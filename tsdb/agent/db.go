@@ -253,6 +253,7 @@ func (m *dbMetrics) Unregister() {
 type deletedRefMeta struct {
 	lastSegment int
 	labels      labels.Labels
+	meta        *metadata.Metadata
 }
 
 // DB represents a WAL-only storage. It implements storage.DB.
@@ -603,7 +604,7 @@ func (db *DB) loadWAL(r *wlog.Reader, duplicateRefToValidRef map[chunks.HeadSeri
 						if db.opts.CheckpointFromInMemorySeries {
 							lbls = entry.Labels
 						}
-						db.deleted[entry.Ref] = deletedRefMeta{lastSegment: currentSegmentOrCheckpoint, labels: lbls}
+						db.deleted[entry.Ref] = deletedRefMeta{lastSegment: currentSegmentOrCheckpoint, labels: lbls, meta: meta.meta}
 					}
 				} else {
 					db.metrics.numActiveSeries.Inc()
@@ -689,9 +690,17 @@ func (db *DB) loadWAL(r *wlog.Reader, duplicateRefToValidRef map[chunks.HeadSeri
 			// Metadata records are replayed unconditionally regardless of EnableMetadataWALRecords
 			// to preserve existing metadata from the WAL for forward compatibility (matching TSDB Head replay).
 			for _, entry := range v {
+				m := &metadata.Metadata{
+					Type: record.ToMetricType(entry.Type),
+					Unit: entry.Unit,
+					Help: entry.Help,
+				}
 				if ref, ok := duplicateRefToValidRef[entry.Ref]; ok {
 					if meta, ok := db.deleted[entry.Ref]; ok && meta.lastSegment <= currentSegmentOrCheckpoint {
 						meta.lastSegment = currentSegmentOrCheckpoint
+						if db.opts.CheckpointFromInMemorySeries {
+							meta.meta = m
+						}
 						db.deleted[entry.Ref] = meta
 					}
 					entry.Ref = ref
@@ -702,11 +711,7 @@ func (db *DB) loadWAL(r *wlog.Reader, duplicateRefToValidRef map[chunks.HeadSeri
 					continue
 				}
 
-				series.meta = &metadata.Metadata{
-					Type: record.ToMetricType(entry.Type),
-					Unit: entry.Unit,
-					Help: entry.Help,
-				}
+				series.meta = m
 			}
 			clear(v) // Zero out to avoid retaining metadata strings.
 			db.walReplayMetadataPool.Put(v[:0])
@@ -876,8 +881,8 @@ func (db *DB) gc(mint int64) {
 	// We want to keep series records for any newly deleted series
 	// until we've passed the last recorded segment. This prevents
 	// the WAL having samples for series records that no longer exist.
-	for ref, lset := range deleted {
-		db.deleted[ref] = deletedRefMeta{lastSegment: last, labels: lset}
+	for ref, ds := range deleted {
+		db.deleted[ref] = deletedRefMeta{lastSegment: last, labels: ds.labels, meta: ds.meta}
 	}
 
 	db.metrics.numWALSeriesPendingDeletion.Set(float64(len(db.deleted)))

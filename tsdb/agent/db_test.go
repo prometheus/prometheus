@@ -1447,101 +1447,118 @@ func TestDBStartTimestampSamplesIngestion(t *testing.T) {
 }
 
 func TestDuplicateSeriesRefsByHash(t *testing.T) {
-	dbDir := t.TempDir()
-	opts := DefaultOptions()
-	opts.EnableMetadataWALRecords = true
-	rs1 := remote.NewStorage(promslog.NewNopLogger(), nil, startTime, dbDir, time.Second*30, nil, false)
-	db, err := Open(promslog.NewNopLogger(), nil, rs1, dbDir, opts)
-	require.NoError(t, err)
+	for _, inMemCheckpoint := range []bool{false, true} {
+		t.Run("CheckpointFromInMemorySeries="+strconv.FormatBool(inMemCheckpoint), func(t *testing.T) {
+			dbDir := t.TempDir()
+			opts := DefaultOptions()
+			opts.EnableMetadataWALRecords = true
+			opts.CheckpointFromInMemorySeries = inMemCheckpoint
+			rs1 := remote.NewStorage(promslog.NewNopLogger(), nil, startTime, dbDir, time.Second*30, nil, false)
+			db, err := Open(promslog.NewNopLogger(), nil, rs1, dbDir, opts)
+			require.NoError(t, err)
 
-	app := db.Appender(context.Background())
+			app := db.Appender(context.Background())
 
-	initialMeta := metadata.Metadata{Type: model.MetricTypeGauge, Unit: "bytes", Help: "initial metadata"}
-	updatedMeta := metadata.Metadata{Type: model.MetricTypeCounter, Unit: "seconds", Help: "updated metadata"}
+			initialMeta := metadata.Metadata{Type: model.MetricTypeGauge, Unit: "bytes", Help: "initial metadata"}
+			updatedMeta := metadata.Metadata{Type: model.MetricTypeCounter, Unit: "seconds", Help: "updated metadata"}
 
-	metricNames := []string{"foo", "bar", "baz", "blerg"}
-	originalSeriesRefs := make([]chunks.HeadSeriesRef, 0, len(metricNames))
-	for _, metricName := range metricNames {
-		lbls := labels.FromMap(map[string]string{"__name__": metricName})
+			metricNames := []string{"foo", "bar", "baz", "blerg"}
+			originalSeriesRefs := make([]chunks.HeadSeriesRef, 0, len(metricNames))
+			for _, metricName := range metricNames {
+				lbls := labels.FromMap(map[string]string{"__name__": metricName})
 
-		ref, err := app.Append(storage.SeriesRef(0), lbls, int64(0), 10.0)
-		require.NoError(t, err)
-		originalSeriesRefs = append(originalSeriesRefs, chunks.HeadSeriesRef(ref))
-		ref2, err := app.Append(ref, lbls, int64(10), 100.0)
-		require.NoError(t, err)
-		require.Equal(t, ref, ref2)
-		_, err = app.UpdateMetadata(ref, lbls, initialMeta)
-		require.NoError(t, err)
-	}
-	require.NoError(t, app.Commit())
+				ref, err := app.Append(storage.SeriesRef(0), lbls, int64(0), 10.0)
+				require.NoError(t, err)
+				originalSeriesRefs = append(originalSeriesRefs, chunks.HeadSeriesRef(ref))
+				ref2, err := app.Append(ref, lbls, int64(10), 100.0)
+				require.NoError(t, err)
+				require.Equal(t, ref, ref2)
+				_, err = app.UpdateMetadata(ref, lbls, initialMeta)
+				require.NoError(t, err)
+			}
+			require.NoError(t, app.Commit())
 
-	// Forcefully create a bunch of new segments to force a truncation.
-	for range 3 {
-		_, err := db.wal.NextSegmentSync()
-		require.NoError(t, err)
-	}
-	// No series should be deleted yet
-	require.Empty(t, db.deleted)
+			// Forcefully create a bunch of new segments to force a truncation.
+			for range 3 {
+				_, err := db.wal.NextSegmentSync()
+				require.NoError(t, err)
+			}
+			// No series should be deleted yet
+			require.Empty(t, db.deleted)
 
-	// Truncate at 1 ms higher than the highest timestamp.
-	err = db.truncate(11)
-	require.NoError(t, err)
+			// Truncate at 1 ms higher than the highest timestamp.
+			err = db.truncate(11)
+			require.NoError(t, err)
 
-	// The original SeriesRefs should be considered deleted.
-	for _, ref := range originalSeriesRefs {
-		require.Nil(t, db.series.GetByID(ref))
-		require.Contains(t, db.deleted, ref)
-	}
+			// The original SeriesRefs should be considered deleted.
+			for _, ref := range originalSeriesRefs {
+				require.Nil(t, db.series.GetByID(ref))
+				require.Contains(t, db.deleted, ref)
+			}
 
-	duplicateSeriesRefs := make([]chunks.HeadSeriesRef, 0, len(metricNames))
-	for _, metricName := range metricNames {
-		lbls := labels.FromMap(map[string]string{"__name__": metricName})
-		ref, err := app.Append(storage.SeriesRef(0), lbls, int64(20), 10.0)
-		require.NoError(t, err)
-		_, err = app.UpdateMetadata(ref, lbls, updatedMeta)
-		require.NoError(t, err)
-		duplicateSeriesRefs = append(duplicateSeriesRefs, chunks.HeadSeriesRef(ref))
-	}
-	require.NoError(t, app.Commit())
+			duplicateSeriesRefs := make([]chunks.HeadSeriesRef, 0, len(metricNames))
+			for i, metricName := range metricNames {
+				lbls := labels.FromMap(map[string]string{"__name__": metricName})
+				ref, err := app.Append(storage.SeriesRef(0), lbls, int64(20), 10.0)
+				require.NoError(t, err)
+				// Leave i==0 without a new metadata record in the segment so replay must
+				// recover initialMeta from the deleted series record in the checkpoint.
+				if i > 0 {
+					_, err = app.UpdateMetadata(ref, lbls, updatedMeta)
+					require.NoError(t, err)
+				}
+				duplicateSeriesRefs = append(duplicateSeriesRefs, chunks.HeadSeriesRef(ref))
+			}
+			require.NoError(t, app.Commit())
 
-	// Write a raw metadata record for a non-existent series ref to exercise the nil series skip path on replay.
-	var enc record.Encoder
-	require.NoError(t, db.wal.Log(enc.Metadata([]record.RefMetadata{{
-		Ref:  9999,
-		Type: record.GetMetricType(model.MetricTypeGauge),
-		Unit: "bytes",
-		Help: "orphan metadata",
-	}}, nil)))
+			// Write a raw metadata record for a non-existent series ref to exercise the nil series skip path on replay.
+			var enc record.Encoder
+			require.NoError(t, db.wal.Log(enc.Metadata([]record.RefMetadata{{
+				Ref:  9999,
+				Type: record.GetMetricType(model.MetricTypeGauge),
+				Unit: "bytes",
+				Help: "orphan metadata",
+			}}, nil)))
 
-	// The duplicate SeriesRefs should be in series.
-	for _, ref := range duplicateSeriesRefs {
-		require.NotNil(t, db.series.GetByID(ref))
-	}
+			// The duplicate SeriesRefs should be in series.
+			for _, ref := range duplicateSeriesRefs {
+				require.NotNil(t, db.series.GetByID(ref))
+			}
 
-	// Close the WAL before we have a chance to remove the original RefIDs.
-	// Both db and rs1 must be closed to release all file handles before
-	// reopening the same directory — important on Windows.
-	require.NoError(t, db.Close())
-	require.NoError(t, rs1.Close())
+			// Close the WAL before we have a chance to remove the original RefIDs.
+			// Both db and rs1 must be closed to release all file handles before
+			// reopening the same directory — important on Windows.
+			require.NoError(t, db.Close())
+			require.NoError(t, rs1.Close())
 
-	rs2 := remote.NewStorage(promslog.NewNopLogger(), nil, startTime, dbDir, time.Second*30, nil, false)
-	t.Cleanup(func() { require.NoError(t, rs2.Close()) })
-	db, err = Open(promslog.NewNopLogger(), nil, rs2, dbDir, opts)
-	require.NoError(t, err)
-	t.Cleanup(func() { require.NoError(t, db.Close()) })
+			rs2 := remote.NewStorage(promslog.NewNopLogger(), nil, startTime, dbDir, time.Second*30, nil, false)
+			t.Cleanup(func() { require.NoError(t, rs2.Close()) })
+			db, err = Open(promslog.NewNopLogger(), nil, rs2, dbDir, opts)
+			require.NoError(t, err)
+			t.Cleanup(func() { require.NoError(t, db.Close()) })
 
-	// The original SeriesRefs should be in series and have the metadata remapped from duplicateSeriesRefs.
-	for _, ref := range originalSeriesRefs {
-		s := db.series.GetByID(ref)
-		require.NotNil(t, s)
-		require.Equal(t, &updatedMeta, s.Metadata())
-		require.NotContains(t, db.deleted, ref)
-	}
+			// The original SeriesRefs should be in series with initialMeta (for i==0, recovered from
+			// the deleted series in the checkpoint) or updatedMeta (for i>0, remapped from duplicateSeriesRefs).
+			for i, ref := range originalSeriesRefs {
+				s := db.series.GetByID(ref)
+				require.NotNil(t, s)
+				if i == 0 {
+					require.Equal(t, &initialMeta, s.Metadata())
+				} else {
+					require.Equal(t, &updatedMeta, s.Metadata())
+				}
+				require.NotContains(t, db.deleted, ref)
+			}
 
-	// The duplicated SeriesRefs should be considered deleted.
-	for _, ref := range duplicateSeriesRefs {
-		require.Nil(t, db.series.GetByID(ref))
-		require.Contains(t, db.deleted, ref)
+			// The duplicated SeriesRefs should be considered deleted.
+			for i, ref := range duplicateSeriesRefs {
+				require.Nil(t, db.series.GetByID(ref))
+				require.Contains(t, db.deleted, ref)
+				if inMemCheckpoint && i > 0 {
+					require.Equal(t, &updatedMeta, db.deleted[ref].meta)
+				}
+			}
+		})
 	}
 }
 

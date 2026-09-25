@@ -93,6 +93,9 @@ func TestCheckpointReplayCompatibility(t *testing.T) {
 			lset := labels.New(l...)
 			for j, sample := range samples.datapointSamples {
 				st := sample[0].T()
+				if i%3 != 0 {
+					st += int64(j + 1)
+				}
 				sf := sample[0].F()
 
 				// replay doesn't include exemplars, thus don't include them to remove them from assertion.
@@ -115,7 +118,7 @@ func TestCheckpointReplayCompatibility(t *testing.T) {
 			lset := labels.New(l...)
 			histograms := samples.histogramSamples[i]
 			for j, sample := range histograms {
-				_, err := app.AppendHistogram(0, lset, int64(j), sample, nil)
+				_, err := app.AppendHistogram(0, lset, int64(j+1), sample, nil)
 				require.NoError(t, err)
 				n++
 				maybeFlush()
@@ -135,8 +138,9 @@ func TestCheckpointReplayCompatibility(t *testing.T) {
 	openDBAndDo(false, wlogStateRoot, func(db *DB) {
 		appendData(db)
 
-		// Trigger checkpoint call.
-		err := db.truncate(-1)
+		// Trigger checkpoint call with mint=1 so series with i%3 == 0 (lastTs=0) are
+		// garbage-collected into db.deleted while remaining in the checkpoint.
+		err := db.truncate(1)
 		require.NoError(t, err, "db.truncate")
 		require.NoError(t, db.Close())
 	})
@@ -156,7 +160,7 @@ func TestCheckpointReplayCompatibility(t *testing.T) {
 	openDBAndDo(true, agentStateRoot, func(db *DB) {
 		appendData(db)
 
-		err := db.truncate(-1)
+		err := db.truncate(1)
 		require.NoError(t, err, "db.truncate")
 		require.NoError(t, db.Close())
 	})

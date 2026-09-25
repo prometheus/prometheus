@@ -61,9 +61,22 @@ type DeletedSeries interface {
 	Labels() labels.Labels
 }
 
+// DeletedSeriesWithMetadata describes a deleted series that also provides metadata to be written by [Checkpoint].
+//
+// This interface is intentionally exported so downstream users of this package
+// can provide metadata without depending on Prometheus internal series types.
+type DeletedSeriesWithMetadata interface {
+	DeletedSeries
+	// Metadata returns the metadata associated with the series, or nil if the
+	// series has no metadata. The returned value must not be mutated after return,
+	// as [Checkpoint] reads it without holding any lock.
+	Metadata() *metadata.Metadata
+}
+
 // Checkpoint creates an unindexed checkpoint containing record.RefSeries,
 // optional record.RefMetadata (when ActiveSeries implements [ActiveSeriesWithMetadata]),
 // and last timestamp (as record.RefSample) for ActiveSeries, and record.RefSeries
+// and optional record.RefMetadata (when DeletedSeries implements [DeletedSeriesWithMetadata])
 // for DeletedSeries.
 //
 // This API accepts interfaces so downstream users of this package can provide
@@ -261,6 +274,17 @@ func (cf *checkpointWriter) writeDeletedRecords(seriesRefIter iter.Seq[DeletedSe
 			Ref:    series.Ref(),
 			Labels: series.Labels(),
 		})
+
+		if sm, ok := series.(DeletedSeriesWithMetadata); ok {
+			if m := sm.Metadata(); m != nil && !m.IsEmpty() {
+				cf.metaRecords = append(cf.metaRecords, record.RefMetadata{
+					Ref:  series.Ref(),
+					Type: record.GetMetricType(m.Type),
+					Unit: m.Unit,
+					Help: m.Help,
+				})
+			}
+		}
 	}
 
 	// Clear the last batch if we have one

@@ -1483,20 +1483,36 @@ func TestMetadataCheckpointing_AppenderV2(t *testing.T) {
 			ts++
 			_, err = app.Append(0, s2, 0, ts, 0, nil, nil, storage.AOptions{Metadata: m6})
 			require.NoError(t, err)
+			_, err = app.Append(0, s4, 0, ts, 0, nil, nil, storage.AOptions{Metadata: m4})
+			require.NoError(t, err)
 			require.NoError(t, app.Commit())
 
-			// Create a checkpoint directly using the configured checkpoint strategy.
-			first, last, err := wlog.Segments(s.wal.Dir())
+			// GC series 3 (lastTs=0) in segment 0 so its lastSegment is 0 (will be dropped at checkpoint 0).
+			s.gc(1)
+
+			// Advance to segment 1 and GC series 4 (lastTs=4) while keeping series 1 and 2 alive.
+			_, err = s.wal.NextSegmentSync()
+			require.NoError(t, err)
+			app = s.AppenderV2(ctx)
+			ts++
+			_, err = app.Append(0, s1, 0, ts, 0, nil, nil, storage.AOptions{Metadata: m5})
+			require.NoError(t, err)
+			_, err = app.Append(0, s2, 0, ts, 0, nil, nil, storage.AOptions{Metadata: m6})
+			require.NoError(t, err)
+			require.NoError(t, app.Commit())
+
+			// GC series 4 in segment 1 so its lastSegment is 1 > 0 (must be retained as deletedSeries in checkpoint 0).
+			s.gc(ts)
+
+			// Create a checkpoint at segment 0 using the configured checkpoint strategy.
+			first, _, err := wlog.Segments(s.wal.Dir())
 			require.NoError(t, err)
 
 			if inMemCheckpoint {
-				err = Checkpoint(promslog.NewNopLogger(), s.wal, last, 1000, s.series.allSeries(), deletedSeriesIter(s.deleted, last))
+				err = Checkpoint(promslog.NewNopLogger(), s.wal, 0, 1000, s.series.allSeries(), deletedSeriesIter(s.deleted, 0))
 				require.NoError(t, err)
 			} else {
-				keep := func(id chunks.HeadSeriesRef) bool {
-					return id != 3 // Exclude series 3 from checkpoint.
-				}
-				_, err = wlog.Checkpoint(promslog.NewNopLogger(), s.wal, first, last, keep, 0, false, false)
+				_, err = wlog.Checkpoint(promslog.NewNopLogger(), s.wal, first, 0, s.keepSeriesInWALCheckpointFn(0), 0, false, false)
 				require.NoError(t, err)
 			}
 
@@ -1506,36 +1522,24 @@ func TestMetadataCheckpointing_AppenderV2(t *testing.T) {
 
 			// Read checkpoint records.
 			recs := readTestWAL(t, cdir)
-			var gotMetadataBlocks [][]record.RefMetadata
+			var gotMetadata []record.RefMetadata
 			for _, rec := range recs {
 				if mr, ok := rec.([]record.RefMetadata); ok {
-					gotMetadataBlocks = append(gotMetadataBlocks, mr)
+					gotMetadata = append(gotMetadata, mr...)
 				}
 			}
 
-			require.Len(t, gotMetadataBlocks, 1)
-			gotMetadataBlock := gotMetadataBlocks[0]
-			sort.Slice(gotMetadataBlock, func(i, j int) bool { return gotMetadataBlock[i].Ref < gotMetadataBlock[j].Ref })
+			sort.Slice(gotMetadata, func(i, j int) bool { return gotMetadata[i].Ref < gotMetadata[j].Ref })
 
-			var wantMetadata []record.RefMetadata
-			if inMemCheckpoint {
-				// In-memory checkpoint keeps all live series including series 3.
-				wantMetadata = []record.RefMetadata{
-					{Ref: 1, Type: record.GetMetricType(m5.Type), Unit: m5.Unit, Help: m5.Help},
-					{Ref: 2, Type: record.GetMetricType(m6.Type), Unit: m6.Unit, Help: m6.Help},
-					{Ref: 3, Type: record.GetMetricType(m3.Type), Unit: m3.Unit, Help: m3.Help},
-					{Ref: 4, Type: record.GetMetricType(m4.Type), Unit: m4.Unit, Help: m4.Help},
-				}
-			} else {
-				// wlog checkpoint filtered out series 3 via keep predicate.
-				wantMetadata = []record.RefMetadata{
-					{Ref: 1, Type: record.GetMetricType(m5.Type), Unit: m5.Unit, Help: m5.Help},
-					{Ref: 2, Type: record.GetMetricType(m6.Type), Unit: m6.Unit, Help: m6.Help},
-					{Ref: 4, Type: record.GetMetricType(m4.Type), Unit: m4.Unit, Help: m4.Help},
-				}
+			// Both checkpoint strategies keep active series 1 and 2, drop series 3 (deleted at segment 0 <= 0),
+			// and retain deleted series 4 (deleted at segment 1 > 0) along with its metadata.
+			wantMetadata := []record.RefMetadata{
+				{Ref: 1, Type: record.GetMetricType(m5.Type), Unit: m5.Unit, Help: m5.Help},
+				{Ref: 2, Type: record.GetMetricType(m6.Type), Unit: m6.Unit, Help: m6.Help},
+				{Ref: 4, Type: record.GetMetricType(m4.Type), Unit: m4.Unit, Help: m4.Help},
 			}
 
-			require.Equal(t, wantMetadata, gotMetadataBlock)
+			require.Equal(t, wantMetadata, gotMetadata)
 		})
 	}
 }

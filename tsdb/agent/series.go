@@ -183,15 +183,15 @@ func newStripeSeries(stripeSize int) *stripeSeries {
 
 // GC garbage collects old series that have not received a sample after mint
 // and will fully delete them.
-func (s *stripeSeries) GC(mint int64, retainLabels bool) map[chunks.HeadSeriesRef]labels.Labels {
+func (s *stripeSeries) GC(mint int64, retainSeries bool) map[chunks.HeadSeriesRef]deletedSeries {
 	// gcMut serializes GC calls. Within a single GC pass, the check function
 	// holds hashLock and then acquires refLock — callers must never hold both
 	// simultaneously, which SetUnlessAlreadySet satisfies.
 	s.gcMut.Lock()
 	defer s.gcMut.Unlock()
 
-	// labels of deleted series are used by agent.Checkpoint
-	deleted := map[chunks.HeadSeriesRef]labels.Labels{}
+	// Labels and metadata of deleted series are used by agent.Checkpoint.
+	deleted := map[chunks.HeadSeriesRef]deletedSeries{}
 
 	// For one series, truncate old chunks and check if any chunks left. If not, mark as deleted and collect the ID.
 	check := func(hashLock int, hash uint64, series *memSeries) {
@@ -210,10 +210,14 @@ func (s *stripeSeries) GC(mint int64, retainLabels bool) map[chunks.HeadSeriesRe
 			s.locks[refLock].Lock()
 		}
 
-		if retainLabels {
-			deleted[series.ref] = series.lset
+		if retainSeries {
+			deleted[series.ref] = deletedSeries{
+				ref:    series.ref,
+				labels: series.lset,
+				meta:   series.meta,
+			}
 		} else {
-			deleted[series.ref] = labels.EmptyLabels()
+			deleted[series.ref] = deletedSeries{ref: series.ref}
 		}
 
 		delete(s.series[refLock], series.ref)
@@ -405,7 +409,7 @@ func deletedSeriesIter(m map[chunks.HeadSeriesRef]deletedRefMeta, last int) iter
 	return func(yield func(DeletedSeries) bool) {
 		for ref, meta := range m {
 			if meta.lastSegment > last {
-				if !yield(deletedSeries{ref: ref, labels: meta.labels}) {
+				if !yield(deletedSeries{ref: ref, labels: meta.labels, meta: meta.meta}) {
 					return
 				}
 			}
@@ -413,11 +417,15 @@ func deletedSeriesIter(m map[chunks.HeadSeriesRef]deletedRefMeta, last int) iter
 	}
 }
 
-var _ DeletedSeries = deletedSeries{}
+var (
+	_ DeletedSeries             = deletedSeries{}
+	_ DeletedSeriesWithMetadata = deletedSeries{}
+)
 
 type deletedSeries struct {
 	ref    chunks.HeadSeriesRef
 	labels labels.Labels
+	meta   *metadata.Metadata
 }
 
 func (series deletedSeries) Ref() chunks.HeadSeriesRef {
@@ -426,4 +434,8 @@ func (series deletedSeries) Ref() chunks.HeadSeriesRef {
 
 func (series deletedSeries) Labels() labels.Labels {
 	return series.labels
+}
+
+func (series deletedSeries) Metadata() *metadata.Metadata {
+	return series.meta
 }
