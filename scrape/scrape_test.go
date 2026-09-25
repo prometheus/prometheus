@@ -4904,6 +4904,48 @@ func TestRequestTraceparentHeader(t *testing.T) {
 	t.Cleanup(func() { _ = resp.Body.Close() })
 }
 
+func TestTargetScraperServerNameHostHeader(t *testing.T) {
+	var gotHost string
+	server := httptest.NewServer(
+		http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			gotHost = r.Host
+			w.Header().Set("Content-Type", `text/plain; version=0.0.4`)
+			_, _ = w.Write([]byte("metric_a 1\n"))
+		}),
+	)
+	defer server.Close()
+	serverURL, err := url.Parse(server.URL)
+	require.NoError(t, err)
+
+	client, err := newScrapeClient(config_util.DefaultHTTPClientConfig, "test")
+	require.NoError(t, err)
+
+	ts := &targetScraper{
+		Target: &Target{
+			labels: labels.FromStrings(
+				model.SchemeLabel, serverURL.Scheme,
+				model.AddressLabel, serverURL.Host,
+			),
+			scrapeConfig: &config.ScrapeConfig{},
+		},
+		client:     client,
+		serverName: "example.internal",
+	}
+
+	resp, err := ts.scrape(context.Background())
+	require.NoError(t, err)
+	require.NotNil(t, resp)
+	_, err = io.ReadAll(resp.Body)
+	require.NoError(t, err)
+	_ = resp.Body.Close()
+
+	// The Host header must carry the configured tls_config.server_name,
+	// while keeping the port of the scrape address, so that servers which
+	// match the Host header against the SNI certificate (e.g. Jetty's
+	// SecureRequestCustomizer) accept the scrape.
+	require.Equal(t, net.JoinHostPort("example.internal", serverURL.Port()), gotHost)
+}
+
 func TestTargetScraperScrapeOK(t *testing.T) {
 	const (
 		configTimeout   = 1500 * time.Millisecond

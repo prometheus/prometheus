@@ -383,6 +383,7 @@ func (sp *scrapePool) restartLoops(reuseCache bool) {
 				acceptHeader:         acceptHeader(sp.config.ScrapeProtocols, escapingScheme),
 				acceptEncodingHeader: acceptEncodingHeader(sp.config.EnableCompression, sp.options.EnableZstdScrape),
 				enableZstd:           sp.options.EnableZstdScrape,
+				serverName:           sp.config.HTTPClientConfig.TLSConfig.ServerName,
 				logger:               sp.logger,
 				metrics:              sp.metrics,
 			},
@@ -517,6 +518,7 @@ func (sp *scrapePool) sync(targets []*Target) {
 					acceptHeader:         acceptHeader(sp.config.ScrapeProtocols, escapingScheme),
 					acceptEncodingHeader: acceptEncodingHeader(sp.config.EnableCompression, sp.options.EnableZstdScrape),
 					enableZstd:           sp.options.EnableZstdScrape,
+					serverName:           sp.config.HTTPClientConfig.TLSConfig.ServerName,
 					logger:               sp.logger,
 					metrics:              sp.metrics,
 				},
@@ -762,6 +764,7 @@ type targetScraper struct {
 	acceptHeader         string
 	acceptEncodingHeader string
 	enableZstd           bool
+	serverName           string
 	logger               *slog.Logger
 
 	metrics *scrapeMetrics
@@ -831,6 +834,16 @@ func (s *targetScraper) scrape(ctx context.Context) (*http.Response, error) {
 		req.Header.Add("Accept-Encoding", s.acceptEncodingHeader)
 		req.Header.Set("User-Agent", UserAgent)
 		req.Header.Set("X-Prometheus-Scrape-Timeout-Seconds", strconv.FormatFloat(s.timeout.Seconds(), 'f', -1, 64))
+
+		// If tls_config.server_name is set, the TLS SNI extension carries
+		// that name, but the Host header would still default to the target
+		// address. Servers that match the Host header against the SNI
+		// certificate's Subject Alternative Names (e.g. Jetty's
+		// SecureRequestCustomizer) then reject the scrape. Keep the port
+		// from the scrape address, but send the server_name as the host.
+		if s.serverName != "" {
+			req.Host = net.JoinHostPort(s.serverName, req.URL.Port())
+		}
 
 		s.req = req
 	}
