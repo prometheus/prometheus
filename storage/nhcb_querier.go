@@ -16,6 +16,7 @@ package storage
 import (
 	"context"
 	"math"
+	"slices"
 	"strings"
 
 	"github.com/prometheus/common/model"
@@ -51,11 +52,24 @@ import (
 //      http_request_duration_seconds_bucket{le="+Inf", method="POST"}
 //      http_request_duration_seconds_bucket{le="0.1", method="GET"}
 //      http_request_duration_seconds_bucket{le="0.1", method="POST"}
+//
+// 3. Native histograms with an exponential schema, if converted at all, have
+//    no fixed bucket boundaries. So that the resulting classic histograms can
+//    be aggregated by le, across series and over time, all of them are
+//    converted with the same le boundaries: the union of the boundaries of all
+//    the selected exponential histograms, reduced to the lowest schema amongst
+//    them. Hence the le set depends on the selected series and time range, a
+//    single low resolution histogram lowers the resolution of all of them, and
+//    histograms with many buckets result in many classic series.
 
 // NHCBAsClassicQuerier wraps a Querier and converts NHCB (Native Histogram Custom Buckets)
 // queries to classic histogram format when classic series don't exist.
 type NHCBAsClassicQuerier struct {
 	Querier
+
+	// includeExponential converts native histograms with an exponential
+	// schema, too, not only NHCB.
+	includeExponential bool
 }
 
 // NewNHCBAsClassicQuerier returns a new querier that wraps the given querier
@@ -132,9 +146,10 @@ func (q *NHCBAsClassicQuerier) Select(ctx context.Context, sortSeries bool, hint
 		return nhcbSet
 	}
 	seriesSets = append(seriesSets, &nhcbToClassicSeriesSet{
-		nhcbSet:   nhcbSet,
-		leMatcher: leMatcher,
-		suffix:    suffix,
+		nhcbSet:            nhcbSet,
+		leMatcher:          leMatcher,
+		suffix:             suffix,
+		includeExponential: q.includeExponential,
 	})
 
 	return &multipleSeriesSet{
@@ -269,9 +284,13 @@ type nhcbToClassicSeriesSet struct {
 	nhcbSet   SeriesSet
 	leMatcher *labels.Matcher
 	suffix    string
-	series    []Series
-	idx       int
-	err       error
+	// includeExponential converts native histograms with an exponential
+	// schema, too, see NHCBAsClassicQuerier.
+	includeExponential bool
+
+	series []Series
+	idx    int
+	err    error
 }
 
 func (s *nhcbToClassicSeriesSet) Next() bool {
@@ -314,6 +333,10 @@ func (s *nhcbToClassicSeriesSet) convert() bool {
 	if !ok {
 		return false
 	}
+	var boundaries []float64
+	if s.includeExponential && s.suffix == histogram.ClassicSuffixBucket {
+		boundaries = exponentialBoundaries(nhSeries)
+	}
 
 	lsetBuilder := labels.NewBuilder(labels.EmptyLabels())
 	b := newClassicSeriesBuilder()
@@ -324,7 +347,13 @@ func (s *nhcbToClassicSeriesSet) convert() bool {
 		for _, smpl := range ns.samples {
 			b.startSample(smpl.t)
 			if smpl.fh != nil {
-				if err := histogram.ConvertNHCBToClassic(smpl.fh, ns.labels, lsetBuilder, s.suffix, seriesCache, emit); err != nil {
+				var err error
+				if histogram.IsExponentialSchema(smpl.fh.Schema) {
+					err = histogram.ConvertExponentialToClassic(smpl.fh, boundaries, ns.labels, lsetBuilder, s.suffix, seriesCache, emit)
+				} else {
+					err = histogram.ConvertNHCBToClassic(smpl.fh, ns.labels, lsetBuilder, s.suffix, seriesCache, emit)
+				}
+				if err != nil {
 					s.err = err
 					return false
 				}
@@ -401,10 +430,50 @@ func (s *nhcbToClassicSeriesSet) Warnings() annotations.Annotations {
 
 // convertible reports whether a native histogram sample with the given schema
 // and sum is converted to classic histogram series.
-func (*nhcbToClassicSeriesSet) convertible(schema int32, sum float64) bool {
+func (s *nhcbToClassicSeriesSet) convertible(schema int32, sum float64) bool {
 	// Staleness markers are not converted, whatever their schema. The series
 	// converted from the previous sample are marked stale instead.
-	return !value.IsStaleNaN(sum) && histogram.IsCustomBucketsSchema(schema)
+	if value.IsStaleNaN(sum) {
+		return false
+	}
+	return histogram.IsCustomBucketsSchema(schema) || (s.includeExponential && histogram.IsExponentialSchema(schema))
+}
+
+// exponentialBoundaries returns the le boundaries to convert the exponential
+// native histograms amongst nhSeries with: the union of the boundaries of all
+// of them, see histogram.AppendClassicBoundaries, reduced to the lowest schema
+// amongst them. As the boundaries of a lower schema are boundaries of every
+// higher schema, too, the conversion is exact for each histogram. As all of
+// them are converted with the same boundaries, the resulting classic
+// histograms can be aggregated by le, across series and over time.
+func exponentialBoundaries(nhSeries []nativeHistogramSeries) []float64 {
+	minSchema := int32(math.MaxInt32)
+	for _, ns := range nhSeries {
+		for _, smpl := range ns.samples {
+			if smpl.fh != nil && histogram.IsExponentialSchema(smpl.fh.Schema) {
+				minSchema = min(minSchema, smpl.fh.Schema)
+			}
+		}
+	}
+
+	var boundaries []float64
+	for _, ns := range nhSeries {
+		for _, smpl := range ns.samples {
+			if smpl.fh == nil || !histogram.IsExponentialSchema(smpl.fh.Schema) {
+				continue
+			}
+			fh := smpl.fh
+			if fh.Schema > minSchema {
+				fh = fh.CopyToSchema(minSchema)
+			}
+			boundaries = histogram.AppendClassicBoundaries(boundaries, fh)
+		}
+		// The samples of a series mostly have the same buckets, so drop the
+		// duplicates after each series already.
+		slices.Sort(boundaries)
+		boundaries = slices.Compact(boundaries)
+	}
+	return boundaries
 }
 
 type convertedSeriesData struct {
