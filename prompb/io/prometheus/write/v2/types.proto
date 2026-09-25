@@ -74,7 +74,7 @@ message TimeSeries {
   repeated Sample samples = 2 [(gogoproto.nullable) = false];
   repeated Histogram histograms = 3 [(gogoproto.nullable) = false];
 
-  // exemplars represents an optional set of exemplars for this series.
+  // exemplars represents an optional set of exemplars for this series or series's samples/histograms if present.
   repeated Exemplar exemplars = 4 [(gogoproto.nullable) = false];
 
   // metadata represents the metadata associated with the given series' samples.
@@ -85,7 +85,7 @@ message TimeSeries {
   reserved 6;
 }
 
-// Exemplar contains additional information associated with a series.
+// Exemplar contains additional information associated with a series or series's samples/histograms if present.
 // It is typically used to attach an example trace or request ID associated with
 // the metric changes.
 message Exemplar {

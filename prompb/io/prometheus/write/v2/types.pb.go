@@ -193,7 +193,7 @@ type TimeSeries struct {
 	// Samples and histograms are sorted by timestamp (older first).
 	Samples    []Sample    `protobuf:"bytes,2,rep,name=samples,proto3" json:"samples"`
 	Histograms []Histogram `protobuf:"bytes,3,rep,name=histograms,proto3" json:"histograms"`
-	// exemplars represents an optional set of exemplars for this series.
+	// exemplars represents an optional set of exemplars for this series or series's samples/histograms if present.
 	Exemplars []Exemplar `protobuf:"bytes,4,rep,name=exemplars,proto3" json:"exemplars"`
 	// metadata represents the metadata associated with the given series' samples.
 	Metadata             Metadata `protobuf:"bytes,5,opt,name=metadata,proto3" json:"metadata"`
@@ -270,7 +270,7 @@ func (m *TimeSeries) GetMetadata() Metadata {
 	return Metadata{}
 }
 
-// Exemplar contains additional information associated with a series.
+// Exemplar contains additional information associated with a series or series's samples/histograms if present.
 // It is typically used to attach an example trace or request ID associated with
 // the metric changes.
 type Exemplar struct {
