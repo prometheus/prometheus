@@ -192,6 +192,30 @@ func (oh *HeadAndOOOIndexReader) LabelValues(ctx context.Context, name string, h
 	return labelValuesWithMatchers(ctx, oh, name, hints, matchers...)
 }
 
+// SortedLabelValues returns sorted values from in-order and out-of-order data.
+func (oh *HeadAndOOOIndexReader) SortedLabelValues(ctx context.Context, name string, hints *storage.LabelHints, matchers ...*labels.Matcher) ([]string, error) {
+	values, err := oh.LabelValues(ctx, name, hints, matchers...)
+	if err == nil {
+		slices.Sort(values)
+	}
+	return values, err
+}
+
+// LabelNames includes series with in-order or out-of-order samples in the range.
+func (oh *HeadAndOOOIndexReader) LabelNames(ctx context.Context, matchers ...*labels.Matcher) ([]string, error) {
+	if oh.maxt < oh.head.MinTime() && oh.maxt < oh.head.MinOOOTime() || oh.mint > oh.head.MaxTime() && oh.mint > oh.head.MaxOOOTime() {
+		return []string{}, nil
+	}
+
+	if len(matchers) == 0 {
+		names := oh.head.postings.LabelNames()
+		slices.Sort(names)
+		return names, nil
+	}
+
+	return labelNamesWithMatchers(ctx, oh, matchers...)
+}
+
 func lessByMinTimeAndMinRef(a, b chunks.Meta) int {
 	switch {
 	case a.MinTime < b.MinTime:
@@ -604,26 +628,14 @@ func (q *HeadAndOOOQuerier) LabelNames(ctx context.Context, hints *storage.Label
 	return q.querier.LabelNames(ctx, hints, matchers...)
 }
 
-// SearchLabelNames implements storage.Searcher by delegating to the inner querier.
+// SearchLabelNames implements storage.Searcher over in-order and out-of-order data.
 func (q *HeadAndOOOQuerier) SearchLabelNames(ctx context.Context, hints *storage.SearchHints, matchers ...*labels.Matcher) storage.SearchResultSet {
-	if q.querier == nil {
-		return storage.EmptySearchResultSet()
-	}
-	if s, ok := q.querier.(storage.Searcher); ok {
-		return s.SearchLabelNames(ctx, hints, matchers...)
-	}
-	return storage.EmptySearchResultSet()
+	return searchLabelNames(ctx, q.index, hints, matchers...)
 }
 
-// SearchLabelValues implements storage.Searcher by delegating to the inner querier.
+// SearchLabelValues implements storage.Searcher over in-order and out-of-order data.
 func (q *HeadAndOOOQuerier) SearchLabelValues(ctx context.Context, name string, hints *storage.SearchHints, matchers ...*labels.Matcher) storage.SearchResultSet {
-	if q.querier == nil {
-		return storage.EmptySearchResultSet()
-	}
-	if s, ok := q.querier.(storage.Searcher); ok {
-		return s.SearchLabelValues(ctx, name, hints, matchers...)
-	}
-	return storage.EmptySearchResultSet()
+	return searchLabelValues(ctx, q.index, name, hints, matchers...)
 }
 
 func (q *HeadAndOOOQuerier) Close() error {

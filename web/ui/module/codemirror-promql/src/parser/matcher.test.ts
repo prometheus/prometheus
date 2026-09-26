@@ -12,7 +12,7 @@
 // limitations under the License.
 
 import { EqlRegex, EqlSingle, Neq, NeqRegex } from '@prometheus-io/lezer-promql';
-import { labelMatchersToString } from './matcher';
+import { labelMatchersToString, unquotePromQLStringLiteral } from './matcher';
 import { Matcher } from '../types';
 
 describe('labelMatchersToString test', () => {
@@ -132,5 +132,22 @@ describe('labelMatchersToString test', () => {
     it(value.title, () => {
       expect(labelMatchersToString(value.metricName, value.matchers, value.labelName)).toEqual(value.result);
     });
+  });
+});
+
+describe('unquotePromQLStringLiteral', () => {
+  it.each([
+    ['"plain"', 'plain'],
+    ["'single\\''", "single'"],
+    ['`raw\\nvalue`', 'raw\\nvalue'],
+    ['"line\\nquote\\"slash\\\\"', 'line\nquote"slash\\'],
+    ['"hex\\x2e unicode\\u2603 wide\\U0001f680"', 'hex. unicode☃ wide🚀'],
+    ['"octal\\141"', 'octala'],
+  ])('decodes %s', (input, expected) => {
+    expect(unquotePromQLStringLiteral(input)).toBe(expected);
+  });
+
+  it.each(['plain', '"unterminated', '"bad\\q"', '"bad\\x0"', '"bad\\U00110000"'])('rejects %s', (input) => {
+    expect(() => unquotePromQLStringLiteral(input)).toThrow();
   });
 });

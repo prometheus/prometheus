@@ -281,6 +281,7 @@ type Options struct {
 	ExemplarStorage       storage.ExemplarQueryable
 	QueryEngine           *promql.Engine
 	LookbackDelta         time.Duration
+	QueryTimeout          time.Duration
 	ScrapeManager         *scrape.Manager
 	RuleManager           *rules.Manager
 	Notifier              *notifier.Manager
@@ -289,34 +290,35 @@ type Options struct {
 	NotificationsSub      func() (<-chan notifications.Notification, func(), bool)
 	Flags                 map[string]string
 
-	ListenAddresses            []string
-	CORSOrigin                 *regexp.Regexp
-	ReadTimeout                time.Duration
-	MaxConnections             int
-	ExternalURL                *url.URL
-	RoutePrefix                string
-	UseLocalAssets             bool
-	UserAssetsPath             string
-	ConsoleTemplatesPath       string
-	ConsoleLibrariesPath       string
-	UseOldUI                   bool
-	EnableLifecycle            bool
-	EnableAdminAPI             bool
-	EnableSearch               bool
-	MaxSearchLimit             int
-	PageTitle                  string
-	RemoteReadSampleLimit      int
-	RemoteReadConcurrencyLimit int
-	RemoteReadBytesInFrame     int
-	EnableRemoteWriteReceiver  bool
-	EnableOTLPWriteReceiver    bool
-	ConvertOTLPDelta           bool
-	NativeOTLPDeltaIngestion   bool
-	IsAgent                    bool
-	STZeroIngestionEnabled     bool
-	EnableTypeAndUnitLabels    bool
-	AppendMetadata             bool
-	AppName                    string
+	ListenAddresses             []string
+	CORSOrigin                  *regexp.Regexp
+	ReadTimeout                 time.Duration
+	MaxConnections              int
+	ExternalURL                 *url.URL
+	RoutePrefix                 string
+	UseLocalAssets              bool
+	UserAssetsPath              string
+	ConsoleTemplatesPath        string
+	ConsoleLibrariesPath        string
+	UseOldUI                    bool
+	EnableLifecycle             bool
+	EnableAdminAPI              bool
+	EnableSearch                bool
+	MaxSearchLimit              int
+	EnableExperimentalFunctions bool
+	PageTitle                   string
+	RemoteReadSampleLimit       int
+	RemoteReadConcurrencyLimit  int
+	RemoteReadBytesInFrame      int
+	EnableRemoteWriteReceiver   bool
+	EnableOTLPWriteReceiver     bool
+	ConvertOTLPDelta            bool
+	NativeOTLPDeltaIngestion    bool
+	IsAgent                     bool
+	STZeroIngestionEnabled      bool
+	EnableTypeAndUnitLabels     bool
+	AppendMetadata              bool
+	AppName                     string
 
 	AcceptRemoteWriteProtoMsgs remoteapi.MessageTypes
 
@@ -412,6 +414,7 @@ func New(logger *slog.Logger, o *Options) *Handler {
 		h.options.EnableAdminAPI,
 		h.options.EnableSearch,
 		h.options.MaxSearchLimit,
+		h.options.EnableExperimentalFunctions,
 		logger,
 		FactoryRr,
 		h.options.RemoteReadSampleLimit,
@@ -433,6 +436,7 @@ func New(logger *slog.Logger, o *Options) *Handler {
 		o.NativeOTLPDeltaIngestion,
 		o.STZeroIngestionEnabled,
 		o.LookbackDelta,
+		o.QueryTimeout,
 		o.EnableTypeAndUnitLabels,
 		o.AppendMetadata,
 		nil,
@@ -452,6 +456,7 @@ func New(logger *slog.Logger, o *Options) *Handler {
 		r.Set(features.API, "remote_write_receiver", o.EnableRemoteWriteReceiver)
 		r.Set(features.API, "otlp_write_receiver", o.EnableOTLPWriteReceiver)
 		r.Set(features.API, "search", o.EnableSearch)
+		r.Set(features.API, "info_label_search", o.EnableSearch && o.EnableExperimentalFunctions && !o.IsAgent)
 		for _, alg := range api_v1.FuzzAlgorithms() {
 			r.Enable(features.API, "search_fuzz_alg_"+alg)
 		}

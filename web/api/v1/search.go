@@ -58,7 +58,7 @@ import (
 )
 
 // defaultFuzzAlg is the algorithm assumed when fuzz_alg is not specified.
-const defaultFuzzAlg = "subsequence"
+const defaultFuzzAlg = "jarowinkler"
 
 // defaultSearchLimit is the default value for the limit parameter when the client omits it.
 const defaultSearchLimit = 100
@@ -81,7 +81,7 @@ const maxSearchTermsPerRequest = 32
 // used by validation, feature registration, and API documentation. It is kept
 // unexported so it cannot be mutated by external packages; use FuzzAlgorithms()
 // to obtain a defensive copy.
-var fuzzAlgorithms = []string{defaultFuzzAlg, "jarowinkler"}
+var fuzzAlgorithms = []string{defaultFuzzAlg, "subsequence"}
 
 // FuzzAlgorithms returns the canonical list of supported fuzzy matching
 // algorithms. The returned slice is a copy and may be modified safely.
@@ -94,7 +94,7 @@ type searchParams struct {
 	matcherSets   [][]*labels.Matcher
 	searches      []string
 	fuzzThreshold int    // 0-100, default 0 (lowest fuzzy threshold).
-	fuzzAlg       string // "subsequence" (default) or "jarowinkler".
+	fuzzAlg       string // "jarowinkler" (default) or "subsequence".
 	caseSensitive bool   // Default true.
 	sortBy        string
 	sortDir       string // "asc" (default) or "dsc".
@@ -182,8 +182,9 @@ func (nw *ndjsonWriter) writeLine(v any) error {
 	return nil
 }
 
-// parseSearchParams parses the common query parameters for search endpoints.
-func (api *API) parseSearchParams(r *http.Request) (searchParams, *apiError) {
+// parseSearchParams parses common search parameters. Timestamps are always
+// parsed; validateTimeRange controls only start/end ordering validation.
+func (api *API) parseSearchParams(r *http.Request, validateTimeRange bool) (searchParams, *apiError) {
 	var sp searchParams
 
 	now := api.now()
@@ -202,7 +203,7 @@ func (api *API) parseSearchParams(r *http.Request) (searchParams, *apiError) {
 	// this instant" search. Only strictly inverted ranges are rejected, so
 	// a client that accidentally sets end < start gets an immediate error
 	// rather than empty (and possibly misleading) results.
-	if sp.end.Before(sp.start) {
+	if validateTimeRange && sp.end.Before(sp.start) {
 		return sp, &apiError{errorBadData, errors.New("end timestamp must not be before start timestamp")}
 	}
 
@@ -425,6 +426,9 @@ func sortOrdering(sortBy, sortDir string) storage.Ordering {
 }
 
 func searchAPIError(err error) *apiError {
+	if errors.Is(err, context.DeadlineExceeded) {
+		return &apiError{errorTimeout, err}
+	}
 	result := setUnavailStatusOnTSDBNotReady(apiFuncResult{err: returnAPIError(err)})
 	return result.err
 }
@@ -440,6 +444,17 @@ func writeStreamSearchError(nw *ndjsonWriter, err error) {
 
 func writeStreamInternalError(nw *ndjsonWriter, err error) {
 	_ = nw.writeLine(searchErrorResponse{Status: "error", ErrorType: errorInternal.str, Error: err.Error()})
+}
+
+func streamContextDone(ctx context.Context, nw *ndjsonWriter) bool {
+	cause := context.Cause(ctx)
+	if cause == nil {
+		return false
+	}
+	if errors.Is(cause, context.DeadlineExceeded) {
+		writeStreamSearchError(nw, context.DeadlineExceeded)
+	}
+	return true
 }
 
 func searchWarnings(rs storage.SearchResultSet) []string {
@@ -488,6 +503,10 @@ func (s *searchResultStreamer[T]) nextBatch() ([]T, error) {
 
 func streamSearchResults[T any](ctx context.Context, api *API, w http.ResponseWriter, rs storage.SearchResultSet, sp searchParams, toResult func(storage.SearchResult) T) {
 	defer func() { _ = rs.Close() }()
+	if errors.Is(context.Cause(ctx), context.DeadlineExceeded) {
+		api.respondPreStreamSearchError(w, context.DeadlineExceeded)
+		return
+	}
 
 	streamer := &searchResultStreamer[T]{
 		rs:        rs,
@@ -497,6 +516,10 @@ func streamSearchResults[T any](ctx context.Context, api *API, w http.ResponseWr
 	}
 
 	firstBatch, firstErr := streamer.nextBatch()
+	if errors.Is(context.Cause(ctx), context.DeadlineExceeded) {
+		api.respondPreStreamSearchError(w, context.DeadlineExceeded)
+		return
+	}
 	// A non-nil firstErr with zero results means the underlying iterator
 	// could not produce anything; respond with the standard JSON error so
 	// clients see a well-formed failure. When firstErr arrives alongside
@@ -518,11 +541,18 @@ func streamSearchResults[T any](ctx context.Context, api *API, w http.ResponseWr
 		api.respondError(w, &apiError{errorInternal, err}, nil)
 		return
 	}
+	if errors.Is(context.Cause(ctx), context.DeadlineExceeded) {
+		writeStreamSearchError(nw, context.DeadlineExceeded)
+		return
+	}
 
 	// Always emit a first batch line so warnings are observable before any
 	// trailer or error line, even when there are no results.
 	if writeErr := nw.writeLine(searchBatch[T]{Results: firstBatch, Warnings: firstWarnings}); writeErr != nil {
 		writeStreamInternalError(nw, writeErr)
+		return
+	}
+	if streamContextDone(ctx, nw) {
 		return
 	}
 
@@ -540,12 +570,13 @@ func streamSearchResults[T any](ctx context.Context, api *API, w http.ResponseWr
 		// Stop pulling from storage as soon as the client goes away.
 		// Without this check, an abandoned request keeps iterating the
 		// underlying SearchResultSet (which may itself be doing real I/O).
-		select {
-		case <-ctx.Done():
+		if streamContextDone(ctx, nw) {
 			return
-		default:
 		}
 		batch, err := streamer.nextBatch()
+		if streamContextDone(ctx, nw) {
+			return
+		}
 		if len(batch) > 0 {
 			if writeErr := nw.writeLine(searchBatch[T]{Results: batch}); writeErr != nil {
 				writeStreamInternalError(nw, writeErr)
@@ -570,6 +601,9 @@ func streamSearchResults[T any](ctx context.Context, api *API, w http.ResponseWr
 	slices.Sort(trailerWarnings)
 	if slices.Equal(trailerWarnings, firstWarnings) {
 		trailerWarnings = nil
+	}
+	if streamContextDone(ctx, nw) {
+		return
 	}
 	_ = nw.writeLine(searchTrailer{Status: "success", HasMore: streamer.hasMore, Warnings: trailerWarnings})
 }
@@ -693,7 +727,27 @@ func filterChainHasExpensiveScoring(fuzzThreshold int, fuzzAlg string) bool {
 	return fuzzThreshold > 0
 }
 
-// searchRequest holds the common objects prepared by newSearchRequest for a search request.
+// preparedAutocompleteRequest holds validated search parameters and hints before
+// storage is opened.
+type preparedAutocompleteRequest struct {
+	sp    searchParams
+	hints *storage.SearchHints
+}
+
+type autocompleteRequestOptions struct {
+	exprControlsTimeRange bool
+}
+
+// autocompleteRequest adds an acquired storage querier. Callers must defer q.Close().
+type autocompleteRequest struct {
+	sp    searchParams
+	hints *storage.SearchHints
+	q     storage.Querier
+}
+
+// searchRequest holds the common objects prepared by newSearchRequest. It is
+// autocompleteRequest plus a typed Searcher view of q, since the /api/v1/search/*
+// endpoints depend on the Searcher interface for their index-side filtering.
 type searchRequest struct {
 	sp       searchParams
 	hints    *storage.SearchHints
@@ -701,12 +755,9 @@ type searchRequest struct {
 	q        storage.Querier
 }
 
-// newSearchRequest handles the setup shared by all search endpoints: CORS headers,
-// feature-gate checks, form parsing, common parameter parsing, sort_by
-// validation, querier acquisition, and search hint construction. On success a
-// non-nil searchRequest is returned and the caller must defer req.q.Close(). On
-// failure the error has already been written to w and nil is returned.
-func (api *API) newSearchRequest(w http.ResponseWriter, r *http.Request, endpoint string) *searchRequest {
+// prepareAutocompleteRequest validates common autocomplete parameters without
+// opening storage.
+func (api *API) prepareAutocompleteRequest(w http.ResponseWriter, r *http.Request, endpoint string, opts autocompleteRequestOptions) *preparedAutocompleteRequest {
 	httputil.SetCORS(w, api.CORSOrigin, r)
 
 	if !api.enableSearch {
@@ -724,7 +775,8 @@ func (api *API) newSearchRequest(w http.ResponseWriter, r *http.Request, endpoin
 		return nil
 	}
 
-	sp, apiErr := api.parseSearchParams(r)
+	validateTimeRange := !opts.exprControlsTimeRange || r.FormValue("expr") == ""
+	sp, apiErr := api.parseSearchParams(r, validateTimeRange)
 	if apiErr != nil {
 		api.respondError(w, apiErr, nil)
 		return nil
@@ -735,26 +787,54 @@ func (api *API) newSearchRequest(w http.ResponseWriter, r *http.Request, endpoin
 		return nil
 	}
 
-	q, err := api.Queryable.Querier(timestamp.FromTime(sp.start), timestamp.FromTime(sp.end))
-	if err != nil {
-		api.respondPreStreamSearchError(w, err)
-		return nil
-	}
-
-	searcher, ok := q.(storage.Searcher)
-	if !ok {
-		_ = q.Close()
-		api.respondError(w, &apiError{errorInternal, errors.New("search not supported by storage")}, nil)
-		return nil
-	}
-
 	hints := &storage.SearchHints{
 		Filter: buildSearchFilter(sp.searches, sp.fuzzThreshold, sp.fuzzAlg, sp.caseSensitive),
 		Limit:  searchHintsLimit(sp.limit), // Fetch one extra to detect has_more (with saturation guard).
 	}
 	hints.OrderBy = sortOrdering(sp.sortBy, sp.sortDir)
 
-	return &searchRequest{sp: sp, hints: hints, searcher: searcher, q: q}
+	return &preparedAutocompleteRequest{sp: sp, hints: hints}
+}
+
+func (api *API) openAutocompleteRequest(w http.ResponseWriter, prepared *preparedAutocompleteRequest, mint, maxt int64) *autocompleteRequest {
+	q, err := api.Queryable.Querier(mint, maxt)
+	if err != nil {
+		api.respondPreStreamSearchError(w, err)
+		return nil
+	}
+	return &autocompleteRequest{sp: prepared.sp, hints: prepared.hints, q: q}
+}
+
+// newAutocompleteRequest prepares a request and opens storage over its common
+// start/end range.
+func (api *API) newAutocompleteRequest(w http.ResponseWriter, r *http.Request, endpoint string) *autocompleteRequest {
+	prepared := api.prepareAutocompleteRequest(w, r, endpoint, autocompleteRequestOptions{})
+	if prepared == nil {
+		return nil
+	}
+	return api.openAutocompleteRequest(w, prepared, timestamp.FromTime(prepared.sp.start), timestamp.FromTime(prepared.sp.end))
+}
+
+// newSearchRequest is newAutocompleteRequest specialised for the /api/v1/search/*
+// endpoints: it additionally requires the storage to implement Searcher and
+// returns a searchRequest exposing both the typed Searcher and the underlying
+// querier.
+func (api *API) newSearchRequest(w http.ResponseWriter, r *http.Request, endpoint string) *searchRequest {
+	aReq := api.newAutocompleteRequest(w, r, endpoint)
+	if aReq == nil {
+		return nil
+	}
+	return api.searchRequestFromAutocomplete(w, aReq)
+}
+
+func (api *API) searchRequestFromAutocomplete(w http.ResponseWriter, aReq *autocompleteRequest) *searchRequest {
+	searcher, ok := aReq.q.(storage.Searcher)
+	if !ok {
+		_ = aReq.q.Close()
+		api.respondError(w, &apiError{errorUnavailable, errors.New("search is not supported by all storage backends participating in the query")}, nil)
+		return nil
+	}
+	return &searchRequest{sp: aReq.sp, hints: aReq.hints, searcher: searcher, q: aReq.q}
 }
 
 // searchMetricNames handles GET/POST /api/v1/search/metric_names.

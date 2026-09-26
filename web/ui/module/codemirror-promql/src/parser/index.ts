@@ -11,6 +11,6 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-export { buildLabelMatchers, labelMatchersToString } from './matcher';
+export { buildLabelMatchers, labelMatchersToString, unquotePromQLStringLiteral } from './matcher';
 export { Parser } from './parser';
 export { walkBackward, containsAtLeastOneChild, containsChild } from './path-finder';
