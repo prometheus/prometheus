@@ -18,6 +18,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"math"
 	"net/http"
 	"net/http/httptest"
@@ -264,20 +265,155 @@ func TestSearchMetricNames(t *testing.T) {
 	})
 
 	t.Run("with metadata", func(t *testing.T) {
-		rec := doSearchRequest(t, api, "/search/metric_names", url.Values{
-			"search[]":         []string{"go_gc_duration"},
-			"include_metadata": []string{"true"},
-		})
-		require.Equal(t, http.StatusOK, rec.Code)
+		for _, tc := range []struct {
+			name     string
+			metadata scrape.MetricMetadata
+			// Extra metadata is exposed by a second target.
+			extra      []scrape.MetricMetadata
+			extraFirst bool
+			search     string
+			matching   []string
+			missing    []string
+			// Filtered series are loaded but excluded by the search term.
+			filtered []string
+		}{
+			{
+				name:     "gauge",
+				metadata: scrape.MetricMetadata{MetricFamily: "go_goroutines", Type: model.MetricTypeGauge, Help: "Number of goroutines."},
+				matching: []string{"go_goroutines"},
+				missing:  []string{"go_goroutines_total", "go_goroutines_count", "go_goroutines_bucket", "go_goroutines_info"},
+			},
+			{
+				name:     "search filter",
+				metadata: scrape.MetricMetadata{MetricFamily: "go_goroutines", Type: model.MetricTypeGauge, Help: "Number of goroutines."},
+				search:   "go_goroutines",
+				matching: []string{"go_goroutines"},
+				filtered: []string{"go_threads"},
+			},
+			{
+				name:     "name without underscore",
+				metadata: scrape.MetricMetadata{MetricFamily: "up", Type: model.MetricTypeGauge, Help: "Target is up."},
+				matching: []string{"up"},
+				missing:  []string{"uptime"},
+			},
+			{
+				name:     "OpenMetrics counter",
+				metadata: scrape.MetricMetadata{MetricFamily: "process_cpu_seconds", Type: model.MetricTypeCounter, Help: "Total CPU time.", Unit: "seconds"},
+				matching: []string{"process_cpu_seconds_total"},
+				missing:  []string{"process_cpu_seconds_created", "process_cpu_seconds_sum", "process_cpu_seconds_bucket", "process_cpu_seconds_total_total"},
+			},
+			{
+				name:     "Prometheus counter",
+				metadata: scrape.MetricMetadata{MetricFamily: "process_cpu_seconds_total", Type: model.MetricTypeCounter, Help: "Total CPU time.", Unit: "seconds"},
+				matching: []string{"process_cpu_seconds_total"},
+				missing:  []string{"process_cpu_seconds"},
+			},
+			{
+				name:     "conflicting types across targets",
+				metadata: scrape.MetricMetadata{MetricFamily: "requests", Type: model.MetricTypeCounter, Help: "Requests."},
+				extra:    []scrape.MetricMetadata{{MetricFamily: "requests", Type: model.MetricTypeGauge, Help: "In-flight requests."}},
+				matching: []string{"requests_total"},
+			},
+			{
+				name:       "conflicting types across targets with incompatible type first",
+				metadata:   scrape.MetricMetadata{MetricFamily: "requests", Type: model.MetricTypeCounter, Help: "Requests."},
+				extra:      []scrape.MetricMetadata{{MetricFamily: "requests", Type: model.MetricTypeGauge, Help: "In-flight requests."}},
+				extraFirst: true,
+				matching:   []string{"requests_total"},
+			},
+			{
+				name:     "exact metadata takes precedence",
+				metadata: scrape.MetricMetadata{MetricFamily: "http_request_duration_seconds_count", Type: model.MetricTypeGauge, Help: "Independent gauge."},
+				extra:    []scrape.MetricMetadata{{MetricFamily: "http_request_duration_seconds", Type: model.MetricTypeHistogram, Help: "Request duration.", Unit: "seconds"}},
+				matching: []string{"http_request_duration_seconds_count"},
+			},
+			{
+				name:     "histogram",
+				metadata: scrape.MetricMetadata{MetricFamily: "http_request_duration_seconds", Type: model.MetricTypeHistogram, Help: "Request duration.", Unit: "seconds"},
+				matching: []string{"http_request_duration_seconds", "http_request_duration_seconds_bucket", "http_request_duration_seconds_sum", "http_request_duration_seconds_count"},
+				missing:  []string{"http_request_duration_seconds_created", "http_request_duration_seconds_total", "http_request_duration_seconds_gsum", "http_request_duration_seconds_gcount"},
+			},
+			{
+				name:     "summary",
+				metadata: scrape.MetricMetadata{MetricFamily: "go_gc_duration_seconds", Type: model.MetricTypeSummary, Help: "GC duration.", Unit: "seconds"},
+				matching: []string{"go_gc_duration_seconds", "go_gc_duration_seconds_sum", "go_gc_duration_seconds_count"},
+				missing:  []string{"go_gc_duration_seconds_created", "go_gc_duration_seconds_bucket", "go_gc_duration_seconds_total"},
+			},
+			{
+				// OpenMetrics text uses _gsum and _gcount, the protobuf format
+				// uses _sum and _count.
+				name:     "gauge histogram",
+				metadata: scrape.MetricMetadata{MetricFamily: "queue_size", Type: model.MetricTypeGaugeHistogram, Help: "Queue size."},
+				matching: []string{"queue_size", "queue_size_bucket", "queue_size_gsum", "queue_size_gcount", "queue_size_sum", "queue_size_count"},
+				missing:  []string{"queue_size_total", "queue_size_created"},
+			},
+			{
+				name:     "info",
+				metadata: scrape.MetricMetadata{MetricFamily: "target", Type: model.MetricTypeInfo, Help: "Target information."},
+				matching: []string{"target_info"},
+				missing:  []string{"target_total", "target_created"},
+			},
+			{
+				name:     "unknown type",
+				metadata: scrape.MetricMetadata{MetricFamily: "custom_metric", Type: model.MetricTypeUnknown, Help: "Custom metric."},
+				matching: []string{"custom_metric"},
+				missing:  []string{"custom_metric_total", "custom_metric_sum", "custom_metric_count", "custom_metric_created"},
+			},
+		} {
+			t.Run(tc.name, func(t *testing.T) {
+				api := minimalSearchAPI()
+				var input strings.Builder
+				input.WriteString("load 1m\n")
+				for _, names := range [][]string{tc.matching, tc.missing, tc.filtered} {
+					for _, name := range names {
+						fmt.Fprintf(&input, "  %s{job=\"test\"} 0+1x100\n", name)
+					}
+				}
+				api.Queryable = promqltest.LoadedStorage(t, input.String())
+				tr := newTestTargetRetriever([]*testTargetParams{
+					{Identifier: "a", Labels: labels.FromStrings(model.AddressLabel, "a:9090"), Params: url.Values{}, Active: true},
+					{Identifier: "b", Labels: labels.FromStrings(model.AddressLabel, "b:9090"), Params: url.Values{}, Active: true},
+				})
+				require.NoError(t, tr.SetMetadataStoreForTargets("a", &testMetaStore{Metadata: []scrape.MetricMetadata{tc.metadata}}))
+				require.NoError(t, tr.SetMetadataStoreForTargets("b", &testMetaStore{Metadata: tc.extra}))
+				// Keep both targets in one pool so their traversal order is deterministic.
+				targets := []*scrape.Target{tr.activeTargets["a"][0], tr.activeTargets["b"][0]}
+				if tc.extraFirst {
+					targets[0], targets[1] = targets[1], targets[0]
+				}
+				tr.activeTargets = map[string][]*scrape.Target{"test": targets}
+				api.targetRetriever = tr.toFactory()
 
-		lines := parseNDJSON(t, rec.Body.String())
-		var batch searchBatch[searchMetricNameResult]
-		require.NoError(t, json.Unmarshal(lines[0], &batch))
-		require.Len(t, batch.Results, 1)
-		require.Equal(t, "go_gc_duration_seconds", batch.Results[0].Name)
-		require.Equal(t, "gauge", batch.Results[0].Type)
-		require.Equal(t, "GC duration.", batch.Results[0].Help)
-		require.Equal(t, "seconds", batch.Results[0].Unit)
+				for _, includeMetadata := range []bool{true, false} {
+					params := url.Values{
+						"include_metadata": []string{strconv.FormatBool(includeMetadata)},
+					}
+					if tc.search != "" {
+						params.Set("search[]", tc.search)
+					}
+					rec := doSearchRequest(t, api, "/search/metric_names", params)
+					require.Equal(t, http.StatusOK, rec.Code)
+
+					lines := parseNDJSON(t, rec.Body.String())
+					var batch searchBatch[searchMetricNameResult]
+					require.NoError(t, json.Unmarshal(lines[0], &batch))
+					var want []searchMetricNameResult
+					for _, name := range tc.matching {
+						result := searchMetricNameResult{Name: name}
+						if includeMetadata {
+							result.Type = string(tc.metadata.Type)
+							result.Help = tc.metadata.Help
+							result.Unit = tc.metadata.Unit
+						}
+						want = append(want, result)
+					}
+					for _, name := range tc.missing {
+						want = append(want, searchMetricNameResult{Name: name})
+					}
+					require.ElementsMatch(t, want, batch.Results)
+				}
+			})
+		}
 	})
 
 	t.Run("with include_score", func(t *testing.T) {
