@@ -97,17 +97,16 @@ func TestQuerier_ToNHCB(t *testing.T) {
 			},
 		},
 		{
-			// This is the migration overlap: the same series is returned twice,
-			// which PromQL rejects as a labelset collision if the samples
-			// overlap in time. See TestPromQL.
-			name:          "native and classic histogram - both are returned",
+			// This is the migration overlap: the stored native histogram
+			// wins at t=1, the converted one fills the gap at t=2, and both
+			// are one series. See TestQuerier_Stored and TestPromQL.
+			name:          "native and classic histogram - stored native histogram wins",
 			queryMatchers: []*labels.Matcher{labels.MustNewMatcher(labels.MatchEqual, model.MetricNameLabel, "http_requests")},
 			classicSeries: classicHistogramSeries(),
 			nativeSeries: []storage.Series{
 				storage.NewListSeries(labels.FromStrings(model.MetricNameLabel, "http_requests"), []chunks.Sample{hSample{t: 1, h: nhcb}}),
 			},
 			expectedSeries: []string{
-				`{__name__="http_requests"} @[1]`,
 				`{__name__="http_requests"} @[1] @[2]`,
 			},
 		},
@@ -325,12 +324,13 @@ func TestQuerier_ToNHCBStaleness(t *testing.T) {
 			},
 		},
 		{
+			// Converted series without samples other than staleness markers
+			// are not returned.
 			name: "only stale markers",
 			classicSeries: []storage.Series{
 				series("http_requests_bucket", []string{labels.BucketLabel, "+Inf"}, stale),
 				series("http_requests_count", nil, stale),
 			},
-			expected: []string{`{__name__="http_requests"} stale@1`},
 		},
 	} {
 		t.Run(tc.name, func(t *testing.T) {

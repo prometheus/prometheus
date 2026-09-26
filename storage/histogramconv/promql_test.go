@@ -216,27 +216,24 @@ load_with_nhcb 1m
 	rpc_latency_seconds_sum	6x5
 	rpc_latency_seconds_count	4x5
 
-# The stored +Inf bucket and the converted one are the same series at the same
-# timestamp, so the query fails.
+# Stored data wins: nothing is converted at the timestamps of the stored
+# classic histogram.
 eval instant at 2m rpc_latency_seconds_bucket
-	expect fail msg: vector cannot contain metrics with the same labelset
+	rpc_latency_seconds_bucket{le="1"} 1
+	rpc_latency_seconds_bucket{le="+Inf"} 4
 
 eval instant at 2m rpc_latency_seconds_count
-	expect fail msg: vector cannot contain metrics with the same labelset
+	rpc_latency_seconds_count{} 4
 
 eval instant at 2m rate(rpc_latency_seconds_sum[3m])
-	expect fail msg: vector cannot contain metrics with the same labelset
+	{} 0
 
-# Aggregations do not collide, they silently count both representations:
-# 2 stored bucket series plus 2 converted ones instead of 2.
 eval instant at 2m count(rpc_latency_seconds_bucket)
-	{} 4
+	{} 2
 
-# Restricting the query to the finite buckets avoids the collision, but the
-# result mixes the stored and the converted bucket boundaries.
+# Also where a le matcher selects only some of the stored buckets.
 eval instant at 2m rpc_latency_seconds_bucket{le!="+Inf"}
 	rpc_latency_seconds_bucket{le="1"} 1
-	rpc_latency_seconds_bucket{le="1.0"} 1
 `,
 		},
 		{
@@ -260,14 +257,16 @@ eval instant at 8m rpc_latency_seconds_bucket
 	rpc_latency_seconds_bucket{le="1.0"} 1
 	rpc_latency_seconds_bucket{le="+Inf"} 4
 
-# A range that only covers the NHCB is fine.
 eval instant at 10m count_over_time(rpc_latency_seconds_bucket[3m])
 	{le="1.0"} 3
 	{le="+Inf"} 3
 
-# A range that covers both representations collides on the +Inf bucket.
+# A range that covers both representations merges the stored and the
+# converted +Inf bucket into one series.
 eval instant at 10m count_over_time(rpc_latency_seconds_bucket[11m])
-	expect fail msg: vector cannot contain metrics with the same labelset
+	{le="1"} 3
+	{le="1.0"} 3
+	{le="+Inf"} 6
 `,
 		},
 		{
@@ -482,17 +481,15 @@ load_with_nhcb 1m
 	rpc_latency_seconds_sum	6x5
 	rpc_latency_seconds_count	4x5
 
-# The stored NHCB and the one converted from the classic series are the same
-# series at the same timestamp, so the query fails.
+# Stored data wins: nothing is converted at the timestamps of the stored NHCB.
 eval instant at 2m rpc_latency_seconds
-	expect fail msg: vector cannot contain metrics with the same labelset
+	rpc_latency_seconds{} {{schema:-53 sum:6 count:4 custom_values:[1] buckets:[1 3]}}
 
 eval instant at 2m histogram_quantile(0.5, rpc_latency_seconds)
-	expect fail msg: vector cannot contain metrics with the same labelset
+	{} 1
 
-# Aggregations do not collide, they silently count both representations.
 eval instant at 2m count(rpc_latency_seconds)
-	{} 2
+	{} 1
 
 # Classic queries keep working, they are never converted.
 eval instant at 2m rpc_latency_seconds_count
@@ -518,13 +515,12 @@ eval instant at 2m rpc_latency_seconds
 eval instant at 8m rpc_latency_seconds
 	rpc_latency_seconds{} {{schema:-53 sum:6 count:4 custom_values:[1] buckets:[1 3]}}
 
-# A range that only covers the NHCB is fine.
 eval instant at 10m count_over_time(rpc_latency_seconds[3m])
 	{} 3
 
-# A range that covers both representations collides.
+# A range that covers both representations merges them into one series.
 eval instant at 10m count_over_time(rpc_latency_seconds[11m])
-	expect fail msg: vector cannot contain metrics with the same labelset
+	{} 6
 `,
 		},
 		{
@@ -784,13 +780,13 @@ load_with_nhcb 1m
 	rpc_latency_seconds_sum	6x5
 	rpc_latency_seconds_count	4x5
 
-# The converted series are returned in addition to the stored ones, in both
-# directions.
+# Stored data wins in both directions.
 eval instant at 2m rpc_latency_seconds_bucket
-	expect fail msg: vector cannot contain metrics with the same labelset
+	rpc_latency_seconds_bucket{le="1"} 1
+	rpc_latency_seconds_bucket{le="+Inf"} 4
 
 eval instant at 2m rpc_latency_seconds
-	expect fail msg: vector cannot contain metrics with the same labelset
+	rpc_latency_seconds{} {{schema:-53 sum:6 count:4 custom_values:[1] buckets:[1 3]}}
 `,
 		},
 		{
@@ -806,20 +802,161 @@ load 1m
 	rpc_latency_seconds_count	4x5
 	rpc_latency_seconds	{{schema:0 sum:6 count:4 buckets:[1 2 1]}}x5
 
+# Stored data wins in both directions, so nothing is counted twice.
 eval instant at 2m rpc_latency_seconds_count
-	expect fail msg: vector cannot contain metrics with the same labelset
+	rpc_latency_seconds_count{} 4
+
+eval instant at 2m sum(rpc_latency_seconds_count)
+	{} 4
 
 eval instant at 2m rpc_latency_seconds
-	expect fail msg: vector cannot contain metrics with the same labelset
+	rpc_latency_seconds{} {{schema:0 sum:6 count:4 buckets:[1 2 1]}}
 
-# The finite buckets do not collide, but mix both bucket layouts.
+# Also over the buckets converted from the exponential histogram, although
+# their le values differ from the stored ones.
+eval instant at 2m sum by (le) (rpc_latency_seconds_bucket)
+	{le="1"} 1
+	{le="2"} 3
+	{le="+Inf"} 4
+
 eval instant at 2m rpc_latency_seconds_bucket{le!="+Inf"}
 	rpc_latency_seconds_bucket{le="1"} 1
 	rpc_latency_seconds_bucket{le="2"} 3
-	rpc_latency_seconds_bucket{le="0.5"} 0
-	rpc_latency_seconds_bucket{le="1.0"} 1
-	rpc_latency_seconds_bucket{le="2.0"} 3
-	rpc_latency_seconds_bucket{le="4.0"} 4
+`,
+		},
+		{
+			// E.g. convert_classic_histograms_to_nhcb is enabled at 5m. The
+			// scrape loop marks the classic series stale in the scrape where
+			// the NHCB starts.
+			name:        "all: migration from classic histograms to NHCB",
+			convertFrom: histogramconv.Representations(),
+			input: `
+load 1m
+	foo_bucket{job="a", le="1"}	0+1x4 stale
+	foo_bucket{job="a", le="+Inf"}	0+2x4 stale
+	foo_sum{job="a"}	0+2x4 stale
+	foo_count{job="a"}	0+2x4 stale
+	foo{job="a"}	_ _ _ _ _ {{schema:-53 sum:10 count:10 custom_values:[1] buckets:[5 5]}}+{{schema:-53 sum:2 count:2 custom_values:[1] buckets:[1 1]}}x4
+
+eval instant at 7m foo_count
+	foo_count{job="a"} 14
+
+# The stored and the converted samples are one series, so functions work
+# across the switch, in both directions.
+eval instant at 7m rate(foo_count[5m])
+	{job="a"} 0.03333333333333333
+
+eval instant at 7m histogram_count(rate(foo[5m]))
+	{job="a"} 0.03333333333333333
+
+eval range from 0 to 9m step 1m foo_count
+	foo_count{job="a"} 0 2 4 6 8 10 12 14 16 18
+
+eval range from 0 to 9m step 1m histogram_count(foo)
+	{job="a"} 0 2 4 6 8 10 12 14 16 18
+
+# Debug queries show which representation each sample comes from.
+eval range from 3m to 6m step 1m foo_count{__debug_stored_as__="true"}
+	foo_count{job="a", __stored_as__="classic"} 6 8 _ _
+	foo_count{job="a", __stored_as__="nhcb"} _ _ 10 12
+`,
+		},
+		{
+			// E.g. a classic histogram is replaced by an exponential histogram
+			// at 5m. The buckets of the exponential histogram are (0.5,1] and
+			// (1,2].
+			name:        "all: migration from classic to exponential histograms",
+			convertFrom: histogramconv.Representations(),
+			input: `
+load 1m
+	foo_bucket{job="a", le="1"}	0+1x4 stale
+	foo_bucket{job="a", le="2"}	0+2x4 stale
+	foo_bucket{job="a", le="+Inf"}	0+2x4 stale
+	foo_count{job="a"}	0+2x4 stale
+	foo{job="a"}	_ _ _ _ _ {{schema:0 count:10 buckets:[5 5]}}+{{schema:0 count:2 buckets:[1 1]}}x4
+
+# Classic queries work across the switch.
+eval instant at 7m rate(foo_count[5m])
+	{job="a"} 0.03333333333333333
+
+# The NHCB converted from the classic histogram and the stored exponential
+# histograms are one series, so functions across the switch return PromQL's
+# usual warning about mixing them, rather than failing the query.
+eval instant at 7m rate(foo[5m])
+	expect warn regex: .*vector contains a mix of histograms with exponential and custom buckets schemas.*
+`,
+		},
+		{
+			// The classic histogram is scraped every 2m. A configuration
+			// reload at 5m converts it to NHCB, which the new scrape loop
+			// scrapes at 5m and 7m. The old scrape loop marks the classic
+			// series stale at 6m, when its next scrape would have been.
+			name:        "all: staleness markers after a configuration reload",
+			convertFrom: histogramconv.Representations(),
+			input: `
+load 1m
+	foo_bucket{job="a", le="1"}	0 _ 2 _ 4 _ stale
+	foo_bucket{job="a", le="+Inf"}	0 _ 4 _ 8 _ stale
+	foo_count{job="a"}	0 _ 4 _ 8 _ stale
+	foo{job="a"}	_ _ _ _ _ {{schema:-53 count:10 custom_values:[1] buckets:[5 5]}} _ {{schema:-53 count:14 custom_values:[1] buckets:[7 7]}}
+
+# The staleness markers would hide the NHCB until its next scrape.
+eval instant at 6m foo_count
+	foo_count{job="a"} 10
+
+eval instant at 6m histogram_count(foo)
+	{job="a"} 10
+
+# Debug queries do not merge series, so both representations are returned
+# until the staleness markers.
+eval instant at 5m foo_count{__debug_stored_as__="true"}
+	foo_count{job="a", __stored_as__="classic"} 8
+	foo_count{job="a", __stored_as__="nhcb"} 10
+`,
+		},
+		{
+			// E.g. always_scrape_classic_histograms is enabled at 5m. The
+			// buckets of the exponential histogram are (0.5,1], (1,2] and
+			// (2,4].
+			name:        "all: classic histogram takes over from an exponential histogram",
+			convertFrom: histogramconv.Representations(),
+			input: `
+load 1m
+	foo{job="a"}	{{schema:0 sum:6 count:4 buckets:[1 2 1]}}x9
+	foo_bucket{job="a", le="1"}	_ _ _ _ _ 1x4
+	foo_bucket{job="a", le="2"}	_ _ _ _ _ 3x4
+	foo_bucket{job="a", le="+Inf"}	_ _ _ _ _ 4x4
+	foo_sum{job="a"}	_ _ _ _ _ 6x4
+	foo_count{job="a"}	_ _ _ _ _ 4x4
+
+eval instant at 4m foo_bucket
+	foo_bucket{job="a", le="0.5"} 0
+	foo_bucket{job="a", le="1.0"} 1
+	foo_bucket{job="a", le="2.0"} 3
+	foo_bucket{job="a", le="4.0"} 4
+	foo_bucket{job="a", le="+Inf"} 4
+
+# The buckets converted from the exponential histogram end where the stored
+# classic histogram takes over, although their le values differ.
+eval instant at 5m foo_bucket
+	foo_bucket{job="a", le="1"} 1
+	foo_bucket{job="a", le="2"} 3
+	foo_bucket{job="a", le="+Inf"} 4
+
+eval instant at 5m foo_bucket{le="0.5"}
+
+eval instant at 4m histogram_quantile(0.5, foo_bucket)
+	{job="a"} 1.5
+
+eval instant at 5m histogram_quantile(0.5, foo_bucket)
+	{job="a"} 1.5
+
+eval instant at 9m count_over_time(foo_count[10m])
+	{job="a"} 10
+
+eval range from 3m to 6m step 1m foo_bucket{le="+Inf", __debug_stored_as__="true"}
+	foo_bucket{job="a", le="+Inf", __stored_as__="nhe"} 4 4 _ _
+	foo_bucket{job="a", le="+Inf", __stored_as__="classic"} _ _ 4 4
 `,
 		},
 	} {

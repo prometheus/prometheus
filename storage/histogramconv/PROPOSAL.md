@@ -4,7 +4,8 @@
   * Bartłomiej (Bartek) Płotka (@bwplotka)
   * @rbizos
 
-* **Implementation Status:** Partially implemented, a prototype exists, see [Why](#why).
+* **Implementation Status:** Implemented behind the `promql-histogram-conversion` feature flag on the
+  `histogram-promql` branch, except the follow-ups in the [action plan](#action-plan).
 
 * **Related Issues and PRs:**
   * <https://github.com/prometheus/prometheus/issues/16948>
@@ -225,16 +226,19 @@ its gaps:
   e.g. `foo_bucket{job="a"}` only gets buckets converted from `foo{job="a"}` at timestamps where no
   `foo_bucket{job="a"}` series has a sample, also if the selector has a `le` matcher. This also covers buckets
   converted from exponential histograms, whose `le` values differ from the stored ones, so merging by labels alone
-  would mix both bucket layouts.
+  would mix both bucket layouts. The first dropped sample after a returned one becomes a staleness marker, so that
+  such buckets end where the stored histogram takes over, rather than at the end of the lookback window.
 * Converted series are then merged into the stored series with the same labels.
-* Where one side of a merged series ends with a staleness marker and the other one continues it, the marker is
-  dropped, i.e. if the other side has a sample at the same timestamp, or if the sample before the marker is from the
-  other side, which has samples after it. When a histogram switches representation, the series of the old one get
-  staleness markers at the timestamp of the first sample of the new one, in the same scrape
+* A staleness marker of one side of a merged series only ends that side, so it is dropped if the other side has a
+  sample at the same timestamp, or if the sample before the marker is from the other side. When a histogram switches
+  representation, the series of the old one get staleness markers at the timestamp of the first sample of the new
+  one, in the same scrape
   (<https://github.com/prometheus/prometheus/blob/aef3a9c1fb268dd79d71432c658a3c608a469915/scrape/scrape.go#L1753-L1768>),
   or, after a configuration reload, at about that time, when the next scrape of the old configuration would have been
   (<https://github.com/prometheus/prometheus/blob/aef3a9c1fb268dd79d71432c658a3c608a469915/scrape/scrape.go#L1675-L1682>).
-  They would otherwise hide the series continuing them for up to a scrape interval.
+  They would otherwise hide the series continuing them for up to a scrape interval. Whether the other side continues
+  after the marker is not checked, as its next sample can be outside the selected range, e.g. in an instant query at
+  the time of the marker.
 * Where the representations differ in kind, e.g. NHCB converted from classic series followed by stored exponential
   histograms, functions across the switch return PromQL's usual warning about mixing exponential and custom bucket
   histograms, rather than failing the query.
@@ -374,7 +378,7 @@ or interpolated, but:
 * [x] Replace the three flags with `promql-histogram-conversion` and `--query.convert-histograms-from`, wired as an
       engine option.
 * [x] Add the `__convert_stored_as__` and `__debug_stored_as__` control labels.
-* [ ] Let stored data win, merging converted with stored series.
+* [x] Let stored data win, merging converted with stored series.
 * [ ] Account buffered samples in the query limits.
 * [ ] Show converted series, and interpret the control labels, in the metadata APIs.
 

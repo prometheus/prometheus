@@ -402,7 +402,8 @@ of `request_duration_seconds` keep working after enabling `convert_classic_histo
 it:
 
 ```promql
-# Returns the stored classic series and the ones converted from the stored NHCB:
+# Returns the stored classic series, and after the switch the ones converted
+# from the stored NHCB:
 histogram_quantile(0.95, rate(request_duration_seconds_bucket[5m]))
 
 # Returns the stored NHCB:
@@ -422,6 +423,14 @@ Each series selector with a metric name equality matcher is converted in one dir
 
 Converted series are never converted back, so all conversions can be enabled at the same time.
 
+Where a selector reads a histogram both stored and converted, e.g. in a range covering a migration,
+or while `always_scrape_classic_histograms` is enabled, stored data wins. Nothing is converted at
+the timestamps of the stored samples of the same histogram, and the converted samples fill the gaps
+of the stored series with the same labels. So `rate()` works across a migration, and aggregations
+do not count a histogram twice. For classic histograms, the same histogram means the same labels
+except `le`, so the buckets converted from an exponential histogram end where a stored classic
+histogram with other buckets takes over.
+
 Two control labels give per selector control. Matchers on them are removed before selecting from
 the storage, and returned series never have them:
 
@@ -431,11 +440,14 @@ the storage, and returned series never have them:
   with exponential buckets `nhe`, and converted samples have the representation they were
   converted from. Several matchers must all match, and a matcher that matches none of the
   representations selects nothing. Where a stored series changes to a representation the selector
-  does not read, it is marked stale.
+  does not read, it is marked stale. Stored data the selector does not read does not win over
+  converted data.
 * `__debug_stored_as__="true"` adds a `__stored_as__` label to the returned series, holding the
   representation their samples are stored as. A stored series whose samples change representation
-  is split into one series per representation. `__stored_as__` is a normal label, e.g.
-  `sum by (le)` drops it and `sum by (le, __stored_as__)` keeps it.
+  is split into one series per representation. Stored and converted series are not merged then,
+  but stored data still wins, so the result shows which representation each sample is taken from.
+  `__stored_as__` is a normal label, e.g. `sum by (le)` drops it and `sum by (le, __stored_as__)`
+  keeps it.
 
 For example, with `--query.convert-histograms-from=nhcb`:
 
@@ -478,9 +490,8 @@ Limitations:
 * Conversions only apply to PromQL queries, e.g. of the query API and of rules, for both local and
   remote read data. The remote read endpoint, federation and the `/api/v1/series`, `/api/v1/labels`
   and `/api/v1/label/<name>/values` endpoints return stored data only.
-* Converted series are returned in addition to the stored ones. Where a histogram is stored in both
-  representations for the same labels and timestamps, e.g. while `always_scrape_classic_histograms`
-  is enabled, queries fail with `vector cannot contain metrics with the same labelset`, and so do
-  range functions such as `rate()` whose range covers samples of both representations.
+* Stored data only wins at the exact timestamps of its samples. Where a histogram is stored in both
+  representations at different timestamps, e.g. ingested from different sources, the merged series
+  alternates between them.
 * The series to convert from, and the stored series of selectors with control matchers, are
   buffered in memory, and this memory is not accounted in `--query.max-samples`.

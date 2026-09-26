@@ -109,7 +109,9 @@ func TestQuerier_ToClassic(t *testing.T) {
 			expectedSuffix: "_sum",
 		},
 		{
-			name:          "both classic and NHCB - return both",
+			// Nothing is converted at the timestamps of the stored classic
+			// histogram, even though it has other buckets.
+			name:          "both classic and NHCB - stored classic histogram wins",
 			queryMatchers: []*labels.Matcher{labels.MustNewMatcher(labels.MatchEqual, model.MetricNameLabel, "http_requests_bucket")},
 			classicSeries: []storage.Series{
 				storage.NewListSeries(labels.FromStrings("__name__", "http_requests_bucket", "le", "1"), []chunks.Sample{fSample{t: 1, f: 5}}),
@@ -117,7 +119,7 @@ func TestQuerier_ToClassic(t *testing.T) {
 			nhcbSeries: []storage.Series{
 				storage.NewListSeries(labels.FromStrings("__name__", "http_requests"), []chunks.Sample{hSample{t: 1, h: nhcb}}),
 			},
-			expectedCount:  5,
+			expectedCount:  1,
 			expectedSuffix: "_bucket",
 		},
 		{
@@ -249,16 +251,17 @@ func TestQuerier_ToClassicOrder(t *testing.T) {
 		// 2 NHCB series × 4 buckets each (le=1.0, 5.0, 10.0, +Inf) = 8 series.
 		require.Len(t, seriesLabels, 8)
 
-		// Expect buckets for "api" job first (in le order), then "web" job (in le order).
+		// Expect the series sorted by labels, like the storage sorts them,
+		// i.e. by the le values as strings.
 		expectedOrder := []string{
-			`{__name__="http_requests_bucket", job="api", le="1.0"}`,
-			`{__name__="http_requests_bucket", job="api", le="5.0"}`,
-			`{__name__="http_requests_bucket", job="api", le="10.0"}`,
 			`{__name__="http_requests_bucket", job="api", le="+Inf"}`,
-			`{__name__="http_requests_bucket", job="web", le="1.0"}`,
-			`{__name__="http_requests_bucket", job="web", le="5.0"}`,
-			`{__name__="http_requests_bucket", job="web", le="10.0"}`,
+			`{__name__="http_requests_bucket", job="api", le="1.0"}`,
+			`{__name__="http_requests_bucket", job="api", le="10.0"}`,
+			`{__name__="http_requests_bucket", job="api", le="5.0"}`,
 			`{__name__="http_requests_bucket", job="web", le="+Inf"}`,
+			`{__name__="http_requests_bucket", job="web", le="1.0"}`,
+			`{__name__="http_requests_bucket", job="web", le="10.0"}`,
+			`{__name__="http_requests_bucket", job="web", le="5.0"}`,
 		}
 		require.Equal(t, expectedOrder, seriesLabels)
 	}
