@@ -14,6 +14,7 @@
 package tsdb
 
 import (
+	"cmp"
 	"context"
 	"errors"
 	"fmt"
@@ -314,17 +315,43 @@ func PostingsForMatchers(ctx context.Context, ix IndexReader, ms ...*labels.Matc
 	// there is no chance that the set we subtract from
 	// contains postings of series that didn't exist when
 	// we constructed the set we subtract by.
+	//
+	// Among the intersecting matchers, those resolved by a direct postings
+	// lookup run before those that scan all values of a label. An empty result
+	// from a lookup ends the whole call, so the scan is never paid for.
 	slices.SortStableFunc(ms, func(i, j *labels.Matcher) int {
-		if !isSubtractingMatcher(i) && isSubtractingMatcher(j) {
-			return -1
-		}
-
-		return +1
+		return cmp.Compare(matcherOrder(i, isSubtractingMatcher), matcherOrder(j, isSubtractingMatcher))
 	})
 
-	for _, m := range ms {
+	for i, m := range ms {
 		if ctx.Err() != nil {
 			return nil, ctx.Err()
+		}
+		// Regexp matchers on the same label that each need a scan of all its
+		// values are resolved by a single scan. A series has one value per
+		// label name, so intersecting scans combine with AND and subtracting
+		// scans with OR. See https://github.com/prometheus/prometheus/issues/14619.
+		if matcherScans(m) {
+			group, scannedEarlier := scanGroup(ms, i, isSubtractingMatcher)
+			if scannedEarlier {
+				continue
+			}
+			if len(group) > 1 {
+				subtracting := isSubtractingMatcher(m)
+				it := postingsForCombinedScan(ctx, ix, m.Name, subtracting, group)
+				if err := it.Err(); err != nil {
+					return nil, err
+				}
+				if subtracting {
+					notIts = append(notIts, it)
+					continue
+				}
+				if index.IsEmptyPostingsType(it) {
+					return index.EmptyPostings(), nil
+				}
+				its = append(its, it)
+				continue
+			}
 		}
 		switch {
 		case m.Name == "" && m.Value == "":
@@ -413,6 +440,84 @@ func PostingsForMatchers(ctx context.Context, ix IndexReader, ms ...*labels.Matc
 	}
 
 	return it, nil
+}
+
+// postingsForCombinedScan scans the values of label name once for a group of
+// matchers of the same polarity. For intersecting matchers a value is kept only
+// if all matchers match it. For subtracting matchers a value is subtracted if
+// any matcher would subtract it.
+func postingsForCombinedScan(ctx context.Context, ix IndexReader, name string, subtracting bool, matchers []*labels.Matcher) index.Postings {
+	return ix.PostingsForLabelMatching(ctx, name, func(v string) bool {
+		for _, m := range matchers {
+			if !m.Matches(v) {
+				return subtracting
+			}
+		}
+		return !subtracting
+	})
+}
+
+// scanGroup returns the matchers that share one values scan with ms[i]: the
+// matchers that need a scan, on the same label name, with the same polarity.
+// The group starts with ms[i] and is empty if there is nothing to combine.
+// scannedEarlier is true if an earlier matcher is in the group, because its
+// scan already resolved ms[i].
+func scanGroup(ms []*labels.Matcher, i int, isSubtracting func(*labels.Matcher) bool) (group []*labels.Matcher, scannedEarlier bool) {
+	m := ms[i]
+	subtracting := isSubtracting(m)
+	sameGroup := func(o *labels.Matcher) bool {
+		return o.Name == m.Name && matcherScans(o) && isSubtracting(o) == subtracting
+	}
+	if slices.ContainsFunc(ms[:i], sameGroup) {
+		return nil, true
+	}
+	for _, o := range ms[i+1:] {
+		if sameGroup(o) {
+			if group == nil {
+				group = append(group, m)
+			}
+			group = append(group, o)
+		}
+	}
+	return group, false
+}
+
+// matcherOrder returns the rank of m in the order the matchers are resolved in:
+// intersecting lookups, then intersecting matchers that read the postings of
+// many values, then the subtracting matchers.
+func matcherOrder(m *labels.Matcher, isSubtracting func(*labels.Matcher) bool) int {
+	switch {
+	case isSubtracting(m):
+		return 2
+	case matcherLooksUp(m):
+		return 0
+	default:
+		return 1
+	}
+}
+
+// matcherLooksUp reports whether an intersecting m is resolved by a direct
+// postings lookup of the values it names. Matchers such as l!="" and l=~".+"
+// are not, because they read the postings of every value of the label.
+func matcherLooksUp(m *labels.Matcher) bool {
+	return m.Type == labels.MatchEqual || (m.Type == labels.MatchRegexp && m.HasSetMatches())
+}
+
+// matcherScans reports whether resolving m requires scanning all values of its
+// label, i.e. it is a non-trivial regexp matcher with no fast path via direct
+// postings lookups.
+func matcherScans(m *labels.Matcher) bool {
+	if m.Type != labels.MatchRegexp && m.Type != labels.MatchNotRegexp {
+		return false
+	}
+	switch m.Value {
+	case "", ".*", ".+":
+		return false
+	}
+	// A regexp that reduces to a set of equality matches uses a direct postings
+	// lookup, not a values scan, so it must not be combined. HasSetMatches is
+	// allocation-free, unlike SetMatches.
+	return !m.HasSetMatches()
 }
 
 func postingsForMatcher(ctx context.Context, ix IndexReader, m *labels.Matcher) (index.Postings, error) {
