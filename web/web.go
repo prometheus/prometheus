@@ -281,6 +281,7 @@ type Options struct {
 	ExemplarStorage       storage.ExemplarQueryable
 	QueryEngine           *promql.Engine
 	LookbackDelta         time.Duration
+	QueryTimeout          time.Duration
 	ScrapeManager         *scrape.Manager
 	RuleManager           *rules.Manager
 	Notifier              *notifier.Manager
@@ -303,6 +304,7 @@ type Options struct {
 	EnableLifecycle            bool
 	EnableAdminAPI             bool
 	EnableSearch               bool
+	EnableQueryCost            bool
 	MaxSearchLimit             int
 	PageTitle                  string
 	RemoteReadSampleLimit      int
@@ -443,6 +445,8 @@ func New(logger *slog.Logger, o *Options) *Handler {
 			MaxSearchLimit: o.MaxSearchLimit,
 		},
 		o.Parser,
+		o.EnableQueryCost,
+		o.QueryTimeout,
 	)
 
 	if r := o.FeatureRegistry; r != nil {
