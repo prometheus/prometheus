@@ -502,6 +502,22 @@ func TestSymbols(t *testing.T) {
 		i++
 	}
 	require.NoError(t, iter.Err())
+
+	// Cached symbols do not change with the source buffer.
+	v1Symbols, err := NewSymbols(realByteSlice(buf.Get()), FormatV1, symbolsStart)
+	require.NoError(t, err)
+	symbolOffset := symbolsStart + 8 + 99*2
+	sym, err := v1Symbols.Lookup(uint32(symbolOffset))
+	require.NoError(t, err)
+	require.Equal(t, "c", sym)
+
+	buf.Get()[symbolOffset+1] = 'x'
+	sym, err = s.Lookup(99)
+	require.NoError(t, err)
+	require.Equal(t, "c", sym)
+	sym, err = v1Symbols.Lookup(uint32(symbolOffset))
+	require.NoError(t, err)
+	require.Equal(t, "c", sym)
 }
 
 func BenchmarkReader_ShardedPostings(b *testing.B) {
