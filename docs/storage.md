@@ -245,6 +245,12 @@ the block duration to backfill faster and prevent additional compactions by TSDB
 The `--max-block-duration` flag allows the user to configure a maximum duration of blocks.
 The backfilling tool will pick a suitable block duration no larger than this.
 
+To use `--max-block-duration` as is, rather than rounding it down to a duration Prometheus
+compacts to, also set `--allow-incompatible-block-duration`. For example,
+`--max-block-duration=24h --allow-incompatible-block-duration` creates the daily blocks
+that other TSDB systems, such as Cortex, Mimir and Thanos, expect. Prometheus does not
+compact such blocks as efficiently, so promtool logs a warning when creating them.
+
 While larger blocks may improve the performance of backfilling large datasets,
 drawbacks exist as well. Time-based retention policies must keep the entire block
 around if even one sample of the (potentially large) block is still within the
