@@ -39,6 +39,7 @@ func (h *Head) ExemplarQuerier(ctx context.Context) (storage.ExemplarQuerier, er
 }
 
 // Index returns an IndexReader against the block.
+// The reader is not safe for concurrent use from multiple goroutines.
 func (h *Head) Index() (IndexReader, error) {
 	return h.indexRange(math.MinInt64, math.MaxInt64), nil
 }
@@ -478,6 +479,7 @@ func (h *headIndexReader) LabelNamesFor(ctx context.Context, series index.Postin
 }
 
 // Chunks returns a ChunkReader against the block.
+// The reader is not safe for concurrent use from multiple goroutines.
 func (h *Head) Chunks() (ChunkReader, error) {
 	return h.chunksRange(math.MinInt64, math.MaxInt64, h.iso.State(math.MinInt64, math.MaxInt64))
 }
