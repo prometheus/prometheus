@@ -1731,7 +1731,7 @@ func (db *DB) compactOOO(dest string, oooHead *OOOCompactionHead) (_ []ulid.ULID
 
 	meta := &BlockMeta{}
 	meta.Compaction.SetOutOfOrder()
-	for t := blockSize * (oooHeadMint / blockSize); t <= oooHeadMaxt; t += blockSize {
+	for t := rangeStartForTimestamp(oooHeadMint, blockSize); t <= oooHeadMaxt; t += blockSize {
 		mint, maxt := t, t+blockSize
 		// Block intervals are half-open: [b.MinTime, b.MaxTime). Block intervals are always +1 than the total samples it includes.
 		uids, err := db.compactor.Write(dest, oooHead.CloneForTimeRange(mint, maxt-1), mint, maxt, meta)
@@ -1811,7 +1811,10 @@ type headSeriesEvictor func(maxt int64) error
 // or other optional fields.
 // The caller must hold db.cmtx.
 func (db *DB) compactHeadViewLocked(viewFactory headViewFactory, evict headSeriesEvictor, configure func(*BlockMeta)) error {
-	mint, maxt := db.head.opts.ChunkRange*(db.head.MinTime()/db.head.opts.ChunkRange), db.head.MaxTime()
+	// Start at the chunk range containing the head's MinTime. Plain integer division would
+	// round a negative MinTime up and skip the first range, and its samples would then be
+	// evicted without ever being written to a block.
+	mint, maxt := rangeStartForTimestamp(db.head.MinTime(), db.head.opts.ChunkRange), db.head.MaxTime()
 	// The bound is inclusive so that a sample sitting exactly on a chunk-range boundary
 	// (mint == maxt) still gets a block written before its series is evicted.
 	for ; mint <= maxt; mint += db.head.chunkRange.Load() {
@@ -2771,7 +2774,24 @@ func (db *DB) ExemplarQuerier(ctx context.Context) (storage.ExemplarQuerier, err
 }
 
 func rangeForTimestamp(t, width int64) (maxt int64) {
-	return (t/width)*width + width
+	// Go's % takes the sign of t, so for a negative t that is not a multiple of width,
+	// t - t%width is the end of the range containing t rather than its start. Floor
+	// instead, the same alignment splitByRange uses for negative block times. Working
+	// from the remainder, rather than dividing, keeps this exact down to math.MinInt64.
+	m := t % width
+	if m < 0 {
+		m += width
+	}
+	return t - m + width
+}
+
+// rangeStartForTimestamp returns the start of the range of the given width that
+// contains t, or math.MinInt64 if that start is below math.MinInt64.
+func rangeStartForTimestamp(t, width int64) int64 {
+	if start := rangeForTimestamp(t, width) - width; start <= t {
+		return start
+	}
+	return math.MinInt64
 }
 
 // Delete implements deletion of metrics. It only has atomicity guarantees on a per-block basis.
