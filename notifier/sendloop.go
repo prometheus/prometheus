@@ -24,6 +24,11 @@ import (
 	"sync"
 	"time"
 
+	"go.opentelemetry.io/otel"
+	"go.opentelemetry.io/otel/attribute"
+	"go.opentelemetry.io/otel/codes"
+	"go.opentelemetry.io/otel/trace"
+
 	"github.com/prometheus/prometheus/config"
 )
 
@@ -235,11 +240,26 @@ func (s *sendLoop) sendAll(alerts []*Alert) bool {
 	ctx, cancel := context.WithTimeout(context.Background(), time.Duration(s.cfg.Timeout))
 	defer cancel()
 
-	if err := s.sendOne(ctx, s.client, s.alertmanagerURL, payload); err != nil {
-		s.logger.Error("Error sending alerts", "count", len(alerts), "err", err)
-		s.metrics.errors.WithLabelValues(s.alertmanagerURL).Add(float64(len(alerts)))
-		return false
+	{
+		ctx, span := otel.Tracer("").Start(ctx, "Alert Send Batch", trace.WithSpanKind(trace.SpanKindClient))
+		defer span.End()
+
+		span.SetAttributes(
+			attribute.String("alertmanager_url", s.alertmanagerURL),
+			attribute.Int("alert_count", len(alerts)),
+			attribute.Int("batch_size_bytes", len(payload)),
+			attribute.String("api_version", string(s.cfg.APIVersion)),
+		)
+
+		if err := s.sendOne(ctx, s.client, s.alertmanagerURL, payload); err != nil {
+			span.RecordError(err)
+			span.SetStatus(codes.Error, err.Error())
+			s.logger.Error("Error sending alerts", "count", len(alerts), "err", err)
+			s.metrics.errors.WithLabelValues(s.alertmanagerURL).Add(float64(len(alerts)))
+			return false
+		}
 	}
+
 	durationSeconds := time.Since(begin).Seconds()
 	s.metrics.latencySummary.WithLabelValues(s.alertmanagerURL).Observe(durationSeconds)
 	s.metrics.latencyHistogram.WithLabelValues(s.alertmanagerURL).Observe(durationSeconds)
@@ -263,6 +283,11 @@ func (s *sendLoop) sendOne(ctx context.Context, c *http.Client, url string, b []
 		io.Copy(io.Discard, resp.Body)
 		resp.Body.Close()
 	}()
+
+	// Record HTTP status code in the span.
+	if span := trace.SpanFromContext(ctx); span.IsRecording() {
+		span.SetAttributes(attribute.Int("http.status_code", resp.StatusCode))
+	}
 
 	// Any HTTP status 2xx is OK.
 	if resp.StatusCode/100 != 2 {
