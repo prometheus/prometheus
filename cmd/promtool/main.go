@@ -285,6 +285,12 @@ func main() {
 	dumpOpenMetricsMaxTime := tsdbDumpOpenMetricsCmd.Flag("max-time", "Maximum timestamp to dump, in milliseconds since the Unix epoch.").Default(strconv.FormatInt(math.MaxInt64, 10)).Int64()
 	dumpOpenMetricsMatch := tsdbDumpOpenMetricsCmd.Flag("match", "Series selector. Can be specified multiple times.").Default("{__name__=~'(?s:.*)'}").Strings()
 
+	tsdbCheckHistogramsCmd := tsdbCmd.Command("check-histograms", "[Experimental] Scan classic histogram float series for stored inconsistencies: non-monotonic cumulative buckets, le=\"+Inf\" disagreeing with _count, unparsable le labels, duplicate le values, and missing le=\"+Inf\" buckets.")
+	checkHistogramsPath := tsdbCheckHistogramsCmd.Arg("db path", "Database path (default is "+defaultDBPath+").").Default(defaultDBPath).String()
+	checkHistogramsSandboxDirRoot := tsdbCheckHistogramsCmd.Flag("sandbox-dir-root", "Root directory where a sandbox directory will be created, this sandbox is used in case WAL replay generates chunks (default is the database path). The sandbox is cleaned up at the end.").String()
+	checkHistogramsMinTime := tsdbCheckHistogramsCmd.Flag("min-time", "Minimum timestamp to check, in milliseconds since the Unix epoch.").Default(strconv.FormatInt(math.MinInt64, 10)).Int64()
+	checkHistogramsMaxTime := tsdbCheckHistogramsCmd.Flag("max-time", "Maximum timestamp to check, in milliseconds since the Unix epoch.").Default(strconv.FormatInt(math.MaxInt64, 10)).Int64()
+
 	importCmd := tsdbCmd.Command("create-blocks-from", "[Experimental] Import samples from input and produce TSDB blocks. Please refer to the storage docs for more details.")
 	importHumanReadable := importCmd.Flag("human-readable", "Print human readable values.").Short('r').Bool()
 	importQuiet := importCmd.Flag("quiet", "Do not print created blocks.").Short('q').Bool()
@@ -455,6 +461,9 @@ func main() {
 			format = formatSeriesSetLabelsToJSON
 		}
 		os.Exit(checkErr(dumpTSDBData(ctx, *dumpPath, *dumpSandboxDirRoot, *dumpMinTime, *dumpMaxTime, *dumpMatch, format, promtoolParser)))
+
+	case tsdbCheckHistogramsCmd.FullCommand():
+		os.Exit(checkErr(printClassicHistogramChecks(ctx, *checkHistogramsPath, *checkHistogramsSandboxDirRoot, *checkHistogramsMinTime, *checkHistogramsMaxTime)))
 
 	case tsdbDumpOpenMetricsCmd.FullCommand():
 		os.Exit(checkErr(dumpTSDBData(ctx, *dumpOpenMetricsPath, *dumpOpenMetricsSandboxDirRoot, *dumpOpenMetricsMinTime, *dumpOpenMetricsMaxTime, *dumpOpenMetricsMatch, formatSeriesSetOpenMetrics, promtoolParser)))
