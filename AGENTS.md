@@ -1,8 +1,7 @@
 # Agents Guide for Prometheus
 
-This document captures patterns and preferences observed from maintainer reviews
-of recently merged pull requests. Use it to align your contributions with what
-maintainers expect.
+This document provides guidance for agents contributing to Prometheus. Use it to
+align contributions with the project's conventions and review expectations.
 
 ---
 
@@ -82,6 +81,10 @@ Example:
 - Inline subtests in their parent test function. Extract a helper only when
   setup or behavior is genuinely reused; do not extract one-off subtests merely
   to avoid indentation.
+- Prefer grouping related benchmark scenarios as sub-benchmarks when they share
+  a coherent setup and workload.
+- Share mechanical setup while keeping scenario-specific inputs and expectations
+  visible. Consolidate duplication without losing distinct behaviors or workloads.
 
 ---
 
@@ -106,10 +109,33 @@ Maintainers take performance seriously. For any PERF PR:
   and the formatting/style section of
   [Go: Best Practices for Production Environments](https://peter.bourgon.org/go-in-production/#formatting-and-style).
 - State your assumptions.
+- Prefer grouping each type with its constructor and methods, in that order.
+  When methods are split across files by responsibility, group them by receiver
+  within each file. Preserve cohesive file boundaries and avoid unrelated
+  declaration reordering.
+- In production code, prefer inlining short, single-use helpers that merely add
+  indirection. Retain helpers that express meaningful operations or isolate
+  complex logic; single use alone is not a reason to inline. Follow the more
+  specific guidance in Tests for test helpers.
+- Choose names that accurately describe ownership, behavior, and guarantees.
+  Distinguish authoritative state from caches and definite answers from
+  conservative approximations. Avoid names that make normal behavior sound
+  exceptional.
+- Prefer straightforward expressions and control flow when equally suitable.
+  Use measurements to justify complexity added for performance.
+- Use named constants for meaningful limits and representation sizes, without
+  replacing every literal with a constant.
 - Interface contracts: when ownership or lifetime semantics (e.g. buffer reuse) are important,
   document it at the interface definition, not just in the implementation.
+- Document non-obvious ownership, lifetime, locking requirements, lock order, and
+  state invariants on the relevant internal types and methods too.
 - All exposed objects must have a doc comment.
-- All comments must start with a capital letter and end with a full stop.
+- Keep doc comments compact and focused on essential contracts, invariants, and
+  non-obvious behavior. Keep implementation details in local comments near the
+  code they explain, and avoid duplicating them in declaration comments.
+- Start symbol doc comments with the documented name, including lowercase
+  unexported names. Start other prose comments with a capital letter and end
+  prose comments with a full stop. These prose rules do not apply to Go directives.
 - Run `make lint` before submitting. The project uses `golangci-lint` including
   `gocritic` rules such as `emptyStringTest` — fix linter findings rather than
   suppressing them with `//nolint` unless there is a clear false-positive.
