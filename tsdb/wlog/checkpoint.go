@@ -132,6 +132,13 @@ func DeleteTempCheckpoints(logger *slog.Logger, dir string) error {
 	return nil
 }
 
+const (
+	// metadataBatchSize is how many series a single checkpoint metadata record covers.
+	metadataBatchSize = 1000
+	// flushThreshold is how many encoded bytes accumulate before they are written out.
+	flushThreshold = 1 * 1024 * 1024
+)
+
 // Checkpoint creates a compacted checkpoint of segments in range [from, to] in the given WAL.
 // It includes the most recent checkpoint if it exists.
 // All series not satisfying keep, samples/exemplars below mint, tombstones not
@@ -460,8 +467,7 @@ func Checkpoint(logger *slog.Logger, w *WL, from, to int, keep func(id chunks.He
 		}
 		recs = append(recs, buf[start:])
 
-		// Flush records in 1 MB increments.
-		if len(buf) > 1*1024*1024 {
+		if len(buf) > flushThreshold {
 			if err := cp.Log(recs...); err != nil {
 				return nil, fmt.Errorf("flush records: %w", err)
 			}
@@ -479,13 +485,33 @@ func Checkpoint(logger *slog.Logger, w *WL, from, to int, keep func(id chunks.He
 		return nil, fmt.Errorf("flush records: %w", err)
 	}
 
-	// Flush latest metadata records for each series.
-	if len(latestMetadataMap) > 0 {
-		latestMetadata := make([]record.RefMetadata, 0, len(latestMetadataMap))
-		for _, m := range latestMetadataMap {
-			latestMetadata = append(latestMetadata, m)
+	// Flush the latest metadata record for each series. Batching caps the size of
+	// a single record, which bounds both the buffer built here and the buffer a
+	// Reader reassembles the record into on the way back out.
+	buf, recs = buf[:0], recs[:0]
+	metadata = metadata[:0]
+	remaining := len(latestMetadataMap)
+	for _, m := range latestMetadataMap {
+		metadata = append(metadata, m)
+		remaining--
+		if len(metadata) < metadataBatchSize && remaining > 0 {
+			continue
 		}
-		if err := cp.Log(enc.Metadata(latestMetadata, buf[:0])); err != nil {
+
+		start := len(buf)
+		buf = enc.Metadata(metadata, buf)
+		recs = append(recs, buf[start:])
+		metadata = metadata[:0]
+
+		if len(buf) > flushThreshold {
+			if err := cp.Log(recs...); err != nil {
+				return nil, fmt.Errorf("flush metadata records: %w", err)
+			}
+			buf, recs = buf[:0], recs[:0]
+		}
+	}
+	if len(recs) > 0 {
+		if err := cp.Log(recs...); err != nil {
 			return nil, fmt.Errorf("flush metadata records: %w", err)
 		}
 	}
