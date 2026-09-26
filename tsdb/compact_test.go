@@ -1287,6 +1287,9 @@ func BenchmarkCompaction(b *testing.B) {
 	}
 
 	nSeries := 10000
+	if testing.Short() {
+		nSeries = 10
+	}
 	for _, c := range cases {
 		nBlocks := len(c.ranges)
 		b.Run(fmt.Sprintf("type=%s,blocks=%d,series=%d,samplesPerSeriesPerBlock=%d", c.compactionType, nBlocks, nSeries, c.ranges[0][1]-c.ranges[0][0]+1), func(b *testing.B) {
@@ -1319,6 +1322,9 @@ func BenchmarkCompaction(b *testing.B) {
 func BenchmarkCompactionFromHead(b *testing.B) {
 	dir := b.TempDir()
 	totalSeries := 100000
+	if testing.Short() {
+		totalSeries = 100
+	}
 	for labelNames := 1; labelNames < totalSeries; labelNames *= 10 {
 		labelValues := totalSeries / labelNames
 		b.Run(fmt.Sprintf("labelnames=%d,labelvalues=%d", labelNames, labelValues), func(b *testing.B) {
@@ -1349,12 +1355,17 @@ func BenchmarkCompactionFromHead(b *testing.B) {
 	// native histograms that trigger a counter reset on every sample. This
 	// stresses the linked-list traversal in s.chunk() and exercises the
 	// head-chunk cache.
-	for _, tc := range []struct{ series, chunks int }{
+	manyHeadChunksCases := []struct{ series, chunks int }{
 		{100000, 1},  // Baseline: cache skipped (prev==nil).
 		{100000, 10}, // Realistic: cache active, but improvement negligible vs total compaction cost.
 		{10, 100},    // Moderate pathological case.
 		{10, 1000},   // Heavy pathological case.
-	} {
+	}
+	if testing.Short() {
+		manyHeadChunksCases[0].series = 100
+		manyHeadChunksCases[1].series = 100
+	}
+	for _, tc := range manyHeadChunksCases {
 		nSeries, nChunks := tc.series, tc.chunks
 		b.Run(fmt.Sprintf("many head chunks/series=%d,chunks=%d", nSeries, nChunks), func(b *testing.B) {
 			dir := b.TempDir()
@@ -1462,6 +1473,10 @@ func BenchmarkCompactionFromOOOHead(b *testing.B) {
 	dir := b.TempDir()
 	totalSeries := 100000
 	totalSamples := 100
+	if testing.Short() {
+		totalSeries = 100
+		totalSamples = 10
+	}
 	for labelNames := 1; labelNames < totalSeries; labelNames *= 10 {
 		labelValues := totalSeries / labelNames
 		b.Run(fmt.Sprintf("labelnames=%d,labelvalues=%d", labelNames, labelValues), func(b *testing.B) {
@@ -1575,10 +1590,12 @@ func pickRefsEvenly(refs []storage.SeriesRef, count int) []storage.SeriesRef {
 // target chunk size so chunk-writing costs are representative of production
 // workloads rather than degenerate single-sample chunks.
 func BenchmarkCompactSelectedSeries(b *testing.B) {
-	const (
-		totalSeries      = 100_000
-		samplesPerSeries = DefaultSamplesPerChunk
-	)
+	totalSeries := 100_000
+	samplesPerSeries := DefaultSamplesPerChunk
+	if testing.Short() {
+		totalSeries = 100
+		samplesPerSeries = 10
+	}
 	fractions := []float64{1.0, 0.5, 0.3, 0.1, 0.01, 0.001}
 
 	for _, fraction := range fractions {

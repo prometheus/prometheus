@@ -1017,10 +1017,15 @@ func BenchmarkMemPostings_Delete(b *testing.B) {
 		return s
 	}
 
-	const total = 1e6
-	allSeries := [total]labels.Labels{}
+	total := 1000000
+	refsCases := []int{1, 100, 10_000}
+	if testing.Short() {
+		total = 1000
+		refsCases = []int{1, 10, 100}
+	}
+	allSeries := make([]labels.Labels, total)
 	nameValues := make([]string, 0, 100)
-	for i := range int(total) {
+	for i := range total {
 		nameValues = nameValues[:0]
 
 		// A thousand labels like lbl_x_of_1000, each with total/1000 values
@@ -1037,7 +1042,7 @@ func BenchmarkMemPostings_Delete(b *testing.B) {
 		allSeries[i] = labels.FromStrings(append(nameValues, "first", "a", "second", "a", "third", "a")...)
 	}
 
-	for _, refs := range []int{1, 100, 10_000} {
+	for _, refs := range refsCases {
 		b.Run(fmt.Sprintf("refs=%d", refs), func(b *testing.B) {
 			for _, reads := range []int{0, 1, 10} {
 				b.Run(fmt.Sprintf("readers=%d", reads), func(b *testing.B) {
