@@ -102,6 +102,14 @@ func newTestHeadWithOptions(t testing.TB, compressWAL compression.Type, opts *He
 	return h, wal
 }
 
+func waitForWALCheckpoint(t testing.TB, h *Head, mint int64) {
+	t.Helper()
+	require.Eventually(t, func() bool {
+		return h.walCheckpointCompleted.Load() >= mint
+	}, 5*time.Second, 10*time.Millisecond)
+	require.GreaterOrEqual(t, h.walCheckpointCompleted.Load(), mint)
+}
+
 func BenchmarkCreateSeries(b *testing.B) {
 	series := genSeries(b.N, 10, 0, 0)
 	h, _ := newTestHead(b, 10000, compression.None, false)
@@ -1298,6 +1306,72 @@ func TestHead_WALCheckpointMultiRef(t *testing.T) {
 				testutil.RequireEqual(t, tc.expectedWalEntries, recs)
 			})
 		}
+	}
+}
+
+// TestTriggerWALCheckpointMultipleCalls verifies WAL checkpoint worker
+// behaviour when a new checkpoint is triggered with new mint multiple times while
+// the worker is busy.
+func TestTriggerWALCheckpointMultipleCalls(t *testing.T) {
+	tests := []struct {
+		name          string
+		completedMint int64   // Mint of the last completed checkpoint.
+		queuedMints   []int64 // Mints in the queue before the trigger.
+		newMint       int64   // Mint passed to triggerWALCheckpoint.
+		wantMints     []int64 // Mints expected in the queue.
+	}{
+		{
+			name:          "queues mint when queue is empty",
+			completedMint: math.MinInt64,
+			queuedMints:   []int64{},
+			newMint:       100,
+			wantMints:     []int64{100},
+		},
+		{
+			name:          "newer mint replaces pending mint",
+			completedMint: math.MinInt64,
+			queuedMints:   []int64{100},
+			newMint:       200,
+			wantMints:     []int64{200},
+		},
+		{
+			name:          "older mint keeps pending mint",
+			completedMint: math.MinInt64,
+			queuedMints:   []int64{200},
+			newMint:       100,
+			wantMints:     []int64{200},
+		},
+		{
+			name:          "ignores completed mint",
+			completedMint: 200,
+			queuedMints:   []int64{},
+			newMint:       100,
+			wantMints:     []int64{},
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			// Create a dummy Head without starting WAL worker so it never
+			// acts on queued checkpoints.
+			h := &Head{
+				wal:           &wlog.WL{},
+				logger:        promslog.NewNopLogger(),
+				walCheckpoint: make(chan int64, 1),
+			}
+			h.lastWALTruncationTime.Store(tc.completedMint)
+			for _, mint := range tc.queuedMints {
+				h.walCheckpoint <- mint
+			}
+
+			h.triggerWALCheckpoint(tc.newMint)
+
+			gotMints := make([]int64, 0, len(h.walCheckpoint))
+			for len(h.walCheckpoint) > 0 {
+				gotMints = append(gotMints, <-h.walCheckpoint)
+			}
+			require.Equal(t, tc.wantMints, gotMints)
+		})
 	}
 }
 
@@ -3310,12 +3384,14 @@ func TestNewWalSegmentOnTruncate(t *testing.T) {
 
 	add(1)
 	require.NoError(t, h.Truncate(1))
+	waitForWALCheckpoint(t, h, 1)
 	_, last, err = wlog.Segments(wal.Dir())
 	require.NoError(t, err)
 	require.Equal(t, 1, last)
 
 	add(2)
 	require.NoError(t, h.Truncate(2))
+	waitForWALCheckpoint(t, h, 2)
 	_, last, err = wlog.Segments(wal.Dir())
 	require.NoError(t, err)
 	require.Equal(t, 2, last)
