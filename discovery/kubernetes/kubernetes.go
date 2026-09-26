@@ -45,6 +45,8 @@ import (
 	"k8s.io/client-go/rest"
 	"k8s.io/client-go/tools/cache"
 	"k8s.io/client-go/tools/clientcmd"
+	gatewayv1 "sigs.k8s.io/gateway-api/apis/v1"
+	gatewayapi "sigs.k8s.io/gateway-api/pkg/client/clientset/versioned"
 
 	"github.com/prometheus/prometheus/discovery"
 	"github.com/prometheus/prometheus/discovery/targetgroup"
@@ -79,6 +81,8 @@ const (
 	RoleEndpoint      Role = "endpoints"
 	RoleEndpointSlice Role = "endpointslice"
 	RoleIngress       Role = "ingress"
+	RoleGateway       Role = "gateway"
+	RoleHTTPRoute     Role = "httproute"
 )
 
 // UnmarshalYAML implements the yaml.Unmarshaler interface.
@@ -87,7 +91,7 @@ func (c *Role) UnmarshalYAML(unmarshal func(any) error) error {
 		return err
 	}
 	switch *c {
-	case RoleNode, RolePod, RoleService, RoleEndpoint, RoleEndpointSlice, RoleIngress:
+	case RoleNode, RolePod, RoleService, RoleEndpoint, RoleEndpointSlice, RoleIngress, RoleGateway, RoleHTTPRoute:
 		return nil
 	default:
 		return fmt.Errorf("unknown Kubernetes SD role %q", *c)
@@ -141,6 +145,8 @@ type roleSelector struct {
 	endpoints     resourceSelector
 	endpointslice resourceSelector
 	ingress       resourceSelector
+	gateway       resourceSelector
+	httpRoute     resourceSelector
 }
 
 type SelectorConfig struct {
@@ -210,6 +216,8 @@ func (c *SDConfig) UnmarshalYAML(unmarshal func(any) error) error {
 		RoleEndpoint:      {string(RolePod), string(RoleService), string(RoleEndpoint)},
 		RoleNode:          {string(RoleNode)},
 		RoleIngress:       {string(RoleIngress)},
+		RoleGateway:       {string(RoleGateway)},
+		RoleHTTPRoute:     {string(RoleHTTPRoute)},
 	}
 
 	for _, selector := range c.Selectors {
@@ -255,6 +263,7 @@ func (c *NamespaceDiscovery) UnmarshalYAML(unmarshal func(any) error) error {
 type Discovery struct {
 	sync.RWMutex
 	client             k8sClient
+	gatewayClient      gatewayapi.Interface
 	role               Role
 	logger             *slog.Logger
 	namespaceDiscovery *NamespaceDiscovery
@@ -333,6 +342,15 @@ func New(l *slog.Logger, metrics discovery.DiscovererMetrics, conf *SDConfig) (*
 	}
 
 	kcfg.UserAgent = version.PrometheusUserAgent()
+
+	// The Gateway API clientset talks to a CRD, which the API server only ever
+	// serves as JSON, so build it before switching the shared config over to
+	// protobuf for the core client below.
+	gwc, err := gatewayapi.NewForConfig(kcfg)
+	if err != nil {
+		return nil, err
+	}
+
 	kcfg.ContentType = "application/vnd.kubernetes.protobuf"
 
 	c, err := kubernetes.NewForConfig(kcfg)
@@ -342,6 +360,7 @@ func New(l *slog.Logger, metrics discovery.DiscovererMetrics, conf *SDConfig) (*
 
 	d := &Discovery{
 		client:             newClientAdapter(c),
+		gatewayClient:      gwc,
 		logger:             l,
 		role:               conf.Role,
 		namespaceDiscovery: &conf.NamespaceDiscovery,
@@ -368,6 +387,12 @@ func mapSelector(rawSelector []SelectorConfig) roleSelector {
 		case RoleIngress:
 			rs.ingress.field = resourceSelectorRaw.Field
 			rs.ingress.label = resourceSelectorRaw.Label
+		case RoleGateway:
+			rs.gateway.field = resourceSelectorRaw.Field
+			rs.gateway.label = resourceSelectorRaw.Label
+		case RoleHTTPRoute:
+			rs.httpRoute.field = resourceSelectorRaw.Field
+			rs.httpRoute.label = resourceSelectorRaw.Label
 		case RoleNode:
 			rs.node.field = resourceSelectorRaw.Field
 			rs.node.label = resourceSelectorRaw.Label
@@ -665,6 +690,66 @@ func (d *Discovery) Run(ctx context.Context, ch chan<- []*targetgroup.Group) {
 			d.discoverers = append(d.discoverers, ingress)
 			go ingress.informer.Run(ctx.Done())
 		}
+	case RoleGateway:
+		var namespaceInformer cache.SharedInformer
+		if d.attachMetadata.Namespace {
+			namespaceInformer = d.newNamespaceInformer(ctx)
+			go namespaceInformer.Run(ctx.Done())
+		}
+
+		for _, namespace := range namespaces {
+			gwc := d.gatewayClient.GatewayV1().Gateways(namespace)
+			glw := &cache.ListWatch{
+				ListWithContextFunc: func(ctx context.Context, options metav1.ListOptions) (runtime.Object, error) {
+					options.FieldSelector = d.selectors.gateway.field
+					options.LabelSelector = d.selectors.gateway.label
+					return gwc.List(ctx, options)
+				},
+				WatchFuncWithContext: func(ctx context.Context, options metav1.ListOptions) (watch.Interface, error) {
+					options.FieldSelector = d.selectors.gateway.field
+					options.LabelSelector = d.selectors.gateway.label
+					return gwc.Watch(ctx, options)
+				},
+			}
+			gtw := NewGateway(
+				d.logger.With("role", "gateway"),
+				d.newIndexedGatewaysInformer(glw),
+				namespaceInformer,
+				d.metrics.eventCount,
+			)
+			d.discoverers = append(d.discoverers, gtw)
+			go gtw.informer.Run(ctx.Done())
+		}
+	case RoleHTTPRoute:
+		var namespaceInformer cache.SharedInformer
+		if d.attachMetadata.Namespace {
+			namespaceInformer = d.newNamespaceInformer(ctx)
+			go namespaceInformer.Run(ctx.Done())
+		}
+
+		for _, namespace := range namespaces {
+			hrc := d.gatewayClient.GatewayV1().HTTPRoutes(namespace)
+			hlw := &cache.ListWatch{
+				ListWithContextFunc: func(ctx context.Context, options metav1.ListOptions) (runtime.Object, error) {
+					options.FieldSelector = d.selectors.httpRoute.field
+					options.LabelSelector = d.selectors.httpRoute.label
+					return hrc.List(ctx, options)
+				},
+				WatchFuncWithContext: func(ctx context.Context, options metav1.ListOptions) (watch.Interface, error) {
+					options.FieldSelector = d.selectors.httpRoute.field
+					options.LabelSelector = d.selectors.httpRoute.label
+					return hrc.Watch(ctx, options)
+				},
+			}
+			hr := NewHTTPRoute(
+				d.logger.With("role", "httproute"),
+				d.newIndexedHTTPRoutesInformer(hlw),
+				namespaceInformer,
+				d.metrics.eventCount,
+			)
+			d.discoverers = append(d.discoverers, hr)
+			go hr.informer.Run(ctx.Done())
+		}
 	case RoleNode:
 		nodeInformer := d.newNodeInformer(ctx)
 		node := NewNode(d.logger.With("role", "node"), nodeInformer, d.metrics.eventCount)
@@ -937,6 +1022,26 @@ func (d *Discovery) newIndexedIngressesInformer(ilw *cache.ListWatch) cache.Shar
 	}
 
 	return d.mustNewSharedIndexInformer(ilw, &networkv1.Ingress{}, resyncDisabled, indexers)
+}
+
+func (d *Discovery) newIndexedGatewaysInformer(glw *cache.ListWatch) cache.SharedIndexInformer {
+	indexers := make(map[string]cache.IndexFunc)
+
+	if d.attachMetadata.Namespace {
+		indexers[cache.NamespaceIndex] = cache.MetaNamespaceIndexFunc
+	}
+
+	return d.mustNewSharedIndexInformer(glw, &gatewayv1.Gateway{}, resyncDisabled, indexers)
+}
+
+func (d *Discovery) newIndexedHTTPRoutesInformer(hlw *cache.ListWatch) cache.SharedIndexInformer {
+	indexers := make(map[string]cache.IndexFunc)
+
+	if d.attachMetadata.Namespace {
+		indexers[cache.NamespaceIndex] = cache.MetaNamespaceIndexFunc
+	}
+
+	return d.mustNewSharedIndexInformer(hlw, &gatewayv1.HTTPRoute{}, resyncDisabled, indexers)
 }
 
 func (d *Discovery) informerWatchErrorHandler(ctx context.Context, r *cache.Reflector, err error) {
