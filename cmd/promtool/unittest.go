@@ -42,17 +42,36 @@ import (
 	"github.com/prometheus/prometheus/promql/promqltest"
 	"github.com/prometheus/prometheus/rules"
 	"github.com/prometheus/prometheus/storage"
+	"github.com/prometheus/prometheus/util/annotations"
 	"github.com/prometheus/prometheus/util/junitxml"
 )
 
-// RulesUnitTest does unit testing of rules based on the unit testing files provided.
-// More info about the file format can be found in the docs.
-func RulesUnitTest(queryOpts promqltest.LazyLoaderOpts, p parser.Parser, runStrings []string, diffFlag, debug, ignoreUnknownFields bool, files ...string) int {
-	return RulesUnitTestResult(io.Discard, queryOpts, p, runStrings, diffFlag, debug, ignoreUnknownFields, files...)
+type warningErr struct {
+	err error
 }
 
-func RulesUnitTestResult(results io.Writer, queryOpts promqltest.LazyLoaderOpts, p parser.Parser, runStrings []string, diffFlag, debug, ignoreUnknownFields bool, files ...string) int {
-	failed := false
+func (w warningErr) Error() string {
+	return w.err.Error()
+}
+
+func (w warningErr) Unwrap() error {
+	return w.err
+}
+
+func isWarning(err error) bool {
+	var w warningErr
+	return errors.As(err, &w)
+}
+
+// RulesUnitTest does unit testing of rules based on the unit testing files provided.
+// More info about the file format can be found in the docs.
+func RulesUnitTest(queryOpts promqltest.LazyLoaderOpts, p parser.Parser, runStrings []string, warnAsError, diffFlag, debug, ignoreUnknownFields bool, files ...string) int {
+	return RulesUnitTestResult(io.Discard, queryOpts, p, runStrings, warnAsError, diffFlag, debug, ignoreUnknownFields, files...)
+}
+
+func RulesUnitTestResult(results io.Writer, queryOpts promqltest.LazyLoaderOpts, p parser.Parser, runStrings []string, warnAsError, diffFlag, debug, ignoreUnknownFields bool, files ...string) int {
+	hasHardErrors := false
+	hasWarnings := false
 	junit := &junitxml.JUnitXML{}
 
 	var run *regexp.Regexp
@@ -61,13 +80,42 @@ func RulesUnitTestResult(results io.Writer, queryOpts promqltest.LazyLoaderOpts,
 	}
 
 	for _, f := range files {
-		if errs := ruleUnitTest(f, queryOpts, p, run, diffFlag, debug, ignoreUnknownFields, junit.Suite(f)); errs != nil {
+		errs := ruleUnitTest(f, queryOpts, p, run, diffFlag, debug, ignoreUnknownFields, warnAsError, junit.Suite(f))
+		var fileHardErrors []error
+		var fileWarnings []error
+		for _, e := range errs {
+			if isWarning(e) {
+				fileWarnings = append(fileWarnings, e)
+			} else {
+				fileHardErrors = append(fileHardErrors, e)
+			}
+		}
+
+		if len(fileHardErrors) > 0 {
+			hasHardErrors = true
+		}
+		if len(fileWarnings) > 0 {
+			hasWarnings = true
+		}
+
+		if !warnAsError {
+			for _, w := range fileWarnings {
+				fmt.Fprintln(os.Stderr, "  WARNING:", w.Error())
+			}
+		}
+
+		if len(fileHardErrors) > 0 || (warnAsError && len(fileWarnings) > 0) {
 			fmt.Fprintln(os.Stderr, "  FAILED:")
-			for _, e := range errs {
+			for _, e := range fileHardErrors {
 				fmt.Fprintln(os.Stderr, e.Error())
 				fmt.Println()
 			}
-			failed = true
+			if warnAsError {
+				for _, w := range fileWarnings {
+					fmt.Fprintln(os.Stderr, w.Error())
+					fmt.Println()
+				}
+			}
 		} else {
 			fmt.Println("  SUCCESS")
 		}
@@ -77,13 +125,16 @@ func RulesUnitTestResult(results io.Writer, queryOpts promqltest.LazyLoaderOpts,
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "failed to write JUnit XML: %s\n", err)
 	}
-	if failed {
+	if hasHardErrors {
 		return failureExitCode
+	}
+	if warnAsError && hasWarnings {
+		return warningExitCode
 	}
 	return successExitCode
 }
 
-func ruleUnitTest(filename string, queryOpts promqltest.LazyLoaderOpts, p parser.Parser, run *regexp.Regexp, diffFlag, debug, ignoreUnknownFields bool, ts *junitxml.TestSuite) []error {
+func ruleUnitTest(filename string, queryOpts promqltest.LazyLoaderOpts, p parser.Parser, run *regexp.Regexp, diffFlag, debug, ignoreUnknownFields, warnAsError bool, ts *junitxml.TestSuite) []error {
 	b, err := os.ReadFile(filename)
 	if err != nil {
 		ts.Abort(err)
@@ -95,9 +146,19 @@ func ruleUnitTest(filename string, queryOpts promqltest.LazyLoaderOpts, p parser
 		ts.Abort(err)
 		return []error{err}
 	}
-	if err := resolveAndGlobFilepaths(filepath.Dir(filename), &unitTestInp); err != nil {
-		ts.Abort(err)
-		return []error{err}
+
+	var errs []error
+	if globErrs := resolveAndGlobFilepaths(filepath.Dir(filename), &unitTestInp); len(globErrs) > 0 {
+		for _, e := range globErrs {
+			if !isWarning(e) {
+				ts.Abort(e)
+				return globErrs
+			}
+			if warnAsError {
+				ts.Abort(e)
+			}
+		}
+		errs = append(errs, globErrs...)
 	}
 
 	if unitTestInp.EvaluationInterval == 0 {
@@ -119,7 +180,6 @@ func ruleUnitTest(filename string, queryOpts promqltest.LazyLoaderOpts, p parser
 	}
 
 	// Testing.
-	var errs []error
 	for i, t := range unitTestInp.Tests {
 		if !matchesRun(t.TestGroupName, run) {
 			continue
@@ -136,7 +196,9 @@ func ruleUnitTest(filename string, queryOpts promqltest.LazyLoaderOpts, p parser
 		ers := t.test(testname, evalInterval, groupOrderMap, queryOpts, diffFlag, debug, ignoreUnknownFields, unitTestInp.FuzzyCompare, unitTestInp.RuleFiles...)
 		if ers != nil {
 			for _, e := range ers {
-				tc.Fail(e.Error())
+				if !isWarning(e) || warnAsError {
+					tc.Fail(e.Error())
+				}
 			}
 			errs = append(errs, ers...)
 		}
@@ -167,7 +229,7 @@ type unitTestFile struct {
 
 // resolveAndGlobFilepaths joins all relative paths in a configuration
 // with a given base directory and replaces all globs with matching files.
-func resolveAndGlobFilepaths(baseDir string, utf *unitTestFile) error {
+func resolveAndGlobFilepaths(baseDir string, utf *unitTestFile) []error {
 	for i, rf := range utf.RuleFiles {
 		if rf != "" && !filepath.IsAbs(rf) {
 			utf.RuleFiles[i] = filepath.Join(baseDir, rf)
@@ -175,18 +237,19 @@ func resolveAndGlobFilepaths(baseDir string, utf *unitTestFile) error {
 	}
 
 	var globbedFiles []string
+	var errs []error
 	for _, rf := range utf.RuleFiles {
 		m, err := filepath.Glob(rf)
 		if err != nil {
-			return err
+			return []error{err}
 		}
 		if len(m) == 0 {
-			fmt.Fprintln(os.Stderr, "  WARNING: no file match pattern", rf)
+			errs = append(errs, warningErr{err: fmt.Errorf("no file match pattern %s", rf)})
 		}
 		globbedFiles = append(globbedFiles, m...)
 	}
 	utf.RuleFiles = globbedFiles
-	return nil
+	return errs
 }
 
 // testStartTimestamp wraps time.Time to support custom YAML unmarshaling.
@@ -467,8 +530,11 @@ func (tg *testGroup) test(testname string, evalInterval time.Duration, groupOrde
 	// Checking promql expressions.
 Outer:
 	for _, testCase := range tg.PromqlExprTests {
-		got, err := query(suite.Context(), testCase.Expr, mint.Add(time.Duration(testCase.EvalTime)),
+		got, warnings, err := query(suite.Context(), testCase.Expr, mint.Add(time.Duration(testCase.EvalTime)),
 			suite.QueryEngine(), suite.Queryable())
+		for _, w := range warnings.AsErrors() {
+			errs = append(errs, warningErr{err: fmt.Errorf("    expr: %q, time: %s, warning: %w", testCase.Expr, testCase.EvalTime.String(), w)})
+		}
 		if err != nil {
 			errs = append(errs, fmt.Errorf("    expr: %q, time: %s, err: %s", testCase.Expr,
 				testCase.EvalTime.String(), err.Error()))
@@ -608,26 +674,26 @@ func (tg *testGroup) maxEvalTime() time.Duration {
 	return time.Duration(maxd)
 }
 
-func query(ctx context.Context, qs string, t time.Time, engine *promql.Engine, qu storage.Queryable) (promql.Vector, error) {
+func query(ctx context.Context, qs string, t time.Time, engine *promql.Engine, qu storage.Queryable) (promql.Vector, annotations.Annotations, error) {
 	q, err := engine.NewInstantQuery(ctx, qu, nil, qs, t)
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 	res := q.Exec(ctx)
 	if res.Err != nil {
-		return nil, res.Err
+		return nil, res.Warnings, res.Err
 	}
 	switch v := res.Value.(type) {
 	case promql.Vector:
-		return v, nil
+		return v, res.Warnings, nil
 	case promql.Scalar:
 		return promql.Vector{promql.Sample{
 			T:      v.T,
 			F:      v.V,
 			Metric: labels.Labels{},
-		}}, nil
+		}}, res.Warnings, nil
 	default:
-		return nil, errors.New("rule result is not a vector or scalar")
+		return nil, res.Warnings, errors.New("rule result is not a vector or scalar")
 	}
 }
 

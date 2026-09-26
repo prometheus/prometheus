@@ -1,0 +1,5 @@
+rule_files:
+  - does_not_exist.yml
+  - another_missing_file.yml
+
+tests: []
