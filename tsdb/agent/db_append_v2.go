@@ -160,6 +160,9 @@ func (a *appenderV2) appendExemplars(s *memSeries, exemplar []exemplar.Exemplar)
 			V:      e.Value,
 			Labels: e.Labels,
 		})
+		if a.opts.DisableWAL {
+			a.exemplarSeries = append(a.exemplarSeries, s)
+		}
 		a.metrics.totalAppendedExemplars.Inc()
 	}
 	if len(errs) > 0 {

@@ -553,6 +553,9 @@ func main() {
 	agentOnlyFlag(a, "storage.agent.path", "Base path for metrics storage.").
 		Default("data-agent/").StringVar(&cfg.agentStoragePath)
 
+	agentOnlyFlag(a, "storage.agent.wal", "Enable the WAL. When disabled, remote writes are buffered in memory. New data is dropped when a destination queue is full; pending data is lost on restart.").
+		Default("true").BoolVar(&cfg.agent.WALEnabled)
+
 	agentOnlyFlag(a, "storage.agent.wal-segment-size",
 		"Size at which to split WAL segment files. Example: 100MB").
 		Hidden().PlaceHolder("<bytes>").BytesVar(&cfg.agent.WALSegmentSize)
@@ -716,7 +719,7 @@ func main() {
 		os.Exit(3)
 	}
 
-	if agentMode && cfg.agent.CheckpointBatchSize <= 0 {
+	if agentMode && cfg.agent.WALEnabled && cfg.agent.CheckpointBatchSize <= 0 {
 		fmt.Fprintln(os.Stderr, "--storage.agent.checkpoint-batch-size must be greater than 0.")
 		os.Exit(1)
 	}
@@ -1550,13 +1553,13 @@ func main() {
 		)
 	}
 	if agentMode {
-		// WAL storage.
+		// Agent storage.
 		opts := cfg.agent.ToAgentOptions(cfg.tsdb.OutOfOrderTimeWindow)
 		cancel := make(chan struct{})
 		g.Add(
 			func() error {
-				logger.Info("Starting WAL storage ...")
-				if cfg.agent.WALSegmentSize != 0 {
+				logger.Info("Starting agent storage ...", "wal_disabled", opts.DisableWAL)
+				if !opts.DisableWAL && cfg.agent.WALSegmentSize != 0 {
 					if cfg.agent.WALSegmentSize < 10*1024*1024 || cfg.agent.WALSegmentSize > 256*1024*1024 {
 						return errors.New("flag 'storage.agent.wal-segment-size' must be set between 10MB and 256MB")
 					}
@@ -1572,15 +1575,18 @@ func main() {
 					return fmt.Errorf("opening storage failed: %w", err)
 				}
 
-				switch fsType := prom_runtime.FsType(localStoragePath); fsType {
-				case "NFS_SUPER_MAGIC":
-					logger.Warn(fsType, "msg", "This filesystem is not supported and may lead to data corruption and data loss. Please carefully read https://prometheus.io/docs/prometheus/latest/storage/ to learn more about supported filesystems.")
-				default:
-					logger.Info(fsType)
+				if !opts.DisableWAL {
+					switch fsType := prom_runtime.FsType(localStoragePath); fsType {
+					case "NFS_SUPER_MAGIC":
+						logger.Warn(fsType, "msg", "This filesystem is not supported and may lead to data corruption and data loss. Please carefully read https://prometheus.io/docs/prometheus/latest/storage/ to learn more about supported filesystems.")
+					default:
+						logger.Info(fsType)
+					}
 				}
 
-				logger.Info("Agent WAL storage started")
-				logger.Debug("Agent WAL storage options",
+				logger.Info("Agent storage started", "wal_disabled", opts.DisableWAL)
+				logger.Debug("Agent storage options",
+					"DisableWAL", opts.DisableWAL,
 					"WALSegmentSize", cfg.agent.WALSegmentSize,
 					"WALCompressionType", cfg.agent.WALCompressionType,
 					"StripeSize", cfg.agent.StripeSize,
@@ -1596,11 +1602,11 @@ func main() {
 				db.SetWriteNotified(remoteStorage)
 				close(dbOpen)
 				<-cancel
-				logger.Info("Agent WAL storage stopped")
+				logger.Info("Agent storage stopped")
 				return nil
 			},
 			func(error) {
-				logger.Info("Stopping agent WAL storage...")
+				logger.Info("Stopping agent storage...")
 				if err := fanoutStorage.Close(); err != nil {
 					logger.Error("Error stopping storage", "err", err)
 				}
@@ -2183,6 +2189,7 @@ func (opts tsdbOptions) ToTSDBOptions() tsdb.Options {
 // agentOptions is a version of agent.Options with defined units. This is required
 // as agent.Option fields are unit agnostic (time).
 type agentOptions struct {
+	WALEnabled                   bool
 	WALSegmentSize               units.Base2Bytes
 	WALCompressionType           compression.Type
 	StripeSize                   int
@@ -2201,6 +2208,7 @@ func (opts agentOptions) ToAgentOptions(outOfOrderTimeWindow int64) agent.Option
 		outOfOrderTimeWindow = 0
 	}
 	return agent.Options{
+		DisableWAL:                   !opts.WALEnabled,
 		WALSegmentSize:               int(opts.WALSegmentSize),
 		WALCompression:               opts.WALCompressionType,
 		StripeSize:                   opts.StripeSize,
