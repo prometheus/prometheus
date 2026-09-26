@@ -1566,7 +1566,8 @@ func (sl *scrapeLoop) scrapeAndReport(last, appendTime time.Time, errc chan<- er
 	scrapeCtx, cancel := context.WithTimeout(trace.ContextWithSpan(sl.parentCtx, span), sl.timeout)
 	resp, scrapeErr = sl.scraper.scrape(scrapeCtx)
 	if scrapeErr == nil {
-		b = sl.buffers.Get(sl.lastScrapeSize).([]byte)
+		// Avoid copying the body when bytes.Buffer.ReadFrom grows before reading EOF.
+		b = sl.buffers.Get(sl.lastScrapeSize + bytes.MinRead).([]byte)
 		defer sl.buffers.Put(b)
 		buf = bytes.NewBuffer(b)
 		// Trace the response body read and decompression into the buffer.
