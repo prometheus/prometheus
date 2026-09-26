@@ -251,6 +251,8 @@ func (d *Discovery) Run(ctx context.Context, ch chan<- []*targetgroup.Group) {
 	ticker := time.NewTicker(d.interval)
 	defer ticker.Stop()
 
+	var debounce <-chan time.Time
+
 	for {
 		select {
 		case <-ctx.Done():
@@ -270,6 +272,11 @@ func (d *Discovery) Run(ctx context.Context, ch chan<- []*targetgroup.Group) {
 			// different combinations of operations. For all practical purposes
 			// this is inaccurate.
 			// The most reliable solution is to reload everything if anything happens.
+			// We use a short debounce to handle atomic replacements on Windows.
+			debounce = time.After(50 * time.Millisecond)
+
+		case <-debounce:
+			debounce = nil
 			d.refresh(ctx, ch)
 
 		case <-ticker.C:
