@@ -54,6 +54,7 @@ import (
 	"github.com/prometheus/prometheus/model/timestamp"
 	"github.com/prometheus/prometheus/scrape"
 	"github.com/prometheus/prometheus/storage"
+	"github.com/prometheus/prometheus/util/annotations"
 	"github.com/prometheus/prometheus/util/httputil"
 )
 
@@ -201,8 +202,9 @@ func (api *API) parseSearchParams(r *http.Request) (searchParams, *apiError) {
 	// end == start is permitted: it represents a zero-duration "snapshot at
 	// this instant" search. Only strictly inverted ranges are rejected, so
 	// a client that accidentally sets end < start gets an immediate error
-	// rather than empty (and possibly misleading) results.
-	if sp.end.Before(sp.start) {
+	// rather than empty (and possibly misleading) results. Info expressions
+	// derive their own storage range, so start does not constrain them.
+	if (r.FormValue("scope") != "info" || r.FormValue("expr") == "") && sp.end.Before(sp.start) {
 		return sp, &apiError{errorBadData, errors.New("end timestamp must not be before start timestamp")}
 	}
 
@@ -699,12 +701,16 @@ type searchRequest struct {
 	hints    *storage.SearchHints
 	searcher storage.Searcher
 	q        storage.Querier
+	ctx      context.Context
+	cancel   context.CancelFunc
+	warnings annotations.Annotations
+	empty    bool
 }
 
 // newSearchRequest handles the setup shared by all search endpoints: CORS headers,
 // feature-gate checks, form parsing, common parameter parsing, sort_by
 // validation, querier acquisition, and search hint construction. On success a
-// non-nil searchRequest is returned and the caller must defer req.q.Close(). On
+// non-nil searchRequest is returned and the caller must defer req.close(). On
 // failure the error has already been written to w and nil is returned.
 func (api *API) newSearchRequest(w http.ResponseWriter, r *http.Request, endpoint string) *searchRequest {
 	httputil.SetCORS(w, api.CORSOrigin, r)
@@ -724,6 +730,11 @@ func (api *API) newSearchRequest(w http.ResponseWriter, r *http.Request, endpoin
 		return nil
 	}
 
+	if apiErr := api.validateSearchScope(r, endpoint); apiErr != nil {
+		api.respondError(w, apiErr, nil)
+		return nil
+	}
+
 	sp, apiErr := api.parseSearchParams(r)
 	if apiErr != nil {
 		api.respondError(w, apiErr, nil)
@@ -735,15 +746,37 @@ func (api *API) newSearchRequest(w http.ResponseWriter, r *http.Request, endpoin
 		return nil
 	}
 
+	req := &searchRequest{ctx: r.Context()}
+	ready := false
+	defer func() {
+		if !ready {
+			req.close()
+		}
+	}()
+	if r.FormValue("scope") == "info" {
+		if apiErr := api.prepareInfoScope(r, &sp, req); apiErr != nil {
+			api.respondError(w, apiErr, nil)
+			return nil
+		}
+		if err := req.ctx.Err(); err != nil {
+			typ := errorCanceled
+			if errors.Is(err, context.DeadlineExceeded) {
+				typ = errorTimeout
+			}
+			api.respondError(w, &apiError{typ, err}, nil)
+			return nil
+		}
+	}
+
 	q, err := api.Queryable.Querier(timestamp.FromTime(sp.start), timestamp.FromTime(sp.end))
 	if err != nil {
 		api.respondPreStreamSearchError(w, err)
 		return nil
 	}
 
+	req.q = q
 	searcher, ok := q.(storage.Searcher)
 	if !ok {
-		_ = q.Close()
 		api.respondError(w, &apiError{errorInternal, errors.New("search not supported by storage")}, nil)
 		return nil
 	}
@@ -754,7 +787,12 @@ func (api *API) newSearchRequest(w http.ResponseWriter, r *http.Request, endpoin
 	}
 	hints.OrderBy = sortOrdering(sp.sortBy, sp.sortDir)
 
-	return &searchRequest{sp: sp, hints: hints, searcher: searcher, q: q}
+	if r.FormValue("scope") == "info" && endpoint == "label_names" {
+		hints.Filter = infoSearchFilter{hints.Filter}
+	}
+	req.sp, req.hints, req.searcher = sp, hints, searcher
+	ready = true
+	return req
 }
 
 // searchMetricNames handles GET/POST /api/v1/search/metric_names.
@@ -763,7 +801,7 @@ func (api *API) searchMetricNames(w http.ResponseWriter, r *http.Request) {
 	if req == nil {
 		return
 	}
-	defer req.q.Close()
+	defer req.close()
 
 	includeMetadata, apiErr := parseSearchBoolParam(r, "include_metadata", false)
 	if apiErr != nil {
@@ -771,7 +809,7 @@ func (api *API) searchMetricNames(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	ctx := r.Context()
+	ctx := req.ctx
 
 	// metaMap is built lazily on the first metadata lookup so a search that
 	// returns zero results never pays the scrape-manager lock + map-build
@@ -810,10 +848,16 @@ func (api *API) searchLabelNames(w http.ResponseWriter, r *http.Request) {
 	if req == nil {
 		return
 	}
-	defer req.q.Close()
+	defer req.close()
 
-	ctx := r.Context()
-	searchResults := searchLabelNames(ctx, req.searcher, req.sp.matcherSets, req.hints)
+	ctx := req.ctx
+	searchResults := storage.EmptySearchResultSet()
+	if !req.empty {
+		searchResults = searchLabelNames(ctx, req.searcher, req.sp.matcherSets, req.hints)
+	}
+	if len(req.warnings) > 0 {
+		searchResults = infoSearchWarnings{searchResults, req.warnings}
+	}
 	streamSearchResults(ctx, api, w, searchResults, req.sp, func(sr storage.SearchResult) searchLabelNameResult {
 		result := searchLabelNameResult{Name: sr.Value}
 		if req.sp.includeScore {
@@ -830,7 +874,7 @@ func (api *API) searchLabelValues(w http.ResponseWriter, r *http.Request) {
 	if req == nil {
 		return
 	}
-	defer req.q.Close()
+	defer req.close()
 
 	labelName := r.FormValue("label")
 	if labelName == "" {
@@ -838,8 +882,14 @@ func (api *API) searchLabelValues(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	ctx := r.Context()
-	searchResults := searchLabelValues(ctx, req.searcher, labelName, req.sp.matcherSets, req.hints)
+	ctx := req.ctx
+	searchResults := storage.EmptySearchResultSet()
+	if !req.empty {
+		searchResults = searchLabelValues(ctx, req.searcher, labelName, req.sp.matcherSets, req.hints)
+	}
+	if len(req.warnings) > 0 {
+		searchResults = infoSearchWarnings{searchResults, req.warnings}
+	}
 	streamSearchResults(ctx, api, w, searchResults, req.sp, func(sr storage.SearchResult) searchLabelValueResult {
 		result := searchLabelValueResult{Value: sr.Value}
 		if req.sp.includeScore {
