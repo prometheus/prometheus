@@ -1354,6 +1354,11 @@ filters:
 # This can significantly improve performance when you only need to monitor specific clusters/caches.
 [ clusters: [<string>, ...] ]
 
+# Maximum number of AWS API requests issued concurrently while discovering
+# targets (ecs, elasticache, msk, and rds roles only). The defaults are aligned
+# with the sustained request rate limits of the respective AWS APIs.
+[ request_concurrency: <int> | default = 20 for the ecs role, 10 for the elasticache, msk and rds roles ]
+
 # HTTP client settings, including authentication methods (such as basic auth and
 # authorization), proxy configurations, TLS options, custom HTTP headers, etc.
 [ <http_config> ]
