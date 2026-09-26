@@ -390,7 +390,12 @@ func (r *AlertingRule) Eval(ctx context.Context, queryOffset time.Duration, ts t
 	if err != nil {
 		return nil, err
 	}
+	return r.eval(ctx, queryOffset, ts, res, query, externalURL, limit)
+}
 
+// eval advances the alert state machine by one step, using res as the result of
+// the rule expression at ts. query is only used to expand templates.
+func (r *AlertingRule) eval(ctx context.Context, queryOffset time.Duration, ts time.Time, res promql.Vector, query QueryFunc, externalURL *url.URL, limit int) (promql.Vector, error) {
 	// Create pending alerts for any new vector elements in the alert expression
 	// or update the expression value for existing elements.
 	resultFPs := map[uint64]struct{}{}
