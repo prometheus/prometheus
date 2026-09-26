@@ -28,11 +28,11 @@ const TableTab: FC<TableTabProps> = ({ panelIdx, retriggerIdx, expr }) => {
     (state) => state.queryPage.panels[panelIdx],
   );
   const dispatch = useAppDispatch();
-  const { showQueryWarnings, showQueryInfoNotices } = useSettings();
+  const { showQueryWarnings, showQueryInfoNotices, showQueryCost } = useSettings();
 
   const { endTime, range } = visualizer;
 
-  const queryKey = [useId(), "/query", expr, endTime, retriggerIdx];
+  const queryKey = [useId(), "/query", expr, endTime, retriggerIdx, showQueryCost];
   const {
     data: result,
     error,
@@ -48,7 +48,14 @@ const TableTab: FC<TableTabProps> = ({ panelIdx, retriggerIdx, expr }) => {
     path: "/query",
     params: (requestTimeMs) => {
       const time = (endTime ?? requestTimeMs) / 1000;
-      return { query: expr, time: `${time}`, stats: "true" };
+      return {
+        query: expr,
+        time: `${time}`,
+        stats: "true",
+        // Requesting the cost comparison makes the server estimate the query in
+        // addition to executing it, so it is only asked for when the user opted in.
+        ...(showQueryCost ? { cost: "true" } : {}),
+      };
     },
     enabled: expr !== "",
     select: (response, metadata) => ({ response, metadata }),
@@ -76,6 +83,7 @@ const TableTab: FC<TableTabProps> = ({ panelIdx, retriggerIdx, expr }) => {
             numResults={data.data.result.length}
             responseTime={result!.metadata.responseTimeMs}
             stats={data.data.stats!}
+            cost={data.data.cost}
           />
         )}
       </Group>
