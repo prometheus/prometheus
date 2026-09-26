@@ -1984,9 +1984,16 @@ func (notReadyAppender) Rollback() error { return tsdb.ErrNotReady }
 
 type notReadyAppenderV2 struct{}
 
+var _ storage.ExemplarAppenderV2 = notReadyAppenderV2{}
+
 func (notReadyAppenderV2) Append(storage.SeriesRef, labels.Labels, int64, int64, float64, *histogram.Histogram, *histogram.FloatHistogram, storage.AOptions) (storage.SeriesRef, error) {
 	return 0, tsdb.ErrNotReady
 }
+
+func (notReadyAppenderV2) AppendExemplars(storage.SeriesRef, labels.Labels, []exemplar.Exemplar) (storage.SeriesRef, error) {
+	return 0, tsdb.ErrNotReady
+}
+
 func (notReadyAppenderV2) Commit() error { return tsdb.ErrNotReady }
 
 func (notReadyAppenderV2) Rollback() error { return tsdb.ErrNotReady }

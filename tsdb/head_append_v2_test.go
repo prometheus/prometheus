@@ -5218,3 +5218,96 @@ func TestHeadAppenderV2_Histogram_STStorage(t *testing.T) {
 		})
 	}
 }
+
+func TestHeadAppenderV2_ExemplarAppenderV2(t *testing.T) {
+	opts := DefaultHeadOptions()
+	opts.ChunkRange = 1000
+	opts.MaxExemplars.Store(100)
+	opts.EnableExemplarStorage = true
+	h, err := NewHead(nil, nil, nil, nil, opts, nil)
+	require.NoError(t, err)
+	defer func() { require.NoError(t, h.Close()) }()
+	require.NoError(t, h.Init(0))
+
+	// Create two initAppenderV2 instances before any sample initializes head.
+	initApp, ok := h.AppenderV2(t.Context()).(storage.ExemplarAppenderV2)
+	require.True(t, ok)
+	initApp2, ok := h.AppenderV2(t.Context()).(storage.ExemplarAppenderV2)
+	require.True(t, ok)
+
+	_, err = initApp.AppendExemplars(0, labels.FromStrings("__name__", "missing"), []exemplar.Exemplar{{Labels: labels.FromStrings("id", "1"), Value: 1, Ts: 10}})
+	require.ErrorIs(t, err, storage.ErrNotFound)
+
+	lset := labels.FromStrings("__name__", "test_metric", "job", "app")
+	ref, err := initApp.Append(0, lset, 0, 100, 42, nil, nil, storage.AOptions{})
+	require.NoError(t, err)
+
+	// Empty exemplars slice should still validate series and return non-zero SeriesRef.
+	retRef, err := initApp.AppendExemplars(ref, lset, nil)
+	require.NoError(t, err)
+	require.Equal(t, ref, retRef)
+
+	// Append exemplar via SeriesRef (and duplicate exemplar in same slice).
+	ex1 := exemplar.Exemplar{Labels: labels.FromStrings("trace_id", "t1"), Value: 1, Ts: 100, HasTs: true}
+	retRef, err = initApp.AppendExemplars(ref, labels.EmptyLabels(), []exemplar.Exemplar{ex1, ex1})
+	require.NoError(t, err)
+	require.Equal(t, ref, retRef)
+	require.NoError(t, initApp.Commit())
+
+	// initApp2 was created before head was initialized, so calling AppendExemplars on it now
+	// exercises lazy initialization of initApp2.app = a.head.appenderV2().
+	ex2 := exemplar.Exemplar{Labels: labels.FromStrings("trace_id", "t2"), Value: 2, Ts: 200, HasTs: true}
+	retRef, err = initApp2.AppendExemplars(ref, lset, []exemplar.Exemplar{ex2})
+	require.NoError(t, err)
+	require.Equal(t, ref, retRef)
+	require.NoError(t, initApp2.Commit())
+
+	// Now head is initialized; test headAppenderV2 with ref == 0, non-canonical labels, and partial error.
+	headApp, ok := h.AppenderV2(t.Context()).(storage.ExemplarAppenderV2)
+	require.True(t, ok)
+	lsetWithEmpty := labels.FromStrings("__name__", "test_metric", "job", "app", "empty", "")
+	tooLongLabel := strings.Repeat("x", exemplar.ExemplarMaxLabelSetLength+1)
+	invalidEx := exemplar.Exemplar{Labels: labels.FromStrings("trace_id", tooLongLabel), Value: 3, Ts: 250, HasTs: true}
+	ex3 := exemplar.Exemplar{Labels: labels.FromStrings("trace_id", "t3"), Value: 3, Ts: 300, HasTs: true}
+	retRef, err = headApp.AppendExemplars(0, lsetWithEmpty, []exemplar.Exemplar{invalidEx, ex3})
+	var pErr *storage.AppendPartialError
+	require.ErrorAs(t, err, &pErr)
+	require.Len(t, pErr.ExemplarErrors, 1)
+	require.ErrorIs(t, pErr.ExemplarErrors[0], storage.ErrExemplarLabelLength)
+	require.Equal(t, ref, retRef)
+
+	// Unknown series must return ErrNotFound even when exemplars is empty.
+	_, err = headApp.AppendExemplars(0, labels.FromStrings("__name__", "unknown"), nil)
+	require.ErrorIs(t, err, storage.ErrNotFound)
+
+	// Disabled exemplar storage (MaxExemplars == 0) must still validate series and return valid SeriesRef.
+	opts.MaxExemplars.Store(0)
+	_, err = headApp.AppendExemplars(0, labels.FromStrings("__name__", "unknown"), []exemplar.Exemplar{ex3})
+	require.ErrorIs(t, err, storage.ErrNotFound)
+	retRef, err = headApp.AppendExemplars(ref, lset, []exemplar.Exemplar{ex3})
+	require.NoError(t, err)
+	require.Equal(t, ref, retRef)
+	opts.MaxExemplars.Store(100)
+	require.NoError(t, headApp.Commit())
+
+	// Verify all 3 valid exemplars (ex1, ex2, ex3) were stored.
+	q, err := h.ExemplarQuerier(t.Context())
+	require.NoError(t, err)
+	res, err := q.Select(0, 400, []*labels.Matcher{labels.MustNewMatcher(labels.MatchEqual, "__name__", "test_metric")})
+	require.NoError(t, err)
+	require.Len(t, res, 1)
+	require.Len(t, res[0].Exemplars, 3)
+
+	// Also verify (*tsdb.DB).AppenderV2 (dbAppenderV2) implements storage.ExemplarAppenderV2.
+	db, err := Open(t.TempDir(), nil, nil, DefaultOptions(), nil)
+	require.NoError(t, err)
+	defer func() { require.NoError(t, db.Close()) }()
+	dbApp, ok := db.AppenderV2(t.Context()).(storage.ExemplarAppenderV2)
+	require.True(t, ok)
+	dbRef, err := dbApp.Append(0, lset, 0, 100, 1, nil, nil, storage.AOptions{})
+	require.NoError(t, err)
+	dbRetRef, err := dbApp.AppendExemplars(dbRef, lset, []exemplar.Exemplar{ex1})
+	require.NoError(t, err)
+	require.Equal(t, dbRef, dbRetRef)
+	require.NoError(t, dbApp.Commit())
+}
