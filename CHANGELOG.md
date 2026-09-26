@@ -2,6 +2,7 @@
 
 ## main / unreleased
 
+- [BUGFIX] promtool: `tsdb create-blocks-from rules` no longer stops the backfill when the first aligned block contains no evaluation points; it skips the empty block and continues. #19715
 - [ENHANCEMENT] Remote write / Alertmanager: Upgrade `github.com/prometheus/sigv4` to v0.5.0, adding `session_name` and `tags` fields to the `sigv4` configuration block for STS AssumeRole sessions. The existing but previously undocumented `service_name` field is also documented.
 
 ## 3.14.0 / 2026-08-17
