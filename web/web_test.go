@@ -39,6 +39,7 @@ import (
 	"go.opentelemetry.io/contrib/instrumentation/net/http/otelhttp"
 
 	"github.com/prometheus/prometheus/config"
+	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/notifier"
 	"github.com/prometheus/prometheus/rules"
 	"github.com/prometheus/prometheus/scrape"
@@ -62,6 +63,10 @@ func (a *dbAdapter) BlockMetas() ([]tsdb.BlockMeta, error) {
 
 func (a *dbAdapter) Stats(statsByLabelName string, limit int) (*tsdb.Stats, error) {
 	return a.Head().Stats(statsByLabelName, limit), nil
+}
+
+func (a *dbAdapter) StatsForMatchers(ctx context.Context, statsByLabelName string, limit int, matchers []*labels.Matcher) (*tsdb.Stats, error) {
+	return a.Head().StatsForMatchers(ctx, statsByLabelName, limit, matchers)
 }
 
 func (*dbAdapter) WALReplayStatus() (tsdb.WALReplayStatus, error) {
