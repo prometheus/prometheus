@@ -25,6 +25,7 @@ import (
 	"testing"
 
 	"github.com/prometheus/client_golang/prometheus"
+	prom_testutil "github.com/prometheus/client_golang/prometheus/testutil"
 	"github.com/stretchr/testify/require"
 
 	"github.com/prometheus/prometheus/model/exemplar"
@@ -100,6 +101,10 @@ func TestCircularExemplarStorage_AddExemplar(t *testing.T) {
 		wantExemplars []exemplar.Exemplar
 		matcher       []*labels.Matcher
 		wantError     error
+		// Optional matcher for a series that must have no exemplars stored.
+		wantNoExemplars []*labels.Matcher
+		// Expected increase of the too-old exemplars counter.
+		wantTooOld float64
 	}{
 		{
 			name: "insert after newest",
@@ -340,12 +345,62 @@ func TestCircularExemplarStorage_AddExemplar(t *testing.T) {
 				{Labels: series1, Value: 0.3, Ts: 3},
 			},
 		},
+		{
+			name: "skip exemplar older than evicted",
+			size: 2,
+			exemplars: []exemplar.Exemplar{
+				// series2 evicts the only exemplar of series1, which is then re-exposed
+				// (#9377). It must not evict the newer series2 exemplar in its turn.
+				{Labels: series1, Value: 0.1, Ts: 1},
+				{Labels: series2, Value: 0.2, Ts: 500},
+				{Labels: series2, Value: 0.3, Ts: 600},
+				{Labels: series1, Value: 0.1, Ts: 1},
+			},
+			matcher: series2Matcher,
+			wantExemplars: []exemplar.Exemplar{
+				{Labels: series2, Value: 0.2, Ts: 500},
+				{Labels: series2, Value: 0.3, Ts: 600},
+			},
+			wantNoExemplars: series1Matcher,
+			wantTooOld:      1,
+		},
+		{
+			name: "skip exemplar older than evicted for existing series",
+			size: 2,
+			exemplars: []exemplar.Exemplar{
+				{Labels: series2, Value: 0.1, Ts: 500},
+				{Labels: series1, Value: 0.2, Ts: 1},
+				// Within the OOO window of series1, but older than the series2 exemplar it would evict.
+				{Labels: series1, Value: 0.3, Ts: 0},
+			},
+			matcher: series2Matcher,
+			wantExemplars: []exemplar.Exemplar{
+				{Labels: series2, Value: 0.1, Ts: 500},
+			},
+			wantTooOld: 1,
+		},
+		{
+			name: "store in-window exemplar older than evicted",
+			size: 2,
+			exemplars: []exemplar.Exemplar{
+				{Labels: series1, Value: 0.1, Ts: 300},
+				{Labels: series1, Value: 0.2, Ts: 250},
+				// Older than the evicted exemplar (300) but within the OOO window.
+				{Labels: series1, Value: 0.3, Ts: 220},
+			},
+			matcher: series1Matcher,
+			wantExemplars: []exemplar.Exemplar{
+				{Labels: series1, Value: 0.3, Ts: 220},
+				{Labels: series1, Value: 0.2, Ts: 250},
+			},
+		},
 	}
 	for _, tc := range testCases {
 		t.Run(tc.name, func(t *testing.T) {
 			exs, err := NewCircularExemplarStorage(tc.size, eMetrics, 100)
 			require.NoError(t, err)
 			es := exs.(*CircularExemplarStorage)
+			tooOldBefore := prom_testutil.ToFloat64(es.metrics.tooOldExemplars)
 
 			// Add exemplars and compare tc.wantErr against the first exemplar failing.
 			var addError error
@@ -376,6 +431,12 @@ func TestCircularExemplarStorage_AddExemplar(t *testing.T) {
 				require.Len(t, gotExemplars, 1)
 				require.Equal(t, tc.wantExemplars, gotExemplars[0].Exemplars)
 			}
+			if tc.wantNoExemplars != nil {
+				gotExemplars, err = es.Select(0, 1000, tc.wantNoExemplars)
+				require.NoError(t, err)
+				require.Empty(t, gotExemplars)
+			}
+			require.Equal(t, tc.wantTooOld, prom_testutil.ToFloat64(es.metrics.tooOldExemplars)-tooOldBefore)
 		})
 	}
 }
@@ -933,6 +994,16 @@ func TestIndexOverwrite(t *testing.T) {
 	_, ok := es.index[string(l1.Bytes(nil))]
 	require.False(t, ok)
 	require.Equal(t, &indexEntry{1, 0, l2}, es.index[string(l2.Bytes(nil))])
+
+	// Re-adding the evicted exemplar of l1 (#9377) must neither recreate its
+	// index entry nor evict the newer l2 exemplar at the next buffer position.
+	tooOldBefore := prom_testutil.ToFloat64(es.metrics.tooOldExemplars)
+	err = es.AddExemplar(l1, exemplar.Exemplar{Value: 1, Ts: 1})
+	require.NoError(t, err)
+	_, ok = es.index[string(l1.Bytes(nil))]
+	require.False(t, ok)
+	require.Equal(t, &indexEntry{1, 0, l2}, es.index[string(l2.Bytes(nil))])
+	require.Equal(t, 1.0, prom_testutil.ToFloat64(es.metrics.tooOldExemplars)-tooOldBefore)
 
 	err = es.AddExemplar(l1, exemplar.Exemplar{Value: 4, Ts: 4})
 	require.NoError(t, err)
