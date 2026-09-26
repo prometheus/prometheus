@@ -1097,6 +1097,7 @@ func open(dir string, l *slog.Logger, r prometheus.Registerer, opts *Options, rn
 			UseUncachedIO:               opts.UseUncachedIO,
 			BlockExcludeFilter:          opts.BlockCompactionExcludeFunc,
 			FloatChunkEncoding:          db.floatChunkEncoding,
+			MaxBlockBytes:               db.maxCompactedBlockBytes,
 		})
 	}
 	if err != nil {
@@ -2280,6 +2281,40 @@ func BeyondTimeRetention(db *DB, blocks []*Block) (deletable map[ulid.ULID]struc
 	return deletable
 }
 
+// sizeRetentionBytes returns the size-based retention limit in bytes, with
+// MaxPercentage resolved against the size of the filesystem holding the database.
+// A value of 0 or less means size-based retention is disabled. If warn is true, a
+// failure to get the filesystem size is logged.
+func (db *DB) sizeRetentionBytes(warn bool) int64 {
+	maxBytes, maxPercentage := db.getRetentionSettings()
+
+	// Max percentage prevails over max size.
+	if maxPercentage > 0 {
+		diskSize := db.fsSizeFunc(db.dir)
+		if diskSize <= 0 {
+			if warn {
+				db.logger.Warn("Unable to retrieve filesystem size of database directory, skip percentage limitation and default to fixed size limitation", "dir", db.dir)
+			}
+		} else {
+			maxBytes = int64(float64(diskSize) * maxPercentage / 100)
+		}
+	}
+	return maxBytes
+}
+
+// maxCompactedBlockBytes returns the size limit for blocks produced by leveled
+// compaction: 10% of the size-based retention limit, mirroring how the default
+// maximum block duration is 10% of the retention time. Size-based retention
+// deletes whole blocks, so without it a single block could hold most of the
+// retained data. It returns 0 when size-based retention is disabled.
+func (db *DB) maxCompactedBlockBytes() int64 {
+	maxBytes := db.sizeRetentionBytes(false)
+	if maxBytes <= 0 {
+		return 0
+	}
+	return maxBytes / 10
+}
+
 // BeyondSizeRetention returns those blocks which are beyond the size retention
 // set in the db options.
 func BeyondSizeRetention(db *DB, blocks []*Block) (deletable map[ulid.ULID]struct{}) {
@@ -2288,17 +2323,7 @@ func BeyondSizeRetention(db *DB, blocks []*Block) (deletable map[ulid.ULID]struc
 		return deletable
 	}
 
-	maxBytes, maxPercentage := db.getRetentionSettings()
-
-	// Max percentage prevails over max size.
-	if maxPercentage > 0 {
-		diskSize := db.fsSizeFunc(db.dir)
-		if diskSize <= 0 {
-			db.logger.Warn("Unable to retrieve filesystem size of database directory, skip percentage limitation and default to fixed size limitation", "dir", db.dir)
-		} else {
-			maxBytes = int64(float64(diskSize) * maxPercentage / 100)
-		}
-	}
+	maxBytes := db.sizeRetentionBytes(true)
 
 	// Size retention is disabled.
 	if maxBytes <= 0 {
