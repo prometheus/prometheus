@@ -336,6 +336,14 @@ func New(logger *slog.Logger, o *Options) *Handler {
 	if o.Parser == nil {
 		o.Parser = parser.NewParser(parser.Options{})
 	}
+	if o.Gatherer == nil {
+		o.Gatherer = prometheus.NewRegistry()
+	}
+
+	// Register the template metrics.
+	if o.Registerer != nil {
+		template.RegisterTemplateMetrics(o.Registerer)
+	}
 
 	m := newMetrics(o.Registerer)
 	router := route.New().
@@ -503,7 +511,13 @@ func New(logger *slog.Logger, o *Options) *Handler {
 	}
 
 	router.Get("/version", h.version)
-	router.Get("/metrics", promhttp.Handler().ServeHTTP)
+	metricsHandler := promhttp.HandlerFor(o.Gatherer, promhttp.HandlerOpts{})
+	if o.Registerer != nil {
+		// promhttp.Handler(), which this replaces, exposes the handler's own
+		// metrics as well.
+		metricsHandler = promhttp.InstrumentMetricHandler(o.Registerer, metricsHandler)
+	}
+	router.Get("/metrics", metricsHandler.ServeHTTP)
 
 	router.Get("/federate", readyf(httputil.CompressionHandler{
 		Handler: http.HandlerFunc(h.federation),

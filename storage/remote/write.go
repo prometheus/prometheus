@@ -22,7 +22,6 @@ import (
 	"time"
 
 	"github.com/prometheus/client_golang/prometheus"
-	"github.com/prometheus/client_golang/prometheus/promauto"
 	"github.com/prometheus/common/promslog"
 
 	"github.com/prometheus/prometheus/config"
@@ -33,27 +32,6 @@ import (
 	"github.com/prometheus/prometheus/storage"
 	"github.com/prometheus/prometheus/tsdb/record"
 	"github.com/prometheus/prometheus/tsdb/wlog"
-)
-
-var (
-	samplesIn = promauto.NewCounter(prometheus.CounterOpts{
-		Namespace: namespace,
-		Subsystem: subsystem,
-		Name:      "samples_in_total",
-		Help:      "Samples in to remote storage, compare to samples out for queue managers. Deprecated, check prometheus_wal_watcher_records_read_total and prometheus_remote_storage_samples_dropped_total",
-	})
-	exemplarsIn = promauto.NewCounter(prometheus.CounterOpts{
-		Namespace: namespace,
-		Subsystem: subsystem,
-		Name:      "exemplars_in_total",
-		Help:      "Exemplars in to remote storage, compare to exemplars out for queue managers. Deprecated, check prometheus_wal_watcher_records_read_total and prometheus_remote_storage_exemplars_dropped_total",
-	})
-	histogramsIn = promauto.NewCounter(prometheus.CounterOpts{
-		Namespace: namespace,
-		Subsystem: subsystem,
-		Name:      "histograms_in_total",
-		Help:      "HistogramSamples in to remote storage, compare to histograms out for queue managers. Deprecated, check prometheus_wal_watcher_records_read_total and prometheus_remote_storage_histograms_dropped_total",
-	})
 )
 
 // WriteStorage represents all the remote write storage.
@@ -77,6 +55,9 @@ type WriteStorage struct {
 
 	// For timestampTracker.
 	highestTimestamp        *maxTimestamp
+	samplesInTotal          prometheus.Counter
+	exemplarsInTotal        prometheus.Counter
+	histogramsInTotal       prometheus.Counter
 	enableTypeAndUnitLabels bool
 }
 
@@ -105,11 +86,29 @@ func NewWriteStorage(logger *slog.Logger, reg prometheus.Registerer, dir string,
 				Help:      "Highest timestamp that has come into the remote storage via the Appender interface, in seconds since epoch. Initialized to 0 when no data has been received yet. Deprecated, check prometheus_remote_storage_queue_highest_timestamp_seconds which is more accurate.",
 			}),
 		},
+		samplesInTotal: prometheus.NewCounter(prometheus.CounterOpts{
+			Namespace: namespace,
+			Subsystem: subsystem,
+			Name:      "samples_in_total",
+			Help:      "Samples in to remote storage, compare to samples out for queue managers. Deprecated, check prometheus_wal_watcher_records_read_total and prometheus_remote_storage_samples_dropped_total",
+		}),
+		exemplarsInTotal: prometheus.NewCounter(prometheus.CounterOpts{
+			Namespace: namespace,
+			Subsystem: subsystem,
+			Name:      "exemplars_in_total",
+			Help:      "Exemplars in to remote storage, compare to exemplars out for queue managers. Deprecated, check prometheus_wal_watcher_records_read_total and prometheus_remote_storage_exemplars_dropped_total",
+		}),
+		histogramsInTotal: prometheus.NewCounter(prometheus.CounterOpts{
+			Namespace: namespace,
+			Subsystem: subsystem,
+			Name:      "histograms_in_total",
+			Help:      "HistogramSamples in to remote storage, compare to histograms out for queue managers. Deprecated, check prometheus_wal_watcher_records_read_total and prometheus_remote_storage_histograms_dropped_total",
+		}),
 		recordBuf:               record.NewBuffersPool(),
 		enableTypeAndUnitLabels: enableTypeAndUnitLabels,
 	}
 	if reg != nil {
-		reg.MustRegister(rws.highestTimestamp)
+		reg.MustRegister(rws.highestTimestamp, rws.samplesInTotal, rws.exemplarsInTotal, rws.histogramsInTotal, rws.interner.noReferenceReleases)
 	}
 	go rws.run()
 	return rws
@@ -295,6 +294,10 @@ func (rws *WriteStorage) Close() error {
 
 	if rws.reg != nil {
 		rws.reg.Unregister(rws.highestTimestamp.Gauge)
+		rws.reg.Unregister(rws.samplesInTotal)
+		rws.reg.Unregister(rws.exemplarsInTotal)
+		rws.reg.Unregister(rws.histogramsInTotal)
+		rws.reg.Unregister(rws.interner.noReferenceReleases)
 	}
 
 	return nil
@@ -373,9 +376,9 @@ func (*timestampTracker) UpdateMetadata(storage.SeriesRef, labels.Labels, metada
 func (t *baseTimestampTracker) Commit() error {
 	t.writeStorage.samplesIn.incr(t.samples + t.exemplars + t.histograms)
 
-	samplesIn.Add(float64(t.samples))
-	exemplarsIn.Add(float64(t.exemplars))
-	histogramsIn.Add(float64(t.histograms))
+	t.writeStorage.samplesInTotal.Add(float64(t.samples))
+	t.writeStorage.exemplarsInTotal.Add(float64(t.exemplars))
+	t.writeStorage.histogramsInTotal.Add(float64(t.histograms))
 	t.highestRecvTimestamp.Set(float64(t.highestTimestamp / 1000))
 	return nil
 }

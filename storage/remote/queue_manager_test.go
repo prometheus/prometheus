@@ -771,7 +771,7 @@ func TestReleaseNoninternedString(t *testing.T) {
 				m.SeriesReset(1)
 			}
 
-			metric := client_testutil.ToFloat64(noReferenceReleases)
+			metric := client_testutil.ToFloat64(m.interner.noReferenceReleases)
 			require.Equal(t, 0.0, metric, "expected there to be no calls to release for strings that were not already interned: %d", int(metric))
 		})
 	}
