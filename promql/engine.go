@@ -1293,6 +1293,8 @@ type EvalNodeHelper struct {
 	Ts int64
 	// Vector that can be used for output.
 	Out Vector
+	// Lookback delta for this query.
+	LookbackDelta time.Duration
 
 	// Caches.
 	// funcHistogramQuantile and funcHistogramFraction for classic histograms.
@@ -1504,7 +1506,7 @@ func (ev *evaluator) rangeEval(ctx context.Context, matching *parser.VectorMatch
 			biggestLen = len(matrixes[i])
 		}
 	}
-	enh := &EvalNodeHelper{Out: make(Vector, 0, biggestLen), enableDelayedNameRemoval: ev.enableDelayedNameRemoval}
+	enh := &EvalNodeHelper{Out: make(Vector, 0, biggestLen), LookbackDelta: ev.lookbackDelta, enableDelayedNameRemoval: ev.enableDelayedNameRemoval}
 	type seriesAndTimestamp struct {
 		Series
 		ts int64
@@ -1662,7 +1664,7 @@ func (ev *evaluator) rangeEvalAgg(ctx context.Context, aggExpr *parser.Aggregate
 
 	var annos annotations.Annotations
 
-	enh := &EvalNodeHelper{enableDelayedNameRemoval: ev.enableDelayedNameRemoval}
+	enh := &EvalNodeHelper{LookbackDelta: ev.lookbackDelta, enableDelayedNameRemoval: ev.enableDelayedNameRemoval}
 	tempNumSamples := ev.currentSamples
 
 	// Create a mapping from input series to output groups.
@@ -1870,6 +1872,8 @@ func (ev *evaluator) smoothSeries(series []storage.Series, offset time.Duration,
 			} else {
 				// Binary search for the first index with T >= dataTS.
 				i := sort.Search(len(floats), func(i int) bool { return floats[i].T >= dataTS })
+
+				// TODO: for counters, detect start timestamp resets and adjust interpolation accordingly.
 
 				switch {
 				case i < len(floats) && floats[i].T == dataTS:
@@ -2306,7 +2310,7 @@ func (ev *evaluator) eval(ctx context.Context, expr parser.Expr) (parser.Value, 
 		var histograms []HPoint
 		var prevSS *Series
 		inMatrix := make(Matrix, 1)
-		enh := &EvalNodeHelper{Out: make(Vector, 0, 1), enableDelayedNameRemoval: ev.enableDelayedNameRemoval}
+		enh := &EvalNodeHelper{Out: make(Vector, 0, 1), LookbackDelta: ev.lookbackDelta, enableDelayedNameRemoval: ev.enableDelayedNameRemoval}
 		// Process all the calls for one time series at a time.
 		// For anchored and smoothed selectors, we need to iterate over a
 		// larger range than the query range to account for the lookback delta.
@@ -2924,15 +2928,19 @@ func (ev *evaluator) matrixSelector(ctx context.Context, node *parser.MatrixSele
 		matrixMaxt  = maxt
 		matrix      = make(Matrix, 0, len(vs.Series))
 		bufferRange = durationMilliseconds(node.Range)
+
+		retrieveStartTimestamps = false
 	)
 	switch {
 	case vs.Anchored:
 		bufferRange += durationMilliseconds(ev.lookbackDelta)
 		mint -= durationMilliseconds(ev.lookbackDelta)
+		retrieveStartTimestamps = true
 	case vs.Smoothed:
 		bufferRange += 2 * durationMilliseconds(ev.lookbackDelta)
 		mint -= durationMilliseconds(ev.lookbackDelta)
 		maxt += durationMilliseconds(ev.lookbackDelta)
+		retrieveStartTimestamps = true
 	}
 	it := storage.NewBuffer(bufferRange)
 	ws, err := checkAndExpandSeriesSet(ctx, node)
@@ -2952,18 +2960,30 @@ func (ev *evaluator) matrixSelector(ctx context.Context, node *parser.MatrixSele
 			Metric: series[i].Labels(),
 		}
 
-		ss.Floats, ss.Histograms, _ = ev.matrixIterSlice(it, mint, maxt, nil, nil, nil)
+		var startTimestamps *StartTimestamps
+		if ev.useStartTimestamps && retrieveStartTimestamps {
+			startTimestamps = &StartTimestamps{}
+		}
+		ss.Floats, ss.Histograms, startTimestamps = ev.matrixIterSlice(it, mint, maxt, nil, nil, startTimestamps)
 		switch {
 		case vs.Anchored:
 			if ss.Histograms != nil {
 				ev.errorf("anchored modifier is not supported with histograms")
 			}
-			ss.Floats = extendFloats(ss.Floats, matrixMint, matrixMaxt, false)
+			var sts []int64
+			if startTimestamps != nil {
+				sts = startTimestamps.Floats
+			}
+			ss.Floats = extendFloats(ss.Floats, sts, matrixMint, matrixMaxt, mint, false)
 		case vs.Smoothed:
 			if ss.Histograms != nil {
 				ev.errorf("smoothed modifier is not supported with histograms")
 			}
-			ss.Floats = extendFloats(ss.Floats, matrixMint, matrixMaxt, true)
+			var sts []int64
+			if startTimestamps != nil {
+				sts = startTimestamps.Floats
+			}
+			ss.Floats = extendFloats(ss.Floats, sts, matrixMint, matrixMaxt, mint, true)
 		}
 		totalSize := int64(len(ss.Floats)) + int64(totalHPointSize(ss.Histograms))
 		ev.samplesStats.IncrementSamplesAtTimestamp(ev.startTimestamp, totalSize)
@@ -4979,7 +4999,13 @@ func (ev *evaluator) gatherVector(ts int64, input Matrix, output Vector, bufHelp
 
 // extendFloats extends the floats to the given mint and maxt.
 // This function is used with matrix selectors that are smoothed or anchored.
-func extendFloats(floats []FPoint, mint, maxt int64, smoothed bool) []FPoint {
+func extendFloats(
+	floats []FPoint,
+	startTimestamps []int64,
+	mint, maxt int64,
+	lookbackStart int64,
+	smoothed bool,
+) []FPoint {
 	// Nothing to extend. Return floats as-is so the caller can still hand it
 	// back to the pool.
 	if len(floats) == 0 {
@@ -4998,8 +5024,8 @@ func extendFloats(floats []FPoint, mint, maxt int64, smoothed bool) []FPoint {
 	}
 
 	// TODO: detect if the sample is a counter, based on __type__ or metadata.
-	left := pickOrInterpolateLeft(floats, firstSampleIndex, mint, smoothed, false)
-	right := pickOrInterpolateRight(floats, lastSampleIndex, maxt, smoothed, false)
+	left, _ := pickOrInterpolateLeft(floats, startTimestamps, firstSampleIndex, mint, lookbackStart, smoothed, false)
+	right, _ := pickOrInterpolateRight(floats, startTimestamps, lastSampleIndex, maxt, lookbackStart, smoothed, false)
 
 	// Filter out samples at boundaries or outside the range.
 	if floats[firstSampleIndex].T <= mint {
