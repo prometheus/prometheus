@@ -59,6 +59,7 @@ const getPathPrefix = (path: string) => {
     "/config",
     "/alertmanager-discovery",
     "/agent",
+    "/remote-write",
   ];
 
   const pagePath = pagePaths.find((p) => path.endsWith(p));
