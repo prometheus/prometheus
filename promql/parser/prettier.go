@@ -76,7 +76,7 @@ func (e *BinaryExpr) Pretty(level int) string {
 	}
 
 	matching := e.getMatchingStr()
-	return fmt.Sprintf("%s\n%s%s%s%s\n%s", e.LHS.Pretty(level+1), indent(level), e.Op, returnBool, matching, e.RHS.Pretty(level+1))
+	return fmt.Sprintf("%s\n%s%s%s%s\n%s", e.lhs().Pretty(level+1), indent(level), e.Op, returnBool, matching, e.RHS.Pretty(level+1))
 }
 
 func (e *DurationExpr) Pretty(int) string {

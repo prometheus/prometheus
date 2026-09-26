@@ -16,6 +16,7 @@ package parser
 import (
 	"bytes"
 	"fmt"
+	"math"
 	"sort"
 	"strconv"
 	"strings"
@@ -138,7 +139,32 @@ func (node *BinaryExpr) returnBool() string {
 
 func (node *BinaryExpr) String() string {
 	matching := node.getMatchingStr()
-	return node.LHS.String() + " " + node.Op.String() + node.returnBool() + matching + " " + node.RHS.String()
+	return node.lhs().String() + " " + node.Op.String() + node.returnBool() + matching + " " + node.RHS.String()
+}
+
+// lhs returns the left operand to print, in parentheses if it is the base of
+// ^ and prints with a leading sign. ^ binds tighter than a unary sign, so a
+// bare +Inf ^ 2 or -x ^ 2 would parse back as the sign applied to the power.
+func (node *BinaryExpr) lhs() Expr {
+	if node.Op == POW && printsWithSign(node.LHS) {
+		return &ParenExpr{Expr: node.LHS}
+	}
+	return node.LHS
+}
+
+// printsWithSign reports whether e's String() may start with + or -. It errs
+// towards true: a NaN or a zero duration with the sign bit set gets harmless
+// parentheses.
+func printsWithSign(e Expr) bool {
+	switch e := e.(type) {
+	case *NumberLiteral:
+		return math.Signbit(e.Val) || math.IsInf(e.Val, 1)
+	case *UnaryExpr:
+		return true
+	case *StepInvariantExpr:
+		return printsWithSign(e.Expr)
+	}
+	return false
 }
 
 func (node *BinaryExpr) ShortString() string {
