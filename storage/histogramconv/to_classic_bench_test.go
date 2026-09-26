@@ -11,7 +11,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-package storage
+package histogramconv
 
 import (
 	"context"
@@ -23,13 +23,14 @@ import (
 
 	"github.com/prometheus/prometheus/model/histogram"
 	"github.com/prometheus/prometheus/model/labels"
+	"github.com/prometheus/prometheus/storage"
 	"github.com/prometheus/prometheus/tsdb/chunks"
 )
 
 // buildBenchNHCBSeries mirrors the prom-bench synthetic workload: numSeries
 // histograms, each with numBuckets custom buckets, each carrying numSamples
 // raw points (a 5m range at a 1m scrape interval yields ~6 raw samples).
-func buildBenchNHCBSeries(numSeries, numBuckets, numSamples int) []Series {
+func buildBenchNHCBSeries(numSeries, numBuckets, numSamples int) []storage.Series {
 	customValues := make([]float64, numBuckets)
 	for i := range customValues {
 		customValues[i] = float64(i + 1)
@@ -40,7 +41,7 @@ func buildBenchNHCBSeries(numSeries, numBuckets, numSamples int) []Series {
 	positiveBuckets := make([]int64, numBuckets)
 	positiveBuckets[0] = 1
 
-	series := make([]Series, numSeries)
+	series := make([]storage.Series, numSeries)
 	for i := range numSeries {
 		lset := labels.FromStrings(
 			"__name__", "bench_request_duration_seconds",
@@ -65,7 +66,7 @@ func buildBenchNHCBSeries(numSeries, numBuckets, numSamples int) []Series {
 				},
 			}
 		}
-		series[i] = NewListSeries(lset, samples)
+		series[i] = storage.NewListSeries(lset, samples)
 	}
 	return series
 }
@@ -79,7 +80,7 @@ func benchmarkNHCBAsClassicSelect(b *testing.B, suffix string) {
 	nhcbSeries := buildBenchNHCBSeries(numSeries, numBuckets, numSamples)
 
 	mock := &nhcbMockQuerier{
-		classicSeries: []Series{},
+		classicSeries: []storage.Series{},
 		nhcbSeries:    nhcbSeries,
 	}
 	q := NewNHCBAsClassicQuerier(mock)

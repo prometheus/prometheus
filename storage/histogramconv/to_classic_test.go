@@ -11,7 +11,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-package storage
+package histogramconv
 
 import (
 	"context"
@@ -28,6 +28,7 @@ import (
 	"github.com/prometheus/prometheus/model/histogram"
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/model/value"
+	"github.com/prometheus/prometheus/storage"
 	"github.com/prometheus/prometheus/tsdb/chunkenc"
 	"github.com/prometheus/prometheus/tsdb/chunks"
 	"github.com/prometheus/prometheus/util/annotations"
@@ -105,43 +106,43 @@ func TestNHCBAsClassicQuerier_Select(t *testing.T) {
 	tests := []struct {
 		name              string
 		queryMatchers     []*labels.Matcher
-		classicSeries     []Series
-		nhcbSeries        []Series
-		passthroughSeries []Series
+		classicSeries     []storage.Series
+		nhcbSeries        []storage.Series
+		passthroughSeries []storage.Series
 		expectedCount     int
 		expectedSuffix    string
 	}{
 		{
 			name:          "non-histogram query passes through",
 			queryMatchers: []*labels.Matcher{labels.MustNewMatcher(labels.MatchEqual, model.MetricNameLabel, "my_gauge")},
-			passthroughSeries: []Series{
-				NewListSeries(labels.FromStrings("__name__", "my_gauge"), []chunks.Sample{fSample{t: 1, f: 42}}),
+			passthroughSeries: []storage.Series{
+				storage.NewListSeries(labels.FromStrings("__name__", "my_gauge"), []chunks.Sample{fSample{t: 1, f: 42}}),
 			},
 			expectedCount: 1,
 		},
 		{
 			name:          "classic histogram exists - return classic",
 			queryMatchers: []*labels.Matcher{labels.MustNewMatcher(labels.MatchEqual, model.MetricNameLabel, "http_requests_bucket")},
-			classicSeries: []Series{
-				NewListSeries(labels.FromStrings("__name__", "http_requests_bucket", "le", "1"), []chunks.Sample{fSample{t: 1, f: 5}}),
+			classicSeries: []storage.Series{
+				storage.NewListSeries(labels.FromStrings("__name__", "http_requests_bucket", "le", "1"), []chunks.Sample{fSample{t: 1, f: 5}}),
 			},
 			expectedCount: 1,
 		},
 		{
 			name:          "histogram with regex exists - return classic",
 			queryMatchers: []*labels.Matcher{labels.MustNewMatcher(labels.MatchRegexp, model.MetricNameLabel, ".+_requests_bucket")},
-			classicSeries: []Series{},
-			nhcbSeries: []Series{
-				NewListSeries(labels.FromStrings("__name__", "http_requests"), []chunks.Sample{hSample{t: 1, h: nhcb}}),
+			classicSeries: []storage.Series{},
+			nhcbSeries: []storage.Series{
+				storage.NewListSeries(labels.FromStrings("__name__", "http_requests"), []chunks.Sample{hSample{t: 1, h: nhcb}}),
 			},
 			expectedCount: 4,
 		},
 		{
 			name:          "no classic - convert NHCB to bucket series",
 			queryMatchers: []*labels.Matcher{labels.MustNewMatcher(labels.MatchEqual, model.MetricNameLabel, "http_requests_bucket")},
-			classicSeries: []Series{},
-			nhcbSeries: []Series{
-				NewListSeries(labels.FromStrings("__name__", "http_requests"), []chunks.Sample{hSample{t: 1, h: nhcb}}),
+			classicSeries: []storage.Series{},
+			nhcbSeries: []storage.Series{
+				storage.NewListSeries(labels.FromStrings("__name__", "http_requests"), []chunks.Sample{hSample{t: 1, h: nhcb}}),
 			},
 			expectedCount:  4,
 			expectedSuffix: "_bucket",
@@ -149,9 +150,9 @@ func TestNHCBAsClassicQuerier_Select(t *testing.T) {
 		{
 			name:          "no classic - convert NHCB to count series",
 			queryMatchers: []*labels.Matcher{labels.MustNewMatcher(labels.MatchEqual, model.MetricNameLabel, "http_requests_count")},
-			classicSeries: []Series{},
-			nhcbSeries: []Series{
-				NewListSeries(labels.FromStrings("__name__", "http_requests"), []chunks.Sample{hSample{t: 1, h: nhcb}}),
+			classicSeries: []storage.Series{},
+			nhcbSeries: []storage.Series{
+				storage.NewListSeries(labels.FromStrings("__name__", "http_requests"), []chunks.Sample{hSample{t: 1, h: nhcb}}),
 			},
 			expectedCount:  1,
 			expectedSuffix: "_count",
@@ -159,9 +160,9 @@ func TestNHCBAsClassicQuerier_Select(t *testing.T) {
 		{
 			name:          "no classic - convert NHCB to sum series",
 			queryMatchers: []*labels.Matcher{labels.MustNewMatcher(labels.MatchEqual, model.MetricNameLabel, "http_requests_sum")},
-			classicSeries: []Series{},
-			nhcbSeries: []Series{
-				NewListSeries(labels.FromStrings("__name__", "http_requests"), []chunks.Sample{hSample{t: 1, h: nhcb}}),
+			classicSeries: []storage.Series{},
+			nhcbSeries: []storage.Series{
+				storage.NewListSeries(labels.FromStrings("__name__", "http_requests"), []chunks.Sample{hSample{t: 1, h: nhcb}}),
 			},
 			expectedCount:  1,
 			expectedSuffix: "_sum",
@@ -169,11 +170,11 @@ func TestNHCBAsClassicQuerier_Select(t *testing.T) {
 		{
 			name:          "both classic and NHCB - return both",
 			queryMatchers: []*labels.Matcher{labels.MustNewMatcher(labels.MatchEqual, model.MetricNameLabel, "http_requests_bucket")},
-			classicSeries: []Series{
-				NewListSeries(labels.FromStrings("__name__", "http_requests_bucket", "le", "1"), []chunks.Sample{fSample{t: 1, f: 5}}),
+			classicSeries: []storage.Series{
+				storage.NewListSeries(labels.FromStrings("__name__", "http_requests_bucket", "le", "1"), []chunks.Sample{fSample{t: 1, f: 5}}),
 			},
-			nhcbSeries: []Series{
-				NewListSeries(labels.FromStrings("__name__", "http_requests"), []chunks.Sample{hSample{t: 1, h: nhcb}}),
+			nhcbSeries: []storage.Series{
+				storage.NewListSeries(labels.FromStrings("__name__", "http_requests"), []chunks.Sample{hSample{t: 1, h: nhcb}}),
 			},
 			expectedCount:  5,
 			expectedSuffix: "_bucket",
@@ -181,8 +182,8 @@ func TestNHCBAsClassicQuerier_Select(t *testing.T) {
 		{
 			name:          "no classic and no NHCB - return empty",
 			queryMatchers: []*labels.Matcher{labels.MustNewMatcher(labels.MatchEqual, model.MetricNameLabel, "http_requests_bucket")},
-			classicSeries: []Series{},
-			nhcbSeries:    []Series{},
+			classicSeries: []storage.Series{},
+			nhcbSeries:    []storage.Series{},
 			expectedCount: 0,
 		},
 		{
@@ -191,9 +192,9 @@ func TestNHCBAsClassicQuerier_Select(t *testing.T) {
 				labels.MustNewMatcher(labels.MatchEqual, model.MetricNameLabel, "http_requests_bucket"),
 				labels.MustNewMatcher(labels.MatchEqual, labels.BucketLabel, "5.0"),
 			},
-			classicSeries: []Series{},
-			nhcbSeries: []Series{
-				NewListSeries(labels.FromStrings("__name__", "http_requests"), []chunks.Sample{hSample{t: 1, h: nhcb}}),
+			classicSeries: []storage.Series{},
+			nhcbSeries: []storage.Series{
+				storage.NewListSeries(labels.FromStrings("__name__", "http_requests"), []chunks.Sample{hSample{t: 1, h: nhcb}}),
 			},
 			expectedCount:  1,
 			expectedSuffix: "_bucket",
@@ -204,9 +205,9 @@ func TestNHCBAsClassicQuerier_Select(t *testing.T) {
 				labels.MustNewMatcher(labels.MatchEqual, model.MetricNameLabel, "http_requests_bucket"),
 				labels.MustNewMatcher(labels.MatchEqual, labels.BucketLabel, "+Inf"),
 			},
-			classicSeries: []Series{},
-			nhcbSeries: []Series{
-				NewListSeries(labels.FromStrings("__name__", "http_requests"), []chunks.Sample{hSample{t: 1, h: nhcb}}),
+			classicSeries: []storage.Series{},
+			nhcbSeries: []storage.Series{
+				storage.NewListSeries(labels.FromStrings("__name__", "http_requests"), []chunks.Sample{hSample{t: 1, h: nhcb}}),
 			},
 			expectedCount:  1,
 			expectedSuffix: "_bucket",
@@ -217,9 +218,9 @@ func TestNHCBAsClassicQuerier_Select(t *testing.T) {
 				labels.MustNewMatcher(labels.MatchEqual, model.MetricNameLabel, "http_requests_bucket"),
 				labels.MustNewMatcher(labels.MatchEqual, labels.BucketLabel, "99.0"),
 			},
-			classicSeries: []Series{},
-			nhcbSeries: []Series{
-				NewListSeries(labels.FromStrings("__name__", "http_requests"), []chunks.Sample{hSample{t: 1, h: nhcb}}),
+			classicSeries: []storage.Series{},
+			nhcbSeries: []storage.Series{
+				storage.NewListSeries(labels.FromStrings("__name__", "http_requests"), []chunks.Sample{hSample{t: 1, h: nhcb}}),
 			},
 			expectedCount:  0,
 			expectedSuffix: "_bucket",
@@ -230,9 +231,9 @@ func TestNHCBAsClassicQuerier_Select(t *testing.T) {
 				labels.MustNewMatcher(labels.MatchEqual, model.MetricNameLabel, "http_requests_bucket"),
 				labels.MustNewMatcher(labels.MatchRegexp, labels.BucketLabel, "1.0|10.0"),
 			},
-			classicSeries: []Series{},
-			nhcbSeries: []Series{
-				NewListSeries(labels.FromStrings("__name__", "http_requests"), []chunks.Sample{hSample{t: 1, h: nhcb}}),
+			classicSeries: []storage.Series{},
+			nhcbSeries: []storage.Series{
+				storage.NewListSeries(labels.FromStrings("__name__", "http_requests"), []chunks.Sample{hSample{t: 1, h: nhcb}}),
 			},
 			expectedCount:  2,
 			expectedSuffix: "_bucket",
@@ -243,9 +244,9 @@ func TestNHCBAsClassicQuerier_Select(t *testing.T) {
 				labels.MustNewMatcher(labels.MatchEqual, model.MetricNameLabel, "http_requests_bucket"),
 				labels.MustNewMatcher(labels.MatchNotEqual, labels.BucketLabel, "+Inf"),
 			},
-			classicSeries: []Series{},
-			nhcbSeries: []Series{
-				NewListSeries(labels.FromStrings("__name__", "http_requests"), []chunks.Sample{hSample{t: 1, h: nhcb}}),
+			classicSeries: []storage.Series{},
+			nhcbSeries: []storage.Series{
+				storage.NewListSeries(labels.FromStrings("__name__", "http_requests"), []chunks.Sample{hSample{t: 1, h: nhcb}}),
 			},
 			expectedCount:  3,
 			expectedSuffix: "_bucket",
@@ -287,10 +288,10 @@ func TestNHCBAsClassicQuerier_ConsistentOrder(t *testing.T) {
 	}
 
 	mock := &nhcbMockQuerier{
-		classicSeries: []Series{},
-		nhcbSeries: []Series{
-			NewListSeries(labels.FromStrings("__name__", "http_requests", "job", "api"), []chunks.Sample{hSample{t: 1, h: nhcb}}),
-			NewListSeries(labels.FromStrings("__name__", "http_requests", "job", "web"), []chunks.Sample{hSample{t: 1, h: nhcb}}),
+		classicSeries: []storage.Series{},
+		nhcbSeries: []storage.Series{
+			storage.NewListSeries(labels.FromStrings("__name__", "http_requests", "job", "api"), []chunks.Sample{hSample{t: 1, h: nhcb}}),
+			storage.NewListSeries(labels.FromStrings("__name__", "http_requests", "job", "web"), []chunks.Sample{hSample{t: 1, h: nhcb}}),
 		},
 	}
 	q := NewNHCBAsClassicQuerier(mock)
@@ -333,9 +334,9 @@ func TestNHCBAsClassicQuerier_FloatHistogram(t *testing.T) {
 	}
 
 	mock := &nhcbMockQuerier{
-		classicSeries: []Series{},
-		nhcbSeries: []Series{
-			NewListSeries(labels.FromStrings("__name__", "latency"), []chunks.Sample{fhSample{t: 1, fh: fhNHCB}}),
+		classicSeries: []storage.Series{},
+		nhcbSeries: []storage.Series{
+			storage.NewListSeries(labels.FromStrings("__name__", "latency"), []chunks.Sample{fhSample{t: 1, fh: fhNHCB}}),
 		},
 	}
 	q := NewNHCBAsClassicQuerier(mock)
@@ -374,13 +375,13 @@ func TestNHCBAsClassicQuerier_Staleness(t *testing.T) {
 
 	for _, tc := range []struct {
 		name     string
-		series   []Series
+		series   []storage.Series
 		matchers []*labels.Matcher
 		expected []string
 	}{
 		{
 			name: "stale marker",
-			series: []Series{NewListSeries(labels.FromStrings("__name__", "foo"), []chunks.Sample{
+			series: []storage.Series{storage.NewListSeries(labels.FromStrings("__name__", "foo"), []chunks.Sample{
 				hSample{t: 1, h: nhcb(1, 2)}, hSample{t: 2, h: staleMarker}, hSample{t: 3, h: nhcb(1, 2)},
 			})},
 			matchers: []*labels.Matcher{name("foo_bucket")},
@@ -392,7 +393,7 @@ func TestNHCBAsClassicQuerier_Staleness(t *testing.T) {
 		},
 		{
 			name: "float stale marker",
-			series: []Series{NewListSeries(labels.FromStrings("__name__", "foo"), []chunks.Sample{
+			series: []storage.Series{storage.NewListSeries(labels.FromStrings("__name__", "foo"), []chunks.Sample{
 				hSample{t: 1, h: nhcb(1, 2)}, fSample{t: 2, f: math.Float64frombits(value.StaleNaN)},
 			})},
 			matchers: []*labels.Matcher{name("foo_count")},
@@ -400,7 +401,7 @@ func TestNHCBAsClassicQuerier_Staleness(t *testing.T) {
 		},
 		{
 			name: "consecutive stale markers result in a single one",
-			series: []Series{NewListSeries(labels.FromStrings("__name__", "foo"), []chunks.Sample{
+			series: []storage.Series{storage.NewListSeries(labels.FromStrings("__name__", "foo"), []chunks.Sample{
 				hSample{t: 1, h: nhcb(1, 2)}, hSample{t: 2, h: staleMarker}, hSample{t: 3, h: staleMarker}, hSample{t: 4, h: nhcb(1, 2)},
 			})},
 			matchers: []*labels.Matcher{name("foo_sum")},
@@ -408,7 +409,7 @@ func TestNHCBAsClassicQuerier_Staleness(t *testing.T) {
 		},
 		{
 			name: "bucket layout change",
-			series: []Series{NewListSeries(labels.FromStrings("__name__", "foo"), []chunks.Sample{
+			series: []storage.Series{storage.NewListSeries(labels.FromStrings("__name__", "foo"), []chunks.Sample{
 				hSample{t: 1, h: nhcb(1, 2)}, hSample{t: 2, h: nhcb(1, 4)},
 			})},
 			matchers: []*labels.Matcher{name("foo_bucket")},
@@ -421,7 +422,7 @@ func TestNHCBAsClassicQuerier_Staleness(t *testing.T) {
 		},
 		{
 			name: "sample that is not converted",
-			series: []Series{NewListSeries(labels.FromStrings("__name__", "foo"), []chunks.Sample{
+			series: []storage.Series{storage.NewListSeries(labels.FromStrings("__name__", "foo"), []chunks.Sample{
 				hSample{t: 1, h: nhcb(1, 2)}, hSample{t: 2, h: exponential}, hSample{t: 3, h: nhcb(1, 2)},
 			})},
 			matchers: []*labels.Matcher{name("foo_count")},
@@ -429,7 +430,7 @@ func TestNHCBAsClassicQuerier_Staleness(t *testing.T) {
 		},
 		{
 			name: "le matcher",
-			series: []Series{NewListSeries(labels.FromStrings("__name__", "foo"), []chunks.Sample{
+			series: []storage.Series{storage.NewListSeries(labels.FromStrings("__name__", "foo"), []chunks.Sample{
 				hSample{t: 1, h: nhcb(1, 2)}, hSample{t: 2, h: staleMarker},
 			})},
 			matchers: []*labels.Matcher{name("foo_bucket"), labels.MustNewMatcher(labels.MatchEqual, labels.BucketLabel, "+Inf")},
@@ -437,11 +438,11 @@ func TestNHCBAsClassicQuerier_Staleness(t *testing.T) {
 		},
 		{
 			name: "native histogram series go stale independently",
-			series: []Series{
-				NewListSeries(labels.FromStrings("__name__", "foo", "job", "a"), []chunks.Sample{
+			series: []storage.Series{
+				storage.NewListSeries(labels.FromStrings("__name__", "foo", "job", "a"), []chunks.Sample{
 					hSample{t: 1, h: nhcb(1, 2)}, hSample{t: 2, h: staleMarker},
 				}),
-				NewListSeries(labels.FromStrings("__name__", "foo", "job", "b"), []chunks.Sample{
+				storage.NewListSeries(labels.FromStrings("__name__", "foo", "job", "b"), []chunks.Sample{
 					hSample{t: 1, h: nhcb(1, 2)}, hSample{t: 2, h: nhcb(1, 2)},
 				}),
 			},
@@ -493,7 +494,7 @@ func TestNHCBAsClassicQuerier_Exponential(t *testing.T) {
 	for _, tc := range []struct {
 		name               string
 		includeExponential bool
-		series             []Series
+		series             []storage.Series
 		matchers           []*labels.Matcher
 		expected           []string
 	}{
@@ -501,7 +502,7 @@ func TestNHCBAsClassicQuerier_Exponential(t *testing.T) {
 			// The buckets are (0.5,1], (1,2] and (2,4].
 			name:               "exponential histogram",
 			includeExponential: true,
-			series: []Series{NewListSeries(labels.FromStrings("__name__", "foo"), []chunks.Sample{
+			series: []storage.Series{storage.NewListSeries(labels.FromStrings("__name__", "foo"), []chunks.Sample{
 				fhSample{t: 1, fh: exponential(0, 0, 1, 2, 1)},
 			})},
 			matchers: []*labels.Matcher{name("foo_bucket")},
@@ -516,7 +517,7 @@ func TestNHCBAsClassicQuerier_Exponential(t *testing.T) {
 		{
 			name:               "exponential histogram count",
 			includeExponential: true,
-			series: []Series{NewListSeries(labels.FromStrings("__name__", "foo"), []chunks.Sample{
+			series: []storage.Series{storage.NewListSeries(labels.FromStrings("__name__", "foo"), []chunks.Sample{
 				fhSample{t: 1, fh: exponential(0, 0, 1, 2, 1)},
 			})},
 			matchers: []*labels.Matcher{name("foo_count")},
@@ -525,7 +526,7 @@ func TestNHCBAsClassicQuerier_Exponential(t *testing.T) {
 		{
 			name:               "exponential histogram sum",
 			includeExponential: true,
-			series: []Series{NewListSeries(labels.FromStrings("__name__", "foo"), []chunks.Sample{
+			series: []storage.Series{storage.NewListSeries(labels.FromStrings("__name__", "foo"), []chunks.Sample{
 				fhSample{t: 1, fh: exponential(0, 0, 1, 2, 1)},
 			})},
 			matchers: []*labels.Matcher{name("foo_sum")},
@@ -533,7 +534,7 @@ func TestNHCBAsClassicQuerier_Exponential(t *testing.T) {
 		},
 		{
 			name: "exponential histograms are not converted by default",
-			series: []Series{NewListSeries(labels.FromStrings("__name__", "foo"), []chunks.Sample{
+			series: []storage.Series{storage.NewListSeries(labels.FromStrings("__name__", "foo"), []chunks.Sample{
 				fhSample{t: 1, fh: exponential(0, 0, 1, 2, 1)},
 			})},
 			matchers: []*labels.Matcher{name("foo_bucket")},
@@ -543,11 +544,11 @@ func TestNHCBAsClassicQuerier_Exponential(t *testing.T) {
 			// are (√2,2] and (2,2√2], which are (1,2] and (2,4] in schema 0.
 			name:               "all series are converted with the same boundaries",
 			includeExponential: true,
-			series: []Series{
-				NewListSeries(labels.FromStrings("__name__", "foo", "job", "a"), []chunks.Sample{
+			series: []storage.Series{
+				storage.NewListSeries(labels.FromStrings("__name__", "foo", "job", "a"), []chunks.Sample{
 					fhSample{t: 1, fh: exponential(0, 0, 1, 2)},
 				}),
-				NewListSeries(labels.FromStrings("__name__", "foo", "job", "b"), []chunks.Sample{
+				storage.NewListSeries(labels.FromStrings("__name__", "foo", "job", "b"), []chunks.Sample{
 					fhSample{t: 2, fh: exponential(1, 2, 1, 2)},
 				}),
 			},
@@ -571,7 +572,7 @@ func TestNHCBAsClassicQuerier_Exponential(t *testing.T) {
 			// its series stale at the second sample.
 			name:               "schema change",
 			includeExponential: true,
-			series: []Series{NewListSeries(labels.FromStrings("__name__", "foo"), []chunks.Sample{
+			series: []storage.Series{storage.NewListSeries(labels.FromStrings("__name__", "foo"), []chunks.Sample{
 				fhSample{t: 1, fh: exponential(1, 1, 1, 2)}, fhSample{t: 2, fh: exponential(0, 1, 3)},
 			})},
 			matchers: []*labels.Matcher{name("foo_bucket")},
@@ -584,11 +585,11 @@ func TestNHCBAsClassicQuerier_Exponential(t *testing.T) {
 		{
 			name:               "NHCB keep their own boundaries",
 			includeExponential: true,
-			series: []Series{
-				NewListSeries(labels.FromStrings("__name__", "foo", "job", "nhcb"), []chunks.Sample{
+			series: []storage.Series{
+				storage.NewListSeries(labels.FromStrings("__name__", "foo", "job", "nhcb"), []chunks.Sample{
 					fhSample{t: 1, fh: nhcb},
 				}),
-				NewListSeries(labels.FromStrings("__name__", "foo", "job", "exponential"), []chunks.Sample{
+				storage.NewListSeries(labels.FromStrings("__name__", "foo", "job", "exponential"), []chunks.Sample{
 					fhSample{t: 1, fh: exponential(0, 0, 1, 2, 1)},
 				}),
 			},
@@ -607,7 +608,7 @@ func TestNHCBAsClassicQuerier_Exponential(t *testing.T) {
 		{
 			name:               "stale marker",
 			includeExponential: true,
-			series: []Series{NewListSeries(labels.FromStrings("__name__", "foo"), []chunks.Sample{
+			series: []storage.Series{storage.NewListSeries(labels.FromStrings("__name__", "foo"), []chunks.Sample{
 				fhSample{t: 1, fh: exponential(0, 0, 1, 2, 1)}, fhSample{t: 2, fh: staleMarker}, fhSample{t: 3, fh: exponential(0, 0, 1, 2, 1)},
 			})},
 			matchers: []*labels.Matcher{name("foo_bucket"), labels.MustNewMatcher(labels.MatchEqual, labels.BucketLabel, "2.0")},
@@ -624,7 +625,7 @@ func TestNHCBAsClassicQuerier_Exponential(t *testing.T) {
 
 // samplesSummary returns a string per series of ss with its labels and
 // samples, e.g. `{__name__="foo_count"} 4@1 stale@2`.
-func samplesSummary(t *testing.T, ss SeriesSet) []string {
+func samplesSummary(t *testing.T, ss storage.SeriesSet) []string {
 	t.Helper()
 
 	var (
@@ -661,10 +662,32 @@ func samplesSummary(t *testing.T, ss SeriesSet) []string {
 	return summary
 }
 
+// mockSeriesSet returns the given series and warnings.
+type mockSeriesSet struct {
+	idx      int
+	series   []storage.Series
+	warnings annotations.Annotations
+}
+
+func newMockSeriesSet(series ...storage.Series) storage.SeriesSet {
+	return &mockSeriesSet{idx: -1, series: series}
+}
+
+func (m *mockSeriesSet) Next() bool {
+	m.idx++
+	return m.idx < len(m.series)
+}
+
+func (m *mockSeriesSet) At() storage.Series { return m.series[m.idx] }
+
+func (*mockSeriesSet) Err() error { return nil }
+
+func (m *mockSeriesSet) Warnings() annotations.Annotations { return m.warnings }
+
 type nhcbMockQuerier struct {
-	classicSeries     []Series
-	nhcbSeries        []Series
-	passthroughSeries []Series // For non-histogram queries
+	classicSeries     []storage.Series
+	nhcbSeries        []storage.Series
+	passthroughSeries []storage.Series // For non-histogram queries
 
 	// For error/warning injection in tests.
 	classicErr   error
@@ -672,7 +695,7 @@ type nhcbMockQuerier struct {
 	nhcbWarnings annotations.Annotations
 }
 
-func (m *nhcbMockQuerier) Select(_ context.Context, _ bool, _ *SelectHints, matchers ...*labels.Matcher) SeriesSet {
+func (m *nhcbMockQuerier) Select(_ context.Context, _ bool, _ *storage.SelectHints, matchers ...*labels.Matcher) storage.SeriesSet {
 	for _, matcher := range matchers {
 		if matcher.Name == model.MetricNameLabel {
 			// Check if this is a histogram suffix query (classic histogram query)
@@ -680,29 +703,29 @@ func (m *nhcbMockQuerier) Select(_ context.Context, _ bool, _ *SelectHints, matc
 				strings.HasSuffix(matcher.Value, "_count") ||
 				strings.HasSuffix(matcher.Value, "_sum") {
 				if m.classicErr != nil {
-					return ErrSeriesSet(m.classicErr)
+					return storage.ErrSeriesSet(m.classicErr)
 				}
-				return NewMockSeriesSet(m.classicSeries...)
+				return newMockSeriesSet(m.classicSeries...)
 			}
 			// If passthroughSeries is set, use it for non-histogram metric queries
 			if len(m.passthroughSeries) > 0 {
-				return NewMockSeriesSet(m.passthroughSeries...)
+				return newMockSeriesSet(m.passthroughSeries...)
 			}
 			// Base metric name query - return NHCB series
 			if m.nhcbErr != nil {
-				return ErrSeriesSet(m.nhcbErr)
+				return storage.ErrSeriesSet(m.nhcbErr)
 			}
 			return &mockSeriesSet{idx: -1, series: m.nhcbSeries, warnings: m.nhcbWarnings}
 		}
 	}
-	return NewMockSeriesSet()
+	return newMockSeriesSet()
 }
 
-func (*nhcbMockQuerier) LabelValues(context.Context, string, *LabelHints, ...*labels.Matcher) ([]string, annotations.Annotations, error) {
+func (*nhcbMockQuerier) LabelValues(context.Context, string, *storage.LabelHints, ...*labels.Matcher) ([]string, annotations.Annotations, error) {
 	return nil, nil, nil
 }
 
-func (*nhcbMockQuerier) LabelNames(context.Context, *LabelHints, ...*labels.Matcher) ([]string, annotations.Annotations, error) {
+func (*nhcbMockQuerier) LabelNames(context.Context, *storage.LabelHints, ...*labels.Matcher) ([]string, annotations.Annotations, error) {
 	return nil, nil, nil
 }
 
@@ -714,13 +737,13 @@ func (*nhcbMockQuerier) Close() error {
 // after Next() has been exhausted. This lets the pre-iteration Err() check pass
 // while still exercising error paths that are evaluated after draining the set.
 type deferredErrSeriesSet struct {
-	series    []Series
+	series    []storage.Series
 	idx       int
 	err       error
 	exhausted bool
 }
 
-func newDeferredErrSeriesSet(err error, series ...Series) SeriesSet {
+func newDeferredErrSeriesSet(err error, series ...storage.Series) storage.SeriesSet {
 	return &deferredErrSeriesSet{idx: -1, series: series, err: err}
 }
 
@@ -733,7 +756,7 @@ func (s *deferredErrSeriesSet) Next() bool {
 	return true
 }
 
-func (s *deferredErrSeriesSet) At() Series { return s.series[s.idx] }
+func (s *deferredErrSeriesSet) At() storage.Series { return s.series[s.idx] }
 
 func (s *deferredErrSeriesSet) Err() error {
 	if s.exhausted {
@@ -745,14 +768,14 @@ func (s *deferredErrSeriesSet) Err() error {
 func (*deferredErrSeriesSet) Warnings() annotations.Annotations { return nil }
 
 // nhcbSetQuerier routes suffix queries (_bucket/_count/_sum) to classicSet and
-// all other queries to nhcbSet. This lets tests inject arbitrary SeriesSet
+// all other queries to nhcbSet. This lets tests inject arbitrary storage.SeriesSet
 // implementations for either path without duplicating routing logic.
 type nhcbSetQuerier struct {
-	classicSet SeriesSet
-	nhcbSet    SeriesSet
+	classicSet storage.SeriesSet
+	nhcbSet    storage.SeriesSet
 }
 
-func (m *nhcbSetQuerier) Select(_ context.Context, _ bool, _ *SelectHints, matchers ...*labels.Matcher) SeriesSet {
+func (m *nhcbSetQuerier) Select(_ context.Context, _ bool, _ *storage.SelectHints, matchers ...*labels.Matcher) storage.SeriesSet {
 	for _, matcher := range matchers {
 		if matcher.Name == model.MetricNameLabel {
 			if strings.HasSuffix(matcher.Value, "_bucket") ||
@@ -763,14 +786,14 @@ func (m *nhcbSetQuerier) Select(_ context.Context, _ bool, _ *SelectHints, match
 			return m.nhcbSet
 		}
 	}
-	return NewMockSeriesSet()
+	return newMockSeriesSet()
 }
 
-func (*nhcbSetQuerier) LabelValues(context.Context, string, *LabelHints, ...*labels.Matcher) ([]string, annotations.Annotations, error) {
+func (*nhcbSetQuerier) LabelValues(context.Context, string, *storage.LabelHints, ...*labels.Matcher) ([]string, annotations.Annotations, error) {
 	return nil, nil, nil
 }
 
-func (*nhcbSetQuerier) LabelNames(context.Context, *LabelHints, ...*labels.Matcher) ([]string, annotations.Annotations, error) {
+func (*nhcbSetQuerier) LabelNames(context.Context, *storage.LabelHints, ...*labels.Matcher) ([]string, annotations.Annotations, error) {
 	return nil, nil, nil
 }
 
@@ -789,21 +812,21 @@ func TestNHCBAsClassicQuerier_ErrorPropagation(t *testing.T) {
 
 	tests := []struct {
 		name    string
-		querier Querier
+		querier storage.Querier
 	}{
 		{
 			name: "classic set immediate error",
 			querier: &nhcbMockQuerier{
 				classicErr: testError,
-				nhcbSeries: []Series{
-					NewListSeries(labels.FromStrings("__name__", "http_requests"), []chunks.Sample{hSample{t: 1, h: nhcb}}),
+				nhcbSeries: []storage.Series{
+					storage.NewListSeries(labels.FromStrings("__name__", "http_requests"), []chunks.Sample{hSample{t: 1, h: nhcb}}),
 				},
 			},
 		},
 		{
 			name: "nhcb set immediate error",
 			querier: &nhcbMockQuerier{
-				classicSeries: []Series{},
+				classicSeries: []storage.Series{},
 				nhcbErr:       testError,
 			},
 		},
@@ -813,7 +836,7 @@ func TestNHCBAsClassicQuerier_ErrorPropagation(t *testing.T) {
 			// path inside nhcbToClassicSeriesSet.Next().
 			name: "nhcb set error during iteration inside nhcbToClassicSeriesSet",
 			querier: &nhcbSetQuerier{
-				classicSet: NewMockSeriesSet(),
+				classicSet: newMockSeriesSet(),
 				nhcbSet:    newDeferredErrSeriesSet(testError),
 			},
 		},
@@ -840,7 +863,7 @@ func TestNHCBAsClassicQuerier_WarningPropagation(t *testing.T) {
 		PositiveSpans:   []histogram.Span{{Offset: 0, Length: 2}},
 		PositiveBuckets: []int64{1, 1},
 	}
-	nhcbSeries := NewListSeries(
+	nhcbSeries := storage.NewListSeries(
 		labels.FromStrings("__name__", "http_requests"),
 		[]chunks.Sample{hSample{t: 1, h: nhcb}},
 	)
@@ -848,8 +871,8 @@ func TestNHCBAsClassicQuerier_WarningPropagation(t *testing.T) {
 	t.Run("nhcb set warnings propagate", func(t *testing.T) {
 		warn := annotations.New().Add(errors.New("nhcb warning"))
 		q := NewNHCBAsClassicQuerier(&nhcbMockQuerier{
-			classicSeries: []Series{},
-			nhcbSeries:    []Series{nhcbSeries},
+			classicSeries: []storage.Series{},
+			nhcbSeries:    []storage.Series{nhcbSeries},
 			nhcbWarnings:  warn,
 		})
 
@@ -863,13 +886,13 @@ func TestNHCBAsClassicQuerier_WarningPropagation(t *testing.T) {
 
 	t.Run("classic set warnings propagate", func(t *testing.T) {
 		warn := annotations.New().Add(errors.New("classic warning"))
-		classicSeries := []Series{NewListSeries(
+		classicSeries := []storage.Series{storage.NewListSeries(
 			labels.FromStrings("__name__", "http_requests_bucket", "le", "1"),
 			[]chunks.Sample{fSample{t: 1, f: 5}},
 		)}
 		q := NewNHCBAsClassicQuerier(&nhcbSetQuerier{
 			classicSet: &mockSeriesSet{idx: -1, series: classicSeries, warnings: warn},
-			nhcbSet:    NewMockSeriesSet(),
+			nhcbSet:    newMockSeriesSet(),
 		})
 
 		ss := q.Select(context.Background(), false, nil,
@@ -882,7 +905,7 @@ func TestNHCBAsClassicQuerier_WarningPropagation(t *testing.T) {
 
 	t.Run("non-histogram passthrough preserves warnings", func(t *testing.T) {
 		warn := annotations.New().Add(errors.New("passthrough warning"))
-		series := []Series{NewListSeries(labels.FromStrings("__name__", "my_gauge"), []chunks.Sample{fSample{t: 1, f: 1}})}
+		series := []storage.Series{storage.NewListSeries(labels.FromStrings("__name__", "my_gauge"), []chunks.Sample{fSample{t: 1, f: 1}})}
 		q := NewNHCBAsClassicQuerier(&nhcbSetQuerier{
 			nhcbSet: &mockSeriesSet{idx: -1, series: series, warnings: warn},
 		})

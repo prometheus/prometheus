@@ -11,7 +11,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-package storage
+package histogramconv
 
 import (
 	"context"
@@ -24,6 +24,7 @@ import (
 	"github.com/prometheus/prometheus/model/histogram"
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/model/value"
+	"github.com/prometheus/prometheus/storage"
 	"github.com/prometheus/prometheus/tsdb/chunkenc"
 	"github.com/prometheus/prometheus/tsdb/chunks"
 	"github.com/prometheus/prometheus/util/annotations"
@@ -62,10 +63,10 @@ import (
 //    single low resolution histogram lowers the resolution of all of them, and
 //    histograms with many buckets result in many classic series.
 
-// NHCBAsClassicQuerier wraps a Querier and converts NHCB (Native Histogram Custom Buckets)
+// NHCBAsClassicQuerier wraps a storage.Querier and converts NHCB (Native Histogram Custom Buckets)
 // queries to classic histogram format when classic series don't exist.
 type NHCBAsClassicQuerier struct {
-	Querier
+	storage.Querier
 
 	// includeExponential converts native histograms with an exponential
 	// schema, too, not only NHCB.
@@ -74,24 +75,24 @@ type NHCBAsClassicQuerier struct {
 
 // NewNHCBAsClassicQuerier returns a new querier that wraps the given querier
 // and converts NHCB to classic histogram format for queries.
-func NewNHCBAsClassicQuerier(q Querier) Querier {
+func NewNHCBAsClassicQuerier(q storage.Querier) storage.Querier {
 	return &NHCBAsClassicQuerier{Querier: q}
 }
 
-// NHCBAsClassicStorage wraps a Storage and applies NHCB-to-classic conversion
+// NHCBAsClassicStorage wraps a storage.Storage and applies NHCB-to-classic conversion
 // to queriers when enabled.
 type NHCBAsClassicStorage struct {
-	Storage
+	storage.Storage
 }
 
 // NewNHCBAsClassicStorage returns a new storage that wraps the given storage
 // and applies NHCB-to-classic conversion to queriers.
-func NewNHCBAsClassicStorage(s Storage) Storage {
+func NewNHCBAsClassicStorage(s storage.Storage) storage.Storage {
 	return &NHCBAsClassicStorage{Storage: s}
 }
 
-// Querier implements the Storage interface.
-func (s *NHCBAsClassicStorage) Querier(mint, maxt int64) (Querier, error) {
+// Querier implements the storage.Storage interface.
+func (s *NHCBAsClassicStorage) Querier(mint, maxt int64) (storage.Querier, error) {
 	q, err := s.Storage.Querier(mint, maxt)
 	if err != nil {
 		return nil, err
@@ -99,8 +100,8 @@ func (s *NHCBAsClassicStorage) Querier(mint, maxt int64) (Querier, error) {
 	return NewNHCBAsClassicQuerier(q), nil
 }
 
-// Select implements the Querier interface.
-func (q *NHCBAsClassicQuerier) Select(ctx context.Context, sortSeries bool, hints *SelectHints, matchers ...*labels.Matcher) SeriesSet {
+// Select implements the storage.Querier interface.
+func (q *NHCBAsClassicQuerier) Select(ctx context.Context, sortSeries bool, hints *storage.SelectHints, matchers ...*labels.Matcher) storage.SeriesSet {
 	nameMatcher, suffix, baseMatchers := extractHistogramSuffix(matchers)
 	if suffix == "" {
 		// Not a classic histogram query, pass through
@@ -117,16 +118,16 @@ func (q *NHCBAsClassicQuerier) Select(ctx context.Context, sortSeries bool, hint
 		return classicSet
 	}
 
-	var classicSeries []Series
+	var classicSeries []storage.Series
 	for classicSet.Next() {
 		classicSeries = append(classicSeries, classicSet.At())
 	}
 
 	if err := classicSet.Err(); err != nil {
-		return ErrSeriesSet(err)
+		return storage.ErrSeriesSet(err)
 	}
 
-	seriesSets := make([]SeriesSet, 0, 2)
+	seriesSets := make([]storage.SeriesSet, 0, 2)
 	if len(classicSeries) > 0 {
 		seriesSets = append(seriesSets, &bufferedSeriesSet{series: classicSeries, warnings: classicSet.Warnings()})
 	}
@@ -160,7 +161,7 @@ func (q *NHCBAsClassicQuerier) Select(ctx context.Context, sortSeries bool, hint
 
 // bufferedSeriesSet wraps a buffered list of series.
 type bufferedSeriesSet struct {
-	series   []Series
+	series   []storage.Series
 	idx      int
 	warnings annotations.Annotations
 }
@@ -173,7 +174,7 @@ func (b *bufferedSeriesSet) Next() bool {
 	return false
 }
 
-func (b *bufferedSeriesSet) At() Series {
+func (b *bufferedSeriesSet) At() storage.Series {
 	if b.idx == 0 || b.idx > len(b.series) {
 		return nil
 	}
@@ -243,7 +244,7 @@ func extractHistogramSuffix(matchers []*labels.Matcher) (*labels.Matcher, string
 }
 
 type multipleSeriesSet struct {
-	seriesSet []SeriesSet
+	seriesSet []storage.SeriesSet
 	idx       int
 }
 
@@ -258,7 +259,7 @@ func (m *multipleSeriesSet) Next() bool {
 	return true
 }
 
-func (m *multipleSeriesSet) At() Series {
+func (m *multipleSeriesSet) At() storage.Series {
 	return m.seriesSet[m.idx].At()
 }
 
@@ -281,14 +282,14 @@ func (m *multipleSeriesSet) Warnings() annotations.Annotations {
 
 // nhcbToClassicSeriesSet converts NHCB series to classic histogram series format.
 type nhcbToClassicSeriesSet struct {
-	nhcbSet   SeriesSet
+	nhcbSet   storage.SeriesSet
 	leMatcher *labels.Matcher
 	suffix    string
 	// includeExponential converts native histograms with an exponential
 	// schema, too, see NHCBAsClassicQuerier.
 	includeExponential bool
 
-	series []Series
+	series []storage.Series
 	idx    int
 	err    error
 }
@@ -327,7 +328,7 @@ type nativeHistogramSample struct {
 // convert drains the wrapped series set and converts the native histograms to
 // classic histogram series. It reports whether it succeeded.
 func (s *nhcbToClassicSeriesSet) convert() bool {
-	s.series = make([]Series, 0)
+	s.series = make([]storage.Series, 0)
 
 	nhSeries, ok := s.readNativeHistograms()
 	if !ok {
@@ -370,7 +371,7 @@ func (s *nhcbToClassicSeriesSet) convert() bool {
 			}
 		}
 
-		s.series = append(s.series, NewListSeries(data.labels, data.samples))
+		s.series = append(s.series, storage.NewListSeries(data.labels, data.samples))
 	}
 	return true
 }
@@ -413,7 +414,7 @@ func (s *nhcbToClassicSeriesSet) readNativeHistograms() ([]nativeHistogramSeries
 	return nhSeries, true
 }
 
-func (s *nhcbToClassicSeriesSet) At() Series {
+func (s *nhcbToClassicSeriesSet) At() storage.Series {
 	if s.idx == 0 || s.idx > len(s.series) {
 		return nil
 	}

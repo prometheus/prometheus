@@ -11,7 +11,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-package storage
+package histogramconv
 
 import (
 	"context"
@@ -27,6 +27,7 @@ import (
 	"github.com/prometheus/prometheus/model/histogram"
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/model/value"
+	"github.com/prometheus/prometheus/storage"
 	"github.com/prometheus/prometheus/tsdb/chunkenc"
 	"github.com/prometheus/prometheus/tsdb/chunks"
 	"github.com/prometheus/prometheus/util/annotations"
@@ -59,33 +60,33 @@ const classicSuffixesPattern = "(_bucket|_count|_sum)"
 // bucket cannot be parsed as a float.
 var errMalformedBucketLabel = errors.New("malformed bucket label")
 
-// ClassicAsNHCBQuerier wraps a Querier and converts classic histogram series
+// ClassicAsNHCBQuerier wraps a storage.Querier and converts classic histogram series
 // (_bucket, _count and _sum) into Native Histograms with Custom Buckets (NHCB)
 // whenever the base metric name is queried.
 type ClassicAsNHCBQuerier struct {
-	Querier
+	storage.Querier
 }
 
 // NewClassicAsNHCBQuerier returns a new querier that wraps the given querier
 // and converts classic histograms to NHCB for queries.
-func NewClassicAsNHCBQuerier(q Querier) Querier {
+func NewClassicAsNHCBQuerier(q storage.Querier) storage.Querier {
 	return &ClassicAsNHCBQuerier{Querier: q}
 }
 
-// ClassicAsNHCBStorage wraps a Storage and applies classic-to-NHCB conversion
+// ClassicAsNHCBStorage wraps a storage.Storage and applies classic-to-NHCB conversion
 // to queriers.
 type ClassicAsNHCBStorage struct {
-	Storage
+	storage.Storage
 }
 
 // NewClassicAsNHCBStorage returns a new storage that wraps the given storage
 // and applies classic-to-NHCB conversion to queriers.
-func NewClassicAsNHCBStorage(s Storage) Storage {
+func NewClassicAsNHCBStorage(s storage.Storage) storage.Storage {
 	return &ClassicAsNHCBStorage{Storage: s}
 }
 
-// Querier implements the Storage interface.
-func (s *ClassicAsNHCBStorage) Querier(mint, maxt int64) (Querier, error) {
+// Querier implements the storage.Storage interface.
+func (s *ClassicAsNHCBStorage) Querier(mint, maxt int64) (storage.Querier, error) {
 	q, err := s.Storage.Querier(mint, maxt)
 	if err != nil {
 		return nil, err
@@ -93,8 +94,8 @@ func (s *ClassicAsNHCBStorage) Querier(mint, maxt int64) (Querier, error) {
 	return NewClassicAsNHCBQuerier(q), nil
 }
 
-// Select implements the Querier interface.
-func (q *ClassicAsNHCBQuerier) Select(ctx context.Context, sortSeries bool, hints *SelectHints, matchers ...*labels.Matcher) SeriesSet {
+// Select implements the storage.Querier interface.
+func (q *ClassicAsNHCBQuerier) Select(ctx context.Context, sortSeries bool, hints *storage.SelectHints, matchers ...*labels.Matcher) storage.SeriesSet {
 	nameMatcher, baseMatchers := extractMetricNameMatcher(matchers)
 	classicNameMatcher := newClassicSuffixMatcher(nameMatcher)
 	if classicNameMatcher == nil {
@@ -115,15 +116,15 @@ func (q *ClassicAsNHCBQuerier) Select(ctx context.Context, sortSeries bool, hint
 		return nativeSet
 	}
 
-	var nativeSeries []Series
+	var nativeSeries []storage.Series
 	for nativeSet.Next() {
 		nativeSeries = append(nativeSeries, nativeSet.At())
 	}
 	if err := nativeSet.Err(); err != nil {
-		return ErrSeriesSet(err)
+		return storage.ErrSeriesSet(err)
 	}
 
-	seriesSets := make([]SeriesSet, 0, 2)
+	seriesSets := make([]storage.SeriesSet, 0, 2)
 	if len(nativeSeries) > 0 {
 		seriesSets = append(seriesSets, &bufferedSeriesSet{series: nativeSeries, warnings: nativeSet.Warnings()})
 	}
@@ -197,9 +198,9 @@ type nhcbGroup struct {
 
 // classicToNHCBSeriesSet converts classic histogram series into NHCB series.
 type classicToNHCBSeriesSet struct {
-	classicSet SeriesSet
+	classicSet storage.SeriesSet
 
-	series   []Series
+	series   []storage.Series
 	idx      int
 	err      error
 	warnings annotations.Annotations
@@ -225,7 +226,7 @@ func (s *classicToNHCBSeriesSet) Next() bool {
 // convert drains the wrapped series set and builds the NHCB series. It reports
 // whether it succeeded.
 func (s *classicToNHCBSeriesSet) convert() bool {
-	s.series = make([]Series, 0)
+	s.series = make([]storage.Series, 0)
 
 	var (
 		groups  []*nhcbGroup
@@ -339,7 +340,7 @@ func (s *classicToNHCBSeriesSet) convert() bool {
 		if len(samples) == 0 {
 			continue
 		}
-		s.series = append(s.series, NewListSeries(group.labels, samples))
+		s.series = append(s.series, storage.NewListSeries(group.labels, samples))
 	}
 	return true
 }
@@ -364,7 +365,7 @@ func lookupOrCreateGroup(groups *[]*nhcbGroup, byHash map[uint64][]int, lset lab
 	return group
 }
 
-func (s *classicToNHCBSeriesSet) At() Series {
+func (s *classicToNHCBSeriesSet) At() storage.Series {
 	if s.idx == 0 || s.idx > len(s.series) {
 		return nil
 	}

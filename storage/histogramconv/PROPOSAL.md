@@ -370,7 +370,7 @@ or interpolated, but:
 ## Action Plan
 
 * [ ] Agree on this document.
-* [ ] Move the prototype into its own package, without behaviour changes.
+* [x] Move the prototype into its own package, without behaviour changes.
 * [ ] Replace the three flags with `promql-histogram-conversion` and `--query.convert-histograms-from`, wired as an
       engine option.
 * [ ] Add the `__convert_stored_as__` and `__debug_stored_as__` control labels.

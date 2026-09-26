@@ -11,7 +11,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-package storage_test
+package histogramconv_test
 
 import (
 	"context"
@@ -28,6 +28,7 @@ import (
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/model/value"
 	"github.com/prometheus/prometheus/storage"
+	"github.com/prometheus/prometheus/storage/histogramconv"
 	"github.com/prometheus/prometheus/tsdb/chunkenc"
 	"github.com/prometheus/prometheus/util/teststorage"
 )
@@ -103,7 +104,7 @@ func TestNHClassicCompatQuerier(t *testing.T) {
 	}{
 		{
 			name:       "classic buckets, stored and converted from both NHCB and exponential histograms",
-			newQuerier: storage.NewNHClassicCompatQuerier,
+			newQuerier: histogramconv.NewNHClassicCompatQuerier,
 			matchers:   []*labels.Matcher{labels.MustNewMatcher(labels.MatchEqual, model.MetricNameLabel, "rpc_latency_seconds_bucket")},
 			expected: []string{
 				`{__name__="rpc_latency_seconds_bucket", job="classic", le="1"} 1@0 1@60000 stale@120000`,
@@ -122,7 +123,7 @@ func TestNHClassicCompatQuerier(t *testing.T) {
 		},
 		{
 			name:       "classic buckets filtered by le",
-			newQuerier: storage.NewNHClassicCompatQuerier,
+			newQuerier: histogramconv.NewNHClassicCompatQuerier,
 			matchers: []*labels.Matcher{
 				labels.MustNewMatcher(labels.MatchEqual, model.MetricNameLabel, "rpc_latency_seconds_bucket"),
 				labels.MustNewMatcher(labels.MatchEqual, labels.BucketLabel, "+Inf"),
@@ -135,7 +136,7 @@ func TestNHClassicCompatQuerier(t *testing.T) {
 		},
 		{
 			name:       "classic count",
-			newQuerier: storage.NewNHClassicCompatQuerier,
+			newQuerier: histogramconv.NewNHClassicCompatQuerier,
 			matchers:   []*labels.Matcher{labels.MustNewMatcher(labels.MatchEqual, model.MetricNameLabel, "rpc_latency_seconds_count")},
 			expected: []string{
 				`{__name__="rpc_latency_seconds_count", job="classic"} 4@0 4@60000 stale@120000`,
@@ -145,7 +146,7 @@ func TestNHClassicCompatQuerier(t *testing.T) {
 		},
 		{
 			name:       "native histograms, stored and converted from the classic histogram",
-			newQuerier: storage.NewNHClassicCompatQuerier,
+			newQuerier: histogramconv.NewNHClassicCompatQuerier,
 			matchers:   []*labels.Matcher{labels.MustNewMatcher(labels.MatchEqual, model.MetricNameLabel, "rpc_latency_seconds")},
 			expected: []string{
 				`{__name__="rpc_latency_seconds", job="classic"} {count:4, sum:6, [-Inf,1]:1, (1,2]:2, (2,+Inf]:1}@0 {count:4, sum:6, [-Inf,1]:1, (1,2]:2, (2,+Inf]:1}@60000 stale@120000`,
@@ -155,13 +156,13 @@ func TestNHClassicCompatQuerier(t *testing.T) {
 		},
 		{
 			name:       "other metrics are passed through",
-			newQuerier: storage.NewNHClassicCompatQuerier,
+			newQuerier: histogramconv.NewNHClassicCompatQuerier,
 			matchers:   []*labels.Matcher{labels.MustNewMatcher(labels.MatchEqual, model.MetricNameLabel, "up")},
 			expected:   []string{`{__name__="up", job="classic"} 1@0 1@60000`},
 		},
 		{
 			name:       "promql-nhcb-as-classic does not convert exponential histograms",
-			newQuerier: storage.NewNHCBAsClassicQuerier,
+			newQuerier: histogramconv.NewNHCBAsClassicQuerier,
 			matchers:   []*labels.Matcher{labels.MustNewMatcher(labels.MatchEqual, model.MetricNameLabel, "rpc_latency_seconds_bucket")},
 			expected: []string{
 				`{__name__="rpc_latency_seconds_bucket", job="classic", le="1"} 1@0 1@60000 stale@120000`,

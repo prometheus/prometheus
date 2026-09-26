@@ -11,21 +11,27 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-package promql_test
+package histogramconv_test
 
 import (
 	"testing"
 
+	"github.com/prometheus/prometheus/promql"
 	"github.com/prometheus/prometheus/promql/promqltest"
 	"github.com/prometheus/prometheus/storage"
+	"github.com/prometheus/prometheus/storage/histogramconv"
 	"github.com/prometheus/prometheus/util/teststorage"
 )
+
+func newTestEngine(t *testing.T) *promql.Engine {
+	return promqltest.NewTestEngine(t, false, 0, promqltest.DefaultMaxSamplesPerQuery)
+}
 
 // TestNHCBAsClassicCompatLayer covers the promql-nhcb-as-classic feature flag,
 // which lets queries for classic histogram series also read NHCB data.
 func TestNHCBAsClassicCompatLayer(t *testing.T) {
 	newStorage := func(t testing.TB) storage.Storage {
-		return storage.NewNHCBAsClassicStorage(teststorage.New(t))
+		return histogramconv.NewNHCBAsClassicStorage(teststorage.New(t))
 	}
 
 	for _, tc := range []struct {
@@ -208,7 +214,7 @@ eval instant at 10m count_over_time(rpc_latency_seconds_bucket[11m])
 // which lets queries for native histograms also read classic histogram data.
 func TestClassicAsNHCBCompatLayer(t *testing.T) {
 	newStorage := func(t testing.TB) storage.Storage {
-		return storage.NewClassicAsNHCBStorage(teststorage.New(t))
+		return histogramconv.NewClassicAsNHCBStorage(teststorage.New(t))
 	}
 
 	for _, tc := range []struct {
@@ -396,7 +402,7 @@ eval instant at 10m count_over_time(rpc_latency_seconds[11m])
 // ones, and native histogram queries also read classic histograms.
 func TestNHClassicCompatLayer(t *testing.T) {
 	newStorage := func(t testing.TB) storage.Storage {
-		return storage.NewNHClassicCompatStorage(teststorage.New(t))
+		return histogramconv.NewNHClassicCompatStorage(teststorage.New(t))
 	}
 
 	for _, tc := range []struct {

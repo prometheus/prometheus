@@ -73,6 +73,7 @@ import (
 	"github.com/prometheus/prometheus/rules"
 	"github.com/prometheus/prometheus/scrape"
 	"github.com/prometheus/prometheus/storage"
+	"github.com/prometheus/prometheus/storage/histogramconv"
 	"github.com/prometheus/prometheus/storage/remote"
 	"github.com/prometheus/prometheus/template"
 	"github.com/prometheus/prometheus/tracing"
@@ -971,11 +972,11 @@ func main() {
 	)
 	switch {
 	case cfg.enableNHClassicCompat:
-		wrappedStorage = storage.NewNHClassicCompatStorage(localStorage)
+		wrappedStorage = histogramconv.NewNHClassicCompatStorage(localStorage)
 	case cfg.enableNHCBasClassic:
-		wrappedStorage = storage.NewNHCBAsClassicStorage(localStorage)
+		wrappedStorage = histogramconv.NewNHCBAsClassicStorage(localStorage)
 	case cfg.enableClassicAsNHCB:
-		wrappedStorage = storage.NewClassicAsNHCBStorage(localStorage)
+		wrappedStorage = histogramconv.NewClassicAsNHCBStorage(localStorage)
 	}
 
 	var (

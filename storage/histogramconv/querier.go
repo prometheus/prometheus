@@ -11,15 +11,19 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-package storage
+// Package histogramconv converts between histogram representations at query
+// time, e.g. so that queries for classic histograms can read native histograms
+// with custom buckets (NHCB).
+package histogramconv
 
 import (
 	"context"
 
 	"github.com/prometheus/prometheus/model/labels"
+	"github.com/prometheus/prometheus/storage"
 )
 
-// NHClassicCompatQuerier wraps a Querier and makes native and classic
+// NHClassicCompatQuerier wraps a storage.Querier and makes native and classic
 // histograms interchangeable in queries, e.g. while migrating from one to the
 // other:
 //
@@ -41,16 +45,16 @@ import (
 // are returned in addition to the stored ones, even if both exist for the same
 // label set and timestamp.
 type NHClassicCompatQuerier struct {
-	Querier
+	storage.Querier
 
-	nativeAsClassic Querier
-	classicAsNative Querier
+	nativeAsClassic storage.Querier
+	classicAsNative storage.Querier
 }
 
 // NewNHClassicCompatQuerier returns a new querier that wraps the given querier
 // and converts native histograms to classic histograms and vice versa, see
 // NHClassicCompatQuerier.
-func NewNHClassicCompatQuerier(q Querier) Querier {
+func NewNHClassicCompatQuerier(q storage.Querier) storage.Querier {
 	return &NHClassicCompatQuerier{
 		Querier:         q,
 		nativeAsClassic: &NHCBAsClassicQuerier{Querier: q, includeExponential: true},
@@ -58,29 +62,29 @@ func NewNHClassicCompatQuerier(q Querier) Querier {
 	}
 }
 
-// Select implements the Querier interface.
-func (q *NHClassicCompatQuerier) Select(ctx context.Context, sortSeries bool, hints *SelectHints, matchers ...*labels.Matcher) SeriesSet {
+// Select implements the storage.Querier interface.
+func (q *NHClassicCompatQuerier) Select(ctx context.Context, sortSeries bool, hints *storage.SelectHints, matchers ...*labels.Matcher) storage.SeriesSet {
 	if _, suffix, _ := extractHistogramSuffix(matchers); suffix != "" {
 		return q.nativeAsClassic.Select(ctx, sortSeries, hints, matchers...)
 	}
 	return q.classicAsNative.Select(ctx, sortSeries, hints, matchers...)
 }
 
-// NHClassicCompatStorage wraps a Storage and applies the conversions of
+// NHClassicCompatStorage wraps a storage.Storage and applies the conversions of
 // NHClassicCompatQuerier to its queriers.
 type NHClassicCompatStorage struct {
-	Storage
+	storage.Storage
 }
 
 // NewNHClassicCompatStorage returns a new storage that wraps the given storage
 // and converts native histograms to classic histograms and vice versa in its
 // queriers, see NHClassicCompatQuerier.
-func NewNHClassicCompatStorage(s Storage) Storage {
+func NewNHClassicCompatStorage(s storage.Storage) storage.Storage {
 	return &NHClassicCompatStorage{Storage: s}
 }
 
-// Querier implements the Storage interface.
-func (s *NHClassicCompatStorage) Querier(mint, maxt int64) (Querier, error) {
+// Querier implements the storage.Storage interface.
+func (s *NHClassicCompatStorage) Querier(mint, maxt int64) (storage.Querier, error) {
 	q, err := s.Storage.Querier(mint, maxt)
 	if err != nil {
 		return nil, err
