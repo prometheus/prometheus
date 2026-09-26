@@ -422,6 +422,36 @@ Each series selector with a metric name equality matcher is converted in one dir
 
 Converted series are never converted back, so all conversions can be enabled at the same time.
 
+Two control labels give per selector control. Matchers on them are removed before selecting from
+the storage, and returned series never have them:
+
+* A `__convert_stored_as__` matcher selects the representations a selector reads, stored or
+  converted, overriding `--query.convert-histograms-from`. It is matched against `classic`, `nhcb`
+  and `nhe`: float samples are `classic`, native histograms with custom buckets `nhcb`, and those
+  with exponential buckets `nhe`, and converted samples have the representation they were
+  converted from. Several matchers must all match, and a matcher that matches none of the
+  representations selects nothing. Where a stored series changes to a representation the selector
+  does not read, it is marked stale.
+* `__debug_stored_as__="true"` adds a `__stored_as__` label to the returned series, holding the
+  representation their samples are stored as. A stored series whose samples change representation
+  is split into one series per representation. `__stored_as__` is a normal label, e.g.
+  `sum by (le)` drops it and `sum by (le, __stored_as__)` keeps it.
+
+For example, with `--query.convert-histograms-from=nhcb`:
+
+| Selector | Result |
+|---|---|
+| `foo_bucket` | Stored series, plus the series converted from NHCB. |
+| `foo_bucket{__convert_stored_as__="classic"}` | Stored series only. |
+| `foo_bucket{__convert_stored_as__="nhcb"}` | Only the series converted from NHCB. |
+| `foo_bucket{__convert_stored_as__="nhe"}` | Only the series converted from exponential histograms. |
+| `foo{__convert_stored_as__="nhe"}` | Stored exponential histograms only. |
+| `foo{__convert_stored_as__="classic"}` | Only the NHCB converted from classic series. |
+| `foo_bucket{__convert_stored_as__=~".*", __debug_stored_as__="true"}` | Stored series, plus the series converted from every representation, with `__stored_as__`. |
+
+As for any selector, at least one matcher besides the control matchers must not match the empty
+value. Where the feature is disabled, selectors with control matchers select nothing.
+
 Unlike NHCB, native histograms with an exponential schema have no fixed bucket boundaries. So that
 the converted `_bucket` series can be aggregated across series and over time, e.g. with
 `sum by (le)` or `rate()`, all exponential histograms selected by a selector are converted with the
@@ -452,5 +482,5 @@ Limitations:
   representations for the same labels and timestamps, e.g. while `always_scrape_classic_histograms`
   is enabled, queries fail with `vector cannot contain metrics with the same labelset`, and so do
   range functions such as `rate()` whose range covers samples of both representations.
-* The series to convert from are buffered in memory, and this memory is not accounted in
-  `--query.max-samples`.
+* The series to convert from, and the stored series of selectors with control matchers, are
+  buffered in memory, and this memory is not accounted in `--query.max-samples`.

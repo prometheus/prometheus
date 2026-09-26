@@ -359,10 +359,12 @@ type EngineOpts struct {
 	// EnableHistogramConversion converts between histogram representations at
 	// query time, e.g. so that selectors for classic histogram series also
 	// return the classic histogram series converted from native histograms,
-	// see the histogramconv package.
+	// see the histogramconv package. It also enables the control matchers of
+	// that package, e.g. __convert_stored_as__.
 	EnableHistogramConversion bool
 	// HistogramConversionFrom holds the histogram representations converted
-	// from, if EnableHistogramConversion is set.
+	// from, if EnableHistogramConversion is set, unless a
+	// __convert_stored_as__ matcher of a selector overrides them.
 	HistogramConversionFrom []histogramconv.Representation
 
 	// FeatureRegistry is the registry for tracking enabled/disabled features.

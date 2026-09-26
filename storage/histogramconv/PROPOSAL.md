@@ -373,7 +373,7 @@ or interpolated, but:
 * [x] Move the prototype into its own package, without behaviour changes.
 * [x] Replace the three flags with `promql-histogram-conversion` and `--query.convert-histograms-from`, wired as an
       engine option.
-* [ ] Add the `__convert_stored_as__` and `__debug_stored_as__` control labels.
+* [x] Add the `__convert_stored_as__` and `__debug_stored_as__` control labels.
 * [ ] Let stored data win, merging converted with stored series.
 * [ ] Account buffered samples in the query limits.
 * [ ] Show converted series, and interpret the control labels, in the metadata APIs.

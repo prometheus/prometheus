@@ -49,12 +49,13 @@ type nhcbGroup struct {
 // toNHCB converts the classic histogram series (_bucket, _count and _sum) of
 // ss to NHCB, one per label set without the le label. A classic histogram that
 // cannot be converted at a timestamp, e.g. because its buckets are not
-// cumulative, is skipped and reported in the returned annotations.
+// cumulative, is skipped and reported in the returned annotations. In debug
+// mode, the converted series have the StoredAsLabel, set to Classic.
 //
 // The NHCB is marked stale where all of its classic series are, e.g. because
 // the target went away. Otherwise the remaining series are converted, e.g.
 // because the bucket layout changed.
-func toNHCB(ss storage.SeriesSet) ([]*series, annotations.Annotations, error) {
+func toNHCB(ss storage.SeriesSet, debug bool) ([]*series, annotations.Annotations, error) {
 	var (
 		groups   []*nhcbGroup
 		byHash   = make(map[uint64][]int)
@@ -156,7 +157,11 @@ func toNHCB(ss storage.SeriesSet) ([]*series, annotations.Annotations, error) {
 		if len(samples) == 0 {
 			continue
 		}
-		converted = append(converted, &series{lset: group.labels, samples: samples})
+		lset := group.labels
+		if debug {
+			lset = withStoredAs(lset, Classic)
+		}
+		converted = append(converted, &series{lset: lset, samples: samples})
 	}
 	return converted, warnings, nil
 }

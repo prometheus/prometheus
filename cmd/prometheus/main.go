@@ -665,7 +665,7 @@ func main() {
 	serverOnlyFlag(a, "query.max-samples", "Maximum number of samples a single query can load into memory. Note that queries will fail if they try to load more samples than this into memory, so this also limits the number of samples a query can return.").
 		Default("50000000").IntVar(&cfg.queryMaxSamples)
 
-	serverOnlyFlag(a, "query.convert-histograms-from", "Comma separated histogram representations to convert from at query time: PromQL selectors for classic histogram series also return the ones converted from native histograms, and selectors for native histograms the ones converted from classic histograms. Nothing is stored. Valid options: classic, nhcb, nhe. Requires --enable-feature=promql-histogram-conversion.").
+	serverOnlyFlag(a, "query.convert-histograms-from", "Comma separated histogram representations to convert from at query time: PromQL selectors for classic histogram series also return the ones converted from native histograms, and selectors for native histograms the ones converted from classic histograms. Nothing is stored. A __convert_stored_as__ matcher overrides it per selector. Valid options: classic, nhcb, nhe. Requires --enable-feature=promql-histogram-conversion.").
 		StringsVar(&cfg.convertHistogramsFrom)
 
 	a.Flag("scrape.discovery-reload-interval", "Interval used by scrape manager to throttle target groups updates.").

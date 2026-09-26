@@ -596,6 +596,9 @@ func samplesSummary(t *testing.T, ss storage.SeriesSet) []string {
 				}
 			}
 			fmt.Fprintf(&sb, " %s@%d", v, it.AtT())
+			if st := it.AtST(); st != 0 {
+				fmt.Fprintf(&sb, "(st=%d)", st)
+			}
 		}
 		require.NoError(t, it.Err())
 		summary = append(summary, sb.String())

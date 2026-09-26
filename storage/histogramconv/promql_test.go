@@ -47,6 +47,12 @@ eval instant at 2m rpc_latency_seconds_count
 
 eval instant at 2m rpc_latency_seconds
 	rpc_latency_seconds{job="a"} {{schema:-53 sum:6 count:4 custom_values:[1 2] buckets:[1 2 1]}}
+
+# Control matchers are matched against the stored series, which do not have
+# the control labels.
+eval instant at 2m rpc_latency_seconds_count{__convert_stored_as__="classic"}
+
+eval instant at 2m rpc_latency_seconds_count{__debug_stored_as__="true"}
 `,
 		},
 		{
@@ -61,6 +67,35 @@ eval instant at 2m rpc_latency_seconds_count
 
 eval instant at 2m rpc_latency_seconds
 	rpc_latency_seconds{job="a"} {{schema:-53 sum:6 count:4 custom_values:[1 2] buckets:[1 2 1]}}
+
+# A control matcher enables conversions that the flag does not list.
+eval instant at 2m rpc_latency_seconds_count{__convert_stored_as__=~"classic|nhcb"}
+	rpc_latency_seconds_count{job="a"} 4
+	rpc_latency_seconds_count{job="b"} 4
+`,
+		},
+		{
+			// The representation of the stored series changes at 3m.
+			name: "none: debug splits a stored series by representation",
+			input: `
+load 1m
+	rpc_latency_seconds{job="a"}	{{schema:-53 sum:6 count:4 custom_values:[1] buckets:[1 3]}}x2 {{schema:0 sum:6 count:4 buckets:[1 2 1]}}x2
+
+eval instant at 2m rpc_latency_seconds{__debug_stored_as__="true"}
+	rpc_latency_seconds{job="a", __stored_as__="nhcb"} {{schema:-53 sum:6 count:4 custom_values:[1] buckets:[1 3]}}
+
+# The NHCB part is marked stale where the exponential histograms start.
+eval instant at 3m rpc_latency_seconds{__debug_stored_as__="true"}
+	rpc_latency_seconds{job="a", __stored_as__="nhe"} {{schema:0 sum:6 count:4 buckets:[1 2 1]}}
+
+eval instant at 2m rpc_latency_seconds{__convert_stored_as__="nhcb"}
+	rpc_latency_seconds{job="a"} {{schema:-53 sum:6 count:4 custom_values:[1] buckets:[1 3]}}
+
+eval instant at 3m rpc_latency_seconds{__convert_stored_as__="nhcb"}
+
+eval range from 0 to 5m step 1m count_over_time(rpc_latency_seconds{__debug_stored_as__="true"}[2m])
+	{job="a", __stored_as__="nhcb"} 1 2 2 1 _ _
+	{job="a", __stored_as__="nhe"} _ _ _ 1 2 2
 `,
 		},
 		{
@@ -233,6 +268,87 @@ eval instant at 10m count_over_time(rpc_latency_seconds_bucket[3m])
 # A range that covers both representations collides on the +Inf bucket.
 eval instant at 10m count_over_time(rpc_latency_seconds_bucket[11m])
 	expect fail msg: vector cannot contain metrics with the same labelset
+`,
+		},
+		{
+			// The rows of the selector table in PROPOSAL.md.
+			name:        "nhcb: control matchers select the representations per selector",
+			convertFrom: []histogramconv.Representation{histogramconv.NHCB},
+			input: `
+load 1m
+	rpc_latency_seconds_bucket{job="classic", le="1"}	1x5
+	rpc_latency_seconds_bucket{job="classic", le="+Inf"}	4x5
+	rpc_latency_seconds_count{job="classic"}	4x5
+	rpc_latency_seconds{job="nhcb"}	{{schema:-53 sum:6 count:4 custom_values:[1] buckets:[1 3]}}x5
+	rpc_latency_seconds{job="nhe"}	{{schema:0 sum:6 count:4 buckets:[1 2 1]}}x5
+
+# Stored series, plus the conversions of the flag.
+eval instant at 2m rpc_latency_seconds_count
+	rpc_latency_seconds_count{job="classic"} 4
+	rpc_latency_seconds_count{job="nhcb"} 4
+
+# Stored series only.
+eval instant at 2m rpc_latency_seconds_count{__convert_stored_as__="classic"}
+	rpc_latency_seconds_count{job="classic"} 4
+
+# Stored series, plus the series converted from NHCB.
+eval instant at 2m rpc_latency_seconds_count{__convert_stored_as__=~"classic|nhcb"}
+	rpc_latency_seconds_count{job="classic"} 4
+	rpc_latency_seconds_count{job="nhcb"} 4
+
+# Only the series converted from NHCB.
+eval instant at 2m rpc_latency_seconds_count{__convert_stored_as__="nhcb"}
+	rpc_latency_seconds_count{job="nhcb"} 4
+
+# Only the series converted from exponential histograms, although the flag
+# does not list them.
+eval instant at 2m rpc_latency_seconds_count{__convert_stored_as__="nhe"}
+	rpc_latency_seconds_count{job="nhe"} 4
+
+# Stored native histograms only.
+eval instant at 2m rpc_latency_seconds{__convert_stored_as__=~"nhcb|nhe"}
+	rpc_latency_seconds{job="nhcb"} {{schema:-53 sum:6 count:4 custom_values:[1] buckets:[1 3]}}
+	rpc_latency_seconds{job="nhe"} {{schema:0 sum:6 count:4 buckets:[1 2 1]}}
+
+# Stored exponential histograms only.
+eval instant at 2m rpc_latency_seconds{__convert_stored_as__="nhe"}
+	rpc_latency_seconds{job="nhe"} {{schema:0 sum:6 count:4 buckets:[1 2 1]}}
+
+# Only the NHCB converted from classic series.
+eval instant at 2m rpc_latency_seconds{__convert_stored_as__="classic"}
+	rpc_latency_seconds{job="classic"} {{schema:-53 count:4 custom_values:[1] buckets:[1 3]}}
+
+# Same as rpc_latency_seconds_count, with __stored_as__ on every series.
+eval instant at 2m rpc_latency_seconds_count{__debug_stored_as__="true"}
+	rpc_latency_seconds_count{job="classic", __stored_as__="classic"} 4
+	rpc_latency_seconds_count{job="nhcb", __stored_as__="nhcb"} 4
+
+# Stored series, plus the series converted from every representation, with
+# __stored_as__.
+eval instant at 2m rpc_latency_seconds_count{__convert_stored_as__=~".*", __debug_stored_as__="true"}
+	rpc_latency_seconds_count{job="classic", __stored_as__="classic"} 4
+	rpc_latency_seconds_count{job="nhcb", __stored_as__="nhcb"} 4
+	rpc_latency_seconds_count{job="nhe", __stored_as__="nhe"} 4
+
+# A matcher that matches no representation selects nothing.
+eval instant at 2m rpc_latency_seconds_count{__convert_stored_as__="nh"}
+
+# __stored_as__ is a normal label: aggregations drop it, unless it is listed.
+eval instant at 2m sum(rpc_latency_seconds_count{__convert_stored_as__=~".*", __debug_stored_as__="true"})
+	{} 12
+
+eval instant at 2m histogram_quantile(0.5, sum by (le, __stored_as__) (rpc_latency_seconds_bucket{__convert_stored_as__=~".*", __debug_stored_as__="true"}))
+	{__stored_as__="classic"} 1
+	{__stored_as__="nhcb"} 1
+	{__stored_as__="nhe"} 1.5
+
+# Matchers on __stored_as__ are matched against the stored series.
+eval instant at 2m rpc_latency_seconds_count{__stored_as__="nhcb"}
+
+# At least one matcher besides the control matchers must not match the empty
+# value.
+eval instant at 2m {__convert_stored_as__="nhcb"}
+	expect fail msg: expanding series: vector selector must contain at least one non-empty matcher besides __convert_stored_as__ and __debug_stored_as__
 `,
 		},
 		{

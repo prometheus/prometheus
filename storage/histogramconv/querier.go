@@ -37,6 +37,12 @@ import (
 // series only, so nothing is converted twice and all representations can be
 // converted from at the same time.
 //
+// Matchers on the ConvertStoredAsLabel override convertFrom per selector, and
+// select the representations of the stored samples to return, too. Matchers
+// on the DebugStoredAsLabel that match "true" add the StoredAsLabel to the
+// returned series. Both are removed before selecting from the wrapped
+// querier.
+//
 // Known limitations:
 //
 //   - Only Select converts. LabelNames and LabelValues return stored data
@@ -44,7 +50,8 @@ import (
 //   - Converted series are returned in addition to the stored ones, even if
 //     both exist for the same labels and timestamps, and they are returned
 //     after the stored ones, rather than sorted.
-//   - Converted series are buffered in memory before the first one is
+//   - Converted series, and stored series whose samples are filtered by
+//     representation, are buffered in memory before the first one is
 //     returned.
 func NewQuerier(q storage.Querier, convertFrom []Representation) storage.Querier {
 	return &querier{Querier: q, convertFrom: newRepresentations(convertFrom...)}
@@ -58,9 +65,14 @@ type querier struct {
 
 // Select implements the storage.Querier interface.
 func (q *querier) Select(ctx context.Context, sortSeries bool, hints *storage.SelectHints, matchers ...*labels.Matcher) storage.SeriesSet {
-	sel := newSelector(matchers, q.convertFrom)
-	if sel.from == 0 {
-		return q.Querier.Select(ctx, sortSeries, hints, matchers...)
+	sel, err := newSelector(matchers, q.convertFrom)
+	switch {
+	case err != nil:
+		return storage.ErrSeriesSet(err)
+	case sel.stored == 0:
+		return storage.EmptySeriesSet()
+	case sel.passThrough():
+		return q.Querier.Select(ctx, sortSeries, hints, sel.matchers...)
 	}
 	return &seriesSet{ctx: ctx, q: q.Querier, sortSeries: sortSeries, hints: hints, sel: sel}
 }
@@ -114,14 +126,31 @@ func (s *seriesSet) Warnings() annotations.Annotations { return s.warnings }
 // load selects the stored series and the ones to convert from, and converts
 // them.
 func (s *seriesSet) load() ([]storage.Series, error) {
-	var out []storage.Series
-	stored := s.q.Select(s.ctx, s.sortSeries, s.hints, s.sel.matchers...)
+	var (
+		out    []storage.Series
+		stored = s.q.Select(s.ctx, s.sortSeries, s.hints, s.sel.matchers...)
+		filter = s.sel.stored != allRepresentations || s.sel.debug
+		split  = storedSplitter{stored: s.sel.stored, debug: s.sel.debug}
+	)
 	for stored.Next() {
-		out = append(out, stored.At())
+		if !filter {
+			out = append(out, stored.At())
+			continue
+		}
+		parts, err := split.split(stored.At())
+		if err != nil {
+			return nil, err
+		}
+		for _, p := range parts {
+			out = append(out, storage.NewListSeries(p.lset, p.samples))
+		}
 	}
 	s.warnings.Merge(stored.Warnings())
 	if err := stored.Err(); err != nil {
 		return nil, err
+	}
+	if s.sel.from == 0 {
+		return out, nil
 	}
 
 	var (
@@ -130,10 +159,10 @@ func (s *seriesSet) load() ([]storage.Series, error) {
 		err       error
 	)
 	if s.sel.suffix != "" {
-		converted, err = toClassic(sources, s.sel.suffix, s.sel.from, s.sel.leMatchers)
+		converted, err = toClassic(sources, s.sel.suffix, s.sel.from, s.sel.leMatchers, s.sel.debug)
 	} else {
 		var ws annotations.Annotations
-		converted, ws, err = toNHCB(sources)
+		converted, ws, err = toNHCB(sources, s.sel.debug)
 		s.warnings.Merge(ws)
 	}
 	s.warnings.Merge(sources.Warnings())

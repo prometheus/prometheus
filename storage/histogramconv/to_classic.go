@@ -26,7 +26,9 @@ import (
 
 // toClassic converts the native histograms of ss, of the representations in
 // from, to the classic histogram series with the given suffix, and returns the
-// converted series whose le label matches all leMatchers.
+// converted series whose le label matches all leMatchers. In debug mode, the
+// converted series have the StoredAsLabel, set to the representation of the
+// native histograms they were converted from.
 //
 // Native histograms with an exponential schema have no fixed bucket
 // boundaries. So that the resulting classic histograms can be aggregated by
@@ -40,7 +42,7 @@ import (
 // histogram that does not result in it anymore, e.g. because the native
 // histogram went stale, its bucket layout changed or it is not converted, just
 // like the scrape loop marks series stale that disappear from a target.
-func toClassic(ss storage.SeriesSet, suffix string, from representations, leMatchers []*labels.Matcher) ([]*series, error) {
+func toClassic(ss storage.SeriesSet, suffix string, from representations, leMatchers []*labels.Matcher, debug bool) ([]*series, error) {
 	nhSeries, err := readNativeHistograms(ss, from)
 	if err != nil {
 		return nil, err
@@ -53,16 +55,28 @@ func toClassic(ss storage.SeriesSet, suffix string, from representations, leMatc
 	lsetBuilder := labels.NewBuilder(labels.EmptyLabels())
 	b := newClassicSeriesBuilder()
 	for _, ns := range nhSeries {
-		cache := &histogram.ClassicSeriesCache{}
+		// A cache holds the label sets of the series converted from one
+		// native histogram series, whatever its labels, so debug mode, which
+		// adds the representation to the labels, needs one per
+		// representation.
+		var (
+			nhcbLabels, nheLabels = ns.labels, ns.labels
+			nhcbCache             = &histogram.ClassicSeriesCache{}
+			nheCache              = nhcbCache
+		)
+		if debug {
+			nhcbLabels, nheLabels = withStoredAs(ns.labels, NHCB), withStoredAs(ns.labels, NHE)
+			nheCache = &histogram.ClassicSeriesCache{}
+		}
 		b.startSeries()
 		for _, smpl := range ns.samples {
 			b.startSample(smpl.t)
 			if smpl.fh != nil {
 				var err error
 				if histogram.IsExponentialSchema(smpl.fh.Schema) {
-					err = histogram.ConvertExponentialToClassic(smpl.fh, boundaries, ns.labels, lsetBuilder, suffix, cache, b.emit)
+					err = histogram.ConvertExponentialToClassic(smpl.fh, boundaries, nheLabels, lsetBuilder, suffix, nheCache, b.emit)
 				} else {
-					err = histogram.ConvertNHCBToClassic(smpl.fh, ns.labels, lsetBuilder, suffix, cache, b.emit)
+					err = histogram.ConvertNHCBToClassic(smpl.fh, nhcbLabels, lsetBuilder, suffix, nhcbCache, b.emit)
 				}
 				if err != nil {
 					return nil, err
