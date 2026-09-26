@@ -85,6 +85,21 @@ Example:
 
 ---
 
+## Library Use and API Stability
+
+- Prometheus offers no stability guarantees for the Go APIs of packages that
+  are part of the server (see [docs/stability.md](docs/stability.md)), and
+  this repository is
+  [not designed for use as a library](README.md#using-prometheus-as-a-go-library).
+- A bug fix must fix the behaviour of Prometheus itself. A problem that is
+  only reachable through Go library use, for example using a type in a way
+  that no Prometheus code path does, is not a bug: do not label the change
+  `[BUGFIX]`, do not call it a regression, and do not propose backports.
+- Properties of a type that are not documented, such as concurrency safety,
+  are not guarantees. Check the type's documentation before relying on them.
+
+---
+
 ## Performance Work
 
 Maintainers take performance seriously. For any PERF PR:
