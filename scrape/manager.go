@@ -115,6 +115,9 @@ type Options struct {
 	// Option to increase the interval used by scrape manager to throttle target groups updates.
 	DiscoveryReloadInterval model.Duration
 
+	// WarnDuplicateTargets enables warnings for duplicate public target label sets.
+	WarnDuplicateTargets bool
+
 	// Option to enable the ingestion of the created timestamp as a synthetic zero sample.
 	// See: https://github.com/prometheus/proposals/blob/main/proposals/2023-06-13_created-timestamp.md
 	//
@@ -314,6 +317,47 @@ func (m *Manager) reload() {
 	}
 	m.mtxScrape.Unlock()
 	wg.Wait()
+
+	if m.opts.WarnDuplicateTargets {
+		m.warnIfDuplicateTargetLabelSets()
+	}
+}
+
+func (m *Manager) warnIfDuplicateTargetLabelSets() {
+	targetsByPool := m.TargetsActive()
+	totalTargets := 0
+	for _, targets := range targetsByPool {
+		totalTargets += len(targets)
+	}
+	type targetSource struct {
+		pool   string
+		target *Target
+	}
+	// Keep the first source for each label set so warnings can identify both targets and their scrape pools.
+	seen := make(map[string]targetSource, totalTargets)
+	lb := labels.NewBuilder(labels.EmptyLabels())
+	var buf []byte
+	for pool, targets := range targetsByPool {
+		for _, target := range targets {
+			// Scrape URLs and other internal labels can differ while the public labels collide.
+			publicLabels := target.Labels(lb)
+			buf = publicLabels.Bytes(buf)
+
+			key := string(buf)
+			previous, ok := seen[key]
+			if !ok {
+				seen[key] = targetSource{pool: pool, target: target}
+				continue
+			}
+			m.logger.Warn("Found duplicate target label sets",
+				"labels", publicLabels.String(),
+				"scrape_pool", pool,
+				"other_scrape_pool", previous.pool,
+				"target", target,
+				"other_target", previous.target,
+			)
+		}
+	}
 }
 
 // setOffsetSeed calculates a global offsetSeed per server relying on extra label set.
