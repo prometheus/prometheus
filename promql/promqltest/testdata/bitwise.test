@@ -1,0 +1,312 @@
+# Bitwise operators use exact nonnegative integer values, including bits above 32.
+
+load 1m
+  device_status{instance="a",device="0"} 65 69
+  device_status{instance="a",device="1"} 4 5
+  device_status{instance="b",device="0"} 68 64
+  device_status{instance="unmatched",device="0"} 65 65
+  alarm_mask{instance="a",model="x"} 64 64
+  alarm_mask{instance="b",model="y"} 4 4
+  wide_status 4294967297
+  fractional_status 1.5
+  histogram_status {{schema:0 sum:1 count:1 buckets:[1]}}
+
+eval instant at 0 5 bitand 3
+  1
+
+eval instant at 0 wide_status bitand 4294967296
+  {} 4294967296
+
+eval instant at 0 4294967296 bitand wide_status
+  {} 4294967296
+
+eval instant at 0 NaN bitand 1
+  NaN
+
+eval instant at 0 1 bitand NaN
+  NaN
+
+eval instant at 0 Inf bitand 1
+  NaN
+
+eval instant at 0 1 bitand -Inf
+  NaN
+
+eval instant at 0 -1 bitand 1
+  NaN
+
+eval instant at 0 1 bitand -1
+  NaN
+
+eval instant at 0 1.5 bitand 1
+  NaN
+
+eval instant at 0 1 bitand 1.5
+  NaN
+
+eval instant at 0 9007199254740992 bitand 1
+  NaN
+
+eval instant at 0 1 bitand 9007199254740992
+  NaN
+
+eval instant at 0 fractional_status bitand 1
+  {} NaN
+
+eval instant at 0 histogram_status bitand 1
+  expect info
+
+eval instant at 0 1 bitand histogram_status
+  expect info
+
+eval instant at 0 histogram_status bitand vector(1)
+  expect info
+
+eval instant at 0 vector(1) bitand histogram_status
+  expect info
+
+eval instant at 0 histogram_status bitand histogram_status
+  expect info
+
+eval instant at 0 5 bitor 3
+  7
+
+eval instant at 0 wide_status bitor 4294967296
+  {} 4294967297
+
+eval instant at 0 4294967296 bitor wide_status
+  {} 4294967297
+
+eval instant at 0 NaN bitor 1
+  NaN
+
+eval instant at 0 1 bitor NaN
+  NaN
+
+eval instant at 0 Inf bitor 1
+  NaN
+
+eval instant at 0 1 bitor -Inf
+  NaN
+
+eval instant at 0 -1 bitor 1
+  NaN
+
+eval instant at 0 1 bitor -1
+  NaN
+
+eval instant at 0 1.5 bitor 1
+  NaN
+
+eval instant at 0 1 bitor 1.5
+  NaN
+
+eval instant at 0 9007199254740992 bitor 1
+  NaN
+
+eval instant at 0 1 bitor 9007199254740992
+  NaN
+
+eval instant at 0 fractional_status bitor 1
+  {} NaN
+
+eval instant at 0 histogram_status bitor 1
+  expect info
+
+eval instant at 0 1 bitor histogram_status
+  expect info
+
+eval instant at 0 histogram_status bitor vector(1)
+  expect info
+
+eval instant at 0 vector(1) bitor histogram_status
+  expect info
+
+eval instant at 0 histogram_status bitor histogram_status
+  expect info
+
+eval instant at 0 5 bitxor 3
+  6
+
+eval instant at 0 wide_status bitxor 4294967296
+  {} 1
+
+eval instant at 0 4294967296 bitxor wide_status
+  {} 1
+
+eval instant at 0 NaN bitxor 1
+  NaN
+
+eval instant at 0 1 bitxor NaN
+  NaN
+
+eval instant at 0 Inf bitxor 1
+  NaN
+
+eval instant at 0 1 bitxor -Inf
+  NaN
+
+eval instant at 0 -1 bitxor 1
+  NaN
+
+eval instant at 0 1 bitxor -1
+  NaN
+
+eval instant at 0 1.5 bitxor 1
+  NaN
+
+eval instant at 0 1 bitxor 1.5
+  NaN
+
+eval instant at 0 9007199254740992 bitxor 1
+  NaN
+
+eval instant at 0 1 bitxor 9007199254740992
+  NaN
+
+eval instant at 0 fractional_status bitxor 1
+  {} NaN
+
+eval instant at 0 histogram_status bitxor 1
+  expect info
+
+eval instant at 0 1 bitxor histogram_status
+  expect info
+
+eval instant at 0 histogram_status bitxor vector(1)
+  expect info
+
+eval instant at 0 vector(1) bitxor histogram_status
+  expect info
+
+eval instant at 0 histogram_status bitxor histogram_status
+  expect info
+
+# The highest supported bit and integer must not be rounded or truncated.
+eval instant at 0 9007199254740991 bitand 4503599627370496
+  4503599627370496
+
+eval instant at 0 4503599627370496 bitor 4503599627370495
+  9007199254740991
+
+eval instant at 0 9007199254740991 bitxor 4503599627370496
+  4503599627370495
+
+eval instant at 0 -0 bitor 1
+  1
+
+# Vector matching, grouping, labels and an unmatched series.
+eval instant at 0 device_status bitand on(instance) group_left(model) alarm_mask
+  {instance="a",device="0",model="x"} 64
+  {instance="a",device="1",model="x"} 0
+  {instance="b",device="0",model="y"} 4
+
+eval instant at 0 alarm_mask bitor on(instance) group_right(model) device_status
+  {instance="a",device="0",model="x"} 65
+  {instance="a",device="1",model="x"} 68
+  {instance="b",device="0",model="y"} 68
+
+eval instant at 1m device_status bitxor (device_status offset 1m)
+  {instance="a",device="0"} 4
+  {instance="a",device="1"} 1
+  {instance="b",device="0"} 4
+  {instance="unmatched",device="0"} 0
+
+# Same precedence as atan2, evaluated left to right.
+eval instant at 0 1 + 6 bitand 3 * 2 ^ 3
+  17
+
+eval instant at 0 4 bitor 1 bitxor 3 bitand 2
+  2
+
+# Range queries preserve zero results and match series independently at each step.
+eval range from 0 to 1m step 1m device_status bitand on(instance) group_left(model) alarm_mask
+  {instance="a",device="0",model="x"} 64 64
+  {instance="a",device="1",model="x"} 0 0
+  {instance="b",device="0",model="y"} 4 0
+
+eval range from 0 to 1m step 1m alarm_mask bitor on(instance) group_right(model) device_status
+  {instance="a",device="0",model="x"} 65 69
+  {instance="a",device="1",model="x"} 68 69
+  {instance="b",device="0",model="y"} 68 68
+
+eval range from 0 to 1m step 1m device_status bitxor 64
+  {instance="a",device="0"} 1 5
+  {instance="a",device="1"} 68 69
+  {instance="b",device="0"} 4 0
+  {instance="unmatched",device="0"} 1 1
+
+# Invalid vector operands produce NaN on either side, without dropping the sample.
+clear
+load 1m
+  status 0 1.5 -1 NaN Inf -Inf 9007199254740992 9007199254740991
+  mask   1 1   1  1   1   1   1                1
+
+eval range from 0 to 7m step 1m status bitand mask
+  {} 0 NaN NaN NaN NaN NaN NaN 1
+
+eval range from 0 to 7m step 1m mask bitand status
+  {} 0 NaN NaN NaN NaN NaN NaN 1
+
+eval range from 0 to 7m step 1m status bitor mask
+  {} 1 NaN NaN NaN NaN NaN NaN 9007199254740991
+
+eval range from 0 to 7m step 1m mask bitor status
+  {} 1 NaN NaN NaN NaN NaN NaN 9007199254740991
+
+eval range from 0 to 7m step 1m status bitxor mask
+  {} 1 NaN NaN NaN NaN NaN NaN 9007199254740990
+
+eval range from 0 to 7m step 1m mask bitxor status
+  {} 1 NaN NaN NaN NaN NaN NaN 9007199254740990
+
+# Histogram samples are omitted while float samples from the same series survive.
+clear
+load 1m
+  status{instance="a"} 5 {{schema:0 sum:1 count:1 buckets:[1]}} 3
+  mask{instance="a"}   3 3 1
+
+eval range from 0 to 2m step 1m status bitand mask
+  expect info
+  {instance="a"} 1 _ 1
+
+eval range from 0 to 2m step 1m status bitor mask
+  expect info
+  {instance="a"} 7 _ 3
+
+eval range from 0 to 2m step 1m status bitxor mask
+  expect info
+  {instance="a"} 6 _ 2
+
+# Metric names and type/unit labels are dropped for each operand combination.
+clear
+load 1m
+  status{__type__="gauge",__unit__="status",instance="a"} 5
+  mask{__type__="gauge",__unit__="status",instance="a"} 3
+
+eval instant at 0 status bitand 3
+  {instance="a"} 1
+
+eval instant at 0 3 bitand status
+  {instance="a"} 1
+
+eval instant at 0 status bitand mask
+  {instance="a"} 1
+
+eval instant at 0 status bitor 3
+  {instance="a"} 7
+
+eval instant at 0 3 bitor status
+  {instance="a"} 7
+
+eval instant at 0 status bitor mask
+  {instance="a"} 7
+
+eval instant at 0 status bitxor 3
+  {instance="a"} 6
+
+eval instant at 0 3 bitxor status
+  {instance="a"} 6
+
+eval instant at 0 status bitxor mask
+  {instance="a"} 6

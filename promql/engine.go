@@ -3561,8 +3561,30 @@ func scalarBinop(op parser.ItemType, lhs, rhs float64) float64 {
 		return btos(lhs <= rhs)
 	case parser.ATAN2:
 		return math.Atan2(lhs, rhs)
+	case parser.BITAND, parser.BITOR, parser.BITXOR:
+		return bitwiseBinop(op, lhs, rhs)
 	}
 	panic(fmt.Errorf("operator %q not allowed for Scalar operations", op))
+}
+
+// Evaluate bitwise operations on nonnegative integers that float64 can represent exactly.
+// Invalid operands produce NaN instead of being truncated or rounded to integers.
+func bitwiseBinop(op parser.ItemType, lhs, rhs float64) float64 {
+	const maxSafeInteger = 1<<53 - 1
+	if lhs < 0 || rhs < 0 || lhs > maxSafeInteger || rhs > maxSafeInteger ||
+		math.IsNaN(lhs) || math.IsNaN(rhs) || math.Trunc(lhs) != lhs || math.Trunc(rhs) != rhs {
+		return math.NaN()
+	}
+	l, r := uint64(lhs), uint64(rhs)
+	switch op {
+	case parser.BITAND:
+		return float64(l & r)
+	case parser.BITOR:
+		return float64(l | r)
+	case parser.BITXOR:
+		return float64(l ^ r)
+	}
+	panic(fmt.Errorf("operator %q is not a bitwise operator", op))
 }
 
 // vectorElemBinop evaluates a binary operation between two Vector elements.
@@ -3597,6 +3619,8 @@ func vectorElemBinop(op parser.ItemType, lhs, rhs float64, hlhs, hrhs *histogram
 				return lhs, nil, lhs <= rhs, nil, nil
 			case parser.ATAN2:
 				return math.Atan2(lhs, rhs), nil, true, nil, nil
+			case parser.BITAND, parser.BITOR, parser.BITXOR:
+				return bitwiseBinop(op, lhs, rhs), nil, true, nil, nil
 			case parser.TRIM_LOWER, parser.TRIM_UPPER:
 				return 0, nil, false, nil, annotations.NewIncompatibleTypesInBinOpInfo("float", parser.ItemTypeStr[op], "float", pos)
 			}
@@ -3606,7 +3630,7 @@ func vectorElemBinop(op parser.ItemType, lhs, rhs float64, hlhs, hrhs *histogram
 			switch op {
 			case parser.MUL:
 				return 0, hrhs.Copy().Mul(lhs).Compact(0), true, nil, nil
-			case parser.ADD, parser.SUB, parser.DIV, parser.POW, parser.MOD, parser.EQLC, parser.NEQ, parser.GTR, parser.TRIM_LOWER, parser.TRIM_UPPER, parser.LSS, parser.GTE, parser.LTE, parser.ATAN2:
+			case parser.ADD, parser.SUB, parser.DIV, parser.POW, parser.MOD, parser.EQLC, parser.NEQ, parser.GTR, parser.TRIM_LOWER, parser.TRIM_UPPER, parser.LSS, parser.GTE, parser.LTE, parser.ATAN2, parser.BITAND, parser.BITOR, parser.BITXOR:
 				return 0, nil, false, nil, annotations.NewIncompatibleTypesInBinOpInfo("float", parser.ItemTypeStr[op], "histogram", pos)
 			}
 		}
@@ -3623,7 +3647,7 @@ func vectorElemBinop(op parser.ItemType, lhs, rhs float64, hlhs, hrhs *histogram
 				return 0, hlhs.Copy().TrimBuckets(rhs, true), true, nil, nil
 			case parser.TRIM_LOWER:
 				return 0, hlhs.Copy().TrimBuckets(rhs, false), true, nil, nil
-			case parser.ADD, parser.SUB, parser.POW, parser.MOD, parser.EQLC, parser.NEQ, parser.GTR, parser.LSS, parser.GTE, parser.LTE, parser.ATAN2:
+			case parser.ADD, parser.SUB, parser.POW, parser.MOD, parser.EQLC, parser.NEQ, parser.GTR, parser.LSS, parser.GTE, parser.LTE, parser.ATAN2, parser.BITAND, parser.BITOR, parser.BITXOR:
 				return 0, nil, false, nil, annotations.NewIncompatibleTypesInBinOpInfo("histogram", parser.ItemTypeStr[op], "float", pos)
 			}
 		}
@@ -3663,7 +3687,7 @@ func vectorElemBinop(op parser.ItemType, lhs, rhs float64, hlhs, hrhs *histogram
 			case parser.NEQ:
 				// This operation expects that both histograms are compacted.
 				return 0, hlhs, !hlhs.Equals(hrhs), nil, nil
-			case parser.MUL, parser.DIV, parser.POW, parser.MOD, parser.GTR, parser.LSS, parser.GTE, parser.LTE, parser.ATAN2, parser.TRIM_LOWER, parser.TRIM_UPPER:
+			case parser.MUL, parser.DIV, parser.POW, parser.MOD, parser.GTR, parser.LSS, parser.GTE, parser.LTE, parser.ATAN2, parser.BITAND, parser.BITOR, parser.BITXOR, parser.TRIM_LOWER, parser.TRIM_UPPER:
 				return 0, nil, false, nil, annotations.NewIncompatibleTypesInBinOpInfo("histogram", parser.ItemTypeStr[op], "histogram", pos)
 			}
 		}
@@ -4534,7 +4558,7 @@ func btos(b bool) float64 {
 // schema of the metric.
 func changesMetricSchema(op parser.ItemType) bool {
 	switch op {
-	case parser.ADD, parser.SUB, parser.DIV, parser.MUL, parser.POW, parser.MOD, parser.ATAN2:
+	case parser.ADD, parser.SUB, parser.DIV, parser.MUL, parser.POW, parser.MOD, parser.ATAN2, parser.BITAND, parser.BITOR, parser.BITXOR:
 		return true
 	default:
 		return false
