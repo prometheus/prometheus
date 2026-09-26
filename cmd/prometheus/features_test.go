@@ -27,6 +27,7 @@ import (
 	"github.com/prometheus/common/promslog"
 	"github.com/stretchr/testify/require"
 
+	"github.com/prometheus/prometheus/storage/histogramconv"
 	"github.com/prometheus/prometheus/util/testutil"
 )
 
@@ -131,58 +132,57 @@ func TestSetFeatureListOptions_MetadataWALRecords(t *testing.T) {
 	require.True(t, c.tsdb.EnableMetadataWALRecords)
 }
 
-func TestSetFeatureListOptions_HistogramCompatLayers(t *testing.T) {
+func TestSetFeatureListOptions_HistogramConversion(t *testing.T) {
 	for _, tc := range []struct {
-		name     string
-		features []string
+		name                  string
+		features              []string
+		convertHistogramsFrom []string
 
-		expectedNHCBAsClassic   bool
-		expectedClassicAsNHCB   bool
-		expectedNHClassicCompat bool
-		expectedErr             string
+		expectedEnabled bool
+		expectedFrom    []histogramconv.Representation
+		expectedErr     string
 	}{
 		{
-			name:                  "NHCB as classic",
-			features:              []string{"promql-nhcb-as-classic"},
-			expectedNHCBAsClassic: true,
+			name: "disabled",
 		},
 		{
-			name:                  "classic as NHCB",
-			features:              []string{"promql-classic-as-nhcb"},
-			expectedClassicAsNHCB: true,
+			name:            "enabled without conversions by default",
+			features:        []string{"promql-histogram-conversion"},
+			expectedEnabled: true,
 		},
 		{
-			name:                    "native and classic histogram compatibility",
-			features:                []string{"promql-nh-classic-compat"},
-			expectedNHClassicCompat: true,
+			name:                  "comma separated and repeated representations",
+			features:              []string{"promql-histogram-conversion"},
+			convertHistogramsFrom: []string{"nhcb,classic", "nhe", "nhcb"},
+			expectedEnabled:       true,
+			expectedFrom:          []histogramconv.Representation{histogramconv.NHCB, histogramconv.Classic, histogramconv.NHE},
 		},
 		{
-			name:        "both directions have to be enabled with a single flag",
-			features:    []string{"promql-nhcb-as-classic", "promql-classic-as-nhcb"},
-			expectedErr: "enable promql-nh-classic-compat instead",
+			name:                  "empty value",
+			convertHistogramsFrom: []string{""},
 		},
 		{
-			name:        "promql-nh-classic-compat together with promql-nhcb-as-classic",
-			features:    []string{"promql-nh-classic-compat", "promql-nhcb-as-classic"},
-			expectedErr: "it already includes both",
+			name:                  "representations without the feature",
+			convertHistogramsFrom: []string{"nhcb"},
+			expectedErr:           "--query.convert-histograms-from requires --enable-feature=promql-histogram-conversion",
 		},
 		{
-			name:        "promql-nh-classic-compat together with promql-classic-as-nhcb",
-			features:    []string{"promql-classic-as-nhcb,promql-nh-classic-compat"},
-			expectedErr: "it already includes both",
+			name:                  "unknown representation",
+			features:              []string{"promql-histogram-conversion"},
+			convertHistogramsFrom: []string{"nhcb,nh"},
+			expectedErr:           `unknown histogram representation "nh"`,
 		},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			c := &flagConfig{featureList: tc.features}
+			c := &flagConfig{featureList: tc.features, convertHistogramsFrom: tc.convertHistogramsFrom}
 			err := c.setFeatureListOptions(promslog.NewNopLogger())
 			if tc.expectedErr != "" {
 				require.ErrorContains(t, err, tc.expectedErr)
 				return
 			}
 			require.NoError(t, err)
-			require.Equal(t, tc.expectedNHCBAsClassic, c.enableNHCBasClassic)
-			require.Equal(t, tc.expectedClassicAsNHCB, c.enableClassicAsNHCB)
-			require.Equal(t, tc.expectedNHClassicCompat, c.enableNHClassicCompat)
+			require.Equal(t, tc.expectedEnabled, c.enableHistogramConversion)
+			require.Equal(t, tc.expectedFrom, c.histogramConversionFrom)
 		})
 	}
 }

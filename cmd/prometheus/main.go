@@ -215,12 +215,15 @@ type flagConfig struct {
 	featureList []string
 	// These options are extracted from featureList
 	// for ease of use.
-	enablePerStepStats       bool
-	enableConcurrentRuleEval bool
-	useStartTimestamps       bool
-	enableNHCBasClassic      bool
-	enableClassicAsNHCB      bool
-	enableNHClassicCompat    bool
+	enablePerStepStats        bool
+	enableConcurrentRuleEval  bool
+	useStartTimestamps        bool
+	enableHistogramConversion bool
+
+	// convertHistogramsFrom holds the values of --query.convert-histograms-from,
+	// and histogramConversionFrom the representations parsed from them.
+	convertHistogramsFrom   []string
+	histogramConversionFrom []histogramconv.Representation
 
 	prometheusURL   string
 	corsRegexString string
@@ -356,15 +359,9 @@ func (c *flagConfig) setFeatureListOptions(logger *slog.Logger) error {
 			case "search-api":
 				c.web.EnableSearch = true
 				logger.Info("Experimental search API enabled.")
-			case "promql-nhcb-as-classic":
-				c.enableNHCBasClassic = true
-				logger.Info("Experimental NHCB as classic histograms in PromQL enabled.")
-			case "promql-classic-as-nhcb":
-				c.enableClassicAsNHCB = true
-				logger.Info("Experimental classic histograms as NHCB in PromQL enabled.")
-			case "promql-nh-classic-compat":
-				c.enableNHClassicCompat = true
-				logger.Info("Experimental native and classic histogram compatibility in PromQL enabled.")
+			case "promql-histogram-conversion":
+				c.enableHistogramConversion = true
+				logger.Info("Experimental query-time histogram conversion enabled.")
 			default:
 				logger.Warn("Unknown option for --enable-feature", "option", o)
 			}
@@ -375,14 +372,14 @@ func (c *flagConfig) setFeatureListOptions(logger *slog.Logger) error {
 		return errors.New("cannot enable otlp-deltatocumulative and otlp-native-delta-ingestion features at the same time")
 	}
 
-	if c.enableNHClassicCompat && (c.enableNHCBasClassic || c.enableClassicAsNHCB) {
-		return errors.New("cannot enable promql-nh-classic-compat together with promql-nhcb-as-classic or promql-classic-as-nhcb, it already includes both")
+	from, err := histogramconv.ParseRepresentations(c.convertHistogramsFrom...)
+	if err != nil {
+		return fmt.Errorf("invalid --query.convert-histograms-from: %w", err)
 	}
-	if c.enableNHCBasClassic && c.enableClassicAsNHCB {
-		// Each layer would convert the output of the other one back, resulting
-		// in duplicated series for every histogram.
-		return errors.New("cannot enable promql-nhcb-as-classic and promql-classic-as-nhcb features at the same time, enable promql-nh-classic-compat instead")
+	if len(from) > 0 && !c.enableHistogramConversion {
+		return errors.New("--query.convert-histograms-from requires --enable-feature=promql-histogram-conversion")
 	}
+	c.histogramConversionFrom = from
 
 	return nil
 }
@@ -668,10 +665,13 @@ func main() {
 	serverOnlyFlag(a, "query.max-samples", "Maximum number of samples a single query can load into memory. Note that queries will fail if they try to load more samples than this into memory, so this also limits the number of samples a query can return.").
 		Default("50000000").IntVar(&cfg.queryMaxSamples)
 
+	serverOnlyFlag(a, "query.convert-histograms-from", "Comma separated histogram representations to convert from at query time: PromQL selectors for classic histogram series also return the ones converted from native histograms, and selectors for native histograms the ones converted from classic histograms. Nothing is stored. Valid options: classic, nhcb, nhe. Requires --enable-feature=promql-histogram-conversion.").
+		StringsVar(&cfg.convertHistogramsFrom)
+
 	a.Flag("scrape.discovery-reload-interval", "Interval used by scrape manager to throttle target groups updates.").
 		Hidden().Default("5s").SetValue(&cfg.scrape.DiscoveryReloadInterval)
 
-	a.Flag("enable-feature", "Comma separated feature names to enable. Valid options: concurrent-rule-eval, created-timestamp-zero-ingestion, delayed-compaction, exemplar-storage, extra-scrape-metrics, histograms-st-encoding, memory-snapshot-on-shutdown, metadata-wal-records, old-ui, openmetrics2, otlp-deltatocumulative, otlp-native-delta-ingestion, promql-binop-fill-modifiers, promql-classic-as-nhcb, promql-delayed-name-removal, promql-experimental-functions, promql-nh-classic-compat, promql-nhcb-as-classic, promql-per-step-stats, search-api, st-storage, st-synthesis, type-and-unit-labels, use-start-timestamps, use-uncached-io, xor2-encoding, zstd-scrape. See https://prometheus.io/docs/prometheus/latest/feature_flags/ for more details.").
+	a.Flag("enable-feature", "Comma separated feature names to enable. Valid options: concurrent-rule-eval, created-timestamp-zero-ingestion, delayed-compaction, exemplar-storage, extra-scrape-metrics, histograms-st-encoding, memory-snapshot-on-shutdown, metadata-wal-records, old-ui, openmetrics2, otlp-deltatocumulative, otlp-native-delta-ingestion, promql-binop-fill-modifiers, promql-delayed-name-removal, promql-experimental-functions, promql-histogram-conversion, promql-per-step-stats, search-api, st-storage, st-synthesis, type-and-unit-labels, use-start-timestamps, use-uncached-io, xor2-encoding, zstd-scrape. See https://prometheus.io/docs/prometheus/latest/feature_flags/ for more details.").
 		StringsVar(&cfg.featureList)
 
 	a.Flag("agent", "Run Prometheus in 'Agent mode'.").BoolVar(&agentMode)
@@ -966,23 +966,12 @@ func main() {
 	features.Set(features.Prometheus, "auto_reload_config", cfg.enableAutoReload)
 	features.Enable(features.Prometheus, labels.ImplementationName)
 	template.RegisterFeatures(features.DefaultRegistry)
-	var (
-		localStorage                   = &readyStorage{stats: tsdb.NewDBStats()}
-		wrappedStorage storage.Storage = localStorage
-	)
-	switch {
-	case cfg.enableNHClassicCompat:
-		wrappedStorage = histogramconv.NewNHClassicCompatStorage(localStorage)
-	case cfg.enableNHCBasClassic:
-		wrappedStorage = histogramconv.NewNHCBAsClassicStorage(localStorage)
-	case cfg.enableClassicAsNHCB:
-		wrappedStorage = histogramconv.NewClassicAsNHCBStorage(localStorage)
-	}
 
 	var (
+		localStorage  = &readyStorage{stats: tsdb.NewDBStats()}
 		scraper       = &readyScrapeManager{}
 		remoteStorage = remote.NewStorage(logger.With("component", "remote"), prometheus.DefaultRegisterer, localStorage.StartTime, localStoragePath, time.Duration(cfg.RemoteFlushDeadline), scraper, cfg.scrape.EnableTypeAndUnitLabels)
-		fanoutStorage = storage.NewFanout(logger, wrappedStorage, remoteStorage)
+		fanoutStorage = storage.NewFanout(logger, localStorage, remoteStorage)
 	)
 
 	var (
@@ -1062,14 +1051,16 @@ func main() {
 			NoStepSubqueryIntervalFn: noStepSubqueryInterval.Get,
 			// EnableAtModifier and EnableNegativeOffset have to be
 			// always on for regular PromQL as of Prometheus v2.33.
-			EnableAtModifier:         true,
-			EnableNegativeOffset:     true,
-			EnablePerStepStats:       cfg.enablePerStepStats,
-			EnableDelayedNameRemoval: cfg.promqlEnableDelayedNameRemoval,
-			EnableTypeAndUnitLabels:  cfg.scrape.EnableTypeAndUnitLabels,
-			UseStartTimestamps:       cfg.useStartTimestamps,
-			FeatureRegistry:          features.DefaultRegistry,
-			Parser:                   promqlParser,
+			EnableAtModifier:          true,
+			EnableNegativeOffset:      true,
+			EnablePerStepStats:        cfg.enablePerStepStats,
+			EnableDelayedNameRemoval:  cfg.promqlEnableDelayedNameRemoval,
+			EnableTypeAndUnitLabels:   cfg.scrape.EnableTypeAndUnitLabels,
+			UseStartTimestamps:        cfg.useStartTimestamps,
+			EnableHistogramConversion: cfg.enableHistogramConversion,
+			HistogramConversionFrom:   cfg.histogramConversionFrom,
+			FeatureRegistry:           features.DefaultRegistry,
+			Parser:                    promqlParser,
 		}
 
 		queryEngine = promql.NewEngine(opts)

@@ -11,9 +11,6 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-// Package histogramconv converts between histogram representations at query
-// time, e.g. so that queries for classic histograms can read native histograms
-// with custom buckets (NHCB).
 package histogramconv
 
 import (
@@ -21,73 +18,130 @@ import (
 
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/storage"
+	"github.com/prometheus/prometheus/tsdb/chunks"
+	"github.com/prometheus/prometheus/util/annotations"
 )
 
-// NHClassicCompatQuerier wraps a storage.Querier and makes native and classic
-// histograms interchangeable in queries, e.g. while migrating from one to the
-// other:
+// NewQuerier returns a querier that wraps the given querier and converts
+// between histogram representations in Select, from the representations in
+// convertFrom:
 //
-//   - A query for classic histogram series (a metric name with a _bucket,
-//     _count or _sum suffix) also returns the classic series converted from the
-//     native histograms of the base metric name, both native histograms with
-//     custom buckets (NHCB) and with an exponential schema. See
-//     NHCBAsClassicQuerier and histogram.ConvertExponentialToClassic.
-//   - Any other query also returns the NHCB assembled from the classic
-//     histogram series of the queried metric name, see ClassicAsNHCBQuerier.
+//   - A selector for classic histogram series, i.e. with a metric name with a
+//     _bucket, _count or _sum suffix, also returns the classic histogram series
+//     converted from the native histograms of the base name, from NHCB and
+//     NHE.
+//   - A selector for any other metric name also returns the NHCB assembled
+//     from the classic histogram series of that name, from Classic.
 //
-// Every Select is handled by exactly one of the two conversions, and both of
-// them wrap the original querier. Series converted in one direction are hence
-// never converted back, which is what would happen if NHCBAsClassicQuerier
-// wrapped ClassicAsNHCBQuerier: every stored classic series would be returned
-// a second time, converted to NHCB and back.
+// Each selector is handled by exactly one of the two, and both read stored
+// series only, so nothing is converted twice and all representations can be
+// converted from at the same time.
 //
-// The limitations of both conversions apply, most notably the converted series
-// are returned in addition to the stored ones, even if both exist for the same
-// label set and timestamp.
-type NHClassicCompatQuerier struct {
-	storage.Querier
-
-	nativeAsClassic storage.Querier
-	classicAsNative storage.Querier
+// Known limitations:
+//
+//   - Only Select converts. LabelNames and LabelValues return stored data
+//     only.
+//   - Converted series are returned in addition to the stored ones, even if
+//     both exist for the same labels and timestamps, and they are returned
+//     after the stored ones, rather than sorted.
+//   - Converted series are buffered in memory before the first one is
+//     returned.
+func NewQuerier(q storage.Querier, convertFrom []Representation) storage.Querier {
+	return &querier{Querier: q, convertFrom: newRepresentations(convertFrom...)}
 }
 
-// NewNHClassicCompatQuerier returns a new querier that wraps the given querier
-// and converts native histograms to classic histograms and vice versa, see
-// NHClassicCompatQuerier.
-func NewNHClassicCompatQuerier(q storage.Querier) storage.Querier {
-	return &NHClassicCompatQuerier{
-		Querier:         q,
-		nativeAsClassic: &NHCBAsClassicQuerier{Querier: q, includeExponential: true},
-		classicAsNative: &ClassicAsNHCBQuerier{Querier: q},
-	}
+type querier struct {
+	storage.Querier
+
+	convertFrom representations
 }
 
 // Select implements the storage.Querier interface.
-func (q *NHClassicCompatQuerier) Select(ctx context.Context, sortSeries bool, hints *storage.SelectHints, matchers ...*labels.Matcher) storage.SeriesSet {
-	if _, suffix, _ := extractHistogramSuffix(matchers); suffix != "" {
-		return q.nativeAsClassic.Select(ctx, sortSeries, hints, matchers...)
+func (q *querier) Select(ctx context.Context, sortSeries bool, hints *storage.SelectHints, matchers ...*labels.Matcher) storage.SeriesSet {
+	sel := newSelector(matchers, q.convertFrom)
+	if sel.from == 0 {
+		return q.Querier.Select(ctx, sortSeries, hints, matchers...)
 	}
-	return q.classicAsNative.Select(ctx, sortSeries, hints, matchers...)
+	return &seriesSet{ctx: ctx, q: q.Querier, sortSeries: sortSeries, hints: hints, sel: sel}
 }
 
-// NHClassicCompatStorage wraps a storage.Storage and applies the conversions of
-// NHClassicCompatQuerier to its queriers.
-type NHClassicCompatStorage struct {
-	storage.Storage
+// series is a series with buffered samples, e.g. a converted one.
+type series struct {
+	lset    labels.Labels
+	samples []chunks.Sample
 }
 
-// NewNHClassicCompatStorage returns a new storage that wraps the given storage
-// and converts native histograms to classic histograms and vice versa in its
-// queriers, see NHClassicCompatQuerier.
-func NewNHClassicCompatStorage(s storage.Storage) storage.Storage {
-	return &NHClassicCompatStorage{Storage: s}
+// seriesSet returns the stored and the converted series of a selector. It
+// selects and converts them on the first call of Next, as the samples of all
+// the series to convert from are needed to convert any of them.
+type seriesSet struct {
+	ctx        context.Context
+	q          storage.Querier
+	sortSeries bool
+	hints      *storage.SelectHints
+	sel        selector
+
+	loaded   bool
+	series   []storage.Series
+	idx      int
+	err      error
+	warnings annotations.Annotations
 }
 
-// Querier implements the storage.Storage interface.
-func (s *NHClassicCompatStorage) Querier(mint, maxt int64) (storage.Querier, error) {
-	q, err := s.Storage.Querier(mint, maxt)
+func (s *seriesSet) Next() bool {
+	if !s.loaded {
+		s.loaded = true
+		s.series, s.err = s.load()
+	}
+	if s.err != nil || s.idx >= len(s.series) {
+		return false
+	}
+	s.idx++
+	return true
+}
+
+func (s *seriesSet) At() storage.Series {
+	if s.idx == 0 || s.idx > len(s.series) {
+		return nil
+	}
+	return s.series[s.idx-1]
+}
+
+func (s *seriesSet) Err() error { return s.err }
+
+func (s *seriesSet) Warnings() annotations.Annotations { return s.warnings }
+
+// load selects the stored series and the ones to convert from, and converts
+// them.
+func (s *seriesSet) load() ([]storage.Series, error) {
+	var out []storage.Series
+	stored := s.q.Select(s.ctx, s.sortSeries, s.hints, s.sel.matchers...)
+	for stored.Next() {
+		out = append(out, stored.At())
+	}
+	s.warnings.Merge(stored.Warnings())
+	if err := stored.Err(); err != nil {
+		return nil, err
+	}
+
+	var (
+		sources   = s.q.Select(s.ctx, s.sortSeries, s.hints, s.sel.sourceMatchers...)
+		converted []*series
+		err       error
+	)
+	if s.sel.suffix != "" {
+		converted, err = toClassic(sources, s.sel.suffix, s.sel.from, s.sel.leMatchers)
+	} else {
+		var ws annotations.Annotations
+		converted, ws, err = toNHCB(sources)
+		s.warnings.Merge(ws)
+	}
+	s.warnings.Merge(sources.Warnings())
 	if err != nil {
 		return nil, err
 	}
-	return NewNHClassicCompatQuerier(q), nil
+	for _, c := range converted {
+		out = append(out, storage.NewListSeries(c.lset, c.samples))
+	}
+	return out, nil
 }

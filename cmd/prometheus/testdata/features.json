@@ -38,6 +38,7 @@
     "fill_right": false,
     "group_left": true,
     "group_right": true,
+    "histogram_conversion": false,
     "ignoring": true,
     "negative_offset": true,
     "offset": true,

@@ -34,66 +34,7 @@ import (
 	"github.com/prometheus/prometheus/util/annotations"
 )
 
-func TestExtractHistogramSuffix(t *testing.T) {
-	tests := []struct {
-		name           string
-		matchers       []*labels.Matcher
-		expectedName   string
-		expectedSuffix string
-	}{
-		{
-			name:           "bucket suffix",
-			matchers:       []*labels.Matcher{labels.MustNewMatcher(labels.MatchEqual, model.MetricNameLabel, "http_requests_bucket")},
-			expectedName:   "http_requests_bucket",
-			expectedSuffix: "_bucket",
-		},
-		{
-			name:           "count suffix",
-			matchers:       []*labels.Matcher{labels.MustNewMatcher(labels.MatchEqual, model.MetricNameLabel, "http_requests_count")},
-			expectedName:   "http_requests_count",
-			expectedSuffix: "_count",
-		},
-		{
-			name:           "sum suffix",
-			matchers:       []*labels.Matcher{labels.MustNewMatcher(labels.MatchEqual, model.MetricNameLabel, "http_requests_sum")},
-			expectedName:   "http_requests_sum",
-			expectedSuffix: "_sum",
-		},
-		{
-			name:           "no suffix - regular metric",
-			matchers:       []*labels.Matcher{labels.MustNewMatcher(labels.MatchEqual, model.MetricNameLabel, "my_gauge")},
-			expectedName:   "",
-			expectedSuffix: "",
-		},
-		{
-			name:           "no metric name matcher",
-			matchers:       []*labels.Matcher{labels.MustNewMatcher(labels.MatchEqual, "job", "prometheus")},
-			expectedName:   "",
-			expectedSuffix: "",
-		},
-		{
-			name:           "bucket regex suffix",
-			matchers:       []*labels.Matcher{labels.MustNewMatcher(labels.MatchEqual, model.MetricNameLabel, ".+_bucket")},
-			expectedName:   ".+_bucket",
-			expectedSuffix: "_bucket",
-		},
-	}
-
-	for _, tc := range tests {
-		t.Run(tc.name, func(t *testing.T) {
-			matcher, suffix, _ := extractHistogramSuffix(tc.matchers)
-			if tc.expectedName == "" {
-				require.Nil(t, matcher)
-			} else {
-				require.NotNil(t, matcher)
-				require.Equal(t, tc.expectedName, matcher.Value)
-			}
-			require.Equal(t, tc.expectedSuffix, suffix)
-		})
-	}
-}
-
-func TestNHCBAsClassicQuerier_Select(t *testing.T) {
+func TestQuerier_ToClassic(t *testing.T) {
 	nhcb := &histogram.Histogram{
 		Schema:          histogram.CustomBucketsSchema,
 		Count:           16,
@@ -129,13 +70,13 @@ func TestNHCBAsClassicQuerier_Select(t *testing.T) {
 			expectedCount: 1,
 		},
 		{
-			name:          "histogram with regex exists - return classic",
+			name:          "regexp name matchers are not converted",
 			queryMatchers: []*labels.Matcher{labels.MustNewMatcher(labels.MatchRegexp, model.MetricNameLabel, ".+_requests_bucket")},
 			classicSeries: []storage.Series{},
 			nhcbSeries: []storage.Series{
 				storage.NewListSeries(labels.FromStrings("__name__", "http_requests"), []chunks.Sample{hSample{t: 1, h: nhcb}}),
 			},
-			expectedCount: 4,
+			expectedCount: 0,
 		},
 		{
 			name:          "no classic - convert NHCB to bucket series",
@@ -260,7 +201,7 @@ func TestNHCBAsClassicQuerier_Select(t *testing.T) {
 				nhcbSeries:        tc.nhcbSeries,
 				passthroughSeries: tc.passthroughSeries,
 			}
-			q := NewNHCBAsClassicQuerier(mock)
+			q := NewQuerier(mock, []Representation{NHCB})
 
 			ss := q.Select(context.Background(), false, nil, tc.queryMatchers...)
 			var count int
@@ -277,7 +218,7 @@ func TestNHCBAsClassicQuerier_Select(t *testing.T) {
 	}
 }
 
-func TestNHCBAsClassicQuerier_ConsistentOrder(t *testing.T) {
+func TestQuerier_ToClassicOrder(t *testing.T) {
 	nhcb := &histogram.Histogram{
 		Schema:          histogram.CustomBucketsSchema,
 		Count:           16,
@@ -294,7 +235,7 @@ func TestNHCBAsClassicQuerier_ConsistentOrder(t *testing.T) {
 			storage.NewListSeries(labels.FromStrings("__name__", "http_requests", "job", "web"), []chunks.Sample{hSample{t: 1, h: nhcb}}),
 		},
 	}
-	q := NewNHCBAsClassicQuerier(mock)
+	q := NewQuerier(mock, []Representation{NHCB})
 
 	// Run the same query multiple times and verify order is consistent.
 	for range 5 {
@@ -323,7 +264,7 @@ func TestNHCBAsClassicQuerier_ConsistentOrder(t *testing.T) {
 	}
 }
 
-func TestNHCBAsClassicQuerier_FloatHistogram(t *testing.T) {
+func TestQuerier_ToClassicFloatHistogram(t *testing.T) {
 	fhNHCB := &histogram.FloatHistogram{
 		Schema:          histogram.CustomBucketsSchema,
 		Count:           15,
@@ -339,7 +280,7 @@ func TestNHCBAsClassicQuerier_FloatHistogram(t *testing.T) {
 			storage.NewListSeries(labels.FromStrings("__name__", "latency"), []chunks.Sample{fhSample{t: 1, fh: fhNHCB}}),
 		},
 	}
-	q := NewNHCBAsClassicQuerier(mock)
+	q := NewQuerier(mock, []Representation{NHCB})
 
 	ss := q.Select(context.Background(), false, nil, labels.MustNewMatcher(labels.MatchEqual, model.MetricNameLabel, "latency_bucket"))
 	var count int
@@ -350,7 +291,7 @@ func TestNHCBAsClassicQuerier_FloatHistogram(t *testing.T) {
 	require.Equal(t, 3, count)
 }
 
-func TestNHCBAsClassicQuerier_Staleness(t *testing.T) {
+func TestQuerier_ToClassicStaleness(t *testing.T) {
 	nhcb := func(customValues ...float64) *histogram.Histogram {
 		return &histogram.Histogram{
 			Schema:          histogram.CustomBucketsSchema,
@@ -454,14 +395,14 @@ func TestNHCBAsClassicQuerier_Staleness(t *testing.T) {
 		},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			q := NewNHCBAsClassicQuerier(&nhcbMockQuerier{nhcbSeries: tc.series})
+			q := NewQuerier(&nhcbMockQuerier{nhcbSeries: tc.series}, []Representation{NHCB})
 			ss := q.Select(context.Background(), false, nil, tc.matchers...)
 			require.ElementsMatch(t, tc.expected, samplesSummary(t, ss))
 		})
 	}
 }
 
-func TestNHCBAsClassicQuerier_Exponential(t *testing.T) {
+func TestQuerier_ToClassicExponential(t *testing.T) {
 	// exponential returns an exponential histogram with the given schema and
 	// positive bucket counts, starting at the bucket with index offset.
 	exponential := func(schema, offset int32, buckets ...float64) *histogram.FloatHistogram {
@@ -492,16 +433,16 @@ func TestNHCBAsClassicQuerier_Exponential(t *testing.T) {
 	}
 
 	for _, tc := range []struct {
-		name               string
-		includeExponential bool
-		series             []storage.Series
-		matchers           []*labels.Matcher
-		expected           []string
+		name     string
+		from     []Representation
+		series   []storage.Series
+		matchers []*labels.Matcher
+		expected []string
 	}{
 		{
 			// The buckets are (0.5,1], (1,2] and (2,4].
-			name:               "exponential histogram",
-			includeExponential: true,
+			name: "exponential histogram",
+			from: []Representation{NHCB, NHE},
 			series: []storage.Series{storage.NewListSeries(labels.FromStrings("__name__", "foo"), []chunks.Sample{
 				fhSample{t: 1, fh: exponential(0, 0, 1, 2, 1)},
 			})},
@@ -515,8 +456,8 @@ func TestNHCBAsClassicQuerier_Exponential(t *testing.T) {
 			},
 		},
 		{
-			name:               "exponential histogram count",
-			includeExponential: true,
+			name: "exponential histogram count",
+			from: []Representation{NHCB, NHE},
 			series: []storage.Series{storage.NewListSeries(labels.FromStrings("__name__", "foo"), []chunks.Sample{
 				fhSample{t: 1, fh: exponential(0, 0, 1, 2, 1)},
 			})},
@@ -524,8 +465,8 @@ func TestNHCBAsClassicQuerier_Exponential(t *testing.T) {
 			expected: []string{`{__name__="foo_count"} 4@1`},
 		},
 		{
-			name:               "exponential histogram sum",
-			includeExponential: true,
+			name: "exponential histogram sum",
+			from: []Representation{NHCB, NHE},
 			series: []storage.Series{storage.NewListSeries(labels.FromStrings("__name__", "foo"), []chunks.Sample{
 				fhSample{t: 1, fh: exponential(0, 0, 1, 2, 1)},
 			})},
@@ -533,7 +474,8 @@ func TestNHCBAsClassicQuerier_Exponential(t *testing.T) {
 			expected: []string{`{__name__="foo_sum"} 6@1`},
 		},
 		{
-			name: "exponential histograms are not converted by default",
+			name: "exponential histograms are only converted from nhe",
+			from: []Representation{NHCB},
 			series: []storage.Series{storage.NewListSeries(labels.FromStrings("__name__", "foo"), []chunks.Sample{
 				fhSample{t: 1, fh: exponential(0, 0, 1, 2, 1)},
 			})},
@@ -542,8 +484,8 @@ func TestNHCBAsClassicQuerier_Exponential(t *testing.T) {
 		{
 			// The buckets of job a are (0.5,1] and (1,2]. The ones of job b
 			// are (√2,2] and (2,2√2], which are (1,2] and (2,4] in schema 0.
-			name:               "all series are converted with the same boundaries",
-			includeExponential: true,
+			name: "all series are converted with the same boundaries",
+			from: []Representation{NHCB, NHE},
 			series: []storage.Series{
 				storage.NewListSeries(labels.FromStrings("__name__", "foo", "job", "a"), []chunks.Sample{
 					fhSample{t: 1, fh: exponential(0, 0, 1, 2)},
@@ -570,8 +512,8 @@ func TestNHCBAsClassicQuerier_Exponential(t *testing.T) {
 			// The buckets are (1,√2] and (√2,2] first, then (1,2]. The
 			// boundary √2 of the first sample is not used, which would mark
 			// its series stale at the second sample.
-			name:               "schema change",
-			includeExponential: true,
+			name: "schema change",
+			from: []Representation{NHCB, NHE},
 			series: []storage.Series{storage.NewListSeries(labels.FromStrings("__name__", "foo"), []chunks.Sample{
 				fhSample{t: 1, fh: exponential(1, 1, 1, 2)}, fhSample{t: 2, fh: exponential(0, 1, 3)},
 			})},
@@ -583,8 +525,8 @@ func TestNHCBAsClassicQuerier_Exponential(t *testing.T) {
 			},
 		},
 		{
-			name:               "NHCB keep their own boundaries",
-			includeExponential: true,
+			name: "NHCB keep their own boundaries",
+			from: []Representation{NHCB, NHE},
 			series: []storage.Series{
 				storage.NewListSeries(labels.FromStrings("__name__", "foo", "job", "nhcb"), []chunks.Sample{
 					fhSample{t: 1, fh: nhcb},
@@ -606,8 +548,8 @@ func TestNHCBAsClassicQuerier_Exponential(t *testing.T) {
 			},
 		},
 		{
-			name:               "stale marker",
-			includeExponential: true,
+			name: "stale marker",
+			from: []Representation{NHCB, NHE},
 			series: []storage.Series{storage.NewListSeries(labels.FromStrings("__name__", "foo"), []chunks.Sample{
 				fhSample{t: 1, fh: exponential(0, 0, 1, 2, 1)}, fhSample{t: 2, fh: staleMarker}, fhSample{t: 3, fh: exponential(0, 0, 1, 2, 1)},
 			})},
@@ -616,7 +558,7 @@ func TestNHCBAsClassicQuerier_Exponential(t *testing.T) {
 		},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			q := &NHCBAsClassicQuerier{Querier: &nhcbMockQuerier{nhcbSeries: tc.series}, includeExponential: tc.includeExponential}
+			q := NewQuerier(&nhcbMockQuerier{nhcbSeries: tc.series}, tc.from)
 			ss := q.Select(context.Background(), false, nil, tc.matchers...)
 			require.ElementsMatch(t, tc.expected, samplesSummary(t, ss))
 		})
@@ -799,7 +741,7 @@ func (*nhcbSetQuerier) LabelNames(context.Context, *storage.LabelHints, ...*labe
 
 func (*nhcbSetQuerier) Close() error { return nil }
 
-func TestNHCBAsClassicQuerier_ErrorPropagation(t *testing.T) {
+func TestQuerier_ToClassicErrorPropagation(t *testing.T) {
 	nhcb := &histogram.Histogram{
 		Schema:          histogram.CustomBucketsSchema,
 		Count:           3,
@@ -831,10 +773,10 @@ func TestNHCBAsClassicQuerier_ErrorPropagation(t *testing.T) {
 			},
 		},
 		{
-			// The nhcb set's Err() is nil initially (passes the pre-check) but
-			// becomes non-nil once Next() is exhausted, exercising the error
-			// path inside nhcbToClassicSeriesSet.Next().
-			name: "nhcb set error during iteration inside nhcbToClassicSeriesSet",
+			// The nhcb set's Err() only becomes non-nil once Next() is
+			// exhausted, exercising the error path after reading the native
+			// histograms to convert.
+			name: "nhcb set error during iteration",
 			querier: &nhcbSetQuerier{
 				classicSet: newMockSeriesSet(),
 				nhcbSet:    newDeferredErrSeriesSet(testError),
@@ -844,7 +786,7 @@ func TestNHCBAsClassicQuerier_ErrorPropagation(t *testing.T) {
 
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
-			q := NewNHCBAsClassicQuerier(tc.querier)
+			q := NewQuerier(tc.querier, []Representation{NHCB})
 			ss := q.Select(context.Background(), false, nil,
 				labels.MustNewMatcher(labels.MatchEqual, model.MetricNameLabel, "http_requests_bucket"))
 			for ss.Next() {
@@ -854,7 +796,7 @@ func TestNHCBAsClassicQuerier_ErrorPropagation(t *testing.T) {
 	}
 }
 
-func TestNHCBAsClassicQuerier_WarningPropagation(t *testing.T) {
+func TestQuerier_ToClassicWarningPropagation(t *testing.T) {
 	nhcb := &histogram.Histogram{
 		Schema:          histogram.CustomBucketsSchema,
 		Count:           3,
@@ -870,11 +812,11 @@ func TestNHCBAsClassicQuerier_WarningPropagation(t *testing.T) {
 
 	t.Run("nhcb set warnings propagate", func(t *testing.T) {
 		warn := annotations.New().Add(errors.New("nhcb warning"))
-		q := NewNHCBAsClassicQuerier(&nhcbMockQuerier{
+		q := NewQuerier(&nhcbMockQuerier{
 			classicSeries: []storage.Series{},
 			nhcbSeries:    []storage.Series{nhcbSeries},
 			nhcbWarnings:  warn,
-		})
+		}, []Representation{NHCB})
 
 		ss := q.Select(context.Background(), false, nil,
 			labels.MustNewMatcher(labels.MatchEqual, model.MetricNameLabel, "http_requests_bucket"))
@@ -890,10 +832,10 @@ func TestNHCBAsClassicQuerier_WarningPropagation(t *testing.T) {
 			labels.FromStrings("__name__", "http_requests_bucket", "le", "1"),
 			[]chunks.Sample{fSample{t: 1, f: 5}},
 		)}
-		q := NewNHCBAsClassicQuerier(&nhcbSetQuerier{
+		q := NewQuerier(&nhcbSetQuerier{
 			classicSet: &mockSeriesSet{idx: -1, series: classicSeries, warnings: warn},
 			nhcbSet:    newMockSeriesSet(),
-		})
+		}, []Representation{NHCB})
 
 		ss := q.Select(context.Background(), false, nil,
 			labels.MustNewMatcher(labels.MatchEqual, model.MetricNameLabel, "http_requests_bucket"))
@@ -906,9 +848,9 @@ func TestNHCBAsClassicQuerier_WarningPropagation(t *testing.T) {
 	t.Run("non-histogram passthrough preserves warnings", func(t *testing.T) {
 		warn := annotations.New().Add(errors.New("passthrough warning"))
 		series := []storage.Series{storage.NewListSeries(labels.FromStrings("__name__", "my_gauge"), []chunks.Sample{fSample{t: 1, f: 1}})}
-		q := NewNHCBAsClassicQuerier(&nhcbSetQuerier{
+		q := NewQuerier(&nhcbSetQuerier{
 			nhcbSet: &mockSeriesSet{idx: -1, series: series, warnings: warn},
-		})
+		}, []Representation{NHCB})
 
 		ss := q.Select(context.Background(), false, nil,
 			labels.MustNewMatcher(labels.MatchEqual, model.MetricNameLabel, "my_gauge"))

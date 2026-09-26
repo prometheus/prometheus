@@ -376,117 +376,81 @@ When enabled, Prometheus advertises support for Zstandard-compressed scrape resp
 
 When the flag is disabled, Prometheus does not advertise `zstd`. A target that answers with `Content-Encoding: zstd` regardless fails the scrape, because Prometheus cannot decode the body.
 
-## NHCB as classic histograms in PromQL
+## Query-time histogram conversion
 
-`--enable-feature=promql-nhcb-as-classic`
+`--enable-feature=promql-histogram-conversion`
 
-When enabled, PromQL queries for classic histogram series (e.g. `_bucket`, `_count`, `_sum`) will
-automatically convert Native Histograms with Custom Buckets (NHCB) into classic histogram series.
+Converts between classic and native histograms while evaluating PromQL queries, so that queries
+written for one representation keep working for histograms stored as the other one, e.g. while
+migrating from classic histograms to native histograms with custom buckets (NHCB). Unlike the
+`convert_classic_histograms_to_nhcb` scrape option, it never changes what is stored or remote
+written.
 
-For example, if `request_duration_seconds` is stored as an NHCB native histogram:
+`--query.convert-histograms-from` lists the representations to convert from. Like
+`--enable-feature`, it takes a comma separated list and can be repeated. It is empty by default,
+so enabling the feature alone converts nothing:
+
+* `classic`: The `_bucket`, `_count` and `_sum` series of classic histograms are converted to NHCB
+  with the same buckets, for selectors of the base name.
+* `nhcb`: NHCB are converted to classic histogram series with the same buckets, for selectors of
+  their `_bucket`, `_count` and `_sum` series.
+* `nhe`: Native histograms with exponential buckets are converted to classic histogram series with
+  derived buckets, see below.
+
+For example, with `--query.convert-histograms-from=nhcb`, queries for the classic histogram series
+of `request_duration_seconds` keep working after enabling `convert_classic_histograms_to_nhcb` for
+it:
 
 ```promql
-# Querying with a classic histogram suffix triggers the conversion:
+# Returns the stored classic series and the ones converted from the stored NHCB:
 histogram_quantile(0.95, rate(request_duration_seconds_bucket[5m]))
 
-# Querying without a suffix returns the regular NHCB native histogram:
-rate(request_duration_seconds[5m])
-```
-
-## Classic histograms as NHCB in PromQL
-
-`--enable-feature=promql-classic-as-nhcb`
-
-The opposite direction of `promql-nhcb-as-classic`. When enabled, a PromQL query for a native
-histogram also selects the classic histogram series of the same metric (`_bucket`, `_count` and
-`_sum`) and folds them into Native Histograms with Custom Buckets (NHCB) at query time.
-
-For example, if `request_duration_seconds` is only stored as a classic histogram:
-
-```promql
-# Querying the base name returns an NHCB assembled from the classic series:
-histogram_quantile(0.95, rate(request_duration_seconds[5m]))
-
-# Querying a classic suffix still returns the stored classic series:
-rate(request_duration_seconds_bucket[5m])
-```
-
-The conversion is skipped when the selector contains a `le` matcher, because native histogram
-series never carry that label.
-
-A classic histogram that cannot be converted (e.g. non-cumulative bucket counts, or a `_count`
-that does not match the `+Inf` bucket) is skipped for the affected timestamps, and a warning
-annotation is attached to the query result.
-
-Both flags cannot be enabled at the same time, as each layer would convert the output of the
-other one back, duplicating every histogram series. Enable `promql-nh-classic-compat` instead to
-convert in both directions.
-
-## Native and classic histogram compatibility in PromQL
-
-`--enable-feature=promql-nh-classic-compat`
-
-Makes native and classic histograms interchangeable in PromQL queries, e.g. while migrating from
-one to the other. It combines `promql-nhcb-as-classic` and `promql-classic-as-nhcb`, and cannot be
-enabled together with either of them:
-
-* A query for classic histogram series (`_bucket`, `_count` or `_sum`) also returns the classic
-  series converted from the native histograms of the base metric name. Unlike with
-  `promql-nhcb-as-classic`, this includes native histograms with an exponential schema, not only
-  NHCB.
-* Any other query also returns the NHCB assembled from the classic histogram series of the queried
-  metric name, like with `promql-classic-as-nhcb`.
-
-Each series selector is handled by exactly one of the two conversions, so converted series are
-never converted back.
-
-For example, if `request_duration_seconds` is stored as a classic histogram for some targets, and
-as a native histogram for others:
-
-```promql
-# Returns the stored classic histograms and the ones converted from the native histograms:
-histogram_quantile(0.95, rate(request_duration_seconds_bucket[5m]))
-
-# Returns the stored native histograms and the NHCB assembled from the classic histograms:
+# Returns the stored NHCB:
 histogram_quantile(0.95, rate(request_duration_seconds[5m]))
 ```
+
+Each series selector with a metric name equality matcher is converted in one direction only:
+
+* A metric name with a `_bucket`, `_count` or `_sum` suffix returns the stored classic histogram
+  series, plus the ones converted from the native histograms of the base name, from `nhcb` and
+  `nhe`. `le` matchers are applied to the converted series.
+* Any other metric name returns the stored series, plus the NHCB converted from the classic
+  histogram series of that name, from `classic`. As NHCB have no `le` label, nothing is converted
+  if the selector has a `le` matcher that does not match the empty value.
+* Selectors without a metric name equality matcher, e.g. `{__name__=~"request_duration.*"}`, are
+  not converted.
+
+Converted series are never converted back, so all conversions can be enabled at the same time.
 
 Unlike NHCB, native histograms with an exponential schema have no fixed bucket boundaries. So that
 the converted `_bucket` series can be aggregated across series and over time, e.g. with
-`sum by (le)` or `rate()`, all exponential histograms selected by a query are converted with the
-same `le` boundaries: the union of their bucket boundaries, reduced to the lowest schema amongst
-them. This means:
+`sum by (le)` or `rate()`, all exponential histograms selected by a selector are converted with the
+same derived `le` boundaries: the union of their bucket boundaries, reduced to the lowest schema
+amongst them. The count at each boundary is exact, but:
 
 * The `le` boundaries depend on the series and the time range selected by the query.
 * A single histogram with a low resolution lowers the resolution of all of them.
 * Histograms with many populated buckets result in many `_bucket` series.
-* Stored classic histograms and NHCB keep their own bucket boundaries. As usual for classic
-  histograms, aggregating them by `le` with histograms that have different bucket boundaries
-  results in inaccurate quantiles.
 
 Also note that:
 
-* The `le` label of a converted `_bucket` series is formatted as a float, e.g. `le="1.0"` rather
-  than `le="1"`, so `le` matchers must use that format to select it.
+* The `le` label of a converted `_bucket` series is formatted as a float, e.g. `le="1.0"`, like the
+  `le` label of scraped classic histograms since Prometheus v3.0.
 * `histogram_quantile()` interpolates linearly within the buckets of a classic histogram, but
   exponentially within the buckets of a native histogram with an exponential schema. Quantiles
-  calculated from the converted classic series hence differ from the quantiles calculated from the
-  native histograms they were converted from.
+  calculated from converted classic series hence differ from the quantiles calculated from the
+  exponential histograms they were converted from.
+* A classic histogram that cannot be converted, e.g. because its bucket counts are not cumulative,
+  is skipped for the affected timestamps, and a warning annotation is attached to the query result.
 
-### Common limitations
+Limitations:
 
-All three features only affect PromQL query evaluation. They do not apply to remote write (series
-are not converted when being forwarded to remote endpoints) and do not affect the series API (the
-`/api/v1/series` endpoint will not return the converted series).
-
-The converted series are returned *in addition to* the stored ones, they are not merged. During a
-migration, where classic and native histograms are written for the same metric (e.g. with
-`always_scrape_classic_histograms` enabled), this means:
-
-* If the classic and the native representation cover **disjoint** time ranges (e.g. the classic
-  histogram was dropped when the native one was enabled), instant queries work, and range
-  functions such as `rate()` succeed as long as no evaluation step sees samples of both
-  representations.
-* If they **overlap**, i.e. both representations have a sample for the same series at the same
-  timestamp, the query fails with `vector cannot contain metrics with the same labelset`. Use
-  `__name__` matchers, or stop writing one of the two representations, to avoid this.
+* Conversions only apply to PromQL queries, e.g. of the query API and of rules, for both local and
+  remote read data. The remote read endpoint, federation and the `/api/v1/series`, `/api/v1/labels`
+  and `/api/v1/label/<name>/values` endpoints return stored data only.
+* Converted series are returned in addition to the stored ones. Where a histogram is stored in both
+  representations for the same labels and timestamps, e.g. while `always_scrape_classic_histograms`
+  is enabled, queries fail with `vector cannot contain metrics with the same labelset`, and so do
+  range functions such as `rate()` whose range covers samples of both representations.
+* The series to convert from are buffered in memory, and this memory is not accounted in
+  `--query.max-samples`.

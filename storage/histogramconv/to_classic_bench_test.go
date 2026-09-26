@@ -71,7 +71,7 @@ func buildBenchNHCBSeries(numSeries, numBuckets, numSamples int) []storage.Serie
 	return series
 }
 
-func benchmarkNHCBAsClassicSelect(b *testing.B, suffix string) {
+func benchmarkNHCBToClassic(b *testing.B, suffix string) {
 	const (
 		numSeries  = 1000
 		numBuckets = 30
@@ -83,7 +83,7 @@ func benchmarkNHCBAsClassicSelect(b *testing.B, suffix string) {
 		classicSeries: []storage.Series{},
 		nhcbSeries:    nhcbSeries,
 	}
-	q := NewNHCBAsClassicQuerier(mock)
+	q := NewQuerier(mock, []Representation{NHCB})
 	matcher := labels.MustNewMatcher(labels.MatchEqual, model.MetricNameLabel, "bench_request_duration_seconds"+suffix)
 
 	b.ResetTimer()
@@ -104,14 +104,14 @@ func benchmarkNHCBAsClassicSelect(b *testing.B, suffix string) {
 	}
 }
 
-func BenchmarkNHCBAsClassicSelect_Bucket(b *testing.B) {
-	benchmarkNHCBAsClassicSelect(b, "_bucket")
+func BenchmarkQuerier_NHCBToClassicBucket(b *testing.B) {
+	benchmarkNHCBToClassic(b, "_bucket")
 }
 
-func BenchmarkNHCBAsClassicSelect_Count(b *testing.B) {
-	benchmarkNHCBAsClassicSelect(b, "_count")
+func BenchmarkQuerier_NHCBToClassicCount(b *testing.B) {
+	benchmarkNHCBToClassic(b, "_count")
 }
 
-func BenchmarkNHCBAsClassicSelect_Sum(b *testing.B) {
-	benchmarkNHCBAsClassicSelect(b, "_sum")
+func BenchmarkQuerier_NHCBToClassicSum(b *testing.B) {
+	benchmarkNHCBToClassic(b, "_sum")
 }

@@ -14,301 +14,75 @@
 package histogramconv
 
 import (
-	"context"
 	"math"
 	"slices"
-	"strings"
-
-	"github.com/prometheus/common/model"
 
 	"github.com/prometheus/prometheus/model/histogram"
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/model/value"
 	"github.com/prometheus/prometheus/storage"
 	"github.com/prometheus/prometheus/tsdb/chunkenc"
-	"github.com/prometheus/prometheus/tsdb/chunks"
-	"github.com/prometheus/prometheus/util/annotations"
 )
 
-// Known limitations of the NHCB-to-classic conversion:
+// toClassic converts the native histograms of ss, of the representations in
+// from, to the classic histogram series with the given suffix, and returns the
+// converted series whose le label matches all leMatchers.
 //
-// 1. TODO: This does not support the series API (LabelNames, LabelValues, etc.).
-//    Only the Select method is wrapped. Any metadata or label introspection
-//    queries will not reflect the converted classic series.
+// Native histograms with an exponential schema have no fixed bucket
+// boundaries. So that the resulting classic histograms can be aggregated by
+// le, across series and over time, all of them are converted with the same
+// derived boundaries, see exponentialBoundaries. Hence the le set depends on
+// the selected series and time range, a single low resolution histogram lowers
+// the resolution of all of them, and histograms with many buckets result in
+// many classic series.
 //
-// 2. TODO: The results are not properly sorted. When multiple NHCB series with
-//    different label values are converted, the output is grouped by the
-//    original NHCB series rather than being globally sorted by labels.
-//    For example, given two NHCB series with method="GET" and method="POST",
-//    the output order would be:
-//
-//      http_request_duration_seconds_bucket{le="0.1", method="GET"}
-//      http_request_duration_seconds_bucket{le="+Inf", method="GET"}
-//      http_request_duration_seconds_bucket{le="0.1", method="POST"}
-//      http_request_duration_seconds_bucket{le="+Inf", method="POST"}
-//
-//    But the correctly sorted order (lexicographic by labels) would be:
-//
-//      http_request_duration_seconds_bucket{le="+Inf", method="GET"}
-//      http_request_duration_seconds_bucket{le="+Inf", method="POST"}
-//      http_request_duration_seconds_bucket{le="0.1", method="GET"}
-//      http_request_duration_seconds_bucket{le="0.1", method="POST"}
-//
-// 3. Native histograms with an exponential schema, if converted at all, have
-//    no fixed bucket boundaries. So that the resulting classic histograms can
-//    be aggregated by le, across series and over time, all of them are
-//    converted with the same le boundaries: the union of the boundaries of all
-//    the selected exponential histograms, reduced to the lowest schema amongst
-//    them. Hence the le set depends on the selected series and time range, a
-//    single low resolution histogram lowers the resolution of all of them, and
-//    histograms with many buckets result in many classic series.
-
-// NHCBAsClassicQuerier wraps a storage.Querier and converts NHCB (Native Histogram Custom Buckets)
-// queries to classic histogram format when classic series don't exist.
-type NHCBAsClassicQuerier struct {
-	storage.Querier
-
-	// includeExponential converts native histograms with an exponential
-	// schema, too, not only NHCB.
-	includeExponential bool
-}
-
-// NewNHCBAsClassicQuerier returns a new querier that wraps the given querier
-// and converts NHCB to classic histogram format for queries.
-func NewNHCBAsClassicQuerier(q storage.Querier) storage.Querier {
-	return &NHCBAsClassicQuerier{Querier: q}
-}
-
-// NHCBAsClassicStorage wraps a storage.Storage and applies NHCB-to-classic conversion
-// to queriers when enabled.
-type NHCBAsClassicStorage struct {
-	storage.Storage
-}
-
-// NewNHCBAsClassicStorage returns a new storage that wraps the given storage
-// and applies NHCB-to-classic conversion to queriers.
-func NewNHCBAsClassicStorage(s storage.Storage) storage.Storage {
-	return &NHCBAsClassicStorage{Storage: s}
-}
-
-// Querier implements the storage.Storage interface.
-func (s *NHCBAsClassicStorage) Querier(mint, maxt int64) (storage.Querier, error) {
-	q, err := s.Storage.Querier(mint, maxt)
+// A converted series is marked stale at the first sample of its native
+// histogram that does not result in it anymore, e.g. because the native
+// histogram went stale, its bucket layout changed or it is not converted, just
+// like the scrape loop marks series stale that disappear from a target.
+func toClassic(ss storage.SeriesSet, suffix string, from representations, leMatchers []*labels.Matcher) ([]*series, error) {
+	nhSeries, err := readNativeHistograms(ss, from)
 	if err != nil {
 		return nil, err
 	}
-	return NewNHCBAsClassicQuerier(q), nil
-}
-
-// Select implements the storage.Querier interface.
-func (q *NHCBAsClassicQuerier) Select(ctx context.Context, sortSeries bool, hints *storage.SelectHints, matchers ...*labels.Matcher) storage.SeriesSet {
-	nameMatcher, suffix, baseMatchers := extractHistogramSuffix(matchers)
-	if suffix == "" {
-		// Not a classic histogram query, pass through
-		return q.Querier.Select(ctx, sortSeries, hints, matchers...)
+	var boundaries []float64
+	if from.has(NHE) && suffix == histogram.ClassicSuffixBucket {
+		boundaries = exponentialBoundaries(nhSeries)
 	}
 
-	metricNameMacher := newBaseNameMatcher(nameMatcher.Type, nameMatcher.Value, suffix)
-	if metricNameMacher == nil {
-		return q.Querier.Select(ctx, sortSeries, hints, matchers...)
-	}
-
-	classicSet := q.Querier.Select(ctx, sortSeries, hints, matchers...)
-	if classicSet.Err() != nil {
-		return classicSet
-	}
-
-	var classicSeries []storage.Series
-	for classicSet.Next() {
-		classicSeries = append(classicSeries, classicSet.At())
-	}
-
-	if err := classicSet.Err(); err != nil {
-		return storage.ErrSeriesSet(err)
-	}
-
-	seriesSets := make([]storage.SeriesSet, 0, 2)
-	if len(classicSeries) > 0 {
-		seriesSets = append(seriesSets, &bufferedSeriesSet{series: classicSeries, warnings: classicSet.Warnings()})
-	}
-	matchersWithoutLe := make([]*labels.Matcher, 0, len(matchers)-1)
-	var leMatcher *labels.Matcher
-	for _, matcher := range baseMatchers {
-		if matcher.Name == labels.BucketLabel {
-			leMatcher = matcher
-		} else {
-			matchersWithoutLe = append(matchersWithoutLe, matcher)
+	lsetBuilder := labels.NewBuilder(labels.EmptyLabels())
+	b := newClassicSeriesBuilder()
+	for _, ns := range nhSeries {
+		cache := &histogram.ClassicSeriesCache{}
+		b.startSeries()
+		for _, smpl := range ns.samples {
+			b.startSample(smpl.t)
+			if smpl.fh != nil {
+				var err error
+				if histogram.IsExponentialSchema(smpl.fh.Schema) {
+					err = histogram.ConvertExponentialToClassic(smpl.fh, boundaries, ns.labels, lsetBuilder, suffix, cache, b.emit)
+				} else {
+					err = histogram.ConvertNHCBToClassic(smpl.fh, ns.labels, lsetBuilder, suffix, cache, b.emit)
+				}
+				if err != nil {
+					return nil, err
+				}
+			}
+			b.endSample()
 		}
 	}
 
-	matchersWithoutLe = append(matchersWithoutLe, metricNameMacher)
-	nhcbSet := q.Querier.Select(ctx, sortSeries, hints, matchersWithoutLe...)
-	if nhcbSet.Err() != nil {
-		return nhcbSet
-	}
-	seriesSets = append(seriesSets, &nhcbToClassicSeriesSet{
-		nhcbSet:            nhcbSet,
-		leMatcher:          leMatcher,
-		suffix:             suffix,
-		includeExponential: q.includeExponential,
-	})
-
-	return &multipleSeriesSet{
-		seriesSet: seriesSets,
-		idx:       0,
-	}
-}
-
-// bufferedSeriesSet wraps a buffered list of series.
-type bufferedSeriesSet struct {
-	series   []storage.Series
-	idx      int
-	warnings annotations.Annotations
-}
-
-func (b *bufferedSeriesSet) Next() bool {
-	if b.idx < len(b.series) {
-		b.idx++
-		return true
-	}
-	return false
-}
-
-func (b *bufferedSeriesSet) At() storage.Series {
-	if b.idx == 0 || b.idx > len(b.series) {
-		return nil
-	}
-	return b.series[b.idx-1]
-}
-
-func (*bufferedSeriesSet) Err() error {
-	return nil
-}
-
-func (b *bufferedSeriesSet) Warnings() annotations.Annotations {
-	return b.warnings
-}
-
-// histogramSuffix returns the classic histogram suffix (_bucket, _count, _sum)
-// from the given metric name, or empty string if none matches.
-func histogramSuffix(metricName string) string {
-	switch {
-	case strings.HasSuffix(metricName, "_bucket"):
-		return "_bucket"
-	case strings.HasSuffix(metricName, "_count"):
-		return "_count"
-	case strings.HasSuffix(metricName, "_sum"):
-		return "_sum"
-	default:
-		return ""
-	}
-}
-
-// newBaseNameMatcher creates a new __name__ matcher with the histogram suffix removed.
-// Returns nil if the base name matcher cannot be created.
-func newBaseNameMatcher(matchType labels.MatchType, metricName, suffix string) *labels.Matcher {
-	baseName := metricName[:len(metricName)-len(suffix)]
-	m, err := labels.NewMatcher(matchType, model.MetricNameLabel, baseName)
-	if err != nil {
-		return nil
-	}
-	return m
-}
-
-// extractHistogramSuffix separates the __name__ matcher from other matchers and
-// determines the classic histogram suffix (_bucket, _count, _sum).
-// Returns the __name__ matcher, the suffix, and the remaining matchers.
-// Returns empty suffix if not a classic histogram query.
-func extractHistogramSuffix(matchers []*labels.Matcher) (*labels.Matcher, string, []*labels.Matcher) {
-	var nameMatcher *labels.Matcher
-	baseMatchers := make([]*labels.Matcher, 0, len(matchers))
-
-	for _, m := range matchers {
-		if m.Name == model.MetricNameLabel {
-			nameMatcher = m
-		} else {
-			baseMatchers = append(baseMatchers, m)
+	converted := make([]*series, 0, len(b.series))
+Series:
+	for _, s := range b.series {
+		for _, m := range leMatchers {
+			if !m.Matches(s.lset.Get(labels.BucketLabel)) {
+				continue Series
+			}
 		}
+		converted = append(converted, s)
 	}
-
-	if nameMatcher == nil {
-		return nil, "", matchers
-	}
-
-	suffix := histogramSuffix(nameMatcher.Value)
-	if suffix == "" {
-		return nil, "", matchers
-	}
-
-	return nameMatcher, suffix, baseMatchers
-}
-
-type multipleSeriesSet struct {
-	seriesSet []storage.SeriesSet
-	idx       int
-}
-
-func (m *multipleSeriesSet) Next() bool {
-	if m.idx >= len(m.seriesSet) {
-		return false
-	}
-	if !m.seriesSet[m.idx].Next() {
-		m.idx++
-		return m.Next()
-	}
-	return true
-}
-
-func (m *multipleSeriesSet) At() storage.Series {
-	return m.seriesSet[m.idx].At()
-}
-
-func (m *multipleSeriesSet) Err() error {
-	for _, ss := range m.seriesSet {
-		if err := ss.Err(); err != nil {
-			return err
-		}
-	}
-	return nil
-}
-
-func (m *multipleSeriesSet) Warnings() annotations.Annotations {
-	var w annotations.Annotations
-	for _, ss := range m.seriesSet {
-		w.Merge(ss.Warnings())
-	}
-	return w
-}
-
-// nhcbToClassicSeriesSet converts NHCB series to classic histogram series format.
-type nhcbToClassicSeriesSet struct {
-	nhcbSet   storage.SeriesSet
-	leMatcher *labels.Matcher
-	suffix    string
-	// includeExponential converts native histograms with an exponential
-	// schema, too, see NHCBAsClassicQuerier.
-	includeExponential bool
-
-	series []storage.Series
-	idx    int
-	err    error
-}
-
-func (s *nhcbToClassicSeriesSet) Next() bool {
-	if s.err != nil {
-		return false
-	}
-	// Convert all native histogram series on the first Next() call. A single
-	// native histogram results in multiple classic histogram series, so
-	// nothing can be returned before the whole set has been consumed.
-	if s.series == nil && !s.convert() {
-		return false
-	}
-	if s.idx < len(s.series) {
-		s.idx++
-		return true
-	}
-	return false
+	return converted, nil
 }
 
 // nativeHistogramSeries holds the samples of a native histogram series.
@@ -325,119 +99,45 @@ type nativeHistogramSample struct {
 	fh *histogram.FloatHistogram
 }
 
-// convert drains the wrapped series set and converts the native histograms to
-// classic histogram series. It reports whether it succeeded.
-func (s *nhcbToClassicSeriesSet) convert() bool {
-	s.series = make([]storage.Series, 0)
-
-	nhSeries, ok := s.readNativeHistograms()
-	if !ok {
-		return false
-	}
-	var boundaries []float64
-	if s.includeExponential && s.suffix == histogram.ClassicSuffixBucket {
-		boundaries = exponentialBoundaries(nhSeries)
-	}
-
-	lsetBuilder := labels.NewBuilder(labels.EmptyLabels())
-	b := newClassicSeriesBuilder()
-	emit := b.emit
-	for _, ns := range nhSeries {
-		seriesCache := &histogram.ClassicSeriesCache{}
-		b.startSeries()
-		for _, smpl := range ns.samples {
-			b.startSample(smpl.t)
-			if smpl.fh != nil {
-				var err error
-				if histogram.IsExponentialSchema(smpl.fh.Schema) {
-					err = histogram.ConvertExponentialToClassic(smpl.fh, boundaries, ns.labels, lsetBuilder, s.suffix, seriesCache, emit)
-				} else {
-					err = histogram.ConvertNHCBToClassic(smpl.fh, ns.labels, lsetBuilder, s.suffix, seriesCache, emit)
-				}
-				if err != nil {
-					s.err = err
-					return false
-				}
-			}
-			b.endSample()
-		}
-	}
-
-	for _, data := range b.series {
-		if s.leMatcher != nil {
-			// In case a le was provided we need to filter with it
-			if !s.leMatcher.Matches(data.labels.Get(labels.BucketLabel)) {
-				continue
-			}
-		}
-
-		s.series = append(s.series, storage.NewListSeries(data.labels, data.samples))
-	}
-	return true
-}
-
-// readNativeHistograms drains the wrapped series set and returns its series.
-// It reports whether it succeeded.
-func (s *nhcbToClassicSeriesSet) readNativeHistograms() ([]nativeHistogramSeries, bool) {
-	var nhSeries []nativeHistogramSeries
-	for s.nhcbSet.Next() {
-		series := s.nhcbSet.At()
-		if series == nil {
-			continue
-		}
-		it := series.Iterator(nil)
-		if it == nil {
-			continue
-		}
-
-		ns := nativeHistogramSeries{labels: series.Labels()}
+// readNativeHistograms drains ss and returns its series. Only the native
+// histograms of the representations in from are converted.
+func readNativeHistograms(ss storage.SeriesSet, from representations) ([]nativeHistogramSeries, error) {
+	var (
+		nhSeries []nativeHistogramSeries
+		it       chunkenc.Iterator
+	)
+	for ss.Next() {
+		s := ss.At()
+		ns := nativeHistogramSeries{labels: s.Labels()}
+		it = s.Iterator(it)
 		for valType := it.Next(); valType != chunkenc.ValNone; valType = it.Next() {
 			smpl := nativeHistogramSample{t: it.AtT()}
 			if valType == chunkenc.ValHistogram || valType == chunkenc.ValFloatHistogram {
 				// This works for histograms with integer counts, too.
-				if _, fh := it.AtFloatHistogram(nil); fh != nil && s.convertible(fh.Schema, fh.Sum) {
+				if _, fh := it.AtFloatHistogram(nil); convertible(fh, from) {
 					smpl.fh = fh
 				}
 			}
 			ns.samples = append(ns.samples, smpl)
 		}
 		if err := it.Err(); err != nil {
-			s.err = err
-			return nil, false
+			return nil, err
 		}
 		nhSeries = append(nhSeries, ns)
 	}
-	if err := s.nhcbSet.Err(); err != nil {
-		s.err = err
-		return nil, false
-	}
-	return nhSeries, true
+	return nhSeries, ss.Err()
 }
 
-func (s *nhcbToClassicSeriesSet) At() storage.Series {
-	if s.idx == 0 || s.idx > len(s.series) {
-		return nil
-	}
-	return s.series[s.idx-1]
-}
-
-func (s *nhcbToClassicSeriesSet) Err() error {
-	return s.err
-}
-
-func (s *nhcbToClassicSeriesSet) Warnings() annotations.Annotations {
-	return s.nhcbSet.Warnings()
-}
-
-// convertible reports whether a native histogram sample with the given schema
-// and sum is converted to classic histogram series.
-func (s *nhcbToClassicSeriesSet) convertible(schema int32, sum float64) bool {
+// convertible reports whether the native histogram fh, of the representations
+// in from, is converted to classic histogram series.
+func convertible(fh *histogram.FloatHistogram, from representations) bool {
 	// Staleness markers are not converted, whatever their schema. The series
 	// converted from the previous sample are marked stale instead.
-	if value.IsStaleNaN(sum) {
+	if fh == nil || value.IsStaleNaN(fh.Sum) {
 		return false
 	}
-	return histogram.IsCustomBucketsSchema(schema) || (s.includeExponential && histogram.IsExponentialSchema(schema))
+	return (from.has(NHCB) && histogram.IsCustomBucketsSchema(fh.Schema)) ||
+		(from.has(NHE) && histogram.IsExponentialSchema(fh.Schema))
 }
 
 // exponentialBoundaries returns the le boundaries to convert the exponential
@@ -477,11 +177,6 @@ func exponentialBoundaries(nhSeries []nativeHistogramSeries) []float64 {
 	return boundaries
 }
 
-type convertedSeriesData struct {
-	labels  labels.Labels
-	samples []chunks.Sample
-}
-
 // classicSeriesBuilder collects the classic histogram series converted from
 // native histograms, one native histogram sample after the other.
 //
@@ -490,7 +185,7 @@ type convertedSeriesData struct {
 // histogram went stale or its bucket layout changed, just like the scrape loop
 // marks series stale that disappear from a target.
 type classicSeriesBuilder struct {
-	series []*convertedSeriesData
+	series []*series
 	// byHash indexes series by label hash rather than by Labels.String().
 	byHash map[uint64][]int
 
@@ -522,7 +217,7 @@ func (b *classicSeriesBuilder) emit(l labels.Labels, v float64) error {
 	h := l.Hash()
 	idx := -1
 	for _, candidate := range b.byHash[h] {
-		if labels.Equal(b.series[candidate].labels, l) {
+		if labels.Equal(b.series[candidate].lset, l) {
 			idx = candidate
 			break
 		}
@@ -530,16 +225,10 @@ func (b *classicSeriesBuilder) emit(l labels.Labels, v float64) error {
 	if idx == -1 {
 		idx = len(b.series)
 		b.byHash[h] = append(b.byHash[h], idx)
-		b.series = append(b.series, &convertedSeriesData{
-			labels:  l,
-			samples: make([]chunks.Sample, 0),
-		})
+		b.series = append(b.series, &series{lset: l})
 	}
 
-	b.series[idx].samples = append(b.series[idx].samples, fSample{
-		t: b.t,
-		f: v,
-	})
+	b.series[idx].samples = append(b.series[idx].samples, fSample{t: b.t, f: v})
 	b.emitted = append(b.emitted, idx)
 	return nil
 }

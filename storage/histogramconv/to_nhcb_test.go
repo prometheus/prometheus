@@ -33,62 +33,6 @@ import (
 	"github.com/prometheus/prometheus/util/annotations"
 )
 
-func TestNewClassicSuffixMatcher(t *testing.T) {
-	tests := []struct {
-		name          string
-		matcher       *labels.Matcher
-		expectedValue string
-		expectedNil   bool
-	}{
-		{
-			name:          "equal matcher",
-			matcher:       labels.MustNewMatcher(labels.MatchEqual, model.MetricNameLabel, "http_requests"),
-			expectedValue: "http_requests(_bucket|_count|_sum)",
-		},
-		{
-			name:          "equal matcher with regexp meta characters",
-			matcher:       labels.MustNewMatcher(labels.MatchEqual, model.MetricNameLabel, "http.requests"),
-			expectedValue: `http\.requests(_bucket|_count|_sum)`,
-		},
-		{
-			name:          "regexp matcher is grouped to keep the alternation intact",
-			matcher:       labels.MustNewMatcher(labels.MatchRegexp, model.MetricNameLabel, "http_requests|rpc_latency"),
-			expectedValue: "(?:http_requests|rpc_latency)(_bucket|_count|_sum)",
-		},
-		{
-			name:        "no matcher",
-			matcher:     nil,
-			expectedNil: true,
-		},
-		{
-			name:        "name already has a classic suffix",
-			matcher:     labels.MustNewMatcher(labels.MatchEqual, model.MetricNameLabel, "http_requests_bucket"),
-			expectedNil: true,
-		},
-		{
-			name:        "negative matcher matches an unbounded set of names",
-			matcher:     labels.MustNewMatcher(labels.MatchNotEqual, model.MetricNameLabel, "http_requests"),
-			expectedNil: true,
-		},
-	}
-
-	for _, tc := range tests {
-		t.Run(tc.name, func(t *testing.T) {
-			m := newClassicSuffixMatcher(tc.matcher)
-			if tc.expectedNil {
-				require.Nil(t, m)
-				return
-			}
-			require.NotNil(t, m)
-			require.Equal(t, labels.MatchRegexp, m.Type)
-			require.Equal(t, model.MetricNameLabel, m.Name)
-			require.Equal(t, tc.expectedValue, m.Value)
-			require.True(t, m.Matches("http_requests_count") || m.Matches("http.requests_count") || m.Matches("rpc_latency_count"))
-			require.False(t, m.Matches("http_requests"))
-		})
-	}
-}
-
 // classicHistogramSeries returns the classic series of a histogram with the
 // buckets le=1 and le=+Inf, observed at t=1 and t=2.
 func classicHistogramSeries(extraLabels ...string) []storage.Series {
@@ -104,7 +48,7 @@ func classicHistogramSeries(extraLabels ...string) []storage.Series {
 	}
 }
 
-func TestClassicAsNHCBQuerier_Select(t *testing.T) {
+func TestQuerier_ToNHCB(t *testing.T) {
 	nhcb := &histogram.Histogram{
 		Schema:          histogram.CustomBucketsSchema,
 		Count:           5,
@@ -138,12 +82,10 @@ func TestClassicAsNHCBQuerier_Select(t *testing.T) {
 			},
 		},
 		{
-			name:          "classic histogram only - matched by regexp",
-			queryMatchers: []*labels.Matcher{labels.MustNewMatcher(labels.MatchRegexp, model.MetricNameLabel, "http_.*")},
-			classicSeries: classicHistogramSeries(),
-			expectedSeries: []string{
-				`{__name__="http_requests"} @[1] @[2]`,
-			},
+			name:           "regexp name matchers are not converted",
+			queryMatchers:  []*labels.Matcher{labels.MustNewMatcher(labels.MatchRegexp, model.MetricNameLabel, "http_.*")},
+			classicSeries:  classicHistogramSeries(),
+			expectedSeries: nil,
 		},
 		{
 			name:          "one classic histogram per label set",
@@ -157,7 +99,7 @@ func TestClassicAsNHCBQuerier_Select(t *testing.T) {
 		{
 			// This is the migration overlap: the same series is returned twice,
 			// which PromQL rejects as a labelset collision if the samples
-			// overlap in time. See TestNHCBCompatLayers in the promql package.
+			// overlap in time. See TestPromQL.
 			name:          "native and classic histogram - both are returned",
 			queryMatchers: []*labels.Matcher{labels.MustNewMatcher(labels.MatchEqual, model.MetricNameLabel, "http_requests")},
 			classicSeries: classicHistogramSeries(),
@@ -201,10 +143,10 @@ func TestClassicAsNHCBQuerier_Select(t *testing.T) {
 
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
-			q := NewClassicAsNHCBQuerier(&classicMockQuerier{
+			q := NewQuerier(&classicMockQuerier{
 				classicSeries: tc.classicSeries,
 				nativeSeries:  tc.nativeSeries,
-			})
+			}, []Representation{Classic})
 
 			ss := q.Select(context.Background(), false, nil, tc.queryMatchers...)
 			var got []string
@@ -217,7 +159,7 @@ func TestClassicAsNHCBQuerier_Select(t *testing.T) {
 	}
 
 	t.Run("converted samples", func(t *testing.T) {
-		q := NewClassicAsNHCBQuerier(&classicMockQuerier{classicSeries: classicHistogramSeries()})
+		q := NewQuerier(&classicMockQuerier{classicSeries: classicHistogramSeries()}, []Representation{Classic})
 		ss := q.Select(context.Background(), false, nil, labels.MustNewMatcher(labels.MatchEqual, model.MetricNameLabel, "http_requests"))
 		require.True(t, ss.Next())
 
@@ -246,10 +188,10 @@ func TestClassicAsNHCBQuerier_Select(t *testing.T) {
 	})
 
 	t.Run("float bucket counts produce a float histogram", func(t *testing.T) {
-		q := NewClassicAsNHCBQuerier(&classicMockQuerier{classicSeries: []storage.Series{
+		q := NewQuerier(&classicMockQuerier{classicSeries: []storage.Series{
 			storage.NewListSeries(labels.FromStrings(model.MetricNameLabel, "http_requests_bucket", labels.BucketLabel, "1"), []chunks.Sample{fSample{t: 1, f: 2.5}}),
 			storage.NewListSeries(labels.FromStrings(model.MetricNameLabel, "http_requests_bucket", labels.BucketLabel, "+Inf"), []chunks.Sample{fSample{t: 1, f: 5}}),
-		}})
+		}}, []Representation{Classic})
 		ss := q.Select(context.Background(), false, nil, labels.MustNewMatcher(labels.MatchEqual, model.MetricNameLabel, "http_requests"))
 		require.True(t, ss.Next())
 
@@ -262,7 +204,7 @@ func TestClassicAsNHCBQuerier_Select(t *testing.T) {
 	})
 }
 
-func TestClassicAsNHCBQuerier_ConversionWarnings(t *testing.T) {
+func TestQuerier_ToNHCBConversionWarnings(t *testing.T) {
 	tests := []struct {
 		name            string
 		classicSeries   []storage.Series
@@ -314,7 +256,7 @@ func TestClassicAsNHCBQuerier_ConversionWarnings(t *testing.T) {
 
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
-			q := NewClassicAsNHCBQuerier(&classicMockQuerier{classicSeries: tc.classicSeries})
+			q := NewQuerier(&classicMockQuerier{classicSeries: tc.classicSeries}, []Representation{Classic})
 			ss := q.Select(context.Background(), false, nil, labels.MustNewMatcher(labels.MatchEqual, model.MetricNameLabel, "http_requests"))
 			var count int
 			for ss.Next() {
@@ -331,7 +273,7 @@ func TestClassicAsNHCBQuerier_ConversionWarnings(t *testing.T) {
 	}
 }
 
-func TestClassicAsNHCBQuerier_Staleness(t *testing.T) {
+func TestQuerier_ToNHCBStaleness(t *testing.T) {
 	stale := math.Float64frombits(value.StaleNaN)
 	// series returns a classic series with the given values at t=1, t=2, etc.
 	series := func(name string, lbls []string, values ...float64) storage.Series {
@@ -392,7 +334,7 @@ func TestClassicAsNHCBQuerier_Staleness(t *testing.T) {
 		},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			q := NewClassicAsNHCBQuerier(&classicMockQuerier{classicSeries: tc.classicSeries})
+			q := NewQuerier(&classicMockQuerier{classicSeries: tc.classicSeries}, []Representation{Classic})
 			ss := q.Select(context.Background(), false, nil, labels.MustNewMatcher(labels.MatchEqual, model.MetricNameLabel, "http_requests"))
 			require.ElementsMatch(t, tc.expected, samplesSummary(t, ss))
 			require.Empty(t, ss.Warnings())
@@ -400,7 +342,7 @@ func TestClassicAsNHCBQuerier_Staleness(t *testing.T) {
 	}
 }
 
-func TestClassicAsNHCBQuerier_ErrorPropagation(t *testing.T) {
+func TestQuerier_ToNHCBErrorPropagation(t *testing.T) {
 	testError := errors.New("storage error")
 
 	tests := []struct {
@@ -426,7 +368,7 @@ func TestClassicAsNHCBQuerier_ErrorPropagation(t *testing.T) {
 
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
-			q := NewClassicAsNHCBQuerier(tc.querier)
+			q := NewQuerier(tc.querier, []Representation{Classic})
 			ss := q.Select(context.Background(), false, nil,
 				labels.MustNewMatcher(labels.MatchEqual, model.MetricNameLabel, "http_requests"))
 			for ss.Next() {
@@ -436,16 +378,16 @@ func TestClassicAsNHCBQuerier_ErrorPropagation(t *testing.T) {
 	}
 }
 
-func TestClassicAsNHCBQuerier_WarningPropagation(t *testing.T) {
+func TestQuerier_ToNHCBWarningPropagation(t *testing.T) {
 	nativeWarning := annotations.New().Add(errors.New("native warning"))
 	classicWarning := annotations.New().Add(errors.New("classic warning"))
 
-	q := NewClassicAsNHCBQuerier(&classicSetQuerier{
+	q := NewQuerier(&classicSetQuerier{
 		nativeSet: &mockSeriesSet{idx: -1, warnings: nativeWarning, series: []storage.Series{
 			storage.NewListSeries(labels.FromStrings(model.MetricNameLabel, "http_requests"), []chunks.Sample{fSample{t: 1, f: 1}}),
 		}},
 		classicSet: &mockSeriesSet{idx: -1, warnings: classicWarning, series: classicHistogramSeries()},
-	})
+	}, []Representation{Classic})
 
 	ss := q.Select(context.Background(), false, nil,
 		labels.MustNewMatcher(labels.MatchEqual, model.MetricNameLabel, "http_requests"))

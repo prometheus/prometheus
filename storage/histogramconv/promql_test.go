@@ -15,31 +15,57 @@ package histogramconv_test
 
 import (
 	"testing"
+	"time"
 
 	"github.com/prometheus/prometheus/promql"
+	"github.com/prometheus/prometheus/promql/parser"
 	"github.com/prometheus/prometheus/promql/promqltest"
-	"github.com/prometheus/prometheus/storage"
 	"github.com/prometheus/prometheus/storage/histogramconv"
-	"github.com/prometheus/prometheus/util/teststorage"
 )
 
-func newTestEngine(t *testing.T) *promql.Engine {
-	return promqltest.NewTestEngine(t, false, 0, promqltest.DefaultMaxSamplesPerQuery)
-}
-
-// TestNHCBAsClassicCompatLayer covers the promql-nhcb-as-classic feature flag,
-// which lets queries for classic histogram series also read NHCB data.
-func TestNHCBAsClassicCompatLayer(t *testing.T) {
-	newStorage := func(t testing.TB) storage.Storage {
-		return histogramconv.NewNHCBAsClassicStorage(teststorage.New(t))
-	}
-
+// TestPromQL covers PromQL queries with query-time histogram conversion. The
+// case names start with the representations converted from.
+func TestPromQL(t *testing.T) {
 	for _, tc := range []struct {
-		name  string
-		input string
+		name        string
+		convertFrom []histogramconv.Representation
+		// disabled disables query-time histogram conversion.
+		disabled bool
+		input    string
 	}{
 		{
-			name: "NHCB only, classic queries are served from the NHCB",
+			name:        "disabled: nothing is converted if the feature is disabled",
+			convertFrom: histogramconv.Representations(),
+			disabled:    true,
+			input: `
+load 1m
+	rpc_latency_seconds{job="a"}	{{schema:-53 sum:6 count:4 custom_values:[1 2] buckets:[1 2 1]}}x5
+	rpc_latency_seconds_count{job="b"}	4x5
+
+eval instant at 2m rpc_latency_seconds_count
+	rpc_latency_seconds_count{job="b"} 4
+
+eval instant at 2m rpc_latency_seconds
+	rpc_latency_seconds{job="a"} {{schema:-53 sum:6 count:4 custom_values:[1 2] buckets:[1 2 1]}}
+`,
+		},
+		{
+			name: "none: nothing is converted by default",
+			input: `
+load 1m
+	rpc_latency_seconds{job="a"}	{{schema:-53 sum:6 count:4 custom_values:[1 2] buckets:[1 2 1]}}x5
+	rpc_latency_seconds_count{job="b"}	4x5
+
+eval instant at 2m rpc_latency_seconds_count
+	rpc_latency_seconds_count{job="b"} 4
+
+eval instant at 2m rpc_latency_seconds
+	rpc_latency_seconds{job="a"} {{schema:-53 sum:6 count:4 custom_values:[1 2] buckets:[1 2 1]}}
+`,
+		},
+		{
+			name:        "nhcb: NHCB only, classic queries are served from the NHCB",
+			convertFrom: []histogramconv.Representation{histogramconv.NHCB},
 			input: `
 load 1m
 	rpc_latency_seconds{job="a"}	{{schema:-53 sum:6 count:4 custom_values:[1 2] buckets:[1 2 1]}}x5
@@ -67,7 +93,8 @@ eval instant at 2m rpc_latency_seconds
 			// The le label of a converted bucket is rendered in the OpenMetrics
 			// float format, which does not necessarily match how the classic
 			// histogram used to expose it.
-			name: "NHCB only, le matchers must use the normalized bucket boundary",
+			name:        "nhcb: NHCB only, le matchers must use the normalized bucket boundary",
+			convertFrom: []histogramconv.Representation{histogramconv.NHCB},
 			input: `
 load 1m
 	rpc_latency_seconds{job="a"}	{{schema:-53 sum:6 count:4 custom_values:[1 2] buckets:[1 2 1]}}x5
@@ -80,7 +107,8 @@ eval instant at 2m rpc_latency_seconds_bucket{le="1"}
 `,
 		},
 		{
-			name: "NHCB only, converted series go stale with the NHCB",
+			name:        "nhcb: NHCB only, converted series go stale with the NHCB",
+			convertFrom: []histogramconv.Representation{histogramconv.NHCB},
 			input: `
 load 1m
 	rpc_latency_seconds{job="a"}	{{schema:-53 sum:6 count:4 custom_values:[1 2] buckets:[1 2 1]}}x2 stale
@@ -102,7 +130,8 @@ eval instant at 3m rpc_latency_seconds
 `,
 		},
 		{
-			name: "NHCB only, bucket layout change",
+			name:        "nhcb: NHCB only, bucket layout change",
+			convertFrom: []histogramconv.Representation{histogramconv.NHCB},
 			input: `
 load 1m
 	rpc_latency_seconds{job="a"}	{{schema:-53 sum:6 count:4 custom_values:[1 2] buckets:[1 2 1]}}x2 {{schema:-53 sum:6 count:4 custom_values:[1 4] buckets:[1 2 1]}}x2
@@ -125,7 +154,8 @@ eval instant at 4m histogram_quantile(0.5, rpc_latency_seconds_bucket)
 		{
 			// Regression test: a partially migrated metric must not hide the
 			// series that only exist in the other representation.
-			name: "partially migrated metric, classic and NHCB series are both returned",
+			name:        "nhcb: partially migrated metric, classic and NHCB series are both returned",
+			convertFrom: []histogramconv.Representation{histogramconv.NHCB},
 			input: `
 load 1m
 	rpc_latency_seconds_bucket{job="classic", le="1"}	1x5
@@ -142,7 +172,8 @@ eval instant at 2m rpc_latency_seconds_bucket
 		{
 			// load_with_nhcb writes the classic series and the equivalent NHCB
 			// at the same timestamps, i.e. the worst case of a migration.
-			name: "classic and NHCB overlap in storage",
+			name:        "nhcb: classic and NHCB overlap in storage",
+			convertFrom: []histogramconv.Representation{histogramconv.NHCB},
 			input: `
 load_with_nhcb 1m
 	rpc_latency_seconds_bucket{le="1"}	1x5
@@ -176,7 +207,8 @@ eval instant at 2m rpc_latency_seconds_bucket{le!="+Inf"}
 		{
 			// The classic exposition was dropped at 2m, the NHCB starts at 8m,
 			// i.e. the two representations never share a timestamp.
-			name: "classic and NHCB are disjoint in time",
+			name:        "nhcb: classic and NHCB are disjoint in time",
+			convertFrom: []histogramconv.Representation{histogramconv.NHCB},
 			input: `
 load 1m
 	rpc_latency_seconds_bucket{le="1"}	1 1 1
@@ -203,26 +235,9 @@ eval instant at 10m count_over_time(rpc_latency_seconds_bucket[11m])
 	expect fail msg: vector cannot contain metrics with the same labelset
 `,
 		},
-	} {
-		t.Run(tc.name, func(t *testing.T) {
-			promqltest.RunTestWithStorage(t, tc.input, newTestEngine(t), newStorage)
-		})
-	}
-}
-
-// TestClassicAsNHCBCompatLayer covers the promql-classic-as-nhcb feature flag,
-// which lets queries for native histograms also read classic histogram data.
-func TestClassicAsNHCBCompatLayer(t *testing.T) {
-	newStorage := func(t testing.TB) storage.Storage {
-		return histogramconv.NewClassicAsNHCBStorage(teststorage.New(t))
-	}
-
-	for _, tc := range []struct {
-		name  string
-		input string
-	}{
 		{
-			name: "classic only, native queries are served from the classic series",
+			name:        "classic: classic only, native queries are served from the classic series",
+			convertFrom: []histogramconv.Representation{histogramconv.Classic},
 			input: `
 load 1m
 	rpc_latency_seconds_bucket{job="a", le="1"}	1x5
@@ -255,7 +270,8 @@ eval instant at 2m rpc_latency_seconds{le="1"}
 `,
 		},
 		{
-			name: "classic only, count and sum are optional",
+			name:        "classic: classic only, count and sum are optional",
+			convertFrom: []histogramconv.Representation{histogramconv.Classic},
 			input: `
 load 1m
 	rpc_latency_seconds_bucket{le="1"}	1x5
@@ -267,7 +283,8 @@ eval instant at 2m rpc_latency_seconds
 `,
 		},
 		{
-			name: "classic histogram that cannot be converted",
+			name:        "classic: classic histogram that cannot be converted",
+			convertFrom: []histogramconv.Representation{histogramconv.Classic},
 			input: `
 load 1m
 	rpc_latency_seconds_bucket{le="+Inf"}	5x5
@@ -283,7 +300,8 @@ eval instant at 2m rpc_latency_seconds_count
 `,
 		},
 		{
-			name: "classic only, the converted NHCB goes stale with the classic series",
+			name:        "classic: classic only, the converted NHCB goes stale with the classic series",
+			convertFrom: []histogramconv.Representation{histogramconv.Classic},
 			input: `
 load 1m
 	rpc_latency_seconds_bucket{le="1"}	1x2 stale
@@ -302,7 +320,8 @@ eval instant at 3m rpc_latency_seconds
 `,
 		},
 		{
-			name: "classic only, bucket layout change",
+			name:        "classic: classic only, bucket layout change",
+			convertFrom: []histogramconv.Representation{histogramconv.Classic},
 			input: `
 load 1m
 	rpc_latency_seconds_bucket{le="1"}	1x5
@@ -324,7 +343,8 @@ eval instant at 3m rpc_latency_seconds
 		{
 			// Regression test: a partially migrated metric must not hide the
 			// series that only exist in the other representation.
-			name: "partially migrated metric, classic and NHCB series are both returned",
+			name:        "classic: partially migrated metric, classic and NHCB series are both returned",
+			convertFrom: []histogramconv.Representation{histogramconv.Classic},
 			input: `
 load 1m
 	rpc_latency_seconds_bucket{job="classic", le="1"}	1x5
@@ -337,7 +357,8 @@ eval instant at 2m rpc_latency_seconds
 `,
 		},
 		{
-			name: "classic and NHCB overlap in storage",
+			name:        "classic: classic and NHCB overlap in storage",
+			convertFrom: []histogramconv.Representation{histogramconv.Classic},
 			input: `
 load_with_nhcb 1m
 	rpc_latency_seconds_bucket{le="1"}	1x5
@@ -365,7 +386,8 @@ eval instant at 2m rpc_latency_seconds_count
 		{
 			// The classic exposition was dropped at 2m, the NHCB starts at 8m,
 			// i.e. the two representations never share a timestamp.
-			name: "classic and NHCB are disjoint in time",
+			name:        "classic: classic and NHCB are disjoint in time",
+			convertFrom: []histogramconv.Representation{histogramconv.Classic},
 			input: `
 load 1m
 	rpc_latency_seconds_bucket{le="1"}	1 1 1
@@ -389,28 +411,9 @@ eval instant at 10m count_over_time(rpc_latency_seconds[11m])
 	expect fail msg: vector cannot contain metrics with the same labelset
 `,
 		},
-	} {
-		t.Run(tc.name, func(t *testing.T) {
-			promqltest.RunTestWithStorage(t, tc.input, newTestEngine(t), newStorage)
-		})
-	}
-}
-
-// TestNHClassicCompatLayer covers the promql-nh-classic-compat feature flag,
-// which makes native and classic histograms interchangeable in queries: classic
-// histogram queries also read native histograms, both NHCB and exponential
-// ones, and native histogram queries also read classic histograms.
-func TestNHClassicCompatLayer(t *testing.T) {
-	newStorage := func(t testing.TB) storage.Storage {
-		return histogramconv.NewNHClassicCompatStorage(teststorage.New(t))
-	}
-
-	for _, tc := range []struct {
-		name  string
-		input string
-	}{
 		{
-			name: "classic only",
+			name:        "all: classic only",
+			convertFrom: histogramconv.Representations(),
 			input: `
 load 1m
 	rpc_latency_seconds_bucket{job="a", le="1"}	1x5
@@ -440,7 +443,8 @@ eval instant at 2m histogram_quantile(0.5, rpc_latency_seconds)
 `,
 		},
 		{
-			name: "NHCB only",
+			name:        "all: NHCB only",
+			convertFrom: histogramconv.Representations(),
 			input: `
 load 1m
 	rpc_latency_seconds{job="a"}	{{schema:-53 sum:6 count:4 custom_values:[1 2] buckets:[1 2 1]}}x5
@@ -464,7 +468,8 @@ eval instant at 2m rpc_latency_seconds
 		},
 		{
 			// The buckets are (0.5,1], (1,2] and (2,4].
-			name: "exponential only",
+			name:        "all: exponential only",
+			convertFrom: histogramconv.Representations(),
 			input: `
 load 1m
 	rpc_latency_seconds{job="a"}	{{schema:0 sum:6 count:4 buckets:[1 2 1]}}+{{schema:0 sum:6 count:4 buckets:[1 2 1]}}x10
@@ -499,7 +504,8 @@ eval instant at 10m rpc_latency_seconds
 `,
 		},
 		{
-			name: "partially migrated metric, classic, NHCB and exponential histograms",
+			name:        "all: partially migrated metric, classic, NHCB and exponential histograms",
+			convertFrom: histogramconv.Representations(),
 			input: `
 load 1m
 	rpc_latency_seconds_bucket{job="classic", le="1"}	1x5
@@ -548,7 +554,8 @@ eval instant at 2m sum(histogram_count(rpc_latency_seconds))
 		{
 			// The buckets of job a are (0.5,1] and (1,2], the one of job b is
 			// (2,4].
-			name: "exponential histograms with different buckets can be aggregated by le",
+			name:        "all: exponential histograms with different buckets can be aggregated by le",
+			convertFrom: histogramconv.Representations(),
 			input: `
 load 1m
 	rpc_latency_seconds{job="a"}	{{schema:0 sum:4 count:3 buckets:[1 2]}}x5
@@ -585,7 +592,8 @@ eval instant at 2m histogram_quantile(0.9, sum(rpc_latency_seconds))
 		{
 			// The resolution is reduced from schema 0 to -1 at 3m. The buckets
 			// of schema -1 are (0.25,1] and (1,4].
-			name: "exponential histogram with a schema change",
+			name:        "all: exponential histogram with a schema change",
+			convertFrom: histogramconv.Representations(),
 			input: `
 load 1m
 	rpc_latency_seconds	{{schema:0 sum:6 count:4 buckets:[1 2 1]}}x2 {{schema:-1 sum:6 count:4 buckets:[1 3]}}x5
@@ -620,7 +628,8 @@ eval range from 0 to 4m step 1m rpc_latency_seconds_bucket
 `,
 		},
 		{
-			name: "converted series go stale with the stored ones",
+			name:        "all: converted series go stale with the stored ones",
+			convertFrom: histogramconv.Representations(),
 			input: `
 load 1m
 	rpc_latency_seconds_bucket{job="classic", le="1"}	1x2 stale
@@ -650,7 +659,8 @@ eval instant at 3m rpc_latency_seconds
 		{
 			// load_with_nhcb writes the classic series and the equivalent NHCB
 			// at the same timestamps, i.e. the worst case of a migration.
-			name: "classic and NHCB overlap in storage",
+			name:        "all: classic and NHCB overlap in storage",
+			convertFrom: histogramconv.Representations(),
 			input: `
 load_with_nhcb 1m
 	rpc_latency_seconds_bucket{le="1"}	1x5
@@ -669,7 +679,8 @@ eval instant at 2m rpc_latency_seconds
 		},
 		{
 			// E.g. with always_scrape_classic_histograms enabled.
-			name: "classic and exponential histograms scraped side by side",
+			name:        "all: classic and exponential histograms scraped side by side",
+			convertFrom: histogramconv.Representations(),
 			input: `
 load 1m
 	rpc_latency_seconds_bucket{le="1"}	1x5
@@ -697,7 +708,18 @@ eval instant at 2m rpc_latency_seconds_bucket{le!="+Inf"}
 		},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			promqltest.RunTestWithStorage(t, tc.input, newTestEngine(t), newStorage)
+			promqltest.RunTest(t, tc.input, promqltest.NewTestEngineWithOpts(t, promql.EngineOpts{
+				MaxSamples:                promqltest.DefaultMaxSamplesPerQuery,
+				Timeout:                   100 * time.Second,
+				NoStepSubqueryIntervalFn:  func(int64) int64 { return time.Minute.Milliseconds() },
+				EnableAtModifier:          true,
+				EnableNegativeOffset:      true,
+				EnableDelayedNameRemoval:  true,
+				UseStartTimestamps:        true,
+				EnableHistogramConversion: !tc.disabled,
+				HistogramConversionFrom:   tc.convertFrom,
+				Parser:                    parser.NewParser(promqltest.TestParserOpts),
+			}))
 		})
 	}
 }
