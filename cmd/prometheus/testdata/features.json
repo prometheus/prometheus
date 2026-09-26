@@ -9,6 +9,7 @@
     "otlp_write_receiver": false,
     "query_stats": true,
     "query_warnings": true,
+    "receive_relabel_configs": false,
     "remote_write_receiver": false,
     "search": false,
     "search_fuzz_alg_jarowinkler": true,
