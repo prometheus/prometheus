@@ -582,29 +582,196 @@ func TestChunksTimeOrdering(t *testing.T) {
 }
 
 func TestReader_PostingsForLabelMatching(t *testing.T) {
-	const seriesCount = 9
+	const seriesCount = 256
+	ctx := context.Background()
 	var input indexWriterSeriesSlice
-	for i := 1; i <= seriesCount; i++ {
+	values := make([]string, seriesCount)
+	for i := range seriesCount {
+		values[i] = fmt.Sprintf("%03d", i)
 		input = append(input, &indexWriterSeries{
-			labels: labels.FromStrings("__name__", strconv.Itoa(i)),
-			chunks: []chunks.Meta{
-				{Ref: 1, MinTime: 0, MaxTime: 10},
-			},
+			labels: labels.FromStrings("__name__", values[i]),
+			chunks: []chunks.Meta{{Ref: 1, MinTime: 0, MaxTime: 10}},
 		})
 	}
-	ir, _, _ := createFileReader(context.Background(), t, input)
+	ir, filename, _ := createFileReader(ctx, t, input)
 
-	p := ir.PostingsForLabelMatching(context.Background(), "__name__", func(v string) bool {
-		iv, err := strconv.Atoi(v)
-		if err != nil {
-			panic(err)
+	for _, count := range []int{0, 1, 2, 31, 32, 33, 95, 96, 97, 223, 224, 225, seriesCount} {
+		t.Run(fmt.Sprintf("matches=%d", count), func(t *testing.T) {
+			limit := fmt.Sprintf("%03d", count)
+			calls := make(map[string]int)
+			p := ir.PostingsForLabelMatching(ctx, "__name__", func(v string) bool {
+				calls[v]++
+				return v < limit
+			})
+			refs, err := ExpandPostings(p)
+			require.NoError(t, err)
+			want, err := ir.Postings(ctx, "__name__", values[:count]...)
+			require.NoError(t, err)
+			wantRefs, err := ExpandPostings(want)
+			require.NoError(t, err)
+			require.Equal(t, wantRefs, refs)
+			require.Len(t, calls, seriesCount)
+			for _, v := range values {
+				require.Equal(t, 1, calls[v])
+			}
+		})
+	}
+
+	t.Run("noncontiguous matches", func(t *testing.T) {
+		p := ir.PostingsForLabelMatching(ctx, "__name__", func(v string) bool {
+			return v[len(v)-1]%2 == 0
+		})
+		refs, err := ExpandPostings(p)
+		require.NoError(t, err)
+		var expectedValues []string
+		for i := 0; i < seriesCount; i += 2 {
+			expectedValues = append(expectedValues, values[i])
 		}
-		return iv%2 == 0
+		want, err := ir.Postings(ctx, "__name__", expectedValues...)
+		require.NoError(t, err)
+		wantRefs, err := ExpandPostings(want)
+		require.NoError(t, err)
+		require.Equal(t, wantRefs, refs)
 	})
-	require.NoError(t, p.Err())
-	refs, err := ExpandPostings(p)
-	require.NoError(t, err)
-	require.Equal(t, []storage.SeriesRef{4, 6, 8, 10}, refs)
+
+	t.Run("missing label", func(t *testing.T) {
+		p := ir.PostingsForLabelMatching(ctx, "missing", func(string) bool {
+			t.Fatal("Predicate called for a missing label")
+			return true
+		})
+		refs, err := ExpandPostings(p)
+		require.NoError(t, err)
+		require.Empty(t, refs)
+	})
+
+	for _, failAt := range []int{1, 33, 97, 225, seriesCount} {
+		t.Run(fmt.Sprintf("decoder error at %d", failAt), func(t *testing.T) {
+			decodeErr := errors.New("decoding failed")
+			decoded := 0
+			reader, err := NewFileReader(filename, func(d encoding.Decbuf) (int, Postings, error) {
+				decoded++
+				if decoded == failAt {
+					return 0, nil, decodeErr
+				}
+				return DecodePostingsRaw(d)
+			})
+			require.NoError(t, err)
+			t.Cleanup(func() { require.NoError(t, reader.Close()) })
+			p := reader.PostingsForLabelMatching(ctx, "__name__", func(string) bool { return true })
+			require.ErrorIs(t, p.Err(), decodeErr)
+			require.EqualError(t, p.Err(), "decode postings: decoding failed")
+			require.False(t, p.Next())
+			require.Equal(t, failAt, decoded)
+		})
+	}
+
+	for _, tc := range []struct {
+		name     string
+		matches  int
+		scanAt   int
+		decodeAt int
+	}{
+		{name: "already canceled", matches: seriesCount},
+		{name: "cancel from predicate with no matches", scanAt: 1},
+		{name: "cancel from predicate with one match", matches: 1, scanAt: 1},
+		{name: "cancel from predicate with all matches", matches: seriesCount, scanAt: 1},
+		{name: "cancel from decoder with one match", matches: 1, decodeAt: 1},
+		{name: "cancel from decoder with all matches", matches: seriesCount, decodeAt: 1},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			ctx, cancel := context.WithCancel(ctx)
+			defer cancel()
+			if tc.scanAt == 0 && tc.decodeAt == 0 {
+				cancel()
+			}
+			decoded := 0
+			reader, err := NewFileReader(filename, func(d encoding.Decbuf) (int, Postings, error) {
+				decoded++
+				if decoded == tc.decodeAt {
+					cancel()
+				}
+				return DecodePostingsRaw(d)
+			})
+			require.NoError(t, err)
+			t.Cleanup(func() { require.NoError(t, reader.Close()) })
+			limit := fmt.Sprintf("%03d", tc.matches)
+			scanned := 0
+			p := reader.PostingsForLabelMatching(ctx, "__name__", func(v string) bool {
+				scanned++
+				if scanned == tc.scanAt {
+					cancel()
+				}
+				return v < limit
+			})
+			require.False(t, p.Next())
+			require.ErrorIs(t, p.Err(), context.Canceled)
+			require.ErrorIs(t, ctx.Err(), context.Canceled)
+			// Whether values are scanned before or while their postings are decoded,
+			// no work follows the cancellation.
+			switch {
+			case tc.decodeAt > 0:
+				require.Equal(t, tc.decodeAt, decoded)
+			case tc.scanAt > 0:
+				require.Equal(t, tc.scanAt, scanned)
+			default:
+				require.Zero(t, scanned)
+				require.Zero(t, decoded)
+			}
+		})
+	}
+}
+
+func BenchmarkReader_PostingsForLabelMatching(b *testing.B) {
+	ctx := context.Background()
+	cancellableCtx, cancel := context.WithCancel(ctx)
+	defer cancel()
+	for _, tc := range []struct {
+		values  int
+		matches []int
+	}{
+		{values: 256, matches: []int{0, 1, 2, 31, 32, 33, 95, 96, 97, 223, 224, 225, 256}},
+		{values: 100000, matches: []int{1, 1024, 44444, 100000}},
+	} {
+		b.Run(fmt.Sprintf("values=%d", tc.values), func(b *testing.B) {
+			var input indexWriterSeriesSlice
+			for i := range tc.values {
+				input = append(input, &indexWriterSeries{
+					labels: labels.FromStrings("__name__", fmt.Sprintf("%06d", i)),
+					chunks: []chunks.Meta{{Ref: 1, MinTime: 0, MaxTime: 10}},
+				})
+			}
+			ir, _, _ := createFileReader(ctx, b, input)
+			for _, count := range tc.matches {
+				b.Run(fmt.Sprintf("matches=%d", count), func(b *testing.B) {
+					limit := fmt.Sprintf("%06d", count)
+					match := func(v string) bool { return v < limit }
+					for _, contextCase := range []struct {
+						name string
+						ctx  context.Context
+					}{
+						{name: "background", ctx: ctx},
+						{name: "cancellable", ctx: cancellableCtx},
+					} {
+						b.Run("context="+contextCase.name, func(b *testing.B) {
+							refs, err := ExpandPostings(ir.PostingsForLabelMatching(contextCase.ctx, "__name__", match))
+							require.NoError(b, err)
+							require.Len(b, refs, count)
+							b.ReportAllocs()
+							b.ResetTimer()
+							for b.Loop() {
+								p := ir.PostingsForLabelMatching(contextCase.ctx, "__name__", match)
+								for p.Next() {
+								}
+								if err := p.Err(); err != nil {
+									b.Fatal(err)
+								}
+							}
+						})
+					}
+				})
+			}
+		})
+	}
 }
 
 func TestReader_PostingsForAllLabelValues(t *testing.T) {
