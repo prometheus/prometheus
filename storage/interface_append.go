@@ -194,7 +194,8 @@ type AppenderTransaction interface {
 	// Commit submits the collected samples and purges the batch. If Commit
 	// returns a non-nil error, it also rolls back all modifications made in
 	// the appender so far, as Rollback would do. In any case, an Appender
-	// must not be used anymore after Commit has been called.
+	// must not be used anymore after Commit has been called, except for
+	// explicitly documented read-only result accessors.
 	Commit() error
 
 	// Rollback rolls back all modifications made in the appender so far.

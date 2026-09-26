@@ -193,6 +193,8 @@ func (a *headAppenderV2) Append(ref storage.SeriesRef, ls labels.Labels, st, t i
 			a.head.metrics.outOfOrderSamples.WithLabelValues(sampleMetricType).Inc()
 		case errors.Is(appErr, storage.ErrTooOldSample):
 			a.head.metrics.tooOldSamples.WithLabelValues(sampleMetricType).Inc()
+		case errors.Is(appErr, errConflictingSample):
+			a.head.metrics.duplicateSamples.WithLabelValues(sampleMetricType).Inc()
 		}
 		return 0, appErr
 	}
