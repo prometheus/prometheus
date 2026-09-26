@@ -100,6 +100,23 @@ global:
 			expectedInterval: "30s",
 			expectedMetric:   1,
 		},
+		{
+			configText: `
+global:
+  scrape_interval: 15s
+  scrape_timeout: 30s
+`,
+			expectedInterval: "30s",
+			expectedMetric:   0,
+		},
+		{
+			configText: `
+global:
+  scrape_interval: 30s
+`,
+			expectedInterval: "30s",
+			expectedMetric:   1,
+		},
 	}
 
 	runTestSteps(t, steps)
