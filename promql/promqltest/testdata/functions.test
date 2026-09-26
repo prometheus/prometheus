@@ -214,6 +214,31 @@ eval instant at 50m rate(testcounter_zero_cutoff_total[20m])
 
 clear
 
+load 5m
+	short_range_metric 1
+
+eval instant at 0m rate(short_range_metric[1m])
+	expect warn msg: PromQL warning: input range too short for metric name "short_range_metric" (1:6)
+	#empty
+
+eval instant at 0m increase(short_range_metric[1m])
+	expect warn msg: PromQL warning: input range too short for metric name "short_range_metric" (1:10)
+	#empty
+
+eval instant at 0m delta(short_range_metric[1m])
+	expect warn msg: PromQL warning: input range too short for metric name "short_range_metric" (1:7)
+	#empty
+
+eval instant at 0m irate(short_range_metric[1m])
+	expect warn msg: PromQL warning: input range too short for metric name "short_range_metric" (1:7)
+	#empty
+
+eval instant at 0m idelta(short_range_metric[1m])
+	expect warn msg: PromQL warning: input range too short for metric name "short_range_metric" (1:8)
+	#empty
+
+clear
+
 # Tests for irate().
 load 5m
 	http_requests_total{path="/foo"}	0+10x10

@@ -23,10 +23,30 @@ import (
 
 	"github.com/prometheus/prometheus/model/histogram"
 	"github.com/prometheus/prometheus/model/labels"
+	"github.com/prometheus/prometheus/promql/parser"
 	"github.com/prometheus/prometheus/promql/parser/posrange"
 	"github.com/prometheus/prometheus/util/annotations"
 	"github.com/prometheus/prometheus/util/kahansum"
 )
+
+func TestExtrapolatedRateRangeTooShortWarning(t *testing.T) {
+	p := parser.NewParser(parser.Options{})
+	for _, name := range []string{"rate", "increase", "delta"} {
+		t.Run(name, func(t *testing.T) {
+			expr, err := p.ParseExpr(name + "(short_metric[1m])")
+			require.NoError(t, err)
+
+			call := expr.(*parser.Call)
+			matrix := Matrix{{Metric: labels.FromStrings(model.MetricNameLabel, "short_metric")}}
+			result, annos := FunctionCalls[name](nil, matrix, call.Args, &EvalNodeHelper{})
+
+			require.Empty(t, result)
+			warnings, infos := annos.AsStrings(call.String(), 0, 0)
+			require.Empty(t, infos)
+			require.Equal(t, []string{fmt.Sprintf(`PromQL warning: input range too short for metric name "short_metric" (1:%d)`, len(name)+2)}, warnings)
+		})
+	}
+}
 
 func TestHistogramRateCounterResetHint(t *testing.T) {
 	points := []HPoint{
