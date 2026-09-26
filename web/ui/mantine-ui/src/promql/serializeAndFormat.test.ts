@@ -696,6 +696,89 @@ describe("serializeNode and formatNode", () => {
 +
   …`,
       },
+      // A signed left operand of ^ needs parentheses, since ^ binds tighter
+      // than a unary sign. Parsed queries only produce +Inf there (from Inf);
+      // the other cases are trees built by editing.
+      {
+        node: {
+          type: nodeType.binaryExpr,
+          op: binaryOperatorType.pow,
+          lhs: { type: nodeType.numberLiteral, val: "+Inf" },
+          rhs: { type: nodeType.numberLiteral, val: "2" },
+          matching: null,
+          bool: false,
+        },
+        output: "(+Inf) ^ 2",
+        prettyOutput: `  (
+    +Inf
+  )
+^
+  2`,
+      },
+      {
+        node: {
+          type: nodeType.binaryExpr,
+          op: binaryOperatorType.pow,
+          lhs: { type: nodeType.numberLiteral, val: "-2" },
+          rhs: { type: nodeType.numberLiteral, val: "2" },
+          matching: null,
+          bool: false,
+        },
+        output: "(-2) ^ 2",
+        prettyOutput: `  (
+    -2
+  )
+^
+  2`,
+      },
+      {
+        node: {
+          type: nodeType.binaryExpr,
+          op: binaryOperatorType.pow,
+          lhs: {
+            type: nodeType.unaryExpr,
+            op: unaryOperatorType.minus,
+            expr: { type: nodeType.placeholder, children: [] },
+          },
+          rhs: { type: nodeType.placeholder, children: [] },
+          matching: null,
+          bool: false,
+        },
+        output: "(-…) ^ …",
+        prettyOutput: `  (
+    -…
+  )
+^
+  …`,
+      },
+      {
+        node: {
+          type: nodeType.binaryExpr,
+          op: binaryOperatorType.pow,
+          lhs: { type: nodeType.numberLiteral, val: "2" },
+          rhs: { type: nodeType.numberLiteral, val: "-Inf" },
+          matching: null,
+          bool: false,
+        },
+        output: "2 ^ -Inf",
+        prettyOutput: `  2
+^
+  -Inf`,
+      },
+      {
+        node: {
+          type: nodeType.binaryExpr,
+          op: binaryOperatorType.mul,
+          lhs: { type: nodeType.numberLiteral, val: "+Inf" },
+          rhs: { type: nodeType.numberLiteral, val: "2" },
+          matching: null,
+          bool: false,
+        },
+        output: "+Inf * 2",
+        prettyOutput: `  +Inf
+*
+  2`,
+      },
       {
         node: {
           type: nodeType.binaryExpr,
