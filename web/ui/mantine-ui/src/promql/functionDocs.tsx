@@ -1749,8 +1749,14 @@ const funcDocs: Record<string, React.ReactNode> = {
         <code>
           {"{"} ... {"}"}
         </code>
-        ) and may only contain label matchers. The label matchers are used to constrain which info series to consider
-        and which data labels to add to <code>v</code>.
+        ) and may only contain label matchers, at least one. To add all data labels, omit the argument instead of
+        writing{" "}
+        <code>
+          {"{"}
+          {"}"}
+        </code>
+        . The label matchers are used to constrain which info series to consider and which data labels to add to{" "}
+        <code>v</code>.
       </p>
 
       <p>
