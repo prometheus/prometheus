@@ -172,13 +172,20 @@ func TestNoPanicFor0Tombstones(t *testing.T) {
 	c, err := NewLeveledCompactor(context.Background(), nil, nil, []int64{50}, nil, nil)
 	require.NoError(t, err)
 
-	c.plan(metas)
+	c.plan(metas, 0)
 }
 
 // staleMetaRange is like metaRange but tags the block with the from-stale-series hint.
 func staleMetaRange(name string, mint, maxt int64) dirMeta {
 	dm := metaRange(name, mint, maxt, nil)
 	dm.meta.Compaction.SetStaleSeries()
+	return dm
+}
+
+// sizedMetaRange is like metaRange but sets the on-disk size of the block.
+func sizedMetaRange(name string, mint, maxt, size int64) dirMeta {
+	dm := metaRange(name, mint, maxt, nil)
+	dm.size = size
 	return dm
 }
 
@@ -208,7 +215,7 @@ func TestPlanDoesNotMergeStaleAndNonStaleBlocks(t *testing.T) {
 			metaRange("fresh", 60, 80, nil),
 		}
 
-		res, err := compactor.plan(metas)
+		res, err := compactor.plan(metas, 0)
 		require.NoError(t, err)
 		require.NotContains(t, res, "stale", "stale block must not be merged with non-stale blocks")
 		require.Equal(t, []string{"1", "2", "3"}, res)
@@ -225,7 +232,7 @@ func TestPlanDoesNotMergeStaleAndNonStaleBlocks(t *testing.T) {
 			staleMetaRange("s4", 60, 80),
 		}
 
-		res, err := compactor.plan(metas)
+		res, err := compactor.plan(metas, 0)
 		require.NoError(t, err)
 		require.Equal(t, []string{"s1", "s2", "s3"}, res)
 	})
@@ -241,7 +248,7 @@ func TestPlanDoesNotMergeStaleAndNonStaleBlocks(t *testing.T) {
 			staleMetaRange("s4", 60, 80),
 		}
 
-		res, err := compactor.plan(metas)
+		res, err := compactor.plan(metas, 0)
 		require.NoError(t, err)
 		require.Equal(t, []string{"s1", "s2", "s3"}, res)
 	})
@@ -261,8 +268,9 @@ func TestLeveledCompactor(t *testing.T) {
 		require.NoError(t, err)
 
 		cases := map[string]struct {
-			metas    []dirMeta
-			expected []string
+			metas         []dirMeta
+			maxBlockBytes int64
+			expected      []string
 		}{
 			"Outside Range": {
 				metas: []dirMeta{
@@ -446,11 +454,62 @@ func TestLeveledCompactor(t *testing.T) {
 				},
 				expected: []string{"1", "2"},
 			},
+			"Blocks adding up to more than the size limit are not compacted": {
+				metas: []dirMeta{
+					sizedMetaRange("1", 0, 20, 40),
+					sizedMetaRange("2", 20, 40, 40),
+					sizedMetaRange("3", 40, 60, 40),
+					sizedMetaRange("4", 60, 80, 40),
+				},
+				maxBlockBytes: 100,
+				expected:      nil,
+			},
+			"Blocks adding up to the size limit are compacted": {
+				metas: []dirMeta{
+					sizedMetaRange("1", 0, 20, 40),
+					sizedMetaRange("2", 20, 40, 40),
+					sizedMetaRange("3", 40, 60, 40),
+					sizedMetaRange("4", 60, 80, 40),
+				},
+				maxBlockBytes: 120,
+				expected:      []string{"1", "2", "3"},
+			},
+			"A range over the size limit is skipped and the next range is compacted": {
+				metas: []dirMeta{
+					sizedMetaRange("1", 0, 20, 100),
+					sizedMetaRange("2", 20, 40, 100),
+					sizedMetaRange("3", 40, 60, 10),
+					sizedMetaRange("4", 60, 80, 10),
+					sizedMetaRange("5", 80, 100, 10),
+					sizedMetaRange("6", 100, 120, 10),
+					sizedMetaRange("7", 120, 140, 10),
+				},
+				maxBlockBytes: 150,
+				expected:      []string{"4", "5", "6"},
+			},
+			"A larger range over the size limit is not compacted": {
+				metas: []dirMeta{
+					sizedMetaRange("1", 0, 60, 60),
+					sizedMetaRange("2", 60, 120, 60),
+					sizedMetaRange("3", 120, 180, 60),
+					sizedMetaRange("4", 180, 200, 10),
+				},
+				maxBlockBytes: 150,
+				expected:      nil,
+			},
+			"Overlapping blocks are compacted regardless of the size limit": {
+				metas: []dirMeta{
+					sizedMetaRange("1", 0, 20, 100),
+					sizedMetaRange("2", 10, 30, 100),
+				},
+				maxBlockBytes: 50,
+				expected:      []string{"1", "2"},
+			},
 		}
 
 		for title, c := range cases {
 			if !t.Run(title, func(t *testing.T) {
-				res, err := compactor.plan(c.metas)
+				res, err := compactor.plan(c.metas, c.maxBlockBytes)
 				require.NoError(t, err)
 				require.Equal(t, c.expected, res)
 			}) {
@@ -514,6 +573,59 @@ func TestLeveledCompactor(t *testing.T) {
 			require.Contains(t, evaluatedBlocks, block1ULID)
 			require.Contains(t, evaluatedBlocks, block2ULID)
 		})
+
+		// Verify that MaxBlockBytes is compared against the on-disk size of the
+		// blocks and is read on every call.
+		t.Run("MaxBlockBytes uses the on-disk size of blocks", func(t *testing.T) {
+			dir := t.TempDir()
+
+			var blockDirs []string
+			for i := range 4 {
+				uid := ulid.MustNew(uint64(i+1), nil)
+				blockDir := filepath.Join(dir, uid.String())
+				require.NoError(t, os.MkdirAll(filepath.Join(blockDir, "chunks"), 0o777))
+				require.NoError(t, os.WriteFile(filepath.Join(blockDir, "chunks", "000001"), make([]byte, 1000), 0o666))
+
+				meta := &BlockMeta{
+					ULID:    uid,
+					MinTime: int64(i * 20),
+					MaxTime: int64((i + 1) * 20),
+				}
+				meta.Compaction.Level = 1
+				_, err := writeMetaFile(promslog.NewNopLogger(), blockDir, meta)
+				require.NoError(t, err)
+				blockDirs = append(blockDirs, blockDir)
+			}
+
+			var maxBlockBytes int64
+			c, err := NewLeveledCompactorWithOptions(
+				context.Background(),
+				nil,
+				promslog.NewNopLogger(),
+				[]int64{20, 60},
+				chunkenc.NewPool(),
+				LeveledCompactorOptions{
+					MaxBlockBytes:               func() int64 { return maxBlockBytes },
+					EnableOverlappingCompaction: true,
+				},
+			)
+			require.NoError(t, err)
+
+			for _, tc := range []struct {
+				maxBlockBytes int64
+				expected      []string
+			}{
+				{maxBlockBytes: 0, expected: blockDirs[:3]},
+				// The three oldest blocks hold more than 3000 bytes of chunks.
+				{maxBlockBytes: 3000, expected: nil},
+				{maxBlockBytes: 10000, expected: blockDirs[:3]},
+			} {
+				maxBlockBytes = tc.maxBlockBytes
+				res, err := c.Plan(dir)
+				require.NoError(t, err)
+				require.Equal(t, tc.expected, res, "maxBlockBytes=%d", tc.maxBlockBytes)
+			}
+		})
 	})
 }
 
@@ -560,7 +672,7 @@ func TestRangeWithFailedCompactionWontGetSelected(t *testing.T) {
 
 	for _, c := range cases {
 		c.metas[1].meta.Compaction.Failed = true
-		res, err := compactor.plan(c.metas)
+		res, err := compactor.plan(c.metas, 0)
 		require.NoError(t, err)
 
 		require.Equal(t, []string(nil), res)

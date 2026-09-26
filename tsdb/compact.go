@@ -87,6 +87,7 @@ type LeveledCompactor struct {
 	useUncachedIO               bool
 	mergeFunc                   storage.VerticalChunkSeriesMergeFunc
 	blockExcludeFunc            BlockExcludeFilterFunc
+	maxBlockBytes               func() int64
 	postingsEncoder             index.PostingsEncoder
 	postingsDecoderFactory      PostingsDecoderFactory
 	enableOverlappingCompaction bool
@@ -180,6 +181,15 @@ type LeveledCompactorOptions struct {
 	// BlockExcludeFilter is used to decide which blocks are excluded from compactions.
 	BlockExcludeFilter BlockExcludeFilterFunc
 
+	// MaxBlockBytes, if not nil, returns the maximum combined on-disk size in bytes
+	// of the source blocks of a leveled compaction. A range of blocks whose sizes
+	// already add up to more than this is not merged into a larger block, which
+	// keeps compacted blocks from growing beyond it. A value of 0 or less disables
+	// the limit. It is consulted on every Plan call, so it may reflect
+	// runtime-reloaded configuration. Compactions of overlapping blocks and of
+	// blocks with tombstones are not affected.
+	MaxBlockBytes func() int64
+
 	// EnableOverlappingCompaction enables compaction of overlapping blocks. In Prometheus it is always enabled.
 	// It is useful for downstream projects like Mimir, Cortex, Thanos where they have a separate component that does compaction.
 	EnableOverlappingCompaction bool
@@ -243,12 +253,16 @@ func NewLeveledCompactorWithOptions(ctx context.Context, r prometheus.Registerer
 		postingsDecoderFactory:      opts.PD,
 		enableOverlappingCompaction: opts.EnableOverlappingCompaction,
 		blockExcludeFunc:            opts.BlockExcludeFilter,
+		maxBlockBytes:               opts.MaxBlockBytes,
 	}, nil
 }
 
 type dirMeta struct {
 	dir  string
 	meta *BlockMeta
+	// size is the on-disk size of the block in bytes. It is only set when the
+	// compactor has a block size limit configured.
+	size int64
 }
 
 // Plan returns a list of compactable blocks in the provided directory.
@@ -259,6 +273,11 @@ func (c *LeveledCompactor) Plan(dir string) ([]string, error) {
 	}
 	if len(dirs) < 1 {
 		return nil, nil
+	}
+
+	var maxBlockBytes int64
+	if c.maxBlockBytes != nil {
+		maxBlockBytes = c.maxBlockBytes()
 	}
 
 	var dms []dirMeta
@@ -277,12 +296,21 @@ func (c *LeveledCompactor) Plan(dir string) ([]string, error) {
 			// then you will compact in a non-continuous way, leaving gaps of individual un-compacted blocks.
 			break
 		}
-		dms = append(dms, dirMeta{dir, meta})
+		dm := dirMeta{dir: dir, meta: meta}
+		if maxBlockBytes > 0 {
+			if dm.size, err = fileutil.DirSize(dir); err != nil {
+				return nil, fmt.Errorf("get size of block %s: %w", dir, err)
+			}
+		}
+		dms = append(dms, dm)
 	}
-	return c.plan(dms)
+	return c.plan(dms, maxBlockBytes)
 }
 
-func (c *LeveledCompactor) plan(dms []dirMeta) ([]string, error) {
+// plan returns the directories to compact next. If maxBlockBytes is greater
+// than 0, blocks are not merged into a larger block once their combined size
+// exceeds it; the size of each dirMeta must then be set.
+func (c *LeveledCompactor) plan(dms []dirMeta, maxBlockBytes int64) ([]string, error) {
 	if len(dms) == 0 {
 		return nil, nil
 	}
@@ -331,23 +359,23 @@ func (c *LeveledCompactor) plan(dms []dirMeta) ([]string, error) {
 	if classes > 1 {
 		// Prefer non-hint compaction so it is never starved by partial-view
 		// blocks accumulating in the data directory.
-		if res, err := c.planClass(nonHint); err != nil || len(res) > 0 {
+		if res, err := c.planClass(nonHint, maxBlockBytes); err != nil || len(res) > 0 {
 			return res, err
 		}
-		if res, err := c.planClass(stale); err != nil || len(res) > 0 {
+		if res, err := c.planClass(stale, maxBlockBytes); err != nil || len(res) > 0 {
 			return res, err
 		}
-		return c.planClass(selected)
+		return c.planClass(selected, maxBlockBytes)
 	}
 
-	return c.planClass(dms)
+	return c.planClass(dms, maxBlockBytes)
 }
 
 // planClass plans compaction for a single class of blocks: either all blocks
 // carry the same partial-view hint (from-stale-series or from-selected-series)
 // or none do. It must not be called with a mix of classes, so that those
 // hints are preserved through compaction (see plan).
-func (c *LeveledCompactor) planClass(dms []dirMeta) ([]string, error) {
+func (c *LeveledCompactor) planClass(dms []dirMeta, maxBlockBytes int64) ([]string, error) {
 	if len(dms) == 0 {
 		return nil, nil
 	}
@@ -372,7 +400,7 @@ func (c *LeveledCompactor) planClass(dms []dirMeta) ([]string, error) {
 	// This gives users a window of a full block size to piece-wise backup new data without having to care about data overlap.
 	dms = dms[:len(dms)-1]
 
-	for _, dm := range c.selectDirs(dms) {
+	for _, dm := range c.selectDirs(dms, maxBlockBytes) {
 		res = append(res, dm.dir)
 	}
 	if len(res) > 0 {
@@ -400,7 +428,9 @@ func (c *LeveledCompactor) planClass(dms []dirMeta) ([]string, error) {
 
 // selectDirs returns the dir metas that should be compacted into a single new block.
 // If only a single block range is configured, the result is always nil.
-func (c *LeveledCompactor) selectDirs(ds []dirMeta) []dirMeta {
+// If maxBlockBytes is greater than 0, a range whose blocks add up to more than
+// maxBlockBytes is not selected.
+func (c *LeveledCompactor) selectDirs(ds []dirMeta, maxBlockBytes int64) []dirMeta {
 	if len(c.ranges) < 2 || len(ds) < 1 {
 		return nil
 	}
@@ -415,11 +445,19 @@ func (c *LeveledCompactor) selectDirs(ds []dirMeta) []dirMeta {
 
 	Outer:
 		for _, p := range parts {
-			// Do not select the range if it has a block whose compaction failed.
+			var size int64
 			for _, dm := range p {
+				// Do not select the range if it has a block whose compaction failed.
 				if dm.meta.Compaction.Failed {
 					continue Outer
 				}
+				size += dm.size
+			}
+			// Do not select the range if the compacted block could exceed the size limit.
+			// Merging non-overlapping blocks does not grow the data, so the sum of the
+			// source block sizes bounds the size of the result.
+			if maxBlockBytes > 0 && size > maxBlockBytes {
+				continue
 			}
 
 			mint := p[0].meta.MinTime
