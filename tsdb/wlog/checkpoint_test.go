@@ -130,7 +130,7 @@ func TestReadMinValidTime_AfterCheckpoint(t *testing.T) {
 	require.NoError(t, err)
 	defer w.Close()
 
-	_, err = Checkpoint(promslog.NewNopLogger(), w, 0, 1000, func(chunks.HeadSeriesRef) bool { return true }, 100, false, true)
+	_, err = Checkpoint(promslog.NewNopLogger(), w, 0, 1000, func(chunks.HeadSeriesRef) bool { return true }, 100, false)
 	require.NoError(t, err)
 
 	mint, ok, err := ReadMinValidTime(dir)
@@ -145,10 +145,10 @@ func TestReadMinValidTime_ReflectsOnlyLatestCheckpoint(t *testing.T) {
 	require.NoError(t, err)
 	defer w.Close()
 
-	_, err = Checkpoint(promslog.NewNopLogger(), w, 0, 1000, func(chunks.HeadSeriesRef) bool { return true }, 100, false, true)
+	_, err = Checkpoint(promslog.NewNopLogger(), w, 0, 1000, func(chunks.HeadSeriesRef) bool { return true }, 100, false)
 	require.NoError(t, err)
 
-	_, err = Checkpoint(promslog.NewNopLogger(), w, 1001, 2000, func(chunks.HeadSeriesRef) bool { return true }, 200, false, true)
+	_, err = Checkpoint(promslog.NewNopLogger(), w, 1001, 2000, func(chunks.HeadSeriesRef) bool { return true }, 200, false)
 	require.NoError(t, err)
 
 	// The second checkpoint's own mint must win, and the first checkpoint's carried-forward
@@ -187,7 +187,7 @@ func TestCheckpoint_MinValidTimeNeverRegressesAcrossRestarts(t *testing.T) {
 	require.NoError(t, err)
 	defer w.Close()
 
-	_, err = Checkpoint(promslog.NewNopLogger(), w, 0, 1000, func(chunks.HeadSeriesRef) bool { return true }, 5000, false, true)
+	_, err = Checkpoint(promslog.NewNopLogger(), w, 0, 1000, func(chunks.HeadSeriesRef) bool { return true }, 5000, false)
 	require.NoError(t, err)
 
 	mint, ok, err := ReadMinValidTime(dir)
@@ -198,7 +198,7 @@ func TestCheckpoint_MinValidTimeNeverRegressesAcrossRestarts(t *testing.T) {
 	// A restart happened here: lastWALTruncationTime is gone, so this next checkpoint is free
 	// to use a mint lower than 5000 -- it's still a legitimate, real truncation point for the
 	// process it's running in now, just not the highest one ever seen.
-	_, err = Checkpoint(promslog.NewNopLogger(), w, 1001, 2000, func(chunks.HeadSeriesRef) bool { return true }, 100, false, true)
+	_, err = Checkpoint(promslog.NewNopLogger(), w, 1001, 2000, func(chunks.HeadSeriesRef) bool { return true }, 100, false)
 	require.NoError(t, err)
 
 	mint, ok, err = ReadMinValidTime(dir)
@@ -414,7 +414,7 @@ func TestCheckpoint(t *testing.T) {
 
 				stats, err := Checkpoint(promslog.NewNopLogger(), w, 100, 106, func(x chunks.HeadSeriesRef) bool {
 					return x%2 == 0
-				}, last/2, enableSTStorage, false)
+				}, last/2, enableSTStorage)
 				require.NoError(t, err)
 				require.NoError(t, w.Truncate(107))
 				require.NoError(t, DeleteCheckpoints(w.Dir(), 106))
@@ -435,6 +435,11 @@ func TestCheckpoint(t *testing.T) {
 				var series []record.RefSeries
 				var metadata []record.RefMetadata
 				r := NewReader(sr)
+				require.True(t, r.Next())
+				require.Equal(t, record.MinValidTime, dec.Type(r.Record()))
+				mint, err := dec.MinValidTime(r.Record())
+				require.NoError(t, err)
+				require.Equal(t, last/2, mint)
 
 				samplesInCheckpoint, histogramsInCheckpoint, floatHistogramsInCheckpoint := 0, 0, 0
 				for r.Next() {
@@ -610,7 +615,7 @@ func TestCheckpoint_Tombstones(t *testing.T) {
 
 	_, err = Checkpoint(promslog.NewNopLogger(), w, first, last, func(id chunks.HeadSeriesRef) bool {
 		return id == 2 || id == 3 || id == 4
-	}, 10, false, false)
+	}, 10, false)
 	require.NoError(t, err)
 	require.NoError(t, w.Close())
 
@@ -710,7 +715,7 @@ func TestCheckpointV2HistogramsToV1(t *testing.T) {
 
 	// Run Checkpoint with V1 encoding (enableSTStorage=false) to force the
 	// V1 leftover path in checkpoint.go.
-	stats, err := Checkpoint(promslog.NewNopLogger(), w, 0, last, func(_ chunks.HeadSeriesRef) bool { return true }, 0, false, false)
+	stats, err := Checkpoint(promslog.NewNopLogger(), w, 0, last, func(_ chunks.HeadSeriesRef) bool { return true }, 0, false)
 	require.NoError(t, err)
 	require.Equal(t, len(histSamples)+len(floatHistSamples), stats.TotalSamples)
 	require.Zero(t, stats.DroppedSamples, "no histogram samples should be dropped")
@@ -795,7 +800,7 @@ func TestCheckpointNoTmpFolderAfterError(t *testing.T) {
 			require.NoError(t, f.Close())
 
 			// Run the checkpoint and since the wlog contains corrupt data this should return an error.
-			_, err = Checkpoint(promslog.NewNopLogger(), w, 0, 1, nil, 0, enableSTStorage, false)
+			_, err = Checkpoint(promslog.NewNopLogger(), w, 0, 1, nil, 0, enableSTStorage)
 			require.Error(t, err)
 
 			// Walk the wlog dir to make sure there are no tmp folder left behind after the error.
@@ -823,7 +828,7 @@ func TestCheckpointDeletesTemporaryCheckpoints(t *testing.T) {
 	require.NoError(t, err)
 	defer w.Close()
 
-	_, err = Checkpoint(promslog.NewNopLogger(), w, 0, 1000, func(_ chunks.HeadSeriesRef) bool { return true }, 1000, false, false)
+	_, err = Checkpoint(promslog.NewNopLogger(), w, 0, 1000, func(_ chunks.HeadSeriesRef) bool { return true }, 1000, false)
 	require.NoError(t, err)
 
 	files, err := os.ReadDir(dir)
