@@ -178,10 +178,18 @@ type multiMeta struct {
 	metas          []chunks.Meta
 }
 
+// outOfRange reports whether the queried time range lies entirely outside the
+// in-order and the out-of-order head. The headIndexReader check it overrides
+// only knows about the in-order range.
+func (oh *HeadAndOOOIndexReader) outOfRange() bool {
+	return (oh.maxt < oh.head.MinTime() && oh.maxt < oh.head.MinOOOTime()) ||
+		(oh.mint > oh.head.MaxTime() && oh.mint > oh.head.MaxOOOTime())
+}
+
 // LabelValues needs to be overridden from the headIndexReader implementation
 // so we can return labels within either in-order range or ooo range.
 func (oh *HeadAndOOOIndexReader) LabelValues(ctx context.Context, name string, hints *storage.LabelHints, matchers ...*labels.Matcher) ([]string, error) {
-	if oh.maxt < oh.head.MinTime() && oh.maxt < oh.head.MinOOOTime() || oh.mint > oh.head.MaxTime() && oh.mint > oh.head.MaxOOOTime() {
+	if oh.outOfRange() {
 		return []string{}, nil
 	}
 
@@ -190,6 +198,28 @@ func (oh *HeadAndOOOIndexReader) LabelValues(ctx context.Context, name string, h
 	}
 
 	return labelValuesWithMatchers(ctx, oh, name, hints, matchers...)
+}
+
+// SortedLabelValues returns sorted label values from the in-order and out-of-order head.
+func (oh *HeadAndOOOIndexReader) SortedLabelValues(ctx context.Context, name string, hints *storage.LabelHints, matchers ...*labels.Matcher) ([]string, error) {
+	values, err := oh.LabelValues(ctx, name, hints, matchers...)
+	if err == nil {
+		slices.Sort(values)
+	}
+	return values, err
+}
+
+// LabelNames returns label names from the in-order and out-of-order head.
+func (oh *HeadAndOOOIndexReader) LabelNames(ctx context.Context, matchers ...*labels.Matcher) ([]string, error) {
+	if oh.outOfRange() {
+		return []string{}, nil
+	}
+	if len(matchers) == 0 {
+		names := oh.head.postings.LabelNames()
+		slices.Sort(names)
+		return names, nil
+	}
+	return labelNamesWithMatchers(ctx, oh, matchers...)
 }
 
 func lessByMinTimeAndMinRef(a, b chunks.Meta) int {
@@ -568,7 +598,7 @@ type HeadAndOOOQuerier struct {
 	head       *Head
 	index      IndexReader
 	chunkr     ChunkReader
-	querier    storage.Querier // Used for LabelNames, LabelValues, but may be nil if head was truncated in the mean time, in which case we ignore it and not close it in the end.
+	querier    storage.Querier // Holds in-order read isolation until Close; nil if the head was truncated.
 }
 
 var _ storage.Searcher = &HeadAndOOOQuerier{}
@@ -591,39 +621,21 @@ func NewHeadAndOOOQuerier(inoMint, mint, maxt int64, head *Head, oooIsoState *oo
 }
 
 func (q *HeadAndOOOQuerier) LabelValues(ctx context.Context, name string, hints *storage.LabelHints, matchers ...*labels.Matcher) ([]string, annotations.Annotations, error) {
-	if q.querier == nil {
-		return nil, nil, nil
-	}
-	return q.querier.LabelValues(ctx, name, hints, matchers...)
+	return labelValuesFromIndex(ctx, q.index, name, hints, matchers...)
 }
 
 func (q *HeadAndOOOQuerier) LabelNames(ctx context.Context, hints *storage.LabelHints, matchers ...*labels.Matcher) ([]string, annotations.Annotations, error) {
-	if q.querier == nil {
-		return nil, nil, nil
-	}
-	return q.querier.LabelNames(ctx, hints, matchers...)
+	return labelNamesFromIndex(ctx, q.index, hints, matchers...)
 }
 
-// SearchLabelNames implements storage.Searcher by delegating to the inner querier.
+// SearchLabelNames implements storage.Searcher using the in-order and out-of-order index.
 func (q *HeadAndOOOQuerier) SearchLabelNames(ctx context.Context, hints *storage.SearchHints, matchers ...*labels.Matcher) storage.SearchResultSet {
-	if q.querier == nil {
-		return storage.EmptySearchResultSet()
-	}
-	if s, ok := q.querier.(storage.Searcher); ok {
-		return s.SearchLabelNames(ctx, hints, matchers...)
-	}
-	return storage.EmptySearchResultSet()
+	return searchLabelNamesFromIndex(ctx, q.index, hints, matchers...)
 }
 
-// SearchLabelValues implements storage.Searcher by delegating to the inner querier.
+// SearchLabelValues implements storage.Searcher using the in-order and out-of-order index.
 func (q *HeadAndOOOQuerier) SearchLabelValues(ctx context.Context, name string, hints *storage.SearchHints, matchers ...*labels.Matcher) storage.SearchResultSet {
-	if q.querier == nil {
-		return storage.EmptySearchResultSet()
-	}
-	if s, ok := q.querier.(storage.Searcher); ok {
-		return s.SearchLabelValues(ctx, name, hints, matchers...)
-	}
-	return storage.EmptySearchResultSet()
+	return searchLabelValuesFromIndex(ctx, q.index, name, hints, matchers...)
 }
 
 func (q *HeadAndOOOQuerier) Close() error {
@@ -665,17 +677,11 @@ func NewHeadAndOOOChunkQuerier(inoMint, mint, maxt int64, head *Head, oooIsoStat
 }
 
 func (q *HeadAndOOOChunkQuerier) LabelValues(ctx context.Context, name string, hints *storage.LabelHints, matchers ...*labels.Matcher) ([]string, annotations.Annotations, error) {
-	if q.querier == nil {
-		return nil, nil, nil
-	}
-	return q.querier.LabelValues(ctx, name, hints, matchers...)
+	return labelValuesFromIndex(ctx, q.index, name, hints, matchers...)
 }
 
 func (q *HeadAndOOOChunkQuerier) LabelNames(ctx context.Context, hints *storage.LabelHints, matchers ...*labels.Matcher) ([]string, annotations.Annotations, error) {
-	if q.querier == nil {
-		return nil, nil, nil
-	}
-	return q.querier.LabelNames(ctx, hints, matchers...)
+	return labelNamesFromIndex(ctx, q.index, hints, matchers...)
 }
 
 func (q *HeadAndOOOChunkQuerier) Close() error {
