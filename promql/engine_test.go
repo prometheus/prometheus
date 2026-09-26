@@ -4016,8 +4016,9 @@ func TestPreprocessExpr(t *testing.T) {
 						Func: parser.MustGetFunction("timestamp"),
 						Args: parser.Expressions{
 							&parser.VectorSelector{
-								Name:      "metric",
-								Timestamp: makeInt64Pointer(10000),
+								Name:                 "metric",
+								Timestamp:            makeInt64Pointer(10000),
+								SkipHistogramBuckets: true,
 								LabelMatchers: []*labels.Matcher{
 									parser.MustLabelMatcher(labels.MatchEqual, "__name__", "metric"),
 								},
@@ -4041,8 +4042,9 @@ func TestPreprocessExpr(t *testing.T) {
 								Func: parser.MustGetFunction("abs"),
 								Args: parser.Expressions{
 									&parser.VectorSelector{
-										Name:      "metric",
-										Timestamp: makeInt64Pointer(10000),
+										Name:                 "metric",
+										Timestamp:            makeInt64Pointer(10000),
+										SkipHistogramBuckets: true,
 										LabelMatchers: []*labels.Matcher{
 											parser.MustLabelMatcher(labels.MatchEqual, "__name__", "metric"),
 										},
@@ -4151,6 +4153,58 @@ func TestPreprocessExpr(t *testing.T) {
 			})
 		}
 	})
+}
+
+func TestDetectHistogramStatsDecoding(t *testing.T) {
+	cases := []struct {
+		expr string
+		// expectSkip is whether the vector selector in the expression is
+		// expected to have SkipHistogramBuckets set after preprocessing.
+		expectSkip bool
+	}{
+		{expr: `metric`, expectSkip: false},
+		{expr: `histogram_count(metric)`, expectSkip: true},
+		{expr: `histogram_sum(metric)`, expectSkip: true},
+		{expr: `histogram_avg(metric)`, expectSkip: true},
+		{expr: `histogram_count(rate(metric[1m]))`, expectSkip: true},
+		{expr: `histogram_count(sum(rate(metric[1m])))`, expectSkip: true},
+		{expr: `histogram_quantile(0.9, metric)`, expectSkip: false},
+		{expr: `histogram_fraction(0, 0.5, metric)`, expectSkip: false},
+		// timestamp(), start_timestamp() and absent() do not look at
+		// sample values at all.
+		{expr: `timestamp(metric)`, expectSkip: true},
+		{expr: `start_timestamp(metric)`, expectSkip: true},
+		{expr: `absent(metric)`, expectSkip: true},
+		// histogram_stddev and histogram_stdvar estimate the variance from
+		// the buckets, so buckets must not be skipped, even if a function
+		// further up the path would allow skipping them.
+		{expr: `histogram_stddev(metric)`, expectSkip: false},
+		{expr: `histogram_stdvar(metric)`, expectSkip: false},
+		{expr: `timestamp(histogram_stddev(metric))`, expectSkip: false},
+		{expr: `timestamp(histogram_stdvar(metric))`, expectSkip: false},
+		// Buckets are needed for counter reset detection inside subqueries.
+		{expr: `histogram_count(last_over_time(metric[5m:1m]))`, expectSkip: false},
+	}
+
+	// start_timestamp is an experimental function.
+	p := parser.NewParser(parser.Options{EnableExperimentalFunctions: true})
+	for _, tc := range cases {
+		t.Run(tc.expr, func(t *testing.T) {
+			expr, err := p.ParseExpr(tc.expr)
+			require.NoError(t, err)
+			expr, err = promql.PreprocessExpr(expr, time.Unix(1000, 0), time.Unix(9999, 0), 0)
+			require.NoError(t, err)
+			var selectors []*parser.VectorSelector
+			parser.Inspect(expr, func(node parser.Node, _ []parser.Node) error {
+				if vs, ok := node.(*parser.VectorSelector); ok {
+					selectors = append(selectors, vs)
+				}
+				return nil
+			})
+			require.Len(t, selectors, 1)
+			require.Equal(t, tc.expectSkip, selectors[0].SkipHistogramBuckets, "error on input '%s'", tc.expr)
+		})
+	}
 }
 
 func TestEngineOptsValidation(t *testing.T) {
