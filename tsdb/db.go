@@ -742,6 +742,9 @@ func (db *DBReadOnly) loadDataAsQueryable(maxt int64) (storage.SampleAndChunkQue
 
 // Querier loads the blocks and wal and returns a new querier over the data partition for the given time range.
 // Current implementation doesn't support multiple Queriers.
+// The querier is not safe for concurrent use from multiple goroutines, and
+// neither are the series sets and series obtained from it: different series
+// must not be iterated concurrently either.
 func (db *DBReadOnly) Querier(mint, maxt int64) (storage.Querier, error) {
 	q, err := db.loadDataAsQueryable(maxt)
 	if err != nil {
@@ -752,6 +755,9 @@ func (db *DBReadOnly) Querier(mint, maxt int64) (storage.Querier, error) {
 
 // ChunkQuerier loads blocks and the wal and returns a new chunk querier over the data partition for the given time range.
 // Current implementation doesn't support multiple ChunkQueriers.
+// The querier is not safe for concurrent use from multiple goroutines, and
+// neither are the series sets and series obtained from it: different series
+// must not be iterated concurrently either.
 func (db *DBReadOnly) ChunkQuerier(mint, maxt int64) (storage.ChunkQuerier, error) {
 	q, err := db.loadDataAsQueryable(maxt)
 	if err != nil {
@@ -2591,6 +2597,9 @@ func (db *DB) Snapshot(dir string, withHead bool) error {
 }
 
 // Querier returns a new querier over the data partition for the given time range.
+// The querier is not safe for concurrent use from multiple goroutines, and
+// neither are the series sets and series obtained from it: different series
+// must not be iterated concurrently either.
 func (db *DB) Querier(mint, maxt int64) (_ storage.Querier, err error) {
 	var blocks []BlockReader
 
@@ -2758,6 +2767,9 @@ func (db *DB) floatChunkEncoding() chunkenc.Encoding {
 }
 
 // ChunkQuerier returns a new chunk querier over the data partition for the given time range.
+// The querier is not safe for concurrent use from multiple goroutines, and
+// neither are the series sets and series obtained from it: different series
+// must not be iterated concurrently either.
 func (db *DB) ChunkQuerier(mint, maxt int64) (storage.ChunkQuerier, error) {
 	blockQueriers, err := db.blockChunkQuerierForRange(mint, maxt)
 	if err != nil {

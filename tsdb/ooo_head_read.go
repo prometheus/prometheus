@@ -33,6 +33,9 @@ import (
 
 var _ IndexReader = &HeadAndOOOIndexReader{}
 
+// HeadAndOOOIndexReader reads the head index, returning both the in-order and
+// the out-of-order chunks of each series.
+// It is not safe for concurrent use from multiple goroutines.
 type HeadAndOOOIndexReader struct {
 	*headIndexReader            // A reference to the headIndexReader so we can reuse as many interface implementation as possible.
 	inoMint                     int64
@@ -210,6 +213,9 @@ func lessByMinTimeAndMinRef(a, b chunks.Meta) int {
 	}
 }
 
+// HeadAndOOOChunkReader reads both the in-order and the out-of-order chunks of
+// the head.
+// It is not safe for concurrent use from multiple goroutines.
 type HeadAndOOOChunkReader struct {
 	head          *Head
 	mint, maxt    int64
@@ -563,6 +569,9 @@ func (*OOOCompactionHeadIndexReader) Close() error {
 }
 
 // HeadAndOOOQuerier queries both the head and the out-of-order head.
+// The querier is not safe for concurrent use from multiple goroutines, and
+// neither are the series sets and series obtained from it: different series
+// must not be iterated concurrently either.
 type HeadAndOOOQuerier struct {
 	mint, maxt int64
 	head       *Head
@@ -639,6 +648,9 @@ func (q *HeadAndOOOQuerier) Select(ctx context.Context, sortSeries bool, hints *
 }
 
 // HeadAndOOOChunkQuerier queries both the head and the out-of-order head.
+// The querier is not safe for concurrent use from multiple goroutines, and
+// neither are the series sets and series obtained from it: different series
+// must not be iterated concurrently either.
 type HeadAndOOOChunkQuerier struct {
 	mint, maxt int64
 	head       *Head
