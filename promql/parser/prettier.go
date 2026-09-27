@@ -125,18 +125,18 @@ func (e *StepInvariantExpr) Pretty(level int) string {
 }
 
 func (e *MatrixSelector) Pretty(level int) string {
-	return getCommonPrefixIndent(level, e)
+	return indent(level) + e.format(prettyDuration)
 }
 
 func (e *SubqueryExpr) Pretty(level int) string {
 	if !needsSplit(e) {
 		return e.String()
 	}
-	return fmt.Sprintf("%s%s", e.Expr.Pretty(level), e.getSubqueryTimeSuffix())
+	return fmt.Sprintf("%s%s", e.Expr.Pretty(level), e.getSubqueryTimeSuffix(prettyDuration))
 }
 
 func (e *VectorSelector) Pretty(level int) string {
-	return getCommonPrefixIndent(level, e)
+	return indent(level) + e.format(prettyDuration)
 }
 
 func (e *NumberLiteral) Pretty(level int) string {
@@ -152,6 +152,11 @@ func (e *UnaryExpr) Pretty(level int) string {
 	// Remove the indent prefix from child since we attach the prefix indent before Op.
 	child = strings.TrimSpace(child)
 	return fmt.Sprintf("%s%s%s", indent(level), e.Op, child)
+}
+
+// prettyDuration renders a duration expression embedded in a selector or subquery.
+func prettyDuration(e *DurationExpr) string {
+	return e.Pretty(0)
 }
 
 func getCommonPrefixIndent(level int, current Node) string {
