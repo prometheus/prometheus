@@ -20,6 +20,7 @@ import (
 	"errors"
 	"fmt"
 	"math/rand"
+	"runtime"
 	"slices"
 	"sort"
 	"strconv"
@@ -29,6 +30,7 @@ import (
 
 	"github.com/grafana/regexp"
 	"github.com/stretchr/testify/require"
+	"go.uber.org/atomic"
 
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/storage"
@@ -1518,6 +1520,198 @@ func TestMemPostings_PostingsForLabelMatchingHonorsContextCancel(t *testing.T) {
 	})
 	require.Error(t, p.Err())
 	require.Equal(t, failAfter+1, ctx.Count()) // Plus one for the Err() call that puts the error in the result.
+}
+
+func TestMemPostings_Unordered_Add_Get(t *testing.T) {
+	for _, seeded := range []int{0, privateListMinLen} {
+		t.Run(fmt.Sprintf("seeded=%d", seeded), func(t *testing.T) {
+			mp := NewMemPostings()
+			lbls := labels.FromStrings(labels.MetricName, "test")
+			for ref := range storage.SeriesRef(seeded) {
+				mp.Add(ref, lbls)
+			}
+
+			for ref := storage.SeriesRef(seeded); ref < storage.SeriesRef(seeded+8); ref += 2 {
+				next := ref + 1
+				mp.Add(next, lbls)
+				nextPostings := mp.Postings(context.Background(), labels.MetricName, "test")
+				mp.Add(ref, lbls)
+
+				// Postings taken before the out-of-order add must not see it.
+				nextExpanded, err := ExpandPostings(nextPostings)
+				require.NoError(t, err)
+				require.Len(t, nextExpanded, int(ref)+1)
+				require.Equal(t, next, nextExpanded[len(nextExpanded)-1])
+			}
+
+			// No read since the last copy, so these are repaired in place.
+			top := storage.SeriesRef(seeded + 8)
+			mp.Add(top+2, lbls)
+			mp.Add(top+1, lbls)
+			mp.Add(top, lbls)
+
+			want := make([]storage.SeriesRef, 0, top+3)
+			for ref := range top + 3 {
+				want = append(want, ref)
+			}
+			got, err := ExpandPostings(mp.Postings(context.Background(), labels.MetricName, "test"))
+			require.NoError(t, err)
+			require.Equal(t, want, got)
+		})
+	}
+}
+
+func TestMemPostings_Concurrent_Add_Get(t *testing.T) {
+	refs := make(chan storage.SeriesRef)
+	wg := sync.WaitGroup{}
+	wg.Add(1)
+	t.Cleanup(wg.Wait)
+	t.Cleanup(func() { close(refs) })
+
+	mp := NewMemPostings()
+	go func() {
+		defer wg.Done()
+		for ref := range refs {
+			mp.Add(ref, labels.FromStrings(labels.MetricName, "test", "series", strconv.Itoa(int(ref))))
+			p := mp.Postings(context.Background(), labels.MetricName, "test")
+
+			_, err := ExpandPostings(p)
+			if err != nil {
+				t.Errorf("unexpected error: %s", err)
+			}
+		}
+	}()
+
+	for ref := storage.SeriesRef(1); ref < 8; ref += 2 {
+		// Add next ref in another goroutine so they would race.
+		refs <- ref + 1
+		// Add current ref here.
+		mp.Add(ref, labels.FromStrings(labels.MetricName, "test", "series", strconv.Itoa(int(ref))))
+
+		// Only checks for data races, values are checked in TestMemPostings_Unordered_Add_Get.
+		p := mp.Postings(context.Background(), labels.MetricName, "test")
+		_, err := ExpandPostings(p)
+		require.NoError(t, err)
+	}
+}
+
+func TestMemPostings_ConcurrentAddGet_LargeList(t *testing.T) {
+	const (
+		readers    = 2
+		writers    = 4
+		perWriter  = 400
+		labelValue = "big"
+	)
+
+	mp := NewMemPostings()
+	seeded := storage.SeriesRef(privateListMinLen * 2)
+	for i := range seeded {
+		mp.Add(i*2, labels.FromStrings("name", labelValue))
+	}
+
+	var (
+		wg      sync.WaitGroup
+		stop    = make(chan struct{})
+		next    atomic.Uint64
+		readIts atomic.Int64
+	)
+	next.Store(uint64(seeded * 2))
+
+	for range writers {
+		wg.Go(func() {
+			for range perWriter {
+				// Yield between taking a ref and adding it, so writers add out of order like the head does.
+				ref := storage.SeriesRef(next.Add(2))
+				runtime.Gosched()
+				mp.Add(ref, labels.FromStrings("name", labelValue))
+			}
+		})
+	}
+
+	var readWG sync.WaitGroup
+	for range readers {
+		readWG.Go(func() {
+			for {
+				select {
+				case <-stop:
+					return
+				default:
+				}
+				refs, err := ExpandPostings(mp.Postings(context.Background(), "name", labelValue))
+				if err != nil {
+					t.Errorf("unexpected error: %s", err)
+					return
+				}
+				for i := 1; i < len(refs); i++ {
+					if refs[i] <= refs[i-1] {
+						t.Errorf("postings not strictly sorted at %d: %d then %d", i, refs[i-1], refs[i])
+						return
+					}
+				}
+				readIts.Add(1)
+				runtime.Gosched()
+			}
+		})
+	}
+
+	wg.Wait()
+	close(stop)
+	readWG.Wait()
+	require.Positive(t, readIts.Load(), "readers never got to read")
+
+	refs, err := ExpandPostings(mp.Postings(context.Background(), "name", labelValue))
+	require.NoError(t, err)
+	require.Len(t, refs, int(seeded)+writers*perWriter)
+	require.IsIncreasing(t, refs)
+}
+
+// BenchmarkMemPostings_Add benchmarks adding to a large postings list, where repairing order violations is expensive.
+func BenchmarkMemPostings_Add(b *testing.B) {
+	const (
+		seeded   = 200000
+		maxShift = 256 // How far back an out-of-order ref may go.
+	)
+
+	for _, bc := range []struct {
+		name            string
+		outOfOrderEvery int
+		readEvery       int
+	}{
+		{name: "ordered", outOfOrderEvery: 0, readEvery: 0},
+		{name: "ordered_with_reads", outOfOrderEvery: 0, readEvery: 100},
+		{name: "out_of_order", outOfOrderEvery: 30, readEvery: 0},
+		{name: "out_of_order_with_reads", outOfOrderEvery: 30, readEvery: 100},
+		{name: "out_of_order_read_every_add", outOfOrderEvery: 30, readEvery: 1},
+	} {
+		b.Run(bc.name, func(b *testing.B) {
+			mp := NewMemPostings()
+			lbls := labels.FromStrings("job", "bench")
+			next := storage.SeriesRef(0)
+			step := storage.SeriesRef(maxShift * 2)
+			for range seeded {
+				next += step
+				mp.Add(next, lbls)
+			}
+
+			rnd := rand.New(rand.NewSource(1))
+			i := 0
+			b.ReportAllocs()
+			b.ResetTimer()
+			for b.Loop() {
+				i++
+				next += step
+				ref := next
+				if bc.outOfOrderEvery > 0 && i%bc.outOfOrderEvery == 0 {
+					// In-order refs are multiples of step, so subtracting one keeps this ref unique.
+					ref = next - storage.SeriesRef(rnd.Intn(maxShift)+1)*step - 1
+				}
+				mp.Add(ref, lbls)
+				if bc.readEvery > 0 && i%bc.readEvery == 0 {
+					mp.Postings(context.Background(), "job", "bench")
+				}
+			}
+		})
+	}
 }
 
 func TestMemPostings_LabelValuesLimitSmallest(t *testing.T) {
