@@ -1,5 +1,9 @@
 # Changelog
 
+## 3.15.2 / unreleased
+
+- [BUGFIX] Web: Upgrade `exporter-toolkit` to v0.20.0, fixing HTTP/2 ALPN negotiation loss under Go 1.27+ when TLS is enabled with `http2: true`. The server no longer silently falls back to HTTP/1.1, preventing excess TCP connections under concurrent load. #19807
+
 ## 3.15.1 / 2026-10-21
 
 - [SECURITY] Container images: Update CA certificates to distrust "emSign ECC Root CA - G3" and "Comodo AAA Services root" following the compromise of eMudhra intermediate CA private keys.
