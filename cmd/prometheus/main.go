@@ -139,7 +139,7 @@ var (
 		Name: "prometheus_config_last_reload_success_timestamp_seconds",
 		Help: "Timestamp of the last successful configuration reload.",
 	})
-	startupTime = prometheus.NewGauge(prometheus.GaugeOpts{
+	startupMetric = prometheus.NewGauge(prometheus.GaugeOpts{
 		Name: "prometheus_startup_time_seconds",
 		Help: "How long Prometheus took to completely startup and become ready.",
 	})
@@ -1236,7 +1236,7 @@ func main() {
 
 	prometheus.MustRegister(configSuccess)
 	prometheus.MustRegister(configSuccessTime)
-	prometheus.MustRegister(startupTime)
+	prometheus.MustRegister(startupMetric)
 
 	// Start all components while we wait for TSDB to open but only load
 	// initial config and mark ourselves as ready after it completed.
@@ -1485,7 +1485,7 @@ func main() {
 
 				webHandler.SetReady(web.Ready)
 				notifs.DeleteNotification(notifications.StartingUp)
-				startupTime.Set(time.Since(startupStartTime).Seconds())
+				startupMetric.Set(time.Since(startupStartTime).Seconds())
 				logger.Info("Server is ready to receive web requests.")
 				<-cancel
 				return nil
