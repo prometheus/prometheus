@@ -5161,7 +5161,7 @@ load 1m
 			require.NoError(t, actual.Err)
 			require.NoError(t, expected.Err)
 			require.NotEmpty(t, actual.Value)
-			require.Equal(t, expected.Value, actual.Value)
+			testutil.RequireEqual(t, expected.Value, actual.Value)
 			if tc.unquoted == "a or on (__name__) а" || tc.unquoted == `ö or on (__name__) {"ö"}` {
 				vector := actual.Value.(promql.Vector)
 				require.Len(t, vector, 2)

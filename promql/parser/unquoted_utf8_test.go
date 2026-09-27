@@ -21,6 +21,7 @@ import (
 
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/util/features"
+	"github.com/prometheus/prometheus/util/testutil"
 )
 
 func TestUnquotedUTF8Names(t *testing.T) {
@@ -108,10 +109,10 @@ func TestUnquotedUTF8Names(t *testing.T) {
 
 	metric, err := enabled.ParseMetric(`温度{場所="東京"}`)
 	require.NoError(t, err)
-	require.Equal(t, labels.FromStrings("__name__", "温度", "場所", "東京"), metric)
+	testutil.RequireEqual(t, labels.FromStrings("__name__", "温度", "場所", "東京"), metric)
 	series, values, err := enabled.ParseSeriesDesc(`温度{場所="東京"} 1+1x2`)
 	require.NoError(t, err)
-	require.Equal(t, metric, series)
+	testutil.RequireEqual(t, metric, series)
 	require.Equal(t, []SequenceValue{{Value: 1}, {Value: 2}, {Value: 3}}, values)
 
 	for _, enabled := range []bool{false, true} {
