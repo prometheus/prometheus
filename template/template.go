@@ -270,8 +270,7 @@ func NewTemplateExpander(
 				if err != nil {
 					return nil, err
 				}
-				d := time.Duration(v * float64(time.Second))
-				return &d, nil
+				return floatToDuration(v)
 			},
 			"now": func() float64 {
 				return float64(timestamp) / 1000.0
@@ -403,12 +402,28 @@ func (te Expander) ParseTest() error {
 	return nil
 }
 
+// floatToDuration converts a number of seconds to a duration and rejects
+// values that do not fit into an int64 number of nanoseconds.
+func floatToDuration(v float64) (*time.Duration, error) {
+	if math.IsNaN(v) || math.IsInf(v, 0) {
+		return nil, errNaNOrInf
+	}
+	nanos := v * float64(time.Second)
+	// int64 cannot hold 2^63, which float64(math.MaxInt64) rounds up to.
+	if nanos >= float64(math.MaxInt64) || nanos < float64(math.MinInt64) {
+		return nil, fmt.Errorf("%v cannot be represented as a duration since it overflows int64", v)
+	}
+	d := time.Duration(nanos)
+	return &d, nil
+}
+
 func floatToTime(v float64) (*time.Time, error) {
 	if math.IsNaN(v) || math.IsInf(v, 0) {
 		return nil, errNaNOrInf
 	}
 	timestamp := v * 1e9
-	if timestamp > math.MaxInt64 || timestamp < math.MinInt64 {
+	// See floatToDuration for why the upper bound rejects 2^63 exactly.
+	if timestamp >= float64(math.MaxInt64) || timestamp < float64(math.MinInt64) {
 		return nil, fmt.Errorf("%v cannot be represented as a nanoseconds timestamp since it overflows int64", v)
 	}
 	t := model.TimeFromUnixNano(int64(timestamp)).Time().UTC()
