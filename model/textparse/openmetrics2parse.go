@@ -36,6 +36,11 @@ import (
 	"github.com/prometheus/prometheus/schema"
 )
 
+const (
+	sComposite = sETimestamp + 1 + iota
+	sCompValue
+)
+
 // openMetrics2Lexer is the lexer for the OpenMetrics 2.0 text format.
 type openMetrics2Lexer struct {
 	b     []byte
@@ -145,11 +150,6 @@ type openMetrics2Parser struct {
 	// seriesBuf backs pendingEntry.series; reused across entries to avoid
 	// allocating one identity per entry.
 	seriesBuf []byte
-
-	// compositeOffsets stores trimmed byte offsets [k1Start, k1End, v1Start,
-	// v1End, ...] into the raw composite value slice, reused across composite
-	// parses to avoid map and string allocations.
-	compositeOffsets []int
 
 	// extraLabels holds the non-__name__ labels for the current composite line,
 	// reused across composite parses.
@@ -311,6 +311,9 @@ func (p *openMetrics2Parser) nextToken() token {
 
 func (p *openMetrics2Parser) parseError(exp string, got token) error {
 	e := min(len(p.l.b), p.l.i+1)
+	if got == tInvalid && bytes.IndexByte(p.l.b[p.l.start:e], '\r') >= 0 {
+		return fmt.Errorf("unexpected carriage return, got %q (%q) while parsing: %q", p.l.b[p.l.start:e], got, p.l.b[p.start:e])
+	}
 	return fmt.Errorf("%s, got %q (%q) while parsing: %q", exp, p.l.b[p.l.start:e], got, p.l.b[p.start:e])
 }
 
@@ -468,18 +471,11 @@ func (p *openMetrics2Parser) parseSeriesEndOfLine(t token) (Entry, error) {
 	if p.offsets[0] == -1 {
 		return EntryInvalid, fmt.Errorf("metric name not set while parsing: %q", p.l.b[p.start:p.l.i])
 	}
+	if t == tCompOpen {
+		return p.parseCompositeValue()
+	}
 	if t != tValue {
 		return EntryInvalid, p.parseError("expected value after metric", t)
-	}
-
-	// raw is " {..." or " <float>"; strip the leading space.
-	raw := p.l.buf()
-	if len(raw) > 1 && raw[0] == ' ' {
-		raw = raw[1:]
-	}
-
-	if len(raw) > 0 && raw[0] == '{' {
-		return p.parseCompositeValue(raw)
 	}
 
 	// Histogram, GaugeHistogram, and Summary Samples MUST use a composite
@@ -492,7 +488,11 @@ func (p *openMetrics2Parser) parseSeriesEndOfLine(t token) (Entry, error) {
 		)
 	}
 
-	// Plain float value.
+	// Plain float value; strip the leading space.
+	raw := p.l.buf()
+	if len(raw) > 1 && raw[0] == ' ' {
+		raw = raw[1:]
+	}
 	var err error
 	p.val, err = parseFloat(yoloString(raw))
 	if err != nil {
@@ -749,92 +749,22 @@ func (p *openMetrics2Parser) parseLVals(offsets []int, isExemplar bool) ([]int, 
 
 // parseCompositeValue dispatches on the current metric type and builds either
 // a native histogram (EntryHistogram) or a list of pending flat series
-// (EntrySeries) from the composite value token.
-//
-// raw is the raw composite value bytes including the surrounding {}.
-func (p *openMetrics2Parser) parseCompositeValue(raw []byte) (Entry, error) {
-	if bytes.IndexByte(raw, '\r') >= 0 {
-		return EntryInvalid, fmt.Errorf("unexpected carriage return in composite value: %q", raw)
-	}
-	// Consume the rest of the line (timestamp, st@, exemplars) before building
-	// the pending entries, so the exemplar and ST fields are set correctly.
-	if err := p.parseAfterValue(); err != nil {
-		return EntryInvalid, err
-	}
-
+// (EntrySeries) from the composite value tokens.
+func (p *openMetrics2Parser) parseCompositeValue() (Entry, error) {
 	switch p.mtype {
 	case model.MetricTypeHistogram, model.MetricTypeGaugeHistogram:
-		return p.parseHistogramComposite(raw)
+		return p.parseHistogramComposite()
 	case model.MetricTypeSummary:
-		return p.parseSummaryComposite(raw)
+		return p.parseSummaryComposite()
 	default:
 		return EntryInvalid, fmt.Errorf(
 			"composite value not supported for metric type %q while parsing: %q",
-			p.mtype, raw,
+			p.mtype, p.l.b[p.start:p.l.i],
 		)
 	}
 }
 
-// parseCompositeOffsets parses "{k:v,...}" by recording trimmed key and value
-// byte offsets [k1Start, k1End, v1Start, v1End, ...] into raw in
-// p.compositeOffsets. Nested brackets in values are supported.
-func (p *openMetrics2Parser) parseCompositeOffsets(raw []byte) error {
-	if len(raw) < 2 || raw[0] != '{' || raw[len(raw)-1] != '}' {
-		return fmt.Errorf("composite value must be wrapped in {}: %q", raw)
-	}
-	p.compositeOffsets = p.compositeOffsets[:0]
-	end := len(raw) - 1
-	depth := 0
-	fieldStart := 1
-	for i := 1; i <= end; i++ {
-		if i < end {
-			switch raw[i] {
-			case '[', '(':
-				depth++
-				continue
-			case ']', ')':
-				depth--
-				continue
-			case ',':
-				if depth != 0 {
-					continue
-				}
-			default:
-				continue
-			}
-		}
-		fStart, fEnd := trimSpaceOffsets(raw, fieldStart, i)
-		fieldStart = i + 1
-		if fStart == fEnd {
-			continue
-		}
-		colonIdx := bytes.IndexByte(raw[fStart:fEnd], ':')
-		if colonIdx < 0 {
-			return fmt.Errorf("invalid composite field (missing ':'): %q", raw[fStart:fEnd])
-		}
-		colonIdx += fStart
-		kStart, kEnd := trimSpaceOffsets(raw, fStart, colonIdx)
-		vStart, vEnd := trimSpaceOffsets(raw, colonIdx+1, fEnd)
-		p.compositeOffsets = append(p.compositeOffsets, kStart, kEnd, vStart, vEnd)
-	}
-	return nil
-}
-
-func trimSpaceOffsets(b []byte, start, end int) (int, int) {
-	for start < end && isASCIIOrUTF8Space(b[start]) {
-		start++
-	}
-	for end > start && isASCIIOrUTF8Space(b[end-1]) {
-		end--
-	}
-	return start, end
-}
-
-func isASCIIOrUTF8Space(c byte) bool {
-	return c == ' ' || c == '\t' || c == '\n' || c == '\r' || c == '\v' || c == '\f'
-}
-
-// Composite field indices.
+// Composite field indices (ordered to match tCompCount..tCompQuantile).
 const (
 	compFieldCount = iota
 	compFieldGCount
@@ -853,12 +783,13 @@ const (
 )
 
 const (
-	histogramAllowedMask = (1 << compFieldCount) | (1 << compFieldGCount) |
-		(1 << compFieldSum) | (1 << compFieldGSum) |
-		(1 << compFieldSchema) | (1 << compFieldZeroThreshold) | (1 << compFieldZeroCount) |
+	histogramCommonMask = (1 << compFieldSchema) | (1 << compFieldZeroThreshold) | (1 << compFieldZeroCount) |
 		(1 << compFieldNegativeSpans) | (1 << compFieldNegativeBuckets) |
 		(1 << compFieldPositiveSpans) | (1 << compFieldPositiveBuckets) |
 		(1 << compFieldBucket)
+
+	histogramAllowedMask      = histogramCommonMask | (1 << compFieldCount) | (1 << compFieldSum)
+	gaugeHistogramAllowedMask = histogramCommonMask | (1 << compFieldGCount) | (1 << compFieldGSum)
 
 	summaryAllowedMask = (1 << compFieldCount) | (1 << compFieldSum) | (1 << compFieldQuantile)
 )
@@ -876,92 +807,55 @@ func (cf *compositeFields) get(field int) ([]byte, bool) {
 	return cf.fields[field], cf.has(field)
 }
 
-func compositeFieldIndex(k []byte) int {
-	switch {
-	case bytes.Equal(k, []byte("count")):
-		return compFieldCount
-	case bytes.Equal(k, []byte("gcount")):
-		return compFieldGCount
-	case bytes.Equal(k, []byte("sum")):
-		return compFieldSum
-	case bytes.Equal(k, []byte("gsum")):
-		return compFieldGSum
-	case bytes.Equal(k, []byte("schema")):
-		return compFieldSchema
-	case bytes.Equal(k, []byte("zero_threshold")):
-		return compFieldZeroThreshold
-	case bytes.Equal(k, []byte("zero_count")):
-		return compFieldZeroCount
-	case bytes.Equal(k, []byte("negative_spans")):
-		return compFieldNegativeSpans
-	case bytes.Equal(k, []byte("negative_buckets")):
-		return compFieldNegativeBuckets
-	case bytes.Equal(k, []byte("positive_spans")):
-		return compFieldPositiveSpans
-	case bytes.Equal(k, []byte("positive_buckets")):
-		return compFieldPositiveBuckets
-	case bytes.Equal(k, []byte("bucket")):
-		return compFieldBucket
-	case bytes.Equal(k, []byte("quantile")):
-		return compFieldQuantile
-	default:
-		return -1
-	}
-}
-
-func (p *openMetrics2Parser) parseCompositeFields(raw []byte, allowedMask uint16) (compositeFields, error) {
+func (p *openMetrics2Parser) parseCompositeFields(allowedMask uint16) (compositeFields, error) {
 	var cf compositeFields
-	if err := p.parseCompositeOffsets(raw); err != nil {
-		return cf, err
+	t := p.nextToken()
+	if t == tCompClose {
+		return cf, nil
 	}
-	for i := 0; i < len(p.compositeOffsets); i += 4 {
-		k := raw[p.compositeOffsets[i]:p.compositeOffsets[i+1]]
-		v := raw[p.compositeOffsets[i+2]:p.compositeOffsets[i+3]]
-		idx := compositeFieldIndex(k)
-		if idx < 0 || allowedMask&(1<<idx) == 0 {
-			return cf, fmt.Errorf("unknown composite field %q: %q", k, raw)
+	for {
+		idx := int(t - tCompCount)
+		if idx < 0 || idx >= numCompFields || allowedMask&(1<<idx) == 0 {
+			return cf, p.parseError("unknown composite field", t)
 		}
 		if cf.has(idx) {
-			return cf, fmt.Errorf("duplicate composite field %q: %q", k, raw)
+			return cf, p.parseError("duplicate composite field", t)
+		}
+		if t := p.nextToken(); t != tValue {
+			return cf, p.parseError("expected composite value", t)
 		}
 		cf.seen |= 1 << idx
-		cf.fields[idx] = v
+		cf.fields[idx] = p.l.buf()
+
+		switch t = p.nextToken(); t {
+		case tComma:
+			t = p.nextToken()
+		case tCompClose:
+			return cf, nil
+		default:
+			return cf, p.parseError("expected comma or brace close in composite value", t)
+		}
 	}
-	return cf, nil
 }
 
-func (p *openMetrics2Parser) parseHistogramFields(raw []byte, isGauge bool) (compositeFields, error) {
-	cf, err := p.parseCompositeFields(raw, histogramAllowedMask)
-	if err != nil {
-		return cf, err
-	}
-
+func (p *openMetrics2Parser) parseHistogramFields(isGauge bool) (compositeFields, error) {
+	allowedMask := uint16(histogramAllowedMask)
 	countField, sumField := compFieldCount, compFieldSum
 	countKey, sumKey := "count", "sum"
 	if isGauge {
+		allowedMask = gaugeHistogramAllowedMask
 		countField, sumField = compFieldGCount, compFieldGSum
 		countKey, sumKey = "gcount", "gsum"
+	}
+	cf, err := p.parseCompositeFields(allowedMask)
+	if err != nil {
+		return cf, err
 	}
 	if !cf.has(countField) {
 		return cf, fmt.Errorf("missing required field: %s", countKey)
 	}
 	if !cf.has(sumField) {
 		return cf, fmt.Errorf("missing required field: %s", sumKey)
-	}
-	if !isGauge {
-		if cf.has(compFieldGCount) {
-			return cf, fmt.Errorf("unknown composite field %q: %q", "gcount", raw)
-		}
-		if cf.has(compFieldGSum) {
-			return cf, fmt.Errorf("unknown composite field %q: %q", "gsum", raw)
-		}
-	} else {
-		if cf.has(compFieldCount) {
-			return cf, fmt.Errorf("unknown composite field %q: %q", "count", raw)
-		}
-		if cf.has(compFieldSum) {
-			return cf, fmt.Errorf("unknown composite field %q: %q", "sum", raw)
-		}
 	}
 
 	if cf.has(compFieldSchema) {
@@ -978,8 +872,8 @@ func (p *openMetrics2Parser) parseHistogramFields(raw []byte, isGauge bool) (com
 	return cf, nil
 }
 
-func (p *openMetrics2Parser) parseSummaryFields(raw []byte) (compositeFields, error) {
-	cf, err := p.parseCompositeFields(raw, summaryAllowedMask)
+func (p *openMetrics2Parser) parseSummaryFields() (compositeFields, error) {
+	cf, err := p.parseCompositeFields(summaryAllowedMask)
 	if err != nil {
 		return cf, err
 	}
@@ -1007,10 +901,15 @@ func (p *openMetrics2Parser) parseSummaryFields(raw []byte) (compositeFields, er
 //
 // When native buckets are present it returns EntryHistogram.  Otherwise it
 // populates the pending queue and returns EntrySeries for the first entry.
-func (p *openMetrics2Parser) parseHistogramComposite(raw []byte) (Entry, error) {
+func (p *openMetrics2Parser) parseHistogramComposite() (Entry, error) {
 	isGauge := p.mtype == model.MetricTypeGaugeHistogram
-	cf, err := p.parseHistogramFields(raw, isGauge)
+	cf, err := p.parseHistogramFields(isGauge)
 	if err != nil {
+		return EntryInvalid, err
+	}
+	// Consume the rest of the line (timestamp, st@, exemplars) before building
+	// the pending entries, so the exemplar and ST fields are set correctly.
+	if err := p.parseAfterValue(); err != nil {
 		return EntryInvalid, err
 	}
 
@@ -1050,9 +949,14 @@ func (p *openMetrics2Parser) parseHistogramComposite(raw []byte) (Entry, error) 
 // parseSummaryComposite parses a composite summary value such as:
 //
 //	{count:12,sum:5.5,quantile:[0.5:1.0,0.9:2.0,0.99:3.0]}
-func (p *openMetrics2Parser) parseSummaryComposite(raw []byte) (Entry, error) {
-	cf, err := p.parseSummaryFields(raw)
+func (p *openMetrics2Parser) parseSummaryComposite() (Entry, error) {
+	cf, err := p.parseSummaryFields()
 	if err != nil {
+		return EntryInvalid, err
+	}
+	// Consume the rest of the line (timestamp, st@, exemplars) before building
+	// the pending entries, so the exemplar and ST fields are set correctly.
+	if err := p.parseAfterValue(); err != nil {
 		return EntryInvalid, err
 	}
 
