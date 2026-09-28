@@ -1394,6 +1394,7 @@ func main() {
 				notifs.DeleteNotification(notifications.ConfigurationUnsuccessful)
 				return
 			}
+			checksum = ""
 			notifs.AddNotification(notifications.ConfigurationUnsuccessful)
 		}
 
