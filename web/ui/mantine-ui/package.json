@@ -47,8 +47,8 @@
     "react-dom": "^19.2.7",
     "react-infinite-scroll-component": "^6.1.1",
     "react-redux": "^9.3.0",
-    "react-router-dom": "^7.17.0",
-    "sanitize-html": "^2.17.5",
+    "react-router-dom": "^7.18.2",
+    "sanitize-html": "^2.17.7",
     "uplot": "^1.6.32",
     "uplot-react": "^1.2.4",
     "use-query-params": "^2.2.2"
@@ -67,11 +67,11 @@
     "eslint-plugin-react-refresh": "^0.5.2",
     "globals": "^16.5.0",
     "jsdom": "^25.0.1",
-    "postcss": "^8.5.15",
+    "postcss": "^8.5.23",
     "postcss-preset-mantine": "^1.18.0",
     "postcss-simple-vars": "^7.0.1",
     "rollup-plugin-license": "^3.7.1",
     "vite": "^6.4.3",
-    "vitest": "^3.2.6"
+    "vitest": "^4.1.11"
   }
 }
