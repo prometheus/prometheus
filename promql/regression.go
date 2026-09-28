@@ -26,24 +26,31 @@ import (
 	"github.com/prometheus/prometheus/util/annotations"
 )
 
-// Regression output selector constants. They choose which scalar the closed-form
+// regression_over_time output names. They choose which scalar the closed-form
 // ordinary-least-squares fit of the dependent series y on the independent series
 // x returns at each evaluation step.
 const (
-	regressionOutputSlope      = 0 // The regression coefficient β₁.
-	regressionOutputIntercept  = 1 // The intercept β₀.
-	regressionOutputPrediction = 2 // The fitted value ŷ at the most recent x in the window.
-	regressionOutputR2         = 3 // The coefficient of determination r².
+	regressionOutputSlope      = "slope"      // The regression coefficient β₁.
+	regressionOutputIntercept  = "intercept"  // The intercept β₀.
+	regressionOutputPrediction = "prediction" // The fitted value ŷ at the most recent x in the window.
+	regressionOutputR2         = "r2"         // The coefficient of determination r².
 )
 
-// Regression link function constants. The link relates the linear predictor to
-// the dependent variable. The log link regresses ln(y) on x, yielding the
-// multiplicative model y ≈ exp(β₀)·exp(β₁·x) that suits non-negative
-// count-like series, mirroring the log link of count time-series GLMs.
+// regressionOutputs lists the valid output names; the first is the default.
+var regressionOutputs = []string{regressionOutputSlope, regressionOutputIntercept, regressionOutputPrediction, regressionOutputR2}
+
+// regression_over_time link function names. The link relates the linear
+// predictor to the dependent variable. The log link regresses ln(y) on x,
+// yielding the multiplicative model y ≈ exp(β₀)·exp(β₁·x) that suits
+// non-negative count-like series, mirroring the log link of count time-series
+// GLMs.
 const (
-	regressionLinkIdentity = 0
-	regressionLinkLog      = 1
+	regressionLinkIdentity = "identity"
+	regressionLinkLog      = "log"
 )
+
+// regressionLinks lists the valid link names; the first is the default.
+var regressionLinks = []string{regressionLinkIdentity, regressionLinkLog}
 
 // regressionFit holds the closed-form ordinary-least-squares fit of y on x.
 type regressionFit struct {
@@ -129,7 +136,7 @@ func logTransformPairs(x, y []float64) (outX, outY []float64, dropped int) {
 // function returns. For the log link the prediction is back-transformed with
 // exp; slope, intercept and r² stay on the linear (ln) scale, matching how a
 // log-link GLM reports its coefficients.
-func selectRegressionOutput(output, link int, fit regressionFit) float64 {
+func selectRegressionOutput(output, link string, fit regressionFit) float64 {
 	if !fit.ok {
 		return math.NaN()
 	}
@@ -153,12 +160,13 @@ func selectRegressionOutput(output, link int, fit regressionFit) float64 {
 
 // evalRegressionOverTime implements the regression_over_time PromQL function. It
 // takes two range vectors — the dependent series y (first) and the independent
-// series x (second) — and two optional scalar arguments: an output selector
-// (0=slope, 1=intercept, 2=prediction, 3=r²; defaults to slope) and a link
-// function (0=identity, 1=log; defaults to identity). Series are paired across
-// the two selectors by exact match on all labels except __name__. At each
-// evaluation step it fits an ordinary-least-squares regression of y on x over
-// the float samples whose timestamps appear in both range windows (see
+// series x (second) — and three optional string arguments: an output name
+// ("slope" (the default), "intercept", "prediction" or "r2"), a link function
+// ("identity" (the default) or "log"), and an `on` matching key (see
+// parseOnMatching). Series are paired across the two selectors by exact match
+// on all labels except __name__ by default, or by exactly the `on` labels. At
+// each evaluation step it fits an ordinary-least-squares regression of y on x
+// over the float samples whose timestamps appear in both range windows (see
 // alignByTimestamp) and returns the selected scalar.
 //
 // This generalises correlation_over_time: where correlation returns the unitless
@@ -166,36 +174,24 @@ func selectRegressionOutput(output, link int, fit regressionFit) float64 {
 // (β₁ = r·σy/σx) and, optionally, a forecast. With the log link it fits ln(y) on
 // x, the count-friendly multiplicative model used by count time-series GLMs.
 //
-// The result is NaN when a window has fewer than two paired samples, when x has
-// zero variance, or when an output/link selector is invalid (a PromQL warning is
-// then emitted). Histogram samples are skipped and do not contribute. Under the
-// log link, samples with non-positive y are dropped (a PromQL info annotation is
-// emitted). Series without a matching pair in the second selector are silently
-// dropped. When multiple series in the second selector match the same label
-// signature the first encountered series is used and a PromQL warning is emitted.
+// The result is NaN when a window has fewer than two paired samples or when x
+// has zero variance. An unknown output, link or malformed `on` yields an empty
+// result and a PromQL warning. Histogram samples are skipped and do not
+// contribute. Under the log link, samples with non-positive y are dropped (a
+// PromQL info annotation is emitted). Series without a matching pair in the
+// second selector are silently dropped; several first-selector series may share
+// one second-selector series, but a signature matched by several
+// second-selector series is ambiguous and skipped with a PromQL warning.
 func (ev *evaluator) evalRegressionOverTime(ctx context.Context, e *parser.Call) (parser.Value, annotations.Annotations) {
 	var warnings annotations.Annotations
 
-	// Evaluate the optional output and link scalar arguments. Scalar
-	// expressions produce one sample per query step, so per-step validation
-	// happens inside the step loop.
-	resolveScalarArg := func(idx int) (Matrix, bool) {
-		if len(e.Args) <= idx {
-			return nil, false
-		}
-		val, ws := ev.eval(ctx, e.Args[idx])
-		warnings.Merge(ws)
-		m, ok := val.(Matrix)
-		if !ok {
-			ev.error(errWithWarnings{
-				fmt.Errorf("regression_over_time: expected scalar argument %d, got %T", idx+1, val),
-				warnings,
-			})
-		}
-		return m, true
+	// Optional string options, parsed once up front.
+	output, outputOK := enumArg(e, 2, regressionOutputs, annotations.NewInvalidRegressionOutputWarning, &warnings)
+	link, linkOK := enumArg(e, 3, regressionLinks, annotations.NewInvalidRegressionLinkWarning, &warnings)
+	on, onOK := onArg(e, 4, &warnings)
+	if !outputOK || !linkOK || !onOK {
+		return Matrix{}, warnings
 	}
-	outputMat, outputHasArg := resolveScalarArg(2)
-	linkMat, linkHasArg := resolveScalarArg(3)
 
 	// Each range-vector argument can be either a MatrixSelector (e.g.
 	// `metric[5m]`) or a SubqueryExpr (e.g. `rate(metric[1m])[5m:]`).
@@ -234,28 +230,12 @@ func (ev *evaluator) evalRegressionOverTime(ctx context.Context, e *parser.Call)
 	vs0 := sel0.VectorSelector.(*parser.VectorSelector)
 	vs1 := sel1.VectorSelector.(*parser.VectorSelector)
 
-	// Build a map from label-signature (without __name__) to series index for
-	// the second selector. Reuse a single byte buffer across hash calls to
-	// avoid per-series allocations. Collisions are warned (non-deterministic
-	// pairing) and the first series wins.
-	sig1Map := make(map[uint64]int, len(vs1.Series))
-	ambiguousReported := make(map[uint64]struct{})
+	// Index the second selector by matching signature. Ambiguous signatures
+	// (several series) are left out, so their pairs are skipped with a warning.
+	dropName := []string{model.MetricNameLabel}
+	sig1Map := uniqueSigIndex(vs1.Series, on, dropName, e.Args[1].PositionRange(),
+		annotations.NewAmbiguousRegressionPairWarning, &warnings)
 	var hashBuf []byte
-	for i, s := range vs1.Series {
-		var sig uint64
-		sig, hashBuf = s.Labels().HashWithoutLabels(hashBuf, model.MetricNameLabel)
-		if _, dup := sig1Map[sig]; dup {
-			if _, seen := ambiguousReported[sig]; !seen {
-				ambiguousReported[sig] = struct{}{}
-				warnings.Add(annotations.NewAmbiguousRegressionPairWarning(
-					s.Labels().DropReserved(schema.IsMetadataLabel).String(),
-					e.Args[1].PositionRange(),
-				))
-			}
-			continue
-		}
-		sig1Map[sig] = i
-	}
 
 	selRange0 := durationMilliseconds(sel0.Range)
 	selRange1 := durationMilliseconds(sel1.Range)
@@ -274,7 +254,7 @@ func (ev *evaluator) evalRegressionOverTime(ctx context.Context, e *parser.Call)
 	// Process each series from the first selector and find its pair.
 	for _, s0 := range vs0.Series {
 		var sig uint64
-		sig, hashBuf = s0.Labels().HashWithoutLabels(hashBuf, model.MetricNameLabel)
+		sig, hashBuf = on.sig(s0.Labels(), hashBuf, dropName...)
 		j, ok := sig1Map[sig]
 		if !ok {
 			continue // No matching pair in the second selector.
@@ -324,30 +304,13 @@ func (ev *evaluator) evalRegressionOverTime(ctx context.Context, e *parser.Call)
 				warnings.Add(annotations.NewHistogramIgnoredInMixedRangeInfo(metricName, e.Args[0].PositionRange()))
 			}
 
-			output := regressionOutputSlope
-			if outputHasArg && len(outputMat) > 0 && len(outputMat[0].Floats) > step {
-				output = int(outputMat[0].Floats[step].F)
-			}
-			link := regressionLinkIdentity
-			if linkHasArg && len(linkMat) > 0 && len(linkMat[0].Floats) > step {
-				link = int(linkMat[0].Floats[step].F)
-			}
-			validOutput := output >= regressionOutputSlope && output <= regressionOutputR2
-			validLink := link == regressionLinkIdentity || link == regressionLinkLog
-			if !validOutput && outputHasArg {
-				warnings.Add(annotations.NewInvalidRegressionOutputWarning(outputMat[0].Floats[step].F, e.Args[2].PositionRange()))
-			}
-			if !validLink && linkHasArg {
-				warnings.Add(annotations.NewInvalidRegressionLinkWarning(linkMat[0].Floats[step].F, e.Args[3].PositionRange()))
-			}
-
 			if len(floats0) == 0 || len(floats1) == 0 {
 				continue
 			}
 
 			var r float64
 			switch {
-			case !validOutput || !validLink || len(floats0) < 2 || len(floats1) < 2:
+			case len(floats0) < 2 || len(floats1) < 2:
 				r = math.NaN()
 			default:
 				// y is the dependent (first) series, x the independent (second).

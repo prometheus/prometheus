@@ -124,13 +124,17 @@ flag](../feature_flags.md#experimental-promql-functions)
 
 `correlation_over_time(a range-vector, b range-vector, method="pearson" string, on="" string)`
 returns the correlation coefficient between paired float samples of `a` and
-`b` over the given range, per matched series pair. Series across the two
-selectors are paired by exact match on all labels except `__name__` by
-default, or by exactly the `on` labels (comma-separated) when given — letting
-series with differing extra labels (different metrics, different label
-schemas) still pair, as long as they agree on the `on` labels. Unpaired
-series are silently dropped. At each evaluation step, only samples whose
-timestamps appear in both range windows are correlated.
+`b` over the given range, per matched series pair. Unpaired series are
+silently dropped. At each evaluation step, only samples whose timestamps appear
+in both range windows are correlated. Each result carries the labels of its `a`
+series, minus `__name__`.
+
+`on` sets the matching key, like the binary-operator `on()` clause: `""` (the
+default) matches on all labels except `__name__`; a label list such as
+`"job,instance"` (optionally in parentheses) matches on exactly those labels;
+and `"()"` matches on the empty label set, so every series matches every
+other. A malformed value, such as `"(job"`, yields an empty result plus a
+PromQL warning annotation.
 
 The optional `method` string selects the coefficient:
 
@@ -153,10 +157,9 @@ the variance is zero (constant input, single distinct value, or all-tied
 pairs for Kendall). Histogram samples are skipped and do not contribute to
 the correlation.
 
-Multiple series in `a` matching the same series in `b` is normal fan-out, not
-ambiguity. But when more than one series in `b` matches the same signature,
-the pairing is ambiguous — the whole pair is skipped (not picked arbitrarily)
-and a PromQL warning annotation is emitted once.
+Several `a` series may pair with one `b` series. When more than one `b` series
+matches the same key, the pairing is ambiguous: that pair is skipped (not picked
+arbitrarily) and a PromQL warning annotation is emitted once.
 
 For example, to surface request-error-rate and request-latency series whose
 per-minute behaviour over the past hour moves together (potentially the
@@ -180,6 +183,20 @@ correlation_over_time(
   rate(http_request_duration_seconds_sum[1m])[1h:1m],
   "pearson", "job,instance"
 ) > 0.8
+```
+
+`"()"` ranks many candidate series against one target in a single call. For
+example, to list the five services whose error rate moved most closely with p99
+latency over the past six hours:
+
+```
+topk(5,
+  correlation_over_time(
+    sum by (service) (rate(http_request_errors_total[1m]))[6h:1m],
+    histogram_quantile(0.99, sum by (le) (rate(http_request_duration_seconds_bucket[1m])))[6h:1m],
+    "pearson", "()"
+  )
+)
 ```
 
 ## `day_of_month()`
@@ -840,13 +857,14 @@ compose (for example `"ridge,diff,wls"`):
   `labelName` pivot is given (not the bivariate case). The reported `(r2)` is
   measured against the unweighted observations.
 
-Predictor series are grouped by all labels except `__name__` and `labelName`
-by default, or by exactly the `on` labels (comma-separated) when non-empty —
-letting `y` and `X` carry differing extra labels and still group together, as
-long as they agree on the `on` labels. Each group is one independent
+Predictor series are grouped by the `on` key, which works as for
+[`correlation_over_time()`](#correlation_over_time) except that the default also
+ignores `labelName`; `"()"` puts every `X` series into one group, which then
+needs a single `y` series. Each group is one independent
 regression, and its distinct `labelName` values become the design-matrix
 columns. The response series is matched to a group by those same grouping
-labels. Each emitted series carries the group's labels (from `X`) with
+labels. Each emitted series carries the group's labels (just the `on` labels
+when `on` is given) with
 `labelName` set to the predictor's value — or to the reserved value
 `(intercept)` for the intercept term — and its value is the fitted coefficient.
 Each group also emits a `(r2)` series carrying the coefficient of determination
@@ -1023,13 +1041,23 @@ counter resets when your target restarts.
 flag](../feature_flags.md#experimental-promql-functions)
 `--enable-feature=promql-experimental-functions`.**
 
-`regression_over_time(y range-vector, x range-vector, output=0 scalar, link=0 scalar)`
+`regression_over_time(y range-vector, x range-vector, output="slope" string, link="identity" string, on="" string)`
 fits a least-squares regression of the dependent series `y` on the independent
 series `x` over the given range, per matched series pair, and returns the
-selected scalar. Series across the two selectors are paired by exact match on
-all labels except `__name__`; unpaired series are silently dropped. At each
-evaluation step, only samples whose timestamps appear in both range windows are
-used.
+selected scalar. Unpaired series are silently dropped. At each evaluation step,
+only samples whose timestamps appear in both range windows are used. Each
+result carries the labels of its `y` series, minus `__name__`.
+
+`on` sets the matching key, like the binary-operator `on()` clause: `""` (the
+default) matches on all labels except `__name__`; a label list such as
+`"job,instance"` (optionally in parentheses) matches on exactly those labels;
+and `"()"` matches on the empty label set, so every series matches every
+other. A malformed value, such as `"(job"`, yields an empty result plus a
+PromQL warning annotation.
+
+Several `y` series may pair with one `x` series. When more than one `x` series
+matches the same key, the pairing is ambiguous: that pair is skipped (not picked
+arbitrarily) and a PromQL warning annotation is emitted once.
 
 This generalises [`correlation_over_time()`](#correlation_over_time): where
 correlation returns the unitless association coefficient `r`, regression returns
@@ -1039,31 +1067,35 @@ It is the closed-form, Gaussian-family special case of a count time-series GLM
 iterative maximum-likelihood fit of the full GLM is intentionally not
 implemented.
 
-The optional `output` scalar selects what is returned:
+The optional `output` string selects what is returned:
 
-| `output` | meaning                                                  |
-|----------|----------------------------------------------------------|
-| `0`      | slope `β₁` (default)                                     |
-| `1`      | intercept `β₀`                                           |
-| `2`      | prediction `ŷ` at the most recent `x` in the window     |
-| `3`      | coefficient of determination `r²`                       |
+| `output`       | meaning                                              |
+|----------------|------------------------------------------------------|
+| `"slope"`      | slope `β₁` (the default)                             |
+| `"intercept"`  | intercept `β₀`                                       |
+| `"prediction"` | prediction `ŷ` at the most recent `x` in the window |
+| `"r2"`         | coefficient of determination `r²`                   |
 
-The optional `link` scalar selects the link function:
+The optional `link` string selects the link function:
 
-| `link` | meaning                                                              |
-|--------|----------------------------------------------------------------------|
-| `0`    | identity (default): fits `y ≈ β₀ + β₁·x`                             |
-| `1`    | log: fits `ln(y) ≈ β₀ + β₁·x`, i.e. `y ≈ exp(β₀)·exp(β₁·x)`          |
+| `link`       | meaning                                                         |
+|--------------|-----------------------------------------------------------------|
+| `"identity"` | the default: fits `y ≈ β₀ + β₁·x`                               |
+| `"log"`      | fits `ln(y) ≈ β₀ + β₁·x`, i.e. `y ≈ exp(β₀)·exp(β₁·x)`          |
+
+An empty `output` or `link` behaves like omitting it. An unknown name yields an
+empty result plus a PromQL warning annotation listing the valid names. The
+arguments are positional, so to set `on` pass `output` and `link` too (`""`
+keeps their defaults).
 
 The log link suits non-negative, count-like series. Its slope, intercept and
 `r²` are reported on the natural-log scale, while the prediction is
 back-transformed with `exp`. Samples with non-positive `y` cannot be
 log-transformed and are dropped, with a PromQL info annotation.
 
-Returns `NaN` for a step when the paired window has fewer than 2 samples, when
-`x` has zero variance, or when `output`/`link` is out of range — in the last
-case a PromQL warning annotation is also emitted. Histogram samples are skipped
-and do not contribute.
+Returns `NaN` for a step when the paired window has fewer than 2 samples or
+when `x` has zero variance. Histogram samples are skipped and do not
+contribute.
 
 For example, to estimate how much CPU each unit of request rate costs, fitted
 over the past hour:

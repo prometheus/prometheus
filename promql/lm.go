@@ -477,12 +477,10 @@ func (ev *evaluator) evalLMOverTime(ctx context.Context, e *parser.Call) (parser
 	}
 	labelName := stringFromArg(e.Args[3])
 
-	// Optional `on` label list, narrowing/widening the grouping key from the
-	// default (all labels except __name__ and labelName) to exactly these
-	// labels.
-	var on []string
-	if len(e.Args) > 4 {
-		on = parseOnLabels(stringFromArg(e.Args[4]))
+	// Optional `on` matching key; see parseOnMatching.
+	on, ok := onArg(e, 4, &warnings)
+	if !ok {
+		return Matrix{}, warnings
 	}
 
 	// Optional lambda scalar, evaluated per step like correlation's method arg.
@@ -570,40 +568,16 @@ func (ev *evaluator) evalLMOverTime(ctx context.Context, e *parser.Call) (parser
 		return 0
 	}
 
-	// Build the response lookup keyed by the grouping signature: all labels
-	// except __name__ and, defensively, labelName, by default; or exactly the
-	// `on` labels when given.
-	groupSig := func(lb labels.Labels, buf []byte) (uint64, []byte) {
-		if labelName == "" {
-			return matchSig(lb, buf, on, model.MetricNameLabel)
-		}
-		return matchSig(lb, buf, on, model.MetricNameLabel, labelName)
+	// Group by all labels except __name__ and, defensively, labelName by
+	// default, or by exactly the `on` labels. A group key matched by several
+	// response series is ambiguous, so that group is skipped with a warning.
+	groupDrop := []string{model.MetricNameLabel}
+	if labelName != "" {
+		groupDrop = append(groupDrop, labelName)
 	}
-
-	// A signature matched by more than one response series is ambiguous —
-	// which one should the group's fit use? — so it is excluded from
-	// respBySig entirely (skip the whole group) rather than guessing, with a
-	// single warning per ambiguous signature.
+	respBySig := uniqueSigIndex(vsY.Series, on, groupDrop, e.Args[1].PositionRange(),
+		annotations.NewAmbiguousLMResponseWarning, &warnings)
 	var hashBuf []byte
-	respBySig := make(map[uint64]int, len(vsY.Series))
-	ambiguousResp := make(map[uint64]struct{})
-	for i, s := range vsY.Series {
-		var sig uint64
-		sig, hashBuf = groupSig(s.Labels(), hashBuf)
-		if _, amb := ambiguousResp[sig]; amb {
-			continue // Already known-ambiguous; warned once already.
-		}
-		if _, dup := respBySig[sig]; dup {
-			delete(respBySig, sig)
-			ambiguousResp[sig] = struct{}{}
-			warnings.Add(annotations.NewAmbiguousLMResponseWarning(
-				s.Labels().DropReserved(schema.IsMetadataLabel).String(),
-				e.Args[1].PositionRange(),
-			))
-			continue
-		}
-		respBySig[sig] = i
-	}
 
 	if labelName == "" {
 		if weighted {
@@ -618,17 +592,17 @@ func (ev *evaluator) evalLMOverTime(ctx context.Context, e *parser.Call) (parser
 	// Group predictor series by the grouping signature.
 	type lmGroup struct {
 		sig        uint64
-		metric     labels.Labels // Group labels (without __name__/labelName).
+		metric     labels.Labels // Group labels: the `on` labels when explicit.
 		predictors []lmPredictor
 	}
 	groupBySig := make(map[uint64]*lmGroup)
 	var groups []*lmGroup
 	for i, s := range vsX.Series {
 		var sig uint64
-		sig, hashBuf = groupSig(s.Labels(), hashBuf)
+		sig, hashBuf = on.sig(s.Labels(), hashBuf, groupDrop...)
 		g := groupBySig[sig]
 		if g == nil {
-			g = &lmGroup{sig: sig, metric: s.Labels().DropReserved(schema.IsMetadataLabel)}
+			g = &lmGroup{sig: sig, metric: on.keep(s.Labels().DropReserved(schema.IsMetadataLabel))}
 			groupBySig[sig] = g
 			groups = append(groups, g)
 		}
@@ -922,7 +896,7 @@ func (ev *evaluator) evalLMOverTime(ctx context.Context, e *parser.Call) (parser
 
 // lmBivariate handles the no-pivot degenerate case: pair the response and
 // predictor range vectors by label set (ignoring __name__ by default, or by
-// exactly the `on` labels when given — see matchSig) and emit the OLS slope
+// exactly the `on` labels when given — see onMatching) and emit the OLS slope
 // per matched pair, matching regression_over_time's default output. Multiple
 // X series matching the same Y series is normal fan-out, not ambiguity;
 // respBySig already excludes any Y-side signature matched by more than one
@@ -933,7 +907,7 @@ func (ev *evaluator) lmBivariate(
 	vsX, vsY *parser.VectorSelector,
 	respBySig map[uint64]int,
 	difference bool,
-	on []string,
+	on onMatching,
 	rangeX, rangeY, offsetX, offsetY int64,
 	numSteps int, warnings *annotations.Annotations,
 ) (parser.Value, annotations.Annotations) {
@@ -946,7 +920,7 @@ func (ev *evaluator) lmBivariate(
 
 	for _, sx := range vsX.Series {
 		var sig uint64
-		sig, hashBuf = matchSig(sx.Labels(), hashBuf, on, model.MetricNameLabel)
+		sig, hashBuf = on.sig(sx.Labels(), hashBuf, model.MetricNameLabel)
 		yIdx, ok := respBySig[sig]
 		if !ok {
 			continue

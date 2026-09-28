@@ -166,8 +166,8 @@ export const functionSignatures: Record<string, Func> = {
   rate: { name: "rate", argTypes: [valueType.matrix], variadic: 0, returnType: valueType.vector },
   regression_over_time: {
     name: "regression_over_time",
-    argTypes: [valueType.matrix, valueType.matrix, valueType.scalar],
-    variadic: 2,
+    argTypes: [valueType.matrix, valueType.matrix, valueType.string],
+    variadic: 3,
     returnType: valueType.vector,
   },
   resets: { name: "resets", argTypes: [valueType.matrix], variadic: 0, returnType: valueType.vector },

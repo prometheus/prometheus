@@ -154,12 +154,13 @@ var (
 	NativeHistogramNotGaugeWarning          = fmt.Errorf("%w: this native histogram metric is not a gauge:", PromQLWarning)
 	MixedExponentialCustomHistogramsWarning = fmt.Errorf("%w: vector contains a mix of histograms with exponential and custom buckets schemas for metric name", PromQLWarning)
 	IncompatibleBucketLayoutInBinOpWarning  = fmt.Errorf("%w: incompatible bucket layout encountered for binary operator", PromQLWarning)
-	InvalidCorrelationMethodWarning         = fmt.Errorf("%w: correlation_over_time method must be \"pearson\", \"spearman\" or \"kendall\"", PromQLWarning)
+	InvalidCorrelationMethodWarning         = fmt.Errorf("%w: correlation_over_time method must be \"pearson\" (default), \"spearman\" or \"kendall\"", PromQLWarning)
 	AmbiguousCorrelationPairWarning         = fmt.Errorf("%w: correlation_over_time: multiple series in the second range vector match the same label signature; the pair is skipped", PromQLWarning)
 	LargeKendallCorrelationRangeInfo        = fmt.Errorf("%w: correlation_over_time: Kendall correlation is O(n²) and this range has many paired samples", PromQLInfo)
-	InvalidRegressionOutputWarning          = fmt.Errorf("%w: regression_over_time output must be 0 (slope), 1 (intercept), 2 (prediction) or 3 (r2)", PromQLWarning)
-	InvalidRegressionLinkWarning            = fmt.Errorf("%w: regression_over_time link must be 0 (identity) or 1 (log)", PromQLWarning)
-	AmbiguousRegressionPairWarning          = fmt.Errorf("%w: regression_over_time: multiple series in the second range vector match the same label signature; pairing is non-deterministic", PromQLWarning)
+	InvalidRegressionOutputWarning          = fmt.Errorf("%w: regression_over_time output must be \"slope\" (default), \"intercept\", \"prediction\" or \"r2\"", PromQLWarning)
+	InvalidRegressionLinkWarning            = fmt.Errorf("%w: regression_over_time link must be \"identity\" (default) or \"log\"", PromQLWarning)
+	AmbiguousRegressionPairWarning          = fmt.Errorf("%w: regression_over_time: multiple series in the second range vector match the same label signature; the pair is skipped", PromQLWarning)
+	InvalidOnLabelsWarning                  = fmt.Errorf("%w: on must be \"\" (default key), \"()\" (match all series) or a label list such as \"job,instance\"", PromQLWarning)
 	NonPositiveRegressionLogValueInfo       = fmt.Errorf("%w: regression_over_time: log link dropped samples with non-positive dependent values", PromQLInfo)
 	InvalidLMMethodWarning                  = fmt.Errorf("%w: lm_over_time method must be \"lm\" or \"ridge\"", PromQLWarning)
 	InvalidRidgeLambdaWarning               = fmt.Errorf("%w: lm_over_time: ridge method requires a lambda > 0", PromQLWarning)
@@ -285,27 +286,37 @@ func NewLargeKendallCorrelationRangeInfo(pairs int, pos posrange.PositionRange) 
 }
 
 // NewInvalidRegressionOutputWarning is used when the user specifies an invalid
-// output selector value for regression_over_time.
-func NewInvalidRegressionOutputWarning(output float64, pos posrange.PositionRange) error {
+// output name for regression_over_time.
+func NewInvalidRegressionOutputWarning(output string, pos posrange.PositionRange) error {
 	return &annoErr{
 		PositionRange: pos,
-		Err:           fmt.Errorf("%w, got %g", InvalidRegressionOutputWarning, output),
+		Err:           fmt.Errorf("%w, got %q", InvalidRegressionOutputWarning, output),
 	}
 }
 
 // NewInvalidRegressionLinkWarning is used when the user specifies an invalid
-// link function value for regression_over_time.
-func NewInvalidRegressionLinkWarning(link float64, pos posrange.PositionRange) error {
+// link function name for regression_over_time.
+func NewInvalidRegressionLinkWarning(link string, pos posrange.PositionRange) error {
 	return &annoErr{
 		PositionRange: pos,
-		Err:           fmt.Errorf("%w, got %g", InvalidRegressionLinkWarning, link),
+		Err:           fmt.Errorf("%w, got %q", InvalidRegressionLinkWarning, link),
+	}
+}
+
+// NewInvalidOnLabelsWarning is used when the `on` argument of
+// correlation_over_time, regression_over_time or lm_over_time is malformed,
+// for example with unbalanced parentheses.
+func NewInvalidOnLabelsWarning(on string, pos posrange.PositionRange) error {
+	return &annoErr{
+		PositionRange: pos,
+		Err:           fmt.Errorf("%w, got %q", InvalidOnLabelsWarning, on),
 	}
 }
 
 // NewAmbiguousRegressionPairWarning is used when more than one series in the
 // second range vector of regression_over_time matches the same label signature
-// (all labels except __name__) as a series from the first range vector, so the
-// pairing is non-deterministic.
+// as a series from the first range vector; the ambiguous pair is skipped rather
+// than picked arbitrarily.
 func NewAmbiguousRegressionPairWarning(labels string, pos posrange.PositionRange) error {
 	return &annoErr{
 		PositionRange: pos,

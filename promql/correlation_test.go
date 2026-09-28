@@ -106,23 +106,30 @@ func TestSpearmanCorrelation(t *testing.T) {
 	require.InDelta(t, 1.0, spearmanCorrelation(x, y), 1e-9)
 }
 
-func TestParseCorrelationMethod(t *testing.T) {
+func TestParseEnum(t *testing.T) {
 	cases := []struct {
-		in     string
-		method string
-		ok     bool
+		valid []string
+		in    string
+		want  string
+		ok    bool
 	}{
-		{"", correlationMethodPearson, true}, // Empty == omitted == default.
-		{"pearson", correlationMethodPearson, true},
-		{"spearman", correlationMethodSpearman, true},
-		{"kendall", correlationMethodKendall, true},
-		{"kendal", "kendal", false},
-		{"Pearson", "Pearson", false},
-		{"0", "0", false},
+		{correlationMethods, "", correlationMethodPearson, true}, // Empty == omitted == default.
+		{correlationMethods, "pearson", correlationMethodPearson, true},
+		{correlationMethods, "spearman", correlationMethodSpearman, true},
+		{correlationMethods, "kendall", correlationMethodKendall, true},
+		{correlationMethods, "kendal", "kendal", false},
+		{correlationMethods, "Pearson", "Pearson", false},
+		{correlationMethods, "0", "0", false},
+		{regressionOutputs, "", regressionOutputSlope, true},
+		{regressionOutputs, "r2", regressionOutputR2, true},
+		{regressionOutputs, "3", "3", false},
+		{regressionLinks, "", regressionLinkIdentity, true},
+		{regressionLinks, "log", regressionLinkLog, true},
+		{regressionLinks, "logit", "logit", false},
 	}
 	for _, c := range cases {
-		method, ok := parseCorrelationMethod(c.in)
+		got, ok := parseEnum(c.in, c.valid)
 		require.Equal(t, c.ok, ok, "ok for %q", c.in)
-		require.Equal(t, c.method, method, "method for %q", c.in)
+		require.Equal(t, c.want, got, "value for %q", c.in)
 	}
 }

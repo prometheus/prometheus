@@ -2958,6 +2958,27 @@ eval instant at 5m correlation_over_time(onamb_a{job="api"}[5m], onamb_b{job="ap
 
 clear
 
+# Leaderboard: on="()" keys every series on the empty label set, so one target
+# series ranks many candidates in a single call. Each result keeps its
+# candidate's labels (the first argument's, minus __name__); the target's
+# labels do not appear. The 5m window at 4m covers all five samples.
+load 1m
+  lb_candidate{svc="db"}     1 2 3 4 5
+  lb_candidate{svc="cache"}  5 4 3 2 1
+  lb_candidate{svc="queue"}  1 3 2 5 4
+  lb_target{alert="latency"} 10 20 30 40 50
+
+eval instant at 4m correlation_over_time(lb_candidate[5m], lb_target[5m], "pearson", "()")
+  {svc="db"} 1
+  {svc="cache"} -1
+  {svc="queue"} 0.8
+
+# A malformed on value warns and returns nothing.
+eval instant at 4m correlation_over_time(lb_candidate[5m], lb_target[5m], "pearson", "(svc")
+  expect warn
+
+clear
+
 # Tests for regression_over_time.
 # Dependent y = 0.2*x: slope=0.2, intercept=0, prediction at x_latest=50 is 10,
 # r2=1 (perfect linear fit). y is the first range vector, x the second.
@@ -2967,37 +2988,37 @@ load 1m
   reg_y{job="test"} 2 4 6 8 10
   reg_x{job="test"} 10 20 30 40 50
 
-# Default output (0) is the slope.
+# The default output is the slope, also selected by "slope".
 eval instant at 5m regression_over_time(reg_y{job="test"}[5m], reg_x{job="test"}[5m])
   {job="test"} 0.2
 
-eval instant at 5m regression_over_time(reg_y{job="test"}[5m], reg_x{job="test"}[5m], 0)
+eval instant at 5m regression_over_time(reg_y{job="test"}[5m], reg_x{job="test"}[5m], "slope")
   {job="test"} 0.2
 
-# Intercept (output 1).
-eval instant at 5m regression_over_time(reg_y{job="test"}[5m], reg_x{job="test"}[5m], 1)
+# The intercept.
+eval instant at 5m regression_over_time(reg_y{job="test"}[5m], reg_x{job="test"}[5m], "intercept")
   {job="test"} 0
 
-# Prediction (output 2) at the most recent x in the window.
-eval instant at 5m regression_over_time(reg_y{job="test"}[5m], reg_x{job="test"}[5m], 2)
+# The prediction at the most recent x in the window.
+eval instant at 5m regression_over_time(reg_y{job="test"}[5m], reg_x{job="test"}[5m], "prediction")
   {job="test"} 10
 
-# r2 (output 3).
-eval instant at 5m regression_over_time(reg_y{job="test"}[5m], reg_x{job="test"}[5m], 3)
+# The coefficient of determination.
+eval instant at 5m regression_over_time(reg_y{job="test"}[5m], reg_x{job="test"}[5m], "r2")
   {job="test"} 1
 
 clear
 
-# Log link (link 1): exponential y doubling against a linear x. The fit is on
+# The "log" link: exponential y doubling against a linear x. The fit is on
 # ln(y), so the slope is ln(2) and the back-transformed prediction recovers y.
 load 1m
   reg_orders{job="test"} 10 20 40 80 160
   reg_promo{job="test"}  0  1  2  3  4
 
-eval instant at 5m regression_over_time(reg_orders{job="test"}[5m], reg_promo{job="test"}[5m], 0, 1)
+eval instant at 5m regression_over_time(reg_orders{job="test"}[5m], reg_promo{job="test"}[5m], "slope", "log")
   {job="test"} 0.6931471805599453
 
-eval instant at 5m regression_over_time(reg_orders{job="test"}[5m], reg_promo{job="test"}[5m], 2, 1)
+eval instant at 5m regression_over_time(reg_orders{job="test"}[5m], reg_promo{job="test"}[5m], "prediction", "log")
   {job="test"} 160
 
 clear
@@ -3010,25 +3031,41 @@ load 1m
   reg_zero_y{job="test"} 99 0 20 40 80 160
   reg_zero_x{job="test"} 99 0  1  2  3  4
 
-eval instant at 5m regression_over_time(reg_zero_y{job="test"}[5m], reg_zero_x{job="test"}[5m], 0, 1)
+eval instant at 5m regression_over_time(reg_zero_y{job="test"}[5m], reg_zero_x{job="test"}[5m], "slope", "log")
   expect info
   {job="test"} 0.6931471805599453
 
 clear
 
-# Invalid output selector => NaN per step + warning annotation.
+# Unknown output name => empty result + warning annotation.
 load 1m
   reg_y{job="test"} 2 4 6 8 10
   reg_x{job="test"} 10 20 30 40 50
 
-eval instant at 5m regression_over_time(reg_y{job="test"}[5m], reg_x{job="test"}[5m], 99)
+eval instant at 5m regression_over_time(reg_y{job="test"}[5m], reg_x{job="test"}[5m], "trend")
   expect warn
-  {job="test"} NaN
 
-# Invalid link => NaN per step + warning annotation.
-eval instant at 5m regression_over_time(reg_y{job="test"}[5m], reg_x{job="test"}[5m], 0, 5)
+# Unknown link name => empty result + warning annotation.
+eval instant at 5m regression_over_time(reg_y{job="test"}[5m], reg_x{job="test"}[5m], "slope", "logit")
   expect warn
-  {job="test"} NaN
+
+clear
+
+# on narrows the pairing key, so y and x with differing extra labels (code vs
+# zone) still pair. The output carries y's labels, minus __name__.
+load 1m
+  regon_y{job="api", instance="i1", code="500"} 2 4 6 8 10
+  regon_x{job="api", instance="i1", zone="a"}   10 20 30 40 50
+
+eval instant at 5m regression_over_time(regon_y[5m], regon_x[5m], "slope", "identity", "job,instance")
+  {job="api", instance="i1", code="500"} 0.2
+
+# The default key (all labels except __name__) does not pair them.
+eval instant at 5m regression_over_time(regon_y[5m], regon_x[5m])
+
+# A malformed on value warns and returns nothing.
+eval instant at 5m regression_over_time(regon_y[5m], regon_x[5m], "slope", "identity", "(job")
+  expect warn
 
 clear
 
@@ -3256,6 +3293,26 @@ load 1m
   onamblm_x{instance="i1", region="eu", p="a"} 2 4  6  8 10
 
 eval instant at 5m lm_over_time("lm", onamblm_y{instance="i1"}[5m], onamblm_x{instance="i1"}[5m], "p", "instance")
+  expect warn
+
+clear
+
+# on="()" puts every X series into one group, pivoted by labelName, against a
+# single y series. The output carries the group key (empty) plus the pivot
+# label, not any one X series' labels (host).
+load 1m
+  lmall_y{alert="latency"}  6 5 13 12 20
+  lmall_x{host="h1", p="a"} 1 2  3  4  5
+  lmall_x{host="h2", p="b"} 1 0  2  1  3
+
+eval instant at 5m lm_over_time("lm", lmall_y[5m], lmall_x[5m], "p", "()")
+  {p="a"} 2
+  {p="b"} 3
+  {p="(intercept)"} 1
+  {p="(r2)"} 1
+
+# A malformed on value warns and returns nothing.
+eval instant at 5m lm_over_time("lm", lmall_y[5m], lmall_x[5m], "p", "p)")
   expect warn
 
 clear

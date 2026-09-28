@@ -114,8 +114,8 @@ var Functions = map[string]*Function{
 	},
 	"regression_over_time": {
 		Name:         "regression_over_time",
-		ArgTypes:     []ValueType{ValueTypeMatrix, ValueTypeMatrix, ValueTypeScalar},
-		Variadic:     2,
+		ArgTypes:     []ValueType{ValueTypeMatrix, ValueTypeMatrix, ValueTypeString},
+		Variadic:     3,
 		ReturnType:   ValueTypeVector,
 		Experimental: true,
 	},

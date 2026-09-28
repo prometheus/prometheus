@@ -710,11 +710,16 @@ const funcDocs: Record<string, React.ReactNode> = {
           string)
         </code>
         returns the correlation coefficient between paired float samples of <code>a</code> and
-        <code>b</code> over the given range, per matched series pair. Series across the two selectors are paired by
-        exact match on all labels except <code>__name__</code> by default, or by exactly the <code>on</code> labels
-        (comma-separated) when given — letting series with differing extra labels (different metrics, different label
-        schemas) still pair, as long as they agree on the <code>on</code> labels. Unpaired series are silently dropped.
+        <code>b</code> over the given range, per matched series pair. Each result carries the labels of its <code>a</code> series, minus <code>__name__</code>. Unpaired series are silently dropped.
         At each evaluation step, only samples whose timestamps appear in both range windows are correlated.
+      </p>
+
+      <p>
+        <code>on</code> sets the matching key, like the binary-operator <code>on()</code> clause:{" "}
+        <code>&quot;&quot;</code> (the default) matches on all labels except <code>__name__</code>; a label list such as{" "}
+        <code>&quot;job,instance&quot;</code> (optionally in parentheses) matches on exactly those labels; and{" "}
+        <code>&quot;()&quot;</code> matches on the empty label set, so every series matches every other. A malformed
+        value, such as <code>&quot;(job&quot;</code>, yields an empty result plus a PromQL warning annotation.
       </p>
 
       <p>
@@ -801,6 +806,19 @@ const funcDocs: Record<string, React.ReactNode> = {
           correlation_over_time( rate(http_request_errors_total[1m])[1h:1m],
           rate(http_request_duration_seconds_sum[1m])[1h:1m], &quot;pearson&quot;, &quot;job,instance&quot; ) &gt;
           0.8
+        </code>
+      </pre>
+
+      <p>
+        <code>&quot;()&quot;</code> ranks many candidate series against one target in a single call. For example, to
+        list the five services whose error rate moved most closely with p99 latency over the past six hours:
+      </p>
+
+      <pre>
+        <code>
+          topk(5, correlation_over_time( sum by (service) (rate(http_request_errors_total[1m]))[6h:1m],
+          histogram_quantile(0.99, sum by (le) (rate(http_request_duration_seconds_bucket[1m])))[6h:1m],
+          &quot;pearson&quot;, &quot;()&quot; ) )
         </code>
       </pre>
     </>
@@ -2341,10 +2359,10 @@ const funcDocs: Record<string, React.ReactNode> = {
       </ul>
 
       <p>
-        Predictor series are grouped by all labels except <code>__name__</code> and <code>labelName</code> by default,
-        or by exactly the <code>on</code> labels (comma-separated) when non-empty — letting <code>y</code> and{" "}
-        <code>X</code> carry differing extra labels and still group together, as long as they agree on the{" "}
-        <code>on</code> labels. Each group is one independent regression, and its distinct <code>labelName</code>{" "}
+        Predictor series are grouped by the <code>on</code> key, which works as for{" "}
+        <code>correlation_over_time()</code> except that the default also ignores <code>labelName</code>;{" "}
+        <code>&quot;()&quot;</code> puts every <code>X</code> series into one group, which then needs a single{" "}
+        <code>y</code> series. Each group is one independent regression, and its distinct <code>labelName</code>{" "}
         values become the design-matrix columns. The response series is matched to a group by those same grouping
         labels. Each emitted series carries the group&rsquo;s labels (from <code>X</code>) with
         <code>labelName</code> set to the predictor&rsquo;s value — or to the reserved value
@@ -3275,11 +3293,28 @@ const funcDocs: Record<string, React.ReactNode> = {
       </p>
 
       <p>
-        <code>regression_over_time(y range-vector, x range-vector, output=0 scalar, link=0 scalar)</code>
+        <code>
+          regression_over_time(y range-vector, x range-vector, output=&quot;slope&quot; string,
+          link=&quot;identity&quot; string, on=&quot;&quot; string)
+        </code>
         fits a least-squares regression of the dependent series <code>y</code> on the independent series <code>x</code>{" "}
-        over the given range, per matched series pair, and returns the selected scalar. Series across the two selectors
-        are paired by exact match on all labels except <code>__name__</code>; unpaired series are silently dropped. At
-        each evaluation step, only samples whose timestamps appear in both range windows are used.
+        over the given range, per matched series pair, and returns the selected scalar. Unpaired series are silently
+        dropped. At each evaluation step, only samples whose timestamps appear in both range windows are used. Each
+        result carries the labels of its <code>y</code> series, minus <code>__name__</code>.
+      </p>
+
+      <p>
+        <code>on</code> sets the matching key, like the binary-operator <code>on()</code> clause:{" "}
+        <code>&quot;&quot;</code> (the default) matches on all labels except <code>__name__</code>; a label list such as{" "}
+        <code>&quot;job,instance&quot;</code> (optionally in parentheses) matches on exactly those labels; and{" "}
+        <code>&quot;()&quot;</code> matches on the empty label set, so every series matches every other. A malformed
+        value, such as <code>&quot;(job&quot;</code>, yields an empty result plus a PromQL warning annotation.
+      </p>
+
+      <p>
+        Several <code>y</code> series may pair with one <code>x</code> series. When more than one <code>x</code> series
+        matches the same key, the pairing is ambiguous: that pair is skipped (not picked arbitrarily) and a PromQL
+        warning annotation is emitted once.
       </p>
 
       <p>
@@ -3297,7 +3332,7 @@ const funcDocs: Record<string, React.ReactNode> = {
       </p>
 
       <p>
-        The optional <code>output</code> scalar selects what is returned:
+        The optional <code>output</code> string selects what is returned:
       </p>
 
       <table>
@@ -3313,7 +3348,7 @@ const funcDocs: Record<string, React.ReactNode> = {
         <tbody>
           <tr>
             <td>
-              <code>0</code>
+              <code>&quot;slope&quot;</code>
             </td>
             <td>
               slope <code>β₁</code> (default)
@@ -3322,7 +3357,7 @@ const funcDocs: Record<string, React.ReactNode> = {
 
           <tr>
             <td>
-              <code>1</code>
+              <code>&quot;intercept&quot;</code>
             </td>
             <td>
               intercept <code>β₀</code>
@@ -3331,7 +3366,7 @@ const funcDocs: Record<string, React.ReactNode> = {
 
           <tr>
             <td>
-              <code>2</code>
+              <code>&quot;prediction&quot;</code>
             </td>
             <td>
               prediction <code>ŷ</code> at the most recent <code>x</code> in the window
@@ -3340,7 +3375,7 @@ const funcDocs: Record<string, React.ReactNode> = {
 
           <tr>
             <td>
-              <code>3</code>
+              <code>&quot;r2&quot;</code>
             </td>
             <td>
               coefficient of determination <code>r²</code>
@@ -3349,7 +3384,7 @@ const funcDocs: Record<string, React.ReactNode> = {
         </tbody>
       </table>
       <p>
-        The optional <code>link</code> scalar selects the link function:
+        The optional <code>link</code> string selects the link function:
       </p>
 
       <table>
@@ -3365,7 +3400,7 @@ const funcDocs: Record<string, React.ReactNode> = {
         <tbody>
           <tr>
             <td>
-              <code>0</code>
+              <code>&quot;identity&quot;</code>
             </td>
             <td>
               identity (default): fits <code>y ≈ β₀ + β₁·x</code>
@@ -3374,7 +3409,7 @@ const funcDocs: Record<string, React.ReactNode> = {
 
           <tr>
             <td>
-              <code>1</code>
+              <code>&quot;log&quot;</code>
             </td>
             <td>
               log: fits <code>ln(y) ≈ β₀ + β₁·x</code>, i.e. <code>y ≈ exp(β₀)·exp(β₁·x)</code>
@@ -3390,9 +3425,8 @@ const funcDocs: Record<string, React.ReactNode> = {
       </p>
 
       <p>
-        Returns <code>NaN</code> for a step when the paired window has fewer than 2 samples, when
-        <code>x</code> has zero variance, or when <code>output</code>/<code>link</code> is out of range — in the last
-        case a PromQL warning annotation is also emitted. Histogram samples are skipped and do not contribute.
+        Returns <code>NaN</code> for a step when the paired window has fewer than 2 samples or when
+        <code>x</code> has zero variance. Histogram samples are skipped and do not contribute.
       </p>
 
       <p>For example, to estimate how much CPU each unit of request rate costs, fitted over the past hour:</p>

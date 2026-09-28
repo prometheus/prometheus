@@ -21,45 +21,57 @@ import (
 	"github.com/prometheus/prometheus/model/labels"
 )
 
-func TestParseOnLabels(t *testing.T) {
+func TestParseOnMatching(t *testing.T) {
 	cases := []struct {
 		in   string
-		want []string
+		ok   bool
+		want onMatching
 	}{
-		{"", nil},
-		{"   ", nil},
-		{"job", []string{"job"}},
-		{"job,instance", []string{"job", "instance"}},
-		{" job , instance ", []string{"job", "instance"}},
-		{"job,,instance", []string{"job", "instance"}},
-		{",", nil},
+		{"", true, onMatching{}},
+		{"   ", true, onMatching{}},
+		{"job", true, onMatching{explicit: true, labels: []string{"job"}}},
+		// Names are sorted and de-duplicated, as HashForLabels requires.
+		{"job,instance", true, onMatching{explicit: true, labels: []string{"instance", "job"}}},
+		{" (job , instance, job) ", true, onMatching{explicit: true, labels: []string{"instance", "job"}}},
+		{"()", true, onMatching{explicit: true}},
+		{"( )", true, onMatching{explicit: true}},
+		{"(job", false, onMatching{}},
+		{"job)", false, onMatching{}},
+		{"(a)(b)", false, onMatching{}},
+		{",", false, onMatching{}},
 	}
 	for _, c := range cases {
-		got := parseOnLabels(c.in)
-		if len(c.want) == 0 {
-			require.Empty(t, got, "input %q", c.in)
-			continue
+		got, ok := parseOnMatching(c.in)
+		require.Equal(t, c.ok, ok, "ok for %q", c.in)
+		if c.ok {
+			require.Equal(t, c.want.explicit, got.explicit, "explicit for %q", c.in)
+			require.Len(t, got.labels, len(c.want.labels), "labels for %q", c.in)
+			if len(c.want.labels) > 0 {
+				require.Equal(t, c.want.labels, got.labels, "labels for %q", c.in)
+			}
 		}
-		require.Equal(t, c.want, got, "input %q", c.in)
 	}
 }
 
-func TestMatchSig(t *testing.T) {
+func TestOnMatchingSig(t *testing.T) {
 	a := labels.FromStrings("__name__", "a", "job", "x", "instance", "1", "code", "500")
 	b := labels.FromStrings("__name__", "b", "job", "x", "instance", "1", "quantile", "0.99")
+	c := labels.FromStrings("__name__", "a", "job", "x", "instance", "2", "code", "500")
+	sig := func(on string, lb labels.Labels) uint64 {
+		m, ok := parseOnMatching(on)
+		require.True(t, ok, on)
+		h, _ := m.sig(lb, nil, "__name__")
+		return h
+	}
 
-	// on unset: falls back to dropLabels (the pre-`on` default). a and b
-	// differ outside __name__ (code vs quantile), so their signatures differ.
-	sigA, _ := matchSig(a, nil, nil, "__name__")
-	sigB, _ := matchSig(b, nil, nil, "__name__")
-	require.NotEqual(t, sigA, sigB, "a and b should not match on full labelset")
-
-	// on set to the shared labels: a and b now match, ignoring code/quantile.
-	sigA, _ = matchSig(a, nil, []string{"job", "instance"}, "__name__")
-	sigB, _ = matchSig(b, nil, []string{"job", "instance"}, "__name__")
-	require.Equal(t, sigA, sigB, "a and b should match on shared on-labels")
-
-	// on takes priority over dropLabels even when both are given.
-	sigA2, _ := matchSig(a, nil, []string{"job", "instance"}, "__name__", "job")
-	require.Equal(t, sigA, sigA2, "dropLabels must be ignored once on is non-empty")
+	// Default key: a and b differ outside __name__ (code vs quantile).
+	require.NotEqual(t, sig("", a), sig("", b))
+	// Explicit key: a and b share job and instance.
+	require.Equal(t, sig("job,instance", a), sig("job,instance", b))
+	// a and c differ only in instance, which sorts before job. Hashing the
+	// user-order list unsorted would ignore instance and wrongly match them.
+	require.NotEqual(t, sig("job,instance", a), sig("job,instance", c))
+	// "()" gives every series the same signature.
+	require.Equal(t, sig("()", a), sig("()", b))
+	require.Equal(t, sig("()", a), sig("()", c))
 }

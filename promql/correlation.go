@@ -34,19 +34,8 @@ const (
 	correlationMethodKendall  = "kendall"
 )
 
-// parseCorrelationMethod resolves the method argument to one of the supported
-// coefficient names. An empty string selects the default, so an explicit ""
-// behaves like omitting the argument. It returns ok=false for an unknown
-// method.
-func parseCorrelationMethod(s string) (method string, ok bool) {
-	switch s {
-	case "":
-		return correlationMethodPearson, true
-	case correlationMethodPearson, correlationMethodSpearman, correlationMethodKendall:
-		return s, true
-	}
-	return s, false
-}
+// correlationMethods lists the valid method names; the first is the default.
+var correlationMethods = []string{correlationMethodPearson, correlationMethodSpearman, correlationMethodKendall}
 
 // maxKendallCorrelationPairs is the soft warning threshold for Kendall's
 // naive O(n²) implementation.
@@ -240,26 +229,16 @@ func fractionalRanks(vals []float64) []float64 {
 func (ev *evaluator) evalCorrelationOverTime(ctx context.Context, e *parser.Call) (parser.Value, annotations.Annotations) {
 	var warnings annotations.Annotations
 
-	// Optional method argument, resolved once up front. methodPos is where
-	// method-related annotations point; the argument may be absent.
-	method := correlationMethodPearson
+	// Optional string options, parsed once up front.
+	method, methodOK := enumArg(e, 2, correlationMethods, annotations.NewInvalidCorrelationMethodWarning, &warnings)
+	on, onOK := onArg(e, 3, &warnings)
+	if !methodOK || !onOK {
+		return Matrix{}, warnings
+	}
+	// Kendall is only reachable with an explicit method argument.
 	methodPos := e.PositionRange()
 	if len(e.Args) > 2 {
 		methodPos = e.Args[2].PositionRange()
-		methodArg := stringFromArg(e.Args[2])
-		var ok bool
-		method, ok = parseCorrelationMethod(methodArg)
-		if !ok {
-			warnings.Add(annotations.NewInvalidCorrelationMethodWarning(methodArg, methodPos))
-			return Matrix{}, warnings
-		}
-	}
-
-	// Optional `on` label list, narrowing/widening the pairing key from the
-	// default (all labels except __name__) to exactly these labels.
-	var on []string
-	if len(e.Args) > 3 {
-		on = parseOnLabels(stringFromArg(e.Args[3]))
 	}
 
 	// Each range-vector argument can be either a MatrixSelector (e.g.
@@ -300,32 +279,12 @@ func (ev *evaluator) evalCorrelationOverTime(ctx context.Context, e *parser.Call
 	vs0 := sel0.VectorSelector.(*parser.VectorSelector)
 	vs1 := sel1.VectorSelector.(*parser.VectorSelector)
 
-	// Build a map from matching signature to series index for the second
-	// selector. Reuse a single byte buffer across hash calls to avoid
-	// per-series allocations. A signature matched by more than one series is
-	// ambiguous — which one should pair with the first selector? — so it is
-	// excluded from sig1Map entirely (skip the whole pair) rather than
-	// guessing, with a single warning per ambiguous signature.
-	sig1Map := make(map[uint64]int, len(vs1.Series))
-	ambiguousSig1 := make(map[uint64]struct{})
+	// Index the second selector by matching signature. Ambiguous signatures
+	// (several series) are left out, so their pairs are skipped with a warning.
+	dropName := []string{model.MetricNameLabel}
+	sig1Map := uniqueSigIndex(vs1.Series, on, dropName, e.Args[1].PositionRange(),
+		annotations.NewAmbiguousCorrelationPairWarning, &warnings)
 	var hashBuf []byte
-	for i, s := range vs1.Series {
-		var sig uint64
-		sig, hashBuf = matchSig(s.Labels(), hashBuf, on, model.MetricNameLabel)
-		if _, amb := ambiguousSig1[sig]; amb {
-			continue // Already known-ambiguous; warned once already.
-		}
-		if _, dup := sig1Map[sig]; dup {
-			delete(sig1Map, sig)
-			ambiguousSig1[sig] = struct{}{}
-			warnings.Add(annotations.NewAmbiguousCorrelationPairWarning(
-				s.Labels().DropReserved(schema.IsMetadataLabel).String(),
-				e.Args[1].PositionRange(),
-			))
-			continue
-		}
-		sig1Map[sig] = i
-	}
 
 	selRange0 := durationMilliseconds(sel0.Range)
 	selRange1 := durationMilliseconds(sel1.Range)
@@ -344,7 +303,7 @@ func (ev *evaluator) evalCorrelationOverTime(ctx context.Context, e *parser.Call
 	// Process each series from the first selector and find its pair.
 	for _, s0 := range vs0.Series {
 		var sig uint64
-		sig, hashBuf = matchSig(s0.Labels(), hashBuf, on, model.MetricNameLabel)
+		sig, hashBuf = on.sig(s0.Labels(), hashBuf, dropName...)
 		j, ok := sig1Map[sig]
 		if !ok {
 			continue // No matching pair in the second selector.
