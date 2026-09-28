@@ -550,6 +550,9 @@ func main() {
 	serverOnlyFlag(a, "storage.tsdb.block-reload-interval", "Interval at which to check for new or removed blocks in storage. Users who manually backfill or drop blocks must wait up to this duration before changes become available.").
 		Default("1m").Hidden().SetValue(&cfg.tsdb.BlockReloadInterval)
 
+	serverOnlyFlag(a, "storage.tsdb.expanded-postings-cache-size", "[EXPERIMENTAL] Maximum memory size of the expanded postings cache for immutable blocks. 0 disables the cache.").
+		Default("0B").BytesVar(&cfg.tsdb.ExpandedPostingsCacheMaxBytes)
+
 	agentOnlyFlag(a, "storage.agent.path", "Base path for metrics storage.").
 		Default("data-agent/").StringVar(&cfg.agentStoragePath)
 
@@ -2136,6 +2139,7 @@ type tsdbOptions struct {
 	UseUncachedIO                  bool
 	BlockCompactionExcludeFunc     tsdb.BlockExcludeFilterFunc
 	BlockReloadInterval            model.Duration
+	ExpandedPostingsCacheMaxBytes  units.Base2Bytes
 	EnableSTAsZeroSample           bool
 	EnableSTStorage                bool
 	EnableHistogramSTEncoding      bool
@@ -2169,6 +2173,7 @@ func (opts tsdbOptions) ToTSDBOptions() tsdb.Options {
 		UseUncachedIO:                  opts.UseUncachedIO,
 		BlockCompactionExcludeFunc:     opts.BlockCompactionExcludeFunc,
 		BlockReloadInterval:            time.Duration(opts.BlockReloadInterval),
+		ExpandedPostingsCacheMaxBytes:  int64(opts.ExpandedPostingsCacheMaxBytes),
 		FeatureRegistry:                features.DefaultRegistry,
 		EnableSTAsZeroSample:           opts.EnableSTAsZeroSample,
 		EnableSTStorage:                opts.EnableSTStorage,

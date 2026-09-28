@@ -127,6 +127,10 @@ type Options struct {
 	// Typically it is in milliseconds.
 	RetentionDuration int64
 
+	// ExpandedPostingsCacheMaxBytes is the maximum number of bytes retained by
+	// the expanded-postings cache for immutable blocks. 0 or less disables it.
+	ExpandedPostingsCacheMaxBytes int64
+
 	// Maximum number of bytes in blocks to be retained.
 	// 0 or less means disabled.
 	// NOTE: For proper storage calculations need to consider
@@ -365,6 +369,8 @@ type DB struct {
 	blockQuerierFunc BlockQuerierFunc
 
 	blockChunkQuerierFunc BlockChunkQuerierFunc
+
+	expandedPostingsCache *expandedPostingsCache
 
 	fsSizeFunc FsSizeFunc
 }
@@ -1042,6 +1048,7 @@ func open(dir string, l *slog.Logger, r prometheus.Registerer, opts *Options, rn
 		blocksToDelete: opts.BlocksToDelete,
 		registerer:     r,
 	}
+	db.expandedPostingsCache = newExpandedPostingsCache(opts.ExpandedPostingsCacheMaxBytes)
 	defer func() {
 		// Close files if startup fails somewhere.
 		if returnedErr == nil {
@@ -1106,13 +1113,23 @@ func open(dir string, l *slog.Logger, r prometheus.Registerer, opts *Options, rn
 	db.compactCancel = cancel
 
 	if opts.BlockQuerierFunc == nil {
-		db.blockQuerierFunc = NewBlockQuerier
+		db.blockQuerierFunc = func(b BlockReader, mint, maxt int64) (storage.Querier, error) {
+			if _, ok := b.(*Block); ok {
+				return newBlockQuerierWithCache(b, mint, maxt, db.expandedPostingsCache)
+			}
+			return NewBlockQuerier(b, mint, maxt)
+		}
 	} else {
 		db.blockQuerierFunc = opts.BlockQuerierFunc
 	}
 
 	if opts.BlockChunkQuerierFunc == nil {
-		db.blockChunkQuerierFunc = NewBlockChunkQuerier
+		db.blockChunkQuerierFunc = func(b BlockReader, mint, maxt int64) (storage.ChunkQuerier, error) {
+			if _, ok := b.(*Block); ok {
+				return newBlockChunkQuerierWithCache(b, mint, maxt, db.expandedPostingsCache)
+			}
+			return NewBlockChunkQuerier(b, mint, maxt)
+		}
 	} else {
 		db.blockChunkQuerierFunc = opts.BlockChunkQuerierFunc
 	}
@@ -2162,6 +2179,14 @@ func (db *DB) reloadBlocks() (err error) {
 	oldBlocks := db.blocks
 	db.blocks = toLoad
 	db.mtx.Unlock()
+
+	if db.expandedPostingsCache != nil {
+		keep := make(map[ulid.ULID]struct{}, len(toLoad))
+		for _, b := range toLoad {
+			keep[b.Meta().ULID] = struct{}{}
+		}
+		db.expandedPostingsCache.removeBlocks(keep)
+	}
 
 	// Only check overlapping blocks when overlapping compaction is enabled.
 	if db.opts.EnableOverlappingCompaction {
