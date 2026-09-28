@@ -91,6 +91,12 @@ Example:
   are part of the server (see [docs/stability.md](docs/stability.md)), and
   this repository is
   [not designed for use as a library](README.md#using-prometheus-as-a-go-library).
+- Still, many projects use this repository as a library, so keep changes to
+  exported Go APIs to a minimum. Before removing or changing an exported
+  function, method or type, check how downstream projects such as
+  [Cortex](https://github.com/cortexproject/cortex),
+  [Thanos](https://github.com/thanos-io/thanos) and
+  [Mimir](https://github.com/grafana/mimir) use it.
 - A bug fix must fix the behaviour of Prometheus itself. A problem that is
   only reachable through Go library use, for example using a type in a way
   that no Prometheus code path does, is not a bug: do not label the change
