@@ -5420,13 +5420,43 @@ func TestSnapshotError(t *testing.T) {
 // TestSnapshotInvalidRecordFallsBackToWAL verifies recovery from invalid or legacy
 // snapshots, falling back to full WAL replay when available.
 func TestSnapshotInvalidRecordFallsBackToWAL(t *testing.T) {
-	for _, corruption := range []string{
-		"unknown chunk encoding",
-		"missing WAL expiry record",
-		"truncated WAL expiry record",
-		"missing WAL expiry record without WAL",
+	const (
+		unknownChunkEncoding = iota
+		missingWALExpiryRecord
+		truncatedWALExpiryRecord
+	)
+	for _, tc := range []struct {
+		name             string
+		corruption       int
+		withWAL          bool
+		wantReplayErrors float64
+	}{
+		{
+			name:             "unknown chunk encoding",
+			corruption:       unknownChunkEncoding,
+			withWAL:          true,
+			wantReplayErrors: 1,
+		},
+		{
+			name:             "missing WAL expiry record",
+			corruption:       missingWALExpiryRecord,
+			withWAL:          true,
+			wantReplayErrors: 1,
+		},
+		{
+			name:             "truncated WAL expiry record",
+			corruption:       truncatedWALExpiryRecord,
+			withWAL:          true,
+			wantReplayErrors: 1,
+		},
+		{
+			name:             "missing WAL expiry record without WAL",
+			corruption:       missingWALExpiryRecord,
+			withWAL:          false,
+			wantReplayErrors: 0,
+		},
 	} {
-		t.Run(corruption, func(t *testing.T) {
+		t.Run(tc.name, func(t *testing.T) {
 			head, _ := newTestHead(t, 120*4, compression.None, false)
 			querySamples := func() map[string][]chunks.Sample {
 				q, err := NewBlockQuerier(head, math.MinInt64, math.MaxInt64)
@@ -5470,7 +5500,7 @@ func TestSnapshotInvalidRecordFallsBackToWAL(t *testing.T) {
 			for r.Next() {
 				rec := append([]byte(nil), r.Record()...)
 				switch {
-				case corruption == "unknown chunk encoding" && rec[0] == chunkSnapshotRecordTypeSeries:
+				case tc.corruption == unknownChunkEncoding && rec[0] == chunkSnapshotRecordTypeSeries:
 					buf := encoding.Decbuf{B: rec}
 					_ = buf.Byte() // flag
 					_ = buf.Be64() // ref
@@ -5485,10 +5515,10 @@ func TestSnapshotInvalidRecordFallsBackToWAL(t *testing.T) {
 						rec[encPos] = 0xFF
 						mutated = true
 					}
-				case strings.HasPrefix(corruption, "missing WAL expiry record") && rec[0] == chunkSnapshotRecordTypeWALExpiries:
+				case tc.corruption == missingWALExpiryRecord && rec[0] == chunkSnapshotRecordTypeWALExpiries:
 					mutated = true
 					continue
-				case corruption == "truncated WAL expiry record" && rec[0] == chunkSnapshotRecordTypeWALExpiries:
+				case tc.corruption == truncatedWALExpiryRecord && rec[0] == chunkSnapshotRecordTypeWALExpiries:
 					rec = append(rec, 0) // Incomplete reference/expiry pair.
 					mutated = true
 				}
@@ -5512,7 +5542,7 @@ func TestSnapshotInvalidRecordFallsBackToWAL(t *testing.T) {
 			// Legacy snapshots remain usable without a WAL. Otherwise invalid
 			// snapshots must fall back to replaying the WAL.
 			var w *wlog.WL
-			if corruption != "missing WAL expiry record without WAL" {
+			if tc.withWAL {
 				w, err = wlog.NewSize(nil, nil, head.wal.Dir(), 32768, compression.None)
 				require.NoError(t, err)
 			}
@@ -5520,11 +5550,7 @@ func TestSnapshotInvalidRecordFallsBackToWAL(t *testing.T) {
 			require.NoError(t, err)
 			require.NoError(t, head.Init(math.MinInt64))
 
-			if w == nil {
-				require.Zero(t, prom_testutil.ToFloat64(head.metrics.snapshotReplayErrorTotal))
-			} else {
-				require.Equal(t, 1.0, prom_testutil.ToFloat64(head.metrics.snapshotReplayErrorTotal))
-			}
+			require.Equal(t, tc.wantReplayErrors, prom_testutil.ToFloat64(head.metrics.snapshotReplayErrorTotal))
 			require.Equal(t, uint64(2), head.NumSeries(), "both series must be recovered")
 			require.NotNil(t, head.series.getByHash(lblsFloat.Hash(), lblsFloat))
 			require.NotNil(t, head.series.getByHash(lblsFloatHist.Hash(), lblsFloatHist))

@@ -1866,7 +1866,8 @@ Outer:
 			}
 
 		case chunkSnapshotRecordTypeExemplars:
-			// Exemplars are at the end of snapshot. So all series are loaded at this point.
+			// Exemplar records follow all series records. Wait for series replay
+			// before resolving their references.
 			if len(refSeries) == 0 {
 				close(recordChan)
 				wg.Wait()
