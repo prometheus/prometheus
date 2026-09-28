@@ -171,7 +171,10 @@ func ChunkFromSamplesGeneric(s Samples) (Meta, error) {
 		return Meta{}, err
 	}
 
-	ca, _ := c.Appender()
+	ca, err := c.Appender()
+	if err != nil {
+		return emptyChunk, fmt.Errorf("failed to create chunk appender: %w", err)
+	}
 	var newChunk chunkenc.Chunk
 
 	for i := 0; i < s.Len(); i++ {
