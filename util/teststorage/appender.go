@@ -642,8 +642,7 @@ func (a *appenderV2) AppendExemplars(ref storage.SeriesRef, l labels.Labels, exe
 	var matchedLabels labels.Labels
 	if !a.a.skipRecording {
 		a.a.mtx.Lock()
-		for i := len(a.a.pendingSamples) - 1; i >= 0; i-- { // Attach exemplars to the last matching sample.
-			s := a.a.pendingSamples[i]
+		for i, s := range slices.Backward(a.a.pendingSamples) { // Attach exemplars to the last matching sample.
 			if (!l.IsEmpty() && labels.Equal(l, s.L)) || (ref != 0 && storage.SeriesRef(s.L.Hash()) == ref) {
 				pendingIdx = i
 				matchedLabels = s.L
@@ -651,8 +650,7 @@ func (a *appenderV2) AppendExemplars(ref storage.SeriesRef, l labels.Labels, exe
 			}
 		}
 		if pendingIdx == -1 {
-			for i := len(a.a.resultSamples) - 1; i >= 0; i-- {
-				s := a.a.resultSamples[i]
+			for _, s := range slices.Backward(a.a.resultSamples) {
 				if (!l.IsEmpty() && labels.Equal(l, s.L)) || (ref != 0 && storage.SeriesRef(s.L.Hash()) == ref) {
 					matchedLabels = s.L
 					break
