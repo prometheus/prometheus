@@ -2797,15 +2797,16 @@ func BenchmarkScrapeLoopScrapeAndReport(b *testing.B) {
 				parsableText := readTextParseTestMetrics(b)
 
 				s := teststorage.New(b)
+
 				sl, scraper := newTestScrapeLoop(b, withAppendable(s, appV2), func(sl *scrapeLoop) {
 					sl.fallbackScrapeProtocol = "application/openmetrics-text"
 					if !pooled {
-						// Keep the fixture above the largest bucket.
+						// Use a small pool to model production bodies above 59 MB.
 						sl.buffers = pool.New(1e3, 1e3, 3, func(sz int) any { return make([]byte, 0, sz) })
 					}
 				})
 				scraper.scrapeFunc = func(_ context.Context, writer io.Writer) error {
-					// LimitReader prevents io.Copy from using bytes.Reader.WriteTo.
+					// Exercise ReadFrom's EOF growth check, as in production.
 					_, err := io.Copy(writer, io.LimitReader(bytes.NewReader(parsableText), int64(len(parsableText))))
 					return err
 				}
