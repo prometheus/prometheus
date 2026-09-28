@@ -291,6 +291,10 @@ func (c *flagConfig) setFeatureListOptions(logger *slog.Logger) error {
 				c.scrape.SynthesizeST = true
 				features.Enable(features.Scrape, "st-synthesis")
 				logger.Info("Experimental start timestamp synthesis enabled.")
+			case "new-series-zero-sample":
+				c.scrape.EnableNewSeriesZeroSample = true
+				features.Enable(features.Scrape, "new-series-zero-sample")
+				logger.Info("Experimental zero sample seeding for new counter/histogram series enabled. Combine with --enable-feature=created-timestamp-zero-ingestion for the seeded start timestamp to materialize as a stored zero sample.")
 			case "st-storage":
 				c.scrape.ParseST = true
 				c.tsdb.EnableSTStorage = true
@@ -652,7 +656,7 @@ func main() {
 	a.Flag("scrape.discovery-reload-interval", "Interval used by scrape manager to throttle target groups updates.").
 		Hidden().Default("5s").SetValue(&cfg.scrape.DiscoveryReloadInterval)
 
-	a.Flag("enable-feature", "Comma separated feature names to enable. Valid options: concurrent-rule-eval, created-timestamp-zero-ingestion, delayed-compaction, exemplar-storage, extra-scrape-metrics, histograms-st-encoding, memory-snapshot-on-shutdown, metadata-wal-records, old-ui, openmetrics2, otlp-deltatocumulative, otlp-native-delta-ingestion, promql-binop-fill-modifiers, promql-delayed-name-removal, promql-experimental-functions, promql-extended-range-selectors, promql-per-step-stats, search-api, st-storage, st-synthesis, type-and-unit-labels, use-start-timestamps, use-uncached-io, xor2-encoding, zstd-scrape. See https://prometheus.io/docs/prometheus/latest/feature_flags/ for more details.").
+	a.Flag("enable-feature", "Comma separated feature names to enable. Valid options: concurrent-rule-eval, created-timestamp-zero-ingestion, delayed-compaction, exemplar-storage, extra-scrape-metrics, histograms-st-encoding, memory-snapshot-on-shutdown, metadata-wal-records, new-series-zero-sample, old-ui, openmetrics2, otlp-deltatocumulative, otlp-native-delta-ingestion, promql-binop-fill-modifiers, promql-delayed-name-removal, promql-experimental-functions, promql-extended-range-selectors, promql-per-step-stats, search-api, st-storage, st-synthesis, type-and-unit-labels, use-start-timestamps, use-uncached-io, xor2-encoding, zstd-scrape. See https://prometheus.io/docs/prometheus/latest/feature_flags/ for more details.").
 		StringsVar(&cfg.featureList)
 
 	a.Flag("agent", "Run Prometheus in 'Agent mode'.").BoolVar(&agentMode)

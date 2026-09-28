@@ -76,6 +76,13 @@ type AppendV2Options struct {
 	// of order. An OOO append MUST be rejected with storage.ErrOutOfOrderSample
 	// error.
 	RejectOutOfOrder bool
+
+	// OnlyIfNewSeries tells implementation that a non-zero st passed to Append
+	// should only be used to synthesize a zero sample if the series referred to
+	// by ref/l did not already exist in storage before this call. Implementations
+	// that don't track series existence MAY ignore this field, in which case the
+	// zero sample synthesis behaves as if OnlyIfNewSeries was false.
+	OnlyIfNewSeries bool
 }
 
 // AppendPartialError represents an AppenderV2.Append error that tells
