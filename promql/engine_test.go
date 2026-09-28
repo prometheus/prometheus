@@ -1774,6 +1774,43 @@ load 10s
 			},
 		},
 
+		// Subquery with @ in a range query: every step consumes the fixed window
+		// (180s, 200s], so per-step stats match the instant query below.
+		{
+			Query:        "quantile_over_time(time() / 1000, metricWith1SampleEvery10Seconds[20s:10s] @ 200)",
+			Start:        time.Unix(250, 0),
+			End:          time.Unix(280, 0),
+			Interval:     10 * time.Second,
+			PeakSamples:  19,
+			TotalSamples: 16, // (2 subquery input samples + 2 materialized samples) * 4 steps.
+			TotalSamplesPerStep: stats.TotalSamplesPerStep{
+				250000: 4,
+				260000: 4,
+				270000: 4,
+				280000: 4,
+			},
+			SamplesRead: 2,
+			SamplesReadPerStep: stats.TotalSamplesPerStep{
+				250000: 2,
+				260000: 0,
+				270000: 0,
+				280000: 0,
+			},
+		},
+		{
+			Query:        "quantile_over_time(time() / 1000, metricWith1SampleEvery10Seconds[20s:10s] @ 200)",
+			Start:        time.Unix(250, 0),
+			PeakSamples:  7,
+			TotalSamples: 4, // 2 subquery input samples + 2 materialized samples.
+			TotalSamplesPerStep: stats.TotalSamplesPerStep{
+				250000: 4,
+			},
+			SamplesRead: 2,
+			SamplesReadPerStep: stats.TotalSamplesPerStep{
+				250000: 2,
+			},
+		},
+
 		// Instant subquery: basic SamplesRead merging.
 		{
 			Query:        "max_over_time(metricWith1SampleEvery10Seconds[20s:10s])",

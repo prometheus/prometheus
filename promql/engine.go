@@ -2067,16 +2067,22 @@ func (ev *evaluator) runSubquery(ctx context.Context, e *parser.SubqueryExpr) (p
 
 // evalSubquery evaluates given SubqueryExpr and returns an equivalent
 // evaluated MatrixSelector in its place. Note that the Name and LabelMatchers are not set.
-// outerOffset is durationMilliseconds(subq.OriginalOffset) so the merge can
-// shift child timestamps to match the parent step that consumes them.
-// outerRange is the outer call's selRange so the merge can drop subquery
-// iterations whose timestamps fall in gaps between consecutive outer-step
-// windows (i.e. when the outer step is wider than the subquery range).
+// outerOffset and outerRange are the subquery's original offset and the outer
+// call's selRange, used to attribute subquery stats to the parent steps that
+// consume them.
 func (ev *evaluator) evalSubquery(ctx context.Context, subq *parser.SubqueryExpr, outerOffset, outerRange int64) (*parser.MatrixSelector, int, annotations.Annotations) {
 	val, childStats, ws := ev.runSubquery(ctx, subq)
 	ev.samplesStats.UpdatePeakFromSubquery(childStats)
-	ev.samplesStats.MergeTotalSamplesFromSubquery(childStats, ev.startTimestamp, ev.interval, ev.numSteps(), outerOffset, outerRange, subq.Timestamp != nil)
-	ev.samplesStats.MergeSamplesReadFromSubquery(childStats, ev.startTimestamp, ev.interval, ev.numSteps(), outerOffset, outerRange)
+	consumer := stats.SubqueryConsumer{
+		Start:       ev.startTimestamp,
+		Interval:    ev.interval,
+		NumSteps:    ev.numSteps(),
+		Offset:      outerOffset,
+		Range:       outerRange,
+		AtTimestamp: subq.Timestamp,
+	}
+	ev.samplesStats.MergeTotalSamplesFromSubquery(childStats, consumer)
+	ev.samplesStats.MergeSamplesReadFromSubquery(childStats, consumer)
 	mat := val.(Matrix)
 	vs := &parser.VectorSelector{
 		OriginalOffset: subq.OriginalOffset,
@@ -2628,12 +2634,14 @@ func (ev *evaluator) eval(ctx context.Context, expr parser.Expr) (parser.Value, 
 	case *parser.SubqueryExpr:
 		res, childStats, ws := ev.runSubquery(ctx, e)
 		ev.samplesStats.UpdatePeakFromSubquery(childStats)
-		// Attribute the subquery's TotalSamples to the parent's end step
-		// so they appear in the parent's TotalSamples stat.
-		ev.samplesStats.IncrementSamplesAtTimestamp(ev.endTimestamp, childStats.TotalSamples)
-		// outerOffset=0, outerRange=0: every subquery iteration becomes part of
-		// the parent's matrix output, so no shifting or gap filtering is needed.
-		ev.samplesStats.MergeSamplesReadFromSubquery(childStats, ev.startTimestamp, ev.interval, ev.numSteps(), 0, 0)
+		// Every subquery iteration is part of the parent's matrix output.
+		consumer := stats.SubqueryConsumer{
+			Start:    ev.startTimestamp,
+			Interval: ev.interval,
+			NumSteps: ev.numSteps(),
+		}
+		ev.samplesStats.MergeTotalSamplesFromSubquery(childStats, consumer)
+		ev.samplesStats.MergeSamplesReadFromSubquery(childStats, consumer)
 		return res, ws
 	case *parser.StepInvariantExpr:
 		newEv := &evaluator{
