@@ -22,6 +22,7 @@ import (
 	"math"
 	"net/http"
 	"net/http/httptest"
+	"slices"
 	"strconv"
 	"strings"
 	"testing"
@@ -1653,9 +1654,9 @@ func (m *mockAppendable) UpdateMetadata(ref storage.SeriesRef, l labels.Labels, 
 	if m.updateMetadataErr != nil {
 		return 0, m.updateMetadataErr
 	}
-	for i := len(m.metadata) - 1; i >= 0; i-- {
-		if labels.Equal(m.metadata[i].l, l) {
-			if m.metadata[i].m.Equals(mp) {
+	for _, md := range slices.Backward(m.metadata) {
+		if labels.Equal(md.l, l) {
+			if md.m.Equals(mp) {
 				return ref, nil
 			}
 			break
