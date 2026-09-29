@@ -1,4 +1,4 @@
-import { FC, useEffect, useId, useState } from "react";
+import { FC, useId } from "react";
 import { Alert, Skeleton, Box, LoadingOverlay, Stack } from "@mantine/core";
 import { IconAlertTriangle, IconInfoCircle } from "@tabler/icons-react";
 import { RangeQueryResult } from "../../api/responseTypes/query";
@@ -43,7 +43,6 @@ const Graph: FC<GraphProps> = ({
   onSelectRange,
 }) => {
   const { ref, width } = useElementSize();
-  const [rerender, setRerender] = useState(true);
   const { showQueryWarnings, showQueryInfoNotices } = useSettings();
 
   const effectiveExpr =
@@ -62,34 +61,49 @@ const Graph: FC<GraphProps> = ({
                 anchored: node.anchored,
                 smoothed: node.smoothed,
               }
-            : node
+            : node,
         );
 
-  const effectiveEndTime = (endTime !== null ? endTime : Date.now()) / 1000;
-  const startTime = effectiveEndTime - range / 1000;
   const effectiveResolution = getEffectiveResolution(resolution, range) / 1000;
-
-  const { data, error, isFetching, isLoading, refetch } =
-    useAPIQuery<RangeQueryResult>({
-      key: [useId()],
-      path: "/query_range",
-      params: {
+  const {
+    data: dataAndRange,
+    error,
+    isFetching,
+    isLoading,
+  } = useAPIQuery<
+    RangeQueryResult,
+    { data: SuccessAPIResponse<RangeQueryResult>; range: UPlotChartRange }
+  >({
+    key: [
+      useId(),
+      "/query_range",
+      effectiveExpr,
+      endTime,
+      range,
+      effectiveResolution,
+      retriggerIdx,
+    ],
+    path: "/query_range",
+    params: (requestTimeMs) => {
+      const end = (endTime ?? requestTimeMs) / 1000;
+      return {
         query: effectiveExpr,
         step: effectiveResolution.toString(),
-        start: startTime.toString(),
-        end: effectiveEndTime.toString(),
+        start: (end - range / 1000).toString(),
+        end: end.toString(),
+      };
+    },
+    enabled: effectiveExpr !== "",
+    keepPreviousData: true,
+    select: (data, { params }) => ({
+      data,
+      range: {
+        startTime: Number(params.start),
+        endTime: Number(params.end),
+        resolution: Number(params.step),
       },
-      enabled: effectiveExpr !== "",
-    });
-
-  // Bundle the chart data and the displayed range together. This has two purposes:
-  // 1. If we update them separately, we cause unnecessary rerenders of the uPlot chart itself.
-  // 2. We want to keep displaying the old range in the chart while a query for a new range
-  //    is still in progress.
-  const [dataAndRange, setDataAndRange] = useState<{
-    data: SuccessAPIResponse<RangeQueryResult>;
-    range: UPlotChartRange;
-  } | null>(null);
+    }),
+  });
 
   // Helper function to render warnings.
   const renderAlerts = (warnings?: string[], infos?: string[]) => {
@@ -121,37 +135,6 @@ const Graph: FC<GraphProps> = ({
     );
   };
 
-  useEffect(() => {
-    if (data !== undefined) {
-      setDataAndRange({
-        data: data,
-        range: {
-          startTime: startTime,
-          endTime: effectiveEndTime,
-          resolution: effectiveResolution,
-        },
-      });
-    }
-    // We actually want to update the displayed range only once the new data is there,
-    // so we don't want to include any of the range-related parameters in the dependencies.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [data]);
-
-  // Re-execute the query when the user presses Enter (or hits the Execute button).
-  useEffect(() => {
-    if (effectiveExpr !== "") {
-      refetch();
-    }
-  }, [retriggerIdx, refetch, effectiveExpr, endTime, range, resolution]);
-
-  // The useElementSize hook above only gets a valid size on the second render, so this
-  // is a workaround to make the component render twice after mount.
-  useEffect(() => {
-    if (dataAndRange !== null && rerender) {
-      setRerender(false);
-    }
-  }, [dataAndRange, rerender, setRerender]);
-
   // TODO: Share all the loading/error/empty data notices with the DataTable?
 
   // Show a skeleton only on the first load, not on subsequent ones.
@@ -177,7 +160,7 @@ const Graph: FC<GraphProps> = ({
     );
   }
 
-  if (dataAndRange === null) {
+  if (dataAndRange === undefined) {
     return <Alert variant="transparent">No data queried yet</Alert>;
   }
 

@@ -76,31 +76,22 @@ func (p HeadChunkRef) Unpack() (HeadSeriesRef, HeadChunkID) {
 }
 
 // HeadChunkID refers to a specific chunk in a series (memSeries) in the Head.
-// Each memSeries has its own number to refer to its chunks: it is monotonically
-// increasing for in-order chunks, while out-of-order chunk IDs wrap around modulo
-// 2^23 (see oooHeadChunkID in tsdb/head_read.go), so they only increase between
-// wrap-arounds.
-// If the HeadChunkID value is...
-//   - memSeries.firstChunkID+len(memSeries.mmappedChunks), it's the head chunk.
-//   - less than the above, but >= memSeries.firstID, then it's
-//     memSeries.mmappedChunks[i] where i = HeadChunkID - memSeries.firstID.
+// Each memSeries has its own IDs for in-order and out-of-order chunks.
+//
+// IDs occupy bits 0-22 of HeadChunkRef (bit 23 is the OOO flag) and wrap modulo
+// 2^23 (see wrapChunkID, headChunkID, and oooHeadChunkID in tsdb/head_read.go).
+// They are not a globally monotonic counter: never order them, compare them, or
+// bound-check them directly. Recover the live-chunk index with
+//
+//	i = wrapChunkID(HeadChunkID - firstChunkID)
+//
+// For in-order chunks, i indexes mmappedChunks, then the headChunks linked list.
 //
 // If memSeries.headChunks is non-nil it points to a *memChunk that holds the current
-// "open" (accepting appends) instance. *memChunk is a linked list and memChunk.next pointer
-// might link to the older *memChunk instance.
+// "open" (accepting appends) instance. *memChunk is a linked list and memChunk.prev
+// pointer might link to the older *memChunk instance.
 // If there are multiple *memChunk instances linked to each other from memSeries.headChunks
-// they will be m-mapped as soon as possible leaving only "open" *memChunk instance.
-//
-// Example:
-// assume a memSeries.firstChunkID=7 and memSeries.mmappedChunks=[p5,p6,p7,p8,p9].
-//
-//	| HeadChunkID value | refers to ...                                                                          |
-//	|-------------------|----------------------------------------------------------------------------------------|
-//	|               0-6 | chunks that have been compacted to blocks, these won't return data for queries in Head |
-//	|              7-11 | memSeries.mmappedChunks[i] where i is 0 to 4.                                          |
-//	|                12 |                                                         *memChunk{next: nil}
-//	|                13 |                                         *memChunk{next: ^}
-//	|                14 | memSeries.headChunks -> *memChunk{next: ^}
+// they will be m-mapped as soon as possible leaving only one "open" *memChunk instance.
 type HeadChunkID uint64
 
 // BlockChunkRef refers to a chunk within a persisted block.

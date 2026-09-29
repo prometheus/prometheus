@@ -132,6 +132,7 @@ func singleInstanceDiscovery(inst core.Instance, vnic *core.Vnic) *Discovery {
 // ---- instanceLabels ---------------------------------------------------------
 
 func TestInstanceLabels_CoreLabels(t *testing.T) {
+	t.Parallel()
 	inst := makeInstance()
 	labels := instanceLabels(&inst, primaryOnly("ocid1.vnic.oc1..v001", "10.0.0.5", "203.0.113.1"), testTenancy, 9100)
 
@@ -157,18 +158,21 @@ func TestInstanceLabels_CoreLabels(t *testing.T) {
 }
 
 func TestInstanceLabels_AddressIsPrivateIPWhenBothPresent(t *testing.T) {
+	t.Parallel()
 	inst := makeInstance()
 	labels := instanceLabels(&inst, primaryOnly("v", "10.0.0.5", "203.0.113.1"), "tenancy", 80)
 	require.Equal(t, model.LabelValue("10.0.0.5:80"), labels[model.AddressLabel])
 }
 
 func TestInstanceLabels_AddressFallsBackToPublicIP(t *testing.T) {
+	t.Parallel()
 	inst := makeInstance()
 	labels := instanceLabels(&inst, primaryOnly("v", "", "203.0.113.1"), "tenancy", 80)
 	require.Equal(t, model.LabelValue("203.0.113.1:80"), labels[model.AddressLabel])
 }
 
 func TestInstanceLabels_FreeformTagsSanitized(t *testing.T) {
+	t.Parallel()
 	// Sanitization replaces invalid characters with underscores but preserves
 	// case so that case-sensitive OCI tag keys do not collide (e.g. Env vs env).
 	inst := makeInstance(func(i *core.Instance) {
@@ -190,6 +194,7 @@ func TestInstanceLabels_FreeformTagsSanitized(t *testing.T) {
 }
 
 func TestInstanceLabels_DefinedTagsStringifyScalars(t *testing.T) {
+	t.Parallel()
 	// OCI defined tag values may be strings, numbers, or booleans. The SDK
 	// decodes JSON numbers as float64. All scalars are stringified so that
 	// keep/drop relabel rules on numeric or boolean tags match correctly.
@@ -224,6 +229,7 @@ func TestInstanceLabels_DefinedTagsStringifyScalars(t *testing.T) {
 }
 
 func TestStringifyDefinedTag(t *testing.T) {
+	t.Parallel()
 	cases := []struct {
 		name string
 		in   any
@@ -254,6 +260,7 @@ func TestStringifyDefinedTag(t *testing.T) {
 }
 
 func TestInstanceLabels_NilOptionalFields(t *testing.T) {
+	t.Parallel()
 	inst := core.Instance{
 		LifecycleState: core.InstanceLifecycleStateRunning,
 		FreeformTags:   map[string]string{},
@@ -267,6 +274,7 @@ func TestInstanceLabels_NilOptionalFields(t *testing.T) {
 }
 
 func TestInstanceLabels_PortInAddress(t *testing.T) {
+	t.Parallel()
 	inst := makeInstance()
 	for _, port := range []int{80, 9100, 9182, 443} {
 		labels := instanceLabels(&inst, primaryOnly("v", "10.0.0.1", ""), "tenancy", port)
@@ -280,6 +288,7 @@ func TestInstanceLabels_PortInAddress(t *testing.T) {
 }
 
 func TestInstanceLabels_IPv6AndHostname(t *testing.T) {
+	t.Parallel()
 	inst := makeInstance()
 	vnics := instanceVnics{primary: vnicInfo{
 		id:            "ocid1.vnic.oc1..v001",
@@ -294,6 +303,7 @@ func TestInstanceLabels_IPv6AndHostname(t *testing.T) {
 }
 
 func TestInstanceLabels_IPv6AndHostnameEmptyWhenAbsent(t *testing.T) {
+	t.Parallel()
 	// Both labels are set unconditionally, empty when the VNIC has no IPv6
 	// address or hostname label.
 	inst := makeInstance()
@@ -304,6 +314,7 @@ func TestInstanceLabels_IPv6AndHostnameEmptyWhenAbsent(t *testing.T) {
 }
 
 func TestJoinIPv6(t *testing.T) {
+	t.Parallel()
 	require.Empty(t, joinIPv6(nil))
 	require.Empty(t, joinIPv6([]string{}))
 	require.Equal(t, ",2001:db8::1,", joinIPv6([]string{"2001:db8::1"}))
@@ -311,6 +322,7 @@ func TestJoinIPv6(t *testing.T) {
 }
 
 func TestJoinIPv6_MatchableByRegex(t *testing.T) {
+	t.Parallel()
 	// The list is comma-wrapped so a relabel regex can match a whole address
 	// with `.*,addr,.*`, including the first and last entries.
 	value := joinIPv6([]string{"2001:db8::1", "2001:db8::2"})
@@ -321,6 +333,7 @@ func TestJoinIPv6_MatchableByRegex(t *testing.T) {
 }
 
 func TestInstanceLabels_IPv6OnlyAddress(t *testing.T) {
+	t.Parallel()
 	// With no IPv4 address the target falls back to the first (sorted) IPv6
 	// address, bracketed by net.JoinHostPort.
 	inst := makeInstance()
@@ -336,6 +349,7 @@ func TestInstanceLabels_IPv6OnlyAddress(t *testing.T) {
 // ---- refresh ----------------------------------------------------------------
 
 func TestRefresh_SingleInstance(t *testing.T) {
+	t.Parallel()
 	inst := makeInstance()
 	vnic := makeVnic("ocid1.vnic.oc1..v001", "10.0.0.5", "203.0.113.10")
 	d := singleInstanceDiscovery(inst, vnic)
@@ -356,6 +370,7 @@ func TestRefresh_SingleInstance(t *testing.T) {
 }
 
 func TestRefresh_PrimaryVnicIPv6SortedAndHostname(t *testing.T) {
+	t.Parallel()
 	// The primary VNIC's IPv6 addresses are exposed sorted for deterministic
 	// output even though OCI returns them in an unspecified order.
 	inst := makeInstance()
@@ -379,6 +394,7 @@ func TestRefresh_PrimaryVnicIPv6SortedAndHostname(t *testing.T) {
 }
 
 func TestRefresh_IPv6OnlyInstanceNotSkipped(t *testing.T) {
+	t.Parallel()
 	// An IPv6-only primary VNIC (no IPv4 private or public IP) is still
 	// discovered, with its first IPv6 address used as the target address.
 	inst := makeInstance()
@@ -400,6 +416,7 @@ func TestRefresh_IPv6OnlyInstanceNotSkipped(t *testing.T) {
 }
 
 func TestResolveVnics_DoesNotMutateSDKSlice(t *testing.T) {
+	t.Parallel()
 	// resolveVnics sorts a copy of the VNIC's IPv6 addresses, so the slice
 	// owned by the SDK response is left untouched.
 	inst := makeInstance()
@@ -418,6 +435,7 @@ func TestResolveVnics_DoesNotMutateSDKSlice(t *testing.T) {
 }
 
 func TestRefresh_ResolvesPrimaryVnicAndStops(t *testing.T) {
+	t.Parallel()
 	// Only the primary VNIC is resolved: once it is found the walk stops so a
 	// multi-VNIC instance does not fan out a GetVnic call per attachment. The
 	// primary supplies the address and the VNIC labels; the secondary is never
@@ -472,6 +490,7 @@ func TestRefresh_ResolvesPrimaryVnicAndStops(t *testing.T) {
 }
 
 func TestRefresh_MultipleCompartments(t *testing.T) {
+	t.Parallel()
 	comp1 := "ocid1.compartment.oc1..c001"
 	comp2 := "ocid1.compartment.oc1..c002"
 	comp3 := "ocid1.compartment.oc1..c003"
@@ -526,6 +545,7 @@ func TestRefresh_MultipleCompartments(t *testing.T) {
 }
 
 func TestRefresh_DisappearingCompartmentCleared(t *testing.T) {
+	t.Parallel()
 	comp1 := "ocid1.compartment.oc1..c001"
 	comp2 := "ocid1.compartment.oc1..c002"
 	vnic := makeVnic("ocid1.vnic.oc1..v001", "10.0.0.1", "")
@@ -575,6 +595,7 @@ func TestRefresh_DisappearingCompartmentCleared(t *testing.T) {
 }
 
 func TestRefresh_CompartmentListError_Propagates(t *testing.T) {
+	t.Parallel()
 	sentinel := errors.New("identity API unavailable")
 	d := baseDiscovery()
 	d.listCompartments = func(_ context.Context) ([]string, error) {
@@ -586,6 +607,7 @@ func TestRefresh_CompartmentListError_Propagates(t *testing.T) {
 }
 
 func TestRefresh_ListInstancesError_PropagatesError(t *testing.T) {
+	t.Parallel()
 	// listInstances error -> the refresh fails as a whole so the refresh
 	// framework keeps the last known good targets rather than flapping the
 	// compartment's targets down for a cycle.
@@ -601,6 +623,7 @@ func TestRefresh_ListInstancesError_PropagatesError(t *testing.T) {
 }
 
 func TestRefresh_EmptyCompartment(t *testing.T) {
+	t.Parallel()
 	d := baseDiscovery()
 
 	tgs, err := d.refresh(context.Background())
@@ -610,6 +633,7 @@ func TestRefresh_EmptyCompartment(t *testing.T) {
 }
 
 func TestRefresh_VnicAttachmentError_InstanceSkipped(t *testing.T) {
+	t.Parallel()
 	inst := makeInstance()
 	sentinel := errors.New("VNIC list failed")
 
@@ -629,6 +653,7 @@ func TestRefresh_VnicAttachmentError_InstanceSkipped(t *testing.T) {
 }
 
 func TestRefresh_GetVnicError_InstanceSkipped(t *testing.T) {
+	t.Parallel()
 	inst := makeInstance()
 	att := makeAttachment(stringVal(inst.Id), "ocid1.vnic.oc1..v001")
 	sentinel := errors.New("GetVnic failed")
@@ -651,6 +676,7 @@ func TestRefresh_GetVnicError_InstanceSkipped(t *testing.T) {
 }
 
 func TestRefresh_NoPrimaryVnic_InstanceDropped(t *testing.T) {
+	t.Parallel()
 	// An instance with no resolvable primary VNIC has no usable IP, so the
 	// SD drops it rather than emit an unscrapeable :port target.
 	inst := makeInstance()
@@ -677,6 +703,7 @@ func TestRefresh_NoPrimaryVnic_InstanceDropped(t *testing.T) {
 }
 
 func TestRefresh_InstanceWithNilIDDropped(t *testing.T) {
+	t.Parallel()
 	// Defensive: an instance with a nil OCID would panic on dereference;
 	// it must be skipped with a warning.
 	inst := makeInstance(func(i *core.Instance) {
@@ -701,6 +728,7 @@ func TestRefresh_InstanceWithNilIDDropped(t *testing.T) {
 }
 
 func TestRefresh_ContextCanceled(t *testing.T) {
+	t.Parallel()
 	ctx, cancel := context.WithCancel(context.Background())
 	cancel()
 
@@ -774,6 +802,7 @@ func inactiveComp(id string) identity.Compartment {
 }
 
 func TestListAllCompartments_BFSIncludesRoot(t *testing.T) {
+	t.Parallel()
 	tree := &fakeCompartmentTree{
 		children: map[string][]identity.Compartment{
 			"root": {activeComp("c1"), activeComp("c2")},
@@ -787,6 +816,7 @@ func TestListAllCompartments_BFSIncludesRoot(t *testing.T) {
 }
 
 func TestListAllCompartments_PagedResults(t *testing.T) {
+	t.Parallel()
 	tree := &fakeCompartmentTree{
 		children: map[string][]identity.Compartment{
 			"root": {activeComp("c1"), activeComp("c2"), activeComp("c3"), activeComp("c4"), activeComp("c5")},
@@ -801,6 +831,7 @@ func TestListAllCompartments_PagedResults(t *testing.T) {
 }
 
 func TestListAllCompartments_InactiveCompartmentSkipped(t *testing.T) {
+	t.Parallel()
 	tree := &fakeCompartmentTree{
 		children: map[string][]identity.Compartment{
 			"root": {activeComp("c1"), inactiveComp("c2-dead"), activeComp("c3")},
@@ -813,6 +844,7 @@ func TestListAllCompartments_InactiveCompartmentSkipped(t *testing.T) {
 }
 
 func TestListAllCompartments_CycleVisitedOnce(t *testing.T) {
+	t.Parallel()
 	// A child that references back to root must not cause an infinite loop.
 	tree := &fakeCompartmentTree{
 		children: map[string][]identity.Compartment{
@@ -828,6 +860,7 @@ func TestListAllCompartments_CycleVisitedOnce(t *testing.T) {
 }
 
 func TestListAllCompartments_PermissionErrorSkipsSubtree(t *testing.T) {
+	t.Parallel()
 	tree := &fakeCompartmentTree{
 		children: map[string][]identity.Compartment{
 			"root": {activeComp("c1"), activeComp("c2")},
@@ -843,6 +876,7 @@ func TestListAllCompartments_PermissionErrorSkipsSubtree(t *testing.T) {
 }
 
 func TestListAllCompartments_CanceledContextAborts(t *testing.T) {
+	t.Parallel()
 	// A cancelled context must abort the walk immediately rather than be
 	// silently treated as a permission gap.
 	tree := &fakeCompartmentTree{
@@ -861,6 +895,7 @@ func TestListAllCompartments_CanceledContextAborts(t *testing.T) {
 // ---- SDConfig validation ----------------------------------------------------
 
 func TestSDConfig_Validation(t *testing.T) {
+	t.Parallel()
 	validAPIKey := SDConfig{
 		Auth:             authAPIKey,
 		Region:           "us-ashburn-1",
@@ -966,6 +1001,7 @@ func TestSDConfig_Validation(t *testing.T) {
 }
 
 func TestSDConfig_ValidInstancePrincipal(t *testing.T) {
+	t.Parallel()
 	cfg := SDConfig{
 		Auth:             authInstancePrincipal,
 		Region:           "us-ashburn-1",
@@ -976,6 +1012,7 @@ func TestSDConfig_ValidInstancePrincipal(t *testing.T) {
 }
 
 func TestSDConfig_ValidWithExplicitCompartments(t *testing.T) {
+	t.Parallel()
 	cfg := SDConfig{
 		Auth:             authAPIKey,
 		Region:           "us-ashburn-1",
@@ -991,6 +1028,7 @@ func TestSDConfig_ValidWithExplicitCompartments(t *testing.T) {
 }
 
 func TestSDConfig_ValidAutoDiscovery(t *testing.T) {
+	t.Parallel()
 	// Compartments empty -> auto-discover. Should be valid.
 	cfg := SDConfig{
 		Auth:             authAPIKey,
@@ -1006,6 +1044,7 @@ func TestSDConfig_ValidAutoDiscovery(t *testing.T) {
 }
 
 func TestSDConfig_ValidWithKeyPassphraseFile(t *testing.T) {
+	t.Parallel()
 	cfg := SDConfig{
 		Auth:              authAPIKey,
 		Region:            "us-ashburn-1",
@@ -1023,12 +1062,14 @@ func TestSDConfig_ValidWithKeyPassphraseFile(t *testing.T) {
 // ---- resolveKeyPassphrase ---------------------------------------------------
 
 func TestResolveKeyPassphrase_InlinePreferredWhenSetAlone(t *testing.T) {
+	t.Parallel()
 	got, err := resolveKeyPassphrase(&SDConfig{KeyPassphrase: "topsecret"})
 	require.NoError(t, err)
 	require.Equal(t, "topsecret", got)
 }
 
 func TestResolveKeyPassphrase_FileTrimsTrailingNewline(t *testing.T) {
+	t.Parallel()
 	path := filepath.Join(t.TempDir(), "pass")
 	require.NoError(t, writeFile(path, "topsecret\n"))
 
@@ -1038,6 +1079,7 @@ func TestResolveKeyPassphrase_FileTrimsTrailingNewline(t *testing.T) {
 }
 
 func TestResolveKeyPassphrase_FileMissing(t *testing.T) {
+	t.Parallel()
 	_, err := resolveKeyPassphrase(&SDConfig{KeyPassphraseFile: filepath.Join(t.TempDir(), "nope")})
 	require.Error(t, err)
 }
@@ -1045,6 +1087,7 @@ func TestResolveKeyPassphrase_FileMissing(t *testing.T) {
 // ---- SetDirectory -----------------------------------------------------------
 
 func TestSDConfig_SetDirectory_RelativePath(t *testing.T) {
+	t.Parallel()
 	dir := filepath.FromSlash("/etc/prometheus")
 	cfg := SDConfig{KeyFile: filepath.FromSlash("keys/oci.pem")}
 	cfg.SetDirectory(dir)
@@ -1052,6 +1095,7 @@ func TestSDConfig_SetDirectory_RelativePath(t *testing.T) {
 }
 
 func TestSDConfig_SetDirectory_AbsolutePathUnchanged(t *testing.T) {
+	t.Parallel()
 	abs := filepath.Join(t.TempDir(), "oci.pem")
 	cfg := SDConfig{KeyFile: abs}
 	cfg.SetDirectory(filepath.FromSlash("/etc/prometheus"))
@@ -1059,12 +1103,14 @@ func TestSDConfig_SetDirectory_AbsolutePathUnchanged(t *testing.T) {
 }
 
 func TestSDConfig_SetDirectory_EmptyKeyFile(t *testing.T) {
+	t.Parallel()
 	cfg := SDConfig{}
 	cfg.SetDirectory("/etc/prometheus")
 	require.Empty(t, cfg.KeyFile)
 }
 
 func TestSDConfig_SetDirectory_KeyPassphraseFileJoined(t *testing.T) {
+	t.Parallel()
 	dir := filepath.FromSlash("/etc/prometheus")
 	cfg := SDConfig{KeyPassphraseFile: filepath.FromSlash("keys/oci.pass")}
 	cfg.SetDirectory(dir)

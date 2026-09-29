@@ -28,6 +28,7 @@ import (
 )
 
 func TestDockerSwarmSDServicesRefresh(t *testing.T) {
+	t.Parallel()
 	sdmock := NewSDMock(t, "swarmprom")
 	sdmock.Setup()
 
@@ -330,6 +331,7 @@ host: %s
 }
 
 func TestDockerSwarmSDServicesRefreshWithFilters(t *testing.T) {
+	t.Parallel()
 	sdmock := NewSDMock(t, "swarmprom")
 	sdmock.Setup()
 
@@ -453,6 +455,7 @@ filters:
 // discovery does not panic when a service has no container spec, which is the
 // case for services whose task runtime is a plugin or a network attachment.
 func TestDockerSwarmSDServicesRefreshNoContainerSpec(t *testing.T) {
+	t.Parallel()
 	sdmock := NewSDMock(t, "swarmprom-plugin")
 	sdmock.Setup()
 

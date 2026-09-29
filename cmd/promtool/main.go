@@ -64,10 +64,8 @@ import (
 
 var (
 	promqlEnableDelayedNameRemoval = false
-	// Duration expressions are enabled by default; the promql-duration-expr
-	// feature flag is now a no-op.
-	promtoolParserOpts = parser.Options{ExperimentalDurationExpr: true}
-	logger             = promslog.New(&promslog.Config{})
+	promtoolParserOpts             = parser.Options{}
+	logger                         = promslog.New(&promslog.Config{})
 )
 
 func init() {
@@ -137,7 +135,8 @@ func main() {
 	).Default(lintOptionDuplicateRules).String()
 	checkConfigLintFatal := checkConfigCmd.Flag(
 		"lint-fatal",
-		"Make lint errors exit with exit code 3.").Default("false").Bool()
+		"Make lint errors exit with exit code 3.",
+	).Default("false").Bool()
 	checkConfigIgnoreUnknownFields := checkConfigCmd.Flag("ignore-unknown-fields", "Ignore unknown fields in the rule groups read by the config files. This is useful when you want to extend rule files with custom metadata. Ensure that those fields are removed before loading them into the Prometheus server as it performs strict checks by default.").Default("false").Bool()
 
 	checkWebConfigCmd := checkCmd.Command("web-config", "Check if the web config files are valid or not.")
@@ -165,7 +164,8 @@ func main() {
 	).Default(lintOptionDuplicateRules).String()
 	checkRulesLintFatal := checkRulesCmd.Flag(
 		"lint-fatal",
-		"Make lint errors exit with exit code 3.").Default("false").Bool()
+		"Make lint errors exit with exit code 3.",
+	).Default("false").Bool()
 	checkRulesIgnoreUnknownFields := checkRulesCmd.Flag("ignore-unknown-fields", "Ignore unknown fields in the rule files. This is useful when you want to extend rule files with custom metadata. Ensure that those fields are removed before loading them into the Prometheus server as it performs strict checks by default.").Default("false").Bool()
 
 	checkMetricsCmd := checkCmd.Command("metrics", checkMetricsUsage)
@@ -323,7 +323,7 @@ func main() {
 	promQLLabelsDeleteQuery := promQLLabelsDeleteCmd.Arg("query", "PromQL query.").Required().String()
 	promQLLabelsDeleteName := promQLLabelsDeleteCmd.Arg("name", "Name of the label to delete.").Required().String()
 
-	featureList := app.Flag("enable-feature", "Comma separated feature names to enable. Valid options: promql-experimental-functions, promql-delayed-name-removal, promql-extended-range-selectors. See https://prometheus.io/docs/prometheus/latest/feature_flags/ for more details").Default("").Strings()
+	featureList := app.Flag("enable-feature", "Comma separated feature names to enable. Valid options: promql-experimental-functions, promql-delayed-name-removal. See https://prometheus.io/docs/prometheus/latest/feature_flags/ for more details").Default("").Strings()
 
 	documentationCmd := app.Command("write-documentation", "Generate command line documentation. Internal use.").Hidden()
 
@@ -363,7 +363,7 @@ func main() {
 			case "promql-duration-expr":
 				// This feature is now permanently enabled and therefore a no-op.
 			case "promql-extended-range-selectors":
-				promtoolParserOpts.EnableExtendedRangeSelectors = true
+				// This feature is now permanently enabled and therefore a no-op.
 			case "promql-binop-fill-modifiers":
 				promtoolParserOpts.EnableBinopFillModifiers = true
 			case "":

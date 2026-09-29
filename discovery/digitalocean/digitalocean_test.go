@@ -42,6 +42,7 @@ func (s *DigitalOceanSDTestSuite) SetupTest(t *testing.T) {
 }
 
 func TestDigitalOceanSDRefresh(t *testing.T) {
+	t.Parallel()
 	sdmock := &DigitalOceanSDTestSuite{}
 	sdmock.SetupTest(t)
 	t.Cleanup(sdmock.TearDownSuite)

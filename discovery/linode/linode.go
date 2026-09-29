@@ -307,7 +307,7 @@ func (d *Discovery) refreshData(ctx context.Context) ([]*targetgroup.Group, erro
 		}
 
 		if instance.IPv6 != "" {
-			slaac := strings.Split(instance.IPv6, "/")[0]
+			slaac, _, _ := strings.Cut(instance.IPv6, "/")
 			for _, detailedIP := range detailedIPs {
 				if detailedIP.Address != slaac {
 					continue

@@ -375,11 +375,7 @@ func optimizeAlternatingLiterals(s string) (StringMatcher, []string) {
 
 	multiMatcher := newEqualMultiStringMatcher(true, estimatedAlternates, 0, 0)
 
-	for end := strings.IndexByte(s, '|'); end > -1; end = strings.IndexByte(s, '|') {
-		// Split the string into the next literal and the remainder
-		subMatch := s[:end]
-		s = s[end+1:]
-
+	for subMatch := range strings.SplitSeq(s, "|") {
 		// break if any of the submatches are not literals
 		if regexp.QuoteMeta(subMatch) != subMatch {
 			return nil, nil
@@ -387,12 +383,6 @@ func optimizeAlternatingLiterals(s string) (StringMatcher, []string) {
 
 		multiMatcher.add(subMatch)
 	}
-
-	// break if the remainder is not a literal
-	if regexp.QuoteMeta(s) != s {
-		return nil, nil
-	}
-	multiMatcher.add(s)
 
 	return multiMatcher, multiMatcher.setMatches()
 }
@@ -648,25 +638,25 @@ func stringMatcherFromRegexpInternal(re *syntax.Regexp) StringMatcher {
 }
 
 // isSimpleConcatenationPattern returns true if re contains only literals or wildcard matchers,
-// and starts and ends with a wildcard matcher (eg. .*-.*-.*).
+// and starts and ends with a wildcard matcher (eg. .*-.*-.*), with wildcards between every literal.
 func isSimpleConcatenationPattern(re *syntax.Regexp) bool {
 	if re.Op != syntax.OpConcat {
 		return false
 	}
 
-	if len(re.Sub) < 2 {
+	if len(re.Sub) < 3 || len(re.Sub)%2 == 0 {
 		return false
 	}
 
-	first := re.Sub[0]
-	last := re.Sub[len(re.Sub)-1]
-	if !isMatchAny(first) || !isMatchAny(last) {
-		return false
-	}
-
-	for _, re := range re.Sub[1 : len(re.Sub)-1] {
-		if !isMatchAny(re) && !isCaseSensitiveLiteral(re) {
-			return false
+	for i, sub := range re.Sub {
+		if i%2 == 0 {
+			if !isMatchAny(sub) {
+				return false
+			}
+		} else {
+			if !isCaseSensitiveLiteral(sub) {
+				return false
+			}
 		}
 	}
 

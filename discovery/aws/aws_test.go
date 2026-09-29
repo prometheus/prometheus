@@ -543,6 +543,109 @@ func TestAWSSDConfigUnmarshalYAML_NoRegionResolution(t *testing.T) {
 	}
 }
 
+// TestRequestConcurrencyUnmarshalYAML checks that request_concurrency is
+// rejected unless it is positive. A zero value makes errgroup.SetLimit block
+// Go() forever on an unbuffered channel, which hangs the refresh regardless of
+// the context deadline, and a negative one silently means "no limit at all".
+func TestRequestConcurrencyUnmarshalYAML(t *testing.T) {
+	t.Parallel()
+
+	// Every AWS SD config that exposes request_concurrency, along with the
+	// default it falls back to when the field is omitted.
+	configs := []struct {
+		name               string
+		defaultConcurrency int
+		parse              func(string) (int, error)
+	}{
+		{
+			name:               "ecs_sd",
+			defaultConcurrency: DefaultECSSDConfig.RequestConcurrency,
+			parse: func(s string) (int, error) {
+				var cfg ECSSDConfig
+				err := yaml.Unmarshal([]byte(s), &cfg)
+				return cfg.RequestConcurrency, err
+			},
+		},
+		{
+			name:               "elasticache_sd",
+			defaultConcurrency: DefaultElasticacheSDConfig.RequestConcurrency,
+			parse: func(s string) (int, error) {
+				var cfg ElasticacheSDConfig
+				err := yaml.Unmarshal([]byte(s), &cfg)
+				return cfg.RequestConcurrency, err
+			},
+		},
+		{
+			name:               "msk_sd",
+			defaultConcurrency: DefaultMSKSDConfig.RequestConcurrency,
+			parse: func(s string) (int, error) {
+				var cfg MSKSDConfig
+				err := yaml.Unmarshal([]byte(s), &cfg)
+				return cfg.RequestConcurrency, err
+			},
+		},
+		{
+			name:               "rds_sd",
+			defaultConcurrency: DefaultRDSSDConfig.RequestConcurrency,
+			parse: func(s string) (int, error) {
+				var cfg RDSSDConfig
+				err := yaml.Unmarshal([]byte(s), &cfg)
+				return cfg.RequestConcurrency, err
+			},
+		},
+	}
+
+	cases := []struct {
+		name        string
+		yaml        string
+		expectedErr string
+		expected    int
+		wantDefault bool
+	}{
+		{
+			name:        "Zero",
+			yaml:        "request_concurrency: 0",
+			expectedErr: "request_concurrency must be positive, got 0",
+		},
+		{
+			name:        "Negative",
+			yaml:        "request_concurrency: -1",
+			expectedErr: "request_concurrency must be positive, got -1",
+		},
+		{
+			name:     "Positive",
+			yaml:     "request_concurrency: 5",
+			expected: 5,
+		},
+		{
+			name:        "Omitted",
+			yaml:        "",
+			wantDefault: true,
+		},
+	}
+
+	for _, cfg := range configs {
+		for _, tt := range cases {
+			t.Run(cfg.name+"/"+tt.name, func(t *testing.T) {
+				t.Parallel()
+				got, err := cfg.parse("region: us-west-2\n" + tt.yaml + "\n")
+
+				if tt.expectedErr != "" {
+					require.EqualError(t, err, cfg.name+": "+tt.expectedErr)
+					return
+				}
+
+				require.NoError(t, err)
+				expected := tt.expected
+				if tt.wantDefault {
+					expected = cfg.defaultConcurrency
+				}
+				require.Equal(t, expected, got)
+			})
+		}
+	}
+}
+
 func TestSDConfigSetDirectory(t *testing.T) {
 	t.Parallel()
 	tmpDir := t.TempDir()

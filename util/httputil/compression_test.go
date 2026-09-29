@@ -18,6 +18,7 @@ import (
 	"io"
 	"net/http"
 	"net/http/httptest"
+	"strconv"
 	"strings"
 	"testing"
 
@@ -152,4 +153,64 @@ func TestCompressionHandler_Deflate(t *testing.T) {
 	actual := buf.String()
 	expected := "Hello World!"
 	require.Equal(t, expected, actual, "expected response with content")
+}
+
+func TestCompressionHandler_ContentLength(t *testing.T) {
+	for _, encoding := range []string{"", gzipEncoding, deflateEncoding} {
+		for _, tc := range []struct {
+			name   string
+			body   string
+			status int
+		}{
+			{name: "implicit status", body: "Hello World!"},
+			{name: "explicit status", body: "Hello World!", status: http.StatusOK},
+			{name: "empty body"},
+			{name: "no content", status: http.StatusNoContent},
+		} {
+			t.Run(encoding+"/"+tc.name, func(t *testing.T) {
+				srv := httptest.NewServer(CompressionHandler{Handler: http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+					w.Header().Set("Content-Length", strconv.Itoa(len(tc.body)))
+					if tc.status != 0 {
+						w.WriteHeader(tc.status)
+					}
+					if tc.body != "" {
+						w.Write([]byte(tc.body))
+					}
+				})})
+				defer srv.Close()
+
+				req, err := http.NewRequest(http.MethodGet, srv.URL, http.NoBody)
+				require.NoError(t, err)
+				req.Header.Set(acceptEncodingHeader, encoding)
+				transport := &http.Transport{DisableCompression: true}
+				defer transport.CloseIdleConnections()
+				client := &http.Client{Transport: transport}
+				resp, err := client.Do(req)
+				require.NoError(t, err)
+				defer resp.Body.Close()
+				if tc.status == http.StatusNoContent {
+					require.Equal(t, http.StatusNoContent, resp.StatusCode)
+					body, err := io.ReadAll(resp.Body)
+					require.NoError(t, err)
+					require.Empty(t, body)
+					return
+				}
+
+				reader := resp.Body
+				switch encoding {
+				case gzipEncoding:
+					reader, err = gzip.NewReader(resp.Body)
+				case deflateEncoding:
+					reader, err = zlib.NewReader(resp.Body)
+				default:
+					require.Equal(t, int64(len(tc.body)), resp.ContentLength)
+				}
+				require.NoError(t, err)
+				defer reader.Close()
+				body, err := io.ReadAll(reader)
+				require.NoError(t, err)
+				require.Equal(t, tc.body, string(body))
+			})
+		}
+	}
 }

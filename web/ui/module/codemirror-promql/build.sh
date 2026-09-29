@@ -15,6 +15,6 @@
 
 set -ex
 
-# build the lib (both ES2015 and CommonJS)
+# Build ES modules with TypeScript 7 and retain TypeScript 6 for ES5 output.
 tsc --module esnext --target es2018 --outDir dist/esm
-tsc --module commonjs --target es5 --outDir dist/cjs --downlevelIteration
+tsc6 --module commonjs --moduleResolution node --target es5 --outDir dist/cjs --downlevelIteration --ignoreDeprecations 6.0

@@ -1,68 +1,44 @@
-import * as React from 'react';
-import { shallow } from 'enzyme';
+import React from 'react';
+import { render, screen } from '@testing-library/react';
 import { WALReplayData } from '../types/types';
 import { StartingContent } from './withStartingIndicator';
-import { Alert, Progress } from 'reactstrap';
 
-describe('Starting', () => {
-  describe('progress bar', () => {
-    it('does not show when replay not started', () => {
-      const status: WALReplayData = {
-        min: 0,
-        max: 0,
-        current: 0,
-      };
-      const starting = shallow(<StartingContent status={status} isUnexpected={false} />);
-      const progress = starting.find(Progress);
-      expect(progress).toHaveLength(0);
-    });
+describe('StartingContent', () => {
+  it('does not show progress before WAL replay starts', () => {
+    const status: WALReplayData = { min: 0, max: 0, current: 0 };
 
-    it('shows progress bar when max is not 0', () => {
-      const status: WALReplayData = {
-        min: 0,
-        max: 1,
-        current: 0,
-      };
-      const starting = shallow(<StartingContent status={status} isUnexpected={false} />);
-      const progress = starting.find(Progress);
-      expect(progress).toHaveLength(1);
-    });
+    render(<StartingContent status={status} isUnexpected={false} />);
 
-    it('renders progress correctly', () => {
-      const status: WALReplayData = {
-        min: 0,
-        max: 20,
-        current: 1,
-      };
-      const starting = shallow(<StartingContent status={status} isUnexpected={false} />);
-      const progress = starting.find(Progress);
-      expect(progress.prop('value')).toBe(2);
-      expect(progress.prop('min')).toBe(0);
-      expect(progress.prop('max')).toBe(21);
-    });
+    expect(screen.queryByRole('progressbar')).toBeNull();
+  });
 
-    it('shows done when replay done', () => {
-      const status: WALReplayData = {
-        min: 0,
-        max: 20,
-        current: 20,
-      };
-      const starting = shallow(<StartingContent status={status} isUnexpected={false} />);
-      const progress = starting.find(Progress);
-      expect(progress.prop('value')).toBe(21);
-      expect(progress.prop('color')).toBe('success');
-    });
+  it('renders WAL replay progress', () => {
+    const status: WALReplayData = { min: 0, max: 20, current: 1 };
 
-    it('shows unexpected error', () => {
-      const status: WALReplayData = {
-        min: 0,
-        max: 20,
-        current: 0,
-      };
+    render(<StartingContent status={status} isUnexpected={false} />);
 
-      const starting = shallow(<StartingContent status={status} isUnexpected={true} />);
-      const alert = starting.find(Alert);
-      expect(alert.prop('color')).toBe('danger');
-    });
+    expect(screen.getByText('Replaying WAL (1/20)')).toBeTruthy();
+    const progress = screen.getByRole('progressbar');
+    expect(progress.getAttribute('aria-valuenow')).toBe('2');
+    expect(progress.getAttribute('aria-valuemin')).toBe('0');
+    expect(progress.getAttribute('aria-valuemax')).toBe('21');
+  });
+
+  it('marks completed WAL replay as successful', () => {
+    const status: WALReplayData = { min: 0, max: 20, current: 20 };
+
+    render(<StartingContent status={status} isUnexpected={false} />);
+
+    const progress = screen.getByRole('progressbar');
+    expect(progress.getAttribute('aria-valuenow')).toBe('21');
+    expect(progress.classList.contains('bg-success')).toBe(true);
+  });
+
+  it('shows an error when startup fails unexpectedly', () => {
+    render(<StartingContent isUnexpected />);
+
+    const alert = screen.getByRole('alert');
+    expect(alert.textContent).toContain('Server is not responding');
+    expect(alert.classList.contains('alert-danger')).toBe(true);
   });
 });

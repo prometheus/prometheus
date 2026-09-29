@@ -16,6 +16,7 @@ package parser
 import (
 	"errors"
 	"fmt"
+	"maps"
 	"math"
 	"strings"
 	"testing"
@@ -4801,11 +4802,52 @@ var testExpr = []struct {
 						},
 					},
 					StartPos: 12,
-					EndPos:   31,
+					EndPos:   32,
 				},
 				StartPos: 11,
-				EndPos:   31,
+				EndPos:   32,
 			},
+		},
+	},
+	{
+		input: `foo[range():step()]`,
+		expected: &SubqueryExpr{
+			Expr: &VectorSelector{
+				Name: "foo",
+				LabelMatchers: []*labels.Matcher{
+					MustLabelMatcher(labels.MatchEqual, model.MetricNameLabel, "foo"),
+				},
+				PosRange: posrange.PositionRange{Start: 0, End: 3},
+			},
+			RangeExpr: &DurationExpr{
+				Op:       RANGE,
+				StartPos: 4,
+				EndPos:   11,
+			},
+			StepExpr: &DurationExpr{
+				Op:       STEP,
+				StartPos: 12,
+				EndPos:   18,
+			},
+			EndPos: 19,
+		},
+	},
+	{
+		input: `foo[step():]`,
+		expected: &SubqueryExpr{
+			Expr: &VectorSelector{
+				Name: "foo",
+				LabelMatchers: []*labels.Matcher{
+					MustLabelMatcher(labels.MatchEqual, model.MetricNameLabel, "foo"),
+				},
+				PosRange: posrange.PositionRange{Start: 0, End: 3},
+			},
+			RangeExpr: &DurationExpr{
+				Op:       STEP,
+				StartPos: 4,
+				EndPos:   10,
+			},
+			EndPos: 12,
 		},
 	},
 	{
@@ -5455,11 +5497,53 @@ func readable(s string) string {
 	return s[:maxReadableStringLen] + "..."
 }
 
+func TestDurationExprPositionRange(t *testing.T) {
+	for _, tc := range []struct {
+		input string
+		span  string
+	}{
+		{input: "foo[min_of(1m, 2m)]", span: "min_of(1m, 2m)"},
+		{input: "foo[max_of(1m, 2m):]", span: "max_of(1m, 2m)"},
+		{input: "foo[1h:min_of(1m, 2m)]", span: "min_of(1m, 2m)"},
+		{input: "foo offset min_of(1m, 2m)", span: "min_of(1m, 2m)"},
+		{input: "foo offset +min_of(1m, 2m)", span: "+min_of(1m, 2m)"},
+		{input: "foo offset -min_of(1m, 2m)", span: "-min_of(1m, 2m)"},
+		{input: "foo offset +max_of(1m, 2m)", span: "+max_of(1m, 2m)"},
+		{input: "foo offset -max_of(1m, 2m)", span: "-max_of(1m, 2m)"},
+		{input: "foo[min_of(1m, max_of(2m, 3m)) + 1m]", span: "min_of(1m, max_of(2m, 3m)) + 1m"},
+		{input: "foo[1m + max_of(2m, 3m)]", span: "1m + max_of(2m, 3m)"},
+		{input: "foo[1m + 2m]", span: "1m + 2m"},
+		{input: "foo offset -step()", span: "-step()"},
+		{input: "foo[range()]", span: "range()"},
+	} {
+		t.Run(tc.input, func(t *testing.T) {
+			expr, err := testParser.ParseExpr(tc.input)
+			require.NoError(t, err)
+			var duration *DurationExpr
+			switch e := expr.(type) {
+			case *MatrixSelector:
+				duration = e.RangeExpr
+			case *SubqueryExpr:
+				duration = e.RangeExpr
+				if e.StepExpr != nil {
+					duration = e.StepExpr
+				}
+			case *VectorSelector:
+				duration = e.OriginalOffsetExpr
+			}
+			require.NotNil(t, duration)
+			start := strings.Index(tc.input, tc.span)
+			require.Equal(t, posrange.PositionRange{
+				Start: posrange.Pos(start),
+				End:   posrange.Pos(start + len(tc.span)),
+			}, duration.PositionRange())
+		})
+	}
+}
+
 func TestParseExpressions(t *testing.T) {
 	optsParser := NewParser(Options{
-		EnableExperimentalFunctions:  true,
-		ExperimentalDurationExpr:     true,
-		EnableExtendedRangeSelectors: true,
+		EnableExperimentalFunctions: true,
 	})
 
 	for _, test := range testExpr {
@@ -6197,26 +6281,70 @@ func TestExtractSelectors(t *testing.T) {
 }
 
 func TestParseCustomFunctions(t *testing.T) {
-	funcs := Functions
-	funcs["custom_func"] = &Function{
+	customFunc := &Function{
 		Name:       "custom_func",
 		ArgTypes:   []ValueType{ValueTypeMatrix},
 		ReturnType: ValueTypeVector,
 	}
-	input := "custom_func(metric[1m])"
-	p := newParserWithFunctions(input, Options{}, funcs)
-	expr, err := p.parseExpr()
-	require.NoError(t, err)
+	withCustomFunc := maps.Clone(Functions)
+	withCustomFunc[customFunc.Name] = customFunc
 
-	call, ok := expr.(*Call)
-	require.True(t, ok)
-	require.Equal(t, "custom_func", call.Func.Name)
+	t.Run("custom function is parsed", func(t *testing.T) {
+		expr, err := NewParser(Options{Functions: withCustomFunc}).ParseExpr("custom_func(metric[1m])")
+		require.NoError(t, err)
+
+		call, ok := expr.(*Call)
+		require.True(t, ok)
+		require.Same(t, customFunc, call.Func)
+	})
+
+	t.Run("default parser does not accept the custom function", func(t *testing.T) {
+		_, err := NewParser(Options{}).ParseExpr("custom_func(metric[1m])")
+		require.ErrorContains(t, err, `unknown function with name "custom_func"`)
+		require.NotContains(t, Functions, customFunc.Name)
+	})
+
+	t.Run("custom functions replace the default set", func(t *testing.T) {
+		p := NewParser(Options{Functions: map[string]*Function{customFunc.Name: customFunc}})
+		_, err := p.ParseExpr("rate(metric[1m])")
+		require.ErrorContains(t, err, `unknown function with name "rate"`)
+	})
+
+	t.Run("empty functions map accepts no functions", func(t *testing.T) {
+		p := NewParser(Options{Functions: map[string]*Function{}})
+		_, err := p.ParseExpr("rate(metric[1m])")
+		require.ErrorContains(t, err, `unknown function with name "rate"`)
+	})
+
+	t.Run("experimental custom function must be enabled", func(t *testing.T) {
+		experimentalFunc := &Function{
+			Name:         "experimental_func",
+			ArgTypes:     []ValueType{ValueTypeMatrix},
+			ReturnType:   ValueTypeVector,
+			Experimental: true,
+		}
+		funcs := map[string]*Function{experimentalFunc.Name: experimentalFunc}
+
+		_, err := NewParser(Options{Functions: funcs}).ParseExpr("experimental_func(metric[1m])")
+		require.ErrorContains(t, err, `function "experimental_func" is not enabled`)
+
+		_, err = NewParser(Options{Functions: funcs, EnableExperimentalFunctions: true}).ParseExpr("experimental_func(metric[1m])")
+		require.NoError(t, err)
+	})
+
+	t.Run("changing the functions map after creating the parser has no effect", func(t *testing.T) {
+		funcs := map[string]*Function{customFunc.Name: customFunc}
+		p := NewParser(Options{Functions: funcs})
+		delete(funcs, customFunc.Name)
+
+		_, err := p.ParseExpr("custom_func(metric[1m])")
+		require.NoError(t, err)
+	})
 }
 
 func TestNewParser(t *testing.T) {
 	p := NewParser(Options{
 		EnableExperimentalFunctions: true,
-		ExperimentalDurationExpr:    true,
 	})
 
 	// ParseExpr should work.

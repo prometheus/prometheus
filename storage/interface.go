@@ -331,6 +331,34 @@ func ErrSearchResultSet(err error, warnings ...annotations.Annotations) SearchRe
 type LabelHints struct {
 	// Maximum number of results returned. Use a value of 0 to disable.
 	Limit int
+
+	// LimitSmallest requires Limit and will select the lexically smallest N
+	// values of the full set.
+	LimitSmallest bool
+}
+
+// AllowsEarlyStop reports whether a read may stop as soon as it holds Limit
+// values. It will return false when no Limit is set or LimitSmallest is true.
+func (h *LabelHints) AllowsEarlyStop() bool {
+	return h != nil && h.Limit > 0 && !h.LimitSmallest
+}
+
+// ApplyLimit reduces values to at most Limit entries. It keeps the lexically
+// smallest values when LimitSmallest is set, and otherwise the leading ones. A
+// nil receiver, and a Limit of zero or less, both leave values unchanged.
+//
+// The limited result set is returned, along with a bool which indicates if the result
+// has re-used the same input slice or if a newly allocated slice has been created.
+//
+// Do not mutate the returned slice if the returned allocated=false.
+func (h *LabelHints) ApplyLimit(values []string) (limited []string, allocated bool) {
+	if h == nil || h.Limit <= 0 || len(values) <= h.Limit {
+		return values, false
+	}
+	if h.LimitSmallest {
+		return smallestNValues(values, h.Limit), true
+	}
+	return values[:h.Limit], false
 }
 
 // SearchHints configures search operations with filtering and scoring.

@@ -1519,3 +1519,61 @@ func TestMemPostings_PostingsForLabelMatchingHonorsContextCancel(t *testing.T) {
 	require.Error(t, p.Err())
 	require.Equal(t, failAfter+1, ctx.Count()) // Plus one for the Err() call that puts the error in the result.
 }
+
+func TestMemPostings_LabelValuesLimitSmallest(t *testing.T) {
+	ctx := context.Background()
+
+	// Added in descending order
+	p := NewMemPostings()
+	all := []string{"a", "b", "c", "d", "e"}
+	for i, v := range slices.Backward(all) {
+		p.Add(storage.SeriesRef(i+1), labels.FromStrings("lbl", v))
+	}
+
+	shared := slices.Clone(p.lvs["lbl"])
+	require.Equal(t, []string{"e", "d", "c", "b", "a"}, shared,
+		"precondition: the shared value list is held in insertion order")
+
+	for _, tc := range []struct {
+		name  string
+		label string
+		hints *storage.LabelHints
+		want  []string
+	}{
+		{"nil hints", "lbl", nil, nil},
+		{"no limit", "lbl", &storage.LabelHints{LimitSmallest: true}, nil},
+		{"limit below count", "lbl", &storage.LabelHints{Limit: 2, LimitSmallest: true}, []string{"a", "b"}},
+		{"limit of one", "lbl", &storage.LabelHints{Limit: 1, LimitSmallest: true}, []string{"a"}},
+		{"limit at count", "lbl", &storage.LabelHints{Limit: 5, LimitSmallest: true}, nil},
+		{"limit above count", "lbl", &storage.LabelHints{Limit: 10, LimitSmallest: true}, nil},
+		{"limit without flag", "lbl", &storage.LabelHints{Limit: 2}, []string{"e", "d"}},
+		{"unknown label name", "missing", &storage.LabelHints{Limit: 2, LimitSmallest: true}, nil},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			got := p.LabelValues(ctx, tc.label, tc.hints)
+			switch {
+			case tc.label == "missing":
+				require.Nil(t, got)
+			case tc.want == nil:
+				// The whole set, in whatever order it is held.
+				require.ElementsMatch(t, all, got)
+			default:
+				require.Equal(t, tc.want, got)
+			}
+
+			require.Equal(t, shared, p.lvs["lbl"], "the shared value list must not be mutated")
+			if len(got) > 0 {
+				// A write through the result must not reach the shared array.
+				got[0] = "zzz"
+				require.Equal(t, shared, p.lvs["lbl"], "the result must not alias the shared value list")
+			}
+		})
+	}
+
+	// Delete rebuilds the value list from a map, so the order afterwards is
+	// arbitrary.
+	p.Delete(map[storage.SeriesRef]struct{}{3: {}}, map[labels.Label]struct{}{
+		{Name: "lbl", Value: "c"}: {},
+	})
+	require.Equal(t, []string{"a", "b", "d"}, p.LabelValues(ctx, "lbl", &storage.LabelHints{Limit: 3, LimitSmallest: true}))
+}

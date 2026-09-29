@@ -1,37 +1,70 @@
-import * as React from 'react';
-import { shallow } from 'enzyme';
+import React from 'react';
+import { fireEvent, render, screen } from '@testing-library/react';
 import PanelList, { PanelListContent } from './PanelList';
-import Checkbox from '../../components/Checkbox';
-import { Button } from 'reactstrap';
-import Panel from './Panel';
+import { PanelDefaultOptions } from './Panel';
+
+jest.mock('./Panel', () => {
+  const React = jest.requireActual('react');
+  const actual = jest.requireActual('./Panel');
+  return {
+    __esModule: true,
+    ...actual,
+    default: ({ id }: { id: string }) => React.createElement('div', { 'data-testid': 'panel', 'data-panel-id': id }),
+  };
+});
+
+const contentProps = {
+  metrics: [],
+  useLocalTime: false,
+  queryHistoryEnabled: false,
+  enableAutocomplete: true,
+  enableHighlighting: true,
+  enableLinter: true,
+};
 
 describe('PanelList', () => {
-  it('renders configuration checkboxes', () => {
-    [
-      { id: 'use-local-time-checkbox', label: 'Use local time', default: false },
-      { id: 'query-history-checkbox', label: 'Enable query history', default: false },
-      { id: 'autocomplete-checkbox', label: 'Enable autocomplete', default: true },
-      { id: 'highlighting-checkbox', label: 'Enable highlighting', default: true },
-      { id: 'linter-checkbox', label: 'Enable linter', default: true },
-    ].forEach((cb, idx) => {
-      const panelList = shallow(<PanelList />);
-      const checkbox = panelList.find(Checkbox).at(idx);
-      expect(checkbox.prop('id')).toEqual(cb.id);
-      expect(checkbox.prop('defaultChecked')).toBe(cb.default);
-      expect(checkbox.children().text()).toBe(cb.label);
-    });
+  beforeEach(() => {
+    fetchMock.resetMocks();
+    localStorage.clear();
+    window.history.replaceState({}, '', '/graph');
   });
 
-  it('renders panels', () => {
-    const panelList = shallow(<PanelListContent {...({ panels: [{ id: 'foo' }] } as any)} />);
-    const panels = panelList.find(Panel);
-    expect(panels.length).toBeGreaterThan(0);
+  afterEach(() => {
+    window.onpopstate = null;
+    localStorage.clear();
   });
 
-  it('renders a button to add a panel', () => {
-    const panelList = shallow(<PanelListContent {...({ panels: [] } as any)} />);
-    const btn = panelList.find(Button);
-    expect(btn.prop('color')).toEqual('primary');
-    expect(btn.children().text()).toEqual('Add Panel');
+  it('renders the persisted configuration defaults', () => {
+    const now = new Date().getTime() / 1000;
+    fetchMock.mockResponses(
+      JSON.stringify({ status: 'success', data: ['up'] }),
+      JSON.stringify({ status: 'success', data: { result: [now] } })
+    );
+
+    render(<PanelList />);
+
+    expect((screen.getByRole('checkbox', { name: 'Use local time' }) as HTMLInputElement).checked).toBe(false);
+    expect((screen.getByRole('checkbox', { name: 'Enable query history' }) as HTMLInputElement).checked).toBe(false);
+    expect((screen.getByRole('checkbox', { name: 'Enable autocomplete' }) as HTMLInputElement).checked).toBe(true);
+    expect((screen.getByRole('checkbox', { name: 'Enable highlighting' }) as HTMLInputElement).checked).toBe(true);
+    expect((screen.getByRole('checkbox', { name: 'Enable linter' }) as HTMLInputElement).checked).toBe(true);
+  });
+
+  it('renders existing panels and adds another panel', () => {
+    render(
+      <PanelListContent {...contentProps} panels={[{ id: 'existing-panel', key: '0', options: PanelDefaultOptions }]} />
+    );
+
+    expect(screen.getAllByTestId('panel')).toHaveLength(1);
+    expect(screen.getByTestId('panel').getAttribute('data-panel-id')).toBe('existing-panel');
+
+    fireEvent.click(screen.getByRole('button', { name: 'Add Panel' }));
+    expect(screen.getAllByTestId('panel')).toHaveLength(2);
+  });
+
+  it('creates an initial panel when the URL has none', () => {
+    render(<PanelListContent {...contentProps} panels={[]} />);
+
+    expect(screen.getAllByTestId('panel')).toHaveLength(1);
   });
 });

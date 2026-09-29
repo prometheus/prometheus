@@ -42,6 +42,8 @@ const (
 	dockerLabel                     = model.MetaLabelPrefix + "docker_"
 	dockerLabelContainerPrefix      = dockerLabel + "container_"
 	dockerLabelContainerID          = dockerLabelContainerPrefix + "id"
+	dockerLabelContainerImage       = dockerLabelContainerPrefix + "image"
+	dockerLabelContainerImageID     = dockerLabelContainerPrefix + "image_id"
 	dockerLabelContainerName        = dockerLabelContainerPrefix + "name"
 	dockerLabelContainerNetworkMode = dockerLabelContainerPrefix + "network_mode"
 	dockerLabelContainerLabelPrefix = dockerLabelContainerPrefix + "label_"
@@ -226,6 +228,14 @@ func (d *DockerDiscovery) refresh(ctx context.Context) ([]*targetgroup.Group, er
 			dockerLabelContainerID:          c.ID,
 			dockerLabelContainerName:        c.Names[0],
 			dockerLabelContainerNetworkMode: c.HostConfig.NetworkMode,
+		}
+
+		if c.Image != "" {
+			commonLabels[dockerLabelContainerImage] = c.Image
+		}
+
+		if c.ImageID != "" {
+			commonLabels[dockerLabelContainerImageID] = c.ImageID
 		}
 
 		for k, v := range c.Labels {

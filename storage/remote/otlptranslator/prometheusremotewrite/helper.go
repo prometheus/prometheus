@@ -257,6 +257,9 @@ func (c *PrometheusConverter) addHistogramDataPoints(
 	settings Settings,
 	appOpts storage.AOptions,
 ) error {
+	countMetricName := appOpts.MetricFamilyName + countStr
+	bucketMetricName := appOpts.MetricFamilyName + bucketStr
+	var sumMetricName string
 	for x := 0; x < dataPoints.Len(); x++ {
 		if err := c.everyN.checkContext(ctx); err != nil {
 			return err
@@ -276,12 +279,15 @@ func (c *PrometheusConverter) addHistogramDataPoints(
 		// If the sum is unset, it indicates the _sum metric point should be
 		// omitted
 		if pt.HasSum() {
+			if sumMetricName == "" {
+				sumMetricName = appOpts.MetricFamilyName + sumStr
+			}
 			// Treat sum as a sample in an individual TimeSeries.
 			val := pt.Sum()
 			if pt.Flags().NoRecordedValue() {
 				val = math.Float64frombits(value.StaleNaN)
 			}
-			sumLabels := c.addLabels(appOpts.MetricFamilyName+sumStr, baseLabels)
+			sumLabels := c.addLabels(sumMetricName, baseLabels)
 			if _, err := c.appender.Append(0, sumLabels, startTimestamp, timestamp, val, nil, nil, appOpts); err != nil {
 				return err
 			}
@@ -292,7 +298,7 @@ func (c *PrometheusConverter) addHistogramDataPoints(
 		if pt.Flags().NoRecordedValue() {
 			val = math.Float64frombits(value.StaleNaN)
 		}
-		countLabels := c.addLabels(appOpts.MetricFamilyName+countStr, baseLabels)
+		countLabels := c.addLabels(countMetricName, baseLabels)
 		if _, err := c.appender.Append(0, countLabels, startTimestamp, timestamp, val, nil, nil, appOpts); err != nil {
 			return err
 		}
@@ -330,7 +336,7 @@ func (c *PrometheusConverter) addHistogramDataPoints(
 				val = math.Float64frombits(value.StaleNaN)
 			}
 			boundStr := strconv.FormatFloat(bound, 'f', -1, 64)
-			bucketLabels := c.addLabels(appOpts.MetricFamilyName+bucketStr, baseLabels, leStr, boundStr)
+			bucketLabels := c.addLabels(bucketMetricName, baseLabels, leStr, boundStr)
 			if _, err := c.appender.Append(0, bucketLabels, startTimestamp, timestamp, val, nil, nil, appOpts); err != nil {
 				return err
 			}
@@ -342,7 +348,7 @@ func (c *PrometheusConverter) addHistogramDataPoints(
 		if pt.Flags().NoRecordedValue() {
 			val = math.Float64frombits(value.StaleNaN)
 		}
-		infLabels := c.addLabels(appOpts.MetricFamilyName+bucketStr, baseLabels, leStr, pInfStr)
+		infLabels := c.addLabels(bucketMetricName, baseLabels, leStr, pInfStr)
 		if _, err := c.appender.Append(0, infLabels, startTimestamp, timestamp, val, nil, nil, appOpts); err != nil {
 			return err
 		}

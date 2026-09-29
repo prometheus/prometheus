@@ -179,6 +179,7 @@ FunctionIdentifier {
   Idelta |
   Increase |
   Info |
+  Integral |
   Irate |
   LabelReplace |
   LabelJoin |
@@ -472,6 +473,7 @@ durationPrimary[@inline] {
   Idelta { condFn<"idelta"> }
   Increase { condFn<"increase"> }
   Info { condFn<"info"> }
+  Integral { condFn<"integral"> }
   Irate { condFn<"irate"> }
   LabelReplace { condFn<"label_replace"> }
   LabelJoin { condFn<"label_join"> }

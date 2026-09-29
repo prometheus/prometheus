@@ -298,7 +298,8 @@ func (d *LightsailDiscovery) refresh(ctx context.Context) ([]*targetgroup.Group,
 			labels[lightsailLabelIPv6Addresses] = model.LabelValue(
 				lightsailLabelSeparator +
 					strings.Join(ipv6addrs, lightsailLabelSeparator) +
-					lightsailLabelSeparator)
+					lightsailLabelSeparator,
+			)
 		}
 
 		for _, t := range inst.Tags {

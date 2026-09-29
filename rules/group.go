@@ -73,7 +73,7 @@ type Group struct {
 	// defaults to DefaultEvalIterationFunc.
 	evalIterationFunc GroupEvalIterationFunc
 
-	appOpts *storage.AppendOptions
+	appOpts storage.AOptions
 }
 
 // GroupEvalIterationFunc is used to implement and extend rule group
@@ -143,7 +143,7 @@ func NewGroup(o GroupOptions) *Group {
 		logger:               opts.Logger.With("file", o.File, "group", o.Name),
 		metrics:              metrics,
 		evalIterationFunc:    evalIterationFunc,
-		appOpts:              &storage.AppendOptions{DiscardOutOfOrder: true},
+		appOpts:              storage.AOptions{RejectOutOfOrder: true},
 	}
 }
 
@@ -513,7 +513,12 @@ func (g *Group) Eval(ctx context.Context, ts time.Time) {
 
 		logger := g.logger.With("name", rule.Name(), "index", i)
 		ctx, sp := otel.Tracer("").Start(ctx, "rule")
-		sp.SetAttributes(attribute.String("name", rule.Name()))
+		sp.SetAttributes(
+			attribute.String("group", g.Name()),
+			attribute.String("name", rule.Name()),
+			attribute.Stringer("query_offset", ruleQueryOffset),
+			attribute.Int("index", i),
+		)
 		defer func(t time.Time) {
 			sp.End()
 
@@ -539,8 +544,7 @@ func (g *Group) Eval(ctx context.Context, ts time.Time) {
 
 			// Canceled queries are intentional termination of queries. This normally
 			// happens on shutdown and thus we skip logging of any errors here.
-			var eqc promql.ErrQueryCanceled
-			if !errors.As(err, &eqc) {
+			if _, ok := errors.AsType[promql.ErrQueryCanceled](err); !ok {
 				logger.Warn("Evaluating rule failed", "rule", rule, "err", err)
 			}
 			return
@@ -548,6 +552,7 @@ func (g *Group) Eval(ctx context.Context, ts time.Time) {
 		rule.SetHealth(HealthGood)
 		rule.SetLastError(nil)
 		samplesTotal.Add(float64(len(vector)))
+		sp.SetAttributes(attribute.Int("num_series", len(vector)))
 
 		if ar, ok := rule.(*AlertingRule); ok {
 			ar.sendAlerts(ctx, ts, g.opts.ResendDelay, g.interval, g.opts.NotifyFunc)
@@ -558,10 +563,22 @@ func (g *Group) Eval(ctx context.Context, ts time.Time) {
 			numDuplicates = 0
 		)
 
-		app := g.opts.Appendable.Appender(ctx)
+		// The appender can block on storage and for simple queries it can
+		// be the majority of trace duration. Trace it using dedicated span
+		// so it's clear from the trace where did all the duration go.
+		_, appenderSp := otel.Tracer("").Start(ctx, "newAppender")
+		app := g.opts.AppendableV2.AppenderV2(ctx)
+		appenderSp.End()
 		seriesReturned := make(map[string]labels.Labels, len(g.seriesInPreviousEval[i]))
 		defer func() {
-			if err := app.Commit(); err != nil {
+			_, commitSp := otel.Tracer("").Start(ctx, "ruleCommit")
+			err := app.Commit()
+			if err != nil {
+				commitSp.RecordError(err)
+				commitSp.SetStatus(codes.Error, err.Error())
+			}
+			commitSp.End()
+			if err != nil {
 				rule.SetHealth(HealthBad)
 				rule.SetLastError(err)
 				sp.SetStatus(codes.Error, err.Error())
@@ -573,13 +590,13 @@ func (g *Group) Eval(ctx context.Context, ts time.Time) {
 			g.seriesInPreviousEval[i] = seriesReturned
 		}()
 
+		// Trace the time to write the evaluation result samples into the
+		// appender. This span ends before the commit span starts.
+		_, appendSp := otel.Tracer("").Start(ctx, "ruleAppendResults")
+		defer appendSp.End()
+
 		for _, s := range vector {
-			if s.H != nil {
-				_, err = app.AppendHistogram(0, s.Metric, s.T, nil, s.H)
-			} else {
-				app.SetOptions(g.appOpts)
-				_, err = app.Append(0, s.Metric, s.T, s.F)
-			}
+			_, err = app.Append(0, s.Metric, 0, s.T, s.F, nil, s.H, g.appOpts)
 
 			if err != nil {
 				rule.SetHealth(HealthBad)
@@ -620,7 +637,7 @@ func (g *Group) Eval(ctx context.Context, ts time.Time) {
 		for metric, lset := range g.seriesInPreviousEval[i] {
 			if _, ok := seriesReturned[metric]; !ok {
 				// Series no longer exposed, mark it stale.
-				_, err = app.Append(0, lset, timestamp.FromTime(ts.Add(-ruleQueryOffset)), math.Float64frombits(value.StaleNaN))
+				_, err = app.Append(0, lset, 0, timestamp.FromTime(ts.Add(-ruleQueryOffset)), math.Float64frombits(value.StaleNaN), nil, nil, g.appOpts)
 				unwrappedErr := errors.Unwrap(err)
 				if unwrappedErr == nil {
 					unwrappedErr = err
@@ -706,12 +723,11 @@ func (g *Group) cleanupStaleSeries(ctx context.Context, ts time.Time) {
 	if len(g.staleSeries) == 0 {
 		return
 	}
-	app := g.opts.Appendable.Appender(ctx)
-	app.SetOptions(g.appOpts)
+	app := g.opts.AppendableV2.AppenderV2(ctx)
 	queryOffset := g.QueryOffset()
 	for _, s := range g.staleSeries {
 		// Rule that produced series no longer configured, mark it stale.
-		_, err := app.Append(0, s, timestamp.FromTime(ts.Add(-queryOffset)), math.Float64frombits(value.StaleNaN))
+		_, err := app.Append(0, s, 0, timestamp.FromTime(ts.Add(-queryOffset)), math.Float64frombits(value.StaleNaN), nil, nil, g.appOpts)
 		unwrappedErr := errors.Unwrap(err)
 		if unwrappedErr == nil {
 			unwrappedErr = err
@@ -938,7 +954,8 @@ func NewGroupMetrics(reg prometheus.Registerer) *Metrics {
 				Name:       "rule_evaluation_duration_seconds",
 				Help:       "The duration for a rule to execute.",
 				Objectives: map[float64]float64{0.5: 0.05, 0.9: 0.01, 0.99: 0.001},
-			}),
+			},
+		),
 		EvalDurationHistogram: prometheus.NewHistogram(prometheus.HistogramOpts{
 			Namespace:                       namespace,
 			Name:                            "rule_evaluation_duration_histogram_seconds",

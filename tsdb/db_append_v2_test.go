@@ -1244,7 +1244,7 @@ func TestSizeRetention_AppendV2(t *testing.T) {
 			// Create a WAL checkpoint, and compare sizes.
 			first, last, err := wlog.Segments(db.Head().wal.Dir())
 			require.NoError(t, err)
-			_, err = wlog.Checkpoint(promslog.NewNopLogger(), db.Head().wal, first, last-1, func(chunks.HeadSeriesRef) bool { return false }, 0, enableSTStorage)
+			_, err = wlog.Checkpoint(promslog.NewNopLogger(), db.Head().wal, first, last-1, func(chunks.HeadSeriesRef) bool { return false }, 0, enableSTStorage, false)
 			require.NoError(t, err)
 			blockSize = int64(prom_testutil.ToFloat64(db.metrics.blocksBytes)) // Use the actual internal metrics.
 			walSize, err = db.Head().wal.Size()
@@ -3544,7 +3544,7 @@ func TestMetadataCheckpointingOnlyKeepsLatestEntry_AppendV2(t *testing.T) {
 			keep := func(id chunks.HeadSeriesRef) bool {
 				return id != 3
 			}
-			_, err = wlog.Checkpoint(promslog.NewNopLogger(), w, first, last-1, keep, 0, enableSTStorage)
+			_, err = wlog.Checkpoint(promslog.NewNopLogger(), w, first, last-1, keep, 0, enableSTStorage, false)
 			require.NoError(t, err)
 
 			// Confirm there's been a checkpoint.
@@ -7593,7 +7593,6 @@ func TestCompactHeadWithSTStorage_AppendV2(t *testing.T) {
 		MaxBlockDuration:          int64(time.Hour * 2 / time.Millisecond),
 		WALCompression:            compression.Snappy,
 		EnableSTStorage:           true,
-		XOR2EncodingAllowed:       true,
 		FloatChunkEncoding:        chunkenc.EncXOR2,
 		EnableHistogramSTEncoding: true,
 	}
@@ -7748,7 +7747,6 @@ func TestDBAppenderV2_STStorage_OutOfOrder(t *testing.T) {
 			opts := DefaultOptions()
 			opts.OutOfOrderTimeWindow = 300 * time.Minute.Milliseconds()
 			opts.EnableSTStorage = true
-			opts.XOR2EncodingAllowed = true
 			opts.FloatChunkEncoding = chunkenc.EncXOR2
 			opts.EnableHistogramSTEncoding = true
 			db := newTestDB(t, withOpts(opts))

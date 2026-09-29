@@ -1163,7 +1163,7 @@ func testHeadAppenderV2OutOfOrderSamplesMetric(t *testing.T, scenario sampleType
 
 // TestHeadAppenderV2_HistogramErrorDoesNotSetPendingCommit is the V2
 // counterpart of TestAppendHistogramErrorDoesNotSetPendingCommit. The V2
-// histogram paths in head_append_v2.go already set pendingCommit only on
+// histogram paths in head_append_v2.go already reserve pending state only on
 // success, so this test is here to lock that property in.
 func TestHeadAppenderV2_HistogramErrorDoesNotSetPendingCommit(t *testing.T) {
 	for _, tc := range []struct {
@@ -1190,9 +1190,9 @@ func TestHeadAppenderV2_HistogramErrorDoesNotSetPendingCommit(t *testing.T) {
 			require.NoError(t, err)
 			require.NotNil(t, ms)
 			ms.Lock()
-			pc := ms.pendingCommit
+			pc := ms.hasPendingCommit()
 			ms.Unlock()
-			require.False(t, pc, "pendingCommit should be cleared after a successful commit")
+			require.False(t, pc, "pending state should be cleared after a successful commit")
 
 			// Out-of-order append for the same series, OOO window disabled.
 			app = head.AppenderV2(ctx)
@@ -1201,9 +1201,9 @@ func TestHeadAppenderV2_HistogramErrorDoesNotSetPendingCommit(t *testing.T) {
 			require.NoError(t, app.Rollback())
 
 			ms.Lock()
-			pc = ms.pendingCommit
+			pc = ms.hasPendingCommit()
 			ms.Unlock()
-			require.False(t, pc, "pendingCommit should remain false after a failed AppenderV2.Append")
+			require.False(t, pc, "pending state should remain clear after a failed AppenderV2.Append")
 		})
 	}
 }

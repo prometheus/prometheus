@@ -682,6 +682,23 @@ func scrapePoolsResponseExamples() *orderedmap.Map[string, *base.Example] {
 	return examples
 }
 
+// scrapePoolConfigResponseExamples returns examples for /scrape_pools/config response.
+func scrapePoolConfigResponseExamples() *orderedmap.Map[string, *base.Example] {
+	examples := orderedmap.New[string, *base.Example]()
+
+	examples.Set("scrapePoolConfig", &base.Example{
+		Summary: "Effective configuration for a scrape pool",
+		Value: createYAMLNode(map[string]any{
+			"status": "success",
+			"data": map[string]any{
+				"yaml": "job_name: prometheus\nscrape_interval: 15s\nscrape_timeout: 10s\nmetrics_path: /metrics\nscheme: http\n",
+			},
+		}),
+	})
+
+	return examples
+}
+
 // targetsMetadataResponseExamples returns examples for /targets/metadata response.
 func targetsMetadataResponseExamples() *orderedmap.Map[string, *base.Example] {
 	examples := orderedmap.New[string, *base.Example]()

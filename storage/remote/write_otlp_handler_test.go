@@ -603,6 +603,7 @@ func (discardAppender) Rollback() error {
 }
 
 func BenchmarkOTLP(b *testing.B) {
+	b.Skip("Not supported by teststorage Appender")
 	start := time.Date(2000, 1, 2, 3, 4, 5, 0, time.UTC)
 
 	type Type struct {

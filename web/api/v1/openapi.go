@@ -297,6 +297,7 @@ func (b *OpenAPIBuilder) getAllPathDefinitions() *orderedmap.Map[string, *v3.Pat
 
 	// Target endpoints.
 	paths.Set("/scrape_pools", b.scrapePoolsPath())
+	paths.Set("/scrape_pools/config", b.scrapePoolConfigPath())
 	paths.Set("/targets", b.targetsPath())
 	paths.Set("/targets/metadata", b.targetsMetadataPath())
 	paths.Set("/targets/relabel_steps", b.targetsRelabelStepsPath())

@@ -66,10 +66,8 @@ func ConvertNHCBToClassic(nhcb any, lset labels.Labels, lsetBuilder *labels.Buil
 		// Histograms are in delta format so we first bring them to absolute format.
 		acc := int64(0)
 		for _, s := range h.PositiveSpans {
-			for i := 0; i < int(s.Offset); i++ {
-				positiveBuckets[idx] = float64(acc)
-				idx++
-			}
+			// Skipped buckets are empty, so leave them at zero.
+			idx += int(s.Offset)
 			for i := 0; i < int(s.Length); i++ {
 				acc += h.PositiveBuckets[currIdx]
 				positiveBuckets[idx] = float64(acc)

@@ -170,7 +170,8 @@ func buildClients(logger *slog.Logger, cfg *config) ([]writer, []reader) {
 		c := graphite.NewClient(
 			logger.With("storage", "Graphite"),
 			cfg.graphiteAddress, cfg.graphiteTransport,
-			cfg.remoteTimeout, cfg.graphitePrefix)
+			cfg.remoteTimeout, cfg.graphitePrefix,
+		)
 		writers = append(writers, c)
 	}
 	if cfg.opentsdbURL != "" {

@@ -642,7 +642,10 @@ const funcDocs: Record<string, React.ReactNode> = {
           Return an empty vector if <code>min &gt; max</code>
         </li>
         <li>
-          Float samples are clamped to <code>NaN</code> if <code>min</code> or <code>max</code> is <code>NaN</code>
+          The function returns <code>NaN</code> if <code>min</code> or <code>max</code> is <code>NaN</code>
+        </li>
+        <li>
+          Float samples are unchanged if <code>min</code> is <code>-Inf</code> and <code>max</code> is <code>+Inf</code>
         </li>
       </ul>
     </>
@@ -653,6 +656,20 @@ const funcDocs: Record<string, React.ReactNode> = {
         <code>clamp_max(v instant-vector, max scalar)</code> clamps the values of all float samples in <code>v</code> to
         have an upper limit of <code>max</code>. Histogram samples in the input vector are ignored silently.
       </p>
+
+      <p>Special cases:</p>
+
+      <ul>
+        <li>
+          The function returns <code>NaN</code> if the <code>max</code> argument is <code>NaN</code>
+        </li>
+        <li>
+          Float samples are unchanged if <code>max</code> is <code>+Inf</code>
+        </li>
+        <li>
+          All float samples are set to <code>-Inf</code> if <code>max</code> is <code>-Inf</code>
+        </li>
+      </ul>
     </>
   ),
   clamp_min: (
@@ -661,6 +678,20 @@ const funcDocs: Record<string, React.ReactNode> = {
         <code>clamp_min(v instant-vector, min scalar)</code> clamps the values of all float samples in <code>v</code> to
         have a lower limit of <code>min</code>. Histogram samples in the input vector are ignored silently.
       </p>
+
+      <p>Special cases:</p>
+
+      <ul>
+        <li>
+          The function returns <code>NaN</code> if the <code>min</code> argument is <code>NaN</code>
+        </li>
+        <li>
+          Float samples are unchanged if <code>min</code> is <code>-Inf</code>
+        </li>
+        <li>
+          All float samples are set to <code>+Inf</code> if <code>min</code> is <code>+Inf</code>
+        </li>
+      </ul>
     </>
   ),
   cos: (
@@ -1845,11 +1876,48 @@ const funcDocs: Record<string, React.ReactNode> = {
       </p>
 
       <p>
+        Identifying-label presence is evaluated per input series. Inputs containing only <code>job</code>, only{" "}
+        <code>instance</code>, or both can therefore gain data labels from the corresponding info-series group; a
+        missing identifying label is not treated as a wildcard.
+      </p>
+
+      <p>
         These limitations are partially defeating the purpose of the <code>info</code> function. At the current stage,
         this is an experiment to find out how useful the approach turns out to be in practice. A final version of the{" "}
         <code>info</code> function will indeed consider all matching info series and with their appropriate identifying
         labels.
       </p>
+    </>
+  ),
+  integral: (
+    <>
+      <p>
+        <strong>
+          This function has to be enabled via the{" "}
+          <a href="../feature_flags.md#experimental-promql-functions">feature flag</a>
+          <code>--enable-feature=promql-experimental-functions</code>.
+        </strong>
+      </p>
+
+      <p>
+        <code>integral(v range-vector, strategy=2 scalar)</code> calculates the integral of the time series over time in
+        seconds. The optional <code>strategy</code> controls which quadrature rule is used for each interval:{" "}
+        <code>0</code> for the left-point rectangle rule, <code>1</code> for the right-point rectangle rule, and{" "}
+        <code>2</code> for the trapezoidal rule using the average of the adjacent samples. The default is <code>2</code>
+        .
+      </p>
+
+      <p>
+        <code>integral</code> should only be used with gauges, most likely representing a rate in units per second.
+      </p>
+
+      <p>For example, to calculate the total nodes cost accumulated the last 7 days, given its hourly cost:</p>
+
+      <pre>
+        <code>
+          integral(hourly_cost{"{"}job=&quot;nodes&quot;{"}"}[7d]) / 3600
+        </code>
+      </pre>
     </>
   ),
   irate: (

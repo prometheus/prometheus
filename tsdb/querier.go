@@ -114,22 +114,23 @@ func (q *blockBaseQuerier) SearchLabelValues(ctx context.Context, name string, h
 
 	// Limit pushdown is only correct when natural (ascending) index order
 	// is preserved all the way to the output and no filtering discards
-	// values ahead of the limit.
+	// values ahead of the limit. LimitSmallest is also set to true to ensure
+	// we obtain the smallest N results not just N results.
 	labelHints := &storage.LabelHints{}
 	if hints.OrderBy == storage.OrderByValueAsc && hints.Filter == nil {
 		labelHints.Limit = hints.Limit
+		labelHints.LimitSmallest = true
 	}
 
 	var (
 		values []string
 		err    error
 	)
-	switch hints.OrderBy {
-	case storage.OrderByScoreDesc:
-		// Score-based sorting happens in ApplySearchHints; avoid the
-		// index-level sort.
+	// ApplySearchHints needs the values ascending by value.
+	// OrderByScore relies on the score calculated by the filter.
+	if hints.OrderBy == storage.OrderByScoreDesc && hints.Filter != nil {
 		values, err = q.index.LabelValues(ctx, name, labelHints, matchers...)
-	default:
+	} else {
 		values, err = q.index.SortedLabelValues(ctx, name, labelHints, matchers...)
 	}
 	if err != nil {
@@ -503,9 +504,7 @@ func labelValuesWithMatchers(ctx context.Context, r IndexReader, name string, hi
 
 	// If we don't have any matchers for other labels, then we're done.
 	if !hasMatchersForOtherLabels {
-		if hints != nil && hints.Limit > 0 && len(allValues) > hints.Limit {
-			allValues = allValues[:hints.Limit]
-		}
+		allValues, _ = hints.ApplyLimit(allValues)
 		return allValues, nil
 	}
 
@@ -526,14 +525,20 @@ func labelValuesWithMatchers(ctx context.Context, r IndexReader, name string, hi
 		return nil, fmt.Errorf("intersecting postings: %w", err)
 	}
 
+	// FindIntersectingPostings returns the indexes ordered by series reference,
+	// not by value, so stopping at the limit returns an arbitrary subset. A
+	// caller asking for the smallest values has to see all of them first.
+	earlyLimit := hints.AllowsEarlyStop()
 	values := make([]string, 0, len(indexes))
 	for _, idx := range indexes {
 		values = append(values, allValues[idx])
-		if hints != nil && hints.Limit > 0 && len(values) >= hints.Limit {
+		if earlyLimit && len(values) >= hints.Limit {
 			break
 		}
 	}
 
+	// A no-op unless a limit needs the smallest of what we collected.
+	values, _ = hints.ApplyLimit(values)
 	return values, nil
 }
 

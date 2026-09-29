@@ -594,8 +594,7 @@ func TestExitCodes(t *testing.T) {
 
 					require.Error(t, err)
 
-					var exitError *exec.ExitError
-					if errors.As(err, &exitError) {
+					if exitError, ok := errors.AsType[*exec.ExitError](err); ok {
 						status := exitError.Sys().(syscall.WaitStatus)
 						require.Equal(t, c.exitCode, status.ExitStatus())
 					} else {

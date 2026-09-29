@@ -233,6 +233,10 @@ func (c *ElasticacheSDConfig) UnmarshalYAML(unmarshal func(any) error) error {
 		return err
 	}
 
+	if c.RequestConcurrency <= 0 {
+		return fmt.Errorf("elasticache_sd: request_concurrency must be positive, got %d", c.RequestConcurrency)
+	}
+
 	return c.HTTPClientConfig.Validate()
 }
 
@@ -435,53 +439,50 @@ func (d *ElasticacheDiscovery) describeCacheClusters(ctx context.Context, caches
 	mu := &sync.Mutex{}
 	errg, ectx := errgroup.WithContext(ctx)
 	errg.SetLimit(d.cfg.RequestConcurrency)
-	showCacheClustersNotInReplicationGroupsBools := []bool{false, true}
 	var cacheClusters []types.CacheCluster
+	// ShowCacheClustersNotInReplicationGroups is deliberately left unset:
+	// DescribeCacheClusters then returns every provisioned cluster, whereas
+	// setting it narrows the response to the subset that are not replication
+	// group members. Querying both ways returns each standalone cluster twice.
 	if len(caches) == 0 {
-		for _, showCacheClustersNotInReplicationGroupsBool := range showCacheClustersNotInReplicationGroupsBools {
-			errg.Go(func() error {
-				var nextToken *string
-				for {
-					output, err := d.elasticacheClient.DescribeCacheClusters(ectx, &elasticache.DescribeCacheClustersInput{
-						MaxRecords:                              aws.Int32(100),
-						Marker:                                  nextToken,
-						ShowCacheNodeInfo:                       aws.Bool(true),
-						ShowCacheClustersNotInReplicationGroups: aws.Bool(showCacheClustersNotInReplicationGroupsBool),
-					})
-					if err != nil {
-						return fmt.Errorf("failed to describe cache clusters: %w", err)
-					}
-					mu.Lock()
-					cacheClusters = append(cacheClusters, output.CacheClusters...)
-					mu.Unlock()
-					if output.Marker == nil {
-						break
-					}
-					nextToken = output.Marker
+		errg.Go(func() error {
+			var nextToken *string
+			for {
+				output, err := d.elasticacheClient.DescribeCacheClusters(ectx, &elasticache.DescribeCacheClustersInput{
+					MaxRecords:        aws.Int32(100),
+					Marker:            nextToken,
+					ShowCacheNodeInfo: aws.Bool(true),
+				})
+				if err != nil {
+					return fmt.Errorf("failed to describe cache clusters: %w", err)
 				}
-				return nil
-			})
-		}
+				mu.Lock()
+				cacheClusters = append(cacheClusters, output.CacheClusters...)
+				mu.Unlock()
+				if output.Marker == nil {
+					break
+				}
+				nextToken = output.Marker
+			}
+			return nil
+		})
 	} else {
 		for _, cacheID := range caches {
-			for _, showCacheClustersNotInReplicationGroupsBool := range showCacheClustersNotInReplicationGroupsBools {
-				errg.Go(func() error {
-					output, err := d.elasticacheClient.DescribeCacheClusters(ectx, &elasticache.DescribeCacheClustersInput{
-						MaxRecords:                              aws.Int32(100),
-						Marker:                                  nil,
-						ShowCacheNodeInfo:                       aws.Bool(true),
-						ShowCacheClustersNotInReplicationGroups: aws.Bool(showCacheClustersNotInReplicationGroupsBool),
-						CacheClusterId:                          aws.String(cacheID),
-					})
-					if err != nil {
-						return fmt.Errorf("failed to describe cache cluster %s: %w", cacheID, err)
-					}
-					mu.Lock()
-					cacheClusters = append(cacheClusters, output.CacheClusters...)
-					mu.Unlock()
-					return nil
+			errg.Go(func() error {
+				output, err := d.elasticacheClient.DescribeCacheClusters(ectx, &elasticache.DescribeCacheClustersInput{
+					MaxRecords:        aws.Int32(100),
+					Marker:            nil,
+					ShowCacheNodeInfo: aws.Bool(true),
+					CacheClusterId:    aws.String(cacheID),
 				})
-			}
+				if err != nil {
+					return fmt.Errorf("failed to describe cache cluster %s: %w", cacheID, err)
+				}
+				mu.Lock()
+				cacheClusters = append(cacheClusters, output.CacheClusters...)
+				mu.Unlock()
+				return nil
+			})
 		}
 	}
 
@@ -517,39 +518,50 @@ func (d *ElasticacheDiscovery) refresh(ctx context.Context) ([]*targetgroup.Grou
 		return nil, err
 	}
 
-	var clusters []string
-	clustersMu := sync.Mutex{}
 	serverlessCacheIDs, cacheClusterIDs := splitCacheDeploymentOptions(d.cfg.Clusters, d.logger)
 
-	clusterErrg, clusterCtx := errgroup.WithContext(ctx)
-	clusterErrg.Go(func() error {
-		caches, err := d.describeServerlessCaches(clusterCtx, serverlessCacheIDs)
+	// Both deployment options are described once and the results are reused to
+	// build the targets below: asking the API again for what is already in hand
+	// would only spend the account's request quota twice over.
+	var (
+		caches        []types.ServerlessCache
+		cacheClusters []types.CacheCluster
+	)
+	describeErrg, describeCtx := errgroup.WithContext(ctx)
+	describeErrg.Go(func() error {
+		var err error
+		caches, err = d.describeServerlessCaches(describeCtx, serverlessCacheIDs)
 		if err != nil {
 			return fmt.Errorf("failed to describe serverless caches: %w", err)
 		}
-		for _, cache := range caches {
-			clustersMu.Lock()
-			clusters = append(clusters, *cache.ARN)
-			clustersMu.Unlock()
-		}
 		return nil
 	})
 
-	clusterErrg.Go(func() error {
-		cacheClusters, err := d.describeCacheClusters(clusterCtx, cacheClusterIDs)
+	describeErrg.Go(func() error {
+		var err error
+		cacheClusters, err = d.describeCacheClusters(describeCtx, cacheClusterIDs)
 		if err != nil {
 			return fmt.Errorf("failed to describe cache clusters: %w", err)
 		}
-		for _, cluster := range cacheClusters {
-			clustersMu.Lock()
-			clusters = append(clusters, *cluster.ARN)
-			clustersMu.Unlock()
-		}
 		return nil
 	})
 
-	if err := clusterErrg.Wait(); err != nil {
+	if err := describeErrg.Wait(); err != nil {
 		return nil, err
+	}
+
+	// ARN is optional in the ElastiCache API and is only used to look up tags,
+	// so a resource without one is still discovered below.
+	clusters := make([]string, 0, len(caches)+len(cacheClusters))
+	for _, cache := range caches {
+		if cache.ARN != nil {
+			clusters = append(clusters, *cache.ARN)
+		}
+	}
+	for _, cluster := range cacheClusters {
+		if cluster.ARN != nil {
+			clusters = append(clusters, *cluster.ARN)
+		}
 	}
 
 	tagsByResourceARN, err := d.listTagsForResource(ctx, clusters)
@@ -560,32 +572,11 @@ func (d *ElasticacheDiscovery) refresh(ctx context.Context) ([]*targetgroup.Grou
 	tg := &targetgroup.Group{
 		Source: d.region,
 	}
-
-	errg, ectx := errgroup.WithContext(ctx)
-	errg.Go(func() error {
-		caches, err := d.describeServerlessCaches(ectx, serverlessCacheIDs)
-		if err != nil {
-			return fmt.Errorf("failed to describe serverless caches: %w", err)
-		}
-		for _, cache := range caches {
-			addServerlessCacheTargets(tg, &cache, tagsByResourceARN[*cache.ARN])
-		}
-		return nil
-	})
-
-	errg.Go(func() error {
-		cacheClusters, err := d.describeCacheClusters(ectx, cacheClusterIDs)
-		if err != nil {
-			return fmt.Errorf("failed to describe cache clusters: %w", err)
-		}
-		for _, cluster := range cacheClusters {
-			addCacheClusterTargets(tg, &cluster, tagsByResourceARN[*cluster.ARN])
-		}
-		return nil
-	})
-
-	if err := errg.Wait(); err != nil {
-		return nil, err
+	for _, cache := range caches {
+		addServerlessCacheTargets(tg, &cache, tagsByResourceARN[aws.ToString(cache.ARN)])
+	}
+	for _, cluster := range cacheClusters {
+		addCacheClusterTargets(tg, &cluster, tagsByResourceARN[aws.ToString(cluster.ARN)])
 	}
 
 	return []*targetgroup.Group{tg}, nil
@@ -620,14 +611,35 @@ func splitCacheDeploymentOptions(caches []string, logger *slog.Logger) (serverle
 
 // addServerlessCacheTargets adds targets for a serverless cache to the target group.
 func addServerlessCacheTargets(tg *targetgroup.Group, cache *types.ServerlessCache, tags []types.Tag) {
+	// Every field below is optional in the ElastiCache API. Omit the label when
+	// the field is absent rather than dereferencing a nil pointer, which would
+	// panic and take down the whole Prometheus process.
 	labels := model.LabelSet{
-		elasticacheLabelDeploymentOption:                  model.LabelValue("serverless"),
-		elasticacheLabelServerlessCacheARN:                model.LabelValue(*cache.ARN),
-		elasticacheLabelServerlessCacheName:               model.LabelValue(*cache.ServerlessCacheName),
-		elasticacheLabelServerlessCacheStatus:             model.LabelValue(*cache.Status),
-		elasticacheLabelServerlessCacheEngine:             model.LabelValue(*cache.Engine),
-		elasticacheLabelServerlessCacheFullEngineVersion:  model.LabelValue(*cache.FullEngineVersion),
-		elasticacheLabelServerlessCacheMajorEngineVersion: model.LabelValue(*cache.MajorEngineVersion),
+		elasticacheLabelDeploymentOption: model.LabelValue("serverless"),
+	}
+
+	if cache.ARN != nil {
+		labels[elasticacheLabelServerlessCacheARN] = model.LabelValue(*cache.ARN)
+	}
+
+	if cache.ServerlessCacheName != nil {
+		labels[elasticacheLabelServerlessCacheName] = model.LabelValue(*cache.ServerlessCacheName)
+	}
+
+	if cache.Status != nil {
+		labels[elasticacheLabelServerlessCacheStatus] = model.LabelValue(*cache.Status)
+	}
+
+	if cache.Engine != nil {
+		labels[elasticacheLabelServerlessCacheEngine] = model.LabelValue(*cache.Engine)
+	}
+
+	if cache.FullEngineVersion != nil {
+		labels[elasticacheLabelServerlessCacheFullEngineVersion] = model.LabelValue(*cache.FullEngineVersion)
+	}
+
+	if cache.MajorEngineVersion != nil {
+		labels[elasticacheLabelServerlessCacheMajorEngineVersion] = model.LabelValue(*cache.MajorEngineVersion)
 	}
 
 	if cache.Description != nil {
@@ -717,12 +729,24 @@ func addServerlessCacheTargets(tg *targetgroup.Group, cache *types.ServerlessCac
 // addCacheClusterTargets adds targets for a cache cluster to the target group.
 // Creates one target per cache node for individual scraping.
 func addCacheClusterTargets(tg *targetgroup.Group, cluster *types.CacheCluster, tags []types.Tag) {
-	// Build common labels that apply to all nodes in this cluster
+	// Build common labels that apply to all nodes in this cluster. Every field
+	// below is optional in the ElastiCache API, so the label is omitted when the
+	// field is absent rather than dereferencing a nil pointer, which would panic
+	// and take down the whole Prometheus process.
 	commonLabels := model.LabelSet{
-		elasticacheLabelDeploymentOption:   model.LabelValue("node"),
-		elasticacheLabelCacheClusterARN:    model.LabelValue(*cluster.ARN),
-		elasticacheLabelCacheClusterID:     model.LabelValue(*cluster.CacheClusterId),
-		elasticacheLabelCacheClusterStatus: model.LabelValue(*cluster.CacheClusterStatus),
+		elasticacheLabelDeploymentOption: model.LabelValue("node"),
+	}
+
+	if cluster.ARN != nil {
+		commonLabels[elasticacheLabelCacheClusterARN] = model.LabelValue(*cluster.ARN)
+	}
+
+	if cluster.CacheClusterId != nil {
+		commonLabels[elasticacheLabelCacheClusterID] = model.LabelValue(*cluster.CacheClusterId)
+	}
+
+	if cluster.CacheClusterStatus != nil {
+		commonLabels[elasticacheLabelCacheClusterStatus] = model.LabelValue(*cluster.CacheClusterStatus)
 	}
 
 	if cluster.AtRestEncryptionEnabled != nil {

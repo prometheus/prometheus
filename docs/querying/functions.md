@@ -89,7 +89,8 @@ float samples in `v` to have a lower limit of `min` and an upper limit of
 Special cases:
 
 * Return an empty vector if `min > max`
-* Float samples are clamped to `NaN` if `min` or `max` is `NaN`
+* The function returns `NaN` if `min` or `max` is `NaN`
+* Float samples are unchanged if `min` is `-Inf` and `max` is `+Inf`
 
 ## `clamp_max()`
 
@@ -97,11 +98,23 @@ Special cases:
 samples in `v` to have an upper limit of `max`. Histogram samples in the input
 vector are ignored silently.
 
+Special cases:
+
+* The function returns `NaN` if the `max` argument is `NaN`
+* Float samples are unchanged if `max` is `+Inf`
+* All float samples are set to `-Inf` if `max` is `-Inf`
+
 ## `clamp_min()`
 
 `clamp_min(v instant-vector, min scalar)` clamps the values of all float
 samples in `v` to have a lower limit of `min`. Histogram samples in the input
 vector are ignored silently.
+
+Special cases:
+
+* The function returns `NaN` if the `min` argument is `NaN`
+* Float samples are unchanged if `min` is `-Inf`
+* All float samples are set to `+Inf` if `min` is `+Inf`
 
 ## `day_of_month()`
 
@@ -622,10 +635,37 @@ When only negated `__name__` matchers are provided (e.g.
 because negated matchers alone cannot positively identify which info
 metrics to consider.
 
+Identifying-label presence is evaluated per input series. Inputs containing
+only `job`, only `instance`, or both can therefore gain data labels from the
+corresponding info-series group; a missing identifying label is not treated as
+a wildcard.
+
 These limitations are partially defeating the purpose of the `info` function.
 At the current stage, this is an experiment to find out how useful the approach
 turns out to be in practice. A final version of the `info` function will indeed
 consider all matching info series and with their appropriate identifying labels.
+
+## `integral()`
+
+**This function has to be enabled via the [feature
+flag](../feature_flags.md#experimental-promql-functions)
+`--enable-feature=promql-experimental-functions`.**
+
+`integral(v range-vector, strategy=2 scalar)` calculates the integral of the
+time series over time in seconds. The optional `strategy` controls which
+quadrature rule is used for each interval: `0` for the left-point rectangle
+rule, `1` for the right-point rectangle rule, and `2` for the trapezoidal rule
+using the average of the adjacent samples. The default is `2`.
+
+`integral` should only be used with gauges, most likely representing a rate in
+units per second.
+
+For example, to calculate the total nodes cost accumulated the last 7 days,
+given its hourly cost:
+
+```
+integral(hourly_cost{job="nodes"}[7d]) / 3600
+```
 
 ## `irate()`
 

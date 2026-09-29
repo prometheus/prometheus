@@ -33,6 +33,7 @@ import { targetPoolDisplayLimit } from "./ServiceDiscoveryPage";
 import { LabelBadges } from "../../components/LabelBadges";
 import ErrorBoundary from "../../components/ErrorBoundary";
 import RelabelSteps from "./RelabelSteps";
+import ScrapePoolConfig from "../../components/ScrapePoolConfig";
 
 type TargetLabels = {
   discoveredLabels: Labels;
@@ -171,6 +172,9 @@ const ScrapePoolList: FC<ScrapePoolListProp> = ({
     labels: Labels;
     pool: string;
   } | null>(null);
+  const [expandedConfigs, setExpandedConfigs] = useState<
+    Record<string, boolean>
+  >({});
 
   // Based on the selected pool (if any), load the list of targets.
   const {
@@ -248,12 +252,31 @@ const ScrapePoolList: FC<ScrapePoolListProp> = ({
       >
         {shownPoolNames.map((poolName) => {
           const pool = allPools[poolName];
+          const configId = `scrape-config-${poolName}`;
+          const configExpanded = Boolean(expandedConfigs[poolName]);
           return (
             <Accordion.Item key={poolName} value={poolName}>
               <Accordion.Control>
                 <Group wrap="nowrap" justify="space-between" mr="lg">
                   <Text>{poolName}</Text>
                   <Group gap="xs">
+                    <Anchor
+                      component="button"
+                      type="button"
+                      size="xs"
+                      onClick={(event) => {
+                        event.preventDefault();
+                        event.stopPropagation();
+                        setExpandedConfigs((previous) => ({
+                          ...previous,
+                          [poolName]: !previous[poolName],
+                        }));
+                      }}
+                      aria-expanded={configExpanded}
+                      aria-controls={configId}
+                    >
+                      {configExpanded ? "Hide config" : "Show config"}
+                    </Anchor>
                     <Text c="gray.6">
                       {pool.active} / {pool.serverTotal}
                     </Text>
@@ -282,6 +305,11 @@ const ScrapePoolList: FC<ScrapePoolListProp> = ({
                 </Group>
               </Accordion.Control>
               <Accordion.Panel>
+                <ScrapePoolConfig
+                  pool={poolName}
+                  expanded={configExpanded}
+                  id={configId}
+                />
                 {pool.total !== pool.serverTotal && (
                   <Alert
                     title="Only showing partial dropped targets"

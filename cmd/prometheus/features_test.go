@@ -24,6 +24,7 @@ import (
 	"path/filepath"
 	"testing"
 
+	"github.com/prometheus/common/promslog"
 	"github.com/stretchr/testify/require"
 
 	"github.com/prometheus/prometheus/util/testutil"
@@ -113,4 +114,19 @@ func TestFeaturesAPI(t *testing.T) {
 
 	// Compare the features data with the golden file.
 	require.Equal(t, expectedFeatures, apiResponse.Data, "Features mismatch. Run 'make update-features-testdata' to update the golden file.")
+}
+
+// TestSetFeatureListOptions_MetadataWALRecords is a regression test: enabling
+// metadata-wal-records used to only flip the scrape and web AppendMetadata
+// options, never tsdb.EnableMetadataWALRecords. AppenderV2, which the scrape
+// manager prefers whenever the storage implements it, gates on that TSDB
+// option, so metadata was silently never recorded via the default scrape
+// path regardless of the flag.
+func TestSetFeatureListOptions_MetadataWALRecords(t *testing.T) {
+	c := &flagConfig{featureList: []string{"metadata-wal-records"}}
+	require.NoError(t, c.setFeatureListOptions(promslog.NewNopLogger()))
+
+	require.True(t, c.scrape.AppendMetadata)
+	require.True(t, c.web.AppendMetadata)
+	require.True(t, c.tsdb.EnableMetadataWALRecords)
 }
