@@ -395,9 +395,8 @@ func (h *writeHandler) appendV2(app *remoteWriteAppenderV2, req *writev2.Request
 				st = s.StartTimestamp
 			}
 
-			r, err := app.Append(ref, ls, st, s.GetTimestamp(), s.GetValue(), nil, nil, opts)
+			ref, err = app.Append(ref, ls, st, s.GetTimestamp(), s.GetValue(), nil, nil, opts)
 			if err == nil {
-				ref = r
 				rs.Samples++
 				continue
 			}
@@ -420,14 +419,12 @@ func (h *writeHandler) appendV2(app *remoteWriteAppenderV2, req *writev2.Request
 			if h.ingestSTZeroSample && hp.StartTimestamp != 0 && hp.Timestamp != 0 {
 				st = hp.StartTimestamp
 			}
-			var r storage.SeriesRef
 			if hp.IsFloatHistogram() {
-				r, err = app.Append(ref, ls, st, hp.Timestamp, 0, nil, hp.ToFloatHistogram(), opts)
+				ref, err = app.Append(ref, ls, st, hp.Timestamp, 0, nil, hp.ToFloatHistogram(), opts)
 			} else {
-				r, err = app.Append(ref, ls, st, hp.Timestamp, 0, hp.ToIntHistogram(), nil, opts)
+				ref, err = app.Append(ref, ls, st, hp.Timestamp, 0, hp.ToIntHistogram(), nil, opts)
 			}
 			if err == nil {
-				ref = r
 				rs.Histograms++
 				continue
 			}
