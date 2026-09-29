@@ -16,6 +16,7 @@ interface Settings {
   showAnnotations: boolean;
   showQueryWarnings: boolean;
   showQueryInfoNotices: boolean;
+  showQueryCost: boolean;
   ruleGroupsPerPage: number;
   alertGroupsPerPage: number;
 }
@@ -36,6 +37,7 @@ export const localStorageKeyShowAnnotations = "settings.showAnnotations";
 export const localStorageKeyShowQueryWarnings = "settings.showQueryWarnings";
 export const localStorageKeyShowQueryInfoNotices =
   "settings.showQueryInfoNotices";
+export const localStorageKeyShowQueryCost = "settings.showQueryCost";
 export const localStorageKeyRuleGroupsPerPage = "settings.ruleGroupsPerPage";
 export const localStorageKeyAlertGroupsPerPage = "settings.alertGroupsPerPage";
 
@@ -111,6 +113,10 @@ export const initialState: Settings = {
   showQueryInfoNotices: initializeFromLocalStorage<boolean>(
     localStorageKeyShowQueryInfoNotices,
     true
+  ),
+  showQueryCost: initializeFromLocalStorage<boolean>(
+    localStorageKeyShowQueryCost,
+    false
   ),
   ruleGroupsPerPage: initializeFromLocalStorage<number>(
     localStorageKeyRuleGroupsPerPage,

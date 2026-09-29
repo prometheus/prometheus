@@ -93,8 +93,9 @@ const QueryPanel: FC<PanelProps> = ({ idx, metricNames }) => {
   return (
     <Stack gap="lg">
       <ExpressionInput
-        // TODO: Maybe just pass the panelIdx and retriggerIdx to the ExpressionInput
+        // TODO: Maybe just pass the retriggerIdx to the ExpressionInput
         // so it can manage its own state?
+        panelIdx={idx}
         initialExpr={panel.expr}
         metricNames={metricNames}
         executeQuery={(expr: string) => {

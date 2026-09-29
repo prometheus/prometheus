@@ -63,6 +63,7 @@ import {
   IconBinaryTree,
   IconCopy,
   IconDotsVertical,
+  IconGauge,
   IconSearch,
   IconTerminal,
   IconTrash,
@@ -75,10 +76,12 @@ import ErrorBoundary from "../../components/ErrorBoundary";
 import { useAppSelector } from "../../state/hooks";
 import { inputIconStyle, menuIconStyle } from "../../styles";
 import { HistoryCompleteStrategy } from "./HistoryCompleteStrategy";
+import QueryCostModal from "./QueryCostModal";
 
 const promqlExtension = new PromQLExtension();
 
 interface ExpressionInputProps {
+  panelIdx: number;
   initialExpr: string;
   metricNames: string[];
   executeQuery: (expr: string) => void;
@@ -89,6 +92,7 @@ interface ExpressionInputProps {
 }
 
 const ExpressionInput: FC<ExpressionInputProps> = ({
+  panelIdx,
   initialExpr,
   metricNames,
   executeQuery,
@@ -163,6 +167,7 @@ const ExpressionInput: FC<ExpressionInputProps> = ({
   const cmRef = useRef<ReactCodeMirrorRef>(null);
 
   const [showMetricsExplorer, setShowMetricsExplorer] = useState(false);
+  const [showQueryCost, setShowQueryCost] = useState(false);
 
   // (Re)initialize editor based on settings / setting changes.
   useEffect(() => {
@@ -225,6 +230,13 @@ const ExpressionInput: FC<ExpressionInputProps> = ({
                 }
               >
                 Format expression
+              </Menu.Item>
+              <Menu.Item
+                leftSection={<IconGauge style={menuIconStyle} />}
+                onClick={() => setShowQueryCost(true)}
+                disabled={expr === ""}
+              >
+                Estimate query cost
               </Menu.Item>
               <Menu.Item
                 leftSection={<IconBinaryTree style={menuIconStyle} />}
@@ -318,6 +330,12 @@ const ExpressionInput: FC<ExpressionInputProps> = ({
       >
         Execute
       </Button>
+      <QueryCostModal
+        panelIdx={panelIdx}
+        expr={expr}
+        opened={showQueryCost}
+        onClose={() => setShowQueryCost(false)}
+      />
       <Modal
         size="95%"
         opened={showMetricsExplorer}

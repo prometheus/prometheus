@@ -65,6 +65,7 @@ startAppListening({
         case "showAnnotations":
         case "showQueryWarnings":
         case "showQueryInfoNotices":
+        case "showQueryCost":
         case "alertGroupsPerPage":
         case "ruleGroupsPerPage":
           return persistToLocalStorage(`settings.${key}`, value);
