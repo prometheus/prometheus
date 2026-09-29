@@ -322,7 +322,7 @@ func (f *fanoutAppenderV2) Append(ref SeriesRef, l labels.Labels, st, t int64, v
 var _ ExemplarAppenderV2 = &fanoutAppenderV2{}
 
 // AppendExemplars implements ExemplarAppenderV2.
-// It dispatches the exemplars to the primary that is required to and all  
+// It dispatches the exemplars to the primary that is required to and all
 // secondaries that optionally implement ExemplarAppenderV2.
 func (f *fanoutAppenderV2) AppendExemplars(ref SeriesRef, l labels.Labels, exemplars []exemplar.Exemplar) (SeriesRef, error) {
 	pa, ok := f.primary.(ExemplarAppenderV2)
