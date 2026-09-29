@@ -64,6 +64,9 @@ const (
 	HistogramSamplesV2 Type = 12
 	// FloatHistogramSamplesV2 is an enhanced float histogram record that supports start time per sample.
 	FloatHistogramSamplesV2 Type = 13
+	// MinValidTime is used to match checkpoint records that carry the mint a WAL truncation
+	// used. It is only ever written into checkpoints, never into a live WAL segment.
+	MinValidTime Type = 14
 )
 
 func (rt Type) String() string {
@@ -94,6 +97,8 @@ func (rt Type) String() string {
 		return "mmapmarkers"
 	case Metadata:
 		return "metadata"
+	case MinValidTime:
+		return "min_valid_time"
 	default:
 		return "unknown"
 	}
@@ -234,7 +239,7 @@ func (*Decoder) Type(rec []byte) Type {
 	switch t := Type(rec[0]); t {
 	case Series, Samples, SamplesV2, Tombstones, Exemplars, MmapMarkers, Metadata,
 		HistogramSamples, FloatHistogramSamples, CustomBucketsHistogramSamples, CustomBucketsFloatHistogramSamples,
-		HistogramSamplesV2, FloatHistogramSamplesV2:
+		HistogramSamplesV2, FloatHistogramSamplesV2, MinValidTime:
 		return t
 	}
 	return Unknown
@@ -263,6 +268,23 @@ func (d *Decoder) Series(rec []byte, series []RefSeries) ([]RefSeries, error) {
 		return nil, fmt.Errorf("unexpected %d bytes left in entry", len(dec.B))
 	}
 	return series, nil
+}
+
+// MinValidTime decodes a min valid time record.
+func (*Decoder) MinValidTime(rec []byte) (int64, error) {
+	dec := encoding.Decbuf{B: rec}
+
+	if Type(dec.Byte()) != MinValidTime {
+		return 0, errors.New("invalid record type")
+	}
+	mint := dec.Be64int64()
+	if dec.Err() != nil {
+		return 0, dec.Err()
+	}
+	if len(dec.B) > 0 {
+		return 0, fmt.Errorf("unexpected %d bytes left in entry", len(dec.B))
+	}
+	return mint, nil
 }
 
 // Metadata appends metadata in rec to the given slice.
@@ -889,6 +911,15 @@ func (*Encoder) Series(series []RefSeries, b []byte) []byte {
 		buf.PutBE64(uint64(s.Ref))
 		EncodeLabels(&buf, s.Labels)
 	}
+	return buf.Get()
+}
+
+// MinValidTime appends the encoded min valid time record to b and returns the resulting
+// slice. It is only ever written into checkpoints, never into a live WAL segment.
+func (*Encoder) MinValidTime(mint int64, b []byte) []byte {
+	buf := encoding.Encbuf{B: b}
+	buf.PutByte(byte(MinValidTime))
+	buf.PutBE64int64(mint)
 	return buf.Get()
 }
 

@@ -1206,6 +1206,21 @@ func open(dir string, l *slog.Logger, r prometheus.Registerer, opts *Options, rn
 	if ok {
 		minValidTime = inOrderMaxTime
 	}
+	// inOrderMaxTime alone can come back lower than where the WAL was actually truncated: a
+	// block produced by CompactSelectedSeries or CompactStaleHead carries the
+	// FromSelectedSeries or FromStaleSeries hint and is excluded from that search above, and a
+	// truncation whose range had nothing left to write never produces a block at all. Fall
+	// back to the truncation mint persisted by truncateWAL, and use whichever of the two is
+	// higher, so minValidTime never regresses below a point the WAL was already truncated to.
+	// wal is nil when WAL writes are disabled (WALSegmentSize < 0), in which case truncateWAL
+	// never runs and never had anything to persist either.
+	if wal != nil {
+		if storedMinValidTime, ok, err := wlog.ReadMinValidTime(wal.Dir()); err != nil {
+			db.logger.Warn("Failed to read persisted min valid time, falling back to the value computed from blocks", "err", err)
+		} else if ok && storedMinValidTime > minValidTime {
+			minValidTime = storedMinValidTime
+		}
+	}
 
 	if initErr := db.head.Init(minValidTime); initErr != nil {
 		db.head.metrics.walCorruptionsTotal.Inc()

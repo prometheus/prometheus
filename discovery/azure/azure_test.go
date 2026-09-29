@@ -188,6 +188,82 @@ func TestVMToLabelSet(t *testing.T) {
 	require.Len(t, labelSet, 11)
 }
 
+func TestVMToLabelSetWithNilTagValue(t *testing.T) {
+	// A tag with a JSON null value, as returned by the ARM API, unmarshals to a
+	// nil pointer that is still present in the Tags map.
+	id := "/subscriptions/00000000-0000-0000-0000-000000000000/test"
+	name := "name"
+	size := "size"
+	vmSize := armcompute.VirtualMachineSizeTypes(size)
+	osType := armcompute.OperatingSystemTypesLinux
+	vmType := "type"
+	location := "westeurope"
+	computerName := "computer_name"
+	ipAddress := "10.20.30.40"
+	primary := true
+	networkProfile := armcompute.NetworkProfile{
+		NetworkInterfaces: []*armcompute.NetworkInterfaceReference{
+			{
+				ID:         to.Ptr(defaultMockNetworkID),
+				Properties: &armcompute.NetworkInterfaceReferenceProperties{Primary: &primary},
+			},
+		},
+	}
+	properties := &armcompute.VirtualMachineProperties{
+		OSProfile: &armcompute.OSProfile{
+			ComputerName: &computerName,
+		},
+		StorageProfile: &armcompute.StorageProfile{
+			OSDisk: &armcompute.OSDisk{
+				OSType: &osType,
+			},
+		},
+		NetworkProfile: &networkProfile,
+		HardwareProfile: &armcompute.HardwareProfile{
+			VMSize: &vmSize,
+		},
+	}
+
+	testVM := armcompute.VirtualMachine{
+		ID:       &id,
+		Name:     &name,
+		Type:     &vmType,
+		Location: &location,
+		Tags: map[string]*string{
+			"CostCenter": nil,
+			"env":        to.Ptr("prod"),
+		},
+		Properties: properties,
+	}
+
+	cfg := DefaultSDConfig
+	d := &Discovery{
+		cfg:    &cfg,
+		logger: promslog.NewNopLogger(),
+		cache:  cache.New(cache.AsLRU[string, *armnetwork.Interface](lru.WithCapacity(5))),
+	}
+	network := armnetwork.Interface{
+		Name: to.Ptr(defaultMockNetworkID),
+		ID:   to.Ptr(defaultMockNetworkID),
+		Properties: &armnetwork.InterfacePropertiesFormat{
+			Primary: &primary,
+			IPConfigurations: []*armnetwork.InterfaceIPConfiguration{
+				{Properties: &armnetwork.InterfaceIPConfigurationPropertiesFormat{
+					PrivateIPAddress: &ipAddress,
+				}},
+			},
+		},
+	}
+
+	client := createMockAzureClient(t, nil, nil, nil, network, nil)
+
+	labelSet, err := d.vmToLabelSet(context.Background(), client, mapFromVM(testVM))
+	require.NoError(t, err)
+	// The tag with a value is kept, the one with a nil value is skipped.
+	require.Equal(t, model.LabelValue("prod"), labelSet[azureLabelMachineTag+"env"])
+	require.NotContains(t, labelSet, model.LabelName(azureLabelMachineTag+"CostCenter"))
+}
+
 func TestMapFromVMWithEmptyOSType(t *testing.T) {
 	id := "test"
 	name := "name"

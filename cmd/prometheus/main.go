@@ -921,7 +921,7 @@ func main() {
 	klog.SetOutputBySeverity("INFO", klogv1Writer{})
 	// Avoid duplicate API deprecation warnings (e.g., "v1 Endpoints is deprecated in v1.33+...")
 	// that can pollute the logs.
-	rest.SetDefaultWarningHandlerWithContext(logging.NewDedupDeprecationWarningLogger())
+	rest.SetDefaultWarningHandlerWithContext(newDedupDeprecationWarningLogger())
 
 	modeAppName := "Prometheus Server"
 	mode := "server"
@@ -1046,7 +1046,7 @@ func main() {
 
 		ruleManager = rules.NewManager(&rules.ManagerOptions{
 			NameValidationScheme:   cfgFile.GlobalConfig.MetricNameValidationScheme,
-			Appendable:             fanoutStorage,
+			AppendableV2:           fanoutStorage,
 			Queryable:              localStorage,
 			QueryFunc:              rules.EngineQueryFunc(queryEngine, fanoutStorage),
 			NotifyFunc:             rules.SendAlerts(notifierManager, cfg.web.ExternalURL.String()),

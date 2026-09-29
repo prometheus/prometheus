@@ -3215,6 +3215,22 @@ func TestQueryLogger_error(t *testing.T) {
 }
 
 func TestPreprocessExpr(t *testing.T) {
+	t.Run("preserve subquery duration expressions", func(t *testing.T) {
+		for _, input := range []string{
+			"foo[1h / 2:1h / 2]",
+			"foo[1h / 2:30m]",
+			"foo[1h / 2:]",
+		} {
+			t.Run(input, func(t *testing.T) {
+				expr, err := testParser.ParseExpr(input)
+				require.NoError(t, err)
+				expr, err = promql.PreprocessExpr(expr, time.Unix(1000, 0), time.Unix(9999, 0), time.Minute)
+				require.NoError(t, err)
+				require.Equal(t, input, expr.String())
+			})
+		}
+	})
+
 	t.Run("wrap step-invariant expressions", func(t *testing.T) {
 		startTime := time.Unix(1000, 0)
 		endTime := time.Unix(9999, 0)
