@@ -848,12 +848,13 @@ func (p *parser) checkAST(node Node) (typ ValueType) {
 			if vs, ok := n.Args[1].(*VectorSelector); ok && vs.Name != "" {
 				p.addParseErrf(n.Args[1].PositionRange(), "expected label selectors only, got vector selector instead")
 			} else if ok {
-				// The matchers may all match the empty string, but there must be at
-				// least one. Without the argument, info adds all data labels.
+				// Omitting the data label selector adds all data labels, so require at
+				// least one matcher rather than accepting the equivalent {}.
 				if len(vs.LabelMatchers) == 0 {
 					p.addParseErrf(vs.PositionRange(), "data label selector must contain at least one label matcher")
 				}
-				// Set Vector Selector flag to bypass empty matcher check
+				// Unlike in a regular vector selector, the matchers may all match the
+				// empty string, e.g. {data=~".*"}.
 				vs.BypassEmptyMatcherCheck = true
 			} else {
 				p.addParseErrf(n.Args[1].PositionRange(), "expected label selectors only")

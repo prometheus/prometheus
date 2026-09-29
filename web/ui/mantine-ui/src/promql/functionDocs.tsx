@@ -1749,8 +1749,8 @@ const funcDocs: Record<string, React.ReactNode> = {
         <code>
           {"{"} ... {"}"}
         </code>
-        ) and may only contain label matchers, at least one. To add all data labels, omit the argument instead of
-        writing{" "}
+        ), may only contain label matchers, and must contain at least one. To add all data labels, omit the argument
+        instead of writing{" "}
         <code>
           {"{"}
           {"}"}
