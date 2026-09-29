@@ -175,10 +175,17 @@ type PromParser struct {
 // NewPromParser returns a new parser of the byte slice.
 func NewPromParser(b []byte, st *labels.SymbolTable, enableTypeAndUnitLabels bool) Parser {
 	return &PromParser{
-		l:                       &promlexer{b: append(b, '\n')},
+		l:                       &promlexer{b: ensureEndsWithNewline(b)},
 		builder:                 labels.NewScratchBuilderWithSymbolTable(st, 16),
 		enableTypeAndUnitLabels: enableTypeAndUnitLabels,
 	}
+}
+
+func ensureEndsWithNewline(b []byte) []byte {
+	if len(b) > 0 && b[len(b)-1] == '\n' {
+		return b
+	}
+	return append(b, '\n')
 }
 
 // Series returns the bytes of the series, the timestamp if set, and the value
