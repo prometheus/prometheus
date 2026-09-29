@@ -318,8 +318,9 @@ type DB struct {
 	blocksToDelete BlocksToDeleteFunc
 
 	defaultDeletionPolicy bool
-	// compactionSize is only set while cmtx is held.
-	compactionSize int64
+	defaultCompactor      bool
+	// compactionDeletions is only set while cmtx is held.
+	compactionDeletions map[ulid.ULID]struct{}
 
 	// mtx must be held when modifying the general block layout or lastGarbageCollectedMmapRef.
 	mtx    sync.RWMutex
@@ -1035,16 +1036,17 @@ func open(dir string, l *slog.Logger, r prometheus.Registerer, opts *Options, rn
 	var wal, wbl *wlog.WL
 
 	db := &DB{
-		dir:            dir,
-		logger:         l,
-		opts:           opts,
-		compactc:       make(chan struct{}, 1),
-		donec:          make(chan struct{}),
-		stopc:          make(chan struct{}),
-		autoCompact:    true,
-		chunkPool:      chunkenc.NewPool(),
-		blocksToDelete: opts.BlocksToDelete,
-		registerer:     r,
+		dir:              dir,
+		logger:           l,
+		opts:             opts,
+		compactc:         make(chan struct{}, 1),
+		donec:            make(chan struct{}),
+		stopc:            make(chan struct{}),
+		autoCompact:      true,
+		chunkPool:        chunkenc.NewPool(),
+		blocksToDelete:   opts.BlocksToDelete,
+		registerer:       r,
+		defaultCompactor: opts.NewCompactorFunc == nil,
 	}
 	db.defaultDeletionPolicy = db.blocksToDelete == nil
 	defer func() {
@@ -2027,14 +2029,23 @@ func (db *DB) compactBlocks() (err error) {
 			break
 		}
 
-		deleted, err := db.reserveSpaceForCompaction(plan)
+		select {
+		case <-db.stopc:
+			return nil
+		default:
+		}
+
+		reservation, err := db.reserveSpaceForCompaction(plan)
 		if err != nil {
 			return fmt.Errorf("reserve space for compaction: %w", err)
 		}
-		if deleted {
+		switch reservation {
+		case compactionReservationReplan:
 			// Retention may have removed one of the planned blocks. Always plan
 			// again after changing the block layout.
 			continue
+		case compactionReservationBlocked:
+			return nil
 		}
 
 		select {
@@ -2062,18 +2073,27 @@ func (db *DB) compactBlocks() (err error) {
 	return nil
 }
 
+type compactionReservationResult uint8
+
+const (
+	compactionReservationReady compactionReservationResult = iota
+	compactionReservationReplan
+	compactionReservationBlocked
+)
+
 // reserveSpaceForCompaction applies size retention before compaction so the
 // replacement block can be written without exceeding the configured limit.
-func (db *DB) reserveSpaceForCompaction(plan []string) (bool, error) {
-	if !db.defaultDeletionPolicy {
-		return false, nil
+func (db *DB) reserveSpaceForCompaction(plan []string) (compactionReservationResult, error) {
+	if !db.defaultDeletionPolicy || !db.defaultCompactor {
+		return compactionReservationReady, nil
 	}
 	maxBytes, maxPercentage := db.getRetentionSettings()
 	if maxBytes <= 0 && maxPercentage <= 0 {
-		return false, nil
+		return compactionReservationReady, nil
 	}
 
 	planned := make(map[string]struct{}, len(plan))
+	plannedULIDs := make(map[ulid.ULID]struct{}, len(plan))
 	for _, dir := range plan {
 		planned[filepath.Clean(dir)] = struct{}{}
 	}
@@ -2085,14 +2105,15 @@ func (db *DB) reserveSpaceForCompaction(plan []string) (bool, error) {
 			continue
 		}
 		plannedSize += block.Size()
+		plannedULIDs[block.Meta().ULID] = struct{}{}
 		delete(planned, filepath.Clean(block.Dir()))
 	}
 	if len(planned) > 0 {
 		// A custom compactor may plan directories that are not loaded blocks.
-		return false, nil
+		return compactionReservationReady, nil
 	}
 	if plannedSize == 0 {
-		return false, nil
+		return compactionReservationReady, nil
 	}
 
 	// Size retention expects blocks ordered newest to oldest.
@@ -2108,15 +2129,43 @@ func (db *DB) reserveSpaceForCompaction(plan []string) (bool, error) {
 	})
 	deletableULIDs := beyondSizeRetention(db, blocks, plannedSize)
 	if len(deletableULIDs) == 0 {
-		return false, nil
+		return compactionReservationReady, nil
 	}
 
-	db.compactionSize = plannedSize
-	defer func() { db.compactionSize = 0 }()
-	if err := db.reloadBlocks(); err != nil {
-		return false, err
+	deletions := make(map[ulid.ULID]struct{}, len(deletableULIDs))
+	planInvalidated := false
+	for _, block := range slices.Backward(blocks) {
+		id := block.Meta().ULID
+		if _, deletable := deletableULIDs[id]; !deletable {
+			continue
+		}
+		if _, planned := plannedULIDs[id]; planned {
+			// Preserve oldest-first retention. If older blocks can be removed,
+			// delete those and replan before considering a source block.
+			if len(deletions) == 0 {
+				deletions[id] = struct{}{}
+				planInvalidated = true
+			}
+			break
+		}
+		deletions[id] = struct{}{}
 	}
-	return true, nil
+
+	select {
+	case <-db.stopc:
+		return compactionReservationBlocked, nil
+	default:
+	}
+
+	db.compactionDeletions = deletions
+	defer func() { db.compactionDeletions = nil }()
+	if err := db.reloadBlocks(); err != nil {
+		return compactionReservationReady, err
+	}
+	if planInvalidated {
+		return compactionReservationBlocked, nil
+	}
+	return compactionReservationReplan, nil
 }
 
 // getBlock iterates a given block range to find a block by a given id.
@@ -2321,9 +2370,12 @@ func deletableBlocks(db *DB, blocks []*Block) map[ulid.ULID]struct{} {
 		deletable[ulid] = struct{}{}
 	}
 
-	sizeDeletable := beyondSizeRetention(db, blocks, db.compactionSize)
-	if len(sizeDeletable) > 0 {
+	sizeDeletable := beyondSizeRetention(db, blocks, 0)
+	if len(sizeDeletable) > 0 || len(db.compactionDeletions) > 0 {
 		db.metrics.sizeRetentionCount.Inc()
+	}
+	for ulid := range db.compactionDeletions {
+		deletable[ulid] = struct{}{}
 	}
 	for ulid := range sizeDeletable {
 		deletable[ulid] = struct{}{}

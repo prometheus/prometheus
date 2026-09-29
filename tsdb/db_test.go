@@ -9447,11 +9447,21 @@ func (c *mockCompactorFn) Write(string, BlockReader, int64, int64, *BlockMeta) (
 type observingCompactor struct {
 	Compactor
 	afterCompact func()
+	plan         []string
+	done         bool
+}
+
+func (c *observingCompactor) Plan(string) ([]string, error) {
+	if c.done {
+		return nil, nil
+	}
+	return c.plan, nil
 }
 
 func (c *observingCompactor) Compact(dest string, dirs []string, open []*Block) ([]ulid.ULID, error) {
 	ulids, err := c.Compactor.Compact(dest, dirs, open)
 	if err == nil {
+		c.done = true
 		c.afterCompact()
 	}
 	return ulids, err
@@ -9499,10 +9509,14 @@ func TestCompactBlocksReservesSizeRetentionForCompaction(t *testing.T) {
 				compactFn: func() ([]ulid.ULID, error) {
 					compactCalled = true
 					retainedSize := db.Head().Size()
+					retainedBlocks := make(map[ulid.ULID]struct{})
 					for _, block := range db.Blocks() {
 						retainedSize += block.Size()
+						retainedBlocks[block.Meta().ULID] = struct{}{}
 					}
 					require.LessOrEqual(t, retainedSize+plannedSize, maxBytes)
+					require.Contains(t, retainedBlocks, blocks[6].Meta().ULID)
+					require.Contains(t, retainedBlocks, blocks[7].Meta().ULID)
 					return nil, nil
 				},
 				writeFn: func() ([]ulid.ULID, error) { return nil, nil },
@@ -9515,27 +9529,87 @@ func TestCompactBlocksReservesSizeRetentionForCompaction(t *testing.T) {
 	}
 }
 
-func TestCompactBlocksDoesNotApplySizeRetentionWithCustomDeletionPolicy(t *testing.T) {
-	opts := DefaultOptions()
-	opts.BlocksToDelete = func([]*Block) map[ulid.ULID]struct{} { return nil }
-	db := newTestDB(t, withOpts(opts), withRngs(100))
+func TestCompactBlocksDoesNotApplySizeRetentionWithCustomHooks(t *testing.T) {
+	testCases := map[string]struct {
+		configureOptions func(*Options)
+		configureDB      func(*DB)
+	}{
+		"deletion policy": {
+			configureOptions: func(opts *Options) {
+				opts.BlocksToDelete = func([]*Block) map[ulid.ULID]struct{} { return nil }
+			},
+		},
+		"compactor": {
+			configureDB: func(db *DB) {
+				db.defaultCompactor = false
+			},
+		},
+	}
 
-	for i := range 2 {
+	for name, testCase := range testCases {
+		t.Run(name, func(t *testing.T) {
+			opts := DefaultOptions()
+			if testCase.configureOptions != nil {
+				testCase.configureOptions(opts)
+			}
+			db := newTestDB(t, withOpts(opts), withRngs(100))
+			if testCase.configureDB != nil {
+				testCase.configureDB(db)
+			}
+
+			for i := range 2 {
+				mint := int64(i * 100)
+				createBlock(t, db.Dir(), genSeries(10, 10, mint, mint+100))
+			}
+			require.NoError(t, db.reloadBlocks())
+			blocks := db.Blocks()
+			require.Len(t, blocks, 2)
+			db.opts.MaxBytes = 1
+
+			compactCalled := false
+			compactErr := errors.New("stop after reservation check")
+			db.compactor = &mockCompactorFn{
+				planFn: func() ([]string, error) {
+					if compactCalled {
+						return nil, nil
+					}
+					return []string{blocks[0].Dir(), blocks[1].Dir()}, nil
+				},
+				compactFn: func() ([]ulid.ULID, error) {
+					compactCalled = true
+					return nil, compactErr
+				},
+				writeFn: func() ([]ulid.ULID, error) { return nil, nil },
+			}
+
+			require.ErrorIs(t, db.compactBlocks(), compactErr)
+			require.True(t, compactCalled)
+			require.Len(t, db.Blocks(), len(blocks))
+		})
+	}
+}
+
+func TestCompactBlocksStopsReservationAfterDeletingPlannedBlock(t *testing.T) {
+	db := newTestDB(t, withRngs(100))
+
+	for i := range 4 {
 		mint := int64(i * 100)
 		createBlock(t, db.Dir(), genSeries(10, 10, mint, mint+100))
 	}
 	require.NoError(t, db.reloadBlocks())
 	blocks := db.Blocks()
-	require.Len(t, blocks, 2)
-	db.opts.MaxBytes = 1
+	require.Len(t, blocks, 4)
+
+	maxBytes := db.Head().Size()
+	for _, block := range blocks {
+		maxBytes += block.Size()
+	}
+	db.opts.MaxBytes = maxBytes
 
 	compactCalled := false
 	db.compactor = &mockCompactorFn{
 		planFn: func() ([]string, error) {
-			if compactCalled {
-				return nil, nil
-			}
-			return []string{blocks[0].Dir(), blocks[1].Dir()}, nil
+			return []string{blocks[0].Dir(), blocks[1].Dir(), blocks[2].Dir()}, nil
 		},
 		compactFn: func() ([]ulid.ULID, error) {
 			compactCalled = true
@@ -9545,7 +9619,49 @@ func TestCompactBlocksDoesNotApplySizeRetentionWithCustomDeletionPolicy(t *testi
 	}
 
 	require.NoError(t, db.compactBlocks())
-	require.True(t, compactCalled)
+	require.False(t, compactCalled)
+	require.Len(t, db.Blocks(), len(blocks)-1)
+}
+
+func TestCompactBlocksStopsBeforeSizeRetentionReservation(t *testing.T) {
+	db := newTestDB(t, withRngs(100))
+
+	for i := range 2 {
+		mint := int64(i * 100)
+		createBlock(t, db.Dir(), genSeries(10, 10, mint, mint+100))
+	}
+	require.NoError(t, db.reloadBlocks())
+	blocks := db.Blocks()
+	require.Len(t, blocks, 2)
+
+	maxBytes := db.Head().Size()
+	for _, block := range blocks {
+		maxBytes += block.Size()
+	}
+	db.opts.MaxBytes = maxBytes
+
+	compactCalled := false
+	db.compactor = &mockCompactorFn{
+		planFn: func() ([]string, error) {
+			close(db.stopc)
+			<-db.donec
+			return []string{blocks[0].Dir(), blocks[1].Dir()}, nil
+		},
+		compactFn: func() ([]ulid.ULID, error) {
+			compactCalled = true
+			return nil, nil
+		},
+		writeFn: func() ([]ulid.ULID, error) { return nil, nil },
+	}
+
+	t.Cleanup(func() {
+		db.stopc = make(chan struct{})
+		db.donec = make(chan struct{})
+		go db.run(context.Background())
+	})
+
+	require.NoError(t, db.compactBlocks())
+	require.False(t, compactCalled)
 	require.Len(t, db.Blocks(), len(blocks))
 }
 
@@ -9557,6 +9673,8 @@ func TestCompactBlocksPeakDiskUsageStaysWithinSizeRetention(t *testing.T) {
 		createBlock(t, db.Dir(), genSeries(100, 10, mint, mint+100))
 	}
 	require.NoError(t, db.reloadBlocks())
+	blocks := db.Blocks()
+	require.Len(t, blocks, 12)
 
 	maxBytes, err := fileutil.DirSize(db.Dir())
 	require.NoError(t, err)
@@ -9565,6 +9683,11 @@ func TestCompactBlocksPeakDiskUsageStaysWithinSizeRetention(t *testing.T) {
 	compactions := 0
 	db.compactor = &observingCompactor{
 		Compactor: db.compactor,
+		plan: []string{
+			blocks[len(blocks)-3].Dir(),
+			blocks[len(blocks)-2].Dir(),
+			blocks[len(blocks)-1].Dir(),
+		},
 		afterCompact: func() {
 			compactions++
 			size, err := fileutil.DirSize(db.Dir())
