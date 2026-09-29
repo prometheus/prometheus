@@ -1,7 +1,7 @@
 name: CI
 
 on:
-  pull_request:
+  pull_request_target:
   push:
     branches: [main, 'release-*']
     tags: ['v*']
@@ -11,11 +11,15 @@ permissions:
   contents: read
 
 jobs:
-<<<<<<< Updated upstream
   pre-pull-image:
     name: Pre-pull Docker images
     runs-on: monkci-ubuntu-24.04-4
-=======
+    steps:
+      - name: Pull golang-builder images
+        run: |
+          docker pull quay.io/prometheus/golang-builder:1.26-base
+          docker pull quay.io/prometheus/golang-builder:1.25-base
+
   test_go:
     name: Go tests
     runs-on: ubuntu-latest
@@ -36,15 +40,13 @@ jobs:
       - run: go test ./tsdb/ -test.tsdb-isolation=false
       - run: make -C documentation/examples/remote_storage
       - run: make -C documentation/examples
->>>>>>> Stashed changes
 
+  test_go_more:
+    name: More Go tests
+    runs-on: ubuntu-latest
+    container:
+      image: quay.io/prometheus/golang-builder:1.27-base
     steps:
-<<<<<<< Updated upstream
-      - name: Pull golang-builder images
-        run: |
-          docker pull quay.io/prometheus/golang-builder:1.26-base
-          docker pull quay.io/prometheus/golang-builder:1.25-base
-=======
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           ref: ${{ github.event.pull_request.head.sha || github.sha }}
@@ -165,7 +167,6 @@ jobs:
       - name: Failing or cancelled tests
         if: ${{ contains(needs.*.result, 'failure') || contains(needs.*.result, 'cancelled') }}
         run: exit 1
->>>>>>> Stashed changes
 
   test_ui:
     name: UI tests
@@ -219,9 +220,6 @@ jobs:
         continue-on-error: true
         with:
           directory: .tarballs
-<<<<<<< Updated upstream
-=======
-
   test_windows:
     name: Go tests on Windows
     runs-on: windows-latest
@@ -290,7 +288,7 @@ jobs:
       &&
       !(github.event_name == 'push' && startsWith(github.ref, 'refs/tags/v3.'))
       &&
-      !(github.event_name == 'pull_request' && startsWith(github.event.pull_request.base.ref, 'release-'))
+      !(github.event_name == 'pull_request_target' && startsWith(github.event.pull_request.base.ref, 'release-'))
       &&
       !(github.event_name == 'push' && github.event.ref == 'refs/heads/main')
     strategy:
@@ -325,7 +323,7 @@ jobs:
       ||
       (github.event_name == 'push' && startsWith(github.ref, 'refs/tags/v3.'))
       ||
-      (github.event_name == 'pull_request' && startsWith(github.event.pull_request.base.ref, 'release-'))
+      (github.event_name == 'pull_request_target' && startsWith(github.event.pull_request.base.ref, 'release-'))
       ||
       (github.event_name == 'push' && github.event.ref == 'refs/heads/main')
     strategy:
@@ -367,7 +365,7 @@ jobs:
     # And skipped is treated as success https://docs.github.com/en/pull-requests/collaborating-with-pull-requests/collaborat[…]n-repositories-with-code-quality-features/about-status-checks
     # Adding always ensures that the status check is run independently of the
     # results of Build All
-    if: always() && github.event_name == 'pull_request' && startsWith(github.event.pull_request.base.ref, 'release-')
+    if: always() && github.event_name == 'pull_request_target' && startsWith(github.event.pull_request.base.ref, 'release-')
     steps:
       - name: Successful build
         if: ${{ !(contains(needs.*.result, 'failure')) && !(contains(needs.*.result, 'cancelled')) }}
@@ -441,7 +439,7 @@ jobs:
           version: ${{ steps.golangci-lint-version.outputs.version }}
   fuzzing:
     uses: ./.github/workflows/fuzzing.yml
-    if: github.event_name == 'pull_request'
+    if: github.event_name == 'pull_request_target'
   codeql:
     uses: ./.github/workflows/codeql-analysis.yml
     permissions:
@@ -538,4 +536,3 @@ jobs:
           ||
           (github.event_name == 'push' && startsWith(github.ref, 'refs/tags/v3.'))
         run: ./scripts/ui_release.sh --publish
->>>>>>> Stashed changes
