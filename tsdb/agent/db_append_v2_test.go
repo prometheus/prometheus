@@ -872,6 +872,60 @@ func TestStorage_DuplicateExemplarsIgnored_AppendV2(t *testing.T) {
 	require.Equal(t, 4, walExemplarsCount)
 }
 
+func TestStorage_AppendExemplars_AppendV2(t *testing.T) {
+	s := createTestAgentDB(t, nil, DefaultOptions())
+	defer s.Close()
+
+	app, ok := s.AppenderV2(context.Background()).(storage.ExemplarAppenderV2)
+	require.True(t, ok)
+
+	// Unknown series should return storage.ErrNotFound.
+	_, err := app.AppendExemplars(0, labels.FromStrings("a", "unknown"), []exemplar.Exemplar{{Labels: labels.FromStrings("id", "1"), Value: 1, Ts: 10}})
+	require.ErrorIs(t, err, storage.ErrNotFound)
+
+	lset := labels.FromStrings("a", "1")
+	ref, err := app.Append(0, lset, 0, 10, 1, nil, nil, storage.AOptions{})
+	require.NoError(t, err)
+
+	// Empty exemplars slice should still validate series and return SeriesRef.
+	retRef, err := app.AppendExemplars(ref, lset, nil)
+	require.NoError(t, err)
+	require.Equal(t, ref, retRef)
+
+	e1 := exemplar.Exemplar{Labels: labels.FromStrings("id", "1"), Value: 20, Ts: 10, HasTs: true}
+	e2 := exemplar.Exemplar{Labels: labels.FromStrings("id", "2"), Value: 42, Ts: 25, HasTs: true}
+
+	// Append via ref.
+	retRef, err = app.AppendExemplars(ref, labels.EmptyLabels(), []exemplar.Exemplar{e1, e1})
+	require.NoError(t, err)
+	require.Equal(t, ref, retRef)
+
+	// Append via labels lookup (with empty label value that gets canonicalized).
+	retRef, err = app.AppendExemplars(0, labels.FromStrings("a", "1", "empty", ""), []exemplar.Exemplar{e2})
+	require.NoError(t, err)
+	require.Equal(t, ref, retRef)
+
+	require.NoError(t, app.Commit())
+
+	var walExemplarsCount int
+	sr, err := wlog.NewSegmentsReader(s.wal.Dir())
+	require.NoError(t, err)
+	defer sr.Close()
+	r := wlog.NewReader(sr)
+
+	dec := record.NewDecoder(labels.NewSymbolTable(), promslog.NewNopLogger())
+	for r.Next() {
+		rec := r.Record()
+		if dec.Type(rec) == record.Exemplars {
+			var exemplars []record.RefExemplar
+			exemplars, err = dec.Exemplars(rec, exemplars)
+			require.NoError(t, err)
+			walExemplarsCount += len(exemplars)
+		}
+	}
+	require.Equal(t, 2, walExemplarsCount)
+}
+
 func TestDBAllowOOOSamples_AppendV2(t *testing.T) {
 	const (
 		numDatapoints = 5
