@@ -375,3 +375,37 @@ instead.
 When enabled, Prometheus advertises support for Zstandard-compressed scrape responses in addition to gzip. The uncompressed response remains subject to the configured `body_size_limit`.
 
 When the flag is disabled, Prometheus does not advertise `zstd`. A target that answers with `Content-Encoding: zstd` regardless fails the scrape, because Prometheus cannot decode the body.
+
+## Query cost
+
+`--enable-feature=query-cost`
+
+Enables query cost estimation and enforcement. When set, Prometheus exposes the
+[`/api/v1/query_cost` and `/api/v1/query_range_cost`](querying/api.md#query-cost)
+endpoints, which provide a pre-execution *estimate* of the resource cost of a
+query (series touched and samples read) without executing it, and the instant
+and range query endpoints accept a `cost=true` boolean parameter that adds an
+estimated-versus-actual cost comparison to the response. Estimation enumerates matching index entries and samples a bounded amount of
+chunk data. Both values can overestimate or underestimate actual cost; the
+estimate is informational only and is never used to reject a query. Queries
+using `info()` return a warning because its runtime-dependent additional reads
+are omitted from the estimate.
+
+This flag also activates enforcement of the reloadable cost limits configured
+under the `global:` section of the
+[configuration file](configuration/configuration.md#configuration-file):
+`query_max_series`, `query_max_samples_read`, and `query_max_duration`. These
+limits are enforced *during* query execution against the query's actual running
+cost: a query is rejected as soon as the number of series it loads or the number
+of samples it reads exceeds the configured limit, and `query_max_duration`
+surfaces as a query timeout. The limits are reloaded together with the rest of
+the configuration and have no effect when the feature flag is not set.
+
+A client may lower any of these ceilings for a single request with the
+`max_series`, `max_samples_read`, `max_query_duration` and `timeout` query
+parameters. A request asking for a value above the operator-set ceiling is
+rejected with HTTP 400 (`bad_data`) rather than silently clamped.
+
+`query_max_duration` overrides `--query.timeout` only while this feature flag is
+enabled. The command-line flag remains supported and controls the timeout when
+the feature is disabled or `query_max_duration` is unset.

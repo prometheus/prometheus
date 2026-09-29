@@ -278,6 +278,8 @@ func (b *OpenAPIBuilder) getAllPathDefinitions() *orderedmap.Map[string, *v3.Pat
 	// Query endpoints.
 	paths.Set("/query", b.queryPath())
 	paths.Set("/query_range", b.queryRangePath())
+	paths.Set("/query_cost", b.queryCostPath())
+	paths.Set("/query_range_cost", b.queryRangeCostPath())
 	paths.Set("/query_exemplars", b.queryExemplarsPath())
 	paths.Set("/format_query", b.formatQueryPath())
 	paths.Set("/parse_query", b.parseQueryPath())
