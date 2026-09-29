@@ -95,6 +95,21 @@ var ruleEvalTestScenarios = []struct {
 		},
 	},
 	{
+		name:       "templated labels in recording rule",
+		ruleLabels: labels.FromStrings("source", "{{$labels.label_a}}", "observed", "{{$value}}"),
+		expr:       exprWithMetricName,
+		expected: promql.Vector{
+			promql.Sample{
+				Metric: labels.FromStrings("__name__", "test_rule", "source", "1", "observed", "1", "label_a", "1", "label_b", "3"),
+				F:      1, T: timestamp.FromTime(ruleEvaluationTime),
+			},
+			promql.Sample{
+				Metric: labels.FromStrings("__name__", "test_rule", "source", "2", "observed", "10", "label_a", "2", "label_b", "4"),
+				F:      10, T: timestamp.FromTime(ruleEvaluationTime),
+			},
+		},
+	},
+	{
 		name:       "no labels in recording rule, no metric name in query result",
 		ruleLabels: labels.EmptyLabels(),
 		expr:       exprWithoutMetricName,

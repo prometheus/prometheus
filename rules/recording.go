@@ -18,9 +18,11 @@ import (
 	"errors"
 	"fmt"
 	"net/url"
+	"strings"
 	"sync"
 	"time"
 
+	"github.com/prometheus/common/model"
 	"go.uber.org/atomic"
 	"go.yaml.in/yaml/v2"
 
@@ -28,6 +30,7 @@ import (
 	"github.com/prometheus/prometheus/model/rulefmt"
 	"github.com/prometheus/prometheus/promql"
 	"github.com/prometheus/prometheus/promql/parser"
+	"github.com/prometheus/prometheus/template"
 )
 
 // ErrDuplicateRecordingLabelSet is returned when a recording rule evaluation produces
@@ -82,7 +85,7 @@ func (rule *RecordingRule) Labels() labels.Labels {
 }
 
 // Eval evaluates the rule and then overrides the metric names and labels accordingly.
-func (rule *RecordingRule) Eval(ctx context.Context, queryOffset time.Duration, ts time.Time, query QueryFunc, _ *url.URL, limit int) (promql.Vector, error) {
+func (rule *RecordingRule) Eval(ctx context.Context, queryOffset time.Duration, ts time.Time, query QueryFunc, externalURL *url.URL, limit int) (promql.Vector, error) {
 	ctx = NewOriginContext(ctx, NewRuleDetail(rule))
 	vector, err := query(ctx, rule.vector.String(), ts.Add(-queryOffset))
 	if err != nil {
@@ -94,13 +97,38 @@ func (rule *RecordingRule) Eval(ctx context.Context, queryOffset time.Duration, 
 
 	for i := range vector {
 		sample := &vector[i]
+		data := template.AlertTemplateData(sample.Metric.Map(), nil, "", *sample)
+		defs := []string{
+			"{{$labels := .Labels}}",
+			"{{$value := .Value}}",
+		}
+		var templateErr error
 
-		lb.Reset(sample.Metric)
+		// Build the recorded label set from the configured rule labels.
+		lb.Reset(labels.EmptyLabels())
 		lb.Set(labels.MetricName, rule.name)
 
 		rule.labels.Range(func(l labels.Label) {
-			lb.Set(l.Name, l.Value)
+			expander := template.NewTemplateExpander(
+				ctx,
+				strings.Join(append(defs, l.Value), ""),
+				"__recording_"+rule.Name(),
+				data,
+				model.Time(sample.T),
+				template.QueryFunc(query),
+				externalURL,
+				nil,
+			)
+			value, err := expander.Expand()
+			if err != nil {
+				templateErr = fmt.Errorf("expand recording rule label %q: %w", l.Name, err)
+				return
+			}
+			lb.Set(l.Name, value)
 		})
+		if templateErr != nil {
+			return nil, templateErr
+		}
 
 		sample.Metric = lb.Labels()
 	}

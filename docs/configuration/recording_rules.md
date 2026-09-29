@@ -107,9 +107,13 @@ record: <string>
 # time series with the metric name as given by 'record'.
 expr: <string>
 
-# Labels to add or overwrite before storing the result.
+# Labels to add or overwrite before storing the result. Label values support
+# templates evaluated separately for each result series. Templates can use
+# `$labels` to access the input series labels and `$value` to access the sample
+# value. External labels and the external URL are not available to recording
+# rule label templates.
 labels:
-  [ <labelname>: <labelvalue> ]
+  [ <labelname>: <tmpl_string> ]
 ```
 
 The syntax for alerting rules is:
