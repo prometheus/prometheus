@@ -1487,15 +1487,9 @@ func (a *mockAppenderV2) AppendExemplars(ref storage.SeriesRef, l labels.Labels,
 	ref = storage.SeriesRef(hash)
 	var errs []error
 	for _, e := range exemplars {
-		r, err := m.AppendExemplar(ref, l, e)
-		if err != nil {
-			if errors.Is(err, storage.ErrDuplicateExemplar) {
-				continue
-			}
+		if _, err := m.AppendExemplar(ref, l, e); err != nil && !errors.Is(err, storage.ErrDuplicateExemplar) {
 			errs = append(errs, err)
-			continue
 		}
-		ref = r
 	}
 	if len(errs) > 0 {
 		return ref, &storage.AppendPartialError{ExemplarErrors: errs}
