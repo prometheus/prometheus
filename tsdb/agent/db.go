@@ -699,18 +699,7 @@ Loop:
 			// samples and may be deleted from the WAL. Their most recent append
 			// timestamp is compared to ts, and if that timestamp is older then ts,
 			// they are considered inactive and may be deleted.
-			//
-			// Subtracting a duration from ts will add a buffer for when series are
-			// considered inactive and safe for deletion.
-			ts := max(db.rs.LowestSentTimestamp()-db.opts.MinWALTime, 0)
-
-			// Network issues can prevent the result of getRemoteWriteTimestamp from
-			// changing. We don't want data in the WAL to grow forever, so we set a cap
-			// on the maximum age data can be. If our ts is older than this cutoff point,
-			// we'll shift it forward to start deleting very stale data.
-			if maxTS := timestamp.FromTime(time.Now()) - db.opts.MaxWALTime; ts < maxTS {
-				ts = maxTS
-			}
+			ts := walTruncationTime(db.opts, db.rs.LowestSentTimestamp(), time.Now())
 
 			db.logger.Debug("truncating the WAL", "ts", ts)
 			if err := db.truncate(ts); err != nil {
@@ -718,6 +707,26 @@ Loop:
 			}
 		}
 	}
+}
+
+// walTruncationTime keeps the cutoff within the configured WAL retention window,
+// even when lowestSentTs is in the future or remote write is stalled.
+func walTruncationTime(opts *Options, lowestSentTs int64, now time.Time) int64 {
+	nowTS := timestamp.FromTime(now)
+	// Subtracting a duration from lowestSentTs will add a buffer for when series are
+	// considered inactive and safe for deletion.
+	// Clamp to zero when no data has been sent yet on startup.
+	ts := max(lowestSentTs-opts.MinWALTime, 0)
+
+	// Network issues can prevent lowestSentTs from changing. We don't want data
+	// in the WAL to grow forever, so we set a cap on the maximum age data can be.
+	// If our ts is older than this cutoff point, we'll shift it forward to start
+	// deleting very stale data.
+	ts = max(ts, nowTS-opts.MaxWALTime)
+
+	// Do not expire data newer than now - MinWALTime. This protects against
+	// timestamps in the future.
+	return min(ts, max(nowTS-opts.MinWALTime, 0))
 }
 
 // keepSeriesInWALCheckpointFn returns a function that is used to determine whether a series record should be kept in the checkpoint.

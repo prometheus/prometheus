@@ -377,6 +377,35 @@ func TestWriteStorage_CanRegisterMetricsAfterClosing(t *testing.T) {
 	require.NotPanics(t, func() { NewWriteStorage(nil, reg, dir, time.Millisecond, nil, false) })
 }
 
+func TestWriteStorage_Appender_AppendExemplar(t *testing.T) {
+	s := NewWriteStorage(nil, nil, t.TempDir(), time.Millisecond, nil, false)
+	t.Cleanup(func() { require.NoError(t, s.Close()) })
+	now := time.Now().UnixMilli()
+	future := now + (5 * time.Hour).Milliseconds()
+	lbls := labels.FromStrings("__name__", "test_metric")
+	app := s.Appender(t.Context())
+	ref, err := app.Append(0, lbls, now, 1)
+	require.NoError(t, err)
+	_, err = app.AppendExemplar(ref, lbls, exemplar.Exemplar{Ts: future, HasTs: true})
+	require.NoError(t, err)
+	require.NoError(t, app.Commit())
+	require.Equal(t, float64(future/1000), s.highestTimestamp.Get())
+}
+
+func TestWriteStorage_AppenderV2_AppendWithExemplars(t *testing.T) {
+	s := NewWriteStorage(nil, nil, t.TempDir(), time.Millisecond, nil, false)
+	t.Cleanup(func() { require.NoError(t, s.Close()) })
+	now := time.Now().UnixMilli()
+	future := now + (5 * time.Hour).Milliseconds()
+	app := s.AppenderV2(t.Context())
+	_, err := app.Append(0, labels.FromStrings("__name__", "test_metric"), 0, now, 1, nil, nil, storage.AOptions{
+		Exemplars: []exemplar.Exemplar{{Ts: future, HasTs: true}},
+	})
+	require.NoError(t, err)
+	require.NoError(t, app.Commit())
+	require.Equal(t, float64(future/1000), s.highestTimestamp.Get())
+}
+
 func TestWriteStorage_AppenderV2_AppendExemplars(t *testing.T) {
 	dir := t.TempDir()
 	reg := prometheus.NewPedanticRegistry()
@@ -389,16 +418,19 @@ func TestWriteStorage_AppenderV2_AppendExemplars(t *testing.T) {
 
 	before := prom_testutil.ToFloat64(exemplarsIn)
 
+	now := time.Now().UnixMilli()
+	future := now + (5 * time.Hour).Milliseconds()
 	lbls := labels.FromStrings("__name__", "test_metric")
-	ref, err := app.Append(0, lbls, 0, 100, 1, nil, nil, storage.AOptions{})
+	ref, err := app.Append(0, lbls, 0, now, 1, nil, nil, storage.AOptions{})
 	require.NoError(t, err)
 
 	_, err = app.AppendExemplars(ref, lbls, []exemplar.Exemplar{
-		{Labels: labels.FromStrings("trace_id", "1"), Value: 1, Ts: 100},
-		{Labels: labels.FromStrings("trace_id", "2"), Value: 2, Ts: 100},
+		{Labels: labels.FromStrings("trace_id", "1"), Value: 1, Ts: future, HasTs: true},
+		{Labels: labels.FromStrings("trace_id", "2"), Value: 2, Ts: now, HasTs: true},
 	})
 	require.NoError(t, err)
 	require.NoError(t, app.Commit())
 
 	require.Equal(t, before+2, prom_testutil.ToFloat64(exemplarsIn))
+	require.Equal(t, float64(future/1000), s.highestTimestamp.Get())
 }
