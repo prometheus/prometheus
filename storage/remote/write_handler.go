@@ -235,14 +235,9 @@ func (h *writeHandler) write(ctx context.Context, req *prompb.WriteRequest) (err
 	return nil
 }
 
-func (h *writeHandler) appendV1Samples(app storage.AppenderV2, ss []prompb.Sample, ls labels.Labels) (storage.SeriesRef, error) {
-	var (
-		ref storage.SeriesRef
-		err error
-	)
+func (h *writeHandler) appendV1Samples(app storage.AppenderV2, ss []prompb.Sample, ls labels.Labels) (ref storage.SeriesRef, err error) {
 	for _, s := range ss {
-		var r storage.SeriesRef
-		r, err = app.Append(ref, ls, 0, s.GetTimestamp(), s.GetValue(), nil, nil, storage.AOptions{})
+		ref, err = app.Append(ref, ls, 0, s.GetTimestamp(), s.GetValue(), nil, nil, storage.AOptions{})
 		if err != nil {
 			if errors.Is(err, storage.ErrOutOfOrderSample) ||
 				errors.Is(err, storage.ErrOutOfBounds) ||
@@ -252,19 +247,16 @@ func (h *writeHandler) appendV1Samples(app storage.AppenderV2, ss []prompb.Sampl
 			}
 			return ref, err
 		}
-		ref = r
 	}
 	return ref, nil
 }
 
-func (h *writeHandler) appendV1Histograms(app storage.AppenderV2, hh []prompb.Histogram, ls labels.Labels, ref storage.SeriesRef) (storage.SeriesRef, error) {
-	var err error
+func (h *writeHandler) appendV1Histograms(app storage.AppenderV2, hh []prompb.Histogram, ls labels.Labels, ref storage.SeriesRef) (_ storage.SeriesRef, err error) {
 	for _, hp := range hh {
-		var r storage.SeriesRef
 		if hp.IsFloatHistogram() {
-			r, err = app.Append(ref, ls, 0, hp.Timestamp, 0, nil, hp.ToFloatHistogram(), storage.AOptions{})
+			ref, err = app.Append(ref, ls, 0, hp.Timestamp, 0, nil, hp.ToFloatHistogram(), storage.AOptions{})
 		} else {
-			r, err = app.Append(ref, ls, 0, hp.Timestamp, 0, hp.ToIntHistogram(), nil, storage.AOptions{})
+			ref, err = app.Append(ref, ls, 0, hp.Timestamp, 0, hp.ToIntHistogram(), nil, storage.AOptions{})
 		}
 		if err != nil {
 			// Although Append does not currently return ErrDuplicateSampleForTimestamp for histograms there is
@@ -277,7 +269,6 @@ func (h *writeHandler) appendV1Histograms(app storage.AppenderV2, hh []prompb.Hi
 			}
 			return ref, err
 		}
-		ref = r
 	}
 	return ref, nil
 }
