@@ -3218,6 +3218,46 @@ func TestWblRepair_DecodingError(t *testing.T) {
 	}
 }
 
+// TestHead_TruncateWAL_IncrementsCorruptionMetricOnCorruptedSegment ensures that
+// creating a checkpoint over a corrupted WAL segment increments
+// prometheus_tsdb_wal_corruptions_total.
+func TestHead_TruncateWAL_IncrementsCorruptionMetricOnCorruptedSegment(t *testing.T) {
+	h, w := newTestHead(t, 1000, compression.None, false)
+
+	enc := record.Encoder{}
+	seriesRec := enc.Series([]record.RefSeries{
+		{Ref: 1, Labels: labels.FromStrings("a", "b")},
+	}, nil)
+
+	// Create several WAL segments so that truncateWAL has a range to checkpoint.
+	const numSegments = 4
+	for range numSegments {
+		require.NoError(t, w.Log(seriesRec))
+		_, err := w.NextSegmentSync()
+		require.NoError(t, err)
+	}
+
+	// Replay the intact WAL.
+	require.NoError(t, h.Init(0))
+	require.Equal(t, 0.0, prom_testutil.ToFloat64(h.metrics.walCorruptionsTotal))
+
+	// Corrupt segment 0 on disk by flipping a byte inside the first record's data.
+	segFile := wlog.SegmentName(w.Dir(), 0)
+	f, err := os.OpenFile(segFile, os.O_WRONLY, 0o644)
+	require.NoError(t, err)
+	_, err = f.WriteAt([]byte{0xff}, 7)
+	require.NoError(t, err)
+	require.NoError(t, f.Close())
+
+	// Trigger a checkpoint via WAL truncation.
+	h.lastWALTruncationTime.Store(0)
+	err = h.truncateWAL(100)
+	require.Error(t, err)
+	var cerr *wlog.CorruptionErr
+	require.ErrorAs(t, err, &cerr, "checkpoint creation should report a WAL corruption error")
+	require.Equal(t, 1.0, prom_testutil.ToFloat64(h.metrics.walCorruptionsTotal))
+}
+
 func TestHeadReadWriterRepair(t *testing.T) {
 	dir := t.TempDir()
 
