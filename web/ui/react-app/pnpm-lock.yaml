@@ -102,8 +102,8 @@ importers:
         specifier: ^6.1.1
         version: 6.1.1(react@18.3.1)
       react-resize-detector:
-        specifier: ^9.0.0
-        version: 9.1.1(react-dom@18.3.1(react@18.3.1))(react@18.3.1)
+        specifier: ^12.0.0
+        version: 12.3.0(react@18.3.1)
       react-router-dom:
         specifier: ^7.0.0
         version: 7.18.4(react-dom@18.3.1(react@18.3.1))(react@18.3.1)
@@ -2963,6 +2963,9 @@ packages:
     resolution: {integrity: sha512-w+5mJ3GuFL+NjVtJlvydShqE1eN3h3PbI7/5LAsYJP/2qtuMXjfL2LpHSRqo4b4eSF5K/DH1JXKUAHSB2UW50g==}
     engines: {node: '>= 0.4'}
 
+  es-toolkit@1.52.0:
+    resolution: {integrity: sha512-XTNEJQh1tY1ZJVcf6ayP/2n4ZPyaHlW2FWs7xvw5ddPuhUVjLD3olQVQS7kf58JbAB48iL0uL/jerTrjtV3lDA==}
+
   escalade@3.2.0:
     resolution: {integrity: sha512-WUj2qlxaQtO4g6Pq5c29GTcWGDyd8itL8zTlipgECz3JesAiiOKotd8JU6otB3PACgG6xkJUyVhboMS+bje/jA==}
     engines: {node: '>=6'}
@@ -5220,11 +5223,10 @@ packages:
     resolution: {integrity: sha512-F27qZr8uUqwhWZboondsPx8tnC3Ct3SxZA3V5WyEvujRyyNv0VYPhoBg1gZ8/MV5tubQp76Trw8lTv9hzRBa+A==}
     engines: {node: '>=0.10.0'}
 
-  react-resize-detector@9.1.1:
-    resolution: {integrity: sha512-siLzop7i4xIvZIACE/PHTvRegA8QRCEt0TfmvJ/qCIFQJ4U+3NuYcF8tNDmDWxfIn+X1eNCyY2rauH4KRxge8w==}
+  react-resize-detector@12.3.0:
+    resolution: {integrity: sha512-mIDOVrTHKGnKe6qEUWi8dFdfHM5CPyTOpqoHctdMQf89Ljm/0qqDIzkP3vTRZZJi9/raaMiRxDEOqO4you5x+A==}
     peerDependencies:
-      react: ^16.0.0 || ^17.0.0 || ^18.0.0
-      react-dom: ^16.0.0 || ^17.0.0 || ^18.0.0
+      react: ^18.0.0 || ^19.0.0
 
   react-router-dom@7.18.4:
     resolution: {integrity: sha512-yrfmJHIpDG7taCpqKjT1G5B6q3O2K+RN8/fgNf0lTjCwiPbQ0ei6vXX9ZjQR+7ld8Tr7Z5xmyMnZ8YJrphWQUw==}
@@ -9674,6 +9676,8 @@ snapshots:
       is-date-object: 1.1.0
       is-symbol: 1.1.1
 
+  es-toolkit@1.52.0: {}
+
   escalade@3.2.0: {}
 
   escape-html@1.0.3: {}
@@ -12368,11 +12372,10 @@ snapshots:
 
   react-refresh@0.11.0: {}
 
-  react-resize-detector@9.1.1(react-dom@18.3.1(react@18.3.1))(react@18.3.1):
+  react-resize-detector@12.3.0(react@18.3.1):
     dependencies:
-      lodash: 4.18.1
+      es-toolkit: 1.52.0
       react: 18.3.1
-      react-dom: 18.3.1(react@18.3.1)
 
   react-router-dom@7.18.4(react-dom@18.3.1(react@18.3.1))(react@18.3.1):
     dependencies:
