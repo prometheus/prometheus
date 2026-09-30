@@ -168,7 +168,6 @@ var (
 	HistogramCounterResetCollisionWarning   = fmt.Errorf("%w: conflicting counter resets during histogram", PromQLWarning)
 	MismatchedCustomBucketsHistogramsInfo   = fmt.Errorf("%w: mismatched custom buckets were reconciled during", PromQLInfo)
 	StartTimeOverlapWarning                 = fmt.Errorf("%w: sample has start time that overlaps with previous sample timestamp", PromQLWarning)
-	RangeTooShortWarning                    = fmt.Errorf("%w: input range too short", PromQLWarning)
 )
 
 // annoError extends the standard error interface to provide additional functionality
@@ -539,13 +538,6 @@ func NewStartTimeOverlapWarning(metricName string, pos posrange.PositionRange) e
 		Err:           StartTimeOverlapWarning,
 		metricName:    metricName,
 		count:         1,
-	}
-}
-
-func NewRangeTooShortWarning(metricName string, pos posrange.PositionRange) error {
-	return &annoErr{
-		PositionRange: pos,
-		Err:           maybeAddMetricName(RangeTooShortWarning, metricName),
 	}
 }
 

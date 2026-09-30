@@ -533,7 +533,7 @@ func extrapolatedRate(vals Matrix, args parser.Expressions, enh *EvalNodeHelper,
 			}
 		}
 	default:
-		return enh.Out, annos.Add(annotations.NewRangeTooShortWarning(getMetricName(samples.Metric), args[0].PositionRange()))
+		return enh.Out, annos
 	}
 
 	// Duration between first/last samples and boundary of range.
@@ -570,7 +570,7 @@ func extrapolatedRate(vals Matrix, args parser.Expressions, enh *EvalNodeHelper,
 		}
 	} else if numSamplesMinusOne == 0 {
 		// There's a single sample, and we do not have suitable ST to calculate the increase. Return nothing.
-		return enh.Out, annos.Add(annotations.NewRangeTooShortWarning(getMetricName(samples.Metric), args[0].PositionRange()))
+		return enh.Out, annos
 	} else {
 		// If samples are close enough to the (lower or upper) boundary of the
 		// range, we extrapolate the rate all the way to the boundary in
@@ -843,7 +843,7 @@ func instantValue(vals Matrix, args parser.Expressions, enh *EvalNodeHelper, isR
 	// No sense in trying to compute a rate without at least two points. Drop
 	// this Vector element.
 	if len(samples.Floats)+len(samples.Histograms) < 2 {
-		return out, annos.Add(annotations.NewRangeTooShortWarning(getMetricName(samples.Metric), args[0].PositionRange()))
+		return out, annos
 	}
 
 	// Add the last 2 float samples if they exist.
