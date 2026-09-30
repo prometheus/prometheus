@@ -41,6 +41,8 @@ type Provider struct {
 	name   string
 	d      Discoverer
 	config any
+	// SetName is the name of the config the discoverer was created for, which labels its refresh metrics.
+	setName string
 
 	cancel context.CancelFunc
 	// done should be called after cleaning up resources associated with cancelled provider.
@@ -244,6 +246,7 @@ func (m *Manager) ApplyConfig(cfg map[string]Configs) error {
 	var (
 		wg           sync.WaitGroup
 		newProviders []*Provider
+		cancelled    []*Provider
 	)
 	for _, prov := range m.providers {
 		// Cancel obsolete providers if it has no new subs and it has a cancel function.
@@ -258,18 +261,14 @@ func (m *Manager) ApplyConfig(cfg map[string]Configs) error {
 
 			prov.cancel()
 			prov.mu.RUnlock()
+			cancelled = append(cancelled, prov)
 
-			// Clear up refresh metrics associated with this cancelled provider (sub means scrape job name).
 			m.targetsMtx.Lock()
 			for s := range prov.subs {
 				// Also clean up discovered targets metric. targetsMtx lock needed for safe access to m.targets.
 				delete(m.targets, poolKey{s, prov.name})
 				m.metrics.DiscoveredTargets.DeleteLabelValues(s)
 				m.metrics.LastUpdated.DeleteLabelValues(s)
-
-				if cfg, ok := prov.config.(Config); ok {
-					m.sdMetrics.RefreshManager.DeleteLabelValues(cfg.Name(), s)
-				}
 			}
 			m.targetsMtx.Unlock()
 			continue
@@ -289,12 +288,6 @@ func (m *Manager) ApplyConfig(cfg map[string]Configs) error {
 				delete(m.targets, poolKey{s, prov.name})
 				m.metrics.DiscoveredTargets.DeleteLabelValues(s)
 				m.metrics.LastUpdated.DeleteLabelValues(s)
-
-				// Also clean up refresh metrics for subs that are being removed from a provider that is still running.
-				cfg, ok := prov.config.(Config)
-				if ok {
-					m.sdMetrics.RefreshManager.DeleteLabelValues(cfg.Name(), s)
-				}
 			}
 		}
 		// Set metrics and targets for new subs.
@@ -329,9 +322,29 @@ func (m *Manager) ApplyConfig(cfg map[string]Configs) error {
 		}
 	}
 	m.providers = newProviders
+
+	// Clear up refresh metrics associated with cancelled providers.
+	for _, prov := range cancelled {
+		m.deleteRefreshMetrics(prov)
+	}
 	wg.Wait()
 
 	return nil
+}
+
+// DeleteRefreshMetrics deletes refresh metrics for a cancelled provider, unless a running provider
+// was created for the same mechanism and config and still updates them.
+func (m *Manager) deleteRefreshMetrics(prov *Provider) {
+	cfg, ok := prov.config.(Config)
+	if !ok {
+		return
+	}
+	for _, p := range m.providers {
+		if c, ok := p.config.(Config); ok && c.Name() == cfg.Name() && p.setName == prov.setName {
+			return
+		}
+	}
+	m.sdMetrics.RefreshManager.DeleteLabelValues(cfg.Name(), prov.setName)
 }
 
 // StartCustomProvider is used for sdtool. Only use this if you know what you're doing.
@@ -555,6 +568,7 @@ func (m *Manager) registerProviders(cfgs Configs, setName string) int {
 			newSubs: map[string]struct{}{
 				setName: {},
 			},
+			setName: setName,
 		})
 		m.lastProvider++
 		added = true
