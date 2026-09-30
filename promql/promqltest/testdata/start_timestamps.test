@@ -1,7 +1,7 @@
 # Tests for rate(), irate() and increase() on cumulative.
 load 1m
     cumulative{type="no_st"}              _ _ 0+60x14
-    cumulative{type="st_resets"}@st       _ _ -30s-1mx2 -1m-1mx2 -59999ms-1mx2 -1s-1mx2 -1ms-1mx2
+    cumulative{type="st_resets"}@st       _ _ -30s^x2 -1m^x2 -59999ms^x2 -1s^x2 -1ms^x2
     cumulative{type="st_resets"}          _ _ 0+60x14
     cumulative{type="normalized_resets"}  _ _ 0 60 120 300 360 420 780 840 900 1440 1500 1560 2280 2340 2400
 
@@ -53,7 +53,7 @@ clear
 # * ST = T
 load 1m
     delta{type="no_st"}               _ _  60x15
-    delta{type="otel"}@st             _ _ -1mx15
+    delta{type="otel"}@st             _ _ _ ~x15
     delta{type="otel"}                _ _  60x15
     delta{type="gcp"}@st              _ _ -59999msx15
     delta{type="gcp"}                 _ _       60x15
@@ -104,31 +104,31 @@ clear
 # rate extrapolation).
 load 1m
     series{type="no_st_extrapolate_left"}                       _ _ 1 2 3 4 5
-    series{type="st_outside_range"}@st                          _ _ -60s-1mx4
+    series{type="st_outside_range"}@st                          _ _ -60s^x4
     series{type="st_outside_range"}                             _ _ 1 2 3 4 5
-    series{type="st_inside_range"}@st                           _ _ -30s-1mx4
+    series{type="st_inside_range"}@st                           _ _ -30s^x4
     series{type="st_inside_range"}                              _ _ 1 2 3 4 5
-    series{type="st_at_t"}@st                                   _ _ 0-1mx4
+    series{type="st_at_t"}@st                                   _ _ 0^x4
     series{type="st_at_t"}                                      _ _ 1 2 3 4 5
-    series{type="st_after_t"}@st                                _ _ 1ms-1mx4
+    series{type="st_after_t"}@st                                _ _ 1ms^x4
     series{type="st_after_t"}                                   _ _ 1 2 3 4 5
     series{type="no_st_extrapolate_both"}                       _ _ 1 2 3 4   _
-    series{type="st_outside_extrapolate_both"}@st               _ _ -60s-1mx3 _
+    series{type="st_outside_extrapolate_both"}@st               _ _ -60s^x3 _
     series{type="st_outside_extrapolate_both"}                  _ _ 1 2 3 4   _
-    series{type="st_inside_extrapolate_right"}@st               _ _ -30s-1mx3 _
+    series{type="st_inside_extrapolate_right"}@st               _ _ -30s^x3 _
     series{type="st_inside_extrapolate_right"}                  _ _ 1 2 3 4   _
-    series{type="st_at_t_extrapolate_right"}@st                 _ _ 0-1mx3    _
+    series{type="st_at_t_extrapolate_right"}@st                 _ _ 0^x3    _
     series{type="st_at_t_extrapolate_right"}                    _ _ 1 2 3 4   _
-    series{type="st_after_t_extrapolate_both"}@st               _ _ 1ms-1mx3  _
+    series{type="st_after_t_extrapolate_both"}@st               _ _ 1ms^x3  _
     series{type="st_after_t_extrapolate_both"}                  _ _ 1 2 3 4   _
     series{type="no_st_extrapolate_both_limit_range"}           _ _ _ 2 3        _ _
-    series{type="st_outside_extrapolate_both_limit_range"}@st   _ _ _ -120s-1mx1 _ _
+    series{type="st_outside_extrapolate_both_limit_range"}@st   _ _ _ -120s^x1 _ _
     series{type="st_outside_extrapolate_both_limit_range"}      _ _ _ 2 3        _ _
-    series{type="st_inside_extrapolate_right_limit_range"}@st   _ _ _ -90s-1mx1  _ _
+    series{type="st_inside_extrapolate_right_limit_range"}@st   _ _ _ -90s^x1  _ _
     series{type="st_inside_extrapolate_right_limit_range"}      _ _ _ 2 3        _ _
-    series{type="st_at_t_extrapolate_right_limit_range"}@st     _ _ _ 0-1mx1     _ _
+    series{type="st_at_t_extrapolate_right_limit_range"}@st     _ _ _ 0^x1     _ _
     series{type="st_at_t_extrapolate_right_limit_range"}        _ _ _ 2 3        _ _
-    series{type="st_after_t_extrapolate_both_limit_range"}@st   _ _ _ 1ms-1mx1   _ _
+    series{type="st_after_t_extrapolate_both_limit_range"}@st   _ _ _ 1ms^x1   _ _
     series{type="st_after_t_extrapolate_both_limit_range"}      _ _ _ 2 3        _ _
     series{type="no_st_single_datapoint"}                       _ _ _ _ 3     _ _
     series{type="st_outside_single_datapoint"}@st               _ _ _ _ -180s _ _
@@ -201,7 +201,7 @@ clear
 # * ST = T
 # TODO(ywwg): confirm the expected values for histograms and float histograms are correct
 load 1m
-    cumulative@st   _ _ -30s-1mx2 -1m-1mx2 -59999ms-1mx2 -1s-1mx2 -1ms-1mx2
+    cumulative@st   _ _ -30s^x2 -1m^x2 -59999ms^x2 -1s^x2 -1ms^x2
     cumulative      _ _ {{schema:0 sum:0 count:0}}+{{schema:0 sum:60 count:60}}x14
 
 eval range from 7m to 15m step 1m increase(cumulative[5m])
@@ -222,7 +222,7 @@ clear
 # Tests for rate(), irate() and increase() on delta histograms.
 # TODO(ywwg): confirm the expected values for histograms and float histograms are correct
 load 1m
-    delta{type="otel"}@st             _ _ -1mx15
+    delta{type="otel"}@st             _ _ -1m ~x15
     delta{type="otel"}                _ _ {{schema:0 sum:60 count:60}}x15
     delta{type="gcp"}@st              _ _ -59999msx15
     delta{type="gcp"}                 _ _ {{schema:0 sum:60 count:60}}x15
