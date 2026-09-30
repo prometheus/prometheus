@@ -18,6 +18,7 @@ import (
 	"errors"
 	"fmt"
 	"net"
+	"net/url"
 	"strconv"
 	"strings"
 	"time"
@@ -136,7 +137,22 @@ func NewDiscovery(conf *SDConfig, opts discovery.DiscovererOptions) (*Discovery,
 		metrics:         m,
 	}
 
-	HTTPClient, err := config.NewClientFromConfig(conf.HTTPClientConfig, "nomad_sd")
+	serverURL, err := url.Parse(conf.Server)
+	if err != nil {
+		return nil, fmt.Errorf("invalid nomad server address %q: %w", conf.Server, err)
+	}
+
+	var clientOpts []config.HTTPClientOption
+	if serverURL.Scheme == "unix" {
+		socketPath := serverURL.Path
+		clientOpts = append(clientOpts, config.WithDialContextFunc(
+			func(_ context.Context, _, _ string) (net.Conn, error) {
+				return net.Dial("unix", socketPath)
+			},
+		))
+	}
+
+	HTTPClient, err := config.NewClientFromConfig(conf.HTTPClientConfig, "nomad_sd", clientOpts...)
 	if err != nil {
 		return nil, err
 	}
