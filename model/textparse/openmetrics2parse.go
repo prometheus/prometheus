@@ -82,6 +82,7 @@ type pendingEntry struct {
 	lset   labels.Labels
 	val    float64
 	ts     *int64
+	exs    []om2Exemplar
 }
 
 // om2Exemplar holds a fully parsed exemplar.
@@ -310,6 +311,8 @@ func (p *OpenMetrics2Parser) Next() (Entry, error) {
 	// Drain pending composite-value entries.
 	if p.pendingIdx < len(p.pending) {
 		p.pendingIdx++
+		p.exemplars = p.pending[p.pendingIdx-1].exs
+		p.exemplarIdx = 0
 		return EntrySeries, nil
 	}
 	p.pending = p.pending[:0]
@@ -904,6 +907,8 @@ func (p *OpenMetrics2Parser) servePending(pending []pendingEntry) (Entry, error)
 	}
 	p.pending = pending
 	p.pendingIdx = 1 // we are about to serve pending[0]
+	p.exemplars = p.pending[0].exs
+	p.exemplarIdx = 0
 	return EntrySeries, nil
 }
 
@@ -1231,19 +1236,35 @@ func (p *OpenMetrics2Parser) buildClassicHistogramPending(
 	}
 	name = mfName + "_bucket"
 	hasPosInf := false
+
+	assignedExemplars := make([]bool, len(p.exemplars))
+
 	for b, err := range parseBuckets(bv) {
 		if err != nil {
 			return nil, fmt.Errorf("invalid bucket: %w", err)
 		}
+
+		// Parse 'le' back to float for comparison.
+		leFloat, _ := strconv.ParseFloat(b.le, 64)
 		if b.le == "+Inf" {
 			hasPosInf = true
 		}
+
+		var bucketExs []om2Exemplar
+		for i, ex := range p.exemplars {
+			if !assignedExemplars[i] && leFloat >= ex.e.Value {
+				bucketExs = append(bucketExs, ex)
+				assignedExemplars[i] = true
+			}
+		}
+
 		lset := p.buildPendingLabels(name, extraLabels, "le", b.le)
 		pending = append(pending, pendingEntry{
 			series: p.appendSeriesBytes(lset),
 			lset:   lset,
 			val:    b.count,
 			ts:     tsPtr,
+			exs:    bucketExs,
 		})
 	}
 	if !hasPosInf {

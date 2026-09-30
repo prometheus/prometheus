@@ -1435,12 +1435,11 @@ req_duration {count:2,sum:4.0,bucket:[1.0:1,+Inf:2]} # {id="req-1"} 3.8 9999999.
 `
 	exp := []parsedEntry{
 		{m: "req_duration", typ: model.MetricTypeHistogram},
-		// Exemplar is accessible only on the first pending entry served.
 		{
 			m:    "req_duration_count",
 			v:    2,
 			lset: labels.FromStrings("__name__", "req_duration_count"),
-			es:   []exemplar.Exemplar{{Labels: labels.FromStrings("id", "req-1"), Value: 3.8, HasTs: true, Ts: 9999999000}},
+			
 		},
 		{
 			m:    "req_duration_sum",
@@ -1456,6 +1455,7 @@ req_duration {count:2,sum:4.0,bucket:[1.0:1,+Inf:2]} # {id="req-1"} 3.8 9999999.
 			m:    "req_duration_bucket\xffle\xff+Inf",
 			v:    2,
 			lset: labels.FromStrings("__name__", "req_duration_bucket", "le", "+Inf"),
+			es:   []exemplar.Exemplar{{Labels: labels.FromStrings("id", "req-1"), Value: 3.8, HasTs: true, Ts: 9999999000}},
 		},
 	}
 
