@@ -264,12 +264,14 @@ type QuerySamples struct {
 	// configured in the engine.
 	PeakSamples int
 
-	// TotalSamples represents the total number of samples loaded while
-	// evaluating a query. For range-vector functions, each step counts the
-	// full window (points may be counted in multiple steps).
+	// TotalSamples represents logical underlying sample consumption while
+	// evaluating a query, using the existing histogram size weighting.
+	// Subqueries contribute their underlying consumption, not their materialized
+	// results. Overlapping evaluation windows may count the same samples repeatedly;
+	// this is not a count of unique samples or physical storage reads.
 	TotalSamples int64
 
-	// TotalSamplesPerStep represents the total number of samples scanned
+	// TotalSamplesPerStep represents logical underlying sample consumption
 	// per step while evaluating a query. Each step should be identical to the
 	// TotalSamples when a step is run as an instant query, which means
 	// we intentionally do not account for optimizations that happen inside the
