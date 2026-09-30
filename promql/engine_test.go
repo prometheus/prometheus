@@ -1341,9 +1341,9 @@ load 10s
 			Query:        "max_over_time(metricWith3SampleEvery10Seconds[60s:5s])",
 			Start:        time.Unix(201, 0),
 			PeakSamples:  51,
-			TotalSamples: 72, // 36 subquery input samples + 36 materialized samples.
+			TotalSamples: 36,
 			TotalSamplesPerStep: stats.TotalSamplesPerStep{
-				201000: 72,
+				201000: 36,
 			},
 			SamplesRead: 36,
 			SamplesReadPerStep: stats.TotalSamplesPerStep{
@@ -1354,9 +1354,9 @@ load 10s
 			Query:        "sum(max_over_time(metricWith3SampleEvery10Seconds[60s:5s])) + sum(max_over_time(metricWith3SampleEvery10Seconds[60s:5s]))",
 			Start:        time.Unix(201, 0),
 			PeakSamples:  52,
-			TotalSamples: 144, // 2 * (36 subquery input samples + 36 materialized samples).
+			TotalSamples: 72,
 			TotalSamplesPerStep: stats.TotalSamplesPerStep{
-				201000: 144,
+				201000: 72,
 			},
 			SamplesRead: 72,
 			SamplesReadPerStep: stats.TotalSamplesPerStep{
@@ -1602,12 +1602,33 @@ load 10s
 			End:          time.Unix(231, 0),
 			Interval:     10 * time.Second,
 			PeakSamples:  10,
-			TotalSamples: 28, // 1 subquery result point + 6 underlying input points per step.
+			TotalSamples: 24, // 6 underlying samples per step * 4 steps.
 			TotalSamplesPerStep: stats.TotalSamplesPerStep{
-				201000: 7,
-				211000: 7,
-				221000: 7,
-				231000: 7,
+				201000: 6,
+				211000: 6,
+				221000: 6,
+				231000: 6,
+			},
+			SamplesRead: 9,
+			SamplesReadPerStep: stats.TotalSamplesPerStep{
+				201000: 6,
+				211000: 1,
+				221000: 1,
+				231000: 1,
+			},
+		},
+		{
+			Query:        "last_over_time(last_over_time(sum_over_time(metricWith1SampleEvery10Seconds[60s])[10s:10s])[10s:10s])",
+			Start:        time.Unix(201, 0),
+			End:          time.Unix(231, 0),
+			Interval:     10 * time.Second,
+			PeakSamples:  10,
+			TotalSamples: 24, // 6 underlying samples per step * 4 steps.
+			TotalSamplesPerStep: stats.TotalSamplesPerStep{
+				201000: 6,
+				211000: 6,
+				221000: 6,
+				231000: 6,
 			},
 			SamplesRead: 9,
 			SamplesReadPerStep: stats.TotalSamplesPerStep{
@@ -1628,12 +1649,12 @@ load 10s
 			End:          time.Unix(216, 0),
 			Interval:     5 * time.Second,
 			PeakSamples:  69,
-			TotalSamples: 288, // 144 materialized samples + 144 subquery input samples.
+			TotalSamples: 144,
 			TotalSamplesPerStep: stats.TotalSamplesPerStep{
-				201000: 72,
-				206000: 72,
-				211000: 72,
-				216000: 72,
+				201000: 36,
+				206000: 36,
+				211000: 36,
+				216000: 36,
 			},
 			SamplesRead: 45,
 			SamplesReadPerStep: stats.TotalSamplesPerStep{
@@ -1649,12 +1670,12 @@ load 10s
 			End:          time.Unix(220, 0), // 4s past the last aligned step (216).
 			Interval:     5 * time.Second,
 			PeakSamples:  69,
-			TotalSamples: 288, // 144 materialized samples + 144 subquery input samples.
+			TotalSamples: 144,
 			TotalSamplesPerStep: stats.TotalSamplesPerStep{
-				201000: 72,
-				206000: 72,
-				211000: 72,
-				216000: 72,
+				201000: 36,
+				206000: 36,
+				211000: 36,
+				216000: 36,
 			},
 			SamplesRead: 45,
 			SamplesReadPerStep: stats.TotalSamplesPerStep{
@@ -1670,12 +1691,12 @@ load 10s
 			End:          time.Unix(220, 0),
 			Interval:     5 * time.Second,
 			PeakSamples:  31,
-			TotalSamples: 96, // 48 materialized samples + 48 subquery input samples.
+			TotalSamples: 48,
 			TotalSamplesPerStep: stats.TotalSamplesPerStep{
-				201000: 24,
-				206000: 24,
-				211000: 24,
-				216000: 24,
+				201000: 12,
+				206000: 12,
+				211000: 12,
+				216000: 12,
 			},
 			SamplesRead: 15,
 			SamplesReadPerStep: stats.TotalSamplesPerStep{
@@ -1691,12 +1712,12 @@ load 10s
 			End:          time.Unix(220, 0),
 			Interval:     5 * time.Second,
 			PeakSamples:  31,
-			TotalSamples: 96, // 48 materialized samples + 48 subquery input samples.
+			TotalSamples: 48,
 			TotalSamplesPerStep: stats.TotalSamplesPerStep{
-				201000: 24,
-				206000: 24,
-				211000: 24,
-				216000: 24,
+				201000: 12,
+				206000: 12,
+				211000: 12,
+				216000: 12,
 			},
 			SamplesRead: 15,
 			SamplesReadPerStep: stats.TotalSamplesPerStep{
@@ -1712,12 +1733,12 @@ load 10s
 			End:          time.Unix(220, 0),
 			Interval:     5 * time.Second,
 			PeakSamples:  73,
-			TotalSamples: 576, // 288 materialized samples + 288 subquery input samples.
+			TotalSamples: 288,
 			TotalSamplesPerStep: stats.TotalSamplesPerStep{
-				201000: 144,
-				206000: 144,
-				211000: 144,
-				216000: 144,
+				201000: 72,
+				206000: 72,
+				211000: 72,
+				216000: 72,
 			},
 			SamplesRead: 90,
 			SamplesReadPerStep: stats.TotalSamplesPerStep{
@@ -1737,12 +1758,12 @@ load 10s
 			End:          time.Unix(216, 0),
 			Interval:     5 * time.Second,
 			PeakSamples:  69,
-			TotalSamples: 384, // 192 materialized samples + 192 subquery input samples.
+			TotalSamples: 192,
 			TotalSamplesPerStep: stats.TotalSamplesPerStep{
-				201000: 96,
-				206000: 96,
-				211000: 96,
-				216000: 96,
+				201000: 48,
+				206000: 48,
+				211000: 48,
+				216000: 48,
 			},
 			SamplesRead: 60,
 			SamplesReadPerStep: stats.TotalSamplesPerStep{
@@ -1758,12 +1779,12 @@ load 10s
 			End:          time.Unix(220, 0), // 4s past the last aligned step (216).
 			Interval:     5 * time.Second,
 			PeakSamples:  69,
-			TotalSamples: 384, // 192 materialized samples + 192 subquery input samples.
+			TotalSamples: 192,
 			TotalSamplesPerStep: stats.TotalSamplesPerStep{
-				201000: 96,
-				206000: 96,
-				211000: 96,
-				216000: 96,
+				201000: 48,
+				206000: 48,
+				211000: 48,
+				216000: 48,
 			},
 			SamplesRead: 60,
 			SamplesReadPerStep: stats.TotalSamplesPerStep{
@@ -1782,12 +1803,12 @@ load 10s
 			End:          time.Unix(280, 0),
 			Interval:     10 * time.Second,
 			PeakSamples:  19,
-			TotalSamples: 16, // (2 subquery input samples + 2 materialized samples) * 4 steps.
+			TotalSamples: 8,
 			TotalSamplesPerStep: stats.TotalSamplesPerStep{
-				250000: 4,
-				260000: 4,
-				270000: 4,
-				280000: 4,
+				250000: 2,
+				260000: 2,
+				270000: 2,
+				280000: 2,
 			},
 			SamplesRead: 2,
 			SamplesReadPerStep: stats.TotalSamplesPerStep{
@@ -1801,9 +1822,9 @@ load 10s
 			Query:        "quantile_over_time(time() / 1000, metricWith1SampleEvery10Seconds[20s:10s] @ 200)",
 			Start:        time.Unix(250, 0),
 			PeakSamples:  7,
-			TotalSamples: 4, // 2 subquery input samples + 2 materialized samples.
+			TotalSamples: 2,
 			TotalSamplesPerStep: stats.TotalSamplesPerStep{
-				250000: 4,
+				250000: 2,
 			},
 			SamplesRead: 2,
 			SamplesReadPerStep: stats.TotalSamplesPerStep{
@@ -1816,9 +1837,9 @@ load 10s
 			Query:        "max_over_time(metricWith1SampleEvery10Seconds[20s:10s])",
 			Start:        time.Unix(201, 0),
 			PeakSamples:  5,
-			TotalSamples: 4,
+			TotalSamples: 2,
 			TotalSamplesPerStep: stats.TotalSamplesPerStep{
-				201000: 4,
+				201000: 2,
 			},
 			SamplesRead: 2,
 			SamplesReadPerStep: stats.TotalSamplesPerStep{
@@ -1831,9 +1852,9 @@ load 10s
 			Query:        "sum_over_time(metricWith1SampleEvery10Seconds[30s:30s])",
 			Start:        time.Unix(90, 0),
 			PeakSamples:  3,
-			TotalSamples: 2,
+			TotalSamples: 1,
 			TotalSamplesPerStep: stats.TotalSamplesPerStep{
-				90000: 2,
+				90000: 1,
 			},
 			SamplesRead: 1,
 			SamplesReadPerStep: stats.TotalSamplesPerStep{
@@ -1846,9 +1867,9 @@ load 10s
 			Query:        "max_over_time(metricWith1SampleEvery10Seconds[30s:2m])",
 			Start:        time.Unix(240, 0),
 			PeakSamples:  3,
-			TotalSamples: 2,
+			TotalSamples: 1,
 			TotalSamplesPerStep: stats.TotalSamplesPerStep{
-				240000: 2,
+				240000: 1,
 			},
 			SamplesRead: 1,
 			SamplesReadPerStep: stats.TotalSamplesPerStep{
@@ -1863,10 +1884,10 @@ load 10s
 			End:          time.Unix(231, 0),
 			Interval:     30 * time.Second,
 			PeakSamples:  11,
-			TotalSamples: 12,
+			TotalSamples: 6,
 			TotalSamplesPerStep: stats.TotalSamplesPerStep{
-				201000: 6,
-				231000: 6,
+				201000: 3,
+				231000: 3,
 			},
 			SamplesRead: 6,
 			SamplesReadPerStep: stats.TotalSamplesPerStep{
@@ -1883,15 +1904,15 @@ load 10s
 			End:          time.Unix(261, 0),
 			Interval:     10 * time.Second,
 			PeakSamples:  17,
-			TotalSamples: 28,
+			TotalSamples: 14,
 			TotalSamplesPerStep: stats.TotalSamplesPerStep{
-				201000: 4,
-				211000: 4,
-				221000: 4,
-				231000: 4,
-				241000: 4,
-				251000: 4,
-				261000: 4,
+				201000: 2,
+				211000: 2,
+				221000: 2,
+				231000: 2,
+				241000: 2,
+				251000: 2,
+				261000: 2,
 			},
 			SamplesRead: 8,
 			SamplesReadPerStep: stats.TotalSamplesPerStep{
@@ -1916,10 +1937,10 @@ load 10s
 			End:          time.Unix(261, 0),
 			Interval:     1 * time.Minute,
 			PeakSamples:  14,
-			TotalSamples: 12,
+			TotalSamples: 6,
 			TotalSamplesPerStep: stats.TotalSamplesPerStep{
-				201000: 6,
-				261000: 6,
+				201000: 3,
+				261000: 3,
 			},
 			SamplesRead: 6,
 			SamplesReadPerStep: stats.TotalSamplesPerStep{
@@ -1933,9 +1954,9 @@ load 10s
 			Query:        "histogram_count(max_over_time(metricWith1HistogramEvery10Seconds[20s:10s]))",
 			Start:        time.Unix(201, 0),
 			PeakSamples:  52,
-			TotalSamples: 52,
+			TotalSamples: 26,
 			TotalSamplesPerStep: stats.TotalSamplesPerStep{
-				201000: 52,
+				201000: 26,
 			},
 			SamplesRead: 26,
 			SamplesReadPerStep: stats.TotalSamplesPerStep{
@@ -1950,11 +1971,11 @@ load 10s
 			End:          time.Unix(240, 0),
 			Interval:     60 * time.Second,
 			PeakSamples:  117,
-			TotalSamples: 156,
+			TotalSamples: 78,
 			TotalSamplesPerStep: stats.TotalSamplesPerStep{
-				120000: 52,
-				180000: 52,
-				240000: 52,
+				120000: 26,
+				180000: 26,
+				240000: 26,
 			},
 			SamplesRead: 52,
 			SamplesReadPerStep: stats.TotalSamplesPerStep{
@@ -1971,15 +1992,15 @@ load 10s
 			End:          time.Unix(400, 0),
 			Interval:     30 * time.Second,
 			PeakSamples:  99,
-			TotalSamples: 252,
+			TotalSamples: 126,
 			TotalSamplesPerStep: stats.TotalSamplesPerStep{
-				200000: 36,
-				230000: 36,
-				260000: 36,
-				290000: 36,
-				320000: 36,
-				350000: 36,
-				380000: 36,
+				200000: 18,
+				230000: 18,
+				260000: 18,
+				290000: 18,
+				320000: 18,
+				350000: 18,
+				380000: 18,
 			},
 			SamplesRead: 72,
 			SamplesReadPerStep: stats.TotalSamplesPerStep{
@@ -2024,9 +2045,9 @@ load 10s
 			Query:        "sum_over_time(metricWith3SampleEvery10Seconds[20s:10s] @ 200)",
 			Start:        time.Unix(250, 0),
 			PeakSamples:  11,
-			TotalSamples: 12,
+			TotalSamples: 6,
 			TotalSamplesPerStep: stats.TotalSamplesPerStep{
-				250000: 12,
+				250000: 6,
 			},
 			SamplesRead: 6,
 			SamplesReadPerStep: stats.TotalSamplesPerStep{
@@ -2039,13 +2060,35 @@ load 10s
 			Query:        "sum_over_time(metricWith1SampleEvery10Seconds[20s:10s] offset 1m)",
 			Start:        time.Unix(240, 0),
 			PeakSamples:  5,
-			TotalSamples: 4,
+			TotalSamples: 2,
 			TotalSamplesPerStep: stats.TotalSamplesPerStep{
-				240000: 4,
+				240000: 2,
 			},
 			SamplesRead: 2,
 			SamplesReadPerStep: stats.TotalSamplesPerStep{
 				240000: 2,
+			},
+		},
+
+		{
+			Query:        "sum_over_time(metricWith1SampleEvery10Seconds[20s:10s] offset 1m)",
+			Start:        time.Unix(240, 0),
+			End:          time.Unix(270, 0),
+			Interval:     10 * time.Second,
+			PeakSamples:  11,
+			TotalSamples: 8,
+			TotalSamplesPerStep: stats.TotalSamplesPerStep{
+				240000: 2,
+				250000: 2,
+				260000: 2,
+				270000: 2,
+			},
+			SamplesRead: 5,
+			SamplesReadPerStep: stats.TotalSamplesPerStep{
+				240000: 2,
+				250000: 1,
+				260000: 1,
+				270000: 1,
 			},
 		},
 
@@ -2054,9 +2097,9 @@ load 10s
 			Query:        "sum_over_time(metricWith3SampleEvery10Seconds[1m:10s] @ 200 offset 1m)",
 			Start:        time.Unix(300, 0),
 			PeakSamples:  27,
-			TotalSamples: 36,
+			TotalSamples: 18,
 			TotalSamplesPerStep: stats.TotalSamplesPerStep{
-				300000: 36,
+				300000: 18,
 			},
 			SamplesRead: 18,
 			SamplesReadPerStep: stats.TotalSamplesPerStep{
@@ -2069,9 +2112,9 @@ load 10s
 			Query:        "sum_over_time(max_over_time(metricWith3SampleEvery10Seconds[60s] @ 300)[5m:1m] @ 600)[10m:2m]",
 			Start:        time.Unix(800, 0),
 			PeakSamples:  23,
-			TotalSamples: 525,
+			TotalSamples: 450,
 			TotalSamplesPerStep: stats.TotalSamplesPerStep{
-				800000: 525,
+				800000: 450,
 			},
 			SamplesRead: 18,
 			SamplesReadPerStep: stats.TotalSamplesPerStep{
@@ -2080,14 +2123,14 @@ load 10s
 		},
 
 		// Outer subquery wrapping inner range-vector (evalSubquery path):
-		// TotalSamples includes the inner range-vector windows and the outer materialized samples.
+		// TotalSamples includes only the underlying samples in the inner range-vector windows.
 		{
 			Query:        "rate(sum_over_time(metricWith1SampleEvery10Seconds[30s])[1m:30s])",
 			Start:        time.Unix(240, 0),
 			PeakSamples:  5,
-			TotalSamples: 8,
+			TotalSamples: 6,
 			TotalSamplesPerStep: stats.TotalSamplesPerStep{
-				240000: 8,
+				240000: 6,
 			},
 			SamplesRead: 6,
 			SamplesReadPerStep: stats.TotalSamplesPerStep{
@@ -2125,6 +2168,16 @@ load 10s
 				require.Equal(t, c.SamplesRead, stats.Samples.SamplesRead, "Samples read mismatch")
 				require.Equal(t, &c.SamplesReadPerStep, stats.Samples.SamplesReadPerStepMap(), "Samples read per step mismatch")
 				require.Equal(t, c.PeakSamples, stats.Samples.PeakSamples, "Peak samples mismatch")
+				for ts, total := range c.TotalSamplesPerStep {
+					if c.Interval == 0 {
+						break
+					}
+					instant := c
+					instant.Start = time.UnixMilli(ts)
+					instant.Interval = 0
+					instantStats := runQuery(t, engine, opts, instant, nil)
+					require.Equal(t, int64(total), instantStats.Samples.TotalSamples, "Instant query total at %d", ts)
+				}
 
 				// Re-run with the max set to one less than the observed peak;
 				// confirms the peak is what gates the query.max-samples limit.
