@@ -1650,63 +1650,158 @@ func TestUnregisterMetrics(t *testing.T) {
 	}
 }
 
+// refreshConfig is a config for a discoverer that instantiates refresh metrics
+// when created, like discoverers using the refresh package.
+type refreshConfig struct{ url string }
+
+type refreshDiscovererMetrics struct {
+	NoopDiscovererMetrics
+	RefreshMetricsInstantiator
+}
+
+// NewDiscovererMetrics implements discovery.Config.
+func (refreshConfig) NewDiscovererMetrics(_ prometheus.Registerer, rmi RefreshMetricsInstantiator) DiscovererMetrics {
+	return &refreshDiscovererMetrics{RefreshMetricsInstantiator: rmi}
+}
+
+func (refreshConfig) Name() string { return "refresh" }
+func (c refreshConfig) NewDiscoverer(opts DiscovererOptions) (Discoverer, error) {
+	opts.Metrics.(*refreshDiscovererMetrics).Instantiate(c.Name(), opts.SetName)
+	return newTestDiscoverer(), nil
+}
+
 // Refresh and discovery metrics should be deleted for providers that are removed.
+// Refresh metrics should *also* be kept for jobs that still have a provider for the same mechanism after a reload.
 func TestMetricsCleanupAfterConfigReload(t *testing.T) {
 	t.Parallel()
-	ctx := t.Context()
-
-	reg := prometheus.NewRegistry()
-	sdMetrics := NewTestMetrics(t, reg)
-
-	discoveryManager := NewManager(ctx, promslog.NewNopLogger(), reg, sdMetrics)
-	require.NotNil(t, discoveryManager)
-	discoveryManager.updatert = 100 * time.Millisecond
-	go discoveryManager.Run()
-
-	c := map[string]Configs{
-		"prometheus": {
-			staticConfig("foo:9090", "bar:9090"),
+	for _, tc := range []struct {
+		name                string
+		before              map[string]Configs
+		after               map[string]Configs
+		refreshSeriesBefore int // Defaults to len(before).
+		refreshSeries       int
+	}{
+		{
+			name: "job removed",
+			before: map[string]Configs{
+				"prometheus": {refreshConfig{"foo"}},
+				"other":      {refreshConfig{"bar"}},
+			},
+			after: map[string]Configs{
+				"other": {refreshConfig{"bar"}},
+			},
+			refreshSeries: 1,
 		},
-		"other": {
-			staticConfig("baz:9090"),
+		{
+			name: "job changes mechanism",
+			before: map[string]Configs{
+				"prometheus": {refreshConfig{"foo"}},
+			},
+			after: map[string]Configs{
+				"prometheus": {staticConfig("foo:9090")},
+			},
+			refreshSeries: 0,
 		},
+		{
+			name: "job changes config",
+			before: map[string]Configs{
+				"prometheus": {refreshConfig{"foo"}},
+			},
+			after: map[string]Configs{
+				"prometheus": {refreshConfig{"bar"}},
+			},
+			refreshSeries: 1,
+		},
+		{
+			name: "job removes one of its configs",
+			before: map[string]Configs{
+				"prometheus": {refreshConfig{"foo"}, refreshConfig{"bar"}},
+			},
+			after: map[string]Configs{
+				"prometheus": {refreshConfig{"bar"}},
+			},
+			refreshSeries: 1,
+		},
+		{
+			// The provider keeps running, so its metrics keep the original job name.
+			name: "job renamed",
+			before: map[string]Configs{
+				"prometheus": {refreshConfig{"foo"}},
+			},
+			after: map[string]Configs{
+				"renamed": {refreshConfig{"foo"}},
+			},
+			refreshSeries: 1,
+		},
+		{
+			// Jobs with identical configs share one provider.
+			name: "job changes to another job's config",
+			before: map[string]Configs{
+				"prometheus": {refreshConfig{"foo"}},
+				"other":      {refreshConfig{"bar"}},
+			},
+			after: map[string]Configs{
+				"prometheus": {refreshConfig{"foo"}},
+				"other":      {refreshConfig{"foo"}},
+			},
+			refreshSeries: 1,
+		},
+		{
+			// The provider keeps running for the other job, so its metrics are kept.
+			name: "job removed while another job uses its config",
+			before: map[string]Configs{
+				"prometheus": {refreshConfig{"foo"}},
+				"other":      {refreshConfig{"foo"}},
+			},
+			after: map[string]Configs{
+				"other": {refreshConfig{"foo"}},
+			},
+			refreshSeriesBefore: 1,
+			refreshSeries:       1,
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			reg := prometheus.NewRegistry()
+			sdMetrics := NewTestMetrics(t, reg)
+			sdMetrics.MechanismMetrics["refresh"] = refreshConfig{}.NewDiscovererMetrics(reg, sdMetrics.RefreshManager)
+
+			discoveryManager := NewManager(t.Context(), promslog.NewNopLogger(), reg, sdMetrics)
+			require.NotNil(t, discoveryManager)
+			discoveryManager.updatert = 100 * time.Millisecond
+			go discoveryManager.Run()
+
+			discoveryManager.ApplyConfig(tc.before)
+			<-discoveryManager.SyncCh()
+
+			// Ensure we have metrics for every job.
+			refreshSeriesBefore := len(tc.before)
+			if tc.refreshSeriesBefore != 0 {
+				refreshSeriesBefore = tc.refreshSeriesBefore
+			}
+			requireSeriesCount(t, reg, "prometheus_sd_discovered_targets", len(tc.before))
+			requireSeriesCount(t, reg, "prometheus_sd_last_update_timestamp_seconds", len(tc.before))
+			requireSeriesCount(t, reg, "prometheus_sd_refresh_failures_total", refreshSeriesBefore)
+			requireSeriesCount(t, reg, "prometheus_sd_refresh_duration_seconds", refreshSeriesBefore)
+
+			// Simulate a config refresh.
+			discoveryManager.ApplyConfig(tc.after)
+			<-discoveryManager.SyncCh()
+
+			// Ensure we still have metrics for the remaining jobs.
+			requireSeriesCount(t, reg, "prometheus_sd_discovered_targets", len(tc.after))
+			requireSeriesCount(t, reg, "prometheus_sd_last_update_timestamp_seconds", len(tc.after))
+			requireSeriesCount(t, reg, "prometheus_sd_refresh_failures_total", tc.refreshSeries)
+			requireSeriesCount(t, reg, "prometheus_sd_refresh_duration_seconds", tc.refreshSeries)
+		})
 	}
-	discoveryManager.ApplyConfig(c)
-	<-discoveryManager.SyncCh()
+}
 
-	// Manually instantiate refresh metrics to make them visible
-	sdMetrics.RefreshManager.Instantiate("static", "prometheus").Failures.Add(0)
-	sdMetrics.RefreshManager.Instantiate("static", "other").Failures.Add(0)
-
-	count, err := client_testutil.GatherAndCount(reg, "prometheus_sd_discovered_targets")
+// requireSeriesCount checks the number of series exported for a metric.
+func requireSeriesCount(t *testing.T, reg prometheus.Gatherer, metric string, expected int) {
+	t.Helper()
+	count, err := client_testutil.GatherAndCount(reg, metric)
 	require.NoError(t, err)
-	require.Equal(t, 2, count)
-
-	count, err = client_testutil.GatherAndCount(reg, "prometheus_sd_refresh_failures_total")
-	require.NoError(t, err)
-	require.Equal(t, 2, count)
-
-	count, err = client_testutil.GatherAndCount(reg, "prometheus_sd_last_update_timestamp_seconds")
-	require.NoError(t, err)
-	require.Equal(t, 2, count)
-
-	// Simulate a config refresh.
-	delete(c, "prometheus")
-	discoveryManager.ApplyConfig(c)
-	<-discoveryManager.SyncCh()
-
-	// Ensure we still have metrics for the remaining provider.
-	count, err = client_testutil.GatherAndCount(reg, "prometheus_sd_discovered_targets")
-	require.NoError(t, err)
-	require.Equal(t, 1, count)
-
-	count, err = client_testutil.GatherAndCount(reg, "prometheus_sd_refresh_failures_total")
-	require.NoError(t, err)
-	require.Equal(t, 1, count)
-
-	count, err = client_testutil.GatherAndCount(reg, "prometheus_sd_last_update_timestamp_seconds")
-	require.NoError(t, err)
-	require.Equal(t, 1, count)
+	require.Equal(t, expected, count, metric)
 }
 
 // Calling ApplyConfig() that removes providers at the same time as shutting down
