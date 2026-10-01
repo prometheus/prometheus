@@ -959,7 +959,6 @@ outer:
 		}
 		// Check if `convert_nhcb_to_classic` flag is enabled to convert NHCB Float histograms to classic histograms.
 		if t.convertNHCBToClassic && h.FH != nil && h.FH.Schema == histogram.CustomBucketsSchema {
-			// we make labels here :D
 			t.seriesMtx.Lock()
 			lbls, ok := t.seriesLabels[h.Ref]
 			if !ok {
