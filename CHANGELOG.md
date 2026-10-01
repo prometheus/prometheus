@@ -2,6 +2,9 @@
 
 ## main / unreleased
 
+* [BUGFIX] TSDB: Register `prometheus_tsdb_sample_ooo_delta` metric properly. #17477
+* [ENHANCEMENT] Remote Write: Add experimental flag `convert_nhcb_to_classic` to convert NHCB to classic histograms for external system that dont support NHCBs. #17205
+
 - [BUGFIX] Web: Upgrade `exporter-toolkit` to v0.20.0, fixing HTTP/2 ALPN negotiation loss under Go 1.27+ when TLS is enabled with `http2: true`. The server no longer silently falls back to HTTP/1.1, preventing excess TCP connections under concurrent load. #19807
 - [ENHANCEMENT] Remote write / Alertmanager: Upgrade `github.com/prometheus/sigv4` to v0.5.0, adding `session_name` and `tags` fields to the `sigv4` configuration block for STS AssumeRole sessions. The existing but previously undocumented `service_name` field is also documented.
 
@@ -411,7 +414,7 @@ User migrating from bind mounts might need to ajust permissions too, depending o
 * [PERF] TSDB: Optimize appender creation, slightly speeding up startup. #16922
 * [PERF] TSDB: Improve speed of querying a series with multiple matchers. #13971
 * [BUGFIX] Alerting: Mutating alerts relabeling (using `replace` actions, etc.) within a `alertmanager_config.alert_relabel_configs` block is now scoped correctly and no longer yields altered alerts to subsequent blocks. #17063
-* [BUGFIX] Config: Infer valid escaping scheme when scrape config validation scheme is set. #16923
+* [BUGFIX] Config: Infer escaping scheme when scrape config validation scheme is set.
 * [BUGFIX] TSDB: Correctly handle appending mixed-typed samples to the same series. #17071 #17241 #17290 #17295 #17296
 * [BUGFIX] Remote-write: Prevent sending unsupported native histograms with custom buckets (NHCB) over Remote-write 1.0, log warning. #17146
 * [BUGFIX] TSDB: Fix metadata entries handling on `metadata-wal-records` experimental feature for native histograms with custom buckets (NHCB) in protobuf scraping. #17156

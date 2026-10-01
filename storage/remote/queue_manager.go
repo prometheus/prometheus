@@ -434,6 +434,7 @@ type QueueManager struct {
 	sendNativeHistograms    bool
 	enableTypeAndUnitLabels bool
 	failedRequestLogging    bool
+	convertNHCBToClassic    bool
 	watcher                 *wlog.Watcher
 	metadataWatcher         *MetadataWatcher
 
@@ -491,6 +492,7 @@ func NewQueueManager(
 	protoMsg remoteapi.WriteMessageType,
 	recordBuf *record.BuffersPool,
 	failedRequestLogging bool,
+	convertNHCBToClassic bool,
 ) *QueueManager {
 	if logger == nil {
 		logger = promslog.NewNopLogger()
@@ -537,6 +539,8 @@ func NewQueueManager(
 
 		protoMsg: protoMsg,
 		compr:    compression.Snappy, // Hardcoded for now, but scaffolding exists for likely future use.
+
+		convertNHCBToClassic: convertNHCBToClassic,
 	}
 
 	walMetadata := t.protoMsg != remoteapi.WriteV1MessageType
@@ -856,6 +860,42 @@ outer:
 			t.metrics.droppedHistogramsTotal.WithLabelValues(reasonTooOld).Inc()
 			continue
 		}
+		// Check if `convert_nhcb_to_classic` flag is enabled to convert NHCB histograms to classic histograms
+		if t.convertNHCBToClassic && h.H != nil && h.H.Schema == histogram.CustomBucketsSchema {
+			t.seriesMtx.Lock()
+			lbls, ok := t.seriesLabels[h.Ref]
+			if !ok {
+				if _, ok := t.droppedSeries[h.Ref]; !ok {
+					t.logger.Info("Dropped histogram for series that was not explicitly dropped via relabelling", "ref", h.Ref)
+					t.metrics.droppedHistogramsTotal.WithLabelValues(reasonUnintentionalDroppedSeries).Inc()
+				} else {
+					t.metrics.droppedHistogramsTotal.WithLabelValues(reasonDroppedSeries).Inc()
+				}
+				t.seriesMtx.Unlock()
+				continue
+			}
+			meta := t.seriesMetadata[h.Ref]
+			t.seriesMtx.Unlock()
+
+			err := histogram.ConvertNHCBToClassic(h.H, lbls, t.builder, func(bucketLabels labels.Labels, value float64) error {
+				if !t.shards.enqueue(h.Ref, timeSeries{
+					seriesLabels: bucketLabels,
+					metadata:     meta,
+					timestamp:    h.T,
+					value:        value,
+					sType:        tSample,
+				}) {
+					return errors.New("conversion error: failed to enqueue converted classic histogram sample")
+				}
+				return nil
+			})
+			if err != nil {
+				t.logger.Error("Conversion error", "err", err)
+				t.metrics.droppedHistogramsTotal.WithLabelValues("nhcb_to_classic_conversion_error").Inc()
+			}
+			continue
+		}
+		// Handle the case where v1 protocol doesn't support NHCB histograms
 		if t.protoMsg == remoteapi.WriteV1MessageType && h.H != nil && h.H.Schema == histogram.CustomBucketsSchema {
 			// We cannot send native histograms with custom buckets (NHCB) via remote write v1.
 			t.metrics.droppedHistogramsTotal.WithLabelValues(reasonNHCBNotSupported).Inc()
@@ -918,6 +958,43 @@ outer:
 			t.metrics.droppedHistogramsTotal.WithLabelValues(reasonTooOld).Inc()
 			continue
 		}
+		// Check if `convert_nhcb_to_classic` flag is enabled to convert NHCB Float histograms to classic histograms
+		if t.convertNHCBToClassic && h.FH != nil && h.FH.Schema == histogram.CustomBucketsSchema {
+			// we make labels here :D
+			t.seriesMtx.Lock()
+			lbls, ok := t.seriesLabels[h.Ref]
+			if !ok {
+				if _, ok := t.droppedSeries[h.Ref]; !ok {
+					t.logger.Info("Dropped histogram for series that was not explicitly dropped via relabelling", "ref", h.Ref)
+					t.metrics.droppedHistogramsTotal.WithLabelValues(reasonUnintentionalDroppedSeries).Inc()
+				} else {
+					t.metrics.droppedHistogramsTotal.WithLabelValues(reasonDroppedSeries).Inc()
+				}
+				t.seriesMtx.Unlock()
+				continue
+			}
+			meta := t.seriesMetadata[h.Ref]
+			t.seriesMtx.Unlock()
+
+			err := histogram.ConvertNHCBToClassic(h.FH, lbls, t.builder, func(bucketLabels labels.Labels, value float64) error {
+				if !t.shards.enqueue(h.Ref, timeSeries{
+					seriesLabels: bucketLabels,
+					metadata:     meta,
+					timestamp:    h.T,
+					value:        value,
+					sType:        tSample,
+				}) {
+					return errors.New("conversion error: failed to enqueue converted classic histogram sample")
+				}
+				return nil
+			})
+			if err != nil {
+				t.logger.Error("Conversion error", "err", err)
+				t.metrics.droppedHistogramsTotal.WithLabelValues("nhcb_to_classic_conversion_error").Inc()
+			}
+			continue
+		}
+		// Handle the case where v1 protocol doesn't support NHCB histograms
 		if t.protoMsg == remoteapi.WriteV1MessageType && h.FH != nil && h.FH.Schema == histogram.CustomBucketsSchema {
 			// We cannot send native histograms with custom buckets (NHCB) via remote write v1.
 			t.metrics.droppedHistogramsTotal.WithLabelValues(reasonNHCBNotSupported).Inc()
@@ -1689,11 +1766,15 @@ func populateTimeSeries(batch []timeSeries, pendingData []prompb.TimeSeries, sen
 			})
 			nPendingExemplars++
 		case tHistogram:
-			pendingData[nPending].Histograms = append(pendingData[nPending].Histograms, prompb.FromIntHistogram(d.timestamp, d.histogram))
-			nPendingHistograms++
+			if d.histogram != nil {
+				pendingData[nPending].Histograms = append(pendingData[nPending].Histograms, prompb.FromIntHistogram(d.timestamp, d.histogram))
+				nPendingHistograms++
+			}
 		case tFloatHistogram:
-			pendingData[nPending].Histograms = append(pendingData[nPending].Histograms, prompb.FromFloatHistogram(d.timestamp, d.floatHistogram))
-			nPendingHistograms++
+			if d.floatHistogram != nil {
+				pendingData[nPending].Histograms = append(pendingData[nPending].Histograms, prompb.FromFloatHistogram(d.timestamp, d.floatHistogram))
+				nPendingHistograms++
+			}
 		}
 	}
 	return nPendingSamples, nPendingExemplars, nPendingHistograms
@@ -2030,11 +2111,15 @@ func populateV2TimeSeries(symbolTable *writev2.SymbolsTable, batch []timeSeries,
 			})
 			nPendingExemplars++
 		case tHistogram:
-			pendingData[nPending].Histograms = append(pendingData[nPending].Histograms, writev2.FromIntHistogram(d.startTimestamp, d.timestamp, d.histogram))
-			nPendingHistograms++
+			if d.histogram != nil {
+				pendingData[nPending].Histograms = append(pendingData[nPending].Histograms, writev2.FromIntHistogram(d.startTimestamp, d.timestamp, d.histogram))
+				nPendingHistograms++
+			}
 		case tFloatHistogram:
-			pendingData[nPending].Histograms = append(pendingData[nPending].Histograms, writev2.FromFloatHistogram(d.startTimestamp, d.timestamp, d.floatHistogram))
-			nPendingHistograms++
+			if d.floatHistogram != nil {
+				pendingData[nPending].Histograms = append(pendingData[nPending].Histograms, writev2.FromFloatHistogram(d.startTimestamp, d.timestamp, d.floatHistogram))
+				nPendingHistograms++
+			}
 		case tMetadata:
 			nUnexpectedMetadata++
 		}

@@ -221,6 +221,7 @@ func (rws *WriteStorage) ApplyConfig(conf *config.Config) error {
 			rwConf.ProtobufMessage,
 			rws.recordBuf,
 			rwConf.FailedRequestLogging,
+			rwConf.ConvertNHCBToClassic,
 		)
 		// Keep track of which queues are new so we know which to start.
 		newHashes = append(newHashes, hash)
