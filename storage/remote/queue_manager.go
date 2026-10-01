@@ -1019,10 +1019,23 @@ outer:
 				continue
 			}
 			for _, ts := range classicSeries {
-				if !t.shards.enqueue(h.Ref, ts) {
-					t.logger.Error("Conversion error", "err", errors.New("conversion error: failed to enqueue converted classic histogram sample"))
-					t.metrics.droppedHistogramsTotal.WithLabelValues("nhcb_to_classic_conversion_error").Inc()
-					break
+				backoff := model.Duration(5 * time.Millisecond)
+				for {
+					select {
+					case <-t.quit:
+						return false
+					default:
+					}
+					if t.shards.enqueue(h.Ref, ts) {
+						break
+					}
+
+					t.metrics.enqueueRetriesTotal.Inc()
+					time.Sleep(time.Duration(backoff))
+					backoff *= 2
+					if backoff > t.cfg.MaxBackoff {
+						backoff = t.cfg.MaxBackoff
+					}
 				}
 			}
 			continue
