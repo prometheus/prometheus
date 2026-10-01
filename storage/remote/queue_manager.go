@@ -860,7 +860,7 @@ outer:
 			t.metrics.droppedHistogramsTotal.WithLabelValues(reasonTooOld).Inc()
 			continue
 		}
-		// Check if `convert_nhcb_to_classic` flag is enabled to convert NHCB histograms to classic histograms
+		// Check if `convert_nhcb_to_classic` flag is enabled to convert NHCB histograms to classic histograms.
 		if t.convertNHCBToClassic && h.H != nil && h.H.Schema == histogram.CustomBucketsSchema {
 			t.seriesMtx.Lock()
 			lbls, ok := t.seriesLabels[h.Ref]
