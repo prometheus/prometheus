@@ -1465,15 +1465,6 @@ func (p *openMetrics2Parser) buildNHCBHistogram(cf compositeFields, isNative boo
 			fh.CounterResetHint = histogram.GaugeType
 		}
 	}
-	if h != nil {
-		if err := h.Validate(); err != nil {
-			return nil, nil, fmt.Errorf("invalid histogram: %w", err)
-		}
-	} else if fh != nil {
-		if err := fh.Validate(); err != nil {
-			return nil, nil, fmt.Errorf("invalid float histogram: %w", err)
-		}
-	}
 	return h, fh, nil
 }
 
