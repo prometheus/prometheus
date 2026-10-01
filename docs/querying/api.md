@@ -619,6 +619,21 @@ Additional parameters for `/api/v1/search/metric_names`:
 - `include_metadata=<bool>`: Include metric metadata in each result.
 - `sort_by=<alpha | score>`
 
+Metadata is matched by the exact metric name first, then by the metric family
+name for suffixes supported by that family's type:
+
+- `_total` for counters.
+- `_bucket`, `_sum`, and `_count` for histograms.
+- `_bucket`, `_sum`, `_count`, `_gsum`, and `_gcount` for gauge histograms.
+- `_sum` and `_count` for summaries.
+- `_info` for info metrics.
+
+The returned `type`, `help`, and `unit` describe the metric family, not the
+individual series: e.g. `http_request_duration_seconds_bucket` is reported with
+type `histogram`. Matching is done by name against metadata from active
+targets, so it is best-effort. Metadata fields are omitted when no matching
+metadata is available.
+
 Additional parameters for `/api/v1/search/label_names`:
 
 - `sort_by=<alpha | score>`
