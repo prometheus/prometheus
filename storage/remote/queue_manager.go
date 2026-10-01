@@ -545,7 +545,7 @@ func NewQueueManager(
 
 	walMetadata := t.protoMsg != remoteapi.WriteV1MessageType
 
-	t.watcher = wlog.NewWatcher(watcherMetrics, readerMetrics, logger, client.Name(), t, dir, enableExemplarRemoteWrite, enableNativeHistogramRemoteWrite, walMetadata, recordBuf)
+	t.watcher = wlog.NewWatcher(watcherMetrics, readerMetrics, logger, client.Name(), t, dir, enableExemplarRemoteWrite, enableNativeHistogramRemoteWrite || convertNHCBToClassic, walMetadata, recordBuf)
 
 	// The current MetadataWatcher implementation is mutually exclusive
 	// with the new approach, which stores metadata as WAL records and
@@ -850,18 +850,22 @@ outer:
 }
 
 func (t *QueueManager) AppendHistograms(histograms []record.RefHistogramSample) bool {
-	if !t.sendNativeHistograms {
+	if !t.sendNativeHistograms && !t.convertNHCBToClassic {
 		return true
 	}
 	currentTime := time.Now()
 outer:
 	for _, h := range histograms {
+		isNHCB := h.H != nil && h.H.Schema == histogram.CustomBucketsSchema
+		if !t.sendNativeHistograms && (!t.convertNHCBToClassic || !isNHCB) {
+			continue
+		}
 		if isSampleOld(currentTime, time.Duration(t.cfg.SampleAgeLimit), h.T) {
 			t.metrics.droppedHistogramsTotal.WithLabelValues(reasonTooOld).Inc()
 			continue
 		}
 		// Check if `convert_nhcb_to_classic` flag is enabled to convert NHCB histograms to classic histograms.
-		if t.convertNHCBToClassic && h.H != nil && h.H.Schema == histogram.CustomBucketsSchema {
+		if t.convertNHCBToClassic && isNHCB {
 			t.seriesMtx.Lock()
 			lbls, ok := t.seriesLabels[h.Ref]
 			if !ok {
@@ -895,7 +899,7 @@ outer:
 			}
 			continue
 		}
-		if t.protoMsg == remoteapi.WriteV1MessageType && h.H != nil && h.H.Schema == histogram.CustomBucketsSchema {
+		if t.protoMsg == remoteapi.WriteV1MessageType && isNHCB {
 			// We cannot send native histograms with custom buckets (NHCB) via remote write v1.
 			t.metrics.droppedHistogramsTotal.WithLabelValues(reasonNHCBNotSupported).Inc()
 			t.logger.Warn("Dropped native histogram with custom buckets (NHCB) as remote write v1 does not support it", "ref", h.Ref)
@@ -947,18 +951,22 @@ outer:
 }
 
 func (t *QueueManager) AppendFloatHistograms(floatHistograms []record.RefFloatHistogramSample) bool {
-	if !t.sendNativeHistograms {
+	if !t.sendNativeHistograms && !t.convertNHCBToClassic {
 		return true
 	}
 	currentTime := time.Now()
 outer:
 	for _, h := range floatHistograms {
+		isNHCB := h.FH != nil && h.FH.Schema == histogram.CustomBucketsSchema
+		if !t.sendNativeHistograms && (!t.convertNHCBToClassic || !isNHCB) {
+			continue
+		}
 		if isSampleOld(currentTime, time.Duration(t.cfg.SampleAgeLimit), h.T) {
 			t.metrics.droppedHistogramsTotal.WithLabelValues(reasonTooOld).Inc()
 			continue
 		}
 		// Check if `convert_nhcb_to_classic` flag is enabled to convert NHCB Float histograms to classic histograms.
-		if t.convertNHCBToClassic && h.FH != nil && h.FH.Schema == histogram.CustomBucketsSchema {
+		if t.convertNHCBToClassic && isNHCB {
 			t.seriesMtx.Lock()
 			lbls, ok := t.seriesLabels[h.Ref]
 			if !ok {
@@ -992,7 +1000,7 @@ outer:
 			}
 			continue
 		}
-		if t.protoMsg == remoteapi.WriteV1MessageType && h.FH != nil && h.FH.Schema == histogram.CustomBucketsSchema {
+		if t.protoMsg == remoteapi.WriteV1MessageType && isNHCB {
 			// We cannot send native histograms with custom buckets (NHCB) via remote write v1.
 			t.metrics.droppedHistogramsTotal.WithLabelValues(reasonNHCBNotSupported).Inc()
 			t.logger.Warn("Dropped float native histogram with custom buckets (NHCB) as remote write v1 does not support it", "ref", h.Ref)
