@@ -248,10 +248,8 @@ func benchParse(b *testing.B, data []byte, parser string) {
 			return NewOpenMetricsParser(b, st, WithOMParserSTSeriesSkipped())
 		}
 	case "omtext_with_nhcb":
-		newParserFn = func(buf []byte, st *labels.SymbolTable) Parser {
-			p, err := New(buf, "application/openmetrics-text", st, ParserOptions{ConvertClassicHistogramsToNHCB: true})
-			require.NoError(b, err)
-			return p
+		newParserFn = func(b []byte, st *labels.SymbolTable) Parser {
+			return NewNHCBParser(NewOpenMetricsParser(b, st, WithOMParserSTSeriesSkipped()), st, false, false)
 		}
 	case "om2text":
 		newParserFn = func(b []byte, st *labels.SymbolTable) Parser {
@@ -262,13 +260,8 @@ func benchParse(b *testing.B, data []byte, parser string) {
 			return NewOpenMetrics2Parser(b, st, ParserOptions{ConvertClassicHistogramsToNHCB: true})
 		}
 	case "omtext_with_nhcb_st":
-		newParserFn = func(buf []byte, st *labels.SymbolTable) Parser {
-			p, err := New(buf, "application/openmetrics-text", st, ParserOptions{
-				ConvertClassicHistogramsToNHCB: true,
-				OpenMetricsSkipSTSeries:        true,
-			})
-			require.NoError(b, err)
-			return p
+		newParserFn = func(b []byte, st *labels.SymbolTable) Parser {
+			return NewNHCBParser(NewOpenMetricsParser(b, st, WithOMParserSTSeriesSkipped()), st, false, true)
 		}
 	default:
 		b.Fatal("unknown parser", parser)
