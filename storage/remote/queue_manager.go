@@ -987,23 +987,30 @@ outer:
 				continue
 			}
 			meta := t.seriesMetadata[h.Ref]
-			t.seriesMtx.Unlock()
-
+			classicSeries := make([]timeSeries, 0, len(h.FH.CustomValues)+3)
 			err := histogram.ConvertNHCBToClassic(h.FH, lbls, t.builder, func(bucketLabels labels.Labels, value float64) error {
-				if !t.shards.enqueue(h.Ref, timeSeries{
-					seriesLabels: bucketLabels,
-					metadata:     meta,
-					timestamp:    h.T,
-					value:        value,
-					sType:        tSample,
-				}) {
-					return errors.New("conversion error: failed to enqueue converted classic histogram sample")
-				}
+				classicSeries = append(classicSeries, timeSeries{
+					seriesLabels:   bucketLabels,
+					metadata:       meta,
+					startTimestamp: h.ST,
+					timestamp:      h.T,
+					value:          value,
+					sType:          tSample,
+				})
 				return nil
 			})
+			t.seriesMtx.Unlock()
 			if err != nil {
 				t.logger.Error("Conversion error", "err", err)
 				t.metrics.droppedHistogramsTotal.WithLabelValues("nhcb_to_classic_conversion_error").Inc()
+				continue
+			}
+			for _, ts := range classicSeries {
+				if !t.shards.enqueue(h.Ref, ts) {
+					t.logger.Error("Conversion error", "err", errors.New("conversion error: failed to enqueue converted classic histogram sample"))
+					t.metrics.droppedHistogramsTotal.WithLabelValues("nhcb_to_classic_conversion_error").Inc()
+					break
+				}
 			}
 			continue
 		}
