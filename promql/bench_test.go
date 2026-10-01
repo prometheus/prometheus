@@ -342,7 +342,7 @@ func BenchmarkRangeQuery(b *testing.B) {
 		Reg:        nil,
 		MaxSamples: 50000000,
 		Timeout:    100 * time.Second,
-		Parser:     parser.NewParser(parser.Options{EnableExtendedRangeSelectors: true, EnableExperimentalFunctions: true}),
+		Parser:     parser.NewParser(parser.Options{EnableExperimentalFunctions: true}),
 	}
 	engine := promqltest.NewTestEngineWithOpts(b, opts)
 

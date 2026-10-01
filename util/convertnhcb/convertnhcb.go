@@ -28,6 +28,7 @@ var (
 	errNegativeBucketCount = errors.New("bucket count must be non-negative")
 	errNaNBucket           = errors.New("bucket boundary must not be NaN")
 	errNegativeCount       = errors.New("count must be non-negative")
+	errMissingCount        = errors.New("count must be provided when no buckets are present")
 	errCountMismatch       = errors.New("count mismatch")
 	errCountNotCumulative  = errors.New("count is not cumulative")
 )
@@ -144,7 +145,10 @@ func (h TempHistogram) Convert() (*histogram.Histogram, *histogram.FloatHistogra
 		return nil, nil, h.err
 	}
 
-	if !h.hasCount && len(h.buckets) > 0 {
+	if !h.hasCount {
+		if len(h.buckets) == 0 {
+			return nil, nil, errMissingCount
+		}
 		// No count, so set count to the highest known bucket's count.
 		h.count = h.buckets[len(h.buckets)-1].count
 		h.hasCount = true

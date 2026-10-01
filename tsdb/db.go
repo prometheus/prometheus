@@ -37,6 +37,7 @@ import (
 	"golang.org/x/sync/errgroup"
 
 	"github.com/prometheus/prometheus/config"
+	"github.com/prometheus/prometheus/model/exemplar"
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/storage"
 	"github.com/prometheus/prometheus/tsdb/chunkenc"
@@ -742,6 +743,9 @@ func (db *DBReadOnly) loadDataAsQueryable(maxt int64) (storage.SampleAndChunkQue
 
 // Querier loads the blocks and wal and returns a new querier over the data partition for the given time range.
 // Current implementation doesn't support multiple Queriers.
+// The querier is not safe for concurrent use from multiple goroutines, and
+// neither are the series sets and series obtained from it: different series
+// must not be iterated concurrently either.
 func (db *DBReadOnly) Querier(mint, maxt int64) (storage.Querier, error) {
 	q, err := db.loadDataAsQueryable(maxt)
 	if err != nil {
@@ -752,6 +756,9 @@ func (db *DBReadOnly) Querier(mint, maxt int64) (storage.Querier, error) {
 
 // ChunkQuerier loads blocks and the wal and returns a new chunk querier over the data partition for the given time range.
 // Current implementation doesn't support multiple ChunkQueriers.
+// The querier is not safe for concurrent use from multiple goroutines, and
+// neither are the series sets and series obtained from it: different series
+// must not be iterated concurrently either.
 func (db *DBReadOnly) ChunkQuerier(mint, maxt int64) (storage.ChunkQuerier, error) {
 	q, err := db.loadDataAsQueryable(maxt)
 	if err != nil {
@@ -1206,6 +1213,21 @@ func open(dir string, l *slog.Logger, r prometheus.Registerer, opts *Options, rn
 	if ok {
 		minValidTime = inOrderMaxTime
 	}
+	// inOrderMaxTime alone can come back lower than where the WAL was actually truncated: a
+	// block produced by CompactSelectedSeries or CompactStaleHead carries the
+	// FromSelectedSeries or FromStaleSeries hint and is excluded from that search above, and a
+	// truncation whose range had nothing left to write never produces a block at all. Fall
+	// back to the truncation mint persisted by truncateWAL, and use whichever of the two is
+	// higher, so minValidTime never regresses below a point the WAL was already truncated to.
+	// wal is nil when WAL writes are disabled (WALSegmentSize < 0), in which case truncateWAL
+	// never runs and never had anything to persist either.
+	if wal != nil {
+		if storedMinValidTime, ok, err := wlog.ReadMinValidTime(wal.Dir()); err != nil {
+			db.logger.Warn("Failed to read persisted min valid time, falling back to the value computed from blocks", "err", err)
+		} else if ok && storedMinValidTime > minValidTime {
+			minValidTime = storedMinValidTime
+		}
+	}
 
 	if initErr := db.head.Init(minValidTime); initErr != nil {
 		db.head.metrics.walCorruptionsTotal.Inc()
@@ -1483,7 +1505,20 @@ type dbAppenderV2 struct {
 	db *DB
 }
 
-var _ storage.GetRef = dbAppenderV2{}
+var (
+	_ storage.GetRef             = dbAppenderV2{}
+	_ storage.ExemplarAppenderV2 = dbAppenderV2{}
+)
+
+// AppendExemplars implements storage.ExemplarAppenderV2 by delegating to the
+// wrapped head appender.
+func (a dbAppenderV2) AppendExemplars(ref storage.SeriesRef, ls labels.Labels, exemplars []exemplar.Exemplar) (storage.SeriesRef, error) {
+	ea, ok := a.AppenderV2.(storage.ExemplarAppenderV2)
+	if !ok {
+		return 0, fmt.Errorf("appender %T does not implement storage.ExemplarAppenderV2", a.AppenderV2)
+	}
+	return ea.AppendExemplars(ref, ls, exemplars)
+}
 
 func (a dbAppenderV2) GetRef(lset labels.Labels, hash uint64) (storage.SeriesRef, labels.Labels) {
 	if g, ok := a.AppenderV2.(storage.GetRef); ok {
@@ -2576,6 +2611,9 @@ func (db *DB) Snapshot(dir string, withHead bool) error {
 }
 
 // Querier returns a new querier over the data partition for the given time range.
+// The querier is not safe for concurrent use from multiple goroutines, and
+// neither are the series sets and series obtained from it: different series
+// must not be iterated concurrently either.
 func (db *DB) Querier(mint, maxt int64) (_ storage.Querier, err error) {
 	var blocks []BlockReader
 
@@ -2743,6 +2781,9 @@ func (db *DB) floatChunkEncoding() chunkenc.Encoding {
 }
 
 // ChunkQuerier returns a new chunk querier over the data partition for the given time range.
+// The querier is not safe for concurrent use from multiple goroutines, and
+// neither are the series sets and series obtained from it: different series
+// must not be iterated concurrently either.
 func (db *DB) ChunkQuerier(mint, maxt int64) (storage.ChunkQuerier, error) {
 	blockQueriers, err := db.blockChunkQuerierForRange(mint, maxt)
 	if err != nil {

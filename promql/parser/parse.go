@@ -16,6 +16,7 @@ package parser
 import (
 	"errors"
 	"fmt"
+	"maps"
 	"math"
 	"os"
 	"runtime"
@@ -42,10 +43,22 @@ var parserPool = sync.Pool{
 
 // Options holds the configuration for the PromQL parser.
 type Options struct {
-	EnableExperimentalFunctions  bool
-	ExperimentalDurationExpr     bool
-	EnableExtendedRangeSelectors bool
-	EnableBinopFillModifiers     bool
+	EnableExperimentalFunctions bool
+	EnableBinopFillModifiers    bool
+	// Functions is the set of functions the parser accepts, keyed by name.
+	// If nil, the default set in the package-level Functions variable is
+	// used. Otherwise it replaces the default set: to extend the default set,
+	// start from a clone of Functions. An empty map accepts no functions.
+	// NewParser copies the map, so later changes to it do not affect the parser.
+	Functions map[string]*Function
+}
+
+// functions returns the set of functions the parser accepts.
+func (o Options) functions() map[string]*Function {
+	if o.Functions != nil {
+		return o.Functions
+	}
+	return Functions
 }
 
 // Parser provides PromQL parsing methods. Create one with NewParser.
@@ -64,6 +77,9 @@ type promQLParser struct {
 
 // NewParser returns a new PromQL Parser configured with the given options.
 func NewParser(opts Options) Parser {
+	// Copy the functions so that later changes to the caller's map
+	// cannot affect, or race with, parsing.
+	opts.Functions = maps.Clone(opts.Functions)
 	return &promQLParser{options: opts}
 }
 
@@ -170,7 +186,7 @@ type parser struct {
 func newParser(input string, opts Options) *parser {
 	p := parserPool.Get().(*parser)
 
-	p.functions = Functions
+	p.functions = opts.functions()
 	p.injecting = false
 	p.parseErrors = nil
 	p.generatedParserResult = nil
@@ -183,13 +199,6 @@ func newParser(input string, opts Options) *parser {
 		state: lexStatements,
 	}
 
-	return p
-}
-
-// newParserWithFunctions returns a new low-level parser instance with custom functions.
-func newParserWithFunctions(input string, opts Options, functions map[string]*Function) *parser {
-	p := newParser(input, opts)
-	p.functions = functions
 	return p
 }
 
@@ -1074,10 +1083,6 @@ func (p *parser) addOffsetExpr(e Node, expr *DurationExpr) {
 }
 
 func (p *parser) setAnchored(e Node) {
-	if !p.options.EnableExtendedRangeSelectors {
-		p.addParseErrf(e.PositionRange(), "anchored modifier is experimental and not enabled")
-		return
-	}
 	switch s := e.(type) {
 	case *VectorSelector:
 		s.Anchored = true
@@ -1101,10 +1106,6 @@ func (p *parser) setAnchored(e Node) {
 }
 
 func (p *parser) setSmoothed(e Node) {
-	if !p.options.EnableExtendedRangeSelectors {
-		p.addParseErrf(e.PositionRange(), "smoothed modifier is experimental and not enabled")
-		return
-	}
 	switch s := e.(type) {
 	case *VectorSelector:
 		s.Smoothed = true
@@ -1204,12 +1205,6 @@ func (p *parser) getAtModifierVars(e Node) (**int64, *ItemType, *posrange.Pos, b
 // overflow a time.Duration (int64 nanoseconds).
 func durationLiteralOutOfRange(val float64) bool {
 	return val > 1<<63/1e9 || val < -(1<<63)/1e9
-}
-
-func (p *parser) experimentalDurationExpr(e Expr) {
-	if !p.options.ExperimentalDurationExpr {
-		p.addParseErrf(e.PositionRange(), "experimental duration expression is not enabled")
-	}
 }
 
 // wrapParenDurationExpr marks a duration expression as parenthesised so

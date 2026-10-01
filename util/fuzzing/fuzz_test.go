@@ -362,10 +362,8 @@ func FuzzParseExpr(f *testing.F) {
 	}
 
 	p := parser.NewParser(parser.Options{
-		EnableExperimentalFunctions:  true,
-		ExperimentalDurationExpr:     true,
-		EnableExtendedRangeSelectors: true,
-		EnableBinopFillModifiers:     true,
+		EnableExperimentalFunctions: true,
+		EnableBinopFillModifiers:    true,
 	})
 	f.Fuzz(func(t *testing.T, in string) {
 		if len(in) > maxInputSize {
