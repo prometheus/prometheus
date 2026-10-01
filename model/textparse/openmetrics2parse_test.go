@@ -503,9 +503,141 @@ req_duration {count:3,sum:6.0,schema:0,zero_threshold:0.001,zero_count:0,positiv
 			opts: ParserOptions{KeepClassicOnClassicAndNativeHistograms: true},
 			exp:  append(append(append([]parsedEntry{}, header...), nativeEntry), classicSeries...),
 		},
+		{
+			name: "convert_nhcb_keep_classic_off",
+			opts: ParserOptions{ConvertClassicHistogramsToNHCB: true},
+			exp:  append(append([]parsedEntry{}, header...), nativeEntry),
+		},
+		{
+			name: "convert_nhcb_keep_classic_on",
+			opts: ParserOptions{ConvertClassicHistogramsToNHCB: true, KeepClassicOnClassicAndNativeHistograms: true},
+			exp:  append(append(append([]parsedEntry{}, header...), nativeEntry), classicSeries...),
+		},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			p := NewOpenMetrics2Parser([]byte(input), labels.NewSymbolTable(), tc.opts)
+			got := testParse(t, p)
+			requireEntries(t, tc.exp, got)
+		})
+	}
+}
+
+func TestOpenMetrics2ParseConvertClassicHistogramToNHCB(t *testing.T) {
+	ts := int64(1234567000)
+	for _, tc := range []struct {
+		name  string
+		input string
+		opts  ParserOptions
+		exp   []parsedEntry
+	}{
+		{
+			name: "classic_int_histogram_to_nhcb",
+			input: `# HELP req_duration Request duration.
+# TYPE req_duration histogram
+# UNIT req_duration seconds
+req_duration{job="api"} {count:3,sum:6.0,bucket:[0.1:1,1.0:2,+Inf:3]} 1234567.0 st@1000.0 # {id="req-1"} 0.8 1234566.0
+# EOF
+`,
+			opts: ParserOptions{ConvertClassicHistogramsToNHCB: true, EnableTypeAndUnitLabels: true},
+			exp: []parsedEntry{
+				{m: "req_duration", help: "Request duration."},
+				{m: "req_duration", typ: model.MetricTypeHistogram},
+				{m: "req_duration", unit: "seconds"},
+				{
+					m:    `req_duration{job="api"}`,
+					lset: labels.FromStrings("__name__", "req_duration", "__type__", "histogram", "__unit__", "seconds", "job", "api"),
+					t:    &ts,
+					st:   1000000,
+					es:   []exemplar.Exemplar{{Labels: labels.FromStrings("id", "req-1"), Value: 0.8, HasTs: true, Ts: 1234566000}},
+					shs: &histogram.Histogram{
+						Schema:          histogram.CustomBucketsSchema,
+						Count:           3,
+						Sum:             6.0,
+						PositiveSpans:   []histogram.Span{{Offset: 0, Length: 3}},
+						PositiveBuckets: []int64{1, 0, 0},
+						CustomValues:    []float64{0.1, 1.0},
+					},
+				},
+			},
+		},
+		{
+			name: "classic_int_histogram_to_nhcb_with_keep_classic",
+			input: `# TYPE req_duration histogram
+req_duration {count:3,sum:6.0,bucket:[0.1:1,1.0:2,+Inf:3]}
+# EOF
+`,
+			opts: ParserOptions{ConvertClassicHistogramsToNHCB: true, KeepClassicOnClassicAndNativeHistograms: true},
+			exp: []parsedEntry{
+				{m: "req_duration", typ: model.MetricTypeHistogram},
+				{
+					m:    "req_duration",
+					lset: labels.FromStrings("__name__", "req_duration"),
+					shs: &histogram.Histogram{
+						Schema:          histogram.CustomBucketsSchema,
+						Count:           3,
+						Sum:             6.0,
+						PositiveSpans:   []histogram.Span{{Offset: 0, Length: 3}},
+						PositiveBuckets: []int64{1, 0, 0},
+						CustomValues:    []float64{0.1, 1.0},
+					},
+				},
+				{m: "req_duration_count", v: 3, lset: labels.FromStrings("__name__", "req_duration_count")},
+				{m: "req_duration_sum", v: 6.0, lset: labels.FromStrings("__name__", "req_duration_sum")},
+				{m: "req_duration_bucket\xffle\xff0.1", v: 1, lset: labels.FromStrings("__name__", "req_duration_bucket", "le", "0.1")},
+				{m: "req_duration_bucket\xffle\xff1.0", v: 2, lset: labels.FromStrings("__name__", "req_duration_bucket", "le", "1.0")},
+				{m: "req_duration_bucket\xffle\xff+Inf", v: 3, lset: labels.FromStrings("__name__", "req_duration_bucket", "le", "+Inf")},
+			},
+		},
+		{
+			name: "classic_float_histogram_to_nhcb",
+			input: `# TYPE req_duration histogram
+req_duration {count:3.5,sum:6.0,bucket:[0.1:1.5,1.0:2.5,+Inf:3.5]}
+# EOF
+`,
+			opts: ParserOptions{ConvertClassicHistogramsToNHCB: true},
+			exp: []parsedEntry{
+				{m: "req_duration", typ: model.MetricTypeHistogram},
+				{
+					m:    "req_duration",
+					lset: labels.FromStrings("__name__", "req_duration"),
+					fhs: &histogram.FloatHistogram{
+						Schema:          histogram.CustomBucketsSchema,
+						Count:           3.5,
+						Sum:             6.0,
+						PositiveSpans:   []histogram.Span{{Offset: 0, Length: 3}},
+						PositiveBuckets: []float64{1.5, 1.0, 1.0},
+						CustomValues:    []float64{0.1, 1.0},
+					},
+				},
+			},
+		},
+		{
+			name: "classic_gaugehistogram_to_nhcb",
+			input: `# TYPE queue_size gaugehistogram
+queue_size {gcount:4,gsum:100.0,bucket:[10:1,50:3,+Inf:4]}
+# EOF
+`,
+			opts: ParserOptions{ConvertClassicHistogramsToNHCB: true},
+			exp: []parsedEntry{
+				{m: "queue_size", typ: model.MetricTypeGaugeHistogram},
+				{
+					m:    "queue_size",
+					lset: labels.FromStrings("__name__", "queue_size"),
+					shs: &histogram.Histogram{
+						CounterResetHint: histogram.GaugeType,
+						Schema:           histogram.CustomBucketsSchema,
+						Count:            4,
+						Sum:              100.0,
+						PositiveSpans:    []histogram.Span{{Offset: 0, Length: 3}},
+						PositiveBuckets:  []int64{1, 1, -1},
+						CustomValues:     []float64{10, 50},
+					},
+				},
+			},
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			p := NewOpenMetrics2Parser([]byte(tc.input), labels.NewSymbolTable(), tc.opts)
 			got := testParse(t, p)
 			requireEntries(t, tc.exp, got)
 		})
@@ -1794,6 +1926,62 @@ req_seconds {count:12,sum:5.5,bucket:[1.0:3,2.0:7,+Inf:12],schema:0,zero_thresho
 				m:    "req_seconds_bucket\xffle\xff+Inf",
 				v:    12,
 				lset: labels.FromStrings("__name__", "req_seconds_bucket", "le", "+Inf"),
+			},
+		}
+		requireEntries(t, exp, got)
+	})
+
+	t.Run("native-only histogram with NHCB conversion emits single +Inf custom bucket", func(t *testing.T) {
+		input := `# TYPE req_seconds histogram
+req_seconds{service="api"} {count:12,sum:5.5,schema:0,zero_threshold:0.001,zero_count:2,positive_spans:[0:2],positive_buckets:[3,7]} 1700000000.0
+# EOF
+`
+		p := NewOpenMetrics2Parser([]byte(input), labels.NewSymbolTable(), ParserOptions{
+			IgnoreNativeHistograms:         true,
+			ConvertClassicHistogramsToNHCB: true,
+		})
+		got := testParse(t, p)
+		exp := []parsedEntry{
+			{m: "req_seconds", typ: model.MetricTypeHistogram},
+			{
+				m:    `req_seconds{service="api"}`,
+				t:    int64p(1700000000000),
+				lset: labels.FromStrings("__name__", "req_seconds", "service", "api"),
+				shs: &histogram.Histogram{
+					Schema:          histogram.CustomBucketsSchema,
+					Count:           12,
+					Sum:             5.5,
+					PositiveSpans:   []histogram.Span{{Offset: 0, Length: 1}},
+					PositiveBuckets: []int64{12},
+				},
+			},
+		}
+		requireEntries(t, exp, got)
+	})
+
+	t.Run("dual classic and native histogram with NHCB conversion emits NHCB", func(t *testing.T) {
+		input := `# TYPE req_seconds histogram
+req_seconds {count:12,sum:5.5,bucket:[1.0:3,2.0:7,+Inf:12],schema:0,zero_threshold:0.001,zero_count:2,positive_spans:[0:2],positive_buckets:[3,7]}
+# EOF
+`
+		p := NewOpenMetrics2Parser([]byte(input), labels.NewSymbolTable(), ParserOptions{
+			IgnoreNativeHistograms:         true,
+			ConvertClassicHistogramsToNHCB: true,
+		})
+		got := testParse(t, p)
+		exp := []parsedEntry{
+			{m: "req_seconds", typ: model.MetricTypeHistogram},
+			{
+				m:    "req_seconds",
+				lset: labels.FromStrings("__name__", "req_seconds"),
+				shs: &histogram.Histogram{
+					Schema:          histogram.CustomBucketsSchema,
+					Count:           12,
+					Sum:             5.5,
+					PositiveSpans:   []histogram.Span{{Offset: 0, Length: 3}},
+					PositiveBuckets: []int64{3, 1, 1},
+					CustomValues:    []float64{1.0, 2.0},
+				},
 			},
 		}
 		requireEntries(t, exp, got)

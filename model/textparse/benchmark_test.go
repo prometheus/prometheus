@@ -136,7 +136,9 @@ func BenchmarkParseOM1VsOM2_AllTypes(b *testing.B) {
 		file   string
 	}{
 		{"omtext", "alltypes.bench.om.txt"},
+		{"omtext_with_nhcb", "alltypes.bench.om.txt"},
 		{"om2text", "alltypes.bench.om2.txt"},
+		{"om2text_with_nhcb", "alltypes.bench.om2.txt"},
 	} {
 		b.Run(fmt.Sprintf("parser=%v", tc.parser), func(b *testing.B) {
 			benchParse(b, readTestdataFile(b, tc.file), tc.parser)
@@ -170,7 +172,7 @@ func BenchmarkParseOM1VsOM2_CT(b *testing.B) {
 // BenchmarkParseOM1VsOM2_Histograms isolates classic histogram and summary
 // parsing. OM1 emits one series per bucket/quantile plus _sum/_count; OM2 uses
 // a single-line composite that the parser explodes into the same logical
-// series.
+// series (or converts directly to NHCB when enabled).
 //
 //	export bench=v1 && go test ./model/textparse/... \
 //		 -run '^$' -bench '^BenchmarkParseOM1VsOM2_Histograms' \
@@ -182,7 +184,9 @@ func BenchmarkParseOM1VsOM2_Histograms(b *testing.B) {
 		file   string
 	}{
 		{"omtext", "histograms.bench.om.txt"},
+		{"omtext_with_nhcb", "histograms.bench.om.txt"},
 		{"om2text", "histograms.bench.om2.txt"},
+		{"om2text_with_nhcb", "histograms.bench.om2.txt"},
 	} {
 		b.Run(fmt.Sprintf("parser=%v", tc.parser), func(b *testing.B) {
 			benchParse(b, readTestdataFile(b, tc.file), tc.parser)
@@ -252,6 +256,15 @@ func benchParse(b *testing.B, data []byte, parser string) {
 	case "om2text":
 		newParserFn = func(b []byte, st *labels.SymbolTable) Parser {
 			return NewOpenMetrics2Parser(b, st, ParserOptions{})
+		}
+	case "om2text_with_nhcb":
+		newParserFn = func(buf []byte, st *labels.SymbolTable) Parser {
+			p, err := New(buf, "application/openmetrics-text; version=2.0.0", st, ParserOptions{
+				EnableOpenMetrics2:             true,
+				ConvertClassicHistogramsToNHCB: true,
+			})
+			require.NoError(b, err)
+			return p
 		}
 	case "omtext_with_nhcb_st":
 		newParserFn = func(buf []byte, st *labels.SymbolTable) Parser {
@@ -459,6 +472,11 @@ func TestOM1OM2BenchPairsEquivalent(t *testing.T) {
 			om2Series := collectSeries(t, readTestdataFile(t, pair.om2), "om2text")
 			require.Equal(t, om1Series, om2Series,
 				"OM1 and OM2 benchmark files must produce the same series multiset")
+
+			om1NHCBSeries := collectSeries(t, readTestdataFile(t, pair.om1), "omtext_with_nhcb")
+			om2NHCBSeries := collectSeries(t, readTestdataFile(t, pair.om2), "om2text_with_nhcb")
+			require.Equal(t, om1NHCBSeries, om2NHCBSeries,
+				"OM1 and OM2 benchmark files with NHCB conversion must produce the same series multiset")
 		})
 	}
 }
@@ -467,13 +485,28 @@ func TestOM1OM2BenchPairsEquivalent(t *testing.T) {
 // strings, a bit naive but is good enough to compare if we got the same metrics.
 func collectSeries(t *testing.T, data []byte, parser string) []string {
 	t.Helper()
-	var p Parser
+	var (
+		p   Parser
+		err error
+	)
 	st := labels.NewSymbolTable()
 	switch parser {
 	case "omtext":
 		p = NewOpenMetricsParser(data, st, WithOMParserSTSeriesSkipped())
+	case "omtext_with_nhcb":
+		p, err = New(data, "application/openmetrics-text", st, ParserOptions{
+			ConvertClassicHistogramsToNHCB: true,
+			OpenMetricsSkipSTSeries:        true,
+		})
+		require.NoError(t, err)
 	case "om2text":
 		p = NewOpenMetrics2Parser(data, st, ParserOptions{})
+	case "om2text_with_nhcb":
+		p, err = New(data, "application/openmetrics-text; version=2.0.0", st, ParserOptions{
+			EnableOpenMetrics2:             true,
+			ConvertClassicHistogramsToNHCB: true,
+		})
+		require.NoError(t, err)
 	default:
 		t.Fatalf("unknown parser %q", parser)
 	}
@@ -494,8 +527,13 @@ func collectSeries(t *testing.T, data []byte, parser string) []string {
 			p.Labels(&ls)
 			out = append(out, fmt.Sprintf("%s => %g", ls.String(), v))
 		case EntryHistogram:
+			_, _, h, fh := p.Histogram()
 			p.Labels(&ls)
-			out = append(out, fmt.Sprintf("%s => <histogram>", ls.String()))
+			if h != nil {
+				out = append(out, fmt.Sprintf("%s => %s", ls.String(), h.String()))
+			} else {
+				out = append(out, fmt.Sprintf("%s => %s", ls.String(), fh.String()))
+			}
 		}
 	}
 	sort.Strings(out)

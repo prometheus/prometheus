@@ -199,13 +199,12 @@ func New(b []byte, contentType string, st *labels.SymbolTable, opts ParserOption
 	switch mediaType {
 	case "application/openmetrics-text":
 		if version == openMetrics2Version {
-			baseParser = NewOpenMetrics2Parser(b, st, opts)
-		} else {
-			baseParser = NewOpenMetricsParser(b, st, func(o *openMetricsParserOptions) {
-				o.skipSTSeries = opts.OpenMetricsSkipSTSeries
-				o.enableTypeAndUnitLabels = opts.EnableTypeAndUnitLabels
-			})
+			return NewOpenMetrics2Parser(b, st, opts), err
 		}
+		baseParser = NewOpenMetricsParser(b, st, func(o *openMetricsParserOptions) {
+			o.skipSTSeries = opts.OpenMetricsSkipSTSeries
+			o.enableTypeAndUnitLabels = opts.EnableTypeAndUnitLabels
+		})
 	case "application/vnd.google.protobuf":
 		return NewProtobufParser(
 			b,
