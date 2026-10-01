@@ -480,20 +480,13 @@ func TestOM1OM2BenchPairsEquivalent(t *testing.T) {
 // strings, a bit naive but is good enough to compare if we got the same metrics.
 func collectSeries(t *testing.T, data []byte, parser string) []string {
 	t.Helper()
-	var (
-		p   Parser
-		err error
-	)
+	var p Parser
 	st := labels.NewSymbolTable()
 	switch parser {
 	case "omtext":
 		p = NewOpenMetricsParser(data, st, WithOMParserSTSeriesSkipped())
 	case "omtext_with_nhcb":
-		p, err = New(data, "application/openmetrics-text", st, ParserOptions{
-			ConvertClassicHistogramsToNHCB: true,
-			OpenMetricsSkipSTSeries:        true,
-		})
-		require.NoError(t, err)
+		p = NewNHCBParser(NewOpenMetricsParser(data, st, WithOMParserSTSeriesSkipped()), st, false, false)
 	case "om2text":
 		p = NewOpenMetrics2Parser(data, st, ParserOptions{})
 	case "om2text_with_nhcb":
