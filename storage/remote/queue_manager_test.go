@@ -2900,49 +2900,138 @@ func TestAppendToConvertNHCBToClassic(t *testing.T) {
 		Sum:             123,
 	}
 
+	expH := &histogram.Histogram{
+		Schema:          0,
+		ZeroThreshold:   1e-128,
+		Count:           10,
+		Sum:             20,
+		PositiveSpans:   []histogram.Span{{Offset: 0, Length: 1}},
+		PositiveBuckets: []int64{10},
+	}
+
+	expFH := &histogram.FloatHistogram{
+		Schema:          0,
+		ZeroThreshold:   1e-128,
+		Count:           10,
+		Sum:             20,
+		PositiveSpans:   []histogram.Span{{Offset: 0, Length: 1}},
+		PositiveBuckets: []float64{10},
+	}
+
 	testCases := []struct {
 		name                    string
 		protoMsg                remoteapi.WriteMessageType
 		isFloatHistogram        bool
+		sendNativeHistograms    bool
+		convertFlag             bool
+		relabelConfigs          []*relabel.Config
+		expectedMetricName      string
 		expectedSamplesCount    float64
 		expectedHistogramsCount float64
-		convertFlag             bool
+		expectedDroppedSeries   float64
 	}{
 		{
 			name:                    "convert nhcb to classic v1",
 			protoMsg:                remoteapi.WriteV1MessageType,
 			isFloatHistogram:        false,
+			sendNativeHistograms:    true,
+			convertFlag:             true,
+			expectedMetricName:      "test_histogram",
 			expectedSamplesCount:    13,
 			expectedHistogramsCount: 0,
-			convertFlag:             true,
 		},
 		{
 			name:                    "convert float nhcb to classic v1",
 			protoMsg:                remoteapi.WriteV1MessageType,
 			isFloatHistogram:        true,
+			sendNativeHistograms:    true,
+			convertFlag:             true,
+			expectedMetricName:      "test_histogram",
 			expectedSamplesCount:    13,
 			expectedHistogramsCount: 0,
-			convertFlag:             true,
 		},
 		{
 			name:                    "convert nhcb to classic v2",
 			protoMsg:                remoteapi.WriteV2MessageType,
 			isFloatHistogram:        false,
+			sendNativeHistograms:    true,
+			convertFlag:             true,
+			expectedMetricName:      "test_histogram",
 			expectedSamplesCount:    13,
 			expectedHistogramsCount: 0,
-			convertFlag:             true,
 		},
 		{
 			name:                    "convert float nhcb to classic v2",
 			protoMsg:                remoteapi.WriteV2MessageType,
 			isFloatHistogram:        true,
+			sendNativeHistograms:    true,
+			convertFlag:             true,
+			expectedMetricName:      "test_histogram",
 			expectedSamplesCount:    13,
 			expectedHistogramsCount: 0,
+		},
+		{
+			name:                    "convert nhcb to classic with send_native_histograms=false",
+			protoMsg:                remoteapi.WriteV1MessageType,
+			isFloatHistogram:        false,
+			sendNativeHistograms:    false,
 			convertFlag:             true,
+			expectedMetricName:      "test_histogram",
+			expectedSamplesCount:    13,
+			expectedHistogramsCount: 0,
+		},
+		{
+			name:                    "convert float nhcb to classic with send_native_histograms=false",
+			protoMsg:                remoteapi.WriteV1MessageType,
+			isFloatHistogram:        true,
+			sendNativeHistograms:    false,
+			convertFlag:             true,
+			expectedMetricName:      "test_histogram",
+			expectedSamplesCount:    13,
+			expectedHistogramsCount: 0,
+		},
+		{
+			name:                 "convert nhcb to classic after write_relabel_configs rename",
+			protoMsg:             remoteapi.WriteV2MessageType,
+			isFloatHistogram:     false,
+			sendNativeHistograms: true,
+			convertFlag:          true,
+			relabelConfigs: []*relabel.Config{
+				{
+					SourceLabels:         model.LabelNames{model.MetricNameLabel},
+					Regex:                relabel.MustNewRegexp("test_histogram"),
+					TargetLabel:          model.MetricNameLabel,
+					Replacement:          "relabeled_histogram",
+					Action:               relabel.Replace,
+					NameValidationScheme: model.UTF8Validation,
+				},
+			},
+			expectedMetricName:      "relabeled_histogram",
+			expectedSamplesCount:    13,
+			expectedHistogramsCount: 0,
+		},
+		{
+			name:                 "drop nhcb via write_relabel_configs before conversion",
+			protoMsg:             remoteapi.WriteV1MessageType,
+			isFloatHistogram:     false,
+			sendNativeHistograms: false,
+			convertFlag:          true,
+			relabelConfigs: []*relabel.Config{
+				{
+					SourceLabels:         model.LabelNames{model.MetricNameLabel},
+					Regex:                relabel.MustNewRegexp("test_histogram"),
+					Action:               relabel.Drop,
+					NameValidationScheme: model.UTF8Validation,
+				},
+			},
+			expectedSamplesCount:    0,
+			expectedHistogramsCount: 0,
+			expectedDroppedSeries:   1,
 		},
 		{
 			name:                    "no nhcb to classic conversion v2",
 			protoMsg:                remoteapi.WriteV2MessageType,
+			sendNativeHistograms:    true,
 			convertFlag:             false,
 			isFloatHistogram:        false,
 			expectedSamplesCount:    0,
@@ -2951,6 +3040,7 @@ func TestAppendToConvertNHCBToClassic(t *testing.T) {
 		{
 			name:                    "no float nhcb to classic conversion v2",
 			protoMsg:                remoteapi.WriteV2MessageType,
+			sendNativeHistograms:    true,
 			convertFlag:             false,
 			isFloatHistogram:        true,
 			expectedSamplesCount:    0,
@@ -2967,33 +3057,70 @@ func TestAppendToConvertNHCBToClassic(t *testing.T) {
 
 			m := newTestQueueManager(t, cfg, mcfg, defaultFlushDeadline, c, tc.protoMsg)
 			m.convertNHCBToClassic = tc.convertFlag
-			m.sendNativeHistograms = true
+			m.sendNativeHistograms = tc.sendNativeHistograms
+			m.relabelConfigs = tc.relabelConfigs
 
-			series := []record.RefSeries{{
-				Ref:    chunks.HeadSeriesRef(0),
-				Labels: labels.FromStrings("__name__", "test_histogram"),
-			}}
+			series := []record.RefSeries{
+				{
+					Ref:    chunks.HeadSeriesRef(0),
+					Labels: labels.FromStrings("__name__", "test_histogram"),
+				},
+				{
+					Ref:    chunks.HeadSeriesRef(1),
+					Labels: labels.FromStrings("__name__", "exp_histogram"),
+				},
+			}
 			m.StoreSeries(series, 0)
 
 			m.Start()
 			defer m.Stop()
 
-			initialDroppedConversionError := client_testutil.ToFloat64(m.metrics.droppedHistogramsTotal.WithLabelValues("nhcb_to_classic_conversion_error"))
+			initialDroppedConversionError := client_testutil.ToFloat64(m.metrics.droppedHistogramsTotal.WithLabelValues(reasonNHCBConversionError))
 
+			const (
+				st = int64(1234560000)
+				ts = int64(1234567890)
+			)
 			if !tc.isFloatHistogram {
-				require.True(t, m.AppendHistograms([]record.RefHistogramSample{{Ref: chunks.HeadSeriesRef(0), T: 1234567890, H: h}}))
+				samples := []record.RefHistogramSample{{Ref: chunks.HeadSeriesRef(0), ST: st, T: ts, H: h}}
+				if !tc.sendNativeHistograms {
+					// Non-NHCB histograms must be ignored when send_native_histograms is false.
+					samples = append(samples, record.RefHistogramSample{Ref: chunks.HeadSeriesRef(1), ST: st, T: ts, H: expH})
+				}
+				require.True(t, m.AppendHistograms(samples))
 			} else {
-				require.True(t, m.AppendFloatHistograms([]record.RefFloatHistogramSample{{Ref: chunks.HeadSeriesRef(0), T: 1234567890, FH: fh}}))
+				samples := []record.RefFloatHistogramSample{{Ref: chunks.HeadSeriesRef(0), ST: st, T: ts, FH: fh}}
+				if !tc.sendNativeHistograms {
+					samples = append(samples, record.RefFloatHistogramSample{Ref: chunks.HeadSeriesRef(1), ST: st, T: ts, FH: expFH})
+				}
+				require.True(t, m.AppendFloatHistograms(samples))
 			}
 
 			require.Eventually(t, func() bool {
 				return client_testutil.ToFloat64(m.metrics.samplesTotal) == tc.expectedSamplesCount &&
-					client_testutil.ToFloat64(m.metrics.histogramsTotal) == tc.expectedHistogramsCount
+					client_testutil.ToFloat64(m.metrics.histogramsTotal) == tc.expectedHistogramsCount &&
+					client_testutil.ToFloat64(m.metrics.droppedHistogramsTotal.WithLabelValues(reasonDroppedSeries)) == tc.expectedDroppedSeries
 			}, 5*time.Second, 10*time.Millisecond)
 
-			finalDroppedConversionError := client_testutil.ToFloat64(m.metrics.droppedHistogramsTotal.WithLabelValues("nhcb_to_classic_conversion_error"))
+			finalDroppedConversionError := client_testutil.ToFloat64(m.metrics.droppedHistogramsTotal.WithLabelValues(reasonNHCBConversionError))
 			require.Equal(t, initialDroppedConversionError, finalDroppedConversionError, "No conversion errors should occur")
 			require.Equal(t, 0.0, client_testutil.ToFloat64(m.metrics.failedHistogramsTotal))
+
+			if tc.expectedSamplesCount > 0 {
+				expectedST := int64(0)
+				if tc.protoMsg == remoteapi.WriteV2MessageType {
+					expectedST = st
+				}
+				expectedCount := h.Count
+				if tc.isFloatHistogram {
+					expectedCount = uint64(fh.Count)
+				}
+				c.mtx.Lock()
+				require.Equal(t, []writev2.Sample{{StartTimestamp: expectedST, Timestamp: ts, Value: float64(expectedCount)}}, c.receivedSamples[fmt.Sprintf("{__name__=%q}", tc.expectedMetricName+"_count")])
+				require.Equal(t, []writev2.Sample{{StartTimestamp: expectedST, Timestamp: ts, Value: 123}}, c.receivedSamples[fmt.Sprintf("{__name__=%q}", tc.expectedMetricName+"_sum")])
+				require.Equal(t, []writev2.Sample{{StartTimestamp: expectedST, Timestamp: ts, Value: float64(expectedCount)}}, c.receivedSamples[fmt.Sprintf("{__name__=%q, le=\"+Inf\"}", tc.expectedMetricName+"_bucket")])
+				c.mtx.Unlock()
+			}
 		})
 	}
 }

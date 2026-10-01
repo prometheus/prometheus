@@ -1523,10 +1523,10 @@ type RemoteWriteConfig struct {
 	GoogleIAMConfig  *googleiam.Config       `yaml:"google_iam,omitempty"`
 
 	// EXPERIMENTAL: Converts native histograms with custom buckets (NHCB) to classic histograms
-	// during remote write. This enables you to use NHCB locally (for cheaper storage and
-	// atomicity of histograms) while sending classic histograms to external systems that
-	// don't support native histograms yet. Useful for migration scenarios and external system
-	// support without sacrificing local storage efficiency.
+	// after applying write_relabel_configs. This enables using NHCB locally (for cheaper storage
+	// and histogram atomicity) while sending classic histograms to external systems that do not
+	// support native histograms yet. Useful for migration scenarios and external system support
+	// without sacrificing local storage efficiency.
 	ConvertNHCBToClassic bool `yaml:"convert_nhcb_to_classic,omitempty"`
 }
 
