@@ -566,7 +566,7 @@ req_duration{job="api"} {count:3,sum:6.0,bucket:[0.1:1,1.0:2,+Inf:3]} 1234567.0 
 			// emitting both the converted NHCB and the classic histogram series.
 			name: "classic_int_histogram_to_nhcb_with_keep_classic",
 			input: `# TYPE req_duration histogram
-req_duration {count:3,sum:6.0,bucket:[0.1:1,1.0:2,+Inf:3]}
+req_duration {count:3,sum:6.0,bucket:[0.1:1,1.0:2,+Inf:3]} 1234567.0 st@1000.0 # {id="req-1"} 0.8 1234566.0
 # EOF
 `,
 			opts: ParserOptions{ConvertClassicHistogramsToNHCB: true, KeepClassicOnClassicAndNativeHistograms: true},
@@ -575,6 +575,9 @@ req_duration {count:3,sum:6.0,bucket:[0.1:1,1.0:2,+Inf:3]}
 				{
 					m:    "req_duration",
 					lset: labels.FromStrings("__name__", "req_duration"),
+					t:    &ts,
+					st:   1000000,
+					es:   []exemplar.Exemplar{{Labels: labels.FromStrings("id", "req-1"), Value: 0.8, HasTs: true, Ts: 1234566000}},
 					shs: &histogram.Histogram{
 						Schema:          histogram.CustomBucketsSchema,
 						Count:           3,
@@ -584,11 +587,11 @@ req_duration {count:3,sum:6.0,bucket:[0.1:1,1.0:2,+Inf:3]}
 						CustomValues:    []float64{0.1, 1.0},
 					},
 				},
-				{m: "req_duration_count", v: 3, lset: labels.FromStrings("__name__", "req_duration_count")},
-				{m: "req_duration_sum", v: 6.0, lset: labels.FromStrings("__name__", "req_duration_sum")},
-				{m: "req_duration_bucket\xffle\xff0.1", v: 1, lset: labels.FromStrings("__name__", "req_duration_bucket", "le", "0.1")},
-				{m: "req_duration_bucket\xffle\xff1.0", v: 2, lset: labels.FromStrings("__name__", "req_duration_bucket", "le", "1.0")},
-				{m: "req_duration_bucket\xffle\xff+Inf", v: 3, lset: labels.FromStrings("__name__", "req_duration_bucket", "le", "+Inf")},
+				{m: "req_duration_count", v: 3, t: &ts, st: 1000000, lset: labels.FromStrings("__name__", "req_duration_count")},
+				{m: "req_duration_sum", v: 6.0, t: &ts, st: 1000000, lset: labels.FromStrings("__name__", "req_duration_sum")},
+				{m: "req_duration_bucket\xffle\xff0.1", v: 1, t: &ts, st: 1000000, lset: labels.FromStrings("__name__", "req_duration_bucket", "le", "0.1")},
+				{m: "req_duration_bucket\xffle\xff1.0", v: 2, t: &ts, st: 1000000, lset: labels.FromStrings("__name__", "req_duration_bucket", "le", "1.0")},
+				{m: "req_duration_bucket\xffle\xff+Inf", v: 3, t: &ts, st: 1000000, lset: labels.FromStrings("__name__", "req_duration_bucket", "le", "+Inf")},
 			},
 		},
 		{
