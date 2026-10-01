@@ -957,7 +957,7 @@ outer:
 			t.metrics.droppedHistogramsTotal.WithLabelValues(reasonTooOld).Inc()
 			continue
 		}
-		// Check if `convert_nhcb_to_classic` flag is enabled to convert NHCB Float histograms to classic histograms
+		// Check if `convert_nhcb_to_classic` flag is enabled to convert NHCB Float histograms to classic histograms.
 		if t.convertNHCBToClassic && h.FH != nil && h.FH.Schema == histogram.CustomBucketsSchema {
 			// we make labels here :D
 			t.seriesMtx.Lock()
