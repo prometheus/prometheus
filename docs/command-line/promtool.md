@@ -133,7 +133,7 @@ Check if the web config files are valid or not.
 
 ##### `promtool check healthy`
 
-Check if the Prometheus server is healthy. Use `--http`.config.file flag to pass authentication credentials.
+Check if the Prometheus server is healthy. Authentication credentials can be supplied via the HTTP client config file.
 
 
 
@@ -149,7 +149,7 @@ Check if the Prometheus server is healthy. Use `--http`.config.file flag to pass
 
 ##### `promtool check ready`
 
-Check if the Prometheus server is ready. Use `--http`.config.file flag to pass authentication credentials.
+Check if the Prometheus server is ready. Authentication credentials can be supplied via the HTTP client config file.
 
 
 

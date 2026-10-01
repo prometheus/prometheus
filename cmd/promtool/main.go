@@ -144,11 +144,11 @@ func main() {
 		"The config files to check.",
 	).Required().ExistingFiles()
 
-	checkServerHealthCmd := checkCmd.Command("healthy", "Check if the Prometheus server is healthy. Use --http.config.file flag to pass authentication credentials.")
+	checkServerHealthCmd := checkCmd.Command("healthy", "Check if the Prometheus server is healthy. Authentication credentials can be supplied via the HTTP client config file.")
 	checkServerHealthCmd.Flag("http.config.file", httpConfigFileDescription).PlaceHolder("<filename>").ExistingFileVar(&httpConfigFilePath)
 	checkServerHealthCmd.Flag("url", "The URL for the Prometheus server.").Default("http://localhost:9090").URLVar(&serverURL)
 
-	checkServerReadyCmd := checkCmd.Command("ready", "Check if the Prometheus server is ready. Use --http.config.file flag to pass authentication credentials.")
+	checkServerReadyCmd := checkCmd.Command("ready", "Check if the Prometheus server is ready. Authentication credentials can be supplied via the HTTP client config file.")
 	checkServerReadyCmd.Flag("http.config.file", httpConfigFileDescription).PlaceHolder("<filename>").ExistingFileVar(&httpConfigFilePath)
 	checkServerReadyCmd.Flag("url", "The URL for the Prometheus server.").Default("http://localhost:9090").URLVar(&serverURL)
 
