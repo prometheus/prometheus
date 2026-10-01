@@ -2986,19 +2986,14 @@ func TestAppendToConvertNHCBToClassic(t *testing.T) {
 				require.True(t, m.AppendFloatHistograms([]record.RefFloatHistogramSample{{Ref: chunks.HeadSeriesRef(0), T: 1234567890, FH: fh}}))
 			}
 
-			time.Sleep(2 * time.Second)
+			require.Eventually(t, func() bool {
+				return client_testutil.ToFloat64(m.metrics.samplesTotal) == tc.expectedSamplesCount &&
+					client_testutil.ToFloat64(m.metrics.histogramsTotal) == tc.expectedHistogramsCount
+			}, 5*time.Second, 10*time.Millisecond)
 
 			finalDroppedConversionError := client_testutil.ToFloat64(m.metrics.droppedHistogramsTotal.WithLabelValues("nhcb_to_classic_conversion_error"))
 			require.Equal(t, initialDroppedConversionError, finalDroppedConversionError, "No conversion errors should occur")
-
-			finalSamplesTotal := client_testutil.ToFloat64(m.metrics.samplesTotal)
-			finalHistogramsTotal := client_testutil.ToFloat64(m.metrics.histogramsTotal)
-
-			require.Equal(t, tc.expectedSamplesCount, finalSamplesTotal, "Expected samples count mismatch")
-			require.Equal(t, tc.expectedHistogramsCount, finalHistogramsTotal, "Expected histograms count mismatch")
-
 			require.Equal(t, 0.0, client_testutil.ToFloat64(m.metrics.failedHistogramsTotal))
 		})
 	}
 }
-
