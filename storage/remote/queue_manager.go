@@ -992,7 +992,6 @@ outer:
 			}
 			continue
 		}
-		// Handle the case where v1 protocol doesn't support NHCB histograms
 		if t.protoMsg == remoteapi.WriteV1MessageType && h.FH != nil && h.FH.Schema == histogram.CustomBucketsSchema {
 			// We cannot send native histograms with custom buckets (NHCB) via remote write v1.
 			t.metrics.droppedHistogramsTotal.WithLabelValues(reasonNHCBNotSupported).Inc()
