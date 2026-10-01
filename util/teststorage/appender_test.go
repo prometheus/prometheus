@@ -101,13 +101,22 @@ func testAppendableV2(t *testing.T, appTest *Appendable, a storage.AppendableV2)
 		require.NoError(t, err)
 
 		fh := tsdbutil.GenerateTestFloatHistogram(0)
-		_, err = app.Append(0, labels.FromStrings(model.MetricNameLabel, "test_metric3", "app", "v2"), -3, 3, 0, nil, fh, storage.AOptions{})
+		ref3, err := app.Append(0, labels.FromStrings(model.MetricNameLabel, "test_metric3", "app", "v2"), -3, 3, 0, nil, fh, storage.AOptions{})
+		require.NoError(t, err)
+
+		exApp, ok := app.(storage.ExemplarAppenderV2)
+		require.True(t, ok)
+		_, err = exApp.AppendExemplars(0, labels.FromStrings(model.MetricNameLabel, "unknown"), nil)
+		require.ErrorIs(t, err, storage.ErrNotFound)
+
+		e3 := exemplar.Exemplar{Labels: labels.FromStrings(model.MetricNameLabel, "trace"), HasTs: true, Ts: 3, Value: 5}
+		_, err = exApp.AppendExemplars(ref3, labels.EmptyLabels(), []exemplar.Exemplar{e3})
 		require.NoError(t, err)
 
 		exp := []Sample{
 			{L: labels.FromStrings(model.MetricNameLabel, "test_metric1", "app", "v2"), MF: "test_metric1", M: m1, ST: -1, T: 1, V: 2, ES: []exemplar.Exemplar{e1}},
 			{L: labels.FromStrings(model.MetricNameLabel, "test_metric2", "app", "v2"), ST: -2, T: 2, H: h},
-			{L: labels.FromStrings(model.MetricNameLabel, "test_metric3", "app", "v2"), ST: -3, T: 3, FH: fh},
+			{L: labels.FromStrings(model.MetricNameLabel, "test_metric3", "app", "v2"), ST: -3, T: 3, FH: fh, ES: []exemplar.Exemplar{e3}},
 		}
 		testutil.RequireEqual(t, exp, appTest.PendingSamples())
 		require.Nil(t, appTest.ResultSamples())

@@ -356,11 +356,11 @@ func (m *rulesRetrieverMock) CreateRuleGroups() {
 	}
 	engine := promqltest.NewTestEngineWithOpts(m.testing, engineOpts)
 	opts := &rules.ManagerOptions{
-		QueryFunc:  rules.EngineQueryFunc(engine, s),
-		Appendable: s,
-		Context:    context.Background(),
-		Logger:     promslog.NewNopLogger(),
-		NotifyFunc: func(context.Context, string, ...*rules.Alert) {},
+		QueryFunc:    rules.EngineQueryFunc(engine, s),
+		AppendableV2: s,
+		Context:      context.Background(),
+		Logger:       promslog.NewNopLogger(),
+		NotifyFunc:   func(context.Context, string, ...*rules.Alert) {},
 	}
 
 	var r []rules.Rule

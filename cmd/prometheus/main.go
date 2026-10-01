@@ -918,7 +918,7 @@ func main() {
 	klog.SetOutputBySeverity("INFO", klogv1Writer{})
 	// Avoid duplicate API deprecation warnings (e.g., "v1 Endpoints is deprecated in v1.33+...")
 	// that can pollute the logs.
-	rest.SetDefaultWarningHandlerWithContext(logging.NewDedupDeprecationWarningLogger())
+	rest.SetDefaultWarningHandlerWithContext(newDedupDeprecationWarningLogger())
 
 	modeAppName := "Prometheus Server"
 	mode := "server"
@@ -1043,7 +1043,7 @@ func main() {
 
 		ruleManager = rules.NewManager(&rules.ManagerOptions{
 			NameValidationScheme:   cfgFile.GlobalConfig.MetricNameValidationScheme,
-			Appendable:             fanoutStorage,
+			AppendableV2:           fanoutStorage,
 			Queryable:              localStorage,
 			QueryFunc:              rules.EngineQueryFunc(queryEngine, fanoutStorage),
 			NotifyFunc:             rules.SendAlerts(notifierManager, cfg.web.ExternalURL.String()),
@@ -1394,6 +1394,7 @@ func main() {
 				notifs.DeleteNotification(notifications.ConfigurationUnsuccessful)
 				return
 			}
+			checksum = ""
 			notifs.AddNotification(notifications.ConfigurationUnsuccessful)
 		}
 
@@ -1984,9 +1985,16 @@ func (notReadyAppender) Rollback() error { return tsdb.ErrNotReady }
 
 type notReadyAppenderV2 struct{}
 
+var _ storage.ExemplarAppenderV2 = notReadyAppenderV2{}
+
 func (notReadyAppenderV2) Append(storage.SeriesRef, labels.Labels, int64, int64, float64, *histogram.Histogram, *histogram.FloatHistogram, storage.AOptions) (storage.SeriesRef, error) {
 	return 0, tsdb.ErrNotReady
 }
+
+func (notReadyAppenderV2) AppendExemplars(storage.SeriesRef, labels.Labels, []exemplar.Exemplar) (storage.SeriesRef, error) {
+	return 0, tsdb.ErrNotReady
+}
+
 func (notReadyAppenderV2) Commit() error { return tsdb.ErrNotReady }
 
 func (notReadyAppenderV2) Rollback() error { return tsdb.ErrNotReady }

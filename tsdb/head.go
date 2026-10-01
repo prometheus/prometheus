@@ -897,7 +897,7 @@ func (h *Head) Init(minValidTime int64) error {
 
 		// A corrupted checkpoint is a hard error for now and requires user
 		// intervention. There's likely little data that can be recovered anyway.
-		if err := h.loadWAL(wlog.NewReader(sr), syms, multiRef, mmappedChunks, oooMmappedChunks); err != nil {
+		if err := h.loadWAL(wlog.NewReader(sr), syms, multiRef, mmappedChunks, oooMmappedChunks, lastMmapRef); err != nil {
 			return fmt.Errorf("backfill checkpoint: %w", err)
 		}
 		h.updateWALReplayStatusRead(startFrom)
@@ -931,7 +931,7 @@ func (h *Head) Init(minValidTime int64) error {
 		if err != nil {
 			return fmt.Errorf("segment reader (offset=%d): %w", offset, err)
 		}
-		err = h.loadWAL(wlog.NewReader(sr), syms, multiRef, mmappedChunks, oooMmappedChunks)
+		err = h.loadWAL(wlog.NewReader(sr), syms, multiRef, mmappedChunks, oooMmappedChunks, lastMmapRef)
 		if err := sr.Close(); err != nil {
 			h.logger.Warn("Error while closing the wal segments reader", "err", err)
 		}
@@ -1674,9 +1674,9 @@ func (h *Head) truncateWAL(mint int64) error {
 	}
 
 	h.metrics.checkpointCreationTotal.Inc()
-	if _, err = wlog.Checkpoint(h.logger, h.wal, first, last, h.keepSeriesInWALCheckpointFn(mint), mint, h.opts.EnableSTStorage.Load()); err != nil {
+	if _, err = wlog.Checkpoint(h.logger, h.wal, first, last, h.keepSeriesInWALCheckpointFn(mint), mint, h.opts.EnableSTStorage.Load(), true); err != nil {
 		h.metrics.checkpointCreationFail.Inc()
-		if _, ok := errors.AsType[*chunks.CorruptionErr](err); ok {
+		if _, ok := errors.AsType[*wlog.CorruptionErr](err); ok {
 			h.metrics.walCorruptionsTotal.Inc()
 		}
 		return fmt.Errorf("create checkpoint: %w", err)
@@ -1796,6 +1796,8 @@ func (h *Head) Stats(statsByLabelName string, limit int) *Stats {
 
 // RangeHead allows querying Head via an IndexReader, ChunkReader and tombstones.Reader
 // but only within a restricted range.  Used for queries and compactions.
+// Its readers, and queriers over it, are not safe for concurrent use from
+// multiple goroutines.
 type RangeHead struct {
 	head       *Head
 	mint, maxt int64
@@ -2474,8 +2476,9 @@ func (s *stripeSeries) gc(mint int64, minOOOMmapRef chunks.ChunkDiskMapperRef) (
 			s.decMmapReady(series.ref)
 		}
 
-		if len(series.mmappedChunks) > 0 {
-			seq, _ := series.mmappedChunks[0].ref.Unpack()
+		// Replay merges in-order chunks by timestamp, which need not match disk file order.
+		for _, ch := range series.mmappedChunks {
+			seq, _ := ch.ref.Unpack()
 			if seq < minMmapFile {
 				minMmapFile = seq
 			}

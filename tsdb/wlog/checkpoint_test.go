@@ -24,6 +24,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/prometheus/common/model"
 	"github.com/prometheus/common/promslog"
 	"github.com/stretchr/testify/require"
 
@@ -112,6 +113,115 @@ func TestDeleteCheckpoints(t *testing.T) {
 		fns = append(fns, f.Name())
 	}
 	require.Equal(t, []string{"checkpoint.100000000", "checkpoint.100000001"}, fns)
+}
+
+func TestReadMinValidTime_NoCheckpointYet(t *testing.T) {
+	dir := t.TempDir()
+
+	mint, ok, err := ReadMinValidTime(dir)
+	require.NoError(t, err)
+	require.False(t, ok, "a WAL with no checkpoint yet must have no recoverable min valid time")
+	require.Zero(t, mint)
+}
+
+func TestReadMinValidTime_AfterCheckpoint(t *testing.T) {
+	dir := t.TempDir()
+	w, err := New(nil, nil, dir, compression.None)
+	require.NoError(t, err)
+	defer w.Close()
+
+	_, err = Checkpoint(promslog.NewNopLogger(), w, 0, 1000, func(chunks.HeadSeriesRef) bool { return true }, 100, false, true)
+	require.NoError(t, err)
+
+	mint, ok, err := ReadMinValidTime(dir)
+	require.NoError(t, err)
+	require.True(t, ok)
+	require.Equal(t, int64(100), mint)
+}
+
+func TestReadMinValidTime_ReflectsOnlyLatestCheckpoint(t *testing.T) {
+	dir := t.TempDir()
+	w, err := New(nil, nil, dir, compression.None)
+	require.NoError(t, err)
+	defer w.Close()
+
+	_, err = Checkpoint(promslog.NewNopLogger(), w, 0, 1000, func(chunks.HeadSeriesRef) bool { return true }, 100, false, true)
+	require.NoError(t, err)
+
+	_, err = Checkpoint(promslog.NewNopLogger(), w, 1001, 2000, func(chunks.HeadSeriesRef) bool { return true }, 200, false, true)
+	require.NoError(t, err)
+
+	// The second checkpoint's own mint must win, and the first checkpoint's carried-forward
+	// copy must not have been kept alongside it (there must be exactly one such record).
+	mint, ok, err := ReadMinValidTime(dir)
+	require.NoError(t, err)
+	require.True(t, ok)
+	require.Equal(t, int64(200), mint)
+
+	checkpointDir, _, err := LastCheckpoint(dir)
+	require.NoError(t, err)
+	sr, err := NewSegmentsReader(checkpointDir)
+	require.NoError(t, err)
+	defer sr.Close()
+	dec := record.NewDecoder(nil, promslog.NewNopLogger())
+	r := NewReader(sr)
+	minValidTimeRecords := 0
+	for r.Next() {
+		if dec.Type(r.Record()) == record.MinValidTime {
+			minValidTimeRecords++
+		}
+	}
+	require.NoError(t, r.Err())
+	require.Equal(t, 1, minValidTimeRecords, "a checkpoint must carry exactly one min valid time record")
+}
+
+// TestCheckpoint_MinValidTimeNeverRegressesAcrossRestarts covers the case a restart
+// introduces: the guard that makes truncateWAL's calls to Checkpoint use a strictly
+// increasing mint (Head.lastWALTruncationTime) lives only in memory and resets on every
+// restart, so a later checkpoint, in a later process, can legitimately be asked to persist a
+// mint lower than what an earlier checkpoint already recorded. The persisted value must
+// still never regress.
+func TestCheckpoint_MinValidTimeNeverRegressesAcrossRestarts(t *testing.T) {
+	dir := t.TempDir()
+	w, err := New(nil, nil, dir, compression.None)
+	require.NoError(t, err)
+	defer w.Close()
+
+	_, err = Checkpoint(promslog.NewNopLogger(), w, 0, 1000, func(chunks.HeadSeriesRef) bool { return true }, 5000, false, true)
+	require.NoError(t, err)
+
+	mint, ok, err := ReadMinValidTime(dir)
+	require.NoError(t, err)
+	require.True(t, ok)
+	require.Equal(t, int64(5000), mint)
+
+	// A restart happened here: lastWALTruncationTime is gone, so this next checkpoint is free
+	// to use a mint lower than 5000 -- it's still a legitimate, real truncation point for the
+	// process it's running in now, just not the highest one ever seen.
+	_, err = Checkpoint(promslog.NewNopLogger(), w, 1001, 2000, func(chunks.HeadSeriesRef) bool { return true }, 100, false, true)
+	require.NoError(t, err)
+
+	mint, ok, err = ReadMinValidTime(dir)
+	require.NoError(t, err)
+	require.True(t, ok)
+	require.Equal(t, int64(5000), mint, "the persisted min valid time must never regress, even across a restart")
+}
+
+func TestReadMinValidTime_OlderCheckpointWithoutRecord(t *testing.T) {
+	dir := t.TempDir()
+
+	// Simulate a checkpoint written before this record existed: its first (and only) record
+	// is a Series record, not a MinValidTime one.
+	w, err := New(nil, nil, filepath.Join(dir, "checkpoint.0000"), compression.None)
+	require.NoError(t, err)
+	var enc record.Encoder
+	require.NoError(t, w.Log(enc.Series([]record.RefSeries{{Ref: 0, Labels: labels.FromStrings("a", "b")}}, nil)))
+	require.NoError(t, w.Close())
+
+	mint, ok, err := ReadMinValidTime(dir)
+	require.NoError(t, err)
+	require.False(t, ok, "an older checkpoint with no min valid time record must not be mistaken for one recording 0")
+	require.Zero(t, mint)
 }
 
 func TestCheckpoint(t *testing.T) {
@@ -304,7 +414,7 @@ func TestCheckpoint(t *testing.T) {
 
 				stats, err := Checkpoint(promslog.NewNopLogger(), w, 100, 106, func(x chunks.HeadSeriesRef) bool {
 					return x%2 == 0
-				}, last/2, enableSTStorage)
+				}, last/2, enableSTStorage, false)
 				require.NoError(t, err)
 				require.NoError(t, w.Truncate(107))
 				require.NoError(t, DeleteCheckpoints(w.Dir(), 106))
@@ -410,6 +520,64 @@ func TestCheckpoint(t *testing.T) {
 	}
 }
 
+// TestCheckpointMetadataAcrossBatches checkpoints more series than a single
+// metadata record covers, so the metadata is written as several records.
+func TestCheckpointMetadataAcrossBatches(t *testing.T) {
+	t.Parallel()
+
+	const numSeries = 2*metadataBatchSize + 1
+
+	dir := t.TempDir()
+	var enc record.Encoder
+
+	w, err := NewSize(nil, nil, dir, 8*1024*1024, compression.None)
+	require.NoError(t, err)
+
+	expected := make([]record.RefMetadata, 0, numSeries)
+	for i := range numSeries {
+		ref := chunks.HeadSeriesRef(i)
+		m := record.RefMetadata{Ref: ref, Unit: "seconds", Help: strings.Repeat("x", flushThreshold/metadataBatchSize) + strconv.Itoa(i)}
+		expected = append(expected, m)
+		require.NoError(t, w.Log(
+			enc.Series([]record.RefSeries{{Ref: ref, Labels: labels.FromStrings("a", strconv.Itoa(i))}}, nil),
+			enc.Metadata([]record.RefMetadata{m}, nil),
+		))
+	}
+	first, last, err := Segments(dir)
+	require.NoError(t, err)
+	require.NoError(t, w.Close())
+
+	stats, err := Checkpoint(promslog.NewNopLogger(), w, first, last, func(chunks.HeadSeriesRef) bool { return true }, 0, false, false)
+	require.NoError(t, err)
+	require.Equal(t, numSeries, stats.TotalMetadata)
+
+	sr, err := NewSegmentsReader(CheckpointDir(dir, last))
+	require.NoError(t, err)
+	defer sr.Close()
+
+	var (
+		dec        = record.NewDecoder(labels.NewSymbolTable(), promslog.NewNopLogger())
+		got        []record.RefMetadata
+		batchSizes []int
+	)
+	r := NewReader(sr)
+	for r.Next() {
+		rec := r.Record()
+		if dec.Type(rec) != record.Metadata {
+			continue
+		}
+		batch, err := dec.Metadata(rec, nil)
+		require.NoError(t, err)
+		batchSizes = append(batchSizes, len(batch))
+		got = append(got, batch...)
+	}
+	require.NoError(t, r.Err())
+	require.Equal(t, []int{metadataBatchSize, metadataBatchSize, 1}, batchSizes)
+
+	sort.Slice(got, func(i, j int) bool { return got[i].Ref < got[j].Ref })
+	require.Equal(t, expected, got)
+}
+
 // TestCheckpoint_Tombstones verifies tombstone retention. A tombstone is dropped
 // together with its series record, or once all its intervals age out of the WAL.
 func TestCheckpoint_Tombstones(t *testing.T) {
@@ -442,7 +610,7 @@ func TestCheckpoint_Tombstones(t *testing.T) {
 
 	_, err = Checkpoint(promslog.NewNopLogger(), w, first, last, func(id chunks.HeadSeriesRef) bool {
 		return id == 2 || id == 3 || id == 4
-	}, 10, false)
+	}, 10, false, false)
 	require.NoError(t, err)
 	require.NoError(t, w.Close())
 
@@ -542,7 +710,7 @@ func TestCheckpointV2HistogramsToV1(t *testing.T) {
 
 	// Run Checkpoint with V1 encoding (enableSTStorage=false) to force the
 	// V1 leftover path in checkpoint.go.
-	stats, err := Checkpoint(promslog.NewNopLogger(), w, 0, last, func(_ chunks.HeadSeriesRef) bool { return true }, 0, false)
+	stats, err := Checkpoint(promslog.NewNopLogger(), w, 0, last, func(_ chunks.HeadSeriesRef) bool { return true }, 0, false, false)
 	require.NoError(t, err)
 	require.Equal(t, len(histSamples)+len(floatHistSamples), stats.TotalSamples)
 	require.Zero(t, stats.DroppedSamples, "no histogram samples should be dropped")
@@ -627,7 +795,7 @@ func TestCheckpointNoTmpFolderAfterError(t *testing.T) {
 			require.NoError(t, f.Close())
 
 			// Run the checkpoint and since the wlog contains corrupt data this should return an error.
-			_, err = Checkpoint(promslog.NewNopLogger(), w, 0, 1, nil, 0, enableSTStorage)
+			_, err = Checkpoint(promslog.NewNopLogger(), w, 0, 1, nil, 0, enableSTStorage, false)
 			require.Error(t, err)
 
 			// Walk the wlog dir to make sure there are no tmp folder left behind after the error.
@@ -655,7 +823,7 @@ func TestCheckpointDeletesTemporaryCheckpoints(t *testing.T) {
 	require.NoError(t, err)
 	defer w.Close()
 
-	_, err = Checkpoint(promslog.NewNopLogger(), w, 0, 1000, func(_ chunks.HeadSeriesRef) bool { return true }, 1000, false)
+	_, err = Checkpoint(promslog.NewNopLogger(), w, 0, 1000, func(_ chunks.HeadSeriesRef) bool { return true }, 1000, false, false)
 	require.NoError(t, err)
 
 	files, err := os.ReadDir(dir)
@@ -719,6 +887,155 @@ func TestDeleteTempCheckpoints(t *testing.T) {
 				actualDirectories = append(actualDirectories, f.Name())
 			}
 			require.Equal(t, tc.expectedDirectories, actualDirectories)
+		})
+	}
+}
+
+// benchHelpText returns roughly helpLen bytes of descriptive text for a metric.
+func benchHelpText(helpLen, metric int) string {
+	var sb strings.Builder
+	fmt.Fprintf(&sb, "Total number of requests handled by metric_%d_total, partitioned by method and response code.", metric)
+	for sb.Len() < helpLen {
+		sb.WriteString(" Further detail about what this metric counts and how to interpret it.")
+	}
+	return sb.String()[:helpLen]
+}
+
+// BenchmarkCheckpointMetadata covers both sides of the metadata records a
+// checkpoint writes: building them in Checkpoint, and reading them back the way
+// WAL replay and the remote write watcher do.
+//
+// Help text is emitted once per metric and shared by all of that metric's
+// series, which is what an exporter produces. helpLen is what a real target was
+// measured emitting, and metadata bytes per series is what drives record size.
+func BenchmarkCheckpointMetadata(b *testing.B) {
+	const (
+		seriesPerMetric = 100
+		inputBatch      = 1000
+		helpLen         = 400
+	)
+
+	dirSize := func(b *testing.B, dir string) int64 {
+		entries, err := os.ReadDir(dir)
+		require.NoError(b, err)
+		var size int64
+		for _, e := range entries {
+			info, err := e.Info()
+			require.NoError(b, err)
+			size += info.Size()
+		}
+		return size
+	}
+
+	// Cost scales linearly with the series count; 300k is roughly what the
+	// feature was benchmarked against upstream.
+	for _, numSeries := range []int{100_000, 300_000} {
+		b.Run(fmt.Sprintf("series=%d", numSeries), func(b *testing.B) {
+			dir := b.TempDir()
+			var enc record.Encoder
+
+			helpByMetric := make([]string, numSeries/seriesPerMetric+1)
+			for m := range helpByMetric {
+				helpByMetric[m] = benchHelpText(helpLen, m)
+			}
+
+			// Start above 0 so the checkpoint Checkpoint writes does not collide
+			// with the source segments.
+			seg, err := CreateSegment(dir, 1)
+			require.NoError(b, err)
+			require.NoError(b, seg.Close())
+
+			w, err := NewSize(nil, nil, dir, 8*1024*1024, compression.Snappy)
+			require.NoError(b, err)
+
+			series := make([]record.RefSeries, 0, inputBatch)
+			meta := make([]record.RefMetadata, 0, inputBatch)
+			samples := make([]record.RefSample, 0, inputBatch)
+			flush := func() {
+				require.NoError(b, w.Log(enc.Series(series, nil), enc.Metadata(meta, nil), enc.Samples(samples, nil)))
+				series, meta, samples = series[:0], meta[:0], samples[:0]
+			}
+			for i := range numSeries {
+				ref := chunks.HeadSeriesRef(i + 1)
+				metric := i / seriesPerMetric
+				series = append(series, record.RefSeries{
+					Ref: ref,
+					Labels: labels.FromStrings(
+						"__name__", fmt.Sprintf("metric_%d_total", metric),
+						"instance", strconv.Itoa(i%seriesPerMetric),
+						"job", "bench",
+					),
+				})
+				meta = append(meta, record.RefMetadata{
+					Ref:  ref,
+					Type: record.GetMetricType(model.MetricTypeCounter),
+					Unit: "seconds",
+					Help: helpByMetric[metric],
+				})
+				samples = append(samples, record.RefSample{Ref: ref, T: 1, V: float64(i)})
+				if len(series) == inputBatch {
+					flush()
+				}
+			}
+			if len(series) > 0 {
+				flush()
+			}
+
+			first, last, err := Segments(dir)
+			require.NoError(b, err)
+			require.NoError(b, w.Close())
+
+			keep := func(chunks.HeadSeriesRef) bool { return true }
+			cpDir := CheckpointDir(dir, last)
+
+			b.Run("write", func(b *testing.B) {
+				// Batching splits one record into many, which costs a little
+				// compressed size, so the benchmark reports it.
+				var checkpointSize int64
+
+				b.ReportAllocs()
+				for b.Loop() {
+					_, err := Checkpoint(promslog.NewNopLogger(), w, first, last, keep, 0, false, false)
+					require.NoError(b, err)
+
+					b.StopTimer()
+					checkpointSize = dirSize(b, cpDir)
+					require.NoError(b, os.RemoveAll(cpDir))
+					b.StartTimer()
+				}
+				b.ReportMetric(float64(checkpointSize), "checkpoint_size")
+			})
+
+			b.Run("read", func(b *testing.B) {
+				_, err := Checkpoint(promslog.NewNopLogger(), w, first, last, keep, 0, false, false)
+				require.NoError(b, err)
+				b.Cleanup(func() { require.NoError(b, os.RemoveAll(cpDir)) })
+
+				b.ReportAllocs()
+				for b.Loop() {
+					sr, err := NewSegmentsReader(cpDir)
+					require.NoError(b, err)
+
+					var (
+						dec  = record.NewDecoder(labels.NewSymbolTable(), promslog.NewNopLogger())
+						r    = NewReader(sr)
+						meta []record.RefMetadata
+						read int
+					)
+					for r.Next() {
+						rec := r.Record()
+						if dec.Type(rec) != record.Metadata {
+							continue
+						}
+						meta, err = dec.Metadata(rec, meta[:0])
+						require.NoError(b, err)
+						read += len(meta)
+					}
+					require.NoError(b, r.Err())
+					require.NoError(b, sr.Close())
+					require.Equal(b, numSeries, read)
+				}
+			})
 		})
 	}
 }

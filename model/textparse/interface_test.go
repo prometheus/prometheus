@@ -57,7 +57,7 @@ func TestNewParser(t *testing.T) {
 
 	requireOpenMetrics2Parser := func(t *testing.T, p Parser) {
 		require.NotNil(t, p)
-		_, ok := p.(*OpenMetrics2Parser)
+		_, ok := p.(*openMetrics2Parser)
 		require.True(t, ok)
 	}
 

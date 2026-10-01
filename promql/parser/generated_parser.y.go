@@ -2418,11 +2418,11 @@ yydefault:
 			de := &DurationExpr{
 				Op:       yyDollar[1].item.Typ,
 				StartPos: yyDollar[1].item.Pos,
-				EndPos:   yyDollar[6].node.PositionRange().End,
+				EndPos:   yyDollar[7].item.PositionRange().End,
 				RHS: &DurationExpr{
 					Op:       yyDollar[2].item.Typ,
 					StartPos: yyDollar[2].item.PositionRange().Start,
-					EndPos:   yyDollar[6].node.PositionRange().End,
+					EndPos:   yyDollar[7].item.PositionRange().End,
 					LHS:      yyDollar[4].node.(Expr),
 					RHS:      yyDollar[6].node.(Expr),
 				},
