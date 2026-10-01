@@ -15,6 +15,7 @@ allowBuilds:
   '@parcel/watcher': true
   core-js: true
   core-js-pure: true
-minimumReleaseAge: 1440
+# Wait three days before installing newly published packages.
+minimumReleaseAge: 4320
 minimumReleaseAgeStrict: true
 blockExoticSubdeps: true

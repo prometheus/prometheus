@@ -2028,18 +2028,14 @@ func (ev *evaluator) subqueryTimeRange(e *parser.SubqueryExpr) (start, end, inte
 
 // runSubquery evaluates the given SubqueryExpr in a fresh child evaluator
 // aligned to the subquery's own step grid and returns the result along with
-// the child's samples stats. The caller decides how to merge the child stats
-// into the parent: peak and samples-read are always safe to absorb, while
-// TotalSamples should only be absorbed when the caller does not later
-// re-count the materialized matrix (e.g. evalSubquery does not absorb it).
+// the child's samples stats.
 func (ev *evaluator) runSubquery(ctx context.Context, e *parser.SubqueryExpr) (parser.Value, *stats.QuerySamples, annotations.Annotations) {
 	subqStart, subqEnd, subqInterval := ev.subqueryTimeRange(e)
 
-	// Subquery children always track per-step samples-read (independent of
-	// the parent's per-step setting) so MergeSamplesReadFromSubquery can
-	// attribute each subquery iteration to a parent step and drop iterations
-	// that fall in gaps between parent windows. The arrays don't escape this
-	// call.
+	// Subquery children always track per-step samples (independent of the
+	// parent's per-step setting) so subquery stats can attribute each subquery
+	// iteration to a parent step and drop iterations that fall in gaps between
+	// parent windows. The arrays don't escape this call.
 	childStats := stats.NewChildWithStepTracking(subqStart, subqEnd, subqInterval)
 	newEv := &evaluator{
 		startTimestamp:           subqStart,
@@ -2071,19 +2067,22 @@ func (ev *evaluator) runSubquery(ctx context.Context, e *parser.SubqueryExpr) (p
 
 // evalSubquery evaluates given SubqueryExpr and returns an equivalent
 // evaluated MatrixSelector in its place. Note that the Name and LabelMatchers are not set.
-// Only PeakSamples and SamplesRead from the subquery are merged into the
-// parent; TotalSamples is intentionally not merged because the call/range-vector
-// caller will count samples again from the materialized matrix.
-//
-// outerOffset is durationMilliseconds(subq.OriginalOffset) so the merge can
-// shift child timestamps to match the parent step that consumes them.
-// outerRange is the outer call's selRange so the merge can drop subquery
-// iterations whose timestamps fall in gaps between consecutive outer-step
-// windows (i.e. when the outer step is wider than the subquery range).
+// outerOffset and outerRange are the subquery's original offset and the outer
+// call's selRange, used to attribute subquery stats to the parent steps that
+// consume them.
 func (ev *evaluator) evalSubquery(ctx context.Context, subq *parser.SubqueryExpr, outerOffset, outerRange int64) (*parser.MatrixSelector, int, annotations.Annotations) {
 	val, childStats, ws := ev.runSubquery(ctx, subq)
 	ev.samplesStats.UpdatePeakFromSubquery(childStats)
-	ev.samplesStats.MergeSamplesReadFromSubquery(childStats, ev.startTimestamp, ev.interval, ev.numSteps(), outerOffset, outerRange)
+	consumer := stats.SubqueryConsumer{
+		Start:       ev.startTimestamp,
+		Interval:    ev.interval,
+		NumSteps:    ev.numSteps(),
+		Offset:      outerOffset,
+		Range:       outerRange,
+		AtTimestamp: subq.Timestamp,
+	}
+	ev.samplesStats.MergeTotalSamplesFromSubquery(childStats, consumer)
+	ev.samplesStats.MergeSamplesReadFromSubquery(childStats, consumer)
 	mat := val.(Matrix)
 	vs := &parser.VectorSelector{
 		OriginalOffset: subq.OriginalOffset,
@@ -2532,8 +2531,8 @@ func (ev *evaluator) eval(ctx context.Context, expr parser.Expr) (parser.Value, 
 			}, warnings
 		}
 
-		if !ev.enableDelayedNameRemoval && mat.ContainsSameLabelset() {
-			ev.errorf("vector cannot contain metrics with the same labelset")
+		if !ev.enableDelayedNameRemoval {
+			mat = ev.mergeSeriesWithSameLabelset(mat)
 		}
 		return mat, warnings
 
@@ -2635,12 +2634,14 @@ func (ev *evaluator) eval(ctx context.Context, expr parser.Expr) (parser.Value, 
 	case *parser.SubqueryExpr:
 		res, childStats, ws := ev.runSubquery(ctx, e)
 		ev.samplesStats.UpdatePeakFromSubquery(childStats)
-		// Attribute the subquery's TotalSamples to the parent's end step
-		// so they appear in the parent's TotalSamples stat.
-		ev.samplesStats.IncrementSamplesAtTimestamp(ev.endTimestamp, childStats.TotalSamples)
-		// outerOffset=0, outerRange=0: every subquery iteration becomes part of
-		// the parent's matrix output, so no shifting or gap filtering is needed.
-		ev.samplesStats.MergeSamplesReadFromSubquery(childStats, ev.startTimestamp, ev.interval, ev.numSteps(), 0, 0)
+		// Every subquery iteration is part of the parent's matrix output.
+		consumer := stats.SubqueryConsumer{
+			Start:    ev.startTimestamp,
+			Interval: ev.interval,
+			NumSteps: ev.numSteps(),
+		}
+		ev.samplesStats.MergeTotalSamplesFromSubquery(childStats, consumer)
+		ev.samplesStats.MergeSamplesReadFromSubquery(childStats, consumer)
 		return res, ws
 	case *parser.StepInvariantExpr:
 		newEv := &evaluator{
@@ -4417,6 +4418,19 @@ func (ev *evaluator) mergeSeriesWithSameLabelset(mat Matrix) Matrix {
 		for i := 1; i < len(base.Histograms); i++ {
 			if base.Histograms[i].T == base.Histograms[i-1].T {
 				ev.errorf("vector cannot contain metrics with the same labelset")
+			}
+		}
+
+		// Check for a float and a histogram sample sharing the same timestamp,
+		// since the checks above only catch duplicates within the same type.
+		for fi, hi := 0, 0; fi < len(base.Floats) && hi < len(base.Histograms); {
+			switch ft, ht := base.Floats[fi].T, base.Histograms[hi].T; {
+			case ft == ht:
+				ev.errorf("vector cannot contain metrics with the same labelset")
+			case ft < ht:
+				fi++
+			default:
+				hi++
 			}
 		}
 

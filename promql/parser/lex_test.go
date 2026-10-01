@@ -781,6 +781,39 @@ var tests = []struct {
 		name: "subqueries",
 		tests: []testCase{
 			{
+				input: `rate(foo[5m])[:1s]`,
+				fail:  true,
+			},
+			{
+				input: `rate(foo[step()])[:1s]`,
+				fail:  true,
+			},
+			{
+				input: `foo[range():1s]`,
+				expected: []Item{
+					{IDENTIFIER, 0, `foo`},
+					{LEFT_BRACKET, 3, `[`},
+					{RANGE, 4, `range`},
+					{LEFT_PAREN, 9, `(`},
+					{RIGHT_PAREN, 10, `)`},
+					{COLON, 11, `:`},
+					{DURATION, 12, `1s`},
+					{RIGHT_BRACKET, 14, `]`},
+				},
+			},
+			{
+				input: `foo[step():]`,
+				expected: []Item{
+					{IDENTIFIER, 0, `foo`},
+					{LEFT_BRACKET, 3, `[`},
+					{STEP, 4, `step`},
+					{LEFT_PAREN, 8, `(`},
+					{RIGHT_PAREN, 9, `)`},
+					{COLON, 10, `:`},
+					{RIGHT_BRACKET, 11, `]`},
+				},
+			},
+			{
 				input: `test_name{on!~"bar"}[4m:4s]`,
 				expected: []Item{
 					{IDENTIFIER, 0, `test_name`},

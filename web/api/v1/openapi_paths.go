@@ -227,7 +227,7 @@ func (b *OpenAPIBuilder) searchMetricNamesPath() *v3.PathItem {
 		queryParamWithExample("start", "Start timestamp for metric name search.", false, timestampSchema(), timestampExamples(exampleTime.Add(-1*time.Hour))),
 		queryParamWithExample("end", "End timestamp for metric name search.", false, timestampSchema(), timestampExamples(exampleTime)),
 		queryParamWithExample("limit", "Maximum number of metric names to return.", false, integerSchemaWithDefault(b.searchDefaultLimit()), []example{{"example", 20}}),
-		queryParamWithExample("batch_size", "Preferred number of results per NDJSON batch.", false, integerSchemaWithDefault(defaultSearchBatchSize), []example{{"example", 20}}),
+		queryParamWithExample("batch_size", "Preferred number of results per NDJSON batch. Clamped to 1000 and the effective result limit.", false, integerSchemaWithDefault(defaultSearchBatchSize), []example{{"example", 20}}),
 	)
 	return &v3.PathItem{
 		Get: &v3.Operation{
@@ -262,7 +262,7 @@ func (b *OpenAPIBuilder) searchLabelNamesPath() *v3.PathItem {
 		queryParamWithExample("start", "Start timestamp for label name search.", false, timestampSchema(), timestampExamples(exampleTime.Add(-1*time.Hour))),
 		queryParamWithExample("end", "End timestamp for label name search.", false, timestampSchema(), timestampExamples(exampleTime)),
 		queryParamWithExample("limit", "Maximum number of label names to return.", false, integerSchemaWithDefault(b.searchDefaultLimit()), []example{{"example", 20}}),
-		queryParamWithExample("batch_size", "Preferred number of results per NDJSON batch.", false, integerSchemaWithDefault(defaultSearchBatchSize), []example{{"example", 20}}),
+		queryParamWithExample("batch_size", "Preferred number of results per NDJSON batch. Clamped to 1000 and the effective result limit.", false, integerSchemaWithDefault(defaultSearchBatchSize), []example{{"example", 20}}),
 	)
 	return &v3.PathItem{
 		Get: &v3.Operation{
@@ -298,7 +298,7 @@ func (b *OpenAPIBuilder) searchLabelValuesPath() *v3.PathItem {
 		queryParamWithExample("start", "Start timestamp for label value search.", false, timestampSchema(), timestampExamples(exampleTime.Add(-1*time.Hour))),
 		queryParamWithExample("end", "End timestamp for label value search.", false, timestampSchema(), timestampExamples(exampleTime)),
 		queryParamWithExample("limit", "Maximum number of label values to return.", false, integerSchemaWithDefault(b.searchDefaultLimit()), []example{{"example", 10}}),
-		queryParamWithExample("batch_size", "Preferred number of results per NDJSON batch.", false, integerSchemaWithDefault(defaultSearchBatchSize), []example{{"example", 10}}),
+		queryParamWithExample("batch_size", "Preferred number of results per NDJSON batch. Clamped to 1000 and the effective result limit.", false, integerSchemaWithDefault(defaultSearchBatchSize), []example{{"example", 10}}),
 	)
 	return &v3.PathItem{
 		Get: &v3.Operation{

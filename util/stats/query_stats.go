@@ -414,73 +414,126 @@ func NewChildWithStepTracking(start, end, interval int64) *QuerySamples {
 	return qs
 }
 
-// MergeSamplesReadFromSubquery merges only SamplesRead and SamplesReadPerStep from
-// the child (subquery) into the parent. TotalSamples and TotalSamplesPerStep are
-// not merged, because the outer range-eval loop already counts those when it
-// iterates over the pre-computed matrix. The child must have per-step tracking
-// enabled (callers should construct it via NewChildWithStepTracking).
-//
-// parentStart, parentInterval and parentNumSteps describe the parent's step
-// grid; they are passed explicitly so that gap filtering still works when the
-// parent has per-step tracking disabled. parentNumSteps <= 1 (instant query)
-// disables step attribution and gap filtering: the child's total is folded into
-// qs.SamplesRead (and qs.SamplesReadPerStep[0] when allocated).
-//
-// The child timestamp tk is shifted forward by outerOffset before being matched
-// against the parent's step grid, so that an offset subquery (whose iterations
-// run earlier than the parent step) is attributed to the parent step that
-// actually consumes its output. Each child step is attributed to the earliest
-// parent step whose timestamp is >= tk+outerOffset; samples before the first
-// parent step are attributed to step 0 and samples after the last clamp to the
-// last step.
-//
-// outerRange is the consumed window width at each parent step (i.e. selRange of
-// the outer call when the subquery is used as a function's matrix argument). When
-// outerRange > 0, child steps whose shifted timestamp falls in a gap between
-// consecutive parent windows (i.e. tk+outerOffset <= parentTs-outerRange) are
-// skipped, so the count reflects only samples that actually contribute to the
-// output. Pass 0 for both outerOffset and outerRange to disable shifting and gap
-// filtering (e.g. for a bare *parser.SubqueryExpr where every child step is part
-// of the parent matrix output).
-func (qs *QuerySamples) MergeSamplesReadFromSubquery(child *QuerySamples, parentStart, parentInterval int64, parentNumSteps int, outerOffset, outerRange int64) {
+// SubqueryConsumer describes how a parent evaluator consumes a subquery's
+// output, so the subquery's sample stats can be attributed to parent steps.
+// A parent step at parentTs consumes the child steps whose timestamps, shifted
+// by Offset, fall in (parentTs-Range, parentTs]. Child steps outside every
+// parent window are not counted.
+type SubqueryConsumer struct {
+	// Start, Interval and NumSteps describe the parent's step grid. NumSteps <= 1
+	// folds the child's totals into the parent's first step.
+	Start, Interval int64
+	NumSteps        int
+	// Offset is the subquery's original offset.
+	Offset int64
+	// Range is the window width consumed at each parent step. Range <= 0 disables
+	// window filtering and attributes each child step to the earliest parent step
+	// at or after it, clamped to the parent's grid.
+	Range int64
+	// AtTimestamp is the subquery's @ timestamp, if any. Every parent step then
+	// consumes the fixed window (*AtTimestamp-Range, *AtTimestamp].
+	AtTimestamp *int64
+}
+
+func (c SubqueryConsumer) stepTimestamp(step int) int64 {
+	return c.Start + int64(step)*c.Interval
+}
+
+// MergeTotalSamplesFromSubquery merges the child's TotalSamples into the parent.
+// Like a range-vector function, each parent step counts every child step in its
+// window, so overlapping windows count a child step more than once. The child
+// must be created with NewChildWithStepTracking.
+func (qs *QuerySamples) MergeTotalSamplesFromSubquery(child *QuerySamples, c SubqueryConsumer) {
 	if qs == nil || child == nil {
 		return
 	}
-	if parentNumSteps <= 1 {
-		qs.SamplesRead += child.SamplesRead
-		if qs.SamplesReadPerStep != nil {
-			qs.SamplesReadPerStep[0] += child.SamplesRead
+	switch {
+	case c.NumSteps <= 1:
+		qs.IncrementSamplesAtStep(0, child.TotalSamples)
+	case c.Range <= 0:
+		qs.mergeStepsOnce(child, child.TotalSamplesPerStep, c, qs.IncrementSamplesAtStep)
+	case c.AtTimestamp != nil:
+		n := child.sumInWindow(child.TotalSamplesPerStep, c.Offset, *c.AtTimestamp-c.Range, *c.AtTimestamp)
+		for step := range c.NumSteps {
+			qs.IncrementSamplesAtStep(step, n)
 		}
+	default:
+		// Parent windows only move forward, so slide over the child steps.
+		perStep := child.TotalSamplesPerStep
+		var sum int64
+		lo, hi := 0, 0
+		for step := range c.NumSteps {
+			maxt := c.stepTimestamp(step)
+			for hi < len(perStep) && child.stepTimestamp(hi)+c.Offset <= maxt {
+				sum += perStep[hi]
+				hi++
+			}
+			for lo < hi && child.stepTimestamp(lo)+c.Offset <= maxt-c.Range {
+				sum -= perStep[lo]
+				lo++
+			}
+			qs.IncrementSamplesAtStep(step, sum)
+		}
+	}
+}
+
+// MergeSamplesReadFromSubquery merges the child's SamplesRead into the parent.
+// Each consumed child step is counted once, at the earliest parent step that
+// consumes it. The child must be created with NewChildWithStepTracking.
+func (qs *QuerySamples) MergeSamplesReadFromSubquery(child *QuerySamples, c SubqueryConsumer) {
+	if qs == nil || child == nil {
 		return
 	}
+	switch {
+	case c.NumSteps <= 1:
+		qs.IncrementSamplesReadAtStep(0, child.SamplesRead)
+	case c.AtTimestamp != nil && c.Range > 0:
+		qs.IncrementSamplesReadAtStep(0, child.sumInWindow(child.SamplesReadPerStep, c.Offset, *c.AtTimestamp-c.Range, *c.AtTimestamp))
+	default:
+		qs.mergeStepsOnce(child, child.SamplesReadPerStep, c, qs.IncrementSamplesReadAtStep)
+	}
+}
 
-	for k := range child.SamplesReadPerStep {
-		n := child.SamplesReadPerStep[k]
+// mergeStepsOnce increments the earliest parent step consuming each child step.
+func (*QuerySamples) mergeStepsOnce(child *QuerySamples, perStep []int64, c SubqueryConsumer, increment func(int, int64)) {
+	for k, n := range perStep {
 		if n == 0 {
 			continue
 		}
-		tk := child.StartTimestamp + int64(k)*child.Interval + outerOffset
-
-		outerStep := 0
-		if tk > parentStart {
-			outerStep = int((tk - parentStart + parentInterval - 1) / parentInterval)
-		}
-		if outerStep >= parentNumSteps {
-			outerStep = parentNumSteps - 1
-		}
-
-		if outerRange > 0 {
-			parentTs := parentStart + int64(outerStep)*parentInterval
-			if tk <= parentTs-outerRange {
-				continue
-			}
-		}
-
-		qs.SamplesRead += n
-		if qs.SamplesReadPerStep != nil {
-			qs.SamplesReadPerStep[outerStep] += n
+		if step, ok := c.consumingStep(child.stepTimestamp(k) + c.Offset); ok {
+			increment(step, n)
 		}
 	}
+}
+
+// consumingStep returns the earliest parent step whose window contains tk.
+func (c SubqueryConsumer) consumingStep(tk int64) (int, bool) {
+	step := 0
+	if tk > c.Start {
+		step = int((tk - c.Start + c.Interval - 1) / c.Interval)
+	}
+	if c.Range <= 0 {
+		return min(step, c.NumSteps-1), true
+	}
+	if step >= c.NumSteps || tk <= c.stepTimestamp(step)-c.Range {
+		return 0, false
+	}
+	return step, true
+}
+
+// sumInWindow sums perStep over steps whose timestamp plus offset is in (mint, maxt].
+func (qs *QuerySamples) sumInWindow(perStep []int64, offset, mint, maxt int64) int64 {
+	var sum int64
+	for k, n := range perStep {
+		if tk := qs.stepTimestamp(k) + offset; tk > mint && tk <= maxt {
+			sum += n
+		}
+	}
+	return sum
+}
+
+func (qs *QuerySamples) stepTimestamp(step int) int64 {
+	return qs.StartTimestamp + int64(step)*qs.Interval
 }
 
 func (qs *QueryTimers) GetSpanTimer(ctx context.Context, qt QueryTiming, observers ...prometheus.Observer) (*SpanTimer, context.Context) {

@@ -1,6 +1,6 @@
 module github.com/prometheus/prometheus/documentation/examples/remote_storage
 
-go 1.26.0
+go 1.26.7
 
 require (
 	github.com/alecthomas/kingpin/v2 v2.4.0
@@ -144,16 +144,4 @@ require (
 	k8s.io/client-go v0.35.3 // indirect
 	k8s.io/klog/v2 v2.140.0 // indirect
 	k8s.io/utils v0.0.0-20260210185600-b8788abfbbc2 // indirect
-)
-
-exclude (
-	// These excludes are needed because of some weird version collision.
-	// Feel free to try removing them after future dependency updates.
-	cloud.google.com/go v0.26.0
-	cloud.google.com/go v0.34.0
-	cloud.google.com/go v0.65.0
-	cloud.google.com/go v0.82.0
-
-	// Fixing ambiguous import: found package google.golang.org/genproto/googleapis/api/annotations in multiple modules.
-	google.golang.org/genproto v0.0.0-20230410155749-daa745c078e1
 )

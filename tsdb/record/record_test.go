@@ -17,6 +17,7 @@ package record
 import (
 	"bytes"
 	"fmt"
+	"math"
 	"math/rand"
 	"testing"
 
@@ -396,6 +397,28 @@ func TestRecord_EncodeDecode(t *testing.T) {
 			require.Equal(t, int64(0), h.ST, "V1 float histogram records must decode with ST=0")
 		}
 	})
+}
+
+func TestRecord_MinValidTime(t *testing.T) {
+	var enc Encoder
+	var dec Decoder
+
+	for _, mint := range []int64{0, 1, -1, 12345, math.MinInt64, math.MaxInt64} {
+		encoded := enc.MinValidTime(mint, nil)
+		require.Equal(t, MinValidTime, dec.Type(encoded))
+
+		decoded, err := dec.MinValidTime(encoded)
+		require.NoError(t, err)
+		require.Equal(t, mint, decoded)
+	}
+}
+
+func TestRecord_MinValidTimeDecodeWrongType(t *testing.T) {
+	var enc Encoder
+	var dec Decoder
+
+	_, err := dec.MinValidTime(enc.Series(nil, nil))
+	require.Error(t, err)
 }
 
 // TestRecord_V1MixedRegularAndCustomBucketHistogramPermutations verifies that

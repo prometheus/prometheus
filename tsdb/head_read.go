@@ -39,6 +39,7 @@ func (h *Head) ExemplarQuerier(ctx context.Context) (storage.ExemplarQuerier, er
 }
 
 // Index returns an IndexReader against the block.
+// The reader is not safe for concurrent use from multiple goroutines.
 func (h *Head) Index() (IndexReader, error) {
 	return h.indexRange(math.MinInt64, math.MaxInt64), nil
 }
@@ -478,6 +479,7 @@ func (h *headIndexReader) LabelNamesFor(ctx context.Context, series index.Postin
 }
 
 // Chunks returns a ChunkReader against the block.
+// The reader is not safe for concurrent use from multiple goroutines.
 func (h *Head) Chunks() (ChunkReader, error) {
 	return h.chunksRange(math.MinInt64, math.MaxInt64, h.iso.State(math.MinInt64, math.MaxInt64))
 }
@@ -843,14 +845,30 @@ type stopIterator struct {
 	chunkenc.Iterator
 
 	i, stopAfter int
+	// valueType is the type of the current value, or ValNone before the
+	// first and after the last one.
+	valueType chunkenc.ValueType
 }
 
 func (it *stopIterator) Next() chunkenc.ValueType {
 	if it.i+1 >= it.stopAfter {
+		it.valueType = chunkenc.ValNone
 		return chunkenc.ValNone
 	}
 	it.i++
-	return it.Iterator.Next()
+	it.valueType = it.Iterator.Next()
+	return it.valueType
+}
+
+// Seek advances with Next, since the wrapped iterator's Seek would not stop
+// after stopAfter values.
+func (it *stopIterator) Seek(t int64) chunkenc.ValueType {
+	for it.valueType == chunkenc.ValNone || it.AtT() < t {
+		if it.Next() == chunkenc.ValNone {
+			return chunkenc.ValNone
+		}
+	}
+	return it.valueType
 }
 
 func makeStopIterator(c chunkenc.Chunk, it chunkenc.Iterator, stopAfter int) chunkenc.Iterator {
@@ -859,6 +877,7 @@ func makeStopIterator(c chunkenc.Chunk, it chunkenc.Iterator, stopAfter int) chu
 		stopIter.Iterator = c.Iterator(stopIter.Iterator)
 		stopIter.i = -1
 		stopIter.stopAfter = stopAfter
+		stopIter.valueType = chunkenc.ValNone
 		return stopIter
 	}
 
@@ -866,5 +885,6 @@ func makeStopIterator(c chunkenc.Chunk, it chunkenc.Iterator, stopAfter int) chu
 		Iterator:  c.Iterator(it),
 		i:         -1,
 		stopAfter: stopAfter,
+		valueType: chunkenc.ValNone,
 	}
 }

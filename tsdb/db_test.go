@@ -1648,7 +1648,7 @@ func TestSizeRetention(t *testing.T) {
 			// Create a WAL checkpoint, and compare sizes.
 			first, last, err := wlog.Segments(db.Head().wal.Dir())
 			require.NoError(t, err)
-			_, err = wlog.Checkpoint(promslog.NewNopLogger(), db.Head().wal, first, last-1, func(chunks.HeadSeriesRef) bool { return false }, 0, enableSTStorage)
+			_, err = wlog.Checkpoint(promslog.NewNopLogger(), db.Head().wal, first, last-1, func(chunks.HeadSeriesRef) bool { return false }, 0, enableSTStorage, false)
 			require.NoError(t, err)
 			blockSize = int64(prom_testutil.ToFloat64(db.metrics.blocksBytes)) // Use the actual internal metrics.
 			walSize, err = db.Head().wal.Size()
@@ -5157,7 +5157,7 @@ func TestMetadataCheckpointingOnlyKeepsLatestEntry(t *testing.T) {
 			keep := func(id chunks.HeadSeriesRef) bool {
 				return id != 3
 			}
-			_, err = wlog.Checkpoint(promslog.NewNopLogger(), w, first, last-1, keep, 0, enableSTStorage)
+			_, err = wlog.Checkpoint(promslog.NewNopLogger(), w, first, last-1, keep, 0, enableSTStorage, false)
 			require.NoError(t, err)
 
 			// Confirm there's been a checkpoint.
@@ -10971,6 +10971,105 @@ func TestInOrderBlocksMaxTime_ExcludesSelectedSeriesBlocks(t *testing.T) {
 	require.False(t, ok, "selected-series block must be excluded from inOrderBlocksMaxTime")
 }
 
+// TestDBOpen_MinValidTime pins down the max() in open() between the min valid time computed
+// from on-disk blocks (inOrderBlocksMaxTime) and the one persisted in the WAL's checkpoint
+// (wlog.ReadMinValidTime): whichever of the two is higher must win, a missing record must fall
+// back to the blocks-derived value, and a checkpoint that fails to read back must do the same
+// while logging a warning rather than failing Open.
+func TestDBOpen_MinValidTime(t *testing.T) {
+	// newDBDirWithBlock creates a fresh DB directory containing a single in-order block, and
+	// returns that block's actual on-disk maxt (rather than the mint/maxt passed to genSeries,
+	// which createBlock's compaction doesn't necessarily preserve verbatim).
+	newDBDirWithBlock := func(t *testing.T) (dir string, blockMaxTime int64) {
+		t.Helper()
+		dir = t.TempDir()
+		blockDir := createBlock(t, dir, genSeries(1, 1, 0, 5000))
+		meta, _, err := readMetaFile(blockDir)
+		require.NoError(t, err)
+		return dir, meta.MaxTime
+	}
+
+	// writeMinValidTimeCheckpoint writes a standalone checkpoint carrying mint as its
+	// persisted min valid time, into a WAL that open() will then pick up as db's own.
+	writeMinValidTimeCheckpoint := func(t *testing.T, dir string, mint int64) {
+		t.Helper()
+		w, err := wlog.New(nil, nil, filepath.Join(dir, "wal"), compression.None)
+		require.NoError(t, err)
+		_, err = wlog.Checkpoint(promslog.NewNopLogger(), w, 0, 1000, func(chunks.HeadSeriesRef) bool { return true }, mint, false, true)
+		require.NoError(t, err)
+		require.NoError(t, w.Close())
+	}
+
+	// corruptLastCheckpoint flips a byte in the checkpoint's first record, which is always the
+	// min valid time record written by writeMinValidTimeCheckpoint above, making
+	// wlog.ReadMinValidTime fail instead of returning ok == false.
+	corruptLastCheckpoint := func(t *testing.T, dir string) {
+		t.Helper()
+		cpDir, _, err := wlog.LastCheckpoint(filepath.Join(dir, "wal"))
+		require.NoError(t, err)
+		f, err := os.OpenFile(wlog.SegmentName(cpDir, 0), os.O_WRONLY, 0o666)
+		require.NoError(t, err)
+		_, err = f.WriteAt([]byte{42}, 1)
+		require.NoError(t, err)
+		require.NoError(t, f.Close())
+	}
+
+	const warnMsg = "Failed to read persisted min valid time"
+
+	for _, tc := range []struct {
+		name         string
+		setup        func(t *testing.T, dir string)
+		wantMinValid func(blockMaxTime int64) int64
+		wantWarn     bool
+	}{
+		{
+			name: "stored wins when higher than the blocks-derived value",
+			setup: func(t *testing.T, dir string) {
+				writeMinValidTimeCheckpoint(t, dir, 999999)
+			},
+			wantMinValid: func(int64) int64 { return 999999 },
+		},
+		{
+			name: "blocks win when higher than the stored value",
+			setup: func(t *testing.T, dir string) {
+				writeMinValidTimeCheckpoint(t, dir, 1)
+			},
+			wantMinValid: func(blockMaxTime int64) int64 { return blockMaxTime },
+		},
+		{
+			name:         "no record falls back to the blocks-derived value",
+			setup:        func(*testing.T, string) {},
+			wantMinValid: func(blockMaxTime int64) int64 { return blockMaxTime },
+		},
+		{
+			name: "corrupt checkpoint falls back to the blocks-derived value and warns",
+			setup: func(t *testing.T, dir string) {
+				writeMinValidTimeCheckpoint(t, dir, 999999)
+				corruptLastCheckpoint(t, dir)
+			},
+			wantMinValid: func(blockMaxTime int64) int64 { return blockMaxTime },
+			wantWarn:     true,
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			dir, blockMaxTime := newDBDirWithBlock(t)
+			tc.setup(t, dir)
+
+			var logs bytes.Buffer
+			db, err := Open(dir, slog.New(slog.NewTextHandler(&logs, nil)), nil, DefaultOptions(), nil)
+			require.NoError(t, err)
+			t.Cleanup(func() { require.NoError(t, db.Close()) })
+
+			require.Equal(t, tc.wantMinValid(blockMaxTime), db.head.minValidTime.Load())
+			if tc.wantWarn {
+				require.Contains(t, logs.String(), warnMsg)
+			} else {
+				require.NotContains(t, logs.String(), warnMsg)
+			}
+		})
+	}
+}
+
 // TestCompactSelectedSeries_LateAppendDuringCompactionSurvivesRestart
 // verifies that a sample appended after the block write starts but
 // before eviction is not lost.
@@ -11063,6 +11162,135 @@ func TestCompactSelectedSeries_LateAppendDuringCompactionSurvivesRestart(t *test
 
 	afterRestart := querySelected(db)
 	require.Equal(t, expectedSamples, afterRestart, "all three samples must survive restart")
+}
+
+// TestCompactSelectedSeries_RestartDoesNotReplayOrphanedSampleAsUnknownSeriesRef checks that WAL
+// replay, after a restart, does not report an unknown series reference for a sample left
+// behind by CompactSelectedSeries.
+//
+// sel has one sample per chunk range: t=100 (range [0,999]) and t=1200 (range [1000,1999]).
+// CompactSelectedSeries writes one block per range and evicts sel from the head, recording a
+// WAL expiry for sel equal to head.MaxTime() (1200) at that point -- the WAL keeps sel's
+// series record for at least that long, in case a sample for it still needs it.
+//
+// sel's second sample, and the tombstone CompactSelectedSeries logs while evicting sel, sit
+// in a WAL segment created well after the segment that declared sel as a series. Two
+// checkpoints are then forced: the first, with a mint still within the expiry, carries sel's
+// series record forward while deleting the now-obsolete segment that originally declared it;
+// the second, with a mint past the expiry, drops that carried-forward record for good. In
+// both cases sel's own segment, holding its second sample, is left untouched: a checkpoint
+// only ever rewrites the older two thirds of the segments that currently exist.
+//
+// After the DB is closed and reopened, the test asserts that WAL replay does not flag sel's
+// leftover sample as an unknown series reference.
+func TestCompactSelectedSeries_RestartDoesNotReplayOrphanedSampleAsUnknownSeriesRef(t *testing.T) {
+	const chunkRange = 1000
+	opts := DefaultOptions()
+	opts.MinBlockDuration = chunkRange
+	opts.MaxBlockDuration = chunkRange
+	db := newTestDB(t, withOpts(opts))
+	db.DisableCompactions()
+
+	sel := labels.FromStrings("name", "selected")
+	app := db.Appender(context.Background())
+	selRef, err := app.Append(0, sel, 100, 1.0)
+	require.NoError(t, err)
+	require.NoError(t, app.Commit())
+
+	// Roll the WAL well past the segment that declared sel, so sel's second sample (and the
+	// tombstone from its later eviction) land far enough ahead to still be untouched once two
+	// checkpoints have run below.
+	const preRollSegments = 30
+	for range preRollSegments {
+		_, err := db.head.wal.NextSegment()
+		require.NoError(t, err)
+	}
+
+	app = db.Appender(context.Background())
+	_, err = app.Append(selRef, sel, 1200, 2.0)
+	require.NoError(t, err)
+	require.NoError(t, app.Commit())
+	require.Equal(t, int64(1200), db.Head().MaxTime())
+
+	require.NoError(t, db.CompactSelectedSeries([]storage.SeriesRef{selRef}))
+	require.Equal(t, uint64(0), db.Head().NumSeries(), "sel must be evicted from the head")
+	require.Len(t, db.Blocks(), 2, "one selected-series block per chunk range")
+	for _, b := range db.Blocks() {
+		bm := b.Meta()
+		require.True(t, bm.Compaction.FromSelectedSeries(), "block must carry the selected-series hint")
+	}
+
+	keepUntil, ok := db.Head().getWALExpiry(chunks.HeadSeriesRef(selRef))
+	require.True(t, ok, "walExpiry must be recorded for the evicted ref")
+	require.Equal(t, int64(1200), keepUntil)
+
+	// forceCheckpointAt repeatedly retries truncateWAL with the given mint, resetting
+	// lastWALTruncationTime each time, until it actually produces a new checkpoint. Each call
+	// rolls to a new WAL segment regardless, so once enough segments have accumulated, a
+	// checkpoint is produced immediately. The checkpoint index is captured before the loop and
+	// required to strictly increase: once a first checkpoint exists on disk, a bare
+	// LastCheckpoint success would otherwise keep finding that same old checkpoint on the very
+	// first iteration, regardless of whether this call produced a fresh one.
+	forceCheckpointAt := func(mint int64) {
+		t.Helper()
+		_, lastIdx, err := wlog.LastCheckpoint(db.head.wal.Dir())
+		if errors.Is(err, record.ErrNotFound) {
+			lastIdx = -1
+		} else {
+			require.NoError(t, err)
+		}
+		for range 10 {
+			db.head.lastWALTruncationTime.Store(0)
+			require.NoError(t, db.head.truncateWAL(mint))
+			if _, idx, err := wlog.LastCheckpoint(db.head.wal.Dir()); err == nil && idx > lastIdx {
+				return
+			}
+		}
+		t.Fatalf("no new checkpoint produced for mint=%d", mint)
+	}
+	checkpointHasSelRecord := func() bool {
+		checkpointDir, _, err := wlog.LastCheckpoint(db.head.wal.Dir())
+		require.NoError(t, err)
+		for _, rec := range readTestWAL(t, checkpointDir) {
+			seriesRecs, ok := rec.([]record.RefSeries)
+			if !ok {
+				continue
+			}
+			for _, s := range seriesRecs {
+				if storage.SeriesRef(s.Ref) == selRef {
+					return true
+				}
+			}
+		}
+		return false
+	}
+
+	// mint stays within the expiry: sel's record must survive, carried forward into the
+	// checkpoint even though sel is no longer in the head.
+	forceCheckpointAt(150)
+	require.True(t, checkpointHasSelRecord(), "sel's record must be carried forward while still within its walExpiry")
+
+	// mint now exceeds the expiry: sel's record is finally dropped, but sel's own segment,
+	// holding its second sample and eviction tombstone, is still untouched.
+	forceCheckpointAt(1201)
+	require.False(t, checkpointHasSelRecord(), "sel's record must be dropped once its walExpiry has passed")
+
+	require.NoError(t, db.Close())
+	reopened, err := Open(db.Dir(), nil, nil, opts, nil)
+	require.NoError(t, err)
+	t.Cleanup(func() { require.NoError(t, reopened.Close()) })
+
+	// minValidTime must reflect the real WAL truncation point, not just the maxt of blocks
+	// that happen to carry neither the FromSelectedSeries nor the FromStaleSeries hint. Before
+	// this fix, it did not: both blocks on disk are selected-series blocks, inOrderBlocksMaxTime
+	// finds no qualifying block, and minValidTime fell back to math.MinInt64. That let replay
+	// walk straight into sel's leftover sample instead of skipping it as "before minValidTime",
+	// so replay looked up sel's series, did not find it, and logged an unknown series reference.
+	unknownSamples := prom_testutil.ToFloat64(reopened.head.metrics.walReplayUnknownRefsTotal.WithLabelValues("samples"))
+	require.Zero(t, unknownSamples,
+		"WAL replay must not report unknown series references for sel's leftover sample; its "+
+			"data is safely in a selected-series block, but a too-low minValidTime let replay "+
+			"try to match it against a series record that no longer exists")
 }
 
 // TestCompactSelectedSeries_OOOAppendDuringCompactionSurvives verifies that a series is not

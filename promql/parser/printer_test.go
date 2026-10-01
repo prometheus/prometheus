@@ -23,9 +23,7 @@ import (
 
 func TestExprString(t *testing.T) {
 	optsParser := NewParser(Options{
-		ExperimentalDurationExpr:     true,
-		EnableExtendedRangeSelectors: true,
-		EnableBinopFillModifiers:     true,
+		EnableBinopFillModifiers: true,
 	})
 	// A list of valid expressions that are expected to be
 	// returned as out when calling String(). If out is empty the output

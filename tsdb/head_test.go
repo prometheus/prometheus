@@ -185,6 +185,11 @@ func readTestWAL(t testing.TB, dir string) (recs []any) {
 			exemplars, err := dec.Exemplars(rec, nil)
 			require.NoError(t, err)
 			recs = append(recs, exemplars)
+		case record.MinValidTime:
+			// Internal checkpoint bookkeeping, not WAL content callers of readTestWAL care
+			// about; see TestReadMinValidTime_* in tsdb/wlog for coverage of this record.
+			_, err := dec.MinValidTime(rec)
+			require.NoError(t, err)
 		default:
 			require.Fail(t, "unknown record type")
 		}
@@ -3213,6 +3218,46 @@ func TestWblRepair_DecodingError(t *testing.T) {
 	}
 }
 
+// TestHead_TruncateWAL_IncrementsCorruptionMetricOnCorruptedSegment ensures that
+// creating a checkpoint over a corrupted WAL segment increments
+// prometheus_tsdb_wal_corruptions_total.
+func TestHead_TruncateWAL_IncrementsCorruptionMetricOnCorruptedSegment(t *testing.T) {
+	h, w := newTestHead(t, 1000, compression.None, false)
+
+	enc := record.Encoder{}
+	seriesRec := enc.Series([]record.RefSeries{
+		{Ref: 1, Labels: labels.FromStrings("a", "b")},
+	}, nil)
+
+	// Create several WAL segments so that truncateWAL has a range to checkpoint.
+	const numSegments = 4
+	for range numSegments {
+		require.NoError(t, w.Log(seriesRec))
+		_, err := w.NextSegmentSync()
+		require.NoError(t, err)
+	}
+
+	// Replay the intact WAL.
+	require.NoError(t, h.Init(0))
+	require.Equal(t, 0.0, prom_testutil.ToFloat64(h.metrics.walCorruptionsTotal))
+
+	// Corrupt segment 0 on disk by flipping a byte inside the first record's data.
+	segFile := wlog.SegmentName(w.Dir(), 0)
+	f, err := os.OpenFile(segFile, os.O_WRONLY, 0o644)
+	require.NoError(t, err)
+	_, err = f.WriteAt([]byte{0xff}, 7)
+	require.NoError(t, err)
+	require.NoError(t, f.Close())
+
+	// Trigger a checkpoint via WAL truncation.
+	h.lastWALTruncationTime.Store(0)
+	err = h.truncateWAL(100)
+	require.Error(t, err)
+	var cerr *wlog.CorruptionErr
+	require.ErrorAs(t, err, &cerr, "checkpoint creation should report a WAL corruption error")
+	require.Equal(t, 1.0, prom_testutil.ToFloat64(h.metrics.walCorruptionsTotal))
+}
+
 func TestHeadReadWriterRepair(t *testing.T) {
 	dir := t.TempDir()
 
@@ -3614,6 +3659,83 @@ func TestIsolationWithoutAdd(t *testing.T) {
 	require.NoError(t, app.Commit())
 
 	require.Equal(t, hb.iso.lastAppendID(), hb.iso.lowWatermark(), "High watermark should be equal to the low watermark")
+}
+
+// TestIsolationSeek checks that seeking does not expose head samples committed
+// after the querier was created.
+func TestIsolationSeek(t *testing.T) {
+	if defaultIsolationDisabled {
+		t.Skip("skipping test since tsdb isolation is disabled")
+	}
+
+	db := newTestDB(t)
+	ctx := t.Context()
+	lbls := labels.FromStrings("foo", "bar")
+	appendRange := func(from, to int64) {
+		app := db.Appender(ctx)
+		for ts := from; ts <= to; ts++ {
+			_, err := app.Append(0, lbls, ts, float64(ts))
+			require.NoError(t, err)
+		}
+		require.NoError(t, app.Commit())
+	}
+	timestamps := func(from, to int64) []int64 {
+		var res []int64
+		for ts := from; ts <= to; ts++ {
+			res = append(res, ts)
+		}
+		return res
+	}
+
+	appendRange(1, 10)
+	// A querier starting after the chunk's first sample trims the chunk.
+	queriers := []struct {
+		name string
+		mint int64
+		q    storage.Querier
+	}{
+		{name: "untrimmed", mint: 0},
+		{name: "trimmed", mint: 3},
+	}
+	for i := range queriers {
+		q, err := db.Querier(queriers[i].mint, 100)
+		require.NoError(t, err)
+		t.Cleanup(func() { require.NoError(t, q.Close()) })
+		queriers[i].q = q
+	}
+	// The queriers must not see samples committed after they were created,
+	// although these share a head chunk with the ones they do see.
+	appendRange(11, 20)
+
+	for _, qc := range queriers {
+		for _, tc := range []struct {
+			name string
+			seek int64 // Zero means advancing with Next only.
+			want []int64
+		}{
+			{name: "next", want: timestamps(max(1, qc.mint), 10)},
+			{name: "seek to a visible sample", seek: 5, want: timestamps(5, 10)},
+			{name: "seek past the visible samples", seek: 15},
+		} {
+			t.Run(qc.name+"/"+tc.name, func(t *testing.T) {
+				ss := qc.q.Select(ctx, false, nil, labels.MustNewMatcher(labels.MatchEqual, "foo", "bar"))
+				require.True(t, ss.Next())
+				it := ss.At().Iterator(nil)
+				vt := it.Next()
+				if tc.seek != 0 {
+					vt = it.Seek(tc.seek)
+				}
+				var got []int64
+				for ; vt == chunkenc.ValFloat; vt = it.Next() {
+					got = append(got, it.AtT())
+				}
+				require.NoError(t, it.Err())
+				require.Equal(t, tc.want, got)
+				require.False(t, ss.Next())
+				require.NoError(t, ss.Err())
+			})
+		}
+	}
 }
 
 func TestOutOfOrderSamplesMetric(t *testing.T) {
@@ -7470,6 +7592,34 @@ func TestStripeSeries_getOrSet(t *testing.T) {
 }
 
 func TestStripeSeries_gc(t *testing.T) {
+	t.Run("retains the oldest referenced file regardless of timestamp order", func(t *testing.T) {
+		lset := labels.FromStrings("a", "1")
+		series := newMemSeries(lset, 1, 0, defaultIsolationDisabled, false)
+		// File numbers occupy the upper 32 bits of the disk reference.
+		series.mmappedChunks = []*mmappedChunk{
+			{ref: chunks.ChunkDiskMapperRef(3 << 32), minTime: 0, maxTime: 50},
+			{ref: chunks.ChunkDiskMapperRef(1 << 32), minTime: 100, maxTime: 150},
+			{ref: chunks.ChunkDiskMapperRef(2 << 32), minTime: 200, maxTime: 250},
+		}
+		s := newStripeSeries(1, noopSeriesLifecycleCallback{})
+		_, created := s.setUnlessAlreadySet(lset.Hash(), lset, series)
+		require.True(t, created)
+
+		for _, tc := range []struct {
+			mint               int64
+			minFile, remaining int
+		}{
+			{mint: 0, minFile: 1, remaining: 3},
+			{mint: 51, minFile: 1, remaining: 2},
+			{mint: 151, minFile: 2, remaining: 1},
+			{mint: 251, minFile: math.MaxInt32, remaining: 0},
+		} {
+			_, _, _, _, _, _, _, _, minFile := s.gc(tc.mint, 0)
+			require.Equal(t, tc.minFile, minFile, "mint=%d", tc.mint)
+			require.Len(t, series.mmappedChunks, tc.remaining)
+		}
+	})
+
 	t.Run("marks collected series", func(t *testing.T) {
 		s, ms1, ms2 := stripeSeriesWithCollidingSeries(t)
 		hash := ms1.lset.Hash()

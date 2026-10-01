@@ -206,21 +206,15 @@ loop:
 			continue
 		}
 		ce, seriesCached, seriesAlreadyScraped := sl.cache.get(met)
-		var (
-			ref  storage.SeriesRef
-			hash uint64
-		)
+		var ref storage.SeriesRef
 
 		if seriesCached {
 			ref = ce.ref
 			lset = ce.lset
-			hash = ce.hash
 		} else {
 			p.Labels(&lset)
-			hash = lset.Hash()
 
-			// Hash label set as it is seen local to the target. Then add target labels
-			// and relabeling and store the final label set.
+			// Add target labels and apply relabeling before storing the final label set.
 			lset = sl.sampleMutator(lset)
 
 			// The label set may be set to empty to indicate dropping.
@@ -344,7 +338,7 @@ loop:
 		// If a series was new, but we didn't append it due to sample_limit or other errors then we don't need
 		// it in the scrape cache because we don't need to emit StaleNaNs for it when it disappears.
 		if !seriesCached && sampleAdded {
-			ce = sl.cache.addRef(met, ref, lset, hash)
+			ce = sl.cache.addRef(met, ref, lset)
 
 			if sampleLimitErr == nil && bucketLimitErr == nil {
 				seriesAdded++
@@ -433,7 +427,7 @@ func (sl *scrapeLoopAppenderV2) addReportSample(s reportSample, t int64, v float
 	switch {
 	case err == nil:
 		if !ok {
-			sl.cache.addRef(s.name, ref, lset, lset.Hash())
+			sl.cache.addRef(s.name, ref, lset)
 		}
 		return nil
 	case errors.Is(err, storage.ErrOutOfOrderSample), errors.Is(err, storage.ErrDuplicateSampleForTimestamp):
