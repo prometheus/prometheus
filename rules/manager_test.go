@@ -359,6 +359,78 @@ func sortAlerts(items []*Alert) {
 	})
 }
 
+func TestForStateRestorePreservesFiringState(t *testing.T) {
+	st := teststorage.New(t)
+	expr, err := testParser.ParseExpr(`vector(1)`)
+	require.NoError(t, err)
+
+	opts := &ManagerOptions{
+		QueryFunc:       EngineQueryFunc(testEngine(t), st),
+		AppendableV2:    st,
+		Queryable:       st,
+		Context:         context.Background(),
+		Logger:          promslog.NewNopLogger(),
+		NotifyFunc:      func(context.Context, string, ...*Alert) {},
+		OutageTolerance: 30 * time.Minute,
+		ForGracePeriod:  time.Minute,
+	}
+	const alertName = "AlwaysFiring"
+	holdDuration := 10 * time.Minute
+	baseTime := time.Unix(1_700_000_000, 0).UTC()
+
+	rule := NewAlertingRule(
+		alertName,
+		expr,
+		holdDuration,
+		0,
+		labels.EmptyLabels(),
+		labels.EmptyLabels(),
+		labels.EmptyLabels(),
+		"",
+		true,
+		nil,
+	)
+	group := NewGroup(GroupOptions{
+		Name:     "default",
+		Interval: time.Minute,
+		Rules:    []Rule{rule},
+		Opts:     opts,
+	})
+
+	group.Eval(context.Background(), baseTime)
+	group.Eval(context.Background(), baseTime.Add(holdDuration))
+	require.Equal(t, StateFiring, rule.State())
+
+	restoredRule := NewAlertingRule(
+		alertName,
+		expr,
+		holdDuration,
+		0,
+		labels.EmptyLabels(),
+		labels.EmptyLabels(),
+		labels.EmptyLabels(),
+		"",
+		false,
+		nil,
+	)
+	restoredGroup := NewGroup(GroupOptions{
+		Name:          "default",
+		Interval:      time.Minute,
+		Rules:         []Rule{restoredRule},
+		ShouldRestore: true,
+		Opts:          opts,
+	})
+	restoreTime := baseTime.Add(15 * time.Minute)
+	restoredGroup.Eval(context.Background(), restoreTime)
+	restoredGroup.RestoreForState(restoreTime)
+
+	require.True(t, restoredRule.Restored())
+	require.Equal(t, StateFiring, restoredRule.State())
+	require.Len(t, restoredRule.ActiveAlerts(), 1)
+	require.Equal(t, baseTime, restoredRule.ActiveAlerts()[0].ActiveAt)
+	require.Equal(t, baseTime.Add(holdDuration), restoredRule.ActiveAlerts()[0].FiredAt)
+}
+
 func TestForStateRestore(t *testing.T) {
 	for _, queryOffset := range []time.Duration{0, time.Minute} {
 		t.Run(fmt.Sprintf("queryOffset %s", queryOffset.String()), func(t *testing.T) {

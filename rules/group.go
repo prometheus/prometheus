@@ -846,10 +846,11 @@ func (g *Group) RestoreForState(ts time.Time) {
 
 			switch {
 			case timeRemainingPending <= 0:
-				// It means that alert was firing when prometheus went down.
-				// In the next Eval, the state of this alert will be set back to
-				// firing again if it's still firing in that Eval.
-				// Nothing to be done in this case.
+				// The alert was firing when Prometheus went down. The evaluations
+				// before restoration confirmed that it is still active, so restore
+				// its firing state without exposing an intermediate pending state.
+				a.State = StateFiring
+				a.FiredAt = restoredActiveAt.Add(alertHoldDuration)
 			case timeRemainingPending < g.opts.ForGracePeriod:
 				// (new) restoredActiveAt = (ts + m.opts.ForGracePeriod) - alertHoldDuration
 				//                            /* new firing time */      /* moving back by hold duration */
