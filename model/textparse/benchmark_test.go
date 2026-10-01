@@ -258,13 +258,8 @@ func benchParse(b *testing.B, data []byte, parser string) {
 			return NewOpenMetrics2Parser(b, st, ParserOptions{})
 		}
 	case "om2text_with_nhcb":
-		newParserFn = func(buf []byte, st *labels.SymbolTable) Parser {
-			p, err := New(buf, "application/openmetrics-text; version=2.0.0", st, ParserOptions{
-				EnableOpenMetrics2:             true,
-				ConvertClassicHistogramsToNHCB: true,
-			})
-			require.NoError(b, err)
-			return p
+		newParserFn = func(b []byte, st *labels.SymbolTable) Parser {
+			return NewOpenMetrics2Parser(b, st, ParserOptions{ConvertClassicHistogramsToNHCB: true})
 		}
 	case "omtext_with_nhcb_st":
 		newParserFn = func(buf []byte, st *labels.SymbolTable) Parser {
@@ -502,11 +497,7 @@ func collectSeries(t *testing.T, data []byte, parser string) []string {
 	case "om2text":
 		p = NewOpenMetrics2Parser(data, st, ParserOptions{})
 	case "om2text_with_nhcb":
-		p, err = New(data, "application/openmetrics-text; version=2.0.0", st, ParserOptions{
-			EnableOpenMetrics2:             true,
-			ConvertClassicHistogramsToNHCB: true,
-		})
-		require.NoError(t, err)
+		p = NewOpenMetrics2Parser(data, st, ParserOptions{ConvertClassicHistogramsToNHCB: true})
 	default:
 		t.Fatalf("unknown parser %q", parser)
 	}
