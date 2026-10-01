@@ -561,6 +561,9 @@ req_duration{job="api"} {count:3,sum:6.0,bucket:[0.1:1,1.0:2,+Inf:3]} 1234567.0 
 			},
 		},
 		{
+			// Corresponds to convert_classic_histograms_to_nhcb: true and
+			// always_scrape_classic_histograms: true in scrape config (see #13532),
+			// emitting both the converted NHCB and the classic histogram series.
 			name: "classic_int_histogram_to_nhcb_with_keep_classic",
 			input: `# TYPE req_duration histogram
 req_duration {count:3,sum:6.0,bucket:[0.1:1,1.0:2,+Inf:3]}
