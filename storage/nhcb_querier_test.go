@@ -245,6 +245,48 @@ func TestNHCBAsClassicQuerier_Select(t *testing.T) {
 			expectedCount:  3,
 			expectedSuffix: "_bucket",
 		},
+		{
+			name: "le matcher on count query excludes series without le label",
+			queryMatchers: []*labels.Matcher{
+				labels.MustNewMatcher(labels.MatchEqual, model.MetricNameLabel, "http_requests_count"),
+				labels.MustNewMatcher(labels.MatchEqual, labels.BucketLabel, "1.0"),
+			},
+			classicSeries: []Series{},
+			nhcbSeries: []Series{
+				NewListSeries(labels.FromStrings("__name__", "http_requests"), []chunks.Sample{hSample{t: 1, h: nhcb}}),
+			},
+			expectedCount:  0,
+			expectedSuffix: "_count",
+		},
+		{
+			name: "le matcher on sum query excludes series without le label",
+			queryMatchers: []*labels.Matcher{
+				labels.MustNewMatcher(labels.MatchEqual, model.MetricNameLabel, "http_requests_sum"),
+				labels.MustNewMatcher(labels.MatchEqual, labels.BucketLabel, "1.0"),
+			},
+			classicSeries: []Series{},
+			nhcbSeries: []Series{
+				NewListSeries(labels.FromStrings("__name__", "http_requests"), []chunks.Sample{hSample{t: 1, h: nhcb}}),
+			},
+			expectedCount:  0,
+			expectedSuffix: "_sum",
+		},
+		{
+			name: "le matcher on count query returns stored classic count series with le label and excludes NHCB",
+			queryMatchers: []*labels.Matcher{
+				labels.MustNewMatcher(labels.MatchEqual, model.MetricNameLabel, "http_requests_count"),
+				labels.MustNewMatcher(labels.MatchEqual, labels.BucketLabel, "1.0"),
+			},
+			classicSeries: []Series{
+				NewListSeries(labels.FromStrings("__name__", "http_requests_count", "le", "1.0"), []chunks.Sample{fSample{t: 1, f: 5}}),
+				NewListSeries(labels.FromStrings("__name__", "http_requests_count"), []chunks.Sample{fSample{t: 1, f: 10}}),
+			},
+			nhcbSeries: []Series{
+				NewListSeries(labels.FromStrings("__name__", "http_requests"), []chunks.Sample{hSample{t: 1, h: nhcb}}),
+			},
+			expectedCount:  1,
+			expectedSuffix: "_count",
+		},
 	}
 
 	for _, tc := range tests {
@@ -357,26 +399,39 @@ type nhcbMockQuerier struct {
 
 func (m *nhcbMockQuerier) Select(_ context.Context, _ bool, _ *SelectHints, matchers ...*labels.Matcher) SeriesSet {
 	for _, matcher := range matchers {
-		if matcher.Name == model.MetricNameLabel {
-			// Check if this is a histogram suffix query (classic histogram query)
-			if strings.HasSuffix(matcher.Value, "_bucket") ||
-				strings.HasSuffix(matcher.Value, "_count") ||
-				strings.HasSuffix(matcher.Value, "_sum") {
-				if m.classicErr != nil {
-					return ErrSeriesSet(m.classicErr)
-				}
-				return NewMockSeriesSet(m.classicSeries...)
-			}
-			// If passthroughSeries is set, use it for non-histogram metric queries
-			if len(m.passthroughSeries) > 0 {
-				return NewMockSeriesSet(m.passthroughSeries...)
-			}
-			// Base metric name query - return NHCB series
-			if m.nhcbErr != nil {
-				return ErrSeriesSet(m.nhcbErr)
-			}
-			return &mockSeriesSet{idx: -1, series: m.nhcbSeries, warnings: m.nhcbWarnings}
+		if matcher.Name != model.MetricNameLabel {
+			continue
 		}
+		// Check if this is a histogram suffix query (classic histogram query)
+		if strings.HasSuffix(matcher.Value, "_bucket") ||
+			strings.HasSuffix(matcher.Value, "_count") ||
+			strings.HasSuffix(matcher.Value, "_sum") {
+			if m.classicErr != nil {
+				return ErrSeriesSet(m.classicErr)
+			}
+			var matched []Series
+			for _, s := range m.classicSeries {
+				if matchesAll(s.Labels(), matchers) {
+					matched = append(matched, s)
+				}
+			}
+			return NewMockSeriesSet(matched...)
+		}
+		// If passthroughSeries is set, use it for non-histogram metric queries
+		if len(m.passthroughSeries) > 0 {
+			return NewMockSeriesSet(m.passthroughSeries...)
+		}
+		// Base metric name query - return NHCB series
+		if m.nhcbErr != nil {
+			return ErrSeriesSet(m.nhcbErr)
+		}
+		var matched []Series
+		for _, s := range m.nhcbSeries {
+			if matchesAll(s.Labels(), matchers) {
+				matched = append(matched, s)
+			}
+		}
+		return &mockSeriesSet{idx: -1, series: matched, warnings: m.nhcbWarnings}
 	}
 	return NewMockSeriesSet()
 }
@@ -391,6 +446,15 @@ func (*nhcbMockQuerier) LabelNames(context.Context, *LabelHints, ...*labels.Matc
 
 func (*nhcbMockQuerier) Close() error {
 	return nil
+}
+
+func matchesAll(lset labels.Labels, matchers []*labels.Matcher) bool {
+	for _, m := range matchers {
+		if !m.Matches(lset.Get(m.Name)) {
+			return false
+		}
+	}
+	return true
 }
 
 // deferredErrSeriesSet returns series normally but reports a non-nil error only
