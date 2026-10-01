@@ -431,7 +431,11 @@ type headAppenderBase struct {
 	storeST                         bool // Whether start-timestamp storage is enabled for this append.
 	useXOR2                         bool // Whether XOR2 encoding is used for float chunks in this append.
 	useHistogramST                  bool // Whether ST-capable histogram chunk encoding is used in this append.
+
+	// commitStats is populated at the end of Commit, readable via CommitStats.
+	commitStats CommitStats
 }
+
 type headAppender struct {
 	headAppenderBase
 	hints *storage.AppendOptions
@@ -1233,6 +1237,10 @@ type appenderCommitContext struct {
 	// Number of samples out of order but accepted: with ooo enabled and within time window.
 	oooFloatsAccepted    int
 	oooHistogramAccepted int
+	// Number of samples dropped at commit time because the series already had a
+	// sample at the same timestamp, with an equal or a conflicting value.
+	floatDuplicatesDropped int
+	histoDuplicatesDropped int
 	// Number of samples rejected due to: out of order but OOO support disabled.
 	floatOOORejected int
 	histoOOORejected int
@@ -1240,8 +1248,15 @@ type appenderCommitContext struct {
 	floatTooOldRejected int
 	histoTooOldRejected int
 	// Number of samples rejected due to: out of bounds: with t < minValidTime (OOO support disabled).
-	floatOOBRejected    int
-	histoOOBRejected    int
+	floatOOBRejected int
+	histoOOBRejected int
+	// Whether to aggregate same-timestamp drops per series for CommitStats.
+	collectCommitStats bool
+	// Same-timestamp drops aggregated per series, allocated lazily on the first drop.
+	droppedConflict     []DiscardedSeriesSamples
+	droppedExactDup     []DiscardedSeriesSamples
+	droppedConflictIdx  map[chunks.HeadSeriesRef]int
+	droppedExactDupIdx  map[chunks.HeadSeriesRef]int
 	inOrderMint         int64
 	inOrderMaxt         int64
 	appendChunkOpts     chunkOpts
@@ -1338,6 +1353,11 @@ func (acc *appenderCommitContext) collectOOORecords(a *headAppenderBase) {
 	acc.wblFloatHistograms = nil
 	acc.oooMmapMarkers = nil
 }
+
+// errConflictingSample is storage.ErrDuplicateSampleForTimestamp boxed once into an error
+// interface. That sentinel is a value-typed struct, so passing it directly to errors.Is in the
+// per-sample commit path would box it onto the heap on every call; the pre-boxed copy avoids that.
+var errConflictingSample error = storage.ErrDuplicateSampleForTimestamp
 
 // handleAppendableError processes errors encountered during sample appending and updates
 // the provided counters accordingly.
@@ -1455,6 +1475,9 @@ func (a *headAppenderBase) commitFloats(b *appendBatch, acc *appenderCommitConte
 		}
 		oooSample, _, err := series.appendable(s.T, s.V, a.headMaxt, a.minValidTime, a.oooTimeWindow)
 		if err != nil {
+			if errors.Is(err, errConflictingSample) {
+				acc.recordDroppedConflict(series, &acc.floatDuplicatesDropped)
+			}
 			handleAppendableError(err, &acc.floatsAppended, &acc.floatOOORejected, &acc.floatOOBRejected, &acc.floatTooOldRejected)
 		}
 
@@ -1501,11 +1524,10 @@ func (a *headAppenderBase) commitFloats(b *appendBatch, acc *appenderCommitConte
 				}
 				acc.oooFloatsAccepted++
 			} else {
-				// Sample is an exact duplicate of the last sample.
+				// The timestamp already exists, so the sample is dropped.
 				// NOTE: We can only detect updates if they clash with a sample in the OOOHeadChunk,
 				// not with samples in already flushed OOO chunks.
-				// TODO(codesome): Add error reporting? It depends on addressing https://github.com/prometheus/prometheus/discussions/10305.
-				acc.floatsAppended--
+				acc.recordOOODuplicate(series, s.T, s.V, nil, nil, &acc.floatsAppended, &acc.floatDuplicatesDropped)
 			}
 		default:
 			wasStale, wasHistogram, oldBuckets := series.sampleState()
@@ -1525,6 +1547,7 @@ func (a *headAppenderBase) commitFloats(b *appendBatch, acc *appenderCommitConte
 			} else {
 				// The sample is an exact duplicate, and should be silently dropped.
 				acc.floatsAppended--
+				acc.recordDroppedExactDup(series, &acc.floatDuplicatesDropped)
 			}
 		}
 
@@ -1558,6 +1581,9 @@ func (a *headAppenderBase) commitHistograms(b *appendBatch, acc *appenderCommitC
 
 		oooSample, _, err := series.appendableHistogram(s.T, s.H, a.headMaxt, a.minValidTime, a.oooTimeWindow)
 		if err != nil {
+			if errors.Is(err, errConflictingSample) {
+				acc.recordDroppedConflict(series, &acc.histoDuplicatesDropped)
+			}
 			handleAppendableError(err, &acc.histogramsAppended, &acc.histoOOORejected, &acc.histoOOBRejected, &acc.histoTooOldRejected)
 		}
 
@@ -1604,11 +1630,10 @@ func (a *headAppenderBase) commitHistograms(b *appendBatch, acc *appenderCommitC
 				}
 				acc.oooHistogramAccepted++
 			} else {
-				// Sample is an exact duplicate of the last sample.
+				// The timestamp already exists, so the sample is dropped.
 				// NOTE: We can only detect updates if they clash with a sample in the OOOHeadChunk,
 				// not with samples in already flushed OOO chunks.
-				// TODO(codesome): Add error reporting? It depends on addressing https://github.com/prometheus/prometheus/discussions/10305.
-				acc.histogramsAppended--
+				acc.recordOOODuplicate(series, s.T, 0, s.H, nil, &acc.histogramsAppended, &acc.histoDuplicatesDropped)
 			}
 		default:
 			wasStale, wasHistogram, oldBuckets := series.sampleState()
@@ -1625,8 +1650,9 @@ func (a *headAppenderBase) commitHistograms(b *appendBatch, acc *appenderCommitC
 				a.head.updateStaleSeriesMetricOnAppend(wasStale, isStale)
 				a.head.updateNativeHistogramMetricsOnAppend(wasHistogram, true, oldBuckets, newBuckets)
 			} else {
+				// The sample is an exact duplicate, and should be silently dropped.
 				acc.histogramsAppended--
-				acc.histoOOORejected++
+				acc.recordDroppedExactDup(series, &acc.histoDuplicatesDropped)
 			}
 		}
 
@@ -1660,6 +1686,9 @@ func (a *headAppenderBase) commitFloatHistograms(b *appendBatch, acc *appenderCo
 
 		oooSample, _, err := series.appendableFloatHistogram(s.T, s.FH, a.headMaxt, a.minValidTime, a.oooTimeWindow)
 		if err != nil {
+			if errors.Is(err, errConflictingSample) {
+				acc.recordDroppedConflict(series, &acc.histoDuplicatesDropped)
+			}
 			handleAppendableError(err, &acc.histogramsAppended, &acc.histoOOORejected, &acc.histoOOBRejected, &acc.histoTooOldRejected)
 		}
 
@@ -1706,11 +1735,10 @@ func (a *headAppenderBase) commitFloatHistograms(b *appendBatch, acc *appenderCo
 				}
 				acc.oooHistogramAccepted++
 			} else {
-				// Sample is an exact duplicate of the last sample.
+				// The timestamp already exists, so the sample is dropped.
 				// NOTE: We can only detect updates if they clash with a sample in the OOOHeadChunk,
 				// not with samples in already flushed OOO chunks.
-				// TODO(codesome): Add error reporting? It depends on addressing https://github.com/prometheus/prometheus/discussions/10305.
-				acc.histogramsAppended--
+				acc.recordOOODuplicate(series, s.T, 0, nil, s.FH, &acc.histogramsAppended, &acc.histoDuplicatesDropped)
 			}
 		default:
 			wasStale, wasHistogram, oldBuckets := series.sampleState()
@@ -1727,8 +1755,9 @@ func (a *headAppenderBase) commitFloatHistograms(b *appendBatch, acc *appenderCo
 				a.head.updateStaleSeriesMetricOnAppend(wasStale, isStale)
 				a.head.updateNativeHistogramMetricsOnAppend(wasHistogram, true, oldBuckets, newBuckets)
 			} else {
+				// The sample is an exact duplicate, and should be silently dropped.
 				acc.histogramsAppended--
-				acc.histoOOORejected++
+				acc.recordDroppedExactDup(series, &acc.histoDuplicatesDropped)
 			}
 		}
 
@@ -1823,6 +1852,7 @@ func (a *headAppenderBase) Commit() (err error) {
 		oooEnc: record.Encoder{
 			EnableSTStorage: a.storeST,
 		},
+		collectCommitStats: h.opts.EnableCommitStats,
 	}
 
 	for _, b := range a.batches {
@@ -1858,10 +1888,19 @@ func (a *headAppenderBase) Commit() (err error) {
 	h.metrics.tooOldSamples.WithLabelValues(sampleMetricTypeFloat).Add(float64(acc.floatTooOldRejected))
 	h.metrics.samplesAppended.WithLabelValues(sampleMetricTypeFloat).Add(float64(acc.floatsAppended))
 	h.metrics.samplesAppended.WithLabelValues(sampleMetricTypeHistogram).Add(float64(acc.histogramsAppended))
+	h.metrics.duplicateSamples.WithLabelValues(sampleMetricTypeFloat).Add(float64(acc.floatDuplicatesDropped))
+	h.metrics.duplicateSamples.WithLabelValues(sampleMetricTypeHistogram).Add(float64(acc.histoDuplicatesDropped))
 	h.metrics.outOfOrderSamplesAppended.WithLabelValues(sampleMetricTypeFloat).Add(float64(acc.oooFloatsAccepted))
 	h.metrics.outOfOrderSamplesAppended.WithLabelValues(sampleMetricTypeHistogram).Add(float64(acc.oooHistogramAccepted))
 	h.updateMinMaxTime(acc.inOrderMint, acc.inOrderMaxt)
 	h.updateMinOOOMaxOOOTime(acc.oooMinT, acc.oooMaxT)
+
+	a.commitStats = CommitStats{
+		DiscardedSamples: DiscardedSampleStats{
+			SameTimestampDifferentValue: acc.droppedConflict,
+			SameTimestampSameValue:      acc.droppedExactDup,
+		},
+	}
 
 	acc.collectOOORecords(a)
 	if h.wbl != nil {

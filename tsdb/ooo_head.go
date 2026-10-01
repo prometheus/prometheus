@@ -14,6 +14,7 @@
 package tsdb
 
 import (
+	"math"
 	"sort"
 
 	"github.com/prometheus/prometheus/model/histogram"
@@ -64,6 +65,24 @@ func (o *OOOChunk) Insert(st, t int64, v float64, h *histogram.Histogram, fh *hi
 	o.samples[i] = sample{st, t, v, h, fh}
 
 	return true
+}
+
+// hasEqualSample reports whether the chunk has a sample at t whose value equals
+// (v, h, fh). A sample of a different type counts as different.
+func (o *OOOChunk) hasEqualSample(t int64, v float64, h *histogram.Histogram, fh *histogram.FloatHistogram) bool {
+	i := sort.Search(len(o.samples), func(i int) bool { return o.samples[i].t >= t })
+	if i == len(o.samples) || o.samples[i].t != t {
+		return false
+	}
+	s := o.samples[i]
+	switch {
+	case h != nil:
+		return s.h != nil && h.Equals(s.h)
+	case fh != nil:
+		return s.fh != nil && fh.Equals(s.fh)
+	default:
+		return s.h == nil && s.fh == nil && math.Float64bits(s.f) == math.Float64bits(v)
+	}
 }
 
 func (o *OOOChunk) NumSamples() int {
