@@ -393,6 +393,12 @@ histogram_quantile(0.95, rate(request_duration_seconds_bucket[5m]))
 rate(request_duration_seconds[5m])
 ```
 
+Individual selectors can control or debug conversion using the reserved `__nhcb_as_classic__` matcher (which is stripped before querying storage):
+
+* `__nhcb_as_classic__="true"` (or `!="false"`): explicitly enables NHCB-to-classic conversion for the selector.
+* `__nhcb_as_classic__="false"` (or `!="true"`, `=""`): disables NHCB-to-classic conversion for the selector and returns only stored classic series.
+* `__nhcb_as_classic__="debug"` (or `=~"true|debug"`): enables conversion and attaches `__from_nhcb__="true"` to series converted from NHCB and `__from_nhcb__="false"` to stored classic series without merging them into the same labelset.
+
 This feature only affects PromQL query evaluation. It does not apply to remote write
 (NHCB series are not converted when being forwarded to remote endpoints) and does not
 affect the series API (the `/api/v1/series` endpoint will not return the converted classic series).
