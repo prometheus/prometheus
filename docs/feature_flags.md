@@ -376,23 +376,39 @@ When enabled, Prometheus advertises support for Zstandard-compressed scrape resp
 
 When the flag is disabled, Prometheus does not advertise `zstd`. A target that answers with `Content-Encoding: zstd` regardless fails the scrape, because Prometheus cannot decode the body.
 
-## NHCB as classic histograms in PromQL
+## Native histograms as classic histograms in PromQL
 
 `--enable-feature=promql-nhcb-as-classic`
 
 When enabled, PromQL queries for classic histogram series (e.g. `_bucket`, `_count`, `_sum`) will
-automatically convert Native Histograms with Custom Buckets (NHCB) into classic histogram series.
+automatically convert native histograms into classic histogram series.
 
-For example, if `request_duration_seconds` is stored as an NHCB native histogram:
+For example, if `request_duration_seconds` is stored as a native histogram:
 
 ```promql
 # Querying with a classic histogram suffix triggers the conversion:
 histogram_quantile(0.95, rate(request_duration_seconds_bucket[5m]))
 
-# Querying without a suffix returns the regular NHCB native histogram:
+# Querying without a suffix returns the regular native histogram:
 rate(request_duration_seconds[5m])
 ```
 
+Native Histograms with Custom Buckets (NHCB) convert losslessly, as their bucket layout is
+exactly the classic one. Exponential (standard schema) native histograms have no fixed bucket
+layout, so their `_bucket` series are synthesized:
+
+* `_count` and `_sum` are always exact.
+* If the query pins `le` values (e.g. `request_duration_seconds_bucket{le="1"}` or
+  `le=~"0\\.5|1\\.0|\\+Inf"`), the cumulative count is evaluated at exactly those values.
+  Values that coincide with an exponential bucket boundary (powers of two for every schema) are
+  exact; other values are interpolated within the bucket they fall into, like
+  `histogram_fraction` does. `le="1"` and `le="1.0"` are treated as the same bound.
+* Otherwise, buckets are emitted at the populated bucket boundaries of all selected series,
+  reduced to at most schema 2 (4 buckets per power of two) to bound the number of series.
+  The same set of `le` values is used for every series and sample of a query, so
+  `rate()` and `sum by (le)` behave as with classic histograms, but the exact `le` values
+  depend on the observed data and may differ between queries.
+
 This feature only affects PromQL query evaluation. It does not apply to remote write
-(NHCB series are not converted when being forwarded to remote endpoints) and does not
+(native histogram series are not converted when being forwarded to remote endpoints) and does not
 affect the series API (the `/api/v1/series` endpoint will not return the converted classic series).

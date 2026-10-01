@@ -18,6 +18,7 @@ import (
 	"math"
 	"slices"
 	"sort"
+	"strconv"
 	"strings"
 
 	"github.com/prometheus/common/model"
@@ -29,14 +30,22 @@ import (
 	"github.com/prometheus/prometheus/util/annotations"
 )
 
-// Known limitations of the NHCB-to-classic conversion:
+// Known limitations of the native-to-classic conversion:
 //
-// 1. TODO: This does not support the series API (LabelNames, LabelValues, etc.).
-//    Only the Select method is wrapped. Any metadata or label introspection
-//    queries will not reflect the converted classic series.
+//  1. TODO: This does not support the series API (LabelNames, LabelValues, etc.).
+//     Only the Select method is wrapped. Any metadata or label introspection
+//     queries will not reflect the converted classic series.
+//  2. Exponential native histograms have no fixed bucket layout, so their
+//     classic buckets are synthesized: either at the le values pinned by the
+//     query or at the populated bucket bounds (capped at
+//     exponentialAsClassicMaxSchema) unified across the series of a Select.
+//     Bounds that do not coincide with an exponential bucket boundary are
+//     interpolated, so le="0.1" style queries are estimates rather than exact
+//     counts.
 
-// NHCBAsClassicQuerier wraps a Querier and converts NHCB (Native Histogram Custom Buckets)
-// queries to classic histogram format when classic series don't exist.
+// NHCBAsClassicQuerier wraps a Querier and converts native histogram (NHCB and
+// exponential) queries to classic histogram format when classic series don't
+// exist.
 type NHCBAsClassicQuerier struct {
 	Querier
 }
@@ -67,6 +76,14 @@ func (s *NHCBAsClassicStorage) Querier(mint, maxt int64) (Querier, error) {
 	}
 	return NewNHCBAsClassicQuerier(q), nil
 }
+
+// exponentialAsClassicMaxSchema caps the resolution at which exponential native
+// histograms are expanded into classic buckets when the query does not pin
+// specific le values. Schema 2 yields 4 buckets per power of two (factor
+// ~1.19), which keeps linear interpolation in histogram_quantile close to the
+// native estimate without exploding the number of synthesized series (schema 8
+// would produce 256 buckets per power of two).
+const exponentialAsClassicMaxSchema int32 = 2
 
 // Select implements the Querier interface.
 func (q *NHCBAsClassicQuerier) Select(ctx context.Context, sortSeries bool, hints *SelectHints, matchers ...*labels.Matcher) SeriesSet {
@@ -141,17 +158,34 @@ func (q *NHCBAsClassicQuerier) Select(ctx context.Context, sortSeries bool, hint
 	var warnings annotations.Annotations
 	warnings.Merge(classicSet.Warnings())
 
+	// Exponential native histograms have no fixed bucket layout, so classic
+	// bounds must be chosen for them. If the query pins le values, those are
+	// evaluated directly on every sample. Otherwise, when the first native
+	// sample is exponential, all native series are buffered so that the
+	// populated bucket bounds can be unified across series and time
+	// ("exponential mode"): emitting the same le set for every series and
+	// sample is what keeps rate() and sum by (le) correct.
+	var (
+		bounds          []float64
+		exponentialMode bool
+	)
+	if suffix == histogram.ClassicSuffixBucket {
+		bounds = boundsFromLeMatchers(leMatchers)
+		exponentialMode = bounds == nil && firstSampleIsExponential(firstNHCB)
+	}
+
 	// Fast path 2: when no stored classic series exist and either sortSeries is
 	// false or suffix is _count/_sum (which has no le label and therefore
 	// preserves nhcbSet's sort order), stream NHCB series directly from nhcbSet
 	// one series at a time without buffering all series up front.
-	if firstClassic == nil && (!sortSeries || suffix != histogram.ClassicSuffixBucket) {
+	if firstClassic == nil && !exponentialMode && (!sortSeries || suffix != histogram.ClassicSuffixBucket) {
 		return &nhcbToClassicSeriesSet{
 			ctx:        ctx,
 			firstNHCB:  firstNHCB,
 			nhcbSet:    nhcbSet,
 			leMatchers: leMatchers,
 			suffix:     suffix,
+			bounds:     bounds,
 			warnings:   warnings,
 		}
 	}
@@ -160,8 +194,9 @@ func (q *NHCBAsClassicQuerier) Select(ctx context.Context, sortSeries bool, hint
 
 	var groups []histogramGroup
 	if firstClassic == nil {
-		// sortSeries == true for a _bucket query with no stored classic series:
-		// collect NHCB series so converted buckets can be sorted globally.
+		// No stored classic series, but either sortSeries == true for a _bucket
+		// query (converted buckets must be sorted globally) or exponential
+		// mode: collect NHCB series.
 		groups = append(groups, histogramGroup{nhcb: []Series{firstNHCB}})
 		for nhcbSet.Next() {
 			s := nhcbSet.At()
@@ -198,13 +233,134 @@ func (q *NHCBAsClassicQuerier) Select(ctx context.Context, sortSeries bool, hint
 		groups = index.groups
 	}
 
+	if exponentialMode {
+		var (
+			it  chunkenc.Iterator
+			err error
+		)
+		for i := range groups {
+			for _, s := range groups[i].nhcb {
+				if err := ctx.Err(); err != nil {
+					return ErrSeriesSet(err)
+				}
+				bounds, it, err = appendSeriesExponentialBounds(bounds, s, it)
+				if err != nil {
+					return ErrSeriesSet(err)
+				}
+			}
+		}
+		bounds = finalizeBounds(bounds)
+	}
+
 	return &nhcbToClassicSeriesSet{
 		ctx:        ctx,
 		groups:     groups,
 		leMatchers: leMatchers,
 		suffix:     suffix,
+		bounds:     bounds,
 		sortSeries: sortSeries,
 		warnings:   warnings,
+	}
+}
+
+// boundsFromLeMatchers returns the finite classic upper bounds pinned by the
+// given le matchers (equality or a regex that is a set of literals), sorted
+// and deduplicated, or nil when the matchers do not pin a specific set of
+// values. A non-nil empty result means only le="+Inf" was requested.
+func boundsFromLeMatchers(leMatchers []*labels.Matcher) []float64 {
+	var (
+		bounds []float64
+		pinned bool
+	)
+	for _, m := range leMatchers {
+		var values []string
+		switch m.Type {
+		case labels.MatchEqual:
+			values = []string{m.Value}
+		case labels.MatchRegexp:
+			values = m.SetMatches()
+			if len(values) == 0 {
+				continue
+			}
+		default:
+			continue
+		}
+		if pinned {
+			// Another matcher already pinned the values; the remaining
+			// matchers are applied by matchesLe on the converted series.
+			continue
+		}
+		pinned = true
+		for _, v := range values {
+			f, err := strconv.ParseFloat(v, 64)
+			if err != nil || math.IsNaN(f) || math.IsInf(f, 0) {
+				continue
+			}
+			bounds = append(bounds, f)
+		}
+	}
+	if !pinned {
+		return nil
+	}
+	return finalizeBounds(bounds)
+}
+
+// finalizeBounds sorts bounds, removes duplicates and non-finite values, and
+// never returns nil for a non-nil input.
+func finalizeBounds(bounds []float64) []float64 {
+	if bounds == nil {
+		return []float64{}
+	}
+	slices.Sort(bounds)
+	bounds = slices.Compact(bounds)
+	out := bounds[:0]
+	for _, b := range bounds {
+		if !math.IsInf(b, 0) && !math.IsNaN(b) {
+			out = append(out, b)
+		}
+	}
+	return out
+}
+
+// firstSampleIsExponential reports whether the first histogram sample of s
+// uses an exponential schema.
+func firstSampleIsExponential(s Series) bool {
+	it := s.Iterator(nil)
+	if it == nil {
+		return false
+	}
+	switch it.Next() {
+	case chunkenc.ValHistogram:
+		_, h := it.AtHistogram(nil)
+		return h != nil && histogram.IsExponentialSchema(h.Schema)
+	case chunkenc.ValFloatHistogram:
+		_, fh := it.AtFloatHistogram(nil)
+		return fh != nil && histogram.IsExponentialSchema(fh.Schema)
+	}
+	return false
+}
+
+// appendSeriesExponentialBounds appends the populated bucket bounds (capped at
+// exponentialAsClassicMaxSchema) of all non-stale exponential samples of s to
+// dst. NHCB samples are skipped as they carry their own bounds.
+func appendSeriesExponentialBounds(dst []float64, s Series, it chunkenc.Iterator) ([]float64, chunkenc.Iterator, error) {
+	it = s.Iterator(it)
+	if it == nil {
+		return dst, it, nil
+	}
+	var fh *histogram.FloatHistogram
+	for {
+		switch it.Next() {
+		case chunkenc.ValNone:
+			return dst, it, it.Err()
+		case chunkenc.ValHistogram, chunkenc.ValFloatHistogram:
+			// AtFloatHistogram also decodes integer histogram chunks.
+			_, fh = it.AtFloatHistogram(fh)
+			if fh == nil || value.IsStaleNaN(fh.Sum) || !histogram.IsExponentialSchema(fh.Schema) {
+				continue
+			}
+			dst = histogram.AppendExponentialBounds(dst, fh, exponentialAsClassicMaxSchema)
+		}
 	}
 }
 
@@ -382,17 +538,32 @@ func extractHistogramSuffix(matchers []*labels.Matcher) (*labels.Matcher, string
 	return nameMatcher, suffix, baseMatchers, leMatchers
 }
 
+// matchesLe reports whether the le label of lset satisfies all leMatchers.
+// Converted series format le as OpenMetrics floats (e.g. "1.0"), while
+// queries written against Prometheus text format classic histograms use
+// "1", so equality matchers are additionally compared numerically.
 func matchesLe(lset labels.Labels, leMatchers []*labels.Matcher) bool {
 	if len(leMatchers) == 0 {
 		return true
 	}
 	le := lset.Get(labels.BucketLabel)
 	for _, m := range leMatchers {
-		if !m.Matches(le) {
+		if !leMatches(m, le) {
 			return false
 		}
 	}
 	return true
+}
+
+func leMatches(m *labels.Matcher, le string) bool {
+	if m.Type == labels.MatchEqual || m.Type == labels.MatchNotEqual {
+		if want, err := strconv.ParseFloat(m.Value, 64); err == nil {
+			if got, err := strconv.ParseFloat(le, 64); err == nil {
+				return (want == got) == (m.Type == labels.MatchEqual)
+			}
+		}
+	}
+	return m.Matches(le)
 }
 
 // nhcbToClassicSeriesSet converts NHCB series to classic histogram series
@@ -413,6 +584,11 @@ type nhcbToClassicSeriesSet struct {
 	suffix     string
 	sortSeries bool
 	warnings   annotations.Annotations
+	// bounds are the classic upper bounds evaluated on exponential samples
+	// (pinned by le matchers or unified across all series in exponential
+	// mode). When nil, bounds are discovered lazily per series the first time
+	// an exponential sample is encountered.
+	bounds []float64
 
 	initialized bool
 	series      []Series
@@ -420,13 +596,15 @@ type nhcbToClassicSeriesSet struct {
 	err         error
 
 	// Scratch state reused across series/groups.
-	lsetBuilder *labels.Builder
-	seriesCache histogram.ClassicSeriesCache
-	builder     classicSeriesBuilder
-	emitFn      func(labels.Labels, float64) error
-	it          chunkenc.Iterator
-	h           *histogram.Histogram
-	fh          *histogram.FloatHistogram
+	lsetBuilder  *labels.Builder
+	seriesCache  histogram.ClassicSeriesCache
+	builder      classicSeriesBuilder
+	emitFn       func(labels.Labels, float64) error
+	it           chunkenc.Iterator
+	boundsIt     chunkenc.Iterator
+	h            *histogram.Histogram
+	fh           *histogram.FloatHistogram
+	seriesBounds []float64
 }
 
 func (s *nhcbToClassicSeriesSet) Next() bool {
@@ -640,6 +818,7 @@ func (s *nhcbToClassicSeriesSet) convertNHCBSeries(nhcbSeries Series, groupTS []
 
 	s.builder.reset()
 	tsIdx := 0
+	bounds := s.bounds
 
 	for {
 		valType := s.it.Next()
@@ -649,6 +828,7 @@ func (s *nhcbToClassicSeriesSet) convertNHCBSeries(nhcbSeries Series, groupTS []
 
 		var (
 			nhcb  any
+			exp   *histogram.FloatHistogram
 			t     int64
 			stale bool
 		)
@@ -659,23 +839,33 @@ func (s *nhcbToClassicSeriesSet) convertNHCBSeries(nhcbSeries Series, groupTS []
 			if s.h == nil {
 				continue
 			}
-			// Treat both explicit staleness markers and transitions to a
-			// non-NHCB schema (e.g. exponential native histogram on the same
-			// series) as ending any active converted NHCB series at t.
-			if value.IsStaleNaN(s.h.Sum) || !histogram.IsCustomBucketsSchema(s.h.Schema) {
+			switch {
+			case value.IsStaleNaN(s.h.Sum):
 				stale = true
-			} else {
+			case histogram.IsCustomBucketsSchema(s.h.Schema):
 				nhcb = s.h
+			case histogram.IsExponentialSchema(s.h.Schema):
+				// The classic CDF is evaluated on absolute bucket counts, so
+				// integer (delta encoded) histograms go through ToFloat.
+				s.fh = s.h.ToFloat(s.fh)
+				exp = s.fh
+			default:
+				stale = true
 			}
 		case chunkenc.ValFloatHistogram:
 			t, s.fh = s.it.AtFloatHistogram(s.fh)
 			if s.fh == nil {
 				continue
 			}
-			if value.IsStaleNaN(s.fh.Sum) || !histogram.IsCustomBucketsSchema(s.fh.Schema) {
+			switch {
+			case value.IsStaleNaN(s.fh.Sum):
 				stale = true
-			} else {
+			case histogram.IsCustomBucketsSchema(s.fh.Schema):
 				nhcb = s.fh
+			case histogram.IsExponentialSchema(s.fh.Schema):
+				exp = s.fh
+			default:
+				stale = true
 			}
 		default:
 			continue
@@ -712,7 +902,25 @@ func (s *nhcbToClassicSeriesSet) convertNHCBSeries(nhcbSeries Series, groupTS []
 		}
 
 		s.builder.beginStep(t)
-		if err := histogram.ConvertNHCBToClassic(nhcb, nhcbLabels, s.lsetBuilder, s.suffix, &s.seriesCache, s.emitFn); err != nil {
+		if exp != nil {
+			if bounds == nil && s.suffix == histogram.ClassicSuffixBucket {
+				// Select did not fix bounds (the first native sample was an
+				// NHCB), so discover them from this series alone. This keeps
+				// the le set stable across the samples of the series, which
+				// is what rate() needs; it cannot guarantee the same le set
+				// across series though.
+				var err error
+				s.seriesBounds, s.boundsIt, err = appendSeriesExponentialBounds(s.seriesBounds[:0], nhcbSeries, s.boundsIt)
+				if err != nil {
+					return nil, err
+				}
+				s.seriesBounds = finalizeBounds(s.seriesBounds)
+				bounds = s.seriesBounds
+			}
+			if err := histogram.ConvertExponentialToClassic(exp, bounds, nhcbLabels, s.lsetBuilder, s.suffix, &s.seriesCache, s.emitFn); err != nil {
+				return nil, err
+			}
+		} else if err := histogram.ConvertNHCBToClassic(nhcb, nhcbLabels, s.lsetBuilder, s.suffix, &s.seriesCache, s.emitFn); err != nil {
 			return nil, err
 		}
 		s.builder.endStep(t)
