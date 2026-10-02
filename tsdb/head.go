@@ -1680,28 +1680,39 @@ func (h *Head) runWALCheckpointWorker() {
 			h.logger.Error("truncate WAL", "err", err)
 			continue
 		}
-		h.walCheckpointCompleted.Store(mint)
+		// An older queued mint can run after a newer one.
+		// Keep walCheckpointCompleted at the newest completed mint.
+		h.walCheckpointCompleted.Store(max(mint, h.walCheckpointCompleted.Load()))
 	}
 }
 
 // truncateWAL removes old data before mint from the WAL.
-func (h *Head) truncateWAL(mint int64) error {
+func (h *Head) truncateWAL(mint int64) (err error) {
 	h.chunkSnapshotMtx.Lock()
 	defer h.chunkSnapshotMtx.Unlock()
 
 	if h.wal == nil || mint <= h.lastWALTruncationTime.Load() {
 		return nil
 	}
-	start := time.Now()
-	h.lastWALTruncationTime.Store(mint)
 
-	first, last, err := wlog.Segments(h.wal.Dir())
+	defer func() {
+		if err == nil {
+			h.lastWALTruncationTime.Store(mint)
+		}
+	}()
+
+	var (
+		first, last int
+		start       = time.Now()
+	)
+
+	first, last, err = wlog.Segments(h.wal.Dir())
 	if err != nil {
 		return fmt.Errorf("get segment range: %w", err)
 	}
 	// Start a new segment, so low ingestion volume TSDB don't have more WAL than
 	// needed.
-	if _, err := h.wal.NextSegment(); err != nil {
+	if _, err = h.wal.NextSegment(); err != nil {
 		return fmt.Errorf("next segment: %w", err)
 	}
 	last-- // Never consider last segment for checkpoint.
@@ -1725,7 +1736,7 @@ func (h *Head) truncateWAL(mint int64) error {
 		}
 		return fmt.Errorf("create checkpoint: %w", err)
 	}
-	if err := h.wal.Truncate(last + 1); err != nil {
+	if err = h.wal.Truncate(last + 1); err != nil {
 		// If truncating fails, we'll just try again at the next checkpoint.
 		// Leftover segments will just be ignored in the future if there's a checkpoint
 		// that supersedes them.
@@ -1742,7 +1753,7 @@ func (h *Head) truncateWAL(mint int64) error {
 	h.walExpiriesMtx.Unlock()
 
 	h.metrics.checkpointDeleteTotal.Inc()
-	if err := wlog.DeleteCheckpoints(h.wal.Dir(), last); err != nil {
+	if err = wlog.DeleteCheckpoints(h.wal.Dir(), last); err != nil {
 		// Leftover old checkpoints do not cause problems down the line beyond
 		// occupying disk space.
 		// They will just be ignored since a higher checkpoint exists.
