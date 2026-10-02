@@ -1899,7 +1899,7 @@ req_seconds{service="api"} {count:12,sum:5.5,schema:0,zero_threshold:0.001,zero_
 
 	t.Run("dual classic and native histogram emits classic series only", func(t *testing.T) {
 		input := `# TYPE req_seconds histogram
-req_seconds {count:12,sum:5.5,bucket:[1.0:3,2.0:7,+Inf:12],schema:0,zero_threshold:0.001,zero_count:2,positive_spans:[0:2],positive_buckets:[3,7]}
+req_seconds {count:12,sum:5.5,schema:0,zero_threshold:0.001,zero_count:2,positive_spans:[0:2],positive_buckets:[3,7],bucket:[1.0:3,2.0:7,+Inf:12]}
 # EOF
 `
 		p := NewOpenMetrics2Parser([]byte(input), labels.NewSymbolTable(), ParserOptions{
@@ -1967,7 +1967,7 @@ req_seconds{service="api"} {count:12,sum:5.5,schema:0,zero_threshold:0.001,zero_
 
 	t.Run("dual classic and native histogram with NHCB conversion emits NHCB", func(t *testing.T) {
 		input := `# TYPE req_seconds histogram
-req_seconds {count:12,sum:5.5,bucket:[1.0:3,2.0:7,+Inf:12],schema:0,zero_threshold:0.001,zero_count:2,positive_spans:[0:2],positive_buckets:[3,7]}
+req_seconds {count:12,sum:5.5,schema:0,zero_threshold:0.001,zero_count:2,positive_spans:[0:2],positive_buckets:[3,7],bucket:[1.0:3,2.0:7,+Inf:12]}
 # EOF
 `
 		p := NewOpenMetrics2Parser([]byte(input), labels.NewSymbolTable(), ParserOptions{
