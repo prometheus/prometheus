@@ -6969,7 +6969,22 @@ func testHeadMinOOOTimeUpdate(t *testing.T, scenario sampleTypeScenario) {
 	require.Equal(t, 295*time.Minute.Milliseconds(), h.MinOOOTime())
 
 	// Allowed window for OOO is >=290, which is before the earliest ooo sample 295, so it gets set to the lower value.
-	require.NoError(t, h.truncateOOO(0, 1))
+	// Hold chunkSnapshotMtx while OOO cleanup starts. minOOOMmapRef must
+	// advance only after the lock is released.
+	h.chunkSnapshotMtx.Lock()
+	started := make(chan struct{})
+	done := make(chan error, 1)
+	go func() {
+		close(started)
+		done <- h.truncateOOO(0, 1)
+	}()
+	<-started
+	time.Sleep(50 * time.Millisecond)
+	minOOOMmapRef := h.minOOOMmapRef.Load()
+	h.chunkSnapshotMtx.Unlock()
+	require.Equal(t, uint64(0), minOOOMmapRef)
+	require.NoError(t, <-done)
+	require.Equal(t, uint64(1), h.minOOOMmapRef.Load())
 	require.Equal(t, 290*time.Minute.Milliseconds(), h.MinOOOTime())
 
 	appendSample(310) // In-order sample.
