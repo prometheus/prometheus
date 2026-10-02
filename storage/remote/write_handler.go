@@ -177,8 +177,8 @@ func (h *writeHandler) write(ctx context.Context, req *prompb.WriteRequest) (err
 			h.logger.Warn("Invalid metric names or labels", "got", ls.String())
 			samplesWithInvalidLabels++
 			continue
-		} else if duplicateLabel, hasDuplicate := ls.HasDuplicateLabelNames(); hasDuplicate {
-			h.logger.Warn("Invalid labels for series.", "labels", ls.String(), "duplicated_label", duplicateLabel)
+		} else if err := ls.ValidateOrder(); err != nil {
+			h.logger.Warn("Invalid labels for series.", "labels", ls.String(), "err", err)
 			samplesWithInvalidLabels++
 			continue
 		}
@@ -345,8 +345,8 @@ func (h *writeHandler) appendV2(app storage.Appender, req *writev2.Request, rs *
 			badRequestErrs = append(badRequestErrs, fmt.Errorf("invalid metric name or labels, got %v", ls.String()))
 			samplesWithInvalidLabels += len(ts.Samples) + len(ts.Histograms)
 			continue
-		} else if duplicateLabel, hasDuplicate := ls.HasDuplicateLabelNames(); hasDuplicate {
-			badRequestErrs = append(badRequestErrs, fmt.Errorf("invalid labels for series, labels %v, duplicated label %s", ls.String(), duplicateLabel))
+		} else if err := ls.ValidateOrder(); err != nil {
+			badRequestErrs = append(badRequestErrs, fmt.Errorf("invalid labels for series, labels %v: %w", ls.String(), err))
 			samplesWithInvalidLabels += len(ts.Samples) + len(ts.Histograms)
 			continue
 		}
