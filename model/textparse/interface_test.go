@@ -61,12 +61,19 @@ func TestNewParser(t *testing.T) {
 		require.True(t, ok)
 	}
 
+	requireNHCBParser := func(t *testing.T, p Parser) {
+		require.NotNil(t, p)
+		_, ok := p.(*NHCBParser)
+		require.True(t, ok)
+	}
+
 	for name, tt := range map[string]*struct {
-		contentType            string
-		fallbackScrapeProtocol config.ScrapeProtocol
-		enableOpenMetrics2     bool
-		validateParser         func(*testing.T, Parser)
-		err                    string
+		contentType                    string
+		fallbackScrapeProtocol         config.ScrapeProtocol
+		enableOpenMetrics2             bool
+		convertClassicHistogramsToNHCB bool
+		validateParser                 func(*testing.T, Parser)
+		err                            string
 	}{
 		"empty-string": {
 			validateParser: requireNilParser,
@@ -137,6 +144,11 @@ func TestNewParser(t *testing.T) {
 			contentType:    "application/openmetrics-text",
 			validateParser: requireOpenMetricsParser,
 		},
+		"openmetrics-with-nhcb": {
+			contentType:                    "application/openmetrics-text",
+			convertClassicHistogramsToNHCB: true,
+			validateParser:                 requireNHCBParser,
+		},
 		"openmetrics-with-charset": {
 			contentType:    "application/openmetrics-text; charset=utf-8",
 			validateParser: requireOpenMetricsParser,
@@ -149,6 +161,12 @@ func TestNewParser(t *testing.T) {
 			contentType:        "application/openmetrics-text; version=2.0.0",
 			enableOpenMetrics2: true,
 			validateParser:     requireOpenMetrics2Parser,
+		},
+		"openmetrics-v2-with-nhcb": {
+			contentType:                    "application/openmetrics-text; version=2.0.0",
+			enableOpenMetrics2:             true,
+			convertClassicHistogramsToNHCB: true,
+			validateParser:                 requireOpenMetrics2Parser,
 		},
 		"openmetrics-v2-with-charset": {
 			contentType:        "application/openmetrics-text; version=2.0.0; charset=utf-8",
@@ -199,8 +217,9 @@ func TestNewParser(t *testing.T) {
 			fallbackProtoMediaType := tt.fallbackScrapeProtocol.HeaderMediaType()
 
 			p, err := New([]byte{}, tt.contentType, labels.NewSymbolTable(), ParserOptions{
-				FallbackContentType: fallbackProtoMediaType,
-				EnableOpenMetrics2:  tt.enableOpenMetrics2,
+				FallbackContentType:            fallbackProtoMediaType,
+				EnableOpenMetrics2:             tt.enableOpenMetrics2,
+				ConvertClassicHistogramsToNHCB: tt.convertClassicHistogramsToNHCB,
 			})
 			tt.validateParser(t, p)
 			if tt.err == "" {
