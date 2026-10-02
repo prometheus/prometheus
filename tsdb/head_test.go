@@ -1373,6 +1373,62 @@ func TestTriggerWALCheckpointMultipleCalls(t *testing.T) {
 			require.Equal(t, tc.wantMints, gotMints)
 		})
 	}
+
+	t.Run("completion remains monotonic for older queued mint", func(t *testing.T) {
+		h, _ := newTestHead(t, 1000, compression.None, false)
+
+		// An older request can queue while a newer checkpoint waits for
+		// chunkSnapshotMtx.
+		func() {
+			h.chunkSnapshotMtx.Lock()
+			defer h.chunkSnapshotMtx.Unlock()
+
+			h.triggerWALCheckpoint(200)
+			require.Eventually(t, func() bool {
+				return len(h.walCheckpoint) == 0
+			}, 5*time.Second, 10*time.Millisecond)
+			h.triggerWALCheckpoint(100)
+			require.Len(t, h.walCheckpoint, 1)
+		}()
+
+		require.NoError(t, h.Close())
+		require.Equal(t, int64(200), h.lastWALTruncationTime.Load())
+		require.Equal(t, int64(200), h.walCheckpointCompleted.Load())
+	})
+}
+
+func TestWALCheckpointRetriesFailedMint(t *testing.T) {
+	h, wal := newTestHead(t, 1000, compression.None, false)
+	app := h.Appender(context.Background())
+	for _, ts := range []int64{0, 1} {
+		_, err := app.Append(0, labels.FromStrings("a", "b"), ts, float64(ts))
+		require.NoError(t, err)
+	}
+	require.NoError(t, app.Commit())
+	for range 4 {
+		_, err := wal.NextSegment()
+		require.NoError(t, err)
+	}
+
+	// A file at the checkpoint path makes checkpoint creation fail.
+	blockedCheckpoint := wlog.CheckpointDir(wal.Dir(), 2)
+	require.NoError(t, os.WriteFile(blockedCheckpoint, nil, 0o600))
+	require.NoError(t, h.Truncate(1))
+	require.Eventually(t, func() bool {
+		return prom_testutil.ToFloat64(h.metrics.checkpointCreationFail) == 1
+	}, 5*time.Second, 10*time.Millisecond)
+	require.Equal(t, int64(math.MinInt64), h.lastWALTruncationTime.Load())
+	require.Equal(t, int64(math.MinInt64), h.walCheckpointCompleted.Load())
+
+	require.NoError(t, os.Remove(blockedCheckpoint))
+	require.NoError(t, h.Truncate(1))
+	waitForWALCheckpoint(t, h, 1)
+	require.Equal(t, int64(1), h.lastWALTruncationTime.Load())
+	require.Equal(t, 1.0, prom_testutil.ToFloat64(h.metrics.checkpointCreationFail))
+	require.Equal(t, 2.0, prom_testutil.ToFloat64(h.metrics.checkpointCreationTotal))
+	_, checkpointIndex, err := wlog.LastCheckpoint(wal.Dir())
+	require.NoError(t, err)
+	require.Equal(t, 2, checkpointIndex)
 }
 
 func TestHead_KeepSeriesInWALCheckpoint(t *testing.T) {
