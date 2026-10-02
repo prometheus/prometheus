@@ -2525,6 +2525,10 @@ func (db *DB) Close() error {
 	}
 	<-db.donec
 
+	return db.closeResources()
+}
+
+func (db *DB) closeResources() error {
 	db.mtx.Lock()
 	defer db.mtx.Unlock()
 
