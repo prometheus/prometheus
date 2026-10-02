@@ -84,6 +84,10 @@ type Head struct {
 	lastWALTruncationTime    atomic.Int64
 	lastMemoryTruncationTime atomic.Int64
 	lastSeriesID             atomic.Uint64
+
+	// A failed metadata scan must not replace the last usable snapshot or clean startup state.
+	snapshotSeriesRecoveryFailed bool
+
 	// All the ooo m-map chunks should be after this. This is used to truncate old ooo m-map chunks.
 	// This should be typecasted to chunks.ChunkDiskMapperRef after loading.
 	minOOOMmapRef atomic.Uint64
@@ -795,7 +799,7 @@ func (h *Head) Init(minValidTime int64) error {
 			var err error
 			snapIdx, snapOffset, refSeries, err = h.loadChunkSnapshot()
 			if err == nil {
-				snapshotLoaded = true
+				snapshotLoaded = snapIdx >= 0
 				chunkSnapshotLoadDuration = time.Since(start)
 				h.logger.Info("Chunk snapshot loading time", "duration", chunkSnapshotLoadDuration.String())
 			} else {
@@ -834,6 +838,7 @@ func (h *Head) Init(minValidTime int64) error {
 
 			// Discard snapshot data since we need to replay the WAL for the missed m-map chunks data.
 			snapIdx, snapOffset = -1, 0
+			snapshotLoaded = false
 
 			// If this fails, data will be recovered from WAL.
 			// Hence we won't lose any data (given WAL is not corrupt).
@@ -892,6 +897,17 @@ func (h *Head) Init(minValidTime int64) error {
 
 	syms := labels.NewSymbolTable() // One table for the whole WAL.
 	multiRef := map[chunks.HeadSeriesRef]chunks.HeadSeriesRef{}
+	if snapshotLoaded && (err != nil || startFrom < snapIdx) && h.snapshotNeedsSeriesRecovery(snapIdx, snapOffset, endAt, refSeries, mmappedChunks, oooMmappedChunks) {
+		checkpoint := dir
+		if err != nil {
+			checkpoint = ""
+		}
+		multiRef, e = h.recoverSnapshotSeries(checkpoint, startFrom, snapIdx, snapOffset, mmappedChunks, oooMmappedChunks, lastMmapRef)
+		if e != nil {
+			h.snapshotSeriesRecoveryFailed = true
+			return &errSnapshotSeriesRecovery{err: e}
+		}
+	}
 	if err == nil && startFrom >= snapIdx {
 		sr, err := wlog.NewSegmentsReader(dir)
 		if err != nil {
@@ -2219,12 +2235,16 @@ func (h *Head) Close() error {
 		h.seriesStateWg.Wait()
 		h.seriesStateQuit = nil
 		// Flush the final clean state.
-		h.writeSeriesState(true)
+		if !h.snapshotSeriesRecoveryFailed {
+			h.writeSeriesState(true)
+		}
 	}
 
 	// mmap all but last chunk in case we're performing snapshot since that only
 	// takes samples from most recent head chunk.
-	h.mmapHeadChunks()
+	if !h.snapshotSeriesRecoveryFailed {
+		h.mmapHeadChunks()
+	}
 
 	errs := h.chunkDiskMapper.Close()
 	if h.wal != nil {
@@ -2233,7 +2253,7 @@ func (h *Head) Close() error {
 	if h.wbl != nil {
 		errs = errors.Join(errs, h.wbl.Close())
 	}
-	if errs == nil && h.opts.EnableMemorySnapshotOnShutdown {
+	if errs == nil && h.opts.EnableMemorySnapshotOnShutdown && !h.snapshotSeriesRecoveryFailed {
 		errs = errors.Join(errs, h.performChunkSnapshot())
 	}
 	return errs
