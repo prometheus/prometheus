@@ -24,6 +24,8 @@ Exemplar storage is implemented as a fixed size circular buffer that stores exem
 This takes a snapshot of the chunks that are in memory along with the series information when shutting down and stores it on disk. This will reduce the startup time since the memory state can now be restored with this snapshot
 and m-mapped chunks, while a WAL replay from disk is only needed for the parts of the WAL that are not part of the snapshot.
 
+When persisted chunks or out-of-order data use recreated series references, startup also reads series definitions and tombstones from the skipped WAL history to recover their mapping. If that required history cannot be read, startup fails without repairing or truncating the WAL, or replacing the snapshot.
+
 ## Extra scrape metrics
 
 `--enable-feature=extra-scrape-metrics`

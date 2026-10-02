@@ -563,9 +563,8 @@ func (h *Head) resetSeriesWithMMappedChunks(mSeries *memSeries, mmc, oooMmc []*m
 	return overlapped
 }
 
-// mergeSeriesMMappedChunks attaches replay inventories without resetting in-memory chunks.
+// mergeSeriesMMappedChunks attaches replay inventories without resetting in-order head chunks.
 func (h *Head) mergeSeriesMMappedChunks(mSeries *memSeries, mmc, oooMmc []*mmappedChunk, lastMmapRef chunks.ChunkDiskMapperRef) {
-
 	// Preserve chunks that were already on disk at startup, including those
 	// attached through another WAL reference. Chunks written during this replay
 	// belong to the obsolete generation and must still be discarded.
@@ -612,7 +611,6 @@ func (h *Head) mergeSeriesMMappedChunks(mSeries *memSeries, mmc, oooMmc []*mmapp
 		}
 		h.updateMinOOOMaxOOOTime(mint, maxt)
 	}
-
 }
 
 // mergeReplayMmappedChunks merges persisted chunks without modifying the replay
@@ -1759,7 +1757,7 @@ func (h *Head) loadChunkSnapshot() (int, int, map[chunks.HeadSeriesRef]*memSerie
 	dir, snapIdx, snapOffset, err := LastChunkSnapshot(h.opts.ChunkDirRoot)
 	if err != nil {
 		if errors.Is(err, record.ErrNotFound) {
-			return snapIdx, snapOffset, nil, nil
+			return -1, 0, nil, nil
 		}
 		return snapIdx, snapOffset, nil, fmt.Errorf("find last chunk snapshot: %w", err)
 	}
