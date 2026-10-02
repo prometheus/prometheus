@@ -24,6 +24,7 @@ import (
 
 	"github.com/prometheus/prometheus/model/histogram"
 	"github.com/prometheus/prometheus/model/labels"
+	"github.com/prometheus/prometheus/tsdb/chunkenc"
 	"github.com/prometheus/prometheus/tsdb/chunks"
 	"github.com/prometheus/prometheus/util/annotations"
 )
@@ -96,6 +97,24 @@ func TestNHCBAsClassicQuerier_Select(t *testing.T) {
 		PositiveSpans:   []histogram.Span{{Offset: 0, Length: 4}},
 		PositiveBuckets: []int64{2, 1, 2, 1},
 	}
+	makeNHCB := func(customValues []float64, counts []int64) *histogram.Histogram {
+		deltas := make([]int64, len(counts))
+		var total uint64
+		var prev int64
+		for i, c := range counts {
+			deltas[i] = c - prev
+			prev = c
+			total += uint64(c)
+		}
+		return &histogram.Histogram{
+			Schema:          histogram.CustomBucketsSchema,
+			Count:           total,
+			Sum:             float64(total),
+			CustomValues:    customValues,
+			PositiveSpans:   []histogram.Span{{Offset: 0, Length: uint32(len(counts))}},
+			PositiveBuckets: deltas,
+		}
+	}
 
 	tests := []struct {
 		name              string
@@ -105,6 +124,7 @@ func TestNHCBAsClassicQuerier_Select(t *testing.T) {
 		passthroughSeries []Series
 		expectedCount     int
 		expectedSuffix    string
+		expectedSamples   map[string][]fSample
 	}{
 		{
 			name:          "non-histogram query passes through",
@@ -301,6 +321,37 @@ func TestNHCBAsClassicQuerier_Select(t *testing.T) {
 			expectedCount:  1,
 			expectedSuffix: "_count",
 		},
+		{
+			name: "multiple samples per series with mid-series bucket layout change and builder reuse across series",
+			queryMatchers: []*labels.Matcher{
+				labels.MustNewMatcher(labels.MatchEqual, model.MetricNameLabel, "http_requests_bucket"),
+			},
+			classicSeries: []Series{},
+			nhcbSeries: []Series{
+				NewListSeries(labels.FromStrings("__name__", "http_requests", "job", "api"), []chunks.Sample{
+					hSample{t: 1, h: makeNHCB([]float64{1.0, 2.0, 3.0}, []int64{1, 2, 3, 4})},
+					hSample{t: 2, h: makeNHCB([]float64{1.0, 2.0, 3.0}, []int64{2, 4, 6, 8})},
+					hSample{t: 3, h: makeNHCB([]float64{1.0, 5.0}, []int64{3, 7, 5})},
+					hSample{t: 4, h: makeNHCB([]float64{1.0, 2.0, 3.0}, []int64{4, 5, 6, 7})},
+				}),
+				NewListSeries(labels.FromStrings("__name__", "http_requests", "job", "web"), []chunks.Sample{
+					hSample{t: 1, h: makeNHCB([]float64{1.0, 5.0}, []int64{5, 10, 15})},
+					hSample{t: 2, h: makeNHCB([]float64{1.0, 5.0}, []int64{6, 12, 18})},
+				}),
+			},
+			expectedCount:  8,
+			expectedSuffix: "_bucket",
+			expectedSamples: map[string][]fSample{
+				`{__name__="http_requests_bucket", job="api", le="1.0"}`:  {{t: 1, f: 1}, {t: 2, f: 2}, {t: 3, f: 3}, {t: 4, f: 4}},
+				`{__name__="http_requests_bucket", job="api", le="2.0"}`:  {{t: 1, f: 3}, {t: 2, f: 6}, {t: 4, f: 9}},
+				`{__name__="http_requests_bucket", job="api", le="3.0"}`:  {{t: 1, f: 6}, {t: 2, f: 12}, {t: 4, f: 15}},
+				`{__name__="http_requests_bucket", job="api", le="5.0"}`:  {{t: 3, f: 10}},
+				`{__name__="http_requests_bucket", job="api", le="+Inf"}`: {{t: 1, f: 10}, {t: 2, f: 20}, {t: 3, f: 15}, {t: 4, f: 22}},
+				`{__name__="http_requests_bucket", job="web", le="1.0"}`:  {{t: 1, f: 5}, {t: 2, f: 6}},
+				`{__name__="http_requests_bucket", job="web", le="5.0"}`:  {{t: 1, f: 15}, {t: 2, f: 18}},
+				`{__name__="http_requests_bucket", job="web", le="+Inf"}`: {{t: 1, f: 30}, {t: 2, f: 36}},
+			},
+		},
 	}
 
 	for _, tc := range tests {
@@ -314,15 +365,30 @@ func TestNHCBAsClassicQuerier_Select(t *testing.T) {
 
 			ss := q.Select(context.Background(), false, nil, tc.queryMatchers...)
 			var count int
+			gotSamples := make(map[string][]fSample)
+			var it chunkenc.Iterator
 			for ss.Next() {
 				count++
 				s := ss.At()
 				if tc.expectedSuffix != "" {
 					require.Contains(t, s.Labels().Get(model.MetricNameLabel), tc.expectedSuffix)
 				}
+				if tc.expectedSamples != nil {
+					it = s.Iterator(it)
+					var samples []fSample
+					for it.Next() == chunkenc.ValFloat {
+						ts, v := it.At()
+						samples = append(samples, fSample{t: ts, f: v})
+					}
+					require.NoError(t, it.Err())
+					gotSamples[s.Labels().String()] = samples
+				}
 			}
 			require.NoError(t, ss.Err())
 			require.Equal(t, tc.expectedCount, count)
+			if tc.expectedSamples != nil {
+				require.Equal(t, tc.expectedSamples, gotSamples)
+			}
 		})
 	}
 }
