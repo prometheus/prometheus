@@ -1818,9 +1818,16 @@ func (h *Head) truncateOOO(lastWBLFile int, newMinOOOMmapRef chunks.ChunkDiskMap
 	curMinOOOMmapRef := chunks.ChunkDiskMapperRef(h.minOOOMmapRef.Load())
 	if newMinOOOMmapRef.GreaterThan(curMinOOOMmapRef) {
 		h.WaitForPendingReadersForOOOChunksAtOrBefore(newMinOOOMmapRef)
-		h.minOOOMmapRef.Store(uint64(newMinOOOMmapRef))
 
-		if err := h.truncateSeriesAndChunkDiskMapper("truncateOOO"); err != nil {
+		// WAL checkpoints hold chunkSnapshotMtx when they decide which series
+		// records to keep. OOO GC removes series before it records their WAL expiries.
+		// Hold chunkSnapshotMtx during the minOOOMmapRef update and GC so a
+		// checkpoint cannot see a deleted series without its WAL expiry.
+		h.chunkSnapshotMtx.Lock()
+		h.minOOOMmapRef.Store(uint64(newMinOOOMmapRef))
+		err := h.truncateSeriesAndChunkDiskMapper("truncateOOO")
+		h.chunkSnapshotMtx.Unlock()
+		if err != nil {
 			return err
 		}
 	}
