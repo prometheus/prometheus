@@ -24,6 +24,7 @@ import (
 
 	"github.com/prometheus/prometheus/model/histogram"
 	"github.com/prometheus/prometheus/model/labels"
+	"github.com/prometheus/prometheus/tsdb/chunkenc"
 	"github.com/prometheus/prometheus/tsdb/chunks"
 	"github.com/prometheus/prometheus/util/annotations"
 )
@@ -96,6 +97,24 @@ func TestNHCBAsClassicQuerier_Select(t *testing.T) {
 		PositiveSpans:   []histogram.Span{{Offset: 0, Length: 4}},
 		PositiveBuckets: []int64{2, 1, 2, 1},
 	}
+	makeNHCB := func(customValues []float64, counts []int64) *histogram.Histogram {
+		deltas := make([]int64, len(counts))
+		var total uint64
+		var prev int64
+		for i, c := range counts {
+			deltas[i] = c - prev
+			prev = c
+			total += uint64(c)
+		}
+		return &histogram.Histogram{
+			Schema:          histogram.CustomBucketsSchema,
+			Count:           total,
+			Sum:             float64(total),
+			CustomValues:    customValues,
+			PositiveSpans:   []histogram.Span{{Offset: 0, Length: uint32(len(counts))}},
+			PositiveBuckets: deltas,
+		}
+	}
 
 	tests := []struct {
 		name              string
@@ -105,6 +124,7 @@ func TestNHCBAsClassicQuerier_Select(t *testing.T) {
 		passthroughSeries []Series
 		expectedCount     int
 		expectedSuffix    string
+		expectedSamples   map[string][]fSample
 	}{
 		{
 			name:          "non-histogram query passes through",
@@ -245,6 +265,93 @@ func TestNHCBAsClassicQuerier_Select(t *testing.T) {
 			expectedCount:  3,
 			expectedSuffix: "_bucket",
 		},
+		{
+			name: "multiple le matchers all apply",
+			queryMatchers: []*labels.Matcher{
+				labels.MustNewMatcher(labels.MatchEqual, model.MetricNameLabel, "http_requests_bucket"),
+				labels.MustNewMatcher(labels.MatchNotEqual, labels.BucketLabel, "+Inf"),
+				labels.MustNewMatcher(labels.MatchNotEqual, labels.BucketLabel, "1.0"),
+			},
+			classicSeries: []Series{},
+			nhcbSeries: []Series{
+				NewListSeries(labels.FromStrings("__name__", "http_requests"), []chunks.Sample{hSample{t: 1, h: nhcb}}),
+			},
+			expectedCount:  2,
+			expectedSuffix: "_bucket",
+		},
+		{
+			name: "le matcher on count query excludes series without le label",
+			queryMatchers: []*labels.Matcher{
+				labels.MustNewMatcher(labels.MatchEqual, model.MetricNameLabel, "http_requests_count"),
+				labels.MustNewMatcher(labels.MatchEqual, labels.BucketLabel, "1.0"),
+			},
+			classicSeries: []Series{},
+			nhcbSeries: []Series{
+				NewListSeries(labels.FromStrings("__name__", "http_requests"), []chunks.Sample{hSample{t: 1, h: nhcb}}),
+			},
+			expectedCount:  0,
+			expectedSuffix: "_count",
+		},
+		{
+			name: "le matcher on sum query excludes series without le label",
+			queryMatchers: []*labels.Matcher{
+				labels.MustNewMatcher(labels.MatchEqual, model.MetricNameLabel, "http_requests_sum"),
+				labels.MustNewMatcher(labels.MatchEqual, labels.BucketLabel, "1.0"),
+			},
+			classicSeries: []Series{},
+			nhcbSeries: []Series{
+				NewListSeries(labels.FromStrings("__name__", "http_requests"), []chunks.Sample{hSample{t: 1, h: nhcb}}),
+			},
+			expectedCount:  0,
+			expectedSuffix: "_sum",
+		},
+		{
+			name: "le matcher on count query returns stored classic count series with le label and excludes NHCB",
+			queryMatchers: []*labels.Matcher{
+				labels.MustNewMatcher(labels.MatchEqual, model.MetricNameLabel, "http_requests_count"),
+				labels.MustNewMatcher(labels.MatchEqual, labels.BucketLabel, "1.0"),
+			},
+			classicSeries: []Series{
+				NewListSeries(labels.FromStrings("__name__", "http_requests_count", "le", "1.0"), []chunks.Sample{fSample{t: 1, f: 5}}),
+				NewListSeries(labels.FromStrings("__name__", "http_requests_count"), []chunks.Sample{fSample{t: 1, f: 10}}),
+			},
+			nhcbSeries: []Series{
+				NewListSeries(labels.FromStrings("__name__", "http_requests"), []chunks.Sample{hSample{t: 1, h: nhcb}}),
+			},
+			expectedCount:  1,
+			expectedSuffix: "_count",
+		},
+		{
+			name: "multiple samples per series with mid-series bucket layout change and builder reuse across series",
+			queryMatchers: []*labels.Matcher{
+				labels.MustNewMatcher(labels.MatchEqual, model.MetricNameLabel, "http_requests_bucket"),
+			},
+			classicSeries: []Series{},
+			nhcbSeries: []Series{
+				NewListSeries(labels.FromStrings("__name__", "http_requests", "job", "api"), []chunks.Sample{
+					hSample{t: 1, h: makeNHCB([]float64{1.0, 2.0, 3.0}, []int64{1, 2, 3, 4})},
+					hSample{t: 2, h: makeNHCB([]float64{1.0, 2.0, 3.0}, []int64{2, 4, 6, 8})},
+					hSample{t: 3, h: makeNHCB([]float64{1.0, 5.0}, []int64{3, 7, 5})},
+					hSample{t: 4, h: makeNHCB([]float64{1.0, 2.0, 3.0}, []int64{4, 5, 6, 7})},
+				}),
+				NewListSeries(labels.FromStrings("__name__", "http_requests", "job", "web"), []chunks.Sample{
+					hSample{t: 1, h: makeNHCB([]float64{1.0, 5.0}, []int64{5, 10, 15})},
+					hSample{t: 2, h: makeNHCB([]float64{1.0, 5.0}, []int64{6, 12, 18})},
+				}),
+			},
+			expectedCount:  8,
+			expectedSuffix: "_bucket",
+			expectedSamples: map[string][]fSample{
+				`{__name__="http_requests_bucket", job="api", le="1.0"}`:  {{t: 1, f: 1}, {t: 2, f: 2}, {t: 3, f: 3}, {t: 4, f: 4}},
+				`{__name__="http_requests_bucket", job="api", le="2.0"}`:  {{t: 1, f: 3}, {t: 2, f: 6}, {t: 4, f: 9}},
+				`{__name__="http_requests_bucket", job="api", le="3.0"}`:  {{t: 1, f: 6}, {t: 2, f: 12}, {t: 4, f: 15}},
+				`{__name__="http_requests_bucket", job="api", le="5.0"}`:  {{t: 3, f: 10}},
+				`{__name__="http_requests_bucket", job="api", le="+Inf"}`: {{t: 1, f: 10}, {t: 2, f: 20}, {t: 3, f: 15}, {t: 4, f: 22}},
+				`{__name__="http_requests_bucket", job="web", le="1.0"}`:  {{t: 1, f: 5}, {t: 2, f: 6}},
+				`{__name__="http_requests_bucket", job="web", le="5.0"}`:  {{t: 1, f: 15}, {t: 2, f: 18}},
+				`{__name__="http_requests_bucket", job="web", le="+Inf"}`: {{t: 1, f: 30}, {t: 2, f: 36}},
+			},
+		},
 	}
 
 	for _, tc := range tests {
@@ -257,16 +364,50 @@ func TestNHCBAsClassicQuerier_Select(t *testing.T) {
 			q := NewNHCBAsClassicQuerier(mock)
 
 			ss := q.Select(context.Background(), false, nil, tc.queryMatchers...)
-			var count int
+			var collected []Series
 			for ss.Next() {
-				count++
 				s := ss.At()
 				if tc.expectedSuffix != "" {
 					require.Contains(t, s.Labels().Get(model.MetricNameLabel), tc.expectedSuffix)
 				}
+				collected = append(collected, s)
 			}
 			require.NoError(t, ss.Err())
-			require.Equal(t, tc.expectedCount, count)
+			require.Len(t, collected, tc.expectedCount)
+
+			if tc.expectedSamples != nil {
+				// Iterate collected series after draining the SeriesSet to verify
+				// that each series's sample slab remains valid across Next() calls
+				// and that fSampleSeries.Iterator reuses an existing fSampleIterator.
+				gotSamples := make(map[string][]fSample, len(collected))
+				var it chunkenc.Iterator
+				for _, s := range collected {
+					it = s.Iterator(it)
+					var samples []fSample
+					for it.Next() == chunkenc.ValFloat {
+						ts, v := it.At()
+						require.Equal(t, ts, it.AtT())
+						require.Equal(t, int64(0), it.AtST())
+						samples = append(samples, fSample{t: ts, f: v})
+					}
+					require.NoError(t, it.Err())
+					gotSamples[s.Labels().String()] = samples
+
+					// Also verify Seek on the same series using iterator reuse.
+					if len(samples) > 0 {
+						it = s.Iterator(it)
+						mid := samples[len(samples)/2]
+						require.Equal(t, chunkenc.ValFloat, it.Seek(mid.t))
+						ts, v := it.At()
+						require.Equal(t, mid.t, ts)
+						require.Equal(t, mid.f, v)
+						require.Equal(t, chunkenc.ValNone, it.Seek(samples[len(samples)-1].t+100))
+						require.Panics(t, func() { it.AtHistogram(nil) })
+						require.Panics(t, func() { it.AtFloatHistogram(nil) })
+					}
+				}
+				require.Equal(t, tc.expectedSamples, gotSamples)
+			}
 		})
 	}
 }
@@ -357,26 +498,39 @@ type nhcbMockQuerier struct {
 
 func (m *nhcbMockQuerier) Select(_ context.Context, _ bool, _ *SelectHints, matchers ...*labels.Matcher) SeriesSet {
 	for _, matcher := range matchers {
-		if matcher.Name == model.MetricNameLabel {
-			// Check if this is a histogram suffix query (classic histogram query)
-			if strings.HasSuffix(matcher.Value, "_bucket") ||
-				strings.HasSuffix(matcher.Value, "_count") ||
-				strings.HasSuffix(matcher.Value, "_sum") {
-				if m.classicErr != nil {
-					return ErrSeriesSet(m.classicErr)
-				}
-				return NewMockSeriesSet(m.classicSeries...)
-			}
-			// If passthroughSeries is set, use it for non-histogram metric queries
-			if len(m.passthroughSeries) > 0 {
-				return NewMockSeriesSet(m.passthroughSeries...)
-			}
-			// Base metric name query - return NHCB series
-			if m.nhcbErr != nil {
-				return ErrSeriesSet(m.nhcbErr)
-			}
-			return &mockSeriesSet{idx: -1, series: m.nhcbSeries, warnings: m.nhcbWarnings}
+		if matcher.Name != model.MetricNameLabel {
+			continue
 		}
+		// Check if this is a histogram suffix query (classic histogram query)
+		if strings.HasSuffix(matcher.Value, "_bucket") ||
+			strings.HasSuffix(matcher.Value, "_count") ||
+			strings.HasSuffix(matcher.Value, "_sum") {
+			if m.classicErr != nil {
+				return ErrSeriesSet(m.classicErr)
+			}
+			var matched []Series
+			for _, s := range m.classicSeries {
+				if matchesAll(s.Labels(), matchers) {
+					matched = append(matched, s)
+				}
+			}
+			return NewMockSeriesSet(matched...)
+		}
+		// If passthroughSeries is set, use it for non-histogram metric queries
+		if len(m.passthroughSeries) > 0 {
+			return NewMockSeriesSet(m.passthroughSeries...)
+		}
+		// Base metric name query - return NHCB series
+		if m.nhcbErr != nil {
+			return ErrSeriesSet(m.nhcbErr)
+		}
+		var matched []Series
+		for _, s := range m.nhcbSeries {
+			if matchesAll(s.Labels(), matchers) {
+				matched = append(matched, s)
+			}
+		}
+		return &mockSeriesSet{idx: -1, series: matched, warnings: m.nhcbWarnings}
 	}
 	return NewMockSeriesSet()
 }
@@ -391,6 +545,15 @@ func (*nhcbMockQuerier) LabelNames(context.Context, *LabelHints, ...*labels.Matc
 
 func (*nhcbMockQuerier) Close() error {
 	return nil
+}
+
+func matchesAll(lset labels.Labels, matchers []*labels.Matcher) bool {
+	for _, m := range matchers {
+		if !m.Matches(lset.Get(m.Name)) {
+			return false
+		}
+	}
+	return true
 }
 
 // deferredErrSeriesSet returns series normally but reports a non-nil error only

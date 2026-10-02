@@ -31,32 +31,47 @@ const (
 	ClassicSuffixSum    = "_sum"
 )
 
-// ClassicSeriesCache holds precomputed label sets for one NHCB series across
+// ClassicSeriesCache holds precomputed label sets and scratch buffers across
 // repeated ConvertNHCBToClassic calls.
 type ClassicSeriesCache struct {
+	lset         labels.Labels
 	baseName     string
+	bucketName   string
+	countName    string
+	sumName      string
 	customValues []float64
+	leStrings    []string
 
-	bucketLabels []labels.Labels // len(customValues)+1; last entry is the +Inf bucket.
-	haveBuckets  bool
-	countLabels  labels.Labels
-	haveCount    bool
-	sumLabels    labels.Labels
-	haveSum      bool
+	bucketLabels    []labels.Labels // len(customValues)+1; last entry is the +Inf bucket.
+	haveBuckets     bool
+	countLabels     labels.Labels
+	haveCount       bool
+	sumLabels       labels.Labels
+	haveSum         bool
+	positiveBuckets []float64
 }
 
-// invalidateIfNameChanged drops every cached label set once the cache is
-// reused for a differently-named series.
-func (c *ClassicSeriesCache) invalidateIfNameChanged(baseName string) {
+// prepare updates the cache for lset and baseName, preserving reusable
+// customValues, formatted leStrings, metric suffix names, and slice capacities
+// when switching between series of the same metric.
+func (c *ClassicSeriesCache) prepare(lset labels.Labels, baseName string) {
+	if !labels.Equal(c.lset, lset) {
+		c.lset = lset
+		c.haveBuckets = false
+		c.haveCount = false
+		c.haveSum = false
+	}
 	if c.baseName != baseName {
-		*c = ClassicSeriesCache{baseName: baseName}
+		c.baseName = baseName
+		c.bucketName = baseName + ClassicSuffixBucket
+		c.countName = baseName + ClassicSuffixCount
+		c.sumName = baseName + ClassicSuffixSum
 	}
 }
 
-// bucketsMatch reports whether the cached bucket label sets were built for
-// these exact custom bucket.
-func (c *ClassicSeriesCache) bucketsMatch(customValues []float64) bool {
-	if !c.haveBuckets || len(c.customValues) != len(customValues) {
+// customValuesMatch reports whether customValues equals the cached customValues.
+func (c *ClassicSeriesCache) customValuesMatch(customValues []float64) bool {
+	if len(c.customValues) != len(customValues) || len(c.leStrings) != len(customValues) {
 		return false
 	}
 	for i, v := range customValues {
@@ -67,6 +82,22 @@ func (c *ClassicSeriesCache) bucketsMatch(customValues []float64) bool {
 	return true
 }
 
+// bucketsMatch reports whether the cached bucket label sets were built for
+// the current series and these exact custom bucket bounds.
+func (c *ClassicSeriesCache) bucketsMatch(customValues []float64) bool {
+	return c.haveBuckets && c.customValuesMatch(customValues)
+}
+
+func (c *ClassicSeriesCache) allocPositiveBuckets(n int) []float64 {
+	if cap(c.positiveBuckets) < n {
+		c.positiveBuckets = make([]float64, n)
+	} else {
+		c.positiveBuckets = c.positiveBuckets[:n]
+		clear(c.positiveBuckets)
+	}
+	return c.positiveBuckets
+}
+
 // bucketLabelsFor returns the label set for bucket index idx (len(customValues)
 // for the +Inf bucket). If cache is non-nil, the caller must have already
 // populated cache.bucketLabels.
@@ -75,7 +106,7 @@ func bucketLabelsFor(cache *ClassicSeriesCache, idx int, lsetBuilder *labels.Bui
 		return cache.bucketLabels[idx]
 	}
 	lsetBuilder.Reset(lset)
-	lsetBuilder.Set(model.MetricNameLabel, baseName+"_bucket")
+	lsetBuilder.Set(model.MetricNameLabel, baseName+ClassicSuffixBucket)
 	lsetBuilder.Set(model.BucketLabel, labels.FormatOpenMetricsFloat(boundary))
 	return lsetBuilder.Labels()
 }
@@ -98,7 +129,7 @@ func ConvertNHCBToClassic(nhcb any, lset labels.Labels, lsetBuilder *labels.Buil
 		return errors.New("metric name label '__name__' is missing")
 	}
 	if cache != nil {
-		cache.invalidateIfNameChanged(baseName)
+		cache.prepare(lset, baseName)
 	}
 
 	// We preserve original labels and restore them after conversion.
@@ -127,13 +158,17 @@ func ConvertNHCBToClassic(nhcb any, lset labels.Labels, lsetBuilder *labels.Buil
 
 		// Validate the histogram before conversion.
 		// The caller must ensure that the provided histogram is valid NHCB.
-		if h.Validate() != nil {
-			return errors.New(h.Validate().Error())
+		if err := h.Validate(); err != nil {
+			return err
 		}
 
 		if wantBuckets {
 			customValues = h.CustomValues
-			positiveBuckets = make([]float64, len(customValues)+1)
+			if cache != nil {
+				positiveBuckets = cache.allocPositiveBuckets(len(customValues) + 1)
+			} else {
+				positiveBuckets = make([]float64, len(customValues)+1)
+			}
 
 			// Histograms are in delta format so we first bring them to absolute format.
 			acc := int64(0)
@@ -157,13 +192,17 @@ func ConvertNHCBToClassic(nhcb any, lset labels.Labels, lsetBuilder *labels.Buil
 
 		// Validate the histogram before conversion.
 		// The caller must ensure that the provided histogram is valid NHCB.
-		if h.Validate() != nil {
-			return errors.New(h.Validate().Error())
+		if err := h.Validate(); err != nil {
+			return err
 		}
 
 		if wantBuckets {
 			customValues = h.CustomValues
-			positiveBuckets = make([]float64, len(customValues)+1)
+			if cache != nil {
+				positiveBuckets = cache.allocPositiveBuckets(len(customValues) + 1)
+			} else {
+				positiveBuckets = make([]float64, len(customValues)+1)
+			}
 
 			for _, span := range h.PositiveSpans {
 				// Since Float Histogram is already in absolute format we should
@@ -185,17 +224,30 @@ func ConvertNHCBToClassic(nhcb any, lset labels.Labels, lsetBuilder *labels.Buil
 
 	if wantBuckets {
 		if cache != nil && !cache.bucketsMatch(customValues) {
-			cache.customValues = append(cache.customValues[:0], customValues...)
-			cache.bucketLabels = make([]labels.Labels, len(customValues)+1)
-			for i, val := range customValues {
-				lsetBuilder.Reset(lset)
-				lsetBuilder.Set(model.MetricNameLabel, baseName+"_bucket")
-				lsetBuilder.Set(model.BucketLabel, labels.FormatOpenMetricsFloat(val))
-				cache.bucketLabels[i] = lsetBuilder.Labels()
+			if !cache.customValuesMatch(customValues) {
+				cache.customValues = append(cache.customValues[:0], customValues...)
+				if cap(cache.leStrings) < len(customValues) {
+					cache.leStrings = make([]string, len(customValues))
+				} else {
+					cache.leStrings = cache.leStrings[:len(customValues)]
+				}
+				for i, val := range customValues {
+					cache.leStrings[i] = labels.FormatOpenMetricsFloat(val)
+				}
+			}
+			nBuckets := len(customValues) + 1
+			if cap(cache.bucketLabels) < nBuckets {
+				cache.bucketLabels = make([]labels.Labels, nBuckets)
+			} else {
+				cache.bucketLabels = cache.bucketLabels[:nBuckets]
 			}
 			lsetBuilder.Reset(lset)
-			lsetBuilder.Set(model.MetricNameLabel, baseName+"_bucket")
-			lsetBuilder.Set(model.BucketLabel, labels.FormatOpenMetricsFloat(math.Inf(1)))
+			lsetBuilder.Set(model.MetricNameLabel, cache.bucketName)
+			for i, leStr := range cache.leStrings {
+				lsetBuilder.Set(model.BucketLabel, leStr)
+				cache.bucketLabels[i] = lsetBuilder.Labels()
+			}
+			lsetBuilder.Set(model.BucketLabel, "+Inf")
 			cache.bucketLabels[len(customValues)] = lsetBuilder.Labels()
 			cache.haveBuckets = true
 		}
@@ -221,7 +273,7 @@ func ConvertNHCBToClassic(nhcb any, lset labels.Labels, lsetBuilder *labels.Buil
 		if cache != nil {
 			if !cache.haveCount {
 				lsetBuilder.Reset(lset)
-				lsetBuilder.Set(model.MetricNameLabel, baseName+"_count")
+				lsetBuilder.Set(model.MetricNameLabel, cache.countName)
 				cache.countLabels = lsetBuilder.Labels()
 				cache.haveCount = true
 			}
@@ -230,7 +282,7 @@ func ConvertNHCBToClassic(nhcb any, lset labels.Labels, lsetBuilder *labels.Buil
 			}
 		} else {
 			lsetBuilder.Reset(lset)
-			lsetBuilder.Set(model.MetricNameLabel, baseName+"_count")
+			lsetBuilder.Set(model.MetricNameLabel, baseName+ClassicSuffixCount)
 			if err := emitSeriesFn(lsetBuilder.Labels(), count); err != nil {
 				return err
 			}
@@ -241,7 +293,7 @@ func ConvertNHCBToClassic(nhcb any, lset labels.Labels, lsetBuilder *labels.Buil
 		if cache != nil {
 			if !cache.haveSum {
 				lsetBuilder.Reset(lset)
-				lsetBuilder.Set(model.MetricNameLabel, baseName+"_sum")
+				lsetBuilder.Set(model.MetricNameLabel, cache.sumName)
 				cache.sumLabels = lsetBuilder.Labels()
 				cache.haveSum = true
 			}
@@ -250,7 +302,7 @@ func ConvertNHCBToClassic(nhcb any, lset labels.Labels, lsetBuilder *labels.Buil
 			}
 		} else {
 			lsetBuilder.Reset(lset)
-			lsetBuilder.Set(model.MetricNameLabel, baseName+"_sum")
+			lsetBuilder.Set(model.MetricNameLabel, baseName+ClassicSuffixSum)
 			if err := emitSeriesFn(lsetBuilder.Labels(), sum); err != nil {
 				return err
 			}
