@@ -1291,6 +1291,9 @@ func (p *openMetrics2Parser) buildClassicHistogramPending(
 	if err != nil {
 		return nil, fmt.Errorf("invalid %s: %w", countKey, err)
 	}
+	if countVal < 0 && p.mtype != model.MetricTypeGaugeHistogram {
+		return nil, fmt.Errorf("%s must not be negative, got %v", countKey, countVal)
+	}
 	name := mfName + countSuffix
 	lset := p.buildPendingLabels(name, extraLabels, "", "")
 	pending = append(pending, pendingEntry{
@@ -1338,15 +1341,28 @@ func (p *openMetrics2Parser) buildClassicHistogramPending(
 	}
 	name = mfName + "_bucket"
 	hasPosInf := false
+	var prevCount float64
 	for b, err := range parseBuckets(yoloString(bv)) {
 		if err != nil {
 			return nil, fmt.Errorf("invalid bucket: %w", err)
 		}
 		// Classic bucket values are counters for a histogram, which the spec
-		// forbids from being negative. A gauge histogram's bucket values are
-		// gauges, where the spec only discourages it.
-		if b.count < 0 && p.mtype != model.MetricTypeGaugeHistogram {
-			return nil, fmt.Errorf("invalid bucket: value must not be negative, got %v", b.count)
+		// forbids from being negative, requires to be cumulative, and requires
+		// the +Inf bucket value to equal count. A gauge histogram's bucket
+		// values are gauges, where the spec only discourages negative values.
+		if p.mtype != model.MetricTypeGaugeHistogram {
+			if b.count < 0 {
+				return nil, fmt.Errorf("invalid bucket: value must not be negative, got %v", b.count)
+			}
+			if b.count < prevCount {
+				return nil, fmt.Errorf("classic histogram bucket values must be cumulative, got %v after %v", b.count, prevCount)
+			}
+			if b.le == "+Inf" && b.count != countVal {
+				return nil, fmt.Errorf("classic histogram +Inf bucket value (%v) must equal count (%v)", b.count, countVal)
+			}
+			if !math.IsNaN(b.count) {
+				prevCount = b.count
+			}
 		}
 		if b.le == "+Inf" {
 			hasPosInf = true
@@ -1388,6 +1404,12 @@ func (p *openMetrics2Parser) buildSummaryPending(
 	if err != nil {
 		return nil, fmt.Errorf("invalid count: %w", err)
 	}
+	if math.IsNaN(v) || v < 0 {
+		return nil, fmt.Errorf("count must not be negative or NaN, got %v", v)
+	}
+	if v != math.Trunc(v) || math.IsInf(v, 0) {
+		return nil, fmt.Errorf("count must be an integer, got %v", v)
+	}
 	name := mfName + "_count"
 	lset := p.buildPendingLabels(name, extraLabels, "", "")
 	pending = append(pending, pendingEntry{
@@ -1401,6 +1423,9 @@ func (p *openMetrics2Parser) buildSummaryPending(
 	v, err = strconv.ParseFloat(yoloString(sv), 64)
 	if err != nil {
 		return nil, fmt.Errorf("invalid sum: %w", err)
+	}
+	if math.IsNaN(v) || v < 0 {
+		return nil, fmt.Errorf("sum must not be negative or NaN, got %v", v)
 	}
 	name = mfName + "_sum"
 	lset = p.buildPendingLabels(name, extraLabels, "", "")
@@ -1592,6 +1617,13 @@ func parseQuantiles(s string) iter.Seq2[quantileEntry, error] {
 			if err != nil {
 				yield(quantileEntry{}, fmt.Errorf("invalid quantile value %q: %w", after, err))
 				return
+			}
+			if val < 0 {
+				yield(quantileEntry{}, fmt.Errorf("quantile value must not be negative, got %v", val))
+				return
+			}
+			if math.IsNaN(val) {
+				val = math.Float64frombits(value.NormalNaN)
 			}
 			qf, err := strconv.ParseFloat(q, 64)
 			if err != nil {
