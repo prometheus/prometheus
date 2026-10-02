@@ -40,6 +40,7 @@ import (
 	"github.com/prometheus/prometheus/model/rulefmt"
 	"github.com/prometheus/prometheus/promql/parser"
 	"github.com/prometheus/prometheus/promql/promqltest"
+	"github.com/prometheus/prometheus/tsdb"
 )
 
 func init() {
@@ -816,6 +817,50 @@ func TestTSDBDumpCommand(t *testing.T) {
 			args := []string{"-test.main", "tsdb", c.subCmd, storage.Dir()}
 			cmd := exec.Command(promtoolPath, args...)
 			require.NoError(t, cmd.Run())
+		})
+	}
+}
+
+func TestCreateBlocksFromMaxBlockDuration(t *testing.T) {
+	t.Parallel()
+	// The samples are within one 18h compaction range, but either side of a day boundary.
+	input := filepath.Join(t.TempDir(), "input.om")
+	require.NoError(t, os.WriteFile(input, []byte(`# TYPE http_requests_total counter
+http_requests_total{code="200"} 1 1624474800.000
+http_requests_total{code="200"} 2 1624528800.000
+# EOF
+`), 0o666))
+
+	for _, tc := range []struct {
+		name           string
+		args           []string
+		expectedBlocks int
+	}{
+		{
+			name:           "rounded down to a compaction range",
+			expectedBlocks: 1,
+		},
+		{
+			name:           "incompatible block duration allowed",
+			args:           []string{"--allow-incompatible-block-duration"},
+			expectedBlocks: 2,
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			outputDir := t.TempDir()
+			args := append([]string{"-test.main", "tsdb", "create-blocks-from", "--max-block-duration=24h"}, tc.args...)
+			args = append(args, "openmetrics", input, outputDir)
+			require.NoError(t, exec.Command(promtoolPath, args...).Run())
+
+			db, err := tsdb.OpenDBReadOnly(outputDir, "", nil)
+			require.NoError(t, err)
+			defer func() {
+				require.NoError(t, db.Close())
+			}()
+			blocks, err := db.Blocks()
+			require.NoError(t, err)
+			require.Len(t, blocks, tc.expectedBlocks)
 		})
 	}
 }
