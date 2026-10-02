@@ -294,6 +294,13 @@ otlp:
 remote_read:
   [ - <remote_read> ... ]
 
+# List of relabel configurations applied to samples ingested via the
+# remote-write and OTLP receivers, before they reach storage. Only takes
+# effect when the receive-relabel-configs feature flag is enabled; see
+# https://prometheus.io/docs/prometheus/latest/feature_flags/#receive-relabeling.
+receive_relabel_configs:
+  [ - <relabel_config> ... ]
+
 # Storage related settings that are runtime reloadable.
 storage:
   [ tsdb: <tsdb> ]
@@ -3694,6 +3701,16 @@ relabeling is applied after external labels.
 
 One use for this is ensuring a HA pair of Prometheus servers with different
 external labels send identical alerts.
+
+### `<receive_relabel_configs>`
+
+Receive relabeling is applied to samples ingested via the remote-write and
+OTLP receivers, before they reach storage. It has the same configuration
+format and actions as target relabeling.
+
+Requires the `receive-relabel-configs` feature flag; see
+[Receive relabeling](../feature_flags.md#receive-relabeling). Without it,
+`receive_relabel_configs` in the config file has no effect.
 
 ### `<alertmanager_config>`
 

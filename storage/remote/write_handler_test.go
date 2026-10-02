@@ -30,13 +30,16 @@ import (
 	"github.com/gogo/protobuf/proto"
 	"github.com/google/go-cmp/cmp"
 	remoteapi "github.com/prometheus/client_golang/exp/api/remote"
+	"github.com/prometheus/common/model"
 	"github.com/prometheus/common/promslog"
 	"github.com/stretchr/testify/require"
 
+	"github.com/prometheus/prometheus/config"
 	"github.com/prometheus/prometheus/model/exemplar"
 	"github.com/prometheus/prometheus/model/histogram"
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/model/metadata"
+	"github.com/prometheus/prometheus/model/relabel"
 	"github.com/prometheus/prometheus/prompb"
 	writev2 "github.com/prometheus/prometheus/prompb/io/prometheus/write/v2"
 	"github.com/prometheus/prometheus/storage"
@@ -335,6 +338,63 @@ func TestRemoteWriteHandler_V1Message(t *testing.T) {
 
 			k++
 		}
+	}
+}
+
+func TestRemoteWriteHandler_ReceiveRelabeling(t *testing.T) {
+	payloadV1, _, _, err := buildWriteRequest(nil, writeRequestFixture.Timeseries, nil, nil, nil, nil, "snappy")
+	require.NoError(t, err)
+	payloadV2, _, _, _, err := buildV2WriteRequest(nil, writeV2RequestFixture.Timeseries, writeV2RequestFixture.Symbols, nil, nil, nil, "snappy")
+	require.NoError(t, err)
+
+	dropAllConfigs := []*relabel.Config{{
+		SourceLabels:         model.LabelNames{"__name__"},
+		Regex:                relabel.MustNewRegexp("test_metric1"),
+		Action:               relabel.Drop,
+		NameValidationScheme: model.UTF8Validation,
+	}}
+
+	for _, tc := range []struct {
+		name    string
+		msgType remoteapi.WriteMessageType
+		payload []byte
+		configs []*relabel.Config
+	}{
+		{
+			name:    "v1: drop all series matching __name__",
+			msgType: remoteapi.WriteV1MessageType,
+			payload: payloadV1,
+			configs: dropAllConfigs,
+		},
+		{
+			name:    "v2: drop all series matching __name__",
+			msgType: remoteapi.WriteV2MessageType,
+			payload: payloadV2,
+			configs: dropAllConfigs,
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			req, err := http.NewRequest(http.MethodPost, "", bytes.NewReader(tc.payload))
+			require.NoError(t, err)
+			req.Header.Set("Content-Type", remoteWriteContentTypeHeaders[tc.msgType])
+			req.Header.Set("Content-Encoding", compression.Snappy)
+			if tc.msgType == remoteapi.WriteV2MessageType {
+				req.Header.Set(RemoteWriteVersionHeader, RemoteWriteVersion20HeaderValue)
+			}
+
+			appendable := &mockAppendable{}
+			configFunc := func() config.Config { return config.Config{ReceiveRelabelConfigs: tc.configs} }
+			handler := NewWriteHandler(promslog.NewNopLogger(), nil, NewRelabelingAppendable(appendable, configFunc, NewRelabelCache()),
+				[]remoteapi.WriteMessageType{tc.msgType}, false, false, false)
+
+			recorder := httptest.NewRecorder()
+			handler.ServeHTTP(recorder, req)
+
+			require.Equal(t, http.StatusNoContent, recorder.Result().StatusCode)
+			require.Empty(t, appendable.samples)
+			require.Empty(t, appendable.exemplars)
+			require.Empty(t, appendable.histograms)
+		})
 	}
 }
 
