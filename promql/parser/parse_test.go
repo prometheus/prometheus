@@ -6366,3 +6366,52 @@ func TestNewParser(t *testing.T) {
 	_, err = p.ParseExpr("===")
 	require.Error(t, err)
 }
+
+func TestParseBitwiseOperators(t *testing.T) {
+	for _, op := range []ItemType{BITAND, BITOR, BITXOR} {
+		t.Run(op.String(), func(t *testing.T) {
+			p := NewParser(Options{})
+			for _, input := range []string{
+				"5 " + op.String() + " 3",
+				"status " + op.String() + " 64",
+				"64 " + op.String() + " status",
+				"status " + op.String() + " on (instance) group_left (model) mask",
+				"mask " + op.String() + " ignoring (device) group_right () status",
+			} {
+				t.Run(input, func(t *testing.T) {
+					expr, err := p.ParseExpr(input)
+					require.NoError(t, err)
+					require.Equal(t, op, expr.(*BinaryExpr).Op)
+					require.Equal(t, input, expr.String())
+					_, err = p.ParseExpr(expr.String())
+					require.NoError(t, err)
+				})
+			}
+
+			// Match atan2 precedence, including left associativity with multiplication.
+			expr, err := p.ParseExpr("1 + 6 " + op.String() + " 3 * 2 ^ 3")
+			require.NoError(t, err)
+			add := expr.(*BinaryExpr)
+			require.Equal(t, ItemType(ADD), add.Op)
+			mul := add.RHS.(*BinaryExpr)
+			require.Equal(t, ItemType(MUL), mul.Op)
+			require.Equal(t, op, mul.LHS.(*BinaryExpr).Op)
+			require.Equal(t, ItemType(POW), mul.RHS.(*BinaryExpr).Op)
+
+			for _, tc := range []struct{ input, err string }{
+				{"status " + op.String() + " bool 1", "bool modifier can only be used on comparison operators"},
+				{"status[5m] " + op.String() + " 1", "binary expression must contain only scalar and instant vector types"},
+				{"status " + op.String() + " on(instance) 1", "vector matching only allowed between instant vectors"},
+			} {
+				_, err := p.ParseExpr(tc.input)
+				require.ErrorContains(t, err, tc.err)
+			}
+
+			// New keywords remain usable as metric names and grouping labels.
+			for _, input := range []string{op.String(), "sum by (" + op.String() + ") (status)"} {
+				_, err := testParser.ParseExpr(input)
+				require.NoError(t, err)
+			}
+		})
+	}
+}
