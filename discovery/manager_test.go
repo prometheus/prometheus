@@ -1666,9 +1666,24 @@ func (refreshConfig) NewDiscovererMetrics(_ prometheus.Registerer, rmi RefreshMe
 
 func (refreshConfig) Name() string { return "refresh" }
 func (c refreshConfig) NewDiscoverer(opts DiscovererOptions) (Discoverer, error) {
-	opts.Metrics.(*refreshDiscovererMetrics).Instantiate(c.Name(), opts.SetName)
-	return newTestDiscoverer(), nil
+	return newRefreshDiscoverer(opts, c.Name()), nil
 }
+
+// refreshDiscoverer instantiates refresh metrics when created or given a new config name,
+// like discoverers using the refresh package.
+type refreshDiscoverer struct {
+	*testDiscoverer
+	rmi  RefreshMetricsInstantiator
+	mech string
+}
+
+func newRefreshDiscoverer(opts DiscovererOptions, mech string) *refreshDiscoverer {
+	d := &refreshDiscoverer{testDiscoverer: newTestDiscoverer(), rmi: opts.Metrics.(*refreshDiscovererMetrics), mech: mech}
+	d.UpdateSetName(opts.SetName)
+	return d
+}
+
+func (d *refreshDiscoverer) UpdateSetName(setName string) { d.rmi.Instantiate(d.mech, setName) }
 
 // awsConfig is like aws_sd_configs, whose refresh metrics use the role as mechanism.
 type awsConfig struct {
@@ -1679,8 +1694,7 @@ type awsConfig struct {
 func (awsConfig) Name() string               { return "aws" }
 func (c awsConfig) RefreshMechanism() string { return c.role }
 func (c awsConfig) NewDiscoverer(opts DiscovererOptions) (Discoverer, error) {
-	opts.Metrics.(*refreshDiscovererMetrics).Instantiate(c.role, opts.SetName)
-	return newTestDiscoverer(), nil
+	return newRefreshDiscoverer(opts, c.role), nil
 }
 
 // Refresh and discovery metrics should be deleted for providers that are removed.
@@ -1738,7 +1752,7 @@ func TestMetricsCleanupAfterConfigReload(t *testing.T) {
 			refreshSeries: 1,
 		},
 		{
-			// The provider keeps running, so its metrics keep the original job name.
+			// The provider keeps running, and its metrics are labelled with the new job name.
 			name: "job renamed",
 			before: map[string]Configs{
 				"prometheus": {refreshConfig{"foo"}},
@@ -1746,7 +1760,8 @@ func TestMetricsCleanupAfterConfigReload(t *testing.T) {
 			after: map[string]Configs{
 				"renamed": {refreshConfig{"foo"}},
 			},
-			refreshSeries: 1,
+			refreshSeries:      1,
+			refreshConfigLabel: "renamed",
 		},
 		{
 			// Jobs with identical configs share one provider.
@@ -1762,7 +1777,7 @@ func TestMetricsCleanupAfterConfigReload(t *testing.T) {
 			refreshSeries: 1,
 		},
 		{
-			// The provider keeps running for the other job, so its metrics are kept.
+			// The provider keeps running for the other job, and its metrics are labelled with it.
 			name: "job removed while another job uses its config",
 			before: map[string]Configs{
 				"prometheus": {refreshConfig{"foo"}},
@@ -1776,7 +1791,7 @@ func TestMetricsCleanupAfterConfigReload(t *testing.T) {
 			},
 			refreshSeriesBefore: 1,
 			refreshSeries:       1,
-			refreshConfigLabel:  "prometheus",
+			refreshConfigLabel:  "other",
 		},
 		{
 			name: "aws job removed",
