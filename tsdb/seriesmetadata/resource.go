@@ -29,7 +29,13 @@ func mapSameUnderlying(a, b map[string]string) bool {
 
 // ResourceVersion represents a snapshot of resource data at a point in time.
 type ResourceVersion struct {
+	// Identifying holds the attributes the producer classified as identifying; for OTLP
+	// ingestion, the service attributes behind job and instance (see SplitAttributes).
+	// They usually stay constant for a series, since job and instance derive from them,
+	// but nothing here enforces that.
 	Identifying map[string]string
+	// Descriptive holds all other resource attributes, including ones OTel treats as
+	// identifying.
 	Descriptive map[string]string
 	MinTime     int64
 	MaxTime     int64

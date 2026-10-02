@@ -5116,12 +5116,12 @@ components:
                     type: object
                     additionalProperties:
                         type: string
-                    description: Identifying attributes (e.g., service.name, service.namespace, service.instance.id).
+                    description: 'Attributes classified as identifying at ingestion. For OTLP: service.name, service.namespace and service.instance.id, the attributes behind the job and instance labels. Not OTel Resource identity.'
                 descriptive:
                     type: object
                     additionalProperties:
                         type: string
-                    description: Descriptive attributes providing additional context.
+                    description: All other resource attributes, including ones OTel treats as identifying (e.g. host.id).
             required:
                 - identifying
                 - descriptive
@@ -5135,6 +5135,7 @@ components:
                     enum:
                         - identifying
                         - descriptive
+                    description: 'Whether the attribute was stored as identifying (for OTLP: the job and instance service attributes) or descriptive.'
                     example: identifying
                 otel_name:
                     type: string

@@ -8,9 +8,9 @@ Enabled via `--enable-feature=native-metadata`.
 
 Each time series in Prometheus can have associated OTel metadata:
 
-- **Resource attributes**: identifying (e.g. `service.name`) and descriptive (e.g. `host.name`) attributes from the OTel Resource
+- **Resource attributes**: identifying and descriptive attributes from the OTel Resource. For OTLP ingestion, identifying means `service.name`, `service.namespace` and `service.instance.id`, the attributes behind the `job` and `instance` labels; every other attribute (e.g. `host.name`, but also `host.id`) is descriptive. This split is not OTel Resource identity: entity references are ignored.
 
-All metadata is **versioned over time** per series. When a descriptive attribute changes (e.g. a service migrates to a new host), a new version is created with its own time range. Identifying attributes remain constant across versions.
+All metadata is **versioned over time** per series. When a descriptive attribute changes (e.g. a service migrates to a new host), a new version is created with its own time range. Identifying attributes are expected to stay constant across versions on OTLP ingestion, because `job` and `instance` derive from them, but the store does not enforce this.
 
 ## Architecture
 
@@ -97,7 +97,7 @@ Data is stored per-series, keyed by `labels.StableHash` (a 64-bit hash of the se
 **Enable/disable**: The entire inverted index can be disabled via `tsdb.Options.EnableResourceAttrIndex` (default `true`). When disabled: `Head.Init()` skips `InitResourceAttrIndex()`, `DB.mergeBlockMetadata()` skips `BuildResourceAttrIndex()`, and compaction writes no `resource_attr_index` rows. The `UniqueResourceAttrNames()` cache still works — `UpdateResourceAttrIndex()` tracks attribute names before the nil guard, so autocomplete is available even without the index. Downstream projects (e.g. Mimir, Cortex, Thanos) can disable the index per-tenant when Parquet-native filtering on `attr_key`/`attr_value` columns is preferred.
 
 **Selective indexing**: The index uses selective attribute indexing to control its size:
-- **Identifying attributes** (from `ResourceVersion.Identifying`, e.g. `service.name`, `service.namespace`, `service.instance.id`) are **always** indexed
+- **Identifying attributes** (from `ResourceVersion.Identifying`; for OTLP ingestion `service.name`, `service.namespace`, `service.instance.id`) are **always** indexed
 - **Descriptive attributes** (from `ResourceVersion.Descriptive`) are only indexed if their key is in `indexedResourceAttrs` — a configurable set passed via `SetIndexedResourceAttrs()`, sourced from `tsdb.Options.IndexedResourceAttrs`
 - Default (nil `indexedResourceAttrs`) means only identifying attributes are indexed, reducing index size by ~10x at scale
 

@@ -64,10 +64,11 @@ type metadataRow struct {
 
 	// --- Resource fields ---
 
-	// IdentifyingAttrs contains the resource-level identifying attributes.
+	// IdentifyingAttrs contains ResourceVersion.Identifying: the job and instance
+	// service attributes for OTLP ingestion, not OTel Resource identity.
 	IdentifyingAttrs []AttrEntry `parquet:"identifying_attrs,list,optional"`
 
-	// DescriptiveAttrs contains the resource-level descriptive attributes.
+	// DescriptiveAttrs contains ResourceVersion.Descriptive: all other resource attributes.
 	DescriptiveAttrs []AttrEntry `parquet:"descriptive_attrs,list,optional"`
 
 	// --- Resource attribute index fields (namespace="resource_attr_index") ---

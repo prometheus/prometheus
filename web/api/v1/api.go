@@ -1679,7 +1679,8 @@ func (api *API) metricMetadata(r *http.Request) apiFuncResult {
 	return apiFuncResult{res, nil, nil, nil}
 }
 
-// ResourceAttributeData contains identifying and descriptive attribute maps.
+// ResourceAttributeData contains identifying and descriptive attribute maps, as split at
+// ingestion (see seriesmetadata.SplitAttributes); identifying is not OTel Resource identity.
 type ResourceAttributeData struct {
 	Identifying map[string]string `json:"identifying"`
 	Descriptive map[string]string `json:"descriptive"`

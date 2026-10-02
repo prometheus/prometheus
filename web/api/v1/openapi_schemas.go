@@ -1025,14 +1025,14 @@ func (*OpenAPIBuilder) resourceAttributeDataSchema() *base.SchemaProxy {
 		AdditionalProperties: &base.DynamicValue[*base.SchemaProxy, bool]{
 			A: stringSchema(),
 		},
-		Description: "Identifying attributes (e.g., service.name, service.namespace, service.instance.id).",
+		Description: "Attributes classified as identifying at ingestion. For OTLP: service.name, service.namespace and service.instance.id, the attributes behind the job and instance labels. Not OTel Resource identity.",
 	}))
 	props.Set("descriptive", base.CreateSchemaProxy(&base.Schema{
 		Type: []string{"object"},
 		AdditionalProperties: &base.DynamicValue[*base.SchemaProxy, bool]{
 			A: stringSchema(),
 		},
-		Description: "Descriptive attributes providing additional context.",
+		Description: "All other resource attributes, including ones OTel treats as identifying (e.g. host.id).",
 	}))
 
 	return base.CreateSchemaProxy(&base.Schema{
@@ -1046,7 +1046,7 @@ func (*OpenAPIBuilder) resourceAttributeDataSchema() *base.SchemaProxy {
 
 func (*OpenAPIBuilder) resourceAttributeKeyInfoSchema() *base.SchemaProxy {
 	props := orderedmap.New[string, *base.SchemaProxy]()
-	props.Set("role", enumStringSchema("identifying", "descriptive"))
+	props.Set("role", enumStringSchemaWithDescription("Whether the attribute was stored as identifying (for OTLP: the job and instance service attributes) or descriptive.", "identifying", "descriptive"))
 	props.Set("otel_name", stringSchemaWithDescription("Original OTel resource attribute name."))
 	props.Set("prom_name", stringSchemaWithDescription("Prometheus label name after configured translation. Omitted when translation fails."))
 	props.Set("values", base.CreateSchemaProxy(&base.Schema{

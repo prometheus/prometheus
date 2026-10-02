@@ -560,9 +560,10 @@ type MetadataUpdater interface {
 // ResourceUpdater provides an interface for associating OTel resources to stored series.
 type ResourceUpdater interface {
 	// UpdateResource updates the resource for the given series.
-	// The identifying map contains resource-level attributes that uniquely identify the resource
-	// (by default: service.name, service.namespace, service.instance.id).
-	// The descriptive map contains all other resource-level attributes.
+	// The caller decides how attributes are split between the identifying and descriptive
+	// maps. OTLP ingestion puts service.name, service.namespace and service.instance.id,
+	// the attributes behind the job and instance labels, in identifying, and all other
+	// resource-level attributes in descriptive. The split is not OTel Resource identity.
 	// The timestamp t is used to track when this resource version was observed.
 	// If the resource differs from the current version, a new version is created.
 	// If it matches, the existing version's time range is extended.

@@ -13,8 +13,11 @@
 
 package seriesmetadata
 
-// IsIdentifyingAttribute returns true if the given key is an identifying attribute.
-// Identifying attributes are used to uniquely identify a resource.
+// IsIdentifyingAttribute reports whether key is service.name, service.namespace or
+// service.instance.id: the attributes OTLP translation turns into the job and instance
+// labels, as for keep_identifying_resource_attributes. This is not OTel Resource
+// identity: entity references are ignored, and other attributes OTel treats as
+// identifying, such as host.id, are classed as descriptive.
 func IsIdentifyingAttribute(key string) bool {
 	switch key {
 	case AttrServiceName, AttrServiceNamespace, AttrServiceInstanceID:
@@ -37,8 +40,8 @@ func AttributesEqual(a, b map[string]string) bool {
 	return true
 }
 
-// SplitAttributes splits a flat attribute map into identifying and descriptive maps
-// based on the default identifying attribute keys.
+// SplitAttributes splits a flat attribute map into the attributes IsIdentifyingAttribute
+// accepts and all other attributes.
 func SplitAttributes(attrs map[string]string) (identifying, descriptive map[string]string) {
 	identifying = make(map[string]string)
 	descriptive = make(map[string]string, len(attrs))
