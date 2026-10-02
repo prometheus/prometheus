@@ -340,11 +340,19 @@ func (m *Manager) deleteRefreshMetrics(prov *Provider) {
 		return
 	}
 	for _, p := range m.providers {
-		if c, ok := p.config.(Config); ok && c.Name() == cfg.Name() && p.setName == prov.setName {
+		if c, ok := p.config.(Config); ok && refreshMechanism(c) == refreshMechanism(cfg) && p.setName == prov.setName {
 			return
 		}
 	}
-	m.sdMetrics.RefreshManager.DeleteLabelValues(cfg.Name(), prov.setName)
+	m.sdMetrics.RefreshManager.DeleteLabelValues(refreshMechanism(cfg), prov.setName)
+}
+
+// refreshMechanism returns the mechanism label of a config's refresh metrics, which defaults to its name.
+func refreshMechanism(cfg Config) string {
+	if c, ok := cfg.(interface{ RefreshMechanism() string }); ok {
+		return c.RefreshMechanism()
+	}
+	return cfg.Name()
 }
 
 // StartCustomProvider is used for sdtool. Only use this if you know what you're doing.
