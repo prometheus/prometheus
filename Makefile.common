@@ -234,7 +234,7 @@ common-unused:
 .PHONY: common-build
 common-build: promu
 	@echo ">> building binaries"
-	$(PROMU) build --prefix $(PREFIX) $(PROMU_BINARIES)
+	GOEXPERIMENT=mapsplitgroup $(PROMU) build --prefix $(PREFIX) $(PROMU_BINARIES)
 
 .PHONY: common-tarball
 common-tarball: promu
