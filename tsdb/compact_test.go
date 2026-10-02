@@ -2592,3 +2592,73 @@ func TestDelayedCompactionDoesNotBlockUnrelatedOps(t *testing.T) {
 		})
 	}
 }
+
+func TestOOOCompactionAddsDeadSymbols(t *testing.T) {
+	opts := DefaultOptions()
+	opts.OutOfOrderCapMax = 30
+	opts.OutOfOrderTimeWindow = 300 * time.Minute.Milliseconds()
+
+	db := newTestDB(t, withOpts(opts))
+	db.DisableCompactions()
+
+	ctx := context.Background()
+	app := db.Appender(ctx)
+
+	inOrderOnly := []labels.Labels{
+		labels.FromStrings("__name__", "in_order_metric", "unique_id", "aaa"),
+		labels.FromStrings("__name__", "in_order_metric", "unique_id", "bbb"),
+		labels.FromStrings("__name__", "in_order_metric", "unique_id", "ccc"),
+	}
+
+	oooSeries := labels.FromStrings("__name__", "ooo_metric", "instance", "localhost")
+
+	tInOrder := int64(250 * 60 * 1000)
+	for _, l := range inOrderOnly {
+		_, err := app.Append(0, l, tInOrder, 1)
+		require.NoError(t, err)
+	}
+
+	tOOO := int64(100 * 60 * 1000)
+	_, err := app.Append(0, oooSeries, tOOO, 1)
+	require.NoError(t, err)
+
+	require.NoError(t, app.Commit())
+
+	require.NoError(t, db.CompactOOOHead(ctx))
+
+	// Find the OOO block.
+	var oooBlock *Block
+	for _, b := range db.Blocks() {
+		meta := b.Meta()
+		if meta.Compaction.FromOutOfOrder() {
+			oooBlock = b
+			break
+		}
+	}
+	require.NotNil(t, oooBlock, "OOO block not found")
+
+	idxr, err := oooBlock.Index()
+	require.NoError(t, err)
+	defer idxr.Close()
+
+	symsIter := idxr.Symbols()
+	var blockSymbols []string
+	for symsIter.Next() {
+		blockSymbols = append(blockSymbols, symsIter.At())
+	}
+	require.NoError(t, symsIter.Err())
+
+	for _, dead := range []string{
+		"in_order_metric",
+		"unique_id",
+		"aaa",
+		"bbb",
+		"ccc",
+	} {
+		require.NotContains(t, blockSymbols, dead)
+	}
+
+	p, err := idxr.Postings(ctx, "__name__", "in_order_metric")
+	require.NoError(t, err)
+	require.False(t, p.Next())
+}
