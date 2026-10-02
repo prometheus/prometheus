@@ -137,15 +137,15 @@ func (node *BinaryExpr) returnBool() string {
 }
 
 func (node *BinaryExpr) String() string {
-	matching := node.getMatchingStr()
+	matching := node.GetMatchingStr()
 	return node.LHS.String() + " " + node.Op.String() + node.returnBool() + matching + " " + node.RHS.String()
 }
 
 func (node *BinaryExpr) ShortString() string {
-	return node.Op.String() + node.returnBool() + node.getMatchingStr()
+	return node.Op.String() + node.returnBool() + node.GetMatchingStr()
 }
 
-func (node *BinaryExpr) getMatchingStr() string {
+func (node *BinaryExpr) GetMatchingStr() string {
 	matching := ""
 	var b bytes.Buffer
 	vm := node.VectorMatching
