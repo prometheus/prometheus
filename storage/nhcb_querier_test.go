@@ -364,29 +364,48 @@ func TestNHCBAsClassicQuerier_Select(t *testing.T) {
 			q := NewNHCBAsClassicQuerier(mock)
 
 			ss := q.Select(context.Background(), false, nil, tc.queryMatchers...)
-			var count int
-			gotSamples := make(map[string][]fSample)
-			var it chunkenc.Iterator
+			var collected []Series
 			for ss.Next() {
-				count++
 				s := ss.At()
 				if tc.expectedSuffix != "" {
 					require.Contains(t, s.Labels().Get(model.MetricNameLabel), tc.expectedSuffix)
 				}
-				if tc.expectedSamples != nil {
+				collected = append(collected, s)
+			}
+			require.NoError(t, ss.Err())
+			require.Len(t, collected, tc.expectedCount)
+
+			if tc.expectedSamples != nil {
+				// Iterate collected series after draining the SeriesSet to verify
+				// that each series's sample slab remains valid across Next() calls
+				// and that fSampleSeries.Iterator reuses an existing fSampleIterator.
+				gotSamples := make(map[string][]fSample, len(collected))
+				var it chunkenc.Iterator
+				for _, s := range collected {
 					it = s.Iterator(it)
 					var samples []fSample
 					for it.Next() == chunkenc.ValFloat {
 						ts, v := it.At()
+						require.Equal(t, ts, it.AtT())
+						require.Equal(t, int64(0), it.AtST())
 						samples = append(samples, fSample{t: ts, f: v})
 					}
 					require.NoError(t, it.Err())
 					gotSamples[s.Labels().String()] = samples
+
+					// Also verify Seek on the same series using iterator reuse.
+					if len(samples) > 0 {
+						it = s.Iterator(it)
+						mid := samples[len(samples)/2]
+						require.Equal(t, chunkenc.ValFloat, it.Seek(mid.t))
+						ts, v := it.At()
+						require.Equal(t, mid.t, ts)
+						require.Equal(t, mid.f, v)
+						require.Equal(t, chunkenc.ValNone, it.Seek(samples[len(samples)-1].t+100))
+						require.Panics(t, func() { it.AtHistogram(nil) })
+						require.Panics(t, func() { it.AtFloatHistogram(nil) })
+					}
 				}
-			}
-			require.NoError(t, ss.Err())
-			require.Equal(t, tc.expectedCount, count)
-			if tc.expectedSamples != nil {
 				require.Equal(t, tc.expectedSamples, gotSamples)
 			}
 		})
