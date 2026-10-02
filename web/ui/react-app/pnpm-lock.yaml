@@ -63,8 +63,8 @@ importers:
         specifier: link:../module/codemirror-promql
         version: link:../module/codemirror-promql
       bootstrap:
-        specifier: ^4.6.2
-        version: 4.6.2(jquery@3.7.1)(popper.js@1.16.1)
+        specifier: ^5.0.0
+        version: 5.3.8(@popperjs/core@2.11.8)
       css.escape:
         specifier: ^1.5.1
         version: 1.5.1
@@ -118,7 +118,7 @@ importers:
         version: 1.104.1
       tempusdominus-bootstrap-4:
         specifier: ^5.39.2
-        version: 5.39.2(bootstrap@4.6.2(jquery@3.7.1)(popper.js@1.16.1))(jquery@3.7.1)(moment-timezone@0.6.4)(moment@2.31.0)(popper.js@1.16.1)(tempusdominus-core@5.19.3(jquery@3.7.1)(moment-timezone@0.6.4)(moment@2.31.0))
+        version: 5.39.2(bootstrap@5.3.8(@popperjs/core@2.11.8))(jquery@3.7.1)(moment-timezone@0.6.4)(moment@2.31.0)(popper.js@1.16.1)(tempusdominus-core@5.19.3(jquery@3.7.1)(moment-timezone@0.6.4)(moment@2.31.0))
       tempusdominus-core:
         specifier: ^5.19.3
         version: 5.19.3(jquery@3.7.1)(moment-timezone@0.6.4)(moment@2.31.0)
@@ -1446,6 +1446,9 @@ packages:
       webpack-plugin-serve:
         optional: true
 
+  '@popperjs/core@2.11.8':
+    resolution: {integrity: sha512-P1st0aksCrn9sGZhp8GMYwBnQsbvAWsZAX44oXNNvLHGqAOcoVxmjZiohstwQ7SqKnbR47akdNi+uleWD8+g6A==}
+
   '@rollup/plugin-babel@5.3.1':
     resolution: {integrity: sha512-WFfdLWU/xVWKeRQnKmIAQULUI7Il0gZnBIH/ZFO069wYIfPu+8zrfp/KMW0atmELoRDq8FbiP3VCss9MhCut7Q==}
     engines: {node: '>= 10.0.0'}
@@ -2241,6 +2244,11 @@ packages:
     peerDependencies:
       jquery: 1.9.1 - 3
       popper.js: ^1.16.1
+
+  bootstrap@5.3.8:
+    resolution: {integrity: sha512-HP1SZDqaLDPwsNiqRqi5NcP0SSXciX2s9E+RyqJIIqGo+vJeN5AJVM98CXmW/Wux0nQ5L7jeWUdplCEf0Ee+tg==}
+    peerDependencies:
+      '@popperjs/core': ^2.11.8
 
   brace-expansion@1.1.14:
     resolution: {integrity: sha512-MWPGfDxnyzKU7rNOW9SP/c50vi3xrmrua/+6hfPbCS2ABNWfx24vPidzvC7krjU/RTo235sV776ymlsMtGKj8g==}
@@ -7876,6 +7884,8 @@ snapshots:
       type-fest: 4.41.0
       webpack-dev-server: 4.15.2(debug@4.4.3(supports-color@8.1.1))(supports-color@8.1.1)(webpack@5.107.1(clean-css@5.3.3)(cssnano@5.1.15(postcss@8.5.15))(csso@4.2.0)(html-minifier-terser@6.1.0)(postcss@8.5.15)(uglify-js@3.19.3))
 
+  '@popperjs/core@2.11.8': {}
+
   '@rollup/plugin-babel@5.3.1(@babel/core@7.29.7(supports-color@8.1.1))(@types/babel__core@7.20.5)(rollup@2.80.0)(supports-color@8.1.1)':
     dependencies:
       '@babel/core': 7.29.7(supports-color@8.1.1)
@@ -8892,6 +8902,10 @@ snapshots:
     dependencies:
       jquery: 3.7.1
       popper.js: 1.16.1
+
+  bootstrap@5.3.8(@popperjs/core@2.11.8):
+    dependencies:
+      '@popperjs/core': 2.11.8
 
   brace-expansion@1.1.14:
     dependencies:
@@ -13160,9 +13174,9 @@ snapshots:
 
   temp-dir@2.0.0: {}
 
-  tempusdominus-bootstrap-4@5.39.2(bootstrap@4.6.2(jquery@3.7.1)(popper.js@1.16.1))(jquery@3.7.1)(moment-timezone@0.6.4)(moment@2.31.0)(popper.js@1.16.1)(tempusdominus-core@5.19.3(jquery@3.7.1)(moment-timezone@0.6.4)(moment@2.31.0)):
+  tempusdominus-bootstrap-4@5.39.2(bootstrap@5.3.8(@popperjs/core@2.11.8))(jquery@3.7.1)(moment-timezone@0.6.4)(moment@2.31.0)(popper.js@1.16.1)(tempusdominus-core@5.19.3(jquery@3.7.1)(moment-timezone@0.6.4)(moment@2.31.0)):
     dependencies:
-      bootstrap: 4.6.2(jquery@3.7.1)(popper.js@1.16.1)
+      bootstrap: 5.3.8(@popperjs/core@2.11.8)
       jquery: 3.7.1
       moment: 2.31.0
       moment-timezone: 0.6.4
