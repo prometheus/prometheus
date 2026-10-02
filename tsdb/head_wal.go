@@ -551,6 +551,21 @@ func (h *Head) resetSeriesWithMMappedChunks(mSeries *memSeries, mmc, oooMmc []*m
 		}
 	}
 
+	h.mergeSeriesMMappedChunks(mSeries, mmc, oooMmc, lastMmapRef)
+
+	// Any samples replayed till now would already be compacted. Resetting the head chunk.
+	mSeries.nextAt = 0
+	if mSeries.headChunkCount.Load() >= 2 {
+		h.series.decMmapReady(mSeries.ref)
+	}
+	mSeries.setHeadChunks(nil, 0)
+	mSeries.app = nil
+	return overlapped
+}
+
+// mergeSeriesMMappedChunks attaches replay inventories without resetting in-memory chunks.
+func (h *Head) mergeSeriesMMappedChunks(mSeries *memSeries, mmc, oooMmc []*mmappedChunk, lastMmapRef chunks.ChunkDiskMapperRef) {
+
 	// Preserve chunks that were already on disk at startup, including those
 	// attached through another WAL reference. Chunks written during this replay
 	// belong to the obsolete generation and must still be discarded.
@@ -598,14 +613,6 @@ func (h *Head) resetSeriesWithMMappedChunks(mSeries *memSeries, mmc, oooMmc []*m
 		h.updateMinOOOMaxOOOTime(mint, maxt)
 	}
 
-	// Any samples replayed till now would already be compacted. Resetting the head chunk.
-	mSeries.nextAt = 0
-	if mSeries.headChunkCount.Load() >= 2 {
-		h.series.decMmapReady(mSeries.ref)
-	}
-	mSeries.setHeadChunks(nil, 0)
-	mSeries.app = nil
-	return overlapped
 }
 
 // mergeReplayMmappedChunks merges persisted chunks without modifying the replay
