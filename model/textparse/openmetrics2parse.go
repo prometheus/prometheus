@@ -83,10 +83,11 @@ func (l *openMetrics2Lexer) Error(es string) {
 // pending queue that is built when a composite value (summary or classic
 // histogram) is parsed.
 type pendingEntry struct {
-	series []byte
-	lset   labels.Labels
-	val    float64
-	ts     *int64
+	series    []byte
+	lset      labels.Labels
+	val       float64
+	ts        *int64
+	exemplars []om2Exemplar
 }
 
 // om2Exemplar holds a fully parsed exemplar.
@@ -286,7 +287,18 @@ func (p *openMetrics2Parser) Labels(l *labels.Labels) {
 
 // Exemplar writes the next exemplar of the current sample into e and returns
 // true.  Returns false when all exemplars have been consumed.
+// Classic histogram composite exemplars are stored on the matching pending
+// bucket series rather than on p.exemplars.
 func (p *openMetrics2Parser) Exemplar(e *exemplar.Exemplar) bool {
+	if p.pendingIdx > 0 {
+		exs := p.pending[p.pendingIdx-1].exemplars
+		if p.exemplarIdx >= len(exs) {
+			return false
+		}
+		*e = exs[p.exemplarIdx].e
+		p.exemplarIdx++
+		return true
+	}
 	if p.exemplarIdx >= len(p.exemplars) {
 		return false
 	}
@@ -320,9 +332,11 @@ func (p *openMetrics2Parser) parseError(exp string, got token) error {
 // Next advances the parser to the next entry.
 // It returns (EntryInvalid, io.EOF) when there are no more entries.
 func (p *openMetrics2Parser) Next() (Entry, error) {
-	// Drain pending composite-value entries.
+	// Drain pending composite-value entries. Reset the exemplar cursor so
+	// each exploded series yields only the exemplars attached to it.
 	if p.pendingIdx < len(p.pending) {
 		p.pendingIdx++
+		p.exemplarIdx = 0
 		return EntrySeries, nil
 	}
 	p.pending = p.pending[:0]
@@ -943,6 +957,10 @@ func (p *openMetrics2Parser) parseHistogramComposite() (Entry, error) {
 	if err != nil {
 		return EntryInvalid, fmt.Errorf("error parsing classic histogram composite: %w", err)
 	}
+	// Line exemplars belong on the matching classic bucket, not on _count.
+	// A native histogram that also keeps classic series still owns the line
+	// exemplars; that path does not reach here.
+	p.attachClassicHistogramExemplars(pending)
 	return p.servePending(pending)
 }
 
@@ -1364,6 +1382,52 @@ func (p *openMetrics2Parser) buildClassicHistogramPending(
 	}
 
 	return pending, nil
+}
+
+// attachClassicHistogramExemplars moves line exemplars onto the classic
+// _bucket series whose le is the smallest bound greater than or equal to the
+// exemplar value. +Inf is the fallback when no finite bucket matches. Count
+// and sum series are left without exemplars. Exemplars are not redistributed
+// when the composite has no classic bucket list.
+func (p *openMetrics2Parser) attachClassicHistogramExemplars(pending []pendingEntry) {
+	if len(p.exemplars) == 0 || len(pending) == 0 {
+		return
+	}
+	// Count and sum are always the first two entries. Later entries are
+	// buckets in increasing le order, ending with +Inf when present.
+	bucketStart := 2
+	if bucketStart >= len(pending) {
+		return
+	}
+	bounds := make([]float64, len(pending)-bucketStart)
+	for i := bucketStart; i < len(pending); i++ {
+		le := pending[i].lset.Get(model.BucketLabel)
+		bound, err := strconv.ParseFloat(le, 64)
+		if err != nil {
+			// A non-numeric le cannot be matched; +Inf still catches it below.
+			bound = math.NaN()
+		}
+		bounds[i-bucketStart] = bound
+	}
+	for _, ex := range p.exemplars {
+		idx := len(pending) - 1
+		if !math.IsNaN(ex.e.Value) {
+			for i, bound := range bounds {
+				if math.IsNaN(bound) {
+					continue
+				}
+				if ex.e.Value <= bound {
+					idx = bucketStart + i
+					break
+				}
+			}
+		}
+		pending[idx].exemplars = append(pending[idx].exemplars, ex)
+	}
+	// Exemplars now live on pending bucket series. Clearing the shared
+	// slice keeps them off _count when the first pending entry is served.
+	p.exemplars = p.exemplars[:0]
+	p.exemplarIdx = 0
 }
 
 func (p *openMetrics2Parser) buildSummaryPending(
