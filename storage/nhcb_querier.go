@@ -101,7 +101,7 @@ func (q *NHCBAsClassicQuerier) Select(ctx context.Context, sortSeries bool, hint
 	}
 
 	var (
-		leMatcher         *labels.Matcher
+		leMatchers        []*labels.Matcher
 		matchersWithoutLe = baseMatchers
 	)
 	if suffix == histogram.ClassicSuffixBucket {
@@ -110,7 +110,7 @@ func (q *NHCBAsClassicQuerier) Select(ctx context.Context, sortSeries bool, hint
 		matchersWithoutLe = baseMatchers[:0]
 		for _, matcher := range baseMatchers {
 			if matcher.Name == labels.BucketLabel {
-				leMatcher = matcher
+				leMatchers = append(leMatchers, matcher)
 			} else {
 				matchersWithoutLe = append(matchersWithoutLe, matcher)
 			}
@@ -128,7 +128,7 @@ func (q *NHCBAsClassicQuerier) Select(ctx context.Context, sortSeries bool, hint
 			classicSet,
 			&nhcbToClassicSeriesSet{
 				nhcbSet:     nhcbSet,
-				leMatcher:   leMatcher,
+				leMatchers:  leMatchers,
 				suffix:      suffix,
 				lsetBuilder: labels.NewBuilder(labels.EmptyLabels()),
 			},
@@ -322,15 +322,25 @@ func (b *classicSeriesBuilder) growSeries(l labels.Labels) {
 	})
 }
 
-func (b *classicSeriesBuilder) buildSeries(dst []Series, leMatcher *labels.Matcher) []Series {
+func matchesLe(lset labels.Labels, leMatchers []*labels.Matcher) bool {
+	if len(leMatchers) == 0 {
+		return true
+	}
+	le := lset.Get(labels.BucketLabel)
+	for _, m := range leMatchers {
+		if !m.Matches(le) {
+			return false
+		}
+	}
+	return true
+}
+
+func (b *classicSeriesBuilder) buildSeries(dst []Series, leMatchers []*labels.Matcher) []Series {
 	matchCount := 0
 	totalSamples := 0
 	for i := range b.series {
 		s := &b.series[i]
-		if len(s.samples) == 0 {
-			continue
-		}
-		if leMatcher != nil && !leMatcher.Matches(s.labels.Get(labels.BucketLabel)) {
+		if len(s.samples) == 0 || !matchesLe(s.labels, leMatchers) {
 			continue
 		}
 		matchCount++
@@ -349,10 +359,7 @@ func (b *classicSeriesBuilder) buildSeries(dst []Series, leMatcher *labels.Match
 
 	for i := range b.series {
 		s := &b.series[i]
-		if len(s.samples) == 0 {
-			continue
-		}
-		if leMatcher != nil && !leMatcher.Matches(s.labels.Get(labels.BucketLabel)) {
+		if len(s.samples) == 0 || !matchesLe(s.labels, leMatchers) {
 			continue
 		}
 		n := len(s.samples)
@@ -373,9 +380,9 @@ func (b *classicSeriesBuilder) buildSeries(dst []Series, leMatcher *labels.Match
 // nhcbToClassicSeriesSet streams NHCB series and converts each one to classic
 // histogram series on demand.
 type nhcbToClassicSeriesSet struct {
-	nhcbSet   SeriesSet
-	leMatcher *labels.Matcher
-	suffix    string
+	nhcbSet    SeriesSet
+	leMatchers []*labels.Matcher
+	suffix     string
 
 	series []Series
 	idx    int
@@ -475,7 +482,7 @@ func (s *nhcbToClassicSeriesSet) convertSeries(dst []Series, nhcbSeries Series) 
 		return nil
 	}
 
-	return s.builder.buildSeries(dst, s.leMatcher)
+	return s.builder.buildSeries(dst, s.leMatchers)
 }
 
 func (s *nhcbToClassicSeriesSet) At() Series {

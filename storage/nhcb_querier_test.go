@@ -246,6 +246,20 @@ func TestNHCBAsClassicQuerier_Select(t *testing.T) {
 			expectedSuffix: "_bucket",
 		},
 		{
+			name: "multiple le matchers all apply",
+			queryMatchers: []*labels.Matcher{
+				labels.MustNewMatcher(labels.MatchEqual, model.MetricNameLabel, "http_requests_bucket"),
+				labels.MustNewMatcher(labels.MatchNotEqual, labels.BucketLabel, "+Inf"),
+				labels.MustNewMatcher(labels.MatchNotEqual, labels.BucketLabel, "1.0"),
+			},
+			classicSeries: []Series{},
+			nhcbSeries: []Series{
+				NewListSeries(labels.FromStrings("__name__", "http_requests"), []chunks.Sample{hSample{t: 1, h: nhcb}}),
+			},
+			expectedCount:  2,
+			expectedSuffix: "_bucket",
+		},
+		{
 			name: "le matcher on count query excludes series without le label",
 			queryMatchers: []*labels.Matcher{
 				labels.MustNewMatcher(labels.MatchEqual, model.MetricNameLabel, "http_requests_count"),
