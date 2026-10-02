@@ -288,7 +288,6 @@ func TestFanoutErrors(t *testing.T) {
 			}
 		})
 		t.Run("chunks", func(t *testing.T) {
-			t.Skip("enable once TestStorage and TSDB implements ChunkQuerier")
 			querier, err := fanoutStorage.ChunkQuerier(0, 8000)
 			require.NoError(t, err)
 			defer querier.Close()
