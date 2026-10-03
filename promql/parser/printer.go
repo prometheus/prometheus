@@ -254,12 +254,12 @@ func (node *Call) ShortString() string {
 	return node.Func.Name
 }
 
-func (node *MatrixSelector) atOffset() (string, string) {
+func (node *MatrixSelector) atOffset(formatDuration func(*DurationExpr) string) (string, string) {
 	vecSelector := node.VectorSelector.(*VectorSelector)
 	offset := ""
 	switch {
 	case vecSelector.OriginalOffsetExpr != nil:
-		offset = fmt.Sprintf(" offset %s", vecSelector.OriginalOffsetExpr)
+		offset = " offset " + formatDuration(vecSelector.OriginalOffsetExpr)
 	case vecSelector.OriginalOffset > time.Duration(0):
 		offset = fmt.Sprintf(" offset %s", model.Duration(vecSelector.OriginalOffset))
 	case vecSelector.OriginalOffset < time.Duration(0):
@@ -278,7 +278,12 @@ func (node *MatrixSelector) atOffset() (string, string) {
 }
 
 func (node *MatrixSelector) String() string {
-	at, offset := node.atOffset()
+	return node.format((*DurationExpr).String)
+}
+
+// format renders the matrix selector, using formatDuration for duration expressions.
+func (node *MatrixSelector) format(formatDuration func(*DurationExpr) string) string {
+	at, offset := node.atOffset(formatDuration)
 	// Copy the Vector selector so we can modify it to not print @, offset, and other modifiers twice.
 	vecSelector := *node.VectorSelector.(*VectorSelector)
 	anchored, smoothed := vecSelector.Anchored, vecSelector.Smoothed
@@ -298,7 +303,7 @@ func (node *MatrixSelector) String() string {
 	}
 	rangeStr := model.Duration(node.Range).String()
 	if node.RangeExpr != nil {
-		rangeStr = node.RangeExpr.String()
+		rangeStr = formatDuration(node.RangeExpr)
 	}
 	str := fmt.Sprintf("%s[%s]%s%s%s", vecSelector.String(), rangeStr, extendedAttribute, at, offset)
 
@@ -306,7 +311,7 @@ func (node *MatrixSelector) String() string {
 }
 
 func (node *MatrixSelector) ShortString() string {
-	at, offset := node.atOffset()
+	at, offset := node.atOffset((*DurationExpr).String)
 	rangeStr := model.Duration(node.Range).String()
 	if node.RangeExpr != nil {
 		rangeStr = node.RangeExpr.String()
@@ -315,25 +320,25 @@ func (node *MatrixSelector) ShortString() string {
 }
 
 func (node *SubqueryExpr) String() string {
-	return fmt.Sprintf("%s%s", node.Expr.String(), node.getSubqueryTimeSuffix())
+	return fmt.Sprintf("%s%s", node.Expr.String(), node.getSubqueryTimeSuffix((*DurationExpr).String))
 }
 
 func (node *SubqueryExpr) ShortString() string {
-	return node.getSubqueryTimeSuffix()
+	return node.getSubqueryTimeSuffix((*DurationExpr).String)
 }
 
 // getSubqueryTimeSuffix returns the '[<range>:<step>] @ <timestamp> offset <offset>' suffix of the subquery.
-func (node *SubqueryExpr) getSubqueryTimeSuffix() string {
+func (node *SubqueryExpr) getSubqueryTimeSuffix(formatDuration func(*DurationExpr) string) string {
 	step := ""
 	if node.StepExpr != nil {
-		step = node.StepExpr.String()
+		step = formatDuration(node.StepExpr)
 	} else if node.Step != 0 {
 		step = model.Duration(node.Step).String()
 	}
 	offset := ""
 	switch {
 	case node.OriginalOffsetExpr != nil:
-		offset = fmt.Sprintf(" offset %s", node.OriginalOffsetExpr)
+		offset = " offset " + formatDuration(node.OriginalOffsetExpr)
 	case node.OriginalOffset > time.Duration(0):
 		offset = fmt.Sprintf(" offset %s", model.Duration(node.OriginalOffset))
 	case node.OriginalOffset < time.Duration(0):
@@ -350,7 +355,7 @@ func (node *SubqueryExpr) getSubqueryTimeSuffix() string {
 	}
 	rangeStr := model.Duration(node.Range).String()
 	if node.RangeExpr != nil {
-		rangeStr = node.RangeExpr.String()
+		rangeStr = formatDuration(node.RangeExpr)
 	}
 	return fmt.Sprintf("[%s:%s]%s%s", rangeStr, step, at, offset)
 }
@@ -382,6 +387,12 @@ func (node *UnaryExpr) ShortString() string {
 }
 
 func (node *VectorSelector) String() string {
+	return node.format(nil)
+}
+
+// format renders the vector selector, using formatDuration for duration expressions.
+// A nil formatter writes durations directly to the buffer.
+func (node *VectorSelector) format(formatDuration func(*DurationExpr) string) string {
 	var labelStrings []string
 	if len(node.LabelMatchers) > 1 {
 		labelStrings = make([]string, 0, len(node.LabelMatchers)-1)
@@ -419,7 +430,11 @@ func (node *VectorSelector) String() string {
 	switch {
 	case node.OriginalOffsetExpr != nil:
 		b.WriteString(" offset ")
-		node.OriginalOffsetExpr.writeTo(b)
+		if formatDuration == nil {
+			node.OriginalOffsetExpr.writeTo(b)
+		} else {
+			b.WriteString(formatDuration(node.OriginalOffsetExpr))
+		}
 	case node.OriginalOffset > time.Duration(0):
 		b.WriteString(" offset ")
 		b.WriteString(model.Duration(node.OriginalOffset).String())
