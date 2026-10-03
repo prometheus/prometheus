@@ -120,6 +120,7 @@ func benchmarkPostingsForMatchers(b *testing.B, ir IndexReader) {
 	i1Plus := labels.MustNewMatcher(labels.MatchRegexp, "i", "1.+")
 	iEmptyRe := labels.MustNewMatcher(labels.MatchRegexp, "i", "")
 	iNotEmpty := labels.MustNewMatcher(labels.MatchNotEqual, "i", "")
+	iNotEmptyRe := labels.MustNewMatcher(labels.MatchNotRegexp, "i", "")
 	iNot2 := labels.MustNewMatcher(labels.MatchNotEqual, "i", "2"+postingsBenchSuffix)
 	iNot2Star := labels.MustNewMatcher(labels.MatchNotRegexp, "i", "2.*")
 	iNotStar2Star := labels.MustNewMatcher(labels.MatchNotRegexp, "i", ".*2.*")
@@ -159,10 +160,12 @@ func benchmarkPostingsForMatchers(b *testing.B, ir IndexReader) {
 		{`i=~".+",j=~"X.+"`, []*labels.Matcher{iPlus, jXplus}},
 		{`i=~""`, []*labels.Matcher{iEmptyRe}},
 		{`i!=""`, []*labels.Matcher{iNotEmpty}},
+		{`i!~""`, []*labels.Matcher{iNotEmptyRe}},
 		{`n="1",i=~".*",j="foo"`, []*labels.Matcher{n1, iStar, jFoo}},
 		{`n="X",i=~".*",j="foo"`, []*labels.Matcher{nX, iStar, jFoo}},
 		{`n="1",i=~".*",i!="2",j="foo"`, []*labels.Matcher{n1, iStar, iNot2, jFoo}},
 		{`n="1",i!=""`, []*labels.Matcher{n1, iNotEmpty}},
+		{`n="1",i!~""`, []*labels.Matcher{n1, iNotEmptyRe}},
 		{`n="1",i!="",j="foo"`, []*labels.Matcher{n1, iNotEmpty, jFoo}},
 		{`n="1",i!="",j=~"X.+"`, []*labels.Matcher{n1, iNotEmpty, jXplus}},
 		{`n="1",i!="",j=~"XXX|YYY"`, []*labels.Matcher{n1, iNotEmpty, jXXXYYY}},
