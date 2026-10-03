@@ -74,10 +74,10 @@ yystart1:
 
 yystate2:
 	c = l.next()
-	switch c {
+	switch {
 	default:
 		goto yyabort
-	case ' ':
+	case c == ' ':
 		goto yystate3
 	}
 
@@ -101,43 +101,43 @@ yystate5:
 yystate6:
 	c = l.next()
 yystart6:
-	switch c {
+	switch {
 	default:
 		goto yyabort
-	case 'E':
+	case c == 'E':
 		goto yystate7
-	case 'H':
+	case c == 'H':
 		goto yystate11
-	case 'T':
+	case c == 'T':
 		goto yystate16
-	case 'U':
+	case c == 'U':
 		goto yystate21
 	}
 
 yystate7:
 	c = l.next()
-	switch c {
+	switch {
 	default:
 		goto yyabort
-	case 'O':
+	case c == 'O':
 		goto yystate8
 	}
 
 yystate8:
 	c = l.next()
-	switch c {
+	switch {
 	default:
 		goto yyabort
-	case 'F':
+	case c == 'F':
 		goto yystate9
 	}
 
 yystate9:
 	c = l.next()
-	switch c {
+	switch {
 	default:
 		goto yyrule5
-	case '\n':
+	case c == '\n':
 		goto yystate10
 	}
 
@@ -147,37 +147,37 @@ yystate10:
 
 yystate11:
 	c = l.next()
-	switch c {
+	switch {
 	default:
 		goto yyabort
-	case 'E':
+	case c == 'E':
 		goto yystate12
 	}
 
 yystate12:
 	c = l.next()
-	switch c {
+	switch {
 	default:
 		goto yyabort
-	case 'L':
+	case c == 'L':
 		goto yystate13
 	}
 
 yystate13:
 	c = l.next()
-	switch c {
+	switch {
 	default:
 		goto yyabort
-	case 'P':
+	case c == 'P':
 		goto yystate14
 	}
 
 yystate14:
 	c = l.next()
-	switch c {
+	switch {
 	default:
 		goto yyabort
-	case ' ':
+	case c == ' ':
 		goto yystate15
 	}
 
@@ -187,37 +187,37 @@ yystate15:
 
 yystate16:
 	c = l.next()
-	switch c {
+	switch {
 	default:
 		goto yyabort
-	case 'Y':
+	case c == 'Y':
 		goto yystate17
 	}
 
 yystate17:
 	c = l.next()
-	switch c {
+	switch {
 	default:
 		goto yyabort
-	case 'P':
+	case c == 'P':
 		goto yystate18
 	}
 
 yystate18:
 	c = l.next()
-	switch c {
+	switch {
 	default:
 		goto yyabort
-	case 'E':
+	case c == 'E':
 		goto yystate19
 	}
 
 yystate19:
 	c = l.next()
-	switch c {
+	switch {
 	default:
 		goto yyabort
-	case ' ':
+	case c == ' ':
 		goto yystate20
 	}
 
@@ -227,37 +227,37 @@ yystate20:
 
 yystate21:
 	c = l.next()
-	switch c {
+	switch {
 	default:
 		goto yyabort
-	case 'N':
+	case c == 'N':
 		goto yystate22
 	}
 
 yystate22:
 	c = l.next()
-	switch c {
+	switch {
 	default:
 		goto yyabort
-	case 'I':
+	case c == 'I':
 		goto yystate23
 	}
 
 yystate23:
 	c = l.next()
-	switch c {
+	switch {
 	default:
 		goto yyabort
-	case 'T':
+	case c == 'T':
 		goto yystate24
 	}
 
 yystate24:
 	c = l.next()
-	switch c {
+	switch {
 	default:
 		goto yyabort
-	case ' ':
+	case c == ' ':
 		goto yystate25
 	}
 
@@ -315,10 +315,10 @@ yystate30:
 yystate31:
 	c = l.next()
 yystart31:
-	switch c {
+	switch {
 	default:
 		goto yyabort
-	case ' ':
+	case c == ' ':
 		goto yystate32
 	}
 
@@ -405,10 +405,10 @@ yystate41:
 yystate42:
 	c = l.next()
 yystart42:
-	switch c {
+	switch {
 	default:
 		goto yyabort
-	case '"':
+	case c == '"':
 		goto yystate43
 	}
 
@@ -441,12 +441,12 @@ yystate45:
 yystate46:
 	c = l.next()
 yystart46:
-	switch c {
+	switch {
 	default:
 		goto yyabort
-	case ' ':
+	case c == ' ':
 		goto yystate47
-	case '{':
+	case c == '{':
 		goto yystate49
 	}
 
@@ -475,12 +475,12 @@ yystate49:
 yystate50:
 	c = l.next()
 yystart50:
-	switch c {
+	switch {
 	default:
 		goto yyabort
-	case ' ':
+	case c == ' ':
 		goto yystate52
-	case '\n':
+	case c == '\n':
 		goto yystate51
 	}
 
@@ -521,10 +521,10 @@ yystate54:
 
 yystate55:
 	c = l.next()
-	switch c {
+	switch {
 	default:
 		goto yyabort
-	case '{':
+	case c == '{':
 		goto yystate56
 	}
 
@@ -600,12 +600,12 @@ yystate64:
 yystate65:
 	c = l.next()
 yystart65:
-	switch c {
+	switch {
 	default:
 		goto yyabort
-	case ' ':
+	case c == ' ':
 		goto yystate66
-	case '"':
+	case c == '"':
 		goto yystate68
 	}
 
@@ -656,12 +656,12 @@ yystate70:
 yystate71:
 	c = l.next()
 yystart71:
-	switch c {
+	switch {
 	default:
 		goto yyabort
-	case ' ':
+	case c == ' ':
 		goto yystate73
-	case '\n':
+	case c == '\n':
 		goto yystate72
 	}
 
@@ -696,61 +696,61 @@ yyrule2: // HELP{S}
 	{
 		l.state = sMeta1
 		return tHelp
-
+		goto yystate0
 	}
 yyrule3: // TYPE{S}
 	{
 		l.state = sMeta1
 		return tType
-
+		goto yystate0
 	}
 yyrule4: // UNIT{S}
 	{
 		l.state = sMeta1
 		return tUnit
-
+		goto yystate0
 	}
 yyrule5: // "EOF"\n?
 	{
 		l.state = sInit
 		return tEOFWord
-
+		goto yystate0
 	}
 yyrule6: // \"(\\.|[^\\"])*\"
 	{
 		l.state = sMeta2
 		return tMName
-
+		goto yystate0
 	}
 yyrule7: // {M}({M}|{D})*
 	{
 		l.state = sMeta2
 		return tMName
-
+		goto yystate0
 	}
 yyrule8: // {S}{C}*\n
 	{
 		l.state = sInit
 		return tText
-
+		goto yystate0
 	}
 yyrule9: // {M}({M}|{D})*
 	{
 		l.state = sValue
 		return tMName
-
+		goto yystate0
 	}
 yyrule10: // \{
 	{
 		l.state = sLabels
 		return tBraceOpen
-
+		goto yystate0
 	}
 yyrule11: // \{
 	{
 		l.state = sLabels
 		return tBraceOpen
-
+		goto yystate0
 	}
 yyrule12: // {L}({L}|{D})*
 	{
@@ -760,19 +760,19 @@ yyrule13: // \"(\\.|[^\\"])*\"
 	{
 		l.state = sLabels
 		return tQString
-
+		goto yystate0
 	}
 yyrule14: // \}
 	{
 		l.state = sValue
 		return tBraceClose
-
+		goto yystate0
 	}
 yyrule15: // =
 	{
 		l.state = sLValue
 		return tEqual
-
+		goto yystate0
 	}
 yyrule16: // ,
 	{
@@ -782,13 +782,13 @@ yyrule17: // \"(\\.|[^\\"\n])*\"
 	{
 		l.state = sLabels
 		return tLValue
-
+		goto yystate0
 	}
 yyrule18: // {S}[^ \n]+
 	{
 		l.state = sTimestamp
 		return tValue
-
+		goto yystate0
 	}
 yyrule19: // {S}[^ \n]+
 	{
@@ -798,13 +798,13 @@ yyrule20: // \n
 	{
 		l.state = sInit
 		return tLinebreak
-
+		goto yystate0
 	}
 yyrule21: // {S}#{S}\{
 	{
 		l.state = sExemplar
 		return tComment
-
+		goto yystate0
 	}
 yyrule22: // {L}({L}|{D})*
 	{
@@ -814,25 +814,25 @@ yyrule23: // \"(\\.|[^\\"\n])*\"
 	{
 		l.state = sExemplar
 		return tQString
-
+		goto yystate0
 	}
 yyrule24: // \}
 	{
 		l.state = sEValue
 		return tBraceClose
-
+		goto yystate0
 	}
 yyrule25: // =
 	{
 		l.state = sEValue
 		return tEqual
-
+		goto yystate0
 	}
 yyrule26: // \"(\\.|[^\\"\n])*\"
 	{
 		l.state = sExemplar
 		return tLValue
-
+		goto yystate0
 	}
 yyrule27: // ,
 	{
@@ -842,7 +842,7 @@ yyrule28: // {S}[^ \n]+
 	{
 		l.state = sETimestamp
 		return tValue
-
+		goto yystate0
 	}
 yyrule29: // {S}[^ \n]+
 	{
@@ -852,7 +852,7 @@ yyrule30: // \n
 	if true { // avoid go vet determining the below panic will not be reached
 		l.state = sInit
 		return tLinebreak
-
+		goto yystate0
 	}
 	panic("unreachable")
 
