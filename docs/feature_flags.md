@@ -397,7 +397,7 @@ Individual selectors can control or debug conversion using the reserved `__nhcb_
 
 * `__nhcb_as_classic__="true"` (or `!="false"`): explicitly enables NHCB-to-classic conversion for the selector.
 * `__nhcb_as_classic__="false"` (or `!="true"`, `=""`): disables NHCB-to-classic conversion for the selector and returns only stored classic series.
-* `__nhcb_as_classic__="debug"` (or `=~"true|debug"`): enables conversion and attaches `__from_nhcb__="true"` to series converted from NHCB and `__from_nhcb__="false"` to all other returned series (e.g. stored classic series or series of selectors that are not converted). Stored and converted series are neither merged into the same labelset nor shadowed by each other, so both sources are returned in full side by side.
+* `__nhcb_as_classic__="debug"` (or `=~"true|debug"`): enables conversion and attaches `__from_nhcb__="true"` to series converted from NHCB and `__from_nhcb__="false"` to all other returned series (e.g. stored classic series or series of selectors that are not converted). Stored and converted series are neither merged into the same labelset nor shadowed by each other, so both sources are returned in full side by side. In debug mode, `__from_nhcb__` matchers (e.g. `__from_nhcb__="true"`) filter the returned series.
 
 Other values in `=` or `!=` matchers on `__nhcb_as_classic__` return an error.
 

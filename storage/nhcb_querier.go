@@ -50,15 +50,18 @@ const (
 	// FromNHCBLabel is the label added to returned series when a selector uses
 	// debug mode (__nhcb_as_classic__="debug" or =~"true|debug"): "true" for
 	// classic series converted from NHCB, and "false" for stored classic series.
-	// Unlike NHCBAsClassicLabel, it is a regular label on returned series;
-	// matchers on FromNHCBLabel are passed through to the underlying storage.
+	// Unlike NHCBAsClassicLabel, it is a regular label on returned series. In
+	// debug mode, matchers on FromNHCBLabel are applied to the returned series
+	// instead of the underlying storage, which never has this label. Otherwise,
+	// they are passed through to the underlying storage.
 	FromNHCBLabel = "__from_nhcb__"
 )
 
 // errOnlyControlMatchers is returned when a selector's only non-empty matchers
-// are on NHCBAsClassicLabel, because stripping them would leave an empty
-// selector that selects all series from the underlying storage.
-var errOnlyControlMatchers = fmt.Errorf("vector selector must contain at least one non-empty matcher besides %s", NHCBAsClassicLabel)
+// are on NHCBAsClassicLabel (or FromNHCBLabel in debug mode), because stripping
+// them would leave an empty selector that selects all series from the
+// underlying storage.
+var errOnlyControlMatchers = fmt.Errorf("vector selector must contain at least one non-empty matcher besides %s and %s", NHCBAsClassicLabel, FromNHCBLabel)
 
 // errInvalidControlValue is returned when an equality or inequality matcher on
 // NHCBAsClassicLabel uses an unknown value, because silently returning no data
@@ -115,7 +118,31 @@ func (q *NHCBAsClassicQuerier) Select(ctx context.Context, sortSeries bool, hint
 		// Contradictory control matchers (e.g. ="true" and ="false") select nothing.
 		return NoopSeriesSet()
 	}
+	if debug && slices.ContainsFunc(strippedMatchers, isFromNHCBMatcher) {
+		// NOTE: FromNHCBLabel only exists on returned series in debug mode, so
+		// its matchers are applied to the output instead of being pushed down.
+		var fromMatchers, rest []*labels.Matcher
+		for _, m := range strippedMatchers {
+			if isFromNHCBMatcher(m) {
+				fromMatchers = append(fromMatchers, m)
+			} else {
+				rest = append(rest, m)
+			}
+		}
+		if !slices.ContainsFunc(rest, func(m *labels.Matcher) bool { return !m.Matches("") }) {
+			return ErrSeriesSet(errOnlyControlMatchers)
+		}
+		return &fromNHCBFilterSeriesSet{
+			SeriesSet: q.selectConverted(ctx, sortSeries, hints, convert, debug, rest),
+			matchers:  fromMatchers,
+		}
+	}
+	return q.selectConverted(ctx, sortSeries, hints, convert, debug, strippedMatchers)
+}
 
+// selectConverted selects series for strippedMatchers (without control
+// matchers), converting NHCB to classic series if convert is true.
+func (q *NHCBAsClassicQuerier) selectConverted(ctx context.Context, sortSeries bool, hints *SelectHints, convert, debug bool, strippedMatchers []*labels.Matcher) SeriesSet {
 	nameMatcher, suffix, baseMatchers, leMatchers := extractHistogramSuffix(strippedMatchers)
 	if suffix == "" || !convert {
 		// Not a classic histogram query, or conversion explicitly disabled.
@@ -297,6 +324,10 @@ func isNHCBControlMatcher(m *labels.Matcher) bool {
 	return m.Name == NHCBAsClassicLabel
 }
 
+func isFromNHCBMatcher(m *labels.Matcher) bool {
+	return m.Name == FromNHCBLabel
+}
+
 func matchesAllControl(val string, ms []*labels.Matcher) bool {
 	for _, m := range ms {
 		if !m.Matches(val) {
@@ -432,6 +463,25 @@ func (s *fromNHCBSeriesSet) Next() bool {
 }
 
 func (s *fromNHCBSeriesSet) At() Series { return s.cur }
+
+// fromNHCBFilterSeriesSet filters series by FromNHCBLabel matchers.
+type fromNHCBFilterSeriesSet struct {
+	SeriesSet
+	matchers []*labels.Matcher
+}
+
+func (s *fromNHCBFilterSeriesSet) Next() bool {
+	for s.SeriesSet.Next() {
+		ser := s.SeriesSet.At()
+		if ser == nil {
+			continue
+		}
+		if matchesAllControl(ser.Labels().Get(FromNHCBLabel), s.matchers) {
+			return true
+		}
+	}
+	return false
+}
 
 type warningsSeriesSet struct {
 	SeriesSet
