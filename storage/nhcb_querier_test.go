@@ -404,6 +404,33 @@ func TestNHCBAsClassicQuerier_Select(t *testing.T) {
 				`{__name__="http_requests_bucket", job="web", le="+Inf"}`: {{t: 1, f: 30}, {t: 2, f: 36}},
 			},
 		},
+		{
+			name: "summary _count query ignores float quantile series on base name and passes through classic _count",
+			queryMatchers: []*labels.Matcher{
+				labels.MustNewMatcher(labels.MatchEqual, model.MetricNameLabel, "rpc_duration_seconds_count"),
+			},
+			classicSeries: []Series{
+				NewListSeries(labels.FromStrings("__name__", "rpc_duration_seconds_count", "job", "api"), []chunks.Sample{
+					fSample{t: 1, f: 42},
+					fSample{t: 2, f: 84},
+				}),
+			},
+			nhcbSeries: []Series{
+				NewListSeries(labels.FromStrings("__name__", "rpc_duration_seconds", "job", "api", "quantile", "0.5"), []chunks.Sample{
+					fSample{t: 1, f: 0.12},
+					fSample{t: 2, f: 0.15},
+				}),
+				NewListSeries(labels.FromStrings("__name__", "rpc_duration_seconds", "job", "api", "quantile", "0.99"), []chunks.Sample{
+					fSample{t: 1, f: 0.45},
+					fSample{t: 2, f: 0.50},
+				}),
+			},
+			expectedCount:  1,
+			expectedSuffix: "_count",
+			expectedSamples: map[string][]fSample{
+				`{__name__="rpc_duration_seconds_count", job="api"}`: {{t: 1, f: 42}, {t: 2, f: 84}},
+			},
+		},
 	}
 
 	for _, tc := range tests {
@@ -459,8 +486,10 @@ func TestNHCBAsClassicQuerier_Select(t *testing.T) {
 						require.Equal(t, mid.t, ts)
 						require.Equal(t, math.Float64bits(mid.f), math.Float64bits(v))
 						require.Equal(t, chunkenc.ValNone, it.Seek(samples[len(samples)-1].t+100))
-						require.Panics(t, func() { it.AtHistogram(nil) })
-						require.Panics(t, func() { it.AtFloatHistogram(nil) })
+						if _, isFSampleSeries := s.(*fSampleSeries); isFSampleSeries {
+							require.Panics(t, func() { it.AtHistogram(nil) })
+							require.Panics(t, func() { it.AtFloatHistogram(nil) })
+						}
 					}
 				}
 			}
@@ -879,11 +908,11 @@ func TestNHCBAsClassicQuerier_Collisions(t *testing.T) {
 		// 2. NHE series coexisting with stored classic series: stored classic is returned untouched.
 		qNHEWithClassic := NewNHCBAsClassicQuerier(&nhcbMockQuerier{
 			classicSeries: []Series{
-				NewListSeries(labels.FromStrings("__name__", "http_requests_bucket", "le", "1.0"), []chunks.Sample{
-					fSample{t: 1, f: 5},
-				}),
 				NewListSeries(labels.FromStrings("__name__", "http_requests_bucket", "le", "+Inf"), []chunks.Sample{
 					fSample{t: 1, f: 10},
+				}),
+				NewListSeries(labels.FromStrings("__name__", "http_requests_bucket", "le", "1.0"), []chunks.Sample{
+					fSample{t: 1, f: 5},
 				}),
 			},
 			nhcbSeries: []Series{
@@ -906,14 +935,14 @@ func TestNHCBAsClassicQuerier_Collisions(t *testing.T) {
 			},
 		}, gotWithClassic)
 
-		// 3. Same base series transitioning NHE (t=1) -> NHCB (t=2) -> NHE (t=3):
-		// t=1 is ignored, t=2 is converted to classic, and t=3 emits StaleNaN on the converted series.
+		// 3. Same base series transitioning NHCB (t=1) -> NHE (t=2) -> NHCB (t=3):
+		// t=1 is converted to classic, t=2 emits StaleNaN on the converted series, and t=3 resumes conversion.
 		qTransition := NewNHCBAsClassicQuerier(&nhcbMockQuerier{
 			nhcbSeries: []Series{
 				NewListSeries(labels.FromStrings("__name__", "http_requests"), []chunks.Sample{
-					hSample{t: 1, h: expNH},
-					hSample{t: 2, h: nhcb(50, []float64{1.0}, []int64{5, 5})},
-					hSample{t: 3, h: expNH},
+					hSample{t: 1, h: nhcb(50, []float64{1.0}, []int64{5, 5})},
+					hSample{t: 2, h: expNH},
+					hSample{t: 3, h: nhcb(75, []float64{1.0}, []int64{8, 7})},
 				}),
 			},
 		})
@@ -922,11 +951,11 @@ func TestNHCBAsClassicQuerier_Collisions(t *testing.T) {
 		assertSeriesSamplesEqual(t, []seriesSamples{
 			{
 				labels:  `{__name__="http_requests_bucket", le="+Inf"}`,
-				samples: []fSample{{t: 2, f: 10}, {t: 3, f: staleF}},
+				samples: []fSample{{t: 1, f: 10}, {t: 2, f: staleF}, {t: 3, f: 15}},
 			},
 			{
 				labels:  `{__name__="http_requests_bucket", le="1.0"}`,
-				samples: []fSample{{t: 2, f: 5}, {t: 3, f: staleF}},
+				samples: []fSample{{t: 1, f: 5}, {t: 2, f: staleF}, {t: 3, f: 8}},
 			},
 		}, gotTransition)
 	})
