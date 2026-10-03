@@ -756,8 +756,16 @@ func TestPartialTruncateWAL(t *testing.T) {
 }
 
 func TestWALReplay(t *testing.T) {
-	for _, unknownRecord := range []bool{false, true} {
-		t.Run(fmt.Sprintf("unknownRecord=%t", unknownRecord), func(t *testing.T) {
+	var enc record.Encoder
+	for _, tc := range []struct {
+		name   string
+		record []byte
+	}{
+		{name: "baseline"},
+		{name: "unknown", record: []byte{255, 1, 2, 3}},
+		{name: "min valid time", record: enc.MinValidTime(100, nil)},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
 			const (
 				numDatapoints = 1000
 				numHistograms = 100
@@ -766,9 +774,9 @@ func TestWALReplay(t *testing.T) {
 			)
 
 			s := createTestAgentDB(t, nil, DefaultOptions())
-			if unknownRecord {
-				// Valid records following an unknown type must still be replayed.
-				require.NoError(t, s.wal.Log([]byte{255, 1, 2, 3}))
+			if tc.record != nil {
+				// Valid records following an ignored type must still be replayed.
+				require.NoError(t, s.wal.Log(tc.record))
 			}
 			app := s.Appender(context.TODO())
 
