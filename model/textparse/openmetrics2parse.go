@@ -204,8 +204,10 @@ func (p *openMetrics2Parser) resetOnFamilyChange(name []byte) {
 	if !bytes.Equal(name, p.curFamilyName) {
 		p.mtype = model.MetricTypeUnknown
 		p.unit = ""
+		// Only update curFamilyName when the family changes to avoid a pointer
+		// write barrier on every sample within the same family.
+		p.curFamilyName = name
 	}
-	p.curFamilyName = name
 }
 
 // hasFamilyNameLabel reports whether the current sample's labelsinclude a label key matching
@@ -410,20 +412,22 @@ func (p *openMetrics2Parser) Next() (Entry, error) {
 		p.pendingIdx++
 		return EntrySeries, nil
 	}
-	p.pending = p.pending[:0]
-	p.pendingIdx = 0
-	p.seriesBuf = p.seriesBuf[:0]
+	if len(p.pending) > 0 {
+		p.pending = p.pending[:0]
+		p.pendingIdx = 0
+		p.seriesBuf = p.seriesBuf[:0]
+	}
 
 	var err error
 	p.start = p.l.i
 	p.offsets = p.offsets[:0]
-	p.exemplars = p.exemplars[:0]
-	p.eOffsets = p.eOffsets[:0]
-	p.exemplarIdx = 0
+	if len(p.exemplars) > 0 {
+		p.exemplars = p.exemplars[:0]
+		p.eOffsets = p.eOffsets[:0]
+		p.exemplarIdx = 0
+	}
 	p.hasTS = false
 	p.hasST = false
-	p.h = nil
-	p.fh = nil
 
 	switch t := p.nextToken(); t {
 	case tEOFWord:
@@ -442,12 +446,12 @@ func (p *openMetrics2Parser) Next() (Entry, error) {
 			if p.l.b[mStart] == '"' && p.l.b[mEnd-1] == '"' {
 				mStart++
 				mEnd--
-			}
-			if mStart == mEnd {
-				return EntryInvalid, errors.New("metric name must not be empty")
-			}
-			if !utf8.Valid(p.l.b[mStart:mEnd]) {
-				return EntryInvalid, fmt.Errorf("invalid UTF-8 metric name: %q", p.l.b[mStart:mEnd])
+				if mStart == mEnd {
+					return EntryInvalid, errors.New("metric name must not be empty")
+				}
+				if !utf8.Valid(p.l.b[mStart:mEnd]) {
+					return EntryInvalid, fmt.Errorf("invalid UTF-8 metric name: %q", p.l.b[mStart:mEnd])
+				}
 			}
 			p.offsets = append(p.offsets, mStart, mEnd)
 			p.resetOnFamilyChange(p.l.b[mStart:mEnd])
@@ -564,16 +568,6 @@ func (p *openMetrics2Parser) parseSeriesEndOfLine(t token) (Entry, error) {
 		return EntryInvalid, p.parseError("expected value after metric", t)
 	}
 
-	// Histogram, GaugeHistogram, and Summary Samples MUST use a composite
-	// value.
-	switch p.mtype {
-	case model.MetricTypeHistogram, model.MetricTypeGaugeHistogram, model.MetricTypeSummary:
-		return EntryInvalid, fmt.Errorf(
-			"composite value required for metric type %q while parsing: %q",
-			p.mtype, p.l.b[p.start:p.l.i],
-		)
-	}
-
 	// Plain float value; strip the leading space.
 	raw := p.l.buf()
 	if len(raw) > 1 && raw[0] == ' ' {
@@ -591,11 +585,19 @@ func (p *openMetrics2Parser) parseSeriesEndOfLine(t token) (Entry, error) {
 		p.val = math.Float64frombits(value.NormalNaN)
 	}
 
-	if p.mtype == model.MetricTypeInfo && p.val != 1 {
-		return EntryInvalid, fmt.Errorf("info sample value must be 1, got %v while parsing: %q", p.val, p.l.b[p.start:p.l.i])
-	}
-
-	if p.mtype == model.MetricTypeStateset {
+	switch p.mtype {
+	case model.MetricTypeHistogram, model.MetricTypeGaugeHistogram, model.MetricTypeSummary:
+		// Histogram, GaugeHistogram, and Summary Samples MUST use a composite
+		// value.
+		return EntryInvalid, fmt.Errorf(
+			"composite value required for metric type %q while parsing: %q",
+			p.mtype, p.l.b[p.start:p.l.i],
+		)
+	case model.MetricTypeInfo:
+		if p.val != 1 {
+			return EntryInvalid, fmt.Errorf("info sample value must be 1, got %v while parsing: %q", p.val, p.l.b[p.start:p.l.i])
+		}
+	case model.MetricTypeStateset:
 		if p.val != 0 && p.val != 1 {
 			return EntryInvalid, fmt.Errorf("stateset sample value must be 0 or 1, got %v while parsing: %q", p.val, p.l.b[p.start:p.l.i])
 		}
@@ -604,7 +606,12 @@ func (p *openMetrics2Parser) parseSeriesEndOfLine(t token) (Entry, error) {
 		}
 	}
 
-	if err := p.parseAfterValue(); err != nil {
+	// Fast path: plain sample lines end immediately with a linebreak.
+	t2 := p.nextToken()
+	if t2 == tLinebreak {
+		return EntrySeries, nil
+	}
+	if err := p.parseAfterValue(t2); err != nil {
 		return EntryInvalid, err
 	}
 	return EntrySeries, nil
@@ -614,11 +621,11 @@ func (p *openMetrics2Parser) parseSeriesEndOfLine(t token) (Entry, error) {
 //
 //	[tTimestamp] [tStartTimestamp] [*tComment exemplar] tLinebreak
 //
-// It returns after consuming tLinebreak (either directly or via exemplar
-// parsing).
-func (p *openMetrics2Parser) parseAfterValue() error {
+// starting from the already-read token t. It returns after consuming tLinebreak
+// (either directly or via exemplar parsing).
+func (p *openMetrics2Parser) parseAfterValue(t token) error {
 	for {
-		switch t := p.nextToken(); t {
+		switch t {
 		case tEOF:
 			return errors.New("data does not end with # EOF")
 		case tLinebreak:
@@ -666,6 +673,7 @@ func (p *openMetrics2Parser) parseAfterValue() error {
 		default:
 			return p.parseError("unexpected token after value", t)
 		}
+		t = p.nextToken()
 	}
 }
 
@@ -770,39 +778,41 @@ func (p *openMetrics2Parser) parseLVals(offsets []int, isExemplar bool) ([]int, 
 		}
 
 		t = p.nextToken()
-		if isQString && (t == tComma || t == tBraceClose) {
-			if isExemplar {
-				return nil, p.parseError("expected label name", t)
+		if isQString {
+			if t == tComma || t == tBraceClose {
+				if isExemplar {
+					return nil, p.parseError("expected label name", t)
+				}
+				if !isFirst {
+					return nil, errors.New("metric name must be the first item in the label set")
+				}
+				if offsets[0] != -1 || offsets[1] != -1 {
+					return nil, fmt.Errorf("metric name already set while parsing: %q", p.l.b[p.start:p.l.i])
+				}
+				offsets[0] = curTStart + 1
+				offsets[1] = curTI - 1
+				if offsets[0] == offsets[1] {
+					return nil, errors.New("metric name must not be empty")
+				}
+				if !utf8.Valid(p.l.b[offsets[0]:offsets[1]]) {
+					return nil, fmt.Errorf("invalid UTF-8 metric name: %q", p.l.b[offsets[0]:offsets[1]])
+				}
+				if t == tBraceClose {
+					return offsets, nil
+				}
+				t = p.nextToken()
+				continue
 			}
-			if !isFirst {
-				return nil, errors.New("metric name must be the first item in the label set")
-			}
-			if offsets[0] != -1 || offsets[1] != -1 {
-				return nil, fmt.Errorf("metric name already set while parsing: %q", p.l.b[p.start:p.l.i])
-			}
-			offsets[0] = curTStart + 1
-			offsets[1] = curTI - 1
-			if offsets[0] == offsets[1] {
-				return nil, errors.New("metric name must not be empty")
-			}
-			if !utf8.Valid(p.l.b[offsets[0]:offsets[1]]) {
-				return nil, fmt.Errorf("invalid UTF-8 metric name: %q", p.l.b[offsets[0]:offsets[1]])
-			}
-			if t == tBraceClose {
-				return offsets, nil
-			}
-			t = p.nextToken()
-			continue
-		}
-		if p.l.b[curTStart] == '"' {
+			// Quoted label name: strip surrounding quotes and validate non-empty UTF-8.
+			// Unquoted tLName tokens are already guaranteed by the lexer to be non-empty ASCII.
 			curTStart++
 			curTI--
-		}
-		if curTStart == curTI {
-			return nil, errors.New("label name must not be empty")
-		}
-		if !utf8.Valid(p.l.b[curTStart:curTI]) {
-			return nil, fmt.Errorf("invalid UTF-8 label name: %q", p.l.b[curTStart:curTI])
+			if curTStart == curTI {
+				return nil, errors.New("label name must not be empty")
+			}
+			if !utf8.Valid(p.l.b[curTStart:curTI]) {
+				return nil, fmt.Errorf("invalid UTF-8 label name: %q", p.l.b[curTStart:curTI])
+			}
 		}
 		offsets = append(offsets, curTStart, curTI)
 
@@ -988,8 +998,10 @@ func (p *openMetrics2Parser) parseHistogramComposite() (Entry, error) {
 	}
 	// Consume the rest of the line (timestamp, st@, exemplars) before building
 	// the pending entries, so the exemplar and ST fields are set correctly.
-	if err := p.parseAfterValue(); err != nil {
-		return EntryInvalid, err
+	if t2 := p.nextToken(); t2 != tLinebreak {
+		if err := p.parseAfterValue(t2); err != nil {
+			return EntryInvalid, err
+		}
 	}
 
 	// schema is mandatory for native histograms and absent from classic
@@ -1053,8 +1065,10 @@ func (p *openMetrics2Parser) parseSummaryComposite() (Entry, error) {
 	}
 	// Consume the rest of the line (timestamp, st@, exemplars) before building
 	// the pending entries, so the exemplar and ST fields are set correctly.
-	if err := p.parseAfterValue(); err != nil {
-		return EntryInvalid, err
+	if t2 := p.nextToken(); t2 != tLinebreak {
+		if err := p.parseAfterValue(t2); err != nil {
+			return EntryInvalid, err
+		}
 	}
 
 	pending, err := p.buildSummaryPending(cf)
