@@ -77,6 +77,7 @@ func init() {
 const (
 	successExitCode = 0
 	failureExitCode = 1
+	warningExitCode = 2
 	// Exit code 3 is used for "one or more lint issues detected".
 	lintErrExitCode = 3
 
@@ -241,6 +242,7 @@ func main() {
 	junitOutFile := testCmd.Flag("junit", "File path to store JUnit XML test results.").OpenFile(os.O_CREATE|os.O_WRONLY|os.O_TRUNC, 0o644)
 	testRulesCmd := testCmd.Command("rules", "Unit tests for rules.")
 	testRulesRun := testRulesCmd.Flag("run", "If set, will only run test groups whose names match the regular expression. Can be specified multiple times.").Strings()
+	testRulesWarnAsError := testRulesCmd.Flag("warn-as-error", "Treat warnings as errors.").Default("false").Bool()
 	testRulesFiles := testRulesCmd.Arg(
 		"test-rule-file",
 		"The unit test file.",
@@ -434,6 +436,7 @@ func main() {
 			},
 			promtoolParser,
 			*testRulesRun,
+			*testRulesWarnAsError,
 			*testRulesDiff,
 			*testRulesDebug,
 			*testRulesIgnoreUnknownFields,
