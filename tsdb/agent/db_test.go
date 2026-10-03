@@ -1572,7 +1572,7 @@ func readWALSamples(t *testing.T, walDir string) []walSample {
 				outputSamples = append(outputSamples, walSample{
 					st:   h.ST,
 					t:    h.T,
-					h:    h.H,
+					h:    h.H.Copy(), // copy: decode buffer is reused across WAL records
 					lbls: lastSeries.Labels.Copy(),
 					ref:  storage.SeriesRef(lastSeries.Ref),
 				})
