@@ -1610,8 +1610,14 @@ func testScrapeLoopFailLegacyUnderUTF8(t *testing.T, appV2 bool) {
 
 func readTextParseTestMetrics(t testing.TB) []byte {
 	t.Helper()
+	return readTextParseTestdata(t, "alltypes.237mfs.prom.txt")
+}
 
-	b, err := os.ReadFile("../model/textparse/testdata/alltypes.237mfs.prom.txt")
+// readTextParseTestdata reads a file from model/textparse/testdata.
+func readTextParseTestdata(t testing.TB, file string) []byte {
+	t.Helper()
+
+	b, err := os.ReadFile(filepath.Join("..", "model", "textparse", "testdata", file))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -1761,6 +1767,112 @@ func TestPromTextToProto(t *testing.T) {
 	require.Equal(t, "go_gc_cycles_automatic_gc_cycles_total", got[0])
 	require.Equal(t, "prometheus_sd_kuma_fetch_duration_seconds", got[128])
 	require.Equal(t, "promhttp_metric_handler_requests_total", got[236])
+}
+
+func promTextToOM2(tb testing.TB, text []byte) []byte {
+	tb.Helper()
+
+	p := expfmt.NewTextParser(model.UTF8Validation)
+	fams, err := p.TextToMetricFamilies(bytes.NewReader(text))
+	if err != nil {
+		tb.Fatal("TextToMetricFamilies:", err)
+	}
+	// Order by name for the deterministic tests.
+	var names []string
+	for n := range fams {
+		names = append(names, n)
+	}
+	sort.Strings(names)
+
+	buf := bytes.Buffer{}
+	for _, n := range names {
+		if _, err := expfmt.MetricFamilyToOpenMetrics20(&buf, fams[n]); err != nil {
+			tb.Fatal(err)
+		}
+	}
+	if _, err := expfmt.FinalizeOpenMetrics(&buf); err != nil {
+		tb.Fatal(err)
+	}
+	return buf.Bytes()
+}
+
+// benchFormatCase is one scrape payload of a benchDataset in a given exposition format.
+type benchFormatCase struct {
+	name        string
+	contentType string
+	parsable    []byte
+}
+
+// benchDataset is a BenchmarkScrapeLoopAppend dataset: the same metrics in one
+// or more exposition formats.
+type benchDataset struct {
+	name          string
+	cases         []benchFormatCase
+	convertToNHCB bool
+}
+
+// allFormatCases exposes promText as Prometheus text and OM 1.0 text, and
+// converts it to protobuf and OM 2.0 text, so every format carries the same samples.
+func allFormatCases(tb testing.TB, promText []byte) []benchFormatCase {
+	tb.Helper()
+	return []benchFormatCase{
+		{name: "PromText", contentType: "text/plain", parsable: promText},
+		{name: "OMText", contentType: "application/openmetrics-text", parsable: promText},
+		{name: "OMText2", contentType: "application/openmetrics-text; version=2.0.0", parsable: promTextToOM2(tb, promText)},
+		{name: "PromProto", contentType: "application/vnd.google.protobuf", parsable: promTextToProto(tb, promText)},
+	}
+}
+
+// prometheusOMFormatCases is a real Prometheus server /metrics page
+// (prometheus.demo.prometheus.io) as OM 1.0 with _created lines for every
+// counter, summary and histogram, and the same metrics as OM 2.0 with the
+// start timestamps inline (st@). Both files were generated with expfmt from the
+// same families, with the created timestamp set to process_start_time_seconds.
+func prometheusOMFormatCases(tb testing.TB) []benchFormatCase {
+	tb.Helper()
+	return []benchFormatCase{
+		{name: "OMText", contentType: "application/openmetrics-text", parsable: readTextParseTestdata(tb, "prometheus.om1.txt")},
+		{name: "OMText2", contentType: "application/openmetrics-text; version=2.0.0", parsable: readTextParseTestdata(tb, "prometheus.om2.txt")},
+	}
+}
+
+func benchDatasets(tb testing.TB) []benchDataset {
+	tb.Helper()
+	return []benchDataset{
+		{name: "1Fam2000Gauges", cases: allFormatCases(tb, makeTestGauges(2000))},                // ~68.1 KB, ~77.9 KB in proto, ~72.1 KB in OM2.
+		{name: "265FamsPrometheus", cases: prometheusOMFormatCases(tb)},                          // ~253.4 KB in OM1 (with _created), ~120.4 KB in OM2.
+		{name: "265FamsPrometheusNHCB", cases: prometheusOMFormatCases(tb), convertToNHCB: true}, // ~253.4 KB in OM1 (with _created), ~120.4 KB in OM2.
+	}
+}
+
+// TestBenchDatasets checks that every format of a benchmark dataset appends the
+// same number of samples, so BenchmarkScrapeLoopAppend compares equal work.
+func TestBenchDatasets(t *testing.T) {
+	for _, data := range benchDatasets(t) {
+		t.Run(data.name, func(t *testing.T) {
+			var want int
+			for i, tc := range data.cases {
+				appTest := teststorage.NewAppendable()
+				sl, _ := newTestScrapeLoop(t, withAppendable(appTest, true), func(sl *scrapeLoop) {
+					sl.enableNativeHistogramScraping = true
+					sl.convertClassicHistToNHCB = data.convertToNHCB
+					sl.alwaysScrapeClassicHist = false
+					sl.enableOpenMetrics2 = true
+				})
+				app := sl.appender()
+				total, added, seriesAdded, err := app.append(tc.parsable, tc.contentType, time.Now())
+				require.NoError(t, err)
+				require.NoError(t, app.Commit())
+				got := len(appTest.ResultSamples())
+				t.Logf("fmt=%s: bytes=%d total=%d added=%d seriesAdded=%d samples=%d", tc.name, len(tc.parsable), total, added, seriesAdded, got)
+				if i == 0 {
+					want = got
+					continue
+				}
+				require.Equal(t, want, got, "sample count mismatch between %s and %s", data.cases[0].name, tc.name)
+			}
+		})
+	}
 }
 
 func seriesPerHistogramFor100HistsWithExemplars(appV2 bool) int {
@@ -2598,29 +2710,29 @@ metric: <
 
 // BenchmarkScrapeLoopAppend benchmarks scrape appends for typical cases.
 //
-// Benchmark compares append function run across 5 dimensions:
+// Benchmark uses AppenderV2 and compares append function run across 6 dimensions:
 // * `withStorage`: without storage isolates the benchmark to the scrape loop append code. With storage is an
 // integration benchmark with the TSDB head appender code. For acceptance criteria run with storage, without for debugging.
-// * `appV2`: appender V1 or V2.
 // * `appendMetadataToWAL`: metadata-wal-records feature enabled or not (problematic feature we might need to change
 // soon, see https://github.com/prometheus/prometheus/issues/15911.
-// * `data`: different sizes of metrics scraped e.g. one big gauge metric family
-//  with a thousand series and more realistic scenario with common types.
+// * `data`: different metrics scraped e.g. one big gauge metric family with
+//  two thousand series and a real Prometheus server /metrics page; the NHCB
+//  variant converts classic histograms to native histograms with custom buckets.
 // * `fmt`: different scrape formats which will benchmark different parsers e.g.
-//  promtext, omtext and promproto.
+//  promtext, omtext, omtext2 and promproto; see benchDatasets for which
+//  formats each dataset has. All formats of a dataset carry the same samples.
+// * `coldCache`: whether the scrape series cache is warm (steady state) or empty.
+// * `parseST`: whether start timestamps are parsed. OM 1.0 pays for this with a
+//  forward re-lex per counter/summary/histogram family (_created lookup),
+//  OM 2.0 carries st@ inline.
 //
 // NOTE: withStorage=true uses sync.Pool buffers which is heavily non-deterministic and shared across go routines.
 // As a result, it's recommended to run dimensions you want to compare with in e.g. separate go tool invocations.
 // Recommended CLI invocation(s):
 /*
-	# Acceptance: With storage with V1 and V2 in separate process:
-	export bench=appendV1 && go test ./scrape/... \
-		-run '^$' -bench '^BenchmarkScrapeLoopAppend/withStorage=true/appV2=false/$' \
-		-benchtime 2s -count 6 -cpu 2 -timeout 999m \
-		| tee ${bench}.txt
-
-	export bench=appendV2 && go test ./scrape/... \
-		-run '^$' -bench '^BenchmarkScrapeLoopAppend/withStorage=true/appV2=true/$' \
+	# Acceptance: With storage:
+	export bench=append && go test ./scrape/... \
+		-run '^$' -bench '^BenchmarkScrapeLoopAppend/withStorage=true/$' \
 		-benchtime 2s -count 6 -cpu 2 -timeout 999m \
 		| tee ${bench}.txt
 
@@ -2629,39 +2741,37 @@ metric: <
 		-run '^$' -bench '^BenchmarkScrapeLoopAppend/withStorage=false/$' \
 		-benchtime 2s -count 6 -cpu 2 -timeout 999m \
 		| tee ${bench}.txt
+
+	# OM 1.0 vs OM 2.0 parsing in the scrape loop, in separate processes, then:
+	# benchstat -col /fmt omtext.txt omtext2.txt
+	for fmt in OMText OMText2; do
+		export bench=$(echo ${fmt} | tr A-Z a-z) && go test ./scrape/... \
+			-run '^$' -bench "^BenchmarkScrapeLoopAppend/withStorage=false/appendMetadataToWAL=false/data=265FamsPrometheus$/fmt=${fmt}$/coldCache=false/parseST=.+$" \
+			-benchtime 2s -count 6 -cpu 2 -timeout 999m \
+			| tee ${bench}.txt
+	done
 */
 func BenchmarkScrapeLoopAppend(b *testing.B) {
+	datasets := benchDatasets(b)
 	for _, withStorage := range []bool{false, true} {
-		for _, appV2 := range []bool{false, true} {
-			for _, appendMetadataToWAL := range []bool{false, true} {
-				for _, data := range []struct {
-					name         string
-					parsableText []byte
-				}{
-					{name: "1Fam2000Gauges", parsableText: makeTestGauges(2000)},         // ~68.1 KB, ~77.9 KB in proto.
-					{name: "237FamsAllTypes", parsableText: readTextParseTestMetrics(b)}, // ~185.7 KB, ~70.6 KB in proto.
-				} {
-					b.Run(fmt.Sprintf("withStorage=%v/appV2=%v/appendMetadataToWAL=%v/data=%v", withStorage, appV2, appendMetadataToWAL, data.name), func(b *testing.B) {
-						metricsProto := promTextToProto(b, data.parsableText)
-
-						for _, bcase := range []struct {
-							name        string
-							contentType string
-							parsable    []byte
-						}{
-							{name: "PromText", contentType: "text/plain", parsable: data.parsableText},
-							{name: "OMText", contentType: "application/openmetrics-text", parsable: data.parsableText},
-							{name: "PromProto", contentType: "application/vnd.google.protobuf", parsable: metricsProto},
-						} {
-							b.Run(fmt.Sprintf("fmt=%v", bcase.name), func(b *testing.B) {
-								for _, coldCache := range []bool{false, true} {
-									b.Run(fmt.Sprintf("coldCache=%v", coldCache), func(b *testing.B) {
-										benchScrapeLoopAppend(b, withStorage, appV2, bcase.parsable, bcase.contentType, appendMetadataToWAL, false, false, false, coldCache)
-									})
-								}
+		for _, appendMetadataToWAL := range []bool{false, true} {
+			for _, data := range datasets {
+				for _, bcase := range data.cases {
+					for _, coldCache := range []bool{false, true} {
+						for _, parseST := range []bool{true, false} {
+							b.Run(fmt.Sprintf(
+								"withStorage=%v/"+
+									"appendMetadataToWAL=%v/"+
+									"data=%v/"+
+									"fmt=%v/"+
+									"coldCache=%v/"+
+									"parseST=%v",
+								withStorage, appendMetadataToWAL, data.name, bcase.name, coldCache, parseST,
+							), func(b *testing.B) {
+								benchScrapeLoopAppend(b, withStorage, true, bcase.parsable, bcase.contentType, appendMetadataToWAL, false, false, data.convertToNHCB, coldCache, parseST)
 							})
 						}
-					})
+					}
 				}
 			}
 		}
@@ -2684,7 +2794,7 @@ func BenchmarkScrapeLoopAppend_STSynthesis(b *testing.B) {
 				{name: "237FamsAllTypes", parsableText: readTextParseTestMetrics(b), contentType: "application/openmetrics-text", convertToNHCB: true}, // ~185.7 KB, ~70.6 KB in proto.
 			} {
 				b.Run(fmt.Sprintf("withStorage=%v/synthesizeST=%v/data=%v", withStorage, synthesizeST, data.name), func(b *testing.B) {
-					benchScrapeLoopAppend(b, withStorage, true, data.parsableText, data.contentType, false, false, synthesizeST, data.convertToNHCB, false)
+					benchScrapeLoopAppend(b, withStorage, true, data.parsableText, data.contentType, false, false, synthesizeST, data.convertToNHCB, false, true)
 				})
 			}
 		}
@@ -2702,6 +2812,7 @@ func benchScrapeLoopAppend(
 	synthesizeST bool,
 	convertToNHCB bool,
 	coldCache bool,
+	parseST bool,
 ) {
 	var a compatAppendable = teststorage.NewAppendable().SkipRecording(true) // Make it noop for benchmark purposes.
 	if withStorage {
@@ -2719,6 +2830,9 @@ func benchScrapeLoopAppend(
 		sl.enableNativeHistogramScraping = true
 		sl.convertClassicHistToNHCB = convertToNHCB
 		sl.alwaysScrapeClassicHist = false
+		sl.enableOpenMetrics2 = true
+		// Only AppenderV2 uses parseST; false skips p.StartTimestamp() entirely.
+		sl.parseST = parseST
 	})
 	ts := time.Time{}
 
@@ -2758,7 +2872,7 @@ func BenchmarkScrapeLoopAppend_HistogramsWithExemplars(b *testing.B) {
 	for _, appV2 := range []bool{false, true} {
 		b.Run(fmt.Sprintf("appV2=%v", appV2), func(b *testing.B) {
 			parsable := makeTestHistogramsWithExemplars(100) // ~255.8 KB in OM text.
-			benchScrapeLoopAppend(b, true, appV2, parsable, "application/openmetrics-text", false, true, false, false, false)
+			benchScrapeLoopAppend(b, true, appV2, parsable, "application/openmetrics-text", false, true, false, false, false, true)
 		})
 	}
 }
