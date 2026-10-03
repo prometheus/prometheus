@@ -16,6 +16,7 @@ package remote
 import (
 	"context"
 	"errors"
+	"sync"
 	"testing"
 	"time"
 
@@ -54,11 +55,20 @@ func (*TestMetaStore) SizeMetadata() int   { return 0 }
 func (*TestMetaStore) LengthMetadata() int { return 0 }
 
 type writeMetadataToMock struct {
+	mu               sync.Mutex
 	metadataAppended int
 }
 
 func (mwtm *writeMetadataToMock) AppendWatcherMetadata(_ context.Context, m []scrape.MetricMetadata) {
+	mwtm.mu.Lock()
+	defer mwtm.mu.Unlock()
 	mwtm.metadataAppended += len(m)
+}
+
+func (mwtm *writeMetadataToMock) appended() int {
+	mwtm.mu.Lock()
+	defer mwtm.mu.Unlock()
+	return mwtm.metadataAppended
 }
 
 func newMetadataWriteToMock() *writeMetadataToMock {
@@ -97,7 +107,7 @@ func TestWatchScrapeManager_NotReady(t *testing.T) {
 
 	mw.collect()
 
-	require.Equal(t, 0, wt.metadataAppended)
+	require.Equal(t, 0, wt.appended())
 }
 
 func TestWatchScrapeManager_ReadyForCollection(t *testing.T) {
@@ -151,5 +161,45 @@ func TestWatchScrapeManager_ReadyForCollection(t *testing.T) {
 
 	mw.collect()
 
-	require.Equal(t, 2, wt.metadataAppended)
+	require.Equal(t, 2, wt.appended())
+}
+
+func TestMetadataWatcher_CollectsOnStart(t *testing.T) {
+	wt := newMetadataWriteToMock()
+
+	metadata := &TestMetaStore{
+		Metadata: []scrape.MetricMetadata{
+			{
+				MetricFamily: "prometheus_tsdb_head_chunks_created",
+				Type:         model.MetricTypeCounter,
+				Help:         "Total number",
+				Unit:         "",
+			},
+			{
+				MetricFamily: "prometheus_remote_storage_retried_samples",
+				Type:         model.MetricTypeCounter,
+				Help:         "Total number",
+				Unit:         "",
+			},
+		},
+	}
+
+	target := &scrape.Target{}
+	target.SetMetadataStore(metadata)
+
+	manager := &fakeManager{
+		activeTargets: map[string][]*scrape.Target{
+			"job": {target},
+		},
+	}
+
+	// Interval is deliberately long so a pass cannot come from the ticker.
+	mw := NewMetadataWatcher(nil, &scrapeManagerMock{ready: true}, "", wt, model.Duration(time.Hour), time.Second)
+	mw.manager = manager
+	mw.Start()
+	t.Cleanup(mw.Stop)
+
+	require.Eventually(t, func() bool {
+		return wt.appended() == 2
+	}, time.Second, 10*time.Millisecond)
 }
