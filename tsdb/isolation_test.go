@@ -165,6 +165,7 @@ func BenchmarkIsolation(b *testing.B) {
 	for _, goroutines := range []int{10, 100, 1000, 10000} {
 		b.Run(strconv.Itoa(goroutines), func(b *testing.B) {
 			iso := newIsolation(false)
+			iterations := b.N
 
 			wg := sync.WaitGroup{}
 			start := make(chan struct{})
@@ -173,7 +174,7 @@ func BenchmarkIsolation(b *testing.B) {
 				wg.Go(func() {
 					<-start
 
-					for b.Loop() {
+					for range iterations {
 						appendID, _ := iso.newAppendID(0)
 
 						iso.closeAppend(appendID)
@@ -192,6 +193,7 @@ func BenchmarkIsolationWithState(b *testing.B) {
 	for _, goroutines := range []int{10, 100, 1000, 10000} {
 		b.Run(strconv.Itoa(goroutines), func(b *testing.B) {
 			iso := newIsolation(false)
+			iterations := b.N
 
 			wg := sync.WaitGroup{}
 			start := make(chan struct{})
@@ -200,7 +202,7 @@ func BenchmarkIsolationWithState(b *testing.B) {
 				wg.Go(func() {
 					<-start
 
-					for b.Loop() {
+					for range iterations {
 						appendID, _ := iso.newAppendID(0)
 
 						iso.closeAppend(appendID)
@@ -217,7 +219,7 @@ func BenchmarkIsolationWithState(b *testing.B) {
 				wg.Go(func() {
 					<-start
 
-					for b.Loop() {
+					for range iterations {
 						s := iso.State(math.MinInt64, math.MaxInt64)
 						s.Close()
 					}

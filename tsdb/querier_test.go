@@ -2667,6 +2667,11 @@ func BenchmarkQueryIterator(b *testing.B) {
 			overlapPercentages:          []int{0, 10, 30},
 		},
 	}
+	if testing.Short() {
+		cases[0].numBlocks = 2
+		cases[0].numSeries = 10
+		cases[0].numSamplesPerSeriesPerBlock = 100
+	}
 
 	for _, c := range cases {
 		for _, overlapPercentage := range c.overlapPercentages {
@@ -2729,6 +2734,11 @@ func BenchmarkQuerySeek(b *testing.B) {
 			numSamplesPerSeriesPerBlock: 2000,
 			overlapPercentages:          []int{0, 10, 30, 50},
 		},
+	}
+	if testing.Short() {
+		cases[0].numBlocks = 2
+		cases[0].numSeries = 10
+		cases[0].numSamplesPerSeriesPerBlock = 100
 	}
 
 	for _, c := range cases {
@@ -3422,20 +3432,18 @@ func BenchmarkQueries(b *testing.B) {
 		typ     string
 		querier storage.Querier
 	}
-	var queryTypes []qt // We use a slice instead of map to keep the order of test cases consistent.
-	defer func() {
-		for _, q := range queryTypes {
-			// Can't run a check for error here as some of these will fail as
-			// queryTypes is using the same slice for the different block queriers
-			// and would have been closed in the previous iteration.
-			q.querier.Close()
-		}
-	}()
 
+	sampleCounts := []int64{1000, 10000, 100000}
+	if testing.Short() {
+		sampleCounts = sampleCounts[:1]
+	}
 	for title, selectors := range cases {
 		for _, nSeries := range []int{10} {
-			for _, nSamples := range []int64{1000, 10000, 100000} {
+			for _, nSamples := range sampleCounts {
 				dir := b.TempDir()
+				var queryTypes []qt // We use a slice instead of map to keep the order of test cases consistent.
+				var blocks []*Block
+				var heads []*Head
 
 				series := genSeries(nSeries, 5, 1, nSamples)
 
@@ -3467,6 +3475,7 @@ func BenchmarkQueries(b *testing.B) {
 				for x := 0; x <= 10; x++ {
 					block, err := OpenBlock(nil, createBlock(b, dir, series), nil, nil)
 					require.NoError(b, err)
+					blocks = append(blocks, block)
 					q, err := NewBlockQuerier(block, 1, nSamples)
 					require.NoError(b, err)
 					qs = append(qs, q)
@@ -3478,6 +3487,7 @@ func BenchmarkQueries(b *testing.B) {
 
 				chunkDir := b.TempDir()
 				head := createHead(b, nil, series, chunkDir)
+				heads = append(heads, head)
 				qHead, err := NewBlockQuerier(NewRangeHead(head, 1, nSamples), 1, nSamples)
 				require.NoError(b, err)
 				queryTypes = append(queryTypes, qt{"_Head", qHead})
@@ -3487,6 +3497,7 @@ func BenchmarkQueries(b *testing.B) {
 					totalOOOSamples := oooPercentage * int(nSamples) / 100
 					oooSampleFrequency := int(nSamples) / totalOOOSamples
 					head := createHeadWithOOOSamples(b, nil, series, chunkDir, oooSampleFrequency)
+					heads = append(heads, head)
 
 					qHead, err := NewBlockQuerier(NewRangeHead(head, 1, nSamples), 1, nSamples)
 					require.NoError(b, err)
@@ -3505,7 +3516,15 @@ func BenchmarkQueries(b *testing.B) {
 						benchQuery(b, expExpansions, q.querier, selectors)
 					})
 				}
-				require.NoError(b, head.Close())
+				for _, q := range queryTypes {
+					_ = q.querier.Close()
+				}
+				for _, block := range blocks {
+					require.NoError(b, block.Close())
+				}
+				for _, head := range heads {
+					require.NoError(b, head.Close())
+				}
 			}
 		}
 	}
