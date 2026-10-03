@@ -32,6 +32,7 @@ import (
 	"github.com/prometheus/prometheus/promql/parser"
 	"github.com/prometheus/prometheus/promql/parser/posrange"
 	"github.com/prometheus/prometheus/schema"
+	"github.com/prometheus/prometheus/storage"
 	"github.com/prometheus/prometheus/util/annotations"
 	"github.com/prometheus/prometheus/util/kahansum"
 )
@@ -2863,7 +2864,9 @@ func createLabelsForAbsentFunction(expr parser.Expr) labels.Labels {
 	// Note this gives arguably wrong behaviour for `absent(x{job="a",job="a",foo="bar"})`.
 	has := make(map[string]bool, len(lm))
 	for _, ma := range lm {
-		if ma.Name == labels.MetricName {
+		// NOTE: storage.NHCBAsClassicLabel is a query-time control label that
+		// never exists on series, so it must not leak into absent() output.
+		if ma.Name == labels.MetricName || ma.Name == storage.NHCBAsClassicLabel {
 			continue
 		}
 		if ma.Type == labels.MatchEqual && !has[ma.Name] {

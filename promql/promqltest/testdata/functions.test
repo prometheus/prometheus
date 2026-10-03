@@ -1771,6 +1771,13 @@ eval instant at 50m absent(nonexistent{job="testjob",job="testjob2",job="three",
 eval instant at 50m absent(nonexistent{job="testjob",job=~"testjob2",foo="bar"})
 	{foo="bar"} 1
 
+# The __nhcb_as_classic__ control label never exists on series, so it is not added to the output.
+eval instant at 50m absent(nonexistent_count{job="testjob", __nhcb_as_classic__="false"})
+	{job="testjob"} 1
+
+eval instant at 50m absent_over_time(nonexistent_count{job="testjob", __nhcb_as_classic__="debug"}[5m])
+	{job="testjob"} 1
+
 clear
 
 # Don't return anything when there's something there.
