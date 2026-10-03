@@ -1304,6 +1304,36 @@ func TestNHCBAsClassicQuerier_Collisions(t *testing.T) {
 				},
 			},
 			{
+				name: "debug with __from_nhcb__ equal matcher filters returned series",
+				matchers: []*labels.Matcher{
+					countName,
+					labels.MustNewMatcher(labels.MatchEqual, NHCBAsClassicLabel, "debug"),
+					labels.MustNewMatcher(labels.MatchEqual, FromNHCBLabel, "true"),
+				},
+				expected: []seriesSamples{
+					{labels: `{__from_nhcb__="true", __name__="http_requests_count", job="api"}`, samples: []fSample{{t: 2, f: 25}, {t: 3, f: 30}, {t: 4, f: 40}}},
+				},
+			},
+			{
+				name: "debug with __from_nhcb__ not-equal matcher filters returned series",
+				matchers: []*labels.Matcher{
+					countName,
+					labels.MustNewMatcher(labels.MatchEqual, NHCBAsClassicLabel, "debug"),
+					labels.MustNewMatcher(labels.MatchNotEqual, FromNHCBLabel, "true"),
+				},
+				expected: []seriesSamples{
+					{labels: `{__from_nhcb__="false", __name__="http_requests_count", job="api"}`, samples: []fSample{{t: 1, f: 10}, {t: 2, f: 20}}},
+				},
+			},
+			{
+				name: "debug selector with only control and __from_nhcb__ matchers returns error",
+				matchers: []*labels.Matcher{
+					labels.MustNewMatcher(labels.MatchEqual, NHCBAsClassicLabel, "debug"),
+					labels.MustNewMatcher(labels.MatchEqual, FromNHCBLabel, "true"),
+				},
+				expectedErr: errOnlyControlMatchers,
+			},
+			{
 				name:        "selector with only control matchers returns error",
 				matchers:    []*labels.Matcher{labels.MustNewMatcher(labels.MatchEqual, NHCBAsClassicLabel, "true")},
 				expectedErr: errOnlyControlMatchers,
