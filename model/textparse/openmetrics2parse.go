@@ -183,9 +183,11 @@ type openMetrics2Parser struct {
 // NewOpenMetrics2Parser returns a new parser for the OpenMetrics 2.0 text
 // format.
 func NewOpenMetrics2Parser(b []byte, st *labels.SymbolTable, opts ParserOptions) Parser {
+	builder := labels.NewScratchBuilderWithSymbolTable(st, 16)
+	builder.SetUnsafeAdd(true)
 	p := &openMetrics2Parser{
 		l:                        &openMetrics2Lexer{b: b},
-		builder:                  labels.NewScratchBuilderWithSymbolTable(st, 16),
+		builder:                  builder,
 		enableTypeAndUnitLabels:  opts.EnableTypeAndUnitLabels,
 		ignoreNativeHistograms:   opts.IgnoreNativeHistograms,
 		keepClassicOnNativeHist:  opts.KeepClassicOnClassicAndNativeHistograms,
@@ -275,7 +277,9 @@ func (p *openMetrics2Parser) Comment() []byte {
 func (p *openMetrics2Parser) Labels(l *labels.Labels) {
 	if p.pendingIdx > 0 {
 		pe := p.pending[p.pendingIdx-1]
-		s := string(p.seriesBuf[pe.seriesStart:pe.seriesEnd])
+		// p.builder has SetUnsafeAdd(true), so stringlabels and dedupelabels
+		// copy/intern strings inside Labels() and slicelabels clones inside Add().
+		s := yoloString(p.seriesBuf[pe.seriesStart:pe.seriesEnd])
 		p.builder.Reset()
 		metricName := unreplace(s[:pe.nameLen])
 		m := schema.Metadata{
@@ -316,7 +320,9 @@ func (p *openMetrics2Parser) Labels(l *labels.Labels) {
 		*l = p.builder.Labels()
 		return
 	}
-	s := string(p.series)
+	// p.builder has SetUnsafeAdd(true), so yoloString is safe across all labels
+	// implementations without allocating an intermediate string copy.
+	s := yoloString(p.series)
 	p.builder.Reset()
 	metricName := unreplace(s[p.offsets[0]-p.start : p.offsets[1]-p.start])
 	m := schema.Metadata{
@@ -360,7 +366,7 @@ func (p *openMetrics2Parser) Exemplar(e *exemplar.Exemplar) bool {
 	p.builder.Reset()
 	if ex.offsetsStart < ex.offsetsEnd {
 		base := p.eOffsets[ex.offsetsStart]
-		s := string(p.l.b[base:p.eOffsets[ex.offsetsEnd-1]])
+		s := yoloString(p.l.b[base:p.eOffsets[ex.offsetsEnd-1]])
 		for i := ex.offsetsStart; i < ex.offsetsEnd; i += 4 {
 			a := p.eOffsets[i] - base
 			b := p.eOffsets[i+1] - base
