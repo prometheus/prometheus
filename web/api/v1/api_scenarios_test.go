@@ -464,22 +464,19 @@ func TestAPIWithStats(t *testing.T) {
 	now := time.Now().Unix()
 
 	// Test combinations of methods, endpoints, and stats values. Values
-	// outside the supported enum ("true", "all") keep the historical
-	// behaviour (any non-empty value enables basic statistics) but attach a
-	// deprecation warning to the response; they will be rejected in the next
-	// major release.
+	// outside the supported enum ("true", "all") are rejected with a
+	// bad_data error.
 	methods := []string{"GET", "POST"}
 	statsValues := []struct {
-		value         string
-		expectStats   bool
-		expectWarning bool
+		value       string
+		expectStats bool
+		wantErr     bool
 	}{
 		{"true", true, false},
 		{"all", true, false},
-		{"1", true, true},
+		{"1", false, true},
 		{"", false, false},
 	}
-	deprecationWarning := `value "1" for parameter "stats" is deprecated and will be rejected in the next major release, use "true" or "all"`
 
 	for _, method := range methods {
 		for _, stats := range statsValues {
@@ -498,13 +495,14 @@ func TestAPIWithStats(t *testing.T) {
 					resp = testhelpers.POST(t, api, "/api/v1/query", params...)
 				}
 
-				resp.RequireSuccess().ValidateOpenAPI()
-
-				if stats.expectWarning {
-					resp.RequireArrayContains("$.warnings", deprecationWarning)
-				} else {
-					resp.RequireJSONPathNotExists("$.warnings")
+				if stats.wantErr {
+					resp.RequireStatusCode(400).
+						RequireError().
+						RequireEquals("$.errorType", "bad_data")
+					return
 				}
+
+				resp.RequireSuccess().ValidateOpenAPI()
 
 				if stats.expectStats {
 					resp.RequireJSONPathExists("$.data.stats").
@@ -541,13 +539,14 @@ func TestAPIWithStats(t *testing.T) {
 					resp = testhelpers.POST(t, api, "/api/v1/query_range", params...)
 				}
 
-				resp.RequireSuccess().ValidateOpenAPI()
-
-				if stats.expectWarning {
-					resp.RequireArrayContains("$.warnings", deprecationWarning)
-				} else {
-					resp.RequireJSONPathNotExists("$.warnings")
+				if stats.wantErr {
+					resp.RequireStatusCode(400).
+						RequireError().
+						RequireEquals("$.errorType", "bad_data")
+					return
 				}
+
+				resp.RequireSuccess().ValidateOpenAPI()
 
 				if stats.expectStats {
 					resp.RequireJSONPathExists("$.data.stats").
