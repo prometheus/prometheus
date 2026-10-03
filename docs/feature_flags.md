@@ -401,6 +401,8 @@ Individual selectors can control or debug conversion using the reserved `__nhcb_
 
 Other values in `=` or `!=` matchers on `__nhcb_as_classic__` return an error.
 
+The `__nhcb_as_classic__` matcher is only recognized when this feature flag is enabled. Otherwise, it is treated as a regular label matcher, so e.g. `__nhcb_as_classic__="false"` selects nothing, because no stored series has this label.
+
 This feature only affects PromQL query evaluation (e.g. the query APIs and rule evaluation). The
 conversion is applied on top of all data the query engine reads, including series fetched from
 `remote_read` endpoints. It does not apply to remote write (NHCB series are not converted when being
