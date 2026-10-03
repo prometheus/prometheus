@@ -252,6 +252,29 @@ func BenchmarkHeadAppender_AppendCommit(b *testing.B) {
 	}
 }
 
+func BenchmarkHeadBytesBufferPool(b *testing.B) {
+	for _, capacity := range []int{maxPooledBytesBufferCapacity, maxPooledBytesBufferCapacity + 1} {
+		b.Run(fmt.Sprintf("capacity=%d", capacity), func(b *testing.B) {
+			h := &Head{}
+			buf := make([]byte, 0, capacity)
+
+			b.ReportAllocs()
+			b.ResetTimer()
+			for b.Loop() {
+				h.putBytesBuffer(buf)
+				buf = h.getBytesBuffer()
+				if cap(buf) < capacity {
+					buf = make([]byte, 0, capacity)
+				}
+			}
+
+			b.StopTimer()
+			h.putBytesBuffer(buf)
+			b.ReportMetric(float64(cap(h.getBytesBuffer())), "retained-cap-B")
+		})
+	}
+}
+
 func BenchmarkHeadStripeSeriesCreate(b *testing.B) {
 	chunkDir := b.TempDir()
 	// Put a series, select it. GC it and then access it.

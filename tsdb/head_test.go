@@ -102,6 +102,14 @@ func newTestHeadWithOptions(t testing.TB, compressWAL compression.Type, opts *He
 	return h, wal
 }
 
+func TestHeadDoesNotPoolOversizedBytesBuffer(t *testing.T) {
+	h := &Head{}
+	h.putBytesBuffer(make([]byte, 0, maxPooledBytesBufferCapacity+1))
+
+	reused := h.getBytesBuffer()
+	require.LessOrEqual(t, cap(reused), maxPooledBytesBufferCapacity)
+}
+
 func BenchmarkCreateSeries(b *testing.B) {
 	series := genSeries(b.N, 10, 0, 0)
 	h, _ := newTestHead(b, 10000, compression.None, false)
