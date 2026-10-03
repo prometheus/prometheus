@@ -1985,6 +1985,22 @@ eval instant at 0m round(data)
 	{type="ninf"} -Inf
 	{type="nan"} NaN
 
+# Adding 0.5 before the floor must not introduce a rounding error.
+# The comparison allows a relative error, so the tests subtract the
+# expected value and check for 0. Values from 2^52 to 2^53 are integers.
+eval instant at 0m round(vector(4503599627370497)) - 4503599627370497
+	{} 0
+
+eval instant at 0m round(vector(-4503599627370497)) + 4503599627370497
+	{} 0
+
+eval instant at 0m round(vector(2251799813685248.5), 0.5) - 2251799813685248.5
+	{} 0
+
+# The largest float64 below 0.5.
+eval instant at 0m round(vector(0.49999999999999994))
+	{} 0
+
 clear
 
 # Test for absent().
