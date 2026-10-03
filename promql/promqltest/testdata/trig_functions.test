@@ -95,6 +95,12 @@ eval instant at 1m deg(trig - 20)
 	{l="y"} 0
 	{l="NaN"} NaN
 
+eval instant at 1m rad(vector(1e308))
+	{} 1.7453292519943295e+306
+
+eval instant at 1m deg(vector(1e306))
+	{} 5.729577951308232e+307
+
 clear
 
 eval instant at 0s pi()
