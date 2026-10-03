@@ -1116,6 +1116,7 @@ func clamp(vec Vector, minVal, maxVal float64, enh *EvalNodeHelper) (Vector, ann
 	if maxVal < minVal {
 		return enh.Out, nil
 	}
+	boundsNaN := math.IsNaN(minVal) || math.IsNaN(maxVal)
 	for _, el := range vec {
 		if el.H != nil {
 			// Process only float samples.
@@ -1124,9 +1125,13 @@ func clamp(vec Vector, minVal, maxVal float64, enh *EvalNodeHelper) (Vector, ann
 		if !enh.enableDelayedNameRemoval {
 			el.Metric = el.Metric.DropReserved(schema.IsMetadataLabel)
 		}
+		value := math.NaN()
+		if !boundsNaN {
+			value = math.Max(minVal, math.Min(maxVal, el.F))
+		}
 		enh.Out = append(enh.Out, Sample{
 			Metric:   el.Metric,
-			F:        math.Max(minVal, math.Min(maxVal, el.F)),
+			F:        value,
 			DropName: true,
 		})
 	}
