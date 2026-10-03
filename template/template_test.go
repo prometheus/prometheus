@@ -479,6 +479,18 @@ func TestTemplateExpansion(t *testing.T) {
 			output: "30m0s",
 		},
 		{
+			// toDuration - a seconds value that overflows int64 must error.
+			text:       `{{ (9223372036.854776 | toDuration).String }}`,
+			shouldFail: true,
+			errorMsg:   `error executing template test: template: test:1:24: executing "test" at <toDuration>: error calling toDuration: 9.223372036854776e+09 cannot be represented as a duration since it overflows int64`,
+		},
+		{
+			// toDuration - NaN must error.
+			text:       `{{ ("NaN" | toDuration).String }}`,
+			shouldFail: true,
+			errorMsg:   `error executing template test: template: test:1:12: executing "test" at <toDuration>: error calling toDuration: value is NaN or Inf`,
+		},
+		{
 			// now - returns fixed timestamp as float64 seconds.
 			text:   `{{ now }}`,
 			output: "1.353755652e+09",
@@ -650,6 +662,14 @@ func Test_floatToTime(t *testing.T) {
 				return &tm
 			}(),
 			false,
+		},
+		{
+			"exactly the nanoseconds value float64(math.MaxInt64) rounds to",
+			args{
+				v: 9223372036.854776,
+			},
+			nil,
+			true,
 		},
 		{
 			"more than math.MaxInt64",
