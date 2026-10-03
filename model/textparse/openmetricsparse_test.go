@@ -191,7 +191,7 @@ nansum{quantile="0.99"} NaN`
 				}, {
 					m:    `some:aggregate:rate5m{a_b="c"}`,
 					v:    1,
-					lset: todoDetectFamilySwitch(typeAndUnitEnabled, labels.FromStrings("__name__", "some:aggregate:rate5m", "a_b", "c"), model.MetricTypeSummary),
+					lset: labels.FromStrings("__name__", "some:aggregate:rate5m", "a_b", "c"),
 				}, {
 					m:    "go_goroutines",
 					help: "Number of goroutines that currently exist.",
@@ -681,7 +681,7 @@ nansum{quantile="0.99"} NaN`
 				}, {
 					m:    "null_byte_metric{a=\"abc\x00\"}",
 					v:    1,
-					lset: todoDetectFamilySwitch(typeAndUnitEnabled, labels.FromStrings("__name__", "null_byte_metric", "a", "abc\x00"), model.MetricTypeSummary),
+					lset: labels.FromStrings("__name__", "null_byte_metric", "a", "abc\x00"),
 				},
 			}
 			opts := []OpenMetricsOption{WithOMParserSTSeriesSkipped()}
