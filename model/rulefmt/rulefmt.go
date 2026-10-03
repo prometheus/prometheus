@@ -181,6 +181,8 @@ type Rule struct {
 	Record        string            `yaml:"record,omitempty"`
 	Alert         string            `yaml:"alert,omitempty"`
 	Expr          string            `yaml:"expr"`
+	Description   string            `yaml:"description,omitempty"`
+	Type          model.MetricType  `yaml:"type,omitempty"`
 	For           model.Duration    `yaml:"for,omitempty"`
 	KeepFiringFor model.Duration    `yaml:"keep_firing_for,omitempty"`
 	Labels        map[string]string `yaml:"labels,omitempty"`
@@ -192,6 +194,8 @@ type RuleNode struct {
 	Record        yaml.Node         `yaml:"record,omitempty"`
 	Alert         yaml.Node         `yaml:"alert,omitempty"`
 	Expr          yaml.Node         `yaml:"expr"`
+	Description   yaml.Node         `yaml:"description,omitempty"`
+	Type          yaml.Node         `yaml:"type,omitempty"`
 	For           model.Duration    `yaml:"for,omitempty"`
 	KeepFiringFor model.Duration    `yaml:"keep_firing_for,omitempty"`
 	Labels        map[string]string `yaml:"labels,omitempty"`
@@ -259,6 +263,26 @@ func (r *Rule) Validate(node RuleNode, nameValidationScheme model.ValidationSche
 				node: &node.Record,
 			})
 		}
+		if !validRecordingRuleMetricType(r.Type) {
+			nodes = append(nodes, WrappedError{
+				err:  fmt.Errorf("invalid recording rule metric type: %s", r.Type),
+				node: &node.Type,
+			})
+		}
+	}
+	if r.Alert != "" {
+		if r.Description != "" {
+			nodes = append(nodes, WrappedError{
+				err:  errors.New("invalid field 'description' in alerting rule"),
+				node: &node.Description,
+			})
+		}
+		if r.Type != "" {
+			nodes = append(nodes, WrappedError{
+				err:  errors.New("invalid field 'type' in alerting rule"),
+				node: &node.Type,
+			})
+		}
 	}
 
 	for k, v := range r.Labels {
@@ -288,6 +312,17 @@ func (r *Rule) Validate(node RuleNode, nameValidationScheme model.ValidationSche
 	}
 
 	return nodes
+}
+
+func validRecordingRuleMetricType(t model.MetricType) bool {
+	switch t {
+	case "", model.MetricTypeCounter, model.MetricTypeGauge, model.MetricTypeHistogram,
+		model.MetricTypeGaugeHistogram, model.MetricTypeSummary, model.MetricTypeInfo,
+		model.MetricTypeStateset, model.MetricTypeUnknown:
+		return true
+	default:
+		return false
+	}
 }
 
 // testTemplateParsing checks if the templates used in labels and annotations
