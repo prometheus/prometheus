@@ -15,6 +15,7 @@ package relabel
 
 import (
 	"crypto/md5"
+	"crypto/sha256"
 	"encoding/binary"
 	"encoding/json"
 	"errors"
@@ -56,6 +57,8 @@ const (
 	DropEqual Action = "dropequal"
 	// HashMod sets a label to the modulus of a hash of labels.
 	HashMod Action = "hashmod"
+	// HashModSHA256 sets a label to the modulus of a SHA-256 hash of labels.
+	HashModSHA256 Action = "hashmod_sha256"
 	// LabelMap copies labels to other labelnames based on a regex.
 	LabelMap Action = "labelmap"
 	// LabelDrop drops any label matching the regex.
@@ -75,7 +78,7 @@ func (a *Action) UnmarshalYAML(unmarshal func(any) error) error {
 		return err
 	}
 	switch act := Action(strings.ToLower(s)); act {
-	case Replace, Keep, Drop, HashMod, LabelMap, LabelDrop, LabelKeep, Lowercase, Uppercase, KeepEqual, DropEqual:
+	case Replace, Keep, Drop, HashMod, HashModSHA256, LabelMap, LabelDrop, LabelKeep, Lowercase, Uppercase, KeepEqual, DropEqual:
 		*a = act
 		return nil
 	}
@@ -121,10 +124,10 @@ func (c *Config) Validate(nameValidationScheme model.ValidationScheme) error {
 	if c.Action == "" {
 		return errors.New("relabel action cannot be empty")
 	}
-	if c.Modulus == 0 && c.Action == HashMod {
+	if c.Modulus == 0 && (c.Action == HashMod || c.Action == HashModSHA256) {
 		return errors.New("relabel configuration for hashmod requires non-zero modulus")
 	}
-	if (c.Action == Replace || c.Action == HashMod || c.Action == Lowercase || c.Action == Uppercase || c.Action == KeepEqual || c.Action == DropEqual) && c.TargetLabel == "" {
+	if (c.Action == Replace || c.Action == HashMod || c.Action == HashModSHA256 || c.Action == Lowercase || c.Action == Uppercase || c.Action == KeepEqual || c.Action == DropEqual) && c.TargetLabel == "" {
 		return fmt.Errorf("relabel configuration for %s action requires 'target_label' value", c.Action)
 	}
 
@@ -165,7 +168,7 @@ func (c *Config) Validate(nameValidationScheme model.ValidationScheme) error {
 	if c.Action == LabelMap && !isValidLabelNameWithRegexVarFn(c.Replacement) {
 		return fmt.Errorf("%q is invalid 'replacement' for %s action", c.Replacement, c.Action)
 	}
-	if c.Action == HashMod && !c.NameValidationScheme.IsValidLabelName(c.TargetLabel) {
+	if (c.Action == HashMod || c.Action == HashModSHA256) && !c.NameValidationScheme.IsValidLabelName(c.TargetLabel) {
 		return fmt.Errorf("%q is invalid 'target_label' for %s action", c.TargetLabel, c.Action)
 	}
 
@@ -340,6 +343,11 @@ func relabel(cfg *Config, lb *labels.Builder) (keep bool) {
 		hash := md5.Sum([]byte(val))
 		// Use only the last 8 bytes of the hash to give the same result as earlier versions of this code.
 		mod := binary.BigEndian.Uint64(hash[8:]) % cfg.Modulus
+		lb.Set(cfg.TargetLabel, strconv.FormatUint(mod, 10))
+	case HashModSHA256:
+		hash := sha256.Sum256([]byte(val))
+		// Use the first 8 bytes of the SHA-256 hash.
+		mod := binary.BigEndian.Uint64(hash[:8]) % cfg.Modulus
 		lb.Set(cfg.TargetLabel, strconv.FormatUint(mod, 10))
 	case LabelMap:
 		lb.Range(func(l labels.Label) {
