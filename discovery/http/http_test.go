@@ -27,6 +27,8 @@ import (
 	"github.com/prometheus/common/model"
 	"github.com/prometheus/common/promslog"
 	"github.com/stretchr/testify/require"
+	"go.uber.org/atomic"
+	"go.yaml.in/yaml/v2"
 
 	"github.com/prometheus/prometheus/discovery"
 	"github.com/prometheus/prometheus/discovery/targetgroup"
@@ -227,6 +229,178 @@ func TestContentTypeRegex(t *testing.T) {
 			require.Equal(t, test.match, matchContentType.MatchString(test.header))
 		})
 	}
+}
+
+func TestMinBackoffConfig(t *testing.T) {
+	tests := []struct {
+		name            string
+		config          string
+		wantMinBackoff  model.Duration
+		wantErrContains string
+	}{
+		{
+			name: "disabled by default",
+			config: `url: http://example.com
+refresh_interval: 1m
+`,
+		},
+		{
+			name: "configured",
+			config: `url: http://example.com
+refresh_interval: 1m
+min_backoff: 5s
+`,
+			wantMinBackoff: model.Duration(5 * time.Second),
+		},
+		{
+			name: "greater than refresh interval",
+			config: `url: http://example.com
+refresh_interval: 5s
+min_backoff: 10s
+`,
+			wantErrContains: "min_backoff must not be greater than refresh_interval",
+		},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			var cfg SDConfig
+			err := yaml.Unmarshal([]byte(test.config), &cfg)
+			if test.wantErrContains != "" {
+				require.ErrorContains(t, err, test.wantErrContains)
+				return
+			}
+			require.NoError(t, err)
+			require.Equal(t, test.wantMinBackoff, cfg.MinBackoff)
+		})
+	}
+}
+
+func TestHTTPRetry(t *testing.T) {
+	tests := []struct {
+		name            string
+		minBackoff      time.Duration
+		statusCodes     []int
+		wantAttempts    int32
+		wantTargets     int
+		wantErrContains string
+	}{
+		{
+			name:       "server errors then success",
+			minBackoff: time.Millisecond,
+			statusCodes: []int{
+				http.StatusInternalServerError,
+				http.StatusBadGateway,
+				http.StatusOK,
+			},
+			wantAttempts: 3,
+			wantTargets:  1,
+		},
+		{
+			name:       "rate limit then success",
+			minBackoff: time.Millisecond,
+			statusCodes: []int{
+				http.StatusTooManyRequests,
+				http.StatusOK,
+			},
+			wantAttempts: 2,
+			wantTargets:  1,
+		},
+		{
+			name: "disabled",
+			statusCodes: []int{
+				http.StatusInternalServerError,
+				http.StatusOK,
+			},
+			wantAttempts:    1,
+			wantErrContains: "server returned HTTP status 500 Internal Server Error",
+		},
+		{
+			name:       "client error",
+			minBackoff: time.Millisecond,
+			statusCodes: []int{
+				http.StatusBadRequest,
+				http.StatusOK,
+			},
+			wantAttempts:    1,
+			wantErrContains: "server returned HTTP status 400 Bad Request",
+		},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			var attempts atomic.Int32
+			ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+				attempt := int(attempts.Add(1)) - 1
+				statusCode := test.statusCodes[min(attempt, len(test.statusCodes)-1)]
+				if statusCode == http.StatusOK {
+					w.Header().Set("Content-Type", "application/json")
+				}
+				w.WriteHeader(statusCode)
+				if statusCode == http.StatusOK {
+					fmt.Fprint(w, `[{"targets":["127.0.0.1:9090"]}]`)
+				}
+			}))
+			t.Cleanup(ts.Close)
+
+			d := newTestDiscovery(t, SDConfig{
+				HTTPClientConfig: config.DefaultHTTPClientConfig,
+				URL:              ts.URL,
+				RefreshInterval:  model.Duration(100 * time.Millisecond),
+				MinBackoff:       model.Duration(test.minBackoff),
+			})
+			tgs, err := d.Refresh(context.Background())
+			if test.wantErrContains != "" {
+				require.ErrorContains(t, err, test.wantErrContains)
+				require.Equal(t, 1.0, getFailureCount(d.metrics.failuresCount))
+			} else {
+				require.NoError(t, err)
+				require.Len(t, tgs, test.wantTargets)
+				require.Equal(t, 0.0, getFailureCount(d.metrics.failuresCount))
+			}
+			require.Equal(t, test.wantAttempts, attempts.Load())
+		})
+	}
+}
+
+func TestHTTPRetryBudget(t *testing.T) {
+	var attempts atomic.Int32
+	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		attempts.Add(1)
+		w.WriteHeader(http.StatusInternalServerError)
+	}))
+	t.Cleanup(ts.Close)
+
+	d := newTestDiscovery(t, SDConfig{
+		HTTPClientConfig: config.DefaultHTTPClientConfig,
+		URL:              ts.URL,
+		RefreshInterval:  model.Duration(100 * time.Millisecond),
+		MinBackoff:       model.Duration(5 * time.Millisecond),
+	})
+	start := time.Now()
+	_, err := d.Refresh(context.Background())
+	require.EqualError(t, err, "server returned HTTP status 500 Internal Server Error")
+	require.Greater(t, attempts.Load(), int32(1))
+	require.Less(t, time.Since(start), 500*time.Millisecond)
+	require.Equal(t, 1.0, getFailureCount(d.metrics.failuresCount))
+}
+
+func newTestDiscovery(t *testing.T, cfg SDConfig) *Discovery {
+	t.Helper()
+	reg := prometheus.NewRegistry()
+	refreshMetrics := discovery.NewRefreshMetrics(reg)
+	t.Cleanup(refreshMetrics.Unregister)
+	metrics := cfg.NewDiscovererMetrics(reg, refreshMetrics)
+	require.NoError(t, metrics.Register())
+	t.Cleanup(metrics.Unregister)
+
+	d, err := NewDiscovery(&cfg, discovery.DiscovererOptions{
+		Logger:  promslog.NewNopLogger(),
+		Metrics: metrics,
+		SetName: "http",
+	})
+	require.NoError(t, err)
+	return d
 }
 
 func TestSourceDisappeared(t *testing.T) {

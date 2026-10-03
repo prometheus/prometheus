@@ -2367,6 +2367,9 @@ Example response body:
 ```
 
 The endpoint is queried periodically at the specified refresh interval.
+Transient transport errors, HTTP 429 responses, and HTTP 5xx responses can be
+retried with exponential backoff by setting `min_backoff`. The total retry
+window is limited to the refresh interval.
 The `prometheus_sd_http_failures_total` counter metric tracks the number of
 refresh failures.
 
@@ -2384,6 +2387,10 @@ url: <string>
 
 # Refresh interval to re-query the endpoint.
 [ refresh_interval: <duration> | default = 60s ]
+
+# Initial delay between retries. The delay doubles after each failed attempt.
+# Retries are disabled when this is zero.
+[ min_backoff: <duration> | default = 0s ]
 
 # HTTP client settings, including authentication methods (such as basic auth and
 # authorization), proxy configurations, TLS options, custom HTTP headers, etc.
