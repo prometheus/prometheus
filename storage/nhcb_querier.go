@@ -40,8 +40,9 @@ const (
 	//     classic series unchanged.
 	//   - "debug" (or =~ "true|debug"): enables conversion and attaches
 	//     FromNHCBLabel ("true" for converted NHCB series, "false" for stored
-	//     classic series) to all returned series without merging stored and
-	//     converted series into a single labelset.
+	//     classic series) to all returned series. Stored and converted series
+	//     are neither merged into a single labelset nor shadowed by each other,
+	//     so both sources are returned in full side by side.
 	NHCBAsClassicLabel = "__nhcb_as_classic__"
 
 	// FromNHCBLabel is the label added to returned series when a selector uses
@@ -853,10 +854,15 @@ func (s *nhcbToClassicSeriesSet) convertGroup(g *histogramGroup, dst []Series) (
 		filteredClassic []Series
 	)
 	if len(g.classic) > 0 {
-		var err error
-		groupTS, s.it, err = collectClassicTimestamps(g.classic, s.it)
-		if err != nil {
-			return nil, err
+		// NOTE: In debug mode, stored classic and converted series get distinct
+		// FromNHCBLabel values, so we skip shadowing NHCB samples at stored
+		// classic timestamps to show both sources side by side.
+		if !s.debug {
+			var err error
+			groupTS, s.it, err = collectClassicTimestamps(g.classic, s.it)
+			if err != nil {
+				return nil, err
+			}
 		}
 		for _, cs := range g.classic {
 			if matchesLe(cs.Labels(), s.leMatchers) {

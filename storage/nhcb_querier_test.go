@@ -1113,7 +1113,7 @@ func TestNHCBAsClassicQuerier_Collisions(t *testing.T) {
 				},
 				nhcbSeries: []Series{
 					NewListSeries(labels.FromStrings("__name__", "http_requests", "job", "api"), []chunks.Sample{
-						hSample{t: 2, h: nhcb(200, []float64{1.0}, []int64{10, 15})}, // shadowed at t=2 by classic
+						hSample{t: 2, h: nhcb(200, []float64{1.0}, []int64{10, 15})}, // Shadowed at t=2 by stored classic, except in debug mode.
 						hSample{t: 3, h: nhcb(300, []float64{1.0}, []int64{15, 15})},
 						hSample{t: 4, h: nhcb(400, []float64{1.0}, []int64{20, 20})},
 					}),
@@ -1208,7 +1208,7 @@ func TestNHCBAsClassicQuerier_Collisions(t *testing.T) {
 					},
 					{
 						labels:  `{__from_nhcb__="true", __name__="http_requests_count", job="api"}`,
-						samples: []fSample{{t: 3, f: 30}, {t: 4, f: 40}},
+						samples: []fSample{{t: 2, f: 25}, {t: 3, f: 30}, {t: 4, f: 40}},
 					},
 				},
 			},
@@ -1222,7 +1222,7 @@ func TestNHCBAsClassicQuerier_Collisions(t *testing.T) {
 					},
 					{
 						labels:  `{__from_nhcb__="true", __name__="http_requests_count", job="api"}`,
-						samples: []fSample{{t: 3, f: 30}, {t: 4, f: 40}},
+						samples: []fSample{{t: 2, f: 25}, {t: 3, f: 30}, {t: 4, f: 40}},
 					},
 				},
 			},
