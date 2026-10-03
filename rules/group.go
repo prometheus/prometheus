@@ -781,13 +781,6 @@ func (g *Group) RestoreForState(ts time.Time) {
 		}
 
 		alertHoldDuration := alertRule.HoldDuration()
-		if alertHoldDuration < g.opts.ForGracePeriod {
-			// If alertHoldDuration is already less than grace period, we would not
-			// like to make it wait for `g.opts.ForGracePeriod` time before firing.
-			// Hence we skip restoration, which will make it wait for alertHoldDuration.
-			alertRule.SetRestored(true)
-			continue
-		}
 
 		sset, err := alertRule.QueryForStateSeries(g.opts.Context, q)
 		if err != nil {
@@ -846,11 +839,12 @@ func (g *Group) RestoreForState(ts time.Time) {
 
 			switch {
 			case timeRemainingPending <= 0:
-				// The alert was firing when Prometheus went down. The evaluations
-				// before restoration confirmed that it is still active, so restore
-				// its firing state without exposing an intermediate pending state.
-				a.State = StateFiring
-				a.FiredAt = restoredActiveAt.Add(alertHoldDuration)
+				// The alert was firing before the outage. Retain ActiveAt so the
+				// next Eval can transition it to firing with its evaluation timestamp.
+			case alertHoldDuration < g.opts.ForGracePeriod:
+				// Pending alerts with a hold duration shorter than the grace period
+				// should restart their hold duration rather than wait for the grace period.
+				return
 			case timeRemainingPending < g.opts.ForGracePeriod:
 				// (new) restoredActiveAt = (ts + m.opts.ForGracePeriod) - alertHoldDuration
 				//                            /* new firing time */      /* moving back by hold duration */
