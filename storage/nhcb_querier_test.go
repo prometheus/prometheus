@@ -1124,6 +1124,7 @@ func TestNHCBAsClassicQuerier_Collisions(t *testing.T) {
 		countName := labels.MustNewMatcher(labels.MatchEqual, model.MetricNameLabel, "http_requests_count")
 		for _, tc := range []struct {
 			name        string
+			querier     Querier // Defaults to newDualQuerier().
 			matchers    []*labels.Matcher
 			expected    []seriesSamples
 			expectedErr error
@@ -1202,13 +1203,42 @@ func TestNHCBAsClassicQuerier_Collisions(t *testing.T) {
 				expected: nil,
 			},
 			{
+				name: "debug with classic-only and NHCB-only groups labels each group by source",
+				querier: NewNHCBAsClassicQuerier(&nhcbMockQuerier{
+					classicSeries: []Series{
+						NewListSeries(labels.FromStrings("__name__", "http_requests_count", "job", "a"), []chunks.Sample{
+							fSample{t: 1, f: 10},
+						}),
+					},
+					nhcbSeries: []Series{
+						NewListSeries(labels.FromStrings("__name__", "http_requests", "job", "b"), []chunks.Sample{
+							hSample{t: 1, h: nhcb(100, []float64{1.0}, []int64{10, 5})},
+						}),
+					},
+				}),
+				matchers: []*labels.Matcher{countName, labels.MustNewMatcher(labels.MatchEqual, NHCBAsClassicLabel, "debug")},
+				expected: []seriesSamples{
+					{
+						labels:  `{__from_nhcb__="false", __name__="http_requests_count", job="a"}`,
+						samples: []fSample{{t: 1, f: 10}},
+					},
+					{
+						labels:  `{__from_nhcb__="true", __name__="http_requests_count", job="b"}`,
+						samples: []fSample{{t: 1, f: 15}},
+					},
+				},
+			},
+			{
 				name:        "selector with only control matchers returns error",
 				matchers:    []*labels.Matcher{labels.MustNewMatcher(labels.MatchEqual, NHCBAsClassicLabel, "true")},
 				expectedErr: errOnlyControlMatchers,
 			},
 		} {
 			t.Run(tc.name, func(t *testing.T) {
-				q := newDualQuerier()
+				q := tc.querier
+				if q == nil {
+					q = newDualQuerier()
+				}
 				ss := q.Select(context.Background(), false, nil, tc.matchers...)
 				if tc.expectedErr != nil {
 					require.False(t, ss.Next())
