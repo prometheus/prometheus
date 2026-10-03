@@ -1278,105 +1278,85 @@ func TestExtractControlMatchers(t *testing.T) {
 	}
 
 	for _, tc := range []struct {
-		name           string
-		matchers       []*labels.Matcher
-		defaultConvert bool
-		wantConvert    bool
-		wantDebug      bool
-		wantMatched    bool
-		wantErr        error
+		name        string
+		matchers    []*labels.Matcher
+		wantConvert bool
+		wantDebug   bool
+		wantMatched bool
+		wantErr     error
 	}{
 		{
-			name:           "no control matchers uses defaultConvert=true",
-			matchers:       []*labels.Matcher{name},
-			defaultConvert: true,
-			wantConvert:    true,
-			wantDebug:      false,
-			wantMatched:    true,
+			name:        "no control matchers enables conversion",
+			matchers:    []*labels.Matcher{name},
+			wantConvert: true,
+			wantDebug:   false,
+			wantMatched: true,
 		},
 		{
-			name:           "no control matchers uses defaultConvert=false",
-			matchers:       []*labels.Matcher{name},
-			defaultConvert: false,
-			wantConvert:    false,
-			wantDebug:      false,
-			wantMatched:    true,
+			name:        "equal true enables conversion",
+			matchers:    []*labels.Matcher{name, ctrl(labels.MatchEqual, "true")},
+			wantConvert: true,
+			wantDebug:   false,
+			wantMatched: true,
 		},
 		{
-			name:           "equal true enables conversion even when defaultConvert=false",
-			matchers:       []*labels.Matcher{name, ctrl(labels.MatchEqual, "true")},
-			defaultConvert: false,
-			wantConvert:    true,
-			wantDebug:      false,
-			wantMatched:    true,
+			name:        "equal false disables conversion",
+			matchers:    []*labels.Matcher{name, ctrl(labels.MatchEqual, "false")},
+			wantConvert: false,
+			wantDebug:   false,
+			wantMatched: true,
 		},
 		{
-			name:           "equal false disables conversion",
-			matchers:       []*labels.Matcher{name, ctrl(labels.MatchEqual, "false")},
-			defaultConvert: true,
-			wantConvert:    false,
-			wantDebug:      false,
-			wantMatched:    true,
+			name:        "not-equal true disables conversion without debug",
+			matchers:    []*labels.Matcher{name, ctrl(labels.MatchNotEqual, "true")},
+			wantConvert: false,
+			wantDebug:   false,
+			wantMatched: true,
 		},
 		{
-			name:           "not-equal true disables conversion without debug",
-			matchers:       []*labels.Matcher{name, ctrl(labels.MatchNotEqual, "true")},
-			defaultConvert: true,
-			wantConvert:    false,
-			wantDebug:      false,
-			wantMatched:    true,
+			name:        "not-equal false enables conversion without debug",
+			matchers:    []*labels.Matcher{name, ctrl(labels.MatchNotEqual, "false")},
+			wantConvert: true,
+			wantDebug:   false,
+			wantMatched: true,
 		},
 		{
-			name:           "not-equal false enables conversion without debug",
-			matchers:       []*labels.Matcher{name, ctrl(labels.MatchNotEqual, "false")},
-			defaultConvert: false,
-			wantConvert:    true,
-			wantDebug:      false,
-			wantMatched:    true,
+			name:        "not-equal debug enables conversion without debug",
+			matchers:    []*labels.Matcher{name, ctrl(labels.MatchNotEqual, "debug")},
+			wantConvert: true,
+			wantDebug:   false,
+			wantMatched: true,
 		},
 		{
-			name:           "not-equal debug keeps defaultConvert without debug",
-			matchers:       []*labels.Matcher{name, ctrl(labels.MatchNotEqual, "debug")},
-			defaultConvert: true,
-			wantConvert:    true,
-			wantDebug:      false,
-			wantMatched:    true,
+			name:        "equal debug enables conversion and debug",
+			matchers:    []*labels.Matcher{name, ctrl(labels.MatchEqual, "debug")},
+			wantConvert: true,
+			wantDebug:   true,
+			wantMatched: true,
 		},
 		{
-			name:           "equal debug enables conversion and debug",
-			matchers:       []*labels.Matcher{name, ctrl(labels.MatchEqual, "debug")},
-			defaultConvert: false,
-			wantConvert:    true,
-			wantDebug:      true,
-			wantMatched:    true,
+			name:        "regexp true|debug enables conversion and debug",
+			matchers:    []*labels.Matcher{name, ctrl(labels.MatchRegexp, "true|debug")},
+			wantConvert: true,
+			wantDebug:   true,
+			wantMatched: true,
 		},
 		{
-			name:           "regexp true|debug enables conversion and debug",
-			matchers:       []*labels.Matcher{name, ctrl(labels.MatchRegexp, "true|debug")},
-			defaultConvert: false,
-			wantConvert:    true,
-			wantDebug:      true,
-			wantMatched:    true,
+			name:        "regexp matching false disables conversion without debug",
+			matchers:    []*labels.Matcher{name, ctrl(labels.MatchRegexp, "false|debug")},
+			wantConvert: false,
+			wantDebug:   false,
+			wantMatched: true,
 		},
 		{
-			name:           "regexp matching false disables conversion without debug",
-			matchers:       []*labels.Matcher{name, ctrl(labels.MatchRegexp, "false|debug")},
-			defaultConvert: true,
-			wantConvert:    false,
-			wantDebug:      false,
-			wantMatched:    true,
+			name:        "contradictory matchers match nothing",
+			matchers:    []*labels.Matcher{name, ctrl(labels.MatchEqual, "true"), ctrl(labels.MatchEqual, "false")},
+			wantMatched: false,
 		},
 		{
-			name:           "contradictory matchers match nothing",
-			matchers:       []*labels.Matcher{name, ctrl(labels.MatchEqual, "true"), ctrl(labels.MatchEqual, "false")},
-			defaultConvert: true,
-			wantMatched:    false,
-		},
-		{
-			name:           "only control matchers returns error",
-			matchers:       []*labels.Matcher{ctrl(labels.MatchEqual, "true")},
-			defaultConvert: true,
-			wantErr:        errOnlyControlMatchers,
+			name:     "only control matchers returns error",
+			matchers: []*labels.Matcher{ctrl(labels.MatchEqual, "true")},
+			wantErr:  errOnlyControlMatchers,
 		},
 		{
 			name: "only empty-matching matchers besides control matcher returns error",
@@ -1384,12 +1364,11 @@ func TestExtractControlMatchers(t *testing.T) {
 				labels.MustNewMatcher(labels.MatchRegexp, "job", ".*"),
 				ctrl(labels.MatchEqual, "debug"),
 			},
-			defaultConvert: true,
-			wantErr:        errOnlyControlMatchers,
+			wantErr: errOnlyControlMatchers,
 		},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			stripped, convert, debug, matched, err := extractControlMatchers(tc.matchers, tc.defaultConvert)
+			stripped, convert, debug, matched, err := extractControlMatchers(tc.matchers)
 			if tc.wantErr != nil {
 				require.ErrorIs(t, err, tc.wantErr)
 				return
