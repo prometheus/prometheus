@@ -17,6 +17,7 @@ import (
 	"context"
 	"fmt"
 	"testing"
+	"time"
 
 	"github.com/prometheus/common/model"
 	"github.com/stretchr/testify/require"
@@ -758,11 +759,19 @@ func TestEndpointsSlicesDiscoveryWithUpdatedNodeMetadata(t *testing.T) {
 	node2 := makeNode("barbaz", "", "", nodeLabels2, nil, nil)
 	objs := []runtime.Object{makeEndpointSliceV1("default"), node1, node2, svc}
 	n, c := makeDiscoveryWithMetadata(RoleEndpointSlice, NamespaceDiscovery{}, metadataConfig, objs...)
+	nodeWatchStarted := nodeWatchRegistered(c)
 
 	k8sDiscoveryTest{
 		discovery:        n,
 		expectedMaxItems: 2,
 		afterStart: func() {
+			// Update only once the node watch is registered, or the fake
+			// clientset would drop the event and discovery would never see it.
+			select {
+			case <-nodeWatchStarted:
+			case <-time.After(30 * time.Second):
+				t.Fatal("node watch was never registered")
+			}
 			node1.Labels["az"] = "us-central1"
 			c.CoreV1().Nodes().Update(context.Background(), node1, metav1.UpdateOptions{})
 		},
@@ -785,7 +794,7 @@ func TestEndpointsSlicesDiscoveryWithUpdatedNodeMetadata(t *testing.T) {
 						"__meta_kubernetes_endpointslice_port_app_protocol":                  "http",
 						"__meta_kubernetes_endpointslice_port_name":                          "testport",
 						"__meta_kubernetes_endpointslice_port_protocol":                      "TCP",
-						"__meta_kubernetes_node_label_az":                                    "us-east1",
+						"__meta_kubernetes_node_label_az":                                    "us-central1",
 						"__meta_kubernetes_node_labelpresent_az":                             "true",
 						"__meta_kubernetes_node_name":                                        "foobar",
 					},
