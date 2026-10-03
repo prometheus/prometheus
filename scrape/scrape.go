@@ -797,7 +797,11 @@ func acceptHeader(sps []config.ScrapeProtocol, scheme model.EscapingScheme) stri
 	for _, sp := range sps {
 		val := config.ScrapeProtocolsHeaders[sp]
 		// Escaping header is only valid for newer versions of the text formats.
-		if sp == config.PrometheusText1_0_0 || sp == config.OpenMetricsText1_0_0 {
+		// NOTE: OpenMetrics 2.0 supports UTF-8 names natively, but client
+		// libraries (e.g. client_golang and client_java) escape names with their
+		// default scheme (underscores) when the escaping parameter is missing, so
+		// it has to be sent for OpenMetrics 2.0 too.
+		if sp == config.PrometheusText1_0_0 || sp == config.OpenMetricsText1_0_0 || sp == config.OpenMetricsText2_0_0 {
 			val += ";" + model.EscapingKey + "=" + scheme.String()
 		}
 		val += fmt.Sprintf(";q=0.%d", weight)
