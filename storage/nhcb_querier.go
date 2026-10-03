@@ -792,6 +792,9 @@ func (s *nhcbToClassicSeriesSet) convertNHCBSeries(nhcbSeries Series, loadGroupT
 				nhcb = s.fh
 			}
 		case chunkenc.ValFloat:
+			// NOTE: Any float sample on the NHCB series (e.g. a float StaleNaN
+			// from scrape staleness or a type change to a float metric under the
+			// base name) ends any active converted series at t.
 			t = s.it.AtT()
 			stale = true
 		default:
