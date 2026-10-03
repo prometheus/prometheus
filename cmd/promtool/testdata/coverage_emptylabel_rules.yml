@@ -1,0 +1,11 @@
+# severity is set to the empty string, and cluster is templated. The empty value
+# is still a value the rule always produces, so a selector asking for anything
+# else can never observe this rule.
+groups:
+  - name: g
+    rules:
+      - alert: EmptyLabel
+        expr: vector(1)
+        labels:
+          severity: ""
+          cluster: '{{ $externalLabels.cluster }}'

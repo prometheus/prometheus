@@ -1,0 +1,13 @@
+# Has a test group, so the broken rule file is only skipped when --run selects no
+# group. Coverage must still refuse to report the suite as fully covered.
+rule_files:
+  - coverage_broken_rules.yml
+
+evaluation_interval: 1m
+
+tests:
+  - name: unselected
+    interval: 1m
+    input_series:
+      - series: 'up{job="prometheus"}'
+        values: "1x5"

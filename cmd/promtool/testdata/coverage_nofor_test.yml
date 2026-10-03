@@ -1,0 +1,13 @@
+# The assertion can never observe NoFor, so it must not count as coverage. It
+# passes as a test, because the selector genuinely returns nothing.
+rule_files:
+  - coverage_nofor_rules.yml
+
+evaluation_interval: 1m
+
+tests:
+  - name: impossible-pending
+    promql_expr_test:
+      - expr: 'ALERTS{alertname="NoFor",alertstate="pending"}'
+        eval_time: 0m
+        exp_samples: []
