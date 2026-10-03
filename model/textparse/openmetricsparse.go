@@ -105,6 +105,10 @@ type OpenMetricsParser struct {
 	// Start timestamp parsing state.
 	st        int64
 	stHashSet uint64
+	// stNoCreatedUntil is the lexer position where the last StartTimestamp
+	// lookahead stopped without seeing any _created line. A lookahead from any
+	// position before it would scan the same lines, find nothing and return 0.
+	stNoCreatedUntil int
 	// ignoreExemplar instructs the parser to not overwrite exemplars (to keep them while peeking ahead).
 	ignoreExemplar bool
 	// visitedMFName is the metric family name of the last visited metric when peeking ahead
@@ -294,6 +298,14 @@ func (p *OpenMetricsParser) StartTimestamp() int64 {
 		return 0
 	}
 
+	// NOTE: Without this check, targets that expose no _created lines (e.g.
+	// client_golang by default) make every sample rescan the rest of its family,
+	// which is quadratic in the family size.
+	if p.l.i < p.stNoCreatedUntil {
+		p.resetSTParseValues()
+		return 0
+	}
+
 	var (
 		buf      []byte
 		currName []byte
@@ -338,11 +350,13 @@ func (p *OpenMetricsParser) StartTimestamp() int64 {
 			// This might result in partial scrape with wrong/missing ST, but only
 			// spec improvement would help.
 			// TODO: Make sure OM 1.1/2.0 pass ST via metadata or exemplar-like to avoid this.
+			p.stNoCreatedUntil = p.l.i
 			p.resetSTParseValues()
 			return 0
 		}
 		if eType != EntrySeries {
 			// Assume we hit different family, no ST line found.
+			p.stNoCreatedUntil = p.l.i
 			p.resetSTParseValues()
 			return 0
 		}

@@ -1269,6 +1269,59 @@ foo_created{a="b"} 1520872608.123
 	}
 }
 
+// TestOpenMetricsParse_STWithoutCreatedLines ensures that skipping the
+// StartTimestamp lookahead for families without _created lines does not leak
+// into following families that have them.
+func TestOpenMetricsParse_STWithoutCreatedLines(t *testing.T) {
+	input := `# TYPE a counter
+a_total{x="1"} 1
+a_total{x="2"} 2
+a_total{x="3"} 3
+# TYPE b counter
+b_total{x="1"} 1
+b_created{x="1"} 1520872607.123
+b_total{x="2"} 2
+# TYPE c histogram
+c_bucket{le="1"} 1
+c_bucket{le="+Inf"} 2
+c_count 2
+c_sum 3
+# TYPE d summary
+d_count 2
+d_sum 3
+d_created 1520872608.123
+# TYPE e counter
+e_total{x="1"} 1
+e_total{x="2"} 2
+e_created{x="2"} 1520872609.123
+# EOF
+`
+	expected := []parsedEntry{
+		{m: "a", typ: model.MetricTypeCounter},
+		{m: `a_total{x="1"}`},
+		{m: `a_total{x="2"}`},
+		{m: `a_total{x="3"}`},
+		{m: "b", typ: model.MetricTypeCounter},
+		{m: `b_total{x="1"}`, st: 1520872607123},
+		{m: `b_total{x="2"}`},
+		{m: "c", typ: model.MetricTypeHistogram},
+		{m: `c_bucket{le="1"}`},
+		{m: `c_bucket{le="+Inf"}`},
+		{m: `c_count`},
+		{m: `c_sum`},
+		{m: "d", typ: model.MetricTypeSummary},
+		{m: `d_count`, st: 1520872608123},
+		{m: `d_sum`, st: 1520872608123},
+		{m: "e", typ: model.MetricTypeCounter},
+		{m: `e_total{x="1"}`},
+		{m: `e_total{x="2"}`, st: 1520872609123},
+	}
+	p := NewOpenMetricsParser([]byte(input), labels.NewSymbolTable(), WithOMParserSTSeriesSkipped())
+	got := testParse(t, p)
+	resetValAndLset(got) // Keep this test focused on metric, basic entries and ST only.
+	requireEntries(t, expected, got)
+}
+
 func resetValAndLset(e []parsedEntry) {
 	for i := range e {
 		e[i].v = 0
