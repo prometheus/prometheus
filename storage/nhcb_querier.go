@@ -116,12 +116,12 @@ func (q *NHCBAsClassicQuerier) Select(ctx context.Context, sortSeries bool, hint
 	nameMatcher, suffix, baseMatchers, leMatchers := extractHistogramSuffix(strippedMatchers)
 	if suffix == "" || !convert {
 		// Not a classic histogram query, or conversion explicitly disabled.
-		return q.Querier.Select(ctx, sortSeries, hints, strippedMatchers...)
+		return q.selectUnconverted(ctx, sortSeries, hints, debug, strippedMatchers)
 	}
 
 	baseNameMatcher := newBaseNameMatcher(nameMatcher.Type, nameMatcher.Value, suffix)
 	if baseNameMatcher == nil {
-		return q.Querier.Select(ctx, sortSeries, hints, strippedMatchers...)
+		return q.selectUnconverted(ctx, sortSeries, hints, debug, strippedMatchers)
 	}
 
 	// Reuse baseMatchers' spare capacity to append baseNameMatcher without allocating.
@@ -344,6 +344,21 @@ func (s *leFilterSeriesSet) Next() bool {
 		}
 	}
 	return false
+}
+
+// selectUnconverted selects series from the underlying Querier without
+// NHCB-to-classic conversion. In debug mode, all returned series get
+// FromNHCBLabel="false", because none of them were converted from NHCB.
+//
+// NOTE: Adding a constant label keeps sortSeries order, because every series
+// has __name__, which sorts after FromNHCBLabel, so the label is always
+// inserted before the first label that can differ between two series.
+func (q *NHCBAsClassicQuerier) selectUnconverted(ctx context.Context, sortSeries bool, hints *SelectHints, debug bool, matchers []*labels.Matcher) SeriesSet {
+	ss := q.Querier.Select(ctx, sortSeries, hints, matchers...)
+	if debug {
+		ss = newFromNHCBSeriesSet(ss, "false")
+	}
+	return ss
 }
 
 func isNHCBControlMatcher(m *labels.Matcher) bool {

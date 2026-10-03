@@ -1279,6 +1279,31 @@ func TestNHCBAsClassicQuerier_Collisions(t *testing.T) {
 				},
 			},
 			{
+				name: "debug on non-histogram selector labels passthrough series as not converted",
+				querier: NewNHCBAsClassicQuerier(&nhcbMockQuerier{
+					passthroughSeries: []Series{
+						NewListSeries(labels.FromStrings("__name__", "up", "job", "api"), []chunks.Sample{fSample{t: 1, f: 1}}),
+					},
+				}),
+				matchers: []*labels.Matcher{
+					labels.MustNewMatcher(labels.MatchEqual, model.MetricNameLabel, "up"),
+					labels.MustNewMatcher(labels.MatchEqual, NHCBAsClassicLabel, "debug"),
+				},
+				expected: []seriesSamples{
+					{labels: `{__from_nhcb__="false", __name__="up", job="api"}`, samples: []fSample{{t: 1, f: 1}}},
+				},
+			},
+			{
+				name: "debug on regexp __name__ selector labels unconverted stored classic series",
+				matchers: []*labels.Matcher{
+					labels.MustNewMatcher(labels.MatchRegexp, model.MetricNameLabel, "http_requests_count"),
+					labels.MustNewMatcher(labels.MatchEqual, NHCBAsClassicLabel, "debug"),
+				},
+				expected: []seriesSamples{
+					{labels: `{__from_nhcb__="false", __name__="http_requests_count", job="api"}`, samples: []fSample{{t: 1, f: 10}, {t: 2, f: 20}}},
+				},
+			},
+			{
 				name:        "selector with only control matchers returns error",
 				matchers:    []*labels.Matcher{labels.MustNewMatcher(labels.MatchEqual, NHCBAsClassicLabel, "true")},
 				expectedErr: errOnlyControlMatchers,
