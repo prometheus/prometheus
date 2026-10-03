@@ -346,6 +346,20 @@
             },
           },
           {
+            alert: 'PrometheusScrapePoolCreationFailure',
+            expr: |||
+              increase(prometheus_target_scrape_pools_failed_total{%(prometheusSelector)s}[1h]) > 0
+            ||| % $._config,
+            'for': '0s',
+            labels: {
+              severity: 'warning',
+            },
+            annotations: {
+              summary: 'Prometheus has failed to create scrape pools.',
+              description: 'Prometheus %(prometheusName)s has failed to create {{ printf "%%.0f" $value }} scrape pools in the last 1h, so their targets are not scraped.' % $._config,
+            },
+          },
+          {
             alert: 'PrometheusHighQueryLoad',
             expr: |||
               avg_over_time(prometheus_engine_queries{%(prometheusSelector)s}[5m]) / max_over_time(prometheus_engine_queries_concurrent_max{%(prometheusSelector)s}[5m]) > 0.8
