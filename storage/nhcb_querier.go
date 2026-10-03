@@ -88,10 +88,16 @@ func (q *NHCBAsClassicQuerier) Select(ctx context.Context, sortSeries bool, hint
 		return nhcbSet
 	}
 
-	var firstNHCB Series
+	var (
+		firstNHCB Series
+		chkIter   chunkenc.Iterator
+		hScratch  histogram.Histogram
+		fhScratch histogram.FloatHistogram
+	)
 	for nhcbSet.Next() {
 		s := nhcbSet.At()
-		if s == nil || s.Labels().Has(labels.BucketLabel) {
+		var ok bool
+		if ok, chkIter = isNHCBSeries(s, chkIter, &hScratch, &fhScratch); !ok {
 			continue
 		}
 		firstNHCB = s
@@ -165,7 +171,8 @@ func (q *NHCBAsClassicQuerier) Select(ctx context.Context, sortSeries bool, hint
 		groups = append(groups, histogramGroup{nhcb: []Series{firstNHCB}})
 		for nhcbSet.Next() {
 			s := nhcbSet.At()
-			if s == nil || s.Labels().Has(labels.BucketLabel) {
+			var ok bool
+			if ok, chkIter = isNHCBSeries(s, chkIter, &hScratch, &fhScratch); !ok {
 				continue
 			}
 			groups = append(groups, histogramGroup{nhcb: []Series{s}})
@@ -187,7 +194,8 @@ func (q *NHCBAsClassicQuerier) Select(ctx context.Context, sortSeries bool, hint
 		index.addNHCB(firstNHCB)
 		for nhcbSet.Next() {
 			s := nhcbSet.At()
-			if s == nil || s.Labels().Has(labels.BucketLabel) {
+			var ok bool
+			if ok, chkIter = isNHCBSeries(s, chkIter, &hScratch, &fhScratch); !ok {
 				continue
 			}
 			index.addNHCB(s)
@@ -205,6 +213,28 @@ func (q *NHCBAsClassicQuerier) Select(ctx context.Context, sortSeries bool, hint
 		suffix:     suffix,
 		sortSeries: sortSeries,
 		warnings:   warnings,
+	}
+}
+
+// isNHCBSeries reports whether s is a candidate NHCB series (has no le label
+// and its first sample is a custom-buckets histogram).
+func isNHCBSeries(s Series, it chunkenc.Iterator, h *histogram.Histogram, fh *histogram.FloatHistogram) (bool, chunkenc.Iterator) {
+	if s == nil || s.Labels().Has(labels.BucketLabel) {
+		return false, it
+	}
+	it = s.Iterator(it)
+	if it == nil {
+		return false, nil
+	}
+	switch it.Next() {
+	case chunkenc.ValHistogram:
+		_, h = it.AtHistogram(h)
+		return h != nil && histogram.IsCustomBucketsSchema(h.Schema), it
+	case chunkenc.ValFloatHistogram:
+		_, fh = it.AtFloatHistogram(fh)
+		return fh != nil && histogram.IsCustomBucketsSchema(fh.Schema), it
+	default:
+		return false, it
 	}
 }
 
@@ -485,7 +515,8 @@ func (s *nhcbToClassicSeriesSet) Next() bool {
 			} else {
 				for s.nhcbSet.Next() {
 					cand := s.nhcbSet.At()
-					if cand != nil && !cand.Labels().Has(labels.BucketLabel) {
+					var ok bool
+					if ok, s.it = isNHCBSeries(cand, s.it, s.h, s.fh); ok {
 						nhcbSeries = cand
 						break
 					}
