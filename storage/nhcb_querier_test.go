@@ -1081,6 +1081,30 @@ func TestNHCBAsClassicQuerier_Collisions(t *testing.T) {
 				samples: []fSample{{t: 1, f: 5}},
 			},
 		}, gotWithClassic)
+
+		// 3. Base series transitions NHCB (t=1) -> float counter (t=2) -> NHCB (t=3):
+		// t=2 emits StaleNaN on the converted hist_bucket series, and t=3 resumes conversion.
+		qTransition := NewNHCBAsClassicQuerier(&nhcbMockQuerier{
+			nhcbSeries: []Series{
+				NewListSeries(labels.FromStrings("__name__", "hist", "job", "api"), []chunks.Sample{
+					hSample{t: 1, h: nhcb(50, []float64{1.0}, []int64{5, 5})},
+					fSample{t: 2, f: 99},
+					hSample{t: 3, h: nhcb(75, []float64{1.0}, []int64{8, 7})},
+				}),
+			},
+		})
+		gotTransition := readAll(t, qTransition.Select(context.Background(), false, nil,
+			labels.MustNewMatcher(labels.MatchEqual, model.MetricNameLabel, "hist_bucket")))
+		assertSeriesSamplesEqual(t, []seriesSamples{
+			{
+				labels:  `{__name__="hist_bucket", job="api", le="+Inf"}`,
+				samples: []fSample{{t: 1, f: 10}, {t: 2, f: staleF}, {t: 3, f: 15}},
+			},
+			{
+				labels:  `{__name__="hist_bucket", job="api", le="1.0"}`,
+				samples: []fSample{{t: 1, f: 5}, {t: 2, f: staleF}, {t: 3, f: 8}},
+			},
+		}, gotTransition)
 	})
 
 	t.Run("NewMergeQuerier with sortSeries=true deduplicates converted and remote series", func(t *testing.T) {
