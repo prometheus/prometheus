@@ -14,15 +14,85 @@
 package encoding
 
 import (
+	"bytes"
 	"encoding/binary"
 	"errors"
 	"fmt"
 	"hash"
 	"hash/crc32"
+	"io"
 	"math"
+	"runtime"
 
 	"github.com/dennwc/varint"
 )
+
+// ByteView is an owner-aware view over a byte slice.
+// A view and its derived views share the same owner.
+type ByteView struct {
+	b     []byte
+	owner any
+}
+
+// NewByteView returns a view over ordinary Go-managed memory.
+func NewByteView(b []byte) ByteView {
+	return ByteView{b: b}
+}
+
+// NewByteViewWithOwner returns a view that keeps owner alive while the bytes
+// are in use.
+func NewByteViewWithOwner(b []byte, owner any) ByteView {
+	return ByteView{b: b, owner: owner}
+}
+
+func (v ByteView) Len() int { return len(v.b) }
+
+func (v ByteView) At(i int) byte {
+	b := v.b[i]
+	v.KeepAlive()
+	return b
+}
+
+func (v ByteView) Slice(start, end int) ByteView {
+	return ByteView{b: v.b[start:end], owner: v.owner}
+}
+
+func (v ByteView) Copy() []byte {
+	b := append([]byte(nil), v.b...)
+	v.KeepAlive()
+	return b
+}
+
+func (v ByteView) String() string {
+	s := string(v.b)
+	v.KeepAlive()
+	return s
+}
+
+func (v ByteView) Equal(other ByteView) bool {
+	equal := bytes.Equal(v.b, other.b)
+	v.KeepAlive()
+	other.KeepAlive()
+	return equal
+}
+
+// WithBytes exposes the bytes for the duration of fn. Code that retains the
+// slice must also retain the view and call KeepAlive after its final use.
+func (v ByteView) WithBytes(fn func([]byte) error) error {
+	err := fn(v.b)
+	v.KeepAlive()
+	return err
+}
+
+func (v ByteView) WriteTo(w io.Writer) (int64, error) {
+	n, err := w.Write(v.b)
+	v.KeepAlive()
+	return int64(n), err
+}
+
+func (v ByteView) KeepAlive() {
+	runtime.KeepAlive(v.owner)
+}
 
 var (
 	ErrInvalidSize     = errors.New("invalid size")
