@@ -455,6 +455,7 @@ type nhcbToClassicSeriesSet struct {
 	builder     classicSeriesBuilder
 	emitFn      func(labels.Labels, float64) error
 	it          chunkenc.Iterator
+	classicIt   chunkenc.Iterator
 	h           *histogram.Histogram
 	fh          *histogram.FloatHistogram
 }
@@ -614,19 +615,29 @@ func (s *nhcbToClassicSeriesSet) convertGroup(g *histogramGroup, dst []Series) (
 
 	var (
 		groupTS         []int64
+		groupTSLoaded   bool
 		filteredClassic []Series
 	)
 	if len(g.classic) > 0 {
-		var err error
-		groupTS, s.it, err = collectClassicTimestamps(g.classic, s.it)
-		if err != nil {
-			return nil, err
-		}
 		for _, cs := range g.classic {
 			if matchesLe(cs.Labels(), s.leMatchers) {
 				filteredClassic = append(filteredClassic, cs)
 			}
 		}
+	}
+
+	loadGroupTS := func() ([]int64, error) {
+		if !groupTSLoaded {
+			groupTSLoaded = true
+			if len(g.classic) > 0 {
+				var err error
+				groupTS, s.classicIt, err = collectClassicTimestamps(g.classic, s.suffix, s.classicIt)
+				if err != nil {
+					return nil, err
+				}
+			}
+		}
+		return groupTS, nil
 	}
 
 	var converted []Series
@@ -638,7 +649,7 @@ func (s *nhcbToClassicSeriesSet) convertGroup(g *histogramGroup, dst []Series) (
 		if i == 0 && len(filteredClassic) == 0 {
 			seriesDst = dst
 		}
-		seriesFromNHCB, err := s.convertNHCBSeries(nhcbSeries, groupTS, seriesDst)
+		seriesFromNHCB, err := s.convertNHCBSeries(nhcbSeries, loadGroupTS, seriesDst)
 		if err != nil {
 			return nil, err
 		}
@@ -662,7 +673,10 @@ func (s *nhcbToClassicSeriesSet) convertGroup(g *histogramGroup, dst []Series) (
 
 // convertNHCBSeries converts a single NHCB series into classic series,
 // shadowing samples at timestamps where the stored classic histogram is active.
-func (s *nhcbToClassicSeriesSet) convertNHCBSeries(nhcbSeries Series, groupTS []int64, dst []Series) ([]Series, error) {
+// loadGroupTS is called lazily and at most once on the first non-skipped sample
+// to load the group's classic timestamps; a nil loadGroupTS disables classic
+// shadowing (used by the streaming fast path).
+func (s *nhcbToClassicSeriesSet) convertNHCBSeries(nhcbSeries Series, loadGroupTS func() ([]int64, error), dst []Series) ([]Series, error) {
 	nhcbLabels := nhcbSeries.Labels()
 	s.it = nhcbSeries.Iterator(s.it)
 	if s.it == nil {
@@ -670,7 +684,10 @@ func (s *nhcbToClassicSeriesSet) convertNHCBSeries(nhcbSeries Series, groupTS []
 	}
 
 	s.builder.reset()
-	tsIdx := 0
+	var (
+		groupTS []int64
+		tsIdx   int
+	)
 
 	for {
 		valType := s.it.Next()
@@ -720,6 +737,15 @@ func (s *nhcbToClassicSeriesSet) convertNHCBSeries(nhcbSeries Series, groupTS []
 
 		if stale && len(s.builder.series) == 0 {
 			continue
+		}
+
+		if loadGroupTS != nil {
+			var err error
+			groupTS, err = loadGroupTS()
+			if err != nil {
+				return nil, err
+			}
+			loadGroupTS = nil
 		}
 
 		// If the stored classic histogram had a sample strictly between the
@@ -806,11 +832,16 @@ func mergeSeriesByLabels(preferred, fallback []Series) ([]Series, error) {
 }
 
 // collectClassicTimestamps returns the sorted, deduplicated timestamps of all
-// non-stale float samples across the given classic series.
-func collectClassicTimestamps(series []Series, it chunkenc.Iterator) ([]int64, chunkenc.Iterator, error) {
+// non-stale float samples across the given classic series. For _bucket queries,
+// any stored series without an le label (e.g. a non-histogram gauge/counter
+// ending in _bucket) is ignored so it does not shadow converted NHCB buckets.
+func collectClassicTimestamps(series []Series, suffix string, it chunkenc.Iterator) ([]int64, chunkenc.Iterator, error) {
 	var ts []int64
 	for _, s := range series {
 		if s == nil {
+			continue
+		}
+		if suffix == histogram.ClassicSuffixBucket && !s.Labels().Has(labels.BucketLabel) {
 			continue
 		}
 		it = s.Iterator(it)

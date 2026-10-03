@@ -989,6 +989,124 @@ func TestNHCBAsClassicQuerier_Collisions(t *testing.T) {
 		}, gotTransition)
 	})
 
+	t.Run("notahist_bucket without le label is returned as-is and does not shadow NHCB buckets", func(t *testing.T) {
+		// 1. Only notahist_bucket (without le) exists: returned directly.
+		qOnly := NewNHCBAsClassicQuerier(&nhcbMockQuerier{
+			classicSeries: []Series{
+				NewListSeries(labels.FromStrings("__name__", "notahist_bucket", "job", "api"), []chunks.Sample{
+					fSample{t: 1, f: 42},
+				}),
+			},
+		})
+		gotOnly := readAll(t, qOnly.Select(context.Background(), false, nil,
+			labels.MustNewMatcher(labels.MatchEqual, model.MetricNameLabel, "notahist_bucket")))
+		assertSeriesSamplesEqual(t, []seriesSamples{
+			{
+				labels:  `{__name__="notahist_bucket", job="api"}`,
+				samples: []fSample{{t: 1, f: 42}},
+			},
+		}, gotOnly)
+
+		// 2. Both notahist_bucket (without le) and NHCB notahist exist at t=1:
+		// notahist_bucket is not a histogram bucket (no le label), so it is
+		// returned alongside the converted NHCB buckets without shadowing them.
+		qBoth := NewNHCBAsClassicQuerier(&nhcbMockQuerier{
+			classicSeries: []Series{
+				NewListSeries(labels.FromStrings("__name__", "notahist_bucket", "job", "api"), []chunks.Sample{
+					fSample{t: 1, f: 42},
+				}),
+			},
+			nhcbSeries: []Series{
+				NewListSeries(labels.FromStrings("__name__", "notahist", "job", "api"), []chunks.Sample{
+					hSample{t: 1, h: nhcb(50, []float64{1.0}, []int64{5, 5})},
+				}),
+			},
+		})
+		gotBoth := readAll(t, qBoth.Select(context.Background(), false, nil,
+			labels.MustNewMatcher(labels.MatchEqual, model.MetricNameLabel, "notahist_bucket")))
+		assertSeriesSamplesEqual(t, []seriesSamples{
+			{
+				labels:  `{__name__="notahist_bucket", job="api"}`,
+				samples: []fSample{{t: 1, f: 42}},
+			},
+			{
+				labels:  `{__name__="notahist_bucket", job="api", le="+Inf"}`,
+				samples: []fSample{{t: 1, f: 10}},
+			},
+			{
+				labels:  `{__name__="notahist_bucket", job="api", le="1.0"}`,
+				samples: []fSample{{t: 1, f: 5}},
+			},
+		}, gotBoth)
+	})
+
+	t.Run("float counter on base metric name is ignored when querying _bucket", func(t *testing.T) {
+		// 1. Only float counter hist exists: querying hist_bucket returns empty.
+		qOnlyCounter := NewNHCBAsClassicQuerier(&nhcbMockQuerier{
+			nhcbSeries: []Series{
+				NewListSeries(labels.FromStrings("__name__", "hist", "job", "api"), []chunks.Sample{
+					fSample{t: 1, f: 99},
+				}),
+			},
+		})
+		gotOnlyCounter := readAll(t, qOnlyCounter.Select(context.Background(), false, nil,
+			labels.MustNewMatcher(labels.MatchEqual, model.MetricNameLabel, "hist_bucket")))
+		require.Empty(t, gotOnlyCounter)
+
+		// 2. Both classic hist_bucket and float counter hist exist: hist_bucket is returned untouched.
+		qWithClassic := NewNHCBAsClassicQuerier(&nhcbMockQuerier{
+			classicSeries: []Series{
+				NewListSeries(labels.FromStrings("__name__", "hist_bucket", "job", "api", "le", "+Inf"), []chunks.Sample{
+					fSample{t: 1, f: 10},
+				}),
+				NewListSeries(labels.FromStrings("__name__", "hist_bucket", "job", "api", "le", "1.0"), []chunks.Sample{
+					fSample{t: 1, f: 5},
+				}),
+			},
+			nhcbSeries: []Series{
+				NewListSeries(labels.FromStrings("__name__", "hist", "job", "api"), []chunks.Sample{
+					fSample{t: 1, f: 99},
+				}),
+			},
+		})
+		gotWithClassic := readAll(t, qWithClassic.Select(context.Background(), false, nil,
+			labels.MustNewMatcher(labels.MatchEqual, model.MetricNameLabel, "hist_bucket")))
+		assertSeriesSamplesEqual(t, []seriesSamples{
+			{
+				labels:  `{__name__="hist_bucket", job="api", le="+Inf"}`,
+				samples: []fSample{{t: 1, f: 10}},
+			},
+			{
+				labels:  `{__name__="hist_bucket", job="api", le="1.0"}`,
+				samples: []fSample{{t: 1, f: 5}},
+			},
+		}, gotWithClassic)
+
+		// 3. Base series transitions NHCB (t=1) -> float counter (t=2) -> NHCB (t=3):
+		// t=2 emits StaleNaN on the converted hist_bucket series, and t=3 resumes conversion.
+		qTransition := NewNHCBAsClassicQuerier(&nhcbMockQuerier{
+			nhcbSeries: []Series{
+				NewListSeries(labels.FromStrings("__name__", "hist", "job", "api"), []chunks.Sample{
+					hSample{t: 1, h: nhcb(50, []float64{1.0}, []int64{5, 5})},
+					fSample{t: 2, f: 99},
+					hSample{t: 3, h: nhcb(75, []float64{1.0}, []int64{8, 7})},
+				}),
+			},
+		})
+		gotTransition := readAll(t, qTransition.Select(context.Background(), false, nil,
+			labels.MustNewMatcher(labels.MatchEqual, model.MetricNameLabel, "hist_bucket")))
+		assertSeriesSamplesEqual(t, []seriesSamples{
+			{
+				labels:  `{__name__="hist_bucket", job="api", le="+Inf"}`,
+				samples: []fSample{{t: 1, f: 10}, {t: 2, f: staleF}, {t: 3, f: 15}},
+			},
+			{
+				labels:  `{__name__="hist_bucket", job="api", le="1.0"}`,
+				samples: []fSample{{t: 1, f: 5}, {t: 2, f: staleF}, {t: 3, f: 8}},
+			},
+		}, gotTransition)
+	})
+
 	t.Run("NewMergeQuerier with sortSeries=true deduplicates converted and remote series", func(t *testing.T) {
 		// Primary querier has NHCB series; secondary querier (e.g. remote_read)
 		// has classic series with overlapping le="+Inf". Because NewMergeQuerier
