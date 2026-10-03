@@ -139,6 +139,10 @@ var (
 		Name: "prometheus_config_last_reload_success_timestamp_seconds",
 		Help: "Timestamp of the last successful configuration reload.",
 	})
+	startupMetric = prometheus.NewGauge(prometheus.GaugeOpts{
+		Name: "prometheus_startup_time_seconds",
+		Help: "How long Prometheus took to completely startup and become ready.",
+	})
 
 	defaultRetentionString   = "15d"
 	defaultRetentionDuration model.Duration
@@ -374,6 +378,8 @@ func parseCompressionType(compress bool, compressType compression.Type) compress
 }
 
 func main() {
+	startupStartTime := time.Now()
+
 	if os.Getenv("DEBUG") != "" {
 		runtime.SetBlockProfileRate(20)
 		runtime.SetMutexProfileFraction(20)
@@ -1230,6 +1236,7 @@ func main() {
 
 	prometheus.MustRegister(configSuccess)
 	prometheus.MustRegister(configSuccessTime)
+	prometheus.MustRegister(startupMetric)
 
 	// Start all components while we wait for TSDB to open but only load
 	// initial config and mark ourselves as ready after it completed.
@@ -1479,6 +1486,7 @@ func main() {
 
 				webHandler.SetReady(web.Ready)
 				notifs.DeleteNotification(notifications.StartingUp)
+				startupMetric.Set(time.Since(startupStartTime).Seconds())
 				logger.Info("Server is ready to receive web requests.")
 				<-cancel
 				return nil
