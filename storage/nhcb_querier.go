@@ -43,6 +43,8 @@ const (
 	//     classic series) to all returned series. Stored and converted series
 	//     are neither merged into a single labelset nor shadowed by each other,
 	//     so both sources are returned in full side by side.
+	//
+	// Other values in equality or inequality matchers return an error.
 	NHCBAsClassicLabel = "__nhcb_as_classic__"
 
 	// FromNHCBLabel is the label added to returned series when a selector uses
@@ -57,6 +59,11 @@ const (
 // are on NHCBAsClassicLabel, because stripping them would leave an empty
 // selector that selects all series from the underlying storage.
 var errOnlyControlMatchers = fmt.Errorf("vector selector must contain at least one non-empty matcher besides %s", NHCBAsClassicLabel)
+
+// errInvalidControlValue is returned when an equality or inequality matcher on
+// NHCBAsClassicLabel uses an unknown value, because silently returning no data
+// for e.g. a typo would be hard to debug.
+var errInvalidControlValue = fmt.Errorf(`invalid %s value, must be one of "true", "false" or "debug"`, NHCBAsClassicLabel)
 
 // Known limitations of the NHCB-to-classic conversion:
 //
@@ -104,6 +111,7 @@ func (q *NHCBAsClassicQuerier) Select(ctx context.Context, sortSeries bool, hint
 		return ErrSeriesSet(err)
 	}
 	if !matched {
+		// Contradictory control matchers (e.g. ="true" and ="false") select nothing.
 		return NoopSeriesSet()
 	}
 
@@ -305,6 +313,9 @@ func extractControlMatchers(matchers []*labels.Matcher) (stripped []*labels.Matc
 	stripped = make([]*labels.Matcher, 0, len(matchers)-1)
 	for _, m := range matchers {
 		if isNHCBControlMatcher(m) {
+			if err := validateControlMatcher(m); err != nil {
+				return nil, false, false, false, err
+			}
 			controlMatchers = append(controlMatchers, m)
 		} else {
 			stripped = append(stripped, m)
@@ -330,6 +341,21 @@ func extractControlMatchers(matchers []*labels.Matcher) (stripped []*labels.Matc
 		return stripped, false, false, true, nil
 	default:
 		return stripped, false, false, false, nil
+	}
+}
+
+// validateControlMatcher returns an error for equality and inequality matchers
+// with unknown values. Regexp matchers are not validated, as they can
+// legitimately match unknown values (e.g. =~".+").
+func validateControlMatcher(m *labels.Matcher) error {
+	if m.Type != labels.MatchEqual && m.Type != labels.MatchNotEqual {
+		return nil
+	}
+	switch m.Value {
+	case "", "true", "false", "debug":
+		return nil
+	default:
+		return fmt.Errorf("%w, got %q", errInvalidControlValue, m.Value)
 	}
 }
 

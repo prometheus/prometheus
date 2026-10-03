@@ -1100,9 +1100,9 @@ func TestNHCBAsClassicQuerier_Collisions(t *testing.T) {
 				},
 			},
 			{
-				name:     "unknown control value returns empty set",
-				matchers: []*labels.Matcher{countName, labels.MustNewMatcher(labels.MatchEqual, NHCBAsClassicLabel, "invalid")},
-				expected: nil,
+				name:        "unknown control value returns error",
+				matchers:    []*labels.Matcher{countName, labels.MustNewMatcher(labels.MatchEqual, NHCBAsClassicLabel, "True")},
+				expectedErr: errInvalidControlValue,
 			},
 			{
 				name: "debug with classic-only and NHCB-only groups labels each group by source",
@@ -1345,6 +1345,16 @@ func TestExtractControlMatchers(t *testing.T) {
 			matchers:     []*labels.Matcher{name, ctrl(labels.MatchEqual, "true"), ctrl(labels.MatchEqual, "false")},
 			wantStripped: []*labels.Matcher{name},
 			wantMatched:  false,
+		},
+		{
+			name:     "equal unknown value returns error",
+			matchers: []*labels.Matcher{name, ctrl(labels.MatchEqual, "True")},
+			wantErr:  errInvalidControlValue,
+		},
+		{
+			name:     "not-equal unknown value returns error",
+			matchers: []*labels.Matcher{name, ctrl(labels.MatchNotEqual, "debgu")},
+			wantErr:  errInvalidControlValue,
 		},
 		{
 			name:     "only control matchers returns error",
