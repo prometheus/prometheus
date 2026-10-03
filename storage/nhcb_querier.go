@@ -68,7 +68,8 @@ var errInvalidControlValue = fmt.Errorf(`invalid %s value, must be one of "true"
 // Known limitations of the NHCB-to-classic conversion:
 //
 // 1. TODO: This does not support the series API (LabelNames, LabelValues, etc.).
-//    Only the Select method is wrapped. Any metadata or label introspection
+//    Only the Select method converts. LabelNames and LabelValues only strip
+//    NHCBAsClassicLabel matchers, so any metadata or label introspection
 //    queries will not reflect the converted classic series.
 
 // NHCBAsClassicQuerier wraps a Querier and converts NHCB (Native Histogram Custom Buckets)
@@ -352,6 +353,28 @@ func (s *leFilterSeriesSet) Next() bool {
 		}
 	}
 	return false
+}
+
+// LabelValues implements the Querier interface. NHCBAsClassicLabel matchers are
+// stripped, so the same selector can be reused for label APIs (e.g. in Grafana
+// variables), which never convert.
+func (q *NHCBAsClassicQuerier) LabelValues(ctx context.Context, name string, hints *LabelHints, matchers ...*labels.Matcher) ([]string, annotations.Annotations, error) {
+	return q.Querier.LabelValues(ctx, name, hints, stripControlMatchers(matchers)...)
+}
+
+// LabelNames implements the Querier interface. NHCBAsClassicLabel matchers are
+// stripped, for the same reason as in LabelValues.
+func (q *NHCBAsClassicQuerier) LabelNames(ctx context.Context, hints *LabelHints, matchers ...*labels.Matcher) ([]string, annotations.Annotations, error) {
+	return q.Querier.LabelNames(ctx, hints, stripControlMatchers(matchers)...)
+}
+
+// stripControlMatchers returns matchers without NHCBAsClassicLabel matchers.
+// When none is present, matchers is returned as-is without allocating.
+func stripControlMatchers(matchers []*labels.Matcher) []*labels.Matcher {
+	if !slices.ContainsFunc(matchers, isNHCBControlMatcher) {
+		return matchers
+	}
+	return slices.DeleteFunc(slices.Clone(matchers), isNHCBControlMatcher)
 }
 
 // selectUnconverted selects series from the underlying Querier without

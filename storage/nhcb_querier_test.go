@@ -1512,6 +1512,28 @@ func TestExtractControlMatchers(t *testing.T) {
 	}
 }
 
+func TestNHCBAsClassicQuerier_LabelAPIsStripControlMatchers(t *testing.T) {
+	q := NewNHCBAsClassicQuerier(&nhcbMockQuerier{})
+	matchers := []*labels.Matcher{
+		labels.MustNewMatcher(labels.MatchEqual, model.MetricNameLabel, "http_requests_bucket"),
+		labels.MustNewMatcher(labels.MatchEqual, NHCBAsClassicLabel, "false"),
+		labels.MustNewMatcher(labels.MatchEqual, "job", "api"),
+	}
+	want := []string{model.MetricNameLabel, "job"}
+
+	got, _, err := q.LabelValues(t.Context(), labels.BucketLabel, nil, matchers...)
+	require.NoError(t, err)
+	require.Equal(t, want, got)
+
+	got, _, err = q.LabelNames(t.Context(), nil, matchers...)
+	require.NoError(t, err)
+	require.Equal(t, want, got)
+
+	// The caller's matchers must not be modified.
+	require.Len(t, matchers, 3)
+	require.Equal(t, NHCBAsClassicLabel, matchers[1].Name)
+}
+
 func TestNHCBAsClassicQuerier_FloatHistogram(t *testing.T) {
 	fhNHCB := &histogram.FloatHistogram{
 		Schema:          histogram.CustomBucketsSchema,
@@ -1595,12 +1617,24 @@ func (m *nhcbMockQuerier) Select(_ context.Context, _ bool, _ *SelectHints, matc
 	return NewMockSeriesSet()
 }
 
-func (*nhcbMockQuerier) LabelValues(context.Context, string, *LabelHints, ...*labels.Matcher) ([]string, annotations.Annotations, error) {
-	return nil, nil, nil
+// LabelValues returns the names of the given matchers, so tests can assert
+// which matchers reached the underlying Querier.
+func (*nhcbMockQuerier) LabelValues(_ context.Context, _ string, _ *LabelHints, matchers ...*labels.Matcher) ([]string, annotations.Annotations, error) {
+	return matcherNames(matchers), nil, nil
 }
 
-func (*nhcbMockQuerier) LabelNames(context.Context, *LabelHints, ...*labels.Matcher) ([]string, annotations.Annotations, error) {
-	return nil, nil, nil
+// LabelNames returns the names of the given matchers, so tests can assert
+// which matchers reached the underlying Querier.
+func (*nhcbMockQuerier) LabelNames(_ context.Context, _ *LabelHints, matchers ...*labels.Matcher) ([]string, annotations.Annotations, error) {
+	return matcherNames(matchers), nil, nil
+}
+
+func matcherNames(matchers []*labels.Matcher) []string {
+	var names []string
+	for _, m := range matchers {
+		names = append(names, m.Name)
+	}
+	return names
 }
 
 func (*nhcbMockQuerier) Close() error {
