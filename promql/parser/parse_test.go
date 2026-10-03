@@ -2075,6 +2075,17 @@ var testExpr = []struct {
 		},
 	},
 	{
+		input: "foo{bar=\"\uFFFD\"}",
+		expected: &VectorSelector{
+			Name: "foo",
+			LabelMatchers: []*labels.Matcher{
+				MustLabelMatcher(labels.MatchEqual, "bar", "\uFFFD"),
+				MustLabelMatcher(labels.MatchEqual, model.MetricNameLabel, "foo"),
+			},
+			PosRange: posrange.PositionRange{Start: 0, End: 14},
+		},
+	},
+	{
 		input: `foo{a="b", foo!="bar", test=~"test", bar!~"baz"}`,
 		expected: &VectorSelector{
 			Name: "foo",
