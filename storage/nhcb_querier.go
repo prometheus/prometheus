@@ -98,7 +98,7 @@ func (s *NHCBAsClassicStorage) Querier(mint, maxt int64) (Querier, error) {
 
 // Select implements the Querier interface.
 func (q *NHCBAsClassicQuerier) Select(ctx context.Context, sortSeries bool, hints *SelectHints, matchers ...*labels.Matcher) SeriesSet {
-	strippedMatchers, convert, debug, matched, err := extractControlMatchers(matchers, true)
+	strippedMatchers, convert, debug, matched, err := extractControlMatchers(matchers)
 	if err != nil {
 		return ErrSeriesSet(err)
 	}
@@ -281,11 +281,11 @@ func hasPositiveDebugMatcher(ms []*labels.Matcher) bool {
 
 // extractControlMatchers strips any NHCBAsClassicLabel matchers from matchers
 // and evaluates whether conversion and debug mode are enabled for the selector.
-// When no NHCBAsClassicLabel matcher is present, matchers is returned as-is
-// without allocating.
-func extractControlMatchers(matchers []*labels.Matcher, defaultConvert bool) (stripped []*labels.Matcher, convert, debug, matched bool, err error) {
+// Conversion is enabled by default. When no NHCBAsClassicLabel matcher is
+// present, matchers is returned as-is without allocating.
+func extractControlMatchers(matchers []*labels.Matcher) (stripped []*labels.Matcher, convert, debug, matched bool, err error) {
 	if !slices.ContainsFunc(matchers, isNHCBControlMatcher) {
-		return matchers, defaultConvert, false, true, nil
+		return matchers, true, false, true, nil
 	}
 
 	var controlMatchers []*labels.Matcher
@@ -308,7 +308,7 @@ func extractControlMatchers(matchers []*labels.Matcher, defaultConvert bool) (st
 
 	switch {
 	case matchTrue && matchFalse && !matchDebug:
-		return stripped, defaultConvert, false, true, nil
+		return stripped, true, false, true, nil
 	case matchFalse:
 		return stripped, false, false, true, nil
 	case matchTrue || matchDebug:
