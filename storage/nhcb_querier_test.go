@@ -1121,15 +1121,16 @@ func TestNHCBAsClassicQuerier_Collisions(t *testing.T) {
 			})
 		}
 
+		countName := labels.MustNewMatcher(labels.MatchEqual, model.MetricNameLabel, "http_requests_count")
 		for _, tc := range []struct {
 			name        string
-			control     *labels.Matcher
+			matchers    []*labels.Matcher
 			expected    []seriesSamples
 			expectedErr error
 		}{
 			{
-				name:    "equal true keeps conversion on without debug label",
-				control: labels.MustNewMatcher(labels.MatchEqual, NHCBAsClassicLabel, "true"),
+				name:     "equal true keeps conversion on without debug label",
+				matchers: []*labels.Matcher{countName, labels.MustNewMatcher(labels.MatchEqual, NHCBAsClassicLabel, "true")},
 				expected: []seriesSamples{
 					{
 						labels:  `{__name__="http_requests_count", job="api"}`,
@@ -1138,8 +1139,8 @@ func TestNHCBAsClassicQuerier_Collisions(t *testing.T) {
 				},
 			},
 			{
-				name:    "equal false turns conversion off and returns stored classic only",
-				control: labels.MustNewMatcher(labels.MatchEqual, NHCBAsClassicLabel, "false"),
+				name:     "equal false turns conversion off and returns stored classic only",
+				matchers: []*labels.Matcher{countName, labels.MustNewMatcher(labels.MatchEqual, NHCBAsClassicLabel, "false")},
 				expected: []seriesSamples{
 					{
 						labels:  `{__name__="http_requests_count", job="api"}`,
@@ -1148,8 +1149,8 @@ func TestNHCBAsClassicQuerier_Collisions(t *testing.T) {
 				},
 			},
 			{
-				name:    "not-equal true turns conversion off without triggering debug mode",
-				control: labels.MustNewMatcher(labels.MatchNotEqual, NHCBAsClassicLabel, "true"),
+				name:     "not-equal true turns conversion off without triggering debug mode",
+				matchers: []*labels.Matcher{countName, labels.MustNewMatcher(labels.MatchNotEqual, NHCBAsClassicLabel, "true")},
 				expected: []seriesSamples{
 					{
 						labels:  `{__name__="http_requests_count", job="api"}`,
@@ -1158,8 +1159,8 @@ func TestNHCBAsClassicQuerier_Collisions(t *testing.T) {
 				},
 			},
 			{
-				name:    "equal empty turns conversion off",
-				control: labels.MustNewMatcher(labels.MatchEqual, NHCBAsClassicLabel, ""),
+				name:     "equal empty turns conversion off",
+				matchers: []*labels.Matcher{countName, labels.MustNewMatcher(labels.MatchEqual, NHCBAsClassicLabel, "")},
 				expected: []seriesSamples{
 					{
 						labels:  `{__name__="http_requests_count", job="api"}`,
@@ -1168,8 +1169,8 @@ func TestNHCBAsClassicQuerier_Collisions(t *testing.T) {
 				},
 			},
 			{
-				name:    "equal debug emits __from_nhcb__=false/true on separate series",
-				control: labels.MustNewMatcher(labels.MatchEqual, NHCBAsClassicLabel, "debug"),
+				name:     "equal debug emits __from_nhcb__=false/true on separate series",
+				matchers: []*labels.Matcher{countName, labels.MustNewMatcher(labels.MatchEqual, NHCBAsClassicLabel, "debug")},
 				expected: []seriesSamples{
 					{
 						labels:  `{__from_nhcb__="false", __name__="http_requests_count", job="api"}`,
@@ -1182,8 +1183,8 @@ func TestNHCBAsClassicQuerier_Collisions(t *testing.T) {
 				},
 			},
 			{
-				name:    "regexp true|debug emits __from_nhcb__=false/true on separate series",
-				control: labels.MustNewMatcher(labels.MatchRegexp, NHCBAsClassicLabel, "true|debug"),
+				name:     "regexp true|debug emits __from_nhcb__=false/true on separate series",
+				matchers: []*labels.Matcher{countName, labels.MustNewMatcher(labels.MatchRegexp, NHCBAsClassicLabel, "true|debug")},
 				expected: []seriesSamples{
 					{
 						labels:  `{__from_nhcb__="false", __name__="http_requests_count", job="api"}`,
@@ -1197,17 +1198,20 @@ func TestNHCBAsClassicQuerier_Collisions(t *testing.T) {
 			},
 			{
 				name:     "unknown control value returns empty set",
-				control:  labels.MustNewMatcher(labels.MatchEqual, NHCBAsClassicLabel, "invalid"),
+				matchers: []*labels.Matcher{countName, labels.MustNewMatcher(labels.MatchEqual, NHCBAsClassicLabel, "invalid")},
 				expected: nil,
+			},
+			{
+				name:        "selector with only control matchers returns error",
+				matchers:    []*labels.Matcher{labels.MustNewMatcher(labels.MatchEqual, NHCBAsClassicLabel, "true")},
+				expectedErr: errOnlyControlMatchers,
 			},
 		} {
 			t.Run(tc.name, func(t *testing.T) {
 				q := newDualQuerier()
-				ss := q.Select(context.Background(), false, nil,
-					labels.MustNewMatcher(labels.MatchEqual, model.MetricNameLabel, "http_requests_count"),
-					tc.control,
-				)
+				ss := q.Select(context.Background(), false, nil, tc.matchers...)
 				if tc.expectedErr != nil {
+					require.False(t, ss.Next())
 					require.ErrorIs(t, ss.Err(), tc.expectedErr)
 					return
 				}
@@ -1260,14 +1264,6 @@ func TestNHCBAsClassicQuerier_Collisions(t *testing.T) {
 			}, got)
 		})
 
-		t.Run("selector with only control matchers returns error", func(t *testing.T) {
-			q := newDualQuerier()
-			ss := q.Select(context.Background(), false, nil,
-				labels.MustNewMatcher(labels.MatchEqual, NHCBAsClassicLabel, "true"),
-			)
-			require.False(t, ss.Next())
-			require.ErrorIs(t, ss.Err(), errOnlyControlMatchers)
-		})
 	})
 }
 
