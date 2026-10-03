@@ -24,6 +24,40 @@ import (
 	"github.com/prometheus/prometheus/promql/parser/posrange"
 )
 
+func TestQuantileExactRankWithInfinity(t *testing.T) {
+	tests := []struct {
+		name     string
+		q        float64
+		values   vectorByValueHeap
+		expected float64
+	}{
+		{
+			name:     "finite exact rank before positive infinity",
+			q:        0.5,
+			values:   vectorByValueHeap{{F: 1}, {F: 2}, {F: math.Inf(1)}},
+			expected: 2,
+		},
+		{
+			name:     "positive infinity",
+			q:        1,
+			values:   vectorByValueHeap{{F: 1}, {F: math.Inf(1)}},
+			expected: math.Inf(1),
+		},
+		{
+			name:     "negative infinity",
+			q:        0,
+			values:   vectorByValueHeap{{F: math.Inf(-1)}},
+			expected: math.Inf(-1),
+		},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			require.Equal(t, test.expected, quantile(test.q, test.values))
+		})
+	}
+}
+
 func TestBucketQuantile_ForcedMonotonicity(t *testing.T) {
 	eps := 1e-12
 
