@@ -1722,6 +1722,63 @@ func TestSizeRetention(t *testing.T) {
 	}
 }
 
+// TestSizeRetentionLimitsCompactedBlockSize checks that with size-based
+// retention, compaction does not merge blocks into one larger than 10% of the
+// retention size. Size-based retention deletes whole blocks, so a single large
+// block could otherwise hold most of the retained data.
+// See https://github.com/prometheus/prometheus/issues/6857.
+func TestSizeRetentionLimitsCompactedBlockSize(t *testing.T) {
+	t.Parallel()
+
+	cases := map[string]struct {
+		// maxBytes is the size retention, in multiples of the size of one source block.
+		maxBytes  int64
+		expBlocks [][2]int64
+	}{
+		"no size retention": {
+			maxBytes:  0,
+			expBlocks: [][2]int64{{0, 300}, {300, 400}},
+		},
+		"size retention with room for the compacted block": {
+			maxBytes:  100,
+			expBlocks: [][2]int64{{0, 300}, {300, 400}},
+		},
+		"size retention too small for the compacted block": {
+			maxBytes:  20,
+			expBlocks: [][2]int64{{0, 100}, {100, 200}, {200, 300}, {300, 400}},
+		},
+	}
+	for name, c := range cases {
+		t.Run(name, func(t *testing.T) {
+			t.Parallel()
+			dir := t.TempDir()
+
+			var blockSize int64
+			for i := range int64(4) {
+				blockDir := createBlock(t, dir, genSeries(10, 5, i*100, (i+1)*100))
+				size, err := fileutil.DirSize(blockDir)
+				require.NoError(t, err)
+				blockSize = max(blockSize, size)
+			}
+
+			opts := DefaultOptions()
+			opts.MaxBytes = c.maxBytes * blockSize
+			db := newTestDB(t, withDir(dir), withOpts(opts), withRngs(100, 300))
+			db.DisableCompactions()
+			require.NoError(t, db.Compact(context.Background()))
+
+			var actBlocks [][2]int64
+			for _, b := range db.Blocks() {
+				actBlocks = append(actBlocks, [2]int64{b.Meta().MinTime, b.Meta().MaxTime})
+				if opts.MaxBytes > 0 {
+					require.LessOrEqual(t, b.Size(), opts.MaxBytes/10, "block %s is larger than 10%% of the retention size", b.Meta().ULID)
+				}
+			}
+			require.Equal(t, c.expBlocks, actBlocks)
+		})
+	}
+}
+
 func TestSizeRetentionMetric(t *testing.T) {
 	cases := []struct {
 		maxBytes    int64
