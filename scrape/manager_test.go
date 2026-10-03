@@ -16,8 +16,10 @@ package scrape
 import (
 	"bytes"
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
+	"log/slog"
 	"maps"
 	"net/http"
 	"net/http/httptest"
@@ -764,6 +766,285 @@ func TestManagerTargetsUpdates(t *testing.T) {
 	case <-m.triggerReload:
 	default:
 		require.Fail(t, "No scrape loops reload was triggered after targets update.")
+	}
+}
+
+func TestManagerDuplicateTargetLabelSets(t *testing.T) {
+	const samePoolConfig = `
+scrape_configs:
+  - job_name: api
+    static_configs:
+      - targets: ["test.invalid:8080", "test.invalid:8081"]
+    relabel_configs:
+      - source_labels: [__address__]
+        regex: '([^:]+):[0-9]+'
+        target_label: instance
+        replacement: '$1'
+`
+	type source struct {
+		pool string
+		url  string
+	}
+	samePoolSources := []source{
+		{"api", "http://test.invalid:8080/metrics"},
+		{"api", "http://test.invalid:8081/metrics"},
+	}
+	for _, tc := range []struct {
+		name        string
+		config      string
+		disabled    bool
+		wantLabels  string
+		wantSources []source
+	}{
+		{
+			name:        "different addresses in one pool",
+			config:      samePoolConfig,
+			wantLabels:  `{instance="test.invalid", job="api"}`,
+			wantSources: samePoolSources,
+		},
+		{
+			name:        "disabled",
+			config:      samePoolConfig,
+			disabled:    true,
+			wantSources: samePoolSources,
+		},
+		{
+			name: "different public labels",
+			config: `
+scrape_configs:
+  - job_name: api
+    static_configs:
+      - targets: ["test.invalid:8080", "test.invalid:8081"]
+`,
+			wantSources: samePoolSources,
+		},
+		{
+			name: "custom public labels distinguish targets",
+			config: `
+scrape_configs:
+  - job_name: api
+    static_configs:
+      - targets: ["test.invalid:8080"]
+        labels: {instance: shared, zone: first}
+      - targets: ["test.invalid:8081"]
+        labels: {instance: shared, zone: second}
+`,
+			wantSources: samePoolSources,
+		},
+		{
+			name: "same address across pools after relabelling",
+			config: `
+scrape_configs:
+  - job_name: first
+    static_configs:
+      - targets: ["test.invalid:8080"]
+        labels: {foo: bar}
+    relabel_configs:
+      - action: labeldrop
+        regex: 'job|foo'
+  - job_name: second
+    static_configs:
+      - targets: ["test.invalid:8080"]
+        labels: {foo: baz}
+    relabel_configs:
+      - action: labeldrop
+        regex: 'job|foo'
+`,
+			wantLabels: `{instance="test.invalid:8080"}`,
+			wantSources: []source{
+				{"first", "http://test.invalid:8080/metrics"},
+				{"second", "http://test.invalid:8080/metrics"},
+			},
+		},
+		{
+			name: "different addresses across pools after relabelling",
+			config: `
+scrape_configs:
+  - job_name: first
+    static_configs:
+      - targets: ["first.invalid:8080"]
+    relabel_configs:
+      - target_label: instance
+        replacement: shared
+      - action: labeldrop
+        regex: job
+  - job_name: second
+    static_configs:
+      - targets: ["second.invalid:8080"]
+    relabel_configs:
+      - target_label: instance
+        replacement: shared
+      - action: labeldrop
+        regex: job
+`,
+			wantLabels: `{instance="shared"}`,
+			wantSources: []source{
+				{"first", "http://first.invalid:8080/metrics"},
+				{"second", "http://second.invalid:8080/metrics"},
+			},
+		},
+		{
+			name: "scheme path and parameters are not public labels",
+			config: `
+scrape_configs:
+  - job_name: api
+    static_configs:
+      - targets: ["test.invalid:8080"]
+        labels: {__param_probe: first}
+      - targets: ["test.invalid:8080"]
+        labels: {__scheme__: https, __metrics_path__: /custom, __param_probe: second}
+`,
+			wantLabels: `{instance="test.invalid:8080", job="api"}`,
+			wantSources: []source{
+				{"api", "http://test.invalid:8080/metrics?probe=first"},
+				{"api", "https://test.invalid:8080/custom?probe=second"},
+			},
+		},
+		{
+			name: "duplicate discovery entries already share one loop",
+			config: `
+scrape_configs:
+  - job_name: api
+    static_configs:
+      - targets: ["test.invalid:8080", "test.invalid:8080"]
+`,
+			wantSources: []source{{"api", "http://test.invalid:8080/metrics"}},
+		},
+		{
+			name: "dropped targets do not conflict",
+			config: `
+scrape_configs:
+  - job_name: api
+    static_configs:
+      - targets: ["test.invalid:8080", "test.invalid:8081"]
+    relabel_configs:
+      - target_label: instance
+        replacement: shared
+      - source_labels: [__address__]
+        regex: 'test.invalid:8081'
+        action: drop
+`,
+			wantSources: []source{{"api", "http://test.invalid:8080/metrics"}},
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			synctest.Test(t, func(t *testing.T) {
+				var output bytes.Buffer
+				logger := slog.New(slog.NewJSONHandler(&output, &slog.HandlerOptions{Level: slog.LevelWarn}))
+				opts := &Options{
+					WarnDuplicateTargets:    !tc.disabled,
+					DiscoveryReloadInterval: model.Duration(time.Second),
+					// Keep scrape loops asleep while checking target discovery and warnings.
+					InitialScrapeOffset: time.Hour,
+					fqdn:                synctestFQDN,
+				}
+				m, err := NewManager(opts, logger, nil, nil, teststorage.NewAppendable(), prometheus.NewRegistry())
+				require.NoError(t, err)
+				defer m.Stop()
+				cfg := loadConfiguration(t, tc.config)
+				require.NoError(t, m.ApplyConfig(cfg))
+
+				targetSets := make(map[string][]*targetgroup.Group)
+				for _, sc := range cfg.ScrapeConfigs {
+					for _, sd := range sc.ServiceDiscoveryConfigs {
+						targetSets[sc.JobName] = append(targetSets[sc.JobName], sd.(discovery.StaticConfig)...)
+					}
+				}
+				tsetsCh := make(chan map[string][]*targetgroup.Group)
+				go func() {
+					require.NoError(t, m.Run(tsetsCh))
+				}()
+				tsetsCh <- targetSets
+				synctest.Wait()
+				time.Sleep(time.Second)
+				synctest.Wait()
+
+				// A warning must not remove either target or change its URL.
+				var sources []source
+				for pool, targets := range m.TargetsActive() {
+					for _, target := range targets {
+						sources = append(sources, source{pool, target.URL().String()})
+					}
+				}
+				require.ElementsMatch(t, tc.wantSources, sources)
+				if tc.wantLabels == "" {
+					require.Empty(t, output.String())
+				} else {
+					require.NotEmpty(t, output.String(), "expected a warning for duplicate target label sets")
+					var entry struct {
+						Level           string `json:"level"`
+						Message         string `json:"msg"`
+						Labels          string `json:"labels"`
+						ScrapePool      string `json:"scrape_pool"`
+						OtherScrapePool string `json:"other_scrape_pool"`
+						Target          string `json:"target"`
+						OtherTarget     string `json:"other_target"`
+					}
+					require.NoError(t, json.Unmarshal(output.Bytes(), &entry))
+					require.Equal(t, "WARN", entry.Level)
+					require.Equal(t, "Found duplicate target label sets", entry.Message)
+					require.Equal(t, tc.wantLabels, entry.Labels)
+					require.ElementsMatch(t, tc.wantSources, []source{
+						{entry.ScrapePool, entry.Target},
+						{entry.OtherScrapePool, entry.OtherTarget},
+					})
+				}
+
+				// Removing targets must also remove their conflicts on the next update.
+				output.Reset()
+				emptySets := make(map[string][]*targetgroup.Group)
+				for _, sc := range cfg.ScrapeConfigs {
+					emptySets[sc.JobName] = nil
+				}
+				tsetsCh <- emptySets
+				synctest.Wait()
+				time.Sleep(time.Second)
+				synctest.Wait()
+				require.Empty(t, output.String())
+				for _, targets := range m.TargetsActive() {
+					require.Empty(t, targets)
+				}
+			})
+		})
+	}
+}
+
+func BenchmarkManagerDuplicateTargetLabelSets(b *testing.B) {
+	for _, count := range []int{10_000, 100_000} {
+		for _, duplicates := range []bool{false, true} {
+			b.Run(fmt.Sprintf("targets=%d/duplicates=%t", count, duplicates), func(b *testing.B) {
+				var output bytes.Buffer
+				m := &Manager{
+					logger:      slog.New(slog.NewJSONHandler(&output, nil)),
+					scrapePools: make(map[string]*scrapePool),
+				}
+				for i := range 4 {
+					m.scrapePools[strconv.Itoa(i)] = &scrapePool{
+						activeTargets: make(map[uint64]*Target, count/4),
+					}
+				}
+				for i := range count {
+					instance := i
+					if duplicates && i%100 == 1 {
+						// One percent of targets share public labels with another pool's target.
+						instance--
+					}
+					target := NewTarget(labels.FromStrings(
+						model.AddressLabel, fmt.Sprintf("target-%d.invalid:8080", i),
+						model.SchemeLabel, "http",
+						model.MetricsPathLabel, "/metrics",
+						model.JobLabel, "api",
+						model.InstanceLabel, strconv.Itoa(instance),
+					), &config.DefaultScrapeConfig, nil, nil)
+					m.scrapePools[strconv.Itoa(i%4)].activeTargets[target.hash()] = target
+				}
+				b.ReportAllocs()
+				for b.Loop() {
+					output.Reset()
+					m.warnIfDuplicateTargetLabelSets()
+				}
+			})
+		}
 	}
 }
 
