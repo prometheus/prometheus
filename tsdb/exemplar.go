@@ -16,6 +16,7 @@ package tsdb
 import (
 	"context"
 	"errors"
+	"fmt"
 	"slices"
 	"sync"
 	"unicode/utf8"
@@ -231,6 +232,10 @@ func (ce *CircularExemplarStorage) ValidateExemplar(l labels.Labels, e exemplar.
 func (ce *CircularExemplarStorage) validateExemplar(idx *indexEntry, e exemplar.Exemplar, appended bool) error {
 	if len(ce.exemplars) == 0 {
 		return storage.ErrExemplarsDisabled
+	}
+
+	if l, dup := e.Labels.HasDuplicateLabelNames(); dup {
+		return fmt.Errorf("label name %q is not unique: %w", l, ErrInvalidExemplar)
 	}
 
 	// Exemplar label length does not include chars involved in text rendering such as quotes

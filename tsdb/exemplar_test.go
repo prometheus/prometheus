@@ -75,6 +75,14 @@ func TestValidateExemplar(t *testing.T) {
 		Ts:     2,
 	}
 	require.Equal(t, storage.ErrExemplarLabelLength, es.ValidateExemplar(l, e4))
+
+	e5 := exemplar.Exemplar{
+		Labels: labels.FromStrings("trace_id", "aaaa", "trace_id", "bbbb"),
+		Value:  0.1,
+		Ts:     4,
+	}
+	require.ErrorIs(t, es.ValidateExemplar(l, e5), ErrInvalidExemplar, "error is expected when the exemplar label names are not unique")
+	require.ErrorIs(t, es.AddExemplar(l, e5), ErrInvalidExemplar, "error is expected when the exemplar label names are not unique")
 }
 
 func TestCircularExemplarStorage_AddExemplar(t *testing.T) {
