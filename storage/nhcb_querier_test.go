@@ -856,13 +856,17 @@ func TestNHCBAsClassicQuerier_Collisions(t *testing.T) {
 	t.Run("NHCB staleness marker and bucket layout change emit StaleNaN on converted series", func(t *testing.T) {
 		// t=1: CustomValues [1.0, 5.0]
 		// t=2: CustomValues [1.0] (bucket 5.0 removed -> gets StaleNaN at t=2)
-		// t=3: NHCB stale marker -> active series (le="1.0", "+Inf") get StaleNaN at t=3
+		// t=3: histogram NHCB stale marker -> active series (le="1.0", "+Inf") get StaleNaN at t=3
+		// t=4: CustomValues [1.0] (resumes)
+		// t=5: float StaleNaN (common scrape staleness marker) -> active series get StaleNaN at t=5
 		q := NewNHCBAsClassicQuerier(&nhcbMockQuerier{
 			nhcbSeries: []Series{
 				NewListSeries(labels.FromStrings("__name__", "http_requests"), []chunks.Sample{
 					hSample{t: 1, h: nhcb(50, []float64{1.0, 5.0}, []int64{5, 3, 2})},
 					hSample{t: 2, h: nhcb(75, []float64{1.0}, []int64{8, 7})},
 					hSample{t: 3, h: staleNHCB},
+					hSample{t: 4, h: nhcb(90, []float64{1.0}, []int64{10, 8})},
+					fSample{t: 5, f: staleF},
 				}),
 			},
 		})
@@ -871,11 +875,11 @@ func TestNHCBAsClassicQuerier_Collisions(t *testing.T) {
 		assertSeriesSamplesEqual(t, []seriesSamples{
 			{
 				labels:  `{__name__="http_requests_bucket", le="+Inf"}`,
-				samples: []fSample{{t: 1, f: 10}, {t: 2, f: 15}, {t: 3, f: staleF}},
+				samples: []fSample{{t: 1, f: 10}, {t: 2, f: 15}, {t: 3, f: staleF}, {t: 4, f: 18}, {t: 5, f: staleF}},
 			},
 			{
 				labels:  `{__name__="http_requests_bucket", le="1.0"}`,
-				samples: []fSample{{t: 1, f: 5}, {t: 2, f: 8}, {t: 3, f: staleF}},
+				samples: []fSample{{t: 1, f: 5}, {t: 2, f: 8}, {t: 3, f: staleF}, {t: 4, f: 10}, {t: 5, f: staleF}},
 			},
 			{
 				labels:  `{__name__="http_requests_bucket", le="5.0"}`,
