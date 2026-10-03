@@ -143,6 +143,16 @@ global:
   # and underscores.
   [ metric_name_validation_scheme: <string> | default "utf8" ]
 
+  # Specifies the character escaping scheme that will be requested when scraping
+  # for metric and label names that do not conform to the legacy Prometheus
+  # character set. Available options are `allow-utf-8`, `underscores`, `dots`
+  # and `values`; see the `<scrape_config>` section below for what each one does.
+  # If this value is left blank, Prometheus will default to `allow-utf-8` if the
+  # global validation scheme is set to utf8, or `underscores` if it is set to
+  # `legacy`. Scrape configs that set neither option inherit this value.
+  # Scrape configs inheriting `allow-utf-8` must use the utf8 validation scheme.
+  [ metric_name_escaping_scheme: <string> | default "allow-utf-8" ]
+
   # If true, native histograms exposed by a target are recognized during
   # scraping and ingested as such. If false, any native parts of histograms
   # are ignored and only the classic parts are recognized (possibly as
@@ -599,7 +609,9 @@ metric_relabel_configs:
 #     e.g. "U__my_2e_dotted_2e_name".
 # If this value is left blank, Prometheus will default to `allow-utf-8` if the
 # validation scheme for the current scrape config is set to utf8, or
-# `underscores` if the validation scheme is set to `legacy`.
+# `underscores` if the validation scheme is set to `legacy`. If neither this nor
+# `metric_name_validation_scheme` is set, the global `metric_name_escaping_scheme`
+# is used.
 [ metric_name_escaping_scheme: <string> | default "allow-utf-8" ]
 
 # Limit on total number of positive and negative buckets allowed in a single
