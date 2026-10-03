@@ -20,16 +20,37 @@ import (
 func (m Sample) T() int64   { return m.Timestamp }
 func (m Sample) V() float64 { return m.Value }
 
+// OptimizedMarshal marshals m into dst when its capacity suffices. Otherwise
+// the new buffer's capacity is the allocator's block for the message, so later
+// messages within that block can reuse it.
 func (m *Request) OptimizedMarshal(dst []byte) ([]byte, error) {
 	siz := m.Size()
 	if cap(dst) < siz {
-		dst = make([]byte, siz)
+		dst = growBuffer(siz)
 	}
 	n, err := m.OptimizedMarshalToSizedBuffer(dst[:siz])
 	if err != nil {
 		return nil, err
 	}
 	return dst[:n], nil
+}
+
+// Go allocates objects above 32 KiB in whole 8 KiB pages.
+const (
+	largeObjectSize = 32 << 10
+	heapPageSize    = 8 << 10
+)
+
+// growBuffer returns an empty buffer whose capacity is the allocator's block
+// for n bytes, so it never retains more than an exact allocation.
+func growBuffer(n int) []byte {
+	if n > largeObjectSize {
+		// Unlike slices.Grow, make lets the runtime skip clearing pages that the
+		// OS returns zeroed.
+		return make([]byte, 0, (n+heapPageSize-1)&^(heapPageSize-1))
+	}
+	// Growing from nil skips append's growth factor and copying stale contents.
+	return slices.Grow([]byte(nil), n)
 }
 
 // OptimizedMarshalToSizedBuffer is mostly a copy of the generated MarshalToSizedBuffer,
