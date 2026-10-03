@@ -739,6 +739,9 @@ func (s *nhcbToClassicSeriesSet) convertGroup(g *histogramGroup, dst []Series) (
 
 // convertNHCBSeries converts a single NHCB series into classic series,
 // shadowing samples at timestamps where the stored classic histogram is active.
+// loadGroupTS is called lazily and at most once on the first non-skipped sample
+// to load the group's classic timestamps; a nil loadGroupTS disables classic
+// shadowing (used by the streaming fast path).
 func (s *nhcbToClassicSeriesSet) convertNHCBSeries(nhcbSeries Series, loadGroupTS func() ([]int64, error), dst []Series) ([]Series, error) {
 	nhcbLabels := nhcbSeries.Labels()
 	s.it = nhcbSeries.Iterator(s.it)
