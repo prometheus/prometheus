@@ -795,6 +795,12 @@ type ScrapeConfig struct {
 	ScrapeInterval model.Duration `yaml:"scrape_interval,omitempty"`
 	// The timeout for scraping targets of this config.
 	ScrapeTimeout model.Duration `yaml:"scrape_timeout,omitempty"`
+
+	// globalScrapeTimeout keeps the uncapped global timeout when ScrapeTimeout
+	// was inherited. ScrapeTimeout itself remains capped for configuration
+	// output and jobs whose targets do not override the interval.
+	globalScrapeTimeout      model.Duration
+	scrapeIntervalConfigured bool
 	// The protocols to negotiate during a scrape. It tells clients what
 	// protocol are accepted by Prometheus and with what preference (most wanted is first).
 	// Supported values (case sensitive): PrometheusProto, OpenMetricsText0.0.1,
@@ -884,6 +890,7 @@ func (c *ScrapeConfig) UnmarshalYAML(unmarshal func(any) error) error {
 	if err := discovery.UnmarshalYAMLWithInlineConfigs(c, unmarshal); err != nil {
 		return err
 	}
+	c.scrapeIntervalConfigured = c.ScrapeInterval != 0
 	if c.JobName == "" {
 		return errors.New("job_name is empty")
 	}
@@ -930,6 +937,7 @@ func (c *ScrapeConfig) Validate(globalConfig GlobalConfig) error {
 		return fmt.Errorf("scrape timeout greater than scrape interval for scrape config with job name %q", c.JobName)
 	}
 	if c.ScrapeTimeout == 0 {
+		c.globalScrapeTimeout = globalConfig.ScrapeTimeout
 		c.ScrapeTimeout = min(globalConfig.ScrapeTimeout, c.ScrapeInterval)
 	}
 	if c.BodySizeLimit == 0 {
@@ -1069,6 +1077,15 @@ func (c *ScrapeConfig) Validate(globalConfig GlobalConfig) error {
 	}
 
 	return nil
+}
+
+// ScrapeTimeoutForInterval returns the timeout for a target interval.
+// An inherited global timeout is resolved against an interval overridden per target.
+func (c *ScrapeConfig) ScrapeTimeoutForInterval(interval model.Duration) model.Duration {
+	if c.globalScrapeTimeout != 0 && c.scrapeIntervalConfigured && interval != c.ScrapeInterval {
+		return min(c.globalScrapeTimeout, interval)
+	}
+	return c.ScrapeTimeout
 }
 
 // MarshalYAML implements the yaml.Marshaler interface.
