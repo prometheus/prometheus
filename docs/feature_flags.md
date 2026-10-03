@@ -393,6 +393,8 @@ histogram_quantile(0.95, rate(request_duration_seconds_bucket[5m]))
 rate(request_duration_seconds[5m])
 ```
 
-This feature only affects PromQL query evaluation. It does not apply to remote write
-(NHCB series are not converted when being forwarded to remote endpoints) and does not
-affect the series API (the `/api/v1/series` endpoint will not return the converted classic series).
+This feature only affects PromQL query evaluation (e.g. the query APIs and rule evaluation). The
+conversion is applied on top of all data the query engine reads, including series fetched from
+`remote_read` endpoints. It does not apply to remote write (NHCB series are not converted when being
+forwarded to remote endpoints), the remote read API, federation, or the series API (the
+`/api/v1/series` endpoint will not return the converted classic series).
