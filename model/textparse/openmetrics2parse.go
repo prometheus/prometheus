@@ -95,9 +95,13 @@ type pendingEntry struct {
 	val         float64
 }
 
-// om2Exemplar holds a fully parsed exemplar.
+// om2Exemplar holds the byte-offset range into p.eOffsets and parsed scalar
+// fields for a single exemplar so that Exemplar() can construct labels lazily.
 type om2Exemplar struct {
-	e exemplar.Exemplar
+	offsetsStart int
+	offsetsEnd   int
+	val          float64
+	ts           int64
 }
 
 // openMetrics2Parser parses samples from a byte slice in the OpenMetrics 2.0
@@ -144,7 +148,10 @@ type openMetrics2Parser struct {
 	fh *histogram.FloatHistogram
 
 	// Multiple exemplars per sample (OM 2.0 allows zero or more).
+	// eOffsets stores the flat [k1Start, k1End, v1Start, v1End, ...] byte
+	// offsets into l.b across all exemplars on the current line.
 	exemplars   []om2Exemplar
+	eOffsets    []int
 	exemplarIdx int
 
 	// Pending queue for composite values exploded into flat EntrySeries.
@@ -344,8 +351,26 @@ func (p *openMetrics2Parser) Exemplar(e *exemplar.Exemplar) bool {
 	if p.exemplarIdx >= len(p.exemplars) {
 		return false
 	}
-	*e = p.exemplars[p.exemplarIdx].e
+	ex := p.exemplars[p.exemplarIdx]
 	p.exemplarIdx++
+
+	e.Value = ex.val
+	e.HasTs = true
+	e.Ts = ex.ts
+	p.builder.Reset()
+	if ex.offsetsStart < ex.offsetsEnd {
+		base := p.eOffsets[ex.offsetsStart]
+		s := string(p.l.b[base:p.eOffsets[ex.offsetsEnd-1]])
+		for i := ex.offsetsStart; i < ex.offsetsEnd; i += 4 {
+			a := p.eOffsets[i] - base
+			b := p.eOffsets[i+1] - base
+			c := p.eOffsets[i+2] - base
+			d := p.eOffsets[i+3] - base
+			p.builder.Add(unreplace(s[a:b]), unreplace(s[c:d]))
+		}
+		p.builder.Sort()
+	}
+	e.Labels = p.builder.Labels()
 	return true
 }
 
@@ -387,6 +412,7 @@ func (p *openMetrics2Parser) Next() (Entry, error) {
 	p.start = p.l.i
 	p.offsets = p.offsets[:0]
 	p.exemplars = p.exemplars[:0]
+	p.eOffsets = p.eOffsets[:0]
 	p.exemplarIdx = 0
 	p.hasTS = false
 	p.hasST = false
@@ -658,37 +684,27 @@ func (p *openMetrics2Parser) parseExemplars() error {
 //   - tLinebreak → done=true
 //   - tComment   → done=false (caller loops for next exemplar)
 func (p *openMetrics2Parser) parseSingleExemplar() (done bool, err error) {
-	var ex om2Exemplar
+	offsetsStart := len(p.eOffsets)
 
-	// Parse exemplar label set (the "{" was opened by the tComment token).
-	eOffsets, err := p.parseLVals(nil, true)
+	// Parse exemplar label set (the "{" was opened by the tComment token) into
+	// the shared p.eOffsets slice so Exemplar() can build labels lazily.
+	p.eOffsets, err = p.parseLVals(p.eOffsets, true)
 	if err != nil {
 		return false, err
 	}
+	offsetsEnd := len(p.eOffsets)
 
 	// Parse exemplar value.
 	if t := p.nextToken(); t != tValue {
 		return false, p.parseError("expected exemplar value", t)
 	}
-	ex.e.Value, err = parseFloat(yoloString(p.l.buf()[1:]))
+	val, err := parseFloat(yoloString(p.l.buf()[1:]))
 	if err != nil {
 		return false, fmt.Errorf("%w while parsing exemplar value: %q", err, p.l.b[p.start:p.l.i])
 	}
-	if math.IsNaN(ex.e.Value) {
-		ex.e.Value = math.Float64frombits(value.NormalNaN)
+	if math.IsNaN(val) {
+		val = math.Float64frombits(value.NormalNaN)
 	}
-
-	// Build exemplar labels from the byte offsets collected above.
-	p.builder.Reset()
-	for i := 0; i < len(eOffsets); i += 4 {
-		a := eOffsets[i]
-		b := eOffsets[i+1]
-		c := eOffsets[i+2]
-		d := eOffsets[i+3]
-		p.builder.Add(unreplace(string(p.l.b[a:b])), unreplace(string(p.l.b[c:d])))
-	}
-	p.builder.Sort()
-	ex.e.Labels = p.builder.Labels()
 
 	// Read the token following the exemplar value.  OM2 requires every
 	// exemplar to carry a timestamp, so anything other than tTimestamp here
@@ -697,7 +713,6 @@ func (p *openMetrics2Parser) parseSingleExemplar() (done bool, err error) {
 	case tEOF:
 		return false, errors.New("data does not end with # EOF")
 	case tTimestamp:
-		ex.e.HasTs = true
 		var ts float64
 		if ts, err = parseFloat(yoloString(p.l.buf()[1:])); err != nil {
 			return false, fmt.Errorf("%w while parsing exemplar timestamp: %q", err, p.l.b[p.start:p.l.i])
@@ -705,8 +720,12 @@ func (p *openMetrics2Parser) parseSingleExemplar() (done bool, err error) {
 		if math.IsNaN(ts) || math.IsInf(ts, 0) {
 			return false, fmt.Errorf("invalid exemplar timestamp %f", ts)
 		}
-		ex.e.Ts = int64(ts * 1000)
-		p.exemplars = append(p.exemplars, ex)
+		p.exemplars = append(p.exemplars, om2Exemplar{
+			offsetsStart: offsetsStart,
+			offsetsEnd:   offsetsEnd,
+			val:          val,
+			ts:           int64(ts * 1000),
+		})
 		// After the exemplar timestamp, the line may end (tLinebreak) or
 		// another exemplar may follow (tComment).
 		switch t3 := p.nextToken(); t3 {
