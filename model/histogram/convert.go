@@ -220,6 +220,133 @@ func ConvertNHCBToClassic(nhcb any, lset labels.Labels, lsetBuilder *labels.Buil
 	return emitClassicSeries(lset, baseName, lsetBuilder, onlySuffix, cache, customValues, cumulative, count, sum, emitSeriesFn)
 }
 
+// ConvertExponentialToClassic converts a standard (exponential schema) native
+// histogram to classic histogram series, evaluating the cumulative count at
+// each of the given classic upper bounds. Bounds must be finite, sorted in
+// ascending order and deduplicated; the +Inf bucket is always emitted in
+// addition. Unlike ConvertNHCBToClassic, only float histograms are accepted:
+// convert integer histograms with Histogram.ToFloat first.
+//
+// Exponential bucket boundaries rarely coincide with the requested bounds, so
+// the observations of a bucket straddling a bound are interpolated the same
+// way histogram_fraction does for native histograms: exponentially for regular
+// buckets and linearly for the zero bucket (see
+// FloatHistogram.InterpolationBounds). When a bound coincides with an
+// exponential bucket boundary the result is exact.
+//
+// Use AppendExponentialBounds to derive bounds from the populated buckets of
+// the histograms being converted.
+//
+// See ConvertNHCBToClassic for onlySuffix, cache and emitSeriesFn.
+func ConvertExponentialToClassic(h *FloatHistogram, bounds []float64, lset labels.Labels, lsetBuilder *labels.Builder, onlySuffix string, cache *ClassicSeriesCache, emitSeriesFn func(labels labels.Labels, value float64) error) error {
+	baseName := lset.Get(model.MetricNameLabel)
+	if baseName == "" {
+		return errors.New("metric name label '__name__' is missing")
+	}
+	if !IsExponentialSchema(h.Schema) {
+		return errors.New("unsupported histogram schema, not an exponential native histogram")
+	}
+	if err := h.Validate(); err != nil {
+		return err
+	}
+
+	var cumulative []float64
+	if onlySuffix == "" || onlySuffix == ClassicSuffixBucket {
+		cumulative = allocCumulative(cache, len(bounds)+1)
+		total := exponentialCumulativeCounts(h, bounds, cumulative)
+		// The +Inf bucket is h.Count, which unlike the buckets includes NaN
+		// observations. Validate does not require Count >= sum of buckets for
+		// float histograms though, so take the bucket sum when it is larger
+		// to keep the classic buckets monotonic.
+		cumulative[len(bounds)] = max(h.Count, total)
+	}
+	return emitClassicSeries(lset, baseName, lsetBuilder, onlySuffix, cache, bounds, cumulative, h.Count, h.Sum, emitSeriesFn)
+}
+
+// exponentialCumulativeCounts fills cumulative[i] with the (estimated) number
+// of observations in h that are less than or equal to bounds[i], and returns
+// the total number of observations in all buckets. Bounds must be sorted in
+// ascending order.
+func exponentialCumulativeCounts(h *FloatHistogram, bounds, cumulative []float64) float64 {
+	var (
+		it     = h.AllBucketIterator()
+		rank   float64 // Observations in all buckets fully below the current one.
+		b      Bucket[float64]
+		linear bool
+		have   = it.Next()
+	)
+	if have {
+		b, linear = h.InterpolationBounds(it.At())
+	}
+	for i, v := range bounds {
+		for have && b.Upper <= v {
+			rank += b.Count
+			if have = it.Next(); have {
+				b, linear = h.InterpolationBounds(it.At())
+			}
+		}
+		c := rank
+		// Here v < b.Upper, so v is strictly inside the bucket if it is
+		// above its (possibly adjusted) lower bound.
+		if have && b.Count > 0 && b.Lower < v {
+			c += b.Count * b.FractionBelow(v, linear)
+		}
+		cumulative[i] = c
+	}
+	for have {
+		rank += b.Count
+		if have = it.Next(); have {
+			b = it.At()
+		}
+	}
+	return rank
+}
+
+// AppendExponentialBounds appends the lower and upper bound of every populated
+// bucket of the exponential histogram h to dst, after reducing the resolution
+// to at most maxSchema (which must be a valid exponential schema, i.e. within
+// [ExponentialSchemaMin, ExponentialSchemaMax]), and returns the extended
+// slice. Both bounds are needed so that classic quantile estimation
+// interpolates within the populated bucket instead of all the way from the
+// previous populated bucket. The result is neither sorted nor deduplicated and
+// may contain +Inf for the overflow bucket. dst is returned unchanged if h does
+// not use an exponential schema.
+func AppendExponentialBounds(dst []float64, h *FloatHistogram, maxSchema int32) []float64 {
+	if !IsExponentialSchema(h.Schema) {
+		return dst
+	}
+	schema := min(h.Schema, maxSchema)
+	for it := h.PositiveBucketIterator(); it.Next(); {
+		b := it.At()
+		if b.Count == 0 {
+			continue
+		}
+		idx := b.Index
+		if h.Schema > schema {
+			idx = targetIdx(idx, h.Schema, schema)
+		}
+		dst = append(dst, getBoundExponential(idx-1, schema), getBoundExponential(idx, schema))
+	}
+	for it := h.NegativeBucketIterator(); it.Next(); {
+		b := it.At()
+		if b.Count == 0 {
+			continue
+		}
+		idx := b.Index
+		if h.Schema > schema {
+			idx = targetIdx(idx, h.Schema, schema)
+		}
+		dst = append(dst, -getBoundExponential(idx, schema), -getBoundExponential(idx-1, schema))
+	}
+	if h.ZeroCount > 0 {
+		dst = append(dst, h.ZeroThreshold)
+		if len(h.NegativeBuckets) > 0 {
+			dst = append(dst, -h.ZeroThreshold)
+		}
+	}
+	return dst
+}
+
 // emitClassicSeries emits the classic bucket (using bounds and cumulative,
 // where cumulative has one more element than bounds for the +Inf bucket),
 // count and sum series selected by onlySuffix.
