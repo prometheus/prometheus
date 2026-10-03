@@ -886,6 +886,19 @@ func (d *Discovery) newIndexedEndpointSlicesInformer(plw *cache.ListWatch, objec
 
 		return []string{namespacedName(e.Namespace, svcName)}, nil
 	}
+	indexers[podIndex] = func(obj any) ([]string, error) {
+		e, ok := obj.(*disv1.EndpointSlice)
+		if !ok {
+			return nil, errors.New("object is not an endpointslice")
+		}
+		var pods []string
+		for _, endpoint := range e.Endpoints {
+			if endpoint.TargetRef != nil && endpoint.TargetRef.Kind == "Pod" {
+				pods = append(pods, namespacedName(endpoint.TargetRef.Namespace, endpoint.TargetRef.Name))
+			}
+		}
+		return pods, nil
+	}
 
 	if d.attachMetadata.Node {
 		indexers[nodeIndex] = func(obj any) ([]string, error) {

@@ -439,6 +439,127 @@ func TestEndpointSliceDiscoveryEmptyEndpoints(t *testing.T) {
 	}.Run(t)
 }
 
+func TestEndpointSliceDiscoveryUpdatePod(t *testing.T) {
+	t.Parallel()
+	pod := &corev1.Pod{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      "testpod",
+			Namespace: "default",
+			UID:       types.UID("deadbeef"),
+		},
+		Spec: corev1.PodSpec{
+			NodeName: "testnode",
+			Containers: []corev1.Container{
+				{
+					Name:  "c1",
+					Image: "c1:latest",
+					Ports: []corev1.ContainerPort{
+						{
+							Name:          "mainport",
+							ContainerPort: 9000,
+							Protocol:      corev1.ProtocolTCP,
+						},
+					},
+				},
+			},
+		},
+		Status: corev1.PodStatus{
+			// Pod is in Pending phase when discovered for first time.
+			Phase: "Pending",
+			Conditions: []corev1.PodCondition{
+				{
+					Type:   corev1.PodReady,
+					Status: corev1.ConditionFalse,
+				},
+			},
+			HostIP: "2.3.4.5",
+			PodIP:  "4.3.2.1",
+		},
+	}
+	objs := []runtime.Object{
+		&v1.EndpointSlice{
+			ObjectMeta: metav1.ObjectMeta{
+				Name:      "testendpoints",
+				Namespace: "default",
+			},
+			AddressType: v1.AddressTypeIPv4,
+			Ports: []v1.EndpointPort{
+				{
+					Name:     strptr("testport"),
+					Port:     int32ptr(9000),
+					Protocol: protocolptr(corev1.ProtocolTCP),
+				},
+			},
+			Endpoints: []v1.Endpoint{
+				{
+					Addresses: []string{"4.3.2.1"},
+					TargetRef: &corev1.ObjectReference{
+						Kind:      "Pod",
+						Name:      "testpod",
+						Namespace: "default",
+					},
+					Conditions: v1.EndpointConditions{
+						Ready: boolptr(false),
+					},
+				},
+			},
+		},
+		pod,
+	}
+	n, c := makeDiscovery(RoleEndpointSlice, NamespaceDiscovery{}, objs...)
+
+	k8sDiscoveryTest{
+		discovery: n,
+		afterStart: func() {
+			// The Pod becomes Running, which does not trigger an EndpointSlice
+			// update. The discovery must still refresh the pod metadata.
+			pod.Status.Phase = "Running"
+			pod.Status.Conditions = []corev1.PodCondition{
+				{
+					Type:   corev1.PodReady,
+					Status: corev1.ConditionTrue,
+				},
+			}
+			c.CoreV1().Pods(pod.Namespace).Update(context.Background(), pod, metav1.UpdateOptions{})
+		},
+		expectedMaxItems: 2,
+		expectedRes: map[string]*targetgroup.Group{
+			"endpointslice/default/testendpoints": {
+				Targets: []model.LabelSet{
+					{
+						"__address__": "4.3.2.1:9000",
+						"__meta_kubernetes_endpointslice_address_target_kind":       "Pod",
+						"__meta_kubernetes_endpointslice_address_target_name":       "testpod",
+						"__meta_kubernetes_endpointslice_endpoint_conditions_ready": "false",
+						"__meta_kubernetes_endpointslice_port":                      "9000",
+						"__meta_kubernetes_endpointslice_port_name":                 "testport",
+						"__meta_kubernetes_endpointslice_port_protocol":             "TCP",
+						"__meta_kubernetes_pod_container_init":                      "false",
+						"__meta_kubernetes_pod_container_image":                     "c1:latest",
+						"__meta_kubernetes_pod_container_name":                      "c1",
+						"__meta_kubernetes_pod_container_port_name":                 "mainport",
+						"__meta_kubernetes_pod_container_port_number":               "9000",
+						"__meta_kubernetes_pod_container_port_protocol":             "TCP",
+						"__meta_kubernetes_pod_host_ip":                             "2.3.4.5",
+						"__meta_kubernetes_pod_ip":                                  "4.3.2.1",
+						"__meta_kubernetes_pod_name":                                "testpod",
+						"__meta_kubernetes_pod_node_name":                           "testnode",
+						"__meta_kubernetes_pod_phase":                               "Running",
+						"__meta_kubernetes_pod_ready":                               "true",
+						"__meta_kubernetes_pod_uid":                                 "deadbeef",
+					},
+				},
+				Labels: model.LabelSet{
+					"__meta_kubernetes_endpointslice_address_type": "IPv4",
+					"__meta_kubernetes_endpointslice_name":         "testendpoints",
+					"__meta_kubernetes_namespace":                  "default",
+				},
+				Source: "endpointslice/default/testendpoints",
+			},
+		},
+	}.Run(t)
+}
+
 func TestEndpointSliceDiscoveryWithService(t *testing.T) {
 	t.Parallel()
 	n, c := makeDiscovery(RoleEndpointSlice, NamespaceDiscovery{Names: []string{"default"}}, makeEndpointSliceV1("default"))
@@ -1206,8 +1327,8 @@ func TestEndpointSliceInfIndexersCount(t *testing.T) {
 			t.Parallel()
 			var (
 				n *Discovery
-				// service indexer is enabled by default
-				mainInfIndexersCount = 1
+				// service and pod indexers are enabled by default
+				mainInfIndexersCount = 2
 			)
 			if tc.withNodeMetadata {
 				mainInfIndexersCount++
