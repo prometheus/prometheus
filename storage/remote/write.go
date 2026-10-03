@@ -67,11 +67,19 @@ type WriteStorage struct {
 	externalLabels    labels.Labels
 	dir               string
 	queues            map[string]*QueueManager
-	samplesIn         *ewmaRate
-	flushDeadline     time.Duration
-	interner          *pool
-	scraper           ReadyScrapeManager
-	quit              chan struct{}
+	memoryWrite       bool
+
+	// Memory commits use a separate lock so configuration reloads can flush
+	// replaced destinations while unchanged destinations continue accepting data.
+	memoryMtx    sync.Mutex
+	memoryQueues []*QueueManager
+	memoryClosed bool
+
+	samplesIn     *ewmaRate
+	flushDeadline time.Duration
+	interner      *pool
+	scraper       ReadyScrapeManager
+	quit          chan struct{}
 
 	recordBuf *record.BuffersPool
 
@@ -133,8 +141,10 @@ func (rws *WriteStorage) Notify() {
 	defer rws.mtx.Unlock()
 
 	for _, q := range rws.queues {
-		// These should all be non blocking
-		q.watcher.Notify()
+		// These should all be nonblocking.
+		if q.watcher != nil {
+			q.watcher.Notify()
+		}
 	}
 }
 
@@ -222,12 +232,23 @@ func (rws *WriteStorage) ApplyConfig(conf *config.Config) error {
 			rws.recordBuf,
 			rwConf.FailedRequestLogging,
 		)
+		if rws.memoryWrite {
+			newQueues[hash].memoryWrite = true
+			newQueues[hash].watcher = nil
+		}
 		// Keep track of which queues are new so we know which to start.
 		newHashes = append(newHashes, hash)
 	}
 
 	// Anything remaining in rws.queues is a queue who's config has
 	// changed or was removed from the overall remote write config.
+	if rws.memoryWrite {
+		rws.memoryMtx.Lock()
+		for _, q := range rws.queues {
+			q.memoryStopped = true
+		}
+		rws.memoryMtx.Unlock()
+	}
 	for _, q := range rws.queues {
 		q.Stop()
 	}
@@ -237,6 +258,14 @@ func (rws *WriteStorage) ApplyConfig(conf *config.Config) error {
 	}
 
 	rws.queues = newQueues
+	if rws.memoryWrite {
+		rws.memoryMtx.Lock()
+		rws.memoryQueues = rws.memoryQueues[:0]
+		for _, q := range newQueues {
+			rws.memoryQueues = append(rws.memoryQueues, q)
+		}
+		rws.memoryMtx.Unlock()
+	}
 
 	return nil
 }
@@ -285,10 +314,15 @@ func (rws *WriteStorage) LowestSentTimestamp() int64 {
 func (rws *WriteStorage) Close() error {
 	rws.mtx.Lock()
 	defer rws.mtx.Unlock()
+	rws.memoryMtx.Lock()
+	rws.memoryClosed = true
+	rws.memoryQueues = nil
+	rws.memoryMtx.Unlock()
 	for _, q := range rws.queues {
 		q.Stop()
 	}
 	close(rws.quit)
+	clear(rws.queues)
 
 	rws.watcherMetrics.Unregister()
 	rws.liveReaderMetrics.Unregister()

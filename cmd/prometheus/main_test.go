@@ -589,21 +589,43 @@ func getCurrentGaugeValuesFor(t *testing.T, reg prometheus.Gatherer, metricNames
 func TestAgentSuccessfulStartup(t *testing.T) {
 	t.Parallel()
 
-	prom := exec.Command(promPath, "-test.main", "--agent", "--web.listen-address=0.0.0.0:0", "--config.file="+agentConfig)
-	require.NoError(t, prom.Start())
+	for _, tc := range []struct {
+		name       string
+		args       []string
+		walEnabled bool
+	}{
+		{name: "default", walEnabled: true},
+		{name: "enabled", args: []string{"--storage.agent.wal"}, walEnabled: true},
+		{name: "disabled", args: []string{"--no-storage.agent.wal"}},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
 
-	actualExitStatus := 0
-	done := make(chan error, 1)
+			storagePath := filepath.Join(t.TempDir(), "agent")
+			args := []string{"-test.main", "--agent", "--web.listen-address=0.0.0.0:0", "--config.file=" + agentConfig, "--storage.agent.path=" + storagePath}
+			args = append(args, tc.args...)
+			prom := exec.Command(promPath, args...)
+			var output bytes.Buffer
+			prom.Stderr = &output
+			require.NoError(t, prom.Start())
 
-	go func() { done <- prom.Wait() }()
-	select {
-	case err := <-done:
-		t.Logf("prometheus agent exited early: %v", err)
-		actualExitStatus = prom.ProcessState.ExitCode()
-	case <-time.After(startupTime):
-		prom.Process.Kill()
+			done := make(chan error, 1)
+			go func() { done <- prom.Wait() }()
+			select {
+			case err := <-done:
+				t.Fatalf("prometheus agent exited early: %v\n%s", err, output.String())
+			case <-time.After(startupTime):
+				prom.Process.Kill()
+				<-done
+			}
+
+			if tc.walEnabled {
+				require.DirExists(t, filepath.Join(storagePath, "wal"), output.String())
+			} else {
+				require.NoDirExists(t, storagePath, output.String())
+			}
+		})
 	}
-	require.Equal(t, 0, actualExitStatus)
 }
 
 func TestAgentFailedStartupWithServerFlag(t *testing.T) {
@@ -670,12 +692,20 @@ func TestModeSpecificFlags(t *testing.T) {
 		{"server", "--storage.tsdb.path", 0},
 		{"server", "--storage.agent.path", 3},
 		{"agent", "--storage.tsdb.path", 3},
+		{"agent", "--storage.agent.wal", 0},
+		{"agent", "--no-storage.agent.wal", 0},
+		{"server", "--storage.agent.wal", 3},
+		{"server", "--no-storage.agent.wal", 3},
 	}
 
 	for _, tc := range testcases {
 		t.Run(fmt.Sprintf("%s mode with option %s", tc.mode, tc.arg), func(t *testing.T) {
 			t.Parallel()
-			args := []string{"-test.main", tc.arg, t.TempDir(), "--web.listen-address=0.0.0.0:0"}
+			args := []string{"-test.main", tc.arg}
+			if strings.HasSuffix(tc.arg, ".path") {
+				args = append(args, t.TempDir())
+			}
+			args = append(args, "--web.listen-address=0.0.0.0:0")
 
 			if tc.mode == "agent" {
 				args = append(args, "--agent", "--config.file="+agentConfig)

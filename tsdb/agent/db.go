@@ -58,8 +58,11 @@ var (
 	DefaultMaxWALTime        = int64(4 * time.Hour / time.Millisecond)
 )
 
-// Options of the WAL storage.
+// Options of the agent storage.
 type Options struct {
+	// DisableWAL forwards committed data to bounded remote-write queues in memory.
+	DisableWAL bool
+
 	// Segments (wal files) max size.
 	// WALSegmentSize <= 0, segment size is default size.
 	// WALSegmentSize > 0, segment size is WALSegmentSize.
@@ -146,7 +149,7 @@ func newDBMetrics(r prometheus.Registerer) *dbMetrics {
 	m := dbMetrics{r: r}
 	m.numActiveSeries = prometheus.NewGauge(prometheus.GaugeOpts{
 		Name: "prometheus_agent_active_series",
-		Help: "Number of active series being tracked by the WAL storage",
+		Help: "Number of active series being tracked by the agent storage",
 	})
 
 	m.numWALSeriesPendingDeletion = prometheus.NewGauge(prometheus.GaugeOpts{
@@ -252,7 +255,7 @@ type deletedRefMeta struct {
 	labels      labels.Labels
 }
 
-// DB represents a WAL-only storage. It implements storage.DB.
+// DB stores agent series and forwards samples through the WAL or memory queues.
 type DB struct {
 	mtx    sync.RWMutex
 	logger *slog.Logger
@@ -287,26 +290,35 @@ type DB struct {
 	metrics *dbMetrics
 }
 
-// Open returns a new agent.DB in the given directory.
+// Open returns a new agent.DB. With DisableWAL, it does not access the directory
+// and must be called before applying configuration to remote storage.
 func Open(l *slog.Logger, reg prometheus.Registerer, rs *remote.Storage, dir string, opts *Options) (*DB, error) {
 	opts = validateOptions(opts)
 
-	locker, err := tsdbutil.NewDirLocker(dir, "agent", l, reg)
-	if err != nil {
-		return nil, err
-	}
-	if !opts.NoLockfile {
-		if err := locker.Lock(); err != nil {
+	var locker *tsdbutil.DirLocker
+	var w *wlog.WL
+	if opts.DisableWAL {
+		if err := rs.EnableMemoryWrite(); err != nil {
 			return nil, err
 		}
-	}
+	} else {
+		var err error
+		locker, err = tsdbutil.NewDirLocker(dir, "agent", l, reg)
+		if err != nil {
+			return nil, err
+		}
+		if !opts.NoLockfile {
+			if err := locker.Lock(); err != nil {
+				return nil, err
+			}
+		}
 
-	// remote_write expects WAL to be stored in a "wal" subdirectory of the main storage.
-	dir = filepath.Join(dir, "wal")
-
-	w, err := wlog.NewSize(l, reg, dir, opts.WALSegmentSize, opts.WALCompression)
-	if err != nil {
-		return nil, fmt.Errorf("creating WAL: %w", err)
+		// Remote write expects the WAL in a subdirectory of the main storage.
+		dir = filepath.Join(dir, "wal")
+		w, err = wlog.NewSize(l, reg, dir, opts.WALSegmentSize, opts.WALCompression)
+		if err != nil {
+			return nil, fmt.Errorf("creating WAL: %w", err)
+		}
 	}
 
 	db := &DB{
@@ -356,12 +368,14 @@ func Open(l *slog.Logger, reg prometheus.Registerer, rs *remote.Storage, dir str
 		}
 	}
 
-	if err := db.replayWAL(); err != nil {
-		db.logger.Warn("encountered WAL read error, attempting repair", "err", err)
-		if err := w.Repair(err); err != nil {
-			return nil, fmt.Errorf("repair corrupted WAL: %w", err)
+	if !opts.DisableWAL {
+		if err := db.replayWAL(); err != nil {
+			db.logger.Warn("encountered WAL read error, attempting repair", "err", err)
+			if err := w.Repair(err); err != nil {
+				return nil, fmt.Errorf("repair corrupted WAL: %w", err)
+			}
+			db.logger.Info("successfully repaired WAL")
 		}
-		db.logger.Info("successfully repaired WAL")
 	}
 
 	go db.run()
@@ -399,7 +413,7 @@ func validateOptions(opts *Options) *Options {
 	if opts.MaxWALTime <= 0 {
 		opts.MaxWALTime = DefaultMaxWALTime
 	}
-	if opts.MinWALTime > opts.MaxWALTime {
+	if !opts.DisableWAL && opts.MinWALTime > opts.MaxWALTime {
 		opts.MaxWALTime = opts.MinWALTime
 	}
 
@@ -695,6 +709,10 @@ Loop:
 		case <-db.stopc:
 			break Loop
 		case <-time.After(db.opts.TruncateFrequency):
+			if db.opts.DisableWAL {
+				db.gc(timestamp.FromTime(time.Now()) - db.opts.MaxWALTime)
+				continue
+			}
 			// The timestamp ts is used to determine which series are not receiving
 			// samples and may be deleted from the WAL. Their most recent append
 			// timestamp is compared to ts, and if that timestamp is older then ts,
@@ -824,6 +842,9 @@ func (db *DB) truncate(mint int64) error {
 func (db *DB) gc(mint int64) {
 	deleted := db.series.GC(mint, db.opts.CheckpointFromInMemorySeries)
 	db.metrics.numActiveSeries.Sub(float64(len(deleted)))
+	if db.opts.DisableWAL {
+		return
+	}
 
 	_, last, _ := wlog.Segments(db.wal.Dir())
 
@@ -871,6 +892,9 @@ func (db *DB) Close() error {
 	<-db.donec
 
 	db.metrics.Unregister()
+	if db.opts.DisableWAL {
+		return nil
+	}
 
 	return errors.Join(db.locker.Release(), db.wal.Close())
 }
@@ -895,6 +919,9 @@ type appenderBase struct {
 	// Pointers to the series referenced by each element of pendingFloatHistograms.
 	// Series lock is not held on elements.
 	floatHistogramSeries []*memSeries
+
+	// Exemplar series are retained until commit, even if GC removes their refs.
+	exemplarSeries []*memSeries
 }
 
 type appender struct {
@@ -1010,6 +1037,9 @@ func (a *appender) AppendExemplar(ref storage.SeriesRef, _ labels.Labels, e exem
 		V:      e.Value,
 		Labels: e.Labels,
 	})
+	if a.opts.DisableWAL {
+		a.exemplarSeries = append(a.exemplarSeries, s)
+	}
 	a.metrics.totalAppendedExemplars.Inc()
 	return storage.SeriesRef(s.ref), nil
 }
@@ -1206,13 +1236,19 @@ func (a *appender) Rollback() error {
 }
 
 func (a *appenderBase) commit() error {
-	if err := a.log(); err != nil {
-		return err
+	if a.opts.DisableWAL {
+		if err := a.writeMemory(); err != nil {
+			return err
+		}
+	} else {
+		if err := a.log(); err != nil {
+			return err
+		}
 	}
 
 	a.clearData()
 
-	if a.writeNotified != nil {
+	if !a.opts.DisableWAL && a.writeNotified != nil {
 		a.writeNotified.Notify()
 	}
 	return nil
@@ -1289,6 +1325,11 @@ func (a *appenderBase) log() error {
 		buf = buf[:0]
 	}
 
+	a.updateTimestamps()
+	return nil
+}
+
+func (a *appenderBase) updateTimestamps() {
 	var series *memSeries
 	for i, s := range a.pendingSamples {
 		series = a.sampleSeries[i]
@@ -1308,8 +1349,6 @@ func (a *appenderBase) log() error {
 			a.metrics.totalOutOfOrderSamples.Inc()
 		}
 	}
-
-	return nil
 }
 
 // clearData clears all pending data.
@@ -1322,6 +1361,8 @@ func (a *appenderBase) clearData() {
 	a.sampleSeries = a.sampleSeries[:0]
 	a.histogramSeries = a.histogramSeries[:0]
 	a.floatHistogramSeries = a.floatHistogramSeries[:0]
+	clear(a.exemplarSeries)
+	a.exemplarSeries = a.exemplarSeries[:0]
 }
 
 func (a *appenderBase) rollback() error {
@@ -1338,6 +1379,9 @@ func (a *appenderBase) rollback() error {
 
 // logSeries logs only pending series records to the WAL.
 func (a *appenderBase) logSeries() error {
+	if a.opts.DisableWAL {
+		return nil
+	}
 	a.mtx.RLock()
 	defer a.mtx.RUnlock()
 
