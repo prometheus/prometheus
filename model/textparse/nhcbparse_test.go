@@ -15,6 +15,7 @@ package textparse
 
 import (
 	"bytes"
+	"math"
 	"strconv"
 	"testing"
 
@@ -1267,4 +1268,272 @@ metric: <
 			require.Equal(t, "test_histogram_seconds", string(lastMFName))
 		})
 	}
+}
+
+// TestNHCBParserFastPathEdgeCases verifies that NHCBParser fast-path matching and bytesNHCB
+// formatting produce identical results across various label orders and options.
+func TestNHCBParserFastPathEdgeCases(t *testing.T) {
+	t.Run("le label positions and exposition orders", func(t *testing.T) {
+		input := `# TYPE h_last histogram
+h_last_bucket{a="1",b="2",le="0.5"} 1
+h_last_bucket{a="1",b="2",le="1.0"} 3
+h_last_bucket{a="1",b="2",le="+Inf"} 5
+h_last_sum{a="1",b="2"} 10.5
+h_last_count{a="1",b="2"} 5
+# TYPE h_first histogram
+h_first_bucket{le="0.5",x="1",y="2"} 2
+h_first_bucket{le="1.0",x="1",y="2"} 4
+h_first_bucket{le="+Inf",x="1",y="2"} 6
+h_first_sum{x="1",y="2"} 12.0
+h_first_count{x="1",y="2"} 6
+# TYPE h_mid histogram
+h_mid_bucket{a="1",le="0.5",z="9"} 1
+h_mid_bucket{a="1",le="1.0",z="9"} 2
+h_mid_bucket{a="1",le="+Inf",z="9"} 3
+h_mid_sum{a="1",z="9"} 4.5
+h_mid_count{a="1",z="9"} 3
+# TYPE h_count_first_le_first histogram
+h_count_first_le_first_count{z="9"} 3
+h_count_first_le_first_sum{z="9"} 4.5
+h_count_first_le_first_bucket{le="0.5",z="9"} 1
+h_count_first_le_first_bucket{le="1.0",z="9"} 2
+h_count_first_le_first_bucket{le="+Inf",z="9"} 3
+# TYPE h_substrings histogram
+h_substrings_bucket{file="test",role="admin",le="0.5"} 2
+h_substrings_bucket{file="test",role="admin",le="+Inf"} 4
+h_substrings_sum{file="test",role="admin"} 6.0
+h_substrings_count{file="test",role="admin"} 4
+# EOF
+`
+		p, err := New([]byte(input), "application/openmetrics-text", labels.NewSymbolTable(), ParserOptions{
+			ConvertClassicHistogramsToNHCB: true,
+		})
+		require.NoError(t, err)
+		got := testParse(t, p)
+
+		exp := []parsedEntry{
+			{m: "h_last", typ: model.MetricTypeHistogram},
+			{
+				m: `h_last{a="1",b="2"}`,
+				shs: &histogram.Histogram{
+					Schema:          histogram.CustomBucketsSchema,
+					Count:           5,
+					Sum:             10.5,
+					PositiveSpans:   []histogram.Span{{Length: 3}},
+					PositiveBuckets: []int64{1, 1, 0},
+					CustomValues:    []float64{0.5, 1.0},
+				},
+				lset: labels.FromStrings("__name__", "h_last", "a", "1", "b", "2"),
+			},
+			{m: "h_first", typ: model.MetricTypeHistogram},
+			{
+				m: `h_first{x="1",y="2"}`,
+				shs: &histogram.Histogram{
+					Schema:          histogram.CustomBucketsSchema,
+					Count:           6,
+					Sum:             12.0,
+					PositiveSpans:   []histogram.Span{{Length: 3}},
+					PositiveBuckets: []int64{2, 0, 0},
+					CustomValues:    []float64{0.5, 1.0},
+				},
+				lset: labels.FromStrings("__name__", "h_first", "x", "1", "y", "2"),
+			},
+			{m: "h_mid", typ: model.MetricTypeHistogram},
+			{
+				m: `h_mid{a="1",z="9"}`,
+				shs: &histogram.Histogram{
+					Schema:          histogram.CustomBucketsSchema,
+					Count:           3,
+					Sum:             4.5,
+					PositiveSpans:   []histogram.Span{{Length: 3}},
+					PositiveBuckets: []int64{1, 0, 0},
+					CustomValues:    []float64{0.5, 1.0},
+				},
+				lset: labels.FromStrings("__name__", "h_mid", "a", "1", "z", "9"),
+			},
+			{m: "h_count_first_le_first", typ: model.MetricTypeHistogram},
+			{
+				m: `h_count_first_le_first{z="9"}`,
+				shs: &histogram.Histogram{
+					Schema:          histogram.CustomBucketsSchema,
+					Count:           3,
+					Sum:             4.5,
+					PositiveSpans:   []histogram.Span{{Length: 3}},
+					PositiveBuckets: []int64{1, 0, 0},
+					CustomValues:    []float64{0.5, 1.0},
+				},
+				lset: labels.FromStrings("__name__", "h_count_first_le_first", "z", "9"),
+			},
+			{m: "h_substrings", typ: model.MetricTypeHistogram},
+			{
+				m: `h_substrings{file="test",role="admin"}`,
+				shs: &histogram.Histogram{
+					Schema:          histogram.CustomBucketsSchema,
+					Count:           4,
+					Sum:             6.0,
+					PositiveSpans:   []histogram.Span{{Length: 2}},
+					PositiveBuckets: []int64{2, 0},
+					CustomValues:    []float64{0.5},
+				},
+				lset: labels.FromStrings("__name__", "h_substrings", "file", "test", "role", "admin"),
+			},
+		}
+		requireEntries(t, exp, got)
+	})
+
+	t.Run("reordered labels fallback", func(t *testing.T) {
+		input := `# TYPE h_reordered histogram
+h_reordered_bucket{b="2",a="1",le="0.5"} 1
+h_reordered_bucket{a="1",b="2",le="1.0"} 2
+h_reordered_bucket{b="2",le="+Inf",a="1"} 3
+h_reordered_sum{b="2",a="1"} 4.5
+h_reordered_count{a="1",b="2"} 3
+`
+		p, err := New([]byte(input), "text/plain", labels.NewSymbolTable(), ParserOptions{
+			ConvertClassicHistogramsToNHCB: true,
+		})
+		require.NoError(t, err)
+		got := testParse(t, p)
+
+		exp := []parsedEntry{
+			{m: "h_reordered", typ: model.MetricTypeHistogram},
+			{
+				m: `h_reordered{a="1",b="2"}`,
+				shs: &histogram.Histogram{
+					Schema:          histogram.CustomBucketsSchema,
+					Count:           3,
+					Sum:             4.5,
+					PositiveSpans:   []histogram.Span{{Length: 3}},
+					PositiveBuckets: []int64{1, 0, 0},
+					CustomValues:    []float64{0.5, 1.0},
+				},
+				lset: labels.FromStrings("__name__", "h_reordered", "a", "1", "b", "2"),
+			},
+		}
+		requireEntries(t, exp, got)
+	})
+
+	t.Run("enable type and unit labels", func(t *testing.T) {
+		input := `# TYPE h_meta_seconds histogram
+# UNIT h_meta_seconds seconds
+h_meta_seconds_bucket{a="1",le="0.5"} 1
+h_meta_seconds_bucket{a="1",le="+Inf"} 2
+h_meta_seconds_sum{a="1"} 1.5
+h_meta_seconds_count{a="1"} 2
+# EOF
+`
+		p, err := New([]byte(input), "application/openmetrics-text", labels.NewSymbolTable(), ParserOptions{
+			ConvertClassicHistogramsToNHCB: true,
+			EnableTypeAndUnitLabels:        true,
+		})
+		require.NoError(t, err)
+		got := testParse(t, p)
+
+		exp := []parsedEntry{
+			{m: "h_meta_seconds", typ: model.MetricTypeHistogram},
+			{m: "h_meta_seconds", unit: "seconds"},
+			{
+				m: `h_meta_seconds{__type__="histogram",__unit__="seconds",a="1"}`,
+				shs: &histogram.Histogram{
+					Schema:          histogram.CustomBucketsSchema,
+					Count:           2,
+					Sum:             1.5,
+					PositiveSpans:   []histogram.Span{{Length: 2}},
+					PositiveBuckets: []int64{1, 0},
+					CustomValues:    []float64{0.5},
+				},
+				lset: labels.FromStrings("__name__", "h_meta_seconds", "__type__", "histogram", "__unit__", "seconds", "a", "1"),
+			},
+		}
+		requireEntries(t, exp, got)
+	})
+
+	t.Run("negative zero le bound normalization", func(t *testing.T) {
+		input := `# TYPE h_neg_zero histogram
+h_neg_zero_bucket{a="1",le="-1.0"} 1
+h_neg_zero_bucket{a="1",le="-0.0"} 2
+h_neg_zero_bucket{a="1",le="+Inf"} 3
+h_neg_zero_sum{a="1"} 0.5
+h_neg_zero_count{a="1"} 3
+# EOF
+`
+		p, err := New([]byte(input), "application/openmetrics-text", labels.NewSymbolTable(), ParserOptions{
+			ConvertClassicHistogramsToNHCB: true,
+		})
+		require.NoError(t, err)
+		got := testParse(t, p)
+		require.Len(t, got, 2)
+		require.NotNil(t, got[1].shs)
+		require.Equal(t, []float64{-1.0, 0.0}, got[1].shs.CustomValues)
+		require.False(t, math.Signbit(got[1].shs.CustomValues[1]), "expected -0.0 bucket bound to be normalized to positive 0.0")
+	})
+
+	t.Run("invalid histogram conversion failure does not corrupt next series", func(t *testing.T) {
+		input := `# TYPE h_val_err histogram
+h_val_err_count{a="1"} 18
+h_val_err_sum{a="1"} 10.0
+h_val_err_bucket{a="1",le="1.0"} 18
+h_val_err_bucket{a="1",le="+Inf"} 5
+h_val_err_bucket{a="2",le="1.0"} 1
+h_val_err_bucket{a="2",le="+Inf"} 2
+h_val_err_sum{a="2"} 1.5
+h_val_err_count{a="2"} 2
+# EOF
+`
+		p, err := New([]byte(input), "application/openmetrics-text", labels.NewSymbolTable(), ParserOptions{
+			ConvertClassicHistogramsToNHCB: true,
+		})
+		require.NoError(t, err)
+		got := testParse(t, p)
+
+		exp := []parsedEntry{
+			{m: "h_val_err", typ: model.MetricTypeHistogram},
+			{
+				m: `h_val_err{a="2"}`,
+				shs: &histogram.Histogram{
+					Schema:          histogram.CustomBucketsSchema,
+					Count:           2,
+					Sum:             1.5,
+					PositiveSpans:   []histogram.Span{{Length: 2}},
+					PositiveBuckets: []int64{1, 0},
+					CustomValues:    []float64{1.0},
+				},
+				lset: labels.FromStrings("__name__", "h_val_err", "a", "2"),
+			},
+		}
+		requireEntries(t, exp, got)
+	})
+
+	t.Run("escaped quotes and le substrings in label values", func(t *testing.T) {
+		input := `# TYPE h_escaped histogram
+h_escaped_bucket{a="foo\",bar",b="x,le=\"1.0\"",le="0.5"} 1
+h_escaped_bucket{a="foo\",bar",b="x,le=\"1.0\"",le="1.0"} 2
+h_escaped_bucket{a="foo\",bar",b="x,le=\"1.0\"",le="+Inf"} 3
+h_escaped_sum{a="foo\",bar",b="x,le=\"1.0\""} 2.5
+h_escaped_count{a="foo\",bar",b="x,le=\"1.0\""} 3
+# EOF
+`
+		p, err := New([]byte(input), "application/openmetrics-text", labels.NewSymbolTable(), ParserOptions{
+			ConvertClassicHistogramsToNHCB: true,
+		})
+		require.NoError(t, err)
+		got := testParse(t, p)
+
+		exp := []parsedEntry{
+			{m: "h_escaped", typ: model.MetricTypeHistogram},
+			{
+				m: `h_escaped{a="foo\",bar",b="x,le=\"1.0\""}`,
+				shs: &histogram.Histogram{
+					Schema:          histogram.CustomBucketsSchema,
+					Count:           3,
+					Sum:             2.5,
+					PositiveSpans:   []histogram.Span{{Length: 3}},
+					PositiveBuckets: []int64{1, 0, 0},
+					CustomValues:    []float64{0.5, 1.0},
+				},
+				lset: labels.FromStrings("__name__", "h_escaped", "a", `foo",bar`, "b", `x,le="1.0"`),
+			},
+		}
+		requireEntries(t, exp, got)
+	})
 }
