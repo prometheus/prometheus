@@ -4498,6 +4498,41 @@ var testExpr = []struct {
 		},
 	},
 	{
+		input: `info(http_request_counter_total{namespace="zzz"}, {})`,
+		fail:  true,
+		errors: ParseErrors{
+			ParseErr{
+				PositionRange: posrange.PositionRange{Start: 50, End: 52},
+				Err:           errors.New("data label selector must contain at least one label matcher"),
+				Query:         `info(http_request_counter_total{namespace="zzz"}, {})`,
+			},
+		},
+	},
+	{
+		input: `info(http_request_counter_total{namespace="zzz"}, {data!="foo"})`,
+		expected: &Call{
+			Func: MustGetFunction("info"),
+			Args: Expressions{
+				&VectorSelector{
+					Name: "http_request_counter_total",
+					LabelMatchers: []*labels.Matcher{
+						MustLabelMatcher(labels.MatchEqual, "namespace", "zzz"),
+						MustLabelMatcher(labels.MatchEqual, model.MetricNameLabel, "http_request_counter_total"),
+					},
+					PosRange: posrange.PositionRange{Start: 5, End: 48},
+				},
+				&VectorSelector{
+					LabelMatchers: []*labels.Matcher{
+						MustLabelMatcher(labels.MatchNotEqual, "data", "foo"),
+					},
+					PosRange:                posrange.PositionRange{Start: 50, End: 63},
+					BypassEmptyMatcherCheck: true,
+				},
+			},
+			PosRange: posrange.PositionRange{Start: 0, End: 64},
+		},
+	},
+	{
 		input: `info(http_request_counter_total{namespace="zzz"}, {foo="bar"} == 1)`,
 		fail:  true,
 		errors: ParseErrors{
