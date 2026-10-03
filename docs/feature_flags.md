@@ -399,6 +399,8 @@ Individual selectors can control or debug conversion using the reserved `__nhcb_
 * `__nhcb_as_classic__="false"` (or `!="true"`, `=""`): disables NHCB-to-classic conversion for the selector and returns only stored classic series.
 * `__nhcb_as_classic__="debug"` (or `=~"true|debug"`): enables conversion and attaches `__from_nhcb__="true"` to series converted from NHCB and `__from_nhcb__="false"` to all other returned series (e.g. stored classic series or series of selectors that are not converted). Stored and converted series are neither merged into the same labelset nor shadowed by each other, so both sources are returned in full side by side.
 
+Other values in `=` or `!=` matchers on `__nhcb_as_classic__` return an error.
+
 This feature only affects PromQL query evaluation (e.g. the query APIs and rule evaluation). The
 conversion is applied on top of all data the query engine reads, including series fetched from
 `remote_read` endpoints. It does not apply to remote write (NHCB series are not converted when being
