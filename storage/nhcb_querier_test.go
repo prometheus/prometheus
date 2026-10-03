@@ -668,7 +668,8 @@ func TestNHCBAsClassicQuerier_Collisions(t *testing.T) {
 	})
 
 	t.Run("disjoint timestamps across migration cutover: merged into single continuous series", func(t *testing.T) {
-		q := NewNHCBAsClassicQuerier(&nhcbMockQuerier{
+		// 1. Classic (t=1,2) -> NHCB (t=3,4) forward migration.
+		qForward := NewNHCBAsClassicQuerier(&nhcbMockQuerier{
 			classicSeries: []Series{
 				NewListSeries(labels.FromStrings("__name__", "http_requests_count", "job", "api"), []chunks.Sample{
 					fSample{t: 1, f: 10},
@@ -682,14 +683,38 @@ func TestNHCBAsClassicQuerier_Collisions(t *testing.T) {
 				}),
 			},
 		})
-		got := readAll(t, q.Select(context.Background(), false, nil,
+		gotForward := readAll(t, qForward.Select(context.Background(), false, nil,
 			labels.MustNewMatcher(labels.MatchEqual, model.MetricNameLabel, "http_requests_count")))
 		assertSeriesSamplesEqual(t, []seriesSamples{
 			{
 				labels:  `{__name__="http_requests_count", job="api"}`,
 				samples: []fSample{{t: 1, f: 10}, {t: 2, f: 20}, {t: 3, f: 30}, {t: 4, f: 40}},
 			},
-		}, got)
+		}, gotForward)
+
+		// 2. NHCB (t=1,2) -> Classic (t=3,4) rollback where stored classic continues after converted samples end.
+		qRollback := NewNHCBAsClassicQuerier(&nhcbMockQuerier{
+			classicSeries: []Series{
+				NewListSeries(labels.FromStrings("__name__", "http_requests_count", "job", "api"), []chunks.Sample{
+					fSample{t: 3, f: 30},
+					fSample{t: 4, f: 40},
+				}),
+			},
+			nhcbSeries: []Series{
+				NewListSeries(labels.FromStrings("__name__", "http_requests", "job", "api"), []chunks.Sample{
+					hSample{t: 1, h: nhcb(100, []float64{1.0}, []int64{5, 5})},
+					hSample{t: 2, h: nhcb(200, []float64{1.0}, []int64{10, 10})},
+				}),
+			},
+		})
+		gotRollback := readAll(t, qRollback.Select(context.Background(), false, nil,
+			labels.MustNewMatcher(labels.MatchEqual, model.MetricNameLabel, "http_requests_count")))
+		assertSeriesSamplesEqual(t, []seriesSamples{
+			{
+				labels:  `{__name__="http_requests_count", job="api"}`,
+				samples: []fSample{{t: 1, f: 10}, {t: 2, f: 20}, {t: 3, f: 30}, {t: 4, f: 40}},
+			},
+		}, gotRollback)
 	})
 
 	t.Run("same-timestamp staleness marker vs live sample at cutover: live sample wins", func(t *testing.T) {
