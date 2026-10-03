@@ -1007,6 +1007,75 @@ func TestNHCBAsClassicQuerier_Collisions(t *testing.T) {
 			},
 		}, got)
 	})
+
+	t.Run("multi-group hybrid collision with classic and multiple NHCB series respects sortSeries", func(t *testing.T) {
+		// Use label "z" (which sorts after "le") so that per-group sorting
+		// (sortSeries=false) and global sorting across groups (sortSeries=true)
+		// produce distinct series orders.
+		newQuerier := func() Querier {
+			return NewNHCBAsClassicQuerier(&nhcbMockQuerier{
+				classicSeries: []Series{
+					NewListSeries(labels.FromStrings("__name__", "http_requests_bucket", "le", "1.0", "z", "a"), []chunks.Sample{
+						fSample{t: 1, f: 3},
+					}),
+					NewListSeries(labels.FromStrings("__name__", "http_requests_bucket", "le", "+Inf", "z", "a"), []chunks.Sample{
+						fSample{t: 1, f: 10},
+					}),
+				},
+				nhcbSeries: []Series{
+					NewListSeries(labels.FromStrings("__name__", "http_requests", "z", "a"), []chunks.Sample{
+						hSample{t: 1, h: nhcb(50, []float64{1.0}, []int64{5, 5})},
+						hSample{t: 2, h: nhcb(100, []float64{1.0}, []int64{8, 7})},
+					}),
+					NewListSeries(labels.FromStrings("__name__", "http_requests", "z", "b"), []chunks.Sample{
+						hSample{t: 1, h: nhcb(30, []float64{1.0}, []int64{2, 4})},
+					}),
+				},
+			})
+		}
+
+		gotUnsorted := readAll(t, newQuerier().Select(context.Background(), false, nil,
+			labels.MustNewMatcher(labels.MatchEqual, model.MetricNameLabel, "http_requests_bucket")))
+		assertSeriesSamplesEqual(t, []seriesSamples{
+			{
+				labels:  `{__name__="http_requests_bucket", le="+Inf", z="a"}`,
+				samples: []fSample{{t: 1, f: 10}, {t: 2, f: 15}},
+			},
+			{
+				labels:  `{__name__="http_requests_bucket", le="1.0", z="a"}`,
+				samples: []fSample{{t: 1, f: 3}, {t: 2, f: 8}},
+			},
+			{
+				labels:  `{__name__="http_requests_bucket", le="+Inf", z="b"}`,
+				samples: []fSample{{t: 1, f: 6}},
+			},
+			{
+				labels:  `{__name__="http_requests_bucket", le="1.0", z="b"}`,
+				samples: []fSample{{t: 1, f: 2}},
+			},
+		}, gotUnsorted)
+
+		gotSorted := readAll(t, newQuerier().Select(context.Background(), true, nil,
+			labels.MustNewMatcher(labels.MatchEqual, model.MetricNameLabel, "http_requests_bucket")))
+		assertSeriesSamplesEqual(t, []seriesSamples{
+			{
+				labels:  `{__name__="http_requests_bucket", le="+Inf", z="a"}`,
+				samples: []fSample{{t: 1, f: 10}, {t: 2, f: 15}},
+			},
+			{
+				labels:  `{__name__="http_requests_bucket", le="+Inf", z="b"}`,
+				samples: []fSample{{t: 1, f: 6}},
+			},
+			{
+				labels:  `{__name__="http_requests_bucket", le="1.0", z="a"}`,
+				samples: []fSample{{t: 1, f: 3}, {t: 2, f: 8}},
+			},
+			{
+				labels:  `{__name__="http_requests_bucket", le="1.0", z="b"}`,
+				samples: []fSample{{t: 1, f: 2}},
+			},
+		}, gotSorted)
+	})
 }
 
 func TestNHCBAsClassicQuerier_FloatHistogram(t *testing.T) {
