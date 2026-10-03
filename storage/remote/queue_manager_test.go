@@ -1372,6 +1372,44 @@ var extraLabels []labels.Label = []labels.Label{
 	{Name: "pod_name", Value: "some-other-name-5j8s8"},
 }
 
+// BenchmarkRunShardInitialization measures shard startup and clean exit with an
+// empty, already-closed queue. No samples are transmitted.
+func BenchmarkRunShardInitialization(b *testing.B) {
+	for _, count := range []int{1, 2000, 10000} {
+		for _, exemplars := range []bool{false, true} {
+			for _, protocol := range []struct {
+				name    string
+				message remoteapi.WriteMessageType
+			}{
+				{name: "v1", message: remoteapi.WriteV1MessageType},
+				{name: "v2", message: remoteapi.WriteV2MessageType},
+			} {
+				b.Run(fmt.Sprintf("n=%d/exemplars=%t/proto=%s", count, exemplars, protocol.name), func(b *testing.B) {
+					cfg := config.DefaultQueueConfig
+					cfg.MaxSamplesPerSend = count
+					cfg.BatchSendDeadline = model.Duration(time.Hour)
+					qm := newTestQueueManager(b, cfg, config.DefaultMetadataConfig, time.Second,
+						NewTestWriteClient(protocol.message), protocol.message)
+					qm.sendExemplars = exemplars
+					q := newQueue(count, cfg.Capacity)
+					q.FlushAndShutdown(nil)
+					s := qm.newShards()
+
+					b.ReportAllocs()
+					for b.Loop() {
+						s.done = make(chan struct{})
+						s.running.Store(1)
+						s.runShard(context.Background(), 0, q)
+					}
+					if s.running.Load() != 0 {
+						b.Fatal("Shard failed to stop.")
+					}
+				})
+			}
+		}
+	}
+}
+
 // Recommended CLI invocation(s):
 /*
 	export bench=sampleSend && go test ./storage/remote/... \
