@@ -34,7 +34,8 @@ const (
 	// NHCBAsClassicLabel is the control label that configures NHCB-to-classic
 	// conversion per selector when NHCBAsClassicQuerier is active.
 	//
-	// Matchers on this label are stripped before querying the underlying storage:
+	// Matchers on this label are stripped before querying the underlying (local)
+	// storage:
 	//   - "true" (or != "false"): enables NHCB-to-classic conversion for the selector.
 	//   - "false" (or != "true", = ""): disables conversion and returns stored
 	//     classic series unchanged.
@@ -74,6 +75,10 @@ var errInvalidControlValue = fmt.Errorf(`invalid %s value, must be one of "true"
 //    Only the Select method converts. LabelNames and LabelValues only strip
 //    NHCBAsClassicLabel matchers, so any metadata or label introspection
 //    queries will not reflect the converted classic series.
+//
+// 2. TODO: Only local storage is wrapped (see cmd/prometheus/main.go), so remote
+//    read secondaries in the fanout storage receive NHCBAsClassicLabel and
+//    FromNHCBLabel matchers unchanged.
 
 // NHCBAsClassicQuerier wraps a Querier and converts NHCB (Native Histogram Custom Buckets)
 // queries to classic histogram format when classic series don't exist.

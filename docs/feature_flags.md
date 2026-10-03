@@ -406,3 +406,5 @@ The `__nhcb_as_classic__` matcher is only recognized when this feature flag is e
 This feature only affects PromQL query evaluation. It does not apply to remote write
 (NHCB series are not converted when being forwarded to remote endpoints) and does not
 affect the series API (the `/api/v1/series` endpoint will not return the converted classic series).
+
+It also only applies to local storage. Remote read endpoints receive `__nhcb_as_classic__` and `__from_nhcb__` matchers unchanged, so e.g. `__nhcb_as_classic__="true"` drops all remote read data, while `__nhcb_as_classic__!="true"` matches all of it.
