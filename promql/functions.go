@@ -1072,11 +1072,9 @@ func funcSortByLabel(vectorVals []Vector, _ Matrix, args parser.Expressions, _ *
 				continue
 			}
 
-			if natsort.Compare(lv1, lv2) {
-				return -1
+			if cmp := compareNaturalLabelValues(lv1, lv2); cmp != 0 {
+				return cmp
 			}
-
-			return +1
 		}
 
 		// If all labels provided as arguments were equal, sort by the full label set. This ensures a consistent ordering.
@@ -1098,11 +1096,9 @@ func funcSortByLabelDesc(vectorVals []Vector, _ Matrix, args parser.Expressions,
 				continue
 			}
 
-			if natsort.Compare(lv1, lv2) {
-				return +1
+			if cmp := compareNaturalLabelValues(lv1, lv2); cmp != 0 {
+				return -cmp
 			}
-
-			return -1
 		}
 
 		// If all labels provided as arguments were equal, sort by the full label set. This ensures a consistent ordering.
@@ -1110,6 +1106,28 @@ func funcSortByLabelDesc(vectorVals []Vector, _ Matrix, args parser.Expressions,
 	})
 
 	return vectorVals[0], nil
+}
+
+func compareNaturalLabelValues(a, b string) int {
+	if a == b {
+		return 0
+	}
+
+	aBeforeB := natsort.Compare(a, b)
+	bBeforeA := natsort.Compare(b, a)
+
+	switch {
+	case aBeforeB && !bBeforeA:
+		return -1
+	case bBeforeA && !aBeforeB:
+		return 1
+	case aBeforeB && bBeforeA:
+		// Natsort's Compare is a less predicate and can return true both ways
+		// for equal numeric chunks such as "1" and "01".
+		return 0
+	default:
+		return strings.Compare(a, b)
+	}
 }
 
 func clamp(vec Vector, minVal, maxVal float64, enh *EvalNodeHelper) (Vector, annotations.Annotations) {
