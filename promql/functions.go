@@ -1163,6 +1163,18 @@ func funcRound(vectorVals []Vector, _ Matrix, args parser.Expressions, enh *Eval
 	if len(args) >= 2 {
 		toNearest = vectorVals[1][0].F
 	}
+	// Use the absolute value of toNearest. The set of multiples of a negative
+	// number is the same as the set of multiples of its absolute value, so the
+	// sign should not affect the result.
+	toNearest = math.Abs(toNearest)
+	// If toNearest is zero, return the original values unchanged. Rounding to
+	// the nearest multiple of zero is undefined; returning the input is the
+	// least surprising behaviour and avoids producing NaN.
+	if toNearest == 0 {
+		return simpleFloatFunc(vectorVals, enh, func(f float64) float64 {
+			return f
+		}), nil
+	}
 	// Invert as it seems to cause fewer floating point accuracy issues.
 	toNearestInverse := 1.0 / toNearest
 	return simpleFloatFunc(vectorVals, enh, func(f float64) float64 {
