@@ -325,7 +325,7 @@ jobs:
         if: ${{ contains(needs.*.result, 'failure') || contains(needs.*.result, 'cancelled') }}
         run: exit 1
   check_generated_parser:
-    # Checks generated parser and UI functions list. Not renaming as it is a required check.
+    # Checks generated parser, textparse lexers, and UI functions list. Not renaming as it is a required check.
     name: Check generated parser
     runs-on: ubuntu-latest
     container:
@@ -340,6 +340,7 @@ jobs:
           enable_npm: true
           cache_key_suffix: parser
       - run: make install-goyacc check-generated-parser
+      - run: make install-golex check-generated-textparse-lexers
       - run: make check-generated-promql-functions
   golangci:
     name: golangci-lint
