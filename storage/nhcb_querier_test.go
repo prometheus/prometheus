@@ -1273,85 +1273,104 @@ func TestNHCBAsClassicQuerier_Collisions(t *testing.T) {
 
 func TestExtractControlMatchers(t *testing.T) {
 	name := labels.MustNewMatcher(labels.MatchEqual, model.MetricNameLabel, "http_requests_bucket")
+	le := labels.MustNewMatcher(labels.MatchEqual, labels.BucketLabel, "1.0")
 	ctrl := func(mt labels.MatchType, val string) *labels.Matcher {
 		return labels.MustNewMatcher(mt, NHCBAsClassicLabel, val)
 	}
 
 	for _, tc := range []struct {
-		name        string
-		matchers    []*labels.Matcher
-		wantConvert bool
-		wantDebug   bool
-		wantMatched bool
-		wantErr     error
+		name         string
+		matchers     []*labels.Matcher
+		wantStripped []*labels.Matcher
+		wantConvert  bool
+		wantDebug    bool
+		wantMatched  bool
+		wantErr      error
 	}{
 		{
-			name:        "no control matchers enables conversion",
-			matchers:    []*labels.Matcher{name},
-			wantConvert: true,
-			wantDebug:   false,
-			wantMatched: true,
+			name:         "no control matchers enables conversion",
+			matchers:     []*labels.Matcher{name},
+			wantStripped: []*labels.Matcher{name},
+			wantConvert:  true,
+			wantDebug:    false,
+			wantMatched:  true,
 		},
 		{
-			name:        "equal true enables conversion",
-			matchers:    []*labels.Matcher{name, ctrl(labels.MatchEqual, "true")},
-			wantConvert: true,
-			wantDebug:   false,
-			wantMatched: true,
+			name:         "equal true enables conversion",
+			matchers:     []*labels.Matcher{name, ctrl(labels.MatchEqual, "true")},
+			wantStripped: []*labels.Matcher{name},
+			wantConvert:  true,
+			wantDebug:    false,
+			wantMatched:  true,
 		},
 		{
-			name:        "equal false disables conversion",
-			matchers:    []*labels.Matcher{name, ctrl(labels.MatchEqual, "false")},
-			wantConvert: false,
-			wantDebug:   false,
-			wantMatched: true,
+			name:         "non-control matchers including le are preserved in order",
+			matchers:     []*labels.Matcher{name, ctrl(labels.MatchEqual, "true"), le},
+			wantStripped: []*labels.Matcher{name, le},
+			wantConvert:  true,
+			wantMatched:  true,
 		},
 		{
-			name:        "not-equal true disables conversion without debug",
-			matchers:    []*labels.Matcher{name, ctrl(labels.MatchNotEqual, "true")},
-			wantConvert: false,
-			wantDebug:   false,
-			wantMatched: true,
+			name:         "equal false disables conversion",
+			matchers:     []*labels.Matcher{name, ctrl(labels.MatchEqual, "false")},
+			wantStripped: []*labels.Matcher{name},
+			wantConvert:  false,
+			wantDebug:    false,
+			wantMatched:  true,
 		},
 		{
-			name:        "not-equal false enables conversion without debug",
-			matchers:    []*labels.Matcher{name, ctrl(labels.MatchNotEqual, "false")},
-			wantConvert: true,
-			wantDebug:   false,
-			wantMatched: true,
+			name:         "not-equal true disables conversion without debug",
+			matchers:     []*labels.Matcher{name, ctrl(labels.MatchNotEqual, "true")},
+			wantStripped: []*labels.Matcher{name},
+			wantConvert:  false,
+			wantDebug:    false,
+			wantMatched:  true,
 		},
 		{
-			name:        "not-equal debug enables conversion without debug",
-			matchers:    []*labels.Matcher{name, ctrl(labels.MatchNotEqual, "debug")},
-			wantConvert: true,
-			wantDebug:   false,
-			wantMatched: true,
+			name:         "not-equal false enables conversion without debug",
+			matchers:     []*labels.Matcher{name, ctrl(labels.MatchNotEqual, "false")},
+			wantStripped: []*labels.Matcher{name},
+			wantConvert:  true,
+			wantDebug:    false,
+			wantMatched:  true,
 		},
 		{
-			name:        "equal debug enables conversion and debug",
-			matchers:    []*labels.Matcher{name, ctrl(labels.MatchEqual, "debug")},
-			wantConvert: true,
-			wantDebug:   true,
-			wantMatched: true,
+			name:         "not-equal debug enables conversion without debug",
+			matchers:     []*labels.Matcher{name, ctrl(labels.MatchNotEqual, "debug")},
+			wantStripped: []*labels.Matcher{name},
+			wantConvert:  true,
+			wantDebug:    false,
+			wantMatched:  true,
 		},
 		{
-			name:        "regexp true|debug enables conversion and debug",
-			matchers:    []*labels.Matcher{name, ctrl(labels.MatchRegexp, "true|debug")},
-			wantConvert: true,
-			wantDebug:   true,
-			wantMatched: true,
+			name:         "equal debug enables conversion and debug",
+			matchers:     []*labels.Matcher{name, ctrl(labels.MatchEqual, "debug")},
+			wantStripped: []*labels.Matcher{name},
+			wantConvert:  true,
+			wantDebug:    true,
+			wantMatched:  true,
 		},
 		{
-			name:        "regexp matching false disables conversion without debug",
-			matchers:    []*labels.Matcher{name, ctrl(labels.MatchRegexp, "false|debug")},
-			wantConvert: false,
-			wantDebug:   false,
-			wantMatched: true,
+			name:         "regexp true|debug enables conversion and debug",
+			matchers:     []*labels.Matcher{name, ctrl(labels.MatchRegexp, "true|debug")},
+			wantStripped: []*labels.Matcher{name},
+			wantConvert:  true,
+			wantDebug:    true,
+			wantMatched:  true,
 		},
 		{
-			name:        "contradictory matchers match nothing",
-			matchers:    []*labels.Matcher{name, ctrl(labels.MatchEqual, "true"), ctrl(labels.MatchEqual, "false")},
-			wantMatched: false,
+			name:         "regexp matching false disables conversion without debug",
+			matchers:     []*labels.Matcher{name, ctrl(labels.MatchRegexp, "false|debug")},
+			wantStripped: []*labels.Matcher{name},
+			wantConvert:  false,
+			wantDebug:    false,
+			wantMatched:  true,
+		},
+		{
+			name:         "contradictory matchers match nothing",
+			matchers:     []*labels.Matcher{name, ctrl(labels.MatchEqual, "true"), ctrl(labels.MatchEqual, "false")},
+			wantStripped: []*labels.Matcher{name},
+			wantMatched:  false,
 		},
 		{
 			name:     "only control matchers returns error",
@@ -1377,9 +1396,7 @@ func TestExtractControlMatchers(t *testing.T) {
 			require.Equal(t, tc.wantConvert, convert)
 			require.Equal(t, tc.wantDebug, debug)
 			require.Equal(t, tc.wantMatched, matched)
-			for _, m := range stripped {
-				require.NotEqual(t, NHCBAsClassicLabel, m.Name)
-			}
+			require.Equal(t, tc.wantStripped, stripped)
 		})
 	}
 }
