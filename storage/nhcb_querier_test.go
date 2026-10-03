@@ -1121,10 +1121,39 @@ func TestNHCBAsClassicQuerier_Collisions(t *testing.T) {
 			})
 		}
 
+		newMixedBucketQuerier := func() Querier {
+			// Group job="web" has stored classic and NHCB series, group job="api" has
+			// NHCB only. Classic series are indexed first, so job="web" is the first group.
+			return NewNHCBAsClassicQuerier(&nhcbMockQuerier{
+				classicSeries: []Series{
+					NewListSeries(labels.FromStrings("__name__", "http_requests_bucket", "job", "web", "le", "+Inf"), []chunks.Sample{
+						fSample{t: 1, f: 6},
+					}),
+					NewListSeries(labels.FromStrings("__name__", "http_requests_bucket", "job", "web", "le", "1.0"), []chunks.Sample{
+						fSample{t: 1, f: 4},
+					}),
+				},
+				nhcbSeries: []Series{
+					NewListSeries(labels.FromStrings("__name__", "http_requests", "job", "web"), []chunks.Sample{
+						hSample{t: 3, h: nhcb(30, []float64{1.0}, []int64{7, 3})},
+					}),
+					NewListSeries(labels.FromStrings("__name__", "http_requests", "job", "api"), []chunks.Sample{
+						hSample{t: 3, h: nhcb(50, []float64{1.0}, []int64{10, 5})},
+					}),
+				},
+			})
+		}
+		debugBucketLe := []*labels.Matcher{
+			labels.MustNewMatcher(labels.MatchEqual, model.MetricNameLabel, "http_requests_bucket"),
+			labels.MustNewMatcher(labels.MatchEqual, labels.BucketLabel, "1.0"),
+			labels.MustNewMatcher(labels.MatchEqual, NHCBAsClassicLabel, "debug"),
+		}
+
 		countName := labels.MustNewMatcher(labels.MatchEqual, model.MetricNameLabel, "http_requests_count")
 		for _, tc := range []struct {
 			name        string
 			querier     Querier // Defaults to newDualQuerier().
+			sortSeries  bool
 			matchers    []*labels.Matcher
 			expected    []seriesSamples
 			expectedErr error
@@ -1229,6 +1258,27 @@ func TestNHCBAsClassicQuerier_Collisions(t *testing.T) {
 				},
 			},
 			{
+				name:     "debug with _bucket and le matcher on mixed groups, sortSeries=false sorts per group",
+				querier:  newMixedBucketQuerier(),
+				matchers: debugBucketLe,
+				expected: []seriesSamples{
+					{labels: `{__from_nhcb__="false", __name__="http_requests_bucket", job="web", le="1.0"}`, samples: []fSample{{t: 1, f: 4}}},
+					{labels: `{__from_nhcb__="true", __name__="http_requests_bucket", job="web", le="1.0"}`, samples: []fSample{{t: 3, f: 7}}},
+					{labels: `{__from_nhcb__="true", __name__="http_requests_bucket", job="api", le="1.0"}`, samples: []fSample{{t: 3, f: 10}}},
+				},
+			},
+			{
+				name:       "debug with _bucket and le matcher on mixed groups, sortSeries=true sorts globally",
+				querier:    newMixedBucketQuerier(),
+				sortSeries: true,
+				matchers:   debugBucketLe,
+				expected: []seriesSamples{
+					{labels: `{__from_nhcb__="false", __name__="http_requests_bucket", job="web", le="1.0"}`, samples: []fSample{{t: 1, f: 4}}},
+					{labels: `{__from_nhcb__="true", __name__="http_requests_bucket", job="api", le="1.0"}`, samples: []fSample{{t: 3, f: 10}}},
+					{labels: `{__from_nhcb__="true", __name__="http_requests_bucket", job="web", le="1.0"}`, samples: []fSample{{t: 3, f: 7}}},
+				},
+			},
+			{
 				name:        "selector with only control matchers returns error",
 				matchers:    []*labels.Matcher{labels.MustNewMatcher(labels.MatchEqual, NHCBAsClassicLabel, "true")},
 				expectedErr: errOnlyControlMatchers,
@@ -1239,7 +1289,7 @@ func TestNHCBAsClassicQuerier_Collisions(t *testing.T) {
 				if q == nil {
 					q = newDualQuerier()
 				}
-				ss := q.Select(context.Background(), false, nil, tc.matchers...)
+				ss := q.Select(context.Background(), tc.sortSeries, nil, tc.matchers...)
 				if tc.expectedErr != nil {
 					require.False(t, ss.Next())
 					require.ErrorIs(t, ss.Err(), tc.expectedErr)
