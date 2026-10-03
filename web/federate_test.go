@@ -255,6 +255,10 @@ func (notReadyReadStorage) Stats(string, int) (*tsdb.Stats, error) {
 	return nil, fmt.Errorf("wrap: %w", tsdb.ErrNotReady)
 }
 
+func (notReadyReadStorage) StatsForMatchers(context.Context, string, int, []*labels.Matcher) (*tsdb.Stats, error) {
+	return nil, fmt.Errorf("wrap: %w", tsdb.ErrNotReady)
+}
+
 // Regression test for https://github.com/prometheus/prometheus/issues/7181.
 func TestFederation_NotReady(t *testing.T) {
 	for name, scenario := range scenarios {
