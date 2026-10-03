@@ -414,7 +414,6 @@ func HistogramFraction(lower, upper float64, h *histogram.FloatHistogram, metric
 	for it.Next() {
 		b := it.At()
 		count += b.Count
-		zeroBucket := false
 
 		// interpolateLinearly is used for custom buckets to be
 		// consistent with the linear interpolation known from classic
@@ -441,29 +440,11 @@ func HistogramFraction(lower, upper float64, h *histogram.FloatHistogram, metric
 			return rank + b.Count*b.FractionBelow(v, false)
 		}
 
-		if h.UsesCustomBuckets() {
-			// Custom buckets have no zero bucket. Only the first bucket has a
-			// lower bound of -Inf, and 0 is its lower bound if its upper bound
-			// is positive, as done for classic histograms and in
-			// HistogramQuantile above.
-			if b.Lower == math.Inf(-1) && b.Upper > 0 {
-				b.Lower = 0
-			}
-		} else if b.Lower <= 0 && b.Upper >= 0 {
-			zeroBucket = true
-			switch {
-			case len(h.NegativeBuckets) == 0 && len(h.PositiveBuckets) > 0:
-				// This is the zero bucket and the histogram has only
-				// positive buckets. So we consider 0 to be the lower
-				// bound.
-				b.Lower = 0
-			case len(h.PositiveBuckets) == 0 && len(h.NegativeBuckets) > 0:
-				// This is in the zero bucket and the histogram has only
-				// negative buckets. So we consider 0 to be the upper
-				// bound.
-				b.Upper = 0
-			}
-		}
+		// Custom buckets and the zero bucket are interpolated linearly, with
+		// 0 as the natural bound where the histogram is one-sided. See
+		// FloatHistogram.InterpolationBounds.
+		var linear bool
+		b, linear = h.InterpolationBounds(b)
 		if !lowerSet && b.Lower >= lower {
 			// We have hit the lower value at the lower bucket boundary.
 			lowerRank = rank
@@ -479,7 +460,7 @@ func HistogramFraction(lower, upper float64, h *histogram.FloatHistogram, metric
 		}
 		if !lowerSet && b.Lower < lower && b.Upper > lower {
 			// The lower value is in this bucket.
-			if h.UsesCustomBuckets() || zeroBucket {
+			if linear {
 				lowerRank = interpolateLinearly(lower)
 			} else {
 				lowerRank = interpolateExponentially(lower)
@@ -488,7 +469,7 @@ func HistogramFraction(lower, upper float64, h *histogram.FloatHistogram, metric
 		}
 		if !upperSet && b.Lower < upper && b.Upper > upper {
 			// The upper value is in this bucket.
-			if h.UsesCustomBuckets() || zeroBucket {
+			if linear {
 				upperRank = interpolateLinearly(upper)
 			} else {
 				upperRank = interpolateExponentially(upper)

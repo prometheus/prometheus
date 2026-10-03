@@ -66,6 +66,33 @@ func (h *FloatHistogram) UsesCustomBuckets() bool {
 	return IsCustomBucketsSchema(h.Schema)
 }
 
+// InterpolationBounds returns the bucket b of h with its bounds adjusted the
+// way PromQL's histogram_fraction interpolates within it, and whether that
+// interpolation has to be linear (see FractionBelow). Custom buckets are
+// always interpolated linearly, and 0 replaces the -Inf lower bound of their
+// first bucket when its upper bound is positive, as for classic histograms.
+// The zero bucket of an exponential histogram is interpolated linearly too,
+// with 0 as its lower bound when h has only positive buckets and as its upper
+// bound when h has only negative buckets.
+func (h *FloatHistogram) InterpolationBounds(b Bucket[float64]) (Bucket[float64], bool) {
+	if h.UsesCustomBuckets() {
+		if b.Lower == math.Inf(-1) && b.Upper > 0 {
+			b.Lower = 0
+		}
+		return b, true
+	}
+	if b.Lower > 0 || b.Upper < 0 {
+		return b, false
+	}
+	switch {
+	case len(h.NegativeBuckets) == 0 && len(h.PositiveBuckets) > 0:
+		b.Lower = 0
+	case len(h.PositiveBuckets) == 0 && len(h.NegativeBuckets) > 0:
+		b.Upper = 0
+	}
+	return b, true
+}
+
 // Copy returns a deep copy of the Histogram.
 func (h *FloatHistogram) Copy() *FloatHistogram {
 	c := FloatHistogram{
