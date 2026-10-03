@@ -329,8 +329,11 @@ func (t *timestampTracker) Append(_ storage.SeriesRef, _ labels.Labels, ts int64
 	return 0, nil
 }
 
-func (t *timestampTracker) AppendExemplar(storage.SeriesRef, labels.Labels, exemplar.Exemplar) (storage.SeriesRef, error) {
+func (t *timestampTracker) AppendExemplar(_ storage.SeriesRef, _ labels.Labels, e exemplar.Exemplar) (storage.SeriesRef, error) {
 	t.exemplars++
+	if e.Ts > t.highestTimestamp {
+		t.highestTimestamp = e.Ts
+	}
 	return 0, nil
 }
 
@@ -401,12 +404,22 @@ func (t *timestampTrackerV2) Append(ref storage.SeriesRef, _ labels.Labels, _, t
 		t.highestTimestamp = ts
 	}
 	t.exemplars += int64(len(opts.Exemplars))
+	for _, e := range opts.Exemplars {
+		if e.Ts > t.highestTimestamp {
+			t.highestTimestamp = e.Ts
+		}
+	}
 	return ref, nil
 }
 
 // AppendExemplars implements storage.ExemplarAppenderV2.
 func (t *timestampTrackerV2) AppendExemplars(ref storage.SeriesRef, _ labels.Labels, exemplars []exemplar.Exemplar) (storage.SeriesRef, error) {
 	t.exemplars += int64(len(exemplars))
+	for _, e := range exemplars {
+		if e.Ts > t.highestTimestamp {
+			t.highestTimestamp = e.Ts
+		}
+	}
 	return ref, nil
 }
 
