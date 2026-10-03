@@ -263,7 +263,69 @@ Here are some non-obvious parts of adding service discoveries that need to be ve
 - List the service discovery in both `<scrape_config>` and
   `<alertmanager_config>` in `docs/configuration/configuration.md`.
 
-<!-- TODO: Add best-practices -->
+### Best Practices for Service Discovery Implementations
+
+When implementing a new service discovery mechanism, follow these best practices to ensure reliability, performance, and maintainability:
+
+#### Error Handling and Retries
+
+- **Implement exponential backoff**: Use exponential backoff with jitter for retry logic to avoid overwhelming the SD backend during outages. See `consul/consul.go` for a reference implementation with `retryInterval` of 15 seconds.
+  
+- **Handle transient failures gracefully**: Distinguish between temporary network issues and permanent configuration errors. Only retry on transient failures.
+
+- **Set appropriate timeouts**: Configure reasonable timeouts for API calls (e.g., `watchTimeout` of 2 minutes in Consul SD) to prevent blocking indefinitely.
+
+- **Log errors with context**: Include relevant details (URL, operation, error type) in error logs to aid debugging.
+
+#### Performance Considerations
+
+- **Use blocking queries or long polling**: Where supported by the SD backend (e.g., Consul's blocking queries), use them to reduce unnecessary API calls and improve efficiency.
+
+- **Implement caching**: Cache SD responses where appropriate to reduce load on the SD backend, especially for large deployments.
+
+- **Support filtering options**: Expose backend-specific filtering capabilities (like EC2's `Filter` or Consul's `Filter`) as performance optimizations for large-scale deployments, while ensuring all filtering can also be done via relabelling.
+
+- **Batch API calls**: Where possible, retrieve multiple targets in a single API call rather than making individual requests.
+
+- **Use delta updates**: If the SD backend supports incremental updates, send only changed target groups rather than the full set on every update.
+
+#### Reliability
+
+- **Handle SD backend unavailability**: Continue operating with the last known good state when the SD backend is temporarily unavailable. Don't remove all targets on a transient error.
+
+- **Validate configuration early**: Validate SD-specific configuration during unmarshalling to catch errors before starting discovery.
+
+- **Use structured logging**: Leverage the provided `*slog.Logger` for consistent, structured logging with appropriate log levels.
+
+- **Monitor SD health**: Expose metrics via the provided `prometheus.Registerer` to track discovery performance, error rates, and target counts.
+
+#### Resource Management
+
+- **Clean up resources**: Properly close HTTP clients, watchers, and other resources when the SD is stopped. Implement context cancellation handling.
+
+- **Avoid goroutine leaks**: Ensure all goroutines are properly terminated when the discovery Run method's context is cancelled.
+
+- **Limit memory usage**: For SDs that may discover very large numbers of targets, consider streaming or pagination to avoid loading everything into memory at once.
+
+#### Testing
+
+- **Write comprehensive unit tests**: Cover configuration unmarshalling, metadata extraction, error handling, and edge cases.
+
+- **Test with real data**: Use realistic SD responses in tests to catch unexpected data formats or edge cases.
+
+- **Test failure scenarios**: Verify correct behavior when the SD backend is unavailable, returns errors, or provides malformed data.
+
+- **Validate target group generation**: Ensure target groups are correctly formatted with proper `Source` identifiers and that empty target lists are sent when all targets disappear.
+
+#### Code Quality
+
+- **Keep business logic in relabelling**: The SD should extract raw metadata; leave filtering and transformation to relabelling configs. Don't make assumptions about how users will use the discovered targets.
+
+- **Follow existing patterns**: Study similar SDs (e.g., Consul, Kubernetes) for established patterns around configuration, target group management, and error handling.
+
+- **Document configuration options**: Provide clear documentation for all configuration fields, including defaults, valid values, and examples.
+
+- **Use meaningful constant names**: Define clear constants for all metadata label prefixes (e.g., `model.MetaLabelPrefix + "mysd_labelname"`).
 
 ### Examples of Service Discovery pull requests
 
