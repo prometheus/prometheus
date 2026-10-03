@@ -148,11 +148,11 @@ global:
   # are ignored and only the classic parts are recognized (possibly as
   # a classic histogram with only the +Inf buckets if no explicit classic
   # buckets are part of the histogram).
-  [ scrape_native_histograms: <bool> | default = false ]
+  [ scrape_native_histograms: <boolean> | default = false ]
 
   # Specifies whether to convert scraped classic histograms into native
   # histograms with custom buckets.
-  [ convert_classic_histograms_to_nhcb: <bool> | default = false ]
+  [ convert_classic_histograms_to_nhcb: <boolean> | default = false ]
 
   # Specifies whether to additionally scrape the classic parts of a histogram,
   # even if it is also exposed with native parts or it is converted into a
@@ -654,11 +654,11 @@ metric_relabel_configs:
 # are ignored and only the classic parts are recognized (possibly as
 # a classic histogram with only the +Inf buckets if no explicit classic
 # buckets are part of the histogram).
-[ scrape_native_histograms: <bool> | default = <global.scrape_native_histograms> ]
+[ scrape_native_histograms: <boolean> | default = <global.scrape_native_histograms> ]
 
 # Specifies whether to convert classic histograms into native histograms with
 # custom buckets.
-[ convert_classic_histograms_to_nhcb: <bool> | default = <global.convert_classic_histograms_to_nhcb>]
+[ convert_classic_histograms_to_nhcb: <boolean> | default = <global.convert_classic_histograms_to_nhcb> ]
 
 # Specifies whether to additionally scrape the classic parts of a histogram,
 # even if it is also exposed with native parts or it is converted into a
@@ -697,7 +697,7 @@ basic_auth:
 # the configured credentials.
 authorization:
   # Sets the authentication type of the request.
-  [ type: <string> | default: Bearer ]
+  [ type: <string> | default = Bearer ]
   # Sets the credentials of the request. It is mutually exclusive with
   # `credentials_file`.
   [ credentials: <secret> ]
@@ -714,7 +714,7 @@ oauth2:
 [ follow_redirects: <boolean> | default = true ]
 
 # Whether to enable HTTP2.
-[ enable_http2: <boolean> | default: true ]
+[ enable_http2: <boolean> | default = true ]
 
 # Configures the request's TLS settings.
 tls_config:
@@ -727,7 +727,7 @@ tls_config:
 # contain port numbers.
 [ no_proxy: <string> ]
 # Use proxy URL indicated by environment variables (HTTP_PROXY, HTTPS_PROXY, NO_PROXY, and their lowercase versions)
-[ proxy_from_environment: <boolean> | default: false ]
+[ proxy_from_environment: <boolean> | default = false ]
 # Specifies headers to send to proxies during CONNECT requests.
 [ proxy_connect_header:
   [ <string>: [<secret>, ...] ] ]
@@ -862,7 +862,7 @@ tls_config:
 # contain port numbers.
 [ no_proxy: <string> ]
 # Use proxy URL indicated by environment variables (HTTP_PROXY, HTTPS_PROXY, NO_PROXY, and their lowercase versions)
-[ proxy_from_environment: <boolean> | default: false ]
+[ proxy_from_environment: <boolean> | default = false ]
 # Specifies headers to send to proxies during CONNECT requests.
 [ proxy_connect_header:
   [ <string>: [<secret>, ...] ] ]
@@ -1401,7 +1401,7 @@ See below for the configuration options for Azure discovery:
 # by the Azure Workload Identity webhook (AZURE_CLIENT_ID, AZURE_TENANT_ID and
 # AZURE_FEDERATED_TOKEN_FILE).
 # See https://learn.microsoft.com/en-us/azure/aks/workload-identity-overview
-[ authentication_method: <string> | default = OAuth]
+[ authentication_method: <string> | default = OAuth ]
 # The subscription ID. Always required.
 subscription_id: <string>
 # Optional tenant ID. Only required with authentication_method OAuth.
@@ -1809,7 +1809,7 @@ names:
 [ type: <string> | default = 'SRV' ]
 
 # The port number used if the query type is not SRV.
-[ port: <int>]
+[ port: <int> ]
 
 # The time after which the provided names are refreshed.
 [ refresh_interval: <duration> | default = 30s ]
@@ -2012,7 +2012,7 @@ region: <string>
 
 # Whether the service discovery should list all instances for all projects.
 # It is only relevant for the 'instance' role and usually requires admin permissions.
-[ all_tenants: <boolean> | default: false ]
+[ all_tenants: <boolean> | default = false ]
 
 # Refresh interval to re-read the instance list.
 [ refresh_interval: <duration> | default = 60s ]
@@ -2929,8 +2929,8 @@ The following meta labels are available on targets during [relabeling](#relabel_
 [ refresh_interval: <duration> | default = 60s ]
 [ region: <string> | default = global ]
 # The URL to connect to the API.
-[ server: <string> ]
-[ tag_separator: <string> | default = ,]
+[ server: <string> | default = http://localhost:4646 ]
+[ tag_separator: <string> | default = , ]
 
 # HTTP client settings, including authentication methods (such as basic auth and
 # authorization), proxy configurations, TLS options, custom HTTP headers, etc.
@@ -3047,7 +3047,7 @@ region: <string>
 # contain port numbers.
 [ no_proxy: <string> ]
 # Use proxy URL indicated by environment variables (HTTP_PROXY, HTTPS_PROXY, NO_PROXY, and their lowercase versions)
-[ proxy_from_environment: <boolean> | default: false ]
+[ proxy_from_environment: <boolean> | default = false ]
 # Specifies headers to send to proxies during CONNECT requests.
 [ proxy_connect_header:
   [ <string>: [<secret>, ...] ] ]
@@ -3056,7 +3056,7 @@ region: <string>
 [ follow_redirects: <boolean> | default = true ]
 
 # Whether to enable HTTP2.
-[ enable_http2: <boolean> | default: true ]
+[ enable_http2: <boolean> | default = true ]
 
 # Configures the TLS settings.
 tls_config:
@@ -3123,10 +3123,10 @@ See below for the configuration options for STACKIT discovery:
 project: <string>
 
 # STACKIT region to use. No automatic discovery of the region is done.
-[ region : <string> | default = "eu01" ]
+[ region: <string> | default = "eu01" ]
 
 # Custom API endpoint to be used. Format scheme://host:port
-[ endpoint : <string>  ]
+[ endpoint: <string> ]
 
 # The port to scrape metrics from.
 [ port: <int> | default = 80 ]
@@ -3228,7 +3228,7 @@ account: <string>
 # The type of targets to discover, can be set to:
 # * "container" to discover virtual machines (SmartOS zones, lx/KVM/bhyve branded zones) running on Triton
 # * "cn" to discover compute nodes (servers/global zones) making up the Triton infrastructure
-[ role : <string> | default = "container" ]
+[ role: <string> | default = "container" ]
 
 # The DNS suffix which should be applied to target.
 dns_suffix: <string>
@@ -4075,7 +4075,7 @@ queue_config:
   # Minimum number of shards, i.e. amount of concurrency.
   [ min_shards: <int> | default = 1 ]
   # Maximum number of samples per send.
-  [ max_samples_per_send: <int> | default = 2000]
+  [ max_samples_per_send: <int> | default = 2000 ]
   # Maximum time a sample will wait for a send. The sample might wait less
   # if the buffer is full. Further time might pass due to potential retries.
   [ batch_send_deadline: <duration> | default = 5s ]
@@ -4103,7 +4103,7 @@ metadata_config:
   # How frequently metric metadata is sent to remote storage.
   [ send_interval: <duration> | default = 1m ]
   # Maximum number of samples per send.
-  [ max_samples_per_send: <int> | default = 2000]
+  [ max_samples_per_send: <int> | default = 2000 ]
 
 # HTTP client settings, including authentication methods (such as basic auth and
 # authorization), proxy configurations, TLS options, custom HTTP headers, etc.
