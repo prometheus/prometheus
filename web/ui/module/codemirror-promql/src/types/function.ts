@@ -216,8 +216,8 @@ const promqlFunctions: { [key: number]: PromQLFunction } = {
   },
   [CorrelationOverTime]: {
     name: 'correlation_over_time',
-    argTypes: [ValueType.matrix, ValueType.matrix, ValueType.scalar],
-    variadic: 1,
+    argTypes: [ValueType.matrix, ValueType.matrix, ValueType.string],
+    variadic: 2,
     returnType: ValueType.vector,
   },
   [Cos]: {
@@ -414,8 +414,8 @@ const promqlFunctions: { [key: number]: PromQLFunction } = {
   },
   [LmOverTime]: {
     name: 'lm_over_time',
-    argTypes: [ValueType.string, ValueType.matrix, ValueType.matrix, ValueType.string, ValueType.scalar],
-    variadic: 1,
+    argTypes: [ValueType.string, ValueType.matrix, ValueType.matrix, ValueType.string, ValueType.string, ValueType.scalar],
+    variadic: 2,
     returnType: ValueType.vector,
   },
   [Ln]: {
@@ -534,8 +534,8 @@ const promqlFunctions: { [key: number]: PromQLFunction } = {
   },
   [RegressionOverTime]: {
     name: 'regression_over_time',
-    argTypes: [ValueType.matrix, ValueType.matrix, ValueType.scalar],
-    variadic: 2,
+    argTypes: [ValueType.matrix, ValueType.matrix, ValueType.string],
+    variadic: 3,
     returnType: ValueType.vector,
   },
   [Resets]: {

@@ -994,6 +994,33 @@ describe('promql operations', () => {
       ],
     },
     {
+      expr: 'correlation_over_time(a[5m], b[5m], "spearman", "job,instance")',
+      expectedValueType: ValueType.vector,
+      expectedDiag: [] as Diagnostic[],
+    },
+    {
+      expr: 'regression_over_time(a[5m], b[5m], "prediction", "log", "instance")',
+      expectedValueType: ValueType.vector,
+      expectedDiag: [] as Diagnostic[],
+    },
+    {
+      expr: 'lm_over_time("ridge,wls", a[5m], b[5m], "mode", "instance", 0.1, 300)',
+      expectedValueType: ValueType.vector,
+      expectedDiag: [] as Diagnostic[],
+    },
+    {
+      expr: 'regression_over_time(a[5m], b[5m], 2)',
+      expectedValueType: ValueType.vector,
+      expectedDiag: [
+        {
+          from: 35,
+          to: 36,
+          message: 'expected type string in call to function "regression_over_time", got scalar',
+          severity: 'error',
+        },
+      ],
+    },
+    {
       expr:
         'histogram_quantile(                                             # Root of the query, final result, approximates a quantile.\n' +
         '  0.9,                                                          # 1st argument to histogram_quantile(), the target quantile.\n' +
