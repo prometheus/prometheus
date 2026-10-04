@@ -710,13 +710,15 @@ const funcDocs: Record<string, React.ReactNode> = {
           string)
         </code>
         returns the correlation coefficient between paired float samples of <code>a</code> and
-        <code>b</code> over the given range, per matched series pair. Each result carries the labels of its <code>a</code> series, minus <code>__name__</code>. Unpaired series are silently dropped.
-        At each evaluation step, only samples whose timestamps appear in both range windows are correlated.
+        <code>b</code> over the given range, per matched series pair. Unpaired series are silently dropped. At each
+        evaluation step, only samples whose timestamps appear in both range windows are correlated. Each result carries
+        the labels of its <code>a</code>
+        series, minus <code>__name__</code>.
       </p>
 
       <p>
         <code>on</code> sets the matching key, like the binary-operator <code>on()</code> clause:{" "}
-        <code>&quot;&quot;</code> (the default) matches on all labels except <code>__name__</code>; a label list such as{" "}
+        <code>&quot;&quot;</code> (the default) matches on all labels except <code>__name__</code>; a label list such as
         <code>&quot;job,instance&quot;</code> (optionally in parentheses) matches on exactly those labels; and{" "}
         <code>&quot;()&quot;</code> matches on the empty label set, so every series matches every other. A malformed
         value, such as <code>&quot;(job&quot;</code>, yields an empty result plus a PromQL warning annotation.
@@ -777,9 +779,9 @@ const funcDocs: Record<string, React.ReactNode> = {
       </p>
 
       <p>
-        Multiple series in <code>a</code> matching the same series in <code>b</code> is normal fan-out, not ambiguity.
-        But when more than one series in <code>b</code> matches the same signature, the pairing is ambiguous — the
-        whole pair is skipped (not picked arbitrarily) and a PromQL warning annotation is emitted once.
+        Several <code>a</code> series may pair with one <code>b</code> series. When more than one <code>b</code> series
+        matches the same key, the pairing is ambiguous: that pair is skipped (not picked arbitrarily) and a PromQL
+        warning annotation is emitted once.
       </p>
 
       <p>
@@ -796,16 +798,15 @@ const funcDocs: Record<string, React.ReactNode> = {
 
       <p>
         <code>on</code> lets the two sides carry different extra labels — for example, errors labeled by{" "}
-        <code>code</code> and latency labeled by <code>quantile</code>, correlated per <code>job</code>/
-        <code>instance</code> regardless. Since <code>on</code> is positional, <code>method</code> has to be given too
-        (<code>&quot;&quot;</code> or <code>&quot;pearson&quot;</code> for the default):
+        <code>code</code> and latency labeled by <code>quantile</code>, correlated per
+        <code>job</code>/<code>instance</code> regardless. Since <code>on</code> is positional, <code>method</code> has
+        to be given too (<code>&quot;&quot;</code> or <code>&quot;pearson&quot;</code> for the default):
       </p>
 
       <pre>
         <code>
           correlation_over_time( rate(http_request_errors_total[1m])[1h:1m],
-          rate(http_request_duration_seconds_sum[1m])[1h:1m], &quot;pearson&quot;, &quot;job,instance&quot; ) &gt;
-          0.8
+          rate(http_request_duration_seconds_sum[1m])[1h:1m], &quot;pearson&quot;, &quot;job,instance&quot; ) &gt; 0.8
         </code>
       </pre>
 
@@ -2297,9 +2298,10 @@ const funcDocs: Record<string, React.ReactNode> = {
           <code>regression_over_time()</code>
         </a>
         : <code>labelName</code> is the pivot that reshapes <code>X</code> into a design matrix whose columns are the
-        distinct values of that label. <code>on</code> must be given (pass <code>&quot;&quot;</code> for &quot;no
-        restriction&quot;) whenever <code>lambda</code> or <code>halflife</code> are supplied, mirroring{" "}
-        <code>labelName</code>&rsquo;s own required-but-defaultable convention.
+        distinct values of that label. <code>on</code> must be given (pass <code>&quot;&quot;</code> for &ldquo;no
+        restriction&rdquo;) whenever <code>lambda</code> or
+        <code>halflife</code> are supplied, mirroring <code>labelName</code>&rsquo;s own required-but-defaultable
+        convention.
       </p>
 
       <p>
@@ -2359,12 +2361,15 @@ const funcDocs: Record<string, React.ReactNode> = {
       </ul>
 
       <p>
-        Predictor series are grouped by the <code>on</code> key, which works as for{" "}
-        <code>correlation_over_time()</code> except that the default also ignores <code>labelName</code>;{" "}
-        <code>&quot;()&quot;</code> puts every <code>X</code> series into one group, which then needs a single{" "}
-        <code>y</code> series. Each group is one independent regression, and its distinct <code>labelName</code>{" "}
-        values become the design-matrix columns. The response series is matched to a group by those same grouping
-        labels. Each emitted series carries the group&rsquo;s labels (from <code>X</code>) with
+        Predictor series are grouped by the <code>on</code> key, which works as for
+        <a href="#correlation_over_time">
+          <code>correlation_over_time()</code>
+        </a>{" "}
+        except that the default also ignores <code>labelName</code>; <code>&quot;()&quot;</code> puts every{" "}
+        <code>X</code> series into one group, which then needs a single <code>y</code> series. Each group is one
+        independent regression, and its distinct <code>labelName</code> values become the design-matrix columns. The
+        response series is matched to a group by those same grouping labels. Each emitted series carries the
+        group&rsquo;s labels (just the <code>on</code> labels when <code>on</code> is given) with
         <code>labelName</code> set to the predictor&rsquo;s value — or to the reserved value
         <code>(intercept)</code> for the intercept term — and its value is the fitted coefficient. Each group also emits
         a <code>(r2)</code> series carrying the coefficient of determination (the fraction of the response variance
@@ -2374,8 +2379,8 @@ const funcDocs: Record<string, React.ReactNode> = {
       </p>
 
       <p>
-        Two ambiguity cases are skipped (with a warning) rather than resolved arbitrarily: more than one response
-        series matching the same group, and two predictor series in the same group ending up with the same{" "}
+        Two ambiguity cases are skipped (with a warning) rather than resolved arbitrarily: more than one response series
+        matching the same group, and two predictor series in the same group ending up with the same{" "}
         <code>labelName</code> pivot value (which would otherwise produce two design-matrix columns with the same
         header) — the latter typically happens once <code>on</code> drops the label that used to distinguish them.
       </p>
@@ -2399,25 +2404,37 @@ const funcDocs: Record<string, React.ReactNode> = {
         collides with <code>(intercept)</code>, are skipped with a warning. Histogram samples are ignored.
       </p>
 
-      <p>For example, to estimate how much each non-idle CPU mode contributes to request latency over the past hour:</p>
-
-      <pre>
-        <code>
-          lm_over_time( &quot;lm&quot;, request_latency_p99[1h:1m], rate(node_cpu_seconds_total{"{"}
-          mode!=&quot;idle&quot;{"}"}[1m])[1h:1m], &quot;mode&quot;, &quot;&quot; )
-        </code>
-      </pre>
-
       <p>
-        <code>on</code> lets <code>y</code> and <code>X</code> carry differing extra labels — for example, a{" "}
-        <code>y</code> recording rule that adds a <code>team</code> label the exporter&rsquo;s CPU metrics don&rsquo;t
-        have, grouped by <code>instance</code> regardless:
+        Each group needs exactly one <code>y</code> series and, for every <code>labelName</code> value, exactly one{" "}
+        <code>X</code> series. Shape both sides with aggregations to get there. For example, to estimate how much each
+        non-idle CPU mode contributes to request latency over the past hour, per instance:
       </p>
 
       <pre>
         <code>
-          lm_over_time( &quot;lm&quot;, request_latency_p99[1h:1m], rate(node_cpu_seconds_total{"{"}
-          mode!=&quot;idle&quot;{"}"}[1m])[1h:1m], &quot;mode&quot;, &quot;instance&quot; )
+          lm_over_time( &quot;lm&quot;, max by (instance) (request_latency_p99)[1h:1m], sum by (instance, mode)
+          (rate(node_cpu_seconds_total{"{"}mode!=&quot;idle&quot;{"}"}[1m]))[1h:1m], &quot;mode&quot;, &quot;&quot; )
+        </code>
+      </pre>
+
+      <p>
+        The <code>sum by (instance, mode)</code> matters: <code>node_cpu_seconds_total</code> has one series per CPU
+        core, so without it every group would hold several <code>X</code> series per mode and be skipped as ambiguous.
+        With the default <code>on</code>, both sides group on what is left after dropping <code>__name__</code> and{" "}
+        <code>mode</code>, here just <code>instance</code>.
+      </p>
+
+      <p>
+        <code>on</code> lets <code>y</code> carry extra labels that <code>X</code> doesn&rsquo;t — for example, a{" "}
+        <code>y</code>
+        recording rule that adds a <code>team</code> label the exporter&rsquo;s CPU metrics don&rsquo;t have — and still
+        group by <code>instance</code>, as long as there is one <code>y</code> series per instance:
+      </p>
+
+      <pre>
+        <code>
+          lm_over_time( &quot;lm&quot;, request_latency_p99[1h:1m], sum by (instance, mode) (rate(node_cpu_seconds_total
+          {"{"}mode!=&quot;idle&quot;{"}"}[1m]))[1h:1m], &quot;mode&quot;, &quot;instance&quot; )
         </code>
       </pre>
     </>
@@ -3305,7 +3322,7 @@ const funcDocs: Record<string, React.ReactNode> = {
 
       <p>
         <code>on</code> sets the matching key, like the binary-operator <code>on()</code> clause:{" "}
-        <code>&quot;&quot;</code> (the default) matches on all labels except <code>__name__</code>; a label list such as{" "}
+        <code>&quot;&quot;</code> (the default) matches on all labels except <code>__name__</code>; a label list such as
         <code>&quot;job,instance&quot;</code> (optionally in parentheses) matches on exactly those labels; and{" "}
         <code>&quot;()&quot;</code> matches on the empty label set, so every series matches every other. A malformed
         value, such as <code>&quot;(job&quot;</code>, yields an empty result plus a PromQL warning annotation.
@@ -3351,7 +3368,7 @@ const funcDocs: Record<string, React.ReactNode> = {
               <code>&quot;slope&quot;</code>
             </td>
             <td>
-              slope <code>β₁</code> (default)
+              slope <code>β₁</code> (the default)
             </td>
           </tr>
 
@@ -3403,7 +3420,7 @@ const funcDocs: Record<string, React.ReactNode> = {
               <code>&quot;identity&quot;</code>
             </td>
             <td>
-              identity (default): fits <code>y ≈ β₀ + β₁·x</code>
+              the default: fits <code>y ≈ β₀ + β₁·x</code>
             </td>
           </tr>
 
@@ -3412,11 +3429,18 @@ const funcDocs: Record<string, React.ReactNode> = {
               <code>&quot;log&quot;</code>
             </td>
             <td>
-              log: fits <code>ln(y) ≈ β₀ + β₁·x</code>, i.e. <code>y ≈ exp(β₀)·exp(β₁·x)</code>
+              fits <code>ln(y) ≈ β₀ + β₁·x</code>, i.e. <code>y ≈ exp(β₀)·exp(β₁·x)</code>
             </td>
           </tr>
         </tbody>
       </table>
+      <p>
+        An empty <code>output</code> or <code>link</code> behaves like omitting it. An unknown name yields an empty
+        result plus a PromQL warning annotation listing the valid names. The arguments are positional, so to set{" "}
+        <code>on</code> pass <code>output</code> and <code>link</code> too (<code>&quot;&quot;</code>
+        keeps their defaults).
+      </p>
+
       <p>
         The log link suits non-negative, count-like series. Its slope, intercept and
         <code>r²</code> are reported on the natural-log scale, while the prediction is back-transformed with{" "}
@@ -3425,8 +3449,8 @@ const funcDocs: Record<string, React.ReactNode> = {
       </p>
 
       <p>
-        Returns <code>NaN</code> for a step when the paired window has fewer than 2 samples or when
-        <code>x</code> has zero variance. Histogram samples are skipped and do not contribute.
+        Returns <code>NaN</code> for a step when the paired window has fewer than 2 samples or when <code>x</code> has
+        zero variance. Histogram samples are skipped and do not contribute.
       </p>
 
       <p>For example, to estimate how much CPU each unit of request rate costs, fitted over the past hour:</p>

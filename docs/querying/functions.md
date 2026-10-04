@@ -897,28 +897,36 @@ column.) Groups whose predictor cardinality exceeds the supported maximum, or
 that contain a predictor whose pivot value collides with `(intercept)`, are
 skipped with a warning. Histogram samples are ignored.
 
-For example, to estimate how much each non-idle CPU mode contributes to request
-latency over the past hour:
+Each group needs exactly one `y` series and, for every `labelName` value,
+exactly one `X` series. Shape both sides with aggregations to get there. For
+example, to estimate how much each non-idle CPU mode contributes to request
+latency over the past hour, per instance:
 
 ```
 lm_over_time(
   "lm",
-  request_latency_p99[1h:1m],
-  rate(node_cpu_seconds_total{mode!="idle"}[1m])[1h:1m],
+  max by (instance) (request_latency_p99)[1h:1m],
+  sum by (instance, mode) (rate(node_cpu_seconds_total{mode!="idle"}[1m]))[1h:1m],
   "mode",
   ""
 )
 ```
 
-`on` lets `y` and `X` carry differing extra labels — for example, a `y`
+The `sum by (instance, mode)` matters: `node_cpu_seconds_total` has one series
+per CPU core, so without it every group would hold several `X` series per mode
+and be skipped as ambiguous. With the default `on`, both sides group on what is
+left after dropping `__name__` and `mode`, here just `instance`.
+
+`on` lets `y` carry extra labels that `X` doesn't — for example, a `y`
 recording rule that adds a `team` label the exporter's CPU metrics don't
-have, grouped by `instance` regardless:
+have — and still group by `instance`, as long as there is one `y` series per
+instance:
 
 ```
 lm_over_time(
   "lm",
   request_latency_p99[1h:1m],
-  rate(node_cpu_seconds_total{mode!="idle"}[1m])[1h:1m],
+  sum by (instance, mode) (rate(node_cpu_seconds_total{mode!="idle"}[1m]))[1h:1m],
   "mode",
   "instance"
 )
