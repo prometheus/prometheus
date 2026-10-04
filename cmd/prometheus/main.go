@@ -947,18 +947,12 @@ func main() {
 	features.Set(features.Prometheus, "auto_reload_config", cfg.enableAutoReload)
 	features.Enable(features.Prometheus, labels.ImplementationName)
 	template.RegisterFeatures(features.DefaultRegistry)
-	var (
-		localStorage                   = &readyStorage{stats: tsdb.NewDBStats()}
-		wrappedStorage storage.Storage = localStorage
-	)
-	if cfg.enableNHCBasClassic {
-		wrappedStorage = storage.NewNHCBAsClassicStorage(localStorage)
-	}
 
 	var (
+		localStorage  = &readyStorage{stats: tsdb.NewDBStats()}
 		scraper       = &readyScrapeManager{}
 		remoteStorage = remote.NewStorage(logger.With("component", "remote"), prometheus.DefaultRegisterer, localStorage.StartTime, localStoragePath, time.Duration(cfg.RemoteFlushDeadline), scraper, cfg.scrape.EnableTypeAndUnitLabels)
-		fanoutStorage = storage.NewFanout(logger, wrappedStorage, remoteStorage)
+		fanoutStorage = storage.NewFanout(logger, localStorage, remoteStorage)
 	)
 
 	var (
@@ -1044,6 +1038,7 @@ func main() {
 			EnableDelayedNameRemoval: cfg.promqlEnableDelayedNameRemoval,
 			EnableTypeAndUnitLabels:  cfg.scrape.EnableTypeAndUnitLabels,
 			UseStartTimestamps:       cfg.useStartTimestamps,
+			EnableNHCBAsClassic:      cfg.enableNHCBasClassic,
 			FeatureRegistry:          features.DefaultRegistry,
 			Parser:                   promqlParser,
 		}

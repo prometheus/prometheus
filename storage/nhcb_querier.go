@@ -61,21 +61,27 @@ func NewNHCBAsClassicQuerier(q Querier) Querier {
 	return &NHCBAsClassicQuerier{Querier: q}
 }
 
-// NHCBAsClassicStorage wraps a Storage and applies NHCB-to-classic conversion
-// to queriers when enabled.
-type NHCBAsClassicStorage struct {
-	Storage
+// NHCBAsClassicQueryable wraps a Queryable and applies NHCB-to-classic
+// conversion to its queriers.
+//
+// NOTE: This is meant to wrap the Queryable used by the PromQL engine (see
+// promql.EngineOpts.EnableNHCBAsClassic), above any fanout. Wrapping only one
+// fanout leg (e.g. local storage) would leave remote-read secondaries
+// unconverted and would also convert data served to non-PromQL consumers like
+// the remote read API.
+type NHCBAsClassicQueryable struct {
+	Queryable
 }
 
-// NewNHCBAsClassicStorage returns a new storage that wraps the given storage
-// and applies NHCB-to-classic conversion to queriers.
-func NewNHCBAsClassicStorage(s Storage) Storage {
-	return &NHCBAsClassicStorage{Storage: s}
+// NewNHCBAsClassicQueryable returns a new queryable that wraps the given
+// queryable and applies NHCB-to-classic conversion to queriers.
+func NewNHCBAsClassicQueryable(q Queryable) Queryable {
+	return &NHCBAsClassicQueryable{Queryable: q}
 }
 
-// Querier implements the Storage interface.
-func (s *NHCBAsClassicStorage) Querier(mint, maxt int64) (Querier, error) {
-	q, err := s.Storage.Querier(mint, maxt)
+// Querier implements the Queryable interface.
+func (s *NHCBAsClassicQueryable) Querier(mint, maxt int64) (Querier, error) {
+	q, err := s.Queryable.Querier(mint, maxt)
 	if err != nil {
 		return nil, err
 	}

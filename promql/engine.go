@@ -355,6 +355,14 @@ type EngineOpts struct {
 	// UseStartTimestamps enables start timestamp usage in functions such as rate().
 	UseStartTimestamps bool
 
+	// EnableNHCBAsClassic makes selectors for classic histogram series (_bucket,
+	// _count, _sum) also return series converted from native histograms with
+	// custom buckets (NHCB). The conversion wraps the Queryable passed to each
+	// query, so it applies to all data the engine reads (including remote-read
+	// sources behind a fanout), but not to other consumers of the same storage
+	// (e.g. the remote read API, federation or the series API).
+	EnableNHCBAsClassic bool
+
 	// FeatureRegistry is the registry for tracking enabled/disabled features.
 	FeatureRegistry features.Collector
 
@@ -380,6 +388,7 @@ type Engine struct {
 	enableDelayedNameRemoval bool
 	enableTypeAndUnitLabels  bool
 	useStartTimestamps       bool
+	enableNHCBAsClassic      bool
 	parser                   parser.Parser
 }
 
@@ -517,6 +526,7 @@ func NewEngine(opts EngineOpts) *Engine {
 		enableDelayedNameRemoval: opts.EnableDelayedNameRemoval,
 		enableTypeAndUnitLabels:  opts.EnableTypeAndUnitLabels,
 		useStartTimestamps:       opts.UseStartTimestamps,
+		enableNHCBAsClassic:      opts.EnableNHCBAsClassic,
 		parser:                   opts.Parser,
 	}
 }
@@ -605,6 +615,12 @@ func (ng *Engine) NewRangeQuery(ctx context.Context, q storage.Queryable, opts Q
 func (ng *Engine) newQuery(q storage.Queryable, qs string, opts QueryOpts, start, end time.Time, interval time.Duration) (*parser.Expr, *query) {
 	if opts == nil {
 		opts = NewPrometheusQueryOpts(false, 0, nil)
+	}
+	if ng.enableNHCBAsClassic {
+		// NOTE: Wrapping here, not in the storage, keeps the conversion scoped to
+		// PromQL evaluation while still covering every source behind q (e.g.
+		// remote-read secondaries of a fanout).
+		q = storage.NewNHCBAsClassicQueryable(q)
 	}
 
 	lookbackDelta := opts.LookbackDelta()
