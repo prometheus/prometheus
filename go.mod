@@ -66,7 +66,7 @@ require (
 	github.com/prometheus/client_golang v1.24.1
 	github.com/prometheus/client_golang/exp v0.0.0-20260921141911-45322d125bf0
 	github.com/prometheus/client_model v0.6.3
-	github.com/prometheus/common v0.71.0
+	github.com/prometheus/common v0.72.0
 	github.com/prometheus/common/assets v0.2.0
 	github.com/prometheus/exporter-toolkit v0.20.0
 	github.com/prometheus/sigv4 v0.5.0
