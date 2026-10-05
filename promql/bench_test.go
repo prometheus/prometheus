@@ -601,6 +601,206 @@ func BenchmarkNativeHistogramsCustomBuckets(b *testing.B) {
 	}
 }
 
+// nhcbAsClassicCase holds one query expressed for each way of storing and
+// querying the same histograms.
+type nhcbAsClassicCase struct {
+	name string
+	// Query over the stored classic histograms.
+	classic string
+	// Query over the stored NHCB with native PromQL.
+	nhcb string
+	// Query over the stored NHCB with classic PromQL, answered through the
+	// NHCB-as-classic compatibility layer.
+	nhcbAsClassic string
+}
+
+// BenchmarkNHCBAsClassic compares the same query over the same synthetic
+// latency histograms as classic histograms, NHCB and NHCB with
+// conversion to classic to benchmark usual histograms usage.
+func BenchmarkNHCBAsClassic(b *testing.B) {
+	const (
+		numSeries  = 1000
+		numBuckets = 30
+		numSamples = 70
+	)
+	testStorage := newClassicAndNHCBStorage(b, numSeries, numBuckets, numSamples)
+	compatStorage := storage.NewNHCBAsClassicStorage(testStorage)
+	ng := promqltest.NewTestEngineWithOpts(b, promql.EngineOpts{
+		MaxSamples: 500000000,
+		Timeout:    100 * time.Second,
+	})
+
+	end := time.UnixMilli(int64(numSamples-1) * time.Minute.Milliseconds())
+	rangeStart := end.Add(-30 * time.Minute)
+
+	cases := []nhcbAsClassicCase{
+		{
+			name:          "count",
+			classic:       `sum(rate(bench_classic_seconds_count[5m]))`,
+			nhcb:          `sum(histogram_count(rate(bench_nhcb_seconds[5m])))`,
+			nhcbAsClassic: `sum(rate(bench_nhcb_seconds_count[5m]))`,
+		},
+		{
+			name:          "sum",
+			classic:       `sum(rate(bench_classic_seconds_sum[5m]))`,
+			nhcb:          `sum(histogram_sum(rate(bench_nhcb_seconds[5m])))`,
+			nhcbAsClassic: `sum(rate(bench_nhcb_seconds_sum[5m]))`,
+		},
+		{
+			name:          "quantile",
+			classic:       `histogram_quantile(0.99, sum by (le) (rate(bench_classic_seconds_bucket[5m])))`,
+			nhcb:          `histogram_quantile(0.99, sum(rate(bench_nhcb_seconds[5m])))`,
+			nhcbAsClassic: `histogram_quantile(0.99, sum by (le) (rate(bench_nhcb_seconds_bucket[5m])))`,
+		},
+	}
+	modes := []struct {
+		name      string
+		queryable storage.Queryable
+		query     func(nhcbAsClassicCase) string
+	}{
+		{"classic", testStorage, func(c nhcbAsClassicCase) string { return c.classic }},
+		{"nhcb", testStorage, func(c nhcbAsClassicCase) string { return c.nhcb }},
+		{"nhcb_as_classic", compatStorage, func(c nhcbAsClassicCase) string { return c.nhcbAsClassic }},
+	}
+
+	// The compatibility layer must return what the stored classic histograms
+	// return, otherwise the timings below compare different work.
+	for _, tc := range cases {
+		classic := execInstantQuery(b, ng, testStorage, tc.classic, end)
+		converted := execInstantQuery(b, ng, compatStorage, tc.nhcbAsClassic, end)
+		require.Len(b, classic, 1, tc.name)
+		require.Len(b, converted, 1, tc.name)
+		require.InDelta(b, classic[0].F, converted[0].F, 1e-6*classic[0].F, tc.name)
+	}
+
+	for _, tc := range cases {
+		for _, shape := range []string{"instant", "range_30m"} {
+			for _, m := range modes {
+				b.Run(tc.name+"/"+shape+"/"+m.name, func(b *testing.B) {
+					query := m.query(tc)
+					b.ReportAllocs()
+					for b.Loop() {
+						if shape == "instant" {
+							execInstantQuery(b, ng, m.queryable, query, end)
+							continue
+						}
+						qry, err := ng.NewRangeQuery(context.Background(), m.queryable, nil, query, rangeStart, end, time.Minute)
+						require.NoError(b, err)
+						require.NoError(b, qry.Exec(context.Background()).Err)
+						qry.Close()
+					}
+				})
+			}
+		}
+	}
+}
+
+// execInstantQuery runs an instant query and returns its vector result.
+func execInstantQuery(tb testing.TB, ng *promql.Engine, q storage.Queryable, query string, ts time.Time) promql.Vector {
+	tb.Helper()
+
+	qry, err := ng.NewInstantQuery(context.Background(), q, nil, query, ts)
+	require.NoError(tb, err)
+	defer qry.Close()
+
+	res := qry.Exec(context.Background())
+	require.NoError(tb, res.Err)
+	v, err := res.Vector()
+	require.NoError(tb, err)
+	return v
+}
+
+// newClassicAndNHCBStorage returns a storage holding numSeries synthetic
+// latency histograms with numBuckets buckets and numSamples samples taken one
+// minute apart. Each histogram is stored twice: as classic histograms
+// (bench_classic_seconds_{bucket,count,sum}) and as NHCB (bench_nhcb_seconds).
+func newClassicAndNHCBStorage(tb testing.TB, numSeries, numBuckets, numSamples int) *teststorage.TestStorage {
+	tb.Helper()
+
+	bounds := make([]float64, numBuckets)
+	for i := range bounds {
+		bounds[i] = float64(i + 1)
+	}
+
+	testStorage := teststorage.New(tb)
+	app := testStorage.Appender(context.Background())
+	for s := range numSeries {
+		appendClassicAndNHCBSeries(tb, app, s, bounds, numSamples)
+	}
+	require.NoError(tb, app.Commit())
+	return testStorage
+}
+
+// appendClassicAndNHCBSeries appends one latency histogram, identified by id,
+// as classic series and as an NHCB series. Counters grow linearly over time.
+func appendClassicAndNHCBSeries(tb testing.TB, app storage.Appender, id int, bounds []float64, numSamples int) {
+	tb.Helper()
+
+	common := []string{
+		"tenant", "tenant-" + strconv.Itoa(id%100),
+		"handler", "/api/" + strconv.Itoa(id%50),
+		"method", []string{"GET", "POST"}[id%2],
+		"status", []string{"200", "400", "500"}[id%3],
+		"series", strconv.Itoa(id),
+	}
+	lsetFor := func(name string, extra ...string) labels.Labels {
+		return labels.FromStrings(append(append([]string{labels.MetricName, name}, common...), extra...)...)
+	}
+	appendFloat := func(lset labels.Labels, ts int64, v float64) {
+		_, err := app.Append(0, lset, ts, v)
+		require.NoError(tb, err)
+	}
+
+	bucketLabels := make([]labels.Labels, len(bounds))
+	for i, bound := range bounds {
+		bucketLabels[i] = lsetFor("bench_classic_seconds_bucket", "le", labels.FormatOpenMetricsFloat(bound))
+	}
+	infLabels := lsetFor("bench_classic_seconds_bucket", "le", "+Inf")
+	countLabels := lsetFor("bench_classic_seconds_count")
+	sumLabels := lsetFor("bench_classic_seconds_sum")
+	nhcbLabels := lsetFor("bench_nhcb_seconds")
+
+	for j := range numSamples {
+		ts := int64(j) * time.Minute.Milliseconds()
+
+		// Per-bucket (non-cumulative) observation counts.
+		perBucket := make([]int64, len(bounds))
+		var total int64
+		for k := range perBucket {
+			perBucket[k] = int64(j+1) * int64(k%5+1)
+			total += perBucket[k]
+		}
+		sum := float64(total) * 1.5
+
+		// Classic histograms store cumulative bucket counts.
+		var cumulative int64
+		for k := range perBucket {
+			cumulative += perBucket[k]
+			appendFloat(bucketLabels[k], ts, float64(cumulative))
+		}
+		appendFloat(infLabels, ts, float64(total))
+		appendFloat(countLabels, ts, float64(total))
+		appendFloat(sumLabels, ts, sum)
+
+		// Native histogram buckets are delta encoded.
+		deltas := make([]int64, len(bounds))
+		prev := int64(0)
+		for k := range perBucket {
+			deltas[k] = perBucket[k] - prev
+			prev = perBucket[k]
+		}
+		_, err := app.AppendHistogram(0, nhcbLabels, ts, &histogram.Histogram{
+			Schema:          histogram.CustomBucketsSchema,
+			Count:           uint64(total),
+			Sum:             sum,
+			CustomValues:    bounds,
+			PositiveSpans:   []histogram.Span{{Offset: 0, Length: uint32(len(bounds))}},
+			PositiveBuckets: deltas,
+		}, nil)
+		require.NoError(tb, err)
+	}
+}
+
 func BenchmarkInfoFunction(b *testing.B) {
 	// Initialize test storage and generate test series data.
 	testStorage := teststorage.New(b)
