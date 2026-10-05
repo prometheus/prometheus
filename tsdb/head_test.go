@@ -7651,7 +7651,7 @@ func TestStripeSeries_gc(t *testing.T) {
 		ms2.Unlock()
 	})
 
-	t.Run("a memSeries not built via newMemSeries is incorrectly protected at mint<=0", func(t *testing.T) {
+	t.Run("collects a directly constructed series without samples or exemplars at mint<=0", func(t *testing.T) {
 		// Construct the series directly to verify that zero-valued exemplar state
 		// does not imply an exemplar at timestamp zero. With no chunks or exemplars,
 		// the series must be collected at mint<=0 without constructor initialization.
