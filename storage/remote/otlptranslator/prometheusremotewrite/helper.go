@@ -119,6 +119,7 @@ func (c *PrometheusConverter) createAttributes(
 				return
 			}
 			if existingValue := c.builder.Get(finalKey); existingValue != "" {
+				c.recordLabelCollision(sortedLabels, finalKey)
 				c.builder.Set(finalKey, existingValue+";"+l.Value)
 			} else {
 				c.builder.Set(finalKey, l.Value)
@@ -194,6 +195,40 @@ func (c *PrometheusConverter) createAttributes(
 	return c.builder.Labels(), nil
 }
 
+// recordLabelCollision adds a warning annotation naming the original attribute
+// keys that map to the same label name finalKey after sanitization, so that
+// callers of FromMetrics can surface which attributes produced a concatenated
+// label value. Name lookups hit the sanitizedLabels cache.
+//
+// Each finalKey is recorded at most once per FromMetrics call.
+// Accepted limitation: if different attribute sets
+// collide as the same finalKey within one call, only the first set is recorded.
+func (c *PrometheusConverter) recordLabelCollision(sortedLabels labels.Labels, finalKey string) {
+	if _, ok := c.recordedCollisions[finalKey]; ok {
+		return
+	}
+
+	var keys strings.Builder
+	sortedLabels.Range(func(l labels.Label) {
+		// No need to handle errors here.
+		if name, err := c.buildLabelName(l.Name); err != nil || name != finalKey {
+			return
+		}
+		if keys.Len() > 0 {
+			keys.WriteString(", ")
+		}
+		fmt.Fprintf(&keys, "%q", l.Name)
+	})
+	c.collisionAnnots.Add(newCategorizedWarningf(WarningCategoryLabelNameCollision,
+		"OTLP %s attributes %s collide as label %q after name sanitization, values are concatenated with ';'",
+		c.collisionSource.String(), keys.String(), finalKey))
+
+	if c.recordedCollisions == nil {
+		c.recordedCollisions = make(map[string]struct{}, 4)
+	}
+	c.recordedCollisions[finalKey] = struct{}{}
+}
+
 func aggregationTemporality(metric pmetric.Metric) (pmetric.AggregationTemporality, bool, error) {
 	//exhaustive:enforce
 	switch metric.Type() {
@@ -222,6 +257,9 @@ func (c *PrometheusConverter) addHistogramDataPoints(
 	settings Settings,
 	appOpts storage.AOptions,
 ) error {
+	countMetricName := appOpts.MetricFamilyName + countStr
+	bucketMetricName := appOpts.MetricFamilyName + bucketStr
+	var sumMetricName string
 	for x := 0; x < dataPoints.Len(); x++ {
 		if err := c.everyN.checkContext(ctx); err != nil {
 			return err
@@ -241,12 +279,15 @@ func (c *PrometheusConverter) addHistogramDataPoints(
 		// If the sum is unset, it indicates the _sum metric point should be
 		// omitted
 		if pt.HasSum() {
+			if sumMetricName == "" {
+				sumMetricName = appOpts.MetricFamilyName + sumStr
+			}
 			// Treat sum as a sample in an individual TimeSeries.
 			val := pt.Sum()
 			if pt.Flags().NoRecordedValue() {
 				val = math.Float64frombits(value.StaleNaN)
 			}
-			sumLabels := c.addLabels(appOpts.MetricFamilyName+sumStr, baseLabels)
+			sumLabels := c.addLabels(sumMetricName, baseLabels)
 			if _, err := c.appender.Append(0, sumLabels, startTimestamp, timestamp, val, nil, nil, appOpts); err != nil {
 				return err
 			}
@@ -257,7 +298,7 @@ func (c *PrometheusConverter) addHistogramDataPoints(
 		if pt.Flags().NoRecordedValue() {
 			val = math.Float64frombits(value.StaleNaN)
 		}
-		countLabels := c.addLabels(appOpts.MetricFamilyName+countStr, baseLabels)
+		countLabels := c.addLabels(countMetricName, baseLabels)
 		if _, err := c.appender.Append(0, countLabels, startTimestamp, timestamp, val, nil, nil, appOpts); err != nil {
 			return err
 		}
@@ -295,7 +336,7 @@ func (c *PrometheusConverter) addHistogramDataPoints(
 				val = math.Float64frombits(value.StaleNaN)
 			}
 			boundStr := strconv.FormatFloat(bound, 'f', -1, 64)
-			bucketLabels := c.addLabels(appOpts.MetricFamilyName+bucketStr, baseLabels, leStr, boundStr)
+			bucketLabels := c.addLabels(bucketMetricName, baseLabels, leStr, boundStr)
 			if _, err := c.appender.Append(0, bucketLabels, startTimestamp, timestamp, val, nil, nil, appOpts); err != nil {
 				return err
 			}
@@ -307,7 +348,7 @@ func (c *PrometheusConverter) addHistogramDataPoints(
 		if pt.Flags().NoRecordedValue() {
 			val = math.Float64frombits(value.StaleNaN)
 		}
-		infLabels := c.addLabels(appOpts.MetricFamilyName+bucketStr, baseLabels, leStr, pInfStr)
+		infLabels := c.addLabels(bucketMetricName, baseLabels, leStr, pInfStr)
 		if _, err := c.appender.Append(0, infLabels, startTimestamp, timestamp, val, nil, nil, appOpts); err != nil {
 			return err
 		}
@@ -540,7 +581,9 @@ func (c *PrometheusConverter) addResourceTargetInfo(resource pcommon.Resource, s
 	// Temporarily clear scope labels for this call.
 	savedScopeLabels := c.scopeLabels
 	c.scopeLabels = nil
+	c.collisionSource = collisionFromResource
 	lbls, err := c.createAttributes(attributes, settings, identifyingAttrs, false, metadata.Metadata{}, model.MetricNameLabel, name)
+	c.collisionSource = collisionFromDataPoint
 	c.scopeLabels = savedScopeLabels
 	if err != nil {
 		return err

@@ -26,6 +26,7 @@ import (
 )
 
 func TestDigitalOceanDBRefresh(t *testing.T) {
+	t.Parallel()
 	mock := NewSDMock(t)
 	mock.Setup()
 	defer mock.ShutdownServer()
@@ -94,6 +95,7 @@ func TestDigitalOceanDBRefresh(t *testing.T) {
 }
 
 func TestDigitalOceanDBRefreshPagination(t *testing.T) {
+	t.Parallel()
 	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		page := r.URL.Query().Get("page")
 		switch page {

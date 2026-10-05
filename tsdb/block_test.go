@@ -14,11 +14,14 @@
 package tsdb
 
 import (
+	"bytes"
 	"context"
 	"encoding/binary"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"hash/crc32"
+	"log/slog"
 	"math/rand"
 	"os"
 	"path/filepath"
@@ -40,6 +43,34 @@ import (
 	"github.com/prometheus/prometheus/tsdb/index"
 	"github.com/prometheus/prometheus/tsdb/wlog"
 )
+
+// TestBlockMetaCompaction_SetSelectedSeries verifies the round-trip behaviour of the
+// FromSelectedSeries compaction hint: it is initially absent, becomes present after
+// SetSelectedSeries, repeated calls are idempotent, and it is independent of the
+// FromStaleSeries hint (the two can co-exist on the same block meta if needed).
+func TestBlockMetaCompaction_SetSelectedSeries(t *testing.T) {
+	var bmc BlockMetaCompaction
+
+	// Initially absent.
+	require.False(t, bmc.FromSelectedSeries())
+
+	// Set it once.
+	bmc.SetSelectedSeries()
+	require.True(t, bmc.FromSelectedSeries())
+	require.Len(t, bmc.Hints, 1)
+
+	// Idempotent: setting again does not duplicate the hint.
+	bmc.SetSelectedSeries()
+	require.True(t, bmc.FromSelectedSeries())
+	require.Len(t, bmc.Hints, 1)
+
+	// Independent of FromStaleSeries.
+	require.False(t, bmc.FromStaleSeries())
+	bmc.SetStaleSeries()
+	require.True(t, bmc.FromStaleSeries())
+	require.True(t, bmc.FromSelectedSeries())
+	require.Len(t, bmc.Hints, 2)
+}
 
 // In Prometheus 2.1.0 we had a bug where the meta.json version was falsely bumped
 // to 2. We had a migration in place resetting it to 1 but we should move immediately to
@@ -70,6 +101,77 @@ func TestSetCompactionFailed(t *testing.T) {
 	require.NoError(t, err)
 	require.True(t, b.meta.Compaction.Failed)
 	require.NoError(t, b.Close())
+}
+
+func TestBlockLogValue(t *testing.T) {
+	blockDir := createBlock(t, t.TempDir(), genSeries(1, 1, 0, 10))
+	block, err := OpenBlock(nil, blockDir, nil, nil)
+	require.NoError(t, err)
+	t.Cleanup(func() { require.NoError(t, block.Close()) })
+
+	for _, tc := range []struct {
+		name  string
+		block *Block
+		want  any
+	}{
+		{name: "block", block: block, want: filepath.Base(blockDir)},
+		{name: "nil"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			require.Equal(t, tc.want, slog.AnyValue(tc.block).Resolve().Any())
+
+			data, err := json.Marshal(map[string]*Block{"block": tc.block})
+			require.NoError(t, err)
+			if tc.want == nil {
+				require.JSONEq(t, "{\"block\":null}", string(data))
+			} else {
+				require.JSONEq(t, "{\"block\":{}}", string(data))
+			}
+
+			for _, style := range []promslog.LogStyle{promslog.SlogStyle, promslog.GoKitStyle} {
+				for _, formatName := range []string{"json", "logfmt"} {
+					for _, placement := range []string{"direct", "with", "group", "with-group"} {
+						t.Run(string(style)+"/"+formatName+"/"+placement, func(t *testing.T) {
+							var output bytes.Buffer
+							format := promslog.NewFormat()
+							require.NoError(t, format.Set(formatName))
+							logger := promslog.New(&promslog.Config{Writer: &output, Format: format, Style: style})
+							switch placement {
+							case "direct":
+								logger.Info("test", "block", tc.block)
+							case "with":
+								logger.With("block", tc.block).Info("test")
+							case "group":
+								logger.Info("test", slog.Group("group", "block", tc.block))
+							case "with-group":
+								logger.WithGroup("group").With("block", tc.block).Info("test")
+							}
+
+							if formatName == "json" {
+								var entry map[string]any
+								require.NoError(t, json.Unmarshal(output.Bytes(), &entry))
+								if placement == "group" || placement == "with-group" {
+									entry = entry["group"].(map[string]any)
+								}
+								require.Contains(t, entry, "block")
+								require.Equal(t, tc.want, entry["block"])
+							} else {
+								key := "block"
+								if placement == "group" || placement == "with-group" {
+									key = "group.block"
+								}
+								want := "<nil>"
+								if tc.want != nil {
+									want = tc.want.(string)
+								}
+								require.Contains(t, output.String(), key+"="+want)
+							}
+						})
+					}
+				}
+			}
+		})
+	}
 }
 
 func TestCreateBlock(t *testing.T) {
@@ -166,7 +268,7 @@ func TestCorruptedChunk(t *testing.T) {
 				// Seek to the last byte of chunk data and modify it.
 				_, err = f.Seek(int64(chkEndOffset-1), 0)
 				require.NoError(t, err)
-				n, err := f.Write([]byte("x"))
+				n, err := f.WriteString("x")
 				require.NoError(t, err)
 				require.Equal(t, 1, n)
 			},
@@ -421,6 +523,66 @@ func TestReadIndexFormatV1(t *testing.T) {
 		`{foo="bar"}`: {sample{t: 1, f: 2}},
 		`{foo="baz"}`: {sample{t: 3, f: 4}},
 	}, query(t, q, labels.MustNewMatcher(labels.MatchNotRegexp, "foo", "^.?$")))
+}
+
+// TestSearchLabelValuesIndexFormatV1 covers the limit selection on a FormatV1
+// index, whose label values are held in a map and so are read in an arbitrary
+// order. The current writer only emits FormatV2, so this fixture is the only
+// way to reach that branch of index.Reader.LabelValues.
+func TestSearchLabelValuesIndexFormatV1(t *testing.T) {
+	ctx := context.Background()
+
+	block, err := OpenBlock(nil, filepath.Join("testdata", "index_format_v1"), nil, nil)
+	require.NoError(t, err)
+	t.Cleanup(func() { require.NoError(t, block.Close()) })
+	require.Equal(t, index.FormatV1, block.meta.Version, "fixture must exercise the FormatV1 branch")
+
+	// The fixture holds "bar" values "0" to "99", so the lexically smallest are
+	// not the numerically smallest and an arbitrary subset is easy to spot.
+	wantSmallest := []string{"0", "1", "10", "11", "12"}
+
+	t.Run("index reader keeps the smallest values", func(t *testing.T) {
+		ir, err := block.Index()
+		require.NoError(t, err)
+		t.Cleanup(func() { require.NoError(t, ir.Close()) })
+
+		all, err := ir.LabelValues(ctx, "bar", nil)
+		require.NoError(t, err)
+		require.Len(t, all, 100)
+		require.False(t, slices.IsSorted(all), "precondition: the map read is unordered")
+
+		got, err := ir.LabelValues(ctx, "bar", &storage.LabelHints{Limit: 5, LimitSmallest: true})
+		require.NoError(t, err)
+		require.Equal(t, wantSmallest, got)
+	})
+
+	t.Run("legacy limit still takes any subset", func(t *testing.T) {
+		ir, err := block.Index()
+		require.NoError(t, err)
+		t.Cleanup(func() { require.NoError(t, ir.Close()) })
+
+		// Without LimitSmallest the read may stop early, so only the count is
+		// guaranteed. Asserting the values would pin Go's map order.
+		got, err := ir.LabelValues(ctx, "bar", &storage.LabelHints{Limit: 5})
+		require.NoError(t, err)
+		require.Len(t, got, 5)
+	})
+
+	t.Run("search returns the smallest values", func(t *testing.T) {
+		q, err := NewBlockQuerier(block, 0, 1000)
+		require.NoError(t, err)
+		t.Cleanup(func() { require.NoError(t, q.Close()) })
+
+		rs := q.(storage.Searcher).SearchLabelValues(ctx, "bar", &storage.SearchHints{Limit: 5})
+		t.Cleanup(func() { require.NoError(t, rs.Close()) })
+
+		var got []string
+		for rs.Next() {
+			got = append(got, rs.At().Value)
+		}
+		require.NoError(t, rs.Err())
+		require.Equal(t, wantSmallest, got)
+	})
 }
 
 func BenchmarkLabelValuesWithMatchers(b *testing.B) {

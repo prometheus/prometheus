@@ -1,7 +1,7 @@
 go:
     # Whenever the Go version is updated here,
     # .github/workflows should also be updated.
-    version: 1.26
+    version: 1.27
 repository:
     path: github.com/prometheus/prometheus
 build:
@@ -29,7 +29,6 @@ tarball:
         - documentation/examples/prometheus.yml
         - LICENSE
         - NOTICE
-        - npm_licenses.tar.bz2
 crossbuild:
     platforms:
         - aix

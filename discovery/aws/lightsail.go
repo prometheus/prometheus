@@ -103,17 +103,13 @@ func (c *LightsailSDConfig) SetDirectory(dir string) {
 }
 
 // UnmarshalYAML implements the yaml.Unmarshaler interface for the Lightsail Config.
+// Region resolution is deferred to lightsailClient; see loadRegion.
 func (c *LightsailSDConfig) UnmarshalYAML(unmarshal func(any) error) error {
 	*c = DefaultLightsailSDConfig
 	type plain LightsailSDConfig
 	err := unmarshal((*plain)(c))
 	if err != nil {
 		return err
-	}
-
-	c.Region, err = loadRegion(context.Background(), c.Region)
-	if err != nil {
-		return fmt.Errorf("could not determine AWS region: %w", err)
 	}
 
 	return c.HTTPClientConfig.Validate()
@@ -142,6 +138,11 @@ type LightsailDiscovery struct {
 	*refresh.Discovery
 	cfg       *LightsailSDConfig
 	lightsail *lightsailClientAdapter
+
+	// region is the resolved region used for the AWS client and for the
+	// Source / __meta_lightsail_region labels. Lazily populated by
+	// lightsailClient.
+	region string
 }
 
 // NewLightsailDiscovery returns a new LightsailDiscovery which periodically refreshes its targets.
@@ -182,9 +183,15 @@ func (d *LightsailDiscovery) lightsailClient(ctx context.Context) (*lightsailCli
 		return nil, err
 	}
 
-	// Build the AWS config with the provided region.
+	// Resolve the region lazily. See LightsailSDConfig.UnmarshalYAML.
+	d.region, err = loadRegion(ctx, d.cfg.Region)
+	if err != nil {
+		return nil, err
+	}
+
+	// Build the AWS config with the resolved region.
 	configOptions := []func(*awsConfig.LoadOptions) error{
-		awsConfig.WithRegion(d.cfg.Region),
+		awsConfig.WithRegion(d.region),
 		awsConfig.WithHTTPClient(httpClient),
 	}
 
@@ -232,7 +239,7 @@ func (d *LightsailDiscovery) refresh(ctx context.Context) ([]*targetgroup.Group,
 	}
 
 	tg := &targetgroup.Group{
-		Source: d.cfg.Region,
+		Source: d.region,
 	}
 
 	input := &lightsail.GetInstancesInput{}
@@ -251,15 +258,31 @@ func (d *LightsailDiscovery) refresh(ctx context.Context) ([]*targetgroup.Group,
 			continue
 		}
 
+		// Every field below is optional in the Lightsail API. Omit the label
+		// when the field is absent rather than dereferencing a nil pointer,
+		// which would panic and take down the whole Prometheus process.
 		labels := model.LabelSet{
-			lightsailLabelAZ:                  model.LabelValue(*inst.Location.AvailabilityZone),
-			lightsailLabelBlueprintID:         model.LabelValue(*inst.BlueprintId),
-			lightsailLabelBundleID:            model.LabelValue(*inst.BundleId),
-			lightsailLabelInstanceName:        model.LabelValue(*inst.Name),
-			lightsailLabelInstanceState:       model.LabelValue(*inst.State.Name),
-			lightsailLabelInstanceSupportCode: model.LabelValue(*inst.SupportCode),
-			lightsailLabelPrivateIP:           model.LabelValue(*inst.PrivateIpAddress),
-			lightsailLabelRegion:              model.LabelValue(d.cfg.Region),
+			lightsailLabelPrivateIP: model.LabelValue(*inst.PrivateIpAddress),
+			lightsailLabelRegion:    model.LabelValue(d.region),
+		}
+
+		if inst.Location != nil && inst.Location.AvailabilityZone != nil {
+			labels[lightsailLabelAZ] = model.LabelValue(*inst.Location.AvailabilityZone)
+		}
+		if inst.BlueprintId != nil {
+			labels[lightsailLabelBlueprintID] = model.LabelValue(*inst.BlueprintId)
+		}
+		if inst.BundleId != nil {
+			labels[lightsailLabelBundleID] = model.LabelValue(*inst.BundleId)
+		}
+		if inst.Name != nil {
+			labels[lightsailLabelInstanceName] = model.LabelValue(*inst.Name)
+		}
+		if inst.State != nil && inst.State.Name != nil {
+			labels[lightsailLabelInstanceState] = model.LabelValue(*inst.State.Name)
+		}
+		if inst.SupportCode != nil {
+			labels[lightsailLabelInstanceSupportCode] = model.LabelValue(*inst.SupportCode)
 		}
 
 		addr := net.JoinHostPort(*inst.PrivateIpAddress, strconv.Itoa(d.cfg.Port))
@@ -275,7 +298,8 @@ func (d *LightsailDiscovery) refresh(ctx context.Context) ([]*targetgroup.Group,
 			labels[lightsailLabelIPv6Addresses] = model.LabelValue(
 				lightsailLabelSeparator +
 					strings.Join(ipv6addrs, lightsailLabelSeparator) +
-					lightsailLabelSeparator)
+					lightsailLabelSeparator,
+			)
 		}
 
 		for _, t := range inst.Tags {

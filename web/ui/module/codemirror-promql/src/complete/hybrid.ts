@@ -17,6 +17,7 @@ import { PrometheusClient } from '../client';
 import {
   Add,
   AggregateExpr,
+  AggregateModifier,
   And,
   BinaryExpr,
   BoolModifier,
@@ -54,6 +55,7 @@ import {
   QuotedLabelName,
   NumberDurationLiteralInDurationContext,
   NumberDurationLiteral,
+  DurationExpr,
   AggregateOp,
   Topk,
   Bottomk,
@@ -73,6 +75,8 @@ import {
   binOpModifierTerms,
   binOpTerms,
   durationTerms,
+  durationExprTerms,
+  durationExprOperatorTerms,
   functionIdentifierTerms,
   matchOpTerms,
   numberTerms,
@@ -85,6 +89,8 @@ const autocompleteNodes: { [key: string]: Completion[] } = {
   matchOp: matchOpTerms,
   binOp: binOpTerms,
   duration: durationTerms,
+  durationExpr: durationExprTerms,
+  durationExprOperator: durationExprOperatorTerms,
   binOpModifier: binOpModifierTerms,
   atModifier: atModifierTerms,
   functionIdentifier: functionIdentifierTerms,
@@ -107,6 +113,8 @@ export enum ContextKind {
   MatchOp,
   AggregateOpModifier,
   Duration,
+  DurationExpr,
+  DurationExprOperator,
   Offset,
   Bool,
   AtModifiers,
@@ -156,8 +164,10 @@ function getMetricNameInVectorSelector(tree: SyntaxNode, state: EditorState): st
 }
 
 function arrayToCompletionResult(data: Completion[], from: number, to: number, includeSnippet = false, span = true): CompletionResult {
-  const options = data;
+  const options = dedupeCompletions(data);
   if (includeSnippet) {
+    // Snippets are appended after deduplication; if a snippet label ever matched a
+    // deduped option, both could appear until dedupe is extended to cover snippets.
     options.push(...snippets);
   }
   return {
@@ -175,13 +185,40 @@ function escapePromQLString(str: string): string {
   return str.replace(/([\\"])/g, '\\$1');
 }
 
+function isAfterClosedFunctionCallBody(state: EditorState, node: SyntaxNode, pos: number): boolean {
+  return node.type.id === FunctionCallBody && pos >= node.to && node.from < node.to && state.sliceDoc(node.to - 1, node.to) === ')';
+}
+
+function dedupeCompletions(data: Completion[]): Completion[] {
+  const seen = new Set<string>();
+  const deduped: Completion[] = [];
+  for (const completion of data) {
+    const infoKey = typeof completion.info === 'string' ? completion.info : '';
+    // Include `apply` in the key when it is a string (e.g. snippet insert text) so that two
+    // completions sharing the same label/type/info but inserting different text are not merged.
+    // Function `apply` values cannot be compared meaningfully, so they fall back to an empty key.
+    const applyKey = typeof completion.apply === 'string' ? completion.apply : '';
+    const key = `${completion.label}|${completion.type ?? ''}|${infoKey}|${applyKey}`;
+    if (seen.has(key)) {
+      continue;
+    }
+    seen.add(key);
+    deduped.push(completion);
+  }
+  return deduped;
+}
+
 // computeEndCompletePosition calculates the end position for autocompletion replacement.
 // When the cursor is in the middle of a token, this ensures the entire token is replaced,
 // not just the portion before the cursor. This fixes issue #15839.
 // Note: this method is exported only for testing purpose.
-export function computeEndCompletePosition(node: SyntaxNode, pos: number): number {
+export function computeEndCompletePosition(state: EditorState, node: SyntaxNode, pos: number): number {
   // For error nodes, use the cursor position as the end position
   if (node.type.id === 0) {
+    return pos;
+  }
+
+  if (isAfterClosedFunctionCallBody(state, node, pos)) {
     return pos;
   }
 
@@ -240,7 +277,9 @@ function computeStartCompleteLabelPositionInLabelMatcherOrInGroupingLabel(node: 
 export function computeStartCompletePosition(state: EditorState, node: SyntaxNode, pos: number): number {
   const currentText = state.doc.slice(node.from, pos).toString();
   let start = node.from;
-  if (node.type.id === LabelMatchers || node.type.id === GroupingLabels) {
+  if (isAfterClosedFunctionCallBody(state, node, pos)) {
+    start = pos;
+  } else if (node.type.id === LabelMatchers || node.type.id === GroupingLabels) {
     start = computeStartCompleteLabelPositionInLabelMatcherOrInGroupingLabel(node, pos);
   } else if (
     (node.type.id === FunctionCallBody && node.firstChild === null) ||
@@ -249,6 +288,11 @@ export function computeStartCompletePosition(state: EditorState, node: SyntaxNod
     // When the cursor is between bracket, quote, we need to increment the starting position to avoid to consider the open bracket/ first string.
     start++;
   } else if (
+    // MatrixSelector/SubqueryExpr are safe here: this branch is only reached when
+    // `resolve()` returns those bracket nodes directly, i.e. cursor is in duration
+    // slots where replacing from `pos` avoids clobbering the selector expression.
+    node.type.id === MatrixSelector ||
+    node.type.id === SubqueryExpr ||
     node.type.id === OffsetExpr ||
     // Since duration and number are equivalent, writing go[5] or go[5d] is syntactically accurate.
     // Before we were able to guess when we had to autocomplete the duration later based on the error node,
@@ -260,7 +304,7 @@ export function computeStartCompletePosition(state: EditorState, node: SyntaxNod
     (node.type.id === 0 &&
       (node.parent?.type.id === OffsetExpr ||
         node.parent?.type.id === MatrixSelector ||
-        (node.parent?.type.id === SubqueryExpr && containsAtLeastOneChild(node.parent, NumberDurationLiteralInDurationContext))))
+        (node.parent?.type.id === SubqueryExpr && node.parent.getChild(DurationExpr) !== null)))
   ) {
     start = pos;
   }
@@ -280,38 +324,40 @@ function isAggregatorWithParam(functionCallBody: SyntaxNode): boolean {
 
 // analyzeCompletion is going to determinate what should be autocompleted.
 // The value of the autocompletion is then calculate by the function buildCompletion.
+// `explicit` should reflect whether the completion was explicitly requested by the user (e.g. via Ctrl+Space)
+// rather than triggered automatically while typing; some contexts are only relevant in the former case.
 // Note: this method is exported for testing purpose only. Do not use it directly.
-export function analyzeCompletion(state: EditorState, node: SyntaxNode, pos: number): Context[] {
+export function analyzeCompletion(state: EditorState, node: SyntaxNode, pos: number, explicit = true): Context[] {
   const result: Context[] = [];
   switch (node.type.id) {
     case 0: {
       // 0 is the id of the error node
-      if (node.parent?.type.id === OffsetExpr) {
-        // we are likely in the given situation:
-        // `metric_name offset 5` that leads to this tree:
-        // `OffsetExpr(VectorSelector(Identifier),Offset,⚠)`
-        // Here we can just autocomplete a duration.
-        result.push({ kind: ContextKind.Duration });
+      if (
+        node.parent?.type.id === OffsetExpr ||
+        node.parent?.type.id === MatrixSelector ||
+        (node.parent?.type.id === SubqueryExpr && node.parent.getChild(DurationExpr) !== null)
+      ) {
+        // We are in a duration slot. Two situations land here with an error node:
+        //   1. `go[]`  -> the error node text is empty: nothing typed yet, so offer
+        //      no suggestions (units appear once the user starts a duration, and
+        //      functions appear once the user types a letter via the Identifier/LabelName handler).
+        //   2. `go[5d1]` or `go[5d:5d4]` -> a dangling digit follows a complete duration,
+        //      so the error node text is a non-empty number. The user is building a
+        //      compound duration (e.g. `5d1h`), so we keep offering duration units.
+        const errorText = state.sliceDoc(node.from, node.to);
+        if (errorText.length > 0) {
+          // TODO: Ideally we should restrict the offered units to those strictly smaller than
+          // the last unit already typed, because compound durations must be written in strictly
+          // descending unit order (y w d h m s ms). For example, after `5d` only `h/m/s/ms` are
+          // valid, so suggesting `5d1d` or `5d1y` is wrong. For now we over-offer the full set.
+          result.push({ kind: ContextKind.Duration });
+        }
         break;
       }
       if (node.parent?.type.id === UnquotedLabelMatcher || node.parent?.type.id === QuotedLabelMatcher) {
         // In this case the current token is not itself a valid match op yet:
         //      metric_name{labelName!}
         result.push({ kind: ContextKind.MatchOp });
-        break;
-      }
-      if (node.parent?.type.id === MatrixSelector) {
-        // we are likely in the given situation:
-        // `metric_name{}[5]`
-        // We can also just autocomplete a duration
-        result.push({ kind: ContextKind.Duration });
-        break;
-      }
-      if (node.parent?.type.id === SubqueryExpr && containsAtLeastOneChild(node.parent, NumberDurationLiteralInDurationContext)) {
-        // we are likely in the given situation:
-        //    `rate(foo[5d:5])`
-        // so we should autocomplete a duration
-        result.push({ kind: ContextKind.Duration });
         break;
       }
       // when we are in the situation 'metric_name !', we have the following tree
@@ -360,6 +406,19 @@ export function analyzeCompletion(state: EditorState, node: SyntaxNode, pos: num
           //
           // The expr `metric_name off` leads to the same tree. So we have to provide the offset keyword too here.
           result.push({ kind: ContextKind.BinOp }, { kind: ContextKind.Offset });
+          break;
+        }
+
+        if (
+          errorNodeParent?.type.id === MatrixSelector ||
+          errorNodeParent?.type.id === OffsetExpr ||
+          errorNodeParent?.type.id === SubqueryExpr ||
+          errorNodeParent?.type.id === DurationExpr
+        ) {
+          // Identifier typed in a duration slot or inside a DurationExpr arithmetic expression
+          // (e.g. `foo[ste]`, `foo offset ste`, `go[5d:ste]`, `foo[5m+2ms+m`).
+          // Offer duration-expression functions so the user can complete `step()`, `range()`, etc.
+          result.push({ kind: ContextKind.DurationExpr });
           break;
         }
 
@@ -476,6 +535,13 @@ export function analyzeCompletion(state: EditorState, node: SyntaxNode, pos: num
         // so we have or to continue to autocomplete any kind of labelName or
         // to continue to autocomplete only the labelName associated to the metric
         result.push({ kind: ContextKind.LabelName, metricName: getMetricNameInVectorSelector(node, state) });
+      } else if (node.parent?.type.id === 0) {
+        const grandParent = node.parent.parent;
+        if (grandParent?.type.id === MatrixSelector || grandParent?.type.id === OffsetExpr || grandParent?.type.id === SubqueryExpr) {
+          // LabelName typed after a complete duration in a duration slot (e.g. `foo[5mss]`).
+          // Offer duration-expression functions so the user can complete `step()`, `range()`, etc.
+          result.push({ kind: ContextKind.DurationExpr });
+        }
       }
       break;
     case StringLiteral:
@@ -541,10 +607,26 @@ export function analyzeCompletion(state: EditorState, node: SyntaxNode, pos: num
         result.push({ kind: ContextKind.Duration });
       }
       break;
+    case MatrixSelector:
+    case SubqueryExpr:
     case OffsetExpr:
-      result.push({ kind: ContextKind.Duration });
+      // Duration slot: nothing typed yet, so offer no suggestions.
+      // Units appear once the user types a digit (NumberDurationLiteralInDurationContext).
+      // Functions appear once the user types a letter (Identifier/LabelName handler).
       break;
     case FunctionCallBody:
+      if (isAfterClosedFunctionCallBody(state, node, pos)) {
+        if (!explicit) {
+          // Only offer binary operators/modifiers here when explicitly requested, otherwise the
+          // dropdown would pop open as soon as the closing parenthesis is typed.
+          break;
+        }
+        if (node.parent?.type.id === AggregateExpr && !containsAtLeastOneChild(node.parent, AggregateModifier)) {
+          result.push({ kind: ContextKind.AggregateOpModifier });
+        }
+        result.push({ kind: ContextKind.BinOp });
+        break;
+      }
       // For aggregation function such as Topk, the first parameter is a number.
       // The second one is an expression.
       // When moving to the second parameter, the node is an error node.
@@ -585,6 +667,12 @@ export function analyzeCompletion(state: EditorState, node: SyntaxNode, pos: num
     case Mod:
     case Add:
     case Sub:
+      if (node.parent?.type.id === DurationExpr) {
+        result.push({ kind: ContextKind.DurationExprOperator });
+      } else {
+        result.push({ kind: ContextKind.BinOp });
+      }
+      break;
     case Eql:
     case Gte:
     case Gtr:
@@ -627,7 +715,7 @@ export class HybridComplete implements CompleteStrategy {
     // It's useful when you are trying to understand why it doesn't autocomplete.
     // console.log(syntaxTree(state).topNode.toString());
     // console.log(`current node: ${tree.type.name}`);
-    const contexts = analyzeCompletion(state, tree, pos);
+    const contexts = analyzeCompletion(state, tree, pos, context.explicit);
     let asyncResult: Promise<Completion[]> = Promise.resolve([]);
     let completeSnippet = false;
     let span = true;
@@ -671,6 +759,18 @@ export class HybridComplete implements CompleteStrategy {
             return result.concat(autocompleteNodes.duration);
           });
           break;
+        case ContextKind.DurationExpr:
+          span = false;
+          asyncResult = asyncResult.then((result) => {
+            return result.concat(autocompleteNodes.durationExpr);
+          });
+          break;
+        case ContextKind.DurationExprOperator:
+          span = false;
+          asyncResult = asyncResult.then((result) => {
+            return result.concat(autocompleteNodes.durationExprOperator);
+          });
+          break;
         case ContextKind.Offset:
           asyncResult = asyncResult.then((result) => {
             return result.concat([{ label: 'offset' }]);
@@ -711,7 +811,7 @@ export class HybridComplete implements CompleteStrategy {
       return arrayToCompletionResult(
         result,
         computeStartCompletePosition(state, tree, pos),
-        computeEndCompletePosition(tree, pos),
+        computeEndCompletePosition(state, tree, pos),
         completeSnippet,
         span
       );

@@ -38,7 +38,8 @@ func newDiscovererMetrics(reg prometheus.Registerer, _ discovery.RefreshMetricsI
 				Namespace: namespace,
 				Name:      "sd_consul_rpc_failures_total",
 				Help:      "The number of Consul RPC call failures.",
-			}),
+			},
+		),
 		rpcDuration: prometheus.NewSummaryVec(
 			prometheus.SummaryOpts{
 				Namespace:  namespace,

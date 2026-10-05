@@ -1525,6 +1525,9 @@ yydefault:
 			fn, exist := getFunction(yyDollar[1].item.Val, yylex.(*parser).functions)
 			if !exist {
 				yylex.(*parser).addParseErrf(yyDollar[1].item.PositionRange(), "unknown function with name %q", yyDollar[1].item.Val)
+				// Keep the name so the partially-built AST stays printable; the
+				// recorded error still rejects the query.
+				fn = &Function{Name: yyDollar[1].item.Val}
 			}
 			if fn != nil && fn.Experimental && !yylex.(*parser).options.EnableExperimentalFunctions {
 				yylex.(*parser).addParseErrf(yyDollar[1].item.PositionRange(), "function %q is not enabled", yyDollar[1].item.Val)
@@ -1544,6 +1547,9 @@ yydefault:
 			fn, exist := getFunction(yyDollar[1].item.Val, yylex.(*parser).functions)
 			if !exist {
 				yylex.(*parser).addParseErrf(yyDollar[1].item.PositionRange(), "unknown function with name %q", yyDollar[1].item.Val)
+				// Keep the name so the partially-built AST stays printable; the
+				// recorded error still rejects the query.
+				fn = &Function{Name: yyDollar[1].item.Val}
 			}
 			if fn != nil && fn.Experimental && !yylex.(*parser).options.EnableExperimentalFunctions {
 				yylex.(*parser).addParseErrf(yyDollar[1].item.PositionRange(), "function %q is not enabled", yyDollar[1].item.Val)
@@ -1563,6 +1569,9 @@ yydefault:
 			fn, exist := getFunction(yyDollar[1].item.Val, yylex.(*parser).functions)
 			if !exist {
 				yylex.(*parser).addParseErrf(yyDollar[1].item.PositionRange(), "unknown function with name %q", yyDollar[1].item.Val)
+				// Keep the name so the partially-built AST stays printable; the
+				// recorded error still rejects the query.
+				fn = &Function{Name: yyDollar[1].item.Val}
 			}
 			if fn != nil && fn.Experimental && !yylex.(*parser).options.EnableExperimentalFunctions {
 				yylex.(*parser).addParseErrf(yyDollar[1].item.PositionRange(), "function %q is not enabled", yyDollar[1].item.Val)
@@ -1582,6 +1591,9 @@ yydefault:
 			fn, exist := getFunction(yyDollar[1].item.Val, yylex.(*parser).functions)
 			if !exist {
 				yylex.(*parser).addParseErrf(yyDollar[1].item.PositionRange(), "unknown function with name %q", yyDollar[1].item.Val)
+				// Keep the name so the partially-built AST stays printable; the
+				// recorded error still rejects the query.
+				fn = &Function{Name: yyDollar[1].item.Val}
 			}
 			if fn != nil && fn.Experimental && !yylex.(*parser).options.EnableExperimentalFunctions {
 				yylex.(*parser).addParseErrf(yyDollar[1].item.PositionRange(), "function %q is not enabled", yyDollar[1].item.Val)
@@ -1601,6 +1613,9 @@ yydefault:
 			fn, exist := getFunction(yyDollar[1].item.Val, yylex.(*parser).functions)
 			if !exist {
 				yylex.(*parser).addParseErrf(yyDollar[1].item.PositionRange(), "unknown function with name %q", yyDollar[1].item.Val)
+				// Keep the name so the partially-built AST stays printable; the
+				// recorded error still rejects the query.
+				fn = &Function{Name: yyDollar[1].item.Val}
 			}
 			if fn != nil && fn.Experimental && !yylex.(*parser).options.EnableExperimentalFunctions {
 				yylex.(*parser).addParseErrf(yyDollar[1].item.PositionRange(), "function %q is not enabled", yyDollar[1].item.Val)
@@ -1711,9 +1726,9 @@ yydefault:
 			vs, ok := yyDollar[1].node.(*VectorSelector)
 			if !ok {
 				errMsg = "ranges only allowed for vector selectors"
-			} else if vs.OriginalOffset != 0 {
+			} else if vs.OriginalOffset != 0 || vs.OriginalOffsetExpr != nil {
 				errMsg = "no offset modifiers allowed before range"
-			} else if vs.Timestamp != nil {
+			} else if vs.Timestamp != nil || vs.StartOrEnd != 0 {
 				errMsg = "no @ modifiers allowed before range"
 			}
 
@@ -1862,7 +1877,10 @@ yydefault:
 	case 109:
 		yyDollar = yyS[yypt-3 : yypt+1]
 		{
-			if yyDollar[1].matchers != nil {
+			// A nil matcher failed to build (invalid regexp or incomplete syntax)
+			// and its error is already recorded. Drop it so the partially-built
+			// AST never holds a nil matcher.
+			if yyDollar[1].matchers != nil && yyDollar[3].matcher != nil {
 				yyVAL.matchers = append(yyDollar[1].matchers, yyDollar[3].matcher)
 			} else {
 				yyVAL.matchers = yyDollar[1].matchers
@@ -1871,7 +1889,11 @@ yydefault:
 	case 110:
 		yyDollar = yyS[yypt-1 : yypt+1]
 		{
-			yyVAL.matchers = []*labels.Matcher{yyDollar[1].matcher}
+			if yyDollar[1].matcher != nil {
+				yyVAL.matchers = []*labels.Matcher{yyDollar[1].matcher}
+			} else {
+				yyVAL.matchers = []*labels.Matcher{}
+			}
 		}
 	case 111:
 		yyDollar = yyS[yypt-2 : yypt+1]
@@ -2360,7 +2382,6 @@ yydefault:
 				StartPos: yyDollar[1].item.PositionRange().Start,
 				EndPos:   yyDollar[3].item.PositionRange().End,
 			}
-			yylex.(*parser).experimentalDurationExpr(de)
 			yyVAL.node = de
 		}
 	case 288:
@@ -2371,7 +2392,6 @@ yydefault:
 				StartPos: yyDollar[1].item.PositionRange().Start,
 				EndPos:   yyDollar[3].item.PositionRange().End,
 			}
-			yylex.(*parser).experimentalDurationExpr(de)
 			yyVAL.node = de
 		}
 	case 289:
@@ -2386,7 +2406,6 @@ yydefault:
 				},
 				StartPos: yyDollar[1].item.Pos,
 			}
-			yylex.(*parser).experimentalDurationExpr(de)
 			yyVAL.node = de
 		}
 	case 290:
@@ -2401,7 +2420,6 @@ yydefault:
 				},
 				StartPos: yyDollar[1].item.Pos,
 			}
-			yylex.(*parser).experimentalDurationExpr(de)
 			yyVAL.node = de
 		}
 	case 291:
@@ -2414,7 +2432,6 @@ yydefault:
 				LHS:      yyDollar[3].node.(Expr),
 				RHS:      yyDollar[5].node.(Expr),
 			}
-			yylex.(*parser).experimentalDurationExpr(de)
 			yyVAL.node = de
 		}
 	case 292:
@@ -2423,16 +2440,15 @@ yydefault:
 			de := &DurationExpr{
 				Op:       yyDollar[1].item.Typ,
 				StartPos: yyDollar[1].item.Pos,
-				EndPos:   yyDollar[6].node.PositionRange().End,
+				EndPos:   yyDollar[7].item.PositionRange().End,
 				RHS: &DurationExpr{
 					Op:       yyDollar[2].item.Typ,
 					StartPos: yyDollar[2].item.PositionRange().Start,
-					EndPos:   yyDollar[6].node.PositionRange().End,
+					EndPos:   yyDollar[7].item.PositionRange().End,
 					LHS:      yyDollar[4].node.(Expr),
 					RHS:      yyDollar[6].node.(Expr),
 				},
 			}
-			yylex.(*parser).experimentalDurationExpr(de)
 			yyVAL.node = de
 		}
 	case 293:
@@ -2459,25 +2475,21 @@ yydefault:
 	case 299:
 		yyDollar = yyS[yypt-3 : yypt+1]
 		{
-			yylex.(*parser).experimentalDurationExpr(yyDollar[1].node.(Expr))
 			yyVAL.node = &DurationExpr{Op: ADD, LHS: yyDollar[1].node.(Expr), RHS: yyDollar[3].node.(Expr)}
 		}
 	case 300:
 		yyDollar = yyS[yypt-3 : yypt+1]
 		{
-			yylex.(*parser).experimentalDurationExpr(yyDollar[1].node.(Expr))
 			yyVAL.node = &DurationExpr{Op: SUB, LHS: yyDollar[1].node.(Expr), RHS: yyDollar[3].node.(Expr)}
 		}
 	case 301:
 		yyDollar = yyS[yypt-3 : yypt+1]
 		{
-			yylex.(*parser).experimentalDurationExpr(yyDollar[1].node.(Expr))
 			yyVAL.node = &DurationExpr{Op: MUL, LHS: yyDollar[1].node.(Expr), RHS: yyDollar[3].node.(Expr)}
 		}
 	case 302:
 		yyDollar = yyS[yypt-3 : yypt+1]
 		{
-			yylex.(*parser).experimentalDurationExpr(yyDollar[1].node.(Expr))
 			if nl, ok := yyDollar[3].node.(*NumberLiteral); ok && nl.Val == 0 {
 				yylex.(*parser).addParseErrf(yyDollar[2].item.PositionRange(), "division by zero")
 				yyVAL.node = &NumberLiteral{Val: 0}
@@ -2488,7 +2500,6 @@ yydefault:
 	case 303:
 		yyDollar = yyS[yypt-3 : yypt+1]
 		{
-			yylex.(*parser).experimentalDurationExpr(yyDollar[1].node.(Expr))
 			if nl, ok := yyDollar[3].node.(*NumberLiteral); ok && nl.Val == 0 {
 				yylex.(*parser).addParseErrf(yyDollar[2].item.PositionRange(), "modulo by zero")
 				yyVAL.node = &NumberLiteral{Val: 0}
@@ -2499,7 +2510,6 @@ yydefault:
 	case 304:
 		yyDollar = yyS[yypt-3 : yypt+1]
 		{
-			yylex.(*parser).experimentalDurationExpr(yyDollar[1].node.(Expr))
 			yyVAL.node = &DurationExpr{Op: POW, LHS: yyDollar[1].node.(Expr), RHS: yyDollar[3].node.(Expr)}
 		}
 	case 305:
@@ -2510,7 +2520,6 @@ yydefault:
 				StartPos: yyDollar[1].item.PositionRange().Start,
 				EndPos:   yyDollar[3].item.PositionRange().End,
 			}
-			yylex.(*parser).experimentalDurationExpr(de)
 			yyVAL.node = de
 		}
 	case 306:
@@ -2521,7 +2530,6 @@ yydefault:
 				StartPos: yyDollar[1].item.PositionRange().Start,
 				EndPos:   yyDollar[3].item.PositionRange().End,
 			}
-			yylex.(*parser).experimentalDurationExpr(de)
 			yyVAL.node = de
 		}
 	case 307:
@@ -2534,19 +2542,12 @@ yydefault:
 				LHS:      yyDollar[3].node.(Expr),
 				RHS:      yyDollar[5].node.(Expr),
 			}
-			yylex.(*parser).experimentalDurationExpr(de)
 			yyVAL.node = de
 		}
 	case 309:
 		yyDollar = yyS[yypt-3 : yypt+1]
 		{
-			yylex.(*parser).experimentalDurationExpr(yyDollar[2].node.(Expr))
-			if durationExpr, ok := yyDollar[2].node.(*DurationExpr); ok {
-				durationExpr.Wrapped = true
-				yyVAL.node = durationExpr
-				break
-			}
-			yyVAL.node = yyDollar[2].node
+			yyVAL.node = yylex.(*parser).wrapParenDurationExpr(yyDollar[2].node.(Expr), yyDollar[1].item.PositionRange().Start, yyDollar[3].item.PositionRange().End)
 		}
 	}
 	goto yystack /* stack new state and value */

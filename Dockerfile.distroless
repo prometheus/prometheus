@@ -18,7 +18,7 @@ LABEL org.opencontainers.image.licenses="Apache License 2.0"
 LABEL io.prometheus.image.variant="distroless"
 
 COPY documentation/examples/prometheus.yml  /etc/prometheus/prometheus.yml
-COPY LICENSE NOTICE npm_licenses.tar.bz2 /
+COPY LICENSE NOTICE /
 COPY .build/${OS}-${ARCH}/prometheus        /bin/prometheus
 COPY .build/${OS}-${ARCH}/promtool          /bin/promtool
 

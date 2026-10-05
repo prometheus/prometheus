@@ -43,6 +43,7 @@ func (s *VultrSDTestSuite) SetupTest(t *testing.T) {
 }
 
 func TestVultrSDRefresh(t *testing.T) {
+	t.Parallel()
 	sdMock := &VultrSDTestSuite{}
 	sdMock.SetupTest(t)
 	t.Cleanup(sdMock.TearDownSuite)

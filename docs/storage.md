@@ -82,7 +82,9 @@ For further details on file format, see [TSDB format](/tsdb/docs/format/README.m
 The initial two-hour blocks are eventually compacted into longer blocks in the background.
 
 Compaction will create larger blocks containing data spanning up to 10% of the retention time,
-or 31 days, whichever is smaller.
+or 31 days, whichever is smaller. Because both the source blocks and the new compacted block
+must coexist on disk, on-disk size can briefly exceed `storage.tsdb.retention.size`; the
+excess is released when the next retention cleanup removes the source blocks.
 
 ### Operational aspects
 
@@ -145,8 +147,10 @@ a buffer, ensuring that older entries will be removed before the allocated stora
 for Prometheus becomes full.
 
 At present, we recommend setting the retention size to, at most, 80-85% of your
-allocated Prometheus disk space. This increases the likelihood that older entries
-will be removed prior to hitting any disk limitations.
+allocated Prometheus disk space. The remaining 15-20% buffer covers the temporary
+extra space required by in-progress compactions (see [Compaction](#compaction)),
+which keep both the source blocks and the newly compacted block on disk at the
+same time before the old blocks are removed.
 
 ## Remote storage integrations
 

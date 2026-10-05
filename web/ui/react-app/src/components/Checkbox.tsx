@@ -1,7 +1,8 @@
-import React, { FC, memo, CSSProperties } from 'react';
+import React, { FC, memo, CSSProperties, ReactNode } from 'react';
 import { FormGroup, Label, Input, InputProps } from 'reactstrap';
 
 interface CheckboxProps extends InputProps {
+  children?: ReactNode;
   wrapperStyles?: CSSProperties;
 }
 

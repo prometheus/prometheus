@@ -102,7 +102,11 @@ URL query parameters:
    is capped by the value of the `-query.timeout` flag.
 - `limit=<number>`: Maximum number of returned series. Doesn't affect scalars or strings but truncates the number of series for matrices and vectors. Optional. 0 means disabled.
 - `lookback_delta=<duration | float>`: Override the [lookback period](#staleness) just for this query in `duration` format or float number of seconds. Optional.
-- `stats=<string>`: Include query statistics in the response. If set to `all`, includes detailed statistics. Optional.
+- `stats=<string>`: Include query statistics in the response. Supported values are `true` (basic statistics) and `all` (additionally includes detailed per-step statistics: timings and sample counts). Any other non-empty value currently behaves like `true`, but is deprecated, adds a warning to the response, and will be rejected in the next major release. Optional. See [Query statistics](#query-statistics).
+
+Optional HTTP request headers:
+
+- `X-Prometheus-Use-Start-Timestamps: <bool>`: Override the engine-level start timestamp processing setting (`--promql.use-start-timestamps`) for this query. When set to `true`, functions such as `rate()` will use start timestamps from ingested data. When set to `false`, start timestamp processing is disabled for this query. Optional. If omitted, the engine-level default is used.
 
 The current server time is used if the `time` parameter is omitted.
 
@@ -176,7 +180,11 @@ URL query parameters:
    is capped by the value of the `-query.timeout` flag.
 - `limit=<number>`: Maximum number of returned series. Optional. 0 means disabled.
 - `lookback_delta=<duration | float>`: Override the [lookback period](#staleness) just for this query in `duration` format or float number of seconds. Optional.
-- `stats=<string>`: Include query statistics in the response. If set to `all`, includes detailed statistics. Optional.
+- `stats=<string>`: Include query statistics in the response. Supported values are `true` (basic statistics) and `all` (additionally includes detailed per-step statistics: timings and sample counts). Any other non-empty value currently behaves like `true`, but is deprecated, adds a warning to the response, and will be rejected in the next major release. Optional. See [Query statistics](#query-statistics).
+
+Optional HTTP request headers:
+
+- `X-Prometheus-Use-Start-Timestamps: <bool>`: Override the engine-level start timestamp processing setting (`--promql.use-start-timestamps`) for this query. When set to `true`, functions such as `rate()` will use start timestamps from ingested data. When set to `false`, start timestamp processing is disabled for this query. Optional. If omitted, the engine-level default is used.
 
 You can URL-encode these parameters directly in the request body by using the `POST` method and
 `Content-Type: application/x-www-form-urlencoded` header. This is useful when specifying a large
@@ -235,6 +243,20 @@ curl 'http://localhost:9090/api/v1/query_range?query=up&start=2015-07-01T20:10:3
    }
 }
 ```
+
+### Query statistics
+
+When the `stats` parameter is set (e.g. `stats=all`), the response `data` includes a `stats` object with the following structure:
+
+- **timings**: Durations (in seconds) for different phases of query execution (e.g. `evalTotalTime`, `execQueueTime`).
+- **samples**:
+  - **totalQueryableSamples**: Total number of samples *loaded* during the query. For range-vector functions over multiple steps, each step counts the full window.
+  - **totalQueryableSamplesPerStep**: (Only with `stats=all` and when per-step stats are enabled.) Per-step count of samples loaded; same semantics as `totalQueryableSamples` per step.
+  - **samplesRead**: Total number of samples *read* (I/O). For range-vector functions in range queries, only new points per step are counted; for other queries this equals `totalQueryableSamples`.
+  - **samplesReadPerStep**: (Only with `stats=all` and when per-step stats are enabled.) Per-step count of samples read (delta semantics for range-vector).
+  - **peakSamples**: Peak number of samples in memory during evaluation.
+
+The server also exposes two Prometheus metrics: `prometheus_engine_query_samples_total` (samples loaded) and `prometheus_engine_query_samples_read_total` (samples read). See [Per-step stats](../feature_flags.md#per-step-stats) for the `promql-per-step-stats` feature flag.
 
 ## Formatting query expressions
 
@@ -586,7 +608,7 @@ Common URL query parameters:
 - `limit=<number>`: Maximum number of returned results. Optional. Default is
   100.
 - `batch_size=<number>`: Preferred number of results per NDJSON batch.
-  Optional. Default is 100.
+  Optional. Default is 100. Clamped to 1000 and the effective result limit.
 
 The `start` and `end` parameters narrow results to the selected time window.
 Results may include values from series active slightly outside that window,
@@ -596,6 +618,25 @@ Additional parameters for `/api/v1/search/metric_names`:
 
 - `include_metadata=<bool>`: Include metric metadata in each result.
 - `sort_by=<alpha | score>`
+
+Metadata is matched by the exact metric name first, then by the metric family
+name for suffixes supported by that family's type:
+
+- `_total` for counters.
+- `_bucket`, `_sum`, and `_count` for histograms.
+- `_bucket`, `_sum`, `_count`, `_gsum`, and `_gcount` for gauge histograms.
+- `_sum` and `_count` for summaries.
+- `_info` for info metrics.
+
+A metric family name that already ends with `_total` or `_info` is not matched
+for the same suffix again: e.g. `requests_total_total` does not get the
+metadata of a `requests_total` counter.
+
+The returned `type`, `help`, and `unit` describe the metric family, not the
+individual series: e.g. `http_request_duration_seconds_bucket` is reported with
+type `histogram`. Matching is done by name against metadata from active
+targets, so it is best-effort. Metadata fields are omitted when no matching
+metadata is available.
 
 Additional parameters for `/api/v1/search/label_names`:
 
@@ -825,6 +866,36 @@ curl http://localhost:9090/api/v1/scrape_pools
 
 *New in v2.42*
 
+### Scrape pool configuration
+
+This endpoint is **experimental** and might change in the future. It is
+currently intended for use by Prometheus' own web UI.
+
+The following endpoint returns the effective configuration for a scrape pool.
+This includes scrape configurations loaded through `scrape_config_files`.
+Authentication credentials and other secrets are redacted.
+
+The `scrapePool` query parameter is required and must contain the name of a
+configured scrape pool.
+
+```
+GET /api/v1/scrape_pools/config?scrapePool=<scrape_pool_name>
+```
+
+```bash
+curl -G http://localhost:9090/api/v1/scrape_pools/config \
+  --data-urlencode 'scrapePool=prometheus'
+```
+
+```json
+{
+  "status": "success",
+  "data": {
+    "yaml": "job_name: prometheus\nscrape_interval: 15s\nscrape_timeout: 10s\nmetrics_path: /metrics\nscheme: http\n"
+  }
+}
+```
+
 ## Targets
 
 The following endpoint returns an overview of the current state of the
@@ -874,9 +945,12 @@ curl http://localhost:9090/api/v1/targets
       {
         "discoveredLabels": {
           "__address__": "127.0.0.1:9100",
+          "__always_scrape_classic_histograms__": "false",
+          "__convert_classic_histograms_to_nhcb__": "false",
           "__metrics_path__": "/metrics",
           "__scheme__": "http",
           "__scrape_interval__": "1m",
+          "__scrape_native_histograms__": "false",
           "__scrape_timeout__": "10s",
           "job": "node"
         },
@@ -1821,6 +1895,14 @@ Enable the remote write receiver by setting
 endpoint is `/api/v1/write`. Find more details [here](../storage.md#overview).
 
 *New in v2.33*
+
+## Remote Read
+
+`POST /api/v1/read`
+
+Prometheus exposes a remote read endpoint that allows external systems (such as Thanos) to read data from the TSDB.
+
+For more details, see the [Remote Read API documentation](https://prometheus.io/docs/prometheus/latest/querying/remote_read_api/) and the guide on [Remote Endpoints and Storage](https://prometheus.io/docs/operating/integrations/#remote-endpoints-and-storage).
 
 ## OTLP Receiver
 

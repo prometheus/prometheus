@@ -16,6 +16,7 @@ package remote
 import (
 	"context"
 	"errors"
+	"io"
 	"log/slog"
 	"net/http"
 	"slices"
@@ -45,6 +46,7 @@ type readHandler struct {
 
 // NewReadHandler creates a http.Handler that accepts remote read requests and
 // writes them to the provided queryable.
+// The handler panics with http.ErrAbortHandler if a streaming response fails after it has started.
 func NewReadHandler(logger *slog.Logger, r prometheus.Registerer, queryable storage.SampleAndChunkQueryable, config func() config.Config, remoteReadSampleLimit, remoteReadConcurrencyLimit, remoteReadMaxBytesInFrame int) http.Handler {
 	h := &readHandler{
 		logger:                    logger,
@@ -164,13 +166,14 @@ func (h *readHandler) remoteReadSamples(
 			for _, w := range ws {
 				h.logger.Warn("Warnings on remote read query", "err", w.Error())
 			}
-			for _, ts := range resp.Results[i].Timeseries {
-				ts.Labels = MergeLabels(ts.Labels, sortedExternalLabels)
+			if len(sortedExternalLabels) > 0 {
+				for _, ts := range resp.Results[i].Timeseries {
+					ts.Labels = MergeLabels(ts.Labels, sortedExternalLabels)
+				}
 			}
 			return nil
 		}(); err != nil {
-			var httpErr HTTPError
-			if errors.As(err, &httpErr) {
+			if httpErr, ok := errors.AsType[HTTPError](err); ok {
 				http.Error(w, httpErr.Error(), httpErr.Status())
 				return
 			}
@@ -193,6 +196,9 @@ func (h *readHandler) remoteReadStreamedXORChunks(ctx context.Context, w http.Re
 		http.Error(w, "internal http.ResponseWriter does not implement http.Flusher interface", http.StatusInternalServerError)
 		return
 	}
+
+	sw := &streamedReadWriter{Writer: w}
+	cw := NewChunkedWriter(sw, f)
 
 	for i, query := range req.Queries {
 		if err := func() error {
@@ -225,7 +231,7 @@ func (h *readHandler) remoteReadStreamedXORChunks(ctx context.Context, w http.Re
 			}
 
 			ws, err := StreamChunkedReadResponses(
-				NewChunkedWriter(w, f),
+				cw,
 				int64(i),
 				// The streaming API has to provide the series sorted.
 				querier.Select(ctx, true, hints, filteredMatchers...),
@@ -242,8 +248,14 @@ func (h *readHandler) remoteReadStreamedXORChunks(ctx context.Context, w http.Re
 			}
 			return nil
 		}(); err != nil {
-			var httpErr HTTPError
-			if errors.As(err, &httpErr) {
+			if sw.started {
+				if h.logger != nil {
+					h.logger.Error("Error streaming remote read response", "err", err, "query_index", i)
+				}
+				// Returning normally would make the incomplete stream appear successful.
+				panic(http.ErrAbortHandler)
+			}
+			if httpErr, ok := errors.AsType[HTTPError](err); ok {
 				http.Error(w, httpErr.Error(), httpErr.Status())
 				return
 			}
@@ -251,6 +263,18 @@ func (h *readHandler) remoteReadStreamedXORChunks(ctx context.Context, w http.Re
 			return
 		}
 	}
+	cw.Close()
+}
+
+type streamedReadWriter struct {
+	io.Writer
+	started bool
+}
+
+func (w *streamedReadWriter) Write(p []byte) (int, error) {
+	// A write can commit headers even when it returns no bytes and an error.
+	w.started = true
+	return w.Writer.Write(p)
 }
 
 // filterExtLabelsFromMatchers change equality matchers which match external labels

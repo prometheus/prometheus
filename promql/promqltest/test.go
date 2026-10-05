@@ -40,6 +40,7 @@ import (
 	"github.com/prometheus/prometheus/promql/parser/posrange"
 	"github.com/prometheus/prometheus/storage"
 	"github.com/prometheus/prometheus/tsdb"
+	"github.com/prometheus/prometheus/tsdb/chunkenc"
 	"github.com/prometheus/prometheus/util/almost"
 	"github.com/prometheus/prometheus/util/annotations"
 	"github.com/prometheus/prometheus/util/convertnhcb"
@@ -72,8 +73,13 @@ var testStartTime = time.Unix(0, 0).UTC()
 
 // LoadedStorage returns storage with generated data using the provided load statements.
 // Non-load statements will cause test errors.
-func LoadedStorage(t testing.TB, input string) *teststorage.TestStorage {
-	test, err := newTest(t, input, false, newTestStorage)
+// Optional teststorage.Option functions can be passed to configure the underlying TSDB storage.
+// Queriers of the returned storage are not safe for concurrent use from multiple goroutines.
+func LoadedStorage(t testing.TB, input string, opts ...teststorage.Option) *teststorage.TestStorage {
+	testStorage := func(t testing.TB) storage.Storage {
+		return teststorage.New(t, opts...)
+	}
+	test, err := newTest(t, input, false, testStorage)
 	require.NoError(t, err)
 
 	for _, cmd := range test.cmds {
@@ -89,10 +95,8 @@ func LoadedStorage(t testing.TB, input string) *teststorage.TestStorage {
 
 // TestParserOpts are the parser options used for all built-in test engines.
 var TestParserOpts = parser.Options{
-	EnableExperimentalFunctions:  true,
-	ExperimentalDurationExpr:     true,
-	EnableExtendedRangeSelectors: true,
-	EnableBinopFillModifiers:     true,
+	EnableExperimentalFunctions: true,
+	EnableBinopFillModifiers:    true,
 }
 
 // NewTestEngine creates a promql.Engine with enablePerStepStats, lookbackDelta and maxSamples, and returns it.
@@ -156,13 +160,24 @@ func GetBuiltInExprs() ([]string, error) {
 	return exprs, nil
 }
 
-// RunBuiltinTests runs an acceptance test suite against the provided engine.
+// NewBuiltinTestStorage returns the storage that RunBuiltinTests runs the
+// acceptance test suite against. Its queriers are not safe for concurrent use
+// from multiple goroutines; engines that need that can wrap it and use
+// RunBuiltinTestsWithStorage.
+func NewBuiltinTestStorage(t testing.TB) *teststorage.TestStorage {
+	return teststorage.New(t, func(opt *tsdb.Options) {
+		opt.EnableSTStorage = true
+		opt.FloatChunkEncoding = chunkenc.EncXOR2
+		opt.EnableHistogramSTEncoding = true
+	})
+}
+
+// RunBuiltinTests runs an acceptance test suite against the provided engine,
+// on storage from NewBuiltinTestStorage. Engines that use a querier from
+// multiple goroutines should use RunBuiltinTestsWithStorage instead.
 func RunBuiltinTests(t TBRun, engine promql.QueryEngine) {
 	RunBuiltinTestsWithStorage(t, engine, func(t testing.TB) storage.Storage {
-		return teststorage.New(t, func(opt *tsdb.Options) {
-			opt.EnableSTStorage = true
-			opt.EnableXOR2Encoding = true
-		})
+		return NewBuiltinTestStorage(t)
 	})
 }
 
@@ -182,6 +197,9 @@ func RunBuiltinTestsWithStorage(t TBRun, engine promql.QueryEngine, newStorage f
 }
 
 // RunTest parses and runs the test against the provided engine.
+// The queriers of the storage it runs against are not safe for concurrent use
+// from multiple goroutines; engines that need that should use
+// RunTestWithStorage.
 func RunTest(t testing.TB, input string, engine promql.QueryEngine) {
 	RunTestWithStorage(t, input, engine, newTestStorage)
 }
@@ -1177,7 +1195,7 @@ func (ev *evalCmd) expectMetric(pos int, m labels.Labels, vals ...parser.Sequenc
 }
 
 // validateExpectedAnnotationsOfType validates expected messages and regex match actual annotations.
-func validateExpectedAnnotationsOfType(expr string, expectedAnnotationsOfType []expectCmd, actualAnnotationsOfType []string, line int, annotationType string, allAnnos annotations.Annotations) error {
+func validateExpectedAnnotationsOfType(expr string, expectedAnnotationsOfType []expectCmd, actualAnnotationsOfType []string, line int, annotationType string) error {
 	if len(expectedAnnotationsOfType) == 0 {
 		return nil
 	}
@@ -1190,7 +1208,7 @@ func validateExpectedAnnotationsOfType(expr string, expectedAnnotationsOfType []
 	for _, e := range expectedAnnotationsOfType {
 		matchFound := slices.ContainsFunc(actualAnnotationsOfType, e.CheckMatch)
 		if !matchFound {
-			return fmt.Errorf(`expected %s annotation matching %s %q but no matching annotation was found for query %q (line %d), found: %v`, annotationType, e.Type(), e.String(), expr, line, allAnnos.AsErrors())
+			return fmt.Errorf(`expected %s annotation matching %s %q but no matching annotation was found for query %q (line %d), found: %v`, annotationType, e.Type(), e.String(), expr, line, actualAnnotationsOfType)
 		}
 	}
 
@@ -1217,22 +1235,16 @@ func (ev *evalCmd) checkAnnotations(expr string, annos annotations.Annotations) 
 		return fmt.Errorf("expected info annotations evaluating query %q (line %d) but got none", expr, ev.line)
 	}
 
-	var warnings, infos []string
-
 	for _, err := range annos {
-		switch {
-		case errors.Is(err, annotations.PromQLWarning):
-			warnings = append(warnings, err.Error())
-		case errors.Is(err, annotations.PromQLInfo):
-			infos = append(infos, err.Error())
-		default:
+		if !errors.Is(err, annotations.PromQLWarning) && !errors.Is(err, annotations.PromQLInfo) {
 			return fmt.Errorf("unexpected annotation type, must be either info or warn but got: %w", err)
 		}
 	}
-	if err := validateExpectedAnnotationsOfType(expr, ev.expectedCmds[Warn], warnings, ev.line, "warn", annos); err != nil {
+	warnings, infos := annos.AsStrings(expr, 0, 0)
+	if err := validateExpectedAnnotationsOfType(expr, ev.expectedCmds[Warn], warnings, ev.line, "warn"); err != nil {
 		return err
 	}
-	if err := validateExpectedAnnotationsOfType(expr, ev.expectedCmds[Info], infos, ev.line, "info", annos); err != nil {
+	if err := validateExpectedAnnotationsOfType(expr, ev.expectedCmds[Info], infos, ev.line, "info"); err != nil {
 		return err
 	}
 	if ev.expectedCmds[NoWarn] != nil && len(warnings) > 0 {

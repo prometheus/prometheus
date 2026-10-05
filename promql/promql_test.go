@@ -46,8 +46,7 @@ func TestConcurrentRangeQueries(t *testing.T) {
 		MaxSamples: 50000000,
 		Timeout:    100 * time.Second,
 		Parser: parser.NewParser(parser.Options{
-			EnableExperimentalFunctions:  true,
-			EnableExtendedRangeSelectors: true,
+			EnableExperimentalFunctions: true,
 		}),
 	}
 	engine := promqltest.NewTestEngineWithOpts(t, opts)
@@ -83,7 +82,8 @@ func TestConcurrentRangeQueries(t *testing.T) {
 			qry, err := engine.NewRangeQuery(
 				ctx, stor, nil, c.expr,
 				time.Unix(int64((numIntervals-c.steps)*10), 0),
-				time.Unix(int64(numIntervals*10), 0), time.Second*10)
+				time.Unix(int64(numIntervals*10), 0), time.Second*10,
+			)
 			if err != nil {
 				return err
 			}

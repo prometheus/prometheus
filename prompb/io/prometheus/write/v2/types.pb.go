@@ -106,7 +106,7 @@ func (Histogram_ResetHint) EnumDescriptor() ([]byte, []int) {
 // The canonical Content-Type request header value for this message is
 // "application/x-protobuf;proto=io.prometheus.write.v2.Request"
 //
-// Version: v2.0-rc.4
+// Version: v2.0-rc.5
 //
 // NOTE: gogoproto options might change in future for this file, they
 // are not part of the spec proto (they only modify the generated Go code, not
@@ -185,14 +185,15 @@ type TimeSeries struct {
 	// Requests with the same labels e.g. for different exemplars, metadata
 	// or start timestamp.
 	LabelsRefs []uint32 `protobuf:"varint,1,rep,packed,name=labels_refs,json=labelsRefs,proto3" json:"labels_refs,omitempty"`
-	// Timeseries messages can either specify samples or (native) histogram samples
-	// (histogram field), but not both. For a typical sender (real-time metric
-	// streaming), in healthy cases, there will be only one sample or histogram.
+	// TimeSeries messages must specify at least one float sample, native histogram sample
+	// or exemplar. Samples and histograms must not be specified at the same time.
+	// Exemplars may be specified without samples or histograms. For a typical sender
+	// (real-time metric streaming), in healthy cases, there will be only one sample or histogram.
 	//
 	// Samples and histograms are sorted by timestamp (older first).
 	Samples    []Sample    `protobuf:"bytes,2,rep,name=samples,proto3" json:"samples"`
 	Histograms []Histogram `protobuf:"bytes,3,rep,name=histograms,proto3" json:"histograms"`
-	// exemplars represents an optional set of exemplars attached to this series' samples.
+	// exemplars represents an optional set of exemplars for this series or series's samples/histograms if present.
 	Exemplars []Exemplar `protobuf:"bytes,4,rep,name=exemplars,proto3" json:"exemplars"`
 	// metadata represents the metadata associated with the given series' samples.
 	Metadata             Metadata `protobuf:"bytes,5,opt,name=metadata,proto3" json:"metadata"`
@@ -269,7 +270,7 @@ func (m *TimeSeries) GetMetadata() Metadata {
 	return Metadata{}
 }
 
-// Exemplar is an additional information attached to some series' samples.
+// Exemplar contains additional information associated with a series or series's samples/histograms if present.
 // It is typically used to attach an example trace or request ID associated with
 // the metric changes.
 type Exemplar struct {
@@ -510,7 +511,6 @@ func (m *Metadata) GetUnitRef() uint32 {
 // See the full spec: https://prometheus.io/docs/specs/native_histograms/
 type Histogram struct {
 	// Types that are valid to be assigned to Count:
-	//
 	//	*Histogram_CountInt
 	//	*Histogram_CountFloat
 	Count isHistogram_Count `protobuf_oneof:"count"`
@@ -529,7 +529,6 @@ type Histogram struct {
 	Schema        int32   `protobuf:"zigzag32,4,opt,name=schema,proto3" json:"schema,omitempty"`
 	ZeroThreshold float64 `protobuf:"fixed64,5,opt,name=zero_threshold,json=zeroThreshold,proto3" json:"zero_threshold,omitempty"`
 	// Types that are valid to be assigned to ZeroCount:
-	//
 	//	*Histogram_ZeroCountInt
 	//	*Histogram_ZeroCountFloat
 	ZeroCount isHistogram_ZeroCount `protobuf_oneof:"zero_count"`
@@ -889,7 +888,7 @@ func init() {
 }
 
 var fileDescriptor_f139519efd9fa8d7 = []byte{
-	// 931 bytes of a gzipped FileDescriptorProto
+	// 927 bytes of a gzipped FileDescriptorProto
 	0x1f, 0x8b, 0x08, 0x00, 0x00, 0x00, 0x00, 0x00, 0x02, 0xff, 0x94, 0x55, 0x5d, 0x6f, 0xe3, 0x44,
 	0x14, 0xed, 0xc4, 0xf9, 0xbc, 0x69, 0xb2, 0xce, 0xd0, 0x76, 0xbd, 0x05, 0xb2, 0xd9, 0x20, 0x20,
 	0x02, 0x29, 0x91, 0xc2, 0x2b, 0x02, 0x35, 0xad, 0xdb, 0xa4, 0x52, 0x92, 0xd5, 0xc4, 0x45, 0x2a,
@@ -947,8 +946,7 @@ var fileDescriptor_f139519efd9fa8d7 = []byte{
 	0xf6, 0xb7, 0x00, 0xe9, 0x97, 0x12, 0xbb, 0xe1, 0x2d, 0x16, 0x8c, 0x86, 0xcb, 0xd6, 0x20, 0xd1,
 	0x4d, 0xe0, 0x0e, 0x5d, 0x2f, 0xf9, 0x4a, 0xee, 0x58, 0x8d, 0x44, 0xb7, 0xc1, 0xe1, 0xbb, 0xfb,
 	0x26, 0xfa, 0xe3, 0xbe, 0x89, 0xfe, 0xbe, 0x6f, 0xa2, 0x1f, 0x4b, 0xb2, 0xbb, 0xdb, 0xfe, 0x4d,
-	0x51, 0xfe, 0x6b, 0x7f, 0xf3, 0x5f, 0x00, 0x00, 0x00, 0xff, 0xff, 0x62, 0x8f, 0x36, 0x4b, 0x09,
-	0x08, 0x00, 0x00,
+	0x51, 0xfe, 0x6b, 0x7f, 0xf3, 0xdf, 0x00, 0x62, 0x8f, 0x36, 0x4b, 0x09, 0x08, 0x00, 0x00,
 }
 
 func (m *Request) Marshal() (dAtA []byte, err error) {

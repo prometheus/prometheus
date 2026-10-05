@@ -67,7 +67,7 @@ const formatYAxisTickValues = (splits: number[]): string[] => {
 
   for (let precision = 3; precision <= maxYAxisTickPrecision; precision++) {
     const preciseLabels = splits.map((split) =>
-      formatYAxisTickValue(split, precision)
+      formatYAxisTickValue(split, precision),
     );
 
     if (!hasDuplicateLabels(preciseLabels)) {
@@ -76,7 +76,7 @@ const formatYAxisTickValues = (splits: number[]): string[] => {
   }
 
   return splits.map((split) =>
-    formatYAxisTickValue(split, maxYAxisTickPrecision)
+    formatYAxisTickValue(split, maxYAxisTickPrecision),
   );
 };
 
@@ -109,42 +109,56 @@ const formatLabels = (labels: { [key: string]: string }): string => `
             </div>`;
 
 const tooltipPlugin = (useLocalTime: boolean, data: AlignedData) => {
-  let over: HTMLDivElement;
-  let selectedSeriesIdx: number | null = null;
-
-  const overlay = document.createElement("div");
-  overlay.className = "u-tooltip";
-  overlay.style.display = "none";
+  const instances = new WeakMap<
+    uPlot,
+    {
+      overlay: HTMLDivElement;
+      selectedSeriesIdx: number | null;
+      enter: () => void;
+      leave: () => void;
+    }
+  >();
 
   return {
     hooks: {
       // Set up event handlers and append overlay.
       init: (u: uPlot) => {
-        over = u.over;
-
-        over.addEventListener("mouseenter", () => {
+        const overlay = document.createElement("div");
+        overlay.className = "u-tooltip";
+        overlay.style.display = "none";
+        const enter = () => {
           overlay.style.display = "block";
-        });
-
-        over.addEventListener("mouseleave", () => {
+        };
+        const leave = () => {
           overlay.style.display = "none";
-        });
-
+        };
+        instances.set(u, { overlay, selectedSeriesIdx: null, enter, leave });
+        u.over.addEventListener("mouseenter", enter);
+        u.over.addEventListener("mouseleave", leave);
         document.body.appendChild(overlay);
       },
-      // When the chart is destroyed, remove the overlay from the DOM.
-      destroy: () => {
-        overlay.remove();
+      // Remove this chart's tooltip and event handlers on destruction.
+      destroy: (u: uPlot) => {
+        const state = instances.get(u);
+        if (state === undefined) return;
+        u.over.removeEventListener("mouseenter", state.enter);
+        u.over.removeEventListener("mouseleave", state.leave);
+        state.overlay.remove();
+        instances.delete(u);
       },
       // When a series is selected by hovering close to it, store the
       // index of the selected series, so we can update the hover tooltip
       // in setCursor.
-      setSeries: (_u: uPlot, seriesIdx: number | null, _opts: Series) => {
-        selectedSeriesIdx = seriesIdx;
+      setSeries: (u: uPlot, seriesIdx: number | null, _opts: Series) => {
+        const state = instances.get(u);
+        if (state !== undefined) state.selectedSeriesIdx = seriesIdx;
       },
       // When the cursor is moved, update the tooltip with the current
       // series value and position it near the cursor.
       setCursor: (u: uPlot) => {
+        const state = instances.get(u);
+        if (state === undefined) return;
+        const { overlay, selectedSeriesIdx } = state;
         const { left, top, idx } = u.cursor;
 
         if (
@@ -172,7 +186,7 @@ const tooltipPlugin = (useLocalTime: boolean, data: AlignedData) => {
         // Get the bounding rect fresh on every cursor move to account for
         // page scrolling, which would otherwise cause a growing Y offset
         // for charts further down the page.
-        const bbox = over.getBoundingClientRect();
+        const bbox = u.over.getBoundingClientRect();
         const x = left + bbox.left;
         const y = top + bbox.top;
 
@@ -204,6 +218,7 @@ const tooltipPlugin = (useLocalTime: boolean, data: AlignedData) => {
           placement: "right-start",
           middleware: [offset(5), flip(), shift()],
         }).then(({ x, y }) => {
+          if (instances.get(u) !== state) return;
           Object.assign(overlay.style, {
             top: `${y}px`,
             left: `${x}px`,
@@ -428,18 +443,16 @@ export const getUPlotOptions = (
   ],
   series: [
     {},
-    ...result.map(
-      (r, idx): uPlot.Series => ({
-        points: {
-          filter: onlyDrawPointsForDisconnectedSamplesFilter,
-        },
-        label: formatSeries(r.metric),
-        width: 1.5,
-        // @ts-expect-error - uPlot doesn't have a field for labels, but we just attach some anyway.
-        labels: r.metric,
-        stroke: getSeriesColor(idx, light),
-      }),
-    ),
+    ...result.map((r, idx): uPlot.Series => ({
+      points: {
+        filter: onlyDrawPointsForDisconnectedSamplesFilter,
+      },
+      label: formatSeries(r.metric),
+      width: 1.5,
+      // @ts-expect-error - uPlot doesn't have a field for labels, but we just attach some anyway.
+      labels: r.metric,
+      stroke: getSeriesColor(idx, light),
+    })),
   ],
   hooks: {
     setSelect: [

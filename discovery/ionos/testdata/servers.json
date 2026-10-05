@@ -610,6 +610,49 @@
           ]
         }
       }
+    },
+    {
+      "id": null,
+      "type": "server",
+      "href": "https://api.ionos.com/cloudapi/v6/datacenters/8feda53f-15f0-447f-badf-ebe32dad2fc0/servers/00000000-0000-0000-0000-000000000000",
+      "properties": {
+        "name": null,
+        "cores": 1,
+        "ram": 1024,
+        "availabilityZone": null,
+        "vmState": null,
+        "bootCdrom": null,
+        "bootVolume": null,
+        "cpuFamily": null,
+        "type": null
+      },
+      "entities": {
+        "nics": {
+          "id": "00000000-0000-0000-0000-000000000000/nics",
+          "type": "collection",
+          "href": "https://api.ionos.com/cloudapi/v6/datacenters/8feda53f-15f0-447f-badf-ebe32dad2fc0/servers/00000000-0000-0000-0000-000000000000/nics",
+          "items": [
+            {
+              "id": "00000000-0000-0000-0000-000000000001",
+              "type": "nic",
+              "href": "https://api.ionos.com/cloudapi/v6/datacenters/8feda53f-15f0-447f-badf-ebe32dad2fc0/servers/00000000-0000-0000-0000-000000000000/nics/00000000-0000-0000-0000-000000000001",
+              "properties": {
+                "name": null,
+                "mac": "02:01:00:00:00:01",
+                "ips": [
+                  "10.0.0.99"
+                ],
+                "dhcp": true,
+                "lan": 1,
+                "firewallActive": false,
+                "firewallType": "INGRESS",
+                "deviceNumber": 1,
+                "pciSlot": 5
+              }
+            }
+          ]
+        }
+      }
     }
   ]
 }

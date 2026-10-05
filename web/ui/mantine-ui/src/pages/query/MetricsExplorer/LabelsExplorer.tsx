@@ -92,6 +92,7 @@ const LabelsExplorer: FC<LabelsExplorerProps> = ({
     name: metricName,
     matchers,
     offset: 0,
+    offsetExpr: null,
     timestamp: null,
     startOrEnd: null,
     anchored: false,

@@ -18,6 +18,7 @@ package prometheusremotewrite
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"testing"
 	"time"
@@ -34,8 +35,99 @@ import (
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/model/metadata"
 	"github.com/prometheus/prometheus/storage"
+	"github.com/prometheus/prometheus/util/annotations"
 	"github.com/prometheus/prometheus/util/teststorage"
 )
+
+func TestPrometheusConverter_Reset(t *testing.T) {
+	t.Run("isolates requests", func(t *testing.T) {
+		request := pmetricotlp.NewExportRequest()
+		metrics := request.Metrics().ResourceMetrics().AppendEmpty().ScopeMetrics().AppendEmpty().Metrics()
+		metric := metrics.AppendEmpty()
+		metric.SetName("test_gauge")
+		dataPoint := metric.SetEmptyGauge().DataPoints().AppendEmpty()
+		dataPoint.SetTimestamp(pcommon.NewTimestampFromTime(time.Unix(0, 0)))
+		dataPoint.SetIntValue(1)
+		dataPoint.Attributes().PutStr("foo.bar", "value")
+
+		converter := NewPrometheusConverter(nil)
+		for _, tc := range []struct {
+			name           string
+			allowUTF8      bool
+			labelName      string
+			otherLabelName string
+		}{
+			{
+				name:           "escaped labels",
+				labelName:      "foo_bar",
+				otherLabelName: "foo.bar",
+			},
+			{
+				name:           "UTF-8 labels",
+				allowUTF8:      true,
+				labelName:      "foo.bar",
+				otherLabelName: "foo_bar",
+			},
+		} {
+			t.Run(tc.name, func(t *testing.T) {
+				appendable := teststorage.NewAppendable()
+				appender := appendable.AppenderV2(t.Context())
+				converter.Reset(appender)
+
+				annots, err := converter.FromMetrics(t.Context(), request.Metrics(), Settings{
+					AllowUTF8:         tc.allowUTF8,
+					DisableTargetInfo: true,
+				})
+				require.NoError(t, err)
+				require.Empty(t, annots)
+				require.NoError(t, appender.Commit())
+
+				samples := appendable.ResultSamples()
+				require.Len(t, samples, 1)
+				require.Equal(t, "value", samples[0].L.Get(tc.labelName))
+				require.False(t, samples[0].L.Has(tc.otherLabelName))
+
+				converter.Reset(nil)
+			})
+		}
+	})
+
+	t.Run("clears request state", func(t *testing.T) {
+		converter := NewPrometheusConverter(&noOpAppender{})
+		converter.everyN = everyNTimes{n: 128, i: 1, err: context.Canceled}
+		converter.scratchBuilder.Add("request_label", "request_value")
+		converter.builder.Set("request_label", "request_value")
+		converter.seenTargetInfo = map[targetInfoKey]struct{}{{}: {}}
+		converter.resourceLabels = &cachedResourceLabels{jobLabel: "request_job"}
+		converter.scopeLabels = &cachedScopeLabels{scopeName: "request_scope"}
+		converter.labelNamer = otlptranslator.LabelNamer{UTF8Allowed: true}
+		converter.sanitizedLabels["request_label"] = "request_label"
+		converter.collisionAnnots = annotations.Annotations{"request": errors.New("request annotation")}
+		converter.recordedCollisions = map[string]struct{}{"request_label": {}}
+		converter.collisionSource = collisionFromResource
+
+		converter.Reset(nil)
+
+		require.Equal(t, PrometheusConverter{
+			sanitizedLabels: map[string]string{},
+		}, *converter)
+	})
+
+	t.Run("drops large label cache", func(t *testing.T) {
+		converter := NewPrometheusConverter(&noOpAppender{})
+		for i := range maxSanitizedLabels + 1 {
+			label := fmt.Sprintf("request_label_%d", i)
+			converter.sanitizedLabels[label] = label
+		}
+
+		converter.Reset(nil)
+		require.Nil(t, converter.sanitizedLabels)
+
+		converter.Reset(&noOpAppender{})
+		require.NotNil(t, converter.sanitizedLabels)
+		require.Empty(t, converter.sanitizedLabels)
+	})
+}
 
 func TestFromMetrics(t *testing.T) {
 	t.Run("Successful", func(t *testing.T) {
@@ -306,6 +398,147 @@ func TestFromMetrics(t *testing.T) {
 		require.Equal(t, []string{
 			"histogram data point has zero count, but non-zero sum: 155.000000",
 		}, ws)
+	})
+
+	t.Run("empty data points are surfaced as warnings", func(t *testing.T) {
+		for _, tc := range []struct {
+			name       string
+			buildEmpty func(pmetric.Metric)
+		}{
+			{
+				name: "gauge",
+				buildEmpty: func(m pmetric.Metric) {
+					m.SetEmptyGauge()
+				},
+			},
+			{
+				name: "sum",
+				buildEmpty: func(m pmetric.Metric) {
+					m.SetEmptySum().SetAggregationTemporality(pmetric.AggregationTemporalityCumulative)
+				},
+			},
+			{
+				name: "histogram",
+				buildEmpty: func(m pmetric.Metric) {
+					m.SetEmptyHistogram().SetAggregationTemporality(pmetric.AggregationTemporalityCumulative)
+				},
+			},
+			{
+				name: "exponential histogram",
+				buildEmpty: func(m pmetric.Metric) {
+					m.SetEmptyExponentialHistogram().SetAggregationTemporality(pmetric.AggregationTemporalityCumulative)
+				},
+			},
+			{
+				name: "summary",
+				buildEmpty: func(m pmetric.Metric) {
+					m.SetEmptySummary()
+				},
+			},
+		} {
+			t.Run(tc.name, func(t *testing.T) {
+				request := pmetricotlp.NewExportRequest()
+				m := request.Metrics().ResourceMetrics().AppendEmpty().ScopeMetrics().AppendEmpty().Metrics().AppendEmpty()
+				m.SetName("test_empty")
+				tc.buildEmpty(m)
+
+				converter := NewPrometheusConverter(teststorage.NewAppendable().AppenderV2(t.Context()))
+				annots, err := converter.FromMetrics(t.Context(), request.Metrics(), Settings{})
+				require.NoError(t, err)
+				require.Equal(t, map[WarningCategory]int{WarningCategoryEmptyDataPoints: 1}, CountWarningsByCategory(annots))
+
+				ws, infos := annots.AsStrings("", 0, 0)
+				require.Empty(t, infos)
+				require.Equal(t, []string{"empty data points. test_empty is dropped"}, ws)
+			})
+		}
+	})
+
+	t.Run("attribute collision is surfaced as a warning", func(t *testing.T) {
+		request := pmetricotlp.NewExportRequest()
+		rm := request.Metrics().ResourceMetrics().AppendEmpty()
+		m := rm.ScopeMetrics().AppendEmpty().Metrics().AppendEmpty()
+		m.SetName("test_gauge")
+		dp := m.SetEmptyGauge().DataPoints().AppendEmpty()
+		dp.SetTimestamp(pcommon.NewTimestampFromTime(time.Now()))
+		dp.SetIntValue(1)
+		dp.Attributes().PutStr("a.b", "x")
+		dp.Attributes().PutStr("a_b", "y")
+
+		converter := NewPrometheusConverter(teststorage.NewAppendable().AppenderV2(t.Context()))
+		annots, err := converter.FromMetrics(t.Context(), request.Metrics(), Settings{})
+		require.NoError(t, err)
+
+		want := []string{
+			`OTLP data point attributes "a.b", "a_b" collide as label "a_b" after name sanitization, values are concatenated with ';'`,
+		}
+		ws, infos := annots.AsStrings("", 0, 0)
+		require.Empty(t, infos)
+		require.Equal(t, want, ws)
+		require.Equal(t, want, collisionWarnings(annots))
+	})
+
+	t.Run("resource attribute collision is surfaced as a warning", func(t *testing.T) {
+		request := pmetricotlp.NewExportRequest()
+		rm := request.Metrics().ResourceMetrics().AppendEmpty()
+		rm.Resource().Attributes().PutStr("k8s.pod.name", "foo")
+		rm.Resource().Attributes().PutStr("k8s_pod_name", "bar")
+		m := rm.ScopeMetrics().AppendEmpty().Metrics().AppendEmpty()
+		m.SetName("test_gauge")
+		dp := m.SetEmptyGauge().DataPoints().AppendEmpty()
+		dp.SetTimestamp(pcommon.NewTimestampFromTime(time.Now()))
+		dp.SetIntValue(1)
+
+		converter := NewPrometheusConverter(teststorage.NewAppendable().AppenderV2(t.Context()))
+		annots, err := converter.FromMetrics(t.Context(), request.Metrics(), Settings{})
+		require.NoError(t, err)
+		ws, _ := annots.AsStrings("", 0, 0)
+		require.Contains(t, ws, `OTLP resource attributes "k8s.pod.name", "k8s_pod_name" collide as label "k8s_pod_name" after name sanitization, values are concatenated with ';'`)
+	})
+
+	t.Run("repeated collision across data points is recorded once", func(t *testing.T) {
+		request := pmetricotlp.NewExportRequest()
+		rm := request.Metrics().ResourceMetrics().AppendEmpty()
+		m := rm.ScopeMetrics().AppendEmpty().Metrics().AppendEmpty()
+		m.SetName("test_gauge")
+		g := m.SetEmptyGauge()
+		ts := pcommon.NewTimestampFromTime(time.Now())
+		// Two distinct series sharing the same colliding attribute names.
+		for i, v := range []string{"y", "z"} {
+			dp := g.DataPoints().AppendEmpty()
+			dp.SetTimestamp(ts)
+			dp.SetIntValue(int64(i))
+			dp.Attributes().PutStr("a.b", "x")
+			dp.Attributes().PutStr("a_b", v)
+		}
+
+		converter := NewPrometheusConverter(teststorage.NewAppendable().AppenderV2(t.Context()))
+		annots, err := converter.FromMetrics(t.Context(), request.Metrics(), Settings{})
+		require.NoError(t, err)
+
+		ws, _ := annots.AsStrings("", 0, 0)
+		require.Equal(t, []string{
+			`OTLP data point attributes "a.b", "a_b" collide as label "a_b" after name sanitization, values are concatenated with ';'`,
+		}, ws)
+	})
+
+	t.Run("no collision warning when UTF-8 is allowed", func(t *testing.T) {
+		request := pmetricotlp.NewExportRequest()
+		rm := request.Metrics().ResourceMetrics().AppendEmpty()
+		m := rm.ScopeMetrics().AppendEmpty().Metrics().AppendEmpty()
+		m.SetName("test_gauge")
+		dp := m.SetEmptyGauge().DataPoints().AppendEmpty()
+		dp.SetTimestamp(pcommon.NewTimestampFromTime(time.Now()))
+		dp.SetIntValue(1)
+		dp.Attributes().PutStr("a.b", "x")
+		dp.Attributes().PutStr("a_b", "y")
+
+		converter := NewPrometheusConverter(teststorage.NewAppendable().AppenderV2(t.Context()))
+		annots, err := converter.FromMetrics(t.Context(), request.Metrics(), Settings{AllowUTF8: true})
+		require.NoError(t, err)
+		require.Empty(t, collisionWarnings(annots))
+		ws, _ := annots.AsStrings("", 0, 0)
+		require.Empty(t, ws)
 	})
 
 	t.Run("target_info's samples starts at the earliest metric sample timestamp and ends at the latest sample timestamp of the corresponding resource, with one sample every lookback delta/2 timestamps between", func(t *testing.T) {
@@ -1341,6 +1574,65 @@ func BenchmarkPrometheusConverter_FromMetrics(b *testing.B) {
 			}
 		})
 	}
+}
+
+// BenchmarkPrometheusConverter_FromMetrics_ExplicitHistogram measures explicit
+// histogram conversion as the number of data points and finite bounds changes.
+func BenchmarkPrometheusConverter_FromMetrics_ExplicitHistogram(b *testing.B) {
+	for _, tc := range []struct {
+		dataPoints   int
+		finiteBounds int
+	}{
+		{dataPoints: 1, finiteBounds: 1},
+		{dataPoints: 1, finiteBounds: 64},
+		{dataPoints: 64, finiteBounds: 1},
+		{dataPoints: 64, finiteBounds: 64},
+	} {
+		b.Run(fmt.Sprintf("points=%d/bounds=%d", tc.dataPoints, tc.finiteBounds), func(b *testing.B) {
+			settings := Settings{}
+			payload := createExplicitHistogramExportRequest(tc.dataPoints, tc.finiteBounds)
+			b.ReportAllocs()
+			b.ResetTimer()
+
+			for b.Loop() {
+				app := &noOpAppender{}
+				converter := NewPrometheusConverter(app)
+				annots, err := converter.FromMetrics(context.Background(), payload.Metrics(), settings)
+				require.NoError(b, err)
+				require.Empty(b, annots)
+				require.Positive(b, app.samples)
+				require.Positive(b, app.metadata)
+			}
+		})
+	}
+}
+
+func createExplicitHistogramExportRequest(dataPoints, finiteBounds int) pmetricotlp.ExportRequest {
+	request := pmetricotlp.NewExportRequest()
+	metrics := request.Metrics().ResourceMetrics().AppendEmpty().ScopeMetrics().AppendEmpty().Metrics()
+	metric := metrics.AppendEmpty()
+	metric.SetName("explicit_histogram")
+	histogram := metric.SetEmptyHistogram()
+	histogram.SetAggregationTemporality(pmetric.AggregationTemporalityCumulative)
+
+	bounds := make([]float64, finiteBounds)
+	bucketCounts := make([]uint64, finiteBounds+1)
+	for i := range bounds {
+		bounds[i] = float64(i + 1)
+		bucketCounts[i] = 1
+	}
+	bucketCounts[finiteBounds] = 1
+
+	for i := range dataPoints {
+		point := histogram.DataPoints().AppendEmpty()
+		point.SetTimestamp(pcommon.NewTimestampFromTime(time.Unix(int64(i), 0)))
+		point.SetCount(uint64(finiteBounds + 1))
+		point.SetSum(float64(finiteBounds + 1))
+		point.ExplicitBounds().FromRaw(bounds)
+		point.BucketCounts().FromRaw(bucketCounts)
+		point.Attributes().PutStr("test_label", "test_value")
+	}
+	return request
 }
 
 type noOpAppender struct {

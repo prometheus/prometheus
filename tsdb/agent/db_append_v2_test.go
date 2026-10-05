@@ -108,10 +108,22 @@ func TestCommit_AppendV2(t *testing.T) {
 			var (
 				expectedSampleSTs []int64
 				gotSampleSTs      []int64
+
+				expectedHistogramSTs []int64
+				gotHistogramSTs      []int64
+
+				expectedFloatHistogramSTs []int64
+				gotFloatHistogramSTs      []int64
 			)
 			if enableSTStorage {
 				expectedSampleSTs = make([]int64, 0, numSeries*numDatapoints)
 				gotSampleSTs = make([]int64, 0, numSeries*numDatapoints)
+
+				expectedHistogramSTs = make([]int64, 0, numSeries*numHistograms*2)
+				gotHistogramSTs = make([]int64, 0, numSeries*numHistograms*2)
+
+				expectedFloatHistogramSTs = make([]int64, 0, numSeries*numHistograms*2)
+				gotFloatHistogramSTs = make([]int64, 0, numSeries*numHistograms*2)
 			}
 
 			app := s.AppenderV2(t.Context())
@@ -144,8 +156,12 @@ func TestCommit_AppendV2(t *testing.T) {
 				histograms := tsdbutil.GenerateTestHistograms(numHistograms)
 
 				for i := range numHistograms {
-					_, err := app.Append(0, lset, int64(i+2234), int64(i+2000), 0, histograms[i], nil, storage.AOptions{})
+					st := int64(i + 2234)
+					_, err := app.Append(0, lset, st, int64(i+2000), 0, histograms[i], nil, storage.AOptions{})
 					require.NoError(t, err)
+					if enableSTStorage {
+						expectedHistogramSTs = append(expectedHistogramSTs, st)
+					}
 				}
 			}
 
@@ -156,8 +172,12 @@ func TestCommit_AppendV2(t *testing.T) {
 				customBucketHistograms := tsdbutil.GenerateTestCustomBucketsHistograms(numHistograms)
 
 				for i := range numHistograms {
-					_, err := app.Append(0, lset, int64(i+3234), int64(i+2000), 0, customBucketHistograms[i], nil, storage.AOptions{})
+					st := int64(i + 3234)
+					_, err := app.Append(0, lset, st, int64(i+2000), 0, customBucketHistograms[i], nil, storage.AOptions{})
 					require.NoError(t, err)
+					if enableSTStorage {
+						expectedHistogramSTs = append(expectedHistogramSTs, st)
+					}
 				}
 			}
 
@@ -168,8 +188,12 @@ func TestCommit_AppendV2(t *testing.T) {
 				floatHistograms := tsdbutil.GenerateTestFloatHistograms(numHistograms)
 
 				for i := range numHistograms {
-					_, err := app.Append(0, lset, int64(i+4234), int64(i+2000), 0, nil, floatHistograms[i], storage.AOptions{})
+					st := int64(i + 4234)
+					_, err := app.Append(0, lset, st, int64(i+2000), 0, nil, floatHistograms[i], storage.AOptions{})
 					require.NoError(t, err)
+					if enableSTStorage {
+						expectedFloatHistogramSTs = append(expectedFloatHistogramSTs, st)
+					}
 				}
 			}
 
@@ -180,8 +204,12 @@ func TestCommit_AppendV2(t *testing.T) {
 				customBucketFloatHistograms := tsdbutil.GenerateTestCustomBucketsFloatHistograms(numHistograms)
 
 				for i := range numHistograms {
-					_, err := app.Append(0, lset, int64(i+5234), int64(i+2000), 0, nil, customBucketFloatHistograms[i], storage.AOptions{})
+					st := int64(i + 5234)
+					_, err := app.Append(0, lset, st, int64(i+2000), 0, nil, customBucketFloatHistograms[i], storage.AOptions{})
 					require.NoError(t, err)
+					if enableSTStorage {
+						expectedFloatHistogramSTs = append(expectedFloatHistogramSTs, st)
+					}
 				}
 			}
 
@@ -212,7 +240,7 @@ func TestCommit_AppendV2(t *testing.T) {
 
 				case record.Samples:
 					if enableSTStorage {
-						t.Errorf("Got V1 Samples when ST enabled")
+						t.Error("Got V1 Samples when ST enabled")
 					}
 					var samples []record.RefSample
 					samples, err = dec.Samples(rec, samples)
@@ -220,7 +248,7 @@ func TestCommit_AppendV2(t *testing.T) {
 					walSamplesCount += len(samples)
 				case record.SamplesV2:
 					if !enableSTStorage {
-						t.Errorf("Got V2 Samples when ST disabled")
+						t.Error("Got V2 Samples when ST disabled")
 					}
 					var samples []record.RefSample
 					samples, err = dec.Samples(rec, samples)
@@ -233,7 +261,7 @@ func TestCommit_AppendV2(t *testing.T) {
 
 				case record.HistogramSamples, record.CustomBucketsHistogramSamples:
 					if enableSTStorage {
-						t.Errorf("Got V1 Samples when ST enabled")
+						t.Error("Got V1 Samples when ST enabled")
 					}
 					var histograms []record.RefHistogramSample
 					histograms, err = dec.HistogramSamples(rec, histograms)
@@ -242,16 +270,19 @@ func TestCommit_AppendV2(t *testing.T) {
 
 				case record.HistogramSamplesV2:
 					if !enableSTStorage {
-						t.Errorf("Got V2 Samples when ST disabled")
+						t.Error("Got V2 Samples when ST disabled")
 					}
 					var histograms []record.RefHistogramSample
 					histograms, err = dec.HistogramSamples(rec, histograms)
 					require.NoError(t, err)
+					for _, h := range histograms {
+						gotHistogramSTs = append(gotHistogramSTs, h.ST)
+					}
 					walHistogramCount += len(histograms)
 
 				case record.FloatHistogramSamples, record.CustomBucketsFloatHistogramSamples:
 					if enableSTStorage {
-						t.Errorf("Got V1 Samples when ST enabled")
+						t.Error("Got V1 Samples when ST enabled")
 					}
 					var floatHistograms []record.RefFloatHistogramSample
 					floatHistograms, err = dec.FloatHistogramSamples(rec, floatHistograms)
@@ -260,11 +291,14 @@ func TestCommit_AppendV2(t *testing.T) {
 
 				case record.FloatHistogramSamplesV2:
 					if !enableSTStorage {
-						t.Errorf("Got V2 Samples when ST disabled")
+						t.Error("Got V2 Samples when ST disabled")
 					}
 					var floatHistograms []record.RefFloatHistogramSample
 					floatHistograms, err = dec.FloatHistogramSamples(rec, floatHistograms)
 					require.NoError(t, err)
+					for _, h := range floatHistograms {
+						gotFloatHistogramSTs = append(gotFloatHistogramSTs, h.ST)
+					}
 					walFloatHistogramCount += len(floatHistograms)
 
 				case record.Exemplars:
@@ -284,6 +318,8 @@ func TestCommit_AppendV2(t *testing.T) {
 			require.Equal(t, numSeries*numDatapoints, walExemplarsCount, "unexpected number of exemplars")
 			require.Equal(t, numSeries*numHistograms*2, walHistogramCount, "unexpected number of histograms")
 			require.Equal(t, numSeries*numHistograms*2, walFloatHistogramCount, "unexpected number of float histograms")
+			require.Equal(t, expectedHistogramSTs, gotHistogramSTs, "unexpected histogram STs received")
+			require.Equal(t, expectedFloatHistogramSTs, gotFloatHistogramSTs, "unexpected float histogram STs received")
 
 			// Check that we can still create both kinds of Appender.
 			// Regression test against https://github.com/prometheus/prometheus/issues/17800.
@@ -394,13 +430,13 @@ func TestRollbackAppendV2(t *testing.T) {
 				walSeriesCount += len(series)
 
 			case record.Samples, record.SamplesV2:
-				t.Errorf("should not have found samples")
+				t.Error("should not have found samples")
 
 			case record.Exemplars:
-				t.Errorf("should not have found exemplars")
+				t.Error("should not have found exemplars")
 
 			case record.HistogramSamples, record.CustomBucketsHistogramSamples, record.FloatHistogramSamples, record.CustomBucketsFloatHistogramSamples, record.HistogramSamplesV2, record.FloatHistogramSamplesV2:
-				t.Errorf("should not have found histograms")
+				t.Error("should not have found histograms")
 
 			default:
 			}
@@ -834,6 +870,60 @@ func TestStorage_DuplicateExemplarsIgnored_AppendV2(t *testing.T) {
 
 	// We had 9 calls to AppendExemplar but only 4 of those should have gotten through.
 	require.Equal(t, 4, walExemplarsCount)
+}
+
+func TestStorage_AppendExemplars_AppendV2(t *testing.T) {
+	s := createTestAgentDB(t, nil, DefaultOptions())
+	defer s.Close()
+
+	app, ok := s.AppenderV2(context.Background()).(storage.ExemplarAppenderV2)
+	require.True(t, ok)
+
+	// Unknown series should return storage.ErrNotFound.
+	_, err := app.AppendExemplars(0, labels.FromStrings("a", "unknown"), []exemplar.Exemplar{{Labels: labels.FromStrings("id", "1"), Value: 1, Ts: 10}})
+	require.ErrorIs(t, err, storage.ErrNotFound)
+
+	lset := labels.FromStrings("a", "1")
+	ref, err := app.Append(0, lset, 0, 10, 1, nil, nil, storage.AOptions{})
+	require.NoError(t, err)
+
+	// Empty exemplars slice should still validate series and return SeriesRef.
+	retRef, err := app.AppendExemplars(ref, lset, nil)
+	require.NoError(t, err)
+	require.Equal(t, ref, retRef)
+
+	e1 := exemplar.Exemplar{Labels: labels.FromStrings("id", "1"), Value: 20, Ts: 10, HasTs: true}
+	e2 := exemplar.Exemplar{Labels: labels.FromStrings("id", "2"), Value: 42, Ts: 25, HasTs: true}
+
+	// Append via ref.
+	retRef, err = app.AppendExemplars(ref, labels.EmptyLabels(), []exemplar.Exemplar{e1, e1})
+	require.NoError(t, err)
+	require.Equal(t, ref, retRef)
+
+	// Append via labels lookup (with empty label value that gets canonicalized).
+	retRef, err = app.AppendExemplars(0, labels.FromStrings("a", "1", "empty", ""), []exemplar.Exemplar{e2})
+	require.NoError(t, err)
+	require.Equal(t, ref, retRef)
+
+	require.NoError(t, app.Commit())
+
+	var walExemplarsCount int
+	sr, err := wlog.NewSegmentsReader(s.wal.Dir())
+	require.NoError(t, err)
+	defer sr.Close()
+	r := wlog.NewReader(sr)
+
+	dec := record.NewDecoder(labels.NewSymbolTable(), promslog.NewNopLogger())
+	for r.Next() {
+		rec := r.Record()
+		if dec.Type(rec) == record.Exemplars {
+			var exemplars []record.RefExemplar
+			exemplars, err = dec.Exemplars(rec, exemplars)
+			require.NoError(t, err)
+			walExemplarsCount += len(exemplars)
+		}
+	}
+	require.Equal(t, 2, walExemplarsCount)
 }
 
 func TestDBAllowOOOSamples_AppendV2(t *testing.T) {

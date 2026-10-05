@@ -31,6 +31,8 @@ const (
 	EncHistogram
 	EncFloatHistogram
 	EncXOR2
+	EncHistogramST
+	EncFloatHistogramST
 )
 
 func (e Encoding) String() string {
@@ -45,13 +47,17 @@ func (e Encoding) String() string {
 		return "floathistogram"
 	case EncXOR2:
 		return "XOR2"
+	case EncHistogramST:
+		return "histogramST"
+	case EncFloatHistogramST:
+		return "floathistogramST"
 	}
 	return "<unknown>"
 }
 
 // IsValidEncoding returns true for supported encodings.
 func IsValidEncoding(e Encoding) bool {
-	return e == EncXOR || e == EncHistogram || e == EncFloatHistogram || e == EncXOR2
+	return e == EncXOR || e == EncHistogram || e == EncFloatHistogram || e == EncXOR2 || e == EncHistogramST || e == EncFloatHistogramST
 }
 
 const (
@@ -119,6 +125,9 @@ type Appender interface {
 	// Appending a histogram may require creating a completely new chunk or recoding (changing) the current chunk.
 	// The Appender prev is used to determine if there is a counter reset between the previous Appender and the current Appender.
 	// The Appender prev is optional and only taken into account when the first sample is being appended.
+	// It is typed as the generic Appender interface so callers can pass whichever concrete appender they
+	// currently hold without first type-asserting; each implementation performs the type check itself,
+	// and only on the code path that actually needs the previous appender's state.
 	// The bool appendOnly governs what happens when a sample cannot be appended to the current chunk. If appendOnly is true, then
 	// in such case an error is returned without modifying the chunk. If appendOnly is false, then a new chunk is created or the
 	// current chunk is recoded to accommodate the sample.
@@ -126,8 +135,8 @@ type Appender interface {
 	// The returned bool isRecoded can be used to distinguish between the new Chunk c being a completely new Chunk
 	// or the current Chunk recoded to a new Chunk.
 	// The Appender app that can be used for the next append is always returned.
-	AppendHistogram(prev *HistogramAppender, st, t int64, h *histogram.Histogram, appendOnly bool) (c Chunk, isRecoded bool, app Appender, err error)
-	AppendFloatHistogram(prev *FloatHistogramAppender, st, t int64, h *histogram.FloatHistogram, appendOnly bool) (c Chunk, isRecoded bool, app Appender, err error)
+	AppendHistogram(prev Appender, st, t int64, h *histogram.Histogram, appendOnly bool) (c Chunk, isRecoded bool, app Appender, err error)
+	AppendFloatHistogram(prev Appender, st, t int64, h *histogram.FloatHistogram, appendOnly bool) (c Chunk, isRecoded bool, app Appender, err error)
 }
 
 // Iterator is a simple iterator that can only get the next value.
@@ -198,7 +207,13 @@ func (v ValueType) String() string {
 	}
 }
 
-func (v ValueType) ChunkEncoding(useXOR2 bool) Encoding {
+// ChunkEncoding returns the chunk encoding to use for new chunks of this value type.
+// The useXOR2 flag selects EncXOR2 over EncXOR for ValFloat. The useHistogramST flag
+// selects EncHistogramST over EncHistogram for ValHistogram and EncFloatHistogramST
+// over EncFloatHistogram for ValFloatHistogram. The two flags are independent;
+// callers gating purely on whether ST is present in the data should pass the same
+// value for both.
+func (v ValueType) ChunkEncoding(useXOR2, useHistogramST bool) Encoding {
 	switch v {
 	case ValFloat:
 		if useXOR2 {
@@ -206,8 +221,14 @@ func (v ValueType) ChunkEncoding(useXOR2 bool) Encoding {
 		}
 		return EncXOR
 	case ValHistogram:
+		if useHistogramST {
+			return EncHistogramST
+		}
 		return EncHistogram
 	case ValFloatHistogram:
+		if useHistogramST {
+			return EncFloatHistogramST
+		}
 		return EncFloatHistogram
 	default:
 		return EncNone
@@ -215,8 +236,28 @@ func (v ValueType) ChunkEncoding(useXOR2 bool) Encoding {
 }
 
 // NewChunk returns a new empty chunk for the given value type.
-func (v ValueType) NewChunk(useXOR2 bool) (Chunk, error) {
-	return NewEmptyChunk(v.ChunkEncoding(useXOR2))
+// See ChunkEncoding for the meaning of useXOR2 and useHistogramST.
+func (v ValueType) NewChunk(useXOR2, useHistogramST bool) (Chunk, error) {
+	return NewEmptyChunk(v.ChunkEncoding(useXOR2, useHistogramST))
+}
+
+// CompatibleValues reports whether two encodings are mutually compatible with
+// respect to sample-value encoding, meaning a chunk opened with one encoding can
+// continue to receive appends even when the desired encoding changes to the other,
+// without requiring a new chunk to be started.
+// Data written into the existing chunk continues to use the chunk's original encoding;
+// the new encoding takes effect only when a new chunk is created.
+// The EncXOR family (EncXOR and EncXOR2) is mutually compatible; all other encoding
+// pairs, including same-histogram-type pairs, are not compatible.
+// This concerns only the sample-value encoding. Start timestamp (ST) compatibility
+// is a separate concern that the caller must check itself.
+func CompatibleValues(a, b Encoding) bool {
+	return isFloatXOREncoding(a) && isFloatXOREncoding(b)
+}
+
+// isFloatXOREncoding reports whether the encoding e belongs to the XOR float family (EncXOR or EncXOR2).
+func isFloatXOREncoding(e Encoding) bool {
+	return e == EncXOR || e == EncXOR2
 }
 
 // MockSeriesIterator returns an iterator for a mock series with custom
@@ -303,10 +344,12 @@ type Pool interface {
 
 // pool is a memory pool of chunk objects.
 type pool struct {
-	xor            sync.Pool
-	histogram      sync.Pool
-	floatHistogram sync.Pool
-	xo2            sync.Pool
+	xor              sync.Pool
+	histogram        sync.Pool
+	floatHistogram   sync.Pool
+	xo2              sync.Pool
+	histogramST      sync.Pool
+	floatHistogramST sync.Pool
 }
 
 // NewPool returns a new pool.
@@ -332,6 +375,16 @@ func NewPool() Pool {
 				return &XOR2Chunk{b: bstream{}}
 			},
 		},
+		histogramST: sync.Pool{
+			New: func() any {
+				return &HistogramSTChunk{b: bstream{}}
+			},
+		},
+		floatHistogramST: sync.Pool{
+			New: func() any {
+				return &FloatHistogramSTChunk{b: bstream{}}
+			},
+		},
 	}
 }
 
@@ -346,6 +399,10 @@ func (p *pool) Get(e Encoding, b []byte) (Chunk, error) {
 		c = p.floatHistogram.Get().(*FloatHistogramChunk)
 	case EncXOR2:
 		c = p.xo2.Get().(*XOR2Chunk)
+	case EncHistogramST:
+		c = p.histogramST.Get().(*HistogramSTChunk)
+	case EncFloatHistogramST:
+		c = p.floatHistogramST.Get().(*FloatHistogramSTChunk)
 	default:
 		return nil, fmt.Errorf("invalid chunk encoding %q", e)
 	}
@@ -370,6 +427,12 @@ func (p *pool) Put(c Chunk) error {
 	case EncXOR2:
 		_, ok = c.(*XOR2Chunk)
 		sp = &p.xo2
+	case EncHistogramST:
+		_, ok = c.(*HistogramSTChunk)
+		sp = &p.histogramST
+	case EncFloatHistogramST:
+		_, ok = c.(*FloatHistogramSTChunk)
+		sp = &p.floatHistogramST
 	default:
 		return fmt.Errorf("invalid chunk encoding %q", c.Encoding())
 	}
@@ -398,6 +461,10 @@ func FromData(e Encoding, d []byte) (Chunk, error) {
 		return &FloatHistogramChunk{b: bstream{count: 0, stream: d}}, nil
 	case EncXOR2:
 		return &XOR2Chunk{b: bstream{count: 0, stream: d}}, nil
+	case EncHistogramST:
+		return &HistogramSTChunk{b: bstream{count: 0, stream: d}}, nil
+	case EncFloatHistogramST:
+		return &FloatHistogramSTChunk{b: bstream{count: 0, stream: d}}, nil
 	}
 	return nil, fmt.Errorf("invalid chunk encoding %q", e)
 }
@@ -413,6 +480,10 @@ func NewEmptyChunk(e Encoding) (Chunk, error) {
 		return NewFloatHistogramChunk(), nil
 	case EncXOR2:
 		return NewXOR2Chunk(), nil
+	case EncHistogramST:
+		return NewHistogramSTChunk(), nil
+	case EncFloatHistogramST:
+		return NewFloatHistogramSTChunk(), nil
 	}
 	return nil, fmt.Errorf("invalid chunk encoding %q", e)
 }

@@ -85,7 +85,7 @@ func (s Sample) String() string {
 }
 
 func (s Sample) Equals(other Sample) bool {
-	return strings.Compare(s.MF, other.MF) == 0 &&
+	return s.MF == other.MF &&
 		labels.Equal(s.L, other.L) &&
 		s.M.Equals(other.M) &&
 		s.ST == other.ST &&
@@ -182,10 +182,11 @@ func includeStaleNaNs(s []Sample) bool {
 // It allows recording all samples that were added through the appender and injecting errors.
 // Appendable will panic if more than one Appender is open.
 type Appendable struct {
-	appendErrFn          func(ls labels.Labels) error // If non-nil, inject appender error on every Append, AppendHistogram and ST zero calls.
-	appendExemplarsError error                        // If non-nil, inject exemplar error.
-	commitErr            error                        // If non-nil, inject commit error.
-	skipRecording        bool                         // If true, Appendable won't record samples, useful for benchmarks.
+	appendErrFn          func(ls labels.Labels) error             // If non-nil, inject appender error on every Append, AppendHistogram and ST zero calls.
+	refFn                func(ls labels.Labels) storage.SeriesRef // If non-nil, decides the storage.SeriesRef returned by the appender.
+	appendExemplarsError error                                    // If non-nil, inject exemplar error.
+	commitErr            error                                    // If non-nil, inject commit error.
+	skipRecording        bool                                     // If true, Appendable won't record samples, useful for benchmarks.
 
 	mtx           sync.Mutex
 	openAppenders atomic.Int32 // Guard against multi-appender use.
@@ -220,6 +221,16 @@ func (a *Appendable) WithErrs(appendErrFn func(ls labels.Labels) error, appendEx
 	a.appendErrFn = appendErrFn
 	a.appendExemplarsError = appendExemplarsError
 	a.commitErr = commitErr
+	return a
+}
+
+// WithRefFn makes the appender return the storage.SeriesRef given by refFn instead of
+// the label hash based one. It also disables the check that the caller passes back a
+// reference matching the label set, so tests can emulate a storage that hands out a
+// new reference for a series it already handed one out for, e.g. because the series
+// was garbage collected and recreated in the meantime.
+func (a *Appendable) WithRefFn(refFn func(ls labels.Labels) storage.SeriesRef) *Appendable {
+	a.refFn = refFn
 	return a
 }
 
@@ -419,10 +430,14 @@ func (a *appender) Append(ref storage.SeriesRef, ls labels.Labels, t int64, v fl
 		return a.next.Append(ref, ls, t, v)
 	}
 
-	return computeOrCheckRef(ref, ls)
+	return a.a.computeOrCheckRef(ref, ls)
 }
 
-func computeOrCheckRef(ref storage.SeriesRef, ls labels.Labels) (storage.SeriesRef, error) {
+func (a *Appendable) computeOrCheckRef(ref storage.SeriesRef, ls labels.Labels) (storage.SeriesRef, error) {
+	if a.refFn != nil {
+		return a.refFn(ls), nil
+	}
+
 	h := ls.Hash()
 	if ref == 0 {
 		// Use labels hash as a stand-in for unique series reference, to avoid having to track all series.
@@ -457,7 +472,7 @@ func (a *appender) AppendHistogram(ref storage.SeriesRef, ls labels.Labels, t in
 		return a.next.AppendHistogram(ref, ls, t, h, fh)
 	}
 
-	return computeOrCheckRef(ref, ls)
+	return a.a.computeOrCheckRef(ref, ls)
 }
 
 func (a *appender) AppendExemplar(ref storage.SeriesRef, l labels.Labels, e exemplar.Exemplar) (storage.SeriesRef, error) {
@@ -492,7 +507,7 @@ func (a *appender) AppendExemplar(ref storage.SeriesRef, l labels.Labels, e exem
 	if a.next != nil {
 		return a.next.AppendExemplar(ref, l, e)
 	}
-	return computeOrCheckRef(ref, l)
+	return a.a.computeOrCheckRef(ref, l)
 }
 
 func (a *appender) AppendSTZeroSample(ref storage.SeriesRef, l labels.Labels, _, st int64) (storage.SeriesRef, error) {
@@ -535,7 +550,7 @@ func (a *appender) UpdateMetadata(ref storage.SeriesRef, l labels.Labels, m meta
 	if a.next != nil {
 		return a.next.UpdateMetadata(ref, l, m)
 	}
-	return computeOrCheckRef(ref, l)
+	return a.a.computeOrCheckRef(ref, l)
 }
 
 type appenderV2 struct {
@@ -607,10 +622,84 @@ func (a *appenderV2) Append(ref storage.SeriesRef, ls labels.Labels, st, t int64
 			return 0, err
 		}
 	} else {
-		ref, err = computeOrCheckRef(ref, ls)
+		ref, err = a.a.computeOrCheckRef(ref, ls)
 		if err != nil {
 			return ref, err
 		}
 	}
 	return ref, partialErr
+}
+
+var _ storage.ExemplarAppenderV2 = &appenderV2{}
+
+// AppendExemplars implements storage.ExemplarAppenderV2.
+func (a *appenderV2) AppendExemplars(ref storage.SeriesRef, l labels.Labels, exemplars []exemplar.Exemplar) (_ storage.SeriesRef, err error) {
+	if err := a.checkErr(); err != nil {
+		return 0, err
+	}
+
+	pendingIdx := -1
+	var matchedLabels labels.Labels
+	if !a.a.skipRecording {
+		a.a.mtx.Lock()
+		for i, s := range slices.Backward(a.a.pendingSamples) { // Attach exemplars to the last matching sample.
+			if (!l.IsEmpty() && labels.Equal(l, s.L)) || (ref != 0 && storage.SeriesRef(s.L.Hash()) == ref) {
+				pendingIdx = i
+				matchedLabels = s.L
+				break
+			}
+		}
+		if pendingIdx == -1 {
+			for _, s := range slices.Backward(a.a.resultSamples) {
+				if (!l.IsEmpty() && labels.Equal(l, s.L)) || (ref != 0 && storage.SeriesRef(s.L.Hash()) == ref) {
+					matchedLabels = s.L
+					break
+				}
+			}
+		}
+		a.a.mtx.Unlock()
+		if matchedLabels.IsEmpty() {
+			return 0, fmt.Errorf("teststorage.appenderV2: exemplars appended without series; ref %v; l %v; exemplars: %v: %w", ref, l, exemplars, storage.ErrNotFound)
+		}
+	}
+
+	var partialErr *storage.AppendPartialError
+	if next, ok := a.next.(storage.ExemplarAppenderV2); ok {
+		ref, err = next.AppendExemplars(ref, l, exemplars)
+		partialErr, err = partialErr.Handle(err)
+		if err != nil {
+			return 0, err
+		}
+	} else {
+		checkL := l
+		if checkL.IsEmpty() {
+			checkL = matchedLabels
+		}
+		ref, err = a.a.computeOrCheckRef(ref, checkL)
+		if err != nil {
+			return ref, err
+		}
+	}
+
+	if !a.a.skipRecording && len(exemplars) > 0 {
+		if a.a.appendExemplarsError != nil {
+			exErrs := make([]error, len(exemplars))
+			for i := range exemplars {
+				exErrs[i] = a.a.appendExemplarsError
+			}
+			partialErr, _ = partialErr.Handle(&storage.AppendPartialError{ExemplarErrors: exErrs})
+		} else {
+			// As per ExemplarAppenderV2 interface, the exemplars slice is unsafe for reuse.
+			es := make([]exemplar.Exemplar, len(exemplars))
+			copy(es, exemplars)
+			a.a.mtx.Lock()
+			if pendingIdx >= 0 && pendingIdx < len(a.a.pendingSamples) {
+				a.a.pendingSamples[pendingIdx].ES = append(a.a.pendingSamples[pendingIdx].ES, es...)
+			} else {
+				a.a.pendingSamples = append(a.a.pendingSamples, Sample{L: matchedLabels, ES: es})
+			}
+			a.a.mtx.Unlock()
+		}
+	}
+	return ref, partialErr.ToError()
 }

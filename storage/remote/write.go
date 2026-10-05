@@ -220,6 +220,7 @@ func (rws *WriteStorage) ApplyConfig(conf *config.Config) error {
 			rws.enableTypeAndUnitLabels,
 			rwConf.ProtobufMessage,
 			rws.recordBuf,
+			rwConf.FailedRequestLogging,
 		)
 		// Keep track of which queues are new so we know which to start.
 		newHashes = append(newHashes, hash)
@@ -362,8 +363,9 @@ func (t *timestampTracker) AppendHistogramSTZeroSample(_ storage.SeriesRef, _ la
 }
 
 func (*timestampTracker) UpdateMetadata(storage.SeriesRef, labels.Labels, metadata.Metadata) (storage.SeriesRef, error) {
-	// TODO: Add and increment a `metadata` field when we get around to wiring metadata in remote_write.
-	// UpdateMetadata is no-op for remote write (where timestampTracker is being used) for now.
+	// Intentionally a no-op. dataIn measures records that create work for the
+	// sharded queue and is used to estimate queue load and backlog. A metadata
+	// update only changes cached per-series state; it does not enqueue an item.
 	return 0, nil
 }
 
@@ -401,3 +403,11 @@ func (t *timestampTrackerV2) Append(ref storage.SeriesRef, _ labels.Labels, _, t
 	t.exemplars += int64(len(opts.Exemplars))
 	return ref, nil
 }
+
+// AppendExemplars implements storage.ExemplarAppenderV2.
+func (t *timestampTrackerV2) AppendExemplars(ref storage.SeriesRef, _ labels.Labels, exemplars []exemplar.Exemplar) (storage.SeriesRef, error) {
+	t.exemplars += int64(len(exemplars))
+	return ref, nil
+}
+
+var _ storage.ExemplarAppenderV2 = &timestampTrackerV2{}

@@ -21,7 +21,21 @@ import (
 
 	"go.opentelemetry.io/collector/pdata/pcommon"
 	"go.opentelemetry.io/collector/pdata/pmetric"
+
+	"github.com/prometheus/prometheus/util/annotations"
 )
+
+// collisionWarnings returns the label-name collision warning messages in annots,
+// the way an embedder extracts them via the public warning-category API.
+func collisionWarnings(annots annotations.Annotations) []string {
+	var ws []string
+	for _, err := range annots {
+		if WarningCategoryOf(err) == WarningCategoryLabelNameCollision {
+			ws = append(ws, err.Error())
+		}
+	}
+	return ws
+}
 
 func getIntGaugeMetric(name string, attributes pcommon.Map, value int64, ts uint64) pmetric.Metric {
 	metric := pmetric.NewMetric()

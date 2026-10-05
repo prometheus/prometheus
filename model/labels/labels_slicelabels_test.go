@@ -42,7 +42,7 @@ func TestScratchBuilderAdd_Strings(t *testing.T) {
 		ret := l.Labels()
 
 		// For slicelabels, in default mode strings are reused, so modifying the
-		// intput will cause `ret` labels to change too.
+		// input will cause `ret` labels to change too.
 		n[1] = byte('?')
 		v[2] = byte('?')
 

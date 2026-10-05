@@ -16,10 +16,10 @@
 
 set -ex
 
-npx lezer-generator src/promql.grammar -o src/parser
+pnpm exec lezer-generator src/promql.grammar -o src/parser
 
 cat src/parser.terms.js >> src/parser.js
 
 bash ./generate-types.sh
 
-rollup -c
+pnpm exec rollup -c

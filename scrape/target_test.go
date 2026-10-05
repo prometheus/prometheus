@@ -14,9 +14,12 @@
 package scrape
 
 import (
+	"bytes"
 	"crypto/tls"
 	"crypto/x509"
+	"encoding/json"
 	"fmt"
+	"log/slog"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
@@ -28,6 +31,7 @@ import (
 
 	config_util "github.com/prometheus/common/config"
 	"github.com/prometheus/common/model"
+	"github.com/prometheus/common/promslog"
 	"github.com/stretchr/testify/require"
 
 	"github.com/prometheus/prometheus/config"
@@ -42,6 +46,80 @@ import (
 const (
 	caCertPath = "testdata/ca.cer"
 )
+
+func TestTargetLogValue(t *testing.T) {
+	target := NewTarget(labels.FromStrings(
+		model.SchemeLabel, "http",
+		model.AddressLabel, "test.invalid:9090",
+		model.MetricsPathLabel, "/metrics",
+	), &config.ScrapeConfig{Params: url.Values{"zone": {"a b", "c"}}}, nil, nil)
+	const wantURL = "http://test.invalid:9090/metrics?zone=a+b&zone=c"
+
+	for _, tc := range []struct {
+		name   string
+		target any
+		want   any
+	}{
+		{name: "target", target: target, want: wantURL},
+		{name: "target scraper", target: &targetScraper{Target: target}, want: wantURL},
+		{name: "nil target", target: (*Target)(nil)},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			require.Equal(t, tc.want, slog.AnyValue(tc.target).Resolve().Any())
+
+			data, err := json.Marshal(map[string]any{"target": tc.target})
+			require.NoError(t, err)
+			if tc.want == nil {
+				require.JSONEq(t, `{"target":null}`, string(data))
+			} else {
+				require.JSONEq(t, `{"target":{}}`, string(data))
+			}
+
+			for _, style := range []promslog.LogStyle{promslog.SlogStyle, promslog.GoKitStyle} {
+				for _, formatName := range []string{"json", "logfmt"} {
+					for _, placement := range []string{"direct", "with", "group", "with-group"} {
+						t.Run(string(style)+"/"+formatName+"/"+placement, func(t *testing.T) {
+							var output bytes.Buffer
+							format := promslog.NewFormat()
+							require.NoError(t, format.Set(formatName))
+							logger := promslog.New(&promslog.Config{Writer: &output, Format: format, Style: style})
+							switch placement {
+							case "direct":
+								logger.Info("test", "target", tc.target)
+							case "with":
+								logger.With("target", tc.target).Info("test")
+							case "group":
+								logger.Info("test", slog.Group("group", "target", tc.target))
+							case "with-group":
+								logger.WithGroup("group").With("target", tc.target).Info("test")
+							}
+
+							if formatName == "json" {
+								var entry map[string]any
+								require.NoError(t, json.Unmarshal(output.Bytes(), &entry))
+								if placement == "group" || placement == "with-group" {
+									entry = entry["group"].(map[string]any)
+								}
+								require.Contains(t, entry, "target")
+								require.Equal(t, tc.want, entry["target"])
+							} else {
+								key := "target"
+								if placement == "group" || placement == "with-group" {
+									key = "group.target"
+								}
+								want := "<nil>"
+								if tc.want != nil {
+									want = fmt.Sprintf("%q", tc.want)
+								}
+								require.Contains(t, output.String(), key+"="+want)
+							}
+						})
+					}
+				}
+			}
+		})
+	}
+}
 
 func TestTargetLabels(t *testing.T) {
 	target := newTestTarget("example.com:80", 0, labels.FromStrings("job", "some_job", "foo", "bar"))
@@ -133,6 +211,49 @@ func TestTargetURL(t *testing.T) {
 		Host:     "example.com:1234",
 		Path:     "/metricz",
 		RawQuery: expectedParams.Encode(),
+	}
+
+	require.Equal(t, expectedURL, target.URL())
+}
+
+func TestTargetURL_Unix(t *testing.T) {
+	scrapeConfig := &config.ScrapeConfig{}
+	labels := labels.FromMap(map[string]string{
+		model.AddressLabel:     "example.com:1234",
+		model.SchemeLabel:      "https",
+		model.MetricsPathLabel: "/metrics",
+		UnixSocketLabel:        "/tmp/sock",
+	})
+	target := NewTarget(labels, scrapeConfig, nil, nil)
+
+	// __unix_socket__ does not affect URL generation; the URL is built
+	// from __scheme__, __address__ and __metrics_path__ as usual.
+	// The socket path is passed to the dialer via the request context.
+	expectedURL := &url.URL{
+		Scheme: "https",
+		Host:   "example.com:1234",
+		Path:   "/metrics",
+	}
+
+	require.Equal(t, expectedURL, target.URL())
+}
+
+func TestTargetURL_UnixEmptyAddress(t *testing.T) {
+	scrapeConfig := &config.ScrapeConfig{}
+	labels := labels.FromMap(map[string]string{
+		model.SchemeLabel:      "http",
+		model.MetricsPathLabel: "/metrics",
+		UnixSocketLabel:        "/tmp/sock",
+		// No __address__ set.
+	})
+	target := NewTarget(labels, scrapeConfig, nil, nil)
+
+	// When __unix_socket__ is set but __address__ is empty, "localhost"
+	// is used as a placeholder host to keep the URL valid.
+	expectedURL := &url.URL{
+		Scheme: "http",
+		Host:   "localhost",
+		Path:   "/metrics",
 	}
 
 	require.Equal(t, expectedURL, target.URL())

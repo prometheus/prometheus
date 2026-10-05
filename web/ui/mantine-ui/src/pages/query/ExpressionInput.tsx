@@ -14,7 +14,14 @@ import {
   PromQLExtension,
   newCompleteStrategy,
 } from "@prometheus-io/codemirror-promql";
-import { FC, Suspense, useEffect, useRef, useState } from "react";
+import {
+  FC,
+  Suspense,
+  useEffect,
+  useLayoutEffect,
+  useRef,
+  useState,
+} from "react";
 import CodeMirror, {
   EditorState,
   EditorView,
@@ -71,7 +78,6 @@ import { HistoryCompleteStrategy } from "./HistoryCompleteStrategy";
 
 const promqlExtension = new PromQLExtension();
 
-
 interface ExpressionInputProps {
   initialExpr: string;
   metricNames: string[];
@@ -101,13 +107,26 @@ const ExpressionInput: FC<ExpressionInputProps> = ({
     enableQueryHistory,
   } = useSettings();
   const [expr, setExpr] = useState(initialExpr);
-  useEffect(() => {
+  const [previousInitialExpr, setPreviousInitialExpr] = useState(initialExpr);
+  if (previousInitialExpr !== initialExpr) {
+    setPreviousInitialExpr(initialExpr);
     setExpr(initialExpr);
+  }
+  const formatGeneration = useRef({ value: 0 });
+  useLayoutEffect(() => {
+    const generation = formatGeneration.current;
+    generation.value++;
+    return () => {
+      generation.value++;
+    };
   }, [initialExpr]);
+  const updateDraft = (value: string) => {
+    formatGeneration.current.value++;
+    setExpr(value);
+  };
 
   const {
     data: formatResult,
-    error: formatError,
     isFetching: isFormatting,
     refetch: formatQuery,
   } = useAPIQuery<string>({
@@ -118,24 +137,28 @@ const ExpressionInput: FC<ExpressionInputProps> = ({
     enabled: false,
   });
 
-  useEffect(() => {
-    if (formatError) {
+  const handleFormat = async () => {
+    const generation = ++formatGeneration.current.value;
+    const result = await formatQuery();
+    // Refetch may settle after its observer has switched to another draft.
+    if (generation !== formatGeneration.current.value) return;
+    if (result.error) {
       notifications.show({
         color: "red",
         title: "Error formatting query",
-        message: formatError.message,
+        message: result.error.message,
       });
       return;
     }
 
-    if (formatResult) {
-      setExpr(formatResult.data);
+    if (result.data) {
+      setExpr(result.data.data);
       notifications.show({
         title: "Expression formatted",
         message: "Expression formatted successfully!",
       });
     }
-  }, [formatResult, formatError]);
+  };
 
   const cmRef = useRef<ReactCodeMirrorRef>(null);
 
@@ -155,7 +178,7 @@ const ExpressionInput: FC<ExpressionInputProps> = ({
               cache: { initialMetricList: metricNames },
             },
           }),
-          enableQueryHistory ? queryHistory : []
+          enableQueryHistory ? queryHistory : [],
         ),
       });
   }, [
@@ -196,7 +219,7 @@ const ExpressionInput: FC<ExpressionInputProps> = ({
               </Menu.Item>
               <Menu.Item
                 leftSection={<IconAlignJustified style={menuIconStyle} />}
-                onClick={() => formatQuery()}
+                onClick={handleFormat}
                 disabled={
                   isFormatting || expr === "" || expr === formatResult?.data
                 }
@@ -229,7 +252,7 @@ const ExpressionInput: FC<ExpressionInputProps> = ({
         className={classes.input}
         basicSetup={false}
         value={expr}
-        onChange={setExpr}
+        onChange={updateDraft}
         autoFocus
         ref={cmRef}
         extensions={[
@@ -253,7 +276,7 @@ const ExpressionInput: FC<ExpressionInputProps> = ({
           placeholder("Enter expression (press Shift+Enter for newlines)"),
           enableSyntaxHighlighting
             ? syntaxHighlighting(
-                theme === "light" ? promqlHighlighter : darkPromqlHighlighter
+                theme === "light" ? promqlHighlighter : darkPromqlHighlighter,
               )
             : [],
           promqlExtension.asExtension(),
@@ -280,7 +303,7 @@ const ExpressionInput: FC<ExpressionInputProps> = ({
                 key: "Shift-Enter",
                 run: insertNewlineAndIndent,
               },
-            ])
+            ]),
           ),
         ]}
         multiline
@@ -323,7 +346,7 @@ const ExpressionInput: FC<ExpressionInputProps> = ({
                         to: view.state.selection.ranges[0].to,
                         insert: text,
                       },
-                    })
+                    }),
                   );
                 }
               }}

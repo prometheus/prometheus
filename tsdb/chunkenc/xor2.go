@@ -65,40 +65,8 @@ import (
 )
 
 const (
-	chunkSTHeaderSize  = 1
-	maxFirstSTChangeOn = 0x7F
+	chunkSTHeaderSize = 1
 )
-
-func writeHeaderFirstSTKnown(b []byte) {
-	b[0] = 0x80
-}
-
-func writeHeaderFirstSTChangeOn(b []byte, firstSTChangeOn uint16) {
-	// First bit indicates the initial ST value.
-	// Here we save the sample number from where the first change occurs in the
-	// rest of the byte (7 bits)
-
-	if firstSTChangeOn > maxFirstSTChangeOn {
-		// This should never happen, would cause corruption (ST already skipped but shouldn't).
-		return
-	}
-	b[0] |= uint8(firstSTChangeOn)
-}
-
-func readSTHeader(b []byte) (firstSTKnown bool, firstSTChangeOn uint8) {
-	if b[0] == 0x00 {
-		return false, 0
-	}
-	if b[0] == 0x80 {
-		return true, 0
-	}
-	mask := byte(0x80)
-	if b[0]&mask != 0 {
-		firstSTKnown = true
-	}
-	mask = 0x7F
-	return firstSTKnown, b[0] & mask
-}
 
 // XOR2Chunk holds XOR2 encoded samples with optional start
 // timestamp per chunk or per sample.
@@ -503,11 +471,11 @@ func (a *xor2Appender) writeVDeltaKnownNonZero(delta uint64) {
 	a.b.writeBitsFast(delta>>newTrailing, int(sigbits))
 }
 
-func (*xor2Appender) AppendHistogram(*HistogramAppender, int64, int64, *histogram.Histogram, bool) (Chunk, bool, Appender, error) {
+func (*xor2Appender) AppendHistogram(Appender, int64, int64, *histogram.Histogram, bool) (Chunk, bool, Appender, error) {
 	panic("appended a histogram sample to a float chunk")
 }
 
-func (*xor2Appender) AppendFloatHistogram(*FloatHistogramAppender, int64, int64, *histogram.FloatHistogram, bool) (Chunk, bool, Appender, error) {
+func (*xor2Appender) AppendFloatHistogram(Appender, int64, int64, *histogram.FloatHistogram, bool) (Chunk, bool, Appender, error) {
 	panic("appended a float histogram sample to a float chunk")
 }
 

@@ -120,6 +120,35 @@ func TestQueryInstantHeaders(t *testing.T) {
 	require.Equal(t, "value", getRequest().Header.Get("X-Custom"))
 }
 
+func TestCheckServerStatus(t *testing.T) {
+	t.Parallel()
+
+	for _, tc := range []struct {
+		name      string
+		urlSuffix string
+	}{
+		{name: "no trailing slash", urlSuffix: ""},
+		{name: "trailing slash", urlSuffix: "/"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			s, getRequest := mockServer(200, "Prometheus is Healthy.\n")
+			defer s.Close()
+
+			urlObject, err := url.Parse(s.URL + tc.urlSuffix)
+			require.NoError(t, err)
+
+			err = CheckServerStatus(urlObject, checkHealth, http.DefaultTransport)
+			require.NoError(t, err)
+			// The endpoint path must be requested verbatim regardless of a
+			// trailing slash in the user-provided URL. A naive string
+			// concatenation would request "//-/healthy" here, which the
+			// Prometheus router does not match.
+			require.Equal(t, checkHealth, getRequest().URL.Path)
+		})
+	}
+}
+
 func mockServer(code int, body string) (*httptest.Server, func() *http.Request) {
 	var req *http.Request
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -529,6 +558,11 @@ func TestExitCodes(t *testing.T) {
 			file: "prometheus-config.good.yml",
 		},
 		{
+			// Regression test for https://github.com/prometheus/prometheus/issues/6092:
+			// AWS SDs with empty region must parse without IMDS calls.
+			file: "prometheus-aws-sd-empty-region.good.yml",
+		},
+		{
 			file:     "prometheus-config.bad.yml",
 			exitCode: 1,
 		},
@@ -560,8 +594,7 @@ func TestExitCodes(t *testing.T) {
 
 					require.Error(t, err)
 
-					var exitError *exec.ExitError
-					if errors.As(err, &exitError) {
+					if exitError, ok := errors.AsType[*exec.ExitError](err); ok {
 						status := exitError.Sys().(syscall.WaitStatus)
 						require.Equal(t, c.exitCode, status.ExitStatus())
 					} else {
@@ -673,7 +706,7 @@ func TestCheckRulesWithFeatureFlag(t *testing.T) {
 	// As opposed to TestCheckRules calling CheckRules directly we run promtool
 	// so the feature flag parsing can be tested.
 
-	args := []string{"-test.main", "--enable-feature=promql-experimental-functions", "--enable-feature=promql-duration-expr", "--enable-feature=promql-extended-range-selectors", "check", "rules", "testdata/features.yml"}
+	args := []string{"-test.main", "--enable-feature=promql-experimental-functions", "--enable-feature=promql-extended-range-selectors", "--enable-feature=promql-binop-fill-modifiers", "check", "rules", "testdata/features.yml"}
 	tool := exec.Command(promtoolPath, args...)
 	err := tool.Run()
 	require.NoError(t, err)

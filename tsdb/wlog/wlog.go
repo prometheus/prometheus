@@ -781,7 +781,7 @@ func (w *WL) log(rec []byte, final bool) error {
 }
 
 // LastSegmentAndOffset returns the last segment number of the WAL
-// and the offset in that file upto which the segment has been filled.
+// and the offset in that file up to which the segment has been filled.
 func (w *WL) LastSegmentAndOffset() (seg, offset int, err error) {
 	w.mtx.Lock()
 	defer w.mtx.Unlock()
@@ -1028,7 +1028,7 @@ func (r *segmentBufReader) Read(b []byte) (n int, err error) {
 		return n + i, nil
 	}
 
-	// There is no more deta left in the curr segment and there are no more
+	// There is no more data left in the curr segment and there are no more
 	// segments left.  Return EOF.
 	if r.cur+1 >= len(r.segs) {
 		return n, io.EOF

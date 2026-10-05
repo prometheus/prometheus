@@ -1,0 +1,7 @@
+cloud: AzurePublic
+certificate:
+  client_id: 00000000-0000-0000-0000-000000000000
+  tenant_id: 00000000-a12b-3cd4-e56f-000000000000
+  certificate_path: /path/to/certificate.pem
+  certificate_key_path: /path/to/key.pem
+  send_certificate_chain: true

@@ -309,6 +309,21 @@ eval range from 0 to 20m step 5m intermittent_left + fill_left(0) intermittent_r
   {label="b"} 100 _ 300 _ 500
   {label="c"} 1000 _ _ 4000 5000
 
+# Regression test: group_left fill_left in a range query must apply fill values
+# at every timestep, even when the RHS sigOrd was matched at a previous timestep.
+# resetMatchedSigs previously used clear() which left non-nil empty maps, causing
+# the fill-LHS path to incorrectly skip unmatched RHS samples on subsequent timesteps.
+clear
+
+load 5m
+  matched_lhs{key="a"}  1  _  3
+  matched_rhs{key="a"}  10 20 30
+  matched_rhs{key="b"}  100 200 300
+
+eval range from 0 to 10m step 5m matched_lhs + on(key) group_left fill_left(0) matched_rhs
+  {key="a"} 11 20 33
+  {key="b"} 100 200 300
+
 # ---------- fill with vectors where one side is empty ----------
 
 clear

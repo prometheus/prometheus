@@ -56,6 +56,10 @@ import (
 	"github.com/prometheus/prometheus/util/testutil"
 )
 
+func boolPtr(b bool) *bool {
+	return &b
+}
+
 func TestPopulateLabels(t *testing.T) {
 	cases := []struct {
 		in      model.LabelSet
@@ -78,23 +82,29 @@ func TestPopulateLabels(t *testing.T) {
 				ScrapeTimeout:  model.Duration(time.Second),
 			},
 			res: labels.FromMap(map[string]string{
-				model.AddressLabel:        "1.2.3.4:1000",
-				model.InstanceLabel:       "1.2.3.4:1000",
-				model.SchemeLabel:         "https",
-				model.MetricsPathLabel:    "/metrics",
-				model.JobLabel:            "job",
-				model.ScrapeIntervalLabel: "1s",
-				model.ScrapeTimeoutLabel:  "1s",
-				"custom":                  "value",
+				model.AddressLabel:                  "1.2.3.4:1000",
+				model.InstanceLabel:                 "1.2.3.4:1000",
+				model.SchemeLabel:                   "https",
+				model.MetricsPathLabel:              "/metrics",
+				model.JobLabel:                      "job",
+				model.ScrapeIntervalLabel:           "1s",
+				model.ScrapeTimeoutLabel:            "1s",
+				convertClassicHistogramsToNHCBLabel: "false",
+				alwaysScrapeClassicHistogramsLabel:  "false",
+				scrapeNativeHistogramsLabel:         "false",
+				"custom":                            "value",
 			}),
 			resOrig: labels.FromMap(map[string]string{
-				model.AddressLabel:        "1.2.3.4:1000",
-				model.SchemeLabel:         "https",
-				model.MetricsPathLabel:    "/metrics",
-				model.JobLabel:            "job",
-				"custom":                  "value",
-				model.ScrapeIntervalLabel: "1s",
-				model.ScrapeTimeoutLabel:  "1s",
+				model.AddressLabel:                  "1.2.3.4:1000",
+				model.SchemeLabel:                   "https",
+				model.MetricsPathLabel:              "/metrics",
+				model.JobLabel:                      "job",
+				"custom":                            "value",
+				model.ScrapeIntervalLabel:           "1s",
+				model.ScrapeTimeoutLabel:            "1s",
+				convertClassicHistogramsToNHCBLabel: "false",
+				alwaysScrapeClassicHistogramsLabel:  "false",
+				scrapeNativeHistogramsLabel:         "false",
 			}),
 		},
 		// Pre-define/overwrite scrape config labels.
@@ -116,21 +126,27 @@ func TestPopulateLabels(t *testing.T) {
 				ScrapeTimeout:  model.Duration(time.Second),
 			},
 			res: labels.FromMap(map[string]string{
-				model.AddressLabel:        "1.2.3.4",
-				model.InstanceLabel:       "1.2.3.4",
-				model.SchemeLabel:         "http",
-				model.MetricsPathLabel:    "/custom",
-				model.JobLabel:            "custom-job",
-				model.ScrapeIntervalLabel: "2s",
-				model.ScrapeTimeoutLabel:  "2s",
+				model.AddressLabel:                  "1.2.3.4",
+				model.InstanceLabel:                 "1.2.3.4",
+				model.SchemeLabel:                   "http",
+				model.MetricsPathLabel:              "/custom",
+				model.JobLabel:                      "custom-job",
+				model.ScrapeIntervalLabel:           "2s",
+				model.ScrapeTimeoutLabel:            "2s",
+				convertClassicHistogramsToNHCBLabel: "false",
+				alwaysScrapeClassicHistogramsLabel:  "false",
+				scrapeNativeHistogramsLabel:         "false",
 			}),
 			resOrig: labels.FromMap(map[string]string{
-				model.AddressLabel:        "1.2.3.4",
-				model.SchemeLabel:         "http",
-				model.MetricsPathLabel:    "/custom",
-				model.JobLabel:            "custom-job",
-				model.ScrapeIntervalLabel: "2s",
-				model.ScrapeTimeoutLabel:  "2s",
+				model.AddressLabel:                  "1.2.3.4",
+				model.SchemeLabel:                   "http",
+				model.MetricsPathLabel:              "/custom",
+				model.JobLabel:                      "custom-job",
+				model.ScrapeIntervalLabel:           "2s",
+				model.ScrapeTimeoutLabel:            "2s",
+				convertClassicHistogramsToNHCBLabel: "false",
+				alwaysScrapeClassicHistogramsLabel:  "false",
+				scrapeNativeHistogramsLabel:         "false",
 			}),
 		},
 		// Provide instance label. HTTPS port default for IPv6.
@@ -147,22 +163,28 @@ func TestPopulateLabels(t *testing.T) {
 				ScrapeTimeout:  model.Duration(time.Second),
 			},
 			res: labels.FromMap(map[string]string{
-				model.AddressLabel:        "[::1]",
-				model.InstanceLabel:       "custom-instance",
-				model.SchemeLabel:         "https",
-				model.MetricsPathLabel:    "/metrics",
-				model.JobLabel:            "job",
-				model.ScrapeIntervalLabel: "1s",
-				model.ScrapeTimeoutLabel:  "1s",
+				model.AddressLabel:                  "[::1]",
+				model.InstanceLabel:                 "custom-instance",
+				model.SchemeLabel:                   "https",
+				model.MetricsPathLabel:              "/metrics",
+				model.JobLabel:                      "job",
+				model.ScrapeIntervalLabel:           "1s",
+				model.ScrapeTimeoutLabel:            "1s",
+				convertClassicHistogramsToNHCBLabel: "false",
+				alwaysScrapeClassicHistogramsLabel:  "false",
+				scrapeNativeHistogramsLabel:         "false",
 			}),
 			resOrig: labels.FromMap(map[string]string{
-				model.AddressLabel:        "[::1]",
-				model.InstanceLabel:       "custom-instance",
-				model.SchemeLabel:         "https",
-				model.MetricsPathLabel:    "/metrics",
-				model.JobLabel:            "job",
-				model.ScrapeIntervalLabel: "1s",
-				model.ScrapeTimeoutLabel:  "1s",
+				model.AddressLabel:                  "[::1]",
+				model.InstanceLabel:                 "custom-instance",
+				model.SchemeLabel:                   "https",
+				model.MetricsPathLabel:              "/metrics",
+				model.JobLabel:                      "job",
+				model.ScrapeIntervalLabel:           "1s",
+				model.ScrapeTimeoutLabel:            "1s",
+				convertClassicHistogramsToNHCBLabel: "false",
+				alwaysScrapeClassicHistogramsLabel:  "false",
+				scrapeNativeHistogramsLabel:         "false",
 			}),
 		},
 		// Address label missing.
@@ -200,22 +222,28 @@ func TestPopulateLabels(t *testing.T) {
 				},
 			},
 			res: labels.FromMap(map[string]string{
-				model.AddressLabel:        "host:1234",
-				model.InstanceLabel:       "host:1234",
-				model.SchemeLabel:         "https",
-				model.MetricsPathLabel:    "/metrics",
-				model.JobLabel:            "job",
-				model.ScrapeIntervalLabel: "1s",
-				model.ScrapeTimeoutLabel:  "1s",
-				"custom":                  "host:1234",
+				model.AddressLabel:                  "host:1234",
+				model.InstanceLabel:                 "host:1234",
+				model.SchemeLabel:                   "https",
+				model.MetricsPathLabel:              "/metrics",
+				model.JobLabel:                      "job",
+				model.ScrapeIntervalLabel:           "1s",
+				model.ScrapeTimeoutLabel:            "1s",
+				convertClassicHistogramsToNHCBLabel: "false",
+				alwaysScrapeClassicHistogramsLabel:  "false",
+				scrapeNativeHistogramsLabel:         "false",
+				"custom":                            "host:1234",
 			}),
 			resOrig: labels.FromMap(map[string]string{
-				model.SchemeLabel:         "https",
-				model.MetricsPathLabel:    "/metrics",
-				model.JobLabel:            "job",
-				model.ScrapeIntervalLabel: "1s",
-				model.ScrapeTimeoutLabel:  "1s",
-				"custom":                  "host:1234",
+				model.SchemeLabel:                   "https",
+				model.MetricsPathLabel:              "/metrics",
+				model.JobLabel:                      "job",
+				model.ScrapeIntervalLabel:           "1s",
+				model.ScrapeTimeoutLabel:            "1s",
+				convertClassicHistogramsToNHCBLabel: "false",
+				alwaysScrapeClassicHistogramsLabel:  "false",
+				scrapeNativeHistogramsLabel:         "false",
+				"custom":                            "host:1234",
 			}),
 		},
 		// Address label missing, but added in relabelling.
@@ -239,22 +267,28 @@ func TestPopulateLabels(t *testing.T) {
 				},
 			},
 			res: labels.FromMap(map[string]string{
-				model.AddressLabel:        "host:1234",
-				model.InstanceLabel:       "host:1234",
-				model.SchemeLabel:         "https",
-				model.MetricsPathLabel:    "/metrics",
-				model.JobLabel:            "job",
-				model.ScrapeIntervalLabel: "1s",
-				model.ScrapeTimeoutLabel:  "1s",
-				"custom":                  "host:1234",
+				model.AddressLabel:                  "host:1234",
+				model.InstanceLabel:                 "host:1234",
+				model.SchemeLabel:                   "https",
+				model.MetricsPathLabel:              "/metrics",
+				model.JobLabel:                      "job",
+				model.ScrapeIntervalLabel:           "1s",
+				model.ScrapeTimeoutLabel:            "1s",
+				convertClassicHistogramsToNHCBLabel: "false",
+				alwaysScrapeClassicHistogramsLabel:  "false",
+				scrapeNativeHistogramsLabel:         "false",
+				"custom":                            "host:1234",
 			}),
 			resOrig: labels.FromMap(map[string]string{
-				model.SchemeLabel:         "https",
-				model.MetricsPathLabel:    "/metrics",
-				model.JobLabel:            "job",
-				model.ScrapeIntervalLabel: "1s",
-				model.ScrapeTimeoutLabel:  "1s",
-				"custom":                  "host:1234",
+				model.SchemeLabel:                   "https",
+				model.MetricsPathLabel:              "/metrics",
+				model.JobLabel:                      "job",
+				model.ScrapeIntervalLabel:           "1s",
+				model.ScrapeTimeoutLabel:            "1s",
+				convertClassicHistogramsToNHCBLabel: "false",
+				alwaysScrapeClassicHistogramsLabel:  "false",
+				scrapeNativeHistogramsLabel:         "false",
+				"custom":                            "host:1234",
 			}),
 		},
 		// Invalid UTF-8 in label.
@@ -373,21 +407,27 @@ func TestPopulateLabels(t *testing.T) {
 				ScrapeTimeout:  model.Duration(time.Second),
 			},
 			res: labels.FromMap(map[string]string{
-				model.AddressLabel:        "1.2.3.4",
-				model.InstanceLabel:       "1.2.3.4",
-				model.SchemeLabel:         "https",
-				model.MetricsPathLabel:    "/metrics",
-				model.JobLabel:            "job",
-				model.ScrapeIntervalLabel: "1s",
-				model.ScrapeTimeoutLabel:  "1s",
+				model.AddressLabel:                  "1.2.3.4",
+				model.InstanceLabel:                 "1.2.3.4",
+				model.SchemeLabel:                   "https",
+				model.MetricsPathLabel:              "/metrics",
+				model.JobLabel:                      "job",
+				model.ScrapeIntervalLabel:           "1s",
+				model.ScrapeTimeoutLabel:            "1s",
+				convertClassicHistogramsToNHCBLabel: "false",
+				alwaysScrapeClassicHistogramsLabel:  "false",
+				scrapeNativeHistogramsLabel:         "false",
 			}),
 			resOrig: labels.FromMap(map[string]string{
-				model.AddressLabel:        "1.2.3.4",
-				model.SchemeLabel:         "https",
-				model.MetricsPathLabel:    "/metrics",
-				model.JobLabel:            "job",
-				model.ScrapeIntervalLabel: "1s",
-				model.ScrapeTimeoutLabel:  "1s",
+				model.AddressLabel:                  "1.2.3.4",
+				model.SchemeLabel:                   "https",
+				model.MetricsPathLabel:              "/metrics",
+				model.JobLabel:                      "job",
+				model.ScrapeIntervalLabel:           "1s",
+				model.ScrapeTimeoutLabel:            "1s",
+				convertClassicHistogramsToNHCBLabel: "false",
+				alwaysScrapeClassicHistogramsLabel:  "false",
+				scrapeNativeHistogramsLabel:         "false",
 			}),
 		},
 		// verify that the default port is not removed (http).
@@ -403,21 +443,27 @@ func TestPopulateLabels(t *testing.T) {
 				ScrapeTimeout:  model.Duration(time.Second),
 			},
 			res: labels.FromMap(map[string]string{
-				model.AddressLabel:        "1.2.3.4:80",
-				model.InstanceLabel:       "1.2.3.4:80",
-				model.SchemeLabel:         "http",
-				model.MetricsPathLabel:    "/metrics",
-				model.JobLabel:            "job",
-				model.ScrapeIntervalLabel: "1s",
-				model.ScrapeTimeoutLabel:  "1s",
+				model.AddressLabel:                  "1.2.3.4:80",
+				model.InstanceLabel:                 "1.2.3.4:80",
+				model.SchemeLabel:                   "http",
+				model.MetricsPathLabel:              "/metrics",
+				model.JobLabel:                      "job",
+				model.ScrapeIntervalLabel:           "1s",
+				model.ScrapeTimeoutLabel:            "1s",
+				convertClassicHistogramsToNHCBLabel: "false",
+				alwaysScrapeClassicHistogramsLabel:  "false",
+				scrapeNativeHistogramsLabel:         "false",
 			}),
 			resOrig: labels.FromMap(map[string]string{
-				model.AddressLabel:        "1.2.3.4:80",
-				model.SchemeLabel:         "http",
-				model.MetricsPathLabel:    "/metrics",
-				model.JobLabel:            "job",
-				model.ScrapeIntervalLabel: "1s",
-				model.ScrapeTimeoutLabel:  "1s",
+				model.AddressLabel:                  "1.2.3.4:80",
+				model.SchemeLabel:                   "http",
+				model.MetricsPathLabel:              "/metrics",
+				model.JobLabel:                      "job",
+				model.ScrapeIntervalLabel:           "1s",
+				model.ScrapeTimeoutLabel:            "1s",
+				convertClassicHistogramsToNHCBLabel: "false",
+				alwaysScrapeClassicHistogramsLabel:  "false",
+				scrapeNativeHistogramsLabel:         "false",
 			}),
 		},
 		// verify that the default port is not removed (https).
@@ -433,22 +479,128 @@ func TestPopulateLabels(t *testing.T) {
 				ScrapeTimeout:  model.Duration(time.Second),
 			},
 			res: labels.FromMap(map[string]string{
-				model.AddressLabel:        "1.2.3.4:443",
-				model.InstanceLabel:       "1.2.3.4:443",
-				model.SchemeLabel:         "https",
-				model.MetricsPathLabel:    "/metrics",
-				model.JobLabel:            "job",
-				model.ScrapeIntervalLabel: "1s",
-				model.ScrapeTimeoutLabel:  "1s",
+				model.AddressLabel:                  "1.2.3.4:443",
+				model.InstanceLabel:                 "1.2.3.4:443",
+				model.SchemeLabel:                   "https",
+				model.MetricsPathLabel:              "/metrics",
+				model.JobLabel:                      "job",
+				model.ScrapeIntervalLabel:           "1s",
+				model.ScrapeTimeoutLabel:            "1s",
+				convertClassicHistogramsToNHCBLabel: "false",
+				alwaysScrapeClassicHistogramsLabel:  "false",
+				scrapeNativeHistogramsLabel:         "false",
 			}),
 			resOrig: labels.FromMap(map[string]string{
-				model.AddressLabel:        "1.2.3.4:443",
-				model.SchemeLabel:         "https",
-				model.MetricsPathLabel:    "/metrics",
-				model.JobLabel:            "job",
-				model.ScrapeIntervalLabel: "1s",
-				model.ScrapeTimeoutLabel:  "1s",
+				model.AddressLabel:                  "1.2.3.4:443",
+				model.SchemeLabel:                   "https",
+				model.MetricsPathLabel:              "/metrics",
+				model.JobLabel:                      "job",
+				model.ScrapeIntervalLabel:           "1s",
+				model.ScrapeTimeoutLabel:            "1s",
+				convertClassicHistogramsToNHCBLabel: "false",
+				alwaysScrapeClassicHistogramsLabel:  "false",
+				scrapeNativeHistogramsLabel:         "false",
 			}),
+		},
+		// convert_classic_histograms_to_nhcb seeded from the config default.
+		{
+			in: model.LabelSet{
+				model.AddressLabel: "1.2.3.4:1000",
+			},
+			cfg: &config.ScrapeConfig{
+				Scheme:                         "https",
+				MetricsPath:                    "/metrics",
+				JobName:                        "job",
+				ScrapeInterval:                 model.Duration(time.Second),
+				ScrapeTimeout:                  model.Duration(time.Second),
+				ConvertClassicHistogramsToNHCB: boolPtr(true),
+			},
+			res: labels.FromMap(map[string]string{
+				model.AddressLabel:                  "1.2.3.4:1000",
+				model.InstanceLabel:                 "1.2.3.4:1000",
+				model.SchemeLabel:                   "https",
+				model.MetricsPathLabel:              "/metrics",
+				model.JobLabel:                      "job",
+				model.ScrapeIntervalLabel:           "1s",
+				model.ScrapeTimeoutLabel:            "1s",
+				convertClassicHistogramsToNHCBLabel: "true",
+				alwaysScrapeClassicHistogramsLabel:  "false",
+				scrapeNativeHistogramsLabel:         "false",
+			}),
+			resOrig: labels.FromMap(map[string]string{
+				model.AddressLabel:                  "1.2.3.4:1000",
+				model.SchemeLabel:                   "https",
+				model.MetricsPathLabel:              "/metrics",
+				model.JobLabel:                      "job",
+				model.ScrapeIntervalLabel:           "1s",
+				model.ScrapeTimeoutLabel:            "1s",
+				convertClassicHistogramsToNHCBLabel: "true",
+				alwaysScrapeClassicHistogramsLabel:  "false",
+				scrapeNativeHistogramsLabel:         "false",
+			}),
+		},
+		// convert_classic_histograms_to_nhcb overridden via relabeling.
+		{
+			in: model.LabelSet{
+				model.AddressLabel: "1.2.3.4:1000",
+			},
+			cfg: &config.ScrapeConfig{
+				Scheme:         "https",
+				MetricsPath:    "/metrics",
+				JobName:        "job",
+				ScrapeInterval: model.Duration(time.Second),
+				ScrapeTimeout:  model.Duration(time.Second),
+				RelabelConfigs: []*relabel.Config{
+					{
+						Action:               relabel.Replace,
+						Regex:                relabel.MustNewRegexp("false"),
+						SourceLabels:         model.LabelNames{convertClassicHistogramsToNHCBLabel},
+						Replacement:          "true",
+						TargetLabel:          convertClassicHistogramsToNHCBLabel,
+						NameValidationScheme: model.UTF8Validation,
+					},
+				},
+			},
+			res: labels.FromMap(map[string]string{
+				model.AddressLabel:                  "1.2.3.4:1000",
+				model.InstanceLabel:                 "1.2.3.4:1000",
+				model.SchemeLabel:                   "https",
+				model.MetricsPathLabel:              "/metrics",
+				model.JobLabel:                      "job",
+				model.ScrapeIntervalLabel:           "1s",
+				model.ScrapeTimeoutLabel:            "1s",
+				convertClassicHistogramsToNHCBLabel: "true",
+				alwaysScrapeClassicHistogramsLabel:  "false",
+				scrapeNativeHistogramsLabel:         "false",
+			}),
+			resOrig: labels.FromMap(map[string]string{
+				model.AddressLabel:                  "1.2.3.4:1000",
+				model.SchemeLabel:                   "https",
+				model.MetricsPathLabel:              "/metrics",
+				model.JobLabel:                      "job",
+				model.ScrapeIntervalLabel:           "1s",
+				model.ScrapeTimeoutLabel:            "1s",
+				convertClassicHistogramsToNHCBLabel: "false",
+				alwaysScrapeClassicHistogramsLabel:  "false",
+				scrapeNativeHistogramsLabel:         "false",
+			}),
+		},
+		// Invalid boolean in convert_classic_histograms_to_nhcb label.
+		{
+			in: model.LabelSet{
+				model.AddressLabel:                  "1.2.3.4:1000",
+				convertClassicHistogramsToNHCBLabel: "maybe",
+			},
+			cfg: &config.ScrapeConfig{
+				Scheme:         "https",
+				MetricsPath:    "/metrics",
+				JobName:        "job",
+				ScrapeInterval: model.Duration(time.Second),
+				ScrapeTimeout:  model.Duration(time.Second),
+			},
+			res:     labels.EmptyLabels(),
+			resOrig: labels.EmptyLabels(),
+			err:     "error parsing convert classic histograms to nhcb: strconv.ParseBool: parsing \"maybe\": invalid syntax",
 		},
 	}
 	for _, c := range cases {
@@ -615,6 +767,26 @@ func TestManagerTargetsUpdates(t *testing.T) {
 	}
 }
 
+func TestManagerRunReturnsWhenTargetSetsClosed(t *testing.T) {
+	m, err := NewManager(&Options{}, nil, nil, nil, teststorage.NewAppendable(), prometheus.NewRegistry())
+	require.NoError(t, err)
+	defer m.Stop()
+
+	targetSetsCh := make(chan map[string][]*targetgroup.Group)
+	runErr := make(chan error, 1)
+	go func() {
+		runErr <- m.Run(targetSetsCh)
+	}()
+	close(targetSetsCh)
+
+	select {
+	case err := <-runErr:
+		require.NoError(t, err)
+	case <-time.After(time.Second):
+		t.Fatal("scrape manager did not stop after target sets channel was closed")
+	}
+}
+
 func TestSetOffsetSeed(t *testing.T) {
 	getConfig := func(prometheus string) *config.Config {
 		cfgText := `
@@ -649,6 +821,25 @@ global:
 	offsetSeed2 := scrapeManager.offsetSeed
 
 	require.NotEqual(t, offsetSeed1, offsetSeed2, "Offset seed should not be the same on different set of external labels.")
+
+	// The fqdn option replaces the name lookup, so the seed follows it.
+	seedFor := func(fqdn string) uint64 {
+		m, err := NewManager(&Options{fqdn: fqdn}, nil, nil, nil, teststorage.NewAppendable(), prometheus.NewRegistry())
+		require.NoError(t, err)
+		require.NoError(t, m.setOffsetSeed(cfg1.GlobalConfig.ExternalLabels))
+		return m.offsetSeed
+	}
+	seedA, seedB := seedFor("a.example.com"), seedFor("b.example.com")
+	require.NotEqual(t, seedA, seedB, "Offset seed should follow the fqdn option.")
+	require.Equal(t, seedA, seedFor("a.example.com"), "Offset seed should be stable for a fixed fqdn.")
+}
+
+func TestSetupSynctestManagerReplacesFQDNLookup(t *testing.T) {
+	scrapeManager, _, cleanup := setupSynctestManager(t, nil)
+	t.Cleanup(cleanup)
+
+	require.Equal(t, synctestFQDN, scrapeManager.opts.fqdn,
+		"synctest tests must not reach the resolver from inside a bubble")
 }
 
 func TestManagerScrapePools(t *testing.T) {
@@ -860,7 +1051,7 @@ func prepareTestEncodedCounter(t *testing.T, format config.ScrapeProtocol, mName
 		return protoMarshalDelimited(t, inputMetric)
 	case config.OpenMetricsText1_0_0:
 		buf := &bytes.Buffer{}
-		require.NoError(t, expfmt.NewEncoder(buf, expfmt.NewFormat(expfmt.TypeOpenMetrics), expfmt.WithCreatedLines(), expfmt.WithUnit()).Encode(inputMetric))
+		require.NoError(t, expfmt.NewEncoder(buf, expfmt.NewFormat(expfmt.TypeOpenMetrics), expfmt.WithCreatedLines()).Encode(inputMetric))
 		_, _ = buf.WriteString("# EOF")
 
 		t.Log("produced OM text to expose:", buf.String())

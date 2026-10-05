@@ -461,6 +461,9 @@ function_call   : IDENTIFIER function_call_body
                         fn, exist := getFunction($1.Val, yylex.(*parser).functions)
                         if !exist{
                                 yylex.(*parser).addParseErrf($1.PositionRange(),"unknown function with name %q", $1.Val)
+                                // Keep the name so the partially-built AST stays printable; the
+                                // recorded error still rejects the query.
+                                fn = &Function{Name: $1.Val}
                         }
                         if fn != nil && fn.Experimental && !yylex.(*parser).options.EnableExperimentalFunctions {
                                 yylex.(*parser).addParseErrf($1.PositionRange(),"function %q is not enabled", $1.Val)
@@ -479,6 +482,9 @@ function_call   : IDENTIFIER function_call_body
                         fn, exist := getFunction($1.Val, yylex.(*parser).functions)
                         if !exist{
                                 yylex.(*parser).addParseErrf($1.PositionRange(),"unknown function with name %q", $1.Val)
+                                // Keep the name so the partially-built AST stays printable; the
+                                // recorded error still rejects the query.
+                                fn = &Function{Name: $1.Val}
                         }
                         if fn != nil && fn.Experimental && !yylex.(*parser).options.EnableExperimentalFunctions {
                                 yylex.(*parser).addParseErrf($1.PositionRange(),"function %q is not enabled", $1.Val)
@@ -497,6 +503,9 @@ function_call   : IDENTIFIER function_call_body
                         fn, exist := getFunction($1.Val, yylex.(*parser).functions)
                         if !exist{
                                 yylex.(*parser).addParseErrf($1.PositionRange(),"unknown function with name %q", $1.Val)
+                                // Keep the name so the partially-built AST stays printable; the
+                                // recorded error still rejects the query.
+                                fn = &Function{Name: $1.Val}
                         }
                         if fn != nil && fn.Experimental && !yylex.(*parser).options.EnableExperimentalFunctions {
                                 yylex.(*parser).addParseErrf($1.PositionRange(),"function %q is not enabled", $1.Val)
@@ -515,6 +524,9 @@ function_call   : IDENTIFIER function_call_body
                         fn, exist := getFunction($1.Val, yylex.(*parser).functions)
                         if !exist{
                                 yylex.(*parser).addParseErrf($1.PositionRange(),"unknown function with name %q", $1.Val)
+                                // Keep the name so the partially-built AST stays printable; the
+                                // recorded error still rejects the query.
+                                fn = &Function{Name: $1.Val}
                         }
                         if fn != nil && fn.Experimental && !yylex.(*parser).options.EnableExperimentalFunctions {
                                 yylex.(*parser).addParseErrf($1.PositionRange(),"function %q is not enabled", $1.Val)
@@ -533,6 +545,9 @@ function_call   : IDENTIFIER function_call_body
                         fn, exist := getFunction($1.Val, yylex.(*parser).functions)
                         if !exist{
                                 yylex.(*parser).addParseErrf($1.PositionRange(),"unknown function with name %q", $1.Val)
+                                // Keep the name so the partially-built AST stays printable; the
+                                // recorded error still rejects the query.
+                                fn = &Function{Name: $1.Val}
                         }
                         if fn != nil && fn.Experimental && !yylex.(*parser).options.EnableExperimentalFunctions {
                                 yylex.(*parser).addParseErrf($1.PositionRange(),"function %q is not enabled", $1.Val)
@@ -650,9 +665,9 @@ matrix_selector : expr LEFT_BRACKET positive_duration_expr RIGHT_BRACKET
                         vs, ok := $1.(*VectorSelector)
                         if !ok{
                                 errMsg = "ranges only allowed for vector selectors"
-                        } else if vs.OriginalOffset != 0{
+                        } else if vs.OriginalOffset != 0 || vs.OriginalOffsetExpr != nil {
                                 errMsg = "no offset modifiers allowed before range"
-                        } else if vs.Timestamp != nil {
+                        } else if vs.Timestamp != nil || vs.StartOrEnd != 0 {
                                 errMsg = "no @ modifiers allowed before range"
                         }
 
@@ -795,14 +810,23 @@ label_matchers  : LEFT_BRACE label_match_list RIGHT_BRACE
 
 label_match_list: label_match_list COMMA label_matcher
                         {
-                        if $1 != nil{
+                        // A nil matcher failed to build (invalid regexp or incomplete syntax)
+                        // and its error is already recorded. Drop it so the partially-built
+                        // AST never holds a nil matcher.
+                        if $1 != nil && $3 != nil {
                                 $$ = append($1, $3)
                         } else {
                                 $$ = $1
                         }
                         }
                 | label_matcher
-                        { $$ = []*labels.Matcher{$1}}
+                        {
+                        if $1 != nil {
+                                $$ = []*labels.Matcher{$1}
+                        } else {
+                                $$ = []*labels.Matcher{}
+                        }
+                        }
                 | label_match_list error
                         { yylex.(*parser).unexpected("label matching", "\",\" or \"}\""); $$ = $1 }
                 ;
@@ -1226,7 +1250,6 @@ offset_duration_expr    : number_duration_literal
                                         StartPos: $1.PositionRange().Start,
                                         EndPos:   $3.PositionRange().End,
                                 }
-                                yylex.(*parser).experimentalDurationExpr(de)
                                 $$ = de
                                 }
                         | RANGE LEFT_PAREN RIGHT_PAREN
@@ -1236,7 +1259,6 @@ offset_duration_expr    : number_duration_literal
                                         StartPos: $1.PositionRange().Start,
                                         EndPos:   $3.PositionRange().End,
                                 }
-                                yylex.(*parser).experimentalDurationExpr(de)
                                 $$ = de
                                 }
                         | unary_op STEP LEFT_PAREN RIGHT_PAREN
@@ -1250,7 +1272,6 @@ offset_duration_expr    : number_duration_literal
                                         },
                                         StartPos: $1.Pos,
                                 }
-                                yylex.(*parser).experimentalDurationExpr(de)
                                 $$ = de
                                 }
                         | unary_op RANGE LEFT_PAREN RIGHT_PAREN
@@ -1264,7 +1285,6 @@ offset_duration_expr    : number_duration_literal
                                         },
                                         StartPos: $1.Pos,
                                 }
-                                yylex.(*parser).experimentalDurationExpr(de)
                                 $$ = de
                                 }
                         | max_of_min_of LEFT_PAREN duration_expr COMMA duration_expr RIGHT_PAREN
@@ -1276,7 +1296,6 @@ offset_duration_expr    : number_duration_literal
                                         LHS:      $3.(Expr),
                                         RHS:      $5.(Expr),
                                     }
-                                    yylex.(*parser).experimentalDurationExpr(de)
                                     $$ = de
                                 }
                         | unary_op max_of_min_of LEFT_PAREN duration_expr COMMA duration_expr RIGHT_PAREN
@@ -1284,16 +1303,15 @@ offset_duration_expr    : number_duration_literal
                                     de := &DurationExpr{
                                         Op:       $1.Typ,
                                         StartPos: $1.Pos,
-                                        EndPos:   $6.PositionRange().End,
+                                        EndPos:   $7.PositionRange().End,
                                         RHS: &DurationExpr{
                                                 Op:       $2.Typ,
                                                 StartPos: $2.PositionRange().Start,
-                                                EndPos:   $6.PositionRange().End,
+                                                EndPos:   $7.PositionRange().End,
                                                 LHS:      $4.(Expr),
                                                 RHS:      $6.(Expr),
                                         },
                                     }
-                                    yylex.(*parser).experimentalDurationExpr(de)
                                     $$ = de
                                 }
                         | unary_op LEFT_PAREN duration_expr RIGHT_PAREN %prec MUL
@@ -1321,22 +1339,18 @@ duration_expr   : number_duration_literal
                         }
                 | duration_expr ADD duration_expr
                         {
-                        yylex.(*parser).experimentalDurationExpr($1.(Expr))
                         $$ = &DurationExpr{Op: ADD, LHS: $1.(Expr), RHS: $3.(Expr)}
                         }
                 | duration_expr SUB duration_expr
                         {
-                        yylex.(*parser).experimentalDurationExpr($1.(Expr))
                         $$ = &DurationExpr{Op: SUB, LHS: $1.(Expr), RHS: $3.(Expr)}
                         }
                 | duration_expr MUL duration_expr
                         {
-                        yylex.(*parser).experimentalDurationExpr($1.(Expr))
                         $$ = &DurationExpr{Op: MUL, LHS: $1.(Expr), RHS: $3.(Expr)}
                         }
                 | duration_expr DIV duration_expr
                         {
-                        yylex.(*parser).experimentalDurationExpr($1.(Expr))
                         if nl, ok := $3.(*NumberLiteral); ok && nl.Val == 0 {
                                 yylex.(*parser).addParseErrf($2.PositionRange(), "division by zero")
                                 $$ = &NumberLiteral{Val: 0}
@@ -1346,7 +1360,6 @@ duration_expr   : number_duration_literal
                         }
                 | duration_expr MOD duration_expr
                         {
-                        yylex.(*parser).experimentalDurationExpr($1.(Expr))
                         if nl, ok := $3.(*NumberLiteral); ok && nl.Val == 0 {
                             yylex.(*parser).addParseErrf($2.PositionRange(), "modulo by zero")
                             $$ = &NumberLiteral{Val: 0}
@@ -1356,7 +1369,6 @@ duration_expr   : number_duration_literal
                         }
                 | duration_expr POW duration_expr
                         {
-                            yylex.(*parser).experimentalDurationExpr($1.(Expr))
                             $$ = &DurationExpr{Op: POW, LHS: $1.(Expr), RHS: $3.(Expr)}
                         }
                 | STEP LEFT_PAREN RIGHT_PAREN
@@ -1366,7 +1378,6 @@ duration_expr   : number_duration_literal
                                 StartPos: $1.PositionRange().Start,
                                 EndPos:   $3.PositionRange().End,
                             }
-                            yylex.(*parser).experimentalDurationExpr(de)
                             $$ = de
                         }
                 | RANGE LEFT_PAREN RIGHT_PAREN
@@ -1376,7 +1387,6 @@ duration_expr   : number_duration_literal
                                 StartPos: $1.PositionRange().Start,
                                 EndPos:   $3.PositionRange().End,
                             }
-                            yylex.(*parser).experimentalDurationExpr(de)
                             $$ = de
                         }
                 | max_of_min_of LEFT_PAREN duration_expr COMMA duration_expr RIGHT_PAREN
@@ -1388,7 +1398,6 @@ duration_expr   : number_duration_literal
                                 LHS: $3.(Expr),
                                 RHS: $5.(Expr),
                             }
-                            yylex.(*parser).experimentalDurationExpr(de)
                             $$ = de
                         }
                 | paren_duration_expr
@@ -1396,13 +1405,7 @@ duration_expr   : number_duration_literal
 
 paren_duration_expr : LEFT_PAREN duration_expr RIGHT_PAREN
                         {
-                            yylex.(*parser).experimentalDurationExpr($2.(Expr))
-                            if durationExpr, ok := $2.(*DurationExpr); ok {
-                                durationExpr.Wrapped = true
-                                $$ = durationExpr
-                                break
-                            }
-                            $$ = $2
+                            $$ = yylex.(*parser).wrapParenDurationExpr($2.(Expr), $1.PositionRange().Start, $3.PositionRange().End)
                         }
                 ;
 

@@ -1,41 +1,54 @@
 import React from 'react';
-import { shallow } from 'enzyme';
+import { fireEvent, render, screen } from '@testing-library/react';
 import AlertsContent from './AlertContents';
 
 describe('AlertsContent', () => {
   const defaultProps = {
     groups: [],
     statsCount: {
-      inactive: 0,
-      pending: 0,
-      firing: 0,
+      inactive: 3,
+      pending: 2,
+      firing: 1,
     },
   };
-  const wrapper = shallow(<AlertsContent {...defaultProps} />);
 
-  it('matches a snapshot', () => {
-    expect(wrapper).toMatchSnapshot();
+  beforeEach(() => {
+    localStorage.clear();
   });
 
-  [
-    { selector: '#inactive-toggler', propName: 'inactive' },
-    { selector: '#pending-toggler', propName: 'pending' },
-    { selector: '#firing-toggler', propName: 'firing' },
-  ].forEach((testCase) => {
-    it(`toggles the ${testCase.propName} checkbox from true to false when clicked and back to true when clicked again`, () => {
-      expect(wrapper.find(testCase.selector).prop('checked')).toBe(true);
-      wrapper.find(testCase.selector).simulate('change', { target: { checked: false } });
-      expect(wrapper.find(testCase.selector).prop('checked')).toBe(false);
-      wrapper.find(testCase.selector).simulate('change', { target: { checked: true } });
-      expect(wrapper.find(testCase.selector).prop('checked')).toBe(true);
-    });
+  afterEach(() => {
+    localStorage.clear();
   });
 
-  it('toggles the "annotations" checkbox from false to true when clicked and back to false when clicked again', () => {
-    expect(wrapper.find('#show-annotations-toggler').prop('checked')).toBe(false);
-    wrapper.find('#show-annotations-toggler').simulate('change', { target: { checked: true } });
-    expect(wrapper.find('#show-annotations-toggler').prop('checked')).toBe(true);
-    wrapper.find('#show-annotations-toggler').simulate('change', { target: { checked: false } });
-    expect(wrapper.find('#show-annotations-toggler').prop('checked')).toBe(false);
+  it('renders alert-state counts and enabled filters', () => {
+    render(<AlertsContent {...defaultProps} />);
+
+    expect((screen.getByRole('checkbox', { name: 'inactive (3)' }) as HTMLInputElement).checked).toBe(true);
+    expect((screen.getByRole('checkbox', { name: 'pending (2)' }) as HTMLInputElement).checked).toBe(true);
+    expect((screen.getByRole('checkbox', { name: 'firing (1)' }) as HTMLInputElement).checked).toBe(true);
+    expect((screen.getByRole('checkbox', { name: 'Show annotations' }) as HTMLInputElement).checked).toBe(false);
+  });
+
+  it.each(['inactive (3)', 'pending (2)', 'firing (1)'])('toggles the %s filter', (name) => {
+    render(<AlertsContent {...defaultProps} />);
+    const checkbox = screen.getByRole('checkbox', { name });
+
+    fireEvent.click(checkbox);
+    expect((checkbox as HTMLInputElement).checked).toBe(false);
+
+    fireEvent.click(checkbox);
+    expect((checkbox as HTMLInputElement).checked).toBe(true);
+  });
+
+  it('toggles annotations and persists the choice', () => {
+    render(<AlertsContent {...defaultProps} />);
+    const checkbox = screen.getByRole('checkbox', { name: 'Show annotations' });
+
+    fireEvent.click(checkbox);
+    expect((checkbox as HTMLInputElement).checked).toBe(true);
+    expect(localStorage.getItem('alerts-annotations-status')).toBe('{"checked":true}');
+
+    fireEvent.click(checkbox);
+    expect((checkbox as HTMLInputElement).checked).toBe(false);
   });
 });
