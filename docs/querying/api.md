@@ -628,6 +628,10 @@ name for suffixes supported by that family's type:
 - `_sum` and `_count` for summaries.
 - `_info` for info metrics.
 
+A metric family name that already ends with `_total` or `_info` is not matched
+for the same suffix again: e.g. `requests_total_total` does not get the
+metadata of a `requests_total` counter.
+
 The returned `type`, `help`, and `unit` describe the metric family, not the
 individual series: e.g. `http_request_duration_seconds_bucket` is reported with
 type `histogram`. Matching is done by name against metadata from active

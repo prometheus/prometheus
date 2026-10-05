@@ -444,6 +444,8 @@ func TestIsSeriesPartOfFamily(t *testing.T) {
 		require.False(t, isSeriesPartOfFamily("http_requests_total", []byte("http_requests"), model.MetricTypeUnknown)) // We don't know.
 		require.False(t, isSeriesPartOfFamily("http_requests2_total", []byte("http_requests_total"), model.MetricTypeCounter))
 		require.False(t, isSeriesPartOfFamily("http_requests_requests_total", []byte("http_requests"), model.MetricTypeCounter))
+
+		require.False(t, isSeriesPartOfFamily("http_requests_total_total", []byte("http_requests_total"), model.MetricTypeCounter))
 	})
 
 	t.Run("gauge", func(t *testing.T) {
@@ -480,6 +482,8 @@ func TestIsSeriesPartOfFamily(t *testing.T) {
 		require.False(t, isSeriesPartOfFamily("go_build_info", []byte("go_build"), model.MetricTypeUnknown)) // We don't know.
 		require.False(t, isSeriesPartOfFamily("go_build2_info", []byte("go_build_info"), model.MetricTypeInfo))
 		require.False(t, isSeriesPartOfFamily("go_build_build_info", []byte("go_build_info"), model.MetricTypeInfo))
+
+		require.False(t, isSeriesPartOfFamily("go_build_info_info", []byte("go_build_info"), model.MetricTypeInfo))
 	})
 }
 
