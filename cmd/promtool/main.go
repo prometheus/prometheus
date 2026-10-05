@@ -976,8 +976,14 @@ func checkRuleGroups(rgs *rulefmt.RuleGroups, lintSettings rulesLintConfig) (int
 
 func lintScrapeConfigs(scrapeConfigs []*config.ScrapeConfig, lintSettings configLintConfig) bool {
 	for _, scfg := range scrapeConfigs {
-		if lintSettings.lookbackDelta > 0 && scfg.ScrapeInterval >= lintSettings.lookbackDelta {
-			fmt.Fprintf(os.Stderr, "  FAILED: too long scrape interval found, data point will be marked as stale - job: %s, interval: %s\n", scfg.JobName, scfg.ScrapeInterval)
+		if lintSettings.lookbackDelta > 0 && scfg.ScrapeInterval+scfg.ScrapeTimeout >= lintSettings.lookbackDelta {
+			fmt.Fprintf(
+				os.Stderr,
+				"  FAILED: scrape interval plus timeout is greater than or equal to lookback delta, data point may become stale - job: %s, interval: %s, timeout: %s\n",
+				scfg.JobName,
+				scfg.ScrapeInterval,
+				scfg.ScrapeTimeout,
+			)
 			return true
 		}
 	}
