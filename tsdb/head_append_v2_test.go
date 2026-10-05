@@ -43,6 +43,7 @@ import (
 	"github.com/prometheus/prometheus/model/exemplar"
 	"github.com/prometheus/prometheus/model/histogram"
 	"github.com/prometheus/prometheus/model/labels"
+	"github.com/prometheus/prometheus/model/metadata"
 	"github.com/prometheus/prometheus/model/value"
 	"github.com/prometheus/prometheus/storage"
 	"github.com/prometheus/prometheus/tsdb/chunkenc"
@@ -5310,4 +5311,82 @@ func TestHeadAppenderV2_ExemplarAppenderV2(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, dbRef, dbRetRef)
 	require.NoError(t, dbApp.Commit())
+}
+
+func TestHeadAppenderV2_Append_Metadata(t *testing.T) {
+	m1 := metadata.Metadata{Type: "gauge", Help: "first", Unit: "seconds"}
+	m2 := metadata.Metadata{Type: "gauge", Help: "second", Unit: "seconds"}
+	for _, tc := range []struct {
+		name     string
+		seed     *metadata.Metadata
+		metadata []metadata.Metadata
+		kinds    []string
+		rollback bool
+		want     []metadata.Metadata
+	}{
+		{name: "deduplicate across batches", metadata: []metadata.Metadata{m1, m1, m1, m1}, kinds: []string{"float", "histogram", "float histogram", "float"}, want: []metadata.Metadata{m1}},
+		{name: "unchanged committed metadata", seed: &m1, metadata: []metadata.Metadata{m1, m1}, want: []metadata.Metadata{m1}},
+		{name: "return to committed metadata", seed: &m1, metadata: []metadata.Metadata{m2, m2, m1, m1}, want: []metadata.Metadata{m1, m2, m1}},
+		{name: "rollback does not suppress next transaction", metadata: []metadata.Metadata{m1}, rollback: true, want: []metadata.Metadata{m1}},
+		{name: "converted histogram stale marker", metadata: []metadata.Metadata{m1, m2}, kinds: []string{"histogram", "stale"}, want: []metadata.Metadata{m1, m2}},
+		{name: "converted float histogram stale marker", metadata: []metadata.Metadata{m1, m2}, kinds: []string{"float histogram", "stale"}, want: []metadata.Metadata{m1, m2}},
+		{name: "stale float skips inline exemplars", metadata: []metadata.Metadata{m1}, kinds: []string{"stale"}, want: []metadata.Metadata{m1}},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			opts := newTestHeadDefaultOptions(10000, false)
+			opts.EnableMetadataWALRecords = true
+			opts.EnableExemplarStorage = true
+			opts.MaxExemplars.Store(100)
+			head, wal := newTestHeadWithOptions(t, compression.None, opts)
+			ls := labels.FromStrings("__name__", "metadata_metric")
+			if tc.seed != nil {
+				app := head.AppenderV2(t.Context())
+				_, err := app.Append(0, ls, 0, 10, 1, nil, nil, storage.AOptions{Metadata: *tc.seed})
+				require.NoError(t, err)
+				require.NoError(t, app.Commit())
+			}
+			app := head.AppenderV2(t.Context())
+			var ref storage.SeriesRef
+			for i, m := range tc.metadata {
+				var h *histogram.Histogram
+				var fh *histogram.FloatHistogram
+				v := float64(i)
+				if len(tc.kinds) > 0 {
+					switch tc.kinds[i] {
+					case "histogram":
+						h = tsdbutil.GenerateTestHistogram(int64(i))
+					case "float histogram":
+						fh = tsdbutil.GenerateTestFloatHistogram(int64(i))
+					case "stale":
+						v = math.Float64frombits(value.StaleNaN)
+					}
+				}
+				// Invalid inline exemplars must still be skipped on stale samples.
+				var exemplars []exemplar.Exemplar
+				if value.IsStaleNaN(v) {
+					exemplars = []exemplar.Exemplar{{Labels: labels.FromStrings("trace_id", strings.Repeat("x", exemplar.ExemplarMaxLabelSetLength+1)), Ts: int64(100 + i), HasTs: true}}
+				}
+				var err error
+				ref, err = app.Append(ref, ls, 0, int64(100+i), v, h, fh, storage.AOptions{Metadata: m, Exemplars: exemplars})
+				require.NoError(t, err)
+			}
+			if tc.rollback {
+				require.NoError(t, app.Rollback())
+				app = head.AppenderV2(t.Context())
+				_, err := app.Append(0, ls, 0, 1000, 1, nil, nil, storage.AOptions{Metadata: m1})
+				require.NoError(t, err)
+			}
+			require.NoError(t, app.Commit())
+			require.NoError(t, head.Close())
+			var got []metadata.Metadata
+			for _, rec := range readTestWAL(t, wal.Dir()) {
+				if entries, ok := rec.([]record.RefMetadata); ok {
+					for _, entry := range entries {
+						got = append(got, metadata.Metadata{Type: record.ToMetricType(entry.Type), Help: entry.Help, Unit: entry.Unit})
+					}
+				}
+			}
+			require.Equal(t, tc.want, got)
+		})
+	}
 }

@@ -21,6 +21,7 @@ import (
 	"github.com/prometheus/prometheus/model/exemplar"
 	"github.com/prometheus/prometheus/model/histogram"
 	"github.com/prometheus/prometheus/model/labels"
+	"github.com/prometheus/prometheus/model/metadata"
 	"github.com/prometheus/prometheus/model/value"
 	"github.com/prometheus/prometheus/storage"
 	"github.com/prometheus/prometheus/tsdb/chunks"
@@ -120,6 +121,7 @@ func (h *Head) appenderV2() *headAppenderV2 {
 
 type headAppenderV2 struct {
 	headAppenderBase
+	pendingMetadata map[chunks.HeadSeriesRef]metadata.Metadata
 }
 
 func (a *headAppenderV2) Append(ref storage.SeriesRef, ls labels.Labels, st, t int64, v float64, h *histogram.Histogram, fh *histogram.FloatHistogram, opts storage.AOptions) (storage.SeriesRef, error) {
@@ -186,13 +188,9 @@ func (a *headAppenderV2) Append(ref storage.SeriesRef, ls labels.Labels, st, t i
 			// an optimization for the more likely case.
 			switch a.typesInBatch[s.ref] {
 			case stHistogram, stCustomBucketHistogram:
-				return a.Append(storage.SeriesRef(s.ref), ls, st, t, 0, &histogram.Histogram{Sum: v}, nil, storage.AOptions{
-					RejectOutOfOrder: opts.RejectOutOfOrder,
-				})
+				return a.Append(storage.SeriesRef(s.ref), ls, st, t, 0, &histogram.Histogram{Sum: v}, nil, opts)
 			case stFloatHistogram, stCustomBucketFloatHistogram:
-				return a.Append(storage.SeriesRef(s.ref), ls, st, t, 0, nil, &histogram.FloatHistogram{Sum: v}, storage.AOptions{
-					RejectOutOfOrder: opts.RejectOutOfOrder,
-				})
+				return a.Append(storage.SeriesRef(s.ref), ls, st, t, 0, nil, &histogram.FloatHistogram{Sum: v}, opts)
 			}
 			// Note that a series reference not yet in the map will come out
 			// as stNone, but since we do not handle that case separately,
@@ -213,32 +211,44 @@ func (a *headAppenderV2) Append(ref storage.SeriesRef, ls labels.Labels, st, t i
 	}
 	s = appended
 
-	if isStale {
-		// For stale values we never attempt to process metadata/exemplars, claim the success.
-		return storage.SeriesRef(s.ref), nil
-	}
-
 	// Append exemplars if any and if storage was configured for it.
-	if len(opts.Exemplars) > 0 && a.head.opts.EnableExemplarStorage && a.head.opts.MaxExemplars.Load() > 0 {
+	if !isStale && len(opts.Exemplars) > 0 && a.head.opts.EnableExemplarStorage && a.head.opts.MaxExemplars.Load() > 0 {
 		// Currently only exemplars can return partial errors.
 		partialErr = a.appendExemplars(s, opts.Exemplars)
 	}
 	if a.head.opts.EnableMetadataWALRecords && !opts.Metadata.IsEmpty() {
-		s.Lock()
-		metaChanged := s.meta == nil || !s.meta.Equals(opts.Metadata)
-		s.Unlock()
-		if metaChanged {
-			b := a.getCurrentBatch(stNone, s.ref)
-			b.metadata = append(b.metadata, record.RefMetadata{
-				Ref:  s.ref,
-				Type: record.GetMetricType(opts.Metadata.Type),
-				Unit: opts.Metadata.Unit,
-				Help: opts.Metadata.Help,
-			})
-			b.metadataSeries = append(b.metadataSeries, s)
-		}
+		a.appendMetadata(s, opts.Metadata)
 	}
 	return storage.SeriesRef(s.ref), partialErr
+}
+
+func (a *headAppenderV2) appendMetadata(s *memSeries, meta metadata.Metadata) {
+	if pending, ok := a.pendingMetadata[s.ref]; ok {
+		if pending.Equals(meta) {
+			return
+		}
+	} else {
+		s.Lock()
+		unchanged := s.meta != nil && s.meta.Equals(meta)
+		s.Unlock()
+		if unchanged {
+			return
+		}
+	}
+
+	// Committed metadata is updated only at commit, so deduplicate across all batches in this transaction.
+	if a.pendingMetadata == nil {
+		a.pendingMetadata = make(map[chunks.HeadSeriesRef]metadata.Metadata)
+	}
+	a.pendingMetadata[s.ref] = meta
+	b := a.getCurrentBatch(stNone, s.ref)
+	b.metadata = append(b.metadata, record.RefMetadata{
+		Ref:  s.ref,
+		Type: record.GetMetricType(meta.Type),
+		Unit: meta.Unit,
+		Help: meta.Help,
+	})
+	b.metadataSeries = append(b.metadataSeries, s)
 }
 
 // AppendExemplars implements storage.ExemplarAppenderV2.
