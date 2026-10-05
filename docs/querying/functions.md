@@ -1010,6 +1010,7 @@ embedded label-string grammar, no escape hell.
 | `trim` | `trim(s string) string` | Same as Go's `strings.TrimSpace`. |
 | `add` / `sub` / `mul` / `div` / `mod` | `(a, b numeric) float` | Binary math; operands accept any integer or float type. `div` and `mod` reject a zero divisor. |
 | `int` | `(v numeric) int` | Truncate toward zero. Useful for feeding `printf "%d"` because the binary math helpers always return float64. |
+| `float` | `(v string or numeric) float` | Parse a string as a float (Go `strconv.ParseFloat` syntax, including `NaN` and `Inf`; surrounding whitespace is ignored) or convert a number. Useful for turning values produced by `split` into sample values. |
 | `abs` / `floor` / `ceil` / `round` | `(v numeric) float` | `math.Abs` / `math.Floor` / `math.Ceil` / `math.Round`. |
 | `min` / `max` | `(a, b numeric) float` | `math.Min` / `math.Max`. |
 | `printf` | (built-in) | Standard Go template `printf`. |
@@ -1025,7 +1026,17 @@ timeseries_gen(`{{rangeSeries "env" "prod,stage,dev" 1.0 "job" "api"}}`)
 
 # Indexed series via seq + printf.
 timeseries_gen(`{{range $i := seq 1 5}}{{series 1.0 "i" (printf "%d" $i)}}{{end}}`)
+
+# Sample value parsed from the same string as the label, via float.
+timeseries_gen(`{{range $r := split "0.236,0.382,0.5,0.618" ","}}{{series (float $r) "ratio" $r}}{{end}}`)
+
+# Label-to-value table from two parallel lists, via the built-in index.
+timeseries_gen(`{{$t := split "0.999,0.99,0.9" ","}}{{range $i, $s := split "api,web,db" ","}}{{series (float (index $t $i)) "service" $s}}{{end}}`)
 ```
+
+When pairing parallel lists with `index`, keep them the same length: a shorter
+value list fails the query with an out-of-range error, while extra values are
+silently ignored.
 
 ### Restrictions
 

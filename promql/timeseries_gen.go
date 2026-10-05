@@ -17,6 +17,7 @@ import (
 	"errors"
 	"fmt"
 	"math"
+	"strconv"
 	"strings"
 	"text/template"
 	"text/template/parse"
@@ -156,6 +157,25 @@ func tplInt(v any) (int, error) {
 		return 0, err
 	}
 	return int(math.Trunc(f)), nil
+}
+
+// tplFloat converts v to a float64. Strings are parsed with
+// strconv.ParseFloat after trimming surrounding whitespace (so NaN, Inf and
+// hexadecimal floats are accepted), letting values coming from split be used
+// as sample values; numeric values are converted as by toFloat64.
+func tplFloat(v any) (float64, error) {
+	s, ok := v.(string)
+	if !ok {
+		return toFloat64(v)
+	}
+	f, err := strconv.ParseFloat(strings.TrimSpace(s), 64)
+	if err != nil {
+		if numErr, ok := errors.AsType[*strconv.NumError](err); ok {
+			err = numErr.Err
+		}
+		return 0, fmt.Errorf("cannot parse %q as a number: %w", s, err)
+	}
+	return f, nil
 }
 
 // tplAbs returns math.Abs(v), coercing v to float64 first.
@@ -334,6 +354,7 @@ func newTplEngine(src string) (*tplEngine, error) {
 		"div":         tplDiv,
 		"mod":         tplMod,
 		"int":         tplInt,
+		"float":       tplFloat,
 		"abs":         tplAbs,
 		"floor":       tplFloor,
 		"ceil":        tplCeil,

@@ -2865,6 +2865,39 @@ eval instant at 0m timeseries_gen(`{{range $i := seq 1 5}}{{series (div $i 10) "
 eval instant at 0m timeseries_gen(`{{series (div 1 0) "env" "prod"}}`)
   expect fail regex:division by zero
 
+# `float` parses a string so split output can be used as the sample value.
+eval instant at 0m timeseries_gen(`{{range $r := split "0.236, 0.5,1e3,NaN" ","}}{{series (float $r) "r" (trim $r)}}{{end}}`)
+  {r="0.236"} 0.236
+  {r="0.5"} 0.5
+  {r="1e3"} 1000
+  {r="NaN"} NaN
+
+# `float` with index builds a label-to-value table from parallel lists.
+eval instant at 0m timeseries_gen(`{{$t := split "0.999,0.99,0.9" ","}}{{range $i, $s := split "api,web,db" ","}}{{series (float (index $t $i)) "service" $s}}{{end}}`)
+  {service="api"} 0.999
+  {service="web"} 0.99
+  {service="db"} 0.9
+
+# `float` passes numeric values through unchanged.
+eval instant at 0m timeseries_gen(`{{range $i := seq 1 2}}{{series (float $i) "i" (printf "%d" $i)}}{{end}}`)
+  {i="1"} 1
+  {i="2"} 2
+
+# `float` rejects strings that are not numbers.
+eval instant at 0m timeseries_gen(`{{series (float "0.99x") "env" "prod"}}`)
+  expect fail regex:cannot parse "0\.99x" as a number: invalid syntax
+
+eval instant at 0m timeseries_gen(`{{series (float "") "env" "prod"}}`)
+  expect fail regex:cannot parse "" as a number: invalid syntax
+
+# `float` reports out-of-range values instead of returning ±Inf.
+eval instant at 0m timeseries_gen(`{{series (float "1e999") "env" "prod"}}`)
+  expect fail regex:cannot parse "1e999" as a number: value out of range
+
+# `float` rejects arguments that are neither strings nor numbers.
+eval instant at 0m timeseries_gen(`{{series (float true) "env" "prod"}}`)
+  expect fail regex:expected numeric value, got bool
+
 # `int` converts a numeric result so printf %d works (math helpers return float64).
 eval instant at 0m timeseries_gen(`{{range $i := seq 1 5}}{{series (div $i 10) "__name__" (printf "x%d" $i) "foo" (printf "%d" (int (mul $i 2)))}}{{end}}`)
   x1{foo="2"} 0.1

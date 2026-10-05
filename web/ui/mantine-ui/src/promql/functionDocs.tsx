@@ -3965,6 +3965,20 @@ const funcDocs: Record<string, React.ReactNode> = {
 
           <tr>
             <td>
+              <code>float</code>
+            </td>
+            <td>
+              <code>(v string or numeric) float</code>
+            </td>
+            <td>
+              Parse a string as a float (Go <code>strconv.ParseFloat</code> syntax, including <code>NaN</code> and{" "}
+              <code>Inf</code>; surrounding whitespace is ignored) or convert a number. Useful for turning values
+              produced by <code>split</code> into sample values.
+            </td>
+          </tr>
+
+          <tr>
+            <td>
               <code>abs</code> / <code>floor</code> / <code>ceil</code> / <code>round</code>
             </td>
             <td>
@@ -4017,6 +4031,23 @@ const funcDocs: Record<string, React.ReactNode> = {
           {"}"}`)
         </code>
       </pre>
+
+      <p>
+        With <code>float</code>, one string can serve as both label and sample value, and the built-in{" "}
+        <code>index</code> pairs two parallel lists into a label-to-value table:
+      </p>
+
+      <pre>
+        <code>
+          {`timeseries_gen(\`{{range $r := split "0.236,0.382,0.5,0.618" ","}}{{series (float $r) "ratio" $r}}{{end}}\`)
+timeseries_gen(\`{{$t := split "0.999,0.99,0.9" ","}}{{range $i, $s := split "api,web,db" ","}}{{series (float (index $t $i)) "service" $s}}{{end}}\`)`}
+        </code>
+      </pre>
+
+      <p>
+        When pairing parallel lists with <code>index</code>, keep them the same length: a shorter value list fails the
+        query with an out-of-range error, while extra values are silently ignored.
+      </p>
 
       <h3>Restrictions</h3>
 
