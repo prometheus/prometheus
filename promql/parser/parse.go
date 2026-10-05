@@ -63,8 +63,16 @@ func (o Options) functions() map[string]*Function {
 
 // Parser provides PromQL parsing methods. Create one with NewParser.
 type Parser interface {
+	// ParseExpr parses the input into an expression AST. On error, the returned
+	// Expr may still be non-nil and hold the partially-built AST, so that tooling
+	// (such as a language server) can inspect or print what was parsed. A partial
+	// AST is well-formed for inspection and printing but must not be evaluated.
 	ParseExpr(input string) (Expr, error)
 	ParseMetric(input string) (labels.Labels, error)
+	// ParseMetricSelector parses the input as a metric selector and returns its
+	// label matchers. On error, the returned matchers may still hold what was
+	// parsed, so that tooling can inspect or print them. Partial matchers are
+	// well-formed for that purpose but must not be used to select series.
 	ParseMetricSelector(input string) ([]*labels.Matcher, error)
 	ParseMetricSelectors(matchers []string) ([][]*labels.Matcher, error)
 	ParseSeriesDesc(input string) (labels.Labels, []SequenceValue, error)
