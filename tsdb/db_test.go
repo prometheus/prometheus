@@ -50,6 +50,7 @@ import (
 	"go.uber.org/goleak"
 
 	"github.com/prometheus/prometheus/config"
+	"github.com/prometheus/prometheus/model/exemplar"
 	"github.com/prometheus/prometheus/model/histogram"
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/model/metadata"
@@ -3674,6 +3675,110 @@ func TestOpen_VariousBlockStates(t *testing.T) {
 	require.True(t, os.IsNotExist(err))
 	_, err = os.Stat(tmpChunkSnapshotDir)
 	require.True(t, os.IsNotExist(err))
+}
+
+// TestExemplarAfterLastSampleSurvivesCompaction verifies that ordinary compaction
+// retains enough WAL state to replay an exemplar newer than its series's last sample.
+func TestExemplarAfterLastSampleSurvivesCompaction(t *testing.T) {
+	t.Parallel()
+	for _, enableSnapshot := range []bool{false, true} {
+		t.Run("snapshot="+strconv.FormatBool(enableSnapshot), func(t *testing.T) {
+			const blockRange = 1000
+			opts := DefaultOptions()
+			opts.MinBlockDuration = blockRange
+			opts.MaxBlockDuration = blockRange
+			opts.EnableExemplarStorage = true
+			opts.MaxExemplars = 10
+			opts.EnableMemorySnapshotOnShutdown = enableSnapshot
+			db := newTestDB(t, withOpts(opts))
+			db.DisableCompactions()
+			ctx := context.Background()
+
+			seriesLabels := labels.FromStrings("name", "exemplar_only")
+			app := db.Appender(ctx)
+			ref, err := app.Append(0, seriesLabels, 100, 1)
+			require.NoError(t, err)
+			require.NoError(t, app.Commit())
+
+			// Leave the series record in an old segment and the exemplar in a recent one.
+			const exemplarSegment = 8
+			for range exemplarSegment {
+				_, err := db.head.wal.NextSegment()
+				require.NoError(t, err)
+			}
+			e := exemplar.Exemplar{
+				Labels: labels.FromStrings("trace_id", "abc123"),
+				Value:  1,
+				Ts:     10 * blockRange,
+			}
+			app = db.Appender(ctx)
+			_, err = app.AppendExemplar(ref, seriesLabels, e)
+			require.NoError(t, err)
+			require.NoError(t, app.Commit())
+
+			// Only the unrelated series advances sample time and triggers compaction.
+			activeLabels := labels.FromStrings("name", "active")
+			app = db.Appender(ctx)
+			activeRef, err := app.Append(0, activeLabels, blockRange*3/2+101, 1)
+			require.NoError(t, err)
+			require.NoError(t, app.Commit())
+			require.NoError(t, db.Compact(ctx))
+			require.Len(t, db.Blocks(), 1)
+			_, firstCheckpoint, err := wlog.LastCheckpoint(db.head.wal.Dir())
+			require.NoError(t, err)
+
+			// Advance beyond the expiry that sample-only eviction would assign. Without
+			// exemplar protection, this checkpoint drops the series record while its
+			// exemplar remains in the WAL.
+			app = db.Appender(ctx)
+			_, err = app.Append(activeRef, activeLabels, blockRange*5/2+101, 2)
+			require.NoError(t, err)
+			_, err = app.Append(activeRef, activeLabels, blockRange*7/2+101, 3)
+			require.NoError(t, err)
+			require.NoError(t, app.Commit())
+			require.NoError(t, db.Compact(ctx))
+			require.Len(t, db.Blocks(), 2)
+			_, secondCheckpoint, err := wlog.LastCheckpoint(db.head.wal.Dir())
+			require.NoError(t, err)
+			require.Greater(t, secondCheckpoint, firstCheckpoint)
+			require.Less(t, secondCheckpoint, exemplarSegment, "the exemplar segment must still await replay")
+			require.Less(t, db.Head().MinTime(), e.Ts)
+
+			matcher := labels.MustNewMatcher(labels.MatchEqual, "name", "exemplar_only")
+			expected := []exemplar.QueryResult{{SeriesLabels: seriesLabels, Exemplars: []exemplar.Exemplar{e}}}
+			q, err := db.ExemplarQuerier(ctx)
+			require.NoError(t, err)
+			beforeRestart, err := q.Select(0, e.Ts, []*labels.Matcher{matcher})
+			require.NoError(t, err)
+			require.Equal(t, expected, beforeRestart)
+
+			require.NoError(t, db.Close())
+			reopened := newTestDB(t, withDir(db.Dir()), withOpts(opts))
+			reopened.DisableCompactions()
+			q, err = reopened.ExemplarQuerier(ctx)
+			require.NoError(t, err)
+			afterRestart, err := q.Select(0, e.Ts, []*labels.Matcher{matcher})
+			require.NoError(t, err)
+			require.Equal(t, expected, afterRestart, "the exemplar must survive compaction and WAL replay")
+			require.Zero(t, prom_testutil.ToFloat64(reopened.head.metrics.walReplayUnknownRefsTotal.WithLabelValues("exemplars")))
+
+			// Replay must restore the exemplar's eviction protection, so another compaction
+			// and restart cannot lose an exemplar that survived the first restart.
+			app = reopened.Appender(ctx)
+			_, err = app.Append(0, activeLabels, blockRange*11/2+101, 4)
+			require.NoError(t, err)
+			require.NoError(t, app.Commit())
+			require.NoError(t, reopened.Compact(ctx))
+			require.NoError(t, reopened.Close())
+			reopened = newTestDB(t, withDir(db.Dir()), withOpts(opts))
+			reopened.DisableCompactions()
+			q, err = reopened.ExemplarQuerier(ctx)
+			require.NoError(t, err)
+			afterRestart, err = q.Select(0, e.Ts, []*labels.Matcher{matcher})
+			require.NoError(t, err)
+			require.Equal(t, expected, afterRestart, "replayed exemplars must survive subsequent compaction and restart")
+		})
+	}
 }
 
 func TestOneCheckpointPerCompactCall(t *testing.T) {

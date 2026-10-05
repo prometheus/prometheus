@@ -2563,6 +2563,12 @@ func (s *stripeSeries) gc(mint int64, minOOOMmapRef chunks.ChunkDiskMapperRef) (
 			}
 			return
 		}
+		// Exemplars are not persisted in blocks. Keep their series reference resolvable
+		// until WAL truncation and replay can discard them by timestamp. An empty
+		// series retained for exemplars must not affect the minimum sample time.
+		if series.lastExemplarTs >= mint {
+			return
+		}
 		// The series is gone entirely. We need to keep the series lock
 		// and make sure we have acquired the stripe locks for hash and ID of the
 		// series alike.
@@ -2958,6 +2964,10 @@ type memSeries struct {
 
 	lset labels.Labels // Locking required with -tags dedupelabels, not otherwise.
 
+	// Latest accepted exemplar timestamp, including exemplars awaiting commit.
+	// A rolled-back exemplar may conservatively delay eviction until this time.
+	lastExemplarTs int64
+
 	// Immutable chunks on disk that have not yet gone into a block, in order of ascending time stamps.
 	// When compaction runs, chunks get moved into a block and all pointers are shifted like so:
 	//
@@ -3085,10 +3095,11 @@ type memSeriesOOOFields struct {
 
 func newMemSeries(lset labels.Labels, id chunks.HeadSeriesRef, shardHash uint64, isolationDisabled, pendingCommit bool) *memSeries {
 	s := &memSeries{
-		lset:      lset,
-		ref:       id,
-		nextAt:    math.MinInt64,
-		shardHash: shardHash,
+		lset:           lset,
+		ref:            id,
+		nextAt:         math.MinInt64,
+		shardHash:      shardHash,
+		lastExemplarTs: math.MinInt64,
 	}
 	if pendingCommit {
 		s.markPendingCommit()
@@ -3097,6 +3108,13 @@ func newMemSeries(lset labels.Labels, id chunks.HeadSeriesRef, shardHash uint64,
 		s.txs = newTxRing(0)
 	}
 	return s
+}
+
+// updateExemplarTimestamp records the latest exemplar time while holding the series lock.
+func (s *memSeries) updateExemplarTimestamp(ts int64) {
+	s.Lock()
+	s.lastExemplarTs = max(s.lastExemplarTs, ts)
+	s.Unlock()
 }
 
 func (s *memSeries) minTime() int64 {

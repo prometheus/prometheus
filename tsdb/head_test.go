@@ -7577,27 +7577,21 @@ func stripeSeriesWithCollidingSeries(t *testing.T) (*stripeSeries, *memSeries, *
 	t.Helper()
 
 	lbls1, lbls2 := labelsWithHashCollision()
-	ms1 := memSeries{
-		lset: lbls1,
-		ref:  1,
-	}
-	ms2 := memSeries{
-		lset: lbls2,
-		ref:  2,
-	}
+	ms1 := newMemSeries(lbls1, 1, 0, true, false)
+	ms2 := newMemSeries(lbls2, 2, 0, true, false)
 	hash := lbls1.Hash()
 	s := newStripeSeries(1, noopSeriesLifecycleCallback{})
 
-	got, created := s.setUnlessAlreadySet(hash, lbls1, &ms1)
+	got, created := s.setUnlessAlreadySet(hash, lbls1, ms1)
 	require.True(t, created)
-	require.Same(t, &ms1, got)
+	require.Same(t, ms1, got)
 
 	// Add a conflicting series
-	got, created = s.setUnlessAlreadySet(hash, lbls2, &ms2)
+	got, created = s.setUnlessAlreadySet(hash, lbls2, ms2)
 	require.True(t, created)
-	require.Same(t, &ms2, got)
+	require.Same(t, ms2, got)
 
-	return s, &ms1, &ms2
+	return s, ms1, ms2
 }
 
 func TestStripeSeries_getOrSet(t *testing.T) {
