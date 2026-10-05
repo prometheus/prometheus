@@ -1879,6 +1879,8 @@ func (db *DB) compactHeadViewLocked(viewFactory headViewFactory, evict headSerie
 	return nil
 }
 
+// CompactStaleHead writes stale series into blocks and evicts those that are still
+// eligible for removal. Series whose exemplars still need replay remain in the head.
 func (db *DB) CompactStaleHead() (err error) {
 	db.cmtx.Lock()
 	defer func() {
@@ -1944,6 +1946,8 @@ func (db *DB) CompactStaleHead() (err error) {
 //
 // Series that received new samples after the ref list was collected are skipped during eviction
 // and remain in the head. They may be reconsidered during a subsequent compaction cycle.
+// Series with exemplars at or after the global replay cutoff also remain in the head,
+// including their sample chunks, until the cutoff passes the exemplar timestamps.
 //
 // This operation persists only in-order chunks. Series with non-empty out-of-order state at the
 // time of compaction are therefore skipped as well, since evicting them would orphan their

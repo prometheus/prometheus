@@ -2615,7 +2615,7 @@ func (s *stripeSeries) gc(mint int64, minOOOMmapRef chunks.ChunkDiskMapperRef) (
 func (h *Head) gcSeries(seriesRefs []storage.SeriesRef, maxt int64, shouldEvict func(*memSeries) bool) map[storage.SeriesRef]struct{} {
 	// Drop old chunks and remember series IDs and hashes if they can be
 	// deleted entirely.
-	deleted, affected, chunksRemoved, staleSeriesDeleted, histogramSeriesDeleted, histogramBucketsDeleted := h.series.gcSeries(seriesRefs, maxt, shouldEvict)
+	deleted, affected, chunksRemoved, staleSeriesDeleted, histogramSeriesDeleted, histogramBucketsDeleted := h.series.gcSeries(seriesRefs, maxt, h.minValidTime.Load(), shouldEvict)
 	seriesRemoved := len(deleted)
 
 	h.metrics.seriesRemoved.Add(float64(seriesRemoved))
@@ -2734,11 +2734,12 @@ func (h *Head) deleteSeriesByID(refs []chunks.HeadSeriesRef) {
 	}
 }
 
-// gcSeries walks all series and removes those whose ref is in seriesRefs, whose maxTime is
-// <= maxt, and for which shouldEvict returns true. Returns the set of deleted refs, the set
-// of label-name/value pairs whose postings are affected, the count of removed chunks, and
-// the number of deleted series that carried a stale-NaN last value.
-func (s *stripeSeries) gcSeries(seriesRefs []storage.SeriesRef, maxt int64, shouldEvict func(*memSeries) bool) (_ map[storage.SeriesRef]struct{}, _ map[labels.Label]struct{}, _, _, _, _ int) {
+// gcSeries removes the provided series if their samples are at or before maxt,
+// they have no pending commits or exemplars at or after minValidTime, and shouldEvict returns true.
+// minValidTime is the global replay cutoff; compacting a subset of series does not advance it.
+// It returns the deleted refs, affected label-name/value pairs, the count of removed chunks,
+// and the number of deleted series that carried a stale-NaN last value.
+func (s *stripeSeries) gcSeries(seriesRefs []storage.SeriesRef, maxt, minValidTime int64, shouldEvict func(*memSeries) bool) (_ map[storage.SeriesRef]struct{}, _ map[labels.Label]struct{}, _, _, _, _ int) {
 	var (
 		deleted                 = map[storage.SeriesRef]struct{}{}
 		affected                = map[labels.Label]struct{}{}
@@ -2763,6 +2764,12 @@ func (s *stripeSeries) gcSeries(seriesRefs []storage.SeriesRef, maxt int64, shou
 		defer series.Unlock()
 
 		if series.hasPendingCommit() || series.maxTime() > maxt {
+			return
+		}
+
+		// Keep the series identity and avoid a deletion tombstone while its exemplars
+		// still need replay. The selected samples' maxt does not bound exemplar lifetime.
+		if series.hasExemplar && series.lastExemplarTs >= minValidTime {
 			return
 		}
 
