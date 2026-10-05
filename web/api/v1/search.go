@@ -421,6 +421,11 @@ func (api *API) buildMetricMetadataMap(ctx context.Context) map[string][]scrape.
 // belongs to. An exact match on the family name wins. Otherwise the last
 // suffix is stripped and the metadata is returned if the family type allows
 // that suffix.
+//
+// A family name that already ends with _total or _info is in the Prometheus
+// text style, where the series has the family name, so it is not matched for
+// the same suffix again: x_total_total is not a series of the x_total family.
+// This follows isSeriesPartOfFamily in scrape/scrape.go.
 func metadataForMetric(metaMap map[string][]scrape.MetricMetadata, name string) (scrape.MetricMetadata, bool) {
 	if mds := metaMap[name]; len(mds) > 0 {
 		return mds[0], true
@@ -429,8 +434,12 @@ func metadataForMetric(metaMap map[string][]scrape.MetricMetadata, name string) 
 	if i < 0 {
 		return scrape.MetricMetadata{}, false
 	}
-	for _, md := range metaMap[name[:i]] {
-		if typeAllowsSuffix(md.Type, name[i:]) {
+	family, suffix := name[:i], name[i:]
+	if (suffix == "_total" || suffix == "_info") && strings.HasSuffix(family, suffix) {
+		return scrape.MetricMetadata{}, false
+	}
+	for _, md := range metaMap[family] {
+		if typeAllowsSuffix(md.Type, suffix) {
 			return md, true
 		}
 	}
