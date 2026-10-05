@@ -2607,23 +2607,38 @@ func (s *stripeSeries) gc(mint int64, minOOOMmapRef chunks.ChunkDiskMapperRef) (
 }
 
 // gcSeries removes eligible series from the head index and updates head metrics,
-// postings, tombstones and WAL expiries accordingly. Series with pending commits,
-// samples after maxt, or exemplars at or after the global replay cutoff are retained.
-// The caller's shouldEvict predicate is applied to the remaining series with the
-// series lock held.
+// postings, tombstones and WAL expiries accordingly. Series with pending commits
+// or samples after maxt are skipped. The caller's shouldEvict predicate runs under
+// the series lock and must reject series with unpersisted samples or out-of-order data.
+// Series whose exemplars still need replay retain their identity, but their persisted
+// sample chunks are released if shouldEvict returns true.
 //
 // The returned references are the series that got deleted.
 func (h *Head) gcSeries(seriesRefs []storage.SeriesRef, maxt int64, shouldEvict func(*memSeries) bool) map[storage.SeriesRef]struct{} {
-	// Drop old chunks and remember series IDs and hashes if they can be
-	// deleted entirely.
 	minValidTime := h.minValidTime.Load()
+	var protectedChunksRemoved int
 	deleted, affected, chunksRemoved, staleSeriesDeleted, histogramSeriesDeleted, histogramBucketsDeleted := h.series.gcSeries(seriesRefs, maxt, func(s *memSeries) bool {
-		// Keep the series identity needed for exemplar replay until the global
-		// replay cutoff passes its exemplar timestamps. This check runs under the
-		// series lock, together with the caller's eviction predicate.
-		return (!s.hasExemplar || s.lastExemplarTs < minValidTime) && shouldEvict(s)
+		// Check for samples or out-of-order data that were not persisted before
+		// either releasing chunks or deleting the series.
+		if !shouldEvict(s) {
+			return false
+		}
+		if !s.hasExemplar || s.lastExemplarTs < minValidTime {
+			return true
+		}
+
+		// Retain the identity needed for exemplar replay without retaining its
+		// persisted chunks. The appender also references the last head chunk.
+		wasMmapReady := s.headChunkCount.Load() >= 2
+		protectedChunksRemoved += s.truncateChunksBefore(math.MaxInt64, 0)
+		s.app = nil
+		if wasMmapReady && s.headChunkCount.Load() < 2 {
+			h.series.decMmapReady(s.ref)
+		}
+		return false
 	})
 	seriesRemoved := len(deleted)
+	chunksRemoved += protectedChunksRemoved
 
 	h.metrics.seriesRemoved.Add(float64(seriesRemoved))
 	h.metrics.chunksRemoved.Add(float64(chunksRemoved))
