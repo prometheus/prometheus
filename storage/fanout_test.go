@@ -16,6 +16,8 @@ package storage_test
 import (
 	"context"
 	"errors"
+	"fmt"
+	"slices"
 	"strconv"
 	"testing"
 
@@ -23,6 +25,7 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/prometheus/prometheus/model/exemplar"
+	"github.com/prometheus/prometheus/model/histogram"
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/storage"
 	"github.com/prometheus/prometheus/tsdb/chunkenc"
@@ -501,6 +504,7 @@ func TestFanoutAppender(t *testing.T) {
 }
 
 func TestFanoutAppenderV2(t *testing.T) {
+	t.Run("indexed failures", func(t *testing.T) { testFanoutIndexedExemplarErrors(t, true) })
 	h := tsdbutil.GenerateTestHistogram(0)
 	fh := tsdbutil.GenerateTestFloatHistogram(0)
 	ex := exemplar.Exemplar{Value: 1}
@@ -525,10 +529,9 @@ func TestFanoutAppenderV2(t *testing.T) {
 			case tt.expectExemplarError:
 				var pErr *storage.AppendPartialError
 				require.ErrorAs(t, err, &pErr)
-				// One for primary, one for secondary.
-				// This is because in V2 flow we must append sample even when first append partially failed with exemplars.
-				// Filtering out exemplars is neither feasible, nor important.
-				require.Len(t, pErr.ExemplarErrors, 2)
+				// Both backends fail the same input exemplar.
+				require.Len(t, pErr.ExemplarErrors, 1)
+				require.Equal(t, 1, pErr.FailedExemplarCount())
 			default:
 				require.NoError(t, err)
 			}
@@ -566,6 +569,7 @@ func TestFanoutAppenderV2(t *testing.T) {
 }
 
 func TestFanoutAppenderV2_AppendExemplars(t *testing.T) {
+	t.Run("indexed failures", func(t *testing.T) { testFanoutIndexedExemplarErrors(t, false) })
 	h := tsdbutil.GenerateTestHistogram(0)
 	fh := tsdbutil.GenerateTestFloatHistogram(0)
 	ex := exemplar.Exemplar{Value: 1}
@@ -598,7 +602,8 @@ func TestFanoutAppenderV2_AppendExemplars(t *testing.T) {
 			case tt.expectExemplarError:
 				var pErr *storage.AppendPartialError
 				require.ErrorAs(t, err, &pErr)
-				require.Len(t, pErr.ExemplarErrors, 2)
+				require.Len(t, pErr.ExemplarErrors, 1)
+				require.Equal(t, 1, pErr.FailedExemplarCount())
 			default:
 				require.NoError(t, err)
 			}
@@ -713,6 +718,101 @@ func BenchmarkFanoutAppenderV2(b *testing.B) {
 					})
 				}
 				require.NoError(b, app.Rollback())
+			}
+		})
+	}
+}
+
+type fanoutExemplarFailure struct{ backend string }
+
+func (e *fanoutExemplarFailure) Error() string { return e.backend }
+
+type partialFanoutAppendable struct {
+	storage.Storage
+	partial *storage.AppendPartialError
+}
+
+func (a partialFanoutAppendable) AppenderV2(context.Context) storage.AppenderV2 {
+	return &partialFanoutAppender{partial: a.partial}
+}
+
+type partialFanoutAppender struct {
+	storage.ExemplarAppenderV2
+	partial *storage.AppendPartialError
+}
+
+func (a *partialFanoutAppender) Append(ref storage.SeriesRef, _ labels.Labels, _, _ int64, _ float64, _ *histogram.Histogram, _ *histogram.FloatHistogram, _ storage.AOptions) (storage.SeriesRef, error) {
+	return ref, fmt.Errorf("backend: %w", a.partial)
+}
+
+func (a *partialFanoutAppender) AppendExemplars(ref storage.SeriesRef, _ labels.Labels, _ []exemplar.Exemplar) (storage.SeriesRef, error) {
+	return ref, fmt.Errorf("backend: %w", a.partial)
+}
+
+func (*partialFanoutAppender) Rollback() error { return nil }
+
+func testFanoutIndexedExemplarErrors(t *testing.T, inline bool) {
+	t.Helper()
+	first := &fanoutExemplarFailure{backend: "primary"}
+	second := &fanoutExemplarFailure{backend: "secondary"}
+	third := &fanoutExemplarFailure{backend: "third"}
+	for _, tc := range []struct {
+		name   string
+		inputs [][]error
+		want   [][]error
+		hard   bool
+	}{
+		{name: "two overlapping", inputs: [][]error{{nil, first}, {nil, second}}, want: [][]error{nil, {first, second}}},
+		{name: "two disjoint", inputs: [][]error{{first, nil}, {nil, second}}, want: [][]error{{first}, {second}}},
+		{name: "three overlapping", inputs: [][]error{{first, nil}, {second, nil}, {third, nil}}, want: [][]error{{first, second, third}, nil}},
+		{name: "three mixed", inputs: [][]error{{first, nil}, {nil, second}, {nil, third}}, want: [][]error{{first}, {second, third}}},
+		{name: "all nil", inputs: [][]error{{nil, nil}, {nil, nil}}},
+		{name: "malformed primary", inputs: [][]error{{first}, {nil, second}}, hard: true},
+		{name: "malformed secondary", inputs: [][]error{{nil, nil}, {second}}, hard: true},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			backends := make([]storage.Storage, len(tc.inputs))
+			for i, input := range tc.inputs {
+				backends[i] = partialFanoutAppendable{partial: &storage.AppendPartialError{ExemplarErrors: slices.Clone(input)}}
+			}
+			app := storage.NewFanout(nil, backends[0], backends[1:]...).AppenderV2(t.Context())
+			defer func() { require.NoError(t, app.Rollback()) }()
+			input := make([]exemplar.Exemplar, 2)
+			var err error
+			if inline {
+				_, err = app.Append(1, labels.EmptyLabels(), 0, 1, 1, nil, nil, storage.AOptions{Exemplars: input})
+			} else {
+				_, err = app.(storage.ExemplarAppenderV2).AppendExemplars(1, labels.EmptyLabels(), input)
+			}
+			var partial *storage.AppendPartialError
+			if tc.hard {
+				require.Error(t, err)
+				require.NotErrorAs(t, err, &partial)
+				return
+			}
+			if tc.want == nil {
+				require.NoError(t, err)
+				return
+			}
+			require.ErrorAs(t, err, &partial)
+			require.Len(t, partial.ExemplarErrors, len(input))
+			failed := 0
+			for i, causes := range tc.want {
+				if len(causes) == 0 {
+					require.NoError(t, partial.ExemplarErrors[i])
+					continue
+				}
+				failed++
+				for _, cause := range causes {
+					require.ErrorIs(t, partial.ExemplarErrors[i], cause)
+				}
+				var backendCause *fanoutExemplarFailure
+				require.ErrorAs(t, partial.ExemplarErrors[i], &backendCause)
+			}
+			require.Equal(t, failed, partial.FailedExemplarCount())
+			partial.ExemplarErrors[0] = storage.ErrNotFound
+			for i, backend := range backends {
+				require.Equal(t, tc.inputs[i], backend.(partialFanoutAppendable).partial.ExemplarErrors)
 			}
 		})
 	}

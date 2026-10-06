@@ -362,14 +362,17 @@ func (a *headAppenderV2) appendFloatHistogram(s *memSeries, st, t int64, fh *his
 
 func (a *headAppenderV2) appendExemplars(s *memSeries, exemplars []exemplar.Exemplar) error {
 	var errs []error
-	for _, e := range exemplars {
+	for i, e := range exemplars {
 		// Ensure no empty labels have gotten through.
 		e.Labels = e.Labels.WithoutEmpty()
 		if err := a.head.exemplars.ValidateExemplar(s.labels(), e); err != nil {
 			if !errors.Is(err, storage.ErrDuplicateExemplar) && !errors.Is(err, storage.ErrExemplarsDisabled) {
 				// Except duplicates, return partial errors.
 				// TODO(bwplotka): Add exemplar info into error.
-				errs = append(errs, err)
+				if errs == nil {
+					errs = make([]error, len(exemplars))
+				}
+				errs[i] = err
 				continue
 			}
 			if !errors.Is(err, storage.ErrOutOfOrderExemplar) {

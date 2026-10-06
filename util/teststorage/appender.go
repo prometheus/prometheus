@@ -590,9 +590,9 @@ func (a *appenderV2) Append(ref storage.SeriesRef, ls labels.Labels, st, t int64
 
 		if len(opts.Exemplars) > 0 {
 			if a.a.appendExemplarsError != nil {
-				var exErrs []error
-				for range opts.Exemplars {
-					exErrs = append(exErrs, a.a.appendExemplarsError)
+				exErrs := make([]error, len(opts.Exemplars))
+				for i := range opts.Exemplars {
+					exErrs[i] = a.a.appendExemplarsError
 				}
 				if len(exErrs) > 0 {
 					partialErr = &storage.AppendPartialError{ExemplarErrors: exErrs}
@@ -687,7 +687,10 @@ func (a *appenderV2) AppendExemplars(ref storage.SeriesRef, l labels.Labels, exe
 			for i := range exemplars {
 				exErrs[i] = a.a.appendExemplarsError
 			}
-			partialErr, _ = partialErr.Handle(&storage.AppendPartialError{ExemplarErrors: exErrs})
+			partialErr, err = partialErr.Handle(&storage.AppendPartialError{ExemplarErrors: exErrs})
+			if err != nil {
+				return ref, err
+			}
 		} else {
 			// As per ExemplarAppenderV2 interface, the exemplars slice is unsafe for reuse.
 			es := make([]exemplar.Exemplar, len(exemplars))

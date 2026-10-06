@@ -5269,11 +5269,13 @@ func TestHeadAppenderV2_ExemplarAppenderV2(t *testing.T) {
 	tooLongLabel := strings.Repeat("x", exemplar.ExemplarMaxLabelSetLength+1)
 	invalidEx := exemplar.Exemplar{Labels: labels.FromStrings("trace_id", tooLongLabel), Value: 3, Ts: 250, HasTs: true}
 	ex3 := exemplar.Exemplar{Labels: labels.FromStrings("trace_id", "t3"), Value: 3, Ts: 300, HasTs: true}
-	retRef, err = headApp.AppendExemplars(0, lsetWithEmpty, []exemplar.Exemplar{invalidEx, ex3})
+	retRef, err = headApp.AppendExemplars(0, lsetWithEmpty, []exemplar.Exemplar{ex2, invalidEx, ex3})
 	var pErr *storage.AppendPartialError
 	require.ErrorAs(t, err, &pErr)
-	require.Len(t, pErr.ExemplarErrors, 1)
-	require.ErrorIs(t, pErr.ExemplarErrors[0], storage.ErrExemplarLabelLength)
+	require.Len(t, pErr.ExemplarErrors, 3)
+	require.NoError(t, pErr.ExemplarErrors[0])
+	require.ErrorIs(t, pErr.ExemplarErrors[1], storage.ErrExemplarLabelLength)
+	require.NoError(t, pErr.ExemplarErrors[2])
 	require.Equal(t, ref, retRef)
 
 	// Unknown series must return ErrNotFound even when exemplars is empty.

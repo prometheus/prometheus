@@ -889,6 +889,33 @@ func sampleCount(md pmetric.Metrics) int {
 }
 
 func TestOTLPInstrumentedAppendable(t *testing.T) {
+	for _, tc := range []struct {
+		name   string
+		err    error
+		failed float64
+		hard   bool
+	}{
+		{name: "sparse first", err: &storage.AppendPartialError{ExemplarErrors: []error{storage.ErrOutOfOrderExemplar, nil}}, failed: 1},
+		{name: "sparse last", err: &storage.AppendPartialError{ExemplarErrors: []error{nil, errors.New("backend exemplar error")}}, failed: 1},
+		{name: "all nil", err: &storage.AppendPartialError{ExemplarErrors: make([]error, 2)}},
+		{name: "typed nil", err: (*storage.AppendPartialError)(nil)},
+		{name: "malformed", err: &storage.AppendPartialError{ExemplarErrors: []error{storage.ErrOutOfOrderExemplar}}, hard: true},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			oa := newOTLPInstrumentedAppendable(prometheus.NewRegistry(), teststorage.NewAppendable())
+			app := &otlpInstrumentedAppender{AppenderV2: &indexedExemplarAppender{rawError: tc.err}, samplesAppendedWithoutMetadata: oa.samplesAppendedWithoutMetadata, outOfOrderExemplars: oa.outOfOrderExemplars}
+			_, err := app.Append(1, labels.EmptyLabels(), 0, 1, 2, nil, nil, storage.AOptions{Exemplars: make([]exemplar.Exemplar, 2)})
+			if tc.hard {
+				require.Error(t, err)
+				var partial *storage.AppendPartialError
+				require.NotErrorAs(t, err, &partial)
+			} else {
+				require.NoError(t, err)
+			}
+			require.Equal(t, tc.failed, testutil.ToFloat64(oa.outOfOrderExemplars))
+		})
+	}
+
 	t.Run("no problems", func(t *testing.T) {
 		appTest := teststorage.NewAppendable()
 		oa := newOTLPInstrumentedAppendable(prometheus.NewRegistry(), appTest)
