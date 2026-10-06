@@ -922,7 +922,7 @@ func (it *bigEndianPostings) Seek(x storage.SeriesRef) bool {
 	num := len(it.list) / 4
 	// Do binary search between current position and end.
 	i := sort.Search(num, func(i int) bool {
-		return binary.BigEndian.Uint32(it.list[i*4:]) >= uint32(x)
+		return storage.SeriesRef(binary.BigEndian.Uint32(it.list[i*4:])) >= x
 	})
 	if i < num {
 		j := i * 4
