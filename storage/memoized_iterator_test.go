@@ -14,12 +14,15 @@
 package storage
 
 import (
+	"fmt"
+	"math"
 	"testing"
 
 	"github.com/stretchr/testify/require"
 
 	"github.com/prometheus/prometheus/model/histogram"
 	"github.com/prometheus/prometheus/tsdb/chunkenc"
+	"github.com/prometheus/prometheus/tsdb/chunks"
 	"github.com/prometheus/prometheus/tsdb/tsdbutil"
 )
 
@@ -120,4 +123,64 @@ func BenchmarkMemoizedSeriesIterator(b *testing.B) {
 		// Scan everything.
 	}
 	require.NoError(b, it.Err())
+}
+
+func TestMemoizedSeriesIteratorPreviousMinimumTimestamp(t *testing.T) {
+	for _, kind := range []chunkenc.ValueType{chunkenc.ValFloat, chunkenc.ValHistogram, chunkenc.ValFloatHistogram} {
+		for _, first := range []int64{math.MinInt64, -1, math.MaxInt64 - 1} {
+			for _, terminal := range []bool{false, true} {
+				t.Run(fmt.Sprintf("type_%s/first_%d/terminal_%t", kind, first, terminal), func(t *testing.T) {
+					startTimestamp := first
+					if first > math.MinInt64 {
+						startTimestamp--
+					}
+					expected := &histogram.FloatHistogram{Schema: 0, ZeroThreshold: 1, Count: 2, Sum: 3, CounterResetHint: histogram.GaugeType, PositiveSpans: []histogram.Span{{Offset: 1, Length: 1}}, PositiveBuckets: []float64{2}}
+					var previousSample chunks.Sample
+					switch kind {
+					case chunkenc.ValFloat:
+						previousSample = fSample{t: first, st: startTimestamp, f: 7}
+					case chunkenc.ValHistogram:
+						previousSample = hSample{t: first, st: startTimestamp, h: &histogram.Histogram{Schema: 0, ZeroThreshold: 1, Count: 2, Sum: 3, CounterResetHint: histogram.GaugeType, PositiveSpans: []histogram.Span{{Offset: 1, Length: 1}}, PositiveBuckets: []int64{2}}}
+					case chunkenc.ValFloatHistogram:
+						previousSample = fhSample{t: first, st: startTimestamp, fh: expected.Copy()}
+					}
+					input := samples{previousSample}
+					if !terminal {
+						input = append(input, fSample{t: first + 1, f: 8})
+					}
+					actual := NewMemoizedIterator(NewListSeriesIterator(input), 0)
+					_, _, _, _, ok := actual.PeekPrev()
+					require.False(t, ok)
+					if terminal {
+						require.Equal(t, chunkenc.ValNone, actual.Next())
+					} else {
+						require.Equal(t, chunkenc.ValFloat, actual.Next())
+					}
+					for range 2 {
+						start, timestamp, value, h, ok := actual.PeekPrev()
+						require.True(t, ok)
+						require.Equal(t, startTimestamp, start)
+						require.Equal(t, first, timestamp)
+						if kind == chunkenc.ValFloat {
+							require.Equal(t, float64(7), value)
+							require.Nil(t, h)
+						} else {
+							require.Zero(t, value)
+							require.Equal(t, expected, h)
+						}
+					}
+					actual.Reset(NewListSeriesIterator(samples{fSample{t: 10, f: 9}, fSample{t: 11, f: 10}, fSample{t: 12, f: 11}}))
+					_, _, _, _, ok = actual.PeekPrev()
+					require.False(t, ok)
+					require.Equal(t, chunkenc.ValFloat, actual.Next())
+					_, timestamp, _, _, ok := actual.PeekPrev()
+					require.True(t, ok)
+					require.Equal(t, int64(10), timestamp)
+					require.Equal(t, chunkenc.ValFloat, actual.Seek(12))
+					_, _, _, _, ok = actual.PeekPrev()
+					require.False(t, ok)
+				})
+			}
+		}
+	}
 }
