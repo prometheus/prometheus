@@ -497,6 +497,7 @@ func getChainSampleIterator(it chunkenc.Iterator, length int) *chainSampleIterat
 		csi.iterators = csi.iterators[:length]
 	}
 	csi.h = nil
+	csi.curr = nil
 	csi.lastT = math.MinInt64
 	return csi
 }
@@ -607,6 +608,9 @@ func (c *chainSampleIterator) AtST() int64 {
 }
 
 func (c *chainSampleIterator) Next() chunkenc.ValueType {
+	// A freshly initialized iterator has no previous sample, even if the
+	// first timestamp equals the initial value of lastT.
+	hasPreviousSample := c.curr != nil
 	var (
 		currT           int64
 		currValueType   chunkenc.ValueType
@@ -651,7 +655,7 @@ func (c *chainSampleIterator) Next() chunkenc.ValueType {
 			}
 		} else {
 			currT = c.curr.AtT()
-			if currT == c.lastT {
+			if hasPreviousSample && currT == c.lastT {
 				// Ignoring sample for the same timestamp.
 				continue
 			}
@@ -675,7 +679,7 @@ func (c *chainSampleIterator) Next() chunkenc.ValueType {
 		iteratorChanged = true
 		currT = c.curr.AtT()
 		currValueType = c.curr.Seek(currT)
-		if currT != c.lastT {
+		if !hasPreviousSample || currT != c.lastT {
 			break
 		}
 	}
