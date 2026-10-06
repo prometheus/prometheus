@@ -1282,3 +1282,57 @@ func debugCircularBuffer(ce *CircularExemplarStorage) string {
 	fmt.Fprintf(&sb, "Next index: %d\n", ce.nextIndex)
 	return sb.String()
 }
+
+func TestValidateExemplarTimestampWindow(t *testing.T) {
+	for _, tc := range []struct {
+		name                      string
+		newest, timestamp, window int64
+		wantError                 bool
+	}{
+		{name: "cutoff below minimum", newest: math.MinInt64 + 3, timestamp: math.MinInt64 + 1, window: 10},
+		{name: "minimum timestamp inside window", newest: math.MinInt64 + 1, timestamp: math.MinInt64, window: 10},
+		{name: "last underflowing cutoff", newest: math.MinInt64 + 9, timestamp: math.MinInt64 + 7, window: 10},
+		{name: "cutoff at minimum inside window", newest: math.MinInt64 + 10, timestamp: math.MinInt64 + 1, window: 10},
+		{name: "cutoff at minimum exact window", newest: math.MinInt64 + 10, timestamp: math.MinInt64, window: 10, wantError: true},
+		{name: "negative timestamps inside window", newest: -20, timestamp: -22, window: 10},
+		{name: "positive timestamps inside window", newest: 20, timestamp: 18, window: 10},
+		{name: "negative timestamps exact window", newest: -20, timestamp: -30, window: 10, wantError: true},
+		{name: "positive timestamps exact window", newest: 20, timestamp: 10, window: 10, wantError: true},
+		{name: "opposite extrema", newest: math.MaxInt64, timestamp: math.MinInt64, window: math.MaxInt64, wantError: true},
+		{name: "large age inside window", newest: 0, timestamp: math.MinInt64 + 2, window: math.MaxInt64},
+		{name: "large age exact window", newest: 0, timestamp: math.MinInt64 + 1, window: math.MaxInt64, wantError: true},
+		{name: "zero window", newest: math.MinInt64 + 1, timestamp: math.MinInt64, wantError: true},
+		{name: "negative window", newest: math.MaxInt64, timestamp: math.MaxInt64 - 1, window: -1, wantError: true},
+		{name: "equal timestamp with disabled window", newest: 1, timestamp: 1},
+		{name: "newer timestamp with disabled window", newest: 1, timestamp: 2},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			x, err := NewCircularExemplarStorage(3, NewExemplarMetrics(nil), tc.window)
+			require.NoError(t, err)
+			es := x.(*CircularExemplarStorage)
+			series := labels.FromStrings("series", "a")
+			first := exemplar.Exemplar{Labels: labels.FromStrings("trace_id", "fixed"), Ts: tc.newest, Value: 1, HasTs: true}
+			candidate := first
+			candidate.Ts, candidate.Value = tc.timestamp, 2
+			require.NoError(t, es.AddExemplar(series, first))
+			var want error
+			if tc.wantError {
+				want = storage.ErrOutOfOrderExemplar
+			}
+			require.ErrorIs(t, es.ValidateExemplar(series, candidate), want)
+			require.ErrorIs(t, es.AddExemplar(series, candidate), want)
+			result, err := es.Select(math.MinInt64, math.MaxInt64, []*labels.Matcher{})
+			require.NoError(t, err)
+			require.Len(t, result, 1)
+			expected := []exemplar.Exemplar{first}
+			if !tc.wantError {
+				if tc.timestamp < tc.newest {
+					expected = []exemplar.Exemplar{candidate, first}
+				} else {
+					expected = append(expected, candidate)
+				}
+			}
+			require.Equal(t, expected, result[0].Exemplars)
+		})
+	}
+}
