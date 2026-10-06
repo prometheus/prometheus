@@ -32,6 +32,7 @@ type HistogramStatsIterator struct {
 	current       *histogram.FloatHistogram
 	last          *histogram.FloatHistogram
 	lastIsCurrent bool
+	hasCurrent    bool
 }
 
 // NewHistogramStatsIterator creates a new HistogramStatsIterator.
@@ -48,6 +49,7 @@ func (hsi *HistogramStatsIterator) Reset(it chunkenc.Iterator) {
 	hsi.Iterator = it
 	hsi.last = nil
 	hsi.lastIsCurrent = false
+	hsi.hasCurrent = false
 }
 
 // Next mostly relays to the underlying iterator, but changes a ValHistogram
@@ -55,6 +57,7 @@ func (hsi *HistogramStatsIterator) Reset(it chunkenc.Iterator) {
 func (hsi *HistogramStatsIterator) Next() chunkenc.ValueType {
 	hsi.lastIsCurrent = false
 	vt := hsi.Iterator.Next()
+	hsi.hasCurrent = vt != chunkenc.ValNone
 	if vt == chunkenc.ValHistogram {
 		return chunkenc.ValFloatHistogram
 	}
@@ -66,12 +69,13 @@ func (hsi *HistogramStatsIterator) Next() chunkenc.ValueType {
 func (hsi *HistogramStatsIterator) Seek(t int64) chunkenc.ValueType {
 	// If the Seek is going to move the iterator, we have to forget the
 	// lastFH and mark the currentFH as not current anymore.
-	// A fresh or reset iterator has no current sample to inspect yet.
-	if hsi.last != nil && t > hsi.AtT() {
+	// Only inspect a timestamp while the underlying iterator has a sample.
+	if hsi.hasCurrent && t > hsi.AtT() {
 		hsi.last = nil
 		hsi.lastIsCurrent = false
 	}
 	vt := hsi.Iterator.Seek(t)
+	hsi.hasCurrent = vt != chunkenc.ValNone
 	if vt == chunkenc.ValHistogram {
 		return chunkenc.ValFloatHistogram
 	}
