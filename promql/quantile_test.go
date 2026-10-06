@@ -351,6 +351,42 @@ func TestBucketQuantile_ForcedMonotonicity(t *testing.T) {
 	}
 }
 
+func TestBucketFraction_EmptyBuckets(t *testing.T) {
+	for name, buckets := range map[string]Buckets{"nil": nil, "empty": {}} {
+		for _, tc := range []struct {
+			name         string
+			lower, upper float64
+		}{
+			{"finite bounds", 0, 1},
+			{"reversed bounds", 1, 0},
+			{"infinite bounds", math.Inf(-1), math.Inf(1)},
+			{"NaN lower bound", math.NaN(), 1},
+			{"NaN upper bound", 0, math.NaN()},
+		} {
+			t.Run(name+"/"+tc.name, func(t *testing.T) {
+				require.True(t, math.IsNaN(BucketFraction(tc.lower, tc.upper, buckets)))
+			})
+		}
+	}
+
+	// Control: a non-empty bucket list keeps its existing behavior,
+	// including NaN for a +Inf bucket with a count of zero.
+	require.True(t, math.IsNaN(BucketFraction(0, 1, Buckets{{UpperBound: math.Inf(1), Count: 0}})))
+}
+
+func TestBucketFraction(t *testing.T) {
+	// Two buckets with counts 10 and 30 (cumulative), all observations
+	// above zero. The fraction between 0 and 0.5 interpolates within
+	// the first bucket: 10 * (0.5 - 0) / (1 - 0) = 5 out of 30 total.
+	buckets := Buckets{
+		{UpperBound: 1, Count: 10},
+		{UpperBound: math.Inf(1), Count: 30},
+	}
+	require.InEpsilon(t, 5.0/30.0, BucketFraction(0, 0.5, buckets), 1e-12)
+	require.InEpsilon(t, 1.0, BucketFraction(0, math.Inf(1), buckets), 1e-12)
+	require.Zero(t, BucketFraction(1, 0, buckets))
+}
+
 // TestTrimBuckets_HistogramFractionCrossCheck checks that `h </ x` and `h >/ x` match histogram_fraction(-Inf, x, h) and histogram_fraction(x, +Inf, h) times histogram_count(h).
 func TestTrimBuckets_HistogramFractionCrossCheck(t *testing.T) {
 	testCases := []struct {

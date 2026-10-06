@@ -541,6 +541,9 @@ func BucketFraction(lower, upper float64, buckets Buckets) float64 {
 		}
 		return 0
 	})
+	if len(buckets) == 0 {
+		return math.NaN()
+	}
 	if !math.IsInf(buckets[len(buckets)-1].UpperBound, +1) {
 		return math.NaN()
 	}
