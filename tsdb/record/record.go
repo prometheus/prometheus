@@ -404,12 +404,13 @@ func (*Decoder) samplesV2(dec *encoding.Decbuf, samples []RefSample) ([]RefSampl
 		samples = make([]RefSample, 0, minSize)
 	}
 	var firstT, firstST int64
+	initialSamplesLen := len(samples)
 	for len(dec.B) > 0 && dec.Err() == nil {
 		var prev RefSample
 		var ref, t, st int64
 		var val uint64
 
-		if len(samples) == 0 {
+		if len(samples) == initialSamplesLen {
 			ref = dec.Varint64()
 			firstT = dec.Varint64()
 			t = firstT
