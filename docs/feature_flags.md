@@ -376,28 +376,49 @@ When enabled, Prometheus advertises support for Zstandard-compressed scrape resp
 
 When the flag is disabled, Prometheus does not advertise `zstd`. A target that answers with `Content-Encoding: zstd` regardless fails the scrape, because Prometheus cannot decode the body.
 
-## NHCB as classic histograms in PromQL
+## Native histograms as classic histograms in PromQL
 
 `--enable-feature=promql-nhcb-as-classic`
 
 When enabled, PromQL queries for classic histogram series (e.g. `_bucket`, `_count`, `_sum`) will
-automatically convert Native Histograms with Custom Buckets (NHCB) into classic histogram series.
+automatically convert native histograms into classic histogram series.
 
-For example, if `request_duration_seconds` is stored as an NHCB native histogram:
+For example, if `request_duration_seconds` is stored as a native histogram:
 
 ```promql
 # Querying with a classic histogram suffix triggers the conversion:
 histogram_quantile(0.95, rate(request_duration_seconds_bucket[5m]))
 
-# Querying without a suffix returns the regular NHCB native histogram:
+# Querying without a suffix returns the regular native histogram:
 rate(request_duration_seconds[5m])
 ```
 
+Native Histograms with Custom Buckets (NHCB) convert losslessly, as their bucket layout is
+exactly the classic one. Exponential (standard schema) native histograms have no fixed bucket
+layout, so their `_bucket` series are synthesized:
+
+* `_count` and `_sum` are always exact.
+* If the query pins `le` values (e.g. `request_duration_seconds_bucket{le="1"}` or
+  `le=~"0.5|1|\\+Inf"`), the cumulative count is evaluated at exactly those values.
+  Values that coincide with an exponential bucket boundary (1, and powers of two for schemas
+  greater than or equal to 0) are exact; other values are interpolated within the bucket they
+  fall into, like `histogram_fraction` does. `le="1"` and `le="1.0"` are treated as the same
+  bound.
+* Otherwise, buckets are emitted at the populated bucket boundaries of all selected series,
+  reduced to at most schema 2 (4 buckets per power of two) to bound the number of series.
+  The same set of `le` values is used for every series and sample of a selector, so
+  `rate()` and `sum by (le)` behave as with classic histograms, but the exact `le` values
+  depend on the observed data and may differ between selectors and queries. A series that
+  starts as NHCB and later switches to an exponential schema derives its `le` values from
+  its own samples only.
+
 Individual selectors can control or debug conversion using the reserved `__opt_classic_from` matcher:
 
-* `__opt_classic_from="nhcb"` (or `!="none"`): converts Native Histograms with Custom Buckets (NHCB) for the selector (the default when no `__opt_classic_from` matcher is present).
-* `__opt_classic_from="none"` (or `=""`, `!="nhcb"`, `!~"nhcb"`): disables NHCB-to-classic conversion for the selector and returns only stored classic series.
-* `__opt_classic_from="debug"` (or `=~"nhcb|debug"`): enables conversion and attaches `__stored_as__="nhcb"` to series converted from NHCB samples and `__stored_as__="classic"` to all other returned series (e.g. stored classic series or series of selectors that are not converted). Stored and converted series are neither merged into the same labelset nor shadowed by each other, so both sources are returned in full side by side. In debug mode, `__stored_as__` matchers (e.g. `__stored_as__="nhcb"`) filter the returned series.
+* `__opt_classic_from="nhcb"` (or `!="nhe"`): converts only Native Histograms with Custom Buckets (NHCB) for the selector.
+* `__opt_classic_from="nhe"` (or `!="nhcb"`): converts only exponential native histograms (NHE) for the selector.
+* `__opt_classic_from=~"nhcb|nhe"`: converts both NHCB and NHE series (the default when no `__opt_classic_from` matcher is present).
+* `__opt_classic_from="none"` (or `=""`, `!~"nhcb|nhe"`): disables native-to-classic conversion for the selector and returns only stored classic series.
+* `__opt_classic_from="debug"` (or `=~"...|debug"`, e.g. `=~"nhcb|debug"`, `=~"nhe|debug"`, `=~"nhcb|nhe|debug"`): enables conversion (for both NHCB and NHE when `"debug"` is used alone, or for the matched schema(s)) and attaches `__stored_as__="nhcb"` to series converted from NHCB samples, `__stored_as__="nhe"` to series converted from exponential native histogram samples, and `__stored_as__="classic"` to all other returned series (e.g. stored classic series or series of selectors that are not converted). Stored and converted series are neither merged into the same labelset nor shadowed by each other, so all sources are returned in full side by side. In debug mode, `__stored_as__` matchers (e.g. `__stored_as__="nhcb"`) filter the returned series.
 
 Other values in `=` or `!=` matchers on `__opt_classic_from` return an error when this feature flag is enabled.
 
@@ -405,6 +426,6 @@ Matchers with the `__opt_` prefix (such as `__opt_classic_from`) are always stri
 
 This feature only affects PromQL query evaluation (e.g. the query APIs and rule evaluation). The
 conversion is applied on top of all data the query engine reads, including series fetched from
-`remote_read` endpoints. It does not apply to remote write (NHCB series are not converted when being
-forwarded to remote endpoints), the remote read API, federation, or the series API (the
-`/api/v1/series` endpoint will not return the converted classic series).
+`remote_read` endpoints. It does not apply to remote write (native histogram series are not
+converted when being forwarded to remote endpoints), the remote read API, federation, or the series
+API (the `/api/v1/series` endpoint will not return the converted classic series).
