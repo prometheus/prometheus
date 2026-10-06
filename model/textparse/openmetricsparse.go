@@ -22,6 +22,7 @@ import (
 	"fmt"
 	"io"
 	"math"
+	"slices"
 	"strconv"
 	"strings"
 	"unicode/utf8"
@@ -378,6 +379,7 @@ var (
 // of label names and values from the parsed OpenMetrics data. It skips quantile
 // and le labels for summaries and histograms respectively.
 func (p *OpenMetricsParser) seriesHash(offsetsArr *[]byte, metricFamilyName []byte) uint64 {
+	labelIndexes := make([]int, 0, (len(p.offsets)-2)/4)
 	// Iterate through p.offsets to find the label names and values.
 	for i := 2; i < len(p.offsets); i += 4 {
 		lStart := p.offsets[i] - p.start
@@ -390,6 +392,18 @@ func (p *OpenMetricsParser) seriesHash(offsetsArr *[]byte, metricFamilyName []by
 		if p.mtype == model.MetricTypeHistogram && bytes.Equal(label, leBytes) {
 			continue
 		}
+		labelIndexes = append(labelIndexes, i)
+	}
+	// Source label order does not affect the identity of a metric.
+	slices.SortFunc(labelIndexes, func(a, b int) int {
+		return bytes.Compare(
+			p.series[p.offsets[a]-p.start:p.offsets[a+1]-p.start],
+			p.series[p.offsets[b]-p.start:p.offsets[b+1]-p.start],
+		)
+	})
+	for _, i := range labelIndexes {
+		lStart := p.offsets[i] - p.start
+		lEnd := p.offsets[i+1] - p.start
 		*offsetsArr = append(*offsetsArr, p.series[lStart:lEnd]...)
 		vStart := p.offsets[i+2] - p.start
 		vEnd := p.offsets[i+3] - p.start
