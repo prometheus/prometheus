@@ -76,6 +76,18 @@ func (s *NHCBAsClassicQueryable) Querier(mint, maxt int64) (Querier, error) {
 }
 
 // Select implements the Querier interface.
+//
+// A classic histogram selector such as {__name__="foo_bucket", le="0.5", job="x"}
+// is served with a single underlying Select whose matchers are rewritten to
+// {__name__=~"foo|foo_bucket", le=~"0\.5|\+Inf|", job="x"}, so that the stored
+// classic series and the NHCB candidates come back in one SeriesSet. The set
+// is then split by __name__ and handed to selectNHCBAsClassic.
+//
+// NOTE: One Select instead of one per representation matters for remote and
+// fan-out storages, where every Select is a round trip to every backend, and
+// it removes the constraint that both Selects must be issued before any Next()
+// (secondaryQuerier panics otherwise). The __name__ alternation is a set
+// matcher, so indexes resolve it with plain postings lookups.
 func (q *NHCBAsClassicQuerier) Select(ctx context.Context, sortSeries bool, hints *SelectHints, matchers ...*labels.Matcher) SeriesSet {
 	nameMatcher, suffix, baseMatchers, leMatchers := extractHistogramSuffix(matchers)
 	if suffix == "" {
@@ -83,55 +95,95 @@ func (q *NHCBAsClassicQuerier) Select(ctx context.Context, sortSeries bool, hint
 		return q.Querier.Select(ctx, sortSeries, hints, matchers...)
 	}
 
-	baseNameMatcher := newBaseNameMatcher(nameMatcher.Type, nameMatcher.Value, suffix)
-	if baseNameMatcher == nil {
+	unionNameMatcher := newUnionNameMatcher(nameMatcher.Value, suffix)
+	if unionNameMatcher == nil {
 		return q.Querier.Select(ctx, sortSeries, hints, matchers...)
 	}
 
-	// Reuse baseMatchers' spare capacity to append baseNameMatcher without allocating.
-	nhcbMatchers := append(baseMatchers, baseNameMatcher)
-	nhcbSet := q.Querier.Select(ctx, sortSeries, hints, nhcbMatchers...)
-	if nhcbSet.Err() != nil {
-		return nhcbSet
-	}
-
-	// Query stored classic series with the le matchers pushed down, widened so
-	// that the +Inf bucket is always selected. Shadowing converted NHCB samples
-	// only needs to know at which timestamps a stored classic histogram has a
-	// sample, and every classic histogram has a +Inf bucket, so the +Inf series
-	// is enough even when the query's le matcher selects none of the stored
-	// buckets (e.g. a bucket that only exists in the NHCB, or an le formatted
-	// differently such as "1" vs "1.0"). The original le matchers are still
-	// applied to the stored classic series before they are returned.
+	// The le matchers are pushed down relaxed so that NHCB series (no le label)
+	// pass, and widened so that the stored classic +Inf bucket is always
+	// selected. Shadowing converted NHCB samples only needs to know at which
+	// timestamps a stored classic histogram has a sample, and every classic
+	// histogram has a +Inf bucket, so the +Inf series is enough even when the
+	// query's le matcher selects none of the stored buckets (e.g. a bucket that
+	// only exists in the NHCB, or an le formatted differently such as "1" vs
+	// "1.0"). The original le matchers are still applied to the stored classic
+	// series before they are returned.
 	//
 	// NOTE: Dropping the le matchers instead would fetch all B+1 bucket series
 	// for selective queries such as foo_bucket{le="+Inf"}, also for users that
 	// never store NHCBs.
 	//
-	// NOTE: Both Select calls on q.Querier must happen before any SeriesSet.Next()
-	// call, and advancing nhcbSet/classicSet is deferred to lazySeriesSet.Next(),
-	// because secondaryQuerier (used by Fanout / NewMergeQuerier) panics if Select
-	// is invoked after the first Next() of any returned SeriesSet.
-	classicMatchers := matchers
-	if len(leMatchers) > 0 {
-		classicMatchers = make([]*labels.Matcher, 0, len(matchers))
-		classicMatchers = append(classicMatchers, baseMatchers...)
-		classicMatchers = append(classicMatchers, nameMatcher)
-		for _, m := range leMatchers {
-			if wm := withInfBucket(m); wm != nil {
-				classicMatchers = append(classicMatchers, wm)
-			}
+	// extractHistogramSuffix sizes baseMatchers with capacity len(matchers), so
+	// appending the rewritten name and le matchers never reallocates.
+	unionMatchers := append(baseMatchers, unionNameMatcher)
+	for _, m := range leMatchers {
+		if um := optionalLeMatcher(withInfBucket(m)); um != nil {
+			unionMatchers = append(unionMatchers, um)
 		}
 	}
-	classicSet := q.Querier.Select(ctx, sortSeries, hints, classicMatchers...)
-	if classicSet.Err() != nil {
-		return classicSet
+
+	set := q.Querier.Select(ctx, sortSeries, hints, unionMatchers...)
+	if set.Err() != nil {
+		return set
 	}
 
 	return &lazySeriesSet{init: func() SeriesSet {
+		nhcb, classic, err := splitByName(set, nameMatcher.Value)
+		if err != nil {
+			return ErrSeriesSet(err)
+		}
+		// Warnings of the underlying set are attached once, to the NHCB set;
+		// selectNHCBAsClassic merges the warnings of both sets.
+		nhcbSet := &listSeriesSet{series: nhcb, idx: -1, warnings: set.Warnings()}
+		classicSet := &listSeriesSet{series: classic, idx: -1}
 		return selectNHCBAsClassic(ctx, sortSeries, nhcbSet, classicSet, leMatchers, suffix)
 	}}
 }
+
+// splitByName drains set into series named classicName and all others (the
+// NHCB candidates), preserving the order within each slice.
+//
+// NOTE: This buffers the Series handles (labels and chunk references), not
+// samples, which PromQL does anyway when it expands a SeriesSet before
+// evaluation. Sample decoding stays lazy in selectNHCBAsClassic.
+func splitByName(set SeriesSet, classicName string) (nhcb, classic []Series, err error) {
+	for set.Next() {
+		s := set.At()
+		if s == nil {
+			continue
+		}
+		if s.Labels().Get(model.MetricNameLabel) == classicName {
+			classic = append(classic, s)
+		} else {
+			nhcb = append(nhcb, s)
+		}
+	}
+	return nhcb, classic, set.Err()
+}
+
+// listSeriesSet is a SeriesSet over an in-memory slice of Series.
+type listSeriesSet struct {
+	series   []Series
+	idx      int
+	warnings annotations.Annotations
+}
+
+func (s *listSeriesSet) Next() bool {
+	s.idx++
+	return s.idx < len(s.series)
+}
+
+func (s *listSeriesSet) At() Series {
+	if s.idx < 0 || s.idx >= len(s.series) {
+		return nil
+	}
+	return s.series[s.idx]
+}
+
+func (*listSeriesSet) Err() error { return nil }
+
+func (s *listSeriesSet) Warnings() annotations.Annotations { return s.warnings }
 
 func selectNHCBAsClassic(ctx context.Context, sortSeries bool, nhcbSet, classicSet SeriesSet, leMatchers []*labels.Matcher, suffix string) SeriesSet {
 	var (
@@ -432,14 +484,18 @@ func histogramSuffix(metricName string) string {
 	}
 }
 
-// newBaseNameMatcher creates a new __name__ matcher with the histogram suffix removed.
-// Returns nil if the base name is empty or the matcher cannot be created.
-func newBaseNameMatcher(matchType labels.MatchType, metricName, suffix string) *labels.Matcher {
+// newUnionNameMatcher returns a __name__ matcher that selects both the stored
+// classic series (metricName) and the NHCB base series (metricName without
+// suffix). Returns nil if the base name is empty or the matcher cannot be created.
+func newUnionNameMatcher(metricName, suffix string) *labels.Matcher {
 	baseName := metricName[:len(metricName)-len(suffix)]
 	if baseName == "" {
 		return nil
 	}
-	m, err := labels.NewMatcher(matchType, model.MetricNameLabel, baseName)
+	// QuoteMeta keeps UTF-8 metric names (e.g. containing dots) literal. The
+	// alternation of two literals is recognised as a set matcher by
+	// labels.FastRegexMatcher, so storages see it as two exact values.
+	m, err := labels.NewMatcher(labels.MatchRegexp, model.MetricNameLabel, regexp.QuoteMeta(baseName)+"|"+regexp.QuoteMeta(metricName))
 	if err != nil {
 		return nil
 	}
@@ -517,6 +573,36 @@ func withInfBucket(m *labels.Matcher) *labels.Matcher {
 		return nil
 	}
 	return wm
+}
+
+// optionalLeMatcher returns a matcher that behaves like m for non-empty values
+// but additionally matches the empty value, so NHCB series (which carry no le
+// label) pass the storage-level filter while stored classic buckets still
+// benefit from le index pushdown. Returns nil if m is nil or cannot be relaxed,
+// in which case the le filter is only applied client-side by matchesLe.
+func optionalLeMatcher(m *labels.Matcher) *labels.Matcher {
+	if m == nil {
+		return nil
+	}
+	if m.Matches("") {
+		return m
+	}
+	var re string
+	switch m.Type {
+	case labels.MatchEqual:
+		re = regexp.QuoteMeta(m.Value) + "|"
+	case labels.MatchRegexp:
+		re = "(?:" + m.Value + ")|"
+	default:
+		// le!="" or le!~"<regex matching empty>" require le to be set. They
+		// are rare in classic histogram queries, so just skip the pushdown.
+		return nil
+	}
+	om, err := labels.NewMatcher(labels.MatchRegexp, labels.BucketLabel, re)
+	if err != nil {
+		return nil
+	}
+	return om
 }
 
 func matchesLe(lset labels.Labels, leMatchers []*labels.Matcher) bool {

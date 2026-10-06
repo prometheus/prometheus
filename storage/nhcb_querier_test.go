@@ -17,7 +17,6 @@ import (
 	"context"
 	"errors"
 	"math"
-	"strings"
 	"testing"
 
 	"github.com/prometheus/common/model"
@@ -1248,59 +1247,37 @@ func TestNHCBAsClassicQuerier_FloatHistogram(t *testing.T) {
 	require.Equal(t, 3, count)
 }
 
+// nhcbMockQuerier serves all configured series through a single Select that
+// evaluates the given matchers against each series' labels, like a real storage
+// would. It also records the matchers of the last Select call.
 type nhcbMockQuerier struct {
 	classicSeries     []Series
 	nhcbSeries        []Series
-	passthroughSeries []Series // For non-histogram queries
+	passthroughSeries []Series // For non-histogram queries.
 
 	// For error/warning injection in tests.
-	classicErr      error
-	nhcbErr         error
-	classicWarnings annotations.Annotations
-	nhcbWarnings    annotations.Annotations
+	err      error
+	warnings annotations.Annotations
 
-	// Matchers of the last classic (suffixed name) Select call.
-	lastClassicMatchers []*labels.Matcher
+	selects      int
+	lastMatchers []*labels.Matcher
 }
 
 func (m *nhcbMockQuerier) Select(_ context.Context, _ bool, _ *SelectHints, matchers ...*labels.Matcher) SeriesSet {
-	for _, matcher := range matchers {
-		if matcher.Name != model.MetricNameLabel {
-			continue
-		}
-		// Check if this is a histogram suffix query (classic histogram query)
-		if strings.HasSuffix(matcher.Value, "_bucket") ||
-			strings.HasSuffix(matcher.Value, "_count") ||
-			strings.HasSuffix(matcher.Value, "_sum") {
-			m.lastClassicMatchers = matchers
-			if m.classicErr != nil {
-				return ErrSeriesSet(m.classicErr)
-			}
-			var matched []Series
-			for _, s := range m.classicSeries {
-				if matchesAll(s.Labels(), matchers) {
-					matched = append(matched, s)
-				}
-			}
-			return &mockSeriesSet{idx: -1, series: matched, warnings: m.classicWarnings}
-		}
-		// If passthroughSeries is set, use it for non-histogram metric queries
-		if len(m.passthroughSeries) > 0 {
-			return NewMockSeriesSet(m.passthroughSeries...)
-		}
-		// Base metric name query - return NHCB series
-		if m.nhcbErr != nil {
-			return ErrSeriesSet(m.nhcbErr)
-		}
-		var matched []Series
-		for _, s := range m.nhcbSeries {
+	m.selects++
+	m.lastMatchers = matchers
+	if m.err != nil {
+		return ErrSeriesSet(m.err)
+	}
+	var matched []Series
+	for _, group := range [][]Series{m.classicSeries, m.nhcbSeries, m.passthroughSeries} {
+		for _, s := range group {
 			if matchesAll(s.Labels(), matchers) {
 				matched = append(matched, s)
 			}
 		}
-		return &mockSeriesSet{idx: -1, series: matched, warnings: m.nhcbWarnings}
 	}
-	return NewMockSeriesSet()
+	return &mockSeriesSet{idx: -1, series: matched, warnings: m.warnings}
 }
 
 func (*nhcbMockQuerier) LabelValues(context.Context, string, *LabelHints, ...*labels.Matcher) ([]string, annotations.Annotations, error) {
@@ -1358,26 +1335,14 @@ func (s *deferredErrSeriesSet) Err() error {
 
 func (*deferredErrSeriesSet) Warnings() annotations.Annotations { return nil }
 
-// nhcbSetQuerier routes suffix queries (_bucket/_count/_sum) to classicSet and
-// all other queries to nhcbSet. This lets tests inject arbitrary SeriesSet
-// implementations for either path without duplicating routing logic.
+// nhcbSetQuerier returns the given SeriesSet for every Select. This lets tests
+// inject arbitrary SeriesSet implementations.
 type nhcbSetQuerier struct {
-	classicSet SeriesSet
-	nhcbSet    SeriesSet
+	set SeriesSet
 }
 
-func (m *nhcbSetQuerier) Select(_ context.Context, _ bool, _ *SelectHints, matchers ...*labels.Matcher) SeriesSet {
-	for _, matcher := range matchers {
-		if matcher.Name == model.MetricNameLabel {
-			if strings.HasSuffix(matcher.Value, "_bucket") ||
-				strings.HasSuffix(matcher.Value, "_count") ||
-				strings.HasSuffix(matcher.Value, "_sum") {
-				return m.classicSet
-			}
-			return m.nhcbSet
-		}
-	}
-	return NewMockSeriesSet()
+func (m *nhcbSetQuerier) Select(context.Context, bool, *SelectHints, ...*labels.Matcher) SeriesSet {
+	return m.set
 }
 
 func (*nhcbSetQuerier) LabelValues(context.Context, string, *LabelHints, ...*labels.Matcher) ([]string, annotations.Annotations, error) {
@@ -1406,26 +1371,18 @@ func TestNHCBAsClassicQuerier_ErrorPropagation(t *testing.T) {
 		querier Querier
 	}{
 		{
-			name: "classic set immediate error",
+			name: "immediate error",
 			querier: &nhcbMockQuerier{
-				classicErr: testError,
+				err: testError,
 				nhcbSeries: []Series{
 					NewListSeries(labels.FromStrings("__name__", "http_requests"), []chunks.Sample{hSample{t: 1, h: nhcb}}),
 				},
 			},
 		},
 		{
-			name: "nhcb set immediate error",
-			querier: &nhcbMockQuerier{
-				classicSeries: []Series{},
-				nhcbErr:       testError,
-			},
-		},
-		{
-			name: "nhcb set error during iteration",
+			name: "error during iteration",
 			querier: &nhcbSetQuerier{
-				classicSet: NewMockSeriesSet(),
-				nhcbSet:    newDeferredErrSeriesSet(testError),
+				set: newDeferredErrSeriesSet(testError),
 			},
 		},
 	}
@@ -1456,14 +1413,12 @@ func TestNHCBAsClassicQuerier_WarningPropagation(t *testing.T) {
 		[]chunks.Sample{hSample{t: 1, h: nhcb}},
 	)
 
-	t.Run("classic and nhcb set warnings both propagate", func(t *testing.T) {
-		classicWarn := annotations.New().Add(errors.New("classic warning"))
-		nhcbWarn := annotations.New().Add(errors.New("nhcb warning"))
+	t.Run("warnings propagate", func(t *testing.T) {
+		warn := annotations.New().Add(errors.New("storage warning"))
 		q := NewNHCBAsClassicQuerier(&nhcbMockQuerier{
-			classicSeries:   []Series{},
-			nhcbSeries:      []Series{nhcbSeries},
-			classicWarnings: classicWarn,
-			nhcbWarnings:    nhcbWarn,
+			classicSeries: []Series{},
+			nhcbSeries:    []Series{nhcbSeries},
+			warnings:      warn,
 		})
 
 		ss := q.Select(context.Background(), false, nil,
@@ -1471,17 +1426,14 @@ func TestNHCBAsClassicQuerier_WarningPropagation(t *testing.T) {
 		for ss.Next() {
 		}
 		require.NoError(t, ss.Err())
-		var expected annotations.Annotations
-		expected.Merge(classicWarn)
-		expected.Merge(nhcbWarn)
-		require.Equal(t, expected, ss.Warnings())
+		require.Equal(t, warn, ss.Warnings())
 	})
 
 	t.Run("non-histogram passthrough preserves warnings", func(t *testing.T) {
 		warn := annotations.New().Add(errors.New("passthrough warning"))
 		series := []Series{NewListSeries(labels.FromStrings("__name__", "my_gauge"), []chunks.Sample{fSample{t: 1, f: 1}})}
 		q := NewNHCBAsClassicQuerier(&nhcbSetQuerier{
-			nhcbSet: &mockSeriesSet{idx: -1, series: series, warnings: warn},
+			set: &mockSeriesSet{idx: -1, series: series, warnings: warn},
 		})
 
 		ss := q.Select(context.Background(), false, nil,
@@ -1493,7 +1445,7 @@ func TestNHCBAsClassicQuerier_WarningPropagation(t *testing.T) {
 	})
 }
 
-func TestNHCBAsClassicQuerier_ClassicSelectLeMatchers(t *testing.T) {
+func TestNHCBAsClassicQuerier_SingleSelectMatchers(t *testing.T) {
 	nhcb := &histogram.Histogram{
 		Schema:          histogram.CustomBucketsSchema,
 		Count:           16,
@@ -1522,7 +1474,7 @@ func TestNHCBAsClassicQuerier_ClassicSelectLeMatchers(t *testing.T) {
 	}{
 		{
 			name:             "no le matcher",
-			expectedMatchers: []string{`__name__="http_requests_bucket"`},
+			expectedMatchers: []string{`__name__=~"http_requests|http_requests_bucket"`},
 			expectedSeries: []string{
 				`{__name__="http_requests_bucket", le="+Inf"}`,
 				`{__name__="http_requests_bucket", le="1.0"}`,
@@ -1531,30 +1483,30 @@ func TestNHCBAsClassicQuerier_ClassicSelectLeMatchers(t *testing.T) {
 			},
 		},
 		{
-			name:             "le equality is widened to include +Inf",
+			name:             "le equality is widened to include +Inf and no le",
 			leMatchers:       []*labels.Matcher{labels.MustNewMatcher(labels.MatchEqual, labels.BucketLabel, "5.0")},
-			expectedMatchers: []string{`__name__="http_requests_bucket"`, `le=~"5\\.0|\\+Inf"`},
+			expectedMatchers: []string{`__name__=~"http_requests|http_requests_bucket"`, `le=~"(?:5\\.0|\\+Inf)|"`},
 			expectedSeries:   []string{`{__name__="http_requests_bucket", le="5.0"}`},
 		},
 		{
-			name:             "le +Inf is pushed down as is",
+			name:             "le +Inf is widened to include no le",
 			leMatchers:       []*labels.Matcher{labels.MustNewMatcher(labels.MatchEqual, labels.BucketLabel, "+Inf")},
-			expectedMatchers: []string{`__name__="http_requests_bucket"`, `le="+Inf"`},
+			expectedMatchers: []string{`__name__=~"http_requests|http_requests_bucket"`, `le=~"\\+Inf|"`},
 			expectedSeries:   []string{`{__name__="http_requests_bucket", le="+Inf"}`},
 		},
 		{
-			name:             "le regex is widened to include +Inf",
+			name:             "le regex is widened to include +Inf and no le",
 			leMatchers:       []*labels.Matcher{labels.MustNewMatcher(labels.MatchRegexp, labels.BucketLabel, "1.0|10.0")},
-			expectedMatchers: []string{`__name__="http_requests_bucket"`, `le=~"(?:1.0|10.0)|\\+Inf"`},
+			expectedMatchers: []string{`__name__=~"http_requests|http_requests_bucket"`, `le=~"(?:(?:1.0|10.0)|\\+Inf)|"`},
 			expectedSeries: []string{
 				`{__name__="http_requests_bucket", le="1.0"}`,
 				`{__name__="http_requests_bucket", le="10.0"}`,
 			},
 		},
 		{
-			name:             "le not equal already matches +Inf",
+			name:             "le not equal already matches +Inf and no le",
 			leMatchers:       []*labels.Matcher{labels.MustNewMatcher(labels.MatchNotEqual, labels.BucketLabel, "1.0")},
-			expectedMatchers: []string{`__name__="http_requests_bucket"`, `le!="1.0"`},
+			expectedMatchers: []string{`__name__=~"http_requests|http_requests_bucket"`, `le!="1.0"`},
 			expectedSeries: []string{
 				`{__name__="http_requests_bucket", le="+Inf"}`,
 				`{__name__="http_requests_bucket", le="10.0"}`,
@@ -1564,7 +1516,7 @@ func TestNHCBAsClassicQuerier_ClassicSelectLeMatchers(t *testing.T) {
 		{
 			name:             "le not equal +Inf cannot be widened and is applied client-side",
 			leMatchers:       []*labels.Matcher{labels.MustNewMatcher(labels.MatchNotEqual, labels.BucketLabel, "+Inf")},
-			expectedMatchers: []string{`__name__="http_requests_bucket"`},
+			expectedMatchers: []string{`__name__=~"http_requests|http_requests_bucket"`},
 			expectedSeries: []string{
 				`{__name__="http_requests_bucket", le="1.0"}`,
 				`{__name__="http_requests_bucket", le="10.0"}`,
@@ -1585,11 +1537,15 @@ func TestNHCBAsClassicQuerier_ClassicSelectLeMatchers(t *testing.T) {
 			}
 			require.NoError(t, ss.Err())
 
+			require.Equal(t, 1, mock.selects)
 			var gotMatchers []string
-			for _, m := range mock.lastClassicMatchers {
+			for _, m := range mock.lastMatchers {
 				gotMatchers = append(gotMatchers, m.String())
 			}
 			require.Equal(t, tc.expectedMatchers, gotMatchers)
+			// The rewritten __name__ matcher must stay a set matcher so that
+			// storages resolve it with postings lookups instead of a regex scan.
+			require.Len(t, mock.lastMatchers[0].SetMatches(), 2)
 			// Stored classic samples at t=1 shadow the NHCB at t=1 regardless of
 			// which buckets the query selects; the converted buckets at t=2 are
 			// merged into the stored classic series or added for le="10.0".
