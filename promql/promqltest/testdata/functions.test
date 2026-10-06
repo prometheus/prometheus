@@ -1771,12 +1771,23 @@ eval instant at 50m absent(nonexistent{job="testjob",job="testjob2",job="three",
 eval instant at 50m absent(nonexistent{job="testjob",job=~"testjob2",foo="bar"})
 	{foo="bar"} 1
 
+# __opt_* option matchers never exist on series, so they are omitted from absent() output
+# and stripped before querying storage even when conversion feature flags are disabled.
+eval instant at 50m absent(nonexistent_count{job="testjob", __opt_classic_from="none"})
+	{job="testjob"} 1
+
+eval instant at 50m absent_over_time(nonexistent_count{job="testjob", __opt_classic_from="debug"}[5m])
+	{job="testjob"} 1
+
 clear
 
 # Don't return anything when there's something there.
 load 5m
 	http_requests{job="api-server", instance="0", group="production"}	0+10x10
 	http_requests_histogram{job="api-server", instance="0", group="production"} {{schema:0 sum:1 count:1}}x11
+
+eval instant at 50m http_requests{job="api-server", __opt_classic_from="nhcb"}
+	http_requests{group="production", instance="0", job="api-server"} 100
 
 eval instant at 50m absent(http_requests)
 

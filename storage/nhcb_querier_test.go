@@ -17,6 +17,7 @@ import (
 	"context"
 	"errors"
 	"math"
+	"slices"
 	"strings"
 	"testing"
 
@@ -1219,6 +1220,571 @@ func TestNHCBAsClassicQuerier_Collisions(t *testing.T) {
 			},
 		}, gotSorted)
 	})
+
+	t.Run("per-selector control label and debug provenance label", func(t *testing.T) {
+		// Classic series at t=1 (val=10) and NHCB series at t=1 (count=99) & t=2 (count=20).
+		newHybridQuerier := func() Querier {
+			return NewNHCBAsClassicQuerier(&nhcbMockQuerier{
+				classicSeries: []Series{
+					NewListSeries(labels.FromStrings("__name__", "http_requests_count", "job", "api", "pod", "a"), []chunks.Sample{
+						fSample{t: 1, f: 10},
+					}),
+				},
+				nhcbSeries: []Series{
+					NewListSeries(labels.FromStrings("__name__", "http_requests", "job", "api", "pod", "a"), []chunks.Sample{
+						hSample{t: 1, h: nhcb(100, []float64{1.0}, []int64{50, 49})},
+						hSample{t: 2, h: nhcb(200, []float64{1.0}, []int64{10, 10})},
+					}),
+				},
+			})
+		}
+
+		nameMatcher := labels.MustNewMatcher(labels.MatchEqual, model.MetricNameLabel, "http_requests_count")
+		for _, tc := range []struct {
+			name     string
+			matchers []*labels.Matcher
+			want     []seriesSamples
+			wantErr  error
+		}{
+			{
+				name:     "default (no control matcher) converts NHCB",
+				matchers: []*labels.Matcher{nameMatcher},
+				want: []seriesSamples{
+					{
+						labels:  `{__name__="http_requests_count", job="api", pod="a"}`,
+						samples: []fSample{{t: 1, f: 10}, {t: 2, f: 20}},
+					},
+				},
+			},
+			{
+				name: "nhcb converts NHCB series",
+				matchers: []*labels.Matcher{
+					nameMatcher,
+					labels.MustNewMatcher(labels.MatchEqual, ClassicFromLabel, "nhcb"),
+				},
+				want: []seriesSamples{
+					{
+						labels:  `{__name__="http_requests_count", job="api", pod="a"}`,
+						samples: []fSample{{t: 1, f: 10}, {t: 2, f: 20}},
+					},
+				},
+			},
+			{
+				name: "not-equal none converts NHCB series",
+				matchers: []*labels.Matcher{
+					nameMatcher,
+					labels.MustNewMatcher(labels.MatchNotEqual, ClassicFromLabel, "none"),
+				},
+				want: []seriesSamples{
+					{
+						labels:  `{__name__="http_requests_count", job="api", pod="a"}`,
+						samples: []fSample{{t: 1, f: 10}, {t: 2, f: 20}},
+					},
+				},
+			},
+			{
+				name: "none disables conversion and returns stored classic only",
+				matchers: []*labels.Matcher{
+					nameMatcher,
+					labels.MustNewMatcher(labels.MatchEqual, ClassicFromLabel, "none"),
+				},
+				want: []seriesSamples{
+					{
+						labels:  `{__name__="http_requests_count", job="api", pod="a"}`,
+						samples: []fSample{{t: 1, f: 10}},
+					},
+				},
+			},
+			{
+				name: "empty value disables conversion",
+				matchers: []*labels.Matcher{
+					nameMatcher,
+					labels.MustNewMatcher(labels.MatchEqual, ClassicFromLabel, ""),
+				},
+				want: []seriesSamples{
+					{
+						labels:  `{__name__="http_requests_count", job="api", pod="a"}`,
+						samples: []fSample{{t: 1, f: 10}},
+					},
+				},
+			},
+			{
+				name: "not-equal nhcb disables conversion",
+				matchers: []*labels.Matcher{
+					nameMatcher,
+					labels.MustNewMatcher(labels.MatchNotEqual, ClassicFromLabel, "nhcb"),
+				},
+				want: []seriesSamples{
+					{
+						labels:  `{__name__="http_requests_count", job="api", pod="a"}`,
+						samples: []fSample{{t: 1, f: 10}},
+					},
+				},
+			},
+			{
+				name: "not-regexp nhcb disables conversion",
+				matchers: []*labels.Matcher{
+					nameMatcher,
+					labels.MustNewMatcher(labels.MatchNotRegexp, ClassicFromLabel, "nhcb"),
+				},
+				want: []seriesSamples{
+					{
+						labels:  `{__name__="http_requests_count", job="api", pod="a"}`,
+						samples: []fSample{{t: 1, f: 10}},
+					},
+				},
+			},
+			{
+				name: "debug attaches __stored_as__=classic/nhcb without merging or shadowing",
+				matchers: []*labels.Matcher{
+					nameMatcher,
+					labels.MustNewMatcher(labels.MatchEqual, ClassicFromLabel, "debug"),
+				},
+				want: []seriesSamples{
+					{
+						labels:  `{__name__="http_requests_count", __stored_as__="classic", job="api", pod="a"}`,
+						samples: []fSample{{t: 1, f: 10}},
+					},
+					{
+						labels:  `{__name__="http_requests_count", __stored_as__="nhcb", job="api", pod="a"}`,
+						samples: []fSample{{t: 1, f: 99}, {t: 2, f: 20}},
+					},
+				},
+			},
+			{
+				name: "regexp nhcb|debug converts NHCB and attaches __stored_as__",
+				matchers: []*labels.Matcher{
+					nameMatcher,
+					labels.MustNewMatcher(labels.MatchRegexp, ClassicFromLabel, "nhcb|debug"),
+				},
+				want: []seriesSamples{
+					{
+						labels:  `{__name__="http_requests_count", __stored_as__="classic", job="api", pod="a"}`,
+						samples: []fSample{{t: 1, f: 10}},
+					},
+					{
+						labels:  `{__name__="http_requests_count", __stored_as__="nhcb", job="api", pod="a"}`,
+						samples: []fSample{{t: 1, f: 99}, {t: 2, f: 20}},
+					},
+				},
+			},
+			{
+				name: "debug with __stored_as__=nhcb returns only NHCB-converted series",
+				matchers: []*labels.Matcher{
+					nameMatcher,
+					labels.MustNewMatcher(labels.MatchEqual, ClassicFromLabel, "debug"),
+					labels.MustNewMatcher(labels.MatchEqual, StoredAsLabel, "nhcb"),
+				},
+				want: []seriesSamples{
+					{
+						labels:  `{__name__="http_requests_count", __stored_as__="nhcb", job="api", pod="a"}`,
+						samples: []fSample{{t: 1, f: 99}, {t: 2, f: 20}},
+					},
+				},
+			},
+			{
+				name: "debug with __stored_as__=classic returns only stored classic series",
+				matchers: []*labels.Matcher{
+					nameMatcher,
+					labels.MustNewMatcher(labels.MatchEqual, ClassicFromLabel, "debug"),
+					labels.MustNewMatcher(labels.MatchEqual, StoredAsLabel, "classic"),
+				},
+				want: []seriesSamples{
+					{
+						labels:  `{__name__="http_requests_count", __stored_as__="classic", job="api", pod="a"}`,
+						samples: []fSample{{t: 1, f: 10}},
+					},
+				},
+			},
+			{
+				name: "__stored_as__=nhcb without debug is passed through and matches nothing",
+				matchers: []*labels.Matcher{
+					nameMatcher,
+					labels.MustNewMatcher(labels.MatchEqual, StoredAsLabel, "nhcb"),
+				},
+				want: nil,
+			},
+			{
+				name: "contradictory control matchers return empty set",
+				matchers: []*labels.Matcher{
+					nameMatcher,
+					labels.MustNewMatcher(labels.MatchEqual, ClassicFromLabel, "nhcb"),
+					labels.MustNewMatcher(labels.MatchEqual, ClassicFromLabel, "none"),
+				},
+				want: nil,
+			},
+			{
+				name: "unknown control value returns error",
+				matchers: []*labels.Matcher{
+					nameMatcher,
+					labels.MustNewMatcher(labels.MatchEqual, ClassicFromLabel, "true"),
+				},
+				wantErr: errInvalidControlValue,
+			},
+			{
+				name: "only control matcher without other non-empty matchers returns error",
+				matchers: []*labels.Matcher{
+					labels.MustNewMatcher(labels.MatchEqual, ClassicFromLabel, "nhcb"),
+				},
+				wantErr: errOnlyControlMatchers,
+			},
+			{
+				name: "only control and __stored_as__ matchers in debug mode returns error",
+				matchers: []*labels.Matcher{
+					labels.MustNewMatcher(labels.MatchEqual, ClassicFromLabel, "debug"),
+					labels.MustNewMatcher(labels.MatchEqual, StoredAsLabel, "nhcb"),
+				},
+				wantErr: errOnlyControlMatchers,
+			},
+		} {
+			t.Run(tc.name, func(t *testing.T) {
+				ss := newHybridQuerier().Select(context.Background(), false, nil, tc.matchers...)
+				if tc.wantErr != nil {
+					require.False(t, ss.Next())
+					require.ErrorIs(t, ss.Err(), tc.wantErr)
+					return
+				}
+				got := readAll(t, ss)
+				assertSeriesSamplesEqual(t, tc.want, got)
+			})
+		}
+
+		t.Run("debug mode when no NHCB series exist attaches __stored_as__=classic to stored classic", func(t *testing.T) {
+			q := NewNHCBAsClassicQuerier(&nhcbMockQuerier{
+				classicSeries: []Series{
+					NewListSeries(labels.FromStrings("__name__", "http_requests_count", "job", "api"), []chunks.Sample{
+						fSample{t: 1, f: 10},
+					}),
+				},
+			})
+			got := readAll(t, q.Select(context.Background(), false, nil,
+				nameMatcher,
+				labels.MustNewMatcher(labels.MatchEqual, ClassicFromLabel, "debug"),
+			))
+			assertSeriesSamplesEqual(t, []seriesSamples{
+				{
+					labels:  `{__name__="http_requests_count", __stored_as__="classic", job="api"}`,
+					samples: []fSample{{t: 1, f: 10}},
+				},
+			}, got)
+		})
+
+		t.Run("debug mode on non-histogram selector attaches __stored_as__=classic", func(t *testing.T) {
+			q := NewNHCBAsClassicQuerier(&nhcbMockQuerier{
+				passthroughSeries: []Series{
+					NewListSeries(labels.FromStrings("__name__", "http_requests", "job", "api"), []chunks.Sample{
+						fSample{t: 1, f: 42},
+					}),
+				},
+			})
+			got := readAll(t, q.Select(context.Background(), false, nil,
+				labels.MustNewMatcher(labels.MatchEqual, model.MetricNameLabel, "http_requests"),
+				labels.MustNewMatcher(labels.MatchEqual, ClassicFromLabel, "debug"),
+			))
+			assertSeriesSamplesEqual(t, []seriesSamples{
+				{
+					labels:  `{__name__="http_requests", __stored_as__="classic", job="api"}`,
+					samples: []fSample{{t: 1, f: 42}},
+				},
+			}, got)
+		})
+
+		t.Run("debug mode on classic-only histogram group attaches __stored_as__=classic", func(t *testing.T) {
+			q := NewNHCBAsClassicQuerier(&nhcbMockQuerier{
+				classicSeries: []Series{
+					NewListSeries(labels.FromStrings("__name__", "http_requests_count", "pod", "classic_only"), []chunks.Sample{
+						fSample{t: 1, f: 10},
+					}),
+				},
+				nhcbSeries: []Series{
+					NewListSeries(labels.FromStrings("__name__", "http_requests", "pod", "nhcb_only"), []chunks.Sample{
+						hSample{t: 1, h: nhcb(200, []float64{1.0}, []int64{10, 10})},
+					}),
+				},
+			})
+			got := readAll(t, q.Select(context.Background(), false, nil,
+				nameMatcher,
+				labels.MustNewMatcher(labels.MatchEqual, ClassicFromLabel, "debug"),
+			))
+			assertSeriesSamplesEqual(t, []seriesSamples{
+				{
+					labels:  `{__name__="http_requests_count", __stored_as__="classic", pod="classic_only"}`,
+					samples: []fSample{{t: 1, f: 10}},
+				},
+				{
+					labels:  `{__name__="http_requests_count", __stored_as__="nhcb", pod="nhcb_only"}`,
+					samples: []fSample{{t: 1, f: 20}},
+				},
+			}, got)
+		})
+
+		t.Run("debug mode with _bucket le matcher on mixed groups", func(t *testing.T) {
+			newBucketQuerier := func() Querier {
+				return NewNHCBAsClassicQuerier(&nhcbMockQuerier{
+					classicSeries: []Series{
+						NewListSeries(labels.FromStrings("__name__", "http_requests_bucket", "le", "1.0", "pod", "a"), []chunks.Sample{
+							fSample{t: 1, f: 3},
+						}),
+						NewListSeries(labels.FromStrings("__name__", "http_requests_bucket", "le", "+Inf", "pod", "a"), []chunks.Sample{
+							fSample{t: 1, f: 10},
+						}),
+						NewListSeries(labels.FromStrings("__name__", "http_requests_bucket", "le", "1.0", "pod", "b"), []chunks.Sample{
+							fSample{t: 1, f: 4},
+						}),
+						NewListSeries(labels.FromStrings("__name__", "http_requests_bucket", "le", "+Inf", "pod", "b"), []chunks.Sample{
+							fSample{t: 1, f: 8},
+						}),
+					},
+					nhcbSeries: []Series{
+						NewListSeries(labels.FromStrings("__name__", "http_requests", "pod", "a"), []chunks.Sample{
+							hSample{t: 1, h: nhcb(50, []float64{1.0}, []int64{5, 5})},
+							hSample{t: 2, h: nhcb(100, []float64{1.0}, []int64{8, 7})},
+						}),
+					},
+				})
+			}
+
+			matchers := []*labels.Matcher{
+				labels.MustNewMatcher(labels.MatchEqual, model.MetricNameLabel, "http_requests_bucket"),
+				labels.MustNewMatcher(labels.MatchEqual, labels.BucketLabel, "1.0"),
+				labels.MustNewMatcher(labels.MatchEqual, ClassicFromLabel, "debug"),
+			}
+
+			gotUnsorted := readAll(t, newBucketQuerier().Select(context.Background(), false, nil, matchers...))
+			assertSeriesSamplesEqual(t, []seriesSamples{
+				{
+					labels:  `{__name__="http_requests_bucket", __stored_as__="classic", le="1.0", pod="a"}`,
+					samples: []fSample{{t: 1, f: 3}},
+				},
+				{
+					labels:  `{__name__="http_requests_bucket", __stored_as__="nhcb", le="1.0", pod="a"}`,
+					samples: []fSample{{t: 1, f: 5}, {t: 2, f: 8}},
+				},
+				{
+					labels:  `{__name__="http_requests_bucket", __stored_as__="classic", le="1.0", pod="b"}`,
+					samples: []fSample{{t: 1, f: 4}},
+				},
+			}, gotUnsorted)
+
+			gotSorted := readAll(t, newBucketQuerier().Select(context.Background(), true, nil, matchers...))
+			assertSeriesSamplesEqual(t, []seriesSamples{
+				{
+					labels:  `{__name__="http_requests_bucket", __stored_as__="classic", le="1.0", pod="a"}`,
+					samples: []fSample{{t: 1, f: 3}},
+				},
+				{
+					labels:  `{__name__="http_requests_bucket", __stored_as__="classic", le="1.0", pod="b"}`,
+					samples: []fSample{{t: 1, f: 4}},
+				},
+				{
+					labels:  `{__name__="http_requests_bucket", __stored_as__="nhcb", le="1.0", pod="a"}`,
+					samples: []fSample{{t: 1, f: 5}, {t: 2, f: 8}},
+				},
+			}, gotSorted)
+		})
+	})
+}
+
+func TestExtractControlMatchers(t *testing.T) {
+	name := labels.MustNewMatcher(labels.MatchEqual, model.MetricNameLabel, "http_requests_bucket")
+	le := labels.MustNewMatcher(labels.MatchEqual, labels.BucketLabel, "1.0")
+	ctrl := func(mt labels.MatchType, val string) *labels.Matcher {
+		return labels.MustNewMatcher(mt, ClassicFromLabel, val)
+	}
+
+	for _, tc := range []struct {
+		name            string
+		matchers        []*labels.Matcher
+		wantStripped    []*labels.Matcher
+		wantConvertNHCB bool
+		wantDebug       bool
+		wantMatched     bool
+		wantErr         error
+	}{
+		{
+			name:            "no control matchers enables NHCB conversion",
+			matchers:        []*labels.Matcher{name},
+			wantStripped:    []*labels.Matcher{name},
+			wantConvertNHCB: true,
+			wantDebug:       false,
+			wantMatched:     true,
+		},
+		{
+			name:            "equal nhcb enables NHCB conversion",
+			matchers:        []*labels.Matcher{name, ctrl(labels.MatchEqual, "nhcb")},
+			wantStripped:    []*labels.Matcher{name},
+			wantConvertNHCB: true,
+			wantDebug:       false,
+			wantMatched:     true,
+		},
+		{
+			name:            "non-control matchers including le are preserved in order",
+			matchers:        []*labels.Matcher{name, ctrl(labels.MatchEqual, "nhcb"), le},
+			wantStripped:    []*labels.Matcher{name, le},
+			wantConvertNHCB: true,
+			wantMatched:     true,
+		},
+		{
+			name:            "not-equal none enables NHCB without debug",
+			matchers:        []*labels.Matcher{name, ctrl(labels.MatchNotEqual, "none")},
+			wantStripped:    []*labels.Matcher{name},
+			wantConvertNHCB: true,
+			wantDebug:       false,
+			wantMatched:     true,
+		},
+		{
+			name:            "not-equal debug enables NHCB without debug",
+			matchers:        []*labels.Matcher{name, ctrl(labels.MatchNotEqual, "debug")},
+			wantStripped:    []*labels.Matcher{name},
+			wantConvertNHCB: true,
+			wantDebug:       false,
+			wantMatched:     true,
+		},
+		{
+			name:            "equal none disables conversion",
+			matchers:        []*labels.Matcher{name, ctrl(labels.MatchEqual, "none")},
+			wantStripped:    []*labels.Matcher{name},
+			wantConvertNHCB: false,
+			wantDebug:       false,
+			wantMatched:     true,
+		},
+		{
+			name:            "equal empty string disables conversion",
+			matchers:        []*labels.Matcher{name, ctrl(labels.MatchEqual, "")},
+			wantStripped:    []*labels.Matcher{name},
+			wantConvertNHCB: false,
+			wantDebug:       false,
+			wantMatched:     true,
+		},
+		{
+			name:            "not-equal nhcb disables conversion",
+			matchers:        []*labels.Matcher{name, ctrl(labels.MatchNotEqual, "nhcb")},
+			wantStripped:    []*labels.Matcher{name},
+			wantConvertNHCB: false,
+			wantDebug:       false,
+			wantMatched:     true,
+		},
+		{
+			name:            "not-regexp nhcb disables conversion",
+			matchers:        []*labels.Matcher{name, ctrl(labels.MatchNotRegexp, "nhcb")},
+			wantStripped:    []*labels.Matcher{name},
+			wantConvertNHCB: false,
+			wantDebug:       false,
+			wantMatched:     true,
+		},
+		{
+			name:            "equal debug enables NHCB conversion and debug",
+			matchers:        []*labels.Matcher{name, ctrl(labels.MatchEqual, "debug")},
+			wantStripped:    []*labels.Matcher{name},
+			wantConvertNHCB: true,
+			wantDebug:       true,
+			wantMatched:     true,
+		},
+		{
+			name:            "regexp nhcb|debug enables NHCB and debug",
+			matchers:        []*labels.Matcher{name, ctrl(labels.MatchRegexp, "nhcb|debug")},
+			wantStripped:    []*labels.Matcher{name},
+			wantConvertNHCB: true,
+			wantDebug:       true,
+			wantMatched:     true,
+		},
+		{
+			name:            "regexp matching none disables conversion without debug",
+			matchers:        []*labels.Matcher{name, ctrl(labels.MatchRegexp, "none|debug")},
+			wantStripped:    []*labels.Matcher{name},
+			wantConvertNHCB: false,
+			wantDebug:       false,
+			wantMatched:     true,
+		},
+		{
+			name: "other __opt_ matcher is stripped without changing default conversion",
+			matchers: []*labels.Matcher{
+				name,
+				labels.MustNewMatcher(labels.MatchEqual, "__opt_other", "foo"),
+			},
+			wantStripped:    []*labels.Matcher{name},
+			wantConvertNHCB: true,
+			wantDebug:       false,
+			wantMatched:     true,
+		},
+		{
+			name: "other __opt_ matcher alongside __opt_classic_from=nhcb are both stripped",
+			matchers: []*labels.Matcher{
+				name,
+				ctrl(labels.MatchEqual, "nhcb"),
+				labels.MustNewMatcher(labels.MatchEqual, "__opt_other", "foo"),
+			},
+			wantStripped:    []*labels.Matcher{name},
+			wantConvertNHCB: true,
+			wantDebug:       false,
+			wantMatched:     true,
+		},
+		{
+			name:         "contradictory matchers match nothing",
+			matchers:     []*labels.Matcher{name, ctrl(labels.MatchEqual, "nhcb"), ctrl(labels.MatchEqual, "none")},
+			wantStripped: []*labels.Matcher{name},
+			wantMatched:  false,
+		},
+		{
+			name:     "equal unknown value returns error",
+			matchers: []*labels.Matcher{name, ctrl(labels.MatchEqual, "true")},
+			wantErr:  errInvalidControlValue,
+		},
+		{
+			name:     "not-equal unknown value returns error",
+			matchers: []*labels.Matcher{name, ctrl(labels.MatchNotEqual, "debgu")},
+			wantErr:  errInvalidControlValue,
+		},
+		{
+			name:     "only control matchers returns error",
+			matchers: []*labels.Matcher{ctrl(labels.MatchEqual, "nhcb")},
+			wantErr:  errOnlyControlMatchers,
+		},
+		{
+			name: "only empty-matching matchers besides control matcher returns error",
+			matchers: []*labels.Matcher{
+				labels.MustNewMatcher(labels.MatchRegexp, "job", ".*"),
+				ctrl(labels.MatchEqual, "debug"),
+			},
+			wantErr: errOnlyControlMatchers,
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			stripped, convertNHCB, debug, matched, err := extractControlMatchers(tc.matchers)
+			if tc.wantErr != nil {
+				require.ErrorIs(t, err, tc.wantErr)
+				return
+			}
+			require.NoError(t, err)
+			require.Equal(t, tc.wantConvertNHCB, convertNHCB)
+			require.Equal(t, tc.wantDebug, debug)
+			require.Equal(t, tc.wantMatched, matched)
+			require.Equal(t, tc.wantStripped, stripped)
+		})
+	}
+}
+
+func TestOptStripQuerier(t *testing.T) {
+	q := NewOptStripQuerier(&nhcbMockQuerier{})
+
+	matchers := []*labels.Matcher{
+		labels.MustNewMatcher(labels.MatchEqual, model.MetricNameLabel, "http_requests_bucket"),
+		labels.MustNewMatcher(labels.MatchEqual, ClassicFromLabel, "nhcb"),
+		labels.MustNewMatcher(labels.MatchEqual, "job", "api"),
+	}
+	ss := q.Select(t.Context(), false, nil, matchers...)
+	require.False(t, ss.Next())
+	require.NoError(t, ss.Err())
+
+	// Only __opt_* matchers must be rejected so stripping never turns a
+	// selector into an empty match-all query.
+	onlyOpt := q.Select(t.Context(), false, nil, labels.MustNewMatcher(labels.MatchEqual, ClassicFromLabel, "nhcb"))
+	require.False(t, onlyOpt.Next())
+	require.ErrorIs(t, onlyOpt.Err(), errOnlyControlMatchers)
+
+	// The caller's matchers must not be modified.
+	require.Len(t, matchers, 3)
+	require.Equal(t, ClassicFromLabel, matchers[1].Name)
 }
 
 func TestNHCBAsClassicQuerier_FloatHistogram(t *testing.T) {
@@ -1261,6 +1827,9 @@ type nhcbMockQuerier struct {
 }
 
 func (m *nhcbMockQuerier) Select(_ context.Context, _ bool, _ *SelectHints, matchers ...*labels.Matcher) SeriesSet {
+	if slices.ContainsFunc(matchers, IsOptMatcher) {
+		return ErrSeriesSet(errors.New("control matcher was not stripped before calling underlying Querier.Select"))
+	}
 	for _, matcher := range matchers {
 		if matcher.Name != model.MetricNameLabel {
 			continue

@@ -393,6 +393,16 @@ histogram_quantile(0.95, rate(request_duration_seconds_bucket[5m]))
 rate(request_duration_seconds[5m])
 ```
 
+Individual selectors can control or debug conversion using the reserved `__opt_classic_from` matcher:
+
+* `__opt_classic_from="nhcb"` (or `!="none"`): converts Native Histograms with Custom Buckets (NHCB) for the selector (the default when no `__opt_classic_from` matcher is present).
+* `__opt_classic_from="none"` (or `=""`, `!="nhcb"`, `!~"nhcb"`): disables NHCB-to-classic conversion for the selector and returns only stored classic series.
+* `__opt_classic_from="debug"` (or `=~"nhcb|debug"`): enables conversion and attaches `__stored_as__="nhcb"` to series converted from NHCB samples and `__stored_as__="classic"` to all other returned series (e.g. stored classic series or series of selectors that are not converted). Stored and converted series are neither merged into the same labelset nor shadowed by each other, so both sources are returned in full side by side. In debug mode, `__stored_as__` matchers (e.g. `__stored_as__="nhcb"`) filter the returned series.
+
+Other values in `=` or `!=` matchers on `__opt_classic_from` return an error when this feature flag is enabled.
+
+Matchers with the `__opt_` prefix (such as `__opt_classic_from`) are always stripped in PromQL queries even when this feature flag is disabled, so rolling back `--enable-feature=promql-nhcb-as-classic` does not break queries that use `__opt_classic_from`.
+
 This feature only affects PromQL query evaluation (e.g. the query APIs and rule evaluation). The
 conversion is applied on top of all data the query engine reads, including series fetched from
 `remote_read` endpoints. It does not apply to remote write (NHCB series are not converted when being
