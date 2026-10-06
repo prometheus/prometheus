@@ -82,6 +82,7 @@ type NHCBParser struct {
 
 	// Caches the values and metric for the inserted converted NHCB.
 	bytesNHCB        []byte
+	tsNHCB           *int64
 	hNHCB            *histogram.Histogram
 	fhNHCB           *histogram.FloatHistogram
 	lsetNHCB         labels.Labels
@@ -96,6 +97,7 @@ type NHCBParser struct {
 	tempExemplars     []exemplar.Exemplar
 	tempExemplarCount int
 	tempST            int64
+	tempTS            *int64
 
 	// Remembers the last base histogram metric name (assuming it's
 	// a classic histogram) so we can tell if the next float series
@@ -122,7 +124,7 @@ func (p *NHCBParser) Series() ([]byte, *int64, float64) {
 
 func (p *NHCBParser) Histogram() ([]byte, *int64, *histogram.Histogram, *histogram.FloatHistogram) {
 	if p.state == stateEmitting {
-		return p.bytesNHCB, p.ts, p.hNHCB, p.fhNHCB
+		return p.bytesNHCB, p.tsNHCB, p.hNHCB, p.fhNHCB
 	}
 	return p.bytes, p.ts, p.h, p.fh
 }
@@ -323,6 +325,11 @@ func (p *NHCBParser) handleClassicHistogramSeries(lset labels.Labels) bool {
 func (p *NHCBParser) processClassicHistogramSeries(lset labels.Labels, name string, updateHist func(*convertnhcb.TempHistogram)) {
 	if p.state != stateCollecting {
 		p.storeClassicLabels(name)
+		p.tempTS = nil
+		if p.ts != nil {
+			ts := *p.ts
+			p.tempTS = &ts
+		}
 		if p.parseST {
 			p.tempST = p.parser.StartTimestamp()
 		} else {
@@ -370,6 +377,7 @@ func (p *NHCBParser) processNHCB() bool {
 	if err == nil {
 		p.hNHCB = h
 		p.fhNHCB = fh
+		p.tsNHCB = p.tempTS
 
 		lblsWithMetricName := p.tempLsetNHCB.DropReserved(func(n string) bool { return n == labels.MetricName })
 		// Ensure we return `metric` instead of `metric{}` for name only
@@ -391,5 +399,6 @@ func (p *NHCBParser) processNHCB() bool {
 	p.tempNHCB.Reset()
 	p.tempExemplarCount = 0
 	p.tempST = 0
+	p.tempTS = nil
 	return err == nil
 }

@@ -15,6 +15,9 @@ package textparse
 
 import (
 	"bytes"
+	"errors"
+	"fmt"
+	"io"
 	"strconv"
 	"testing"
 
@@ -1267,4 +1270,146 @@ metric: <
 			require.Equal(t, "test_histogram_seconds", string(lastMFName))
 		})
 	}
+}
+
+func TestNHCBParserPreservesTimestamp(t *testing.T) {
+	for _, profile := range []struct {
+		name, a, b   string
+		hasA, hasB   bool
+		timeA, timeB int64
+	}{
+		{"same", " 10", " 10", true, true, 10000, 10000},
+		{"different", " 10", " 20", true, true, 10000, 20000},
+		{"previous_only", " 10", "", true, false, 10000, 0},
+		{"next_only", "", " 20", false, true, 0, 20000},
+		{"absent", "", "", false, false, 0, 0},
+	} {
+		for _, keep := range []bool{false, true} {
+			for _, parseST := range []bool{false, true} {
+				t.Run(fmt.Sprintf("%s_keep%v_parseST%v", profile.name, keep, parseST), func(t *testing.T) {
+					input := fmt.Sprintf(`# TYPE h histogram
+h_bucket{job="a",le="+Inf"} 1%s
+h_count{job="a"} 1%s
+h_sum{job="a"} 1%s
+h_bucket{job="b",le="+Inf"} 2%s
+h_count{job="b"} 2%s
+h_sum{job="b"} 2%s
+# EOF
+`, profile.a, profile.a, profile.a, profile.b, profile.b, profile.b)
+					symbols := labels.NewSymbolTable()
+					p := NewNHCBParser(NewOpenMetricsParser([]byte(input), symbols, WithOMParserSTSeriesSkipped()), symbols, keep, parseST)
+					seenHistogram, seenSeries := 0, 0
+					for {
+						entry, err := p.Next()
+						if err != nil {
+							if !errors.Is(err, io.EOF) || entry != EntryInvalid {
+								t.Fatal(entry, err)
+							}
+							break
+						}
+						if entry != EntryHistogram && entry != EntrySeries {
+							continue
+						}
+						var timestamp *int64
+						var value float64
+						if entry == EntrySeries {
+							_, timestamp, value = p.Series()
+						} else {
+							_, ts, h, fh := p.Histogram()
+							timestamp = ts
+							if h == nil || fh != nil {
+								t.Fatalf("histogram output: h=%v fh=%v", h, fh)
+							}
+							value = float64(h.Count)
+							if h.Sum != value || h.Schema != histogram.CustomBucketsSchema || len(h.CustomValues) != 0 {
+								t.Fatalf("histogram fields: %v", h)
+							}
+							seenHistogram++
+						}
+						var lset labels.Labels
+						p.Labels(&lset)
+						_ = p.StartTimestamp()
+						wantTime, wantPresent, wantValue := profile.timeA, profile.hasA, 1.0
+						if lset.Get("job") == "b" {
+							wantTime, wantPresent, wantValue = profile.timeB, profile.hasB, 2.0
+						} else if lset.Get("job") != "a" {
+							t.Fatal(lset)
+						}
+						gotTime := int64(0)
+						if timestamp != nil {
+							gotTime = *timestamp
+						}
+						if gotTime != wantTime || (timestamp != nil) != wantPresent || value != wantValue {
+							t.Errorf("entry=%v labels=%s timestamp=%d present=%v value=%v want timestamp=%d present=%v value=%v", entry, lset.String(), gotTime, timestamp != nil, value, wantTime, wantPresent, wantValue)
+						}
+						if entry == EntrySeries {
+							seenSeries++
+						}
+					}
+					wantSeries := 0
+					if keep {
+						wantSeries = 6
+					}
+					if seenHistogram != 2 || seenSeries != wantSeries {
+						t.Fatalf("histograms=%d series=%d", seenHistogram, seenSeries)
+					}
+				})
+			}
+		}
+	}
+}
+
+// nhcbReusedTimestampParser demonstrates the Parser's borrowed timestamp
+// lifetime: the next Series call may reuse the returned timestamp storage.
+type nhcbReusedTimestampParser struct {
+	Parser
+	timestamp int64
+}
+
+func (p *nhcbReusedTimestampParser) Series() ([]byte, *int64, float64) {
+	raw, timestamp, value := p.Parser.Series()
+	if timestamp != nil {
+		p.timestamp = *timestamp
+		timestamp = &p.timestamp
+	}
+	return raw, timestamp, value
+}
+
+func TestNHCBParserCopiesBorrowedTimestamp(t *testing.T) {
+	const input = `# TYPE h histogram
+h_bucket{job="a",le="+Inf"} 1 10
+h_count{job="a"} 1 10
+h_sum{job="a"} 1 10
+h_bucket{job="b",le="+Inf"} 2 20
+h_count{job="b"} 2 20
+h_sum{job="b"} 2 20
+# EOF
+`
+	symbols := labels.NewSymbolTable()
+	underlying := &nhcbReusedTimestampParser{Parser: NewOpenMetricsParser([]byte(input), symbols, WithOMParserSTSeriesSkipped())}
+	p := NewNHCBParser(underlying, symbols, false, false)
+	seen := 0
+	for {
+		entry, err := p.Next()
+		if errors.Is(err, io.EOF) {
+			require.Equal(t, EntryInvalid, entry)
+			break
+		}
+		require.NoError(t, err)
+		if entry == EntryType {
+			continue
+		}
+		require.Equal(t, EntryHistogram, entry)
+		_, timestamp, h, fh := p.Histogram()
+		var lset labels.Labels
+		p.Labels(&lset)
+		require.NotNil(t, timestamp)
+		require.Equal(t, int64((seen+1)*10000), *timestamp)
+		require.Equal(t, []string{"a", "b"}[seen], lset.Get("job"))
+		require.Nil(t, fh)
+		require.NotNil(t, h)
+		require.Equal(t, uint64(seen+1), h.Count)
+		seen++
+	}
+	require.Equal(t, 2, seen)
 }
