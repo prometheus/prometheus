@@ -5956,12 +5956,39 @@ func testReuseCacheRace(t *testing.T, appV2 bool) {
 }
 
 func TestCheckAddError(t *testing.T) {
-	var appErrs appendErrors
-	sl, _ := newTestScrapeLoop(t)
-	// TODO: Check err etc
-	_, _ = sl.checkAddError(nil, nil, storage.ErrOutOfOrderSample, nil, nil, &appErrs)
-	require.Equal(t, 1, appErrs.numOutOfOrder)
-	// TODO(bwplotka): Test partial error check and other cases
+	for _, tc := range []struct {
+		name      string
+		err       error
+		exemplars int
+		sample    bool
+		ooo       int
+		hard      bool
+	}{
+		{name: "out of order sample", err: storage.ErrOutOfOrderSample},
+		{name: "sparse", err: &storage.AppendPartialError{ExemplarErrors: []error{nil, storage.ErrOutOfOrderExemplar}}, exemplars: 2, sample: true},
+		{name: "all failed", err: &storage.AppendPartialError{ExemplarErrors: []error{storage.ErrOutOfOrderExemplar, storage.ErrOutOfOrderExemplar}}, exemplars: 2, sample: true, ooo: 2},
+		{name: "all nil", err: &storage.AppendPartialError{ExemplarErrors: make([]error, 2)}, exemplars: 2, sample: true},
+		{name: "typed nil", err: (*storage.AppendPartialError)(nil), exemplars: 2, sample: true},
+		{name: "malformed", err: &storage.AppendPartialError{ExemplarErrors: []error{storage.ErrOutOfOrderExemplar}}, exemplars: 2, hard: true},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			var appErrs appendErrors
+			sl, _ := newTestScrapeLoop(t)
+			added, err := sl.checkAddError(nil, make([]exemplar.Exemplar, tc.exemplars), tc.err, nil, nil, &appErrs)
+			require.Equal(t, tc.sample, added)
+			if tc.hard {
+				require.Error(t, err)
+				var partial *storage.AppendPartialError
+				require.NotErrorAs(t, err, &partial)
+			} else {
+				require.NoError(t, err)
+			}
+			require.Equal(t, tc.ooo, appErrs.numExemplarOutOfOrder)
+			if tc.name == "out of order sample" {
+				require.Equal(t, 1, appErrs.numOutOfOrder)
+			}
+		})
+	}
 }
 
 func TestScrapeReportSingleAppender(t *testing.T) {

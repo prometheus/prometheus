@@ -905,6 +905,19 @@ func TestStorage_AppendExemplars_AppendV2(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, ref, retRef)
 
+	t.Run("mixed duplicate invalid and valid", func(t *testing.T) {
+		invalid := exemplar.Exemplar{Labels: labels.FromStrings("a", "1", "a", "2"), Ts: 30}
+		valid := exemplar.Exemplar{Labels: labels.FromStrings("id", "3"), Value: 43, Ts: 35, HasTs: true}
+		input := []exemplar.Exemplar{e2, invalid, valid}
+		_, err := app.AppendExemplars(ref, lset, input)
+		var partial *storage.AppendPartialError
+		require.ErrorAs(t, err, &partial)
+		require.Len(t, partial.ExemplarErrors, len(input))
+		require.NoError(t, partial.ExemplarErrors[0])
+		require.ErrorIs(t, partial.ExemplarErrors[1], tsdb.ErrInvalidExemplar)
+		require.NoError(t, partial.ExemplarErrors[2])
+		require.Equal(t, 1, partial.FailedExemplarCount())
+	})
 	require.NoError(t, app.Commit())
 
 	var walExemplarsCount int
@@ -923,7 +936,7 @@ func TestStorage_AppendExemplars_AppendV2(t *testing.T) {
 			walExemplarsCount += len(exemplars)
 		}
 	}
-	require.Equal(t, 2, walExemplarsCount)
+	require.Equal(t, 3, walExemplarsCount)
 }
 
 func TestDBAllowOOOSamples_AppendV2(t *testing.T) {

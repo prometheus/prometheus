@@ -14,6 +14,7 @@
 package teststorage
 
 import (
+	"context"
 	"errors"
 	"math"
 	"testing"
@@ -144,6 +145,48 @@ func TestAppendable(t *testing.T) {
 }
 
 func TestAppendable_Then(t *testing.T) {
+	t.Run("exemplar partial errors", func(t *testing.T) {
+		local := errors.New("local exemplar failure")
+		for _, tc := range []struct {
+			name     string
+			failures []error
+			hard     bool
+		}{
+			{name: "sparse next", failures: []error{nil, storage.ErrOutOfOrderExemplar}},
+			{name: "typed nil next"},
+			{name: "all nil next", failures: make([]error, 2)},
+			{name: "malformed next", failures: []error{storage.ErrOutOfOrderExemplar}, hard: true},
+		} {
+			t.Run(tc.name, func(t *testing.T) {
+				var partial *storage.AppendPartialError
+				if tc.failures != nil {
+					partial = &storage.AppendPartialError{ExemplarErrors: tc.failures}
+				}
+				next := &partialAppendable{Appendable: NewAppendable(), partial: partial}
+				app := NewAppendable().WithErrs(nil, local, nil).Then(next).AppenderV2(t.Context()).(storage.ExemplarAppenderV2)
+				ls := labels.FromStrings("__name__", "metric")
+				ref, err := app.Append(0, ls, 0, 1, 1, nil, nil, storage.AOptions{})
+				require.NoError(t, err)
+				_, err = app.AppendExemplars(ref, ls, make([]exemplar.Exemplar, 2))
+				var result *storage.AppendPartialError
+				if tc.hard {
+					require.Error(t, err)
+					require.NotErrorAs(t, err, &result)
+				} else {
+					require.ErrorAs(t, err, &result)
+					require.Len(t, result.ExemplarErrors, 2)
+					for _, slot := range result.ExemplarErrors {
+						require.ErrorIs(t, slot, local)
+					}
+					if len(tc.failures) > 1 && tc.failures[1] != nil {
+						require.ErrorIs(t, result.ExemplarErrors[1], tc.failures[1])
+					}
+				}
+				require.NoError(t, app.Rollback())
+			})
+		}
+	})
+
 	nextAppTest := NewAppendable()
 	app := NewAppendable().Then(nextAppTest)
 
@@ -419,4 +462,22 @@ func TestSampleIsStale(t *testing.T) {
 	fh.Sum = math.Float64frombits(value.StaleNaN)
 	fh2 := Sample{V: 1, H: tsdbutil.GenerateTestHistogram(1), FH: fh}
 	require.True(t, fh2.IsStale())
+}
+
+type partialAppendable struct {
+	*Appendable
+	partial *storage.AppendPartialError
+}
+
+func (a *partialAppendable) AppenderV2(ctx context.Context) storage.AppenderV2 {
+	return &partialAppender{ExemplarAppenderV2: a.Appendable.AppenderV2(ctx).(storage.ExemplarAppenderV2), partial: a.partial}
+}
+
+type partialAppender struct {
+	storage.ExemplarAppenderV2
+	partial *storage.AppendPartialError
+}
+
+func (a *partialAppender) AppendExemplars(ref storage.SeriesRef, _ labels.Labels, _ []exemplar.Exemplar) (storage.SeriesRef, error) {
+	return ref, a.partial
 }

@@ -279,14 +279,14 @@ type otlpInstrumentedAppender struct {
 
 func (app *otlpInstrumentedAppender) Append(ref storage.SeriesRef, ls labels.Labels, st, t int64, v float64, h *histogram.Histogram, fh *histogram.FloatHistogram, opts storage.AOptions) (storage.SeriesRef, error) {
 	ref, err := app.AppenderV2.Append(ref, ls, st, t, v, h, fh, opts)
+	err = checkExemplarError(err, len(opts.Exemplars))
 	if err != nil {
-		var partialErr *storage.AppendPartialError
-		partialErr, hErr := partialErr.Handle(err)
-		if hErr != nil {
+		partialErr, ok := errors.AsType[*storage.AppendPartialError](err)
+		if !ok {
 			// Not a partial error, return err.
 			return 0, err
 		}
-		app.outOfOrderExemplars.Add(float64(len(partialErr.ExemplarErrors)))
+		app.outOfOrderExemplars.Add(float64(partialErr.FailedExemplarCount()))
 		// Hide the partial error as otlp converter does not handle it.
 	}
 	if opts.Metadata.IsEmpty() {

@@ -1486,9 +1486,12 @@ func (a *mockAppenderV2) AppendExemplars(ref storage.SeriesRef, l labels.Labels,
 	}
 	ref = storage.SeriesRef(hash)
 	var errs []error
-	for _, e := range exemplars {
+	for i, e := range exemplars {
 		if _, err := m.AppendExemplar(ref, l, e); err != nil && !errors.Is(err, storage.ErrDuplicateExemplar) {
-			errs = append(errs, err)
+			if errs == nil {
+				errs = make([]error, len(exemplars))
+			}
+			errs[i] = err
 		}
 	}
 	if len(errs) > 0 {
@@ -1842,6 +1845,7 @@ func TestRemoteWriteHandler_ResponseStats(t *testing.T) {
 			}
 
 			srv := httptest.NewServer(handler)
+			t.Cleanup(srv.Close)
 
 			// Send message and do the parse response flow.
 			c := &Client{Client: srv.Client(), urlString: srv.URL, timeout: 5 * time.Minute, writeProtoMsg: tt.msgType}
@@ -1857,6 +1861,85 @@ func TestRemoteWriteHandler_ResponseStats(t *testing.T) {
 			}
 		})
 	}
+
+	t.Run("fanout", func(t *testing.T) {
+		for _, tc := range []struct {
+			name         string
+			destinations int
+			seedTimes    []int64
+		}{
+			{name: "one destination", destinations: 1},
+			{name: "two destinations", destinations: 2},
+			{name: "three destinations", destinations: 3},
+			{name: "different failures by destination", destinations: 2, seedTimes: []int64{1500, 2500}},
+		} {
+			t.Run(tc.name, func(t *testing.T) {
+				var stores []storage.Storage
+				ls := labels.FromStrings("__name__", "fanout_metric")
+				for i := range tc.destinations {
+					opts := tsdb.DefaultOptions()
+					opts.EnableExemplarStorage = true
+					opts.MaxExemplars = 100
+					db, err := tsdb.Open(t.TempDir(), promslog.NewNopLogger(), nil, opts, tsdb.NewDBStats())
+					require.NoError(t, err)
+					db.DisableCompactions()
+					t.Cleanup(func() { require.NoError(t, db.Close()) })
+					stores = append(stores, db)
+					if len(tc.seedTimes) > 0 {
+						app := db.AppenderV2(t.Context()).(storage.ExemplarAppenderV2)
+						ref, err := app.Append(0, ls, 0, 500, 1, nil, nil, storage.AOptions{})
+						require.NoError(t, err)
+						_, err = app.AppendExemplars(ref, ls, []exemplar.Exemplar{{Labels: labels.FromStrings("trace_id", "seed"), Ts: tc.seedTimes[i], HasTs: true}})
+						require.NoError(t, err)
+						require.NoError(t, app.Commit())
+					}
+				}
+				fanout := storage.NewFanout(promslog.NewNopLogger(), stores[0], stores[1:]...)
+				handler := NewWriteHandler(promslog.NewNopLogger(), nil, fanout, []remoteapi.WriteMessageType{remoteapi.WriteV2MessageType}, false, false, false)
+				exemplars := []writev2.Exemplar{
+					{LabelsRefs: []uint32{2, 3}, Timestamp: 1000, Value: 1},
+					{LabelsRefs: []uint32{2, 4}, Timestamp: 1001, Value: 2},
+				}
+				wantStatus := http.StatusNoContent
+				if len(tc.seedTimes) > 0 {
+					// The first input fails everywhere; the second fails only on the secondary.
+					exemplars = []writev2.Exemplar{
+						{LabelsRefs: []uint32{2, 3}, Timestamp: 1000, Value: 1},
+						{LabelsRefs: []uint32{2, 3}, Timestamp: 2000, Value: 2},
+						{LabelsRefs: []uint32{2, 3}, Timestamp: 3000, Value: 3},
+					}
+					wantStatus = http.StatusBadRequest
+				}
+				payload, _, _, _, err := buildV2WriteRequest(promslog.NewNopLogger(), []writev2.TimeSeries{{
+					LabelsRefs: []uint32{0, 1},
+					Samples:    []writev2.Sample{{Timestamp: 4000, Value: 1}},
+					Exemplars:  exemplars,
+				}}, []string{"__name__", "fanout_metric", "trace_id", "valid", strings.Repeat("x", exemplar.ExemplarMaxLabelSetLength+1)}, nil, nil, nil, "snappy")
+				require.NoError(t, err)
+				req := httptest.NewRequest(http.MethodPost, "/api/v1/write", bytes.NewReader(payload))
+				req.Header.Set("Content-Type", remoteWriteContentTypeHeaders[remoteapi.WriteV2MessageType])
+				req.Header.Set("Content-Encoding", compression.Snappy)
+				recorder := httptest.NewRecorder()
+				handler.ServeHTTP(recorder, req)
+				require.Equal(t, wantStatus, recorder.Code)
+				expectHeaderValue(t, 1, recorder.Header().Get(rw20WrittenSamplesHeader))
+				expectHeaderValue(t, 1, recorder.Header().Get(rw20WrittenExemplarsHeader))
+				for i, store := range stores {
+					q, err := store.(storage.ExemplarQueryable).ExemplarQuerier(t.Context())
+					require.NoError(t, err)
+					results, err := q.Select(0, 4000, []*labels.Matcher{labels.MustNewMatcher(labels.MatchEqual, "__name__", "fanout_metric")})
+					require.NoError(t, err)
+					require.Len(t, results, 1)
+					wantStored := 1
+					if len(tc.seedTimes) > 0 {
+						wantStored = 3 - i
+					}
+					require.Len(t, results[0].Exemplars, wantStored)
+					require.Equal(t, "valid", results[0].Exemplars[wantStored-1].Labels.Get("trace_id"))
+				}
+			})
+		}
+	})
 }
 
 type mockAppenderV2Only struct {
@@ -2109,35 +2192,124 @@ func TestRemoteWriteHandler_V2ExemplarOrderingAndRejectedSeries(t *testing.T) {
 	})
 }
 
-func TestRemoteWriteAppenderV2_AppendExemplarsDoesNotMutateCallerSlice(t *testing.T) {
-	appendable := &mockAppendable{}
-	baseApp := appendable.AppenderV2(t.Context()).(storage.ExemplarAppenderV2)
-	rwApp := &remoteWriteAppenderV2{
-		AppenderV2: baseApp,
-		exApp:      baseApp,
-		maxTime:    1000,
+func TestRemoteWriteAppenderV2_AppendExemplars(t *testing.T) {
+	t.Run("caller slice remains unchanged", func(t *testing.T) {
+		appendable := &mockAppendable{}
+		baseApp := appendable.AppenderV2(t.Context()).(storage.ExemplarAppenderV2)
+		rwApp := &remoteWriteAppenderV2{
+			AppenderV2: baseApp,
+			exApp:      baseApp,
+			maxTime:    1000,
+		}
+
+		lbls := labels.FromStrings("__name__", "test_metric")
+		ref, err := rwApp.Append(0, lbls, 0, 500, 1.0, nil, nil, storage.AOptions{})
+		require.NoError(t, err)
+
+		input := []exemplar.Exemplar{
+			{Labels: labels.FromStrings("id", "1"), Value: 1, Ts: 2000}, // future (> maxTime)
+			{Labels: labels.FromStrings("id", "2"), Value: 2, Ts: 900},  // valid (<= maxTime)
+		}
+		origFirstID := input[0].Labels.Get("id")
+		origSecondID := input[1].Labels.Get("id")
+
+		_, err = rwApp.AppendExemplars(ref, lbls, input)
+		var pErr *storage.AppendPartialError
+		require.ErrorAs(t, err, &pErr)
+		require.Len(t, pErr.ExemplarErrors, len(input))
+		require.NoError(t, pErr.ExemplarErrors[1])
+		require.ErrorIs(t, pErr.ExemplarErrors[0], storage.ErrOutOfBounds)
+
+		// Caller's input slice must not be mutated in place.
+		require.Equal(t, origFirstID, input[0].Labels.Get("id"))
+		require.Equal(t, origSecondID, input[1].Labels.Get("id"))
+		require.Len(t, appendable.exemplars, 1)
+		require.Equal(t, int64(900), appendable.exemplars[0].t)
+	})
+
+	for _, tc := range []struct {
+		name      string
+		input     []exemplar.Exemplar
+		backend   []error
+		want      []error
+		malformed bool
+	}{
+		{name: "filtered sparse", input: []exemplar.Exemplar{{Ts: 2000}, {Ts: 100}, {Ts: 3000}, {Ts: 900}, {Ts: 950}}, backend: []error{storage.ErrOutOfOrderExemplar, nil, storage.ErrExemplarLabelLength}, want: []error{storage.ErrOutOfBounds, storage.ErrOutOfOrderExemplar, storage.ErrOutOfBounds, nil, storage.ErrExemplarLabelLength}},
+		{name: "filtered successful", input: []exemplar.Exemplar{{Ts: 2000}, {Ts: 100}}, want: []error{storage.ErrOutOfBounds, nil}},
+		{name: "filtered all nil", input: []exemplar.Exemplar{{Ts: 2000}, {Ts: 100}}, backend: []error{nil}, want: []error{storage.ErrOutOfBounds, nil}},
+		{name: "unfiltered sparse", input: []exemplar.Exemplar{{Ts: 100}, {Ts: 900}}, backend: []error{nil, storage.ErrOutOfOrderExemplar}, want: []error{nil, storage.ErrOutOfOrderExemplar}},
+		{name: "unfiltered successful", input: []exemplar.Exemplar{{Ts: 100}, {Ts: 900}}},
+		{name: "all future", input: []exemplar.Exemplar{{Ts: 2000}, {Ts: 3000}}, want: []error{storage.ErrOutOfBounds, storage.ErrOutOfBounds}},
+		{name: "filtered malformed", input: []exemplar.Exemplar{{Ts: 2000}, {Ts: 100}, {Ts: 900}}, backend: []error{storage.ErrOutOfOrderExemplar}, malformed: true},
+		{name: "unfiltered malformed", input: []exemplar.Exemplar{{Ts: 100}, {Ts: 900}}, backend: []error{storage.ErrOutOfOrderExemplar}, malformed: true},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			incoming := &storage.AppendPartialError{ExemplarErrors: slices.Clone(tc.backend)}
+			backend := &indexedExemplarAppender{partial: incoming}
+			app := &remoteWriteAppenderV2{AppenderV2: backend, exApp: backend, maxTime: 1000}
+			original := slices.Clone(tc.input)
+			_, err := app.AppendExemplars(1, labels.FromStrings("__name__", "metric"), tc.input)
+			var partial *storage.AppendPartialError
+			switch {
+			case tc.malformed:
+				require.Error(t, err)
+				require.NotErrorAs(t, err, &partial)
+			case tc.want == nil:
+				require.NoError(t, err)
+			default:
+				require.ErrorAs(t, err, &partial)
+				require.Len(t, partial.ExemplarErrors, len(tc.input))
+				failed := 0
+				for i, cause := range tc.want {
+					if cause == nil {
+						require.NoError(t, partial.ExemplarErrors[i])
+						continue
+					}
+					failed++
+					require.ErrorIs(t, partial.ExemplarErrors[i], cause)
+				}
+				require.Equal(t, failed, partial.FailedExemplarCount())
+				partial.ExemplarErrors[0] = storage.ErrNotFound
+			}
+			require.Equal(t, original, tc.input)
+			require.Equal(t, tc.backend, incoming.ExemplarErrors)
+			var valid []exemplar.Exemplar
+			for _, e := range tc.input {
+				if e.Ts <= app.maxTime {
+					valid = append(valid, e)
+				}
+			}
+			require.Equal(t, valid, backend.received)
+		})
 	}
+}
 
-	lbls := labels.FromStrings("__name__", "test_metric")
-	ref, err := rwApp.Append(0, lbls, 0, 500, 1.0, nil, nil, storage.AOptions{})
-	require.NoError(t, err)
+type indexedExemplarAppender struct {
+	storage.ExemplarAppenderV2
+	rawError error
+	partial  *storage.AppendPartialError
+	received []exemplar.Exemplar
+}
 
-	input := []exemplar.Exemplar{
-		{Labels: labels.FromStrings("id", "1"), Value: 1, Ts: 2000}, // future (> maxTime)
-		{Labels: labels.FromStrings("id", "2"), Value: 2, Ts: 900},  // valid (<= maxTime)
+func (a *indexedExemplarAppender) AppendExemplars(ref storage.SeriesRef, _ labels.Labels, exemplars []exemplar.Exemplar) (storage.SeriesRef, error) {
+	a.received = slices.Clone(exemplars)
+	if a.rawError != nil {
+		return ref, a.rawError
 	}
-	origFirstID := input[0].Labels.Get("id")
-	origSecondID := input[1].Labels.Get("id")
+	err := a.partial.ToError()
+	if err != nil {
+		return ref, fmt.Errorf("backend: %w", err)
+	}
+	return ref, nil
+}
 
-	_, err = rwApp.AppendExemplars(ref, lbls, input)
-	var pErr *storage.AppendPartialError
-	require.ErrorAs(t, err, &pErr)
-	require.Len(t, pErr.ExemplarErrors, 1)
-	require.ErrorIs(t, pErr.ExemplarErrors[0], storage.ErrOutOfBounds)
-
-	// Caller's input slice must not be mutated in place.
-	require.Equal(t, origFirstID, input[0].Labels.Get("id"))
-	require.Equal(t, origSecondID, input[1].Labels.Get("id"))
-	require.Len(t, appendable.exemplars, 1)
-	require.Equal(t, int64(900), appendable.exemplars[0].t)
+func (a *indexedExemplarAppender) Append(ref storage.SeriesRef, _ labels.Labels, _, _ int64, _ float64, _ *histogram.Histogram, _ *histogram.FloatHistogram, _ storage.AOptions) (storage.SeriesRef, error) {
+	if a.rawError != nil {
+		return ref, a.rawError
+	}
+	err := a.partial.ToError()
+	if err != nil {
+		return ref, fmt.Errorf("backend: %w", err)
+	}
+	return ref, nil
 }

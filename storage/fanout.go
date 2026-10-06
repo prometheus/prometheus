@@ -304,14 +304,14 @@ func (f *fanoutAppenderV2) Append(ref SeriesRef, l labels.Labels, st, t int64, v
 	var partialErr *AppendPartialError
 
 	ref, err := f.primary.Append(ref, l, st, t, v, h, fh, opts)
-	partialErr, err = partialErr.Handle(err)
+	partialErr, err = handleFanoutExemplarError(partialErr, err, len(opts.Exemplars))
 	if err != nil {
 		return ref, err
 	}
 
 	for _, appender := range f.secondaries {
 		_, serr := appender.Append(ref, l, st, t, v, h, fh, opts)
-		partialErr, serr = partialErr.Handle(serr)
+		partialErr, serr = handleFanoutExemplarError(partialErr, serr, len(opts.Exemplars))
 		if serr != nil {
 			return ref, serr
 		}
@@ -333,7 +333,7 @@ func (f *fanoutAppenderV2) AppendExemplars(ref SeriesRef, l labels.Labels, exemp
 	var partialErr *AppendPartialError
 
 	ref, err := pa.AppendExemplars(ref, l, exemplars)
-	partialErr, err = partialErr.Handle(err)
+	partialErr, err = handleFanoutExemplarError(partialErr, err, len(exemplars))
 	if err != nil {
 		return ref, err
 	}
@@ -344,12 +344,19 @@ func (f *fanoutAppenderV2) AppendExemplars(ref SeriesRef, l labels.Labels, exemp
 			continue
 		}
 		_, serr := sa.AppendExemplars(ref, l, exemplars)
-		partialErr, serr = partialErr.Handle(serr)
+		partialErr, serr = handleFanoutExemplarError(partialErr, serr, len(exemplars))
 		if serr != nil {
 			return ref, serr
 		}
 	}
 	return ref, partialErr.ToError()
+}
+
+func handleFanoutExemplarError(aggregate *AppendPartialError, err error, total int) (*AppendPartialError, error) {
+	if partial, ok := errors.AsType[*AppendPartialError](err); ok && partial.ToError() != nil && len(partial.ExemplarErrors) != total {
+		return aggregate, fmt.Errorf("expected %d exemplar error entries, got %d", total, len(partial.ExemplarErrors))
+	}
+	return aggregate.Handle(err)
 }
 
 func (f *fanoutAppenderV2) Commit() (err error) {

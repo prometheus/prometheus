@@ -469,9 +469,12 @@ func (h *writeHandler) appendV2(app *remoteWriteAppenderV2, req *writev2.Request
 
 				appended := len(exemplars)
 				if _, err := app.AppendExemplars(ref, ls, exemplars); err != nil {
-					if pErr, ok := errors.AsType[*storage.AppendPartialError](err); ok {
-						appended = max(0, appended-len(pErr.ExemplarErrors))
+					if pErr, ok := errors.AsType[*storage.AppendPartialError](err); ok && pErr != nil {
+						appended -= pErr.FailedExemplarCount()
 						for _, eErr := range pErr.ExemplarErrors {
+							if eErr == nil {
+								continue
+							}
 							if errors.Is(eErr, storage.ErrOutOfOrderExemplar) {
 								outOfOrderExemplarErrs++ // Maintain old metrics, but technically not needed, given we fail here.
 								h.logger.Error("Out of order exemplar", "err", eErr.Error(), "series", ls.String())
@@ -532,36 +535,31 @@ func (app *remoteWriteAppenderV2) Append(ref storage.SeriesRef, ls labels.Labels
 			return 0, err
 		}
 	}
-	return app.AppenderV2.Append(ref, ls, st, t, v, h, fh, opts)
+	ref, err := app.AppenderV2.Append(ref, ls, st, t, v, h, fh, opts)
+	return ref, checkExemplarError(err, len(opts.Exemplars))
 }
 
 // AppendExemplars rejects exemplars that are too far in the future, same as Append does
 // for samples, before delegating the rest to the wrapped ExemplarAppenderV2.
 func (app *remoteWriteAppenderV2) AppendExemplars(ref storage.SeriesRef, ls labels.Labels, exemplars []exemplar.Exemplar) (storage.SeriesRef, error) {
-	var (
-		futureErrs []error
-		valid      = exemplars
-	)
+	var partialErr *storage.AppendPartialError
+	valid := exemplars
 	for i, e := range exemplars {
 		if e.Ts > app.maxTime {
-			if futureErrs == nil {
+			if partialErr == nil {
+				partialErr = &storage.AppendPartialError{ExemplarErrors: make([]error, len(exemplars))}
 				valid = make([]exemplar.Exemplar, 0, len(exemplars)-1)
 				valid = append(valid, exemplars[:i]...)
 			}
-			futureErrs = append(futureErrs, fmt.Errorf("%w: timestamp is too far in the future", storage.ErrOutOfBounds))
+			partialErr.ExemplarErrors[i] = fmt.Errorf("%w: timestamp is too far in the future", storage.ErrOutOfBounds)
 			continue
 		}
-		if futureErrs != nil {
+		if partialErr != nil {
 			valid = append(valid, e)
 		}
 	}
-
-	var partialErr *storage.AppendPartialError
-	if len(futureErrs) > 0 {
-		partialErr = &storage.AppendPartialError{ExemplarErrors: futureErrs}
-		if len(valid) == 0 {
-			return ref, partialErr.ToError()
-		}
+	if partialErr != nil && len(valid) == 0 {
+		return ref, partialErr.ToError()
 	}
 
 	exApp := app.exApp
@@ -573,9 +571,39 @@ func (app *remoteWriteAppenderV2) AppendExemplars(ref storage.SeriesRef, ls labe
 		}
 	}
 	ref, err := exApp.AppendExemplars(ref, ls, valid)
-	partialErr, err = partialErr.Handle(err)
-	if err != nil {
+	err = checkExemplarError(err, len(valid))
+	if partialErr == nil {
+		partialErr, err = partialErr.Handle(err)
+		if err != nil {
+			return ref, err
+		}
+		return ref, partialErr.ToError()
+	}
+	if err == nil {
+		return ref, partialErr.ToError()
+	}
+	backend, ok := errors.AsType[*storage.AppendPartialError](err)
+	if !ok {
 		return ref, err
 	}
+	// Backend entries refer to valid. Rescan to map them into the original slice.
+	for i, j := 0, 0; i < len(exemplars); i++ {
+		if exemplars[i].Ts <= app.maxTime {
+			partialErr.ExemplarErrors[i] = backend.ExemplarErrors[j]
+			j++
+		}
+	}
 	return ref, partialErr.ToError()
+}
+
+func checkExemplarError(err error, total int) error {
+	if partial, ok := errors.AsType[*storage.AppendPartialError](err); ok {
+		if partial.ToError() == nil {
+			return nil
+		}
+		if len(partial.ExemplarErrors) != total {
+			return fmt.Errorf("expected %d exemplar error entries, got %d", total, len(partial.ExemplarErrors))
+		}
+	}
+	return err
 }

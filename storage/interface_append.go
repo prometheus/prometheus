@@ -16,6 +16,7 @@ package storage
 import (
 	"context"
 	"errors"
+	"fmt"
 
 	"github.com/prometheus/prometheus/model/exemplar"
 	"github.com/prometheus/prometheus/model/histogram"
@@ -86,6 +87,9 @@ type AppendV2Options struct {
 // It's up to the caller to decide if it's an ignorable error or not, plus
 // it allows extra reporting (e.g. for Remote Write 2.0 X-Remote-Write-Written headers).
 type AppendPartialError struct {
+	// ExemplarErrors is indexed by AppendV2Options.Exemplars or the
+	// AppendExemplars input slice. If any exemplar fails, its length must equal
+	// the input length. A nil entry means no failure was reported, including ignored duplicates.
 	ExemplarErrors []error
 }
 
@@ -105,10 +109,28 @@ func (e *AppendPartialError) Error() string {
 // ToError returns AppendPartialError as error, returning nil
 // if there are no errors.
 func (e *AppendPartialError) ToError() error {
-	if e == nil || len(e.ExemplarErrors) == 0 {
-		return nil
+	if e != nil {
+		for _, err := range e.ExemplarErrors {
+			if err != nil {
+				return e
+			}
+		}
 	}
-	return e
+	return nil
+}
+
+// FailedExemplarCount returns the number of input exemplars with reported failures.
+func (e *AppendPartialError) FailedExemplarCount() int {
+	if e == nil {
+		return 0
+	}
+	failed := 0
+	for _, err := range e.ExemplarErrors {
+		if err != nil {
+			failed++
+		}
+	}
+	return failed
 }
 
 // Is implements method that's expected by errors.Is.
@@ -119,28 +141,36 @@ func (*AppendPartialError) Is(target error) bool {
 	return ok
 }
 
-// Handle handles the given err that may be an AppendPartialError.
-// If the err is nil or not an AppendPartialError it returns err.
-// Otherwise, partial errors are aggregated.
+// Handle merges partial errors for the same input slice, preserving each cause.
+// The aggregate owns its error slice. Incompatible failure slices return a
+// non-partial error without changing the aggregate; other errors pass through.
 func (e *AppendPartialError) Handle(err error) (*AppendPartialError, error) {
 	if err == nil {
 		return e, nil
 	}
-
-	// Fast, alloc-free path first for non-partial error cases.
-	if !errors.Is(err, e) {
+	pErr, ok := errors.AsType[*AppendPartialError](err)
+	if !ok {
 		return e, err
 	}
-	var pErr *AppendPartialError
-	if !errors.As(err, &pErr) {
-		return e, err
+	if pErr.ToError() == nil {
+		return e, nil
 	}
-
-	if e == nil {
-		// Lazy allocation.
-		e = &AppendPartialError{}
+	if e.ToError() == nil {
+		return &AppendPartialError{ExemplarErrors: append([]error(nil), pErr.ExemplarErrors...)}, nil
 	}
-	e.ExemplarErrors = append(e.ExemplarErrors, pErr.ExemplarErrors...)
+	if len(e.ExemplarErrors) != len(pErr.ExemplarErrors) {
+		return e, fmt.Errorf("incompatible exemplar error lengths: %d and %d", len(e.ExemplarErrors), len(pErr.ExemplarErrors))
+	}
+	for i, incoming := range pErr.ExemplarErrors {
+		if incoming == nil {
+			continue
+		}
+		if e.ExemplarErrors[i] == nil {
+			e.ExemplarErrors[i] = incoming
+		} else {
+			e.ExemplarErrors[i] = errors.Join(e.ExemplarErrors[i], incoming)
+		}
+	}
 	return e, nil
 }
 
