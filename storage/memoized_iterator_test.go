@@ -130,9 +130,9 @@ func TestMemoizedSeriesIteratorPreviousMinimumTimestamp(t *testing.T) {
 		for _, first := range []int64{math.MinInt64, -1, math.MaxInt64 - 1} {
 			for _, terminal := range []bool{false, true} {
 				t.Run(fmt.Sprintf("type_%s/first_%d/terminal_%t", kind, first, terminal), func(t *testing.T) {
-					startTimestamp := first
+					startTimestamp := int64(0)
 					if first > math.MinInt64 {
-						startTimestamp--
+						startTimestamp = first - 1
 					}
 					expected := &histogram.FloatHistogram{Schema: 0, ZeroThreshold: 1, Count: 2, Sum: 3, CounterResetHint: histogram.GaugeType, PositiveSpans: []histogram.Span{{Offset: 1, Length: 1}}, PositiveBuckets: []float64{2}}
 					var previousSample chunks.Sample
