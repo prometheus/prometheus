@@ -25,6 +25,36 @@ import (
 )
 
 func TestBucketQuantile_ForcedMonotonicity(t *testing.T) {
+	t.Run("empty buckets", func(t *testing.T) {
+		for name, buckets := range map[string]Buckets{"nil": nil, "empty": {}} {
+			for _, tc := range []struct {
+				name    string
+				q, want float64
+			}{
+				{"zero", 0, math.NaN()},
+				{"middle", 0.5, math.NaN()},
+				{"one", 1, math.NaN()},
+				{"NaN", math.NaN(), math.NaN()},
+				{"below zero", -1, math.Inf(-1)},
+				{"above one", 2, math.Inf(1)},
+			} {
+				t.Run(name+"/"+tc.name, func(t *testing.T) {
+					got, forced, fixed, minBucket, maxBucket, maxDiff := BucketQuantile(tc.q, buckets)
+					if math.IsNaN(tc.want) {
+						require.True(t, math.IsNaN(got))
+					} else {
+						require.Equal(t, tc.want, got)
+					}
+					require.False(t, forced)
+					require.False(t, fixed)
+					require.Zero(t, minBucket)
+					require.Zero(t, maxBucket)
+					require.Zero(t, maxDiff)
+				})
+			}
+		}
+	})
+
 	eps := 1e-12
 
 	for name, tc := range map[string]struct {
