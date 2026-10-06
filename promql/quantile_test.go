@@ -16,11 +16,13 @@ package promql
 import (
 	"fmt"
 	"math"
+	"slices"
 	"testing"
 
 	"github.com/stretchr/testify/require"
 
 	"github.com/prometheus/prometheus/model/histogram"
+	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/promql/parser/posrange"
 )
 
@@ -321,108 +323,110 @@ func TestBucketQuantile_ForcedMonotonicity(t *testing.T) {
 	}
 }
 
+// fractionCrossCheckCases are histograms and thresholds used to cross-check
+// other bucket-splitting operations against HistogramFraction.
+var fractionCrossCheckCases = []struct {
+	name       string
+	h          *histogram.FloatHistogram
+	thresholds []float64
+}{
+	{
+		// Bucket bounds: (-64,-32] (-32,-16] (-16,-8] (-4,-2] (-2,-1] (-0.5,0.5] (0.5,1] (1,2] (2,4] (16,32] (32,64] (64,128].
+		name: "exponential, positive and negative buckets, zero bucket, multiple spans, empty buckets",
+		h: &histogram.FloatHistogram{
+			Schema:          0,
+			Count:           56,
+			Sum:             113,
+			ZeroThreshold:   0.5,
+			ZeroCount:       7,
+			PositiveSpans:   []histogram.Span{{Offset: 0, Length: 3}, {Offset: 2, Length: 3}},
+			PositiveBuckets: []float64{3, 11, 2, 9, 0, 6},
+			NegativeSpans:   []histogram.Span{{Offset: 1, Length: 2}, {Offset: 1, Length: 3}},
+			NegativeBuckets: []float64{4, 1, 8, 0, 5},
+		},
+		thresholds: []float64{
+			math.Inf(-1), -100,
+			-64, -32, -16, -8, -4, -2, -1, -0.5, // Bucket boundaries.
+			-48, -12, -6, -3, -0.75, -0.3, // Inside buckets and inside gaps between spans.
+			0,
+			0.3, 0.73, 1.87, 3.3, 12, 100, // Inside buckets and inside gaps between spans.
+			0.5, 1, 2, 4, 16, 32, 64, 128, // Bucket boundaries.
+			200, math.Inf(1),
+		},
+	},
+	{
+		// Bucket bounds: (-Inf,1] (1,2] (2,4] (8,16] (16,+Inf].
+		name: "custom buckets (NHCB), underflow bucket to -Inf and overflow bucket to +Inf",
+		h: &histogram.FloatHistogram{
+			Schema:          histogram.CustomBucketsSchema,
+			Count:           36,
+			Sum:             181,
+			PositiveSpans:   []histogram.Span{{Offset: 0, Length: 3}, {Offset: 1, Length: 2}},
+			PositiveBuckets: []float64{2, 7, 5, 13, 9},
+			CustomValues:    []float64{1, 2, 4, 8, 16},
+		},
+		// Finite negative thresholds fall inside the underflow bucket (-Inf, 1] and are covered by the known divergences below, not here.
+		thresholds: []float64{
+			math.Inf(-1), 0,
+			1, 2, 4, 8, 16, // Bucket boundaries.
+			0.3, 0.73, 1.87, 3.3, 6, 12, 20, // Inside buckets, inside the gap between spans and inside the overflow bucket.
+			math.Inf(1),
+		},
+	},
+	{
+		// Bucket bounds: (0.5,0.5946] (0.5946,0.7071] (0.7071,0.8409] (0.8409,1] (1.6818,2] (2,2.3784] (2.3784,2.8284].
+		name: "only positive buckets, no zero bucket, multiple spans, empty bucket",
+		h: &histogram.FloatHistogram{
+			Schema:          2,
+			Count:           36,
+			Sum:             49,
+			PositiveSpans:   []histogram.Span{{Offset: -3, Length: 4}, {Offset: 3, Length: 3}},
+			PositiveBuckets: []float64{1, 6, 0, 9, 4, 11, 5},
+		},
+		thresholds: []float64{
+			math.Inf(-1), -12, -1.7, 0,
+			0.5, 1, 2, // Bucket boundaries.
+			0.6, 0.9, 1.5, 2.5, 3, // Inside buckets and inside the gap between spans.
+			math.Inf(1),
+		},
+	},
+	{
+		// Bucket bounds: (-8,-5.6569] (-5.6569,-4] (-2,-1.4142] (-1.4142,-1] (-1,-0.7071].
+		name: "only negative buckets, no zero bucket, multiple spans",
+		h: &histogram.FloatHistogram{
+			Schema:          1,
+			Count:           29,
+			Sum:             -87,
+			NegativeSpans:   []histogram.Span{{Offset: 0, Length: 3}, {Offset: 2, Length: 2}},
+			NegativeBuckets: []float64{4, 9, 3, 8, 5},
+		},
+		thresholds: []float64{
+			math.Inf(-1), -20,
+			-8, -4, -2, -1, // Bucket boundaries.
+			-6, -3, -1.7, -0.9, -0.5, // Inside buckets and inside the gap between spans.
+			0, 0.5, math.Inf(1),
+		},
+	},
+	{
+		name: "zero bucket only",
+		h: &histogram.FloatHistogram{
+			Schema:        0,
+			Count:         9,
+			Sum:           0.4,
+			ZeroThreshold: 0.25,
+			ZeroCount:     9,
+		},
+		thresholds: []float64{
+			math.Inf(-1), -1,
+			-0.25, 0.25, // Bucket boundaries.
+			-0.1, 0, 0.1, 1, math.Inf(1),
+		},
+	},
+}
+
 // TestTrimBuckets_HistogramFractionCrossCheck checks that `h </ x` and `h >/ x` match histogram_fraction(-Inf, x, h) and histogram_fraction(x, +Inf, h) times histogram_count(h).
 func TestTrimBuckets_HistogramFractionCrossCheck(t *testing.T) {
-	testCases := []struct {
-		name       string
-		h          *histogram.FloatHistogram
-		thresholds []float64
-	}{
-		{
-			// Bucket bounds: (-64,-32] (-32,-16] (-16,-8] (-4,-2] (-2,-1] (-0.5,0.5] (0.5,1] (1,2] (2,4] (16,32] (32,64] (64,128].
-			name: "exponential, positive and negative buckets, zero bucket, multiple spans, empty buckets",
-			h: &histogram.FloatHistogram{
-				Schema:          0,
-				Count:           56,
-				Sum:             113,
-				ZeroThreshold:   0.5,
-				ZeroCount:       7,
-				PositiveSpans:   []histogram.Span{{Offset: 0, Length: 3}, {Offset: 2, Length: 3}},
-				PositiveBuckets: []float64{3, 11, 2, 9, 0, 6},
-				NegativeSpans:   []histogram.Span{{Offset: 1, Length: 2}, {Offset: 1, Length: 3}},
-				NegativeBuckets: []float64{4, 1, 8, 0, 5},
-			},
-			thresholds: []float64{
-				math.Inf(-1), -100,
-				-64, -32, -16, -8, -4, -2, -1, -0.5, // Bucket boundaries.
-				-48, -12, -6, -3, -0.75, -0.3, // Inside buckets and inside gaps between spans.
-				0,
-				0.3, 0.73, 1.87, 3.3, 12, 100, // Inside buckets and inside gaps between spans.
-				0.5, 1, 2, 4, 16, 32, 64, 128, // Bucket boundaries.
-				200, math.Inf(1),
-			},
-		},
-		{
-			// Bucket bounds: (-Inf,1] (1,2] (2,4] (8,16] (16,+Inf].
-			name: "custom buckets (NHCB), underflow bucket to -Inf and overflow bucket to +Inf",
-			h: &histogram.FloatHistogram{
-				Schema:          histogram.CustomBucketsSchema,
-				Count:           36,
-				Sum:             181,
-				PositiveSpans:   []histogram.Span{{Offset: 0, Length: 3}, {Offset: 1, Length: 2}},
-				PositiveBuckets: []float64{2, 7, 5, 13, 9},
-				CustomValues:    []float64{1, 2, 4, 8, 16},
-			},
-			// Finite negative thresholds fall inside the underflow bucket (-Inf, 1] and are covered by the known divergences below, not here.
-			thresholds: []float64{
-				math.Inf(-1), 0,
-				1, 2, 4, 8, 16, // Bucket boundaries.
-				0.3, 0.73, 1.87, 3.3, 6, 12, 20, // Inside buckets, inside the gap between spans and inside the overflow bucket.
-				math.Inf(1),
-			},
-		},
-		{
-			// Bucket bounds: (0.5,0.5946] (0.5946,0.7071] (0.7071,0.8409] (0.8409,1] (1.6818,2] (2,2.3784] (2.3784,2.8284].
-			name: "only positive buckets, no zero bucket, multiple spans, empty bucket",
-			h: &histogram.FloatHistogram{
-				Schema:          2,
-				Count:           36,
-				Sum:             49,
-				PositiveSpans:   []histogram.Span{{Offset: -3, Length: 4}, {Offset: 3, Length: 3}},
-				PositiveBuckets: []float64{1, 6, 0, 9, 4, 11, 5},
-			},
-			thresholds: []float64{
-				math.Inf(-1), -12, -1.7, 0,
-				0.5, 1, 2, // Bucket boundaries.
-				0.6, 0.9, 1.5, 2.5, 3, // Inside buckets and inside the gap between spans.
-				math.Inf(1),
-			},
-		},
-		{
-			// Bucket bounds: (-8,-5.6569] (-5.6569,-4] (-2,-1.4142] (-1.4142,-1] (-1,-0.7071].
-			name: "only negative buckets, no zero bucket, multiple spans",
-			h: &histogram.FloatHistogram{
-				Schema:          1,
-				Count:           29,
-				Sum:             -87,
-				NegativeSpans:   []histogram.Span{{Offset: 0, Length: 3}, {Offset: 2, Length: 2}},
-				NegativeBuckets: []float64{4, 9, 3, 8, 5},
-			},
-			thresholds: []float64{
-				math.Inf(-1), -20,
-				-8, -4, -2, -1, // Bucket boundaries.
-				-6, -3, -1.7, -0.9, -0.5, // Inside buckets and inside the gap between spans.
-				0, 0.5, math.Inf(1),
-			},
-		},
-		{
-			name: "zero bucket only",
-			h: &histogram.FloatHistogram{
-				Schema:        0,
-				Count:         9,
-				Sum:           0.4,
-				ZeroThreshold: 0.25,
-				ZeroCount:     9,
-			},
-			thresholds: []float64{
-				math.Inf(-1), -1,
-				-0.25, 0.25, // Bucket boundaries.
-				-0.1, 0, 0.1, 1, math.Inf(1),
-			},
-		},
-	}
-
-	for _, tc := range testCases {
+	for _, tc := range fractionCrossCheckCases {
 		t.Run(tc.name, func(t *testing.T) {
 			total := tc.h.Count
 			// Guard against a fixture whose Count does not match its buckets, which would make every comparison below meaningless.
@@ -529,6 +533,47 @@ func TestTrimBuckets_HistogramFractionCrossCheck(t *testing.T) {
 			fraction, annos := HistogramFraction(lower, upper, tc.h, "", posrange.PositionRange{})
 			require.Empty(t, annos)
 			require.Equal(t, tc.expectedFraction, fraction, "HistogramFraction handles the %s differently", tc.why)
+		})
+	}
+}
+
+// TestConvertExponentialToClassic_HistogramFractionCrossCheck checks that the
+// classic buckets produced by histogram.ConvertExponentialToClassic match
+// histogram_fraction(-Inf, le, h) times histogram_count(h), so that the
+// promql-nhcb-as-classic feature flag and native PromQL cannot drift apart.
+func TestConvertExponentialToClassic_HistogramFractionCrossCheck(t *testing.T) {
+	lset := labels.FromStrings("__name__", "h")
+	for _, tc := range fractionCrossCheckCases {
+		if tc.h.UsesCustomBuckets() {
+			continue
+		}
+		t.Run(tc.name, func(t *testing.T) {
+			var bounds []float64
+			for _, x := range tc.thresholds {
+				if !math.IsInf(x, 0) {
+					bounds = append(bounds, x)
+				}
+			}
+			slices.Sort(bounds)
+			bounds = slices.Compact(bounds)
+
+			got := map[string]float64{}
+			require.NoError(t, histogram.ConvertExponentialToClassic(tc.h, bounds, lset, labels.NewBuilder(labels.EmptyLabels()), histogram.ClassicSuffixBucket, nil, func(l labels.Labels, v float64) error {
+				got[l.Get(labels.BucketLabel)] = v
+				return nil
+			}))
+			require.Len(t, got, len(bounds)+1)
+			require.Equal(t, tc.h.Count, got["+Inf"])
+			for _, x := range bounds {
+				fraction, annos := HistogramFraction(math.Inf(-1), x, tc.h, "", posrange.PositionRange{})
+				require.Empty(t, annos)
+				le := labels.FormatOpenMetricsFloat(x)
+				if fraction == 0 {
+					require.Zero(t, got[le], "le=%s", le)
+					continue
+				}
+				require.InEpsilon(t, fraction*tc.h.Count, got[le], 1e-9, "le=%s", le)
+			}
 		})
 	}
 }

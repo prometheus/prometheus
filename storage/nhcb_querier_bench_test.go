@@ -114,3 +114,94 @@ func BenchmarkNHCBAsClassicSelect_Count(b *testing.B) {
 func BenchmarkNHCBAsClassicSelect_Sum(b *testing.B) {
 	benchmarkNHCBAsClassicSelect(b, "_sum")
 }
+
+// buildBenchExponentialSeries builds numSeries schema 3 exponential histograms
+// with numBuckets populated positive buckets, each carrying numSamples points.
+func buildBenchExponentialSeries(numSeries, numBuckets, numSamples int) []Series {
+	// Delta-encoded: every bucket has 1 observation.
+	positiveBuckets := make([]int64, numBuckets)
+	positiveBuckets[0] = 1
+
+	series := make([]Series, numSeries)
+	for i := range numSeries {
+		lset := labels.FromStrings(
+			"__name__", "bench_request_duration_seconds",
+			"tenant", fmt.Sprintf("tenant-%d", i%100),
+			"handler", fmt.Sprintf("/api/%d", i%50),
+			"method", []string{"GET", "POST"}[i%2],
+			"status", []string{"200", "400", "500"}[i%3],
+			"series", strconv.Itoa(i),
+		)
+
+		samples := make([]chunks.Sample, numSamples)
+		for j := range numSamples {
+			samples[j] = hSample{
+				t: int64(j * 60000),
+				h: &histogram.Histogram{
+					Schema:          3,
+					Count:           uint64(numBuckets),
+					Sum:             float64(numBuckets) * 1.5,
+					PositiveSpans:   []histogram.Span{{Offset: -8, Length: uint32(numBuckets)}},
+					PositiveBuckets: positiveBuckets,
+				},
+			}
+		}
+		series[i] = NewListSeries(lset, samples)
+	}
+	return series
+}
+
+// Recommended CLI invocation:
+/*
+	export bench=nheAsClassic && go test ./storage/ \
+		-run '^$' -bench '^BenchmarkExponentialAsClassicSelect' \
+		-benchtime 2s -count 6 -cpu 2 -timeout 999m \
+		-benchmem | tee ${bench}.txt
+*/
+func BenchmarkExponentialAsClassicSelect(b *testing.B) {
+	const (
+		numSeries  = 1000
+		numBuckets = 30
+		numSamples = 6
+	)
+	mock := &nhcbMockQuerier{
+		classicSeries: []Series{},
+		nhcbSeries:    buildBenchExponentialSeries(numSeries, numBuckets, numSamples),
+	}
+	q := NewNHCBAsClassicQuerier(mock)
+
+	for _, tc := range []struct {
+		name     string
+		matchers []*labels.Matcher
+	}{
+		{name: "suffix=_bucket", matchers: []*labels.Matcher{
+			labels.MustNewMatcher(labels.MatchEqual, model.MetricNameLabel, "bench_request_duration_seconds_bucket"),
+		}},
+		{name: "suffix=_bucket,le=1", matchers: []*labels.Matcher{
+			labels.MustNewMatcher(labels.MatchEqual, model.MetricNameLabel, "bench_request_duration_seconds_bucket"),
+			labels.MustNewMatcher(labels.MatchEqual, labels.BucketLabel, "1"),
+		}},
+		{name: "suffix=_count", matchers: []*labels.Matcher{
+			labels.MustNewMatcher(labels.MatchEqual, model.MetricNameLabel, "bench_request_duration_seconds_count"),
+		}},
+	} {
+		b.Run(tc.name, func(b *testing.B) {
+			b.ReportAllocs()
+			b.ResetTimer()
+			for b.Loop() {
+				ss := q.Select(context.Background(), false, nil, tc.matchers...)
+				count := 0
+				for ss.Next() {
+					count++
+					_ = ss.At().Labels()
+				}
+				if err := ss.Err(); err != nil {
+					b.Fatal(err)
+				}
+				if count == 0 {
+					b.Fatal("expected series, got none")
+				}
+			}
+		})
+	}
+}

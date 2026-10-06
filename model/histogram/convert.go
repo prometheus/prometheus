@@ -32,27 +32,27 @@ const (
 )
 
 // ClassicSeriesCache holds precomputed label sets and scratch buffers across
-// repeated ConvertNHCBToClassic calls.
+// repeated ConvertNHCBToClassic and ConvertExponentialToClassic calls.
 type ClassicSeriesCache struct {
-	lset         labels.Labels
-	baseName     string
-	bucketName   string
-	countName    string
-	sumName      string
-	customValues []float64
-	leStrings    []string
+	lset       labels.Labels
+	baseName   string
+	bucketName string
+	countName  string
+	sumName    string
+	bounds     []float64 // Classic upper bounds the cached bucketLabels were built for.
+	leStrings  []string
 
-	bucketLabels    []labels.Labels // len(customValues)+1; last entry is the +Inf bucket.
-	haveBuckets     bool
-	countLabels     labels.Labels
-	haveCount       bool
-	sumLabels       labels.Labels
-	haveSum         bool
-	positiveBuckets []float64
+	bucketLabels []labels.Labels // len(bounds)+1; last entry is the +Inf bucket.
+	haveBuckets  bool
+	countLabels  labels.Labels
+	haveCount    bool
+	sumLabels    labels.Labels
+	haveSum      bool
+	cumulative   []float64
 }
 
 // prepare updates the cache for lset and baseName, preserving reusable
-// customValues, formatted leStrings, metric suffix names, and slice capacities
+// bounds, formatted leStrings, metric suffix names, and slice capacities
 // when switching between series of the same metric.
 func (c *ClassicSeriesCache) prepare(lset labels.Labels, baseName string) {
 	if !labels.Equal(c.lset, lset) {
@@ -69,13 +69,13 @@ func (c *ClassicSeriesCache) prepare(lset labels.Labels, baseName string) {
 	}
 }
 
-// customValuesMatch reports whether customValues equals the cached customValues.
-func (c *ClassicSeriesCache) customValuesMatch(customValues []float64) bool {
-	if len(c.customValues) != len(customValues) || len(c.leStrings) != len(customValues) {
+// boundsMatch reports whether bounds equals the cached bounds.
+func (c *ClassicSeriesCache) boundsMatch(bounds []float64) bool {
+	if len(c.bounds) != len(bounds) || len(c.leStrings) != len(bounds) {
 		return false
 	}
-	for i, v := range customValues {
-		if c.customValues[i] != v {
+	for i, v := range bounds {
+		if c.bounds[i] != v {
 			return false
 		}
 	}
@@ -83,22 +83,29 @@ func (c *ClassicSeriesCache) customValuesMatch(customValues []float64) bool {
 }
 
 // bucketsMatch reports whether the cached bucket label sets were built for
-// the current series and these exact custom bucket bounds.
-func (c *ClassicSeriesCache) bucketsMatch(customValues []float64) bool {
-	return c.haveBuckets && c.customValuesMatch(customValues)
+// the current series and these exact classic bounds.
+func (c *ClassicSeriesCache) bucketsMatch(bounds []float64) bool {
+	return c.haveBuckets && c.boundsMatch(bounds)
 }
 
-func (c *ClassicSeriesCache) allocPositiveBuckets(n int) []float64 {
-	if cap(c.positiveBuckets) < n {
-		c.positiveBuckets = make([]float64, n)
+func (c *ClassicSeriesCache) allocCumulative(n int) []float64 {
+	if cap(c.cumulative) < n {
+		c.cumulative = make([]float64, n)
 	} else {
-		c.positiveBuckets = c.positiveBuckets[:n]
-		clear(c.positiveBuckets)
+		c.cumulative = c.cumulative[:n]
+		clear(c.cumulative)
 	}
-	return c.positiveBuckets
+	return c.cumulative
 }
 
-// bucketLabelsFor returns the label set for bucket index idx (len(customValues)
+func allocCumulative(cache *ClassicSeriesCache, n int) []float64 {
+	if cache != nil {
+		return cache.allocCumulative(n)
+	}
+	return make([]float64, n)
+}
+
+// bucketLabelsFor returns the label set for bucket index idx (len(bounds)
 // for the +Inf bucket). If cache is non-nil, the caller must have already
 // populated cache.bucketLabels.
 func bucketLabelsFor(cache *ClassicSeriesCache, idx int, lsetBuilder *labels.Builder, lset labels.Labels, baseName string, boundary float64) labels.Labels {
@@ -128,26 +135,15 @@ func ConvertNHCBToClassic(nhcb any, lset labels.Labels, lsetBuilder *labels.Buil
 	if baseName == "" {
 		return errors.New("metric name label '__name__' is missing")
 	}
-	if cache != nil {
-		cache.prepare(lset, baseName)
-	}
-
-	// We preserve original labels and restore them after conversion.
-	// This is to ensure that no modifications are made to the original labels
-	// that the queue_manager relies on.
-	oldLabels := lsetBuilder.Labels()
-	defer lsetBuilder.Reset(oldLabels)
 
 	wantBuckets := onlySuffix == "" || onlySuffix == ClassicSuffixBucket
-	wantCount := onlySuffix == "" || onlySuffix == ClassicSuffixCount
-	wantSum := onlySuffix == "" || onlySuffix == ClassicSuffixSum
 
 	var (
-		customValues    []float64
-		positiveBuckets []float64
-		count, sum      float64
-		idx             int // This index is to track buckets in Classic Histogram
-		currIdx         int // This index is to track buckets in Native Histogram
+		customValues []float64
+		cumulative   []float64
+		count, sum   float64
+		idx          int // This index is to track buckets in Classic Histogram
+		currIdx      int // This index is to track buckets in Native Histogram
 	)
 
 	switch h := nhcb.(type) {
@@ -164,11 +160,7 @@ func ConvertNHCBToClassic(nhcb any, lset labels.Labels, lsetBuilder *labels.Buil
 
 		if wantBuckets {
 			customValues = h.CustomValues
-			if cache != nil {
-				positiveBuckets = cache.allocPositiveBuckets(len(customValues) + 1)
-			} else {
-				positiveBuckets = make([]float64, len(customValues)+1)
-			}
+			cumulative = allocCumulative(cache, len(customValues)+1)
 
 			// Histograms are in delta format so we first bring them to absolute format.
 			acc := int64(0)
@@ -177,7 +169,7 @@ func ConvertNHCBToClassic(nhcb any, lset labels.Labels, lsetBuilder *labels.Buil
 				idx += int(s.Offset)
 				for i := 0; i < int(s.Length); i++ {
 					acc += h.PositiveBuckets[currIdx]
-					positiveBuckets[idx] = float64(acc)
+					cumulative[idx] = float64(acc)
 					idx++
 					currIdx++
 				}
@@ -198,11 +190,7 @@ func ConvertNHCBToClassic(nhcb any, lset labels.Labels, lsetBuilder *labels.Buil
 
 		if wantBuckets {
 			customValues = h.CustomValues
-			if cache != nil {
-				positiveBuckets = cache.allocPositiveBuckets(len(customValues) + 1)
-			} else {
-				positiveBuckets = make([]float64, len(customValues)+1)
-			}
+			cumulative = allocCumulative(cache, len(customValues)+1)
 
 			for _, span := range h.PositiveSpans {
 				// Since Float Histogram is already in absolute format we should
@@ -210,7 +198,7 @@ func ConvertNHCBToClassic(nhcb any, lset labels.Labels, lsetBuilder *labels.Buil
 				// bucket index.
 				idx += int(span.Offset)
 				for i := 0; i < int(span.Length); i++ {
-					positiveBuckets[idx] = h.PositiveBuckets[currIdx]
+					cumulative[idx] = h.PositiveBuckets[currIdx]
 					idx++
 					currIdx++
 				}
@@ -223,19 +211,174 @@ func ConvertNHCBToClassic(nhcb any, lset labels.Labels, lsetBuilder *labels.Buil
 	}
 
 	if wantBuckets {
-		if cache != nil && !cache.bucketsMatch(customValues) {
-			if !cache.customValuesMatch(customValues) {
-				cache.customValues = append(cache.customValues[:0], customValues...)
-				if cap(cache.leStrings) < len(customValues) {
-					cache.leStrings = make([]string, len(customValues))
+		// Turn per-bucket counts into cumulative counts. The +Inf bucket is the
+		// sum of all buckets, matching the classic exposition for NHCB.
+		for i := 1; i < len(cumulative); i++ {
+			cumulative[i] += cumulative[i-1]
+		}
+	}
+	return emitClassicSeries(lset, baseName, lsetBuilder, onlySuffix, cache, customValues, cumulative, count, sum, emitSeriesFn)
+}
+
+// ConvertExponentialToClassic converts a standard (exponential schema) native
+// histogram to classic histogram series, evaluating the cumulative count at
+// each of the given classic upper bounds. Bounds must be finite, sorted in
+// ascending order and deduplicated; the +Inf bucket is always emitted in
+// addition. Unlike ConvertNHCBToClassic, only float histograms are accepted:
+// convert integer histograms with Histogram.ToFloat first.
+//
+// Exponential bucket boundaries rarely coincide with the requested bounds, so
+// the observations of a bucket straddling a bound are interpolated the same
+// way histogram_fraction does for native histograms: exponentially for regular
+// buckets and linearly for the zero bucket (see
+// FloatHistogram.InterpolationBounds). When a bound coincides with an
+// exponential bucket boundary the result is exact.
+//
+// Use AppendExponentialBounds to derive bounds from the populated buckets of
+// the histograms being converted.
+//
+// See ConvertNHCBToClassic for onlySuffix, cache and emitSeriesFn.
+func ConvertExponentialToClassic(h *FloatHistogram, bounds []float64, lset labels.Labels, lsetBuilder *labels.Builder, onlySuffix string, cache *ClassicSeriesCache, emitSeriesFn func(labels labels.Labels, value float64) error) error {
+	baseName := lset.Get(model.MetricNameLabel)
+	if baseName == "" {
+		return errors.New("metric name label '__name__' is missing")
+	}
+	if !IsExponentialSchema(h.Schema) {
+		return errors.New("unsupported histogram schema, not an exponential native histogram")
+	}
+	if err := h.Validate(); err != nil {
+		return err
+	}
+
+	var cumulative []float64
+	if onlySuffix == "" || onlySuffix == ClassicSuffixBucket {
+		cumulative = allocCumulative(cache, len(bounds)+1)
+		total := exponentialCumulativeCounts(h, bounds, cumulative)
+		// The +Inf bucket is h.Count, which unlike the buckets includes NaN
+		// observations. Validate does not require Count >= sum of buckets for
+		// float histograms though, so take the bucket sum when it is larger
+		// to keep the classic buckets monotonic.
+		cumulative[len(bounds)] = max(h.Count, total)
+	}
+	return emitClassicSeries(lset, baseName, lsetBuilder, onlySuffix, cache, bounds, cumulative, h.Count, h.Sum, emitSeriesFn)
+}
+
+// exponentialCumulativeCounts fills cumulative[i] with the (estimated) number
+// of observations in h that are less than or equal to bounds[i], and returns
+// the total number of observations in all buckets. Bounds must be sorted in
+// ascending order.
+func exponentialCumulativeCounts(h *FloatHistogram, bounds, cumulative []float64) float64 {
+	var (
+		it     = h.AllBucketIterator()
+		rank   float64 // Observations in all buckets fully below the current one.
+		b      Bucket[float64]
+		linear bool
+		have   = it.Next()
+	)
+	if have {
+		b, linear = h.InterpolationBounds(it.At())
+	}
+	for i, v := range bounds {
+		for have && b.Upper <= v {
+			rank += b.Count
+			if have = it.Next(); have {
+				b, linear = h.InterpolationBounds(it.At())
+			}
+		}
+		c := rank
+		// Here v < b.Upper, so v is strictly inside the bucket if it is
+		// above its (possibly adjusted) lower bound.
+		if have && b.Count > 0 && b.Lower < v {
+			c += b.Count * b.FractionBelow(v, linear)
+		}
+		cumulative[i] = c
+	}
+	for have {
+		rank += b.Count
+		if have = it.Next(); have {
+			b = it.At()
+		}
+	}
+	return rank
+}
+
+// AppendExponentialBounds appends the lower and upper bound of every populated
+// bucket of the exponential histogram h to dst, after reducing the resolution
+// to at most maxSchema (which must be a valid exponential schema, i.e. within
+// [ExponentialSchemaMin, ExponentialSchemaMax]), and returns the extended
+// slice. Both bounds are needed so that classic quantile estimation
+// interpolates within the populated bucket instead of all the way from the
+// previous populated bucket. The result is neither sorted nor deduplicated and
+// may contain +Inf for the overflow bucket. dst is returned unchanged if h does
+// not use an exponential schema.
+func AppendExponentialBounds(dst []float64, h *FloatHistogram, maxSchema int32) []float64 {
+	if !IsExponentialSchema(h.Schema) {
+		return dst
+	}
+	schema := min(h.Schema, maxSchema)
+	for it := h.PositiveBucketIterator(); it.Next(); {
+		b := it.At()
+		if b.Count == 0 {
+			continue
+		}
+		idx := b.Index
+		if h.Schema > schema {
+			idx = targetIdx(idx, h.Schema, schema)
+		}
+		dst = append(dst, getBoundExponential(idx-1, schema), getBoundExponential(idx, schema))
+	}
+	for it := h.NegativeBucketIterator(); it.Next(); {
+		b := it.At()
+		if b.Count == 0 {
+			continue
+		}
+		idx := b.Index
+		if h.Schema > schema {
+			idx = targetIdx(idx, h.Schema, schema)
+		}
+		dst = append(dst, -getBoundExponential(idx, schema), -getBoundExponential(idx-1, schema))
+	}
+	if h.ZeroCount > 0 {
+		dst = append(dst, h.ZeroThreshold)
+		if len(h.NegativeBuckets) > 0 {
+			dst = append(dst, -h.ZeroThreshold)
+		}
+	}
+	return dst
+}
+
+// emitClassicSeries emits the classic bucket (using bounds and cumulative,
+// where cumulative has one more element than bounds for the +Inf bucket),
+// count and sum series selected by onlySuffix.
+func emitClassicSeries(lset labels.Labels, baseName string, lsetBuilder *labels.Builder, onlySuffix string, cache *ClassicSeriesCache, bounds, cumulative []float64, count, sum float64, emitSeriesFn func(labels labels.Labels, value float64) error) error {
+	if cache != nil {
+		cache.prepare(lset, baseName)
+	}
+
+	// We preserve original labels and restore them after conversion.
+	// This is to ensure that no modifications are made to the original labels
+	// that the queue_manager relies on.
+	oldLabels := lsetBuilder.Labels()
+	defer lsetBuilder.Reset(oldLabels)
+
+	wantBuckets := onlySuffix == "" || onlySuffix == ClassicSuffixBucket
+	wantCount := onlySuffix == "" || onlySuffix == ClassicSuffixCount
+	wantSum := onlySuffix == "" || onlySuffix == ClassicSuffixSum
+
+	if wantBuckets {
+		if cache != nil && !cache.bucketsMatch(bounds) {
+			if !cache.boundsMatch(bounds) {
+				cache.bounds = append(cache.bounds[:0], bounds...)
+				if cap(cache.leStrings) < len(bounds) {
+					cache.leStrings = make([]string, len(bounds))
 				} else {
-					cache.leStrings = cache.leStrings[:len(customValues)]
+					cache.leStrings = cache.leStrings[:len(bounds)]
 				}
-				for i, val := range customValues {
+				for i, val := range bounds {
 					cache.leStrings[i] = labels.FormatOpenMetricsFloat(val)
 				}
 			}
-			nBuckets := len(customValues) + 1
+			nBuckets := len(bounds) + 1
 			if cap(cache.bucketLabels) < nBuckets {
 				cache.bucketLabels = make([]labels.Labels, nBuckets)
 			} else {
@@ -248,23 +391,18 @@ func ConvertNHCBToClassic(nhcb any, lset labels.Labels, lsetBuilder *labels.Buil
 				cache.bucketLabels[i] = lsetBuilder.Labels()
 			}
 			lsetBuilder.Set(model.BucketLabel, "+Inf")
-			cache.bucketLabels[len(customValues)] = lsetBuilder.Labels()
+			cache.bucketLabels[len(bounds)] = lsetBuilder.Labels()
 			cache.haveBuckets = true
 		}
 
-		currCount := float64(0)
-		for i, val := range customValues {
-			currCount += positiveBuckets[i]
+		for i, val := range bounds {
 			bucketLabels := bucketLabelsFor(cache, i, lsetBuilder, lset, baseName, val)
-			if err := emitSeriesFn(bucketLabels, currCount); err != nil {
+			if err := emitSeriesFn(bucketLabels, cumulative[i]); err != nil {
 				return err
 			}
 		}
-
-		currCount += positiveBuckets[len(positiveBuckets)-1]
-
-		infLabels := bucketLabelsFor(cache, len(customValues), lsetBuilder, lset, baseName, math.Inf(1))
-		if err := emitSeriesFn(infLabels, currCount); err != nil {
+		infLabels := bucketLabelsFor(cache, len(bounds), lsetBuilder, lset, baseName, math.Inf(1))
+		if err := emitSeriesFn(infLabels, cumulative[len(bounds)]); err != nil {
 			return err
 		}
 	}

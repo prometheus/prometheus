@@ -914,7 +914,9 @@ func TestNHCBAsClassicQuerier_Collisions(t *testing.T) {
 		}, got)
 	})
 
-	t.Run("exponential native histogram is never converted and NHCB to NHE transition emits StaleNaN", func(t *testing.T) {
+	t.Run("exponential native histograms are expanded into classic buckets", func(t *testing.T) {
+		// Schema 3 buckets (0.917,1.0]:15 and (1.0,1.09]:15. Reduced to the
+		// schema 2 cap this populates (0.84,1.0] and (1.0,1.19].
 		expNH := &histogram.Histogram{
 			Schema:          3,
 			Count:           30,
@@ -922,72 +924,308 @@ func TestNHCBAsClassicQuerier_Collisions(t *testing.T) {
 			PositiveSpans:   []histogram.Span{{Offset: 0, Length: 2}},
 			PositiveBuckets: []int64{15, 0},
 		}
+		// Schema 0 bucket (2,4]:8 only.
+		expNHHigh := &histogram.Histogram{
+			Schema:          0,
+			Count:           8,
+			Sum:             24,
+			PositiveSpans:   []histogram.Span{{Offset: 2, Length: 1}},
+			PositiveBuckets: []int64{8},
+		}
+		le084 := labels.FormatOpenMetricsFloat(0.8408964152537144)
+		le119 := labels.FormatOpenMetricsFloat(1.189207115002721)
+		bucketQuery := labels.MustNewMatcher(labels.MatchEqual, model.MetricNameLabel, "http_requests_bucket")
 
-		// 1. Pure NHE series: ignored, 0 classic series returned.
-		qPureNHE := NewNHCBAsClassicQuerier(&nhcbMockQuerier{
-			nhcbSeries: []Series{
-				NewListSeries(labels.FromStrings("__name__", "http_requests"), []chunks.Sample{
-					hSample{t: 1, h: expNH},
-				}),
-			},
-		})
-		gotPure := readAll(t, qPureNHE.Select(context.Background(), false, nil,
-			labels.MustNewMatcher(labels.MatchEqual, model.MetricNameLabel, "http_requests_bucket")))
-		require.Empty(t, gotPure)
+		for _, tc := range []struct {
+			name    string
+			samples []chunks.Sample
+		}{
+			{name: "integer", samples: []chunks.Sample{hSample{t: 1, h: expNH}, hSample{t: 2, h: expNH}}},
+			{name: "float", samples: []chunks.Sample{fhSample{t: 1, fh: expNH.ToFloat(nil)}, fhSample{t: 2, fh: expNH.ToFloat(nil)}}},
+			// Stale markers are schema 0 histograms and must not be taken
+			// as the first sample when classifying the series.
+			{name: "integer after stale marker", samples: []chunks.Sample{hSample{t: 0, h: staleNHCB}, hSample{t: 1, h: expNH}, hSample{t: 2, h: expNH}}},
+		} {
+			t.Run("pure exponential series/"+tc.name, func(t *testing.T) {
+				q := NewNHCBAsClassicQuerier(&nhcbMockQuerier{
+					nhcbSeries: []Series{
+						NewListSeries(labels.FromStrings("__name__", "http_requests"), tc.samples),
+					},
+				})
+				got := readAll(t, q.Select(context.Background(), false, nil, bucketQuery))
+				assertSeriesSamplesEqual(t, []seriesSamples{
+					{labels: `{__name__="http_requests_bucket", le="+Inf"}`, samples: []fSample{{t: 1, f: 30}, {t: 2, f: 30}}},
+					{labels: `{__name__="http_requests_bucket", le="` + le084 + `"}`, samples: []fSample{{t: 1, f: 0}, {t: 2, f: 0}}},
+					{labels: `{__name__="http_requests_bucket", le="1.0"}`, samples: []fSample{{t: 1, f: 15}, {t: 2, f: 15}}},
+					{labels: `{__name__="http_requests_bucket", le="` + le119 + `"}`, samples: []fSample{{t: 1, f: 30}, {t: 2, f: 30}}},
+				}, got)
+			})
+		}
 
-		// 2. NHE series coexisting with stored classic series: stored classic is returned untouched.
-		qNHEWithClassic := NewNHCBAsClassicQuerier(&nhcbMockQuerier{
-			classicSeries: []Series{
-				NewListSeries(labels.FromStrings("__name__", "http_requests_bucket", "le", "+Inf"), []chunks.Sample{
-					fSample{t: 1, f: 10},
-				}),
-				NewListSeries(labels.FromStrings("__name__", "http_requests_bucket", "le", "1.0"), []chunks.Sample{
-					fSample{t: 1, f: 5},
-				}),
-			},
-			nhcbSeries: []Series{
-				NewListSeries(labels.FromStrings("__name__", "http_requests"), []chunks.Sample{
-					hSample{t: 1, h: expNH},
-					hSample{t: 2, h: expNH},
-				}),
-			},
-		})
-		gotWithClassic := readAll(t, qNHEWithClassic.Select(context.Background(), false, nil,
-			labels.MustNewMatcher(labels.MatchEqual, model.MetricNameLabel, "http_requests_bucket")))
-		assertSeriesSamplesEqual(t, []seriesSamples{
-			{
-				labels:  `{__name__="http_requests_bucket", le="+Inf"}`,
-				samples: []fSample{{t: 1, f: 10}},
-			},
-			{
-				labels:  `{__name__="http_requests_bucket", le="1.0"}`,
-				samples: []fSample{{t: 1, f: 5}},
-			},
-		}, gotWithClassic)
+		t.Run("NHCB series followed by exponential series unify bounds while streaming", func(t *testing.T) {
+			// pod=a is NHCB and streams; pod=b and pod=c are exponential, so
+			// from pod=b on the remaining series are buffered and share the
+			// same le set, independent of label order.
+			q := NewNHCBAsClassicQuerier(&nhcbMockQuerier{
+				nhcbSeries: []Series{
+					NewListSeries(labels.FromStrings("__name__", "http_requests", "pod", "a"), []chunks.Sample{
+						hSample{t: 1, h: nhcb(50, []float64{1.0}, []int64{5, 5})},
+					}),
+					NewListSeries(labels.FromStrings("__name__", "http_requests", "pod", "b"), []chunks.Sample{
+						hSample{t: 1, h: expNH},
+					}),
+					NewListSeries(labels.FromStrings("__name__", "http_requests", "pod", "c"), []chunks.Sample{
+						hSample{t: 1, h: expNHHigh},
+					}),
+				},
+			})
+			got := readAll(t, q.Select(context.Background(), false, nil, bucketQuery))
+			assertSeriesSamplesEqual(t, []seriesSamples{
+				{labels: `{__name__="http_requests_bucket", le="+Inf", pod="a"}`, samples: []fSample{{t: 1, f: 10}}},
+				{labels: `{__name__="http_requests_bucket", le="1.0", pod="a"}`, samples: []fSample{{t: 1, f: 5}}},
+				{labels: `{__name__="http_requests_bucket", le="+Inf", pod="b"}`, samples: []fSample{{t: 1, f: 30}}},
+				{labels: `{__name__="http_requests_bucket", le="` + le084 + `", pod="b"}`, samples: []fSample{{t: 1, f: 0}}},
+				{labels: `{__name__="http_requests_bucket", le="1.0", pod="b"}`, samples: []fSample{{t: 1, f: 15}}},
+				{labels: `{__name__="http_requests_bucket", le="` + le119 + `", pod="b"}`, samples: []fSample{{t: 1, f: 30}}},
+				{labels: `{__name__="http_requests_bucket", le="2.0", pod="b"}`, samples: []fSample{{t: 1, f: 30}}},
+				{labels: `{__name__="http_requests_bucket", le="4.0", pod="b"}`, samples: []fSample{{t: 1, f: 30}}},
+				{labels: `{__name__="http_requests_bucket", le="+Inf", pod="c"}`, samples: []fSample{{t: 1, f: 8}}},
+				{labels: `{__name__="http_requests_bucket", le="` + le084 + `", pod="c"}`, samples: []fSample{{t: 1, f: 0}}},
+				{labels: `{__name__="http_requests_bucket", le="1.0", pod="c"}`, samples: []fSample{{t: 1, f: 0}}},
+				{labels: `{__name__="http_requests_bucket", le="` + le119 + `", pod="c"}`, samples: []fSample{{t: 1, f: 0}}},
+				{labels: `{__name__="http_requests_bucket", le="2.0", pod="c"}`, samples: []fSample{{t: 1, f: 0}}},
+				{labels: `{__name__="http_requests_bucket", le="4.0", pod="c"}`, samples: []fSample{{t: 1, f: 8}}},
+			}, got)
 
-		// 3. Same base series transitioning NHCB (t=1) -> NHE (t=2) -> NHCB (t=3):
-		// t=1 is converted to classic, t=2 emits StaleNaN on the converted series, and t=3 resumes conversion.
-		qTransition := NewNHCBAsClassicQuerier(&nhcbMockQuerier{
-			nhcbSeries: []Series{
-				NewListSeries(labels.FromStrings("__name__", "http_requests"), []chunks.Sample{
-					hSample{t: 1, h: nhcb(50, []float64{1.0}, []int64{5, 5})},
-					hSample{t: 2, h: expNH},
-					hSample{t: 3, h: nhcb(75, []float64{1.0}, []int64{8, 7})},
-				}),
-			},
+			// The same holds on the grouped path (sortSeries=true).
+			got = readAll(t, q.Select(context.Background(), true, nil, bucketQuery))
+			require.Len(t, got, 14)
 		})
-		gotTransition := readAll(t, qTransition.Select(context.Background(), false, nil,
-			labels.MustNewMatcher(labels.MatchEqual, model.MetricNameLabel, "http_requests_bucket")))
-		assertSeriesSamplesEqual(t, []seriesSamples{
-			{
-				labels:  `{__name__="http_requests_bucket", le="+Inf"}`,
-				samples: []fSample{{t: 1, f: 10}, {t: 2, f: staleF}, {t: 3, f: 15}},
-			},
-			{
-				labels:  `{__name__="http_requests_bucket", le="1.0"}`,
-				samples: []fSample{{t: 1, f: 5}, {t: 2, f: staleF}, {t: 3, f: 8}},
-			},
-		}, gotTransition)
+
+		t.Run("bounds are unified across series and samples", func(t *testing.T) {
+			// pod=a only ever populates buckets up to 1.19 and pod=b only (2,4],
+			// yet both must emit every bound so that sum by (le) stays
+			// monotonic and rate() has a baseline before a bucket's first
+			// observation (pod=b gets its first observation at t=2).
+			q := NewNHCBAsClassicQuerier(&nhcbMockQuerier{
+				nhcbSeries: []Series{
+					NewListSeries(labels.FromStrings("__name__", "http_requests", "pod", "a"), []chunks.Sample{
+						hSample{t: 1, h: expNH},
+						hSample{t: 2, h: expNH},
+					}),
+					NewListSeries(labels.FromStrings("__name__", "http_requests", "pod", "b"), []chunks.Sample{
+						hSample{t: 1, h: &histogram.Histogram{Schema: 0}},
+						hSample{t: 2, h: expNHHigh},
+					}),
+				},
+			})
+			got := readAll(t, q.Select(context.Background(), false, nil, bucketQuery))
+			assertSeriesSamplesEqual(t, []seriesSamples{
+				{labels: `{__name__="http_requests_bucket", le="+Inf", pod="a"}`, samples: []fSample{{t: 1, f: 30}, {t: 2, f: 30}}},
+				{labels: `{__name__="http_requests_bucket", le="` + le084 + `", pod="a"}`, samples: []fSample{{t: 1, f: 0}, {t: 2, f: 0}}},
+				{labels: `{__name__="http_requests_bucket", le="1.0", pod="a"}`, samples: []fSample{{t: 1, f: 15}, {t: 2, f: 15}}},
+				{labels: `{__name__="http_requests_bucket", le="` + le119 + `", pod="a"}`, samples: []fSample{{t: 1, f: 30}, {t: 2, f: 30}}},
+				{labels: `{__name__="http_requests_bucket", le="2.0", pod="a"}`, samples: []fSample{{t: 1, f: 30}, {t: 2, f: 30}}},
+				{labels: `{__name__="http_requests_bucket", le="4.0", pod="a"}`, samples: []fSample{{t: 1, f: 30}, {t: 2, f: 30}}},
+				{labels: `{__name__="http_requests_bucket", le="+Inf", pod="b"}`, samples: []fSample{{t: 1, f: 0}, {t: 2, f: 8}}},
+				{labels: `{__name__="http_requests_bucket", le="` + le084 + `", pod="b"}`, samples: []fSample{{t: 1, f: 0}, {t: 2, f: 0}}},
+				{labels: `{__name__="http_requests_bucket", le="1.0", pod="b"}`, samples: []fSample{{t: 1, f: 0}, {t: 2, f: 0}}},
+				{labels: `{__name__="http_requests_bucket", le="` + le119 + `", pod="b"}`, samples: []fSample{{t: 1, f: 0}, {t: 2, f: 0}}},
+				{labels: `{__name__="http_requests_bucket", le="2.0", pod="b"}`, samples: []fSample{{t: 1, f: 0}, {t: 2, f: 0}}},
+				{labels: `{__name__="http_requests_bucket", le="4.0", pod="b"}`, samples: []fSample{{t: 1, f: 0}, {t: 2, f: 8}}},
+			}, got)
+		})
+
+		t.Run("le matchers pin the evaluated bounds and match numerically", func(t *testing.T) {
+			q := NewNHCBAsClassicQuerier(&nhcbMockQuerier{
+				nhcbSeries: []Series{
+					NewListSeries(labels.FromStrings("__name__", "http_requests"), []chunks.Sample{
+						hSample{t: 1, h: expNH},
+					}),
+				},
+			})
+			// le="1" (Prometheus text format spelling) coincides with an
+			// exponential boundary, so the count is exact even though schema 3
+			// is otherwise reduced.
+			got := readAll(t, q.Select(context.Background(), false, nil, bucketQuery,
+				labels.MustNewMatcher(labels.MatchEqual, labels.BucketLabel, "1")))
+			assertSeriesSamplesEqual(t, []seriesSamples{
+				{labels: `{__name__="http_requests_bucket", le="1.0"}`, samples: []fSample{{t: 1, f: 15}}},
+			}, got)
+
+			// le="0.95" falls inside (0.917,1.0] at the native schema 3 and is
+			// interpolated exponentially.
+			frac := histogram.Bucket[float64]{Lower: 0.9170040432046711, Upper: 1}.FractionBelow(0.95, false)
+			got = readAll(t, q.Select(context.Background(), false, nil, bucketQuery,
+				labels.MustNewMatcher(labels.MatchEqual, labels.BucketLabel, "0.95")))
+			require.Len(t, got, 1)
+			require.Equal(t, `{__name__="http_requests_bucket", le="0.95"}`, got[0].labels)
+			require.Len(t, got[0].samples, 1)
+			require.InDelta(t, 15*frac, got[0].samples[0].f, 1e-9)
+
+			// A literal set regex pins multiple bounds plus +Inf.
+			got = readAll(t, q.Select(context.Background(), false, nil, bucketQuery,
+				labels.MustNewMatcher(labels.MatchRegexp, labels.BucketLabel, `0\.5|2\.0|\+Inf`)))
+			assertSeriesSamplesEqual(t, []seriesSamples{
+				{labels: `{__name__="http_requests_bucket", le="+Inf"}`, samples: []fSample{{t: 1, f: 30}}},
+				{labels: `{__name__="http_requests_bucket", le="0.5"}`, samples: []fSample{{t: 1, f: 0}}},
+				{labels: `{__name__="http_requests_bucket", le="2.0"}`, samples: []fSample{{t: 1, f: 30}}},
+			}, got)
+
+			// Numeric le matching also applies to NHCB buckets.
+			qNHCB := NewNHCBAsClassicQuerier(&nhcbMockQuerier{
+				nhcbSeries: []Series{
+					NewListSeries(labels.FromStrings("__name__", "http_requests"), []chunks.Sample{
+						hSample{t: 1, h: nhcb(50, []float64{1.0, 5.0}, []int64{5, 3, 2})},
+					}),
+				},
+			})
+			got = readAll(t, qNHCB.Select(context.Background(), false, nil, bucketQuery,
+				labels.MustNewMatcher(labels.MatchEqual, labels.BucketLabel, "5")))
+			assertSeriesSamplesEqual(t, []seriesSamples{
+				{labels: `{__name__="http_requests_bucket", le="5.0"}`, samples: []fSample{{t: 1, f: 8}}},
+			}, got)
+
+			// The common unescaped spellings pin bounds too, and the regex is
+			// matched against the text format spelling of the emitted le.
+			for _, re := range []string{`1|2`, `0.5|2.0|1`, `\+Inf|1|2.0`} {
+				got = readAll(t, q.Select(context.Background(), false, nil, bucketQuery,
+					labels.MustNewMatcher(labels.MatchRegexp, labels.BucketLabel, re)))
+				require.NotEmpty(t, got, "le=~%q", re)
+				for _, s := range got {
+					require.Contains(t, []string{
+						`{__name__="http_requests_bucket", le="+Inf"}`,
+						`{__name__="http_requests_bucket", le="0.5"}`,
+						`{__name__="http_requests_bucket", le="1.0"}`,
+						`{__name__="http_requests_bucket", le="2.0"}`,
+					}, s.labels, "le=~%q", re)
+				}
+				require.Len(t, got, strings.Count(re, "|")+1, "le=~%q", re)
+			}
+			got = readAll(t, q.Select(context.Background(), false, nil, bucketQuery,
+				labels.MustNewMatcher(labels.MatchNotRegexp, labels.BucketLabel, `1|2`)))
+			assertSeriesSamplesEqual(t, []seriesSamples{
+				{labels: `{__name__="http_requests_bucket", le="+Inf"}`, samples: []fSample{{t: 1, f: 30}}},
+				{labels: `{__name__="http_requests_bucket", le="` + le084 + `"}`, samples: []fSample{{t: 1, f: 0}}},
+				{labels: `{__name__="http_requests_bucket", le="` + le119 + `"}`, samples: []fSample{{t: 1, f: 30}}},
+			}, got)
+		})
+
+		t.Run("stored classic le is matched as a string", func(t *testing.T) {
+			// The underlying storage compares le as a string on fast path 1,
+			// so the same must hold when a native series exists for the
+			// metric: le="1" selects only the stored le="1" series, while the
+			// converted series answer numerically.
+			q := NewNHCBAsClassicQuerier(&nhcbMockQuerier{
+				classicSeries: []Series{
+					NewListSeries(labels.FromStrings("__name__", "http_requests_bucket", "le", "1", "pod", "a"), []chunks.Sample{
+						fSample{t: 1, f: 5},
+					}),
+					NewListSeries(labels.FromStrings("__name__", "http_requests_bucket", "le", "1.0", "pod", "b"), []chunks.Sample{
+						fSample{t: 1, f: 6},
+					}),
+				},
+				nhcbSeries: []Series{
+					NewListSeries(labels.FromStrings("__name__", "http_requests", "pod", "c"), []chunks.Sample{
+						hSample{t: 1, h: expNH},
+					}),
+				},
+			})
+			got := readAll(t, q.Select(context.Background(), false, nil, bucketQuery,
+				labels.MustNewMatcher(labels.MatchEqual, labels.BucketLabel, "1")))
+			assertSeriesSamplesEqual(t, []seriesSamples{
+				{labels: `{__name__="http_requests_bucket", le="1", pod="a"}`, samples: []fSample{{t: 1, f: 5}}},
+				{labels: `{__name__="http_requests_bucket", le="1.0", pod="c"}`, samples: []fSample{{t: 1, f: 15}}},
+			}, got)
+		})
+
+		t.Run("count and sum stream without bounds", func(t *testing.T) {
+			q := NewNHCBAsClassicQuerier(&nhcbMockQuerier{
+				nhcbSeries: []Series{
+					NewListSeries(labels.FromStrings("__name__", "http_requests"), []chunks.Sample{
+						hSample{t: 1, h: expNH},
+						hSample{t: 2, h: nhcb(50, []float64{1.0}, []int64{5, 5})},
+					}),
+				},
+			})
+			got := readAll(t, q.Select(context.Background(), false, nil,
+				labels.MustNewMatcher(labels.MatchEqual, model.MetricNameLabel, "http_requests_count")))
+			assertSeriesSamplesEqual(t, []seriesSamples{
+				{labels: `{__name__="http_requests_count"}`, samples: []fSample{{t: 1, f: 30}, {t: 2, f: 10}}},
+			}, got)
+			got = readAll(t, q.Select(context.Background(), false, nil,
+				labels.MustNewMatcher(labels.MatchEqual, model.MetricNameLabel, "http_requests_sum")))
+			assertSeriesSamplesEqual(t, []seriesSamples{
+				{labels: `{__name__="http_requests_sum"}`, samples: []fSample{{t: 1, f: 120}, {t: 2, f: 50}}},
+			}, got)
+		})
+
+		t.Run("stored classic shadows exponential samples at the same timestamp", func(t *testing.T) {
+			q := NewNHCBAsClassicQuerier(&nhcbMockQuerier{
+				classicSeries: []Series{
+					NewListSeries(labels.FromStrings("__name__", "http_requests_bucket", "le", "1.0"), []chunks.Sample{
+						fSample{t: 1, f: 5},
+					}),
+					NewListSeries(labels.FromStrings("__name__", "http_requests_bucket", "le", "+Inf"), []chunks.Sample{
+						fSample{t: 1, f: 10},
+					}),
+				},
+				nhcbSeries: []Series{
+					NewListSeries(labels.FromStrings("__name__", "http_requests"), []chunks.Sample{
+						hSample{t: 1, h: expNH},
+						hSample{t: 2, h: expNH},
+					}),
+				},
+			})
+			got := readAll(t, q.Select(context.Background(), false, nil, bucketQuery))
+			assertSeriesSamplesEqual(t, []seriesSamples{
+				{labels: `{__name__="http_requests_bucket", le="+Inf"}`, samples: []fSample{{t: 1, f: 10}, {t: 2, f: 30}}},
+				{labels: `{__name__="http_requests_bucket", le="` + le084 + `"}`, samples: []fSample{{t: 2, f: 0}}},
+				{labels: `{__name__="http_requests_bucket", le="1.0"}`, samples: []fSample{{t: 1, f: 5}, {t: 2, f: 15}}},
+				{labels: `{__name__="http_requests_bucket", le="` + le119 + `"}`, samples: []fSample{{t: 2, f: 30}}},
+			}, got)
+		})
+
+		t.Run("NHE to NHCB to NHE transition on the same series", func(t *testing.T) {
+			q := NewNHCBAsClassicQuerier(&nhcbMockQuerier{
+				nhcbSeries: []Series{
+					NewListSeries(labels.FromStrings("__name__", "http_requests"), []chunks.Sample{
+						hSample{t: 1, h: expNH},
+						hSample{t: 2, h: nhcb(50, []float64{1.0}, []int64{5, 5})},
+						hSample{t: 3, h: expNH},
+					}),
+				},
+			})
+			got := readAll(t, q.Select(context.Background(), false, nil, bucketQuery))
+			// Buckets absent from the NHCB layout at t=2 go stale and come back at t=3.
+			assertSeriesSamplesEqual(t, []seriesSamples{
+				{labels: `{__name__="http_requests_bucket", le="+Inf"}`, samples: []fSample{{t: 1, f: 30}, {t: 2, f: 10}, {t: 3, f: 30}}},
+				{labels: `{__name__="http_requests_bucket", le="` + le084 + `"}`, samples: []fSample{{t: 1, f: 0}, {t: 2, f: staleF}, {t: 3, f: 0}}},
+				{labels: `{__name__="http_requests_bucket", le="1.0"}`, samples: []fSample{{t: 1, f: 15}, {t: 2, f: 5}, {t: 3, f: 15}}},
+				{labels: `{__name__="http_requests_bucket", le="` + le119 + `"}`, samples: []fSample{{t: 1, f: 30}, {t: 2, f: staleF}, {t: 3, f: 30}}},
+			}, got)
+		})
+
+		t.Run("NHCB to NHE transition discovers bounds per series", func(t *testing.T) {
+			// The first native sample is NHCB, so Select streams; the
+			// exponential sample at t=2 still gets converted using bounds
+			// discovered from this series.
+			q := NewNHCBAsClassicQuerier(&nhcbMockQuerier{
+				nhcbSeries: []Series{
+					NewListSeries(labels.FromStrings("__name__", "http_requests"), []chunks.Sample{
+						hSample{t: 1, h: nhcb(50, []float64{1.0}, []int64{5, 5})},
+						hSample{t: 2, h: expNH},
+					}),
+				},
+			})
+			got := readAll(t, q.Select(context.Background(), false, nil, bucketQuery))
+			assertSeriesSamplesEqual(t, []seriesSamples{
+				{labels: `{__name__="http_requests_bucket", le="+Inf"}`, samples: []fSample{{t: 1, f: 10}, {t: 2, f: 30}}},
+				{labels: `{__name__="http_requests_bucket", le="` + le084 + `"}`, samples: []fSample{{t: 2, f: 0}}},
+				{labels: `{__name__="http_requests_bucket", le="1.0"}`, samples: []fSample{{t: 1, f: 5}, {t: 2, f: 15}}},
+				{labels: `{__name__="http_requests_bucket", le="` + le119 + `"}`, samples: []fSample{{t: 2, f: 30}}},
+			}, got)
+		})
 	})
 
 	t.Run("notahist_bucket without le label is returned as-is and does not shadow NHCB buckets", func(t *testing.T) {
@@ -1222,8 +1460,17 @@ func TestNHCBAsClassicQuerier_Collisions(t *testing.T) {
 	})
 
 	t.Run("per-selector control label and debug provenance label", func(t *testing.T) {
-		// Classic series at t=1 (val=10) and NHCB series at t=1 (count=99) & t=2 (count=20).
-		newHybridQuerier := func() Querier {
+		expNH := &histogram.Histogram{
+			Schema:          3,
+			Count:           30,
+			Sum:             120,
+			PositiveSpans:   []histogram.Span{{Offset: 0, Length: 2}},
+			PositiveBuckets: []int64{15, 0},
+		}
+
+		// Classic series at t=1 (val=10), NHCB series at t=1 (count=99) & t=2 (count=20),
+		// and NHE series on pod="exp" at t=1 (count=30).
+		newMixedQuerier := func() Querier {
 			return NewNHCBAsClassicQuerier(&nhcbMockQuerier{
 				classicSeries: []Series{
 					NewListSeries(labels.FromStrings("__name__", "http_requests_count", "job", "api", "pod", "a"), []chunks.Sample{
@@ -1234,6 +1481,9 @@ func TestNHCBAsClassicQuerier_Collisions(t *testing.T) {
 					NewListSeries(labels.FromStrings("__name__", "http_requests", "job", "api", "pod", "a"), []chunks.Sample{
 						hSample{t: 1, h: nhcb(100, []float64{1.0}, []int64{50, 49})},
 						hSample{t: 2, h: nhcb(200, []float64{1.0}, []int64{10, 10})},
+					}),
+					NewListSeries(labels.FromStrings("__name__", "http_requests", "job", "api", "pod", "exp"), []chunks.Sample{
+						hSample{t: 1, h: expNH},
 					}),
 				},
 			})
@@ -1247,17 +1497,21 @@ func TestNHCBAsClassicQuerier_Collisions(t *testing.T) {
 			wantErr  error
 		}{
 			{
-				name:     "default (no control matcher) converts NHCB",
+				name:     "default (no control matcher) converts both NHCB and NHE",
 				matchers: []*labels.Matcher{nameMatcher},
 				want: []seriesSamples{
 					{
 						labels:  `{__name__="http_requests_count", job="api", pod="a"}`,
 						samples: []fSample{{t: 1, f: 10}, {t: 2, f: 20}},
 					},
+					{
+						labels:  `{__name__="http_requests_count", job="api", pod="exp"}`,
+						samples: []fSample{{t: 1, f: 30}},
+					},
 				},
 			},
 			{
-				name: "nhcb converts NHCB series",
+				name: "nhcb converts only NHCB series",
 				matchers: []*labels.Matcher{
 					nameMatcher,
 					labels.MustNewMatcher(labels.MatchEqual, ClassicFromLabel, "nhcb"),
@@ -1270,15 +1524,66 @@ func TestNHCBAsClassicQuerier_Collisions(t *testing.T) {
 				},
 			},
 			{
-				name: "not-equal none converts NHCB series",
+				name: "not-equal nhe converts only NHCB series",
 				matchers: []*labels.Matcher{
 					nameMatcher,
-					labels.MustNewMatcher(labels.MatchNotEqual, ClassicFromLabel, "none"),
+					labels.MustNewMatcher(labels.MatchNotEqual, ClassicFromLabel, "nhe"),
 				},
 				want: []seriesSamples{
 					{
 						labels:  `{__name__="http_requests_count", job="api", pod="a"}`,
 						samples: []fSample{{t: 1, f: 10}, {t: 2, f: 20}},
+					},
+				},
+			},
+			{
+				name: "nhe converts only exponential series",
+				matchers: []*labels.Matcher{
+					nameMatcher,
+					labels.MustNewMatcher(labels.MatchEqual, ClassicFromLabel, "nhe"),
+				},
+				want: []seriesSamples{
+					{
+						labels:  `{__name__="http_requests_count", job="api", pod="a"}`,
+						samples: []fSample{{t: 1, f: 10}},
+					},
+					{
+						labels:  `{__name__="http_requests_count", job="api", pod="exp"}`,
+						samples: []fSample{{t: 1, f: 30}},
+					},
+				},
+			},
+			{
+				name: "not-equal nhcb converts only exponential series",
+				matchers: []*labels.Matcher{
+					nameMatcher,
+					labels.MustNewMatcher(labels.MatchNotEqual, ClassicFromLabel, "nhcb"),
+				},
+				want: []seriesSamples{
+					{
+						labels:  `{__name__="http_requests_count", job="api", pod="a"}`,
+						samples: []fSample{{t: 1, f: 10}},
+					},
+					{
+						labels:  `{__name__="http_requests_count", job="api", pod="exp"}`,
+						samples: []fSample{{t: 1, f: 30}},
+					},
+				},
+			},
+			{
+				name: "regexp nhcb|nhe converts both",
+				matchers: []*labels.Matcher{
+					nameMatcher,
+					labels.MustNewMatcher(labels.MatchRegexp, ClassicFromLabel, "nhcb|nhe"),
+				},
+				want: []seriesSamples{
+					{
+						labels:  `{__name__="http_requests_count", job="api", pod="a"}`,
+						samples: []fSample{{t: 1, f: 10}, {t: 2, f: 20}},
+					},
+					{
+						labels:  `{__name__="http_requests_count", job="api", pod="exp"}`,
+						samples: []fSample{{t: 1, f: 30}},
 					},
 				},
 			},
@@ -1309,10 +1614,10 @@ func TestNHCBAsClassicQuerier_Collisions(t *testing.T) {
 				},
 			},
 			{
-				name: "not-equal nhcb disables conversion",
+				name: "not-regexp nhcb|nhe disables conversion",
 				matchers: []*labels.Matcher{
 					nameMatcher,
-					labels.MustNewMatcher(labels.MatchNotEqual, ClassicFromLabel, "nhcb"),
+					labels.MustNewMatcher(labels.MatchNotRegexp, ClassicFromLabel, "nhcb|nhe"),
 				},
 				want: []seriesSamples{
 					{
@@ -1322,20 +1627,7 @@ func TestNHCBAsClassicQuerier_Collisions(t *testing.T) {
 				},
 			},
 			{
-				name: "not-regexp nhcb disables conversion",
-				matchers: []*labels.Matcher{
-					nameMatcher,
-					labels.MustNewMatcher(labels.MatchNotRegexp, ClassicFromLabel, "nhcb"),
-				},
-				want: []seriesSamples{
-					{
-						labels:  `{__name__="http_requests_count", job="api", pod="a"}`,
-						samples: []fSample{{t: 1, f: 10}},
-					},
-				},
-			},
-			{
-				name: "debug attaches __stored_as__=classic/nhcb without merging or shadowing",
+				name: "debug attaches __stored_as__=classic/nhcb/nhe without merging or shadowing",
 				matchers: []*labels.Matcher{
 					nameMatcher,
 					labels.MustNewMatcher(labels.MatchEqual, ClassicFromLabel, "debug"),
@@ -1349,10 +1641,14 @@ func TestNHCBAsClassicQuerier_Collisions(t *testing.T) {
 						labels:  `{__name__="http_requests_count", __stored_as__="nhcb", job="api", pod="a"}`,
 						samples: []fSample{{t: 1, f: 99}, {t: 2, f: 20}},
 					},
+					{
+						labels:  `{__name__="http_requests_count", __stored_as__="nhe", job="api", pod="exp"}`,
+						samples: []fSample{{t: 1, f: 30}},
+					},
 				},
 			},
 			{
-				name: "regexp nhcb|debug converts NHCB and attaches __stored_as__",
+				name: "regexp nhcb|debug converts only NHCB and attaches __stored_as__",
 				matchers: []*labels.Matcher{
 					nameMatcher,
 					labels.MustNewMatcher(labels.MatchRegexp, ClassicFromLabel, "nhcb|debug"),
@@ -1369,6 +1665,23 @@ func TestNHCBAsClassicQuerier_Collisions(t *testing.T) {
 				},
 			},
 			{
+				name: "regexp nhe|debug converts only NHE and attaches __stored_as__",
+				matchers: []*labels.Matcher{
+					nameMatcher,
+					labels.MustNewMatcher(labels.MatchRegexp, ClassicFromLabel, "nhe|debug"),
+				},
+				want: []seriesSamples{
+					{
+						labels:  `{__name__="http_requests_count", __stored_as__="classic", job="api", pod="a"}`,
+						samples: []fSample{{t: 1, f: 10}},
+					},
+					{
+						labels:  `{__name__="http_requests_count", __stored_as__="nhe", job="api", pod="exp"}`,
+						samples: []fSample{{t: 1, f: 30}},
+					},
+				},
+			},
+			{
 				name: "debug with __stored_as__=nhcb returns only NHCB-converted series",
 				matchers: []*labels.Matcher{
 					nameMatcher,
@@ -1379,6 +1692,20 @@ func TestNHCBAsClassicQuerier_Collisions(t *testing.T) {
 					{
 						labels:  `{__name__="http_requests_count", __stored_as__="nhcb", job="api", pod="a"}`,
 						samples: []fSample{{t: 1, f: 99}, {t: 2, f: 20}},
+					},
+				},
+			},
+			{
+				name: "debug with __stored_as__=nhe returns only NHE-converted series",
+				matchers: []*labels.Matcher{
+					nameMatcher,
+					labels.MustNewMatcher(labels.MatchEqual, ClassicFromLabel, "debug"),
+					labels.MustNewMatcher(labels.MatchEqual, StoredAsLabel, "nhe"),
+				},
+				want: []seriesSamples{
+					{
+						labels:  `{__name__="http_requests_count", __stored_as__="nhe", job="api", pod="exp"}`,
+						samples: []fSample{{t: 1, f: 30}},
 					},
 				},
 			},
@@ -1409,7 +1736,7 @@ func TestNHCBAsClassicQuerier_Collisions(t *testing.T) {
 				matchers: []*labels.Matcher{
 					nameMatcher,
 					labels.MustNewMatcher(labels.MatchEqual, ClassicFromLabel, "nhcb"),
-					labels.MustNewMatcher(labels.MatchEqual, ClassicFromLabel, "none"),
+					labels.MustNewMatcher(labels.MatchEqual, ClassicFromLabel, "nhe"),
 				},
 				want: nil,
 			},
@@ -1438,7 +1765,7 @@ func TestNHCBAsClassicQuerier_Collisions(t *testing.T) {
 			},
 		} {
 			t.Run(tc.name, func(t *testing.T) {
-				ss := newHybridQuerier().Select(context.Background(), false, nil, tc.matchers...)
+				ss := newMixedQuerier().Select(context.Background(), false, nil, tc.matchers...)
 				if tc.wantErr != nil {
 					require.False(t, ss.Next())
 					require.ErrorIs(t, ss.Err(), tc.wantErr)
@@ -1449,7 +1776,63 @@ func TestNHCBAsClassicQuerier_Collisions(t *testing.T) {
 			})
 		}
 
-		t.Run("debug mode when no NHCB series exist attaches __stored_as__=classic to stored classic", func(t *testing.T) {
+		t.Run("debug mode on series transitioning between NHCB and NHE emits separate __stored_as__ series", func(t *testing.T) {
+			q := NewNHCBAsClassicQuerier(&nhcbMockQuerier{
+				nhcbSeries: []Series{
+					NewListSeries(labels.FromStrings("__name__", "http_requests", "job", "api"), []chunks.Sample{
+						hSample{t: 1, h: nhcb(50, []float64{1.0}, []int64{5, 5})},
+						hSample{t: 2, h: expNH},
+					}),
+				},
+			})
+			got := readAll(t, q.Select(context.Background(), false, nil,
+				nameMatcher,
+				labels.MustNewMatcher(labels.MatchEqual, ClassicFromLabel, "debug"),
+			))
+			assertSeriesSamplesEqual(t, []seriesSamples{
+				{
+					labels:  `{__name__="http_requests_count", __stored_as__="nhcb", job="api"}`,
+					samples: []fSample{{t: 1, f: 10}, {t: 2, f: staleF}},
+				},
+				{
+					labels:  `{__name__="http_requests_count", __stored_as__="nhe", job="api"}`,
+					samples: []fSample{{t: 2, f: 30}},
+				},
+			}, got)
+		})
+
+		t.Run("debug mode with sortSeries=true sorts across NHCB and NHE series on _count", func(t *testing.T) {
+			// pod="a" is NHE (__stored_as__="nhe") and pod="b" is NHCB
+			// (__stored_as__="nhcb"). Because __stored_as__ sorts before pod,
+			// sortSeries=true must order pod="b" (__stored_as__="nhcb") before
+			// pod="a" (__stored_as__="nhe").
+			q := NewNHCBAsClassicQuerier(&nhcbMockQuerier{
+				nhcbSeries: []Series{
+					NewListSeries(labels.FromStrings("__name__", "http_requests", "pod", "a"), []chunks.Sample{
+						hSample{t: 1, h: expNH},
+					}),
+					NewListSeries(labels.FromStrings("__name__", "http_requests", "pod", "b"), []chunks.Sample{
+						hSample{t: 1, h: nhcb(50, []float64{1.0}, []int64{5, 5})},
+					}),
+				},
+			})
+			got := readAll(t, q.Select(context.Background(), true, nil,
+				nameMatcher,
+				labels.MustNewMatcher(labels.MatchEqual, ClassicFromLabel, "debug"),
+			))
+			assertSeriesSamplesEqual(t, []seriesSamples{
+				{
+					labels:  `{__name__="http_requests_count", __stored_as__="nhcb", pod="b"}`,
+					samples: []fSample{{t: 1, f: 10}},
+				},
+				{
+					labels:  `{__name__="http_requests_count", __stored_as__="nhe", pod="a"}`,
+					samples: []fSample{{t: 1, f: 30}},
+				},
+			}, got)
+		})
+
+		t.Run("debug mode when no native series exist attaches __stored_as__=classic to stored classic", func(t *testing.T) {
 			q := NewNHCBAsClassicQuerier(&nhcbMockQuerier{
 				classicSeries: []Series{
 					NewListSeries(labels.FromStrings("__name__", "http_requests_count", "job", "api"), []chunks.Sample{
@@ -1582,6 +1965,82 @@ func TestNHCBAsClassicQuerier_Collisions(t *testing.T) {
 				},
 			}, gotSorted)
 		})
+
+		t.Run("single-schema control on _bucket and mid-series NHCB to NHE transition", func(t *testing.T) {
+			bucketName := labels.MustNewMatcher(labels.MatchEqual, model.MetricNameLabel, "http_requests_bucket")
+			newBucketMixed := func() Querier {
+				return NewNHCBAsClassicQuerier(&nhcbMockQuerier{
+					nhcbSeries: []Series{
+						NewListSeries(labels.FromStrings("__name__", "http_requests", "pod", "nhcb"), []chunks.Sample{
+							hSample{t: 1, h: nhcb(50, []float64{1.0}, []int64{5, 5})},
+						}),
+						NewListSeries(labels.FromStrings("__name__", "http_requests", "pod", "nhe"), []chunks.Sample{
+							hSample{t: 1, h: expNH},
+						}),
+					},
+				})
+			}
+
+			gotNHCB := readAll(t, newBucketMixed().Select(context.Background(), false, nil,
+				bucketName,
+				labels.MustNewMatcher(labels.MatchEqual, ClassicFromLabel, "nhcb"),
+			))
+			assertSeriesSamplesEqual(t, []seriesSamples{
+				{
+					labels:  `{__name__="http_requests_bucket", le="+Inf", pod="nhcb"}`,
+					samples: []fSample{{t: 1, f: 10}},
+				},
+				{
+					labels:  `{__name__="http_requests_bucket", le="1.0", pod="nhcb"}`,
+					samples: []fSample{{t: 1, f: 5}},
+				},
+			}, gotNHCB)
+
+			gotNHE := readAll(t, newBucketMixed().Select(context.Background(), false, nil,
+				bucketName,
+				labels.MustNewMatcher(labels.MatchEqual, labels.BucketLabel, "+Inf"),
+				labels.MustNewMatcher(labels.MatchEqual, ClassicFromLabel, "nhe"),
+			))
+			assertSeriesSamplesEqual(t, []seriesSamples{
+				{
+					labels:  `{__name__="http_requests_bucket", le="+Inf", pod="nhe"}`,
+					samples: []fSample{{t: 1, f: 30}},
+				},
+			}, gotNHE)
+
+			newTransitionQuerier := func() Querier {
+				return NewNHCBAsClassicQuerier(&nhcbMockQuerier{
+					nhcbSeries: []Series{
+						NewListSeries(labels.FromStrings("__name__", "http_requests", "job", "api"), []chunks.Sample{
+							hSample{t: 1, h: nhcb(50, []float64{1.0}, []int64{5, 5})},
+							hSample{t: 2, h: expNH},
+						}),
+					},
+				})
+			}
+
+			gotTransitionNHCB := readAll(t, newTransitionQuerier().Select(context.Background(), false, nil,
+				nameMatcher,
+				labels.MustNewMatcher(labels.MatchEqual, ClassicFromLabel, "nhcb"),
+			))
+			assertSeriesSamplesEqual(t, []seriesSamples{
+				{
+					labels:  `{__name__="http_requests_count", job="api"}`,
+					samples: []fSample{{t: 1, f: 10}, {t: 2, f: staleF}},
+				},
+			}, gotTransitionNHCB)
+
+			gotTransitionNHE := readAll(t, newTransitionQuerier().Select(context.Background(), false, nil,
+				nameMatcher,
+				labels.MustNewMatcher(labels.MatchEqual, ClassicFromLabel, "nhe"),
+			))
+			assertSeriesSamplesEqual(t, []seriesSamples{
+				{
+					labels:  `{__name__="http_requests_count", job="api"}`,
+					samples: []fSample{{t: 2, f: 30}},
+				},
+			}, gotTransitionNHE)
+		})
 	})
 }
 
@@ -1597,23 +2056,44 @@ func TestExtractControlMatchers(t *testing.T) {
 		matchers        []*labels.Matcher
 		wantStripped    []*labels.Matcher
 		wantConvertNHCB bool
+		wantConvertNHE  bool
 		wantDebug       bool
 		wantMatched     bool
 		wantErr         error
 	}{
 		{
-			name:            "no control matchers enables NHCB conversion",
+			name:            "no control matchers enables NHCB and NHE conversion",
 			matchers:        []*labels.Matcher{name},
 			wantStripped:    []*labels.Matcher{name},
 			wantConvertNHCB: true,
+			wantConvertNHE:  true,
 			wantDebug:       false,
 			wantMatched:     true,
 		},
 		{
-			name:            "equal nhcb enables NHCB conversion",
+			name:            "equal nhcb enables NHCB only",
 			matchers:        []*labels.Matcher{name, ctrl(labels.MatchEqual, "nhcb")},
 			wantStripped:    []*labels.Matcher{name},
 			wantConvertNHCB: true,
+			wantConvertNHE:  false,
+			wantDebug:       false,
+			wantMatched:     true,
+		},
+		{
+			name:            "equal nhe enables NHE only",
+			matchers:        []*labels.Matcher{name, ctrl(labels.MatchEqual, "nhe")},
+			wantStripped:    []*labels.Matcher{name},
+			wantConvertNHCB: false,
+			wantConvertNHE:  true,
+			wantDebug:       false,
+			wantMatched:     true,
+		},
+		{
+			name:            "regexp nhcb|nhe enables both",
+			matchers:        []*labels.Matcher{name, ctrl(labels.MatchRegexp, "nhcb|nhe")},
+			wantStripped:    []*labels.Matcher{name},
+			wantConvertNHCB: true,
+			wantConvertNHE:  true,
 			wantDebug:       false,
 			wantMatched:     true,
 		},
@@ -1622,21 +2102,42 @@ func TestExtractControlMatchers(t *testing.T) {
 			matchers:        []*labels.Matcher{name, ctrl(labels.MatchEqual, "nhcb"), le},
 			wantStripped:    []*labels.Matcher{name, le},
 			wantConvertNHCB: true,
+			wantConvertNHE:  false,
 			wantMatched:     true,
 		},
 		{
-			name:            "not-equal none enables NHCB without debug",
-			matchers:        []*labels.Matcher{name, ctrl(labels.MatchNotEqual, "none")},
+			name:            "not-equal nhe enables NHCB only without debug",
+			matchers:        []*labels.Matcher{name, ctrl(labels.MatchNotEqual, "nhe")},
 			wantStripped:    []*labels.Matcher{name},
 			wantConvertNHCB: true,
+			wantConvertNHE:  false,
 			wantDebug:       false,
 			wantMatched:     true,
 		},
 		{
-			name:            "not-equal debug enables NHCB without debug",
+			name:            "not-equal nhcb enables NHE only without debug",
+			matchers:        []*labels.Matcher{name, ctrl(labels.MatchNotEqual, "nhcb")},
+			wantStripped:    []*labels.Matcher{name},
+			wantConvertNHCB: false,
+			wantConvertNHE:  true,
+			wantDebug:       false,
+			wantMatched:     true,
+		},
+		{
+			name:            "not-equal none enables both without debug",
+			matchers:        []*labels.Matcher{name, ctrl(labels.MatchNotEqual, "none")},
+			wantStripped:    []*labels.Matcher{name},
+			wantConvertNHCB: true,
+			wantConvertNHE:  true,
+			wantDebug:       false,
+			wantMatched:     true,
+		},
+		{
+			name:            "not-equal debug enables both without debug",
 			matchers:        []*labels.Matcher{name, ctrl(labels.MatchNotEqual, "debug")},
 			wantStripped:    []*labels.Matcher{name},
 			wantConvertNHCB: true,
+			wantConvertNHE:  true,
 			wantDebug:       false,
 			wantMatched:     true,
 		},
@@ -1645,6 +2146,7 @@ func TestExtractControlMatchers(t *testing.T) {
 			matchers:        []*labels.Matcher{name, ctrl(labels.MatchEqual, "none")},
 			wantStripped:    []*labels.Matcher{name},
 			wantConvertNHCB: false,
+			wantConvertNHE:  false,
 			wantDebug:       false,
 			wantMatched:     true,
 		},
@@ -1653,30 +2155,25 @@ func TestExtractControlMatchers(t *testing.T) {
 			matchers:        []*labels.Matcher{name, ctrl(labels.MatchEqual, "")},
 			wantStripped:    []*labels.Matcher{name},
 			wantConvertNHCB: false,
+			wantConvertNHE:  false,
 			wantDebug:       false,
 			wantMatched:     true,
 		},
 		{
-			name:            "not-equal nhcb disables conversion",
-			matchers:        []*labels.Matcher{name, ctrl(labels.MatchNotEqual, "nhcb")},
+			name:            "not-regexp nhcb|nhe disables conversion",
+			matchers:        []*labels.Matcher{name, ctrl(labels.MatchNotRegexp, "nhcb|nhe")},
 			wantStripped:    []*labels.Matcher{name},
 			wantConvertNHCB: false,
+			wantConvertNHE:  false,
 			wantDebug:       false,
 			wantMatched:     true,
 		},
 		{
-			name:            "not-regexp nhcb disables conversion",
-			matchers:        []*labels.Matcher{name, ctrl(labels.MatchNotRegexp, "nhcb")},
-			wantStripped:    []*labels.Matcher{name},
-			wantConvertNHCB: false,
-			wantDebug:       false,
-			wantMatched:     true,
-		},
-		{
-			name:            "equal debug enables NHCB conversion and debug",
+			name:            "equal debug enables both schemas and debug",
 			matchers:        []*labels.Matcher{name, ctrl(labels.MatchEqual, "debug")},
 			wantStripped:    []*labels.Matcher{name},
 			wantConvertNHCB: true,
+			wantConvertNHE:  true,
 			wantDebug:       true,
 			wantMatched:     true,
 		},
@@ -1685,6 +2182,25 @@ func TestExtractControlMatchers(t *testing.T) {
 			matchers:        []*labels.Matcher{name, ctrl(labels.MatchRegexp, "nhcb|debug")},
 			wantStripped:    []*labels.Matcher{name},
 			wantConvertNHCB: true,
+			wantConvertNHE:  false,
+			wantDebug:       true,
+			wantMatched:     true,
+		},
+		{
+			name:            "regexp nhe|debug enables NHE and debug",
+			matchers:        []*labels.Matcher{name, ctrl(labels.MatchRegexp, "nhe|debug")},
+			wantStripped:    []*labels.Matcher{name},
+			wantConvertNHCB: false,
+			wantConvertNHE:  true,
+			wantDebug:       true,
+			wantMatched:     true,
+		},
+		{
+			name:            "regexp nhcb|nhe|debug enables both schemas and debug",
+			matchers:        []*labels.Matcher{name, ctrl(labels.MatchRegexp, "nhcb|nhe|debug")},
+			wantStripped:    []*labels.Matcher{name},
+			wantConvertNHCB: true,
+			wantConvertNHE:  true,
 			wantDebug:       true,
 			wantMatched:     true,
 		},
@@ -1693,6 +2209,7 @@ func TestExtractControlMatchers(t *testing.T) {
 			matchers:        []*labels.Matcher{name, ctrl(labels.MatchRegexp, "none|debug")},
 			wantStripped:    []*labels.Matcher{name},
 			wantConvertNHCB: false,
+			wantConvertNHE:  false,
 			wantDebug:       false,
 			wantMatched:     true,
 		},
@@ -1704,6 +2221,7 @@ func TestExtractControlMatchers(t *testing.T) {
 			},
 			wantStripped:    []*labels.Matcher{name},
 			wantConvertNHCB: true,
+			wantConvertNHE:  true,
 			wantDebug:       false,
 			wantMatched:     true,
 		},
@@ -1716,12 +2234,13 @@ func TestExtractControlMatchers(t *testing.T) {
 			},
 			wantStripped:    []*labels.Matcher{name},
 			wantConvertNHCB: true,
+			wantConvertNHE:  false,
 			wantDebug:       false,
 			wantMatched:     true,
 		},
 		{
 			name:         "contradictory matchers match nothing",
-			matchers:     []*labels.Matcher{name, ctrl(labels.MatchEqual, "nhcb"), ctrl(labels.MatchEqual, "none")},
+			matchers:     []*labels.Matcher{name, ctrl(labels.MatchEqual, "nhcb"), ctrl(labels.MatchEqual, "nhe")},
 			wantStripped: []*labels.Matcher{name},
 			wantMatched:  false,
 		},
@@ -1750,13 +2269,14 @@ func TestExtractControlMatchers(t *testing.T) {
 		},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			stripped, convertNHCB, debug, matched, err := extractControlMatchers(tc.matchers)
+			stripped, convertNHCB, convertNHE, debug, matched, err := extractControlMatchers(tc.matchers)
 			if tc.wantErr != nil {
 				require.ErrorIs(t, err, tc.wantErr)
 				return
 			}
 			require.NoError(t, err)
 			require.Equal(t, tc.wantConvertNHCB, convertNHCB)
+			require.Equal(t, tc.wantConvertNHE, convertNHE)
 			require.Equal(t, tc.wantDebug, debug)
 			require.Equal(t, tc.wantMatched, matched)
 			require.Equal(t, tc.wantStripped, stripped)
@@ -1868,11 +2388,11 @@ func (m *nhcbMockQuerier) Select(_ context.Context, _ bool, _ *SelectHints, matc
 	return NewMockSeriesSet()
 }
 
-func (*nhcbMockQuerier) LabelValues(context.Context, string, *LabelHints, ...*labels.Matcher) ([]string, annotations.Annotations, error) {
+func (*nhcbMockQuerier) LabelValues(_ context.Context, _ string, _ *LabelHints, _ ...*labels.Matcher) ([]string, annotations.Annotations, error) {
 	return nil, nil, nil
 }
 
-func (*nhcbMockQuerier) LabelNames(context.Context, *LabelHints, ...*labels.Matcher) ([]string, annotations.Annotations, error) {
+func (*nhcbMockQuerier) LabelNames(_ context.Context, _ *LabelHints, _ ...*labels.Matcher) ([]string, annotations.Annotations, error) {
 	return nil, nil, nil
 }
 

@@ -14,6 +14,8 @@
 package histogram
 
 import (
+	"fmt"
+	"math"
 	"testing"
 
 	"github.com/prometheus/common/model"
@@ -456,4 +458,290 @@ func TestConvertNHCBToClassicIntFloatAgreement(t *testing.T) {
 		}
 	}
 	require.Equal(t, count, infBucket)
+}
+
+func TestConvertExponentialToClassic(t *testing.T) {
+	// Schema 0 buckets: (0.5,1]:10, (1,2]:20, (2,4]:30.
+	posOnly := &FloatHistogram{
+		Schema:          0,
+		Count:           60,
+		Sum:             100,
+		PositiveSpans:   []Span{{Offset: 0, Length: 3}},
+		PositiveBuckets: []float64{10, 20, 30},
+	}
+	// Zero bucket [-0.1,0.1]:5 plus (0.5,1]:10.
+	withZero := &FloatHistogram{
+		Schema:          0,
+		Count:           15,
+		Sum:             10,
+		ZeroThreshold:   0.1,
+		ZeroCount:       5,
+		PositiveSpans:   []Span{{Offset: 0, Length: 1}},
+		PositiveBuckets: []float64{10},
+	}
+	// Negative bucket [-1,-0.5):7, zero bucket [-0.1,0.1]:5, (0.5,1]:10.
+	withNegative := &FloatHistogram{
+		Schema:          0,
+		Count:           22,
+		Sum:             1,
+		ZeroThreshold:   0.1,
+		ZeroCount:       5,
+		NegativeSpans:   []Span{{Offset: 0, Length: 1}},
+		NegativeBuckets: []float64{7},
+		PositiveSpans:   []Span{{Offset: 0, Length: 1}},
+		PositiveBuckets: []float64{10},
+	}
+	// NaN observations are only reflected in Count.
+	withNaN := &FloatHistogram{
+		Schema:          0,
+		Count:           12,
+		Sum:             math.NaN(),
+		PositiveSpans:   []Span{{Offset: 0, Length: 1}},
+		PositiveBuckets: []float64{10},
+	}
+	// Only the zero bucket [-0.1,0.1]:4 is populated, so neither bound is
+	// replaced by 0 and the bucket interpolates linearly across the whole
+	// width, as histogram_fraction does.
+	zeroOnly := &FloatHistogram{
+		Schema:        0,
+		Count:         4,
+		Sum:           0,
+		ZeroThreshold: 0.1,
+		ZeroCount:     4,
+	}
+	// Negative bucket [-1,-0.5):7 and zero bucket [-0.1,0.1]:4: with only
+	// negative buckets 0 is the upper bound of the zero bucket, so le="0.0"
+	// already includes all observations.
+	negativeOnly := &FloatHistogram{
+		Schema:          0,
+		Count:           11,
+		Sum:             -5,
+		ZeroThreshold:   0.1,
+		ZeroCount:       4,
+		NegativeSpans:   []Span{{Offset: 0, Length: 1}},
+		NegativeBuckets: []float64{7},
+	}
+	// Float histograms may carry a Count below the bucket sum (e.g. after
+	// float rounding in recording rules); +Inf must stay monotonic.
+	countBelowBuckets := &FloatHistogram{
+		Schema:          0,
+		Count:           9.5,
+		Sum:             10,
+		PositiveSpans:   []Span{{Offset: 0, Length: 2}},
+		PositiveBuckets: []float64{5, 5},
+	}
+	lset := labels.FromStrings("__name__", "test_metric", "job", "a")
+	bucket := func(le string, v float64) sample {
+		return sample{lset: labels.FromStrings("__name__", "test_metric_bucket", "job", "a", "le", le), val: v}
+	}
+	// Expected interpolated fraction of bucket (lower, upper] below v, as
+	// done by histogram_fraction for exponential buckets.
+	expFrac := func(lower, upper, v float64) float64 {
+		return Bucket[float64]{Lower: lower, Upper: upper}.FractionBelow(v, false)
+	}
+
+	for _, tc := range []struct {
+		name     string
+		h        *FloatHistogram
+		bounds   []float64
+		suffix   string
+		expected []sample
+	}{
+		{
+			name:   "bounds on exponential boundaries are exact",
+			h:      posOnly,
+			bounds: []float64{1, 2, 4},
+			expected: []sample{
+				bucket("1.0", 10), bucket("2.0", 30), bucket("4.0", 60), bucket("+Inf", 60),
+				{lset: labels.FromStrings("__name__", "test_metric_count", "job", "a"), val: 60},
+				{lset: labels.FromStrings("__name__", "test_metric_sum", "job", "a"), val: 100},
+			},
+		},
+		{
+			name:   "bounds below, inside and above populated buckets",
+			h:      posOnly,
+			bounds: []float64{0.25, 0.5, 1.5, 3, 8},
+			suffix: ClassicSuffixBucket,
+			expected: []sample{
+				bucket("0.25", 0),
+				bucket("0.5", 0),
+				bucket("1.5", 10+20*expFrac(1, 2, 1.5)),
+				bucket("3.0", 30+30*expFrac(2, 4, 3)),
+				bucket("8.0", 60),
+				bucket("+Inf", 60),
+			},
+		},
+		{
+			name:     "no finite bounds only emits +Inf",
+			h:        posOnly,
+			bounds:   []float64{},
+			suffix:   ClassicSuffixBucket,
+			expected: []sample{bucket("+Inf", 60)},
+		},
+		{
+			name:   "zero bucket of a positive-only histogram interpolates linearly from 0",
+			h:      withZero,
+			bounds: []float64{0.05, 0.1, 0.3, 1},
+			suffix: ClassicSuffixBucket,
+			expected: []sample{
+				bucket("0.05", 2.5), bucket("0.1", 5), bucket("0.3", 5), bucket("1.0", 15), bucket("+Inf", 15),
+			},
+		},
+		{
+			name:   "negative buckets",
+			h:      withNegative,
+			bounds: []float64{-2, -0.75, -0.5, 0, 0.1, 1},
+			suffix: ClassicSuffixBucket,
+			expected: []sample{
+				bucket("-2.0", 0),
+				bucket("-0.75", 7*expFrac(-1, -0.5, -0.75)),
+				bucket("-0.5", 7),
+				bucket("0.0", 7+5*0.5),
+				bucket("0.1", 12),
+				bucket("1.0", 22),
+				bucket("+Inf", 22),
+			},
+		},
+		{
+			name:   "NaN observations are counted in +Inf and _count only",
+			h:      withNaN,
+			bounds: []float64{1},
+			expected: []sample{
+				bucket("1.0", 10), bucket("+Inf", 12),
+				{lset: labels.FromStrings("__name__", "test_metric_count", "job", "a"), val: 12},
+				{lset: labels.FromStrings("__name__", "test_metric_sum", "job", "a"), val: math.NaN()},
+			},
+		},
+		{
+			name:   "zero bucket of a zero-only histogram interpolates linearly across its full width",
+			h:      zeroOnly,
+			bounds: []float64{-0.05, 0, 0.05, 0.1},
+			suffix: ClassicSuffixBucket,
+			expected: []sample{
+				bucket("-0.05", 1), bucket("0.0", 2), bucket("0.05", 3), bucket("0.1", 4), bucket("+Inf", 4),
+			},
+		},
+		{
+			name:   "zero bucket of a negative-only histogram ends at 0",
+			h:      negativeOnly,
+			bounds: []float64{-0.1, -0.05, 0, 0.05},
+			suffix: ClassicSuffixBucket,
+			expected: []sample{
+				bucket("-0.1", 7), bucket("-0.05", 9), bucket("0.0", 11), bucket("0.05", 11), bucket("+Inf", 11),
+			},
+		},
+		{
+			name:   "+Inf is at least the bucket sum when Count is lower",
+			h:      countBelowBuckets,
+			bounds: []float64{1, 2},
+			expected: []sample{
+				bucket("1.0", 5), bucket("2.0", 10), bucket("+Inf", 10),
+				{lset: labels.FromStrings("__name__", "test_metric_count", "job", "a"), val: 9.5},
+				{lset: labels.FromStrings("__name__", "test_metric_sum", "job", "a"), val: 10},
+			},
+		},
+		{
+			name:   "count only ignores bounds",
+			h:      posOnly,
+			bounds: nil,
+			suffix: ClassicSuffixCount,
+			expected: []sample{
+				{lset: labels.FromStrings("__name__", "test_metric_count", "job", "a"), val: 60},
+			},
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			require.NoError(t, tc.h.Validate())
+			for _, useCache := range []bool{false, true} {
+				t.Run(fmt.Sprintf("cache=%v", useCache), func(t *testing.T) {
+					var cache *ClassicSeriesCache
+					if useCache {
+						cache = &ClassicSeriesCache{}
+					}
+					lb := labels.NewBuilder(labels.EmptyLabels())
+					// Convert twice to exercise cache reuse.
+					for range 2 {
+						var got []sample
+						require.NoError(t, ConvertExponentialToClassic(tc.h, tc.bounds, lset, lb, tc.suffix, cache, func(l labels.Labels, v float64) error {
+							got = append(got, sample{lset: l, val: v})
+							return nil
+						}))
+						require.Len(t, got, len(tc.expected))
+						for i := range tc.expected {
+							require.True(t, labels.Equal(tc.expected[i].lset, got[i].lset), "labels mismatch at index %d: expected %v, got %v", i, tc.expected[i].lset, got[i].lset)
+							if math.IsNaN(tc.expected[i].val) {
+								require.True(t, math.IsNaN(got[i].val))
+								continue
+							}
+							require.InDelta(t, tc.expected[i].val, got[i].val, 1e-9, "series %s", got[i].lset)
+						}
+					}
+				})
+			}
+		})
+	}
+
+	t.Run("rejects NHCB", func(t *testing.T) {
+		nhcb := &FloatHistogram{Schema: CustomBucketsSchema, CustomValues: []float64{1}, Count: 1, PositiveSpans: []Span{{Length: 1}}, PositiveBuckets: []float64{1}}
+		err := ConvertExponentialToClassic(nhcb, []float64{1}, lset, labels.NewBuilder(labels.EmptyLabels()), "", nil, func(labels.Labels, float64) error { return nil })
+		require.Error(t, err)
+	})
+}
+
+func TestAppendExponentialBounds(t *testing.T) {
+	for _, tc := range []struct {
+		name      string
+		h         *FloatHistogram
+		maxSchema int32
+		expected  []float64
+	}{
+		{
+			name: "schema at or below max emits lower and upper of populated buckets",
+			h: &FloatHistogram{
+				Schema:          0,
+				PositiveSpans:   []Span{{Offset: 0, Length: 2}, {Offset: 1, Length: 1}},
+				PositiveBuckets: []float64{10, 0, 30},
+			},
+			maxSchema: 2,
+			expected:  []float64{0.5, 1, 4, 8},
+		},
+		{
+			name: "higher schema is reduced to max schema",
+			h: &FloatHistogram{
+				Schema:          3,
+				PositiveSpans:   []Span{{Offset: 0, Length: 2}},
+				PositiveBuckets: []float64{15, 15},
+			},
+			maxSchema: 2,
+			expected:  []float64{0.8408964152537144, 1, 1, 1.189207115002721},
+		},
+		{
+			name: "zero and negative buckets",
+			h: &FloatHistogram{
+				Schema:          0,
+				ZeroThreshold:   0.1,
+				ZeroCount:       1,
+				NegativeSpans:   []Span{{Offset: 1, Length: 1}},
+				NegativeBuckets: []float64{7},
+			},
+			maxSchema: 2,
+			expected:  []float64{-2, -1, 0.1, -0.1},
+		},
+		{
+			name:      "empty histogram",
+			h:         &FloatHistogram{Schema: 0},
+			maxSchema: 2,
+			expected:  nil,
+		},
+		{
+			name:      "custom buckets schema is ignored",
+			h:         &FloatHistogram{Schema: CustomBucketsSchema, CustomValues: []float64{1}, PositiveSpans: []Span{{Length: 1}}, PositiveBuckets: []float64{1}},
+			maxSchema: 2,
+			expected:  nil,
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			require.Equal(t, tc.expected, AppendExponentialBounds(nil, tc.h, tc.maxSchema))
+		})
+	}
 }
