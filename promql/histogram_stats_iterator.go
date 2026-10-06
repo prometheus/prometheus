@@ -66,7 +66,8 @@ func (hsi *HistogramStatsIterator) Next() chunkenc.ValueType {
 func (hsi *HistogramStatsIterator) Seek(t int64) chunkenc.ValueType {
 	// If the Seek is going to move the iterator, we have to forget the
 	// lastFH and mark the currentFH as not current anymore.
-	if t > hsi.AtT() {
+	// A fresh or reset iterator has no current sample to inspect yet.
+	if hsi.last != nil && t > hsi.AtT() {
 		hsi.last = nil
 		hsi.lastIsCurrent = false
 	}

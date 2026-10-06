@@ -14,6 +14,7 @@
 package promql
 
 import (
+	"fmt"
 	"math"
 	"testing"
 
@@ -22,6 +23,7 @@ import (
 	"github.com/prometheus/prometheus/model/histogram"
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/model/value"
+	"github.com/prometheus/prometheus/storage"
 	"github.com/prometheus/prometheus/tsdb/chunkenc"
 	"github.com/prometheus/prometheus/tsdb/tsdbutil"
 )
@@ -238,3 +240,64 @@ func (*histogramIterator) AtT() int64 { return 0 }
 func (*histogramIterator) AtST() int64 { return 0 }
 
 func (*histogramIterator) Err() error { return nil }
+
+func TestHistogramStatsInitialChainSeek(t *testing.T) {
+	for _, enc := range []chunkenc.Encoding{chunkenc.EncHistogram, chunkenc.EncFloatHistogram} {
+		for _, reuse := range []bool{false, true} {
+			t.Run(fmt.Sprintf("%s/reuse%t", enc, reuse), func(t *testing.T) {
+				var pieces []storage.Series
+				for _, ts := range []int64{10, 20} {
+					c, err := chunkenc.NewEmptyChunk(enc)
+					if err != nil {
+						t.Fatal(err)
+					}
+					app, err := c.Appender()
+					if err != nil {
+						t.Fatal(err)
+					}
+					if enc == chunkenc.EncHistogram {
+						_, _, _, err = app.AppendHistogram(nil, 0, ts, &histogram.Histogram{CounterResetHint: histogram.GaugeType, Schema: 0, ZeroCount: 1, ZeroThreshold: 1, Count: 3, Sum: 4.5, PositiveSpans: []histogram.Span{{Offset: 1, Length: 1}}, PositiveBuckets: []int64{2}}, false)
+					} else {
+						_, _, _, err = app.AppendFloatHistogram(nil, 0, ts, &histogram.FloatHistogram{CounterResetHint: histogram.GaugeType, Schema: 0, ZeroCount: 1, ZeroThreshold: 1, Count: 3, Sum: 4.5, PositiveSpans: []histogram.Span{{Offset: 1, Length: 1}}, PositiveBuckets: []float64{2}}, false)
+					}
+					if err != nil {
+						t.Fatal(err)
+					}
+					decoded, err := chunkenc.FromData(enc, append([]byte(nil), c.Bytes()...))
+					if err != nil {
+						t.Fatal(err)
+					}
+					pieces = append(pieces, &storage.SeriesEntry{Lset: labels.FromStrings("series", "a"), SampleIteratorFn: func(chunkenc.Iterator) chunkenc.Iterator { return decoded.Iterator(nil) }})
+				}
+				merged := storage.ChainedSeriesMerge(pieces...)
+				control := merged.Iterator(nil)
+				if control.Seek(10) == chunkenc.ValNone {
+					t.Fatal("direct chain Seek failed")
+				}
+				ts, h := control.AtFloatHistogram(nil)
+				if ts != 10 || h.Count != 3 || h.Sum != 4.5 {
+					t.Fatal("invalid control")
+				}
+				var previous chunkenc.Iterator
+				if reuse {
+					previous = NewHistogramStatsIterator(pieces[0].Iterator(nil))
+					previous.Next()
+					previous.AtFloatHistogram(nil)
+				}
+				wrapped := newHistogramStatsSeries(merged).Iterator(previous)
+				defer func() {
+					if r := recover(); r != nil {
+						t.Fatalf("fresh/reset Seek(10) should position real encoded chain; panic: %v", r)
+					}
+				}()
+				if wrapped.Seek(10) != chunkenc.ValFloatHistogram {
+					t.Fatal("wrapper Seek failed")
+				}
+				ts, h = wrapped.AtFloatHistogram(nil)
+				if ts != 10 || h.Count != 3 || h.Sum != 4.5 {
+					t.Fatal("wrapper payload")
+				}
+			})
+		}
+	}
+}
