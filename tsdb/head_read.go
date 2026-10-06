@@ -185,6 +185,9 @@ func (h *headIndexReader) ShardedPostings(p index.Postings, shardIndex, shardCou
 	if notFoundSeriesCount > 0 {
 		h.head.logger.Debug("Looked up series not found", "count", notFoundSeriesCount)
 	}
+	if err := p.Err(); err != nil {
+		return index.ErrPostings(fmt.Errorf("expand postings: %w", err))
+	}
 
 	return index.NewListPostings(out)
 }

@@ -236,6 +236,22 @@ func TestIndexRW_Postings(t *testing.T) {
 				require.Equal(t, shardIndex, labels.StableHash(lbls.Labels())%shardCount)
 			}
 		}
+
+		errExpected := errors.New("postings error")
+		for _, tc := range []struct {
+			name string
+			refs []storage.SeriesRef
+		}{
+			{name: "empty"},
+			{name: "non-empty", refs: expected},
+		} {
+			t.Run(tc.name, func(t *testing.T) {
+				p := Merge(ctx, NewListPostings(tc.refs), ErrPostings(errExpected))
+				p = ir.ShardedPostings(p, 0, shardCount)
+				require.False(t, p.Next())
+				require.ErrorIs(t, p.Err(), errExpected)
+			})
+		}
 	})
 }
 
