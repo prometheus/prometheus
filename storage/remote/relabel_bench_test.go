@@ -55,7 +55,7 @@ func BenchmarkRelabel_CacheSteadyState(b *testing.B) {
 	for _, n := range []int{1, 5} {
 		cfgs := benchRelabelConfigs(n)
 		b.Run(nRulesName(n), func(b *testing.B) {
-			cache := NewRelabelCache()
+			cache := NewRelabelCache(nil)
 			cache.relabel(l, cfgs, model.UTF8Validation)
 
 			b.ReportAllocs()
@@ -71,7 +71,7 @@ func BenchmarkRelabel_CacheSteadyStateParallel(b *testing.B) {
 	for _, n := range []int{1, 5} {
 		cfgs := benchRelabelConfigs(n)
 		b.Run(nRulesName(n), func(b *testing.B) {
-			cache := NewRelabelCache()
+			cache := NewRelabelCache(nil)
 			cache.relabel(l, cfgs, model.UTF8Validation)
 
 			b.ReportAllocs()

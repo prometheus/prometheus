@@ -409,7 +409,7 @@ func TestOTLPWriteHandler_ReceiveRelabeling(t *testing.T) {
 	}
 
 	appendable := teststorage.NewAppendable()
-	wrapped := NewRelabelingAppendableV2(appendable, configFunc, NewRelabelCache())
+	wrapped := NewRelabelingAppendableV2(appendable, configFunc, NewRelabelCache(nil))
 	handler := NewOTLPWriteHandler(slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: slog.LevelWarn})), nil, wrapped, configFunc, OTLPOptions{})
 
 	recorder := httptest.NewRecorder()

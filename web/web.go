@@ -398,7 +398,7 @@ func New(logger *slog.Logger, o *Options) *Handler {
 				}
 				return *h.config
 			}
-			relabelCache := remote.NewRelabelCache()
+			relabelCache := remote.NewRelabelCache(o.Registerer)
 			app = remote.NewRelabelingAppendable(app, relabelConfigFunc, relabelCache)
 			appV2 = remote.NewRelabelingAppendableV2(appV2, relabelConfigFunc, relabelCache)
 		}

@@ -19,6 +19,8 @@ import (
 	"slices"
 	"sync"
 
+	"github.com/prometheus/client_golang/prometheus"
+	"github.com/prometheus/client_golang/prometheus/promauto"
 	"github.com/prometheus/common/model"
 	"go.uber.org/atomic"
 
@@ -65,6 +67,11 @@ type RelabelCache struct {
 	entries map[uint64]*relabelCacheEntry
 	// cfgs is the last-seen rule set.
 	cfgs []*relabel.Config
+
+	size    prometheus.Gauge
+	hits    prometheus.Counter
+	misses  prometheus.Counter
+	evicted prometheus.Counter
 }
 
 type relabelCacheEntry struct {
@@ -78,8 +85,33 @@ type relabelCacheEntry struct {
 }
 
 // NewRelabelCache returns an empty RelabelCache.
-func NewRelabelCache() *RelabelCache {
-	return &RelabelCache{}
+func NewRelabelCache(reg prometheus.Registerer) *RelabelCache {
+	return &RelabelCache{
+		size: promauto.With(reg).NewGauge(prometheus.GaugeOpts{
+			Namespace: "prometheus",
+			Subsystem: "api",
+			Name:      "receive_relabel_cache_entries",
+			Help:      "Current number of entries in the receive-path relabel cache.",
+		}),
+		hits: promauto.With(reg).NewCounter(prometheus.CounterOpts{
+			Namespace: "prometheus",
+			Subsystem: "api",
+			Name:      "receive_relabel_cache_hits_total",
+			Help:      "Total number of receive-path relabel cache hits.",
+		}),
+		misses: promauto.With(reg).NewCounter(prometheus.CounterOpts{
+			Namespace: "prometheus",
+			Subsystem: "api",
+			Name:      "receive_relabel_cache_misses_total",
+			Help:      "Total number of receive-path relabel cache misses.",
+		}),
+		evicted: promauto.With(reg).NewCounter(prometheus.CounterOpts{
+			Namespace: "prometheus",
+			Subsystem: "api",
+			Name:      "receive_relabel_cache_evicted_total",
+			Help:      "Total number of entries evicted from the receive-path relabel cache to bound its size.",
+		}),
+	}
 }
 
 func (c *RelabelCache) relabel(l labels.Labels, cfgs []*relabel.Config, validationScheme model.ValidationScheme) (labels.Labels, bool) {
@@ -91,8 +123,10 @@ func (c *RelabelCache) relabel(l labels.Labels, cfgs []*relabel.Config, validati
 	h := l.Hash()
 
 	if result, keep, ok := c.get(h, l, cfgs); ok {
+		c.hits.Inc()
 		return result, keep
 	}
+	c.misses.Inc()
 
 	result, keep := relabelLabels(l, cfgs, validationScheme)
 	c.put(h, l, result, keep, cfgs)
@@ -132,7 +166,7 @@ func (c *RelabelCache) put(h uint64, orig, result labels.Labels, keep bool, cfgs
 	}
 
 	if len(c.entries) >= relabelCacheMaxEntries {
-		c.sweep()
+		evicted := c.sweep()
 		// Evict arbitrary entries down to the low watermark instead of
 		// wiping the map, so a stampede doesn't force every hot entry to
 		// recompute.
@@ -141,12 +175,15 @@ func (c *RelabelCache) put(h uint64, orig, result labels.Labels, keep bool, cfgs
 				break
 			}
 			delete(c.entries, evict)
+			evicted++
 		}
+		c.evicted.Add(float64(evicted))
 	}
 	// touched starts false: an entry only counts as "used" once something
 	// looks it up again after this insert, so a sweep can tell a reused
 	// entry apart from a one-off it never sees twice.
 	c.entries[h] = &relabelCacheEntry{orig: orig, result: result, keep: keep}
+	c.size.Set(float64(len(c.entries)))
 }
 
 // clear drops all entries and resets cfgs.
@@ -158,6 +195,7 @@ func (c *RelabelCache) clear() {
 	c.entries = nil
 	c.cfgs = nil
 	c.mu.Unlock()
+	c.size.Set(0)
 }
 
 func (c *RelabelCache) empty() bool {
@@ -167,13 +205,16 @@ func (c *RelabelCache) empty() bool {
 }
 
 // sweep deletes entries not touched since the previous sweep and clears the
-// mark on survivors. Called with c.mu held.
-func (c *RelabelCache) sweep() {
+// mark on survivors. Called with c.mu held. Returns the number of entries deleted.
+func (c *RelabelCache) sweep() int {
+	deleted := 0
 	for h, e := range c.entries {
 		if !e.touched.Swap(false) {
 			delete(c.entries, h)
+			deleted++
 		}
 	}
+	return deleted
 }
 
 // NewRelabelingAppendable applies Config.ReceiveRelabelConfigs to samples

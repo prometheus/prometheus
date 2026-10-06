@@ -93,7 +93,7 @@ func TestNewRelabelingAppendable(t *testing.T) {
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			appendable := teststorage.NewAppendable()
-			wrapped := NewRelabelingAppendable(appendable, relabelTestConfigFunc(tc.configs, tc.scheme), NewRelabelCache())
+			wrapped := NewRelabelingAppendable(appendable, relabelTestConfigFunc(tc.configs, tc.scheme), NewRelabelCache(nil))
 			app := wrapped.Appender(context.Background())
 
 			ref, err := app.Append(0, tc.in, 10, 1)
@@ -139,7 +139,7 @@ func TestNewRelabelingAppendableV2(t *testing.T) {
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			appendable := teststorage.NewAppendable()
-			wrapped := NewRelabelingAppendableV2(appendable, relabelTestConfigFunc(tc.configs, tc.scheme), NewRelabelCache())
+			wrapped := NewRelabelingAppendableV2(appendable, relabelTestConfigFunc(tc.configs, tc.scheme), NewRelabelCache(nil))
 			app := wrapped.AppenderV2(context.Background())
 
 			_, err := app.Append(0, tc.in, 0, 10, 1, nil, nil, storage.AOptions{
@@ -192,7 +192,7 @@ func TestNewRelabelingAppendableV2_MetricFamilyName(t *testing.T) {
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			appendable := teststorage.NewAppendable()
-			wrapped := NewRelabelingAppendableV2(appendable, relabelTestConfigFunc(tc.configs, model.UTF8Validation), NewRelabelCache())
+			wrapped := NewRelabelingAppendableV2(appendable, relabelTestConfigFunc(tc.configs, model.UTF8Validation), NewRelabelCache(nil))
 			app := wrapped.AppenderV2(context.Background())
 
 			_, err := app.Append(0, tc.in, 0, 10, 1, nil, nil, storage.AOptions{MetricFamilyName: "keep_me"})
@@ -210,7 +210,7 @@ func TestRelabelCache(t *testing.T) {
 	l := labels.FromStrings("__name__", "keep_me", "env", "prod")
 
 	t.Run("caches and reuses result for the same config generation", func(t *testing.T) {
-		cache := NewRelabelCache()
+		cache := NewRelabelCache(nil)
 		result1, keep1 := cache.relabel(l, relabelTestRewriteConfig, model.UTF8Validation)
 		require.True(t, keep1)
 
@@ -227,7 +227,7 @@ func TestRelabelCache(t *testing.T) {
 	})
 
 	t.Run("reload with unchanged rule content adopts the new identity without evicting unrelated entries", func(t *testing.T) {
-		cache := NewRelabelCache()
+		cache := NewRelabelCache(nil)
 		other := labels.FromStrings("__name__", "keep_me_2", "env", "prod")
 		cache.relabel(l, relabelTestRewriteConfig, model.UTF8Validation)
 		cache.relabel(other, relabelTestRewriteConfig, model.UTF8Validation)
@@ -265,7 +265,7 @@ func TestRelabelCache(t *testing.T) {
 	})
 
 	t.Run("reload with changed rule content wipes stale entries", func(t *testing.T) {
-		cache := NewRelabelCache()
+		cache := NewRelabelCache(nil)
 		result1, _ := cache.relabel(l, relabelTestRewriteConfig, model.UTF8Validation)
 		require.True(t, result1.Has("environment"))
 		require.Equal(t, "prod", result1.Get("environment"))
@@ -283,7 +283,7 @@ func TestRelabelCache(t *testing.T) {
 	})
 
 	t.Run("clears on overflow instead of growing unbounded", func(t *testing.T) {
-		cache := NewRelabelCache()
+		cache := NewRelabelCache(nil)
 		const overflowBy = 10
 		for i := range relabelCacheMaxEntries + overflowBy {
 			cache.relabel(labels.FromStrings("__name__", "m", "i", strconv.Itoa(i)), relabelTestRewriteConfig, model.UTF8Validation)
@@ -296,7 +296,7 @@ func TestRelabelCache(t *testing.T) {
 	})
 
 	t.Run("sweep freeing nothing evicts arbitrary entries instead of wiping the cache", func(t *testing.T) {
-		cache := NewRelabelCache()
+		cache := NewRelabelCache(nil)
 		for i := range relabelCacheMaxEntries {
 			cache.relabel(labels.FromStrings("__name__", "m", "i", strconv.Itoa(i)), relabelTestRewriteConfig, model.UTF8Validation)
 		}
@@ -314,7 +314,7 @@ func TestRelabelCache(t *testing.T) {
 	})
 
 	t.Run("consecutive misses with nothing touched in between don't collapse the cache", func(t *testing.T) {
-		cache := NewRelabelCache()
+		cache := NewRelabelCache(nil)
 		for i := range relabelCacheMaxEntries {
 			cache.relabel(labels.FromStrings("__name__", "m", "i", strconv.Itoa(i)), relabelTestRewriteConfig, model.UTF8Validation)
 		}
@@ -333,7 +333,7 @@ func TestRelabelCache(t *testing.T) {
 	})
 
 	t.Run("an entry reused before overflow survives it, one that wasn't does not", func(t *testing.T) {
-		cache := NewRelabelCache()
+		cache := NewRelabelCache(nil)
 		hot := labels.FromStrings("__name__", "m", "kind", "hot")
 		cold := labels.FromStrings("__name__", "m", "kind", "cold")
 		cache.relabel(hot, relabelTestRewriteConfig, model.UTF8Validation)
@@ -354,7 +354,7 @@ func TestRelabelCache(t *testing.T) {
 	})
 
 	t.Run("clears entries once reloaded to no configs", func(t *testing.T) {
-		cache := NewRelabelCache()
+		cache := NewRelabelCache(nil)
 		cache.relabel(l, relabelTestRewriteConfig, model.UTF8Validation)
 		require.False(t, cache.empty())
 
@@ -364,7 +364,7 @@ func TestRelabelCache(t *testing.T) {
 }
 
 func TestRelabelCache_sweep(t *testing.T) {
-	cache := NewRelabelCache()
+	cache := NewRelabelCache(nil)
 	hot := &relabelCacheEntry{orig: labels.FromStrings("__name__", "hot")}
 	hot.touched.Store(true)
 	cold := &relabelCacheEntry{orig: labels.FromStrings("__name__", "cold")}
@@ -378,7 +378,7 @@ func TestRelabelCache_sweep(t *testing.T) {
 
 // Run with -race.
 func TestRelabelCache_ConcurrentAccess(t *testing.T) {
-	cache := NewRelabelCache()
+	cache := NewRelabelCache(nil)
 	const goroutines = 50
 	const iterations = 200
 
@@ -401,7 +401,7 @@ func TestRelabelCache_ConcurrentAccess(t *testing.T) {
 // observe a result computed under the other, even while both race to
 // establish their generation in the shared cache.
 func TestRelabelCache_ConcurrentReload(t *testing.T) {
-	cache := NewRelabelCache()
+	cache := NewRelabelCache(nil)
 	l := labels.FromStrings("__name__", "keep_me", "env", "prod")
 
 	cfgsA := []*relabel.Config{{
@@ -442,7 +442,7 @@ func TestRelabelCache_ConcurrentReload(t *testing.T) {
 }
 
 func TestRelabelCache_SharedAcrossV1AndV2(t *testing.T) {
-	cache := NewRelabelCache()
+	cache := NewRelabelCache(nil)
 	configFunc := relabelTestConfigFunc(relabelTestRewriteConfig, model.UTF8Validation)
 
 	v1 := NewRelabelingAppendable(teststorage.NewAppendable(), configFunc, cache)
