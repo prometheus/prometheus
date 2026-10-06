@@ -3772,7 +3772,7 @@ func TestExemplarAfterLastSampleSurvivesCompaction(t *testing.T) {
 				require.NoError(t, err)
 				beforeRestart, err := q.Select(0, e.Ts, []*labels.Matcher{matcher})
 				require.NoError(t, err)
-				require.Equal(t, expected, beforeRestart)
+				testutil.RequireEqual(t, expected, beforeRestart)
 
 				require.NoError(t, db.Close())
 				reopened := newTestDB(t, withDir(db.Dir()), withOpts(opts))
@@ -3781,7 +3781,7 @@ func TestExemplarAfterLastSampleSurvivesCompaction(t *testing.T) {
 				require.NoError(t, err)
 				afterRestart, err := q.Select(0, e.Ts, []*labels.Matcher{matcher})
 				require.NoError(t, err)
-				require.Equal(t, expected, afterRestart, "the exemplar must survive %s compaction and restart", compaction)
+				testutil.RequireEqual(t, expected, afterRestart, "the exemplar must survive %s compaction and restart", compaction)
 				require.Zero(t, prom_testutil.ToFloat64(reopened.head.metrics.walReplayUnknownRefsTotal.WithLabelValues("exemplars")))
 
 				// Replay must restore the exemplar's eviction protection, so another compaction
@@ -3798,7 +3798,7 @@ func TestExemplarAfterLastSampleSurvivesCompaction(t *testing.T) {
 				require.NoError(t, err)
 				afterRestart, err = q.Select(0, e.Ts, []*labels.Matcher{matcher})
 				require.NoError(t, err)
-				require.Equal(t, expected, afterRestart, "replayed exemplars must survive subsequent compaction and restart")
+				testutil.RequireEqual(t, expected, afterRestart, "replayed exemplars must survive subsequent compaction and restart")
 				require.Zero(t, prom_testutil.ToFloat64(reopened.head.metrics.walReplayUnknownRefsTotal.WithLabelValues("exemplars")))
 			})
 		}
@@ -3859,7 +3859,7 @@ func TestExemplarBeforeLastSampleSurvivesSeriesCompaction(t *testing.T) {
 				require.NoError(t, err)
 				actual, err := q.Select(0, e.Ts, []*labels.Matcher{matcher})
 				require.NoError(t, err)
-				require.Equal(t, []exemplar.QueryResult{{SeriesLabels: seriesLabels, Exemplars: []exemplar.Exemplar{e}}}, actual)
+				testutil.RequireEqual(t, []exemplar.QueryResult{{SeriesLabels: seriesLabels, Exemplars: []exemplar.Exemplar{e}}}, actual)
 				require.Zero(t, prom_testutil.ToFloat64(reopened.head.metrics.walReplayUnknownRefsTotal.WithLabelValues("exemplars")))
 
 				// Once replay can skip the exemplar, it no longer prevents eviction.
@@ -4001,7 +4001,7 @@ func TestSeriesCompactionReclaimsChunksWithExemplars(t *testing.T) {
 						require.NoError(t, err)
 						got, err := q.Select(0, e.Ts, []*labels.Matcher{matcher})
 						require.NoError(t, err)
-						require.Equal(t, []exemplar.QueryResult{{SeriesLabels: seriesLabels, Exemplars: []exemplar.Exemplar{e}}}, got)
+						testutil.RequireEqual(t, []exemplar.QueryResult{{SeriesLabels: seriesLabels, Exemplars: []exemplar.Exemplar{e}}}, got)
 						sq, err := d.Querier(0, blockRange)
 						require.NoError(t, err)
 						samples := query(t, sq, matcher)[seriesLabels.String()]
