@@ -134,6 +134,29 @@ func TestRecord_EncodeDecode(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, samplesWithConstST, decSamples)
 
+	t.Run("custom-only histogram encoding preserves prefix", func(t *testing.T) {
+		for _, floating := range []bool{false, true} {
+			for _, prefix := range [][]byte{nil, {0xca, 0xfe}} {
+				t.Run(fmt.Sprintf("float=%t/prefix=%d", floating, len(prefix)), func(t *testing.T) {
+					encoder := Encoder{}
+					if floating {
+						input := []RefFloatHistogramSample{{Ref: 1, T: 10, FH: &histogram.FloatHistogram{Schema: histogram.CustomBucketsSchema, Count: 1, Sum: 0.5, PositiveSpans: []histogram.Span{{Length: 1}}, PositiveBuckets: []float64{1}, CustomValues: []float64{1}}}}
+						require.NoError(t, input[0].FH.Validate())
+						got, leftover := encoder.FloatHistogramSamples(input, append([]byte(nil), prefix...))
+						require.True(t, bytes.Equal(prefix, got), "prefix bytes changed: got=%x want=%x", got, prefix)
+						require.Equal(t, input, leftover)
+					} else {
+						input := []RefHistogramSample{{Ref: 1, T: 10, H: &histogram.Histogram{Schema: histogram.CustomBucketsSchema, Count: 1, Sum: 0.5, PositiveSpans: []histogram.Span{{Length: 1}}, PositiveBuckets: []int64{1}, CustomValues: []float64{1}}}}
+						require.NoError(t, input[0].H.Validate())
+						got, leftover := encoder.HistogramSamples(input, append([]byte(nil), prefix...))
+						require.True(t, bytes.Equal(prefix, got), "prefix bytes changed: got=%x want=%x", got, prefix)
+						require.Equal(t, input, leftover)
+					}
+				})
+			}
+		}
+	})
+
 	// Intervals get split up into single entries. So we don't get back exactly
 	// what we put in.
 	tstones := []tombstones.Stone{
