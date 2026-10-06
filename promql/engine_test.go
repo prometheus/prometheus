@@ -5224,10 +5224,15 @@ func TestQueryStartTimestampsOverride(t *testing.T) {
 func TestEngine_NHCBAsClassic(t *testing.T) {
 	const load = `
 load 1m
-	%s {{schema:-53 sum:5 count:4 custom_values:[1 2] buckets:[1 2 1]}}
+	%[1]s {{schema:-53 sum:5 count:4 custom_values:[1 2] buckets:[1 2 1]}}
+	%[1]s_bucket{le="1.0", kind="classic"} 10
+	%[1]s_bucket{le="+Inf", kind="classic"} 20
+	%[1]s_bucket{kind="classic_no_le"} 30
 `
 	// Secondary storage stands in for a remote-read endpoint behind the fanout,
-	// which is how cmd/prometheus wires local and remote storage.
+	// which is how cmd/prometheus wires local and remote storage. Both hold an
+	// NHCB and stored classic series under the same base name, so the rewritten
+	// matchers are exercised against a real TSDB index.
 	primary := promqltest.LoadedStorage(t, fmt.Sprintf(load, "local_seconds"))
 	secondary := promqltest.LoadedStorage(t, fmt.Sprintf(load, "remote_seconds"))
 	fanout := storage.NewFanout(promslog.NewNopLogger(), primary, secondary)
@@ -5241,25 +5246,63 @@ load 1m
 			}
 			ng := promqltest.NewTestEngineWithOpts(t, opts)
 
-			q, err := ng.NewInstantQuery(t.Context(), fanout, nil, `local_seconds_count or on(__name__) remote_seconds_count`, time.Unix(0, 0))
-			require.NoError(t, err)
-			t.Cleanup(q.Close)
-			res := q.Exec(t.Context())
-			require.NoError(t, res.Err)
-			vec, err := res.Vector()
-			require.NoError(t, err)
+			eval := func(t *testing.T, expr string) map[string]float64 {
+				q, err := ng.NewInstantQuery(t.Context(), fanout, nil, expr, time.Unix(0, 0))
+				require.NoError(t, err)
+				t.Cleanup(q.Close)
+				res := q.Exec(t.Context())
+				require.NoError(t, res.Err)
+				vec, err := res.Vector()
+				require.NoError(t, err)
 
-			got := map[string]float64{}
-			for _, s := range vec {
-				got[s.Metric.Get(labels.MetricName)] = s.F
+				got := map[string]float64{}
+				for _, s := range vec {
+					got[s.Metric.String()] = s.F
+				}
+				return got
 			}
+
+			got := eval(t, `local_seconds_count or on(__name__) remote_seconds_count`)
 			if !enabled {
 				require.Empty(t, got)
 				return
 			}
 			// Both local and remote-read NHCBs are converted, since the conversion
 			// wraps the engine's queryable rather than a single fanout leg.
-			require.Equal(t, map[string]float64{"local_seconds_count": 4, "remote_seconds_count": 4}, got)
+			require.Equal(t, map[string]float64{
+				`{__name__="local_seconds_count"}`:  4,
+				`{__name__="remote_seconds_count"}`: 4,
+			}, got)
+
+			// Without an le matcher, stored classic buckets and converted NHCB
+			// buckets are both returned.
+			require.Equal(t, map[string]float64{
+				`{__name__="local_seconds_bucket", kind="classic", le="1.0"}`:  10,
+				`{__name__="local_seconds_bucket", kind="classic", le="+Inf"}`: 20,
+				`{__name__="local_seconds_bucket", kind="classic_no_le"}`:      30,
+				`{__name__="local_seconds_bucket", le="1.0"}`:                  1,
+				`{__name__="local_seconds_bucket", le="2.0"}`:                  3,
+				`{__name__="local_seconds_bucket", le="+Inf"}`:                 4,
+			}, eval(t, `local_seconds_bucket`))
+
+			// An le matcher is still applied to stored classic series (including
+			// excluding classic series without le) and to converted NHCB buckets.
+			require.Equal(t, map[string]float64{
+				`{__name__="local_seconds_bucket", kind="classic", le="1.0"}`: 10,
+				`{__name__="local_seconds_bucket", le="1.0"}`:                 1,
+			}, eval(t, `local_seconds_bucket{le="1.0"}`))
+			require.Equal(t, map[string]float64{
+				`{__name__="local_seconds_bucket", kind="classic", le="1.0"}`: 10,
+				`{__name__="local_seconds_bucket", le="1.0"}`:                 1,
+				`{__name__="local_seconds_bucket", le="2.0"}`:                 3,
+			}, eval(t, `local_seconds_bucket{le=~"1.0|2.0"}`))
+			require.Equal(t, map[string]float64{
+				`{__name__="local_seconds_bucket", kind="classic", le="1.0"}`:  10,
+				`{__name__="local_seconds_bucket", kind="classic", le="+Inf"}`: 20,
+				`{__name__="local_seconds_bucket", le="1.0"}`:                  1,
+				`{__name__="local_seconds_bucket", le="2.0"}`:                  3,
+				`{__name__="local_seconds_bucket", le="+Inf"}`:                 4,
+			}, eval(t, `local_seconds_bucket{le!=""}`))
 
 			// Other consumers of the same storage (e.g. the remote read API) still
 			// see raw data only.
