@@ -2618,23 +2618,26 @@ func (h *Head) gcSeries(seriesRefs []storage.SeriesRef, maxt int64, shouldEvict 
 	minValidTime := h.minValidTime.Load()
 	var protectedChunksRemoved int
 	deleted, affected, chunksRemoved, staleSeriesDeleted, histogramSeriesDeleted, histogramBucketsDeleted := h.series.gcSeries(seriesRefs, maxt, func(s *memSeries) bool {
-		// Check for samples or out-of-order data that were not persisted before
-		// either releasing chunks or deleting the series.
+		// Keep unpersisted samples before considering chunk removal or series eviction.
 		if !shouldEvict(s) {
 			return false
 		}
+		// Delete the series if it has no exemplar at or after the WAL replay cutoff.
 		if !s.hasExemplar || s.lastExemplarTs < minValidTime {
 			return true
 		}
 
-		// Retain the identity needed for exemplar replay without retaining its
-		// persisted chunks. The appender also references the last head chunk.
+		// Free the persisted sample chunks, but keep the series identity for exemplar replay.
+		// Memory mapping keeps the newest chunk in memory, so it needs at least two head chunks.
 		wasMmapReady := s.headChunkCount.Load() >= 2
 		protectedChunksRemoved += s.truncateChunksBefore(math.MaxInt64, 0)
+		// Clear the appender because it references the removed head chunk.
 		s.app = nil
+		// The series no longer has enough chunks to be ready for memory mapping.
 		if wasMmapReady && s.headChunkCount.Load() < 2 {
 			h.series.decMmapReady(s.ref)
 		}
+		// Prevent deletion of the series identity while its exemplar can still be replayed.
 		return false
 	})
 	seriesRemoved := len(deleted)
