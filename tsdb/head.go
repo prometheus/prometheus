@@ -2567,6 +2567,8 @@ func (s *stripeSeries) gc(mint int64, minOOOMmapRef chunks.ChunkDiskMapperRef) (
 		// until WAL truncation and replay can discard them by timestamp. An empty
 		// series retained for exemplars must not affect the minimum sample time.
 		if series.hasExemplar && series.lastExemplarTs >= mint {
+			// Clear the appender so it does not retain the removed sample chunk.
+			series.app = nil
 			return
 		}
 		// The series is gone entirely. We need to keep the series lock

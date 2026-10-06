@@ -3744,6 +3744,10 @@ func TestExemplarAfterLastSampleSurvivesCompaction(t *testing.T) {
 				if compaction == "ordinary" {
 					require.Len(t, db.Blocks(), 1)
 				}
+				series := db.Head().series.getByID(chunks.HeadSeriesRef(ref))
+				require.NotNil(t, series)
+				require.Nil(t, series.headChunks)
+				require.Nil(t, series.app, "the retained identity must not keep the compacted chunk alive")
 				_, firstCheckpoint, err := wlog.LastCheckpoint(db.head.wal.Dir())
 				require.NoError(t, err)
 
