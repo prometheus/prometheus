@@ -177,6 +177,49 @@ func TestRecord_EncodeDecode(t *testing.T) {
 		}
 	})
 
+	t.Run("Samples preserve prefix", func(t *testing.T) {
+		for _, tc := range []struct {
+			name string
+			wire []string
+			want []RefSample
+		}{
+			{"V1", []string{"02", "020000000000000001000000000000000a00003ff000000000000002024000000000000000"}, []RefSample{{Ref: 1, T: 10, V: 1}, {Ref: 2, T: 11, V: 2}}},
+			{"V2", []string{"0b", "0b02140a3ff00000000000000202014000000000000000"}, []RefSample{{Ref: 1, ST: 5, T: 10, V: 1}, {Ref: 2, ST: 5, T: 11, V: 2}}},
+		} {
+			for n, wireHex := range tc.wire {
+				for _, prefix := range []bool{false, true} {
+					for _, capacity := range []int{1, 64} {
+						t.Run(fmt.Sprintf("%s/nonempty%t/prefix%t/cap%d", tc.name, n != 0, prefix, capacity), func(t *testing.T) {
+							wire, err := hex.DecodeString(wireHex)
+							require.NoError(t, err)
+							// Capacity one forces preallocation for the two-sample records.
+							destination := make([]RefSample, 0, capacity)
+							var want []RefSample
+							if prefix {
+								destination = append(destination, RefSample{Ref: 7, ST: 3, T: 5, V: 2})
+								want = append(want, RefSample{Ref: 7, ST: 3, T: 5, V: 2})
+							}
+							for range 2 {
+								destination, err = dec.Samples(wire, destination)
+								require.NoError(t, err)
+								if n != 0 {
+									want = append(want, tc.want...)
+								}
+								require.Len(t, destination, len(want))
+								for i, expected := range want {
+									require.Equal(t, expected.Ref, destination[i].Ref)
+									require.Equal(t, expected.ST, destination[i].ST)
+									require.Equal(t, expected.T, destination[i].T)
+									require.Equal(t, math.Float64bits(expected.V), math.Float64bits(destination[i].V))
+								}
+							}
+						})
+					}
+				}
+			}
+		}
+	})
+
 	// Intervals get split up into single entries. So we don't get back exactly
 	// what we put in.
 	tstones := []tombstones.Stone{
