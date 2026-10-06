@@ -362,7 +362,7 @@ func (in Intervals) Add(n Interval) Intervals {
 		}
 	}
 
-	maxi := len(in)
+	maxi := len(in) - mini
 	if n.Maxt != math.MaxInt64 { // Avoid overflow.
 		maxi = sort.Search(len(in)-mini, func(i int) bool { return in[mini+i].Mint > n.Maxt+1 })
 		if maxi == 0 {
