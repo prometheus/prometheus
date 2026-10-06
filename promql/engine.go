@@ -842,6 +842,7 @@ func (ng *Engine) execEvalStmt(ctx context.Context, query *query, s *parser.Eval
 	}
 	querierSpan.End()
 	defer querier.Close()
+	querier = storage.NewOptStripQuerier(querier)
 
 	ng.populateSeries(ctxPrepare, querier, s)
 	prepareSpanTimer.Finish()
