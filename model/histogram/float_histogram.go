@@ -1011,6 +1011,12 @@ func (h *FloatHistogram) zeroCountForLargerThreshold(
 outer:
 	for {
 		hZeroCount = h.ZeroCount
+		// Start each attempt with the original compensation, since a larger
+		// threshold on the negative side can restart the calculation.
+		cZeroCount = 0
+		if c != nil {
+			cZeroCount = c.ZeroCount
+		}
 		i := h.PositiveBucketIterator()
 		bucketsIdx := 0
 		for i.Next() {
