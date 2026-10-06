@@ -22,6 +22,7 @@ import (
 	"math"
 	"net/http"
 	"net/http/httptest"
+	"path/filepath"
 	"slices"
 	"strconv"
 	"strings"
@@ -38,10 +39,13 @@ import (
 	"github.com/prometheus/prometheus/model/histogram"
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/model/metadata"
+	"github.com/prometheus/prometheus/model/value"
 	"github.com/prometheus/prometheus/prompb"
 	writev2 "github.com/prometheus/prometheus/prompb/io/prometheus/write/v2"
 	"github.com/prometheus/prometheus/storage"
 	"github.com/prometheus/prometheus/tsdb"
+	"github.com/prometheus/prometheus/tsdb/record"
+	"github.com/prometheus/prometheus/tsdb/wlog"
 	"github.com/prometheus/prometheus/util/compression"
 	"github.com/prometheus/prometheus/util/testutil"
 )
@@ -2140,4 +2144,76 @@ func TestRemoteWriteAppenderV2_AppendExemplarsDoesNotMutateCallerSlice(t *testin
 	require.Equal(t, origSecondID, input[1].Labels.Get("id"))
 	require.Len(t, appendable.exemplars, 1)
 	require.Equal(t, int64(900), appendable.exemplars[0].t)
+}
+
+func TestRemoteWriteHandler_V2MetadataWAL(t *testing.T) {
+	for _, tc := range []struct {
+		name            string
+		stale           bool
+		histogram       bool
+		metadataEnabled bool
+		sampleCount     int
+		wantEntries     int
+	}{
+		{name: "batched samples", metadataEnabled: true, sampleCount: 1000, wantEntries: 1},
+		{name: "stale float", stale: true, metadataEnabled: true, sampleCount: 1, wantEntries: 1},
+		{name: "stale histogram", stale: true, histogram: true, metadataEnabled: true, sampleCount: 1, wantEntries: 1},
+		{name: "metadata disabled", sampleCount: 1000},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			dir := t.TempDir()
+			opts := tsdb.DefaultOptions()
+			opts.EnableMetadataWALRecords = tc.metadataEnabled
+			db, err := tsdb.Open(dir, promslog.NewNopLogger(), nil, opts, tsdb.NewDBStats())
+			require.NoError(t, err)
+			t.Cleanup(func() { _ = db.Close() })
+			db.DisableCompactions()
+
+			symbols := writev2.NewSymbolTable()
+			ts := writev2.TimeSeries{
+				LabelsRefs: symbols.SymbolizeLabels(labels.FromStrings("__name__", "metadata_metric"), nil),
+				Metadata:   writev2.Metadata{Type: writev2.Metadata_METRIC_TYPE_GAUGE, HelpRef: symbols.Symbolize("Metric help"), UnitRef: symbols.Symbolize("seconds")},
+			}
+			for i := range tc.sampleCount {
+				v := float64(i)
+				if tc.stale {
+					v = math.Float64frombits(value.StaleNaN)
+				}
+				if tc.histogram {
+					ts.Histograms = append(ts.Histograms, writev2.FromIntHistogram(0, int64(1000+i), &histogram.Histogram{Sum: v}))
+				} else {
+					ts.Samples = append(ts.Samples, writev2.Sample{Timestamp: int64(1000 + i), Value: v})
+				}
+			}
+			payload, _, _, _, err := buildV2WriteRequest(promslog.NewNopLogger(), []writev2.TimeSeries{ts}, symbols.Symbols(), nil, nil, nil, "snappy")
+			require.NoError(t, err)
+			req := httptest.NewRequest(http.MethodPost, "/api/v1/write", bytes.NewReader(payload))
+			req.Header.Set("Content-Type", remoteWriteContentTypeHeaders[remoteapi.WriteV2MessageType])
+			req.Header.Set("Content-Encoding", compression.Snappy)
+			recorder := httptest.NewRecorder()
+			NewWriteHandler(promslog.NewNopLogger(), nil, db, []remoteapi.WriteMessageType{remoteapi.WriteV2MessageType}, false, false, tc.metadataEnabled).ServeHTTP(recorder, req)
+			require.Equal(t, http.StatusNoContent, recorder.Code, recorder.Body.String())
+			require.NoError(t, db.Close())
+
+			reader, err := wlog.NewSegmentsReader(filepath.Join(dir, "wal"))
+			require.NoError(t, err)
+			defer reader.Close()
+			walReader := wlog.NewReader(reader)
+			decoder := record.Decoder{}
+			var entries []record.RefMetadata
+			for walReader.Next() {
+				if decoder.Type(walReader.Record()) == record.Metadata {
+					entries, err = decoder.Metadata(walReader.Record(), entries)
+					require.NoError(t, err)
+				}
+			}
+			require.NoError(t, walReader.Err())
+			require.Len(t, entries, tc.wantEntries)
+			if tc.wantEntries > 0 {
+				require.Equal(t, uint8(record.Gauge), entries[0].Type)
+				require.Equal(t, "Metric help", entries[0].Help)
+				require.Equal(t, "seconds", entries[0].Unit)
+			}
+		})
+	}
 }
