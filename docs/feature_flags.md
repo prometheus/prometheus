@@ -394,3 +394,11 @@ discarded before it reaches storage.
 This is disabled by default and, when disabled, `receive_relabel_configs` in the
 config file has no effect. The rules are re-read on every config reload, so
 changes take effect without restarting Prometheus.
+
+To avoid recomputing relabeling for samples already seen, decisions are
+cached. The Prometheus server exposes metrics for this cache:
+`prometheus_api_receive_relabel_cache_entries` (current size),
+`prometheus_api_receive_relabel_cache_hits_total` (cache hits),
+`prometheus_api_receive_relabel_cache_misses_total` (cache misses), and
+`prometheus_api_receive_relabel_cache_evicted_total` (entries evicted to
+bound the cache's size).
