@@ -912,6 +912,48 @@ func (*mockChunkIterator) Err() error {
 }
 
 func TestChunkedSeriesIterator(t *testing.T) {
+	t.Run("seek below window across chunks", func(t *testing.T) {
+		for _, tc := range []struct {
+			name                   string
+			second, firstMax, mint int64
+		}{
+			{"exact bounds", 2, 1, 2},
+			{"enclosing bounds", 3, 2, 2},
+		} {
+			t.Run(tc.name, func(t *testing.T) {
+				var chks []prompb.Chunk
+				for i, ts := range []int64{1, tc.second} {
+					c := chunkenc.NewXORChunk()
+					app, err := c.Appender()
+					require.NoError(t, err)
+					app.Append(0, ts, float64(ts))
+					maxTime := ts
+					if i == 0 {
+						maxTime = tc.firstMax
+					}
+					chks = append(chks, prompb.Chunk{MinTimeMs: ts, MaxTimeMs: maxTime, Type: prompb.Chunk_XOR, Data: c.Bytes()})
+				}
+				control := newChunkedSeriesIterator(chks, tc.mint, tc.second)
+				require.Equal(t, chunkenc.ValFloat, control.Next())
+				ts, value := control.At()
+				require.Equal(t, tc.second, ts)
+				require.Equal(t, float64(tc.second), value)
+				require.NoError(t, control.Err())
+
+				it := newChunkedSeriesIterator(chks, tc.mint, tc.second)
+				require.Equal(t, chunkenc.ValFloat, it.Seek(1))
+				ts, value = it.At()
+				require.Equal(t, tc.second, ts)
+				require.Equal(t, float64(tc.second), value)
+				// A lower request retains the current eligible sample.
+				require.Equal(t, chunkenc.ValFloat, it.Seek(1))
+				require.Equal(t, tc.second, it.AtT())
+				require.Equal(t, chunkenc.ValNone, it.Next())
+				require.NoError(t, it.Err())
+			})
+		}
+	})
+
 	t.Run("happy path", func(t *testing.T) {
 		chks := buildTestChunks(t)
 
