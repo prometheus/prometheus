@@ -16,6 +16,7 @@ package parser
 import (
 	"errors"
 	"fmt"
+	"maps"
 	"math"
 	"strings"
 	"testing"
@@ -52,6 +53,7 @@ var testExpr = []struct {
 	expected Expr        // The expected expression AST.
 	fail     bool        // Whether parsing is supposed to fail.
 	errors   ParseErrors // The errors that should be returned.
+	printed  string      // For failing cases, the String() of the partially-built AST; empty skips the check.
 }{
 	// Scalars and scalar-to-scalar operations.
 	{
@@ -2394,6 +2396,17 @@ var testExpr = []struct {
 			},
 		},
 	},
+	{
+		input: `foo{a="b",c=~"[a-z"}`,
+		fail:  true,
+		errors: ParseErrors{
+			ParseErr{
+				PositionRange: posrange.PositionRange{Start: 10, End: 19},
+				Err:           errors.New("error parsing regexp: missing closing ]: `[a-z`"),
+				Query:         `foo{a="b",c=~"[a-z"}`,
+			},
+		},
+	},
 	// Test matrix selector.
 	{
 		input: "test[1000ms]",
@@ -3230,8 +3243,9 @@ var testExpr = []struct {
 		},
 	},
 	{
-		input: `sum () by (test)`,
-		fail:  true,
+		input:   `sum () by (test)`,
+		fail:    true,
+		printed: `sum by (test) ()`,
 		errors: ParseErrors{
 			ParseErr{
 				PositionRange: posrange.PositionRange{Start: 0, End: 16},
@@ -3285,8 +3299,9 @@ var testExpr = []struct {
 		},
 	},
 	{
-		input: `topk(some_metric)`,
-		fail:  true,
+		input:   `topk(some_metric)`,
+		fail:    true,
+		printed: `topk(some_metric)`,
 		errors: ParseErrors{
 			ParseErr{
 				PositionRange: posrange.PositionRange{Start: 0, End: 17},
@@ -3296,8 +3311,9 @@ var testExpr = []struct {
 		},
 	},
 	{
-		input: `topk(some_metric,)`,
-		fail:  true,
+		input:   `topk(some_metric,)`,
+		fail:    true,
+		printed: `topk(some_metric)`,
 		errors: ParseErrors{
 			ParseErr{
 				PositionRange: posrange.PositionRange{Start: 16, End: 17},
@@ -3493,8 +3509,9 @@ var testExpr = []struct {
 		},
 	},
 	{
-		input: "non_existent_function_far_bar()",
-		fail:  true,
+		input:   "non_existent_function_far_bar()",
+		fail:    true,
+		printed: `non_existent_function_far_bar()`,
 		errors: ParseErrors{
 			ParseErr{
 				PositionRange: posrange.PositionRange{Start: 0, End: 29},
@@ -3576,8 +3593,9 @@ var testExpr = []struct {
 		},
 	},
 	{
-		input: "a>b()",
-		fail:  true,
+		input:   "a>b()",
+		fail:    true,
+		printed: `a > b()`,
 		errors: ParseErrors{
 			ParseErr{
 				PositionRange: posrange.PositionRange{Start: 2, End: 3},
@@ -5404,8 +5422,9 @@ var testExpr = []struct {
 		},
 	},
 	{
-		input: "sum(",
-		fail:  true,
+		input:   "sum(",
+		fail:    true,
+		printed: `sum()`,
 		errors: ParseErrors{
 			ParseErr{
 				PositionRange: posrange.PositionRange{Start: 4, End: 4},
@@ -5420,8 +5439,9 @@ var testExpr = []struct {
 		},
 	},
 	{
-		input: "sum(rate(",
-		fail:  true,
+		input:   "sum(rate(",
+		fail:    true,
+		printed: `sum()`,
 		errors: ParseErrors{
 			ParseErr{
 				PositionRange: posrange.PositionRange{Start: 9, End: 9},
@@ -5477,6 +5497,225 @@ var testExpr = []struct {
 				PositionRange: posrange.PositionRange{Start: 1, End: 5},
 				Err:           errors.New("ranges only allowed for vector selectors"),
 				Query:         "1[5m] anchored",
+			},
+		},
+	},
+	// Failing parses must return a partially-built AST that stays printable. These
+	// cover each way the parser used to leave a malformed node behind; the generic
+	// checks in TestParseExpressions apply to every failing case.
+	{
+		input: `metric{a="1",b=~"[a-z)("}`,
+		fail:  true,
+		errors: ParseErrors{
+			ParseErr{
+				PositionRange: posrange.PositionRange{Start: 13, End: 24},
+				Err:           errors.New("error parsing regexp: missing closing ]: `[a-z)(`"),
+				Query:         `metric{a="1",b=~"[a-z)("}`,
+			},
+		},
+	},
+	{
+		input: `{__name__=~".*(bucket",foo="bar"}`,
+		fail:  true,
+		errors: ParseErrors{
+			ParseErr{
+				PositionRange: posrange.PositionRange{Start: 1, End: 22},
+				Err:           errors.New("error parsing regexp: missing closing ): `.*(bucket`"),
+				Query:         `{__name__=~".*(bucket",foo="bar"}`,
+			},
+		},
+	},
+	{
+		input: `count by (__name__) ({foo="bar",__name__=~".*(bucket"})`,
+		fail:  true,
+		errors: ParseErrors{
+			ParseErr{
+				PositionRange: posrange.PositionRange{Start: 32, End: 53},
+				Err:           errors.New("error parsing regexp: missing closing ): `.*(bucket`"),
+				Query:         `count by (__name__) ({foo="bar",__name__=~".*(bucket"})`,
+			},
+		},
+	},
+	{
+		input: `metric{a="1",b=~}`,
+		fail:  true,
+		errors: ParseErrors{
+			ParseErr{
+				PositionRange: posrange.PositionRange{Start: 16, End: 17},
+				Err:           errors.New(`unexpected "}" in label matching, expected string`),
+				Query:         `metric{a="1",b=~}`,
+			},
+		},
+	},
+	{
+		input: `metric{a="1",b=}`,
+		fail:  true,
+		errors: ParseErrors{
+			ParseErr{
+				PositionRange: posrange.PositionRange{Start: 15, End: 16},
+				Err:           errors.New(`unexpected "}" in label matching, expected string`),
+				Query:         `metric{a="1",b=}`,
+			},
+		},
+	},
+	{
+		input: `{a="1",b=~}`,
+		fail:  true,
+		errors: ParseErrors{
+			ParseErr{
+				PositionRange: posrange.PositionRange{Start: 10, End: 11},
+				Err:           errors.New(`unexpected "}" in label matching, expected string`),
+				Query:         `{a="1",b=~}`,
+			},
+		},
+	},
+	{
+		input: `1[5m]`,
+		fail:  true,
+		errors: ParseErrors{
+			ParseErr{
+				PositionRange: posrange.PositionRange{Start: 1, End: 5},
+				Err:           errors.New("ranges only allowed for vector selectors"),
+				Query:         `1[5m]`,
+			},
+		},
+	},
+	{
+		input: `""[5m]`,
+		fail:  true,
+		errors: ParseErrors{
+			ParseErr{
+				PositionRange: posrange.PositionRange{Start: 2, End: 6},
+				Err:           errors.New("ranges only allowed for vector selectors"),
+				Query:         `""[5m]`,
+			},
+		},
+	},
+	{
+		input: `a[5m][5m]`,
+		fail:  true,
+		errors: ParseErrors{
+			ParseErr{
+				PositionRange: posrange.PositionRange{Start: 5, End: 9},
+				Err:           errors.New("ranges only allowed for vector selectors"),
+				Query:         `a[5m][5m]`,
+			},
+		},
+	},
+	{
+		input:   `unknown(1)`,
+		fail:    true,
+		printed: `unknown(1)`,
+		errors: ParseErrors{
+			ParseErr{
+				PositionRange: posrange.PositionRange{Start: 0, End: 7},
+				Err:           errors.New(`unknown function with name "unknown"`),
+				Query:         `unknown(1)`,
+			},
+		},
+	},
+	{
+		input:   `unknown(a, b)`,
+		fail:    true,
+		printed: `unknown(a, b)`,
+		errors: ParseErrors{
+			ParseErr{
+				PositionRange: posrange.PositionRange{Start: 0, End: 7},
+				Err:           errors.New(`unknown function with name "unknown"`),
+				Query:         `unknown(a, b)`,
+			},
+		},
+	},
+	{
+		input:   `unknown(1)[5m]`,
+		fail:    true,
+		printed: `unknown(1)[5m]`,
+		errors: ParseErrors{
+			ParseErr{
+				PositionRange: posrange.PositionRange{Start: 0, End: 7},
+				Err:           errors.New(`unknown function with name "unknown"`),
+				Query:         `unknown(1)[5m]`,
+			},
+			ParseErr{
+				PositionRange: posrange.PositionRange{Start: 10, End: 14},
+				Err:           errors.New("ranges only allowed for vector selectors"),
+				Query:         `unknown(1)[5m]`,
+			},
+		},
+	},
+	{
+		input:   `sum()`,
+		fail:    true,
+		printed: `sum()`,
+		errors: ParseErrors{
+			ParseErr{
+				PositionRange: posrange.PositionRange{Start: 0, End: 5},
+				Err:           errors.New("no arguments for aggregate expression provided"),
+				Query:         `sum()`,
+			},
+		},
+	},
+	{
+		input:   `topk()`,
+		fail:    true,
+		printed: `topk()`,
+		errors: ParseErrors{
+			ParseErr{
+				PositionRange: posrange.PositionRange{Start: 0, End: 6},
+				Err:           errors.New("no arguments for aggregate expression provided"),
+				Query:         `topk()`,
+			},
+		},
+	},
+	{
+		input: `topk(5, a, b)`,
+		fail:  true,
+		errors: ParseErrors{
+			ParseErr{
+				PositionRange: posrange.PositionRange{Start: 0, End: 13},
+				Err:           errors.New("wrong number of arguments for aggregate expression provided, expected 2, got 3"),
+				Query:         `topk(5, a, b)`,
+			},
+		},
+	},
+	{
+		input:   `quantile(0.5)`,
+		fail:    true,
+		printed: `quantile(0.5)`,
+		errors: ParseErrors{
+			ParseErr{
+				PositionRange: posrange.PositionRange{Start: 0, End: 13},
+				Err:           errors.New("wrong number of arguments for aggregate expression provided, expected 2, got 1"),
+				Query:         `quantile(0.5)`,
+			},
+		},
+	},
+	{
+		input:   `count_values("x")`,
+		fail:    true,
+		printed: `count_values("x")`,
+		errors: ParseErrors{
+			ParseErr{
+				PositionRange: posrange.PositionRange{Start: 0, End: 17},
+				Err:           errors.New("wrong number of arguments for aggregate expression provided, expected 2, got 1"),
+				Query:         `count_values("x")`,
+			},
+		},
+	},
+	{
+		input:   `sum()[5m]`,
+		fail:    true,
+		printed: `sum()[5m]`,
+		errors: ParseErrors{
+			ParseErr{
+				PositionRange: posrange.PositionRange{Start: 0, End: 5},
+				Err:           errors.New("no arguments for aggregate expression provided"),
+				Query:         `sum()[5m]`,
+			},
+			ParseErr{
+				PositionRange: posrange.PositionRange{Start: 5, End: 9},
+				Err:           errors.New("ranges only allowed for vector selectors"),
+				Query:         `sum()[5m]`,
 			},
 		},
 	},
@@ -5589,6 +5828,25 @@ func TestParseExpressions(t *testing.T) {
 
 				if diff := cmp.Diff(test.errors, errorList, equalParseErr()); diff != "" {
 					t.Errorf("mismatch (-want +got):\n%s\nErrors: %+v", diff, errorList)
+				}
+
+				// A failed parse may still return a partially-built AST. Callers that
+				// inspect or print it must not panic, so it must never hold a nil label
+				// matcher and must always be printable.
+				if expr != nil {
+					Inspect(expr, func(node Node, _ []Node) error {
+						if vs, ok := node.(*VectorSelector); ok {
+							for i, m := range vs.LabelMatchers {
+								require.NotNilf(t, m, "label matcher %d is nil for input '%s'", i, test.input)
+							}
+						}
+						return nil
+					})
+					var got string
+					require.NotPanics(t, func() { got = expr.String() }, "String() panicked on partial AST for input '%s'", test.input)
+					if test.printed != "" {
+						require.Equal(t, test.printed, got, "unexpected String() of partial AST for input '%s'", test.input)
+					}
 				}
 
 				for _, e := range errorList {
@@ -6280,20 +6538,65 @@ func TestExtractSelectors(t *testing.T) {
 }
 
 func TestParseCustomFunctions(t *testing.T) {
-	funcs := Functions
-	funcs["custom_func"] = &Function{
+	customFunc := &Function{
 		Name:       "custom_func",
 		ArgTypes:   []ValueType{ValueTypeMatrix},
 		ReturnType: ValueTypeVector,
 	}
-	input := "custom_func(metric[1m])"
-	p := newParserWithFunctions(input, Options{}, funcs)
-	expr, err := p.parseExpr()
-	require.NoError(t, err)
+	withCustomFunc := maps.Clone(Functions)
+	withCustomFunc[customFunc.Name] = customFunc
 
-	call, ok := expr.(*Call)
-	require.True(t, ok)
-	require.Equal(t, "custom_func", call.Func.Name)
+	t.Run("custom function is parsed", func(t *testing.T) {
+		expr, err := NewParser(Options{Functions: withCustomFunc}).ParseExpr("custom_func(metric[1m])")
+		require.NoError(t, err)
+
+		call, ok := expr.(*Call)
+		require.True(t, ok)
+		require.Same(t, customFunc, call.Func)
+	})
+
+	t.Run("default parser does not accept the custom function", func(t *testing.T) {
+		_, err := NewParser(Options{}).ParseExpr("custom_func(metric[1m])")
+		require.ErrorContains(t, err, `unknown function with name "custom_func"`)
+		require.NotContains(t, Functions, customFunc.Name)
+	})
+
+	t.Run("custom functions replace the default set", func(t *testing.T) {
+		p := NewParser(Options{Functions: map[string]*Function{customFunc.Name: customFunc}})
+		_, err := p.ParseExpr("rate(metric[1m])")
+		require.ErrorContains(t, err, `unknown function with name "rate"`)
+	})
+
+	t.Run("empty functions map accepts no functions", func(t *testing.T) {
+		p := NewParser(Options{Functions: map[string]*Function{}})
+		_, err := p.ParseExpr("rate(metric[1m])")
+		require.ErrorContains(t, err, `unknown function with name "rate"`)
+	})
+
+	t.Run("experimental custom function must be enabled", func(t *testing.T) {
+		experimentalFunc := &Function{
+			Name:         "experimental_func",
+			ArgTypes:     []ValueType{ValueTypeMatrix},
+			ReturnType:   ValueTypeVector,
+			Experimental: true,
+		}
+		funcs := map[string]*Function{experimentalFunc.Name: experimentalFunc}
+
+		_, err := NewParser(Options{Functions: funcs}).ParseExpr("experimental_func(metric[1m])")
+		require.ErrorContains(t, err, `function "experimental_func" is not enabled`)
+
+		_, err = NewParser(Options{Functions: funcs, EnableExperimentalFunctions: true}).ParseExpr("experimental_func(metric[1m])")
+		require.NoError(t, err)
+	})
+
+	t.Run("changing the functions map after creating the parser has no effect", func(t *testing.T) {
+		funcs := map[string]*Function{customFunc.Name: customFunc}
+		p := NewParser(Options{Functions: funcs})
+		delete(funcs, customFunc.Name)
+
+		_, err := p.ParseExpr("custom_func(metric[1m])")
+		require.NoError(t, err)
+	})
 }
 
 func TestNewParser(t *testing.T) {

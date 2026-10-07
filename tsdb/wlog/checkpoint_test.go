@@ -24,6 +24,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/prometheus/common/model"
 	"github.com/prometheus/common/promslog"
 	"github.com/stretchr/testify/require"
 
@@ -519,6 +520,64 @@ func TestCheckpoint(t *testing.T) {
 	}
 }
 
+// TestCheckpointMetadataAcrossBatches checkpoints more series than a single
+// metadata record covers, so the metadata is written as several records.
+func TestCheckpointMetadataAcrossBatches(t *testing.T) {
+	t.Parallel()
+
+	const numSeries = 2*metadataBatchSize + 1
+
+	dir := t.TempDir()
+	var enc record.Encoder
+
+	w, err := NewSize(nil, nil, dir, 8*1024*1024, compression.None)
+	require.NoError(t, err)
+
+	expected := make([]record.RefMetadata, 0, numSeries)
+	for i := range numSeries {
+		ref := chunks.HeadSeriesRef(i)
+		m := record.RefMetadata{Ref: ref, Unit: "seconds", Help: strings.Repeat("x", flushThreshold/metadataBatchSize) + strconv.Itoa(i)}
+		expected = append(expected, m)
+		require.NoError(t, w.Log(
+			enc.Series([]record.RefSeries{{Ref: ref, Labels: labels.FromStrings("a", strconv.Itoa(i))}}, nil),
+			enc.Metadata([]record.RefMetadata{m}, nil),
+		))
+	}
+	first, last, err := Segments(dir)
+	require.NoError(t, err)
+	require.NoError(t, w.Close())
+
+	stats, err := Checkpoint(promslog.NewNopLogger(), w, first, last, func(chunks.HeadSeriesRef) bool { return true }, 0, false, false)
+	require.NoError(t, err)
+	require.Equal(t, numSeries, stats.TotalMetadata)
+
+	sr, err := NewSegmentsReader(CheckpointDir(dir, last))
+	require.NoError(t, err)
+	defer sr.Close()
+
+	var (
+		dec        = record.NewDecoder(labels.NewSymbolTable(), promslog.NewNopLogger())
+		got        []record.RefMetadata
+		batchSizes []int
+	)
+	r := NewReader(sr)
+	for r.Next() {
+		rec := r.Record()
+		if dec.Type(rec) != record.Metadata {
+			continue
+		}
+		batch, err := dec.Metadata(rec, nil)
+		require.NoError(t, err)
+		batchSizes = append(batchSizes, len(batch))
+		got = append(got, batch...)
+	}
+	require.NoError(t, r.Err())
+	require.Equal(t, []int{metadataBatchSize, metadataBatchSize, 1}, batchSizes)
+
+	sort.Slice(got, func(i, j int) bool { return got[i].Ref < got[j].Ref })
+	require.Equal(t, expected, got)
+}
+
 // TestCheckpoint_Tombstones verifies tombstone retention. A tombstone is dropped
 // together with its series record, or once all its intervals age out of the WAL.
 func TestCheckpoint_Tombstones(t *testing.T) {
@@ -828,6 +887,155 @@ func TestDeleteTempCheckpoints(t *testing.T) {
 				actualDirectories = append(actualDirectories, f.Name())
 			}
 			require.Equal(t, tc.expectedDirectories, actualDirectories)
+		})
+	}
+}
+
+// benchHelpText returns roughly helpLen bytes of descriptive text for a metric.
+func benchHelpText(helpLen, metric int) string {
+	var sb strings.Builder
+	fmt.Fprintf(&sb, "Total number of requests handled by metric_%d_total, partitioned by method and response code.", metric)
+	for sb.Len() < helpLen {
+		sb.WriteString(" Further detail about what this metric counts and how to interpret it.")
+	}
+	return sb.String()[:helpLen]
+}
+
+// BenchmarkCheckpointMetadata covers both sides of the metadata records a
+// checkpoint writes: building them in Checkpoint, and reading them back the way
+// WAL replay and the remote write watcher do.
+//
+// Help text is emitted once per metric and shared by all of that metric's
+// series, which is what an exporter produces. helpLen is what a real target was
+// measured emitting, and metadata bytes per series is what drives record size.
+func BenchmarkCheckpointMetadata(b *testing.B) {
+	const (
+		seriesPerMetric = 100
+		inputBatch      = 1000
+		helpLen         = 400
+	)
+
+	dirSize := func(b *testing.B, dir string) int64 {
+		entries, err := os.ReadDir(dir)
+		require.NoError(b, err)
+		var size int64
+		for _, e := range entries {
+			info, err := e.Info()
+			require.NoError(b, err)
+			size += info.Size()
+		}
+		return size
+	}
+
+	// Cost scales linearly with the series count; 300k is roughly what the
+	// feature was benchmarked against upstream.
+	for _, numSeries := range []int{100_000, 300_000} {
+		b.Run(fmt.Sprintf("series=%d", numSeries), func(b *testing.B) {
+			dir := b.TempDir()
+			var enc record.Encoder
+
+			helpByMetric := make([]string, numSeries/seriesPerMetric+1)
+			for m := range helpByMetric {
+				helpByMetric[m] = benchHelpText(helpLen, m)
+			}
+
+			// Start above 0 so the checkpoint Checkpoint writes does not collide
+			// with the source segments.
+			seg, err := CreateSegment(dir, 1)
+			require.NoError(b, err)
+			require.NoError(b, seg.Close())
+
+			w, err := NewSize(nil, nil, dir, 8*1024*1024, compression.Snappy)
+			require.NoError(b, err)
+
+			series := make([]record.RefSeries, 0, inputBatch)
+			meta := make([]record.RefMetadata, 0, inputBatch)
+			samples := make([]record.RefSample, 0, inputBatch)
+			flush := func() {
+				require.NoError(b, w.Log(enc.Series(series, nil), enc.Metadata(meta, nil), enc.Samples(samples, nil)))
+				series, meta, samples = series[:0], meta[:0], samples[:0]
+			}
+			for i := range numSeries {
+				ref := chunks.HeadSeriesRef(i + 1)
+				metric := i / seriesPerMetric
+				series = append(series, record.RefSeries{
+					Ref: ref,
+					Labels: labels.FromStrings(
+						"__name__", fmt.Sprintf("metric_%d_total", metric),
+						"instance", strconv.Itoa(i%seriesPerMetric),
+						"job", "bench",
+					),
+				})
+				meta = append(meta, record.RefMetadata{
+					Ref:  ref,
+					Type: record.GetMetricType(model.MetricTypeCounter),
+					Unit: "seconds",
+					Help: helpByMetric[metric],
+				})
+				samples = append(samples, record.RefSample{Ref: ref, T: 1, V: float64(i)})
+				if len(series) == inputBatch {
+					flush()
+				}
+			}
+			if len(series) > 0 {
+				flush()
+			}
+
+			first, last, err := Segments(dir)
+			require.NoError(b, err)
+			require.NoError(b, w.Close())
+
+			keep := func(chunks.HeadSeriesRef) bool { return true }
+			cpDir := CheckpointDir(dir, last)
+
+			b.Run("write", func(b *testing.B) {
+				// Batching splits one record into many, which costs a little
+				// compressed size, so the benchmark reports it.
+				var checkpointSize int64
+
+				b.ReportAllocs()
+				for b.Loop() {
+					_, err := Checkpoint(promslog.NewNopLogger(), w, first, last, keep, 0, false, false)
+					require.NoError(b, err)
+
+					b.StopTimer()
+					checkpointSize = dirSize(b, cpDir)
+					require.NoError(b, os.RemoveAll(cpDir))
+					b.StartTimer()
+				}
+				b.ReportMetric(float64(checkpointSize), "checkpoint_size")
+			})
+
+			b.Run("read", func(b *testing.B) {
+				_, err := Checkpoint(promslog.NewNopLogger(), w, first, last, keep, 0, false, false)
+				require.NoError(b, err)
+				b.Cleanup(func() { require.NoError(b, os.RemoveAll(cpDir)) })
+
+				b.ReportAllocs()
+				for b.Loop() {
+					sr, err := NewSegmentsReader(cpDir)
+					require.NoError(b, err)
+
+					var (
+						dec  = record.NewDecoder(labels.NewSymbolTable(), promslog.NewNopLogger())
+						r    = NewReader(sr)
+						meta []record.RefMetadata
+						read int
+					)
+					for r.Next() {
+						rec := r.Record()
+						if dec.Type(rec) != record.Metadata {
+							continue
+						}
+						meta, err = dec.Metadata(rec, meta[:0])
+						require.NoError(b, err)
+						read += len(meta)
+					}
+					require.NoError(b, r.Err())
+					require.NoError(b, sr.Close())
+					require.Equal(b, numSeries, read)
+				}
+			})
 		})
 	}
 }

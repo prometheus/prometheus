@@ -1495,12 +1495,12 @@ func funcTsOfLastOverTime(_ []Vector, matrixVal Matrix, _ parser.Expressions, en
 	}
 	el := matrixVal[0]
 
-	var tf int64
+	var tf int64 = math.MinInt64
 	if len(el.Floats) > 0 {
 		tf = el.Floats[len(el.Floats)-1].T
 	}
 
-	var th int64
+	var th int64 = math.MinInt64
 	if len(el.Histograms) > 0 {
 		th = el.Histograms[len(el.Histograms)-1].T
 	}
@@ -1772,8 +1772,13 @@ func funcIntegral(vectorVals []Vector, matrixVal Matrix, args parser.Expressions
 				// to implement (currVal+prevVal)/2.
 				if prevVal != 0 || currVal != 0 {
 					value, cValue = kahansum.Inc(currVal, prevVal, 0)
-					value /= 2
-					cValue /= 2
+					if math.IsInf(value, 0) && !math.IsInf(currVal, 0) && !math.IsInf(prevVal, 0) {
+						// Avoid overflow when averaging finite samples.
+						value, cValue = kahansum.Inc(currVal/2, prevVal/2, 0)
+					} else {
+						value /= 2
+						cValue /= 2
+					}
 				}
 			}
 			// Skip the first sample, aggregate non-zero values.

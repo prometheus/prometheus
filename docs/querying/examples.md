@@ -121,7 +121,10 @@ time will give the _time in seconds_ that the value was `1`, for example, to
 get the _amount of time_ a particular metric has been absent during the past
 day (sampled every 5 minutes):
 
-    integral(absent(metric_name)[1d:5m])
+    integral((absent(metric_name) or vector(0))[1d:5m])
+
+The `or vector(0)` supplies zero when the metric is present, so the integral
+does not connect separate periods of absence across healthy periods.
 
 As another case for measuring _amount of time_, for example a boolean metric
 representing a service level agreement (SLA) being met divided by the total
