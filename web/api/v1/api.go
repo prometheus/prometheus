@@ -313,7 +313,7 @@ func NewAPI(
 	statsRenderer StatsRenderer,
 	rwEnabled bool,
 	acceptRemoteWriteProtoMsgs remoteapi.MessageTypes,
-	otlpEnabled, otlpDeltaToCumulative, otlpNativeDeltaIngestion bool,
+	otlpEnabled, otlpNativeDeltaIngestion bool,
 	stZeroIngestionEnabled bool,
 	lookbackDelta time.Duration,
 	enableTypeAndUnitLabels bool,
@@ -381,7 +381,6 @@ func NewAPI(
 	}
 	if otlpEnabled {
 		a.otlpWriteHandler = remote.NewOTLPWriteHandler(logger, registerer, apV2, configFunc, remote.OTLPOptions{
-			ConvertDelta:            otlpDeltaToCumulative,
 			NativeDelta:             otlpNativeDeltaIngestion,
 			LookbackDelta:           lookbackDelta,
 			EnableTypeAndUnitLabels: enableTypeAndUnitLabels,

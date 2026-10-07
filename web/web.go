@@ -310,7 +310,6 @@ type Options struct {
 	RemoteReadBytesInFrame     int
 	EnableRemoteWriteReceiver  bool
 	EnableOTLPWriteReceiver    bool
-	ConvertOTLPDelta           bool
 	NativeOTLPDeltaIngestion   bool
 	IsAgent                    bool
 	STZeroIngestionEnabled     bool
@@ -429,7 +428,6 @@ func New(logger *slog.Logger, o *Options) *Handler {
 		o.EnableRemoteWriteReceiver,
 		o.AcceptRemoteWriteProtoMsgs,
 		o.EnableOTLPWriteReceiver,
-		o.ConvertOTLPDelta,
 		o.NativeOTLPDeltaIngestion,
 		o.STZeroIngestionEnabled,
 		o.LookbackDelta,
@@ -455,7 +453,8 @@ func New(logger *slog.Logger, o *Options) *Handler {
 		for _, alg := range api_v1.FuzzAlgorithms() {
 			r.Enable(features.API, "search_fuzz_alg_"+alg)
 		}
-		r.Set(features.OTLPReceiver, "delta_conversion", o.ConvertOTLPDelta)
+		// Keep reporting the removed delta conversion feature for API compatibility.
+		r.Set(features.OTLPReceiver, "delta_conversion", false)
 		r.Set(features.OTLPReceiver, "native_delta_ingestion", o.NativeOTLPDeltaIngestion)
 		r.Enable(features.API, "label_values_match") // match[] parameter for label values endpoint.
 		r.Enable(features.API, "query_warnings")     // warnings in query responses.

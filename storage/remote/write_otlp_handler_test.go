@@ -23,17 +23,16 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"os"
-	"reflect"
 	"runtime"
 	"strconv"
 	"sync"
 	"testing"
 	"time"
 
-	"github.com/google/go-cmp/cmp"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/testutil"
 	"github.com/prometheus/common/model"
+	"github.com/prometheus/common/promslog"
 	"github.com/prometheus/otlptranslator"
 	"github.com/stretchr/testify/require"
 	"go.opentelemetry.io/collector/pdata/pcommon"
@@ -260,12 +259,12 @@ func TestOTLPWriteHandler(t *testing.T) {
 	}
 
 	t.Run("translation warnings metric", func(t *testing.T) {
-		newExporter := func() *rwExporter {
+		newHandler := func() *otlpWriteHandler {
 			log := slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: slog.LevelWarn}))
 			handler := NewOTLPWriteHandler(log, prometheus.NewRegistry(), teststorage.NewAppendable(), func() config.Config {
 				return config.Config{OTLPConfig: config.OTLPConfig{TranslationStrategy: otlptranslator.UnderscoreEscapingWithSuffixes}}
 			}, OTLPOptions{})
-			return handler.(*otlpWriteHandler).defaultConsumer.(*rwExporter)
+			return handler.(*otlpWriteHandler)
 		}
 
 		t.Run("label name collision", func(t *testing.T) {
@@ -281,10 +280,10 @@ func TestOTLPWriteHandler(t *testing.T) {
 			dp.Attributes().PutStr("a.b", "x")
 			dp.Attributes().PutStr("a_b", "y")
 
-			ex := newExporter()
-			require.Equal(t, 0.0, testutil.ToFloat64(ex.translationWarnings.WithLabelValues("label_name_collision")))
-			require.NoError(t, ex.ConsumeMetrics(t.Context(), request.Metrics()))
-			require.Equal(t, 1.0, testutil.ToFloat64(ex.translationWarnings.WithLabelValues("label_name_collision")))
+			handler := newHandler()
+			require.Equal(t, 0.0, testutil.ToFloat64(handler.translationWarnings.WithLabelValues("label_name_collision")))
+			require.NoError(t, handler.writeMetrics(t.Context(), request.Metrics()))
+			require.Equal(t, 1.0, testutil.ToFloat64(handler.translationWarnings.WithLabelValues("label_name_collision")))
 		})
 
 		t.Run("histogram zero count non-zero sum", func(t *testing.T) {
@@ -299,10 +298,10 @@ func TestOTLPWriteHandler(t *testing.T) {
 			h.SetCount(0)
 			h.SetSum(155)
 
-			ex := newExporter()
-			require.Equal(t, 0.0, testutil.ToFloat64(ex.translationWarnings.WithLabelValues("histogram_zero_count_non_zero_sum")))
-			require.NoError(t, ex.ConsumeMetrics(t.Context(), request.Metrics()))
-			require.Equal(t, 1.0, testutil.ToFloat64(ex.translationWarnings.WithLabelValues("histogram_zero_count_non_zero_sum")))
+			handler := newHandler()
+			require.Equal(t, 0.0, testutil.ToFloat64(handler.translationWarnings.WithLabelValues("histogram_zero_count_non_zero_sum")))
+			require.NoError(t, handler.writeMetrics(t.Context(), request.Metrics()))
+			require.Equal(t, 1.0, testutil.ToFloat64(handler.translationWarnings.WithLabelValues("histogram_zero_count_non_zero_sum")))
 		})
 
 		t.Run("empty data points", func(t *testing.T) {
@@ -311,10 +310,10 @@ func TestOTLPWriteHandler(t *testing.T) {
 			m.SetName("test_empty_gauge")
 			m.SetEmptyGauge()
 
-			ex := newExporter()
-			require.Equal(t, 0.0, testutil.ToFloat64(ex.translationWarnings.WithLabelValues("empty_data_points")))
-			require.NoError(t, ex.ConsumeMetrics(t.Context(), request.Metrics()))
-			require.Equal(t, 1.0, testutil.ToFloat64(ex.translationWarnings.WithLabelValues("empty_data_points")))
+			handler := newHandler()
+			require.Equal(t, 0.0, testutil.ToFloat64(handler.translationWarnings.WithLabelValues("empty_data_points")))
+			require.NoError(t, handler.writeMetrics(t.Context(), request.Metrics()))
+			require.Equal(t, 1.0, testutil.ToFloat64(handler.translationWarnings.WithLabelValues("empty_data_points")))
 		})
 	})
 
@@ -473,21 +472,16 @@ func generateOTLPWriteRequest(timestamp, startTime time.Time) pmetricotlp.Export
 	return pmetricotlp.NewExportRequestFromMetrics(d)
 }
 
-func TestOTLPDelta(t *testing.T) {
-	log := slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: slog.LevelWarn}))
+func TestOTLPNativeDelta(t *testing.T) {
 	appendable := teststorage.NewAppendable()
-	cfg := func() config.Config {
+	handler := NewOTLPWriteHandler(promslog.NewNopLogger(), nil, appendable, func() config.Config {
 		return config.Config{OTLPConfig: config.DefaultOTLPConfig}
-	}
-	handler := NewOTLPWriteHandler(log, nil, appendable, cfg, OTLPOptions{ConvertDelta: true})
+	}, OTLPOptions{NativeDelta: true})
 
 	md := pmetric.NewMetrics()
-	ms := md.ResourceMetrics().AppendEmpty().ScopeMetrics().AppendEmpty().Metrics()
-
-	m := ms.AppendEmpty()
-	m.SetName("some.delta.total")
-
-	sum := m.SetEmptySum()
+	metric := md.ResourceMetrics().AppendEmpty().ScopeMetrics().AppendEmpty().Metrics().AppendEmpty()
+	metric.SetName("some.delta.total")
+	sum := metric.SetEmptySum()
 	sum.SetAggregationTemporality(pmetric.AggregationTemporalityDelta)
 
 	ts := time.Date(2000, 1, 2, 3, 4, 0, 0, time.UTC)
@@ -499,28 +493,20 @@ func TestOTLPDelta(t *testing.T) {
 
 	proto, err := pmetricotlp.NewExportRequestFromMetrics(md).MarshalProto()
 	require.NoError(t, err)
-
-	req, err := http.NewRequest("", "", bytes.NewReader(proto))
-	require.NoError(t, err)
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/otlp/v1/metrics", bytes.NewReader(proto))
 	req.Header.Set("Content-Type", "application/x-protobuf")
 
 	rec := httptest.NewRecorder()
 	handler.ServeHTTP(rec, req)
-	require.Equal(t, http.StatusOK, rec.Result().StatusCode)
+	require.Equal(t, http.StatusOK, rec.Code)
 
 	ls := labels.FromStrings("__name__", "some_delta_total")
-	milli := func(sec int) int64 {
-		return time.Date(2000, 1, 2, 3, 4, sec, 0, time.UTC).UnixMilli()
-	}
-
 	want := []sample{
-		{MF: "some_delta_total", M: metadata.Metadata{Type: model.MetricTypeGauge}, T: milli(0), L: ls, V: 0}, // +0
-		{MF: "some_delta_total", M: metadata.Metadata{Type: model.MetricTypeGauge}, T: milli(1), L: ls, V: 1}, // +1
-		{MF: "some_delta_total", M: metadata.Metadata{Type: model.MetricTypeGauge}, T: milli(2), L: ls, V: 3}, // +2
+		{MF: "some_delta_total", M: metadata.Metadata{Type: model.MetricTypeUnknown}, T: ts.UnixMilli(), L: ls, V: 0},
+		{MF: "some_delta_total", M: metadata.Metadata{Type: model.MetricTypeUnknown}, T: ts.Add(time.Second).UnixMilli(), L: ls, V: 1},
+		{MF: "some_delta_total", M: metadata.Metadata{Type: model.MetricTypeUnknown}, T: ts.Add(2 * time.Second).UnixMilli(), L: ls, V: 2},
 	}
-	if diff := cmp.Diff(want, appendable.ResultSamples(), cmp.Exporter(func(reflect.Type) bool { return true })); diff != "" {
-		t.Fatal(diff)
-	}
+	teststorage.RequireEqual(t, want, appendable.ResultSamples())
 }
 
 // BenchmarkOTLPWriteHandler measures a decoded OTLP request through the HTTP
@@ -761,7 +747,7 @@ func BenchmarkOTLP(b *testing.B) {
 		opts OTLPOptions
 	}{
 		{name: "default"},
-		{name: "convert", opts: OTLPOptions{ConvertDelta: true}},
+		{name: "native-delta", opts: OTLPOptions{NativeDelta: true}},
 	}
 
 	Workers := runtime.GOMAXPROCS(0)
@@ -769,17 +755,13 @@ func BenchmarkOTLP(b *testing.B) {
 		for _, mode := range modes {
 			for _, cfg := range configs {
 				b.Run(fmt.Sprintf("type=%s/temporality=%s/cfg=%s", cs.name, mode.name, cfg.name), func(b *testing.B) {
-					if !cfg.opts.ConvertDelta && (mode.name == "delta" || mode.name == "mixed") {
+					if !cfg.opts.NativeDelta && (mode.name == "delta" || mode.name == "mixed") {
 						b.Skip("not possible")
 					}
 
 					var total int
 
 					// reqs is a [b.N]*http.Request, divided across the workers.
-					// deltatocumulative requires timestamps to be strictly in
-					// order on a per-series basis. to ensure this, each reqs[k]
-					// contains samples of differently named series, sorted
-					// strictly in time order
 					reqs := make([][]*http.Request, Workers)
 					for n := range b.N {
 						k := n % Workers
