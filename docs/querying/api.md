@@ -1919,12 +1919,11 @@ endpoint is `/api/v1/otlp/v1/metrics`.
 
 ### OTLP Delta
 
-Prometheus can convert incoming metrics from delta temporality to their cumulative equivalent.
-This is done using [deltatocumulative](https://github.com/open-telemetry/opentelemetry-collector-contrib/tree/main/processor/deltatocumulativeprocessor) from the OpenTelemetry Collector.
+Prometheus can natively ingest incoming OTLP metrics with delta temporality, storing their raw sample values without conversion.
 
-To enable, pass `--enable-feature=otlp-deltatocumulative`.
+To enable native delta ingestion, pass `--enable-feature=otlp-native-delta-ingestion`. To retain OTLP start timestamps and use them in PromQL rate calculations, also enable `st-storage` and `use-start-timestamps`. See [OTLP Native Delta Support](../feature_flags.md#otlp-native-delta-support) for details.
 
-*New in v3.2*
+*New in v3.4; start-timestamp-aware querying was added in v3.12.*
 
 ## Notifications
 
