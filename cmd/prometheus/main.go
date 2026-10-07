@@ -322,7 +322,7 @@ func (c *flagConfig) setFeatureListOptions(logger *slog.Logger) error {
 				logger.Info("Serving previous version of the Prometheus web UI.")
 			case "otlp-deltatocumulative":
 				c.web.ConvertOTLPDelta = true
-				logger.Info("Converting delta OTLP metrics to cumulative")
+				logger.Warn("This option for --enable-feature is deprecated and will be removed in a future major version. Use otlp-native-delta-ingestion instead.", "option", o)
 			case "otlp-native-delta-ingestion":
 				// Experimental OTLP native delta ingestion.
 				// This currently just stores the raw delta value as-is with unknown metric type. Better typing and
