@@ -160,11 +160,12 @@ func (h *FloatHistogram) CopyToSchema(targetSchema int32) *FloatHistogram {
 		panic(fmt.Errorf("cannot copy from schema %d to %d", h.Schema, targetSchema))
 	}
 	c := FloatHistogram{
-		Schema:        targetSchema,
-		ZeroThreshold: h.ZeroThreshold,
-		ZeroCount:     h.ZeroCount,
-		Count:         h.Count,
-		Sum:           h.Sum,
+		CounterResetHint: h.CounterResetHint,
+		Schema:           targetSchema,
+		ZeroThreshold:    h.ZeroThreshold,
+		ZeroCount:        h.ZeroCount,
+		Count:            h.Count,
+		Sum:              h.Sum,
 	}
 
 	c.PositiveSpans, c.PositiveBuckets = mustReduceResolution(h.PositiveSpans, h.PositiveBuckets, h.Schema, targetSchema, false, false)

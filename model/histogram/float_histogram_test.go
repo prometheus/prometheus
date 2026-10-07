@@ -3249,10 +3249,16 @@ func TestFloatHistogramCopyToSchema(t *testing.T) {
 
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {
-			inCopy := c.in.Copy()
-			require.Equal(t, c.expected, c.in.CopyToSchema(c.targetSchema))
-			// Check that the receiver histogram was not mutated:
-			require.Equal(t, inCopy, c.in)
+			for _, hint := range []CounterResetHint{UnknownCounterReset, CounterReset, NotCounterReset, GaugeType} {
+				in := c.in.Copy()
+				in.CounterResetHint = hint
+				expected := c.expected.Copy()
+				expected.CounterResetHint = hint
+				inCopy := in.Copy()
+				require.Equal(t, expected, in.CopyToSchema(c.targetSchema))
+				// Check that the receiver histogram was not mutated:
+				require.Equal(t, inCopy, in)
+			}
 		})
 	}
 }
