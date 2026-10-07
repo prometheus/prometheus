@@ -1657,6 +1657,34 @@ eval instant at 1m histogram_fraction(-Inf, +Inf, histogram_nan)
 
 clear
 
+# Test native histogram quantile with NaN observations and more than one
+# populated bucket. The quantile must be interpolated within the bucket where
+# the rank is reached, not within the highest bucket.
+# The "NaN" case observed {1.5, 3, NaN}, the "no NaN" case observed {1.5, 3}.
+# The "3 buckets" case observed {1.5, 2.5, 3, 5, NaN}.
+load 1m
+    histogram_nan_multi{case="NaN"} {{schema:0 count:0 sum:0}} {{schema:0 count:3 sum:NaN offset:1 buckets:[1 1]}}
+    histogram_nan_multi{case="no NaN"} {{schema:0 count:0 sum:0}} {{schema:0 count:2 sum:4.5 offset:1 buckets:[1 1]}}
+    histogram_nan_multi{case="3 buckets"} {{schema:0 count:0 sum:0}} {{schema:0 count:5 sum:NaN offset:1 buckets:[1 2 1]}}
+
+# Rank 0.2*3 = 0.6 is reached in bucket (1,2], fraction 0.6: 2^0.6.
+eval instant at 1m histogram_quantile(0.2, histogram_nan_multi{case="NaN"})
+    expect info msg: PromQL info: input to histogram_quantile has NaN observations, result is skewed higher for metric name "histogram_nan_multi" (1:25)
+    {case="NaN"} 1.515716566510398
+
+# Rank 0.3*2 = 0.6 is reached in bucket (1,2], fraction 0.6: 2^0.6, as above.
+eval instant at 1m histogram_quantile(0.3, histogram_nan_multi{case="no NaN"})
+    expect no_info
+    {case="no NaN"} 1.515716566510398
+
+# Rank 0.4*5 = 2 is reached in bucket (2,4], which holds 2 observations after
+# 1 observation in lower buckets, fraction 0.5: 2^1.5.
+eval instant at 1m histogram_quantile(0.4, histogram_nan_multi{case="3 buckets"})
+    expect info msg: PromQL info: input to histogram_quantile has NaN observations, result is skewed higher for metric name "histogram_nan_multi" (1:25)
+    {case="3 buckets"} 2.82842712474619
+
+clear
+
 # Tests to demonstrate how an extrapolation below zero is prevented for both float counters and native counter histograms.
 # Note that the float counter behaves the same as the histogram count after `increase`.
 

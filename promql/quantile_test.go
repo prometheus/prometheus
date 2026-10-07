@@ -562,3 +562,36 @@ func TestTrimBuckets_HistogramFractionCrossCheck(t *testing.T) {
 		})
 	}
 }
+
+// TestHistogramQuantile_NaNSumWithoutNaNObservations checks a native histogram
+// whose sum is NaN because it observed both -Inf and +Inf, without any NaN
+// observations. The ±Inf observations are in the overflow buckets, whose
+// indexes are too high to express compactly in the PromQL test framework.
+func TestHistogramQuantile_NaNSumWithoutNaNObservations(t *testing.T) {
+	// Observations {-Inf, 1.5, 3, +Inf}.
+	h := &histogram.FloatHistogram{
+		Schema:          0,
+		Count:           4,
+		Sum:             math.NaN(),
+		PositiveSpans:   []histogram.Span{{Offset: 1, Length: 2}, {Offset: 1022, Length: 1}},
+		PositiveBuckets: []float64{1, 1, 1},
+		NegativeSpans:   []histogram.Span{{Offset: 1025, Length: 1}},
+		NegativeBuckets: []float64{1},
+	}
+	require.NoError(t, h.Validate())
+	// Without NaN observations, Count is the sum of the bucket counts.
+	var bounds [][2]float64
+	var bucketCount float64
+	for it := h.AllBucketIterator(); it.Next(); {
+		b := it.At()
+		bounds = append(bounds, [2]float64{b.Lower, b.Upper})
+		bucketCount += b.Count
+	}
+	require.Equal(t, [][2]float64{{math.Inf(-1), -math.MaxFloat64}, {1, 2}, {2, 4}, {math.MaxFloat64, math.Inf(1)}}, bounds)
+	require.Equal(t, h.Count, bucketCount)
+
+	// Rank 0.375*4 = 1.5 is reached in bucket (1,2], fraction 0.5: 2^0.5.
+	quantile, annos := HistogramQuantile(0.375, h, "", posrange.PositionRange{})
+	require.Empty(t, annos)
+	require.InEpsilon(t, math.Sqrt2, quantile, 1e-12)
+}
