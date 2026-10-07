@@ -1882,6 +1882,8 @@ func (db *DB) compactHeadViewLocked(viewFactory headViewFactory, evict headSerie
 // CompactStaleHead writes stale series into blocks and evicts those that are still
 // eligible for removal. Series whose exemplars still need replay remain in the head,
 // but their persisted sample chunks are released if otherwise eligible for eviction.
+// WAL replay may restore those samples after a restart until the global replay
+// cutoff passes them.
 func (db *DB) CompactStaleHead() (err error) {
 	db.cmtx.Lock()
 	defer func() {
