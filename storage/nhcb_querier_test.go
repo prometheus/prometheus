@@ -810,10 +810,13 @@ func TestNHCBAsClassicQuerier_Collisions(t *testing.T) {
 		}, got)
 	})
 
-	t.Run("partial le matcher still shadows NHCB when stored classic exists at timestamp", func(t *testing.T) {
+	t.Run("le matcher not matching any stored classic bucket does not shadow NHCB", func(t *testing.T) {
 		// Stored classic at t=1 only has le="1.0" and "+Inf" (no le="5.0").
-		// Query selects le="5.0". At t=1 stored classic is active, so NHCB's
-		// le="5.0" must still be shadowed at t=1 and only appear at t=2.
+		// Query selects le="5.0". The le matcher is pushed down to the stored
+		// classic Select, so no stored classic series is found and the
+		// converted NHCB le="5.0" bucket is returned at both t=1 and t=2.
+		// From the query's point of view the stored classic histogram has no
+		// such bucket, so there is nothing to shadow with.
 		q := NewNHCBAsClassicQuerier(&nhcbMockQuerier{
 			classicSeries: []Series{
 				NewListSeries(labels.FromStrings("__name__", "http_requests_bucket", "le", "1.0"), []chunks.Sample{
@@ -836,7 +839,7 @@ func TestNHCBAsClassicQuerier_Collisions(t *testing.T) {
 		assertSeriesSamplesEqual(t, []seriesSamples{
 			{
 				labels:  `{__name__="http_requests_bucket", le="5.0"}`,
-				samples: []fSample{{t: 2, f: 16}},
+				samples: []fSample{{t: 1, f: 8}, {t: 2, f: 16}},
 			},
 		}, got)
 	})
@@ -1219,6 +1222,90 @@ func TestNHCBAsClassicQuerier_Collisions(t *testing.T) {
 			},
 		}, gotSorted)
 	})
+	t.Run("le matchers are pushed down to the stored classic Select", func(t *testing.T) {
+		// Stored classic at t=1 has le="1.0", "5.0", "+Inf" (no le="10.0"); the
+		// NHCB has buckets 1.0, 5.0, 10.0, +Inf at t=1 and t=2.
+		classicSeries := []Series{
+			NewListSeries(labels.FromStrings("__name__", "http_requests_bucket", "le", "1.0"), []chunks.Sample{fSample{t: 1, f: 5}}),
+			NewListSeries(labels.FromStrings("__name__", "http_requests_bucket", "le", "5.0"), []chunks.Sample{fSample{t: 1, f: 8}}),
+			NewListSeries(labels.FromStrings("__name__", "http_requests_bucket", "le", "+Inf"), []chunks.Sample{fSample{t: 1, f: 10}}),
+		}
+		nhcbSeries := []Series{
+			NewListSeries(labels.FromStrings("__name__", "http_requests"), []chunks.Sample{
+				hSample{t: 1, h: nhcb(16, []float64{1.0, 5.0, 10.0}, []int64{2, 3, 5, 6})},
+				hSample{t: 2, h: nhcb(16, []float64{1.0, 5.0, 10.0}, []int64{2, 3, 5, 6})},
+			}),
+		}
+
+		for _, tc := range []struct {
+			name             string
+			leMatchers       []*labels.Matcher
+			expectedMatchers []string
+			expected         []seriesSamples
+		}{
+			{
+				name:             "no le matcher",
+				expectedMatchers: []string{`__name__="http_requests_bucket"`},
+				expected: []seriesSamples{
+					{labels: `{__name__="http_requests_bucket", le="+Inf"}`, samples: []fSample{{t: 1, f: 10}, {t: 2, f: 16}}},
+					{labels: `{__name__="http_requests_bucket", le="1.0"}`, samples: []fSample{{t: 1, f: 5}, {t: 2, f: 2}}},
+					{labels: `{__name__="http_requests_bucket", le="10.0"}`, samples: []fSample{{t: 2, f: 10}}},
+					{labels: `{__name__="http_requests_bucket", le="5.0"}`, samples: []fSample{{t: 1, f: 8}, {t: 2, f: 5}}},
+				},
+			},
+			{
+				name:             "le equality is pushed down and the stored classic shadows NHCB at t=1",
+				leMatchers:       []*labels.Matcher{labels.MustNewMatcher(labels.MatchEqual, labels.BucketLabel, "5.0")},
+				expectedMatchers: []string{`__name__="http_requests_bucket"`, `le="5.0"`},
+				expected: []seriesSamples{
+					{labels: `{__name__="http_requests_bucket", le="5.0"}`, samples: []fSample{{t: 1, f: 8}, {t: 2, f: 5}}},
+				},
+			},
+			{
+				name:             "le regex is pushed down and shadows the whole group at t=1",
+				leMatchers:       []*labels.Matcher{labels.MustNewMatcher(labels.MatchRegexp, labels.BucketLabel, "1.0|10.0")},
+				expectedMatchers: []string{`__name__="http_requests_bucket"`, `le=~"1.0|10.0"`},
+				expected: []seriesSamples{
+					{labels: `{__name__="http_requests_bucket", le="1.0"}`, samples: []fSample{{t: 1, f: 5}, {t: 2, f: 2}}},
+					// le="10.0" only exists in the NHCB; it is shadowed at t=1
+					// because the stored classic le="1.0" matched and is live.
+					{labels: `{__name__="http_requests_bucket", le="10.0"}`, samples: []fSample{{t: 2, f: 10}}},
+				},
+			},
+			{
+				name:             "le matching no stored classic bucket returns NHCB unshadowed",
+				leMatchers:       []*labels.Matcher{labels.MustNewMatcher(labels.MatchEqual, labels.BucketLabel, "10.0")},
+				expectedMatchers: []string{`__name__="http_requests_bucket"`, `le="10.0"`},
+				expected: []seriesSamples{
+					{labels: `{__name__="http_requests_bucket", le="10.0"}`, samples: []fSample{{t: 1, f: 10}, {t: 2, f: 10}}},
+				},
+			},
+			{
+				name:             "le not equal is pushed down",
+				leMatchers:       []*labels.Matcher{labels.MustNewMatcher(labels.MatchNotEqual, labels.BucketLabel, "+Inf")},
+				expectedMatchers: []string{`__name__="http_requests_bucket"`, `le!="+Inf"`},
+				expected: []seriesSamples{
+					{labels: `{__name__="http_requests_bucket", le="1.0"}`, samples: []fSample{{t: 1, f: 5}, {t: 2, f: 2}}},
+					{labels: `{__name__="http_requests_bucket", le="10.0"}`, samples: []fSample{{t: 2, f: 10}}},
+					{labels: `{__name__="http_requests_bucket", le="5.0"}`, samples: []fSample{{t: 1, f: 8}, {t: 2, f: 5}}},
+				},
+			},
+		} {
+			t.Run(tc.name, func(t *testing.T) {
+				mock := &nhcbMockQuerier{classicSeries: classicSeries, nhcbSeries: nhcbSeries}
+				q := NewNHCBAsClassicQuerier(mock)
+				matchers := append([]*labels.Matcher{labels.MustNewMatcher(labels.MatchEqual, model.MetricNameLabel, "http_requests_bucket")}, tc.leMatchers...)
+				got := readAll(t, q.Select(context.Background(), false, nil, matchers...))
+
+				var gotMatchers []string
+				for _, m := range mock.lastClassicMatchers {
+					gotMatchers = append(gotMatchers, m.String())
+				}
+				require.Equal(t, tc.expectedMatchers, gotMatchers)
+				assertSeriesSamplesEqual(t, tc.expected, got)
+			})
+		}
+	})
 }
 
 func TestNHCBAsClassicQuerier_FloatHistogram(t *testing.T) {
@@ -1258,6 +1345,9 @@ type nhcbMockQuerier struct {
 	nhcbErr         error
 	classicWarnings annotations.Annotations
 	nhcbWarnings    annotations.Annotations
+
+	// Matchers of the last classic (suffixed name) Select call.
+	lastClassicMatchers []*labels.Matcher
 }
 
 func (m *nhcbMockQuerier) Select(_ context.Context, _ bool, _ *SelectHints, matchers ...*labels.Matcher) SeriesSet {
@@ -1269,6 +1359,7 @@ func (m *nhcbMockQuerier) Select(_ context.Context, _ bool, _ *SelectHints, matc
 		if strings.HasSuffix(matcher.Value, "_bucket") ||
 			strings.HasSuffix(matcher.Value, "_count") ||
 			strings.HasSuffix(matcher.Value, "_sum") {
+			m.lastClassicMatchers = matchers
 			if m.classicErr != nil {
 				return ErrSeriesSet(m.classicErr)
 			}

@@ -94,22 +94,24 @@ func (q *NHCBAsClassicQuerier) Select(ctx context.Context, sortSeries bool, hint
 		return nhcbSet
 	}
 
-	// Query stored classic series without le matchers so that we can detect if
-	// a stored classic histogram exists at a given timestamp even when the
-	// query's le matcher only selects a subset of buckets (or a bucket label
-	// that differs between stored classic and converted NHCB).
+	// Query stored classic series with the original matchers, including le, so
+	// that selective queries such as foo_bucket{le="+Inf"} only fetch the
+	// requested bucket series from the underlying querier (index and chunks),
+	// also on the pure-classic fast path and for remote storages.
+	//
+	// NOTE: As a consequence a stored classic histogram shadows converted NHCB
+	// samples only when at least one of its stored bucket series matches the
+	// query's le matchers. A query for le="0.5" against a stored classic
+	// histogram that only has le="0.5000" (or lacks that bucket entirely) does
+	// not match any stored series, so the converted NHCB bucket is returned
+	// unshadowed. This is intended: the stored classic histogram does not have
+	// that le string, so from the query's point of view it does not exist.
 	//
 	// NOTE: Both Select calls on q.Querier must happen before any SeriesSet.Next()
 	// call, and advancing nhcbSet/classicSet is deferred to lazySeriesSet.Next(),
 	// because secondaryQuerier (used by Fanout / NewMergeQuerier) panics if Select
 	// is invoked after the first Next() of any returned SeriesSet.
-	classicMatchers := matchers
-	if len(leMatchers) > 0 {
-		classicMatchers = make([]*labels.Matcher, 0, len(baseMatchers)+1)
-		classicMatchers = append(classicMatchers, baseMatchers...)
-		classicMatchers = append(classicMatchers, nameMatcher)
-	}
-	classicSet := q.Querier.Select(ctx, sortSeries, hints, classicMatchers...)
+	classicSet := q.Querier.Select(ctx, sortSeries, hints, matchers...)
 	if classicSet.Err() != nil {
 		return classicSet
 	}
@@ -140,11 +142,9 @@ func selectNHCBAsClassic(ctx context.Context, sortSeries bool, nhcbSet, classicS
 	}
 
 	// Fast path 1: when no NHCB series exist for the base metric name, stream
-	// directly from the underlying classic SeriesSet.
+	// directly from the underlying classic SeriesSet. The le matchers were
+	// pushed down, so no client-side filtering is needed.
 	if firstNHCB == nil {
-		if len(leMatchers) > 0 {
-			classicSet = &leFilterSeriesSet{SeriesSet: classicSet, leMatchers: leMatchers}
-		}
 		if w := nhcbSet.Warnings(); len(w) > 0 {
 			return &warningsSeriesSet{SeriesSet: classicSet, warnings: w}
 		}
@@ -288,20 +288,6 @@ func (s *lazySeriesSet) Warnings() annotations.Annotations {
 		return nil
 	}
 	return s.set.Warnings()
-}
-
-type leFilterSeriesSet struct {
-	SeriesSet
-	leMatchers []*labels.Matcher
-}
-
-func (s *leFilterSeriesSet) Next() bool {
-	for s.SeriesSet.Next() {
-		if matchesLe(s.SeriesSet.At().Labels(), s.leMatchers) {
-			return true
-		}
-	}
-	return false
 }
 
 type warningsSeriesSet struct {
