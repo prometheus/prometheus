@@ -779,12 +779,42 @@ func lexValueSequence(l *Lexer) stateFn {
 		lexNumber(l)
 	case isAlpha(r):
 		l.backup()
+		if lexSeriesValueWord(l) {
+			return lexValueSequence
+		}
 		// We might lex invalid Items here but this will be caught by the parser.
 		return lexKeywordOrIdentifier
 	default:
 		return l.errorf("unexpected character in series sequence: %q", r)
 	}
 	return lexValueSequence
+}
+
+// seriesValueWords are the words a series value can be spelled with.
+var seriesValueWords = map[string]ItemType{
+	"inf":   NUMBER,
+	"nan":   NUMBER,
+	"stale": IDENTIFIER,
+}
+
+// lexSeriesValueWord scans Inf, NaN or stale when the expanding notation's
+// 'x' follows it directly, as in "stalex3", and leaves the 'x' for
+// lexValueSequence, as lexNumber does after a number. It reports whether it
+// emitted an item; when it did not, the position is unchanged.
+func lexSeriesValueWord(l *Lexer) bool {
+	for {
+		if r := l.next(); !isAlpha(r) || r == 'x' {
+			l.backup()
+			break
+		}
+	}
+	t, ok := seriesValueWords[strings.ToLower(l.input[l.start:l.pos])]
+	if !ok || l.peek() != 'x' {
+		l.pos = l.start
+		return false
+	}
+	l.emit(t)
+	return true
 }
 
 // lexEscape scans a string escape sequence. The initial escaping character (\)

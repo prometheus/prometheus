@@ -28,6 +28,7 @@ import (
 
 	"github.com/prometheus/prometheus/model/histogram"
 	"github.com/prometheus/prometheus/model/labels"
+	"github.com/prometheus/prometheus/model/value"
 	"github.com/prometheus/prometheus/promql/parser/posrange"
 	"github.com/prometheus/prometheus/util/testutil"
 )
@@ -6001,6 +6002,10 @@ var testSeries = []struct {
 		expectedMetric: labels.EmptyLabels(),
 		expectedValues: newSeq(1),
 	}, {
+		input:          `{} Infx2 -Infx1`,
+		expectedMetric: labels.EmptyLabels(),
+		expectedValues: newSeq(math.Inf(1), math.Inf(1), math.Inf(1), math.Inf(-1), math.Inf(-1)),
+	}, {
 		input:          `my_metric{a="b"} 1 3 _ 5 _x4`,
 		expectedMetric: labels.FromStrings(labels.MetricName, "my_metric", "a", "b"),
 		expectedValues: newSeq(1, 3, none, 5, none, none, none, none),
@@ -6470,6 +6475,27 @@ func TestParseSeries(t *testing.T) {
 			require.Equal(t, test.expectedValues, vals, "error in input '%s'", test.input)
 		} else {
 			require.Error(t, err)
+		}
+	}
+}
+
+// TestParseSeriesExpandingWordValues checks the expanding notation on the
+// values spelled as words, NaN and stale, which require.Equal cannot compare.
+func TestParseSeriesExpandingWordValues(t *testing.T) {
+	for _, test := range []struct {
+		input string
+		count int
+		check func(float64) bool
+	}{
+		{input: `{} NaNx2`, count: 3, check: func(v float64) bool { return math.IsNaN(v) && !value.IsStaleNaN(v) }},
+		{input: `{} stalex2`, count: 3, check: value.IsStaleNaN},
+	} {
+		_, vals, err := testParser.ParseSeriesDesc(test.input)
+		require.NoError(t, err, "error on input '%s'", test.input)
+		require.Len(t, vals, test.count, "input '%s'", test.input)
+		for i, v := range vals {
+			require.False(t, v.Omitted, "input '%s', value %d", test.input, i)
+			require.True(t, test.check(v.Value), "input '%s', value %d is %v", test.input, i, v.Value)
 		}
 	}
 }

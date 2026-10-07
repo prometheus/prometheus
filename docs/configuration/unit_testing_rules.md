@@ -103,6 +103,7 @@ series: <string>
 #     2. ' 1-2x4' becomes '1 -1 -3 -5 -7' - series starts at 1, then 4 further samples decrementing by 2.
 #     3. ' 1x4' becomes '1 1 1 1 1' - shorthand for '1+0x4', series starts at 1, then 4 further samples incrementing by 0.
 #     4. ' 1 _x3 stale' becomes '1 _ _ _ stale' - the missing sample cannot increment, so 3 missing samples are produced by the '_x3' expression.
+#     5. ' 1 NaNx2 stalex1' becomes '1 NaN NaN NaN stale stale' - 'Inf', 'NaN' and 'stale' repeat with 'axn' like any other value.
 #
 # Native histogram notation:
 #     Native histograms can be used instead of floating point numbers using the following notation:
