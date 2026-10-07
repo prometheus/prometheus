@@ -17,6 +17,7 @@ import (
 	"fmt"
 	"math"
 	"math/bits"
+	"math/rand/v2"
 	"testing"
 
 	"github.com/stretchr/testify/require"
@@ -74,23 +75,143 @@ func xor2DeltaWindow(delta uint64) (leading, trailing, sigbits uint8) {
 }
 
 func BenchmarkXor2Write(b *testing.B) {
-	samples := make([]struct {
-		t int64
-		v float64
-	}, 120)
-	for i := range samples {
-		samples[i].t = int64(i) * 1000
-		samples[i].v = float64(i) + float64(i)/10 + float64(i)/100 + float64(i)/1000
+	for _, tc := range xor2WindowSamples() {
+		b.Run(tc.name, func(b *testing.B) {
+			b.ReportAllocs()
+			for b.Loop() {
+				c := NewXOR2Chunk()
+				app, err := c.Appender()
+				if err != nil {
+					b.Fatal(err)
+				}
+				for _, s := range tc.samples {
+					app.Append(s.st, s.t, s.v)
+				}
+				b.ReportMetric(float64(len(c.Bytes())), "B/chunk")
+			}
+		})
+	}
+}
+
+func xor2WindowSamples() []sampleCase {
+	r := rand.New(rand.NewPCG(10, 20))
+	patterns := []struct {
+		name  string
+		value func(int) float64
+	}{
+		{"constant", func(int) float64 { return 1e9 }},
+		{"counter", func(i int) float64 { return 1e9 + float64(i) }},
+		{"alternating-bool", func(i int) float64 { return float64(i % 2) }},
+		{"sign-excursion", func(i int) float64 {
+			v := 1e9 + float64(i)
+			if i == 2 {
+				return -v
+			}
+			return v
+		}},
+		{"zero-excursion", func(i int) float64 {
+			if i == 2 {
+				return 0
+			}
+			return 1000 + float64(i)*0.125
+		}},
+		{"random-integer", func(int) float64 { return float64(r.IntN(1001)) }},
+		{"random-float", func(int) float64 { return r.Float64() * 1000 }},
+		{"fractional", func(i int) float64 {
+			return float64(i) + float64(i)/10 + float64(i)/100 + float64(i)/1000
+		}},
+		{"special-floats", func(i int) float64 {
+			switch i % 31 {
+			case 0:
+				return math.Float64frombits(value.StaleNaN)
+			case 1:
+				return math.Float64frombits(0x7ff8000000000012)
+			case 2:
+				return math.Inf(1)
+			case 3:
+				return math.Inf(-1)
+			case 4:
+				return math.Copysign(0, -1)
+			case 5:
+				return 0
+			default:
+				return 1e9 + float64(i)
+			}
+		}},
 	}
 
-	b.ReportAllocs()
-
-	for b.Loop() {
-		c := NewXOR2Chunk()
-		app, _ := c.Appender()
-		for _, s := range samples {
-			app.Append(0, s.t, s.v)
+	var cases []sampleCase
+	for _, pattern := range patterns {
+		values := make([]float64, 120)
+		for i := range values {
+			values[i] = pattern.value(i)
 		}
+		for _, jitter := range []bool{false, true} {
+			for _, withST := range []bool{false, true} {
+				timestamps := rand.New(rand.NewPCG(1, 2))
+				samples := make([]triple, len(values))
+				for i, v := range values {
+					t := int64(1700000000000) + int64(i)*15000
+					if jitter {
+						t += int64(timestamps.IntN(11) - 5)
+					}
+					var st int64
+					if withST {
+						st = int64(1699999990000) + int64(i/60)*900000
+					}
+					samples[i] = triple{st: st, t: t, v: v}
+				}
+				cases = append(cases, sampleCase{
+					name:    fmt.Sprintf("%s/jitter=%t/st=%t", pattern.name, jitter, withST),
+					samples: samples,
+				})
+			}
+		}
+	}
+	return cases
+}
+
+func TestXOR2WindowSelection(t *testing.T) {
+	wantBytes := map[string]int{
+		"sign-excursion/jitter=false/st=false": 225,
+		"sign-excursion/jitter=false/st=true":  408,
+		"sign-excursion/jitter=true/st=false":  429,
+		"sign-excursion/jitter=true/st=true":   612,
+		"zero-excursion/jitter=false/st=false": 175,
+		"zero-excursion/jitter=false/st=true":  358,
+		"zero-excursion/jitter=true/st=false":  380,
+		"zero-excursion/jitter=true/st=true":   563,
+	}
+	for _, tc := range xor2WindowSamples() {
+		t.Run(tc.name, func(t *testing.T) {
+			c := NewXOR2Chunk()
+			app, err := c.Appender()
+			require.NoError(t, err)
+			for i, s := range tc.samples {
+				if i == 4 {
+					// Resume appending after narrowing the window.
+					c.Reset(append([]byte(nil), c.Bytes()...))
+					app, err = c.Appender()
+					require.NoError(t, err)
+				}
+				app.Append(s.st, s.t, s.v)
+			}
+			if n, ok := wantBytes[tc.name]; ok {
+				require.Len(t, c.Bytes(), n)
+			}
+			decoded, err := FromData(EncXOR2, c.Bytes())
+			require.NoError(t, err)
+			it := decoded.Iterator(nil)
+			for _, s := range tc.samples {
+				require.Equal(t, ValFloat, it.Next())
+				ts, v := it.At()
+				require.Equal(t, s.t, ts)
+				require.Equal(t, s.st, it.AtST())
+				require.Equal(t, math.Float64bits(s.v), math.Float64bits(v))
+			}
+			require.Equal(t, ValNone, it.Next())
+			require.NoError(t, it.Err())
+		})
 	}
 }
 
