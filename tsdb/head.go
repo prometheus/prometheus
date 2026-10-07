@@ -2563,6 +2563,14 @@ func (s *stripeSeries) gc(mint int64, minOOOMmapRef chunks.ChunkDiskMapperRef) (
 			}
 			return
 		}
+		// Exemplars are not persisted in blocks. Keep their series reference resolvable
+		// until WAL truncation and replay can discard them by timestamp. An empty
+		// series retained for exemplars must not affect the minimum sample time.
+		if series.hasExemplar && series.lastExemplarTs >= mint {
+			// Clear the appender so it does not retain the removed sample chunk.
+			series.app = nil
+			return
+		}
 		// The series is gone entirely. We need to keep the series lock
 		// and make sure we have acquired the stripe locks for hash and ID of the
 		// series alike.
@@ -2600,17 +2608,42 @@ func (s *stripeSeries) gc(mint int64, minOOOMmapRef chunks.ChunkDiskMapperRef) (
 	return deleted, affected, rmChunks, staleSeriesDeleted, histogramSeriesDeleted, histogramBucketsDeleted, actualMint, minOOOTime, minMmapFile
 }
 
-// gcSeries removes the provided series from the head index and updates head metrics,
-// postings, tombstones and WAL expiries accordingly. shouldEvict is the per-series predicate
-// applied after the safety check for series that received fresh samples since the caller
-// collected the ref list.
+// gcSeries removes eligible series from the head index and updates head metrics,
+// postings, tombstones and WAL expiries accordingly. Series with pending commits
+// or samples after maxt are skipped. The caller's shouldEvict predicate runs under
+// the series lock and must reject series with unpersisted samples or out-of-order data.
+// Series whose exemplars still need replay retain their identity, but their persisted
+// sample chunks are released if shouldEvict returns true.
 //
 // The returned references are the series that got deleted.
 func (h *Head) gcSeries(seriesRefs []storage.SeriesRef, maxt int64, shouldEvict func(*memSeries) bool) map[storage.SeriesRef]struct{} {
-	// Drop old chunks and remember series IDs and hashes if they can be
-	// deleted entirely.
-	deleted, affected, chunksRemoved, staleSeriesDeleted, histogramSeriesDeleted, histogramBucketsDeleted := h.series.gcSeries(seriesRefs, maxt, shouldEvict)
+	minValidTime := h.minValidTime.Load()
+	var protectedChunksRemoved int
+	deleted, affected, chunksRemoved, staleSeriesDeleted, histogramSeriesDeleted, histogramBucketsDeleted := h.series.gcSeries(seriesRefs, maxt, func(s *memSeries) bool {
+		// Keep unpersisted samples before considering chunk removal or series eviction.
+		if !shouldEvict(s) {
+			return false
+		}
+		// Delete the series if it has no exemplar at or after the WAL replay cutoff.
+		if !s.hasExemplar || s.lastExemplarTs < minValidTime {
+			return true
+		}
+
+		// Free the persisted sample chunks, but keep the series identity for exemplar replay.
+		// Memory mapping keeps the newest chunk in memory, so it needs at least two head chunks.
+		wasMmapReady := s.headChunkCount.Load() >= 2
+		protectedChunksRemoved += s.truncateChunksBefore(math.MaxInt64, 0)
+		// Clear the appender because it references the removed head chunk.
+		s.app = nil
+		// The series no longer has enough chunks to be ready for memory mapping.
+		if wasMmapReady && s.headChunkCount.Load() < 2 {
+			h.series.decMmapReady(s.ref)
+		}
+		// Prevent deletion of the series identity while its exemplar can still be replayed.
+		return false
+	})
 	seriesRemoved := len(deleted)
+	chunksRemoved += protectedChunksRemoved
 
 	h.metrics.seriesRemoved.Add(float64(seriesRemoved))
 	h.metrics.chunksRemoved.Add(float64(chunksRemoved))
@@ -2958,6 +2991,12 @@ type memSeries struct {
 
 	lset labels.Labels // Locking required with -tags dedupelabels, not otherwise.
 
+	// Latest accepted exemplar timestamp, including exemplars awaiting commit.
+	// A rolled-back exemplar may conservatively delay eviction until this time.
+	lastExemplarTs int64
+	// Whether an exemplar timestamp has been recorded, including zero or negative timestamps.
+	hasExemplar bool
+
 	// Immutable chunks on disk that have not yet gone into a block, in order of ascending time stamps.
 	// When compaction runs, chunks get moved into a block and all pointers are shifted like so:
 	//
@@ -3097,6 +3136,16 @@ func newMemSeries(lset labels.Labels, id chunks.HeadSeriesRef, shardHash uint64,
 		s.txs = newTxRing(0)
 	}
 	return s
+}
+
+// updateExemplarTimestamp records the latest exemplar time while holding the series lock.
+func (s *memSeries) updateExemplarTimestamp(ts int64) {
+	s.Lock()
+	if !s.hasExemplar || ts > s.lastExemplarTs {
+		s.lastExemplarTs = ts
+	}
+	s.hasExemplar = true
+	s.Unlock()
 }
 
 func (s *memSeries) minTime() int64 {

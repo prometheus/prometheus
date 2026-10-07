@@ -7577,27 +7577,21 @@ func stripeSeriesWithCollidingSeries(t *testing.T) (*stripeSeries, *memSeries, *
 	t.Helper()
 
 	lbls1, lbls2 := labelsWithHashCollision()
-	ms1 := memSeries{
-		lset: lbls1,
-		ref:  1,
-	}
-	ms2 := memSeries{
-		lset: lbls2,
-		ref:  2,
-	}
+	ms1 := newMemSeries(lbls1, 1, 0, true, false)
+	ms2 := newMemSeries(lbls2, 2, 0, true, false)
 	hash := lbls1.Hash()
 	s := newStripeSeries(1, noopSeriesLifecycleCallback{})
 
-	got, created := s.setUnlessAlreadySet(hash, lbls1, &ms1)
+	got, created := s.setUnlessAlreadySet(hash, lbls1, ms1)
 	require.True(t, created)
-	require.Same(t, &ms1, got)
+	require.Same(t, ms1, got)
 
 	// Add a conflicting series
-	got, created = s.setUnlessAlreadySet(hash, lbls2, &ms2)
+	got, created = s.setUnlessAlreadySet(hash, lbls2, ms2)
 	require.True(t, created)
-	require.Same(t, &ms2, got)
+	require.Same(t, ms2, got)
 
-	return s, &ms1, &ms2
+	return s, ms1, ms2
 }
 
 func TestStripeSeries_getOrSet(t *testing.T) {
@@ -7655,6 +7649,43 @@ func TestStripeSeries_gc(t *testing.T) {
 		ms2.Lock()
 		require.True(t, ms2.isGCed())
 		ms2.Unlock()
+	})
+
+	t.Run("collects a directly constructed series without samples or exemplars at mint<=0", func(t *testing.T) {
+		// Construct the series directly to verify that zero-valued exemplar state
+		// does not imply an exemplar at timestamp zero. With no chunks or exemplars,
+		// the series must be collected at mint<=0 without constructor initialization.
+		for _, mint := range []int64{-1, 0} {
+			lset := labels.FromStrings("a", "1")
+			series := &memSeries{lset: lset, ref: 1}
+			s := newStripeSeries(1, noopSeriesLifecycleCallback{})
+			_, created := s.setUnlessAlreadySet(lset.Hash(), lset, series)
+			require.True(t, created)
+
+			s.gc(mint, 0)
+
+			require.Nil(t, s.getByHash(lset.Hash(), lset),
+				"a series with no chunks and no exemplar must be collected at mint=%d, regardless of how it was constructed", mint)
+		}
+	})
+
+	t.Run("keeps series with zero or negative exemplar timestamps", func(t *testing.T) {
+		for _, ts := range []int64{-1, 0} {
+			lset := labels.FromStrings("a", "1")
+			series := &memSeries{lset: lset, ref: 1}
+			s := newStripeSeries(1, noopSeriesLifecycleCallback{})
+			_, created := s.setUnlessAlreadySet(lset.Hash(), lset, series)
+			require.True(t, created)
+
+			series.updateExemplarTimestamp(ts)
+			// An older exemplar must not shorten the lifetime of the series.
+			series.updateExemplarTimestamp(ts - 1)
+			s.gc(ts, 0)
+			require.Same(t, series, s.getByID(series.ref), "exemplar timestamp=%d", ts)
+
+			s.gc(ts+1, 0)
+			require.Nil(t, s.getByID(series.ref), "exemplar timestamp=%d", ts)
+		}
 	})
 
 	t.Run("keeps series until all reservations are released", func(t *testing.T) {
