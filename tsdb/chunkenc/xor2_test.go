@@ -188,7 +188,7 @@ func TestXOR2WindowSelection(t *testing.T) {
 			app, err := c.Appender()
 			require.NoError(t, err)
 			for i, s := range tc.samples {
-				if i == 4 {
+				if i == 5 {
 					// Resume appending after narrowing the window.
 					c.Reset(append([]byte(nil), c.Bytes()...))
 					app, err = c.Appender()
