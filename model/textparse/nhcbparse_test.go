@@ -1269,20 +1269,10 @@ metric: <
 	}
 }
 
-// TestNHCBUngroupedHistogramSeries shows that ungrouped classic histogram series in text format
-// will not be converted into a single histogram per label set by NHCBParser (specifically around
-// processClassicHistogramSeries, see <https://github.com/prometheus/prometheus/blob/main/model/textparse/nhcbparse.go>).
-//
-// Technically, such ungrouped ordering across label sets is allowed in the Prometheus text format
-// (<https://prometheus.io/docs/instrumenting/exposition_formats/#grouping-and-sorting> only requires
-// all lines for a given metric family to be provided as one single group and buckets to be in
-// increasing numerical "le" order), whereas OpenMetrics 1.0 explicitly forbids interleaving
-// Metrics and MetricPoints within a MetricFamily (<https://prometheus.io/docs/specs/om/open_metrics_spec/#metric-1>
-// and <https://prometheus.io/docs/specs/om/open_metrics_spec/#metricpoint-1>).
-//
-// Because NHCBParser is streaming and expects all classic histogram series (_bucket, _count, _sum)
-// for a single label set to appear contiguously, alphabetically sorted or ungrouped metric outputs
-// cause it to prematurely emit incomplete NHCB histograms whenever the label set changes.
+// TestNHCBUngroupedHistogramSeries documents a known limitation: NHCBParser is streaming and
+// expects all classic histogram series (_bucket, _count, _sum) of one label set to be contiguous,
+// so ungrouped (e.g. alphabetically sorted) input yields incomplete NHCB histograms.
+// See <https://github.com/prometheus/prometheus/pull/19050> for details.
 func TestNHCBUngroupedHistogramSeries(t *testing.T) {
 	input := `# TYPE test_histogram histogram
 test_histogram_bucket{a="1",le="1"} 1
