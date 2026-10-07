@@ -912,6 +912,41 @@ func (*mockChunkIterator) Err() error {
 }
 
 func TestChunkedSeriesIterator(t *testing.T) {
+	t.Run("fresh seek with nonpositive window bounds", func(t *testing.T) {
+		for _, tc := range []struct {
+			name             string
+			mint, ts, target int64
+		}{
+			{"zero lower bound", 0, 1, -1},
+			{"zero timestamp", 0, 0, -1},
+			{"negative lower bound", -2, -1, -3},
+			{"negative boundary timestamp", -2, -2, -3},
+		} {
+			t.Run(tc.name, func(t *testing.T) {
+				c := chunkenc.NewXORChunk()
+				app, err := c.Appender()
+				require.NoError(t, err)
+				app.Append(0, tc.ts, 17)
+				chks := []prompb.Chunk{{MinTimeMs: tc.ts, MaxTimeMs: tc.ts, Type: prompb.Chunk_XOR, Data: c.Bytes()}}
+
+				control := newChunkedSeriesIterator(chks, tc.mint, tc.ts)
+				require.Equal(t, chunkenc.ValFloat, control.Next())
+				require.Equal(t, tc.ts, control.AtT())
+				require.NoError(t, control.Err())
+
+				it := newChunkedSeriesIterator(chks, tc.mint, tc.ts)
+				require.Equal(t, chunkenc.ValFloat, it.Seek(tc.target))
+				ts, value := it.At()
+				require.Equal(t, tc.ts, ts)
+				require.Equal(t, float64(17), value)
+				require.Equal(t, chunkenc.ValFloat, it.Seek(tc.target))
+				require.Equal(t, tc.ts, it.AtT())
+				require.Equal(t, chunkenc.ValNone, it.Next())
+				require.NoError(t, it.Err())
+			})
+		}
+	})
+
 	t.Run("seek below window across chunks", func(t *testing.T) {
 		for _, tc := range []struct {
 			name                   string
