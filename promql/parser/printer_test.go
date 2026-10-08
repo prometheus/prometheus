@@ -15,6 +15,7 @@ package parser
 
 import (
 	"testing"
+	"time"
 
 	"github.com/stretchr/testify/require"
 
@@ -451,6 +452,47 @@ func TestVectorSelector_String(t *testing.T) {
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			require.Equal(t, tc.expected, tc.vs.String())
+		})
+	}
+}
+
+func TestMatrixSelector_String(t *testing.T) {
+	for _, tc := range []struct {
+		name          string
+		ms            MatrixSelector
+		expected      string
+		expectedShort string
+	}{
+		{
+			name: "vector selector",
+			ms: MatrixSelector{
+				VectorSelector: &VectorSelector{Name: "foobar"},
+				Range:          5 * time.Minute,
+			},
+			expected:      `foobar[5m]`,
+			expectedShort: `[5m]`,
+		},
+		{
+			// A failed parse can leave a non-vector expression as the operand.
+			name: "non-vector operand",
+			ms: MatrixSelector{
+				VectorSelector: &NumberLiteral{Val: 1},
+				Range:          5 * time.Minute,
+			},
+			expected:      `1[5m]`,
+			expectedShort: `[5m]`,
+		},
+		{
+			// A hand-built node may have no operand at all.
+			name:          "no operand",
+			ms:            MatrixSelector{Range: 5 * time.Minute},
+			expected:      `[5m]`,
+			expectedShort: `[5m]`,
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			require.Equal(t, tc.expected, tc.ms.String())
+			require.Equal(t, tc.expectedShort, tc.ms.ShortString())
 		})
 	}
 }
