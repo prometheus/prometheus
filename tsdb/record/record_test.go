@@ -425,7 +425,7 @@ func TestRecord_MinValidTimeDecodeWrongType(t *testing.T) {
 // V1 encoding correctly splits mixed regular and custom-bucket histograms into
 // separate records regardless of input ordering. The split is only meaningful
 // for V1, which keeps the two record types distinct for backwards
-// compatibility. See TestRecord_V2MixedRegularAndCustomBucketHistogram for the
+// compatibility. See TestRecord_V2HistogramRoundTrip for the
 // V2 behaviour.
 func TestRecord_V1MixedRegularAndCustomBucketHistogramPermutations(t *testing.T) {
 	dec := NewDecoder(labels.NewSymbolTable(), promslog.NewNopLogger())
@@ -593,7 +593,7 @@ func TestRecord_V1MixedRegularAndCustomBucketHistogramPermutations(t *testing.T)
 	}
 }
 
-// TestRecord_V2MixedRegularAndCustomBucketHistogram verifies that V2 encodes
+// TestRecord_V2HistogramRoundTrip verifies that V2 encodes
 // regular and custom-bucket histograms into a single HistogramSamplesV2 /
 // FloatHistogramSamplesV2 record. V2 drops the V1 split because the on-wire
 // format has no need to preserve backwards compatibility with readers that
