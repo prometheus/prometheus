@@ -34,6 +34,7 @@ import (
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/model/value"
 	"github.com/prometheus/prometheus/schema"
+	"github.com/prometheus/prometheus/util/convertnhcb"
 )
 
 const (
@@ -159,22 +160,33 @@ type openMetrics2Parser struct {
 	ignoreNativeHistograms  bool
 
 	// When true, a composite histogram that exposes both native fields and a
-	// classic bucket list emits the native histogram followed by classic
-	// _count/_sum/_bucket flat series. Mirrors the protobuf parser's
+	// classic bucket list (or a classic histogram converted to NHCB) emits
+	// the native histogram followed by classic _count/_sum/_bucket flat
+	// series. Mirrors the protobuf parser's
 	// KeepClassicOnClassicAndNativeHistograms option.
 	keepClassicOnNativeHist bool
+
+	// When true, classic histograms (without native schema/spans) are
+	// converted directly to native histograms with custom buckets (NHCB).
+	convertClassicHistToNHCB bool
+	tmpNHCB                  convertnhcb.TempHistogram
 }
 
 // NewOpenMetrics2Parser returns a new parser for the OpenMetrics 2.0 text
 // format.
 func NewOpenMetrics2Parser(b []byte, st *labels.SymbolTable, opts ParserOptions) Parser {
-	return &openMetrics2Parser{
-		l:                       &openMetrics2Lexer{b: b},
-		builder:                 labels.NewScratchBuilderWithSymbolTable(st, 16),
-		enableTypeAndUnitLabels: opts.EnableTypeAndUnitLabels,
-		ignoreNativeHistograms:  opts.IgnoreNativeHistograms,
-		keepClassicOnNativeHist: opts.KeepClassicOnClassicAndNativeHistograms,
+	p := &openMetrics2Parser{
+		l:                        &openMetrics2Lexer{b: b},
+		builder:                  labels.NewScratchBuilderWithSymbolTable(st, 16),
+		enableTypeAndUnitLabels:  opts.EnableTypeAndUnitLabels,
+		ignoreNativeHistograms:   opts.IgnoreNativeHistograms,
+		keepClassicOnNativeHist:  opts.KeepClassicOnClassicAndNativeHistograms,
+		convertClassicHistToNHCB: opts.ConvertClassicHistogramsToNHCB,
 	}
+	if opts.ConvertClassicHistogramsToNHCB {
+		p.tmpNHCB = convertnhcb.NewTempHistogram()
+	}
+	return p
 }
 
 // resetOnFamilyChange resets mtype/unit when name differs from curFamilyName.
@@ -938,6 +950,24 @@ func (p *openMetrics2Parser) parseHistogramComposite() (Entry, error) {
 		return EntryHistogram, nil
 	}
 
+	if p.convertClassicHistToNHCB {
+		h, fh, err := p.buildNHCBHistogram(cf, isNative)
+		if err != nil {
+			return EntryInvalid, fmt.Errorf("error parsing classic histogram composite: %w", err)
+		}
+		p.h = h
+		p.fh = fh
+		if p.keepClassicOnNativeHist {
+			pending, err := p.buildClassicHistogramPending(cf, isNative, p.hasTS, p.ts)
+			if err != nil {
+				return EntryInvalid, fmt.Errorf("error parsing classic histogram composite: %w", err)
+			}
+			p.pending = pending
+			p.pendingIdx = 0
+		}
+		return EntryHistogram, nil
+	}
+
 	// Classic histogram (or native histogram with ignoreNativeHistograms): explode into flat pending entries.
 	pending, err := p.buildClassicHistogramPending(cf, isNative, p.hasTS, p.ts)
 	if err != nil {
@@ -1348,10 +1378,10 @@ func (p *openMetrics2Parser) buildClassicHistogramPending(
 		if b.count < 0 && p.mtype != model.MetricTypeGaugeHistogram {
 			return nil, fmt.Errorf("invalid bucket: value must not be negative, got %v", b.count)
 		}
-		if b.le == "+Inf" {
+		if math.IsInf(b.lef, 1) {
 			hasPosInf = true
 		}
-		lset := p.buildPendingLabels(name, extraLabels, "le", b.le)
+		lset := p.buildPendingLabels(name, extraLabels, "le", labels.FormatOpenMetricsFloat(b.lef))
 		pending = append(pending, pendingEntry{
 			series: p.appendSeriesBytes(lset),
 			lset:   lset,
@@ -1364,6 +1394,78 @@ func (p *openMetrics2Parser) buildClassicHistogramPending(
 	}
 
 	return pending, nil
+}
+
+func (p *openMetrics2Parser) buildNHCBHistogram(cf compositeFields, isNative bool) (*histogram.Histogram, *histogram.FloatHistogram, error) {
+	isGauge := p.mtype == model.MetricTypeGaugeHistogram
+	countField, sumField := compFieldCount, compFieldSum
+	countKey, sumKey := "count", "sum"
+	if isGauge {
+		countField, sumField = compFieldGCount, compFieldGSum
+		countKey, sumKey = "gcount", "gsum"
+	}
+
+	cv, ok := cf.get(countField)
+	if !ok {
+		return nil, nil, fmt.Errorf("missing required field: %s", countKey)
+	}
+	count, err := strconv.ParseFloat(yoloString(cv), 64)
+	if err != nil {
+		return nil, nil, fmt.Errorf("invalid %s: %w", countKey, err)
+	}
+
+	sv, ok := cf.get(sumField)
+	if !ok {
+		return nil, nil, fmt.Errorf("missing required field: %s", sumKey)
+	}
+	sum, err := strconv.ParseFloat(yoloString(sv), 64)
+	if err != nil {
+		return nil, nil, fmt.Errorf("invalid %s: %w", sumKey, err)
+	}
+
+	p.tmpNHCB.Reset()
+	if err := p.tmpNHCB.SetCount(count); err != nil {
+		return nil, nil, err
+	}
+	if err := p.tmpNHCB.SetSum(sum); err != nil {
+		return nil, nil, err
+	}
+
+	bv, ok := cf.get(compFieldBucket)
+	if !ok {
+		if !isNative {
+			return nil, nil, errors.New("missing required field: bucket")
+		}
+	} else {
+		hasPosInf := false
+		for b, err := range parseBuckets(yoloString(bv)) {
+			if err != nil {
+				return nil, nil, fmt.Errorf("invalid bucket: %w", err)
+			}
+			if math.IsInf(b.lef, 1) {
+				hasPosInf = true
+			}
+			if err := p.tmpNHCB.SetBucketCount(b.lef, b.count); err != nil {
+				return nil, nil, err
+			}
+		}
+		if !hasPosInf {
+			return nil, nil, errors.New("classic histogram buckets must include a +Inf threshold")
+		}
+	}
+
+	h, fh, err := p.tmpNHCB.Convert()
+	if err != nil {
+		return nil, nil, err
+	}
+	if isGauge {
+		if h != nil {
+			h.CounterResetHint = histogram.GaugeType
+		} else {
+			fh.CounterResetHint = histogram.GaugeType
+		}
+	}
+	return h, fh, nil
 }
 
 func (p *openMetrics2Parser) buildSummaryPending(
@@ -1496,7 +1598,7 @@ func (p *openMetrics2Parser) buildPendingLabels(name string, extra []labels.Labe
 
 // bucketEntry holds one parsed classic histogram bucket.
 type bucketEntry struct {
-	le    string
+	lef   float64
 	count float64
 }
 
@@ -1548,9 +1650,7 @@ func parseBuckets(s string) iter.Seq2[bucketEntry, error] {
 			}
 			firstLe = false
 			prevLe = lef
-			// Normalise le to OpenMetrics float format.
-			le = labels.FormatOpenMetricsFloat(lef)
-			if !yield(bucketEntry{le: le, count: count}, nil) {
+			if !yield(bucketEntry{lef: lef, count: count}, nil) {
 				return
 			}
 		}
