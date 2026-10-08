@@ -368,19 +368,8 @@ func (p *NHCBParser) processNHCB() bool {
 	}
 	h, fh, err := p.tempNHCB.Convert()
 	if err == nil {
-		if h != nil {
-			if err := h.Validate(); err != nil {
-				return false
-			}
-			p.hNHCB = h
-			p.fhNHCB = nil
-		} else if fh != nil {
-			if err := fh.Validate(); err != nil {
-				return false
-			}
-			p.hNHCB = nil
-			p.fhNHCB = fh
-		}
+		p.hNHCB = h
+		p.fhNHCB = fh
 
 		lblsWithMetricName := p.tempLsetNHCB.DropReserved(func(n string) bool { return n == labels.MetricName })
 		// Ensure we return `metric` instead of `metric{}` for name only

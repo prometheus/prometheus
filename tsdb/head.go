@@ -123,6 +123,13 @@ type Head struct {
 	walExpiriesMtx sync.Mutex
 	walExpiries    map[chunks.HeadSeriesRef]int64 // Series no longer in the head, and what time they must be kept until.
 
+	wblPinnedSeriesRefsMtx sync.Mutex
+	// Series references that the WBL uses. WAL replay maps each one onto a
+	// series that the head holds under a different reference. The mapping
+	// exists only in memory. The records must stay in the WAL until
+	// out-of-order compaction writes the WBL into a block.
+	wblPinnedSeriesRefs map[chunks.HeadSeriesRef]struct{}
+
 	// TODO(codesome): Extend MemPostings to return only OOOPostings, Set OOOStatus, ... Like an additional map of ooo postings.
 	postings *index.MemPostings // Postings lists for terms.
 
@@ -395,6 +402,7 @@ func (h *Head) resetInMemoryState() error {
 	h.postings = index.NewUnorderedMemPostings()
 	h.tombstones = tombstones.NewMemTombstones()
 	h.walExpiries = map[chunks.HeadSeriesRef]int64{}
+	h.wblPinnedSeriesRefs = map[chunks.HeadSeriesRef]struct{}{}
 	h.chunkRange.Store(h.opts.ChunkRange)
 	h.minTime.Store(math.MaxInt64)
 	h.maxTime.Store(math.MinInt64)
@@ -1625,12 +1633,53 @@ func (h *Head) updateWALExpiry(id chunks.HeadSeriesRef, keepUntil int64) {
 	h.walExpiries[id] = max(keepUntil, h.walExpiries[id])
 }
 
+// pinWBLSeriesRefs marks series references that the WBL uses. WAL replay maps
+// each one onto a series that the head holds under a different reference. These
+// series records must stay in the WAL until out-of-order compaction writes the
+// WBL into a block. Nothing writes the mapping to disk.
+func (h *Head) pinWBLSeriesRefs(refs map[chunks.HeadSeriesRef]struct{}) {
+	h.wblPinnedSeriesRefsMtx.Lock()
+	defer h.wblPinnedSeriesRefsMtx.Unlock()
+
+	for ref := range refs {
+		h.wblPinnedSeriesRefs[ref] = struct{}{}
+	}
+}
+
+// isWBLPinnedSeriesRef reports whether the WBL uses id through a mapping that
+// WAL replay made.
+func (h *Head) isWBLPinnedSeriesRef(id chunks.HeadSeriesRef) bool {
+	h.wblPinnedSeriesRefsMtx.Lock()
+	defer h.wblPinnedSeriesRefsMtx.Unlock()
+
+	_, ok := h.wblPinnedSeriesRefs[id]
+	return ok
+}
+
+// releaseWBLPinnedSeriesRefs forgets every pinned reference. Call it only after
+// truncation removes the WBL segments that use them.
+func (h *Head) releaseWBLPinnedSeriesRefs() {
+	h.wblPinnedSeriesRefsMtx.Lock()
+	defer h.wblPinnedSeriesRefsMtx.Unlock()
+
+	h.wblPinnedSeriesRefs = map[chunks.HeadSeriesRef]struct{}{}
+}
+
 // keepSeriesInWALCheckpointFn returns a function that is used to determine whether a series record should be kept in the checkpoint.
 // mint is the time before which data in the WAL is being truncated.
 func (h *Head) keepSeriesInWALCheckpointFn(mint int64) func(id chunks.HeadSeriesRef) bool {
 	return func(id chunks.HeadSeriesRef) bool {
 		// Keep the record if the series exists in the head.
 		if h.series.getByID(id) != nil {
+			return true
+		}
+
+		// Keep the record if the WBL uses this reference. The record resolves
+		// the reference, so the out-of-order samples are lost if the WAL drops
+		// it. The mint parameter cannot express this lifetime. An out-of-order
+		// sample has a timestamp below the in-order data that the checkpoint
+		// truncates.
+		if h.isWBLPinnedSeriesRef(id) {
 			return true
 		}
 
@@ -1736,7 +1785,14 @@ func (h *Head) truncateOOO(lastWBLFile int, newMinOOOMmapRef chunks.ChunkDiskMap
 		return nil
 	}
 
-	return h.wbl.Truncate(lastWBLFile)
+	if err := h.wbl.Truncate(lastWBLFile); err != nil {
+		return err
+	}
+
+	// The truncated segments held every WBL record from before the last replay.
+	// No reference that the replay made is still necessary.
+	h.releaseWBLPinnedSeriesRefs()
+	return nil
 }
 
 // truncateSeriesAndChunkDiskMapper is a helper function for truncateMemory and truncateOOO.
@@ -2507,6 +2563,14 @@ func (s *stripeSeries) gc(mint int64, minOOOMmapRef chunks.ChunkDiskMapperRef) (
 			}
 			return
 		}
+		// Exemplars are not persisted in blocks. Keep their series reference resolvable
+		// until WAL truncation and replay can discard them by timestamp. An empty
+		// series retained for exemplars must not affect the minimum sample time.
+		if series.hasExemplar && series.lastExemplarTs >= mint {
+			// Clear the appender so it does not retain the removed sample chunk.
+			series.app = nil
+			return
+		}
 		// The series is gone entirely. We need to keep the series lock
 		// and make sure we have acquired the stripe locks for hash and ID of the
 		// series alike.
@@ -2544,17 +2608,42 @@ func (s *stripeSeries) gc(mint int64, minOOOMmapRef chunks.ChunkDiskMapperRef) (
 	return deleted, affected, rmChunks, staleSeriesDeleted, histogramSeriesDeleted, histogramBucketsDeleted, actualMint, minOOOTime, minMmapFile
 }
 
-// gcSeries removes the provided series from the head index and updates head metrics,
-// postings, tombstones and WAL expiries accordingly. shouldEvict is the per-series predicate
-// applied after the safety check for series that received fresh samples since the caller
-// collected the ref list.
+// gcSeries removes eligible series from the head index and updates head metrics,
+// postings, tombstones and WAL expiries accordingly. Series with pending commits
+// or samples after maxt are skipped. The caller's shouldEvict predicate runs under
+// the series lock and must reject series with unpersisted samples or out-of-order data.
+// Series whose exemplars still need replay retain their identity, but their persisted
+// sample chunks are released if shouldEvict returns true.
 //
 // The returned references are the series that got deleted.
 func (h *Head) gcSeries(seriesRefs []storage.SeriesRef, maxt int64, shouldEvict func(*memSeries) bool) map[storage.SeriesRef]struct{} {
-	// Drop old chunks and remember series IDs and hashes if they can be
-	// deleted entirely.
-	deleted, affected, chunksRemoved, staleSeriesDeleted, histogramSeriesDeleted, histogramBucketsDeleted := h.series.gcSeries(seriesRefs, maxt, shouldEvict)
+	minValidTime := h.minValidTime.Load()
+	var protectedChunksRemoved int
+	deleted, affected, chunksRemoved, staleSeriesDeleted, histogramSeriesDeleted, histogramBucketsDeleted := h.series.gcSeries(seriesRefs, maxt, func(s *memSeries) bool {
+		// Keep unpersisted samples before considering chunk removal or series eviction.
+		if !shouldEvict(s) {
+			return false
+		}
+		// Delete the series if it has no exemplar at or after the WAL replay cutoff.
+		if !s.hasExemplar || s.lastExemplarTs < minValidTime {
+			return true
+		}
+
+		// Free the persisted sample chunks, but keep the series identity for exemplar replay.
+		// Memory mapping keeps the newest chunk in memory, so it needs at least two head chunks.
+		wasMmapReady := s.headChunkCount.Load() >= 2
+		protectedChunksRemoved += s.truncateChunksBefore(math.MaxInt64, 0)
+		// Clear the appender because it references the removed head chunk.
+		s.app = nil
+		// The series no longer has enough chunks to be ready for memory mapping.
+		if wasMmapReady && s.headChunkCount.Load() < 2 {
+			h.series.decMmapReady(s.ref)
+		}
+		// Prevent deletion of the series identity while its exemplar can still be replayed.
+		return false
+	})
 	seriesRemoved := len(deleted)
+	chunksRemoved += protectedChunksRemoved
 
 	h.metrics.seriesRemoved.Add(float64(seriesRemoved))
 	h.metrics.chunksRemoved.Add(float64(chunksRemoved))
@@ -2902,6 +2991,12 @@ type memSeries struct {
 
 	lset labels.Labels // Locking required with -tags dedupelabels, not otherwise.
 
+	// Latest accepted exemplar timestamp, including exemplars awaiting commit.
+	// A rolled-back exemplar may conservatively delay eviction until this time.
+	lastExemplarTs int64
+	// Whether an exemplar timestamp has been recorded, including zero or negative timestamps.
+	hasExemplar bool
+
 	// Immutable chunks on disk that have not yet gone into a block, in order of ascending time stamps.
 	// When compaction runs, chunks get moved into a block and all pointers are shifted like so:
 	//
@@ -3041,6 +3136,16 @@ func newMemSeries(lset labels.Labels, id chunks.HeadSeriesRef, shardHash uint64,
 		s.txs = newTxRing(0)
 	}
 	return s
+}
+
+// updateExemplarTimestamp records the latest exemplar time while holding the series lock.
+func (s *memSeries) updateExemplarTimestamp(ts int64) {
+	s.Lock()
+	if !s.hasExemplar || ts > s.lastExemplarTs {
+		s.lastExemplarTs = ts
+	}
+	s.hasExemplar = true
+	s.Unlock()
 }
 
 func (s *memSeries) minTime() int64 {

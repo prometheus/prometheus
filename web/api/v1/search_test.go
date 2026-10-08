@@ -309,6 +309,21 @@ func TestSearchMetricNames(t *testing.T) {
 				missing:  []string{"process_cpu_seconds"},
 			},
 			{
+				// A counter family named with _total is in the Prometheus text
+				// style, so its series has the family name, as in
+				// isSeriesPartOfFamily in scrape/scrape.go.
+				name:     "Prometheus counter with doubled suffix",
+				metadata: scrape.MetricMetadata{MetricFamily: "process_cpu_seconds_total", Type: model.MetricTypeCounter, Help: "Total CPU time.", Unit: "seconds"},
+				matching: []string{"process_cpu_seconds_total"},
+				missing:  []string{"process_cpu_seconds_total_total"},
+			},
+			{
+				name:     "exact metadata for doubled suffix",
+				metadata: scrape.MetricMetadata{MetricFamily: "requests_total_total", Type: model.MetricTypeGauge, Help: "Independent gauge."},
+				extra:    []scrape.MetricMetadata{{MetricFamily: "requests_total", Type: model.MetricTypeCounter, Help: "Requests."}},
+				matching: []string{"requests_total_total"},
+			},
+			{
 				name:     "conflicting types across targets",
 				metadata: scrape.MetricMetadata{MetricFamily: "requests", Type: model.MetricTypeCounter, Help: "Requests."},
 				extra:    []scrape.MetricMetadata{{MetricFamily: "requests", Type: model.MetricTypeGauge, Help: "In-flight requests."}},
@@ -352,6 +367,12 @@ func TestSearchMetricNames(t *testing.T) {
 				metadata: scrape.MetricMetadata{MetricFamily: "target", Type: model.MetricTypeInfo, Help: "Target information."},
 				matching: []string{"target_info"},
 				missing:  []string{"target_total", "target_created"},
+			},
+			{
+				name:     "Prometheus info with doubled suffix",
+				metadata: scrape.MetricMetadata{MetricFamily: "go_build_info", Type: model.MetricTypeInfo, Help: "Build information."},
+				matching: []string{"go_build_info"},
+				missing:  []string{"go_build_info_info"},
 			},
 			{
 				name:     "unknown type",
