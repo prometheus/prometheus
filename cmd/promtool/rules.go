@@ -34,7 +34,7 @@ import (
 const maxSamplesInMemory = 5000
 
 type queryRangeAPI interface {
-	QueryRange(ctx context.Context, query string, r v1.Range, opts ...v1.Option) (model.Value, v1.Warnings, error)
+	QueryRange(ctx context.Context, query string, r v1.Range, opts ...v1.Option) (model.Value, v1.Warnings, v1.Infos, error)
 }
 
 type ruleImporter struct {
@@ -115,7 +115,7 @@ func (importer *ruleImporter) importRule(ctx context.Context, ruleExpr, ruleName
 		if end.Before(startWithAlignment) {
 			break
 		}
-		val, warnings, err := importer.apiClient.QueryRange(ctx,
+		val, warnings, infos, err := importer.apiClient.QueryRange(ctx,
 			ruleExpr,
 			v1.Range{
 				Start: startWithAlignment,
@@ -128,6 +128,9 @@ func (importer *ruleImporter) importRule(ctx context.Context, ruleExpr, ruleName
 		}
 		if warnings != nil {
 			importer.logger.Warn("Range query returned warnings.", "warnings", warnings)
+		}
+		if infos != nil {
+			importer.logger.Info("Range query returned infos.", "infos", infos)
 		}
 
 		// To prevent races with compaction, a block writer only allows appending samples
