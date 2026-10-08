@@ -13,4 +13,5 @@
 
 export { buildLabelMatchers, labelMatchersToString } from './matcher';
 export { Parser } from './parser';
+export * from './utf8';
 export { walkBackward, containsAtLeastOneChild, containsChild } from './path-finder';

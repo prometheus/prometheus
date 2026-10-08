@@ -11,6 +11,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+import nock from 'nock';
 import { HTTPPrometheusClient, CachedPrometheusClient } from './prometheus';
 
 describe('HTTPPrometheusClient destroy', () => {
@@ -93,5 +94,37 @@ describe('CachedPrometheusClient destroy', () => {
 
     // Should not throw even though underlying client has no destroy
     expect(() => cachedClient.destroy()).not.toThrow();
+  });
+});
+
+describe('HTTPPrometheusClient utf-8 names', () => {
+  afterEach(() => {
+    nock.cleanAll();
+  });
+
+  const testCases = [
+    {
+      title: 'escapes the label name in the path, and quotes the metric name in the selector',
+      labelName: 'http.status_code',
+      metricName: 'http.requests',
+      path: '/api/v1/label/U__http_2e_status__code/values',
+      selector: '{"http.requests"}',
+    },
+    { title: 'does not escape a legacy label name', labelName: 'job', metricName: 'up', path: '/api/v1/label/job/values', selector: 'up' },
+    { title: 'does not escape __name__ and has no selector without a metric name', labelName: '__name__', path: '/api/v1/label/__name__/values' },
+    { title: 'escapes non-ascii characters of the label name', labelName: 'é😀', path: '/api/v1/label/U___e9__1f600_/values' },
+    { title: 'escapes characters that have a meaning in a replacement string', labelName: 'a$&b', path: '/api/v1/label/U__a_24__26_b/values' },
+    { title: 'escapes a label name containing a colon', labelName: 'a:b', path: '/api/v1/label/a:b/values' },
+  ];
+  testCases.forEach((value) => {
+    it(value.title, async () => {
+      const scope = nock('http://localhost:8080')
+        .get(value.path)
+        .query((query) => query['match[]'] === value.selector)
+        .reply(200, { status: 'success', data: ['200', '500'] });
+      const client = new HTTPPrometheusClient({ url: 'http://localhost:8080' });
+      await expect(client.labelValues(value.labelName, value.metricName)).resolves.toEqual(['200', '500']);
+      expect(scope.isDone()).toBe(true);
+    });
   });
 });

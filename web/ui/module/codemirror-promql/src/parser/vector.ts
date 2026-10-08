@@ -18,6 +18,7 @@ import {
   BinaryExpr,
   MatchingModifierClause,
   LabelName,
+  QuotedLabelName,
   GroupingLabels,
   GroupLeft,
   GroupRight,
@@ -32,6 +33,20 @@ import {
 } from '@prometheus-io/lezer-promql';
 import { VectorMatchCardinality, VectorMatching } from '../types';
 import { containsAtLeastOneChild } from './path-finder';
+import { unquotePromQLString } from './utf8';
+
+// Returns the label names of a GroupingLabels node, whether they are quoted or not.
+function getLabelNames(state: EditorState, groupingLabels: SyntaxNode | null | undefined): string[] {
+  const names: string[] = [];
+  for (let child = groupingLabels?.firstChild ?? null; child; child = child.nextSibling) {
+    if (child.type.id === LabelName) {
+      names.push(state.sliceDoc(child.from, child.to));
+    } else if (child.type.id === QuotedLabelName) {
+      names.push(unquotePromQLString(state.sliceDoc(child.from, child.to)));
+    }
+  }
+  return names;
+}
 
 export function buildVectorMatching(state: EditorState, binaryNode: SyntaxNode): VectorMatching | null {
   if (!binaryNode || binaryNode.type.id !== BinaryExpr) {
@@ -50,22 +65,14 @@ export function buildVectorMatching(state: EditorState, binaryNode: SyntaxNode):
   const modifierClause = binaryNode.getChild(MatchingModifierClause);
   if (modifierClause) {
     result.on = modifierClause.getChild(On) !== null;
-    const labelNode = modifierClause.getChild(GroupingLabels);
-    const labels = labelNode ? labelNode.getChildren(LabelName) : [];
-    for (const label of labels) {
-      result.matchingLabels.push(state.sliceDoc(label.from, label.to));
-    }
+    result.matchingLabels.push(...getLabelNames(state, modifierClause.getChild(GroupingLabels)));
 
     const groupLeft = modifierClause.getChild(GroupLeft);
     const groupRight = modifierClause.getChild(GroupRight);
     const group = groupLeft || groupRight;
     if (group) {
       result.card = groupLeft ? VectorMatchCardinality.CardManyToOne : VectorMatchCardinality.CardOneToMany;
-      const labelNode = group.nextSibling;
-      const labels = labelNode?.getChildren(LabelName) || [];
-      for (const label of labels) {
-        result.include.push(state.sliceDoc(label.from, label.to));
-      }
+      result.include.push(...getLabelNames(state, group.nextSibling));
     }
   }
 
