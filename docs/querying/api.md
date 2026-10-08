@@ -608,7 +608,7 @@ Common URL query parameters:
 - `limit=<number>`: Maximum number of returned results. Optional. Default is
   100.
 - `batch_size=<number>`: Preferred number of results per NDJSON batch.
-  Optional. Default is 100.
+  Optional. Default is 100. Clamped to 1000 and the effective result limit.
 
 The `start` and `end` parameters narrow results to the selected time window.
 Results may include values from series active slightly outside that window,
@@ -618,6 +618,25 @@ Additional parameters for `/api/v1/search/metric_names`:
 
 - `include_metadata=<bool>`: Include metric metadata in each result.
 - `sort_by=<alpha | score>`
+
+Metadata is matched by the exact metric name first, then by the metric family
+name for suffixes supported by that family's type:
+
+- `_total` for counters.
+- `_bucket`, `_sum`, and `_count` for histograms.
+- `_bucket`, `_sum`, `_count`, `_gsum`, and `_gcount` for gauge histograms.
+- `_sum` and `_count` for summaries.
+- `_info` for info metrics.
+
+A metric family name that already ends with `_total` or `_info` is not matched
+for the same suffix again: e.g. `requests_total_total` does not get the
+metadata of a `requests_total` counter.
+
+The returned `type`, `help`, and `unit` describe the metric family, not the
+individual series: e.g. `http_request_duration_seconds_bucket` is reported with
+type `histogram`. Matching is done by name against metadata from active
+targets, so it is best-effort. Metadata fields are omitted when no matching
+metadata is available.
 
 Additional parameters for `/api/v1/search/label_names`:
 

@@ -1576,6 +1576,65 @@ func BenchmarkPrometheusConverter_FromMetrics(b *testing.B) {
 	}
 }
 
+// BenchmarkPrometheusConverter_FromMetrics_ExplicitHistogram measures explicit
+// histogram conversion as the number of data points and finite bounds changes.
+func BenchmarkPrometheusConverter_FromMetrics_ExplicitHistogram(b *testing.B) {
+	for _, tc := range []struct {
+		dataPoints   int
+		finiteBounds int
+	}{
+		{dataPoints: 1, finiteBounds: 1},
+		{dataPoints: 1, finiteBounds: 64},
+		{dataPoints: 64, finiteBounds: 1},
+		{dataPoints: 64, finiteBounds: 64},
+	} {
+		b.Run(fmt.Sprintf("points=%d/bounds=%d", tc.dataPoints, tc.finiteBounds), func(b *testing.B) {
+			settings := Settings{}
+			payload := createExplicitHistogramExportRequest(tc.dataPoints, tc.finiteBounds)
+			b.ReportAllocs()
+			b.ResetTimer()
+
+			for b.Loop() {
+				app := &noOpAppender{}
+				converter := NewPrometheusConverter(app)
+				annots, err := converter.FromMetrics(context.Background(), payload.Metrics(), settings)
+				require.NoError(b, err)
+				require.Empty(b, annots)
+				require.Positive(b, app.samples)
+				require.Positive(b, app.metadata)
+			}
+		})
+	}
+}
+
+func createExplicitHistogramExportRequest(dataPoints, finiteBounds int) pmetricotlp.ExportRequest {
+	request := pmetricotlp.NewExportRequest()
+	metrics := request.Metrics().ResourceMetrics().AppendEmpty().ScopeMetrics().AppendEmpty().Metrics()
+	metric := metrics.AppendEmpty()
+	metric.SetName("explicit_histogram")
+	histogram := metric.SetEmptyHistogram()
+	histogram.SetAggregationTemporality(pmetric.AggregationTemporalityCumulative)
+
+	bounds := make([]float64, finiteBounds)
+	bucketCounts := make([]uint64, finiteBounds+1)
+	for i := range bounds {
+		bounds[i] = float64(i + 1)
+		bucketCounts[i] = 1
+	}
+	bucketCounts[finiteBounds] = 1
+
+	for i := range dataPoints {
+		point := histogram.DataPoints().AppendEmpty()
+		point.SetTimestamp(pcommon.NewTimestampFromTime(time.Unix(int64(i), 0)))
+		point.SetCount(uint64(finiteBounds + 1))
+		point.SetSum(float64(finiteBounds + 1))
+		point.ExplicitBounds().FromRaw(bounds)
+		point.BucketCounts().FromRaw(bucketCounts)
+		point.Attributes().PutStr("test_label", "test_value")
+	}
+	return request
+}
+
 type noOpAppender struct {
 	samples    int
 	histograms int

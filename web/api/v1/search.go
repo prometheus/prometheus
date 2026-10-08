@@ -48,6 +48,7 @@ import (
 	"time"
 
 	jsoniter "github.com/json-iterator/go"
+	"github.com/prometheus/common/model"
 	"go.uber.org/atomic"
 
 	"github.com/prometheus/prometheus/model/labels"
@@ -65,6 +66,9 @@ const defaultSearchLimit = 100
 
 // defaultSearchBatchSize is the default value for the batch_size parameter when the client omits it.
 const defaultSearchBatchSize = 100
+
+// maxSearchBatchSize bounds batch allocations even when the result limit is uncapped.
+const maxSearchBatchSize = 1000
 
 // maxSearchTermsPerRequest caps the number of search[] query parameters
 // accepted in one request. Per-value filter cost grows with the number of
@@ -293,6 +297,7 @@ func (api *API) parseSearchParams(r *http.Request) (searchParams, *apiError) {
 		}
 		sp.batchSize = bs
 	}
+	sp.batchSize = min(sp.batchSize, sp.limit, maxSearchBatchSize)
 
 	return sp, nil
 }
@@ -333,7 +338,7 @@ const metricMetadataCacheTTL = 5 * time.Second
 // non-nil entry can read built and data without further synchronisation.
 type metadataCacheEntry struct {
 	built time.Time
-	data  map[string]scrape.MetricMetadata
+	data  map[string][]scrape.MetricMetadata
 }
 
 // searchMetadataCache caches the metric metadata map produced by
@@ -347,7 +352,8 @@ type searchMetadataCache struct {
 }
 
 // buildMetricMetadataMap snapshots metric metadata across all active targets
-// into a single map keyed by metric family name. It is intended to be called
+// into a single map keyed by metric family name. Each family holds the first
+// metadata seen for every distinct type. It is intended to be called
 // once per request when include_metadata=true so that per-result metadata
 // lookups are O(1) and we acquire the scrape manager lock only once instead
 // of once per emitted result.
@@ -362,15 +368,18 @@ type searchMetadataCache struct {
 // is shared across concurrent requests, and any mutation would race with
 // every other reader holding the same reference.
 //
-// Iteration order over active targets is non-deterministic; for a metric name
-// that appears on multiple targets we keep the first metadata seen, matching
-// the prior per-result fallthrough behaviour.
+// Iteration order over active targets is non-deterministic; for a metric
+// family that appears on multiple targets with the same type we keep the
+// first metadata seen, matching the prior per-result fallthrough behaviour.
+// Distinct types are all kept so that whether metadataForMetric finds a
+// suffix match does not depend on which target was seen first. If multiple
+// types allow the suffix, the first compatible metadata entry wins.
 //
 // The traversal aborts as soon as ctx is done so a request that the client
 // has already abandoned (or one that has run past its deadline) does not
 // keep accumulating per-target locks. Callers tolerate a partial map: a
 // missing entry just means the result is emitted without metadata.
-func (api *API) buildMetricMetadataMap(ctx context.Context) map[string]scrape.MetricMetadata {
+func (api *API) buildMetricMetadataMap(ctx context.Context) map[string][]scrape.MetricMetadata {
 	if c := api.metaCache; c != nil {
 		if e := c.entry.Load(); e != nil && api.now().Sub(e.built) < metricMetadataCacheTTL {
 			return e.data
@@ -381,7 +390,7 @@ func (api *API) buildMetricMetadataMap(ctx context.Context) map[string]scrape.Me
 	if tr == nil {
 		return nil
 	}
-	out := map[string]scrape.MetricMetadata{}
+	out := map[string][]scrape.MetricMetadata{}
 	for _, targets := range tr.TargetsActive() {
 		if ctx.Err() != nil {
 			return out
@@ -394,8 +403,9 @@ func (api *API) buildMetricMetadataMap(ctx context.Context) map[string]scrape.Me
 				if ctx.Err() != nil {
 					return out
 				}
-				if _, exists := out[md.MetricFamily]; !exists {
-					out[md.MetricFamily] = md
+				mds := out[md.MetricFamily]
+				if !slices.ContainsFunc(mds, func(m scrape.MetricMetadata) bool { return m.Type == md.Type }) {
+					out[md.MetricFamily] = append(mds, md)
 				}
 			}
 		}
@@ -405,6 +415,58 @@ func (api *API) buildMetricMetadataMap(ctx context.Context) map[string]scrape.Me
 		api.metaCache.entry.Store(&metadataCacheEntry{built: api.now(), data: out})
 	}
 	return out
+}
+
+// metadataForMetric returns the metadata of the metric family a metric name
+// belongs to. An exact match on the family name wins. Otherwise the last
+// suffix is stripped and the metadata is returned if the family type allows
+// that suffix.
+//
+// A family name that already ends with _total or _info is in the Prometheus
+// text style, where the series has the family name, so it is not matched for
+// the same suffix again: x_total_total is not a series of the x_total family.
+// This follows isSeriesPartOfFamily in scrape/scrape.go.
+func metadataForMetric(metaMap map[string][]scrape.MetricMetadata, name string) (scrape.MetricMetadata, bool) {
+	if mds := metaMap[name]; len(mds) > 0 {
+		return mds[0], true
+	}
+	i := strings.LastIndexByte(name, '_')
+	if i < 0 {
+		return scrape.MetricMetadata{}, false
+	}
+	family, suffix := name[:i], name[i:]
+	if (suffix == "_total" || suffix == "_info") && strings.HasSuffix(family, suffix) {
+		return scrape.MetricMetadata{}, false
+	}
+	for _, md := range metaMap[family] {
+		if typeAllowsSuffix(md.Type, suffix) {
+			return md, true
+		}
+	}
+	return scrape.MetricMetadata{}, false
+}
+
+// typeAllowsSuffix reports whether series of a metric family with the given
+// type can be named with the given suffix. It follows isSeriesPartOfFamily in
+// scrape/scrape.go (see #17900) and additionally accepts _sum and _count for
+// gauge histograms, which is how the protobuf parser names them. The _created
+// suffix is not accepted because that series holds a timestamp, not a value of
+// the family type.
+func typeAllowsSuffix(typ model.MetricType, suffix string) bool {
+	switch suffix {
+	case "_total":
+		return typ == model.MetricTypeCounter
+	case "_bucket":
+		return typ == model.MetricTypeHistogram || typ == model.MetricTypeGaugeHistogram
+	case "_sum", "_count":
+		return typ == model.MetricTypeHistogram || typ == model.MetricTypeGaugeHistogram || typ == model.MetricTypeSummary
+	case "_gsum", "_gcount":
+		return typ == model.MetricTypeGaugeHistogram
+	case "_info":
+		return typ == model.MetricTypeInfo
+	default:
+		return false
+	}
 }
 
 // sortOrdering maps sort_by and sort_dir parameters to a storage.Ordering.
@@ -461,7 +523,11 @@ func (s *searchResultStreamer[T]) nextBatch() ([]T, error) {
 	if s.hasMore {
 		return nil, nil
 	}
-	batch := make([]T, 0, s.batchSize)
+	capacity := s.batchSize
+	if s.limit > 0 {
+		capacity = min(capacity, s.limit-s.emitted)
+	}
+	batch := make([]T, 0, capacity)
 	for len(batch) < s.batchSize {
 		if s.limit > 0 && s.emitted >= s.limit {
 			if s.rs.Next() {
@@ -770,7 +836,7 @@ func (api *API) searchMetricNames(w http.ResponseWriter, r *http.Request) {
 	// cost. The streamer drives toResult from a single goroutine, so the
 	// captured flag does not need a lock.
 	var (
-		metaMap     map[string]scrape.MetricMetadata
+		metaMap     map[string][]scrape.MetricMetadata
 		metaMapDone bool
 	)
 
@@ -786,7 +852,7 @@ func (api *API) searchMetricNames(w http.ResponseWriter, r *http.Request) {
 				metaMap = api.buildMetricMetadataMap(ctx)
 				metaMapDone = true
 			}
-			if md, ok := metaMap[sr.Value]; ok {
+			if md, ok := metadataForMetric(metaMap, sr.Value); ok {
 				result.Type = string(md.Type)
 				result.Help = md.Help
 				result.Unit = md.Unit

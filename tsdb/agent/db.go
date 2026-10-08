@@ -548,11 +548,8 @@ func (db *DB) loadWAL(r *wlog.Reader, duplicateRefToValidRef map[chunks.HeadSeri
 				// stripeSeries.exemplars in the next block by using setLatestExemplar.
 				continue
 			default:
-				errCh <- &wlog.CorruptionErr{
-					Err:     fmt.Errorf("invalid record type %v", dec.Type(rec)),
-					Segment: r.Segment(),
-					Offset:  r.Offset(),
-				}
+				// Unknown records are ignored, enabling users to roll back.
+				// If this behaviour changes, update both server and agent replay.
 			}
 		}
 	}()
@@ -777,7 +774,11 @@ func (db *DB) truncate(mint int64) error {
 	if db.opts.CheckpointFromInMemorySeries {
 		err = Checkpoint(db.logger, db.wal, last, db.opts.CheckpointBatchSize, db.series.allSeries(), deletedSeriesIter(db.deleted, last))
 	} else {
-		_, err = wlog.Checkpoint(db.logger, db.wal, first, last, db.keepSeriesInWALCheckpointFn(last), mint, db.opts.EnableSTStorage)
+		// writeMinValidTime is false: the agent has no use for ReadMinValidTime, and unlike
+		// Head's own replay, the agent's replay treats any unrecognized record type as
+		// corruption. Writing that record here would risk data loss on a downgrade to an
+		// older agent that doesn't know about it.
+		_, err = wlog.Checkpoint(db.logger, db.wal, first, last, db.keepSeriesInWALCheckpointFn(last), mint, db.opts.EnableSTStorage, false)
 	}
 
 	if err != nil {

@@ -565,6 +565,121 @@ func TestFanoutAppenderV2(t *testing.T) {
 	}
 }
 
+func TestFanoutAppenderV2_AppendExemplars(t *testing.T) {
+	h := tsdbutil.GenerateTestHistogram(0)
+	fh := tsdbutil.GenerateTestFloatHistogram(0)
+	ex := exemplar.Exemplar{Value: 1}
+
+	expected := []sample{
+		{L: labels.FromStrings(model.MetricNameLabel, "metric1"), ST: -1, V: 1, ES: []exemplar.Exemplar{ex}},
+		{L: labels.FromStrings(model.MetricNameLabel, "metric2"), ST: -2, T: 1, H: h},
+		{L: labels.FromStrings(model.MetricNameLabel, "metric3"), ST: -3, T: 2, FH: fh},
+	}
+
+	for _, tt := range fanoutAppenderTestCases(expected) {
+		t.Run(tt.name, func(t *testing.T) {
+			f := storage.NewFanout(nil, mockStorage{appV2: tt.primary}, mockStorage{appV2: tt.secondary})
+
+			app := f.AppenderV2(t.Context())
+			exApp, ok := app.(storage.ExemplarAppenderV2)
+			require.True(t, ok)
+
+			ref, err := exApp.Append(0, labels.FromStrings(model.MetricNameLabel, "metric1"), -1, 0, 1, nil, nil, storage.AOptions{})
+			if tt.expectAppendErr {
+				require.Error(t, err)
+			} else {
+				require.NoError(t, err)
+			}
+
+			_, err = exApp.AppendExemplars(ref, labels.FromStrings(model.MetricNameLabel, "metric1"), []exemplar.Exemplar{ex})
+			switch {
+			case tt.expectAppendErr:
+				require.Error(t, err)
+			case tt.expectExemplarError:
+				var pErr *storage.AppendPartialError
+				require.ErrorAs(t, err, &pErr)
+				require.Len(t, pErr.ExemplarErrors, 2)
+			default:
+				require.NoError(t, err)
+			}
+
+			_, err = exApp.Append(0, labels.FromStrings(model.MetricNameLabel, "metric2"), -2, 1, 0, h, nil, storage.AOptions{})
+			if tt.expectAppendErr {
+				require.Error(t, err)
+			} else {
+				require.NoError(t, err)
+			}
+
+			_, err = exApp.Append(0, labels.FromStrings(model.MetricNameLabel, "metric3"), -3, 2, 0, nil, fh, storage.AOptions{})
+			if tt.expectAppendErr {
+				require.Error(t, err)
+			} else {
+				require.NoError(t, err)
+			}
+
+			err = exApp.Commit()
+			if tt.expectCommitError {
+				require.Error(t, err)
+			} else {
+				require.NoError(t, err)
+			}
+
+			require.Nil(t, tt.primary.PendingSamples())
+			testutil.RequireEqual(t, tt.expectPrimarySamples, tt.primary.ResultSamples())
+			require.Nil(t, tt.primary.RolledbackSamples())
+
+			require.Nil(t, tt.secondary.PendingSamples())
+			testutil.RequireEqual(t, tt.expectSecondarySamples, tt.secondary.ResultSamples())
+			require.Nil(t, tt.secondary.RolledbackSamples())
+		})
+	}
+
+	t.Run("secondary without ExemplarAppenderV2 is skipped", func(t *testing.T) {
+		primary := teststorage.NewAppendable()
+		secondary := teststorage.NewAppendable()
+		f := storage.NewFanout(nil, mockStorage{appV2: primary}, mockStorage{appV2: &appendableV2WithoutExemplars{AppendableV2: secondary}})
+
+		exApp := f.AppenderV2(t.Context()).(storage.ExemplarAppenderV2)
+		lbls := labels.FromStrings(model.MetricNameLabel, "metric1")
+		ref, err := exApp.Append(0, lbls, -1, 0, 1, nil, nil, storage.AOptions{})
+		require.NoError(t, err)
+
+		_, err = exApp.AppendExemplars(ref, lbls, []exemplar.Exemplar{ex})
+		require.NoError(t, err)
+		require.NoError(t, exApp.Commit())
+
+		testutil.RequireEqual(t, []sample{{L: lbls, ST: -1, V: 1, ES: []exemplar.Exemplar{ex}}}, primary.ResultSamples())
+		testutil.RequireEqual(t, []sample{{L: lbls, ST: -1, V: 1}}, secondary.ResultSamples())
+	})
+
+	t.Run("primary without ExemplarAppenderV2 returns error", func(t *testing.T) {
+		primary := teststorage.NewAppendable()
+		secondary := teststorage.NewAppendable()
+		f := storage.NewFanout(nil, mockStorage{appV2: &appendableV2WithoutExemplars{AppendableV2: primary}}, mockStorage{appV2: secondary})
+
+		exApp := f.AppenderV2(t.Context()).(storage.ExemplarAppenderV2)
+		lbls := labels.FromStrings(model.MetricNameLabel, "metric1")
+		ref, err := exApp.Append(0, lbls, -1, 0, 1, nil, nil, storage.AOptions{})
+		require.NoError(t, err)
+
+		_, err = exApp.AppendExemplars(ref, lbls, []exemplar.Exemplar{ex})
+		require.ErrorContains(t, err, "does not implement ExemplarAppenderV2")
+		require.NoError(t, exApp.Rollback())
+	})
+}
+
+type appendableV2WithoutExemplars struct {
+	storage.AppendableV2
+}
+
+type appenderV2WithoutExemplars struct {
+	storage.AppenderV2
+}
+
+func (a *appendableV2WithoutExemplars) AppenderV2(ctx context.Context) storage.AppenderV2 {
+	return &appenderV2WithoutExemplars{AppenderV2: a.AppendableV2.AppenderV2(ctx)}
+}
+
 // Recommended CLI invocation:
 /*
 	export bench=fanoutAppender && go test ./storage/... \

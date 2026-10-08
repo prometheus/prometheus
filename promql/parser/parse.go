@@ -16,6 +16,7 @@ package parser
 import (
 	"errors"
 	"fmt"
+	"maps"
 	"math"
 	"os"
 	"runtime"
@@ -44,12 +45,34 @@ var parserPool = sync.Pool{
 type Options struct {
 	EnableExperimentalFunctions bool
 	EnableBinopFillModifiers    bool
+	// Functions is the set of functions the parser accepts, keyed by name.
+	// If nil, the default set in the package-level Functions variable is
+	// used. Otherwise it replaces the default set: to extend the default set,
+	// start from a clone of Functions. An empty map accepts no functions.
+	// NewParser copies the map, so later changes to it do not affect the parser.
+	Functions map[string]*Function
+}
+
+// functions returns the set of functions the parser accepts.
+func (o Options) functions() map[string]*Function {
+	if o.Functions != nil {
+		return o.Functions
+	}
+	return Functions
 }
 
 // Parser provides PromQL parsing methods. Create one with NewParser.
 type Parser interface {
+	// ParseExpr parses the input into an expression AST. On error, the returned
+	// Expr may still be non-nil and hold the partially-built AST, so that tooling
+	// (such as a language server) can inspect or print what was parsed. A partial
+	// AST is well-formed for inspection and printing but must not be evaluated.
 	ParseExpr(input string) (Expr, error)
 	ParseMetric(input string) (labels.Labels, error)
+	// ParseMetricSelector parses the input as a metric selector and returns its
+	// label matchers. On error, the returned matchers may still hold what was
+	// parsed, so that tooling can inspect or print them. Partial matchers are
+	// well-formed for that purpose but must not be used to select series.
 	ParseMetricSelector(input string) ([]*labels.Matcher, error)
 	ParseMetricSelectors(matchers []string) ([][]*labels.Matcher, error)
 	ParseSeriesDesc(input string) (labels.Labels, []SequenceValue, error)
@@ -62,6 +85,9 @@ type promQLParser struct {
 
 // NewParser returns a new PromQL Parser configured with the given options.
 func NewParser(opts Options) Parser {
+	// Copy the functions so that later changes to the caller's map
+	// cannot affect, or race with, parsing.
+	opts.Functions = maps.Clone(opts.Functions)
 	return &promQLParser{options: opts}
 }
 
@@ -168,7 +194,7 @@ type parser struct {
 func newParser(input string, opts Options) *parser {
 	p := parserPool.Get().(*parser)
 
-	p.functions = Functions
+	p.functions = opts.functions()
 	p.injecting = false
 	p.parseErrors = nil
 	p.generatedParserResult = nil
@@ -181,13 +207,6 @@ func newParser(input string, opts Options) *parser {
 		state: lexStatements,
 	}
 
-	return p
-}
-
-// newParserWithFunctions returns a new low-level parser instance with custom functions.
-func newParserWithFunctions(input string, opts Options, functions map[string]*Function) *parser {
-	p := newParser(input, opts)
-	p.functions = functions
 	return p
 }
 

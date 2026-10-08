@@ -601,14 +601,15 @@ func (t *QueueManager) sendMetadataWithBackoff(ctx context.Context, metadata []p
 	metadataCount := len(metadata)
 
 	attemptStore := func(try int) error {
+		cl := t.client()
 		ctx, span := otel.Tracer("").Start(ctx, "Remote Metadata Send Batch")
 		defer span.End()
 
 		span.SetAttributes(
 			attribute.Int("metadata", metadataCount),
 			attribute.Int("try", try),
-			attribute.String("remote_name", t.storeClient.Name()),
-			attribute.String("remote_url", t.storeClient.Endpoint()),
+			attribute.String("remote_name", cl.Name()),
+			attribute.String("remote_url", cl.Endpoint()),
 		)
 		// Attributes defined by OpenTelemetry semantic conventions.
 		if try > 0 {
@@ -618,7 +619,7 @@ func (t *QueueManager) sendMetadataWithBackoff(ctx context.Context, metadata []p
 		begin := time.Now()
 		// Ignoring WriteResponseStats, because there is nothing for metadata, since it's
 		// embedded in v2 calls now, and we do v1 here.
-		_, err := t.storeClient.Store(ctx, req, try)
+		_, err := cl.Store(ctx, req, try)
 		t.metrics.sentBatchDuration.Observe(time.Since(begin).Seconds())
 
 		if err != nil {
@@ -858,7 +859,7 @@ outer:
 		if t.protoMsg == remoteapi.WriteV1MessageType && h.H != nil && h.H.Schema == histogram.CustomBucketsSchema {
 			// We cannot send native histograms with custom buckets (NHCB) via remote write v1.
 			t.metrics.droppedHistogramsTotal.WithLabelValues(reasonNHCBNotSupported).Inc()
-			t.logger.Warn("Dropped native histogram with custom buckets (NHCB) as remote write v1 does not support itB", "ref", h.Ref)
+			t.logger.Warn("Dropped native histogram with custom buckets (NHCB) as remote write v1 does not support it", "ref", h.Ref)
 			continue
 		}
 		t.seriesMtx.Lock()
@@ -920,7 +921,7 @@ outer:
 		if t.protoMsg == remoteapi.WriteV1MessageType && h.FH != nil && h.FH.Schema == histogram.CustomBucketsSchema {
 			// We cannot send native histograms with custom buckets (NHCB) via remote write v1.
 			t.metrics.droppedHistogramsTotal.WithLabelValues(reasonNHCBNotSupported).Inc()
-			t.logger.Warn("Dropped float native histogram with custom buckets (NHCB) as remote write v1 does not support itB", "ref", h.Ref)
+			t.logger.Warn("Dropped float native histogram with custom buckets (NHCB) as remote write v1 does not support it", "ref", h.Ref)
 			continue
 		}
 		t.seriesMtx.Lock()
@@ -1814,14 +1815,15 @@ func (s *shards) sendSamplesWithBackoff(ctx context.Context, samples []prompb.Ti
 			req = req2
 		}
 
-		ctx, span := createBatchSpan(sc.ctx, sc, s.qm.storeClient.Name(), s.qm.storeClient.Endpoint(), try)
+		cl := s.qm.client()
+		ctx, span := createBatchSpan(sc.ctx, sc, cl.Name(), cl.Endpoint(), try)
 		defer span.End()
 
 		begin := time.Now()
 		metricsUpdater.recordBatchAttempt(sc)
 		// Technically for v1, we will likely have empty response stats, but for
 		// newer Receivers this might be not, so used it in a best effort.
-		rs, err := s.qm.client().Store(ctx, req, try)
+		rs, err := cl.Store(ctx, req, try)
 		metricsUpdater.recordLatency(begin)
 		// TODO(bwplotka): Revisit this once we have Receivers doing retriable partial error
 		// so far we don't have those, so it's ok to potentially skew statistics.
@@ -1920,12 +1922,13 @@ func (s *shards) sendV2SamplesWithBackoff(ctx context.Context, samples []writev2
 			v2Req = v2Req2
 		}
 
-		ctx, span := createBatchSpan(sc.ctx, sc, s.qm.storeClient.Name(), s.qm.storeClient.Endpoint(), try)
+		cl := s.qm.client()
+		ctx, span := createBatchSpan(sc.ctx, sc, cl.Name(), cl.Endpoint(), try)
 		defer span.End()
 
 		begin := time.Now()
 		metricsUpdater.recordBatchAttempt(sc)
-		rs, err := s.qm.client().Store(ctx, req, try)
+		rs, err := cl.Store(ctx, req, try)
 		metricsUpdater.recordLatency(begin)
 		// TODO(bwplotka): Revisit this once we have Receivers doing retriable partial error
 		// so far we don't have those, so it's ok to potentially skew statistics.

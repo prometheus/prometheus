@@ -782,7 +782,7 @@ func (b *OpenAPIBuilder) commonSearchPostProps() []schemaProp {
 		{"start", stringSchemaWithDescriptionAndExample("Form field: The start time of the query.", "2026-01-02T12:37:00.000Z")},
 		{"end", stringSchemaWithDescriptionAndExample("Form field: The end time of the query.", "2026-01-02T13:37:00.000Z")},
 		{"limit", integerSchemaWithDescriptionDefaultAndExample("Form field: The maximum number of results to return.", b.searchDefaultLimit(), 20)},
-		{"batch_size", integerSchemaWithDescriptionDefaultAndExample("Form field: Preferred number of results per NDJSON batch.", defaultSearchBatchSize, 20)},
+		{"batch_size", integerSchemaWithDescriptionDefaultAndExample("Form field: Preferred number of results per NDJSON batch. Clamped to 1000 and the effective result limit.", defaultSearchBatchSize, 20)},
 	}
 }
 

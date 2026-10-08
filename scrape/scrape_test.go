@@ -444,6 +444,8 @@ func TestIsSeriesPartOfFamily(t *testing.T) {
 		require.False(t, isSeriesPartOfFamily("http_requests_total", []byte("http_requests"), model.MetricTypeUnknown)) // We don't know.
 		require.False(t, isSeriesPartOfFamily("http_requests2_total", []byte("http_requests_total"), model.MetricTypeCounter))
 		require.False(t, isSeriesPartOfFamily("http_requests_requests_total", []byte("http_requests"), model.MetricTypeCounter))
+
+		require.False(t, isSeriesPartOfFamily("http_requests_total_total", []byte("http_requests_total"), model.MetricTypeCounter))
 	})
 
 	t.Run("gauge", func(t *testing.T) {
@@ -480,6 +482,8 @@ func TestIsSeriesPartOfFamily(t *testing.T) {
 		require.False(t, isSeriesPartOfFamily("go_build_info", []byte("go_build"), model.MetricTypeUnknown)) // We don't know.
 		require.False(t, isSeriesPartOfFamily("go_build2_info", []byte("go_build_info"), model.MetricTypeInfo))
 		require.False(t, isSeriesPartOfFamily("go_build_build_info", []byte("go_build_info"), model.MetricTypeInfo))
+
+		require.False(t, isSeriesPartOfFamily("go_build_info_info", []byte("go_build_info"), model.MetricTypeInfo))
 	})
 }
 
@@ -2801,29 +2805,36 @@ func testScrapeLoopScrapeAndReport(t *testing.T, appV2 bool) {
 */
 func BenchmarkScrapeLoopScrapeAndReport(b *testing.B) {
 	for _, appV2 := range []bool{false, true} {
-		b.Run(fmt.Sprintf("appV2=%v", appV2), func(b *testing.B) {
-			parsableText := readTextParseTestMetrics(b)
+		for _, pooled := range []bool{true, false} {
+			b.Run(fmt.Sprintf("appV2=%v/pooled=%v", appV2, pooled), func(b *testing.B) {
+				parsableText := readTextParseTestMetrics(b)
 
-			s := teststorage.New(b)
+				s := teststorage.New(b)
 
-			sl, scraper := newTestScrapeLoop(b, withAppendable(s, appV2), func(sl *scrapeLoop) {
-				sl.fallbackScrapeProtocol = "application/openmetrics-text"
+				sl, scraper := newTestScrapeLoop(b, withAppendable(s, appV2), func(sl *scrapeLoop) {
+					sl.fallbackScrapeProtocol = "application/openmetrics-text"
+					if !pooled {
+						// Use a small pool to model production bodies above 59 MB.
+						sl.buffers = pool.New(1e3, 1e3, 3, func(sz int) any { return make([]byte, 0, sz) })
+					}
+				})
+				scraper.scrapeFunc = func(_ context.Context, writer io.Writer) error {
+					// Exercise ReadFrom's EOF growth check, as in production.
+					_, err := io.Copy(writer, io.LimitReader(bytes.NewReader(parsableText), int64(len(parsableText))))
+					return err
+				}
+
+				ts := time.Time{}
+
+				b.ReportAllocs()
+				b.ResetTimer()
+				for b.Loop() {
+					ts = ts.Add(time.Second)
+					sl.scrapeAndReport(time.Time{}, ts, nil)
+					require.NoError(b, scraper.lastError)
+				}
 			})
-			scraper.scrapeFunc = func(_ context.Context, writer io.Writer) error {
-				_, err := writer.Write(parsableText)
-				return err
-			}
-
-			ts := time.Time{}
-
-			b.ReportAllocs()
-			b.ResetTimer()
-			for b.Loop() {
-				ts = ts.Add(time.Second)
-				sl.scrapeAndReport(time.Time{}, ts, nil)
-				require.NoError(b, scraper.lastError)
-			}
-		})
+		}
 	}
 }
 
@@ -6600,6 +6611,21 @@ metric: <
 `, name, classic, expo)
 	}
 
+	genTestHistOM2 := func(name string, hasClassic, hasExponential bool) string {
+		fields := []string{"count:1", "sum:10"}
+		if hasExponential {
+			fields = append(fields, "schema:3", "zero_threshold:2.938735877055719e-39", "zero_count:0", "positive_spans:[2:1]", "positive_buckets:[1]")
+		}
+		if hasClassic {
+			fields = append(fields, "bucket:[0.005:0,0.01:0,0.025:0,0.05:0,0.1:0,0.25:0,0.5:0,1.0:0,2.5:0,5.0:0,10.0:1,+Inf:1]")
+		}
+		return fmt.Sprintf(`
+# HELP %s This is a histogram with default buckets
+# TYPE %s histogram
+%s{address="0.0.0.0",port="5001"} {%s}
+`, name, name, name, strings.Join(fields, ","))
+	}
+
 	metricsTexts := map[string]struct {
 		text           []string
 		contentType    string
@@ -6729,6 +6755,91 @@ metric: <
 				genTestHistProto("test_histogram_3", false, true),
 			},
 			contentType:    "application/vnd.google.protobuf",
+			hasExponential: true,
+		},
+		"openmetrics2": {
+			text: []string{
+				genTestCounterText("test_metric_1"),
+				genTestCounterText("test_metric_1_count"),
+				genTestCounterText("test_metric_1_sum"),
+				genTestCounterText("test_metric_1_bucket"),
+				genTestHistOM2("test_histogram_1", true, false),
+				genTestCounterText("test_metric_2"),
+				genTestCounterText("test_metric_2_count"),
+				genTestCounterText("test_metric_2_sum"),
+				genTestCounterText("test_metric_2_bucket"),
+				genTestHistOM2("test_histogram_2", true, false),
+				genTestCounterText("test_metric_3"),
+				genTestCounterText("test_metric_3_count"),
+				genTestCounterText("test_metric_3_sum"),
+				genTestCounterText("test_metric_3_bucket"),
+				genTestHistOM2("test_histogram_3", true, false),
+			},
+			contentType: "application/openmetrics-text; version=2.0.0",
+			hasClassic:  true,
+		},
+		"openmetrics2, in different order": {
+			text: []string{
+				genTestHistOM2("test_histogram_1", true, false),
+				genTestCounterText("test_metric_1"),
+				genTestCounterText("test_metric_1_count"),
+				genTestCounterText("test_metric_1_sum"),
+				genTestCounterText("test_metric_1_bucket"),
+				genTestHistOM2("test_histogram_2", true, false),
+				genTestCounterText("test_metric_2"),
+				genTestCounterText("test_metric_2_count"),
+				genTestCounterText("test_metric_2_sum"),
+				genTestCounterText("test_metric_2_bucket"),
+				genTestHistOM2("test_histogram_3", true, false),
+				genTestCounterText("test_metric_3"),
+				genTestCounterText("test_metric_3_count"),
+				genTestCounterText("test_metric_3_sum"),
+				genTestCounterText("test_metric_3_bucket"),
+			},
+			contentType: "application/openmetrics-text; version=2.0.0",
+			hasClassic:  true,
+		},
+		"openmetrics2, with additional native exponential histogram": {
+			text: []string{
+				genTestCounterText("test_metric_1"),
+				genTestCounterText("test_metric_1_count"),
+				genTestCounterText("test_metric_1_sum"),
+				genTestCounterText("test_metric_1_bucket"),
+				genTestHistOM2("test_histogram_1", true, true),
+				genTestCounterText("test_metric_2"),
+				genTestCounterText("test_metric_2_count"),
+				genTestCounterText("test_metric_2_sum"),
+				genTestCounterText("test_metric_2_bucket"),
+				genTestHistOM2("test_histogram_2", true, true),
+				genTestCounterText("test_metric_3"),
+				genTestCounterText("test_metric_3_count"),
+				genTestCounterText("test_metric_3_sum"),
+				genTestCounterText("test_metric_3_bucket"),
+				genTestHistOM2("test_histogram_3", true, true),
+			},
+			contentType:    "application/openmetrics-text; version=2.0.0",
+			hasClassic:     true,
+			hasExponential: true,
+		},
+		"openmetrics2, with only native exponential histogram": {
+			text: []string{
+				genTestCounterText("test_metric_1"),
+				genTestCounterText("test_metric_1_count"),
+				genTestCounterText("test_metric_1_sum"),
+				genTestCounterText("test_metric_1_bucket"),
+				genTestHistOM2("test_histogram_1", false, true),
+				genTestCounterText("test_metric_2"),
+				genTestCounterText("test_metric_2_count"),
+				genTestCounterText("test_metric_2_sum"),
+				genTestCounterText("test_metric_2_bucket"),
+				genTestHistOM2("test_histogram_2", false, true),
+				genTestCounterText("test_metric_3"),
+				genTestCounterText("test_metric_3_count"),
+				genTestCounterText("test_metric_3_sum"),
+				genTestCounterText("test_metric_3_bucket"),
+				genTestHistOM2("test_histogram_3", false, true),
+			},
+			contentType:    "application/openmetrics-text; version=2.0.0",
 			hasExponential: true,
 		},
 	}
@@ -6869,6 +6980,7 @@ metric: <
 					sl.alwaysScrapeClassicHist = tc.alwaysScrapeClassicHistograms
 					sl.convertClassicHistToNHCB = tc.convertClassicHistToNHCB
 					sl.enableNativeHistogramScraping = true
+					sl.enableOpenMetrics2 = true
 				})
 
 				var content []byte
@@ -6885,6 +6997,13 @@ metric: <
 						buf.Write(protoMarshalDelimited(t, pb))
 					}
 					content = buf.Bytes()
+				case "application/openmetrics-text; version=2.0.0":
+					var b strings.Builder
+					for _, text := range metricsText.text {
+						b.WriteString(strings.TrimLeft(text, "\n"))
+					}
+					b.WriteString("# EOF\n")
+					content = []byte(b.String())
 				case "text/plain", "":
 					// The input text fragments already have a newline at the
 					// end, so we just concatenate them without separator.

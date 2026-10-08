@@ -10,7 +10,10 @@ formatters:
         - default
         - prefix(github.com/prometheus/prometheus)
     gofumpt:
-      extra-rules: true
+      extra:
+        group-params: true
+        clothe-returns: true
+        balance-calls: true
     goimports:
       local-prefixes:
         - github.com/prometheus/prometheus

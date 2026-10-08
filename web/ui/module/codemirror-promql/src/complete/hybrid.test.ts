@@ -1835,4 +1835,31 @@ describe('autocomplete promQL test', () => {
     expect(result).not.toBeNull();
     expect((result as NonNullable<typeof result>).options.length).toBeGreaterThan(0);
   });
+
+  // Typing the closing parenthesis of a function call/aggregation should not pop open a
+  // completion dropdown of binary operators on its own; it should only show up when the
+  // user explicitly requests completion (e.g. via Ctrl+Space).
+  const noAutoCompleteAfterClosedParenTestCases = [
+    { title: 'no autocompletion right after closing a function call', expr: 'rate(foo[5m])', pos: 13 },
+    { title: 'no autocompletion right after closing an aggregation', expr: 'sum()', pos: 5 },
+    { title: 'no autocompletion right after closing a nested aggregation', expr: 'sum(rate(foo[5m]))', pos: 18 },
+  ];
+  noAutoCompleteAfterClosedParenTestCases.forEach((value) => {
+    it(value.title, async () => {
+      const state = createEditorState(value.expr);
+      const context = new CompletionContext(state, value.pos, false);
+      const completion = newCompleteStrategy();
+      const result = await completion.promQL(context);
+      expect((result as NonNullable<typeof result>).options).toEqual([]);
+    });
+  });
+
+  it('still autocompletes binary operators after a closed function call when explicitly requested', async () => {
+    const state = createEditorState('rate(foo[5m])');
+    const context = new CompletionContext(state, 13, true);
+    const completion = newCompleteStrategy();
+    const result = await completion.promQL(context);
+    expect(result).not.toBeNull();
+    expect((result as NonNullable<typeof result>).options).toEqual(binOpTerms);
+  });
 });

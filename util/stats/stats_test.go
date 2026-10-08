@@ -84,63 +84,83 @@ func TestQueryStatsWithSpanTimers(t *testing.T) {
 	require.True(t, match, "Expected timings with one non-zero entry.")
 }
 
-func TestMergeSamplesReadFromSubquery(t *testing.T) {
+func TestMergeFromSubquery(t *testing.T) {
 	type stepGrid struct {
 		start, end, interval int64
 		perStep              []int64
 	}
+	at := func(ts int64) *int64 { return &ts }
 	cases := []struct {
-		name            string
-		parent          stepGrid
-		child           stepGrid
-		outerOffset     int64
-		outerRange      int64
-		wantPerStep     []int64
-		wantSamplesRead int64
+		name          string
+		parent        stepGrid
+		child         stepGrid
+		outerOffset   int64
+		outerRange    int64
+		atTimestamp   *int64
+		wantTotalStep []int64
+		wantReadStep  []int64
 	}{
 		{
-			name:            "alignedChildGridAddsToParentSteps",
-			parent:          stepGrid{1000, 3000, 1000, []int64{1, 2, 3}},
-			child:           stepGrid{1000, 3000, 1000, []int64{10, 20, 30}},
-			wantPerStep:     []int64{11, 22, 33},
-			wantSamplesRead: 66,
+			name:          "alignedChildGridAddsToParentSteps",
+			parent:        stepGrid{1000, 3000, 1000, []int64{1, 2, 3}},
+			child:         stepGrid{1000, 3000, 1000, []int64{10, 20, 30}},
+			wantTotalStep: []int64{11, 22, 33},
+			wantReadStep:  []int64{11, 22, 33},
 		},
 		{
-			name:            "offsetChildGridAttributesByTimestamp",
-			parent:          stepGrid{1000, 3000, 1000, []int64{0, 5, 0}},
-			child:           stepGrid{2000, 4000, 1000, []int64{0, 100, 0}}, // tk=3000 -> parent step 2.
-			wantPerStep:     []int64{0, 5, 100},
-			wantSamplesRead: 105,
+			name:          "offsetChildGridAttributesByTimestamp",
+			parent:        stepGrid{1000, 3000, 1000, []int64{0, 5, 0}},
+			child:         stepGrid{2000, 4000, 1000, []int64{0, 100, 0}}, // tk=3000 -> parent step 2.
+			wantTotalStep: []int64{0, 5, 100},
+			wantReadStep:  []int64{0, 5, 100},
 		},
 		{
 			// Child spans 1000..9000 (9 steps). Steps with tk <= parentStart=5000
 			// (k=0..4) clamp to parent step 0; tk=6000 -> step 1; tk=7000 -> step 2;
 			// tk=8000,9000 clamp to the last parent step (also 2).
-			name:            "childBeforeAndAfterParentWindowClampsToEndpoints",
-			parent:          stepGrid{5000, 7000, 1000, []int64{0, 0, 0}},
-			child:           stepGrid{1000, 9000, 1000, []int64{1, 1, 1, 1, 1, 1, 1, 1, 1}},
-			wantPerStep:     []int64{5, 1, 3},
-			wantSamplesRead: 9,
+			name:          "childBeforeAndAfterParentWindowClampsToEndpoints",
+			parent:        stepGrid{5000, 7000, 1000, []int64{0, 0, 0}},
+			child:         stepGrid{1000, 9000, 1000, []int64{1, 1, 1, 1, 1, 1, 1, 1, 1}},
+			wantTotalStep: []int64{5, 1, 3},
+			wantReadStep:  []int64{5, 1, 3},
 		},
 		{
 			// Parent step 60s, outer range 30s: window per step is (parentTs-30, parentTs].
 			// Child grid at 10s; tk values 10/20/30k -> step 0 window (0,30k];
 			// 70/80/90k -> step 1 window (60k,90k]; 40/50/60k fall in gap (30k,60k].
-			name:            "outerRangeExcludesGapSamples",
-			parent:          stepGrid{30000, 90000, 60000, []int64{0, 0}},
-			child:           stepGrid{10000, 90000, 10000, []int64{1, 1, 1, 1, 1, 1, 1, 1, 1}},
-			outerRange:      30000,
-			wantPerStep:     []int64{3, 3},
-			wantSamplesRead: 6,
+			name:          "outerRangeExcludesGapSamples",
+			parent:        stepGrid{30000, 90000, 60000, []int64{0, 0}},
+			child:         stepGrid{10000, 90000, 10000, []int64{1, 1, 1, 1, 1, 1, 1, 1, 1}},
+			outerRange:    30000,
+			wantTotalStep: []int64{3, 3},
+			wantReadStep:  []int64{3, 3},
+		},
+		{
+			// Overlapping windows: totals count a child step per window, reads once.
+			name:          "overlappingWindowsCountTotalsPerWindowAndReadsOnce",
+			parent:        stepGrid{30000, 60000, 10000, []int64{0, 0, 0, 0}},
+			child:         stepGrid{10000, 60000, 10000, []int64{1, 1, 1, 1, 1, 1}},
+			outerRange:    30000,
+			wantTotalStep: []int64{3, 3, 3, 3},
+			wantReadStep:  []int64{3, 1, 1, 1},
+		},
+		{
+			// Child steps at 30k and 40k are past the last window (10k,20k].
+			name:          "childAfterLastParentWindowIsDropped",
+			parent:        stepGrid{10000, 20000, 10000, []int64{0, 0}},
+			child:         stepGrid{10000, 40000, 10000, []int64{1, 1, 1, 1}},
+			outerRange:    10000,
+			wantTotalStep: []int64{1, 1},
+			wantReadStep:  []int64{1, 1},
 		},
 		{
 			// outerRange=0 disables filtering even when the parent has a wider step
 			// than the child's range; preserves old behaviour for bare-subquery merges.
-			name:            "outerRangeZeroDisablesGapFilter",
-			parent:          stepGrid{30000, 90000, 60000, []int64{0, 0}},
-			child:           stepGrid{10000, 90000, 10000, []int64{1, 1, 1, 1, 1, 1, 1, 1, 1}},
-			wantPerStep:     []int64{3, 6},
-			wantSamplesRead: 9,
+			name:          "outerRangeZeroDisablesGapFilter",
+			parent:        stepGrid{30000, 90000, 60000, []int64{0, 0}},
+			child:         stepGrid{10000, 90000, 10000, []int64{1, 1, 1, 1, 1, 1, 1, 1, 1}},
+			wantTotalStep: []int64{3, 6},
+			wantReadStep:  []int64{3, 6},
 		},
 		{
 			// Offset 60s shifts child tk forward before matching the parent grid.
@@ -148,36 +168,102 @@ func TestMergeSamplesReadFromSubquery(t *testing.T) {
 			// Child iterations at tk=170000, 180000 (already shifted earlier by the
 			// subquery's offset); shifted tk+60000 = 230000, 240000 falls inside the
 			// outer window (240000-20000, 240000] = (220000, 240000].
-			name:            "outerOffsetShiftsTkIntoWindow",
-			parent:          stepGrid{240000, 240000, 1, []int64{0}},
-			child:           stepGrid{170000, 180000, 10000, []int64{1, 1}},
-			outerOffset:     60000,
-			outerRange:      20000,
-			wantPerStep:     []int64{2},
-			wantSamplesRead: 2,
+			name:          "outerOffsetShiftsTkIntoWindow",
+			parent:        stepGrid{240000, 240000, 1, []int64{0}},
+			child:         stepGrid{170000, 180000, 10000, []int64{1, 1}},
+			outerOffset:   60000,
+			outerRange:    20000,
+			wantTotalStep: []int64{2},
+			wantReadStep:  []int64{2},
 		},
+		{
+			// @ 200s: every parent step consumes the fixed window (180k,200k].
+			name:          "atModifierConsumesFixedWindow",
+			parent:        stepGrid{250000, 280000, 10000, []int64{0, 0, 0, 0}},
+			child:         stepGrid{190000, 230000, 10000, []int64{1, 1, 1, 1, 1}},
+			outerRange:    20000,
+			atTimestamp:   at(200000),
+			wantTotalStep: []int64{2, 2, 2, 2},
+			wantReadStep:  []int64{2, 0, 0, 0},
+		},
+		{
+			// @ 200s offset 60s: child steps 130k and 140k shift into (180k,200k].
+			name:          "atModifierWithOffsetConsumesShiftedWindow",
+			parent:        stepGrid{250000, 260000, 10000, []int64{0, 0}},
+			child:         stepGrid{130000, 170000, 10000, []int64{1, 1, 1, 1, 1}},
+			outerOffset:   60000,
+			outerRange:    20000,
+			atTimestamp:   at(200000),
+			wantTotalStep: []int64{2, 2},
+			wantReadStep:  []int64{2, 0},
+		},
+	}
+
+	sum := func(s []int64) (n int64) {
+		for _, v := range s {
+			n += v
+		}
+		return n
 	}
 
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
 			parent := NewQuerySamples(true)
 			parent.InitStepTracking(tc.parent.start, tc.parent.end, tc.parent.interval)
+			copy(parent.TotalSamplesPerStep, tc.parent.perStep)
 			copy(parent.SamplesReadPerStep, tc.parent.perStep)
-			for _, v := range tc.parent.perStep {
-				parent.SamplesRead += v
-			}
+			parent.TotalSamples = sum(tc.parent.perStep)
+			parent.SamplesRead = sum(tc.parent.perStep)
 
 			child := NewChildWithStepTracking(tc.child.start, tc.child.end, tc.child.interval)
+			copy(child.TotalSamplesPerStep, tc.child.perStep)
 			copy(child.SamplesReadPerStep, tc.child.perStep)
-			for _, v := range tc.child.perStep {
-				child.SamplesRead += v
+			child.TotalSamples = sum(tc.child.perStep)
+			child.SamplesRead = sum(tc.child.perStep)
+
+			consumer := SubqueryConsumer{
+				Start:       tc.parent.start,
+				Interval:    tc.parent.interval,
+				NumSteps:    len(tc.parent.perStep),
+				Offset:      tc.outerOffset,
+				Range:       tc.outerRange,
+				AtTimestamp: tc.atTimestamp,
 			}
+			parent.MergeTotalSamplesFromSubquery(child, consumer)
+			parent.MergeSamplesReadFromSubquery(child, consumer)
 
-			parent.MergeSamplesReadFromSubquery(child, tc.parent.start, tc.parent.interval, len(tc.parent.perStep), tc.outerOffset, tc.outerRange)
-
-			require.Equal(t, tc.wantSamplesRead, parent.SamplesRead)
-			require.Equal(t, tc.wantPerStep, parent.SamplesReadPerStep)
+			require.Equal(t, tc.wantTotalStep, parent.TotalSamplesPerStep)
+			require.Equal(t, sum(tc.wantTotalStep), parent.TotalSamples)
+			require.Equal(t, tc.wantReadStep, parent.SamplesReadPerStep)
+			require.Equal(t, sum(tc.wantReadStep), parent.SamplesRead)
 		})
+	}
+}
+
+func BenchmarkMergeTotalSamplesFromSubquery(b *testing.B) {
+	// A one-day range query at 1m steps over a [1h:15s] subquery.
+	const (
+		parentInterval = int64(60000)
+		parentSteps    = 1440
+		childInterval  = int64(15000)
+		outerRange     = int64(3600000)
+	)
+	parentEnd := int64(parentSteps-1) * parentInterval
+	child := NewChildWithStepTracking(-outerRange+childInterval, parentEnd, childInterval)
+	for i := range child.TotalSamplesPerStep {
+		child.TotalSamplesPerStep[i] = 1
+	}
+	consumer := SubqueryConsumer{
+		Interval: parentInterval,
+		NumSteps: parentSteps,
+		Range:    outerRange,
+	}
+
+	b.ReportAllocs()
+	for b.Loop() {
+		parent := NewQuerySamples(true)
+		parent.InitStepTracking(0, parentEnd, parentInterval)
+		parent.MergeTotalSamplesFromSubquery(child, consumer)
 	}
 }
 
