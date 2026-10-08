@@ -389,16 +389,21 @@ func TestWriteStorage_AppenderV2_AppendExemplars(t *testing.T) {
 
 	before := prom_testutil.ToFloat64(exemplarsIn)
 
+	now := time.Now().UnixMilli()
+	future := now + time.Hour.Milliseconds()
 	lbls := labels.FromStrings("__name__", "test_metric")
-	ref, err := app.Append(0, lbls, 0, 100, 1, nil, nil, storage.AOptions{})
+	ref, err := app.Append(0, lbls, 0, now, 1, nil, nil, storage.AOptions{
+		Exemplars: []exemplar.Exemplar{{Labels: labels.FromStrings("trace_id", "1"), Value: 1, Ts: future, HasTs: true}},
+	})
 	require.NoError(t, err)
 
 	_, err = app.AppendExemplars(ref, lbls, []exemplar.Exemplar{
-		{Labels: labels.FromStrings("trace_id", "1"), Value: 1, Ts: 100},
-		{Labels: labels.FromStrings("trace_id", "2"), Value: 2, Ts: 100},
+		{Labels: labels.FromStrings("trace_id", "2"), Value: 2, Ts: future, HasTs: true},
+		{Labels: labels.FromStrings("trace_id", "3"), Value: 3, Ts: future, HasTs: true},
 	})
 	require.NoError(t, err)
 	require.NoError(t, app.Commit())
 
-	require.Equal(t, before+2, prom_testutil.ToFloat64(exemplarsIn))
+	require.Equal(t, before+3, prom_testutil.ToFloat64(exemplarsIn))
+	require.Equal(t, float64(now/1000), s.highestTimestamp.Get())
 }
