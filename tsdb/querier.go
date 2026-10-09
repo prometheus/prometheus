@@ -79,12 +79,35 @@ func newBlockBaseQuerier(b BlockReader, mint, maxt int64) (*blockBaseQuerier, er
 }
 
 func (q *blockBaseQuerier) LabelValues(ctx context.Context, name string, hints *storage.LabelHints, matchers ...*labels.Matcher) ([]string, annotations.Annotations, error) {
-	res, err := q.index.SortedLabelValues(ctx, name, hints, matchers...)
-	return res, nil, err
+	return labelValuesFromIndex(ctx, q.index, name, hints, matchers...)
 }
 
 func (q *blockBaseQuerier) LabelNames(ctx context.Context, hints *storage.LabelHints, matchers ...*labels.Matcher) ([]string, annotations.Annotations, error) {
-	res, err := q.index.LabelNames(ctx, matchers...)
+	return labelNamesFromIndex(ctx, q.index, hints, matchers...)
+}
+
+// SearchLabelNames implements storage.Searcher.
+func (q *blockBaseQuerier) SearchLabelNames(ctx context.Context, hints *storage.SearchHints, matchers ...*labels.Matcher) storage.SearchResultSet {
+	return searchLabelNamesFromIndex(ctx, q.index, hints, matchers...)
+}
+
+// SearchLabelValues implements storage.Searcher.
+func (q *blockBaseQuerier) SearchLabelValues(ctx context.Context, name string, hints *storage.SearchHints, matchers ...*labels.Matcher) storage.SearchResultSet {
+	return searchLabelValuesFromIndex(ctx, q.index, name, hints, matchers...)
+}
+
+// labelValuesFromIndex implements storage.LabelQuerier.LabelValues on top of an
+// index reader. It is shared by the block and head queriers, which have nothing
+// else in common.
+func labelValuesFromIndex(ctx context.Context, ix IndexReader, name string, hints *storage.LabelHints, matchers ...*labels.Matcher) ([]string, annotations.Annotations, error) {
+	res, err := ix.SortedLabelValues(ctx, name, hints, matchers...)
+	return res, nil, err
+}
+
+// labelNamesFromIndex implements storage.LabelQuerier.LabelNames on top of an
+// index reader.
+func labelNamesFromIndex(ctx context.Context, ix IndexReader, hints *storage.LabelHints, matchers ...*labels.Matcher) ([]string, annotations.Annotations, error) {
+	res, err := ix.LabelNames(ctx, matchers...)
 	if err != nil {
 		return nil, nil, err
 	}
@@ -96,9 +119,10 @@ func (q *blockBaseQuerier) LabelNames(ctx context.Context, hints *storage.LabelH
 	return res, nil, nil
 }
 
-// SearchLabelNames implements storage.Searcher.
-func (q *blockBaseQuerier) SearchLabelNames(ctx context.Context, hints *storage.SearchHints, matchers ...*labels.Matcher) storage.SearchResultSet {
-	names, err := q.index.LabelNames(ctx, matchers...)
+// searchLabelNamesFromIndex implements storage.Searcher.SearchLabelNames on top
+// of an index reader.
+func searchLabelNamesFromIndex(ctx context.Context, ix IndexReader, hints *storage.SearchHints, matchers ...*labels.Matcher) storage.SearchResultSet {
+	names, err := ix.LabelNames(ctx, matchers...)
 	if err != nil {
 		return storage.ErrSearchResultSet(err)
 	}
@@ -106,8 +130,9 @@ func (q *blockBaseQuerier) SearchLabelNames(ctx context.Context, hints *storage.
 	return storage.NewSearchResultSetFromSlice(storage.ApplySearchHints(names, hints), nil)
 }
 
-// SearchLabelValues implements storage.Searcher.
-func (q *blockBaseQuerier) SearchLabelValues(ctx context.Context, name string, hints *storage.SearchHints, matchers ...*labels.Matcher) storage.SearchResultSet {
+// searchLabelValuesFromIndex implements storage.Searcher.SearchLabelValues on
+// top of an index reader.
+func searchLabelValuesFromIndex(ctx context.Context, ix IndexReader, name string, hints *storage.SearchHints, matchers ...*labels.Matcher) storage.SearchResultSet {
 	if hints == nil {
 		hints = &storage.SearchHints{}
 	}
@@ -129,9 +154,9 @@ func (q *blockBaseQuerier) SearchLabelValues(ctx context.Context, name string, h
 	// ApplySearchHints needs the values ascending by value.
 	// OrderByScore relies on the score calculated by the filter.
 	if hints.OrderBy == storage.OrderByScoreDesc && hints.Filter != nil {
-		values, err = q.index.LabelValues(ctx, name, labelHints, matchers...)
+		values, err = ix.LabelValues(ctx, name, labelHints, matchers...)
 	} else {
-		values, err = q.index.SortedLabelValues(ctx, name, labelHints, matchers...)
+		values, err = ix.SortedLabelValues(ctx, name, labelHints, matchers...)
 	}
 	if err != nil {
 		return storage.ErrSearchResultSet(err)
