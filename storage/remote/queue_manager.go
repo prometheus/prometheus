@@ -1571,16 +1571,25 @@ func (s *shards) runShard(ctx context.Context, shardID int, queue *queue) {
 
 	// TODO: Dry all of this, we should make an interface/generic for the timeseries type.
 	batchQueue := queue.Chan()
-	pendingData := make([]prompb.TimeSeries, maxCount)
-	for i := range pendingData {
-		pendingData[i].Samples = []prompb.Sample{{}}
-		if s.qm.sendExemplars {
-			pendingData[i].Exemplars = []prompb.Exemplar{{}}
+	var (
+		pendingData   []prompb.TimeSeries
+		pendingDataV2 []writev2.TimeSeries
+	)
+	// The protocol is fixed for the lifetime of the queue manager.
+	switch s.qm.protoMsg {
+	case remoteapi.WriteV1MessageType:
+		pendingData = make([]prompb.TimeSeries, maxCount)
+		for i := range pendingData {
+			pendingData[i].Samples = []prompb.Sample{{}}
+			if s.qm.sendExemplars {
+				pendingData[i].Exemplars = []prompb.Exemplar{{}}
+			}
 		}
-	}
-	pendingDataV2 := make([]writev2.TimeSeries, maxCount)
-	for i := range pendingDataV2 {
-		pendingDataV2[i].Samples = []writev2.Sample{{}}
+	case remoteapi.WriteV2MessageType:
+		pendingDataV2 = make([]writev2.TimeSeries, maxCount)
+		for i := range pendingDataV2 {
+			pendingDataV2[i].Samples = []writev2.Sample{{}}
+		}
 	}
 
 	timer := time.NewTimer(time.Duration(s.qm.cfg.BatchSendDeadline))
