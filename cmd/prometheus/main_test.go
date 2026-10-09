@@ -14,9 +14,11 @@
 package main
 
 import (
+	"bufio"
 	"bytes"
 	"context"
 	"errors"
+	"flag"
 	"fmt"
 	"io"
 	"math"
@@ -42,11 +44,13 @@ import (
 	"github.com/prometheus/common/model"
 	"github.com/prometheus/common/promslog"
 	"github.com/stretchr/testify/require"
+	"go.uber.org/atomic"
 
 	"github.com/prometheus/prometheus/config"
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/notifier"
 	"github.com/prometheus/prometheus/rules"
+	"github.com/prometheus/prometheus/tsdb/fileutil"
 	"github.com/prometheus/prometheus/util/testutil"
 )
 
@@ -1314,4 +1318,199 @@ func TestFeatureFlagsDocumented(t *testing.T) {
 	require.NotEmpty(t, docFlags)
 	require.True(t, slices.IsSorted(helpFlags))
 	require.ElementsMatch(t, helpFlags, docFlags)
+}
+
+// getMetricValueFromURL fetches the metrics endpoint at metricsURL and returns
+// the value of the requested metric, reusing getMetricValue for parsing.
+func getMetricValueFromURL(t testing.TB, metricsURL string, metricType model.MetricType, metricName string) (float64, error) {
+	t.Helper()
+
+	r, err := http.Get(metricsURL)
+	if err != nil {
+		return 0, err
+	}
+	defer r.Body.Close()
+	if r.StatusCode != http.StatusOK {
+		return 0, fmt.Errorf("server returned HTTP status %s", r.Status)
+	}
+	return getMetricValue(t, r.Body, metricType, metricName)
+}
+
+var sizeRestrictedFSAvailable = flag.Bool("test.size-restricted-fs", false, "run tests that require size restricted FS")
+
+// TestNoSpaceLeftFailureRecovery uses the size-restricted filesystems in /mnt/test_prom_size_restricted_fs
+// to reproduce an ENOSPC failure during, it then frees some space and ensures
+// that things retun to normal and that the already produced WAL isn't corrupted.
+// Issues such as https://github.com/prometheus/prometheus/issues/13027 have suggested that the WAL
+// becomes corrupted when the disk is full. This test will help give additional attention to such cases.
+// and help provide an environement to learn more about them.
+// Note: Update the test invocation if the test name is changed.
+func TestSizeRestrictedFS_NoSpaceLeftFailureRecovery(t *testing.T) {
+	const fsRoot = "/mnt/test_prom_size_restricted_fs"
+	if !*sizeRestrictedFSAvailable {
+		t.Skip("test requires size restricted FS")
+	}
+
+	for i := range 100 {
+		t.Run(fmt.Sprintf("fs_%d", i), func(t *testing.T) {
+			// TODO: uncomment
+			// t.Parallel()
+
+			root := filepath.Join(fsRoot, fmt.Sprintf("fs_%d", i), "tmp")
+			require.NoError(t, os.RemoveAll(root))
+			require.NoError(t, os.MkdirAll(root, 0o777))
+
+			// Reserve some space in the FS.
+			placeholder := filepath.Join(root, "placeholder")
+			f, err := os.OpenFile(placeholder, os.O_WRONLY|os.O_CREATE, 0o777)
+			require.NoError(t, err)
+			err = fileutil.Preallocate(f, 2*1024*1024, false)
+			require.NoError(t, err)
+			require.NoError(t, f.Close())
+
+			// Remote endpoint
+			remoteEndpoint := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+				w.WriteHeader(http.StatusOK)
+			}))
+			defer remoteEndpoint.Close()
+
+			port := testutil.RandomUnprivilegedPort(t)
+			metricsURL := fmt.Sprintf("http://127.0.0.1:%d/metrics", port)
+			recodingRulesFilePath := filepath.Join(root, "rules.yml")
+			recordingRules := `
+groups:
+- name: group0
+  rules:
+  - record: up:count
+    expr:  count(up==1)
+`
+			err = os.WriteFile(recodingRulesFilePath, []byte(recordingRules), 0o644)
+			require.NoError(t, err)
+			configFilePath := filepath.Join(root, "prometheus.yml")
+			// Scraping + rules + remote_write to self.
+			config := fmt.Sprintf(`
+global:
+  scrape_timeout: 200ms
+  evaluation_interval: 100ms
+  external_labels:
+    prometheus: notme
+
+scrape_configs:
+- job_name: self1
+  scrape_interval: 61ms
+  static_configs:
+    - targets: ["localhost:%d"]
+- job_name: self2
+  scrape_interval: 67ms
+  static_configs:
+    - targets: ["localhost:%d"]
+- job_name: self3
+  scrape_interval: 71ms
+  static_configs:
+    - targets: ["localhost:%d"]
+
+remote_write:
+  - url: %s
+
+rule_files:
+  - %s
+`, port, port, port, remoteEndpoint.URL, recodingRulesFilePath)
+			err = os.WriteFile(configFilePath, []byte(config), 0o644)
+			require.NoError(t, err)
+
+			dbDir := filepath.Join(root, "prometheus_data")
+			require.NoError(t, os.MkdirAll(dbDir, 0o777))
+
+			var nospcDetected atomic.Bool
+			detectNOSPC := func(t testing.TB, r io.Reader) {
+				scanner := bufio.NewScanner(r)
+				for scanner.Scan() {
+					l := scanner.Text()
+					t.Log(l)
+					if !nospcDetected.Load() && strings.Contains(l, syscall.ENOSPC.Error()) {
+						nospcDetected.Store(true)
+					}
+				}
+				if err := scanner.Err(); err != nil {
+					t.Logf("Error reading logs: %v", err)
+				}
+			}
+
+			// The instance will be terminated at the end.
+			t.Run(fmt.Sprintf("provoke ENOSPC fs_%d", i), func(t *testing.T) {
+				prom := commandWithLogging(
+					t,
+					detectNOSPC,
+					promPath,
+					"-test.main",
+					"--config.file="+configFilePath,
+					"--web.listen-address=0.0.0.0:"+strconv.Itoa(port),
+					"--storage.tsdb.path",
+					dbDir,
+					"--web.enable-remote-write-receiver",
+					// TODO: remove
+					"--log.level",
+					"debug",
+				)
+				require.NoError(t, prom.Start())
+
+				for !nospcDetected.Load() {
+					time.Sleep(200 * time.Millisecond)
+				}
+				// Sanity check: some WAL writes failed.
+				require.Eventually(t, func() bool {
+					failedWrites, err := getMetricValueFromURL(t, metricsURL, model.MetricTypeCounter, "prometheus_tsdb_wal_writes_failed_total")
+					if err != nil {
+						return false
+					}
+					return failedWrites > 0
+				}, 5*time.Second, 100*time.Millisecond)
+
+				// Let the instance run under ENOSPC to better simulate reality
+				time.Sleep(500 * time.Millisecond)
+
+				initialWalSize, err := getMetricValueFromURL(t, metricsURL, model.MetricTypeGauge, "prometheus_tsdb_wal_storage_size_bytes")
+				require.NoError(t, err)
+				require.NotZero(t, initialWalSize)
+
+				// Free the reserved space
+				require.NoError(t, os.Remove(placeholder))
+
+				// Ensure it resumes WAL writing
+				require.Eventually(t, func() bool {
+					walSize, err := getMetricValueFromURL(t, metricsURL, model.MetricTypeGauge, "prometheus_tsdb_wal_storage_size_bytes")
+					if err != nil {
+						return false
+					}
+					return walSize > initialWalSize+1024
+				}, 5*time.Second, 100*time.Millisecond)
+			})
+
+			// Restart the instance
+			prom := prometheusCommandWithLogging(
+				t,
+				configFilePath,
+				port,
+				"--storage.tsdb.path",
+				dbDir,
+				"--web.enable-remote-write-receiver",
+				// TODO: remove
+				"--log.level",
+				"debug",
+			)
+			require.NoError(t, prom.Start())
+
+			// Wait for the TSDB to be loaded.
+			waitForPrometheusReady(t, port)
+
+			// Ensure no corruptions
+			corruptions, err := getMetricValueFromURL(t, metricsURL, model.MetricTypeCounter, "prometheus_tsdb_wal_corruptions_total")
+			require.NoError(t, err)
+			require.Equal(t, 0.0, corruptions)
+
+			rwCorruptions, err := getMetricValueFromURL(t, metricsURL, model.MetricTypeCounter, "prometheus_tsdb_wal_reader_corruption_errors_total")
+			require.NoError(t, err)
+			require.Equal(t, 0.0, rwCorruptions)
+		})
+	}
 }
