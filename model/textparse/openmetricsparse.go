@@ -11,7 +11,6 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-//go:generate go get -u modernc.org/golex
 //go:generate golex -o=openmetricslex.l.go openmetricslex.l
 
 package textparse
@@ -216,9 +215,10 @@ func (p *OpenMetricsParser) Labels(l *labels.Labels) {
 	// Defensive copy in case the following keeps a reference.
 	// See https://github.com/prometheus/prometheus/issues/16490
 	s := string(p.series)
+	u := newUnescaper(s)
 
 	p.builder.Reset()
-	metricName := unreplace(s[p.offsets[0]-p.start : p.offsets[1]-p.start])
+	metricName := u.unreplace(s[p.offsets[0]-p.start : p.offsets[1]-p.start])
 
 	m := schema.Metadata{
 		Name: metricName,
@@ -233,14 +233,14 @@ func (p *OpenMetricsParser) Labels(l *labels.Labels) {
 	for i := 2; i < len(p.offsets); i += 4 {
 		a := p.offsets[i] - p.start
 		b := p.offsets[i+1] - p.start
-		label := unreplace(s[a:b])
+		label := u.unreplace(s[a:b])
 		if p.enableTypeAndUnitLabels && !m.IsEmptyFor(label) {
 			// Dropping user provided metadata labels, if found in the OM metadata.
 			continue
 		}
 		c := p.offsets[i+2] - p.start
 		d := p.offsets[i+3] - p.start
-		value := normalizeFloatsInLabelValues(p.mtype, label, unreplace(s[c:d]))
+		value := normalizeFloatsInLabelValues(p.mtype, label, u.unreplace(s[c:d]))
 		p.builder.Add(label, value)
 	}
 
