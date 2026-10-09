@@ -27,6 +27,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/prometheus/common/promslog"
 	"github.com/stretchr/testify/require"
 
 	"github.com/prometheus/prometheus/model/histogram"
@@ -5311,6 +5312,58 @@ func TestQueryStartTimestampsOverride(t *testing.T) {
 			require.NoError(t, res.Err)
 			require.NotNil(t, res.Value)
 			require.Equal(t, tc.expected, res.Value.String())
+		})
+	}
+}
+
+func TestEngine_NHCBAsClassic(t *testing.T) {
+	const load = `
+load 1m
+	%s {{schema:-53 sum:5 count:4 custom_values:[1 2] buckets:[1 2 1]}}
+`
+	// Secondary storage stands in for a remote-read endpoint behind the fanout,
+	// which is how cmd/prometheus wires local and remote storage.
+	primary := promqltest.LoadedStorage(t, fmt.Sprintf(load, "local_seconds"))
+	secondary := promqltest.LoadedStorage(t, fmt.Sprintf(load, "remote_seconds"))
+	fanout := storage.NewFanout(promslog.NewNopLogger(), primary, secondary)
+
+	for _, enabled := range []bool{false, true} {
+		t.Run(fmt.Sprintf("enabled=%v", enabled), func(t *testing.T) {
+			opts := promql.EngineOpts{
+				MaxSamples:          1000,
+				Timeout:             10 * time.Second,
+				EnableNHCBAsClassic: enabled,
+			}
+			ng := promqltest.NewTestEngineWithOpts(t, opts)
+
+			q, err := ng.NewInstantQuery(t.Context(), fanout, nil, `local_seconds_count or on(__name__) remote_seconds_count`, time.Unix(0, 0))
+			require.NoError(t, err)
+			t.Cleanup(q.Close)
+			res := q.Exec(t.Context())
+			require.NoError(t, res.Err)
+			vec, err := res.Vector()
+			require.NoError(t, err)
+
+			got := map[string]float64{}
+			for _, s := range vec {
+				got[s.Metric.Get(labels.MetricName)] = s.F
+			}
+			if !enabled {
+				require.Empty(t, got)
+				return
+			}
+			// Both local and remote-read NHCBs are converted, since the conversion
+			// wraps the engine's queryable rather than a single fanout leg.
+			require.Equal(t, map[string]float64{"local_seconds_count": 4, "remote_seconds_count": 4}, got)
+
+			// Other consumers of the same storage (e.g. the remote read API) still
+			// see raw data only.
+			sq, err := fanout.Querier(math.MinInt64, math.MaxInt64)
+			require.NoError(t, err)
+			t.Cleanup(func() { require.NoError(t, sq.Close()) })
+			ss := sq.Select(t.Context(), false, nil, labels.MustNewMatcher(labels.MatchEqual, labels.MetricName, "local_seconds_count"))
+			require.False(t, ss.Next())
+			require.NoError(t, ss.Err())
 		})
 	}
 }
