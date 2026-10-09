@@ -1166,7 +1166,15 @@ func funcRound(vectorVals []Vector, _ Matrix, args parser.Expressions, enh *Eval
 	// Invert as it seems to cause fewer floating point accuracy issues.
 	toNearestInverse := 1.0 / toNearest
 	return simpleFloatFunc(vectorVals, enh, func(f float64) float64 {
-		return math.Floor(f*toNearestInverse+0.5) / toNearestInverse
+		x := f * toNearestInverse
+		r := math.Floor(x + 0.5)
+		// The addition x+0.5 can round up to the next integer, for example
+		// for 0.49999999999999994 or for odd integers from 2^52 to 2^53.
+		// In that case r is one too large, and r-0.5 is greater than x.
+		if r-0.5 > x {
+			r--
+		}
+		return r / toNearestInverse
 	}), nil
 }
 
