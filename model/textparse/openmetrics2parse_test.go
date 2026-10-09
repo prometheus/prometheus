@@ -641,6 +641,57 @@ queue_size {gcount:4,gsum:100.0,bucket:[10:1,50:3,+Inf:4]}
 				},
 			},
 		},
+		{
+			name: "classic_gaugehistogram_negative_bucket",
+			input: `# TYPE queue_size gaugehistogram
+queue_size {gcount:2,gsum:2,bucket:[1:-1,+Inf:2]} 1234567.0 st@1000.0 # {id="req-1"} 0.8 1234566.0
+other 42
+# EOF
+`,
+			opts: ParserOptions{ConvertClassicHistogramsToNHCB: true},
+			exp: []parsedEntry{
+				{m: "queue_size", typ: model.MetricTypeGaugeHistogram},
+				{m: "queue_size_gcount", v: 2, t: &ts, st: 1000000, lset: labels.FromStrings("__name__", "queue_size_gcount"), es: []exemplar.Exemplar{{Labels: labels.FromStrings("id", "req-1"), Value: 0.8, HasTs: true, Ts: 1234566000}}},
+				{m: "queue_size_gsum", v: 2, t: &ts, st: 1000000, lset: labels.FromStrings("__name__", "queue_size_gsum")},
+				{m: "queue_size_bucket\xffle\xff1.0", v: -1, t: &ts, st: 1000000, lset: labels.FromStrings("__name__", "queue_size_bucket", "le", "1.0")},
+				{m: "queue_size_bucket\xffle\xff+Inf", v: 2, t: &ts, st: 1000000, lset: labels.FromStrings("__name__", "queue_size_bucket", "le", "+Inf")},
+				{m: "other", v: 42, lset: labels.FromStrings("__name__", "other")},
+			},
+		},
+		{
+			name: "classic_gaugehistogram_negative_count",
+			input: `# TYPE queue_size gaugehistogram
+queue_size {gcount:-1,gsum:-2,bucket:[1:-2,+Inf:-1]} 1234567.0 st@1000.0 # {id="req-1"} 0.8 1234566.0
+other 42
+# EOF
+`,
+			opts: ParserOptions{ConvertClassicHistogramsToNHCB: true},
+			exp: []parsedEntry{
+				{m: "queue_size", typ: model.MetricTypeGaugeHistogram},
+				{m: "queue_size_gcount", v: -1, t: &ts, st: 1000000, lset: labels.FromStrings("__name__", "queue_size_gcount"), es: []exemplar.Exemplar{{Labels: labels.FromStrings("id", "req-1"), Value: 0.8, HasTs: true, Ts: 1234566000}}},
+				{m: "queue_size_gsum", v: -2, t: &ts, st: 1000000, lset: labels.FromStrings("__name__", "queue_size_gsum")},
+				{m: "queue_size_bucket\xffle\xff1.0", v: -2, t: &ts, st: 1000000, lset: labels.FromStrings("__name__", "queue_size_bucket", "le", "1.0")},
+				{m: "queue_size_bucket\xffle\xff+Inf", v: -1, t: &ts, st: 1000000, lset: labels.FromStrings("__name__", "queue_size_bucket", "le", "+Inf")},
+				{m: "other", v: 42, lset: labels.FromStrings("__name__", "other")},
+			},
+		},
+		{
+			name: "classic_gaugehistogram_negative_bucket_with_keep_classic",
+			input: `# TYPE queue_size gaugehistogram
+queue_size {gcount:2,gsum:2,bucket:[1:-1,+Inf:2]} 1234567.0 st@1000.0 # {id="req-1"} 0.8 1234566.0
+other 42
+# EOF
+`,
+			opts: ParserOptions{ConvertClassicHistogramsToNHCB: true, KeepClassicOnClassicAndNativeHistograms: true},
+			exp: []parsedEntry{
+				{m: "queue_size", typ: model.MetricTypeGaugeHistogram},
+				{m: "queue_size_gcount", v: 2, t: &ts, st: 1000000, lset: labels.FromStrings("__name__", "queue_size_gcount"), es: []exemplar.Exemplar{{Labels: labels.FromStrings("id", "req-1"), Value: 0.8, HasTs: true, Ts: 1234566000}}},
+				{m: "queue_size_gsum", v: 2, t: &ts, st: 1000000, lset: labels.FromStrings("__name__", "queue_size_gsum")},
+				{m: "queue_size_bucket\xffle\xff1.0", v: -1, t: &ts, st: 1000000, lset: labels.FromStrings("__name__", "queue_size_bucket", "le", "1.0")},
+				{m: "queue_size_bucket\xffle\xff+Inf", v: 2, t: &ts, st: 1000000, lset: labels.FromStrings("__name__", "queue_size_bucket", "le", "+Inf")},
+				{m: "other", v: 42, lset: labels.FromStrings("__name__", "other")},
+			},
+		},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			p := NewOpenMetrics2Parser([]byte(tc.input), labels.NewSymbolTable(), tc.opts)

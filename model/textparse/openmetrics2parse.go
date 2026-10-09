@@ -953,6 +953,15 @@ func (p *openMetrics2Parser) parseHistogramComposite() (Entry, error) {
 	if p.convertClassicHistToNHCB {
 		h, fh, err := p.buildNHCBHistogram(cf, isNative)
 		if err != nil {
+			if isGauge {
+				// Gauge histograms may have signed counts that NHCB cannot represent.
+				// Preserve their classic series if conversion fails.
+				pending, err := p.buildClassicHistogramPending(cf, isNative, p.hasTS, p.ts)
+				if err != nil {
+					return EntryInvalid, fmt.Errorf("error parsing classic histogram composite: %w", err)
+				}
+				return p.servePending(pending)
+			}
 			return EntryInvalid, fmt.Errorf("error parsing classic histogram composite: %w", err)
 		}
 		p.h = h
