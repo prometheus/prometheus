@@ -16,6 +16,7 @@
 package labels
 
 import (
+	"fmt"
 	"slices"
 	"strings"
 	"unsafe"
@@ -241,19 +242,26 @@ func (ls Labels) Has(name string) bool {
 	return false
 }
 
-// HasDuplicateLabelNames returns whether ls has duplicate label names.
-// It assumes that the labelset is sorted.
-func (ls Labels) HasDuplicateLabelNames() (string, bool) {
-	var lName, prevName string
-	for i := 0; i < len(ls.data); {
-		lName, i = decodeString(ls.data, i)
-		_, i = decodeString(ls.data, i)
-		if lName == prevName {
-			return lName, true
-		}
-		prevName = lName
+// ValidateOrder checks that label names are strictly increasing.
+// It returns an error for the first duplicate or out-of-order name.
+func (ls Labels) ValidateOrder() error {
+	if ls.data == "" {
+		return nil
 	}
-	return "", false
+	prev, i := decodeString(ls.data, 0)
+	_, i = decodeString(ls.data, i)
+	for i < len(ls.data) {
+		name, next := decodeString(ls.data, i)
+		_, i = decodeString(ls.data, next)
+		if name <= prev {
+			if name == prev {
+				return fmt.Errorf("label name %q is not unique", name)
+			}
+			return fmt.Errorf("label name %q is out of order", name)
+		}
+		prev = name
+	}
+	return nil
 }
 
 // WithoutEmpty returns the labelset without empty labels.
