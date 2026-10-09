@@ -14,6 +14,7 @@
 import { parser } from '@prometheus-io/lezer-promql';
 import { Extension } from '@codemirror/state';
 import { CompleteConfiguration, CompleteStrategy, newCompleteStrategy } from './complete';
+
 import { LintStrategy, newLintStrategy, promQLLinter } from './lint';
 import { CompletionContext } from '@codemirror/autocomplete';
 import { LRLanguage } from '@codemirror/language';
