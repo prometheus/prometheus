@@ -283,6 +283,38 @@ Run range query.
 
 
 
+##### `promtool query backtest`
+
+Replay an alerting rule over historical data and report when it would have been pending and firing.
+
+
+
+###### Flags
+
+| Flag | Description | Default |
+| --- | --- | --- |
+| <code class="text-nowrap">--name</code> | Name of the simulated alert. | `Backtest` |
+| <code class="text-nowrap">--for</code> | The 'for' duration to simulate. |  |
+| <code class="text-nowrap">--keep-firing-for</code> | The 'keep_firing_for' duration to simulate. |  |
+| <code class="text-nowrap">--label</code> | Label to attach to the simulated alert. Can be specified multiple times. |  |
+| <code class="text-nowrap">--start</code> | Backtest range start time (RFC3339 or Unix timestamp), defaults to one hour before the end. |  |
+| <code class="text-nowrap">--end</code> | Backtest range end time (RFC3339 or Unix timestamp), defaults to now. |  |
+| <code class="text-nowrap">--interval</code> | Evaluation interval to simulate. Determines the resolution of the 'for' duration. | `1m` |
+| <code class="text-nowrap">--header</code> | Extra headers to send to server. |  |
+
+
+
+
+###### Arguments
+
+| Argument | Description | Required |
+| --- | --- | --- |
+| server | Prometheus server to query. | Yes |
+| expr | PromQL alerting rule expression. | Yes |
+
+
+
+
 ##### `promtool query series`
 
 Run series query.
