@@ -102,6 +102,14 @@ func newTestHeadWithOptions(t testing.TB, compressWAL compression.Type, opts *He
 	return h, wal
 }
 
+func waitForWALCheckpoint(t testing.TB, h *Head, mint int64) {
+	t.Helper()
+	require.Eventually(t, func() bool {
+		return h.walCheckpointCompleted.Load() >= mint
+	}, 5*time.Second, 10*time.Millisecond)
+	require.GreaterOrEqual(t, h.walCheckpointCompleted.Load(), mint)
+}
+
 func BenchmarkCreateSeries(b *testing.B) {
 	series := genSeries(b.N, 10, 0, 0)
 	h, _ := newTestHead(b, 10000, compression.None, false)
@@ -1299,6 +1307,128 @@ func TestHead_WALCheckpointMultiRef(t *testing.T) {
 			})
 		}
 	}
+}
+
+// TestTriggerWALCheckpointMultipleCalls verifies WAL checkpoint worker
+// behaviour when a new checkpoint is triggered with new mint multiple times while
+// the worker is busy.
+func TestTriggerWALCheckpointMultipleCalls(t *testing.T) {
+	tests := []struct {
+		name          string
+		completedMint int64   // Mint of the last completed checkpoint.
+		queuedMints   []int64 // Mints in the queue before the trigger.
+		newMint       int64   // Mint passed to triggerWALCheckpoint.
+		wantMints     []int64 // Mints expected in the queue.
+	}{
+		{
+			name:          "queues mint when queue is empty",
+			completedMint: math.MinInt64,
+			queuedMints:   []int64{},
+			newMint:       100,
+			wantMints:     []int64{100},
+		},
+		{
+			name:          "newer mint replaces pending mint",
+			completedMint: math.MinInt64,
+			queuedMints:   []int64{100},
+			newMint:       200,
+			wantMints:     []int64{200},
+		},
+		{
+			name:          "older mint keeps pending mint",
+			completedMint: math.MinInt64,
+			queuedMints:   []int64{200},
+			newMint:       100,
+			wantMints:     []int64{200},
+		},
+		{
+			name:          "ignores completed mint",
+			completedMint: 200,
+			queuedMints:   []int64{},
+			newMint:       100,
+			wantMints:     []int64{},
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			// Create a dummy Head without starting WAL worker so it never
+			// acts on queued checkpoints.
+			h := &Head{
+				wal:           &wlog.WL{},
+				logger:        promslog.NewNopLogger(),
+				walCheckpoint: make(chan int64, 1),
+			}
+			h.lastWALTruncationTime.Store(tc.completedMint)
+			for _, mint := range tc.queuedMints {
+				h.walCheckpoint <- mint
+			}
+
+			h.triggerWALCheckpoint(tc.newMint)
+
+			gotMints := make([]int64, 0, len(h.walCheckpoint))
+			for len(h.walCheckpoint) > 0 {
+				gotMints = append(gotMints, <-h.walCheckpoint)
+			}
+			require.Equal(t, tc.wantMints, gotMints)
+		})
+	}
+
+	t.Run("completion remains monotonic for older queued mint", func(t *testing.T) {
+		h, _ := newTestHead(t, 1000, compression.None, false)
+
+		// An older request can queue while a newer checkpoint waits for
+		// chunkSnapshotMtx.
+		func() {
+			h.chunkSnapshotMtx.Lock()
+			defer h.chunkSnapshotMtx.Unlock()
+
+			h.triggerWALCheckpoint(200)
+			require.Eventually(t, func() bool {
+				return len(h.walCheckpoint) == 0
+			}, 5*time.Second, 10*time.Millisecond)
+			h.triggerWALCheckpoint(100)
+			require.Len(t, h.walCheckpoint, 1)
+		}()
+
+		require.NoError(t, h.Close())
+		require.Equal(t, int64(200), h.lastWALTruncationTime.Load())
+		require.Equal(t, int64(200), h.walCheckpointCompleted.Load())
+	})
+}
+
+func TestWALCheckpointRetriesFailedMint(t *testing.T) {
+	h, wal := newTestHead(t, 1000, compression.None, false)
+	app := h.Appender(context.Background())
+	for _, ts := range []int64{0, 1} {
+		_, err := app.Append(0, labels.FromStrings("a", "b"), ts, float64(ts))
+		require.NoError(t, err)
+	}
+	require.NoError(t, app.Commit())
+	for range 4 {
+		_, err := wal.NextSegment()
+		require.NoError(t, err)
+	}
+
+	// A file at the checkpoint path makes checkpoint creation fail.
+	blockedCheckpoint := wlog.CheckpointDir(wal.Dir(), 2)
+	require.NoError(t, os.WriteFile(blockedCheckpoint, nil, 0o600))
+	require.NoError(t, h.Truncate(1))
+	require.Eventually(t, func() bool {
+		return prom_testutil.ToFloat64(h.metrics.checkpointCreationFail) == 1
+	}, 5*time.Second, 10*time.Millisecond)
+	require.Equal(t, int64(math.MinInt64), h.lastWALTruncationTime.Load())
+	require.Equal(t, int64(math.MinInt64), h.walCheckpointCompleted.Load())
+
+	require.NoError(t, os.Remove(blockedCheckpoint))
+	require.NoError(t, h.Truncate(1))
+	waitForWALCheckpoint(t, h, 1)
+	require.Equal(t, int64(1), h.lastWALTruncationTime.Load())
+	require.Equal(t, 1.0, prom_testutil.ToFloat64(h.metrics.checkpointCreationFail))
+	require.Equal(t, 2.0, prom_testutil.ToFloat64(h.metrics.checkpointCreationTotal))
+	_, checkpointIndex, err := wlog.LastCheckpoint(wal.Dir())
+	require.NoError(t, err)
+	require.Equal(t, 2, checkpointIndex)
 }
 
 func TestHead_KeepSeriesInWALCheckpoint(t *testing.T) {
@@ -3370,12 +3500,14 @@ func TestNewWalSegmentOnTruncate(t *testing.T) {
 
 	add(1)
 	require.NoError(t, h.Truncate(1))
+	waitForWALCheckpoint(t, h, 1)
 	_, last, err = wlog.Segments(wal.Dir())
 	require.NoError(t, err)
 	require.Equal(t, 1, last)
 
 	add(2)
 	require.NoError(t, h.Truncate(2))
+	waitForWALCheckpoint(t, h, 2)
 	_, last, err = wlog.Segments(wal.Dir())
 	require.NoError(t, err)
 	require.Equal(t, 2, last)
@@ -7030,7 +7162,22 @@ func testHeadMinOOOTimeUpdate(t *testing.T, scenario sampleTypeScenario) {
 	require.Equal(t, 295*time.Minute.Milliseconds(), h.MinOOOTime())
 
 	// Allowed window for OOO is >=290, which is before the earliest ooo sample 295, so it gets set to the lower value.
-	require.NoError(t, h.truncateOOO(0, 1))
+	// Hold chunkSnapshotMtx while OOO cleanup starts. minOOOMmapRef must
+	// advance only after the lock is released.
+	h.chunkSnapshotMtx.Lock()
+	started := make(chan struct{})
+	done := make(chan error, 1)
+	go func() {
+		close(started)
+		done <- h.truncateOOO(0, 1)
+	}()
+	<-started
+	time.Sleep(50 * time.Millisecond)
+	minOOOMmapRef := h.minOOOMmapRef.Load()
+	h.chunkSnapshotMtx.Unlock()
+	require.Equal(t, uint64(0), minOOOMmapRef)
+	require.NoError(t, <-done)
+	require.Equal(t, uint64(1), h.minOOOMmapRef.Load())
 	require.Equal(t, 290*time.Minute.Milliseconds(), h.MinOOOTime())
 
 	appendSample(310) // In-order sample.
