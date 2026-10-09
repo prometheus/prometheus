@@ -1058,6 +1058,7 @@ func TestHead_WALCheckpointMultiRef(t *testing.T) {
 	cases := []struct {
 		name               string
 		walEntries         []any
+		wblEntries         []any
 		expectedWalExpiry  int64
 		walTruncateMinT    int64
 		expectedWalEntries []any
@@ -1259,13 +1260,115 @@ func TestHead_WALCheckpointMultiRef(t *testing.T) {
 				},
 			},
 		},
+		// The WBL resolves the duplicate reference only through the series
+		// record, so the record must outlive its expiry until the WBL is truncated.
+		{
+			name: "OOO samples only; keep duplicate series record that the WBL needs",
+			walEntries: []any{
+				[]record.RefSeries{
+					{Ref: 1, Labels: labels.FromStrings("a", "1")},
+					{Ref: 2, Labels: labels.FromStrings("a", "1")},
+				},
+				[]record.RefSample{
+					{Ref: 1, T: 100, V: 1},
+					{Ref: 2, T: 500, V: 2},
+				},
+			},
+			wblEntries: []any{
+				[]record.RefSample{
+					{Ref: 2, T: 300, V: 3},
+				},
+			},
+			expectedWalExpiry: 500,
+			walTruncateMinT:   600,
+			expectedWalEntries: []any{
+				[]record.RefSeries{
+					{Ref: 1, Labels: labels.FromStrings("a", "1")},
+					{Ref: 2, Labels: labels.FromStrings("a", "1")},
+				},
+			},
+		},
+		{
+			name: "OOO histograms only; keep duplicate series record that the WBL needs",
+			walEntries: []any{
+				[]record.RefSeries{
+					{Ref: 1, Labels: labels.FromStrings("a", "1")},
+					{Ref: 2, Labels: labels.FromStrings("a", "1")},
+				},
+				[]record.RefHistogramSample{
+					{Ref: 1, T: 100, H: &histogram.Histogram{}},
+					{Ref: 2, T: 500, H: &histogram.Histogram{}},
+				},
+			},
+			wblEntries: []any{
+				[]record.RefHistogramSample{
+					{Ref: 2, T: 300, H: &histogram.Histogram{}},
+				},
+			},
+			expectedWalExpiry: 500,
+			walTruncateMinT:   600,
+			expectedWalEntries: []any{
+				[]record.RefSeries{
+					{Ref: 1, Labels: labels.FromStrings("a", "1")},
+					{Ref: 2, Labels: labels.FromStrings("a", "1")},
+				},
+			},
+		},
+		{
+			name: "OOO float histograms only; keep duplicate series record that the WBL needs",
+			walEntries: []any{
+				[]record.RefSeries{
+					{Ref: 1, Labels: labels.FromStrings("a", "1")},
+					{Ref: 2, Labels: labels.FromStrings("a", "1")},
+				},
+				[]record.RefFloatHistogramSample{
+					{Ref: 1, T: 100, FH: &histogram.FloatHistogram{}},
+					{Ref: 2, T: 500, FH: &histogram.FloatHistogram{}},
+				},
+			},
+			wblEntries: []any{
+				[]record.RefFloatHistogramSample{
+					{Ref: 2, T: 300, FH: &histogram.FloatHistogram{}},
+				},
+			},
+			expectedWalExpiry: 500,
+			walTruncateMinT:   600,
+			expectedWalEntries: []any{
+				[]record.RefSeries{
+					{Ref: 1, Labels: labels.FromStrings("a", "1")},
+					{Ref: 2, Labels: labels.FromStrings("a", "1")},
+				},
+			},
+		},
 	}
 
 	for _, enableSTStorage := range []bool{false, true} {
 		for _, tc := range cases {
 			t.Run(tc.name+",stStorage="+strconv.FormatBool(enableSTStorage), func(t *testing.T) {
-				h, w := newTestHead(t, 1000, compression.None, false)
+				var (
+					h      *Head
+					w, wbl *wlog.WL
+				)
+				if len(tc.wblEntries) == 0 {
+					h, w = newTestHead(t, 1000, compression.None, false)
+				} else {
+					dir := t.TempDir()
+					var err error
+					w, err = wlog.NewSize(nil, nil, filepath.Join(dir, "wal"), 32768, compression.None)
+					require.NoError(t, err)
+					wbl, err = wlog.NewSize(nil, nil, filepath.Join(dir, wlog.WblDirName), 32768, compression.None)
+					require.NoError(t, err)
+					opts := newTestHeadDefaultOptions(1000, true)
+					opts.ChunkDirRoot = dir
+					h, err = NewHead(nil, nil, w, wbl, opts, nil)
+					require.NoError(t, err)
+					t.Cleanup(func() { _ = h.Close() })
+				}
+
 				populateTestWL(t, w, tc.walEntries, nil, enableSTStorage)
+				if wbl != nil {
+					populateTestWL(t, wbl, tc.wblEntries, nil, enableSTStorage)
+				}
 				first, _, err := wlog.Segments(w.Dir())
 				require.NoError(t, err)
 
