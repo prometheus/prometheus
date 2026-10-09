@@ -302,7 +302,10 @@ func rangeQueryCases() []benchCase {
 			expr:  "count({__name__!=\"\",l=\"\"})",
 			steps: 1,
 		},
-		// Functions which have special handling inside eval()
+		{
+			expr: "quantile_over_time(time() % 100 / 100, a_X[1m:10s] @ 86400)",
+		},
+		// Functions which have special handling inside eval().
 		{
 			expr: "timestamp(a_X)",
 		},
@@ -338,11 +341,12 @@ func BenchmarkRangeQuery(b *testing.B) {
 	stor.DisableCompactions() // Don't want auto-compaction disrupting timings.
 
 	opts := promql.EngineOpts{
-		Logger:     nil,
-		Reg:        nil,
-		MaxSamples: 50000000,
-		Timeout:    100 * time.Second,
-		Parser:     parser.NewParser(parser.Options{EnableExperimentalFunctions: true}),
+		Logger:           nil,
+		Reg:              nil,
+		MaxSamples:       50000000,
+		Timeout:          100 * time.Second,
+		EnableAtModifier: true,
+		Parser:           parser.NewParser(parser.Options{EnableExperimentalFunctions: true}),
 	}
 	engine := promqltest.NewTestEngineWithOpts(b, opts)
 

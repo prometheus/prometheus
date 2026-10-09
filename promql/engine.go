@@ -2007,7 +2007,11 @@ func (ev *evaluator) subqueryTimeRange(e *parser.SubqueryExpr) (start, end, inte
 	rangeMillis := durationMilliseconds(e.Range)
 
 	parentEnd := ev.endTimestamp
-	if ev.interval > 0 {
+	if e.Timestamp != nil {
+		// Every parent step consumes the same window with an @ modifier.
+		// The adjusted offset is relative to the parent's start timestamp.
+		parentEnd = ev.startTimestamp
+	} else if ev.interval > 0 {
 		parentEnd = ev.startTimestamp + ((ev.endTimestamp-ev.startTimestamp)/ev.interval)*ev.interval
 	}
 	end = parentEnd - offsetMillis

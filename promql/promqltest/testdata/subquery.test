@@ -159,3 +159,32 @@ eval instant at 12m min_over_time((topk(1, foo))[1m:5m])
 	expect no_info
 	expect no_warn
 	#empty
+
+clear
+
+load 10s
+  metric 1+1x100
+
+# A varying scalar argument keeps the parent evaluation from being step invariant.
+# Only the fixed subquery window is consumed, including with offsets and nesting.
+eval range from 250s to 280s step 10s quantile_over_time(time() / 1000, metric[20s:10s] @ 200)
+  {} 20.25 20.26 20.27 20.28
+
+eval range from 250s to 280s step 10s quantile_over_time(time() / 1000, metric[20s:10s] @ 200 offset 1m)
+  {} 14.25 14.26 14.27 14.28
+
+eval range from 250s to 280s step 10s quantile_over_time(time() / 1000, metric[20s:10s] @ 200 offset -1m)
+  {} 26.25 26.26 26.27 26.28
+
+eval range from 250s to 280s step 10s quantile_over_time(time() / 1000, metric[20s:10s] @ start())
+  {} 25.25 25.26 25.27 25.28
+
+eval range from 250s to 280s step 10s quantile_over_time(time() / 1000, metric[20s:10s] @ end())
+  {} 28.25 28.26 28.27 28.28
+
+eval range from 250s to 280s step 10s sum_over_time(quantile_over_time(time() / 1000, metric[20s:10s] @ 200)[20s:10s])
+  {} 40.49 40.51 40.53 40.55
+
+# An unaligned parent end must not extend the fixed window.
+eval range from 251s to 289s step 10s quantile_over_time(time() / 1000, metric[20s:10s] @ 200)
+  {} 20.251 20.261 20.271 20.281
