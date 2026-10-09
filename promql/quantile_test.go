@@ -16,6 +16,7 @@ package promql
 import (
 	"fmt"
 	"math"
+	"slices"
 	"testing"
 
 	"github.com/stretchr/testify/require"
@@ -381,7 +382,7 @@ func TestBucketFraction(t *testing.T) {
 		{"reversed bounds", buckets, 1, 0, 0},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			got := BucketFraction(tc.lower, tc.upper, tc.buckets)
+			got := BucketFraction(tc.lower, tc.upper, slices.Clone(tc.buckets))
 			switch {
 			case math.IsNaN(tc.want):
 				require.True(t, math.IsNaN(got))
