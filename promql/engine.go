@@ -3282,9 +3282,11 @@ func (ev *evaluator) VectorBinop(op parser.ItemType, lhs, rhs Vector, matching *
 	// The control flow below handles one-to-one or many-to-one matching.
 	// For one-to-many, swap sidedness and account for the swap when calculating
 	// values.
+	fillLHS, fillRHS := matching.FillValues.LHS, matching.FillValues.RHS
 	if matching.Card == parser.CardOneToMany {
 		lhs, rhs = rhs, lhs
 		lhsh, rhsh = rhsh, lhsh
+		fillLHS, fillRHS = fillRHS, fillLHS
 	}
 
 	// All samples from the rhs by their join signature ordinal.
@@ -3405,7 +3407,7 @@ func (ev *evaluator) VectorBinop(op parser.ItemType, lhs, rhs Vector, matching *
 			rs = rightSigs[sigOrd]
 		} else {
 			// Have to fall back to the fill value.
-			fill := matching.FillValues.RHS
+			fill := fillRHS
 			if fill == nil {
 				continue
 			}
@@ -3420,7 +3422,7 @@ func (ev *evaluator) VectorBinop(op parser.ItemType, lhs, rhs Vector, matching *
 
 	// For any rhs samples which have not been matched, check if we need to
 	// perform the operation with a fill value from the lhs.
-	if fill := matching.FillValues.LHS; fill != nil {
+	if fill := fillLHS; fill != nil {
 		for i, rs := range rhs {
 			sigOrd := rhsh[i].sigOrdinal
 
