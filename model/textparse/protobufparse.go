@@ -729,7 +729,8 @@ func isNativeHistogram(h *dto.Histogram) bool {
 	return len(h.GetPositiveSpan()) > 0 ||
 		len(h.GetNegativeSpan()) > 0 ||
 		h.GetZeroThreshold() > 0 ||
-		h.GetZeroCount() > 0
+		h.GetZeroCount() > 0 ||
+		h.GetZeroCountFloat() > 0
 }
 
 func isFloatHistogram(h *dto.Histogram) bool {
