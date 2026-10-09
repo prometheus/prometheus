@@ -30,6 +30,7 @@ type SeriesEntry struct {
 }
 
 func (s *SeriesEntry) Labels() labels.Labels                           { return s.Lset }
+func (s *SeriesEntry) OriginalLabelsHash() uint64                      { return s.Lset.Hash() }
 func (s *SeriesEntry) Iterator(it chunkenc.Iterator) chunkenc.Iterator { return s.SampleIteratorFn(it) }
 
 type ChunkSeriesEntry struct {
