@@ -84,7 +84,17 @@ func getCompatibleBlockDuration(maxBlockDuration int64) int64 {
 	return blockDuration
 }
 
-func createBlocks(input []byte, mint, maxt, maxBlockDuration int64, maxSamplesInAppender int, outputDir string, humanReadable, quiet bool, customLabels map[string]string) (returnErr error) {
+type parserBuilder func(input []byte, st *labels.SymbolTable) textparse.Parser
+
+func protobufParserBuilder(input []byte, _ *labels.SymbolTable) textparse.Parser {
+	return textparse.NewProtobufSeriesParser(input)
+}
+
+func openMetricsParserBuilder(input []byte, st *labels.SymbolTable) textparse.Parser {
+	return textparse.NewOpenMetricsParser(input, st)
+}
+
+func createBlocks(input []byte, parserBuilder parserBuilder, mint, maxt, maxBlockDuration int64, maxSamplesInAppender int, outputDir string, humanReadable, quiet bool, customLabels map[string]string) (returnErr error) {
 	blockDuration := getCompatibleBlockDuration(maxBlockDuration)
 	mint = blockDuration * (mint / blockDuration)
 
@@ -130,7 +140,7 @@ func createBlocks(input []byte, mint, maxt, maxBlockDuration int64, maxSamplesIn
 			ctx := context.Background()
 			app := w.Appender(ctx)
 			symbolTable := labels.NewSymbolTable() // One table per block means it won't grow too large.
-			p := textparse.NewOpenMetricsParser(input, symbolTable)
+			p := parserBuilder(input, symbolTable)
 			samplesCount := 0
 			for {
 				e, err := p.Next()
@@ -228,13 +238,13 @@ func createBlocks(input []byte, mint, maxt, maxBlockDuration int64, maxSamplesIn
 	return nil
 }
 
-func backfill(maxSamplesInAppender int, input []byte, outputDir string, humanReadable, quiet bool, maxBlockDuration time.Duration, customLabels map[string]string) (err error) {
-	p := textparse.NewOpenMetricsParser(input, nil) // Don't need a SymbolTable to get max and min timestamps.
+func backfill(maxSamplesInAppender int, input []byte, outputDir string, parserBuilder parserBuilder, humanReadable, quiet bool, maxBlockDuration time.Duration, customLabels map[string]string) (err error) {
+	p := parserBuilder(input, nil) // Don't need a SymbolTable to get max and min timestamps.
 	maxt, mint, err := getMinAndMaxTimestamps(p)
 	if err != nil {
 		return fmt.Errorf("getting min and max timestamp: %w", err)
 	}
-	if err = createBlocks(input, mint, maxt, int64(maxBlockDuration/time.Millisecond), maxSamplesInAppender, outputDir, humanReadable, quiet, customLabels); err != nil {
+	if err = createBlocks(input, parserBuilder, mint, maxt, int64(maxBlockDuration/time.Millisecond), maxSamplesInAppender, outputDir, humanReadable, quiet, customLabels); err != nil {
 		return fmt.Errorf("block creation: %w", err)
 	}
 	return nil
