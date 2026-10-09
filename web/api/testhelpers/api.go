@@ -68,6 +68,7 @@ type TSDBAdminStats interface {
 	Delete(ctx context.Context, mint, maxt int64, ms ...*labels.Matcher) error
 	Snapshot(dir string, withHead bool) error
 	Stats(statsByLabelName string, limit int) (*tsdb.Stats, error)
+	StatsForMatchers(ctx context.Context, statsByLabelName string, limit int, matchers []*labels.Matcher) (*tsdb.Stats, error)
 	WALReplayStatus() (tsdb.WALReplayStatus, error)
 	BlockMetas() ([]tsdb.BlockMeta, error)
 }
