@@ -267,7 +267,9 @@ func (ce *CircularExemplarStorage) validateExemplar(idx *indexEntry, e exemplar.
 	// duplicates without iterating through all stored exemplars, which would be too
 	// expensive under lock. Exemplars with equal timestamps but different values or
 	// labels are allowed to support multiple buckets of native histograms.
-	if (e.Ts < newestExemplar.Ts && e.Ts <= newestExemplar.Ts-ce.oooTimeWindowMillis) ||
+	// Unsigned distance preserves the full timestamp range without a wrapped cutoff.
+	if (e.Ts < newestExemplar.Ts && (ce.oooTimeWindowMillis <= 0 ||
+		uint64(newestExemplar.Ts)-uint64(e.Ts) >= uint64(ce.oooTimeWindowMillis))) ||
 		(e.Ts == newestExemplar.Ts && e.Value < newestExemplar.Value) ||
 		(e.Ts == newestExemplar.Ts && e.Value == newestExemplar.Value && e.Labels.Hash() < newestExemplar.Labels.Hash()) {
 		if appended {
