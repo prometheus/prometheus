@@ -682,6 +682,115 @@ http_requests_total{code="200"} 3 1629863088.000
 			},
 		},
 		{
+			// Regression test for https://github.com/prometheus/prometheus/issues/12531.
+			// Duplicate samples (same series + timestamp, different value) that cross an
+			// appender batch boundary must be skipped (first value wins), matching the
+			// within-batch behaviour where the TSDB commit already drops them without error.
+			ToParse: `# HELP http_requests_total The total number of HTTP requests.
+# TYPE http_requests_total counter
+http_requests_total{code="200"} 1 1565133713.989
+http_requests_total{code="200"} 2 1565133713.989
+http_requests_total{code="200"} 3 1565133714.989
+# EOF
+`,
+			IsOk:                 true,
+			Description:          "Duplicate samples across appender batch boundary are skipped, not fatal.",
+			MaxSamplesInAppender: 1,
+			Expected: struct {
+				MinTime       int64
+				MaxTime       int64
+				NumBlocks     int
+				BlockDuration int64
+				Samples       []backfillSample
+			}{
+				MinTime:       1565133713989,
+				MaxTime:       1565133714989,
+				NumBlocks:     1,
+				BlockDuration: tsdb.DefaultBlockDuration,
+				Samples: []backfillSample{
+					{
+						Timestamp: 1565133713989,
+						Value:     1,
+						Labels:    labels.FromStrings("__name__", "http_requests_total", "code", "200"),
+					},
+					{
+						Timestamp: 1565133714989,
+						Value:     3,
+						Labels:    labels.FromStrings("__name__", "http_requests_total", "code", "200"),
+					},
+				},
+			},
+		},
+		{
+			// Issue #12531 reproducer: multiple conflicting values for the same
+			// series+timestamp. With MaxSamplesInAppender=1 every append commits
+			// immediately so every duplicate takes the cross-batch path.
+			ToParse: `# HELP camel_route_exchange Camel route exchange count.
+# TYPE camel_route_exchange gauge
+camel_route_exchange{host="XXX"} 12 1686096035.177
+camel_route_exchange{host="XXX"} 11 1686096035.177
+camel_route_exchange{host="XXX"} 13 1686096035.177
+camel_route_exchange{host="XXX"} 10 1686096035.177
+# EOF
+`,
+			IsOk:                 true,
+			Description:          "Issue #12531 repro: multiple duplicates for one series+timestamp are skipped.",
+			MaxSamplesInAppender: 1,
+			Expected: struct {
+				MinTime       int64
+				MaxTime       int64
+				NumBlocks     int
+				BlockDuration int64
+				Samples       []backfillSample
+			}{
+				MinTime:       1686096035177,
+				MaxTime:       1686096035177,
+				NumBlocks:     1,
+				BlockDuration: tsdb.DefaultBlockDuration,
+				Samples: []backfillSample{
+					{
+						Timestamp: 1686096035177,
+						Value:     12,
+						Labels:    labels.FromStrings("__name__", "camel_route_exchange", "host", "XXX"),
+					},
+				},
+			},
+		},
+		{
+			// Same four conflicting samples as above, but all inside one appender
+			// batch. Must also succeed (TSDB drops duplicates at Commit).
+			ToParse: `# HELP camel_route_exchange Camel route exchange count.
+# TYPE camel_route_exchange gauge
+camel_route_exchange{host="XXX"} 14 1686096035.177
+camel_route_exchange{host="XXX"} 2 1686096035.177
+camel_route_exchange{host="XXX"} 40 1686096035.177
+camel_route_exchange{host="XXX"} 1 1686096035.177
+# EOF
+`,
+			IsOk:                 true,
+			Description:          "Within-batch duplicate samples are silently dropped at commit.",
+			MaxSamplesInAppender: 5000,
+			Expected: struct {
+				MinTime       int64
+				MaxTime       int64
+				NumBlocks     int
+				BlockDuration int64
+				Samples       []backfillSample
+			}{
+				MinTime:       1686096035177,
+				MaxTime:       1686096035177,
+				NumBlocks:     1,
+				BlockDuration: tsdb.DefaultBlockDuration,
+				Samples: []backfillSample{
+					{
+						Timestamp: 1686096035177,
+						Value:     14,
+						Labels:    labels.FromStrings("__name__", "camel_route_exchange", "host", "XXX"),
+					},
+				},
+			},
+		},
+		{
 			ToParse: `# HELP rpc_duration_seconds A summary of the RPC duration in seconds.
 # TYPE rpc_duration_seconds summary
 rpc_duration_seconds{quantile="0.01"} 3102
