@@ -11,6 +11,7 @@ import ASTNode, {
 import {
   aggregatorsWithParam,
   maybeParenthesizeBinopChild,
+  maybeParenthesizeBinopLHS,
   escapeString,
   metricContainsExtendedCharset,
   maybeQuoteLabelName,
@@ -209,7 +210,7 @@ const serializeNode = (
         }
       }
 
-      return `${serializeNode(maybeParenthesizeBinopChild(node.op, node.lhs), childIndent, pretty)}${childSeparator}${ind}${
+      return `${serializeNode(maybeParenthesizeBinopLHS(node.op, node.lhs), childIndent, pretty)}${childSeparator}${ind}${
         node.op
       }${node.bool ? " bool" : ""}${matching}${grouping}${fill}${childSeparator}${serializeNode(
         maybeParenthesizeBinopChild(node.op, node.rhs),
