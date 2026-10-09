@@ -3583,7 +3583,10 @@ The `__param_<name>`
 label is set to the value of the first passed URL parameter called `<name>`, as defined in `scrape_config`.
 
 The `__scrape_interval__` and `__scrape_timeout__` labels are set to the target's
-interval and timeout, as specified in `scrape_config`.
+interval and timeout, as specified in `scrape_config`. Service discovery integrations
+that override `__scrape_interval__` SHOULD also override `__scrape_timeout__` to keep
+the settings consistent. If a scrape config has an explicit `scrape_interval` but no
+`scrape_timeout`, its global timeout is capped by an interval supplied by service discovery.
 
 The `__convert_classic_histograms_to_nhcb__` label is set to the target's
 `convert_classic_histograms_to_nhcb` value, as specified in `scrape_config`

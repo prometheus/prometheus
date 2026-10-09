@@ -623,6 +623,92 @@ func TestPopulateLabels(t *testing.T) {
 	}
 }
 
+func TestInheritedGlobalScrapeTimeoutWithDiscoveredInterval(t *testing.T) {
+	for _, tc := range []struct {
+		name           string
+		jobInterval    string
+		jobTimeout     string
+		targetInterval model.LabelValue
+		targetTimeout  model.LabelValue
+		wantTimeout    string
+	}{
+		{
+			name:           "global timeout applies to longer discovered interval",
+			jobInterval:    "    scrape_interval: 40s\n",
+			targetInterval: "5m",
+			wantTimeout:    "1m",
+		},
+		{
+			name:           "global timeout is capped to shorter discovered interval",
+			jobInterval:    "    scrape_interval: 40s\n",
+			targetInterval: "30s",
+			wantTimeout:    "30s",
+		},
+		{
+			name:           "discovered timeout takes precedence",
+			jobInterval:    "    scrape_interval: 40s\n",
+			targetInterval: "5m",
+			targetTimeout:  "2m",
+			wantTimeout:    "2m",
+		},
+		{
+			name:           "discovered timeout equal to job default takes precedence",
+			jobInterval:    "    scrape_interval: 40s\n",
+			targetInterval: "5m",
+			targetTimeout:  "40s",
+			wantTimeout:    "40s",
+		},
+		{
+			name:           "explicit job timeout is preserved",
+			jobInterval:    "    scrape_interval: 40s\n",
+			jobTimeout:     "    scrape_timeout: 30s\n",
+			targetInterval: "5m",
+			wantTimeout:    "30s",
+		},
+		{
+			name:        "job defaults are unchanged without a discovered interval",
+			jobInterval: "    scrape_interval: 40s\n",
+			wantTimeout: "40s",
+		},
+		{
+			name:           "inherited job interval is unchanged",
+			targetInterval: "5m",
+			wantTimeout:    "1m",
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			cfg := loadConfiguration(t, fmt.Sprintf(`
+global:
+  scrape_interval: 1m
+  scrape_timeout: 1m
+scrape_configs:
+  - job_name: example
+%s%s    static_configs:
+      - targets: ["target.example:9100"]
+`, tc.jobInterval, tc.jobTimeout))
+			sc := cfg.ScrapeConfigs[0]
+
+			if tc.name == "global timeout applies to longer discovered interval" {
+				b, err := yaml.Marshal(sc)
+				require.NoError(t, err)
+				require.Contains(t, string(b), "scrape_timeout: 40s", "marshaled configuration must keep showing the job-level capped timeout")
+			}
+
+			targetLabels := model.LabelSet{model.AddressLabel: "target.example:9100"}
+			if tc.targetInterval != "" {
+				targetLabels[model.ScrapeIntervalLabel] = tc.targetInterval
+			}
+			if tc.targetTimeout != "" {
+				targetLabels[model.ScrapeTimeoutLabel] = tc.targetTimeout
+			}
+			lb := labels.NewBuilder(labels.EmptyLabels())
+			got, err := PopulateLabels(lb, sc, targetLabels, nil)
+			require.NoError(t, err)
+			require.Equal(t, tc.wantTimeout, got.Get(model.ScrapeTimeoutLabel))
+		})
+	}
+}
+
 func loadConfiguration(t testing.TB, c string) *config.Config {
 	t.Helper()
 
