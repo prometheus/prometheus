@@ -41,7 +41,6 @@ import (
 // TODO: Handle edge cases not yet supported (non-exhaustive, see
 // https://github.com/prometheus/prometheus/pull/19881):
 //   - Non conventional metrics:
-//     - NHCB series that already carry an le label
 //     - Non-histogram series named *_bucket without an le label
 //   - Classic and NHCB at the same timestamp (classic should win)
 //   - Transition polish:
@@ -123,7 +122,7 @@ func (q *NHCBAsClassicQuerier) Select(ctx context.Context, sortSeries bool, hint
 		}
 	}
 
-	matchersWithoutLe = append(matchersWithoutLe, metricNameMatcher)
+	matchersWithoutLe = append(matchersWithoutLe, metricNameMatcher, labels.MustNewMatcher(labels.MatchEqual, labels.BucketLabel, ""))
 	nhcbSet := q.Querier.Select(ctx, sortSeries, hints, matchersWithoutLe...)
 	if nhcbSet.Err() != nil {
 		return nhcbSet

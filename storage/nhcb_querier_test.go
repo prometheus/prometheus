@@ -355,6 +355,14 @@ func TestNHCBAsClassicQuerier_Select(t *testing.T) {
 			expectedSuffix: "_count",
 		},
 		{
+			name:          "NHCB series that already has le label is ignored",
+			queryMatchers: []*labels.Matcher{labels.MustNewMatcher(labels.MatchEqual, model.MetricNameLabel, "http_requests_bucket")},
+			nhcbSeries: []Series{
+				NewListSeries(labels.FromStrings("__name__", "http_requests", "le", "custom"), []chunks.Sample{hSample{t: 1, h: nhcb}}),
+			},
+			expectedCount: 0,
+		},
+		{
 			name: "multiple samples per series with mid-series bucket layout change and builder reuse across series",
 			queryMatchers: []*labels.Matcher{
 				labels.MustNewMatcher(labels.MatchEqual, model.MetricNameLabel, "http_requests_bucket"),
