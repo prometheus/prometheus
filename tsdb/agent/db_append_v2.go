@@ -37,7 +37,6 @@ type appenderV2 struct {
 }
 
 // Append appends pending sample to agent's DB.
-// TODO: Wire metadata in the Agent's appender.
 func (a *appenderV2) Append(ref storage.SeriesRef, ls labels.Labels, st, t int64, v float64, h *histogram.Histogram, fh *histogram.FloatHistogram, opts storage.AOptions) (storage.SeriesRef, error) {
 	var (
 		// Avoid shadowing err variables for reliability.
@@ -121,6 +120,20 @@ func (a *appenderV2) Append(ref storage.SeriesRef, ls labels.Labels, st, t int64
 	if len(opts.Exemplars) > 0 {
 		// Currently only exemplars can return partial errors.
 		partialErr = a.appendExemplars(s, opts.Exemplars)
+	}
+	if a.opts.EnableMetadataWALRecords && !opts.Metadata.IsEmpty() {
+		s.Lock()
+		metaChanged := s.meta == nil || !s.meta.Equals(opts.Metadata)
+		s.Unlock()
+		if metaChanged {
+			a.pendingMetadata = append(a.pendingMetadata, record.RefMetadata{
+				Ref:  s.ref,
+				Type: record.GetMetricType(opts.Metadata.Type),
+				Unit: opts.Metadata.Unit,
+				Help: opts.Metadata.Help,
+			})
+			a.metadataSeries = append(a.metadataSeries, s)
+		}
 	}
 	return storage.SeriesRef(s.ref), partialErr
 }
