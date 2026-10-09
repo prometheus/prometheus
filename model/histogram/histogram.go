@@ -652,3 +652,494 @@ func (h *Histogram) ReduceResolution(targetSchema int32) error {
 	h.Schema = targetSchema
 	return nil
 }
+
+func decodeToMap(spans []Span, buckets []int64) map[int32]int64 {
+	m := make(map[int32]int64)
+	if len(spans) == 0 {
+		return m
+	}
+	idx := int32(0)
+	bucketIdx := 0
+	var absNum int64
+	for _, s := range spans {
+		idx += s.Offset
+		for j := uint32(0); j < s.Length; j++ {
+			absNum += buckets[bucketIdx]
+			if absNum != 0 {
+				m[idx] = absNum
+			}
+			bucketIdx++
+			idx++
+		}
+	}
+	return m
+}
+
+func encodeFromMap(m map[int32]int64, schema int32, threshold float64, _ []float64) ([]Span, []int64) {
+	if len(m) == 0 {
+		return nil, nil
+	}
+
+	var keys []int32
+	for k, v := range m {
+		if v != 0 {
+			if IsExponentialSchema(schema) && getBoundExponential(k, schema) <= threshold {
+				continue
+			}
+			keys = append(keys, k)
+		}
+	}
+	if len(keys) == 0 {
+		return nil, nil
+	}
+	slices.Sort(keys)
+
+	var spans []Span
+	var buckets []int64
+	var lastCount int64
+	var lastIdx int32 = -1
+
+	for i, k := range keys {
+		if i == 0 {
+			spans = append(spans, Span{Offset: k, Length: 1})
+			buckets = append(buckets, m[k])
+			lastCount = m[k]
+			lastIdx = k
+			continue
+		}
+
+		gap := k - lastIdx - 1
+		if gap == 0 {
+			spans[len(spans)-1].Length++
+		} else {
+			spans = append(spans, Span{Offset: gap, Length: 1})
+		}
+		buckets = append(buckets, m[k]-lastCount)
+		lastCount = m[k]
+		lastIdx = k
+	}
+
+	return spans, buckets
+}
+
+func addIntegerBuckets(
+	schema int32, threshold float64, negative bool,
+	spansA []Span, bucketsA []int64,
+	spansB []Span, bucketsB []int64,
+) ([]Span, []int64) {
+	mA := decodeToMap(spansA, bucketsA)
+	mB := decodeToMap(spansB, bucketsB)
+
+	for k, v := range mB {
+		if negative {
+			mA[k] -= v
+		} else {
+			mA[k] += v
+		}
+	}
+
+	return encodeFromMap(mA, schema, threshold, nil)
+}
+
+func addCustomIntegerBucketsWithMismatches(
+	negative bool,
+	spansA []Span, bucketsA []int64, boundsA []float64,
+	spansB []Span, bucketsB []int64, boundsB []float64,
+	intersectedBounds []float64,
+) ([]Span, []int64) {
+	targetBuckets := make([]int64, len(intersectedBounds)+1)
+
+	mapBuckets := func(spans []Span, buckets []int64, bounds []float64, negative bool) {
+		mA := decodeToMap(spans, buckets)
+		for srcIdx, value := range mA {
+			targetIdx := len(targetBuckets) - 1 // Default to +Inf
+			if int(srcIdx) < len(bounds) {
+				srcBound := bounds[srcIdx]
+				for intersectIdx := range intersectedBounds {
+					if intersectedBounds[intersectIdx] >= srcBound {
+						targetIdx = intersectIdx
+						break
+					}
+				}
+			}
+			if negative {
+				targetBuckets[targetIdx] -= value
+			} else {
+				targetBuckets[targetIdx] += value
+			}
+		}
+	}
+
+	mapBuckets(spansA, bucketsA, boundsA, false)
+	mapBuckets(spansB, bucketsB, boundsB, negative)
+
+	mRes := make(map[int32]int64)
+	for i, v := range targetBuckets {
+		if v != 0 {
+			mRes[int32(i)] = v
+		}
+	}
+	return encodeFromMap(mRes, CustomBucketsSchema, 0, intersectedBounds)
+}
+
+// DetectReset returns true if the receiving histogram is missing any buckets
+// that have a non-zero population in the provided previous histogram. It also
+// returns true if any count (in any bucket, in the zero count, or in the count
+// of observations, but NOT the sum of observations) is smaller in the receiving
+// histogram compared to the previous histogram. Otherwise, it returns false.
+func (h *Histogram) DetectReset(previous *Histogram) bool {
+	if h.CounterResetHint == CounterReset {
+		return true
+	}
+	if h.CounterResetHint == NotCounterReset {
+		return false
+	}
+	if h.Count < previous.Count {
+		return true
+	}
+	if h.UsesCustomBuckets() {
+		if !previous.UsesCustomBuckets() {
+			return true
+		}
+		if !CustomBucketBoundsMatch(h.CustomValues, previous.CustomValues) {
+			return h.detectResetWithMismatchedCustomBounds(previous, h.CustomValues, previous.CustomValues)
+		}
+	}
+	if h.Schema > previous.Schema {
+		return true
+	}
+	if h.ZeroThreshold < previous.ZeroThreshold {
+		return true
+	}
+
+	previousZeroCount, newThreshold := previous.zeroCountForLargerThreshold(h.ZeroThreshold)
+	if newThreshold != h.ZeroThreshold {
+		return true
+	}
+	if h.ZeroCount < previousZeroCount {
+		return true
+	}
+
+	currIt := h.PositiveBucketIterator()
+	prevIt := previous.PositiveBucketIterator()
+	if h.Schema < previous.Schema {
+		p := previous.Copy()
+		if err := p.ReduceResolution(h.Schema); err != nil {
+			return true
+		}
+		prevIt = p.PositiveBucketIterator()
+	}
+	if detectResetInt(currIt, prevIt, h.ZeroThreshold) {
+		return true
+	}
+
+	currIt = h.NegativeBucketIterator()
+	prevIt = previous.NegativeBucketIterator()
+	if h.Schema < previous.Schema {
+		p := previous.Copy()
+		if err := p.ReduceResolution(h.Schema); err != nil {
+			return true
+		}
+		prevIt = p.NegativeBucketIterator()
+	}
+	return detectResetInt(currIt, prevIt, h.ZeroThreshold)
+}
+
+func detectResetInt(currIt, prevIt BucketIterator[uint64], startValue float64) bool {
+	advanceToThreshold := func(it BucketIterator[uint64], bound float64) (bool, Bucket[uint64]) {
+		for it.Next() {
+			b := it.At()
+			upperBoundRaw := b.Upper
+			if upperBoundRaw < 0 {
+				upperBoundRaw = -b.Lower
+			}
+			if upperBoundRaw > bound {
+				return true, b
+			}
+		}
+		return false, Bucket[uint64]{}
+	}
+
+	hasPrev, prevBucket := advanceToThreshold(prevIt, startValue)
+	if !hasPrev {
+		return false
+	}
+	hasCurr, currBucket := advanceToThreshold(currIt, startValue)
+	if !hasCurr {
+		for {
+			if prevBucket.Count != 0 {
+				return true
+			}
+			if !prevIt.Next() {
+				return false
+			}
+			prevBucket = prevIt.At()
+		}
+	}
+
+	for {
+		for currBucket.Index < prevBucket.Index {
+			if !currIt.Next() {
+				for {
+					if prevBucket.Count != 0 {
+						return true
+					}
+					if !prevIt.Next() {
+						return false
+					}
+					prevBucket = prevIt.At()
+				}
+			}
+			currBucket = currIt.At()
+		}
+		if currBucket.Index > prevBucket.Index {
+			if prevBucket.Count != 0 {
+				return true
+			}
+		} else {
+			if currBucket.Count < prevBucket.Count {
+				return true
+			}
+		}
+		if !prevIt.Next() {
+			return false
+		}
+		prevBucket = prevIt.At()
+	}
+}
+
+func (h *Histogram) detectResetWithMismatchedCustomBounds(
+	previous *Histogram, currBounds, prevBounds []float64,
+) bool {
+	if h.Schema != CustomBucketsSchema || previous.Schema != CustomBucketsSchema {
+		panic("detectResetWithMismatchedCustomBounds called with non-NHCB schema")
+	}
+	currIt := h.PositiveBucketIterator()
+	prevIt := previous.PositiveBucketIterator()
+
+	rollupSumForBound := func(iter BucketIterator[uint64], iterStarted bool, iterBucket Bucket[uint64], bound float64) (uint64, Bucket[uint64], bool) {
+		if !iterStarted {
+			if !iter.Next() {
+				return 0, Bucket[uint64]{}, false
+			}
+			iterBucket = iter.At()
+		}
+		var sum uint64
+		for iterBucket.Upper <= bound {
+			sum += iterBucket.Count
+			if !iter.Next() {
+				return sum, Bucket[uint64]{}, false
+			}
+			iterBucket = iter.At()
+		}
+		return sum, iterBucket, true
+	}
+
+	var (
+		currBoundIdx, prevBoundIdx   = 0, 0
+		currBucket, prevBucket       Bucket[uint64]
+		currIterStarted, currHasMore bool
+		prevIterStarted, prevHasMore bool
+	)
+
+	for currBoundIdx <= len(currBounds) && prevBoundIdx <= len(prevBounds) {
+		currBound := math.Inf(1)
+		if currBoundIdx < len(currBounds) {
+			currBound = currBounds[currBoundIdx]
+		}
+		prevBound := math.Inf(1)
+		if prevBoundIdx < len(prevBounds) {
+			prevBound = prevBounds[prevBoundIdx]
+		}
+
+		switch {
+		case currBound == prevBound:
+			var currRollupSum uint64
+			if !currIterStarted || currHasMore {
+				currRollupSum, currBucket, currHasMore = rollupSumForBound(currIt, currIterStarted, currBucket, currBound)
+				currIterStarted = true
+			}
+			var prevRollupSum uint64
+			if !prevIterStarted || prevHasMore {
+				prevRollupSum, prevBucket, prevHasMore = rollupSumForBound(prevIt, prevIterStarted, prevBucket, currBound)
+				prevIterStarted = true
+			}
+			if currRollupSum < prevRollupSum {
+				return true
+			}
+			currBoundIdx++
+			prevBoundIdx++
+		case currBound < prevBound:
+			currBoundIdx++
+		default:
+			prevBoundIdx++
+		}
+	}
+	return false
+}
+
+func (h *Histogram) zeroCountForLargerThreshold(
+	largerThreshold float64,
+) (hZeroCount uint64, threshold float64) {
+	if largerThreshold == h.ZeroThreshold {
+		return h.ZeroCount, largerThreshold
+	}
+	if largerThreshold < h.ZeroThreshold {
+		panic(fmt.Errorf("new threshold %f is less than old threshold %f", largerThreshold, h.ZeroThreshold))
+	}
+outer:
+	for {
+		hZeroCount = h.ZeroCount
+		i := h.PositiveBucketIterator()
+		for i.Next() {
+			b := i.At()
+			if b.Lower >= largerThreshold {
+				break
+			}
+			hZeroCount += b.Count
+			if b.Upper > largerThreshold {
+				if b.Count != 0 {
+					largerThreshold = b.Upper
+				}
+				break
+			}
+		}
+		i = h.NegativeBucketIterator()
+		for i.Next() {
+			b := i.At()
+			if b.Upper <= -largerThreshold {
+				break
+			}
+			hZeroCount += b.Count
+			if b.Lower < -largerThreshold {
+				if b.Count != 0 {
+					largerThreshold = -b.Lower
+					continue outer
+				}
+				break
+			}
+		}
+		return hZeroCount, largerThreshold
+	}
+}
+
+func (h *Histogram) reconcileZeroBuckets(other *Histogram) uint64 {
+	otherZeroCount := other.ZeroCount
+	otherZeroThreshold := other.ZeroThreshold
+
+	for otherZeroThreshold != h.ZeroThreshold {
+		if h.ZeroThreshold > otherZeroThreshold {
+			otherZeroCount, otherZeroThreshold = other.zeroCountForLargerThreshold(h.ZeroThreshold)
+		}
+		if otherZeroThreshold > h.ZeroThreshold {
+			h.ZeroCount, h.ZeroThreshold = h.zeroCountForLargerThreshold(otherZeroThreshold)
+			h.trimBucketsInZeroBucket()
+		}
+	}
+	return otherZeroCount
+}
+
+func (h *Histogram) trimBucketsInZeroBucket() {
+	mA := decodeToMap(h.PositiveSpans, h.PositiveBuckets)
+	mB := decodeToMap(h.NegativeSpans, h.NegativeBuckets)
+
+	for k := range mA {
+		if getBoundExponential(k, h.Schema) <= h.ZeroThreshold {
+			delete(mA, k)
+		}
+	}
+	for k := range mB {
+		if getBoundExponential(k, h.Schema) <= h.ZeroThreshold {
+			delete(mB, k)
+		}
+	}
+	h.PositiveSpans, h.PositiveBuckets = encodeFromMap(mA, h.Schema, h.ZeroThreshold, nil)
+	h.NegativeSpans, h.NegativeBuckets = encodeFromMap(mB, h.Schema, h.ZeroThreshold, nil)
+}
+
+func (h *Histogram) adjustCounterReset(other *Histogram) bool {
+	if h.CounterResetHint == CounterReset || h.CounterResetHint == NotCounterReset {
+		return false
+	}
+	if h.CounterResetHint == UnknownCounterReset && other.CounterResetHint == CounterReset {
+		h.CounterResetHint = CounterReset
+		return false
+	}
+	if h.CounterResetHint == GaugeType && other.CounterResetHint == CounterReset {
+		return true
+	}
+	return false
+}
+
+func (h *Histogram) checkSchemaAndBounds(other *Histogram) error {
+	if h.UsesCustomBuckets() != other.UsesCustomBuckets() {
+		return ErrHistogramsIncompatibleSchema
+	}
+	if h.UsesCustomBuckets() && !CustomBucketBoundsMatch(h.CustomValues, other.CustomValues) {
+		return nil
+	}
+	if !h.UsesCustomBuckets() && (!IsKnownSchema(h.Schema) || !IsKnownSchema(other.Schema)) {
+		return UnknownSchemaError(h.Schema)
+	}
+	return nil
+}
+
+func (h *Histogram) Sub(other *Histogram) (*Histogram, bool, bool, error) {
+	if err := h.checkSchemaAndBounds(other); err != nil {
+		return nil, false, false, err
+	}
+	counterResetCollision := h.adjustCounterReset(other)
+	if !h.UsesCustomBuckets() {
+		otherZeroCount := h.reconcileZeroBuckets(other)
+		h.ZeroCount -= otherZeroCount
+	}
+	h.Count -= other.Count
+	h.Sum -= other.Sum
+
+	var (
+		hPositiveSpans       = h.PositiveSpans
+		hPositiveBuckets     = h.PositiveBuckets
+		otherPositiveSpans   = other.PositiveSpans
+		otherPositiveBuckets = other.PositiveBuckets
+		nhcbBoundsReconciled bool
+	)
+
+	if h.UsesCustomBuckets() {
+		if CustomBucketBoundsMatch(h.CustomValues, other.CustomValues) {
+			h.PositiveSpans, h.PositiveBuckets = addIntegerBuckets(h.Schema, h.ZeroThreshold, true, hPositiveSpans, hPositiveBuckets, otherPositiveSpans, otherPositiveBuckets)
+		} else {
+			nhcbBoundsReconciled = true
+			intersectedBounds := intersectCustomBucketBounds(h.CustomValues, other.CustomValues)
+
+			h.PositiveSpans, h.PositiveBuckets = addCustomIntegerBucketsWithMismatches(
+				true,
+				hPositiveSpans, hPositiveBuckets, h.CustomValues,
+				otherPositiveSpans, otherPositiveBuckets, other.CustomValues,
+				intersectedBounds)
+			h.CustomValues = intersectedBounds
+		}
+		return h, counterResetCollision, nhcbBoundsReconciled, nil
+	}
+
+	var (
+		hNegativeSpans       = h.NegativeSpans
+		hNegativeBuckets     = h.NegativeBuckets
+		otherNegativeSpans   = other.NegativeSpans
+		otherNegativeBuckets = other.NegativeBuckets
+	)
+
+	switch {
+	case other.Schema < h.Schema:
+		hPositiveSpans, hPositiveBuckets, _ = reduceResolution(hPositiveSpans, hPositiveBuckets, h.Schema, other.Schema, true, false)
+		hNegativeSpans, hNegativeBuckets, _ = reduceResolution(hNegativeSpans, hNegativeBuckets, h.Schema, other.Schema, true, false)
+		h.Schema = other.Schema
+	case other.Schema > h.Schema:
+		otherPositiveSpans, otherPositiveBuckets, _ = reduceResolution(otherPositiveSpans, otherPositiveBuckets, other.Schema, h.Schema, true, false)
+		otherNegativeSpans, otherNegativeBuckets, _ = reduceResolution(otherNegativeSpans, otherNegativeBuckets, other.Schema, h.Schema, true, false)
+	}
+
+	h.PositiveSpans, h.PositiveBuckets = addIntegerBuckets(h.Schema, h.ZeroThreshold, true, hPositiveSpans, hPositiveBuckets, otherPositiveSpans, otherPositiveBuckets)
+	h.NegativeSpans, h.NegativeBuckets = addIntegerBuckets(h.Schema, h.ZeroThreshold, true, hNegativeSpans, hNegativeBuckets, otherNegativeSpans, otherNegativeBuckets)
+
+	return h, counterResetCollision, nhcbBoundsReconciled, nil
+}
