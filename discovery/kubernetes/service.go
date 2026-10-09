@@ -190,13 +190,14 @@ func serviceSourceFromNamespaceAndName(namespace, name string) string {
 }
 
 const (
-	servicePortNameLabel     = metaLabelPrefix + "service_port_name"
-	servicePortNumberLabel   = metaLabelPrefix + "service_port_number"
-	servicePortProtocolLabel = metaLabelPrefix + "service_port_protocol"
-	serviceClusterIPLabel    = metaLabelPrefix + "service_cluster_ip"
-	serviceLoadBalancerIP    = metaLabelPrefix + "service_loadbalancer_ip"
-	serviceExternalNameLabel = metaLabelPrefix + "service_external_name"
-	serviceType              = metaLabelPrefix + "service_type"
+	servicePortNameLabel        = metaLabelPrefix + "service_port_name"
+	servicePortNumberLabel      = metaLabelPrefix + "service_port_number"
+	servicePortProtocolLabel    = metaLabelPrefix + "service_port_protocol"
+	serviceClusterIPLabel       = metaLabelPrefix + "service_cluster_ip"
+	serviceLoadBalancerIP       = metaLabelPrefix + "service_loadbalancer_ip"
+	serviceLoadBalancerHostname = metaLabelPrefix + "service_loadbalancer_hostname"
+	serviceExternalNameLabel    = metaLabelPrefix + "service_external_name"
+	serviceType                 = metaLabelPrefix + "service_type"
 )
 
 func serviceLabels(svc *apiv1.Service) model.LabelSet {
@@ -235,7 +236,12 @@ func (s *Service) buildService(svc *apiv1.Service) *targetgroup.Group {
 		}
 
 		if svc.Spec.Type == apiv1.ServiceTypeLoadBalancer {
-			labelSet[serviceLoadBalancerIP] = lv(loadBalancerIPs(svc))
+			if lbIPs := loadBalancerIPs(svc); lbIPs != "" {
+				labelSet[serviceLoadBalancerIP] = lv(lbIPs)
+			}
+			if lbHostnames := loadBalancerHostnames(svc); lbHostnames != "" {
+				labelSet[serviceLoadBalancerHostname] = lv(lbHostnames)
+			}
 		}
 
 		tg.Targets = append(tg.Targets, labelSet)
@@ -258,4 +264,19 @@ func loadBalancerIPs(svc *apiv1.Service) string {
 		return strings.Join(ips, ",")
 	}
 	return svc.Spec.LoadBalancerIP
+}
+
+// loadBalancerHostnames returns the LoadBalancer hostnames from status.ingress.
+// Multiple ingress hostnames are joined with commas so relabeling can extract them.
+func loadBalancerHostnames(svc *apiv1.Service) string {
+	var hostnames []string
+	for _, ing := range svc.Status.LoadBalancer.Ingress {
+		if ing.Hostname != "" {
+			hostnames = append(hostnames, ing.Hostname)
+		}
+	}
+	if len(hostnames) > 0 {
+		return strings.Join(hostnames, ",")
+	}
+	return ""
 }
