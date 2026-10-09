@@ -1,176 +1,167 @@
-# Agents Guide for Prometheus
+# AGENTS.md
 
-This document captures patterns and preferences observed from maintainer reviews
-of recently merged pull requests. Use it to align your contributions with what
-maintainers expect.
+Context file for AI agents working on prometheus.
 
----
+## Project Overview
 
-## PR Title Format
+prometheus is a Go project using Go (Makefile).
 
-Titles must follow `area: short description`, using a prefix that identifies the
-subsystem. Examples from merged PRs:
+**Key Info:**
+- **Primary Language:** Go
+- **Build System:** Go (Makefile)
+- **Test Framework:** Go testing
+- **Total Files:** 1691
+- **Test Files:** 319
+- **AI Readiness Score:** 98/100 (Agent-Optimized)
 
-```
-tsdb/wlog: optimize WAL watcher reads
-fix(PromQL): do not skip histogram buckets when trimming
-feat(agent): fix ST append; add compliance RW sender test
-chore: fix emptyStringTest issues from gocritic
-ci: add statuses write permission to prombench workflow
-docs: clarify that `lookback_delta` query parameter takes either a duration or number of seconds
-```
+## Prerequisites
 
-Common area prefixes: `tsdb`, `tsdb/wlog`, `promql`, `discovery/<name>`, `agent`,
-`alerting`, `textparse`, `ui`, `build`, `ci`, `docs`, `chore`.
+- **Go:** 1.18+ (or applicable language version)
+- **Package Manager:** go modules
+- **Test Runner:** Go testing
 
-For performance work, append `[PERF]` to the area segment or use the `perf(area):`
-convention.
-
----
-
-## Commits
-
-- Each commit must compile and pass tests independently, except when one commit adds a test to expose a bug and then the next commit fixes the bug.
-- Keep commits small and focused. Do not bundle unrelated changes in one commit.
-- Sign off every commit with `git commit -s` to satisfy the DCO requirement.
-- Do not include unrelated local changes in the PR.
-
----
-
-## Release Notes Block
-
-Every PR must include a `release-notes` fenced code block in the description.
-If there is no user-facing change, write `NONE`:
-
-````
-```release-notes
-NONE
-```
-````
-
-Otherwise use one of these prefixes, matching the CHANGELOG style:
+## Project Structure
 
 ```
-[FEATURE]     new capability
-[ENHANCEMENT] improvement to existing behaviour
-[PERF]        performance improvement
-[BUGFIX]      bug fix
-[SECURITY]    security fix
-[CHANGE]      breaking or behavioural change
+prometheus/
+├── Makefile
+├── Makefile
+├── Makefile
+├── src/                  # Source code
+├── tests/                # Test suite (319 files)
+└── README.md             # Project documentation
 ```
 
-Example:
-````
-```release-notes
-[BUGFIX] PromQL: Do not skip histogram buckets in queries where histogram trimming is used.
-```
-````
+## Architecture Overview
 
----
+### Key Components
+- **Main Entry:** main.go, main.go, main.go, main.go, main.go
+- **Test Suite:** 319 test files
+- **Build Configuration:** Makefile, Makefile, Makefile
 
-## Tests
+### Design Principles
 
-- Bug fixes require a test that reproduces the bug.
-- New behaviour or exported API changes require unit or e2e tests.
-- Tests should attempt to mirror realistic data and/or behaviour.
-- Use only exported APIs in tests where possible — this keeps tests closer to
-  real library usage and simplifies review.
-- Prefer adding cases to existing table-driven tests over writing new test
-  functions, even if the existing test needs minor adjustments to fit the new
-  case. Where it helps, convert an existing test into a table-driven test
-  rather than duplicating it.
-- Inline subtests in their parent test function. Extract a helper only when
-  setup or behavior is genuinely reused; do not extract one-off subtests merely
-  to avoid indentation.
+1. **Modularity** - Code organized by functionality with clear separation of concerns
+2. **Testability** - Comprehensive test coverage across critical paths
+3. **Clarity** - Explicit naming and structure for AI agent understanding
+4. **Consistency** - Uniform patterns and conventions throughout codebase
+5. **Maintainability** - Well-documented code with clear intent
 
----
+## Development Workflow
 
-## Library Use and API Stability
+### Initial Setup
 
-- Prometheus offers no stability guarantees for the Go APIs of packages that
-  are part of the server (see [docs/stability.md](docs/stability.md)), and
-  this repository is
-  [not designed for use as a library](README.md#using-prometheus-as-a-go-library).
-- Still, many projects use this repository as a library, so keep changes to
-  exported Go APIs to a minimum. Before removing or changing an exported
-  function, method or type, check how downstream projects such as
-  [Cortex](https://github.com/cortexproject/cortex),
-  [Thanos](https://github.com/thanos-io/thanos) and
-  [Mimir](https://github.com/grafana/mimir) use it.
-- A bug fix must fix the behaviour of Prometheus itself. A problem that is
-  only reachable through Go library use, for example using a type in a way
-  that no Prometheus code path does, is not a bug: do not label the change
-  `[BUGFIX]`, do not call it a regression, and do not propose backports.
-- Properties of a type that are not documented, such as concurrency safety,
-  are not guarantees. Check the type's documentation before relying on them.
-
----
-
-## Performance Work
-
-Maintainers take performance seriously. For any PERF PR:
-
-- Performance improvements require a benchmark that demonstrates the improvement.
-- Run benchmarks before and after the change using `go test -count=6 -benchmem -bench <directory changed in PR>`
-- Provide benchmark numbers in the PR body using `benchstat` output.
-- If a subset of benchmark results show a regression, address this or explain why the case is not important.
-- Reuse allocations in hot paths where possible (slices, buffers). 
-- When reusing buffers passed to interfaces, document that callers must copy
-  the contents and must not retain references.
-- Link to supporting analysis (Google Doc, issue, etc.) for complex changes.
-
----
-
-## Code Style
-
-- Follow [Go Code Review Comments](https://go.dev/wiki/CodeReviewComments)
-  and the formatting/style section of
-  [Go: Best Practices for Production Environments](https://peter.bourgon.org/go-in-production/#formatting-and-style).
-- State your assumptions.
-- Interface contracts: when ownership or lifetime semantics (e.g. buffer reuse) are important,
-  document it at the interface definition, not just in the implementation.
-- All exposed objects must have a doc comment.
-- All comments must start with a capital letter and end with a full stop.
-- Run `make lint` before submitting. The project uses `golangci-lint` including
-  `gocritic` rules such as `emptyStringTest` — fix linter findings rather than
-  suppressing them with `//nolint` unless there is a clear false-positive.
-- Use `//nolint:linter1[,linter2,...]` sparingly; prefer fixing the code.
-
----
-
-## Linking Issues
-
-Use GitHub closing keywords in the PR body so the linked issue closes
-automatically on merge:
-
-```
-Fixes #18243
+```bash
+git clone https://github.com/YOUR_ORG/prometheus.git
+cd prometheus
+go mod download
 ```
 
+### Development Commands
+
+#### Running Tests
+```bash
+go test ./...
+go test -v ./...
+```
+
+#### Code Quality
+```bash
+gofmt -w .
+go vet ./...
+```
+
+## Code Style & Conventions
+
+- **Naming:** Use Go conventions (snake_case for functions, PascalCase for classes)
+- **Type Hints:** Yes (strongly encouraged)
+- **Error Handling:** Yes - handle errors at boundaries; let exceptions propagate when another layer owns recovery
+- **Logging:** Yes
+- **Testing:** Yes - write tests alongside code changes
+
+## Testing Strategy
+
+**Framework:** Go testing
+**Test Files:** 319 found
+
+Before committing:
+1. Run the full test suite: `pytest`
+2. Ensure all tests pass
+3. Check type hints: `mypy .`
+4. Format code: `ruff format .`
+
+## Writing Documentation
+
+When updating docs:
+1. Always include explanatory text before code snippets
+2. Describe *why* and *what* before showing *how*
+3. Keep sections focused on a single concept
+4. Use clear, concrete examples
+
+## Contributing Guidelines
+
+This project has a detailed contribution guide at **`CONTRIBUTING.md`**.
+
+**Key Requirements:**
+- **DCO Sign-off Required**: Every commit must be signed with `git commit -s`
+
+**Before submitting:**
+1. Read `CONTRIBUTING.md` in full
+2. Check recent merged PRs for patterns
+3. Follow the specific requirements above
+
+## Common Patterns
+
+When contributing to this project:
+1. Read existing code in the area you're modifying
+2. Follow the established patterns and style
+3. Write tests for new functionality
+4. Use clear, descriptive variable and function names
+5. Add docstrings for public APIs
+6. Update tests when changing behavior
+
+## What We Value
+
+✅ Well-tested code with clear intent
+✅ Consistent code style and naming conventions
+✅ Code that is easy for AI agents to understand
+✅ Clear, descriptive commit messages
+✅ Modular, reusable components
+✅ Comprehensive documentation
+
+## What We Avoid
+
+❌ Large functions doing multiple things
+❌ Commented-out dead code
+❌ Inconsistent naming or patterns
+❌ Unclear error messages
+❌ Unexplained magic numbers or strings
+❌ Skipped tests or test TODOs
+
+## AI Readiness Dimensions (Scoring)
+
+This project is evaluated across 8 dimensions:
+
+1. **Architecture** (20/100) - Code organization and modularity
+2. **Testing** (15/100) - Test coverage and quality
+3. **Dependencies** (12/100) - Dependency management
+4. **Conventions** (8/100) - Consistent patterns
+5. **Entry Points** (10/100) - Clear main/start locations
+6. **Security** (15/100) - Input validation and error handling
+7. **Build** (10/100) - Clear build/setup instructions
+8. **Documentation** (8/100) - Code and project documentation
+
+## Next Steps
+
+Before making changes:
+1. Read relevant source files to understand the existing code
+2. Look at existing tests for similar functionality
+3. Follow the patterns you see in the codebase
+4. Write tests for your changes
+5. Run `pytest` to verify nothing breaks
+6. Run code quality checks: `ruff check . && mypy .`
+7. Format your code: `ruff format .`
+
 ---
 
-## Scope Discipline
-
-- Do not include unrelated changes in a PR; make a separate PR instead.
-- If a refactor is necessary to make a change, do those in separate commits.
-- If a PR is large, split it into preparatory and follow-up PRs and reference
-  them with "Part of #NNNN" or "Depends on #NNNN".
-
----
-
-## Documentation Changes
-
-- Docs PRs are welcome for clarifying ambiguous parameter descriptions,
-  fixing Markdown formatting, and keeping the OpenAPI spec consistent with
-  the implementation.
-- When changing documented behaviour, update any relevant text in the docs/ directory.
-  Check whether the OpenAPI spec also needs updating.
-
----
-
-## CI / Workflow Changes
-
-- Workflow files need the correct GitHub token permissions declared explicitly.
-  Missing permissions (e.g. `statuses: write`) cause silent 403 failures.
-
----
+*Generated by Braxis - keeping AI agents in sync with your code*
