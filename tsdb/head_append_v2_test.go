@@ -5219,6 +5219,68 @@ func TestHeadAppenderV2_Histogram_STStorage(t *testing.T) {
 	}
 }
 
+func TestHeadAppenderV2_ExemplarsSurviveTruncation(t *testing.T) {
+	for _, withSample := range []bool{false, true} {
+		t.Run(fmt.Sprintf("withSample=%t", withSample), func(t *testing.T) {
+			opts := DefaultHeadOptions()
+			opts.ChunkRange = 1000
+			opts.MaxExemplars.Store(10)
+			opts.EnableExemplarStorage = true
+			h, err := NewHead(nil, nil, nil, nil, opts, nil)
+			require.NoError(t, err)
+			t.Cleanup(func() { require.NoError(t, h.Close()) })
+			require.NoError(t, h.Init(0))
+
+			lset := labels.FromStrings("name", "exemplar_series")
+			app := h.AppenderV2(t.Context())
+			ref, err := app.Append(0, lset, 0, 100, 1, nil, nil, storage.AOptions{})
+			require.NoError(t, err)
+			require.NoError(t, app.Commit())
+
+			e := exemplar.Exemplar{Labels: labels.FromStrings("trace_id", "abc123"), Value: 1, Ts: 10000, HasTs: true}
+			app = h.AppenderV2(t.Context())
+			if withSample {
+				_, err = app.Append(ref, lset, 0, 200, 2, nil, nil, storage.AOptions{Exemplars: []exemplar.Exemplar{e}})
+			} else {
+				_, err = app.(storage.ExemplarAppenderV2).AppendExemplars(ref, lset, []exemplar.Exemplar{e})
+			}
+			require.NoError(t, err)
+			series := h.series.getByID(chunks.HeadSeriesRef(ref))
+			require.NotNil(t, series)
+			// Protect accepted exemplars even before their transaction commits.
+			require.True(t, series.hasExemplar)
+			require.Equal(t, e.Ts, series.lastExemplarTs)
+			require.NoError(t, app.Commit())
+
+			require.NoError(t, h.Truncate(1000))
+			require.Same(t, series, h.series.getByID(chunks.HeadSeriesRef(ref)))
+			require.Nil(t, series.headChunks)
+			require.Nil(t, series.app)
+			q, err := h.ExemplarQuerier(t.Context())
+			require.NoError(t, err)
+			got, err := q.Select(0, e.Ts, []*labels.Matcher{labels.MustNewMatcher(labels.MatchEqual, "name", "exemplar_series")})
+			require.NoError(t, err)
+			require.Len(t, got, 1)
+			require.True(t, labels.Equal(lset, got[0].SeriesLabels))
+			require.Len(t, got[0].Exemplars, 1)
+			require.True(t, e.Equals(got[0].Exemplars[0]))
+
+			// New samples can use the retained identity and create a new chunk appender.
+			app = h.AppenderV2(t.Context())
+			newRef, err := app.Append(ref, lset, 0, e.Ts+1, 3, nil, nil, storage.AOptions{})
+			require.NoError(t, err)
+			require.Equal(t, ref, newRef)
+			require.NoError(t, app.Commit())
+			require.NotNil(t, series.headChunks)
+			require.NotNil(t, series.app)
+
+			// Once the cutoff passes both the exemplar and the samples, eviction is safe.
+			require.NoError(t, h.Truncate(e.Ts+2))
+			require.Nil(t, h.series.getByID(chunks.HeadSeriesRef(ref)))
+		})
+	}
+}
+
 func TestHeadAppenderV2_ExemplarAppenderV2(t *testing.T) {
 	opts := DefaultHeadOptions()
 	opts.ChunkRange = 1000

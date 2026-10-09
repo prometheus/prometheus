@@ -378,6 +378,8 @@ func (a *headAppenderV2) appendExemplars(s *memSeries, exemplars []exemplar.Exem
 			continue
 		}
 		b := a.getCurrentBatch(stNone, s.ref)
+		// Protect the series from compaction before the exemplar is committed.
+		s.updateExemplarTimestamp(e.Ts)
 		b.exemplars = append(b.exemplars, exemplarWithSeriesRef{storage.SeriesRef(s.ref), e})
 	}
 	if len(errs) > 0 {

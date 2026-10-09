@@ -461,6 +461,9 @@ function_call   : IDENTIFIER function_call_body
                         fn, exist := getFunction($1.Val, yylex.(*parser).functions)
                         if !exist{
                                 yylex.(*parser).addParseErrf($1.PositionRange(),"unknown function with name %q", $1.Val)
+                                // Keep the name so the partially-built AST stays printable; the
+                                // recorded error still rejects the query.
+                                fn = &Function{Name: $1.Val}
                         }
                         if fn != nil && fn.Experimental && !yylex.(*parser).options.EnableExperimentalFunctions {
                                 yylex.(*parser).addParseErrf($1.PositionRange(),"function %q is not enabled", $1.Val)
@@ -479,6 +482,9 @@ function_call   : IDENTIFIER function_call_body
                         fn, exist := getFunction($1.Val, yylex.(*parser).functions)
                         if !exist{
                                 yylex.(*parser).addParseErrf($1.PositionRange(),"unknown function with name %q", $1.Val)
+                                // Keep the name so the partially-built AST stays printable; the
+                                // recorded error still rejects the query.
+                                fn = &Function{Name: $1.Val}
                         }
                         if fn != nil && fn.Experimental && !yylex.(*parser).options.EnableExperimentalFunctions {
                                 yylex.(*parser).addParseErrf($1.PositionRange(),"function %q is not enabled", $1.Val)
@@ -497,6 +503,9 @@ function_call   : IDENTIFIER function_call_body
                         fn, exist := getFunction($1.Val, yylex.(*parser).functions)
                         if !exist{
                                 yylex.(*parser).addParseErrf($1.PositionRange(),"unknown function with name %q", $1.Val)
+                                // Keep the name so the partially-built AST stays printable; the
+                                // recorded error still rejects the query.
+                                fn = &Function{Name: $1.Val}
                         }
                         if fn != nil && fn.Experimental && !yylex.(*parser).options.EnableExperimentalFunctions {
                                 yylex.(*parser).addParseErrf($1.PositionRange(),"function %q is not enabled", $1.Val)
@@ -515,6 +524,9 @@ function_call   : IDENTIFIER function_call_body
                         fn, exist := getFunction($1.Val, yylex.(*parser).functions)
                         if !exist{
                                 yylex.(*parser).addParseErrf($1.PositionRange(),"unknown function with name %q", $1.Val)
+                                // Keep the name so the partially-built AST stays printable; the
+                                // recorded error still rejects the query.
+                                fn = &Function{Name: $1.Val}
                         }
                         if fn != nil && fn.Experimental && !yylex.(*parser).options.EnableExperimentalFunctions {
                                 yylex.(*parser).addParseErrf($1.PositionRange(),"function %q is not enabled", $1.Val)
@@ -533,6 +545,9 @@ function_call   : IDENTIFIER function_call_body
                         fn, exist := getFunction($1.Val, yylex.(*parser).functions)
                         if !exist{
                                 yylex.(*parser).addParseErrf($1.PositionRange(),"unknown function with name %q", $1.Val)
+                                // Keep the name so the partially-built AST stays printable; the
+                                // recorded error still rejects the query.
+                                fn = &Function{Name: $1.Val}
                         }
                         if fn != nil && fn.Experimental && !yylex.(*parser).options.EnableExperimentalFunctions {
                                 yylex.(*parser).addParseErrf($1.PositionRange(),"function %q is not enabled", $1.Val)
@@ -795,14 +810,23 @@ label_matchers  : LEFT_BRACE label_match_list RIGHT_BRACE
 
 label_match_list: label_match_list COMMA label_matcher
                         {
-                        if $1 != nil{
+                        // A nil matcher failed to build (invalid regexp or incomplete syntax)
+                        // and its error is already recorded. Drop it so the partially-built
+                        // AST never holds a nil matcher.
+                        if $1 != nil && $3 != nil {
                                 $$ = append($1, $3)
                         } else {
                                 $$ = $1
                         }
                         }
                 | label_matcher
-                        { $$ = []*labels.Matcher{$1}}
+                        {
+                        if $1 != nil {
+                                $$ = []*labels.Matcher{$1}
+                        } else {
+                                $$ = []*labels.Matcher{}
+                        }
+                        }
                 | label_match_list error
                         { yylex.(*parser).unexpected("label matching", "\",\" or \"}\""); $$ = $1 }
                 ;
