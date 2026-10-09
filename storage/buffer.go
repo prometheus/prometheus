@@ -62,6 +62,9 @@ func (b *BufferedSeriesIterator) Reset(it chunkenc.Iterator) {
 	b.buf.reset()
 	b.buf.delta = b.delta
 	b.valueType = it.Next()
+	if b.valueType != chunkenc.ValNone {
+		b.lastTime = it.AtT()
+	}
 }
 
 // ReduceDelta lowers the buffered time delta, for the current SeriesIterator only.
