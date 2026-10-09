@@ -112,26 +112,8 @@ func TestNHCBAsClassicQuerier_Select(t *testing.T) {
 		PositiveSpans:   []histogram.Span{{Offset: 0, Length: 4}},
 		PositiveBuckets: []int64{2, 1, 2, 1},
 	}
-	makeNHCB := func(customValues []float64, counts []int64) *histogram.Histogram {
-		deltas := make([]int64, len(counts))
-		var total uint64
-		var prev int64
-		for i, c := range counts {
-			deltas[i] = c - prev
-			prev = c
-			total += uint64(c)
-		}
-		return &histogram.Histogram{
-			Schema:          histogram.CustomBucketsSchema,
-			Count:           total,
-			Sum:             float64(total),
-			CustomValues:    customValues,
-			PositiveSpans:   []histogram.Span{{Offset: 0, Length: uint32(len(counts))}},
-			PositiveBuckets: deltas,
-		}
-	}
 
-	tests := []struct {
+	type testCase struct {
 		name              string
 		queryMatchers     []*labels.Matcher
 		classicSeries     []Series
@@ -139,315 +121,368 @@ func TestNHCBAsClassicQuerier_Select(t *testing.T) {
 		passthroughSeries []Series
 		expectedCount     int
 		expectedSuffix    string
-		expectedSamples   map[string][]fSample
+		expectedSamples   []seriesSamples
+	}
+
+	groups := []struct {
+		name  string
+		cases []testCase
 	}{
 		{
-			name:          "non-histogram query passes through",
-			queryMatchers: []*labels.Matcher{labels.MustNewMatcher(labels.MatchEqual, model.MetricNameLabel, "my_gauge")},
-			passthroughSeries: []Series{
-				NewListSeries(labels.FromStrings("__name__", "my_gauge"), []chunks.Sample{fSample{t: 1, f: 42}}),
+			name: "conversion",
+			cases: []testCase{
+				{
+					name:          "non-histogram query passes through",
+					queryMatchers: []*labels.Matcher{labels.MustNewMatcher(labels.MatchEqual, model.MetricNameLabel, "my_gauge")},
+					passthroughSeries: []Series{
+						NewListSeries(labels.FromStrings("__name__", "my_gauge"), []chunks.Sample{fSample{t: 1, f: 42}}),
+					},
+					expectedCount: 1,
+				},
+				{
+					name:          "classic histogram exists - return classic",
+					queryMatchers: []*labels.Matcher{labels.MustNewMatcher(labels.MatchEqual, model.MetricNameLabel, "http_requests_bucket")},
+					classicSeries: []Series{
+						NewListSeries(labels.FromStrings("__name__", "http_requests_bucket", "le", "1"), []chunks.Sample{fSample{t: 1, f: 5}}),
+					},
+					expectedCount: 1,
+				},
+				{
+					name:          "regex name matcher passes through without conversion",
+					queryMatchers: []*labels.Matcher{labels.MustNewMatcher(labels.MatchRegexp, model.MetricNameLabel, ".+_requests_bucket")},
+					nhcbSeries: []Series{
+						NewListSeries(labels.FromStrings("__name__", "http_requests"), []chunks.Sample{hSample{t: 1, h: nhcb}}),
+					},
+					expectedCount: 0,
+				},
+				{
+					name:          "not-equal name matcher passes through without conversion",
+					queryMatchers: []*labels.Matcher{labels.MustNewMatcher(labels.MatchNotEqual, model.MetricNameLabel, "http_requests_bucket")},
+					nhcbSeries: []Series{
+						NewListSeries(labels.FromStrings("__name__", "rpc_latency"), []chunks.Sample{hSample{t: 1, h: nhcb}}),
+					},
+					expectedCount: 0,
+				},
+				{
+					name: "contradictory name matchers pass through without conversion",
+					queryMatchers: []*labels.Matcher{
+						labels.MustNewMatcher(labels.MatchEqual, model.MetricNameLabel, "http_requests_bucket"),
+						labels.MustNewMatcher(labels.MatchNotEqual, model.MetricNameLabel, "http_requests_bucket"),
+					},
+					nhcbSeries: []Series{
+						NewListSeries(labels.FromStrings("__name__", "rpc_latency"), []chunks.Sample{hSample{t: 1, h: nhcb}}),
+					},
+					expectedCount: 0,
+				},
+				{
+					name:          "no classic - convert NHCB to bucket series",
+					queryMatchers: []*labels.Matcher{labels.MustNewMatcher(labels.MatchEqual, model.MetricNameLabel, "http_requests_bucket")},
+					classicSeries: []Series{},
+					nhcbSeries: []Series{
+						NewListSeries(labels.FromStrings("__name__", "http_requests"), []chunks.Sample{hSample{t: 1, h: nhcb}}),
+					},
+					expectedCount:  4,
+					expectedSuffix: "_bucket",
+				},
+				{
+					name:          "no classic - convert NHCB to count series",
+					queryMatchers: []*labels.Matcher{labels.MustNewMatcher(labels.MatchEqual, model.MetricNameLabel, "http_requests_count")},
+					classicSeries: []Series{},
+					nhcbSeries: []Series{
+						NewListSeries(labels.FromStrings("__name__", "http_requests"), []chunks.Sample{hSample{t: 1, h: nhcb}}),
+					},
+					expectedCount:  1,
+					expectedSuffix: "_count",
+				},
+				{
+					name:          "no classic - convert NHCB to sum series",
+					queryMatchers: []*labels.Matcher{labels.MustNewMatcher(labels.MatchEqual, model.MetricNameLabel, "http_requests_sum")},
+					classicSeries: []Series{},
+					nhcbSeries: []Series{
+						NewListSeries(labels.FromStrings("__name__", "http_requests"), []chunks.Sample{hSample{t: 1, h: nhcb}}),
+					},
+					expectedCount:  1,
+					expectedSuffix: "_sum",
+				},
+				{
+					name:          "both classic and NHCB - return both",
+					queryMatchers: []*labels.Matcher{labels.MustNewMatcher(labels.MatchEqual, model.MetricNameLabel, "http_requests_bucket")},
+					classicSeries: []Series{
+						NewListSeries(labels.FromStrings("__name__", "http_requests_bucket", "le", "1"), []chunks.Sample{fSample{t: 1, f: 5}}),
+					},
+					nhcbSeries: []Series{
+						NewListSeries(labels.FromStrings("__name__", "http_requests"), []chunks.Sample{hSample{t: 1, h: nhcb}}),
+					},
+					expectedCount:  5,
+					expectedSuffix: "_bucket",
+				},
+				{
+					name:          "no classic and no NHCB - return empty",
+					queryMatchers: []*labels.Matcher{labels.MustNewMatcher(labels.MatchEqual, model.MetricNameLabel, "http_requests_bucket")},
+					classicSeries: []Series{},
+					nhcbSeries:    []Series{},
+					expectedCount: 0,
+				},
+				{
+					name: "le exact match filters to single bucket",
+					queryMatchers: []*labels.Matcher{
+						labels.MustNewMatcher(labels.MatchEqual, model.MetricNameLabel, "http_requests_bucket"),
+						labels.MustNewMatcher(labels.MatchEqual, labels.BucketLabel, "5.0"),
+					},
+					classicSeries: []Series{},
+					nhcbSeries: []Series{
+						NewListSeries(labels.FromStrings("__name__", "http_requests"), []chunks.Sample{hSample{t: 1, h: nhcb}}),
+					},
+					expectedCount:  1,
+					expectedSuffix: "_bucket",
+				},
+				{
+					name: "le exact match +Inf",
+					queryMatchers: []*labels.Matcher{
+						labels.MustNewMatcher(labels.MatchEqual, model.MetricNameLabel, "http_requests_bucket"),
+						labels.MustNewMatcher(labels.MatchEqual, labels.BucketLabel, "+Inf"),
+					},
+					classicSeries: []Series{},
+					nhcbSeries: []Series{
+						NewListSeries(labels.FromStrings("__name__", "http_requests"), []chunks.Sample{hSample{t: 1, h: nhcb}}),
+					},
+					expectedCount:  1,
+					expectedSuffix: "_bucket",
+				},
+				{
+					name: "le exact match no match",
+					queryMatchers: []*labels.Matcher{
+						labels.MustNewMatcher(labels.MatchEqual, model.MetricNameLabel, "http_requests_bucket"),
+						labels.MustNewMatcher(labels.MatchEqual, labels.BucketLabel, "99.0"),
+					},
+					classicSeries: []Series{},
+					nhcbSeries: []Series{
+						NewListSeries(labels.FromStrings("__name__", "http_requests"), []chunks.Sample{hSample{t: 1, h: nhcb}}),
+					},
+					expectedCount:  0,
+					expectedSuffix: "_bucket",
+				},
+				{
+					name: "le regex match filters to matching buckets",
+					queryMatchers: []*labels.Matcher{
+						labels.MustNewMatcher(labels.MatchEqual, model.MetricNameLabel, "http_requests_bucket"),
+						labels.MustNewMatcher(labels.MatchRegexp, labels.BucketLabel, "1.0|10.0"),
+					},
+					classicSeries: []Series{},
+					nhcbSeries: []Series{
+						NewListSeries(labels.FromStrings("__name__", "http_requests"), []chunks.Sample{hSample{t: 1, h: nhcb}}),
+					},
+					expectedCount:  2,
+					expectedSuffix: "_bucket",
+				},
+				{
+					name: "le not equal excludes one bucket",
+					queryMatchers: []*labels.Matcher{
+						labels.MustNewMatcher(labels.MatchEqual, model.MetricNameLabel, "http_requests_bucket"),
+						labels.MustNewMatcher(labels.MatchNotEqual, labels.BucketLabel, "+Inf"),
+					},
+					classicSeries: []Series{},
+					nhcbSeries: []Series{
+						NewListSeries(labels.FromStrings("__name__", "http_requests"), []chunks.Sample{hSample{t: 1, h: nhcb}}),
+					},
+					expectedCount:  3,
+					expectedSuffix: "_bucket",
+				},
+				{
+					name: "multiple le matchers all apply",
+					queryMatchers: []*labels.Matcher{
+						labels.MustNewMatcher(labels.MatchEqual, model.MetricNameLabel, "http_requests_bucket"),
+						labels.MustNewMatcher(labels.MatchNotEqual, labels.BucketLabel, "+Inf"),
+						labels.MustNewMatcher(labels.MatchNotEqual, labels.BucketLabel, "1.0"),
+					},
+					classicSeries: []Series{},
+					nhcbSeries: []Series{
+						NewListSeries(labels.FromStrings("__name__", "http_requests"), []chunks.Sample{hSample{t: 1, h: nhcb}}),
+					},
+					expectedCount:  2,
+					expectedSuffix: "_bucket",
+				},
+				{
+					name: "le matcher on count query excludes series without le label",
+					queryMatchers: []*labels.Matcher{
+						labels.MustNewMatcher(labels.MatchEqual, model.MetricNameLabel, "http_requests_count"),
+						labels.MustNewMatcher(labels.MatchEqual, labels.BucketLabel, "1.0"),
+					},
+					classicSeries: []Series{},
+					nhcbSeries: []Series{
+						NewListSeries(labels.FromStrings("__name__", "http_requests"), []chunks.Sample{hSample{t: 1, h: nhcb}}),
+					},
+					expectedCount:  0,
+					expectedSuffix: "_count",
+				},
+				{
+					name: "le matcher on sum query excludes series without le label",
+					queryMatchers: []*labels.Matcher{
+						labels.MustNewMatcher(labels.MatchEqual, model.MetricNameLabel, "http_requests_sum"),
+						labels.MustNewMatcher(labels.MatchEqual, labels.BucketLabel, "1.0"),
+					},
+					classicSeries: []Series{},
+					nhcbSeries: []Series{
+						NewListSeries(labels.FromStrings("__name__", "http_requests"), []chunks.Sample{hSample{t: 1, h: nhcb}}),
+					},
+					expectedCount:  0,
+					expectedSuffix: "_sum",
+				},
+				{
+					name: "le matcher on count query returns stored classic count series with le label and excludes NHCB",
+					queryMatchers: []*labels.Matcher{
+						labels.MustNewMatcher(labels.MatchEqual, model.MetricNameLabel, "http_requests_count"),
+						labels.MustNewMatcher(labels.MatchEqual, labels.BucketLabel, "1.0"),
+					},
+					classicSeries: []Series{
+						NewListSeries(labels.FromStrings("__name__", "http_requests_count", "le", "1.0"), []chunks.Sample{fSample{t: 1, f: 5}}),
+						NewListSeries(labels.FromStrings("__name__", "http_requests_count"), []chunks.Sample{fSample{t: 1, f: 10}}),
+					},
+					nhcbSeries: []Series{
+						NewListSeries(labels.FromStrings("__name__", "http_requests"), []chunks.Sample{hSample{t: 1, h: nhcb}}),
+					},
+					expectedCount:  1,
+					expectedSuffix: "_count",
+				},
+				{
+					name:          "non-histogram _bucket series without le label is returned alongside converted NHCB",
+					queryMatchers: []*labels.Matcher{labels.MustNewMatcher(labels.MatchEqual, model.MetricNameLabel, "notahist_bucket")},
+					classicSeries: []Series{
+						NewListSeries(labels.FromStrings("__name__", "notahist_bucket", "job", "api"), []chunks.Sample{fSample{t: 1, f: 42}}),
+					},
+					nhcbSeries: []Series{
+						NewListSeries(labels.FromStrings("__name__", "notahist", "job", "api"), []chunks.Sample{hSample{t: 1, h: makeNHCB([]float64{1.0}, []int64{5, 5})}}),
+					},
+					expectedCount: 3,
+					expectedSamples: []seriesSamples{
+						{labels: `{__name__="notahist_bucket", job="api"}`, samples: []fSample{{t: 1, f: 42}}},
+						{labels: `{__name__="notahist_bucket", job="api", le="1.0"}`, samples: []fSample{{t: 1, f: 5}}},
+						{labels: `{__name__="notahist_bucket", job="api", le="+Inf"}`, samples: []fSample{{t: 1, f: 10}}},
+					},
+				},
+				{
+					name:          "NHCB series that already has le label is ignored",
+					queryMatchers: []*labels.Matcher{labels.MustNewMatcher(labels.MatchEqual, model.MetricNameLabel, "http_requests_bucket")},
+					nhcbSeries: []Series{
+						NewListSeries(labels.FromStrings("__name__", "http_requests", "le", "custom"), []chunks.Sample{hSample{t: 1, h: nhcb}}),
+					},
+					expectedCount: 0,
+				},
+				{
+					name: "multiple samples per series with mid-series bucket layout change and builder reuse across series",
+					queryMatchers: []*labels.Matcher{
+						labels.MustNewMatcher(labels.MatchEqual, model.MetricNameLabel, "http_requests_bucket"),
+					},
+					classicSeries: []Series{},
+					nhcbSeries: []Series{
+						NewListSeries(labels.FromStrings("__name__", "http_requests", "job", "api"), []chunks.Sample{
+							hSample{t: 1, h: makeNHCB([]float64{1.0, 2.0, 3.0}, []int64{1, 2, 3, 4})},
+							hSample{t: 2, h: makeNHCB([]float64{1.0, 2.0, 3.0}, []int64{2, 4, 6, 8})},
+							hSample{t: 3, h: makeNHCB([]float64{1.0, 5.0}, []int64{3, 7, 5})},
+							hSample{t: 4, h: makeNHCB([]float64{1.0, 2.0, 3.0}, []int64{4, 5, 6, 7})},
+						}),
+						NewListSeries(labels.FromStrings("__name__", "http_requests", "job", "web"), []chunks.Sample{
+							hSample{t: 1, h: makeNHCB([]float64{1.0, 5.0}, []int64{5, 10, 15})},
+							hSample{t: 2, h: makeNHCB([]float64{1.0, 5.0}, []int64{6, 12, 18})},
+						}),
+					},
+					expectedCount:  8,
+					expectedSuffix: "_bucket",
+					expectedSamples: []seriesSamples{
+						{labels: `{__name__="http_requests_bucket", job="api", le="1.0"}`, samples: []fSample{{t: 1, f: 1}, {t: 2, f: 2}, {t: 3, f: 3}, {t: 4, f: 4}}},
+						{labels: `{__name__="http_requests_bucket", job="api", le="2.0"}`, samples: []fSample{{t: 1, f: 3}, {t: 2, f: 6}, {t: 4, f: 9}}},
+						{labels: `{__name__="http_requests_bucket", job="api", le="3.0"}`, samples: []fSample{{t: 1, f: 6}, {t: 2, f: 12}, {t: 4, f: 15}}},
+						{labels: `{__name__="http_requests_bucket", job="api", le="+Inf"}`, samples: []fSample{{t: 1, f: 10}, {t: 2, f: 20}, {t: 3, f: 15}, {t: 4, f: 22}}},
+						{labels: `{__name__="http_requests_bucket", job="api", le="5.0"}`, samples: []fSample{{t: 3, f: 10}}},
+						{labels: `{__name__="http_requests_bucket", job="web", le="1.0"}`, samples: []fSample{{t: 1, f: 5}, {t: 2, f: 6}}},
+						{labels: `{__name__="http_requests_bucket", job="web", le="5.0"}`, samples: []fSample{{t: 1, f: 15}, {t: 2, f: 18}}},
+						{labels: `{__name__="http_requests_bucket", job="web", le="+Inf"}`, samples: []fSample{{t: 1, f: 30}, {t: 2, f: 36}}},
+					},
+				},
 			},
-			expectedCount: 1,
 		},
 		{
-			name:          "classic histogram exists - return classic",
-			queryMatchers: []*labels.Matcher{labels.MustNewMatcher(labels.MatchEqual, model.MetricNameLabel, "http_requests_bucket")},
-			classicSeries: []Series{
-				NewListSeries(labels.FromStrings("__name__", "http_requests_bucket", "le", "1"), []chunks.Sample{fSample{t: 1, f: 5}}),
-			},
-			expectedCount: 1,
-		},
-		{
-			name:          "regex name matcher passes through without conversion",
-			queryMatchers: []*labels.Matcher{labels.MustNewMatcher(labels.MatchRegexp, model.MetricNameLabel, ".+_requests_bucket")},
-			nhcbSeries: []Series{
-				NewListSeries(labels.FromStrings("__name__", "http_requests"), []chunks.Sample{hSample{t: 1, h: nhcb}}),
-			},
-			expectedCount: 0,
-		},
-		{
-			name:          "not-equal name matcher passes through without conversion",
-			queryMatchers: []*labels.Matcher{labels.MustNewMatcher(labels.MatchNotEqual, model.MetricNameLabel, "http_requests_bucket")},
-			nhcbSeries: []Series{
-				NewListSeries(labels.FromStrings("__name__", "rpc_latency"), []chunks.Sample{hSample{t: 1, h: nhcb}}),
-			},
-			expectedCount: 0,
-		},
-		{
-			name: "contradictory name matchers pass through without conversion",
-			queryMatchers: []*labels.Matcher{
-				labels.MustNewMatcher(labels.MatchEqual, model.MetricNameLabel, "http_requests_bucket"),
-				labels.MustNewMatcher(labels.MatchNotEqual, model.MetricNameLabel, "http_requests_bucket"),
-			},
-			nhcbSeries: []Series{
-				NewListSeries(labels.FromStrings("__name__", "rpc_latency"), []chunks.Sample{hSample{t: 1, h: nhcb}}),
-			},
-			expectedCount: 0,
-		},
-		{
-			name:          "no classic - convert NHCB to bucket series",
-			queryMatchers: []*labels.Matcher{labels.MustNewMatcher(labels.MatchEqual, model.MetricNameLabel, "http_requests_bucket")},
-			classicSeries: []Series{},
-			nhcbSeries: []Series{
-				NewListSeries(labels.FromStrings("__name__", "http_requests"), []chunks.Sample{hSample{t: 1, h: nhcb}}),
-			},
-			expectedCount:  4,
-			expectedSuffix: "_bucket",
-		},
-		{
-			name:          "no classic - convert NHCB to count series",
-			queryMatchers: []*labels.Matcher{labels.MustNewMatcher(labels.MatchEqual, model.MetricNameLabel, "http_requests_count")},
-			classicSeries: []Series{},
-			nhcbSeries: []Series{
-				NewListSeries(labels.FromStrings("__name__", "http_requests"), []chunks.Sample{hSample{t: 1, h: nhcb}}),
-			},
-			expectedCount:  1,
-			expectedSuffix: "_count",
-		},
-		{
-			name:          "no classic - convert NHCB to sum series",
-			queryMatchers: []*labels.Matcher{labels.MustNewMatcher(labels.MatchEqual, model.MetricNameLabel, "http_requests_sum")},
-			classicSeries: []Series{},
-			nhcbSeries: []Series{
-				NewListSeries(labels.FromStrings("__name__", "http_requests"), []chunks.Sample{hSample{t: 1, h: nhcb}}),
-			},
-			expectedCount:  1,
-			expectedSuffix: "_sum",
-		},
-		{
-			name:          "both classic and NHCB - return both",
-			queryMatchers: []*labels.Matcher{labels.MustNewMatcher(labels.MatchEqual, model.MetricNameLabel, "http_requests_bucket")},
-			classicSeries: []Series{
-				NewListSeries(labels.FromStrings("__name__", "http_requests_bucket", "le", "1"), []chunks.Sample{fSample{t: 1, f: 5}}),
-			},
-			nhcbSeries: []Series{
-				NewListSeries(labels.FromStrings("__name__", "http_requests"), []chunks.Sample{hSample{t: 1, h: nhcb}}),
-			},
-			expectedCount:  5,
-			expectedSuffix: "_bucket",
-		},
-		{
-			name:          "no classic and no NHCB - return empty",
-			queryMatchers: []*labels.Matcher{labels.MustNewMatcher(labels.MatchEqual, model.MetricNameLabel, "http_requests_bucket")},
-			classicSeries: []Series{},
-			nhcbSeries:    []Series{},
-			expectedCount: 0,
-		},
-		{
-			name: "le exact match filters to single bucket",
-			queryMatchers: []*labels.Matcher{
-				labels.MustNewMatcher(labels.MatchEqual, model.MetricNameLabel, "http_requests_bucket"),
-				labels.MustNewMatcher(labels.MatchEqual, labels.BucketLabel, "5.0"),
-			},
-			classicSeries: []Series{},
-			nhcbSeries: []Series{
-				NewListSeries(labels.FromStrings("__name__", "http_requests"), []chunks.Sample{hSample{t: 1, h: nhcb}}),
-			},
-			expectedCount:  1,
-			expectedSuffix: "_bucket",
-		},
-		{
-			name: "le exact match +Inf",
-			queryMatchers: []*labels.Matcher{
-				labels.MustNewMatcher(labels.MatchEqual, model.MetricNameLabel, "http_requests_bucket"),
-				labels.MustNewMatcher(labels.MatchEqual, labels.BucketLabel, "+Inf"),
-			},
-			classicSeries: []Series{},
-			nhcbSeries: []Series{
-				NewListSeries(labels.FromStrings("__name__", "http_requests"), []chunks.Sample{hSample{t: 1, h: nhcb}}),
-			},
-			expectedCount:  1,
-			expectedSuffix: "_bucket",
-		},
-		{
-			name: "le exact match no match",
-			queryMatchers: []*labels.Matcher{
-				labels.MustNewMatcher(labels.MatchEqual, model.MetricNameLabel, "http_requests_bucket"),
-				labels.MustNewMatcher(labels.MatchEqual, labels.BucketLabel, "99.0"),
-			},
-			classicSeries: []Series{},
-			nhcbSeries: []Series{
-				NewListSeries(labels.FromStrings("__name__", "http_requests"), []chunks.Sample{hSample{t: 1, h: nhcb}}),
-			},
-			expectedCount:  0,
-			expectedSuffix: "_bucket",
-		},
-		{
-			name: "le regex match filters to matching buckets",
-			queryMatchers: []*labels.Matcher{
-				labels.MustNewMatcher(labels.MatchEqual, model.MetricNameLabel, "http_requests_bucket"),
-				labels.MustNewMatcher(labels.MatchRegexp, labels.BucketLabel, "1.0|10.0"),
-			},
-			classicSeries: []Series{},
-			nhcbSeries: []Series{
-				NewListSeries(labels.FromStrings("__name__", "http_requests"), []chunks.Sample{hSample{t: 1, h: nhcb}}),
-			},
-			expectedCount:  2,
-			expectedSuffix: "_bucket",
-		},
-		{
-			name: "le not equal excludes one bucket",
-			queryMatchers: []*labels.Matcher{
-				labels.MustNewMatcher(labels.MatchEqual, model.MetricNameLabel, "http_requests_bucket"),
-				labels.MustNewMatcher(labels.MatchNotEqual, labels.BucketLabel, "+Inf"),
-			},
-			classicSeries: []Series{},
-			nhcbSeries: []Series{
-				NewListSeries(labels.FromStrings("__name__", "http_requests"), []chunks.Sample{hSample{t: 1, h: nhcb}}),
-			},
-			expectedCount:  3,
-			expectedSuffix: "_bucket",
-		},
-		{
-			name: "multiple le matchers all apply",
-			queryMatchers: []*labels.Matcher{
-				labels.MustNewMatcher(labels.MatchEqual, model.MetricNameLabel, "http_requests_bucket"),
-				labels.MustNewMatcher(labels.MatchNotEqual, labels.BucketLabel, "+Inf"),
-				labels.MustNewMatcher(labels.MatchNotEqual, labels.BucketLabel, "1.0"),
-			},
-			classicSeries: []Series{},
-			nhcbSeries: []Series{
-				NewListSeries(labels.FromStrings("__name__", "http_requests"), []chunks.Sample{hSample{t: 1, h: nhcb}}),
-			},
-			expectedCount:  2,
-			expectedSuffix: "_bucket",
-		},
-		{
-			name: "le matcher on count query excludes series without le label",
-			queryMatchers: []*labels.Matcher{
-				labels.MustNewMatcher(labels.MatchEqual, model.MetricNameLabel, "http_requests_count"),
-				labels.MustNewMatcher(labels.MatchEqual, labels.BucketLabel, "1.0"),
-			},
-			classicSeries: []Series{},
-			nhcbSeries: []Series{
-				NewListSeries(labels.FromStrings("__name__", "http_requests"), []chunks.Sample{hSample{t: 1, h: nhcb}}),
-			},
-			expectedCount:  0,
-			expectedSuffix: "_count",
-		},
-		{
-			name: "le matcher on sum query excludes series without le label",
-			queryMatchers: []*labels.Matcher{
-				labels.MustNewMatcher(labels.MatchEqual, model.MetricNameLabel, "http_requests_sum"),
-				labels.MustNewMatcher(labels.MatchEqual, labels.BucketLabel, "1.0"),
-			},
-			classicSeries: []Series{},
-			nhcbSeries: []Series{
-				NewListSeries(labels.FromStrings("__name__", "http_requests"), []chunks.Sample{hSample{t: 1, h: nhcb}}),
-			},
-			expectedCount:  0,
-			expectedSuffix: "_sum",
-		},
-		{
-			name: "le matcher on count query returns stored classic count series with le label and excludes NHCB",
-			queryMatchers: []*labels.Matcher{
-				labels.MustNewMatcher(labels.MatchEqual, model.MetricNameLabel, "http_requests_count"),
-				labels.MustNewMatcher(labels.MatchEqual, labels.BucketLabel, "1.0"),
-			},
-			classicSeries: []Series{
-				NewListSeries(labels.FromStrings("__name__", "http_requests_count", "le", "1.0"), []chunks.Sample{fSample{t: 1, f: 5}}),
-				NewListSeries(labels.FromStrings("__name__", "http_requests_count"), []chunks.Sample{fSample{t: 1, f: 10}}),
-			},
-			nhcbSeries: []Series{
-				NewListSeries(labels.FromStrings("__name__", "http_requests"), []chunks.Sample{hSample{t: 1, h: nhcb}}),
-			},
-			expectedCount:  1,
-			expectedSuffix: "_count",
-		},
-		{
-			name:          "NHCB series that already has le label is ignored",
-			queryMatchers: []*labels.Matcher{labels.MustNewMatcher(labels.MatchEqual, model.MetricNameLabel, "http_requests_bucket")},
-			nhcbSeries: []Series{
-				NewListSeries(labels.FromStrings("__name__", "http_requests", "le", "custom"), []chunks.Sample{hSample{t: 1, h: nhcb}}),
-			},
-			expectedCount: 0,
-		},
-		{
-			name: "multiple samples per series with mid-series bucket layout change and builder reuse across series",
-			queryMatchers: []*labels.Matcher{
-				labels.MustNewMatcher(labels.MatchEqual, model.MetricNameLabel, "http_requests_bucket"),
-			},
-			classicSeries: []Series{},
-			nhcbSeries: []Series{
-				NewListSeries(labels.FromStrings("__name__", "http_requests", "job", "api"), []chunks.Sample{
-					hSample{t: 1, h: makeNHCB([]float64{1.0, 2.0, 3.0}, []int64{1, 2, 3, 4})},
-					hSample{t: 2, h: makeNHCB([]float64{1.0, 2.0, 3.0}, []int64{2, 4, 6, 8})},
-					hSample{t: 3, h: makeNHCB([]float64{1.0, 5.0}, []int64{3, 7, 5})},
-					hSample{t: 4, h: makeNHCB([]float64{1.0, 2.0, 3.0}, []int64{4, 5, 6, 7})},
-				}),
-				NewListSeries(labels.FromStrings("__name__", "http_requests", "job", "web"), []chunks.Sample{
-					hSample{t: 1, h: makeNHCB([]float64{1.0, 5.0}, []int64{5, 10, 15})},
-					hSample{t: 2, h: makeNHCB([]float64{1.0, 5.0}, []int64{6, 12, 18})},
-				}),
-			},
-			expectedCount:  8,
-			expectedSuffix: "_bucket",
-			expectedSamples: map[string][]fSample{
-				`{__name__="http_requests_bucket", job="api", le="1.0"}`:  {{t: 1, f: 1}, {t: 2, f: 2}, {t: 3, f: 3}, {t: 4, f: 4}},
-				`{__name__="http_requests_bucket", job="api", le="2.0"}`:  {{t: 1, f: 3}, {t: 2, f: 6}, {t: 4, f: 9}},
-				`{__name__="http_requests_bucket", job="api", le="3.0"}`:  {{t: 1, f: 6}, {t: 2, f: 12}, {t: 4, f: 15}},
-				`{__name__="http_requests_bucket", job="api", le="5.0"}`:  {{t: 3, f: 10}},
-				`{__name__="http_requests_bucket", job="api", le="+Inf"}`: {{t: 1, f: 10}, {t: 2, f: 20}, {t: 3, f: 15}, {t: 4, f: 22}},
-				`{__name__="http_requests_bucket", job="web", le="1.0"}`:  {{t: 1, f: 5}, {t: 2, f: 6}},
-				`{__name__="http_requests_bucket", job="web", le="5.0"}`:  {{t: 1, f: 15}, {t: 2, f: 18}},
-				`{__name__="http_requests_bucket", job="web", le="+Inf"}`: {{t: 1, f: 30}, {t: 2, f: 36}},
+			// TODO: Stored classic and NHCB series with identical labels are not
+			// merged yet, each case documents the current output.
+			name: "collisions not yet handled",
+			cases: []testCase{
+				{
+					// Stored classic should win, returning only the classic series.
+					name:          "identical labelset and timestamp returns duplicate series",
+					queryMatchers: []*labels.Matcher{labels.MustNewMatcher(labels.MatchEqual, model.MetricNameLabel, "http_requests_count")},
+					classicSeries: []Series{
+						NewListSeries(labels.FromStrings("__name__", "http_requests_count", "job", "api"), []chunks.Sample{fSample{t: 1, f: 10}}),
+					},
+					nhcbSeries: []Series{
+						NewListSeries(labels.FromStrings("__name__", "http_requests", "job", "api"), []chunks.Sample{hSample{t: 1, h: makeNHCB([]float64{1.0}, []int64{50, 49})}}),
+					},
+					expectedCount: 2,
+					expectedSamples: []seriesSamples{
+						{labels: `{__name__="http_requests_count", job="api"}`, samples: []fSample{{t: 1, f: 10}}},
+						{labels: `{__name__="http_requests_count", job="api"}`, samples: []fSample{{t: 1, f: 99}}},
+					},
+				},
 			},
 		},
 	}
 
-	for _, tc := range tests {
-		t.Run(tc.name, func(t *testing.T) {
-			mock := &nhcbMockQuerier{
-				classicSeries:     tc.classicSeries,
-				nhcbSeries:        tc.nhcbSeries,
-				passthroughSeries: tc.passthroughSeries,
-			}
-			q := NewNHCBAsClassicQuerier(mock)
-
-			ss := q.Select(context.Background(), false, nil, tc.queryMatchers...)
-			var collected []Series
-			for ss.Next() {
-				s := ss.At()
-				if tc.expectedSuffix != "" {
-					require.Contains(t, s.Labels().Get(model.MetricNameLabel), tc.expectedSuffix)
-				}
-				collected = append(collected, s)
-			}
-			require.NoError(t, ss.Err())
-			require.Len(t, collected, tc.expectedCount)
-
-			if tc.expectedSamples != nil {
-				// Iterate collected series after draining the SeriesSet to verify
-				// that each series's sample slab remains valid across Next() calls
-				// and that fSampleSeries.Iterator reuses an existing fSampleIterator.
-				gotSamples := make(map[string][]fSample, len(collected))
-				var it chunkenc.Iterator
-				for _, s := range collected {
-					it = s.Iterator(it)
-					var samples []fSample
-					for it.Next() == chunkenc.ValFloat {
-						ts, v := it.At()
-						require.Equal(t, ts, it.AtT())
-						require.Equal(t, int64(0), it.AtST())
-						samples = append(samples, fSample{t: ts, f: v})
+	for _, g := range groups {
+		t.Run(g.name, func(t *testing.T) {
+			for _, tc := range g.cases {
+				t.Run(tc.name, func(t *testing.T) {
+					mock := &nhcbMockQuerier{
+						classicSeries:     tc.classicSeries,
+						nhcbSeries:        tc.nhcbSeries,
+						passthroughSeries: tc.passthroughSeries,
 					}
-					require.NoError(t, it.Err())
-					gotSamples[s.Labels().String()] = samples
+					q := NewNHCBAsClassicQuerier(mock)
 
-					// Also verify Seek on the same series using iterator reuse.
-					if len(samples) > 0 {
-						it = s.Iterator(it)
-						mid := samples[len(samples)/2]
-						require.Equal(t, chunkenc.ValFloat, it.Seek(mid.t))
-						ts, v := it.At()
-						require.Equal(t, mid.t, ts)
-						require.Equal(t, mid.f, v)
-						require.Equal(t, chunkenc.ValNone, it.Seek(samples[len(samples)-1].t+100))
-						require.Panics(t, func() { it.AtHistogram(nil) })
-						require.Panics(t, func() { it.AtFloatHistogram(nil) })
+					ss := q.Select(context.Background(), false, nil, tc.queryMatchers...)
+					var collected []Series
+					for ss.Next() {
+						s := ss.At()
+						if tc.expectedSuffix != "" {
+							require.Contains(t, s.Labels().Get(model.MetricNameLabel), tc.expectedSuffix)
+						}
+						collected = append(collected, s)
 					}
-				}
-				require.Equal(t, tc.expectedSamples, gotSamples)
+					require.NoError(t, ss.Err())
+					require.Len(t, collected, tc.expectedCount)
+
+					if tc.expectedSamples != nil {
+						// Iterate collected series after draining the SeriesSet to verify
+						// that each series's sample slab remains valid across Next() calls
+						// and that fSampleSeries.Iterator reuses an existing fSampleIterator.
+						gotSamples := make([]seriesSamples, 0, len(collected))
+						var it chunkenc.Iterator
+						for _, s := range collected {
+							it = s.Iterator(it)
+							var samples []fSample
+							for it.Next() == chunkenc.ValFloat {
+								ts, v := it.At()
+								require.Equal(t, ts, it.AtT())
+								require.Equal(t, int64(0), it.AtST())
+								samples = append(samples, fSample{t: ts, f: v})
+							}
+							require.NoError(t, it.Err())
+							gotSamples = append(gotSamples, seriesSamples{labels: s.Labels().String(), samples: samples})
+
+							// Also verify Seek on the same series using iterator reuse.
+							if len(samples) > 0 {
+								it = s.Iterator(it)
+								mid := samples[len(samples)/2]
+								require.Equal(t, chunkenc.ValFloat, it.Seek(mid.t))
+								ts, v := it.At()
+								require.Equal(t, mid.t, ts)
+								require.Equal(t, mid.f, v)
+								require.Equal(t, chunkenc.ValNone, it.Seek(samples[len(samples)-1].t+100))
+								require.Panics(t, func() { it.AtHistogram(nil) })
+								require.Panics(t, func() { it.AtFloatHistogram(nil) })
+							}
+						}
+						require.Equal(t, tc.expectedSamples, gotSamples)
+					}
+				})
 			}
 		})
 	}
@@ -524,6 +559,33 @@ func TestNHCBAsClassicQuerier_FloatHistogram(t *testing.T) {
 	}
 	require.NoError(t, ss.Err())
 	require.Equal(t, 3, count)
+}
+
+// makeNHCB builds a custom buckets histogram from per-bucket counts, the last
+// count being the +Inf bucket.
+func makeNHCB(customValues []float64, counts []int64) *histogram.Histogram {
+	deltas := make([]int64, len(counts))
+	var total uint64
+	var prev int64
+	for i, c := range counts {
+		deltas[i] = c - prev
+		prev = c
+		total += uint64(c)
+	}
+	return &histogram.Histogram{
+		Schema:          histogram.CustomBucketsSchema,
+		Count:           total,
+		Sum:             float64(total),
+		CustomValues:    customValues,
+		PositiveSpans:   []histogram.Span{{Offset: 0, Length: uint32(len(counts))}},
+		PositiveBuckets: deltas,
+	}
+}
+
+// seriesSamples is a series' labels and float samples, in the order returned.
+type seriesSamples struct {
+	labels  string
+	samples []fSample
 }
 
 type nhcbMockQuerier struct {
