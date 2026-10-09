@@ -114,6 +114,9 @@ func (c *XORChunk) Appender() (Appender, error) {
 		return nil, err
 	}
 
+	// Recover the writable bits after loading a serialized chunk.
+	c.b.count = it.br.valid
+
 	a := &xorAppender{
 		b:        &c.b,
 		t:        it.t,
