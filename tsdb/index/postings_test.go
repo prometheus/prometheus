@@ -763,6 +763,21 @@ func TestBigEndian(t *testing.T) {
 		require.NoError(t, bep.Err())
 	})
 
+	t.Run("Seek beyond uint32", func(t *testing.T) {
+		for _, target := range []storage.SeriesRef{1 << 32, 1<<32 + 1, 1<<33 + 2, ^storage.SeriesRef(0)} {
+			for _, positioned := range []bool{false, true} {
+				bep := newBigEndianPostings([]byte{0, 0, 0, 1, 0xff, 0xff, 0xff, 0xff})
+				if positioned {
+					require.True(t, bep.Next())
+					require.Equal(t, storage.SeriesRef(1), bep.At())
+				}
+				require.False(t, bep.Seek(target), "target=%d positioned=%v", target, positioned)
+				require.False(t, bep.Next())
+				require.NoError(t, bep.Err())
+			}
+		}
+	})
+
 	t.Run("Seek", func(t *testing.T) {
 		table := []struct {
 			seek  uint32
