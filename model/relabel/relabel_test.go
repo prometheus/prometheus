@@ -861,6 +861,21 @@ func TestRelabelValidate(t *testing.T) {
 	}
 }
 
+func TestRelabelLabelMapSkipsInvalidGeneratedLabelNames(t *testing.T) {
+	input := labels.FromStrings("_0foo", "bar")
+	cfg := &Config{
+		Regex:                MustNewRegexp("_(.*)"),
+		Replacement:          "$1",
+		Action:               LabelMap,
+		NameValidationScheme: model.LegacyValidation,
+	}
+	require.NoError(t, cfg.Validate(model.LegacyValidation))
+
+	lb := labels.NewBuilder(input)
+	require.True(t, ProcessBuilder(lb, cfg))
+	testutil.RequireEqual(t, input, lb.Labels())
+}
+
 func TestTargetLabelLegacyValidity(t *testing.T) {
 	for _, test := range []struct {
 		str   string
