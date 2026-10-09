@@ -40,7 +40,6 @@ import (
 //
 // TODO: Handle edge cases not yet supported (non-exhaustive, see
 // https://github.com/prometheus/prometheus/pull/19881):
-//   - Non equality __name__ matchers (regex, negative matchers, etc.)
 //   - Non conventional metrics:
 //     - NHCB series that already carry an le label
 //     - Non-histogram series named *_bucket without an le label
@@ -176,9 +175,13 @@ func newBaseNameMatcher(matchType labels.MatchType, metricName, suffix string) *
 func extractHistogramSuffix(matchers []*labels.Matcher) (*labels.Matcher, string, []*labels.Matcher) {
 	var nameMatcher *labels.Matcher
 	for _, m := range matchers {
-		if m.Name == model.MetricNameLabel {
-			nameMatcher = m
+		if m.Name != model.MetricNameLabel {
+			continue
 		}
+		if nameMatcher != nil || m.Type != labels.MatchEqual {
+			return nil, "", matchers
+		}
+		nameMatcher = m
 	}
 	if nameMatcher == nil {
 		return nil, "", matchers

@@ -72,6 +72,21 @@ func TestExtractHistogramSuffix(t *testing.T) {
 			expectedName:   ".+_bucket",
 			expectedSuffix: "_bucket",
 		},
+		{
+			name:     "bucket regex matcher is not rewritten",
+			matchers: []*labels.Matcher{labels.MustNewMatcher(labels.MatchRegexp, model.MetricNameLabel, ".+_bucket")},
+		},
+		{
+			name:     "bucket not-equal matcher is not rewritten",
+			matchers: []*labels.Matcher{labels.MustNewMatcher(labels.MatchNotEqual, model.MetricNameLabel, "http_requests_bucket")},
+		},
+		{
+			name: "contradictory metric name matchers are not rewritten",
+			matchers: []*labels.Matcher{
+				labels.MustNewMatcher(labels.MatchEqual, model.MetricNameLabel, "http_requests_bucket"),
+				labels.MustNewMatcher(labels.MatchNotEqual, model.MetricNameLabel, "http_requests_bucket"),
+			},
+		},
 	}
 
 	for _, tc := range tests {
@@ -143,13 +158,31 @@ func TestNHCBAsClassicQuerier_Select(t *testing.T) {
 			expectedCount: 1,
 		},
 		{
-			name:          "histogram with regex exists - return classic",
+			name:          "regex name matcher passes through without conversion",
 			queryMatchers: []*labels.Matcher{labels.MustNewMatcher(labels.MatchRegexp, model.MetricNameLabel, ".+_requests_bucket")},
-			classicSeries: []Series{},
 			nhcbSeries: []Series{
 				NewListSeries(labels.FromStrings("__name__", "http_requests"), []chunks.Sample{hSample{t: 1, h: nhcb}}),
 			},
-			expectedCount: 4,
+			expectedCount: 0,
+		},
+		{
+			name:          "not-equal name matcher passes through without conversion",
+			queryMatchers: []*labels.Matcher{labels.MustNewMatcher(labels.MatchNotEqual, model.MetricNameLabel, "http_requests_bucket")},
+			nhcbSeries: []Series{
+				NewListSeries(labels.FromStrings("__name__", "rpc_latency"), []chunks.Sample{hSample{t: 1, h: nhcb}}),
+			},
+			expectedCount: 0,
+		},
+		{
+			name: "contradictory name matchers pass through without conversion",
+			queryMatchers: []*labels.Matcher{
+				labels.MustNewMatcher(labels.MatchEqual, model.MetricNameLabel, "http_requests_bucket"),
+				labels.MustNewMatcher(labels.MatchNotEqual, model.MetricNameLabel, "http_requests_bucket"),
+			},
+			nhcbSeries: []Series{
+				NewListSeries(labels.FromStrings("__name__", "rpc_latency"), []chunks.Sample{hSample{t: 1, h: nhcb}}),
+			},
+			expectedCount: 0,
 		},
 		{
 			name:          "no classic - convert NHCB to bucket series",

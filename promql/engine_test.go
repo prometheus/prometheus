@@ -5336,7 +5336,7 @@ load 1m
 			}
 			ng := promqltest.NewTestEngineWithOpts(t, opts)
 
-			q, err := ng.NewInstantQuery(t.Context(), fanout, nil, `{__name__=~"(local|remote)_seconds_count"}`, time.Unix(0, 0))
+			q, err := ng.NewInstantQuery(t.Context(), fanout, nil, `local_seconds_count or on(__name__) remote_seconds_count`, time.Unix(0, 0))
 			require.NoError(t, err)
 			t.Cleanup(q.Close)
 			res := q.Exec(t.Context())
