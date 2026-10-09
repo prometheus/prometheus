@@ -1275,3 +1275,54 @@ func resetValAndLset(e []parsedEntry) {
 		e[i].lset = labels.EmptyLabels()
 	}
 }
+
+func TestOpenMetricsStartTimestampLabelOrder(t *testing.T) {
+	for _, typ := range []string{"counter", "histogram", "summary"} {
+		for _, tc := range []struct{ name, sample, created string }{
+			{"same_ab", `a="x",b="y"`, `a="x",b="y"`},
+			{"same_ba", `b="y",a="x"`, `b="y",a="x"`},
+			{"ab_then_ba", `a="x",b="y"`, `b="y",a="x"`},
+			{"ba_then_ab", `b="y",a="x"`, `a="x",b="y"`},
+		} {
+			t.Run(typ+"/"+tc.name, func(t *testing.T) {
+				suffix, extra := "_total", ""
+				if typ == "histogram" {
+					suffix, extra = "_bucket", `,le="+Inf"`
+				}
+				if typ == "summary" {
+					suffix, extra = "", `,quantile="0.5"`
+				}
+				input := fmt.Sprintf("# TYPE calls %s\ncalls%s{%s%s} 1\ncalls_created{%s} 3\n# EOF\n", typ, suffix, tc.sample, extra, tc.created)
+				p := NewOpenMetricsParser([]byte(input), labels.NewSymbolTable(), WithOMParserSTSeriesSkipped())
+				entry, err := p.Next()
+				require.NoError(t, err)
+				require.Equal(t, EntryType, entry)
+				entry, err = p.Next()
+				require.NoError(t, err)
+				require.Equal(t, EntrySeries, entry)
+				raw, ts, value := p.Series()
+				require.Equal(t, fmt.Sprintf("calls%s{%s%s}", suffix, tc.sample, extra), string(raw))
+				require.Nil(t, ts)
+				require.Equal(t, 1.0, value)
+				var gotLabels labels.Labels
+				p.Labels(&gotLabels)
+				wantLabels := labels.FromStrings("__name__", "calls"+suffix, "a", "x", "b", "y")
+				if typ == "histogram" {
+					wantLabels = labels.FromStrings("__name__", "calls"+suffix, "a", "x", "b", "y", "le", "+Inf")
+				}
+				if typ == "summary" {
+					wantLabels = labels.FromStrings("__name__", "calls"+suffix, "a", "x", "b", "y", "quantile", "0.5")
+				}
+				require.Equal(t, wantLabels, gotLabels)
+				gotST := p.StartTimestamp()
+				t.Logf("first sample: got ST=%d, expected=3000", gotST)
+				if gotST != 3000 {
+					t.Errorf("matching _created sample has same label set: got ST=%d, expected=3000", gotST)
+				}
+				entry, err = p.Next()
+				require.ErrorIs(t, err, io.EOF)
+				require.Equal(t, EntryInvalid, entry)
+			})
+		}
+	}
+}
