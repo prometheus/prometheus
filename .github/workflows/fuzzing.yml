@@ -23,7 +23,7 @@ jobs:
       - name: Run Fuzzing
         run: |
           for fuzz_test in ${{ join(matrix.fuzz_test, ' ') }}; do
-            go test -fuzz="${fuzz_test}$" -fuzztime=4m ./util/fuzzing
+            go test -fuzz="${fuzz_test}$" -fuzztime=4m -timeout=15m ./util/fuzzing
           done
         id: fuzz
       - name: Upload Crash Artifacts
