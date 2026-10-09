@@ -1174,7 +1174,7 @@ func (t *QueueManager) calculateDesiredShards() int {
 		dataPendingRate = dataInRate*dataKeptRatio - dataOutRate
 		highestSent     = t.metrics.highestSentTimestamp.Get()
 		highestRecv     = t.highestRecvTimestamp.Get()
-		delay           = highestRecv - highestSent
+		delay           = max(highestRecv-highestSent, 0) // Delay must never be negative.
 		dataPending     = delay * dataInRate * dataKeptRatio
 	)
 

@@ -699,18 +699,7 @@ Loop:
 			// samples and may be deleted from the WAL. Their most recent append
 			// timestamp is compared to ts, and if that timestamp is older then ts,
 			// they are considered inactive and may be deleted.
-			//
-			// Subtracting a duration from ts will add a buffer for when series are
-			// considered inactive and safe for deletion.
-			ts := max(db.rs.LowestSentTimestamp()-db.opts.MinWALTime, 0)
-
-			// Network issues can prevent the result of getRemoteWriteTimestamp from
-			// changing. We don't want data in the WAL to grow forever, so we set a cap
-			// on the maximum age data can be. If our ts is older than this cutoff point,
-			// we'll shift it forward to start deleting very stale data.
-			if maxTS := timestamp.FromTime(time.Now()) - db.opts.MaxWALTime; ts < maxTS {
-				ts = maxTS
-			}
+			ts := walTruncationTime(db.opts, db.rs.LowestSentTimestamp(), timestamp.FromTime(time.Now()))
 
 			db.logger.Debug("truncating the WAL", "ts", ts)
 			if err := db.truncate(ts); err != nil {
@@ -718,6 +707,21 @@ Loop:
 			}
 		}
 	}
+}
+
+// walTruncationTime returns the timestamp before which inactive series may be
+// truncated from the WAL, keeping between MinWALTime and MaxWALTime of data.
+func walTruncationTime(opts *Options, lowestSentTs, nowTS int64) int64 {
+	// Keep MinWALTime of data behind what remote write has sent. Floor at 0
+	// since lowestSentTs is 0 until remote write sends something.
+	ts := max(lowestSentTs-opts.MinWALTime, 0)
+
+	// Keep at most MaxWALTime of data, even if remote write is stalled.
+	ts = max(ts, nowTS-opts.MaxWALTime)
+
+	// Keep at least MinWALTime of data, even if lowestSentTs is in the future.
+	// Floor at 0 so the cutoff is never negative.
+	return min(ts, max(nowTS-opts.MinWALTime, 0))
 }
 
 // keepSeriesInWALCheckpointFn returns a function that is used to determine whether a series record should be kept in the checkpoint.

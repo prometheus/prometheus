@@ -77,7 +77,7 @@ func (c *Client) Write(samples model.Samples) error {
 	for _, s := range samples {
 		v := float64(s.Value)
 		if math.IsNaN(v) || math.IsInf(v, 0) {
-			c.logger.Debug("Cannot send value to OpenTSDB, skipping sample", "value", v, "sample", s)
+			c.logger.Debug("Cannot send value to OpenTSDB, skipping sample", "value", v, "sample", s) //nolint:loggercheck
 			continue
 		}
 		metric := TagValue(s.Metric[model.MetricNameLabel])
