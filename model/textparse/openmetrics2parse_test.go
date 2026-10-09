@@ -1138,27 +1138,27 @@ req_duration{job="api",env="prod"} {count:3,sum:6.0,bucket:[0.1:1,1.0:2,+Inf:3]}
 	exp := []parsedEntry{
 		{m: "req_duration", typ: model.MetricTypeHistogram},
 		{
-			m:    "req_duration_count\xffenv\xffprod\xffjob\xffapi",
+			m:    "req_duration_count\xffjob\xffapi\xffenv\xffprod",
 			v:    3,
 			lset: labels.FromStrings("__name__", "req_duration_count", "env", "prod", "job", "api"),
 		},
 		{
-			m:    "req_duration_sum\xffenv\xffprod\xffjob\xffapi",
+			m:    "req_duration_sum\xffjob\xffapi\xffenv\xffprod",
 			v:    6.0,
 			lset: labels.FromStrings("__name__", "req_duration_sum", "env", "prod", "job", "api"),
 		},
 		{
-			m:    "req_duration_bucket\xffenv\xffprod\xffjob\xffapi\xffle\xff0.1",
+			m:    "req_duration_bucket\xffjob\xffapi\xffenv\xffprod\xffle\xff0.1",
 			v:    1,
 			lset: labels.FromStrings("__name__", "req_duration_bucket", "env", "prod", "job", "api", "le", "0.1"),
 		},
 		{
-			m:    "req_duration_bucket\xffenv\xffprod\xffjob\xffapi\xffle\xff1.0",
+			m:    "req_duration_bucket\xffjob\xffapi\xffenv\xffprod\xffle\xff1.0",
 			v:    2,
 			lset: labels.FromStrings("__name__", "req_duration_bucket", "env", "prod", "job", "api", "le", "1.0"),
 		},
 		{
-			m:    "req_duration_bucket\xffenv\xffprod\xffjob\xffapi\xffle\xff+Inf",
+			m:    "req_duration_bucket\xffjob\xffapi\xffenv\xffprod\xffle\xff+Inf",
 			v:    3,
 			lset: labels.FromStrings("__name__", "req_duration_bucket", "env", "prod", "job", "api", "le", "+Inf"),
 		},
@@ -1169,36 +1169,102 @@ req_duration{job="api",env="prod"} {count:3,sum:6.0,bucket:[0.1:1,1.0:2,+Inf:3]}
 	requireEntries(t, exp, got)
 }
 
-// TestOpenMetrics2ParseCompositeExtraLabelsQuoted verifies that a quoted
-// extra label (OM2 UTF-8 label names) on a composite line is extracted
-// correctly — same as it already is on a plain (non-composite) sample line.
+// TestOpenMetrics2ParseCompositeExtraLabelsQuoted verifies that quoted metric
+// and label names as well as escaped label values on a composite line are
+// extracted and unescaped with the expected Series() bytes and Labels().
 func TestOpenMetrics2ParseCompositeExtraLabelsQuoted(t *testing.T) {
-	input := `# TYPE foo summary
+	for _, tc := range []struct {
+		name  string
+		input string
+		exp   []parsedEntry
+	}{
+		{
+			name: "utf8 label name",
+			input: `# TYPE foo summary
 foo{"user.id"="x"} {count:1,sum:2.0,quantile:[0.5:1.0]}
 # EOF
-`
-	exp := []parsedEntry{
-		{m: "foo", typ: model.MetricTypeSummary},
-		{
-			m:    "foo_count\xffuser.id\xffx",
-			v:    1,
-			lset: labels.FromStrings("__name__", "foo_count", "user.id", "x"),
+`,
+			exp: []parsedEntry{
+				{m: "foo", typ: model.MetricTypeSummary},
+				{
+					m:    "foo_count\xffuser.id\xffx",
+					v:    1,
+					lset: labels.FromStrings("__name__", "foo_count", "user.id", "x"),
+				},
+				{
+					m:    "foo_sum\xffuser.id\xffx",
+					v:    2.0,
+					lset: labels.FromStrings("__name__", "foo_sum", "user.id", "x"),
+				},
+				{
+					m:    "foo\xffuser.id\xffx\xffquantile\xff0.5",
+					v:    1.0,
+					lset: labels.FromStrings("__name__", "foo", "quantile", "0.5", "user.id", "x"),
+				},
+			},
 		},
 		{
-			m:    "foo_sum\xffuser.id\xffx",
-			v:    2.0,
-			lset: labels.FromStrings("__name__", "foo_sum", "user.id", "x"),
+			name: "escaped values and quoted names on histogram",
+			input: `# TYPE "my\"metric" histogram
+{"my\"metric","a\"k"="x\"y\n",b="\\",c=""} {count:2,sum:3.0,bucket:[1.0:1,+Inf:2]}
+# EOF
+`,
+			exp: []parsedEntry{
+				{m: `my\"metric`, typ: model.MetricTypeHistogram},
+				{
+					m:    "my\\\"metric_count\xffa\\\"k\xffx\\\"y\\n\xffb\xff\\\\\xffc\xff",
+					v:    2,
+					lset: labels.FromStrings("__name__", `my"metric_count`, `a"k`, "x\"y\n", "b", `\`, "c", ""),
+				},
+				{
+					m:    "my\\\"metric_sum\xffa\\\"k\xffx\\\"y\\n\xffb\xff\\\\\xffc\xff",
+					v:    3.0,
+					lset: labels.FromStrings("__name__", `my"metric_sum`, `a"k`, "x\"y\n", "b", `\`, "c", ""),
+				},
+				{
+					m:    "my\\\"metric_bucket\xffa\\\"k\xffx\\\"y\\n\xffb\xff\\\\\xffc\xff\xffle\xff1.0",
+					v:    1,
+					lset: labels.FromStrings("__name__", `my"metric_bucket`, `a"k`, "x\"y\n", "b", `\`, "c", "", "le", "1.0"),
+				},
+				{
+					m:    "my\\\"metric_bucket\xffa\\\"k\xffx\\\"y\\n\xffb\xff\\\\\xffc\xff\xffle\xff+Inf",
+					v:    2,
+					lset: labels.FromStrings("__name__", `my"metric_bucket`, `a"k`, "x\"y\n", "b", `\`, "c", "", "le", "+Inf"),
+				},
+			},
 		},
 		{
-			m:    "foo\xffquantile\xff0.5\xffuser.id\xffx",
-			v:    1.0,
-			lset: labels.FromStrings("__name__", "foo", "quantile", "0.5", "user.id", "x"),
+			name: "escaped values and quoted names on summary",
+			input: `# TYPE "my\"metric" summary
+{"my\"metric","a\"k"="x\"y\n",b="\\",c=""} {count:2,sum:3.0,quantile:[0.5:1.5]}
+# EOF
+`,
+			exp: []parsedEntry{
+				{m: `my\"metric`, typ: model.MetricTypeSummary},
+				{
+					m:    "my\\\"metric_count\xffa\\\"k\xffx\\\"y\\n\xffb\xff\\\\\xffc\xff",
+					v:    2,
+					lset: labels.FromStrings("__name__", `my"metric_count`, `a"k`, "x\"y\n", "b", `\`, "c", ""),
+				},
+				{
+					m:    "my\\\"metric_sum\xffa\\\"k\xffx\\\"y\\n\xffb\xff\\\\\xffc\xff",
+					v:    3.0,
+					lset: labels.FromStrings("__name__", `my"metric_sum`, `a"k`, "x\"y\n", "b", `\`, "c", ""),
+				},
+				{
+					m:    "my\\\"metric\xffa\\\"k\xffx\\\"y\\n\xffb\xff\\\\\xffc\xff\xffquantile\xff0.5",
+					v:    1.5,
+					lset: labels.FromStrings("__name__", `my"metric`, `a"k`, "x\"y\n", "b", `\`, "c", "", "quantile", "0.5"),
+				},
+			},
 		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			p := NewOpenMetrics2Parser([]byte(tc.input), labels.NewSymbolTable(), ParserOptions{})
+			got := testParse(t, p)
+			requireEntries(t, tc.exp, got)
+		})
 	}
-
-	p := NewOpenMetrics2Parser([]byte(input), labels.NewSymbolTable(), ParserOptions{})
-	got := testParse(t, p)
-	requireEntries(t, exp, got)
 }
 
 // TestOpenMetrics2ParseCompositeExtraLabelsQuotedWithEquals verifies that a
@@ -1500,6 +1566,8 @@ process_open_fds 8.0
 # TYPE rpc_duration_seconds summary
 # UNIT rpc_duration_seconds seconds
 rpc_duration_seconds {count:10,sum:5.0,quantile:[0.5:1.0]}
+# TYPE rpc_duration_seconds_count gauge
+rpc_duration_seconds_count 99.0
 # EOF
 `
 	exp := []parsedEntry{
@@ -1527,11 +1595,20 @@ rpc_duration_seconds {count:10,sum:5.0,quantile:[0.5:1.0]}
 			v:    1.0,
 			lset: labels.FromStrings("__name__", "rpc_duration_seconds", "__type__", "summary", "__unit__", "seconds", "quantile", "0.5"),
 		},
+		{m: "rpc_duration_seconds_count", typ: model.MetricTypeGauge},
+		{
+			m:    "rpc_duration_seconds_count",
+			v:    99.0,
+			lset: labels.FromStrings("__name__", "rpc_duration_seconds_count", "__type__", "gauge"),
+		},
 	}
 
 	p := NewOpenMetrics2Parser([]byte(input), labels.NewSymbolTable(), ParserOptions{EnableTypeAndUnitLabels: true})
 	got := testParse(t, p)
 	requireEntries(t, exp, got)
+	// Summary _count and flat gauge with the same metric name must have distinct
+	// Series() cache keys so the scrape cache does not conflate them.
+	require.NotEqual(t, got[5].m, got[9].m)
 }
 
 func TestOpenMetrics2ParseTypeAndUnitLabelsScalarTypes(t *testing.T) {
@@ -1583,6 +1660,7 @@ func TestOpenMetrics2ParseTypeAndUnitLabelsClassicHistogram(t *testing.T) {
 	input := `# TYPE http_request_duration_seconds histogram
 # UNIT http_request_duration_seconds seconds
 http_request_duration_seconds {count:3,sum:6.0,bucket:[0.1:1,0.5:2,+Inf:3]}
+http_request_duration_seconds{__type__="counter",__unit__="bytes",x="y"} {count:1,sum:2.0,bucket:[+Inf:1]}
 # EOF
 `
 	exp := []parsedEntry{
@@ -1613,11 +1691,36 @@ http_request_duration_seconds {count:3,sum:6.0,bucket:[0.1:1,0.5:2,+Inf:3]}
 			v:    3,
 			lset: labels.FromStrings("__name__", "http_request_duration_seconds_bucket", "__type__", "histogram", "__unit__", "seconds", "le", "+Inf"),
 		},
+		{
+			m:    "http_request_duration_seconds_count\xff__type__\xffhistogram\xff__unit__\xffseconds\xff__type__\xffcounter\xff__unit__\xffbytes\xffx\xffy",
+			v:    1,
+			lset: labels.FromStrings("__name__", "http_request_duration_seconds_count", "__type__", "histogram", "__unit__", "seconds", "x", "y"),
+		},
+		{
+			m:    "http_request_duration_seconds_sum\xff__type__\xffhistogram\xff__unit__\xffseconds\xff__type__\xffcounter\xff__unit__\xffbytes\xffx\xffy",
+			v:    2.0,
+			lset: labels.FromStrings("__name__", "http_request_duration_seconds_sum", "__type__", "histogram", "__unit__", "seconds", "x", "y"),
+		},
+		{
+			m:    "http_request_duration_seconds_bucket\xff__type__\xffhistogram\xff__unit__\xffseconds\xff__type__\xffcounter\xff__unit__\xffbytes\xffx\xffy\xffle\xff+Inf",
+			v:    1,
+			lset: labels.FromStrings("__name__", "http_request_duration_seconds_bucket", "__type__", "histogram", "__unit__", "seconds", "le", "+Inf", "x", "y"),
+		},
 	}
 
 	p := NewOpenMetrics2Parser([]byte(input), labels.NewSymbolTable(), ParserOptions{EnableTypeAndUnitLabels: true})
 	got := testParse(t, p)
 	requireEntries(t, exp, got)
+
+	// Changing TYPE or UNIT on a subsequent scrape must produce distinct Series()
+	// bytes for shared series like _bucket so the scrape cache refreshes Labels().
+	inputGaugeHist := `# TYPE http_request_duration_seconds gaugehistogram
+http_request_duration_seconds {gcount:3,gsum:6.0,bucket:[0.1:1,0.5:2,+Inf:3]}
+# EOF
+`
+	p2 := NewOpenMetrics2Parser([]byte(inputGaugeHist), labels.NewSymbolTable(), ParserOptions{EnableTypeAndUnitLabels: true})
+	got2 := testParse(t, p2)
+	require.NotEqual(t, got[4].m, got2[3].m)
 }
 
 func TestOpenMetrics2ParseTypeAndUnitLabelsGaugeHistogram(t *testing.T) {
@@ -1888,7 +1991,7 @@ req_seconds{service="api"} {count:12,sum:5.5,schema:0,zero_threshold:0.001,zero_
 				lset: labels.FromStrings("__name__", "req_seconds_sum", "service", "api"),
 			},
 			{
-				m:    "req_seconds_bucket\xffle\xff+Inf\xffservice\xffapi",
+				m:    "req_seconds_bucket\xffservice\xffapi\xffle\xff+Inf",
 				v:    12,
 				t:    int64p(1700000000000),
 				lset: labels.FromStrings("__name__", "req_seconds_bucket", "le", "+Inf", "service", "api"),
