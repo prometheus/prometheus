@@ -1689,12 +1689,10 @@ req_duration {count:2,sum:4.0,bucket:[1.0:1,+Inf:2]} # {id="req-1"} 3.8 9999999.
 `
 	exp := []parsedEntry{
 		{m: "req_duration", typ: model.MetricTypeHistogram},
-		// Exemplar is accessible only on the first pending entry served.
 		{
 			m:    "req_duration_count",
 			v:    2,
 			lset: labels.FromStrings("__name__", "req_duration_count"),
-			es:   []exemplar.Exemplar{{Labels: labels.FromStrings("id", "req-1"), Value: 3.8, HasTs: true, Ts: 9999999000}},
 		},
 		{
 			m:    "req_duration_sum",
@@ -1709,6 +1707,83 @@ req_duration {count:2,sum:4.0,bucket:[1.0:1,+Inf:2]} # {id="req-1"} 3.8 9999999.
 		{
 			m:    "req_duration_bucket\xffle\xff+Inf",
 			v:    2,
+			lset: labels.FromStrings("__name__", "req_duration_bucket", "le", "+Inf"),
+			es:   []exemplar.Exemplar{{Labels: labels.FromStrings("id", "req-1"), Value: 3.8, HasTs: true, Ts: 9999999000}},
+		},
+	}
+
+	p := NewOpenMetrics2Parser([]byte(input), labels.NewSymbolTable(), ParserOptions{})
+	got := testParse(t, p)
+	requireEntries(t, exp, got)
+}
+
+func TestOpenMetrics2ParseExemplarOnMatchingFiniteBucket(t *testing.T) {
+	input := `# TYPE req_duration histogram
+req_duration {count:2,sum:4.0,bucket:[1.0:1,+Inf:2]} # {id="req-1"} 0.5 9999999.0
+# EOF
+`
+	exp := []parsedEntry{
+		{m: "req_duration", typ: model.MetricTypeHistogram},
+		{
+			m:    "req_duration_count",
+			v:    2,
+			lset: labels.FromStrings("__name__", "req_duration_count"),
+		},
+		{
+			m:    "req_duration_sum",
+			v:    4.0,
+			lset: labels.FromStrings("__name__", "req_duration_sum"),
+		},
+		{
+			m:    "req_duration_bucket\xffle\xff1.0",
+			v:    1,
+			lset: labels.FromStrings("__name__", "req_duration_bucket", "le", "1.0"),
+			es:   []exemplar.Exemplar{{Labels: labels.FromStrings("id", "req-1"), Value: 0.5, HasTs: true, Ts: 9999999000}},
+		},
+		{
+			m:    "req_duration_bucket\xffle\xff+Inf",
+			v:    2,
+			lset: labels.FromStrings("__name__", "req_duration_bucket", "le", "+Inf"),
+		},
+	}
+
+	p := NewOpenMetrics2Parser([]byte(input), labels.NewSymbolTable(), ParserOptions{})
+	got := testParse(t, p)
+	requireEntries(t, exp, got)
+}
+
+func TestOpenMetrics2ParseExemplarsOnDifferentBuckets(t *testing.T) {
+	input := `# TYPE req_duration histogram
+req_duration {count:3,sum:6.0,bucket:[1.0:1,2.5:2,+Inf:3]} # {id="a"} 0.5 1000.0 # {id="b"} 2.0 1001.0
+# EOF
+`
+	exp := []parsedEntry{
+		{m: "req_duration", typ: model.MetricTypeHistogram},
+		{
+			m:    "req_duration_count",
+			v:    3,
+			lset: labels.FromStrings("__name__", "req_duration_count"),
+		},
+		{
+			m:    "req_duration_sum",
+			v:    6.0,
+			lset: labels.FromStrings("__name__", "req_duration_sum"),
+		},
+		{
+			m:    "req_duration_bucket\xffle\xff1.0",
+			v:    1,
+			lset: labels.FromStrings("__name__", "req_duration_bucket", "le", "1.0"),
+			es:   []exemplar.Exemplar{{Labels: labels.FromStrings("id", "a"), Value: 0.5, HasTs: true, Ts: 1000000}},
+		},
+		{
+			m:    "req_duration_bucket\xffle\xff2.5",
+			v:    2,
+			lset: labels.FromStrings("__name__", "req_duration_bucket", "le", "2.5"),
+			es:   []exemplar.Exemplar{{Labels: labels.FromStrings("id", "b"), Value: 2.0, HasTs: true, Ts: 1001000}},
+		},
+		{
+			m:    "req_duration_bucket\xffle\xff+Inf",
+			v:    3,
 			lset: labels.FromStrings("__name__", "req_duration_bucket", "le", "+Inf"),
 		},
 	}
