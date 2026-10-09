@@ -124,7 +124,6 @@ linters:
         - appendAssign
         - appendCombine
         - badLock
-        - boolExprSimplify
         - commentedOutCode
         - deferInLoop
         - docStub
