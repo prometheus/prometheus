@@ -2017,14 +2017,14 @@ func funcAtanh(vectorVals []Vector, _ Matrix, _ parser.Expressions, enh *EvalNod
 // === rad(Vector parser.ValueTypeVector) (Vector, Annotations) ===
 func funcRad(vectorVals []Vector, _ Matrix, _ parser.Expressions, enh *EvalNodeHelper) (Vector, annotations.Annotations) {
 	return simpleFloatFunc(vectorVals, enh, func(v float64) float64 {
-		return v * math.Pi / 180
+		return v * (math.Pi / 180)
 	}), nil
 }
 
 // === deg(Vector parser.ValueTypeVector) (Vector, Annotations) ===
 func funcDeg(vectorVals []Vector, _ Matrix, _ parser.Expressions, enh *EvalNodeHelper) (Vector, annotations.Annotations) {
 	return simpleFloatFunc(vectorVals, enh, func(v float64) float64 {
-		return v * 180 / math.Pi
+		return v * (180 / math.Pi)
 	}), nil
 }
 
