@@ -1,0 +1,18 @@
+# References the same shared rule file as coverage_shared_a_test.yml but does
+# not test only:metric. The rule must still be counted once for the suite.
+rule_files:
+  - coverage_shared_rules.yml
+
+evaluation_interval: 1m
+
+tests:
+  - interval: 1m
+    input_series:
+      - series: 'up{job="prometheus"}'
+        values: "1x5"
+    promql_expr_test:
+      - expr: up
+        eval_time: 1m
+        exp_samples:
+          - value: 1
+            labels: 'up{job="prometheus"}'
