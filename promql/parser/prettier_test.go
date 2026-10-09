@@ -670,7 +670,6 @@ func TestUnaryPretty(t *testing.T) {
 }
 
 func TestDurationExprPretty(t *testing.T) {
-	optsParser := NewParser(Options{})
 	maxCharactersPerLine = 10
 	inputs := []struct {
 		in, out string
@@ -693,12 +692,155 @@ func TestDurationExprPretty(t *testing.T) {
   foo[-5m + 35m]
 )`,
 		},
+		{
+			in: `rate(http_requests_total[2*1h])`,
+			out: `rate(
+  http_requests_total[2 * 1h]
+)`,
+		},
+		{
+			in: `rate(http_requests_total[(2+1)*1h])`,
+			out: `rate(
+  http_requests_total[(2 + 1) * 1h]
+)`,
+		},
+		{
+			in: `rate(http_requests_total[-5m+35m])`,
+			out: `rate(
+  http_requests_total[-5m + 35m]
+)`,
+		},
+		{
+			in: `rate(http_requests_total[min_of(5m,10m)])`,
+			out: `rate(
+  http_requests_total[min_of(5m, 10m)]
+)`,
+		},
+		{
+			in: `rate(http_requests_total[max_of(5m,10m)])`,
+			out: `rate(
+  http_requests_total[max_of(5m, 10m)]
+)`,
+		},
+		{
+			in: `rate(http_requests_total[min_of(max_of(5m,10m),15m)])`,
+			out: `rate(
+  http_requests_total[min_of(max_of(5m, 10m), 15m)]
+)`,
+		},
+		{
+			in: `rate(http_requests_total[(max_of((5m+1m),min_of(10m,15m))) * 2])`,
+			out: `rate(
+  http_requests_total[(max_of((5m + 1m), min_of(10m, 15m))) * 2]
+)`,
+		},
+		{
+			in: `rate(http_requests_total[step()])`,
+			out: `rate(
+  http_requests_total[step()]
+)`,
+		},
+		{
+			in: `rate(http_requests_total[range()])`,
+			out: `rate(
+  http_requests_total[range()]
+)`,
+		},
+		{
+			in: `rate(http_requests_total[(step())])`,
+			out: `rate(
+  http_requests_total[(step())]
+)`,
+		},
+		{
+			in: `rate(http_requests_total[(range())])`,
+			out: `rate(
+  http_requests_total[(range())]
+)`,
+		},
+		{
+			in: `rate(http_requests_total[max_of((step()),min_of(range(),5m))])`,
+			out: `rate(
+  http_requests_total[max_of((step()), min_of(range(), 5m))]
+)`,
+		},
+		{
+			in: `rate(http_requests_total[-min_of(5m,10m)+15m])`,
+			out: `rate(
+  http_requests_total[-min_of(5m, 10m) + 15m]
+)`,
+		},
+		{
+			in: `rate(http_requests_total[+max_of(5m,10m)])`,
+			out: `rate(
+  http_requests_total[max_of(5m, 10m)]
+)`,
+		},
+		{
+			in: `rate(http_requests_total[+(5m)])`,
+			out: `rate(
+  http_requests_total[(5m)]
+)`,
+		},
+		{
+			in: `rate(http_requests_total[-(5m)+10m])`,
+			out: `rate(
+  http_requests_total[-(5m) + 10m]
+)`,
+		},
+		{
+			in: `rate(http_requests_total[min_of(10m/2,15m-5m)])`,
+			out: `rate(
+  http_requests_total[min_of(10m / 2, 15m - 5m)]
+)`,
+		},
+		{
+			in: `rate(http_requests_total[max_of(10m%3m,2^3)])`,
+			out: `rate(
+  http_requests_total[max_of(10m % 3m, 2 ^ 3)]
+)`,
+		},
+		{
+			in:  `http_requests_total offset min_of(5m,10m)`,
+			out: `http_requests_total offset min_of(5m, 10m)`,
+		},
+		{
+			in:  `http_requests_total offset -(max_of(step(),range()))`,
+			out: `http_requests_total offset -(max_of(step(), range()))`,
+		},
+		{
+			in:  `http_requests_total[min_of(range(),1h):1m]`,
+			out: `http_requests_total[min_of(range(), 1h):1m]`,
+		},
+		{
+			in:  `http_requests_total[1h:max_of(step(),1m)]`,
+			out: `http_requests_total[1h:max_of(step(), 1m)]`,
+		},
+		{
+			in:  `http_requests_total[5m] @ start() offset min_of(5m,10m)`,
+			out: `http_requests_total[5m] @ start() offset min_of(5m, 10m)`,
+		},
+		{
+			in:  `http_requests_total[1h:1m] @ end() offset max_of(step(),range())`,
+			out: `http_requests_total[1h:1m] @ end() offset max_of(step(), range())`,
+		},
+		{
+			in:  `http_requests_total[min_of(range(),1h):max_of(step(),1m)]`,
+			out: `http_requests_total[min_of(range(), 1h):max_of(step(), 1m)]`,
+		},
 	}
 	for _, test := range inputs {
 		t.Run(test.in, func(t *testing.T) {
+			optsParser := NewParser(Options{})
 			expr, err := optsParser.ParseExpr(test.in)
 			require.NoError(t, err)
-			require.Equal(t, test.out, Prettify(expr))
+			var pretty string
+			require.NotPanics(t, func() { pretty = Prettify(expr) })
+			require.Equal(t, test.out, pretty)
+
+			reparsed, err := optsParser.ParseExpr(pretty)
+			require.NoError(t, err)
+			require.Equal(t, expr.String(), reparsed.String())
 		})
 	}
 }
