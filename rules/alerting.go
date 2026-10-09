@@ -393,8 +393,6 @@ func (r *AlertingRule) Eval(ctx context.Context, queryOffset time.Duration, ts t
 
 	// Create pending alerts for any new vector elements in the alert expression
 	// or update the expression value for existing elements.
-	resultFPs := map[uint64]struct{}{}
-
 	lb := labels.NewBuilder(labels.EmptyLabels())
 	sb := labels.NewScratchBuilder(0)
 	var vec promql.Vector
@@ -447,7 +445,6 @@ func (r *AlertingRule) Eval(ctx context.Context, queryOffset time.Duration, ts t
 
 		lbs := lb.Labels()
 		h := lbs.Hash()
-		resultFPs[h] = struct{}{}
 
 		if _, ok := alerts[h]; ok {
 			return nil, ErrDuplicateAlertLabelSet
@@ -480,7 +477,7 @@ func (r *AlertingRule) Eval(ctx context.Context, queryOffset time.Duration, ts t
 	var numActivePending int
 	// Check if any pending alerts should be removed or fire now. Write out alert timeseries.
 	for fp, a := range r.active {
-		if _, ok := resultFPs[fp]; !ok {
+		if _, ok := alerts[fp]; !ok {
 			// There is no firing alerts for this fingerprint. The alert is no
 			// longer firing.
 
