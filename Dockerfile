@@ -1,31 +1,29 @@
-ARG ARCH="amd64"
-ARG OS="linux"
-FROM quay.io/prometheus/busybox-${OS}-${ARCH}:latest
-LABEL maintainer="The Prometheus Authors <prometheus-developers@googlegroups.com>"
-LABEL org.opencontainers.image.authors="The Prometheus Authors" \
-      org.opencontainers.image.vendor="Prometheus" \
-      org.opencontainers.image.title="Prometheus" \
-      org.opencontainers.image.description="The Prometheus monitoring system and time series database" \
-      org.opencontainers.image.source="https://github.com/prometheus/prometheus" \
-      org.opencontainers.image.url="https://github.com/prometheus/prometheus" \
-      org.opencontainers.image.documentation="https://prometheus.io/docs" \
-      org.opencontainers.image.licenses="Apache License 2.0" \
-      io.prometheus.image.variant="busybox"
+ARG DISTROLESS_ARCH="amd64"
+
+# Use DISTROLESS_ARCH for base image selection (handles armv7->arm mapping).
+FROM gcr.io/distroless/static-debian13:nonroot-${DISTROLESS_ARCH}
+# Base image sets USER to 65532:65532 (nonroot user).
 
 ARG ARCH="amd64"
 ARG OS="linux"
+
+LABEL org.opencontainers.image.authors="The Prometheus Authors"
+LABEL org.opencontainers.image.vendor="Prometheus"
+LABEL org.opencontainers.image.title="Prometheus"
+LABEL org.opencontainers.image.description="The Prometheus monitoring system and time series database"
+LABEL org.opencontainers.image.source="https://github.com/prometheus/prometheus"
+LABEL org.opencontainers.image.url="https://github.com/prometheus/prometheus"
+LABEL org.opencontainers.image.documentation="https://prometheus.io/docs"
+LABEL org.opencontainers.image.licenses="Apache License 2.0"
+LABEL io.prometheus.image.variant="distroless"
+
+COPY documentation/examples/prometheus.yml  /etc/prometheus/prometheus.yml
+COPY LICENSE NOTICE /
 COPY .build/${OS}-${ARCH}/prometheus        /bin/prometheus
 COPY .build/${OS}-${ARCH}/promtool          /bin/promtool
-COPY documentation/examples/prometheus.yml  /etc/prometheus/prometheus.yml
-COPY LICENSE                                /LICENSE
-COPY NOTICE                                 /NOTICE
 
 WORKDIR /prometheus
-RUN chown -R nobody:nobody /etc/prometheus /prometheus && chmod g+w /prometheus
-
-USER       nobody
 EXPOSE     9090
-VOLUME     [ "/prometheus" ]
 ENTRYPOINT [ "/bin/prometheus" ]
 CMD        [ "--config.file=/etc/prometheus/prometheus.yml", \
              "--storage.tsdb.path=/prometheus" ]
