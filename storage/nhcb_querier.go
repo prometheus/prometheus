@@ -27,27 +27,28 @@ import (
 
 // Known limitations of the NHCB-to-classic conversion:
 //
-// 1. TODO: This does not support the series API (LabelNames, LabelValues, etc.).
-//    Only the Select method is wrapped. Any metadata or label introspection
-//    queries will not reflect the converted classic series.
+// TODO: Add control labels marking converted series once the naming is
+// agreed on. A design doc would be great (current proposal: __opt_classic_from).
 //
-// 2. TODO: The results are not properly sorted. When multiple NHCB series with
-//    different label values are converted, the output is grouped by the
-//    original NHCB series rather than being globally sorted by labels.
-//    For example, given two NHCB series with method="GET" and method="POST",
-//    the output order would be:
+// TODO: Support and test a single query, which might be better for remote
+// storage, e.g. {__name__=~"<base name>(<suffix>)?", le=~"<le>|"}.
 //
-//      http_request_duration_seconds_bucket{le="0.1", method="GET"}
-//      http_request_duration_seconds_bucket{le="+Inf", method="GET"}
-//      http_request_duration_seconds_bucket{le="0.1", method="POST"}
-//      http_request_duration_seconds_bucket{le="+Inf", method="POST"}
+// TODO: Support native histograms with exponential buckets, and add a flag
+// selecting the allowed conversions (lower priority).
 //
-//    But the correctly sorted order (lexicographic by labels) would be:
+// TODO(opt): Emit a metric counting conversions for meta-monitoring.
 //
-//      http_request_duration_seconds_bucket{le="+Inf", method="GET"}
-//      http_request_duration_seconds_bucket{le="+Inf", method="POST"}
-//      http_request_duration_seconds_bucket{le="0.1", method="GET"}
-//      http_request_duration_seconds_bucket{le="0.1", method="POST"}
+// TODO: Handle edge cases not yet supported (non-exhaustive, see
+// https://github.com/prometheus/prometheus/pull/19881):
+//   - Non equality __name__ matchers (regex, negative matchers, etc.)
+//   - Non conventional metrics:
+//     - NHCB series that already carry an le label
+//     - Non-histogram series named *_bucket without an le label
+//   - Classic and NHCB at the same timestamp (classic should win)
+//   - Transition polish:
+//     - Prefer live samples over stale markers at transitions
+//     - Merge differing le formatting (e.g. 1 vs 1.0)
+//   - Stale NHCB should produce a stale marker per generated series.
 
 // NHCBAsClassicQuerier wraps a Querier and converts NHCB (Native Histogram Custom Buckets)
 // queries to classic histogram format when classic series don't exist.
