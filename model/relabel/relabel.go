@@ -234,8 +234,19 @@ func (re Regexp) MarshalYAML() (any, error) {
 	return re.String(), nil
 }
 
-// UnmarshalJSON implements the json.Unmarshaler interface.
+// UnmarshalJSON implements the json.Unmarshaler interface. The explicit null
+// handling below mirrors UnmarshalYAML's behaviour, where the yaml library
+// never invokes the Unmarshaler on a null node and leaves *re at its zero
+// value; encoding/json has no such built-in skip, so it is done here. This
+// only matters to external Go callers marshaling Regexp/relabel.Config
+// values directly: Prometheus's own YAML-loaded scrape configs always seed a
+// non-nil default regex before unmarshaling and never round-trip through
+// JSON in that path.
 func (re *Regexp) UnmarshalJSON(b []byte) error {
+	if string(b) == "null" {
+		*re = Regexp{}
+		return nil
+	}
 	var s string
 	if err := json.Unmarshal(b, &s); err != nil {
 		return err
@@ -250,6 +261,9 @@ func (re *Regexp) UnmarshalJSON(b []byte) error {
 
 // MarshalJSON implements the json.Marshaler interface.
 func (re Regexp) MarshalJSON() ([]byte, error) {
+	if re.Regexp == nil {
+		return []byte("null"), nil
+	}
 	return json.Marshal(re.String())
 }
 
