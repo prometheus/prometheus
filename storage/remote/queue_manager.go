@@ -64,6 +64,7 @@ const (
 	reasonDroppedSeries              = "dropped_series"
 	reasonUnintentionalDroppedSeries = "unintentionally_dropped_series"
 	reasonNHCBNotSupported           = "nhcb_in_rw1_not_supported"
+	reasonNHCBConversionError        = "nhcb_to_classic_conversion_error"
 )
 
 type queueManagerMetrics struct {
@@ -434,6 +435,7 @@ type QueueManager struct {
 	sendNativeHistograms    bool
 	enableTypeAndUnitLabels bool
 	failedRequestLogging    bool
+	convertNHCBToClassic    bool
 	watcher                 *wlog.Watcher
 	metadataWatcher         *MetadataWatcher
 
@@ -491,6 +493,7 @@ func NewQueueManager(
 	protoMsg remoteapi.WriteMessageType,
 	recordBuf *record.BuffersPool,
 	failedRequestLogging bool,
+	convertNHCBToClassic bool,
 ) *QueueManager {
 	if logger == nil {
 		logger = promslog.NewNopLogger()
@@ -537,11 +540,13 @@ func NewQueueManager(
 
 		protoMsg: protoMsg,
 		compr:    compression.Snappy, // Hardcoded for now, but scaffolding exists for likely future use.
+
+		convertNHCBToClassic: convertNHCBToClassic,
 	}
 
 	walMetadata := t.protoMsg != remoteapi.WriteV1MessageType
 
-	t.watcher = wlog.NewWatcher(watcherMetrics, readerMetrics, logger, client.Name(), t, dir, enableExemplarRemoteWrite, enableNativeHistogramRemoteWrite, walMetadata, recordBuf)
+	t.watcher = wlog.NewWatcher(watcherMetrics, readerMetrics, logger, client.Name(), t, dir, enableExemplarRemoteWrite, enableNativeHistogramRemoteWrite || convertNHCBToClassic, walMetadata, recordBuf)
 
 	// The current MetadataWatcher implementation is mutually exclusive
 	// with the new approach, which stores metadata as WAL records and
@@ -845,18 +850,67 @@ outer:
 	return true
 }
 
+// convertAndEnqueueNHCB converts an NHCB histogram (using the already-relabeled seriesLabels)
+// into classic _bucket, _count, and _sum samples while holding seriesMtx, then enqueues them
+// after releasing the lock. Caller must hold t.seriesMtx on entry; this method unlocks it.
+func (t *QueueManager) convertAndEnqueueNHCB(ref chunks.HeadSeriesRef, st, ts int64, nhcb any, customBuckets int, lbls labels.Labels, meta *metadata.Metadata) bool {
+	classicSeries := make([]timeSeries, 0, customBuckets+3)
+	err := histogram.ConvertNHCBToClassic(nhcb, lbls, t.builder, func(bucketLabels labels.Labels, value float64) error {
+		classicSeries = append(classicSeries, timeSeries{
+			seriesLabels:   bucketLabels,
+			metadata:       meta,
+			startTimestamp: st,
+			timestamp:      ts,
+			value:          value,
+			sType:          tSample,
+		})
+		return nil
+	})
+	t.seriesMtx.Unlock()
+	if err != nil {
+		t.logger.Error("Conversion error", "err", err)
+		t.metrics.droppedHistogramsTotal.WithLabelValues(reasonNHCBConversionError).Inc()
+		return true
+	}
+	for _, s := range classicSeries {
+		backoff := model.Duration(5 * time.Millisecond)
+		for {
+			select {
+			case <-t.quit:
+				return false
+			default:
+			}
+			if t.shards.enqueue(ref, s) {
+				break
+			}
+
+			t.metrics.enqueueRetriesTotal.Inc()
+			time.Sleep(time.Duration(backoff))
+			backoff *= 2
+			if backoff > t.cfg.MaxBackoff {
+				backoff = t.cfg.MaxBackoff
+			}
+		}
+	}
+	return true
+}
+
 func (t *QueueManager) AppendHistograms(histograms []record.RefHistogramSample) bool {
-	if !t.sendNativeHistograms {
+	if !t.sendNativeHistograms && !t.convertNHCBToClassic {
 		return true
 	}
 	currentTime := time.Now()
 outer:
 	for _, h := range histograms {
+		isNHCB := h.H != nil && h.H.Schema == histogram.CustomBucketsSchema
+		if !t.sendNativeHistograms && (!t.convertNHCBToClassic || !isNHCB) {
+			continue
+		}
 		if isSampleOld(currentTime, time.Duration(t.cfg.SampleAgeLimit), h.T) {
 			t.metrics.droppedHistogramsTotal.WithLabelValues(reasonTooOld).Inc()
 			continue
 		}
-		if t.protoMsg == remoteapi.WriteV1MessageType && h.H != nil && h.H.Schema == histogram.CustomBucketsSchema {
+		if !t.convertNHCBToClassic && t.protoMsg == remoteapi.WriteV1MessageType && isNHCB {
 			// We cannot send native histograms with custom buckets (NHCB) via remote write v1.
 			t.metrics.droppedHistogramsTotal.WithLabelValues(reasonNHCBNotSupported).Inc()
 			t.logger.Warn("Dropped native histogram with custom buckets (NHCB) as remote write v1 does not support it", "ref", h.Ref)
@@ -876,6 +930,13 @@ outer:
 			continue
 		}
 		meta := t.seriesMetadata[h.Ref]
+		// Check if `convert_nhcb_to_classic` flag is enabled to convert NHCB histograms to classic histograms.
+		if t.convertNHCBToClassic && isNHCB {
+			if !t.convertAndEnqueueNHCB(h.Ref, h.ST, h.T, h.H, len(h.H.CustomValues), lbls, meta) {
+				return false
+			}
+			continue
+		}
 		t.seriesMtx.Unlock()
 
 		backoff := model.Duration(5 * time.Millisecond)
@@ -908,17 +969,21 @@ outer:
 }
 
 func (t *QueueManager) AppendFloatHistograms(floatHistograms []record.RefFloatHistogramSample) bool {
-	if !t.sendNativeHistograms {
+	if !t.sendNativeHistograms && !t.convertNHCBToClassic {
 		return true
 	}
 	currentTime := time.Now()
 outer:
 	for _, h := range floatHistograms {
+		isNHCB := h.FH != nil && h.FH.Schema == histogram.CustomBucketsSchema
+		if !t.sendNativeHistograms && (!t.convertNHCBToClassic || !isNHCB) {
+			continue
+		}
 		if isSampleOld(currentTime, time.Duration(t.cfg.SampleAgeLimit), h.T) {
 			t.metrics.droppedHistogramsTotal.WithLabelValues(reasonTooOld).Inc()
 			continue
 		}
-		if t.protoMsg == remoteapi.WriteV1MessageType && h.FH != nil && h.FH.Schema == histogram.CustomBucketsSchema {
+		if !t.convertNHCBToClassic && t.protoMsg == remoteapi.WriteV1MessageType && isNHCB {
 			// We cannot send native histograms with custom buckets (NHCB) via remote write v1.
 			t.metrics.droppedHistogramsTotal.WithLabelValues(reasonNHCBNotSupported).Inc()
 			t.logger.Warn("Dropped float native histogram with custom buckets (NHCB) as remote write v1 does not support it", "ref", h.Ref)
@@ -938,6 +1003,13 @@ outer:
 			continue
 		}
 		meta := t.seriesMetadata[h.Ref]
+		// Check if `convert_nhcb_to_classic` flag is enabled to convert NHCB Float histograms to classic histograms.
+		if t.convertNHCBToClassic && isNHCB {
+			if !t.convertAndEnqueueNHCB(h.Ref, h.ST, h.T, h.FH, len(h.FH.CustomValues), lbls, meta) {
+				return false
+			}
+			continue
+		}
 		t.seriesMtx.Unlock()
 
 		backoff := model.Duration(5 * time.Millisecond)
