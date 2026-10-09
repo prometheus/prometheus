@@ -423,7 +423,8 @@ func (a *xor2Appender) writeVDelta(v float64) {
 		newLeading = 31
 	}
 
-	if a.leading != 0xff && newLeading >= a.leading && newTrailing >= a.trailing {
+	// A new window costs 12 extra bits: one control bit and 11 window bits.
+	if newLeading >= a.leading && newTrailing >= a.trailing && newLeading+newTrailing <= a.leading+a.trailing+12 {
 		a.b.writeBitsFast(0b10, 2)
 		a.b.writeBitsFast(delta>>a.trailing, 64-int(a.leading)-int(a.trailing))
 		return
@@ -455,7 +456,8 @@ func (a *xor2Appender) writeVDeltaKnownNonZero(delta uint64) {
 		newLeading = 31
 	}
 
-	if a.leading != 0xff && newLeading >= a.leading && newTrailing >= a.trailing {
+	// Both controls cost one bit, so a new window costs 11 extra window bits.
+	if newLeading >= a.leading && newTrailing >= a.trailing && newLeading+newTrailing <= a.leading+a.trailing+11 {
 		a.b.writeBit(zero)
 		a.b.writeBitsFast(delta>>a.trailing, 64-int(a.leading)-int(a.trailing))
 		return
