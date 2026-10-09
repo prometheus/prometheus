@@ -3267,6 +3267,34 @@ func TestPostingsForMatchers(t *testing.T) {
 				labels.FromStrings("n", "2.5"),
 			},
 		},
+		// Multiple subtracting regexp matchers on the same label name are
+		// combined into a single scan; the result must subtract the union.
+		{
+			matchers: []*labels.Matcher{labels.MustNewMatcher(labels.MatchEqual, "n", "1"), labels.MustNewMatcher(labels.MatchNotRegexp, "i", "a.*"), labels.MustNewMatcher(labels.MatchNotRegexp, "i", "b.*")},
+			exp: []labels.Labels{
+				labels.FromStrings("n", "1"),
+				labels.FromStrings("n", "1", "i", "\n"),
+			},
+		},
+		// Same as above but without a non-subtracting matcher, so the base is
+		// all postings.
+		{
+			matchers: []*labels.Matcher{labels.MustNewMatcher(labels.MatchNotRegexp, "i", "a.*"), labels.MustNewMatcher(labels.MatchNotRegexp, "i", "b.*")},
+			exp: []labels.Labels{
+				labels.FromStrings("n", "1"),
+				labels.FromStrings("n", "1", "i", "\n"),
+				labels.FromStrings("n", "2"),
+				labels.FromStrings("n", "2.5"),
+			},
+		},
+		// Multiple intersecting regexp matchers on the same label name are
+		// combined into a single scan; the result must intersect them.
+		{
+			matchers: []*labels.Matcher{labels.MustNewMatcher(labels.MatchRegexp, "i", "a.*"), labels.MustNewMatcher(labels.MatchRegexp, "i", ".*a")},
+			exp: []labels.Labels{
+				labels.FromStrings("n", "1", "i", "a"),
+			},
+		},
 	}
 
 	ir, err := h.Index()
@@ -3302,6 +3330,76 @@ func TestPostingsForMatchers(t *testing.T) {
 			require.Empty(t, exp, "Evaluating %v", c.matchers)
 		})
 	}
+}
+
+// TestPostingsForMatchersLookupsFirst checks that a lookup which matches
+// nothing ends the call before a matcher reads the postings of all values of a
+// label, whatever the order the matchers are given in.
+func TestPostingsForMatchersLookupsFirst(t *testing.T) {
+	ctx := context.Background()
+
+	opts := DefaultHeadOptions()
+	opts.ChunkDirRoot = t.TempDir()
+	h, err := NewHead(nil, nil, nil, nil, opts, nil)
+	require.NoError(t, err)
+	defer func() {
+		require.NoError(t, h.Close())
+	}()
+
+	app := h.Appender(ctx)
+	app.Append(0, labels.FromStrings("n", "1", "i", "a"), 0, 0)
+	app.Append(0, labels.FromStrings("n", "1", "i", "b"), 0, 0)
+	require.NoError(t, app.Commit())
+
+	ir, err := h.Index()
+	require.NoError(t, err)
+
+	for _, c := range []struct {
+		name     string
+		matchers []*labels.Matcher
+	}{
+		{
+			name:     `i!="",n="X"`,
+			matchers: []*labels.Matcher{labels.MustNewMatcher(labels.MatchNotEqual, "i", ""), labels.MustNewMatcher(labels.MatchEqual, "n", "X")},
+		},
+		{
+			name:     `i!~"",n="X"`,
+			matchers: []*labels.Matcher{labels.MustNewMatcher(labels.MatchNotRegexp, "i", ""), labels.MustNewMatcher(labels.MatchEqual, "n", "X")},
+		},
+		{
+			name:     `i=~".+",n="X"`,
+			matchers: []*labels.Matcher{labels.MustNewMatcher(labels.MatchRegexp, "i", ".+"), labels.MustNewMatcher(labels.MatchEqual, "n", "X")},
+		},
+		{
+			name:     `i=~"a.*",n=~"X|Y"`,
+			matchers: []*labels.Matcher{labels.MustNewMatcher(labels.MatchRegexp, "i", "a.*"), labels.MustNewMatcher(labels.MatchRegexp, "n", "X|Y")},
+		},
+	} {
+		t.Run(c.name, func(t *testing.T) {
+			counting := &valuesReadCountingIndexReader{IndexReader: ir}
+			p, err := PostingsForMatchers(ctx, counting, c.matchers...)
+			require.NoError(t, err)
+			require.False(t, p.Next())
+			require.Zero(t, counting.valuesReads)
+		})
+	}
+}
+
+// valuesReadCountingIndexReader counts the calls that read the postings of
+// many values of a label.
+type valuesReadCountingIndexReader struct {
+	IndexReader
+	valuesReads int
+}
+
+func (r *valuesReadCountingIndexReader) PostingsForLabelMatching(ctx context.Context, name string, match func(string) bool) index.Postings {
+	r.valuesReads++
+	return r.IndexReader.PostingsForLabelMatching(ctx, name, match)
+}
+
+func (r *valuesReadCountingIndexReader) PostingsForAllLabelValues(ctx context.Context, name string) index.Postings {
+	r.valuesReads++
+	return r.IndexReader.PostingsForAllLabelValues(ctx, name)
 }
 
 // TestQuerierIndexQueriesRace tests the index queries with racing appends.
