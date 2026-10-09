@@ -584,6 +584,133 @@ func TestCompactionFailWillCleanUpTempDir(t *testing.T) {
 	require.True(t, os.IsNotExist(err), "directory is not cleaned up")
 }
 
+// TestLeveledCompactorMaybePause verifies that compactor calls MaybePause
+// during compaction and that an error from MaybePause aborts the compaction.
+func TestLeveledCompactorMaybePause(t *testing.T) {
+	t.Parallel()
+
+	newSeries := func(totalSeries int, mint, maxt int64) []storage.Series {
+		return genSeriesFromSampleGenerator(totalSeries, 1, mint, maxt, 1, func(ts int64) chunks.Sample {
+			return sample{t: ts, f: float64(ts)}
+		})
+	}
+
+	cases := map[string]struct {
+		blockSeries [][]storage.Series
+		hookErr     error
+		expCalls    int
+		expErr      string
+		expStats    BlockStats
+	}{
+		"called once on a short merge and compaction completes": {
+			blockSeries: [][]storage.Series{newSeries(5, 0, 100), newSeries(5, 100, 200)},
+			expCalls:    1,
+			expStats:    BlockStats{NumSamples: 1000, NumFloatSamples: 1000, NumSeries: 5, NumChunks: 10},
+		},
+		"called twice when merge has more than 10000 series": {
+			blockSeries: [][]storage.Series{newSeries(12000, 0, 2)},
+			expCalls:    2,
+			expStats:    BlockStats{NumSamples: 24000, NumFloatSamples: 24000, NumSeries: 12000, NumChunks: 12000},
+		},
+		"error from MaybePause aborts compaction and removes the partial block": {
+			blockSeries: [][]storage.Series{newSeries(5, 0, 100), newSeries(5, 100, 200)},
+			hookErr:     errors.New("boom"),
+			expCalls:    1,
+			expErr:      "populate block: maybe pause: boom",
+		},
+	}
+
+	for name, tc := range cases {
+		t.Run(name, func(t *testing.T) {
+			t.Parallel()
+
+			tmpdir := t.TempDir()
+			blockDirs := make([]string, 0, len(tc.blockSeries))
+			for _, series := range tc.blockSeries {
+				blockDirs = append(blockDirs, createBlock(t, tmpdir, series))
+			}
+
+			compactor, err := NewLeveledCompactor(t.Context(), nil, promslog.NewNopLogger(), []int64{200}, nil, nil)
+			require.NoError(t, err)
+
+			var calls int
+			compactor.MaybePause = func(context.Context) error {
+				calls++
+				return tc.hookErr
+			}
+
+			uids, err := compactor.Compact(tmpdir, blockDirs, nil)
+			require.Equal(t, tc.expCalls, calls)
+
+			if tc.expErr != "" {
+				require.EqualError(t, err, tc.expErr)
+				require.Nil(t, uids)
+
+				entries, err := os.ReadDir(tmpdir)
+				require.NoError(t, err)
+				require.Len(t, entries, len(tc.blockSeries), "only the source blocks may remain")
+				return
+			}
+			require.NoError(t, err)
+			require.Len(t, uids, 1)
+
+			block, err := OpenBlock(nil, filepath.Join(tmpdir, uids[0].String()), nil, nil)
+			require.NoError(t, err)
+			t.Cleanup(func() {
+				require.NoError(t, block.Close())
+			})
+
+			meta := block.Meta()
+			require.Equal(t, 2, meta.Compaction.Level)
+			require.Len(t, meta.Compaction.Sources, len(tc.blockSeries))
+			require.Equal(t, tc.expStats, meta.Stats)
+
+			exp := map[string][]chunks.Sample{}
+			for _, series := range tc.blockSeries {
+				for _, s := range series {
+					samples, err := storage.ExpandSamples(s.Iterator(nil), newSample)
+					require.NoError(t, err)
+					exp[s.Labels().String()] = append(exp[s.Labels().String()], samples...)
+				}
+			}
+
+			q, err := NewBlockQuerier(block, block.MinTime(), block.MaxTime())
+			require.NoError(t, err)
+			require.Equal(t, exp, query(t, q, labels.MustNewMatcher(labels.MatchRegexp, defaultLabelName, ".*")))
+		})
+	}
+}
+
+// TestLeveledCompactorMaybePauseNotCalledDuringWrite verifies that Write
+// never calls MaybePause. Write already writes the head block, so there is
+// nothing to pause.
+func TestLeveledCompactorMaybePauseNotCalledDuringWrite(t *testing.T) {
+	t.Parallel()
+
+	tmpdir := t.TempDir()
+	blockDir := createBlock(t, tmpdir, genSeries(1, 1, 0, 100))
+
+	compactor, err := NewLeveledCompactor(t.Context(), nil, promslog.NewNopLogger(), []int64{200}, nil, nil)
+	require.NoError(t, err)
+
+	var calls int
+	compactor.MaybePause = func(context.Context) error {
+		calls++
+		return nil
+	}
+
+	block, err := OpenBlock(nil, blockDir, nil, nil)
+	require.NoError(t, err)
+	t.Cleanup(func() {
+		require.NoError(t, block.Close())
+	})
+
+	uids, err := compactor.Write(tmpdir, block, 0, 100, nil)
+	require.NoError(t, err)
+	require.Len(t, uids, 1)
+	require.Equal(t, 0, calls)
+}
+
 func metaRange(name string, mint, maxt int64, stats *BlockStats) dirMeta {
 	meta := &BlockMeta{MinTime: mint, MaxTime: maxt}
 	if stats != nil {
