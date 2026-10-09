@@ -19,6 +19,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"math"
 	"net/http"
 	"strings"
 	"sync"
@@ -912,6 +913,83 @@ func (*mockChunkIterator) Err() error {
 }
 
 func TestChunkedSeriesIterator(t *testing.T) {
+	t.Run("initial seek without current sample", func(t *testing.T) {
+		for _, enc := range []chunkenc.Encoding{chunkenc.EncXOR, chunkenc.EncHistogram, chunkenc.EncFloatHistogram} {
+			for _, tc := range []struct {
+				name                    string
+				timestamp, target, mint int64
+			}{
+				{"zero target", 10, 0, 0},
+				{"negative target", 10, -1, -20},
+				{"negative timestamp", -10, -20, -20},
+				{"zero timestamp", 0, 0, 0},
+				{"minimum target", 10, math.MinInt64, math.MinInt64},
+				{"minimum timestamp", math.MinInt64, math.MinInt64, math.MinInt64},
+			} {
+				t.Run(enc.String()+"/"+tc.name, func(t *testing.T) {
+					c, err := chunkenc.NewEmptyChunk(enc)
+					require.NoError(t, err)
+					app, err := c.Appender()
+					require.NoError(t, err)
+					wantType := chunkenc.ValFloat
+					switch enc {
+					case chunkenc.EncXOR:
+						app.Append(0, tc.timestamp, 42.25)
+					case chunkenc.EncHistogram:
+						wantType = chunkenc.ValHistogram
+						h := &histogram.Histogram{CounterResetHint: histogram.GaugeType, Schema: 1, ZeroCount: 2, Count: 5, Sum: 42.25, PositiveSpans: []histogram.Span{{Offset: 1, Length: 1}}, PositiveBuckets: []int64{3}}
+						_, _, _, err = app.AppendHistogram(nil, 0, tc.timestamp, h, false)
+					case chunkenc.EncFloatHistogram:
+						wantType = chunkenc.ValFloatHistogram
+						h := &histogram.FloatHistogram{CounterResetHint: histogram.GaugeType, Schema: 1, ZeroCount: 2.25, Count: 5.5, Sum: 42.25, PositiveSpans: []histogram.Span{{Offset: 1, Length: 1}}, PositiveBuckets: []float64{3.25}}
+						_, _, _, err = app.AppendFloatHistogram(nil, 0, tc.timestamp, h, false)
+					}
+					require.NoError(t, err)
+					chunks := []prompb.Chunk{{MinTimeMs: tc.timestamp, MaxTimeMs: tc.timestamp, Type: prompb.Chunk_Encoding(enc), Data: c.Bytes()}}
+					for _, reuse := range []bool{false, true} {
+						t.Run(fmt.Sprintf("reuse=%t", reuse), func(t *testing.T) {
+							var previous chunkenc.Iterator
+							if reuse {
+								seed := chunkenc.NewXORChunk()
+								app, err := seed.Appender()
+								require.NoError(t, err)
+								app.Append(0, 100, 999)
+								previous = newChunkedSeriesIterator([]prompb.Chunk{{MinTimeMs: 100, MaxTimeMs: 100, Type: prompb.Chunk_XOR, Data: seed.Bytes()}}, 90, 110)
+								require.Equal(t, chunkenc.ValFloat, previous.Next())
+							}
+							s := chunkedSeries{ChunkedSeries: prompb.ChunkedSeries{Chunks: chunks}, mint: tc.mint, maxt: 20}
+							it := s.Iterator(previous)
+							require.Equal(t, wantType, it.Seek(tc.target))
+							require.Equal(t, tc.timestamp, it.AtT())
+							switch wantType {
+							case chunkenc.ValFloat:
+								ts, value := it.At()
+								require.Equal(t, tc.timestamp, ts)
+								require.Equal(t, 42.25, value)
+							case chunkenc.ValHistogram:
+								ts, h := it.AtHistogram(nil)
+								require.Equal(t, tc.timestamp, ts)
+								require.Equal(t, uint64(5), h.Count)
+								require.Equal(t, 42.25, h.Sum)
+								require.Equal(t, []int64{3}, h.PositiveBuckets)
+							case chunkenc.ValFloatHistogram:
+								ts, h := it.AtFloatHistogram(nil)
+								require.Equal(t, tc.timestamp, ts)
+								require.Equal(t, 5.5, h.Count)
+								require.Equal(t, 42.25, h.Sum)
+								require.Equal(t, []float64{3.25}, h.PositiveBuckets)
+							}
+							require.Equal(t, wantType, it.Seek(tc.target))
+							require.Equal(t, tc.timestamp, it.AtT())
+							require.Equal(t, chunkenc.ValNone, it.Next())
+							require.NoError(t, it.Err())
+						})
+					}
+				})
+			}
+		}
+	})
+
 	t.Run("happy path", func(t *testing.T) {
 		chks := buildTestChunks(t)
 
