@@ -1817,6 +1817,55 @@ eval instant at 0m year(histogram_sample)
 
 clear
 
+# Test NaN and infinite timestamps. They do not denote a point in time,
+# so the result is NaN on every platform.
+load 5m
+    not_a_time{val="NaN"} NaN
+    not_a_time{val="+Inf"} +Inf
+    not_a_time{val="-Inf"} -Inf
+
+eval instant at 0m day_of_month(not_a_time)
+  {val="NaN"} NaN
+  {val="+Inf"} NaN
+  {val="-Inf"} NaN
+
+eval instant at 0m day_of_week(not_a_time)
+  {val="NaN"} NaN
+  {val="+Inf"} NaN
+  {val="-Inf"} NaN
+
+eval instant at 0m day_of_year(not_a_time)
+  {val="NaN"} NaN
+  {val="+Inf"} NaN
+  {val="-Inf"} NaN
+
+eval instant at 0m days_in_month(not_a_time)
+  {val="NaN"} NaN
+  {val="+Inf"} NaN
+  {val="-Inf"} NaN
+
+eval instant at 0m hour(not_a_time)
+  {val="NaN"} NaN
+  {val="+Inf"} NaN
+  {val="-Inf"} NaN
+
+eval instant at 0m minute(not_a_time)
+  {val="NaN"} NaN
+  {val="+Inf"} NaN
+  {val="-Inf"} NaN
+
+eval instant at 0m month(not_a_time)
+  {val="NaN"} NaN
+  {val="+Inf"} NaN
+  {val="-Inf"} NaN
+
+eval instant at 0m year(not_a_time)
+  {val="NaN"} NaN
+  {val="+Inf"} NaN
+  {val="-Inf"} NaN
+
+clear
+
 # Test duplicate labelset in promql output.
 load 5m
   testmetric1{src="a",dst="b"} 0

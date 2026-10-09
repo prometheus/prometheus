@@ -2732,13 +2732,19 @@ func dateWrapper(vectorVals []Vector, enh *EvalNodeHelper, f func(time.Time) flo
 			// Ignore histogram sample.
 			continue
 		}
-		t := time.Unix(int64(el.F), 0).UTC()
+		// NaN and infinite samples do not denote a point in time. Converting
+		// them with int64() is implementation-specific in Go, so the result
+		// would differ between CPU architectures.
+		v := math.NaN()
+		if !math.IsNaN(el.F) && !math.IsInf(el.F, 0) {
+			v = f(time.Unix(int64(el.F), 0).UTC())
+		}
 		if !enh.enableDelayedNameRemoval {
 			el.Metric = el.Metric.DropReserved(schema.IsMetadataLabel)
 		}
 		enh.Out = append(enh.Out, Sample{
 			Metric:   el.Metric,
-			F:        f(t),
+			F:        v,
 			DropName: true,
 		})
 	}
