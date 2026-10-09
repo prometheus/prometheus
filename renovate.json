@@ -29,6 +29,23 @@
   "prHourlyLimit": 5,
   "packageRules": [
     {
+      "description": "Keep Go patch versions aligned after module updates",
+      "matchManagers": [
+        "gomod"
+      ],
+      "postUpgradeTasks": {
+        "commands": [
+          "bash scripts/sync-go-versions.sh"
+        ],
+        "executionMode": "branch",
+        "fileFilters": [
+          "go.mod",
+          "**/go.mod",
+          "go.work"
+        ]
+      }
+    },
+    {
       "description": "Keep the legacy app on the TypeScript major supported by react-scripts 5",
       "matchManagers": [
         "npm"
