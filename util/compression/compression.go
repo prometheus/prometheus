@@ -16,6 +16,7 @@ package compression
 import (
 	"errors"
 	"fmt"
+	"slices"
 
 	"github.com/golang/snappy"
 )
@@ -51,7 +52,8 @@ func Encode(t Type, src []byte, buf EncodeBuffer) (ret []byte, err error) {
 	}
 	if t == Snappy {
 		// If MaxEncodedLen is less than 0 the record is too large to be compressed.
-		if snappy.MaxEncodedLen(len(src)) < 0 {
+		n := snappy.MaxEncodedLen(len(src))
+		if n < 0 {
 			return src, fmt.Errorf("compression: Snappy can't encode such a large message: %v", len(src))
 		}
 		var b []byte
@@ -60,6 +62,11 @@ func Encode(t Type, src []byte, buf EncodeBuffer) (ret []byte, err error) {
 			defer func() {
 				buf.set(ret)
 			}()
+		}
+		if cap(b) < n {
+			// Keep the allocator's block as capacity so later messages within it
+			// reuse the buffer.
+			b = growBuffer(n)
 		}
 
 		// The snappy library uses `len` to calculate if we need a new buffer.
@@ -80,6 +87,24 @@ func Encode(t Type, src []byte, buf EncodeBuffer) (ret []byte, err error) {
 		return buf.zstdEncBuf().EncodeAll(src, b[:0]), nil
 	}
 	return nil, fmt.Errorf("unsupported compression type: %s", t)
+}
+
+// Go allocates objects above 32 KiB in whole 8 KiB pages.
+const (
+	largeObjectSize = 32 << 10
+	heapPageSize    = 8 << 10
+)
+
+// growBuffer returns an empty buffer whose capacity is the allocator's block
+// for n bytes, so it never retains more than an exact allocation.
+func growBuffer(n int) []byte {
+	if n > largeObjectSize {
+		// Unlike slices.Grow, make lets the runtime skip clearing pages that the
+		// OS returns zeroed.
+		return make([]byte, 0, (n+heapPageSize-1)&^(heapPageSize-1))
+	}
+	// Growing from nil skips append's growth factor and copying stale contents.
+	return slices.Grow([]byte(nil), n)
 }
 
 // Decode returns the decoded form of src for the given compression type.
