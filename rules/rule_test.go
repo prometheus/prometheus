@@ -14,16 +14,14 @@
 package rules
 
 import (
-	"bytes"
 	"encoding/json"
-	"fmt"
-	"log/slog"
 	"testing"
 
 	"github.com/prometheus/common/promslog"
 	"github.com/stretchr/testify/require"
 
 	"github.com/prometheus/prometheus/model/labels"
+	"github.com/prometheus/prometheus/util/testutil"
 )
 
 func TestRuleLogValue(t *testing.T) {
@@ -49,8 +47,6 @@ func TestRuleLogValue(t *testing.T) {
 		{name: "nil alerting", rule: (*AlertingRule)(nil)},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			require.Equal(t, tc.want, slog.AnyValue(tc.rule).Resolve().Any())
-
 			data, err := json.Marshal(tc.rule)
 			require.NoError(t, err)
 			if tc.want == nil {
@@ -59,48 +55,7 @@ func TestRuleLogValue(t *testing.T) {
 				require.JSONEq(t, "{}", string(data))
 			}
 
-			for _, style := range []promslog.LogStyle{promslog.SlogStyle, promslog.GoKitStyle} {
-				for _, formatName := range []string{"json", "logfmt"} {
-					for _, placement := range []string{"direct", "with", "group", "with-group"} {
-						t.Run(string(style)+"/"+formatName+"/"+placement, func(t *testing.T) {
-							var output bytes.Buffer
-							format := promslog.NewFormat()
-							require.NoError(t, format.Set(formatName))
-							logger := promslog.New(&promslog.Config{Writer: &output, Format: format, Style: style})
-							switch placement {
-							case "direct":
-								logger.Info("test", "rule", tc.rule)
-							case "with":
-								logger.With("rule", tc.rule).Info("test")
-							case "group":
-								logger.Info("test", slog.Group("group", "rule", tc.rule))
-							case "with-group":
-								logger.WithGroup("group").With("rule", tc.rule).Info("test")
-							}
-
-							if formatName == "json" {
-								var entry map[string]any
-								require.NoError(t, json.Unmarshal(output.Bytes(), &entry))
-								if placement == "group" || placement == "with-group" {
-									entry = entry["group"].(map[string]any)
-								}
-								require.Contains(t, entry, "rule")
-								require.Equal(t, tc.want, entry["rule"])
-							} else {
-								key := "rule"
-								if placement == "group" || placement == "with-group" {
-									key = "group.rule"
-								}
-								want := "<nil>"
-								if tc.want != nil {
-									want = fmt.Sprintf("%q", tc.want)
-								}
-								require.Contains(t, output.String(), key+"="+want)
-							}
-						})
-					}
-				}
-			}
+			testutil.RequireLogValue(t, "rule", tc.rule, tc.want)
 		})
 	}
 }

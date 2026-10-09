@@ -14,14 +14,12 @@
 package tsdb
 
 import (
-	"bytes"
 	"context"
 	"encoding/binary"
 	"encoding/json"
 	"errors"
 	"fmt"
 	"hash/crc32"
-	"log/slog"
 	"math/rand"
 	"os"
 	"path/filepath"
@@ -42,6 +40,7 @@ import (
 	"github.com/prometheus/prometheus/tsdb/fileutil"
 	"github.com/prometheus/prometheus/tsdb/index"
 	"github.com/prometheus/prometheus/tsdb/wlog"
+	"github.com/prometheus/prometheus/util/testutil"
 )
 
 // TestBlockMetaCompaction_SetSelectedSeries verifies the round-trip behaviour of the
@@ -118,8 +117,6 @@ func TestBlockLogValue(t *testing.T) {
 		{name: "nil"},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			require.Equal(t, tc.want, slog.AnyValue(tc.block).Resolve().Any())
-
 			data, err := json.Marshal(map[string]*Block{"block": tc.block})
 			require.NoError(t, err)
 			if tc.want == nil {
@@ -128,48 +125,7 @@ func TestBlockLogValue(t *testing.T) {
 				require.JSONEq(t, "{\"block\":{}}", string(data))
 			}
 
-			for _, style := range []promslog.LogStyle{promslog.SlogStyle, promslog.GoKitStyle} {
-				for _, formatName := range []string{"json", "logfmt"} {
-					for _, placement := range []string{"direct", "with", "group", "with-group"} {
-						t.Run(string(style)+"/"+formatName+"/"+placement, func(t *testing.T) {
-							var output bytes.Buffer
-							format := promslog.NewFormat()
-							require.NoError(t, format.Set(formatName))
-							logger := promslog.New(&promslog.Config{Writer: &output, Format: format, Style: style})
-							switch placement {
-							case "direct":
-								logger.Info("test", "block", tc.block)
-							case "with":
-								logger.With("block", tc.block).Info("test")
-							case "group":
-								logger.Info("test", slog.Group("group", "block", tc.block))
-							case "with-group":
-								logger.WithGroup("group").With("block", tc.block).Info("test")
-							}
-
-							if formatName == "json" {
-								var entry map[string]any
-								require.NoError(t, json.Unmarshal(output.Bytes(), &entry))
-								if placement == "group" || placement == "with-group" {
-									entry = entry["group"].(map[string]any)
-								}
-								require.Contains(t, entry, "block")
-								require.Equal(t, tc.want, entry["block"])
-							} else {
-								key := "block"
-								if placement == "group" || placement == "with-group" {
-									key = "group.block"
-								}
-								want := "<nil>"
-								if tc.want != nil {
-									want = tc.want.(string)
-								}
-								require.Contains(t, output.String(), key+"="+want)
-							}
-						})
-					}
-				}
-			}
+			testutil.RequireLogValue(t, "block", tc.block, tc.want)
 		})
 	}
 }
