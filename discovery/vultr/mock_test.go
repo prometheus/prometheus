@@ -168,3 +168,111 @@ func (m *SDMock) HandleInstanceList() {
 `)
 	})
 }
+
+// HandleBaremetalList mocks vultr baremetal list.
+func (m *SDMock) HandleBaremetalList() {
+	m.Mux.HandleFunc("/v2/bare-metals", func(w http.ResponseWriter, r *http.Request) {
+		if r.Header.Get("Authorization") != fmt.Sprintf("Bearer %s", APIKey) {
+			w.WriteHeader(http.StatusForbidden)
+			return
+		}
+
+		w.Header().Add("content-type", "application/json; charset=utf-8")
+		w.WriteHeader(http.StatusOK)
+
+		fmt.Fprint(w, `
+{
+  "bare_metals": [
+    {
+      "id": "cb676a46-66fd-4dfb-b839-443f2e6c0b60",
+      "os": "Application",
+      "ram": "32768 MB",
+      "disk": "2x 240GB SSD",
+      "main_ip": "192.0.2.123",
+      "cpu_count": 4,
+      "region": "ams",
+      "default_password": "example-password",
+      "date_created": "2020-10-10T01:56:20+00:00",
+      "status": "active",
+      "netmask_v4": "255.255.254.0",
+      "gateway_v4": "192.0.2.1",
+      "plan": "vbm-4c-32gb",
+      "v6_network": "2001:0db8:5001:3990::",
+      "v6_main_ip": "2001:0db8:5001:3990:0ec4:7aff:fe8e:f97a",
+      "v6_network_size": 64,
+      "label": "Example Bare Metal",
+      "mac_address": 2199756823533,
+      "os_id": 186,
+      "app_id": 3,
+      "image_id": "",
+      "features": ["backups"],
+      "tags": ["tag1", "tag2", "tag3"],
+      "user_scheme": "root",
+      "mdisk_mode": "raid1"
+    },
+    {
+      "id": "sdfgsdfgsdfg-66fd-4dfb-b839-443f2e6c0b60",
+      "os": "Application",
+      "ram": "32768 MB",
+      "disk": "2x 240GB SSD",
+      "main_ip": "192.0.2.124",
+      "cpu_count": 4,
+      "region": "ams",
+      "default_password": "example-password",
+      "date_created": "2020-10-10T01:56:20+00:00",
+      "status": "active",
+      "netmask_v4": "255.255.254.0",
+      "gateway_v4": "192.0.2.1",
+      "plan": "vbm-4c-32gb",
+      "v6_network": "2001:0db8:5001:3990::",
+      "v6_main_ip": "2001:0db8:5001:3990:0ec4:7aff:fe8e:f97a",
+      "v6_network_size": 64,
+      "label": "Example Bare Metal 2",
+      "mac_address": 2199756823533,
+      "os_id": 186,
+      "app_id": 3,
+      "image_id": "",
+      "features": ["backups"],
+      "tags": ["tag1", "tag2", "tag3"],
+      "user_scheme": "root",
+      "mdisk_mode": "raid1"
+    },
+    {
+      "id": "wertwery6-66fd-4dfb-b839-443f2e6c0b60",
+      "os": "Application",
+      "ram": "32768 MB",
+      "disk": "2x 240GB SSD",
+      "main_ip": "192.0.2.125",
+      "cpu_count": 4,
+      "region": "ams",
+      "default_password": "example-password",
+      "date_created": "2020-10-10T01:56:20+00:00",
+      "status": "active",
+      "netmask_v4": "255.255.254.0",
+      "gateway_v4": "192.0.2.1",
+      "plan": "vbm-4c-32gb",
+      "v6_network": "2001:0db8:5001:3990::",
+      "v6_main_ip": "2001:0db8:5001:3990:0ec4:7aff:fe8e:f97a",
+      "v6_network_size": 64,
+      "label": "Example Bare Metal 3",
+      "mac_address": 2199756823533,
+      "os_id": 186,
+      "app_id": 3,
+      "image_id": "",
+      "features": ["backups"],
+      "tags": ["tag1", "tag2", "tag3"],
+      "user_scheme": "root",
+      "mdisk_mode": "raid1"
+    }
+  ],
+  "meta": {
+    "total": 3,
+    "links": {
+      "next": "",
+      "prev": ""
+    }
+  }
+}
+`)
+	})
+}
