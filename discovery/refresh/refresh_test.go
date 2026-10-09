@@ -20,6 +20,7 @@ import (
 	"time"
 
 	"github.com/prometheus/client_golang/prometheus"
+	"github.com/prometheus/client_golang/prometheus/testutil"
 	"github.com/prometheus/common/model"
 	"github.com/stretchr/testify/require"
 	"go.uber.org/goleak"
@@ -100,4 +101,28 @@ func TestRefresh(t *testing.T) {
 		require.FailNow(t, "Unexpected target group")
 	case <-tick.C:
 	}
+}
+
+func TestRefreshUpdateSetName(t *testing.T) {
+	metrics := discovery.NewRefreshMetrics(prometheus.NewRegistry())
+	require.NoError(t, metrics.Register())
+	defer metrics.Unregister()
+
+	d := NewDiscovery(
+		Options{
+			Mech:     "test",
+			SetName:  "old",
+			Interval: time.Hour,
+			RefreshF: func(context.Context) ([]*targetgroup.Group, error) {
+				return nil, errors.New("some error")
+			},
+			MetricsInstantiator: metrics,
+		},
+	)
+	d.UpdateSetName("new")
+
+	_, err := d.refresh(t.Context())
+	require.Error(t, err)
+	require.Equal(t, 0.0, testutil.ToFloat64(metrics.Instantiate("test", "old").Failures))
+	require.Equal(t, 1.0, testutil.ToFloat64(metrics.Instantiate("test", "new").Failures))
 }
