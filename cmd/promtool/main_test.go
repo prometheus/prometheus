@@ -120,6 +120,38 @@ func TestQueryInstantHeaders(t *testing.T) {
 	require.Equal(t, "value", getRequest().Header.Get("X-Custom"))
 }
 
+func TestQuerySeriesHeaders(t *testing.T) {
+	t.Parallel()
+	s, getRequest := mockServer(200, `{"status": "success", "data": []}`)
+	defer s.Close()
+
+	urlObject, err := url.Parse(s.URL)
+	require.NoError(t, err)
+
+	p := &promqlPrinter{}
+	headers := map[string]string{"X-Scope-OrgID": "prom", "X-Custom": "value"}
+	exitCode := QuerySeries(urlObject, http.DefaultTransport, headers, []string{"up"}, "", "", p)
+	require.Equal(t, 0, exitCode)
+	require.Equal(t, "prom", getRequest().Header.Get("X-Scope-OrgID"))
+	require.Equal(t, "value", getRequest().Header.Get("X-Custom"))
+}
+
+func TestQueryLabelsHeaders(t *testing.T) {
+	t.Parallel()
+	s, getRequest := mockServer(200, `{"status": "success", "data": []}`)
+	defer s.Close()
+
+	urlObject, err := url.Parse(s.URL)
+	require.NoError(t, err)
+
+	p := &promqlPrinter{}
+	headers := map[string]string{"X-Scope-OrgID": "prom", "X-Custom": "value"}
+	exitCode := QueryLabels(urlObject, http.DefaultTransport, headers, []string{"up"}, "job", "", "", p)
+	require.Equal(t, 0, exitCode)
+	require.Equal(t, "prom", getRequest().Header.Get("X-Scope-OrgID"))
+	require.Equal(t, "value", getRequest().Header.Get("X-Custom"))
+}
+
 func TestCheckServerStatus(t *testing.T) {
 	t.Parallel()
 
