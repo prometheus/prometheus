@@ -606,6 +606,59 @@ func TestAgentSuccessfulStartup(t *testing.T) {
 	require.Equal(t, 0, actualExitStatus)
 }
 
+func TestMetricsEndpoint(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping test in short mode.")
+	}
+	t.Parallel()
+
+	for _, tc := range []struct {
+		name  string
+		agent bool
+	}{
+		{name: "server mode"},
+		{name: "agent mode", agent: true},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+
+			tmpDir := t.TempDir()
+			configFile := filepath.Join(tmpDir, "prometheus.yml")
+			require.NoError(t, os.WriteFile(configFile, nil, 0o777))
+			args := []string{"--storage.tsdb.path=" + tmpDir}
+			if tc.agent {
+				args = []string{"--agent", "--storage.agent.path=" + tmpDir}
+			}
+			port := testutil.RandomUnprivilegedPort(t)
+			prom := prometheusCommandWithLogging(t, configFile, port, args...)
+			require.NoError(t, prom.Start())
+			waitForPrometheusReady(t, port)
+
+			r, err := http.Get(fmt.Sprintf("http://127.0.0.1:%d/metrics", port))
+			require.NoError(t, err)
+			defer r.Body.Close()
+			require.Equal(t, http.StatusOK, r.StatusCode)
+			p := expfmt.NewTextParser(model.UTF8Validation)
+			families, err := p.TextToMetricFamilies(r.Body)
+			require.NoError(t, err)
+
+			// One family from each of the version and Go collectors, the template
+			// package, ZooKeeper service discovery, go-conntrack and the metrics
+			// handler, which register their metrics in different ways.
+			for _, name := range []string{
+				"prometheus_build_info",
+				"go_goroutines",
+				"prometheus_template_text_expansions_total",
+				"prometheus_treecache_zookeeper_failures_total",
+				"net_conntrack_listener_conn_accepted_total",
+				"promhttp_metric_handler_requests_total",
+			} {
+				require.Contains(t, families, name)
+			}
+		})
+	}
+}
+
 func TestAgentFailedStartupWithServerFlag(t *testing.T) {
 	t.Parallel()
 
