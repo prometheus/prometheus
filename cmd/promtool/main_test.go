@@ -776,6 +776,56 @@ func TestCheckScrapeConfigs(t *testing.T) {
 	}
 }
 
+func TestCheckScrapeConfigsWithTimeout(t *testing.T) {
+	t.Parallel()
+
+	for _, tc := range []struct {
+		name          string
+		lookbackDelta model.Duration
+		expectError   bool
+	}{
+		{
+			name:          "scrape interval plus timeout less than lookback delta",
+			lookbackDelta: model.Duration(6 * time.Minute),
+			expectError:   false,
+		},
+		{
+			name:          "scrape interval plus timeout equal to lookback delta",
+			lookbackDelta: model.Duration(5*time.Minute + 55*time.Second),
+			expectError:   true,
+		},
+		{
+			name:          "scrape interval plus timeout greater than lookback delta",
+			lookbackDelta: model.Duration(5 * time.Minute),
+			expectError:   true,
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			p := parser.NewParser(parser.Options{})
+
+			code := CheckConfig(
+				false,
+				false,
+				newConfigLintConfig(
+					lintOptionTooLongScrapeInterval,
+					true,
+					false,
+					model.UTF8Validation,
+					tc.lookbackDelta,
+				),
+				p,
+				"./testdata/prometheus-config.lint.scrape_interval_plus_timeout.yml",
+			)
+
+			if tc.expectError {
+				require.Equal(t, lintErrExitCode, code)
+			} else {
+				require.Equal(t, successExitCode, code)
+			}
+		})
+	}
+}
+
 func TestTSDBDumpCommand(t *testing.T) {
 	if testing.Short() {
 		t.Skip("skipping test in short mode.")
