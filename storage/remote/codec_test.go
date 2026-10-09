@@ -20,6 +20,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"runtime"
 	"strings"
 	"sync"
 	"testing"
@@ -838,11 +839,96 @@ func TestStreamResponse(t *testing.T) {
 	require.Equal(t, expectData, writer.actual)
 }
 
+func TestStreamResponseWithMmapBackedChunk(t *testing.T) {
+	reader, series := newMmapBackedChunkSeries(t)
+	writer := mockWriter{beforeWrite: runtime.GC}
+	ss := &singleChunkSeriesSet{series: series}
+
+	warnings, err := StreamChunkedReadResponses(&writer, 0, ss, nil, 1<<20, &sync.Pool{})
+	require.NoError(t, err)
+	require.Nil(t, warnings)
+	require.Len(t, writer.actual, 1)
+	require.Len(t, writer.actual[0].Chunks, 1)
+	it := series.Iterator(nil)
+	require.True(t, it.Next())
+	require.Equal(t, it.At().Chunk.Bytes(), writer.actual[0].Chunks[0].Data)
+	runtime.KeepAlive(reader)
+}
+
+func BenchmarkStreamResponseWithMmapBackedChunk(b *testing.B) {
+	reader, series := newMmapBackedChunkSeries(b)
+	ss := &singleChunkSeriesSet{series: series}
+	pool := &sync.Pool{}
+
+	b.ReportAllocs()
+	for b.Loop() {
+		ss.done = false
+		if _, err := StreamChunkedReadResponses(io.Discard, 0, ss, nil, 1<<20, pool); err != nil {
+			b.Fatal(err)
+		}
+	}
+	runtime.KeepAlive(reader)
+}
+
+func newMmapBackedChunkSeries(tb testing.TB) (*chunks.Reader, storage.ChunkSeries) {
+	tb.Helper()
+	dir := tb.TempDir()
+	writer, err := chunks.NewWriter(dir)
+	require.NoError(tb, err)
+	chunk := chunkenc.NewXORChunk()
+	app, err := chunk.Appender()
+	require.NoError(tb, err)
+	for i := range 120 {
+		app.Append(0, int64(i), float64(i))
+	}
+	metas := []chunks.Meta{{MinTime: 0, MaxTime: 119, Chunk: chunk}}
+	require.NoError(tb, writer.WriteChunks(metas...))
+	require.NoError(tb, writer.Close())
+
+	reader, err := chunks.NewDirReader(dir, chunkenc.NewPool())
+	require.NoError(tb, err)
+	tb.Cleanup(func() { require.NoError(tb, reader.Close()) })
+	mappedChunk, iterable, err := reader.ChunkOrIterable(metas[0])
+	require.NoError(tb, err)
+	require.Nil(tb, iterable)
+	meta := chunks.Meta{MinTime: metas[0].MinTime, MaxTime: metas[0].MaxTime, Chunk: mappedChunk}
+	series := &storage.ChunkSeriesEntry{
+		Lset: labels.FromStrings(labels.MetricName, "mmap_metric"),
+		ChunkIteratorFn: func(chunks.Iterator) chunks.Iterator {
+			return storage.NewListChunkSeriesIterator(meta)
+		},
+	}
+	return reader, series
+}
+
+type singleChunkSeriesSet struct {
+	series storage.ChunkSeries
+	done   bool
+}
+
+func (s *singleChunkSeriesSet) Next() bool {
+	if s.done {
+		return false
+	}
+	s.done = true
+	return true
+}
+
+func (s *singleChunkSeriesSet) At() storage.ChunkSeries { return s.series }
+
+func (*singleChunkSeriesSet) Warnings() annotations.Annotations { return nil }
+
+func (*singleChunkSeriesSet) Err() error { return nil }
+
 type mockWriter struct {
-	actual []*prompb.ChunkedSeries
+	actual      []*prompb.ChunkedSeries
+	beforeWrite func()
 }
 
 func (m *mockWriter) Write(p []byte) (n int, err error) {
+	if m.beforeWrite != nil {
+		m.beforeWrite()
+	}
 	cr := &prompb.ChunkedReadResponse{}
 	if err := proto.Unmarshal(p, cr); err != nil {
 		return 0, fmt.Errorf("unmarshaling: %w", err)

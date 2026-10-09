@@ -14,13 +14,38 @@
 package fileutil
 
 import (
+	"errors"
 	"fmt"
 	"os"
+	"runtime"
+
+	"github.com/prometheus/prometheus/tsdb/encoding"
 )
 
-type MmapFile struct {
-	f *os.File
+type mmapRef struct {
 	b []byte
+}
+
+func (m *mmapRef) close() error {
+	return m.closeWith(munmap)
+}
+
+func (m *mmapRef) closeWith(unmap func([]byte) error) error {
+	if m.b == nil {
+		return errors.New("mmap already closed")
+	}
+	err := unmap(m.b)
+	if err != nil {
+		return err
+	}
+	m.b = nil
+	return nil
+}
+
+type MmapFile struct {
+	f       *os.File
+	m       *mmapRef
+	cleanup runtime.Cleanup
 }
 
 func OpenMmapFile(path string) (*MmapFile, error) {
@@ -50,12 +75,23 @@ func OpenMmapFileWithSize(path string, size int) (mf *MmapFile, retErr error) {
 		return nil, fmt.Errorf("mmap, size %d: %w", size, err)
 	}
 
-	return &MmapFile{f: f, b: b}, nil
+	m := &mmapRef{b: b}
+	mmapFile := &MmapFile{f: f, m: m}
+	mmapFile.cleanup = runtime.AddCleanup(m, func(b []byte) {
+		_ = munmap(b)
+	}, b)
+
+	return mmapFile, nil
 }
 
+// Close invalidates all views returned by Bytes and BytesView.
 func (f *MmapFile) Close() error {
-	err0 := munmap(f.b)
+	err0 := f.m.close()
+	if err0 == nil {
+		f.cleanup.Stop()
+	}
 	err1 := f.f.Close()
+	runtime.KeepAlive(f.m)
 
 	if err0 != nil {
 		return err0
@@ -67,6 +103,16 @@ func (f *MmapFile) File() *os.File {
 	return f.f
 }
 
+// Bytes returns a borrowed view of the mapping. The caller must keep f
+// reachable until it finishes using the slice. The slice is invalid after Close.
 func (f *MmapFile) Bytes() []byte {
-	return f.b
+	b := f.m.b
+	runtime.KeepAlive(f)
+	return b
+}
+
+// BytesView returns a view that keeps the mapping reachable. It is invalid
+// after Close.
+func (f *MmapFile) BytesView() encoding.ByteView {
+	return encoding.NewByteViewWithOwner(f.m.b, f.m)
 }
