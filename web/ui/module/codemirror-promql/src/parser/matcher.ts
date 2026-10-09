@@ -26,6 +26,7 @@ import {
 } from '@prometheus-io/lezer-promql';
 import { EditorState } from '@codemirror/state';
 import { Matcher } from '../types';
+import { labelNameNeedsQuoting, metricNameNeedsQuoting, quotePromQLString, unquotePromQLString } from './utf8';
 
 function createMatcher(labelMatcher: SyntaxNode, state: EditorState): Matcher {
   const matcher = new Matcher(0, '', '');
@@ -39,7 +40,7 @@ function createMatcher(labelMatcher: SyntaxNode, state: EditorState): Matcher {
       do {
         switch (cursor.type.id) {
           case QuotedLabelName:
-            matcher.name = state.sliceDoc(cursor.from, cursor.to).slice(1, -1);
+            matcher.name = unquotePromQLString(state.sliceDoc(cursor.from, cursor.to));
             break;
           case MatchOp: {
             const ope = cursor.node.firstChild;
@@ -49,7 +50,7 @@ function createMatcher(labelMatcher: SyntaxNode, state: EditorState): Matcher {
             break;
           }
           case StringLiteral:
-            matcher.value = state.sliceDoc(cursor.from, cursor.to).slice(1, -1);
+            matcher.value = unquotePromQLString(state.sliceDoc(cursor.from, cursor.to));
             break;
         }
       } while (cursor.nextSibling());
@@ -72,14 +73,14 @@ function createMatcher(labelMatcher: SyntaxNode, state: EditorState): Matcher {
             break;
           }
           case StringLiteral:
-            matcher.value = state.sliceDoc(cursor.from, cursor.to).slice(1, -1);
+            matcher.value = unquotePromQLString(state.sliceDoc(cursor.from, cursor.to));
             break;
         }
       } while (cursor.nextSibling());
       break;
     case QuotedLabelName:
       matcher.name = '__name__';
-      matcher.value = state.sliceDoc(cursor.from, cursor.to).slice(1, -1);
+      matcher.value = unquotePromQLString(state.sliceDoc(cursor.from, cursor.to));
       matcher.type = EqlSingle;
       break;
   }
@@ -95,13 +96,17 @@ export function buildLabelMatchers(labelMatchers: SyntaxNode[], state: EditorSta
 }
 
 export function labelMatchersToString(metricName: string, matchers?: Matcher[], labelName?: string): string {
+  // A metric name that is not a valid legacy name has to be quoted, and moved inside the braces.
+  const quotedMetricName = metricName !== '' && metricNameNeedsQuoting(metricName);
   if (!matchers || matchers.length === 0) {
-    return metricName;
+    return quotedMetricName ? `{${quotePromQLString(metricName)}}` : metricName;
   }
 
-  let matchersAsString = '';
+  let matchersAsString = quotedMetricName ? quotePromQLString(metricName) : '';
   for (const matcher of matchers) {
-    if (matcher.name === labelName || matcher.value === '') {
+    // The metric name is already set by the quoted metric name.
+    const isQuotedMetricName = quotedMetricName && matcher.type === EqlSingle && matcher.name === '__name__' && matcher.value === metricName;
+    if (matcher.name === labelName || matcher.value === '' || isQuotedMetricName) {
       continue;
     }
     let type: string;
@@ -121,12 +126,13 @@ export function labelMatchersToString(metricName: string, matchers?: Matcher[], 
       default:
         type = '=';
     }
-    const m = `${matcher.name}${type}"${matcher.value}"`;
+    const name = labelNameNeedsQuoting(matcher.name) ? quotePromQLString(matcher.name) : matcher.name;
+    const m = `${name}${type}${quotePromQLString(matcher.value)}`;
     if (matchersAsString === '') {
       matchersAsString = m;
     } else {
       matchersAsString = `${matchersAsString},${m}`;
     }
   }
-  return `${metricName}{${matchersAsString}}`;
+  return `${quotedMetricName ? '' : metricName}{${matchersAsString}}`;
 }

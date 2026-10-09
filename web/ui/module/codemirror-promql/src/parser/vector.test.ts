@@ -166,6 +166,30 @@ describe('buildVectorMatching test', () => {
       },
     },
     {
+      binaryExpr: 'foo * on("a.b",c,"d\\"e") group_left("x.y",z) bar',
+      expectedVectorMatching: {
+        card: VectorMatchCardinality.CardManyToOne,
+        matchingLabels: ['a.b', 'c', 'd"e'],
+        on: true,
+        include: ['x.y', 'z'],
+        ...noFill,
+      },
+    },
+    {
+      binaryExpr: 'foo * ignoring("é😀") group_right("x.y") bar',
+      expectedVectorMatching: {
+        card: VectorMatchCardinality.CardOneToMany,
+        matchingLabels: ['é😀'],
+        on: false,
+        include: ['x.y'],
+        ...noFill,
+      },
+    },
+    {
+      binaryExpr: 'foo and on("a.b") bar',
+      expectedVectorMatching: { card: VectorMatchCardinality.CardManyToMany, matchingLabels: ['a.b'], on: true, include: [], ...noFill },
+    },
+    {
       binaryExpr: 'foo / on(test,blub) group_left(bar) bar',
       expectedVectorMatching: {
         card: VectorMatchCardinality.CardManyToOne,

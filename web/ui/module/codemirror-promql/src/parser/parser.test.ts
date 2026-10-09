@@ -561,6 +561,23 @@ describe('promql operations', () => {
       ],
     },
     {
+      expr: 'foo + on("a.b", c) group_left("a.b") bar',
+      expectedValueType: ValueType.vector,
+      expectedDiag: [
+        {
+          from: 0,
+          to: 40,
+          message: 'label "a.b" must not occur in ON and GROUP clause at once',
+          severity: 'error',
+        },
+      ],
+    },
+    { expr: 'foo + on("a.b") group_left("c.d") bar', expectedValueType: ValueType.vector, expectedDiag: [] as Diagnostic[] },
+    { expr: 'foo and ignoring("a.b", "é") bar', expectedValueType: ValueType.vector, expectedDiag: [] as Diagnostic[] },
+    { expr: 'sum by ("a.b", c) (foo)', expectedValueType: ValueType.vector, expectedDiag: [] as Diagnostic[] },
+    { expr: 'sum without ("a.b") (foo)', expectedValueType: ValueType.vector, expectedDiag: [] as Diagnostic[] },
+    { expr: 'sum(foo) by ("my.label")', expectedValueType: ValueType.vector, expectedDiag: [] as Diagnostic[] },
+    {
       expr: 'foo + bool bar',
       expectedValueType: ValueType.vector,
       expectedDiag: [
@@ -1105,26 +1122,109 @@ describe('promql operations', () => {
   });
 
   describe('analyze()', () => {
-    it('does not duplicate invalid-offset diagnostics when the offset is not at EOF', () => {
-      const state = createEditorState('foo offset abc * 2');
-      const parser = new Parser(state);
-      parser.analyze();
-      const diags = parser.getDiagnostics();
-      expect(diags).toHaveLength(1);
-      expect(diags[0].message).toBe('offset requires a duration expression');
-      expect(diags[0].from).toBe(0);
-      expect(diags[0].to).toBe(15);
-    });
-
-    it('still reports a single targeted offset diagnostic with trailing document space (editor-like)', () => {
-      const state = createEditorState('foo offset abc   ');
-      const parser = new Parser(state);
-      parser.analyze();
-      const diags = parser.getDiagnostics();
-      expect(diags).toHaveLength(1);
-      expect(diags[0].message).toBe('offset requires a duration expression');
-      expect(diags[0].from).toBe(0);
-      expect(diags[0].to).toBe(17);
+    const analyzeTestCases = [
+      {
+        title: 'does not duplicate invalid-offset diagnostics when the offset is not at EOF',
+        expr: 'foo offset abc * 2',
+        diagnostics: [{ message: 'offset requires a duration expression', from: 0, to: 15 }],
+      },
+      {
+        title: 'still reports a single targeted offset diagnostic with trailing document space (editor-like)',
+        expr: 'foo offset abc   ',
+        diagnostics: [{ message: 'offset requires a duration expression', from: 0, to: 17 }],
+      },
+      { title: 'unquoted name with a dot', expr: 'foo.bar', diagnostics: [{ message: 'name must be quoted: "foo.bar"', from: 0, to: 7 }] },
+      { title: 'unquoted name ending with a dot', expr: 'foo.', diagnostics: [{ message: 'name must be quoted: "foo."', from: 0, to: 4 }] },
+      {
+        title: 'unquoted metric name followed by matchers',
+        expr: 'foo.bar{a="b"}',
+        diagnostics: [{ message: 'name must be quoted: "foo.bar"', from: 0, to: 7 }],
+      },
+      {
+        title: 'unquoted metric name in a function call',
+        expr: 'sum(foo.bar) + 1',
+        diagnostics: [{ message: 'name must be quoted: "foo.bar"', from: 4, to: 11 }],
+      },
+      { title: 'unquoted label name in a matcher', expr: 'foo{a.b="c"}', diagnostics: [{ message: 'name must be quoted: "a.b"', from: 4, to: 7 }] },
+      {
+        title: 'unquoted label name in a grouping',
+        expr: 'sum by (a.b) (x)',
+        diagnostics: [{ message: 'name must be quoted: "a.b"', from: 8, to: 11 }],
+      },
+      {
+        title: 'unquoted name with non-ascii characters',
+        expr: 'métrique',
+        diagnostics: [{ message: 'name must be quoted: "métrique"', from: 0, to: 8 }],
+      },
+      { title: 'quoted metric name', expr: '{"foo.bar"}', diagnostics: [] },
+      { title: 'quoted metric and label names', expr: '{"foo.bar", "a.b"!="c", d="e"}', diagnostics: [] },
+      { title: 'quoted names in a grouping', expr: 'sum by ("a.b") ({"foo.bar"})', diagnostics: [] },
+      { title: 'dots and non-ascii characters in a label value', expr: 'foo{a="é.b"}', diagnostics: [] },
+      { title: 'content of an unterminated string', expr: '{"foo.bar', diagnostics: [] },
+      {
+        title: 'unquoted name followed by a duration modifier',
+        expr: 'foo.bar offset 5m',
+        diagnostics: [{ message: 'name must be quoted: "foo.bar"', from: 0, to: 7 }],
+      },
+      { title: 'unquoted name made of non-ascii characters only', expr: 'é', diagnostics: [{ message: 'name must be quoted: "é"', from: 0, to: 1 }] },
+      { title: 'unquoted name containing an emoji', expr: 'x😀y', diagnostics: [{ message: 'name must be quoted: "x😀y"', from: 0, to: 4 }] },
+      {
+        title: 'unquoted label name starting with a non-ascii character in a grouping',
+        expr: 'sum by (é) (x)',
+        diagnostics: [{ message: 'name must be quoted: "é"', from: 8, to: 9 }],
+      },
+      {
+        title: 'unquoted label name starting with a non-ascii character in a matcher',
+        expr: '{é}',
+        diagnostics: [
+          { message: 'vector selector must contain at least one non-empty matcher', from: 0, to: 3 },
+          { message: 'name must be quoted: "é"', from: 1, to: 2 },
+        ],
+      },
+      { title: 'unquoted label value', expr: 'x{a=b.c}', diagnostics: [{ message: 'name must be quoted: "b.c"', from: 4, to: 7 }] },
+      {
+        title: 'unquoted names on different lines',
+        expr: 'foo.bar +\nbaz.qux',
+        diagnostics: [
+          { message: 'name must be quoted: "foo.bar"', from: 0, to: 7 },
+          { message: 'name must be quoted: "baz.qux"', from: 10, to: 17 },
+        ],
+      },
+      {
+        title: 'unquoted names in a binary expression with matching',
+        expr: 'foo.bar{a="x"} / on(a.b) baz',
+        diagnostics: [
+          { message: 'name must be quoted: "foo.bar"', from: 0, to: 7 },
+          { message: 'name must be quoted: "a.b"', from: 20, to: 23 },
+        ],
+      },
+      { title: 'name in a comment', expr: 'foo.bar # c é.x', diagnostics: [{ message: 'name must be quoted: "foo.bar"', from: 0, to: 7 }] },
+      {
+        title: 'unquoted name in an offset duration is reported by the offset diagnostic only',
+        expr: 'foo offset abc.d',
+        diagnostics: [{ message: 'offset requires a duration expression', from: 0, to: 16 }],
+      },
+      { title: 'punctuation after a name is not part of the name', expr: 'foo;', diagnostics: [] },
+      {
+        title: 'symbols that cannot be part of a name are not reported as names',
+        expr: 'foo ≥ 1',
+        diagnostics: [{ message: 'unexpected expression', from: 0, to: 7 }],
+      },
+      { title: 'decimal number', expr: '1.5', diagnostics: [] },
+      { title: 'number starting with a dot', expr: '.5 + foo', diagnostics: [] },
+      { title: 'range selector with a duration', expr: 'foo[5m] offset 1h', diagnostics: [] },
+      {
+        title: 'very long unquoted name',
+        expr: `a.${'b'.repeat(200000)}`,
+        diagnostics: [{ message: `name must be quoted: "a.${'b'.repeat(200000)}"`, from: 0, to: 200002 }],
+      },
+    ];
+    analyzeTestCases.forEach((value) => {
+      it(value.title, () => {
+        const parser = new Parser(createEditorState(value.expr));
+        parser.analyze();
+        expect(parser.getDiagnostics().map(({ message, from, to }) => ({ message, from, to }))).toEqual(value.diagnostics);
+      });
     });
   });
 });

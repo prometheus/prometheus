@@ -17,6 +17,10 @@ export const promQLHighLight = styleTags({
     LineComment: tags.comment,
     LabelName: tags.labelName,
     StringLiteral: tags.string,
+    // Quoted names are highlighted like their unquoted counterparts: label names in groupings and matchers,
+    // and metric names when the name is alone in the matchers.
+    'GroupingLabels/QuotedLabelName/StringLiteral QuotedLabelMatcher/QuotedLabelName/StringLiteral': tags.labelName,
+    'LabelMatchers/QuotedLabelName/StringLiteral': tags.variableName,
     NumberDurationLiteral: tags.number,
     NumberDurationLiteralInDurationContext: tags.number,
     Identifier: tags.variableName,
@@ -31,5 +35,7 @@ export const promQLHighLight = styleTags({
     '( )': tags.paren,
     '[ ]': tags.squareBracket,
     '{ }': tags.brace,
+    // The rest of a name that has to be quoted (e.g. the `bar` of `foo.bar`) ends up inside an error node.
+    '⚠/Identifier ⚠/LabelName': tags.invalid,
     '⚠': tags.invalid,
 })
