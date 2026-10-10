@@ -26,8 +26,7 @@ import (
 	"github.com/prometheus/prometheus/util/annotations"
 )
 
-// querierAdapter must implement the Searcher interface.
-var _ Searcher = &querierAdapter{}
+var _ Searcher = &searchQuerierAdapter{}
 
 type genericQuerier interface {
 	LabelQuerier
@@ -86,6 +85,20 @@ type querierAdapter struct {
 	genericQuerier
 }
 
+type searchQuerierAdapter struct {
+	*querierAdapter
+	searchers []Searcher
+}
+
+func newQuerierAdapter(q genericQuerier) Querier {
+	adapter := &querierAdapter{genericQuerier: q}
+	searchers, ok := collectSearchers(q)
+	if !ok {
+		return adapter
+	}
+	return &searchQuerierAdapter{querierAdapter: adapter, searchers: searchers}
+}
+
 type seriesSetAdapter struct {
 	genericSeriesSet
 }
@@ -138,31 +151,38 @@ func (a *chunkSeriesMergerAdapter) Merge(s ...Labels) Labels {
 	return a.VerticalChunkSeriesMergeFunc(buf...)
 }
 
-// searcherFromGenericQuerier extracts a Searcher from a genericQuerierAdapter.
-// Falls back to a direct Searcher assertion if the querier is not a
-// genericQuerierAdapter.
+// searcherFromGenericQuerier returns the Searcher implemented by gq or its
+// wrapped sample or chunk querier, if supported.
 func searcherFromGenericQuerier(gq genericQuerier) (Searcher, bool) {
 	if a, ok := gq.(*genericQuerierAdapter); ok {
-		s, ok := a.q.(Searcher)
+		if a.q != nil {
+			s, ok := a.q.(Searcher)
+			return s, ok
+		}
+		s, ok := a.cq.(Searcher)
 		return s, ok
 	}
 	s, ok := gq.(Searcher)
 	return s, ok
 }
 
-// collectSearchers extracts Searcher implementations from a genericQuerier tree.
-func collectSearchers(gq genericQuerier) []Searcher {
+// collectSearchers extracts Searchers only when the complete querier tree supports search.
+func collectSearchers(gq genericQuerier) ([]Searcher, bool) {
 	if m, ok := gq.(*mergeGenericQuerier); ok {
 		var searchers []Searcher
 		for _, q := range m.queriers {
-			searchers = append(searchers, collectSearchers(q)...)
+			childSearchers, ok := collectSearchers(q)
+			if !ok {
+				return nil, false
+			}
+			searchers = append(searchers, childSearchers...)
 		}
-		return searchers
+		return searchers, true
 	}
 	if s, ok := searcherFromGenericQuerier(gq); ok {
-		return []Searcher{s}
+		return []Searcher{s}, true
 	}
-	return nil
+	return nil, false
 }
 
 // sliceSearchResultSet is a SearchResultSet backed by a pre-built slice.
@@ -855,20 +875,18 @@ func (s *mergingSearchResultSet) Close() error {
 	return errors.Join(s.a.Close(), s.b.Close())
 }
 
-// SearchLabelNames implements Searcher by merging results from all underlying queriers
-// that support the Searcher interface.
-func (q *querierAdapter) SearchLabelNames(ctx context.Context, hints *SearchHints, matchers ...*labels.Matcher) SearchResultSet {
+// SearchLabelNames implements Searcher by merging results from every underlying querier.
+func (q *searchQuerierAdapter) SearchLabelNames(ctx context.Context, hints *SearchHints, matchers ...*labels.Matcher) SearchResultSet {
 	return mergeSearchSets(hints, func(s Searcher) SearchResultSet {
 		return s.SearchLabelNames(ctx, hints, matchers...)
-	}, collectSearchers(q.genericQuerier))
+	}, q.searchers)
 }
 
-// SearchLabelValues implements Searcher by merging results from all underlying queriers
-// that support the Searcher interface.
-func (q *querierAdapter) SearchLabelValues(ctx context.Context, name string, hints *SearchHints, matchers ...*labels.Matcher) SearchResultSet {
+// SearchLabelValues implements Searcher by merging results from every underlying querier.
+func (q *searchQuerierAdapter) SearchLabelValues(ctx context.Context, name string, hints *SearchHints, matchers ...*labels.Matcher) SearchResultSet {
 	return mergeSearchSets(hints, func(s Searcher) SearchResultSet {
 		return s.SearchLabelValues(ctx, name, hints, matchers...)
-	}, collectSearchers(q.genericQuerier))
+	}, q.searchers)
 }
 
 type noopGenericSeriesSet struct{}

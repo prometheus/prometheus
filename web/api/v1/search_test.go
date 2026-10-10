@@ -160,20 +160,32 @@ func (q errorSearchQuerier) SearchLabelValues(context.Context, string, *storage.
 	return storage.ErrSearchResultSet(q.err)
 }
 
-func TestSearchEndpointsMapTSDBNotReadyToUnavailable(t *testing.T) {
+func TestAPI_SearchEndpoints_UnavailableStorage(t *testing.T) {
 	testCases := []struct {
-		name      string
-		queryable errorTestQueryable
+		name          string
+		queryable     errorTestQueryable
+		expectedError string
 	}{
 		{
-			name:      "querier error",
-			queryable: errorTestQueryable{err: tsdb.ErrNotReady},
+			name:          "querier error",
+			queryable:     errorTestQueryable{err: tsdb.ErrNotReady},
+			expectedError: tsdb.ErrNotReady.Error(),
 		},
 		{
 			name: "search result error",
 			queryable: errorTestQueryable{
 				q: errorSearchQuerier{err: tsdb.ErrNotReady},
 			},
+			expectedError: tsdb.ErrNotReady.Error(),
+		},
+		{
+			name: "incomplete search support",
+			queryable: errorTestQueryable{q: storage.NewMergeQuerier(
+				[]storage.Querier{fixedSearchQuerier{rs: storage.EmptySearchResultSet()}},
+				[]storage.Querier{errorTestQuerier{}},
+				storage.ChainedSeriesMerge,
+			)},
+			expectedError: "search is not supported by all storage backends participating in the query",
 		},
 	}
 
@@ -191,18 +203,31 @@ func TestSearchEndpointsMapTSDBNotReadyToUnavailable(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			api := minimalSearchAPI()
 			api.Queryable = tc.queryable
+			r := route.New()
+			api.Register(r)
 
 			for _, endpoint := range endpoints {
-				t.Run(endpoint.name, func(t *testing.T) {
-					rec := doSearchRequest(t, api, endpoint.path, endpoint.params)
-					require.Equal(t, http.StatusInternalServerError, rec.Code)
+				for _, method := range []string{http.MethodGet, http.MethodPost} {
+					t.Run(method+" "+endpoint.name, func(t *testing.T) {
+						var req *http.Request
+						if method == http.MethodPost {
+							req = httptest.NewRequest(method, "http://example.com"+endpoint.path, strings.NewReader(endpoint.params.Encode()))
+							req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+						} else {
+							req = httptest.NewRequest(method, "http://example.com"+endpoint.path+"?"+endpoint.params.Encode(), http.NoBody)
+						}
+						rec := httptest.NewRecorder()
+						r.ServeHTTP(rec, req.WithContext(t.Context()))
+						require.Equal(t, http.StatusInternalServerError, rec.Code)
+						require.Equal(t, "application/json", rec.Header().Get("Content-Type"))
 
-					var response Response
-					require.NoError(t, json.Unmarshal(rec.Body.Bytes(), &response))
-					require.Equal(t, statusError, response.Status)
-					require.Equal(t, errorUnavailable.str, response.ErrorType)
-					require.Contains(t, response.Error, tsdb.ErrNotReady.Error())
-				})
+						var response Response
+						require.NoError(t, json.Unmarshal(rec.Body.Bytes(), &response))
+						require.Equal(t, statusError, response.Status)
+						require.Equal(t, errorUnavailable.str, response.ErrorType)
+						require.Equal(t, tc.expectedError, response.Error)
+					})
+				}
 			}
 		})
 	}
