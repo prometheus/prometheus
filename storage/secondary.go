@@ -21,8 +21,7 @@ import (
 	"github.com/prometheus/prometheus/util/annotations"
 )
 
-// secondaryQuerier must implement the Searcher interface.
-var _ Searcher = (*secondaryQuerier)(nil)
+var _ Searcher = (*secondarySearchQuerier)(nil)
 
 // secondaryQuerier is a wrapper that allows a querier to be treated in a best effort manner.
 // This means that an error on any method returned by Querier except Close will be returned as a warning,
@@ -44,12 +43,25 @@ type secondaryQuerier struct {
 	asyncSets []genericSeriesSet
 }
 
+type secondarySearchQuerier struct {
+	*secondaryQuerier
+	searcher Searcher
+}
+
 func newSecondaryQuerierFrom(q Querier) genericQuerier {
-	return &secondaryQuerier{genericQuerier: newGenericQuerierFrom(q)}
+	secondary := &secondaryQuerier{genericQuerier: newGenericQuerierFrom(q)}
+	if searcher, ok := q.(Searcher); ok {
+		return &secondarySearchQuerier{secondaryQuerier: secondary, searcher: searcher}
+	}
+	return secondary
 }
 
 func newSecondaryQuerierFromChunk(cq ChunkQuerier) genericQuerier {
-	return &secondaryQuerier{genericQuerier: newGenericQuerierFromChunk(cq)}
+	secondary := &secondaryQuerier{genericQuerier: newGenericQuerierFromChunk(cq)}
+	if searcher, ok := cq.(Searcher); ok {
+		return &secondarySearchQuerier{secondaryQuerier: secondary, searcher: searcher}
+	}
+	return secondary
 }
 
 func (s *secondaryQuerier) LabelValues(ctx context.Context, name string, hints *LabelHints, matchers ...*labels.Matcher) ([]string, annotations.Annotations, error) {
@@ -68,22 +80,14 @@ func (s *secondaryQuerier) LabelNames(ctx context.Context, hints *LabelHints, ma
 	return names, w, nil
 }
 
-// SearchLabelNames returns search results from the wrapped querier and converts errors into warnings.
-func (s *secondaryQuerier) SearchLabelNames(ctx context.Context, hints *SearchHints, matchers ...*labels.Matcher) SearchResultSet {
-	searcher, ok := searcherFromGenericQuerier(s.genericQuerier)
-	if !ok {
-		return EmptySearchResultSet()
-	}
-	return warningsOnErrorSearchResultSet(searcher.SearchLabelNames(ctx, hints, matchers...))
+// SearchLabelNames returns search results and converts errors into warnings.
+func (s *secondarySearchQuerier) SearchLabelNames(ctx context.Context, hints *SearchHints, matchers ...*labels.Matcher) SearchResultSet {
+	return warningsOnErrorSearchResultSet(s.searcher.SearchLabelNames(ctx, hints, matchers...))
 }
 
-// SearchLabelValues returns search results from the wrapped querier and converts errors into warnings.
-func (s *secondaryQuerier) SearchLabelValues(ctx context.Context, name string, hints *SearchHints, matchers ...*labels.Matcher) SearchResultSet {
-	searcher, ok := searcherFromGenericQuerier(s.genericQuerier)
-	if !ok {
-		return EmptySearchResultSet()
-	}
-	return warningsOnErrorSearchResultSet(searcher.SearchLabelValues(ctx, name, hints, matchers...))
+// SearchLabelValues returns search results and converts errors into warnings.
+func (s *secondarySearchQuerier) SearchLabelValues(ctx context.Context, name string, hints *SearchHints, matchers ...*labels.Matcher) SearchResultSet {
+	return warningsOnErrorSearchResultSet(s.searcher.SearchLabelValues(ctx, name, hints, matchers...))
 }
 
 func (s *secondaryQuerier) Select(ctx context.Context, sortSeries bool, hints *SelectHints, matchers ...*labels.Matcher) genericSeriesSet {
