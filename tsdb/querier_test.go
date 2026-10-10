@@ -4426,9 +4426,8 @@ func TestSearchLabelValuesLimitAppliedAfterOrdering(t *testing.T) {
 		})
 	})
 
-	// ApplySearchHints documents that its input must be ascending by value. With
-	// a nil filter the score ordering degenerates to value ascending, so the
-	// index-level sort cannot be skipped.
+	// With a nil filter, score ordering degenerates to value ascending, so
+	// ApplySearchHints requires ascending input and the index-level sort cannot be skipped.
 	t.Run("OrderByScoreDesc without a filter", func(t *testing.T) {
 		forEachSearchBackend(t, unorderedInsertion, func(t *testing.T, q storage.Searcher) {
 			rs := q.SearchLabelValues(t.Context(), "__name__", &storage.SearchHints{
