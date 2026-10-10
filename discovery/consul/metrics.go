@@ -14,6 +14,8 @@
 package consul
 
 import (
+	"time"
+
 	"github.com/prometheus/client_golang/prometheus"
 
 	"github.com/prometheus/prometheus/discovery"
@@ -23,7 +25,7 @@ var _ discovery.DiscovererMetrics = (*consulMetrics)(nil)
 
 type consulMetrics struct {
 	rpcFailuresCount prometheus.Counter
-	rpcDuration      *prometheus.SummaryVec
+	rpcDuration      *prometheus.HistogramVec
 
 	servicesRPCDuration prometheus.Observer
 	serviceRPCDuration  prometheus.Observer
@@ -40,12 +42,14 @@ func newDiscovererMetrics(reg prometheus.Registerer, _ discovery.RefreshMetricsI
 				Help:      "The number of Consul RPC call failures.",
 			},
 		),
-		rpcDuration: prometheus.NewSummaryVec(
-			prometheus.SummaryOpts{
-				Namespace:  namespace,
-				Name:       "sd_consul_rpc_duration_seconds",
-				Help:       "The duration of a Consul RPC call in seconds.",
-				Objectives: map[float64]float64{0.5: 0.05, 0.9: 0.01, 0.99: 0.001},
+		rpcDuration: prometheus.NewHistogramVec(
+			prometheus.HistogramOpts{
+				Namespace:                       namespace,
+				Name:                            "sd_consul_rpc_duration_seconds",
+				Help:                            "The duration of a Consul RPC call in seconds.",
+				NativeHistogramBucketFactor:     1.1,
+				NativeHistogramMaxBucketNumber:  100,
+				NativeHistogramMinResetDuration: 1 * time.Hour,
 			},
 			[]string{"endpoint", "call"},
 		),

@@ -14,6 +14,8 @@
 package xds
 
 import (
+	"time"
+
 	"github.com/prometheus/client_golang/prometheus"
 
 	"github.com/prometheus/prometheus/discovery"
@@ -22,7 +24,7 @@ import (
 var _ discovery.DiscovererMetrics = (*xdsMetrics)(nil)
 
 type xdsMetrics struct {
-	fetchDuration        prometheus.Summary
+	fetchDuration        prometheus.Histogram
 	fetchSkipUpdateCount prometheus.Counter
 	fetchFailuresCount   prometheus.Counter
 
@@ -45,12 +47,14 @@ func newDiscovererMetrics(reg prometheus.Registerer, _ discovery.RefreshMetricsI
 				Help:      "The number of Kuma MADS fetch calls that result in no updates to the targets.",
 			},
 		),
-		fetchDuration: prometheus.NewSummary(
-			prometheus.SummaryOpts{
-				Namespace:  namespace,
-				Name:       "sd_kuma_fetch_duration_seconds",
-				Help:       "The duration of a Kuma MADS fetch call.",
-				Objectives: map[float64]float64{0.5: 0.05, 0.9: 0.01, 0.99: 0.001},
+		fetchDuration: prometheus.NewHistogram(
+			prometheus.HistogramOpts{
+				Namespace:                       namespace,
+				Name:                            "sd_kuma_fetch_duration_seconds",
+				Help:                            "The duration of a Kuma MADS fetch call.",
+				NativeHistogramBucketFactor:     1.1,
+				NativeHistogramMaxBucketNumber:  100,
+				NativeHistogramMinResetDuration: 1 * time.Hour,
 			},
 		),
 	}

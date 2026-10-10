@@ -438,13 +438,13 @@ type headMetrics struct {
 	chunks                    prometheus.Gauge
 	chunksCreated             prometheus.Counter
 	chunksRemoved             prometheus.Counter
-	gcDuration                prometheus.Summary
+	gcDuration                prometheus.Histogram
 	samplesAppended           *prometheus.CounterVec
 	outOfOrderSamplesAppended *prometheus.CounterVec
 	outOfBoundSamples         *prometheus.CounterVec
 	outOfOrderSamples         *prometheus.CounterVec
 	tooOldSamples             *prometheus.CounterVec
-	walTruncateDuration       prometheus.Summary
+	walTruncateDuration       prometheus.Histogram
 	walCorruptionsTotal       prometheus.Counter
 	dataTotalReplayDuration   prometheus.Gauge
 	headTruncateFail          prometheus.Counter
@@ -528,13 +528,19 @@ func newHeadMetrics(h *Head, r prometheus.Registerer) *headMetrics {
 			Name: "prometheus_tsdb_head_chunks_removed_total",
 			Help: "Total number of chunks removed in the head",
 		}),
-		gcDuration: prometheus.NewSummary(prometheus.SummaryOpts{
-			Name: "prometheus_tsdb_head_gc_duration_seconds",
-			Help: "Runtime of garbage collection in the head block.",
+		gcDuration: prometheus.NewHistogram(prometheus.HistogramOpts{
+			Name:                            "prometheus_tsdb_head_gc_duration_seconds",
+			Help:                            "Runtime of garbage collection in the head block.",
+			NativeHistogramBucketFactor:     1.1,
+			NativeHistogramMaxBucketNumber:  100,
+			NativeHistogramMinResetDuration: 1 * time.Hour,
 		}),
-		walTruncateDuration: prometheus.NewSummary(prometheus.SummaryOpts{
-			Name: "prometheus_tsdb_wal_truncate_duration_seconds",
-			Help: "Duration of WAL truncation.",
+		walTruncateDuration: prometheus.NewHistogram(prometheus.HistogramOpts{
+			Name:                            "prometheus_tsdb_wal_truncate_duration_seconds",
+			Help:                            "Duration of WAL truncation.",
+			NativeHistogramBucketFactor:     1.1,
+			NativeHistogramMaxBucketNumber:  100,
+			NativeHistogramMinResetDuration: 1 * time.Hour,
 		}),
 		walCorruptionsTotal: prometheus.NewCounter(prometheus.CounterOpts{
 			Name: "prometheus_tsdb_wal_corruptions_total",

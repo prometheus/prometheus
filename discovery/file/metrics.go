@@ -14,6 +14,8 @@
 package file
 
 import (
+	"time"
+
 	"github.com/prometheus/client_golang/prometheus"
 
 	"github.com/prometheus/prometheus/discovery"
@@ -23,7 +25,7 @@ var _ discovery.DiscovererMetrics = (*fileMetrics)(nil)
 
 type fileMetrics struct {
 	fileSDReadErrorsCount  prometheus.Counter
-	fileSDScanDuration     prometheus.Summary
+	fileSDScanDuration     prometheus.Histogram
 	fileWatcherErrorsCount prometheus.Counter
 	fileSDTimeStamp        *TimestampCollector
 
@@ -38,11 +40,13 @@ func newDiscovererMetrics(reg prometheus.Registerer, _ discovery.RefreshMetricsI
 				Help: "The number of File-SD read errors.",
 			},
 		),
-		fileSDScanDuration: prometheus.NewSummary(
-			prometheus.SummaryOpts{
-				Name:       "prometheus_sd_file_scan_duration_seconds",
-				Help:       "The duration of the File-SD scan in seconds.",
-				Objectives: map[float64]float64{0.5: 0.05, 0.9: 0.01, 0.99: 0.001},
+		fileSDScanDuration: prometheus.NewHistogram(
+			prometheus.HistogramOpts{
+				Name:                            "prometheus_sd_file_scan_duration_seconds",
+				Help:                            "The duration of the File-SD scan in seconds.",
+				NativeHistogramBucketFactor:     1.1,
+				NativeHistogramMaxBucketNumber:  100,
+				NativeHistogramMinResetDuration: 1 * time.Hour,
 			},
 		),
 		fileWatcherErrorsCount: prometheus.NewCounter(

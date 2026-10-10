@@ -50,12 +50,14 @@ var (
 		},
 		[]string{"status_code"},
 	)
-	clientGoRequestLatencyMetricVec = prometheus.NewSummaryVec(
-		prometheus.SummaryOpts{
-			Namespace:  KubernetesMetricsNamespace,
-			Name:       "http_request_duration_seconds",
-			Help:       "Summary of latencies for HTTP requests to the Kubernetes API by endpoint.",
-			Objectives: map[float64]float64{},
+	clientGoRequestLatencyMetricVec = prometheus.NewHistogramVec(
+		prometheus.HistogramOpts{
+			Namespace:                       KubernetesMetricsNamespace,
+			Name:                            "http_request_duration_seconds",
+			Help:                            "Histogram of latencies for HTTP requests to the Kubernetes API by endpoint.",
+			NativeHistogramBucketFactor:     1.1,
+			NativeHistogramMaxBucketNumber:  100,
+			NativeHistogramMinResetDuration: 1 * time.Hour,
 		},
 		[]string{"endpoint"},
 	)
@@ -77,12 +79,14 @@ var (
 		},
 		[]string{"queue_name"},
 	)
-	clientGoWorkqueueLatencyMetricVec = prometheus.NewSummaryVec(
-		prometheus.SummaryOpts{
-			Namespace:  workqueueMetricsNamespace,
-			Name:       "latency_seconds",
-			Help:       "How long an item stays in the work queue.",
-			Objectives: map[float64]float64{},
+	clientGoWorkqueueLatencyMetricVec = prometheus.NewHistogramVec(
+		prometheus.HistogramOpts{
+			Namespace:                       workqueueMetricsNamespace,
+			Name:                            "latency_seconds",
+			Help:                            "How long an item stays in the work queue.",
+			NativeHistogramBucketFactor:     1.1,
+			NativeHistogramMaxBucketNumber:  100,
+			NativeHistogramMinResetDuration: 1 * time.Hour,
 		},
 		[]string{"queue_name"},
 	)
@@ -102,12 +106,14 @@ var (
 		},
 		[]string{"queue_name"},
 	)
-	clientGoWorkqueueWorkDurationMetricVec = prometheus.NewSummaryVec(
-		prometheus.SummaryOpts{
-			Namespace:  workqueueMetricsNamespace,
-			Name:       "work_duration_seconds",
-			Help:       "How long processing an item from the work queue takes.",
-			Objectives: map[float64]float64{},
+	clientGoWorkqueueWorkDurationMetricVec = prometheus.NewHistogramVec(
+		prometheus.HistogramOpts{
+			Namespace:                       workqueueMetricsNamespace,
+			Name:                            "work_duration_seconds",
+			Help:                            "How long processing an item from the work queue takes.",
+			NativeHistogramBucketFactor:     1.1,
+			NativeHistogramMaxBucketNumber:  100,
+			NativeHistogramMinResetDuration: 1 * time.Hour,
 		},
 		[]string{"queue_name"},
 	)
