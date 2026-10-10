@@ -2560,3 +2560,54 @@ eval range from 0 to 10m step 5m scalar(single)
 
 eval range from 0 to 10m step 5m scalar(pair)
   {} NaN NaN NaN
+
+clear
+
+# Tests for clamp(), clamp_min() and clamp_max() on float-only input.
+load 5m
+  test_clamp{src="low"} -50
+  test_clamp{src="zero"} 0
+  test_clamp{src="high"} 100
+  test_clamp{src="nan"} NaN
+  rising 1+1x4
+
+# The metric name is dropped from the result.
+eval instant at 0m clamp_max(test_clamp, 75)
+  {src="low"} -50
+  {src="zero"} 0
+  {src="high"} 75
+  {src="nan"} NaN
+
+eval instant at 0m clamp_min(test_clamp, -25)
+  {src="low"} -25
+  {src="zero"} 0
+  {src="high"} 100
+  {src="nan"} NaN
+
+eval instant at 0m clamp(test_clamp, -25, 75)
+  {src="low"} -25
+  {src="zero"} 0
+  {src="high"} 75
+  {src="nan"} NaN
+
+# min == max collapses every value onto that bound. NaN input stays NaN.
+eval instant at 0m clamp(test_clamp, 10, 10)
+  {src="low"} 10
+  {src="zero"} 10
+  {src="high"} 10
+  {src="nan"} NaN
+
+# min > max returns an empty vector.
+eval instant at 0m clamp(test_clamp, 75, -25)
+
+eval instant at 0m clamp(test_clamp, 1, 0)
+
+# Range query: each step is clamped independently.
+eval range from 0 to 20m step 5m clamp(rising, 2, 4)
+  {} 2 2 3 4 4
+
+eval range from 0 to 20m step 5m clamp_min(rising, 3)
+  {} 3 3 3 4 5
+
+eval range from 0 to 20m step 5m clamp_max(rising, 3)
+  {} 1 2 3 3 3
