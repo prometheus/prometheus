@@ -2530,3 +2530,33 @@ eval instant at 0s max_of(NaN, 3)
 
 eval instant at 0s max_of(3, NaN)
   NaN
+
+clear
+
+# Tests for scalar() on float-only input.
+load 5m
+  single{a="1"} 1+1x2
+  pair{b="1"} 4+1x2
+  pair{b="2"} 7+1x2
+
+# Exactly one series: its sample value.
+eval instant at 10m scalar(single)
+  3
+
+# More than one series: NaN.
+eval instant at 10m scalar(pair)
+  NaN
+
+# No series: NaN.
+eval instant at 10m scalar(nonexistent)
+  NaN
+
+# The result is a scalar and can be used in scalar arithmetic.
+eval instant at 10m scalar(single) + 1
+  4
+
+eval range from 0 to 10m step 5m scalar(single)
+  {} 1 2 3
+
+eval range from 0 to 10m step 5m scalar(pair)
+  {} NaN NaN NaN
