@@ -103,7 +103,11 @@ func (q *blockBaseQuerier) SearchLabelNames(ctx context.Context, hints *storage.
 		return storage.ErrSearchResultSet(err)
 	}
 
-	return storage.NewSearchResultSetFromSlice(storage.ApplySearchHints(names, hints), nil)
+	results, err := storage.ApplySearchHints(ctx, names, hints)
+	if err != nil {
+		return storage.ErrSearchResultSet(err)
+	}
+	return storage.NewSearchResultSetFromSlice(results, nil)
 }
 
 // SearchLabelValues implements storage.Searcher.
@@ -126,8 +130,7 @@ func (q *blockBaseQuerier) SearchLabelValues(ctx context.Context, name string, h
 		values []string
 		err    error
 	)
-	// ApplySearchHints needs the values ascending by value.
-	// OrderByScore relies on the score calculated by the filter.
+	// ApplySearchHints needs ascending values except for score ordering with a filter.
 	if hints.OrderBy == storage.OrderByScoreDesc && hints.Filter != nil {
 		values, err = q.index.LabelValues(ctx, name, labelHints, matchers...)
 	} else {
@@ -137,7 +140,11 @@ func (q *blockBaseQuerier) SearchLabelValues(ctx context.Context, name string, h
 		return storage.ErrSearchResultSet(err)
 	}
 
-	return storage.NewSearchResultSetFromSlice(storage.ApplySearchHints(values, hints), nil)
+	results, err := storage.ApplySearchHints(ctx, values, hints)
+	if err != nil {
+		return storage.ErrSearchResultSet(err)
+	}
+	return storage.NewSearchResultSetFromSlice(results, nil)
 }
 
 func (q *blockBaseQuerier) Close() error {
