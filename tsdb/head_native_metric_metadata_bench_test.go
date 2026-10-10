@@ -1,0 +1,905 @@
+// Copyright The Prometheus Authors
+// Licensed under the Apache License, Version 2.0 (the "License");
+// you may not use this file except in compliance with the License.
+// You may obtain a copy of the License at
+//
+// http://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
+
+package tsdb
+
+import (
+	"fmt"
+	"math"
+	"path/filepath"
+	"runtime"
+	"strconv"
+	"strings"
+	"testing"
+
+	"github.com/prometheus/common/model"
+	"go.uber.org/atomic"
+
+	"github.com/prometheus/prometheus/model/labels"
+	"github.com/prometheus/prometheus/model/metadata"
+	"github.com/prometheus/prometheus/storage"
+	"github.com/prometheus/prometheus/tsdb/chunkenc"
+	"github.com/prometheus/prometheus/tsdb/chunks"
+	"github.com/prometheus/prometheus/tsdb/wlog"
+	"github.com/prometheus/prometheus/util/compression"
+)
+
+type metricMetadataBenchmarkMode struct {
+	name          string
+	legacyEnabled bool
+	nativeEnabled bool
+}
+
+// metricMetadataBenchmarkModes returns the metadata storage configurations
+// under test: "off" stores none, "legacy" writes metadata WAL records,
+// "native" fills the in-memory versioned store, and "dual" enables both.
+//
+// All modes receive fixture metadata, matching callers that supply it
+// independently of the enabled storage features.
+func metricMetadataBenchmarkModes() []metricMetadataBenchmarkMode {
+	return []metricMetadataBenchmarkMode{
+		{name: "off"},
+		{name: "legacy", legacyEnabled: true},
+		{name: "native", nativeEnabled: true},
+		{name: "dual", legacyEnabled: true, nativeEnabled: true},
+	}
+}
+
+// metricMetadataFamilyOrder decides which family each series belongs to, which
+// in turn decides how often consecutive appends share metadata.
+type metricMetadataFamilyOrder int
+
+const (
+	// familyInterleaved assigns families round-robin, as a Remote Write request may.
+	familyInterleaved metricMetadataFamilyOrder = iota
+	// familyGrouped emits a family's series consecutively, the way a scrape
+	// walks an exposition one metric family at a time.
+	familyGrouped
+)
+
+func (o metricMetadataFamilyOrder) familyOf(series, numSeries, numFamilies int) int {
+	if o == familyGrouped {
+		return series * numFamilies / numSeries
+	}
+	return series % numFamilies
+}
+
+type metricMetadataBenchmarkFixture struct {
+	labels         []labels.Labels
+	familyBySeries []int
+	options        [][]storage.AOptions
+}
+
+func newMetricMetadataBenchmarkFixture(numSeries, numFamilies, numVariants int) *metricMetadataBenchmarkFixture {
+	return newOrderedMetricMetadataBenchmarkFixture(numSeries, numFamilies, numVariants, familyInterleaved)
+}
+
+func newOrderedMetricMetadataBenchmarkFixture(numSeries, numFamilies, numVariants int, order metricMetadataFamilyOrder) *metricMetadataBenchmarkFixture {
+	metricNames := make([]string, numFamilies)
+	for family := range numFamilies {
+		metricNames[family] = fmt.Sprintf("metadata_benchmark_%03d_total", family)
+	}
+
+	fixture := &metricMetadataBenchmarkFixture{
+		labels:         make([]labels.Labels, numSeries),
+		familyBySeries: make([]int, numSeries),
+		options:        make([][]storage.AOptions, numVariants),
+	}
+	for i := range numSeries {
+		family := order.familyOf(i, numSeries, numFamilies)
+		fixture.familyBySeries[i] = family
+		fixture.labels[i] = labels.FromStrings(
+			labels.MetricName, metricNames[family],
+			"instance", strconv.Itoa(i),
+			"job", "metadata-benchmark",
+		)
+	}
+	// Supply metadata and its family name in every mode, independently of
+	// whether native storage or legacy metadata WAL recording is enabled.
+	for variant := range numVariants {
+		fixture.options[variant] = make([]storage.AOptions, numFamilies)
+		for family := range numFamilies {
+			meta := metadata.Metadata{
+				Type: model.MetricTypeCounter,
+				Unit: "requests",
+				Help: fmt.Sprintf("Total requests processed by benchmark family %03d, metadata version %02d.", family, variant),
+			}
+			fixture.options[variant][family] = storage.AOptions{
+				MetricFamilyName: metricNames[family],
+				Metadata:         meta,
+			}
+		}
+	}
+	return fixture
+}
+
+func newMetricMetadataBenchmarkHead(b *testing.B, mode metricMetadataBenchmarkMode, chunkRange int64, withWAL bool) (*Head, *wlog.WL, func()) {
+	dir := b.TempDir()
+	var wal *wlog.WL
+	if withWAL {
+		var err error
+		wal, err = wlog.NewSize(nil, nil, filepath.Join(dir, "wal"), wlog.DefaultSegmentSize, compression.Snappy)
+		if err != nil {
+			b.Fatal(err)
+		}
+	}
+
+	opts := newTestHeadDefaultOptions(chunkRange, false)
+	opts.ChunkDirRoot = dir
+	opts.EnableExemplarStorage = false
+	opts.EnableMetadataWALRecords = mode.legacyEnabled
+	opts.EnableNativeMetadata = mode.nativeEnabled
+	h, err := NewHead(nil, nil, wal, nil, opts, nil)
+	if err != nil {
+		if wal != nil {
+			_ = wal.Close()
+		}
+		b.Fatal(err)
+	}
+	if err := h.chunkDiskMapper.IterateAllChunks(func(chunks.HeadSeriesRef, chunks.ChunkDiskMapperRef, int64, int64, uint16, chunkenc.Encoding, bool) error {
+		return nil
+	}); err != nil {
+		_ = h.Close()
+		b.Fatal(err)
+	}
+
+	return h, wal, func() {
+		if err := h.Close(); err != nil {
+			b.Fatal(err)
+		}
+	}
+}
+
+func metricMetadataBenchmarkWALPosition(b *testing.B, wal *wlog.WL) int64 {
+	segment, offset, err := wal.LastSegmentAndOffset()
+	if err != nil {
+		b.Fatal(err)
+	}
+	return int64(segment)*int64(wlog.DefaultSegmentSize) + int64(offset)
+}
+
+func metricMetadataBenchmarkHeapAlloc() uint64 {
+	// The second collection clears sync.Pool victim caches left by the commit.
+	runtime.GC()
+	runtime.GC()
+	var stats runtime.MemStats
+	runtime.ReadMemStats(&stats)
+	return stats.HeapAlloc
+}
+
+func appendMetricMetadataBenchmarkRound(b *testing.B, h *Head, fixture *metricMetadataBenchmarkFixture, refs []storage.SeriesRef, variant int, timestamp int64) {
+	app := h.AppenderV2(b.Context())
+	options := fixture.options[variant]
+	for i, lset := range fixture.labels {
+		ref, err := app.Append(refs[i], lset, 0, timestamp, float64(timestamp), nil, nil, options[fixture.familyBySeries[i]])
+		if err != nil {
+			b.Fatal(err)
+		}
+		refs[i] = ref
+	}
+	if err := app.Commit(); err != nil {
+		b.Fatal(err)
+	}
+}
+
+func validateMetricMetadataBenchmarkState(b *testing.B, h *Head, mode metricMetadataBenchmarkMode, fixture *metricMetadataBenchmarkFixture, refs []storage.SeriesRef, numVersions int) {
+	if got, want := h.NumSeries(), uint64(len(refs)); got != want {
+		b.Fatalf("unexpected series count: got %d, want %d", got, want)
+	}
+
+	if mode.nativeEnabled {
+		if h.nativeMetricMetadata == nil {
+			b.Fatal("native metadata store was not created")
+		}
+		if got, want := h.nativeMetricMetadata.series.Load(), int64(len(refs)); got != want {
+			b.Fatalf("unexpected native metadata series count: got %d, want %d", got, want)
+		}
+		versionsPerSeries := min(numVersions, maxNativeMetricMetadataVersions)
+		if got, want := h.nativeMetricMetadata.versions.Load(), int64(len(refs)*versionsPerSeries); got != want {
+			b.Fatalf("unexpected native metadata version count: got %d, want %d", got, want)
+		}
+		evictionsPerSeries := max(numVersions-maxNativeMetricMetadataVersions, 0)
+		if got, want := h.nativeMetricMetadata.evictions.Load(), uint64(len(refs)*evictionsPerSeries); got != want {
+			b.Fatalf("unexpected native metadata eviction count: got %d, want %d", got, want)
+		}
+		for _, i := range []int{0, len(refs) - 1} {
+			versions, truncated, ok := h.nativeMetricMetadata.get(chunks.HeadSeriesRef(refs[i]))
+			if !ok {
+				b.Fatalf("native metadata for series %d was not found", refs[i])
+			}
+			if len(versions) != versionsPerSeries {
+				b.Fatalf("unexpected native metadata history length for series %d: got %d, want %d", refs[i], len(versions), versionsPerSeries)
+			}
+			if want := numVersions > maxNativeMetricMetadataVersions; truncated != want {
+				b.Fatalf("unexpected native metadata truncation for series %d: got %t, want %t", refs[i], truncated, want)
+			}
+		}
+	}
+	if mode.legacyEnabled {
+		lastVariant := (numVersions - 1) % len(fixture.options)
+		for _, i := range []int{0, len(refs) - 1} {
+			series := h.series.getByID(chunks.HeadSeriesRef(refs[i]))
+			if series == nil {
+				b.Fatalf("series %d was not found", refs[i])
+			}
+			series.Lock()
+			got := series.legacyMetadataLocked()
+			series.Unlock()
+			want := fixture.options[lastVariant][fixture.familyBySeries[i]].Metadata
+			if got == nil || !got.Equals(want) {
+				b.Fatalf("unexpected legacy metadata for series %d: got %v, want %v", refs[i], got, want)
+			}
+		}
+	}
+	if !mode.nativeEnabled && !mode.legacyEnabled {
+		if h.nativeMetricMetadata != nil {
+			b.Fatal("mode=off unexpectedly created a native metadata store")
+		}
+		for _, i := range []int{0, len(refs) - 1} {
+			series := h.series.getByID(chunks.HeadSeriesRef(refs[i]))
+			if series == nil {
+				b.Fatalf("series %d was not found", refs[i])
+			}
+			series.Lock()
+			got := series.legacyMetadataLocked()
+			series.Unlock()
+			if got != nil {
+				b.Fatalf("mode=off unexpectedly retained metadata for series %d", refs[i])
+			}
+		}
+	}
+}
+
+// BenchmarkHeadMetricMetadataRetainedHeap compares initial ingestion and
+// retained per-series heap. Run each case six times in fresh processes with
+// -benchtime=1x -cpu=2 so global interning state cannot cross cases.
+func BenchmarkHeadMetricMetadataRetainedHeap(b *testing.B) {
+	scenarios := []struct {
+		name        string
+		numSeries   int
+		numFamilies int
+		numVersions int
+		numVariants int
+	}{
+		{name: "stable", numSeries: 100_000, numFamilies: 100, numVersions: 1, numVariants: 1},
+		{name: "stable-unique", numSeries: 25_000, numFamilies: 25_000, numVersions: 1, numVariants: 1},
+		{name: "observed-versions=2", numSeries: 25_000, numFamilies: 100, numVersions: 2, numVariants: 2},
+		{name: "observed-versions=3", numSeries: 25_000, numFamilies: 100, numVersions: 3, numVariants: 3},
+		{name: "observed-versions=5", numSeries: 25_000, numFamilies: 100, numVersions: 5, numVariants: 5},
+		{name: "observed-versions=4", numSeries: 25_000, numFamilies: 100, numVersions: 4, numVariants: 4},
+		{name: fmt.Sprintf("observed-versions=%d", maxNativeMetricMetadataVersions+1), numSeries: 10_000, numFamilies: 100, numVersions: maxNativeMetricMetadataVersions + 1, numVariants: 2},
+	}
+
+	for _, scenario := range scenarios {
+		for _, mode := range metricMetadataBenchmarkModes() {
+			b.Run(fmt.Sprintf("scenario=%s/mode=%s", scenario.name, mode.name), func(b *testing.B) {
+				fixture := newMetricMetadataBenchmarkFixture(scenario.numSeries, scenario.numFamilies, scenario.numVariants)
+				refs := make([]storage.SeriesRef, scenario.numSeries)
+				var totalHeapBytes uint64
+				var totalHeapObjects uint64
+				var totalWALBytes int64
+
+				b.ReportAllocs()
+				b.ResetTimer()
+				for range b.N {
+					b.StopTimer()
+					clear(refs)
+					beforeHeap := metricMetadataBenchmarkHeapAlloc()
+					var beforeMem runtime.MemStats
+					runtime.ReadMemStats(&beforeMem)
+					h, wal, closeHead := newMetricMetadataBenchmarkHead(b, mode, 1_000_000_000, true)
+					beforeWAL := metricMetadataBenchmarkWALPosition(b, wal)
+					b.StartTimer()
+
+					for version := range scenario.numVersions {
+						appendMetricMetadataBenchmarkRound(b, h, fixture, refs, version%scenario.numVariants, 100+int64(version))
+					}
+
+					b.StopTimer()
+					afterWAL := metricMetadataBenchmarkWALPosition(b, wal)
+					afterHeap := metricMetadataBenchmarkHeapAlloc()
+					var afterMem runtime.MemStats
+					runtime.ReadMemStats(&afterMem)
+					totalHeapObjects += afterMem.HeapObjects - beforeMem.HeapObjects
+					if afterHeap < beforeHeap {
+						b.Fatalf("heap allocation decreased during benchmark: before %d, after %d", beforeHeap, afterHeap)
+					}
+					totalHeapBytes += afterHeap - beforeHeap
+					totalWALBytes += afterWAL - beforeWAL
+					validateMetricMetadataBenchmarkState(b, h, mode, fixture, refs, scenario.numVersions)
+					runtime.KeepAlive(fixture)
+					runtime.KeepAlive(refs)
+					runtime.KeepAlive(h)
+					closeHead()
+				}
+
+				operations := float64(b.N * scenario.numSeries)
+				b.ReportMetric(float64(totalHeapBytes)/operations, "heap-B/series")
+				b.ReportMetric(float64(totalHeapObjects)/operations, "heap-objects/series")
+				b.ReportMetric(float64(totalWALBytes)/operations, "wal-B/series")
+			})
+		}
+	}
+}
+
+// BenchmarkHeadSeriesWithoutMetadataRetainedHeap verifies that enabling either
+// metadata path does not allocate per-series state without metadata.
+// Run each case in a fresh process with -benchtime=1x.
+func BenchmarkHeadSeriesWithoutMetadataRetainedHeap(b *testing.B) {
+	const numSeries = 100_000
+	fixture := newMetricMetadataBenchmarkFixture(numSeries, 100, 1)
+
+	for _, mode := range metricMetadataBenchmarkModes() {
+		b.Run("mode="+mode.name, func(b *testing.B) {
+			refs := make([]storage.SeriesRef, numSeries)
+			var totalHeapBytes uint64
+			var totalHeapObjects uint64
+			b.ReportAllocs()
+			b.ResetTimer()
+			for range b.N {
+				b.StopTimer()
+				clear(refs)
+				beforeHeap := metricMetadataBenchmarkHeapAlloc()
+				var beforeMem runtime.MemStats
+				runtime.ReadMemStats(&beforeMem)
+				h, _, closeHead := newMetricMetadataBenchmarkHead(b, mode, 1_000_000_000, false)
+				b.StartTimer()
+
+				app := h.AppenderV2(b.Context())
+				for i, lset := range fixture.labels {
+					ref, err := app.Append(0, lset, 0, 100, float64(i), nil, nil, storage.AOptions{})
+					if err != nil {
+						b.Fatal(err)
+					}
+					refs[i] = ref
+				}
+				if err := app.Commit(); err != nil {
+					b.Fatal(err)
+				}
+
+				b.StopTimer()
+				afterHeap := metricMetadataBenchmarkHeapAlloc()
+				var afterMem runtime.MemStats
+				runtime.ReadMemStats(&afterMem)
+				totalHeapObjects += afterMem.HeapObjects - beforeMem.HeapObjects
+				if afterHeap < beforeHeap {
+					b.Fatalf("heap allocation decreased during benchmark: before %d, after %d", beforeHeap, afterHeap)
+				}
+				totalHeapBytes += afterHeap - beforeHeap
+				if got := h.NumSeries(); got != numSeries {
+					b.Fatalf("unexpected series count: got %d, want %d", got, numSeries)
+				}
+				for _, i := range []int{0, numSeries - 1} {
+					series := h.series.getByID(chunks.HeadSeriesRef(refs[i]))
+					series.Lock()
+					state := series.metadata
+					series.Unlock()
+					if state != nil {
+						b.Fatalf("untouched series %d allocated metadata state", refs[i])
+					}
+				}
+				if mode.nativeEnabled && h.nativeMetricMetadata.series.Load() != 0 {
+					b.Fatalf("native store unexpectedly contains %d series", h.nativeMetricMetadata.series.Load())
+				}
+				runtime.KeepAlive(fixture)
+				runtime.KeepAlive(refs)
+				runtime.KeepAlive(h)
+				closeHead()
+			}
+
+			b.ReportMetric(float64(totalHeapBytes)/float64(b.N*numSeries), "heap-B/series")
+			b.ReportMetric(float64(totalHeapObjects)/float64(b.N*numSeries), "heap-objects/series")
+		})
+	}
+}
+
+// BenchmarkHeadMetricMetadataAppend compares steady-state append and commit
+// costs after series and metadata have already been established. Use a fixed
+// iteration count such as -benchtime=1000x to bound Head and WAL growth.
+func BenchmarkHeadMetricMetadataAppend(b *testing.B) {
+	benchmarkHeadMetricMetadataAppend(b, true)
+}
+
+// BenchmarkHeadMetricMetadataAppendInMemory isolates steady-state Head append
+// and commit costs from WAL encoding and I/O.
+func BenchmarkHeadMetricMetadataAppendInMemory(b *testing.B) {
+	benchmarkHeadMetricMetadataAppend(b, false)
+}
+
+func benchmarkHeadMetricMetadataAppend(b *testing.B, withWAL bool) {
+	const numSeries = 1_000
+	// "stable" interleaves metric families, as a Remote Write request may.
+	// "stable-grouped" appends each family's series together, as a scrape does.
+	// These cases compare workload shapes rather than isolate one optimization.
+	// Once seeded, both skip recording unchanged native metadata.
+	cases := []struct {
+		name             string
+		numFamilies      int
+		setupVersions    int
+		numVariants      int
+		order            metricMetadataFamilyOrder
+		freshStrings     bool
+		stableAfterSetup bool
+	}{
+		{name: "stable", numFamilies: 100, setupVersions: 1, numVariants: 1, order: familyInterleaved},
+		{name: "stable-fresh-strings", numFamilies: 100, setupVersions: 1, numVariants: 1, freshStrings: true},
+		{name: "stable-at-cap", numFamilies: 100, setupVersions: 5, numVariants: 5, stableAfterSetup: true},
+		{name: "stable-grouped", numFamilies: 100, setupVersions: 1, numVariants: 1, order: familyGrouped},
+		{name: "stable-unique", numFamilies: numSeries, setupVersions: 1, numVariants: 1, order: familyInterleaved},
+		{name: "changing-at-cap", numFamilies: 100, setupVersions: maxNativeMetricMetadataVersions, numVariants: 2, order: familyInterleaved},
+	}
+	for _, benchmarkCase := range cases {
+		for _, mode := range metricMetadataBenchmarkModes() {
+			b.Run(fmt.Sprintf("case=%s/mode=%s", benchmarkCase.name, mode.name), func(b *testing.B) {
+				fixture := newOrderedMetricMetadataBenchmarkFixture(numSeries, benchmarkCase.numFamilies, benchmarkCase.numVariants, benchmarkCase.order)
+				refs := make([]storage.SeriesRef, numSeries)
+				h, wal, closeHead := newMetricMetadataBenchmarkHead(b, mode, 1_000_000_000, withWAL)
+				b.Cleanup(closeHead)
+				for version := range benchmarkCase.setupVersions {
+					appendMetricMetadataBenchmarkRound(b, h, fixture, refs, version%benchmarkCase.numVariants, 100+int64(version))
+				}
+				if benchmarkCase.freshStrings {
+					for _, options := range fixture.options {
+						for i := range options {
+							m := &options[i].Metadata
+							m.Type = model.MetricType(strings.Clone(string(m.Type)))
+							m.Unit = strings.Clone(m.Unit)
+							m.Help = strings.Clone(m.Help)
+						}
+					}
+				}
+				var beforeWAL int64
+				if wal != nil {
+					beforeWAL = metricMetadataBenchmarkWALPosition(b, wal)
+				}
+
+				b.ReportAllocs()
+				var iteration int64
+				for b.Loop() {
+					// Continue the setup's variant sequence so changing-metadata cases
+					// change on their first timed append too. Otherwise an unchanged
+					// first append would invalidate their expected version count.
+					variant := (benchmarkCase.setupVersions + int(iteration)) % benchmarkCase.numVariants
+					if benchmarkCase.stableAfterSetup {
+						variant = benchmarkCase.setupVersions - 1
+					}
+					appendMetricMetadataBenchmarkRound(b, h, fixture, refs, variant, 1_000+iteration)
+					iteration++
+				}
+
+				var afterWAL int64
+				if wal != nil {
+					afterWAL = metricMetadataBenchmarkWALPosition(b, wal)
+				}
+				numVersions := benchmarkCase.setupVersions
+				if benchmarkCase.numVariants > 1 && !benchmarkCase.stableAfterSetup {
+					numVersions += int(iteration)
+				}
+				validateMetricMetadataBenchmarkState(b, h, mode, fixture, refs, numVersions)
+				validateMetricMetadataBenchmarkSamples(b, h, int64(numSeries)*(int64(benchmarkCase.setupVersions)+iteration))
+				if wal != nil {
+					b.ReportMetric(float64(afterWAL-beforeWAL)/float64(b.N*numSeries), "wal-B/sample")
+				}
+			})
+		}
+	}
+}
+
+// BenchmarkHeadMetricMetadataAppendConcurrent measures stable metadata append
+// throughput when independent appenders contend across every metadata stripe.
+func BenchmarkHeadMetricMetadataAppendConcurrent(b *testing.B) {
+	const seriesPerWorker = nativeMetricMetadataStripes
+
+	for _, benchmarkCase := range []struct {
+		name        string
+		numFamilies func(int) int
+	}{
+		{name: "stable", numFamilies: func(int) int { return 100 }},
+		{name: "stable-unique", numFamilies: func(numSeries int) int { return numSeries }},
+	} {
+		for _, mode := range []metricMetadataBenchmarkMode{
+			{name: "off"},
+			{name: "native", nativeEnabled: true},
+		} {
+			b.Run(fmt.Sprintf("case=%s/mode=%s", benchmarkCase.name, mode.name), func(b *testing.B) {
+				numWorkers := runtime.GOMAXPROCS(0)
+				numSeries := numWorkers * seriesPerWorker
+				fixture := newMetricMetadataBenchmarkFixture(numSeries, benchmarkCase.numFamilies(numSeries), 1)
+				refs := make([]storage.SeriesRef, numSeries)
+				h, _, closeHead := newMetricMetadataBenchmarkHead(b, mode, 1_000_000_000, false)
+				b.Cleanup(closeHead)
+				appendMetricMetadataBenchmarkRound(b, h, fixture, refs, 0, 100)
+
+				var nextWorker atomic.Uint64
+				b.ReportAllocs()
+				b.SetParallelism(1)
+				b.ResetTimer()
+				b.RunParallel(func(pb *testing.PB) {
+					worker := int(nextWorker.Add(1) - 1)
+					if worker >= numWorkers {
+						b.Fatalf("unexpected worker %d; configured for %d", worker, numWorkers)
+					}
+					start := worker * seriesPerWorker
+					end := start + seriesPerWorker
+					var iteration int64
+					for pb.Next() {
+						app := h.AppenderV2(b.Context())
+						for i := start; i < end; i++ {
+							ref, err := app.Append(refs[i], fixture.labels[i], 0, 1_000+iteration, float64(iteration), nil, nil, fixture.options[0][fixture.familyBySeries[i]])
+							if err != nil {
+								b.Fatal(err)
+							}
+							refs[i] = ref
+						}
+						if err := app.Commit(); err != nil {
+							b.Fatal(err)
+						}
+						iteration++
+					}
+				})
+				b.StopTimer()
+				b.ReportMetric(float64(b.Elapsed().Nanoseconds())/float64(b.N*seriesPerWorker), "ns/sample")
+				validateMetricMetadataBenchmarkSamples(b, h, int64(numSeries)+int64(b.N)*int64(seriesPerWorker))
+				validateMetricMetadataBenchmarkState(b, h, mode, fixture, refs, 1)
+				if mode.nativeEnabled {
+					for i, ref := range refs {
+						versions, _, ok := h.nativeMetricMetadata.get(chunks.HeadSeriesRef(ref))
+						if !ok || !versions[0].Metadata.Equals(fixture.options[0][fixture.familyBySeries[i]].Metadata) {
+							b.Fatal("unexpected concurrent metadata value")
+						}
+					}
+				}
+			})
+		}
+	}
+}
+
+// BenchmarkHeadMetricMetadataAppendSparseChangesInMemory measures a scrape in
+// which one percent of series change metadata while the rest remain stable.
+func BenchmarkHeadMetricMetadataAppendSparseChangesInMemory(b *testing.B) {
+	const (
+		numSeries  = 10_000
+		changeEach = 100
+	)
+	fixture := newMetricMetadataBenchmarkFixture(numSeries, 100, 3)
+
+	for _, mode := range []metricMetadataBenchmarkMode{
+		{name: "off"},
+		{name: "native", nativeEnabled: true},
+		{name: "dual", legacyEnabled: true, nativeEnabled: true},
+	} {
+		b.Run("mode="+mode.name, func(b *testing.B) {
+			refs := make([]storage.SeriesRef, numSeries)
+			h, _, closeHead := newMetricMetadataBenchmarkHead(b, mode, 1_000_000_000, false)
+			b.Cleanup(closeHead)
+			appendMetricMetadataBenchmarkRound(b, h, fixture, refs, 0, 100)
+
+			b.ReportAllocs()
+			var iteration int64
+			for b.Loop() {
+				app := h.AppenderV2(b.Context())
+				changedVariant := 1 + int(iteration&1)
+				for i, lset := range fixture.labels {
+					variant := 0
+					if i%changeEach == 0 {
+						variant = changedVariant
+					}
+					ref, err := app.Append(refs[i], lset, 0, 1_000+iteration, float64(iteration), nil, nil, fixture.options[variant][fixture.familyBySeries[i]])
+					if err != nil {
+						b.Fatal(err)
+					}
+					refs[i] = ref
+				}
+				if err := app.Commit(); err != nil {
+					b.Fatal(err)
+				}
+				iteration++
+			}
+
+			validateMetricMetadataBenchmarkSamples(b, h, int64(numSeries)*(iteration+1))
+			if mode.nativeEnabled {
+				changed, _, ok := h.nativeMetricMetadata.get(chunks.HeadSeriesRef(refs[0]))
+				if !ok || len(changed) < 2 {
+					b.Fatalf("changed series metadata was not retained: %v", changed)
+				}
+				lastChangedVariant := 1 + int((iteration-1)&1)
+				if want := fixture.options[lastChangedVariant][fixture.familyBySeries[0]].Metadata; !changed[len(changed)-1].Metadata.Equals(want) {
+					b.Fatalf("unexpected changed series metadata: got %v, want %v", changed[len(changed)-1].Metadata, want)
+				}
+				stable, _, ok := h.nativeMetricMetadata.get(chunks.HeadSeriesRef(refs[1]))
+				if !ok || len(stable) != 1 {
+					b.Fatalf("stable series metadata changed: %v", stable)
+				}
+			}
+			if mode.legacyEnabled {
+				lastChangedVariant := 1 + int((iteration-1)&1)
+				for _, i := range []int{0, 1} {
+					variant := 0
+					if i == 0 {
+						variant = lastChangedVariant
+					}
+					series := h.series.getByID(chunks.HeadSeriesRef(refs[i]))
+					series.Lock()
+					got := series.legacyMetadataLocked()
+					series.Unlock()
+					want := fixture.options[variant][fixture.familyBySeries[i]].Metadata
+					if got == nil || !got.Equals(want) {
+						b.Fatalf("unexpected legacy metadata for series %d: got %v, want %v", refs[i], got, want)
+					}
+				}
+			}
+		})
+	}
+}
+
+// BenchmarkNativeMetricMetadataPendingHeap isolates the transient transaction
+// state retained before commit. Run with -benchtime=1x in fresh processes.
+func BenchmarkNativeMetricMetadataPendingHeap(b *testing.B) {
+	const sharedFamilies = 100
+	sharedMetadata := make([]metadata.Metadata, sharedFamilies)
+	for i := range sharedMetadata {
+		sharedMetadata[i] = metadata.Metadata{Type: model.MetricTypeGauge, Help: fmt.Sprintf("shared metadata %d", i)}
+	}
+	uniqueMetadata := make([]metadata.Metadata, 25_000)
+	for i := range uniqueMetadata {
+		uniqueMetadata[i] = metadata.Metadata{Type: model.MetricTypeGauge, Help: strconv.Itoa(i)}
+	}
+
+	for _, benchmarkCase := range []struct {
+		name         string
+		numSeries    int
+		observations int
+		metadata     func(int) metadata.Metadata
+		series       func(int) int
+	}{
+		{
+			name:         "shared-grouped",
+			numSeries:    100_000,
+			observations: 100_000,
+			metadata:     func(i int) metadata.Metadata { return sharedMetadata[i/(100_000/sharedFamilies)] },
+			series:       func(i int) int { return i },
+		},
+		{
+			name:         "shared-round-robin",
+			numSeries:    100_000,
+			observations: 100_000,
+			metadata:     func(i int) metadata.Metadata { return sharedMetadata[i%sharedFamilies] },
+			series:       func(i int) int { return i },
+		},
+		{
+			name:         "single-series",
+			numSeries:    1,
+			observations: 100_000,
+			metadata:     func(int) metadata.Metadata { return sharedMetadata[0] },
+			series:       func(int) int { return 0 },
+		},
+		{
+			name:         "unique",
+			numSeries:    25_000,
+			observations: 25_000,
+			metadata:     func(i int) metadata.Metadata { return uniqueMetadata[i] },
+			series:       func(i int) int { return i },
+		},
+	} {
+		b.Run(benchmarkCase.name, func(b *testing.B) {
+			series := make([]memSeries, benchmarkCase.numSeries)
+			for i := range series {
+				series[i].ref = chunks.HeadSeriesRef(i + 1)
+			}
+			var totalHeap uint64
+			b.ReportAllocs()
+			b.ResetTimer()
+			for range b.N {
+				b.StopTimer()
+				store := newNativeMetricMetadataStore()
+				app := headAppenderBase{head: &Head{nativeMetricMetadata: store}}
+				runtime.GC()
+				runtime.GC()
+				var before runtime.MemStats
+				runtime.ReadMemStats(&before)
+				b.StartTimer()
+
+				for i := range benchmarkCase.observations {
+					s := &series[benchmarkCase.series(i)]
+					timestamp := int64(i)
+					m := benchmarkCase.metadata(i)
+					if app.head.nativeMetricMetadata == nil || m.IsEmpty() {
+						continue
+					}
+					if m.Type == "" {
+						m.Type = model.MetricTypeUnknown
+					}
+					s.Lock()
+					observe := app.shouldObserveNativeMetricMetadataLocked(s, timestamp, &m)
+					s.Unlock()
+					if observe {
+						app.recordNativeMetricMetadata(s, timestamp, m)
+					}
+				}
+
+				b.StopTimer()
+				var after runtime.MemStats
+				runtime.ReadMemStats(&after)
+				if after.HeapAlloc < before.HeapAlloc {
+					b.Fatalf("heap allocation decreased during benchmark: before %d, after %d", before.HeapAlloc, after.HeapAlloc)
+				}
+				totalHeap += after.HeapAlloc - before.HeapAlloc
+				app.clearNativeMetricMetadata()
+			}
+			b.ReportMetric(float64(totalHeap)/float64(b.N*benchmarkCase.observations), "pending-heap-B/observation")
+		})
+	}
+}
+
+// BenchmarkHeadMetricMetadataSeriesChurn measures removal and recreation of
+// series carrying unchanged metadata. Use a fixed iteration count such as
+// -benchtime=10x to reduce one-shot truncation noise.
+func BenchmarkHeadMetricMetadataSeriesChurn(b *testing.B) {
+	const (
+		numSeries   = 10_000
+		numFamilies = 100
+	)
+
+	for _, mode := range metricMetadataBenchmarkModes() {
+		b.Run("mode="+mode.name, func(b *testing.B) {
+			fixture := newMetricMetadataBenchmarkFixture(numSeries, numFamilies, 1)
+			initialRefs := make([]storage.SeriesRef, numSeries)
+			recreatedRefs := make([]storage.SeriesRef, numSeries)
+			var totalWALBytes int64
+
+			b.ReportAllocs()
+			b.ResetTimer()
+			for range b.N {
+				b.StopTimer()
+				clear(initialRefs)
+				clear(recreatedRefs)
+				h, wal, closeHead := newMetricMetadataBenchmarkHead(b, mode, 1_000, true)
+				appendMetricMetadataBenchmarkRound(b, h, fixture, initialRefs, 0, 100)
+				beforeWAL := metricMetadataBenchmarkWALPosition(b, wal)
+				b.StartTimer()
+
+				if err := h.truncateMemory(2_000); err != nil {
+					b.Fatal(err)
+				}
+				b.StopTimer()
+				if got := h.NumSeries(); got != 0 {
+					b.Fatalf("unexpected series count after truncation: got %d, want 0", got)
+				}
+				if mode.nativeEnabled && h.nativeMetricMetadata.series.Load() != 0 {
+					b.Fatalf("native metadata was not removed during truncation: got %d series", h.nativeMetricMetadata.series.Load())
+				}
+				b.StartTimer()
+				appendMetricMetadataBenchmarkRound(b, h, fixture, recreatedRefs, 0, 3_000)
+
+				b.StopTimer()
+				afterWAL := metricMetadataBenchmarkWALPosition(b, wal)
+				totalWALBytes += afterWAL - beforeWAL
+				validateMetricMetadataBenchmarkState(b, h, mode, fixture, recreatedRefs, 1)
+				closeHead()
+			}
+
+			b.ReportMetric(float64(totalWALBytes)/float64(b.N*numSeries), "wal-B/series")
+		})
+	}
+}
+
+func validateMetricMetadataBenchmarkSamples(b *testing.B, h *Head, want int64) {
+	b.Helper()
+	q, err := NewBlockChunkQuerier(h, math.MinInt64, math.MaxInt64)
+	if err != nil {
+		b.Fatal(err)
+	}
+	defer q.Close()
+	series := q.Select(b.Context(), false, nil, labels.MustNewMatcher(labels.MatchRegexp, labels.MetricName, ".+"))
+	var count int64
+	var iter chunks.Iterator
+	for series.Next() {
+		iter = series.At().Iterator(iter)
+		for iter.Next() {
+			count += int64(iter.At().Chunk.NumSamples())
+		}
+		if err := iter.Err(); err != nil {
+			b.Fatal(err)
+		}
+	}
+	if err := series.Err(); err != nil {
+		b.Fatal(err)
+	}
+	if count != want {
+		b.Fatalf("stored %d samples, want %d", count, want)
+	}
+}
+
+// BenchmarkHeadMetricMetadataLargeTransactions measures transaction-size scaling.
+// Use a fixed iteration count to bound sample growth.
+func BenchmarkHeadMetricMetadataLargeTransactions(b *testing.B) {
+	for _, numSeries := range []int{16_000, 33_000, 100_000} {
+		for _, mode := range []metricMetadataBenchmarkMode{{name: "off"}, {name: "native", nativeEnabled: true}} {
+			b.Run(fmt.Sprintf("series=%d/mode=%s", numSeries, mode.name), func(b *testing.B) {
+				h, _, closeHead := newMetricMetadataBenchmarkHead(b, mode, 1_000_000_000, false)
+				b.Cleanup(closeHead)
+				fixture := newMetricMetadataBenchmarkFixture(numSeries, 100, 2)
+				refs := make([]storage.SeriesRef, numSeries)
+				appendMetricMetadataBenchmarkRound(b, h, fixture, refs, 0, 100)
+				var iteration int64
+				b.ReportAllocs()
+				for b.Loop() {
+					appendMetricMetadataBenchmarkRound(b, h, fixture, refs, 1-int(iteration%2), 1000+iteration)
+					iteration++
+				}
+				validateMetricMetadataBenchmarkState(b, h, mode, fixture, refs, int(iteration)+1)
+				validateMetricMetadataBenchmarkSamples(b, h, int64(numSeries)*(iteration+1))
+			})
+		}
+	}
+}
+
+// BenchmarkHeadMetricMetadataCollapsedHistoryRetainedHeap retains a truncated
+// singleton. Run each case in a fresh process with -benchtime=1x.
+func BenchmarkHeadMetricMetadataCollapsedHistoryRetainedHeap(b *testing.B) {
+	const numSeries = 25_000
+	for _, mode := range metricMetadataBenchmarkModes() {
+		b.Run("mode="+mode.name, func(b *testing.B) {
+			fixture := newMetricMetadataBenchmarkFixture(numSeries, 100, 6)
+			refs := make([]storage.SeriesRef, numSeries)
+			var heap, objects uint64
+			for range b.N {
+				b.StopTimer()
+				before := metricMetadataBenchmarkHeapAlloc()
+				var beforeMem runtime.MemStats
+				runtime.ReadMemStats(&beforeMem)
+				h, _, closeHead := newMetricMetadataBenchmarkHead(b, mode, 1_000_000_000, false)
+				// Accepted OOO duplicates carry metadata at each retained timestamp.
+				h.opts.OutOfOrderTimeWindow.Store(1000)
+				b.StartTimer()
+				for version := range 6 {
+					appendMetricMetadataBenchmarkRound(b, h, fixture, refs, version, 100+int64(version))
+				}
+				app := h.AppenderV2(b.Context())
+				for i, lset := range fixture.labels {
+					for timestamp := int64(101); timestamp <= 105; timestamp++ {
+						if _, err := app.Append(refs[i], lset, 0, timestamp, float64(timestamp), nil, nil, fixture.options[0][fixture.familyBySeries[i]]); err != nil {
+							b.Fatal(err)
+						}
+					}
+				}
+				if err := app.Commit(); err != nil {
+					b.Fatal(err)
+				}
+				b.StopTimer()
+				afterHeap := metricMetadataBenchmarkHeapAlloc()
+				var after runtime.MemStats
+				runtime.ReadMemStats(&after)
+				if afterHeap < before || after.HeapObjects < beforeMem.HeapObjects {
+					b.Fatal("retained heap or object count decreased")
+				}
+				heap += afterHeap - before
+				objects += after.HeapObjects - beforeMem.HeapObjects
+				if mode.nativeEnabled {
+					for _, ref := range []storage.SeriesRef{refs[0], refs[len(refs)-1]} {
+						versions, truncated, ok := h.nativeMetricMetadata.get(chunks.HeadSeriesRef(ref))
+						if !ok || len(versions) != 1 || !truncated {
+							b.Fatalf("unexpected collapsed history: %v, %t", versions, truncated)
+						}
+					}
+				}
+				runtime.KeepAlive(fixture)
+				runtime.KeepAlive(refs)
+				runtime.KeepAlive(h)
+				closeHead()
+			}
+			b.ReportMetric(float64(heap)/float64(b.N*numSeries), "heap-B/series")
+			b.ReportMetric(float64(objects)/float64(b.N*numSeries), "heap-objects/series")
+		})
+	}
+}
