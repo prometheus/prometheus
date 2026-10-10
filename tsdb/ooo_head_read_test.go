@@ -30,7 +30,6 @@ import (
 	"github.com/prometheus/prometheus/storage"
 	"github.com/prometheus/prometheus/tsdb/chunkenc"
 	"github.com/prometheus/prometheus/tsdb/chunks"
-	"github.com/prometheus/prometheus/util/annotations"
 	"github.com/prometheus/prometheus/util/compression"
 )
 
@@ -1118,113 +1117,59 @@ func TestSortMetaByMinTimeAndMinRef(t *testing.T) {
 	}
 }
 
-// mockSearchQuerier is a minimal storage.Querier that also implements storage.Searcher.
-type mockSearchQuerier struct {
-	labelNames  []string
-	labelValues []string
-}
-
-func (*mockSearchQuerier) Select(context.Context, bool, *storage.SelectHints, ...*labels.Matcher) storage.SeriesSet {
-	return storage.EmptySeriesSet()
-}
-
-func (m *mockSearchQuerier) LabelValues(_ context.Context, _ string, _ *storage.LabelHints, _ ...*labels.Matcher) ([]string, annotations.Annotations, error) {
-	return m.labelValues, nil, nil
-}
-
-func (m *mockSearchQuerier) LabelNames(_ context.Context, _ *storage.LabelHints, _ ...*labels.Matcher) ([]string, annotations.Annotations, error) {
-	return m.labelNames, nil, nil
-}
-
-func (*mockSearchQuerier) Close() error { return nil }
-
-func (m *mockSearchQuerier) SearchLabelNames(_ context.Context, _ *storage.SearchHints, _ ...*labels.Matcher) storage.SearchResultSet {
-	results := make([]storage.SearchResult, len(m.labelNames))
-	for i, n := range m.labelNames {
-		results[i] = storage.SearchResult{Value: n, Score: 1.0}
-	}
-	return storage.NewSearchResultSetFromSlice(results, nil)
-}
-
-func (m *mockSearchQuerier) SearchLabelValues(_ context.Context, _ string, _ *storage.SearchHints, _ ...*labels.Matcher) storage.SearchResultSet {
-	results := make([]storage.SearchResult, len(m.labelValues))
-	for i, v := range m.labelValues {
-		results[i] = storage.SearchResult{Value: v, Score: 1.0}
-	}
-	return storage.NewSearchResultSetFromSlice(results, nil)
-}
-
-// mockSearchQuerierNoSearch is a storage.Querier that does not implement storage.Searcher.
-type mockSearchQuerierNoSearch struct{}
-
-func (mockSearchQuerierNoSearch) Select(context.Context, bool, *storage.SelectHints, ...*labels.Matcher) storage.SeriesSet {
-	return storage.EmptySeriesSet()
-}
-
-func (mockSearchQuerierNoSearch) LabelValues(context.Context, string, *storage.LabelHints, ...*labels.Matcher) ([]string, annotations.Annotations, error) {
-	return nil, nil, nil
-}
-
-func (mockSearchQuerierNoSearch) LabelNames(context.Context, *storage.LabelHints, ...*labels.Matcher) ([]string, annotations.Annotations, error) {
-	return nil, nil, nil
-}
-
-func (mockSearchQuerierNoSearch) Close() error { return nil }
-
 func TestHeadAndOOOQuerierSearch(t *testing.T) {
-	ctx := context.Background()
+	opts := DefaultOptions()
+	opts.OutOfOrderCapMax = 5
+	opts.OutOfOrderTimeWindow = 10 * time.Minute.Milliseconds()
+	db := newTestDB(t, withOpts(opts))
+	db.DisableCompactions()
 
-	t.Run("nil inner querier returns empty", func(t *testing.T) {
-		q := &HeadAndOOOQuerier{}
-		rs := q.SearchLabelNames(ctx, nil)
-		require.False(t, rs.Next())
-		require.NoError(t, rs.Err())
-		require.NoError(t, rs.Close())
+	series := []labels.Labels{
+		labels.FromStrings("__name__", "target_info", "instance", "a", "job", "api", "ooo_label", "alpha"),
+		labels.FromStrings("__name__", "target_info", "instance", "b", "job", "api", "ooo_label", "beta"),
+	}
+	app := db.Appender(t.Context())
+	for i, lset := range series {
+		_, err := app.Append(0, lset, int64(110+i), 1)
+		require.NoError(t, err)
+	}
+	require.NoError(t, app.Commit())
 
-		rs = q.SearchLabelValues(ctx, "env", nil)
-		require.False(t, rs.Next())
-		require.NoError(t, rs.Err())
-		require.NoError(t, rs.Close())
-	})
+	app = db.Appender(t.Context())
+	for _, lset := range series {
+		_, err := app.Append(0, lset, 90, 1)
+		require.NoError(t, err)
+	}
+	require.NoError(t, app.Commit())
 
-	t.Run("delegates to inner searcher", func(t *testing.T) {
-		inner := &mockSearchQuerier{
-			labelNames:  []string{"env", "job"},
-			labelValues: []string{"prod", "dev"},
-		}
-		q := &HeadAndOOOQuerier{querier: inner}
+	querier, err := db.Querier(90, 90)
+	require.NoError(t, err)
+	defer querier.Close()
+	searcher, ok := querier.(storage.Searcher)
+	require.True(t, ok)
 
-		rs := q.SearchLabelNames(ctx, nil)
-		var names []string
+	collect := func(rs storage.SearchResultSet) []storage.SearchResult {
+		defer func() { require.NoError(t, rs.Close()) }()
+		var results []storage.SearchResult
 		for rs.Next() {
-			names = append(names, rs.At().Value)
+			results = append(results, rs.At())
 		}
 		require.NoError(t, rs.Err())
-		require.NoError(t, rs.Close())
-		require.Equal(t, []string{"env", "job"}, names)
+		return results
+	}
+	matchers := []*labels.Matcher{labels.MustNewMatcher(labels.MatchEqual, "__name__", "target_info")}
 
-		rs = q.SearchLabelValues(ctx, "env", nil)
-		var values []string
-		for rs.Next() {
-			values = append(values, rs.At().Value)
-		}
-		require.NoError(t, rs.Err())
-		require.NoError(t, rs.Close())
-		require.Equal(t, []string{"prod", "dev"}, values)
-	})
+	names := collect(searcher.SearchLabelNames(t.Context(), &storage.SearchHints{
+		Filter: prefixFilter{prefix: "ooo_"},
+		Limit:  1,
+	}, matchers...))
+	require.Equal(t, []storage.SearchResult{{Value: "ooo_label", Score: 1}}, names)
 
-	t.Run("non-searcher inner querier returns empty", func(t *testing.T) {
-		inner := mockSearchQuerierNoSearch{}
-		q := &HeadAndOOOQuerier{querier: inner}
-
-		rs := q.SearchLabelNames(ctx, nil)
-		require.False(t, rs.Next())
-		require.NoError(t, rs.Close())
-
-		rs = q.SearchLabelValues(ctx, "env", nil)
-		require.False(t, rs.Next())
-		require.NoError(t, rs.Close())
-	})
+	values := collect(searcher.SearchLabelValues(t.Context(), "ooo_label", &storage.SearchHints{
+		Limit:   1,
+		OrderBy: storage.OrderByValueDesc,
+	}, matchers...))
+	require.Equal(t, []storage.SearchResult{{Value: "beta", Score: 1}}, values)
 }
 
 // TestNewOOOCompactionHead_panicReleasesLock is a regression test for

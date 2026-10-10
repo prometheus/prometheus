@@ -264,6 +264,10 @@ type API struct {
 	customStatsRenderer bool // See validateStatsParam: a custom StatsRenderer's `stats` vocabulary is not validated.
 	notificationsGetter func() []notifications.Notification
 	notificationsSub    func() (<-chan notifications.Notification, func(), bool)
+
+	enableExperimentalFunctions bool
+	queryTimeout                time.Duration
+
 	// Allows customizing the default mapping
 	overrideErrorCode OverrideErrorCode
 
@@ -297,6 +301,7 @@ func NewAPI(
 	enableAdmin bool,
 	enableSearch bool,
 	maxSearchLimit int,
+	enableExperimentalFunctions bool,
 	logger *slog.Logger,
 	rr func(context.Context) RulesRetriever,
 	remoteReadSampleLimit int,
@@ -316,6 +321,7 @@ func NewAPI(
 	otlpEnabled, otlpDeltaToCumulative, otlpNativeDeltaIngestion bool,
 	stZeroIngestionEnabled bool,
 	lookbackDelta time.Duration,
+	queryTimeout time.Duration,
 	enableTypeAndUnitLabels bool,
 	appendMetadata bool,
 	overrideErrorCode OverrideErrorCode,
@@ -357,6 +363,9 @@ func NewAPI(
 		featureRegistry:     featureRegistry,
 		openAPIBuilder:      NewOpenAPIBuilder(openAPIOptions, logger),
 		parser:              promqlParser,
+
+		enableExperimentalFunctions: enableExperimentalFunctions,
+		queryTimeout:                queryTimeout,
 
 		remoteReadHandler: remote.NewReadHandler(logger, registerer, q, configFunc, remoteReadSampleLimit, remoteReadConcurrencyLimit, remoteReadMaxBytesInFrame),
 	}
@@ -497,6 +506,10 @@ func (api *API) Register(r *route.Router) {
 	r.Post("/search/label_names", api.ready(api.searchLabelNames))
 	r.Get("/search/label_values", api.ready(api.searchLabelValues))
 	r.Post("/search/label_values", api.ready(api.searchLabelValues))
+	r.Get("/search/info_labels", api.ready(api.infoLabels))
+	r.Post("/search/info_labels", api.ready(api.infoLabels))
+	r.Get("/search/info_label_values", api.ready(api.infoLabelValues))
+	r.Post("/search/info_label_values", api.ready(api.infoLabelValues))
 
 	r.Get("/alerts", wrapAgent(api.alerts))
 	r.Get("/rules", wrapAgent(api.rules))
