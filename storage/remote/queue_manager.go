@@ -1846,6 +1846,9 @@ func (s *shards) sendSamplesWithBackoff(ctx context.Context, samples []prompb.Ti
 		// So we exit early to not update the metrics.
 		return accumulatedStats, err
 	}
+	if err == nil {
+		s.qm.metrics.metadataTotal.Add(float64(metadataCount))
+	}
 
 	s.qm.metrics.sentBytesTotal.Add(float64(reqSize))
 	s.qm.metrics.highestSentTimestamp.Set(float64(highest / 1000))
@@ -1986,15 +1989,21 @@ func populateV2TimeSeries(symbolTable *writev2.SymbolsTable, batch []timeSeries,
 			pendingData[nPending].Metadata.UnitRef = symbolTable.Symbolize(m.Unit)
 			pendingData[nPending].Metadata.HelpRef = 0 // Type and unit does not give us help.
 			// Use Help from d.metadata if available.
+			var help string
 			if d.metadata != nil {
-				pendingData[nPending].Metadata.HelpRef = symbolTable.Symbolize(d.metadata.Help)
+				help = d.metadata.Help
+				pendingData[nPending].Metadata.HelpRef = symbolTable.Symbolize(help)
+			}
+			if m.Type != model.MetricTypeUnknown || m.Unit != "" || help != "" {
 				nPendingMetadata++
 			}
 		case d.metadata != nil:
 			pendingData[nPending].Metadata.Type = writev2.FromMetadataType(d.metadata.Type)
 			pendingData[nPending].Metadata.HelpRef = symbolTable.Symbolize(d.metadata.Help)
 			pendingData[nPending].Metadata.UnitRef = symbolTable.Symbolize(d.metadata.Unit)
-			nPendingMetadata++
+			if d.metadata.Type != model.MetricTypeUnknown || d.metadata.Help != "" || d.metadata.Unit != "" {
+				nPendingMetadata++
+			}
 		default:
 			// Safeguard against sending garbage in case of not having metadata
 			// for whatever reason.
@@ -2303,7 +2312,6 @@ func (b *batchMetricsUpdater) recordBatchAttempt(sc sendBatchContext) {
 	b.metrics.samplesTotal.Add(float64(sc.sampleCount))
 	b.metrics.exemplarsTotal.Add(float64(sc.exemplarCount))
 	b.metrics.histogramsTotal.Add(float64(sc.histogramCount))
-	b.metrics.metadataTotal.Add(float64(sc.metadataCount))
 }
 
 // recordLatency records the observed send duration for a batch attempt.
