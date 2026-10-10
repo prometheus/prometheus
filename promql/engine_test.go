@@ -5314,3 +5314,66 @@ func TestQueryStartTimestampsOverride(t *testing.T) {
 		})
 	}
 }
+
+func TestTypeAndUnitMetadataLabelsInFunctionsAndMatching(t *testing.T) {
+	load := `load 1m
+  hist_metric{__type__="histogram", __unit__="seconds", job="api"} {{schema:1 sum:10 count:5 buckets:[1 2 2]}}
+  lhs_metric{__type__="counter", __unit__="requests", job="api", instance="0"} 10
+  rhs_metric{__type__="gauge", __unit__="seconds", job="only-rhs", instance="1"} 20
+  target_info{__type__="info", job="api", instance="0", env="prod"} 1
+`
+	storage := promqltest.LoadedStorage(t, load)
+	defer storage.Close()
+
+	for _, delayedNameRemoval := range []bool{false, true} {
+		t.Run(fmt.Sprintf("delayedNameRemoval=%v", delayedNameRemoval), func(t *testing.T) {
+			engine := promqltest.NewTestEngineWithOpts(t, promql.EngineOpts{
+				Timeout:                  5 * time.Minute,
+				MaxSamples:               promqltest.DefaultMaxSamplesPerQuery,
+				EnableDelayedNameRemoval: delayedNameRemoval,
+				EnableTypeAndUnitLabels:  true,
+				Parser: parser.NewParser(parser.Options{
+					EnableBinopFillModifiers:    true,
+					EnableExperimentalFunctions: true,
+				}),
+			})
+
+			for _, tc := range []struct {
+				expr     string
+				expected string
+			}{
+				{
+					expr:     `histogram_count(hist_metric)`,
+					expected: `{job="api"} => 5 @[0]`,
+				},
+				{
+					expr:     `histogram_sum(hist_metric)`,
+					expected: `{job="api"} => 10 @[0]`,
+				},
+				{
+					expr:     `absent(nonexistent{__type__="counter", __unit__="seconds", job="api"})`,
+					expected: `{job="api"} => 1 @[0]`,
+				},
+				{
+					expr:     `sum without (instance) (lhs_metric)`,
+					expected: `{job="api"} => 10 @[0]`,
+				},
+				{
+					expr:     `lhs_metric > ignoring(instance) fill_left(100) rhs_metric`,
+					expected: `{job="only-rhs"} => 100 @[0]`,
+				},
+				{
+					expr:     `info(sum by (job, instance) (lhs_metric))`,
+					expected: `{env="prod", instance="0", job="api"} => 10 @[0]`,
+				},
+			} {
+				q, err := engine.NewInstantQuery(context.Background(), storage, nil, tc.expr, time.Unix(0, 0))
+				require.NoError(t, err)
+				res := q.Exec(context.Background())
+				q.Close()
+				require.NoError(t, res.Err)
+				require.Equal(t, tc.expected, res.Value.String(), "query: %s", tc.expr)
+			}
+		})
+	}
+}
