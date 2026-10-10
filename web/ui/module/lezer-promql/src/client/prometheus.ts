@@ -11,15 +11,8 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-import { FetchFn } from './index';
-import { Matcher } from '../types';
-import { labelMatchersToString } from '../parser';
+import { FetchFn, Matcher, MetricMetadata, labelMatchersToString } from './types';
 import { LRUCache } from 'lru-cache';
-
-export interface MetricMetadata {
-  type: string;
-  help: string;
-}
 
 export interface PrometheusClient {
   labelNames(metricName?: string): Promise<string[]>;
@@ -40,8 +33,26 @@ export interface PrometheusClient {
   // flags returns flag values that prometheus was configured with.
   flags(): Promise<Record<string, string>>;
 
+  infoLabelNames(request?: InfoLabelSearchRequest): Promise<InfoSearchResult<string>>;
+
+  infoLabelValues(label: string, request?: InfoLabelSearchRequest): Promise<InfoSearchResult<string>>;
+
   // destroy is called to release all resources held by this client
   destroy?(): void;
+}
+
+// InfoSearchResult contains a successful stream's results, truncation flag, and warnings.
+export interface InfoSearchResult<T> {
+  results: T[];
+  hasMore: boolean;
+  // Warnings retain wire order and may indicate incomplete discovery independently of hasMore.
+  warnings: string[];
+}
+
+export interface InfoLabelSearchRequest {
+  expr?: string;
+  dataMatches?: string[];
+  search?: string;
 }
 
 export interface CacheConfig {
@@ -81,7 +92,7 @@ const serviceUnavailable = 503;
 
 // HTTPPrometheusClient is the HTTP client that should be used to get some information from the different endpoint provided by prometheus.
 export class HTTPPrometheusClient implements PrometheusClient {
-  private readonly lookbackInterval: undefined | number; //12 hours
+  private readonly lookbackInterval: undefined | number;
   private readonly url: string;
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   private readonly errorHandler?: (error: any) => void;
@@ -203,6 +214,204 @@ export class HTTPPrometheusClient implements PrometheusClient {
     });
   }
 
+  infoLabelNames(request: InfoLabelSearchRequest = {}): Promise<InfoSearchResult<string>> {
+    const params = this.infoLabelParams(request);
+    return this.fetchInfoSearch(this.infoLabelsEndpoint(), params, 'name');
+  }
+
+  infoLabelValues(label: string, request: InfoLabelSearchRequest = {}): Promise<InfoSearchResult<string>> {
+    const params = this.infoLabelParams(request);
+    params.set('label', label);
+    return this.fetchInfoSearch(this.infoLabelValuesEndpoint(), params, 'value');
+  }
+
+  private infoLabelParams(request: InfoLabelSearchRequest): URLSearchParams {
+    const params: URLSearchParams = new URLSearchParams();
+    if (this.lookbackInterval) {
+      const end = new Date();
+      const start = new Date(end.getTime() - this.lookbackInterval);
+      params.set('start', start.toISOString());
+      params.set('end', end.toISOString());
+    }
+    if (request.expr) {
+      params.set('expr', request.expr);
+    }
+    for (const matcher of request.dataMatches ?? []) {
+      params.append('data_match[]', matcher);
+    }
+    if (request.search) {
+      params.append('search[]', request.search);
+      params.set('case_sensitive', 'false');
+      params.set('sort_by', 'score');
+    }
+    return params;
+  }
+
+  private fetchInfoSearch(endpoint: string, params: URLSearchParams, field: 'name' | 'value'): Promise<InfoSearchResult<string>> {
+    const request = this.buildRequest(endpoint, params);
+    return this.fetchNDJSON<Record<string, unknown>>(request.uri, { method: this.httpMethod, body: request.body })
+      .then(({ results, hasMore, warnings }) => {
+        const values = results.map((record) => {
+          if (record === null || typeof record !== 'object' || typeof record[field] !== 'string') {
+            throw new Error(`invalid info label ${field} record`);
+          }
+          return record[field] as string;
+        });
+        return { results: values, hasMore, warnings };
+      })
+      .catch((error) => {
+        if (this.errorHandler) {
+          this.errorHandler(error);
+        }
+        throw error;
+      });
+  }
+
+  // FetchNDJSON returns only complete successful streams, retaining batch and trailer warnings.
+  private async fetchNDJSON<T>(resource: string, init?: RequestInit): Promise<InfoSearchResult<T>> {
+    const controller = new AbortController();
+    this.abortControllers.add(controller);
+    let reader: ReadableStreamDefaultReader<Uint8Array> | undefined;
+
+    try {
+      const res = await this.fetchFn(this.url + resource, {
+        ...init,
+        headers: this.requestHeaders,
+        signal: controller.signal,
+      });
+      if (!res.ok) {
+        let message = res.statusText || `HTTP ${res.status}`;
+        try {
+          const body: unknown = await res.json();
+          if (body !== null && typeof body === 'object' && 'error' in body && typeof body.error === 'string' && body.error.length > 0) {
+            message = body.error;
+          }
+        } catch (error) {
+          if (controller.signal.aborted) {
+            throw error;
+          }
+          // An unusable error body leaves the HTTP status as the diagnostic.
+        }
+        throw new Error(message);
+      }
+      if (!res.body) {
+        // Runtime without ReadableStream (e.g. some legacy environments).
+        // Fall back to a buffered read; behaviour is identical.
+        return this.parseNDJSONBody<T>(await res.text());
+      }
+
+      const state: InfoNDJSONState<T> = { results: [], hasMore: false, warnings: [], terminal: false };
+      reader = res.body.getReader();
+      const decoder = new TextDecoder('utf-8');
+      let buffer = '';
+
+      // Each iteration consumes any complete lines accumulated in the
+      // buffer; the trailing partial line is kept for the next chunk.
+      //
+      // The abort check at the top of the loop is a belt-and-suspenders
+      // safeguard: the underlying fetch already wires `signal` into the
+      // reader, so an in-flight read() will reject with AbortError on its
+      // own — but explicitly polling the signal between chunks gives a
+      // clean exit even if a chunk landed before the abort was observed,
+      // and removes the dependency on the platform ReadableStream
+      // correctly propagating signal to read().
+      for (;;) {
+        if (controller.signal.aborted) {
+          throw new DOMException('aborted', 'AbortError');
+        }
+        const { value, done } = await reader.read();
+        if (value) {
+          buffer += decoder.decode(value, { stream: true });
+          let newlineIdx = buffer.indexOf('\n');
+          while (newlineIdx !== -1) {
+            const line = buffer.slice(0, newlineIdx);
+            buffer = buffer.slice(newlineIdx + 1);
+            this.handleNDJSONLine<T>(line, state);
+            newlineIdx = buffer.indexOf('\n');
+          }
+        }
+        if (done) {
+          break;
+        }
+      }
+      // Flush any trailing bytes from the decoder and process the residual
+      // line (a body without a trailing newline is well-formed).
+      buffer += decoder.decode();
+      if (buffer.length > 0) {
+        this.handleNDJSONLine<T>(buffer, state);
+      }
+      if (!state.terminal) {
+        throw new Error('info label stream ended without a success trailer');
+      }
+      return { results: state.results, hasMore: state.hasMore, warnings: state.warnings };
+    } catch (error) {
+      controller.abort();
+      try {
+        await reader?.cancel();
+      } catch {
+        // Preserve the original failure if stream cleanup also fails.
+      }
+      throw error;
+    } finally {
+      reader?.releaseLock();
+      this.abortControllers.delete(controller);
+    }
+  }
+
+  // ParseNDJSONBody applies the streaming parser's rules to a buffered response.
+  private parseNDJSONBody<T>(body: string): InfoSearchResult<T> {
+    const state: InfoNDJSONState<T> = { results: [], hasMore: false, warnings: [], terminal: false };
+    for (const line of body.split('\n')) {
+      this.handleNDJSONLine<T>(line, state);
+    }
+    if (!state.terminal) {
+      throw new Error('info label stream ended without a success trailer');
+    }
+    return { results: state.results, hasMore: state.hasMore, warnings: state.warnings };
+  }
+
+  // HandleNDJSONLine parses one NDJSON line and either appends its results,
+  // records a success trailer, or throws on invalid or error input.
+  private handleNDJSONLine<T>(line: string, state: InfoNDJSONState<T>): void {
+    if (line.length === 0) {
+      return;
+    }
+    const parsed: unknown = JSON.parse(line);
+    if (parsed === null || typeof parsed !== 'object' || Array.isArray(parsed) || state.terminal) {
+      throw new Error('invalid info label NDJSON line');
+    }
+    const obj = parsed as Record<string, unknown>;
+    if ('warnings' in obj) {
+      if (!Array.isArray(obj.warnings) || obj.warnings.some((warning) => typeof warning !== 'string')) {
+        throw new Error('invalid info label warnings');
+      }
+      for (const warning of obj.warnings) {
+        state.warnings.push(warning);
+      }
+    }
+    if ('results' in obj) {
+      if ('status' in obj || 'errorType' in obj || 'error' in obj || 'has_more' in obj || !Array.isArray(obj.results)) {
+        throw new Error('invalid info label result batch');
+      }
+      for (const r of obj.results as unknown[]) {
+        state.results.push(r as T);
+      }
+      return;
+    }
+    if ('status' in obj) {
+      if (obj.status === 'error' && typeof obj.errorType === 'string' && typeof obj.error === 'string' && !('has_more' in obj)) {
+        throw new Error(obj.error);
+      }
+      if (obj.status !== 'success' || 'errorType' in obj || 'error' in obj || typeof obj.has_more !== 'boolean') {
+        throw new Error('invalid info label stream trailer');
+      }
+      state.terminal = true;
+      state.hasMore = obj.has_more;
+      return;
+    }
+    throw new Error('invalid info label NDJSON line');
+  }
+
   destroy(): void {
     for (const controller of this.abortControllers) {
       controller.abort();
@@ -271,6 +480,21 @@ export class HTTPPrometheusClient implements PrometheusClient {
   private flagsEndpoint(): string {
     return `${this.apiPrefix}/status/flags`;
   }
+
+  private infoLabelsEndpoint(): string {
+    return `${this.apiPrefix}/search/info_labels`;
+  }
+
+  private infoLabelValuesEndpoint(): string {
+    return `${this.apiPrefix}/search/info_label_values`;
+  }
+}
+
+interface InfoNDJSONState<T> {
+  results: T[];
+  hasMore: boolean;
+  warnings: string[];
+  terminal: boolean;
 }
 
 class Cache {
@@ -281,6 +505,8 @@ class Cache {
   private labelValues: LRUCache<string, string[]>;
   private labelNames: string[];
   private flags: Record<string, string>;
+  private infoLabelNames: LRUCache<string, InfoSearchResult<string>>;
+  private infoLabelValues: LRUCache<string, InfoSearchResult<string>>;
 
   constructor(config?: CacheConfig) {
     const maxAge = {
@@ -292,6 +518,8 @@ class Cache {
     this.labelValues = new LRUCache<string, string[]>(maxAge);
     this.labelNames = [];
     this.flags = {};
+    this.infoLabelNames = new LRUCache<string, InfoSearchResult<string>>({ ...maxAge, max: 100 });
+    this.infoLabelValues = new LRUCache<string, InfoSearchResult<string>>({ ...maxAge, max: 100 });
     if (config?.initialMetricList) {
       this.setLabelValues('__name__', config.initialMetricList);
     }
@@ -399,11 +627,29 @@ class Cache {
     }
     return [];
   }
+
+  setInfoLabelNames(cacheKey: string, result: InfoSearchResult<string>): void {
+    this.infoLabelNames.set(cacheKey, result);
+  }
+
+  getInfoLabelNames(cacheKey: string): InfoSearchResult<string> | undefined {
+    return this.infoLabelNames.get(cacheKey);
+  }
+
+  setInfoLabelValues(cacheKey: string, result: InfoSearchResult<string>): void {
+    this.infoLabelValues.set(cacheKey, result);
+  }
+
+  getInfoLabelValues(cacheKey: string): InfoSearchResult<string> | undefined {
+    return this.infoLabelValues.get(cacheKey);
+  }
 }
 
 export class CachedPrometheusClient implements PrometheusClient {
   private readonly cache: Cache;
   private readonly client: PrometheusClient;
+  private readonly infoLabelNamesInFlight = new Map<string, Promise<InfoSearchResult<string>>>();
+  private readonly infoLabelValuesInFlight = new Map<string, Promise<InfoSearchResult<string>>>();
 
   constructor(client: PrometheusClient, config?: CacheConfig) {
     this.client = client;
@@ -465,6 +711,55 @@ export class CachedPrometheusClient implements PrometheusClient {
       this.cache.setFlags(flags);
       return flags;
     });
+  }
+
+  // InfoLabelCacheKey normalizes omitted fields while retaining matcher source order and spelling.
+  private infoLabelCacheKey(operation: 'names' | 'values', request: InfoLabelSearchRequest, label = ''): string {
+    return JSON.stringify([operation, label, request.expr ?? '', request.dataMatches ?? [], request.search ?? '']);
+  }
+
+  infoLabelNames(request: InfoLabelSearchRequest = {}): Promise<InfoSearchResult<string>> {
+    const cacheKey = this.infoLabelCacheKey('names', request);
+    const cached = this.cache.getInfoLabelNames(cacheKey);
+    if (cached !== undefined) {
+      return Promise.resolve(cached);
+    }
+    const pending = this.infoLabelNamesInFlight.get(cacheKey);
+    if (pending) {
+      return pending;
+    }
+
+    const promise = this.client
+      .infoLabelNames(request)
+      .then((result) => {
+        this.cache.setInfoLabelNames(cacheKey, result);
+        return result;
+      })
+      .finally(() => this.infoLabelNamesInFlight.delete(cacheKey));
+    this.infoLabelNamesInFlight.set(cacheKey, promise);
+    return promise;
+  }
+
+  infoLabelValues(label: string, request: InfoLabelSearchRequest = {}): Promise<InfoSearchResult<string>> {
+    const cacheKey = this.infoLabelCacheKey('values', request, label);
+    const cached = this.cache.getInfoLabelValues(cacheKey);
+    if (cached !== undefined) {
+      return Promise.resolve(cached);
+    }
+    const pending = this.infoLabelValuesInFlight.get(cacheKey);
+    if (pending) {
+      return pending;
+    }
+
+    const promise = this.client
+      .infoLabelValues(label, request)
+      .then((result) => {
+        this.cache.setInfoLabelValues(cacheKey, result);
+        return result;
+      })
+      .finally(() => this.infoLabelValuesInFlight.delete(cacheKey));
+    this.infoLabelValuesInFlight.set(cacheKey, promise);
+    return promise;
   }
 
   destroy(): void {

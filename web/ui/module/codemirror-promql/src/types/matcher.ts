@@ -11,27 +11,5 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-import { EqlSingle, Neq } from '@prometheus-io/lezer-promql';
-
-export class Matcher {
-  type: number;
-  name: string;
-  value: string;
-
-  constructor(type: number, name: string, value: string) {
-    this.type = type;
-    this.name = name;
-    this.value = value;
-  }
-
-  matchesEmpty(): boolean {
-    switch (this.type) {
-      case EqlSingle:
-        return this.value === '';
-      case Neq:
-        return this.value !== '';
-      default:
-        return false;
-    }
-  }
-}
+// Re-export Matcher from lezer-promql for backwards compatibility
+export { Matcher } from '@prometheus-io/lezer-promql/client';
