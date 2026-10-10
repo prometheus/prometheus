@@ -1667,3 +1667,19 @@ func BenchmarkGetOrCreate(b *testing.B) {
 		}
 	})
 }
+
+func TestNativeHistogramMetrics(t *testing.T) {
+	metrics := newDBMetrics(nil)
+	for _, value := range []float64{0.01, 0.25, 1.5} {
+		metrics.walTruncateDuration.Observe(value)
+	}
+	metric := &dto.Metric{}
+	require.NoError(t, metrics.walTruncateDuration.Write(metric))
+	require.Nil(t, metric.Summary)
+	h := metric.GetHistogram()
+	require.NotNil(t, h)
+	require.NotNil(t, h.Schema)
+	require.Equal(t, uint64(3), h.GetSampleCount())
+	require.InDelta(t, 1.76, h.GetSampleSum(), 1e-10)
+	require.NotEmpty(t, h.PositiveSpan)
+}

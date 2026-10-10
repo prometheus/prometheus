@@ -25,6 +25,7 @@ import (
 	"time"
 
 	"github.com/prometheus/client_golang/prometheus"
+	dto "github.com/prometheus/client_model/go"
 	"github.com/prometheus/common/model"
 	"github.com/stretchr/testify/require"
 	"go.uber.org/goleak"
@@ -516,4 +517,23 @@ func TestRemoveFile(t *testing.T) {
 			},
 		},
 	)
+}
+
+func TestNativeHistogramMetrics(t *testing.T) {
+	reg := prometheus.NewRegistry()
+	m := newDiscovererMetrics(reg, nil).(*fileMetrics)
+	require.NoError(t, m.Register())
+	defer m.Unregister()
+	for _, value := range []float64{0.01, 0.25, 1.5} {
+		m.fileSDScanDuration.Observe(value)
+	}
+	metric := &dto.Metric{}
+	require.NoError(t, m.fileSDScanDuration.Write(metric))
+	require.Nil(t, metric.Summary)
+	h := metric.GetHistogram()
+	require.NotNil(t, h)
+	require.NotNil(t, h.Schema)
+	require.Equal(t, uint64(3), h.GetSampleCount())
+	require.InDelta(t, 1.76, h.GetSampleSum(), 1e-10)
+	require.NotEmpty(t, h.PositiveSpan)
 }

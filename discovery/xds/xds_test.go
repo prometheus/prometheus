@@ -23,6 +23,7 @@ import (
 
 	v3 "github.com/envoyproxy/go-control-plane/envoy/service/discovery/v3"
 	"github.com/prometheus/client_golang/prometheus"
+	dto "github.com/prometheus/client_model/go"
 	"github.com/prometheus/common/model"
 	"github.com/prometheus/common/promslog"
 	"github.com/stretchr/testify/require"
@@ -302,4 +303,23 @@ func TestPollingDisappearingTargets(t *testing.T) {
 
 	metrics.Unregister()
 	refreshMetrics.Unregister()
+}
+
+func TestNativeHistogramMetrics(t *testing.T) {
+	reg := prometheus.NewRegistry()
+	m := newDiscovererMetrics(reg, nil).(*xdsMetrics)
+	require.NoError(t, m.Register())
+	defer m.Unregister()
+	for _, value := range []float64{0.01, 0.25, 1.5} {
+		m.fetchDuration.Observe(value)
+	}
+	metric := &dto.Metric{}
+	require.NoError(t, m.fetchDuration.Write(metric))
+	require.Nil(t, metric.Summary)
+	h := metric.GetHistogram()
+	require.NotNil(t, h)
+	require.NotNil(t, h.Schema)
+	require.Equal(t, uint64(3), h.GetSampleCount())
+	require.InDelta(t, 1.76, h.GetSampleSum(), 1e-10)
+	require.NotEmpty(t, h.PositiveSpan)
 }

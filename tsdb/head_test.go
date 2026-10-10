@@ -11282,3 +11282,38 @@ func testOOORestartResetsFirstOOOChunkID(t *testing.T, scenario sampleTypeScenar
 
 	require.NoError(t, h.Close())
 }
+
+func TestInternalNativeHistogramMetrics(t *testing.T) {
+	head, _ := newTestHead(t, 1000, compression.None, false)
+	compactor := NewCompactorMetrics(nil)
+	for _, tc := range []struct {
+		name           string
+		observer       prometheus.Observer
+		values         []float64
+		wantSum        float64
+		classicBuckets int
+	}{
+		{"head_gc", head.metrics.gcDuration, []float64{0.01, 0.25, 1.5}, 1.76, 0},
+		{"wal_truncate", head.metrics.walTruncateDuration, []float64{0.01, 0.25, 1.5}, 1.76, 0},
+		{"chunk_size", compactor.ChunkSize, []float64{32, 256, 4096}, 4384, 12},
+		{"chunk_samples", compactor.ChunkSamples, []float64{4, 120, 240}, 364, 12},
+		{"chunk_range", compactor.ChunkRange, []float64{60, 600, 7200}, 7860, 10},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			for _, value := range tc.values {
+				tc.observer.Observe(value)
+			}
+
+			metric := &dto.Metric{}
+			require.NoError(t, tc.observer.(prometheus.Metric).Write(metric))
+			require.Nil(t, metric.Summary)
+			h := metric.GetHistogram()
+			require.NotNil(t, h)
+			require.NotNil(t, h.Schema)
+			require.Equal(t, uint64(3), h.GetSampleCount())
+			require.InDelta(t, tc.wantSum, h.GetSampleSum(), 1e-10)
+			require.NotEmpty(t, h.PositiveSpan)
+			require.Len(t, h.Bucket, tc.classicBuckets)
+		})
+	}
+}

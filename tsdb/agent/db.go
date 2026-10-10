@@ -133,7 +133,7 @@ type dbMetrics struct {
 	totalAppendedSamples        *prometheus.CounterVec
 	totalAppendedExemplars      prometheus.Counter
 	totalOutOfOrderSamples      prometheus.Counter
-	walTruncateDuration         prometheus.Summary
+	walTruncateDuration         prometheus.Histogram
 	walCorruptionsTotal         prometheus.Counter
 	walTotalReplayDuration      prometheus.Gauge
 	checkpointDeleteFail        prometheus.Counter
@@ -169,9 +169,12 @@ func newDBMetrics(r prometheus.Registerer) *dbMetrics {
 		Help: "Total number of out of order samples ingestion failed attempts.",
 	})
 
-	m.walTruncateDuration = prometheus.NewSummary(prometheus.SummaryOpts{
-		Name: "prometheus_agent_truncate_duration_seconds",
-		Help: "Duration of WAL truncation.",
+	m.walTruncateDuration = prometheus.NewHistogram(prometheus.HistogramOpts{
+		Name:                            "prometheus_agent_truncate_duration_seconds",
+		Help:                            "Duration of WAL truncation.",
+		NativeHistogramBucketFactor:     1.1,
+		NativeHistogramMaxBucketNumber:  100,
+		NativeHistogramMinResetDuration: 1 * time.Hour,
 	})
 
 	m.walCorruptionsTotal = prometheus.NewCounter(prometheus.CounterOpts{

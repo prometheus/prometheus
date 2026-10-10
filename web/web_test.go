@@ -43,6 +43,7 @@ import (
 
 	"github.com/prometheus/client_golang/prometheus"
 	prom_testutil "github.com/prometheus/client_golang/prometheus/testutil"
+	dto "github.com/prometheus/client_model/go"
 	"github.com/stretchr/testify/require"
 	"go.opentelemetry.io/contrib/instrumentation/net/http/otelhttp"
 
@@ -436,6 +437,24 @@ func TestHTTPMetrics(t *testing.T) {
 	require.Equal(t, 0, int(prom_testutil.ToFloat64(ready)))
 	require.Equal(t, 2, int(prom_testutil.ToFloat64(counter.WithLabelValues("/-/ready", strconv.Itoa(http.StatusOK)))))
 	require.Equal(t, 3, int(prom_testutil.ToFloat64(counter.WithLabelValues("/-/ready", strconv.Itoa(http.StatusServiceUnavailable)))))
+	for _, tc := range []struct {
+		name      string
+		histogram *prometheus.HistogramVec
+	}{
+		{"request_duration", handler.metrics.requestDuration},
+		{"response_size", handler.metrics.responseSize},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			metric := &dto.Metric{}
+			require.NoError(t, tc.histogram.WithLabelValues("/-/ready").(prometheus.Metric).Write(metric))
+			h := metric.GetHistogram()
+			require.NotNil(t, h.Schema)
+			require.Equal(t, uint64(5), h.GetSampleCount())
+			require.Positive(t, h.GetSampleSum())
+			require.NotEmpty(t, h.PositiveSpan)
+			require.NotEmpty(t, h.Bucket)
+		})
+	}
 }
 
 func TestShutdownWithStaleConnection(t *testing.T) {

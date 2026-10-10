@@ -756,6 +756,15 @@ func TestScrapePoolReload(t *testing.T) {
 	expectedName, expectedValue := "interval", cfg1.ScrapeInterval.String()
 	require.Equal(t, [][]*dto.LabelPair{{{Name: &expectedName, Value: &expectedValue}}}, got)
 	require.Equal(t, 1.0, prom_testutil.ToFloat64(sp.metrics.targetScrapePoolReloads))
+
+	metric := &dto.Metric{}
+	require.NoError(t, sp.metrics.targetReloadIntervalLength.WithLabelValues(cfg1.ScrapeInterval.String()).(prometheus.Metric).Write(metric))
+	h := metric.GetHistogram()
+	require.NotNil(t, h)
+	require.NotNil(t, h.Schema)
+	require.Equal(t, uint64(1), h.GetSampleCount())
+	require.Positive(t, h.GetSampleSum())
+	require.NotEmpty(t, h.PositiveSpan)
 }
 
 func TestScrapePoolReloadPreserveRelabeledIntervalTimeout(t *testing.T) {
