@@ -2192,7 +2192,7 @@ func simpleHistogramFunc(vectorVals []Vector, enh *EvalNodeHelper, f func(h *his
 	for _, el := range vectorVals[0] {
 		if el.H != nil { // Process only histogram samples.
 			if !enh.enableDelayedNameRemoval {
-				el.Metric = el.Metric.DropReserved(func(n string) bool { return n == labels.MetricName })
+				el.Metric = el.Metric.DropReserved(schema.IsMetadataLabel)
 			}
 			enh.Out = append(enh.Out, Sample{
 				Metric:   el.Metric,
@@ -3011,7 +3011,7 @@ func createLabelsForAbsentFunction(expr parser.Expr) labels.Labels {
 	// Note this gives arguably wrong behaviour for `absent(x{job="a",job="a",foo="bar"})`.
 	has := make(map[string]bool, len(lm))
 	for _, ma := range lm {
-		if ma.Name == labels.MetricName {
+		if schema.IsMetadataLabel(ma.Name) {
 			continue
 		}
 		if ma.Type == labels.MatchEqual && !has[ma.Name] {
