@@ -69,7 +69,7 @@ func NewReadHandler(logger *slog.Logger, r prometheus.Registerer, queryable stor
 			Namespace:                       namespace,
 			Subsystem:                       "remote_read_handler",
 			Name:                            "gate_wait_duration_seconds",
-			Help:                            "How long a remote read request spent waiting for the concurrency gate to open before proceeding.",
+			Help:                            "How long a remote read request spent waiting for the concurrency gate, including requests canceled while waiting.",
 			NativeHistogramBucketFactor:     1.1,
 			NativeHistogramMaxBucketNumber:  100,
 			NativeHistogramMinResetDuration: 1 * time.Hour,
