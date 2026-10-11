@@ -19,6 +19,7 @@ import (
 	"testing"
 
 	"github.com/prometheus/prometheus/model/labels"
+	"github.com/prometheus/prometheus/promql/infohelper"
 )
 
 func BenchmarkInfoIdentifyingMatcherSets(b *testing.B) {
@@ -56,7 +57,13 @@ func BenchmarkInfoIdentifyingMatcherSets(b *testing.B) {
 			b.ReportAllocs()
 			var matcherSets [][]*labels.Matcher
 			for b.Loop() {
-				matcherSets = infoIdentifyingMatcherSets(mat, nil)
+				builder := infohelper.NewDefaultIdentifyingMatcherSetBuilder(infohelper.MatcherSetLimits{})
+				for _, s := range mat {
+					if err := builder.Add(s.Metric); err != nil {
+						b.Fatal(err)
+					}
+				}
+				matcherSets = builder.MatcherSets()
 			}
 			runtime.KeepAlive(matcherSets)
 		})
