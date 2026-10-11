@@ -149,7 +149,7 @@ func TestBasicContentNegotiation(t *testing.T) {
 				Series: 1, SamplesPerSeries: 1,
 			})
 			if tc.senderProtoMsg == remoteapi.WriteV2MessageType {
-				recs.Metadata[0].Type = model.MetricTypeGauge
+				recs.Metadata[0].Type = record.GetMetricType(model.MetricTypeGauge)
 			}
 
 			conf.RemoteWriteConfigs[0].ProtobufMessage = tc.senderProtoMsg
