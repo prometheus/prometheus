@@ -4024,8 +4024,13 @@ func assertAPIResponseMetadataLen(t *testing.T, got any, expLen int) {
 }
 
 type fakeDB struct {
-	err        error
-	blockMetas []tsdb.BlockMeta
+	err                     error
+	blockMetas              []tsdb.BlockMeta
+	nativeMetadata          []tsdb.NativeMetricMetadataSeries
+	nativeMetadataTruncated bool
+	nativeMetadataErr       error
+	nativeMatcherSets       [][]*labels.Matcher
+	nativeLimit             int
 }
 
 func (f *fakeDB) CleanTombstones() error { return f.err }
@@ -4054,6 +4059,109 @@ func (*fakeDB) Stats(statsByLabelName string, limit int) (_ *tsdb.Stats, retErr 
 
 func (*fakeDB) WALReplayStatus() (tsdb.WALReplayStatus, error) {
 	return tsdb.WALReplayStatus{}, nil
+}
+
+func (f *fakeDB) NativeMetricMetadata(_ context.Context, matcherSets [][]*labels.Matcher, limit int) ([]tsdb.NativeMetricMetadataSeries, bool, error) {
+	f.nativeMatcherSets = matcherSets
+	f.nativeLimit = limit
+	return f.nativeMetadata, f.nativeMetadataTruncated, f.nativeMetadataErr
+}
+
+func TestNativeMetricMetadata(t *testing.T) {
+	for _, tc := range []struct {
+		name       string
+		path       string
+		isAgent    bool
+		wantStatus int
+	}{
+		{name: "success", path: "/api/v1/series/metadata", wantStatus: http.StatusOK},
+		{name: "agent mode", path: "/api/v1/series/metadata", isAgent: true, wantStatus: http.StatusUnprocessableEntity},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			metricA := metadata.Metadata{Type: model.MetricTypeCounter, Unit: "requests", Help: "A"}
+			metricB := metadata.Metadata{Type: model.MetricTypeCounter, Unit: "requests", Help: "B"}
+			db := &fakeDB{
+				nativeMetadata: []tsdb.NativeMetricMetadataSeries{{
+					Labels: labels.FromStrings(labels.MetricName, "http_requests_total", "job", "api"),
+					Versions: []tsdb.NativeMetricMetadataVersion{
+						{EffectiveFrom: 1000, Metadata: metricA},
+						{EffectiveFrom: 2000, Metadata: metricB},
+					},
+					Truncated: true,
+				}},
+				nativeMetadataTruncated: true,
+			}
+			logger := promslog.NewNopLogger()
+			api := &API{
+				db:             db,
+				parser:         testParser,
+				ready:          func(f http.HandlerFunc) http.HandlerFunc { return f },
+				logger:         logger,
+				openAPIBuilder: NewOpenAPIBuilder(OpenAPIOptions{}, logger),
+				isAgent:        tc.isAgent,
+			}
+			api.InstallCodec(JSONCodec{})
+			router := route.New()
+			api.Register(router.WithPrefix("/api/v1"))
+
+			req := httptest.NewRequest(http.MethodGet, tc.path+"?match%5B%5D=%7Bjob%3D%22api%22%7D&match%5B%5D=%7B__name__%3D%22http_requests_total%22%7D&limit=1", http.NoBody)
+			rec := httptest.NewRecorder()
+			router.ServeHTTP(rec, req)
+			require.Equal(t, tc.wantStatus, rec.Code)
+			if tc.wantStatus != http.StatusOK {
+				require.Nil(t, db.nativeMatcherSets)
+				if tc.isAgent {
+					require.JSONEq(t, `{"status":"error","errorType":"execution","error":"unavailable with Prometheus Agent"}`, rec.Body.String())
+				}
+				return
+			}
+			require.Equal(t, "application/json", rec.Header().Get("Content-Type"))
+			require.Equal(t, 1, db.nativeLimit)
+			require.Equal(t, [][]*labels.Matcher{
+				{labels.MustNewMatcher(labels.MatchEqual, "job", "api")},
+				{labels.MustNewMatcher(labels.MatchEqual, labels.MetricName, "http_requests_total")},
+			}, db.nativeMatcherSets)
+
+			require.JSONEq(t, `{
+				"status": "success",
+				"data": {
+					"results": [{
+						"labels": {"__name__": "http_requests_total", "job": "api"},
+						"metadata": {"categories": {"metric": {
+							"versions": [
+								{"effectiveFrom": 1000, "effectiveUntil": 2000, "type": "counter", "unit": "requests", "help": "A"},
+								{"effectiveFrom": 2000, "type": "counter", "unit": "requests", "help": "B"}
+							],
+							"truncated": true
+						}}}
+					}],
+					"truncated": true
+				}
+			}`, rec.Body.String())
+		})
+	}
+
+	for _, tc := range []struct {
+		name    string
+		url     string
+		db      TSDBAdminStats
+		errType errorType
+	}{
+		{name: "missing matcher", url: "/series/metadata", db: &fakeDB{}, errType: errorBadData},
+		{name: "invalid matcher", url: "/series/metadata?match%5B%5D=%7B", db: &fakeDB{}, errType: errorBadData},
+		{name: "invalid limit", url: "/series/metadata?match%5B%5D=%7Bjob%3D%22api%22%7D&limit=-1", db: &fakeDB{}, errType: errorBadData},
+		{name: "reader unavailable", url: "/series/metadata?match%5B%5D=%7Bjob%3D%22api%22%7D", db: &testhelpers.FakeTSDBAdminStats{}, errType: errorExec},
+		{name: "disabled", url: "/series/metadata?match%5B%5D=%7Bjob%3D%22api%22%7D", db: &fakeDB{nativeMetadataErr: tsdb.ErrNativeMetadataDisabled}, errType: errorExec},
+		{name: "not ready", url: "/series/metadata?match%5B%5D=%7Bjob%3D%22api%22%7D", db: &fakeDB{nativeMetadataErr: tsdb.ErrNotReady}, errType: errorUnavailable},
+		{name: "unexpected reader error", url: "/series/metadata?match%5B%5D=%7Bjob%3D%22api%22%7D", db: &fakeDB{nativeMetadataErr: errors.New("read failed")}, errType: errorInternal},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			api := &API{db: tc.db, parser: testParser}
+			result := setUnavailStatusOnTSDBNotReady(api.nativeMetricMetadata(httptest.NewRequest(http.MethodGet, tc.url, http.NoBody)))
+			require.NotNil(t, result.err)
+			require.Equal(t, tc.errType, result.err.typ)
+		})
+	}
 }
 
 func TestAdminEndpoints(t *testing.T) {
