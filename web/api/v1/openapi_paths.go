@@ -309,6 +309,77 @@ func (b *OpenAPIBuilder) searchLabelValuesPath() *v3.PathItem {
 	}
 }
 
+func (b *OpenAPIBuilder) infoSearchParams(values bool) []*v3.Parameter {
+	searchDescription := "Up to 32 search terms matched against data label names (OR logic)."
+	searchExample, resultKind := "ver", "names"
+	var params []*v3.Parameter
+	if values {
+		searchDescription = "Up to 32 search terms matched against values (OR logic)."
+		searchExample, resultKind = "2.", "values"
+		params = append(params, queryParamWithExample("label", "Exact data-label name whose values should be searched.", true, stringSchema(), []example{{"example", "version"}}))
+	}
+	params = append(params,
+		queryParamWithExample("expr", "Optional instant-vector PromQL expression. Its identifying labels (job, instance) scope the info-metric query, whose storage range follows info() lookback, offset, and @ semantics.", false, stringSchema(), []example{{"example", "up{job=\"prometheus\"}"}}),
+		queryParamWithExample("data_match[]", "Full PromQL matcher from info()'s data-label selector, including __name__. Repeat for AND semantics. Defaults to __name__=\"target_info\" when no name matcher is supplied; negative-only name matchers are restricted to .+_info names. At most 32 matchers are accepted.", false, stringArraySchema(), []example{{"example", []string{`__name__=~".+_info"`, `env="prod"`}}}),
+		queryParamWithExample("search[]", searchDescription, false, searchTermsSchema("", nil), []example{{"example", []string{searchExample}}}),
+	)
+	params = append(params, commonSearchParams()...)
+	params = append(params,
+		queryParamWithExample("time", "Evaluation timestamp for expr. Defaults to end.", false, timestampSchema(), timestampExamples(exampleTime)),
+		queryParamWithExample("lookback_delta", "Override the lookback period used to evaluate expr and search matching info metrics.", false, durationSchema(), []example{{"duration", "5m"}, {"number", "300"}}),
+		queryParamWithExample("timeout", "Timeout shared by expression evaluation and info-metric search. Defaults to and is capped by the -query.timeout flag.", false, durationSchema(), []example{{"duration", "30s"}, {"number", "30"}}),
+		queryParamWithExample("start", "Start of the info-metric storage range when expr is omitted. With expr, it must be valid but is ignored for range selection and ordering validation.", false, timestampSchema(), timestampExamples(exampleTime.Add(-1*time.Hour))),
+		queryParamWithExample("end", "End of the info-metric storage range when expr is omitted; also the default expr evaluation time.", false, timestampSchema(), timestampExamples(exampleTime)),
+		queryParamWithExample("limit", "Positive maximum number of label "+resultKind+" to return, subject to the operator-configured search limit.", false, integerSchemaWithDefault(b.searchDefaultLimit()), []example{{"example", 20}}),
+		queryParamWithExample("batch_size", "Preferred number of results per NDJSON batch. Clamped to 1000 and the effective result limit.", false, integerSchemaWithDefault(defaultSearchBatchSize), []example{{"example", 20}}),
+	)
+	return params
+}
+
+func (b *OpenAPIBuilder) infoLabelsPath() *v3.PathItem {
+	params := b.infoSearchParams(false)
+	return &v3.PathItem{
+		Get: &v3.Operation{
+			OperationId: "info-labels",
+			Summary:     "Discover info metric data-label names",
+			Description: "Streams data-label names from info metrics matching data_match[] and the identifying-label scope derived from expr. Requests with expr require query authorization. Expression-derived scope is limited to 10000 unique identifying values and 1048576 escaped regular-expression bytes.",
+			Tags:        []string{"labels"},
+			Parameters:  params,
+			Responses:   ndjsonResponsesWithErrorExamples(infoLabelsResponseExamples(), errorResponseExamples(), "Info labels streamed successfully.", "Error retrieving info labels."),
+		},
+		Post: &v3.Operation{
+			OperationId: "info-labels-post",
+			Summary:     "Discover info metric data-label names",
+			Description: "Streams data-label names from scoped info metrics. Requests with expr require query authorization. Accepts the same parameters as the GET version.",
+			Tags:        []string{"labels"},
+			RequestBody: formRequestBodyWithExamples("InfoLabelsPostInputBody", infoLabelsPostExamples(), "Submit an info labels query."),
+			Responses:   ndjsonResponsesWithErrorExamples(infoLabelsResponseExamples(), errorResponseExamples(), "Info labels streamed successfully via POST.", "Error retrieving info labels via POST."),
+		},
+	}
+}
+
+func (b *OpenAPIBuilder) infoLabelValuesPath() *v3.PathItem {
+	params := b.infoSearchParams(true)
+	return &v3.PathItem{
+		Get: &v3.Operation{
+			OperationId: "info-label-values",
+			Summary:     "Discover info metric data-label values",
+			Description: "Streams values for one exact data-label name from scoped info metrics. Requests with expr require query authorization. Expression-derived scope is limited to 10000 unique identifying values and 1048576 escaped regular-expression bytes.",
+			Tags:        []string{"labels"},
+			Parameters:  params,
+			Responses:   ndjsonResponsesWithErrorExamples(infoLabelValuesResponseExamples(), errorResponseExamples(), "Info label values streamed successfully.", "Error retrieving info label values."),
+		},
+		Post: &v3.Operation{
+			OperationId: "info-label-values-post",
+			Summary:     "Discover info metric data-label values",
+			Description: "Streams values for one exact data-label name from scoped info metrics. Requests with expr require query authorization. Accepts the same parameters as the GET version.",
+			Tags:        []string{"labels"},
+			RequestBody: formRequestBodyWithExamples("InfoLabelValuesPostInputBody", infoLabelValuesPostExamples(), "Submit an info label value query."),
+			Responses:   ndjsonResponsesWithErrorExamples(infoLabelValuesResponseExamples(), errorResponseExamples(), "Info label values streamed successfully via POST.", "Error retrieving info label values via POST."),
+		},
+	}
+}
+
 func (*OpenAPIBuilder) seriesPath() *v3.PathItem {
 	params := []*v3.Parameter{
 		queryParamWithExample("start", "Start timestamp for series query.", false, timestampSchema(), timestampExamples(exampleTime.Add(-1*time.Hour))),

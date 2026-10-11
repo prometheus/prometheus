@@ -682,6 +682,103 @@ curl -g 'http://localhost:9090/api/v1/search/label_values?label=instance&match[]
 {"status":"success","has_more":true}
 ```
 
+### Querying info labels
+
+The experimental info-label endpoints support autocomplete for the second
+argument of the experimental `info()` PromQL function. They discover data
+labels on info metrics such as `target_info`; `__name__`, `job`, and `instance`
+are excluded. These are dedicated operations within the Search API family,
+sharing its storage and NDJSON infrastructure. Their separate routes keep the
+info-specific scope parameters and expression-dependent time semantics explicit.
+
+```
+GET /api/v1/search/info_labels
+POST /api/v1/search/info_labels
+GET /api/v1/search/info_label_values
+POST /api/v1/search/info_label_values
+```
+
+Both endpoints accept the common search parameters described above, except
+`match[]`. The metric-name endpoint's `include_metadata` option enriches metrics
+with type, help, and unit; it is not part of the info-label request contract.
+Metadata enrichment for info-label results would need a separately defined
+source and schema. The info-label endpoints additionally accept:
+
+- `data_match[]=<matcher>`: Repeated full PromQL matcher copied from `info()`'s
+  data-label selector, including its special `__name__` matcher. Multiple
+  matchers use AND semantics. When no `__name__` matcher is supplied, the
+  endpoint uses `__name__="target_info"`; a request containing only negative
+  name matchers is also restricted to names matching `.+_info`.
+- `expr=<string>`: Optional instant-vector PromQL expression. Its `job` and
+  `instance` values scope the matching info metrics. Results containing only `job`, only
+  `instance`, or both are kept in separate presence groups so a missing label
+  is not treated as a wildcard. For a group containing both labels, the
+  endpoint may conservatively inspect cross-pairs of observed values; the
+  `info()` function still performs its exact identifying-label join. Matrix,
+  scalar, and string expressions are rejected.
+- `time=<rfc3339 | unix_timestamp>`: Evaluation timestamp for `expr`. Defaults
+  to `end`.
+- `lookback_delta=<duration | float>`: Override the lookback period used both
+  to evaluate `expr` and to search the matching info metrics.
+- `timeout=<duration | float>`: Timeout shared by expression evaluation and
+  info-metric search. It defaults to and is capped by `--query.timeout`.
+
+When `expr` is present, the info-metric storage range is the range an instant
+`info(expr, ...)` evaluation would use, including lookback, `offset`, and `@`
+modifiers. `start` does not alter that range or participate in `start`/`end`
+ordering validation, while `end` supplies the default evaluation `time`.
+Supplied timestamps must still be syntactically valid. Without `expr`, `start`
+and `end` directly bound the info-metric storage search and must not be
+inverted.
+
+`/api/v1/search/info_labels` applies `search[]` and `limit` to data-label names and
+streams `{name, score?}` records. It rejects the `label` parameter.
+
+```bash
+curl -N -g 'http://localhost:9090/api/v1/search/info_labels?expr=http_requests_total{job="prometheus"}&data_match[]=__name__=~".+_info"&data_match[]=env="prod"&search[]=ver&sort_by=score'
+```
+
+```json
+{"results":[{"name":"version"}]}
+{"status":"success","has_more":false}
+```
+
+`/api/v1/search/info_label_values` requires an exact decoded `label` parameter. It
+applies `search[]` and `limit` to that label's values and streams
+`{value, score?}` records. Empty labels and the non-data labels `__name__`,
+`job`, and `instance` are rejected.
+
+```bash
+curl -N -g 'http://localhost:9090/api/v1/search/info_label_values?label=version&expr=http_requests_total{job="prometheus"}&search[]=2.'
+```
+
+```json
+{"results":[{"value":"2.0"},{"value":"2.1"}]}
+{"status":"success","has_more":false}
+```
+
+Both endpoints require `--enable-feature=search-api,promql-experimental-functions`.
+`GET /api/v1/features` reports `data.api.info_label_search=true` only when
+both flags are enabled and Prometheus is not running in Agent mode. An absent
+or false value means the endpoint pair is unavailable.
+
+Requests containing `expr` are query operations: sample values can affect
+which labels are returned. They must receive the same authorization as
+`/api/v1/query`; deployments that cannot authorize based on request parameters
+should protect both routes as query surfaces.
+
+One deadline covers expression evaluation and storage search. Expiry before
+streaming returns a normal HTTP 503 JSON timeout error; expiry after streaming
+starts produces a terminal NDJSON timeout error. Client cancellation may instead leave an abrupt EOF.
+
+Their default result limit is 100, reduced when `--web.search.max-limit` is
+lower. Limits bound the endpoint's retained result state and wire output;
+storage implementations may still enumerate a larger candidate set internally.
+At most 32 `data_match[]` parameters may be supplied. Expression-derived scope
+is rejected before the info-metric search if
+it exceeds 10,000 unique identifying values or 1,048,576 escaped regular-
+expression bytes; it is never silently truncated.
+
 ## Querying exemplars
 
 This is **experimental** and might change in the future.

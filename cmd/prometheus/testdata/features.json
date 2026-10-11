@@ -2,6 +2,7 @@
   "api": {
     "admin": false,
     "exclude_alerts": true,
+    "info_label_search": false,
     "label_values_match": true,
     "lifecycle": false,
     "openapi_3.1": true,

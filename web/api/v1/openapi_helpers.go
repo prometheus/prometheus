@@ -461,3 +461,10 @@ func searchTermsSchema(description string, example any) *base.SchemaProxy {
 	}
 	return base.CreateSchemaProxy(schema)
 }
+
+func stringArraySchema() *base.SchemaProxy {
+	return base.CreateSchemaProxy(&base.Schema{
+		Type:  []string{"array"},
+		Items: &base.DynamicValue[*base.SchemaProxy, bool]{A: stringSchema()},
+	})
+}
