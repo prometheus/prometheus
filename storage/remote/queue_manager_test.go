@@ -148,10 +148,6 @@ func TestBasicContentNegotiation(t *testing.T) {
 				NoST:   tc.senderProtoMsg == remoteapi.WriteV1MessageType, // RW1 does not support ST.
 				Series: 1, SamplesPerSeries: 1,
 			})
-			if tc.senderProtoMsg == remoteapi.WriteV2MessageType {
-				recs.Metadata[0].Type = record.GetMetricType(model.MetricTypeGauge)
-			}
-
 			conf.RemoteWriteConfigs[0].ProtobufMessage = tc.senderProtoMsg
 			require.NoError(t, s.ApplyConfig(conf))
 			hash, err := toHash(writeConfig)
@@ -198,8 +194,12 @@ func TestBasicContentNegotiation(t *testing.T) {
 			expectedMetadataTotal := 0.0
 			if tc.senderProtoMsg == remoteapi.WriteV2MessageType && !tc.expectFail {
 				expectedMetadataTotal = float64(len(recs.Metadata))
+				require.Eventually(t, func() bool {
+					return client_testutil.ToFloat64(qm.metrics.metadataTotal) == expectedMetadataTotal
+				}, 5*time.Second, 10*time.Millisecond)
+			} else {
+				require.Equal(t, expectedMetadataTotal, client_testutil.ToFloat64(qm.metrics.metadataTotal))
 			}
-			require.Equal(t, expectedMetadataTotal, client_testutil.ToFloat64(qm.metrics.metadataTotal))
 		})
 	}
 }
