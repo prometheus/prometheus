@@ -126,8 +126,8 @@ func main() {
 	checkConfigCmd := checkCmd.Command("config", "Check if the config files are valid or not.")
 	configFiles := checkConfigCmd.Arg(
 		"config-files",
-		"The config files to check.",
-	).Required().ExistingFiles()
+		"The config files to check, default is read from standard input.",
+	).ExistingFiles()
 	checkConfigSyntaxOnly := checkConfigCmd.Flag("syntax-only", "Only check the config file syntax, ignoring file and content validation referenced in the config").Bool()
 	checkConfigLint := checkConfigCmd.Flag(
 		"lint",
@@ -608,13 +608,22 @@ func CheckServerStatus(serverURL *url.URL, checkEndpoint string, roundTripper ht
 	return nil
 }
 
-// CheckConfig validates configuration files.
+// CheckConfig validates configuration files. With no files given, it reads a
+// single config from standard input.
 func CheckConfig(agentMode, checkSyntaxOnly bool, lintSettings configLintConfig, p parser.Parser, files ...string) int {
 	failed := false
 	hasErrors := false
 
+	if len(files) == 0 {
+		files = []string{""}
+	}
+
 	for _, f := range files {
 		ruleFiles, scrapeConfigs, err := checkConfig(agentMode, f, checkSyntaxOnly)
+		display := f
+		if display == "" {
+			display = "standard input"
+		}
 		if err != nil {
 			fmt.Fprintln(os.Stderr, "  FAILED:", err)
 			hasErrors = true
@@ -623,7 +632,7 @@ func CheckConfig(agentMode, checkSyntaxOnly bool, lintSettings configLintConfig,
 			if len(ruleFiles) > 0 {
 				fmt.Printf("  SUCCESS: %d rule files found\n", len(ruleFiles))
 			}
-			fmt.Printf(" SUCCESS: %s is valid prometheus config file syntax\n", f)
+			fmt.Printf(" SUCCESS: %s is valid prometheus config file syntax\n", display)
 		}
 		fmt.Println()
 
@@ -671,10 +680,49 @@ func checkFileExists(fn string) error {
 	return err
 }
 
-func checkConfig(agentMode bool, filename string, checkSyntaxOnly bool) ([]string, []*config.ScrapeConfig, error) {
-	fmt.Println("Checking", filename)
+// checkAgentModeConstraints applies the same agent-mode validation that
+// config.LoadFile performs on a config loaded from a file. It is needed
+// separately for a config read from standard input, which has no file for
+// LoadFile to read and validate in one step.
+func checkAgentModeConstraints(cfg *config.Config) error {
+	if len(cfg.AlertingConfig.AlertmanagerConfigs) > 0 || len(cfg.AlertingConfig.AlertRelabelConfigs) > 0 {
+		return errors.New("field alerting is not allowed in agent mode")
+	}
+	if len(cfg.RuleFiles) > 0 {
+		return errors.New("field rule_files is not allowed in agent mode")
+	}
+	if len(cfg.RemoteReadConfigs) > 0 {
+		return errors.New("field remote_read is not allowed in agent mode")
+	}
+	return nil
+}
 
-	cfg, err := config.LoadFile(filename, agentMode, logger)
+func checkConfig(agentMode bool, filename string, checkSyntaxOnly bool) ([]string, []*config.ScrapeConfig, error) {
+	var (
+		cfg *config.Config
+		err error
+	)
+	if filename == "" {
+		fmt.Println("Checking standard input")
+		data, readErr := io.ReadAll(os.Stdin)
+		if readErr != nil {
+			return nil, nil, readErr
+		}
+		cfg, err = config.Load(string(data), logger)
+		if err == nil && agentMode {
+			err = checkAgentModeConstraints(cfg)
+		}
+		if err == nil {
+			// There is no config file whose directory relative paths (rule
+			// files, TLS certs, file_sd files, ...) could resolve against,
+			// so fall back to the current working directory, same as if the
+			// paths had been left untouched.
+			cfg.SetDirectory(".")
+		}
+	} else {
+		fmt.Println("Checking", filename)
+		cfg, err = config.LoadFile(filename, agentMode, logger)
+	}
 	if err != nil {
 		return nil, nil, err
 	}

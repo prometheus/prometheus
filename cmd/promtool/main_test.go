@@ -381,6 +381,49 @@ func TestCheckConfigSyntax(t *testing.T) {
 	}
 }
 
+// TestCheckConfigStdin covers `promtool check config` with no file argument,
+// which reads a single config from standard input instead.
+func TestCheckConfigStdin(t *testing.T) {
+	withStdin := func(t *testing.T, content string) {
+		t.Helper()
+		r, w, err := os.Pipe()
+		require.NoError(t, err)
+		_, err = w.WriteString(content)
+		require.NoError(t, err)
+		require.NoError(t, w.Close())
+
+		old := os.Stdin
+		os.Stdin = r
+		t.Cleanup(func() { os.Stdin = old })
+	}
+
+	t.Run("good config from stdin", func(t *testing.T) {
+		withStdin(t, "global:\n  scrape_interval: 15s\n")
+
+		p := parser.NewParser(parser.Options{})
+		exitCode := CheckConfig(false, false, newConfigLintConfig(lintOptionNone, false, false, model.UTF8Validation, 0), p)
+		require.Equal(t, successExitCode, exitCode)
+	})
+
+	t.Run("malformed config from stdin", func(t *testing.T) {
+		withStdin(t, "global: [\n")
+
+		p := parser.NewParser(parser.Options{})
+		exitCode := CheckConfig(false, false, newConfigLintConfig(lintOptionNone, false, false, model.UTF8Validation, 0), p)
+		require.Equal(t, failureExitCode, exitCode)
+	})
+
+	t.Run("agent mode rejects rule_files from stdin", func(t *testing.T) {
+		data, err := os.ReadFile("testdata/config_with_rule_files.yml")
+		require.NoError(t, err)
+		withStdin(t, string(data))
+
+		p := parser.NewParser(parser.Options{})
+		exitCode := CheckConfig(true, false, newConfigLintConfig(lintOptionNone, false, false, model.UTF8Validation, 0), p)
+		require.Equal(t, failureExitCode, exitCode)
+	})
+}
+
 func TestAuthorizationConfig(t *testing.T) {
 	t.Parallel()
 	cases := []struct {
