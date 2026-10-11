@@ -1809,7 +1809,7 @@ func TestSearchBatchSize(t *testing.T) {
 			api.maxSearchLimit = tc.maxLimit
 			params := url.Values{"batch_size": {tc.batchSize}, "limit": {tc.limit}}
 			req := httptest.NewRequest(http.MethodGet, "/search/metric_names?"+params.Encode(), http.NoBody)
-			sp, err := api.parseSearchParams(req)
+			sp, err := api.parseSearchParams(req, true)
 			require.Nil(t, err)
 			require.Equal(t, tc.wantBatch, sp.batchSize)
 			require.Equal(t, tc.wantLimit, sp.limit)
@@ -1820,7 +1820,7 @@ func TestSearchBatchSize(t *testing.T) {
 		t.Run("invalid batch "+value, func(t *testing.T) {
 			params := url.Values{"batch_size": {value}}
 			req := httptest.NewRequest(http.MethodGet, "/search/metric_names?"+params.Encode(), http.NoBody)
-			_, err := minimalSearchAPI().parseSearchParams(req)
+			_, err := minimalSearchAPI().parseSearchParams(req, true)
 			require.NotNil(t, err)
 			require.Equal(t, errorBadData, err.typ)
 		})

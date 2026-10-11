@@ -183,8 +183,9 @@ func (nw *ndjsonWriter) writeLine(v any) error {
 	return nil
 }
 
-// parseSearchParams parses the common query parameters for search endpoints.
-func (api *API) parseSearchParams(r *http.Request) (searchParams, *apiError) {
+// parseSearchParams parses common search parameters. Timestamps are always
+// parsed; validateTimeRange controls only start/end ordering validation.
+func (api *API) parseSearchParams(r *http.Request, validateTimeRange bool) (searchParams, *apiError) {
 	var sp searchParams
 
 	now := api.now()
@@ -203,7 +204,7 @@ func (api *API) parseSearchParams(r *http.Request) (searchParams, *apiError) {
 	// this instant" search. Only strictly inverted ranges are rejected, so
 	// a client that accidentally sets end < start gets an immediate error
 	// rather than empty (and possibly misleading) results.
-	if sp.end.Before(sp.start) {
+	if validateTimeRange && sp.end.Before(sp.start) {
 		return sp, &apiError{errorBadData, errors.New("end timestamp must not be before start timestamp")}
 	}
 
@@ -784,20 +785,26 @@ func filterChainHasExpensiveScoring(fuzzThreshold int, fuzzAlg string) bool {
 	return fuzzThreshold > 0
 }
 
-// searchRequest holds the common objects prepared by newSearchRequest for a search request.
+// preparedSearchRequest holds validated search parameters and hints before
+// storage is opened.
+type preparedSearchRequest struct {
+	sp    searchParams
+	hints *storage.SearchHints
+}
+
+type searchRequestOptions struct {
+	exprControlsTimeRange bool
+}
+
+// searchRequest owns an acquired search-capable querier. Callers must close q.
 type searchRequest struct {
-	sp       searchParams
-	hints    *storage.SearchHints
+	preparedSearchRequest
 	searcher storage.Searcher
 	q        storage.Querier
 }
 
-// newSearchRequest handles the setup shared by all search endpoints: CORS headers,
-// feature-gate checks, form parsing, common parameter parsing, sort_by
-// validation, querier acquisition, and search hint construction. On success a
-// non-nil searchRequest is returned and the caller must defer req.q.Close(). On
-// failure the error has already been written to w and nil is returned.
-func (api *API) newSearchRequest(w http.ResponseWriter, r *http.Request, endpoint string) *searchRequest {
+// prepareSearchRequest validates common search parameters without opening storage.
+func (api *API) prepareSearchRequest(w http.ResponseWriter, r *http.Request, endpoint string, opts searchRequestOptions) *preparedSearchRequest {
 	httputil.SetCORS(w, api.CORSOrigin, r)
 
 	if !api.enableSearch {
@@ -815,7 +822,8 @@ func (api *API) newSearchRequest(w http.ResponseWriter, r *http.Request, endpoin
 		return nil
 	}
 
-	sp, apiErr := api.parseSearchParams(r)
+	validateTimeRange := !opts.exprControlsTimeRange || r.FormValue("expr") == ""
+	sp, apiErr := api.parseSearchParams(r, validateTimeRange)
 	if apiErr != nil {
 		api.respondError(w, apiErr, nil)
 		return nil
@@ -826,26 +834,38 @@ func (api *API) newSearchRequest(w http.ResponseWriter, r *http.Request, endpoin
 		return nil
 	}
 
-	q, err := api.Queryable.Querier(timestamp.FromTime(sp.start), timestamp.FromTime(sp.end))
-	if err != nil {
-		api.respondPreStreamSearchError(w, err)
-		return nil
-	}
-
-	searcher, ok := q.(storage.Searcher)
-	if !ok {
-		_ = q.Close()
-		api.respondError(w, &apiError{errorUnavailable, errors.New("search not supported by storage")}, nil)
-		return nil
-	}
-
 	hints := &storage.SearchHints{
 		Filter: buildSearchFilter(sp.searches, sp.fuzzThreshold, sp.fuzzAlg, sp.caseSensitive),
 		Limit:  searchHintsLimit(sp.limit), // Fetch one extra to detect has_more (with saturation guard).
 	}
 	hints.OrderBy = sortOrdering(sp.sortBy, sp.sortDir)
 
-	return &searchRequest{sp: sp, hints: hints, searcher: searcher, q: q}
+	return &preparedSearchRequest{sp: sp, hints: hints}
+}
+
+// newSearchRequest prepares a request and opens storage over its start/end range.
+func (api *API) newSearchRequest(w http.ResponseWriter, r *http.Request, endpoint string) *searchRequest {
+	prepared := api.prepareSearchRequest(w, r, endpoint, searchRequestOptions{})
+	if prepared == nil {
+		return nil
+	}
+	q, err := api.Queryable.Querier(timestamp.FromTime(prepared.sp.start), timestamp.FromTime(prepared.sp.end))
+	if err != nil {
+		api.respondPreStreamSearchError(w, err)
+		return nil
+	}
+	return api.searchRequestFromQuerier(w, prepared, q)
+}
+
+// searchRequestFromQuerier transfers ownership of q, closing it on failure.
+func (api *API) searchRequestFromQuerier(w http.ResponseWriter, prepared *preparedSearchRequest, q storage.Querier) *searchRequest {
+	searcher, ok := q.(storage.Searcher)
+	if !ok {
+		_ = q.Close()
+		api.respondError(w, &apiError{errorUnavailable, errors.New("search not supported by storage")}, nil)
+		return nil
+	}
+	return &searchRequest{preparedSearchRequest: *prepared, searcher: searcher, q: q}
 }
 
 // searchMetricNames handles GET/POST /api/v1/search/metric_names.
