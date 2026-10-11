@@ -1846,10 +1846,6 @@ func (s *shards) sendSamplesWithBackoff(ctx context.Context, samples []prompb.Ti
 		// So we exit early to not update the metrics.
 		return accumulatedStats, err
 	}
-	if err == nil {
-		s.qm.metrics.metadataTotal.Add(float64(metadataCount))
-	}
-
 	s.qm.metrics.sentBytesTotal.Add(float64(reqSize))
 	s.qm.metrics.highestSentTimestamp.Set(float64(highest / 1000))
 
@@ -1971,6 +1967,9 @@ func (s *shards) sendV2SamplesWithBackoff(ctx context.Context, samples []writev2
 		// When there is resharding, we cancel the context for this queue, which means the data is not sent.
 		// So we exit early to not update the metrics.
 		return accumulatedStats, err
+	}
+	if err == nil {
+		s.qm.metrics.metadataTotal.Add(float64(metadataCount))
 	}
 
 	s.qm.metrics.sentBytesTotal.Add(float64(reqSize))
