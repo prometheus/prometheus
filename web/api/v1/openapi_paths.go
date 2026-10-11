@@ -287,8 +287,8 @@ func commonSearchParams() []*v3.Parameter {
 		queryParamWithExample("fuzz_threshold", "Fuzzy threshold in the range 0-100. A value of 0 is the lowest fuzzy threshold.", false, integerSchema(), []example{{"example", 80}}),
 		queryParamWithExample("fuzz_alg", "Fuzzy algorithm. Supported values are subsequence (default) and jarowinkler.", false, enumStringSchema(FuzzAlgorithms()...), nil),
 		queryParamWithExample("case_sensitive", "Whether matching is case-sensitive.", false, booleanSchema(), []example{{"example", true}}),
-		queryParamWithExample("sort_by", "Sort mode. Supported values are alpha and score.", false, enumStringSchema("alpha", "score"), nil),
-		queryParamWithExample("sort_dir", "Sort direction. Only valid with sort_by=alpha. Supported values are asc and dsc.", false, enumStringSchema("asc", "dsc"), nil),
+		queryParamWithExample("sort_by", "Sort mode. Supported values are alpha and score. If omitted, results are ordered by value ascending.", false, enumStringSchema("alpha", "score"), nil),
+		queryParamWithExample("sort_dir", "Sort direction. Only valid with explicit sort_by=alpha. Supported values are asc and dsc.", false, enumStringSchema("asc", "dsc"), nil),
 		queryParamWithExample("include_score", "Include the relevance score in each result.", false, booleanSchema(), []example{{"example", true}}),
 	}
 }
@@ -299,16 +299,13 @@ func (b *OpenAPIBuilder) searchMetricNamesPath() *v3.PathItem {
 			Type:  []string{"array"},
 			Items: &base.DynamicValue[*base.SchemaProxy, bool]{A: stringSchema()},
 		}), []example{{"example", []string{"{job=\"prometheus\"}"}}}),
-		queryParamWithExample("search[]", "One or more search terms matched against metric names (OR logic).", false, base.CreateSchemaProxy(&base.Schema{
-			Type:  []string{"array"},
-			Items: &base.DynamicValue[*base.SchemaProxy, bool]{A: stringSchema()},
-		}), []example{{"example", []string{"http_req"}}}),
+		queryParamWithExample("search[]", "Up to 32 search terms matched against metric names (OR logic).", false, searchTermsSchema("", nil), []example{{"example", []string{"http_req"}}}),
 	}, commonSearchParams()...)
 	params = append(params,
 		queryParamWithExample("include_metadata", "Include metric metadata in each result.", false, booleanSchema(), []example{{"example", true}}),
 		queryParamWithExample("start", "Start timestamp for metric name search.", false, timestampSchema(), timestampExamples(exampleTime.Add(-1*time.Hour))),
 		queryParamWithExample("end", "End timestamp for metric name search.", false, timestampSchema(), timestampExamples(exampleTime)),
-		queryParamWithExample("limit", "Maximum number of metric names to return.", false, integerSchemaWithDefault(b.searchDefaultLimit()), []example{{"example", 20}}),
+		queryParamWithExample("limit", "Positive maximum number of metric names to return, subject to the operator-configured search limit.", false, integerSchemaWithDefault(b.searchDefaultLimit()), []example{{"example", 20}}),
 		queryParamWithExample("batch_size", "Preferred number of results per NDJSON batch. Clamped to 1000 and the effective result limit.", false, integerSchemaWithDefault(defaultSearchBatchSize), []example{{"example", 20}}),
 	)
 	return &v3.PathItem{
@@ -335,15 +332,12 @@ func (b *OpenAPIBuilder) searchLabelNamesPath() *v3.PathItem {
 			Type:  []string{"array"},
 			Items: &base.DynamicValue[*base.SchemaProxy, bool]{A: stringSchema()},
 		}), []example{{"example", []string{"{__name__=\"up\"}"}}}),
-		queryParamWithExample("search[]", "One or more search terms matched against label names (OR logic).", false, base.CreateSchemaProxy(&base.Schema{
-			Type:  []string{"array"},
-			Items: &base.DynamicValue[*base.SchemaProxy, bool]{A: stringSchema()},
-		}), []example{{"example", []string{"inst"}}}),
+		queryParamWithExample("search[]", "Up to 32 search terms matched against label names (OR logic).", false, searchTermsSchema("", nil), []example{{"example", []string{"inst"}}}),
 	}, commonSearchParams()...)
 	params = append(params,
 		queryParamWithExample("start", "Start timestamp for label name search.", false, timestampSchema(), timestampExamples(exampleTime.Add(-1*time.Hour))),
 		queryParamWithExample("end", "End timestamp for label name search.", false, timestampSchema(), timestampExamples(exampleTime)),
-		queryParamWithExample("limit", "Maximum number of label names to return.", false, integerSchemaWithDefault(b.searchDefaultLimit()), []example{{"example", 20}}),
+		queryParamWithExample("limit", "Positive maximum number of label names to return, subject to the operator-configured search limit.", false, integerSchemaWithDefault(b.searchDefaultLimit()), []example{{"example", 20}}),
 		queryParamWithExample("batch_size", "Preferred number of results per NDJSON batch. Clamped to 1000 and the effective result limit.", false, integerSchemaWithDefault(defaultSearchBatchSize), []example{{"example", 20}}),
 	)
 	return &v3.PathItem{
@@ -371,15 +365,12 @@ func (b *OpenAPIBuilder) searchLabelValuesPath() *v3.PathItem {
 			Type:  []string{"array"},
 			Items: &base.DynamicValue[*base.SchemaProxy, bool]{A: stringSchema()},
 		}), []example{{"example", []string{"up"}}}),
-		queryParamWithExample("search[]", "One or more search terms matched against label values (OR logic).", false, base.CreateSchemaProxy(&base.Schema{
-			Type:  []string{"array"},
-			Items: &base.DynamicValue[*base.SchemaProxy, bool]{A: stringSchema()},
-		}), []example{{"example", []string{"909"}}}),
+		queryParamWithExample("search[]", "Up to 32 search terms matched against label values (OR logic).", false, searchTermsSchema("", nil), []example{{"example", []string{"909"}}}),
 	}, commonSearchParams()...)
 	params = append(params,
 		queryParamWithExample("start", "Start timestamp for label value search.", false, timestampSchema(), timestampExamples(exampleTime.Add(-1*time.Hour))),
 		queryParamWithExample("end", "End timestamp for label value search.", false, timestampSchema(), timestampExamples(exampleTime)),
-		queryParamWithExample("limit", "Maximum number of label values to return.", false, integerSchemaWithDefault(b.searchDefaultLimit()), []example{{"example", 10}}),
+		queryParamWithExample("limit", "Positive maximum number of label values to return, subject to the operator-configured search limit.", false, integerSchemaWithDefault(b.searchDefaultLimit()), []example{{"example", 10}}),
 		queryParamWithExample("batch_size", "Preferred number of results per NDJSON batch. Clamped to 1000 and the effective result limit.", false, integerSchemaWithDefault(defaultSearchBatchSize), []example{{"example", 10}}),
 	)
 	return &v3.PathItem{
