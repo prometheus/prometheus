@@ -255,6 +255,12 @@ func (c *flagConfig) setFeatureListOptions(logger *slog.Logger) error {
 				c.agent.EnableMetadataWALRecords = true
 				features.Enable(features.TSDB, "metadata_wal_records")
 				logger.Info("Experimental metadata records in WAL enabled")
+			case "native-metadata":
+				c.scrape.AppendMetadata = true
+				c.web.AppendMetadata = true
+				c.tsdb.EnableNativeMetadata = true
+				features.Enable(features.TSDB, "native_metadata")
+				logger.Info("Experimental in-memory native metric metadata enabled")
 			case "promql-per-step-stats":
 				c.enablePerStepStats = true
 				logger.Info("Experimental per-step statistics reporting")
@@ -666,7 +672,7 @@ func main() {
 	a.Flag("scrape.discovery-reload-interval", "Interval used by scrape manager to throttle target groups updates.").
 		Hidden().Default("5s").SetValue(&cfg.scrape.DiscoveryReloadInterval)
 
-	a.Flag("enable-feature", "Comma separated feature names to enable. Valid options: concurrent-rule-eval, created-timestamp-zero-ingestion, delayed-compaction, exemplar-storage, extra-scrape-metrics, histograms-st-encoding, memory-snapshot-on-shutdown, metadata-wal-records, old-ui, openmetrics2, otlp-deltatocumulative, otlp-native-delta-ingestion, promql-binop-fill-modifiers, promql-delayed-name-removal, promql-experimental-functions, promql-native-histograms-as-classic, promql-per-step-stats, promql-unquoted-utf8-names, query-cost, search-api, st-storage, st-synthesis, type-and-unit-labels, use-start-timestamps, use-uncached-io, xor2-encoding, zstd-scrape. See https://prometheus.io/docs/prometheus/latest/feature_flags/ for more details.").
+	a.Flag("enable-feature", "Comma separated feature names to enable. Valid options: concurrent-rule-eval, created-timestamp-zero-ingestion, delayed-compaction, exemplar-storage, extra-scrape-metrics, histograms-st-encoding, memory-snapshot-on-shutdown, metadata-wal-records, native-metadata, old-ui, openmetrics2, otlp-deltatocumulative, otlp-native-delta-ingestion, promql-binop-fill-modifiers, promql-delayed-name-removal, promql-experimental-functions, promql-native-histograms-as-classic, promql-per-step-stats, promql-unquoted-utf8-names, query-cost, search-api, st-storage, st-synthesis, type-and-unit-labels, use-start-timestamps, use-uncached-io, xor2-encoding, zstd-scrape. See https://prometheus.io/docs/prometheus/latest/feature_flags/ for more details.").
 		StringsVar(&cfg.featureList)
 
 	a.Flag("agent", "Run Prometheus in 'Agent mode'.").BoolVar(&agentMode)
@@ -2013,6 +2019,25 @@ func (s *readyStorage) ExemplarQuerier(ctx context.Context) (storage.ExemplarQue
 	return nil, tsdb.ErrNotReady
 }
 
+// NativeMetricMetadata returns native metric metadata from the active TSDB.
+func (s *readyStorage) NativeMetricMetadata(ctx context.Context, matcherSets [][]*labels.Matcher, limit int) ([]tsdb.NativeMetricMetadataSeries, bool, error) {
+	if x := s.get(); x != nil {
+		switch db := x.(type) {
+		case *tsdb.DB:
+			series, truncated, err := db.NativeMetricMetadata(ctx, matcherSets, limit)
+			if errors.Is(err, tsdb.ErrNativeMetadataDisabled) {
+				err = fmt.Errorf("%w; enable with --enable-feature=native-metadata", err)
+			}
+			return series, truncated, err
+		case *agent.DB:
+			return nil, false, agent.ErrUnsupported
+		default:
+			panic(fmt.Sprintf("unknown storage type %T", db))
+		}
+	}
+	return nil, false, tsdb.ErrNotReady
+}
+
 // Appender implements the Storage interface.
 func (s *readyStorage) Appender(ctx context.Context) storage.Appender {
 	if x := s.get(); x != nil {
@@ -2226,6 +2251,7 @@ type tsdbOptions struct {
 	EnableSTAsZeroSample           bool
 	EnableSTStorage                bool
 	EnableHistogramSTEncoding      bool
+	EnableNativeMetadata           bool
 	StaleSeriesCompactionThreshold float64
 	EnableFastStartup              bool
 	FloatChunkEncoding             chunkenc.Encoding
@@ -2260,6 +2286,7 @@ func (opts tsdbOptions) ToTSDBOptions() tsdb.Options {
 		EnableSTAsZeroSample:           opts.EnableSTAsZeroSample,
 		EnableSTStorage:                opts.EnableSTStorage,
 		EnableHistogramSTEncoding:      opts.EnableHistogramSTEncoding,
+		EnableNativeMetadata:           opts.EnableNativeMetadata,
 		StaleSeriesCompactionThreshold: opts.StaleSeriesCompactionThreshold,
 		EnableFastStartup:              opts.EnableFastStartup,
 		FloatChunkEncoding:             opts.FloatChunkEncoding,
