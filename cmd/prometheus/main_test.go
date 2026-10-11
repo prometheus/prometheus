@@ -54,6 +54,8 @@ import (
 	"github.com/prometheus/prometheus/rules"
 	"github.com/prometheus/prometheus/storage"
 	"github.com/prometheus/prometheus/storage/remote"
+	"github.com/prometheus/prometheus/tsdb"
+	"github.com/prometheus/prometheus/util/features"
 	"github.com/prometheus/prometheus/util/testutil"
 )
 
@@ -1546,6 +1548,37 @@ remote_write:
 		return true
 		// 3*shardUpdateDuration to allow for the resharding logic to run.
 	}, 30*time.Second, time.Second)
+}
+
+func TestNativeMetadataFeatureConfiguration(t *testing.T) {
+	t.Cleanup(func() {
+		features.Disable(features.TSDB, "native_metadata")
+	})
+	cfg := flagConfig{featureList: []string{"native-metadata"}}
+	require.NoError(t, cfg.setFeatureListOptions(promslog.NewNopLogger()))
+	require.True(t, cfg.scrape.AppendMetadata)
+	require.True(t, cfg.web.AppendMetadata)
+	require.True(t, cfg.tsdb.EnableNativeMetadata)
+	require.False(t, cfg.tsdb.ToTSDBOptions().EnableMetadataWALRecords)
+}
+
+func TestReadyStorageNativeMetricMetadata(t *testing.T) {
+	t.Run("disabled native metadata names the flag", func(t *testing.T) {
+		db, err := tsdb.Open(t.TempDir(), nil, nil, tsdb.DefaultOptions(), nil)
+		require.NoError(t, err)
+		t.Cleanup(func() { require.NoError(t, db.Close()) })
+		rs := &readyStorage{}
+		rs.Set(db, 0)
+
+		_, _, err = rs.NativeMetricMetadata(t.Context(), nil, 0)
+		require.ErrorIs(t, err, tsdb.ErrNativeMetadataDisabled)
+		require.ErrorContains(t, err, "--enable-feature=native-metadata")
+	})
+
+	t.Run("unset storage is not ready", func(t *testing.T) {
+		_, _, err := (&readyStorage{}).NativeMetricMetadata(t.Context(), nil, 0)
+		require.ErrorIs(t, err, tsdb.ErrNotReady)
+	})
 }
 
 // TestFeatureFlagsDocumented ensures the --enable-feature help text in main.go
