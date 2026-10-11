@@ -148,6 +148,9 @@ func TestBasicContentNegotiation(t *testing.T) {
 				NoST:   tc.senderProtoMsg == remoteapi.WriteV1MessageType, // RW1 does not support ST.
 				Series: 1, SamplesPerSeries: 1,
 			})
+			if tc.senderProtoMsg == remoteapi.WriteV2MessageType {
+				recs.Metadata[0].Type = model.MetricTypeGauge
+			}
 
 			conf.RemoteWriteConfigs[0].ProtobufMessage = tc.senderProtoMsg
 			require.NoError(t, s.ApplyConfig(conf))
