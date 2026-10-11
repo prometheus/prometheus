@@ -42,10 +42,6 @@ func GraphLinkForExpression(expr string) string {
 // Note: this does not handle all Prometheus label name restrictions (such as
 // not starting with a digit 0-9), and hence should only be used if the label
 // name is prefixed with a known valid string.
-func SanitizeLabelName(name string) string {
-	return invalidLabelCharRE.ReplaceAllString(name, "_")
-}
-
 // SanitizeFullLabelName replaces any invalid character with an underscore, and
 // if given an empty string, returns a string containing a single underscore.
 func SanitizeFullLabelName(name string) string {
@@ -53,6 +49,7 @@ func SanitizeFullLabelName(name string) string {
 		return "_"
 	}
 	var validSb strings.Builder
+	validSb.Grow(len(name)) // <-- TAM OLARAK BU SATIRI EKLEYECEKSİN
 	for i, b := range name {
 		if (b >= 'a' && b <= 'z') || (b >= 'A' && b <= 'Z') || b == '_' || (b >= '0' && b <= '9' && i > 0) {
 			validSb.WriteRune(b)
@@ -62,3 +59,4 @@ func SanitizeFullLabelName(name string) string {
 	}
 	return validSb.String()
 }
+
