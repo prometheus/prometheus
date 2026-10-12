@@ -4522,6 +4522,7 @@ func generateGroupingLabels(enh *EvalNodeHelper, metric labels.Labels, without b
 	switch {
 	case without:
 		enh.lb.Del(grouping...)
+		// Set empty name, type and unit labels to effectively remove those if specified.
 		schema.Metadata{}.SetToLabels(enh.lb)
 		return enh.lb.Labels()
 	case len(grouping) > 0:
