@@ -217,6 +217,7 @@ type flagConfig struct {
 	enablePerStepStats       bool
 	enableConcurrentRuleEval bool
 	useStartTimestamps       bool
+	enableNHCBasClassic      bool
 
 	prometheusURL   string
 	corsRegexString string
@@ -352,6 +353,8 @@ func (c *flagConfig) setFeatureListOptions(logger *slog.Logger) error {
 			case "search-api":
 				c.web.EnableSearch = true
 				logger.Info("Experimental search API enabled.")
+			case "promql-nhcb-as-classic":
+				c.enableNHCBasClassic = true
 			default:
 				logger.Warn("Unknown option for --enable-feature", "option", o)
 			}
@@ -649,7 +652,7 @@ func main() {
 	a.Flag("scrape.discovery-reload-interval", "Interval used by scrape manager to throttle target groups updates.").
 		Hidden().Default("5s").SetValue(&cfg.scrape.DiscoveryReloadInterval)
 
-	a.Flag("enable-feature", "Comma separated feature names to enable. Valid options: concurrent-rule-eval, created-timestamp-zero-ingestion, delayed-compaction, exemplar-storage, extra-scrape-metrics, histograms-st-encoding, memory-snapshot-on-shutdown, metadata-wal-records, old-ui, openmetrics2, otlp-deltatocumulative, otlp-native-delta-ingestion, promql-binop-fill-modifiers, promql-delayed-name-removal, promql-experimental-functions, promql-per-step-stats, search-api, st-storage, st-synthesis, type-and-unit-labels, use-start-timestamps, use-uncached-io, xor2-encoding, zstd-scrape. See https://prometheus.io/docs/prometheus/latest/feature_flags/ for more details.").
+	a.Flag("enable-feature", "Comma separated feature names to enable. Valid options: concurrent-rule-eval, created-timestamp-zero-ingestion, delayed-compaction, exemplar-storage, extra-scrape-metrics, histograms-st-encoding, memory-snapshot-on-shutdown, metadata-wal-records, old-ui, openmetrics2, otlp-deltatocumulative, otlp-native-delta-ingestion, promql-binop-fill-modifiers, promql-delayed-name-removal, promql-experimental-functions, promql-nhcb-as-classic, promql-per-step-stats, search-api, st-storage, st-synthesis, type-and-unit-labels, use-start-timestamps, use-uncached-io, xor2-encoding, zstd-scrape. See https://prometheus.io/docs/prometheus/latest/feature_flags/ for more details.").
 		StringsVar(&cfg.featureList)
 
 	a.Flag("agent", "Run Prometheus in 'Agent mode'.").BoolVar(&agentMode)
@@ -1035,6 +1038,7 @@ func main() {
 			EnableDelayedNameRemoval: cfg.promqlEnableDelayedNameRemoval,
 			EnableTypeAndUnitLabels:  cfg.scrape.EnableTypeAndUnitLabels,
 			UseStartTimestamps:       cfg.useStartTimestamps,
+			EnableNHCBAsClassic:      cfg.enableNHCBasClassic,
 			FeatureRegistry:          features.DefaultRegistry,
 			Parser:                   promqlParser,
 		}
