@@ -737,8 +737,7 @@ func (ng *Engine) exec(ctx context.Context, q *query) (v parser.Value, ws annota
 				f = append(f, slog.Any("error", err))
 			}
 			f = append(f, slog.Any("stats", stats.NewQueryStats(q.Stats())))
-			if span := trace.SpanFromContext(ctx); span != nil {
-				spanCtx := span.SpanContext()
+			if spanCtx := trace.SpanContextFromContext(ctx); spanCtx.IsValid() {
 				f = append(f,
 					slog.Any("spanID", spanCtx.SpanID()),
 					slog.Any("traceID", spanCtx.TraceID()),
