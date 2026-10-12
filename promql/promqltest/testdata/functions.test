@@ -2530,3 +2530,125 @@ eval instant at 0s max_of(NaN, 3)
 
 eval instant at 0s max_of(3, NaN)
   NaN
+
+clear
+
+# Tests for scalar() on float-only input.
+load 5m
+  single{a="1"} 1+1x2
+  pair{b="1"} 4+1x2
+  pair{b="2"} 7+1x2
+
+# Exactly one series: its sample value.
+eval instant at 10m scalar(single)
+  3
+
+# More than one series: NaN.
+eval instant at 10m scalar(pair)
+  NaN
+
+# No series: NaN.
+eval instant at 10m scalar(nonexistent)
+  NaN
+
+# The result is a scalar and can be used in scalar arithmetic.
+eval instant at 10m scalar(single) + 1
+  4
+
+eval range from 0 to 10m step 5m scalar(single)
+  {} 1 2 3
+
+eval range from 0 to 10m step 5m scalar(pair)
+  {} NaN NaN NaN
+
+clear
+
+# Tests for clamp(), clamp_min() and clamp_max() on float-only input.
+load 5m
+  test_clamp{src="low"} -50
+  test_clamp{src="zero"} 0
+  test_clamp{src="high"} 100
+  test_clamp{src="nan"} NaN
+  rising 1+1x4
+
+# The metric name is dropped from the result.
+eval instant at 0m clamp_max(test_clamp, 75)
+  {src="low"} -50
+  {src="zero"} 0
+  {src="high"} 75
+  {src="nan"} NaN
+
+eval instant at 0m clamp_min(test_clamp, -25)
+  {src="low"} -25
+  {src="zero"} 0
+  {src="high"} 100
+  {src="nan"} NaN
+
+eval instant at 0m clamp(test_clamp, -25, 75)
+  {src="low"} -25
+  {src="zero"} 0
+  {src="high"} 75
+  {src="nan"} NaN
+
+# min == max collapses every value onto that bound. NaN input stays NaN.
+eval instant at 0m clamp(test_clamp, 10, 10)
+  {src="low"} 10
+  {src="zero"} 10
+  {src="high"} 10
+  {src="nan"} NaN
+
+# min > max returns an empty vector.
+eval instant at 0m clamp(test_clamp, 75, -25)
+
+eval instant at 0m clamp(test_clamp, 1, 0)
+
+# Range query: each step is clamped independently.
+eval range from 0 to 20m step 5m clamp(rising, 2, 4)
+  {} 2 2 3 4 4
+
+eval range from 0 to 20m step 5m clamp_min(rising, 3)
+  {} 3 3 3 4 5
+
+eval range from 0 to 20m step 5m clamp_max(rising, 3)
+  {} 1 2 3 3 3
+
+clear
+
+# Tests for delta() on float-only input.
+load 1m
+  gauge 0+1x10
+  gauge_late _x5 0+1x5
+  gauge_early 0+1x5 _x5
+  counter 0+9x4 0+9x5
+
+# The range (0m, 10m] holds 10 samples spaced 1m apart. The first sample
+# at 1m is within 1.1 intervals of the range start, so the delta is
+# extrapolated to both edges: (10-1) * (600s / 540s) = 10.
+eval instant at 10m delta(gauge[10m])
+  {} 10
+
+# Samples only start at 5m. The gap to the range start is wider than
+# 1.1 intervals, so the start is extrapolated by half an interval only:
+# (5-0) * (330s / 300s) = 5.5.
+eval instant at 10m delta(gauge_late[10m])
+  {} 5.5
+
+# Samples end at 5m. Full extrapolation to the start, half an interval at
+# the end: (5-1) * (330s / 240s) = 5.5.
+eval instant at 10m delta(gauge_early[10m])
+  {} 5.5
+
+# A single sample in the range yields no result.
+eval instant at 10m delta(gauge[1m])
+
+eval instant at 5m delta(gauge_late[5m])
+
+# delta does not account for counter resets, unlike increase():
+# (45-9) * (600s / 540s) = 40.
+eval instant at 10m delta(counter[10m])
+  {} 40
+
+# Each step sees 5 samples spaced 1m apart, extrapolated to both edges:
+# 4 * (300s / 240s) = 5.
+eval range from 5m to 10m step 1m delta(gauge[5m])
+  {} 5 5 5 5 5 5
