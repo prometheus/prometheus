@@ -1974,7 +1974,12 @@ func (api *API) features(*http.Request) apiFuncResult {
 	if api.featureRegistry == nil {
 		return apiFuncResult{nil, &apiError{errorInternal, errors.New("feature registry not configured")}, nil, nil}
 	}
-	return apiFuncResult{featuresData{data: api.featureRegistry.Get()}, nil, nil, nil}
+	data := api.featureRegistry.Get()
+	if data[features.API] == nil {
+		data[features.API] = map[string]bool{}
+	}
+	data[features.API]["search_scope_info"] = api.infoSearchEnabled()
+	return apiFuncResult{featuresData{data: data}, nil, nil, nil}
 }
 
 // TSDBStat holds the information about individual cardinality.
