@@ -569,6 +569,14 @@ These endpoints return newline-delimited JSON with content type
   optional `warnings`) **or** an **error line** (`status`, `errorType`, `error`)
   if iteration failed mid-stream after the first batch was sent.
 
+Searches return results from supported storage backends. Participating
+remote-read storage that does not support search contributes a warning instead
+of results. Secondary search failures also become warnings, while unsupported
+primary storage makes search unavailable. No-op backends, including remote-read
+storage excluded by the requested time range, do not contribute warnings.
+Warnings can indicate incomplete discovery independently of `has_more`, which
+only describes truncation of the available results by the requested limit.
+
 ```json
 {"results":[{"name":"http_requests_total","type":"counter","help":"Total HTTP requests."}]}
 {"status":"success","has_more":false}

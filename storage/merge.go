@@ -43,7 +43,8 @@ type mergeGenericQuerier struct {
 // See NewFanout commentary to learn more about primary vs secondary differences.
 //
 // In case of overlaps between the data given by primaries' and secondaries' Selects, merge function will be used.
-// The returned Querier implements Searcher only when every non-noop input Querier does.
+// The returned Querier implements Searcher when every non-noop primary does.
+// Unsupported secondary searches return warnings instead of results.
 func NewMergeQuerier(primaries, secondaries []Querier, mergeFn VerticalSeriesMergeFunc) Querier {
 	primaries = filterQueriers(primaries)
 	secondaries = filterQueriers(secondaries)
@@ -54,11 +55,15 @@ func NewMergeQuerier(primaries, secondaries []Querier, mergeFn VerticalSeriesMer
 	case len(primaries) == 1 && len(secondaries) == 0:
 		return primaries[0]
 	case len(primaries) == 0 && len(secondaries) == 1:
-		return newQuerierAdapter(newSecondaryQuerierFrom(secondaries[0]))
+		return newQuerierAdapter(newSecondaryQuerierFrom(secondaries[0]), true)
 	}
 
 	queriers := make([]genericQuerier, 0, len(primaries)+len(secondaries))
+	supportsSearch := true
 	for _, q := range primaries {
+		if _, ok := q.(Searcher); !ok {
+			supportsSearch = false
+		}
 		queriers = append(queriers, newGenericQuerierFrom(q))
 	}
 	for _, q := range secondaries {
@@ -71,7 +76,7 @@ func NewMergeQuerier(primaries, secondaries []Querier, mergeFn VerticalSeriesMer
 		mergeFn:          (&seriesMergerAdapter{VerticalSeriesMergeFunc: mergeFn}).Merge,
 		queriers:         queriers,
 		concurrentSelect: concurrentSelect,
-	})
+	}, supportsSearch)
 }
 
 func filterQueriers(qs []Querier) []Querier {

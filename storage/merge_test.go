@@ -18,6 +18,7 @@ import (
 	"errors"
 	"fmt"
 	"math"
+	"slices"
 	"sort"
 	"sync"
 	"testing"
@@ -1506,6 +1507,8 @@ func visitMockQueriers(t *testing.T, qr Querier, f func(t *testing.T, q *mockQue
 		f(t, x)
 	case *querierAdapter:
 		count += visitMockQueriersInGenericQuerier(t, x.genericQuerier, f)
+	case *searchQuerierAdapter:
+		count += visitMockQueriersInGenericQuerier(t, x.genericQuerier, f)
 	}
 	return count
 }
@@ -2006,10 +2009,13 @@ func TestMergeQuerierSearch(t *testing.T) {
 	})
 
 	for _, tc := range []struct {
-		name        string
-		primaries   []Querier
-		secondaries []Querier
-		expected    bool
+		name           string
+		primaries      []Querier
+		secondaries    []Querier
+		expected       bool
+		expectedNames  []SearchResult
+		expectedValues []SearchResult
+		warnings       []string
 	}{
 		{
 			name: "supported nested primary",
@@ -2034,6 +2040,14 @@ func TestMergeQuerierSearch(t *testing.T) {
 		{
 			name:        "unsupported secondary only",
 			secondaries: []Querier{&mockQuerier{}},
+			expected:    true,
+			warnings:    []string{errSecondarySearchUnsupported.Error()},
+		},
+		{
+			name:        "multiple unsupported secondaries deduplicate warnings",
+			secondaries: []Querier{&mockQuerier{}, &mockQuerier{}},
+			expected:    true,
+			warnings:    []string{errSecondarySearchUnsupported.Error()},
 		},
 		{
 			name:        "supported nested secondary",
@@ -2041,8 +2055,53 @@ func TestMergeQuerierSearch(t *testing.T) {
 			expected:    true,
 		},
 		{
-			name:        "unsupported nested secondary",
+			name:        "unsupported nested primary merge used as a secondary",
 			secondaries: []Querier{newMerged(&searchQuerier{}, &mockQuerier{})},
+			expected:    true,
+			warnings:    []string{errSecondarySearchUnsupported.Error()},
+		},
+		{
+			name: "nested secondary-only merge retains supported results",
+			secondaries: []Querier{NewMergeQuerier(nil, []Querier{
+				&searchQuerier{
+					names:  []SearchResult{{Value: "region", Score: 1}},
+					values: []SearchResult{{Value: "staging", Score: 1}},
+				},
+				&mockQuerier{},
+			}, ChainedSeriesMerge)},
+			expected:       true,
+			expectedNames:  []SearchResult{{Value: "region", Score: 1}},
+			expectedValues: []SearchResult{{Value: "staging", Score: 1}},
+			warnings:       []string{errSecondarySearchUnsupported.Error()},
+		},
+		{
+			name: "primary results survive nested secondary warnings",
+			primaries: []Querier{&searchQuerier{
+				names:  []SearchResult{{Value: "env", Score: 1}},
+				values: []SearchResult{{Value: "prod", Score: 1}},
+			}},
+			secondaries: []Querier{NewMergeQuerier(nil, []Querier{
+				&searchQuerier{
+					names:       []SearchResult{{Value: "region", Score: 1}},
+					values:      []SearchResult{{Value: "staging", Score: 1}},
+					searchWarns: annotations.New().Add(errors.New("existing warning")),
+				},
+				&mockQuerier{},
+				&searchQuerier{err: errors.New("secondary failed")},
+			}, ChainedSeriesMerge)},
+			expected:       true,
+			expectedNames:  []SearchResult{{Value: "env", Score: 1}, {Value: "region", Score: 1}},
+			expectedValues: []SearchResult{{Value: "prod", Score: 1}, {Value: "staging", Score: 1}},
+			warnings:       []string{errSecondarySearchUnsupported.Error(), "existing warning", "secondary failed"},
+		},
+		{
+			name: "unsupported nested primary group is omitted as a whole",
+			secondaries: []Querier{newMerged(&searchQuerier{
+				names:  []SearchResult{{Value: "region", Score: 1}},
+				values: []SearchResult{{Value: "staging", Score: 1}},
+			}, &mockQuerier{})},
+			expected: true,
+			warnings: []string{errSecondarySearchUnsupported.Error()},
 		},
 		{
 			name:      "mixed search support is not advertised",
@@ -2053,14 +2112,26 @@ func TestMergeQuerierSearch(t *testing.T) {
 			primaries: []Querier{&mockQuerier{}, &mockQuerier{}},
 		},
 		{
-			name:        "unsupported secondary prevents search capability",
+			name:        "unsupported secondary returns a warning",
 			primaries:   []Querier{&searchQuerier{}},
 			secondaries: []Querier{&mockQuerier{}},
+			expected:    true,
+			warnings:    []string{errSecondarySearchUnsupported.Error()},
 		},
 		{
 			name:        "noop secondary does not prevent search capability",
 			primaries:   []Querier{&searchQuerier{}},
 			secondaries: []Querier{NoopQuerier()},
+			expected:    true,
+		},
+		{
+			name:     "empty merge returns a valid empty iterator",
+			expected: true,
+		},
+		{
+			name:        "all noop inputs return a valid empty iterator",
+			primaries:   []Querier{nil, NoopQuerier()},
+			secondaries: []Querier{NoopQuerier(), nil},
 			expected:    true,
 		},
 	} {
@@ -2069,8 +2140,41 @@ func TestMergeQuerierSearch(t *testing.T) {
 			defer merged.Close()
 			searcher, ok := merged.(Searcher)
 			require.Equal(t, tc.expected, ok)
-			if ok {
-				require.Empty(t, collectSearchResults(t, searcher.SearchLabelNames(ctx, nil)))
+			if !ok {
+				return
+			}
+			for _, order := range []Ordering{OrderByValueAsc, OrderByValueDesc, OrderByScoreDesc} {
+				for _, limit := range []int{0, 1} {
+					t.Run(fmt.Sprintf("order=%d/limit=%d", order, limit), func(t *testing.T) {
+						hints := &SearchHints{OrderBy: order, Limit: limit}
+						for _, method := range []struct {
+							name     string
+							search   func() SearchResultSet
+							expected []SearchResult
+						}{
+							{"names", func() SearchResultSet { return searcher.SearchLabelNames(t.Context(), hints) }, tc.expectedNames},
+							{"values", func() SearchResultSet { return searcher.SearchLabelValues(t.Context(), "env", hints) }, tc.expectedValues},
+						} {
+							t.Run(method.name, func(t *testing.T) {
+								rs := method.search()
+								require.NotNil(t, rs)
+								expected := slices.Clone(method.expected)
+								if order == OrderByValueDesc {
+									slices.Reverse(expected)
+								}
+								if limit > 0 && len(expected) > limit {
+									expected = expected[:limit]
+								}
+								require.Equal(t, expected, collectSearchResults(t, rs))
+								var warnings []string
+								for _, warning := range rs.Warnings() {
+									warnings = append(warnings, warning.Error())
+								}
+								require.ElementsMatch(t, tc.warnings, warnings)
+							})
+						}
+					})
+				}
 			}
 		})
 	}

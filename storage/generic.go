@@ -86,17 +86,14 @@ type querierAdapter struct {
 }
 
 type searchQuerierAdapter struct {
-	*querierAdapter
-	searchers []Searcher
+	querierAdapter
 }
 
-func newQuerierAdapter(q genericQuerier) Querier {
-	adapter := &querierAdapter{genericQuerier: q}
-	searchers, ok := collectSearchers(q)
-	if !ok {
-		return adapter
+func newQuerierAdapter(q genericQuerier, supportsSearch bool) Querier {
+	if !supportsSearch {
+		return &querierAdapter{genericQuerier: q}
 	}
-	return &searchQuerierAdapter{querierAdapter: adapter, searchers: searchers}
+	return &searchQuerierAdapter{querierAdapter: querierAdapter{genericQuerier: q}}
 }
 
 type seriesSetAdapter struct {
@@ -166,23 +163,19 @@ func searcherFromGenericQuerier(gq genericQuerier) (Searcher, bool) {
 	return s, ok
 }
 
-// collectSearchers extracts Searchers only when the complete querier tree supports search.
-func collectSearchers(gq genericQuerier) ([]Searcher, bool) {
+// collectSearchers extracts Searcher implementations from a genericQuerier tree.
+func collectSearchers(gq genericQuerier) []Searcher {
 	if m, ok := gq.(*mergeGenericQuerier); ok {
 		var searchers []Searcher
 		for _, q := range m.queriers {
-			childSearchers, ok := collectSearchers(q)
-			if !ok {
-				return nil, false
-			}
-			searchers = append(searchers, childSearchers...)
+			searchers = append(searchers, collectSearchers(q)...)
 		}
-		return searchers, true
+		return searchers
 	}
 	if s, ok := searcherFromGenericQuerier(gq); ok {
-		return []Searcher{s}, true
+		return []Searcher{s}
 	}
-	return nil, false
+	return nil
 }
 
 // sliceSearchResultSet is a SearchResultSet backed by a pre-built slice.
@@ -879,14 +872,14 @@ func (s *mergingSearchResultSet) Close() error {
 func (q *searchQuerierAdapter) SearchLabelNames(ctx context.Context, hints *SearchHints, matchers ...*labels.Matcher) SearchResultSet {
 	return mergeSearchSets(hints, func(s Searcher) SearchResultSet {
 		return s.SearchLabelNames(ctx, hints, matchers...)
-	}, q.searchers)
+	}, collectSearchers(q.genericQuerier))
 }
 
 // SearchLabelValues implements Searcher by merging results from every underlying querier.
 func (q *searchQuerierAdapter) SearchLabelValues(ctx context.Context, name string, hints *SearchHints, matchers ...*labels.Matcher) SearchResultSet {
 	return mergeSearchSets(hints, func(s Searcher) SearchResultSet {
 		return s.SearchLabelValues(ctx, name, hints, matchers...)
-	}, q.searchers)
+	}, collectSearchers(q.genericQuerier))
 }
 
 type noopGenericSeriesSet struct{}

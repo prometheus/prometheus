@@ -316,21 +316,24 @@ func TestFanoutErrors(t *testing.T) {
 
 func TestFanout_Querier_SearcherCapability(t *testing.T) {
 	primary := teststorage.New(t)
+	app := primary.Appender(t.Context())
+	_, err := app.Append(0, labels.FromStrings("__name__", "up", "job", "prometheus"), 0, 1)
+	require.NoError(t, err)
+	require.NoError(t, app.Commit())
 
 	for _, tc := range []struct {
 		name      string
 		secondary storage.Storage
-		expected  bool
+		warning   bool
 	}{
 		{
 			name:      "active unsupported secondary",
 			secondary: errStorage{},
-			expected:  false,
+			warning:   true,
 		},
 		{
 			name:      "noop secondary",
 			secondary: fixedQuerierStorage{q: storage.NoopQuerier()},
-			expected:  true,
 		},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
@@ -339,8 +342,34 @@ func TestFanout_Querier_SearcherCapability(t *testing.T) {
 			require.NoError(t, err)
 			defer querier.Close()
 
-			_, ok := querier.(storage.Searcher)
-			require.Equal(t, tc.expected, ok)
+			searcher, ok := querier.(storage.Searcher)
+			require.True(t, ok)
+			for _, method := range []struct {
+				name     string
+				search   func() storage.SearchResultSet
+				expected []string
+			}{
+				{"names", func() storage.SearchResultSet { return searcher.SearchLabelNames(t.Context(), nil) }, []string{"__name__", "job"}},
+				{"values", func() storage.SearchResultSet { return searcher.SearchLabelValues(t.Context(), "job", nil) }, []string{"prometheus"}},
+			} {
+				t.Run(method.name, func(t *testing.T) {
+					rs := method.search()
+					defer func() { require.NoError(t, rs.Close()) }()
+					var values []string
+					for rs.Next() {
+						values = append(values, rs.At().Value)
+					}
+					require.NoError(t, rs.Err())
+					require.Equal(t, method.expected, values)
+					if tc.warning {
+						warnings := rs.Warnings().AsErrors()
+						require.Len(t, warnings, 1)
+						require.EqualError(t, warnings[0], "search is not supported by a secondary storage backend; results may be incomplete")
+					} else {
+						require.Empty(t, rs.Warnings())
+					}
+				})
+			}
 		})
 	}
 }
