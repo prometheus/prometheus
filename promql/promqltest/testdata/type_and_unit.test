@@ -36,6 +36,17 @@ eval instant at 50m SUM(http_requests_total) BY (job) - COUNT(http_requests_tota
 	{job="api-server"} 996
 	{job="app-server"} 2596
 
+eval instant at 50m SUM(http_requests_total) WITHOUT (instance, group)
+	{job="api-server"} 1000
+	{job="app-server"} 2600
+
+eval instant at 50m COUNT_VALUES("val", http_requests_total{job="api-server", group="production"}) WITHOUT (instance)
+	{group="production", job="api-server", val="100"} 1
+	{group="production", job="api-server", val="200"} 1
+
+eval instant at 50m absent(http_requests_total{__type__="counter", __unit__="request", job="nonexistent"})
+	{job="nonexistent"} 1
+
 eval instant at 50m -http_requests_total{job="api-server",instance="0",group="production"}
   {job="api-server",instance="0",group="production"} -100
 
@@ -177,6 +188,14 @@ eval instant at 50m SUM({__type__="counter", __unit__="request"}) BY (job)
 eval instant at 50m SUM(http_requests_total) BY (job) - COUNT(http_requests_total) BY (job)
 	{job="api-server"} 996
 	{job="app-server"} 2596
+
+eval instant at 50m SUM(http_requests_total) WITHOUT (instance, group)
+	{job="api-server"} 1000
+	{job="app-server"} 2600
+
+eval instant at 50m COUNT_VALUES("val", http_requests_total{job="api-server", group="production"}) WITHOUT (instance)
+	{group="production", job="api-server", val="100"} 1
+	{group="production", job="api-server", val="200"} 1
 
 eval instant at 50m -http_requests_total{job="api-server",instance="0",group="production"}
   {job="api-server",instance="0",group="production"} -100
