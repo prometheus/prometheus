@@ -3889,6 +3889,86 @@ func TestDBCompactPersistsHeadDuringBlockMerge(t *testing.T) {
 	require.Equal(t, expHead, query(t, q, labels.MustNewMatcher(labels.MatchRegexp, "foo", "bar")))
 }
 
+// TestDBCompactMmapsHeadChunksDuringBlockMerge verifies that a block merge
+// m-maps full head chunks when the last m-mapping is older than the merge
+// m-mapping interval, and leaves them in memory when it is not.
+func TestDBCompactMmapsHeadChunksDuringBlockMerge(t *testing.T) {
+	t.Parallel()
+
+	blockRange := int64(1000)
+	cases := map[string]struct {
+		lastMmapAgo time.Duration
+		expMmapped  bool
+	}{
+		"last m-mapping is older than the merge m-mapping interval": {
+			lastMmapAgo: 2 * mergeHeadMmapInterval,
+			expMmapped:  true,
+		},
+		"last m-mapping is within the merge m-mapping interval": {
+			lastMmapAgo: 0,
+			expMmapped:  false,
+		},
+	}
+	for name, tc := range cases {
+		t.Run(name, func(t *testing.T) {
+			t.Parallel()
+
+			opts := &Options{
+				RetentionDuration:   blockRange * 1000,
+				NoLockfile:          true,
+				MinBlockDuration:    blockRange,
+				MaxBlockDuration:    3 * blockRange,
+				BlockReloadInterval: time.Hour,
+			}
+			ctx := context.Background()
+			db := newTestDB(t, withOpts(opts), withRngs(blockRange, 3*blockRange))
+			db.DisableCompactions()
+
+			genSample := func(ts int64) chunks.Sample {
+				return sample{t: ts, f: float64(ts)}
+			}
+			// Four blocks: Plan ignores the newest one, so only the first three merge.
+			for i := range int64(4) {
+				mint, maxt := i*blockRange, (i+1)*blockRange
+				createBlock(t, db.Dir(), genSeriesFromSampleGenerator(2, 1, mint, maxt, 1, genSample))
+			}
+			require.NoError(t, db.reloadBlocks())
+
+			// The head range stays below 1.5 block ranges, so the merge does not write the head block.
+			headLabels := labels.FromStrings("foo", "bar")
+			app := db.Appender(ctx)
+			for ts := 4 * blockRange; ts < 4*blockRange+300; ts++ {
+				_, err := app.Append(0, headLabels, ts, float64(ts))
+				require.NoError(t, err)
+			}
+			require.NoError(t, app.Commit())
+
+			series := db.head.series.getByHash(headLabels.Hash(), headLabels)
+			require.NotNil(t, series)
+			headChunks := int(series.headChunkCount.Load())
+			// The chunk count depends on the chunk cutting heuristic.
+			// The test needs at least one full chunk that can be m-mapped.
+			require.GreaterOrEqual(t, headChunks, 2)
+
+			db.lastHeadMmapTime.Store(time.Now().Add(-tc.lastMmapAgo).UnixNano())
+			require.NoError(t, db.Compact(ctx))
+			require.Len(t, db.Blocks(), 2)
+
+			expMmapped := 0
+			expHeadChunks := headChunks
+			if tc.expMmapped {
+				expMmapped = headChunks - 1
+				expHeadChunks = 1
+			}
+			require.Equal(t, float64(expMmapped), prom_testutil.ToFloat64(db.head.metrics.mmapChunksTotal))
+			series.Lock()
+			require.Len(t, series.mmappedChunks, expMmapped)
+			require.Equal(t, uint32(expHeadChunks), series.headChunkCount.Load())
+			series.Unlock()
+		})
+	}
+}
+
 func TestNoPanicOnTSDBOpenError(t *testing.T) {
 	tmpdir := t.TempDir()
 

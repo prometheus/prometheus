@@ -64,6 +64,9 @@ const (
 
 	defaultBlockReloadInterval = time.Minute
 
+	// mergeHeadMmapInterval is how often head chunks are m-mapped while blocks are merged.
+	mergeHeadMmapInterval = 5 * time.Minute
+
 	// Block dir suffixes to make deletion and creation operations atomic.
 	// We decided to do suffixes instead of creating meta.json as last (or delete as first) one,
 	// because in error case you still can recover meta.json from the block content within local TSDB dir.
@@ -358,6 +361,9 @@ type DB struct {
 	// lastHeadCompactionTime is the last wall clock time when the head block compaction was started,
 	// irrespective of success or failure. This does not include out-of-order compaction and stale series compaction.
 	lastHeadCompactionTime time.Time
+
+	// lastHeadMmapTime is the wall clock time, in Unix nanoseconds, when head chunks were last m-mapped.
+	lastHeadMmapTime atomic.Int64
 
 	writeNotified wlog.WriteNotified
 
@@ -1321,6 +1327,7 @@ func (db *DB) run(ctx context.Context) {
 			}
 			// We attempt mmapping of head chunks regularly.
 			db.head.mmapHeadChunks()
+			db.lastHeadMmapTime.Store(time.Now().UnixNano())
 
 			numStaleSeries, numSeries := db.Head().NumStaleSeries(), db.Head().NumSeries()
 			if db.autoCompact && numSeries > 0 && db.opts.staleSeriesCompactionThreshold.Load() > 0 {
@@ -1624,10 +1631,18 @@ func (db *DB) Compact(ctx context.Context) (returnErr error) {
 	return db.compactBlocks()
 }
 
-// maybePause writes the head block if the head became compactable while
-// blocks are being compacted. Compact holds db.cmtx for the whole compaction,
-// so it can run while a merge is paused.
+// maybePause m-maps head chunks if the last m-mapping is older than
+// mergeHeadMmapInterval, and writes the head block if the head became
+// compactable while blocks are being compacted. Compact holds db.cmtx for the
+// whole compaction, so it can run while a merge is paused.
 func (db *DB) maybePause(ctx context.Context) error {
+	// A merge can run for hours and it blocks the m-mapping done in db.run.
+	lastMmap := time.Unix(0, db.lastHeadMmapTime.Load())
+	if time.Since(lastMmap) >= mergeHeadMmapInterval {
+		db.head.mmapHeadChunks()
+		db.lastHeadMmapTime.Store(time.Now().UnixNano())
+	}
+
 	if !db.head.compactable() || db.waitingForCompactionDelay() {
 		return nil
 	}
