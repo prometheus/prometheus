@@ -314,7 +314,7 @@ func NewAPI(
 	rwEnabled bool,
 	acceptRemoteWriteProtoMsgs remoteapi.MessageTypes,
 	otlpEnabled, otlpDeltaToCumulative, otlpNativeDeltaIngestion bool,
-	stZeroIngestionEnabled bool,
+	_ bool, // stZeroIngestionEnabled; kept for API compatibility, now handled by AppendableV2.
 	lookbackDelta time.Duration,
 	enableTypeAndUnitLabels bool,
 	appendMetadata bool,
@@ -377,7 +377,7 @@ func NewAPI(
 	}
 
 	if rwEnabled {
-		a.remoteWriteHandler = remote.NewWriteHandler(logger, registerer, apV2, acceptRemoteWriteProtoMsgs, stZeroIngestionEnabled, enableTypeAndUnitLabels, appendMetadata)
+		a.remoteWriteHandler = remote.NewWriteHandler(logger, registerer, apV2, acceptRemoteWriteProtoMsgs, enableTypeAndUnitLabels, appendMetadata)
 	}
 	if otlpEnabled {
 		a.otlpWriteHandler = remote.NewOTLPWriteHandler(logger, registerer, apV2, configFunc, remote.OTLPOptions{

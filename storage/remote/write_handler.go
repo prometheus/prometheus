@@ -46,7 +46,6 @@ type writeHandler struct {
 	samplesWithInvalidLabelsTotal  prometheus.Counter
 	samplesAppendedWithoutMetadata prometheus.Counter
 
-	ingestSTZeroSample      bool
 	enableTypeAndUnitLabels bool
 	appendMetadata          bool
 }
@@ -59,7 +58,7 @@ const maxAheadTime = 10 * time.Minute
 //
 // NOTE(bwplotka): When accepting v2 proto and spec, partial writes are possible
 // as per https://prometheus.io/docs/specs/remote_write_spec_2_0/#partial-write.
-func NewWriteHandler(logger *slog.Logger, reg prometheus.Registerer, appendableV2 storage.AppendableV2, acceptedMsgs remoteapi.MessageTypes, ingestSTZeroSample, enableTypeAndUnitLabels, appendMetadata bool) http.Handler {
+func NewWriteHandler(logger *slog.Logger, reg prometheus.Registerer, appendableV2 storage.AppendableV2, acceptedMsgs remoteapi.MessageTypes, enableTypeAndUnitLabels, appendMetadata bool) http.Handler {
 	h := &writeHandler{
 		logger:       logger,
 		appendableV2: appendableV2,
@@ -76,7 +75,6 @@ func NewWriteHandler(logger *slog.Logger, reg prometheus.Registerer, appendableV
 			Help:      "The total number of received remote write samples (and histogram samples) which were ingested without corresponding metadata.",
 		}),
 
-		ingestSTZeroSample:      ingestSTZeroSample,
 		enableTypeAndUnitLabels: enableTypeAndUnitLabels,
 		appendMetadata:          appendMetadata,
 	}
@@ -390,12 +388,7 @@ func (h *writeHandler) appendV2(app *remoteWriteAppenderV2, req *writev2.Request
 			opts.Metadata = m
 		}
 		for _, s := range ts.Samples {
-			var st int64
-			if h.ingestSTZeroSample && s.StartTimestamp != 0 && s.Timestamp != 0 {
-				st = s.StartTimestamp
-			}
-
-			ref, err = app.Append(ref, ls, st, s.GetTimestamp(), s.GetValue(), nil, nil, opts)
+			ref, err = app.Append(ref, ls, s.StartTimestamp, s.GetTimestamp(), s.GetValue(), nil, nil, opts)
 			if err == nil {
 				rs.Samples++
 				continue
@@ -415,14 +408,10 @@ func (h *writeHandler) appendV2(app *remoteWriteAppenderV2, req *writev2.Request
 
 		// Native Histograms.
 		for _, hp := range ts.Histograms {
-			var st int64
-			if h.ingestSTZeroSample && hp.StartTimestamp != 0 && hp.Timestamp != 0 {
-				st = hp.StartTimestamp
-			}
 			if hp.IsFloatHistogram() {
-				ref, err = app.Append(ref, ls, st, hp.Timestamp, 0, nil, hp.ToFloatHistogram(), opts)
+				ref, err = app.Append(ref, ls, hp.StartTimestamp, hp.Timestamp, 0, nil, hp.ToFloatHistogram(), opts)
 			} else {
-				ref, err = app.Append(ref, ls, st, hp.Timestamp, 0, hp.ToIntHistogram(), nil, opts)
+				ref, err = app.Append(ref, ls, hp.StartTimestamp, hp.Timestamp, 0, hp.ToIntHistogram(), nil, opts)
 			}
 			if err == nil {
 				rs.Histograms++
@@ -473,7 +462,7 @@ func (h *writeHandler) appendV2(app *remoteWriteAppenderV2, req *writev2.Request
 						appended = max(0, appended-len(pErr.ExemplarErrors))
 						for _, eErr := range pErr.ExemplarErrors {
 							if errors.Is(eErr, storage.ErrOutOfOrderExemplar) {
-								outOfOrderExemplarErrs++ // Maintain old metrics, but technically not needed, given we fail here.
+								outOfOrderExemplarErrs++
 								h.logger.Error("Out of order exemplar", "err", eErr.Error(), "series", ls.String())
 								badRequestErrs = append(badRequestErrs, fmt.Errorf("%w for series %v", eErr, ls.String()))
 								continue
