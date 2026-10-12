@@ -423,7 +423,8 @@ type headAppenderBase struct {
 	series     []*memSeries       // New series held by this appender (using corresponding slices indexes from seriesRefs)
 	batches    []*appendBatch     // Holds all the other data to append. (In regular cases, there should be only one of these.)
 
-	typesInBatch map[chunks.HeadSeriesRef]sampleType // Which (one) sample type each series holds in the most recent batch.
+	typesInBatch    map[chunks.HeadSeriesRef]sampleType // Which (one) sample type each series holds in the most recent batch.
+	pendingMetadata map[chunks.HeadSeriesRef]metadataPosition
 
 	appendID, cleanupAppendIDsBelow uint64
 	closed                          bool
@@ -431,6 +432,11 @@ type headAppenderBase struct {
 	useXOR2                         bool // Whether XOR2 encoding is used for float chunks in this append.
 	useHistogramST                  bool // Whether ST-capable histogram chunk encoding is used in this append.
 }
+
+type metadataPosition struct {
+	batch, record int
+}
+
 type headAppender struct {
 	headAppenderBase
 	hints *storage.AppendOptions
@@ -1089,18 +1095,37 @@ func (a *headAppender) UpdateMetadata(ref storage.SeriesRef, lset labels.Labels,
 	hasNewMetadata := s.meta == nil || *s.meta != meta
 	s.Unlock()
 
-	if hasNewMetadata {
-		b := a.getCurrentBatch(stNone, s.ref)
-		b.metadata = append(b.metadata, record.RefMetadata{
-			Ref:  s.ref,
-			Type: record.GetMetricType(meta.Type),
-			Unit: meta.Unit,
-			Help: meta.Help,
-		})
-		b.metadataSeries = append(b.metadataSeries, s)
+	if hasNewMetadata || a.pendingMetadata != nil {
+		a.appendMetadata(s, meta, hasNewMetadata)
 	}
 
 	return ref, nil
+}
+
+func (a *headAppenderBase) appendMetadata(s *memSeries, meta metadata.Metadata, differsFromCommitted bool) {
+	m := record.RefMetadata{
+		Ref:  s.ref,
+		Type: record.GetMetricType(meta.Type),
+		Unit: meta.Unit,
+		Help: meta.Help,
+	}
+	if p, ok := a.pendingMetadata[s.ref]; ok {
+		// Pending updates take precedence, including a return to the committed value.
+		// Keep metadata in later batches: another appender's WAL records can interleave.
+		if p.batch == len(a.batches)-1 && a.batches[p.batch].metadata[p.record] == m {
+			return
+		}
+	} else if !differsFromCommitted {
+		return
+	}
+
+	b := a.getCurrentBatch(stNone, s.ref)
+	if a.pendingMetadata == nil {
+		a.pendingMetadata = make(map[chunks.HeadSeriesRef]metadataPosition)
+	}
+	a.pendingMetadata[s.ref] = metadataPosition{batch: len(a.batches) - 1, record: len(b.metadata)}
+	b.metadata = append(b.metadata, m)
+	b.metadataSeries = append(b.metadataSeries, s)
 }
 
 var _ storage.GetRef = &headAppender{}
@@ -1783,6 +1808,7 @@ func (a *headAppenderBase) Commit() (err error) {
 		h.putRefSeriesBuffer(a.seriesRefs)
 		h.putSeriesBuffer(a.series)
 		h.putTypeMap(a.typesInBatch)
+		a.pendingMetadata = nil
 		a.closed = true
 	}()
 
@@ -2318,6 +2344,7 @@ func (a *headAppenderBase) Rollback() (err error) {
 		h.putRefSeriesBuffer(a.seriesRefs)
 		h.putSeriesBuffer(a.series)
 		h.putTypeMap(a.typesInBatch)
+		a.pendingMetadata = nil
 	}()
 
 	var series *memSeries

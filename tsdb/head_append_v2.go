@@ -227,15 +227,8 @@ func (a *headAppenderV2) Append(ref storage.SeriesRef, ls labels.Labels, st, t i
 		s.Lock()
 		metaChanged := s.meta == nil || !s.meta.Equals(opts.Metadata)
 		s.Unlock()
-		if metaChanged {
-			b := a.getCurrentBatch(stNone, s.ref)
-			b.metadata = append(b.metadata, record.RefMetadata{
-				Ref:  s.ref,
-				Type: record.GetMetricType(opts.Metadata.Type),
-				Unit: opts.Metadata.Unit,
-				Help: opts.Metadata.Help,
-			})
-			b.metadataSeries = append(b.metadataSeries, s)
+		if metaChanged || a.pendingMetadata != nil {
+			a.appendMetadata(s, opts.Metadata, metaChanged)
 		}
 	}
 	return storage.SeriesRef(s.ref), partialErr
