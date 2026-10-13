@@ -154,7 +154,6 @@ func (h *writeHandler) write(ctx context.Context, req *prompb.WriteRequest) (err
 	appV2 := h.appendableV2.AppenderV2(ctx)
 	exemplarApp, ok := appV2.(storage.ExemplarAppenderV2)
 	if !ok {
-		_ = appV2.Rollback()
 		return fmt.Errorf("remote write 1.0 receiver requires a storage.ExemplarAppenderV2, got %T", appV2)
 	}
 	app := &remoteWriteAppenderV2{
@@ -284,7 +283,6 @@ func (h *writeHandler) writeV2(ctx context.Context, req *writev2.Request) (_ rem
 	appV2 := h.appendableV2.AppenderV2(ctx)
 	exemplarApp, ok := appV2.(storage.ExemplarAppenderV2)
 	if !ok {
-		_ = appV2.Rollback()
 		return remoteapi.WriteResponseStats{}, http.StatusInternalServerError, fmt.Errorf("remote write 2.x receiver requires a storage.ExemplarAppenderV2, got %T", appV2)
 	}
 	app := &remoteWriteAppenderV2{
@@ -393,6 +391,9 @@ func (h *writeHandler) appendV2(app *remoteWriteAppenderV2, req *writev2.Request
 				rs.Samples++
 				continue
 			}
+			// TODO(bwplotka): Consider adding AppendPartialError support. Currently not needed as it can only come from
+			// exemplars. For future proof handling we could consider skipping those errors.
+
 			// Handle append error.
 			if errors.Is(err, storage.ErrOutOfOrderSample) ||
 				errors.Is(err, storage.ErrOutOfBounds) ||
