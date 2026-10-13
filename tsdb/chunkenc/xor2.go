@@ -430,6 +430,16 @@ func (a *xor2Appender) writeVDelta(v float64) {
 		return
 	}
 
+	// When widening, retain the old window boundaries if the union adds at most
+	// half a replacement header's cost in payload bits. This can avoid another
+	// header if the following delta needs the old boundaries again.
+	if a.leading != 0xff && (newLeading < a.leading || newTrailing < a.trailing) {
+		unionLeading, unionTrailing := min(newLeading, a.leading), min(newTrailing, a.trailing)
+		if newLeading+newTrailing-unionLeading-unionTrailing <= 6 {
+			newLeading, newTrailing = unionLeading, unionTrailing
+		}
+	}
+
 	a.leading, a.trailing = newLeading, newTrailing
 
 	a.b.writeBitsFast(0b110, 3)
@@ -461,6 +471,15 @@ func (a *xor2Appender) writeVDeltaKnownNonZero(delta uint64) {
 		a.b.writeBit(zero)
 		a.b.writeBitsFast(delta>>a.trailing, 64-int(a.leading)-int(a.trailing))
 		return
+	}
+
+	// As in writeVDelta, retain nearby old boundaries when widening. Half of
+	// this path's 11-bit replacement overhead allows five extra payload bits.
+	if a.leading != 0xff && (newLeading < a.leading || newTrailing < a.trailing) {
+		unionLeading, unionTrailing := min(newLeading, a.leading), min(newTrailing, a.trailing)
+		if newLeading+newTrailing-unionLeading-unionTrailing <= 5 {
+			newLeading, newTrailing = unionLeading, unionTrailing
+		}
 	}
 
 	a.leading, a.trailing = newLeading, newTrailing

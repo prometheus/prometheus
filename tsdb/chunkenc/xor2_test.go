@@ -102,6 +102,23 @@ func xor2WindowSamples() []sampleCase {
 		{"constant", func(int) float64 { return 1e9 }},
 		{"counter", func(i int) float64 { return 1e9 + float64(i) }},
 		{"alternating-bool", func(i int) float64 { return float64(i % 2) }},
+		// Alternate shifted XOR windows at and beyond the expansion limits.
+		{"shifted-window-5", func(i int) float64 {
+			deltas := [...]uint64{0, 0xff << 27, 0xff<<27 ^ 0xff<<32, 0xff << 32}
+			return math.Float64frombits(math.Float64bits(1) ^ deltas[i%4])
+		}},
+		{"shifted-window-6", func(i int) float64 {
+			deltas := [...]uint64{0, 0xff << 27, 0xff<<27 ^ 0xff<<33, 0xff << 33}
+			return math.Float64frombits(math.Float64bits(1) ^ deltas[i%4])
+		}},
+		{"shifted-window-7", func(i int) float64 {
+			deltas := [...]uint64{0, 0xff << 27, 0xff<<27 ^ 0xff<<34, 0xff << 34}
+			return math.Float64frombits(math.Float64bits(1) ^ deltas[i%4])
+		}},
+		{"full-width-union", func(i int) float64 {
+			deltas := [...]uint64{0, 1<<63 | 1<<5, 1<<63 | 1<<58 | 1<<5 | 1, 1<<58 | 1}
+			return math.Float64frombits(math.Float64bits(1) ^ deltas[i%4])
+		}},
 		{"sign-excursion", func(i int) float64 {
 			v := 1e9 + float64(i)
 			if i == 2 {
@@ -173,14 +190,30 @@ func xor2WindowSamples() []sampleCase {
 
 func TestXOR2WindowSelection(t *testing.T) {
 	wantBytes := map[string]int{
-		"sign-excursion/jitter=false/st=false": 225,
-		"sign-excursion/jitter=false/st=true":  408,
-		"sign-excursion/jitter=true/st=false":  429,
-		"sign-excursion/jitter=true/st=true":   612,
-		"zero-excursion/jitter=false/st=false": 175,
-		"zero-excursion/jitter=false/st=true":  358,
-		"zero-excursion/jitter=true/st=false":  380,
-		"zero-excursion/jitter=true/st=true":   563,
+		"shifted-window-5/jitter=false/st=false": 260,
+		"shifted-window-5/jitter=false/st=true":  443,
+		"shifted-window-5/jitter=true/st=false":  464,
+		"shifted-window-5/jitter=true/st=true":   647,
+		"shifted-window-6/jitter=false/st=false": 347,
+		"shifted-window-6/jitter=false/st=true":  530,
+		"shifted-window-6/jitter=true/st=false":  479,
+		"shifted-window-6/jitter=true/st=true":   662,
+		"shifted-window-7/jitter=false/st=false": 347,
+		"shifted-window-7/jitter=false/st=true":  530,
+		"shifted-window-7/jitter=true/st=false":  565,
+		"shifted-window-7/jitter=true/st=true":   748,
+		"full-width-union/jitter=false/st=false": 1018,
+		"full-width-union/jitter=false/st=true":  1201,
+		"full-width-union/jitter=true/st=false":  1223,
+		"full-width-union/jitter=true/st=true":   1406,
+		"sign-excursion/jitter=false/st=false":   225,
+		"sign-excursion/jitter=false/st=true":    408,
+		"sign-excursion/jitter=true/st=false":    429,
+		"sign-excursion/jitter=true/st=true":     612,
+		"zero-excursion/jitter=false/st=false":   175,
+		"zero-excursion/jitter=false/st=true":    358,
+		"zero-excursion/jitter=true/st=false":    380,
+		"zero-excursion/jitter=true/st=true":     563,
 	}
 	for _, tc := range xor2WindowSamples() {
 		t.Run(tc.name, func(t *testing.T) {
