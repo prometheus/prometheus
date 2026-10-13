@@ -2181,6 +2181,16 @@ func TestOTLPAllowUTF8(t *testing.T) {
 	})
 }
 
+func TestReceiveRelabelConfigs(t *testing.T) {
+	c, err := LoadFile(filepath.Join("testdata", "receive_relabel_configs.good.yml"), false, promslog.NewNopLogger())
+	require.NoError(t, err)
+
+	require.Len(t, c.ReceiveRelabelConfigs, 1)
+	require.Equal(t, model.LabelNames{"__name__"}, c.ReceiveRelabelConfigs[0].SourceLabels)
+	require.Equal(t, relabel.Replace, c.ReceiveRelabelConfigs[0].Action)
+	require.Equal(t, "__name__", c.ReceiveRelabelConfigs[0].TargetLabel)
+}
+
 func TestLoadConfig(t *testing.T) {
 	// Parse a valid file that sets a global scrape timeout. This tests whether parsing
 	// an overwritten default field in the global config permanently changes the default.
@@ -2624,6 +2634,10 @@ var expectedErrors = []struct {
 	{
 		filename: "empty_rw_relabel_config.bad.yml",
 		errMsg:   "empty or null relabeling rule in remote write config",
+	},
+	{
+		filename: "empty_receive_relabel_config.bad.yml",
+		errMsg:   "empty or null relabeling rule in receive_relabel_configs",
 	},
 	{
 		filename: "empty_static_config.bad.yml",
