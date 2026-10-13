@@ -1181,6 +1181,83 @@ func TestGetPromExemplars(t *testing.T) {
 		_, err := c.getPromExemplars(ctx, es)
 		require.Error(t, err)
 	})
+
+	t.Run("Exemplars with filtered attributes colliding with trace context", func(t *testing.T) {
+		traceID := pcommon.TraceID{0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07, 0x08, 0x09, 0x0a, 0x0b, 0x0c, 0x0d, 0x0e, 0x0f, 0x10}
+		spanID := pcommon.SpanID{0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07, 0x08}
+		const (
+			traceIDHex = "0102030405060708090a0b0c0d0e0f10"
+			spanIDHex  = "0102030405060708"
+		)
+		for _, tc := range []struct {
+			name           string
+			traceID        pcommon.TraceID
+			spanID         pcommon.SpanID
+			attrs          map[string]any
+			expectedLabels labels.Labels
+		}{
+			{
+				name:    "trace and span ID override filtered attributes",
+				traceID: traceID,
+				spanID:  spanID,
+				attrs:   map[string]any{"trace_id": "attr-trace", "span_id": "attr-span", "foo": "bar"},
+				expectedLabels: labels.FromStrings(
+					"trace_id", traceIDHex,
+					"span_id", spanIDHex,
+					"foo", "bar",
+				),
+			},
+			{
+				name:    "only trace ID overrides filtered attribute",
+				traceID: traceID,
+				attrs:   map[string]any{"trace_id": "attr-trace", "span_id": "attr-span"},
+				expectedLabels: labels.FromStrings(
+					"trace_id", traceIDHex,
+					"span_id", "attr-span",
+				),
+			},
+			{
+				name:   "only span ID overrides filtered attribute",
+				spanID: spanID,
+				attrs:  map[string]any{"trace_id": "attr-trace", "span_id": "attr-span"},
+				expectedLabels: labels.FromStrings(
+					"trace_id", "attr-trace",
+					"span_id", spanIDHex,
+				),
+			},
+			{
+				name:           "filtered attributes are kept without trace context",
+				attrs:          map[string]any{"trace_id": "attr-trace", "span_id": "attr-span"},
+				expectedLabels: labels.FromStrings("trace_id", "attr-trace", "span_id", "attr-span"),
+			},
+			{
+				name:    "overridden filtered attributes do not count towards rune limit",
+				traceID: traceID,
+				spanID:  spanID,
+				attrs:   map[string]any{"trace_id": strings.Repeat("a", maxExemplarRunes), "foo": "bar"},
+				expectedLabels: labels.FromStrings(
+					"trace_id", traceIDHex,
+					"span_id", spanIDHex,
+					"foo", "bar",
+				),
+			},
+		} {
+			t.Run(tc.name, func(t *testing.T) {
+				es := pmetric.NewExemplarSlice()
+				ex := es.AppendEmpty()
+				ex.SetTimestamp(pcommon.Timestamp(time.Now().UnixNano()))
+				ex.SetDoubleValue(1)
+				ex.SetTraceID(tc.traceID)
+				ex.SetSpanID(tc.spanID)
+				require.NoError(t, ex.FilteredAttributes().FromRaw(tc.attrs))
+
+				exemplars, err := c.getPromExemplars(ctx, es)
+				require.NoError(t, err)
+				require.Len(t, exemplars, 1)
+				testutil.RequireEqual(t, tc.expectedLabels, exemplars[0].Labels)
+			})
+		}
+	})
 }
 
 func TestAddTypeAndUnitLabels(t *testing.T) {
