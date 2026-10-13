@@ -323,9 +323,7 @@ func (cdm *ChunkDiskMapper) openMMapFiles() (returnErr error) {
 		return err
 	}
 
-	files, err = repairLastChunkFile(files, func(path string) (io.ReadCloser, error) {
-		return os.Open(path)
-	})
+	files, err = repairLastChunkFile(files)
 	if err != nil {
 		return err
 	}
@@ -421,7 +419,7 @@ func HardLinkChunkFiles(src, dst string) error {
 // repairLastChunkFile deletes the last file if it's empty.
 // Because we don't fsync when creating these files, we could end
 // up with an empty file at the end during an abrupt shutdown.
-func repairLastChunkFile(files map[int]string, openFile func(string) (io.ReadCloser, error)) (_ map[int]string, returnErr error) {
+func repairLastChunkFile(files map[int]string) (_ map[int]string, returnErr error) {
 	lastFile := -1
 	for seq := range files {
 		if seq > lastFile {
@@ -433,19 +431,15 @@ func repairLastChunkFile(files map[int]string, openFile func(string) (io.ReadClo
 		return files, nil
 	}
 
-	f, err := openFile(files[lastFile])
+	f, err := os.Open(files[lastFile])
 	if err != nil {
 		return files, fmt.Errorf("open file during last head chunk file repair: %w", err)
 	}
 
 	buf := make([]byte, MagicChunksSize)
-	size, err := f.Read(buf)
-	closeErr := f.Close()
-	if err != nil && !errors.Is(err, io.EOF) {
-		return files, fmt.Errorf("failed to read magic number during last head chunk file repair: %w", errors.Join(err, closeErr))
-	}
-	if closeErr != nil {
-		return files, fmt.Errorf("close file during last head chunk file repair: %w", closeErr)
+	size, err := readChunkHeaderAndClose(f, buf)
+	if err != nil {
+		return files, err
 	}
 
 	// We either don't have enough bytes for the magic number or the magic number is 0.
@@ -461,6 +455,18 @@ func repairLastChunkFile(files map[int]string, openFile func(string) (io.ReadClo
 	}
 
 	return files, nil
+}
+
+func readChunkHeaderAndClose(f io.ReadCloser, buf []byte) (int, error) {
+	size, err := f.Read(buf)
+	closeErr := f.Close()
+	if err != nil && !errors.Is(err, io.EOF) {
+		return size, fmt.Errorf("failed to read magic number during last head chunk file repair: %w", errors.Join(err, closeErr))
+	}
+	if closeErr != nil {
+		return size, fmt.Errorf("close file during last head chunk file repair: %w", closeErr)
+	}
+	return size, nil
 }
 
 // WriteChunk writes the chunk to disk.

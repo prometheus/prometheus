@@ -547,9 +547,7 @@ func TestHeadReadWriter_ReadRepairOnEmptyLastFile(t *testing.T) {
 
 	// Read failure closes the file.
 	reader := &repairReader{}
-	_, err := repairLastChunkFile(map[int]string{1: "test"}, func(string) (io.ReadCloser, error) {
-		return reader, nil
-	})
+	_, err := readChunkHeaderAndClose(reader, make([]byte, MagicChunksSize))
 	require.ErrorIs(t, err, io.ErrUnexpectedEOF)
 	require.True(t, reader.closed)
 }
