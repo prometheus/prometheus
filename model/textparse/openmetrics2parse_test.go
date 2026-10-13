@@ -367,6 +367,15 @@ rpc_duration_seconds {count:100,sum:30000.0,quantile:[0.5:100.0,0.9:200.0,0.99:3
 	p := NewOpenMetrics2Parser([]byte(input), labels.NewSymbolTable(), ParserOptions{})
 	got := testParse(t, p)
 	requireEntries(t, exp, got)
+
+	// testParse drained the input to io.EOF, so the pooled composite buffers
+	// must be detached from the parser and a stray Next() must not touch them.
+	op := p.(*openMetrics2Parser)
+	require.Nil(t, op.scratch)
+	require.Nil(t, op.pending)
+	require.Nil(t, op.seriesBuf)
+	_, err := p.Next()
+	require.Error(t, err)
 }
 
 func TestOpenMetrics2ParseCompositeClassicHistogram(t *testing.T) {

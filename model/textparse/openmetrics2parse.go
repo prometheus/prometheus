@@ -25,6 +25,7 @@ import (
 	"math"
 	"strconv"
 	"strings"
+	"sync"
 	"unicode/utf8"
 
 	"github.com/prometheus/common/model"
@@ -95,6 +96,26 @@ type pendingEntry struct {
 	val         float64
 }
 
+// om2CompositeScratch holds the buffers that back the exploded composite
+// entries (pending queue and the series bytes it points into). They are
+// pooled across parser instances because callers like the scrape loop create
+// a new parser per scrape, and without pooling every scrape of a page with
+// classic histograms or summaries re-grows both buffers to the size of its
+// largest family (a few KiB per scrape).
+type om2CompositeScratch struct {
+	pending   []pendingEntry
+	seriesBuf []byte
+}
+
+var om2CompositeScratchPool = sync.Pool{
+	New: func() any {
+		return &om2CompositeScratch{
+			pending:   make([]pendingEntry, 0, 16),
+			seriesBuf: make([]byte, 0, 1024),
+		}
+	},
+}
+
 // om2Exemplar holds the byte-offset range into p.eOffsets and parsed scalar
 // fields for a single exemplar so that Exemplar() can construct labels lazily.
 type om2Exemplar struct {
@@ -163,6 +184,11 @@ type openMetrics2Parser struct {
 	// seriesBuf backs pendingEntry series bytes; reused across composite lines
 	// to avoid allocating one byte slice per exploded entry.
 	seriesBuf []byte
+
+	// scratch is the pooled owner of pending and seriesBuf's backing arrays,
+	// taken lazily on the first composite line and returned on io.EOF. Nil
+	// means no composite was parsed yet (or the buffers were already returned).
+	scratch *om2CompositeScratch
 
 	enableTypeAndUnitLabels bool
 	ignoreNativeHistograms  bool
@@ -434,6 +460,10 @@ func (p *openMetrics2Parser) Next() (Entry, error) {
 		if t := p.nextToken(); t != tEOF {
 			return EntryInvalid, errors.New("unexpected data after # EOF")
 		}
+		// All pending entries were served above, so nothing references the
+		// composite buffers anymore and they can go back to the pool. On
+		// parse errors they are simply dropped together with the parser.
+		p.releaseCompositeScratch()
 		return EntryInvalid, io.EOF
 	case tEOF:
 		return EntryInvalid, errors.New("data does not end with # EOF")
@@ -1370,12 +1400,7 @@ func (p *openMetrics2Parser) buildClassicHistogramPending(
 ) ([]pendingEntry, error) {
 	// p.pending and p.seriesBuf have been reset to [:0] by Next() before any
 	// parsing begins, so we reuse their backing arrays across composite parses.
-	// Lazily preallocate enough capacity for a typical classic histogram on the
-	// first composite line to avoid repeated slice growth allocations.
-	if cap(p.pending) == 0 {
-		p.pending = make([]pendingEntry, 0, 16)
-		p.seriesBuf = make([]byte, 0, 1024)
-	}
+	p.acquireCompositeScratch()
 	pending := p.pending
 
 	// GaugeHistogram Samples with Classic Buckets expose count/sum as
@@ -1517,13 +1542,37 @@ func (p *openMetrics2Parser) buildNHCBHistogram(cf compositeFields, isNative boo
 	return h, fh, nil
 }
 
+// acquireCompositeScratch makes p.pending and p.seriesBuf point at pooled,
+// empty backing arrays. It is a no-op once the parser owns a scratch.
+func (p *openMetrics2Parser) acquireCompositeScratch() {
+	if p.scratch != nil {
+		return
+	}
+	p.scratch = om2CompositeScratchPool.Get().(*om2CompositeScratch)
+	p.pending = p.scratch.pending[:0]
+	p.seriesBuf = p.scratch.seriesBuf[:0]
+}
+
+// releaseCompositeScratch hands the (possibly grown) backing arrays back to
+// the pool and detaches them from the parser, so a parser that is used after
+// io.EOF cannot write into memory another parser may already own.
+func (p *openMetrics2Parser) releaseCompositeScratch() {
+	if p.scratch == nil {
+		return
+	}
+	p.scratch.pending = p.pending[:0]
+	p.scratch.seriesBuf = p.seriesBuf[:0]
+	om2CompositeScratchPool.Put(p.scratch)
+	p.scratch = nil
+	p.pending = nil
+	p.pendingIdx = 0
+	p.seriesBuf = nil
+}
+
 func (p *openMetrics2Parser) buildSummaryPending(cf compositeFields) ([]pendingEntry, error) {
 	// p.pending and p.seriesBuf have been reset to [:0] by Next() before any
 	// parsing begins, so we reuse their backing arrays across composite parses.
-	if cap(p.pending) == 0 {
-		p.pending = make([]pendingEntry, 0, 8)
-		p.seriesBuf = make([]byte, 0, 512)
-	}
+	p.acquireCompositeScratch()
 	pending := p.pending
 
 	cv := cf.fields[compFieldCount]
