@@ -427,15 +427,24 @@ func TestEstimateCostSparseSeries(t *testing.T) {
 			engine := newQueryCostEngine(t)
 			start, end := time.Unix(7200, 0), time.Unix(14385, 0)
 			const expr = "sum_over_time(metric[10m])"
-			query, err := engine.NewRangeQuery(context.Background(), s, nil, expr, start, end, time.Minute)
+			query, err := engine.NewRangeQuery(t.Context(), s, nil, expr, start, end, time.Minute)
 			require.NoError(t, err)
 			defer query.Close()
-			require.NoError(t, query.Exec(context.Background()).Err)
-			est, _, err := promql.EstimateCost(context.Background(), s, estimateTestParser, expr, start, end, time.Minute, 5*time.Minute, time.Minute, 15*time.Second)
+			require.NoError(t, query.Exec(t.Context()).Err)
+			est, annos, err := promql.EstimateCost(t.Context(), s, estimateTestParser, expr, start, end, time.Minute, 5*time.Minute, time.Minute, 15*time.Second)
 			require.NoError(t, err)
 			actual := query.Stats().Samples.SamplesRead
 			require.Positive(t, actual)
-			require.InDelta(t, actual, est.SamplesRead, float64(actual)*0.05)
+			if tc.blocks > 1 {
+				// Multi-block readers use 41 initial units plus four units for each
+				// of the remaining 119 steps, rather than eagerly merging chunks.
+				require.Equal(t, int64(tc.series*517), est.SamplesRead)
+				require.Len(t, annos.AsErrors(), 1)
+				require.Contains(t, annos.AsErrors()[0].Error(), "bounded storage sampling is unavailable")
+			} else {
+				require.Empty(t, annos.AsErrors())
+				require.InDelta(t, actual, est.SamplesRead, float64(actual)*0.05)
+			}
 		})
 	}
 }
@@ -789,6 +798,15 @@ type chunkMetaCountingQueryable struct {
 	q     storage.Queryable
 	cq    storage.ChunkQueryable
 	metas []*int
+	owner *chunkMetaCountingQueryable
+}
+
+func (c *chunkMetaCountingQueryable) CostSamplingQueryable() (storage.SampleAndChunkQueryable, bool) {
+	source, supported := c.q.(storage.CostSamplingQueryable).CostSamplingQueryable()
+	if !supported || source == nil {
+		return source, supported
+	}
+	return &chunkMetaCountingQueryable{q: source, cq: source, owner: c}, true
 }
 
 func (c *chunkMetaCountingQueryable) Querier(mint, maxt int64) (storage.Querier, error) {
@@ -801,7 +819,11 @@ func (c *chunkMetaCountingQueryable) ChunkQuerier(mint, maxt int64) (storage.Chu
 		return nil, err
 	}
 	n := new(int)
-	c.metas = append(c.metas, n)
+	owner := c
+	if c.owner != nil {
+		owner = c.owner
+	}
+	owner.metas = append(owner.metas, n)
 	return &chunkMetaCountingQuerier{ChunkQuerier: qr, metas: n}, nil
 }
 
@@ -1057,6 +1079,14 @@ type sampleErrorQueryable struct {
 	err error
 }
 
+func (q sampleErrorQueryable) CostSamplingQueryable() (storage.SampleAndChunkQueryable, bool) {
+	source, supported := q.SampleAndChunkQueryable.(storage.CostSamplingQueryable).CostSamplingQueryable()
+	if !supported || source == nil {
+		return source, supported
+	}
+	return sampleErrorQueryable{SampleAndChunkQueryable: source, err: q.err}, true
+}
+
 func (q sampleErrorQueryable) Querier(mint, maxt int64) (storage.Querier, error) {
 	inner, err := q.SampleAndChunkQueryable.Querier(mint, maxt)
 	return sampleErrorQuerier{Querier: inner, err: q.err}, err
@@ -1103,8 +1133,53 @@ func TestEstimateCostSamplingErrors(t *testing.T) {
 		t.Run(want.Error(), func(t *testing.T) {
 			q := sampleErrorQueryable{SampleAndChunkQueryable: s, err: want}
 			ts := time.Unix(100, 0)
-			_, _, err := promql.EstimateCost(context.Background(), q, estimateTestParser, "metric", ts, ts, 0, 5*time.Minute, time.Minute, 10*time.Second)
+			_, _, err := promql.EstimateCost(t.Context(), q, estimateTestParser, "metric", ts, ts, 0, 5*time.Minute, time.Minute, 10*time.Second)
 			require.ErrorIs(t, err, want)
+		})
+	}
+}
+
+func TestEstimateCost_InvalidQuery(t *testing.T) {
+	for _, tc := range []struct {
+		name, expr, wantError string
+		step                  time.Duration
+		parseError            bool
+		preprocessError       bool
+	}{
+		{name: "syntax", expr: "broken(", wantError: "parse error", parseError: true},
+		{name: "preprocessing", expr: "rate(metric[1s-2s])", wantError: "duration must be greater than 0", preprocessError: true},
+		{name: "range result type", expr: "metric[5m]", step: time.Second, wantError: "invalid expression type"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			start, end := time.Unix(100, 0), time.Unix(100, 0)
+			if tc.step > 0 {
+				end = end.Add(time.Minute)
+			}
+			parsed, err := estimateTestParser.ParseExpr(tc.expr)
+			if tc.parseError {
+				require.Error(t, err)
+			} else {
+				require.NoError(t, err)
+			}
+			if tc.preprocessError {
+				_, err = promql.PreprocessExpr(parsed, start, end, tc.step)
+				require.ErrorContains(t, err, tc.wantError)
+			}
+
+			opens := 0
+			q := storage.QueryableFunc(func(int64, int64) (storage.Querier, error) {
+				opens++
+				return storage.NoopQuerier(), nil
+			})
+			estimate, _, err := promql.EstimateCost(t.Context(), q, estimateTestParser, tc.expr, start, end, tc.step, time.Minute, time.Minute, time.Second)
+			require.ErrorContains(t, err, tc.wantError)
+			if tc.parseError {
+				var parseErrors parser.ParseErrors
+				require.ErrorAs(t, err, &parseErrors)
+				require.NotEmpty(t, parseErrors)
+			}
+			require.Equal(t, promql.CostEstimate{}, estimate)
+			require.Zero(t, opens, "invalid queries must not open storage")
 		})
 	}
 }
