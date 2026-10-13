@@ -83,16 +83,25 @@ func (l *openMetrics2Lexer) Error(es string) {
 // pendingEntry holds a single exploded flat series to be drained from the
 // pending queue that is built when a composite value (summary or classic
 // histogram) is parsed.
+//
+// Labels are not constructed eagerly during Next() because warm scrape caches
+// only inspect Series() bytes; Labels() reconstructs the label set lazily from
+// p.seriesBuf[seriesStart:seriesEnd] and p.offsets on a cache miss.
 type pendingEntry struct {
-	series []byte
-	lset   labels.Labels
-	val    float64
-	ts     *int64
+	seriesStart int
+	seriesEnd   int
+	nameLen     int
+	injectKey   string
+	val         float64
 }
 
-// om2Exemplar holds a fully parsed exemplar.
+// om2Exemplar holds the byte-offset range into p.eOffsets and parsed scalar
+// fields for a single exemplar so that Exemplar() can construct labels lazily.
 type om2Exemplar struct {
-	e exemplar.Exemplar
+	offsetsStart int
+	offsetsEnd   int
+	val          float64
+	ts           int64
 }
 
 // openMetrics2Parser parses samples from a byte slice in the OpenMetrics 2.0
@@ -139,7 +148,10 @@ type openMetrics2Parser struct {
 	fh *histogram.FloatHistogram
 
 	// Multiple exemplars per sample (OM 2.0 allows zero or more).
+	// eOffsets stores the flat [k1Start, k1End, v1Start, v1End, ...] byte
+	// offsets into l.b across all exemplars on the current line.
 	exemplars   []om2Exemplar
+	eOffsets    []int
 	exemplarIdx int
 
 	// Pending queue for composite values exploded into flat EntrySeries.
@@ -148,13 +160,9 @@ type openMetrics2Parser struct {
 	pending    []pendingEntry
 	pendingIdx int
 
-	// seriesBuf backs pendingEntry.series; reused across entries to avoid
-	// allocating one identity per entry.
+	// seriesBuf backs pendingEntry series bytes; reused across composite lines
+	// to avoid allocating one byte slice per exploded entry.
 	seriesBuf []byte
-
-	// extraLabels holds the non-__name__ labels for the current composite line,
-	// reused across composite parses.
-	extraLabels []labels.Label
 
 	enableTypeAndUnitLabels bool
 	ignoreNativeHistograms  bool
@@ -175,9 +183,11 @@ type openMetrics2Parser struct {
 // NewOpenMetrics2Parser returns a new parser for the OpenMetrics 2.0 text
 // format.
 func NewOpenMetrics2Parser(b []byte, st *labels.SymbolTable, opts ParserOptions) Parser {
+	builder := labels.NewScratchBuilderWithSymbolTable(st, 16)
+	builder.SetUnsafeAdd(true)
 	p := &openMetrics2Parser{
 		l:                        &openMetrics2Lexer{b: b},
-		builder:                  labels.NewScratchBuilderWithSymbolTable(st, 16),
+		builder:                  builder,
 		enableTypeAndUnitLabels:  opts.EnableTypeAndUnitLabels,
 		ignoreNativeHistograms:   opts.IgnoreNativeHistograms,
 		keepClassicOnNativeHist:  opts.KeepClassicOnClassicAndNativeHistograms,
@@ -194,8 +204,10 @@ func (p *openMetrics2Parser) resetOnFamilyChange(name []byte) {
 	if !bytes.Equal(name, p.curFamilyName) {
 		p.mtype = model.MetricTypeUnknown
 		p.unit = ""
+		// Only update curFamilyName when the family changes to avoid a pointer
+		// write barrier on every sample within the same family.
+		p.curFamilyName = name
 	}
-	p.curFamilyName = name
 }
 
 // hasFamilyNameLabel reports whether the current sample's labelsinclude a label key matching
@@ -214,11 +226,14 @@ func (p *openMetrics2Parser) hasFamilyNameLabel() bool {
 func (p *openMetrics2Parser) Series() ([]byte, *int64, float64) {
 	if p.pendingIdx > 0 {
 		pe := p.pending[p.pendingIdx-1]
-		return pe.series, pe.ts, pe.val
+		series := p.seriesBuf[pe.seriesStart:pe.seriesEnd:pe.seriesEnd]
+		if p.hasTS {
+			return series, &p.ts, pe.val
+		}
+		return series, nil, pe.val
 	}
 	if p.hasTS {
-		ts := p.ts
-		return p.series, &ts, p.val
+		return p.series, &p.ts, p.val
 	}
 	return p.series, nil, p.val
 }
@@ -227,8 +242,7 @@ func (p *openMetrics2Parser) Series() ([]byte, *int64, float64) {
 // and the native histogram value.
 func (p *openMetrics2Parser) Histogram() ([]byte, *int64, *histogram.Histogram, *histogram.FloatHistogram) {
 	if p.hasTS {
-		ts := p.ts
-		return p.series, &ts, p.h, p.fh
+		return p.series, &p.ts, p.h, p.fh
 	}
 	return p.series, nil, p.h, p.fh
 }
@@ -264,10 +278,53 @@ func (p *openMetrics2Parser) Comment() []byte {
 // Labels writes the labels of the current sample into l.
 func (p *openMetrics2Parser) Labels(l *labels.Labels) {
 	if p.pendingIdx > 0 {
-		*l = p.pending[p.pendingIdx-1].lset
+		pe := p.pending[p.pendingIdx-1]
+		// p.builder has SetUnsafeAdd(true), so stringlabels and dedupelabels
+		// copy/intern strings inside Labels() and slicelabels clones inside Add().
+		s := yoloString(p.seriesBuf[pe.seriesStart:pe.seriesEnd])
+		p.builder.Reset()
+		metricName := unreplace(s[:pe.nameLen])
+		m := schema.Metadata{
+			Name: metricName,
+			Type: p.mtype,
+			Unit: p.unit,
+		}
+		pos := pe.nameLen
+		if p.enableTypeAndUnitLabels {
+			if !m.IsTypeEmpty() {
+				pos += 1 + len(model.MetricTypeLabel) + 1 + len(p.mtype)
+			}
+			if p.unit != "" {
+				pos += 1 + len(model.MetricUnitLabel) + 1 + len(p.unit)
+			}
+			m.AddToLabels(&p.builder)
+		} else {
+			p.builder.Add(model.MetricNameLabel, metricName)
+		}
+		for i := 2; i < len(p.offsets); i += 4 {
+			pos++ // skip SeparatorByte
+			kLen := p.offsets[i+1] - p.offsets[i]
+			label := unreplace(s[pos : pos+kLen])
+			pos += kLen + 1 // skip key and SeparatorByte
+			vLen := p.offsets[i+3] - p.offsets[i+2]
+			val := unreplace(s[pos : pos+vLen])
+			pos += vLen
+			if p.enableTypeAndUnitLabels && !m.IsEmptyFor(label) {
+				continue
+			}
+			p.builder.Add(label, val)
+		}
+		if pe.injectKey != "" {
+			pos += 1 + len(pe.injectKey) + 1 // skip SeparatorByte, injectKey, SeparatorByte
+			p.builder.Add(pe.injectKey, s[pos:])
+		}
+		p.builder.Sort()
+		*l = p.builder.Labels()
 		return
 	}
-	s := string(p.series)
+	// p.builder has SetUnsafeAdd(true), so yoloString is safe across all labels
+	// implementations without allocating an intermediate string copy.
+	s := yoloString(p.series)
 	p.builder.Reset()
 	metricName := unreplace(s[p.offsets[0]-p.start : p.offsets[1]-p.start])
 	m := schema.Metadata{
@@ -302,8 +359,26 @@ func (p *openMetrics2Parser) Exemplar(e *exemplar.Exemplar) bool {
 	if p.exemplarIdx >= len(p.exemplars) {
 		return false
 	}
-	*e = p.exemplars[p.exemplarIdx].e
+	ex := p.exemplars[p.exemplarIdx]
 	p.exemplarIdx++
+
+	e.Value = ex.val
+	e.HasTs = true
+	e.Ts = ex.ts
+	p.builder.Reset()
+	if ex.offsetsStart < ex.offsetsEnd {
+		base := p.eOffsets[ex.offsetsStart]
+		s := yoloString(p.l.b[base:p.eOffsets[ex.offsetsEnd-1]])
+		for i := ex.offsetsStart; i < ex.offsetsEnd; i += 4 {
+			a := p.eOffsets[i] - base
+			b := p.eOffsets[i+1] - base
+			c := p.eOffsets[i+2] - base
+			d := p.eOffsets[i+3] - base
+			p.builder.Add(unreplace(s[a:b]), unreplace(s[c:d]))
+		}
+		p.builder.Sort()
+	}
+	e.Labels = p.builder.Labels()
 	return true
 }
 
@@ -337,19 +412,22 @@ func (p *openMetrics2Parser) Next() (Entry, error) {
 		p.pendingIdx++
 		return EntrySeries, nil
 	}
-	p.pending = p.pending[:0]
-	p.pendingIdx = 0
-	p.seriesBuf = p.seriesBuf[:0]
+	if len(p.pending) > 0 {
+		p.pending = p.pending[:0]
+		p.pendingIdx = 0
+		p.seriesBuf = p.seriesBuf[:0]
+	}
 
 	var err error
 	p.start = p.l.i
 	p.offsets = p.offsets[:0]
-	p.exemplars = p.exemplars[:0]
-	p.exemplarIdx = 0
+	if len(p.exemplars) > 0 {
+		p.exemplars = p.exemplars[:0]
+		p.eOffsets = p.eOffsets[:0]
+		p.exemplarIdx = 0
+	}
 	p.hasTS = false
 	p.hasST = false
-	p.h = nil
-	p.fh = nil
 
 	switch t := p.nextToken(); t {
 	case tEOFWord:
@@ -368,12 +446,12 @@ func (p *openMetrics2Parser) Next() (Entry, error) {
 			if p.l.b[mStart] == '"' && p.l.b[mEnd-1] == '"' {
 				mStart++
 				mEnd--
-			}
-			if mStart == mEnd {
-				return EntryInvalid, errors.New("metric name must not be empty")
-			}
-			if !utf8.Valid(p.l.b[mStart:mEnd]) {
-				return EntryInvalid, fmt.Errorf("invalid UTF-8 metric name: %q", p.l.b[mStart:mEnd])
+				if mStart == mEnd {
+					return EntryInvalid, errors.New("metric name must not be empty")
+				}
+				if !utf8.Valid(p.l.b[mStart:mEnd]) {
+					return EntryInvalid, fmt.Errorf("invalid UTF-8 metric name: %q", p.l.b[mStart:mEnd])
+				}
 			}
 			p.offsets = append(p.offsets, mStart, mEnd)
 			p.resetOnFamilyChange(p.l.b[mStart:mEnd])
@@ -490,16 +568,6 @@ func (p *openMetrics2Parser) parseSeriesEndOfLine(t token) (Entry, error) {
 		return EntryInvalid, p.parseError("expected value after metric", t)
 	}
 
-	// Histogram, GaugeHistogram, and Summary Samples MUST use a composite
-	// value.
-	switch p.mtype {
-	case model.MetricTypeHistogram, model.MetricTypeGaugeHistogram, model.MetricTypeSummary:
-		return EntryInvalid, fmt.Errorf(
-			"composite value required for metric type %q while parsing: %q",
-			p.mtype, p.l.b[p.start:p.l.i],
-		)
-	}
-
 	// Plain float value; strip the leading space.
 	raw := p.l.buf()
 	if len(raw) > 1 && raw[0] == ' ' {
@@ -517,11 +585,19 @@ func (p *openMetrics2Parser) parseSeriesEndOfLine(t token) (Entry, error) {
 		p.val = math.Float64frombits(value.NormalNaN)
 	}
 
-	if p.mtype == model.MetricTypeInfo && p.val != 1 {
-		return EntryInvalid, fmt.Errorf("info sample value must be 1, got %v while parsing: %q", p.val, p.l.b[p.start:p.l.i])
-	}
-
-	if p.mtype == model.MetricTypeStateset {
+	switch p.mtype {
+	case model.MetricTypeHistogram, model.MetricTypeGaugeHistogram, model.MetricTypeSummary:
+		// Histogram, GaugeHistogram, and Summary Samples MUST use a composite
+		// value.
+		return EntryInvalid, fmt.Errorf(
+			"composite value required for metric type %q while parsing: %q",
+			p.mtype, p.l.b[p.start:p.l.i],
+		)
+	case model.MetricTypeInfo:
+		if p.val != 1 {
+			return EntryInvalid, fmt.Errorf("info sample value must be 1, got %v while parsing: %q", p.val, p.l.b[p.start:p.l.i])
+		}
+	case model.MetricTypeStateset:
 		if p.val != 0 && p.val != 1 {
 			return EntryInvalid, fmt.Errorf("stateset sample value must be 0 or 1, got %v while parsing: %q", p.val, p.l.b[p.start:p.l.i])
 		}
@@ -530,7 +606,12 @@ func (p *openMetrics2Parser) parseSeriesEndOfLine(t token) (Entry, error) {
 		}
 	}
 
-	if err := p.parseAfterValue(); err != nil {
+	// Fast path: plain sample lines end immediately with a linebreak.
+	t2 := p.nextToken()
+	if t2 == tLinebreak {
+		return EntrySeries, nil
+	}
+	if err := p.parseAfterValue(t2); err != nil {
 		return EntryInvalid, err
 	}
 	return EntrySeries, nil
@@ -540,11 +621,11 @@ func (p *openMetrics2Parser) parseSeriesEndOfLine(t token) (Entry, error) {
 //
 //	[tTimestamp] [tStartTimestamp] [*tComment exemplar] tLinebreak
 //
-// It returns after consuming tLinebreak (either directly or via exemplar
-// parsing).
-func (p *openMetrics2Parser) parseAfterValue() error {
+// starting from the already-read token t. It returns after consuming tLinebreak
+// (either directly or via exemplar parsing).
+func (p *openMetrics2Parser) parseAfterValue(t token) error {
 	for {
-		switch t := p.nextToken(); t {
+		switch t {
 		case tEOF:
 			return errors.New("data does not end with # EOF")
 		case tLinebreak:
@@ -592,6 +673,7 @@ func (p *openMetrics2Parser) parseAfterValue() error {
 		default:
 			return p.parseError("unexpected token after value", t)
 		}
+		t = p.nextToken()
 	}
 }
 
@@ -616,37 +698,27 @@ func (p *openMetrics2Parser) parseExemplars() error {
 //   - tLinebreak → done=true
 //   - tComment   → done=false (caller loops for next exemplar)
 func (p *openMetrics2Parser) parseSingleExemplar() (done bool, err error) {
-	var ex om2Exemplar
+	offsetsStart := len(p.eOffsets)
 
-	// Parse exemplar label set (the "{" was opened by the tComment token).
-	eOffsets, err := p.parseLVals(nil, true)
+	// Parse exemplar label set (the "{" was opened by the tComment token) into
+	// the shared p.eOffsets slice so Exemplar() can build labels lazily.
+	p.eOffsets, err = p.parseLVals(p.eOffsets, true)
 	if err != nil {
 		return false, err
 	}
+	offsetsEnd := len(p.eOffsets)
 
 	// Parse exemplar value.
 	if t := p.nextToken(); t != tValue {
 		return false, p.parseError("expected exemplar value", t)
 	}
-	ex.e.Value, err = parseFloat(yoloString(p.l.buf()[1:]))
+	val, err := parseFloat(yoloString(p.l.buf()[1:]))
 	if err != nil {
 		return false, fmt.Errorf("%w while parsing exemplar value: %q", err, p.l.b[p.start:p.l.i])
 	}
-	if math.IsNaN(ex.e.Value) {
-		ex.e.Value = math.Float64frombits(value.NormalNaN)
+	if math.IsNaN(val) {
+		val = math.Float64frombits(value.NormalNaN)
 	}
-
-	// Build exemplar labels from the byte offsets collected above.
-	p.builder.Reset()
-	for i := 0; i < len(eOffsets); i += 4 {
-		a := eOffsets[i]
-		b := eOffsets[i+1]
-		c := eOffsets[i+2]
-		d := eOffsets[i+3]
-		p.builder.Add(unreplace(string(p.l.b[a:b])), unreplace(string(p.l.b[c:d])))
-	}
-	p.builder.Sort()
-	ex.e.Labels = p.builder.Labels()
 
 	// Read the token following the exemplar value.  OM2 requires every
 	// exemplar to carry a timestamp, so anything other than tTimestamp here
@@ -655,7 +727,6 @@ func (p *openMetrics2Parser) parseSingleExemplar() (done bool, err error) {
 	case tEOF:
 		return false, errors.New("data does not end with # EOF")
 	case tTimestamp:
-		ex.e.HasTs = true
 		var ts float64
 		if ts, err = parseFloat(yoloString(p.l.buf()[1:])); err != nil {
 			return false, fmt.Errorf("%w while parsing exemplar timestamp: %q", err, p.l.b[p.start:p.l.i])
@@ -663,8 +734,12 @@ func (p *openMetrics2Parser) parseSingleExemplar() (done bool, err error) {
 		if math.IsNaN(ts) || math.IsInf(ts, 0) {
 			return false, fmt.Errorf("invalid exemplar timestamp %f", ts)
 		}
-		ex.e.Ts = int64(ts * 1000)
-		p.exemplars = append(p.exemplars, ex)
+		p.exemplars = append(p.exemplars, om2Exemplar{
+			offsetsStart: offsetsStart,
+			offsetsEnd:   offsetsEnd,
+			val:          val,
+			ts:           int64(ts * 1000),
+		})
 		// After the exemplar timestamp, the line may end (tLinebreak) or
 		// another exemplar may follow (tComment).
 		switch t3 := p.nextToken(); t3 {
@@ -703,39 +778,41 @@ func (p *openMetrics2Parser) parseLVals(offsets []int, isExemplar bool) ([]int, 
 		}
 
 		t = p.nextToken()
-		if isQString && (t == tComma || t == tBraceClose) {
-			if isExemplar {
-				return nil, p.parseError("expected label name", t)
+		if isQString {
+			if t == tComma || t == tBraceClose {
+				if isExemplar {
+					return nil, p.parseError("expected label name", t)
+				}
+				if !isFirst {
+					return nil, errors.New("metric name must be the first item in the label set")
+				}
+				if offsets[0] != -1 || offsets[1] != -1 {
+					return nil, fmt.Errorf("metric name already set while parsing: %q", p.l.b[p.start:p.l.i])
+				}
+				offsets[0] = curTStart + 1
+				offsets[1] = curTI - 1
+				if offsets[0] == offsets[1] {
+					return nil, errors.New("metric name must not be empty")
+				}
+				if !utf8.Valid(p.l.b[offsets[0]:offsets[1]]) {
+					return nil, fmt.Errorf("invalid UTF-8 metric name: %q", p.l.b[offsets[0]:offsets[1]])
+				}
+				if t == tBraceClose {
+					return offsets, nil
+				}
+				t = p.nextToken()
+				continue
 			}
-			if !isFirst {
-				return nil, errors.New("metric name must be the first item in the label set")
-			}
-			if offsets[0] != -1 || offsets[1] != -1 {
-				return nil, fmt.Errorf("metric name already set while parsing: %q", p.l.b[p.start:p.l.i])
-			}
-			offsets[0] = curTStart + 1
-			offsets[1] = curTI - 1
-			if offsets[0] == offsets[1] {
-				return nil, errors.New("metric name must not be empty")
-			}
-			if !utf8.Valid(p.l.b[offsets[0]:offsets[1]]) {
-				return nil, fmt.Errorf("invalid UTF-8 metric name: %q", p.l.b[offsets[0]:offsets[1]])
-			}
-			if t == tBraceClose {
-				return offsets, nil
-			}
-			t = p.nextToken()
-			continue
-		}
-		if p.l.b[curTStart] == '"' {
+			// Quoted label name: strip surrounding quotes and validate non-empty UTF-8.
+			// Unquoted tLName tokens are already guaranteed by the lexer to be non-empty ASCII.
 			curTStart++
 			curTI--
-		}
-		if curTStart == curTI {
-			return nil, errors.New("label name must not be empty")
-		}
-		if !utf8.Valid(p.l.b[curTStart:curTI]) {
-			return nil, fmt.Errorf("invalid UTF-8 label name: %q", p.l.b[curTStart:curTI])
+			if curTStart == curTI {
+				return nil, errors.New("label name must not be empty")
+			}
+			if !utf8.Valid(p.l.b[curTStart:curTI]) {
+				return nil, fmt.Errorf("invalid UTF-8 label name: %q", p.l.b[curTStart:curTI])
+			}
 		}
 		offsets = append(offsets, curTStart, curTI)
 
@@ -921,8 +998,10 @@ func (p *openMetrics2Parser) parseHistogramComposite() (Entry, error) {
 	}
 	// Consume the rest of the line (timestamp, st@, exemplars) before building
 	// the pending entries, so the exemplar and ST fields are set correctly.
-	if err := p.parseAfterValue(); err != nil {
-		return EntryInvalid, err
+	if t2 := p.nextToken(); t2 != tLinebreak {
+		if err := p.parseAfterValue(t2); err != nil {
+			return EntryInvalid, err
+		}
 	}
 
 	// schema is mandatory for native histograms and absent from classic
@@ -940,7 +1019,7 @@ func (p *openMetrics2Parser) parseHistogramComposite() (Entry, error) {
 		// caller asked to keep it, queue the classic flat series so that
 		// subsequent Next() calls drain them after the EntryHistogram.
 		if cf.has(compFieldBucket) && p.keepClassicOnNativeHist {
-			pending, err := p.buildClassicHistogramPending(cf, false, p.hasTS, p.ts)
+			pending, err := p.buildClassicHistogramPending(cf, false)
 			if err != nil {
 				return EntryInvalid, fmt.Errorf("error parsing classic histogram composite: %w", err)
 			}
@@ -958,7 +1037,7 @@ func (p *openMetrics2Parser) parseHistogramComposite() (Entry, error) {
 		p.h = h
 		p.fh = fh
 		if p.keepClassicOnNativeHist {
-			pending, err := p.buildClassicHistogramPending(cf, isNative, p.hasTS, p.ts)
+			pending, err := p.buildClassicHistogramPending(cf, isNative)
 			if err != nil {
 				return EntryInvalid, fmt.Errorf("error parsing classic histogram composite: %w", err)
 			}
@@ -969,7 +1048,7 @@ func (p *openMetrics2Parser) parseHistogramComposite() (Entry, error) {
 	}
 
 	// Classic histogram (or native histogram with ignoreNativeHistograms): explode into flat pending entries.
-	pending, err := p.buildClassicHistogramPending(cf, isNative, p.hasTS, p.ts)
+	pending, err := p.buildClassicHistogramPending(cf, isNative)
 	if err != nil {
 		return EntryInvalid, fmt.Errorf("error parsing classic histogram composite: %w", err)
 	}
@@ -986,11 +1065,13 @@ func (p *openMetrics2Parser) parseSummaryComposite() (Entry, error) {
 	}
 	// Consume the rest of the line (timestamp, st@, exemplars) before building
 	// the pending entries, so the exemplar and ST fields are set correctly.
-	if err := p.parseAfterValue(); err != nil {
-		return EntryInvalid, err
+	if t2 := p.nextToken(); t2 != tLinebreak {
+		if err := p.parseAfterValue(t2); err != nil {
+			return EntryInvalid, err
+		}
 	}
 
-	pending, err := p.buildSummaryPending(cf, p.hasTS, p.ts)
+	pending, err := p.buildSummaryPending(cf)
 	if err != nil {
 		return EntryInvalid, fmt.Errorf("error parsing summary composite: %w", err)
 	}
@@ -1286,19 +1367,15 @@ func parseFloatBuckets(b []byte) ([]float64, error) {
 func (p *openMetrics2Parser) buildClassicHistogramPending(
 	cf compositeFields,
 	isNative bool,
-	hasTS bool,
-	ts int64,
 ) ([]pendingEntry, error) {
-	mfName, extraLabels := p.nameAndExtraLabelsFromOffsets()
-
-	var tsPtr *int64
-	if hasTS {
-		p.ts = ts
-		tsPtr = &p.ts
+	// p.pending and p.seriesBuf have been reset to [:0] by Next() before any
+	// parsing begins, so we reuse their backing arrays across composite parses.
+	// Lazily preallocate enough capacity for a typical classic histogram on the
+	// first composite line to avoid repeated slice growth allocations.
+	if cap(p.pending) == 0 {
+		p.pending = make([]pendingEntry, 0, 16)
+		p.seriesBuf = make([]byte, 0, 1024)
 	}
-
-	// p.pending has been reset to [:0] by Next() before any parsing begins,
-	// so we reuse its backing array across composite parses.
 	pending := p.pending
 
 	// GaugeHistogram Samples with Classic Buckets expose count/sum as
@@ -1321,14 +1398,7 @@ func (p *openMetrics2Parser) buildClassicHistogramPending(
 	if err != nil {
 		return nil, fmt.Errorf("invalid %s: %w", countKey, err)
 	}
-	name := mfName + countSuffix
-	lset := p.buildPendingLabels(name, extraLabels, "", "")
-	pending = append(pending, pendingEntry{
-		series: p.appendSeriesBytes(lset),
-		lset:   lset,
-		val:    countVal,
-		ts:     tsPtr,
-	})
+	pending = append(pending, p.appendPendingSeriesBytes(countSuffix, "", 0, countVal))
 
 	sv, ok := cf.get(sumField)
 	if !ok {
@@ -1338,14 +1408,7 @@ func (p *openMetrics2Parser) buildClassicHistogramPending(
 	if err != nil {
 		return nil, fmt.Errorf("invalid %s: %w", sumKey, err)
 	}
-	name = mfName + sumSuffix
-	lset = p.buildPendingLabels(name, extraLabels, "", "")
-	pending = append(pending, pendingEntry{
-		series: p.appendSeriesBytes(lset),
-		lset:   lset,
-		val:    v,
-		ts:     tsPtr,
-	})
+	pending = append(pending, p.appendPendingSeriesBytes(sumSuffix, "", 0, v))
 
 	// _bucket entries. The spec requires a Classic Bucket list to include a
 	// +Inf threshold.
@@ -1356,17 +1419,9 @@ func (p *openMetrics2Parser) buildClassicHistogramPending(
 		}
 		// When IgnoreNativeHistograms is enabled on a native-only histogram,
 		// emit the +Inf bucket with the total count.
-		name = mfName + "_bucket"
-		lset := p.buildPendingLabels(name, extraLabels, "le", "+Inf")
-		pending = append(pending, pendingEntry{
-			series: p.appendSeriesBytes(lset),
-			lset:   lset,
-			val:    countVal,
-			ts:     tsPtr,
-		})
+		pending = append(pending, p.appendPendingSeriesBytes("_bucket", "le", math.Inf(1), countVal))
 		return pending, nil
 	}
-	name = mfName + "_bucket"
 	hasPosInf := false
 	for b, err := range parseBuckets(yoloString(bv)) {
 		if err != nil {
@@ -1381,13 +1436,7 @@ func (p *openMetrics2Parser) buildClassicHistogramPending(
 		if math.IsInf(b.lef, 1) {
 			hasPosInf = true
 		}
-		lset := p.buildPendingLabels(name, extraLabels, "le", labels.FormatOpenMetricsFloat(b.lef))
-		pending = append(pending, pendingEntry{
-			series: p.appendSeriesBytes(lset),
-			lset:   lset,
-			val:    b.count,
-			ts:     tsPtr,
-		})
+		pending = append(pending, p.appendPendingSeriesBytes("_bucket", "le", b.lef, b.count))
 	}
 	if !hasPosInf {
 		return nil, errors.New("classic histogram buckets must include a +Inf threshold")
@@ -1468,21 +1517,13 @@ func (p *openMetrics2Parser) buildNHCBHistogram(cf compositeFields, isNative boo
 	return h, fh, nil
 }
 
-func (p *openMetrics2Parser) buildSummaryPending(
-	cf compositeFields,
-	hasTS bool,
-	ts int64,
-) ([]pendingEntry, error) {
-	mfName, extraLabels := p.nameAndExtraLabelsFromOffsets()
-
-	var tsPtr *int64
-	if hasTS {
-		p.ts = ts
-		tsPtr = &p.ts
+func (p *openMetrics2Parser) buildSummaryPending(cf compositeFields) ([]pendingEntry, error) {
+	// p.pending and p.seriesBuf have been reset to [:0] by Next() before any
+	// parsing begins, so we reuse their backing arrays across composite parses.
+	if cap(p.pending) == 0 {
+		p.pending = make([]pendingEntry, 0, 8)
+		p.seriesBuf = make([]byte, 0, 512)
 	}
-
-	// p.pending has been reset to [:0] by Next() before any parsing begins,
-	// so we reuse its backing array across composite parses.
 	pending := p.pending
 
 	cv := cf.fields[compFieldCount]
@@ -1490,110 +1531,68 @@ func (p *openMetrics2Parser) buildSummaryPending(
 	if err != nil {
 		return nil, fmt.Errorf("invalid count: %w", err)
 	}
-	name := mfName + "_count"
-	lset := p.buildPendingLabels(name, extraLabels, "", "")
-	pending = append(pending, pendingEntry{
-		series: p.appendSeriesBytes(lset),
-		lset:   lset,
-		val:    v,
-		ts:     tsPtr,
-	})
+	pending = append(pending, p.appendPendingSeriesBytes("_count", "", 0, v))
 
 	sv := cf.fields[compFieldSum]
 	v, err = strconv.ParseFloat(yoloString(sv), 64)
 	if err != nil {
 		return nil, fmt.Errorf("invalid sum: %w", err)
 	}
-	name = mfName + "_sum"
-	lset = p.buildPendingLabels(name, extraLabels, "", "")
-	pending = append(pending, pendingEntry{
-		series: p.appendSeriesBytes(lset),
-		lset:   lset,
-		val:    v,
-		ts:     tsPtr,
-	})
+	pending = append(pending, p.appendPendingSeriesBytes("_sum", "", 0, v))
 
 	qv := cf.fields[compFieldQuantile]
 	for q, err := range parseQuantiles(yoloString(qv)) {
 		if err != nil {
 			return nil, fmt.Errorf("invalid quantile: %w", err)
 		}
-		lset := p.buildPendingLabels(mfName, extraLabels, "quantile", q.q)
-		pending = append(pending, pendingEntry{
-			series: p.appendSeriesBytes(lset),
-			lset:   lset,
-			val:    q.val,
-			ts:     tsPtr,
-		})
+		pending = append(pending, p.appendPendingSeriesBytes("", "quantile", q.qf, q.val))
 	}
 
 	return pending, nil
 }
 
-// nameAndExtraLabelsFromOffsets returns the metric family name and the extra
-// (non metric name) labels for the line currently being parsed, reusing the
-// offsets parseLVals already computed.
-func (p *openMetrics2Parser) nameAndExtraLabelsFromOffsets() (string, []labels.Label) {
-	s := string(p.series)
-	name := unreplace(s[p.offsets[0]-p.start : p.offsets[1]-p.start])
-	if len(p.offsets) <= 2 {
-		return name, nil
-	}
-	p.extraLabels = p.extraLabels[:0]
-	for i := 2; i < len(p.offsets); i += 4 {
-		k := unreplace(s[p.offsets[i]-p.start : p.offsets[i+1]-p.start])
-		v := unreplace(s[p.offsets[i+2]-p.start : p.offsets[i+3]-p.start])
-		p.extraLabels = append(p.extraLabels, labels.Label{Name: k, Value: v})
-	}
-	return name, p.extraLabels
-}
-
-// appendSeriesBytes returns a byte identity for lset, unique per distinct
-// label set, appended into the shared p.seriesBuf (reset per batch in Next(),
-// so sub-slices stay valid until then). Mirrors
-// ProtobufParser.onSeriesOrHistogramUpdate's entryBytes.
-func (p *openMetrics2Parser) appendSeriesBytes(lset labels.Labels) []byte {
+// appendPendingSeriesBytes formats a unique series byte identity for an
+// exploded composite entry directly into p.seriesBuf from p.l.b and p.offsets
+// without constructing labels.Labels. Labels() reconstructs the label set
+// lazily from the appended bytes on a scrape series cache miss.
+func (p *openMetrics2Parser) appendPendingSeriesBytes(suffix, injectKey string, injectVal, val float64) pendingEntry {
 	start := len(p.seriesBuf)
-	lset.Range(func(l labels.Label) {
-		if l.Name == labels.MetricName {
-			p.seriesBuf = append(p.seriesBuf, l.Value...)
-			return
-		}
-		p.seriesBuf = append(p.seriesBuf, model.SeparatorByte)
-		p.seriesBuf = append(p.seriesBuf, l.Name...)
-		p.seriesBuf = append(p.seriesBuf, model.SeparatorByte)
-		p.seriesBuf = append(p.seriesBuf, l.Value...)
-	})
-	return p.seriesBuf[start:len(p.seriesBuf):len(p.seriesBuf)]
-}
-
-// buildPendingLabels builds labels for a pending entry, reusing p.builder so
-// successive calls (one per bucket/quantile) avoid allocating a fresh Builder
-// each time.  injectKey and injectVal are the extra label to inject (e.g.
-// "le"/"quantile") — pass empty strings for _count and _sum series.
-//
-// p.builder must not be in use elsewhere while this runs; it is safe to call
-// once parseAfterValue has finished consuming the line (any exemplar labels
-// have already been materialised into their own labels.Labels values).
-func (p *openMetrics2Parser) buildPendingLabels(name string, extra []labels.Label, injectKey, injectVal string) labels.Labels {
-	p.builder.Reset()
-	m := schema.Metadata{Name: name, Type: p.mtype, Unit: p.unit}
+	p.seriesBuf = append(p.seriesBuf, p.l.b[p.offsets[0]:p.offsets[1]]...)
+	p.seriesBuf = append(p.seriesBuf, suffix...)
+	nameLen := len(p.seriesBuf) - start
 	if p.enableTypeAndUnitLabels {
-		m.AddToLabels(&p.builder)
-	} else {
-		p.builder.Add(model.MetricNameLabel, name)
-	}
-	for _, l := range extra {
-		if p.enableTypeAndUnitLabels && !m.IsEmptyFor(l.Name) {
-			continue
+		if p.mtype != "" && p.mtype != model.MetricTypeUnknown {
+			p.seriesBuf = append(p.seriesBuf, model.SeparatorByte)
+			p.seriesBuf = append(p.seriesBuf, model.MetricTypeLabel...)
+			p.seriesBuf = append(p.seriesBuf, model.SeparatorByte)
+			p.seriesBuf = append(p.seriesBuf, p.mtype...)
 		}
-		p.builder.Add(l.Name, l.Value)
+		if p.unit != "" {
+			p.seriesBuf = append(p.seriesBuf, model.SeparatorByte)
+			p.seriesBuf = append(p.seriesBuf, model.MetricUnitLabel...)
+			p.seriesBuf = append(p.seriesBuf, model.SeparatorByte)
+			p.seriesBuf = append(p.seriesBuf, p.unit...)
+		}
+	}
+	for i := 2; i < len(p.offsets); i += 4 {
+		p.seriesBuf = append(p.seriesBuf, model.SeparatorByte)
+		p.seriesBuf = append(p.seriesBuf, p.l.b[p.offsets[i]:p.offsets[i+1]]...)
+		p.seriesBuf = append(p.seriesBuf, model.SeparatorByte)
+		p.seriesBuf = append(p.seriesBuf, p.l.b[p.offsets[i+2]:p.offsets[i+3]]...)
 	}
 	if injectKey != "" {
-		p.builder.Add(injectKey, injectVal)
+		p.seriesBuf = append(p.seriesBuf, model.SeparatorByte)
+		p.seriesBuf = append(p.seriesBuf, injectKey...)
+		p.seriesBuf = append(p.seriesBuf, model.SeparatorByte)
+		p.seriesBuf = labels.AppendOpenMetricsFloat(p.seriesBuf, injectVal)
 	}
-	p.builder.Sort()
-	return p.builder.Labels()
+	return pendingEntry{
+		seriesStart: start,
+		seriesEnd:   len(p.seriesBuf),
+		nameLen:     nameLen,
+		injectKey:   injectKey,
+		val:         val,
+	}
 }
 
 // bucketEntry holds one parsed classic histogram bucket.
@@ -1659,7 +1658,7 @@ func parseBuckets(s string) iter.Seq2[bucketEntry, error] {
 
 // quantileEntry holds one parsed summary quantile.
 type quantileEntry struct {
-	q   string
+	qf  float64
 	val float64
 }
 
@@ -1711,9 +1710,7 @@ func parseQuantiles(s string) iter.Seq2[quantileEntry, error] {
 				return
 			}
 			prevQ = qf
-			// Normalise quantile label to OpenMetrics float format.
-			q = labels.FormatOpenMetricsFloat(qf)
-			if !yield(quantileEntry{q: q, val: val}, nil) {
+			if !yield(quantileEntry{qf: qf, val: val}, nil) {
 				return
 			}
 		}
