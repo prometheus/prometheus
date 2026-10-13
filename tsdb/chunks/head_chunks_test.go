@@ -16,6 +16,7 @@ package chunks
 import (
 	"encoding/binary"
 	"errors"
+	"io"
 	"math/rand"
 	"os"
 	"strconv"
@@ -543,6 +544,27 @@ func TestHeadReadWriter_ReadRepairOnEmptyLastFile(t *testing.T) {
 
 	// Check that it does not delete a valid last file.
 	checkRepair()
+
+	// Read failure closes the file.
+	reader := &repairReader{}
+	_, err := repairLastChunkFile(map[int]string{1: "test"}, func(string) (io.ReadCloser, error) {
+		return reader, nil
+	})
+	require.ErrorIs(t, err, io.ErrUnexpectedEOF)
+	require.True(t, reader.closed)
+}
+
+type repairReader struct {
+	closed bool
+}
+
+func (*repairReader) Read([]byte) (int, error) {
+	return 0, io.ErrUnexpectedEOF
+}
+
+func (r *repairReader) Close() error {
+	r.closed = true
+	return nil
 }
 
 func createChunkDiskMapper(t *testing.T, dir string) *ChunkDiskMapper {

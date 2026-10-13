@@ -323,7 +323,9 @@ func (cdm *ChunkDiskMapper) openMMapFiles() (returnErr error) {
 		return err
 	}
 
-	files, err = repairLastChunkFile(files)
+	files, err = repairLastChunkFile(files, func(path string) (io.ReadCloser, error) {
+		return os.Open(path)
+	})
 	if err != nil {
 		return err
 	}
@@ -419,7 +421,7 @@ func HardLinkChunkFiles(src, dst string) error {
 // repairLastChunkFile deletes the last file if it's empty.
 // Because we don't fsync when creating these files, we could end
 // up with an empty file at the end during an abrupt shutdown.
-func repairLastChunkFile(files map[int]string) (_ map[int]string, returnErr error) {
+func repairLastChunkFile(files map[int]string, openFile func(string) (io.ReadCloser, error)) (_ map[int]string, returnErr error) {
 	lastFile := -1
 	for seq := range files {
 		if seq > lastFile {
@@ -431,18 +433,19 @@ func repairLastChunkFile(files map[int]string) (_ map[int]string, returnErr erro
 		return files, nil
 	}
 
-	f, err := os.Open(files[lastFile])
+	f, err := openFile(files[lastFile])
 	if err != nil {
 		return files, fmt.Errorf("open file during last head chunk file repair: %w", err)
 	}
 
 	buf := make([]byte, MagicChunksSize)
 	size, err := f.Read(buf)
+	closeErr := f.Close()
 	if err != nil && !errors.Is(err, io.EOF) {
-		return files, fmt.Errorf("failed to read magic number during last head chunk file repair: %w", errors.Join(err, f.Close()))
+		return files, fmt.Errorf("failed to read magic number during last head chunk file repair: %w", errors.Join(err, closeErr))
 	}
-	if err := f.Close(); err != nil {
-		return files, fmt.Errorf("close file during last head chunk file repair: %w", err)
+	if closeErr != nil {
+		return files, fmt.Errorf("close file during last head chunk file repair: %w", closeErr)
 	}
 
 	// We either don't have enough bytes for the magic number or the magic number is 0.
