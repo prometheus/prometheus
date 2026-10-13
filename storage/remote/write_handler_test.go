@@ -22,6 +22,7 @@ import (
 	"math"
 	"net/http"
 	"net/http/httptest"
+	"slices"
 	"strconv"
 	"strings"
 	"testing"
@@ -30,6 +31,8 @@ import (
 	"github.com/gogo/protobuf/proto"
 	"github.com/google/go-cmp/cmp"
 	remoteapi "github.com/prometheus/client_golang/exp/api/remote"
+	"github.com/prometheus/client_golang/prometheus"
+	promtestutil "github.com/prometheus/client_golang/prometheus/testutil"
 	"github.com/prometheus/common/promslog"
 	"github.com/stretchr/testify/require"
 
@@ -291,51 +294,86 @@ func TestRemoteWriteHandlerHeadersHandling_V2Message(t *testing.T) {
 }
 
 func TestRemoteWriteHandler_V1Message(t *testing.T) {
-	payload, _, _, err := buildWriteRequest(nil, writeRequestFixture.Timeseries, nil, nil, nil, nil, "snappy")
-	require.NoError(t, err)
+	unsorted := proto.Clone(writeRequestFixture).(*prompb.WriteRequest)
+	slices.Reverse(unsorted.Timeseries[0].Labels)
+	for _, tc := range []struct {
+		name          string
+		input         []prompb.TimeSeries
+		invalidLabels int
+	}{
+		{name: "sorted labels", input: writeRequestFixture.Timeseries},
+		{name: "unsorted unique labels", input: unsorted.Timeseries},
+		{
+			name: "non-adjacent duplicates",
+			input: append([]prompb.TimeSeries{{
+				Labels:  []prompb.Label{{Name: "__name__", Value: "test_metric1"}, {Name: "b", Value: "c"}, {Name: "baz", Value: "qux"}, {Name: "b", Value: "c"}},
+				Samples: []prompb.Sample{{Timestamp: 1, Value: 1}, {Timestamp: 2, Value: 2}},
+			}}, writeRequestFixture.Timeseries...),
+			invalidLabels: 1, // V1 counts invalid series, regardless of their sample count.
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			payload, _, _, err := buildWriteRequest(nil, tc.input, nil, nil, nil, nil, "snappy")
+			require.NoError(t, err)
 
-	req, err := http.NewRequest(http.MethodPost, "", bytes.NewReader(payload))
-	require.NoError(t, err)
+			req, err := http.NewRequest(http.MethodPost, "", bytes.NewReader(payload))
+			require.NoError(t, err)
 
-	// NOTE: Strictly speaking, even for 1.0 we require headers, but we never verified those
-	// in Prometheus, so keeping like this to not break existing 1.0 clients.
+			// NOTE: Strictly speaking, even for 1.0 we require headers, but we never verified those
+			// in Prometheus, so keeping like this to not break existing 1.0 clients.
 
-	appendable := &mockAppendable{}
-	handler := NewWriteHandler(promslog.NewNopLogger(), nil, appendable, []remoteapi.WriteMessageType{remoteapi.WriteV1MessageType}, false, false, false)
+			appendable := &mockAppendable{}
+			reg := prometheus.NewRegistry()
+			handler := NewWriteHandler(promslog.NewNopLogger(), reg, appendable, []remoteapi.WriteMessageType{remoteapi.WriteV1MessageType}, false, false, false)
 
-	recorder := httptest.NewRecorder()
-	handler.ServeHTTP(recorder, req)
+			recorder := httptest.NewRecorder()
+			handler.ServeHTTP(recorder, req)
 
-	resp := recorder.Result()
-	require.Equal(t, http.StatusNoContent, resp.StatusCode)
+			resp := recorder.Result()
+			t.Cleanup(func() { require.NoError(t, resp.Body.Close()) })
+			require.Equal(t, http.StatusNoContent, resp.StatusCode)
 
-	b := labels.NewScratchBuilder(0)
-	i := 0
-	j := 0
-	k := 0
-	for _, ts := range writeRequestFixture.Timeseries {
-		labels := ts.ToLabels(&b, nil)
-		for _, s := range ts.Samples {
-			requireEqual(t, mockSample{labels, s.Timestamp, s.Value}, appendable.samples[i])
-			i++
-		}
-		for _, e := range ts.Exemplars {
-			exemplarLabels := e.ToExemplar(&b, nil).Labels
-			requireEqual(t, mockExemplar{labels, exemplarLabels, e.Timestamp, e.Value}, appendable.exemplars[j])
-			j++
-		}
-		for _, hp := range ts.Histograms {
-			if hp.IsFloatHistogram() {
-				fh := hp.ToFloatHistogram()
-				requireEqual(t, mockHistogram{labels, hp.Timestamp, nil, fh}, appendable.histograms[k])
-			} else {
-				h := hp.ToIntHistogram()
-				requireEqual(t, mockHistogram{labels, hp.Timestamp, h, nil}, appendable.histograms[k])
+			b := labels.NewScratchBuilder(0)
+			i := 0
+			j := 0
+			k := 0
+			for _, ts := range writeRequestFixture.Timeseries {
+				labels := ts.ToLabels(&b, nil)
+				for _, s := range ts.Samples {
+					requireEqual(t, mockSample{labels, s.Timestamp, s.Value}, appendable.samples[i])
+					i++
+				}
+				for _, e := range ts.Exemplars {
+					exemplarLabels := e.ToExemplar(&b, nil).Labels
+					requireEqual(t, mockExemplar{labels, exemplarLabels, e.Timestamp, e.Value}, appendable.exemplars[j])
+					j++
+				}
+				for _, hp := range ts.Histograms {
+					if hp.IsFloatHistogram() {
+						fh := hp.ToFloatHistogram()
+						requireEqual(t, mockHistogram{labels, hp.Timestamp, nil, fh}, appendable.histograms[k])
+					} else {
+						h := hp.ToIntHistogram()
+						requireEqual(t, mockHistogram{labels, hp.Timestamp, h, nil}, appendable.histograms[k])
+					}
+
+					k++
+				}
 			}
-
-			k++
-		}
+			require.Len(t, appendable.samples, i)
+			require.Len(t, appendable.exemplars, j)
+			require.Len(t, appendable.histograms, k)
+			requireInvalidLabelSamples(t, reg, tc.invalidLabels)
+		})
 	}
+}
+
+func requireInvalidLabelSamples(t *testing.T, reg prometheus.Gatherer, want int) {
+	t.Helper()
+	require.NoError(t, promtestutil.GatherAndCompare(reg, strings.NewReader(fmt.Sprintf(`# HELP prometheus_api_remote_write_invalid_labels_samples_total The total number of received remote write samples and histogram samples which were rejected due to invalid labels.
+# TYPE prometheus_api_remote_write_invalid_labels_samples_total counter
+prometheus_api_remote_write_invalid_labels_samples_total %d
+`, want)), "prometheus_api_remote_write_invalid_labels_samples_total"))
 }
 
 func expectHeaderValue(t testing.TB, expected int, got string) {
@@ -350,11 +388,13 @@ func expectHeaderValue(t testing.TB, expected int, got string) {
 func TestRemoteWriteHandler_V2Message(t *testing.T) {
 	// V2 supports partial writes for non-retriable errors, so test them.
 	for _, tc := range []struct {
-		desc             string
-		input            []writev2.TimeSeries
-		symbols          []string // Custom symbol table for tests that need it
-		expectedCode     int
-		expectedRespBody string
+		desc                  string
+		input                 []writev2.TimeSeries
+		symbols               []string // Custom symbol table for tests that need it
+		expectedCode          int
+		expectedRespBody      string
+		checkInvalidLabels    bool
+		expectedInvalidLabels int
 
 		commitErr             error
 		appendSampleErr       error
@@ -378,6 +418,28 @@ func TestRemoteWriteHandler_V2Message(t *testing.T) {
 			desc:         "All timeseries accepted/ct_disabled",
 			input:        writeV2RequestFixture.Timeseries,
 			expectedCode: http.StatusNoContent,
+		},
+		{
+			desc: "Unsorted unique labels are normalized",
+			input: func() []writev2.TimeSeries {
+				f := proto.Clone(writeV2RequestFixture).(*writev2.Request)
+				refs := f.Timeseries[0].LabelsRefs
+				f.Timeseries[0].LabelsRefs = append(slices.Clone(refs[2:]), refs[:2]...)
+				return f.Timeseries
+			}(),
+			expectedCode:       http.StatusNoContent,
+			checkInvalidLabels: true,
+		},
+		{
+			desc: "Partial write; non-adjacent duplicate labels",
+			input: append([]writev2.TimeSeries{{
+				LabelsRefs: []uint32{1, 2, 3, 4, 5, 6, 3, 4},
+				Samples:    []writev2.Sample{{Timestamp: 1, Value: 1}, {Timestamp: 2, Value: 2}},
+			}}, writeV2RequestFixture.Timeseries...),
+			expectedCode:          http.StatusBadRequest,
+			expectedRespBody:      `invalid labels for series, labels {__name__="test_metric1", b="c", b="c", baz="qux"}: label name "b" is not unique` + "\n",
+			checkInvalidLabels:    true,
+			expectedInvalidLabels: 2,
 		},
 		{
 			desc: "Partial write; first series with invalid labels (no metric name)",
@@ -407,7 +469,7 @@ func TestRemoteWriteHandler_V2Message(t *testing.T) {
 				writeV2RequestFixture.Timeseries...,
 			),
 			expectedCode:     http.StatusBadRequest,
-			expectedRespBody: "invalid labels for series, labels {__name__=\"test_metric1\", test_metric1=\"test_metric1\", test_metric1=\"test_metric1\"}, duplicated label test_metric1\n",
+			expectedRespBody: "invalid labels for series, labels {__name__=\"test_metric1\", test_metric1=\"test_metric1\", test_metric1=\"test_metric1\"}: label name \"test_metric1\" is not unique\n",
 		},
 		{
 			desc: "Partial write; first series with odd number of label refs",
@@ -744,16 +806,21 @@ func TestRemoteWriteHandler_V2Message(t *testing.T) {
 				appendExemplarErr:     tc.appendExemplarErr,
 				updateMetadataErr:     tc.updateMetadataErr,
 			}
-			handler := NewWriteHandler(promslog.NewNopLogger(), nil, appendable, []remoteapi.WriteMessageType{remoteapi.WriteV2MessageType}, tc.ingestSTZeroSample, tc.enableTypeAndUnitLabels, tc.appendMetadata)
+			reg := prometheus.NewRegistry()
+			handler := NewWriteHandler(promslog.NewNopLogger(), reg, appendable, []remoteapi.WriteMessageType{remoteapi.WriteV2MessageType}, tc.ingestSTZeroSample, tc.enableTypeAndUnitLabels, tc.appendMetadata)
 
 			recorder := httptest.NewRecorder()
 			handler.ServeHTTP(recorder, req)
 
 			resp := recorder.Result()
+			t.Cleanup(func() { require.NoError(t, resp.Body.Close()) })
 			require.Equal(t, tc.expectedCode, resp.StatusCode)
 			respBody, err := io.ReadAll(resp.Body)
 			require.NoError(t, err)
 			require.Equal(t, tc.expectedRespBody, string(respBody))
+			if tc.checkInvalidLabels {
+				requireInvalidLabelSamples(t, reg, tc.expectedInvalidLabels)
+			}
 
 			if tc.expectedCode == http.StatusInternalServerError {
 				// We don't expect writes for partial writes with retry-able code.
@@ -930,8 +997,7 @@ func TestRemoteWriteHandler_V2Message_NoDuplicateTypeAndUnitLabels(t *testing.T)
 			require.Len(t, appendable.samples, 1)
 			receivedLabels := appendable.samples[0].l
 
-			duplicateLabel, hasDuplicate := receivedLabels.HasDuplicateLabelNames()
-			require.False(t, hasDuplicate, "Labels should NOT contain duplicates, but found duplicate label: %s\nReceived labels: %s", duplicateLabel, receivedLabels.String())
+			require.NoError(t, receivedLabels.ValidateOrder(), "Labels should have unique, sorted names")
 
 			require.Equal(t, tc.expectedLabels.String(), receivedLabels.String(), "Labels should match expected")
 
@@ -1396,7 +1462,7 @@ func (m *mockAppendable) Append(_ storage.SeriesRef, l labels.Labels, t int64, v
 	if l.IsEmpty() {
 		return 0, tsdb.ErrInvalidSample
 	}
-	if _, hasDuplicates := l.HasDuplicateLabelNames(); hasDuplicates {
+	if err := l.ValidateOrder(); err != nil {
 		return 0, tsdb.ErrInvalidSample
 	}
 
@@ -1459,7 +1525,7 @@ func (m *mockAppendable) AppendHistogram(_ storage.SeriesRef, l labels.Labels, t
 	if l.IsEmpty() {
 		return 0, tsdb.ErrInvalidSample
 	}
-	if _, hasDuplicates := l.HasDuplicateLabelNames(); hasDuplicates {
+	if err := l.ValidateOrder(); err != nil {
 		return 0, tsdb.ErrInvalidSample
 	}
 
@@ -1499,7 +1565,7 @@ func (m *mockAppendable) AppendHistogramSTZeroSample(_ storage.SeriesRef, l labe
 		return 0, tsdb.ErrInvalidSample
 	}
 
-	if _, hasDuplicates := l.HasDuplicateLabelNames(); hasDuplicates {
+	if err := l.ValidateOrder(); err != nil {
 		return 0, tsdb.ErrInvalidSample
 	}
 
@@ -1543,7 +1609,7 @@ func (m *mockAppendable) AppendSTZeroSample(_ storage.SeriesRef, l labels.Labels
 	if l.IsEmpty() {
 		return 0, tsdb.ErrInvalidSample
 	}
-	if _, hasDuplicates := l.HasDuplicateLabelNames(); hasDuplicates {
+	if err := l.ValidateOrder(); err != nil {
 		return 0, tsdb.ErrInvalidSample
 	}
 

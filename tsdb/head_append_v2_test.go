@@ -771,23 +771,6 @@ func TestHeadAppenderV2_NewWalSegmentOnTruncate(t *testing.T) {
 	require.Equal(t, 2, last)
 }
 
-func TestHeadAppenderV2_Append_DuplicateLabelName(t *testing.T) {
-	h, _ := newTestHead(t, 1000, compression.None, false)
-	defer func() {
-		require.NoError(t, h.Close())
-	}()
-
-	add := func(labels labels.Labels, labelName string) {
-		app := h.AppenderV2(context.Background())
-		_, err := app.Append(0, labels, 0, 0, 0, nil, nil, storage.AOptions{})
-		require.EqualError(t, err, fmt.Sprintf(`label name "%s" is not unique: invalid sample`, labelName))
-	}
-
-	add(labels.FromStrings("a", "c", "a", "b"), "a")
-	add(labels.FromStrings("a", "c", "a", "c"), "a")
-	add(labels.FromStrings("__name__", "up", "job", "prometheus", "le", "500", "le", "400", "unit", "s"), "le")
-}
-
 func TestHeadAppenderV2_MemSeriesIsolation(t *testing.T) {
 	if defaultIsolationDisabled {
 		t.Skip("skipping test since tsdb isolation is disabled")
