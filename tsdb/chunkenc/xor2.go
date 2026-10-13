@@ -433,9 +433,10 @@ func (a *xor2Appender) writeVDelta(v float64) {
 		return
 	}
 
-	// When widening, retain the old window boundaries if the union adds at most
-	// half a replacement header's cost in payload bits. This can avoid another
-	// header if the following delta needs the old boundaries again.
+	// When widening, retain one or both narrower window boundaries if the union
+	// adds at most half a replacement header's cost in payload bits. This can
+	// avoid another header if the following delta needs the old boundaries
+	// again.
 	if a.leading != 0xff && (newLeading < a.leading || newTrailing < a.trailing) {
 		unionLeading, unionTrailing := min(newLeading, a.leading), min(newTrailing, a.trailing)
 		if newLeading+newTrailing-unionLeading-unionTrailing <= 6 {
