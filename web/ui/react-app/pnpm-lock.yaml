@@ -63,8 +63,8 @@ importers:
         specifier: link:../module/codemirror-promql
         version: link:../module/codemirror-promql
       bootstrap:
-        specifier: ^4.6.2
-        version: 4.6.2(jquery@3.7.1)(popper.js@1.16.1)
+        specifier: ^5.0.0
+        version: 5.3.8(@popperjs/core@2.11.8)
       css.escape:
         specifier: ^1.5.1
         version: 1.5.1
@@ -118,7 +118,7 @@ importers:
         version: 1.104.1
       tempusdominus-bootstrap-4:
         specifier: ^5.39.2
-        version: 5.39.2(bootstrap@4.6.2(jquery@3.7.1)(popper.js@1.16.1))(jquery@3.7.1)(moment-timezone@0.6.4)(moment@2.31.0)(popper.js@1.16.1)(tempusdominus-core@5.19.3(jquery@3.7.1)(moment-timezone@0.6.4)(moment@2.31.0))
+        version: 5.39.2(bootstrap@5.3.8(@popperjs/core@2.11.8))(jquery@3.7.1)(moment-timezone@0.6.4)(moment@2.31.0)(popper.js@1.16.1)(tempusdominus-core@5.19.3(jquery@3.7.1)(moment-timezone@0.6.4)(moment@2.31.0))
       tempusdominus-core:
         specifier: ^5.19.3
         version: 5.19.3(jquery@3.7.1)(moment-timezone@0.6.4)(moment@2.31.0)
@@ -212,13 +212,13 @@ importers:
         version: 3.9.8
       react-app-rewired:
         specifier: ^2.2.1
-        version: 2.2.1(react-scripts@5.0.1(@babel/plugin-syntax-flow@7.29.7(@babel/core@7.29.7(supports-color@8.1.1)))(@babel/plugin-transform-react-jsx@7.29.7(@babel/core@7.29.7(supports-color@8.1.1))(supports-color@8.1.1))(@types/babel__core@7.20.5)(clean-css@5.3.3)(cssnano@5.1.15(postcss@8.5.15))(csso@4.2.0)(debug@4.4.3(supports-color@8.1.1))(eslint@10.11.0(jiti@1.21.7)(supports-color@8.1.1))(html-minifier-terser@6.1.0)(react@18.3.1)(sass@1.104.1)(supports-color@8.1.1)(type-fest@4.41.0)(typescript@4.9.5)(uglify-js@3.19.3))
+        version: 2.2.1(react-scripts@5.0.1(@babel/plugin-syntax-flow@7.29.7(@babel/core@7.29.7(supports-color@8.1.1)))(@babel/plugin-transform-react-jsx@7.29.7(@babel/core@7.29.7(supports-color@8.1.1))(supports-color@8.1.1))(@types/babel__core@7.20.5)(clean-css@5.3.3)(cssnano@5.1.15(postcss@8.5.15))(csso@4.2.0)(debug@4.4.3(supports-color@8.1.1))(eslint@10.11.0(jiti@1.21.7)(supports-color@8.1.1))(html-minifier-terser@6.1.0)(react@18.3.1)(sass@1.104.1)(supports-color@8.1.1)(type-fest@0.21.3)(typescript@4.9.5)(uglify-js@3.19.3))
       react-router:
         specifier: ^7.0.0
         version: 7.18.4(react-dom@18.3.1(react@18.3.1))(react@18.3.1)
       react-scripts:
         specifier: ^5.0.1
-        version: 5.0.1(@babel/plugin-syntax-flow@7.29.7(@babel/core@7.29.7(supports-color@8.1.1)))(@babel/plugin-transform-react-jsx@7.29.7(@babel/core@7.29.7(supports-color@8.1.1))(supports-color@8.1.1))(@types/babel__core@7.20.5)(clean-css@5.3.3)(cssnano@5.1.15(postcss@8.5.15))(csso@4.2.0)(debug@4.4.3(supports-color@8.1.1))(eslint@10.11.0(jiti@1.21.7)(supports-color@8.1.1))(html-minifier-terser@6.1.0)(react@18.3.1)(sass@1.104.1)(supports-color@8.1.1)(type-fest@4.41.0)(typescript@4.9.5)(uglify-js@3.19.3)
+        version: 5.0.1(@babel/plugin-syntax-flow@7.29.7(@babel/core@7.29.7(supports-color@8.1.1)))(@babel/plugin-transform-react-jsx@7.29.7(@babel/core@7.29.7(supports-color@8.1.1))(supports-color@8.1.1))(@types/babel__core@7.20.5)(clean-css@5.3.3)(cssnano@5.1.15(postcss@8.5.15))(csso@4.2.0)(debug@4.4.3(supports-color@8.1.1))(eslint@10.11.0(jiti@1.21.7)(supports-color@8.1.1))(html-minifier-terser@6.1.0)(react@18.3.1)(sass@1.104.1)(supports-color@8.1.1)(type-fest@0.21.3)(typescript@4.9.5)(uglify-js@3.19.3)
       typescript:
         specifier: ^4.9.5
         version: 4.9.5
@@ -1446,6 +1446,9 @@ packages:
       webpack-plugin-serve:
         optional: true
 
+  '@popperjs/core@2.11.8':
+    resolution: {integrity: sha512-P1st0aksCrn9sGZhp8GMYwBnQsbvAWsZAX44oXNNvLHGqAOcoVxmjZiohstwQ7SqKnbR47akdNi+uleWD8+g6A==}
+
   '@rollup/plugin-babel@5.3.1':
     resolution: {integrity: sha512-WFfdLWU/xVWKeRQnKmIAQULUI7Il0gZnBIH/ZFO069wYIfPu+8zrfp/KMW0atmELoRDq8FbiP3VCss9MhCut7Q==}
     engines: {node: '>= 10.0.0'}
@@ -2241,6 +2244,11 @@ packages:
     peerDependencies:
       jquery: 1.9.1 - 3
       popper.js: ^1.16.1
+
+  bootstrap@5.3.8:
+    resolution: {integrity: sha512-HP1SZDqaLDPwsNiqRqi5NcP0SSXciX2s9E+RyqJIIqGo+vJeN5AJVM98CXmW/Wux0nQ5L7jeWUdplCEf0Ee+tg==}
+    peerDependencies:
+      '@popperjs/core': ^2.11.8
 
   brace-expansion@1.1.14:
     resolution: {integrity: sha512-MWPGfDxnyzKU7rNOW9SP/c50vi3xrmrua/+6hfPbCS2ABNWfx24vPidzvC7krjU/RTo235sV776ymlsMtGKj8g==}
@@ -5986,10 +5994,6 @@ packages:
     resolution: {integrity: sha512-t0rzBq87m3fVcduHDUFhKmyyX+9eo6WQjZvf51Ea/M0Q7+T374Jp1aUiyUl0GKxp8M/OETVHSDvmkyPgvX+X2w==}
     engines: {node: '>=10'}
 
-  type-fest@4.41.0:
-    resolution: {integrity: sha512-TeTSQ6H5YHvpqVwBRcnLDCBnDOHWYu7IvGbHT6N8AOymcr9PJGjc1GTtiWZTYg0NCgYwvnYWEkVChQAr9bjfwA==}
-    engines: {node: '>=16'}
-
   type-is@1.6.18:
     resolution: {integrity: sha512-TkRKr9sUTxEH8MdfuCSP7VizJyzRNMjj2J2do2Jr3Kym598JVdEksuzPQCnlFPW4ky9Q+iA+ma9BGm06XQBy8g==}
     engines: {node: '>= 0.6'}
@@ -7861,7 +7865,7 @@ snapshots:
 
   '@pkgr/core@0.3.6': {}
 
-  '@pmmmwh/react-refresh-webpack-plugin@0.5.17(react-refresh@0.11.0)(type-fest@4.41.0)(webpack-dev-server@4.15.2(debug@4.4.3(supports-color@8.1.1))(supports-color@8.1.1)(webpack@5.107.1(clean-css@5.3.3)(cssnano@5.1.15(postcss@8.5.15))(csso@4.2.0)(html-minifier-terser@6.1.0)(postcss@8.5.15)(uglify-js@3.19.3)))(webpack@5.107.1(clean-css@5.3.3)(cssnano@5.1.15(postcss@8.5.15))(csso@4.2.0)(html-minifier-terser@6.1.0)(postcss@8.5.15)(uglify-js@3.19.3))':
+  '@pmmmwh/react-refresh-webpack-plugin@0.5.17(react-refresh@0.11.0)(type-fest@0.21.3)(webpack-dev-server@4.15.2(debug@4.4.3(supports-color@8.1.1))(supports-color@8.1.1)(webpack@5.107.1(clean-css@5.3.3)(cssnano@5.1.15(postcss@8.5.15))(csso@4.2.0)(html-minifier-terser@6.1.0)(postcss@8.5.15)(uglify-js@3.19.3)))(webpack@5.107.1(clean-css@5.3.3)(cssnano@5.1.15(postcss@8.5.15))(csso@4.2.0)(html-minifier-terser@6.1.0)(postcss@8.5.15)(uglify-js@3.19.3))':
     dependencies:
       ansi-html: 0.0.9
       core-js-pure: 3.49.0
@@ -7873,8 +7877,10 @@ snapshots:
       source-map: 0.7.6
       webpack: 5.107.1(clean-css@5.3.3)(cssnano@5.1.15(postcss@8.5.15))(csso@4.2.0)(html-minifier-terser@6.1.0)(postcss@8.5.15)(uglify-js@3.19.3)
     optionalDependencies:
-      type-fest: 4.41.0
+      type-fest: 0.21.3
       webpack-dev-server: 4.15.2(debug@4.4.3(supports-color@8.1.1))(supports-color@8.1.1)(webpack@5.107.1(clean-css@5.3.3)(cssnano@5.1.15(postcss@8.5.15))(csso@4.2.0)(html-minifier-terser@6.1.0)(postcss@8.5.15)(uglify-js@3.19.3))
+
+  '@popperjs/core@2.11.8': {}
 
   '@rollup/plugin-babel@5.3.1(@babel/core@7.29.7(supports-color@8.1.1))(@types/babel__core@7.20.5)(rollup@2.80.0)(supports-color@8.1.1)':
     dependencies:
@@ -8892,6 +8898,10 @@ snapshots:
     dependencies:
       jquery: 3.7.1
       popper.js: 1.16.1
+
+  bootstrap@5.3.8(@popperjs/core@2.11.8):
+    dependencies:
+      '@popperjs/core': 2.11.8
 
   brace-expansion@1.1.14:
     dependencies:
@@ -12287,9 +12297,9 @@ snapshots:
       regenerator-runtime: 0.13.11
       whatwg-fetch: 3.6.20
 
-  react-app-rewired@2.2.1(react-scripts@5.0.1(@babel/plugin-syntax-flow@7.29.7(@babel/core@7.29.7(supports-color@8.1.1)))(@babel/plugin-transform-react-jsx@7.29.7(@babel/core@7.29.7(supports-color@8.1.1))(supports-color@8.1.1))(@types/babel__core@7.20.5)(clean-css@5.3.3)(cssnano@5.1.15(postcss@8.5.15))(csso@4.2.0)(debug@4.4.3(supports-color@8.1.1))(eslint@10.11.0(jiti@1.21.7)(supports-color@8.1.1))(html-minifier-terser@6.1.0)(react@18.3.1)(sass@1.104.1)(supports-color@8.1.1)(type-fest@4.41.0)(typescript@4.9.5)(uglify-js@3.19.3)):
+  react-app-rewired@2.2.1(react-scripts@5.0.1(@babel/plugin-syntax-flow@7.29.7(@babel/core@7.29.7(supports-color@8.1.1)))(@babel/plugin-transform-react-jsx@7.29.7(@babel/core@7.29.7(supports-color@8.1.1))(supports-color@8.1.1))(@types/babel__core@7.20.5)(clean-css@5.3.3)(cssnano@5.1.15(postcss@8.5.15))(csso@4.2.0)(debug@4.4.3(supports-color@8.1.1))(eslint@10.11.0(jiti@1.21.7)(supports-color@8.1.1))(html-minifier-terser@6.1.0)(react@18.3.1)(sass@1.104.1)(supports-color@8.1.1)(type-fest@0.21.3)(typescript@4.9.5)(uglify-js@3.19.3)):
     dependencies:
-      react-scripts: 5.0.1(@babel/plugin-syntax-flow@7.29.7(@babel/core@7.29.7(supports-color@8.1.1)))(@babel/plugin-transform-react-jsx@7.29.7(@babel/core@7.29.7(supports-color@8.1.1))(supports-color@8.1.1))(@types/babel__core@7.20.5)(clean-css@5.3.3)(cssnano@5.1.15(postcss@8.5.15))(csso@4.2.0)(debug@4.4.3(supports-color@8.1.1))(eslint@10.11.0(jiti@1.21.7)(supports-color@8.1.1))(html-minifier-terser@6.1.0)(react@18.3.1)(sass@1.104.1)(supports-color@8.1.1)(type-fest@4.41.0)(typescript@4.9.5)(uglify-js@3.19.3)
+      react-scripts: 5.0.1(@babel/plugin-syntax-flow@7.29.7(@babel/core@7.29.7(supports-color@8.1.1)))(@babel/plugin-transform-react-jsx@7.29.7(@babel/core@7.29.7(supports-color@8.1.1))(supports-color@8.1.1))(@types/babel__core@7.20.5)(clean-css@5.3.3)(cssnano@5.1.15(postcss@8.5.15))(csso@4.2.0)(debug@4.4.3(supports-color@8.1.1))(eslint@10.11.0(jiti@1.21.7)(supports-color@8.1.1))(html-minifier-terser@6.1.0)(react@18.3.1)(sass@1.104.1)(supports-color@8.1.1)(type-fest@0.21.3)(typescript@4.9.5)(uglify-js@3.19.3)
       semver: 5.7.2
 
   react-copy-to-clipboard@5.1.1(react@18.3.1):
@@ -12388,10 +12398,10 @@ snapshots:
     optionalDependencies:
       react-dom: 18.3.1(react@18.3.1)
 
-  react-scripts@5.0.1(@babel/plugin-syntax-flow@7.29.7(@babel/core@7.29.7(supports-color@8.1.1)))(@babel/plugin-transform-react-jsx@7.29.7(@babel/core@7.29.7(supports-color@8.1.1))(supports-color@8.1.1))(@types/babel__core@7.20.5)(clean-css@5.3.3)(cssnano@5.1.15(postcss@8.5.15))(csso@4.2.0)(debug@4.4.3(supports-color@8.1.1))(eslint@10.11.0(jiti@1.21.7)(supports-color@8.1.1))(html-minifier-terser@6.1.0)(react@18.3.1)(sass@1.104.1)(supports-color@8.1.1)(type-fest@4.41.0)(typescript@4.9.5)(uglify-js@3.19.3):
+  react-scripts@5.0.1(@babel/plugin-syntax-flow@7.29.7(@babel/core@7.29.7(supports-color@8.1.1)))(@babel/plugin-transform-react-jsx@7.29.7(@babel/core@7.29.7(supports-color@8.1.1))(supports-color@8.1.1))(@types/babel__core@7.20.5)(clean-css@5.3.3)(cssnano@5.1.15(postcss@8.5.15))(csso@4.2.0)(debug@4.4.3(supports-color@8.1.1))(eslint@10.11.0(jiti@1.21.7)(supports-color@8.1.1))(html-minifier-terser@6.1.0)(react@18.3.1)(sass@1.104.1)(supports-color@8.1.1)(type-fest@0.21.3)(typescript@4.9.5)(uglify-js@3.19.3):
     dependencies:
       '@babel/core': 7.29.7(supports-color@8.1.1)
-      '@pmmmwh/react-refresh-webpack-plugin': 0.5.17(react-refresh@0.11.0)(type-fest@4.41.0)(webpack-dev-server@4.15.2(debug@4.4.3(supports-color@8.1.1))(supports-color@8.1.1)(webpack@5.107.1(clean-css@5.3.3)(cssnano@5.1.15(postcss@8.5.15))(csso@4.2.0)(html-minifier-terser@6.1.0)(postcss@8.5.15)(uglify-js@3.19.3)))(webpack@5.107.1(clean-css@5.3.3)(cssnano@5.1.15(postcss@8.5.15))(csso@4.2.0)(html-minifier-terser@6.1.0)(postcss@8.5.15)(uglify-js@3.19.3))
+      '@pmmmwh/react-refresh-webpack-plugin': 0.5.17(react-refresh@0.11.0)(type-fest@0.21.3)(webpack-dev-server@4.15.2(debug@4.4.3(supports-color@8.1.1))(supports-color@8.1.1)(webpack@5.107.1(clean-css@5.3.3)(cssnano@5.1.15(postcss@8.5.15))(csso@4.2.0)(html-minifier-terser@6.1.0)(postcss@8.5.15)(uglify-js@3.19.3)))(webpack@5.107.1(clean-css@5.3.3)(cssnano@5.1.15(postcss@8.5.15))(csso@4.2.0)(html-minifier-terser@6.1.0)(postcss@8.5.15)(uglify-js@3.19.3))
       '@svgr/webpack': 5.5.0(supports-color@8.1.1)
       babel-jest: 27.5.1(@babel/core@7.29.7(supports-color@8.1.1))(supports-color@8.1.1)
       babel-loader: 8.4.1(@babel/core@7.29.7(supports-color@8.1.1))(webpack@5.107.1(clean-css@5.3.3)(cssnano@5.1.15(postcss@8.5.15))(csso@4.2.0)(html-minifier-terser@6.1.0)(postcss@8.5.15)(uglify-js@3.19.3))
@@ -13160,9 +13170,9 @@ snapshots:
 
   temp-dir@2.0.0: {}
 
-  tempusdominus-bootstrap-4@5.39.2(bootstrap@4.6.2(jquery@3.7.1)(popper.js@1.16.1))(jquery@3.7.1)(moment-timezone@0.6.4)(moment@2.31.0)(popper.js@1.16.1)(tempusdominus-core@5.19.3(jquery@3.7.1)(moment-timezone@0.6.4)(moment@2.31.0)):
+  tempusdominus-bootstrap-4@5.39.2(bootstrap@5.3.8(@popperjs/core@2.11.8))(jquery@3.7.1)(moment-timezone@0.6.4)(moment@2.31.0)(popper.js@1.16.1)(tempusdominus-core@5.19.3(jquery@3.7.1)(moment-timezone@0.6.4)(moment@2.31.0)):
     dependencies:
-      bootstrap: 4.6.2(jquery@3.7.1)(popper.js@1.16.1)
+      bootstrap: 5.3.8(@popperjs/core@2.11.8)
       jquery: 3.7.1
       moment: 2.31.0
       moment-timezone: 0.6.4
@@ -13296,9 +13306,6 @@ snapshots:
   type-fest@0.16.0: {}
 
   type-fest@0.21.3: {}
-
-  type-fest@4.41.0:
-    optional: true
 
   type-is@1.6.18:
     dependencies:
