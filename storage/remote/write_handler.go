@@ -235,7 +235,7 @@ func (h *writeHandler) write(ctx context.Context, req *prompb.WriteRequest) (err
 func (h *writeHandler) appendV1Samples(app storage.AppenderV2, ss []prompb.Sample, ls labels.Labels) (ref storage.SeriesRef, err error) {
 	for _, s := range ss {
 		ref, err = app.Append(ref, ls, 0, s.GetTimestamp(), s.GetValue(), nil, nil, storage.AOptions{})
-		if err != nil {
+		if err != nil && !errors.Is(err, (*storage.AppendPartialError)(nil)) {
 			if errors.Is(err, storage.ErrOutOfOrderSample) ||
 				errors.Is(err, storage.ErrOutOfBounds) ||
 				errors.Is(err, storage.ErrDuplicateSampleForTimestamp) ||
@@ -255,7 +255,7 @@ func (h *writeHandler) appendV1Histograms(app storage.AppenderV2, hh []prompb.Hi
 		} else {
 			ref, err = app.Append(ref, ls, 0, hp.Timestamp, 0, hp.ToIntHistogram(), nil, storage.AOptions{})
 		}
-		if err != nil {
+		if err != nil && !errors.Is(err, (*storage.AppendPartialError)(nil)) {
 			// Although Append does not currently return ErrDuplicateSampleForTimestamp for histograms there is
 			// a note indicating its inclusion in the future.
 			if errors.Is(err, storage.ErrOutOfOrderSample) ||
@@ -387,12 +387,10 @@ func (h *writeHandler) appendV2(app *remoteWriteAppenderV2, req *writev2.Request
 		}
 		for _, s := range ts.Samples {
 			ref, err = app.Append(ref, ls, s.StartTimestamp, s.GetTimestamp(), s.GetValue(), nil, nil, opts)
-			if err == nil {
+			if _, err = h.handleV2PartialErr(err, ls, &outOfOrderExemplarErrs, &badRequestErrs); err == nil {
 				rs.Samples++
 				continue
 			}
-			// TODO(bwplotka): Consider adding AppendPartialError support. Currently not needed as it can only come from
-			// exemplars. For future proof handling we could consider skipping those errors.
 
 			// Handle append error.
 			if errors.Is(err, storage.ErrOutOfOrderSample) ||
@@ -414,7 +412,7 @@ func (h *writeHandler) appendV2(app *remoteWriteAppenderV2, req *writev2.Request
 			} else {
 				ref, err = app.Append(ref, ls, hp.StartTimestamp, hp.Timestamp, 0, hp.ToIntHistogram(), nil, opts)
 			}
-			if err == nil {
+			if _, err = h.handleV2PartialErr(err, ls, &outOfOrderExemplarErrs, &badRequestErrs); err == nil {
 				rs.Histograms++
 				continue
 			}
@@ -457,31 +455,17 @@ func (h *writeHandler) appendV2(app *remoteWriteAppenderV2, req *writev2.Request
 				// AppendExemplars requires exemplars sorted by timestamp.
 				slices.SortFunc(exemplars, exemplar.Compare)
 
-				appended := len(exemplars)
-				if _, err := app.AppendExemplars(ref, ls, exemplars); err != nil {
-					if pErr, ok := errors.AsType[*storage.AppendPartialError](err); ok {
-						appended = max(0, appended-len(pErr.ExemplarErrors))
-						for _, eErr := range pErr.ExemplarErrors {
-							if errors.Is(eErr, storage.ErrOutOfOrderExemplar) {
-								outOfOrderExemplarErrs++
-								h.logger.Error("Out of order exemplar", "err", eErr.Error(), "series", ls.String())
-								badRequestErrs = append(badRequestErrs, fmt.Errorf("%w for series %v", eErr, ls.String()))
-								continue
-							}
-							// TODO(bwplotka): Add strict mode which would trigger rollback of everything if needed.
-							// For now we keep the previously released flow (just error not debug level) of dropping them without rollback and 5xx.
-							h.logger.Error("failed to ingest exemplar, emitting error log, but no error for PRW caller", "err", eErr.Error(), "series", ls.String())
-						}
+				_, err := app.AppendExemplars(ref, ls, exemplars)
+				failedExemplars, err := h.handleV2PartialErr(err, ls, &outOfOrderExemplarErrs, &badRequestErrs)
+				if err != nil {
+					if errors.Is(err, storage.ErrNotFound) && rs.AllSamples() == allSamplesSoFar {
+						h.logger.Debug("skipping exemplars for series where all samples/histograms were rejected", "err", err.Error(), "series", ls.String())
 					} else {
-						appended = 0
-						if errors.Is(err, storage.ErrNotFound) && rs.AllSamples() == allSamplesSoFar {
-							h.logger.Debug("skipping exemplars for series where all samples/histograms were rejected", "err", err.Error(), "series", ls.String())
-						} else {
-							h.logger.Error("failed to ingest exemplars, emitting error log, but no error for PRW caller", "err", err.Error(), "series", ls.String())
-						}
+						h.logger.Error("failed to ingest exemplars, emitting error log, but no error for PRW caller", "err", err.Error(), "series", ls.String())
 					}
+				} else {
+					rs.Exemplars += max(0, len(exemplars)-failedExemplars)
 				}
-				rs.Exemplars += appended
 			}
 		}
 	}
@@ -496,6 +480,32 @@ func (h *writeHandler) appendV2(app *remoteWriteAppenderV2, req *writev2.Request
 	}
 	// TODO(bwplotka): Better concat formatting? Perhaps add size limit?
 	return samplesWithoutMetadata, http.StatusBadRequest, errors.Join(badRequestErrs...)
+}
+
+// handleV2PartialErr checks if err is a storage.AppendPartialError. If so, it logs
+// and records any exemplar errors, and returns the number of failed exemplars
+// along with a nil error (since a partial error indicates the sample or histogram
+// itself was appended). Otherwise, it returns 0 and the original err.
+func (h *writeHandler) handleV2PartialErr(err error, ls labels.Labels, outOfOrderExemplarErrs *int, badRequestErrs *[]error) (failedExemplars int, _ error) {
+	if err == nil || !errors.Is(err, (*storage.AppendPartialError)(nil)) {
+		return 0, err
+	}
+	pErr, ok := errors.AsType[*storage.AppendPartialError](err)
+	if !ok {
+		return 0, err
+	}
+	for _, eErr := range pErr.ExemplarErrors {
+		if errors.Is(eErr, storage.ErrOutOfOrderExemplar) {
+			*outOfOrderExemplarErrs++
+			h.logger.Error("Out of order exemplar", "err", eErr.Error(), "series", ls.String())
+			*badRequestErrs = append(*badRequestErrs, fmt.Errorf("%w for series %v", eErr, ls.String()))
+			continue
+		}
+		// TODO(bwplotka): Add strict mode which would trigger rollback of everything if needed.
+		// For now we keep the previously released flow (just error not debug level) of dropping them without rollback and 5xx.
+		h.logger.Error("failed to ingest exemplar, emitting error log, but no error for PRW caller", "err", eErr.Error(), "series", ls.String())
+	}
+	return len(pErr.ExemplarErrors), nil
 }
 
 // TODO(bwplotka): Consider exposing timeLimitAppender and bucketLimitAppender appenders from scrape/target.go

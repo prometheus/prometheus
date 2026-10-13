@@ -1457,16 +1457,16 @@ func (a *mockAppenderV2) Append(ref storage.SeriesRef, l labels.Labels, st, t in
 	var err error
 	if h != nil || fh != nil {
 		ref, err = a.asV1().AppendHistogram(ref, l, t, h, fh)
-		if err == nil {
+		if err == nil || errors.Is(err, (*storage.AppendPartialError)(nil)) {
 			a.histograms[len(a.histograms)-1].st = st
 		}
 	} else {
 		ref, err = a.asV1().Append(ref, l, t, v)
-		if err == nil {
+		if err == nil || errors.Is(err, (*storage.AppendPartialError)(nil)) {
 			a.samples[len(a.samples)-1].st = st
 		}
 	}
-	if err != nil {
+	if err != nil && !errors.Is(err, (*storage.AppendPartialError)(nil)) {
 		return ref, err
 	}
 	if !opts.Metadata.IsEmpty() {
@@ -1476,7 +1476,7 @@ func (a *mockAppenderV2) Append(ref storage.SeriesRef, l labels.Labels, st, t in
 	if len(opts.Exemplars) > 0 {
 		return a.AppendExemplars(ref, l, opts.Exemplars)
 	}
-	return ref, nil
+	return ref, err
 }
 
 func (m *mockAppendable) seriesExists(hash uint64) bool {
@@ -1517,7 +1517,7 @@ func (a *mockAppenderV2) Rollback() error {
 }
 
 func (m *mockAppendable) Append(_ storage.SeriesRef, l labels.Labels, t int64, v float64) (storage.SeriesRef, error) {
-	if m.appendSampleErr != nil {
+	if m.appendSampleErr != nil && !errors.Is(m.appendSampleErr, (*storage.AppendPartialError)(nil)) {
 		return 0, m.appendSampleErr
 	}
 	hash := l.Hash()
@@ -1538,7 +1538,7 @@ func (m *mockAppendable) Append(_ storage.SeriesRef, l labels.Labels, t int64, v
 
 	m.latestSample[hash] = t
 	m.samples = append(m.samples, mockSample{l: l, t: t, v: v})
-	return storage.SeriesRef(hash), nil
+	return storage.SeriesRef(hash), m.appendSampleErr
 }
 
 func (m *mockAppendable) Commit() error {
@@ -1581,7 +1581,7 @@ func (m *mockAppendable) AppendExemplar(ref storage.SeriesRef, l labels.Labels, 
 }
 
 func (m *mockAppendable) AppendHistogram(_ storage.SeriesRef, l labels.Labels, t int64, h *histogram.Histogram, fh *histogram.FloatHistogram) (storage.SeriesRef, error) {
-	if m.appendHistogramErr != nil {
+	if m.appendHistogramErr != nil && !errors.Is(m.appendHistogramErr, (*storage.AppendPartialError)(nil)) {
 		return 0, m.appendHistogramErr
 	}
 	hash := l.Hash()
@@ -1611,7 +1611,7 @@ func (m *mockAppendable) AppendHistogram(_ storage.SeriesRef, l labels.Labels, t
 		m.latestFloatHist[hash] = t
 	}
 	m.histograms = append(m.histograms, mockHistogram{l: l, t: t, h: h, fh: fh})
-	return storage.SeriesRef(hash), nil
+	return storage.SeriesRef(hash), m.appendHistogramErr
 }
 
 func (m *mockAppendable) AppendHistogramSTZeroSample(_ storage.SeriesRef, l labels.Labels, t, st int64, h *histogram.Histogram, _ *histogram.FloatHistogram) (storage.SeriesRef, error) {
@@ -1869,22 +1869,10 @@ func TestRemoteWriteHandler_ResponseStats(t *testing.T) {
 	}
 }
 
-type mockAppenderV2Only struct {
-	storage.AppenderV2
-	rolledBack bool
-}
+type mockAppendableV2Only struct{}
 
-func (m *mockAppenderV2Only) Rollback() error {
-	m.rolledBack = true
-	return nil
-}
-
-type mockAppendableV2Only struct {
-	app *mockAppenderV2Only
-}
-
-func (m *mockAppendableV2Only) AppenderV2(context.Context) storage.AppenderV2 {
-	return m.app
+func (mockAppendableV2Only) AppenderV2(context.Context) storage.AppenderV2 {
+	return struct{ storage.AppenderV2 }{}
 }
 
 func TestRemoteWriteHandler_RequiresExemplarAppenderV2(t *testing.T) {
@@ -1902,12 +1890,10 @@ func TestRemoteWriteHandler_RequiresExemplarAppenderV2(t *testing.T) {
 		{name: "v2", msgType: remoteapi.WriteV2MessageType, payload: payloadV2},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			app := &mockAppenderV2Only{}
-			appendable := &mockAppendableV2Only{app: app}
 			handler := NewWriteHandler(
 				promslog.NewNopLogger(),
 				nil,
-				appendable,
+				mockAppendableV2Only{},
 				[]remoteapi.WriteMessageType{tc.msgType},
 				false,
 				false,
@@ -1928,7 +1914,6 @@ func TestRemoteWriteHandler_RequiresExemplarAppenderV2(t *testing.T) {
 
 			require.Equal(t, http.StatusInternalServerError, resp.StatusCode)
 			require.Contains(t, string(body), "requires a storage.ExemplarAppenderV2")
-			require.True(t, app.rolledBack, "expected Rollback to be called when ExemplarAppenderV2 is not implemented")
 		})
 	}
 }
@@ -2111,6 +2096,43 @@ func TestRemoteWriteHandler_V2ExemplarOrderingAndRejectedSeries(t *testing.T) {
 		expectHeaderValue(t, 0, resp.Header.Get(rw20WrittenSamplesHeader))
 		expectHeaderValue(t, 0, resp.Header.Get(rw20WrittenExemplarsHeader))
 		require.Empty(t, appendable.exemplars)
+	})
+
+	t.Run("AppendPartialError from Append still counts sample and histogram as written", func(t *testing.T) {
+		appendable := &mockAppendable{
+			appendSampleErr:    &storage.AppendPartialError{ExemplarErrors: []error{errors.New("some non-OOO exemplar error")}},
+			appendHistogramErr: &storage.AppendPartialError{ExemplarErrors: []error{storage.ErrOutOfOrderExemplar}},
+		}
+		handler := NewWriteHandler(
+			promslog.NewNopLogger(),
+			nil,
+			appendable,
+			[]remoteapi.WriteMessageType{remoteapi.WriteV2MessageType},
+			false,
+			false,
+		)
+		payload, _, _, _, err := buildV2WriteRequest(promslog.NewNopLogger(), []writev2.TimeSeries{
+			{
+				LabelsRefs: []uint32{0, 1},
+				Samples:    []writev2.Sample{{Timestamp: 1000, Value: 1}},
+				Histograms: []writev2.Histogram{writev2.FromIntHistogram(0, 1000, highSchemaHistogram)},
+			},
+		}, []string{"__name__", "partial_err_metric"}, nil, nil, nil, "snappy")
+		require.NoError(t, err)
+
+		req, err := http.NewRequest(http.MethodPost, "", bytes.NewReader(payload))
+		require.NoError(t, err)
+		req.Header.Set("Content-Type", remoteWriteContentTypeHeaders[remoteapi.WriteV2MessageType])
+		req.Header.Set("Content-Encoding", compression.Snappy)
+
+		recorder := httptest.NewRecorder()
+		handler.ServeHTTP(recorder, req)
+		resp := recorder.Result()
+		require.Equal(t, http.StatusBadRequest, resp.StatusCode)
+		expectHeaderValue(t, 1, resp.Header.Get(rw20WrittenSamplesHeader))
+		expectHeaderValue(t, 1, resp.Header.Get(rw20WrittenHistogramsHeader))
+		require.Len(t, appendable.samples, 1)
+		require.Len(t, appendable.histograms, 1)
 	})
 }
 

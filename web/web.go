@@ -313,7 +313,6 @@ type Options struct {
 	ConvertOTLPDelta           bool
 	NativeOTLPDeltaIngestion   bool
 	IsAgent                    bool
-	STZeroIngestionEnabled     bool
 	EnableTypeAndUnitLabels    bool
 	AppendMetadata             bool
 	AppName                    string
@@ -431,7 +430,6 @@ func New(logger *slog.Logger, o *Options) *Handler {
 		o.EnableOTLPWriteReceiver,
 		o.ConvertOTLPDelta,
 		o.NativeOTLPDeltaIngestion,
-		o.STZeroIngestionEnabled,
 		o.LookbackDelta,
 		o.EnableTypeAndUnitLabels,
 		o.AppendMetadata,
