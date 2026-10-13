@@ -423,10 +423,25 @@ func (a *xor2Appender) writeVDelta(v float64) {
 		newLeading = 31
 	}
 
-	if a.leading != 0xff && newLeading >= a.leading && newTrailing >= a.trailing {
+	// A new window costs 12 extra bits: one control bit and 11 window bits.
+	// Reuse has prefix 10; replacement has prefix 110 plus leading(5) and sigbits(6).
+	// Choose the lower cost for this delta and reuse on a tie. Narrowing can cost
+	// more overall if the next delta needs a wider window again.
+	if newLeading >= a.leading && newTrailing >= a.trailing && newLeading+newTrailing <= a.leading+a.trailing+12 {
 		a.b.writeBitsFast(0b10, 2)
 		a.b.writeBitsFast(delta>>a.trailing, 64-int(a.leading)-int(a.trailing))
 		return
+	}
+
+	// When widening, retain one or both narrower window boundaries if the union
+	// adds at most half a replacement header's cost in payload bits. This can
+	// avoid another header if the following delta needs the old boundaries
+	// again.
+	if a.leading != 0xff && (newLeading < a.leading || newTrailing < a.trailing) {
+		unionLeading, unionTrailing := min(newLeading, a.leading), min(newTrailing, a.trailing)
+		if newLeading+newTrailing-unionLeading-unionTrailing <= 6 {
+			newLeading, newTrailing = unionLeading, unionTrailing
+		}
 	}
 
 	a.leading, a.trailing = newLeading, newTrailing
@@ -455,10 +470,21 @@ func (a *xor2Appender) writeVDeltaKnownNonZero(delta uint64) {
 		newLeading = 31
 	}
 
-	if a.leading != 0xff && newLeading >= a.leading && newTrailing >= a.trailing {
+	// Both controls cost one bit, so a new window costs 11 extra window bits.
+	// As in writeVDelta, choose the lower cost for this delta and reuse on a tie.
+	if newLeading >= a.leading && newTrailing >= a.trailing && newLeading+newTrailing <= a.leading+a.trailing+11 {
 		a.b.writeBit(zero)
 		a.b.writeBitsFast(delta>>a.trailing, 64-int(a.leading)-int(a.trailing))
 		return
+	}
+
+	// As in writeVDelta, retain nearby old boundaries when widening. Half of
+	// this path's 11-bit replacement overhead allows five extra payload bits.
+	if a.leading != 0xff && (newLeading < a.leading || newTrailing < a.trailing) {
+		unionLeading, unionTrailing := min(newLeading, a.leading), min(newTrailing, a.trailing)
+		if newLeading+newTrailing-unionLeading-unionTrailing <= 5 {
+			newLeading, newTrailing = unionLeading, unionTrailing
+		}
 	}
 
 	a.leading, a.trailing = newLeading, newTrailing
