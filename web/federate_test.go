@@ -251,7 +251,7 @@ func (notReadyReadStorage) StartTime() (int64, error) {
 	return 0, fmt.Errorf("wrap: %w", tsdb.ErrNotReady)
 }
 
-func (notReadyReadStorage) Stats(string, int) (*tsdb.Stats, error) {
+func (notReadyReadStorage) Stats(context.Context, string, int, ...[]*labels.Matcher) (*tsdb.Stats, error) {
 	return nil, fmt.Errorf("wrap: %w", tsdb.ErrNotReady)
 }
 

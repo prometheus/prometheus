@@ -220,7 +220,7 @@ type TSDBAdminStats interface {
 	CleanTombstones() error
 	Delete(ctx context.Context, mint, maxt int64, ms ...*labels.Matcher) error
 	Snapshot(dir string, withHead bool) error
-	Stats(statsByLabelName string, limit int) (*tsdb.Stats, error)
+	Stats(ctx context.Context, statsByLabelName string, limit int, matcherSets ...[]*labels.Matcher) (*tsdb.Stats, error)
 	WALReplayStatus() (tsdb.WALReplayStatus, error)
 	BlockMetas() ([]tsdb.BlockMeta, error)
 }
@@ -2068,7 +2068,17 @@ func (api *API) serveTSDBStatus(r *http.Request) apiFuncResult {
 			return apiFuncResult{nil, &apiError{errorBadData, fmt.Errorf("limit must not exceed %d", maxTSDBLimit)}, nil, nil}
 		}
 	}
-	s, err := api.db.Stats(labels.MetricName, limit)
+	// Optional match[] selectors restrict the statistics to the matching series.
+	// r.FormValue above has already parsed the form.
+	var matcherSets [][]*labels.Matcher
+	if len(r.Form["match[]"]) > 0 {
+		var err error
+		matcherSets, err = api.parseMatchersParam(r.Form["match[]"])
+		if err != nil {
+			return invalidParamError(err, "match[]")
+		}
+	}
+	s, err := api.db.Stats(r.Context(), labels.MetricName, limit, matcherSets...)
 	if err != nil {
 		return apiFuncResult{nil, &apiError{errorInternal, err}, nil, nil}
 	}

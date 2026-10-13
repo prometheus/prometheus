@@ -460,7 +460,7 @@ func (*FakeTSDBAdminStats) Snapshot(_ string, _ bool) error {
 	return nil
 }
 
-func (*FakeTSDBAdminStats) Stats(_ string, _ int) (*tsdb.Stats, error) {
+func (*FakeTSDBAdminStats) Stats(_ context.Context, _ string, _ int, _ ...[]*labels.Matcher) (*tsdb.Stats, error) {
 	return &tsdb.Stats{}, nil
 }
 

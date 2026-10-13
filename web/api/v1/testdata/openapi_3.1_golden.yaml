@@ -2777,6 +2777,19 @@ paths:
                   examples:
                     example:
                         value: 10
+                - name: match[]
+                  in: query
+                  description: Series selector argument. If provided, the statistics only cover series matching at least one selector. The head time range (minTime and maxTime) and chunkCount are not filtered.
+                  required: false
+                  explode: false
+                  schema:
+                    type: array
+                    items:
+                        type: string
+                  examples:
+                    example:
+                        value:
+                            - '{job="prometheus"}'
             responses:
                 "200":
                     description: TSDB status retrieved successfully.
