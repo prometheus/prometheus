@@ -42,13 +42,16 @@ import (
 //
 // For range vectors it will be a Matrix with one series, instant vectors a
 // Vector, scalars a Vector with one series whose value is the scalar
-// value,and nil for strings.
+// value, and nil for strings.
+//
+// Scalar vectors passed to range-vector functions may be reused between series
+// and steps. Function implementations must not retain or modify them.
 //
 // args are the original arguments to the function, where you can access
 // matrixSelectors, vectorSelectors, and StringLiterals.
 //
 // enh.Out is a pre-allocated empty vector that you may use to accumulate
-// output before returning it. The vectors in vals should not be returned.a
+// output before returning it. The vectors in vals should not be returned.
 //
 // Range vector functions need only return a vector with the right value,
 // the metric and timestamp are not needed.
