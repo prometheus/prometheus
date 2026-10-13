@@ -124,7 +124,7 @@ type rwExporter struct {
 
 func (rw *rwExporter) ConsumeMetrics(ctx context.Context, md pmetric.Metrics) error {
 	otlpCfg := rw.config().OTLPConfig
-	app := &remoteWriteAppenderV2{
+	app := &timeLimitAppenderV2{
 		AppenderV2: rw.appendable.AppenderV2(ctx),
 		maxTime:    timestamp.FromTime(time.Now().Add(maxAheadTime)),
 	}

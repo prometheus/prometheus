@@ -2136,17 +2136,13 @@ func TestRemoteWriteHandler_V2ExemplarOrderingAndRejectedSeries(t *testing.T) {
 	})
 }
 
-func TestRemoteWriteAppenderV2_AppendExemplarsDoesNotMutateCallerSlice(t *testing.T) {
+func TestTimeLimitExemplarAppenderV2_AppendExemplarsDoesNotMutateCallerSlice(t *testing.T) {
 	appendable := &mockAppendable{}
 	baseApp := appendable.AppenderV2(t.Context()).(storage.ExemplarAppenderV2)
-	rwApp := &remoteWriteAppenderV2{
-		AppenderV2: baseApp,
-		exApp:      baseApp,
-		maxTime:    1000,
-	}
+	app := newTimeLimitExemplarAppenderV2(baseApp, 1000)
 
 	lbls := labels.FromStrings("__name__", "test_metric")
-	ref, err := rwApp.Append(0, lbls, 0, 500, 1.0, nil, nil, storage.AOptions{})
+	ref, err := app.Append(0, lbls, 0, 500, 1.0, nil, nil, storage.AOptions{})
 	require.NoError(t, err)
 
 	input := []exemplar.Exemplar{
@@ -2156,7 +2152,7 @@ func TestRemoteWriteAppenderV2_AppendExemplarsDoesNotMutateCallerSlice(t *testin
 	origFirstID := input[0].Labels.Get("id")
 	origSecondID := input[1].Labels.Get("id")
 
-	_, err = rwApp.AppendExemplars(ref, lbls, input)
+	_, err = app.AppendExemplars(ref, lbls, input)
 	var pErr *storage.AppendPartialError
 	require.ErrorAs(t, err, &pErr)
 	require.Len(t, pErr.ExemplarErrors, 1)

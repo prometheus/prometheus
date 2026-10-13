@@ -156,11 +156,7 @@ func (h *writeHandler) write(ctx context.Context, req *prompb.WriteRequest) (err
 	if !ok {
 		return fmt.Errorf("remote write 1.0 receiver requires a storage.ExemplarAppenderV2, got %T", appV2)
 	}
-	app := &remoteWriteAppenderV2{
-		AppenderV2: appV2,
-		exApp:      exemplarApp,
-		maxTime:    timestamp.FromTime(time.Now().Add(maxAheadTime)),
-	}
+	app := newTimeLimitExemplarAppenderV2(exemplarApp, timestamp.FromTime(time.Now().Add(maxAheadTime)))
 
 	defer func() {
 		if err != nil {
@@ -285,11 +281,7 @@ func (h *writeHandler) writeV2(ctx context.Context, req *writev2.Request) (_ rem
 	if !ok {
 		return remoteapi.WriteResponseStats{}, http.StatusInternalServerError, fmt.Errorf("remote write 2.x receiver requires a storage.ExemplarAppenderV2, got %T", appV2)
 	}
-	app := &remoteWriteAppenderV2{
-		AppenderV2: appV2,
-		exApp:      exemplarApp,
-		maxTime:    timestamp.FromTime(time.Now().Add(maxAheadTime)),
-	}
+	app := newTimeLimitExemplarAppenderV2(exemplarApp, timestamp.FromTime(time.Now().Add(maxAheadTime)))
 
 	s := remoteapi.WriteResponseStats{}
 	samplesWithoutMetadata, errHTTPCode, err := h.appendV2(app, req, &s)
@@ -322,7 +314,7 @@ func (h *writeHandler) writeV2(ctx context.Context, req *writev2.Request) (_ rem
 	return s, 0, nil
 }
 
-func (h *writeHandler) appendV2(app *remoteWriteAppenderV2, req *writev2.Request, rs *remoteapi.WriteResponseStats) (samplesWithoutMetadata, errHTTPCode int, err error) {
+func (h *writeHandler) appendV2(app *timeLimitExemplarAppenderV2, req *writev2.Request, rs *remoteapi.WriteResponseStats) (samplesWithoutMetadata, errHTTPCode int, err error) {
 	var (
 		badRequestErrs                                   []error
 		outOfOrderExemplarErrs, samplesWithInvalidLabels int
@@ -458,11 +450,7 @@ func (h *writeHandler) appendV2(app *remoteWriteAppenderV2, req *writev2.Request
 				_, err := app.AppendExemplars(ref, ls, exemplars)
 				failedExemplars, err := h.handleV2PartialErr(err, ls, &outOfOrderExemplarErrs, &badRequestErrs)
 				if err != nil {
-					if errors.Is(err, storage.ErrNotFound) && rs.AllSamples() == allSamplesSoFar {
-						h.logger.Debug("skipping exemplars for series where all samples/histograms were rejected", "err", err.Error(), "series", ls.String())
-					} else {
-						h.logger.Error("failed to ingest exemplars, emitting error log, but no error for PRW caller", "err", err.Error(), "series", ls.String())
-					}
+					h.logger.Error("failed to ingest exemplars, emitting error log, but no error for PRW caller", "err", err.Error(), "series", ls.String())
 				} else {
 					rs.Exemplars += max(0, len(exemplars)-failedExemplars)
 				}
@@ -508,16 +496,14 @@ func (h *writeHandler) handleV2PartialErr(err error, ls labels.Labels, outOfOrde
 	return len(pErr.ExemplarErrors), nil
 }
 
-// TODO(bwplotka): Consider exposing timeLimitAppender and bucketLimitAppender appenders from scrape/target.go
-// to DRY, they do the same.
-type remoteWriteAppenderV2 struct {
+// timeLimitAppenderV2 ensures maxTime on appended samples, histograms and exemplars.
+type timeLimitAppenderV2 struct {
 	storage.AppenderV2
-	exApp storage.ExemplarAppenderV2
 
 	maxTime int64
 }
 
-func (app *remoteWriteAppenderV2) Append(ref storage.SeriesRef, ls labels.Labels, st, t int64, v float64, h *histogram.Histogram, fh *histogram.FloatHistogram, opts storage.AOptions) (storage.SeriesRef, error) {
+func (app *timeLimitExemplarAppenderV2) Append(ref storage.SeriesRef, ls labels.Labels, st, t int64, v float64, h *histogram.Histogram, fh *histogram.FloatHistogram, opts storage.AOptions) (storage.SeriesRef, error) {
 	if t > app.maxTime {
 		return 0, fmt.Errorf("%w: timestamp is too far in the future", storage.ErrOutOfBounds)
 	}
@@ -532,12 +518,23 @@ func (app *remoteWriteAppenderV2) Append(ref storage.SeriesRef, ls labels.Labels
 			return 0, err
 		}
 	}
-	return app.AppenderV2.Append(ref, ls, st, t, v, h, fh, opts)
+	return app.ExemplarAppenderV2.Append(ref, ls, st, t, v, h, fh, opts)
+}
+
+// timeLimitExemplarAppenderV2 ensures maxTime on appended samples, histograms and exemplars.
+type timeLimitExemplarAppenderV2 struct {
+	timeLimitAppenderV2
+	storage.ExemplarAppenderV2
+}
+
+func newTimeLimitExemplarAppenderV2(app storage.ExemplarAppenderV2, maxTime int64) *timeLimitExemplarAppenderV2 {
+	return &timeLimitExemplarAppenderV2{
+		timeLimitAppenderV2: timeLimitAppenderV2{AppenderV2: app, maxTime: maxTime}, ExemplarAppenderV2: app}
 }
 
 // AppendExemplars rejects exemplars that are too far in the future, same as Append does
 // for samples, before delegating the rest to the wrapped ExemplarAppenderV2.
-func (app *remoteWriteAppenderV2) AppendExemplars(ref storage.SeriesRef, ls labels.Labels, exemplars []exemplar.Exemplar) (storage.SeriesRef, error) {
+func (app *timeLimitExemplarAppenderV2) AppendExemplars(ref storage.SeriesRef, ls labels.Labels, exemplars []exemplar.Exemplar) (storage.SeriesRef, error) {
 	var (
 		futureErrs []error
 		valid      = exemplars
@@ -564,15 +561,7 @@ func (app *remoteWriteAppenderV2) AppendExemplars(ref storage.SeriesRef, ls labe
 		}
 	}
 
-	exApp := app.exApp
-	if exApp == nil {
-		var ok bool
-		exApp, ok = app.AppenderV2.(storage.ExemplarAppenderV2)
-		if !ok {
-			return 0, fmt.Errorf("appender %T does not implement storage.ExemplarAppenderV2", app.AppenderV2)
-		}
-	}
-	ref, err := exApp.AppendExemplars(ref, ls, valid)
+	ref, err := app.ExemplarAppenderV2.AppendExemplars(ref, ls, valid)
 	partialErr, err = partialErr.Handle(err)
 	if err != nil {
 		return ref, err
