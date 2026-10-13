@@ -2994,7 +2994,7 @@ func TestChunkSnapshotTakenAfterIncompleteSnapshot_AppenderV2(t *testing.T) {
 	require.Positive(t, offset)
 }
 
-// TestWBLReplay checks the replay at a low level.
+// TestWBLReplay_AppenderV2 checks the replay at a low level.
 func TestWBLReplay_AppenderV2(t *testing.T) {
 	for name, scenario := range sampleTypeScenarios {
 		for _, enableSTstorage := range []bool{false, true} {
@@ -3095,7 +3095,7 @@ func testWBLReplayAppenderV2(t *testing.T, scenario sampleTypeScenario, enableST
 	require.NoError(t, h.Close())
 }
 
-// TestOOOMmapReplay checks the replay at a low level.
+// TestOOOMmapReplay_AppenderV2 checks the replay at a low level.
 func TestOOOMmapReplay_AppenderV2(t *testing.T) {
 	for name, scenario := range sampleTypeScenarios {
 		t.Run(name, func(t *testing.T) {
@@ -3891,7 +3891,7 @@ func TestCuttingNewHeadChunks_AppenderV2(t *testing.T) {
 	}
 }
 
-// TestHeadDetectsDuplicateSampleAtSizeLimit tests a regression where a duplicate sample
+// TestHeadDetectsDuplicateSampleAtSizeLimit_AppenderV2 tests a regression where a duplicate sample
 // is appended to the head, right when the head chunk is at the size limit.
 // The test adds all samples as duplicate, thus expecting that the result has
 // exactly half of the samples.
@@ -4850,7 +4850,7 @@ func TestHeadAppenderV2_NumStaleSeries(t *testing.T) {
 	verifySeriesCounts(4, 5)
 }
 
-// TestHistogramStalenessConversionMetrics verifies that staleness marker conversion correctly
+// TestHeadAppenderV2_Append_HistogramStalenessConversionMetrics verifies that staleness marker conversion correctly
 // increments the right appender metrics for both histogram and float histogram scenarios.
 func TestHeadAppenderV2_Append_HistogramStalenessConversionMetrics(t *testing.T) {
 	testCases := []struct {
@@ -4956,7 +4956,7 @@ func TestHeadAppenderV2_Append_HistogramStalenessConversionMetrics(t *testing.T)
 	}
 }
 
-// TestHeadAppender_STStorage verifies that when EnableSTStorage is true,
+// TestHeadAppenderV2_STStorage verifies that when EnableSTStorage is true,
 // start timestamps are properly stored in chunks and returned by queries.
 // This test uses AppenderV2 which has native ST support.
 func TestHeadAppenderV2_STStorage(t *testing.T) {
