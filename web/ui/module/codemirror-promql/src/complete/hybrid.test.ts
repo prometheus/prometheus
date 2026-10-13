@@ -13,7 +13,9 @@
 
 import { analyzeCompletion, computeStartCompletePosition, computeEndCompletePosition, ContextKind, durationWithUnitRegexp } from './hybrid';
 import { createEditorState, mockedMetricsTerms, mockPrometheusServer } from '../test/utils-test';
-import { Completion, CompletionContext } from '@codemirror/autocomplete';
+import { Completion, CompletionContext, CompletionResult } from '@codemirror/autocomplete';
+import { TransactionSpec } from '@codemirror/state';
+import { EditorView } from '@codemirror/view';
 import {
   aggregateOpModifierTerms,
   aggregateOpTerms,
@@ -361,7 +363,69 @@ describe('analyzeCompletion test', () => {
       title: 'continue to autocomplete quoted labelName associated to a metric',
       expr: '{"metric_"}',
       pos: 10, // cursor is between the bracket after the string metric_
-      expectedContext: [{ kind: ContextKind.MetricName, metricName: 'metric_' }],
+      expectedContext: [
+        { kind: ContextKind.MetricName, metricName: 'metric_' },
+        { kind: ContextKind.LabelName, metricName: '' },
+      ],
+    },
+    {
+      title: 'autocomplete the labelValue of a quoted labelName containing escaped characters',
+      expr: '{"a\\"b"=""}',
+      pos: 10, // cursor is between the quotes of the value
+      expectedContext: [
+        {
+          kind: ContextKind.LabelValue,
+          metricName: '',
+          labelName: 'a"b',
+          matchers: [{ type: EqlSingle, name: 'a"b', value: '' }],
+        },
+      ],
+    },
+    {
+      title: 'autocomplete only the labelName in a quoted string when the metric name is already set',
+      expr: 'foo{"x"}',
+      pos: 6, // cursor is inside "x"
+      expectedContext: [{ kind: ContextKind.LabelName, metricName: 'foo' }],
+    },
+    {
+      title: 'autocomplete only the labelName in a quoted string when the metric name is already quoted',
+      expr: '{"foo.bar", "x"}',
+      pos: 14, // cursor is inside "x"
+      expectedContext: [{ kind: ContextKind.LabelName, metricName: 'foo.bar' }],
+    },
+    {
+      title: 'autocomplete the metric name and the labelName in a quoted string after other matchers',
+      expr: '{a="b", "x"}',
+      pos: 10, // cursor is inside "x"
+      expectedContext: [
+        { kind: ContextKind.MetricName, metricName: 'x' },
+        { kind: ContextKind.LabelName, metricName: '' },
+      ],
+    },
+    {
+      title: 'autocomplete the labelValue of a quoted labelName containing an octal escape',
+      expr: '{"a\\101"=""}',
+      pos: 11, // cursor is between the quotes of the value
+      expectedContext: [
+        {
+          kind: ContextKind.LabelValue,
+          metricName: '',
+          labelName: 'aA',
+          matchers: [{ type: EqlSingle, name: 'aA', value: '' }],
+        },
+      ],
+    },
+    {
+      title: 'scope the labelName completion to the whole unquoted metric name',
+      expr: 'foo.bar{a}',
+      pos: 9, // cursor is after the a
+      expectedContext: [{ kind: ContextKind.LabelName, metricName: 'foo.bar' }],
+    },
+    {
+      title: 'autocomplete the quoted labelName of a quoted matcher with the quoted metric name',
+      expr: '{"http.requests", "met"="x"}',
+      pos: 21, // cursor is inside "met"
+      expectedContext: [{ kind: ContextKind.LabelName, metricName: 'http.requests' }],
     },
     {
       title: 'autocomplete the labelValue with metricName + labelName',
@@ -769,6 +833,18 @@ describe('durationWithUnitRegexp test', () => {
 describe('computeStartCompletePosition test', () => {
   const testCases = [
     {
+      title: 'quoted name starts after the opening quote',
+      expr: '{"foo.bar"}',
+      pos: 5, // cursor is inside the quotes
+      expectedStart: 2,
+    },
+    {
+      title: 'quoted label name in a grouping starts after the opening quote',
+      expr: 'sum by ("foo")',
+      pos: 11, // cursor is inside the quotes
+      expectedStart: 9,
+    },
+    {
       title: 'empty bracket',
       expr: '{}',
       pos: 1, // cursor is between the bracket
@@ -967,6 +1043,30 @@ describe('computeStartCompletePosition test', () => {
 
 describe('computeEndCompletePosition test', () => {
   const testCases = [
+    {
+      title: 'quoted name replaces the content of the quotes',
+      expr: '{"foo.bar"}',
+      pos: 5, // cursor is inside the quotes
+      expectedEnd: 9, // before the closing quote
+    },
+    {
+      title: 'quoted name ending with an escaped quote replaces the content of the quotes',
+      expr: '{"foo\\"bar"}',
+      pos: 5, // cursor is inside the quotes
+      expectedEnd: 10, // before the closing quote
+    },
+    {
+      title: 'unterminated quoted name only replaces the content before the cursor',
+      expr: '{"foo} + bar',
+      pos: 4, // cursor is after "fo
+      expectedEnd: 4,
+    },
+    {
+      title: 'unterminated quoted name ending with an escaped quote only replaces the content before the cursor',
+      expr: '{"foo\\"',
+      pos: 7, // cursor is at the end
+      expectedEnd: 7,
+    },
     {
       title: 'cursor at end of metric name',
       expr: 'metric_name',
@@ -1861,5 +1961,626 @@ describe('autocomplete promQL test', () => {
     const result = await completion.promQL(context);
     expect(result).not.toBeNull();
     expect((result as NonNullable<typeof result>).options).toEqual(binOpTerms);
+  });
+});
+
+describe('autocomplete utf-8 names test', () => {
+  beforeEach(() => {
+    nock.cleanAll();
+  });
+  afterEach(() => {
+    nock.cleanAll();
+  });
+
+  // `|` is the cursor in `doc`, and in `expected` after the completion has been applied.
+  // `metrics` and `labels` are the names returned by the server, `name` is the one that is selected.
+  // `selector` is the series selector the label names are expected to be scoped to.
+  // `typed` is inserted at the cursor before the completion is applied, like when the user keeps on typing
+  // while CodeMirror still uses the same completion result.
+  // `notOffered` are names that must not be part of the completion.
+  const testCases: {
+    title: string;
+    doc: string;
+    name: string;
+    metrics?: string[];
+    labels?: string[];
+    selector?: string;
+    typed?: string;
+    notOffered?: string[];
+    expected: string;
+  }[] = [
+    { title: 'quotes a metric name and moves it in braces', doc: 'foo|', name: 'foo.bar', metrics: ['foo.bar'], expected: '{"foo.bar"|}' },
+    {
+      title: 'quotes a metric name in front of existing matchers',
+      doc: 'foo|{a="b"}',
+      name: 'foo.bar',
+      metrics: ['foo.bar'],
+      expected: '{"foo.bar"|, a="b"}',
+    },
+    {
+      title: 'quotes a metric name in front of existing matchers after whitespace',
+      doc: 'foo|  {a="b"}',
+      name: 'foo.bar',
+      metrics: ['foo.bar'],
+      expected: '  {"foo.bar"|, a="b"}',
+    },
+    {
+      title: 'quotes a metric name in front of existing matchers that start with whitespace',
+      doc: 'foo|{ a="b"}',
+      name: 'foo.bar',
+      metrics: ['foo.bar'],
+      expected: '{"foo.bar"|, a="b"}',
+    },
+    {
+      title: 'quotes a metric name in front of empty matchers',
+      doc: 'foo|{}',
+      name: 'foo.bar',
+      metrics: ['foo.bar'],
+      expected: '{"foo.bar"|}',
+    },
+    {
+      title: 'quotes a metric name in front of empty matchers containing whitespace',
+      doc: 'foo|{ }',
+      name: 'foo.bar',
+      metrics: ['foo.bar'],
+      expected: '{"foo.bar"| }',
+    },
+    {
+      title: 'quotes a metric name inside a function call',
+      doc: 'rate(foo|[5m])',
+      name: 'foo.bar',
+      metrics: ['foo.bar'],
+      expected: 'rate({"foo.bar"|}[5m])',
+    },
+    {
+      title: 'quotes a metric name in a binary expression',
+      doc: 'a + foo|',
+      name: 'foo.bar',
+      metrics: ['foo.bar'],
+      expected: 'a + {"foo.bar"|}',
+    },
+    {
+      title: 'replaces the whole metric name when the cursor is in the middle of it',
+      doc: 'fo|o',
+      name: 'foo.bar',
+      metrics: ['foo.bar'],
+      expected: '{"foo.bar"|}',
+    },
+    {
+      title: 'applies the completion of a metric name after more characters have been typed',
+      doc: 'fo|{a="b"}',
+      typed: 'o',
+      name: 'foo.bar',
+      metrics: ['foo.bar'],
+      expected: '{"foo.bar"|, a="b"}',
+    },
+    {
+      title: 'applies the completion of a metric name after more characters have been typed, without matchers',
+      doc: 'fo|',
+      typed: 'o',
+      name: 'foo.bar',
+      metrics: ['foo.bar'],
+      expected: '{"foo.bar"|}',
+    },
+    {
+      title: 'completes a metric name containing a dot typed without quotes',
+      doc: 'foo.b|',
+      name: 'foo.bar',
+      metrics: ['foo.bar'],
+      expected: '{"foo.bar"|}',
+    },
+    {
+      title: 'completes a metric name containing a dot typed without quotes, in front of matchers',
+      doc: 'foo.b|{a="b"}',
+      name: 'foo.bar',
+      metrics: ['foo.bar'],
+      expected: '{"foo.bar"|, a="b"}',
+    },
+    {
+      title: 'completes a metric name containing a dot when the cursor is in the middle of it',
+      doc: 'foo.|bar',
+      name: 'foo.bar',
+      metrics: ['foo.bar'],
+      expected: '{"foo.bar"|}',
+    },
+    {
+      title: 'completes a metric name containing non-ascii characters',
+      doc: 'mét|',
+      name: 'métrique',
+      metrics: ['métrique'],
+      expected: '{"métrique"|}',
+    },
+    {
+      title: 'completes a metric name starting with a non-ascii character',
+      doc: 'éa|',
+      name: 'éa.b',
+      metrics: ['éa.b'],
+      expected: '{"éa.b"|}',
+    },
+    {
+      title: 'completes a metric name starting and ending with non-ascii characters',
+      doc: 'été|',
+      name: 'été.x',
+      metrics: ['été.x'],
+      expected: '{"été.x"|}',
+    },
+    {
+      title: 'completes a metric name made of non-ascii characters only',
+      doc: '指标|',
+      name: '指标.x',
+      metrics: ['指标.x'],
+      expected: '{"指标.x"|}',
+    },
+    {
+      title: 'completes a metric name containing a surrogate pair',
+      doc: '😀x|',
+      name: '😀x.y',
+      metrics: ['😀x.y'],
+      expected: '{"😀x.y"|}',
+    },
+    { title: 'does not quote a legacy metric name', doc: 'foo|', name: 'foo_bar', metrics: ['foo_bar'], expected: 'foo_bar|' },
+    { title: 'does not quote a legacy metric name with colons', doc: 'foo|', name: 'foo:bar', metrics: ['foo:bar'], expected: 'foo:bar|' },
+    { title: 'completes a quoted metric name', doc: '{"fo|"}', name: 'foo.bar', metrics: ['foo.bar'], expected: '{"foo.bar"|}' },
+    {
+      title: 'completes a quoted metric name when the cursor is in the middle of it',
+      doc: '{"fo|o"}',
+      name: 'foo.bar',
+      metrics: ['foo.bar'],
+      expected: '{"foo.bar"|}',
+    },
+    {
+      title: 'completes a single-quoted metric name',
+      doc: "{'fo|'}",
+      name: 'foo.bar',
+      metrics: ['foo.bar'],
+      expected: '{"foo.bar"|}',
+    },
+    {
+      title: 'completes a backtick-quoted metric name',
+      doc: '{`fo|`}',
+      name: 'foo.bar',
+      metrics: ['foo.bar'],
+      expected: '{"foo.bar"|}',
+    },
+    {
+      title: 'completes a quoted metric name that is not closed yet',
+      doc: '{"fo|',
+      name: 'foo.bar',
+      metrics: ['foo.bar'],
+      expected: '{"foo.bar"|',
+    },
+    {
+      title: 'completes a quoted metric name that is not closed without losing what follows',
+      doc: '{"fo|} + bar',
+      name: 'foo.bar',
+      metrics: ['foo.bar'],
+      expected: '{"foo.bar"|} + bar',
+    },
+    {
+      title: 'applies the completion of a quoted metric name after more characters have been typed',
+      doc: '{"fo|"}',
+      typed: 'o',
+      name: 'foo.bar',
+      metrics: ['foo.bar'],
+      expected: '{"foo.bar"|}',
+    },
+    { title: 'escapes a quoted metric name', doc: '{"fo|"}', name: 'foo"bar', metrics: ['foo"bar'], expected: '{"foo\\"bar"|}' },
+    {
+      title: 'completes a quoted metric name next to other matchers',
+      doc: '{a="b", "x|"}',
+      name: 'x.y',
+      metrics: ['x.y'],
+      expected: '{a="b", "x.y"|}',
+    },
+    {
+      title: 'quotes a label name',
+      doc: 'foo{a|}',
+      name: 'a.b',
+      labels: ['a.b'],
+      selector: 'foo',
+      expected: 'foo{"a.b"|}',
+    },
+    {
+      title: 'quotes a label name typed without quotes',
+      doc: 'foo{a.|}',
+      name: 'a.b',
+      labels: ['a.b'],
+      selector: 'foo',
+      expected: 'foo{"a.b"|}',
+    },
+    {
+      title: 'quotes a label name starting with a non-ascii character',
+      doc: 'foo{é|}',
+      name: 'é.b',
+      labels: ['é.b'],
+      selector: 'foo',
+      expected: 'foo{"é.b"|}',
+    },
+    {
+      title: 'quotes a label name in a matcher',
+      doc: 'foo{a|="x"}',
+      name: 'a.b',
+      labels: ['a.b'],
+      selector: 'foo',
+      expected: 'foo{"a.b"|="x"}',
+    },
+    {
+      title: 'quotes a label name after other matchers',
+      doc: 'foo{c="d", a|}',
+      name: 'a.b',
+      labels: ['a.b'],
+      selector: 'foo',
+      expected: 'foo{c="d", "a.b"|}',
+    },
+    {
+      title: 'applies the completion of a label name after more characters have been typed',
+      doc: 'foo{a|}',
+      typed: 'b',
+      name: 'ab.c',
+      labels: ['ab.c'],
+      selector: 'foo',
+      expected: 'foo{"ab.c"|}',
+    },
+    {
+      title: 'quotes a label name in a grouping',
+      doc: 'sum by (a|) (x)',
+      name: 'a.b',
+      labels: ['a.b'],
+      expected: 'sum by ("a.b"|) (x)',
+    },
+    {
+      title: 'quotes a label name starting with a non-ascii character in a grouping',
+      doc: 'sum by (é|) (x)',
+      name: 'é.b',
+      labels: ['é.b'],
+      selector: 'x',
+      expected: 'sum by ("é.b"|) (x)',
+    },
+    {
+      title: 'quotes a label name in a without grouping',
+      doc: 'sum without (a|) (x)',
+      name: 'a.b',
+      labels: ['a.b'],
+      expected: 'sum without ("a.b"|) (x)',
+    },
+    {
+      title: 'completes a quoted label name in a without grouping',
+      doc: 'sum without ("a|") (x)',
+      name: 'a.b',
+      labels: ['a.b'],
+      expected: 'sum without ("a.b"|) (x)',
+    },
+    {
+      title: 'quotes a label name in a grouping after the aggregated expression',
+      doc: 'sum(x) by (a|)',
+      name: 'a.b',
+      labels: ['a.b'],
+      expected: 'sum(x) by ("a.b"|)',
+    },
+    {
+      title: 'completes a quoted label name in a grouping after the aggregated expression',
+      doc: 'sum(x) by ("a|")',
+      name: 'a.b',
+      labels: ['a.b'],
+      expected: 'sum(x) by ("a.b"|)',
+    },
+    {
+      title: 'quotes a label name in a grouping after other labels',
+      doc: 'sum by (c, a|) (x)',
+      name: 'a.b',
+      labels: ['a.b'],
+      expected: 'sum by (c, "a.b"|) (x)',
+    },
+    {
+      title: 'quotes a label name in a grouping of a topk',
+      doc: 'topk(3, x) by (a|)',
+      name: 'a.b',
+      labels: ['a.b'],
+      expected: 'topk(3, x) by ("a.b"|)',
+    },
+    {
+      title: 'quotes a label name in an on modifier',
+      doc: 'a / on(a|) b',
+      name: 'a.b',
+      labels: ['a.b'],
+      expected: 'a / on("a.b"|) b',
+    },
+    {
+      title: 'completes a quoted label name in an on modifier',
+      doc: 'a / on("a|") b',
+      name: 'a.b',
+      labels: ['a.b'],
+      expected: 'a / on("a.b"|) b',
+    },
+    {
+      title: 'quotes a label name typed without quotes in an ignoring modifier',
+      doc: 'a / ignoring(a.|) b',
+      name: 'a.b',
+      labels: ['a.b'],
+      expected: 'a / ignoring("a.b"|) b',
+    },
+    {
+      title: 'completes a quoted label name in an ignoring modifier',
+      doc: 'a / ignoring("a|") b',
+      name: 'a.b',
+      labels: ['a.b'],
+      expected: 'a / ignoring("a.b"|) b',
+    },
+    {
+      title: 'quotes a label name in a group_left modifier',
+      doc: 'a / on(x) group_left(a|) b',
+      name: 'a.b',
+      labels: ['a.b'],
+      expected: 'a / on(x) group_left("a.b"|) b',
+    },
+    {
+      title: 'completes a quoted label name in a group_right modifier',
+      doc: 'a / on(x) group_right("a|") b',
+      name: 'a.b',
+      labels: ['a.b'],
+      expected: 'a / on(x) group_right("a.b"|) b',
+    },
+    {
+      title: 'quotes a label name starting with a non-ascii character in an on modifier',
+      doc: 'a / on(é|) b',
+      name: 'é.b',
+      labels: ['é.b'],
+      expected: 'a / on("é.b"|) b',
+    },
+    {
+      title: 'quotes a label name after other labels in an on modifier',
+      doc: 'a / on("x.y", a|) b',
+      name: 'a.b',
+      labels: ['a.b'],
+      expected: 'a / on("x.y", "a.b"|) b',
+    },
+    {
+      title: 'does not quote a legacy label name',
+      doc: 'foo{a|}',
+      name: 'a_b',
+      labels: ['a_b'],
+      selector: 'foo',
+      expected: 'foo{a_b|}',
+    },
+    {
+      title: 'quotes a label name containing a colon',
+      doc: 'foo{a|}',
+      name: 'a:b',
+      labels: ['a:b'],
+      selector: 'foo',
+      expected: 'foo{"a:b"|}',
+    },
+    {
+      title: 'completes a quoted label name in a matcher',
+      doc: 'foo{"a|"="x"}',
+      name: 'a.b',
+      labels: ['a.b'],
+      selector: 'foo',
+      expected: 'foo{"a.b"|="x"}',
+    },
+    {
+      title: 'completes a single-quoted label name in a matcher',
+      doc: "foo{'a|'='x'}",
+      name: 'a.b',
+      labels: ['a.b'],
+      selector: 'foo',
+      expected: 'foo{"a.b"|=\'x\'}',
+    },
+    {
+      title: 'completes a quoted label name in a grouping',
+      doc: 'sum by ("a|") (x)',
+      name: 'a.b',
+      labels: ['a.b'],
+      expected: 'sum by ("a.b"|) (x)',
+    },
+    {
+      title: 'completes a quoted label name scoped to the quoted metric name',
+      doc: '{"foo.bar", "a|"}',
+      name: 'a.b',
+      labels: ['a.b'],
+      metrics: ['a.metric'],
+      selector: '{"foo.bar"}',
+      notOffered: ['a.metric'],
+      expected: '{"foo.bar", "a.b"|}',
+    },
+    {
+      title: 'completes a quoted label name without offering metric names when the metric name is set',
+      doc: 'foo{"x|"}',
+      name: 'x.y',
+      labels: ['x.y'],
+      metrics: ['foo.bar'],
+      selector: 'foo',
+      notOffered: ['foo.bar'],
+      expected: 'foo{"x.y"|}',
+    },
+    {
+      title: 'completes a quoted label name that is not closed without losing what follows',
+      doc: 'foo{"a|}[5m]',
+      name: 'a.b',
+      labels: ['a.b'],
+      metrics: ['foo.bar'],
+      selector: 'foo',
+      notOffered: ['foo.bar'],
+      expected: 'foo{"a.b"|}[5m]',
+    },
+    {
+      title: 'scopes the label names to the whole unquoted metric name',
+      doc: 'foo.bar{a|}',
+      name: 'a.b',
+      labels: ['a.b'],
+      selector: '{"foo.bar"}',
+      expected: 'foo.bar{"a.b"|}',
+    },
+    {
+      title: 'scopes the label names to an unquoted metric name starting with a non-ascii character',
+      doc: 'métrique{a|}',
+      name: 'a.b',
+      labels: ['a.b'],
+      selector: '{"métrique"}',
+      expected: 'métrique{"a.b"|}',
+    },
+  ];
+  testCases.forEach((value) => {
+    it(value.title, async () => {
+      const metricsScope = nock('http://localhost:8080')
+        .get('/api/v1/label/__name__/values')
+        .query(true)
+        .reply(200, { status: 'success', data: value.metrics ?? [] });
+      nock('http://localhost:8080').get('/api/v1/metadata').query(true).reply(200, { status: 'success', data: {} });
+      const labelsScope = nock('http://localhost:8080')
+        .post('/api/v1/labels', (body) => body['match[]'] === value.selector)
+        .reply(200, { status: 'success', data: value.labels ?? [] });
+
+      const pos = value.doc.indexOf('|');
+      let state = createEditorState(value.doc.slice(0, pos) + value.doc.slice(pos + 1));
+      const completion = newCompleteStrategy({ remote: { url: 'http://localhost:8080' } });
+      const result = (await completion.promQL(new CompletionContext(state, pos, true))) as CompletionResult;
+
+      // The names that are expected to be completed have been fetched, with the expected selector for the label names.
+      if (value.metrics) {
+        // The metric names are not fetched when a metric name cannot be completed.
+        expect(metricsScope.isDone()).toBe(value.notOffered === undefined);
+      }
+      if (value.labels) {
+        expect(labelsScope.isDone()).toBe(true);
+      }
+      for (const name of value.notOffered ?? []) {
+        expect(result.options.map((o) => o.label)).not.toContain(name);
+      }
+      const option = result.options.find((o) => o.label === value.name);
+      expect(option).toBeDefined();
+
+      // CodeMirror filters the options with the text between the start of the range and the cursor, so it has to match.
+      const filter = state.sliceDoc(result.from, pos).toLowerCase();
+      const filterChars = Array.from(filter);
+      let matched = 0;
+      for (const char of Array.from(value.name.toLowerCase())) {
+        if (matched < filterChars.length && char === filterChars[matched]) {
+          matched++;
+        }
+      }
+      expect(matched).toBe(filterChars.length);
+
+      // CodeMirror keeps on using the completion result while the user types, and maps the range through the changes.
+      let { from, to } = result;
+      if (value.typed) {
+        const transaction = state.update({ changes: { from: pos, insert: value.typed }, selection: { anchor: pos + value.typed.length } });
+        from = transaction.changes.mapPos(from, -1);
+        to = transaction.changes.mapPos(to, 1);
+        state = transaction.state;
+        expect(result.validFor).toBeInstanceOf(RegExp);
+        expect((result.validFor as RegExp).test(state.sliceDoc(from, to))).toBe(true);
+      }
+
+      // Applying a completion only needs the state and dispatch of the view, and the tests do not run in a DOM.
+      const specs: TransactionSpec[] = [];
+      const view = {
+        get state() {
+          return state;
+        },
+        dispatch: (spec: TransactionSpec) => {
+          specs.push(spec);
+          state = state.update(spec).state;
+        },
+      } as unknown as EditorView;
+      const apply = option?.apply ?? value.name;
+      if (typeof apply === 'function') {
+        apply(view, option as Completion, from, to);
+        expect(specs).toHaveLength(1);
+        expect(specs[0].userEvent).toBe('input.complete');
+      } else {
+        view.dispatch({ changes: { from, to, insert: apply }, selection: { anchor: from + apply.length } });
+      }
+      const cursor = state.selection.main.head;
+      expect(`${state.doc.sliceString(0, cursor)}|${state.doc.sliceString(cursor)}`).toBe(value.expected);
+    });
+  });
+  // Label values are inserted inside the quotes of the matcher, and the cursor stays inside the quotes.
+  // The cached client does not send the other matchers, so the selector is only made of the metric name.
+  const labelValueTestCases = [
+    {
+      title: 'quoted label name containing a dot',
+      doc: 'foo{"a.b"="|"}',
+      values: ['x"y'],
+      path: '/api/v1/label/U__a_2e_b/values',
+      selector: 'foo',
+      expected: 'foo{"a.b"="x\\"y|"}',
+    },
+    {
+      title: 'unquoted label name',
+      doc: 'foo{a="|"}',
+      values: ['x.y'],
+      path: '/api/v1/label/a/values',
+      selector: 'foo',
+      expected: 'foo{a="x.y|"}',
+    },
+    {
+      title: 'quoted label name next to a quoted metric name',
+      doc: '{"foo.bar", "a.b"="|"}',
+      values: ['x'],
+      path: '/api/v1/label/U__a_2e_b/values',
+      selector: '{"foo.bar"}',
+      expected: '{"foo.bar", "a.b"="x|"}',
+    },
+    {
+      title: 'quoted label name and unquoted utf-8 metric name',
+      doc: 'foo.bar{"a.b"="|"}',
+      values: ['x'],
+      path: '/api/v1/label/U__a_2e_b/values',
+      selector: '{"foo.bar"}',
+      expected: 'foo.bar{"a.b"="x|"}',
+    },
+    {
+      title: '__name__ label',
+      doc: '{__name__="|"}',
+      values: ['foo.bar'],
+      path: '/api/v1/label/__name__/values',
+      expected: '{__name__="foo.bar|"}',
+    },
+    {
+      title: 'value containing a line break',
+      doc: 'foo{a="|"}',
+      values: ['x\ny'],
+      path: '/api/v1/label/a/values',
+      selector: 'foo',
+      expected: 'foo{a="x\\ny|"}',
+    },
+    {
+      title: 'cursor in the middle of the value',
+      doc: 'foo{a="x|y"}',
+      values: ['xyz'],
+      path: '/api/v1/label/a/values',
+      selector: 'foo',
+      expected: 'foo{a="xyz|"}',
+    },
+    {
+      title: 'single-quoted value',
+      doc: "foo{a='x|'}",
+      values: ['xyz'],
+      path: '/api/v1/label/a/values',
+      selector: 'foo',
+      expected: "foo{a='xyz|'}",
+    },
+  ];
+  labelValueTestCases.forEach((value) => {
+    it(`label value: ${value.title}`, async () => {
+      const scope = nock('http://localhost:8080')
+        .get(value.path)
+        .query((query) => query['match[]'] === value.selector)
+        .reply(200, { status: 'success', data: value.values });
+
+      const pos = value.doc.indexOf('|');
+      const state = createEditorState(value.doc.slice(0, pos) + value.doc.slice(pos + 1));
+      const completion = newCompleteStrategy({ remote: { url: 'http://localhost:8080' } });
+      const result = (await completion.promQL(new CompletionContext(state, pos, true))) as CompletionResult;
+      expect(scope.isDone()).toBe(true);
+
+      const option = result.options.find((o) => o.label === value.values[0]);
+      expect(option).toBeDefined();
+      const insert = option?.apply as string;
+      const doc = state.doc.sliceString(0, result.from) + insert + state.doc.sliceString(result.to);
+      const cursor = result.from + insert.length;
+      expect(`${doc.slice(0, cursor)}|${doc.slice(cursor)}`).toBe(value.expected);
+    });
   });
 });
