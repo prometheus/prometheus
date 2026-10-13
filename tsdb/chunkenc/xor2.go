@@ -424,6 +424,9 @@ func (a *xor2Appender) writeVDelta(v float64) {
 	}
 
 	// A new window costs 12 extra bits: one control bit and 11 window bits.
+	// Reuse has prefix 10; replacement has prefix 110 plus leading(5) and sigbits(6).
+	// Choose the lower cost for this delta and reuse on a tie. Narrowing can cost
+	// more overall if the next delta needs a wider window again.
 	if newLeading >= a.leading && newTrailing >= a.trailing && newLeading+newTrailing <= a.leading+a.trailing+12 {
 		a.b.writeBitsFast(0b10, 2)
 		a.b.writeBitsFast(delta>>a.trailing, 64-int(a.leading)-int(a.trailing))
@@ -467,6 +470,7 @@ func (a *xor2Appender) writeVDeltaKnownNonZero(delta uint64) {
 	}
 
 	// Both controls cost one bit, so a new window costs 11 extra window bits.
+	// As in writeVDelta, choose the lower cost for this delta and reuse on a tie.
 	if newLeading >= a.leading && newTrailing >= a.trailing && newLeading+newTrailing <= a.leading+a.trailing+11 {
 		a.b.writeBit(zero)
 		a.b.writeBitsFast(delta>>a.trailing, 64-int(a.leading)-int(a.trailing))
