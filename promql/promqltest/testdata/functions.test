@@ -1711,6 +1711,35 @@ eval instant at 1m quantile_over_time(0.5, data_histogram{test="mix samples"}[2m
 	expect no_warn
 	{test="mix samples"} 1
 
+# Exact-ranked infinities in quantile_over_time must not become NaN.
+clear
+
+load 10s
+	data{test="finite before +Inf"} 1 2 Inf
+	data{test="finite after -Inf"} -Inf 2 3
+	data{test="positive infinity"} 1 Inf
+	data{test="negative infinity"} -Inf
+	data{test="mixed infinities"} -Inf Inf
+
+eval instant at 1m quantile_over_time(0.5, data[2m])
+	expect no_info
+	expect no_warn
+	{test="finite before +Inf"} 2
+	{test="finite after -Inf"} 2
+	{test="positive infinity"} +Inf
+	{test="negative infinity"} -Inf
+	{test="mixed infinities"} NaN
+
+eval instant at 1m quantile_over_time(1, data{test="positive infinity"}[2m])
+	expect no_info
+	expect no_warn
+	{test="positive infinity"} +Inf
+
+eval instant at 1m quantile_over_time(0, data{test="negative infinity"}[2m])
+	expect no_info
+	expect no_warn
+	{test="negative infinity"} -Inf
+
 clear
 
 # Test time-related functions.
