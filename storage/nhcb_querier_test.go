@@ -701,6 +701,35 @@ func TestNHCBAsClassicQuerier_ConsistentOrder(t *testing.T) {
 	}
 }
 
+func TestNHCBAsClassicQuerier_SortedSelect(t *testing.T) {
+	// z_job sorts after le, so sorted order interleaves the buckets of both NHCB series.
+	q := NewNHCBAsClassicQuerier(&nhcbMockQuerier{
+		nhcbSeries: []Series{
+			NewListSeries(labels.FromStrings("__name__", "http_requests", "z_job", "api"), []chunks.Sample{hSample{t: 1, h: makeNHCB([]float64{1.0, 5.0}, []int64{2, 3, 5})}}),
+			NewListSeries(labels.FromStrings("__name__", "http_requests", "z_job", "web"), []chunks.Sample{hSample{t: 1, h: makeNHCB([]float64{1.0, 5.0}, []int64{2, 3, 5})}}),
+		},
+	})
+
+	ss := q.Select(context.Background(), true, nil, labels.MustNewMatcher(labels.MatchEqual, model.MetricNameLabel, "http_requests_bucket"))
+	var seriesLabels []string
+	for ss.Next() {
+		seriesLabels = append(seriesLabels, ss.At().Labels().String())
+	}
+	require.NoError(t, ss.Err())
+
+	// Should: return series in labels.Compare order, as NewMergeQuerier and remote read require.
+	// Currently: returns the buckets of each NHCB series together, in bucket boundary order.
+	// TODO: sort converted bucket series across NHCB series when sortSeries is true.
+	require.Equal(t, []string{
+		`{__name__="http_requests_bucket", le="1.0", z_job="api"}`,
+		`{__name__="http_requests_bucket", le="5.0", z_job="api"}`,
+		`{__name__="http_requests_bucket", le="+Inf", z_job="api"}`,
+		`{__name__="http_requests_bucket", le="1.0", z_job="web"}`,
+		`{__name__="http_requests_bucket", le="5.0", z_job="web"}`,
+		`{__name__="http_requests_bucket", le="+Inf", z_job="web"}`,
+	}, seriesLabels)
+}
+
 func TestNHCBAsClassicQuerier_FloatHistogram(t *testing.T) {
 	fhNHCB := &histogram.FloatHistogram{
 		Schema:          histogram.CustomBucketsSchema,
