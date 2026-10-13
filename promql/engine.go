@@ -305,7 +305,7 @@ type QueryCostOpts interface {
 	// MaxQueryDuration is the per-query override for the maximum wall-clock
 	// duration of the query. The effective ceiling it may lower is the
 	// operator-set query_max_duration when non-zero, and the -query.timeout flag
-	// otherwise.
+	// otherwise. The budget includes construction and waiting for a query slot.
 	MaxQueryDuration() time.Duration
 }
 
@@ -334,12 +334,8 @@ type query struct {
 	maxSamplesRead   uint64
 	maxQueryDuration time.Duration
 
-	// durationLimited records whether the query-cost duration limit was chosen
-	// as the effective timeout for this execution, instead of the -query.timeout
-	// flag. It lets the metric attribution distinguish a duration-limit
-	// rejection from a generic engine or upstream context timeout, both of which
-	// surface as ErrQueryTimeout.
-	durationLimited bool
+	// Deadline covers construction and execution when query-cost is enabled.
+	deadline time.Time
 
 	// The engine against which the query is executed.
 	ng *Engine
@@ -394,6 +390,28 @@ func (q *query) Exec(ctx context.Context) *Result {
 	// Exec query.
 	res, warnings, err := q.ng.exec(ctx, q)
 	return &Result{Err: err, Value: res, Warnings: warnings}
+}
+
+var errQueryCostDuration = errors.New("query cost duration exceeded")
+
+func (q *query) executionContext(ctx context.Context) (context.Context, context.CancelFunc) {
+	if q.deadline.IsZero() {
+		return context.WithTimeout(ctx, q.ng.timeout)
+	}
+	cause := context.DeadlineExceeded
+	if q.maxQueryDuration > 0 {
+		cause = errQueryCostDuration
+	}
+	return context.WithDeadlineCause(ctx, q.deadline, cause)
+}
+
+func (q *query) constructionError(ctx context.Context, err error) error {
+	if !q.deadline.IsZero() {
+		if contextError := contextDone(ctx, env); contextError != nil {
+			return contextError
+		}
+	}
+	return err
 }
 
 // contextDone returns an error if the context was canceled or timed out.
@@ -763,19 +781,42 @@ func (ng *Engine) NewInstantQuery(ctx context.Context, q storage.Queryable, opts
 	if err != nil {
 		return nil, err
 	}
+	if ng.enableQueryCost {
+		var cancel context.CancelFunc
+		ctx, cancel = qry.executionContext(ctx)
+		defer cancel()
+		defer func() { ng.observeQueryRejection(ctx, err) }()
+	}
 	finishQueue, err := ng.queueActive(ctx, qry)
 	if err != nil {
+		if ng.enableQueryCost {
+			err = contextErr(err, env)
+		}
 		return nil, err
 	}
 	defer finishQueue()
+	if ng.enableQueryCost {
+		if contextError := contextDone(ctx, env); contextError != nil {
+			err = contextError
+			return nil, err
+		}
+	}
 	expr, err := ng.parser.ParseExpr(qs)
+	err = qry.constructionError(ctx, err)
 	if err != nil {
 		return nil, err
 	}
-	if err := ng.validateOpts(expr); err != nil {
+	err = qry.constructionError(ctx, ng.validateOpts(expr))
+	if err != nil {
 		return nil, err
 	}
 	*pExpr, err = PreprocessExpr(expr, ts, ts, 0)
+	if ng.enableQueryCost {
+		if contextError := contextDone(ctx, env); contextError != nil {
+			err = contextError
+			return nil, err
+		}
+	}
 
 	return qry, err
 }
@@ -787,22 +828,45 @@ func (ng *Engine) NewRangeQuery(ctx context.Context, q storage.Queryable, opts Q
 	if err != nil {
 		return nil, err
 	}
+	if ng.enableQueryCost {
+		var cancel context.CancelFunc
+		ctx, cancel = qry.executionContext(ctx)
+		defer cancel()
+		defer func() { ng.observeQueryRejection(ctx, err) }()
+	}
 	finishQueue, err := ng.queueActive(ctx, qry)
 	if err != nil {
+		if ng.enableQueryCost {
+			err = contextErr(err, env)
+		}
 		return nil, err
 	}
 	defer finishQueue()
+	if ng.enableQueryCost {
+		if contextError := contextDone(ctx, env); contextError != nil {
+			err = contextError
+			return nil, err
+		}
+	}
 	expr, err := ng.parser.ParseExpr(qs)
+	err = qry.constructionError(ctx, err)
 	if err != nil {
 		return nil, err
 	}
-	if err := ng.validateOpts(expr); err != nil {
+	err = qry.constructionError(ctx, ng.validateOpts(expr))
+	if err != nil {
 		return nil, err
 	}
 	if expr.Type() != parser.ValueTypeVector && expr.Type() != parser.ValueTypeScalar {
 		return nil, fmt.Errorf("invalid expression type %q for range query, must be Scalar or instant Vector", parser.DocumentedType(expr.Type()))
 	}
 	*pExpr, err = PreprocessExpr(expr, start, end, interval)
+	if ng.enableQueryCost {
+		if contextError := contextDone(ctx, env); contextError != nil {
+			err = contextError
+			return nil, err
+		}
+	}
 
 	return qry, err
 }
@@ -878,6 +942,11 @@ func (ng *Engine) newQuery(q storage.Queryable, qs string, opts QueryOpts, start
 				return nil, nil, err
 			}
 		}
+		timeout := ng.timeout
+		if qry.maxQueryDuration > 0 {
+			timeout = qry.maxQueryDuration
+		}
+		qry.deadline = time.Now().Add(timeout)
 	}
 
 	return &es.Expr, qry, nil
@@ -1015,45 +1084,13 @@ func (ng *Engine) exec(ctx context.Context, q *query) (v parser.Value, ws annota
 		if ng.enableQueryCost {
 			ng.metrics.querySamplesReadHistogram.Observe(float64(q.sampleStats.SamplesRead))
 			ng.metrics.querySeriesTouched.Observe(float64(q.sampleStats.TotalSeries))
-			// Attribute cost-guardrail rejections to a reason. The duration limit
-			// surfaces as ErrQueryTimeout, so it is only counted when the
-			// per-query duration limit was the binding (effective) timeout, as
-			// recorded by q.durationLimited. Note: when the per-query limit is
-			// the effective timeout, this still cannot distinguish a cost-driven
-			// timeout from a coincidental engine or upstream context timeout that
-			// happened to fire within the same window; it only stops attributing
-			// max_duration when the per-query limit was not the binding timeout.
-			var (
-				tooManySeries  ErrTooManySeries
-				tooManySamples ErrTooManySamplesRead
-				queryTimeout   ErrQueryTimeout
-			)
-			switch {
-			case errors.As(err, &tooManySeries):
-				ng.metrics.queryRejectedTotal.WithLabelValues("max_series").Inc()
-			case errors.As(err, &tooManySamples):
-				ng.metrics.queryRejectedTotal.WithLabelValues("max_samples_read").Inc()
-			case errors.As(err, &queryTimeout):
-				if q.durationLimited {
-					ng.metrics.queryRejectedTotal.WithLabelValues("max_duration").Inc()
-				}
-			}
+			ng.observeQueryRejection(ctx, err)
 		}
 	}()
 
-	// Use the effective query max duration when it is set. It already accounts
-	// for the --query.timeout flag: the flag is only the ceiling while
-	// query_max_duration is unset, so a configured query_max_duration may be
-	// longer than the flag's value. An overrun surfaces as ErrQueryTimeout.
-	timeout := ng.timeout
-	if q.maxQueryDuration > 0 {
-		timeout = q.maxQueryDuration
-		// Record that the duration limit is the binding timeout so the deferred
-		// metric attribution can credit an ErrQueryTimeout to it.
-		q.durationLimited = true
-	}
-	ctx, cancel := context.WithTimeout(ctx, timeout)
+	ctx, cancel := q.executionContext(ctx)
 	q.cancel = cancel
+	defer cancel()
 
 	defer func() {
 		ng.queryLoggerLock.RLock()
@@ -1098,12 +1135,12 @@ func (ng *Engine) exec(ctx context.Context, q *query) (v parser.Value, ws annota
 
 	finishQueue, err := ng.queueActive(ctx, q)
 	if err != nil {
+		if ng.enableQueryCost {
+			err = contextErr(err, env)
+		}
 		return nil, nil, err
 	}
 	defer finishQueue()
-
-	// Cancel when execution is done or an error was raised.
-	defer q.cancel()
 
 	evalSpanTimer, ctx := q.stats.GetSpanTimer(ctx, stats.EvalTotalTime)
 	defer evalSpanTimer.Finish()
@@ -1115,12 +1152,40 @@ func (ng *Engine) exec(ctx context.Context, q *query) (v parser.Value, ws annota
 
 	switch s := q.Statement().(type) {
 	case *parser.EvalStmt:
-		return ng.execEvalStmt(ctx, q, s)
+		v, ws, err = ng.execEvalStmt(ctx, q, s)
+		if ng.enableQueryCost && err == nil {
+			// Include conversion, sorting, and reader closure before reporting success.
+			if err = contextDone(ctx, "expression evaluation"); err != nil {
+				return nil, ws, err
+			}
+		}
+		return v, ws, err
 	case parser.TestStmt:
 		return nil, nil, s(ctx)
 	}
 
 	panic(fmt.Errorf("promql.Engine.exec: unhandled statement of type %T", q.Statement()))
+}
+
+// Observe only the guardrail responsible for a rejection. Caller deadlines and
+// the startup timeout are not query-cost duration rejections.
+func (ng *Engine) observeQueryRejection(ctx context.Context, err error) {
+	if !ng.enableQueryCost || err == nil {
+		return
+	}
+	var (
+		tooManySeries  ErrTooManySeries
+		tooManySamples ErrTooManySamplesRead
+		queryTimeout   ErrQueryTimeout
+	)
+	switch {
+	case errors.As(err, &tooManySeries):
+		ng.metrics.queryRejectedTotal.WithLabelValues("max_series").Inc()
+	case errors.As(err, &tooManySamples):
+		ng.metrics.queryRejectedTotal.WithLabelValues("max_samples_read").Inc()
+	case errors.As(err, &queryTimeout) && errors.Is(context.Cause(ctx), errQueryCostDuration):
+		ng.metrics.queryRejectedTotal.WithLabelValues("max_duration").Inc()
+	}
 }
 
 // Log query in active log. The active log guarantees that we don't run over
@@ -1132,7 +1197,10 @@ func (ng *Engine) queueActive(ctx context.Context, q *query) (func(), error) {
 	queueSpanTimer, _ := q.stats.GetSpanTimer(ctx, stats.ExecQueueTime, ng.metrics.queryQueueTime, ng.metrics.queryQueueTimeHistogram)
 	queryIndex, err := ng.activeQueryTracker.Insert(ctx, q.q)
 	queueSpanTimer.Finish()
-	return func() { ng.activeQueryTracker.Delete(queryIndex) }, err
+	if err != nil {
+		return func() {}, err
+	}
+	return func() { ng.activeQueryTracker.Delete(queryIndex) }, nil
 }
 
 // QuerySlotAcquirer is an optional interface a QueryEngine may satisfy to lend
@@ -2219,10 +2287,10 @@ func (ev *evaluator) rangeEvalAgg(ctx context.Context, aggExpr *parser.Aggregate
 
 // smoothSeries is a helper function that smooths the series by interpolating the values
 // based on values before and after the timestamp.
-func (ev *evaluator) smoothSeries(series []storage.Series, offset time.Duration, pos posrange.PositionRange) (Matrix, annotations.Annotations) {
+func (ev *evaluator) smoothSeries(ctx context.Context, series []storage.Series, offset time.Duration, pos posrange.PositionRange) (Matrix, annotations.Annotations) {
 	dur := ev.endTimestamp - ev.startTimestamp
 
-	it := storage.NewBuffer(dur + 2*durationMilliseconds(ev.lookbackDelta))
+	it := ev.newMatrixIterator(ctx, dur+2*durationMilliseconds(ev.lookbackDelta))
 
 	offMS := offset.Milliseconds()
 	step := ev.interval
@@ -2248,7 +2316,7 @@ func (ev *evaluator) smoothSeries(series []storage.Series, offset time.Duration,
 			matrixStart := dataTS - lb
 			matrixEnd := dataTS + lb
 
-			floats, hists, _ = ev.matrixIterSlice(it, matrixStart, matrixEnd, floats, hists, nil, int((evalTS-ev.startTimestamp)/ev.interval))
+			floats, hists, _ = ev.matrixIterSlice(ctx, it, matrixStart, matrixEnd, floats, hists, nil, int((evalTS-ev.startTimestamp)/ev.interval))
 			if len(floats) == 0 && len(hists) == 0 {
 				continue
 			}
@@ -2346,19 +2414,31 @@ func (ev *evaluator) evalSeries(ctx context.Context, series []storage.Series, of
 	var prevSS *Series
 	it := storage.NewMemoizedEmptyIterator(durationMilliseconds(ev.lookbackDelta))
 	var chkIter chunkenc.Iterator
+	var guard *queryIterator
+	if ev.budget != nil {
+		guard = ev.newQueryIterator(ctx, nil)
+	}
 	for _, s := range series {
 		if err := contextDone(ctx, "expression evaluation"); err != nil {
 			ev.error(err)
 		}
 
 		chkIter = s.Iterator(chkIter)
-		it.Reset(chkIter)
+		if guard != nil {
+			guard.Iterator = chkIter
+			it.Reset(guard)
+		} else {
+			it.Reset(chkIter)
+		}
 		ss := Series{
 			Metric: s.Labels(),
 		}
 
 		for ts, step := ev.startTimestamp, -1; ts <= ev.endTimestamp; ts += ev.interval {
 			step++
+			if guard != nil {
+				guard.checkContext()
+			}
 			lookupTS := ts
 			if atTimestamp != nil {
 				lookupTS = *atTimestamp
@@ -2765,7 +2845,7 @@ func (ev *evaluator) eval(ctx context.Context, expr parser.Expr) (parser.Value, 
 			bufferRange += durationMilliseconds(2 * ev.lookbackDelta)
 		}
 
-		it := storage.NewBuffer(bufferRange)
+		it := ev.newMatrixIterator(ctx, bufferRange)
 		var chkIter chunkenc.Iterator
 
 		var startTimestamps *StartTimestamps
@@ -2848,7 +2928,7 @@ func (ev *evaluator) eval(ctx context.Context, expr parser.Expr) (parser.Value, 
 					if matrixFromSubquery {
 						readStep = -1
 					}
-					floats, histograms, startTimestamps = ev.matrixIterSlice(it, mint, maxt, floats, histograms, startTimestamps, readStep)
+					floats, histograms, startTimestamps = ev.matrixIterSlice(ctx, it, mint, maxt, floats, histograms, startTimestamps, readStep)
 				}
 				if len(floats)+len(histograms) == 0 {
 					continue
@@ -3073,7 +3153,7 @@ func (ev *evaluator) eval(ctx context.Context, expr parser.Expr) (parser.Value, 
 			ev.error(errWithWarnings{fmt.Errorf("expanding series: %w", err), ws})
 		}
 		if e.Smoothed {
-			mat, smoothAnnos := ev.smoothSeries(e.Series, e.Offset, e.PositionRange())
+			mat, smoothAnnos := ev.smoothSeries(ctx, e.Series, e.Offset, e.PositionRange())
 			ws.Merge(smoothAnnos)
 			return mat, ws
 		}
@@ -3204,6 +3284,9 @@ func (ev *evaluator) rangeEvalTimestampFunctionOverVectorSelector(ctx context.Co
 	seriesIterators := make([]*storage.MemoizedSeriesIterator, len(vs.Series))
 	for i, s := range vs.Series {
 		it := s.Iterator(nil)
+		if ev.budget != nil {
+			it = ev.newQueryIterator(ctx, it)
+		}
 		seriesIterators[i] = storage.NewMemoizedIterator(it, durationMilliseconds(ev.lookbackDelta)-1)
 	}
 
@@ -3227,6 +3310,11 @@ func (ev *evaluator) rangeEvalTimestampFunctionOverVectorSelector(ctx context.Co
 			sts = slices.Grow(sts, len(vs.Series))[:0]
 		}
 		for i, s := range vs.Series {
+			if ev.budget != nil {
+				if err := contextDone(ctx, env); err != nil {
+					ev.error(err)
+				}
+			}
 			it := seriesIterators[i]
 			st, t, _, _, ok := ev.vectorSelectorSingle(it, vs.Offset, enh.Ts)
 			if !ok {
@@ -3398,7 +3486,7 @@ func (ev *evaluator) matrixSelector(ctx context.Context, node *parser.MatrixSele
 		maxt += durationMilliseconds(ev.lookbackDelta)
 		retrieveStartTimestamps = true
 	}
-	it := storage.NewBuffer(bufferRange)
+	it := ev.newMatrixIterator(ctx, bufferRange)
 	ws, err := ev.checkAndExpandSeriesSet(ctx, node)
 	if err != nil {
 		ev.error(errWithWarnings{fmt.Errorf("expanding series: %w", err), ws})
@@ -3420,7 +3508,7 @@ func (ev *evaluator) matrixSelector(ctx context.Context, node *parser.MatrixSele
 		if ev.useStartTimestamps && retrieveStartTimestamps {
 			startTimestamps = &StartTimestamps{}
 		}
-		ss.Floats, ss.Histograms, startTimestamps = ev.matrixIterSlice(it, mint, maxt, nil, nil, startTimestamps, 0)
+		ss.Floats, ss.Histograms, startTimestamps = ev.matrixIterSlice(ctx, it, mint, maxt, nil, nil, startTimestamps, 0)
 		switch {
 		case vs.Anchored:
 			if ss.Histograms != nil {
@@ -3476,9 +3564,10 @@ func (ev *evaluator) matrixSelector(ctx context.Context, node *parser.MatrixSele
 // A negative value skips charging matrices materialized by a subquery, which
 // already charged its storage reads during evaluation.
 func (ev *evaluator) matrixIterSlice(
-	it *storage.BufferedSeriesIterator, mint, maxt int64,
+	ctx context.Context, it *matrixIterator, mint, maxt int64,
 	floats []FPoint, histograms []HPoint, startTimestamps *StartTimestamps, readStep int,
 ) ([]FPoint, []HPoint, *StartTimestamps) {
+	it.beginFrame(ctx, readStep)
 	mintFloats, mintHistograms := mint, mint
 
 	// First floats...
@@ -3558,7 +3647,7 @@ func (ev *evaluator) matrixIterSlice(
 		return floats, histograms, startTimestamps
 	}
 
-	soughtValueType := it.Seek(maxt)
+	soughtValueType := it.seek(mintFloats, mintHistograms, maxt)
 	if soughtValueType == chunkenc.ValNone {
 		if it.Err() != nil {
 			ev.error(it.Err())
@@ -3568,6 +3657,7 @@ func (ev *evaluator) matrixIterSlice(
 	buf := it.Buffer()
 loop:
 	for {
+		it.checkContext()
 		switch buf.Next() {
 		case chunkenc.ValNone:
 			break loop
@@ -3623,6 +3713,7 @@ loop:
 		}
 	}
 	// The sought sample might also be in the range.
+	it.checkContext()
 	switch soughtValueType {
 	case chunkenc.ValFloatHistogram, chunkenc.ValHistogram:
 		if it.AtT() != maxt {
@@ -3674,6 +3765,7 @@ loop:
 			}
 		}
 	}
+	it.checkContext()
 	ev.samplesStats.UpdatePeak(ev.currentSamples)
 	return floats, histograms, startTimestamps
 }

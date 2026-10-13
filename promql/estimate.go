@@ -16,6 +16,7 @@ package promql
 import (
 	"context"
 	"errors"
+	"fmt"
 	"math"
 	"time"
 
@@ -41,35 +42,32 @@ type CostEstimate struct {
 	SamplesRead int64
 }
 
-// EstimateCost estimates expr over [start,end] without evaluating it.
-// The parser and evaluation options must match the engine that will run expr.
-// A non-positive lookbackDelta or subqueryDefaultStep uses the package default.
+// EstimateCost approximates storage input without evaluating expr. The parser
+// and evaluation options must match the engine; non-positive lookbackDelta and
+// subqueryDefaultStep use package defaults. Range queries require a scalar or vector.
 //
-// Selectors are preprocessed and their storage windows include ranges, offsets,
-// @ modifiers, and subqueries. Series are counted through a shared querier using
-// the "series" hint. This enumerates all matching index entries and is not a
-// constant-cost operation; callers must bound it by a deadline and concurrency.
+// Series enumeration uses the "series" hint over preprocessed selector windows.
+// It scales with cardinality and storage blocks and can retrieve remote sample data.
+// Callers must bound the whole operation, including parsing, by deadline and concurrency.
 //
-// For storage supporting ChunkQueryable, bounded samples measure
-// sample density and histogram size. These access chunk data, including decoding
-// and trimming boundary chunks. The density sampler examines at most
-// chunkSampleLimit chunks, and the point-size sampler at most
-// histogramSampleLimit series per selector. Plain Queryables
-// use scrapeInterval and float-sized points as fallbacks.
+// CostSamplingQueryable sources measure density and point size incrementally,
+// examining at most 50 series and, for density, 50 chunks per selector. Unsupported
+// sources or windows use scrapeInterval and float-sized points with a warning.
 //
-// Range selectors model one full window followed by incremental reads, capped
-// at a window per step when windows do not overlap. Vector selectors model one
-// point per evaluation step, except smoothed selectors, which read a window
-// spanning two lookback deltas. Anchored range selectors extend their window by
-// one lookback delta, and smoothed range selectors by two. Subqueries and
-// step-invariant expressions follow the same nested evaluation grids as the engine.
-//
-// Neither figure is a guaranteed bound. Index entries may lack in-window data,
-// shared selectors count the same series repeatedly, and sampled density and
-// histogram size may not represent all matching series. Implicit selections
-// made by info() are omitted with a warning. Arithmetic saturates at math.MaxInt64.
-func EstimateCost(ctx context.Context, q storage.Queryable, p parser.Parser, expr string, start, end time.Time, step, lookbackDelta, subqueryDefaultStep, scrapeInterval time.Duration) (CostEstimate, annotations.Annotations, error) {
-	var annos annotations.Annotations
+// Estimates follow the engine's nested evaluation grids and incremental window reads.
+// Neither figure is a guaranteed bound. Sampling may not represent all matching data;
+// shared selectors count repeated series, and implicit info() reads are omitted with
+// a warning. Arithmetic saturates at math.MaxInt64. Errors return no partial estimate.
+func EstimateCost(ctx context.Context, q storage.Queryable, p parser.Parser, expr string, start, end time.Time, step, lookbackDelta, subqueryDefaultStep, scrapeInterval time.Duration) (estimate CostEstimate, annos annotations.Annotations, err error) {
+	defer func() {
+		err = costEstimationError(ctx, err)
+		if err != nil {
+			estimate = CostEstimate{}
+		}
+	}()
+	if err := ctx.Err(); err != nil {
+		return CostEstimate{}, annos, err
+	}
 
 	if lookbackDelta <= 0 {
 		lookbackDelta = defaultLookbackDelta
@@ -79,8 +77,14 @@ func EstimateCost(ctx context.Context, q storage.Queryable, p parser.Parser, exp
 	}
 
 	parsed, err := p.ParseExpr(expr)
+	if contextErr := ctx.Err(); contextErr != nil {
+		return CostEstimate{}, annos, errors.Join(contextErr, err)
+	}
 	if err != nil {
 		return CostEstimate{}, annos, err
+	}
+	if step > 0 && parsed.Type() != parser.ValueTypeVector && parsed.Type() != parser.ValueTypeScalar {
+		return CostEstimate{}, annos, fmt.Errorf("invalid expression type %q for range query, must be Scalar or instant Vector", parser.DocumentedType(parsed.Type()))
 	}
 
 	// Run the same preprocessing the engine runs before evaluating, so the
@@ -90,6 +94,9 @@ func EstimateCost(ctx context.Context, q storage.Queryable, p parser.Parser, exp
 	// Without this a range or offset written as an expression is misread, and a
 	// step-invariant selector is charged once per step instead of once.
 	parsed, err = PreprocessExpr(parsed, start, end, step)
+	if contextErr := ctx.Err(); contextErr != nil {
+		return CostEstimate{}, annos, errors.Join(contextErr, err)
+	}
 	if err != nil {
 		return CostEstimate{}, annos, err
 	}
@@ -138,6 +145,9 @@ func EstimateCost(ctx context.Context, q storage.Queryable, p parser.Parser, exp
 	)
 	var incomplete bool
 	parser.Inspect(stmt.Expr, func(node parser.Node, path []parser.Node) error {
+		if err := ctx.Err(); err != nil {
+			return err
+		}
 		switch n := node.(type) {
 		case *parser.Call:
 			if n.Func.Name == "info" {
@@ -182,6 +192,9 @@ func EstimateCost(ctx context.Context, q storage.Queryable, p parser.Parser, exp
 		}
 		return nil
 	})
+	if err := ctx.Err(); err != nil {
+		return CostEstimate{}, annos, err
+	}
 
 	if incomplete {
 		annos.Add(errors.New("query cost estimate is incomplete: info() selects additional series at runtime"))
@@ -206,18 +219,23 @@ func EstimateCost(ctx context.Context, q storage.Queryable, p parser.Parser, exp
 		}
 	}
 
-	// Chunk-capable storage allows bounded density and histogram-size sampling.
-	// The series count itself always uses the plain querier's index-only hint.
-	cq, useChunks := q.(storage.ChunkQueryable)
+	var sampler storage.SampleAndChunkQueryable
+	if provider, ok := q.(storage.CostSamplingQueryable); ok {
+		if source, supported := provider.CostSamplingQueryable(); supported {
+			sampler = source
+		}
+	}
+	if err := ctx.Err(); err != nil {
+		return CostEstimate{}, annos, err
+	}
 
 	// The series count uses Func:"series" so storage can skip chunk decoding.
 	querier, err := q.Querier(unionMint, unionMaxt)
 	if err != nil {
 		return CostEstimate{}, annos, err
 	}
-	defer querier.Close()
+	defer func() { err = errors.Join(err, querier.Close()) }()
 
-	var estimate CostEstimate
 	for _, sel := range selectors {
 		series, sa, err := countSeries(ctx, querier, sel.mint, sel.maxt, sel.matchers)
 		annos = annos.Merge(sa)
@@ -233,32 +251,32 @@ func EstimateCost(ctx context.Context, q storage.Queryable, p parser.Parser, exp
 		effInterval := scrapeInterval
 		avgPointCost := fallbackAvgPointCost
 		var density selectorDensity
-		if useChunks {
+		if sampler != nil && series > 0 {
 			var sia annotations.Annotations
-			density, sia, err = sampleSelectorDensity(ctx, cq, sel.mint, sel.maxt, sel.matchers)
+			density, sia, err = sampleSelectorDensity(ctx, sampler, sel.mint, sel.maxt, sel.matchers)
 			annos = annos.Merge(sia)
-			if err != nil {
+			if err != nil && !samplingUnsupported(err) {
 				return CostEstimate{}, annos, err
 			}
-			if density.intervalMs > 0 {
+			if err == nil {
+				var sca annotations.Annotations
+				avgPointCost, sca, err = sampleAvgPointCost(ctx, sampler, sel.mint, sel.maxt, series, scrapeInterval, sel.skipHistogramBuckets, sel.matchers)
+				annos = annos.Merge(sca)
+				if err != nil && !samplingUnsupported(err) {
+					return CostEstimate{}, annos, err
+				}
+			}
+			if err != nil {
+				// A later opening can see a new unsupported layout. Discard both
+				// measurements rather than keeping a partially sampled estimate.
+				density = selectorDensity{}
+				avgPointCost = fallbackAvgPointCost
+				annos.Add(errCostSamplingFallback)
+			} else if density.intervalMs > 0 {
 				effInterval = time.Duration(density.intervalMs * float64(time.Millisecond))
 			}
-
-			// Measure the average per-point cost of this selector's series so that
-			// native-histogram points, which the engine charges per bucket, are sized
-			// correctly rather than counted as a single float unit each. This decodes
-			// samples, so it only runs where chunk sampling runs at all: against a
-			// plain storage.Queryable the estimator must stay index-only and keeps
-			// the float-sized fallback cost. series (already counted above) tells
-			// sampleAvgPointCost whether the selector's real window is cheap enough
-			// (few enough series) to sample directly instead of a narrow window near
-			// the selector's end.
-			cost, sca, aerr := sampleAvgPointCost(ctx, q, sel.mint, sel.maxt, series, scrapeInterval, sel.skipHistogramBuckets, sel.matchers)
-			annos = annos.Merge(sca)
-			if aerr != nil {
-				return CostEstimate{}, annos, aerr
-			}
-			avgPointCost = cost
+		} else if series > 0 {
+			annos.Add(errCostSamplingFallback)
 		}
 
 		// Estimate samples per series following the engine's incremental reads,
@@ -278,6 +296,20 @@ func EstimateCost(ctx context.Context, q storage.Queryable, p parser.Parser, exp
 	}
 
 	return estimate, annos, nil
+}
+
+var errCostSamplingFallback = errors.New("query cost estimate uses the configured scrape interval and float-sized points because bounded storage sampling is unavailable")
+
+func costEstimationError(ctx context.Context, err error) error {
+	if contextErr := ctx.Err(); contextErr != nil && !errors.Is(err, contextErr) {
+		return errors.Join(contextErr, err)
+	}
+	return err
+}
+
+func samplingUnsupported(err error) bool {
+	return errors.Is(err, storage.ErrCostSamplingUnsupported) &&
+		!errors.Is(err, context.Canceled) && !errors.Is(err, context.DeadlineExceeded)
 }
 
 // mulSaturatingInt64 multiplies two non-negative int64 values, saturating at
@@ -368,29 +400,19 @@ func fallbackSampleWindow(endMs int64, scrapeInterval time.Duration) (mint, maxt
 // when chunks contain only one sample or the budget ends partway through a series.
 const chunkSampleLimit = 50
 
-// sampleAvgPointCost measures the average per-point cost, in the engine's
-// sample-unit accounting, of the series matching matchers. When the selector's
-// real series count (series, already counted by the caller) is small enough to
-// fit within histogramSampleLimit, it opens a querier over the selector's real
-// window [mint,maxt] and decodes the first in-window point of every one of its
-// series, so the measurement reflects the actual data the query would touch.
-// Otherwise (series exceeds the limit) it falls back to sampling a narrow window
-// ending at the selector's maxt (see fallbackSampleWindow): at most
-// histogramSampleLimit series are decoded regardless of which window is used.
-// Because it decodes samples, callers must only invoke it where chunk sampling is
-// allowed to run at all, i.e. when the storage exposes a storage.ChunkQueryable;
-// against a plain storage.Queryable the estimator stays index-only and uses
-// fallbackAvgPointCost. It selects WITHOUT the
-// "series" hint (which would return label-only series with no samples).
-// Bucket decoding follows the engine's SkipHistogramBuckets optimization. A float
-// point costs one unit; a native-histogram point costs
-// (FloatHistogram.Size()+8)/16 units, mirroring HPoint.size().
-//
-// It returns the mean per-point cost over the sampled points. When no points are
-// sampled (e.g. the sampled window holds nothing) it returns fallbackAvgPointCost
-// so the estimate degrades to treating points as floats. Select
-// warnings are merged into annos and the context deadline is honoured.
+// Density sampling must also bound series whose iterators contain no chunks.
+const densitySeriesSampleLimit = 50
+
+// sampleAvgPointCost sizes the first usable point of at most histogramSampleLimit
+// series through an approved sampling source. Small populations use the selector's
+// real window; larger populations use a narrow window near its end.
+// Bucket decoding honors skipHistogramBuckets and sizing matches HPoint.size().
+// Missing usable points return fallbackAvgPointCost; failures remain errors.
 func sampleAvgPointCost(ctx context.Context, q storage.Queryable, mint, maxt, series int64, scrapeInterval time.Duration, skipHistogramBuckets bool, matchers []*labels.Matcher) (avgPointCost float64, annos annotations.Annotations, err error) {
+	defer func() { err = costEstimationError(ctx, err) }()
+	if err := ctx.Err(); err != nil {
+		return fallbackAvgPointCost, annos, err
+	}
 	qMint, qMaxt := mint, maxt
 	if series <= 0 || series > histogramSampleLimit {
 		// Too many series (or the count is not yet known) to sample the real window
@@ -405,7 +427,10 @@ func sampleAvgPointCost(ctx context.Context, q storage.Queryable, mint, maxt, se
 	if err != nil {
 		return fallbackAvgPointCost, annos, err
 	}
-	defer querier.Close()
+	defer func() { err = errors.Join(err, querier.Close()) }()
+	if err := ctx.Err(); err != nil {
+		return fallbackAvgPointCost, annos, err
+	}
 
 	// Select WITHOUT Func:"series": the estimator's main querier asks for
 	// label-only series, but here we must decode actual samples to size points.
@@ -417,12 +442,9 @@ func sampleAvgPointCost(ctx context.Context, q storage.Queryable, mint, maxt, se
 		n       int
 		sampled int
 	)
-	for set.Next() {
+	for sampled < histogramSampleLimit && set.Next() {
 		if err := ctx.Err(); err != nil {
 			return fallbackAvgPointCost, annos, err
-		}
-		if sampled >= histogramSampleLimit {
-			break
 		}
 		sampled++
 
@@ -503,23 +525,32 @@ type selectorDensity struct {
 // still provide a measurement. No additional chunk is read to check whether a
 // series that exhausts the budget is complete.
 func sampleSelectorDensity(ctx context.Context, cq storage.ChunkQueryable, mint, maxt int64, matchers []*labels.Matcher) (density selectorDensity, annos annotations.Annotations, err error) {
+	defer func() { err = costEstimationError(ctx, err) }()
+	if err := ctx.Err(); err != nil {
+		return density, annos, err
+	}
 	querier, err := cq.ChunkQuerier(mint, maxt)
 	if err != nil {
 		return density, annos, err
 	}
-	defer querier.Close()
+	defer func() { err = errors.Join(err, querier.Close()) }()
+	if err := ctx.Err(); err != nil {
+		return density, annos, err
+	}
 
 	set := querier.Select(ctx, false, &storage.SelectHints{Start: mint, End: maxt}, matchers...)
 	var (
 		totalSpanMs float64
 		totalGaps   int64
 		read        int
+		seriesRead  int
 		it          chunks.Iterator
 	)
-	for read < chunkSampleLimit && set.Next() {
+	for read < chunkSampleLimit && seriesRead < densitySeriesSampleLimit && set.Next() {
 		if err := ctx.Err(); err != nil {
 			return density, set.Warnings(), err
 		}
+		seriesRead++
 		var (
 			points  int64
 			lastMax int64
@@ -565,20 +596,15 @@ func sampleSelectorDensity(ctx context.Context, cq storage.ChunkQueryable, mint,
 	return density, annos, nil
 }
 
-// countSeries counts the series matching matchers over [mint,maxt] without
-// iterating their samples, using the supplied querier. The querier is opened by
-// the caller over the union of every selector's window and reused for each
-// selector, mirroring the engine; the per-selector window is applied through
-// the SelectHints. It uses the portable storage.Querier Select path rather than
-// reading postings directly, so it works against any storage.Queryable. The
-// returned count reflects the storage index and may over-count: see EstimateCost
-// for the accuracy limitations.
-//
-// The count is not capped: stopping early would silently truncate the estimate. Only context cancellation aborts the walk, and it does
-// so with an error rather than a partial count.
+// countSeries enumerates matching series through the shared querier using the
+// "series" hint. Backends may still retrieve sample data to enumerate their series.
+// Enumeration is not capped; cancellation returns an error rather than a partial count.
 func countSeries(ctx context.Context, querier storage.Querier, mint, maxt int64, matchers []*labels.Matcher) (count int64, annos annotations.Annotations, err error) {
-	// Func "series" lets the storage know we only need the series labels and not
-	// their samples, which keeps the count cheap.
+	defer func() { err = costEstimationError(ctx, err) }()
+	if err := ctx.Err(); err != nil {
+		return 0, annos, err
+	}
+	// Func "series" lets supporting storage skip sample retrieval.
 	hints := &storage.SelectHints{
 		Start: mint,
 		End:   maxt,
