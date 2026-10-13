@@ -152,22 +152,22 @@ func (h *writeHandler) write(ctx context.Context, req *prompb.WriteRequest) (err
 	samplesAppended := 0
 
 	appV2 := h.appendableV2.AppenderV2(ctx)
+	defer func() {
+		if err != nil {
+			_ = appV2.Rollback()
+			return
+		}
+		err = appV2.Commit()
+		if err != nil {
+			h.samplesAppendedWithoutMetadata.Add(float64(samplesAppended))
+		}
+	}()
+
 	exemplarApp, ok := appV2.(storage.ExemplarAppenderV2)
 	if !ok {
 		return fmt.Errorf("remote write 1.0 receiver requires a storage.ExemplarAppenderV2, got %T", appV2)
 	}
 	app := newTimeLimitExemplarAppenderV2(exemplarApp, timestamp.FromTime(time.Now().Add(maxAheadTime)))
-
-	defer func() {
-		if err != nil {
-			_ = app.Rollback()
-			return
-		}
-		err = app.Commit()
-		if err != nil {
-			h.samplesAppendedWithoutMetadata.Add(float64(samplesAppended))
-		}
-	}()
 
 	b := labels.NewScratchBuilder(0)
 	exemplars := make([]exemplar.Exemplar, 0, 1)
@@ -279,6 +279,7 @@ func (h *writeHandler) writeV2(ctx context.Context, req *writev2.Request) (_ rem
 	appV2 := h.appendableV2.AppenderV2(ctx)
 	exemplarApp, ok := appV2.(storage.ExemplarAppenderV2)
 	if !ok {
+		_ = appV2.Rollback()
 		return remoteapi.WriteResponseStats{}, http.StatusInternalServerError, fmt.Errorf("remote write 2.x receiver requires a storage.ExemplarAppenderV2, got %T", appV2)
 	}
 	app := newTimeLimitExemplarAppenderV2(exemplarApp, timestamp.FromTime(time.Now().Add(maxAheadTime)))

@@ -1869,10 +1869,22 @@ func TestRemoteWriteHandler_ResponseStats(t *testing.T) {
 	}
 }
 
-type mockAppendableV2Only struct{}
+type mockAppendableV2Only struct {
+	app *mockAppenderV2Only
+}
 
-func (mockAppendableV2Only) AppenderV2(context.Context) storage.AppenderV2 {
-	return struct{ storage.AppenderV2 }{}
+type mockAppenderV2Only struct {
+	storage.AppenderV2
+	rolledBack bool
+}
+
+func (a *mockAppenderV2Only) Rollback() error {
+	a.rolledBack = true
+	return nil
+}
+
+func (m mockAppendableV2Only) AppenderV2(context.Context) storage.AppenderV2 {
+	return m.app
 }
 
 func TestRemoteWriteHandler_RequiresExemplarAppenderV2(t *testing.T) {
@@ -1890,10 +1902,11 @@ func TestRemoteWriteHandler_RequiresExemplarAppenderV2(t *testing.T) {
 		{name: "v2", msgType: remoteapi.WriteV2MessageType, payload: payloadV2},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
+			app := &mockAppenderV2Only{}
 			handler := NewWriteHandler(
 				promslog.NewNopLogger(),
 				nil,
-				mockAppendableV2Only{},
+				mockAppendableV2Only{app: app},
 				[]remoteapi.WriteMessageType{tc.msgType},
 				false,
 				false,
@@ -1914,6 +1927,7 @@ func TestRemoteWriteHandler_RequiresExemplarAppenderV2(t *testing.T) {
 
 			require.Equal(t, http.StatusInternalServerError, resp.StatusCode)
 			require.Contains(t, string(body), "requires a storage.ExemplarAppenderV2")
+			require.True(t, app.rolledBack)
 		})
 	}
 }
@@ -2136,31 +2150,68 @@ func TestRemoteWriteHandler_V2ExemplarOrderingAndRejectedSeries(t *testing.T) {
 	})
 }
 
-func TestTimeLimitExemplarAppenderV2_AppendExemplarsDoesNotMutateCallerSlice(t *testing.T) {
-	appendable := &mockAppendable{}
-	baseApp := appendable.AppenderV2(t.Context()).(storage.ExemplarAppenderV2)
-	app := newTimeLimitExemplarAppenderV2(baseApp, 1000)
-
+func TestTimeLimitAppenderV2_LimitExemplars(t *testing.T) {
 	lbls := labels.FromStrings("__name__", "test_metric")
-	ref, err := app.Append(0, lbls, 0, 500, 1.0, nil, nil, storage.AOptions{})
-	require.NoError(t, err)
 
-	input := []exemplar.Exemplar{
-		{Labels: labels.FromStrings("id", "1"), Value: 1, Ts: 2000}, // future (> maxTime)
-		{Labels: labels.FromStrings("id", "2"), Value: 2, Ts: 900},  // valid (<= maxTime)
-	}
-	origFirstID := input[0].Labels.Get("id")
-	origSecondID := input[1].Labels.Get("id")
+	t.Run("Append with inlined exemplars", func(t *testing.T) {
+		appendable := &mockAppendable{
+			latestExemplar: map[uint64]int64{lbls.Hash(): 500},
+		}
+		app := &timeLimitAppenderV2{
+			AppenderV2: appendable.AppenderV2(t.Context()),
+			maxTime:    1000,
+		}
 
-	_, err = app.AppendExemplars(ref, lbls, input)
-	var pErr *storage.AppendPartialError
-	require.ErrorAs(t, err, &pErr)
-	require.Len(t, pErr.ExemplarErrors, 1)
-	require.ErrorIs(t, pErr.ExemplarErrors[0], storage.ErrOutOfBounds)
+		input := []exemplar.Exemplar{
+			{Labels: labels.FromStrings("id", "1"), Value: 1, Ts: 2000}, // future (> maxTime)
+			{Labels: labels.FromStrings("id", "2"), Value: 2, Ts: 400},  // out of order (< 500)
+			{Labels: labels.FromStrings("id", "3"), Value: 3, Ts: 900},  // valid (<= maxTime)
+		}
+		origFirstID := input[0].Labels.Get("id")
+		origSecondID := input[1].Labels.Get("id")
+		origThirdID := input[2].Labels.Get("id")
 
-	// Caller's input slice must not be mutated in place.
-	require.Equal(t, origFirstID, input[0].Labels.Get("id"))
-	require.Equal(t, origSecondID, input[1].Labels.Get("id"))
-	require.Len(t, appendable.exemplars, 1)
-	require.Equal(t, int64(900), appendable.exemplars[0].t)
+		_, err := app.Append(0, lbls, 0, 500, 1.0, nil, nil, storage.AOptions{Exemplars: input})
+		var pErr *storage.AppendPartialError
+		require.ErrorAs(t, err, &pErr)
+		require.Len(t, pErr.ExemplarErrors, 2)
+		require.ErrorIs(t, pErr.ExemplarErrors[0], storage.ErrOutOfBounds)
+		require.ErrorIs(t, pErr.ExemplarErrors[1], storage.ErrOutOfOrderExemplar)
+
+		// Caller's input slice must not be mutated in place.
+		require.Equal(t, origFirstID, input[0].Labels.Get("id"))
+		require.Equal(t, origSecondID, input[1].Labels.Get("id"))
+		require.Equal(t, origThirdID, input[2].Labels.Get("id"))
+		require.Len(t, appendable.samples, 1)
+		require.Len(t, appendable.exemplars, 1)
+		require.Equal(t, int64(900), appendable.exemplars[0].t)
+	})
+
+	t.Run("AppendExemplars", func(t *testing.T) {
+		appendable := &mockAppendable{}
+		baseApp := appendable.AppenderV2(t.Context()).(storage.ExemplarAppenderV2)
+		app := newTimeLimitExemplarAppenderV2(baseApp, 1000)
+
+		ref, err := app.Append(0, lbls, 0, 500, 1.0, nil, nil, storage.AOptions{})
+		require.NoError(t, err)
+
+		input := []exemplar.Exemplar{
+			{Labels: labels.FromStrings("id", "1"), Value: 1, Ts: 2000}, // future (> maxTime)
+			{Labels: labels.FromStrings("id", "2"), Value: 2, Ts: 900},  // valid (<= maxTime)
+		}
+		origFirstID := input[0].Labels.Get("id")
+		origSecondID := input[1].Labels.Get("id")
+
+		_, err = app.AppendExemplars(ref, lbls, input)
+		var pErr *storage.AppendPartialError
+		require.ErrorAs(t, err, &pErr)
+		require.Len(t, pErr.ExemplarErrors, 1)
+		require.ErrorIs(t, pErr.ExemplarErrors[0], storage.ErrOutOfBounds)
+
+		// Caller's input slice must not be mutated in place.
+		require.Equal(t, origFirstID, input[0].Labels.Get("id"))
+		require.Equal(t, origSecondID, input[1].Labels.Get("id"))
+		require.Len(t, appendable.exemplars, 1)
+		require.Equal(t, int64(900), appendable.exemplars[0].t)
+	})
 }
