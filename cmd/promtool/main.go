@@ -26,6 +26,7 @@ import (
 	"net/url"
 	"os"
 	"path/filepath"
+	"slices"
 	"sort"
 	"strconv"
 	"strings"
@@ -126,8 +127,8 @@ func main() {
 	checkConfigCmd := checkCmd.Command("config", "Check if the config files are valid or not.")
 	configFiles := checkConfigCmd.Arg(
 		"config-files",
-		"The config files to check.",
-	).Required().ExistingFiles()
+		"The config files to check. Use '-' to read from standard input once; relative paths in a config read from standard input are resolved against the working directory.",
+	).Required().Strings()
 	checkConfigSyntaxOnly := checkConfigCmd.Flag("syntax-only", "Only check the config file syntax, ignoring file and content validation referenced in the config").Bool()
 	checkConfigLint := checkConfigCmd.Flag(
 		"lint",
@@ -156,8 +157,8 @@ func main() {
 	checkRulesCmd := checkCmd.Command("rules", "Check if the rule files are valid or not.")
 	ruleFiles := checkRulesCmd.Arg(
 		"rule-files",
-		"The rule files to check, default is read from standard input.",
-	).ExistingFiles()
+		"The rule files to check. If none are given, or for '-', the rules are read from standard input (at most once).",
+	).Strings()
 	checkRulesLint := checkRulesCmd.Flag(
 		"lint",
 		"Linting checks to apply. Available options are: "+strings.Join(lintRulesOptions, ", ")+". Use --lint=none to disable linting",
@@ -380,7 +381,7 @@ func main() {
 		os.Exit(CheckSD(*sdConfigFile, *sdJobName, *sdTimeout, prometheus.DefaultRegisterer))
 
 	case checkConfigCmd.FullCommand():
-		os.Exit(CheckConfig(*agentMode, *checkConfigSyntaxOnly, newConfigLintConfig(*checkConfigLint, *checkConfigLintFatal, *checkConfigIgnoreUnknownFields, model.UTF8Validation, model.Duration(*checkLookbackDelta)), promtoolParser, *configFiles...))
+		os.Exit(CheckConfig(*agentMode, *checkConfigSyntaxOnly, newConfigLintConfig(*checkConfigLint, *checkConfigLintFatal, *checkConfigIgnoreUnknownFields, model.UTF8Validation, model.Duration(*checkLookbackDelta)), promtoolParser, normalizeStdinArgs(*configFiles)...))
 
 	case checkServerHealthCmd.FullCommand():
 		os.Exit(checkErr(CheckServerStatus(serverURL, checkHealth, httpRoundTripper)))
@@ -392,7 +393,7 @@ func main() {
 		os.Exit(CheckWebConfig(*webConfigFiles...))
 
 	case checkRulesCmd.FullCommand():
-		os.Exit(CheckRules(newRulesLintConfig(*checkRulesLint, *checkRulesLintFatal, *checkRulesIgnoreUnknownFields, model.UTF8Validation), promtoolParser, *ruleFiles...))
+		os.Exit(CheckRules(newRulesLintConfig(*checkRulesLint, *checkRulesLintFatal, *checkRulesIgnoreUnknownFields, model.UTF8Validation), promtoolParser, normalizeStdinArgs(*ruleFiles)...))
 
 	case checkMetricsCmd.FullCommand():
 		os.Exit(CheckMetrics(*checkMetricsExtended, *checkMetricsLint))
@@ -608,8 +609,35 @@ func CheckServerStatus(serverURL *url.URL, checkEndpoint string, roundTripper ht
 	return nil
 }
 
-// CheckConfig validates configuration files.
+// normalizeStdinArgs maps empty positional values to "-". Kingpin returns an
+// empty value for a bare "-" argument, so this restores the stdin marker. As a
+// side effect an explicit empty argument ("") also means standard input.
+func normalizeStdinArgs(args []string) []string {
+	for i, a := range args {
+		if a == "" {
+			args[i] = "-"
+		}
+	}
+	return args
+}
+
+// repeatedStdin reports (and prints an error) if "-" is given more than once,
+// as standard input can only be read once.
+func repeatedStdin(files []string) bool {
+	first := slices.Index(files, "-")
+	if first >= 0 && slices.Contains(files[first+1:], "-") {
+		fmt.Fprintln(os.Stderr, "  FAILED: standard input ('-') can only be specified once")
+		return true
+	}
+	return false
+}
+
+// CheckConfig validates configuration files. A file named "-" is read from
+// standard input; it may be given at most once.
 func CheckConfig(agentMode, checkSyntaxOnly bool, lintSettings configLintConfig, p parser.Parser, files ...string) int {
+	if repeatedStdin(files) {
+		return failureExitCode
+	}
 	failed := false
 	hasErrors := false
 
@@ -623,7 +651,11 @@ func CheckConfig(agentMode, checkSyntaxOnly bool, lintSettings configLintConfig,
 			if len(ruleFiles) > 0 {
 				fmt.Printf("  SUCCESS: %d rule files found\n", len(ruleFiles))
 			}
-			fmt.Printf(" SUCCESS: %s is valid prometheus config file syntax\n", f)
+			name := f
+			if f == "-" {
+				name = "standard input"
+			}
+			fmt.Printf(" SUCCESS: %s is valid prometheus config file syntax\n", name)
 		}
 		fmt.Println()
 
@@ -672,9 +704,17 @@ func checkFileExists(fn string) error {
 }
 
 func checkConfig(agentMode bool, filename string, checkSyntaxOnly bool) ([]string, []*config.ScrapeConfig, error) {
-	fmt.Println("Checking", filename)
-
-	cfg, err := config.LoadFile(filename, agentMode, logger)
+	var (
+		cfg *config.Config
+		err error
+	)
+	if filename == "-" {
+		fmt.Println("Checking standard input")
+		cfg, err = config.LoadReader(os.Stdin, "standard input", agentMode, logger)
+	} else {
+		fmt.Println("Checking", filename)
+		cfg, err = config.LoadFile(filename, agentMode, logger)
+	}
 	if err != nil {
 		return nil, nil, err
 	}
@@ -856,15 +896,24 @@ func checkSDFile(filename string) ([]*targetgroup.Group, error) {
 	return targetGroups, nil
 }
 
-// CheckRules validates rule files.
+// CheckRules validates rule files. Rules are read from standard input if no
+// files are given or for a file named "-"; "-" may be given at most once.
 func CheckRules(ls rulesLintConfig, p parser.Parser, files ...string) int {
-	failed := false
-	hasErrors := false
-	if len(files) == 0 {
-		failed, hasErrors = checkRulesFromStdin(ls, p, logger)
-	} else {
-		failed, hasErrors = checkRules(files, ls, p, logger)
+	if repeatedStdin(files) {
+		return failureExitCode
 	}
+	if len(files) == 0 {
+		files = []string{"-"}
+	}
+	// Rule files from a config can never be named "", so use it internally to
+	// tell standard input apart from a file that is literally named "-".
+	files = slices.Clone(files)
+	for i, f := range files {
+		if f == "-" {
+			files[i] = ""
+		}
+	}
+	failed, hasErrors := checkRules(files, ls, p, logger)
 
 	if failed && hasErrors {
 		return failureExitCode
@@ -876,51 +925,37 @@ func CheckRules(ls rulesLintConfig, p parser.Parser, files ...string) int {
 	return successExitCode
 }
 
-// checkRulesFromStdin validates rule from stdin.
-func checkRulesFromStdin(ls rulesLintConfig, p parser.Parser, logger *slog.Logger) (bool, bool) {
-	failed := false
-	hasErrors := false
-	fmt.Println("Checking standard input")
-	data, err := io.ReadAll(os.Stdin)
-	if err != nil {
-		fmt.Fprintln(os.Stderr, "  FAILED:", err)
-		return true, true
-	}
-	rgs, errs := rulefmt.Parse(data, ls.ignoreUnknownFields, ls.nameValidationScheme, p, logger)
-	if errs != nil {
-		failed = true
-		fmt.Fprintln(os.Stderr, "  FAILED:")
-		for _, e := range errs {
-			fmt.Fprintln(os.Stderr, e.Error())
-			hasErrors = hasErrors || !errors.Is(e, errLint)
-		}
-		if hasErrors {
-			return failed, hasErrors
-		}
-	}
-	if n, errs := checkRuleGroups(rgs, ls); errs != nil {
-		fmt.Fprintln(os.Stderr, "  FAILED:")
-		for _, e := range errs {
-			fmt.Fprintln(os.Stderr, e.Error())
-		}
-		failed = true
-		for _, err := range errs {
-			hasErrors = hasErrors || !errors.Is(err, errLint)
-		}
-	} else {
-		fmt.Printf("  SUCCESS: %d rules found\n", n)
-	}
-	fmt.Println()
-	return failed, hasErrors
-}
-
-// checkRules validates rule files.
+// checkRules validates rule files. An empty file name means standard input.
 func checkRules(files []string, ls rulesLintConfig, p parser.Parser, logger *slog.Logger) (bool, bool) {
 	failed := false
 	hasErrors := false
 	for _, f := range files {
-		fmt.Println("Checking", f)
-		rgs, errs := rulefmt.ParseFile(f, ls.ignoreUnknownFields, ls.nameValidationScheme, p, logger)
+		var (
+			rgs  *rulefmt.RuleGroups
+			errs []error
+		)
+		switch f {
+		case "":
+			fmt.Println("Checking standard input")
+			data, err := io.ReadAll(os.Stdin)
+			if err != nil {
+				fmt.Fprintln(os.Stderr, "  FAILED:", err)
+				failed = true
+				hasErrors = true
+				continue
+			}
+			rgs, errs = rulefmt.Parse(data, ls.ignoreUnknownFields, ls.nameValidationScheme, p, logger)
+		default:
+			fmt.Println("Checking", f)
+			// Check existence first as ParseFile would repeat the file name in its error.
+			if err := checkFileExists(f); err != nil {
+				fmt.Fprintln(os.Stderr, "  FAILED:", err)
+				failed = true
+				hasErrors = true
+				continue
+			}
+			rgs, errs = rulefmt.ParseFile(f, ls.ignoreUnknownFields, ls.nameValidationScheme, p, logger)
+		}
 		if errs != nil {
 			failed = true
 			fmt.Fprintln(os.Stderr, "  FAILED:")
