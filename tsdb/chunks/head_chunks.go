@@ -439,7 +439,7 @@ func repairLastChunkFile(files map[int]string) (_ map[int]string, returnErr erro
 	buf := make([]byte, MagicChunksSize)
 	size, err := f.Read(buf)
 	if err != nil && !errors.Is(err, io.EOF) {
-		return files, fmt.Errorf("failed to read magic number during last head chunk file repair: %w", err)
+		return files, fmt.Errorf("failed to read magic number during last head chunk file repair: %w", errors.Join(err, f.Close()))
 	}
 	if err := f.Close(); err != nil {
 		return files, fmt.Errorf("close file during last head chunk file repair: %w", err)
