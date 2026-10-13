@@ -33,6 +33,7 @@ import (
 	"go.uber.org/atomic"
 
 	"github.com/prometheus/prometheus/tsdb/chunkenc"
+	"github.com/prometheus/prometheus/tsdb/encoding"
 	"github.com/prometheus/prometheus/tsdb/fileutil"
 )
 
@@ -235,6 +236,7 @@ type ChunkDiskMapper struct {
 // mmappedChunkFile provides mmap access to an entire head chunks file that holds many chunks.
 type mmappedChunkFile struct {
 	byteSlice ByteSlice
+	view      encoding.ByteView
 	maxt      int64 // Max timestamp among all of this file's chunks.
 }
 
@@ -335,7 +337,13 @@ func (cdm *ChunkDiskMapper) openMMapFiles() (returnErr error) {
 			return fmt.Errorf("mmap files, file: %s: %w", fn, err)
 		}
 		cdm.closers[seq] = f
-		cdm.mmappedChunkFiles[seq] = &mmappedChunkFile{byteSlice: realByteSlice(f.Bytes())}
+		view := f.BytesView()
+		var bs realByteSlice
+		_ = view.WithBytes(func(b []byte) error {
+			bs = realByteSlice(b)
+			return nil
+		})
+		cdm.mmappedChunkFiles[seq] = &mmappedChunkFile{byteSlice: bs, view: view}
 		chkFileIndices = append(chkFileIndices, seq)
 	}
 
@@ -519,9 +527,10 @@ func (cdm *ChunkDiskMapper) writeChunk(seriesRef HeadSeriesRef, mint, maxt int64
 		}
 	}
 
-	// if len(chk.Bytes())+MaxHeadChunkMetaSize >= writeBufferSize, it means that chunk >= the buffer size;
+	chkLen := len(chk.Bytes())
+	// If chkLen+MaxHeadChunkMetaSize >= writeBufferSize, the chunk is at least as large as the buffer;
 	// so no need to flush here, as we have to flush at the end (to not keep partial chunks in buffer).
-	if len(chk.Bytes())+MaxHeadChunkMetaSize < cdm.writeBufferSize && cdm.chkWriter.Available() < MaxHeadChunkMetaSize+len(chk.Bytes()) {
+	if chkLen+MaxHeadChunkMetaSize < cdm.writeBufferSize && cdm.chkWriter.Available() < MaxHeadChunkMetaSize+chkLen {
 		if err := cdm.flushBuffer(); err != nil {
 			return err
 		}
@@ -542,7 +551,7 @@ func (cdm *ChunkDiskMapper) writeChunk(seriesRef HeadSeriesRef, mint, maxt int64
 	}
 	cdm.byteBuf[bytesWritten] = byte(enc)
 	bytesWritten += ChunkEncodingSize
-	n := binary.PutUvarint(cdm.byteBuf[bytesWritten:], uint64(len(chk.Bytes())))
+	n := binary.PutUvarint(cdm.byteBuf[bytesWritten:], uint64(chkLen))
 	bytesWritten += n
 
 	if err := cdm.writeAndAppendToCRC32(cdm.byteBuf[:bytesWritten]); err != nil {
@@ -561,7 +570,7 @@ func (cdm *ChunkDiskMapper) writeChunk(seriesRef HeadSeriesRef, mint, maxt int64
 
 	cdm.chunkBuffer.put(ref, chk)
 
-	if len(chk.Bytes())+MaxHeadChunkMetaSize >= cdm.writeBufferSize {
+	if chkLen+MaxHeadChunkMetaSize >= cdm.writeBufferSize {
 		// The chunk was bigger than the buffer itself.
 		// Flushing to not keep partial chunks in buffer.
 		if err := cdm.flushBuffer(); err != nil {
@@ -648,7 +657,13 @@ func (cdm *ChunkDiskMapper) cut() (seq, offset int, returnErr error) {
 	}
 
 	cdm.closers[cdm.curFileSequence] = mmapFile
-	cdm.mmappedChunkFiles[cdm.curFileSequence] = &mmappedChunkFile{byteSlice: realByteSlice(mmapFile.Bytes())}
+	view := mmapFile.BytesView()
+	var bs realByteSlice
+	_ = view.WithBytes(func(b []byte) error {
+		bs = realByteSlice(b)
+		return nil
+	})
+	cdm.mmappedChunkFiles[cdm.curFileSequence] = &mmappedChunkFile{byteSlice: bs, view: view}
 	cdm.readPathMtx.Unlock()
 
 	cdm.curFileMaxt = 0

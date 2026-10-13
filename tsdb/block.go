@@ -57,11 +57,13 @@ type IndexWriter interface {
 	Close() error
 }
 
-// IndexReader provides reading access of serialized index data.
+// IndexReader provides reading access of serialized index data. Returned
+// strings and iterators may borrow index data. Keep the reader reachable and
+// open through their final use; defer Close or use runtime.KeepAlive as needed.
 type IndexReader interface {
 	// Symbols return an iterator over sorted string symbols that may occur in
-	// series' labels and indices. It is not safe to use the returned strings
-	// beyond the lifetime of the index reader.
+	// series' labels and indices. Keep the reader reachable and open through the
+	// final use of the returned strings.
 	Symbols() index.StringIter
 
 	// SortedLabelValues returns sorted possible label values.
@@ -77,6 +79,7 @@ type IndexReader interface {
 	Postings(ctx context.Context, name string, values ...string) (index.Postings, error)
 
 	// PostingsForLabelMatching returns a sorted iterator over postings having a label with the given name and a value for which match returns true.
+	// The value passed to match is borrowed and must not be retained.
 	// If no postings are found having at least one matching label, an empty iterator is returned.
 	PostingsForLabelMatching(ctx context.Context, name string, match func(value string) bool) index.Postings
 
@@ -122,7 +125,9 @@ type ChunkWriter interface {
 	Close() error
 }
 
-// ChunkReader provides reading access of serialized time series data.
+// ChunkReader provides reading access of serialized time series data. Returned
+// chunks and iterables may borrow chunk data. Keep the reader reachable and
+// open through their final use; defer Close or use runtime.KeepAlive as needed.
 type ChunkReader interface {
 	// ChunkOrIterable returns the series data for the given chunks.Meta.
 	// Either a single chunk will be returned, or an iterable.

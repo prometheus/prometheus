@@ -848,7 +848,10 @@ func checkErr(err error) int {
 }
 
 func backfillOpenMetrics(path, outputDir string, humanReadable, quiet bool, maxBlockDuration time.Duration, customLabels map[string]string) int {
-	var buf []byte
+	var (
+		buf       []byte
+		inputFile *fileutil.MmapFile
+	)
 	info, err := os.Stat(path)
 	if err != nil {
 		return checkErr(err)
@@ -860,18 +863,23 @@ func backfillOpenMetrics(path, outputDir string, humanReadable, quiet bool, maxB
 			return checkErr(err)
 		}
 	} else {
-		inputFile, err := fileutil.OpenMmapFile(path)
+		inputFile, err = fileutil.OpenMmapFile(path)
 		if err != nil {
 			return checkErr(err)
 		}
 		defer inputFile.Close()
-		buf = inputFile.Bytes()
 	}
 
 	if err := os.MkdirAll(outputDir, 0o777); err != nil {
 		return checkErr(fmt.Errorf("create output dir: %w", err))
 	}
 
+	if inputFile != nil {
+		view := inputFile.BytesView()
+		return checkErr(view.WithBytes(func(b []byte) error {
+			return backfill(5000, b, outputDir, humanReadable, quiet, maxBlockDuration, customLabels)
+		}))
+	}
 	return checkErr(backfill(5000, buf, outputDir, humanReadable, quiet, maxBlockDuration, customLabels))
 }
 
