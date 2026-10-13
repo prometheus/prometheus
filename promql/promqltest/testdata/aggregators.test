@@ -965,3 +965,68 @@ eval instant at 0m stddev(series)
 
 eval instant at 0m stdvar(series)
 	{} NaN
+
+clear
+
+# Tests for count_values on float-only input.
+load 5m
+  data{job="a", instance="0"} 1
+  data{job="a", instance="1"} 1
+  data{job="a", instance="2"} 1.5
+  data{job="b", instance="0"} 0
+  data{job="b", instance="1"} -0
+  data{job="b", instance="2"} NaN
+  data{job="b", instance="3"} NaN
+  data{job="c", instance="0"} Inf
+  data{job="c", instance="1"} -Inf
+  data{job="c", instance="2"} 1e10
+  data{job="c", instance="3"} 1e-3
+  data{job="c", instance="4"} 1.5
+
+# Values are formatted with strconv.FormatFloat(v, 'f', -1, 64):
+# no exponent, shortest representation, NaN and Inf spelled out.
+# 0 and -0 are distinct values and count separately.
+eval instant at 0m count_values("value", data)
+  {value="1"} 2
+  {value="1.5"} 2
+  {value="0"} 1
+  {value="-0"} 1
+  {value="NaN"} 2
+  {value="+Inf"} 1
+  {value="-Inf"} 1
+  {value="10000000000"} 1
+  {value="0.001"} 1
+
+eval instant at 0m count_values by (job) ("value", data)
+  {job="a", value="1"} 2
+  {job="a", value="1.5"} 1
+  {job="b", value="0"} 1
+  {job="b", value="-0"} 1
+  {job="b", value="NaN"} 2
+  {job="c", value="+Inf"} 1
+  {job="c", value="-Inf"} 1
+  {job="c", value="10000000000"} 1
+  {job="c", value="0.001"} 1
+  {job="c", value="1.5"} 1
+
+eval instant at 0m count_values without (instance) ("value", data)
+  {job="a", value="1"} 2
+  {job="a", value="1.5"} 1
+  {job="b", value="0"} 1
+  {job="b", value="-0"} 1
+  {job="b", value="NaN"} 2
+  {job="c", value="+Inf"} 1
+  {job="c", value="-Inf"} 1
+  {job="c", value="10000000000"} 1
+  {job="c", value="0.001"} 1
+  {job="c", value="1.5"} 1
+
+# Range query: the count follows the values at each step.
+clear
+load 5m
+  data{instance="0"} 1 1 2
+  data{instance="1"} 1 2 2
+
+eval range from 0 to 10m step 5m count_values("value", data)
+  {value="1"} 2 1 _
+  {value="2"} _ 1 2

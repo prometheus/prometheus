@@ -35,8 +35,8 @@ type mockQueryRangeAPI struct {
 	samples model.Matrix
 }
 
-func (mockAPI mockQueryRangeAPI) QueryRange(context.Context, string, v1.Range, ...v1.Option) (model.Value, v1.Warnings, error) {
-	return mockAPI.samples, v1.Warnings{}, nil
+func (mockAPI mockQueryRangeAPI) QueryRange(context.Context, string, v1.Range, ...v1.Option) (model.Value, v1.Warnings, v1.Infos, error) {
+	return mockAPI.samples, v1.Warnings{}, v1.Infos{}, nil
 }
 
 const defaultBlockDuration = time.Duration(tsdb.DefaultBlockDuration) * time.Millisecond

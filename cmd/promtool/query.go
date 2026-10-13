@@ -79,7 +79,7 @@ func QueryInstant(url *url.URL, roundTripper http.RoundTripper, headers map[stri
 
 	// Run query against client.
 	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Minute)
-	val, _, err := api.Query(ctx, query, eTime) // Ignoring warnings for now.
+	val, _, _, err := api.Query(ctx, query, eTime) // Ignoring warnings and infos for now.
 	cancel()
 	if err != nil {
 		return handleAPIError(err)
@@ -134,7 +134,7 @@ func QueryRange(url *url.URL, roundTripper http.RoundTripper, headers map[string
 	// Run query against client.
 	r := v1.Range{Start: stime, End: etime, Step: step}
 	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Minute)
-	val, _, err := api.QueryRange(ctx, query, r) // Ignoring warnings for now.
+	val, _, _, err := api.QueryRange(ctx, query, r) // Ignoring warnings and infos for now.
 	cancel()
 
 	if err != nil {
@@ -161,7 +161,7 @@ func QuerySeries(url *url.URL, roundTripper http.RoundTripper, matchers []string
 
 	// Run query against client.
 	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Minute)
-	val, _, err := api.Series(ctx, matchers, stime, etime) // Ignoring warnings for now.
+	val, _, _, err := api.Series(ctx, matchers, stime, etime) // Ignoring warnings and infos for now.
 	cancel()
 
 	if err != nil {
@@ -188,7 +188,7 @@ func QueryLabels(url *url.URL, roundTripper http.RoundTripper, matchers []string
 
 	// Run query against client.
 	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Minute)
-	val, warn, err := api.LabelValues(ctx, name, matchers, stime, etime)
+	val, warn, _, err := api.LabelValues(ctx, name, matchers, stime, etime)
 	cancel()
 
 	for _, v := range warn {

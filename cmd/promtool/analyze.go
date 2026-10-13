@@ -162,7 +162,7 @@ func formatSeriesName(metricName string, lbs model.LabelSet) string {
 }
 
 func querySamples(ctx context.Context, api v1.API, query string, end time.Time) (model.Matrix, error) {
-	values, _, err := api.Query(ctx, query, end)
+	values, _, _, err := api.Query(ctx, query, end)
 	if err != nil {
 		return nil, err
 	}

@@ -802,7 +802,7 @@ func (api *API) newSearchRequest(w http.ResponseWriter, r *http.Request, endpoin
 	searcher, ok := q.(storage.Searcher)
 	if !ok {
 		_ = q.Close()
-		api.respondError(w, &apiError{errorInternal, errors.New("search not supported by storage")}, nil)
+		api.respondError(w, &apiError{errorUnavailable, errors.New("search not supported by storage")}, nil)
 		return nil
 	}
 
