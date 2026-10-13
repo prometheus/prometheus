@@ -496,14 +496,14 @@ func (h *writeHandler) handleV2PartialErr(err error, ls labels.Labels, outOfOrde
 	return len(pErr.ExemplarErrors), nil
 }
 
-// timeLimitAppenderV2 ensures maxTime on appended samples, histograms and exemplars.
+// timeLimitAppenderV2 ensures maxTime on appended samples and histograms.
 type timeLimitAppenderV2 struct {
 	storage.AppenderV2
 
 	maxTime int64
 }
 
-func (app *timeLimitExemplarAppenderV2) Append(ref storage.SeriesRef, ls labels.Labels, st, t int64, v float64, h *histogram.Histogram, fh *histogram.FloatHistogram, opts storage.AOptions) (storage.SeriesRef, error) {
+func (app *timeLimitAppenderV2) Append(ref storage.SeriesRef, ls labels.Labels, st, t int64, v float64, h *histogram.Histogram, fh *histogram.FloatHistogram, opts storage.AOptions) (storage.SeriesRef, error) {
 	if t > app.maxTime {
 		return 0, fmt.Errorf("%w: timestamp is too far in the future", storage.ErrOutOfBounds)
 	}
@@ -518,18 +518,20 @@ func (app *timeLimitExemplarAppenderV2) Append(ref storage.SeriesRef, ls labels.
 			return 0, err
 		}
 	}
-	return app.ExemplarAppenderV2.Append(ref, ls, st, t, v, h, fh, opts)
+	return app.AppenderV2.Append(ref, ls, st, t, v, h, fh, opts)
 }
 
 // timeLimitExemplarAppenderV2 ensures maxTime on appended samples, histograms and exemplars.
 type timeLimitExemplarAppenderV2 struct {
 	timeLimitAppenderV2
-	storage.ExemplarAppenderV2
+	exApp storage.ExemplarAppenderV2
 }
 
 func newTimeLimitExemplarAppenderV2(app storage.ExemplarAppenderV2, maxTime int64) *timeLimitExemplarAppenderV2 {
 	return &timeLimitExemplarAppenderV2{
-		timeLimitAppenderV2: timeLimitAppenderV2{AppenderV2: app, maxTime: maxTime}, ExemplarAppenderV2: app}
+		timeLimitAppenderV2: timeLimitAppenderV2{AppenderV2: app, maxTime: maxTime},
+		exApp:               app,
+	}
 }
 
 // AppendExemplars rejects exemplars that are too far in the future, same as Append does
@@ -561,7 +563,7 @@ func (app *timeLimitExemplarAppenderV2) AppendExemplars(ref storage.SeriesRef, l
 		}
 	}
 
-	ref, err := app.ExemplarAppenderV2.AppendExemplars(ref, ls, valid)
+	ref, err := app.exApp.AppendExemplars(ref, ls, valid)
 	partialErr, err = partialErr.Handle(err)
 	if err != nil {
 		return ref, err
