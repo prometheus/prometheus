@@ -514,6 +514,25 @@ func TestRollback(t *testing.T) {
 	require.Equal(t, 0, walFloatHistogramCount, "float histograms should not have been written to WAL")
 }
 
+func TestWALTruncationTime(t *testing.T) {
+	opts := DefaultOptions()
+	nowTS := time.Now().UnixMilli()
+	for _, tc := range []struct {
+		name string
+		sent int64
+		want int64
+	}{
+		{"current", nowTS, nowTS - opts.MinWALTime},
+		{"lagging", nowTS - time.Hour.Milliseconds(), nowTS - time.Hour.Milliseconds() - opts.MinWALTime},
+		{"stalled", 0, nowTS - opts.MaxWALTime},
+		{"future", nowTS + (5 * time.Hour).Milliseconds(), nowTS - opts.MinWALTime},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			require.Equal(t, tc.want, walTruncationTime(opts, tc.sent, nowTS))
+		})
+	}
+}
+
 func TestFullTruncateWAL(t *testing.T) {
 	const (
 		numDatapoints = 1000

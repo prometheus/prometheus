@@ -737,8 +737,7 @@ func (ng *Engine) exec(ctx context.Context, q *query) (v parser.Value, ws annota
 				f = append(f, slog.Any("error", err))
 			}
 			f = append(f, slog.Any("stats", stats.NewQueryStats(q.Stats())))
-			if span := trace.SpanFromContext(ctx); span != nil {
-				spanCtx := span.SpanContext()
+			if spanCtx := trace.SpanContextFromContext(ctx); spanCtx.IsValid() {
 				f = append(f,
 					slog.Any("spanID", spanCtx.SpanID()),
 					slog.Any("traceID", spanCtx.TraceID()),
@@ -1530,7 +1529,7 @@ func (ev *evaluator) rangeEval(ctx context.Context, matching *parser.VectorMatch
 				return string(lset.BytesWithLabels(buf, names...))
 			}
 		} else { // "without"
-			names = append([]string{labels.MetricName}, names...)
+			names = append([]string{model.MetricNameLabel, model.MetricTypeLabel, model.MetricUnitLabel}, names...)
 			slices.Sort(names)
 			sigf = func(lset labels.Labels) string {
 				return string(lset.BytesWithoutLabels(buf, names...))
@@ -2152,6 +2151,9 @@ func (ev *evaluator) eval(ctx context.Context, expr parser.Expr) (parser.Value, 
 	case *parser.AggregateExpr:
 		// Grouping labels must be sorted (expected both by generateGroupingKey() and aggregation()).
 		sortedGrouping := e.Grouping
+		if e.Without {
+			sortedGrouping = append([]string{model.MetricNameLabel, model.MetricTypeLabel, model.MetricUnitLabel}, sortedGrouping...)
+		}
 		slices.Sort(sortedGrouping)
 
 		if e.Op == parser.COUNT_VALUES {
@@ -3303,7 +3305,7 @@ func (ev *evaluator) VectorBinop(op parser.ItemType, lhs, rhs Vector, matching *
 			if matching.Card == parser.CardOneToMany {
 				oneSide = "left"
 			}
-			matchedLabels := rs.Metric.MatchLabels(matching.On, matching.MatchingLabels...)
+			matchedLabels := matchLabels(rs.Metric, matching.On, matching.MatchingLabels...)
 			// Make the error message consistent between runs by ordering the reported series.
 			dupl1, dupl2 := rs.Metric.String(), duplSample.Metric.String()
 			if dupl1 > dupl2 {
@@ -3410,7 +3412,7 @@ func (ev *evaluator) VectorBinop(op parser.ItemType, lhs, rhs Vector, matching *
 				continue
 			}
 			rs = Sample{
-				Metric: ls.Metric.MatchLabels(matching.On, matching.MatchingLabels...),
+				Metric: matchLabels(ls.Metric, matching.On, matching.MatchingLabels...),
 				F:      *fill,
 			}
 		}
@@ -3429,7 +3431,7 @@ func (ev *evaluator) VectorBinop(op parser.ItemType, lhs, rhs Vector, matching *
 				continue // Already matched.
 			}
 			ls := Sample{
-				Metric: rs.Metric.MatchLabels(matching.On, matching.MatchingLabels...),
+				Metric: matchLabels(rs.Metric, matching.On, matching.MatchingLabels...),
 				F:      *fill,
 			}
 
@@ -3438,6 +3440,13 @@ func (ev *evaluator) VectorBinop(op parser.ItemType, lhs, rhs Vector, matching *
 	}
 
 	return enh.Out, lastErr
+}
+
+func matchLabels(metric labels.Labels, on bool, names ...string) labels.Labels {
+	if !on {
+		names = append([]string{model.MetricNameLabel, model.MetricTypeLabel, model.MetricUnitLabel}, names...)
+	}
+	return metric.MatchLabels(on, names...)
 }
 
 // resultMetric returns the metric for the given sample(s) based on the Vector
@@ -4513,7 +4522,8 @@ func generateGroupingLabels(enh *EvalNodeHelper, metric labels.Labels, without b
 	switch {
 	case without:
 		enh.lb.Del(grouping...)
-		enh.lb.Del(labels.MetricName)
+		// Set empty name, type and unit labels to effectively remove those if specified.
+		schema.Metadata{}.SetToLabels(enh.lb)
 		return enh.lb.Labels()
 	case len(grouping) > 0:
 		enh.lb.Keep(grouping...)

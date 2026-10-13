@@ -957,3 +957,125 @@ func addNativeHistogramsToTestSuite(t *testing.T, storage *teststorage.TestStora
 
 	require.NoError(t, app.Commit())
 }
+
+func TestRemoteReadGateWaitDurationObserved(t *testing.T) {
+	store := promqltest.LoadedStorage(t, `
+		load 1m
+			test_metric1{foo="bar"} 1
+	`)
+	defer store.Close()
+
+	newRequest := func(t *testing.T) *http.Request {
+		matcher, err := labels.NewMatcher(labels.MatchEqual, "__name__", "test_metric1")
+		require.NoError(t, err)
+		query, err := ToQuery(0, 1, []*labels.Matcher{matcher}, &storage.SelectHints{Step: 0, Func: "avg"})
+		require.NoError(t, err)
+		data, err := proto.Marshal(&prompb.ReadRequest{Queries: []*prompb.Query{query}})
+		require.NoError(t, err)
+		request, err := http.NewRequest(http.MethodPost, "", bytes.NewBuffer(snappy.Encode(nil, data)))
+		require.NoError(t, err)
+		return request
+	}
+
+	gateWaitHistogram := func(t *testing.T, reg *prometheus.Registry) (count uint64, sum float64) {
+		mfs, err := reg.Gather()
+		require.NoError(t, err)
+		for _, mf := range mfs {
+			if mf.GetName() == "prometheus_remote_read_handler_gate_wait_duration_seconds" {
+				hist := mf.GetMetric()[0].GetHistogram()
+				return hist.GetSampleCount(), hist.GetSampleSum()
+			}
+		}
+		t.Fatal("expected gate wait duration histogram to be registered")
+		return 0, 0
+	}
+	gateWaitSampleCount := func(t *testing.T, reg *prometheus.Registry) uint64 {
+		count, _ := gateWaitHistogram(t, reg)
+		return count
+	}
+
+	t.Run("successful acquisition", func(t *testing.T) {
+		reg := prometheus.NewRegistry()
+		h := NewReadHandler(nil, reg, store, func() config.Config {
+			return config.Config{}
+		}, 1e6, 1, 0)
+
+		recorder := httptest.NewRecorder()
+		h.ServeHTTP(recorder, newRequest(t))
+		require.Equal(t, 2, recorder.Code/100)
+
+		require.Equal(t, uint64(1), gateWaitSampleCount(t, reg))
+	})
+
+	t.Run("canceled acquisition", func(t *testing.T) {
+		reg := prometheus.NewRegistry()
+		// A concurrency limit of zero means the gate never opens, so a canceled context
+		// deterministically loses the race in Gate.Start and returns an error.
+		h := NewReadHandler(nil, reg, store, func() config.Config {
+			return config.Config{}
+		}, 1e6, 0, 0)
+
+		ctx, cancel := context.WithCancel(context.Background())
+		cancel()
+
+		recorder := httptest.NewRecorder()
+		h.ServeHTTP(recorder, newRequest(t).WithContext(ctx))
+		require.Equal(t, http.StatusInternalServerError, recorder.Code)
+
+		// The wait is still observed even though the request was canceled at the gate.
+		require.Equal(t, uint64(1), gateWaitSampleCount(t, reg))
+	})
+
+	// holdWait fills the single gate slot, starts a request that has to queue behind it and
+	// calls finish after the request has been waiting for the returned interval.
+	holdWait := func(t *testing.T, finish func(cancel context.CancelFunc, rh *readHandler)) (reg *prometheus.Registry, recorder *httptest.ResponseRecorder, wait time.Duration) {
+		reg = prometheus.NewRegistry()
+		h := NewReadHandler(nil, reg, store, func() config.Config {
+			return config.Config{}
+		}, 1e6, 1, 0)
+		rh := h.(*readHandler)
+		require.NoError(t, rh.remoteReadGate.Start(context.Background()))
+
+		ctx, cancel := context.WithCancel(context.Background())
+		defer cancel()
+
+		wait = 200 * time.Millisecond
+		recorder = httptest.NewRecorder()
+		started := make(chan struct{})
+		done := make(chan struct{})
+		go func() {
+			defer close(done)
+			close(started)
+			h.ServeHTTP(recorder, newRequest(t).WithContext(ctx))
+		}()
+		<-started
+		time.Sleep(wait)
+		finish(cancel, rh)
+		<-done
+		return reg, recorder, wait
+	}
+
+	// The request only starts waiting once the goroutine is scheduled, which can be slightly
+	// after the sleep begins, so allow for half the interval as slack.
+	t.Run("contended acquisition", func(t *testing.T) {
+		reg, recorder, wait := holdWait(t, func(_ context.CancelFunc, rh *readHandler) {
+			rh.remoteReadGate.Done()
+		})
+		require.Equal(t, 2, recorder.Code/100)
+
+		count, sum := gateWaitHistogram(t, reg)
+		require.Equal(t, uint64(1), count)
+		require.GreaterOrEqual(t, sum, (wait / 2).Seconds())
+	})
+
+	t.Run("contended canceled acquisition", func(t *testing.T) {
+		reg, recorder, wait := holdWait(t, func(cancel context.CancelFunc, _ *readHandler) {
+			cancel()
+		})
+		require.Equal(t, http.StatusInternalServerError, recorder.Code)
+
+		count, sum := gateWaitHistogram(t, reg)
+		require.Equal(t, uint64(1), count)
+		require.GreaterOrEqual(t, sum, (wait / 2).Seconds())
+	})
+}

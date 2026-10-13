@@ -29,6 +29,7 @@ import (
 	"github.com/prometheus/prometheus/prompb"
 	"github.com/prometheus/prometheus/storage"
 	"github.com/prometheus/prometheus/util/annotations"
+	"github.com/prometheus/prometheus/util/teststorage"
 	"github.com/prometheus/prometheus/util/testutil"
 )
 
@@ -534,7 +535,7 @@ func TestSampleAndChunkQueryableClient(t *testing.T) {
 				require.NoError(t, q.Close())
 			}()
 
-			ss := q.Select(context.Background(), true, nil, tc.matchers...)
+			ss := q.Select(t.Context(), true, nil, tc.matchers...)
 			require.NoError(t, err)
 			require.Equal(t, annotations.Annotations(nil), ss.Warnings())
 
@@ -548,4 +549,75 @@ func TestSampleAndChunkQueryableClient(t *testing.T) {
 			testutil.RequireEqual(t, tc.expectedSeries, got)
 		})
 	}
+
+	t.Run("search warnings", func(t *testing.T) {
+		local := teststorage.New(t)
+		app := local.Appender(t.Context())
+		ref, err := app.Append(0, labels.FromStrings("__name__", "up", "job", "prometheus"), 1000, 1)
+		require.NoError(t, err)
+		_, err = app.Append(ref, labels.EmptyLabels(), 1500, 1)
+		require.NoError(t, err)
+		require.NoError(t, app.Commit())
+
+		for _, tc := range []struct {
+			name       string
+			mint, maxt int64
+			readRecent bool
+			warning    bool
+			empty      bool
+		}{
+			{name: "overlapping local history", mint: 0, maxt: 2000, warning: true},
+			{name: "before local history", mint: 0, maxt: 999, warning: true, empty: true},
+			{name: "local start boundary", mint: 1000, maxt: 2000, warning: true},
+			{name: "recent range excludes remote", mint: 1001, maxt: 2000},
+			{name: "read recent includes remote", mint: 1001, maxt: 2000, readRecent: true, warning: true},
+		} {
+			t.Run(tc.name, func(t *testing.T) {
+				client := &mockedRemoteClient{}
+				remote := &Storage{queryables: []storage.SampleAndChunkQueryable{NewSampleAndChunkQueryableClient(
+					client, labels.EmptyLabels(), nil, tc.readRecent, func() (int64, error) { return 1000, nil },
+				)}}
+				primary, err := local.Querier(tc.mint, tc.maxt)
+				require.NoError(t, err)
+				secondary, err := remote.Querier(tc.mint, tc.maxt)
+				require.NoError(t, err)
+				q := storage.NewMergeQuerier([]storage.Querier{primary}, []storage.Querier{secondary}, storage.ChainedSeriesMerge)
+				defer func() { require.NoError(t, q.Close()) }()
+				searcher, ok := q.(storage.Searcher)
+				require.True(t, ok)
+				for _, method := range []struct {
+					name     string
+					search   func() storage.SearchResultSet
+					expected []string
+				}{
+					{"names", func() storage.SearchResultSet { return searcher.SearchLabelNames(t.Context(), nil) }, []string{"__name__", "job"}},
+					{"values", func() storage.SearchResultSet { return searcher.SearchLabelValues(t.Context(), "job", nil) }, []string{"prometheus"}},
+				} {
+					t.Run(method.name, func(t *testing.T) {
+						rs := method.search()
+						defer func() { require.NoError(t, rs.Close()) }()
+						var values []string
+						for rs.Next() {
+							values = append(values, rs.At().Value)
+						}
+						require.NoError(t, rs.Err())
+						if tc.empty {
+							require.Empty(t, values)
+						} else {
+							require.Equal(t, method.expected, values)
+						}
+						if tc.warning {
+							warnings := rs.Warnings().AsErrors()
+							require.Len(t, warnings, 1)
+							require.EqualError(t, warnings[0], "search is not supported by a secondary storage backend; results may be incomplete")
+						} else {
+							require.Empty(t, rs.Warnings())
+						}
+						require.Nil(t, client.got)
+						require.Empty(t, client.gotMultiple)
+					})
+				}
+			})
+		}
+	})
 }

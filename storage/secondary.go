@@ -15,14 +15,16 @@ package storage
 
 import (
 	"context"
+	"errors"
 	"sync"
 
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/util/annotations"
 )
 
-// secondaryQuerier must implement the Searcher interface.
 var _ Searcher = (*secondaryQuerier)(nil)
+
+var errSecondarySearchUnsupported = errors.New("search is not supported by a secondary storage backend; results may be incomplete")
 
 // secondaryQuerier is a wrapper that allows a querier to be treated in a best effort manner.
 // This means that an error on any method returned by Querier except Close will be returned as a warning,
@@ -68,20 +70,20 @@ func (s *secondaryQuerier) LabelNames(ctx context.Context, hints *LabelHints, ma
 	return names, w, nil
 }
 
-// SearchLabelNames returns search results from the wrapped querier and converts errors into warnings.
+// SearchLabelNames returns search results, reporting errors and unsupported search as warnings.
 func (s *secondaryQuerier) SearchLabelNames(ctx context.Context, hints *SearchHints, matchers ...*labels.Matcher) SearchResultSet {
 	searcher, ok := searcherFromGenericQuerier(s.genericQuerier)
 	if !ok {
-		return EmptySearchResultSet()
+		return NewSearchResultSetFromSlice(nil, annotations.New().Add(errSecondarySearchUnsupported))
 	}
 	return warningsOnErrorSearchResultSet(searcher.SearchLabelNames(ctx, hints, matchers...))
 }
 
-// SearchLabelValues returns search results from the wrapped querier and converts errors into warnings.
+// SearchLabelValues returns search results, reporting errors and unsupported search as warnings.
 func (s *secondaryQuerier) SearchLabelValues(ctx context.Context, name string, hints *SearchHints, matchers ...*labels.Matcher) SearchResultSet {
 	searcher, ok := searcherFromGenericQuerier(s.genericQuerier)
 	if !ok {
-		return EmptySearchResultSet()
+		return NewSearchResultSetFromSlice(nil, annotations.New().Add(errSecondarySearchUnsupported))
 	}
 	return warningsOnErrorSearchResultSet(searcher.SearchLabelValues(ctx, name, hints, matchers...))
 }

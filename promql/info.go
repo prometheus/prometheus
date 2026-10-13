@@ -26,6 +26,7 @@ import (
 
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/promql/parser"
+	"github.com/prometheus/prometheus/schema"
 	"github.com/prometheus/prometheus/storage"
 	"github.com/prometheus/prometheus/util/annotations"
 )
@@ -589,7 +590,7 @@ func (ev *evaluator) combineWithInfoVector(base, info Vector, ignoreSeries map[u
 			}
 
 			err := is.Metric.Validate(func(l labels.Label) error {
-				if l.Name == model.MetricNameLabel {
+				if schema.IsMetadataLabel(l.Name) {
 					return nil
 				}
 				if _, exists := dataLabelMatchers[l.Name]; len(dataLabelMatchers) > 0 && !exists {
