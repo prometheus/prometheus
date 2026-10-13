@@ -496,7 +496,7 @@ func (h *writeHandler) handleV2PartialErr(err error, ls labels.Labels, outOfOrde
 	return len(pErr.ExemplarErrors), nil
 }
 
-// timeLimitAppenderV2 ensures maxTime on appended samples and histograms.
+// timeLimitAppenderV2 ensures maxTime on appended samples, histograms and inlined exemplars.
 type timeLimitAppenderV2 struct {
 	storage.AppenderV2
 
@@ -518,7 +518,41 @@ func (app *timeLimitAppenderV2) Append(ref storage.SeriesRef, ls labels.Labels, 
 			return 0, err
 		}
 	}
-	return app.AppenderV2.Append(ref, ls, st, t, v, h, fh, opts)
+
+	var partialErr *storage.AppendPartialError
+	if len(opts.Exemplars) > 0 {
+		opts.Exemplars, partialErr = app.limitExemplars(opts.Exemplars)
+	}
+	ref, err := app.AppenderV2.Append(ref, ls, st, t, v, h, fh, opts)
+	partialErr, err = partialErr.Handle(err)
+	if err != nil {
+		return ref, err
+	}
+	return ref, partialErr.ToError()
+}
+
+func (app *timeLimitAppenderV2) limitExemplars(exemplars []exemplar.Exemplar) ([]exemplar.Exemplar, *storage.AppendPartialError) {
+	var (
+		futureErrs []error
+		valid      = exemplars
+	)
+	for i, e := range exemplars {
+		if e.Ts > app.maxTime {
+			if futureErrs == nil {
+				valid = make([]exemplar.Exemplar, 0, len(exemplars)-1)
+				valid = append(valid, exemplars[:i]...)
+			}
+			futureErrs = append(futureErrs, fmt.Errorf("%w: timestamp is too far in the future", storage.ErrOutOfBounds))
+			continue
+		}
+		if futureErrs != nil {
+			valid = append(valid, e)
+		}
+	}
+	if len(futureErrs) == 0 {
+		return valid, nil
+	}
+	return valid, &storage.AppendPartialError{ExemplarErrors: futureErrs}
 }
 
 // timeLimitExemplarAppenderV2 ensures maxTime on appended samples, histograms and exemplars.
@@ -537,30 +571,9 @@ func newTimeLimitExemplarAppenderV2(app storage.ExemplarAppenderV2, maxTime int6
 // AppendExemplars rejects exemplars that are too far in the future, same as Append does
 // for samples, before delegating the rest to the wrapped ExemplarAppenderV2.
 func (app *timeLimitExemplarAppenderV2) AppendExemplars(ref storage.SeriesRef, ls labels.Labels, exemplars []exemplar.Exemplar) (storage.SeriesRef, error) {
-	var (
-		futureErrs []error
-		valid      = exemplars
-	)
-	for i, e := range exemplars {
-		if e.Ts > app.maxTime {
-			if futureErrs == nil {
-				valid = make([]exemplar.Exemplar, 0, len(exemplars)-1)
-				valid = append(valid, exemplars[:i]...)
-			}
-			futureErrs = append(futureErrs, fmt.Errorf("%w: timestamp is too far in the future", storage.ErrOutOfBounds))
-			continue
-		}
-		if futureErrs != nil {
-			valid = append(valid, e)
-		}
-	}
-
-	var partialErr *storage.AppendPartialError
-	if len(futureErrs) > 0 {
-		partialErr = &storage.AppendPartialError{ExemplarErrors: futureErrs}
-		if len(valid) == 0 {
-			return ref, partialErr.ToError()
-		}
+	valid, partialErr := app.limitExemplars(exemplars)
+	if len(valid) == 0 {
+		return ref, partialErr.ToError()
 	}
 
 	ref, err := app.exApp.AppendExemplars(ref, ls, valid)
