@@ -46,22 +46,15 @@ import (
 // For readability.
 type sample = teststorage.Sample
 
-type compatAppendable interface {
-	storage.Appendable
-	storage.AppendableV2
-}
-
 func withCtx(ctx context.Context) func(sl *scrapeLoop) {
 	return func(sl *scrapeLoop) {
 		sl.ctx = ctx
 	}
 }
 
-func withAppendable(app compatAppendable, appV2 bool) func(sl *scrapeLoop) {
+func withAppendable(app storage.AppendableV2) func(sl *scrapeLoop) {
 	return func(sl *scrapeLoop) {
-		sa := selectAppendable(app, appV2)
-		sl.appendable = sa.V1()
-		sl.appendableV2 = sa.V2()
+		sl.appendableV2 = app
 	}
 }
 
@@ -113,10 +106,6 @@ func newTestScrapeLoop(t testing.TB, opts ...func(sl *scrapeLoop)) (_ *scrapeLoo
 		o(sl)
 	}
 
-	if sl.appendable != nil && sl.appendableV2 != nil {
-		t.Fatal("select the appendable to use, both were passed, likely a bug")
-	}
-
 	// Validate user opts for convenience.
 	require.Nil(t, sl.parentCtx, "newTestScrapeLoop does not support injecting non-nil parent context")
 	require.Nil(t, sl.appenderCtx, "newTestScrapeLoop does not support injecting non-nil appender context")
@@ -140,8 +129,7 @@ func newTestScrapeLoop(t testing.TB, opts ...func(sl *scrapeLoop)) (_ *scrapeLoo
 	return sl, scraper
 }
 
-func newTestScrapePool(t *testing.T, app compatAppendable, appV2 bool, injectNewLoop func(options scrapeLoopOptions) loop) *scrapePool {
-	sa := selectAppendable(app, appV2)
+func newTestScrapePool(t *testing.T, app storage.AppendableV2, injectNewLoop func(options scrapeLoopOptions) loop) *scrapePool {
 	return &scrapePool{
 		ctx:     t.Context(),
 		cancel:  func() {},
@@ -154,7 +142,7 @@ func newTestScrapePool(t *testing.T, app compatAppendable, appV2 bool, injectNew
 		loops:             map[uint64]loop{},
 		injectTestNewLoop: injectNewLoop,
 
-		appendable: sa.V1(), appendableV2: sa.V2(),
+		appendableV2: app,
 
 		symbolTable: labels.NewSymbolTable(),
 		metrics:     newTestScrapeMetrics(t),
@@ -178,69 +166,6 @@ func protoMarshalDelimited(t *testing.T, mf *dto.MetricFamily) []byte {
 	buf.Write(varintBuf[:varintLength])
 	buf.Write(protoBuf)
 	return buf.Bytes()
-}
-
-type selectedAppendable struct {
-	useV2 bool
-	app   compatAppendable
-}
-
-// V1 returns Appendable if V1 is selected, otherwise nil.
-func (s selectedAppendable) V1() storage.Appendable {
-	if s.useV2 {
-		return nil
-	}
-	return s.app
-}
-
-// V2 returns AppendableV2 if V2 is selected, otherwise nil.
-func (s selectedAppendable) V2() storage.AppendableV2 {
-	if !s.useV2 {
-		return nil
-	}
-	return s.app
-}
-
-// selectAppendable allows to specify which appendable callers should use when the struct
-// implements both. This is how all callers are making the decision - if one appendable is nil, they
-// take another. selectAppendable allows to inject nil to e.g. storage.AppendableV2 when appV2 is false.
-func selectAppendable(app compatAppendable, appV2 bool) selectedAppendable {
-	s := selectedAppendable{
-		app:   app,
-		useV2: appV2,
-	}
-	return s
-}
-
-func foreachAppendable(t *testing.T, f func(t *testing.T, appV2 bool)) {
-	for _, appV2 := range []bool{false, true} {
-		t.Run(fmt.Sprintf("appV2=%v", appV2), func(t *testing.T) {
-			f(t, appV2)
-		})
-	}
-}
-
-func TestSelectAppendable(t *testing.T) {
-	var i int
-	foreachAppendable(t, func(t *testing.T, appV2 bool) {
-		defer func() { i++ }()
-		switch i {
-		case 0:
-			require.False(t, appV2)
-
-			s := selectAppendable(teststorage.NewAppendable(), appV2)
-			require.NotNil(t, s.V1())
-			require.Nil(t, s.V2())
-		case 1:
-			require.True(t, appV2)
-
-			s := selectAppendable(teststorage.NewAppendable(), appV2)
-			require.Nil(t, s.V1())
-			require.NotNil(t, s.V2())
-		default:
-			t.Fatal("too many iterations")
-		}
-	})
 }
 
 // pipeListener is an in-memory net.Listener that connects a custom DialContext
