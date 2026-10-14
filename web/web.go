@@ -380,12 +380,9 @@ func New(logger *slog.Logger, o *Options) *Handler {
 	factoryAr := func(context.Context) api_v1.AlertmanagerRetriever { return h.notifier }
 	FactoryRr := func(context.Context) api_v1.RulesRetriever { return h.ruleManager }
 
-	var (
-		app   storage.Appendable
-		appV2 storage.AppendableV2
-	)
+	var appV2 storage.AppendableV2
 	if o.EnableRemoteWriteReceiver || o.EnableOTLPWriteReceiver {
-		app, appV2 = h.storage, h.storage
+		appV2 = h.storage
 	}
 
 	version := ""
@@ -393,7 +390,7 @@ func New(logger *slog.Logger, o *Options) *Handler {
 		version = o.Version.Version
 	}
 
-	h.apiV1 = api_v1.NewAPI(h.queryEngine, h.storage, app, appV2, h.exemplarStorage, factorySPr, factoryTr, factoryAr,
+	h.apiV1 = api_v1.NewAPI(h.queryEngine, h.storage, appV2, h.exemplarStorage, factorySPr, factoryTr, factoryAr,
 		func() config.Config {
 			h.mtx.RLock()
 			defer h.mtx.RUnlock()
