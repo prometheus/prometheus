@@ -190,11 +190,6 @@ func (s *Storage) ChunkQuerier(mint, maxt int64) (storage.ChunkQuerier, error) {
 	return storage.NewMergeChunkQuerier(nil, queriers, storage.NewCompactingChunkSeriesMerger(storage.ChainedSeriesMerge)), nil
 }
 
-// Appender implements storage.Storage.
-func (s *Storage) Appender(ctx context.Context) storage.Appender {
-	return s.rws.Appender(ctx)
-}
-
 // AppenderV2 implements storage.Storage.
 func (s *Storage) AppenderV2(ctx context.Context) storage.AppenderV2 {
 	return s.rws.AppenderV2(ctx)

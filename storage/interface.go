@@ -82,10 +82,6 @@ type SampleAndChunkQueryable interface {
 type Storage interface {
 	SampleAndChunkQueryable
 
-	// Appendable allows appending to storage.
-	// WARNING(bwplotka): Switch to AppendableV2 is in progress (https://github.com/prometheus/prometheus/issues/17632).
-	// Appendable will be removed soon (ETA: Q2 2026).
-	Appendable
 	// AppendableV2 allows appending to storage.
 	AppendableV2
 

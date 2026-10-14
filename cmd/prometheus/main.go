@@ -64,7 +64,6 @@ import (
 	"github.com/prometheus/prometheus/model/exemplar"
 	"github.com/prometheus/prometheus/model/histogram"
 	"github.com/prometheus/prometheus/model/labels"
-	"github.com/prometheus/prometheus/model/metadata"
 	"github.com/prometheus/prometheus/model/relabel"
 	"github.com/prometheus/prometheus/notifier"
 	_ "github.com/prometheus/prometheus/plugins" // Register plugins.
@@ -1931,14 +1930,6 @@ func (s *readyStorage) ExemplarQuerier(ctx context.Context) (storage.ExemplarQue
 	return nil, tsdb.ErrNotReady
 }
 
-// Appender implements the Storage interface.
-func (s *readyStorage) Appender(ctx context.Context) storage.Appender {
-	if x := s.get(); x != nil {
-		return x.Appender(ctx)
-	}
-	return notReadyAppender{}
-}
-
 // AppenderV2 implements the Storage interface.
 func (s *readyStorage) AppenderV2(ctx context.Context) storage.AppenderV2 {
 	if x := s.get(); x != nil {
@@ -1946,39 +1937,6 @@ func (s *readyStorage) AppenderV2(ctx context.Context) storage.AppenderV2 {
 	}
 	return notReadyAppenderV2{}
 }
-
-type notReadyAppender struct{}
-
-// SetOptions does nothing in this appender implementation.
-func (notReadyAppender) SetOptions(*storage.AppendOptions) {}
-
-func (notReadyAppender) Append(storage.SeriesRef, labels.Labels, int64, float64) (storage.SeriesRef, error) {
-	return 0, tsdb.ErrNotReady
-}
-
-func (notReadyAppender) AppendExemplar(storage.SeriesRef, labels.Labels, exemplar.Exemplar) (storage.SeriesRef, error) {
-	return 0, tsdb.ErrNotReady
-}
-
-func (notReadyAppender) AppendHistogram(storage.SeriesRef, labels.Labels, int64, *histogram.Histogram, *histogram.FloatHistogram) (storage.SeriesRef, error) {
-	return 0, tsdb.ErrNotReady
-}
-
-func (notReadyAppender) AppendHistogramSTZeroSample(storage.SeriesRef, labels.Labels, int64, int64, *histogram.Histogram, *histogram.FloatHistogram) (storage.SeriesRef, error) {
-	return 0, tsdb.ErrNotReady
-}
-
-func (notReadyAppender) UpdateMetadata(storage.SeriesRef, labels.Labels, metadata.Metadata) (storage.SeriesRef, error) {
-	return 0, tsdb.ErrNotReady
-}
-
-func (notReadyAppender) AppendSTZeroSample(storage.SeriesRef, labels.Labels, int64, int64) (storage.SeriesRef, error) {
-	return 0, tsdb.ErrNotReady
-}
-
-func (notReadyAppender) Commit() error { return tsdb.ErrNotReady }
-
-func (notReadyAppender) Rollback() error { return tsdb.ErrNotReady }
 
 type notReadyAppenderV2 struct{}
 

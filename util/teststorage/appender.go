@@ -197,7 +197,7 @@ type Appendable struct {
 	rolledbackSamples []Sample
 
 	// Optional chain (Appender will collect samples, then run next).
-	next compatAppendable
+	next storage.AppendableV2
 }
 
 // NewAppendable returns mock Appendable.
@@ -205,13 +205,8 @@ func NewAppendable() *Appendable {
 	return &Appendable{}
 }
 
-type compatAppendable interface {
-	storage.Appendable
-	storage.AppendableV2
-}
-
-// Then chains another appender from the provided Appendable for the Appender calls.
-func (a *Appendable) Then(appendable compatAppendable) *Appendable {
+// Then chains another appender from the provided AppendableV2 for the AppenderV2 calls.
+func (a *Appendable) Then(appendable storage.AppendableV2) *Appendable {
 	a.next = appendable
 	return a
 }
@@ -387,52 +382,6 @@ func (a *baseAppender) Rollback() error {
 	return nil
 }
 
-type appender struct {
-	baseAppender
-
-	next storage.Appender
-}
-
-func (a *Appendable) Appender(ctx context.Context) storage.Appender {
-	ret := &appender{baseAppender: baseAppender{a: a}}
-	if a.openAppenders.Inc() > 1 {
-		ret.err = errors.New("teststorage.Appendable.Appender() concurrent use is not supported; attempted opening new Appender() without Commit/Rollback of the previous one. Extend the implementation if concurrent mock is needed")
-		return ret
-	}
-
-	if a.next != nil {
-		app := a.next.Appender(ctx)
-		ret.next, ret.nextTr = app, app
-	}
-	return ret
-}
-
-func (*appender) SetOptions(*storage.AppendOptions) {}
-
-func (a *appender) Append(ref storage.SeriesRef, ls labels.Labels, t int64, v float64) (storage.SeriesRef, error) {
-	if err := a.checkErr(); err != nil {
-		return 0, err
-	}
-
-	if a.a.appendErrFn != nil {
-		if err := a.a.appendErrFn(ls); err != nil {
-			return 0, err
-		}
-	}
-
-	if !a.a.skipRecording {
-		a.a.mtx.Lock()
-		a.a.pendingSamples = append(a.a.pendingSamples, Sample{L: ls, T: t, V: v})
-		a.a.mtx.Unlock()
-	}
-
-	if a.next != nil {
-		return a.next.Append(ref, ls, t, v)
-	}
-
-	return a.a.computeOrCheckRef(ref, ls)
-}
-
 func (a *Appendable) computeOrCheckRef(ref storage.SeriesRef, ls labels.Labels) (storage.SeriesRef, error) {
 	if a.refFn != nil {
 		return a.refFn(ls), nil
@@ -450,107 +399,6 @@ func (a *Appendable) computeOrCheckRef(ref storage.SeriesRef, ls labels.Labels) 
 		return 0, errors.New("teststorage.appender: found input ref not matching labels; potential bug in Appendable usage")
 	}
 	return ref, nil
-}
-
-func (a *appender) AppendHistogram(ref storage.SeriesRef, ls labels.Labels, t int64, h *histogram.Histogram, fh *histogram.FloatHistogram) (storage.SeriesRef, error) {
-	if err := a.checkErr(); err != nil {
-		return 0, err
-	}
-	if a.a.appendErrFn != nil {
-		if err := a.a.appendErrFn(ls); err != nil {
-			return 0, err
-		}
-	}
-
-	if !a.a.skipRecording {
-		a.a.mtx.Lock()
-		a.a.pendingSamples = append(a.a.pendingSamples, Sample{L: ls, T: t, H: h, FH: fh})
-		a.a.mtx.Unlock()
-	}
-
-	if a.next != nil {
-		return a.next.AppendHistogram(ref, ls, t, h, fh)
-	}
-
-	return a.a.computeOrCheckRef(ref, ls)
-}
-
-func (a *appender) AppendExemplar(ref storage.SeriesRef, l labels.Labels, e exemplar.Exemplar) (storage.SeriesRef, error) {
-	if err := a.checkErr(); err != nil {
-		return 0, err
-	}
-	if a.a.appendExemplarsError != nil {
-		return 0, a.a.appendExemplarsError
-	}
-
-	if !a.a.skipRecording {
-		var appended bool
-
-		a.a.mtx.Lock()
-		// NOTE(bwplotka): Eventually exemplar has to be attached to a series and soon
-		// the AppenderV2 will guarantee that for TSDB. Assume this from the mock perspective
-		// with the naive attaching. See: https://github.com/prometheus/prometheus/issues/17632
-		i := len(a.a.pendingSamples) - 1
-		for ; i >= 0; i-- { // Attach exemplars to the last matching sample.
-			if labels.Equal(l, a.a.pendingSamples[i].L) {
-				a.a.pendingSamples[i].ES = append(a.a.pendingSamples[i].ES, e)
-				appended = true
-				break
-			}
-		}
-		a.a.mtx.Unlock()
-		if !appended {
-			return 0, fmt.Errorf("teststorage.appender: exemplar appender without series; ref %v; l %v; exemplar: %v", ref, l, e)
-		}
-	}
-
-	if a.next != nil {
-		return a.next.AppendExemplar(ref, l, e)
-	}
-	return a.a.computeOrCheckRef(ref, l)
-}
-
-func (a *appender) AppendSTZeroSample(ref storage.SeriesRef, l labels.Labels, _, st int64) (storage.SeriesRef, error) {
-	return a.Append(ref, l, st, 0.0) // This will change soon with AppenderV2, but we already report ST as 0 samples.
-}
-
-func (a *appender) AppendHistogramSTZeroSample(ref storage.SeriesRef, l labels.Labels, _, st int64, h *histogram.Histogram, _ *histogram.FloatHistogram) (storage.SeriesRef, error) {
-	if h != nil {
-		return a.AppendHistogram(ref, l, st, &histogram.Histogram{}, nil)
-	}
-	return a.AppendHistogram(ref, l, st, nil, &histogram.FloatHistogram{}) // This will change soon with AppenderV2, but we already report ST as 0 histograms.
-}
-
-func (a *appender) UpdateMetadata(ref storage.SeriesRef, l labels.Labels, m metadata.Metadata) (storage.SeriesRef, error) {
-	if err := a.checkErr(); err != nil {
-		return 0, err
-	}
-
-	if !a.a.skipRecording {
-		var updated bool
-
-		a.a.mtx.Lock()
-		// NOTE(bwplotka): Eventually metadata has to be attached to a series and soon
-		// the AppenderV2 will guarantee that for TSDB. Assume this from the mock perspective
-		// with the naive attaching. See: https://github.com/prometheus/prometheus/issues/17632
-		i := len(a.a.pendingSamples) - 1
-		for ; i >= 0; i-- { // Attach metadata to the last matching sample.
-			if labels.Equal(l, a.a.pendingSamples[i].L) {
-				a.a.pendingSamples[i].M = m
-				updated = true
-				break
-			}
-		}
-		a.a.mtx.Unlock()
-		if !updated {
-			return 0, fmt.Errorf("teststorage.appender: metadata update without series; ref %v; l %v; m: %v", ref, l, m)
-		}
-	}
-
-	if a.next != nil {
-		return a.next.UpdateMetadata(ref, l, m)
-	}
-	return a.a.computeOrCheckRef(ref, l)
 }
 
 type appenderV2 struct {

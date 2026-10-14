@@ -24,7 +24,6 @@ import (
 	"github.com/prometheus/prometheus/model/exemplar"
 	"github.com/prometheus/prometheus/model/histogram"
 	"github.com/prometheus/prometheus/model/labels"
-	"github.com/prometheus/prometheus/model/metadata"
 )
 
 type fanout struct {
@@ -124,19 +123,6 @@ func (f *fanout) ChunkQuerier(mint, maxt int64) (ChunkQuerier, error) {
 	return NewMergeChunkQuerier([]ChunkQuerier{primary}, secondaries, NewCompactingChunkSeriesMerger(ChainedSeriesMerge)), nil
 }
 
-func (f *fanout) Appender(ctx context.Context) Appender {
-	primary := f.primary.Appender(ctx)
-	secondaries := make([]Appender, 0, len(f.secondaries))
-	for _, storage := range f.secondaries {
-		secondaries = append(secondaries, storage.Appender(ctx))
-	}
-	return &fanoutAppender{
-		logger:      f.logger,
-		primary:     primary,
-		secondaries: secondaries,
-	}
-}
-
 func (f *fanout) AppenderV2(ctx context.Context) AppenderV2 {
 	primary := f.primary.AppenderV2(ctx)
 	secondaries := make([]AppenderV2, 0, len(f.secondaries))
@@ -159,138 +145,6 @@ func (f *fanout) Close() error {
 		errs = append(errs, s.Close())
 	}
 	return errors.Join(errs...)
-}
-
-// fanoutAppender implements Appender.
-type fanoutAppender struct {
-	logger *slog.Logger
-
-	primary     Appender
-	secondaries []Appender
-}
-
-// SetOptions propagates the hints to both primary and secondary appenders.
-func (f *fanoutAppender) SetOptions(opts *AppendOptions) {
-	if f.primary != nil {
-		f.primary.SetOptions(opts)
-	}
-	for _, appender := range f.secondaries {
-		appender.SetOptions(opts)
-	}
-}
-
-func (f *fanoutAppender) Append(ref SeriesRef, l labels.Labels, t int64, v float64) (SeriesRef, error) {
-	ref, err := f.primary.Append(ref, l, t, v)
-	if err != nil {
-		return ref, err
-	}
-
-	for _, appender := range f.secondaries {
-		if _, err := appender.Append(ref, l, t, v); err != nil {
-			return 0, err
-		}
-	}
-	return ref, nil
-}
-
-func (f *fanoutAppender) AppendExemplar(ref SeriesRef, l labels.Labels, e exemplar.Exemplar) (SeriesRef, error) {
-	ref, err := f.primary.AppendExemplar(ref, l, e)
-	if err != nil {
-		return ref, err
-	}
-
-	for _, appender := range f.secondaries {
-		if _, err := appender.AppendExemplar(ref, l, e); err != nil {
-			return 0, err
-		}
-	}
-	return ref, nil
-}
-
-func (f *fanoutAppender) AppendHistogram(ref SeriesRef, l labels.Labels, t int64, h *histogram.Histogram, fh *histogram.FloatHistogram) (SeriesRef, error) {
-	ref, err := f.primary.AppendHistogram(ref, l, t, h, fh)
-	if err != nil {
-		return ref, err
-	}
-
-	for _, appender := range f.secondaries {
-		if _, err := appender.AppendHistogram(ref, l, t, h, fh); err != nil {
-			return 0, err
-		}
-	}
-	return ref, nil
-}
-
-func (f *fanoutAppender) AppendHistogramSTZeroSample(ref SeriesRef, l labels.Labels, t, st int64, h *histogram.Histogram, fh *histogram.FloatHistogram) (SeriesRef, error) {
-	ref, err := f.primary.AppendHistogramSTZeroSample(ref, l, t, st, h, fh)
-	if err != nil {
-		return ref, err
-	}
-
-	for _, appender := range f.secondaries {
-		if _, err := appender.AppendHistogramSTZeroSample(ref, l, t, st, h, fh); err != nil {
-			return 0, err
-		}
-	}
-	return ref, nil
-}
-
-func (f *fanoutAppender) UpdateMetadata(ref SeriesRef, l labels.Labels, m metadata.Metadata) (SeriesRef, error) {
-	ref, err := f.primary.UpdateMetadata(ref, l, m)
-	if err != nil {
-		return ref, err
-	}
-
-	for _, appender := range f.secondaries {
-		if _, err := appender.UpdateMetadata(ref, l, m); err != nil {
-			return 0, err
-		}
-	}
-	return ref, nil
-}
-
-func (f *fanoutAppender) AppendSTZeroSample(ref SeriesRef, l labels.Labels, t, st int64) (SeriesRef, error) {
-	ref, err := f.primary.AppendSTZeroSample(ref, l, t, st)
-	if err != nil {
-		return ref, err
-	}
-
-	for _, appender := range f.secondaries {
-		if _, err := appender.AppendSTZeroSample(ref, l, t, st); err != nil {
-			return 0, err
-		}
-	}
-	return ref, nil
-}
-
-func (f *fanoutAppender) Commit() (err error) {
-	err = f.primary.Commit()
-
-	for _, appender := range f.secondaries {
-		if err == nil {
-			err = appender.Commit()
-		} else {
-			if rollbackErr := appender.Rollback(); rollbackErr != nil {
-				f.logger.Error("Squashed rollback error on commit", "err", rollbackErr)
-			}
-		}
-	}
-	return err
-}
-
-func (f *fanoutAppender) Rollback() (err error) {
-	err = f.primary.Rollback()
-
-	for _, appender := range f.secondaries {
-		rollbackErr := appender.Rollback()
-		switch {
-		case err == nil:
-			err = rollbackErr
-		case rollbackErr != nil:
-			f.logger.Error("Squashed rollback error on rollback", "err", rollbackErr)
-		}
-	}
-	return err
 }
 
 type fanoutAppenderV2 struct {
