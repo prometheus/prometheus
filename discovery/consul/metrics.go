@@ -24,8 +24,9 @@ import (
 var _ discovery.DiscovererMetrics = (*consulMetrics)(nil)
 
 type consulMetrics struct {
-	rpcFailuresCount prometheus.Counter
-	rpcDuration      *prometheus.HistogramVec
+	rpcFailuresCount     prometheus.Counter
+	rpcDuration          *prometheus.SummaryVec
+	rpcDurationHistogram *prometheus.HistogramVec
 
 	servicesRPCDuration prometheus.Observer
 	serviceRPCDuration  prometheus.Observer
@@ -42,10 +43,19 @@ func newDiscovererMetrics(reg prometheus.Registerer, _ discovery.RefreshMetricsI
 				Help:      "The number of Consul RPC call failures.",
 			},
 		),
-		rpcDuration: prometheus.NewHistogramVec(
+		rpcDuration: prometheus.NewSummaryVec(
+			prometheus.SummaryOpts{
+				Namespace:  namespace,
+				Name:       "sd_consul_rpc_duration_seconds",
+				Help:       "The duration of a Consul RPC call in seconds.",
+				Objectives: map[float64]float64{0.5: 0.05, 0.9: 0.01, 0.99: 0.001},
+			},
+			[]string{"endpoint", "call"},
+		),
+		rpcDurationHistogram: prometheus.NewHistogramVec(
 			prometheus.HistogramOpts{
 				Namespace:                       namespace,
-				Name:                            "sd_consul_rpc_duration_seconds",
+				Name:                            "sd_consul_rpc_duration_histogram_seconds",
 				Help:                            "The duration of a Consul RPC call in seconds.",
 				NativeHistogramBucketFactor:     1.1,
 				NativeHistogramMaxBucketNumber:  100,
@@ -58,11 +68,22 @@ func newDiscovererMetrics(reg prometheus.Registerer, _ discovery.RefreshMetricsI
 	m.metricRegisterer = discovery.NewMetricRegisterer(reg, []prometheus.Collector{
 		m.rpcFailuresCount,
 		m.rpcDuration,
+		m.rpcDurationHistogram,
 	})
 
 	// Initialize metric vectors.
-	m.servicesRPCDuration = m.rpcDuration.WithLabelValues("catalog", "services")
-	m.serviceRPCDuration = m.rpcDuration.WithLabelValues("catalog", "service")
+	servicesSummary := m.rpcDuration.WithLabelValues("catalog", "services")
+	servicesHistogram := m.rpcDurationHistogram.WithLabelValues("catalog", "services")
+	m.servicesRPCDuration = prometheus.ObserverFunc(func(value float64) {
+		servicesSummary.Observe(value)
+		servicesHistogram.Observe(value)
+	})
+	serviceSummary := m.rpcDuration.WithLabelValues("catalog", "service")
+	serviceHistogram := m.rpcDurationHistogram.WithLabelValues("catalog", "service")
+	m.serviceRPCDuration = prometheus.ObserverFunc(func(value float64) {
+		serviceSummary.Observe(value)
+		serviceHistogram.Observe(value)
+	})
 
 	return m
 }

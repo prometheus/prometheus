@@ -16,6 +16,7 @@ package discovery
 import (
 	"context"
 	"net/url"
+	"strings"
 	"testing"
 	"time"
 
@@ -29,8 +30,11 @@ func TestK8sClientNativeHistograms(t *testing.T) {
 	require.NoError(t, RegisterK8sClientMetricsWithPrometheus(reg))
 	t.Cleanup(func() {
 		clientGoRequestLatencyMetricVec.Reset()
+		clientGoRequestLatencyHistogramMetricVec.Reset()
 		clientGoWorkqueueLatencyMetricVec.Reset()
+		clientGoWorkqueueLatencyHistogramMetricVec.Reset()
 		clientGoWorkqueueWorkDurationMetricVec.Reset()
+		clientGoWorkqueueWorkDurationHistogramMetricVec.Reset()
 	})
 
 	for _, tc := range []struct {
@@ -40,7 +44,7 @@ func TestK8sClientNativeHistograms(t *testing.T) {
 		labelValue string
 	}{
 		{
-			name: "prometheus_sd_kubernetes_http_request_duration_seconds",
+			name: "prometheus_sd_kubernetes_http_request_duration_histogram_seconds",
 			observe: func(value float64) {
 				clientGoRequestMetrics.Observe(context.Background(), "GET", url.URL{Path: "/api/v1/pods"}, time.Duration(value*float64(time.Second)))
 			},
@@ -48,13 +52,13 @@ func TestK8sClientNativeHistograms(t *testing.T) {
 			labelValue: "/api/v1/pods",
 		},
 		{
-			name:       "prometheus_sd_kubernetes_workqueue_latency_seconds",
+			name:       "prometheus_sd_kubernetes_workqueue_latency_histogram_seconds",
 			observe:    clientGoWorkloadMetrics.NewLatencyMetric("native-histogram-test").Observe,
 			labelName:  "queue_name",
 			labelValue: "native-histogram-test",
 		},
 		{
-			name:       "prometheus_sd_kubernetes_workqueue_work_duration_seconds",
+			name:       "prometheus_sd_kubernetes_workqueue_work_duration_histogram_seconds",
 			observe:    clientGoWorkloadMetrics.NewWorkDurationMetric("native-histogram-test").Observe,
 			labelName:  "queue_name",
 			labelValue: "native-histogram-test",
@@ -86,6 +90,20 @@ func TestK8sClientNativeHistograms(t *testing.T) {
 			require.Equal(t, uint64(3), h.GetSampleCount())
 			require.InDelta(t, 1.76, h.GetSampleSum(), 1e-10)
 			require.NotEmpty(t, h.PositiveSpan)
+			summaryName := strings.Replace(tc.name, "_histogram_seconds", "_seconds", 1)
+			var summary *dto.MetricFamily
+			for _, f := range families {
+				if f.GetName() == summaryName {
+					summary = f
+					break
+				}
+			}
+			require.NotNil(t, summary)
+			require.Equal(t, dto.MetricType_SUMMARY, summary.GetType())
+			require.Len(t, summary.Metric, 1)
+			require.Equal(t, metric.Label, summary.Metric[0].Label)
+			require.Equal(t, h.GetSampleCount(), summary.Metric[0].GetSummary().GetSampleCount())
+			require.Equal(t, h.GetSampleSum(), summary.Metric[0].GetSummary().GetSampleSum())
 		})
 	}
 }

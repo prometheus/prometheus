@@ -128,18 +128,19 @@ func DefaultOptions() *Options {
 type dbMetrics struct {
 	r prometheus.Registerer
 
-	numActiveSeries             prometheus.Gauge
-	numWALSeriesPendingDeletion prometheus.Gauge
-	totalAppendedSamples        *prometheus.CounterVec
-	totalAppendedExemplars      prometheus.Counter
-	totalOutOfOrderSamples      prometheus.Counter
-	walTruncateDuration         prometheus.Histogram
-	walCorruptionsTotal         prometheus.Counter
-	walTotalReplayDuration      prometheus.Gauge
-	checkpointDeleteFail        prometheus.Counter
-	checkpointDeleteTotal       prometheus.Counter
-	checkpointCreationFail      prometheus.Counter
-	checkpointCreationTotal     prometheus.Counter
+	numActiveSeries              prometheus.Gauge
+	numWALSeriesPendingDeletion  prometheus.Gauge
+	totalAppendedSamples         *prometheus.CounterVec
+	totalAppendedExemplars       prometheus.Counter
+	totalOutOfOrderSamples       prometheus.Counter
+	walTruncateDuration          prometheus.Summary
+	walTruncateDurationHistogram prometheus.Histogram
+	walCorruptionsTotal          prometheus.Counter
+	walTotalReplayDuration       prometheus.Gauge
+	checkpointDeleteFail         prometheus.Counter
+	checkpointDeleteTotal        prometheus.Counter
+	checkpointCreationFail       prometheus.Counter
+	checkpointCreationTotal      prometheus.Counter
 }
 
 func newDBMetrics(r prometheus.Registerer) *dbMetrics {
@@ -169,8 +170,12 @@ func newDBMetrics(r prometheus.Registerer) *dbMetrics {
 		Help: "Total number of out of order samples ingestion failed attempts.",
 	})
 
-	m.walTruncateDuration = prometheus.NewHistogram(prometheus.HistogramOpts{
-		Name:                            "prometheus_agent_truncate_duration_seconds",
+	m.walTruncateDuration = prometheus.NewSummary(prometheus.SummaryOpts{
+		Name: "prometheus_agent_truncate_duration_seconds",
+		Help: "Duration of WAL truncation.",
+	})
+	m.walTruncateDurationHistogram = prometheus.NewHistogram(prometheus.HistogramOpts{
+		Name:                            "prometheus_agent_truncate_duration_histogram_seconds",
 		Help:                            "Duration of WAL truncation.",
 		NativeHistogramBucketFactor:     1.1,
 		NativeHistogramMaxBucketNumber:  100,
@@ -215,6 +220,7 @@ func newDBMetrics(r prometheus.Registerer) *dbMetrics {
 			m.totalAppendedExemplars,
 			m.totalOutOfOrderSamples,
 			m.walTruncateDuration,
+			m.walTruncateDurationHistogram,
 			m.walCorruptionsTotal,
 			m.walTotalReplayDuration,
 			m.checkpointDeleteFail,
@@ -238,6 +244,7 @@ func (m *dbMetrics) Unregister() {
 		m.totalAppendedExemplars,
 		m.totalOutOfOrderSamples,
 		m.walTruncateDuration,
+		m.walTruncateDurationHistogram,
 		m.walCorruptionsTotal,
 		m.walTotalReplayDuration,
 		m.checkpointDeleteFail,
@@ -820,7 +827,9 @@ func (db *DB) truncate(mint int64) error {
 		db.metrics.checkpointDeleteFail.Inc()
 	}
 
-	db.metrics.walTruncateDuration.Observe(time.Since(start).Seconds())
+	duration := time.Since(start).Seconds()
+	db.metrics.walTruncateDuration.Observe(duration)
+	db.metrics.walTruncateDurationHistogram.Observe(duration)
 
 	db.logger.Info("WAL checkpoint complete", "first", first, "last", last, "duration", time.Since(start))
 	return nil

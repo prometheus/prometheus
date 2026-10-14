@@ -310,16 +310,20 @@ func TestNativeHistogramMetrics(t *testing.T) {
 	m := newDiscovererMetrics(reg, nil).(*xdsMetrics)
 	require.NoError(t, m.Register())
 	defer m.Unregister()
-	for _, value := range []float64{0.01, 0.25, 1.5} {
-		m.fetchDuration.Observe(value)
-	}
+	d := &fetchDiscovery{metrics: m, logger: nopLogger, client: testResourceClient{fetch: func(context.Context) (*v3.DiscoveryResponse, error) { return nil, nil }}}
+	d.poll(context.Background(), make(chan []*targetgroup.Group, 1))
 	metric := &dto.Metric{}
-	require.NoError(t, m.fetchDuration.Write(metric))
+	require.NoError(t, m.fetchDurationHistogram.Write(metric))
 	require.Nil(t, metric.Summary)
 	h := metric.GetHistogram()
 	require.NotNil(t, h)
 	require.NotNil(t, h.Schema)
-	require.Equal(t, uint64(3), h.GetSampleCount())
-	require.InDelta(t, 1.76, h.GetSampleSum(), 1e-10)
+	require.Equal(t, uint64(1), h.GetSampleCount())
+	require.Positive(t, h.GetSampleSum())
 	require.NotEmpty(t, h.PositiveSpan)
+	summary := &dto.Metric{}
+	require.NoError(t, m.fetchDuration.Write(summary))
+	require.Equal(t, h.GetSampleCount(), summary.GetSummary().GetSampleCount())
+	require.Equal(t, h.GetSampleSum(), summary.GetSummary().GetSampleSum())
+	require.Len(t, summary.GetSummary().Quantile, 3)
 }

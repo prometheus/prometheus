@@ -698,10 +698,11 @@ func TestNativeHistogramMetrics(t *testing.T) {
 	defer m.Unregister()
 	for _, tc := range []struct {
 		name     string
+		call     string
 		observer prometheus.Observer
 	}{
-		{"services_rpc", m.servicesRPCDuration},
-		{"service_rpc", m.serviceRPCDuration},
+		{"services_rpc", "services", m.servicesRPCDuration},
+		{"service_rpc", "service", m.serviceRPCDuration},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			for _, value := range []float64{0.01, 0.25, 1.5} {
@@ -709,7 +710,7 @@ func TestNativeHistogramMetrics(t *testing.T) {
 			}
 
 			metric := &dto.Metric{}
-			require.NoError(t, tc.observer.(prometheus.Metric).Write(metric))
+			require.NoError(t, m.rpcDurationHistogram.WithLabelValues("catalog", tc.call).(prometheus.Metric).Write(metric))
 			require.Nil(t, metric.Summary)
 			h := metric.GetHistogram()
 			require.NotNil(t, h)
@@ -717,6 +718,11 @@ func TestNativeHistogramMetrics(t *testing.T) {
 			require.Equal(t, uint64(3), h.GetSampleCount())
 			require.InDelta(t, 1.76, h.GetSampleSum(), 1e-10)
 			require.NotEmpty(t, h.PositiveSpan)
+			summary := &dto.Metric{}
+			require.NoError(t, m.rpcDuration.WithLabelValues("catalog", tc.call).(prometheus.Metric).Write(summary))
+			require.Equal(t, h.GetSampleCount(), summary.GetSummary().GetSampleCount())
+			require.Equal(t, h.GetSampleSum(), summary.GetSummary().GetSampleSum())
+			require.Len(t, summary.GetSummary().Quantile, 3)
 		})
 	}
 }

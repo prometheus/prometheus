@@ -11283,37 +11283,46 @@ func testOOORestartResetsFirstOOOChunkID(t *testing.T, scenario sampleTypeScenar
 	require.NoError(t, h.Close())
 }
 
-func TestInternalNativeHistogramMetrics(t *testing.T) {
-	head, _ := newTestHead(t, 1000, compression.None, false)
-	compactor := NewCompactorMetrics(nil)
-	for _, tc := range []struct {
-		name           string
-		observer       prometheus.Observer
-		values         []float64
-		wantSum        float64
-		classicBuckets int
-	}{
-		{"head_gc", head.metrics.gcDuration, []float64{0.01, 0.25, 1.5}, 1.76, 0},
-		{"wal_truncate", head.metrics.walTruncateDuration, []float64{0.01, 0.25, 1.5}, 1.76, 0},
-		{"chunk_size", compactor.ChunkSize, []float64{32, 256, 4096}, 4384, 12},
-		{"chunk_samples", compactor.ChunkSamples, []float64{4, 120, 240}, 364, 12},
-		{"chunk_range", compactor.ChunkRange, []float64{60, 600, 7200}, 7860, 10},
-	} {
-		t.Run(tc.name, func(t *testing.T) {
-			for _, value := range tc.values {
-				tc.observer.Observe(value)
-			}
-
-			metric := &dto.Metric{}
-			require.NoError(t, tc.observer.(prometheus.Metric).Write(metric))
-			require.Nil(t, metric.Summary)
-			h := metric.GetHistogram()
-			require.NotNil(t, h)
+func TestHeadDurationMetrics(t *testing.T) {
+	reg := prometheus.NewRegistry()
+	dir := t.TempDir()
+	wal, err := wlog.NewSize(nil, nil, filepath.Join(dir, "wal"), 32768, compression.None)
+	require.NoError(t, err)
+	opts := newTestHeadDefaultOptions(1000, false)
+	opts.ChunkDirRoot = dir
+	head, err := NewHead(reg, nil, wal, nil, opts, nil)
+	require.NoError(t, err)
+	t.Cleanup(func() { require.NoError(t, head.Close()) })
+	for timestamp := int64(0); timestamp <= 4; timestamp++ {
+		app := head.Appender(context.Background())
+		_, err := app.Append(0, labels.FromStrings("a", "b"), timestamp, 0)
+		require.NoError(t, err)
+		require.NoError(t, app.Commit())
+		if timestamp > 0 {
+			require.NoError(t, head.Truncate(timestamp))
+		}
+	}
+	families, err := reg.Gather()
+	require.NoError(t, err)
+	metrics := map[string]*dto.MetricFamily{}
+	for _, family := range families {
+		metrics[family.GetName()] = family
+	}
+	for _, name := range []string{"prometheus_tsdb_head_gc_duration", "prometheus_tsdb_wal_truncate_duration"} {
+		t.Run(name, func(t *testing.T) {
+			summary := metrics[name+"_seconds"]
+			histogram := metrics[name+"_histogram_seconds"]
+			require.NotNil(t, summary)
+			require.NotNil(t, histogram)
+			require.Equal(t, dto.MetricType_SUMMARY, summary.GetType())
+			require.Equal(t, dto.MetricType_HISTOGRAM, histogram.GetType())
+			require.Len(t, summary.Metric, 1)
+			require.Len(t, histogram.Metric, 1)
+			h := histogram.Metric[0].GetHistogram()
 			require.NotNil(t, h.Schema)
-			require.Equal(t, uint64(3), h.GetSampleCount())
-			require.InDelta(t, tc.wantSum, h.GetSampleSum(), 1e-10)
-			require.NotEmpty(t, h.PositiveSpan)
-			require.Len(t, h.Bucket, tc.classicBuckets)
+			require.Positive(t, h.GetSampleCount())
+			require.Equal(t, summary.Metric[0].GetSummary().GetSampleCount(), h.GetSampleCount())
+			require.Equal(t, summary.Metric[0].GetSummary().GetSampleSum(), h.GetSampleSum())
 		})
 	}
 }

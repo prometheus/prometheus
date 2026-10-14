@@ -24,9 +24,10 @@ import (
 var _ discovery.DiscovererMetrics = (*xdsMetrics)(nil)
 
 type xdsMetrics struct {
-	fetchDuration        prometheus.Histogram
-	fetchSkipUpdateCount prometheus.Counter
-	fetchFailuresCount   prometheus.Counter
+	fetchDuration          prometheus.Summary
+	fetchDurationHistogram prometheus.Histogram
+	fetchSkipUpdateCount   prometheus.Counter
+	fetchFailuresCount     prometheus.Counter
 
 	metricRegisterer discovery.MetricRegisterer
 }
@@ -47,10 +48,18 @@ func newDiscovererMetrics(reg prometheus.Registerer, _ discovery.RefreshMetricsI
 				Help:      "The number of Kuma MADS fetch calls that result in no updates to the targets.",
 			},
 		),
-		fetchDuration: prometheus.NewHistogram(
+		fetchDuration: prometheus.NewSummary(
+			prometheus.SummaryOpts{
+				Namespace:  namespace,
+				Name:       "sd_kuma_fetch_duration_seconds",
+				Help:       "The duration of a Kuma MADS fetch call.",
+				Objectives: map[float64]float64{0.5: 0.05, 0.9: 0.01, 0.99: 0.001},
+			},
+		),
+		fetchDurationHistogram: prometheus.NewHistogram(
 			prometheus.HistogramOpts{
 				Namespace:                       namespace,
-				Name:                            "sd_kuma_fetch_duration_seconds",
+				Name:                            "sd_kuma_fetch_duration_histogram_seconds",
 				Help:                            "The duration of a Kuma MADS fetch call.",
 				NativeHistogramBucketFactor:     1.1,
 				NativeHistogramMaxBucketNumber:  100,
@@ -63,6 +72,7 @@ func newDiscovererMetrics(reg prometheus.Registerer, _ discovery.RefreshMetricsI
 		m.fetchFailuresCount,
 		m.fetchSkipUpdateCount,
 		m.fetchDuration,
+		m.fetchDurationHistogram,
 	})
 
 	return m

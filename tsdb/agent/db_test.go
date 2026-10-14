@@ -1669,17 +1669,24 @@ func BenchmarkGetOrCreate(b *testing.B) {
 }
 
 func TestNativeHistogramMetrics(t *testing.T) {
-	metrics := newDBMetrics(nil)
-	for _, value := range []float64{0.01, 0.25, 1.5} {
-		metrics.walTruncateDuration.Observe(value)
+	reg := prometheus.NewRegistry()
+	s := createTestAgentDB(t, reg, DefaultOptions())
+	defer func() { require.NoError(t, s.Close()) }()
+	app := s.Appender(context.Background())
+	_, err := app.Append(0, labels.FromStrings("a", "b"), 0, 0)
+	require.NoError(t, err)
+	require.NoError(t, app.Commit())
+	for range 3 {
+		_, err := s.wal.NextSegment()
+		require.NoError(t, err)
 	}
-	metric := &dto.Metric{}
-	require.NoError(t, metrics.walTruncateDuration.Write(metric))
-	require.Nil(t, metric.Summary)
-	h := metric.GetHistogram()
-	require.NotNil(t, h)
-	require.NotNil(t, h.Schema)
-	require.Equal(t, uint64(3), h.GetSampleCount())
-	require.InDelta(t, 1.76, h.GetSampleSum(), 1e-10)
-	require.NotEmpty(t, h.PositiveSpan)
+	require.NoError(t, s.truncate(1))
+	summary := &dto.Metric{}
+	histogram := &dto.Metric{}
+	require.NoError(t, s.metrics.walTruncateDuration.Write(summary))
+	require.NoError(t, s.metrics.walTruncateDurationHistogram.Write(histogram))
+	require.NotNil(t, histogram.GetHistogram().Schema)
+	require.Positive(t, histogram.GetHistogram().GetSampleCount())
+	require.Equal(t, summary.GetSummary().GetSampleCount(), histogram.GetHistogram().GetSampleCount())
+	require.Equal(t, summary.GetSummary().GetSampleSum(), histogram.GetHistogram().GetSampleSum())
 }

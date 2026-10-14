@@ -425,40 +425,42 @@ func (h *Head) resetWLReplayResources() {
 }
 
 type headMetrics struct {
-	activeAppenders           prometheus.Gauge
-	appendersCreated          prometheus.Counter
-	series                    prometheus.GaugeFunc
-	staleSeries               prometheus.GaugeFunc
-	nativeHistogramSeries     prometheus.GaugeFunc
-	nativeHistogramBuckets    prometheus.GaugeFunc
-	seriesCreated             prometheus.Counter
-	seriesRemoved             prometheus.Counter
-	seriesNotFound            prometheus.Counter
-	pendingCommitUnderflow    prometheus.Counter
-	chunks                    prometheus.Gauge
-	chunksCreated             prometheus.Counter
-	chunksRemoved             prometheus.Counter
-	gcDuration                prometheus.Histogram
-	samplesAppended           *prometheus.CounterVec
-	outOfOrderSamplesAppended *prometheus.CounterVec
-	outOfBoundSamples         *prometheus.CounterVec
-	outOfOrderSamples         *prometheus.CounterVec
-	tooOldSamples             *prometheus.CounterVec
-	walTruncateDuration       prometheus.Histogram
-	walCorruptionsTotal       prometheus.Counter
-	dataTotalReplayDuration   prometheus.Gauge
-	headTruncateFail          prometheus.Counter
-	headTruncateTotal         prometheus.Counter
-	checkpointDeleteFail      prometheus.Counter
-	checkpointDeleteTotal     prometheus.Counter
-	checkpointCreationFail    prometheus.Counter
-	checkpointCreationTotal   prometheus.Counter
-	mmapChunkCorruptionTotal  prometheus.Counter
-	snapshotReplayErrorTotal  prometheus.Counter // Will be either 0 or 1.
-	oooHistogram              prometheus.Histogram
-	mmapChunksTotal           prometheus.Counter
-	walReplayUnknownRefsTotal *prometheus.CounterVec
-	wblReplayUnknownRefsTotal *prometheus.CounterVec
+	activeAppenders              prometheus.Gauge
+	appendersCreated             prometheus.Counter
+	series                       prometheus.GaugeFunc
+	staleSeries                  prometheus.GaugeFunc
+	nativeHistogramSeries        prometheus.GaugeFunc
+	nativeHistogramBuckets       prometheus.GaugeFunc
+	seriesCreated                prometheus.Counter
+	seriesRemoved                prometheus.Counter
+	seriesNotFound               prometheus.Counter
+	pendingCommitUnderflow       prometheus.Counter
+	chunks                       prometheus.Gauge
+	chunksCreated                prometheus.Counter
+	chunksRemoved                prometheus.Counter
+	gcDuration                   prometheus.Summary
+	gcDurationHistogram          prometheus.Histogram
+	samplesAppended              *prometheus.CounterVec
+	outOfOrderSamplesAppended    *prometheus.CounterVec
+	outOfBoundSamples            *prometheus.CounterVec
+	outOfOrderSamples            *prometheus.CounterVec
+	tooOldSamples                *prometheus.CounterVec
+	walTruncateDuration          prometheus.Summary
+	walTruncateDurationHistogram prometheus.Histogram
+	walCorruptionsTotal          prometheus.Counter
+	dataTotalReplayDuration      prometheus.Gauge
+	headTruncateFail             prometheus.Counter
+	headTruncateTotal            prometheus.Counter
+	checkpointDeleteFail         prometheus.Counter
+	checkpointDeleteTotal        prometheus.Counter
+	checkpointCreationFail       prometheus.Counter
+	checkpointCreationTotal      prometheus.Counter
+	mmapChunkCorruptionTotal     prometheus.Counter
+	snapshotReplayErrorTotal     prometheus.Counter // Will be either 0 or 1.
+	oooHistogram                 prometheus.Histogram
+	mmapChunksTotal              prometheus.Counter
+	walReplayUnknownRefsTotal    *prometheus.CounterVec
+	wblReplayUnknownRefsTotal    *prometheus.CounterVec
 }
 
 const (
@@ -528,15 +530,23 @@ func newHeadMetrics(h *Head, r prometheus.Registerer) *headMetrics {
 			Name: "prometheus_tsdb_head_chunks_removed_total",
 			Help: "Total number of chunks removed in the head",
 		}),
-		gcDuration: prometheus.NewHistogram(prometheus.HistogramOpts{
-			Name:                            "prometheus_tsdb_head_gc_duration_seconds",
+		gcDuration: prometheus.NewSummary(prometheus.SummaryOpts{
+			Name: "prometheus_tsdb_head_gc_duration_seconds",
+			Help: "Runtime of garbage collection in the head block.",
+		}),
+		gcDurationHistogram: prometheus.NewHistogram(prometheus.HistogramOpts{
+			Name:                            "prometheus_tsdb_head_gc_duration_histogram_seconds",
 			Help:                            "Runtime of garbage collection in the head block.",
 			NativeHistogramBucketFactor:     1.1,
 			NativeHistogramMaxBucketNumber:  100,
 			NativeHistogramMinResetDuration: 1 * time.Hour,
 		}),
-		walTruncateDuration: prometheus.NewHistogram(prometheus.HistogramOpts{
-			Name:                            "prometheus_tsdb_wal_truncate_duration_seconds",
+		walTruncateDuration: prometheus.NewSummary(prometheus.SummaryOpts{
+			Name: "prometheus_tsdb_wal_truncate_duration_seconds",
+			Help: "Duration of WAL truncation.",
+		}),
+		walTruncateDurationHistogram: prometheus.NewHistogram(prometheus.HistogramOpts{
+			Name:                            "prometheus_tsdb_wal_truncate_duration_histogram_seconds",
 			Help:                            "Duration of WAL truncation.",
 			NativeHistogramBucketFactor:     1.1,
 			NativeHistogramMaxBucketNumber:  100,
@@ -648,7 +658,9 @@ func newHeadMetrics(h *Head, r prometheus.Registerer) *headMetrics {
 			m.seriesNotFound,
 			m.pendingCommitUnderflow,
 			m.gcDuration,
+			m.gcDurationHistogram,
 			m.walTruncateDuration,
+			m.walTruncateDurationHistogram,
 			m.walCorruptionsTotal,
 			m.dataTotalReplayDuration,
 			m.samplesAppended,
@@ -1760,7 +1772,9 @@ func (h *Head) truncateWAL(mint int64) error {
 		h.logger.Error("delete old checkpoints", "err", err)
 		h.metrics.checkpointDeleteFail.Inc()
 	}
-	h.metrics.walTruncateDuration.Observe(time.Since(start).Seconds())
+	duration := time.Since(start).Seconds()
+	h.metrics.walTruncateDuration.Observe(duration)
+	h.metrics.walTruncateDurationHistogram.Observe(duration)
 
 	h.logger.Info("WAL checkpoint complete",
 		"first", first, "last", last, "duration", time.Since(start).String())
@@ -1809,7 +1823,9 @@ func (h *Head) truncateSeriesAndChunkDiskMapper(caller string) error {
 	headMaxt := h.MaxTime()
 	actualMint, minOOOTime, minMmapFile := h.gc()
 	h.logger.Info("Head GC completed", "caller", caller, "duration", time.Since(start).String())
-	h.metrics.gcDuration.Observe(time.Since(start).Seconds())
+	duration := time.Since(start).Seconds()
+	h.metrics.gcDuration.Observe(duration)
+	h.metrics.gcDurationHistogram.Observe(duration)
 
 	if actualMint > h.minTime.Load() {
 		// The actual mint of the head is higher than the one asked to truncate.
