@@ -824,7 +824,7 @@ func createHead(tb testing.TB, w *wlog.WL, series []storage.Series, chunkDir str
 
 	var it chunkenc.Iterator
 	ctx := context.Background()
-	app := head.Appender(ctx)
+	app := head.AppenderV2(ctx)
 	for _, s := range series {
 		ref := storage.SeriesRef(0)
 		it = s.Iterator(it)
@@ -836,19 +836,19 @@ func createHead(tb testing.TB, w *wlog.WL, series []storage.Series, chunkDir str
 				// The behaviour of appender is undefined if samples of different types
 				// are appended to the same series in a single Commit().
 				require.NoError(tb, app.Commit())
-				app = head.Appender(ctx)
+				app = head.AppenderV2(ctx)
 			}
 
 			switch typ {
 			case chunkenc.ValFloat:
 				t, v := it.At()
-				ref, err = app.Append(ref, lset, t, v)
+				ref, err = app.Append(ref, lset, 0, t, v, nil, nil, storage.AOptions{})
 			case chunkenc.ValHistogram:
 				t, h := it.AtHistogram(nil)
-				ref, err = app.AppendHistogram(ref, lset, t, h, nil)
+				ref, err = app.Append(ref, lset, 0, t, 0, h, nil, storage.AOptions{})
 			case chunkenc.ValFloatHistogram:
 				t, fh := it.AtFloatHistogram(nil)
-				ref, err = app.AppendHistogram(ref, lset, t, nil, fh)
+				ref, err = app.Append(ref, lset, 0, t, 0, nil, fh, storage.AOptions{})
 			default:
 				err = fmt.Errorf("unknown sample type %s", typ.String())
 			}
@@ -873,7 +873,7 @@ func createHeadWithOOOSamples(tb testing.TB, w *wlog.WL, series []storage.Series
 
 	var it chunkenc.Iterator
 	totalSamples := 0
-	app := head.Appender(context.Background())
+	app := head.AppenderV2(context.Background())
 	for _, s := range series {
 		ref := storage.SeriesRef(0)
 		it = s.Iterator(it)
@@ -888,7 +888,7 @@ func createHeadWithOOOSamples(tb testing.TB, w *wlog.WL, series []storage.Series
 				os = append(os, sample{t: t, f: v})
 				continue
 			}
-			ref, err = app.Append(ref, lset, t, v)
+			ref, err = app.Append(ref, lset, 0, t, v, nil, nil, storage.AOptions{})
 			require.NoError(tb, err)
 		}
 		require.NoError(tb, it.Err())
@@ -902,11 +902,11 @@ func createHeadWithOOOSamples(tb testing.TB, w *wlog.WL, series []storage.Series
 	oooSamplesAppended := 0
 	require.Equal(tb, float64(0), prom_testutil.ToFloat64(head.metrics.outOfOrderSamplesAppended))
 
-	app = head.Appender(context.Background())
+	app = head.AppenderV2(context.Background())
 	for i, lset := range oooSampleLabels {
 		ref := storage.SeriesRef(0)
 		for _, sample := range oooSamples[i] {
-			ref, err = app.Append(ref, lset, sample.T(), sample.F())
+			ref, err = app.Append(ref, lset, 0, sample.T(), sample.F(), nil, nil, storage.AOptions{})
 			require.NoError(tb, err)
 			oooSamplesAppended++
 		}

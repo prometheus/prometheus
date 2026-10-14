@@ -1243,12 +1243,12 @@ func TestNewOOOCompactionHead_panicReleasesLock(t *testing.T) {
 	require.NoError(t, h.Init(0))
 
 	lbls := labels.FromStrings("__name__", "series")
-	app := h.Appender(t.Context())
+	app := h.AppenderV2(t.Context())
 	inOrderTs := 60 * time.Minute.Milliseconds()
-	_, err := app.Append(0, lbls, inOrderTs, 0)
+	_, err := app.Append(0, lbls, 0, inOrderTs, 0, nil, nil, storage.AOptions{})
 	require.NoError(t, err)
 	// An out-of-order sample within the OOO window creates an OOO head chunk.
-	_, err = app.Append(0, lbls, inOrderTs-5*time.Minute.Milliseconds(), 1)
+	_, err = app.Append(0, lbls, 0, inOrderTs-5*time.Minute.Milliseconds(), 1, nil, nil, storage.AOptions{})
 	require.NoError(t, err)
 	require.NoError(t, app.Commit())
 
