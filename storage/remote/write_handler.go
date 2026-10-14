@@ -486,7 +486,6 @@ func (h *writeHandler) handleV2PartialErr(err error, ls labels.Labels, outOfOrde
 	for _, eErr := range pErr.ExemplarErrors {
 		if errors.Is(eErr, storage.ErrOutOfOrderExemplar) {
 			*outOfOrderExemplarErrs++
-			h.logger.Error("Out of order exemplar", "err", eErr.Error(), "series", ls.String())
 			*badRequestErrs = append(*badRequestErrs, fmt.Errorf("%w for series %v", eErr, ls.String()))
 			continue
 		}
