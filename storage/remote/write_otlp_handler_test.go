@@ -338,6 +338,38 @@ func TestOTLPWriteHandler(t *testing.T) {
 		require.Equal(t, "healthy_metric", samples[0].L.Get(labels.MetricName))
 	})
 
+	t.Run("future exemplar is dropped without failing request", func(t *testing.T) {
+		for _, exOffset := range []time.Duration{0, time.Hour} {
+			t.Run(exOffset.String(), func(t *testing.T) {
+				now := time.Now()
+				request := pmetricotlp.NewExportRequest()
+				m := request.Metrics().ResourceMetrics().AppendEmpty().ScopeMetrics().AppendEmpty().Metrics().AppendEmpty()
+				m.SetName("test_histogram")
+				eh := m.SetEmptyExponentialHistogram()
+				eh.SetAggregationTemporality(pmetric.AggregationTemporalityCumulative)
+				dp := eh.DataPoints().AppendEmpty()
+				dp.SetTimestamp(pcommon.NewTimestampFromTime(now))
+				dp.SetCount(1)
+				dp.SetSum(1)
+				dp.SetScale(0)
+				dp.Positive().BucketCounts().FromRaw([]uint64{1})
+				ex := dp.Exemplars().AppendEmpty()
+				ex.SetTimestamp(pcommon.NewTimestampFromTime(now.Add(exOffset)))
+				ex.SetDoubleValue(1)
+				ex.SetTraceID(pcommon.TraceID{1})
+
+				appendable := handleOTLP(t, request, config.OTLPConfig{}, OTLPOptions{})
+				samples := appendable.ResultSamples()
+				require.Len(t, samples, 1, "histogram sample should be stored")
+				if exOffset == 0 {
+					require.Len(t, samples[0].ES, 1)
+				} else {
+					require.Empty(t, samples[0].ES)
+				}
+			})
+		}
+	})
+
 	t.Run("concurrent requests", func(t *testing.T) {
 		handler, payload := newOTLPWriteHandlerFixture(t)
 

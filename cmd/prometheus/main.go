@@ -272,7 +272,6 @@ func (c *flagConfig) setFeatureListOptions(logger *slog.Logger) error {
 				// NOTE(bwplotka): Once AppendableV1 is removed, there will be only the TSDB and agent flags.
 				c.scrape.EnableStartTimestampZeroIngestion = true
 				c.scrape.ParseST = true
-				c.web.STZeroIngestionEnabled = true
 				c.tsdb.EnableSTAsZeroSample = true
 				c.agent.EnableSTAsZeroSample = true
 

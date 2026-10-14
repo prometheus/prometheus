@@ -99,7 +99,6 @@ func newTestAPI(t *testing.T, cfg testhelpers.APIConfig) *testhelpers.APIWrapper
 		false,                              // otlpEnabled
 		false,                              // otlpDeltaToCumulative
 		false,                              // otlpNativeDeltaIngestion
-		false,                              // stZeroIngestionEnabled
 		5*time.Minute,                      // lookbackDelta
 		false,                              // enableTypeAndUnitLabels
 		false,                              // appendMetadata
