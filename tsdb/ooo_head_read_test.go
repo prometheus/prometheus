@@ -392,7 +392,7 @@ func testOOOHeadChunkReader_LabelValues(t *testing.T, scenario sampleTypeScenari
 
 	ctx := context.Background()
 
-	app := head.Appender(context.Background())
+	app := head.AppenderV2(context.Background())
 
 	// Add in-order samples
 	_, _, err := scenario.appendFunc(app, labels.FromStrings("foo", "bar1"), 100, int64(1))
@@ -838,13 +838,13 @@ func testOOOHeadChunkReader_Chunk(t *testing.T, scenario sampleTypeScenario) {
 		t.Run(fmt.Sprintf("name=%s", tc.name), func(t *testing.T) {
 			db := newTestDB(t, withOpts(opts))
 
-			app := db.Appender(context.Background())
+			app := db.AppenderV2(context.Background())
 			s1Ref, _, err := scenario.appendFunc(app, s1, tc.firstInOrderSampleAt, tc.firstInOrderSampleAt/1*time.Minute.Milliseconds())
 			require.NoError(t, err)
 			require.NoError(t, app.Commit())
 
 			// OOO few samples for s1.
-			app = db.Appender(context.Background())
+			app = db.AppenderV2(context.Background())
 			for _, s := range tc.inputSamples {
 				_, _, err := scenario.appendFunc(app, s1, s.Ts, s.V)
 				require.NoError(t, err)
@@ -1007,13 +1007,13 @@ func testOOOHeadChunkReader_Chunk_ConsistentQueryResponseDespiteOfHeadExpanding(
 		t.Run(fmt.Sprintf("name=%s", tc.name), func(t *testing.T) {
 			db := newTestDB(t, withOpts(opts))
 
-			app := db.Appender(context.Background())
+			app := db.AppenderV2(context.Background())
 			s1Ref, _, err := scenario.appendFunc(app, s1, tc.firstInOrderSampleAt, tc.firstInOrderSampleAt/1*time.Minute.Milliseconds())
 			require.NoError(t, err)
 			require.NoError(t, app.Commit())
 
 			// OOO few samples for s1.
-			app = db.Appender(context.Background())
+			app = db.AppenderV2(context.Background())
 			for _, s := range tc.initialSamples {
 				_, _, err := scenario.appendFunc(app, s1, s.Ts, s.V)
 				require.NoError(t, err)
@@ -1031,7 +1031,7 @@ func testOOOHeadChunkReader_Chunk_ConsistentQueryResponseDespiteOfHeadExpanding(
 
 			// Now we keep receiving ooo samples
 			// OOO few samples for s1.
-			app = db.Appender(context.Background())
+			app = db.AppenderV2(context.Background())
 			for _, s := range tc.samplesAfterSeriesCall {
 				_, _, err = scenario.appendFunc(app, s1, s.Ts, s.V)
 				require.NoError(t, err)
@@ -1286,7 +1286,7 @@ func testOOOQueryAcrossChunkIDWrap(t *testing.T, scenario sampleTypeScenario) {
 	s1 := labels.FromStrings("l", "v1")
 	minutes := func(m int64) int64 { return m * time.Minute.Milliseconds() }
 
-	app := db.Appender(context.Background())
+	app := db.AppenderV2(context.Background())
 
 	// In-order sample to establish the series.
 	ref, _, err := scenario.appendFunc(app, s1, minutes(120), 120)
@@ -1311,7 +1311,7 @@ func testOOOQueryAcrossChunkIDWrap(t *testing.T, scenario sampleTypeScenario) {
 	ms.Unlock()
 
 	// Second batch of 10 OOO samples whose chunk IDs cross the boundary.
-	app = db.Appender(context.Background())
+	app = db.AppenderV2(context.Background())
 	for i := int64(11); i <= 20; i++ {
 		_, _, err = scenario.appendFunc(app, s1, minutes(i), i)
 		require.NoError(t, err)

@@ -2079,7 +2079,7 @@ func TestOOOSampleLossOnWALCheckpointBeforeOOOCompaction(t *testing.T) {
 
 			appendSample := func(db *DB, ts int64) chunks.HeadSeriesRef {
 				app := db.AppenderV2(context.Background())
-				ref, _, err := scenario.appendFunc(storage.AppenderV2AsLimitedV1(app), series, ts, ts)
+				ref, _, err := scenario.appendFunc(app, series, ts, ts)
 				require.NoError(t, err)
 				require.NoError(t, app.Commit())
 				return chunks.HeadSeriesRef(ref)
@@ -2218,7 +2218,7 @@ func testDiskFillingUpAfterDisablingOOO(t *testing.T, scenario sampleTypeScenari
 		app := db.AppenderV2(ctx)
 		for m := fromMins; m <= toMins; m += 5 {
 			ts := m * time.Minute.Milliseconds()
-			_, _, err := scenario.appendFunc(storage.AppenderV2AsLimitedV1(app), series1, ts, ts)
+			_, _, err := scenario.appendFunc(app, series1, ts, ts)
 			require.NoError(t, err)
 		}
 		require.NoError(t, app.Commit())
@@ -5089,14 +5089,14 @@ func testOOOCompactionAcrossChunkIDWrap(t *testing.T, scenario sampleTypeScenari
 	app := db.AppenderV2(context.Background())
 
 	// In-order sample.
-	ref, _, err := scenario.appendFunc(storage.AppenderV2AsLimitedV1(app), l, minutes(200), 200)
+	ref, _, err := scenario.appendFunc(app, l, minutes(200), 200)
 	require.NoError(t, err)
 	var expSamples []chunks.Sample
 	expSamples = append(expSamples, scenario.sampleFunc(minutes(200), 200))
 
 	// 15 OOO samples to create 3 mmapped chunks (cap=5).
 	for i := int64(1); i <= 15; i++ {
-		_, _, err = scenario.appendFunc(storage.AppenderV2AsLimitedV1(app), l, minutes(i), i)
+		_, _, err = scenario.appendFunc(app, l, minutes(i), i)
 		require.NoError(t, err)
 		expSamples = append(expSamples, scenario.sampleFunc(minutes(i), i))
 	}
@@ -5113,7 +5113,7 @@ func testOOOCompactionAcrossChunkIDWrap(t *testing.T, scenario sampleTypeScenari
 	// More OOO data whose chunk IDs cross the boundary.
 	app = db.AppenderV2(context.Background())
 	for i := int64(16); i <= 30; i++ {
-		_, _, err = scenario.appendFunc(storage.AppenderV2AsLimitedV1(app), l, minutes(i), i)
+		_, _, err = scenario.appendFunc(app, l, minutes(i), i)
 		require.NoError(t, err)
 		expSamples = append(expSamples, scenario.sampleFunc(minutes(i), i))
 	}
@@ -5157,7 +5157,7 @@ func testInOrderCompactionAcrossChunkIDWrap(t *testing.T, scenario sampleTypeSce
 	// chunks. Every chunk appended afterwards is created with an ID at or past
 	// the boundary, so their stored HeadChunkRef IDs must wrap.
 	app := db.AppenderV2(context.Background())
-	ref, _, err := scenario.appendFunc(storage.AppenderV2AsLimitedV1(app), l, 0, 0)
+	ref, _, err := scenario.appendFunc(app, l, 0, 0)
 	require.NoError(t, err)
 	require.NoError(t, app.Commit())
 
@@ -5178,7 +5178,7 @@ func testInOrderCompactionAcrossChunkIDWrap(t *testing.T, scenario sampleTypeSce
 	expSamples := []chunks.Sample{scenario.sampleFunc(0, 0)}
 	app = db.AppenderV2(context.Background())
 	for ts := int64(10); ts < maxT; ts += 10 {
-		_, _, err = scenario.appendFunc(storage.AppenderV2AsLimitedV1(app), l, ts, ts)
+		_, _, err = scenario.appendFunc(app, l, ts, ts)
 		require.NoError(t, err)
 		expSamples = append(expSamples, scenario.sampleFunc(ts, ts))
 	}
