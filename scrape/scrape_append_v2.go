@@ -86,8 +86,6 @@ type scrapeLoopAppenderV2 struct {
 	storage.AppenderV2
 }
 
-var _ scrapeLoopAppendAdapter = &scrapeLoopAppenderV2{}
-
 func (sl *scrapeLoopAppenderV2) append(b []byte, contentType string, ts time.Time) (total, added, seriesAdded int, err error) {
 	defTime := timestamp.FromTime(ts)
 

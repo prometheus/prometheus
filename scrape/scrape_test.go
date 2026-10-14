@@ -101,7 +101,7 @@ func TestNewScrapePool(t *testing.T) {
 			MetricNameValidationScheme: model.UTF8Validation,
 			MetricNameEscapingScheme:   model.AllowUTF8,
 		}
-		sp, err = newScrapePool(cfg, nil, app, 0, nil, nil, &Options{}, newTestScrapeMetrics(t))
+		sp, err = newScrapePool(cfg, app, 0, nil, nil, &Options{}, newTestScrapeMetrics(t))
 	)
 	require.NoError(t, err)
 
@@ -109,8 +109,6 @@ func TestNewScrapePool(t *testing.T) {
 	require.True(t, ok, "Failure to append.")
 	require.Equal(t, app, a, "Wrong sample AppenderV2.")
 	require.Equal(t, cfg, sp.config, "Wrong scrape config.")
-
-	require.Nil(t, sp.appendable)
 }
 
 func TestStorageHandlesOutOfOrderTimestamps(t *testing.T) {
@@ -473,7 +471,7 @@ func TestDroppedTargetsList(t *testing.T) {
 				},
 			},
 		}
-		sp, _                  = newScrapePool(cfg, nil, app, 0, nil, nil, &Options{}, newTestScrapeMetrics(t))
+		sp, _                  = newScrapePool(cfg, app, 0, nil, nil, &Options{}, newTestScrapeMetrics(t))
 		expectedLabelSetString = "{__address__=\"127.0.0.1:9090\", __always_scrape_classic_histograms__=\"false\", __convert_classic_histograms_to_nhcb__=\"false\", __scrape_interval__=\"0s\", __scrape_native_histograms__=\"false\", __scrape_timeout__=\"0s\", job=\"dropMe\"}"
 		expectedLength         = 2
 	)
@@ -963,7 +961,7 @@ func TestScrapePoolRaces(t *testing.T) {
 			MetricNameEscapingScheme:   model.AllowUTF8,
 		}
 	}
-	sp, _ := newScrapePool(newConfig(), nil, teststorage.NewAppendable(), 0, nil, nil, &Options{}, newTestScrapeMetrics(t))
+	sp, _ := newScrapePool(newConfig(), teststorage.NewAppendable(), 0, nil, nil, &Options{}, newTestScrapeMetrics(t))
 	tgts := []*targetgroup.Group{
 		{
 			Targets: []model.LabelSet{
@@ -5373,7 +5371,7 @@ func TestReuseScrapeCache(t *testing.T) {
 			MetricNameValidationScheme: model.UTF8Validation,
 			MetricNameEscapingScheme:   model.AllowUTF8,
 		}
-		sp, _ = newScrapePool(cfg, nil, app, 0, nil, nil, &Options{}, newTestScrapeMetrics(t))
+		sp, _ = newScrapePool(cfg, app, 0, nil, nil, &Options{}, newTestScrapeMetrics(t))
 		t1    = &Target{
 			labels: labels.FromStrings("labelNew", "nameNew", "labelNew1", "nameNew1", "labelNew2", "nameNew2"),
 			scrapeConfig: &config.ScrapeConfig{
@@ -5579,7 +5577,7 @@ func TestReuseCacheRace(t *testing.T) {
 			MetricNameEscapingScheme:   model.AllowUTF8,
 		}
 		buffers = pool.New(1e3, 100e6, 3, func(sz int) any { return make([]byte, 0, sz) })
-		sp, _   = newScrapePool(cfg, nil, teststorage.NewAppendable(), 0, nil, buffers, &Options{}, newTestScrapeMetrics(t))
+		sp, _   = newScrapePool(cfg, teststorage.NewAppendable(), 0, nil, buffers, &Options{}, newTestScrapeMetrics(t))
 		t1      = &Target{
 			labels:       labels.FromStrings("labelNew", "nameNew"),
 			scrapeConfig: &config.ScrapeConfig{},
@@ -5684,7 +5682,7 @@ func TestScrapeReportLimit(t *testing.T) {
 	ts, scrapedTwice := newScrapableServer("metric_a 44\nmetric_b 44\nmetric_c 44\nmetric_d 44\n")
 	defer ts.Close()
 
-	sp, err := newScrapePool(cfg, nil, s, 0, nil, nil, &Options{}, newTestScrapeMetrics(t))
+	sp, err := newScrapePool(cfg, s, 0, nil, nil, &Options{}, newTestScrapeMetrics(t))
 	require.NoError(t, err)
 	defer sp.stop()
 
@@ -5737,7 +5735,7 @@ func TestScrapeUTF8(t *testing.T) {
 	ts, scrapedTwice := newScrapableServer("{\"with.dots\"} 42\n")
 	defer ts.Close()
 
-	sp, err := newScrapePool(cfg, nil, s, 0, nil, nil, &Options{}, newTestScrapeMetrics(t))
+	sp, err := newScrapePool(cfg, s, 0, nil, nil, &Options{}, newTestScrapeMetrics(t))
 	require.NoError(t, err)
 	defer sp.stop()
 
@@ -5885,7 +5883,7 @@ func TestTargetScrapeIntervalAndTimeoutRelabel(t *testing.T) {
 		},
 	}
 
-	sp, _ := newScrapePool(cfg, nil, teststorage.NewAppendable(), 0, nil, nil, &Options{}, newTestScrapeMetrics(t))
+	sp, _ := newScrapePool(cfg, teststorage.NewAppendable(), 0, nil, nil, &Options{}, newTestScrapeMetrics(t))
 	tgts := []*targetgroup.Group{
 		{
 			Targets: []model.LabelSet{{model.AddressLabel: "127.0.0.1:9090"}},
@@ -5919,7 +5917,7 @@ func TestTargetScrapeConvertClassicHistogramsToNHCBRelabel(t *testing.T) {
 		},
 	}
 
-	sp, _ := newScrapePool(cfg, nil, teststorage.NewAppendable(), 0, nil, nil, &Options{}, newTestScrapeMetrics(t))
+	sp, _ := newScrapePool(cfg, teststorage.NewAppendable(), 0, nil, nil, &Options{}, newTestScrapeMetrics(t))
 	tgts := []*targetgroup.Group{
 		{
 			Targets: []model.LabelSet{{model.AddressLabel: "127.0.0.1:9090"}},
@@ -6010,7 +6008,7 @@ test_summary_count 199
 	ts, scrapedTwice := newScrapableServer(metricsText)
 	defer ts.Close()
 
-	sp, err := newScrapePool(cfg, nil, s, 0, nil, nil, &Options{}, newTestScrapeMetrics(t))
+	sp, err := newScrapePool(cfg, s, 0, nil, nil, &Options{}, newTestScrapeMetrics(t))
 	require.NoError(t, err)
 	defer sp.stop()
 
@@ -6696,7 +6694,7 @@ disk_usage_bytes 456
 	ts, scrapedTwice := newScrapableServer(metricsText)
 	defer ts.Close()
 
-	sp, err := newScrapePool(cfg, nil, s, 0, nil, nil, &Options{}, newTestScrapeMetrics(t))
+	sp, err := newScrapePool(cfg, s, 0, nil, nil, &Options{}, newTestScrapeMetrics(t))
 	require.NoError(t, err)
 	defer sp.stop()
 
@@ -6824,7 +6822,7 @@ func TestScrapeLoopCompression(t *testing.T) {
 				MetricNameEscapingScheme:   model.AllowUTF8,
 			}
 
-			sp, err := newScrapePool(cfg, nil, s, 0, nil, nil, &Options{EnableZstdScrape: tc.enableZstd}, newTestScrapeMetrics(t))
+			sp, err := newScrapePool(cfg, s, 0, nil, nil, &Options{EnableZstdScrape: tc.enableZstd}, newTestScrapeMetrics(t))
 			require.NoError(t, err)
 			defer sp.stop()
 
@@ -7109,7 +7107,7 @@ scrape_configs:
 	s := teststorage.New(t)
 	reg := prometheus.NewRegistry()
 
-	mng, err := NewManager(&Options{DiscoveryReloadInterval: model.Duration(10 * time.Millisecond)}, nil, nil, nil, s, reg)
+	mng, err := NewManager(&Options{DiscoveryReloadInterval: model.Duration(10 * time.Millisecond)}, nil, nil, s, reg)
 	require.NoError(t, err)
 
 	cfg, err := config.Load(configStr, promslog.NewNopLogger())
@@ -7212,7 +7210,7 @@ func TestTargetScrapeConfigWithLabels(t *testing.T) {
 			}
 		}
 
-		sp, err := newScrapePool(cfg, nil, teststorage.NewAppendable(), 0, nil, nil, &Options{}, newTestScrapeMetrics(t))
+		sp, err := newScrapePool(cfg, teststorage.NewAppendable(), 0, nil, nil, &Options{}, newTestScrapeMetrics(t))
 		require.NoError(t, err)
 		t.Cleanup(sp.stop)
 
@@ -7375,7 +7373,7 @@ func TestScrapePoolScrapeAfterReload(t *testing.T) {
 		},
 	}
 
-	p, err := newScrapePool(cfg, nil, teststorage.NewAppendable(), 0, nil, nil, &Options{}, newTestScrapeMetrics(t))
+	p, err := newScrapePool(cfg, teststorage.NewAppendable(), 0, nil, nil, &Options{}, newTestScrapeMetrics(t))
 	require.NoError(t, err)
 	t.Cleanup(p.stop)
 
@@ -7696,7 +7694,6 @@ func BenchmarkScrapePoolRestartLoops(b *testing.B) {
 			ScrapeTimeout:              model.Duration(1 * time.Hour),
 		},
 		nil,
-		nil,
 		0,
 		nil,
 		nil,
@@ -7797,7 +7794,7 @@ func TestNewScrapeLoopHonorLabelsWiring(t *testing.T) {
 				MetricNameValidationScheme: model.UTF8Validation,
 			}
 
-			sp, err := newScrapePool(cfg, nil, s, 0, nil, nil, &Options{skipJitterOffsetting: true}, newTestScrapeMetrics(t))
+			sp, err := newScrapePool(cfg, s, 0, nil, nil, &Options{skipJitterOffsetting: true}, newTestScrapeMetrics(t))
 			require.NoError(t, err)
 			defer sp.stop()
 
@@ -7895,7 +7892,7 @@ func TestScrapePoolSetScrapeFailureLoggerRace(t *testing.T) {
 			MetricNameValidationScheme: model.UTF8Validation,
 			MetricNameEscapingScheme:   model.AllowUTF8,
 		}
-		sp, err = newScrapePool(cfg, nil, app, 0, nil, nil, &Options{}, newTestScrapeMetrics(t))
+		sp, err = newScrapePool(cfg, app, 0, nil, nil, &Options{}, newTestScrapeMetrics(t))
 	)
 	require.NoError(t, err)
 	defer sp.stop()
@@ -7975,7 +7972,7 @@ func TestScrapeOffsetDistribution(t *testing.T) {
 			// which zeroes the offsets asserted below.
 			fqdn: synctestFQDN,
 		}
-		scrapeManager, err := NewManager(opts, promslog.NewNopLogger(), nil, nil, app, prometheus.NewRegistry())
+		scrapeManager, err := NewManager(opts, promslog.NewNopLogger(), nil, app, prometheus.NewRegistry())
 		scrapeManager.offsetSeed = 1 // Set a fixed offset seed for deterministic testing.
 		require.NoError(t, err)
 

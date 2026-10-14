@@ -40,20 +40,11 @@ import (
 	"github.com/prometheus/prometheus/util/pool"
 )
 
-// NewManager is the Manager constructor using storage.Appendable or storage.AppendableV2.
-//
-// If unsure which one to use/implement, implement AppendableV2 as it significantly simplifies implementation and allows more
-// (passing ST, always-on metadata, exemplars per sample).
-//
-// NewManager returns error if both appendable and appendableV2 are specified.
-//
-// Switch to AppendableV2 is in progress (https://github.com/prometheus/prometheus/issues/17632).
-// storage.Appendable will be removed soon (ETA: Q2 2026).
+// NewManager is the Manager constructor.
 func NewManager(
 	o *Options,
 	logger *slog.Logger,
 	newScrapeFailureLogger func(string) (*logging.JSONFileLogger, error),
-	appendable storage.Appendable,
 	appendableV2 storage.AppendableV2,
 	registerer prometheus.Registerer,
 ) (*Manager, error) {
@@ -63,11 +54,8 @@ func NewManager(
 	if logger == nil {
 		logger = promslog.NewNopLogger()
 	}
-	if appendable != nil && appendableV2 != nil {
-		return nil, errors.New("scrape.NewManager: appendable and appendableV2 cannot be provided at the same time")
-	}
-	if appendable == nil && appendableV2 == nil {
-		return nil, errors.New("scrape.NewManager: provide either appendable or appendableV2")
+	if appendableV2 == nil {
+		return nil, errors.New("scrape.NewManager: appendableV2 not provided")
 	}
 
 	sm, err := newScrapeMetrics(registerer)
@@ -76,7 +64,6 @@ func NewManager(
 	}
 
 	m := &Manager{
-		appendable:             appendable,
 		appendableV2:           appendableV2,
 		opts:                   o,
 		logger:                 logger,
@@ -95,7 +82,6 @@ func NewManager(
 	if r := o.FeatureRegistry; r != nil {
 		// "Extra scrape metrics" is always enabled because it moved from feature flag to config file.
 		r.Enable(features.Scrape, "extra_scrape_metrics")
-		r.Set(features.Scrape, "start_timestamp_zero_ingestion", o.EnableStartTimestampZeroIngestion)
 		r.Set(features.Scrape, "type_and_unit_labels", o.EnableTypeAndUnitLabels)
 		r.Set(features.Scrape, "openmetrics2", o.EnableOpenMetrics2)
 	}
@@ -115,13 +101,6 @@ type Options struct {
 	// Option to increase the interval used by scrape manager to throttle target groups updates.
 	DiscoveryReloadInterval model.Duration
 
-	// Option to enable the ingestion of the created timestamp as a synthetic zero sample.
-	// See: https://github.com/prometheus/proposals/blob/main/proposals/2023-06-13_created-timestamp.md
-	//
-	// NOTE: This option has no effect for AppenderV2 and will be removed with the AppenderV1
-	// removal.
-	EnableStartTimestampZeroIngestion bool
-
 	// ParseST controls if ST should be parsed and appended from the scrape formats.
 	// This should be by default true, but it's opt-in for OpenMetrics (OM) 1.0 reasons and might be moved
 	// to OM  1.0 only flow.
@@ -133,7 +112,6 @@ type Options struct {
 	// * Add relatively small (but still) overhead.
 	// * Can yield wrong ST values in rare edge cases (unknown metadata and metric name collisions).
 	//
-	// This only applies to AppenderV2 flow (Prometheus default).
 	// TODO: Move this option to OM1 parser and use only on OM1 flow.
 	ParseST bool
 
@@ -199,7 +177,6 @@ type Manager struct {
 	opts   *Options
 	logger *slog.Logger
 
-	appendable   storage.Appendable
 	appendableV2 storage.AppendableV2
 
 	graceShut chan struct{}
@@ -291,7 +268,7 @@ func (m *Manager) reload() {
 				continue
 			}
 			m.metrics.targetScrapePools.Inc()
-			sp, err := newScrapePool(scrapeConfig, m.appendable, m.appendableV2, m.offsetSeed, m.logger.With("scrape_pool", setName), m.buffers, m.opts, m.metrics)
+			sp, err := newScrapePool(scrapeConfig, m.appendableV2, m.offsetSeed, m.logger.With("scrape_pool", setName), m.buffers, m.opts, m.metrics)
 			if err != nil {
 				m.metrics.targetScrapePoolsFailed.Inc()
 				m.logger.Error("error creating new scrape pool", "err", err, "scrape_pool", setName)

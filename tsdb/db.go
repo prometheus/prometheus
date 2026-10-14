@@ -927,6 +927,7 @@ func Open(dir string, l *slog.Logger, r prometheus.Registerer, opts *Options, st
 		opts.FeatureRegistry.Set(features.TSDB, "use_uncached_io", opts.UseUncachedIO)
 		opts.FeatureRegistry.Enable(features.TSDB, "native_histograms")
 		opts.FeatureRegistry.Set(features.TSDB, "st_storage", opts.EnableSTStorage)
+		opts.FeatureRegistry.Set(features.TSDB, "start_timestamp_zero_ingestion", opts.EnableSTAsZeroSample)
 		opts.FeatureRegistry.Enable(features.TSDB, "xor2_encoding")
 		opts.FeatureRegistry.Set(features.TSDB, "histograms_st_encoding", opts.EnableHistogramSTEncoding)
 	}
