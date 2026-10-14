@@ -1781,7 +1781,7 @@ load 10s
 			Start:        time.Unix(250, 0),
 			End:          time.Unix(280, 0),
 			Interval:     10 * time.Second,
-			PeakSamples:  19,
+			PeakSamples:  16,
 			TotalSamples: 16, // (2 subquery input samples + 2 materialized samples) * 4 steps.
 			TotalSamplesPerStep: stats.TotalSamplesPerStep{
 				250000: 4,
