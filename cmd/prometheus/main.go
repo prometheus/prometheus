@@ -54,6 +54,7 @@ import (
 	"github.com/prometheus/common/version"
 	toolkit_web "github.com/prometheus/exporter-toolkit/web"
 	"go.uber.org/atomic"
+	"go.yaml.in/yaml/v2"
 	"go.uber.org/automaxprocs/maxprocs"
 	"k8s.io/client-go/rest"
 	"k8s.io/klog"
@@ -731,7 +732,13 @@ func main() {
 		localStoragePath = cfg.agentStoragePath
 	}
 
-	cfg.web.ExternalURL, err = computeExternalURL(cfg.prometheusURL, cfg.web.ListenAddresses[0])
+	tlsEnabled, err := webConfigHasTLS(*webConfig)
+	if err != nil {
+		fmt.Fprintln(os.Stderr, err)
+		os.Exit(2)
+	}
+
+	cfg.web.ExternalURL, err = computeExternalURL(cfg.prometheusURL, cfg.web.ListenAddresses[0], tlsEnabled)
 	if err != nil {
 		fmt.Fprintln(os.Stderr, fmt.Errorf("parse external URL %q: %w", cfg.prometheusURL, err))
 		os.Exit(2)
@@ -1790,8 +1797,10 @@ func compileCORSRegexString(s string) (*regexp.Regexp, error) {
 }
 
 // computeExternalURL computes a sanitized external URL from a raw input. It infers unset
-// URL parts from the OS and the given listen address.
-func computeExternalURL(u, listenAddr string) (*url.URL, error) {
+// URL parts from the OS and the given listen address. The tlsEnabled parameter indicates
+// whether TLS is configured, so that the inferred scheme defaults to https:// instead
+// of http://.
+func computeExternalURL(u, listenAddr string, tlsEnabled bool) (*url.URL, error) {
 	if u == "" {
 		hostname, err := os.Hostname()
 		if err != nil {
@@ -1801,7 +1810,11 @@ func computeExternalURL(u, listenAddr string) (*url.URL, error) {
 		if err != nil {
 			return nil, err
 		}
-		u = fmt.Sprintf("http://%s:%s/", hostname, port)
+		scheme := "http"
+		if tlsEnabled {
+			scheme = "https"
+		}
+		u = fmt.Sprintf("%s://%s:%s/", scheme, hostname, port)
 	}
 
 	if startsOrEndsWithQuote(u) {
@@ -1820,6 +1833,25 @@ func computeExternalURL(u, listenAddr string) (*url.URL, error) {
 	eu.Path = ppref
 
 	return eu, nil
+}
+
+// webConfigHasTLS checks whether TLS is configured in the web config file.
+// It returns false if no web config file is specified or if the file does not
+// contain TLS configuration. An error reading the file is reported via the
+// error return value.
+func webConfigHasTLS(webConfigPath string) (bool, error) {
+	if webConfigPath == "" {
+		return false, nil
+	}
+	content, err := os.ReadFile(webConfigPath)
+	if err != nil {
+		return false, fmt.Errorf("reading web config file %q: %w", webConfigPath, err)
+	}
+	var cfg toolkit_web.Config
+	if err := yaml.Unmarshal(content, &cfg); err != nil {
+		return false, fmt.Errorf("parsing web config file %q: %w", webConfigPath, err)
+	}
+	return cfg.TLSConfig.IsEnabled(), nil
 }
 
 // storagePathFsSize returns the filesystem size for path or its closest existing parent.
