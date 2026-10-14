@@ -1079,7 +1079,7 @@ func testHeadAppenderV2OutOfOrderSamplesMetric(t *testing.T, scenario sampleType
 
 	appendSample := func(app storage.AppenderV2, ts int64) (storage.SeriesRef, error) {
 		// TODO(bwplotka): Migrate to V2 natively.
-		ref, _, err := scenario.appendFunc(storage.AppenderV2AsLimitedV1(app), labels.FromStrings("a", "b"), ts, 99)
+		ref, _, err := scenario.appendFunc(app, labels.FromStrings("a", "b"), ts, 99)
 		return ref, err
 	}
 
@@ -3025,7 +3025,7 @@ func testWBLReplayAppenderV2(t *testing.T, scenario sampleTypeScenario, enableST
 	l := labels.FromStrings("foo", "bar")
 	appendSample := func(mins int64, _ float64, isOOO bool) {
 		app := h.AppenderV2(context.Background())
-		_, s, err := scenario.appendFunc(storage.AppenderV2AsLimitedV1(app), l, mins*time.Minute.Milliseconds(), mins)
+		_, s, err := scenario.appendFunc(app, l, mins*time.Minute.Milliseconds(), mins)
 		require.NoError(t, err)
 		require.NoError(t, app.Commit())
 
@@ -3117,7 +3117,7 @@ func testOOOMmapReplayAppenderV2(t *testing.T, scenario sampleTypeScenario) {
 	l := labels.FromStrings("foo", "bar")
 	appendSample := func(mins int64) {
 		app := h.AppenderV2(context.Background())
-		_, _, err := scenario.appendFunc(storage.AppenderV2AsLimitedV1(app), l, mins*time.Minute.Milliseconds(), mins)
+		_, _, err := scenario.appendFunc(app, l, mins*time.Minute.Milliseconds(), mins)
 		require.NoError(t, err)
 		require.NoError(t, app.Commit())
 	}
@@ -3381,7 +3381,7 @@ func TestHeadAppenderV2_Append_OOOWithNoSeries(t *testing.T) {
 	}
 }
 
-func testHeadAppenderV2AppendOOOWithNoSeries(t *testing.T, appendFunc func(appender storage.LimitedAppenderV1, lbls labels.Labels, ts, value int64) (storage.SeriesRef, sample, error)) {
+func testHeadAppenderV2AppendOOOWithNoSeries(t *testing.T, appendFunc func(appender storage.AppenderV2, lbls labels.Labels, ts, value int64) (storage.SeriesRef, sample, error)) {
 	dir := t.TempDir()
 	wal, err := wlog.NewSize(nil, nil, filepath.Join(dir, "wal"), 32768, compression.Snappy)
 	require.NoError(t, err)
@@ -3402,7 +3402,7 @@ func testHeadAppenderV2AppendOOOWithNoSeries(t *testing.T, appendFunc func(appen
 
 	appendSample := func(lbls labels.Labels, ts int64) {
 		app := h.AppenderV2(context.Background())
-		_, _, err := appendFunc(storage.AppenderV2AsLimitedV1(app), lbls, ts*time.Minute.Milliseconds(), ts)
+		_, _, err := appendFunc(app, lbls, ts*time.Minute.Milliseconds(), ts)
 		require.NoError(t, err)
 		require.NoError(t, app.Commit())
 	}
@@ -3450,7 +3450,7 @@ func testHeadAppenderV2AppendOOOWithNoSeries(t *testing.T, appendFunc func(appen
 	// Now 179m is too old.
 	s4 := newLabels(4)
 	app := h.AppenderV2(context.Background())
-	_, _, err = appendFunc(storage.AppenderV2AsLimitedV1(app), s4, 179*time.Minute.Milliseconds(), 179)
+	_, _, err = appendFunc(app, s4, 179*time.Minute.Milliseconds(), 179)
 	require.Equal(t, storage.ErrTooOldSample, err)
 	require.NoError(t, app.Rollback())
 	verifyOOOSamples(s3, 1)
@@ -3492,7 +3492,7 @@ func testHeadMinOOOTimeUpdateAppenderV2(t *testing.T, scenario sampleTypeScenari
 
 	appendSample := func(ts int64) {
 		app := h.AppenderV2(context.Background())
-		_, _, err = scenario.appendFunc(storage.AppenderV2AsLimitedV1(app), labels.FromStrings("a", "b"), ts*time.Minute.Milliseconds(), ts)
+		_, _, err = scenario.appendFunc(app, labels.FromStrings("a", "b"), ts*time.Minute.Milliseconds(), ts)
 		require.NoError(t, err)
 		require.NoError(t, app.Commit())
 	}
