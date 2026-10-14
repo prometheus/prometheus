@@ -374,10 +374,13 @@ func (a *HistogramSTAppender) AppendHistogram(prev Appender, st, t int64, h *his
 			if appendOnly {
 				return nil, false, a, fmt.Errorf("histogram layout change with %d positive and %d negative forwards inserts", len(pForwardInserts), len(nForwardInserts))
 			}
-			chk, happ := a.recodeST(
+			chk, happ, err := a.recodeST(
 				pForwardInserts, nForwardInserts,
 				h.PositiveSpans, h.NegativeSpans,
 			)
+			if err != nil {
+				return nil, false, nil, err
+			}
 			happ.setNumSamples(happ.appendHistogramST(happ.NumSamples(), st, t, h))
 			return chk, true, happ, nil
 		}
@@ -415,10 +418,13 @@ func (a *HistogramSTAppender) AppendHistogram(prev Appender, st, t int64, h *his
 		if appendOnly {
 			return nil, false, a, fmt.Errorf("gauge histogram layout change with %d positive and %d negative forwards inserts", len(pForwardInserts), len(nForwardInserts))
 		}
-		chk, happ := a.recodeST(
+		chk, happ, err := a.recodeST(
 			pForwardInserts, nForwardInserts,
 			h.PositiveSpans, h.NegativeSpans,
 		)
+		if err != nil {
+			return nil, false, nil, err
+		}
 		happ.setNumSamples(happ.appendHistogramST(happ.NumSamples(), st, t, h))
 		return chk, true, happ, nil
 	}
@@ -431,7 +437,7 @@ func (a *HistogramSTAppender) AppendHistogram(prev Appender, st, t int64, h *his
 func (a *HistogramSTAppender) recodeST(
 	positiveInserts, negativeInserts []Insert,
 	positiveSpans, negativeSpans []histogram.Span,
-) (Chunk, *HistogramSTAppender) {
+) (Chunk, *HistogramSTAppender, error) {
 	byts := a.b.bytes()
 	it := newHistogramSTIterator(byts)
 	hc := NewHistogramSTChunk()
@@ -464,10 +470,13 @@ func (a *HistogramSTAppender) recodeST(
 		}
 		num = happ.appendHistogramST(num, stOld, tOld, hOld)
 	}
+	if err := it.Err(); err != nil {
+		return nil, nil, err
+	}
 	happ.setNumSamples(num)
 
 	happ.setCounterResetHeader(CounterResetHeader(byts[0] & CounterResetHeaderMask))
-	return hc, happ
+	return hc, happ, nil
 }
 
 // histogramSTIterator is an iterator for HistogramSTChunk that decodes ST after each sample.

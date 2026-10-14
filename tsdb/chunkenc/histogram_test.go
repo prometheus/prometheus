@@ -270,7 +270,8 @@ func TestHistogramChunkBucketChanges(t *testing.T) {
 	require.Empty(t, backwardNegativeInserts)
 	require.True(t, ok) // Only new buckets came in.
 	require.Equal(t, NotCounterReset, cr)
-	c, app = hApp.recode(posInterjections, negInterjections, h2.PositiveSpans, h2.NegativeSpans)
+	c, app, err = hApp.recode(posInterjections, negInterjections, h2.PositiveSpans, h2.NegativeSpans)
+	require.NoError(t, err)
 	chk, _, _, err = app.AppendHistogram(nil, 0, ts2, h2, false)
 	require.NoError(t, err)
 	require.Nil(t, chk)

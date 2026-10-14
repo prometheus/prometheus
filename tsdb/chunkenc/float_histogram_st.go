@@ -393,10 +393,13 @@ func (a *FloatHistogramSTAppender) AppendFloatHistogram(prev Appender, st, t int
 			if appendOnly {
 				return nil, false, a, fmt.Errorf("float histogram layout change with %d positive and %d negative forwards inserts", len(pForwardInserts), len(nForwardInserts))
 			}
-			chk, happ := a.recodeST(
+			chk, happ, err := a.recodeST(
 				pForwardInserts, nForwardInserts,
 				fh.PositiveSpans, fh.NegativeSpans,
 			)
+			if err != nil {
+				return nil, false, nil, err
+			}
 			happ.setNumSamples(happ.appendFloatHistogramST(happ.NumSamples(), st, t, fh))
 			return chk, true, happ, nil
 		}
@@ -434,10 +437,13 @@ func (a *FloatHistogramSTAppender) AppendFloatHistogram(prev Appender, st, t int
 		if appendOnly {
 			return nil, false, a, fmt.Errorf("float gauge histogram layout change with %d positive and %d negative forwards inserts", len(pForwardInserts), len(nForwardInserts))
 		}
-		chk, happ := a.recodeST(
+		chk, happ, err := a.recodeST(
 			pForwardInserts, nForwardInserts,
 			fh.PositiveSpans, fh.NegativeSpans,
 		)
+		if err != nil {
+			return nil, false, nil, err
+		}
 		happ.setNumSamples(happ.appendFloatHistogramST(happ.NumSamples(), st, t, fh))
 		return chk, true, happ, nil
 	}
@@ -450,7 +456,7 @@ func (a *FloatHistogramSTAppender) AppendFloatHistogram(prev Appender, st, t int
 func (a *FloatHistogramSTAppender) recodeST(
 	positiveInserts, negativeInserts []Insert,
 	positiveSpans, negativeSpans []histogram.Span,
-) (Chunk, *FloatHistogramSTAppender) {
+) (Chunk, *FloatHistogramSTAppender, error) {
 	byts := a.b.bytes()
 	it := newFloatHistogramSTIterator(byts)
 	hc := NewFloatHistogramSTChunk()
@@ -483,10 +489,13 @@ func (a *FloatHistogramSTAppender) recodeST(
 		}
 		num = happ.appendFloatHistogramST(num, stOld, tOld, fhOld)
 	}
+	if err := it.Err(); err != nil {
+		return nil, nil, err
+	}
 	happ.setNumSamples(num)
 
 	happ.setCounterResetHeader(CounterResetHeader(byts[0] & CounterResetHeaderMask))
-	return hc, happ
+	return hc, happ, nil
 }
 
 // floatHistogramSTIterator is an iterator for FloatHistogramSTChunk that decodes ST after each sample.
