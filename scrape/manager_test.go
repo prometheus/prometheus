@@ -674,7 +674,7 @@ scrape_configs:
 	)
 
 	opts := Options{}
-	scrapeManager, err := NewManager(&opts, nil, nil, nil, teststorage.NewAppendable(), testRegistry)
+	scrapeManager, err := NewManager(&opts, nil, nil, teststorage.NewAppendable(), testRegistry)
 	require.NoError(t, err)
 	newLoop := func(scrapeLoopOptions) loop {
 		ch <- struct{}{}
@@ -730,7 +730,7 @@ scrape_configs:
 func TestManagerTargetsUpdates(t *testing.T) {
 	opts := Options{}
 	testRegistry := prometheus.NewRegistry()
-	m, err := NewManager(&opts, nil, nil, nil, teststorage.NewAppendable(), testRegistry)
+	m, err := NewManager(&opts, nil, nil, teststorage.NewAppendable(), testRegistry)
 	require.NoError(t, err)
 
 	targetSetsCh := make(chan map[string][]*targetgroup.Group)
@@ -767,7 +767,7 @@ func TestManagerTargetsUpdates(t *testing.T) {
 }
 
 func TestManagerRunReturnsWhenTargetSetsClosed(t *testing.T) {
-	m, err := NewManager(&Options{}, nil, nil, nil, teststorage.NewAppendable(), prometheus.NewRegistry())
+	m, err := NewManager(&Options{}, nil, nil, teststorage.NewAppendable(), prometheus.NewRegistry())
 	require.NoError(t, err)
 	defer m.Stop()
 
@@ -803,7 +803,7 @@ global:
 
 	opts := Options{}
 	testRegistry := prometheus.NewRegistry()
-	scrapeManager, err := NewManager(&opts, nil, nil, nil, teststorage.NewAppendable(), testRegistry)
+	scrapeManager, err := NewManager(&opts, nil, nil, teststorage.NewAppendable(), testRegistry)
 	require.NoError(t, err)
 
 	// Load the first config.
@@ -823,7 +823,7 @@ global:
 
 	// The fqdn option replaces the name lookup, so the seed follows it.
 	seedFor := func(fqdn string) uint64 {
-		m, err := NewManager(&Options{fqdn: fqdn}, nil, nil, nil, teststorage.NewAppendable(), prometheus.NewRegistry())
+		m, err := NewManager(&Options{fqdn: fqdn}, nil, nil, teststorage.NewAppendable(), prometheus.NewRegistry())
 		require.NoError(t, err)
 		require.NoError(t, m.setOffsetSeed(cfg1.GlobalConfig.ExternalLabels))
 		return m.offsetSeed
@@ -892,7 +892,7 @@ scrape_configs:
 	}
 
 	opts := Options{}
-	scrapeManager, err := NewManager(&opts, nil, nil, nil, teststorage.NewAppendable(), testRegistry)
+	scrapeManager, err := NewManager(&opts, nil, nil, teststorage.NewAppendable(), testRegistry)
 	require.NoError(t, err)
 
 	reload(scrapeManager, cfg1)
@@ -957,7 +957,7 @@ func TestManagerParseST(t *testing.T) {
 							discoveryManager, scrapeManager := runManagers(t, ctx, &Options{
 								ParseST:              testParseST,
 								skipJitterOffsetting: true,
-							}, nil, app)
+							}, app)
 							defer scrapeManager.Stop()
 
 							server := setupTestServer(t, config.ScrapeProtocolsHeaders[testFormat], encoded)
@@ -1138,7 +1138,7 @@ func TestManagerParseSTHistogram(t *testing.T) {
 			discoveryManager, scrapeManager := runManagers(t, ctx, &Options{
 				ParseST:              tc.parseST,
 				skipJitterOffsetting: true,
-			}, nil, app)
+			}, app)
 			defer scrapeManager.Stop()
 
 			once := sync.Once{}
@@ -1210,7 +1210,7 @@ func TestUnregisterMetrics(t *testing.T) {
 	// Check that all metrics can be unregistered, allowing a second manager to be created.
 	for range 2 {
 		opts := Options{}
-		manager, err := NewManager(&opts, nil, nil, nil, teststorage.NewAppendable(), reg)
+		manager, err := NewManager(&opts, nil, nil, teststorage.NewAppendable(), reg)
 		require.NotNil(t, manager)
 		require.NoError(t, err)
 		// Unregister all metrics.
@@ -1239,7 +1239,7 @@ func TestNHCBAndParseST(t *testing.T) {
 	discoveryManager, scrapeManager := runManagers(t, ctx, &Options{
 		ParseST:              true,
 		skipJitterOffsetting: true,
-	}, nil, app)
+	}, app)
 	defer scrapeManager.Stop()
 
 	once := sync.Once{}
@@ -1331,7 +1331,7 @@ func applyConfig(
 	require.NoError(t, discoveryManager.ApplyConfig(c))
 }
 
-func runManagers(t *testing.T, ctx context.Context, opts *Options, app storage.Appendable, appV2 storage.AppendableV2) (*discovery.Manager, *Manager) {
+func runManagers(t *testing.T, ctx context.Context, opts *Options, appV2 storage.AppendableV2) (*discovery.Manager, *Manager) {
 	t.Helper()
 
 	if opts == nil {
@@ -1358,7 +1358,7 @@ func runManagers(t *testing.T, ctx context.Context, opts *Options, app storage.A
 		opts,
 		nil,
 		nil,
-		app, appV2,
+		appV2,
 		prometheus.NewRegistry(),
 	)
 	require.NoError(t, err)
@@ -1431,7 +1431,7 @@ scrape_configs:
   - files: ['%s']
 `
 
-	discoveryManager, scrapeManager := runManagers(t, ctx, nil, nil, teststorage.NewAppendable())
+	discoveryManager, scrapeManager := runManagers(t, ctx, nil, teststorage.NewAppendable())
 	defer scrapeManager.Stop()
 
 	applyConfig(
@@ -1530,7 +1530,7 @@ scrape_configs:
   file_sd_configs:
   - files: ['%s', '%s']
 `
-	discoveryManager, scrapeManager := runManagers(t, ctx, nil, nil, teststorage.NewAppendable())
+	discoveryManager, scrapeManager := runManagers(t, ctx, nil, teststorage.NewAppendable())
 	defer scrapeManager.Stop()
 
 	applyConfig(
@@ -1589,7 +1589,7 @@ scrape_configs:
   file_sd_configs:
   - files: ['%s']
 `
-	discoveryManager, scrapeManager := runManagers(t, ctx, nil, nil, teststorage.NewAppendable())
+	discoveryManager, scrapeManager := runManagers(t, ctx, nil, teststorage.NewAppendable())
 	defer scrapeManager.Stop()
 
 	applyConfig(
@@ -1655,7 +1655,7 @@ scrape_configs:
   - targets: ['%s']
 `
 
-	discoveryManager, scrapeManager := runManagers(t, ctx, nil, nil, teststorage.NewAppendable())
+	discoveryManager, scrapeManager := runManagers(t, ctx, nil, teststorage.NewAppendable())
 	defer scrapeManager.Stop()
 
 	// Apply the initial config with an existing file
@@ -1739,7 +1739,7 @@ scrape_configs:
 
 	cfg := loadConfiguration(t, cfgText)
 
-	m, err := NewManager(&Options{}, nil, nil, nil, teststorage.NewAppendable(), prometheus.NewRegistry())
+	m, err := NewManager(&Options{}, nil, nil, teststorage.NewAppendable(), prometheus.NewRegistry())
 	require.NoError(t, err)
 	defer m.Stop()
 	require.NoError(t, m.ApplyConfig(cfg))

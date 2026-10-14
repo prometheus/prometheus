@@ -271,7 +271,7 @@ func setupSynctestManager(t *testing.T, opts *Options) (*Manager, *teststorage.A
 	scrapeManager, err := NewManager(
 		opts,
 		promslog.New(&promslog.Config{}),
-		nil, nil, app, prometheus.NewRegistry(),
+		nil, app, prometheus.NewRegistry(),
 	)
 	require.NoError(t, err)
 
