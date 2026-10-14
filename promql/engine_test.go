@@ -2516,7 +2516,7 @@ func TestParserConfigIsolation(t *testing.T) {
 
 func TestAtModifier(t *testing.T) {
 	engine := newTestEngine(t)
-	storage := promqltest.LoadedStorage(t, `
+	store := promqltest.LoadedStorage(t, `
 load 10s
   metric{job="1"} 0+1x1000
   metric{job="2"} 0+2x1000
@@ -2536,17 +2536,17 @@ load 1ms
 	lblsneg := labels.FromStrings("__name__", "metric_neg")
 
 	// Add some samples with negative timestamp.
-	db := storage.DB
-	app := db.Appender(context.Background())
-	ref, err := app.Append(0, lblsneg, -1000000, 1000)
+	db := store.DB
+	app := db.AppenderV2(context.Background())
+	ref, err := app.Append(0, lblsneg, 0, -1000000, 1000, nil, nil, storage.AOptions{})
 	require.NoError(t, err)
 	for ts := int64(-1000000 + 1000); ts <= 0; ts += 1000 {
-		_, err := app.Append(ref, labels.EmptyLabels(), ts, -float64(ts/1000)+1)
+		_, err := app.Append(ref, lblsneg, 0, ts, -float64(ts/1000)+1, nil, nil, storage.AOptions{})
 		require.NoError(t, err)
 	}
 
 	// To test the fix for https://github.com/prometheus/prometheus/issues/8433.
-	_, err = app.Append(0, labels.FromStrings("__name__", "metric_timestamp"), 3600*1000, 1000)
+	_, err = app.Append(0, labels.FromStrings("__name__", "metric_timestamp"), 0, 3600*1000, 1000, nil, nil, storage.AOptions{})
 	require.NoError(t, err)
 
 	require.NoError(t, app.Commit())
@@ -2757,9 +2757,9 @@ load 1ms
 			var err error
 			var qry promql.Query
 			if c.end == 0 {
-				qry, err = engine.NewInstantQuery(context.Background(), storage, nil, c.query, start)
+				qry, err = engine.NewInstantQuery(context.Background(), store, nil, c.query, start)
 			} else {
-				qry, err = engine.NewRangeQuery(context.Background(), storage, nil, c.query, start, end, interval)
+				qry, err = engine.NewRangeQuery(context.Background(), store, nil, c.query, start, end, interval)
 			}
 			require.NoError(t, err)
 
@@ -5020,7 +5020,7 @@ func TestInconsistentHistogramCount(t *testing.T) {
 		_ = head.Close()
 	})
 
-	app := head.Appender(context.Background())
+	app := head.AppenderV2(context.Background())
 
 	l := labels.FromStrings("__name__", "series_1")
 
@@ -5049,7 +5049,7 @@ func TestInconsistentHistogramCount(t *testing.T) {
 
 	for i, h := range inHs {
 		maxt = mint + dT*int64(i)
-		_, err = app.AppendHistogram(0, l, maxt, h, nil)
+		_, err = app.Append(0, l, 0, maxt, 0, h, nil, storage.AOptions{})
 		require.NoError(t, err)
 	}
 
