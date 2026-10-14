@@ -76,16 +76,16 @@ func setupRangeQueryTestData(stor *teststorage.TestStorage, _ *promql.Engine, in
 	pointsPerSparseSeries := numIntervals / 50
 
 	for s := range numIntervals {
-		a := stor.Appender(context.Background())
+		a := stor.AppenderV2(context.Background())
 		ts := int64(s * interval)
 		for i, metric := range metrics {
-			ref, _ := a.Append(refs[i], metric, ts, float64(s)+float64(i)/float64(len(metrics)))
+			ref, _ := a.Append(refs[i], metric, 0, ts, float64(s)+float64(i)/float64(len(metrics)), nil, nil, storage.AOptions{})
 			refs[i] = ref
 		}
 		// Generating a sparse time series: each label value of "l" will contain data only for
 		// pointsPerSparseSeries points
 		metric := labels.FromStrings("__name__", "sparse", "l", strconv.Itoa(s/pointsPerSparseSeries))
-		_, err := a.Append(0, metric, ts, float64(s)/float64(len(metrics)))
+		_, err := a.Append(0, metric, 0, ts, float64(s)/float64(len(metrics)), nil, nil, storage.AOptions{})
 		if err != nil {
 			return err
 		}
@@ -134,10 +134,10 @@ func setupJoinQueryTestData(stor *teststorage.TestStorage, _ *promql.Engine, int
 	refs := make([]storage.SeriesRef, len(metrics))
 
 	for s := range numIntervals {
-		a := stor.Appender(context.Background())
+		a := stor.AppenderV2(context.Background())
 		ts := int64(s * interval)
 		for i, metric := range metrics {
-			ref, _ := a.Append(refs[i], metric, ts, float64(s)+float64(i)/float64(len(metrics)))
+			ref, _ := a.Append(refs[i], metric, 0, ts, float64(s)+float64(i)/float64(len(metrics)), nil, nil, storage.AOptions{})
 			refs[i] = ref
 		}
 		if err := a.Commit(); err != nil {
@@ -462,7 +462,7 @@ func BenchmarkJoinQuery(b *testing.B) {
 func BenchmarkNativeHistograms(b *testing.B) {
 	testStorage := teststorage.New(b)
 
-	app := testStorage.Appender(context.TODO())
+	app := testStorage.AppenderV2(context.TODO())
 	if err := generateNativeHistogramSeries(app, 3000); err != nil {
 		b.Fatal(err)
 	}
@@ -539,7 +539,7 @@ func BenchmarkNativeHistograms(b *testing.B) {
 func BenchmarkNativeHistogramsCustomBuckets(b *testing.B) {
 	testStorage := teststorage.New(b)
 
-	app := testStorage.Appender(context.TODO())
+	app := testStorage.AppenderV2(context.TODO())
 	if err := generateNativeHistogramCustomBucketsSeries(app, 3000); err != nil {
 		b.Fatal(err)
 	}
@@ -706,15 +706,15 @@ func generateInfoFunctionTestSeries(tb testing.TB, stor *teststorage.TestStorage
 	refs := make([]storage.SeriesRef, len(metrics))
 
 	for i := range numIntervals {
-		a := stor.Appender(context.Background())
+		a := stor.AppenderV2(context.Background())
 		ts := int64(i * interval)
 		for j, metric := range metrics[:infoSeriesNum] {
-			ref, _ := a.Append(refs[j], metric, ts, 1)
+			ref, _ := a.Append(refs[j], metric, 0, ts, 1, nil, nil, storage.AOptions{})
 			refs[j] = ref
 		}
 
 		for j, metric := range metrics[infoSeriesNum:] {
-			ref, _ := a.Append(refs[j+infoSeriesNum], metric, ts, float64(i))
+			ref, _ := a.Append(refs[j+infoSeriesNum], metric, 0, ts, float64(i), nil, nil, storage.AOptions{})
 			refs[j+infoSeriesNum] = ref
 		}
 
@@ -725,7 +725,7 @@ func generateInfoFunctionTestSeries(tb testing.TB, stor *teststorage.TestStorage
 	stor.Compact(ctx)
 }
 
-func generateNativeHistogramSeries(app storage.Appender, numSeries int) error {
+func generateNativeHistogramSeries(app storage.AppenderV2, numSeries int) error {
 	commonLabels := []string{labels.MetricName, "native_histogram_series", "foo", "bar"}
 	series := make([][]*histogram.Histogram, numSeries)
 	for i := range series {
@@ -747,11 +747,11 @@ func generateNativeHistogramSeries(app storage.Appender, numSeries int) error {
 			ts := time.Unix(int64(i*15), 0).UnixMilli()
 			if i == 0 {
 				// Inject a histogram with a higher schema.
-				if _, err := app.AppendHistogram(0, seriesLabels, ts, higherSchemaHist, nil); err != nil {
+				if _, err := app.Append(0, seriesLabels, 0, ts, 0, higherSchemaHist, nil, storage.AOptions{}); err != nil {
 					return err
 				}
 			}
-			if _, err := app.AppendHistogram(0, seriesLabels, ts, histograms[i], nil); err != nil {
+			if _, err := app.Append(0, seriesLabels, 0, ts, 0, histograms[i], nil, storage.AOptions{}); err != nil {
 				return err
 			}
 		}
@@ -760,7 +760,7 @@ func generateNativeHistogramSeries(app storage.Appender, numSeries int) error {
 	return nil
 }
 
-func generateNativeHistogramCustomBucketsSeries(app storage.Appender, numSeries int) error {
+func generateNativeHistogramCustomBucketsSeries(app storage.AppenderV2, numSeries int) error {
 	commonLabels := []string{labels.MetricName, "native_histogram_custom_bucket_series", "foo", "bar"}
 	series := make([][]*histogram.Histogram, numSeries)
 	for i := range series {
@@ -771,7 +771,7 @@ func generateNativeHistogramCustomBucketsSeries(app storage.Appender, numSeries 
 		seriesLabels := labels.FromStrings(append(commonLabels, "h", strconv.Itoa(sid))...)
 		for i := range histograms {
 			ts := time.Unix(int64(i*15), 0).UnixMilli()
-			if _, err := app.AppendHistogram(0, seriesLabels, ts, histograms[i], nil); err != nil {
+			if _, err := app.Append(0, seriesLabels, 0, ts, 0, histograms[i], nil, storage.AOptions{}); err != nil {
 				return err
 			}
 		}
