@@ -178,7 +178,7 @@ func includeStaleNaNs(s []Sample) bool {
 	return false
 }
 
-// Appendable is a storage.Appendable mock.
+// Appendable is a storage.AppendableV2 mock.
 // It allows recording all samples that were added through the appender and injecting errors.
 // Appendable will panic if more than one Appender is open.
 type Appendable struct {

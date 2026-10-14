@@ -190,9 +190,8 @@ type AppenderV2 interface {
 	Append(ref SeriesRef, ls labels.Labels, st, t int64, v float64, h *histogram.Histogram, fh *histogram.FloatHistogram, opts AppendV2Options) (SeriesRef, error)
 }
 
-// ExemplarAppenderV2 is an optional extension of AppenderV2 (mirroring the V1
-// ExemplarAppender) that allows appending exemplars in a separate call from the
-// sample Append call.
+// ExemplarAppenderV2 is an optional extension of AppenderV2 that allows
+// appending exemplars in a separate call from the sample Append call.
 //
 // Exemplars appended this way are still part of the AppenderV2 transaction:
 // they are persisted on Commit and discarded on Rollback, exactly like the

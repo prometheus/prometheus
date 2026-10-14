@@ -19,9 +19,7 @@ import (
 	"fmt"
 
 	"github.com/prometheus/prometheus/model/exemplar"
-	"github.com/prometheus/prometheus/model/histogram"
 	"github.com/prometheus/prometheus/model/labels"
-	"github.com/prometheus/prometheus/model/metadata"
 	"github.com/prometheus/prometheus/tsdb/chunkenc"
 	"github.com/prometheus/prometheus/tsdb/chunks"
 	"github.com/prometheus/prometheus/util/annotations"
@@ -49,7 +47,6 @@ var (
 	// NOTE(bwplotka): This can be both an instrumentation failure or commonly expected
 	// behaviour, and we currently don't have a way to determine this. As a result
 	// it's recommended to ignore this error for now.
-	// TODO(bwplotka): Remove with appender v1 flow; not used in v2.
 	ErrOutOfOrderST      = errors.New("start timestamp out of order, ignoring")
 	ErrSTNewerThanSample = errors.New("ST is newer or the same as sample's timestamp, ignoring")
 )
@@ -58,18 +55,6 @@ var (
 // HeadSeriesRef or BlockSeriesRef, though other implementations may have
 // their own reference types.
 type SeriesRef uint64
-
-// Appendable allows creating Appender.
-//
-// WARNING(bwplotka): Switch to AppendableV2 is in progress (https://github.com/prometheus/prometheus/issues/17632).
-// Appendable will be removed soon (ETA: Q2 2026).
-type Appendable interface {
-	// Appender returns a new appender for the storage.
-	//
-	// Implementations CAN choose whether to use the context e.g. for deadlines,
-	// but it's not mandatory.
-	Appender(ctx context.Context) Appender
-}
 
 // SampleAndChunkQueryable allows retrieving samples as well as encoded samples in form of chunks.
 type SampleAndChunkQueryable interface {
@@ -90,13 +75,6 @@ type Storage interface {
 
 	// Close closes the storage and all its underlying resources.
 	Close() error
-}
-
-// ExemplarStorage ingests and manages exemplars, along with various indexes. All methods are
-// goroutine-safe. ExemplarStorage implements storage.ExemplarAppender and storage.ExemplarQuerier.
-type ExemplarStorage interface {
-	ExemplarQueryable
-	ExemplarAppender
 }
 
 // A Queryable handles queries against a storage.
@@ -412,51 +390,6 @@ func (f QueryableFunc) Querier(mint, maxt int64) (Querier, error) {
 	return f(mint, maxt)
 }
 
-// AppendOptions provides options for implementations of the Appender interface.
-//
-// WARNING(bwplotka): Switch to AppendableV2 is in progress (https://github.com/prometheus/prometheus/issues/17632).
-// AppendOptions will be removed soon (ETA: Q2 2026).
-type AppendOptions struct {
-	// DiscardOutOfOrder tells implementation that this append should not be out
-	// of order. An OOO append MUST be rejected with storage.ErrOutOfOrderSample
-	// error.
-	DiscardOutOfOrder bool
-}
-
-// Appender provides batched appends against a storage.
-// It must be completed with a call to Commit or Rollback and must not be reused afterwards.
-//
-// Operations on the Appender interface are not goroutine-safe.
-//
-// The order of samples appended via the Appender is preserved within each series.
-// I.e. timestamp order within batch is not validated, samples are not reordered per timestamp or by float/histogram
-// type.
-//
-// WARNING(bwplotka): Switch to AppendableV2 is in progress (https://github.com/prometheus/prometheus/issues/17632).
-// Appender will be removed soon (ETA: Q2 2026).
-type Appender interface {
-	AppenderTransaction
-
-	// Append adds a sample pair for the given series.
-	// An optional series reference can be provided to accelerate calls.
-	// A series reference number is returned which can be used to add further
-	// samples to the given series in the same or later transactions.
-	// Returned reference numbers are ephemeral and may be rejected in calls
-	// to Append() at any point. Adding the sample via Append() returns a new
-	// reference number.
-	// If the reference is 0 it must not be used for caching.
-	Append(ref SeriesRef, l labels.Labels, t int64, v float64) (SeriesRef, error)
-
-	// SetOptions configures the appender with specific append options such as
-	// discarding out-of-order samples even if out-of-order is enabled in the TSDB.
-	SetOptions(opts *AppendOptions)
-
-	ExemplarAppender
-	HistogramAppender
-	MetadataUpdater
-	StartTimestampAppender
-}
-
 // GetRef is an extra interface on Appenders used by downstream projects
 // (e.g. Cortex) to avoid maintaining a parallel set of references.
 type GetRef interface {
@@ -465,95 +398,6 @@ type GetRef interface {
 	// 0 means the appender does not have a reference to this series.
 	// hash should be a hash of lset.
 	GetRef(lset labels.Labels, hash uint64) (SeriesRef, labels.Labels)
-}
-
-// ExemplarAppender provides an interface for adding samples to exemplar storage, which
-// within Prometheus is in-memory only.
-//
-// WARNING(bwplotka): Switch to AppendableV2 is in progress (https://github.com/prometheus/prometheus/issues/17632).
-// ExemplarAppender will be removed soon (ETA: Q2 2026).
-type ExemplarAppender interface {
-	// AppendExemplar adds an exemplar for the given series labels.
-	// An optional reference number can be provided to accelerate calls.
-	// A reference number is returned which can be used to add further
-	// exemplars in the same or later transactions.
-	// Returned reference numbers are ephemeral and may be rejected in calls
-	// to Append() at any point. Adding the sample via Append() returns a new
-	// reference number.
-	// If the reference is 0 it must not be used for caching.
-	// Note that in our current implementation of Prometheus' exemplar storage
-	// calls to Append should generate the reference numbers, AppendExemplar
-	// generating a new reference number should be considered possible erroneous behaviour and be logged.
-	AppendExemplar(ref SeriesRef, l labels.Labels, e exemplar.Exemplar) (SeriesRef, error)
-}
-
-// HistogramAppender provides an interface for appending histograms to the storage.
-//
-// WARNING(bwplotka): Switch to AppendableV2 is in progress (https://github.com/prometheus/prometheus/issues/17632).
-// HistogramAppender will be removed soon (ETA: Q2 2026).
-type HistogramAppender interface {
-	// AppendHistogram adds a histogram for the given series labels. An
-	// optional reference number can be provided to accelerate calls. A
-	// reference number is returned which can be used to add further
-	// histograms in the same or later transactions. Returned reference
-	// numbers are ephemeral and may be rejected in calls to Append() at any
-	// point. Adding the sample via Append() returns a new reference number.
-	// If the reference is 0, it must not be used for caching.
-	//
-	// For efficiency reasons, the histogram is passed as a
-	// pointer. AppendHistogram won't mutate the histogram, but in turn
-	// depends on the caller to not mutate it either.
-	AppendHistogram(ref SeriesRef, l labels.Labels, t int64, h *histogram.Histogram, fh *histogram.FloatHistogram) (SeriesRef, error)
-	// AppendHistogramSTZeroSample adds synthetic zero sample for the given st timestamp,
-	// which will be associated with given series, labels and the incoming
-	// sample's t (timestamp). AppendHistogramSTZeroSample returns error if zero sample can't be
-	// appended, for example when st is too old, or when it would collide with
-	// incoming sample (sample has priority).
-	//
-	// AppendHistogramSTZeroSample has to be called before the corresponding histogram AppendHistogram.
-	// A series reference number is returned which can be used to modify the
-	// ST for the given series in the same or later transactions.
-	// Returned reference numbers are ephemeral and may be rejected in calls
-	// to AppendHistogramSTZeroSample() at any point.
-	//
-	// If the reference is 0 it must not be used for caching.
-	AppendHistogramSTZeroSample(ref SeriesRef, l labels.Labels, t, st int64, h *histogram.Histogram, fh *histogram.FloatHistogram) (SeriesRef, error)
-}
-
-// MetadataUpdater provides an interface for associating metadata to stored series.
-//
-// WARNING(bwplotka): Switch to AppendableV2 is in progress (https://github.com/prometheus/prometheus/issues/17632).
-// MetadataUpdater will be removed soon (ETA: Q2 2026).
-type MetadataUpdater interface {
-	// UpdateMetadata updates a metadata entry for the given series and labels.
-	// A series reference number is returned which can be used to modify the
-	// metadata of the given series in the same or later transactions.
-	// Returned reference numbers are ephemeral and may be rejected in calls
-	// to UpdateMetadata() at any point. If the series does not exist,
-	// UpdateMetadata returns an error.
-	// If the reference is 0 it must not be used for caching.
-	UpdateMetadata(ref SeriesRef, l labels.Labels, m metadata.Metadata) (SeriesRef, error)
-}
-
-// StartTimestampAppender provides an interface for appending ST to storage.
-//
-// WARNING(bwplotka): Switch to AppendableV2 is in progress (https://github.com/prometheus/prometheus/issues/17632).
-// StartTimestampAppender will be removed soon (ETA: Q2 2026).
-type StartTimestampAppender interface {
-	// AppendSTZeroSample adds synthetic zero sample for the given st timestamp,
-	// which will be associated with given series, labels and the incoming
-	// sample's t (timestamp). AppendSTZeroSample returns error if zero sample can't be
-	// appended, for example when st is too old, or when it would collide with
-	// incoming sample (sample has priority).
-	//
-	// AppendSTZeroSample has to be called before the corresponding sample Append.
-	// A series reference number is returned which can be used to modify the
-	// ST for the given series in the same or later transactions.
-	// Returned reference numbers are ephemeral and may be rejected in calls
-	// to AppendSTZeroSample() at any point.
-	//
-	// If the reference is 0 it must not be used for caching.
-	AppendSTZeroSample(ref SeriesRef, l labels.Labels, t, st int64) (SeriesRef, error)
 }
 
 // SeriesSet contains a set of series.
