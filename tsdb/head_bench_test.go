@@ -268,23 +268,30 @@ func BenchmarkHeadStripeSeriesCreate(b *testing.B) {
 }
 
 func BenchmarkHeadStripeSeriesCreateParallel(b *testing.B) {
-	chunkDir := b.TempDir()
-	// Put a series, select it. GC it and then access it.
-	opts := DefaultHeadOptions()
-	opts.ChunkRange = 1000
-	opts.ChunkDirRoot = chunkDir
-	h, err := NewHead(nil, nil, nil, nil, opts, nil)
-	require.NoError(b, err)
-	defer h.Close()
+	for _, parallelism := range []int{1, 10, 100, 1000} {
+		b.Run(fmt.Sprintf("goroutines-per-cpu=%d", parallelism), func(b *testing.B) {
+			chunkDir := b.TempDir()
+			opts := DefaultHeadOptions()
+			opts.ChunkRange = 1000
+			opts.ChunkDirRoot = chunkDir
+			h, err := NewHead(nil, nil, nil, nil, opts, nil)
+			require.NoError(b, err)
+			defer h.Close()
+			// Init orders the postings, as on a running head.
+			require.NoError(b, h.Init(0))
 
-	var count atomic.Int64
+			var count atomic.Int64
 
-	b.RunParallel(func(pb *testing.PB) {
-		for pb.Next() {
-			i := count.Inc()
-			h.getOrCreate(uint64(i), labels.FromStrings("a", strconv.Itoa(int(i))), false)
-		}
-	})
+			b.ResetTimer()
+			b.SetParallelism(parallelism)
+			b.RunParallel(func(pb *testing.PB) {
+				for pb.Next() {
+					i := count.Inc()
+					h.getOrCreate(uint64(i), labels.FromStrings("a", strconv.Itoa(int(i)), "job", "bench"), false)
+				}
+			})
+		})
+	}
 }
 
 func BenchmarkHeadStripeSeriesCreate_PreCreationFailure(b *testing.B) {
