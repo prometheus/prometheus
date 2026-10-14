@@ -55,15 +55,6 @@ import (
 	"github.com/prometheus/prometheus/util/testutil"
 )
 
-// TODO(bwplotka): Ensure non-ported tests are not deleted from head_test.go when removing AppenderV1 flow (#17632),
-// for example:
-// * TestChunkNotFoundHeadGCRace
-// * TestHeadSeriesChunkRace
-// * TestHeadLabelValuesWithMatchers
-// * TestHeadLabelNamesWithMatchers
-// * TestHeadShardedPostings
-// * TestHead_HighConcurrencyReadAndWrite
-
 func TestHeadAppenderV2_WALMultiRef(t *testing.T) {
 	head, w := newTestHead(t, 1000, compression.None, false)
 
@@ -4644,6 +4635,42 @@ func TestHeadAppenderV2_BestEffortSTZeroSample_OOO(t *testing.T) {
 			require.Len(t, result[`{foo="bar"}`], 2)
 		})
 	}
+
+	t.Run("rejected ST injected zero does not retain series", func(t *testing.T) {
+		for _, tc := range []struct {
+			name string
+			v    float64
+			h    *histogram.Histogram
+			fh   *histogram.FloatHistogram
+		}{
+			{name: "float", v: 10},
+			{name: "histogram", h: testHistogram},
+			{name: "float_histogram", fh: testFloatHistogram},
+		} {
+			t.Run(tc.name, func(t *testing.T) {
+				opts := newTestHeadDefaultOptions(DefaultBlockDuration, true)
+				opts.EnableSTAsZeroSample = true
+				h, _ := newTestHeadWithOptions(t, compression.None, opts)
+
+				lset := labels.FromStrings("a", "1")
+				baseline := h.AppenderV2(t.Context())
+				ref, err := baseline.Append(0, lset, 0, 200, tc.v, tc.h, tc.fh, storage.AOptions{})
+				require.NoError(t, err)
+				require.NoError(t, baseline.Commit())
+
+				app := h.AppenderV2(t.Context())
+				// Both st=100 (always fastRejectOOO=true) and ts=150 (RejectOutOfOrder=true)
+				// are OOO relative to headMaxt=200 and rejected without retaining the series.
+				_, err = app.Append(ref, lset, 100, 150, tc.v, tc.h, tc.fh, storage.AOptions{RejectOutOfOrder: true})
+				require.ErrorIs(t, err, storage.ErrOutOfOrderSample)
+				require.NoError(t, app.Rollback())
+
+				require.NoError(t, h.Truncate(201))
+				require.Zero(t, h.NumSeries(), "the rejected sample must not protect the collectable series")
+				require.Zero(t, prom_testutil.ToFloat64(h.metrics.pendingCommitUnderflow))
+			})
+		}
+	})
 }
 
 // Regression test for data race https://github.com/prometheus/prometheus/issues/15139.
