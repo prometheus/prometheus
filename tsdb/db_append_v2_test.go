@@ -55,12 +55,6 @@ import (
 	"github.com/prometheus/prometheus/util/testutil"
 )
 
-// TODO(bwplotka): Ensure non-ported tests are not deleted from db_test.go when removing AppenderV1 flow (#17632):
-// * TestQuerier_ShouldNotPanicIfHeadChunkIsTruncatedWhileReadingQueriedChunks
-// * TestChunkQuerier_ShouldNotPanicIfHeadChunkIsTruncatedWhileReadingQueriedChunks
-// * TestEmptyLabelsetCausesError
-// * TestQueryHistogramFromBlocksWithCompaction
-
 // TODO(krajorama): Add histograms test cases.
 func TestDataAvailableOnlyAfterCommit_AppendV2(t *testing.T) {
 	db := newTestDB(t)
