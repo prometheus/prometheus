@@ -26,6 +26,7 @@ import (
 
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/model/textparse"
+	"github.com/prometheus/prometheus/storage"
 	"github.com/prometheus/prometheus/tsdb"
 )
 
@@ -128,7 +129,7 @@ func createBlocks(input []byte, mint, maxt, maxBlockDuration int64, maxSamplesIn
 			}()
 
 			ctx := context.Background()
-			app := w.Appender(ctx)
+			app := w.AppenderV2(ctx)
 			symbolTable := labels.NewSymbolTable() // One table per block means it won't grow too large.
 			p := textparse.NewOpenMetricsParser(input, symbolTable)
 			samplesCount := 0
@@ -169,7 +170,7 @@ func createBlocks(input []byte, mint, maxt, maxBlockDuration int64, maxSamplesIn
 				}
 				lbls := lb.Labels()
 
-				if _, err := app.Append(0, lbls, *ts, v); err != nil {
+				if _, err := app.Append(0, lbls, 0, *ts, v, nil, nil, storage.AOptions{}); err != nil {
 					return fmt.Errorf("add sample: %w", err)
 				}
 
@@ -185,7 +186,7 @@ func createBlocks(input []byte, mint, maxt, maxBlockDuration int64, maxSamplesIn
 					return fmt.Errorf("commit: %w", err)
 				}
 
-				app = w.Appender(ctx)
+				app = w.AppenderV2(ctx)
 				samplesCount = 0
 			}
 
