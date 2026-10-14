@@ -24,13 +24,27 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
+// findShardEntry looks up an entry across all shards. Only used in tests.
+func findShardEntry(t *testing.T, p *pool, s string) *entry {
+	t.Helper()
+	for _, shard := range p.shards {
+		shard.mtx.RLock()
+		e, ok := shard.pool[s]
+		shard.mtx.RUnlock()
+		if ok {
+			return e
+		}
+	}
+	return nil
+}
+
 func TestIntern(t *testing.T) {
 	interner := newPool()
 	testString := "TestIntern"
 	interner.intern(testString)
-	interned, ok := interner.pool[testString]
+	interned := findShardEntry(t, interner, testString)
 
-	require.True(t, ok)
+	require.NotNil(t, interned)
 	require.Equalf(t, int64(1), interned.refs.Load(), "expected refs to be 1 but it was %d", interned.refs.Load())
 }
 
@@ -39,15 +53,15 @@ func TestIntern_MultiRef(t *testing.T) {
 	testString := "TestIntern_MultiRef"
 
 	interner.intern(testString)
-	interned, ok := interner.pool[testString]
+	interned := findShardEntry(t, interner, testString)
 
-	require.True(t, ok)
+	require.NotNil(t, interned)
 	require.Equalf(t, int64(1), interned.refs.Load(), "expected refs to be 1 but it was %d", interned.refs.Load())
 
 	interner.intern(testString)
-	interned, ok = interner.pool[testString]
+	interned = findShardEntry(t, interner, testString)
 
-	require.True(t, ok)
+	require.NotNil(t, interned)
 	require.Equalf(t, int64(2), interned.refs.Load(), "expected refs to be 2 but it was %d", interned.refs.Load())
 }
 
@@ -56,14 +70,14 @@ func TestIntern_DeleteRef(t *testing.T) {
 	testString := "TestIntern_DeleteRef"
 
 	interner.intern(testString)
-	interned, ok := interner.pool[testString]
+	interned := findShardEntry(t, interner, testString)
 
-	require.True(t, ok)
+	require.NotNil(t, interned)
 	require.Equalf(t, int64(1), interned.refs.Load(), "expected refs to be 1 but it was %d", interned.refs.Load())
 
 	interner.release(testString)
-	_, ok = interner.pool[testString]
-	require.False(t, ok)
+	interned = findShardEntry(t, interner, testString)
+	require.Nil(t, interned)
 }
 
 func TestIntern_MultiRef_Concurrent(t *testing.T) {
@@ -71,8 +85,8 @@ func TestIntern_MultiRef_Concurrent(t *testing.T) {
 	testString := "TestIntern_MultiRef_Concurrent"
 
 	interner.intern(testString)
-	interned, ok := interner.pool[testString]
-	require.True(t, ok)
+	interned := findShardEntry(t, interner, testString)
+	require.NotNil(t, interned)
 	require.Equal(t, int64(1), interned.refs.Load(), "wrong interned refs count")
 
 	for range 1000 {
@@ -85,9 +99,7 @@ func TestIntern_MultiRef_Concurrent(t *testing.T) {
 		<-released
 	}
 
-	interner.mtx.RLock()
-	interned, ok = interner.pool[testString]
-	interner.mtx.RUnlock()
-	require.True(t, ok)
+	interned = findShardEntry(t, interner, testString)
+	require.NotNil(t, interned)
 	require.Equal(t, int64(1), interned.refs.Load(), "wrong interned refs count")
 }
