@@ -1109,25 +1109,20 @@ func funcSortByLabelDesc(vectorVals []Vector, _ Matrix, args parser.Expressions,
 }
 
 func compareNaturalLabelValues(a, b string) int {
-	if a == b {
-		return 0
-	}
-
 	aBeforeB := natsort.Compare(a, b)
 	bBeforeA := natsort.Compare(b, a)
 
-	switch {
-	case aBeforeB && !bBeforeA:
-		return -1
-	case bBeforeA && !aBeforeB:
-		return 1
-	case aBeforeB && bBeforeA:
-		// Natsort's Compare is a less predicate and can return true both ways
-		// for equal numeric chunks such as "1" and "01".
-		return 0
-	default:
+	if aBeforeB == bBeforeA {
+		// No clear natural ordering between the two label values (e.g. "1" and "01"),
+		// fall back to lexicographic comparison.
 		return strings.Compare(a, b)
 	}
+
+	if aBeforeB {
+		return -1
+	}
+
+	return 1
 }
 
 func clamp(vec Vector, minVal, maxVal float64, enh *EvalNodeHelper) (Vector, annotations.Annotations) {

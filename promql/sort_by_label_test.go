@@ -23,61 +23,65 @@ import (
 	"github.com/prometheus/prometheus/promql/parser"
 )
 
-func TestSortByLabelNaturallyEqualValuesUseFullLabelSetTieBreak(t *testing.T) {
-	samples := Vector{
+func TestSortByLabelOrder(t *testing.T) {
+	for _, tc := range []struct {
+		name               string
+		samples            Vector
+		sortLabels         []string
+		resultLabel        string
+		expectedAscending  []string
+		expectedDescending []string
+	}{
 		{
-			Metric: labels.FromStrings("__name__", "leading_zero_cpu", "cpu", "001", "shard", "a"),
-			F:      1,
+			name: "naturally equal values fall back to lexicographic order",
+			samples: Vector{
+				{Metric: labels.FromStrings("__name__", "leading_zero_cpu", "cpu", "001", "shard", "a"), F: 1},
+				{Metric: labels.FromStrings("__name__", "leading_zero_cpu", "cpu", "01", "shard", "b"), F: 2},
+				{Metric: labels.FromStrings("__name__", "leading_zero_cpu", "cpu", "1", "shard", "c"), F: 3},
+			},
+			sortLabels:         []string{"cpu"},
+			resultLabel:        "cpu",
+			expectedAscending:  []string{"001", "01", "1"},
+			expectedDescending: []string{"1", "01", "001"},
 		},
 		{
-			Metric: labels.FromStrings("__name__", "leading_zero_cpu", "cpu", "01", "shard", "b"),
-			F:      2,
+			name: "lexicographic fallback is used before the next sort label",
+			samples: Vector{
+				{Metric: labels.FromStrings("__name__", "leading_zero_cpu", "cpu", "1", "shard", "a"), F: 1},
+				{Metric: labels.FromStrings("__name__", "leading_zero_cpu", "cpu", "01", "shard", "b"), F: 2},
+			},
+			sortLabels:         []string{"cpu", "shard"},
+			resultLabel:        "cpu",
+			expectedAscending:  []string{"01", "1"},
+			expectedDescending: []string{"1", "01"},
 		},
 		{
-			Metric: labels.FromStrings("__name__", "leading_zero_cpu", "cpu", "1", "shard", "c"),
-			F:      3,
+			name: "missing and empty values sort before populated values",
+			samples: Vector{
+				{Metric: labels.FromStrings("__name__", "cpu_usage", "id", "missing"), F: 1},
+				{Metric: labels.FromStrings("__name__", "cpu_usage", "cpu", "1", "id", "present"), F: 2},
+				{Metric: labels.FromStrings("__name__", "cpu_usage", "cpu", "", "id", "empty"), F: 3},
+			},
+			sortLabels:         []string{"cpu"},
+			resultLabel:        "id",
+			expectedAscending:  []string{"empty", "missing", "present"},
+			expectedDescending: []string{"present", "missing", "empty"},
 		},
-	}
-	expectedAscending := []string{"001", "01", "1"}
-	expectedDescending := []string{"1", "01", "001"}
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			args := parser.Expressions{nil}
+			for _, l := range tc.sortLabels {
+				args = append(args, &parser.StringLiteral{Val: l})
+			}
 
-	for _, vec := range samplePermutations(samples) {
-		args := parser.Expressions{nil, &parser.StringLiteral{Val: "cpu"}}
+			for _, vec := range samplePermutations(tc.samples) {
+				ascending, _ := funcSortByLabel([]Vector{slices.Clone(vec)}, nil, args, nil)
+				require.Equal(t, tc.expectedAscending, labelValues(ascending, tc.resultLabel))
 
-		ascending, _ := funcSortByLabel([]Vector{append(Vector(nil), vec...)}, nil, args, nil)
-		require.Equal(t, expectedAscending, cpuLabelValues(ascending))
-
-		descending, _ := funcSortByLabelDesc([]Vector{append(Vector(nil), vec...)}, nil, args, nil)
-		require.Equal(t, expectedDescending, cpuLabelValues(descending))
-	}
-}
-
-func TestSortByLabelMissingAndEmptyValuesSortBeforePopulatedValues(t *testing.T) {
-	samples := Vector{
-		{
-			Metric: labels.FromStrings("__name__", "cpu_usage", "id", "missing"),
-			F:      1,
-		},
-		{
-			Metric: labels.FromStrings("__name__", "cpu_usage", "cpu", "1", "id", "present"),
-			F:      2,
-		},
-		{
-			Metric: labels.FromStrings("__name__", "cpu_usage", "cpu", "", "id", "empty"),
-			F:      3,
-		},
-	}
-	expectedAscending := []string{"empty", "missing", "present"}
-	expectedDescending := []string{"present", "missing", "empty"}
-
-	for _, vec := range samplePermutations(samples) {
-		args := parser.Expressions{nil, &parser.StringLiteral{Val: "cpu"}}
-
-		ascending, _ := funcSortByLabel([]Vector{append(Vector(nil), vec...)}, nil, args, nil)
-		require.Equal(t, expectedAscending, idLabelValues(ascending))
-
-		descending, _ := funcSortByLabelDesc([]Vector{append(Vector(nil), vec...)}, nil, args, nil)
-		require.Equal(t, expectedDescending, idLabelValues(descending))
+				descending, _ := funcSortByLabelDesc([]Vector{slices.Clone(vec)}, nil, args, nil)
+				require.Equal(t, tc.expectedDescending, labelValues(descending, tc.resultLabel))
+			}
+		})
 	}
 }
 
@@ -86,7 +90,7 @@ func samplePermutations(samples Vector) []Vector {
 	var permute func(Vector, int)
 	permute = func(vec Vector, index int) {
 		if index == len(vec) {
-			result = append(result, append(Vector(nil), vec...))
+			result = append(result, slices.Clone(vec))
 			return
 		}
 		for i := index; i < len(vec); i++ {
@@ -99,18 +103,10 @@ func samplePermutations(samples Vector) []Vector {
 	return result
 }
 
-func cpuLabelValues(vec Vector) []string {
+func labelValues(vec Vector, name string) []string {
 	values := make([]string, 0, len(vec))
 	for _, sample := range vec {
-		values = append(values, sample.Metric.Get("cpu"))
-	}
-	return values
-}
-
-func idLabelValues(vec Vector) []string {
-	values := make([]string, 0, len(vec))
-	for _, sample := range vec {
-		values = append(values, sample.Metric.Get("id"))
+		values = append(values, sample.Metric.Get(name))
 	}
 	return values
 }
