@@ -58,7 +58,7 @@ paths:
                         value: up
                 - name: timeout
                   in: query
-                  description: 'Evaluation timeout. Optional. Defaults to the effective server-side maximum: global.query_max_duration when the query-cost feature is enabled and the value is set, otherwise the -query.timeout flag. With the query-cost feature flag and query_max_duration set, a higher value is rejected rather than silently lowered.'
+                  description: 'Evaluation timeout. Optional. Must be positive. Defaults to and is capped by the effective server-side maximum: global.query_max_duration when the query-cost feature is enabled and the value is set, otherwise the -query.timeout flag.'
                   required: false
                   explode: false
                   schema:
@@ -138,7 +138,7 @@ paths:
                         value: 100000
                 - name: max_query_duration
                   in: query
-                  description: 'Lower the maximum execution duration of this query. Optional. Honored only with the query-cost feature flag (--enable-feature=query-cost). It may only lower the query_max_duration ceiling, never raise it: a higher value is rejected.'
+                  description: 'Lower the maximum execution duration of this query. Optional. Honored only with the query-cost feature flag (--enable-feature=query-cost). It may only lower the effective duration ceiling (query_max_duration when set, otherwise the -query.timeout flag), never raise it: a higher value is rejected.'
                   required: false
                   explode: false
                   schema:
@@ -348,7 +348,7 @@ paths:
                         value: rate(prometheus_http_requests_total{handler="/api/v1/query"}[5m])
                 - name: timeout
                   in: query
-                  description: 'Evaluation timeout. Optional. Defaults to the effective server-side maximum: global.query_max_duration when the query-cost feature is enabled and the value is set, otherwise the -query.timeout flag. With the query-cost feature flag and query_max_duration set, a higher value is rejected rather than silently lowered.'
+                  description: 'Evaluation timeout. Optional. Must be positive. Defaults to and is capped by the effective server-side maximum: global.query_max_duration when the query-cost feature is enabled and the value is set, otherwise the -query.timeout flag.'
                   required: false
                   explode: false
                   schema:
@@ -428,7 +428,7 @@ paths:
                         value: 100000
                 - name: max_query_duration
                   in: query
-                  description: 'Lower the maximum execution duration of this query. Optional. Honored only with the query-cost feature flag (--enable-feature=query-cost). It may only lower the query_max_duration ceiling, never raise it: a higher value is rejected.'
+                  description: 'Lower the maximum execution duration of this query. Optional. Honored only with the query-cost feature flag (--enable-feature=query-cost). It may only lower the effective duration ceiling (query_max_duration when set, otherwise the -query.timeout flag), never raise it: a higher value is rejected.'
                   required: false
                   explode: false
                   schema:
@@ -566,7 +566,7 @@ paths:
                         value: up
                 - name: timeout
                   in: query
-                  description: 'Evaluation timeout. Optional. Defaults to the effective server-side maximum: global.query_max_duration when the query-cost feature is enabled and the value is set, otherwise the -query.timeout flag. With the query-cost feature flag and query_max_duration set, a higher value is rejected rather than silently lowered.'
+                  description: 'Evaluation timeout. Optional. Must be positive. Defaults to and is capped by the effective server-side maximum: global.query_max_duration when the query-cost feature is enabled and the value is set, otherwise the -query.timeout flag.'
                   required: false
                   explode: false
                   schema:
@@ -657,7 +657,7 @@ paths:
                         value: 100000
                 - name: max_query_duration
                   in: query
-                  description: 'Lower the maximum execution duration of this query. Optional. Honored only with the query-cost feature flag (--enable-feature=query-cost). It may only lower the query_max_duration ceiling, never raise it: a higher value is rejected.'
+                  description: 'Lower the maximum execution duration of this query. Optional. Honored only with the query-cost feature flag (--enable-feature=query-cost). It may only lower the effective duration ceiling (query_max_duration when set, otherwise the -query.timeout flag), never raise it: a higher value is rejected.'
                   required: false
                   explode: false
                   schema:
@@ -832,7 +832,7 @@ paths:
                         value: rate(prometheus_http_requests_total{handler="/api/v1/query"}[5m])
                 - name: timeout
                   in: query
-                  description: 'Evaluation timeout. Optional. Defaults to the effective server-side maximum: global.query_max_duration when the query-cost feature is enabled and the value is set, otherwise the -query.timeout flag. With the query-cost feature flag and query_max_duration set, a higher value is rejected rather than silently lowered.'
+                  description: 'Evaluation timeout. Optional. Must be positive. Defaults to and is capped by the effective server-side maximum: global.query_max_duration when the query-cost feature is enabled and the value is set, otherwise the -query.timeout flag.'
                   required: false
                   explode: false
                   schema:
@@ -923,7 +923,7 @@ paths:
                         value: 100000
                 - name: max_query_duration
                   in: query
-                  description: 'Lower the maximum execution duration of this query. Optional. Honored only with the query-cost feature flag (--enable-feature=query-cost). It may only lower the query_max_duration ceiling, never raise it: a higher value is rejected.'
+                  description: 'Lower the maximum execution duration of this query. Optional. Honored only with the query-cost feature flag (--enable-feature=query-cost). It may only lower the effective duration ceiling (query_max_duration when set, otherwise the -query.timeout flag), never raise it: a higher value is rejected.'
                   required: false
                   explode: false
                   schema:
@@ -4114,7 +4114,7 @@ components:
                     example: 100
                 timeout:
                     type: string
-                    description: 'Form field: Evaluation timeout. Optional. Defaults to the effective server-side maximum: global.query_max_duration when the query-cost feature is enabled and the value is set, otherwise the -query.timeout flag. With the query-cost feature flag and query_max_duration set, a higher value is rejected rather than silently lowered.'
+                    description: 'Form field: Evaluation timeout. Optional. Must be positive. Defaults to and is capped by the effective server-side maximum: global.query_max_duration when the query-cost feature is enabled and the value is set, otherwise the -query.timeout flag.'
                     example: 30s
                 lookback_delta:
                     type: string
@@ -4139,7 +4139,7 @@ components:
                     example: 100000
                 max_query_duration:
                     type: string
-                    description: 'Form field: Lower the maximum execution duration of this query. Optional. Honored only with the query-cost feature flag (--enable-feature=query-cost). It may only lower the query_max_duration ceiling, never raise it: a higher value is rejected.'
+                    description: 'Form field: Lower the maximum execution duration of this query. Optional. Honored only with the query-cost feature flag (--enable-feature=query-cost). It may only lower the effective duration ceiling (query_max_duration when set, otherwise the -query.timeout flag), never raise it: a higher value is rejected.'
                     example: 30s
             required:
                 - query
@@ -4171,7 +4171,7 @@ components:
                     example: 100
                 timeout:
                     type: string
-                    description: 'Form field: Evaluation timeout. Optional. Defaults to the effective server-side maximum: global.query_max_duration when the query-cost feature is enabled and the value is set, otherwise the -query.timeout flag. With the query-cost feature flag and query_max_duration set, a higher value is rejected rather than silently lowered.'
+                    description: 'Form field: Evaluation timeout. Optional. Must be positive. Defaults to and is capped by the effective server-side maximum: global.query_max_duration when the query-cost feature is enabled and the value is set, otherwise the -query.timeout flag.'
                     example: 30s
                 lookback_delta:
                     type: string
@@ -4196,7 +4196,7 @@ components:
                     example: 100000
                 max_query_duration:
                     type: string
-                    description: 'Form field: Lower the maximum execution duration of this query. Optional. Honored only with the query-cost feature flag (--enable-feature=query-cost). It may only lower the query_max_duration ceiling, never raise it: a higher value is rejected.'
+                    description: 'Form field: Lower the maximum execution duration of this query. Optional. Honored only with the query-cost feature flag (--enable-feature=query-cost). It may only lower the effective duration ceiling (query_max_duration when set, otherwise the -query.timeout flag), never raise it: a higher value is rejected.'
                     example: 30s
             required:
                 - query
@@ -4518,7 +4518,7 @@ components:
                 samplesRead:
                     type: integer
                     format: int64
-                    description: Number of samples the query read from storage.
+                    description: Samples read by the evaluator in the engine's sample units; the same quantity as the samplesRead query statistic.
                 peakSamples:
                     type: integer
                     format: int64
@@ -4589,7 +4589,7 @@ components:
                     example: "2023-07-21T20:10:51.781Z"
                 timeout:
                     type: string
-                    description: 'Form field: Evaluation timeout. Optional. Defaults to the effective server-side maximum: global.query_max_duration when the query-cost feature is enabled and the value is set, otherwise the -query.timeout flag. With the query-cost feature flag and query_max_duration set, a higher value is rejected rather than silently lowered.'
+                    description: 'Form field: Evaluation timeout. Optional. Must be positive. Defaults to and is capped by the effective server-side maximum: global.query_max_duration when the query-cost feature is enabled and the value is set, otherwise the -query.timeout flag.'
                     example: 30s
                 lookback_delta:
                     type: string
@@ -4619,7 +4619,7 @@ components:
                     example: 100000
                 max_query_duration:
                     type: string
-                    description: 'Form field: Lower the maximum execution duration of this query. Optional. Honored only with the query-cost feature flag (--enable-feature=query-cost). It may only lower the query_max_duration ceiling, never raise it: a higher value is rejected.'
+                    description: 'Form field: Lower the maximum execution duration of this query. Optional. Honored only with the query-cost feature flag (--enable-feature=query-cost). It may only lower the effective duration ceiling (query_max_duration when set, otherwise the -query.timeout flag), never raise it: a higher value is rejected.'
                     example: 30s
             required:
                 - query
@@ -4646,7 +4646,7 @@ components:
                     example: 15s
                 timeout:
                     type: string
-                    description: 'Form field: Evaluation timeout. Optional. Defaults to the effective server-side maximum: global.query_max_duration when the query-cost feature is enabled and the value is set, otherwise the -query.timeout flag. With the query-cost feature flag and query_max_duration set, a higher value is rejected rather than silently lowered.'
+                    description: 'Form field: Evaluation timeout. Optional. Must be positive. Defaults to and is capped by the effective server-side maximum: global.query_max_duration when the query-cost feature is enabled and the value is set, otherwise the -query.timeout flag.'
                     example: 30s
                 lookback_delta:
                     type: string
@@ -4676,7 +4676,7 @@ components:
                     example: 100000
                 max_query_duration:
                     type: string
-                    description: 'Form field: Lower the maximum execution duration of this query. Optional. Honored only with the query-cost feature flag (--enable-feature=query-cost). It may only lower the query_max_duration ceiling, never raise it: a higher value is rejected.'
+                    description: 'Form field: Lower the maximum execution duration of this query. Optional. Honored only with the query-cost feature flag (--enable-feature=query-cost). It may only lower the effective duration ceiling (query_max_duration when set, otherwise the -query.timeout flag), never raise it: a higher value is rejected.'
                     example: 30s
             required:
                 - query
