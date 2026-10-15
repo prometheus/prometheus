@@ -30,6 +30,7 @@ func TestUnquotedUTF8Names(t *testing.T) {
 		"Björn", "温度", "θερμοκρασία", "температура", "حرارة", "𐐀", "a𐐀9",
 		"http.server.request.duration", "foo..bar", "foo.", "_:温度.total",
 		"rate.total", "Inf.total", "NaN.total", "on.total", "sum.total",
+		"bool.5", "BOOL.5", "bool.5xx", "atan2.5", "offset.5",
 		"resource.k8s.namespace", "target.info", "histogram.count",
 		"İnf", "а", "ö",
 	} {
@@ -123,6 +124,15 @@ func TestUnquotedUTF8Names(t *testing.T) {
 
 func TestUnquotedUTF8NamesPrinting(t *testing.T) {
 	for _, tc := range []struct{ input, enabled, disabled string }{
+		{`foo > bool.5`, `foo > bool.5`, `foo > bool 0.5`},
+		{`foo > BOOL.5`, `foo > BOOL.5`, `foo > bool 0.5`},
+		{`foo > bool.5xx`, `foo > bool.5xx`, ``},
+		{`foo atan2.5`, ``, `foo atan2 0.5`},
+		{`foo offset.5`, ``, `foo offset 500ms`},
+		{`foo > bool .5`, `foo > bool 0.5`, `foo > bool 0.5`},
+		{`foo > bool 0.5`, `foo > bool 0.5`, `foo > bool 0.5`},
+		{`foo atan2 .5`, `foo atan2 0.5`, `foo atan2 0.5`},
+		{`foo offset .5`, `foo offset 500ms`, `foo offset 500ms`},
 		{`foo{"service.name"="api"}`, `foo{service.name="api"}`, `foo{"service.name"="api"}`},
 		{`sum by ("service.name", "équipe") (foo)`, `sum by (service.name, équipe) (foo)`, `sum by ("service.name", "équipe") (foo)`},
 		{`foo + on ("service.name") group_left ("équipe") bar`, `foo + on (service.name) group_left (équipe) bar`, `foo + on ("service.name") group_left ("équipe") bar`},
@@ -132,10 +142,23 @@ func TestUnquotedUTF8NamesPrinting(t *testing.T) {
 			for _, enabled := range []bool{false, true} {
 				p := NewParser(Options{EnableUnquotedUTF8Names: enabled})
 				expr, err := p.ParseExpr(tc.input)
-				require.NoError(t, err)
 				expected := tc.disabled
 				if enabled {
 					expected = tc.enabled
+				}
+				if expected == "" {
+					require.Error(t, err)
+					continue
+				}
+				require.NoError(t, err)
+				if tc.input == "foo > bool.5" || tc.input == "foo > BOOL.5" {
+					binary := expr.(*BinaryExpr)
+					require.Equal(t, !enabled, binary.ReturnBool)
+					if enabled {
+						require.Equal(t, tc.input[len("foo > "):], binary.RHS.(*VectorSelector).Name)
+					} else {
+						require.Equal(t, 0.5, binary.RHS.(*NumberLiteral).Val)
+					}
 				}
 				require.Equal(t, expected, expr.String())
 				roundTrip, err := p.ParseExpr(expr.String())

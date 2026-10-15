@@ -67,6 +67,10 @@ sum by (service.name) (rate(http.server.requests[5m]))
 requests_total + on (service.name) group_left (équipe) service_info
 ```
 
+This changes the interpretation of keywords immediately followed by a dot and
+digits: `bool.5` becomes a metric name. Use whitespace to separate a keyword
+from a numeric literal, for example `foo > bool .5` instead of `foo > bool.5`.
+
 See [metric and label names](querying/basics.md#metric-and-label-names) for the
 character rules and compatibility details. This flag is also supported by
 promtool when checking or testing rules and parsing or formatting queries.

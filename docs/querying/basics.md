@@ -373,6 +373,13 @@ Names beginning with a dot or digit still require quoting; `.5` is a numeric
 literal. Combining marks, non-ASCII digits, emoji, spaces, and other punctuation
 also require quoting.
 
+Enabling this feature changes how a keyword immediately followed by a dot and
+digits is parsed. For example, `bool.5` is a metric name, so `foo > bool.5`
+compares two vectors. Without this feature, the same expression is parsed as
+`foo > bool 0.5`. Separate keywords from numeric literals with whitespace to
+preserve their meaning with either setting: write `foo > bool .5` or
+`foo > bool 0.5`, and `foo atan2 .5` instead of `foo atan2.5`.
+
 Names retain their exact spelling without Unicode normalization or case folding.
 For example, Latin `a` and Cyrillic `а` are distinct names. Precomposed `ö` can be
 unquoted, while `o` followed by a combining diaeresis requires quotes and denotes
