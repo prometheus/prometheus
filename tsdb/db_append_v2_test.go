@@ -27,6 +27,7 @@ import (
 	"runtime"
 	"sort"
 	"strconv"
+	"strings"
 	"testing"
 	"time"
 
@@ -38,9 +39,11 @@ import (
 	"go.uber.org/atomic"
 
 	"github.com/prometheus/prometheus/config"
+	"github.com/prometheus/prometheus/model/exemplar"
 	"github.com/prometheus/prometheus/model/histogram"
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/model/metadata"
+	"github.com/prometheus/prometheus/model/value"
 	"github.com/prometheus/prometheus/storage"
 	"github.com/prometheus/prometheus/tsdb/chunkenc"
 	"github.com/prometheus/prometheus/tsdb/chunks"
@@ -3463,6 +3466,76 @@ func TestMetadataInWAL_AppenderV2(t *testing.T) {
 	require.Len(t, gotMetadataBlocks, 2)
 	require.Equal(t, expectedMetadata[:3], gotMetadataBlocks[0])
 	require.Equal(t, expectedMetadata[3:], gotMetadataBlocks[1])
+
+	t.Run("stale samples", func(t *testing.T) {
+		staleNaN := math.Float64frombits(value.StaleNaN)
+		for _, tc := range []struct {
+			name       string
+			samples    []sample
+			appendOpts []storage.AOptions // One per sample.
+			want       []metadata.Metadata
+		}{
+			{
+				name:       "stale float",
+				samples:    []sample{{f: staleNaN}},
+				appendOpts: []storage.AOptions{{Metadata: m1}},
+				want:       []metadata.Metadata{m1},
+			},
+			{
+				name:       "stale histogram",
+				samples:    []sample{{h: &histogram.Histogram{Sum: staleNaN}}},
+				appendOpts: []storage.AOptions{{Metadata: m1}},
+				want:       []metadata.Metadata{m1},
+			},
+			{
+				name:       "stale float after histogram",
+				samples:    []sample{{h: tsdbutil.GenerateTestHistogram(1)}, {f: staleNaN}},
+				appendOpts: []storage.AOptions{{Metadata: m1}, {Metadata: m2}},
+				want:       []metadata.Metadata{m1, m2},
+			},
+			{
+				name:       "stale float after float histogram",
+				samples:    []sample{{fh: tsdbutil.GenerateTestFloatHistogram(1)}, {f: staleNaN}},
+				appendOpts: []storage.AOptions{{Metadata: m1}, {Metadata: m2}},
+				want:       []metadata.Metadata{m1, m2},
+			},
+			{
+				name:    "stale float with invalid exemplar",
+				samples: []sample{{f: staleNaN}},
+				appendOpts: []storage.AOptions{{Metadata: m1, Exemplars: []exemplar.Exemplar{{
+					Labels: labels.FromStrings("trace_id", strings.Repeat("x", exemplar.ExemplarMaxLabelSetLength)),
+					HasTs:  true,
+				}}}},
+				want: []metadata.Metadata{m1},
+			},
+		} {
+			t.Run(tc.name, func(t *testing.T) {
+				opts := DefaultOptions()
+				opts.EnableMetadataWALRecords = true
+				opts.EnableExemplarStorage = true
+				opts.MaxExemplars = 10
+				db := newTestDB(t, withOpts(opts))
+
+				app := db.AppenderV2(ctx)
+				for i, s := range tc.samples {
+					_, err := app.Append(0, s1, 0, int64(i), s.f, s.h, s.fh, tc.appendOpts[i])
+					require.NoError(t, err)
+				}
+				require.NoError(t, app.Commit())
+
+				var want, got []record.RefMetadata
+				for _, m := range tc.want {
+					want = append(want, record.RefMetadata{Ref: 1, Type: record.GetMetricType(m.Type), Unit: m.Unit, Help: m.Help})
+				}
+				for _, rec := range readTestWAL(t, path.Join(db.Dir(), "wal")) {
+					if mr, ok := rec.([]record.RefMetadata); ok {
+						got = append(got, mr...)
+					}
+				}
+				require.Equal(t, want, got)
+			})
+		}
+	})
 }
 
 func TestMetadataCheckpointingOnlyKeepsLatestEntry_AppendV2(t *testing.T) {
