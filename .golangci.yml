@@ -117,7 +117,8 @@ linters:
         # No need to check for errors on server's shutdown.
         - (*net/http.Server).Shutdown
         # Never check for rollback errors as Rollback() is called when a previous error was detected.
-        - (github.com/prometheus/prometheus/storage.Appender).Rollback
+        - (github.com/prometheus/prometheus/storage.AppenderTransaction).Rollback
+        - (github.com/prometheus/prometheus/storage.AppenderV2).Rollback
     gocritic:
       enable-all: true
       disabled-checks:

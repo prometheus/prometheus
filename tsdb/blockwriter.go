@@ -80,12 +80,6 @@ func (w *BlockWriter) initHead() error {
 	return w.head.Init(math.MinInt64)
 }
 
-// Appender returns a new appender on the database.
-// Appender can't be called concurrently. However, the returned Appender can safely be used concurrently.
-func (w *BlockWriter) Appender(ctx context.Context) storage.Appender {
-	return w.head.Appender(ctx)
-}
-
 // AppenderV2 returns a new appender on the database.
 // AppenderV2 can't be called concurrently. However, the returned AppenderV2 can safely be used concurrently.
 func (w *BlockWriter) AppenderV2(ctx context.Context) storage.AppenderV2 {

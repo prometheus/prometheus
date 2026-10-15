@@ -32,107 +32,6 @@ import (
 	"github.com/prometheus/prometheus/util/testutil"
 )
 
-func TestFanout_SelectSorted(t *testing.T) {
-	inputLabel := labels.FromStrings(model.MetricNameLabel, "a")
-	outputLabel := labels.FromStrings(model.MetricNameLabel, "a")
-
-	inputTotalSize := 0
-	ctx := context.Background()
-
-	priStorage := teststorage.New(t)
-	app1 := priStorage.Appender(ctx)
-	app1.Append(0, inputLabel, 0, 0)
-	inputTotalSize++
-	app1.Append(0, inputLabel, 1000, 1)
-	inputTotalSize++
-	app1.Append(0, inputLabel, 2000, 2)
-	inputTotalSize++
-	err := app1.Commit()
-	require.NoError(t, err)
-
-	remoteStorage1 := teststorage.New(t)
-	app2 := remoteStorage1.Appender(ctx)
-	app2.Append(0, inputLabel, 3000, 3)
-	inputTotalSize++
-	app2.Append(0, inputLabel, 4000, 4)
-	inputTotalSize++
-	app2.Append(0, inputLabel, 5000, 5)
-	inputTotalSize++
-	err = app2.Commit()
-	require.NoError(t, err)
-
-	remoteStorage2 := teststorage.New(t)
-
-	app3 := remoteStorage2.Appender(ctx)
-	app3.Append(0, inputLabel, 6000, 6)
-	inputTotalSize++
-	app3.Append(0, inputLabel, 7000, 7)
-	inputTotalSize++
-	app3.Append(0, inputLabel, 8000, 8)
-	inputTotalSize++
-
-	err = app3.Commit()
-	require.NoError(t, err)
-
-	fanoutStorage := storage.NewFanout(nil, priStorage, remoteStorage1, remoteStorage2)
-
-	t.Run("querier", func(t *testing.T) {
-		querier, err := fanoutStorage.Querier(0, 8000)
-		require.NoError(t, err)
-		defer querier.Close()
-
-		matcher, err := labels.NewMatcher(labels.MatchEqual, model.MetricNameLabel, "a")
-		require.NoError(t, err)
-
-		seriesSet := querier.Select(ctx, true, nil, matcher)
-
-		result := make(map[int64]float64)
-		var labelsResult labels.Labels
-		var iterator chunkenc.Iterator
-		for seriesSet.Next() {
-			series := seriesSet.At()
-			seriesLabels := series.Labels()
-			labelsResult = seriesLabels
-			iterator := series.Iterator(iterator)
-			for iterator.Next() == chunkenc.ValFloat {
-				timestamp, value := iterator.At()
-				result[timestamp] = value
-			}
-		}
-
-		require.Equal(t, labelsResult, outputLabel)
-		require.Len(t, result, inputTotalSize)
-	})
-	t.Run("chunk querier", func(t *testing.T) {
-		querier, err := fanoutStorage.ChunkQuerier(0, 8000)
-		require.NoError(t, err)
-		defer querier.Close()
-
-		matcher, err := labels.NewMatcher(labels.MatchEqual, model.MetricNameLabel, "a")
-		require.NoError(t, err)
-
-		seriesSet := storage.NewSeriesSetFromChunkSeriesSet(querier.Select(ctx, true, nil, matcher))
-
-		result := make(map[int64]float64)
-		var labelsResult labels.Labels
-		var iterator chunkenc.Iterator
-		for seriesSet.Next() {
-			series := seriesSet.At()
-			seriesLabels := series.Labels()
-			labelsResult = seriesLabels
-			iterator := series.Iterator(iterator)
-			for iterator.Next() == chunkenc.ValFloat {
-				timestamp, value := iterator.At()
-				result[timestamp] = value
-			}
-		}
-
-		require.NoError(t, seriesSet.Err())
-		require.Equal(t, labelsResult, outputLabel)
-		require.Len(t, result, inputTotalSize)
-	})
-}
-
 func TestFanout_SelectSorted_AppenderV2(t *testing.T) {
 	inputLabel := labels.FromStrings(model.MetricNameLabel, "a")
 	outputLabel := labels.FromStrings(model.MetricNameLabel, "a")
@@ -316,8 +215,8 @@ func TestFanoutErrors(t *testing.T) {
 
 func TestFanout_Querier_SearcherCapability(t *testing.T) {
 	primary := teststorage.New(t)
-	app := primary.Appender(t.Context())
-	_, err := app.Append(0, labels.FromStrings("__name__", "up", "job", "prometheus"), 0, 1)
+	app := primary.AppenderV2(t.Context())
+	_, err := app.Append(0, labels.FromStrings("__name__", "up", "job", "prometheus"), 0, 0, 1, nil, nil, storage.AOptions{})
 	require.NoError(t, err)
 	require.NoError(t, app.Commit())
 
@@ -398,7 +297,6 @@ type errChunkQuerier struct{ errQuerier }
 func (errStorage) ChunkQuerier(_, _ int64) (storage.ChunkQuerier, error) {
 	return errChunkQuerier{}, nil
 }
-func (errStorage) Appender(context.Context) storage.Appender     { return nil }
 func (errStorage) AppenderV2(context.Context) storage.AppenderV2 { return nil }
 func (errStorage) StartTime() (int64, error)                     { return 0, nil }
 func (errStorage) Close() error                                  { return nil }
@@ -422,13 +320,8 @@ func (errChunkQuerier) Select(context.Context, bool, *storage.SelectHints, ...*l
 }
 
 type mockStorage struct {
-	app   storage.Appendable
 	appV2 storage.AppendableV2
 	storage.Storage
-}
-
-func (m mockStorage) Appender(ctx context.Context) storage.Appender {
-	return m.app.Appender(ctx)
 }
 
 func (m mockStorage) AppenderV2(ctx context.Context) storage.AppenderV2 {
@@ -505,67 +398,6 @@ func fanoutAppenderTestCases(expected []sample) []fanoutAppenderTestCase {
 
 			expectPrimarySamples: expected,
 		},
-	}
-}
-
-func TestFanoutAppender(t *testing.T) {
-	h := tsdbutil.GenerateTestHistogram(0)
-	fh := tsdbutil.GenerateTestFloatHistogram(0)
-	ex := exemplar.Exemplar{Value: 1}
-
-	expected := []sample{
-		{L: labels.FromStrings(model.MetricNameLabel, "metric1"), V: 1, ES: []exemplar.Exemplar{ex}},
-		{L: labels.FromStrings(model.MetricNameLabel, "metric2"), T: 1, H: h},
-		{L: labels.FromStrings(model.MetricNameLabel, "metric3"), T: 2, FH: fh},
-	}
-	for _, tt := range fanoutAppenderTestCases(expected) {
-		t.Run(tt.name, func(t *testing.T) {
-			f := storage.NewFanout(nil, mockStorage{app: tt.primary}, mockStorage{app: tt.secondary})
-
-			app := f.Appender(t.Context())
-			ref, err := app.Append(0, labels.FromStrings(model.MetricNameLabel, "metric1"), 0, 1)
-			if tt.expectAppendErr {
-				require.Error(t, err)
-			} else {
-				require.NoError(t, err)
-			}
-
-			_, err = app.AppendExemplar(ref, labels.FromStrings(model.MetricNameLabel, "metric1"), ex)
-			if tt.expectExemplarError {
-				require.Error(t, err)
-			} else {
-				require.NoError(t, err)
-			}
-
-			_, err = app.AppendHistogram(0, labels.FromStrings(model.MetricNameLabel, "metric2"), 1, h, nil)
-			if tt.expectAppendErr {
-				require.Error(t, err)
-			} else {
-				require.NoError(t, err)
-			}
-
-			_, err = app.AppendHistogram(0, labels.FromStrings(model.MetricNameLabel, "metric3"), 2, nil, fh)
-			if tt.expectAppendErr {
-				require.Error(t, err)
-			} else {
-				require.NoError(t, err)
-			}
-
-			err = app.Commit()
-			if tt.expectCommitError {
-				require.Error(t, err)
-			} else {
-				require.NoError(t, err)
-			}
-
-			require.Nil(t, tt.primary.PendingSamples())
-			testutil.RequireEqual(t, tt.expectPrimarySamples, tt.primary.ResultSamples())
-			require.Nil(t, tt.primary.RolledbackSamples())
-
-			require.Nil(t, tt.secondary.PendingSamples())
-			testutil.RequireEqual(t, tt.expectSecondarySamples, tt.secondary.ResultSamples())
-			require.Nil(t, tt.secondary.RolledbackSamples())
-		})
 	}
 }
 

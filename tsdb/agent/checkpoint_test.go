@@ -30,6 +30,7 @@ import (
 	"github.com/prometheus/prometheus/model/exemplar"
 	"github.com/prometheus/prometheus/model/histogram"
 	"github.com/prometheus/prometheus/model/labels"
+	"github.com/prometheus/prometheus/storage"
 	"github.com/prometheus/prometheus/storage/remote"
 	"github.com/prometheus/prometheus/tsdb/chunks"
 	"github.com/prometheus/prometheus/tsdb/record"
@@ -73,7 +74,7 @@ func TestCheckpointReplayCompatibility(t *testing.T) {
 	})
 
 	appendData := func(db *DB) {
-		app := db.Appender(t.Context())
+		app := db.AppenderV2(t.Context())
 		const flushEvery = 1000
 		n := 0
 		maybeFlush := func() {
@@ -81,7 +82,7 @@ func TestCheckpointReplayCompatibility(t *testing.T) {
 				return
 			}
 			require.NoError(t, app.Commit())
-			app = db.Appender(t.Context())
+			app = db.AppenderV2(t.Context())
 			n = 0
 		}
 
@@ -93,7 +94,7 @@ func TestCheckpointReplayCompatibility(t *testing.T) {
 				sf := sample[0].F()
 
 				// replay doesn't include exemplars, thus don't include them to remove them from assertion.
-				_, err := app.Append(0, lset, st, sf)
+				_, err := app.Append(0, lset, 0, st, sf, nil, nil, storage.AOptions{})
 				require.NoErrorf(t, err, "L: %v; S: %v", i, j)
 				n++
 				maybeFlush()
@@ -104,7 +105,7 @@ func TestCheckpointReplayCompatibility(t *testing.T) {
 			lset := labels.New(l...)
 			histograms := samples.histogramSamples[i]
 			for j, sample := range histograms {
-				_, err := app.AppendHistogram(0, lset, int64(j), sample, nil)
+				_, err := app.Append(0, lset, 0, int64(j), 0, sample, nil, storage.AOptions{})
 				require.NoError(t, err)
 				n++
 				maybeFlush()
@@ -321,7 +322,7 @@ func benchCheckpoint(b *testing.B, p benchCheckpointParams) {
 	db, err := Open(l, nil, rs, p.storageDir, opts)
 	require.NoError(b, err, "Open")
 
-	app := db.Appender(b.Context())
+	app := db.AppenderV2(b.Context())
 	const flushEvery = 1000
 	n := 0
 	maybeFlush := func() {
@@ -329,7 +330,7 @@ func benchCheckpoint(b *testing.B, p benchCheckpointParams) {
 			return
 		}
 		require.NoError(b, app.Commit())
-		app = db.Appender(b.Context())
+		app = db.AppenderV2(b.Context())
 		n = 0
 	}
 
@@ -339,9 +340,6 @@ func benchCheckpoint(b *testing.B, p benchCheckpointParams) {
 		for j, sample := range p.samples.datapointSamples {
 			st := sample[0].T()
 			sf := sample[0].F()
-			ref, err := app.Append(0, lset, st, sf)
-			require.NoErrorf(b, err, "L: %v; S: %v", i, j)
-
 			e := exemplar.Exemplar{
 				Labels: lset,
 				Ts:     sample[0].T() + int64(i),
@@ -349,8 +347,10 @@ func benchCheckpoint(b *testing.B, p benchCheckpointParams) {
 				HasTs:  true,
 			}
 
-			_, err = app.AppendExemplar(ref, lset, e)
-			require.NoError(b, err)
+			_, err := app.Append(0, lset, 0, st, sf, nil, nil, storage.AOptions{
+				Exemplars: []exemplar.Exemplar{e},
+			})
+			require.NoErrorf(b, err, "L: %v; S: %v", i, j)
 
 			n += 2
 			maybeFlush()
@@ -361,7 +361,7 @@ func benchCheckpoint(b *testing.B, p benchCheckpointParams) {
 		lset := labels.New(l...)
 		histograms := p.samples.histogramSamples[i]
 		for j, sample := range histograms {
-			_, err := app.AppendHistogram(0, lset, int64(j), sample, nil)
+			_, err := app.Append(0, lset, 0, int64(j), 0, sample, nil, storage.AOptions{})
 			require.NoError(b, err)
 			n++
 			maybeFlush()

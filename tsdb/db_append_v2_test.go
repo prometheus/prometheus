@@ -55,12 +55,6 @@ import (
 	"github.com/prometheus/prometheus/util/testutil"
 )
 
-// TODO(bwplotka): Ensure non-ported tests are not deleted from db_test.go when removing AppenderV1 flow (#17632):
-// * TestQuerier_ShouldNotPanicIfHeadChunkIsTruncatedWhileReadingQueriedChunks
-// * TestChunkQuerier_ShouldNotPanicIfHeadChunkIsTruncatedWhileReadingQueriedChunks
-// * TestEmptyLabelsetCausesError
-// * TestQueryHistogramFromBlocksWithCompaction
-
 // TODO(krajorama): Add histograms test cases.
 func TestDataAvailableOnlyAfterCommit_AppendV2(t *testing.T) {
 	db := newTestDB(t)
@@ -3829,9 +3823,9 @@ func testOOOCompactionAppenderV2(t *testing.T, scenario sampleTypeScenario, addE
 		app := db.AppenderV2(context.Background())
 		for m := fromMins; m <= toMins; m++ {
 			ts := m * time.Minute.Milliseconds()
-			_, _, err := scenario.appendFunc(storage.AppenderV2AsLimitedV1(app), series1, ts, ts)
+			_, _, err := scenario.appendFunc(app, series1, ts, ts)
 			require.NoError(t, err)
-			_, _, err = scenario.appendFunc(storage.AppenderV2AsLimitedV1(app), series2, ts, 2*ts)
+			_, _, err = scenario.appendFunc(app, series2, ts, 2*ts)
 			require.NoError(t, err)
 		}
 		require.NoError(t, app.Commit())
@@ -4027,9 +4021,9 @@ func testOOOCompactionWithNormalCompactionAppendV2(t *testing.T, scenario sample
 		app := db.AppenderV2(context.Background())
 		for m := fromMins; m <= toMins; m++ {
 			ts := m * time.Minute.Milliseconds()
-			_, _, err := scenario.appendFunc(storage.AppenderV2AsLimitedV1(app), series1, ts, ts)
+			_, _, err := scenario.appendFunc(app, series1, ts, ts)
 			require.NoError(t, err)
-			_, _, err = scenario.appendFunc(storage.AppenderV2AsLimitedV1(app), series2, ts, 2*ts)
+			_, _, err = scenario.appendFunc(app, series2, ts, 2*ts)
 			require.NoError(t, err)
 		}
 		require.NoError(t, app.Commit())
@@ -4133,9 +4127,9 @@ func testOOOCompactionWithDisabledWriteLogAppend2(t *testing.T, scenario sampleT
 		app := db.AppenderV2(context.Background())
 		for m := fromMins; m <= toMins; m++ {
 			ts := m * time.Minute.Milliseconds()
-			_, _, err := scenario.appendFunc(storage.AppenderV2AsLimitedV1(app), series1, ts, ts)
+			_, _, err := scenario.appendFunc(app, series1, ts, ts)
 			require.NoError(t, err)
-			_, _, err = scenario.appendFunc(storage.AppenderV2AsLimitedV1(app), series2, ts, 2*ts)
+			_, _, err = scenario.appendFunc(app, series2, ts, 2*ts)
 			require.NoError(t, err)
 		}
 		require.NoError(t, app.Commit())
@@ -4238,9 +4232,9 @@ func testOOOQueryAfterRestartWithSnapshotAndRemovedWBLAppendV2(t *testing.T, sce
 		app := db.AppenderV2(context.Background())
 		for m := fromMins; m <= toMins; m++ {
 			ts := m * time.Minute.Milliseconds()
-			_, _, err := scenario.appendFunc(storage.AppenderV2AsLimitedV1(app), series1, ts, ts)
+			_, _, err := scenario.appendFunc(app, series1, ts, ts)
 			require.NoError(t, err)
-			_, _, err = scenario.appendFunc(storage.AppenderV2AsLimitedV1(app), series2, ts, 2*ts)
+			_, _, err = scenario.appendFunc(app, series2, ts, 2*ts)
 			require.NoError(t, err)
 		}
 		require.NoError(t, app.Commit())
@@ -5102,7 +5096,7 @@ func testOOONativeHistogramsWithCounterResetsAppendV2(t *testing.T, scenario sam
 					if resetCount {
 						j = 0
 					}
-					_, s, err := scenario.appendFunc(storage.AppenderV2AsLimitedV1(app), lbls, minutes(i), j)
+					_, s, err := scenario.appendFunc(app, lbls, minutes(i), j)
 					require.NoError(t, err)
 					if s.Type() == chunkenc.ValHistogram {
 						s.H().CounterResetHint = batch.expCounterResetHints[smplIdx]
@@ -5434,7 +5428,7 @@ func testOOOAppendAndQueryAppendV2(t *testing.T, scenario sampleTypeScenario) {
 		from, to := minutes(fromMins), minutes(toMins)
 		for m := from; m <= to; m += time.Minute.Milliseconds() {
 			val := rand.Intn(1000)
-			_, s, err := scenario.appendFunc(storage.AppenderV2AsLimitedV1(app), lbls, m, int64(val))
+			_, s, err := scenario.appendFunc(app, lbls, m, int64(val))
 			if faceError {
 				require.Error(t, err)
 			} else {
@@ -5561,7 +5555,7 @@ func testOOODisabledAppendV2(t *testing.T, scenario sampleTypeScenario) {
 		key := lbls.String()
 		from, to := minutes(fromMins), minutes(toMins)
 		for m := from; m <= to; m += time.Minute.Milliseconds() {
-			_, _, err := scenario.appendFunc(storage.AppenderV2AsLimitedV1(app), lbls, m, m)
+			_, _, err := scenario.appendFunc(app, lbls, m, m)
 			if faceError {
 				require.Error(t, err)
 				failedSamples++
@@ -5633,7 +5627,7 @@ func testWBLAndMmapReplayAppendV2(t *testing.T, scenario sampleTypeScenario) {
 		from, to := minutes(fromMins), minutes(toMins)
 		for m := from; m <= to; m += time.Minute.Milliseconds() {
 			val := rand.Intn(1000)
-			_, s, err := scenario.appendFunc(storage.AppenderV2AsLimitedV1(app), lbls, m, int64(val))
+			_, s, err := scenario.appendFunc(app, lbls, m, int64(val))
 			require.NoError(t, err)
 			expSamples[key] = append(expSamples[key], s)
 			totalSamples++
@@ -6259,7 +6253,7 @@ func testOOOCompactionFailureAppendV2(t *testing.T, scenario sampleTypeScenario)
 		app := db.AppenderV2(context.Background())
 		for m := fromMins; m <= toMins; m++ {
 			ts := m * time.Minute.Milliseconds()
-			_, _, err := scenario.appendFunc(storage.AppenderV2AsLimitedV1(app), series1, ts, ts)
+			_, _, err := scenario.appendFunc(app, series1, ts, ts)
 			require.NoError(t, err)
 		}
 		require.NoError(t, app.Commit())
@@ -6536,7 +6530,7 @@ func testOOOMmapCorruptionAppendV2(t *testing.T, scenario sampleTypeScenario) {
 		app := db.AppenderV2(context.Background())
 		for m := fromMins; m <= toMins; m++ {
 			ts := m * time.Minute.Milliseconds()
-			_, s, err := scenario.appendFunc(storage.AppenderV2AsLimitedV1(app), series1, ts, ts)
+			_, s, err := scenario.appendFunc(app, series1, ts, ts)
 			require.NoError(t, err)
 			allSamples = append(allSamples, s)
 			if inMmapAfterCorruption {
@@ -6674,7 +6668,7 @@ func testOutOfOrderRuntimeConfigAppendV2(t *testing.T, scenario sampleTypeScenar
 		app := db.AppenderV2(context.Background())
 		for m := fromMins; m <= toMins; m++ {
 			ts := m * time.Minute.Milliseconds()
-			_, s, err := scenario.appendFunc(storage.AppenderV2AsLimitedV1(app), series1, ts, ts)
+			_, s, err := scenario.appendFunc(app, series1, ts, ts)
 			if success {
 				require.NoError(t, err)
 				allSamples = append(allSamples, s)
@@ -6886,7 +6880,7 @@ func testNoGapAfterRestartWithOOOAppendV2(t *testing.T, scenario sampleTypeScena
 		app := db.AppenderV2(context.Background())
 		for m := fromMins; m <= toMins; m++ {
 			ts := m * time.Minute.Milliseconds()
-			_, _, err := scenario.appendFunc(storage.AppenderV2AsLimitedV1(app), series1, ts, ts)
+			_, _, err := scenario.appendFunc(app, series1, ts, ts)
 			if success {
 				require.NoError(t, err)
 			} else {
@@ -7000,7 +6994,7 @@ func testWblReplayAfterOOODisableAndRestartAppendV2(t *testing.T, scenario sampl
 		app := db.AppenderV2(context.Background())
 		for m := fromMins; m <= toMins; m++ {
 			ts := m * time.Minute.Milliseconds()
-			_, s, err := scenario.appendFunc(storage.AppenderV2AsLimitedV1(app), series1, ts, ts)
+			_, s, err := scenario.appendFunc(app, series1, ts, ts)
 			require.NoError(t, err)
 			allSamples = append(allSamples, s)
 		}
@@ -7060,7 +7054,7 @@ func testPanicOnApplyConfigAppendV2(t *testing.T, scenario sampleTypeScenario) {
 		app := db.AppenderV2(context.Background())
 		for m := fromMins; m <= toMins; m++ {
 			ts := m * time.Minute.Milliseconds()
-			_, s, err := scenario.appendFunc(storage.AppenderV2AsLimitedV1(app), series1, ts, ts)
+			_, s, err := scenario.appendFunc(app, series1, ts, ts)
 			require.NoError(t, err)
 			allSamples = append(allSamples, s)
 		}

@@ -29,7 +29,6 @@ import (
 	"github.com/prometheus/prometheus/model/exemplar"
 	"github.com/prometheus/prometheus/model/histogram"
 	"github.com/prometheus/prometheus/model/labels"
-	"github.com/prometheus/prometheus/model/metadata"
 	"github.com/prometheus/prometheus/storage"
 	"github.com/prometheus/prometheus/tsdb/record"
 	"github.com/prometheus/prometheus/tsdb/wlog"
@@ -241,16 +240,6 @@ func (rws *WriteStorage) ApplyConfig(conf *config.Config) error {
 	return nil
 }
 
-// Appender implements storage.Storage.
-func (rws *WriteStorage) Appender(context.Context) storage.Appender {
-	return &timestampTracker{
-		baseTimestampTracker: baseTimestampTracker{
-			writeStorage:         rws,
-			highestRecvTimestamp: rws.highestTimestamp,
-		},
-	}
-}
-
 // AppenderV2 implements storage.Storage.
 func (rws *WriteStorage) AppenderV2(context.Context) storage.AppenderV2 {
 	return &timestampTrackerV2{
@@ -310,67 +299,7 @@ type baseTimestampTracker struct {
 	highestRecvTimestamp *maxTimestamp
 }
 
-type timestampTracker struct {
-	baseTimestampTracker
-
-	appendOptions *storage.AppendOptions
-}
-
-func (t *timestampTracker) SetOptions(opts *storage.AppendOptions) {
-	t.appendOptions = opts
-}
-
-// Append implements storage.Appender.
-func (t *timestampTracker) Append(_ storage.SeriesRef, _ labels.Labels, ts int64, _ float64) (storage.SeriesRef, error) {
-	t.samples++
-	if ts > t.highestTimestamp {
-		t.highestTimestamp = ts
-	}
-	return 0, nil
-}
-
-func (t *timestampTracker) AppendExemplar(storage.SeriesRef, labels.Labels, exemplar.Exemplar) (storage.SeriesRef, error) {
-	// highestTimestamp excludes exemplars, as not all queues send them.
-	t.exemplars++
-	return 0, nil
-}
-
-func (t *timestampTracker) AppendHistogram(_ storage.SeriesRef, _ labels.Labels, ts int64, _ *histogram.Histogram, _ *histogram.FloatHistogram) (storage.SeriesRef, error) {
-	t.histograms++
-	if ts > t.highestTimestamp {
-		t.highestTimestamp = ts
-	}
-	return 0, nil
-}
-
-func (t *timestampTracker) AppendSTZeroSample(_ storage.SeriesRef, _ labels.Labels, _, st int64) (storage.SeriesRef, error) {
-	t.samples++
-	if st > t.highestTimestamp {
-		// Theoretically, we should never see a ST zero sample with a timestamp higher than the highest timestamp we've seen so far.
-		// However, we're not going to enforce that here, as it is not the responsibility of the tracker to enforce this.
-		t.highestTimestamp = st
-	}
-	return 0, nil
-}
-
-func (t *timestampTracker) AppendHistogramSTZeroSample(_ storage.SeriesRef, _ labels.Labels, _, st int64, _ *histogram.Histogram, _ *histogram.FloatHistogram) (storage.SeriesRef, error) {
-	t.histograms++
-	if st > t.highestTimestamp {
-		// Theoretically, we should never see a ST zero sample with a timestamp higher than the highest timestamp we've seen so far.
-		// However, we're not going to enforce that here, as it is not the responsibility of the tracker to enforce this.
-		t.highestTimestamp = st
-	}
-	return 0, nil
-}
-
-func (*timestampTracker) UpdateMetadata(storage.SeriesRef, labels.Labels, metadata.Metadata) (storage.SeriesRef, error) {
-	// Intentionally a no-op. dataIn measures records that create work for the
-	// sharded queue and is used to estimate queue load and backlog. A metadata
-	// update only changes cached per-series state; it does not enqueue an item.
-	return 0, nil
-}
-
-// Commit implements storage.Appender.
+// Commit implements storage.AppenderV2.
 func (t *baseTimestampTracker) Commit() error {
 	t.writeStorage.samplesIn.incr(t.samples + t.exemplars + t.histograms)
 
@@ -381,7 +310,7 @@ func (t *baseTimestampTracker) Commit() error {
 	return nil
 }
 
-// Rollback implements storage.Appender.
+// Rollback implements storage.AppenderV2.
 func (*baseTimestampTracker) Rollback() error {
 	return nil
 }

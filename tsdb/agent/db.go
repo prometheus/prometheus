@@ -29,9 +29,7 @@ import (
 	"go.uber.org/atomic"
 
 	"github.com/prometheus/prometheus/model/exemplar"
-	"github.com/prometheus/prometheus/model/histogram"
 	"github.com/prometheus/prometheus/model/labels"
-	"github.com/prometheus/prometheus/model/metadata"
 	"github.com/prometheus/prometheus/model/timestamp"
 	"github.com/prometheus/prometheus/storage"
 	"github.com/prometheus/prometheus/storage/remote"
@@ -262,7 +260,6 @@ type DB struct {
 	wal    *wlog.WL
 	locker *tsdbutil.DirLocker
 
-	appenderPool   sync.Pool
 	appenderV2Pool sync.Pool
 	bufPool        sync.Pool
 
@@ -331,18 +328,6 @@ func Open(l *slog.Logger, reg prometheus.Registerer, rs *remote.Storage, dir str
 		return make([]byte, 0, 1024)
 	}
 
-	db.appenderPool.New = func() any {
-		return &appender{
-			appenderBase: appenderBase{
-				DB:                     db,
-				pendingSeries:          make([]record.RefSeries, 0, 100),
-				pendingSamples:         make([]record.RefSample, 0, 100),
-				pendingHistograms:      make([]record.RefHistogramSample, 0, 100),
-				pendingFloatHistograms: make([]record.RefFloatHistogramSample, 0, 100),
-				pendingExamplars:       make([]record.RefExemplar, 0, 10),
-			},
-		}
-	}
 	db.appenderV2Pool.New = func() any {
 		return &appenderV2{
 			appenderBase: appenderBase{
@@ -861,11 +846,6 @@ func (*DB) ExemplarQuerier(context.Context) (storage.ExemplarQuerier, error) {
 	return nil, ErrUnsupported
 }
 
-// Appender implements storage.Storage.
-func (db *DB) Appender(context.Context) storage.Appender {
-	return db.appenderPool.Get().(storage.Appender)
-}
-
 // Close implements the Storage interface.
 func (db *DB) Close() error {
 	db.mtx.Lock()
@@ -899,42 +879,6 @@ type appenderBase struct {
 	// Pointers to the series referenced by each element of pendingFloatHistograms.
 	// Series lock is not held on elements.
 	floatHistogramSeries []*memSeries
-}
-
-type appender struct {
-	appenderBase
-
-	hints *storage.AppendOptions
-}
-
-func (a *appender) SetOptions(opts *storage.AppendOptions) {
-	a.hints = opts
-}
-
-func (a *appender) Append(ref storage.SeriesRef, l labels.Labels, t int64, v float64) (storage.SeriesRef, error) {
-	series, err := a.getOrCreate(chunks.HeadSeriesRef(ref), l)
-	if err != nil {
-		return 0, err
-	}
-
-	series.Lock()
-	defer series.Unlock()
-
-	if t <= a.minValidTime(series.lastTs) {
-		a.metrics.totalOutOfOrderSamples.Inc()
-		return 0, storage.ErrOutOfOrderSample
-	}
-
-	// NOTE: always modify pendingSamples and sampleSeries together.
-	a.pendingSamples = append(a.pendingSamples, record.RefSample{
-		Ref: series.ref,
-		T:   t,
-		V:   v,
-	})
-	a.sampleSeries = append(a.sampleSeries, series)
-
-	a.metrics.totalAppendedSamples.WithLabelValues(sampleMetricTypeFloat).Inc()
-	return storage.SeriesRef(series.ref), nil
 }
 
 func (a *appenderBase) getOrCreate(ref chunks.HeadSeriesRef, l labels.Labels) (series *memSeries, err error) {
@@ -987,37 +931,6 @@ func (a *appenderBase) getOrCreate(ref chunks.HeadSeriesRef, l labels.Labels) (s
 	return series, nil
 }
 
-func (a *appender) AppendExemplar(ref storage.SeriesRef, _ labels.Labels, e exemplar.Exemplar) (storage.SeriesRef, error) {
-	// Series references and chunk references are identical for agent mode.
-	headRef := chunks.HeadSeriesRef(ref)
-
-	s := a.series.GetByID(headRef)
-	if s == nil {
-		return 0, fmt.Errorf("unknown series ref when trying to add exemplar: %d", ref)
-	}
-
-	// Ensure no empty labels have gotten through.
-	e.Labels = e.Labels.WithoutEmpty()
-
-	if err := a.validateExemplar(s.ref, e); err != nil {
-		if errors.Is(err, storage.ErrDuplicateExemplar) {
-			// Duplicate, don't return an error but don't accept the exemplar.
-			return 0, nil
-		}
-		return 0, err
-	}
-
-	a.series.SetLatestExemplar(s.ref, &e)
-	a.pendingExamplars = append(a.pendingExamplars, record.RefExemplar{
-		Ref:    s.ref,
-		T:      e.Ts,
-		V:      e.Value,
-		Labels: e.Labels,
-	})
-	a.metrics.totalAppendedExemplars.Inc()
-	return storage.SeriesRef(s.ref), nil
-}
-
 func (a *appenderBase) validateExemplar(ref chunks.HeadSeriesRef, e exemplar.Exemplar) error {
 	if lbl, dup := e.Labels.HasDuplicateLabelNames(); dup {
 		return fmt.Errorf(`label name "%s" is not unique: %w`, lbl, tsdb.ErrInvalidExemplar)
@@ -1044,169 +957,6 @@ func (a *appenderBase) validateExemplar(ref chunks.HeadSeriesRef, e exemplar.Exe
 		return storage.ErrDuplicateExemplar
 	}
 	return nil
-}
-
-func (a *appender) AppendHistogram(ref storage.SeriesRef, l labels.Labels, t int64, h *histogram.Histogram, fh *histogram.FloatHistogram) (storage.SeriesRef, error) {
-	if h != nil {
-		if err := h.Validate(); err != nil {
-			return 0, err
-		}
-	}
-
-	if fh != nil {
-		if err := fh.Validate(); err != nil {
-			return 0, err
-		}
-	}
-
-	series, err := a.getOrCreate(chunks.HeadSeriesRef(ref), l)
-	if err != nil {
-		return 0, err
-	}
-
-	series.Lock()
-	defer series.Unlock()
-
-	if t <= a.minValidTime(series.lastTs) {
-		a.metrics.totalOutOfOrderSamples.Inc()
-		return 0, storage.ErrOutOfOrderSample
-	}
-
-	switch {
-	case h != nil:
-		// NOTE: always modify pendingHistograms and histogramSeries together
-		a.pendingHistograms = append(a.pendingHistograms, record.RefHistogramSample{
-			Ref: series.ref,
-			T:   t,
-			H:   h,
-		})
-		a.histogramSeries = append(a.histogramSeries, series)
-	case fh != nil:
-		// NOTE: always modify pendingFloatHistograms and floatHistogramSeries together
-		a.pendingFloatHistograms = append(a.pendingFloatHistograms, record.RefFloatHistogramSample{
-			Ref: series.ref,
-			T:   t,
-			FH:  fh,
-		})
-		a.floatHistogramSeries = append(a.floatHistogramSeries, series)
-	}
-
-	a.metrics.totalAppendedSamples.WithLabelValues(sampleMetricTypeHistogram).Inc()
-	return storage.SeriesRef(series.ref), nil
-}
-
-func (*appender) UpdateMetadata(storage.SeriesRef, labels.Labels, metadata.Metadata) (storage.SeriesRef, error) {
-	// TODO: Wire metadata in the Agent's appender.
-	return 0, nil
-}
-
-func (a *appender) AppendHistogramSTZeroSample(ref storage.SeriesRef, l labels.Labels, t, st int64, h *histogram.Histogram, fh *histogram.FloatHistogram) (storage.SeriesRef, error) {
-	if h != nil {
-		if err := h.Validate(); err != nil {
-			return 0, err
-		}
-	}
-	if fh != nil {
-		if err := fh.Validate(); err != nil {
-			return 0, err
-		}
-	}
-	if st >= t {
-		return 0, storage.ErrSTNewerThanSample
-	}
-
-	series, err := a.getOrCreate(chunks.HeadSeriesRef(ref), l)
-	if err != nil {
-		return 0, err
-	}
-
-	series.Lock()
-	defer series.Unlock()
-
-	if st <= a.minValidTime(series.lastTs) {
-		return 0, storage.ErrOutOfOrderST
-	}
-
-	if st <= series.lastTs {
-		// discard the sample if it's out of order.
-		return 0, storage.ErrOutOfOrderST
-	}
-	// NOTE(bwplotka): This is a bug, as we "commit" pending sample TS as the WAL last TS. It was likely done
-	// to satisfy incorrect TestDBStartTimestampSamplesIngestion test. We are leaving it as-is given the planned removal
-	// of AppenderV1 as per https://github.com/prometheus/prometheus/issues/17632.
-	series.lastTs = st
-
-	switch {
-	case h != nil:
-		zeroHistogram := &histogram.Histogram{}
-		a.pendingHistograms = append(a.pendingHistograms, record.RefHistogramSample{
-			Ref: series.ref,
-			T:   st,
-			H:   zeroHistogram,
-		})
-		a.histogramSeries = append(a.histogramSeries, series)
-	case fh != nil:
-		a.pendingFloatHistograms = append(a.pendingFloatHistograms, record.RefFloatHistogramSample{
-			Ref: series.ref,
-			T:   st,
-			FH:  &histogram.FloatHistogram{},
-		})
-		a.floatHistogramSeries = append(a.floatHistogramSeries, series)
-	}
-
-	a.metrics.totalAppendedSamples.WithLabelValues(sampleMetricTypeHistogram).Inc()
-	return storage.SeriesRef(series.ref), nil
-}
-
-func (a *appender) AppendSTZeroSample(ref storage.SeriesRef, l labels.Labels, t, st int64) (storage.SeriesRef, error) {
-	if st >= t {
-		return 0, storage.ErrSTNewerThanSample
-	}
-
-	series, err := a.getOrCreate(chunks.HeadSeriesRef(ref), l)
-	if err != nil {
-		return 0, err
-	}
-
-	series.Lock()
-	defer series.Unlock()
-
-	if t <= a.minValidTime(series.lastTs) {
-		a.metrics.totalOutOfOrderSamples.Inc()
-		return 0, storage.ErrOutOfOrderSample
-	}
-
-	if st <= series.lastTs {
-		// discard the sample if it's out of order.
-		return 0, storage.ErrOutOfOrderST
-	}
-	// NOTE(bwplotka): This is a bug, as we "commit" pending sample TS as the WAL last TS. It was likely done
-	// to satisfy incorrect TestDBStartTimestampSamplesIngestion test. We are leaving it as-is given the planned removal
-	// of AppenderV1 as per https://github.com/prometheus/prometheus/issues/17632.
-	series.lastTs = st
-
-	// NOTE: always modify pendingSamples and sampleSeries together.
-	a.pendingSamples = append(a.pendingSamples, record.RefSample{
-		Ref: series.ref,
-		T:   st,
-		V:   0,
-	})
-	a.sampleSeries = append(a.sampleSeries, series)
-
-	a.metrics.totalAppendedSamples.WithLabelValues(sampleMetricTypeFloat).Inc()
-
-	return storage.SeriesRef(series.ref), nil
-}
-
-// Commit submits the collected samples and purges the batch.
-func (a *appender) Commit() error {
-	defer a.appenderPool.Put(a)
-	return a.commit()
-}
-
-func (a *appender) Rollback() error {
-	defer a.appenderPool.Put(a)
-	return a.rollback()
 }
 
 func (a *appenderBase) commit() error {

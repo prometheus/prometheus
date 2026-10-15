@@ -45,7 +45,6 @@ import (
 	"github.com/prometheus/prometheus/discovery"
 	_ "github.com/prometheus/prometheus/discovery/file"
 	"github.com/prometheus/prometheus/discovery/targetgroup"
-	"github.com/prometheus/prometheus/model/histogram"
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/model/relabel"
 	"github.com/prometheus/prometheus/model/timestamp"
@@ -675,13 +674,13 @@ scrape_configs:
 	)
 
 	opts := Options{}
-	scrapeManager, err := NewManager(&opts, nil, nil, nil, teststorage.NewAppendable(), testRegistry)
+	scrapeManager, err := NewManager(&opts, nil, nil, teststorage.NewAppendable(), testRegistry)
 	require.NoError(t, err)
 	newLoop := func(scrapeLoopOptions) loop {
 		ch <- struct{}{}
 		return noopLoop()
 	}
-	sp := newTestScrapePool(t, nil, false, newLoop)
+	sp := newTestScrapePool(t, nil, newLoop)
 	sp.activeTargets[1] = &Target{}
 	sp.loops[1] = noopLoop()
 	sp.config = cfg1.ScrapeConfigs[0]
@@ -731,7 +730,7 @@ scrape_configs:
 func TestManagerTargetsUpdates(t *testing.T) {
 	opts := Options{}
 	testRegistry := prometheus.NewRegistry()
-	m, err := NewManager(&opts, nil, nil, nil, teststorage.NewAppendable(), testRegistry)
+	m, err := NewManager(&opts, nil, nil, teststorage.NewAppendable(), testRegistry)
 	require.NoError(t, err)
 
 	targetSetsCh := make(chan map[string][]*targetgroup.Group)
@@ -768,7 +767,7 @@ func TestManagerTargetsUpdates(t *testing.T) {
 }
 
 func TestManagerRunReturnsWhenTargetSetsClosed(t *testing.T) {
-	m, err := NewManager(&Options{}, nil, nil, nil, teststorage.NewAppendable(), prometheus.NewRegistry())
+	m, err := NewManager(&Options{}, nil, nil, teststorage.NewAppendable(), prometheus.NewRegistry())
 	require.NoError(t, err)
 	defer m.Stop()
 
@@ -804,7 +803,7 @@ global:
 
 	opts := Options{}
 	testRegistry := prometheus.NewRegistry()
-	scrapeManager, err := NewManager(&opts, nil, nil, nil, teststorage.NewAppendable(), testRegistry)
+	scrapeManager, err := NewManager(&opts, nil, nil, teststorage.NewAppendable(), testRegistry)
 	require.NoError(t, err)
 
 	// Load the first config.
@@ -824,7 +823,7 @@ global:
 
 	// The fqdn option replaces the name lookup, so the seed follows it.
 	seedFor := func(fqdn string) uint64 {
-		m, err := NewManager(&Options{fqdn: fqdn}, nil, nil, nil, teststorage.NewAppendable(), prometheus.NewRegistry())
+		m, err := NewManager(&Options{fqdn: fqdn}, nil, nil, teststorage.NewAppendable(), prometheus.NewRegistry())
 		require.NoError(t, err)
 		require.NoError(t, m.setOffsetSeed(cfg1.GlobalConfig.ExternalLabels))
 		return m.offsetSeed
@@ -876,7 +875,7 @@ scrape_configs:
 			_, cancel := context.WithCancel(context.Background())
 			defer cancel()
 
-			sp := newTestScrapePool(t, nil, false, newLoop)
+			sp := newTestScrapePool(t, nil, newLoop)
 			sp.loops[1] = noopLoop()
 			sp.config = cfg1.ScrapeConfigs[0]
 			sp.metrics = scrapeManager.metrics
@@ -893,7 +892,7 @@ scrape_configs:
 	}
 
 	opts := Options{}
-	scrapeManager, err := NewManager(&opts, nil, nil, nil, teststorage.NewAppendable(), testRegistry)
+	scrapeManager, err := NewManager(&opts, nil, nil, teststorage.NewAppendable(), testRegistry)
 	require.NoError(t, err)
 
 	reload(scrapeManager, cfg1)
@@ -926,10 +925,8 @@ func setupTestServer(t *testing.T, typ string, toWrite []byte) *httptest.Server 
 	return server
 }
 
-// TestManagerSTZeroIngestion tests scrape manager for various ST cases.
-// NOTE(bwplotka): There is no AppenderV2 test for this STZeroIngestion feature as in V2 flow it's
-// moved to AppenderV2 implementation (e.g. storage) and it's tested there, e.g. tsdb.TestHeadAppenderV2_Append_EnableSTAsZeroSample.
-func TestManagerSTZeroIngestion(t *testing.T) {
+// TestManagerParseST tests scrape manager for various ST cases.
+func TestManagerParseST(t *testing.T) {
 	t.Parallel()
 	const (
 		// _total suffix is required, otherwise expfmt with OMText will mark metric as "unknown"
@@ -942,8 +939,8 @@ func TestManagerSTZeroIngestion(t *testing.T) {
 		t.Run(fmt.Sprintf("format=%s", testFormat), func(t *testing.T) {
 			for _, testWithST := range []bool{false, true} {
 				t.Run(fmt.Sprintf("withST=%v", testWithST), func(t *testing.T) {
-					for _, testSTZeroIngest := range []bool{false, true} {
-						t.Run(fmt.Sprintf("stZeroIngest=%v", testSTZeroIngest), func(t *testing.T) {
+					for _, testParseST := range []bool{false, true} {
+						t.Run(fmt.Sprintf("parseST=%v", testParseST), func(t *testing.T) {
 							ctx, cancel := context.WithCancel(context.Background())
 							defer cancel()
 
@@ -958,10 +955,9 @@ func TestManagerSTZeroIngestion(t *testing.T) {
 
 							app := teststorage.NewAppendable()
 							discoveryManager, scrapeManager := runManagers(t, ctx, &Options{
-								EnableStartTimestampZeroIngestion: testSTZeroIngest,
-								ParseST:                           testSTZeroIngest,
-								skipJitterOffsetting:              true,
-							}, app, nil)
+								ParseST:              testParseST,
+								skipJitterOffsetting: true,
+							}, app)
 							defer scrapeManager.Stop()
 
 							server := setupTestServer(t, config.ScrapeProtocolsHeaders[testFormat], encoded)
@@ -994,24 +990,21 @@ scrape_configs:
 							}), "after 1 minute")
 
 							// Verify results.
-							// Verify what we got vs expectations around ST injection.
+							// Verify what we got vs expectations around ST parsing.
 							got := findSamplesForMetric(app.ResultSamples(), expectedMetricName)
-							if testWithST && testSTZeroIngest {
-								require.Len(t, got, 2)
-								require.Equal(t, 0.0, got[0].V)
-								require.Equal(t, timestamp.FromTime(stTs), got[0].T)
-								require.Equal(t, expectedSampleValue, got[1].V)
-								require.Equal(t, timestamp.FromTime(sampleTs), got[1].T)
+							require.Len(t, got, 1)
+							if testWithST && testParseST {
+								require.Equal(t, timestamp.FromTime(stTs), got[0].ST)
 							} else {
-								require.Len(t, got, 1)
-								require.Equal(t, expectedSampleValue, got[0].V)
-								require.Equal(t, timestamp.FromTime(sampleTs), got[0].T)
+								require.Zero(t, got[0].ST)
 							}
+							require.Equal(t, expectedSampleValue, got[0].V)
+							require.Equal(t, timestamp.FromTime(sampleTs), got[0].T)
 
 							// Verify what we got vs expectations around additional _created series for OM text.
-							// enableSTZeroInjection also kills that _created line.
+							// ParseST also skips that _created line.
 							gotSTSeries := findSamplesForMetric(app.ResultSamples(), expectedCreatedMetricName)
-							if testFormat == config.OpenMetricsText1_0_0 && testWithST && !testSTZeroIngest {
+							if testFormat == config.OpenMetricsText1_0_0 && testWithST && !testParseST {
 								// For OM Text, when counter has ST, and feature flag disabled we should see _created lines.
 								require.Len(t, gotSTSeries, 1)
 								// Conversion taken from common/expfmt.writeOpenMetricsFloat.
@@ -1100,16 +1093,14 @@ func generateTestHistogram(i int) *dto.Histogram {
 	return h
 }
 
-// NOTE(bwplotka): There is no AppenderV2 test for this STZeroIngestion feature as in V2 flow it's
-// moved to AppenderV2 implementation (e.g. storage) and it's tested there, e.g. tsdb.TestHeadAppenderV2_Append_EnableSTAsZeroSample.
-func TestManagerSTZeroIngestionHistogram(t *testing.T) {
+func TestManagerParseSTHistogram(t *testing.T) {
 	t.Parallel()
 	const mName = "expected_histogram"
 
 	for _, tc := range []struct {
-		name                  string
-		inputHistSample       *dto.Histogram
-		enableSTZeroIngestion bool
+		name            string
+		inputHistSample *dto.Histogram
+		parseST         bool
 	}{
 		{
 			name: "disabled with ST on histogram",
@@ -1118,7 +1109,7 @@ func TestManagerSTZeroIngestionHistogram(t *testing.T) {
 				h.CreatedTimestamp = timestamppb.Now()
 				return h
 			}(),
-			enableSTZeroIngestion: false,
+			parseST: false,
 		},
 		{
 			name: "enabled with ST on histogram",
@@ -1127,7 +1118,7 @@ func TestManagerSTZeroIngestionHistogram(t *testing.T) {
 				h.CreatedTimestamp = timestamppb.Now()
 				return h
 			}(),
-			enableSTZeroIngestion: true,
+			parseST: true,
 		},
 		{
 			name: "enabled without ST on histogram",
@@ -1135,7 +1126,7 @@ func TestManagerSTZeroIngestionHistogram(t *testing.T) {
 				h := generateTestHistogram(0)
 				return h
 			}(),
-			enableSTZeroIngestion: true,
+			parseST: true,
 		},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
@@ -1145,10 +1136,9 @@ func TestManagerSTZeroIngestionHistogram(t *testing.T) {
 
 			app := teststorage.NewAppendable()
 			discoveryManager, scrapeManager := runManagers(t, ctx, &Options{
-				EnableStartTimestampZeroIngestion: tc.enableSTZeroIngestion,
-				ParseST:                           tc.enableSTZeroIngestion,
-				skipJitterOffsetting:              true,
-			}, app, nil)
+				ParseST:              tc.parseST,
+				skipJitterOffsetting: true,
+			}, app)
 			defer scrapeManager.Stop()
 
 			once := sync.Once{}
@@ -1203,20 +1193,12 @@ scrape_configs:
 			}), "after 1 minute")
 
 			got := findSamplesForMetric(app.ResultSamples(), mName)
-
-			// Check for zero samples, assuming we only injected always one histogram sample.
-			// Did it contain ST to inject? If yes, was ST zero enabled?
-			if tc.inputHistSample.CreatedTimestamp.IsValid() && tc.enableSTZeroIngestion {
-				require.Len(t, got, 2)
-				// Zero sample.
-				require.Equal(t, histogram.Histogram{}, *got[0].H)
-				// Quick soft check to make sure it's the same sample or at least not zero.
-				require.Equal(t, tc.inputHistSample.GetSampleSum(), got[1].H.Sum)
-				return
-			}
-
-			// Expect only one, valid sample.
 			require.Len(t, got, 1)
+			if tc.inputHistSample.CreatedTimestamp.IsValid() && tc.parseST {
+				require.Equal(t, timestamp.FromTime(tc.inputHistSample.CreatedTimestamp.AsTime()), got[0].ST)
+			} else {
+				require.Zero(t, got[0].ST)
+			}
 			// Quick soft check to make sure it's the same sample or at least not zero.
 			require.Equal(t, tc.inputHistSample.GetSampleSum(), got[0].H.Sum)
 		})
@@ -1228,7 +1210,7 @@ func TestUnregisterMetrics(t *testing.T) {
 	// Check that all metrics can be unregistered, allowing a second manager to be created.
 	for range 2 {
 		opts := Options{}
-		manager, err := NewManager(&opts, nil, nil, nil, teststorage.NewAppendable(), reg)
+		manager, err := NewManager(&opts, nil, nil, teststorage.NewAppendable(), reg)
 		require.NotNil(t, manager)
 		require.NoError(t, err)
 		// Unregister all metrics.
@@ -1236,15 +1218,12 @@ func TestUnregisterMetrics(t *testing.T) {
 	}
 }
 
-// TestNHCBAndSTZeroIngestion verifies that both ConvertClassicHistogramsToNHCBEnabled
-// and EnableStartTimestampZeroIngestion can be used simultaneously without errors.
+// TestNHCBAndParseST verifies that both ConvertClassicHistogramsToNHCBEnabled
+// and ParseST can be used simultaneously without errors.
 // This test addresses issue #17216 by ensuring the previously blocking check has been removed.
 // The test verifies that the presence of exemplars in the input does not cause errors,
 // although exemplars are not preserved during NHCB conversion (as documented below).
-//
-// NOTE(bwplotka): There is no AppenderV2 test for this STZeroIngestion feature as in V2 flow it's
-// moved to AppenderV2 implementation (e.g. storage) and it's tested there, e.g. tsdb.TestHeadAppenderV2_Append_EnableSTAsZeroSample.
-func TestNHCBAndSTZeroIngestion(t *testing.T) {
+func TestNHCBAndParseST(t *testing.T) {
 	t.Parallel()
 
 	const (
@@ -1258,10 +1237,9 @@ func TestNHCBAndSTZeroIngestion(t *testing.T) {
 
 	app := teststorage.NewAppendable()
 	discoveryManager, scrapeManager := runManagers(t, ctx, &Options{
-		EnableStartTimestampZeroIngestion: true,
-		ParseST:                           true,
-		skipJitterOffsetting:              true,
-	}, app, nil)
+		ParseST:              true,
+		skipJitterOffsetting: true,
+	}, app)
 	defer scrapeManager.Stop()
 
 	once := sync.Once{}
@@ -1296,7 +1274,7 @@ test_histogram_created 1520430001
 	serverURL, err := url.Parse(server.URL)
 	require.NoError(t, err)
 
-	// Configuration with both convert_classic_histograms_to_nhcb enabled and ST zero ingestion enabled.
+	// Configuration with convert_classic_histograms_to_nhcb enabled and ParseST enabled.
 	testConfig := fmt.Sprintf(`
 global:
   # Use a very long scrape_interval to prevent automatic scraping during the test.
@@ -1327,12 +1305,10 @@ scrape_configs:
 	// Verify that samples were ingested (proving both features work together).
 	got := findSamplesForMetric(app.ResultSamples(), mName)
 
-	// With ST zero ingestion enabled and a created timestamp present, we expect 2 samples:
-	// one zero sample and one actual sample.
-	require.Len(t, got, 2, "expected 2 histogram samples (zero sample + actual sample)")
-	require.Equal(t, histogram.Histogram{}, *got[0].H, "first sample should be zero sample")
-	require.InDelta(t, expectedHistogramSum, got[1].H.Sum, 1e-9, "second sample should retain the expected sum")
-	require.Len(t, got[1].ES, 2, "expected 2 exemplars on second histogram")
+	require.Len(t, got, 1)
+	require.Equal(t, int64(1520430001000), got[0].ST)
+	require.InDelta(t, expectedHistogramSum, got[0].H.Sum, 1e-9)
+	require.Len(t, got[0].ES, 2, "expected 2 exemplars on histogram")
 }
 
 func applyConfig(
@@ -1355,7 +1331,7 @@ func applyConfig(
 	require.NoError(t, discoveryManager.ApplyConfig(c))
 }
 
-func runManagers(t *testing.T, ctx context.Context, opts *Options, app storage.Appendable, appV2 storage.AppendableV2) (*discovery.Manager, *Manager) {
+func runManagers(t *testing.T, ctx context.Context, opts *Options, appV2 storage.AppendableV2) (*discovery.Manager, *Manager) {
 	t.Helper()
 
 	if opts == nil {
@@ -1382,7 +1358,7 @@ func runManagers(t *testing.T, ctx context.Context, opts *Options, app storage.A
 		opts,
 		nil,
 		nil,
-		app, appV2,
+		appV2,
 		prometheus.NewRegistry(),
 	)
 	require.NoError(t, err)
@@ -1455,7 +1431,7 @@ scrape_configs:
   - files: ['%s']
 `
 
-	discoveryManager, scrapeManager := runManagers(t, ctx, nil, nil, teststorage.NewAppendable())
+	discoveryManager, scrapeManager := runManagers(t, ctx, nil, teststorage.NewAppendable())
 	defer scrapeManager.Stop()
 
 	applyConfig(
@@ -1554,7 +1530,7 @@ scrape_configs:
   file_sd_configs:
   - files: ['%s', '%s']
 `
-	discoveryManager, scrapeManager := runManagers(t, ctx, nil, nil, teststorage.NewAppendable())
+	discoveryManager, scrapeManager := runManagers(t, ctx, nil, teststorage.NewAppendable())
 	defer scrapeManager.Stop()
 
 	applyConfig(
@@ -1613,7 +1589,7 @@ scrape_configs:
   file_sd_configs:
   - files: ['%s']
 `
-	discoveryManager, scrapeManager := runManagers(t, ctx, nil, nil, teststorage.NewAppendable())
+	discoveryManager, scrapeManager := runManagers(t, ctx, nil, teststorage.NewAppendable())
 	defer scrapeManager.Stop()
 
 	applyConfig(
@@ -1679,7 +1655,7 @@ scrape_configs:
   - targets: ['%s']
 `
 
-	discoveryManager, scrapeManager := runManagers(t, ctx, nil, nil, teststorage.NewAppendable())
+	discoveryManager, scrapeManager := runManagers(t, ctx, nil, teststorage.NewAppendable())
 	defer scrapeManager.Stop()
 
 	// Apply the initial config with an existing file
@@ -1763,7 +1739,7 @@ scrape_configs:
 
 	cfg := loadConfiguration(t, cfgText)
 
-	m, err := NewManager(&Options{}, nil, nil, nil, teststorage.NewAppendable(), prometheus.NewRegistry())
+	m, err := NewManager(&Options{}, nil, nil, teststorage.NewAppendable(), prometheus.NewRegistry())
 	require.NoError(t, err)
 	defer m.Stop()
 	require.NoError(t, m.ApplyConfig(cfg))

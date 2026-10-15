@@ -927,6 +927,7 @@ func Open(dir string, l *slog.Logger, r prometheus.Registerer, opts *Options, st
 		opts.FeatureRegistry.Set(features.TSDB, "use_uncached_io", opts.UseUncachedIO)
 		opts.FeatureRegistry.Enable(features.TSDB, "native_histograms")
 		opts.FeatureRegistry.Set(features.TSDB, "st_storage", opts.EnableSTStorage)
+		opts.FeatureRegistry.Set(features.TSDB, "start_timestamp_zero_ingestion", opts.EnableSTAsZeroSample)
 		opts.FeatureRegistry.Enable(features.TSDB, "xor2_encoding")
 		opts.FeatureRegistry.Set(features.TSDB, "histograms_st_encoding", opts.EnableHistogramSTEncoding)
 	}
@@ -1356,11 +1357,6 @@ func (db *DB) run(ctx context.Context) {
 	}
 }
 
-// Appender opens a new Appender against the database.
-func (db *DB) Appender(ctx context.Context) storage.Appender {
-	return dbAppender{db: db, Appender: db.head.Appender(ctx)}
-}
-
 // AppenderV2 opens a new AppenderV2 against the database.
 func (db *DB) AppenderV2(ctx context.Context) storage.AppenderV2 {
 	return dbAppenderV2{db: db, AppenderV2: db.head.AppenderV2(ctx)}
@@ -1466,36 +1462,6 @@ func (db *DB) getRetentionSettings() (int64, float64) {
 	db.retentionMtx.RLock()
 	defer db.retentionMtx.RUnlock()
 	return db.opts.MaxBytes, db.opts.MaxPercentage
-}
-
-// dbAppender wraps the DB's head appender and triggers compactions on commit
-// if necessary.
-type dbAppender struct {
-	storage.Appender
-	db *DB
-}
-
-var _ storage.GetRef = dbAppender{}
-
-func (a dbAppender) GetRef(lset labels.Labels, hash uint64) (storage.SeriesRef, labels.Labels) {
-	if g, ok := a.Appender.(storage.GetRef); ok {
-		return g.GetRef(lset, hash)
-	}
-	return 0, labels.EmptyLabels()
-}
-
-func (a dbAppender) Commit() error {
-	err := a.Appender.Commit()
-
-	// We could just run this check every few minutes practically. But for benchmarks
-	// and high frequency use cases this is the safer way.
-	if a.db.head.compactable() {
-		select {
-		case a.db.compactc <- struct{}{}:
-		default:
-		}
-	}
-	return err
 }
 
 // dbAppenderV2 wraps the DB's head appender and triggers compactions on commit

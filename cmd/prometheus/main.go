@@ -64,7 +64,6 @@ import (
 	"github.com/prometheus/prometheus/model/exemplar"
 	"github.com/prometheus/prometheus/model/histogram"
 	"github.com/prometheus/prometheus/model/labels"
-	"github.com/prometheus/prometheus/model/metadata"
 	"github.com/prometheus/prometheus/model/relabel"
 	"github.com/prometheus/prometheus/notifier"
 	_ "github.com/prometheus/prometheus/plugins" // Register plugins.
@@ -269,8 +268,6 @@ func (c *flagConfig) setFeatureListOptions(logger *slog.Logger) error {
 			case "ooo-native-histograms":
 				logger.Warn("This option for --enable-feature is now permanently enabled and therefore a no-op.", "option", o)
 			case "created-timestamp-zero-ingestion":
-				// NOTE(bwplotka): Once AppendableV1 is removed, there will be only the TSDB and agent flags.
-				c.scrape.EnableStartTimestampZeroIngestion = true
 				c.scrape.ParseST = true
 				c.tsdb.EnableSTAsZeroSample = true
 				c.agent.EnableSTAsZeroSample = true
@@ -996,7 +993,7 @@ func main() {
 		&cfg.scrape,
 		logger.With("component", "scrape manager"),
 		logging.NewJSONFileLogger,
-		nil, fanoutStorage,
+		fanoutStorage,
 		prometheus.DefaultRegisterer,
 	)
 	if err != nil {
@@ -1933,14 +1930,6 @@ func (s *readyStorage) ExemplarQuerier(ctx context.Context) (storage.ExemplarQue
 	return nil, tsdb.ErrNotReady
 }
 
-// Appender implements the Storage interface.
-func (s *readyStorage) Appender(ctx context.Context) storage.Appender {
-	if x := s.get(); x != nil {
-		return x.Appender(ctx)
-	}
-	return notReadyAppender{}
-}
-
 // AppenderV2 implements the Storage interface.
 func (s *readyStorage) AppenderV2(ctx context.Context) storage.AppenderV2 {
 	if x := s.get(); x != nil {
@@ -1948,39 +1937,6 @@ func (s *readyStorage) AppenderV2(ctx context.Context) storage.AppenderV2 {
 	}
 	return notReadyAppenderV2{}
 }
-
-type notReadyAppender struct{}
-
-// SetOptions does nothing in this appender implementation.
-func (notReadyAppender) SetOptions(*storage.AppendOptions) {}
-
-func (notReadyAppender) Append(storage.SeriesRef, labels.Labels, int64, float64) (storage.SeriesRef, error) {
-	return 0, tsdb.ErrNotReady
-}
-
-func (notReadyAppender) AppendExemplar(storage.SeriesRef, labels.Labels, exemplar.Exemplar) (storage.SeriesRef, error) {
-	return 0, tsdb.ErrNotReady
-}
-
-func (notReadyAppender) AppendHistogram(storage.SeriesRef, labels.Labels, int64, *histogram.Histogram, *histogram.FloatHistogram) (storage.SeriesRef, error) {
-	return 0, tsdb.ErrNotReady
-}
-
-func (notReadyAppender) AppendHistogramSTZeroSample(storage.SeriesRef, labels.Labels, int64, int64, *histogram.Histogram, *histogram.FloatHistogram) (storage.SeriesRef, error) {
-	return 0, tsdb.ErrNotReady
-}
-
-func (notReadyAppender) UpdateMetadata(storage.SeriesRef, labels.Labels, metadata.Metadata) (storage.SeriesRef, error) {
-	return 0, tsdb.ErrNotReady
-}
-
-func (notReadyAppender) AppendSTZeroSample(storage.SeriesRef, labels.Labels, int64, int64) (storage.SeriesRef, error) {
-	return 0, tsdb.ErrNotReady
-}
-
-func (notReadyAppender) Commit() error { return tsdb.ErrNotReady }
-
-func (notReadyAppender) Rollback() error { return tsdb.ErrNotReady }
 
 type notReadyAppenderV2 struct{}
 
