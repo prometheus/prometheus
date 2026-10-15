@@ -1370,6 +1370,8 @@ type mockAppendable struct {
 	appendHistogramErr    error
 	appendExemplarErr     error
 	updateMetadataErr     error
+	// AppenderV2's AppendExemplars returns appendExemplarsPartialErr, if set, without appending.
+	appendExemplarsPartialErr *storage.AppendPartialError
 }
 
 type mockSample struct {
@@ -1496,10 +1498,13 @@ func (a *mockAppenderV2) AppendExemplars(ref storage.SeriesRef, l labels.Labels,
 		return 0, fmt.Errorf("unknown series ref %d: %w", ref, storage.ErrNotFound)
 	}
 	ref = storage.SeriesRef(hash)
-	var errs []error
-	for _, e := range exemplars {
+	if m.appendExemplarsPartialErr != nil {
+		return ref, m.appendExemplarsPartialErr
+	}
+	var errs []storage.ExemplarError
+	for i, e := range exemplars {
 		if _, err := m.AppendExemplar(ref, l, e); err != nil && !errors.Is(err, storage.ErrDuplicateExemplar) {
-			errs = append(errs, err)
+			errs = append(errs, storage.ExemplarError{Index: i, Err: err})
 		}
 	}
 	if len(errs) > 0 {
@@ -2114,8 +2119,8 @@ func TestRemoteWriteHandler_V2ExemplarOrderingAndRejectedSeries(t *testing.T) {
 
 	t.Run("AppendPartialError from Append still counts sample and histogram as written", func(t *testing.T) {
 		appendable := &mockAppendable{
-			appendSampleErr:    &storage.AppendPartialError{ExemplarErrors: []error{errors.New("some non-OOO exemplar error")}},
-			appendHistogramErr: &storage.AppendPartialError{ExemplarErrors: []error{storage.ErrOutOfOrderExemplar}},
+			appendSampleErr:    &storage.AppendPartialError{ExemplarErrors: []storage.ExemplarError{{Err: errors.New("some non-OOO exemplar error")}}},
+			appendHistogramErr: &storage.AppendPartialError{ExemplarErrors: []storage.ExemplarError{{Err: storage.ErrOutOfOrderExemplar}}},
 		}
 		handler := NewWriteHandler(
 			promslog.NewNopLogger(),
@@ -2148,6 +2153,46 @@ func TestRemoteWriteHandler_V2ExemplarOrderingAndRejectedSeries(t *testing.T) {
 		require.Len(t, appendable.samples, 1)
 		require.Len(t, appendable.histograms, 1)
 	})
+
+	t.Run("exemplar rejected by several storages is counted once", func(t *testing.T) {
+		appendable := &mockAppendable{
+			appendExemplarsPartialErr: &storage.AppendPartialError{ExemplarErrors: []storage.ExemplarError{
+				{Index: 0, Err: errors.New("primary storage exemplar error")},
+				{Index: 0, Err: errors.New("secondary storage exemplar error")},
+			}},
+		}
+		handler := NewWriteHandler(
+			promslog.NewNopLogger(),
+			nil,
+			appendable,
+			[]remoteapi.WriteMessageType{remoteapi.WriteV2MessageType},
+			false,
+			false,
+		)
+		payload, _, _, _, err := buildV2WriteRequest(promslog.NewNopLogger(), []writev2.TimeSeries{
+			{
+				LabelsRefs: []uint32{0, 1},
+				Samples:    []writev2.Sample{{Timestamp: 1000, Value: 1}},
+				Exemplars: []writev2.Exemplar{
+					{LabelsRefs: []uint32{2, 3}, Value: 1, Timestamp: 1000},
+					{LabelsRefs: []uint32{2, 4}, Value: 2, Timestamp: 1001},
+				},
+			},
+		}, []string{"__name__", "exemplar_metric", "trace_id", "t1", "t2"}, nil, nil, nil, "snappy")
+		require.NoError(t, err)
+
+		req, err := http.NewRequest(http.MethodPost, "", bytes.NewReader(payload))
+		require.NoError(t, err)
+		req.Header.Set("Content-Type", remoteWriteContentTypeHeaders[remoteapi.WriteV2MessageType])
+		req.Header.Set("Content-Encoding", compression.Snappy)
+
+		recorder := httptest.NewRecorder()
+		handler.ServeHTTP(recorder, req)
+		resp := recorder.Result()
+		require.Equal(t, http.StatusNoContent, resp.StatusCode)
+		expectHeaderValue(t, 1, resp.Header.Get(rw20WrittenSamplesHeader))
+		expectHeaderValue(t, 1, resp.Header.Get(rw20WrittenExemplarsHeader))
+	})
 }
 
 func TestTimeLimitAppenderV2_LimitExemplars(t *testing.T) {
@@ -2177,6 +2222,9 @@ func TestTimeLimitAppenderV2_LimitExemplars(t *testing.T) {
 		require.Len(t, pErr.ExemplarErrors, 2)
 		require.ErrorIs(t, pErr.ExemplarErrors[0], storage.ErrOutOfBounds)
 		require.ErrorIs(t, pErr.ExemplarErrors[1], storage.ErrOutOfOrderExemplar)
+		// Indexes refer to the caller's input, not to the exemplars kept after the time limit.
+		require.Equal(t, 0, pErr.ExemplarErrors[0].Index)
+		require.Equal(t, 1, pErr.ExemplarErrors[1].Index)
 
 		// Caller's input slice must not be mutated in place.
 		require.Equal(t, origFirstID, input[0].Labels.Get("id"))
@@ -2188,7 +2236,9 @@ func TestTimeLimitAppenderV2_LimitExemplars(t *testing.T) {
 	})
 
 	t.Run("AppendExemplars", func(t *testing.T) {
-		appendable := &mockAppendable{}
+		appendable := &mockAppendable{
+			latestExemplar: map[uint64]int64{lbls.Hash(): 500},
+		}
 		baseApp := appendable.AppenderV2(t.Context()).(storage.ExemplarAppenderV2)
 		app := newTimeLimitExemplarAppenderV2(baseApp, 1000)
 
@@ -2198,19 +2248,26 @@ func TestTimeLimitAppenderV2_LimitExemplars(t *testing.T) {
 		input := []exemplar.Exemplar{
 			{Labels: labels.FromStrings("id", "1"), Value: 1, Ts: 2000}, // future (> maxTime)
 			{Labels: labels.FromStrings("id", "2"), Value: 2, Ts: 900},  // valid (<= maxTime)
+			{Labels: labels.FromStrings("id", "3"), Value: 3, Ts: 400},  // out of order (< 900)
 		}
 		origFirstID := input[0].Labels.Get("id")
 		origSecondID := input[1].Labels.Get("id")
+		origThirdID := input[2].Labels.Get("id")
 
 		_, err = app.AppendExemplars(ref, lbls, input)
 		var pErr *storage.AppendPartialError
 		require.ErrorAs(t, err, &pErr)
-		require.Len(t, pErr.ExemplarErrors, 1)
+		require.Len(t, pErr.ExemplarErrors, 2)
 		require.ErrorIs(t, pErr.ExemplarErrors[0], storage.ErrOutOfBounds)
+		require.ErrorIs(t, pErr.ExemplarErrors[1], storage.ErrOutOfOrderExemplar)
+		// Indexes refer to the caller's input, not to the exemplars kept after the time limit.
+		require.Equal(t, 0, pErr.ExemplarErrors[0].Index)
+		require.Equal(t, 2, pErr.ExemplarErrors[1].Index)
 
 		// Caller's input slice must not be mutated in place.
 		require.Equal(t, origFirstID, input[0].Labels.Get("id"))
 		require.Equal(t, origSecondID, input[1].Labels.Get("id"))
+		require.Equal(t, origThirdID, input[2].Labels.Get("id"))
 		require.Len(t, appendable.exemplars, 1)
 		require.Equal(t, int64(900), appendable.exemplars[0].t)
 	})
