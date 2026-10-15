@@ -16,7 +16,6 @@ package remote
 import (
 	"bytes"
 	"context"
-	"errors"
 	"fmt"
 	"log/slog"
 	"math/rand/v2"
@@ -954,7 +953,7 @@ func TestOTLPInstrumentedAppendable(t *testing.T) {
 		require.Equal(t, 1.0, testutil.ToFloat64(oa.samplesAppendedWithoutMetadata))
 	})
 	t.Run("without metadata; 2 exemplar OOO errors", func(t *testing.T) {
-		appTest := teststorage.NewAppendable().WithErrs(nil, errors.New("exemplar error"), nil)
+		appTest := teststorage.NewAppendable().WithErrs(nil, storage.ErrOutOfOrderExemplar, nil)
 		oa := newOTLPInstrumentedAppendable(prometheus.NewRegistry(), appTest)
 
 		require.Equal(t, 0.0, testutil.ToFloat64(oa.outOfOrderExemplars))
@@ -969,5 +968,30 @@ func TestOTLPInstrumentedAppendable(t *testing.T) {
 
 		require.Equal(t, 2.0, testutil.ToFloat64(oa.outOfOrderExemplars))
 		require.Equal(t, 1.0, testutil.ToFloat64(oa.samplesAppendedWithoutMetadata))
+	})
+	t.Run("exemplar errors other than out of order are not counted", func(t *testing.T) {
+		appTest := teststorage.NewAppendable().WithErrs(nil, storage.ErrExemplarLabelLength, nil)
+		oa := newOTLPInstrumentedAppendable(prometheus.NewRegistry(), appTest)
+
+		app := oa.AppenderV2(t.Context())
+		_, err := app.Append(0, labels.EmptyLabels(), -1, 1, 2, nil, nil, storage.AOptions{Exemplars: []exemplar.Exemplar{{}, {}}})
+		require.NoError(t, err)
+		require.NoError(t, app.Commit())
+		require.Len(t, appTest.ResultSamples(), 1)
+
+		require.Equal(t, 0.0, testutil.ToFloat64(oa.outOfOrderExemplars))
+	})
+	t.Run("exemplars too far in the future are not counted", func(t *testing.T) {
+		appTest := teststorage.NewAppendable()
+		oa := newOTLPInstrumentedAppendable(prometheus.NewRegistry(), appTest)
+
+		future := timestamp.FromTime(time.Now().Add(time.Hour))
+		app := oa.AppenderV2(t.Context())
+		_, err := app.Append(0, labels.EmptyLabels(), -1, 1, 2, nil, nil, storage.AOptions{Exemplars: []exemplar.Exemplar{{Ts: future, HasTs: true}}})
+		require.NoError(t, err)
+		require.NoError(t, app.Commit())
+		require.Len(t, appTest.ResultSamples(), 1)
+
+		require.Equal(t, 0.0, testutil.ToFloat64(oa.outOfOrderExemplars))
 	})
 }

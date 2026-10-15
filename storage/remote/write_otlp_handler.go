@@ -286,7 +286,11 @@ func (app *otlpInstrumentedAppender) Append(ref storage.SeriesRef, ls labels.Lab
 			// Not a partial error, return err.
 			return 0, err
 		}
-		app.outOfOrderExemplars.Add(float64(len(partialErr.ExemplarErrors)))
+		for _, eErr := range partialErr.ExemplarErrors {
+			if errors.Is(eErr, storage.ErrOutOfOrderExemplar) {
+				app.outOfOrderExemplars.Inc()
+			}
+		}
 		// Hide the partial error as otlp converter does not handle it.
 	}
 	if opts.Metadata.IsEmpty() {
