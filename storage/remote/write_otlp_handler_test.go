@@ -404,7 +404,7 @@ func TestOTLPWriteHandler(t *testing.T) {
 		req, err := http.NewRequest("", "", bytes.NewReader(buf))
 		require.NoError(t, err)
 		req.Header.Set("Content-Type", "application/x-protobuf")
-		handler := NewOTLPWriteHandler(promslog.NewNopLogger(), nil, db, func() config.Config {
+		handler := NewOTLPWriteHandler(slog.New(slog.DiscardHandler), nil, db, func() config.Config {
 			return config.Config{}
 		}, OTLPOptions{})
 		recorder := httptest.NewRecorder()
