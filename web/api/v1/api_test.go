@@ -5353,9 +5353,10 @@ func TestQueryCostEstimateEndpoint(t *testing.T) {
 }
 
 // TestQueryCostEndpointParameterParity verifies that the cost endpoints accept
-// and validate the parameters that only shape an executed query's response the
-// same way the query endpoints do, so a request accepted by one endpoint is
-// accepted by the other.
+// and validate parameters the same way the query endpoints do, so a request
+// accepted by one endpoint is accepted by the other. That covers the parameters
+// that only shape an executed query's response as well as the per-query cost
+// overrides.
 func TestQueryCostEndpointParameterParity(t *testing.T) {
 	api := newQueryCostTestAPI(t, true, false)
 
@@ -5372,6 +5373,9 @@ func TestQueryCostEndpointParameterParity(t *testing.T) {
 		{name: "deprecated stats value warns", params: []string{"stats", "bogus"}, warning: true},
 		{name: "valid cost", params: []string{"cost", "true"}},
 		{name: "invalid cost", params: []string{"cost", "maybe"}, errType: errorBadData},
+		{name: "invalid max_series", params: []string{"max_series", "notanumber"}, errType: errorBadData},
+		{name: "invalid max_samples_read", params: []string{"max_samples_read", "-1"}, errType: errorBadData},
+		{name: "invalid max_query_duration", params: []string{"max_query_duration", "notaduration"}, errType: errorBadData},
 		// A malformed expression is a client error on /query, so it must be one
 		// here too rather than looking like an execution failure.
 		{name: "malformed query", params: []string{"query", "up{"}, errType: errorBadData},
@@ -5450,68 +5454,66 @@ func TestQueryRangeCostEndpointValidation(t *testing.T) {
 }
 
 // TestQueryCostComparisonGating verifies that the cost comparison object is
-// present on a query response only when the cost parameter is set and the
-// feature is enabled.
+// present on a query response only when the cost parameter is true, the feature
+// is enabled and estimation succeeds. A failing estimate must never turn a
+// successful query into an API error: the result is returned without a
+// comparison, and the estimation error becomes a warning.
 func TestQueryCostComparisonGating(t *testing.T) {
-	t.Run("present when cost=1 and feature enabled", func(t *testing.T) {
-		api := newQueryCostTestAPI(t, true, false)
-		req, err := http.NewRequest(http.MethodGet, "http://example.com?query=test_metric1&time=120&cost=1", http.NoBody)
-		require.NoError(t, err)
+	for _, tc := range []struct {
+		name         string
+		enabled      bool
+		cost         string
+		failEstimate bool
+		errType      errorType
+		wantCost     bool
+	}{
+		{name: "present when cost=1 and feature enabled", enabled: true, cost: "1", wantCost: true},
+		{name: "absent without cost param", enabled: true},
+		{name: "absent when feature disabled even with cost=1", cost: "1"},
+		{name: "absent when cost=false", enabled: true, cost: "false"},
+		{name: "rejected when cost is not a boolean", enabled: true, cost: "maybe", errType: errorBadData},
+		{name: "absent with a warning when estimation fails", enabled: true, cost: "1", failEstimate: true},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			api := newQueryCostTestAPI(t, tc.enabled, false)
+			if tc.failEstimate {
+				api.Queryable = failEstimateQueryable{SampleAndChunkQueryable: api.Queryable}
+			}
+			for _, ep := range queryCostEndpoints(api) {
+				if ep.name != "query" && ep.name != "query_range" {
+					continue
+				}
+				t.Run(ep.name, func(t *testing.T) {
+					params := ep.params
+					if tc.cost != "" {
+						params = withParams(params, "cost", tc.cost)
+					}
+					res := ep.handler(queryCostRequest(t, http.MethodGet, params))
+					if res.finalizer != nil {
+						defer res.finalizer()
+					}
+					assertAPIError(t, res.err, tc.errType)
+					if tc.errType != errorNone {
+						return
+					}
 
-		res := api.query(req)
-		require.Nil(t, res.err)
-		data, ok := res.data.(*QueryData)
-		require.True(t, ok, "expected *QueryData, got %T", res.data)
-		require.NotNil(t, data.Cost)
-		require.GreaterOrEqual(t, data.Cost.Estimated.SeriesTouched, int64(1))
-		require.GreaterOrEqual(t, data.Cost.Actual.SeriesTouched, int64(1))
-	})
-
-	t.Run("absent without cost param", func(t *testing.T) {
-		api := newQueryCostTestAPI(t, true, false)
-		req, err := http.NewRequest(http.MethodGet, "http://example.com?query=test_metric1&time=120", http.NoBody)
-		require.NoError(t, err)
-
-		res := api.query(req)
-		require.Nil(t, res.err)
-		data, ok := res.data.(*QueryData)
-		require.True(t, ok, "expected *QueryData, got %T", res.data)
-		require.Nil(t, data.Cost)
-	})
-
-	t.Run("absent when feature disabled even with cost=1", func(t *testing.T) {
-		api := newQueryCostTestAPI(t, false, false)
-		req, err := http.NewRequest(http.MethodGet, "http://example.com?query=test_metric1&time=120&cost=1", http.NoBody)
-		require.NoError(t, err)
-
-		res := api.query(req)
-		require.Nil(t, res.err)
-		data, ok := res.data.(*QueryData)
-		require.True(t, ok, "expected *QueryData, got %T", res.data)
-		require.Nil(t, data.Cost)
-	})
-
-	t.Run("absent when cost=false", func(t *testing.T) {
-		api := newQueryCostTestAPI(t, true, false)
-		req, err := http.NewRequest(http.MethodGet, "http://example.com?query=test_metric1&time=120&cost=false", http.NoBody)
-		require.NoError(t, err)
-
-		res := api.query(req)
-		require.Nil(t, res.err)
-		data, ok := res.data.(*QueryData)
-		require.True(t, ok, "expected *QueryData, got %T", res.data)
-		require.Nil(t, data.Cost)
-	})
-
-	t.Run("rejected when cost is not a boolean", func(t *testing.T) {
-		api := newQueryCostTestAPI(t, true, false)
-		req, err := http.NewRequest(http.MethodGet, "http://example.com?query=test_metric1&time=120&cost=maybe", http.NoBody)
-		require.NoError(t, err)
-
-		res := api.query(req)
-		require.NotNil(t, res.err)
-		require.Equal(t, errorBadData, res.err.typ)
-	})
+					data, ok := res.data.(*QueryData)
+					require.True(t, ok, "expected *QueryData, got %T", res.data)
+					require.NotNil(t, data.Result)
+					if tc.wantCost {
+						require.NotNil(t, data.Cost)
+						require.GreaterOrEqual(t, data.Cost.Estimated.SeriesTouched, int64(1))
+						require.GreaterOrEqual(t, data.Cost.Actual.SeriesTouched, int64(1))
+					} else {
+						require.Nil(t, data.Cost)
+					}
+					if tc.failEstimate {
+						require.NotEmpty(t, res.warnings.AsErrors())
+					}
+				})
+			}
+		})
+	}
 }
 
 // TestQueryCostRoutesUnavailableInAgentMode verifies that the cost endpoints are
@@ -5549,40 +5551,6 @@ func TestQueryCostRoutesUnavailableInAgentMode(t *testing.T) {
 		require.NoError(t, err)
 		resp.Body.Close()
 		require.Equal(t, http.StatusNotFound, resp.StatusCode)
-	})
-}
-
-// TestQueryCostOverrideParams verifies that the per-query cost-limit override
-// parameters are parsed by extractQueryOpts only when the feature is enabled.
-func TestQueryCostOverrideParams(t *testing.T) {
-	t.Run("parsed when enabled", func(t *testing.T) {
-		api := newQueryCostTestAPI(t, true, false)
-		req, err := http.NewRequest(http.MethodGet, "http://example.com?max_series=10&max_samples_read=100&max_query_duration=5s", http.NoBody)
-		require.NoError(t, err)
-
-		opts, err := api.extractQueryOpts(req)
-		require.NoError(t, err)
-		require.NotNil(t, opts)
-	})
-
-	t.Run("invalid value rejected when enabled", func(t *testing.T) {
-		api := newQueryCostTestAPI(t, true, false)
-		req, err := http.NewRequest(http.MethodGet, "http://example.com?max_series=notanumber", http.NoBody)
-		require.NoError(t, err)
-
-		_, err = api.extractQueryOpts(req)
-		require.Error(t, err)
-	})
-
-	t.Run("ignored when feature disabled", func(t *testing.T) {
-		api := newQueryCostTestAPI(t, false, false)
-		req, err := http.NewRequest(http.MethodGet, "http://example.com?max_series=notanumber", http.NoBody)
-		require.NoError(t, err)
-
-		// The invalid value is ignored when the feature is disabled, so no error.
-		opts, err := api.extractQueryOpts(req)
-		require.NoError(t, err)
-		require.NotNil(t, opts)
 	})
 }
 
@@ -5662,48 +5630,6 @@ type failEstimateChunkQuerier struct {
 
 func (failEstimateChunkQuerier) Select(context.Context, bool, *storage.SelectHints, ...*labels.Matcher) storage.ChunkSeriesSet {
 	return storage.ErrChunkSeriesSet(errors.New("injected estimation failure"))
-}
-
-// TestQueryCostComparisonNonFatal verifies that the estimated-vs-actual cost
-// comparison attached when cost=1 is non-fatal: when cost estimation fails the
-// successful query result must still be returned (status success, result
-// present, Cost left nil), rather than being converted into an API error.
-func TestQueryCostComparisonNonFatal(t *testing.T) {
-	t.Run("instant query estimation failure is non-fatal", func(t *testing.T) {
-		api := newQueryCostTestAPI(t, true, false)
-		api.Queryable = failEstimateQueryable{SampleAndChunkQueryable: api.Queryable}
-
-		req, err := http.NewRequest(http.MethodGet, "http://example.com?query=test_metric1&time=120&cost=1", http.NoBody)
-		require.NoError(t, err)
-
-		res := api.query(req)
-		// The query executed successfully; the failing estimate must not turn it
-		// into an API error.
-		require.Nil(t, res.err)
-		data, ok := res.data.(*QueryData)
-		require.True(t, ok, "expected *QueryData, got %T", res.data)
-		require.NotNil(t, data.Result)
-		// Cost is left nil because estimation failed.
-		require.Nil(t, data.Cost)
-		// The estimation error is surfaced as a warning, not an error.
-		require.NotEmpty(t, res.warnings.AsErrors())
-	})
-
-	t.Run("range query estimation failure is non-fatal", func(t *testing.T) {
-		api := newQueryCostTestAPI(t, true, false)
-		api.Queryable = failEstimateQueryable{SampleAndChunkQueryable: api.Queryable}
-
-		req, err := http.NewRequest(http.MethodGet, "http://example.com?query=test_metric1&start=0&end=120&step=60&cost=1", http.NoBody)
-		require.NoError(t, err)
-
-		res := api.queryRange(req)
-		require.Nil(t, res.err)
-		data, ok := res.data.(*QueryData)
-		require.True(t, ok, "expected *QueryData, got %T", res.data)
-		require.NotNil(t, data.Result)
-		require.Nil(t, data.Cost)
-		require.NotEmpty(t, res.warnings.AsErrors())
-	})
 }
 
 // TestQueryCostComparisonShape verifies the wire shape of the estimated-vs-actual
@@ -5828,36 +5754,45 @@ func TestQueryCostOverrideAboveCeilingRejected(t *testing.T) {
 
 // TestQueryCostDisabledIgnoresCeilings verifies that with the query-cost feature
 // disabled the endpoints behave as they did before the feature existed: the
-// configured ceilings are not enforced, the per-query overrides are ignored, and
-// a timeout larger than query_max_duration is accepted.
+// configured ceilings are not enforced and the per-query overrides are ignored,
+// without even being parsed.
 func TestQueryCostDisabledIgnoresCeilings(t *testing.T) {
 	api := newQueryCostTestAPI(t, false, false)
 	cfg := queryCostConfig(10, 100, 30*time.Second)
 	api.config = func() config.Config { return cfg }
 
-	t.Run("overrides above the ceiling are ignored", func(t *testing.T) {
-		req := queryCostRequest(t, http.MethodGet, url.Values{
-			"max_series":         {"1000000"},
-			"max_samples_read":   {"1000000"},
-			"max_query_duration": {"1h"},
-		})
-		opts, err := api.extractQueryOpts(req)
-		require.NoError(t, err)
-		costOpts, ok := opts.(promql.QueryCostOpts)
-		require.True(t, ok, "the returned opts must carry the per-query cost overrides")
-		require.Zero(t, costOpts.MaxSeries())
-		require.Zero(t, costOpts.MaxSamplesRead())
-		require.Zero(t, costOpts.MaxQueryDuration())
-	})
-
-	t.Run("timeout above the ceiling is accepted", func(t *testing.T) {
-		req := queryCostRequest(t, http.MethodGet, url.Values{"query": {"test_metric1"}, "time": {"120"}, "timeout": {"1h"}})
-		timeout, apiErr := api.queryTimeout(req)
-		require.Nil(t, apiErr)
-		require.Equal(t, time.Hour, timeout)
-
-		res := api.query(req)
-		require.Nil(t, res.err)
+	t.Run("overrides are ignored", func(t *testing.T) {
+		for _, tc := range []struct {
+			name   string
+			params url.Values
+		}{
+			{
+				name: "above the ceiling",
+				params: url.Values{
+					"max_series":         {"1000000"},
+					"max_samples_read":   {"1000000"},
+					"max_query_duration": {"1h"},
+				},
+			},
+			{
+				name: "malformed",
+				params: url.Values{
+					"max_series":         {"notanumber"},
+					"max_samples_read":   {"notanumber"},
+					"max_query_duration": {"notaduration"},
+				},
+			},
+		} {
+			t.Run(tc.name, func(t *testing.T) {
+				opts, err := api.extractQueryOpts(queryCostRequest(t, http.MethodGet, tc.params))
+				require.NoError(t, err)
+				costOpts, ok := opts.(promql.QueryCostOpts)
+				require.True(t, ok, "the returned opts must carry the per-query cost overrides")
+				require.Zero(t, costOpts.MaxSeries())
+				require.Zero(t, costOpts.MaxSamplesRead())
+				require.Zero(t, costOpts.MaxQueryDuration())
+			})
+		}
 	})
 }
 
