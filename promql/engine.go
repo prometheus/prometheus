@@ -4857,6 +4857,20 @@ func detectHistogramStatsDecoding(expr parser.Expr) {
 					// buckets.
 					n.SkipHistogramBuckets = false
 					break pathLoop
+				case "changes":
+					// Detecting a change compares whole
+					// histograms, including their buckets.
+					n.SkipHistogramBuckets = false
+					break pathLoop
+				}
+
+			case *parser.AggregateExpr:
+				if p.Op == parser.COUNT_VALUES {
+					// The value label is the string
+					// representation of the whole histogram,
+					// including its buckets.
+					n.SkipHistogramBuckets = false
+					break pathLoop
 				}
 
 			case *parser.BinaryExpr:
