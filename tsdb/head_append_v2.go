@@ -186,9 +186,13 @@ func (a *headAppenderV2) Append(ref storage.SeriesRef, ls labels.Labels, st, t i
 			// an optimization for the more likely case.
 			switch a.typesInBatch[s.ref] {
 			case stHistogram, stCustomBucketHistogram:
-				return a.Append(storage.SeriesRef(s.ref), ls, st, t, 0, &histogram.Histogram{Sum: v}, nil, opts)
+				return a.Append(storage.SeriesRef(s.ref), ls, st, t, 0, &histogram.Histogram{Sum: v}, nil, storage.AOptions{
+					RejectOutOfOrder: opts.RejectOutOfOrder,
+				})
 			case stFloatHistogram, stCustomBucketFloatHistogram:
-				return a.Append(storage.SeriesRef(s.ref), ls, st, t, 0, nil, &histogram.FloatHistogram{Sum: v}, opts)
+				return a.Append(storage.SeriesRef(s.ref), ls, st, t, 0, nil, &histogram.FloatHistogram{Sum: v}, storage.AOptions{
+					RejectOutOfOrder: opts.RejectOutOfOrder,
+				})
 			}
 			// Note that a series reference not yet in the map will come out
 			// as stNone, but since we do not handle that case separately,
@@ -209,9 +213,13 @@ func (a *headAppenderV2) Append(ref storage.SeriesRef, ls labels.Labels, st, t i
 	}
 	s = appended
 
+	if isStale {
+		// For stale values we never attempt to process metadata/exemplars, claim the success.
+		return storage.SeriesRef(s.ref), nil
+	}
+
 	// Append exemplars if any and if storage was configured for it.
-	// Exemplars of stale values are ignored.
-	if !isStale && len(opts.Exemplars) > 0 && a.head.opts.EnableExemplarStorage && a.head.opts.MaxExemplars.Load() > 0 {
+	if len(opts.Exemplars) > 0 && a.head.opts.EnableExemplarStorage && a.head.opts.MaxExemplars.Load() > 0 {
 		// Currently only exemplars can return partial errors.
 		partialErr = a.appendExemplars(s, opts.Exemplars)
 	}

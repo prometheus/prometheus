@@ -27,7 +27,6 @@ import (
 	"runtime"
 	"sort"
 	"strconv"
-	"strings"
 	"testing"
 	"time"
 
@@ -3402,7 +3401,6 @@ func TestDBPanicOnMmappingHeadChunk_AppendV2(t *testing.T) {
 	require.NoError(t, db.Close())
 }
 
-// TODO(bwplotka): Add cases ensuring stale sample appends will skipp metadata persisting.
 func TestMetadataInWAL_AppenderV2(t *testing.T) {
 	opts := DefaultOptions()
 	opts.EnableMetadataWALRecords = true
@@ -3469,44 +3467,41 @@ func TestMetadataInWAL_AppenderV2(t *testing.T) {
 
 	t.Run("stale samples", func(t *testing.T) {
 		staleNaN := math.Float64frombits(value.StaleNaN)
+		exemplarsAt := func(ts int64) []exemplar.Exemplar {
+			return []exemplar.Exemplar{{Labels: labels.FromStrings("trace_id", "abc"), Value: 1, Ts: ts, HasTs: true}}
+		}
 		for _, tc := range []struct {
-			name       string
-			samples    []sample
-			appendOpts []storage.AOptions // One per sample.
-			want       []metadata.Metadata
+			name         string
+			samples      []sample
+			appendOpts   []storage.AOptions // One per sample.
+			wantMetadata []metadata.Metadata
 		}{
 			{
 				name:       "stale float",
 				samples:    []sample{{f: staleNaN}},
-				appendOpts: []storage.AOptions{{Metadata: m1}},
-				want:       []metadata.Metadata{m1},
+				appendOpts: []storage.AOptions{{Metadata: m1, Exemplars: exemplarsAt(0)}},
 			},
 			{
 				name:       "stale histogram",
 				samples:    []sample{{h: &histogram.Histogram{Sum: staleNaN}}},
-				appendOpts: []storage.AOptions{{Metadata: m1}},
-				want:       []metadata.Metadata{m1},
+				appendOpts: []storage.AOptions{{Metadata: m1, Exemplars: exemplarsAt(0)}},
 			},
 			{
-				name:       "stale float after histogram",
-				samples:    []sample{{h: tsdbutil.GenerateTestHistogram(1)}, {f: staleNaN}},
-				appendOpts: []storage.AOptions{{Metadata: m1}, {Metadata: m2}},
-				want:       []metadata.Metadata{m1, m2},
+				name:       "stale float histogram",
+				samples:    []sample{{fh: &histogram.FloatHistogram{Sum: staleNaN}}},
+				appendOpts: []storage.AOptions{{Metadata: m1, Exemplars: exemplarsAt(0)}},
 			},
 			{
-				name:       "stale float after float histogram",
-				samples:    []sample{{fh: tsdbutil.GenerateTestFloatHistogram(1)}, {f: staleNaN}},
-				appendOpts: []storage.AOptions{{Metadata: m1}, {Metadata: m2}},
-				want:       []metadata.Metadata{m1, m2},
+				name:         "stale float after histogram",
+				samples:      []sample{{h: tsdbutil.GenerateTestHistogram(1)}, {f: staleNaN}},
+				appendOpts:   []storage.AOptions{{Metadata: m1}, {Metadata: m2, Exemplars: exemplarsAt(1)}},
+				wantMetadata: []metadata.Metadata{m1},
 			},
 			{
-				name:    "stale float with invalid exemplar",
-				samples: []sample{{f: staleNaN}},
-				appendOpts: []storage.AOptions{{Metadata: m1, Exemplars: []exemplar.Exemplar{{
-					Labels: labels.FromStrings("trace_id", strings.Repeat("x", exemplar.ExemplarMaxLabelSetLength)),
-					HasTs:  true,
-				}}}},
-				want: []metadata.Metadata{m1},
+				name:         "stale float after float histogram",
+				samples:      []sample{{fh: tsdbutil.GenerateTestFloatHistogram(1)}, {f: staleNaN}},
+				appendOpts:   []storage.AOptions{{Metadata: m1}, {Metadata: m2, Exemplars: exemplarsAt(1)}},
+				wantMetadata: []metadata.Metadata{m1},
 			},
 		} {
 			t.Run(tc.name, func(t *testing.T) {
@@ -3523,16 +3518,21 @@ func TestMetadataInWAL_AppenderV2(t *testing.T) {
 				}
 				require.NoError(t, app.Commit())
 
-				var want, got []record.RefMetadata
-				for _, m := range tc.want {
-					want = append(want, record.RefMetadata{Ref: 1, Type: record.GetMetricType(m.Type), Unit: m.Unit, Help: m.Help})
+				var wantMetadata, gotMetadata []record.RefMetadata
+				for _, m := range tc.wantMetadata {
+					wantMetadata = append(wantMetadata, record.RefMetadata{Ref: 1, Type: record.GetMetricType(m.Type), Unit: m.Unit, Help: m.Help})
 				}
+				var gotExemplars []record.RefExemplar
 				for _, rec := range readTestWAL(t, path.Join(db.Dir(), "wal")) {
-					if mr, ok := rec.([]record.RefMetadata); ok {
-						got = append(got, mr...)
+					switch rec := rec.(type) {
+					case []record.RefMetadata:
+						gotMetadata = append(gotMetadata, rec...)
+					case []record.RefExemplar:
+						gotExemplars = append(gotExemplars, rec...)
 					}
 				}
-				require.Equal(t, want, got)
+				require.Equal(t, wantMetadata, gotMetadata)
+				require.Empty(t, gotExemplars)
 			})
 		}
 	})
