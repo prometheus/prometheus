@@ -5248,8 +5248,11 @@ func TestHeadAppenderV2_ExemplarsSurviveTruncation(t *testing.T) {
 			series := h.series.getByID(chunks.HeadSeriesRef(ref))
 			require.NotNil(t, series)
 			// Protect accepted exemplars even before their transaction commits.
-			require.True(t, series.hasExemplar)
-			require.Equal(t, e.Ts, series.lastExemplarTs)
+			series.Lock()
+			ts, ok := series.lastExemplarTimestamp()
+			series.Unlock()
+			require.True(t, ok)
+			require.Equal(t, e.Ts, ts)
 			require.NoError(t, app.Commit())
 
 			require.NoError(t, h.Truncate(1000))
