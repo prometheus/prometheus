@@ -32,6 +32,77 @@ import (
 	"github.com/prometheus/prometheus/util/testutil"
 )
 
+type costSamplingTestStorage struct {
+	storage.Storage
+	source    storage.SampleAndChunkQueryable
+	supported bool
+	queries   int
+}
+
+func (s *costSamplingTestStorage) CostSamplingQueryable() (storage.SampleAndChunkQueryable, bool) {
+	return s.source, s.supported
+}
+
+func (s *costSamplingTestStorage) Querier(int64, int64) (storage.Querier, error) {
+	s.queries++
+	return nil, errors.New("unexpected secondary sampling")
+}
+
+func (s *costSamplingTestStorage) ChunkQuerier(int64, int64) (storage.ChunkQuerier, error) {
+	s.queries++
+	return nil, errors.New("unexpected secondary sampling")
+}
+
+// Hide the optional sampling capability of the embedded concrete storage.
+type costSamplingUnknownStorage struct{ storage.Storage }
+
+func TestFanout_CostSamplingQueryable(t *testing.T) {
+	primary := teststorage.New(t)
+	native, supported := primary.CostSamplingQueryable()
+	require.True(t, supported)
+	empty := &costSamplingTestStorage{Storage: primary, supported: true}
+	unsafe := &costSamplingTestStorage{Storage: primary}
+	extraNative := &costSamplingTestStorage{Storage: primary, source: native, supported: true}
+	unknown := costSamplingUnknownStorage{Storage: primary}
+	for _, tc := range []struct {
+		name      string
+		primary   storage.Storage
+		secondary []storage.Storage
+		supported bool
+		empty     bool
+	}{
+		{name: "native primary", primary: primary, supported: true},
+		{name: "empty secondary", primary: primary, secondary: []storage.Storage{empty}, supported: true},
+		{name: "unsafe secondary", primary: primary, secondary: []storage.Storage{unsafe}},
+		{name: "unknown secondary", primary: primary, secondary: []storage.Storage{unknown}},
+		{name: "multiple native sources", primary: primary, secondary: []storage.Storage{extraNative}},
+		{name: "unknown primary", primary: unknown},
+		{name: "all empty", primary: empty, secondary: []storage.Storage{empty}, supported: true, empty: true},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			fanout := storage.NewFanout(nil, tc.primary, tc.secondary...)
+			source, supported := fanout.(storage.CostSamplingQueryable).CostSamplingQueryable()
+			require.Equal(t, tc.supported, supported)
+			if !supported || tc.empty {
+				require.Nil(t, source)
+			} else {
+				require.Equal(t, native, source)
+			}
+		})
+	}
+	t.Run("selected source survives secondary reload", func(t *testing.T) {
+		source, supported := storage.NewFanout(nil, primary, empty).(storage.CostSamplingQueryable).CostSamplingQueryable()
+		require.True(t, supported)
+		empty.supported = false
+		q, err := source.ChunkQuerier(0, 100)
+		require.NoError(t, err)
+		require.NoError(t, q.Close())
+		require.Zero(t, empty.queries, "the selected source must not re-enter the live fanout")
+		_, supported = storage.NewFanout(nil, primary, empty).(storage.CostSamplingQueryable).CostSamplingQueryable()
+		require.False(t, supported)
+	})
+}
+
 func TestFanout_SelectSorted(t *testing.T) {
 	inputLabel := labels.FromStrings(model.MetricNameLabel, "a")
 	outputLabel := labels.FromStrings(model.MetricNameLabel, "a")

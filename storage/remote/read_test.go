@@ -18,6 +18,7 @@ import (
 	"fmt"
 	"net/url"
 	"sort"
+	"sync"
 	"testing"
 
 	"github.com/prometheus/client_golang/prometheus"
@@ -32,6 +33,33 @@ import (
 	"github.com/prometheus/prometheus/util/teststorage"
 	"github.com/prometheus/prometheus/util/testutil"
 )
+
+func TestStorage_CostSamplingQueryable_ConfigReload(t *testing.T) {
+	s := NewStorage(nil, prometheus.NewRegistry(), nil, t.TempDir(), defaultFlushDeadline, nil, false)
+	t.Cleanup(func() { require.NoError(t, s.Close()) })
+	empty := &config.Config{GlobalConfig: config.DefaultGlobalConfig}
+	configured := &config.Config{GlobalConfig: config.DefaultGlobalConfig}
+	reader := config.DefaultRemoteReadConfig
+	reader.URL = &config_util.URL{URL: &url.URL{Scheme: "http", Host: "example.invalid"}}
+	configured.RemoteReadConfigs = []*config.RemoteReadConfig{&reader}
+	for _, cfg := range []*config.Config{empty, configured, empty} {
+		require.NoError(t, s.ApplyConfig(cfg))
+		source, supported := s.CostSamplingQueryable()
+		require.Nil(t, source)
+		require.Equal(t, len(cfg.RemoteReadConfigs) == 0, supported)
+	}
+	var wg sync.WaitGroup
+	wg.Go(func() {
+		for range 50 {
+			_, _ = s.CostSamplingQueryable()
+		}
+	})
+	for range 10 {
+		require.NoError(t, s.ApplyConfig(configured))
+		require.NoError(t, s.ApplyConfig(empty))
+	}
+	wg.Wait()
+}
 
 func TestNoDuplicateReadConfigs(t *testing.T) {
 	dir := t.TempDir()
