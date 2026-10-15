@@ -669,6 +669,10 @@ func TestFanoutAppenderV2(t *testing.T) {
 				// This is because in V2 flow we must append sample even when first append partially failed with exemplars.
 				// Filtering out exemplars is neither feasible, nor important.
 				require.Len(t, pErr.ExemplarErrors, 2)
+				// Both errors refer to the same, only exemplar.
+				for _, eErr := range pErr.ExemplarErrors {
+					require.Equal(t, 0, eErr.Index)
+				}
 			default:
 				require.NoError(t, err)
 			}
@@ -738,7 +742,11 @@ func TestFanoutAppenderV2_AppendExemplars(t *testing.T) {
 			case tt.expectExemplarError:
 				var pErr *storage.AppendPartialError
 				require.ErrorAs(t, err, &pErr)
+				// One for primary, one for secondary, both for the only exemplar.
 				require.Len(t, pErr.ExemplarErrors, 2)
+				for _, eErr := range pErr.ExemplarErrors {
+					require.Equal(t, 0, eErr.Index)
+				}
 			default:
 				require.NoError(t, err)
 			}

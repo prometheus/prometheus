@@ -1496,10 +1496,10 @@ func (a *mockAppenderV2) AppendExemplars(ref storage.SeriesRef, l labels.Labels,
 		return 0, fmt.Errorf("unknown series ref %d: %w", ref, storage.ErrNotFound)
 	}
 	ref = storage.SeriesRef(hash)
-	var errs []error
-	for _, e := range exemplars {
+	var errs []storage.ExemplarError
+	for i, e := range exemplars {
 		if _, err := m.AppendExemplar(ref, l, e); err != nil && !errors.Is(err, storage.ErrDuplicateExemplar) {
-			errs = append(errs, err)
+			errs = append(errs, storage.ExemplarError{Index: i, Err: err})
 		}
 	}
 	if len(errs) > 0 {
@@ -2114,8 +2114,8 @@ func TestRemoteWriteHandler_V2ExemplarOrderingAndRejectedSeries(t *testing.T) {
 
 	t.Run("AppendPartialError from Append still counts sample and histogram as written", func(t *testing.T) {
 		appendable := &mockAppendable{
-			appendSampleErr:    &storage.AppendPartialError{ExemplarErrors: []error{errors.New("some non-OOO exemplar error")}},
-			appendHistogramErr: &storage.AppendPartialError{ExemplarErrors: []error{storage.ErrOutOfOrderExemplar}},
+			appendSampleErr:    &storage.AppendPartialError{ExemplarErrors: []storage.ExemplarError{{Err: errors.New("some non-OOO exemplar error")}}},
+			appendHistogramErr: &storage.AppendPartialError{ExemplarErrors: []storage.ExemplarError{{Err: storage.ErrOutOfOrderExemplar}}},
 		}
 		handler := NewWriteHandler(
 			promslog.NewNopLogger(),
@@ -2163,8 +2163,8 @@ func TestTimeLimitAppenderV2_LimitExemplars(t *testing.T) {
 		}
 
 		input := []exemplar.Exemplar{
-			{Labels: labels.FromStrings("id", "1"), Value: 1, Ts: 2000}, // future (> maxTime)
-			{Labels: labels.FromStrings("id", "2"), Value: 2, Ts: 400},  // out of order (< 500)
+			{Labels: labels.FromStrings("id", "1"), Value: 1, Ts: 400},  // out of order (< 500)
+			{Labels: labels.FromStrings("id", "2"), Value: 2, Ts: 2000}, // future (> maxTime)
 			{Labels: labels.FromStrings("id", "3"), Value: 3, Ts: 900},  // valid (<= maxTime)
 		}
 		origFirstID := input[0].Labels.Get("id")
@@ -2176,7 +2176,9 @@ func TestTimeLimitAppenderV2_LimitExemplars(t *testing.T) {
 		require.ErrorAs(t, err, &pErr)
 		require.Len(t, pErr.ExemplarErrors, 2)
 		require.ErrorIs(t, pErr.ExemplarErrors[0], storage.ErrOutOfBounds)
+		require.Equal(t, 1, pErr.ExemplarErrors[0].Index)
 		require.ErrorIs(t, pErr.ExemplarErrors[1], storage.ErrOutOfOrderExemplar)
+		require.Equal(t, 0, pErr.ExemplarErrors[1].Index)
 
 		// Caller's input slice must not be mutated in place.
 		require.Equal(t, origFirstID, input[0].Labels.Get("id"))
