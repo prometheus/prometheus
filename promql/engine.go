@@ -4860,8 +4860,15 @@ func detectHistogramStatsDecoding(expr parser.Expr) {
 				}
 
 			case *parser.BinaryExpr:
-				if p.Op == parser.TRIM_UPPER || p.Op == parser.TRIM_LOWER {
+				switch p.Op {
+				case parser.TRIM_UPPER, parser.TRIM_LOWER:
 					// Trimming depends on buckets, we will not skip them.
+					n.SkipHistogramBuckets = false
+					break pathLoop
+				case parser.EQLC, parser.NEQ:
+					// Comparing histograms for (in)equality
+					// takes the buckets into account, we will
+					// not skip them.
 					n.SkipHistogramBuckets = false
 					break pathLoop
 				}
