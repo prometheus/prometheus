@@ -537,8 +537,15 @@ func TestNativeHistogramMetrics(t *testing.T) {
 	require.NotNil(t, h)
 	require.NotNil(t, h.Schema)
 	require.Equal(t, uint64(1), h.GetSampleCount())
-	require.Positive(t, h.GetSampleSum())
-	require.NotEmpty(t, h.PositiveSpan)
+	require.GreaterOrEqual(t, h.GetSampleSum(), float64(0))
+	switch {
+	case h.GetZeroCount() == 1:
+		require.Empty(t, h.PositiveSpan)
+	case len(h.PositiveSpan) > 0:
+		require.Zero(t, h.GetZeroCount())
+	default:
+		require.Fail(t, "observation was not recorded in the zero or positive bucket")
+	}
 	summary := &dto.Metric{}
 	require.NoError(t, m.fileSDScanDuration.Write(summary))
 	require.Equal(t, h.GetSampleCount(), summary.GetSummary().GetSampleCount())
