@@ -46,6 +46,7 @@ import (
 	"github.com/prometheus/prometheus/model/metadata"
 	"github.com/prometheus/prometheus/model/timestamp"
 	"github.com/prometheus/prometheus/storage"
+	"github.com/prometheus/prometheus/tsdb/record"
 	"github.com/prometheus/prometheus/util/teststorage"
 )
 
@@ -388,6 +389,79 @@ func TestOTLPWriteHandler(t *testing.T) {
 		for status := range statuses {
 			require.Equal(t, http.StatusOK, status)
 		}
+	})
+
+	t.Run("metadata WAL", func(t *testing.T) {
+		for _, packed := range []bool{true, false} {
+			for _, stress := range []bool{false, true} {
+				for _, state := range []string{"new", "changed", "unchanged", "distinct series"} {
+					t.Run(fmt.Sprintf("packed=%t/stress=%t/%s", packed, stress, state), func(t *testing.T) {
+						dir := t.TempDir()
+						db := openOTLPMetadataDB(t, dir, true)
+						defer func() { require.NoError(t, db.Close()) }()
+						handler := newOTLPMetadataHandler(db)
+						a, b := otlpMetadataDescriptions(stress)
+						series, observations := 1, 64
+						if state == "distinct series" {
+							series, observations = 64, 1
+						}
+						first, initialEntries := 0, 0
+						if state == "changed" || state == "unchanged" {
+							serveOTLPMetadata(t, handler, otlpMetadataRequest(series, 1, 0, []string{a}, packed))
+							first = 1
+							initialEntries = len(readOTLPMetadataWAL(t, db))
+						}
+						description := a
+						if state == "changed" {
+							description = b
+						}
+						serveOTLPMetadata(t, handler, otlpMetadataRequest(series, observations, first, []string{description}, packed))
+						entries := readOTLPMetadataWAL(t, db)[initialEntries:]
+						wantEntries := series
+						if state == "unchanged" {
+							wantEntries = 0
+						}
+						gotEntries := len(entries)
+						require.Equal(t, wantEntries, gotEntries, "metadata entry count")
+						for _, entry := range entries {
+							require.Equal(t, uint8(record.Gauge), entry.Type)
+							require.Empty(t, entry.Unit)
+							require.Equal(t, description, entry.Help)
+						}
+						for replay := range 2 {
+							requireOTLPMetadataSamples(t, db, series, first+observations)
+							if replay == 0 {
+								require.NoError(t, db.Close())
+								db = openOTLPMetadataDB(t, dir, true)
+							}
+						}
+					})
+				}
+			}
+		}
+
+		t.Run("return to committed description", func(t *testing.T) {
+			dir := t.TempDir()
+			db := openOTLPMetadataDB(t, dir, true)
+			defer func() { require.NoError(t, db.Close()) }()
+			handler := newOTLPMetadataHandler(db)
+			a, b := otlpMetadataDescriptions(false)
+			serveOTLPMetadata(t, handler, otlpMetadataRequest(1, 1, 0, []string{a}, false))
+			initialEntries := len(readOTLPMetadataWAL(t, db))
+			serveOTLPMetadata(t, handler, otlpMetadataRequest(1, 2, 1, []string{b, a}, false))
+			entries := readOTLPMetadataWAL(t, db)[initialEntries:]
+			wantEntries, gotEntries := 2, len(entries)
+			require.Equal(t, wantEntries, gotEntries, "metadata entry count")
+			require.Equal(t, entries[0].Ref, entries[1].Ref)
+			require.Equal(t, []string{b, a}, []string{entries[0].Help, entries[1].Help})
+			for replay := range 2 {
+				requireOTLPMetadataSamples(t, db, 1, 3)
+				if replay == 0 {
+					require.NoError(t, db.Close())
+					db = openOTLPMetadataDB(t, dir, true)
+				}
+			}
+		})
 	})
 }
 
