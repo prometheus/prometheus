@@ -472,9 +472,9 @@ func (h *writeHandler) appendV2(app *timeLimitExemplarAppenderV2, req *writev2.R
 }
 
 // handleV2PartialErr checks if err is a storage.AppendPartialError. If so, it logs
-// and records any exemplar errors, and returns the number of failed exemplars,
-// each counted once, along with a nil error (since a partial error indicates the
-// sample or histogram itself was appended). Otherwise, it returns 0 and the original err.
+// and records any exemplar errors, and returns the number of failed exemplars
+// along with a nil error (since a partial error indicates the sample or histogram
+// itself was appended). Otherwise, it returns 0 and the original err.
 func (h *writeHandler) handleV2PartialErr(err error, ls labels.Labels, outOfOrderExemplarErrs *int, badRequestErrs *[]error) (failedExemplars int, _ error) {
 	if err == nil || !errors.Is(err, (*storage.AppendPartialError)(nil)) {
 		return 0, err
@@ -493,27 +493,7 @@ func (h *writeHandler) handleV2PartialErr(err error, ls labels.Labels, outOfOrde
 		// For now we keep the previously released flow (just error not debug level) of dropping them without rollback and 5xx.
 		h.logger.Error("failed to ingest exemplar, emitting error log, but no error for PRW caller", "err", eErr.Error(), "series", ls.String())
 	}
-	return countFailedExemplars(pErr.ExemplarErrors), nil
-}
-
-// countFailedExemplars returns the number of distinct exemplar indexes in errs.
-func countFailedExemplars(errs []storage.ExemplarError) int {
-	ascending := true
-	for i := 1; i < len(errs); i++ {
-		if errs[i].Index <= errs[i-1].Index {
-			ascending = false
-			break
-		}
-	}
-	if ascending {
-		// A single storage reports each exemplar once, in order.
-		return len(errs)
-	}
-	seen := make(map[int]struct{}, len(errs))
-	for _, e := range errs {
-		seen[e.Index] = struct{}{}
-	}
-	return len(seen)
+	return len(pErr.ExemplarErrors), nil
 }
 
 // timeLimitAppenderV2 ensures maxTime on appended samples, histograms and inlined exemplars.
@@ -539,35 +519,31 @@ func (app *timeLimitAppenderV2) Append(ref storage.SeriesRef, ls labels.Labels, 
 		}
 	}
 
-	var (
-		partialErr *storage.AppendPartialError
-		positions  []int
-	)
+	var partialErr *storage.AppendPartialError
 	if len(opts.Exemplars) > 0 {
-		opts.Exemplars, positions, partialErr = app.limitExemplars(opts.Exemplars)
+		opts.Exemplars, partialErr = app.limitExemplars(opts.Exemplars)
 	}
 	ref, err := app.AppenderV2.Append(ref, ls, st, t, v, h, fh, opts)
-	partialErr, err = mergeLimitedExemplarErrors(partialErr, err, positions)
+	partialErr, err = partialErr.Handle(err)
 	if err != nil {
 		return ref, err
 	}
 	return ref, partialErr.ToError()
 }
 
-// limitExemplars returns the exemplars that are not too far in the future. If it
-// drops any, it also returns the positions of the kept exemplars in exemplars.
-func (app *timeLimitAppenderV2) limitExemplars(exemplars []exemplar.Exemplar) (valid []exemplar.Exemplar, positions []int, _ *storage.AppendPartialError) {
-	var futureErrs []storage.ExemplarError
-	valid = exemplars
+// limitExemplars returns the exemplars that are not too far in the future, and
+// reports the index of each one it drops. Exemplars are sorted by timestamp, so the
+// dropped ones come last and the kept ones keep their indexes.
+func (app *timeLimitAppenderV2) limitExemplars(exemplars []exemplar.Exemplar) ([]exemplar.Exemplar, *storage.AppendPartialError) {
+	var (
+		futureErrs []storage.ExemplarError
+		valid      = exemplars
+	)
 	for i, e := range exemplars {
 		if e.Ts > app.maxTime {
 			if futureErrs == nil {
 				valid = make([]exemplar.Exemplar, 0, len(exemplars)-1)
 				valid = append(valid, exemplars[:i]...)
-				positions = make([]int, i, len(exemplars)-1)
-				for j := range positions {
-					positions[j] = j
-				}
 			}
 			futureErrs = append(futureErrs, storage.ExemplarError{
 				Index: i,
@@ -577,31 +553,12 @@ func (app *timeLimitAppenderV2) limitExemplars(exemplars []exemplar.Exemplar) (v
 		}
 		if futureErrs != nil {
 			valid = append(valid, e)
-			positions = append(positions, i)
 		}
 	}
 	if len(futureErrs) == 0 {
-		return valid, nil, nil
+		return valid, nil
 	}
-	return valid, positions, &storage.AppendPartialError{ExemplarErrors: futureErrs}
-}
-
-// mergeLimitedExemplarErrors merges err into partialErr like Handle does. Exemplar
-// indexes in err refer to the exemplars kept by limitExemplars, and are mapped back
-// to the caller's positions.
-func mergeLimitedExemplarErrors(partialErr *storage.AppendPartialError, err error, positions []int) (*storage.AppendPartialError, error) {
-	var n int
-	if partialErr != nil {
-		n = len(partialErr.ExemplarErrors)
-	}
-	partialErr, err = partialErr.Handle(err)
-	if err != nil || positions == nil {
-		return partialErr, err
-	}
-	for i := n; i < len(partialErr.ExemplarErrors); i++ {
-		partialErr.ExemplarErrors[i].Index = positions[partialErr.ExemplarErrors[i].Index]
-	}
-	return partialErr, nil
+	return valid, &storage.AppendPartialError{ExemplarErrors: futureErrs}
 }
 
 // timeLimitExemplarAppenderV2 ensures maxTime on appended samples, histograms and exemplars.
@@ -620,13 +577,13 @@ func newTimeLimitExemplarAppenderV2(app storage.ExemplarAppenderV2, maxTime int6
 // AppendExemplars rejects exemplars that are too far in the future, same as Append does
 // for samples, before delegating the rest to the wrapped ExemplarAppenderV2.
 func (app *timeLimitExemplarAppenderV2) AppendExemplars(ref storage.SeriesRef, ls labels.Labels, exemplars []exemplar.Exemplar) (storage.SeriesRef, error) {
-	valid, positions, partialErr := app.limitExemplars(exemplars)
+	valid, partialErr := app.limitExemplars(exemplars)
 	if len(valid) == 0 {
 		return ref, partialErr.ToError()
 	}
 
 	ref, err := app.exApp.AppendExemplars(ref, ls, valid)
-	partialErr, err = mergeLimitedExemplarErrors(partialErr, err, positions)
+	partialErr, err = partialErr.Handle(err)
 	if err != nil {
 		return ref, err
 	}

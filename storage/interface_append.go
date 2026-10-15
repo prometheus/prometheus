@@ -98,7 +98,8 @@ type ExemplarError struct {
 	// AppenderV2.Append (AppendV2Options.Exemplars) or
 	// ExemplarAppenderV2.AppendExemplars.
 	Index int
-	Err   error
+	// Err is why the exemplar was not written. It must not be nil.
+	Err error
 }
 
 // Error returns the message of Err.
