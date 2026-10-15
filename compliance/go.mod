@@ -2,7 +2,7 @@ module compliance
 
 go 1.26.7
 
-require github.com/prometheus/compliance/remotewrite 8d0b612e2885
+require github.com/prometheus/compliance/remotewrite v0.0.0-20260812112852-9471697515f5
 
 require (
 	github.com/cespare/xxhash/v2 v2.3.0 // indirect
