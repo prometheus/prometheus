@@ -101,6 +101,8 @@ global:
   # rejected as soon as it loads more series than this. 0 means no limit.
   # These three query cost limits are reloadable and only enforced when the
   # query-cost feature flag is enabled (--enable-feature=query-cost).
+  # They apply to every query the engine evaluates, including recording and
+  # alerting rule evaluation.
   # A client may lower any of them for a single request with the max_series,
   # max_samples_read and max_query_duration query parameters. A request that
   # asks for a value above the ceiling set here is an error, it is not silently
@@ -109,7 +111,7 @@ global:
 
   # Maximum number of samples a query may read before it is rejected. Like
   # query_max_series, it is enforced during execution against the samples the
-  # query actually reads from storage, never against the estimate: the query is
+  # query actually reads, never against the estimate: the query is
   # rejected as soon as it reads more samples than this. 0 means no limit.
   [ query_max_samples_read: <int> | default = 0 ]
 
@@ -117,8 +119,7 @@ global:
   # timeout: the query is aborted once it has run for this long. 0s falls back
   # to --query.timeout. A nonzero value overrides that flag only when the
   # query-cost feature is enabled. The per-query timeout parameter
-  # of the query endpoints is bounded by this ceiling in the same way: a larger
-  # value is an error.
+  # of the query endpoints is capped at this ceiling.
   [ query_max_duration: <duration> | default = 0s ]
 
   # File to which scrape failures are logged.
