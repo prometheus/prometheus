@@ -19,7 +19,6 @@
 package remote
 
 import (
-	"hash/fnv"
 	"sync"
 
 	"github.com/prometheus/client_golang/prometheus"
@@ -68,11 +67,20 @@ func newPool() *pool {
 	return p
 }
 
+// fnv32a computes the FNV-1a 32-bit hash of s. Inlined to avoid the
+// allocation overhead of hash/fnv.New32a on every call.
+func fnv32a(s string) uint32 {
+	h := uint32(2166136261)
+	for i := 0; i < len(s); i++ {
+		h ^= uint32(s[i])
+		h *= 16777619
+	}
+	return h
+}
+
 // shard returns the shard that handles the given string.
 func (p *pool) shard(s string) *poolShard {
-	h := fnv.New32a()
-	h.Write([]byte(s))
-	return p.shards[h.Sum32()&(numInternShards-1)]
+	return p.shards[fnv32a(s)&(numInternShards-1)]
 }
 
 func (p *pool) intern(s string) string {
