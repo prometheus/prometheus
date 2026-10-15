@@ -45,7 +45,7 @@ When enabled, passing `stats=all` in a query request returns per-step
 statistics. The following sample statistics are included:
 
 - **totalQueryableSamples** / **totalQueryableSamplesPerStep**: Total number of samples *loaded* during the query. For range-vector functions (e.g. `rate`, `sum_over_time`) evaluated over multiple steps, each step counts the full window (the same point may be counted in multiple steps).
-- **samplesRead** / **samplesReadPerStep**: Total number of samples *read* (I/O). For range-vector functions in range queries, only *new* points per step are counted (step 0: full window; later steps: points not seen in the previous step). For other query types, this equals totalQueryableSamples.
+- **samplesRead** / **samplesReadPerStep**: Total number of samples *read* by the evaluator (its input, not physical storage I/O). For range-vector functions in range queries, only *new* points per step are counted (step 0: full window; later steps: points not seen in the previous step). See [Query statistics](querying/api.md#query-statistics) for the exact semantics.
 - **peakSamples**: Peak number of samples in memory during evaluation (used for the `query.max-samples` limit).
 
 The Prometheus server exposes two counters for observability: `prometheus_engine_query_samples_total` (logical underlying sample consumption, full window per step) and `prometheus_engine_query_samples_read_total` (samples read, delta per step for range-vector).
@@ -401,11 +401,21 @@ of samples it reads exceeds the configured limit, and `query_max_duration`
 surfaces as a query timeout. The limits are reloaded together with the rest of
 the configuration and have no effect when the feature flag is not set.
 
+These limits apply to every query the engine evaluates, not only to API
+requests. Recording and alerting rules are subject to them too: a rule whose
+query exceeds a limit fails to evaluate like any other query error, and
+`query_max_duration` replaces `--query.timeout` as the timeout of rule queries.
+
 A client may lower any of these ceilings for a single request with the
-`max_series`, `max_samples_read`, `max_query_duration` and `timeout` query
-parameters. A request asking for a value above the operator-set ceiling is
-rejected with HTTP 400 (`bad_data`) rather than silently clamped.
+`max_series`, `max_samples_read` and `max_query_duration` query parameters. A
+request asking for a value above the operator-set ceiling is rejected with HTTP
+400 (`bad_data`) rather than silently clamped. For `max_query_duration`, the
+ceiling is `--query.timeout` while `query_max_duration` is unset. A `timeout`
+parameter above the effective duration ceiling is capped at that ceiling.
 
 `query_max_duration` overrides `--query.timeout` only while this feature flag is
 enabled. The command-line flag remains supported and controls the timeout when
 the feature is disabled or `query_max_duration` is unset.
+
+Clients can detect the feature through [`/api/v1/features`](querying/api.md#features),
+where it is reported as `query_cost` in the `api` category.

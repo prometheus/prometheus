@@ -453,6 +453,7 @@ func New(logger *slog.Logger, o *Options) *Handler {
 		r.Set(features.API, "admin", o.EnableAdminAPI)
 		r.Set(features.API, "remote_write_receiver", o.EnableRemoteWriteReceiver)
 		r.Set(features.API, "otlp_write_receiver", o.EnableOTLPWriteReceiver)
+		r.Set(features.API, "query_cost", o.EnableQueryCost)
 		r.Set(features.API, "search", o.EnableSearch)
 		for _, alg := range api_v1.FuzzAlgorithms() {
 			r.Enable(features.API, "search_fuzz_alg_"+alg)

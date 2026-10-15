@@ -98,19 +98,18 @@ URL query parameters:
 
 - `query=<string>`: Prometheus expression query string.
 - `time=<rfc3339 | unix_timestamp>`: Evaluation timestamp. Optional.
-- `timeout=<duration>`: Evaluation timeout. Optional. Defaults to the effective
-   server-side maximum, which is the `query_max_duration` configuration option
-   when the query-cost feature is enabled and the value is set, and otherwise
-   the value of the `-query.timeout` flag. With the [`query-cost`](../feature_flags.md#query-cost) feature flag
-   enabled and `query_max_duration` set, a `timeout` above that ceiling is
-   rejected with HTTP 400 (`bad_data`) instead of being silently lowered.
+- `timeout=<duration>`: Evaluation timeout. Optional. Must be positive. Defaults
+   to and is capped by the effective server-side maximum, which is the
+   `query_max_duration` configuration option when the
+   [`query-cost`](../feature_flags.md#query-cost) feature flag is enabled and
+   the value is set, and otherwise the value of the `-query.timeout` flag.
 - `limit=<number>`: Maximum number of returned series. Doesn't affect scalars or strings but truncates the number of series for matrices and vectors. Optional. 0 means disabled.
 - `lookback_delta=<duration | float>`: Override the [lookback period](#staleness) just for this query in `duration` format or float number of seconds. Optional.
 - `stats=<string>`: Include query statistics in the response. Supported values are `true` (basic statistics) and `all` (additionally includes detailed per-step statistics: timings and sample counts). Any other non-empty value currently behaves like `true`, but is deprecated, adds a warning to the response, and will be rejected in the next major release. Optional. See [Query statistics](#query-statistics).
 - `cost=<bool>`: Include an estimated-versus-actual cost comparison in the response `data`. Optional. Ignored unless the [`query-cost`](../feature_flags.md#query-cost) feature flag is enabled. It is a plain on/off switch: any value that is not a boolean is an error. See [Query statistics](#query-statistics).
 - `max_series=<number>`: Lower the per-query maximum number of series this query may load. Optional. Ignored unless the [`query-cost`](../feature_flags.md#query-cost) feature flag is enabled. It may only *lower* the operator-set ceiling configured via `query_max_series`, never raise it: a higher value is rejected with HTTP 400 (`bad_data`) rather than silently clamped.
 - `max_samples_read=<number>`: Lower the per-query maximum number of samples this query may read. Optional. Ignored unless the [`query-cost`](../feature_flags.md#query-cost) feature flag is enabled. It may only *lower* the operator-set ceiling configured via `query_max_samples_read`, never raise it: a higher value is rejected with HTTP 400 (`bad_data`) rather than silently clamped.
-- `max_query_duration=<duration>`: Lower the per-query maximum execution duration. Optional. Ignored unless the [`query-cost`](../feature_flags.md#query-cost) feature flag is enabled. It may only *lower* the operator-set ceiling configured via `query_max_duration`, never raise it: a higher value is rejected with HTTP 400 (`bad_data`) rather than silently clamped.
+- `max_query_duration=<duration>`: Lower the per-query maximum execution duration. Optional. Ignored unless the [`query-cost`](../feature_flags.md#query-cost) feature flag is enabled. It may only *lower* the effective duration ceiling, which is `query_max_duration` when set and otherwise the `-query.timeout` flag, never raise it: a higher value is rejected with HTTP 400 (`bad_data`) rather than silently clamped.
 
 Optional HTTP request headers:
 
@@ -184,19 +183,18 @@ URL query parameters:
 - `start=<rfc3339 | unix_timestamp>`: Start timestamp, inclusive.
 - `end=<rfc3339 | unix_timestamp>`: End timestamp, inclusive.
 - `step=<duration | float>`: Query resolution step width in `duration` format or float number of seconds.
-- `timeout=<duration>`: Evaluation timeout. Optional. Defaults to the effective
-   server-side maximum, which is the `query_max_duration` configuration option
-   when the query-cost feature is enabled and the value is set, and otherwise
-   the value of the `-query.timeout` flag. With the [`query-cost`](../feature_flags.md#query-cost) feature flag
-   enabled and `query_max_duration` set, a `timeout` above that ceiling is
-   rejected with HTTP 400 (`bad_data`) instead of being silently lowered.
+- `timeout=<duration>`: Evaluation timeout. Optional. Must be positive. Defaults
+   to and is capped by the effective server-side maximum, which is the
+   `query_max_duration` configuration option when the
+   [`query-cost`](../feature_flags.md#query-cost) feature flag is enabled and
+   the value is set, and otherwise the value of the `-query.timeout` flag.
 - `limit=<number>`: Maximum number of returned series. Optional. 0 means disabled.
 - `lookback_delta=<duration | float>`: Override the [lookback period](#staleness) just for this query in `duration` format or float number of seconds. Optional.
 - `stats=<string>`: Include query statistics in the response. Supported values are `true` (basic statistics) and `all` (additionally includes detailed per-step statistics: timings and sample counts). Any other non-empty value currently behaves like `true`, but is deprecated, adds a warning to the response, and will be rejected in the next major release. Optional. See [Query statistics](#query-statistics).
 - `cost=<bool>`: Include an estimated-versus-actual cost comparison in the response `data`. Optional. Ignored unless the [`query-cost`](../feature_flags.md#query-cost) feature flag is enabled. It is a plain on/off switch: any value that is not a boolean is an error. See [Query statistics](#query-statistics).
 - `max_series=<number>`: Lower the per-query maximum number of series this query may load. Optional. Ignored unless the [`query-cost`](../feature_flags.md#query-cost) feature flag is enabled. It may only *lower* the operator-set ceiling configured via `query_max_series`, never raise it: a higher value is rejected with HTTP 400 (`bad_data`) rather than silently clamped.
 - `max_samples_read=<number>`: Lower the per-query maximum number of samples this query may read. Optional. Ignored unless the [`query-cost`](../feature_flags.md#query-cost) feature flag is enabled. It may only *lower* the operator-set ceiling configured via `query_max_samples_read`, never raise it: a higher value is rejected with HTTP 400 (`bad_data`) rather than silently clamped.
-- `max_query_duration=<duration>`: Lower the per-query maximum execution duration. Optional. Ignored unless the [`query-cost`](../feature_flags.md#query-cost) feature flag is enabled. It may only *lower* the operator-set ceiling configured via `query_max_duration`, never raise it: a higher value is rejected with HTTP 400 (`bad_data`) rather than silently clamped.
+- `max_query_duration=<duration>`: Lower the per-query maximum execution duration. Optional. Ignored unless the [`query-cost`](../feature_flags.md#query-cost) feature flag is enabled. It may only *lower* the effective duration ceiling, which is `query_max_duration` when set and otherwise the `-query.timeout` flag, never raise it: a higher value is rejected with HTTP 400 (`bad_data`) rather than silently clamped.
 
 Optional HTTP request headers:
 
@@ -307,11 +305,14 @@ estimated `peakSamples`. The comparison is informational: the estimate is never
 used to reject a query.
 
 Note that requesting `cost=true` adds some overhead: Prometheus performs an
-additional cost estimation after executing the query, including index enumeration
-and bounded sampling of chunk data. This estimation reserves a query concurrency
-slot and applies the effective duration limit, including a shorter
-`max_query_duration` or request `timeout`. If estimation fails, the successful
-query result is returned with a warning and without a cost comparison.
+additional cost estimation after building the query and before executing it,
+including index enumeration and bounded sampling of chunk data. This estimation
+reserves a query concurrency slot and counts against the query's duration limit,
+which starts when the query is built, including a shorter `max_query_duration`,
+and against a request `timeout`: if either expires or the client cancels during
+estimation, the query fails with the usual timeout or cancellation error. If
+estimation fails for any other reason, the query still runs, and its result is
+returned with a warning and without a cost comparison.
 
 ## Query cost
 
@@ -349,9 +350,9 @@ The `data` section of the response has the following format:
 ```
 
 - `seriesTouched`: the number of series the query reads, summed per selector.
-- `samplesRead`: the number of samples the query reads from storage, i.e. the
-  same quantity as the `samplesRead` [query statistic](#query-statistics) rather
-  than the peak number of samples in memory.
+- `samplesRead`: an estimate of the `samplesRead`
+  [query statistic](#query-statistics), the samples the evaluator reads in the
+  engine's sample units, rather than the peak number of samples in memory.
 
 Estimation enumerates matching series in the index and, when supported by
 storage, samples chunk data to measure sample density and native histogram size.
@@ -380,7 +381,12 @@ count the same series repeatedly, indexed series can lack samples in the query
 window, and sampled density and histogram sizes may not represent all matching
 series. `info()` produces an incomplete-estimate warning because its additional
 runtime-dependent selections are omitted; its second argument is a label filter,
-not an independent selector. The UI displays these warnings with the estimate.
+not an independent selector.
+
+When remote read is configured, series enumeration also queries the remote read
+endpoints, and density sampling is unavailable. Estimates then assume the global
+`scrape_interval` and float-sized samples, with a warning for each selector that
+matches series.
 
 Estimation occupies one of the `--query.max-concurrency` slots for its duration.
 The deadline also applies while waiting for a slot. It uses `query_max_duration`
@@ -418,26 +424,40 @@ configured limit, and `query_max_duration` surfaces as a query timeout. The
 estimate returned by these endpoints is informational only and is never used to
 reject a query.
 
+These limits apply to every query the engine evaluates, not only to API
+requests. Recording and alerting rules are subject to them too: a rule whose
+query exceeds a limit fails to evaluate like any other query error, and
+`query_max_duration` replaces `--query.timeout` as the timeout of rule queries.
+
 With query-cost enabled, sample accounting includes all storage input consumed
 by child evaluators, even when their output falls between outer query windows.
 Reusing a materialized child result does not charge its storage reads again.
 
 A client may lower any of these ceilings for a single request with the
-`max_series`, `max_samples_read`, `max_query_duration` and `timeout`
-parameters. These can only tighten the operator-set value, never loosen it: a
-request asking for a value above the ceiling is rejected with HTTP 400
-(`bad_data`) so that the caller sees that the limit it asked for was not applied,
-instead of being silently clamped down. A `timeout` must be positive; a
-non-positive value is rejected with HTTP 400 (`bad_data`).
+`max_series`, `max_samples_read` and `max_query_duration` parameters. These can
+only tighten the operator-set value, never loosen it: a request asking for a
+value above the ceiling is rejected with HTTP 400 (`bad_data`) so that the
+caller sees that the limit it asked for was not applied, instead of being
+silently clamped down. The `timeout` parameter can also shorten the deadline,
+but a larger value is capped at the effective duration ceiling rather than
+rejected.
 
-A query rejected by one of these limits during execution returns HTTP 422 with
-the `errorType` `cost_limit`, distinguishing a cost rejection from other
-execution failures.
+A query rejected by the series or samples-read limit during execution returns
+HTTP 422 with the `errorType` `cost_limit`, distinguishing a cost rejection from
+other execution failures. A query stopped by the duration limit usually fails
+like any other query timeout, with HTTP 503 and the `errorType` `timeout`. If the
+limit expires while the query is still loading series from storage, local or
+remote, the query can instead fail with HTTP 422 and the `errorType` `execution`
+(`expanding series: context deadline exceeded`), and is not counted under
+`max_duration` below.
 
 The engine also exposes three metrics while the feature flag is enabled:
 `prometheus_engine_query_rejected_total` (rejections by `reason`),
 `prometheus_engine_query_series_touched` and
-`prometheus_engine_query_samples_read` (per-query distributions).
+`prometheus_engine_query_samples_read` (per-query distributions). The `reason`
+is `max_series`, `max_samples_read` or `max_duration`. `max_duration` counts
+queries stopped by `query_max_duration` or `max_query_duration`; expiries of
+`--query.timeout` or a request `timeout` are not counted.
 
 ## Formatting query expressions
 
