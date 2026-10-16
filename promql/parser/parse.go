@@ -45,6 +45,8 @@ var parserPool = sync.Pool{
 type Options struct {
 	EnableExperimentalFunctions bool
 	EnableBinopFillModifiers    bool
+	// EnableUnquotedUTF8Names allows Unicode letters and non-leading dots in unquoted names.
+	EnableUnquotedUTF8Names bool
 	// Functions is the set of functions the parser accepts, keyed by name.
 	// If nil, the default set in the package-level Functions variable is
 	// used. Otherwise it replaces the default set: to extend the default set,
@@ -203,8 +205,9 @@ func newParser(input string, opts Options) *parser {
 
 	// Clear lexer struct before reusing.
 	p.lex = Lexer{
-		input: input,
-		state: lexStatements,
+		input:             input,
+		state:             lexStatements,
+		unquotedUTF8Names: opts.EnableUnquotedUTF8Names,
 	}
 
 	return p
@@ -446,6 +449,7 @@ func (p *parser) InjectItem(typ ItemType) {
 
 func (p *parser) newBinaryExpression(lhs Node, op Item, modifiers, rhs Node) *BinaryExpr {
 	ret := modifiers.(*BinaryExpr)
+	ret.unquotedUTF8Names = p.options.EnableUnquotedUTF8Names
 
 	ret.LHS = lhs.(Expr)
 	ret.RHS = rhs.(Expr)
@@ -459,7 +463,8 @@ func (p *parser) newBinaryExpression(lhs Node, op Item, modifiers, rhs Node) *Bi
 	return ret
 }
 
-func (*parser) assembleVectorSelector(vs *VectorSelector) {
+func (p *parser) assembleVectorSelector(vs *VectorSelector) {
+	vs.unquotedUTF8Names = p.options.EnableUnquotedUTF8Names
 	// If the metric name was set outside the braces, add a matcher for it.
 	// If the metric name was inside the braces we don't need to do anything.
 	if vs.Name != "" {
@@ -473,6 +478,7 @@ func (*parser) assembleVectorSelector(vs *VectorSelector) {
 
 func (p *parser) newAggregateExpr(op Item, modifier, args Node, overread bool) (ret *AggregateExpr) {
 	ret = modifier.(*AggregateExpr)
+	ret.unquotedUTF8Names = p.options.EnableUnquotedUTF8Names
 	arguments := args.(Expressions)
 
 	ret.PosRange = posrange.PositionRange{
