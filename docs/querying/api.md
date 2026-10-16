@@ -1585,14 +1585,15 @@ GET /api/v1/status/tsdb
 URL query parameters:
 
 - `limit=<number>`: Limit the number of returned items to a given number for each set of statistics. By default, 10 items are returned. The maximum allowed limit is 10000.
+- `match[]=<series_selector>`: Optional repeated series selector. If provided, the statistics only cover series matching at least one of the selectors (the same semantics as `match[]` in the series API). Without it, statistics cover all series in the head block. Requests with `match[]` are considerably more expensive than without, as the statistics are computed on demand for the matched series and, unlike requests without `match[]`, are not cached.
 
 The `data` section of the query result consists of:
 
 - **headStats**: This provides the following data about the head block of the TSDB:
-  - **numSeries**: The number of series.
-  - **chunkCount**: The number of chunks.
-  - **minTime**: The current minimum timestamp in milliseconds.
-  - **maxTime**: The current maximum timestamp in milliseconds.
+  - **numSeries**: The number of series (only those matching `match[]`, if provided).
+  - **chunkCount**: The number of chunks in the whole head block. This is not filtered by `match[]`.
+  - **minTime**: The current minimum timestamp in milliseconds of the whole head block (not filtered by `match[]`).
+  - **maxTime**: The current maximum timestamp in milliseconds of the whole head block (not filtered by `match[]`).
 - **seriesCountByMetricName:**  This will provide a list of metrics names and their series count.
 - **labelValueCountByLabelName:** This will provide a list of the label names and their value count.
 - **memoryInBytesByLabelName** This will provide a list of the label names and memory used in bytes. Memory usage is calculated by adding the length of all values for a given label name.

@@ -2076,11 +2076,11 @@ func (s *readyStorage) Snapshot(dir string, withHead bool) error {
 }
 
 // Stats implements the api_v1.TSDBAdminStats interface.
-func (s *readyStorage) Stats(statsByLabelName string, limit int) (*tsdb.Stats, error) {
+func (s *readyStorage) Stats(ctx context.Context, statsByLabelName string, limit int, matcherSets ...[]*labels.Matcher) (*tsdb.Stats, error) {
 	if x := s.get(); x != nil {
 		switch db := x.(type) {
 		case *tsdb.DB:
-			return db.Head().Stats(statsByLabelName, limit), nil
+			return db.Head().StatsForMatchers(ctx, statsByLabelName, limit, matcherSets)
 		case *agent.DB:
 			return nil, agent.ErrUnsupported
 		default:

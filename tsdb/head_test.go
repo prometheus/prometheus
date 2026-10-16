@@ -7766,6 +7766,153 @@ func TestPostingsCardinalityStats(t *testing.T) {
 	require.Equal(t, statsForSomeLabel1, head.PostingsCardinalityStats("n", 1))
 }
 
+func TestHeadStatsForMatchers(t *testing.T) {
+	head, _ := newTestHead(t, DefaultBlockDuration, compression.None, false)
+	app := head.Appender(context.Background())
+	// Every series has a different timestamp, so that the head wide min and max
+	// time differ from the time of any single matched series.
+	for ts, lbls := range []labels.Labels{
+		labels.FromStrings(labels.MetricName, "http_requests_total", "job", "api", "instance", "a:9090", "code", "200"),
+		labels.FromStrings(labels.MetricName, "http_requests_total", "job", "api", "instance", "b:9090", "code", "500"),
+		labels.FromStrings(labels.MetricName, "http_requests_total", "job", "db", "instance", "c:9090", "code", "200"),
+		labels.FromStrings(labels.MetricName, "up", "job", "api", "instance", "a:9090"),
+		labels.FromStrings(labels.MetricName, "up", "job", "db", "instance", "c:9090"),
+	} {
+		_, err := app.Append(0, lbls, int64(ts+1)*1000, float64(ts))
+		require.NoError(t, err)
+	}
+	require.NoError(t, app.Commit())
+
+	const limit = 10
+	m := func(name, value string) *labels.Matcher { return labels.MustNewMatcher(labels.MatchEqual, name, value) }
+	re := func(name, value string) *labels.Matcher {
+		return labels.MustNewMatcher(labels.MatchRegexp, name, value)
+	}
+
+	// The order of entries with equal counts is not defined.
+	requireSameStats := func(t *testing.T, want, got *index.PostingsStats) {
+		t.Helper()
+		require.ElementsMatch(t, want.CardinalityMetricsStats, got.CardinalityMetricsStats)
+		require.ElementsMatch(t, want.CardinalityLabelStats, got.CardinalityLabelStats)
+		require.ElementsMatch(t, want.LabelValueStats, got.LabelValueStats)
+		require.ElementsMatch(t, want.LabelValuePairsStats, got.LabelValuePairsStats)
+		require.Equal(t, want.NumLabelPairs, got.NumLabelPairs)
+	}
+
+	for _, tc := range []struct {
+		name        string
+		matcherSets [][]*labels.Matcher
+		// wantNumSeries and wantByMetric are always checked.
+		wantNumSeries uint64
+		wantByMetric  map[string]uint64
+		// If set, the whole IndexPostingStats is compared.
+		wantIndexStats *index.PostingsStats
+		// If true, the IndexPostingStats must equal the one of the unmatched Head.Stats.
+		wantSameAsHead bool
+	}{
+		{
+			name:           "no matcher sets covers all series",
+			wantNumSeries:  5,
+			wantByMetric:   map[string]uint64{"http_requests_total": 3, "up": 2},
+			wantSameAsHead: true,
+		},
+		{
+			name:           "selector matching all series equals unmatched stats",
+			matcherSets:    [][]*labels.Matcher{{re(labels.MetricName, ".+")}},
+			wantNumSeries:  5,
+			wantByMetric:   map[string]uint64{"http_requests_total": 3, "up": 2},
+			wantSameAsHead: true,
+		},
+		{
+			name:          "single matcher",
+			matcherSets:   [][]*labels.Matcher{{m("job", "db")}},
+			wantNumSeries: 2,
+			wantByMetric:  map[string]uint64{"http_requests_total": 1, "up": 1},
+		},
+		{
+			name:          "matchers within a set are intersected",
+			matcherSets:   [][]*labels.Matcher{{m(labels.MetricName, "http_requests_total"), m("job", "api")}},
+			wantNumSeries: 2,
+			wantByMetric:  map[string]uint64{"http_requests_total": 2},
+			wantIndexStats: &index.PostingsStats{
+				CardinalityMetricsStats: []index.Stat{{Name: "http_requests_total", Count: 2}},
+				CardinalityLabelStats: []index.Stat{
+					{Name: "instance", Count: 2}, {Name: "code", Count: 2}, {Name: "job", Count: 1}, {Name: labels.MetricName, Count: 1},
+				},
+				LabelValueStats: []index.Stat{
+					{Name: labels.MetricName, Count: labels.SizeOfLabels(labels.MetricName, "http_requests_total", 2)},
+					{Name: "job", Count: labels.SizeOfLabels("job", "api", 2)},
+					{Name: "instance", Count: labels.SizeOfLabels("instance", "a:9090", 1) + labels.SizeOfLabels("instance", "b:9090", 1)},
+					{Name: "code", Count: labels.SizeOfLabels("code", "200", 1) + labels.SizeOfLabels("code", "500", 1)},
+				},
+				LabelValuePairsStats: []index.Stat{
+					{Name: labels.MetricName + "=http_requests_total", Count: 2},
+					{Name: "job=api", Count: 2},
+					{Name: "instance=a:9090", Count: 1},
+					{Name: "instance=b:9090", Count: 1},
+					{Name: "code=200", Count: 1},
+					{Name: "code=500", Count: 1},
+				},
+				NumLabelPairs: 6,
+			},
+		},
+		{
+			name:          "regex matcher",
+			matcherSets:   [][]*labels.Matcher{{re("instance", "[ab]:9090")}},
+			wantNumSeries: 3,
+			wantByMetric:  map[string]uint64{"http_requests_total": 2, "up": 1},
+		},
+		{
+			name: "overlapping sets are unioned without duplicates",
+			matcherSets: [][]*labels.Matcher{
+				{m("instance", "a:9090")},
+				{m("job", "api")},
+			},
+			wantNumSeries: 3,
+			wantByMetric:  map[string]uint64{"http_requests_total": 2, "up": 1},
+		},
+		{
+			name:          "no matching series",
+			matcherSets:   [][]*labels.Matcher{{m("job", "none")}},
+			wantByMetric:  map[string]uint64{},
+			wantNumSeries: 0,
+			wantIndexStats: &index.PostingsStats{
+				CardinalityMetricsStats: []index.Stat{}, CardinalityLabelStats: []index.Stat{},
+				LabelValueStats: []index.Stat{}, LabelValuePairsStats: []index.Stat{},
+			},
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			stats, err := head.StatsForMatchers(context.Background(), labels.MetricName, limit, tc.matcherSets)
+			require.NoError(t, err)
+			require.Equal(t, tc.wantNumSeries, stats.NumSeries)
+			// The time range is head wide and not affected by the matchers.
+			require.Equal(t, int64(1000), stats.MinTime)
+			require.Equal(t, int64(5000), stats.MaxTime)
+
+			got := map[string]uint64{}
+			for _, s := range stats.IndexPostingStats.CardinalityMetricsStats {
+				got[s.Name] = s.Count
+			}
+			require.Equal(t, tc.wantByMetric, got)
+
+			if tc.wantSameAsHead {
+				requireSameStats(t, head.Stats(labels.MetricName, limit).IndexPostingStats, stats.IndexPostingStats)
+			}
+			if tc.wantIndexStats != nil {
+				requireSameStats(t, tc.wantIndexStats, stats.IndexPostingStats)
+			}
+		})
+	}
+
+	t.Run("canceled context aborts matched stats", func(t *testing.T) {
+		ctx, cancel := context.WithCancel(context.Background())
+		cancel()
+		_, err := head.StatsForMatchers(ctx, labels.MetricName, limit, [][]*labels.Matcher{{re(labels.MetricName, ".+")}})
+		require.ErrorIs(t, err, context.Canceled)
+	})
+}
+
 func TestHeadAppender_AppendFloatWithSameTimestampAsPreviousHistogram(t *testing.T) {
 	head, _ := newTestHead(t, DefaultBlockDuration, compression.None, false)
 

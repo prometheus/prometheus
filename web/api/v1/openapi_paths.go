@@ -541,6 +541,10 @@ func (*OpenAPIBuilder) statusFlagsPath() *v3.PathItem {
 func (*OpenAPIBuilder) statusTSDBPath() *v3.PathItem {
 	params := []*v3.Parameter{
 		queryParamWithExample("limit", "The maximum number of items to return per category.", false, integerSchema(), []example{{"example", 10}}),
+		queryParamWithExample("match[]", "Series selector argument. If provided, the statistics only cover series matching at least one selector. The head time range (minTime and maxTime) and chunkCount are not filtered.", false, base.CreateSchemaProxy(&base.Schema{
+			Type:  []string{"array"},
+			Items: &base.DynamicValue[*base.SchemaProxy, bool]{A: stringSchema()},
+		}), []example{{"example", []string{"{job=\"prometheus\"}"}}}),
 	}
 	return &v3.PathItem{
 		Get: &v3.Operation{
