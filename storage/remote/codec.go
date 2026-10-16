@@ -22,6 +22,7 @@ import (
 	"net/http"
 	"slices"
 	"sort"
+	"strings"
 	"sync"
 
 	"github.com/gogo/protobuf/proto"
@@ -224,7 +225,10 @@ func NegotiateResponseType(accepted []prompb.ReadRequest_ResponseType) (prompb.R
 }
 
 // StreamChunkedReadResponses iterates over series, builds chunks and streams those to the caller.
-// It expects Series set with populated chunks.
+// It expects Series set with populated chunks, sorted by labels. Each series gets
+// the external labels it does not have yet, and the series are streamed sorted by
+// the resulting labels, unless some of them already have a label named like an
+// external label.
 func StreamChunkedReadResponses(
 	stream io.Writer,
 	queryIndex int64,
@@ -235,14 +239,19 @@ func StreamChunkedReadResponses(
 ) (annotations.Annotations, error) {
 	var (
 		chks []prompb.Chunk
-		lbls []prompb.Label
+		buf  []prompb.Label
 		iter chunks.Iterator
+		// Series that a later series may sort before, each one sorting before
+		// the one below it.
+		held         []heldChunkSeries
+		lastExtLabel string
 	)
+	if len(sortedExternalLabels) > 0 {
+		lastExtLabel = sortedExternalLabels[len(sortedExternalLabels)-1].Name
+	}
 
-	for ss.Next() {
-		series := ss.At()
+	write := func(series storage.ChunkSeries, lbls []prompb.Label) error {
 		iter = series.Iterator(iter)
-		lbls = MergeLabels(prompb.FromLabels(series.Labels(), lbls), sortedExternalLabels)
 
 		maxDataLength := maxBytesInFrame
 		for _, lbl := range lbls {
@@ -257,7 +266,7 @@ func StreamChunkedReadResponses(
 			chk := iter.At()
 
 			if chk.Chunk == nil {
-				return ss.Warnings(), fmt.Errorf("StreamChunkedReadResponses: found not populated chunk returned by SeriesSet at ref: %v", chk.Ref)
+				return fmt.Errorf("StreamChunkedReadResponses: found not populated chunk returned by SeriesSet at ref: %v", chk.Ref)
 			}
 
 			// Cut the chunk.
@@ -284,11 +293,11 @@ func StreamChunkedReadResponses(
 
 			b, err := resp.PooledMarshal(marshalPool)
 			if err != nil {
-				return ss.Warnings(), fmt.Errorf("marshal ChunkedReadResponse: %w", err)
+				return fmt.Errorf("marshal ChunkedReadResponse: %w", err)
 			}
 
 			if _, err := stream.Write(b); err != nil {
-				return ss.Warnings(), fmt.Errorf("write to stream: %w", err)
+				return fmt.Errorf("write to stream: %w", err)
 			}
 
 			// The Write() has consumed b, so it is safe to return to the pool.
@@ -296,11 +305,69 @@ func StreamChunkedReadResponses(
 			chks = chks[:0]
 			frameBytesLeft = maxDataLength
 		}
-		if err := iter.Err(); err != nil {
+		return iter.Err()
+	}
+
+	for ss.Next() {
+		series := ss.At()
+		buf = prompb.FromLabels(series.Labels(), buf)
+		lbls := MergeLabels(buf, sortedExternalLabels)
+
+		// Write the held series that sort before this one.
+		for len(held) > 0 && compareLabels(held[len(held)-1].lbls, lbls) < 0 {
+			h := held[len(held)-1]
+			held[len(held)-1] = heldChunkSeries{}
+			held = held[:len(held)-1]
+			if err := write(h.series, h.lbls); err != nil {
+				return ss.Warnings(), err
+			}
+		}
+
+		// With the external label c="3" added, x{a="1", b="2"} sorts before
+		// x{a="1"}, so x{a="1"} is held until no later series can sort before it.
+		// Only a later series with all the labels of this one and more can, if
+		// its first additional label is named before the last external label.
+		// Holding a series does not read its chunks.
+		var lastName string
+		if len(buf) > 0 {
+			lastName = buf[len(buf)-1].Name
+		}
+		if lastName < lastExtLabel {
+			held = append(held, heldChunkSeries{series: series, lbls: lbls})
+			continue
+		}
+		if err := write(series, lbls); err != nil {
 			return ss.Warnings(), err
 		}
 	}
-	return ss.Warnings(), ss.Err()
+	if err := ss.Err(); err != nil {
+		return ss.Warnings(), err
+	}
+	for _, h := range slices.Backward(held) {
+		if err := write(h.series, h.lbls); err != nil {
+			return ss.Warnings(), err
+		}
+	}
+	return ss.Warnings(), nil
+}
+
+// heldChunkSeries is a series held back, with the labels to stream it with.
+type heldChunkSeries struct {
+	series storage.ChunkSeries
+	lbls   []prompb.Label
+}
+
+// compareLabels compares two sorted sets of proto labels like labels.Compare.
+func compareLabels(a, b []prompb.Label) int {
+	for i := range min(len(a), len(b)) {
+		if c := strings.Compare(a[i].Name, b[i].Name); c != 0 {
+			return c
+		}
+		if c := strings.Compare(a[i].Value, b[i].Value); c != 0 {
+			return c
+		}
+	}
+	return len(a) - len(b)
 }
 
 // MergeLabels merges two sets of sorted proto labels, preferring those in
