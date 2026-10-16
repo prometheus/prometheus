@@ -396,6 +396,42 @@ var tests = []struct {
 		name: "keywords",
 		tests: []testCase{
 			{
+				input: "bool.5",
+				fail:  true,
+			},
+			{
+				input: "BOOL.5",
+				fail:  true,
+			},
+			{
+				input: "offset.5",
+				fail:  true,
+			},
+			{
+				input: "atan2.5",
+				fail:  true,
+			},
+			{
+				input: "foo.",
+				fail:  true,
+			},
+			{
+				input: "bool.",
+				fail:  true,
+			},
+			{
+				input:    "bool .5",
+				expected: []Item{{BOOL, 0, "bool"}, {NUMBER, 5, ".5"}},
+			},
+			{
+				input:    "offset .5",
+				expected: []Item{{OFFSET, 0, "offset"}, {NUMBER, 7, ".5"}},
+			},
+			{
+				input:    "atan2 .5",
+				expected: []Item{{ATAN2, 0, "atan2"}, {NUMBER, 6, ".5"}},
+			},
+			{
 				input:    "offset",
 				expected: []Item{{OFFSET, 0, "offset"}},
 			},
