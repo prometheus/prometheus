@@ -437,12 +437,9 @@ func repairLastChunkFile(files map[int]string) (_ map[int]string, returnErr erro
 	}
 
 	buf := make([]byte, MagicChunksSize)
-	size, err := f.Read(buf)
-	if err != nil && !errors.Is(err, io.EOF) {
-		return files, fmt.Errorf("failed to read magic number during last head chunk file repair: %w", err)
-	}
-	if err := f.Close(); err != nil {
-		return files, fmt.Errorf("close file during last head chunk file repair: %w", err)
+	size, err := readChunkHeaderAndClose(f, buf)
+	if err != nil {
+		return files, err
 	}
 
 	// We either don't have enough bytes for the magic number or the magic number is 0.
@@ -458,6 +455,18 @@ func repairLastChunkFile(files map[int]string) (_ map[int]string, returnErr erro
 	}
 
 	return files, nil
+}
+
+func readChunkHeaderAndClose(f io.ReadCloser, buf []byte) (int, error) {
+	size, err := f.Read(buf)
+	closeErr := f.Close()
+	if err != nil && !errors.Is(err, io.EOF) {
+		return size, fmt.Errorf("failed to read magic number during last head chunk file repair: %w", errors.Join(err, closeErr))
+	}
+	if closeErr != nil {
+		return size, fmt.Errorf("close file during last head chunk file repair: %w", closeErr)
+	}
+	return size, nil
 }
 
 // WriteChunk writes the chunk to disk.
