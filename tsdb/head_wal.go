@@ -469,11 +469,16 @@ Outer:
 					missingSeries[m.Ref] = struct{}{}
 					continue
 				}
-				s.meta = &metadata.Metadata{
+				// Replay workers do not access series metadata. Appenders do not run
+				// yet, but the lock keeps the shared sidecar safe once fast startup
+				// admits them during replay.
+				s.Lock()
+				s.setLegacyMetadataLocked(&metadata.Metadata{
 					Type: record.ToMetricType(m.Type),
 					Unit: m.Unit,
 					Help: m.Help,
-				}
+				})
+				s.Unlock()
 			}
 			clear(v) // Zero out to avoid retaining metadata strings.
 			h.wlReplayMetadataPool.Put(v[:0])
