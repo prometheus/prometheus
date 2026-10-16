@@ -1407,3 +1407,44 @@ func BenchmarkDecodeHistogramSamples(b *testing.B) {
 		}
 	}
 }
+
+// Recommended CLI invocation:
+//
+//	export bench=decode_metadata && go test ./tsdb/record -run '^$' -bench '^BenchmarkDecodeMetadata' -benchtime 2s -count 6 -cpu 2 -timeout 999m -benchmem | tee ${bench}.txt
+func BenchmarkDecodeMetadata(b *testing.B) {
+	const numSeries = 1000
+
+	for _, numFamilies := range []int{10, 100} {
+		b.Run(fmt.Sprintf("series=%d/families=%d", numSeries, numFamilies), func(b *testing.B) {
+			meta := make([]RefMetadata, numSeries)
+			for i := range meta {
+				fam := i % numFamilies
+				unit := ""
+				if fam%2 == 0 {
+					unit = "seconds"
+				}
+				meta[i] = RefMetadata{
+					Ref:  chunks.HeadSeriesRef(i + 1),
+					Type: uint8(Counter),
+					Unit: unit,
+					Help: fmt.Sprintf("Total time spent in subsystem %d across all worker goroutines in seconds.", fam),
+				}
+			}
+
+			var enc Encoder
+			raw := enc.Metadata(meta, nil)
+			dec := NewDecoder(labels.NewSymbolTable(), promslog.NewNopLogger())
+			buf := make([]RefMetadata, 0, numSeries)
+
+			b.ReportAllocs()
+			b.ResetTimer()
+			for b.Loop() {
+				var err error
+				buf, err = dec.Metadata(raw, buf[:0])
+				if err != nil {
+					b.Fatal(err)
+				}
+			}
+		})
+	}
+}

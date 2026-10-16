@@ -20,6 +20,7 @@ import (
 	"fmt"
 	"log/slog"
 	"math"
+	"unique"
 	"unsafe"
 
 	"github.com/prometheus/common/model"
@@ -304,13 +305,18 @@ func (*Decoder) Metadata(rec []byte, metadata []RefMetadata) ([]RefMetadata, err
 		// so we can correctly align with the start with the next metadata record.
 		var unit, help string
 		for range numFields {
-			fieldName := dec.UvarintStr()
-			fieldValue := dec.UvarintStr()
+			fieldName := yoloString(dec.UvarintBytes())
+			fieldValue := dec.UvarintBytes()
+			if len(fieldValue) == 0 {
+				continue
+			}
+			// Intern unit and help strings across series sharing a metric family.
+			// unique.Make clones the underlying bytes on first insertion so rec is not retained.
 			switch fieldName {
 			case unitMetaName:
-				unit = fieldValue
+				unit = unique.Make(yoloString(fieldValue)).Value()
 			case helpMetaName:
-				help = fieldValue
+				help = unique.Make(yoloString(fieldValue)).Value()
 			}
 		}
 
