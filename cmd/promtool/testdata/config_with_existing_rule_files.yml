@@ -1,0 +1,2 @@
+rule_files:
+  - testdata/rules.yml

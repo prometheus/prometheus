@@ -19,6 +19,7 @@ import (
 	"net/url"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 
@@ -3071,6 +3072,18 @@ func TestAgentMode(t *testing.T) {
 		"http://remote1/push",
 		c.RemoteWriteConfigs[0].URL.String(),
 	)
+
+	// LoadReader applies the same agent mode checks and resolves relative
+	// paths against the working directory.
+	_, err = LoadReader(strings.NewReader("rule_files: [first.rules]"), "test input", true, promslog.NewNopLogger())
+	require.EqualError(t, err, "field rule_files is not allowed in agent mode")
+
+	_, err = LoadReader(strings.NewReader("global: [1]"), "test input", false, promslog.NewNopLogger())
+	require.ErrorContains(t, err, "parsing YAML from test input")
+
+	c, err = LoadReader(strings.NewReader("rule_files: [dir/../first.rules]"), "test input", false, promslog.NewNopLogger())
+	require.NoError(t, err)
+	require.Equal(t, []string{"first.rules"}, c.RuleFiles)
 }
 
 func TestGlobalConfig(t *testing.T) {
