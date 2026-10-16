@@ -1369,3 +1369,36 @@ func TestFeatureFlagsDocumented(t *testing.T) {
 	require.True(t, slices.IsSorted(helpFlags))
 	require.ElementsMatch(t, helpFlags, docFlags)
 }
+
+func TestDefaultMaxBlockDuration(t *testing.T) {
+	day := model.Duration(24 * time.Hour)
+	for _, tc := range []struct {
+		name      string
+		retention model.Duration
+		want      model.Duration
+	}{
+		{name: "no retention", retention: 0, want: 31 * day},
+		{name: "default 15d retention", retention: 15 * day, want: model.Duration(36 * time.Hour)},
+		{name: "retention/10 equal to cap", retention: 310 * day, want: 31 * day},
+		{name: "long retention is capped at 31d", retention: 3650 * day, want: 31 * day},
+		{name: "short retention", retention: 2 * day, want: model.Duration(4*time.Hour + 48*time.Minute)},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			require.Equal(t, tc.want, defaultMaxBlockDuration(tc.retention))
+		})
+	}
+}
+
+func TestUpdateMaxBlockDuration(t *testing.T) {
+	day := model.Duration(24 * time.Hour)
+
+	var got []int64
+	set := func(d int64) { got = append(got, d) }
+
+	updateMaxBlockDuration(false, 190*day, set)
+	require.Equal(t, []int64{int64(19 * 24 * time.Hour / time.Millisecond)}, got)
+
+	got = nil
+	updateMaxBlockDuration(true, 190*day, set)
+	require.Empty(t, got, "an explicit --storage.tsdb.max-block-duration must not be overridden")
+}
