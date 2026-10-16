@@ -220,16 +220,8 @@ func runScrapeLoopTest(t *testing.T, appV2 bool, s *teststorage.TestStorage, exp
 	}
 }
 
-// Regression test against https://github.com/prometheus/prometheus/issues/15831.
-func TestScrapeAppend_MetadataUpdate(t *testing.T) {
-	foreachAppendable(t, func(t *testing.T, appV2 bool) {
-		testScrapeAppendMetadataUpdate(t, appV2)
-	})
-}
-
-func testScrapeAppendMetadataUpdate(t *testing.T, appV2 bool) {
-	const (
-		scrape1 = `# TYPE test_metric counter
+const (
+	metadataUpdateScrape1 = `# TYPE test_metric counter
 # HELP test_metric some help text
 # UNIT test_metric metric
 test_metric_total 1
@@ -240,7 +232,7 @@ test_metric2{foo="bar"} 2
 # HELP test_metric3 this represents tricky case of "broken" text that is not trivial to detect
 test_metric3_metric4{foo="bar"} 2
 # EOF`
-		scrape2 = `# TYPE test_metric counter
+	metadataUpdateScrape2 = `# TYPE test_metric counter
 # HELP test_metric different help text
 test_metric_total 11
 # TYPE test_metric2 gauge
@@ -248,14 +240,57 @@ test_metric_total 11
 # UNIT test_metric2 metric2
 test_metric2{foo="bar"} 22
 # EOF`
-	)
+)
 
+// Regression test against https://github.com/prometheus/prometheus/issues/15831.
+func TestScrapeAppend_MetadataUpdate(t *testing.T) {
+	foreachAppendable(t, func(t *testing.T, appV2 bool) {
+		testScrapeAppendMetadataUpdate(t, appV2)
+	})
+	t.Run("native metadata store", func(t *testing.T) {
+		db := teststorage.New(t, func(opts *tsdb.Options) {
+			opts.EnableNativeMetadata = true
+		})
+		sl, _ := newTestScrapeLoop(t, withAppendable(db, true))
+		now := time.Unix(1_700_000_000, 0)
+
+		app := sl.appender()
+		_, _, _, err := app.append([]byte(metadataUpdateScrape1), "application/openmetrics-text", now)
+		require.NoError(t, err)
+		require.NoError(t, app.Commit())
+
+		app = sl.appender()
+		_, _, _, err = app.append([]byte(metadataUpdateScrape2), "application/openmetrics-text", now.Add(15*time.Second))
+		require.NoError(t, err)
+		require.NoError(t, app.Commit())
+
+		nameMatcher := labels.MustNewMatcher(labels.MatchEqual, labels.MetricName, "test_metric_total")
+		result, truncated, err := db.NativeMetricMetadata(t.Context(), [][]*labels.Matcher{{nameMatcher}}, 0)
+		require.NoError(t, err)
+		require.False(t, truncated)
+		require.Len(t, result, 1)
+		require.True(t, labels.Equal(labels.FromStrings(labels.MetricName, "test_metric_total"), result[0].Labels))
+		require.False(t, result[0].Truncated)
+		require.Equal(t, []tsdb.NativeMetricMetadataVersion{
+			{
+				EffectiveFrom: timestamp.FromTime(now),
+				Metadata:      metadata.Metadata{Type: model.MetricTypeCounter, Unit: "metric", Help: "some help text"},
+			},
+			{
+				EffectiveFrom: timestamp.FromTime(now.Add(15 * time.Second)),
+				Metadata:      metadata.Metadata{Type: model.MetricTypeCounter, Unit: "metric", Help: "different help text"},
+			},
+		}, result[0].Versions)
+	})
+}
+
+func testScrapeAppendMetadataUpdate(t *testing.T, appV2 bool) {
 	appTest := teststorage.NewAppendable()
 	sl, _ := newTestScrapeLoop(t, withAppendable(appTest, appV2))
 
 	now := time.Now()
 	app := sl.appender()
-	_, _, _, err := app.append([]byte(scrape1), "application/openmetrics-text", now)
+	_, _, _, err := app.append([]byte(metadataUpdateScrape1), "application/openmetrics-text", now)
 	require.NoError(t, err)
 	require.NoError(t, app.Commit())
 	teststorage.RequireEqual(t, []sample{
@@ -265,7 +300,7 @@ test_metric2{foo="bar"} 22
 	appTest.ResultReset()
 
 	app = sl.appender()
-	_, _, _, err = app.append([]byte(scrape1), "application/openmetrics-text", now.Add(15*time.Second))
+	_, _, _, err = app.append([]byte(metadataUpdateScrape1), "application/openmetrics-text", now.Add(15*time.Second))
 	require.NoError(t, err)
 	require.NoError(t, app.Commit())
 	if appV2 {
@@ -281,7 +316,7 @@ test_metric2{foo="bar"} 22
 	appTest.ResultReset()
 
 	app = sl.appender()
-	_, _, _, err = app.append([]byte(scrape2), "application/openmetrics-text", now.Add(15*time.Second))
+	_, _, _, err = app.append([]byte(metadataUpdateScrape2), "application/openmetrics-text", now.Add(15*time.Second))
 	require.NoError(t, err)
 	require.NoError(t, app.Commit())
 	teststorage.RequireEqual(t, []sample{
