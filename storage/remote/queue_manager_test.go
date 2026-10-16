@@ -32,6 +32,7 @@ import (
 	"testing"
 	"testing/synctest"
 	"time"
+	"unique"
 
 	"github.com/gogo/protobuf/proto"
 	remoteapi "github.com/prometheus/client_golang/exp/api/remote"
@@ -2788,12 +2789,16 @@ func TestPopulateV2TimeSeries_MetadataAndTypeAndUnit(t *testing.T) {
 			}
 			builder.Sort()
 
+			var metaHandle unique.Handle[metadata.Metadata]
+			if tc.metadata != nil {
+				metaHandle = unique.Make(*tc.metadata)
+			}
 			batch[0] = timeSeries{
 				seriesLabels: builder.Labels(),
 				value:        123.45,
 				timestamp:    time.Now().UnixMilli(),
 				sType:        tSample,
-				metadata:     tc.metadata,
+				metadata:     metaHandle,
 			}
 
 			pendingData := make([]writev2.TimeSeries, 1)
@@ -3867,4 +3872,39 @@ func TestAppendToConvertNHCBToClassic(t *testing.T) {
 			})
 		}
 	})
+}
+
+// Recommended CLI invocation:
+//
+//	export bench=store_metadata && go test ./storage/remote -run '^$' -bench '^BenchmarkStoreMetadata' -benchtime 2s -count 6 -cpu 2 -timeout 999m -benchmem | tee ${bench}.txt
+func BenchmarkStoreMetadata(b *testing.B) {
+	const numSeries = 1000
+
+	for _, numFamilies := range []int{10, 100} {
+		b.Run(fmt.Sprintf("series=%d/families=%d", numSeries, numFamilies), func(b *testing.B) {
+			meta := make([]record.RefMetadata, numSeries)
+			for i := range meta {
+				fam := i % numFamilies
+				unit := ""
+				if fam%2 == 0 {
+					unit = "seconds"
+				}
+				meta[i] = record.RefMetadata{
+					Ref:  chunks.HeadSeriesRef(i + 1),
+					Type: uint8(record.Counter),
+					Unit: unit,
+					Help: fmt.Sprintf("Total time spent in subsystem %d across all worker goroutines in seconds.", fam),
+				}
+			}
+
+			c := NewTestBlockedWriteClient()
+			qm := newTestQueueManager(b, config.DefaultQueueConfig, config.DefaultMetadataConfig, defaultFlushDeadline, c, remoteapi.WriteV2MessageType)
+
+			b.ReportAllocs()
+			b.ResetTimer()
+			for b.Loop() {
+				qm.StoreMetadata(meta)
+			}
+		})
+	}
 }
