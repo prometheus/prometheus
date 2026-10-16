@@ -1055,6 +1055,12 @@ func open(dir string, l *slog.Logger, r prometheus.Registerer, opts *Options, rn
 			return
 		}
 
+		if _, ok := errors.AsType[*errSnapshotSeriesRecovery](returnedErr); ok {
+			close(db.donec)
+			returnedErr = errors.Join(returnedErr, db.closeResources())
+			return
+		}
+
 		// If head was never initialized, WAL/WBL goroutines need explicit
 		// cleanup since db.Close() -> head.Close() won't reach them.
 		if db.head == nil {
@@ -1230,6 +1236,9 @@ func open(dir string, l *slog.Logger, r prometheus.Registerer, opts *Options, rn
 	}
 
 	if initErr := db.head.Init(minValidTime); initErr != nil {
+		if _, ok := errors.AsType[*errSnapshotSeriesRecovery](initErr); ok {
+			return nil, initErr
+		}
 		db.head.metrics.walCorruptionsTotal.Inc()
 		if e, ok := errors.AsType[*errLoadWbl](initErr); ok {
 			db.logger.Warn("Encountered WBL read error, attempting repair", "err", initErr)
@@ -2534,6 +2543,10 @@ func (db *DB) Close() error {
 	}
 	<-db.donec
 
+	return db.closeResources()
+}
+
+func (db *DB) closeResources() error {
 	db.mtx.Lock()
 	defer db.mtx.Unlock()
 
