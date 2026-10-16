@@ -646,6 +646,14 @@ func PopulateDiscoveredLabels(lb *labels.Builder, cfg *config.ScrapeConfig, tLab
 // performs defined relabeling, checks validity, and adds Prometheus standard labels such as 'instance'.
 // A return of empty labels and nil error means the target was dropped by relabeling.
 func PopulateLabels(lb *labels.Builder, cfg *config.ScrapeConfig, tLabels, tgLabels model.LabelSet) (res labels.Labels, err error) {
+	_, targetIntervalConfigured := tLabels[model.ScrapeIntervalLabel]
+	if !targetIntervalConfigured {
+		_, targetIntervalConfigured = tgLabels[model.ScrapeIntervalLabel]
+	}
+	_, targetTimeoutConfigured := tLabels[model.ScrapeTimeoutLabel]
+	if !targetTimeoutConfigured {
+		_, targetTimeoutConfigured = tgLabels[model.ScrapeTimeoutLabel]
+	}
 	PopulateDiscoveredLabels(lb, cfg, tLabels, tgLabels)
 	keep := relabel.ProcessBuilder(lb, cfg.RelabelConfigs...)
 
@@ -679,6 +687,12 @@ func PopulateLabels(lb *labels.Builder, cfg *config.ScrapeConfig, tLabels, tgLab
 	}
 	if time.Duration(timeoutDuration) == 0 {
 		return labels.EmptyLabels(), errors.New("scrape timeout cannot be 0")
+	}
+
+	if targetIntervalConfigured && !targetTimeoutConfigured && timeout == cfg.ScrapeTimeout.String() {
+		timeoutDuration = cfg.ScrapeTimeoutForInterval(intervalDuration)
+		timeout = timeoutDuration.String()
+		lb.Set(model.ScrapeTimeoutLabel, timeout)
 	}
 
 	if timeoutDuration > intervalDuration {
