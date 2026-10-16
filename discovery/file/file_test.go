@@ -111,10 +111,9 @@ func (t *testRunner) atomicWrite(dst string, data []byte) {
 	// hasn't released the file yet. Retry a few times to handle this;
 	// on Linux/macOS os.Rename always succeeds regardless, so the retry
 	// never triggers.
-	for retries := 0; ; retries++ {
-		err = os.Rename(tmp.Name(), dst)
-		if err == nil || retries >= 5 {
-			break
+	for retries := 0; retries < 20; retries++ {
+		if err := os.Rename(tmp.Name(), dst); err == nil {
+			return
 		}
 		time.Sleep(50 * time.Millisecond)
 	}
