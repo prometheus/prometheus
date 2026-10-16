@@ -71,6 +71,7 @@ func NewEndpointSlice(l *slog.Logger, eps cache.SharedIndexInformer, svc, pod, n
 	svcAddCount := eventCount.WithLabelValues(RoleService.String(), MetricLabelRoleAdd)
 	svcUpdateCount := eventCount.WithLabelValues(RoleService.String(), MetricLabelRoleUpdate)
 	svcDeleteCount := eventCount.WithLabelValues(RoleService.String(), MetricLabelRoleDelete)
+	podUpdateCount := eventCount.WithLabelValues(RolePod.String(), MetricLabelRoleUpdate)
 
 	e := &EndpointSlice{
 		logger:                 l,
@@ -147,6 +148,30 @@ func NewEndpointSlice(l *slog.Logger, eps cache.SharedIndexInformer, svc, pod, n
 		l.Error("Error adding services event handler.", "err", err)
 	}
 
+	_, err = e.podInf.AddEventHandler(cache.ResourceEventHandlerFuncs{
+		UpdateFunc: func(old, cur any) {
+			podUpdateCount.Inc()
+			oldPod, ok := old.(*apiv1.Pod)
+			if !ok {
+				return
+			}
+
+			curPod, ok := cur.(*apiv1.Pod)
+			if !ok {
+				return
+			}
+
+			// The Pod's phase may change without triggering an update on the EndpointSlice.
+			// https://github.com/prometheus/prometheus/issues/19835.
+			if curPod.Status.Phase != oldPod.Status.Phase {
+				e.enqueuePod(namespacedName(curPod.Namespace, curPod.Name))
+			}
+		},
+	})
+	if err != nil {
+		l.Error("Error adding pods event handler.", "err", err)
+	}
+
 	if e.withNodeMetadata {
 		_, err = e.nodeInf.AddEventHandler(cache.ResourceEventHandlerFuncs{
 			AddFunc: func(o any) {
@@ -208,6 +233,18 @@ func (e *EndpointSlice) enqueueNamespace(namespace string) {
 
 	for _, endpoint := range endpoints {
 		e.enqueue(endpoint)
+	}
+}
+
+func (e *EndpointSlice) enqueuePod(podNamespacedName string) {
+	endpointSlices, err := e.endpointSliceInf.GetIndexer().ByIndex(podIndex, podNamespacedName)
+	if err != nil {
+		e.logger.Error("Error getting endpoint slices for pod", "pod", podNamespacedName, "err", err)
+		return
+	}
+
+	for _, endpointSlice := range endpointSlices {
+		e.enqueue(endpointSlice)
 	}
 }
 
