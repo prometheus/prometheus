@@ -1139,9 +1139,9 @@ func (*Encoder) histogramSamplesV1(histograms []RefHistogramSample, b []byte) ([
 		EncodeHistogram(&buf, h.H)
 	}
 
-	// Reset buffer if only custom bucket histograms existed in list of histogram samples.
+	// Discard only the new record if all samples use custom buckets.
 	if len(histograms) == len(customBucketHistograms) {
-		buf.Reset()
+		buf.B = buf.B[:len(b)]
 	}
 
 	return buf.Get(), customBucketHistograms
@@ -1289,9 +1289,9 @@ func (*Encoder) floatHistogramSamplesV1(histograms []RefFloatHistogramSample, b 
 		EncodeFloatHistogram(&buf, h.FH)
 	}
 
-	// Reset buffer if only custom bucket histograms existed in list of histogram samples
+	// Discard only the new record if all samples use custom buckets.
 	if len(histograms) == len(customBucketsFloatHistograms) {
-		buf.Reset()
+		buf.B = buf.B[:len(b)]
 	}
 
 	return buf.Get(), customBucketsFloatHistograms
