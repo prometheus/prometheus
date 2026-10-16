@@ -33,10 +33,21 @@ var noReferenceReleases = promauto.NewCounter(prometheus.CounterOpts{
 	Help:      "The number of times release has been called for strings that are not interned.",
 })
 
-type pool struct {
+// poolShard is a single shard of the intern pool. Each shard has its own
+// lock so that concurrent intern/release calls on different strings do not
+// contend on a single mutex.
+type poolShard struct {
 	mtx  sync.RWMutex
 	pool map[string]*entry
 }
+
+// pool is a sharded string interner. Strings are distributed across shards
+// by hash, so that calls on different strings do not serialize on a single lock.
+type pool struct {
+	shards [numInternShards]*poolShard
+}
+
+const numInternShards = 32
 
 type entry struct {
 	refs atomic.Int64
@@ -49,9 +60,27 @@ func newEntry(s string) *entry {
 }
 
 func newPool() *pool {
-	return &pool{
-		pool: map[string]*entry{},
+	p := &pool{}
+	for i := range numInternShards {
+		p.shards[i] = &poolShard{pool: map[string]*entry{}}
 	}
+	return p
+}
+
+// fnv32a computes the FNV-1a 32-bit hash of s. Inlined to avoid the
+// allocation overhead of hash/fnv.New32a on every call.
+func fnv32a(s string) uint32 {
+	h := uint32(2166136261)
+	for i := 0; i < len(s); i++ {
+		h ^= uint32(s[i])
+		h *= 16777619
+	}
+	return h
+}
+
+// shard returns the shard that handles the given string.
+func (p *pool) shard(s string) *poolShard {
+	return p.shards[fnv32a(s)&(numInternShards-1)]
 }
 
 func (p *pool) intern(s string) string {
@@ -59,33 +88,37 @@ func (p *pool) intern(s string) string {
 		return ""
 	}
 
-	p.mtx.RLock()
-	interned, ok := p.pool[s]
+	shard := p.shard(s)
+
+	shard.mtx.RLock()
+	interned, ok := shard.pool[s]
 	if ok {
 		// Increase the reference count while we're still holding the read lock,
 		// This will prevent the release() from deleting the entry while we're increasing its ref count.
 		interned.refs.Inc()
-		p.mtx.RUnlock()
+		shard.mtx.RUnlock()
 		return interned.s
 	}
-	p.mtx.RUnlock()
+	shard.mtx.RUnlock()
 
-	p.mtx.Lock()
-	defer p.mtx.Unlock()
-	if interned, ok := p.pool[s]; ok {
+	shard.mtx.Lock()
+	defer shard.mtx.Unlock()
+	if interned, ok := shard.pool[s]; ok {
 		interned.refs.Inc()
 		return interned.s
 	}
 
-	p.pool[s] = newEntry(s)
-	p.pool[s].refs.Store(1)
+	shard.pool[s] = newEntry(s)
+	shard.pool[s].refs.Store(1)
 	return s
 }
 
 func (p *pool) release(s string) {
-	p.mtx.RLock()
-	interned, ok := p.pool[s]
-	p.mtx.RUnlock()
+	shard := p.shard(s)
+
+	shard.mtx.RLock()
+	interned, ok := shard.pool[s]
+	shard.mtx.RUnlock()
 
 	if !ok {
 		noReferenceReleases.Inc()
@@ -97,10 +130,10 @@ func (p *pool) release(s string) {
 		return
 	}
 
-	p.mtx.Lock()
-	defer p.mtx.Unlock()
+	shard.mtx.Lock()
+	defer shard.mtx.Unlock()
 	if interned.refs.Load() != 0 {
 		return
 	}
-	delete(p.pool, s)
+	delete(shard.pool, s)
 }
