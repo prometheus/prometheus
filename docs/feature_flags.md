@@ -194,6 +194,8 @@ It is possible to craft a query that aggregates by `__name__` and puts samples w
 
 `--enable-feature=otlp-deltatocumulative`
 
+> **Note:** This feature flag is deprecated and will be removed in a future major version. Use `--enable-feature=otlp-native-delta-ingestion` for native delta ingestion instead.
+
 When enabled, Prometheus will convert OTLP metrics from delta temporality to their
 cumulative equivalent, instead of dropping them. This cannot be enabled in conjunction with `otlp-native-delta-ingestion`.
 
@@ -216,17 +218,17 @@ state is mutex guarded. Cumulative-only OTLP requests are not affected.
 
 `--enable-feature=otlp-native-delta-ingestion`
 
-When enabled, allows for the native ingestion of delta OTLP metrics, storing the raw sample values without conversion. This cannot be enabled in conjunction with `otlp-deltatocumulative`.
+This is the recommended feature flag for ingesting OTLP metrics with delta temporality. When enabled, Prometheus stores the raw sample values without conversion. This cannot be enabled in conjunction with the deprecated `otlp-deltatocumulative` flag.
 
-Currently, the StartTimeUnixNano field is ignored, and deltas are given the unknown metric metadata type.
+To retain the OTLP `StartTimeUnixNano` field, also enable [`st-storage`](#start-timestamp-st-native-storage). To use the retained start timestamps in PromQL functions such as `rate()` and `increase()`, enable [`use-start-timestamps`](#start-timestamp-st-usage-in-promql-functions). Delta metrics are currently given the unknown metric metadata type.
 
-Delta support is in a very early stage of development and the ingestion and querying process my change over time. For the open proposal see [prometheus/proposals#48](https://github.com/prometheus/proposals/pull/48).
+Native delta support remains experimental, and the ingestion and querying process may change over time. Ongoing work is tracked in [prometheus/prometheus#17649](https://github.com/prometheus/prometheus/issues/17649).
 
 ### Querying
 
-We encourage users to experiment with deltas and existing PromQL functions; we will collect feedback and likely build features to improve the experience around querying deltas.
+When `st-storage` and `use-start-timestamps` are also enabled and incoming delta samples have valid start timestamps, PromQL functions such as `rate()` and `increase()` use those timestamps to account for the interval represented by each delta.
 
-Note that standard PromQL counter functions like `rate()` and `increase()` are designed for cumulative metrics and will produce incorrect results when used with delta metrics. This may change in the future, but for now, to get similar results for delta metrics, you need `sum_over_time()`:
+Without start-timestamp storage and processing, use `sum_over_time()` to query delta metrics:
 
 * `sum_over_time(delta_metric[<range>])`: Calculates the sum of delta values over the specified time range.
 * `sum_over_time(delta_metric[<range>]) / <range>`: Calculates the per-second rate of the delta metric.
