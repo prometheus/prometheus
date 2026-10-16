@@ -4850,7 +4850,6 @@ func TestAcceptHeader(t *testing.T) {
 			expectedHeader:  "application/openmetrics-text;version=2.0.0;escaping=underscores;q=0.7,application/openmetrics-text;version=1.0.0;escaping=underscores;q=0.6,*/*;q=0.5",
 		},
 		{
-			// Without escaping=allow-utf-8, client libraries escape UTF-8 names in OpenMetrics 2.0 too.
 			name:            "openmetrics 2.0.0 only, with no escaping",
 			scrapeProtocols: []config.ScrapeProtocol{config.OpenMetricsText2_0_0},
 			scheme:          model.NoEscaping,
