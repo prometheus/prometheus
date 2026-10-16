@@ -896,6 +896,79 @@ var testExpr = []struct {
 		},
 	},
 	{
+		input: "foo > bool.5",
+		fail:  true,
+		errors: ParseErrors{
+			{
+				PositionRange: posrange.PositionRange{Start: 6, End: 12},
+				Err:           errors.New(`unexpected character after identifier: '.'`),
+				Query:         "foo > bool.5",
+			},
+		},
+	},
+	{
+		input: "foo atan2.5",
+		fail:  true,
+		errors: ParseErrors{
+			{
+				PositionRange: posrange.PositionRange{Start: 4, End: 11},
+				Err:           errors.New(`unexpected character after identifier: '.'`),
+				Query:         "foo atan2.5",
+			},
+		},
+	},
+	{
+		input: "foo offset.5",
+		fail:  true,
+		errors: ParseErrors{
+			{
+				PositionRange: posrange.PositionRange{Start: 4, End: 12},
+				Err:           errors.New(`unexpected character after identifier: '.'`),
+				Query:         "foo offset.5",
+			},
+		},
+	},
+	{
+		input: "1 > bool .5",
+		expected: &BinaryExpr{
+			Op: GTR,
+			LHS: &NumberLiteral{
+				Val:      1,
+				PosRange: posrange.PositionRange{Start: 0, End: 1},
+			},
+			RHS: &NumberLiteral{
+				Val:      0.5,
+				PosRange: posrange.PositionRange{Start: 9, End: 11},
+			},
+			ReturnBool: true,
+		},
+	},
+	{
+		input: "1 atan2 .5",
+		expected: &BinaryExpr{
+			Op: ATAN2,
+			LHS: &NumberLiteral{
+				Val:      1,
+				PosRange: posrange.PositionRange{Start: 0, End: 1},
+			},
+			RHS: &NumberLiteral{
+				Val:      0.5,
+				PosRange: posrange.PositionRange{Start: 8, End: 10},
+			},
+		},
+	},
+	{
+		input: "foo offset .5",
+		expected: &VectorSelector{
+			Name:           "foo",
+			OriginalOffset: 500 * time.Millisecond,
+			LabelMatchers: []*labels.Matcher{
+				MustLabelMatcher(labels.MatchEqual, model.MetricNameLabel, "foo"),
+			},
+			PosRange: posrange.PositionRange{Start: 0, End: 13},
+		},
+	},
+	{
 		input: "foo == bool 1",
 		expected: &BinaryExpr{
 			Op: EQLC,
