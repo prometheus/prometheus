@@ -330,6 +330,9 @@ func (c *SDConfig) UnmarshalYAML(unmarshal func(any) error) error {
 // Name returns the name of the AWS Config.
 func (*SDConfig) Name() string { return "aws" }
 
+// RefreshMechanism returns the role, which is the mechanism label of the refresh metrics.
+func (c *SDConfig) RefreshMechanism() string { return string(c.Role) }
+
 // NewDiscovererMetrics implements discovery.Config.
 func (*SDConfig) NewDiscovererMetrics(_ prometheus.Registerer, rmi discovery.RefreshMetricsInstantiator) discovery.DiscovererMetrics {
 	return &awsMetrics{refreshMetrics: rmi}

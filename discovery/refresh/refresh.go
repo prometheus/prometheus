@@ -20,6 +20,7 @@ import (
 	"time"
 
 	"github.com/prometheus/common/promslog"
+	"go.uber.org/atomic"
 
 	"github.com/prometheus/prometheus/discovery"
 	"github.com/prometheus/prometheus/discovery/targetgroup"
@@ -39,13 +40,13 @@ type Discovery struct {
 	logger   *slog.Logger
 	interval time.Duration
 	refreshf func(ctx context.Context) ([]*targetgroup.Group, error)
-	metrics  *discovery.RefreshMetrics
+	mech     string
+	rmi      discovery.RefreshMetricsInstantiator
+	metrics  atomic.Pointer[discovery.RefreshMetrics]
 }
 
 // NewDiscovery returns a Discoverer function that calls a refresh() function at every interval.
 func NewDiscovery(opts Options) *Discovery {
-	m := opts.MetricsInstantiator.Instantiate(opts.Mech, opts.SetName)
-
 	var logger *slog.Logger
 	if opts.Logger == nil {
 		logger = promslog.NewNopLogger()
@@ -57,10 +58,17 @@ func NewDiscovery(opts Options) *Discovery {
 		logger:   logger,
 		interval: opts.Interval,
 		refreshf: opts.RefreshF,
-		metrics:  m,
+		mech:     opts.Mech,
+		rmi:      opts.MetricsInstantiator,
 	}
+	d.UpdateSetName(opts.SetName)
 
 	return &d
+}
+
+// UpdateSetName labels the refresh metrics with a new config name, without restarting the discoverer.
+func (d *Discovery) UpdateSetName(setName string) {
+	d.metrics.Store(d.rmi.Instantiate(d.mech, setName))
 }
 
 // Run implements the Discoverer interface.
@@ -106,14 +114,15 @@ func (d *Discovery) Run(ctx context.Context, ch chan<- []*targetgroup.Group) {
 
 func (d *Discovery) refresh(ctx context.Context) ([]*targetgroup.Group, error) {
 	now := time.Now()
+	metrics := d.metrics.Load()
 	defer func() {
-		d.metrics.Duration.Observe(time.Since(now).Seconds())
-		d.metrics.DurationHistogram.Observe(time.Since(now).Seconds())
+		metrics.Duration.Observe(time.Since(now).Seconds())
+		metrics.DurationHistogram.Observe(time.Since(now).Seconds())
 	}()
 
 	tgs, err := d.refreshf(ctx)
 	if err != nil {
-		d.metrics.Failures.Inc()
+		metrics.Failures.Inc()
 	}
 	return tgs, err
 }
