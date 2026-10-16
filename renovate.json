@@ -138,6 +138,16 @@
         "patch"
       ],
       "enabled": true
+    },
+    {
+      "description": "Only open frontend update PRs when approved via the Dependency Dashboard",
+      "matchManagers": [
+        "npm"
+      ],
+      "matchFileNames": [
+        "web/ui/**"
+      ],
+      "dependencyDashboardApproval": true
     }
   ],
   "branchPrefix": "deps-update/",
