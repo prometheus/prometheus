@@ -21,6 +21,7 @@ import (
 	"github.com/prometheus/common/model"
 
 	"github.com/prometheus/prometheus/model/labels"
+	"github.com/prometheus/prometheus/model/value"
 )
 
 // ConvertNHCBToClassic converts Native Histogram Custom Buckets (NHCB) to classic histogram series.
@@ -107,23 +108,33 @@ func ConvertNHCBToClassic(nhcb any, lset labels.Labels, lsetBuilder *labels.Buil
 		return fmt.Errorf("unsupported histogram type: %T", h)
 	}
 
+	isStale := value.IsStaleNaN(sum)
 	currCount := float64(0)
 	for i, val := range customValues {
 		currCount += positiveBuckets[i]
+		bucketVal := currCount
+		if isStale {
+			bucketVal = sum
+		}
 		lsetBuilder.Reset(lset)
 		lsetBuilder.Set(model.MetricNameLabel, baseName+"_bucket")
 		lsetBuilder.Set(model.BucketLabel, labels.FormatOpenMetricsFloat(val))
-		if err := emitSeriesFn(lsetBuilder.Labels(), currCount); err != nil {
+		if err := emitSeriesFn(lsetBuilder.Labels(), bucketVal); err != nil {
 			return err
 		}
 	}
 
 	currCount += positiveBuckets[len(positiveBuckets)-1]
+	infVal := currCount
+	if isStale {
+		infVal = sum
+		count = sum
+	}
 
 	lsetBuilder.Reset(lset)
 	lsetBuilder.Set(model.MetricNameLabel, baseName+"_bucket")
 	lsetBuilder.Set(model.BucketLabel, labels.FormatOpenMetricsFloat(math.Inf(1)))
-	if err := emitSeriesFn(lsetBuilder.Labels(), currCount); err != nil {
+	if err := emitSeriesFn(lsetBuilder.Labels(), infVal); err != nil {
 		return err
 	}
 

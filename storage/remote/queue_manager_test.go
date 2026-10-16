@@ -3491,11 +3491,11 @@ func TestAppendToConvertNHCBToClassic(t *testing.T) {
 				require.NoError(t, err)
 				require.Len(t, got, 1, "receiver must preserve the histogram exemplar")
 				require.Len(t, got[0].Exemplars, 1)
-				require.Equal(t, exemplarLabels, got[0].Exemplars[0].Labels)
+				testutil.RequireEqual(t, exemplarLabels, got[0].Exemplars[0].Labels)
 				require.Equal(t, 0.5, got[0].Exemplars[0].Value)
 				require.Equal(t, int64(1000), got[0].Exemplars[0].Ts)
 				if kind == "native control" {
-					require.Equal(t, baseSeries.Labels, got[0].SeriesLabels)
+					testutil.RequireEqual(t, baseSeries.Labels, got[0].SeriesLabels)
 				} else {
 					require.Equal(t, "latency_bucket", got[0].SeriesLabels.Get("__name__"))
 					bound, err := strconv.ParseFloat(got[0].SeriesLabels.Get("le"), 64)
