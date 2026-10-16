@@ -16,7 +16,6 @@ package histogram
 import (
 	"errors"
 	"fmt"
-	"math"
 
 	"github.com/prometheus/common/model"
 
@@ -42,11 +41,12 @@ func ConvertNHCBToClassic(nhcb any, lset labels.Labels, lsetBuilder *labels.Buil
 	defer lsetBuilder.Reset(oldLabels)
 
 	var (
-		customValues    []float64
-		positiveBuckets []float64
-		count, sum      float64
-		idx             int // This index is to track buckets in Classic Histogram
-		currIdx         int // This index is to track buckets in Native Histogram
+		customValues   []float64
+		spans          []Span
+		intBuckets     []int64
+		floatBuckets   []float64
+		isIntHistogram bool
+		count, sum     float64
 	)
 
 	switch h := nhcb.(type) {
@@ -57,25 +57,14 @@ func ConvertNHCBToClassic(nhcb any, lset labels.Labels, lsetBuilder *labels.Buil
 
 		// Validate the histogram before conversion.
 		// The caller must ensure that the provided histogram is valid NHCB.
-		if h.Validate() != nil {
-			return errors.New(h.Validate().Error())
+		if err := h.Validate(); err != nil {
+			return err
 		}
 
 		customValues = h.CustomValues
-		positiveBuckets = make([]float64, len(customValues)+1)
-
-		// Histograms are in delta format so we first bring them to absolute format.
-		acc := int64(0)
-		for _, s := range h.PositiveSpans {
-			// Skipped buckets are empty, so leave them at zero.
-			idx += int(s.Offset)
-			for i := 0; i < int(s.Length); i++ {
-				acc += h.PositiveBuckets[currIdx]
-				positiveBuckets[idx] = float64(acc)
-				idx++
-				currIdx++
-			}
-		}
+		spans = h.PositiveSpans
+		intBuckets = h.PositiveBuckets
+		isIntHistogram = true
 		count = float64(h.Count)
 		sum = h.Sum
 	case *FloatHistogram:
@@ -85,66 +74,78 @@ func ConvertNHCBToClassic(nhcb any, lset labels.Labels, lsetBuilder *labels.Buil
 
 		// Validate the histogram before conversion.
 		// The caller must ensure that the provided histogram is valid NHCB.
-		if h.Validate() != nil {
-			return errors.New(h.Validate().Error())
+		if err := h.Validate(); err != nil {
+			return err
 		}
 		customValues = h.CustomValues
-		positiveBuckets = make([]float64, len(customValues)+1)
-
-		for _, span := range h.PositiveSpans {
-			// Since Float Histogram is already in absolute format we should
-			// keep the sparse buckets empty so we jump and go to next filled
-			// bucket index.
-			idx += int(span.Offset)
-			for i := 0; i < int(span.Length); i++ {
-				positiveBuckets[idx] = h.PositiveBuckets[currIdx]
-				idx++
-				currIdx++
-			}
-		}
+		spans = h.PositiveSpans
+		floatBuckets = h.PositiveBuckets
 		count = h.Count
 		sum = h.Sum
 	default:
 		return fmt.Errorf("unsupported histogram type: %T", h)
 	}
 
+	var (
+		spanIdx   int
+		nextIdx   int
+		remInSpan int
+		currIdx   int
+		intAcc    int64
+		currCount float64
+	)
+	stepBucket := func(i int) {
+		for remInSpan == 0 && spanIdx < len(spans) {
+			nextIdx += int(spans[spanIdx].Offset)
+			remInSpan = int(spans[spanIdx].Length)
+			spanIdx++
+		}
+		if remInSpan > 0 && i == nextIdx {
+			if isIntHistogram {
+				intAcc += intBuckets[currIdx]
+				currCount += float64(intAcc)
+			} else {
+				currCount += floatBuckets[currIdx]
+			}
+			currIdx++
+			nextIdx++
+			remInSpan--
+		}
+	}
+
 	isStale := value.IsStaleNaN(sum)
-	currCount := float64(0)
+	lsetBuilder.Reset(lset)
+	lsetBuilder.Set(model.MetricNameLabel, baseName+"_bucket")
 	for i, val := range customValues {
-		currCount += positiveBuckets[i]
+		stepBucket(i)
 		bucketVal := currCount
 		if isStale {
 			bucketVal = sum
 		}
-		lsetBuilder.Reset(lset)
-		lsetBuilder.Set(model.MetricNameLabel, baseName+"_bucket")
 		lsetBuilder.Set(model.BucketLabel, labels.FormatOpenMetricsFloat(val))
 		if err := emitSeriesFn(lsetBuilder.Labels(), bucketVal); err != nil {
 			return err
 		}
 	}
 
-	currCount += positiveBuckets[len(positiveBuckets)-1]
+	stepBucket(len(customValues))
 	infVal := currCount
 	if isStale {
 		infVal = sum
 		count = sum
 	}
 
-	lsetBuilder.Reset(lset)
-	lsetBuilder.Set(model.MetricNameLabel, baseName+"_bucket")
-	lsetBuilder.Set(model.BucketLabel, labels.FormatOpenMetricsFloat(math.Inf(1)))
+	lsetBuilder.Set(model.BucketLabel, "+Inf")
 	if err := emitSeriesFn(lsetBuilder.Labels(), infVal); err != nil {
 		return err
 	}
 
-	lsetBuilder.Reset(lset)
+	lsetBuilder.Del(model.BucketLabel)
 	lsetBuilder.Set(model.MetricNameLabel, baseName+"_count")
 	if err := emitSeriesFn(lsetBuilder.Labels(), count); err != nil {
 		return err
 	}
 
-	lsetBuilder.Reset(lset)
 	lsetBuilder.Set(model.MetricNameLabel, baseName+"_sum")
 	if err := emitSeriesFn(lsetBuilder.Labels(), sum); err != nil {
 		return err

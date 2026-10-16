@@ -391,3 +391,59 @@ func TestConvertNHCBToClassicIntFloatAgreement(t *testing.T) {
 	}
 	require.Equal(t, count, infBucket)
 }
+
+// Recommended CLI invocation:
+//
+//	export bench=convertNHCB && go test ./model/histogram/... \
+//		-run '^$' -bench '^BenchmarkConvertNHCBToClassic$' \
+//		-benchtime 1s -count 6 -cpu 2 -timeout 999m -benchmem \
+//		| tee ${bench}.txt
+func BenchmarkConvertNHCBToClassic(b *testing.B) {
+	h := &Histogram{
+		Schema:       CustomBucketsSchema,
+		CustomValues: []float64{0.005, 0.01, 0.025, 0.05, 0.1, 0.25, 0.5, 1, 2.5, 5, 10},
+		PositiveSpans: []Span{
+			{Offset: 0, Length: 4},
+			{Offset: 2, Length: 5},
+		},
+		PositiveBuckets: []int64{10, 5, -3, 8, 2, 0, 4, -1, 3},
+		Count:           180,
+		Sum:             456.78,
+	}
+	fh := h.ToFloat(nil)
+	lset := labels.FromStrings(
+		"__name__", "http_request_duration_seconds",
+		"job", "api-server",
+		"instance", "10.0.0.1:8080",
+		"method", "GET",
+		"status", "200",
+	)
+
+	b.Run("int", func(b *testing.B) {
+		lb := labels.NewBuilder(labels.EmptyLabels())
+		b.ReportAllocs()
+		b.ResetTimer()
+		for b.Loop() {
+			err := ConvertNHCBToClassic(h, lset, lb, func(labels.Labels, float64) error {
+				return nil
+			})
+			if err != nil {
+				b.Fatal(err)
+			}
+		}
+	})
+
+	b.Run("float", func(b *testing.B) {
+		lb := labels.NewBuilder(labels.EmptyLabels())
+		b.ReportAllocs()
+		b.ResetTimer()
+		for b.Loop() {
+			err := ConvertNHCBToClassic(fh, lset, lb, func(labels.Labels, float64) error {
+				return nil
+			})
+			if err != nil {
+				b.Fatal(err)
+			}
+		}
+	})
+}
