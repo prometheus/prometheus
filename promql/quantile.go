@@ -327,9 +327,9 @@ func HistogramQuantile(q float64, h *histogram.FloatHistogram, metricName string
 	// and +Inf at some point, which made the Sum == NaN.
 	if math.IsNaN(h.Sum) {
 		// Detect if h.Count is greater than sum of buckets.
+		// Preserve the selected bucket for interpolation below.
 		for it.Next() {
-			bucket = it.At()
-			count += bucket.Count
+			count += it.At().Count
 		}
 		if count < h.Count {
 			annos.Add(annotations.NewNativeHistogramQuantileNaNSkewInfo(metricName, pos))
@@ -752,5 +752,8 @@ func quantile(q float64, values vectorByValueHeap) float64 {
 	upperIndex := math.Min(n-1, lowerIndex+1)
 
 	weight := rank - math.Floor(rank)
+	if weight == 0 {
+		return values[int(lowerIndex)].F
+	}
 	return values[int(lowerIndex)].F*(1-weight) + values[int(upperIndex)].F*weight
 }

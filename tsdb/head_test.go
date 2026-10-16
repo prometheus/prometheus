@@ -16,6 +16,7 @@ package tsdb
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"math"
@@ -4150,6 +4151,22 @@ func TestHeadShardedPostings(t *testing.T) {
 			require.NoError(t, ir.Series(id, &lbls, nil))
 			require.Equal(t, shardIndex, labels.StableHash(lbls.Labels())%shardCount)
 		}
+	}
+
+	errExpected := errors.New("postings error")
+	for _, tc := range []struct {
+		name string
+		refs []storage.SeriesRef
+	}{
+		{name: "empty"},
+		{name: "non-empty", refs: expected},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			p := index.Merge(ctx, index.NewListPostings(tc.refs), index.ErrPostings(errExpected))
+			p = ir.ShardedPostings(p, 0, shardCount)
+			require.False(t, p.Next())
+			require.ErrorIs(t, p.Err(), errExpected)
+		})
 	}
 }
 

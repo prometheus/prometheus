@@ -1282,10 +1282,12 @@ func (m mergedStringIter) Err() error {
 }
 
 // DeletedIterator wraps chunk Iterator and makes sure any deleted metrics are not returned.
+// To reuse it, set both Iter and Intervals; no other state needs resetting.
 type DeletedIterator struct {
 	// Iter is an Iterator to be wrapped.
 	Iter chunkenc.Iterator
-	// Intervals are the deletion intervals.
+	// Intervals are the deletion intervals, sorted by Mint in ascending order.
+	// The iterator drops intervals from the front as it moves past them.
 	Intervals tombstones.Intervals
 }
 
