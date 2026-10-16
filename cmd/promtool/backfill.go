@@ -19,6 +19,7 @@ import (
 	"fmt"
 	"io"
 	"math"
+	"os"
 	"time"
 
 	"github.com/oklog/ulid/v2"
@@ -26,6 +27,7 @@ import (
 
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/model/textparse"
+	"github.com/prometheus/prometheus/storage"
 	"github.com/prometheus/prometheus/tsdb"
 )
 
@@ -96,8 +98,9 @@ func createBlocks(input []byte, mint, maxt, blockDuration int64, maxSamplesInApp
 	}()
 
 	var (
-		wroteHeader  bool
-		nextSampleTs int64 = math.MaxInt64
+		wroteHeader       bool
+		nextSampleTs      int64 = math.MaxInt64
+		duplicatesSkipped int
 	)
 
 	lb := labels.NewBuilder(labels.EmptyLabels())
@@ -169,6 +172,16 @@ func createBlocks(input []byte, mint, maxt, blockDuration int64, maxSamplesInApp
 				lbls := lb.Labels()
 
 				if _, err := app.Append(0, lbls, *ts, v); err != nil {
+					// Within a single appender batch, TSDB silently drops duplicate
+					// samples (same series + timestamp, different value) at Commit().
+					// Across batch boundaries the first sample has already been
+					// committed, so Append returns ErrDuplicateSampleForTimestamp.
+					// Skip those samples so behaviour is consistent regardless of
+					// where the duplicate falls relative to maxSamplesInAppender.
+					if errors.Is(err, storage.ErrDuplicateSampleForTimestamp) {
+						duplicatesSkipped++
+						continue
+					}
 					return fmt.Errorf("add sample: %w", err)
 				}
 
@@ -223,6 +236,10 @@ func createBlocks(input []byte, mint, maxt, blockDuration int64, maxSamplesInApp
 		if err != nil {
 			return fmt.Errorf("process blocks: %w", err)
 		}
+	}
+
+	if !quiet && duplicatesSkipped > 0 {
+		fmt.Fprintf(os.Stderr, "skipped %d duplicate sample(s)\n", duplicatesSkipped)
 	}
 	return nil
 }
