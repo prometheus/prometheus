@@ -1,0 +1,10 @@
+rule_files:
+  - coverage_emptylabel_rules.yml
+
+evaluation_interval: 1m
+
+tests:
+  - promql_expr_test:
+      - expr: 'ALERTS{alertname="EmptyLabel",severity="page"}'
+        eval_time: 0m
+        exp_samples: []

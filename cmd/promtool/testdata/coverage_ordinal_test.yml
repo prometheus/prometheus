@@ -1,0 +1,5 @@
+# Exercises neither declaration, so both must be counted and listed as untested.
+rule_files:
+  - coverage_ordinal_rules.yml
+
+tests: []

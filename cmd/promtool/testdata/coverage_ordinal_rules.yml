@@ -1,0 +1,15 @@
+# Two declarations in the same group that share a name, expression and labels and
+# differ only in "for". They are two distinct rules and must be counted twice.
+groups:
+  - name: ordinal
+    rules:
+      - alert: Twin
+        expr: up == 0
+        for: 5m
+        labels:
+          severity: page
+      - alert: Twin
+        expr: up == 0
+        for: 30m
+        labels:
+          severity: page

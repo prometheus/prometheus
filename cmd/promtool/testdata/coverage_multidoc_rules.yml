@@ -1,0 +1,9 @@
+# A rule file with a second YAML document. The rule loader warns about it, which
+# used to panic the coverage loader through its nil logger.
+groups:
+  - name: multidoc
+    rules:
+      - record: multidoc:metric
+        expr: vector(1)
+---
+groups: []

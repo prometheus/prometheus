@@ -1,0 +1,17 @@
+# Tests the shared recording rule only:metric.
+rule_files:
+  - coverage_shared_rules.yml
+
+evaluation_interval: 1m
+
+tests:
+  - interval: 1m
+    input_series:
+      - series: 'up{job="prometheus"}'
+        values: "1x5"
+    promql_expr_test:
+      - expr: only:metric
+        eval_time: 1m
+        exp_samples:
+          - value: 1
+            labels: 'only:metric{job="prometheus"}'

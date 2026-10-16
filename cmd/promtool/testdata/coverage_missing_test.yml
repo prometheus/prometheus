@@ -1,0 +1,15 @@
+# The second entry matches no file. The first is fully covered, so the totals
+# look complete unless the unmatched pattern is tracked.
+rule_files:
+  - coverage_missing_rules.yml
+  - coverage_no_such_file.yml
+
+evaluation_interval: 1m
+
+tests:
+  - promql_expr_test:
+      - expr: covered:metric
+        eval_time: 0m
+        exp_samples:
+          - labels: covered:metric
+            value: 1

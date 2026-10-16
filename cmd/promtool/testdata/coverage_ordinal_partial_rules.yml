@@ -1,0 +1,10 @@
+# Two declarations that differ only in "for". A selector on the pending state can
+# only observe the second one, so the report has to say which is untested.
+groups:
+  - name: partial
+    rules:
+      - alert: Twin
+        expr: up == 0
+      - alert: Twin
+        expr: up == 0
+        for: 5m

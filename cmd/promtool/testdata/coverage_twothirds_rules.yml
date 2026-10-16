@@ -1,0 +1,11 @@
+# Three recording rules of which two are tested, yielding 2/3 (66.7%) coverage,
+# used to exercise the coverage-threshold rounding behaviour.
+groups:
+  - name: g
+    rules:
+      - record: a:metric
+        expr: up
+      - record: b:metric
+        expr: up
+      - record: c:metric
+        expr: up
