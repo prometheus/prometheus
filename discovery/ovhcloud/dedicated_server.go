@@ -131,10 +131,7 @@ func (d *dedicatedServerDiscovery) refresh(context.Context) ([]*targetgroup.Grou
 				ipv6 = ip.String()
 			}
 		}
-		defaultIP := ipv4
-		if defaultIP == "" {
-			defaultIP = ipv6
-		}
+		defaultIP := formatTargetAddress(ipv4, ipv6)
 		labels := model.LabelSet{
 			model.AddressLabel:                              model.LabelValue(defaultIP),
 			model.InstanceLabel:                             model.LabelValue(server.Name),
