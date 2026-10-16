@@ -74,6 +74,8 @@ github.com/aws/aws-sdk-go-v2/service/kafka v1.65.2 h1:kk2DEk5kG5RsckxOXCoQ7eTudr
 github.com/aws/aws-sdk-go-v2/service/kafka v1.65.2/go.mod h1:dLmfTMk7qZ1UmYnVjdBBU/zcqDCeTSdamY0gRly2QRc=
 github.com/aws/aws-sdk-go-v2/service/lightsail v1.66.2 h1:xVCyjlJP8BzmYpkpjQpFkHndR5ssYGC3XClMDKT3+XE=
 github.com/aws/aws-sdk-go-v2/service/lightsail v1.66.2/go.mod h1:9zpsNDhJzOqXcnwLUy0Uv1+h1/e0GXGh8n/NdYJ9GK0=
+github.com/aws/aws-sdk-go-v2/service/mq v1.45.2 h1:lG4/VZnztd+Apzxur+h+H67IWqsAjQ8hjw+lxm76UYY=
+github.com/aws/aws-sdk-go-v2/service/mq v1.45.2/go.mod h1:DeFn1Wiiee6BBtOAL5gBoYVOEtlQ11Jx3WfI2M0dyRA=
 github.com/aws/aws-sdk-go-v2/service/rds v1.130.1 h1:H17oFwC/icF6BB/UeG1EskOdI/n7ugkVKMs8aAFi4Yo=
 github.com/aws/aws-sdk-go-v2/service/rds v1.130.1/go.mod h1:ISB8224E71TShRfUITcXvgbjlq0MVx/KWpvF0jbiFmg=
 github.com/aws/aws-sdk-go-v2/service/signin v1.10.2 h1:vrPP4O9VABnquYrDHfU+Fu0Fp6TuzaqPUu9Fh7VBBVY=

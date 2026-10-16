@@ -19,6 +19,7 @@ require (
 	github.com/aws/aws-sdk-go-v2/service/elasticache v1.63.1
 	github.com/aws/aws-sdk-go-v2/service/kafka v1.65.2
 	github.com/aws/aws-sdk-go-v2/service/lightsail v1.66.2
+	github.com/aws/aws-sdk-go-v2/service/mq v1.45.2
 	github.com/aws/aws-sdk-go-v2/service/rds v1.130.1
 	github.com/aws/aws-sdk-go-v2/service/sts v1.51.2
 	github.com/aws/smithy-go v1.28.4

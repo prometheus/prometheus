@@ -1302,11 +1302,117 @@ The following meta labels are available on targets during [relabeling](#relabel_
 * `__meta_rds_instance_timezone`: the time zone of the DB instance
 * `__meta_rds_instance_upgrade_rollout_order`: the upgrade rollout order
 
+#### `mq`
+
+The `mq` role discovers targets from [AWS MQ](https://aws.amazon.com/amazon-mq/)
+brokers, for both the ActiveMQ and RabbitMQ engines. One target is created for
+each `https` endpoint exposed by a broker's instance(s).
+
+**Important**: [only RabbitMQ 4.2+ brokers support Prometheus
+metrics](https://docs.aws.amazon.com/amazon-mq/latest/developer-guide/rabbitmq-prometheus-metrics.html);
+ActiveMQ brokers do not.
+
+**Important**: how instances map to `https` endpoints differs by deployment mode:
+
+* `SINGLE_INSTANCE` and `ACTIVE_STANDBY_MULTI_AZ` (ActiveMQ) brokers report one
+  broker instance per node, each with its own host and a single `https`
+  endpoint, so one target is created per node. The API does not indicate which
+  instance is currently active, so in `ACTIVE_STANDBY_MULTI_AZ` mode both the
+  active and standby instance are discovered as targets; neither will scrape
+  successfully (see above).
+* `SINGLE_INSTANCE` and `CLUSTER_MULTI_AZ` (RabbitMQ) brokers report all of
+  their nodes as a single broker instance with one or more `https` endpoints
+  (same host, distinct ports, one per node), so one target is still created
+  per node. RabbitMQ brokers do not expose a per-node IP address or identifier
+  through this API, so `__meta_mq_broker_instance_ip_address` is absent on
+  these targets and nodes can only be told apart by their endpoint/port.
+
+A broker with no running instances (for example, while it is still being
+created) yields no targets.
+
+The IAM credentials used must have the following permissions to discover
+scrape targets:
+
+- `mq:ListBrokers`
+- `mq:DescribeBroker`
+
+The following meta labels are available on targets during [relabeling](#relabel_config):
+
+**Broker labels (common to every target of a broker):**
+
+* `__meta_mq_authentication_strategy`: the authentication strategy used by the broker
+* `__meta_mq_auto_minor_version_upgrade`: whether automatic minor version upgrades are enabled
+* `__meta_mq_broker_arn`: the ARN of the broker
+* `__meta_mq_broker_id`: the ID of the broker
+* `__meta_mq_broker_name`: the name of the broker
+* `__meta_mq_broker_state`: the state of the broker (e.g., RUNNING, CREATION_IN_PROGRESS, REBOOT_IN_PROGRESS)
+* `__meta_mq_configurations_current_id`: the ID of the broker's current configuration
+* `__meta_mq_configurations_current_revision`: the revision of the broker's current configuration
+* `__meta_mq_created`: the creation time of the broker in RFC3339 format
+* `__meta_mq_data_replication_mode`: the data replication mode of the broker (NONE or CRDR)
+* `__meta_mq_data_replication_metadata_data_replication_role`: the replication role of the broker (data replication deployments only)
+* `__meta_mq_data_replication_metadata_data_replication_counterpart_broker_id`: the broker ID of the replication counterpart (data replication deployments only)
+* `__meta_mq_data_replication_metadata_data_replication_counterpart_region`: the region of the replication counterpart (data replication deployments only)
+* `__meta_mq_deployment_mode`: the deployment mode of the broker (e.g., SINGLE_INSTANCE, ACTIVE_STANDBY_MULTI_AZ, CLUSTER_MULTI_AZ)
+* `__meta_mq_encryption_options_use_aws_owned_key`: whether the broker uses an AWS-owned encryption key
+* `__meta_mq_encryption_options_kms_key_id`: the ID of the customer-managed KMS key used for encryption, if any
+* `__meta_mq_engine_type`: the broker engine (ACTIVEMQ or RABBITMQ)
+* `__meta_mq_engine_version`: the broker engine version
+* `__meta_mq_host_instance_type`: the broker's instance type (e.g., mq.m5.large)
+* `__meta_mq_ldap_server_metadata_hosts`: comma-separated list of LDAP server hosts used for authentication, if configured
+* `__meta_mq_ldap_server_metadata_role_base`: the LDAP role base DN, if configured
+* `__meta_mq_ldap_server_metadata_role_search_matching`: the LDAP role search filter, if configured
+* `__meta_mq_ldap_server_metadata_role_search_subtree`: whether the LDAP role search is recursive, if configured
+* `__meta_mq_ldap_server_metadata_role_name`: the LDAP role name attribute, if configured
+* `__meta_mq_ldap_server_metadata_service_account_username`: the LDAP service account username, if configured
+* `__meta_mq_ldap_server_metadata_user_base`: the LDAP user base DN, if configured
+* `__meta_mq_ldap_server_metadata_user_role_name`: the LDAP user role name attribute, if configured
+* `__meta_mq_ldap_server_metadata_user_search_matching`: the LDAP user search filter, if configured
+* `__meta_mq_ldap_server_metadata_user_search_subtree`: whether the LDAP user search is recursive, if configured
+* `__meta_mq_logs_audit`: whether audit logging is enabled on the broker
+* `__meta_mq_logs_audit_log_group`: the CloudWatch Logs log group audit logs are sent to, if audit logging is enabled
+* `__meta_mq_logs_general`: whether general logging is enabled on the broker
+* `__meta_mq_logs_general_log_group`: the CloudWatch Logs log group general logs are sent to
+* `__meta_mq_logs_pending_audit`: whether audit logging will be enabled once a pending logging change is applied, if a change is pending
+* `__meta_mq_logs_pending_general`: whether general logging will be enabled once a pending logging change is applied, if a change is pending
+* `__meta_mq_maintenance_window_start_time_day_of_week`: the day of the week of the broker's maintenance window
+* `__meta_mq_maintenance_window_start_time_time_of_day`: the time of day of the broker's maintenance window
+* `__meta_mq_maintenance_window_start_time_time_zone`: the time zone of the broker's maintenance window
+* `__meta_mq_pending_authentication_strategy`: the pending authentication strategy, if a change is pending
+* `__meta_mq_pending_data_replication_mode`: the pending data replication mode, if a change is pending
+* `__meta_mq_pending_data_replication_metadata_data_replication_role`: the pending replication role, if a change is pending
+* `__meta_mq_pending_data_replication_metadata_data_replication_counterpart_broker_id`: the pending replication counterpart broker ID, if a change is pending
+* `__meta_mq_pending_data_replication_metadata_data_replication_counterpart_region`: the pending replication counterpart region, if a change is pending
+* `__meta_mq_pending_engine_version`: the pending engine version, if an upgrade is pending
+* `__meta_mq_pending_host_instance_type`: the pending instance type, if a change is pending
+* `__meta_mq_pending_ldap_server_metadata_hosts`: comma-separated list of pending LDAP server hosts, if a change is pending
+* `__meta_mq_pending_ldap_server_metadata_role_base`: the pending LDAP role base DN, if a change is pending
+* `__meta_mq_pending_ldap_server_metadata_role_search_matching`: the pending LDAP role search filter, if a change is pending
+* `__meta_mq_pending_ldap_server_metadata_role_search_subtree`: the pending LDAP role search recursiveness, if a change is pending
+* `__meta_mq_pending_ldap_server_metadata_role_name`: the pending LDAP role name attribute, if a change is pending
+* `__meta_mq_pending_ldap_server_metadata_service_account_username`: the pending LDAP service account username, if a change is pending
+* `__meta_mq_pending_ldap_server_metadata_user_base`: the pending LDAP user base DN, if a change is pending
+* `__meta_mq_pending_ldap_server_metadata_user_role_name`: the pending LDAP user role name attribute, if a change is pending
+* `__meta_mq_pending_ldap_server_metadata_user_search_matching`: the pending LDAP user search filter, if a change is pending
+* `__meta_mq_pending_ldap_server_metadata_user_search_subtree`: the pending LDAP user search recursiveness, if a change is pending
+* `__meta_mq_pending_security_groups`: comma-separated list of pending security group IDs, if a change is pending
+* `__meta_mq_pending_storage_size`: the pending storage size in gibibytes (GiB), if a change is pending
+* `__meta_mq_publicly_accessible`: whether the broker is publicly accessible
+* `__meta_mq_security_groups`: comma-separated list of security group IDs attached to the broker
+* `__meta_mq_storage_size`: the storage size of the broker in gibibytes (GiB)
+* `__meta_mq_storage_type`: the storage type of the broker (EBS or EFS)
+* `__meta_mq_subnet_ids`: comma-separated list of subnet IDs the broker is deployed into
+* `__meta_mq_tags_<tagkey>`: each tag value of the broker, keyed by tag name
+
+**Broker instance labels (target-specific):**
+
+* `__meta_mq_broker_instance_endpoint`: the `https` endpoint used as the target's scrape address
+
 See below for the configuration options for AWS discovery:
 
 ```yaml
 # The AWS role to use for service discovery.
-# Must be one of: ec2, lightsail, ecs, msk, elasticache, or rds.
+# Must be one of: ec2, lightsail, ecs, msk, elasticache, mq, or rds.
 role: <string>
 
 # The AWS region. If blank, the region from the instance metadata is used.
