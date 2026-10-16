@@ -62,6 +62,9 @@ func (b *MemoizedSeriesIterator) Reset(it chunkenc.Iterator) {
 	b.lastTime = math.MinInt64
 	b.prevTime = math.MinInt64
 	b.valueType = it.Next()
+	if b.valueType != chunkenc.ValNone {
+		b.lastTime = it.AtT()
+	}
 }
 
 // PeekPrev returns the previous element of the iterator. If there is none buffered,
@@ -92,6 +95,9 @@ func (b *MemoizedSeriesIterator) Seek(t int64) chunkenc.ValueType {
 		b.lastTime = b.it.AtT()
 	}
 	if b.lastTime >= t {
+		if b.valueType == chunkenc.ValHistogram {
+			return chunkenc.ValFloatHistogram
+		}
 		return b.valueType
 	}
 	for b.Next() != chunkenc.ValNone {
