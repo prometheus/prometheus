@@ -41,6 +41,7 @@ The Prometheus monitoring server
 | <code class="text-nowrap">--storage.tsdb.no-lockfile</code> | Do not create lockfile in data directory. Use with server mode only. | `false` |
 | <code class="text-nowrap">--storage.tsdb.head-chunks-write-queue-size</code> | Size of the queue through which head chunks are written to the disk to be m-mapped, 0 disables the queue completely. Experimental. Use with server mode only. | `0` |
 | <code class="text-nowrap">--storage.tsdb.delay-compact-file.path</code> | Path to a JSON file with uploaded TSDB blocks e.g. Thanos shipper meta file. If set TSDB will only compact 1 level blocks that are marked as uploaded in that file, improving external storage integrations e.g. with Thanos sidecar. 1+ level compactions won't be delayed. Use with server mode only. |  |
+| <code class="text-nowrap">--storage.tsdb.expanded-postings-cache-size</code> | [EXPERIMENTAL] Maximum memory size of the expanded postings cache for immutable blocks. 0 disables the cache. Use with server mode only. | `0B` |
 | <code class="text-nowrap">--storage.agent.path</code> | Base path for metrics storage. Use with agent mode only. | `data-agent/` |
 | <code class="text-nowrap">--storage.agent.wal-compression</code> | Compress the agent WAL. If false, the --storage.agent.wal-compression-type flag is ignored. Use with agent mode only. | `true` |
 | <code class="text-nowrap">--storage.agent.retention.min-time</code> | Minimum age samples may be before being considered for deletion when the WAL is truncated Use with agent mode only. | `5m` |
