@@ -1,0 +1,14 @@
+rule_files:
+  - rules.yml
+
+tests:
+  - interval: 1m
+    input_series:
+      - series: 'http_requests{job="api"}'
+        values: '1 2'
+    promql_expr_test:
+      - expr: quantile_over_time(1.5, http_requests{job="api"}[5m])
+        eval_time: 2m
+        exp_samples:
+          - labels: '{job="api"}'
+            value: .Inf
