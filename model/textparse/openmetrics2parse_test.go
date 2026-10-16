@@ -1112,6 +1112,18 @@ foo_total 1.0 # {id="x"} 1.0
 			err:   "classic histogram +Inf bucket value (4) must equal count (3)",
 		},
 		{
+			input: "# TYPE foo gaugehistogram\nfoo {gcount:3,gsum:6.0,bucket:[1.0:-1,+Inf:3]}\n# EOF\n",
+			err:   "value must not be negative",
+		},
+		{
+			input: "# TYPE foo gaugehistogram\nfoo {gcount:3,gsum:6.0,bucket:[1.0:2,2.0:1,+Inf:3]}\n# EOF\n",
+			err:   "classic histogram bucket values must be cumulative",
+		},
+		{
+			input: "# TYPE foo gaugehistogram\nfoo {gcount:3,gsum:6.0,bucket:[1.0:1,2.0:2,+Inf:4]}\n# EOF\n",
+			err:   "classic histogram +Inf bucket value (4) must equal gcount (3)",
+		},
+		{
 			input: "# TYPE foo summary\nfoo {count:-1,sum:2.0,quantile:[0.5:1.0]}\n# EOF\n",
 			err:   "count must not be negative or NaN",
 		},

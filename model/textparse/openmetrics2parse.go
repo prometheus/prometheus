@@ -1490,23 +1490,19 @@ func (p *openMetrics2Parser) buildClassicHistogramPending(
 		if err != nil {
 			return nil, fmt.Errorf("invalid bucket: %w", err)
 		}
-		// Classic bucket values are counters for a histogram, which the spec
-		// forbids from being negative, requires to be cumulative, and requires
-		// the +Inf bucket value to equal count. A gauge histogram's bucket
-		// values are gauges, where the spec only discourages negative values.
-		if p.mtype != model.MetricTypeGaugeHistogram {
-			if b.count < 0 {
-				return nil, fmt.Errorf("invalid bucket: value must not be negative, got %v", b.count)
-			}
-			if b.count < prevCount {
-				return nil, fmt.Errorf("classic histogram bucket values must be cumulative, got %v after %v", b.count, prevCount)
-			}
-			if math.IsInf(b.lef, 1) && b.count != countVal {
-				return nil, fmt.Errorf("classic histogram +Inf bucket value (%v) must equal count (%v)", b.count, countVal)
-			}
-			if !math.IsNaN(b.count) {
-				prevCount = b.count
-			}
+		// Classic bucket values must not be negative, must be cumulative, and
+		// the +Inf bucket value must equal count/gcount.
+		if b.count < 0 {
+			return nil, fmt.Errorf("invalid bucket: value must not be negative, got %v", b.count)
+		}
+		if b.count < prevCount {
+			return nil, fmt.Errorf("classic histogram bucket values must be cumulative, got %v after %v", b.count, prevCount)
+		}
+		if math.IsInf(b.lef, 1) && b.count != countVal {
+			return nil, fmt.Errorf("classic histogram +Inf bucket value (%v) must equal %s (%v)", b.count, countKey, countVal)
+		}
+		if !math.IsNaN(b.count) {
+			prevCount = b.count
 		}
 		if math.IsInf(b.lef, 1) {
 			hasPosInf = true
