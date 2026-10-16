@@ -30,6 +30,9 @@ import (
 // The errors exposed.
 var (
 	ErrNotFound = errors.New("not found")
+	// ErrCostSamplingUnsupported means the requested window cannot be sampled incrementally.
+	// It must not be returned with other failures, including failures closing rejected readers.
+	ErrCostSamplingUnsupported = errors.New("bounded query cost sampling is unavailable")
 	// ErrOutOfOrderSample is when out of order support is disabled and the sample is out of order.
 	ErrOutOfOrderSample = errors.New("out of order sample")
 	// ErrOutOfBounds is when out of order support is disabled and the sample is older than the min valid time for the append.
@@ -161,6 +164,16 @@ func (q *MockQuerier) Select(_ context.Context, sortSeries bool, hints *SelectHi
 type ChunkQueryable interface {
 	// ChunkQuerier returns a new ChunkQuerier on the storage.
 	ChunkQuerier(mint, maxt int64) (ChunkQuerier, error)
+}
+
+// CostSamplingQueryable optionally provides incremental density and point-size sampling.
+// The source must retain its selected backends across reloads and must not eagerly
+// encode a whole series or window. Unsupported windows return ErrCostSamplingUnsupported
+// after closing any opened readers; other failures remain errors.
+// False means unsupported; nil with true means a definitively empty backend.
+// Callers own each returned querier, but not the source itself.
+type CostSamplingQueryable interface {
+	CostSamplingQueryable() (SampleAndChunkQueryable, bool)
 }
 
 // ChunkQuerier provides querying access over time series data of a fixed time range.

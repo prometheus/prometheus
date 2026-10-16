@@ -1657,6 +1657,143 @@ eval instant at 1m histogram_fraction(-Inf, +Inf, histogram_nan)
 
 clear
 
+# Test native histogram quantile with NaN observations and more than one
+# populated bucket. The quantile must be interpolated within the bucket where
+# the rank is reached, not within the highest bucket. Each quantile is checked
+# against the equivalent histogram_fraction.
+# The "NaN" case observed {1.5, 3, NaN}, the "no NaN" case observed {1.5, 3}.
+# The "3 buckets" case observed {1.5, 2.5, 3, 5, NaN}.
+load 1m
+    histogram_nan_multi{case="NaN"} {{schema:0 count:0 sum:0}} {{schema:0 count:3 sum:NaN offset:1 buckets:[1 1]}}
+    histogram_nan_multi{case="no NaN"} {{schema:0 count:0 sum:0}} {{schema:0 count:2 sum:4.5 offset:1 buckets:[1 1]}}
+    histogram_nan_multi{case="3 buckets"} {{schema:0 count:0 sum:0}} {{schema:0 count:5 sum:NaN offset:1 buckets:[1 2 1]}}
+
+# Rank 0.2*3 = 0.6 is reached in bucket (1,2], fraction 0.6: 2^0.6.
+eval instant at 1m histogram_quantile(0.2, histogram_nan_multi{case="NaN"})
+    expect info msg: PromQL info: input to histogram_quantile has NaN observations, result is skewed higher for metric name "histogram_nan_multi" (1:25)
+    {case="NaN"} 1.515716566510398
+
+eval instant at 1m histogram_fraction(-Inf, 1.515716566510398, histogram_nan_multi{case="NaN"})
+    expect info msg: PromQL info: input to histogram_fraction has NaN observations, which are excluded from all fractions for metric name "histogram_nan_multi" (1:45)
+    {case="NaN"} 0.2
+
+# Rank 0.3*2 = 0.6 is reached in bucket (1,2], fraction 0.6: 2^0.6, as above.
+eval instant at 1m histogram_quantile(0.3, histogram_nan_multi{case="no NaN"})
+    expect no_info
+    {case="no NaN"} 1.515716566510398
+
+eval instant at 1m histogram_fraction(-Inf, 1.515716566510398, histogram_nan_multi{case="no NaN"})
+    expect no_info
+    {case="no NaN"} 0.3
+
+# Rank 0.4*5 = 2 is reached in bucket (2,4], which holds 2 observations after
+# 1 observation in lower buckets, fraction 0.5: 2^1.5.
+eval instant at 1m histogram_quantile(0.4, histogram_nan_multi{case="3 buckets"})
+    expect info msg: PromQL info: input to histogram_quantile has NaN observations, result is skewed higher for metric name "histogram_nan_multi" (1:25)
+    {case="3 buckets"} 2.82842712474619
+
+eval instant at 1m histogram_fraction(-Inf, 2.82842712474619, histogram_nan_multi{case="3 buckets"})
+    expect info msg: PromQL info: input to histogram_fraction has NaN observations, which are excluded from all fractions for metric name "histogram_nan_multi" (1:44)
+    {case="3 buckets"} 0.4
+
+clear
+
+# Observations {-Inf, 1.5, 100000, +Inf}: sum is NaN without NaN observations.
+# With schema -4, bucket i has upper bound 2^(16*i), so the ±Inf observations
+# are in the buckets with index ±65.
+load 1m
+    histogram_inf_obs {{schema:-4 count:0 sum:0}} {{schema:-4 count:4 sum:NaN offset:1 buckets:[1 1 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 1] n_offset:65 n_buckets:[1]}}
+
+# Rank 0.375*4 = 1.5 is reached in bucket (1,2^16], fraction 0.5: 2^8.
+eval instant at 1m histogram_quantile(0.375, histogram_inf_obs)
+    expect no_info
+    {} 256
+
+eval instant at 1m histogram_fraction(-Inf, 256, histogram_inf_obs)
+    expect no_info
+    {} 0.375
+
+clear
+
+# Test the same cases with classic histograms and native histograms with custom
+# buckets. NaN observations are counted in the +Inf bucket, so there is no info
+# annotation. Interpolation is linear.
+load_with_nhcb 1m
+    histogram_nan_multi_bucket{case="NaN", le="1"}          0 0
+    histogram_nan_multi_bucket{case="NaN", le="2"}          0 1
+    histogram_nan_multi_bucket{case="NaN", le="4"}          0 2
+    histogram_nan_multi_bucket{case="NaN", le="8"}          0 2
+    histogram_nan_multi_bucket{case="NaN", le="+Inf"}       0 3
+    histogram_nan_multi_sum{case="NaN"}                     0 NaN
+    histogram_nan_multi_count{case="NaN"}                   0 3
+    histogram_nan_multi_bucket{case="no NaN", le="1"}       0 0
+    histogram_nan_multi_bucket{case="no NaN", le="2"}       0 1
+    histogram_nan_multi_bucket{case="no NaN", le="4"}       0 2
+    histogram_nan_multi_bucket{case="no NaN", le="8"}       0 2
+    histogram_nan_multi_bucket{case="no NaN", le="+Inf"}    0 2
+    histogram_nan_multi_sum{case="no NaN"}                  0 4.5
+    histogram_nan_multi_count{case="no NaN"}                0 2
+    histogram_nan_multi_bucket{case="3 buckets", le="1"}    0 0
+    histogram_nan_multi_bucket{case="3 buckets", le="2"}    0 1
+    histogram_nan_multi_bucket{case="3 buckets", le="4"}    0 3
+    histogram_nan_multi_bucket{case="3 buckets", le="8"}    0 4
+    histogram_nan_multi_bucket{case="3 buckets", le="+Inf"} 0 5
+    histogram_nan_multi_sum{case="3 buckets"}               0 NaN
+    histogram_nan_multi_count{case="3 buckets"}             0 5
+
+# Rank 0.2*3 = 0.6 is reached in bucket (1,2], fraction 0.6: 1.6.
+eval instant at 1m histogram_quantile(0.2, histogram_nan_multi_bucket{case="NaN"})
+    expect no_info
+    {case="NaN"} 1.6
+
+eval instant at 1m histogram_quantile(0.2, histogram_nan_multi{case="NaN"})
+    expect no_info
+    {case="NaN"} 1.6
+
+eval instant at 1m histogram_fraction(-Inf, 1.6, histogram_nan_multi_bucket{case="NaN"})
+    expect no_info
+    {case="NaN"} 0.2
+
+eval instant at 1m histogram_fraction(-Inf, 1.6, histogram_nan_multi{case="NaN"})
+    expect no_info
+    {case="NaN"} 0.2
+
+# Rank 0.3*2 = 0.6 is reached in bucket (1,2], fraction 0.6: 1.6, as above.
+eval instant at 1m histogram_quantile(0.3, histogram_nan_multi_bucket{case="no NaN"})
+    expect no_info
+    {case="no NaN"} 1.6
+
+eval instant at 1m histogram_quantile(0.3, histogram_nan_multi{case="no NaN"})
+    expect no_info
+    {case="no NaN"} 1.6
+
+eval instant at 1m histogram_fraction(-Inf, 1.6, histogram_nan_multi_bucket{case="no NaN"})
+    expect no_info
+    {case="no NaN"} 0.3
+
+eval instant at 1m histogram_fraction(-Inf, 1.6, histogram_nan_multi{case="no NaN"})
+    expect no_info
+    {case="no NaN"} 0.3
+
+# Rank 0.4*5 = 2 is reached in bucket (2,4], fraction 0.5: 3.
+eval instant at 1m histogram_quantile(0.4, histogram_nan_multi_bucket{case="3 buckets"})
+    expect no_info
+    {case="3 buckets"} 3
+
+eval instant at 1m histogram_quantile(0.4, histogram_nan_multi{case="3 buckets"})
+    expect no_info
+    {case="3 buckets"} 3
+
+eval instant at 1m histogram_fraction(-Inf, 3, histogram_nan_multi_bucket{case="3 buckets"})
+    expect no_info
+    {case="3 buckets"} 0.4
+
+eval instant at 1m histogram_fraction(-Inf, 3, histogram_nan_multi{case="3 buckets"})
+    expect no_info
+    {case="3 buckets"} 0.4
+
+clear
+
 # Tests to demonstrate how an extrapolation below zero is prevented for both float counters and native counter histograms.
 # Note that the float counter behaves the same as the histogram count after `increase`.
 
@@ -2532,5 +2669,46 @@ eval instant at 1m histogram_count(cbh >/ 13)
 
 eval instant at 1m histogram_fraction(13, +Inf, cbh) * histogram_count(cbh)
   {} 5.6
+
+clear
+
+# Comparing histograms for (in)equality needs the buckets, even if the
+# surrounding function would otherwise allow skipping them.
+load 1m
+  hist_eq_a {{schema:0 count:4 sum:10 buckets:[1 2 1]}}x5
+  hist_eq_b {{schema:0 count:4 sum:10 buckets:[2 1 1]}}x5
+
+eval instant at 2m hist_eq_a == hist_eq_b
+
+eval instant at 2m histogram_count(hist_eq_a == hist_eq_b)
+
+eval instant at 2m histogram_sum(hist_eq_a == hist_eq_b)
+
+eval instant at 2m histogram_count(hist_eq_a != hist_eq_b)
+  {} 4
+
+eval instant at 2m histogram_sum(hist_eq_a != hist_eq_b)
+  {} 10
+
+clear
+
+# Detecting changes and counting distinct values needs the buckets, even if
+# the surrounding function would otherwise allow skipping them.
+load 1m
+  hist_changes {{schema:0 count:4 sum:10 buckets:[1 2 1]}} {{schema:0 count:4 sum:10 buckets:[2 1 1]}}x2
+  hist_values_a {{schema:0 count:4 sum:10 buckets:[1 2 1]}}x2
+  hist_values_b {{schema:0 count:4 sum:10 buckets:[2 1 1]}}x2
+
+eval instant at 2m changes(hist_changes[5m])
+  {} 1
+
+eval instant at 2m histogram_count(hist_changes and changes(hist_changes[5m]) > 0)
+  {} 4
+
+eval instant at 2m count(count_values("value", {__name__=~"hist_values_.*"}))
+  {} 2
+
+eval instant at 2m histogram_count(hist_values_a and on() count(count_values("value", {__name__=~"hist_values_.*"})) > 1)
+  {} 4
 
 clear

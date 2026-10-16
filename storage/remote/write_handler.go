@@ -531,9 +531,12 @@ func (app *timeLimitAppenderV2) Append(ref storage.SeriesRef, ls labels.Labels, 
 	return ref, partialErr.ToError()
 }
 
+// limitExemplars returns the exemplars that are not too far in the future, and
+// reports the index of each one it drops. Exemplars are sorted by timestamp, so the
+// dropped ones come last and the kept ones keep their indexes.
 func (app *timeLimitAppenderV2) limitExemplars(exemplars []exemplar.Exemplar) ([]exemplar.Exemplar, *storage.AppendPartialError) {
 	var (
-		futureErrs []error
+		futureErrs []storage.ExemplarError
 		valid      = exemplars
 	)
 	for i, e := range exemplars {
@@ -542,7 +545,10 @@ func (app *timeLimitAppenderV2) limitExemplars(exemplars []exemplar.Exemplar) ([
 				valid = make([]exemplar.Exemplar, 0, len(exemplars)-1)
 				valid = append(valid, exemplars[:i]...)
 			}
-			futureErrs = append(futureErrs, fmt.Errorf("%w: timestamp is too far in the future", storage.ErrOutOfBounds))
+			futureErrs = append(futureErrs, storage.ExemplarError{
+				Index: i,
+				Err:   fmt.Errorf("%w: timestamp is too far in the future", storage.ErrOutOfBounds),
+			})
 			continue
 		}
 		if futureErrs != nil {

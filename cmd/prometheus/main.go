@@ -1919,6 +1919,15 @@ func (s *readyStorage) ChunkQuerier(mint, maxt int64) (storage.ChunkQuerier, err
 	return nil, tsdb.ErrNotReady
 }
 
+// CostSamplingQueryable forwards bounded sampling to the ready storage.
+func (s *readyStorage) CostSamplingQueryable() (storage.SampleAndChunkQueryable, bool) {
+	provider, ok := s.get().(storage.CostSamplingQueryable)
+	if !ok {
+		return nil, false
+	}
+	return provider.CostSamplingQueryable()
+}
+
 func (s *readyStorage) ExemplarQuerier(ctx context.Context) (storage.ExemplarQuerier, error) {
 	if x := s.get(); x != nil {
 		switch db := x.(type) {

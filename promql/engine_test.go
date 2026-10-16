@@ -22,11 +22,14 @@ import (
 	"path/filepath"
 	"slices"
 	"sort"
+	"strconv"
 	"strings"
 	"sync"
 	"testing"
+	"testing/synctest"
 	"time"
 
+	"github.com/prometheus/client_golang/prometheus"
 	"github.com/stretchr/testify/require"
 
 	"github.com/prometheus/prometheus/model/histogram"
@@ -1341,9 +1344,9 @@ load 10s
 			Query:        "max_over_time(metricWith3SampleEvery10Seconds[60s:5s])",
 			Start:        time.Unix(201, 0),
 			PeakSamples:  51,
-			TotalSamples: 72, // 36 subquery input samples + 36 materialized samples.
+			TotalSamples: 36,
 			TotalSamplesPerStep: stats.TotalSamplesPerStep{
-				201000: 72,
+				201000: 36,
 			},
 			SamplesRead: 36,
 			SamplesReadPerStep: stats.TotalSamplesPerStep{
@@ -1354,9 +1357,9 @@ load 10s
 			Query:        "sum(max_over_time(metricWith3SampleEvery10Seconds[60s:5s])) + sum(max_over_time(metricWith3SampleEvery10Seconds[60s:5s]))",
 			Start:        time.Unix(201, 0),
 			PeakSamples:  52,
-			TotalSamples: 144, // 2 * (36 subquery input samples + 36 materialized samples).
+			TotalSamples: 72,
 			TotalSamplesPerStep: stats.TotalSamplesPerStep{
-				201000: 144,
+				201000: 72,
 			},
 			SamplesRead: 72,
 			SamplesReadPerStep: stats.TotalSamplesPerStep{
@@ -1602,12 +1605,33 @@ load 10s
 			End:          time.Unix(231, 0),
 			Interval:     10 * time.Second,
 			PeakSamples:  10,
-			TotalSamples: 28, // 1 subquery result point + 6 underlying input points per step.
+			TotalSamples: 24, // 6 underlying samples per step * 4 steps.
 			TotalSamplesPerStep: stats.TotalSamplesPerStep{
-				201000: 7,
-				211000: 7,
-				221000: 7,
-				231000: 7,
+				201000: 6,
+				211000: 6,
+				221000: 6,
+				231000: 6,
+			},
+			SamplesRead: 9,
+			SamplesReadPerStep: stats.TotalSamplesPerStep{
+				201000: 6,
+				211000: 1,
+				221000: 1,
+				231000: 1,
+			},
+		},
+		{
+			Query:        "last_over_time(last_over_time(sum_over_time(metricWith1SampleEvery10Seconds[60s])[10s:10s])[10s:10s])",
+			Start:        time.Unix(201, 0),
+			End:          time.Unix(231, 0),
+			Interval:     10 * time.Second,
+			PeakSamples:  10,
+			TotalSamples: 24, // 6 underlying samples per step * 4 steps.
+			TotalSamplesPerStep: stats.TotalSamplesPerStep{
+				201000: 6,
+				211000: 6,
+				221000: 6,
+				231000: 6,
 			},
 			SamplesRead: 9,
 			SamplesReadPerStep: stats.TotalSamplesPerStep{
@@ -1628,12 +1652,12 @@ load 10s
 			End:          time.Unix(216, 0),
 			Interval:     5 * time.Second,
 			PeakSamples:  69,
-			TotalSamples: 288, // 144 materialized samples + 144 subquery input samples.
+			TotalSamples: 144,
 			TotalSamplesPerStep: stats.TotalSamplesPerStep{
-				201000: 72,
-				206000: 72,
-				211000: 72,
-				216000: 72,
+				201000: 36,
+				206000: 36,
+				211000: 36,
+				216000: 36,
 			},
 			SamplesRead: 45,
 			SamplesReadPerStep: stats.TotalSamplesPerStep{
@@ -1649,12 +1673,12 @@ load 10s
 			End:          time.Unix(220, 0), // 4s past the last aligned step (216).
 			Interval:     5 * time.Second,
 			PeakSamples:  69,
-			TotalSamples: 288, // 144 materialized samples + 144 subquery input samples.
+			TotalSamples: 144,
 			TotalSamplesPerStep: stats.TotalSamplesPerStep{
-				201000: 72,
-				206000: 72,
-				211000: 72,
-				216000: 72,
+				201000: 36,
+				206000: 36,
+				211000: 36,
+				216000: 36,
 			},
 			SamplesRead: 45,
 			SamplesReadPerStep: stats.TotalSamplesPerStep{
@@ -1670,12 +1694,12 @@ load 10s
 			End:          time.Unix(220, 0),
 			Interval:     5 * time.Second,
 			PeakSamples:  31,
-			TotalSamples: 96, // 48 materialized samples + 48 subquery input samples.
+			TotalSamples: 48,
 			TotalSamplesPerStep: stats.TotalSamplesPerStep{
-				201000: 24,
-				206000: 24,
-				211000: 24,
-				216000: 24,
+				201000: 12,
+				206000: 12,
+				211000: 12,
+				216000: 12,
 			},
 			SamplesRead: 15,
 			SamplesReadPerStep: stats.TotalSamplesPerStep{
@@ -1691,12 +1715,12 @@ load 10s
 			End:          time.Unix(220, 0),
 			Interval:     5 * time.Second,
 			PeakSamples:  31,
-			TotalSamples: 96, // 48 materialized samples + 48 subquery input samples.
+			TotalSamples: 48,
 			TotalSamplesPerStep: stats.TotalSamplesPerStep{
-				201000: 24,
-				206000: 24,
-				211000: 24,
-				216000: 24,
+				201000: 12,
+				206000: 12,
+				211000: 12,
+				216000: 12,
 			},
 			SamplesRead: 15,
 			SamplesReadPerStep: stats.TotalSamplesPerStep{
@@ -1712,12 +1736,12 @@ load 10s
 			End:          time.Unix(220, 0),
 			Interval:     5 * time.Second,
 			PeakSamples:  73,
-			TotalSamples: 576, // 288 materialized samples + 288 subquery input samples.
+			TotalSamples: 288,
 			TotalSamplesPerStep: stats.TotalSamplesPerStep{
-				201000: 144,
-				206000: 144,
-				211000: 144,
-				216000: 144,
+				201000: 72,
+				206000: 72,
+				211000: 72,
+				216000: 72,
 			},
 			SamplesRead: 90,
 			SamplesReadPerStep: stats.TotalSamplesPerStep{
@@ -1737,12 +1761,12 @@ load 10s
 			End:          time.Unix(216, 0),
 			Interval:     5 * time.Second,
 			PeakSamples:  69,
-			TotalSamples: 384, // 192 materialized samples + 192 subquery input samples.
+			TotalSamples: 192,
 			TotalSamplesPerStep: stats.TotalSamplesPerStep{
-				201000: 96,
-				206000: 96,
-				211000: 96,
-				216000: 96,
+				201000: 48,
+				206000: 48,
+				211000: 48,
+				216000: 48,
 			},
 			SamplesRead: 60,
 			SamplesReadPerStep: stats.TotalSamplesPerStep{
@@ -1758,12 +1782,12 @@ load 10s
 			End:          time.Unix(220, 0), // 4s past the last aligned step (216).
 			Interval:     5 * time.Second,
 			PeakSamples:  69,
-			TotalSamples: 384, // 192 materialized samples + 192 subquery input samples.
+			TotalSamples: 192,
 			TotalSamplesPerStep: stats.TotalSamplesPerStep{
-				201000: 96,
-				206000: 96,
-				211000: 96,
-				216000: 96,
+				201000: 48,
+				206000: 48,
+				211000: 48,
+				216000: 48,
 			},
 			SamplesRead: 60,
 			SamplesReadPerStep: stats.TotalSamplesPerStep{
@@ -1782,12 +1806,12 @@ load 10s
 			End:          time.Unix(280, 0),
 			Interval:     10 * time.Second,
 			PeakSamples:  16,
-			TotalSamples: 16, // (2 subquery input samples + 2 materialized samples) * 4 steps.
+			TotalSamples: 8,
 			TotalSamplesPerStep: stats.TotalSamplesPerStep{
-				250000: 4,
-				260000: 4,
-				270000: 4,
-				280000: 4,
+				250000: 2,
+				260000: 2,
+				270000: 2,
+				280000: 2,
 			},
 			SamplesRead: 2,
 			SamplesReadPerStep: stats.TotalSamplesPerStep{
@@ -1801,9 +1825,9 @@ load 10s
 			Query:        "quantile_over_time(time() / 1000, metricWith1SampleEvery10Seconds[20s:10s] @ 200)",
 			Start:        time.Unix(250, 0),
 			PeakSamples:  7,
-			TotalSamples: 4, // 2 subquery input samples + 2 materialized samples.
+			TotalSamples: 2,
 			TotalSamplesPerStep: stats.TotalSamplesPerStep{
-				250000: 4,
+				250000: 2,
 			},
 			SamplesRead: 2,
 			SamplesReadPerStep: stats.TotalSamplesPerStep{
@@ -1816,9 +1840,9 @@ load 10s
 			Query:        "max_over_time(metricWith1SampleEvery10Seconds[20s:10s])",
 			Start:        time.Unix(201, 0),
 			PeakSamples:  5,
-			TotalSamples: 4,
+			TotalSamples: 2,
 			TotalSamplesPerStep: stats.TotalSamplesPerStep{
-				201000: 4,
+				201000: 2,
 			},
 			SamplesRead: 2,
 			SamplesReadPerStep: stats.TotalSamplesPerStep{
@@ -1831,9 +1855,9 @@ load 10s
 			Query:        "sum_over_time(metricWith1SampleEvery10Seconds[30s:30s])",
 			Start:        time.Unix(90, 0),
 			PeakSamples:  3,
-			TotalSamples: 2,
+			TotalSamples: 1,
 			TotalSamplesPerStep: stats.TotalSamplesPerStep{
-				90000: 2,
+				90000: 1,
 			},
 			SamplesRead: 1,
 			SamplesReadPerStep: stats.TotalSamplesPerStep{
@@ -1846,9 +1870,9 @@ load 10s
 			Query:        "max_over_time(metricWith1SampleEvery10Seconds[30s:2m])",
 			Start:        time.Unix(240, 0),
 			PeakSamples:  3,
-			TotalSamples: 2,
+			TotalSamples: 1,
 			TotalSamplesPerStep: stats.TotalSamplesPerStep{
-				240000: 2,
+				240000: 1,
 			},
 			SamplesRead: 1,
 			SamplesReadPerStep: stats.TotalSamplesPerStep{
@@ -1863,10 +1887,10 @@ load 10s
 			End:          time.Unix(231, 0),
 			Interval:     30 * time.Second,
 			PeakSamples:  11,
-			TotalSamples: 12,
+			TotalSamples: 6,
 			TotalSamplesPerStep: stats.TotalSamplesPerStep{
-				201000: 6,
-				231000: 6,
+				201000: 3,
+				231000: 3,
 			},
 			SamplesRead: 6,
 			SamplesReadPerStep: stats.TotalSamplesPerStep{
@@ -1883,15 +1907,15 @@ load 10s
 			End:          time.Unix(261, 0),
 			Interval:     10 * time.Second,
 			PeakSamples:  17,
-			TotalSamples: 28,
+			TotalSamples: 14,
 			TotalSamplesPerStep: stats.TotalSamplesPerStep{
-				201000: 4,
-				211000: 4,
-				221000: 4,
-				231000: 4,
-				241000: 4,
-				251000: 4,
-				261000: 4,
+				201000: 2,
+				211000: 2,
+				221000: 2,
+				231000: 2,
+				241000: 2,
+				251000: 2,
+				261000: 2,
 			},
 			SamplesRead: 8,
 			SamplesReadPerStep: stats.TotalSamplesPerStep{
@@ -1916,10 +1940,10 @@ load 10s
 			End:          time.Unix(261, 0),
 			Interval:     1 * time.Minute,
 			PeakSamples:  14,
-			TotalSamples: 12,
+			TotalSamples: 6,
 			TotalSamplesPerStep: stats.TotalSamplesPerStep{
-				201000: 6,
-				261000: 6,
+				201000: 3,
+				261000: 3,
 			},
 			SamplesRead: 6,
 			SamplesReadPerStep: stats.TotalSamplesPerStep{
@@ -1933,9 +1957,9 @@ load 10s
 			Query:        "histogram_count(max_over_time(metricWith1HistogramEvery10Seconds[20s:10s]))",
 			Start:        time.Unix(201, 0),
 			PeakSamples:  52,
-			TotalSamples: 52,
+			TotalSamples: 26,
 			TotalSamplesPerStep: stats.TotalSamplesPerStep{
-				201000: 52,
+				201000: 26,
 			},
 			SamplesRead: 26,
 			SamplesReadPerStep: stats.TotalSamplesPerStep{
@@ -1950,11 +1974,11 @@ load 10s
 			End:          time.Unix(240, 0),
 			Interval:     60 * time.Second,
 			PeakSamples:  117,
-			TotalSamples: 156,
+			TotalSamples: 78,
 			TotalSamplesPerStep: stats.TotalSamplesPerStep{
-				120000: 52,
-				180000: 52,
-				240000: 52,
+				120000: 26,
+				180000: 26,
+				240000: 26,
 			},
 			SamplesRead: 52,
 			SamplesReadPerStep: stats.TotalSamplesPerStep{
@@ -1971,15 +1995,15 @@ load 10s
 			End:          time.Unix(400, 0),
 			Interval:     30 * time.Second,
 			PeakSamples:  99,
-			TotalSamples: 252,
+			TotalSamples: 126,
 			TotalSamplesPerStep: stats.TotalSamplesPerStep{
-				200000: 36,
-				230000: 36,
-				260000: 36,
-				290000: 36,
-				320000: 36,
-				350000: 36,
-				380000: 36,
+				200000: 18,
+				230000: 18,
+				260000: 18,
+				290000: 18,
+				320000: 18,
+				350000: 18,
+				380000: 18,
 			},
 			SamplesRead: 72,
 			SamplesReadPerStep: stats.TotalSamplesPerStep{
@@ -2024,9 +2048,9 @@ load 10s
 			Query:        "sum_over_time(metricWith3SampleEvery10Seconds[20s:10s] @ 200)",
 			Start:        time.Unix(250, 0),
 			PeakSamples:  11,
-			TotalSamples: 12,
+			TotalSamples: 6,
 			TotalSamplesPerStep: stats.TotalSamplesPerStep{
-				250000: 12,
+				250000: 6,
 			},
 			SamplesRead: 6,
 			SamplesReadPerStep: stats.TotalSamplesPerStep{
@@ -2039,13 +2063,35 @@ load 10s
 			Query:        "sum_over_time(metricWith1SampleEvery10Seconds[20s:10s] offset 1m)",
 			Start:        time.Unix(240, 0),
 			PeakSamples:  5,
-			TotalSamples: 4,
+			TotalSamples: 2,
 			TotalSamplesPerStep: stats.TotalSamplesPerStep{
-				240000: 4,
+				240000: 2,
 			},
 			SamplesRead: 2,
 			SamplesReadPerStep: stats.TotalSamplesPerStep{
 				240000: 2,
+			},
+		},
+
+		{
+			Query:        "sum_over_time(metricWith1SampleEvery10Seconds[20s:10s] offset 1m)",
+			Start:        time.Unix(240, 0),
+			End:          time.Unix(270, 0),
+			Interval:     10 * time.Second,
+			PeakSamples:  11,
+			TotalSamples: 8,
+			TotalSamplesPerStep: stats.TotalSamplesPerStep{
+				240000: 2,
+				250000: 2,
+				260000: 2,
+				270000: 2,
+			},
+			SamplesRead: 5,
+			SamplesReadPerStep: stats.TotalSamplesPerStep{
+				240000: 2,
+				250000: 1,
+				260000: 1,
+				270000: 1,
 			},
 		},
 
@@ -2054,9 +2100,9 @@ load 10s
 			Query:        "sum_over_time(metricWith3SampleEvery10Seconds[1m:10s] @ 200 offset 1m)",
 			Start:        time.Unix(300, 0),
 			PeakSamples:  27,
-			TotalSamples: 36,
+			TotalSamples: 18,
 			TotalSamplesPerStep: stats.TotalSamplesPerStep{
-				300000: 36,
+				300000: 18,
 			},
 			SamplesRead: 18,
 			SamplesReadPerStep: stats.TotalSamplesPerStep{
@@ -2069,9 +2115,9 @@ load 10s
 			Query:        "sum_over_time(max_over_time(metricWith3SampleEvery10Seconds[60s] @ 300)[5m:1m] @ 600)[10m:2m]",
 			Start:        time.Unix(800, 0),
 			PeakSamples:  23,
-			TotalSamples: 525,
+			TotalSamples: 450,
 			TotalSamplesPerStep: stats.TotalSamplesPerStep{
-				800000: 525,
+				800000: 450,
 			},
 			SamplesRead: 18,
 			SamplesReadPerStep: stats.TotalSamplesPerStep{
@@ -2080,14 +2126,14 @@ load 10s
 		},
 
 		// Outer subquery wrapping inner range-vector (evalSubquery path):
-		// TotalSamples includes the inner range-vector windows and the outer materialized samples.
+		// TotalSamples includes only the underlying samples in the inner range-vector windows.
 		{
 			Query:        "rate(sum_over_time(metricWith1SampleEvery10Seconds[30s])[1m:30s])",
 			Start:        time.Unix(240, 0),
 			PeakSamples:  5,
-			TotalSamples: 8,
+			TotalSamples: 6,
 			TotalSamplesPerStep: stats.TotalSamplesPerStep{
-				240000: 8,
+				240000: 6,
 			},
 			SamplesRead: 6,
 			SamplesReadPerStep: stats.TotalSamplesPerStep{
@@ -2125,6 +2171,16 @@ load 10s
 				require.Equal(t, c.SamplesRead, stats.Samples.SamplesRead, "Samples read mismatch")
 				require.Equal(t, &c.SamplesReadPerStep, stats.Samples.SamplesReadPerStepMap(), "Samples read per step mismatch")
 				require.Equal(t, c.PeakSamples, stats.Samples.PeakSamples, "Peak samples mismatch")
+				for ts, total := range c.TotalSamplesPerStep {
+					if c.Interval == 0 {
+						break
+					}
+					instant := c
+					instant.Start = time.UnixMilli(ts)
+					instant.Interval = 0
+					instantStats := runQuery(t, engine, opts, instant, nil)
+					require.Equal(t, int64(total), instantStats.Samples.TotalSamples, "Instant query total at %d", ts)
+				}
 
 				// Re-run with the max set to one less than the observed peak;
 				// confirms the peak is what gates the query.max-samples limit.
@@ -2330,6 +2386,1128 @@ load 10s
 			testFunc(promql.ErrTooManySamples(env))
 		})
 	}
+}
+
+func newQueryCostEngine(t *testing.T) *promql.Engine {
+	return promqltest.NewTestEngineWithOpts(t, promql.EngineOpts{
+		MaxSamples:               1e6,
+		Timeout:                  100 * time.Second,
+		NoStepSubqueryIntervalFn: func(int64) int64 { return int64(time.Minute / time.Millisecond) },
+		EnableAtModifier:         true,
+		EnableNegativeOffset:     true,
+		EnableDelayedNameRemoval: true,
+		EnableQueryCost:          true,
+		EnablePerStepStats:       true,
+		Parser:                   parser.NewParser(promqltest.TestParserOpts),
+	})
+}
+
+func TestQueryCostMaxSeries(t *testing.T) {
+	storage := promqltest.LoadedStorage(t, `
+load 10s
+  bigmetric{a="1"} 1+1x100
+  bigmetric{a="2"} 1+1x100
+  bigmetric{a="3"} 1+1x100
+`)
+	t.Cleanup(func() { storage.Close() })
+
+	engine := newQueryCostEngine(t)
+	ts := time.Unix(0, 0)
+
+	// Operator ceiling of 3 series allows the query.
+	engine.SetQueryLimits(3, 0, 0)
+	qry, err := engine.NewInstantQuery(context.Background(), storage, nil, "bigmetric", ts)
+	require.NoError(t, err)
+	require.NoError(t, qry.Exec(context.Background()).Err)
+
+	// Operator ceiling of 2 series rejects the query.
+	engine.SetQueryLimits(2, 0, 0)
+	qry, err = engine.NewInstantQuery(context.Background(), storage, nil, "bigmetric", ts)
+	require.NoError(t, err)
+	require.Equal(t, promql.ErrTooManySeries(env), qry.Exec(context.Background()).Err)
+
+	// A per-query override may lower the ceiling and reject the query.
+	engine.SetQueryLimits(10, 0, 0)
+	opts := promql.NewPrometheusQueryOptsWithLimits(false, 0, 2, 0, 0, nil)
+	qry, err = engine.NewInstantQuery(context.Background(), storage, opts, "bigmetric", ts)
+	require.NoError(t, err)
+	require.Equal(t, promql.ErrTooManySeries(env), qry.Exec(context.Background()).Err)
+
+	// A per-query override may not raise the ceiling above the operator limit:
+	// the query is rejected at construction time rather than clamped.
+	engine.SetQueryLimits(2, 0, 0)
+	opts = promql.NewPrometheusQueryOptsWithLimits(false, 0, 100, 0, 0, nil)
+	_, err = engine.NewInstantQuery(context.Background(), storage, opts, "bigmetric", ts)
+	var limitErr promql.ErrLimitAboveCeiling
+	require.ErrorAs(t, err, &limitErr)
+	require.Equal(t, "max_series", limitErr.Limit)
+}
+
+func TestQueryCostMaxSamplesRead(t *testing.T) {
+	storage := promqltest.LoadedStorage(t, `
+load 10s
+  bigmetric{a="1"} 1+1x100
+  bigmetric{a="2"} 1+1x100
+`)
+	t.Cleanup(func() { storage.Close() })
+
+	engine := newQueryCostEngine(t)
+	ts := time.Unix(1000, 0)
+	query := "sum_over_time(bigmetric[100s])"
+
+	// A generous ceiling allows the query.
+	engine.SetQueryLimits(0, 1e6, 0)
+	qry, err := engine.NewInstantQuery(context.Background(), storage, nil, query, ts)
+	require.NoError(t, err)
+	require.NoError(t, qry.Exec(context.Background()).Err)
+
+	// A tiny ceiling rejects the query.
+	engine.SetQueryLimits(0, 1, 0)
+	qry, err = engine.NewInstantQuery(context.Background(), storage, nil, query, ts)
+	require.NoError(t, err)
+	require.Equal(t, promql.ErrTooManySamplesRead(env), qry.Exec(context.Background()).Err)
+}
+
+func TestQueryCostDisabledFeature(t *testing.T) {
+	storage := promqltest.LoadedStorage(t, `
+load 10s
+  bigmetric{a="1"} 1+1x100
+  bigmetric{a="2"} 1+1x100
+`)
+	t.Cleanup(func() { storage.Close() })
+
+	// The feature is disabled, so limits and per-query overrides are ignored.
+	engine := promqltest.NewTestEngine(t, false, 0, 1e6)
+	engine.SetQueryLimits(1, 1, 0)
+	opts := promql.NewPrometheusQueryOptsWithLimits(false, 0, 1, 1, 0, nil)
+	qry, err := engine.NewInstantQuery(context.Background(), storage, opts, "bigmetric", time.Unix(0, 0))
+	require.NoError(t, err)
+	require.NoError(t, qry.Exec(context.Background()).Err)
+}
+
+func TestQueryCostSamplesAccounting(t *testing.T) {
+	// The cost accounting the API reports as the actual cost of a query is the
+	// samples accounting, which is collected whether or not the query-cost
+	// feature is enabled. There is no separate cost object in the statistics.
+	storage := promqltest.LoadedStorage(t, `
+load 10s
+  bigmetric{a="1"} 1+1x100
+  bigmetric{a="2"} 1+1x100
+`)
+	t.Cleanup(func() { storage.Close() })
+
+	ts := time.Unix(0, 0)
+
+	for _, c := range []struct {
+		name   string
+		engine *promql.Engine
+	}{
+		{name: "feature disabled", engine: promqltest.NewTestEngine(t, false, 0, 1e6)},
+		{name: "feature enabled", engine: newQueryCostEngine(t)},
+	} {
+		t.Run(c.name, func(t *testing.T) {
+			qry, err := c.engine.NewInstantQuery(context.Background(), storage, nil, "bigmetric", ts)
+			require.NoError(t, err)
+			require.NoError(t, qry.Exec(context.Background()).Err)
+			st := qry.Stats()
+			require.Equal(t, int64(2), st.Samples.TotalSeries, "series touched must be accounted")
+			require.Equal(t, int64(2), st.Samples.SamplesRead, "samples read must be accounted")
+			require.Positive(t, st.Samples.PeakSamples, "peak samples must be accounted")
+		})
+	}
+}
+
+// TestQueryCostLimitResolution covers how a per-query override of a counting
+// cost limit resolves against the operator-set ceiling. An override may only
+// tighten the ceiling: a request above it is rejected at query construction
+// time with an ErrLimitAboveCeiling instead of being silently clamped down.
+func TestQueryCostLimitResolution(t *testing.T) {
+	storage := promqltest.LoadedStorage(t, `
+load 10s
+  bigmetric{a="1"} 1+1x100
+  bigmetric{a="2"} 1+1x100
+  bigmetric{a="3"} 1+1x100
+`)
+	t.Cleanup(func() { storage.Close() })
+
+	ts := time.Unix(1000, 0)
+
+	// The value of each limit is not directly observable, so it is probed with a
+	// query that the tight value rejects and the loose value allows.
+	limits := []struct {
+		name         string
+		query        string
+		tight, loose uint64
+		setCeiling   func(engine *promql.Engine, ceiling uint64)
+		opts         func(requested uint64) promql.QueryOpts
+		wantRejected error
+	}{
+		{
+			name:       "max_series",
+			query:      "bigmetric",
+			tight:      2,
+			loose:      1000,
+			setCeiling: func(engine *promql.Engine, ceiling uint64) { engine.SetQueryLimits(ceiling, 0, 0) },
+			opts: func(requested uint64) promql.QueryOpts {
+				return promql.NewPrometheusQueryOptsWithLimits(false, 0, requested, 0, 0, nil)
+			},
+			wantRejected: promql.ErrTooManySeries(env),
+		},
+		{
+			name:       "max_samples_read",
+			query:      "sum_over_time(bigmetric[100s])",
+			tight:      1,
+			loose:      1e6,
+			setCeiling: func(engine *promql.Engine, ceiling uint64) { engine.SetQueryLimits(0, ceiling, 0) },
+			opts: func(requested uint64) promql.QueryOpts {
+				return promql.NewPrometheusQueryOptsWithLimits(false, 0, 0, requested, 0, nil)
+			},
+			wantRejected: promql.ErrTooManySamplesRead(env),
+		},
+	}
+
+	// unset means the ceiling or the request is zero, i.e. not set.
+	const (
+		unset = "unset"
+		tight = "tight"
+		loose = "loose"
+	)
+
+	cases := []struct {
+		name             string
+		ceiling          string
+		requested        string
+		wantConstructErr bool
+		wantRejected     bool
+	}{
+		{name: "request below the ceiling tightens it", ceiling: loose, requested: tight, wantRejected: true},
+		{name: "request equal to the ceiling is accepted", ceiling: tight, requested: tight, wantRejected: true},
+		{name: "request above the ceiling is rejected", ceiling: tight, requested: loose, wantConstructErr: true},
+		{name: "no request falls back to the ceiling", ceiling: tight, requested: unset, wantRejected: true},
+		{name: "no request and a generous ceiling allows the query", ceiling: loose, requested: unset},
+		{name: "unlimited ceiling applies the request", ceiling: unset, requested: tight, wantRejected: true},
+		{name: "unlimited ceiling applies a large request", ceiling: unset, requested: loose},
+	}
+
+	for _, limit := range limits {
+		value := func(which string) uint64 {
+			switch which {
+			case tight:
+				return limit.tight
+			case loose:
+				return limit.loose
+			default:
+				return 0
+			}
+		}
+		for _, c := range cases {
+			t.Run(limit.name+"/"+c.name, func(t *testing.T) {
+				engine := newQueryCostEngine(t)
+				limit.setCeiling(engine, value(c.ceiling))
+
+				var opts promql.QueryOpts
+				if requested := value(c.requested); requested > 0 {
+					opts = limit.opts(requested)
+				}
+				qry, err := engine.NewInstantQuery(context.Background(), storage, opts, limit.query, ts)
+				if c.wantConstructErr {
+					var limitErr promql.ErrLimitAboveCeiling
+					require.ErrorAs(t, err, &limitErr)
+					require.Equal(t, limit.name, limitErr.Limit)
+					require.Equal(t, strconv.FormatUint(value(c.requested), 10), limitErr.Requested)
+					require.Equal(t, strconv.FormatUint(value(c.ceiling), 10), limitErr.Ceiling)
+					return
+				}
+				require.NoError(t, err)
+				if c.wantRejected {
+					require.Equal(t, limit.wantRejected, qry.Exec(context.Background()).Err)
+					return
+				}
+				require.NoError(t, qry.Exec(context.Background()).Err)
+			})
+		}
+	}
+}
+
+func TestQueryCostMaxSamplesReadMatrix(t *testing.T) {
+	t.Run("limits", func(t *testing.T) {
+		// A large matrix window must stop consuming points as soon as its budget is exhausted.
+		storage := promqltest.LoadedStorage(t, `
+load 10s
+  bigmetric{a="1"} 1+1x1000
+`)
+		t.Cleanup(func() { storage.Close() })
+
+		engine := newQueryCostEngine(t)
+		ts := time.Unix(10000, 0)
+		for _, tc := range []struct {
+			query string
+			reads uint64
+		}{
+			{query: "bigmetric[10000s]", reads: 1000},
+			{query: "sum_over_time(bigmetric[10000s])", reads: 1000},
+			{query: "sum_over_time(bigmetric[10000s] @ 10000)", reads: 1000},
+			{query: "rate(bigmetric[10000s] anchored)", reads: 1001},
+			{query: "rate(bigmetric[10000s] smoothed)", reads: 1001},
+		} {
+			t.Run(tc.query, func(t *testing.T) {
+				engine.SetQueryLimits(0, tc.reads, 0)
+				qry, err := engine.NewInstantQuery(t.Context(), storage, nil, tc.query, ts)
+				require.NoError(t, err)
+				require.NoError(t, qry.Exec(t.Context()).Err)
+				require.Equal(t, int64(tc.reads), qry.Stats().Samples.SamplesRead)
+				qry.Close()
+
+				engine.SetQueryLimits(0, 10, 0)
+				counted := &sampleReadQueryable{Queryable: storage}
+				qry, err = engine.NewInstantQuery(t.Context(), counted, nil, tc.query, ts)
+				require.NoError(t, err)
+				defer qry.Close()
+				require.Equal(t, promql.ErrTooManySamplesRead(env), qry.Exec(t.Context()).Err)
+				require.Equal(t, int64(11), qry.Stats().Samples.SamplesRead, "stop before consuming the full window")
+				require.LessOrEqual(t, counted.reads, 12, "stop before buffering the full window")
+			})
+		}
+	})
+
+	t.Run("buffer_accounting", func(t *testing.T) {
+		for _, kind := range []string{"float", "histogram", "float histogram", "custom histogram", "mixed", "stale"} {
+			t.Run(kind, func(t *testing.T) {
+				opts := tsdb.DefaultHeadOptions()
+				opts.ChunkDirRoot = t.TempDir()
+				head, err := tsdb.NewHead(nil, nil, nil, nil, opts, nil)
+				require.NoError(t, err)
+				t.Cleanup(func() { require.NoError(t, head.Close()) })
+				app := head.Appender(t.Context())
+				metric := labels.FromStrings(labels.MetricName, "metric")
+				var interruptedCost int64
+				for i := range 1001 {
+					ts := int64(i * 10000)
+					h := &histogram.Histogram{
+						Count: uint64(i + 1), Sum: float64(i + 1),
+						PositiveSpans: []histogram.Span{{Length: 1}}, PositiveBuckets: []int64{int64(i + 1)},
+					}
+					pointCost := int64(1)
+					switch {
+					case kind == "float", kind == "mixed" && i%2 == 0:
+						_, err = app.Append(0, metric, ts, float64(i))
+					case kind == "stale":
+						pointCost = 0
+						_, err = app.Append(0, metric, ts, math.Float64frombits(value.StaleNaN))
+					case kind == "histogram":
+						pointCost = int64((h.ToFloat(nil).Size() + 8) / 16)
+						_, err = app.AppendHistogram(0, metric, ts, h, nil)
+					default:
+						fh := h.ToFloat(nil)
+						if kind == "custom histogram" {
+							fh.Schema = histogram.CustomBucketsSchema
+							fh.CustomValues = []float64{1, 2}
+						}
+						pointCost = int64((fh.Size() + 8) / 16)
+						_, err = app.AppendHistogram(0, metric, ts, nil, fh)
+					}
+					require.NoError(t, err)
+					if i > 0 && i <= 10 {
+						interruptedCost += pointCost
+					}
+				}
+				require.NoError(t, app.Commit())
+				queryable := storage.QueryableFunc(func(mint, maxt int64) (storage.Querier, error) {
+					return tsdb.NewBlockQuerier(head, mint, maxt)
+				})
+				engine := newQueryCostEngine(t)
+				for _, expr := range []string{"metric[10000s]", "metric smoothed", "sum_over_time(metric[10000s])", "last_over_time(metric[10000s])", "histogram_sum(sum_over_time(metric[10000s]))", "last_over_time(sum_over_time(metric[10000s])[1s:1s])"} {
+					t.Run(expr, func(t *testing.T) {
+						engine.SetQueryLimits(0, 0, 0)
+						q, err := engine.NewInstantQuery(t.Context(), queryable, nil, expr, time.Unix(10000, 0))
+						require.NoError(t, err)
+						result := q.Exec(t.Context())
+						require.NoError(t, result.Err)
+						want := result.Value.String()
+						reads := q.Stats().Samples.SamplesRead
+						q.Close()
+						engine.SetQueryLimits(0, uint64(reads), 0)
+						q, err = engine.NewInstantQuery(t.Context(), queryable, nil, expr, time.Unix(10000, 0))
+						require.NoError(t, err)
+						result = q.Exec(t.Context())
+						require.NoError(t, result.Err)
+						require.Equal(t, want, result.Value.String())
+						require.Equal(t, reads, q.Stats().Samples.SamplesRead)
+						q.Close()
+						if kind == "stale" {
+							return
+						}
+						engine.SetQueryLimits(0, 25, 0)
+						counted := &sampleReadQueryable{Queryable: queryable}
+						q, err = engine.NewInstantQuery(t.Context(), counted, nil, expr, time.Unix(10000, 0))
+						require.NoError(t, err)
+						defer q.Close()
+						require.Equal(t, promql.ErrTooManySamplesRead(env), q.Exec(t.Context()).Err)
+						require.Greater(t, q.Stats().Samples.SamplesRead, int64(25))
+						require.LessOrEqual(t, q.Stats().Samples.SamplesRead, int64(38))
+						require.LessOrEqual(t, counted.reads, 27, "storage input must stop before the full window")
+					})
+				}
+				for _, quota := range []uint64{0, 1000000} {
+					t.Run(fmt.Sprintf("cancellation/quota=%d", quota), func(t *testing.T) {
+						ctx, cancel := context.WithCancel(t.Context())
+						defer cancel()
+						counted := &sampleReadQueryable{Queryable: queryable}
+						counted.onRead = func() {
+							if counted.reads == 10 {
+								cancel()
+							}
+						}
+						engine.SetQueryLimits(0, quota, 0)
+						q, err := engine.NewInstantQuery(ctx, counted, nil, "metric[10000s]", time.Unix(10000, 0))
+						require.NoError(t, err)
+						defer q.Close()
+						require.Equal(t, promql.ErrQueryCanceled(env), q.Exec(ctx).Err)
+						require.Equal(t, 10, counted.reads)
+						require.Equal(t, interruptedCost, q.Stats().Samples.SamplesRead)
+					})
+				}
+			})
+		}
+	})
+}
+
+// Count storage sample accesses before they enter the evaluator's buffer.
+type sampleReadQueryable struct {
+	storage.Queryable
+	reads  int
+	onRead func()
+}
+
+func (q *sampleReadQueryable) Querier(mint, maxt int64) (storage.Querier, error) {
+	inner, err := q.Queryable.Querier(mint, maxt)
+	return sampleReadQuerier{Querier: inner, owner: q}, err
+}
+
+type sampleReadQuerier struct {
+	storage.Querier
+	owner *sampleReadQueryable
+}
+
+func (q sampleReadQuerier) Select(ctx context.Context, sorted bool, hints *storage.SelectHints, matchers ...*labels.Matcher) storage.SeriesSet {
+	return sampleReadSet{SeriesSet: q.Querier.Select(ctx, sorted, hints, matchers...), owner: q.owner}
+}
+
+type sampleReadSet struct {
+	storage.SeriesSet
+	owner *sampleReadQueryable
+}
+
+func (s sampleReadSet) At() storage.Series {
+	return sampleReadSeries{Series: s.SeriesSet.At(), owner: s.owner}
+}
+
+type sampleReadSeries struct {
+	storage.Series
+	owner *sampleReadQueryable
+}
+
+func (s sampleReadSeries) Iterator(it chunkenc.Iterator) chunkenc.Iterator {
+	if previous, ok := it.(*sampleReadIterator); ok {
+		previous.Iterator = s.Series.Iterator(previous.Iterator)
+		previous.owner = s.owner
+		return previous
+	}
+	return &sampleReadIterator{Iterator: s.Series.Iterator(nil), owner: s.owner}
+}
+
+type sampleReadIterator struct {
+	chunkenc.Iterator
+	owner *sampleReadQueryable
+}
+
+func (it *sampleReadIterator) recordRead() {
+	it.owner.reads++
+	if it.owner.onRead != nil {
+		it.owner.onRead()
+	}
+}
+
+func (it *sampleReadIterator) At() (int64, float64) {
+	it.recordRead()
+	return it.Iterator.At()
+}
+
+func (it *sampleReadIterator) AtHistogram(h *histogram.Histogram) (int64, *histogram.Histogram) {
+	it.recordRead()
+	return it.Iterator.AtHistogram(h)
+}
+
+func (it *sampleReadIterator) AtFloatHistogram(h *histogram.FloatHistogram) (int64, *histogram.FloatHistogram) {
+	it.recordRead()
+	return it.Iterator.AtFloatHistogram(h)
+}
+
+// sleepyQuerier is a storage.Querier whose Select blocks for the given
+// duration before returning an empty series set. It is used to make a query
+// run longer than a short per-query duration limit.
+type sleepyQuerier struct {
+	sleep time.Duration
+}
+
+func (q sleepyQuerier) Select(ctx context.Context, _ bool, _ *storage.SelectHints, _ ...*labels.Matcher) storage.SeriesSet {
+	select {
+	case <-time.After(q.sleep):
+	case <-ctx.Done():
+	}
+	return errSeriesSet{err: ctx.Err()}
+}
+
+func (sleepyQuerier) LabelValues(context.Context, string, *storage.LabelHints, ...*labels.Matcher) ([]string, annotations.Annotations, error) {
+	return nil, nil, nil
+}
+
+func (sleepyQuerier) LabelNames(context.Context, *storage.LabelHints, ...*labels.Matcher) ([]string, annotations.Annotations, error) {
+	return nil, nil, nil
+}
+
+func (sleepyQuerier) Close() error { return nil }
+
+func TestQueryCostMaxDuration(t *testing.T) {
+	// The engine timeout is generous, but the per-query duration limit is tiny.
+	// A query that runs longer than the limit must surface as ErrQueryTimeout.
+	engine := promqltest.NewTestEngineWithOpts(t, promql.EngineOpts{
+		MaxSamples:               1e6,
+		Timeout:                  100 * time.Second,
+		NoStepSubqueryIntervalFn: func(int64) int64 { return int64(time.Minute / time.Millisecond) },
+		EnableQueryCost:          true,
+		Parser:                   parser.NewParser(promqltest.TestParserOpts),
+	})
+
+	queryable := storage.QueryableFunc(func(_, _ int64) (storage.Querier, error) {
+		return sleepyQuerier{sleep: time.Second}, nil
+	})
+
+	// An operator-set duration limit of 5ms, well below the engine timeout,
+	// rejects the slow query.
+	engine.SetQueryLimits(0, 0, 5*time.Millisecond)
+	qry, err := engine.NewInstantQuery(context.Background(), queryable, nil, "metric", time.Unix(0, 0))
+	require.NoError(t, err)
+	var timeoutErr promql.ErrQueryTimeout
+	require.ErrorAs(t, qry.Exec(context.Background()).Err, &timeoutErr)
+
+	// A per-query override may also impose a short duration limit.
+	engine.SetQueryLimits(0, 0, 0)
+	opts := promql.NewPrometheusQueryOptsWithLimits(false, 0, 0, 0, 5*time.Millisecond, nil)
+	qry, err = engine.NewInstantQuery(context.Background(), queryable, opts, "metric", time.Unix(0, 0))
+	require.NoError(t, err)
+	require.ErrorAs(t, qry.Exec(context.Background()).Err, &timeoutErr)
+}
+
+// TestQueryCostMaxDurationResolution covers how a per-query max_query_duration
+// override resolves against its ceiling, and how that ceiling relates to the
+// deprecated -query.timeout flag: query_max_duration is the ceiling on its own
+// when set, and may be longer than the flag; while it is unset the flag remains
+// the ceiling.
+func TestQueryCostMaxDurationResolution(t *testing.T) {
+	// The query sleeps in Select, so it overruns a 5ms limit but finishes well
+	// within a limit of a second or more.
+	const querySleep = 500 * time.Millisecond
+
+	cases := []struct {
+		name string
+		// engineTimeout is the -query.timeout flag value.
+		engineTimeout    time.Duration
+		ceiling          time.Duration
+		requested        time.Duration
+		wantConstructErr bool
+		wantErrCeiling   string
+		wantTimeout      bool
+	}{
+		{
+			name:          "request below the ceiling tightens it",
+			engineTimeout: 100 * time.Second,
+			ceiling:       10 * time.Second,
+			requested:     5 * time.Millisecond,
+			wantTimeout:   true,
+		},
+		{
+			name:          "request equal to the ceiling is accepted",
+			engineTimeout: 100 * time.Second,
+			ceiling:       5 * time.Millisecond,
+			requested:     5 * time.Millisecond,
+			wantTimeout:   true,
+		},
+		{
+			name:             "request above the ceiling is rejected",
+			engineTimeout:    100 * time.Second,
+			ceiling:          5 * time.Millisecond,
+			requested:        10 * time.Second,
+			wantConstructErr: true,
+			wantErrCeiling:   "5ms",
+		},
+		{
+			name:          "no request falls back to the ceiling",
+			engineTimeout: 100 * time.Second,
+			ceiling:       5 * time.Millisecond,
+			wantTimeout:   true,
+		},
+		{
+			name:          "no request and a generous ceiling allows the query",
+			engineTimeout: 100 * time.Second,
+			ceiling:       10 * time.Second,
+		},
+		{
+			name:          "unset ceiling leaves the query timeout flag in force",
+			engineTimeout: 5 * time.Millisecond,
+			wantTimeout:   true,
+		},
+		{
+			name:          "unset ceiling accepts a request below the query timeout flag",
+			engineTimeout: 100 * time.Second,
+			requested:     5 * time.Millisecond,
+			wantTimeout:   true,
+		},
+		{
+			name:             "unset ceiling rejects a request above the query timeout flag",
+			engineTimeout:    50 * time.Millisecond,
+			requested:        10 * time.Second,
+			wantConstructErr: true,
+			wantErrCeiling:   "50ms",
+		},
+		{
+			name:          "ceiling above the query timeout flag is effective on its own",
+			engineTimeout: 50 * time.Millisecond,
+			ceiling:       10 * time.Second,
+		},
+		{
+			name:          "ceiling above the query timeout flag allows a request above it",
+			engineTimeout: 50 * time.Millisecond,
+			ceiling:       10 * time.Second,
+			requested:     5 * time.Second,
+		},
+	}
+
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			engine := promqltest.NewTestEngineWithOpts(t, promql.EngineOpts{
+				MaxSamples:               1e6,
+				Timeout:                  c.engineTimeout,
+				NoStepSubqueryIntervalFn: func(int64) int64 { return int64(time.Minute / time.Millisecond) },
+				EnableQueryCost:          true,
+				Parser:                   parser.NewParser(promqltest.TestParserOpts),
+			})
+			engine.SetQueryLimits(0, 0, c.ceiling)
+
+			queryable := storage.QueryableFunc(func(_, _ int64) (storage.Querier, error) {
+				return sleepyQuerier{sleep: querySleep}, nil
+			})
+
+			var opts promql.QueryOpts
+			if c.requested > 0 {
+				opts = promql.NewPrometheusQueryOptsWithLimits(false, 0, 0, 0, c.requested, nil)
+			}
+			qry, err := engine.NewInstantQuery(context.Background(), queryable, opts, "metric", time.Unix(0, 0))
+			if c.wantConstructErr {
+				var limitErr promql.ErrLimitAboveCeiling
+				require.ErrorAs(t, err, &limitErr)
+				require.Equal(t, "max_query_duration", limitErr.Limit)
+				require.Equal(t, c.requested.String(), limitErr.Requested)
+				require.Equal(t, c.wantErrCeiling, limitErr.Ceiling)
+				return
+			}
+			require.NoError(t, err)
+
+			execErr := qry.Exec(context.Background()).Err
+			if c.wantTimeout {
+				var timeoutErr promql.ErrQueryTimeout
+				require.ErrorAs(t, execErr, &timeoutErr)
+				return
+			}
+			require.NoError(t, execErr)
+		})
+	}
+}
+
+func queryCostRejections(t *testing.T, reg *prometheus.Registry, reason string) float64 {
+	t.Helper()
+	families, err := reg.Gather()
+	require.NoError(t, err)
+	for _, family := range families {
+		if family.GetName() != "prometheus_engine_query_rejected_total" {
+			continue
+		}
+		for _, metric := range family.GetMetric() {
+			for _, label := range metric.GetLabel() {
+				if label.GetName() == "reason" && label.GetValue() == reason {
+					return metric.GetCounter().GetValue()
+				}
+			}
+		}
+	}
+	return 0
+}
+
+func TestQueryCostMaxDurationRejectAttribution(t *testing.T) {
+	for _, tc := range []struct {
+		name       string
+		ceiling    time.Duration
+		requested  time.Duration
+		caller     time.Duration
+		cancel     bool
+		wantReject float64
+	}{
+		{name: "configured duration", ceiling: 100 * time.Millisecond, wantReject: 1},
+		{name: "request duration", requested: 100 * time.Millisecond, wantReject: 1},
+		{name: "startup timeout"},
+		{name: "earlier caller deadline", ceiling: time.Second, caller: 10 * time.Millisecond},
+		{name: "caller cancellation", ceiling: time.Second, caller: 10 * time.Millisecond, cancel: true},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			synctest.Test(t, func(t *testing.T) {
+				reg := prometheus.NewRegistry()
+				engine := promqltest.NewTestEngineWithOpts(t, promql.EngineOpts{
+					Reg: reg, MaxSamples: 1000, Timeout: 100 * time.Millisecond, EnableQueryCost: true,
+				})
+				engine.SetQueryLimits(0, 0, tc.ceiling)
+				queryable := storage.QueryableFunc(func(_, _ int64) (storage.Querier, error) {
+					return sleepyQuerier{sleep: 2 * time.Second}, nil
+				})
+				opts := promql.NewPrometheusQueryOptsWithLimits(false, 0, 0, 0, tc.requested, nil)
+				ctx := t.Context()
+				if tc.caller > 0 {
+					var cancel context.CancelFunc
+					if tc.cancel {
+						ctx, cancel = context.WithCancel(ctx)
+						stop := time.AfterFunc(tc.caller, cancel)
+						defer stop.Stop()
+					} else {
+						ctx, cancel = context.WithTimeout(ctx, tc.caller)
+					}
+					defer cancel()
+				}
+				q, err := engine.NewInstantQuery(ctx, queryable, opts, "metric", time.Unix(0, 0))
+				require.NoError(t, err)
+				defer q.Close()
+				if tc.cancel {
+					var canceled promql.ErrQueryCanceled
+					require.ErrorAs(t, q.Exec(ctx).Err, &canceled)
+				} else {
+					var timeout promql.ErrQueryTimeout
+					require.ErrorAs(t, q.Exec(ctx).Err, &timeout)
+				}
+				require.Equal(t, tc.wantReject, queryCostRejections(t, reg, "max_duration"))
+			})
+		})
+	}
+}
+
+func TestEngine_QueryCostDurationLifecycle(t *testing.T) {
+	t.Run("deadline_snapshot", func(t *testing.T) {
+		for _, enabled := range []bool{false, true} {
+			for _, rangeQuery := range []bool{false, true} {
+				t.Run(fmt.Sprintf("enabled=%t/range=%t", enabled, rangeQuery), func(t *testing.T) {
+					synctest.Test(t, func(t *testing.T) {
+						engine := promqltest.NewTestEngineWithOpts(t, promql.EngineOpts{
+							MaxSamples: 1000, Timeout: time.Second, EnableQueryCost: enabled,
+						})
+						queryable := storage.QueryableFunc(func(_, _ int64) (storage.Querier, error) {
+							return &storage.MockQuerier{}, nil
+						})
+						var q promql.Query
+						var err error
+						if rangeQuery {
+							q, err = engine.NewRangeQuery(t.Context(), queryable, nil, "1", time.Unix(0, 0), time.Unix(60, 0), time.Minute)
+						} else {
+							q, err = engine.NewInstantQuery(t.Context(), queryable, nil, "1", time.Unix(0, 0))
+						}
+						require.NoError(t, err)
+						defer q.Close()
+						engine.SetQueryLimits(0, 0, 5*time.Second)
+						time.Sleep(2 * time.Second)
+						if enabled {
+							require.Equal(t, promql.ErrQueryTimeout(env), q.Exec(t.Context()).Err)
+						} else {
+							require.NoError(t, q.Exec(t.Context()).Err, "the disabled feature must leave the timeout relative to Exec")
+						}
+					})
+				})
+			}
+		}
+	})
+
+	t.Run("queue", func(t *testing.T) {
+		for _, tc := range []struct {
+			name       string
+			ceiling    time.Duration
+			requested  time.Duration
+			caller     time.Duration
+			cancel     bool
+			wantReject float64
+		}{
+			{name: "configured duration", ceiling: 100 * time.Millisecond, wantReject: 1},
+			{name: "request duration", requested: 50 * time.Millisecond, wantReject: 1},
+			{name: "startup fallback"},
+			{name: "earlier caller deadline", ceiling: time.Second, caller: 10 * time.Millisecond},
+			{name: "caller cancellation", ceiling: time.Second, caller: 10 * time.Millisecond, cancel: true},
+		} {
+			for _, rangeQuery := range []bool{false, true} {
+				for _, phase := range []string{"construction", "execution", "expired before execution"} {
+					t.Run(fmt.Sprintf("%s/range=%t/%s", tc.name, rangeQuery, phase), func(t *testing.T) {
+						synctest.Test(t, func(t *testing.T) {
+							tracker, err := promql.NewActiveQueryTracker(t.TempDir(), 1, nil)
+							require.NoError(t, err)
+							reg := prometheus.NewRegistry()
+							engine := promqltest.NewTestEngineWithOpts(t, promql.EngineOpts{
+								Reg: reg, MaxSamples: 1000, Timeout: 200 * time.Millisecond,
+								ActiveQueryTracker: tracker, EnableQueryCost: true,
+							})
+							engine.SetQueryLimits(0, 0, tc.ceiling)
+							opts := promql.NewPrometheusQueryOptsWithLimits(false, 0, 0, 0, tc.requested, nil)
+							queryable := storage.QueryableFunc(func(_, _ int64) (storage.Querier, error) {
+								return &storage.MockQuerier{}, nil
+							})
+							ctx := t.Context()
+							if tc.caller > 0 {
+								var cancel context.CancelFunc
+								if tc.cancel {
+									ctx, cancel = context.WithCancel(ctx)
+									stop := time.AfterFunc(tc.caller, cancel)
+									defer stop.Stop()
+								} else {
+									ctx, cancel = context.WithTimeout(ctx, tc.caller)
+								}
+								defer cancel()
+							}
+							newQuery := func(ctx context.Context) (promql.Query, error) {
+								if rangeQuery {
+									return engine.NewRangeQuery(ctx, queryable, opts, "1", time.Unix(0, 0), time.Unix(60, 0), time.Minute)
+								}
+								return engine.NewInstantQuery(ctx, queryable, opts, "1", time.Unix(0, 0))
+							}
+							var q promql.Query
+							start := time.Now()
+							if phase != "construction" {
+								q, err = newQuery(ctx)
+								require.NoError(t, err)
+								defer q.Close()
+							}
+							release, err := engine.AcquireQuerySlot(t.Context(), "held slot")
+							require.NoError(t, err)
+							released := false
+							defer func() {
+								if !released {
+									release()
+								}
+							}()
+							duration := 200 * time.Millisecond
+							if tc.ceiling > 0 {
+								duration = tc.ceiling
+							}
+							if tc.requested > 0 {
+								duration = tc.requested
+							}
+							if tc.caller > 0 {
+								duration = tc.caller
+							}
+							if phase == "construction" {
+								// An external safety deadline also lets the regression fail
+								// deterministically when construction has no duration limit.
+								ctx, cancel := context.WithTimeout(ctx, time.Second)
+								defer cancel()
+								if rangeQuery {
+									_, err = engine.NewRangeQuery(ctx, queryable, opts, "1", time.Unix(0, 0), time.Unix(60, 0), time.Minute)
+								} else {
+									_, err = engine.NewInstantQuery(ctx, queryable, opts, "1", time.Unix(0, 0))
+								}
+							} else {
+								if phase == "expired before execution" {
+									time.Sleep(duration * 2)
+									duration *= 2
+								} else {
+									time.Sleep(duration / 4)
+								}
+								err = q.Exec(ctx).Err
+							}
+							if tc.cancel {
+								require.Equal(t, promql.ErrQueryCanceled(env), err)
+							} else {
+								require.Equal(t, promql.ErrQueryTimeout(env), err)
+							}
+							require.Equal(t, duration, time.Since(start), "construction and execution must share a deadline")
+							require.Equal(t, tc.wantReject, queryCostRejections(t, reg, "max_duration"))
+							release()
+							released = true
+							recovery, err := newQuery(t.Context())
+							require.NoError(t, err)
+							defer recovery.Close()
+							require.NoError(t, recovery.Exec(t.Context()).Err, "failed queueing must preserve the slot")
+						})
+					})
+				}
+			}
+		}
+	})
+
+	t.Run("parsing", func(t *testing.T) {
+		for _, tc := range []struct {
+			expr     string
+			duration time.Duration
+			timeout  bool
+		}{
+			{expr: "1", duration: time.Second, timeout: true},
+			{expr: "broken(", duration: time.Second, timeout: true},
+			{expr: "rate(metric[1s-2s])", duration: 10 * time.Second},
+		} {
+			for _, rangeQuery := range []bool{false, true} {
+				t.Run(fmt.Sprintf("%s/range=%t", tc.expr, rangeQuery), func(t *testing.T) {
+					synctest.Test(t, func(t *testing.T) {
+						reg := prometheus.NewRegistry()
+						engine := promqltest.NewTestEngineWithOpts(t, promql.EngineOpts{
+							Reg: reg, MaxSamples: 1000, Timeout: time.Minute, EnableQueryCost: true,
+							Parser: delayedCostParser{Parser: parser.NewParser(promqltest.TestParserOpts)},
+						})
+						engine.SetQueryLimits(0, 0, tc.duration)
+						var q promql.Query
+						var err error
+						if rangeQuery {
+							q, err = engine.NewRangeQuery(t.Context(), nil, nil, tc.expr, time.Unix(0, 0), time.Unix(60, 0), time.Minute)
+						} else {
+							q, err = engine.NewInstantQuery(t.Context(), nil, nil, tc.expr, time.Unix(0, 0))
+						}
+						if q != nil {
+							defer q.Close()
+						}
+						if tc.timeout {
+							require.Nil(t, q)
+							require.Equal(t, promql.ErrQueryTimeout(env), err)
+							require.Equal(t, float64(1), queryCostRejections(t, reg, "max_duration"))
+						} else {
+							require.Error(t, err, "preprocessing errors must be preserved before the deadline")
+							require.Zero(t, queryCostRejections(t, reg, "max_duration"))
+						}
+					})
+				})
+			}
+		}
+	})
+}
+
+type delayedCostParser struct {
+	parser.Parser
+}
+
+func (p delayedCostParser) ParseExpr(expr string) (parser.Expr, error) {
+	time.Sleep(2 * time.Second)
+	return p.Parser.ParseExpr(expr)
+}
+
+func TestQueryCostRejectMetricReason(t *testing.T) {
+	storage := promqltest.LoadedStorage(t, `
+load 10s
+  bigmetric{a="1"} 1+1x100
+  bigmetric{a="2"} 1+1x100
+  bigmetric{a="3"} 1+1x100
+`)
+	t.Cleanup(func() { require.NoError(t, storage.Close()) })
+
+	for _, tc := range []struct {
+		name           string
+		query          string
+		ts             int64
+		maxSeries      uint64
+		maxSamplesRead uint64
+		wantErr        error
+	}{
+		{
+			name:      "max_series",
+			query:     "bigmetric",
+			maxSeries: 2,
+			wantErr:   promql.ErrTooManySeries(env),
+		},
+		{
+			name:           "max_samples_read",
+			query:          "sum_over_time(bigmetric[100s])",
+			ts:             1000,
+			maxSamplesRead: 1,
+			wantErr:        promql.ErrTooManySamplesRead(env),
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			reg := prometheus.NewRegistry()
+			engine := promqltest.NewTestEngineWithOpts(t, promql.EngineOpts{
+				Reg:                      reg,
+				MaxSamples:               1e6,
+				Timeout:                  100 * time.Second,
+				NoStepSubqueryIntervalFn: func(int64) int64 { return int64(time.Minute / time.Millisecond) },
+				EnableAtModifier:         true,
+				EnableNegativeOffset:     true,
+				EnableDelayedNameRemoval: true,
+				EnableQueryCost:          true,
+				EnablePerStepStats:       true,
+				Parser:                   parser.NewParser(promqltest.TestParserOpts),
+			})
+			engine.SetQueryLimits(tc.maxSeries, tc.maxSamplesRead, 0)
+			qry, err := engine.NewInstantQuery(t.Context(), storage, nil, tc.query, time.Unix(tc.ts, 0))
+			require.NoError(t, err)
+			defer qry.Close()
+			require.Equal(t, tc.wantErr, qry.Exec(t.Context()).Err)
+
+			for _, reason := range []string{"max_series", "max_samples_read", "max_duration"} {
+				var want float64
+				if reason == tc.name {
+					want = 1
+				}
+				require.Equal(t, want, queryCostRejections(t, reg, reason), "rejection counter for %s", reason)
+			}
+		})
+	}
+}
+
+func TestQueryCostMaxSeriesSubquery(t *testing.T) {
+	// Parent, subquery, and step-invariant evaluators share the query budget.
+	storage := promqltest.LoadedStorage(t, `
+load 10s
+  bigmetric{a="1"} 1+1x100
+  bigmetric{a="2"} 1+1x100
+  bigmetric{a="3"} 1+1x100
+  other{b="1"} 1+1x100
+  other{b="2"} 1+1x100
+  other{b="3"} 1+1x100
+`)
+	t.Cleanup(func() { storage.Close() })
+
+	engine := newQueryCostEngine(t)
+	ts := time.Unix(1000, 0)
+	for _, query := range []string{
+		"other + sum_over_time(bigmetric[20s:10s])",
+		"other + bigmetric @ 1000",
+		"bigmetric @ 1000 + other",
+		"other + sum_over_time(bigmetric[20s:10s] @ 1000)",
+		"other + sum_over_time(bigmetric[20s] @ 1000)",
+	} {
+		t.Run(query, func(t *testing.T) {
+			engine.SetQueryLimits(6, 0, 0)
+			qry, err := engine.NewInstantQuery(context.Background(), storage, nil, query, ts)
+			require.NoError(t, err)
+			require.NoError(t, qry.Exec(context.Background()).Err)
+			require.Equal(t, int64(6), qry.Stats().Samples.TotalSeries)
+			samples := qry.Stats().Samples.SamplesRead
+			qry.Close()
+
+			engine.SetQueryLimits(4, 0, 0)
+			qry, err = engine.NewInstantQuery(context.Background(), storage, nil, query, ts)
+			require.NoError(t, err)
+			require.Equal(t, promql.ErrTooManySeries(env), qry.Exec(context.Background()).Err)
+			require.Equal(t, int64(5), qry.Stats().Samples.TotalSeries)
+			qry.Close()
+
+			// The same shared budget applies to sample reads, even if a binary
+			// expression returns no matching output series.
+			for _, limit := range []int64{samples, samples - 1} {
+				engine.SetQueryLimits(0, uint64(limit), 0)
+				qry, err = engine.NewInstantQuery(context.Background(), storage, nil, query, ts)
+				require.NoError(t, err)
+				if limit == samples {
+					require.NoError(t, qry.Exec(context.Background()).Err)
+				} else {
+					require.Equal(t, promql.ErrTooManySamplesRead(env), qry.Exec(context.Background()).Err)
+				}
+				qry.Close()
+			}
+		})
+	}
+}
+
+func TestQueryCostMaxSeriesInfo(t *testing.T) {
+	// metric contributes 3 series through its own vector selector; the info()
+	// join then selects 3 matching target_info series. The series guardrail
+	// must account for the info series too, otherwise an info() query could
+	// touch unbounded series without ErrTooManySeries ever firing.
+	storage := promqltest.LoadedStorage(t, `
+load 10s
+  metric{instance="a", job="1"} 1+1x100
+  metric{instance="a", job="2"} 1+1x100
+  metric{instance="a", job="3"} 1+1x100
+  target_info{instance="a", job="1", data="one"} 1+0x100
+  target_info{instance="a", job="2", data="two"} 1+0x100
+  target_info{instance="a", job="3", data="three"} 1+0x100
+`)
+	t.Cleanup(func() { storage.Close() })
+
+	engine := newQueryCostEngine(t)
+	ts := time.Unix(0, 0)
+	query := `info(metric)`
+
+	// A generous ceiling allows the base series plus all selected info series.
+	engine.SetQueryLimits(10, 0, 0)
+	qry, err := engine.NewInstantQuery(context.Background(), storage, nil, query, ts)
+	require.NoError(t, err)
+	require.NoError(t, qry.Exec(context.Background()).Err)
+
+	// A ceiling of 4 is above the 3 base series alone but below the cumulative
+	// total once the 3 info series are accounted for, so the query is rejected.
+	engine.SetQueryLimits(4, 0, 0)
+	qry, err = engine.NewInstantQuery(context.Background(), storage, nil, query, ts)
+	require.NoError(t, err)
+	require.Equal(t, promql.ErrTooManySeries(env), qry.Exec(context.Background()).Err)
+}
+
+// countingSeriesSet is a storage.SeriesSet that yields up to total distinct
+// series and records how many times Next was called. It is used to prove that
+// the series guardrail stops pulling series as soon as the ceiling is exceeded,
+// rather than materializing the whole set first.
+type countingSeriesSet struct {
+	total    int
+	produced int
+	calls    int
+}
+
+func (s *countingSeriesSet) Next() bool {
+	s.calls++
+	if s.produced >= s.total {
+		return false
+	}
+	s.produced++
+	return true
+}
+
+func (s *countingSeriesSet) At() storage.Series {
+	return storage.NewListSeries(labels.FromStrings(labels.MetricName, "bigmetric", "i", strconv.Itoa(s.produced)), nil)
+}
+
+func (*countingSeriesSet) Err() error { return nil }
+
+func (*countingSeriesSet) Warnings() annotations.Annotations { return nil }
+
+func TestQueryCostMaxSeriesEarlyTermination(t *testing.T) {
+	// The series guardrail must reject a selector as soon as the cumulative
+	// series count exceeds the ceiling, without materializing the entire set.
+	// We back the query with a SeriesSet that yields far more series than the
+	// ceiling and counts how many times Next is called. With a ceiling of N,
+	// the limit trips on the (N+1)th series, so Next is called exactly N+1
+	// times - not once per series in the whole set.
+	const (
+		maxSeries  = 5
+		totalAvail = 1000
+	)
+
+	set := &countingSeriesSet{total: totalAvail}
+	queryable := &storage.MockQueryable{
+		MockQuerier: &storage.MockQuerier{
+			SelectMockFunction: func(_ bool, _ *storage.SelectHints, _ ...*labels.Matcher) storage.SeriesSet {
+				return set
+			},
+		},
+	}
+
+	engine := newQueryCostEngine(t)
+	engine.SetQueryLimits(maxSeries, 0, 0)
+
+	qry, err := engine.NewInstantQuery(context.Background(), queryable, nil, "bigmetric", time.Unix(0, 0))
+	require.NoError(t, err)
+	require.Equal(t, promql.ErrTooManySeries(env), qry.Exec(context.Background()).Err)
+
+	// Next is called once per produced series plus the call that trips the
+	// limit; the limit trips on the (maxSeries+1)th series. Crucially it is far
+	// below totalAvail, proving the set was not fully materialized.
+	require.Equal(t, maxSeries+1, set.calls, "expected early termination after exceeding the ceiling")
+	require.Less(t, set.calls, totalAvail, "the whole series set must not be materialized")
 }
 
 func TestExtendedRangeSelectors(t *testing.T) {
@@ -5375,5 +6553,79 @@ func TestTypeAndUnitMetadataLabelsInFunctionsAndMatching(t *testing.T) {
 				require.Equal(t, tc.expected, res.Value.String(), "query: %s", tc.expr)
 			}
 		})
+	}
+}
+
+func TestQueryCostSamplesAccountingRange(t *testing.T) {
+	s := promqltest.LoadedStorage(t, `
+load 10s
+  metric{instance="a"} 1+1x100
+  metric{instance="b"} 1+1x100
+`)
+	t.Cleanup(func() { s.Close() })
+	engine := newQueryCostEngine(t)
+	for _, tc := range []struct {
+		query  string
+		reads  int64
+		totals []int64
+	}{
+		{query: "metric", reads: 8, totals: []int64{2, 2, 2, 2}},
+		{query: "rate(metric[20s])", reads: 16, totals: []int64{4, 4, 4, 4}},
+		{query: "metric + metric @ 100", reads: 10, totals: []int64{4, 4, 4, 4}},
+		// All child reads count against the budget, but totals include only consumed windows.
+		{query: "sum_over_time(metric[10s:10s])", reads: 20, totals: []int64{2, 2, 2, 2}},
+		{query: "sum_over_time(metric[10s:10s] offset 10s)", reads: 20, totals: []int64{2, 2, 2, 2}},
+		{query: "sum_over_time(metric[10s:10s] offset -10s)", reads: 20, totals: []int64{2, 2, 2, 2}},
+		{query: "last_over_time(sum_over_time(metric[60s])[10s:10s])", reads: 30, totals: []int64{12, 12, 12, 12}},
+		{query: "last_over_time(last_over_time(sum_over_time(metric[60s])[10s:10s])[10s:10s])", reads: 30, totals: []int64{12, 12, 12, 12}},
+		// Overlapping windows repeat logical consumption without repeating reads.
+		{query: "sum_over_time(metric[60s:10s])", reads: 30, totals: []int64{12, 12, 12, 12}},
+		// A varying scalar prevents step-invariant evaluation of the whole call.
+		{query: "quantile_over_time(time() / 1000, metric[20s:10s] @ 200)", reads: 4, totals: []int64{4, 4, 4, 4}},
+		{query: "quantile_over_time(time() / 1000, metric[20s:10s] @ 50)", reads: 4, totals: []int64{4, 4, 4, 4}},
+		{query: "quantile_over_time(time() / 1000, metric[20s:10s] @ 200 offset 1m)", reads: 4, totals: []int64{4, 4, 4, 4}},
+		{query: "quantile_over_time(time() / 1000, metric[20s:10s] @ 200 offset -1m)", reads: 4, totals: []int64{4, 4, 4, 4}},
+		{query: "quantile_over_time(time() / 1000, metric[20s:10s] @ start())", reads: 4, totals: []int64{4, 4, 4, 4}},
+		{query: "quantile_over_time(time() / 1000, metric[20s:10s] @ end())", reads: 4, totals: []int64{4, 4, 4, 4}},
+	} {
+		for _, perStep := range []bool{false, true} {
+			t.Run(fmt.Sprintf("%s/perStep=%t", tc.query, perStep), func(t *testing.T) {
+				engine.SetQueryLimits(0, uint64(tc.reads), 0)
+				opts := promql.NewPrometheusQueryOpts(perStep, 0, nil)
+				q, err := engine.NewRangeQuery(context.Background(), s, opts, tc.query, time.Unix(100, 0), time.Unix(200, 0), 30*time.Second)
+				require.NoError(t, err)
+				defer q.Close()
+				require.NoError(t, q.Exec(context.Background()).Err)
+				st := q.Stats().Samples
+				series := int64(2)
+				if tc.query == "metric + metric @ 100" {
+					series = 4
+				}
+				require.Equal(t, series, st.TotalSeries)
+				require.Equal(t, tc.reads, st.SamplesRead)
+				var total int64
+				for _, n := range tc.totals {
+					total += n
+				}
+				require.Equal(t, total, st.TotalSamples)
+				if perStep {
+					require.Equal(t, tc.totals, st.TotalSamplesPerStep)
+					var reads int64
+					for _, n := range st.SamplesReadPerStep {
+						reads += n
+					}
+					require.Equal(t, st.SamplesRead, reads)
+					if strings.HasPrefix(tc.query, "quantile_over_time(") {
+						require.Equal(t, []int64{tc.reads, 0, 0, 0}, st.SamplesReadPerStep)
+					}
+				}
+
+				engine.SetQueryLimits(0, uint64(tc.reads-1), 0)
+				limited, err := engine.NewRangeQuery(context.Background(), s, opts, tc.query, time.Unix(100, 0), time.Unix(200, 0), 30*time.Second)
+				require.NoError(t, err)
+				defer limited.Close()
+				require.Equal(t, promql.ErrTooManySamplesRead(env), limited.Exec(context.Background()).Err)
+			})
+		}
 	}
 }

@@ -16,9 +16,9 @@ package remote
 import (
 	"bytes"
 	"context"
-	"errors"
 	"fmt"
 	"log/slog"
+	"math"
 	"math/rand/v2"
 	"net/http"
 	"net/http/httptest"
@@ -47,6 +47,7 @@ import (
 	"github.com/prometheus/prometheus/model/metadata"
 	"github.com/prometheus/prometheus/model/timestamp"
 	"github.com/prometheus/prometheus/storage"
+	"github.com/prometheus/prometheus/tsdb"
 	"github.com/prometheus/prometheus/util/teststorage"
 )
 
@@ -368,6 +369,54 @@ func TestOTLPWriteHandler(t *testing.T) {
 				}
 			})
 		}
+	})
+
+	t.Run("exemplars out of timestamp order are all stored", func(t *testing.T) {
+		opts := tsdb.DefaultOptions()
+		opts.EnableExemplarStorage = true
+		opts.MaxExemplars = 10
+		db, err := tsdb.Open(t.TempDir(), nil, nil, opts, nil)
+		require.NoError(t, err)
+		t.Cleanup(func() { require.NoError(t, db.Close()) })
+
+		now := time.Now()
+		request := pmetricotlp.NewExportRequest()
+		m := request.Metrics().ResourceMetrics().AppendEmpty().ScopeMetrics().AppendEmpty().Metrics().AppendEmpty()
+		m.SetName("test_counter")
+		sum := m.SetEmptySum()
+		sum.SetAggregationTemporality(pmetric.AggregationTemporalityCumulative)
+		sum.SetIsMonotonic(true)
+		dp := sum.DataPoints().AppendEmpty()
+		dp.SetTimestamp(pcommon.NewTimestampFromTime(now))
+		dp.SetDoubleValue(1)
+		// The newer exemplar comes first.
+		for i, offset := range []time.Duration{0, -time.Second} {
+			ex := dp.Exemplars().AppendEmpty()
+			ex.SetTimestamp(pcommon.NewTimestampFromTime(now.Add(offset)))
+			ex.SetDoubleValue(float64(i))
+			ex.SetTraceID(pcommon.TraceID{byte(i + 1)})
+		}
+
+		buf, err := request.MarshalProto()
+		require.NoError(t, err)
+		req, err := http.NewRequest("", "", bytes.NewReader(buf))
+		require.NoError(t, err)
+		req.Header.Set("Content-Type", "application/x-protobuf")
+		handler := NewOTLPWriteHandler(slog.New(slog.DiscardHandler), nil, db, func() config.Config {
+			return config.Config{}
+		}, OTLPOptions{})
+		recorder := httptest.NewRecorder()
+		handler.ServeHTTP(recorder, req)
+		require.Equal(t, http.StatusOK, recorder.Code)
+
+		q, err := db.ExemplarQuerier(t.Context())
+		require.NoError(t, err)
+		res, err := q.Select(math.MinInt64, math.MaxInt64, []*labels.Matcher{
+			labels.MustNewMatcher(labels.MatchRegexp, model.MetricNameLabel, ".+"),
+		})
+		require.NoError(t, err)
+		require.Len(t, res, 1)
+		require.Len(t, res[0].Exemplars, 2)
 	})
 
 	t.Run("concurrent requests", func(t *testing.T) {
@@ -954,7 +1003,7 @@ func TestOTLPInstrumentedAppendable(t *testing.T) {
 		require.Equal(t, 1.0, testutil.ToFloat64(oa.samplesAppendedWithoutMetadata))
 	})
 	t.Run("without metadata; 2 exemplar OOO errors", func(t *testing.T) {
-		appTest := teststorage.NewAppendable().WithErrs(nil, errors.New("exemplar error"), nil)
+		appTest := teststorage.NewAppendable().WithErrs(nil, storage.ErrOutOfOrderExemplar, nil)
 		oa := newOTLPInstrumentedAppendable(prometheus.NewRegistry(), appTest)
 
 		require.Equal(t, 0.0, testutil.ToFloat64(oa.outOfOrderExemplars))
@@ -969,5 +1018,30 @@ func TestOTLPInstrumentedAppendable(t *testing.T) {
 
 		require.Equal(t, 2.0, testutil.ToFloat64(oa.outOfOrderExemplars))
 		require.Equal(t, 1.0, testutil.ToFloat64(oa.samplesAppendedWithoutMetadata))
+	})
+	t.Run("exemplar errors other than out of order are not counted", func(t *testing.T) {
+		appTest := teststorage.NewAppendable().WithErrs(nil, storage.ErrExemplarLabelLength, nil)
+		oa := newOTLPInstrumentedAppendable(prometheus.NewRegistry(), appTest)
+
+		app := oa.AppenderV2(t.Context())
+		_, err := app.Append(0, labels.EmptyLabels(), -1, 1, 2, nil, nil, storage.AOptions{Exemplars: []exemplar.Exemplar{{}, {}}})
+		require.NoError(t, err)
+		require.NoError(t, app.Commit())
+		require.Len(t, appTest.ResultSamples(), 1)
+
+		require.Equal(t, 0.0, testutil.ToFloat64(oa.outOfOrderExemplars))
+	})
+	t.Run("exemplars too far in the future are not counted", func(t *testing.T) {
+		appTest := teststorage.NewAppendable()
+		oa := newOTLPInstrumentedAppendable(prometheus.NewRegistry(), appTest)
+
+		future := timestamp.FromTime(time.Now().Add(time.Hour))
+		app := oa.AppenderV2(t.Context())
+		_, err := app.Append(0, labels.EmptyLabels(), -1, 1, 2, nil, nil, storage.AOptions{Exemplars: []exemplar.Exemplar{{Ts: future, HasTs: true}}})
+		require.NoError(t, err)
+		require.NoError(t, app.Commit())
+		require.Len(t, appTest.ResultSamples(), 1)
+
+		require.Equal(t, 0.0, testutil.ToFloat64(oa.outOfOrderExemplars))
 	})
 }
