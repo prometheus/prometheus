@@ -3507,3 +3507,61 @@ func TestAppendToConvertNHCBToClassic(t *testing.T) {
 		}
 	})
 }
+
+// Recommended CLI invocation:
+//
+//	export bench=nhcbSend && go test ./storage/remote/... \
+//		-run '^$' -bench '^BenchmarkNHCBSend$' \
+//		-benchtime 1s -count 6 -cpu 2 -timeout 999m -benchmem \
+//		| tee ${bench}.txt
+func BenchmarkNHCBSend(b *testing.B) {
+	const numSeries = 1000
+	recs := testwal.GenerateRecords(recCase{Series: numSeries, SamplesPerSeries: 0, ExtraLabels: extraLabels})
+	h := &histogram.Histogram{
+		Schema:       histogram.CustomBucketsSchema,
+		CustomValues: []float64{0.005, 0.01, 0.025, 0.05, 0.1, 0.25, 0.5, 1, 2.5, 5, 10},
+		PositiveSpans: []histogram.Span{
+			{Offset: 0, Length: 4},
+			{Offset: 2, Length: 5},
+		},
+		PositiveBuckets: []int64{10, 5, -3, 8, 2, 0, 4, -1, 3},
+		Count:           180,
+		Sum:             456.78,
+	}
+	histSamples := make([]record.RefHistogramSample, numSeries)
+	for i, s := range recs.Series {
+		histSamples[i] = record.RefHistogramSample{
+			Ref: s.Ref,
+			ST:  1000,
+			T:   2000,
+			H:   h,
+		}
+	}
+
+	c := NewNopWriteClient()
+	cfg := testDefaultQueueConfig()
+	mcfg := config.DefaultMetadataConfig
+	cfg.BatchSendDeadline = model.Duration(100 * time.Millisecond)
+	cfg.MinShards = 20
+	cfg.MaxShards = 20
+
+	for _, format := range []remoteapi.WriteMessageType{remoteapi.WriteV1MessageType, remoteapi.WriteV2MessageType} {
+		b.Run(string(format), func(b *testing.B) {
+			m := newTestQueueManager(b, cfg, mcfg, defaultFlushDeadline, c, format)
+			m.convertNHCBToClassic = true
+			m.StoreSeries(recs.Series, 0)
+
+			m.Start()
+			defer m.Stop()
+
+			b.ReportAllocs()
+			b.ResetTimer()
+			for i := 0; b.Loop(); i++ {
+				m.AppendHistograms(histSamples)
+				m.UpdateSeriesSegment(recs.Series, i+1)
+				m.SeriesReset(i + 1)
+			}
+			b.StopTimer()
+		})
+	}
+}

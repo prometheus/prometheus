@@ -893,7 +893,12 @@ func (t *QueueManager) convertAndEnqueueNHCB(ref chunks.HeadSeriesRef, st, ts in
 		}
 	}
 
-	classicSeries := make([]timeSeries, 0, len(customValues)+len(prevBounds)+3)
+	boundsChanged := !wasActive || !slices.Equal(prevBounds, customValues)
+	extraRemovedCap := 0
+	if wasActive && boundsChanged {
+		extraRemovedCap = len(prevBounds)
+	}
+	classicSeries := make([]timeSeries, 0, len(customValues)+extraRemovedCap+3)
 	err := histogram.ConvertNHCBToClassic(nhcb, lbls, t.builder, func(bucketLabels labels.Labels, value float64) error {
 		classicSeries = append(classicSeries, timeSeries{
 			seriesLabels:   bucketLabels,
@@ -905,15 +910,15 @@ func (t *QueueManager) convertAndEnqueueNHCB(ref chunks.HeadSeriesRef, st, ts in
 		})
 		return nil
 	})
-	if err == nil && wasActive {
+	if err == nil && wasActive && boundsChanged {
 		baseName := lbls.Get(model.MetricNameLabel)
 		staleVal := math.Float64frombits(value.StaleNaN)
+		t.builder.Reset(lbls)
+		t.builder.Set(model.MetricNameLabel, baseName+"_bucket")
 		for _, prevBound := range prevBounds {
 			if slices.Contains(customValues, prevBound) {
 				continue
 			}
-			t.builder.Reset(lbls)
-			t.builder.Set(model.MetricNameLabel, baseName+"_bucket")
 			t.builder.Set(model.BucketLabel, labels.FormatOpenMetricsFloat(prevBound))
 			classicSeries = append(classicSeries, timeSeries{
 				seriesLabels:   t.builder.Labels(),
@@ -928,7 +933,7 @@ func (t *QueueManager) convertAndEnqueueNHCB(ref chunks.HeadSeriesRef, st, ts in
 	if err == nil {
 		if isStale {
 			delete(t.nhcbSeriesBounds, ref)
-		} else if !wasActive || !slices.Equal(prevBounds, customValues) {
+		} else if boundsChanged {
 			t.nhcbSeriesBounds[ref] = slices.Clone(customValues)
 		}
 	}
