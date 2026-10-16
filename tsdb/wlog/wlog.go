@@ -873,7 +873,7 @@ func (w *WL) Close() (err error) {
 }
 
 // Segments returns the range [first, n] of currently existing segments.
-// If no segments are found, first and n are -1.
+// If no segments are found, first and last are -1.
 func Segments(wlDir string) (first, last int, err error) {
 	refs, err := listSegments(wlDir)
 	if err != nil {
