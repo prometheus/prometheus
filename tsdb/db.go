@@ -64,6 +64,9 @@ const (
 
 	defaultBlockReloadInterval = time.Minute
 
+	// mergeHeadMmapInterval is how often head chunks are m-mapped while blocks are merged.
+	mergeHeadMmapInterval = 5 * time.Minute
+
 	// Block dir suffixes to make deletion and creation operations atomic.
 	// We decided to do suffixes instead of creating meta.json as last (or delete as first) one,
 	// because in error case you still can recover meta.json from the block content within local TSDB dir.
@@ -359,6 +362,9 @@ type DB struct {
 	// irrespective of success or failure. This does not include out-of-order compaction and stale series compaction.
 	lastHeadCompactionTime time.Time
 
+	// lastHeadMmapTime is the wall clock time, in Unix nanoseconds, when head chunks were last m-mapped.
+	lastHeadMmapTime atomic.Int64
+
 	writeNotified wlog.WriteNotified
 
 	registerer prometheus.Registerer
@@ -377,6 +383,7 @@ type dbMetrics struct {
 	reloadsFailed                      prometheus.Counter
 	compactionsFailed                  prometheus.Counter
 	compactionsTriggered               prometheus.Counter
+	compactionsPaused                  prometheus.Counter
 	compactionsSkipped                 prometheus.Counter
 	sizeRetentionCount                 prometheus.Counter
 	timeRetentionCount                 prometheus.Counter
@@ -429,6 +436,10 @@ func newDBMetrics(db *DB, r prometheus.Registerer) *dbMetrics {
 	m.compactionsTriggered = prometheus.NewCounter(prometheus.CounterOpts{
 		Name: "prometheus_tsdb_compactions_triggered_total",
 		Help: "Total number of triggered compactions for the partition.",
+	})
+	m.compactionsPaused = prometheus.NewCounter(prometheus.CounterOpts{
+		Name: "prometheus_tsdb_compactions_paused_total",
+		Help: "Total number of times a block compaction was paused to persist the head block.",
 	})
 	m.compactionsFailed = prometheus.NewCounter(prometheus.CounterOpts{
 		Name: "prometheus_tsdb_compactions_failed_total",
@@ -521,6 +532,7 @@ func newDBMetrics(db *DB, r prometheus.Registerer) *dbMetrics {
 			m.reloadsFailed,
 			m.compactionsFailed,
 			m.compactionsTriggered,
+			m.compactionsPaused,
 			m.compactionsSkipped,
 			m.sizeRetentionCount,
 			m.timeRetentionCount,
@@ -1111,6 +1123,9 @@ func open(dir string, l *slog.Logger, r prometheus.Registerer, opts *Options, rn
 		return nil, fmt.Errorf("create compactor: %w", err)
 	}
 	db.compactCancel = cancel
+	if lc, ok := db.compactor.(*LeveledCompactor); ok {
+		lc.MaybePause = db.maybePause
+	}
 
 	if opts.BlockQuerierFunc == nil {
 		db.blockQuerierFunc = NewBlockQuerier
@@ -1312,6 +1327,7 @@ func (db *DB) run(ctx context.Context) {
 			}
 			// We attempt mmapping of head chunks regularly.
 			db.head.mmapHeadChunks()
+			db.lastHeadMmapTime.Store(time.Now().UnixNano())
 
 			numStaleSeries, numSeries := db.Head().NumStaleSeries(), db.Head().NumSeries()
 			if db.autoCompact && numSeries > 0 && db.opts.staleSeriesCompactionThreshold.Load() > 0 {
@@ -1579,42 +1595,12 @@ func (db *DB) Compact(ctx context.Context) (returnErr error) {
 		default:
 		}
 
-		if !db.head.compactable() {
-			// Reset the counter once the head compactions are done.
-			// This would also reset it if a manual compaction was triggered while the auto compaction was in its delay period.
-			if !db.timeWhenCompactionDelayStarted.IsZero() {
-				db.timeWhenCompactionDelayStarted = time.Time{}
-			}
+		maxt, persisted, err := db.persistHead()
+		if err != nil {
+			return err
+		}
+		if !persisted {
 			break
-		}
-
-		if db.timeWhenCompactionDelayStarted.IsZero() {
-			// Start counting for the delay.
-			db.timeWhenCompactionDelayStarted = time.Now()
-		}
-		if db.waitingForCompactionDelay() {
-			break
-		}
-		mint := db.head.MinTime()
-		maxt := rangeForTimestamp(mint, db.head.chunkRange.Load())
-
-		// Wrap head into a range that bounds all reads to it.
-		// We remove 1 millisecond from maxt because block
-		// intervals are half-open: [b.MinTime, b.MaxTime). But
-		// chunk intervals are closed: [c.MinTime, c.MaxTime];
-		// so in order to make sure that overlaps are evaluated
-		// consistently, we explicitly remove the last value
-		// from the block interval here.
-		rh := NewRangeHeadWithIsolationDisabled(db.head, mint, maxt-1)
-
-		// Compaction runs with isolation disabled, because head.compactable()
-		// ensures that maxt is more than chunkRange/2 back from now, and
-		// head.appendableMinValidTime() ensures that no new appends can start within the compaction range.
-		// We do need to wait for any overlapping appenders that started previously to finish.
-		db.head.WaitForAppendersOverlapping(rh.MaxTime())
-
-		if err := db.compactHead(rh); err != nil {
-			return fmt.Errorf("compact head: %w", err)
 		}
 		// Consider only successful compactions for WAL truncation.
 		lastBlockMaxt = maxt
@@ -1643,6 +1629,99 @@ func (db *DB) Compact(ctx context.Context) (returnErr error) {
 	}
 
 	return db.compactBlocks()
+}
+
+// maybePause m-maps head chunks if the last m-mapping is older than
+// mergeHeadMmapInterval, and writes the head block if the head became
+// compactable while blocks are being compacted. Compact holds db.cmtx for the
+// whole compaction, so it can run while a merge is paused.
+func (db *DB) maybePause(ctx context.Context) error {
+	// A merge can run for hours and it blocks the m-mapping done in db.run.
+	lastMmap := time.Unix(0, db.lastHeadMmapTime.Load())
+	if time.Since(lastMmap) >= mergeHeadMmapInterval {
+		db.head.mmapHeadChunks()
+		db.lastHeadMmapTime.Store(time.Now().UnixNano())
+	}
+
+	if !db.head.compactable() || db.waitingForCompactionDelay() {
+		return nil
+	}
+	if db.timeWhenCompactionDelayStarted.IsZero() {
+		db.timeWhenCompactionDelayStarted = time.Now()
+	}
+	if db.waitingForCompactionDelay() {
+		return nil
+	}
+	db.logger.Info("paused block compaction to persist the head block")
+	start := time.Now()
+
+	maxt, persisted, err := db.persistHead()
+	if err != nil {
+		return err
+	}
+	if !persisted {
+		return nil
+	}
+	db.metrics.compactionsPaused.Inc()
+
+	if err := db.head.truncateWAL(maxt); err != nil {
+		return fmt.Errorf("WAL truncation: %w", err)
+	}
+	if err := db.compactOOOHead(ctx); err != nil {
+		return fmt.Errorf("compact ooo head: %w", err)
+	}
+	db.logger.Info("resuming block compaction", "pause", time.Since(start).String())
+	return nil
+}
+
+// persistHead persists one chunk range of the head to disk if the head is
+// compactable and the compaction delay has passed. It returns the maxt of the
+// persisted range and whether a block was written.
+
+// Write HEAD block to disk, returning maxt and bool indicating if the
+// block was written or not, along with any error.
+// Callers are responsible for truncating the WAL and compacting the OOO head afterwards.
+// The db.cmtx should be held before calling this method.
+func (db *DB) persistHead() (int64, bool, error) {
+	if !db.head.compactable() {
+		// Reset the counter once the head compactions are done.
+		// This would also reset it if a manual compaction was triggered while the auto compaction was in its delay period.
+		if !db.timeWhenCompactionDelayStarted.IsZero() {
+			db.timeWhenCompactionDelayStarted = time.Time{}
+		}
+		return 0, false, nil
+	}
+
+	if db.timeWhenCompactionDelayStarted.IsZero() {
+		// Start counting for the delay.
+		db.timeWhenCompactionDelayStarted = time.Now()
+	}
+	if db.waitingForCompactionDelay() {
+		return 0, false, nil
+	}
+	mint := db.head.MinTime()
+	maxt := rangeForTimestamp(mint, db.head.chunkRange.Load())
+
+	// Wrap head into a range that bounds all reads to it.
+	// We remove 1 millisecond from maxt because block
+	// intervals are half-open: [b.MinTime, b.MaxTime). But
+	// chunk intervals are closed: [c.MinTime, c.MaxTime];
+	// so in order to make sure that overlaps are evaluated
+	// consistently, we explicitly remove the last value
+	// from the block interval here.
+	rh := NewRangeHeadWithIsolationDisabled(db.head, mint, maxt-1)
+
+	// Compaction runs with isolation disabled, because head.compactable()
+	// ensures that maxt is more than chunkRange/2 back from now, and
+	// head.appendableMinValidTime() ensures that no new appends can start within the compaction range.
+	// We do need to wait for any overlapping appenders that started previously to finish.
+	db.head.WaitForAppendersOverlapping(rh.MaxTime())
+
+	if err := db.compactHead(rh); err != nil {
+		return 0, false, fmt.Errorf("compact head: %w", err)
+	}
+
+	return maxt, true, nil
 }
 
 // CompactHead compacts the given RangeHead.
@@ -2030,6 +2109,9 @@ func (db *DB) CompactSelectedSeries(seriesRefs []storage.SeriesRef) (err error) 
 	return nil
 }
 
+// Callback for testing.
+var compactBlocksTestingCallback func()
+
 // compactBlocks compacts all the eligible on-disk blocks.
 // The db.cmtx should be held before calling this method.
 func (db *DB) compactBlocks() (err error) {
@@ -2049,6 +2131,10 @@ func (db *DB) compactBlocks() (err error) {
 		}
 		if len(plan) == 0 {
 			break
+		}
+
+		if compactBlocksTestingCallback != nil {
+			compactBlocksTestingCallback()
 		}
 
 		select {
