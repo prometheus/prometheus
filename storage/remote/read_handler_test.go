@@ -51,6 +51,7 @@ import (
 	"github.com/prometheus/prometheus/tsdb/chunks"
 	"github.com/prometheus/prometheus/tsdb/tsdbutil"
 	"github.com/prometheus/prometheus/util/teststorage"
+	"github.com/prometheus/prometheus/util/testutil"
 )
 
 func TestSampledReadEndpoint(t *testing.T) {
@@ -282,65 +283,105 @@ func BenchmarkSampledReadEndpointWithoutExternalLabels(b *testing.B) {
 }
 
 func BenchmarkStreamReadEndpoint(b *testing.B) {
-	store := promqltest.LoadedStorage(b, `
-	load 1m
-		test_metric1{foo="bar1",baz="qux"} 0+100x119
-		test_metric1{foo="bar2",baz="qux"} 0+100x120
-		test_metric1{foo="bar3",baz="qux"} 0+100x240
-	`)
+	bench := func(b *testing.B, store storage.SampleAndChunkQueryable, externalLabels labels.Labels, metric string, maxBytesInFrame, expectedFrames int) {
+		api := NewReadHandler(nil, nil, store, func() config.Config {
+			return config.Config{GlobalConfig: config.GlobalConfig{ExternalLabels: externalLabels}}
+		},
+			0, 1, maxBytesInFrame,
+		)
 
-	b.Cleanup(func() { store.Close() })
-
-	api := NewReadHandler(nil, nil, store, func() config.Config {
-		return config.Config{}
-	},
-		0, 1, 0,
-	)
-
-	matcher, err := labels.NewMatcher(labels.MatchEqual, "__name__", "test_metric1")
-	require.NoError(b, err)
-
-	query, err := ToQuery(0, 14400001, []*labels.Matcher{matcher}, &storage.SelectHints{
-		Step:  1,
-		Func:  "sum",
-		Start: 0,
-		End:   14400001,
-	})
-	require.NoError(b, err)
-
-	req := &prompb.ReadRequest{
-		Queries:               []*prompb.Query{query},
-		AcceptedResponseTypes: []prompb.ReadRequest_ResponseType{prompb.ReadRequest_STREAMED_XOR_CHUNKS},
-	}
-	data, err := proto.Marshal(req)
-	require.NoError(b, err)
-
-	b.ReportAllocs()
-
-	for b.Loop() {
-		compressed := snappy.Encode(nil, data)
-		request, err := http.NewRequest(http.MethodPost, "", bytes.NewBuffer(compressed))
+		matcher, err := labels.NewMatcher(labels.MatchEqual, "__name__", metric)
 		require.NoError(b, err)
 
-		recorder := httptest.NewRecorder()
-		api.ServeHTTP(recorder, request)
+		query, err := ToQuery(0, 14400001, []*labels.Matcher{matcher}, &storage.SelectHints{
+			Step:  1,
+			Func:  "sum",
+			Start: 0,
+			End:   14400001,
+		})
+		require.NoError(b, err)
 
-		require.Equal(b, 2, recorder.Code/100)
-
-		var results []*prompb.ChunkedReadResponse
-		stream := NewChunkedReader(recorder.Result().Body, config.DefaultChunkedReadLimit, nil)
-
-		for {
-			res := &prompb.ChunkedReadResponse{}
-			err := stream.NextProto(res)
-			if errors.Is(err, io.EOF) {
-				break
-			}
-			require.NoError(b, err)
-			results = append(results, res)
+		req := &prompb.ReadRequest{
+			Queries:               []*prompb.Query{query},
+			AcceptedResponseTypes: []prompb.ReadRequest_ResponseType{prompb.ReadRequest_STREAMED_XOR_CHUNKS},
 		}
+		data, err := proto.Marshal(req)
+		require.NoError(b, err)
 
-		require.Len(b, results, 6, "Expected 6 results.")
+		b.ReportAllocs()
+
+		for b.Loop() {
+			compressed := snappy.Encode(nil, data)
+			request, err := http.NewRequest(http.MethodPost, "", bytes.NewBuffer(compressed))
+			require.NoError(b, err)
+
+			recorder := httptest.NewRecorder()
+			api.ServeHTTP(recorder, request)
+
+			require.Equal(b, 2, recorder.Code/100)
+
+			var results []*prompb.ChunkedReadResponse
+			stream := NewChunkedReader(recorder.Result().Body, config.DefaultChunkedReadLimit, nil)
+
+			for {
+				res := &prompb.ChunkedReadResponse{}
+				err := stream.NextProto(res)
+				if errors.Is(err, io.EOF) {
+					break
+				}
+				require.NoError(b, err)
+				results = append(results, res)
+			}
+
+			require.Len(b, results, expectedFrames)
+		}
+	}
+
+	b.Run("test_data", func(b *testing.B) {
+		store := promqltest.LoadedStorage(b, `
+		load 1m
+			test_metric1{foo="bar1",baz="qux"} 0+100x119
+			test_metric1{foo="bar2",baz="qux"} 0+100x120
+			test_metric1{foo="bar3",baz="qux"} 0+100x240
+		`)
+		b.Cleanup(func() { store.Close() })
+
+		bench(b, store, labels.EmptyLabels(), "test_metric1", 0, 6)
+	})
+
+	for _, seriesCount := range []int{100, 1000} {
+		for _, tc := range []struct {
+			name           string
+			externalLabels labels.Labels
+			// Whether the series have a label that sorts after the external labels.
+			lastLabelAfter bool
+		}{
+			{name: "external_labels_none"},
+			{name: "external_labels_after_last_label", externalLabels: labels.FromStrings("cluster", "c1", "replica", "r1")},
+			{name: "external_labels_before_last_label", externalLabels: labels.FromStrings("cluster", "c1", "replica", "r1"), lastLabelAfter: true},
+		} {
+			b.Run(fmt.Sprintf("series_%d/%s", seriesCount, tc.name), func(b *testing.B) {
+				store := teststorage.New(b)
+				app := store.AppenderV2(b.Context())
+				for i := range seriesCount {
+					labelStrings := []string{"__name__", "test_metric", "instance", strconv.Itoa(i), "job", "test"}
+					for j := range 8 {
+						labelStrings = append(labelStrings, fmt.Sprintf("label_%d", j), "value")
+					}
+					if tc.lastLabelAfter {
+						labelStrings = append(labelStrings, "zone", "z1")
+					}
+					lset := labels.FromStrings(labelStrings...)
+					for ts := range 240 {
+						_, err := app.Append(0, lset, 0, int64(ts)*60000, float64(ts), nil, nil, storage.AOptions{})
+						require.NoError(b, err)
+					}
+				}
+				require.NoError(b, app.Commit())
+
+				bench(b, store, tc.externalLabels, "test_metric", 1<<20, seriesCount)
+			})
+		}
 	}
 }
 
@@ -579,6 +620,114 @@ func TestStreamReadEndpoint(t *testing.T) {
 				QueryIndex: 2,
 			},
 		}, results)
+	})
+
+	t.Run("sorted with external labels", func(t *testing.T) {
+		// Adding the same external labels to every series keeps their order, except
+		// when the labels of a series are a prefix of the labels of a later series.
+		store := promqltest.LoadedStorage(t, `
+		load 1m
+			prefix{job="a"} 1
+			prefix{job="a", path="/x"} 2
+			prefix{job="a", path="/y"} 3
+			prefix{job="b"} 4
+			nested{job="a"} 1
+			nested{job="a", path="/x"} 2
+			nested{job="a", path="/x", method="GET"} 3
+			nested{job="a", path="/x", zz="1"} 4
+			nested{job="a", zz="1"} 5
+			unaffected{job="a"} 1
+			unaffected{job="a", zone="z1"} 2
+			unaffected{job="b"} 3
+	`)
+		t.Cleanup(func() { require.NoError(t, store.Close()) })
+
+		type series struct {
+			Labels labels.Labels
+			Value  float64
+		}
+		for _, tc := range []struct {
+			name           string
+			metric         string
+			externalLabels labels.Labels
+			expected       []series
+		}{
+			{
+				name:           "prefix",
+				metric:         "prefix",
+				externalLabels: labels.FromStrings("region", "foo"),
+				expected: []series{
+					{labels.FromStrings("__name__", "prefix", "job", "a", "path", "/x", "region", "foo"), 2},
+					{labels.FromStrings("__name__", "prefix", "job", "a", "path", "/y", "region", "foo"), 3},
+					{labels.FromStrings("__name__", "prefix", "job", "a", "region", "foo"), 1},
+					{labels.FromStrings("__name__", "prefix", "job", "b", "region", "foo"), 4},
+				},
+			},
+			{
+				name:           "nested prefixes",
+				metric:         "nested",
+				externalLabels: labels.FromStrings("cluster", "c1", "replica", "r1"),
+				expected: []series{
+					{labels.FromStrings("__name__", "nested", "cluster", "c1", "job", "a", "method", "GET", "path", "/x", "replica", "r1"), 3},
+					{labels.FromStrings("__name__", "nested", "cluster", "c1", "job", "a", "path", "/x", "replica", "r1"), 2},
+					{labels.FromStrings("__name__", "nested", "cluster", "c1", "job", "a", "path", "/x", "replica", "r1", "zz", "1"), 4},
+					{labels.FromStrings("__name__", "nested", "cluster", "c1", "job", "a", "replica", "r1"), 1},
+					{labels.FromStrings("__name__", "nested", "cluster", "c1", "job", "a", "replica", "r1", "zz", "1"), 5},
+				},
+			},
+			{
+				name:           "prefix with a label after the external labels",
+				metric:         "unaffected",
+				externalLabels: labels.FromStrings("region", "foo"),
+				expected: []series{
+					{labels.FromStrings("__name__", "unaffected", "job", "a", "region", "foo"), 1},
+					{labels.FromStrings("__name__", "unaffected", "job", "a", "region", "foo", "zone", "z1"), 2},
+					{labels.FromStrings("__name__", "unaffected", "job", "b", "region", "foo"), 3},
+				},
+			},
+			{
+				name:   "no external labels",
+				metric: "prefix",
+				expected: []series{
+					{labels.FromStrings("__name__", "prefix", "job", "a"), 1},
+					{labels.FromStrings("__name__", "prefix", "job", "a", "path", "/x"), 2},
+					{labels.FromStrings("__name__", "prefix", "job", "a", "path", "/y"), 3},
+					{labels.FromStrings("__name__", "prefix", "job", "b"), 4},
+				},
+			},
+		} {
+			t.Run(tc.name, func(t *testing.T) {
+				handler := NewReadHandler(nil, nil, store, func() config.Config {
+					return config.Config{GlobalConfig: config.GlobalConfig{ExternalLabels: tc.externalLabels}}
+				}, 1e6, 1, 1<<20)
+				data, err := proto.Marshal(&prompb.ReadRequest{
+					Queries: []*prompb.Query{{
+						StartTimestampMs: 0, EndTimestampMs: 1,
+						Matchers: []*prompb.LabelMatcher{{Type: prompb.LabelMatcher_EQ, Name: "__name__", Value: tc.metric}},
+					}},
+					AcceptedResponseTypes: []prompb.ReadRequest_ResponseType{prompb.ReadRequest_STREAMED_XOR_CHUNKS},
+				})
+				require.NoError(t, err)
+				recorder := httptest.NewRecorder()
+				handler.ServeHTTP(recorder, httptest.NewRequest(http.MethodPost, "/api/v1/read", bytes.NewReader(snappy.Encode(nil, data))))
+				require.Equal(t, http.StatusOK, recorder.Code)
+
+				body := recorder.Result().Body
+				ss := NewChunkedSeriesSet(NewChunkedReader(body, config.DefaultChunkedReadLimit, nil), body, 0, 1, func(error) {})
+				var got []series
+				for ss.Next() {
+					iter := ss.At().Iterator(nil)
+					require.Equal(t, chunkenc.ValFloat, iter.Next())
+					_, value := iter.At()
+					got = append(got, series{ss.At().Labels(), value})
+				}
+				require.NoError(t, ss.Err())
+				for i := 1; i < len(got); i++ {
+					require.Negative(t, labels.Compare(got[i-1].Labels, got[i].Labels), "series %d is not sorted after series %d", i, i-1)
+				}
+				testutil.RequireEqual(t, tc.expected, got)
+			})
+		}
 	})
 
 	t.Run("storage errors", func(t *testing.T) {
