@@ -26,6 +26,11 @@ jobs:
           enable_npm: true
           cache_key_suffix: race
       - run: make GO_ONLY=1 SKIP_GOLANGCI_LINT=1
+      - name: Smoke test Go benchmarks
+        run: |
+          set -o pipefail
+          go test -p=1 -short -run '^$' -bench . -benchtime=1x -timeout=10m ./... | grep -v '^Benchmark'
+        shell: bash
       - run: go test ./tsdb/ -test.tsdb-isolation=false
       - run: make -C documentation/examples/remote_storage
       - run: make -C documentation/examples
