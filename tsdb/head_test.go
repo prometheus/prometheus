@@ -227,6 +227,8 @@ func BenchmarkLoadWLs(b *testing.B) {
 		// minValidTime is passed to Head.Init. Samples before it are dropped,
 		// like samples that a block already holds after a restart.
 		minValidTime int64
+		// walReplaySkipSeries sets HeadOptions.EnableWALReplaySkipSeries.
+		walReplaySkipSeries bool
 	}{
 		{ // Less series and more samples. 2 hour WAL with 1 second scrape interval.
 			batches:          10,
@@ -244,6 +246,19 @@ func BenchmarkLoadWLs(b *testing.B) {
 			seriesPerBatch:   10000,
 			samplesPerSeries: 50,
 			minValidTime:     500,
+		},
+		{ // Same, with the series skipped.
+			batches:             10,
+			seriesPerBatch:      10000,
+			samplesPerSeries:    50,
+			minValidTime:        500,
+			walReplaySkipSeries: true,
+		},
+		{ // More series and less samples, with the extra scan but nothing to skip.
+			batches:             10,
+			seriesPerBatch:      10000,
+			samplesPerSeries:    50,
+			walReplaySkipSeries: true,
 		},
 		{ // In between.
 			batches:          10,
@@ -302,6 +317,14 @@ func BenchmarkLoadWLs(b *testing.B) {
 			histogramSeriesPct:  0.5,
 			bucketsPerHistogram: 8,
 		},
+		{ // All-histogram WAL with the extra scan but nothing to skip.
+			batches:             10,
+			seriesPerBatch:      1000,
+			samplesPerSeries:    480,
+			histogramSeriesPct:  1.0,
+			bucketsPerHistogram: 8,
+			walReplaySkipSeries: true,
+		},
 	}
 
 	labelsPerSeries := 5
@@ -326,6 +349,9 @@ func BenchmarkLoadWLs(b *testing.B) {
 					}
 					if c.minValidTime != 0 {
 						name += fmt.Sprintf(",minValidTime=%d", c.minValidTime)
+					}
+					if c.walReplaySkipSeries {
+						name += ",walReplaySkipSeries=true"
 					}
 					b.Run(name,
 						func(b *testing.B) {
@@ -522,6 +548,7 @@ func BenchmarkLoadWLs(b *testing.B) {
 								opts := DefaultHeadOptions()
 								opts.ChunkRange = 1000
 								opts.ChunkDirRoot = dir
+								opts.EnableWALReplaySkipSeries = c.walReplaySkipSeries
 								if c.oooCapMax > 0 {
 									opts.OutOfOrderCapMax.Store(c.oooCapMax)
 								}
@@ -546,6 +573,8 @@ func BenchmarkLoadWLs(b *testing.B) {
 // BENCHMARK_LOAD_REAL_WLS_DIR should be the folder where `wal` and `chunks_head` are located.
 //
 // Using an absolute path for BENCHMARK_LOAD_REAL_WLS_DIR is recommended.
+//
+// Set BENCHMARK_LOAD_REAL_WLS_SKIP_SERIES to a non-empty value to enable HeadOptions.EnableWALReplaySkipSeries.
 //
 // Because WLs loading may alter BENCHMARK_LOAD_REAL_WLS_DIR which can affect benchmark results and to ensure consistency,
 // a copy of BENCHMARK_LOAD_REAL_WLS_DIR is made for each iteration and deleted at the end.
@@ -590,6 +619,7 @@ func BenchmarkLoadRealWLs(b *testing.B) {
 
 		opts := DefaultHeadOptions()
 		opts.ChunkDirRoot = dir
+		opts.EnableWALReplaySkipSeries = os.Getenv("BENCHMARK_LOAD_REAL_WLS_SKIP_SERIES") != ""
 		h, err := NewHead(nil, nil, wal, wbl, opts, nil)
 		require.NoError(b, err)
 		require.NoError(b, h.Init(minValidTime))
@@ -1013,10 +1043,10 @@ func TestHead_ReadWAL(t *testing.T) {
 
 // TestHead_ReplaySkipsSeriesWithoutData checks the head after WAL replay of
 // series whose samples are all older than the minimum valid time. Replay
-// creates such series and h.gc() deletes them at the end of Init.
 // TestHead_ReplaySkipsSeriesWithoutData checks the head after WAL replay of
 // series whose samples are all older than the minimum valid time. With
 // EnableWALReplaySkipSeries, replay does not create such series, and the head,
+// the WAL expiries and the next checkpoint must be the same as without it.
 func TestHead_ReplaySkipsSeriesWithoutData(t *testing.T) {
 	const (
 		minValidTime = 1000
@@ -1044,6 +1074,7 @@ func TestHead_ReplaySkipsSeriesWithoutData(t *testing.T) {
 
 		series      map[chunks.HeadSeriesRef]labels.Labels // Besides the anchor.
 		created     float64
+		skipped     float64 // Series records skipped with EnableWALReplaySkipSeries.
 		walExpiries map[chunks.HeadSeriesRef]int64
 		checkpoint  []chunks.HeadSeriesRef // Series records in the next checkpoint.
 	}{
@@ -1054,6 +1085,7 @@ func TestHead_ReplaySkipsSeriesWithoutData(t *testing.T) {
 				[]record.RefSample{{Ref: 2, T: old, V: 1}},
 			},
 			created:     2,
+			skipped:     1,
 			walExpiries: map[chunks.HeadSeriesRef]int64{2: valid},
 			checkpoint:  []chunks.HeadSeriesRef{1, 2},
 		},
@@ -1068,6 +1100,7 @@ func TestHead_ReplaySkipsSeriesWithoutData(t *testing.T) {
 			},
 			series:      map[chunks.HeadSeriesRef]labels.Labels{3: lbls("3")},
 			created:     3,
+			skipped:     1,
 			walExpiries: map[chunks.HeadSeriesRef]int64{2: valid},
 			checkpoint:  []chunks.HeadSeriesRef{1, 2, 3},
 		},
@@ -1079,6 +1112,7 @@ func TestHead_ReplaySkipsSeriesWithoutData(t *testing.T) {
 				[]record.RefHistogramSample{{Ref: 2, T: valid, H: unknownSchema}},
 			},
 			created:     2,
+			skipped:     1,
 			walExpiries: map[chunks.HeadSeriesRef]int64{2: valid},
 			checkpoint:  []chunks.HeadSeriesRef{1, 2},
 		},
@@ -1101,6 +1135,7 @@ func TestHead_ReplaySkipsSeriesWithoutData(t *testing.T) {
 				[]record.RefMetadata{{Ref: 2, Type: uint8(record.Counter), Unit: "foo", Help: "total foo"}},
 			},
 			created:     2,
+			skipped:     1,
 			walExpiries: map[chunks.HeadSeriesRef]int64{2: valid},
 			checkpoint:  []chunks.HeadSeriesRef{1, 2},
 		},
@@ -1210,6 +1245,7 @@ func TestHead_ReplaySkipsSeriesWithoutData(t *testing.T) {
 				[]record.RefSample{{Ref: 2, T: old, V: 1}, {Ref: 3, T: old, V: 1}},
 			},
 			created:     2,
+			skipped:     1,
 			walExpiries: map[chunks.HeadSeriesRef]int64{2: valid},
 			checkpoint:  []chunks.HeadSeriesRef{1, 2},
 		},
@@ -1223,12 +1259,14 @@ func TestHead_ReplaySkipsSeriesWithoutData(t *testing.T) {
 			},
 			corruptTail: true,
 			created:     2,
+			skipped:     1,
 			walExpiries: map[chunks.HeadSeriesRef]int64{2: valid},
 		},
 	}
 
-	for _, tc := range cases {
-		t.Run(tc.name, func(t *testing.T) {
+	for i := range 2 * len(cases) {
+		tc, skip := cases[i/2], i%2 == 1
+		t.Run(fmt.Sprintf("%s/skipSeries=%v", tc.name, skip), func(t *testing.T) {
 			dir := t.TempDir()
 			wal, err := wlog.NewSize(nil, nil, filepath.Join(dir, "wal"), 32768, compression.None)
 			require.NoError(t, err)
@@ -1256,6 +1294,7 @@ func TestHead_ReplaySkipsSeriesWithoutData(t *testing.T) {
 
 			opts := newTestHeadDefaultOptions(1000, true)
 			opts.ChunkDirRoot = dir
+			opts.EnableWALReplaySkipSeries = skip
 			head, err := NewHead(nil, nil, wal, wbl, opts, nil)
 			require.NoError(t, err)
 			t.Cleanup(func() { _ = head.Close() })
@@ -1273,7 +1312,11 @@ func TestHead_ReplaySkipsSeriesWithoutData(t *testing.T) {
 				require.NotNil(t, s, "series %d", ref)
 				testutil.RequireEqual(t, lset, s.lset)
 			}
-			require.Equal(t, tc.created, prom_testutil.ToFloat64(head.metrics.seriesCreated))
+			created := tc.created
+			if skip {
+				created -= tc.skipped
+			}
+			require.Equal(t, created, prom_testutil.ToFloat64(head.metrics.seriesCreated))
 			require.Equal(t, 0, prom_testutil.CollectAndCount(head.metrics.walReplayUnknownRefsTotal))
 			walExpiries := tc.walExpiries
 			if walExpiries == nil {

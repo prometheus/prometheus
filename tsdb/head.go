@@ -243,6 +243,11 @@ type HeadOptions struct {
 
 	// EnableFastStartup enables scraping in parallel with WAL replay but with queries still disabled.
 	EnableFastStartup bool
+
+	// EnableWALReplaySkipSeries makes WAL replay skip series records without
+	// data at or after the min valid time instead of creating series that the
+	// end of Init deletes. It costs an extra read of the WAL before replay.
+	EnableWALReplaySkipSeries bool
 }
 
 const (
@@ -745,11 +750,25 @@ const cardinalityCacheExpirationTime = time.Duration(30) * time.Second
 // limits the ingested samples to the head min valid time.
 func (h *Head) Init(minValidTime int64) error {
 	h.minValidTime.Store(minValidTime)
+	var replayFilter *walReplayFilter
 	defer h.resetWLReplayResources()
 	defer func() {
 		h.postings.EnsureOrder(h.opts.WALReplayConcurrency)
 	}()
-	defer h.gc() // After loading the wal remove the obsolete data from the head.
+	defer func() {
+		// After loading the wal remove the obsolete data from the head.
+		actualInOrderMint, _, _ := h.gc()
+		if replayFilter == nil {
+			return
+		}
+		// Replay did not create the skipped series. Set the WAL expiry that h.gc()
+		// would have set when deleting them, so checkpoints keep the same records.
+		h.walExpiriesMtx.Lock()
+		replayFilter.skipped.forEach(func(ref chunks.HeadSeriesRef) {
+			h.walExpiries[ref] = actualInOrderMint
+		})
+		h.walExpiriesMtx.Unlock()
+	}()
 	defer func() {
 		// Loading of m-mapped chunks and snapshot can make the mint of the Head
 		// to go below minValidTime.
@@ -890,6 +909,25 @@ func (h *Head) Init(minValidTime int64) error {
 
 	h.startWALReplayStatus(startFrom, endAt)
 
+	var walScanDuration time.Duration
+	if h.opts.EnableWALReplaySkipSeries && minValidTime != math.MinInt64 {
+		walScanStart := time.Now()
+		checkpointDir, walFrom := "", startFrom
+		if err == nil && startFrom >= snapIdx {
+			checkpointDir = dir
+			walFrom++
+		}
+		var scanErr error
+		replayFilter, scanErr = h.newWALReplayFilter(checkpointDir, max(walFrom, snapIdx), endAt, snapIdx, snapOffset)
+		walScanDuration = time.Since(walScanStart)
+		if scanErr != nil {
+			// Replay loads all series records and reports the error.
+			h.logger.Warn("Failed to scan the WAL for series without data", "err", scanErr)
+		} else {
+			h.logger.Info("Scanned the WAL for series without data", "duration", walScanDuration.String())
+		}
+	}
+
 	syms := labels.NewSymbolTable() // One table for the whole WAL.
 	multiRef := map[chunks.HeadSeriesRef]chunks.HeadSeriesRef{}
 	if err == nil && startFrom >= snapIdx {
@@ -905,14 +943,14 @@ func (h *Head) Init(minValidTime int64) error {
 
 		// A corrupted checkpoint is a hard error for now and requires user
 		// intervention. There's likely little data that can be recovered anyway.
-		if err := h.loadWAL(wlog.NewReader(sr), syms, multiRef, mmappedChunks, oooMmappedChunks, lastMmapRef); err != nil {
+		if err := h.loadWAL(wlog.NewReader(sr), syms, multiRef, mmappedChunks, oooMmappedChunks, lastMmapRef, replayFilter); err != nil {
 			return fmt.Errorf("backfill checkpoint: %w", err)
 		}
 		h.updateWALReplayStatusRead(startFrom)
 		startFrom++
 		h.logger.Info("WAL checkpoint loaded")
 	}
-	checkpointReplayDuration := time.Since(checkpointReplayStart)
+	checkpointReplayDuration := time.Since(checkpointReplayStart) - walScanDuration
 
 	walReplayStart := time.Now()
 
@@ -939,7 +977,7 @@ func (h *Head) Init(minValidTime int64) error {
 		if err != nil {
 			return fmt.Errorf("segment reader (offset=%d): %w", offset, err)
 		}
-		err = h.loadWAL(wlog.NewReader(sr), syms, multiRef, mmappedChunks, oooMmappedChunks, lastMmapRef)
+		err = h.loadWAL(wlog.NewReader(sr), syms, multiRef, mmappedChunks, oooMmappedChunks, lastMmapRef, replayFilter)
 		if err := sr.Close(); err != nil {
 			h.logger.Warn("Error while closing the wal segments reader", "err", err)
 		}
