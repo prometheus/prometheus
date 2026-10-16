@@ -601,22 +601,26 @@ Common URL query parameters:
 - `match[]=<series_selector>`: Repeated series selector used to scope the
   search. Optional.
 - `search[]=<string>`: Repeated search string matched against names or values.
-  Multiple values use OR semantics. Optional.
+  Multiple values use OR semantics. Optional. At most 32 values may be supplied.
 - `fuzz_threshold=<number>`: Fuzzy threshold from 0 to 100. Optional. A value
   of 0 is the lowest fuzzy threshold.
 - `fuzz_alg=<subsequence | jarowinkler>`: Matching algorithm. Optional. Default
   is `subsequence`.
 - `case_sensitive=<bool>`: Toggle case-sensitive matching. Optional.
 - `sort_by=<string>`: Sort mode. Supported values depend on the endpoint.
+  When omitted, results are ordered by value ascending.
 - `sort_dir=<asc | dsc>`: Sort direction. Optional. Only valid with
-  `sort_by=alpha`.
+  an explicit `sort_by=alpha`.
 - `include_score=<bool>`: Include the relevance score in each result. Optional.
 - `start=<rfc3339 | unix_timestamp>`: Start timestamp. Optional.
 - `end=<rfc3339 | unix_timestamp>`: End timestamp. Optional.
-- `limit=<number>`: Maximum number of returned results. Optional. Default is
-  100.
+- `limit=<number>`: Positive maximum number of returned results. Optional.
+  Default is 100. A positive `--web.search.max-limit` caps explicit values and
+  may reduce the default; setting the flag to 0 disables that operator cap but
+  does not make `limit=0` valid.
 - `batch_size=<number>`: Preferred number of results per NDJSON batch.
-  Optional. Default is 100. Clamped to 1000 and the effective result limit.
+  Optional and positive. Default is 100. Clamped to 1000 and the effective
+  result limit.
 
 The `start` and `end` parameters narrow results to the selected time window.
 Results may include values from series active slightly outside that window,
