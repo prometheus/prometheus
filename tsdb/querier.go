@@ -344,15 +344,22 @@ func PostingsForMatchers(ctx context.Context, ix IndexReader, ms ...*labels.Matc
 			return index.EmptyPostings(), nil
 
 		case m.Type == labels.MatchRegexp && m.Value == ".+":
-			// .+ regexp matches any non-empty string: get postings for all label values.
-			it := ix.PostingsForAllLabelValues(ctx, m.Name)
+			// .+ regexp matches any non-empty string.
+			it, err := postingsForNonEmptyLabelValues(ctx, ix, m.Name)
+			if err != nil {
+				return nil, err
+			}
 			if index.IsEmptyPostingsType(it) {
 				return index.EmptyPostings(), nil
 			}
 			its = append(its, it)
 		case m.Type == labels.MatchNotRegexp && m.Value == ".+":
-			// .+ regexp matches any non-empty string: get postings for all label values and remove them.
-			notIts = append(notIts, ix.PostingsForAllLabelValues(ctx, m.Name))
+			// .+ regexp matches any non-empty string: remove those postings.
+			it, err := postingsForNonEmptyLabelValues(ctx, ix, m.Name)
+			if err != nil {
+				return nil, err
+			}
+			notIts = append(notIts, it)
 
 		case labelMustBeSet[m.Name]:
 			// If this matcher must be non-empty, we can be smarter.
@@ -459,16 +466,32 @@ func inversePostingsForMatcher(ctx context.Context, ix IndexReader, m *labels.Ma
 		return ix.Postings(ctx, m.Name, m.Value)
 	}
 
-	// If the matcher being inverted is =~"" or ="", we just want all the values.
+	// If the matcher being inverted is =~"" or ="", we want non-empty values.
 	if m.Value == "" && (m.Type == labels.MatchRegexp || m.Type == labels.MatchEqual) {
-		it := ix.PostingsForAllLabelValues(ctx, m.Name)
-		return it, it.Err()
+		return postingsForNonEmptyLabelValues(ctx, ix, m.Name)
 	}
 
 	it := ix.PostingsForLabelMatching(ctx, m.Name, func(s string) bool {
 		return !m.Matches(s)
 	})
 	return it, it.Err()
+}
+
+// postingsForNonEmptyLabelValues preserves the physical-presence semantics of
+// PostingsForAllLabelValues while excluding explicitly stored empty values.
+func postingsForNonEmptyLabelValues(ctx context.Context, ix IndexReader, name string) (index.Postings, error) {
+	all := ix.PostingsForAllLabelValues(ctx, name)
+	if err := all.Err(); err != nil {
+		return nil, err
+	}
+	if index.IsEmptyPostingsType(all) {
+		return all, nil
+	}
+	empty, err := ix.Postings(ctx, name, "")
+	if err != nil {
+		return nil, err
+	}
+	return index.Without(all, empty), nil
 }
 
 func labelValuesWithMatchers(ctx context.Context, r IndexReader, name string, hints *storage.LabelHints, matchers ...*labels.Matcher) ([]string, error) {
