@@ -331,6 +331,8 @@ func (c *PrometheusConverter) addHistogramDataPoints(
 				}
 				appOpts.Exemplars = append(appOpts.Exemplars, ex)
 			}
+			// Appenders require exemplars sorted by timestamp.
+			slices.SortFunc(appOpts.Exemplars, exemplar.Compare)
 			val := float64(cumulativeCount)
 			if pt.Flags().NoRecordedValue() {
 				val = math.Float64frombits(value.StaleNaN)
@@ -343,6 +345,7 @@ func (c *PrometheusConverter) addHistogramDataPoints(
 		}
 
 		appOpts.Exemplars = exemplars[nextExemplarIdx:]
+		slices.SortFunc(appOpts.Exemplars, exemplar.Compare)
 		// Add le=+Inf bucket.
 		val = float64(pt.Count())
 		if pt.Flags().NoRecordedValue() {

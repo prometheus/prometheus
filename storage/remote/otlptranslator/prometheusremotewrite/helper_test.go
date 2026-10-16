@@ -1003,6 +1003,72 @@ func TestPrometheusConverter_AddHistogramDataPoints(t *testing.T) {
 				}
 			},
 		},
+		{
+			name: "histogram with exemplars out of timestamp order",
+			metric: func() pmetric.Metric {
+				metric := pmetric.NewMetric()
+				metric.SetName("test_hist")
+				metric.SetEmptyHistogram().SetAggregationTemporality(pmetric.AggregationTemporalityCumulative)
+
+				pt := metric.Histogram().DataPoints().AppendEmpty()
+				pt.SetTimestamp(ts)
+				pt.SetCount(4)
+				pt.ExplicitBounds().FromRaw([]float64{5})
+				pt.BucketCounts().FromRaw([]uint64{2, 2})
+				// Each bucket gets a newer exemplar followed by an older one.
+				older := ts - pcommon.Timestamp(time.Second)
+				for _, e := range []struct {
+					value float64
+					ts    pcommon.Timestamp
+				}{{1, ts}, {2, older}, {7, ts}, {8, older}} {
+					ex := pt.Exemplars().AppendEmpty()
+					ex.SetDoubleValue(e.value)
+					ex.SetTimestamp(e.ts)
+				}
+
+				return metric
+			},
+			want: func() []sample {
+				newer := convertTimeStamp(ts)
+				older := convertTimeStamp(ts - pcommon.Timestamp(time.Second))
+				return []sample{
+					{
+						MF: "test_hist",
+						L: labels.FromStrings(
+							model.MetricNameLabel, "test_hist"+countStr,
+						),
+						T: newer,
+						V: 4,
+					},
+					{
+						MF: "test_hist",
+						L: labels.FromStrings(
+							model.MetricNameLabel, "test_hist_bucket",
+							model.BucketLabel, "5",
+						),
+						T: newer,
+						V: 2,
+						ES: []exemplar.Exemplar{
+							{Value: 2, Ts: older, HasTs: true},
+							{Value: 1, Ts: newer, HasTs: true},
+						},
+					},
+					{
+						MF: "test_hist",
+						L: labels.FromStrings(
+							model.MetricNameLabel, "test_hist_bucket",
+							model.BucketLabel, "+Inf",
+						),
+						T: newer,
+						V: 4,
+						ES: []exemplar.Exemplar{
+							{Value: 8, Ts: older, HasTs: true},
+							{Value: 7, Ts: newer, HasTs: true},
+						},
+					},
+				}
+			},
+		},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {

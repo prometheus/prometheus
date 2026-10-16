@@ -706,6 +706,58 @@ func TestPrometheusConverter_addExponentialHistogramDataPoints(t *testing.T) {
 			},
 		},
 		{
+			name: "histogram data point with exemplars out of timestamp order",
+			metric: func() pmetric.Metric {
+				metric := pmetric.NewMetric()
+				metric.SetName("test_hist")
+				metric.SetEmptyExponentialHistogram().SetAggregationTemporality(pmetric.AggregationTemporalityCumulative)
+
+				pt := metric.ExponentialHistogram().DataPoints().AppendEmpty()
+				pt.SetCount(7)
+				pt.SetScale(1)
+				pt.Positive().SetOffset(-1)
+				pt.Positive().BucketCounts().FromRaw([]uint64{4, 2})
+				newer := pt.Exemplars().AppendEmpty()
+				newer.SetTimestamp(pcommon.NewTimestampFromTime(time.UnixMilli(2000)))
+				newer.SetDoubleValue(1)
+				older := pt.Exemplars().AppendEmpty()
+				older.SetTimestamp(pcommon.NewTimestampFromTime(time.UnixMilli(1000)))
+				older.SetDoubleValue(2)
+				pt.Attributes().PutStr("attr", "test_attr")
+
+				return metric
+			},
+			scope:        defaultScope,
+			promoteScope: false,
+			wantSeries: func() []sample {
+				lbls := labels.FromStrings(
+					model.MetricNameLabel, "test_hist",
+					"attr", "test_attr",
+				)
+				return []sample{
+					{
+						MF: "test_hist",
+						L:  lbls,
+						M:  metadata.Metadata{},
+						T:  0,
+						ST: 0,
+						H: &histogram.Histogram{
+							Count:           7,
+							Schema:          1,
+							ZeroThreshold:   defaultZeroThreshold,
+							ZeroCount:       0,
+							PositiveSpans:   []histogram.Span{{Offset: 0, Length: 2}},
+							PositiveBuckets: []int64{4, -2},
+						},
+						ES: []exemplar.Exemplar{
+							{Value: 2, Ts: 1000, HasTs: true},
+							{Value: 1, Ts: 2000, HasTs: true},
+						},
+					},
+				}
+			},
+		},
+		{
 			name: "histogram data points with same labels",
 			metric: func() pmetric.Metric {
 				metric := pmetric.NewMetric()
@@ -1179,6 +1231,58 @@ func TestPrometheusConverter_addCustomBucketsHistogramDataPoints(t *testing.T) {
 							CustomValues:    []float64{0, 1},
 						},
 						ES: []exemplar.Exemplar{{Value: 2}},
+					},
+				}
+			},
+		},
+		{
+			name: "histogram data point with exemplars out of timestamp order",
+			metric: func() pmetric.Metric {
+				metric := pmetric.NewMetric()
+				metric.SetName("test_hist_to_nhcb")
+				metric.SetEmptyHistogram().SetAggregationTemporality(pmetric.AggregationTemporalityCumulative)
+
+				pt := metric.Histogram().DataPoints().AppendEmpty()
+				pt.SetCount(3)
+				pt.SetSum(3)
+				pt.BucketCounts().FromRaw([]uint64{2, 0, 1})
+				pt.ExplicitBounds().FromRaw([]float64{5, 10})
+				newer := pt.Exemplars().AppendEmpty()
+				newer.SetTimestamp(pcommon.NewTimestampFromTime(time.UnixMilli(2000)))
+				newer.SetDoubleValue(1)
+				older := pt.Exemplars().AppendEmpty()
+				older.SetTimestamp(pcommon.NewTimestampFromTime(time.UnixMilli(1000)))
+				older.SetDoubleValue(12)
+				pt.Attributes().PutStr("attr", "test_attr")
+
+				return metric
+			},
+			scope:        defaultScope,
+			promoteScope: false,
+			wantSeries: func() []sample {
+				lbls := labels.FromStrings(
+					model.MetricNameLabel, "test_hist_to_nhcb",
+					"attr", "test_attr",
+				)
+				return []sample{
+					{
+						MF: "test_hist_to_nhcb",
+						L:  lbls,
+						M:  metadata.Metadata{},
+						T:  0,
+						ST: 0,
+						H: &histogram.Histogram{
+							Count:           3,
+							Sum:             3,
+							Schema:          -53,
+							PositiveSpans:   []histogram.Span{{Offset: 0, Length: 3}},
+							PositiveBuckets: []int64{2, -2, 1},
+							CustomValues:    []float64{5, 10},
+						},
+						ES: []exemplar.Exemplar{
+							{Value: 12, Ts: 1000, HasTs: true},
+							{Value: 1, Ts: 2000, HasTs: true},
+						},
 					},
 				}
 			},

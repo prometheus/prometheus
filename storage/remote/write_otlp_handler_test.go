@@ -18,6 +18,7 @@ import (
 	"context"
 	"fmt"
 	"log/slog"
+	"math"
 	"math/rand/v2"
 	"net/http"
 	"net/http/httptest"
@@ -46,6 +47,7 @@ import (
 	"github.com/prometheus/prometheus/model/metadata"
 	"github.com/prometheus/prometheus/model/timestamp"
 	"github.com/prometheus/prometheus/storage"
+	"github.com/prometheus/prometheus/tsdb"
 	"github.com/prometheus/prometheus/util/teststorage"
 )
 
@@ -367,6 +369,54 @@ func TestOTLPWriteHandler(t *testing.T) {
 				}
 			})
 		}
+	})
+
+	t.Run("exemplars out of timestamp order are all stored", func(t *testing.T) {
+		opts := tsdb.DefaultOptions()
+		opts.EnableExemplarStorage = true
+		opts.MaxExemplars = 10
+		db, err := tsdb.Open(t.TempDir(), nil, nil, opts, nil)
+		require.NoError(t, err)
+		t.Cleanup(func() { require.NoError(t, db.Close()) })
+
+		now := time.Now()
+		request := pmetricotlp.NewExportRequest()
+		m := request.Metrics().ResourceMetrics().AppendEmpty().ScopeMetrics().AppendEmpty().Metrics().AppendEmpty()
+		m.SetName("test_counter")
+		sum := m.SetEmptySum()
+		sum.SetAggregationTemporality(pmetric.AggregationTemporalityCumulative)
+		sum.SetIsMonotonic(true)
+		dp := sum.DataPoints().AppendEmpty()
+		dp.SetTimestamp(pcommon.NewTimestampFromTime(now))
+		dp.SetDoubleValue(1)
+		// The newer exemplar comes first.
+		for i, offset := range []time.Duration{0, -time.Second} {
+			ex := dp.Exemplars().AppendEmpty()
+			ex.SetTimestamp(pcommon.NewTimestampFromTime(now.Add(offset)))
+			ex.SetDoubleValue(float64(i))
+			ex.SetTraceID(pcommon.TraceID{byte(i + 1)})
+		}
+
+		buf, err := request.MarshalProto()
+		require.NoError(t, err)
+		req, err := http.NewRequest("", "", bytes.NewReader(buf))
+		require.NoError(t, err)
+		req.Header.Set("Content-Type", "application/x-protobuf")
+		handler := NewOTLPWriteHandler(slog.New(slog.DiscardHandler), nil, db, func() config.Config {
+			return config.Config{}
+		}, OTLPOptions{})
+		recorder := httptest.NewRecorder()
+		handler.ServeHTTP(recorder, req)
+		require.Equal(t, http.StatusOK, recorder.Code)
+
+		q, err := db.ExemplarQuerier(t.Context())
+		require.NoError(t, err)
+		res, err := q.Select(math.MinInt64, math.MaxInt64, []*labels.Matcher{
+			labels.MustNewMatcher(labels.MatchRegexp, model.MetricNameLabel, ".+"),
+		})
+		require.NoError(t, err)
+		require.Len(t, res, 1)
+		require.Len(t, res[0].Exemplars, 2)
 	})
 
 	t.Run("concurrent requests", func(t *testing.T) {
