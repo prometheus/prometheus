@@ -438,12 +438,12 @@ func (d *Discovery) Run(ctx context.Context, ch chan<- []*targetgroup.Group) {
 			}
 			var nodeInf cache.SharedInformer
 			if d.attachMetadata.Node {
-				nodeInf = d.newNodeInformer(context.Background())
+				nodeInf = d.newNodeInformer(ctx)
 				go nodeInf.Run(ctx.Done())
 			}
 			var namespaceInf cache.SharedInformer
 			if d.attachMetadata.Namespace {
-				namespaceInf = d.newNamespaceInformer(context.Background())
+				namespaceInf = d.newNamespaceInformer(ctx)
 				go namespaceInf.Run(ctx.Done())
 			}
 			var replicaSetInf, jobInformer cache.SharedInformer
