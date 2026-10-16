@@ -4105,6 +4105,11 @@ func TestOneCheckpointPerCompactCall(t *testing.T) {
 
 	require.Equal(t, 0.0, prom_testutil.ToFloat64(db.head.metrics.checkpointCreationTotal))
 	require.NoError(t, db.Compact(ctx))
+	waitForWALCheckpoint(
+		t,
+		db.head,
+		db.head.lastMemoryTruncationTime.Load(),
+	)
 	require.Equal(t, 1.0, prom_testutil.ToFloat64(db.head.metrics.checkpointCreationTotal))
 
 	// As the data spans for 59 blocks, 58 go to disk and 1 remains in Head.
@@ -4162,6 +4167,11 @@ func TestOneCheckpointPerCompactCall(t *testing.T) {
 
 	require.Equal(t, 0.0, prom_testutil.ToFloat64(db.head.metrics.checkpointCreationTotal))
 	require.NoError(t, db.Compact(ctx))
+	waitForWALCheckpoint(
+		t,
+		db.head,
+		db.head.lastMemoryTruncationTime.Load(),
+	)
 	require.Equal(t, 1.0, prom_testutil.ToFloat64(db.head.metrics.checkpointCreationTotal))
 
 	// No new blocks should be created as there was not data in between the new samples and the blocks.
@@ -7709,7 +7719,9 @@ func TestOOOSampleLossOnWALCheckpointBeforeOOOCompaction(t *testing.T) {
 			// Compacting the in-order head checkpoints the WAL. Out-of-order compaction
 			// would persist the WBL afterwards, but is not reached here.
 			require.NoError(t, db.CompactHead(NewRangeHead(db.head, db.head.MinTime(), inOrderTime)))
-			require.Positive(t, prom_testutil.ToFloat64(db.head.metrics.checkpointCreationTotal), "the in-order compaction must checkpoint the WAL")
+			require.Eventually(t, func() bool {
+				return prom_testutil.ToFloat64(db.head.metrics.checkpointCreationTotal) > 0
+			}, time.Minute, 10*time.Millisecond, "the in-order compaction must checkpoint the WAL")
 			require.NoError(t, db.Close())
 
 			// The WBL is now the only copy of the out-of-order sample.

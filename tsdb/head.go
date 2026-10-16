@@ -78,10 +78,12 @@ type Head struct {
 	numNativeHistogramSeries  atomic.Uint64
 	numNativeHistogramBuckets atomic.Uint64
 
-	minOOOTime, maxOOOTime   atomic.Int64 // TODO(jesusvazquez) These should be updated after garbage collection.
-	minTime, maxTime         atomic.Int64 // Current min and max of the samples included in the head. minTime != math.MaxInt64 is used to determine whether the head has been initialized, so care must be taken that the initialized state only changes after maxTime is already updated.
-	minValidTime             atomic.Int64 // Mint allowed to be added to the head. It shouldn't be lower than the maxt of the last persisted block.
-	lastWALTruncationTime    atomic.Int64
+	minOOOTime, maxOOOTime atomic.Int64 // TODO(jesusvazquez) These should be updated after garbage collection.
+	minTime, maxTime       atomic.Int64 // Current min and max of the samples included in the head. minTime != math.MaxInt64 is used to determine whether the head has been initialized, so care must be taken that the initialized state only changes after maxTime is already updated.
+	minValidTime           atomic.Int64 // Mint allowed to be added to the head. It shouldn't be lower than the maxt of the last persisted block.
+	lastWALTruncationTime  atomic.Int64
+	// walCheckpointCompleted stores the mint of the last completed background checkpoint.
+	walCheckpointCompleted   atomic.Int64
 	lastMemoryTruncationTime atomic.Int64
 	lastSeriesID             atomic.Uint64
 	// All the ooo m-map chunks should be after this. This is used to truncate old ooo m-map chunks.
@@ -148,6 +150,10 @@ type Head struct {
 	chunkDiskMapper *chunks.ChunkDiskMapper
 
 	chunkSnapshotMtx sync.Mutex
+
+	// The WAL checkpoint worker runs checkpoints in the background.
+	walCheckpoint     chan int64
+	walCheckpointDone chan struct{}
 
 	closedMtx sync.Mutex
 	closed    bool
@@ -361,6 +367,10 @@ func NewHead(r prometheus.Registerer, l *slog.Logger, wal, wbl *wlog.WL, opts *H
 	}
 	h.metrics = newHeadMetrics(h, r)
 
+	h.walCheckpoint = make(chan int64, 1)
+	h.walCheckpointDone = make(chan struct{})
+	go h.runWALCheckpointWorker()
+
 	return h, nil
 }
 
@@ -409,6 +419,7 @@ func (h *Head) resetInMemoryState() error {
 	h.minOOOTime.Store(math.MaxInt64)
 	h.maxOOOTime.Store(math.MinInt64)
 	h.lastWALTruncationTime.Store(math.MinInt64)
+	h.walCheckpointCompleted.Store(math.MinInt64)
 	h.lastMemoryTruncationTime.Store(math.MinInt64)
 	return nil
 }
@@ -1263,7 +1274,8 @@ func (h *Head) Truncate(mint int64) (err error) {
 	if !initialized {
 		return nil
 	}
-	return h.truncateWAL(mint)
+	h.triggerWALCheckpoint(mint)
+	return nil
 }
 
 // OverlapsClosedInterval returns true if the head overlaps [mint, maxt].
@@ -1689,24 +1701,67 @@ func (h *Head) keepSeriesInWALCheckpointFn(mint int64) func(id chunks.HeadSeries
 	}
 }
 
+// triggerWALCheckpoint schedules a WAL checkpoint without blocking the caller.
+// The actual checkpoint is run by a background goroutine.
+func (h *Head) triggerWALCheckpoint(mint int64) {
+	h.closedMtx.Lock()
+	defer h.closedMtx.Unlock()
+
+	if h.closed || h.wal == nil || mint <= h.lastWALTruncationTime.Load() {
+		return
+	}
+
+	select {
+	case queuedMint := <-h.walCheckpoint:
+		if queuedMint >= mint {
+			h.logger.Info("WAL checkpoint already queued", "mint", mint)
+		}
+		mint = max(mint, queuedMint)
+	default:
+	}
+	h.walCheckpoint <- mint
+}
+
+func (h *Head) runWALCheckpointWorker() {
+	defer close(h.walCheckpointDone)
+	for mint := range h.walCheckpoint {
+		if err := h.truncateWAL(mint); err != nil {
+			h.logger.Error("truncate WAL", "err", err)
+			continue
+		}
+		// An older queued mint can run after a newer one.
+		// Keep walCheckpointCompleted at the newest completed mint.
+		h.walCheckpointCompleted.Store(max(mint, h.walCheckpointCompleted.Load()))
+	}
+}
+
 // truncateWAL removes old data before mint from the WAL.
-func (h *Head) truncateWAL(mint int64) error {
+func (h *Head) truncateWAL(mint int64) (err error) {
 	h.chunkSnapshotMtx.Lock()
 	defer h.chunkSnapshotMtx.Unlock()
 
 	if h.wal == nil || mint <= h.lastWALTruncationTime.Load() {
 		return nil
 	}
-	start := time.Now()
-	h.lastWALTruncationTime.Store(mint)
 
-	first, last, err := wlog.Segments(h.wal.Dir())
+	defer func() {
+		if err == nil {
+			h.lastWALTruncationTime.Store(mint)
+		}
+	}()
+
+	var (
+		first, last int
+		start       = time.Now()
+	)
+
+	first, last, err = wlog.Segments(h.wal.Dir())
 	if err != nil {
 		return fmt.Errorf("get segment range: %w", err)
 	}
 	// Start a new segment, so low ingestion volume TSDB don't have more WAL than
 	// needed.
-	if _, err := h.wal.NextSegment(); err != nil {
+	if _, err = h.wal.NextSegment(); err != nil {
 		return fmt.Errorf("next segment: %w", err)
 	}
 	last-- // Never consider last segment for checkpoint.
@@ -1730,7 +1785,7 @@ func (h *Head) truncateWAL(mint int64) error {
 		}
 		return fmt.Errorf("create checkpoint: %w", err)
 	}
-	if err := h.wal.Truncate(last + 1); err != nil {
+	if err = h.wal.Truncate(last + 1); err != nil {
 		// If truncating fails, we'll just try again at the next checkpoint.
 		// Leftover segments will just be ignored in the future if there's a checkpoint
 		// that supersedes them.
@@ -1747,7 +1802,7 @@ func (h *Head) truncateWAL(mint int64) error {
 	h.walExpiriesMtx.Unlock()
 
 	h.metrics.checkpointDeleteTotal.Inc()
-	if err := wlog.DeleteCheckpoints(h.wal.Dir(), last); err != nil {
+	if err = wlog.DeleteCheckpoints(h.wal.Dir(), last); err != nil {
 		// Leftover old checkpoints do not cause problems down the line beyond
 		// occupying disk space.
 		// They will just be ignored since a higher checkpoint exists.
@@ -1774,9 +1829,16 @@ func (h *Head) truncateOOO(lastWBLFile int, newMinOOOMmapRef chunks.ChunkDiskMap
 	curMinOOOMmapRef := chunks.ChunkDiskMapperRef(h.minOOOMmapRef.Load())
 	if newMinOOOMmapRef.GreaterThan(curMinOOOMmapRef) {
 		h.WaitForPendingReadersForOOOChunksAtOrBefore(newMinOOOMmapRef)
-		h.minOOOMmapRef.Store(uint64(newMinOOOMmapRef))
 
-		if err := h.truncateSeriesAndChunkDiskMapper("truncateOOO"); err != nil {
+		// WAL checkpoints hold chunkSnapshotMtx when they decide which series
+		// records to keep. OOO GC removes series before it records their WAL expiries.
+		// Hold chunkSnapshotMtx during the minOOOMmapRef update and GC so a
+		// checkpoint cannot see a deleted series without its WAL expiry.
+		h.chunkSnapshotMtx.Lock()
+		h.minOOOMmapRef.Store(uint64(newMinOOOMmapRef))
+		err := h.truncateSeriesAndChunkDiskMapper("truncateOOO")
+		h.chunkSnapshotMtx.Unlock()
+		if err != nil {
 			return err
 		}
 	}
@@ -2211,6 +2273,9 @@ func (h *Head) compactable() bool {
 func (h *Head) Close() error {
 	h.closedMtx.Lock()
 	defer h.closedMtx.Unlock()
+	if h.closed {
+		return nil
+	}
 	h.closed = true
 
 	// Stop the background series_state.json writer.
@@ -2221,6 +2286,9 @@ func (h *Head) Close() error {
 		// Flush the final clean state.
 		h.writeSeriesState(true)
 	}
+
+	close(h.walCheckpoint)
+	<-h.walCheckpointDone
 
 	// mmap all but last chunk in case we're performing snapshot since that only
 	// takes samples from most recent head chunk.
