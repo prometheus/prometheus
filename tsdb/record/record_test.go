@@ -16,6 +16,7 @@ package record
 
 import (
 	"bytes"
+	"encoding/hex"
 	"fmt"
 	"math"
 	"math/rand"
@@ -133,6 +134,48 @@ func TestRecord_EncodeDecode(t *testing.T) {
 	decSamples, err = dec.Samples(enc.Samples(samplesWithConstST, nil), nil)
 	require.NoError(t, err)
 	require.Equal(t, samplesWithConstST, decSamples)
+
+	t.Run("SamplesV2 append", func(t *testing.T) {
+		for _, tc := range []struct {
+			name string
+			wire string
+			want []RefSample
+		}{
+			{"empty", "0b", nil},
+			{"one sample without ST", "0b0214003ff0000000000000", []RefSample{{Ref: 1, T: 10, V: 1}}},
+			{"two samples without ST", "0b0214003ff00000000000000202004000000000000000", []RefSample{{Ref: 1, T: 10, V: 1}, {Ref: 2, T: 11, V: 2}}},
+			// Initial ST=5, same ST, absent ST, then ST=4 as a delta to the first.
+			{"ST markers", "0b02140a3ff000000000000002020140000000000000000204004008000000000000020602014010000000000000", []RefSample{{Ref: 1, ST: 5, T: 10, V: 1}, {Ref: 2, ST: 5, T: 11, V: 2}, {Ref: 3, T: 12, V: 3}, {Ref: 4, ST: 4, T: 13, V: 4}}},
+		} {
+			for _, prefix := range []bool{false, true} {
+				t.Run(fmt.Sprintf("%s/prefix%t", tc.name, prefix), func(t *testing.T) {
+					wire, err := hex.DecodeString(tc.wire)
+					require.NoError(t, err)
+					// Spare capacity isolates record-local initialization from allocation.
+					destination := make([]RefSample, 0, 64)
+					var want []RefSample
+					repeats := 1
+					if prefix {
+						destination = append(destination, RefSample{Ref: 7, ST: 3, T: 5, V: 2})
+						want = append(want, RefSample{Ref: 7, ST: 3, T: 5, V: 2})
+						repeats = 2
+					}
+					for range repeats {
+						destination, err = dec.Samples(wire, destination)
+						require.NoError(t, err)
+						want = append(want, tc.want...)
+						require.Len(t, destination, len(want))
+						for i, expected := range want {
+							require.Equal(t, expected.Ref, destination[i].Ref)
+							require.Equal(t, expected.ST, destination[i].ST)
+							require.Equal(t, expected.T, destination[i].T)
+							require.Equal(t, math.Float64bits(expected.V), math.Float64bits(destination[i].V))
+						}
+					}
+				})
+			}
+		}
+	})
 
 	// Intervals get split up into single entries. So we don't get back exactly
 	// what we put in.
