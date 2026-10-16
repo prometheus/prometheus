@@ -221,14 +221,14 @@ func BenchmarkSampledReadEndpointWithoutExternalLabels(b *testing.B) {
 		for _, labelCount := range []int{3, 12, 24} {
 			b.Run(fmt.Sprintf("series_%d_labels_%d", seriesCount, labelCount), func(b *testing.B) {
 				store := teststorage.New(b)
-				app := store.Appender(b.Context())
+				app := store.AppenderV2(b.Context())
 				for i := range seriesCount {
 					labelStrings := make([]string, 0, 2*labelCount)
 					labelStrings = append(labelStrings, "__name__", "test_metric", "series", strconv.Itoa(i))
 					for j := 2; j < labelCount; j++ {
 						labelStrings = append(labelStrings, fmt.Sprintf("label_%d", j), "value")
 					}
-					_, err := app.Append(0, labels.FromStrings(labelStrings...), 0, 1)
+					_, err := app.Append(0, labels.FromStrings(labelStrings...), 0, 0, 1, nil, nil, storage.AOptions{})
 					require.NoError(b, err)
 				}
 				require.NoError(b, app.Commit())
@@ -940,18 +940,18 @@ func (w *failingReadResponseWriter) Flush() {
 	w.flushes++
 }
 
-func addNativeHistogramsToTestSuite(t *testing.T, storage *teststorage.TestStorage, n int) {
+func addNativeHistogramsToTestSuite(t *testing.T, s *teststorage.TestStorage, n int) {
 	lbls := labels.FromStrings("__name__", "test_histogram_metric1", "baz", "qux")
 
-	app := storage.Appender(t.Context())
+	app := s.AppenderV2(t.Context())
 	for i, fh := range tsdbutil.GenerateTestFloatHistograms(n) {
-		_, err := app.AppendHistogram(0, lbls, int64(i)*int64(60*time.Second/time.Millisecond), nil, fh)
+		_, err := app.Append(0, lbls, 0, int64(i)*int64(60*time.Second/time.Millisecond), 0, nil, fh, storage.AOptions{})
 		require.NoError(t, err)
 	}
 
 	lbls = labels.FromStrings("__name__", "test_nhcb_metric1", "baz", "qux")
 	for i, fh := range tsdbutil.GenerateTestCustomBucketsFloatHistograms(n) {
-		_, err := app.AppendHistogram(0, lbls, int64(i)*int64(60*time.Second/time.Millisecond), nil, fh)
+		_, err := app.Append(0, lbls, 0, int64(i)*int64(60*time.Second/time.Millisecond), 0, nil, fh, storage.AOptions{})
 		require.NoError(t, err)
 	}
 

@@ -48,7 +48,7 @@ func CreateBlock(series []storage.Series, dir string, chunkRange int64, logger *
 	sampleCount := 0
 	const commitAfter = 10000
 	ctx := context.Background()
-	app := w.Appender(ctx)
+	app := w.AppenderV2(ctx)
 	var it chunkenc.Iterator
 
 	for _, s := range series {
@@ -64,20 +64,20 @@ func CreateBlock(series []storage.Series, dir string, chunkRange int64, logger *
 				if err = app.Commit(); err != nil {
 					return "", err
 				}
-				app = w.Appender(ctx)
+				app = w.AppenderV2(ctx)
 				sampleCount = 0
 			}
 
 			switch typ {
 			case chunkenc.ValFloat:
 				t, v := it.At()
-				ref, err = app.Append(ref, lset, t, v)
+				ref, err = app.Append(ref, lset, 0, t, v, nil, nil, storage.AOptions{})
 			case chunkenc.ValHistogram:
 				t, h := it.AtHistogram(nil)
-				ref, err = app.AppendHistogram(ref, lset, t, h, nil)
+				ref, err = app.Append(ref, lset, 0, t, 0, h, nil, storage.AOptions{})
 			case chunkenc.ValFloatHistogram:
 				t, fh := it.AtFloatHistogram(nil)
-				ref, err = app.AppendHistogram(ref, lset, t, nil, fh)
+				ref, err = app.Append(ref, lset, 0, t, 0, nil, fh, storage.AOptions{})
 			default:
 				return "", fmt.Errorf("unknown sample type %s", typ.String())
 			}
@@ -95,7 +95,7 @@ func CreateBlock(series []storage.Series, dir string, chunkRange int64, logger *
 			if err = app.Commit(); err != nil {
 				return "", err
 			}
-			app = w.Appender(ctx)
+			app = w.AppenderV2(ctx)
 			sampleCount = 0
 		}
 	}

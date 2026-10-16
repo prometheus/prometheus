@@ -1408,7 +1408,9 @@ func requireEqual(t *testing.T, expected, actual any, msgAndArgs ...any) {
 		msgAndArgs...)
 }
 
-func (m *mockAppendable) Appender(context.Context) storage.Appender {
+// AppenderV2 returns a storage.AppenderV2 (which also implements
+// storage.ExemplarAppenderV2) that records into mockAppendable slices.
+func (m *mockAppendable) AppenderV2(context.Context) storage.AppenderV2 {
 	if m.latestSample == nil {
 		m.latestSample = map[uint64]int64{}
 	}
@@ -1421,18 +1423,6 @@ func (m *mockAppendable) Appender(context.Context) storage.Appender {
 	if m.latestExemplar == nil {
 		m.latestExemplar = map[uint64]int64{}
 	}
-	return m
-}
-
-func (*mockAppendable) SetOptions(*storage.AppendOptions) {
-	panic("unimplemented")
-}
-
-// AppenderV2 returns a storage.AppenderV2 (which also implements
-// storage.ExemplarAppenderV2) that records into the same slices
-// as the V1 appender.
-func (m *mockAppendable) AppenderV2(ctx context.Context) storage.AppenderV2 {
-	m.Appender(ctx) // Ensure the latest* maps are initialized.
 	return (*mockAppenderV2)(m)
 }
 

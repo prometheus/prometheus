@@ -194,7 +194,7 @@ func newMultipleAppender(ctx context.Context, blockWriter *tsdb.BlockWriter) *mu
 	return &multipleAppender{
 		maxSamplesInMemory: maxSamplesInMemory,
 		writer:             blockWriter,
-		appender:           blockWriter.Appender(ctx),
+		appender:           blockWriter.AppenderV2(ctx),
 	}
 }
 
@@ -204,11 +204,11 @@ type multipleAppender struct {
 	maxSamplesInMemory int
 	currentSampleCount int
 	writer             *tsdb.BlockWriter
-	appender           storage.Appender
+	appender           storage.AppenderV2
 }
 
 func (m *multipleAppender) add(ctx context.Context, l labels.Labels, t int64, v float64) error {
-	if _, err := m.appender.Append(0, l, t, v); err != nil {
+	if _, err := m.appender.Append(0, l, 0, t, v, nil, nil, storage.AOptions{}); err != nil {
 		return fmt.Errorf("multiappender append: %w", err)
 	}
 	m.currentSampleCount++
@@ -225,7 +225,7 @@ func (m *multipleAppender) commit(ctx context.Context) error {
 	if err := m.appender.Commit(); err != nil {
 		return fmt.Errorf("multiappender commit: %w", err)
 	}
-	m.appender = m.writer.Appender(ctx)
+	m.appender = m.writer.AppenderV2(ctx)
 	m.currentSampleCount = 0
 	return nil
 }
