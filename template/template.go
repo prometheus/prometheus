@@ -25,6 +25,7 @@ import (
 	"net/netip"
 	"net/url"
 	"sort"
+	"strconv"
 	"strings"
 	text_template "text/template"
 	"time"
@@ -212,7 +213,7 @@ func NewTemplateExpander(
 				if math.Abs(v) >= 1 {
 					prefix := ""
 					for _, p := range []string{"k", "M", "G", "T", "P", "E", "Z", "Y"} {
-						if math.Abs(v) < 1000 {
+						if math.Abs(roundForDisplay(v)) < 1000 {
 							break
 						}
 						prefix = p
@@ -220,13 +221,19 @@ func NewTemplateExpander(
 					}
 					return fmt.Sprintf("%.4g%s", v, prefix), nil
 				}
-				prefix := ""
+				prefix, prev := "", ""
 				for _, p := range []string{"m", "u", "n", "p", "f", "a", "z", "y"} {
 					if math.Abs(v) >= 1 {
 						break
 					}
-					prefix = p
+					prev, prefix = prefix, p
 					v *= 1000
+				}
+				// A value just below a prefix boundary, like 0.99996, scales to
+				// 999.96m, which prints as 1000m. Step back up one prefix instead.
+				if prefix != "" && math.Abs(roundForDisplay(v)) >= 1000 {
+					prefix = prev
+					v /= 1000
 				}
 				return fmt.Sprintf("%.4g%s", v, prefix), nil
 			},
@@ -240,7 +247,7 @@ func NewTemplateExpander(
 				}
 				prefix := ""
 				for _, p := range []string{"ki", "Mi", "Gi", "Ti", "Pi", "Ei", "Zi", "Yi"} {
-					if math.Abs(v) < 1024 {
+					if math.Abs(roundForDisplay(v)) < 1024 {
 						break
 					}
 					prefix = p
@@ -401,6 +408,17 @@ func (te Expander) ParseTest() error {
 		return err
 	}
 	return nil
+}
+
+// roundForDisplay returns v rounded the way humanize and humanize1024 print
+// it, to 4 significant digits. The unit prefix has to be chosen from this
+// value, otherwise 999999 is printed as 1000k instead of 1M.
+func roundForDisplay(v float64) float64 {
+	r, err := strconv.ParseFloat(fmt.Sprintf("%.4g", v), 64)
+	if err != nil {
+		return v
+	}
+	return r
 }
 
 func floatToTime(v float64) (*time.Time, error) {
