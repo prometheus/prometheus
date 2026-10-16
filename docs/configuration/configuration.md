@@ -2352,6 +2352,12 @@ It fetches targets from an HTTP endpoint containing a list of zero or more
 The HTTP header `Content-Type` must be `application/json`, and the body must be
 valid JSON.
 
+To allow for request caching using `ETag`/`If-None-Match`, enable the `use_etag`
+option.  If enabled, Prometheus will remember the value of the `ETag` header
+returned by the server and add it to subsequent requests in the `If-None-Match`
+header. The server can then opt to return HTTP 304 Not Modified which will tell
+Prometheus to keep using the previously discovered targets.
+
 Example response body:
 
 ```json
@@ -2388,6 +2394,11 @@ url: <string>
 # HTTP client settings, including authentication methods (such as basic auth and
 # authorization), proxy configurations, TLS options, custom HTTP headers, etc.
 [ <http_config> ]
+
+# Store the value of the ETag header value & send it on subsequent requests in
+# the If-None-Match header. Allows the endpoint to reply with 304 Not Modified
+# to tell prometheus to keep using the previously discovered targets
+[ use_etag:  <boolean> | default = false ]
 ```
 
 ### `<ionos_sd_config>`
