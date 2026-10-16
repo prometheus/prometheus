@@ -1988,6 +1988,59 @@ func BenchmarkBuildV2WriteRequest(b *testing.B) {
 	b.Run("1k instances", func(b *testing.B) {
 		bench(b, hundredBatch)
 	})
+
+	b.Run("buffers", func(b *testing.B) {
+		for _, tc := range rw2BufferBenchmarks() {
+			for _, varied := range []bool{false, true} {
+				b.Run(fmt.Sprintf("%s/varied=%t", tc.name, varied), func(b *testing.B) {
+					requests := rw2BufferBenchmarkRequests(tc.sizes, varied)
+					var raw []byte
+					encoder := compression.NewSyncEncodeBuffer()
+					var bytesPerOp int64
+					for _, req := range requests {
+						bytesPerOp += int64(req.Size())
+						if tc.warm {
+							_, _, _, _, err := buildV2WriteRequest(noopLogger, req.Timeseries, req.Symbols, &raw, nil, encoder, compression.Snappy)
+							require.NoError(b, err)
+						}
+					}
+					b.SetBytes(bytesPerOp)
+					b.ReportAllocs()
+					var wireBytes int64
+					for b.Loop() {
+						if !tc.warm {
+							// One operation is a complete cold-owner request trace,
+							// including both protobuf and compression buffer growth.
+							raw = nil
+							encoder = compression.NewSyncEncodeBuffer()
+						}
+						for _, req := range requests {
+							encoded, _, _, _, err := buildV2WriteRequest(noopLogger, req.Timeseries, req.Symbols, &raw, nil, encoder, compression.Snappy)
+							if err != nil {
+								b.Fatal(err)
+							}
+							wireBytes += int64(len(encoded))
+						}
+					}
+					b.ReportMetric(float64(len(requests)), "requests/op")
+					b.ReportMetric(float64(wireBytes)/float64(b.N), "wire-B/op")
+
+					// Untimed replay reports the allocator blocks of one owner's final
+					// buffers, not process RSS. Do not keep encoded replies.
+					raw = nil
+					encoder = compression.NewSyncEncodeBuffer()
+					var snappyCapacity int
+					for _, req := range requests {
+						encoded, _, _, _, err := buildV2WriteRequest(noopLogger, req.Timeseries, req.Symbols, &raw, nil, encoder, compression.Snappy)
+						require.NoError(b, err)
+						snappyCapacity = cap(encoded)
+					}
+					b.ReportMetric(float64(rw2AllocatedBlock(cap(raw))), "raw-block-B")
+					b.ReportMetric(float64(rw2AllocatedBlock(snappyCapacity)), "snappy-block-B")
+				})
+			}
+		}
+	})
 }
 
 func TestDropOldTimeSeries(t *testing.T) {
