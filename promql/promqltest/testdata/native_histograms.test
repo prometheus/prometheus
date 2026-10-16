@@ -2671,3 +2671,44 @@ eval instant at 1m histogram_fraction(13, +Inf, cbh) * histogram_count(cbh)
   {} 5.6
 
 clear
+
+# Comparing histograms for (in)equality needs the buckets, even if the
+# surrounding function would otherwise allow skipping them.
+load 1m
+  hist_eq_a {{schema:0 count:4 sum:10 buckets:[1 2 1]}}x5
+  hist_eq_b {{schema:0 count:4 sum:10 buckets:[2 1 1]}}x5
+
+eval instant at 2m hist_eq_a == hist_eq_b
+
+eval instant at 2m histogram_count(hist_eq_a == hist_eq_b)
+
+eval instant at 2m histogram_sum(hist_eq_a == hist_eq_b)
+
+eval instant at 2m histogram_count(hist_eq_a != hist_eq_b)
+  {} 4
+
+eval instant at 2m histogram_sum(hist_eq_a != hist_eq_b)
+  {} 10
+
+clear
+
+# Detecting changes and counting distinct values needs the buckets, even if
+# the surrounding function would otherwise allow skipping them.
+load 1m
+  hist_changes {{schema:0 count:4 sum:10 buckets:[1 2 1]}} {{schema:0 count:4 sum:10 buckets:[2 1 1]}}x2
+  hist_values_a {{schema:0 count:4 sum:10 buckets:[1 2 1]}}x2
+  hist_values_b {{schema:0 count:4 sum:10 buckets:[2 1 1]}}x2
+
+eval instant at 2m changes(hist_changes[5m])
+  {} 1
+
+eval instant at 2m histogram_count(hist_changes and changes(hist_changes[5m]) > 0)
+  {} 4
+
+eval instant at 2m count(count_values("value", {__name__=~"hist_values_.*"}))
+  {} 2
+
+eval instant at 2m histogram_count(hist_values_a and on() count(count_values("value", {__name__=~"hist_values_.*"})) > 1)
+  {} 4
+
+clear
