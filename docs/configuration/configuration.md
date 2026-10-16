@@ -2928,7 +2928,10 @@ The following meta labels are available on targets during [relabeling](#relabel_
 [ namespace: <string> | default = default ]
 [ refresh_interval: <duration> | default = 60s ]
 [ region: <string> | default = global ]
-# The URL to connect to the API.
+# The URL to connect to the API. It can be an HTTP(S) URL or a Unix socket
+# address of the form unix:///path/to/nomad.sock. When a Unix socket is
+# used, only the authentication and custom HTTP header settings of
+# <http_config> apply.
 [ server: <string> ]
 [ tag_separator: <string> | default = ,]
 
