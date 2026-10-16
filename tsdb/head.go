@@ -236,6 +236,11 @@ type HeadOptions struct {
 	// is implemented.
 	EnableSTAsZeroSample bool
 
+	// EnableCommitStats makes appenders collect per-series CommitStats for
+	// samples dropped at Commit. The duplicate samples metric is updated
+	// either way.
+	EnableCommitStats bool
+
 	// EnableMetadataWALRecords represents 'metadata-wal-records' feature flag.
 	// NOTE(bwplotka): This feature might be deprecated and removed once PROM-60
 	// is implemented.
@@ -440,6 +445,7 @@ type headMetrics struct {
 	chunksRemoved             prometheus.Counter
 	gcDuration                prometheus.Summary
 	samplesAppended           *prometheus.CounterVec
+	duplicateSamples          *prometheus.CounterVec
 	outOfOrderSamplesAppended *prometheus.CounterVec
 	outOfBoundSamples         *prometheus.CounterVec
 	outOfOrderSamples         *prometheus.CounterVec
@@ -548,6 +554,10 @@ func newHeadMetrics(h *Head, r prometheus.Registerer) *headMetrics {
 			Name: "prometheus_tsdb_head_samples_appended_total",
 			Help: "Total number of appended samples.",
 		}, []string{"type"}),
+		duplicateSamples: prometheus.NewCounterVec(prometheus.CounterOpts{
+			Name: "prometheus_tsdb_duplicate_samples_total",
+			Help: "Total number of samples dropped because the series already had a sample at the same timestamp.",
+		}, []string{"type"}),
 		outOfOrderSamplesAppended: prometheus.NewCounterVec(prometheus.CounterOpts{
 			Name: "prometheus_tsdb_head_out_of_order_samples_appended_total",
 			Help: "Total number of appended out of order samples.",
@@ -646,6 +656,7 @@ func newHeadMetrics(h *Head, r prometheus.Registerer) *headMetrics {
 			m.walCorruptionsTotal,
 			m.dataTotalReplayDuration,
 			m.samplesAppended,
+			m.duplicateSamples,
 			m.outOfOrderSamplesAppended,
 			m.outOfBoundSamples,
 			m.outOfOrderSamples,
