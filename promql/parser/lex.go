@@ -878,8 +878,11 @@ Loop:
 		case '\\':
 			return lexEscape
 		case utf8.RuneError:
-			l.errorf("invalid UTF-8 rune")
-			return lexString
+			// A literal U+FFFD also decodes as RuneError, but with its full width.
+			if l.width == 1 {
+				l.errorf("invalid UTF-8 rune")
+				return lexString
+			}
 		case eof, '\n':
 			return l.errorf("unterminated quoted string")
 		case l.stringOpen:
@@ -896,8 +899,11 @@ Loop:
 	for {
 		switch l.next() {
 		case utf8.RuneError:
-			l.errorf("invalid UTF-8 rune")
-			return lexRawString
+			// A literal U+FFFD also decodes as RuneError, but with its full width.
+			if l.width == 1 {
+				l.errorf("invalid UTF-8 rune")
+				return lexRawString
+			}
 		case eof:
 			l.errorf("unterminated raw string")
 			return lexRawString
