@@ -885,20 +885,6 @@ func main() {
 			}
 		}
 
-		// Max block size settings.
-		if cfg.tsdb.MaxBlockDuration == 0 {
-			maxBlockDuration, err := model.ParseDuration("31d")
-			if err != nil {
-				panic(err)
-			}
-			// When the time retention is set and not too big use to define the max block duration.
-			if cfg.tsdb.RetentionDuration != 0 && cfg.tsdb.RetentionDuration/10 < maxBlockDuration {
-				maxBlockDuration = cfg.tsdb.RetentionDuration / 10
-			}
-
-			cfg.tsdb.MaxBlockDuration = maxBlockDuration
-		}
-
 		// Delayed compaction checks
 		if cfg.tsdb.EnableDelayedCompaction && (cfg.tsdb.CompactionDelayMaxPercent > 100 || cfg.tsdb.CompactionDelayMaxPercent <= 0) {
 			logger.Warn("The --storage.tsdb.delayed-compaction.max-percent should have a value between 1 and 100. Using default", "default", tsdb.DefaultCompactionDelayMaxPercent)
@@ -1520,7 +1506,7 @@ func main() {
 				logger.Info("TSDB started")
 				logger.Debug("TSDB options",
 					"MinBlockDuration", cfg.tsdb.MinBlockDuration,
-					"MaxBlockDuration", cfg.tsdb.MaxBlockDuration,
+					"MaxBlockDuration", model.Duration(time.Duration(opts.MaxBlockDuration)*time.Millisecond),
 					"MaxBytes", cfg.tsdb.MaxBytes,
 					"MaxPercentage", cfg.tsdb.MaxPercentage,
 					"NoLockfile", cfg.tsdb.NoLockfile,

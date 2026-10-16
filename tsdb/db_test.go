@@ -1744,69 +1744,155 @@ func TestSizeRetentionMetric(t *testing.T) {
 }
 
 // TestRuntimeRetentionConfigChange tests that retention configuration can be
-// changed at runtime via ApplyConfig and that the retention logic properly
-// deletes blocks when retention is shortened. This test also ensures race-free
-// concurrent access to retention settings.
+// changed at runtime via ApplyConfig, that the retention logic properly
+// deletes blocks when retention is shortened, and that compaction ranges are
+// updated when MaxBlockDuration is derived from retention.
 func TestRuntimeRetentionConfigChange(t *testing.T) {
-	const (
-		initialRetentionDuration = int64(10 * time.Hour / time.Millisecond) // 10 hours
-		shorterRetentionDuration = int64(1 * time.Hour / time.Millisecond)  // 1 hour
-	)
-
-	db := newTestDB(t, withOpts(&Options{
-		RetentionDuration: initialRetentionDuration,
-	}), withRngs(100))
-
-	nineHoursMs := int64(9 * time.Hour / time.Millisecond)
-	nineAndHalfHoursMs := int64((9*time.Hour + 30*time.Minute) / time.Millisecond)
-	blocks := []*BlockMeta{
-		{MinTime: 0, MaxTime: 100},                                       // 10 hours old (beyond new retention)
-		{MinTime: 100, MaxTime: 200},                                     // 9.9 hours old (beyond new retention)
-		{MinTime: nineHoursMs, MaxTime: nineAndHalfHoursMs},              // 1 hour old (within new retention)
-		{MinTime: nineAndHalfHoursMs, MaxTime: initialRetentionDuration}, // 0.5 hours old (within new retention)
-	}
-
-	for _, m := range blocks {
-		createBlock(t, db.Dir(), genSeriesFromSampleGenerator(10, 10, m.MinTime, m.MaxTime, int64(time.Minute/time.Millisecond), func(ts int64) chunks.Sample {
-			return sample{t: ts, f: rand.Float64()}
-		}))
-	}
-
-	// Reload blocks and verify all are loaded.
-	require.NoError(t, db.reloadBlocks())
-	require.Len(t, db.Blocks(), len(blocks), "expected all blocks to be loaded initially")
-
-	cfg := &config.Config{
-		StorageConfig: config.StorageConfig{
-			TSDBConfig: &config.TSDBConfig{
-				Retention: &config.TSDBRetentionConfig{
-					Time: model.Duration(time.Duration(shorterRetentionDuration) * time.Millisecond),
+	retentionCfg := func(d time.Duration) *config.Config {
+		return &config.Config{
+			StorageConfig: config.StorageConfig{
+				TSDBConfig: &config.TSDBConfig{
+					Retention: &config.TSDBRetentionConfig{
+						Time: model.Duration(d),
+					},
 				},
 			},
-		},
+		}
 	}
 
-	require.NoError(t, db.ApplyConfig(cfg), "ApplyConfig should succeed")
+	t.Run("deletes_blocks_beyond_shortened_retention", func(t *testing.T) {
+		const (
+			initialRetentionDuration = int64(10 * time.Hour / time.Millisecond) // 10 hours
+			shorterRetentionDuration = int64(1 * time.Hour / time.Millisecond)  // 1 hour
+		)
 
-	actualRetention := db.getRetentionDuration()
-	require.Equal(t, shorterRetentionDuration, actualRetention, "retention duration should be updated")
+		db := newTestDB(t, withOpts(&Options{
+			RetentionDuration: initialRetentionDuration,
+		}), withRngs(100))
 
-	expectedRetentionSeconds := (time.Duration(shorterRetentionDuration) * time.Millisecond).Seconds()
-	actualRetentionSeconds := prom_testutil.ToFloat64(db.metrics.retentionDuration)
-	require.Equal(t, expectedRetentionSeconds, actualRetentionSeconds, "retention duration metric should be updated")
+		nineHoursMs := int64(9 * time.Hour / time.Millisecond)
+		nineAndHalfHoursMs := int64((9*time.Hour + 30*time.Minute) / time.Millisecond)
+		blocks := []*BlockMeta{
+			{MinTime: 0, MaxTime: 100},                                       // 10 hours old (beyond new retention)
+			{MinTime: 100, MaxTime: 200},                                     // 9.9 hours old (beyond new retention)
+			{MinTime: nineHoursMs, MaxTime: nineAndHalfHoursMs},              // 1 hour old (within new retention)
+			{MinTime: nineAndHalfHoursMs, MaxTime: initialRetentionDuration}, // 0.5 hours old (within new retention)
+		}
 
-	require.NoError(t, db.reloadBlocks())
+		for _, m := range blocks {
+			createBlock(t, db.Dir(), genSeriesFromSampleGenerator(10, 10, m.MinTime, m.MaxTime, int64(time.Minute/time.Millisecond), func(ts int64) chunks.Sample {
+				return sample{t: ts, f: rand.Float64()}
+			}))
+		}
 
-	// Verify that blocks beyond the new retention were deleted.
-	// We expect only the last 2 blocks to remain (those within 1 hour).
-	actBlocks := db.Blocks()
-	require.Len(t, actBlocks, 2, "expected old blocks to be deleted after retention change")
+		// Reload blocks and verify all are loaded.
+		require.NoError(t, db.reloadBlocks())
+		require.Len(t, db.Blocks(), len(blocks), "expected all blocks to be loaded initially")
 
-	// Verify the remaining blocks are the newest ones.
-	require.Equal(t, nineHoursMs, actBlocks[0].meta.MinTime, "first remaining block should be within retention")
-	require.Equal(t, nineAndHalfHoursMs, actBlocks[1].meta.MinTime, "last remaining block should be the newest")
+		require.NoError(t, db.ApplyConfig(retentionCfg(time.Duration(shorterRetentionDuration)*time.Millisecond)), "ApplyConfig should succeed")
 
-	require.Positive(t, int(prom_testutil.ToFloat64(db.metrics.timeRetentionCount)), "time retention count should be incremented")
+		actualRetention := db.getRetentionDuration()
+		require.Equal(t, shorterRetentionDuration, actualRetention, "retention duration should be updated")
+
+		expectedRetentionSeconds := (time.Duration(shorterRetentionDuration) * time.Millisecond).Seconds()
+		actualRetentionSeconds := prom_testutil.ToFloat64(db.metrics.retentionDuration)
+		require.Equal(t, expectedRetentionSeconds, actualRetentionSeconds, "retention duration metric should be updated")
+
+		require.NoError(t, db.reloadBlocks())
+
+		// Verify that blocks beyond the new retention were deleted.
+		// We expect only the last 2 blocks to remain (those within 1 hour).
+		actBlocks := db.Blocks()
+		require.Len(t, actBlocks, 2, "expected old blocks to be deleted after retention change")
+
+		// Verify the remaining blocks are the newest ones.
+		require.Equal(t, nineHoursMs, actBlocks[0].meta.MinTime, "first remaining block should be within retention")
+		require.Equal(t, nineAndHalfHoursMs, actBlocks[1].meta.MinTime, "last remaining block should be the newest")
+
+		require.Positive(t, int(prom_testutil.ToFloat64(db.metrics.timeRetentionCount)), "time retention count should be incremented")
+	})
+
+	t.Run("updates_compaction_ranges_when_max_block_duration_is_auto", func(t *testing.T) {
+		const (
+			twoYears      = 2 * 365 * 24 * time.Hour
+			retention190d = 190 * 24 * time.Hour
+			hourMs        = int64(time.Hour / time.Millisecond)
+		)
+
+		db := newTestDB(t, withOpts(&Options{
+			RetentionDuration: int64(twoYears / time.Millisecond),
+		}))
+		db.DisableCompactions()
+
+		lc, ok := db.compactor.(*LeveledCompactor)
+		require.True(t, ok)
+
+		// At 2y retention, MaxBlockDuration is capped at 31d (744h) and ranges include 486h.
+		require.Equal(t, defaultMaxBlockDuration, db.opts.MaxBlockDuration)
+		require.Equal(t, []int64{2 * hourMs, 6 * hourMs, 18 * hourMs, 54 * hourMs, 162 * hourMs, 486 * hourMs}, lc.ranges)
+
+		// Create four 162h blocks (the first three span [0, 486h), plus one newer block since the most recent block is excluded from compaction).
+		range162h := 162 * hourMs
+		for i := range int64(4) {
+			mint := i * range162h
+			maxt := (i + 1) * range162h
+			createBlock(t, db.Dir(), genSeriesFromSampleGenerator(1, 1, mint, maxt, range162h-1, func(ts int64) chunks.Sample {
+				return sample{t: ts, f: 1}
+			}))
+		}
+		require.NoError(t, db.reloadBlocks())
+		require.Len(t, db.Blocks(), 4)
+
+		// Shorten retention to 190d: MaxBlockDuration becomes 19d (456h), excluding the 486h tier.
+		require.NoError(t, db.ApplyConfig(retentionCfg(retention190d)))
+		require.Equal(t, int64(19*24*time.Hour/time.Millisecond), db.opts.MaxBlockDuration)
+		require.Equal(t, []int64{2 * hourMs, 6 * hourMs, 18 * hourMs, 54 * hourMs, 162 * hourMs}, lc.ranges)
+
+		// Compacting now must not merge the three 162h blocks into a 486h block.
+		require.NoError(t, db.Compact(context.Background()))
+		require.Len(t, db.Blocks(), 4)
+
+		// Lengthen retention back to 2y: MaxBlockDuration returns to 31d (744h) and 486h compaction is re-enabled.
+		require.NoError(t, db.ApplyConfig(retentionCfg(twoYears)))
+		require.Equal(t, defaultMaxBlockDuration, db.opts.MaxBlockDuration)
+		require.Equal(t, []int64{2 * hourMs, 6 * hourMs, 18 * hourMs, 54 * hourMs, 162 * hourMs, 486 * hourMs}, lc.ranges)
+
+		// Compacting now merges the first three 162h blocks into a single [0, 486h) block.
+		require.NoError(t, db.Compact(context.Background()))
+		actBlocks := db.Blocks()
+		require.Len(t, actBlocks, 2)
+		require.Equal(t, int64(0), actBlocks[0].Meta().MinTime)
+		require.Equal(t, 486*hourMs, actBlocks[0].Meta().MaxTime)
+	})
+
+	t.Run("preserves_explicit_max_block_duration", func(t *testing.T) {
+		const (
+			twoYears         = 2 * 365 * 24 * time.Hour
+			retention190d    = 190 * 24 * time.Hour
+			hourMs           = int64(time.Hour / time.Millisecond)
+			explicitMaxBlock = 24 * hourMs
+		)
+
+		db := newTestDB(t, withOpts(&Options{
+			RetentionDuration: int64(twoYears / time.Millisecond),
+			MaxBlockDuration:  explicitMaxBlock,
+		}))
+
+		lc, ok := db.compactor.(*LeveledCompactor)
+		require.True(t, ok)
+
+		expectedRanges := []int64{2 * hourMs, 6 * hourMs, 18 * hourMs}
+		require.Equal(t, explicitMaxBlock, db.opts.MaxBlockDuration)
+		require.Equal(t, expectedRanges, lc.ranges)
+
+		require.NoError(t, db.ApplyConfig(retentionCfg(retention190d)))
+		require.Equal(t, explicitMaxBlock, db.opts.MaxBlockDuration)
+		require.Equal(t, expectedRanges, lc.ranges)
+
+		require.NoError(t, db.ApplyConfig(retentionCfg(twoYears)))
+		require.Equal(t, explicitMaxBlock, db.opts.MaxBlockDuration)
+		require.Equal(t, expectedRanges, lc.ranges)
+	})
 }
 
 // TestApplyConfigRetentionDurationMetricUnit verifies that after a config

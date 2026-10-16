@@ -23,6 +23,7 @@ import (
 	"os"
 	"path/filepath"
 	"slices"
+	"sync"
 	"time"
 
 	"github.com/oklog/ulid/v2"
@@ -80,6 +81,7 @@ type Compactor interface {
 type LeveledCompactor struct {
 	metrics                     *CompactorMetrics
 	logger                      *slog.Logger
+	rangesMtx                   sync.RWMutex
 	ranges                      []int64
 	chunkPool                   chunkenc.Pool
 	ctx                         context.Context
@@ -90,6 +92,12 @@ type LeveledCompactor struct {
 	postingsEncoder             index.PostingsEncoder
 	postingsDecoderFactory      PostingsDecoderFactory
 	enableOverlappingCompaction bool
+}
+
+func (c *LeveledCompactor) setRanges(ranges []int64) {
+	c.rangesMtx.Lock()
+	defer c.rangesMtx.Unlock()
+	c.ranges = ranges
 }
 
 type CompactorMetrics struct {
@@ -283,6 +291,9 @@ func (c *LeveledCompactor) Plan(dir string) ([]string, error) {
 }
 
 func (c *LeveledCompactor) plan(dms []dirMeta) ([]string, error) {
+	c.rangesMtx.RLock()
+	defer c.rangesMtx.RUnlock()
+
 	if len(dms) == 0 {
 		return nil, nil
 	}

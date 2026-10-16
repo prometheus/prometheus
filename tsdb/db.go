@@ -56,6 +56,9 @@ const (
 	// DefaultBlockDuration in milliseconds.
 	DefaultBlockDuration = int64(2 * time.Hour / time.Millisecond)
 
+	// defaultMaxBlockDuration is the upper bound for auto-computed MaxBlockDuration (31d in milliseconds).
+	defaultMaxBlockDuration = int64(31 * 24 * time.Hour / time.Millisecond)
+
 	// DefaultCompactionDelayMaxPercent in percentage.
 	DefaultCompactionDelayMaxPercent = 10
 
@@ -159,10 +162,16 @@ type Options struct {
 	// Typically it is in milliseconds.
 	MinBlockDuration int64
 
-	// The maximum timestamp range of compacted blocks.
+	// The maximum timestamp range of compacted blocks. If set to 0, it defaults to
+	// min(31d, RetentionDuration/10) (or 31d when RetentionDuration is 0) and is
+	// recalculated when retention is updated via ApplyConfig.
 	// Unit agnostic as long as unit is consistent with MinBlockDuration and RetentionDuration.
 	// Typically it is in milliseconds.
 	MaxBlockDuration int64
+
+	// autoMaxBlockDuration indicates that MaxBlockDuration was not explicitly set
+	// and should be recalculated when RetentionDuration changes via ApplyConfig.
+	autoMaxBlockDuration bool
 
 	// HeadChunksWriteBufferSize configures the write buffer size used by the head chunks mapper.
 	HeadChunksWriteBufferSize int
@@ -316,6 +325,7 @@ type DB struct {
 	opts           *Options
 	chunkPool      chunkenc.Pool
 	compactor      Compactor
+	baseRanges     []int64
 	blocksToDelete BlocksToDeleteFunc
 
 	// mtx must be held when modifying the general block layout or lastGarbageCollectedMmapRef.
@@ -970,7 +980,10 @@ func validateOpts(opts *Options, rngs []int64) (*Options, []int64, error) {
 	if opts.MinBlockDuration <= 0 {
 		opts.MinBlockDuration = DefaultBlockDuration
 	}
-	if opts.MinBlockDuration > opts.MaxBlockDuration {
+	if opts.MaxBlockDuration <= 0 || opts.autoMaxBlockDuration {
+		opts.autoMaxBlockDuration = true
+		opts.MaxBlockDuration = maxBlockDuration(opts.MinBlockDuration, opts.RetentionDuration)
+	} else if opts.MinBlockDuration > opts.MaxBlockDuration {
 		opts.MaxBlockDuration = opts.MinBlockDuration
 	}
 	if opts.OutOfOrderCapMax <= 0 {
@@ -995,6 +1008,26 @@ func validateOpts(opts *Options, rngs []int64) (*Options, []int64, error) {
 	return opts, rngs, nil
 }
 
+func maxBlockDuration(minBlockDuration, retentionDuration int64) int64 {
+	maxBlockDuration := defaultMaxBlockDuration
+	if retentionDuration > 0 && retentionDuration/10 < maxBlockDuration {
+		maxBlockDuration = retentionDuration / 10
+	}
+	if minBlockDuration > maxBlockDuration {
+		maxBlockDuration = minBlockDuration
+	}
+	return maxBlockDuration
+}
+
+func capBlockRanges(rngs []int64, maxBlockDuration int64) []int64 {
+	for i, v := range rngs {
+		if v > maxBlockDuration {
+			return rngs[:i]
+		}
+	}
+	return rngs
+}
+
 // open returns a new DB in the given directory.
 // It initializes the lockfile, WAL, compactor, and Head (by replaying the WAL), and runs the database.
 // It is not safe to open more than one DB in the same directory.
@@ -1009,12 +1042,7 @@ func open(dir string, l *slog.Logger, r prometheus.Registerer, opts *Options, rn
 		stats = NewDBStats()
 	}
 
-	for i, v := range rngs {
-		if v > opts.MaxBlockDuration {
-			rngs = rngs[:i]
-			break
-		}
-	}
+	compactorRngs := capBlockRanges(rngs, opts.MaxBlockDuration)
 
 	// Fixup bad format written by Prometheus 2.1.
 	if err := repairBadIndexVersion(l, dir); err != nil {
@@ -1041,6 +1069,7 @@ func open(dir string, l *slog.Logger, r prometheus.Registerer, opts *Options, rn
 		dir:            dir,
 		logger:         l,
 		opts:           opts,
+		baseRanges:     rngs,
 		compactc:       make(chan struct{}, 1),
 		donec:          make(chan struct{}),
 		stopc:          make(chan struct{}),
@@ -1095,9 +1124,9 @@ func open(dir string, l *slog.Logger, r prometheus.Registerer, opts *Options, rn
 
 	ctx, cancel := context.WithCancel(context.Background())
 	if opts.NewCompactorFunc != nil {
-		db.compactor, err = opts.NewCompactorFunc(ctx, r, l, rngs, db.chunkPool, opts)
+		db.compactor, err = opts.NewCompactorFunc(ctx, r, l, compactorRngs, db.chunkPool, opts)
 	} else {
-		db.compactor, err = NewLeveledCompactorWithOptions(ctx, r, l, rngs, db.chunkPool, LeveledCompactorOptions{
+		db.compactor, err = NewLeveledCompactorWithOptions(ctx, r, l, compactorRngs, db.chunkPool, LeveledCompactorOptions{
 			MaxBlockChunkSegmentSize:    opts.MaxBlockChunkSegmentSize,
 			EnableOverlappingCompaction: opts.EnableOverlappingCompaction,
 			PD:                          opts.PostingsDecoderFactory,
@@ -1414,6 +1443,12 @@ func (db *DB) ApplyConfig(conf *config.Config) error {
 			db.metrics.maxBytes.Set(float64(db.opts.MaxBytes))
 			db.opts.MaxPercentage = conf.StorageConfig.TSDBConfig.Retention.Percentage
 			db.metrics.maxPercentage.Set(db.opts.MaxPercentage)
+			if db.opts.autoMaxBlockDuration {
+				db.opts.MaxBlockDuration = maxBlockDuration(db.opts.MinBlockDuration, db.opts.RetentionDuration)
+				if lc, ok := db.compactor.(*LeveledCompactor); ok {
+					lc.setRanges(capBlockRanges(db.baseRanges, db.opts.MaxBlockDuration))
+				}
+			}
 			db.retentionMtx.Unlock()
 		}
 		db.head.opts.FloatChunkEncoding.Store(uint32(effectiveEncoding))
