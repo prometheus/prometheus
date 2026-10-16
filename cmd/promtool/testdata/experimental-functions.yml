@@ -1,0 +1,7 @@
+# This is the rules file for experimental-functions-test.yml.
+
+groups:
+  - name: experimental-functions
+    rules:
+      - record: x
+        expr: "mad_over_time(requests[5m])"
