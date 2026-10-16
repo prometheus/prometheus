@@ -2612,6 +2612,31 @@ func TestKahanAddWithCompHistogram(t *testing.T) {
 		expNHCBBoundsReconciled     bool
 	}{
 		{
+			name: "zero threshold retry discards compensation from first attempt",
+			in1: &FloatHistogram{
+				Schema: 0, ZeroCount: 1 << 53, Count: (1 << 53) + 2,
+				PositiveSpans: []Span{{Offset: 0, Length: 1}}, PositiveBuckets: []float64{1},
+				NegativeSpans: []Span{{Offset: 1, Length: 1}}, NegativeBuckets: []float64{1},
+			},
+			in2:         &FloatHistogram{Schema: 0, ZeroThreshold: 1.5},
+			expectedSum: &FloatHistogram{Schema: 0, ZeroThreshold: 2, ZeroCount: (1 << 53) + 2, Count: (1 << 53) + 2, PositiveSpans: []Span{{Length: 1}}, NegativeSpans: []Span{{Length: 1}}, PositiveBuckets: []float64{0}, NegativeBuckets: []float64{0}},
+		},
+		{
+			name: "zero threshold retry preserves original compensation",
+			in1: &FloatHistogram{
+				Schema: 0, ZeroCount: 1 << 53, Count: (1 << 53) + 2,
+				PositiveSpans: []Span{{Offset: 0, Length: 1}}, PositiveBuckets: []float64{1},
+				NegativeSpans: []Span{{Offset: 1, Length: 1}}, NegativeBuckets: []float64{1},
+			},
+			comp: &FloatHistogram{
+				Schema: 0, ZeroCount: 2, Count: 2,
+				PositiveSpans: []Span{{Offset: 0, Length: 1}}, PositiveBuckets: []float64{0},
+				NegativeSpans: []Span{{Offset: 1, Length: 1}}, NegativeBuckets: []float64{0},
+			},
+			in2:         &FloatHistogram{Schema: 0, ZeroThreshold: 1.5},
+			expectedSum: &FloatHistogram{Schema: 0, ZeroThreshold: 2, ZeroCount: (1 << 53) + 4, Count: (1 << 53) + 4, PositiveSpans: []Span{{Length: 1}}, NegativeSpans: []Span{{Length: 1}}, PositiveBuckets: []float64{0}, NegativeBuckets: []float64{0}},
+		},
+		{
 			name: "larger zero bucket in first histogram",
 			in1: &FloatHistogram{
 				ZeroThreshold:   1,
