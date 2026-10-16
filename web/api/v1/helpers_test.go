@@ -54,6 +54,7 @@ func newTestAPI(t *testing.T, cfg testhelpers.APIConfig) *testhelpers.APIWrapper
 		false, // enableAdmin
 		false, // enableSearch
 		0,     // maxSearchLimit
+		false, // enableExperimentalFunctions
 		params.Logger,
 		func(ctx context.Context) RulesRetriever {
 			return adaptRulesRetriever(params.RulesRetriever(ctx))
@@ -100,6 +101,7 @@ func newTestAPI(t *testing.T, cfg testhelpers.APIConfig) *testhelpers.APIWrapper
 		false,                              // otlpDeltaToCumulative
 		false,                              // otlpNativeDeltaIngestion
 		5*time.Minute,                      // lookbackDelta
+		2*time.Minute,                      // queryTimeout
 		false,                              // enableTypeAndUnitLabels
 		false,                              // appendMetadata
 		nil,                                // overrideErrorCode
