@@ -20,6 +20,7 @@ import (
 	"fmt"
 	"log/slog"
 	"math"
+	"slices"
 	"unsafe"
 
 	"github.com/prometheus/common/model"
@@ -370,7 +371,7 @@ func (*Decoder) samplesV1(dec *encoding.Decbuf, samples []RefSample) ([]RefSampl
 	)
 	// Allow 1 byte for each varint and 8 for the value; the output slice must be at least that big.
 	if minSize := dec.Len() / (1 + 1 + 8); cap(samples) < minSize {
-		samples = make([]RefSample, 0, minSize)
+		samples = slices.Grow(samples, minSize)
 	}
 	for len(dec.B) > 0 && dec.Err() == nil {
 		dref := dec.Varint64()
@@ -401,15 +402,16 @@ func (*Decoder) samplesV2(dec *encoding.Decbuf, samples []RefSample) ([]RefSampl
 	}
 	// Allow 1 byte for each varint and 8 for the value; the output slice must be at least that big.
 	if minSize := dec.Len() / (1 + 1 + 8); cap(samples) < minSize {
-		samples = make([]RefSample, 0, minSize)
+		samples = slices.Grow(samples, minSize)
 	}
 	var firstT, firstST int64
+	initialSamplesLen := len(samples)
 	for len(dec.B) > 0 && dec.Err() == nil {
 		var prev RefSample
 		var ref, t, st int64
 		var val uint64
 
-		if len(samples) == 0 {
+		if len(samples) == initialSamplesLen {
 			ref = dec.Varint64()
 			firstT = dec.Varint64()
 			t = firstT
