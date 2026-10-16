@@ -187,7 +187,6 @@
   "scrape": {
     "extra_scrape_metrics": true,
     "openmetrics2": false,
-    "start_timestamp_zero_ingestion": false,
     "type_and_unit_labels": false
   },
   "service_discovery_providers": {
@@ -267,6 +266,7 @@
     "isolation": true,
     "native_histograms": true,
     "st_storage": false,
+    "start_timestamp_zero_ingestion": false,
     "use_uncached_io": false,
     "xor2_encoding": true
   },

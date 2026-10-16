@@ -269,8 +269,6 @@ func (c *flagConfig) setFeatureListOptions(logger *slog.Logger) error {
 			case "ooo-native-histograms":
 				logger.Warn("This option for --enable-feature is now permanently enabled and therefore a no-op.", "option", o)
 			case "created-timestamp-zero-ingestion":
-				// NOTE(bwplotka): Once AppendableV1 is removed, there will be only the TSDB and agent flags.
-				c.scrape.EnableStartTimestampZeroIngestion = true
 				c.scrape.ParseST = true
 				c.tsdb.EnableSTAsZeroSample = true
 				c.agent.EnableSTAsZeroSample = true
@@ -996,7 +994,7 @@ func main() {
 		&cfg.scrape,
 		logger.With("component", "scrape manager"),
 		logging.NewJSONFileLogger,
-		nil, fanoutStorage,
+		fanoutStorage,
 		prometheus.DefaultRegisterer,
 	)
 	if err != nil {
