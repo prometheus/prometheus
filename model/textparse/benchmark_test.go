@@ -109,6 +109,45 @@ func BenchmarkParseOMText(b *testing.B) {
 	benchParse(b, data, "omtext")
 }
 
+func BenchmarkOpenMetricsSeriesHash(b *testing.B) {
+	for _, kind := range []string{"counter", "histogram", "summary"} {
+		for _, labelCount := range []int{2, 12} {
+			b.Run(fmt.Sprintf("%s/labels=%d", kind, labelCount), func(b *testing.B) {
+				var parts []string
+				for i := labelCount - 1; i >= 0; i-- {
+					parts = append(parts, fmt.Sprintf(`k%02d="value%02d"`, i, i))
+				}
+				suffix := "_total"
+				switch kind {
+				case "histogram":
+					suffix = "_bucket"
+					parts = append(parts, `le="+Inf"`)
+				case "summary":
+					suffix = ""
+					parts = append(parts, `quantile="0.5"`)
+				}
+				input := fmt.Sprintf("# TYPE calls %s\ncalls%s{%s} 1\n# EOF\n", kind, suffix, strings.Join(parts, ","))
+				p := NewOpenMetricsParser([]byte(input), labels.NewSymbolTable()).(*OpenMetricsParser)
+				entry, err := p.Next()
+				require.NoError(b, err)
+				require.Equal(b, EntryType, entry)
+				entry, err = p.Next()
+				require.NoError(b, err)
+				require.Equal(b, EntrySeries, entry)
+				var buf []byte
+				family := []byte("calls")
+				// Warm parser scratch and hash-input capacity before timing.
+				p.seriesHash(&buf, family)
+				b.ReportAllocs()
+				b.ResetTimer()
+				for b.Loop() {
+					p.seriesHash(&buf, family)
+				}
+			})
+		}
+	}
+}
+
 /*
 	export bench=v1 && go test ./model/textparse/... \
 		 -run '^$' -bench '^BenchmarkParseOM2Text' \
