@@ -59,6 +59,17 @@ var (
 		},
 		[]string{"endpoint"},
 	)
+	clientGoRequestLatencyHistogramMetricVec = prometheus.NewHistogramVec(
+		prometheus.HistogramOpts{
+			Namespace:                       KubernetesMetricsNamespace,
+			Name:                            "http_request_duration_histogram_seconds",
+			Help:                            "Histogram of latencies for HTTP requests to the Kubernetes API by endpoint.",
+			NativeHistogramBucketFactor:     1.1,
+			NativeHistogramMaxBucketNumber:  100,
+			NativeHistogramMinResetDuration: 1 * time.Hour,
+		},
+		[]string{"endpoint"},
+	)
 
 	// Definition of metrics for client-go workflow metrics provider.
 	clientGoWorkqueueDepthMetricVec = prometheus.NewGaugeVec(
@@ -83,6 +94,17 @@ var (
 			Name:       "latency_seconds",
 			Help:       "How long an item stays in the work queue.",
 			Objectives: map[float64]float64{},
+		},
+		[]string{"queue_name"},
+	)
+	clientGoWorkqueueLatencyHistogramMetricVec = prometheus.NewHistogramVec(
+		prometheus.HistogramOpts{
+			Namespace:                       workqueueMetricsNamespace,
+			Name:                            "latency_histogram_seconds",
+			Help:                            "How long an item stays in the work queue.",
+			NativeHistogramBucketFactor:     1.1,
+			NativeHistogramMaxBucketNumber:  100,
+			NativeHistogramMinResetDuration: 1 * time.Hour,
 		},
 		[]string{"queue_name"},
 	)
@@ -111,6 +133,17 @@ var (
 		},
 		[]string{"queue_name"},
 	)
+	clientGoWorkqueueWorkDurationHistogramMetricVec = prometheus.NewHistogramVec(
+		prometheus.HistogramOpts{
+			Namespace:                       workqueueMetricsNamespace,
+			Name:                            "work_duration_histogram_seconds",
+			Help:                            "How long processing an item from the work queue takes.",
+			NativeHistogramBucketFactor:     1.1,
+			NativeHistogramMaxBucketNumber:  100,
+			NativeHistogramMinResetDuration: 1 * time.Hour,
+		},
+		[]string{"queue_name"},
+	)
 )
 
 // Definition of dummy metric used as a placeholder if we don't want to observe some data.
@@ -130,12 +163,15 @@ func clientGoMetrics() []prometheus.Collector {
 	return []prometheus.Collector{
 		clientGoRequestResultMetricVec,
 		clientGoRequestLatencyMetricVec,
+		clientGoRequestLatencyHistogramMetricVec,
 		clientGoWorkqueueDepthMetricVec,
 		clientGoWorkqueueAddsMetricVec,
 		clientGoWorkqueueLatencyMetricVec,
+		clientGoWorkqueueLatencyHistogramMetricVec,
 		clientGoWorkqueueUnfinishedWorkSecondsMetricVec,
 		clientGoWorkqueueLongestRunningProcessorMetricVec,
 		clientGoWorkqueueWorkDurationMetricVec,
+		clientGoWorkqueueWorkDurationHistogramMetricVec,
 	}
 }
 
@@ -167,6 +203,7 @@ func (clientGoRequestMetricAdapter) Increment(_ context.Context, code, _, _ stri
 
 func (clientGoRequestMetricAdapter) Observe(_ context.Context, _ string, u url.URL, latency time.Duration) {
 	clientGoRequestLatencyMetricVec.WithLabelValues(u.EscapedPath()).Observe(latency.Seconds())
+	clientGoRequestLatencyHistogramMetricVec.WithLabelValues(u.EscapedPath()).Observe(latency.Seconds())
 }
 
 // Definition of client-go workqueue metrics provider definition.
@@ -185,11 +222,21 @@ func (*clientGoWorkqueueMetricsProvider) NewAddsMetric(name string) workqueue.Co
 }
 
 func (*clientGoWorkqueueMetricsProvider) NewLatencyMetric(name string) workqueue.HistogramMetric {
-	return clientGoWorkqueueLatencyMetricVec.WithLabelValues(name)
+	summary := clientGoWorkqueueLatencyMetricVec.WithLabelValues(name)
+	histogram := clientGoWorkqueueLatencyHistogramMetricVec.WithLabelValues(name)
+	return prometheus.ObserverFunc(func(value float64) {
+		summary.Observe(value)
+		histogram.Observe(value)
+	})
 }
 
 func (*clientGoWorkqueueMetricsProvider) NewWorkDurationMetric(name string) workqueue.HistogramMetric {
-	return clientGoWorkqueueWorkDurationMetricVec.WithLabelValues(name)
+	summary := clientGoWorkqueueWorkDurationMetricVec.WithLabelValues(name)
+	histogram := clientGoWorkqueueWorkDurationHistogramMetricVec.WithLabelValues(name)
+	return prometheus.ObserverFunc(func(value float64) {
+		summary.Observe(value)
+		histogram.Observe(value)
+	})
 }
 
 func (*clientGoWorkqueueMetricsProvider) NewUnfinishedWorkSecondsMetric(name string) workqueue.SettableGaugeMetric {

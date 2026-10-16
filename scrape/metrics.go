@@ -29,6 +29,7 @@ type scrapeMetrics struct {
 
 	// Used by scrapePool.
 	targetReloadIntervalLength          *prometheus.SummaryVec
+	targetReloadIntervalLengthHistogram *prometheus.HistogramVec
 	targetScrapePoolReloads             prometheus.Counter
 	targetScrapePoolReloadsFailed       prometheus.Counter
 	targetScrapePoolSyncsCounter        *prometheus.CounterVec
@@ -99,6 +100,16 @@ func newScrapeMetrics(reg prometheus.Registerer) (*scrapeMetrics, error) {
 			Name:       "prometheus_target_reload_length_seconds",
 			Help:       "Actual interval to reload the scrape pool with a given configuration.",
 			Objectives: map[float64]float64{0.01: 0.001, 0.05: 0.005, 0.5: 0.05, 0.90: 0.01, 0.99: 0.001},
+		},
+		[]string{"interval"},
+	)
+	sm.targetReloadIntervalLengthHistogram = prometheus.NewHistogramVec(
+		prometheus.HistogramOpts{
+			Name:                            "prometheus_target_reload_length_histogram_seconds",
+			Help:                            "Actual interval to reload the scrape pool with a given configuration.",
+			NativeHistogramBucketFactor:     1.1,
+			NativeHistogramMaxBucketNumber:  100,
+			NativeHistogramMinResetDuration: 1 * time.Hour,
 		},
 		[]string{"interval"},
 	)
@@ -270,6 +281,7 @@ func newScrapeMetrics(reg prometheus.Registerer) (*scrapeMetrics, error) {
 		sm.targetScrapePoolsFailed,
 		// Used by scrapePool.
 		sm.targetReloadIntervalLength,
+		sm.targetReloadIntervalLengthHistogram,
 		sm.targetScrapePoolReloads,
 		sm.targetScrapePoolReloadsFailed,
 		sm.targetSyncIntervalLength,
@@ -314,6 +326,7 @@ func (sm *scrapeMetrics) Unregister() {
 	sm.reg.Unregister(sm.targetScrapePools)
 	sm.reg.Unregister(sm.targetScrapePoolsFailed)
 	sm.reg.Unregister(sm.targetReloadIntervalLength)
+	sm.reg.Unregister(sm.targetReloadIntervalLengthHistogram)
 	sm.reg.Unregister(sm.targetScrapePoolReloads)
 	sm.reg.Unregister(sm.targetScrapePoolReloadsFailed)
 	sm.reg.Unregister(sm.targetSyncIntervalLength)

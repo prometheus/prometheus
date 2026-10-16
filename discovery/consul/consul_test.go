@@ -22,6 +22,7 @@ import (
 	"time"
 
 	"github.com/prometheus/client_golang/prometheus"
+	dto "github.com/prometheus/client_model/go"
 	"github.com/prometheus/common/config"
 	"github.com/prometheus/common/model"
 	"github.com/prometheus/common/promslog"
@@ -686,6 +687,42 @@ oauth2:
 			require.Empty(t, test.errMessage, "Expected error.")
 
 			require.Equal(t, test.expected, config)
+		})
+	}
+}
+
+func TestNativeHistogramMetrics(t *testing.T) {
+	reg := prometheus.NewRegistry()
+	m := newDiscovererMetrics(reg, nil).(*consulMetrics)
+	require.NoError(t, m.Register())
+	defer m.Unregister()
+	for _, tc := range []struct {
+		name     string
+		call     string
+		observer prometheus.Observer
+	}{
+		{"services_rpc", "services", m.servicesRPCDuration},
+		{"service_rpc", "service", m.serviceRPCDuration},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			for _, value := range []float64{0.01, 0.25, 1.5} {
+				tc.observer.Observe(value)
+			}
+
+			metric := &dto.Metric{}
+			require.NoError(t, m.rpcDurationHistogram.WithLabelValues("catalog", tc.call).(prometheus.Metric).Write(metric))
+			require.Nil(t, metric.Summary)
+			h := metric.GetHistogram()
+			require.NotNil(t, h)
+			require.NotNil(t, h.Schema)
+			require.Equal(t, uint64(3), h.GetSampleCount())
+			require.InDelta(t, 1.76, h.GetSampleSum(), 1e-10)
+			require.NotEmpty(t, h.PositiveSpan)
+			summary := &dto.Metric{}
+			require.NoError(t, m.rpcDuration.WithLabelValues("catalog", tc.call).(prometheus.Metric).Write(summary))
+			require.Equal(t, h.GetSampleCount(), summary.GetSummary().GetSampleCount())
+			require.Equal(t, h.GetSampleSum(), summary.GetSummary().GetSampleSum())
+			require.Len(t, summary.GetSummary().Quantile, 3)
 		})
 	}
 }

@@ -25,6 +25,7 @@ import (
 
 	"github.com/prometheus/client_golang/prometheus"
 	client_testutil "github.com/prometheus/client_golang/prometheus/testutil"
+	dto "github.com/prometheus/client_model/go"
 	"github.com/prometheus/common/promslog"
 	"github.com/stretchr/testify/require"
 	"go.uber.org/goleak"
@@ -571,6 +572,36 @@ func TestUnregisterMetrics(t *testing.T) {
 	for range 2 {
 		wl, err := New(promslog.NewNopLogger(), reg, t.TempDir(), compression.None)
 		require.NoError(t, err)
+		require.NoError(t, wl.Sync())
+		families, err := reg.Gather()
+		require.NoError(t, err)
+		var fsync *dto.MetricFamily
+		for _, family := range families {
+			if family.GetName() == "prometheus_tsdb_wal_fsync_duration_histogram_seconds" {
+				fsync = family
+				break
+			}
+		}
+		require.NotNil(t, fsync)
+		require.Equal(t, dto.MetricType_HISTOGRAM, fsync.GetType())
+		require.Len(t, fsync.Metric, 1)
+		require.NotNil(t, fsync.Metric[0].GetHistogram().Schema)
+		require.Equal(t, uint64(1), fsync.Metric[0].GetHistogram().GetSampleCount())
+		var summary *dto.MetricFamily
+		for _, family := range families {
+			if family.GetName() == "prometheus_tsdb_wal_fsync_duration_seconds" {
+				summary = family
+				break
+			}
+		}
+		require.NotNil(t, summary)
+		require.Equal(t, dto.MetricType_SUMMARY, summary.GetType())
+		require.Equal(t, fsync.Metric[0].GetHistogram().GetSampleCount(), summary.Metric[0].GetSummary().GetSampleCount())
+		require.Equal(t, fsync.Metric[0].GetHistogram().GetSampleSum(), summary.Metric[0].GetSummary().GetSampleSum())
+		require.Len(t, summary.Metric[0].GetSummary().Quantile, 3)
 		require.NoError(t, wl.Close())
+		families, err = reg.Gather()
+		require.NoError(t, err)
+		require.Empty(t, families)
 	}
 }

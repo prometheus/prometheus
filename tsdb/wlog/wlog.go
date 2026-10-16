@@ -199,17 +199,18 @@ type WL struct {
 }
 
 type wlMetrics struct {
-	fsyncDuration    prometheus.Summary
-	pageFlushes      prometheus.Counter
-	pageCompletions  prometheus.Counter
-	truncateFail     prometheus.Counter
-	truncateTotal    prometheus.Counter
-	currentSegment   prometheus.Gauge
-	writesFailed     prometheus.Counter
-	walFileSize      prometheus.GaugeFunc
-	recordPartWrites prometheus.Counter
-	recordPartBytes  prometheus.Counter
-	recordBytesSaved *prometheus.CounterVec
+	fsyncDuration          prometheus.Summary
+	fsyncDurationHistogram prometheus.Histogram
+	pageFlushes            prometheus.Counter
+	pageCompletions        prometheus.Counter
+	truncateFail           prometheus.Counter
+	truncateTotal          prometheus.Counter
+	currentSegment         prometheus.Gauge
+	writesFailed           prometheus.Counter
+	walFileSize            prometheus.GaugeFunc
+	recordPartWrites       prometheus.Counter
+	recordPartBytes        prometheus.Counter
+	recordBytesSaved       *prometheus.CounterVec
 
 	r prometheus.Registerer
 }
@@ -219,6 +220,7 @@ func (w *wlMetrics) Unregister() {
 		return
 	}
 	w.r.Unregister(w.fsyncDuration)
+	w.r.Unregister(w.fsyncDurationHistogram)
 	w.r.Unregister(w.pageFlushes)
 	w.r.Unregister(w.pageCompletions)
 	w.r.Unregister(w.truncateFail)
@@ -238,6 +240,13 @@ func newWLMetrics(w *WL, r prometheus.Registerer) *wlMetrics {
 			Name:       "fsync_duration_seconds",
 			Help:       "Duration of write log fsync.",
 			Objectives: map[float64]float64{0.5: 0.05, 0.9: 0.01, 0.99: 0.001},
+		}),
+		fsyncDurationHistogram: promauto.With(r).NewHistogram(prometheus.HistogramOpts{
+			Name:                            "fsync_duration_histogram_seconds",
+			Help:                            "Duration of write log fsync.",
+			NativeHistogramBucketFactor:     1.1,
+			NativeHistogramMaxBucketNumber:  100,
+			NativeHistogramMinResetDuration: 1 * time.Hour,
 		}),
 		pageFlushes: promauto.With(r).NewCounter(prometheus.CounterOpts{
 			Name: "page_flushes_total",
@@ -822,7 +831,9 @@ func (w *WL) Truncate(i int) (err error) {
 func (w *WL) fsync(f *Segment) error {
 	start := time.Now()
 	err := f.Sync()
-	w.metrics.fsyncDuration.Observe(time.Since(start).Seconds())
+	duration := time.Since(start).Seconds()
+	w.metrics.fsyncDuration.Observe(duration)
+	w.metrics.fsyncDurationHistogram.Observe(duration)
 	return err
 }
 

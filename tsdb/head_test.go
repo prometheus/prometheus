@@ -11299,3 +11299,47 @@ func testOOORestartResetsFirstOOOChunkID(t *testing.T, scenario sampleTypeScenar
 
 	require.NoError(t, h.Close())
 }
+
+func TestHeadDurationMetrics(t *testing.T) {
+	reg := prometheus.NewRegistry()
+	dir := t.TempDir()
+	wal, err := wlog.NewSize(nil, nil, filepath.Join(dir, "wal"), 32768, compression.None)
+	require.NoError(t, err)
+	opts := newTestHeadDefaultOptions(1000, false)
+	opts.ChunkDirRoot = dir
+	head, err := NewHead(reg, nil, wal, nil, opts, nil)
+	require.NoError(t, err)
+	t.Cleanup(func() { require.NoError(t, head.Close()) })
+	for timestamp := int64(0); timestamp <= 4; timestamp++ {
+		app := head.Appender(context.Background())
+		_, err := app.Append(0, labels.FromStrings("a", "b"), timestamp, 0)
+		require.NoError(t, err)
+		require.NoError(t, app.Commit())
+		if timestamp > 0 {
+			require.NoError(t, head.Truncate(timestamp))
+		}
+	}
+	families, err := reg.Gather()
+	require.NoError(t, err)
+	metrics := map[string]*dto.MetricFamily{}
+	for _, family := range families {
+		metrics[family.GetName()] = family
+	}
+	for _, name := range []string{"prometheus_tsdb_head_gc_duration", "prometheus_tsdb_wal_truncate_duration"} {
+		t.Run(name, func(t *testing.T) {
+			summary := metrics[name+"_seconds"]
+			histogram := metrics[name+"_histogram_seconds"]
+			require.NotNil(t, summary)
+			require.NotNil(t, histogram)
+			require.Equal(t, dto.MetricType_SUMMARY, summary.GetType())
+			require.Equal(t, dto.MetricType_HISTOGRAM, histogram.GetType())
+			require.Len(t, summary.Metric, 1)
+			require.Len(t, histogram.Metric, 1)
+			h := histogram.Metric[0].GetHistogram()
+			require.NotNil(t, h.Schema)
+			require.Positive(t, h.GetSampleCount())
+			require.Equal(t, summary.Metric[0].GetSummary().GetSampleCount(), h.GetSampleCount())
+			require.Equal(t, summary.Metric[0].GetSummary().GetSampleSum(), h.GetSampleSum())
+		})
+	}
+}
