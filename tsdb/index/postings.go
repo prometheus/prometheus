@@ -28,6 +28,8 @@ import (
 	"time"
 
 	"github.com/bboreham/go-loser"
+	"github.com/cespare/xxhash/v2"
+	"go.uber.org/atomic"
 
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/storage"
@@ -53,6 +55,12 @@ var ensureOrderBatchPool = sync.Pool{
 	},
 }
 
+// readShards is how many read counters label names are hashed onto, so reading one name doesn't force copies of other names' lists.
+const readShards = 512
+
+// privateListMinLen is the length from which addFor remembers lists it copied, shorter ones are cheap to copy every time.
+const privateListMinLen = 128
+
 // MemPostings holds postings list for series ID per label pair. They may be written
 // to out of order.
 // EnsureOrder() must be called once before any reads are done. This allows for quick
@@ -63,10 +71,7 @@ type MemPostings struct {
 	// m holds the postings lists for each label-value pair, indexed first by label name, and then by label value.
 	//
 	// mtx must be held when interacting with m (the appropriate one for reading or writing).
-	// It is safe to retain a reference to a postings list after releasing the lock.
-	//
-	// BUG: There's currently a data race in addFor, which might modify the tail of the postings list:
-	// https://github.com/prometheus/prometheus/issues/15317
+	// It is safe to retain a reference to a postings list after releasing the lock, addFor never moves refs a reader may hold.
 	m map[string]map[string][]storage.SeriesRef
 
 	// lvs holds the label values for each label name.
@@ -75,7 +80,17 @@ type MemPostings struct {
 	// Since it's append-only, it is safe to read the label values slice after releasing the lock.
 	lvs map[string][]string
 
+	// reads is incremented under the read lock whenever postings lists are handed out, see readsFor.
+	reads [readShards]atomic.Uint64
+	// private holds the read counter of a list when addFor copied it, until the counter moves on no reader can hold that copy.
+	private map[labels.Label]uint64
+
 	ordered bool
+}
+
+// readsFor returns the read counter for postings lists of the given label name.
+func (p *MemPostings) readsFor(name string) *atomic.Uint64 {
+	return &p.reads[xxhash.Sum64String(name)%readShards]
 }
 
 const defaultLabelNamesMapSize = 512
@@ -85,6 +100,7 @@ func NewMemPostings() *MemPostings {
 	return &MemPostings{
 		m:       make(map[string]map[string][]storage.SeriesRef, defaultLabelNamesMapSize),
 		lvs:     make(map[string][]string, defaultLabelNamesMapSize),
+		private: map[labels.Label]uint64{},
 		ordered: true,
 	}
 }
@@ -95,6 +111,7 @@ func NewUnorderedMemPostings() *MemPostings {
 	return &MemPostings{
 		m:       make(map[string]map[string][]storage.SeriesRef, defaultLabelNamesMapSize),
 		lvs:     make(map[string][]string, defaultLabelNamesMapSize),
+		private: map[labels.Label]uint64{},
 		ordered: false,
 	}
 }
@@ -324,6 +341,7 @@ func (p *MemPostings) Delete(deleted map[storage.SeriesRef]struct{}, affected ma
 				repl = append(repl, id)
 			}
 		}
+		delete(p.private, l)
 		if len(repl) > 0 {
 			p.m[l.Name][l.Value] = repl
 		} else {
@@ -394,6 +412,9 @@ func (p *MemPostings) unlockWaitAndLockAgain() {
 func (p *MemPostings) Iter(f func(labels.Label, Postings) error) error {
 	p.mtx.RLock()
 	defer p.mtx.RUnlock()
+	for i := range p.reads {
+		p.reads[i].Inc()
+	}
 
 	for n, e := range p.m {
 		for v, p := range e {
@@ -439,19 +460,27 @@ func (p *MemPostings) addFor(id storage.SeriesRef, l labels.Label) {
 	list := appendWithExponentialGrowth(vm, id)
 	nm[l.Value] = list
 
-	if !p.ordered {
+	if !p.ordered || len(vm) == 0 || vm[len(vm)-1] <= id {
 		return
 	}
+
 	// There is no guarantee that no higher ID was inserted before as they may
 	// be generated independently before adding them to postings.
 	// We repair order violations on insert. The invariant is that the first n-1
 	// items in the list are already sorted.
-	for i := len(list) - 1; i >= 1; i-- {
-		if list[i] >= list[i-1] {
-			break
-		}
-		list[i], list[i-1] = list[i-1], list[i]
+	reads := p.readsFor(l.Name).Load()
+	copiedAt, ok := p.private[l]
+	if cap(list) == cap(vm) && (!ok || copiedAt != reads) {
+		// The append reused a backing array a reader may hold, so repair a copy instead, see https://github.com/prometheus/prometheus/issues/15317.
+		list = append(make([]storage.SeriesRef, 0, cap(list)), list...)
+		nm[l.Value] = list
 	}
+	if len(list) >= privateListMinLen {
+		p.private[l] = reads
+	}
+	at, _ := slices.BinarySearch(vm, id)
+	copy(list[at+1:], list[at:])
+	list[at] = id
 }
 
 func (p *MemPostings) PostingsForLabelMatching(ctx context.Context, name string, match func(string) bool) Postings {
@@ -487,6 +516,7 @@ func (p *MemPostings) PostingsForLabelMatching(ctx context.Context, name string,
 	its := make([]*listPostings, 0, len(vals))
 	lps := make([]listPostings, len(vals))
 	p.mtx.RLock()
+	p.readsFor(name).Inc()
 	e := p.m[name]
 	for i, v := range vals {
 		if refs, ok := e[v]; ok {
@@ -509,6 +539,7 @@ func (p *MemPostings) Postings(ctx context.Context, name string, values ...strin
 	res := make([]*listPostings, 0, len(values))
 	lps := make([]listPostings, len(values))
 	p.mtx.RLock()
+	p.readsFor(name).Inc()
 	postingsMapForName := p.m[name]
 	for i, value := range values {
 		if lp := postingsMapForName[value]; lp != nil {
@@ -522,6 +553,7 @@ func (p *MemPostings) Postings(ctx context.Context, name string, values ...strin
 
 func (p *MemPostings) PostingsForAllLabelValues(ctx context.Context, name string) Postings {
 	p.mtx.RLock()
+	p.readsFor(name).Inc()
 
 	e := p.m[name]
 	its := make([]*listPostings, 0, len(e))
