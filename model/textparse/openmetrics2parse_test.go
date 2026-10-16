@@ -25,6 +25,7 @@ import (
 	"github.com/prometheus/prometheus/model/exemplar"
 	"github.com/prometheus/prometheus/model/histogram"
 	"github.com/prometheus/prometheus/model/labels"
+	"github.com/prometheus/prometheus/model/value"
 )
 
 func TestOpenMetrics2Parse(t *testing.T) {
@@ -467,12 +468,16 @@ func TestOpenMetrics2ParseCompositeNativeAndClassicHistogram(t *testing.T) {
 	// classic bucket list. The KeepClassicOnNativeHistogram option mirrors
 	// the protobuf parser's parseClassicHistograms flag: when off, only the
 	// native histogram is emitted and the classic bucket list is dropped;
-	// when on, classic _count/_sum/_bucket flat series are also emitted.
+	// when on, classic _count/_sum/_bucket flat series are also emitted, and
+	// exemplars are returned with both the native histogram and the matching
+	// classic _bucket series.
 	input := `# HELP req_duration Request duration histogram with both representations.
 # TYPE req_duration histogram
-req_duration {count:3,sum:6.0,schema:0,zero_threshold:0.001,zero_count:0,positive_spans:[0:2],positive_buckets:[1,2],bucket:[0.1:1,1.0:2,+Inf:3]}
+req_duration {count:3,sum:6.0,schema:0,zero_threshold:0.001,zero_count:0,positive_spans:[0:2],positive_buckets:[1,2],bucket:[0.1:1,1.0:2,+Inf:3]} # {id="req-1"} 0.8 1234566.0 # {id="req-2"} 5.0 1234567.0
 # EOF
 `
+	ex1 := exemplar.Exemplar{Labels: labels.FromStrings("id", "req-1"), Value: 0.8, HasTs: true, Ts: 1234566000}
+	ex2 := exemplar.Exemplar{Labels: labels.FromStrings("id", "req-2"), Value: 5.0, HasTs: true, Ts: 1234567000}
 	header := []parsedEntry{
 		{m: "req_duration", help: "Request duration histogram with both representations."},
 		{m: "req_duration", typ: model.MetricTypeHistogram},
@@ -480,6 +485,7 @@ req_duration {count:3,sum:6.0,schema:0,zero_threshold:0.001,zero_count:0,positiv
 	nativeEntry := parsedEntry{
 		m:    "req_duration",
 		lset: labels.FromStrings("__name__", "req_duration"),
+		es:   []exemplar.Exemplar{ex1, ex2},
 		shs: &histogram.Histogram{
 			Schema:          0,
 			ZeroThreshold:   0.001,
@@ -494,8 +500,8 @@ req_duration {count:3,sum:6.0,schema:0,zero_threshold:0.001,zero_count:0,positiv
 		{m: "req_duration_count", v: 3, lset: labels.FromStrings("__name__", "req_duration_count")},
 		{m: "req_duration_sum", v: 6.0, lset: labels.FromStrings("__name__", "req_duration_sum")},
 		{m: "req_duration_bucket\xffle\xff0.1", v: 1, lset: labels.FromStrings("__name__", "req_duration_bucket", "le", "0.1")},
-		{m: "req_duration_bucket\xffle\xff1.0", v: 2, lset: labels.FromStrings("__name__", "req_duration_bucket", "le", "1.0")},
-		{m: "req_duration_bucket\xffle\xff+Inf", v: 3, lset: labels.FromStrings("__name__", "req_duration_bucket", "le", "+Inf")},
+		{m: "req_duration_bucket\xffle\xff1.0", v: 2, lset: labels.FromStrings("__name__", "req_duration_bucket", "le", "1.0"), es: []exemplar.Exemplar{ex1}},
+		{m: "req_duration_bucket\xffle\xff+Inf", v: 3, lset: labels.FromStrings("__name__", "req_duration_bucket", "le", "+Inf"), es: []exemplar.Exemplar{ex2}},
 	}
 
 	for _, tc := range []struct {
@@ -599,7 +605,14 @@ req_duration {count:3,sum:6.0,bucket:[0.1:1,1.0:2,+Inf:3]} 1234567.0 st@1000.0 #
 				{m: "req_duration_count", v: 3, t: &ts, st: 1000000, lset: labels.FromStrings("__name__", "req_duration_count")},
 				{m: "req_duration_sum", v: 6.0, t: &ts, st: 1000000, lset: labels.FromStrings("__name__", "req_duration_sum")},
 				{m: "req_duration_bucket\xffle\xff0.1", v: 1, t: &ts, st: 1000000, lset: labels.FromStrings("__name__", "req_duration_bucket", "le", "0.1")},
-				{m: "req_duration_bucket\xffle\xff1.0", v: 2, t: &ts, st: 1000000, lset: labels.FromStrings("__name__", "req_duration_bucket", "le", "1.0")},
+				{
+					m:    "req_duration_bucket\xffle\xff1.0",
+					v:    2,
+					t:    &ts,
+					st:   1000000,
+					lset: labels.FromStrings("__name__", "req_duration_bucket", "le", "1.0"),
+					es:   []exemplar.Exemplar{{Labels: labels.FromStrings("id", "req-1"), Value: 0.8, HasTs: true, Ts: 1234566000}},
+				},
 				{m: "req_duration_bucket\xffle\xff+Inf", v: 3, t: &ts, st: 1000000, lset: labels.FromStrings("__name__", "req_duration_bucket", "le", "+Inf")},
 			},
 		},
@@ -1796,36 +1809,96 @@ req_duration {count:144,sum:53.4,bucket:[+Inf:144,0.1:24,0.2:33,0.4:100,1.0:144]
 
 func TestOpenMetrics2ParseExemplarOnCompositeLine(t *testing.T) {
 	input := `# TYPE req_duration histogram
-req_duration {count:2,sum:4.0,bucket:[1.0:1,+Inf:2]} # {id="req-1"} 3.8 9999999.0
+req_duration {count:5,sum:10.0,bucket:[-Inf:1,1.0:3,2.5:4,+Inf:5]} # {id="inf-ex"} 3.8 9999999.0 # {id="neginf-ex"} -Inf 9999995.0 # {id="b1-ex1"} 1.0 9999996.0 # {id="b1-ex2"} 0.5 9999997.0 # {id="nan-ex"} NaN 9999998.0
+# TYPE queue_size gaugehistogram
+queue_size {gcount:2,gsum:3.0,bucket:[1.0:1,+Inf:2]} # {id="g-ex"} 0.9 9999999.0
+# TYPE native_ignored histogram
+native_ignored {count:2,sum:4.0,schema:0,zero_threshold:0.001,zero_count:0,positive_spans:[0:1],positive_buckets:[2]} # {id="ni-ex"} 1.5 9999999.0
 # EOF
 `
 	exp := []parsedEntry{
 		{m: "req_duration", typ: model.MetricTypeHistogram},
-		// Exemplar is accessible only on the first pending entry served.
 		{
 			m:    "req_duration_count",
-			v:    2,
+			v:    5,
 			lset: labels.FromStrings("__name__", "req_duration_count"),
-			es:   []exemplar.Exemplar{{Labels: labels.FromStrings("id", "req-1"), Value: 3.8, HasTs: true, Ts: 9999999000}},
 		},
 		{
 			m:    "req_duration_sum",
-			v:    4.0,
+			v:    10.0,
 			lset: labels.FromStrings("__name__", "req_duration_sum"),
 		},
 		{
-			m:    "req_duration_bucket\xffle\xff1.0",
+			m:    "req_duration_bucket\xffle\xff-Inf",
 			v:    1,
+			lset: labels.FromStrings("__name__", "req_duration_bucket", "le", "-Inf"),
+			es:   []exemplar.Exemplar{{Labels: labels.FromStrings("id", "neginf-ex"), Value: math.Inf(-1), HasTs: true, Ts: 9999995000}},
+		},
+		{
+			m:    "req_duration_bucket\xffle\xff1.0",
+			v:    3,
 			lset: labels.FromStrings("__name__", "req_duration_bucket", "le", "1.0"),
+			es: []exemplar.Exemplar{
+				{Labels: labels.FromStrings("id", "b1-ex1"), Value: 1.0, HasTs: true, Ts: 9999996000},
+				{Labels: labels.FromStrings("id", "b1-ex2"), Value: 0.5, HasTs: true, Ts: 9999997000},
+			},
+		},
+		{
+			m:    "req_duration_bucket\xffle\xff2.5",
+			v:    4,
+			lset: labels.FromStrings("__name__", "req_duration_bucket", "le", "2.5"),
 		},
 		{
 			m:    "req_duration_bucket\xffle\xff+Inf",
-			v:    2,
+			v:    5,
 			lset: labels.FromStrings("__name__", "req_duration_bucket", "le", "+Inf"),
+			es: []exemplar.Exemplar{
+				{Labels: labels.FromStrings("id", "inf-ex"), Value: 3.8, HasTs: true, Ts: 9999999000},
+				{Labels: labels.FromStrings("id", "nan-ex"), Value: math.Float64frombits(value.NormalNaN), HasTs: true, Ts: 9999998000},
+			},
+		},
+		{m: "queue_size", typ: model.MetricTypeGaugeHistogram},
+		{
+			m:    "queue_size_gcount",
+			v:    2,
+			lset: labels.FromStrings("__name__", "queue_size_gcount"),
+		},
+		{
+			m:    "queue_size_gsum",
+			v:    3.0,
+			lset: labels.FromStrings("__name__", "queue_size_gsum"),
+		},
+		{
+			m:    "queue_size_bucket\xffle\xff1.0",
+			v:    1,
+			lset: labels.FromStrings("__name__", "queue_size_bucket", "le", "1.0"),
+			es:   []exemplar.Exemplar{{Labels: labels.FromStrings("id", "g-ex"), Value: 0.9, HasTs: true, Ts: 9999999000}},
+		},
+		{
+			m:    "queue_size_bucket\xffle\xff+Inf",
+			v:    2,
+			lset: labels.FromStrings("__name__", "queue_size_bucket", "le", "+Inf"),
+		},
+		{m: "native_ignored", typ: model.MetricTypeHistogram},
+		{
+			m:    "native_ignored_count",
+			v:    2,
+			lset: labels.FromStrings("__name__", "native_ignored_count"),
+		},
+		{
+			m:    "native_ignored_sum",
+			v:    4.0,
+			lset: labels.FromStrings("__name__", "native_ignored_sum"),
+		},
+		{
+			m:    "native_ignored_bucket\xffle\xff+Inf",
+			v:    2,
+			lset: labels.FromStrings("__name__", "native_ignored_bucket", "le", "+Inf"),
+			es:   []exemplar.Exemplar{{Labels: labels.FromStrings("id", "ni-ex"), Value: 1.5, HasTs: true, Ts: 9999999000}},
 		},
 	}
 
-	p := NewOpenMetrics2Parser([]byte(input), labels.NewSymbolTable(), ParserOptions{})
+	p := NewOpenMetrics2Parser([]byte(input), labels.NewSymbolTable(), ParserOptions{IgnoreNativeHistograms: true})
 	got := testParse(t, p)
 	requireEntries(t, exp, got)
 }

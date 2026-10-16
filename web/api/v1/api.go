@@ -283,7 +283,7 @@ type API struct {
 func NewAPI(
 	qe promql.QueryEngine,
 	q storage.SampleAndChunkQueryable,
-	ap storage.Appendable, apV2 storage.AppendableV2,
+	apV2 storage.AppendableV2,
 	eq storage.ExemplarQueryable,
 	spsr func(context.Context) ScrapePoolsRetriever,
 	tr func(context.Context) TargetRetriever,
@@ -371,7 +371,7 @@ func NewAPI(
 		a.customStatsRenderer = true
 	}
 
-	if (ap == nil || apV2 == nil) && (rwEnabled || otlpEnabled) {
+	if apV2 == nil && (rwEnabled || otlpEnabled) {
 		panic("remote write or otlp write enabled, but no appender passed in.")
 	}
 
