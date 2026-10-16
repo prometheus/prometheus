@@ -64,6 +64,8 @@ const (
 	reasonDroppedSeries              = "dropped_series"
 	reasonUnintentionalDroppedSeries = "unintentionally_dropped_series"
 	reasonNHCBNotSupported           = "nhcb_in_rw1_not_supported"
+	reasonQueueFull                  = "queue_full"
+	reasonQueueUnavailable           = "queue_unavailable"
 )
 
 type queueManagerMetrics struct {
@@ -198,21 +200,21 @@ func newQueueManagerMetrics(r prometheus.Registerer, rn, e string) *queueManager
 		Namespace:   namespace,
 		Subsystem:   subsystem,
 		Name:        "samples_dropped_total",
-		Help:        "Total number of samples which were dropped after being read from the WAL before being sent via remote write, either via relabelling, due to being too old or unintentionally because of an unknown reference ID.",
+		Help:        "Total number of samples dropped before sending via remote write, partitioned by reason.",
 		ConstLabels: constLabels,
 	}, []string{"reason"})
 	m.droppedExemplarsTotal = prometheus.NewCounterVec(prometheus.CounterOpts{
 		Namespace:   namespace,
 		Subsystem:   subsystem,
 		Name:        "exemplars_dropped_total",
-		Help:        "Total number of exemplars which were dropped after being read from the WAL before being sent via remote write, either via relabelling, due to being too old or unintentionally because of an unknown reference ID.",
+		Help:        "Total number of exemplars dropped before sending via remote write, partitioned by reason.",
 		ConstLabels: constLabels,
 	}, []string{"reason"})
 	m.droppedHistogramsTotal = prometheus.NewCounterVec(prometheus.CounterOpts{
 		Namespace:   namespace,
 		Subsystem:   subsystem,
 		Name:        "histograms_dropped_total",
-		Help:        "Total number of histograms which were dropped after being read from the WAL before being sent via remote write, either via relabelling, due to being too old or unintentionally because of an unknown reference ID.",
+		Help:        "Total number of histograms dropped before sending via remote write, partitioned by reason.",
 		ConstLabels: constLabels,
 	}, []string{"reason"})
 	m.enqueueRetriesTotal = prometheus.NewCounter(prometheus.CounterOpts{
@@ -419,6 +421,12 @@ type WriteClient interface {
 // indicated by the provided WriteClient. Implements writeTo interface
 // used by WAL Watcher.
 type QueueManager struct {
+	// Memory writes drop on full queues instead of blocking a WAL reader.
+	memoryWrite bool
+
+	// Protected by WriteStorage.memoryMtx during configuration reloads.
+	memoryStopped bool
+
 	lastSendTimestamp            atomic.Int64
 	buildRequestLimitTimestamp   atomic.Int64
 	reshardDisableStartTimestamp atomic.Int64 // Time that reshard was disabled.
@@ -981,7 +989,9 @@ func (t *QueueManager) Start() {
 	t.metrics.maxSamplesPerSend.Set(float64(t.cfg.MaxSamplesPerSend))
 
 	t.shards.start(t.numShards)
-	t.watcher.Start()
+	if t.watcher != nil {
+		t.watcher.Start()
+	}
 	if t.mcfg.Send {
 		t.metadataWatcher.Start()
 	}
@@ -1003,7 +1013,9 @@ func (t *QueueManager) Stop() {
 	// causes a closed channel panic.
 	t.wg.Wait()
 	t.shards.stop()
-	t.watcher.Stop()
+	if t.watcher != nil {
+		t.watcher.Stop()
+	}
 	if t.mcfg.Send {
 		t.metadataWatcher.Stop()
 	}
@@ -1356,21 +1368,50 @@ func (s *shards) stop() {
 	logDroppedError("histograms", s.histogramsDroppedOnHardShutdown)
 }
 
-// enqueue data (sample or exemplar). If the shard is full, shutting down, or
-// resharding, it will return false; in this case, you should back off and
-// retry. A shard is full when its configured capacity has been reached,
+// Enqueue data. If the shard is full, shutting down, or resharding, WAL readers
+// receive false and must retry. Memory writes count the drop and return true
+// because the item has been handled. A shard is full at its configured capacity,
 // specifically, when s.queues[shard] has filled its batchQueue channel and the
 // partial batch has also been filled.
 func (s *shards) enqueue(ref chunks.HeadSeriesRef, data timeSeries) bool {
-	s.mtx.RLock()
+	if s.qm.memoryWrite {
+		// Resharding holds the write lock while flushing the old queues.
+		// A slow destination must not make scrape commits wait for that flush.
+		if !s.mtx.TryRLock() {
+			s.qm.dropMemory(data, reasonQueueUnavailable)
+			return true
+		}
+	} else {
+		s.mtx.RLock()
+	}
 	defer s.mtx.RUnlock()
 	shard := uint64(ref) % uint64(len(s.queues))
 	select {
 	case <-s.softShutdown:
+		if s.qm.memoryWrite {
+			s.qm.dropMemory(data, reasonQueueUnavailable)
+			return true
+		}
 		return false
 	default:
+		if s.qm.memoryWrite {
+			// WAL decoding normally gives the sender owned data. Memory writes
+			// must copy mutable input before the caller reuses its buffers.
+			data.seriesLabels = data.seriesLabels.Copy()
+			data.exemplarLabels = data.exemplarLabels.Copy()
+			if data.histogram != nil {
+				data.histogram = data.histogram.Copy()
+			}
+			if data.floatHistogram != nil {
+				data.floatHistogram = data.floatHistogram.Copy()
+			}
+		}
 		appended := s.queues[shard].Append(data)
 		if !appended {
+			if s.qm.memoryWrite {
+				s.qm.dropMemory(data, reasonQueueFull)
+				return true
+			}
 			return false
 		}
 		switch data.sType {
