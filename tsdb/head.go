@@ -28,6 +28,7 @@ import (
 	"sync"
 	stdatomic "sync/atomic" //nolint:depguard
 	"time"
+	"unique"
 
 	"github.com/oklog/ulid/v2"
 	"github.com/prometheus/client_golang/prometheus"
@@ -2980,7 +2981,7 @@ func (s sample) Copy() chunks.Sample {
 type memSeries struct {
 	// Members up to the Mutex are not changed after construction, so can be accessed without a lock.
 	ref  chunks.HeadSeriesRef
-	meta *metadata.Metadata
+	meta unique.Handle[metadata.Metadata]
 
 	// Series labels hash to use for sharding purposes. The value is always 0 when sharding has not
 	// been explicitly enabled in TSDB.
