@@ -19,6 +19,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"maps"
 	"math"
 	"math/rand"
 	"os"
@@ -223,6 +224,9 @@ func BenchmarkLoadWLs(b *testing.B) {
 		// per native histogram sample. Each bucket adds one span entry
 		// and one bucket delta to the encoded histogram.
 		bucketsPerHistogram int
+		// minValidTime is passed to Head.Init. Samples before it are dropped,
+		// like samples that a block already holds after a restart.
+		minValidTime int64
 	}{
 		{ // Less series and more samples. 2 hour WAL with 1 second scrape interval.
 			batches:          10,
@@ -233,6 +237,13 @@ func BenchmarkLoadWLs(b *testing.B) {
 			batches:          10,
 			seriesPerBatch:   10000,
 			samplesPerSeries: 50,
+		},
+		{ // More series and less samples, all of them before the min valid time.
+			// Like WAL segments that head compaction has not checkpointed yet.
+			batches:          10,
+			seriesPerBatch:   10000,
+			samplesPerSeries: 50,
+			minValidTime:     500,
 		},
 		{ // In between.
 			batches:          10,
@@ -312,6 +323,9 @@ func BenchmarkLoadWLs(b *testing.B) {
 					name := fmt.Sprintf("batches=%d,seriesPerBatch=%d,samplesPerSeries=%d,exemplarsPerSeries=%d,mmappedChunkT=%d,oooSeriesPct=%.3f,oooSamplesPct=%.3f,oooCapMax=%d,missingSeriesPct=%.3f,stStorage=%v", c.batches, c.seriesPerBatch, c.samplesPerSeries, exemplarsPerSeries, c.mmappedChunkT, c.oooSeriesPct, c.oooSamplesPct, c.oooCapMax, missingSeriesPct, enableSTStorage)
 					if c.histogramSeriesPct > 0 {
 						name += fmt.Sprintf(",histogramSeriesPct=%.3f,bucketsPerHistogram=%d", c.histogramSeriesPct, c.bucketsPerHistogram)
+					}
+					if c.minValidTime != 0 {
+						name += fmt.Sprintf(",minValidTime=%d", c.minValidTime)
 					}
 					b.Run(name,
 						func(b *testing.B) {
@@ -513,7 +527,7 @@ func BenchmarkLoadWLs(b *testing.B) {
 								}
 								h, err := NewHead(nil, nil, wal, wbl, opts, nil)
 								require.NoError(b, err)
-								h.Init(0)
+								h.Init(c.minValidTime)
 							}
 							b.StopTimer()
 							peak.report(b)
@@ -994,6 +1008,302 @@ func TestHead_ReadWAL(t *testing.T) {
 				require.Equal(t, tombstones.Intervals{{Mint: 0, Maxt: 100}}, intervals)
 			})
 		}
+	}
+}
+
+// TestHead_ReplaySkipsSeriesWithoutData checks the head after WAL replay of
+// series whose samples are all older than the minimum valid time. Replay
+// creates such series and h.gc() deletes them at the end of Init.
+// TestHead_ReplaySkipsSeriesWithoutData checks the head after WAL replay of
+// series whose samples are all older than the minimum valid time. With
+// EnableWALReplaySkipSeries, replay does not create such series, and the head,
+func TestHead_ReplaySkipsSeriesWithoutData(t *testing.T) {
+	const (
+		minValidTime = 1000
+		old          = 500 // Dropped by replay.
+		valid        = 1500
+	)
+	lbls := func(v string) labels.Labels { return labels.FromStrings("a", v) }
+	// Every case starts with this series, so the head's in-order min time and
+	// the WAL expiry that h.gc() sets for deleted series are valid.
+	anchor := []any{
+		[]record.RefSeries{{Ref: 1, Labels: lbls("anchor")}},
+		[]record.RefSample{{Ref: 1, T: valid, V: 1}},
+	}
+	unknownSchema := tsdbutil.GenerateTestHistogram(1)
+	unknownSchema.Schema = 60
+
+	cases := []struct {
+		name string
+		wal  []any
+		wbl  []any
+		// Series refs that get an m-mapped chunk at the valid time.
+		mmappedChunks []chunks.HeadSeriesRef
+		// Whether the WAL ends with a record that cannot be decoded.
+		corruptTail bool
+
+		series      map[chunks.HeadSeriesRef]labels.Labels // Besides the anchor.
+		created     float64
+		walExpiries map[chunks.HeadSeriesRef]int64
+		checkpoint  []chunks.HeadSeriesRef // Series records in the next checkpoint.
+	}{
+		{
+			name: "samples before min valid time",
+			wal: []any{
+				[]record.RefSeries{{Ref: 2, Labels: lbls("2")}},
+				[]record.RefSample{{Ref: 2, T: old, V: 1}},
+			},
+			created:     2,
+			walExpiries: map[chunks.HeadSeriesRef]int64{2: valid},
+			checkpoint:  []chunks.HeadSeriesRef{1, 2},
+		},
+		{
+			name: "histogram samples",
+			wal: []any{
+				[]record.RefSeries{{Ref: 2, Labels: lbls("2")}, {Ref: 3, Labels: lbls("3")}},
+				[]record.RefHistogramSample{
+					{Ref: 2, T: old, H: tsdbutil.GenerateTestHistogram(1)},
+					{Ref: 3, T: valid, H: tsdbutil.GenerateTestHistogram(1)},
+				},
+			},
+			series:      map[chunks.HeadSeriesRef]labels.Labels{3: lbls("3")},
+			created:     3,
+			walExpiries: map[chunks.HeadSeriesRef]int64{2: valid},
+			checkpoint:  []chunks.HeadSeriesRef{1, 2, 3},
+		},
+		{
+			// The decoder drops histograms with an unknown schema.
+			name: "histogram sample with unknown schema",
+			wal: []any{
+				[]record.RefSeries{{Ref: 2, Labels: lbls("2")}},
+				[]record.RefHistogramSample{{Ref: 2, T: valid, H: unknownSchema}},
+			},
+			created:     2,
+			walExpiries: map[chunks.HeadSeriesRef]int64{2: valid},
+			checkpoint:  []chunks.HeadSeriesRef{1, 2},
+		},
+		{
+			name: "exemplar after min valid time",
+			wal: []any{
+				[]record.RefSeries{{Ref: 2, Labels: lbls("2")}},
+				[]record.RefSample{{Ref: 2, T: old, V: 1}},
+				[]record.RefExemplar{{Ref: 2, T: valid, V: 1, Labels: labels.FromStrings("trace_id", "x")}},
+			},
+			series:     map[chunks.HeadSeriesRef]labels.Labels{2: lbls("2")},
+			created:    2,
+			checkpoint: []chunks.HeadSeriesRef{1, 2},
+		},
+		{
+			name: "metadata",
+			wal: []any{
+				[]record.RefSeries{{Ref: 2, Labels: lbls("2")}},
+				[]record.RefSample{{Ref: 2, T: old, V: 1}},
+				[]record.RefMetadata{{Ref: 2, Type: uint8(record.Counter), Unit: "foo", Help: "total foo"}},
+			},
+			created:     2,
+			walExpiries: map[chunks.HeadSeriesRef]int64{2: valid},
+			checkpoint:  []chunks.HeadSeriesRef{1, 2},
+		},
+		{
+			name: "tombstone",
+			wal: []any{
+				[]record.RefSeries{{Ref: 2, Labels: lbls("2")}},
+				[]record.RefSample{{Ref: 2, T: old, V: 1}},
+				[]tombstones.Stone{{Ref: 2, Intervals: tombstones.Intervals{{Mint: 0, Maxt: old}}}},
+			},
+			created:     2,
+			walExpiries: map[chunks.HeadSeriesRef]int64{2: valid},
+			checkpoint:  []chunks.HeadSeriesRef{1, 2},
+		},
+		{
+			name: "full range tombstone",
+			wal: []any{
+				[]record.RefSeries{{Ref: 2, Labels: lbls("2")}},
+				[]record.RefSample{{Ref: 2, T: old, V: 1}},
+				[]tombstones.Stone{{Ref: 2, Intervals: tombstones.Intervals{{Mint: math.MinInt64, Maxt: math.MaxInt64}}}},
+			},
+			created:    2,
+			checkpoint: []chunks.HeadSeriesRef{1},
+		},
+		{
+			name: "WBL samples",
+			wal: []any{
+				[]record.RefSeries{{Ref: 2, Labels: lbls("2")}},
+				[]record.RefSample{{Ref: 2, T: old, V: 1}},
+			},
+			wbl: []any{
+				[]record.RefSample{{Ref: 2, T: old + 1, V: 2}},
+			},
+			series:     map[chunks.HeadSeriesRef]labels.Labels{2: lbls("2")},
+			created:    2,
+			checkpoint: []chunks.HeadSeriesRef{1, 2},
+		},
+		{
+			name: "m-mapped chunk",
+			wal: []any{
+				[]record.RefSeries{{Ref: 2, Labels: lbls("2")}},
+				[]record.RefSample{{Ref: 2, T: old, V: 1}},
+			},
+			mmappedChunks: []chunks.HeadSeriesRef{2},
+			series:        map[chunks.HeadSeriesRef]labels.Labels{2: lbls("2")},
+			created:       2,
+			checkpoint:    []chunks.HeadSeriesRef{1, 2},
+		},
+		{
+			name: "duplicate series record, first ref with m-mapped chunk",
+			wal: []any{
+				[]record.RefSeries{{Ref: 2, Labels: lbls("2")}, {Ref: 3, Labels: lbls("2")}},
+				[]record.RefSample{{Ref: 2, T: old, V: 1}, {Ref: 3, T: old, V: 1}},
+			},
+			mmappedChunks: []chunks.HeadSeriesRef{2},
+			series:        map[chunks.HeadSeriesRef]labels.Labels{2: lbls("2")},
+			created:       2,
+			checkpoint:    []chunks.HeadSeriesRef{1, 2},
+		},
+		{
+			name: "duplicate series record, first ref with samples",
+			wal: []any{
+				[]record.RefSeries{{Ref: 2, Labels: lbls("2")}, {Ref: 3, Labels: lbls("2")}},
+				[]record.RefSample{{Ref: 2, T: valid, V: 1}, {Ref: 3, T: old, V: 1}},
+			},
+			series:     map[chunks.HeadSeriesRef]labels.Labels{2: lbls("2")},
+			created:    2,
+			checkpoint: []chunks.HeadSeriesRef{1, 2},
+		},
+		{
+			name: "duplicate series record, second ref with m-mapped chunk",
+			wal: []any{
+				[]record.RefSeries{{Ref: 2, Labels: lbls("2")}, {Ref: 3, Labels: lbls("2")}},
+				[]record.RefSample{{Ref: 2, T: old, V: 1}, {Ref: 3, T: old, V: 1}},
+			},
+			mmappedChunks: []chunks.HeadSeriesRef{3},
+			series:        map[chunks.HeadSeriesRef]labels.Labels{2: lbls("2")},
+			created:       2,
+			checkpoint:    []chunks.HeadSeriesRef{1, 2},
+		},
+		{
+			name: "duplicate series record, second ref with samples",
+			wal: []any{
+				[]record.RefSeries{{Ref: 2, Labels: lbls("2")}, {Ref: 3, Labels: lbls("2")}},
+				[]record.RefSample{{Ref: 2, T: old, V: 1}, {Ref: 3, T: valid, V: 1}},
+			},
+			series:      map[chunks.HeadSeriesRef]labels.Labels{2: lbls("2")},
+			created:     2,
+			walExpiries: map[chunks.HeadSeriesRef]int64{3: valid},
+			checkpoint:  []chunks.HeadSeriesRef{1, 2, 3},
+		},
+		{
+			name: "three series records, only the last with samples",
+			wal: []any{
+				[]record.RefSeries{{Ref: 2, Labels: lbls("2")}, {Ref: 3, Labels: lbls("2")}, {Ref: 4, Labels: lbls("2")}},
+				[]record.RefSample{{Ref: 2, T: old, V: 1}, {Ref: 3, T: old, V: 1}, {Ref: 4, T: valid, V: 1}},
+			},
+			series:      map[chunks.HeadSeriesRef]labels.Labels{2: lbls("2")},
+			created:     2,
+			walExpiries: map[chunks.HeadSeriesRef]int64{4: valid},
+			checkpoint:  []chunks.HeadSeriesRef{1, 2, 4},
+		},
+		{
+			name: "duplicate series record without data",
+			wal: []any{
+				[]record.RefSeries{{Ref: 2, Labels: lbls("2")}, {Ref: 3, Labels: lbls("2")}},
+				[]record.RefSample{{Ref: 2, T: old, V: 1}, {Ref: 3, T: old, V: 1}},
+			},
+			created:     2,
+			walExpiries: map[chunks.HeadSeriesRef]int64{2: valid},
+			checkpoint:  []chunks.HeadSeriesRef{1, 2},
+		},
+		{
+			// Replay stops at the corrupted record and Init returns the error. The
+			// series loaded before it stay in the head.
+			name: "corrupted record",
+			wal: []any{
+				[]record.RefSeries{{Ref: 2, Labels: lbls("2")}},
+				[]record.RefSample{{Ref: 2, T: old, V: 1}},
+			},
+			corruptTail: true,
+			created:     2,
+			walExpiries: map[chunks.HeadSeriesRef]int64{2: valid},
+		},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			dir := t.TempDir()
+			wal, err := wlog.NewSize(nil, nil, filepath.Join(dir, "wal"), 32768, compression.None)
+			require.NoError(t, err)
+			wbl, err := wlog.NewSize(nil, nil, filepath.Join(dir, wlog.WblDirName), 32768, compression.None)
+			require.NoError(t, err)
+			populateTestWL(t, wal, append(anchor, tc.wal...), nil, false)
+			populateTestWL(t, wbl, tc.wbl, nil, false)
+			if tc.corruptTail {
+				// A samples record that ends after its first reference.
+				require.NoError(t, wal.Log([]byte{byte(record.Samples), 0, 0, 0, 0, 0, 0, 0, 2}))
+			}
+
+			if len(tc.mmappedChunks) > 0 {
+				cdm, err := chunks.NewChunkDiskMapper(nil, mmappedChunksDir(dir), chunkenc.NewPool(), chunks.DefaultWriteBufferSize, chunks.DefaultWriteQueueSize)
+				require.NoError(t, err)
+				for _, ref := range tc.mmappedChunks {
+					chk := chunkenc.NewXORChunk()
+					app, err := chk.Appender()
+					require.NoError(t, err)
+					app.Append(0, valid, 1)
+					cdm.WriteChunk(ref, valid, valid, chk, false, func(err error) { require.NoError(t, err) })
+				}
+				require.NoError(t, cdm.Close())
+			}
+
+			opts := newTestHeadDefaultOptions(1000, true)
+			opts.ChunkDirRoot = dir
+			head, err := NewHead(nil, nil, wal, wbl, opts, nil)
+			require.NoError(t, err)
+			t.Cleanup(func() { _ = head.Close() })
+			if tc.corruptTail {
+				require.Error(t, head.Init(minValidTime))
+			} else {
+				require.NoError(t, head.Init(minValidTime))
+			}
+
+			series := map[chunks.HeadSeriesRef]labels.Labels{1: lbls("anchor")}
+			maps.Copy(series, tc.series)
+			require.Equal(t, uint64(len(series)), head.NumSeries())
+			for ref, lset := range series {
+				s := head.series.getByID(ref)
+				require.NotNil(t, s, "series %d", ref)
+				testutil.RequireEqual(t, lset, s.lset)
+			}
+			require.Equal(t, tc.created, prom_testutil.ToFloat64(head.metrics.seriesCreated))
+			require.Equal(t, 0, prom_testutil.CollectAndCount(head.metrics.walReplayUnknownRefsTotal))
+			walExpiries := tc.walExpiries
+			if walExpiries == nil {
+				walExpiries = map[chunks.HeadSeriesRef]int64{}
+			}
+			require.Equal(t, walExpiries, head.walExpiries)
+			if tc.corruptTail {
+				return
+			}
+
+			// Each truncation starts a new segment, so truncate until there is a checkpoint.
+			for {
+				head.lastWALTruncationTime.Store(0)
+				require.NoError(t, head.truncateWAL(minValidTime))
+				if _, _, err := wlog.LastCheckpoint(wal.Dir()); err == nil {
+					break
+				}
+			}
+			cpDir, _, err := wlog.LastCheckpoint(wal.Dir())
+			require.NoError(t, err)
+			var checkpoint []chunks.HeadSeriesRef
+			for _, rec := range readTestWAL(t, cpDir) {
+				if ss, ok := rec.([]record.RefSeries); ok {
+					for _, s := range ss {
+						checkpoint = append(checkpoint, s.Ref)
+					}
+				}
+			}
+			require.Equal(t, tc.checkpoint, checkpoint)
+		})
 	}
 }
 
