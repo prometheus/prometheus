@@ -1457,7 +1457,7 @@ func (p *openMetrics2Parser) buildClassicHistogramPending(
 	if err != nil {
 		return nil, fmt.Errorf("invalid %s: %w", countKey, err)
 	}
-	if countVal < 0 && p.mtype != model.MetricTypeGaugeHistogram {
+	if countVal < 0 {
 		return nil, fmt.Errorf("%s must not be negative, got %v", countKey, countVal)
 	}
 	pending = append(pending, p.appendPendingSeriesBytes(countSuffix, "", 0, countVal))

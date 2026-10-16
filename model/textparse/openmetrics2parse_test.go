@@ -1100,6 +1100,10 @@ foo_total 1.0 # {id="x"} 1.0
 			err:   "count must not be negative",
 		},
 		{
+			input: "# TYPE foo gaugehistogram\nfoo {gcount:-1,gsum:1.0,bucket:[+Inf:1]}\n# EOF\n",
+			err:   "gcount must not be negative",
+		},
+		{
 			input: "# TYPE foo histogram\nfoo {count:3,sum:6.0,bucket:[1.0:2,2.0:1,+Inf:3]}\n# EOF\n",
 			err:   "classic histogram bucket values must be cumulative",
 		},
