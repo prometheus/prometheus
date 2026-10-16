@@ -136,47 +136,75 @@ func TestMain(m *testing.M) {
 
 func TestComputeExternalURL(t *testing.T) {
 	tests := []struct {
-		input string
-		valid bool
+		input       string
+		tlsEnabled  bool
+		valid       bool
+		expectedURL string
 	}{
 		{
-			input: "",
-			valid: true,
+			input:      "",
+			tlsEnabled: false,
+			valid:      true,
 		},
 		{
-			input: "http://proxy.com/prometheus",
-			valid: true,
+			input:      "",
+			tlsEnabled: true,
+			valid:      true,
 		},
 		{
-			input: "'https://url/prometheus'",
-			valid: false,
+			input:      "http://proxy.com/prometheus",
+			tlsEnabled: false,
+			valid:      true,
 		},
 		{
-			input: "'relative/path/with/quotes'",
-			valid: false,
+			input:      "https://proxy.com/prometheus",
+			tlsEnabled: true,
+			valid:      true,
 		},
 		{
-			input: "http://alertmanager.company.com",
-			valid: true,
+			input:      "'https://url/prometheus'",
+			tlsEnabled: false,
+			valid:      false,
 		},
 		{
-			input: "https://double--dash.de",
-			valid: true,
+			input:      "'relative/path/with/quotes'",
+			tlsEnabled: false,
+			valid:      false,
 		},
 		{
-			input: "'http://starts/with/quote",
-			valid: false,
+			input:      "http://alertmanager.company.com",
+			tlsEnabled: false,
+			valid:      true,
 		},
 		{
-			input: "ends/with/quote\"",
-			valid: false,
+			input:      "https://double--dash.de",
+			tlsEnabled: false,
+			valid:      true,
+		},
+		{
+			input:      "'http://starts/with/quote",
+			tlsEnabled: false,
+			valid:      false,
+		},
+		{
+			input:      "ends/with/quote\"",
+			tlsEnabled: false,
+			valid:      false,
 		},
 	}
 
 	for _, test := range tests {
-		_, err := computeExternalURL(test.input, "0.0.0.0:9090")
+		u, err := computeExternalURL(test.input, "0.0.0.0:9090", test.tlsEnabled)
 		if test.valid {
 			require.NoError(t, err)
+			// When no URL is provided, verify that TLS affects the scheme.
+			if test.input == "" {
+				if test.tlsEnabled {
+					require.Equal(t, "https", u.Scheme, "expected https scheme when TLS is enabled")
+				} else {
+					require.Equal(t, "http", u.Scheme, "expected http scheme when TLS is disabled")
+				}
+			}
 		} else {
 			require.Error(t, err, "input=%q", test.input)
 		}
