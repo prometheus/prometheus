@@ -4110,6 +4110,14 @@ metadata_config:
 # using NHCB locally (for cheaper storage and histogram atomicity) while
 # sending classic histograms to external systems that do not support
 # native histograms yet. Also useful for migration scenarios.
+# NHCBs are converted even when send_native_histograms is enabled; that setting
+# controls forwarding of other native histograms. Classic series ingested
+# alongside NHCBs, for example with always_scrape_classic_histograms, are sent
+# too, so the converted series duplicate them; drop one copy with
+# write_relabel_configs. Gauge histograms are converted with _count and _sum
+# series. Conversion state is not persisted across restarts, so bucket layout or
+# sample type changes that span a restart do not produce stale markers for
+# retired classic series.
 [ convert_nhcb_to_classic: <boolean> | default = false ]
 
 # HTTP client settings, including authentication methods (such as basic auth and
