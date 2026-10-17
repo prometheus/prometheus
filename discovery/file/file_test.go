@@ -19,6 +19,7 @@ import (
 	"encoding/json"
 	"os"
 	"path/filepath"
+	"runtime"
 	"sort"
 	"sync"
 	"testing"
@@ -444,6 +445,69 @@ func TestInvalidFileUpdate(t *testing.T) {
 	if runner.lastReceive().After(ref) {
 		runner.requireTargetGroups(validTg(sdFile), runner.targets())
 	}
+}
+
+func TestUnrelatedFileUpdate(t *testing.T) {
+	t.Parallel()
+
+	runner := newTestRunner(t)
+	sdFile := runner.copyFile("fixtures/valid.yml")
+
+	runner.run("*.yml")
+	defer runner.stop()
+
+	// Verify that we receive the initial target groups.
+	runner.requireUpdate(time.Time{}, validTg(sdFile))
+
+	// Write to a file in the same directory that doesn't match the pattern,
+	// like a log file. When the SD file is invalid, rereading it on each of
+	// these events logs an error, which can feed back into the log file.
+	ref := runner.lastReceive()
+	logFile := filepath.Join(runner.dir, "prometheus.log")
+	for range 10 {
+		runner.writeString(logFile, "level=error msg=\"Error reading file\"\n")
+	}
+
+	// Verify that we receive nothing.
+	time.Sleep(defaultWait)
+	require.False(t, runner.lastReceive().After(ref), "unexpected targets received: %v", runner.targets())
+}
+
+func TestSymlinkSwapUpdate(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("creating symlinks requires extra privileges on Windows")
+	}
+	t.Parallel()
+
+	runner := newTestRunner(t)
+
+	// Mimic how Kubernetes mounts a ConfigMap: the SD file is a symlink into a
+	// "..data" symlink, which is swapped atomically on update.
+	writeVersion := func(name, src string) {
+		content, err := os.ReadFile(src)
+		require.NoError(t, err)
+		require.NoError(t, os.Mkdir(filepath.Join(runner.dir, name), 0o755))
+		require.NoError(t, os.WriteFile(filepath.Join(runner.dir, name, "valid.yml"), content, 0o644))
+	}
+	writeVersion("..v1", "fixtures/valid.yml")
+	require.NoError(t, os.Symlink("..v1", filepath.Join(runner.dir, "..data")))
+	sdFile := filepath.Join(runner.dir, "valid.yml")
+	require.NoError(t, os.Symlink(filepath.Join("..data", "valid.yml"), sdFile))
+
+	runner.run("*.yml")
+	defer runner.stop()
+
+	// Verify that we receive the initial target groups.
+	runner.requireUpdate(time.Time{}, validTg(sdFile))
+
+	// Swap "..data" to the new version. No event names the SD file itself.
+	ref := runner.lastReceive()
+	writeVersion("..v2", "fixtures/valid2.yml")
+	require.NoError(t, os.Symlink("..v2", filepath.Join(runner.dir, "..data_tmp")))
+	require.NoError(t, os.Rename(filepath.Join(runner.dir, "..data_tmp"), filepath.Join(runner.dir, "..data")))
+
+	// Verify that we receive the new target groups.
+	runner.requireUpdate(ref, valid2Tg(sdFile))
 }
 
 func TestUpdateFileWithPartialWrites(t *testing.T) {
