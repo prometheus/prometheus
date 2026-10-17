@@ -761,9 +761,18 @@ outer:
 		// TODO(cstyan): Handle or at least log an error if no metadata is found.
 		// See https://github.com/prometheus/prometheus/issues/14405
 		meta := t.seriesMetadata[s.Ref]
-		if t.convertNHCBToClassic && value.IsStaleNaN(s.V) {
+		if t.convertNHCBToClassic {
 			if _, ok := t.nhcbSeriesBounds[s.Ref]; ok {
-				if !t.convertAndEnqueueNHCB(s.Ref, s.ST, s.T, nil, nil, true, lbls, meta) {
+				// A float sample for a converted NHCB series is either its stale marker or
+				// a change of sample type. Both retire the classic series; a type change
+				// also forwards the float, whose start time stays off the retired series.
+				st := s.ST
+				var replacement *timeSeries
+				if !value.IsStaleNaN(s.V) {
+					st = 0
+					replacement = &timeSeries{seriesLabels: lbls, metadata: meta, startTimestamp: s.ST, timestamp: s.T, value: s.V, sType: tSample}
+				}
+				if !t.convertAndEnqueueNHCB(s.Ref, st, s.T, nil, nil, true, lbls, meta, replacement) {
 					return false
 				}
 				continue
@@ -882,7 +891,8 @@ outer:
 // convertAndEnqueueNHCB converts an NHCB histogram (using the already-relabeled seriesLabels)
 // into classic _bucket, _count, and _sum samples while holding seriesMtx, then enqueues them
 // after releasing the lock. Caller must hold t.seriesMtx on entry; this method unlocks it.
-func (t *QueueManager) convertAndEnqueueNHCB(ref chunks.HeadSeriesRef, st, ts int64, nhcb any, customValues []float64, isStale bool, lbls labels.Labels, meta *metadata.Metadata) bool {
+// A replacement follows the converted stale markers when changing sample type.
+func (t *QueueManager) convertAndEnqueueNHCB(ref chunks.HeadSeriesRef, st, ts int64, nhcb any, customValues []float64, isStale bool, lbls labels.Labels, meta *metadata.Metadata, replacement *timeSeries) bool {
 	prevBounds, wasActive := t.nhcbSeriesBounds[ref]
 	if nhcb == nil {
 		customValues = prevBounds
@@ -915,10 +925,11 @@ func (t *QueueManager) convertAndEnqueueNHCB(ref chunks.HeadSeriesRef, st, ts in
 			t.builder.Reset(lbls)
 			t.builder.Set(model.MetricNameLabel, baseName+"_bucket")
 			t.builder.Set(model.BucketLabel, labels.FormatOpenMetricsFloat(prevBound))
+			// Retired buckets get no start time; st belongs to the new layout.
 			classicSeries = append(classicSeries, timeSeries{
 				seriesLabels:   t.builder.Labels(),
 				metadata:       meta,
-				startTimestamp: st,
+				startTimestamp: 0,
 				timestamp:      ts,
 				value:          staleVal,
 				sType:          tSample,
@@ -931,6 +942,9 @@ func (t *QueueManager) convertAndEnqueueNHCB(ref chunks.HeadSeriesRef, st, ts in
 		} else if !wasActive || !slices.Equal(prevBounds, customValues) {
 			t.nhcbSeriesBounds[ref] = slices.Clone(customValues)
 		}
+		if replacement != nil {
+			classicSeries = append(classicSeries, *replacement)
+		}
 	}
 	t.seriesMtx.Unlock()
 	if err != nil {
@@ -940,7 +954,7 @@ func (t *QueueManager) convertAndEnqueueNHCB(ref chunks.HeadSeriesRef, st, ts in
 		return true
 	}
 	if len(classicSeries) > 1 {
-		// WriteStorage counts the incoming histogram as a single item in dataIn;
+		// WriteStorage counts the incoming sample as a single item in dataIn;
 		// account for the extra classic series produced by NHCB expansion here.
 		t.dataInExpanded.incr(int64(len(classicSeries) - 1))
 	}
@@ -976,13 +990,11 @@ outer:
 	for _, h := range histograms {
 		isNHCB := h.H != nil && h.H.Schema == histogram.CustomBucketsSchema
 		isStale := h.H != nil && value.IsStaleNaN(h.H.Sum)
-		if !t.sendNativeHistograms && (!t.convertNHCBToClassic || (!isNHCB && !isStale)) {
-			continue
-		}
 		t.seriesMtx.Lock()
 		_, isTrackedNHCB := t.nhcbSeriesBounds[h.Ref]
 		convertNHCB := t.convertNHCBToClassic && (isNHCB || (isStale && isTrackedNHCB))
-		if !t.sendNativeHistograms && !convertNHCB {
+		transition := t.convertNHCBToClassic && isTrackedNHCB && !isNHCB && !isStale
+		if !t.sendNativeHistograms && !convertNHCB && !transition {
 			t.seriesMtx.Unlock()
 			continue
 		}
@@ -1011,6 +1023,16 @@ outer:
 			continue
 		}
 		meta := t.seriesMetadata[h.Ref]
+		if transition {
+			var replacement *timeSeries
+			if t.sendNativeHistograms {
+				replacement = &timeSeries{seriesLabels: lbls, metadata: meta, startTimestamp: h.ST, timestamp: h.T, histogram: h.H, sType: tHistogram}
+			}
+			if !t.convertAndEnqueueNHCB(h.Ref, 0, h.T, nil, nil, true, lbls, meta, replacement) {
+				return false
+			}
+			continue
+		}
 		// Check if `convert_nhcb_to_classic` flag is enabled to convert NHCB histograms to classic histograms.
 		if convertNHCB {
 			var nhcb any
@@ -1019,7 +1041,7 @@ outer:
 				nhcb = h.H
 				customValues = h.H.CustomValues
 			}
-			if !t.convertAndEnqueueNHCB(h.Ref, h.ST, h.T, nhcb, customValues, isStale, lbls, meta) {
+			if !t.convertAndEnqueueNHCB(h.Ref, h.ST, h.T, nhcb, customValues, isStale, lbls, meta, nil) {
 				return false
 			}
 			continue
@@ -1064,13 +1086,11 @@ outer:
 	for _, h := range floatHistograms {
 		isNHCB := h.FH != nil && h.FH.Schema == histogram.CustomBucketsSchema
 		isStale := h.FH != nil && value.IsStaleNaN(h.FH.Sum)
-		if !t.sendNativeHistograms && (!t.convertNHCBToClassic || (!isNHCB && !isStale)) {
-			continue
-		}
 		t.seriesMtx.Lock()
 		_, isTrackedNHCB := t.nhcbSeriesBounds[h.Ref]
 		convertNHCB := t.convertNHCBToClassic && (isNHCB || (isStale && isTrackedNHCB))
-		if !t.sendNativeHistograms && !convertNHCB {
+		transition := t.convertNHCBToClassic && isTrackedNHCB && !isNHCB && !isStale
+		if !t.sendNativeHistograms && !convertNHCB && !transition {
 			t.seriesMtx.Unlock()
 			continue
 		}
@@ -1099,6 +1119,16 @@ outer:
 			continue
 		}
 		meta := t.seriesMetadata[h.Ref]
+		if transition {
+			var replacement *timeSeries
+			if t.sendNativeHistograms {
+				replacement = &timeSeries{seriesLabels: lbls, metadata: meta, startTimestamp: h.ST, timestamp: h.T, floatHistogram: h.FH, sType: tFloatHistogram}
+			}
+			if !t.convertAndEnqueueNHCB(h.Ref, 0, h.T, nil, nil, true, lbls, meta, replacement) {
+				return false
+			}
+			continue
+		}
 		// Check if `convert_nhcb_to_classic` flag is enabled to convert NHCB Float histograms to classic histograms.
 		if convertNHCB {
 			var nhcb any
@@ -1107,7 +1137,7 @@ outer:
 				nhcb = h.FH
 				customValues = h.FH.CustomValues
 			}
-			if !t.convertAndEnqueueNHCB(h.Ref, h.ST, h.T, nhcb, customValues, isStale, lbls, meta) {
+			if !t.convertAndEnqueueNHCB(h.Ref, h.ST, h.T, nhcb, customValues, isStale, lbls, meta, nil) {
 				return false
 			}
 			continue
