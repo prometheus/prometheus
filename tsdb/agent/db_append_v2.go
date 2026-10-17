@@ -157,15 +157,15 @@ func (a *appenderV2) Rollback() error {
 }
 
 func (a *appenderV2) appendExemplars(s *memSeries, exemplar []exemplar.Exemplar) error {
-	var errs []error
-	for _, e := range exemplar {
+	var errs []storage.ExemplarError
+	for i, e := range exemplar {
 		// Ensure no empty labels have gotten through.
 		e.Labels = e.Labels.WithoutEmpty()
 
 		if err := a.validateExemplar(s.ref, e); err != nil {
 			if !errors.Is(err, storage.ErrDuplicateExemplar) {
 				// Except duplicates, return partial errors.
-				errs = append(errs, err)
+				errs = append(errs, storage.ExemplarError{Index: i, Err: err})
 				continue
 			}
 			if !errors.Is(err, storage.ErrOutOfOrderExemplar) {

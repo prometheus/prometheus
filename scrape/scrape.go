@@ -797,7 +797,7 @@ func acceptHeader(sps []config.ScrapeProtocol, scheme model.EscapingScheme) stri
 	for _, sp := range sps {
 		val := config.ScrapeProtocolsHeaders[sp]
 		// Escaping header is only valid for newer versions of the text formats.
-		if sp == config.PrometheusText1_0_0 || sp == config.OpenMetricsText1_0_0 {
+		if sp == config.PrometheusText1_0_0 || sp == config.OpenMetricsText1_0_0 || sp == config.OpenMetricsText2_0_0 {
 			val += ";" + model.EscapingKey + "=" + scheme.String()
 		}
 		val += fmt.Sprintf(";q=0.%d", weight)
