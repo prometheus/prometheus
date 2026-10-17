@@ -174,7 +174,11 @@ type Discovery struct {
 	// and how many target groups they contained.
 	// This is used to detect deleted target groups.
 	lastRefresh map[string]int
-	logger      *slog.Logger
+	// lastStats stores the file info of each file found during the last
+	// refresh, taken before the file was read.
+	// This is used to skip refreshes for watch events that didn't change any of them.
+	lastStats map[string]os.FileInfo
+	logger    *slog.Logger
 
 	metrics *fileMetrics
 }
@@ -269,7 +273,12 @@ func (d *Discovery) Run(ctx context.Context, ch chan<- []*targetgroup.Group) {
 			// Changes to a file can spawn various sequences of events with
 			// different combinations of operations. For all practical purposes
 			// this is inaccurate.
-			// The most reliable solution is to reload everything if anything happens.
+			// The most reliable solution is to reload everything if any of the
+			// files changed. Events for other files in the watched directories,
+			// such as a log file, are ignored.
+			if !d.filesChanged() {
+				break
+			}
 			d.refresh(ctx, ch)
 
 		case <-ticker.C:
@@ -333,7 +342,12 @@ func (d *Discovery) refresh(ctx context.Context, ch chan<- []*targetgroup.Group)
 		d.metrics.fileSDScanDuration.Observe(time.Since(t0).Seconds())
 	}()
 	ref := map[string]int{}
+	stats := map[string]os.FileInfo{}
 	for _, p := range d.listFiles() {
+		// Stat before reading, so a change made during the read is still
+		// detected by the next watch event. A nil value means the stat failed.
+		stats[p], _ = os.Stat(p)
+
 		tgroups, err := d.readFile(p)
 		if err != nil {
 			d.metrics.fileSDReadErrorsCount.Inc()
@@ -367,8 +381,36 @@ func (d *Discovery) refresh(ctx context.Context, ch chan<- []*targetgroup.Group)
 		}
 	}
 	d.lastRefresh = ref
+	d.lastStats = stats
 
 	d.watchFiles()
+}
+
+// filesChanged reports whether the set of files matching the configured patterns,
+// or any of those files, changed since the last refresh.
+func (d *Discovery) filesChanged() bool {
+	files := d.listFiles()
+	if len(files) != len(d.lastStats) {
+		return true
+	}
+	for _, f := range files {
+		prev, ok := d.lastStats[f]
+		if !ok {
+			return true
+		}
+		cur, err := os.Stat(f)
+		if (err != nil) != (prev == nil) {
+			return true
+		}
+		if err != nil {
+			// The file still can't be stat'ed, rereading it won't help.
+			continue
+		}
+		if !os.SameFile(prev, cur) || !prev.ModTime().Equal(cur.ModTime()) || prev.Size() != cur.Size() {
+			return true
+		}
+	}
+	return false
 }
 
 // readFile reads a JSON or YAML list of targets groups from the file, depending on its
