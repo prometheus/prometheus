@@ -15,6 +15,7 @@ package histogram
 
 import (
 	"math"
+	"slices"
 	"testing"
 
 	"github.com/prometheus/common/model"
@@ -332,6 +333,19 @@ func TestConvertNHCBToClassicHistogram(t *testing.T) {
 						require.True(t, value.IsStaleNaN(emittedSamples[i].val), "expected stale NaN at index %d", i)
 					} else {
 						require.Equal(t, expSample.val, emittedSamples[i].val, "value mismatch at index %d", i)
+					}
+				}
+
+				// A reused buffer must not leak earlier values into skipped buckets.
+				buckets, count, sum, err := ClassicBucketCounts(tt.nhcb, slices.Repeat([]float64{42}, 16))
+				require.NoError(t, err)
+				counts := append(buckets, count, sum)
+				require.Len(t, counts, len(emittedSamples))
+				for i, s := range emittedSamples {
+					if value.IsStaleNaN(s.val) {
+						require.True(t, value.IsStaleNaN(counts[i]), "expected stale NaN count at index %d", i)
+					} else {
+						require.Equal(t, s.val, counts[i], "count mismatch at index %d", i)
 					}
 				}
 			}

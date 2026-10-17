@@ -23,6 +23,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"os"
+	"runtime"
 	"runtime/pprof"
 	"slices"
 	"strconv"
@@ -1428,6 +1429,81 @@ func BenchmarkSampleSend(b *testing.B) {
 			b.StopTimer()
 		})
 	}
+}
+
+// BenchmarkNHCBRepeatedBounds converts samples whose bucket layout never changes, the common case.
+func BenchmarkNHCBRepeatedBounds(b *testing.B) {
+	for _, buckets := range []int{10, 100, 1000, 5000} {
+		b.Run(strconv.Itoa(buckets), func(b *testing.B) {
+			m, stop := newTestNHCBQueueManager(b, NewNopWriteClient(), nhcbQueueTestOptions{protoMsg: remoteapi.WriteV1MessageType})
+			defer stop()
+			m.StoreSeries([]record.RefSeries{{Ref: 1, Labels: labels.FromStrings("__name__", "latency")}}, 0)
+			h := &histogram.Histogram{
+				Schema: histogram.CustomBucketsSchema, CustomValues: make([]float64, buckets),
+				PositiveSpans:   []histogram.Span{{Length: uint32(buckets + 1)}},
+				PositiveBuckets: make([]int64, buckets+1), Count: uint64(buckets + 1),
+				Sum: float64((buckets+1)*(buckets+1)) / 2,
+			}
+			for i := range h.CustomValues {
+				h.CustomValues[i] = float64(i + 1)
+			}
+			h.PositiveBuckets[0] = 1
+			require.NoError(b, h.Validate())
+			samples := []record.RefHistogramSample{{Ref: 1, T: 1, H: h}}
+			require.True(b, m.AppendHistograms(samples))
+			b.ReportAllocs()
+			for b.Loop() {
+				samples[0].T++
+				if !m.AppendHistograms(samples) {
+					b.Fatal("append stopped")
+				}
+			}
+		})
+	}
+}
+
+// BenchmarkNHCBSeriesMemory reports the conversion state retained per series when every series shares one layout.
+func BenchmarkNHCBSeriesMemory(b *testing.B) {
+	const seriesCount = 10000
+	h := &histogram.Histogram{
+		Schema:        histogram.CustomBucketsSchema,
+		CustomValues:  []float64{0.005, 0.01, 0.025, 0.05, 0.1, 0.25, 0.5, 1, 2.5, 5, 10, 25},
+		PositiveSpans: []histogram.Span{{Length: 13}}, PositiveBuckets: make([]int64, 13), Count: 13, Sum: 42,
+	}
+	h.PositiveBuckets[0] = 1
+	require.NoError(b, h.Validate())
+	series := make([]record.RefSeries, 0, seriesCount)
+	samples := make([]record.RefHistogramSample, 0, seriesCount)
+	for i := range seriesCount {
+		ref := chunks.HeadSeriesRef(i + 1)
+		series = append(series, record.RefSeries{Ref: ref, Labels: labels.FromStrings("__name__", "latency", "series", strconv.Itoa(i))})
+		samples = append(samples, record.RefHistogramSample{Ref: ref, T: 1, H: h})
+	}
+	liveHeap := func() int64 {
+		runtime.GC()
+		runtime.GC() // The second cycle also empties sync.Pool victim caches.
+		var ms runtime.MemStats
+		runtime.ReadMemStats(&ms)
+		return int64(ms.HeapAlloc)
+	}
+	var retained int64
+	for b.Loop() {
+		b.StopTimer()
+		m, stop := newTestNHCBQueueManager(b, NewNopWriteClient(), nhcbQueueTestOptions{protoMsg: remoteapi.WriteV1MessageType})
+		m.StoreSeries(series, 0)
+		before := liveHeap()
+		b.StartTimer()
+		if !m.AppendHistograms(samples) {
+			b.Fatal("append stopped")
+		}
+		b.StopTimer()
+		// Flush the shards so that only conversion state remains.
+		stop()
+		retained = liveHeap() - before
+		runtime.KeepAlive(m)
+		b.StartTimer()
+	}
+	b.ReportMetric(float64(retained)/seriesCount, "retained-B/series")
 }
 
 // Check how long it takes to add N series, including external labels processing.
@@ -3015,7 +3091,7 @@ type nhcbQueueTestOptions struct {
 	batchSendDeadline    time.Duration
 }
 
-func newTestNHCBQueueManager(t *testing.T, c WriteClient, opts nhcbQueueTestOptions) (*QueueManager, func()) {
+func newTestNHCBQueueManager(t testing.TB, c WriteClient, opts nhcbQueueTestOptions) (*QueueManager, func()) {
 	t.Helper()
 	cfg := config.DefaultQueueConfig
 	cfg.MaxSamplesPerSend = 1000
@@ -3668,6 +3744,38 @@ func TestAppendToConvertNHCBToClassic(t *testing.T) {
 				}
 			}
 		}
+	})
+
+	t.Run("shared bucket layouts", func(t *testing.T) {
+		m, stop := newTestNHCBQueueManager(t, NewTestWriteClient(remoteapi.WriteV1MessageType), nhcbQueueTestOptions{protoMsg: remoteapi.WriteV1MessageType})
+		defer stop()
+		other := record.RefSeries{Ref: 2, Labels: labels.FromStrings("__name__", "latency", "job", "web")}
+		m.StoreSeries([]record.RefSeries{baseSeries, other}, 0)
+		appendTo := func(ref chunks.HeadSeriesRef, h *histogram.Histogram, ts int64) {
+			t.Helper()
+			require.True(t, m.AppendHistograms([]record.RefHistogramSample{{Ref: ref, T: ts, H: h}}))
+		}
+		appendTo(baseSeries.Ref, newHistogram(), 1000)
+		appendTo(other.Ref, newHistogram(), 1000)
+		require.Len(t, m.nhcbLayouts, 1)
+		shared := m.nhcbSeriesBounds[baseSeries.Ref]
+		require.Same(t, shared, m.nhcbSeriesBounds[other.Ref])
+		require.Equal(t, 2, shared.refs)
+
+		changed := newHistogram()
+		changed.CustomValues = []float64{1, 3}
+		require.NoError(t, changed.Validate())
+		appendTo(other.Ref, changed, 2000)
+		require.Len(t, m.nhcbLayouts, 2)
+		require.Equal(t, 1, shared.refs)
+
+		appendTo(other.Ref, &histogram.Histogram{Sum: math.Float64frombits(value.StaleNaN)}, 3000)
+		require.Len(t, m.nhcbLayouts, 1, "a stale marker must release its layout")
+		require.NotContains(t, m.nhcbSeriesBounds, other.Ref)
+
+		m.SeriesReset(1)
+		require.Empty(t, m.nhcbSeriesBounds)
+		require.Empty(t, m.nhcbLayouts, "garbage collection must release the last reference")
 	})
 
 	t.Run("exemplars", func(t *testing.T) {

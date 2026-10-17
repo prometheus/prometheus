@@ -15,6 +15,7 @@ package remote
 
 import (
 	"context"
+	"encoding/binary"
 	"errors"
 	"fmt"
 	"log/slog"
@@ -445,11 +446,14 @@ type QueueManager struct {
 	protoMsg    remoteapi.WriteMessageType
 	compr       compression.Type
 
-	seriesMtx        sync.Mutex // Covers seriesLabels, seriesMetadata, droppedSeries, nhcbSeriesBounds and builder.
+	seriesMtx        sync.Mutex // Covers seriesLabels, seriesMetadata, droppedSeries, the NHCB fields and builder.
 	seriesLabels     map[chunks.HeadSeriesRef]labels.Labels
 	seriesMetadata   map[chunks.HeadSeriesRef]*metadata.Metadata
 	droppedSeries    map[chunks.HeadSeriesRef]struct{}
-	nhcbSeriesBounds map[chunks.HeadSeriesRef][]float64
+	nhcbSeriesBounds map[chunks.HeadSeriesRef]*nhcbLayout // Layout of each converted NHCB series.
+	nhcbLayouts      map[string]*nhcbLayout               // Keyed by the encoded bounds.
+	nhcbLayoutKey    []byte                               // Scratch space for layout keys.
+	nhcbCounts       []float64                            // Scratch space for bucket counts.
 	builder          *labels.Builder
 
 	seriesSegmentMtx     sync.Mutex // Covers seriesSegmentIndexes - if you also lock seriesMtx, take seriesMtx first.
@@ -525,7 +529,8 @@ func NewQueueManager(
 		seriesMetadata:       make(map[chunks.HeadSeriesRef]*metadata.Metadata),
 		seriesSegmentIndexes: make(map[chunks.HeadSeriesRef]int),
 		droppedSeries:        make(map[chunks.HeadSeriesRef]struct{}),
-		nhcbSeriesBounds:     make(map[chunks.HeadSeriesRef][]float64),
+		nhcbSeriesBounds:     make(map[chunks.HeadSeriesRef]*nhcbLayout),
+		nhcbLayouts:          make(map[string]*nhcbLayout),
 		builder:              labels.NewBuilder(labels.EmptyLabels()),
 
 		numShards:   cfg.MinShards,
@@ -840,18 +845,18 @@ outer:
 			continue
 		}
 		if t.convertNHCBToClassic {
-			if bounds, ok := t.nhcbSeriesBounds[e.Ref]; ok {
+			if layout, ok := t.nhcbSeriesBounds[e.Ref]; ok {
 				if baseName := lbls.Get(model.MetricNameLabel); baseName != "" {
-					bound := math.Inf(1)
-					for _, b := range bounds {
+					le := layout.le[len(layout.bounds)] // +Inf, for values above every bound.
+					for i, b := range layout.bounds {
 						if e.V <= b {
-							bound = b
+							le = layout.le[i]
 							break
 						}
 					}
 					t.builder.Reset(lbls)
 					t.builder.Set(model.MetricNameLabel, baseName+"_bucket")
-					t.builder.Set(model.BucketLabel, labels.FormatOpenMetricsFloat(bound))
+					t.builder.Set(model.BucketLabel, le)
 					lbls = t.builder.Labels()
 				}
 			}
@@ -888,12 +893,54 @@ outer:
 	return true
 }
 
+// nhcbLayout is a bucket layout shared by the NHCB series that use it.
+type nhcbLayout struct {
+	bounds []float64
+	le     []string // Formatted bounds, followed by +Inf.
+	key    string
+	refs   int // Series sharing the layout.
+}
+
+// acquireNHCBLayout requires seriesMtx and returns a new reference to the shared layout for bounds.
+// Each reference must be released with releaseNHCBLayout.
+func (t *QueueManager) acquireNHCBLayout(bounds []float64) *nhcbLayout {
+	// The key is the bounds' exact bit patterns. Converting it inside the map index avoids an allocation.
+	t.nhcbLayoutKey = t.nhcbLayoutKey[:0]
+	for _, b := range bounds {
+		t.nhcbLayoutKey = binary.LittleEndian.AppendUint64(t.nhcbLayoutKey, math.Float64bits(b))
+	}
+	layout, ok := t.nhcbLayouts[string(t.nhcbLayoutKey)]
+	if !ok {
+		// Copy the bounds, which belong to the caller's histogram.
+		layout = &nhcbLayout{bounds: slices.Clone(bounds), le: make([]string, 0, len(bounds)+1), key: string(t.nhcbLayoutKey)}
+		for _, b := range bounds {
+			layout.le = append(layout.le, labels.FormatOpenMetricsFloat(b))
+		}
+		layout.le = append(layout.le, labels.FormatOpenMetricsFloat(math.Inf(1)))
+		t.nhcbLayouts[layout.key] = layout
+	}
+	layout.refs++
+	return layout
+}
+
+// releaseNHCBLayout requires seriesMtx and drops a reference, forgetting the layout once unused.
+func (t *QueueManager) releaseNHCBLayout(layout *nhcbLayout) {
+	layout.refs--
+	if layout.refs == 0 {
+		delete(t.nhcbLayouts, layout.key)
+	}
+}
+
 // convertAndEnqueueNHCB converts an NHCB histogram (using the already-relabeled seriesLabels)
 // into classic _bucket, _count, and _sum samples while holding seriesMtx, then enqueues them
 // after releasing the lock. Caller must hold t.seriesMtx on entry; this method unlocks it.
 // A replacement follows the converted stale markers when changing sample type.
 func (t *QueueManager) convertAndEnqueueNHCB(ref chunks.HeadSeriesRef, st, ts int64, nhcb any, customValues []float64, isStale bool, lbls labels.Labels, meta *metadata.Metadata, replacement *timeSeries) bool {
-	prevBounds, wasActive := t.nhcbSeriesBounds[ref]
+	prev, wasActive := t.nhcbSeriesBounds[ref]
+	var prevBounds []float64
+	if wasActive {
+		prevBounds = prev.bounds
+	}
 	if nhcb == nil {
 		customValues = prevBounds
 		nhcb = &histogram.Histogram{
@@ -903,8 +950,16 @@ func (t *QueueManager) convertAndEnqueueNHCB(ref chunks.HeadSeriesRef, st, ts in
 		}
 	}
 
-	classicSeries := make([]timeSeries, 0, len(customValues)+len(prevBounds)+3)
-	err := histogram.ConvertNHCBToClassic(nhcb, lbls, t.builder, func(bucketLabels labels.Labels, value float64) error {
+	sameBounds := wasActive && slices.Equal(prevBounds, customValues)
+	capacity := len(customValues) + 3
+	if wasActive && !sameBounds {
+		capacity += len(prevBounds)
+	}
+	if replacement != nil {
+		capacity++
+	}
+	classicSeries := make([]timeSeries, 0, capacity)
+	emit := func(bucketLabels labels.Labels, value float64) {
 		classicSeries = append(classicSeries, timeSeries{
 			seriesLabels:   bucketLabels,
 			metadata:       meta,
@@ -913,18 +968,45 @@ func (t *QueueManager) convertAndEnqueueNHCB(ref chunks.HeadSeriesRef, st, ts in
 			value:          value,
 			sType:          tSample,
 		})
-		return nil
-	})
-	if err == nil && wasActive {
-		baseName := lbls.Get(model.MetricNameLabel)
+	}
+	baseName := lbls.Get(model.MetricNameLabel)
+	var (
+		count, sum float64
+		err        error
+	)
+	if baseName == "" {
+		err = errors.New("metric name label '__name__' is missing")
+	} else {
+		t.nhcbCounts, count, sum, err = histogram.ClassicBucketCounts(nhcb, t.nhcbCounts)
+	}
+	layout := prev
+	if err == nil {
+		if !sameBounds {
+			layout = t.acquireNHCBLayout(customValues)
+		}
+		bucketName := baseName + "_bucket"
+		for i, c := range t.nhcbCounts {
+			t.builder.Reset(lbls)
+			t.builder.Set(model.MetricNameLabel, bucketName)
+			t.builder.Set(model.BucketLabel, layout.le[i])
+			emit(t.builder.Labels(), c)
+		}
+		t.builder.Reset(lbls)
+		t.builder.Set(model.MetricNameLabel, baseName+"_count")
+		emit(t.builder.Labels(), count)
+		t.builder.Reset(lbls)
+		t.builder.Set(model.MetricNameLabel, baseName+"_sum")
+		emit(t.builder.Labels(), sum)
+	}
+	if err == nil && wasActive && !sameBounds {
 		staleVal := math.Float64frombits(value.StaleNaN)
-		for _, prevBound := range prevBounds {
+		for i, prevBound := range prevBounds {
 			if slices.Contains(customValues, prevBound) {
 				continue
 			}
 			t.builder.Reset(lbls)
 			t.builder.Set(model.MetricNameLabel, baseName+"_bucket")
-			t.builder.Set(model.BucketLabel, labels.FormatOpenMetricsFloat(prevBound))
+			t.builder.Set(model.BucketLabel, prev.le[i])
 			// Retired buckets get no start time; st belongs to the new layout.
 			classicSeries = append(classicSeries, timeSeries{
 				seriesLabels:   t.builder.Labels(),
@@ -938,9 +1020,19 @@ func (t *QueueManager) convertAndEnqueueNHCB(ref chunks.HeadSeriesRef, st, ts in
 	}
 	if err == nil {
 		if isStale {
+			if !sameBounds {
+				// A stale marker needed the new layout only for its labels.
+				t.releaseNHCBLayout(layout)
+			}
+			if wasActive {
+				t.releaseNHCBLayout(prev)
+			}
 			delete(t.nhcbSeriesBounds, ref)
-		} else if !wasActive || !slices.Equal(prevBounds, customValues) {
-			t.nhcbSeriesBounds[ref] = slices.Clone(customValues)
+		} else if !sameBounds {
+			if wasActive {
+				t.releaseNHCBLayout(prev)
+			}
+			t.nhcbSeriesBounds[ref] = layout
 		}
 		if replacement != nil {
 			classicSeries = append(classicSeries, *replacement)
@@ -1281,6 +1373,9 @@ func (t *QueueManager) SeriesReset(index int) {
 		delete(t.seriesLabels, k)
 		delete(t.seriesMetadata, k)
 		delete(t.droppedSeries, k)
+		if layout, ok := t.nhcbSeriesBounds[k]; ok {
+			t.releaseNHCBLayout(layout)
+		}
 		delete(t.nhcbSeriesBounds, k)
 	}
 }
