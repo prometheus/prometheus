@@ -151,7 +151,12 @@ func BucketQuantile(q float64, buckets Buckets) (
 		return quantile, forcedMonotonic, fixedPrecision, minBucket, maxBucket, maxDiff
 	}
 	rank := q * observations
-	b := sort.Search(len(buckets)-1, func(i int) bool { return buckets[i].Count >= rank })
+	b := sort.Search(len(buckets)-1, func(i int) bool {
+		if q == 0 {
+			return buckets[i].Count > 0
+		}
+		return buckets[i].Count >= rank
+	})
 
 	switch {
 	case b == len(buckets)-1:

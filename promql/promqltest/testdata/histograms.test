@@ -1273,3 +1273,34 @@ eval instant at 0 histogram_fraction(-Inf, 1, series)
 	expect no_info
 	expect warn msg: PromQL warning: vector contains a mix of classic and native histograms for metric name "series" (1:29)
 	# Should return no results.
+
+clear
+
+# Classic histograms with empty leading buckets should return the first populated bucket's lower bound.
+load 1m
+    zero_quantile_bucket{case="one_empty",le="1"} 0
+    zero_quantile_bucket{case="one_empty",le="2"} 10
+    zero_quantile_bucket{case="one_empty",le="+Inf"} 10
+    zero_quantile_bucket{case="two_empty",le="1"} 0
+    zero_quantile_bucket{case="two_empty",le="2"} 0
+    zero_quantile_bucket{case="two_empty",le="3"} 10
+    zero_quantile_bucket{case="two_empty",le="+Inf"} 10
+    zero_quantile_bucket{case="negative",le="-4"} 0
+    zero_quantile_bucket{case="negative",le="-2"} 0
+    zero_quantile_bucket{case="negative",le="-1"} 10
+    zero_quantile_bucket{case="negative",le="+Inf"} 10
+
+eval instant at 0m histogram_quantile(0, zero_quantile_bucket)
+    expect no_warn
+    {case="one_empty"} 1
+    {case="two_empty"} 2
+    {case="negative"} -2
+
+eval instant at 0m histogram_quantiles(zero_quantile_bucket, "q", 0, 0.5)
+    expect no_warn
+    {case="one_empty",q="0.0"} 1
+    {case="one_empty",q="0.5"} 1.5
+    {case="two_empty",q="0.0"} 2
+    {case="two_empty",q="0.5"} 2.5
+    {case="negative",q="0.0"} -2
+    {case="negative",q="0.5"} -1.5

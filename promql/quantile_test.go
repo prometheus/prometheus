@@ -25,6 +25,61 @@ import (
 	"github.com/prometheus/prometheus/promql/parser/posrange"
 )
 
+func TestBucketQuantile_ZeroQuantileWithEmptyLeadingBuckets(t *testing.T) {
+	for _, tc := range []struct {
+		name    string
+		buckets Buckets
+		want    float64
+	}{
+		{
+			name:    "one empty positive bucket",
+			buckets: Buckets{{UpperBound: 1}, {UpperBound: 2, Count: 10}, {UpperBound: math.Inf(1), Count: 10}},
+			want:    1,
+		},
+		{
+			name:    "two empty positive buckets",
+			buckets: Buckets{{UpperBound: 1}, {UpperBound: 2}, {UpperBound: 3, Count: 10}, {UpperBound: math.Inf(1), Count: 10}},
+			want:    2,
+		},
+		{
+			name:    "two empty negative buckets",
+			buckets: Buckets{{UpperBound: -4}, {UpperBound: -2}, {UpperBound: -1, Count: 10}, {UpperBound: math.Inf(1), Count: 10}},
+			want:    -2,
+		},
+		{
+			name:    "only infinite bucket populated",
+			buckets: Buckets{{UpperBound: 1}, {UpperBound: 2}, {UpperBound: math.Inf(1), Count: 10}},
+			want:    2,
+		},
+		{
+			name:    "first positive bucket populated",
+			buckets: Buckets{{UpperBound: 1, Count: 10}, {UpperBound: 2, Count: 10}, {UpperBound: math.Inf(1), Count: 10}},
+			want:    0,
+		},
+		{
+			name:    "first negative bucket populated",
+			buckets: Buckets{{UpperBound: -1, Count: 10}, {UpperBound: 2, Count: 10}, {UpperBound: math.Inf(1), Count: 10}},
+			want:    -1,
+		},
+		{
+			name:    "no observations",
+			buckets: Buckets{{UpperBound: 1}, {UpperBound: 2}, {UpperBound: math.Inf(1)}},
+			want:    math.NaN(),
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			got, forced, fixed, _, _, _ := BucketQuantile(0, slices.Clone(tc.buckets))
+			if math.IsNaN(tc.want) {
+				require.True(t, math.IsNaN(got))
+			} else {
+				require.Equal(t, tc.want, got)
+			}
+			require.False(t, forced)
+			require.False(t, fixed)
+		})
+	}
+}
+
 func TestBucketQuantile_ForcedMonotonicity(t *testing.T) {
 	t.Run("empty buckets", func(t *testing.T) {
 		for name, buckets := range map[string]Buckets{"nil": nil, "empty": {}} {
