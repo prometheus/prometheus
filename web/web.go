@@ -488,7 +488,14 @@ func New(logger *slog.Logger, o *Options) *Handler {
 
 	if !o.UseOldUI {
 		router.Get("/graph", func(w http.ResponseWriter, r *http.Request) {
-			http.Redirect(w, r, path.Join(o.ExternalURL.Path, "/query?"+r.URL.RawQuery), http.StatusFound)
+			// Join only the path. The query string must not go through
+			// path.Join, as its path.Clean would resolve ".." segments
+			// inside the query and let a request rewrite the redirect target.
+			u := path.Join(o.ExternalURL.Path, "/query")
+			if r.URL.RawQuery != "" {
+				u += "?" + r.URL.RawQuery
+			}
+			http.Redirect(w, r, u, http.StatusFound)
 		})
 	}
 
