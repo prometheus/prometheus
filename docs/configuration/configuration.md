@@ -2597,6 +2597,7 @@ Available meta labels:
   * `__meta_kubernetes_endpointslice_port`: Port of the referenced endpoint.
   * `__meta_kubernetes_endpointslice_port_name`: Named port of the referenced endpoint.
   * `__meta_kubernetes_endpointslice_port_protocol`: Protocol of the referenced endpoint.
+  * `__meta_kubernetes_endpointslice_port_app_protocol`: The application protocol of the referenced endpoint's port, if set
 * If the endpoints belong to a service, all labels of the `role: service` discovery are attached.
 * For all targets backed by a pod, all labels of the `role: pod` discovery are attached.
 
