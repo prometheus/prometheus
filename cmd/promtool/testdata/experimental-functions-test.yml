@@ -1,0 +1,10 @@
+rule_files:
+  - experimental-functions.yml
+
+tests:
+  - interval: 1m
+    input_series:
+      - series: 'up{instance="a"}'
+        values: "1 1 1 1 1 1"
+      - series: 'up{instance="b"}'
+        values: "1 1 1 1 1 1"

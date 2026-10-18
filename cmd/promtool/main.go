@@ -438,9 +438,10 @@ func main() {
 		}
 		os.Exit(RulesUnitTestResult(results,
 			promqltest.LazyLoaderOpts{
-				EnableAtModifier:         true,
-				EnableNegativeOffset:     true,
-				EnableDelayedNameRemoval: promqlEnableDelayedNameRemoval,
+				EnableAtModifier:            true,
+				EnableNegativeOffset:        true,
+				EnableDelayedNameRemoval:    promqlEnableDelayedNameRemoval,
+				EnableExperimentalFunctions: promtoolParserOpts.EnableExperimentalFunctions,
 			},
 			promtoolParser,
 			*testRulesRun,

@@ -1,0 +1,5 @@
+groups:
+  - name: experimental-functions
+    rules:
+      - record: experimental
+        expr: sort_by_label(up, "instance")

@@ -1932,6 +1932,9 @@ type LazyLoaderOpts struct {
 	// Currently defaults to false, matches the "promql-delayed-name-removal"
 	// feature flag.
 	EnableDelayedNameRemoval bool
+	// EnableExperimentalFunctions matches the "promql-experimental-functions"
+	// feature flag.
+	EnableExperimentalFunctions bool
 	// StartTime is the start time for the test. If zero, defaults to Unix epoch.
 	StartTime time.Time
 }
@@ -2002,6 +2005,7 @@ func (ll *LazyLoader) clear() error {
 		EnableAtModifier:         ll.opts.EnableAtModifier,
 		EnableNegativeOffset:     ll.opts.EnableNegativeOffset,
 		EnableDelayedNameRemoval: ll.opts.EnableDelayedNameRemoval,
+		Parser:                   parser.NewParser(parser.Options{EnableExperimentalFunctions: ll.opts.EnableExperimentalFunctions}),
 	}
 
 	ll.queryEngine = promql.NewEngine(opts)

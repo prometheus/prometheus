@@ -32,10 +32,11 @@ func TestRulesUnitTest(t *testing.T) {
 		files []string
 	}
 	tests := []struct {
-		name      string
-		args      args
-		queryOpts promqltest.LazyLoaderOpts
-		want      int
+		name       string
+		args       args
+		queryOpts  promqltest.LazyLoaderOpts
+		parserOpts parser.Options
+		want       int
 	}{
 		{
 			name: "Passing Unit Tests",
@@ -131,6 +132,26 @@ func TestRulesUnitTest(t *testing.T) {
 			want: 0,
 		},
 		{
+			name: "Disabled feature (experimental functions)",
+			args: args{
+				files: []string{"./testdata/experimental-functions-test.yml"},
+			},
+			want: 1,
+		},
+		{
+			name: "Enabled feature (experimental functions)",
+			args: args{
+				files: []string{"./testdata/experimental-functions-test.yml"},
+			},
+			queryOpts: promqltest.LazyLoaderOpts{
+				EnableExperimentalFunctions: true,
+			},
+			parserOpts: parser.Options{
+				EnableExperimentalFunctions: true,
+			},
+			want: 0,
+		},
+		{
 			name: "Start time tests",
 			args: args{
 				files: []string{"./testdata/start-time-test.yml"},
@@ -154,7 +175,7 @@ func TestRulesUnitTest(t *testing.T) {
 		}
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
-			if got := RulesUnitTest(tt.queryOpts, parser.NewParser(parser.Options{}), nil, false, false, false, tt.args.files...); got != tt.want {
+			if got := RulesUnitTest(tt.queryOpts, parser.NewParser(tt.parserOpts), nil, false, false, false, tt.args.files...); got != tt.want {
 				t.Errorf("RulesUnitTest() = %v, want %v", got, tt.want)
 			}
 		})
