@@ -54,9 +54,16 @@
               # Without min_over_time, failed scrapes could create false negatives, see
               # https://www.robustperception.io/alerting-on-gauges-in-prometheus-2-0 for details.
               (
-                predict_linear(prometheus_notifications_queue_length{%(prometheusSelector)s}[5m], 60 * 30)
-              >
-                min_over_time(prometheus_notifications_queue_capacity{%(prometheusSelector)s}[5m])
+                max without (alertmanager) (
+                  predict_linear(
+                    prometheus_notifications_queue_length{%(prometheusSelector)s}[5m],
+                    60 * 30
+                  )
+                )
+                >
+                min_over_time(
+                  prometheus_notifications_queue_capacity{%(prometheusSelector)s}[5m]
+                )
               )
             ||| % $._config,
             'for': '15m',
