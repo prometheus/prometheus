@@ -2472,6 +2472,10 @@ service port.
 Available meta labels:
 
 * `__meta_kubernetes_namespace`: The namespace of the service object.
+* `__meta_kubernetes_namespace_label_<labelname>`: Each label from the namespace object, with any unsupported characters converted to an underscore. Requires `attach_metadata: {namespace: true}`.
+* `__meta_kubernetes_namespace_labelpresent_<labelname>`: `true` for each label from the namespace object, with any unsupported characters converted to an underscore. Requires `attach_metadata: {namespace: true}`.
+* `__meta_kubernetes_namespace_annotation_<annotationname>`: Each annotation from the namespace object. Requires `attach_metadata: {namespace: true}`.
+* `__meta_kubernetes_namespace_annotationpresent_<annotationname>`: `true` for each annotation from the namespace object. Requires `attach_metadata: {namespace: true}`.
 * `__meta_kubernetes_service_annotation_<annotationname>`: Each annotation from the service object.
 * `__meta_kubernetes_service_annotationpresent_<annotationname>`: "true" for each annotation of the service object.
 * `__meta_kubernetes_service_cluster_ip`: The cluster IP address of the service. (Does not apply to services of type ExternalName)
@@ -2495,6 +2499,10 @@ In that case `__address__` is set to the pod IP only, without a port.
 Available meta labels:
 
 * `__meta_kubernetes_namespace`: The namespace of the pod object.
+* `__meta_kubernetes_namespace_label_<labelname>`: Each label from the namespace object, with any unsupported characters converted to an underscore. Requires `attach_metadata: {namespace: true}`.
+* `__meta_kubernetes_namespace_labelpresent_<labelname>`: `true` for each label from the namespace object, with any unsupported characters converted to an underscore. Requires `attach_metadata: {namespace: true}`.
+* `__meta_kubernetes_namespace_annotation_<annotationname>`: Each annotation from the namespace object. Requires `attach_metadata: {namespace: true}`.
+* `__meta_kubernetes_namespace_annotationpresent_<annotationname>`: `true` for each annotation from the namespace object. Requires `attach_metadata: {namespace: true}`.
 * `__meta_kubernetes_pod_name`: The name of the pod object.
 * `__meta_kubernetes_pod_ip`: The pod IP of the pod object.
 * `__meta_kubernetes_pod_label_<labelname>`: Each label from the pod object, with any unsupported characters converted to an underscore.
@@ -2532,6 +2540,10 @@ it is recommended to use EndpointSlices instead and switch to the `endpointslice
 Available meta labels:
 
 * `__meta_kubernetes_namespace`: The namespace of the endpoints object.
+* `__meta_kubernetes_namespace_label_<labelname>`: Each label from the namespace object, with any unsupported characters converted to an underscore. Requires `attach_metadata: {namespace: true}`.
+* `__meta_kubernetes_namespace_labelpresent_<labelname>`: `true` for each label from the namespace object, with any unsupported characters converted to an underscore. Requires `attach_metadata: {namespace: true}`.
+* `__meta_kubernetes_namespace_annotation_<annotationname>`: Each annotation from the namespace object. Requires `attach_metadata: {namespace: true}`.
+* `__meta_kubernetes_namespace_annotationpresent_<annotationname>`: `true` for each annotation from the namespace object. Requires `attach_metadata: {namespace: true}`.
 * `__meta_kubernetes_endpoints_name`: The names of the endpoints object.
 * `__meta_kubernetes_endpoints_label_<labelname>`: Each label from the endpoints object, with any unsupported characters converted to an underscore.
 * `__meta_kubernetes_endpoints_labelpresent_<labelname>`: `true` for each label from the endpoints object, with any unsupported characters converted to an underscore.
@@ -2560,6 +2572,10 @@ The role requires the `discovery.k8s.io/v1` API version (available since Kuberne
 Available meta labels:
 
 * `__meta_kubernetes_namespace`: The namespace of the endpointslice object.
+* `__meta_kubernetes_namespace_label_<labelname>`: Each label from the namespace object, with any unsupported characters converted to an underscore. Requires `attach_metadata: {namespace: true}`.
+* `__meta_kubernetes_namespace_labelpresent_<labelname>`: `true` for each label from the namespace object, with any unsupported characters converted to an underscore. Requires `attach_metadata: {namespace: true}`.
+* `__meta_kubernetes_namespace_annotation_<annotationname>`: Each annotation from the namespace object. Requires `attach_metadata: {namespace: true}`.
+* `__meta_kubernetes_namespace_annotationpresent_<annotationname>`: `true` for each annotation from the namespace object. Requires `attach_metadata: {namespace: true}`.
 * `__meta_kubernetes_endpointslice_name`: The name of endpointslice object.
 * `__meta_kubernetes_endpointslice_label_<labelname>`: Each label from the endpointslice object, with any unsupported characters converted to an underscore.
 * `__meta_kubernetes_endpointslice_labelpresent_<labelname>`: `true` for each label from the endpointslice object, with any unsupported characters converted to an underscore.
@@ -2595,6 +2611,10 @@ The role requires the `networking.k8s.io/v1` API version (available since Kubern
 Available meta labels:
 
 * `__meta_kubernetes_namespace`: The namespace of the ingress object.
+* `__meta_kubernetes_namespace_label_<labelname>`: Each label from the namespace object, with any unsupported characters converted to an underscore. Requires `attach_metadata: {namespace: true}`.
+* `__meta_kubernetes_namespace_labelpresent_<labelname>`: `true` for each label from the namespace object, with any unsupported characters converted to an underscore. Requires `attach_metadata: {namespace: true}`.
+* `__meta_kubernetes_namespace_annotation_<annotationname>`: Each annotation from the namespace object. Requires `attach_metadata: {namespace: true}`.
+* `__meta_kubernetes_namespace_annotationpresent_<annotationname>`: `true` for each annotation from the namespace object. Requires `attach_metadata: {namespace: true}`.
 * `__meta_kubernetes_ingress_name`: The name of the ingress object.
 * `__meta_kubernetes_ingress_label_<labelname>`: Each label from the ingress object, with any unsupported characters converted to an underscore.
 * `__meta_kubernetes_ingress_labelpresent_<labelname>`: `true` for each label from the ingress object, with any unsupported characters converted to an underscore.
