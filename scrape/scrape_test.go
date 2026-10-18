@@ -32,6 +32,7 @@ import (
 	"net/url"
 	"os"
 	"path/filepath"
+	"runtime"
 	"sort"
 	"strconv"
 	"strings"
@@ -40,6 +41,7 @@ import (
 	"testing/synctest"
 	"text/template"
 	"time"
+	"unsafe"
 
 	"github.com/gogo/protobuf/proto"
 	"github.com/grafana/regexp"
@@ -433,6 +435,62 @@ func TestScrapeCacheSizeMetadata(t *testing.T) {
 			tc.steps(t, c)
 		})
 	}
+}
+
+func TestScrapeCacheMetadataInterning(t *testing.T) {
+	metrics := newTestScrapeMetrics(t)
+	c1 := newScrapeCache(metrics)
+	c2 := newScrapeCache(metrics)
+
+	mf1 := []byte("http_requests_total")
+	help1 := []byte("Total number of HTTP requests across all worker goroutines.")
+	unit1 := []byte("requests")
+
+	c1.setType(mf1, model.MetricTypeCounter)
+	c1.setHelp(mf1, help1)
+	c1.setUnit(mf1, unit1)
+
+	// Mutate caller buffers to verify scrapeCache clones the underlying bytes.
+	mf1[0] = 'X'
+	help1[0] = 'X'
+	unit1[0] = 'X'
+
+	// Force GC cycles between target scrapes to verify interned handles stay alive.
+	runtime.GC()
+	runtime.GC()
+
+	mf2 := []byte("http_requests_total")
+	help2 := []byte("Total number of HTTP requests across all worker goroutines.")
+	unit2 := []byte("requests")
+
+	c2.setType(mf2, model.MetricTypeCounter)
+	c2.setHelp(mf2, help2)
+	c2.setUnit(mf2, unit2)
+
+	m1, ok := c1.GetMetadata("http_requests_total")
+	require.True(t, ok)
+	m2, ok := c2.GetMetadata("http_requests_total")
+	require.True(t, ok)
+
+	require.Equal(t, MetricMetadata{
+		MetricFamily: "http_requests_total",
+		Type:         model.MetricTypeCounter,
+		Help:         "Total number of HTTP requests across all worker goroutines.",
+		Unit:         "requests",
+	}, m1)
+	require.Equal(t, m1, m2)
+
+	require.Equal(t, unsafe.StringData(m1.MetricFamily), unsafe.StringData(m2.MetricFamily))
+	require.Equal(t, unsafe.StringData(m1.Help), unsafe.StringData(m2.Help))
+	require.Equal(t, unsafe.StringData(m1.Unit), unsafe.StringData(m2.Unit))
+
+	l1 := c1.ListMetadata()
+	l2 := c2.ListMetadata()
+	require.Len(t, l1, 1)
+	require.Len(t, l2, 1)
+	require.Equal(t, unsafe.StringData(l1[0].MetricFamily), unsafe.StringData(l2[0].MetricFamily))
+	require.Equal(t, unsafe.StringData(l1[0].Help), unsafe.StringData(l2[0].Help))
+	require.Equal(t, unsafe.StringData(l1[0].Unit), unsafe.StringData(l2[0].Unit))
 }
 
 func TestIsSeriesPartOfFamily(t *testing.T) {
@@ -2949,6 +3007,77 @@ func BenchmarkScrapeLoopScrapeAndReport(b *testing.B) {
 				}
 			})
 		}
+	}
+}
+
+// Recommended CLI invocation:
+//
+//	export bench=scrape_metadata && go test ./scrape -run '^$' -bench '^BenchmarkScrapeCacheMetadata' -benchtime 2s -count 6 -cpu 2 -benchmem | tee ${bench}.txt
+func BenchmarkScrapeCacheMetadata(b *testing.B) {
+	const numFamilies = 265
+	type familyMeta struct {
+		name []byte
+		typ  model.MetricType
+		help []byte
+		unit []byte
+	}
+	families := make([]familyMeta, numFamilies)
+	for i := range families {
+		var unit []byte
+		if i%2 == 0 {
+			unit = []byte("seconds")
+		}
+		families[i] = familyMeta{
+			name: fmt.Appendf(nil, "http_server_request_duration_seconds_family_%d", i),
+			typ:  model.MetricTypeHistogram,
+			help: fmt.Appendf(nil, "Duration of HTTP requests handled by server worker %d in seconds across all endpoints.", i),
+			unit: unit,
+		}
+	}
+
+	metrics := newTestScrapeMetrics(b)
+	// Keep one populated target cache alive to model a multi-target scrape pool
+	// where at least one target has already scraped the shared metric families.
+	anchor := newScrapeCache(metrics)
+	for _, f := range families {
+		anchor.setType(f.name, f.typ)
+		anchor.setHelp(f.name, f.help)
+		if len(f.unit) > 0 {
+			anchor.setUnit(f.name, f.unit)
+		}
+	}
+
+	for _, coldCache := range []bool{true, false} {
+		b.Run(fmt.Sprintf("coldCache=%v", coldCache), func(b *testing.B) {
+			c := newScrapeCache(metrics)
+			if !coldCache {
+				for _, f := range families {
+					c.setType(f.name, f.typ)
+					c.setHelp(f.name, f.help)
+					if len(f.unit) > 0 {
+						c.setUnit(f.name, f.unit)
+					}
+				}
+				c.iterDone(true)
+			}
+
+			b.ReportAllocs()
+			b.ResetTimer()
+			for b.Loop() {
+				if coldCache {
+					c = newScrapeCache(metrics)
+				}
+				for _, f := range families {
+					c.setType(f.name, f.typ)
+					c.setHelp(f.name, f.help)
+					if len(f.unit) > 0 {
+						c.setUnit(f.name, f.unit)
+					}
+				}
+				c.iterDone(true)
+			}
+			runtime.KeepAlive(anchor)
+		})
 	}
 }
 

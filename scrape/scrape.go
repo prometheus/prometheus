@@ -31,6 +31,7 @@ import (
 	"strings"
 	"sync"
 	"time"
+	"unique"
 	"unsafe"
 
 	"github.com/klauspost/compress/gzip"
@@ -1031,17 +1032,39 @@ type scrapeCache struct {
 	metrics *scrapeMetrics
 }
 
+var emptyStringHandle = unique.Make("")
+
+func internString(b []byte) unique.Handle[string] {
+	if len(b) == 0 {
+		return emptyStringHandle
+	}
+	return unique.Make(yoloString(b))
+}
+
 // metaEntry holds meta information about a metric.
+// Metric family name, help, and unit strings are interned via the unique
+// package so scrape caches across targets share backing string allocations.
 type metaEntry struct {
-	metadata.Metadata
+	mfName unique.Handle[string]
+	typ    model.MetricType
+	help   unique.Handle[string]
+	unit   unique.Handle[string]
 
 	lastIter       uint64 // Last scrape iteration the entry was observed at.
 	lastIterChange uint64 // Last scrape iteration the entry was changed at.
 }
 
+func (m *metaEntry) metadata() metadata.Metadata {
+	return metadata.Metadata{
+		Type: m.typ,
+		Unit: m.unit.Value(),
+		Help: m.help.Value(),
+	}
+}
+
 func (m *metaEntry) size() int {
 	// The attribute lastIter although part of the struct it is not metadata.
-	return len(m.Help) + len(m.Unit) + len(m.Type)
+	return len(m.help.Value()) + len(m.unit.Value()) + len(m.typ)
 }
 
 func newScrapeCache(metrics *scrapeMetrics) *scrapeCache {
@@ -1178,20 +1201,29 @@ func yoloString(b []byte) string {
 	return unsafe.String(unsafe.SliceData(b), len(b))
 }
 
+func (c *scrapeCache) getOrCreateMetaEntry(mfName []byte) (*metaEntry, int) {
+	e, ok := c.metadata[string(mfName)]
+	if !ok {
+		mfHandle := internString(mfName)
+		e = &metaEntry{
+			mfName: mfHandle,
+			typ:    model.MetricTypeUnknown,
+			help:   emptyStringHandle,
+			unit:   emptyStringHandle,
+		}
+		c.metadata[mfHandle.Value()] = e
+		return e, 0
+	}
+	return e, e.size()
+}
+
 func (c *scrapeCache) setType(mfName []byte, t model.MetricType) ([]byte, *metaEntry) {
 	c.metaMtx.Lock()
 	defer c.metaMtx.Unlock()
 
-	e, ok := c.metadata[string(mfName)]
-	var oldSize int
-	if !ok {
-		e = &metaEntry{Metadata: metadata.Metadata{Type: model.MetricTypeUnknown}}
-		c.metadata[string(mfName)] = e
-	} else {
-		oldSize = e.size()
-	}
-	if e.Type != t {
-		e.Type = t
+	e, oldSize := c.getOrCreateMetaEntry(mfName)
+	if e.typ != t {
+		e.typ = t
 		e.lastIterChange = c.iter
 	}
 	e.lastIter = c.iter
@@ -1203,16 +1235,9 @@ func (c *scrapeCache) setHelp(mfName, help []byte) ([]byte, *metaEntry) {
 	c.metaMtx.Lock()
 	defer c.metaMtx.Unlock()
 
-	e, ok := c.metadata[string(mfName)]
-	var oldSize int
-	if !ok {
-		e = &metaEntry{Metadata: metadata.Metadata{Type: model.MetricTypeUnknown}}
-		c.metadata[string(mfName)] = e
-	} else {
-		oldSize = e.size()
-	}
-	if e.Help != string(help) {
-		e.Help = string(help)
+	e, oldSize := c.getOrCreateMetaEntry(mfName)
+	if e.help.Value() != string(help) {
+		e.help = internString(help)
 		e.lastIterChange = c.iter
 	}
 	e.lastIter = c.iter
@@ -1224,16 +1249,9 @@ func (c *scrapeCache) setUnit(mfName, unit []byte) ([]byte, *metaEntry) {
 	c.metaMtx.Lock()
 	defer c.metaMtx.Unlock()
 
-	e, ok := c.metadata[string(mfName)]
-	var oldSize int
-	if !ok {
-		e = &metaEntry{Metadata: metadata.Metadata{Type: model.MetricTypeUnknown}}
-		c.metadata[string(mfName)] = e
-	} else {
-		oldSize = e.size()
-	}
-	if e.Unit != string(unit) {
-		e.Unit = string(unit)
+	e, oldSize := c.getOrCreateMetaEntry(mfName)
+	if e.unit.Value() != string(unit) {
+		e.unit = internString(unit)
 		e.lastIterChange = c.iter
 	}
 	e.lastIter = c.iter
@@ -1251,10 +1269,10 @@ func (c *scrapeCache) GetMetadata(mfName string) (MetricMetadata, bool) {
 		return MetricMetadata{}, false
 	}
 	return MetricMetadata{
-		MetricFamily: mfName,
-		Type:         m.Type,
-		Help:         m.Help,
-		Unit:         m.Unit,
+		MetricFamily: m.mfName.Value(),
+		Type:         m.typ,
+		Help:         m.help.Value(),
+		Unit:         m.unit.Value(),
 	}, true
 }
 
@@ -1268,9 +1286,9 @@ func (c *scrapeCache) ListMetadata() []MetricMetadata {
 	for m, e := range c.metadata {
 		res = append(res, MetricMetadata{
 			MetricFamily: m,
-			Type:         e.Type,
-			Help:         e.Help,
-			Unit:         e.Unit,
+			Type:         e.typ,
+			Help:         e.help.Value(),
+			Unit:         e.unit.Value(),
 		})
 	}
 	return res
@@ -2044,10 +2062,11 @@ loop:
 				// In majority cases we can trust that the current series/histogram is matching the lastMeta and lastMFName.
 				// However, optional TYPE etc metadata and broken OM text can break this, detect those cases here.
 				// TODO(https://github.com/prometheus/prometheus/issues/17900): Move this to text and OM parser.
-				if isSeriesPartOfFamily(lset.Get(model.MetricNameLabel), lastMFName, lastMeta.Type) {
-					if _, merr := app.UpdateMetadata(ref, lset, lastMeta.Metadata); merr != nil {
+				if isSeriesPartOfFamily(lset.Get(model.MetricNameLabel), lastMFName, lastMeta.typ) {
+					meta := lastMeta.metadata()
+					if _, merr := app.UpdateMetadata(ref, lset, meta); merr != nil {
 						// No need to fail the scrape on errors appending metadata.
-						sl.l.Debug("Error when appending metadata in scrape loop", "ref", fmt.Sprintf("%d", ref), "metadata", fmt.Sprintf("%+v", lastMeta.Metadata), "err", merr)
+						sl.l.Debug("Error when appending metadata in scrape loop", "ref", fmt.Sprintf("%d", ref), "metadata", fmt.Sprintf("%+v", meta), "err", merr)
 					}
 				}
 			}
