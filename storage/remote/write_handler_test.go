@@ -169,6 +169,15 @@ func TestRemoteWriteHandlerHeadersHandling_V2Message(t *testing.T) {
 			expectedCode: http.StatusNoContent,
 		},
 		{
+			name: "correct PRW 2.0 headers with none mode",
+			reqHeaders: map[string]string{
+				"Content-Type":           remoteWriteContentTypeHeaders[remoteapi.WriteV2MessageType] + ";mode=none",
+				"Content-Encoding":       compression.Snappy,
+				RemoteWriteVersionHeader: RemoteWriteVersion20HeaderValue,
+			},
+			expectedCode: http.StatusNoContent,
+		},
+		{
 			name: "correct PRW 2.0 headers with stateless mode",
 			reqHeaders: map[string]string{
 				"Content-Type":           remoteapi.ContentTypeHeader(remoteapi.WriteV2MessageType, remoteapi.WriteModeStateless),
