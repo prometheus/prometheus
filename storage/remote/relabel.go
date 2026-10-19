@@ -218,8 +218,7 @@ func (c *RelabelCache) sweep() int {
 }
 
 // NewRelabelingAppendableV2 applies Config.ReceiveRelabelConfigs to samples
-// before they reach next. Embedding storage.AppenderV2 does not promote
-// storage.GetRef, so a ref lookup can't bypass relabeling.
+// before they reach next.
 func NewRelabelingAppendableV2(next storage.AppendableV2, configFunc func() config.Config, cache *RelabelCache) storage.AppendableV2 {
 	return &relabelingAppendableV2{next: next, configFunc: configFunc, cache: cache}
 }
