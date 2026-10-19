@@ -383,3 +383,43 @@ func BenchmarkMmapHeadChunks(b *testing.B) {
 		}
 	}
 }
+
+// BenchmarkHeadAppenderV2_Append_OldST appends to long-running counters, whose start timestamp is
+// older than the head's min valid time, so they get no zero sample.
+func BenchmarkHeadAppenderV2_Append_OldST(b *testing.B) {
+	series := genSeries(1000, 10, 0, 0) // Only using the generated labels.
+	for _, zeroIngestion := range []bool{false, true} {
+		b.Run(fmt.Sprintf("EnableSTAsZeroSample=%t", zeroIngestion), func(b *testing.B) {
+			opts := newTestHeadDefaultOptions(DefaultBlockDuration, false)
+			opts.ChunkDirRoot = b.TempDir()
+			opts.EnableSTAsZeroSample = zeroIngestion
+			// No WAL, so that the appender dominates the measurement.
+			h, err := NewHead(nil, nil, nil, nil, opts, nil)
+			require.NoError(b, err)
+			b.Cleanup(func() {
+				require.NoError(b, h.Close())
+			})
+
+			const st = 1
+			ts := 10 * DefaultBlockDuration
+			refs := make([]storage.SeriesRef, len(series))
+			appendAll := func() {
+				app := h.AppenderV2(b.Context())
+				for i, s := range series {
+					var err error
+					refs[i], err = app.Append(refs[i], s.Labels(), st, ts, 1, nil, nil, storage.AOptions{})
+					require.NoError(b, err)
+				}
+				require.NoError(b, app.Commit())
+				ts += 15_000
+			}
+			appendAll() // Moves the head's min valid time past st.
+
+			b.ReportAllocs()
+			b.ResetTimer()
+			for b.Loop() {
+				appendAll()
+			}
+		})
+	}
+}
