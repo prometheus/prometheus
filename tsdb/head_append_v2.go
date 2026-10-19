@@ -409,6 +409,8 @@ func (a *headAppenderV2) bestEffortAppendSTZeroSample(s *memSeries, ls labels.La
 		err      error
 		appended *memSeries
 	)
+	// The zero sample's start timestamp is st too, matching the samples that follow,
+	// so ST-capable chunks don't have to encode a start timestamp change.
 	switch {
 	case fh != nil:
 		zeroFloatHistogram := &histogram.FloatHistogram{
@@ -419,7 +421,7 @@ func (a *headAppenderV2) bestEffortAppendSTZeroSample(s *memSeries, ls labels.La
 			ZeroThreshold: fh.ZeroThreshold,
 			CustomValues:  fh.CustomValues,
 		}
-		appended, err = a.appendFloatHistogram(s, 0, st, zeroFloatHistogram, true)
+		appended, err = a.appendFloatHistogram(s, st, st, zeroFloatHistogram, true)
 	case h != nil:
 		zeroHistogram := &histogram.Histogram{
 			// The STZeroSample represents a counter reset by definition.
@@ -429,9 +431,9 @@ func (a *headAppenderV2) bestEffortAppendSTZeroSample(s *memSeries, ls labels.La
 			ZeroThreshold: h.ZeroThreshold,
 			CustomValues:  h.CustomValues,
 		}
-		appended, err = a.appendHistogram(s, 0, st, zeroHistogram, true)
+		appended, err = a.appendHistogram(s, st, st, zeroHistogram, true)
 	default:
-		appended, err = a.appendFloat(s, 0, st, 0, true)
+		appended, err = a.appendFloat(s, st, st, 0, true)
 	}
 
 	if err != nil {

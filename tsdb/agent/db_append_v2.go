@@ -204,6 +204,8 @@ func (a *appenderV2) bestEffortAppendSTZeroSample(s *memSeries, ls labels.Labels
 		return
 	}
 
+	// The zero sample's start timestamp is st too, matching the samples that follow,
+	// so storage receiving them doesn't see a start timestamp change.
 	switch {
 	case fh != nil:
 		zeroFloatHistogram := &histogram.FloatHistogram{
@@ -214,7 +216,7 @@ func (a *appenderV2) bestEffortAppendSTZeroSample(s *memSeries, ls labels.Labels
 			ZeroThreshold: fh.ZeroThreshold,
 			CustomValues:  fh.CustomValues,
 		}
-		a.pendingFloatHistograms = append(a.pendingFloatHistograms, record.RefFloatHistogramSample{Ref: s.ref, T: st, FH: zeroFloatHistogram})
+		a.pendingFloatHistograms = append(a.pendingFloatHistograms, record.RefFloatHistogramSample{Ref: s.ref, ST: st, T: st, FH: zeroFloatHistogram})
 		a.floatHistogramSeries = append(a.floatHistogramSeries, s)
 		a.metrics.totalAppendedSamples.WithLabelValues(sampleMetricTypeHistogram).Inc()
 	case h != nil:
@@ -226,11 +228,11 @@ func (a *appenderV2) bestEffortAppendSTZeroSample(s *memSeries, ls labels.Labels
 			ZeroThreshold: h.ZeroThreshold,
 			CustomValues:  h.CustomValues,
 		}
-		a.pendingHistograms = append(a.pendingHistograms, record.RefHistogramSample{Ref: s.ref, T: st, H: zeroHistogram})
+		a.pendingHistograms = append(a.pendingHistograms, record.RefHistogramSample{Ref: s.ref, ST: st, T: st, H: zeroHistogram})
 		a.histogramSeries = append(a.histogramSeries, s)
 		a.metrics.totalAppendedSamples.WithLabelValues(sampleMetricTypeHistogram).Inc()
 	default:
-		a.pendingSamples = append(a.pendingSamples, record.RefSample{Ref: s.ref, T: st, V: 0})
+		a.pendingSamples = append(a.pendingSamples, record.RefSample{Ref: s.ref, ST: st, T: st, V: 0})
 		a.sampleSeries = append(a.sampleSeries, s)
 		a.metrics.totalAppendedSamples.WithLabelValues(sampleMetricTypeFloat).Inc()
 	}
