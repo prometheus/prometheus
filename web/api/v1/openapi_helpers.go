@@ -448,3 +448,23 @@ func matrixExample(m promql.Matrix) *yaml.Node {
 	resp.Data.Result = m
 	return marshalToYAMLNode(resp)
 }
+
+func searchTermsSchema(description string, example any) *base.SchemaProxy {
+	schema := &base.Schema{
+		Type:        []string{"array"},
+		Items:       &base.DynamicValue[*base.SchemaProxy, bool]{A: stringSchema()},
+		Description: description,
+		MaxItems:    int64Ptr(maxSearchTermsPerRequest),
+	}
+	if example != nil {
+		schema.Example = createYAMLNode(example)
+	}
+	return base.CreateSchemaProxy(schema)
+}
+
+func stringArraySchema() *base.SchemaProxy {
+	return base.CreateSchemaProxy(&base.Schema{
+		Type:  []string{"array"},
+		Items: &base.DynamicValue[*base.SchemaProxy, bool]{A: stringSchema()},
+	})
+}
