@@ -480,17 +480,31 @@ func TestScrapeCacheMetadataInterning(t *testing.T) {
 	}, m1)
 	require.Equal(t, m1, m2)
 
-	require.Equal(t, unsafe.StringData(m1.MetricFamily), unsafe.StringData(m2.MetricFamily))
-	require.Equal(t, unsafe.StringData(m1.Help), unsafe.StringData(m2.Help))
-	require.Equal(t, unsafe.StringData(m1.Unit), unsafe.StringData(m2.Unit))
+	require.Same(t, unsafe.StringData(m1.MetricFamily), unsafe.StringData(m2.MetricFamily))
+	require.Same(t, unsafe.StringData(m1.Help), unsafe.StringData(m2.Help))
+	require.Same(t, unsafe.StringData(m1.Unit), unsafe.StringData(m2.Unit))
 
 	l1 := c1.ListMetadata()
 	l2 := c2.ListMetadata()
 	require.Len(t, l1, 1)
 	require.Len(t, l2, 1)
-	require.Equal(t, unsafe.StringData(l1[0].MetricFamily), unsafe.StringData(l2[0].MetricFamily))
-	require.Equal(t, unsafe.StringData(l1[0].Help), unsafe.StringData(l2[0].Help))
-	require.Equal(t, unsafe.StringData(l1[0].Unit), unsafe.StringData(l2[0].Unit))
+	require.Same(t, unsafe.StringData(l1[0].MetricFamily), unsafe.StringData(l2[0].MetricFamily))
+	require.Same(t, unsafe.StringData(l1[0].Help), unsafe.StringData(l2[0].Help))
+	require.Same(t, unsafe.StringData(l1[0].Unit), unsafe.StringData(l2[0].Unit))
+
+	c3 := newScrapeCache(metrics)
+	internedMF := c3.setMetadata(strings.Clone("http_requests_total"), metadata.Metadata{
+		Type: model.MetricTypeCounter,
+		Help: strings.Clone("Total number of HTTP requests across all worker goroutines."),
+		Unit: strings.Clone("requests"),
+	})
+	m3, ok := c3.GetMetadata("http_requests_total")
+	require.True(t, ok)
+	require.Equal(t, m1, m3)
+	require.Same(t, unsafe.StringData(m1.MetricFamily), unsafe.StringData(internedMF))
+	require.Same(t, unsafe.StringData(m1.MetricFamily), unsafe.StringData(m3.MetricFamily))
+	require.Same(t, unsafe.StringData(m1.Help), unsafe.StringData(m3.Help))
+	require.Same(t, unsafe.StringData(m1.Unit), unsafe.StringData(m3.Unit))
 }
 
 func TestIsSeriesPartOfFamily(t *testing.T) {
