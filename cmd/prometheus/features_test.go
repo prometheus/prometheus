@@ -129,4 +129,5 @@ func TestSetFeatureListOptions_MetadataWALRecords(t *testing.T) {
 	require.True(t, c.scrape.AppendMetadata)
 	require.True(t, c.web.AppendMetadata)
 	require.True(t, c.tsdb.EnableMetadataWALRecords)
+	require.True(t, c.agent.EnableMetadataWALRecords)
 }
