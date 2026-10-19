@@ -26,6 +26,7 @@ import (
 
 	"github.com/gogo/protobuf/proto"
 	"github.com/golang/snappy"
+	remoteapi "github.com/prometheus/client_golang/exp/api/remote"
 	config_util "github.com/prometheus/common/config"
 	"github.com/prometheus/common/model"
 	"github.com/stretchr/testify/require"
@@ -1093,4 +1094,62 @@ func createOverlappingSeriesHandler(t *testing.T, queries []*prompb.Query) http.
 			require.NoError(t, err)
 		}
 	})
+}
+
+func TestClientWriteModeContentType(t *testing.T) {
+	for _, tc := range []struct {
+		name                string
+		protoMsg            remoteapi.WriteMessageType
+		mode                config.RemoteWriteMode
+		expectedContentType string
+	}{
+		{
+			name:                "v1 default",
+			protoMsg:            remoteapi.WriteV1MessageType,
+			mode:                config.RemoteWriteModeNone,
+			expectedContentType: "application/x-protobuf",
+		},
+		{
+			name:                "v2 default",
+			protoMsg:            remoteapi.WriteV2MessageType,
+			mode:                config.RemoteWriteModeNone,
+			expectedContentType: "application/x-protobuf;proto=io.prometheus.write.v2.Request",
+		},
+		{
+			name:                "v2 stateless",
+			protoMsg:            remoteapi.WriteV2MessageType,
+			mode:                config.RemoteWriteModeStateless,
+			expectedContentType: "application/x-protobuf;proto=io.prometheus.write.v2.Request;mode=stateless",
+		},
+		{
+			name:                "v2 stateless-typed",
+			protoMsg:            remoteapi.WriteV2MessageType,
+			mode:                config.RemoteWriteModeStatelessTyped,
+			expectedContentType: "application/x-protobuf;proto=io.prometheus.write.v2.Request;mode=stateless-typed",
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			var gotContentType string
+			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				gotContentType = r.Header.Get("Content-Type")
+				w.WriteHeader(http.StatusNoContent)
+			}))
+			t.Cleanup(server.Close)
+
+			serverURL, err := url.Parse(server.URL)
+			require.NoError(t, err)
+
+			c, err := NewWriteClient("test", &ClientConfig{
+				URL:           &config_util.URL{URL: serverURL},
+				Timeout:       model.Duration(time.Second),
+				WriteProtoMsg: tc.protoMsg,
+				WriteMode:     tc.mode,
+			})
+			require.NoError(t, err)
+
+			_, err = c.Store(t.Context(), []byte{}, 0)
+			require.NoError(t, err)
+			require.Equal(t, tc.expectedContentType, gotContentType)
+		})
+	}
 }
