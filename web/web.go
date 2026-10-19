@@ -521,12 +521,7 @@ func New(logger *slog.Logger, o *Options) *Handler {
 			fmt.Fprintf(w, "Error reading React index.html: %v", err)
 			return
 		}
-		replacedIdx := bytes.ReplaceAll(idx, []byte("CONSOLES_LINK_PLACEHOLDER"), []byte(h.consolesPath()))
-		replacedIdx = bytes.ReplaceAll(replacedIdx, []byte("TITLE_PLACEHOLDER"), []byte(h.options.PageTitle))
-		replacedIdx = bytes.ReplaceAll(replacedIdx, []byte("AGENT_MODE_PLACEHOLDER"), []byte(strconv.FormatBool(h.options.IsAgent)))
-		replacedIdx = bytes.ReplaceAll(replacedIdx, []byte("READY_PLACEHOLDER"), []byte(strconv.FormatBool(h.isReady())))
-		replacedIdx = bytes.ReplaceAll(replacedIdx, []byte("LOOKBACKDELTA_PLACEHOLDER"), []byte(model.Duration(h.options.LookbackDelta).String()))
-		w.Write(replacedIdx)
+		w.Write(h.renderReactIndex(idx))
 	}
 
 	// Serve the React app.
@@ -976,6 +971,16 @@ func (h *Handler) consolesPath() string {
 		}
 	}
 	return ""
+}
+
+// renderReactIndex replaces the placeholders in the React app's index.html.
+func (h *Handler) renderReactIndex(idx []byte) []byte {
+	idx = bytes.ReplaceAll(idx, []byte("CONSOLES_LINK_PLACEHOLDER"), []byte(h.consolesPath()))
+	idx = bytes.ReplaceAll(idx, []byte("TITLE_PLACEHOLDER"), []byte(h.options.PageTitle))
+	idx = bytes.ReplaceAll(idx, []byte("AGENT_MODE_PLACEHOLDER"), []byte(strconv.FormatBool(h.options.IsAgent)))
+	idx = bytes.ReplaceAll(idx, []byte("READY_PLACEHOLDER"), []byte(strconv.FormatBool(h.isReady())))
+	idx = bytes.ReplaceAll(idx, []byte("LOOKBACKDELTA_PLACEHOLDER"), []byte(model.Duration(h.options.LookbackDelta).String()))
+	return idx
 }
 
 func setPathWithPrefix(prefix string) func(handlerName string, handler http.HandlerFunc) http.HandlerFunc {
