@@ -24,7 +24,9 @@ import (
 	"testing"
 	"time"
 
+	"github.com/fsnotify/fsnotify"
 	"github.com/prometheus/client_golang/prometheus"
+	dto "github.com/prometheus/client_model/go"
 	"github.com/prometheus/common/model"
 	"github.com/stretchr/testify/require"
 	"go.uber.org/goleak"
@@ -516,4 +518,37 @@ func TestRemoveFile(t *testing.T) {
 			},
 		},
 	)
+}
+
+func TestNativeHistogramMetrics(t *testing.T) {
+	reg := prometheus.NewRegistry()
+	m := newDiscovererMetrics(reg, nil).(*fileMetrics)
+	require.NoError(t, m.Register())
+	defer m.Unregister()
+	watcher, err := fsnotify.NewWatcher()
+	require.NoError(t, err)
+	defer watcher.Close()
+	d := &Discovery{metrics: m, watcher: watcher}
+	d.refresh(context.Background(), make(chan []*targetgroup.Group, 1))
+	metric := &dto.Metric{}
+	require.NoError(t, m.fileSDScanDurationHistogram.Write(metric))
+	require.Nil(t, metric.Summary)
+	h := metric.GetHistogram()
+	require.NotNil(t, h)
+	require.NotNil(t, h.Schema)
+	require.Equal(t, uint64(1), h.GetSampleCount())
+	require.GreaterOrEqual(t, h.GetSampleSum(), float64(0))
+	switch {
+	case h.GetZeroCount() == 1:
+		require.Empty(t, h.PositiveSpan)
+	case len(h.PositiveSpan) > 0:
+		require.Zero(t, h.GetZeroCount())
+	default:
+		require.Fail(t, "observation was not recorded in the zero or positive bucket")
+	}
+	summary := &dto.Metric{}
+	require.NoError(t, m.fileSDScanDuration.Write(summary))
+	require.Equal(t, h.GetSampleCount(), summary.GetSummary().GetSampleCount())
+	require.Equal(t, h.GetSampleSum(), summary.GetSummary().GetSampleSum())
+	require.Len(t, summary.GetSummary().Quantile, 3)
 }

@@ -127,19 +127,28 @@ func NewCompactorMetrics(r prometheus.Registerer) *CompactorMetrics {
 		NativeHistogramMinResetDuration: 1 * time.Hour,
 	})
 	m.ChunkSize = prometheus.NewHistogram(prometheus.HistogramOpts{
-		Name:    "prometheus_tsdb_compaction_chunk_size_bytes",
-		Help:    "Final size of chunks on their first compaction",
-		Buckets: prometheus.ExponentialBuckets(32, 1.5, 12),
+		Name:                            "prometheus_tsdb_compaction_chunk_size_bytes",
+		Help:                            "Final size of chunks on their first compaction",
+		Buckets:                         prometheus.ExponentialBuckets(32, 1.5, 12),
+		NativeHistogramBucketFactor:     1.1,
+		NativeHistogramMaxBucketNumber:  100,
+		NativeHistogramMinResetDuration: 1 * time.Hour,
 	})
 	m.ChunkSamples = prometheus.NewHistogram(prometheus.HistogramOpts{
-		Name:    "prometheus_tsdb_compaction_chunk_samples",
-		Help:    "Final number of samples on their first compaction",
-		Buckets: prometheus.ExponentialBuckets(4, 1.5, 12),
+		Name:                            "prometheus_tsdb_compaction_chunk_samples",
+		Help:                            "Final number of samples on their first compaction",
+		Buckets:                         prometheus.ExponentialBuckets(4, 1.5, 12),
+		NativeHistogramBucketFactor:     1.1,
+		NativeHistogramMaxBucketNumber:  100,
+		NativeHistogramMinResetDuration: 1 * time.Hour,
 	})
 	m.ChunkRange = prometheus.NewHistogram(prometheus.HistogramOpts{
-		Name:    "prometheus_tsdb_compaction_chunk_range_seconds",
-		Help:    "Final time range of chunks on their first compaction",
-		Buckets: prometheus.ExponentialBuckets(100, 4, 10),
+		Name:                            "prometheus_tsdb_compaction_chunk_range_seconds",
+		Help:                            "Final time range of chunks on their first compaction",
+		Buckets:                         prometheus.ExponentialBuckets(100, 4, 10),
+		NativeHistogramBucketFactor:     1.1,
+		NativeHistogramMaxBucketNumber:  100,
+		NativeHistogramMinResetDuration: 1 * time.Hour,
 	})
 
 	if r != nil {

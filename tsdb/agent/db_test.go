@@ -498,3 +498,26 @@ func BenchmarkGetOrCreate(b *testing.B) {
 		}
 	})
 }
+
+func TestNativeHistogramMetrics(t *testing.T) {
+	reg := prometheus.NewRegistry()
+	s := createTestAgentDB(t, reg, DefaultOptions())
+	defer func() { require.NoError(t, s.Close()) }()
+	app := s.Appender(context.Background())
+	_, err := app.Append(0, labels.FromStrings("a", "b"), 0, 0)
+	require.NoError(t, err)
+	require.NoError(t, app.Commit())
+	for range 3 {
+		_, err := s.wal.NextSegment()
+		require.NoError(t, err)
+	}
+	require.NoError(t, s.truncate(1))
+	summary := &dto.Metric{}
+	histogram := &dto.Metric{}
+	require.NoError(t, s.metrics.walTruncateDuration.Write(summary))
+	require.NoError(t, s.metrics.walTruncateDurationHistogram.Write(histogram))
+	require.NotNil(t, histogram.GetHistogram().Schema)
+	require.Positive(t, histogram.GetHistogram().GetSampleCount())
+	require.Equal(t, summary.GetSummary().GetSampleCount(), histogram.GetHistogram().GetSampleCount())
+	require.Equal(t, summary.GetSummary().GetSampleSum(), histogram.GetHistogram().GetSampleSum())
+}

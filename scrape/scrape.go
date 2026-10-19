@@ -346,9 +346,10 @@ func (sp *scrapePool) reload(cfg *config.ScrapeConfig) error {
 	for _, c := range oldUnixSocketClients {
 		c.CloseIdleConnections()
 	}
-	sp.metrics.targetReloadIntervalLength.WithLabelValues(time.Duration(sp.config.ScrapeInterval).String()).Observe(
-		time.Since(start).Seconds(),
-	)
+	duration := time.Since(start).Seconds()
+	interval := time.Duration(sp.config.ScrapeInterval).String()
+	sp.metrics.targetReloadIntervalLength.WithLabelValues(interval).Observe(duration)
+	sp.metrics.targetReloadIntervalLengthHistogram.WithLabelValues(interval).Observe(duration)
 	return nil
 }
 

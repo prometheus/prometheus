@@ -23,6 +23,7 @@ import (
 
 	v3 "github.com/envoyproxy/go-control-plane/envoy/service/discovery/v3"
 	"github.com/prometheus/client_golang/prometheus"
+	dto "github.com/prometheus/client_model/go"
 	"github.com/prometheus/common/model"
 	"github.com/prometheus/common/promslog"
 	"github.com/stretchr/testify/require"
@@ -302,4 +303,34 @@ func TestPollingDisappearingTargets(t *testing.T) {
 
 	metrics.Unregister()
 	refreshMetrics.Unregister()
+}
+
+func TestNativeHistogramMetrics(t *testing.T) {
+	reg := prometheus.NewRegistry()
+	m := newDiscovererMetrics(reg, nil).(*xdsMetrics)
+	require.NoError(t, m.Register())
+	defer m.Unregister()
+	d := &fetchDiscovery{metrics: m, logger: nopLogger, client: testResourceClient{fetch: func(context.Context) (*v3.DiscoveryResponse, error) { return nil, nil }}}
+	d.poll(context.Background(), make(chan []*targetgroup.Group, 1))
+	metric := &dto.Metric{}
+	require.NoError(t, m.fetchDurationHistogram.Write(metric))
+	require.Nil(t, metric.Summary)
+	h := metric.GetHistogram()
+	require.NotNil(t, h)
+	require.NotNil(t, h.Schema)
+	require.Equal(t, uint64(1), h.GetSampleCount())
+	require.GreaterOrEqual(t, h.GetSampleSum(), float64(0))
+	switch {
+	case h.GetZeroCount() == 1:
+		require.Empty(t, h.PositiveSpan)
+	case len(h.PositiveSpan) > 0:
+		require.Zero(t, h.GetZeroCount())
+	default:
+		require.Fail(t, "observation was not recorded in the zero or positive bucket")
+	}
+	summary := &dto.Metric{}
+	require.NoError(t, m.fetchDuration.Write(summary))
+	require.Equal(t, h.GetSampleCount(), summary.GetSummary().GetSampleCount())
+	require.Equal(t, h.GetSampleSum(), summary.GetSummary().GetSampleSum())
+	require.Len(t, summary.GetSummary().Quantile, 3)
 }

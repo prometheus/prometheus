@@ -32,6 +32,7 @@ import (
 	"github.com/oklog/ulid/v2"
 	"github.com/prometheus/client_golang/prometheus"
 	prom_testutil "github.com/prometheus/client_golang/prometheus/testutil"
+	dto "github.com/prometheus/client_model/go"
 	"github.com/prometheus/common/promslog"
 	"github.com/stretchr/testify/require"
 
@@ -2589,6 +2590,46 @@ func TestDelayedCompactionDoesNotBlockUnrelatedOps(t *testing.T) {
 			// The blocks were compacted.
 			db.Compact(context.Background())
 			require.Len(t, db.Blocks(), 2)
+		})
+	}
+}
+
+func TestCompactorNativeHistogramMetrics(t *testing.T) {
+	metrics := NewCompactorMetrics(nil)
+	for _, tc := range []struct {
+		name      string
+		histogram prometheus.Histogram
+		values    []float64
+		wantSum   float64
+		buckets   []float64
+	}{
+		{"chunk_size", metrics.ChunkSize, []float64{32, 256, 4096}, 4384, prometheus.ExponentialBuckets(32, 1.5, 12)},
+		{"chunk_samples", metrics.ChunkSamples, []float64{4, 120, 240}, 364, prometheus.ExponentialBuckets(4, 1.5, 12)},
+		{"chunk_range", metrics.ChunkRange, []float64{60, 600, 7200}, 7860, prometheus.ExponentialBuckets(100, 4, 10)},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			for _, value := range tc.values {
+				tc.histogram.Observe(value)
+			}
+			metric := &dto.Metric{}
+			require.NoError(t, tc.histogram.Write(metric))
+			h := metric.GetHistogram()
+			require.NotNil(t, h)
+			require.NotNil(t, h.Schema)
+			require.Equal(t, uint64(len(tc.values)), h.GetSampleCount())
+			require.Equal(t, tc.wantSum, h.GetSampleSum())
+			require.NotEmpty(t, h.PositiveSpan)
+			require.Len(t, h.Bucket, len(tc.buckets))
+			for i, boundary := range tc.buckets {
+				require.Equal(t, boundary, h.Bucket[i].GetUpperBound())
+				var count uint64
+				for _, value := range tc.values {
+					if value <= boundary {
+						count++
+					}
+				}
+				require.Equal(t, count, h.Bucket[i].GetCumulativeCount())
+			}
 		})
 	}
 }

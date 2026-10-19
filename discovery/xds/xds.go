@@ -130,6 +130,7 @@ func (d *fetchDiscovery) poll(ctx context.Context, ch chan<- []*targetgroup.Grou
 	response, err := d.client.Fetch(ctx)
 	elapsed := time.Since(t0)
 	d.metrics.fetchDuration.Observe(elapsed.Seconds())
+	d.metrics.fetchDurationHistogram.Observe(elapsed.Seconds())
 
 	// Check the context before in order to exit early.
 	select {

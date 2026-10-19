@@ -330,7 +330,9 @@ func (d *Discovery) stop() {
 func (d *Discovery) refresh(ctx context.Context, ch chan<- []*targetgroup.Group) {
 	t0 := time.Now()
 	defer func() {
-		d.metrics.fileSDScanDuration.Observe(time.Since(t0).Seconds())
+		duration := time.Since(t0).Seconds()
+		d.metrics.fileSDScanDuration.Observe(duration)
+		d.metrics.fileSDScanDurationHistogram.Observe(duration)
 	}()
 	ref := map[string]int{}
 	for _, p := range d.listFiles() {
