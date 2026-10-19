@@ -286,7 +286,7 @@ func (a *headAppenderV2) appendFloat(s *memSeries, st, t int64, v float64, fastR
 	}
 
 	b := a.getCurrentBatch(stFloat, s.ref)
-	b.floats = append(b.floats, record.RefSample{Ref: s.ref, ST: st, T: t, V: v})
+	b.floats = append(b.floats, record.RefSample{Ref: s.ref, ST: a.storedST(st), T: t, V: v})
 	b.floatSeries = append(b.floatSeries, s)
 	return s, nil
 }
@@ -320,7 +320,7 @@ func (a *headAppenderV2) appendHistogram(s *memSeries, st, t int64, h *histogram
 		sTyp = stCustomBucketHistogram
 	}
 	b := a.getCurrentBatch(sTyp, s.ref)
-	b.histograms = append(b.histograms, record.RefHistogramSample{Ref: s.ref, ST: st, T: t, H: h})
+	b.histograms = append(b.histograms, record.RefHistogramSample{Ref: s.ref, ST: a.storedST(st), T: t, H: h})
 	b.histogramSeries = append(b.histogramSeries, s)
 	return s, nil
 }
@@ -355,7 +355,7 @@ func (a *headAppenderV2) appendFloatHistogram(s *memSeries, st, t int64, fh *his
 		sTyp = stCustomBucketFloatHistogram
 	}
 	b := a.getCurrentBatch(sTyp, s.ref)
-	b.floatHistograms = append(b.floatHistograms, record.RefFloatHistogramSample{Ref: s.ref, ST: st, T: t, FH: fh})
+	b.floatHistograms = append(b.floatHistograms, record.RefFloatHistogramSample{Ref: s.ref, ST: a.storedST(st), T: t, FH: fh})
 	b.floatHistogramSeries = append(b.floatHistogramSeries, s)
 	return s, nil
 }
