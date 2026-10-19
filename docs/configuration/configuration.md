@@ -3979,6 +3979,39 @@ url: <string>
 # Read more on https://prometheus.io/docs/specs/remote_write_spec_2_0/#io-prometheus-write-v2-request
 [ protobuf_message: <prometheus.WriteRequest | io.prometheus.write.v2.Request> | default = prometheus.WriteRequest ]
 
+# EXPERIMENTAL: Remote-Write 2.0 mode to use when `protobuf_message` is `io.prometheus.write.v2.Request`.
+#
+# * `none`: default Remote-Write 2.0 behavior with no additional restrictions.
+# * `stateless`: appends `;mode=stateless` to the Content-Type header, defaults `send_native_histograms` to `true`,
+#   requires `--enable-feature=metadata-wal-records` or `--enable-feature=type-and-unit-labels`, and drops classic
+#   histogram float series, detached exemplars, and series with unspecified metadata type.
+# * `stateless-st`: appends `;mode=stateless-st` to the Content-Type header, includes all `stateless` rules,
+#   additionally requires `--enable-feature=st-storage`, and drops cumulative metrics missing a start timestamp.
+#
+# Once metadata relabeling (https://github.com/prometheus/proposals/pull/104) is added, untyped series (such as
+# recording rule outputs) can be relabeled to `counter` or `gauge` via `write_relabel_configs` or `metric_relabel_configs`
+# (the `__type__` rules below already work when `--enable-feature=type-and-unit-labels` is enabled):
+#   write_relabel_configs:
+#     - source_labels: [__type__, __help__]
+#       regex: ';(.+)'
+#       target_label: __help__
+#       replacement: '$1 (type inferred from untyped)'
+#     - source_labels: [__type__, __help__]
+#       regex: ';'
+#       target_label: __help__
+#       replacement: '(type inferred from untyped)'
+#     - source_labels: [__name__, __type__]
+#       regex: '.*_total;'
+#       target_label: __type__
+#       replacement: counter
+#     - source_labels: [__type__]
+#       regex: ''
+#       target_label: __type__
+#       replacement: gauge
+#
+# Read more on https://prometheus.io/docs/specs/prw/remote_write_spec_2_0/#modes
+[ mode: <none | stateless | stateless-st> | default = none ]
+
 # Timeout for requests to the remote write endpoint.
 [ remote_timeout: <duration> | default = 30s ]
 
@@ -4000,7 +4033,7 @@ write_relabel_configs:
 [ send_exemplars: <boolean> | default = false ]
 
 # Enables sending of native histograms, also known as sparse histograms, over remote write.
-# For the `io.prometheus.write.v2.Request` message, this option is noop (always true).
+# Defaults to `true` when `mode` is `stateless` or `stateless-st`.
 [ send_native_histograms: <boolean> | default = false ]
 
 # When enabled, remote-write will resolve the URL host name via DNS, choose one of the IP addresses at random, and connect to it.
