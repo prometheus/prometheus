@@ -62,7 +62,7 @@ load 10s
   nh {{schema:0 sum:10 count:5 buckets:[1 2 2]}}x100
 `)
 	t.Cleanup(func() { require.NoError(t, db.Close()) })
-	remoteStorage := remote.NewStorage(nil, prometheus.NewRegistry(), nil, t.TempDir(), time.Second, nil, false)
+	remoteStorage := remote.NewStorage(nil, prometheus.NewRegistry(), nil, t.TempDir(), time.Second, nil, false, false, false)
 	t.Cleanup(func() { require.NoError(t, remoteStorage.Close()) })
 
 	for _, tc := range []struct {

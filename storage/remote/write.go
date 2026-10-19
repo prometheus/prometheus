@@ -76,12 +76,34 @@ type WriteStorage struct {
 	recordBuf *record.BuffersPool
 
 	// For timestampTracker.
-	highestTimestamp        *maxTimestamp
-	enableTypeAndUnitLabels bool
+	highestTimestamp         *maxTimestamp
+	enableTypeAndUnitLabels  bool
+	enableMetadataWALRecords bool
+	enableSTStorage          bool
+}
+
+// ValidateRemoteWriteFeatures validates that the required feature flags are enabled for all remote_write configurations.
+func ValidateRemoteWriteFeatures(rwConfs []*config.RemoteWriteConfig, enableTypeAndUnitLabels, enableMetadataWALRecords, enableSTStorage bool) error {
+	for _, rwConf := range rwConfs {
+		switch rwConf.Mode {
+		case config.RemoteWriteModeStateless:
+			if !enableTypeAndUnitLabels && !enableMetadataWALRecords {
+				return fmt.Errorf("remote_write mode %q requires --enable-feature=metadata-wal-records or --enable-feature=type-and-unit-labels", rwConf.Mode)
+			}
+		case config.RemoteWriteModeStatelessTyped:
+			if !enableTypeAndUnitLabels && !enableMetadataWALRecords {
+				return fmt.Errorf("remote_write mode %q requires --enable-feature=metadata-wal-records or --enable-feature=type-and-unit-labels", rwConf.Mode)
+			}
+			if !enableSTStorage {
+				return fmt.Errorf("remote_write mode %q requires --enable-feature=st-storage", rwConf.Mode)
+			}
+		}
+	}
+	return nil
 }
 
 // NewWriteStorage creates and runs a WriteStorage.
-func NewWriteStorage(logger *slog.Logger, reg prometheus.Registerer, dir string, flushDeadline time.Duration, sm ReadyScrapeManager, enableTypeAndUnitLabels bool) *WriteStorage {
+func NewWriteStorage(logger *slog.Logger, reg prometheus.Registerer, dir string, flushDeadline time.Duration, sm ReadyScrapeManager, enableTypeAndUnitLabels, enableMetadataWALRecords, enableSTStorage bool) *WriteStorage {
 	if logger == nil {
 		logger = promslog.NewNopLogger()
 	}
@@ -105,8 +127,10 @@ func NewWriteStorage(logger *slog.Logger, reg prometheus.Registerer, dir string,
 				Help:      "Highest timestamp that has come into the remote storage via the Appender interface, in seconds since epoch. Initialized to 0 when no data has been received yet. Deprecated, check prometheus_remote_storage_queue_highest_timestamp_seconds which is more accurate.",
 			}),
 		},
-		recordBuf:               record.NewBuffersPool(),
-		enableTypeAndUnitLabels: enableTypeAndUnitLabels,
+		recordBuf:                record.NewBuffersPool(),
+		enableTypeAndUnitLabels:  enableTypeAndUnitLabels,
+		enableMetadataWALRecords: enableMetadataWALRecords,
+		enableSTStorage:          enableSTStorage,
 	}
 	if reg != nil {
 		reg.MustRegister(rws.highestTimestamp)
@@ -144,6 +168,10 @@ func (rws *WriteStorage) ApplyConfig(conf *config.Config) error {
 	rws.mtx.Lock()
 	defer rws.mtx.Unlock()
 
+	if err := ValidateRemoteWriteFeatures(conf.RemoteWriteConfigs, rws.enableTypeAndUnitLabels, rws.enableMetadataWALRecords, rws.enableSTStorage); err != nil {
+		return err
+	}
+
 	// Remote write queues only need to change if the remote write config or
 	// external labels change.
 	externalLabelUnchanged := labels.Equal(conf.GlobalConfig.ExternalLabels, rws.externalLabels)
@@ -173,6 +201,7 @@ func (rws *WriteStorage) ApplyConfig(conf *config.Config) error {
 		c, err := NewWriteClient(name, &ClientConfig{
 			URL:              rwConf.URL,
 			WriteProtoMsg:    rwConf.ProtobufMessage,
+			WriteMode:        rwConf.Mode,
 			Timeout:          rwConf.RemoteTimeout,
 			HTTPClientConfig: rwConf.HTTPClientConfig,
 			SigV4Config:      rwConf.SigV4Config,
@@ -219,6 +248,7 @@ func (rws *WriteStorage) ApplyConfig(conf *config.Config) error {
 			rwConf.SendNativeHistograms,
 			rws.enableTypeAndUnitLabels,
 			rwConf.ProtobufMessage,
+			rwConf.Mode,
 			rws.recordBuf,
 			rwConf.FailedRequestLogging,
 			rwConf.ConvertNHCBToClassic,

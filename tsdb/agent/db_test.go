@@ -45,7 +45,7 @@ func createTestAgentDB(t testing.TB, reg prometheus.Registerer, opts *Options) *
 
 	dbDir := t.TempDir()
 
-	rs := remote.NewStorage(promslog.NewNopLogger(), reg, startTime, dbDir, time.Second*30, nil, false)
+	rs := remote.NewStorage(promslog.NewNopLogger(), reg, startTime, dbDir, time.Second*30, nil, false, false, false)
 	t.Cleanup(func() {
 		require.NoError(t, rs.Close())
 	})
@@ -213,7 +213,7 @@ func TestLockfile(t *testing.T) {
 	tsdbutil.TestDirLockerUsage(t, func(t *testing.T, data string, createLock bool) (*tsdbutil.DirLocker, testutil.Closer) {
 		logger := promslog.NewNopLogger()
 		reg := prometheus.NewRegistry()
-		rs := remote.NewStorage(logger, reg, startTime, data, time.Second*30, nil, false)
+		rs := remote.NewStorage(logger, reg, startTime, data, time.Second*30, nil, false, false, false)
 		t.Cleanup(func() {
 			require.NoError(t, rs.Close())
 		})
@@ -304,7 +304,7 @@ func TestDuplicateSeriesRefsByHash(t *testing.T) {
 			opts := DefaultOptions()
 			opts.EnableMetadataWALRecords = true
 			opts.CheckpointFromInMemorySeries = inMemCheckpoint
-			rs1 := remote.NewStorage(promslog.NewNopLogger(), nil, startTime, dbDir, time.Second*30, nil, false)
+			rs1 := remote.NewStorage(promslog.NewNopLogger(), nil, startTime, dbDir, time.Second*30, nil, false, false, false)
 			db, err := Open(promslog.NewNopLogger(), nil, rs1, dbDir, opts)
 			require.NoError(t, err)
 
@@ -380,7 +380,7 @@ func TestDuplicateSeriesRefsByHash(t *testing.T) {
 			require.NoError(t, db.Close())
 			require.NoError(t, rs1.Close())
 
-			rs2 := remote.NewStorage(promslog.NewNopLogger(), nil, startTime, dbDir, time.Second*30, nil, false)
+			rs2 := remote.NewStorage(promslog.NewNopLogger(), nil, startTime, dbDir, time.Second*30, nil, false, false, false)
 			t.Cleanup(func() { require.NoError(t, rs2.Close()) })
 			db, err = Open(promslog.NewNopLogger(), nil, rs2, dbDir, opts)
 			require.NoError(t, err)
@@ -762,7 +762,7 @@ func TestWALReplayMetadata(t *testing.T) {
 	dir := t.TempDir()
 
 	l := promslog.NewNopLogger()
-	rs := remote.NewStorage(promslog.NewNopLogger(), nil, startTime, dir, 30*time.Second, nil, false)
+	rs := remote.NewStorage(promslog.NewNopLogger(), nil, startTime, dir, 30*time.Second, nil, false, false, false)
 	defer rs.Close()
 
 	db, err := Open(l, nil, rs, dir, opts)

@@ -103,7 +103,7 @@ func TestWriteStorageApplyConfig_NoDuplicateWriteConfigs(t *testing.T) {
 		},
 	} {
 		t.Run("", func(t *testing.T) {
-			s := NewWriteStorage(nil, nil, dir, time.Millisecond, nil, false)
+			s := NewWriteStorage(nil, nil, dir, time.Millisecond, nil, false, false, false)
 			conf := &config.Config{
 				GlobalConfig:       config.DefaultGlobalConfig,
 				RemoteWriteConfigs: tc.cfgs,
@@ -129,7 +129,7 @@ func TestWriteStorageApplyConfig_RestartOnNameChange(t *testing.T) {
 	hash, err := toHash(cfg)
 	require.NoError(t, err)
 
-	s := NewWriteStorage(nil, nil, dir, time.Millisecond, nil, false)
+	s := NewWriteStorage(nil, nil, dir, time.Millisecond, nil, false, false, false)
 
 	conf := &config.Config{
 		GlobalConfig:       config.DefaultGlobalConfig,
@@ -151,7 +151,7 @@ func TestWriteStorageApplyConfig_RestartOnNameChange(t *testing.T) {
 func TestWriteStorageApplyConfig_UpdateWithRegisterer(t *testing.T) {
 	dir := t.TempDir()
 
-	s := NewWriteStorage(nil, prometheus.NewRegistry(), dir, time.Millisecond, nil, false)
+	s := NewWriteStorage(nil, prometheus.NewRegistry(), dir, time.Millisecond, nil, false, false, false)
 	c1 := &config.RemoteWriteConfig{
 		Name: "named",
 		URL: &common_config.URL{
@@ -192,7 +192,7 @@ func TestWriteStorageApplyConfig_UpdateWithRegisterer(t *testing.T) {
 func TestWriteStorageApplyConfig_Lifecycle(t *testing.T) {
 	dir := t.TempDir()
 
-	s := NewWriteStorage(nil, nil, dir, defaultFlushDeadline, nil, false)
+	s := NewWriteStorage(nil, nil, dir, defaultFlushDeadline, nil, false, false, false)
 	conf := &config.Config{
 		GlobalConfig: config.DefaultGlobalConfig,
 		RemoteWriteConfigs: []*config.RemoteWriteConfig{
@@ -208,7 +208,7 @@ func TestWriteStorageApplyConfig_Lifecycle(t *testing.T) {
 func TestWriteStorageApplyConfig_UpdateExternalLabels(t *testing.T) {
 	dir := t.TempDir()
 
-	s := NewWriteStorage(nil, prometheus.NewRegistry(), dir, time.Second, nil, false)
+	s := NewWriteStorage(nil, prometheus.NewRegistry(), dir, time.Second, nil, false, false, false)
 
 	externalLabels := labels.FromStrings("external", "true")
 	conf := &config.Config{
@@ -236,7 +236,7 @@ func TestWriteStorageApplyConfig_UpdateExternalLabels(t *testing.T) {
 func TestWriteStorageApplyConfig_Idempotent(t *testing.T) {
 	dir := t.TempDir()
 
-	s := NewWriteStorage(nil, nil, dir, defaultFlushDeadline, nil, false)
+	s := NewWriteStorage(nil, nil, dir, defaultFlushDeadline, nil, false, false, false)
 	conf := &config.Config{
 		GlobalConfig: config.GlobalConfig{},
 		RemoteWriteConfigs: []*config.RemoteWriteConfig{
@@ -260,7 +260,7 @@ func TestWriteStorageApplyConfig_Idempotent(t *testing.T) {
 func TestWriteStorageApplyConfig_PartialUpdate(t *testing.T) {
 	dir := t.TempDir()
 
-	s := NewWriteStorage(nil, nil, dir, defaultFlushDeadline, nil, false)
+	s := NewWriteStorage(nil, nil, dir, defaultFlushDeadline, nil, false, false, false)
 
 	c0 := &config.RemoteWriteConfig{
 		RemoteTimeout: model.Duration(10 * time.Second),
@@ -372,16 +372,16 @@ func TestWriteStorage_CanRegisterMetricsAfterClosing(t *testing.T) {
 	dir := t.TempDir()
 	reg := prometheus.NewPedanticRegistry()
 
-	s := NewWriteStorage(nil, reg, dir, time.Millisecond, nil, false)
+	s := NewWriteStorage(nil, reg, dir, time.Millisecond, nil, false, false, false)
 	require.NoError(t, s.Close())
-	require.NotPanics(t, func() { NewWriteStorage(nil, reg, dir, time.Millisecond, nil, false) })
+	require.NotPanics(t, func() { NewWriteStorage(nil, reg, dir, time.Millisecond, nil, false, false, false) })
 }
 
 func TestWriteStorage_AppenderV2_AppendExemplars(t *testing.T) {
 	dir := t.TempDir()
 	reg := prometheus.NewPedanticRegistry()
 
-	s := NewWriteStorage(nil, reg, dir, time.Millisecond, nil, false)
+	s := NewWriteStorage(nil, reg, dir, time.Millisecond, nil, false, false, false)
 	defer func() { require.NoError(t, s.Close()) }()
 
 	app, ok := s.AppenderV2(t.Context()).(storage.ExemplarAppenderV2)
@@ -406,4 +406,97 @@ func TestWriteStorage_AppenderV2_AppendExemplars(t *testing.T) {
 
 	require.Equal(t, before+3, prom_testutil.ToFloat64(exemplarsIn))
 	require.Equal(t, float64(now/1000), s.highestTimestamp.Get())
+}
+
+func TestWriteStorageApplyConfig_ValidateRemoteWriteFeatures(t *testing.T) {
+	for _, tc := range []struct {
+		name                    string
+		mode                    config.RemoteWriteMode
+		enableTypeAndUnitLabels bool
+		enableMetadataWAL       bool
+		enableSTStorage         bool
+		expectedErr             string
+	}{
+		{
+			name:                    "stateless missing metadata features",
+			mode:                    config.RemoteWriteModeStateless,
+			enableTypeAndUnitLabels: false,
+			enableMetadataWAL:       false,
+			expectedErr:             "remote_write mode \"stateless\" requires --enable-feature=metadata-wal-records or --enable-feature=type-and-unit-labels",
+		},
+		{
+			name:                    "stateless with type-and-unit-labels",
+			mode:                    config.RemoteWriteModeStateless,
+			enableTypeAndUnitLabels: true,
+			enableMetadataWAL:       false,
+		},
+		{
+			name:                    "stateless with metadata-wal-records",
+			mode:                    config.RemoteWriteModeStateless,
+			enableTypeAndUnitLabels: false,
+			enableMetadataWAL:       true,
+		},
+		{
+			name:                    "stateless-typed missing st-storage",
+			mode:                    config.RemoteWriteModeStatelessTyped,
+			enableTypeAndUnitLabels: true,
+			enableMetadataWAL:       false,
+			enableSTStorage:         false,
+			expectedErr:             "remote_write mode \"stateless-typed\" requires --enable-feature=st-storage",
+		},
+		{
+			name:                    "stateless-typed with type-and-unit-labels and st-storage",
+			mode:                    config.RemoteWriteModeStatelessTyped,
+			enableTypeAndUnitLabels: true,
+			enableMetadataWAL:       false,
+			enableSTStorage:         true,
+		},
+		{
+			name:                    "stateless-typed with metadata-wal-records and st-storage",
+			mode:                    config.RemoteWriteModeStatelessTyped,
+			enableTypeAndUnitLabels: false,
+			enableMetadataWAL:       true,
+			enableSTStorage:         true,
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			dir := t.TempDir()
+			s := NewWriteStorage(
+				nil,
+				nil,
+				dir,
+				time.Millisecond,
+				nil,
+				tc.enableTypeAndUnitLabels,
+				tc.enableMetadataWAL,
+				tc.enableSTStorage,
+			)
+			t.Cleanup(func() { require.NoError(t, s.Close()) })
+
+			// First apply a valid default config so we can verify a failed reload does not tear down existing queues.
+			initialCfg := testRemoteWriteConfig()
+			require.NoError(t, s.ApplyConfig(&config.Config{
+				GlobalConfig:       config.DefaultGlobalConfig,
+				RemoteWriteConfigs: []*config.RemoteWriteConfig{initialCfg},
+			}))
+			require.Len(t, s.queues, 1)
+
+			rwCfg := testRemoteWriteConfig()
+			rwCfg.ProtobufMessage = remoteapi.WriteV2MessageType
+			rwCfg.SendNativeHistograms = true
+			rwCfg.Mode = tc.mode
+
+			err := s.ApplyConfig(&config.Config{
+				GlobalConfig:       config.DefaultGlobalConfig,
+				RemoteWriteConfigs: []*config.RemoteWriteConfig{rwCfg},
+			})
+			if tc.expectedErr != "" {
+				require.EqualError(t, err, tc.expectedErr)
+				require.Len(t, s.queues, 1, "existing queue must remain active when reload validation fails")
+				return
+			}
+			require.NoError(t, err)
+			require.Len(t, s.queues, 1)
+		})
+	}
 }
