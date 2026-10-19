@@ -17,11 +17,101 @@ import (
 	"errors"
 	"fmt"
 	"math"
+	"slices"
 
 	"github.com/prometheus/common/model"
 
 	"github.com/prometheus/prometheus/model/labels"
+	"github.com/prometheus/prometheus/model/value"
 )
+
+// ClassicBucketCounts returns the cumulative bucket counts of a valid NHCB, one per
+// custom bound followed by +Inf, along with its count and sum. It reuses buf.
+// Every returned value of a stale marker is a stale marker.
+func ClassicBucketCounts(nhcb any, buf []float64) (buckets []float64, count, sum float64, err error) {
+	var (
+		customValues    []float64
+		positiveBuckets []float64
+		idx             int // This index is to track buckets in Classic Histogram
+		currIdx         int // This index is to track buckets in Native Histogram
+	)
+
+	switch h := nhcb.(type) {
+	case *Histogram:
+		if !IsCustomBucketsSchema(h.Schema) {
+			return nil, 0, 0, errors.New("unsupported histogram schema, not a NHCB")
+		}
+
+		// Validate the histogram before conversion.
+		// The caller must ensure that the provided histogram is valid NHCB.
+		if h.Validate() != nil {
+			return nil, 0, 0, errors.New(h.Validate().Error())
+		}
+
+		customValues = h.CustomValues
+		positiveBuckets = slices.Grow(buf[:0], len(customValues)+1)[:len(customValues)+1]
+		clear(positiveBuckets)
+
+		// Histograms are in delta format so we first bring them to absolute format.
+		acc := int64(0)
+		for _, s := range h.PositiveSpans {
+			// Skipped buckets are empty, so leave them at zero.
+			idx += int(s.Offset)
+			for i := 0; i < int(s.Length); i++ {
+				acc += h.PositiveBuckets[currIdx]
+				positiveBuckets[idx] = float64(acc)
+				idx++
+				currIdx++
+			}
+		}
+		count = float64(h.Count)
+		sum = h.Sum
+	case *FloatHistogram:
+		if !IsCustomBucketsSchema(h.Schema) {
+			return nil, 0, 0, errors.New("unsupported histogram schema, not a NHCB")
+		}
+
+		// Validate the histogram before conversion.
+		// The caller must ensure that the provided histogram is valid NHCB.
+		if h.Validate() != nil {
+			return nil, 0, 0, errors.New(h.Validate().Error())
+		}
+		customValues = h.CustomValues
+		positiveBuckets = slices.Grow(buf[:0], len(customValues)+1)[:len(customValues)+1]
+		clear(positiveBuckets)
+
+		for _, span := range h.PositiveSpans {
+			// Since Float Histogram is already in absolute format we should
+			// keep the sparse buckets empty so we jump and go to next filled
+			// bucket index.
+			idx += int(span.Offset)
+			for i := 0; i < int(span.Length); i++ {
+				positiveBuckets[idx] = h.PositiveBuckets[currIdx]
+				idx++
+				currIdx++
+			}
+		}
+		count = h.Count
+		sum = h.Sum
+	default:
+		return nil, 0, 0, fmt.Errorf("unsupported histogram type: %T", h)
+	}
+
+	// Classic buckets are cumulative, and every value of a stale marker is stale.
+	isStale := value.IsStaleNaN(sum)
+	currCount := float64(0)
+	for i := range positiveBuckets {
+		currCount += positiveBuckets[i]
+		positiveBuckets[i] = currCount
+		if isStale {
+			positiveBuckets[i] = sum
+		}
+	}
+	if isStale {
+		count = sum
+	}
+	return positiveBuckets, count, sum, nil
+}
 
 // ConvertNHCBToClassic converts Native Histogram Custom Buckets (NHCB) to classic histogram series.
 // This conversion is needed in various scenarios where users need to get NHCB back to classic histogram format,
@@ -40,90 +130,31 @@ func ConvertNHCBToClassic(nhcb any, lset labels.Labels, lsetBuilder *labels.Buil
 	oldLabels := lsetBuilder.Labels()
 	defer lsetBuilder.Reset(oldLabels)
 
-	var (
-		customValues    []float64
-		positiveBuckets []float64
-		count, sum      float64
-		idx             int // This index is to track buckets in Classic Histogram
-		currIdx         int // This index is to track buckets in Native Histogram
-	)
-
+	buckets, count, sum, err := ClassicBucketCounts(nhcb, nil)
+	if err != nil {
+		return err
+	}
+	var customValues []float64
 	switch h := nhcb.(type) {
 	case *Histogram:
-		if !IsCustomBucketsSchema(h.Schema) {
-			return errors.New("unsupported histogram schema, not a NHCB")
-		}
-
-		// Validate the histogram before conversion.
-		// The caller must ensure that the provided histogram is valid NHCB.
-		if h.Validate() != nil {
-			return errors.New(h.Validate().Error())
-		}
-
 		customValues = h.CustomValues
-		positiveBuckets = make([]float64, len(customValues)+1)
-
-		// Histograms are in delta format so we first bring them to absolute format.
-		acc := int64(0)
-		for _, s := range h.PositiveSpans {
-			// Skipped buckets are empty, so leave them at zero.
-			idx += int(s.Offset)
-			for i := 0; i < int(s.Length); i++ {
-				acc += h.PositiveBuckets[currIdx]
-				positiveBuckets[idx] = float64(acc)
-				idx++
-				currIdx++
-			}
-		}
-		count = float64(h.Count)
-		sum = h.Sum
 	case *FloatHistogram:
-		if !IsCustomBucketsSchema(h.Schema) {
-			return errors.New("unsupported histogram schema, not a NHCB")
-		}
-
-		// Validate the histogram before conversion.
-		// The caller must ensure that the provided histogram is valid NHCB.
-		if h.Validate() != nil {
-			return errors.New(h.Validate().Error())
-		}
 		customValues = h.CustomValues
-		positiveBuckets = make([]float64, len(customValues)+1)
-
-		for _, span := range h.PositiveSpans {
-			// Since Float Histogram is already in absolute format we should
-			// keep the sparse buckets empty so we jump and go to next filled
-			// bucket index.
-			idx += int(span.Offset)
-			for i := 0; i < int(span.Length); i++ {
-				positiveBuckets[idx] = h.PositiveBuckets[currIdx]
-				idx++
-				currIdx++
-			}
-		}
-		count = h.Count
-		sum = h.Sum
-	default:
-		return fmt.Errorf("unsupported histogram type: %T", h)
 	}
 
-	currCount := float64(0)
 	for i, val := range customValues {
-		currCount += positiveBuckets[i]
 		lsetBuilder.Reset(lset)
 		lsetBuilder.Set(model.MetricNameLabel, baseName+"_bucket")
 		lsetBuilder.Set(model.BucketLabel, labels.FormatOpenMetricsFloat(val))
-		if err := emitSeriesFn(lsetBuilder.Labels(), currCount); err != nil {
+		if err := emitSeriesFn(lsetBuilder.Labels(), buckets[i]); err != nil {
 			return err
 		}
 	}
 
-	currCount += positiveBuckets[len(positiveBuckets)-1]
-
 	lsetBuilder.Reset(lset)
 	lsetBuilder.Set(model.MetricNameLabel, baseName+"_bucket")
 	lsetBuilder.Set(model.BucketLabel, labels.FormatOpenMetricsFloat(math.Inf(1)))
-	if err := emitSeriesFn(lsetBuilder.Labels(), currCount); err != nil {
+	if err := emitSeriesFn(lsetBuilder.Labels(), buckets[len(customValues)]); err != nil {
 		return err
 	}
 

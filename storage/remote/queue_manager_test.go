@@ -14,12 +14,18 @@
 package remote
 
 import (
+	"bytes"
 	"context"
 	"errors"
 	"fmt"
+	"math"
 	"math/rand"
+	"net/http"
+	"net/http/httptest"
 	"os"
+	"runtime"
 	"runtime/pprof"
+	"slices"
 	"strconv"
 	"strings"
 	"sync"
@@ -44,10 +50,13 @@ import (
 	"github.com/prometheus/prometheus/model/metadata"
 	"github.com/prometheus/prometheus/model/relabel"
 	"github.com/prometheus/prometheus/model/timestamp"
+	"github.com/prometheus/prometheus/model/value"
 	"github.com/prometheus/prometheus/prompb"
 	writev2 "github.com/prometheus/prometheus/prompb/io/prometheus/write/v2"
 	"github.com/prometheus/prometheus/schema"
 	"github.com/prometheus/prometheus/scrape"
+	"github.com/prometheus/prometheus/storage"
+	"github.com/prometheus/prometheus/tsdb"
 	"github.com/prometheus/prometheus/tsdb/chunks"
 	"github.com/prometheus/prometheus/tsdb/record"
 	"github.com/prometheus/prometheus/util/compression"
@@ -307,7 +316,7 @@ func newTestClientAndQueueManager(t testing.TB, flushDeadline time.Duration, pro
 func newTestQueueManager(t testing.TB, cfg config.QueueConfig, mcfg config.MetadataConfig, deadline time.Duration, c WriteClient, protoMsg remoteapi.WriteMessageType) *QueueManager {
 	dir := t.TempDir()
 	metrics := newQueueManagerMetrics(nil, "", "")
-	m := NewQueueManager(metrics, nil, nil, nil, dir, newEWMARate(ewmaWeight, shardUpdateDuration), cfg, mcfg, labels.EmptyLabels(), nil, c, deadline, newPool(), newHighestTimestampMetric(), nil, false, false, false, protoMsg, record.NewBuffersPool(), false)
+	m := NewQueueManager(metrics, nil, nil, nil, dir, newEWMARate(ewmaWeight, shardUpdateDuration), cfg, mcfg, labels.EmptyLabels(), nil, c, deadline, newPool(), newHighestTimestampMetric(), nil, false, false, false, protoMsg, record.NewBuffersPool(), false, false)
 
 	return m
 }
@@ -852,7 +861,7 @@ func TestDisableReshardOnRetry(t *testing.T) {
 		}
 	)
 
-	m := NewQueueManager(metrics, nil, nil, nil, "", newEWMARate(ewmaWeight, shardUpdateDuration), cfg, mcfg, labels.EmptyLabels(), nil, client, 0, newPool(), newHighestTimestampMetric(), nil, false, false, false, remoteapi.WriteV1MessageType, nil, false)
+	m := NewQueueManager(metrics, nil, nil, nil, "", newEWMARate(ewmaWeight, shardUpdateDuration), cfg, mcfg, labels.EmptyLabels(), nil, client, 0, newPool(), newHighestTimestampMetric(), nil, false, false, false, remoteapi.WriteV1MessageType, nil, false, false)
 	m.StoreSeries(recs.Series, 0)
 
 	// Attempt to samples while the manager is running. We immediately stop the
@@ -942,13 +951,19 @@ type TestWriteClient struct {
 // NewTestWriteClient creates a new testing write client.
 func NewTestWriteClient(protoMsg remoteapi.WriteMessageType) *TestWriteClient {
 	return &TestWriteClient{
-		receivedSamples:  map[string][]writev2.Sample{},
-		expectedSamples:  map[string][]writev2.Sample{},
-		receivedMetadata: map[string][]prompb.MetricMetadata{},
-		expectedMetadata: map[string][]prompb.MetricMetadata{},
-		protoMsg:         protoMsg,
-		storeWait:        0,
-		returnError:      nil,
+		receivedSamples:         map[string][]writev2.Sample{},
+		expectedSamples:         map[string][]writev2.Sample{},
+		receivedExemplars:       map[string][]prompb.Exemplar{},
+		expectedExemplars:       map[string][]prompb.Exemplar{},
+		receivedHistograms:      map[string][]writev2.Histogram{},
+		expectedHistograms:      map[string][]writev2.Histogram{},
+		receivedFloatHistograms: map[string][]writev2.Histogram{},
+		expectedFloatHistograms: map[string][]writev2.Histogram{},
+		receivedMetadata:        map[string][]prompb.MetricMetadata{},
+		expectedMetadata:        map[string][]prompb.MetricMetadata{},
+		protoMsg:                protoMsg,
+		storeWait:               0,
+		returnError:             nil,
 	}
 }
 
@@ -1416,6 +1431,81 @@ func BenchmarkSampleSend(b *testing.B) {
 	}
 }
 
+// BenchmarkNHCBRepeatedBounds converts samples whose bucket layout never changes, the common case.
+func BenchmarkNHCBRepeatedBounds(b *testing.B) {
+	for _, buckets := range []int{10, 100, 1000, 5000} {
+		b.Run(strconv.Itoa(buckets), func(b *testing.B) {
+			m, stop := newTestNHCBQueueManager(b, NewNopWriteClient(), nhcbQueueTestOptions{protoMsg: remoteapi.WriteV1MessageType})
+			defer stop()
+			m.StoreSeries([]record.RefSeries{{Ref: 1, Labels: labels.FromStrings("__name__", "latency")}}, 0)
+			h := &histogram.Histogram{
+				Schema: histogram.CustomBucketsSchema, CustomValues: make([]float64, buckets),
+				PositiveSpans:   []histogram.Span{{Length: uint32(buckets + 1)}},
+				PositiveBuckets: make([]int64, buckets+1), Count: uint64(buckets + 1),
+				Sum: float64((buckets+1)*(buckets+1)) / 2,
+			}
+			for i := range h.CustomValues {
+				h.CustomValues[i] = float64(i + 1)
+			}
+			h.PositiveBuckets[0] = 1
+			require.NoError(b, h.Validate())
+			samples := []record.RefHistogramSample{{Ref: 1, T: 1, H: h}}
+			require.True(b, m.AppendHistograms(samples))
+			b.ReportAllocs()
+			for b.Loop() {
+				samples[0].T++
+				if !m.AppendHistograms(samples) {
+					b.Fatal("append stopped")
+				}
+			}
+		})
+	}
+}
+
+// BenchmarkNHCBSeriesMemory reports the conversion state retained per series when every series shares one layout.
+func BenchmarkNHCBSeriesMemory(b *testing.B) {
+	const seriesCount = 10000
+	h := &histogram.Histogram{
+		Schema:        histogram.CustomBucketsSchema,
+		CustomValues:  []float64{0.005, 0.01, 0.025, 0.05, 0.1, 0.25, 0.5, 1, 2.5, 5, 10, 25},
+		PositiveSpans: []histogram.Span{{Length: 13}}, PositiveBuckets: make([]int64, 13), Count: 13, Sum: 42,
+	}
+	h.PositiveBuckets[0] = 1
+	require.NoError(b, h.Validate())
+	series := make([]record.RefSeries, 0, seriesCount)
+	samples := make([]record.RefHistogramSample, 0, seriesCount)
+	for i := range seriesCount {
+		ref := chunks.HeadSeriesRef(i + 1)
+		series = append(series, record.RefSeries{Ref: ref, Labels: labels.FromStrings("__name__", "latency", "series", strconv.Itoa(i))})
+		samples = append(samples, record.RefHistogramSample{Ref: ref, T: 1, H: h})
+	}
+	liveHeap := func() int64 {
+		runtime.GC()
+		runtime.GC() // The second cycle also empties sync.Pool victim caches.
+		var ms runtime.MemStats
+		runtime.ReadMemStats(&ms)
+		return int64(ms.HeapAlloc)
+	}
+	var retained int64
+	for b.Loop() {
+		b.StopTimer()
+		m, stop := newTestNHCBQueueManager(b, NewNopWriteClient(), nhcbQueueTestOptions{protoMsg: remoteapi.WriteV1MessageType})
+		m.StoreSeries(series, 0)
+		before := liveHeap()
+		b.StartTimer()
+		if !m.AppendHistograms(samples) {
+			b.Fatal("append stopped")
+		}
+		b.StopTimer()
+		// Flush the shards so that only conversion state remains.
+		stop()
+		retained = liveHeap() - before
+		runtime.KeepAlive(m)
+		b.StartTimer()
+	}
+	b.ReportMetric(float64(retained)/seriesCount, "retained-B/series")
+}
+
 // Check how long it takes to add N series, including external labels processing.
 func BenchmarkStoreSeries(b *testing.B) {
 	externalLabels := []labels.Label{
@@ -1460,7 +1550,7 @@ func BenchmarkStoreSeries(b *testing.B) {
 				mcfg := config.DefaultMetadataConfig
 				metrics := newQueueManagerMetrics(nil, "", "")
 
-				m := NewQueueManager(metrics, nil, nil, nil, dir, newEWMARate(ewmaWeight, shardUpdateDuration), cfg, mcfg, labels.EmptyLabels(), nil, c, defaultFlushDeadline, newPool(), newHighestTimestampMetric(), nil, false, false, false, remoteapi.WriteV1MessageType, record.NewBuffersPool(), false)
+				m := NewQueueManager(metrics, nil, nil, nil, dir, newEWMARate(ewmaWeight, shardUpdateDuration), cfg, mcfg, labels.EmptyLabels(), nil, c, defaultFlushDeadline, newPool(), newHighestTimestampMetric(), nil, false, false, false, remoteapi.WriteV1MessageType, record.NewBuffersPool(), false, false)
 				m.externalLabels = tc.externalLabels
 				m.relabelConfigs = tc.relabelConfigs
 
@@ -1784,6 +1874,120 @@ func TestCalculateDesiredShardsDetail(t *testing.T) {
 			require.Equal(t, tc.expectedShards, m.calculateDesiredShards())
 		})
 	}
+
+	t.Run("NHCB conversion", func(t *testing.T) {
+		for _, tc := range []struct {
+			name       string
+			histograms int
+			samples    int
+			asFloat    bool
+		}{
+			{name: "ordinary samples", samples: 10000},
+			{name: "integer histograms", histograms: 1000},
+			{name: "float histograms", histograms: 1000, asFloat: true},
+			{name: "mixed samples", histograms: 500, samples: 5000},
+		} {
+			t.Run(tc.name, func(t *testing.T) {
+				synctest.Test(t, func(t *testing.T) {
+					c := NewTestWriteClient(remoteapi.WriteV1MessageType)
+					var inFlight, peakInFlight, calls atomic.Int64
+					client := &MockWriteClient{
+						NameFunc:     c.Name,
+						EndpointFunc: c.Endpoint,
+						StoreFunc: func(ctx context.Context, req []byte, attempt int) (WriteResponseStats, error) {
+							active := inFlight.Inc()
+							defer inFlight.Dec()
+							for peak := peakInFlight.Load(); active > peak; peak = peakInFlight.Load() {
+								if peakInFlight.CompareAndSwap(peak, active) {
+									break
+								}
+							}
+							calls.Inc()
+							// Delay outside the recording client's mutex so all ten shards can send concurrently.
+							timer := time.NewTimer(shardUpdateDuration)
+							defer timer.Stop()
+							select {
+							case <-timer.C:
+								return c.Store(ctx, req, attempt)
+							case <-ctx.Done():
+								return WriteResponseStats{}, ctx.Err()
+							}
+						},
+					}
+					rws := NewWriteStorage(nil, nil, t.TempDir(), defaultFlushDeadline, nil, false)
+					defer func() { require.NoError(t, rws.Close()) }()
+					m, stop := newTestNHCBQueueManager(t, client, nhcbQueueTestOptions{
+						protoMsg:             remoteapi.WriteV1MessageType,
+						numShards:            10,
+						samplesIn:            rws.samplesIn,
+						highestRecvTimestamp: rws.highestTimestamp,
+					})
+					defer stop()
+
+					h := &histogram.Histogram{
+						Schema:          histogram.CustomBucketsSchema,
+						CustomValues:    []float64{1, 2, 3, 4, 5, 6, 7},
+						PositiveSpans:   []histogram.Span{{Length: 8}},
+						PositiveBuckets: []int64{1, 0, 0, 0, 0, 0, 0, 0},
+						Count:           8,
+						Sum:             30,
+					}
+					require.NoError(t, h.Validate())
+					fh := h.ToFloat(nil)
+					app := rws.AppenderV2(t.Context())
+					var (
+						series          []record.RefSeries
+						histograms      []record.RefHistogramSample
+						floatHistograms []record.RefFloatHistogramSample
+						samples         []record.RefSample
+					)
+					const ts = int64(1000)
+					for i := range tc.histograms + tc.samples {
+						ref := chunks.HeadSeriesRef(i + 1)
+						name := "requests_total"
+						var intH *histogram.Histogram
+						var floatH *histogram.FloatHistogram
+						if i < tc.histograms {
+							name = "latency"
+							if tc.asFloat {
+								floatH = fh
+								floatHistograms = append(floatHistograms, record.RefFloatHistogramSample{Ref: ref, T: ts, FH: fh})
+							} else {
+								intH = h
+								histograms = append(histograms, record.RefHistogramSample{Ref: ref, T: ts, H: h})
+							}
+						} else {
+							samples = append(samples, record.RefSample{Ref: ref, T: ts, V: 1})
+						}
+						lbls := labels.FromStrings("__name__", name, "series", strconv.Itoa(i))
+						series = append(series, record.RefSeries{Ref: ref, Labels: lbls})
+						_, err := app.Append(storage.SeriesRef(ref), lbls, 0, ts, 1, intH, floatH, storage.AOptions{})
+						require.NoError(t, err)
+					}
+					require.NoError(t, app.Commit())
+					m.StoreSeries(series, 0)
+					require.True(t, m.AppendHistograms(histograms))
+					require.True(t, m.AppendFloatHistograms(floatHistograms))
+					require.True(t, m.Append(samples))
+
+					synctest.Wait()
+					require.Equal(t, int64(10), inFlight.Load())
+					time.Sleep(shardUpdateDuration)
+					synctest.Wait()
+					require.Zero(t, inFlight.Load())
+					require.Equal(t, int64(10), peakInFlight.Load())
+					require.Equal(t, int64(10), calls.Load())
+					require.Equal(t, 10000, deepLen(c.receivedSamples))
+					require.Zero(t, client_testutil.ToFloat64(m.metrics.failedSamplesTotal))
+					require.Zero(t, client_testutil.ToFloat64(m.metrics.pendingSamples))
+					require.Equal(t, m.highestRecvTimestamp.Get(), m.metrics.highestSentTimestamp.Get())
+					require.Positive(t, m.dataIn.rate())
+					// Each workload filled ten batches and kept ten shards busy for the whole interval.
+					require.Equal(t, 10, m.calculateDesiredShards(), "NHCB expansion must not reduce the estimated shard demand")
+				})
+			})
+		}
+	})
 }
 
 func forceEMWA(r *ewmaRate, rate int64) {
@@ -2874,4 +3078,793 @@ func TestAppendHistogramsWithStartTimestamp(t *testing.T) {
 	require.True(t, m.AppendFloatHistograms(floatHistograms))
 
 	c.waitForExpectedData(t, 30*time.Second)
+}
+
+type nhcbQueueTestOptions struct {
+	protoMsg             remoteapi.WriteMessageType
+	sendNativeHistograms bool
+	sendExemplars        bool
+	numShards            int
+	samplesIn            *ewmaRate
+	highestRecvTimestamp *maxTimestamp
+	sampleAgeLimit       time.Duration
+	batchSendDeadline    time.Duration
+}
+
+func newTestNHCBQueueManager(t testing.TB, c WriteClient, opts nhcbQueueTestOptions) (*QueueManager, func()) {
+	t.Helper()
+	cfg := config.DefaultQueueConfig
+	cfg.MaxSamplesPerSend = 1000
+	cfg.BatchSendDeadline = model.Duration(time.Minute)
+	if opts.batchSendDeadline != 0 {
+		cfg.BatchSendDeadline = model.Duration(opts.batchSendDeadline)
+	}
+	cfg.SampleAgeLimit = model.Duration(opts.sampleAgeLimit)
+	mcfg := config.DefaultMetadataConfig
+	mcfg.Send = false
+	if opts.numShards == 0 {
+		opts.numShards = 1
+	}
+	if opts.samplesIn == nil {
+		opts.samplesIn = newEWMARate(ewmaWeight, shardUpdateDuration)
+	}
+	if opts.highestRecvTimestamp == nil {
+		opts.highestRecvTimestamp = newHighestTimestampMetric()
+	}
+	m := NewQueueManager(newQueueManagerMetrics(nil, "", ""), nil, nil, nil, t.TempDir(), opts.samplesIn,
+		cfg, mcfg, labels.EmptyLabels(), nil, c, defaultFlushDeadline, newPool(), opts.highestRecvTimestamp,
+		nil, opts.sendExemplars, opts.sendNativeHistograms, false, opts.protoMsg, record.NewBuffersPool(), false, true)
+	// Start the production senders without the WAL watcher or automatic resharding loop.
+	m.numShards = opts.numShards
+	m.shards.start(opts.numShards)
+	stop := sync.OnceFunc(m.shards.stop)
+	t.Cleanup(stop)
+	return m, stop
+}
+
+func TestAppendToConvertNHCBToClassic(t *testing.T) {
+	h := &histogram.Histogram{
+		Schema:       histogram.CustomBucketsSchema,
+		CustomValues: []float64{1, 2, 3, 4, 5, 6, 7, 8, 9, 10},
+		PositiveSpans: []histogram.Span{
+			{Offset: 0, Length: 2},
+			{Offset: 4, Length: 1},
+			{Offset: 1, Length: 2},
+		},
+		PositiveBuckets: []int64{1, 2, 3, 4, 5},
+		Count:           35,
+		Sum:             123,
+	}
+
+	fh := &histogram.FloatHistogram{
+		Schema:       histogram.CustomBucketsSchema,
+		CustomValues: []float64{1, 2, 3, 4, 5, 6, 7, 8, 9, 10},
+		PositiveSpans: []histogram.Span{
+			{Offset: 0, Length: 2},
+			{Offset: 4, Length: 1},
+			{Offset: 1, Length: 2},
+		},
+		PositiveBuckets: []float64{1, 2, 3, 4, 5},
+		Count:           15,
+		Sum:             123,
+	}
+
+	expH := &histogram.Histogram{
+		Schema:          0,
+		ZeroThreshold:   1e-128,
+		Count:           10,
+		Sum:             20,
+		PositiveSpans:   []histogram.Span{{Offset: 0, Length: 1}},
+		PositiveBuckets: []int64{10},
+	}
+
+	expFH := &histogram.FloatHistogram{
+		Schema:          0,
+		ZeroThreshold:   1e-128,
+		Count:           10,
+		Sum:             20,
+		PositiveSpans:   []histogram.Span{{Offset: 0, Length: 1}},
+		PositiveBuckets: []float64{10},
+	}
+
+	testCases := []struct {
+		name                    string
+		protoMsg                remoteapi.WriteMessageType
+		isFloatHistogram        bool
+		sendNativeHistograms    bool
+		convertFlag             bool
+		relabelConfigs          []*relabel.Config
+		expectedMetricName      string
+		expectedSamplesCount    float64
+		expectedHistogramsCount float64
+		expectedDroppedSeries   float64
+	}{
+		{
+			name:                    "convert nhcb to classic v1",
+			protoMsg:                remoteapi.WriteV1MessageType,
+			isFloatHistogram:        false,
+			sendNativeHistograms:    true,
+			convertFlag:             true,
+			expectedMetricName:      "test_histogram",
+			expectedSamplesCount:    13,
+			expectedHistogramsCount: 0,
+		},
+		{
+			name:                    "convert float nhcb to classic v1",
+			protoMsg:                remoteapi.WriteV1MessageType,
+			isFloatHistogram:        true,
+			sendNativeHistograms:    true,
+			convertFlag:             true,
+			expectedMetricName:      "test_histogram",
+			expectedSamplesCount:    13,
+			expectedHistogramsCount: 0,
+		},
+		{
+			name:                    "convert nhcb to classic v2",
+			protoMsg:                remoteapi.WriteV2MessageType,
+			isFloatHistogram:        false,
+			sendNativeHistograms:    true,
+			convertFlag:             true,
+			expectedMetricName:      "test_histogram",
+			expectedSamplesCount:    13,
+			expectedHistogramsCount: 0,
+		},
+		{
+			name:                    "convert float nhcb to classic v2",
+			protoMsg:                remoteapi.WriteV2MessageType,
+			isFloatHistogram:        true,
+			sendNativeHistograms:    true,
+			convertFlag:             true,
+			expectedMetricName:      "test_histogram",
+			expectedSamplesCount:    13,
+			expectedHistogramsCount: 0,
+		},
+		{
+			name:                    "convert nhcb to classic with send_native_histograms=false",
+			protoMsg:                remoteapi.WriteV1MessageType,
+			isFloatHistogram:        false,
+			sendNativeHistograms:    false,
+			convertFlag:             true,
+			expectedMetricName:      "test_histogram",
+			expectedSamplesCount:    13,
+			expectedHistogramsCount: 0,
+		},
+		{
+			name:                    "convert float nhcb to classic with send_native_histograms=false",
+			protoMsg:                remoteapi.WriteV1MessageType,
+			isFloatHistogram:        true,
+			sendNativeHistograms:    false,
+			convertFlag:             true,
+			expectedMetricName:      "test_histogram",
+			expectedSamplesCount:    13,
+			expectedHistogramsCount: 0,
+		},
+		{
+			name:                 "convert nhcb to classic after write_relabel_configs rename",
+			protoMsg:             remoteapi.WriteV2MessageType,
+			isFloatHistogram:     false,
+			sendNativeHistograms: true,
+			convertFlag:          true,
+			relabelConfigs: []*relabel.Config{
+				{
+					SourceLabels:         model.LabelNames{model.MetricNameLabel},
+					Regex:                relabel.MustNewRegexp("test_histogram"),
+					TargetLabel:          model.MetricNameLabel,
+					Replacement:          "relabeled_histogram",
+					Action:               relabel.Replace,
+					NameValidationScheme: model.UTF8Validation,
+				},
+			},
+			expectedMetricName:      "relabeled_histogram",
+			expectedSamplesCount:    13,
+			expectedHistogramsCount: 0,
+		},
+		{
+			name:                 "drop nhcb via write_relabel_configs before conversion",
+			protoMsg:             remoteapi.WriteV1MessageType,
+			isFloatHistogram:     false,
+			sendNativeHistograms: false,
+			convertFlag:          true,
+			relabelConfigs: []*relabel.Config{
+				{
+					SourceLabels:         model.LabelNames{model.MetricNameLabel},
+					Regex:                relabel.MustNewRegexp("test_histogram"),
+					Action:               relabel.Drop,
+					NameValidationScheme: model.UTF8Validation,
+				},
+			},
+			expectedSamplesCount:    0,
+			expectedHistogramsCount: 0,
+			expectedDroppedSeries:   1,
+		},
+		{
+			name:                    "no nhcb to classic conversion v2",
+			protoMsg:                remoteapi.WriteV2MessageType,
+			sendNativeHistograms:    true,
+			convertFlag:             false,
+			isFloatHistogram:        false,
+			expectedSamplesCount:    0,
+			expectedHistogramsCount: 1,
+		},
+		{
+			name:                    "no float nhcb to classic conversion v2",
+			protoMsg:                remoteapi.WriteV2MessageType,
+			sendNativeHistograms:    true,
+			convertFlag:             false,
+			isFloatHistogram:        true,
+			expectedSamplesCount:    0,
+			expectedHistogramsCount: 1,
+		},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			c := NewTestWriteClient(tc.protoMsg)
+			cfg := testDefaultQueueConfig()
+			mcfg := config.DefaultMetadataConfig
+			cfg.MaxShards = 1
+
+			m := newTestQueueManager(t, cfg, mcfg, defaultFlushDeadline, c, tc.protoMsg)
+			m.convertNHCBToClassic = tc.convertFlag
+			m.sendNativeHistograms = tc.sendNativeHistograms
+			m.relabelConfigs = tc.relabelConfigs
+
+			series := []record.RefSeries{
+				{
+					Ref:    chunks.HeadSeriesRef(0),
+					Labels: labels.FromStrings("__name__", "test_histogram"),
+				},
+				{
+					Ref:    chunks.HeadSeriesRef(1),
+					Labels: labels.FromStrings("__name__", "exp_histogram"),
+				},
+			}
+			m.StoreSeries(series, 0)
+
+			m.Start()
+			defer m.Stop()
+
+			initialDroppedConversionError := client_testutil.ToFloat64(m.metrics.droppedHistogramsTotal.WithLabelValues(reasonNHCBConversionError))
+
+			const (
+				st = int64(1234560000)
+				ts = int64(1234567890)
+			)
+			if !tc.isFloatHistogram {
+				samples := []record.RefHistogramSample{{Ref: chunks.HeadSeriesRef(0), ST: st, T: ts, H: h}}
+				if !tc.sendNativeHistograms {
+					// Non-NHCB histograms must be ignored when send_native_histograms is false.
+					samples = append(samples, record.RefHistogramSample{Ref: chunks.HeadSeriesRef(1), ST: st, T: ts, H: expH})
+				}
+				require.True(t, m.AppendHistograms(samples))
+			} else {
+				samples := []record.RefFloatHistogramSample{{Ref: chunks.HeadSeriesRef(0), ST: st, T: ts, FH: fh}}
+				if !tc.sendNativeHistograms {
+					samples = append(samples, record.RefFloatHistogramSample{Ref: chunks.HeadSeriesRef(1), ST: st, T: ts, FH: expFH})
+				}
+				require.True(t, m.AppendFloatHistograms(samples))
+			}
+
+			require.Eventually(t, func() bool {
+				return client_testutil.ToFloat64(m.metrics.samplesTotal) == tc.expectedSamplesCount &&
+					client_testutil.ToFloat64(m.metrics.histogramsTotal) == tc.expectedHistogramsCount &&
+					client_testutil.ToFloat64(m.metrics.droppedHistogramsTotal.WithLabelValues(reasonDroppedSeries)) == tc.expectedDroppedSeries
+			}, 5*time.Second, 10*time.Millisecond)
+
+			finalDroppedConversionError := client_testutil.ToFloat64(m.metrics.droppedHistogramsTotal.WithLabelValues(reasonNHCBConversionError))
+			require.Equal(t, initialDroppedConversionError, finalDroppedConversionError, "No conversion errors should occur")
+			require.Equal(t, 0.0, client_testutil.ToFloat64(m.metrics.failedHistogramsTotal))
+
+			if tc.expectedSamplesCount > 0 {
+				expectedST := int64(0)
+				if tc.protoMsg == remoteapi.WriteV2MessageType {
+					expectedST = st
+				}
+				expectedCount := h.Count
+				if tc.isFloatHistogram {
+					expectedCount = uint64(fh.Count)
+				}
+				c.mtx.Lock()
+				require.Equal(t, []writev2.Sample{{StartTimestamp: expectedST, Timestamp: ts, Value: float64(expectedCount)}}, c.receivedSamples[fmt.Sprintf("{__name__=%q}", tc.expectedMetricName+"_count")])
+				require.Equal(t, []writev2.Sample{{StartTimestamp: expectedST, Timestamp: ts, Value: 123}}, c.receivedSamples[fmt.Sprintf("{__name__=%q}", tc.expectedMetricName+"_sum")])
+				require.Equal(t, []writev2.Sample{{StartTimestamp: expectedST, Timestamp: ts, Value: float64(expectedCount)}}, c.receivedSamples[fmt.Sprintf("{__name__=%q, le=\"+Inf\"}", tc.expectedMetricName+"_bucket")])
+				c.mtx.Unlock()
+			}
+		})
+	}
+
+	baseSeries := record.RefSeries{Ref: 1, Labels: labels.FromStrings("__name__", "latency", "job", "api")}
+	classicSeries := []record.RefSeries{
+		{Ref: 1, Labels: labels.FromStrings("__name__", "latency_bucket", "job", "api", "le", "1.0")},
+		{Ref: 2, Labels: labels.FromStrings("__name__", "latency_bucket", "job", "api", "le", "2.0")},
+		{Ref: 3, Labels: labels.FromStrings("__name__", "latency_bucket", "job", "api", "le", "+Inf")},
+		{Ref: 4, Labels: labels.FromStrings("__name__", "latency_count", "job", "api")},
+		{Ref: 5, Labels: labels.FromStrings("__name__", "latency_sum", "job", "api")},
+	}
+	classicValues := []float64{2, 5, 9, 9, 13}
+	newHistogram := func() *histogram.Histogram {
+		return &histogram.Histogram{
+			Schema:          histogram.CustomBucketsSchema,
+			CustomValues:    []float64{1, 2},
+			PositiveSpans:   []histogram.Span{{Length: 3}},
+			PositiveBuckets: []int64{2, 1, 1},
+			Count:           9,
+			Sum:             13,
+		}
+	}
+	appendHistogram := func(t *testing.T, m *QueueManager, h *histogram.Histogram, ts int64, asFloat bool) {
+		t.Helper()
+		require.NoError(t, h.Validate())
+		if asFloat {
+			require.True(t, m.AppendFloatHistograms([]record.RefFloatHistogramSample{{Ref: baseSeries.Ref, T: ts, FH: h.ToFloat(nil)}}))
+		} else {
+			require.True(t, m.AppendHistograms([]record.RefHistogramSample{{Ref: baseSeries.Ref, T: ts, H: h}}))
+		}
+	}
+	requireInitialSamples := func(t *testing.T, c *TestWriteClient) {
+		t.Helper()
+		for i, series := range classicSeries {
+			got := c.receivedSamples[series.Labels.String()]
+			require.NotEmpty(t, got, "normal sample for %s", series.Labels)
+			require.Equal(t, writev2.Sample{Timestamp: 1000, Value: classicValues[i]}, got[0], "normal sample for %s", series.Labels)
+		}
+	}
+
+	t.Run("sample type transitions", func(t *testing.T) {
+		for _, protoMsg := range []remoteapi.WriteMessageType{remoteapi.WriteV1MessageType, remoteapi.WriteV2MessageType} {
+			for _, target := range []struct {
+				name       string
+				kind       string
+				sendNative bool
+			}{
+				{name: "ordinary float", kind: "float", sendNative: true},
+				{name: "integer exponential histogram", kind: "integer", sendNative: true},
+				{name: "float exponential histogram", kind: "histogram", sendNative: true},
+				{name: "integer exponential without forwarding", kind: "integer"},
+				{name: "float exponential without forwarding", kind: "histogram"},
+			} {
+				if !target.sendNative && protoMsg == remoteapi.WriteV2MessageType {
+					continue
+				}
+				for _, prior := range []string{"ordinary control", "after integer NHCB", "after float NHCB"} {
+					t.Run(fmt.Sprintf("%s/%s/%s", protoMsg, target.name, prior), func(t *testing.T) {
+						c := NewTestWriteClient(protoMsg)
+						m, stop := newTestNHCBQueueManager(t, c, nhcbQueueTestOptions{
+							protoMsg: protoMsg, sendNativeHistograms: target.sendNative, sendExemplars: target.sendNative,
+						})
+						m.StoreSeries([]record.RefSeries{baseSeries}, 0)
+						converted := prior != "ordinary control"
+						if converted {
+							appendHistogram(t, m, newHistogram(), 1000, prior == "after float NHCB")
+						}
+						before := m.dataInExpanded.newEvents.Load()
+						h := newHistogram()
+						h.Schema = 0
+						h.CustomValues = nil
+						require.NoError(t, h.Validate())
+						stale := math.Float64frombits(value.StaleNaN)
+						switch target.kind {
+						case "float":
+							require.True(t, m.Append([]record.RefSample{{Ref: baseSeries.Ref, ST: 1500, T: 2000, V: 17}}))
+						case "integer":
+							require.True(t, m.AppendHistograms([]record.RefHistogramSample{{Ref: baseSeries.Ref, ST: 1500, T: 2000, H: h}}))
+						case "histogram":
+							require.True(t, m.AppendFloatHistograms([]record.RefFloatHistogramSample{{Ref: baseSeries.Ref, ST: 1500, T: 2000, FH: h.ToFloat(nil)}}))
+						}
+						extra := int64(0)
+						if converted {
+							extra = 5
+							if !target.sendNative {
+								extra--
+							}
+						}
+						expanded := m.dataInExpanded.newEvents.Load() - before
+						if target.sendNative {
+							require.True(t, m.AppendExemplars([]record.RefExemplar{{
+								Ref: baseSeries.Ref, T: 2500, V: 1.5, Labels: labels.FromStrings("trace_id", "abc"),
+							}}))
+						}
+						beforeStale := m.dataInExpanded.newEvents.Load()
+						switch target.kind {
+						case "float":
+							require.True(t, m.Append([]record.RefSample{{Ref: baseSeries.Ref, T: 3000, V: stale}}))
+						case "integer":
+							require.True(t, m.AppendHistograms([]record.RefHistogramSample{{Ref: baseSeries.Ref, T: 3000, H: &histogram.Histogram{Sum: stale}}}))
+						case "histogram":
+							require.True(t, m.AppendFloatHistograms([]record.RefFloatHistogramSample{{Ref: baseSeries.Ref, T: 3000, FH: &histogram.FloatHistogram{Sum: stale}}}))
+						}
+						afterStale := m.dataInExpanded.newEvents.Load()
+						stop()
+						t.Run("expansion accounting", func(t *testing.T) {
+							require.Equal(t, extra, expanded, "retirement and replacement must be accounted together")
+							require.Equal(t, beforeStale, afterStale, "the replacement's marker must not expand into old classic series")
+						})
+						if converted {
+							t.Run("converted series retirement", func(t *testing.T) {
+								requireInitialSamples(t, c)
+								for _, series := range classicSeries {
+									got := c.receivedSamples[series.Labels.String()]
+									require.Len(t, got, 2, "retired series %s", series.Labels)
+									require.Equal(t, int64(2000), got[1].Timestamp)
+									require.Zero(t, got[1].StartTimestamp, "retirement must not borrow the replacement's start time")
+									require.True(t, value.IsStaleNaN(got[1].Value))
+								}
+							})
+						}
+						if !target.sendNative {
+							require.Empty(t, c.receivedHistograms)
+							require.Empty(t, c.receivedFloatHistograms)
+							return
+						}
+						expectedST := int64(0)
+						if protoMsg == remoteapi.WriteV2MessageType {
+							expectedST = 1500
+						}
+						key := baseSeries.Labels.String()
+						t.Run("replacement identity", func(t *testing.T) {
+							if target.kind == "float" {
+								got := c.receivedSamples[key]
+								require.Len(t, got, 2, "the replacement float must receive its own stale marker")
+								require.Equal(t, writev2.Sample{StartTimestamp: expectedST, Timestamp: 2000, Value: 17}, got[0])
+								require.Equal(t, int64(3000), got[1].Timestamp)
+								require.True(t, value.IsStaleNaN(got[1].Value))
+							} else {
+								got := c.receivedHistograms[key]
+								want := writev2.FromIntHistogram(expectedST, 2000, h)
+								if target.kind == "histogram" {
+									got = c.receivedFloatHistograms[key]
+									want = writev2.FromFloatHistogram(expectedST, 2000, h.ToFloat(nil))
+								}
+								require.Len(t, got, 2, "the replacement histogram must receive its own stale marker")
+								require.Equal(t, want, got[0])
+								require.Equal(t, int64(3000), got[1].Timestamp)
+								require.True(t, value.IsStaleNaN(got[1].Sum))
+							}
+						})
+						t.Run("exemplar identity", func(t *testing.T) {
+							require.Equal(t, map[string][]prompb.Exemplar{key: {{
+								Timestamp: 2500, Value: 1.5, Labels: []prompb.Label{{Name: "trace_id", Value: "abc"}},
+							}}}, c.receivedExemplars, "replacement exemplars must not retain bucket identity")
+						})
+					})
+				}
+			}
+		}
+	})
+
+	t.Run("age filtered replacements preserve conversion", func(t *testing.T) {
+		// A type change dropped by sample_age_limit must neither retire the classic series
+		// nor stop their conversion; otherwise the series' later stale marker would miss them.
+		// The fake clock makes the age limit pass instantly and deterministically.
+		synctest.Test(t, func(t *testing.T) {
+			c := NewTestWriteClient(remoteapi.WriteV1MessageType)
+			// Native forwarding is on, so a wrongly accepted histogram replacement would be sent.
+			m, stop := newTestNHCBQueueManager(t, c, nhcbQueueTestOptions{
+				protoMsg: remoteapi.WriteV1MessageType, sendNativeHistograms: true, sampleAgeLimit: time.Second, batchSendDeadline: time.Millisecond,
+			})
+			m.StoreSeries([]record.RefSeries{baseSeries}, 0)
+			firstT := time.Now().UnixMilli()
+			appendHistogram(t, m, newHistogram(), firstT, false)
+			time.Sleep(2 * time.Second)
+			// Each sample type change is now too old to send.
+			require.True(t, m.Append([]record.RefSample{{Ref: baseSeries.Ref, T: firstT + 1, V: 17}}))
+			h := newHistogram()
+			h.Schema = 0
+			h.CustomValues = nil
+			require.True(t, m.AppendHistograms([]record.RefHistogramSample{{Ref: baseSeries.Ref, T: firstT + 2, H: h}}))
+			require.True(t, m.AppendFloatHistograms([]record.RefFloatHistogramSample{{Ref: baseSeries.Ref, T: firstT + 3, FH: h.ToFloat(nil)}}))
+			// A fresh stale marker must still reach every classic series.
+			staleT := time.Now().UnixMilli()
+			require.True(t, m.Append([]record.RefSample{{Ref: baseSeries.Ref, T: staleT, V: math.Float64frombits(value.StaleNaN)}}))
+			stop()
+			for _, series := range classicSeries {
+				got := c.receivedSamples[series.Labels.String()]
+				require.Len(t, got, 2)
+				require.Equal(t, staleT, got[1].Timestamp)
+				require.True(t, value.IsStaleNaN(got[1].Value))
+			}
+			// The dropped samples must not have been forwarded.
+			require.Len(t, c.receivedSamples, len(classicSeries))
+			require.Empty(t, c.receivedHistograms)
+			require.Empty(t, c.receivedFloatHistograms)
+		})
+	})
+
+	t.Run("staleness", func(t *testing.T) {
+		for _, protoMsg := range []remoteapi.WriteMessageType{remoteapi.WriteV1MessageType, remoteapi.WriteV2MessageType} {
+			for _, asFloat := range []bool{false, true} {
+				for _, sendNative := range []bool{false, true} {
+					for _, marker := range []string{"float", "histogram without layout", "custom bucket histogram"} {
+						t.Run(fmt.Sprintf("%s/float=%t/send native histograms=%t/%s", protoMsg, asFloat, sendNative, marker), func(t *testing.T) {
+							c := NewTestWriteClient(protoMsg)
+							m, stop := newTestNHCBQueueManager(t, c, nhcbQueueTestOptions{protoMsg: protoMsg, sendNativeHistograms: sendNative})
+							m.StoreSeries([]record.RefSeries{baseSeries}, 0)
+							h := newHistogram()
+							appendHistogram(t, m, h, 1000, asFloat)
+							stale := math.Float64frombits(value.StaleNaN)
+							switch marker {
+							case "float":
+								// Separate scrape transactions produce a float WAL staleness marker.
+								require.True(t, m.Append([]record.RefSample{{Ref: baseSeries.Ref, T: 2000, V: stale}}))
+							case "histogram without layout":
+								appendHistogram(t, m, &histogram.Histogram{Sum: stale}, 2000, asFloat)
+							case "custom bucket histogram":
+								h = h.Copy()
+								h.Sum = stale
+								appendHistogram(t, m, h, 2000, asFloat)
+							}
+							stop()
+							requireInitialSamples(t, c)
+							for _, series := range classicSeries {
+								got := c.receivedSamples[series.Labels.String()]
+								require.Len(t, got, 2, "converted series %s must receive a stale marker", series.Labels)
+								require.Equal(t, int64(2000), got[1].Timestamp)
+								require.True(t, value.IsStaleNaN(got[1].Value), "converted series %s must be stale", series.Labels)
+							}
+							require.Len(t, c.receivedSamples, len(classicSeries))
+						})
+					}
+				}
+			}
+		}
+		t.Run("ordinary float control", func(t *testing.T) {
+			c := NewTestWriteClient(remoteapi.WriteV1MessageType)
+			m, stop := newTestNHCBQueueManager(t, c, nhcbQueueTestOptions{protoMsg: remoteapi.WriteV1MessageType})
+			m.StoreSeries([]record.RefSeries{baseSeries}, 0)
+			require.True(t, m.Append([]record.RefSample{
+				{Ref: baseSeries.Ref, T: 1000, V: 13},
+				{Ref: baseSeries.Ref, T: 2000, V: math.Float64frombits(value.StaleNaN)},
+			}))
+			stop()
+			got := c.receivedSamples[baseSeries.Labels.String()]
+			require.Len(t, got, 2)
+			require.Equal(t, writev2.Sample{Timestamp: 1000, Value: 13}, got[0])
+			require.Equal(t, int64(2000), got[1].Timestamp)
+			require.True(t, value.IsStaleNaN(got[1].Value))
+		})
+	})
+
+	t.Run("removed boundaries", func(t *testing.T) {
+		for _, protoMsg := range []remoteapi.WriteMessageType{remoteapi.WriteV1MessageType, remoteapi.WriteV2MessageType} {
+			for _, asFloat := range []bool{false, true} {
+				t.Run(fmt.Sprintf("%s/float=%t", protoMsg, asFloat), func(t *testing.T) {
+					c := NewTestWriteClient(protoMsg)
+					m, stop := newTestNHCBQueueManager(t, c, nhcbQueueTestOptions{protoMsg: protoMsg})
+					m.StoreSeries([]record.RefSeries{baseSeries}, 0)
+					// Start with finite boundaries 1 and 2, then remove 1 while the histogram stays active.
+					appendHistogram(t, m, newHistogram(), 1000, asFloat)
+					appendHistogram(t, m, &histogram.Histogram{
+						Schema:          histogram.CustomBucketsSchema,
+						CustomValues:    []float64{2},
+						PositiveSpans:   []histogram.Span{{Length: 2}},
+						PositiveBuckets: []int64{5, 0},
+						Count:           10,
+						Sum:             15,
+					}, 2000, asFloat)
+					stop()
+					requireInitialSamples(t, c)
+					for i, v := range []float64{5, 10, 10, 15} {
+						series := classicSeries[i+1]
+						require.Equal(t, []writev2.Sample{
+							{Timestamp: 1000, Value: classicValues[i+1]},
+							{Timestamp: 2000, Value: v},
+						}, c.receivedSamples[series.Labels.String()], "retained series %s", series.Labels)
+					}
+					// The removed le="1.0" bucket must become stale while the retained series keep updating.
+					got := c.receivedSamples[classicSeries[0].Labels.String()]
+					require.Len(t, got, 2, "removed bucket must receive a stale marker")
+					require.Equal(t, int64(2000), got[1].Timestamp)
+					require.True(t, value.IsStaleNaN(got[1].Value))
+				})
+			}
+		}
+	})
+
+	t.Run("boundary layouts", func(t *testing.T) {
+		// When an NHCB series changes bucket layout, every bucket of the new layout is sent, and
+		// each finite bucket it dropped gets one stale marker without a start time. +Inf, _count
+		// and _sum exist in every layout, so they are never retired.
+		for _, protoMsg := range []remoteapi.WriteMessageType{remoteapi.WriteV1MessageType, remoteapi.WriteV2MessageType} {
+			for _, asFloat := range []bool{false, true} {
+				for _, tc := range []struct {
+					name          string
+					before, after []float64
+				}{
+					{name: "unchanged", before: []float64{1, 2}, after: []float64{1, 2}},
+					{name: "added boundary", before: []float64{1, 2}, after: []float64{0.5, 1, 2}},
+					{name: "removed trailing boundary", before: []float64{1, 2}, after: []float64{1}},
+					{name: "interleaved replacement", before: []float64{1, 2}, after: []float64{1.5, 2.5}},
+					{name: "all finite boundaries removed", before: []float64{1, 2}},
+					{name: "first finite boundary added", after: []float64{1}},
+				} {
+					t.Run(fmt.Sprintf("%s/float=%t/%s", protoMsg, asFloat, tc.name), func(t *testing.T) {
+						c := NewTestWriteClient(protoMsg)
+						m, stop := newTestNHCBQueueManager(t, c, nhcbQueueTestOptions{protoMsg: protoMsg})
+						m.StoreSeries([]record.RefSeries{baseSeries}, 0)
+						expected := map[string][]writev2.Sample{}
+						for i, bounds := range [][]float64{tc.before, tc.after} {
+							h := &histogram.Histogram{
+								Schema: histogram.CustomBucketsSchema, CustomValues: bounds,
+								PositiveSpans:   []histogram.Span{{Length: uint32(len(bounds) + 1)}},
+								PositiveBuckets: make([]int64, len(bounds)+1), Count: uint64(len(bounds) + 1), Sum: 13,
+							}
+							// One observation per bucket gives cumulative counts 1, 2, ... including +Inf.
+							h.PositiveBuckets[0] = 1
+							require.NoError(t, h.Validate())
+							ts := int64(1000 * (i + 1))
+							st := ts - 500
+							if asFloat {
+								require.True(t, m.AppendFloatHistograms([]record.RefFloatHistogramSample{{Ref: baseSeries.Ref, ST: st, T: ts, FH: h.ToFloat(nil)}}))
+							} else {
+								require.True(t, m.AppendHistograms([]record.RefHistogramSample{{Ref: baseSeries.Ref, ST: st, T: ts, H: h}}))
+							}
+							// Only remote write v2 carries start times.
+							if protoMsg == remoteapi.WriteV1MessageType {
+								st = 0
+							}
+							for j, bound := range append(append([]float64(nil), bounds...), math.Inf(1)) {
+								ls := labels.FromStrings("__name__", "latency_bucket", "job", "api", "le", labels.FormatOpenMetricsFloat(bound))
+								expected[ls.String()] = append(expected[ls.String()], writev2.Sample{StartTimestamp: st, Timestamp: ts, Value: float64(j + 1)})
+							}
+							for _, s := range []struct {
+								name  string
+								value float64
+							}{
+								{name: "latency_count", value: float64(h.Count)},
+								{name: "latency_sum", value: h.Sum},
+							} {
+								ls := labels.FromStrings("__name__", s.name, "job", "api")
+								expected[ls.String()] = append(expected[ls.String()], writev2.Sample{StartTimestamp: st, Timestamp: ts, Value: s.value})
+							}
+						}
+						// Buckets missing from the new layout are retired at its timestamp.
+						for _, bound := range tc.before {
+							if !slices.Contains(tc.after, bound) {
+								ls := labels.FromStrings("__name__", "latency_bucket", "job", "api", "le", labels.FormatOpenMetricsFloat(bound))
+								expected[ls.String()] = append(expected[ls.String()], writev2.Sample{Timestamp: 2000, Value: math.Float64frombits(value.StaleNaN)})
+							}
+						}
+						stop()
+						// Nothing beyond the expected series and samples may be sent.
+						require.Len(t, c.receivedSamples, len(expected))
+						for key, want := range expected {
+							got := c.receivedSamples[key]
+							require.Len(t, got, len(want), key)
+							for i, sample := range want {
+								require.Equal(t, sample.Timestamp, got[i].Timestamp)
+								if value.IsStaleNaN(sample.Value) {
+									require.True(t, value.IsStaleNaN(got[i].Value), key)
+									require.Zero(t, got[i].StartTimestamp, "retired bucket %s must not borrow the new layout's start time", key)
+								} else {
+									require.Equal(t, sample, got[i], key)
+								}
+							}
+						}
+					})
+				}
+			}
+		}
+	})
+
+	t.Run("shared bucket layouts", func(t *testing.T) {
+		m, stop := newTestNHCBQueueManager(t, NewTestWriteClient(remoteapi.WriteV1MessageType), nhcbQueueTestOptions{protoMsg: remoteapi.WriteV1MessageType})
+		defer stop()
+		other := record.RefSeries{Ref: 2, Labels: labels.FromStrings("__name__", "latency", "job", "web")}
+		m.StoreSeries([]record.RefSeries{baseSeries, other}, 0)
+		appendTo := func(ref chunks.HeadSeriesRef, h *histogram.Histogram, ts int64) {
+			t.Helper()
+			require.True(t, m.AppendHistograms([]record.RefHistogramSample{{Ref: ref, T: ts, H: h}}))
+		}
+		appendTo(baseSeries.Ref, newHistogram(), 1000)
+		appendTo(other.Ref, newHistogram(), 1000)
+		require.Len(t, m.nhcbLayouts, 1)
+		shared := m.nhcbSeriesBounds[baseSeries.Ref]
+		require.Same(t, shared, m.nhcbSeriesBounds[other.Ref])
+		require.Equal(t, 2, shared.refs)
+
+		changed := newHistogram()
+		changed.CustomValues = []float64{1, 3}
+		require.NoError(t, changed.Validate())
+		appendTo(other.Ref, changed, 2000)
+		require.Len(t, m.nhcbLayouts, 2)
+		require.Equal(t, 1, shared.refs)
+
+		appendTo(other.Ref, &histogram.Histogram{Sum: math.Float64frombits(value.StaleNaN)}, 3000)
+		require.Len(t, m.nhcbLayouts, 1, "a stale marker must release its layout")
+		require.NotContains(t, m.nhcbSeriesBounds, other.Ref)
+
+		m.SeriesReset(1)
+		require.Empty(t, m.nhcbSeriesBounds)
+		require.Empty(t, m.nhcbLayouts, "garbage collection must release the last reference")
+	})
+
+	t.Run("exemplars", func(t *testing.T) {
+		for _, kind := range []string{"integer histogram", "float histogram", "classic control", "native control"} {
+			t.Run(kind, func(t *testing.T) {
+				// Use a fresh receiver so an existing base series cannot hide incorrect exemplar routing.
+				opts := tsdb.DefaultHeadOptions()
+				opts.ChunkDirRoot = t.TempDir()
+				opts.EnableExemplarStorage = true
+				opts.MaxExemplars.Store(10)
+				head, err := tsdb.NewHead(nil, nil, nil, nil, opts, nil)
+				require.NoError(t, err)
+				t.Cleanup(func() { require.NoError(t, head.Close()) })
+				require.NoError(t, head.Init(math.MinInt64))
+				handler := NewWriteHandler(promslog.NewNopLogger(), nil, head, []remoteapi.WriteMessageType{remoteapi.WriteV1MessageType}, false, false)
+				c := NewTestWriteClient(remoteapi.WriteV1MessageType)
+				var statuses []int
+				client := &MockWriteClient{
+					NameFunc:     c.Name,
+					EndpointFunc: c.Endpoint,
+					StoreFunc: func(ctx context.Context, payload []byte, attempt int) (WriteResponseStats, error) {
+						req := httptest.NewRequestWithContext(ctx, http.MethodPost, "/", bytes.NewReader(payload))
+						req.Header.Set("Content-Type", remoteWriteContentTypeHeaders[remoteapi.WriteV1MessageType])
+						req.Header.Set("Content-Encoding", compression.Snappy)
+						response := httptest.NewRecorder()
+						handler.ServeHTTP(response, req)
+						statuses = append(statuses, response.Code)
+						if response.Code != http.StatusNoContent {
+							return WriteResponseStats{}, fmt.Errorf("receiver returned HTTP %d: %s", response.Code, response.Body.String())
+						}
+						return c.Store(ctx, payload, attempt)
+					},
+				}
+				m, stop := newTestNHCBQueueManager(t, client, nhcbQueueTestOptions{
+					protoMsg:             remoteapi.WriteV1MessageType,
+					sendExemplars:        true,
+					sendNativeHistograms: kind == "native control",
+				})
+				if kind == "classic control" {
+					m.StoreSeries(classicSeries, 0)
+					for i, series := range classicSeries {
+						require.True(t, m.Append([]record.RefSample{{Ref: series.Ref, T: 1000, V: classicValues[i]}}))
+					}
+				} else {
+					m.StoreSeries([]record.RefSeries{baseSeries}, 0)
+					h := newHistogram()
+					if kind == "native control" {
+						// Use an exponential histogram to exercise native delivery without NHCB conversion.
+						h.Schema = 0
+						h.CustomValues = nil
+					}
+					appendHistogram(t, m, h, 1000, kind == "float histogram")
+				}
+				// Ref 1 identifies the le="1.0" bucket in the classic control and the original histogram otherwise.
+				exemplarLabels := labels.FromStrings("trace_id", "abc")
+				require.True(t, m.AppendExemplars([]record.RefExemplar{{Ref: 1, T: 1000, V: 0.5, Labels: exemplarLabels}}))
+				stop()
+				require.Equal(t, 1, deepLen(c.receivedExemplars), "sender must transmit exactly one exemplar")
+				// RW1 may return HTTP 204 after dropping an exemplar for an unknown series, so query storage below.
+				require.NotEmpty(t, statuses)
+				for _, status := range statuses {
+					require.Equal(t, http.StatusNoContent, status)
+				}
+				if kind == "native control" {
+					require.Equal(t, uint64(1), head.NumSeries())
+					require.Len(t, c.receivedHistograms[baseSeries.Labels.String()], 1)
+				} else {
+					require.Equal(t, uint64(len(classicSeries)), head.NumSeries())
+					requireInitialSamples(t, c)
+				}
+				q, err := head.ExemplarQuerier(t.Context())
+				require.NoError(t, err)
+				got, err := q.Select(0, 2000, []*labels.Matcher{labels.MustNewMatcher(labels.MatchRegexp, "__name__", "latency.*")})
+				require.NoError(t, err)
+				require.Len(t, got, 1, "receiver must preserve the histogram exemplar")
+				require.Len(t, got[0].Exemplars, 1)
+				testutil.RequireEqual(t, exemplarLabels, got[0].Exemplars[0].Labels)
+				require.Equal(t, 0.5, got[0].Exemplars[0].Value)
+				require.Equal(t, int64(1000), got[0].Exemplars[0].Ts)
+				if kind == "native control" {
+					testutil.RequireEqual(t, baseSeries.Labels, got[0].SeriesLabels)
+				} else {
+					require.Equal(t, "latency_bucket", got[0].SeriesLabels.Get("__name__"))
+					bound, err := strconv.ParseFloat(got[0].SeriesLabels.Get("le"), 64)
+					require.NoError(t, err)
+					require.GreaterOrEqual(t, bound, 0.5)
+					require.NotEmpty(t, c.receivedSamples[got[0].SeriesLabels.String()])
+				}
+			})
+		}
+	})
 }
