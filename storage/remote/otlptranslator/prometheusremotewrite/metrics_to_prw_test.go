@@ -941,6 +941,80 @@ func TestFromMetrics(t *testing.T) {
 		require.NotEmpty(t, metricSamples, "expected metric samples")
 		require.Equal(t, "promoted-value", metricSamples[0].L.Get("custom_promoted_attr"), "metric should have promoted resource attribute")
 	})
+
+	t.Run("target_info when resource only has identifying attributes", func(t *testing.T) {
+		for _, tc := range []struct {
+			name                              string
+			keepIdentifyingResourceAttributes bool
+			expectTargetInfo                  bool
+		}{
+			{
+				name:                              "emitted when KeepIdentifyingResourceAttributes is true",
+				keepIdentifyingResourceAttributes: true,
+				expectTargetInfo:                  true,
+			},
+			{
+				name:                              "not emitted when KeepIdentifyingResourceAttributes is false",
+				keepIdentifyingResourceAttributes: false,
+				expectTargetInfo:                  false,
+			},
+		} {
+			t.Run(tc.name, func(t *testing.T) {
+				request := pmetricotlp.NewExportRequest()
+				rm := request.Metrics().ResourceMetrics().AppendEmpty()
+
+				rm.Resource().Attributes().PutStr("service.name", "test-service")
+				rm.Resource().Attributes().PutStr("service.namespace", "test-namespace")
+				rm.Resource().Attributes().PutStr("service.instance.id", "instance-1")
+
+				// Add a metric.
+				ts := pcommon.NewTimestampFromTime(time.Now())
+				scopeMetrics := rm.ScopeMetrics().AppendEmpty()
+				m := scopeMetrics.Metrics().AppendEmpty()
+				m.SetEmptyGauge()
+				m.SetName("test_gauge")
+				m.SetDescription("test gauge")
+				point := m.Gauge().DataPoints().AppendEmpty()
+				point.SetTimestamp(ts)
+				point.SetDoubleValue(1.0)
+
+				appTest := teststorage.NewAppendable()
+				app := appTest.AppenderV2(t.Context())
+				converter := NewPrometheusConverter(app)
+				annots, err := converter.FromMetrics(
+					context.Background(),
+					request.Metrics(),
+					Settings{
+						KeepIdentifyingResourceAttributes: tc.keepIdentifyingResourceAttributes,
+						LookbackDelta:                     defaultLookbackDelta,
+					},
+				)
+				require.NoError(t, err)
+				require.Empty(t, annots)
+				require.NoError(t, app.Commit())
+
+				var targetInfoSamples []sample
+				for _, s := range appTest.ResultSamples() {
+					if s.L.Get(labels.MetricName) == "target_info" {
+						targetInfoSamples = append(targetInfoSamples, s)
+					}
+				}
+
+				if tc.expectTargetInfo {
+					require.NotEmpty(t, targetInfoSamples, "expected target_info samples")
+					for _, s := range targetInfoSamples {
+						require.Equal(t, "test-service", s.L.Get("service_name"), "target_info should have service_name")
+						require.Equal(t, "test-namespace", s.L.Get("service_namespace"), "target_info should have service_namespace")
+						require.Equal(t, "instance-1", s.L.Get("service_instance_id"), "target_info should have service_instance_id")
+						require.Equal(t, "test-namespace/test-service", s.L.Get("job"), "target_info should have job")
+						require.Equal(t, "instance-1", s.L.Get("instance"), "target_info should have instance")
+					}
+				} else {
+					require.Empty(t, targetInfoSamples, "expected no target_info samples when KeepIdentifyingResourceAttributes is false and resource only has identifying attributes")
+				}
+			})
+		}
+	})
 }
 
 func TestTemporality(t *testing.T) {

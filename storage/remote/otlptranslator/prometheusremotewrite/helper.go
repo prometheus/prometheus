@@ -574,8 +574,11 @@ func (c *PrometheusConverter) addResourceTargetInfo(resource pcommon.Resource, s
 			nonIdentifyingAttrsCount--
 		}
 	}
-	if nonIdentifyingAttrsCount == 0 {
+	if !settings.KeepIdentifyingResourceAttributes && nonIdentifyingAttrsCount == 0 {
 		// If we only have job + instance, then target_info isn't useful, so don't add it.
+		return nil
+	}
+	if attributes.Len() == 0 {
 		return nil
 	}
 
