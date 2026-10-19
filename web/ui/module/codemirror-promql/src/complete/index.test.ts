@@ -12,7 +12,7 @@
 // limitations under the License.
 
 import { isPrometheusClient } from './index';
-import { HTTPPrometheusClient } from '../client/prometheus';
+import { HTTPPrometheusClient } from '../client';
 
 describe('type of remoteConfig', () => {
   it('should be a prometheusClient', () => {

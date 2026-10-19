@@ -14,6 +14,7 @@
 package storage
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"math"
@@ -46,10 +47,12 @@ type constScoreFilter float64
 func (f constScoreFilter) Accept(string) (bool, float64) { return true, float64(f) }
 
 func TestApplySearchHints(t *testing.T) {
-	values := []string{"alpha", "beta", "gamma", "delta", "epsilon"}
+	values := []string{"alpha", "beta", "delta", "epsilon", "gamma"}
+	unsortedValues := []string{"alpha", "beta", "gamma", "delta", "epsilon"}
 
 	t.Run("nil hints returns all with score 1", func(t *testing.T) {
-		got := ApplySearchHints(values, nil)
+		got, err := ApplySearchHints(t.Context(), values, nil)
+		require.NoError(t, err)
 		require.Len(t, got, len(values))
 		for i, r := range got {
 			require.Equal(t, values[i], r.Value)
@@ -58,19 +61,21 @@ func TestApplySearchHints(t *testing.T) {
 	})
 
 	t.Run("no filter ascending limit", func(t *testing.T) {
-		got := ApplySearchHints(values, &SearchHints{Limit: 3})
+		got, err := ApplySearchHints(t.Context(), values, &SearchHints{Limit: 3})
+		require.NoError(t, err)
 		require.Equal(t, []SearchResult{
 			{Value: "alpha", Score: 1.0},
 			{Value: "beta", Score: 1.0},
-			{Value: "gamma", Score: 1.0},
+			{Value: "delta", Score: 1.0},
 		}, got)
 	})
 
 	t.Run("no filter descending limit walks input in reverse", func(t *testing.T) {
-		got := ApplySearchHints(values, &SearchHints{OrderBy: OrderByValueDesc, Limit: 2})
+		got, err := ApplySearchHints(t.Context(), values, &SearchHints{OrderBy: OrderByValueDesc, Limit: 2})
+		require.NoError(t, err)
 		require.Equal(t, []SearchResult{
+			{Value: "gamma", Score: 1.0},
 			{Value: "epsilon", Score: 1.0},
-			{Value: "delta", Score: 1.0},
 		}, got)
 	})
 
@@ -80,7 +85,8 @@ func TestApplySearchHints(t *testing.T) {
 			hits++
 			return true, 1.0
 		})
-		got := ApplySearchHints(values, &SearchHints{Filter: filter, Limit: 2})
+		got, err := ApplySearchHints(t.Context(), values, &SearchHints{Filter: filter, Limit: 2})
+		require.NoError(t, err)
 		require.Len(t, got, 2)
 		// Early exit: the filter should not have been called for values past
 		// the second match.
@@ -88,15 +94,16 @@ func TestApplySearchHints(t *testing.T) {
 	})
 
 	t.Run("filter descending reverses then limits", func(t *testing.T) {
-		got := ApplySearchHints(values, &SearchHints{
+		got, err := ApplySearchHints(t.Context(), values, &SearchHints{
 			Filter:  prefixScoreFilter{prefix: ""}, // accepts everything.
 			OrderBy: OrderByValueDesc,
 			Limit:   2,
 		})
+		require.NoError(t, err)
 		require.Len(t, got, 2)
-		// Input order is values[0..4]; reverse picks epsilon then delta.
-		require.Equal(t, "epsilon", got[0].Value)
-		require.Equal(t, "delta", got[1].Value)
+		// Reverse picks gamma then epsilon.
+		require.Equal(t, "gamma", got[0].Value)
+		require.Equal(t, "epsilon", got[1].Value)
 	})
 
 	t.Run("filter descending limit early exits without scanning all", func(t *testing.T) {
@@ -107,14 +114,15 @@ func TestApplySearchHints(t *testing.T) {
 			hits++
 			return true, 1.0
 		})
-		got := ApplySearchHints(values, &SearchHints{
+		got, err := ApplySearchHints(t.Context(), values, &SearchHints{
 			Filter:  filter,
 			OrderBy: OrderByValueDesc,
 			Limit:   2,
 		})
+		require.NoError(t, err)
 		require.Equal(t, []SearchResult{
+			{Value: "gamma", Score: 1.0},
 			{Value: "epsilon", Score: 1.0},
-			{Value: "delta", Score: 1.0},
 		}, got)
 		require.Equal(t, 2, hits, "must early-exit at limit for OrderByValueDesc")
 	})
@@ -126,11 +134,12 @@ func TestApplySearchHints(t *testing.T) {
 		for i := range 100 {
 			input = append(input, fmt.Sprintf("x%0*d", i+1, i))
 		}
-		got := ApplySearchHints(input, &SearchHints{
+		got, err := ApplySearchHints(t.Context(), input, &SearchHints{
 			Filter:  prefixScoreFilter{prefix: "x"},
 			OrderBy: OrderByScoreDesc,
 			Limit:   3,
 		})
+		require.NoError(t, err)
 		require.Len(t, got, 3)
 		// Scores are non-increasing.
 		for i := 1; i < len(got); i++ {
@@ -142,11 +151,12 @@ func TestApplySearchHints(t *testing.T) {
 
 	t.Run("score desc tie-break on Value asc", func(t *testing.T) {
 		// With a constant score, ordering tie-breaks on Value ascending.
-		got := ApplySearchHints(values, &SearchHints{
+		got, err := ApplySearchHints(t.Context(), unsortedValues, &SearchHints{
 			Filter:  constScoreFilter(0.5),
 			OrderBy: OrderByScoreDesc,
 			Limit:   3,
 		})
+		require.NoError(t, err)
 		require.Equal(t, []SearchResult{
 			{Value: "alpha", Score: 0.5},
 			{Value: "beta", Score: 0.5},
@@ -155,10 +165,11 @@ func TestApplySearchHints(t *testing.T) {
 	})
 
 	t.Run("score desc unlimited keeps all matches sorted", func(t *testing.T) {
-		got := ApplySearchHints(values, &SearchHints{
+		got, err := ApplySearchHints(t.Context(), unsortedValues, &SearchHints{
 			Filter:  prefixScoreFilter{prefix: ""},
 			OrderBy: OrderByScoreDesc,
 		})
+		require.NoError(t, err)
 		require.Len(t, got, len(values))
 		for i := 1; i < len(got); i++ {
 			if got[i-1].Score == got[i].Score {
@@ -173,20 +184,22 @@ func TestApplySearchHints(t *testing.T) {
 		// Reachable when --web.search.max-limit=0 disables the cap and a
 		// client supplies a near-MaxInt limit. The pre-allocation must
 		// clamp to len(values) rather than blowing up makeslice.
-		got := ApplySearchHints([]string{"alpha", "beta", "gamma"}, &SearchHints{
+		got, err := ApplySearchHints(t.Context(), []string{"alpha", "beta", "gamma"}, &SearchHints{
 			Filter:  FilterFunc(func(string) (bool, float64) { return true, 0.5 }),
 			OrderBy: OrderByScoreDesc,
 			Limit:   math.MaxInt,
 		})
+		require.NoError(t, err)
 		require.Len(t, got, 3)
 	})
 
 	t.Run("near-MaxInt limit does not panic reverse early exit", func(t *testing.T) {
-		got := ApplySearchHints([]string{"alpha", "beta", "gamma"}, &SearchHints{
+		got, err := ApplySearchHints(t.Context(), []string{"alpha", "beta", "gamma"}, &SearchHints{
 			Filter:  FilterFunc(func(string) (bool, float64) { return true, 1.0 }),
 			OrderBy: OrderByValueDesc,
 			Limit:   math.MaxInt,
 		})
+		require.NoError(t, err)
 		require.Equal(t, []SearchResult{
 			{Value: "gamma", Score: 1.0},
 			{Value: "beta", Score: 1.0},
@@ -198,11 +211,12 @@ func TestApplySearchHints(t *testing.T) {
 		// Same DoS-shape input but routed through applySearchHintsLinear
 		// via OrderByValueAsc. linearResultCap must absorb the overflow
 		// without makeslice panicking.
-		got := ApplySearchHints([]string{"alpha", "beta", "gamma"}, &SearchHints{
+		got, err := ApplySearchHints(t.Context(), []string{"alpha", "beta", "gamma"}, &SearchHints{
 			Filter:  FilterFunc(func(string) (bool, float64) { return true, 0.5 }),
 			OrderBy: OrderByValueAsc,
 			Limit:   math.MaxInt,
 		})
+		require.NoError(t, err)
 		require.Len(t, got, 3)
 		require.Equal(t, "alpha", got[0].Value)
 		require.Equal(t, "gamma", got[2].Value)
@@ -215,16 +229,84 @@ func TestApplySearchHints(t *testing.T) {
 		// catches regressions in the linear capacity helper.
 		var input []string
 		for i := range 10000 {
-			input = append(input, fmt.Sprintf("v%d", i))
+			input = append(input, fmt.Sprintf("v%04d", i))
 		}
-		got := ApplySearchHints(input, &SearchHints{
+		got, err := ApplySearchHints(t.Context(), input, &SearchHints{
 			Filter: FilterFunc(func(v string) (bool, float64) {
 				// Match values whose decimal representation ends in "00".
 				return strings.HasSuffix(v, "00"), 0.5
 			}),
 			Limit: 50,
 		})
+		require.NoError(t, err)
 		require.LessOrEqual(t, len(got), 50)
+	})
+
+	t.Run("cancellation", func(t *testing.T) {
+		t.Run("already canceled", func(t *testing.T) {
+			cause := errors.New("request canceled")
+			ctx, cancel := context.WithCancelCause(t.Context())
+			cancel(cause)
+
+			for _, hints := range []*SearchHints{nil, {OrderBy: OrderByValueAsc}, {OrderBy: OrderByValueDesc}, {OrderBy: OrderByScoreDesc}} {
+				results, err := ApplySearchHints(ctx, []string{"alpha"}, hints)
+				require.ErrorIs(t, err, cause)
+				require.Nil(t, results)
+			}
+		})
+
+		for _, order := range []Ordering{OrderByValueAsc, OrderByValueDesc, OrderByScoreDesc} {
+			t.Run(fmt.Sprintf("order_%d", order), func(t *testing.T) {
+				t.Run("during filtering", func(t *testing.T) {
+					cause := errors.New("filter canceled")
+					ctx, cancel := context.WithCancelCause(t.Context())
+					defer cancel(nil)
+					calls := 0
+					values := make([]string, 1024)
+					for i := range values {
+						values[i] = fmt.Sprintf("value-%04d", i)
+					}
+					hints := &SearchHints{
+						OrderBy: order,
+						Limit:   512,
+						Filter: FilterFunc(func(string) (bool, float64) {
+							calls++
+							if calls == 5 {
+								cancel(cause)
+							}
+							return true, 1
+						}),
+					}
+
+					results, err := ApplySearchHints(ctx, values, hints)
+					require.ErrorIs(t, err, cause)
+					require.Nil(t, results)
+					require.LessOrEqual(t, calls, 128)
+				})
+
+				t.Run("on final filter call", func(t *testing.T) {
+					cause := errors.New("filter canceled")
+					ctx, cancel := context.WithCancelCause(t.Context())
+					defer cancel(nil)
+					calls := 0
+					hints := &SearchHints{
+						OrderBy: order,
+						Limit:   3,
+						Filter: FilterFunc(func(string) (bool, float64) {
+							calls++
+							if calls == 3 {
+								cancel(cause)
+							}
+							return true, 1
+						}),
+					}
+
+					_, err := ApplySearchHints(ctx, []string{"alpha", "beta", "gamma"}, hints)
+					require.ErrorIs(t, err, cause)
+					require.Equal(t, 3, calls)
+				})
+			})
+		}
 	})
 }
 
@@ -321,8 +403,12 @@ func BenchmarkApplySearchHints(b *testing.B) {
 	for _, c := range cases {
 		b.Run(c.name, func(b *testing.B) {
 			b.ReportAllocs()
+			ctx := b.Context()
 			for b.Loop() {
-				_ = ApplySearchHints(values, c.hints)
+				_, err := ApplySearchHints(ctx, values, c.hints)
+				if err != nil {
+					b.Fatal(err)
+				}
 			}
 		})
 	}

@@ -14,8 +14,6 @@ module.exports = {
             },
         },
     },
-    moduleNameMapper: {
-        'lezer-promql': '<rootDir>/node_modules/@prometheus-io/lezer-promql/dist/index.cjs'
-    },
+    resolver: './jestResolver.cjs',
     transformIgnorePatterns: ["<rootDir>/node_modules/(?!@prometheus-io/lezer-promql)/"]
 };
