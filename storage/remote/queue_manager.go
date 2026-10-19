@@ -15,6 +15,7 @@ package remote
 
 import (
 	"context"
+	"encoding/binary"
 	"errors"
 	"fmt"
 	"log/slog"
@@ -41,6 +42,7 @@ import (
 	"github.com/prometheus/prometheus/model/metadata"
 	"github.com/prometheus/prometheus/model/relabel"
 	"github.com/prometheus/prometheus/model/timestamp"
+	"github.com/prometheus/prometheus/model/value"
 	"github.com/prometheus/prometheus/prompb"
 	writev2 "github.com/prometheus/prometheus/prompb/io/prometheus/write/v2"
 	"github.com/prometheus/prometheus/schema"
@@ -64,6 +66,7 @@ const (
 	reasonDroppedSeries              = "dropped_series"
 	reasonUnintentionalDroppedSeries = "unintentionally_dropped_series"
 	reasonNHCBNotSupported           = "nhcb_in_rw1_not_supported"
+	reasonNHCBConversionError        = "nhcb_to_classic_conversion_error"
 )
 
 type queueManagerMetrics struct {
@@ -434,6 +437,7 @@ type QueueManager struct {
 	sendNativeHistograms    bool
 	enableTypeAndUnitLabels bool
 	failedRequestLogging    bool
+	convertNHCBToClassic    bool
 	watcher                 *wlog.Watcher
 	metadataWatcher         *MetadataWatcher
 
@@ -442,11 +446,15 @@ type QueueManager struct {
 	protoMsg    remoteapi.WriteMessageType
 	compr       compression.Type
 
-	seriesMtx      sync.Mutex // Covers seriesLabels, seriesMetadata, droppedSeries and builder.
-	seriesLabels   map[chunks.HeadSeriesRef]labels.Labels
-	seriesMetadata map[chunks.HeadSeriesRef]*metadata.Metadata
-	droppedSeries  map[chunks.HeadSeriesRef]struct{}
-	builder        *labels.Builder
+	seriesMtx        sync.Mutex // Covers seriesLabels, seriesMetadata, droppedSeries, the NHCB fields and builder.
+	seriesLabels     map[chunks.HeadSeriesRef]labels.Labels
+	seriesMetadata   map[chunks.HeadSeriesRef]*metadata.Metadata
+	droppedSeries    map[chunks.HeadSeriesRef]struct{}
+	nhcbSeriesBounds map[chunks.HeadSeriesRef]*nhcbLayout // Layout of each converted NHCB series.
+	nhcbLayouts      map[string]*nhcbLayout               // Keyed by the encoded bounds.
+	nhcbLayoutKey    []byte                               // Scratch space for layout keys.
+	nhcbCounts       []float64                            // Scratch space for bucket counts.
+	builder          *labels.Builder
 
 	seriesSegmentMtx     sync.Mutex // Covers seriesSegmentIndexes - if you also lock seriesMtx, take seriesMtx first.
 	seriesSegmentIndexes map[chunks.HeadSeriesRef]int
@@ -457,7 +465,7 @@ type QueueManager struct {
 	quit        chan struct{}
 	wg          sync.WaitGroup
 
-	dataIn, dataDropped, dataOut, dataOutDuration *ewmaRate
+	dataIn, dataInExpanded, dataDropped, dataOut, dataOutDuration *ewmaRate
 
 	metrics              *queueManagerMetrics
 	interner             *pool
@@ -491,6 +499,7 @@ func NewQueueManager(
 	protoMsg remoteapi.WriteMessageType,
 	recordBuf *record.BuffersPool,
 	failedRequestLogging bool,
+	convertNHCBToClassic bool,
 ) *QueueManager {
 	if logger == nil {
 		logger = promslog.NewNopLogger()
@@ -520,6 +529,8 @@ func NewQueueManager(
 		seriesMetadata:       make(map[chunks.HeadSeriesRef]*metadata.Metadata),
 		seriesSegmentIndexes: make(map[chunks.HeadSeriesRef]int),
 		droppedSeries:        make(map[chunks.HeadSeriesRef]struct{}),
+		nhcbSeriesBounds:     make(map[chunks.HeadSeriesRef]*nhcbLayout),
+		nhcbLayouts:          make(map[string]*nhcbLayout),
 		builder:              labels.NewBuilder(labels.EmptyLabels()),
 
 		numShards:   cfg.MinShards,
@@ -527,6 +538,7 @@ func NewQueueManager(
 		quit:        make(chan struct{}),
 
 		dataIn:          samplesIn,
+		dataInExpanded:  newEWMARate(ewmaWeight, shardUpdateDuration),
 		dataDropped:     newEWMARate(ewmaWeight, shardUpdateDuration),
 		dataOut:         newEWMARate(ewmaWeight, shardUpdateDuration),
 		dataOutDuration: newEWMARate(ewmaWeight, shardUpdateDuration),
@@ -537,11 +549,13 @@ func NewQueueManager(
 
 		protoMsg: protoMsg,
 		compr:    compression.Snappy, // Hardcoded for now, but scaffolding exists for likely future use.
+
+		convertNHCBToClassic: convertNHCBToClassic,
 	}
 
 	walMetadata := t.protoMsg != remoteapi.WriteV1MessageType
 
-	t.watcher = wlog.NewWatcher(watcherMetrics, readerMetrics, logger, client.Name(), t, dir, enableExemplarRemoteWrite, enableNativeHistogramRemoteWrite, walMetadata, recordBuf)
+	t.watcher = wlog.NewWatcher(watcherMetrics, readerMetrics, logger, client.Name(), t, dir, enableExemplarRemoteWrite, enableNativeHistogramRemoteWrite || convertNHCBToClassic, walMetadata, recordBuf)
 
 	// The current MetadataWatcher implementation is mutually exclusive
 	// with the new approach, which stores metadata as WAL records and
@@ -752,6 +766,23 @@ outer:
 		// TODO(cstyan): Handle or at least log an error if no metadata is found.
 		// See https://github.com/prometheus/prometheus/issues/14405
 		meta := t.seriesMetadata[s.Ref]
+		if t.convertNHCBToClassic {
+			if _, ok := t.nhcbSeriesBounds[s.Ref]; ok {
+				// A float sample for a converted NHCB series is either its stale marker or
+				// a change of sample type. Both retire the classic series; a type change
+				// also forwards the float, whose start time stays off the retired series.
+				st := s.ST
+				var replacement *timeSeries
+				if !value.IsStaleNaN(s.V) {
+					st = 0
+					replacement = &timeSeries{seriesLabels: lbls, metadata: meta, startTimestamp: s.ST, timestamp: s.T, value: s.V, sType: tSample}
+				}
+				if !t.convertAndEnqueueNHCB(s.Ref, st, s.T, nil, nil, true, lbls, meta, replacement) {
+					return false
+				}
+				continue
+			}
+		}
 		t.seriesMtx.Unlock()
 		// Start with a very small backoff. This should not be t.cfg.MinBackoff
 		// as it can happen without errors, and we want to pickup work after
@@ -813,6 +844,23 @@ outer:
 			t.seriesMtx.Unlock()
 			continue
 		}
+		if t.convertNHCBToClassic {
+			if layout, ok := t.nhcbSeriesBounds[e.Ref]; ok {
+				if baseName := lbls.Get(model.MetricNameLabel); baseName != "" {
+					le := layout.le[len(layout.bounds)] // +Inf, for values above every bound.
+					for i, b := range layout.bounds {
+						if e.V <= b {
+							le = layout.le[i]
+							break
+						}
+					}
+					t.builder.Reset(lbls)
+					t.builder.Set(model.MetricNameLabel, baseName+"_bucket")
+					t.builder.Set(model.BucketLabel, le)
+					lbls = t.builder.Labels()
+				}
+			}
+		}
 		meta := t.seriesMetadata[e.Ref]
 		t.seriesMtx.Unlock()
 		// This will only loop if the queues are being resharded.
@@ -845,24 +893,215 @@ outer:
 	return true
 }
 
+// nhcbLayout is a bucket layout shared by the NHCB series that use it.
+type nhcbLayout struct {
+	bounds []float64
+	le     []string // Formatted bounds, followed by +Inf.
+	key    string
+	refs   int // Series sharing the layout.
+}
+
+// acquireNHCBLayout requires seriesMtx and returns a new reference to the shared layout for bounds.
+// Each reference must be released with releaseNHCBLayout.
+func (t *QueueManager) acquireNHCBLayout(bounds []float64) *nhcbLayout {
+	// The key is the bounds' exact bit patterns. Converting it inside the map index avoids an allocation.
+	t.nhcbLayoutKey = t.nhcbLayoutKey[:0]
+	for _, b := range bounds {
+		t.nhcbLayoutKey = binary.LittleEndian.AppendUint64(t.nhcbLayoutKey, math.Float64bits(b))
+	}
+	layout, ok := t.nhcbLayouts[string(t.nhcbLayoutKey)]
+	if !ok {
+		// Copy the bounds, which belong to the caller's histogram.
+		layout = &nhcbLayout{bounds: slices.Clone(bounds), le: make([]string, 0, len(bounds)+1), key: string(t.nhcbLayoutKey)}
+		for _, b := range bounds {
+			layout.le = append(layout.le, labels.FormatOpenMetricsFloat(b))
+		}
+		layout.le = append(layout.le, labels.FormatOpenMetricsFloat(math.Inf(1)))
+		t.nhcbLayouts[layout.key] = layout
+	}
+	layout.refs++
+	return layout
+}
+
+// releaseNHCBLayout requires seriesMtx and drops a reference, forgetting the layout once unused.
+func (t *QueueManager) releaseNHCBLayout(layout *nhcbLayout) {
+	layout.refs--
+	if layout.refs == 0 {
+		delete(t.nhcbLayouts, layout.key)
+	}
+}
+
+// convertAndEnqueueNHCB converts an NHCB histogram (using the already-relabeled seriesLabels)
+// into classic _bucket, _count, and _sum samples while holding seriesMtx, then enqueues them
+// after releasing the lock. Caller must hold t.seriesMtx on entry; this method unlocks it.
+// A replacement follows the converted stale markers when changing sample type.
+func (t *QueueManager) convertAndEnqueueNHCB(ref chunks.HeadSeriesRef, st, ts int64, nhcb any, customValues []float64, isStale bool, lbls labels.Labels, meta *metadata.Metadata, replacement *timeSeries) bool {
+	prev, wasActive := t.nhcbSeriesBounds[ref]
+	var prevBounds []float64
+	if wasActive {
+		prevBounds = prev.bounds
+	}
+	if nhcb == nil {
+		customValues = prevBounds
+		nhcb = &histogram.Histogram{
+			Schema:       histogram.CustomBucketsSchema,
+			CustomValues: prevBounds,
+			Sum:          math.Float64frombits(value.StaleNaN),
+		}
+	}
+
+	sameBounds := wasActive && slices.Equal(prevBounds, customValues)
+	capacity := len(customValues) + 3
+	if wasActive && !sameBounds {
+		capacity += len(prevBounds)
+	}
+	if replacement != nil {
+		capacity++
+	}
+	classicSeries := make([]timeSeries, 0, capacity)
+	emit := func(bucketLabels labels.Labels, value float64) {
+		classicSeries = append(classicSeries, timeSeries{
+			seriesLabels:   bucketLabels,
+			metadata:       meta,
+			startTimestamp: st,
+			timestamp:      ts,
+			value:          value,
+			sType:          tSample,
+		})
+	}
+	baseName := lbls.Get(model.MetricNameLabel)
+	var (
+		count, sum float64
+		err        error
+	)
+	if baseName == "" {
+		err = errors.New("metric name label '__name__' is missing")
+	} else {
+		t.nhcbCounts, count, sum, err = histogram.ClassicBucketCounts(nhcb, t.nhcbCounts)
+	}
+	layout := prev
+	if err == nil {
+		if !sameBounds {
+			layout = t.acquireNHCBLayout(customValues)
+		}
+		bucketName := baseName + "_bucket"
+		for i, c := range t.nhcbCounts {
+			t.builder.Reset(lbls)
+			t.builder.Set(model.MetricNameLabel, bucketName)
+			t.builder.Set(model.BucketLabel, layout.le[i])
+			emit(t.builder.Labels(), c)
+		}
+		t.builder.Reset(lbls)
+		t.builder.Set(model.MetricNameLabel, baseName+"_count")
+		emit(t.builder.Labels(), count)
+		t.builder.Reset(lbls)
+		t.builder.Set(model.MetricNameLabel, baseName+"_sum")
+		emit(t.builder.Labels(), sum)
+	}
+	if err == nil && wasActive && !sameBounds {
+		staleVal := math.Float64frombits(value.StaleNaN)
+		for i, prevBound := range prevBounds {
+			if slices.Contains(customValues, prevBound) {
+				continue
+			}
+			t.builder.Reset(lbls)
+			t.builder.Set(model.MetricNameLabel, baseName+"_bucket")
+			t.builder.Set(model.BucketLabel, prev.le[i])
+			// Retired buckets get no start time; st belongs to the new layout.
+			classicSeries = append(classicSeries, timeSeries{
+				seriesLabels:   t.builder.Labels(),
+				metadata:       meta,
+				startTimestamp: 0,
+				timestamp:      ts,
+				value:          staleVal,
+				sType:          tSample,
+			})
+		}
+	}
+	if err == nil {
+		if isStale {
+			if !sameBounds {
+				// A stale marker needed the new layout only for its labels.
+				t.releaseNHCBLayout(layout)
+			}
+			if wasActive {
+				t.releaseNHCBLayout(prev)
+			}
+			delete(t.nhcbSeriesBounds, ref)
+		} else if !sameBounds {
+			if wasActive {
+				t.releaseNHCBLayout(prev)
+			}
+			t.nhcbSeriesBounds[ref] = layout
+		}
+		if replacement != nil {
+			classicSeries = append(classicSeries, *replacement)
+		}
+	}
+	t.seriesMtx.Unlock()
+	if err != nil {
+		t.logger.Error("Conversion error", "err", err)
+		t.metrics.droppedHistogramsTotal.WithLabelValues(reasonNHCBConversionError).Inc()
+		t.dataDropped.incr(1)
+		return true
+	}
+	if len(classicSeries) > 1 {
+		// WriteStorage counts the incoming sample as a single item in dataIn;
+		// account for the extra classic series produced by NHCB expansion here.
+		t.dataInExpanded.incr(int64(len(classicSeries) - 1))
+	}
+	for _, s := range classicSeries {
+		backoff := model.Duration(5 * time.Millisecond)
+		for {
+			select {
+			case <-t.quit:
+				return false
+			default:
+			}
+			if t.shards.enqueue(ref, s) {
+				break
+			}
+
+			t.metrics.enqueueRetriesTotal.Inc()
+			time.Sleep(time.Duration(backoff))
+			backoff *= 2
+			if backoff > t.cfg.MaxBackoff {
+				backoff = t.cfg.MaxBackoff
+			}
+		}
+	}
+	return true
+}
+
 func (t *QueueManager) AppendHistograms(histograms []record.RefHistogramSample) bool {
-	if !t.sendNativeHistograms {
+	if !t.sendNativeHistograms && !t.convertNHCBToClassic {
 		return true
 	}
 	currentTime := time.Now()
 outer:
 	for _, h := range histograms {
+		isNHCB := h.H != nil && h.H.Schema == histogram.CustomBucketsSchema
+		isStale := h.H != nil && value.IsStaleNaN(h.H.Sum)
+		t.seriesMtx.Lock()
+		_, isTrackedNHCB := t.nhcbSeriesBounds[h.Ref]
+		convertNHCB := t.convertNHCBToClassic && (isNHCB || (isStale && isTrackedNHCB))
+		transition := t.convertNHCBToClassic && isTrackedNHCB && !isNHCB && !isStale
+		if !t.sendNativeHistograms && !convertNHCB && !transition {
+			t.seriesMtx.Unlock()
+			continue
+		}
 		if isSampleOld(currentTime, time.Duration(t.cfg.SampleAgeLimit), h.T) {
+			t.seriesMtx.Unlock()
 			t.metrics.droppedHistogramsTotal.WithLabelValues(reasonTooOld).Inc()
 			continue
 		}
-		if t.protoMsg == remoteapi.WriteV1MessageType && h.H != nil && h.H.Schema == histogram.CustomBucketsSchema {
+		if !t.convertNHCBToClassic && t.protoMsg == remoteapi.WriteV1MessageType && isNHCB {
+			t.seriesMtx.Unlock()
 			// We cannot send native histograms with custom buckets (NHCB) via remote write v1.
 			t.metrics.droppedHistogramsTotal.WithLabelValues(reasonNHCBNotSupported).Inc()
 			t.logger.Warn("Dropped native histogram with custom buckets (NHCB) as remote write v1 does not support it", "ref", h.Ref)
 			continue
 		}
-		t.seriesMtx.Lock()
 		lbls, ok := t.seriesLabels[h.Ref]
 		if !ok {
 			t.dataDropped.incr(1)
@@ -876,6 +1115,29 @@ outer:
 			continue
 		}
 		meta := t.seriesMetadata[h.Ref]
+		if transition {
+			var replacement *timeSeries
+			if t.sendNativeHistograms {
+				replacement = &timeSeries{seriesLabels: lbls, metadata: meta, startTimestamp: h.ST, timestamp: h.T, histogram: h.H, sType: tHistogram}
+			}
+			if !t.convertAndEnqueueNHCB(h.Ref, 0, h.T, nil, nil, true, lbls, meta, replacement) {
+				return false
+			}
+			continue
+		}
+		// Check if `convert_nhcb_to_classic` flag is enabled to convert NHCB histograms to classic histograms.
+		if convertNHCB {
+			var nhcb any
+			var customValues []float64
+			if isNHCB {
+				nhcb = h.H
+				customValues = h.H.CustomValues
+			}
+			if !t.convertAndEnqueueNHCB(h.Ref, h.ST, h.T, nhcb, customValues, isStale, lbls, meta, nil) {
+				return false
+			}
+			continue
+		}
 		t.seriesMtx.Unlock()
 
 		backoff := model.Duration(5 * time.Millisecond)
@@ -908,23 +1170,34 @@ outer:
 }
 
 func (t *QueueManager) AppendFloatHistograms(floatHistograms []record.RefFloatHistogramSample) bool {
-	if !t.sendNativeHistograms {
+	if !t.sendNativeHistograms && !t.convertNHCBToClassic {
 		return true
 	}
 	currentTime := time.Now()
 outer:
 	for _, h := range floatHistograms {
+		isNHCB := h.FH != nil && h.FH.Schema == histogram.CustomBucketsSchema
+		isStale := h.FH != nil && value.IsStaleNaN(h.FH.Sum)
+		t.seriesMtx.Lock()
+		_, isTrackedNHCB := t.nhcbSeriesBounds[h.Ref]
+		convertNHCB := t.convertNHCBToClassic && (isNHCB || (isStale && isTrackedNHCB))
+		transition := t.convertNHCBToClassic && isTrackedNHCB && !isNHCB && !isStale
+		if !t.sendNativeHistograms && !convertNHCB && !transition {
+			t.seriesMtx.Unlock()
+			continue
+		}
 		if isSampleOld(currentTime, time.Duration(t.cfg.SampleAgeLimit), h.T) {
+			t.seriesMtx.Unlock()
 			t.metrics.droppedHistogramsTotal.WithLabelValues(reasonTooOld).Inc()
 			continue
 		}
-		if t.protoMsg == remoteapi.WriteV1MessageType && h.FH != nil && h.FH.Schema == histogram.CustomBucketsSchema {
+		if !t.convertNHCBToClassic && t.protoMsg == remoteapi.WriteV1MessageType && isNHCB {
+			t.seriesMtx.Unlock()
 			// We cannot send native histograms with custom buckets (NHCB) via remote write v1.
 			t.metrics.droppedHistogramsTotal.WithLabelValues(reasonNHCBNotSupported).Inc()
 			t.logger.Warn("Dropped float native histogram with custom buckets (NHCB) as remote write v1 does not support it", "ref", h.Ref)
 			continue
 		}
-		t.seriesMtx.Lock()
 		lbls, ok := t.seriesLabels[h.Ref]
 		if !ok {
 			t.dataDropped.incr(1)
@@ -938,6 +1211,29 @@ outer:
 			continue
 		}
 		meta := t.seriesMetadata[h.Ref]
+		if transition {
+			var replacement *timeSeries
+			if t.sendNativeHistograms {
+				replacement = &timeSeries{seriesLabels: lbls, metadata: meta, startTimestamp: h.ST, timestamp: h.T, floatHistogram: h.FH, sType: tFloatHistogram}
+			}
+			if !t.convertAndEnqueueNHCB(h.Ref, 0, h.T, nil, nil, true, lbls, meta, replacement) {
+				return false
+			}
+			continue
+		}
+		// Check if `convert_nhcb_to_classic` flag is enabled to convert NHCB Float histograms to classic histograms.
+		if convertNHCB {
+			var nhcb any
+			var customValues []float64
+			if isNHCB {
+				nhcb = h.FH
+				customValues = h.FH.CustomValues
+			}
+			if !t.convertAndEnqueueNHCB(h.Ref, h.ST, h.T, nhcb, customValues, isStale, lbls, meta, nil) {
+				return false
+			}
+			continue
+		}
 		t.seriesMtx.Unlock()
 
 		backoff := model.Duration(5 * time.Millisecond)
@@ -1070,12 +1366,17 @@ func (t *QueueManager) SeriesReset(index int) {
 	// Check for series that are in segments older than the checkpoint
 	// that were not also present in the checkpoint.
 	for k, v := range t.seriesSegmentIndexes {
-		if v < index {
-			delete(t.seriesSegmentIndexes, k)
-			delete(t.seriesLabels, k)
-			delete(t.seriesMetadata, k)
-			delete(t.droppedSeries, k)
+		if v >= index {
+			continue
 		}
+		delete(t.seriesSegmentIndexes, k)
+		delete(t.seriesLabels, k)
+		delete(t.seriesMetadata, k)
+		delete(t.droppedSeries, k)
+		if layout, ok := t.nhcbSeriesBounds[k]; ok {
+			t.releaseNHCBLayout(layout)
+		}
+		delete(t.nhcbSeriesBounds, k)
 	}
 }
 
@@ -1161,13 +1462,14 @@ func (t *QueueManager) calculateDesiredShards() int {
 	t.dataOut.tick()
 	t.dataDropped.tick()
 	t.dataOutDuration.tick()
+	t.dataInExpanded.tick()
 
 	// We use the number of incoming samples as a prediction of how much work we
 	// will need to do next iteration.  We add to this any pending samples
 	// (received - send) so we can catch up with any backlog. We use the average
 	// outgoing batch latency to work out how many shards we need.
 	var (
-		dataInRate      = t.dataIn.rate()
+		dataInRate      = t.dataIn.rate() + t.dataInExpanded.rate()
 		dataOutRate     = t.dataOut.rate()
 		dataKeptRatio   = dataOutRate / (t.dataDropped.rate() + dataOutRate)
 		dataOutDuration = t.dataOutDuration.rate() / float64(time.Second)

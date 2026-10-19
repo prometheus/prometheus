@@ -169,7 +169,8 @@ var expectedConf = &Config{
 				FollowRedirects: true,
 				EnableHTTP2:     false,
 			},
-			Headers: map[string]string{"name": "value"},
+			Headers:              map[string]string{"name": "value"},
+			ConvertNHCBToClassic: true,
 		},
 	},
 

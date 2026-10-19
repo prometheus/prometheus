@@ -93,6 +93,7 @@ type pendingEntry struct {
 	seriesEnd   int
 	nameLen     int
 	injectKey   string
+	injectVal   float64
 	val         float64
 }
 
@@ -382,11 +383,43 @@ func (p *openMetrics2Parser) Labels(l *labels.Labels) {
 // Exemplar writes the next exemplar of the current sample into e and returns
 // true.  Returns false when all exemplars have been consumed.
 func (p *openMetrics2Parser) Exemplar(e *exemplar.Exemplar) bool {
-	if p.exemplarIdx >= len(p.exemplars) {
+	if len(p.exemplars) == 0 {
 		return false
 	}
-	ex := p.exemplars[p.exemplarIdx]
-	p.exemplarIdx++
+	var ex om2Exemplar
+	if p.pendingIdx > 0 {
+		idx := p.pendingIdx - 1
+		pe := p.pending[idx]
+		if pe.injectKey != "le" {
+			return false
+		}
+		upper := pe.injectVal
+		hasLower := idx > 0 && p.pending[idx-1].injectKey == "le"
+		var lower float64
+		if hasLower {
+			lower = p.pending[idx-1].injectVal
+		}
+		isPosInf := math.IsInf(upper, 1)
+		found := false
+		for p.exemplarIdx < len(p.exemplars) {
+			cand := p.exemplars[p.exemplarIdx]
+			p.exemplarIdx++
+			if (cand.val <= upper && (!hasLower || cand.val > lower)) || (isPosInf && math.IsNaN(cand.val)) {
+				ex = cand
+				found = true
+				break
+			}
+		}
+		if !found {
+			return false
+		}
+	} else {
+		if p.exemplarIdx >= len(p.exemplars) {
+			return false
+		}
+		ex = p.exemplars[p.exemplarIdx]
+		p.exemplarIdx++
+	}
 
 	e.Value = ex.val
 	e.HasTs = true
@@ -436,6 +469,7 @@ func (p *openMetrics2Parser) Next() (Entry, error) {
 	// Drain pending composite-value entries.
 	if p.pendingIdx < len(p.pending) {
 		p.pendingIdx++
+		p.exemplarIdx = 0
 		return EntrySeries, nil
 	}
 	if len(p.pending) > 0 {
@@ -1640,6 +1674,7 @@ func (p *openMetrics2Parser) appendPendingSeriesBytes(suffix, injectKey string, 
 		seriesEnd:   len(p.seriesBuf),
 		nameLen:     nameLen,
 		injectKey:   injectKey,
+		injectVal:   injectVal,
 		val:         val,
 	}
 }

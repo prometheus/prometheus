@@ -2384,6 +2384,55 @@ func TestDeletedIterator(t *testing.T) {
 		require.GreaterOrEqual(t, i, int64(1000))
 		require.NoError(t, it.Err())
 	}
+
+	t.Run("reuse", func(t *testing.T) {
+		for _, tc := range []struct {
+			name  string
+			seek  bool
+			shift int64
+		}{
+			{name: "next/same_range"},
+			{name: "next/next_chunk", shift: 20},
+			{name: "seek/same_range", seek: true},
+			{name: "seek/next_chunk", seek: true, shift: 20},
+		} {
+			t.Run(tc.name, func(t *testing.T) {
+				it := &DeletedIterator{}
+				for iteration := range 2 {
+					start := int64(iteration) * tc.shift
+					chk := chunkenc.NewXORChunk()
+					app, err := chk.Appender()
+					require.NoError(t, err)
+					for ts := start; ts < start+20; ts++ {
+						app.Append(0, ts, float64(ts))
+					}
+
+					// Reuse the wrapper by resetting only its exported fields, as external callers do.
+					it.Intervals = it.Intervals[:0]
+					// Leave samples after the deletion interval so iteration advances past it
+					// before the wrapper is reused.
+					it.Intervals = it.Intervals.Add(tombstones.Interval{Mint: start, Maxt: start + 9})
+					it.Iter = chk.Iterator(nil)
+
+					var valueType chunkenc.ValueType
+					if tc.seek {
+						valueType = it.Seek(start)
+					} else {
+						valueType = it.Next()
+					}
+					for ts := start + 10; ts < start+20; ts++ {
+						require.Equal(t, chunkenc.ValFloat, valueType, "iteration %d", iteration+1)
+						gotTs, gotValue := it.At()
+						require.Equal(t, ts, gotTs, "iteration %d", iteration+1)
+						require.Equal(t, float64(ts), gotValue, "iteration %d", iteration+1)
+						valueType = it.Next()
+					}
+					require.Equal(t, chunkenc.ValNone, valueType, "iteration %d", iteration+1)
+					require.NoError(t, it.Err())
+				}
+			})
+		}
+	})
 }
 
 func TestDeletedIterator_WithSeek(t *testing.T) {
