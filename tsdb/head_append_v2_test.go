@@ -4594,6 +4594,47 @@ func TestHeadAppenderV2_Append_EnableSTAsZeroSample(t *testing.T) {
 	}
 }
 
+// TestHeadAppenderV2_STZeroSample_StartTimestamp verifies that, with ST storage, the zero sample
+// written for a start timestamp carries that start timestamp, like the samples that follow it.
+func TestHeadAppenderV2_STZeroSample_StartTimestamp(t *testing.T) {
+	for _, tc := range []struct {
+		name string
+		v    float64
+		h    *histogram.Histogram
+		fh   *histogram.FloatHistogram
+	}{
+		{name: "float", v: 10},
+		{name: "histogram", h: tsdbutil.GenerateTestHistogram(1)},
+		{name: "float histogram", fh: tsdbutil.GenerateTestFloatHistogram(1)},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			opts := newTestHeadDefaultOptions(DefaultBlockDuration, false)
+			opts.EnableSTAsZeroSample = true
+			opts.EnableSTStorage.Store(true)
+			opts.FloatChunkEncoding.Store(uint32(chunkenc.EncXOR2))
+			opts.EnableHistogramSTEncoding.Store(true)
+			h, _ := newTestHeadWithOptions(t, compression.None, opts)
+
+			lbls := labels.FromStrings("foo", "bar")
+			for _, ts := range []int64{100, 200} {
+				app := h.AppenderV2(context.Background())
+				_, err := app.Append(0, lbls, 1, ts, tc.v, tc.h, tc.fh, storage.AOptions{})
+				require.NoError(t, err)
+				require.NoError(t, app.Commit())
+			}
+
+			q, err := NewBlockQuerier(h, math.MinInt64, math.MaxInt64)
+			require.NoError(t, err)
+			got := query(t, q, labels.MustNewMatcher(labels.MatchEqual, "foo", "bar"))[`{foo="bar"}`]
+			require.Len(t, got, 3) // The zero sample, then both samples.
+			for i, ts := range []int64{1, 100, 200} {
+				require.Equal(t, ts, got[i].T())
+				require.Equal(t, int64(1), got[i].ST())
+			}
+		})
+	}
+}
+
 func TestHeadAppenderV2_BestEffortSTZeroSample_OOO(t *testing.T) {
 	testHistogram := tsdbutil.GenerateTestHistogram(1)
 	testHistogram.CounterResetHint = histogram.NotCounterReset

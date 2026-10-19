@@ -1314,3 +1314,45 @@ func TestDB_EnableSTZeroInjection_AppendV2(t *testing.T) {
 		})
 	}
 }
+
+// TestDB_EnableSTZeroInjection_STStorage_AppendV2 verifies that, with ST storage, the zero sample
+// written for a start timestamp carries that start timestamp, like the samples that follow it.
+func TestDB_EnableSTZeroInjection_STStorage_AppendV2(t *testing.T) {
+	t.Parallel()
+
+	for _, tc := range []struct {
+		name string
+		v    float64
+		h    *histogram.Histogram
+		fh   *histogram.FloatHistogram
+	}{
+		{name: "float", v: 10},
+		{name: "histogram", h: tsdbutil.GenerateTestHistograms(1)[0]},
+		{name: "float histogram", fh: tsdbutil.GenerateTestFloatHistograms(1)[0]},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+
+			opts := DefaultOptions()
+			opts.EnableSTAsZeroSample = true
+			opts.EnableSTStorage = true
+			s := createTestAgentDB(t, prometheus.NewRegistry(), opts)
+
+			lbls := labels.FromStrings("foo", "bar")
+			for _, ts := range []int64{100, 200} {
+				app := s.AppenderV2(t.Context())
+				_, err := app.Append(0, lbls, 1, ts, tc.v, tc.h, tc.fh, storage.AOptions{})
+				require.NoError(t, err)
+				require.NoError(t, app.Commit())
+			}
+			require.NoError(t, s.Close())
+
+			got := readWALSamples(t, s.wal.Dir())
+			require.Len(t, got, 3) // The zero sample, then both samples.
+			for i, ts := range []int64{1, 100, 200} {
+				require.Equal(t, ts, got[i].t)
+				require.Equal(t, int64(1), got[i].st)
+			}
+		})
+	}
+}
