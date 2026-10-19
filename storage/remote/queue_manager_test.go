@@ -157,7 +157,6 @@ func TestBasicContentNegotiation(t *testing.T) {
 				NoST:   tc.senderProtoMsg == remoteapi.WriteV1MessageType, // RW1 does not support ST.
 				Series: 1, SamplesPerSeries: 1,
 			})
-
 			conf.RemoteWriteConfigs[0].ProtobufMessage = tc.senderProtoMsg
 			require.NoError(t, s.ApplyConfig(conf))
 			hash, err := toHash(writeConfig)
@@ -200,6 +199,16 @@ func TestBasicContentNegotiation(t *testing.T) {
 			// samplesTotal means attempts.
 			require.Equal(t, float64(len(tc.injectErrs)), client_testutil.ToFloat64(qm.metrics.samplesTotal))
 			require.Equal(t, float64(len(tc.injectErrs)-1), client_testutil.ToFloat64(qm.metrics.retriedSamplesTotal))
+
+			expectedMetadataTotal := 0.0
+			if tc.senderProtoMsg == remoteapi.WriteV2MessageType && !tc.expectFail {
+				expectedMetadataTotal = float64(len(recs.Metadata))
+				require.Eventually(t, func() bool {
+					return client_testutil.ToFloat64(qm.metrics.metadataTotal) == expectedMetadataTotal
+				}, 5*time.Second, 10*time.Millisecond)
+			} else {
+				require.Equal(t, expectedMetadataTotal, client_testutil.ToFloat64(qm.metrics.metadataTotal))
+			}
 		})
 	}
 }
@@ -2716,6 +2725,7 @@ func TestPopulateV2TimeSeries_MetadataAndTypeAndUnit(t *testing.T) {
 		metadata          *metadata.Metadata
 		expectedType      writev2.Metadata_MetricType
 		expectedUnit      string
+		expectedMetadata  int
 		enableTypeAndUnit bool
 	}{
 		{
@@ -2725,6 +2735,7 @@ func TestPopulateV2TimeSeries_MetadataAndTypeAndUnit(t *testing.T) {
 			metadata:          nil,
 			expectedType:      writev2.Metadata_METRIC_TYPE_GAUGE,
 			expectedUnit:      "bytes",
+			expectedMetadata:  1,
 			enableTypeAndUnit: true,
 		},
 		{
@@ -2734,6 +2745,7 @@ func TestPopulateV2TimeSeries_MetadataAndTypeAndUnit(t *testing.T) {
 			metadata:          nil,
 			expectedType:      writev2.Metadata_METRIC_TYPE_COUNTER,
 			expectedUnit:      "",
+			expectedMetadata:  1,
 			enableTypeAndUnit: true,
 		},
 		{
@@ -2743,6 +2755,7 @@ func TestPopulateV2TimeSeries_MetadataAndTypeAndUnit(t *testing.T) {
 			metadata:          nil,
 			expectedType:      writev2.Metadata_METRIC_TYPE_UNSPECIFIED,
 			expectedUnit:      "",
+			expectedMetadata:  0,
 			enableTypeAndUnit: false,
 		},
 		{
@@ -2756,6 +2769,7 @@ func TestPopulateV2TimeSeries_MetadataAndTypeAndUnit(t *testing.T) {
 			},
 			expectedType:      writev2.Metadata_METRIC_TYPE_GAUGE,
 			expectedUnit:      "bytes",
+			expectedMetadata:  1,
 			enableTypeAndUnit: true,
 		},
 		{
@@ -2769,6 +2783,7 @@ func TestPopulateV2TimeSeries_MetadataAndTypeAndUnit(t *testing.T) {
 			},
 			expectedType:      writev2.Metadata_METRIC_TYPE_COUNTER,
 			expectedUnit:      "requests",
+			expectedMetadata:  1,
 			enableTypeAndUnit: true,
 		},
 	}
@@ -2825,10 +2840,8 @@ func TestPopulateV2TimeSeries_MetadataAndTypeAndUnit(t *testing.T) {
 			}
 			require.Equal(t, tc.expectedUnit, actualUnit, "Unit should match for %s", tc.name)
 
-			// Verify metadata count.
-			if tc.metadata != nil && tc.enableTypeAndUnit {
-				require.Equal(t, 1, nMetadata, "Should count metadata when d.metadata is provided")
-			}
+			// Verify metadata count reflects whether type, unit, or help is present.
+			require.Equal(t, tc.expectedMetadata, nMetadata, "Metadata count should match for %s", tc.name)
 		})
 	}
 }
