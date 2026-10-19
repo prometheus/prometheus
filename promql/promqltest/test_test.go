@@ -1191,6 +1191,93 @@ func TestParseSTSequence(t *testing.T) {
 	}
 }
 
+func TestParseCommands(t *testing.T) {
+	testCases := map[string]struct {
+		input         string
+		expected      []ParsedCommand
+		expectedError string
+	}{
+		"all kinds of commands": {
+			input: `# A comment.
+load 5m
+  metric{a="1"} 0+1x10
+  metric{a="2"} 0+2x10
+
+eval instant at 50m sum(metric)
+  {} 30
+# A comment directly after the expected result ends the command.
+eval range from 0 to 10m step 5m count(metric)
+  {} 2 2 2
+
+eval instant at 50m metric
+  expect warn
+  metric{a="1"} 10
+  metric{a="2"} 20
+
+eval_fail instant at 50m metric + on() metric
+  expected_fail_message some error
+
+clear
+`,
+			expected: []ParsedCommand{
+				{Kind: LoadCommand, StartLine: 2, EndLine: 4},
+				{Kind: EvalCommand, StartLine: 6, EndLine: 7, Expr: "sum(metric)"},
+				{Kind: EvalCommand, StartLine: 9, EndLine: 10, Expr: "count(metric)", IsRange: true},
+				{Kind: EvalCommand, StartLine: 12, EndLine: 15, Expr: "metric"},
+				{Kind: EvalCommand, StartLine: 17, EndLine: 18, Expr: "metric + on() metric"},
+				{Kind: ClearCommand, StartLine: 20, EndLine: 20},
+			},
+		},
+		"commands that end without a blank line": {
+			// A scalar result, expected_fail_message and expected_fail_regexp each end an eval command, so the
+			// next command can start on the line after them.
+			input: `load 5m
+  metric 1
+
+eval instant at 0m scalar(metric)
+  1
+eval_fail instant at 0m metric + on() metric
+  expected_fail_message some error
+eval_fail range from 0 to 5m step 5m metric + on() metric
+  expected_fail_regexp some.*
+eval instant at 0m metric
+  metric 1
+`,
+			expected: []ParsedCommand{
+				{Kind: LoadCommand, StartLine: 1, EndLine: 2},
+				{Kind: EvalCommand, StartLine: 4, EndLine: 5, Expr: "scalar(metric)"},
+				{Kind: EvalCommand, StartLine: 6, EndLine: 7, Expr: "metric + on() metric"},
+				{Kind: EvalCommand, StartLine: 8, EndLine: 9, Expr: "metric + on() metric", IsRange: true},
+				{Kind: EvalCommand, StartLine: 10, EndLine: 11, Expr: "metric"},
+			},
+		},
+		"empty script": {
+			input:    "# Only a comment.\n",
+			expected: []ParsedCommand{},
+		},
+		"invalid command": {
+			input:         "load 5m\n  metric 1\n\nfoo bar\n",
+			expectedError: `invalid command "foo bar"`,
+		},
+		"invalid query": {
+			input:         "eval instant at 0m sum(\n",
+			expectedError: "unclosed left parenthesis",
+		},
+	}
+
+	for name, tc := range testCases {
+		t.Run(name, func(t *testing.T) {
+			cmds, err := ParseCommands(tc.input)
+			if tc.expectedError != "" {
+				require.ErrorContains(t, err, tc.expectedError)
+				return
+			}
+			require.NoError(t, err)
+			require.Equal(t, tc.expected, cmds)
+		})
+	}
+}
+
 func TestParseLoad_STLine(t *testing.T) {
 	// Verify that @st lines are accepted and that the resulting samples carry
 	// the correct absolute start timestamps (ST = position_timestamp + offset).
