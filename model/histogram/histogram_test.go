@@ -1676,6 +1676,16 @@ func TestHistogramValidation(t *testing.T) {
 			},
 			errMsg: `custom buckets: only 3 custom bounds defined which is insufficient to cover total span length of 5: histogram custom bounds are too few`,
 		},
+		"rejects a custom buckets histogram whose total span length overflows a 32-bit int": {
+			h: &Histogram{
+				Count:           1,
+				Schema:          CustomBucketsSchema,
+				PositiveSpans:   []Span{{Offset: 0, Length: 1}, {Offset: math.MaxInt32, Length: 1}, {Offset: math.MaxInt32, Length: 1}},
+				PositiveBuckets: []int64{1, -1, 0},
+				CustomValues:    []float64{1, 2},
+			},
+			errMsg: `custom buckets: only 2 custom bounds defined which is insufficient to cover total span length of 4294967297: histogram custom bounds are too few`,
+		},
 		"valid custom buckets histogram": {
 			h: &Histogram{
 				Count:  5,
