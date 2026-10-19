@@ -205,7 +205,11 @@ func (h TempHistogram) convertToIntegerHistogram(count uint64) (*histogram.Histo
 		return nil, nil, h.err
 	}
 
-	return rh.Compact(2), nil, nil
+	rh = rh.Compact(2)
+	if err := rh.Validate(); err != nil {
+		return nil, nil, fmt.Errorf("invalid histogram: %w", err)
+	}
+	return rh, nil, nil
 }
 
 func (h TempHistogram) convertToFloatHistogram() (*histogram.Histogram, *histogram.FloatHistogram, error) {
@@ -235,7 +239,11 @@ func (h TempHistogram) convertToFloatHistogram() (*histogram.Histogram, *histogr
 		return nil, nil, h.err
 	}
 
-	return nil, rh.Compact(0), nil
+	rh = rh.Compact(0)
+	if err := rh.Validate(); err != nil {
+		return nil, nil, fmt.Errorf("invalid float histogram: %w", err)
+	}
+	return nil, rh, nil
 }
 
 func GetHistogramMetricBase(m labels.Labels, name string) labels.Labels {

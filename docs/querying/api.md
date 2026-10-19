@@ -569,6 +569,14 @@ These endpoints return newline-delimited JSON with content type
   optional `warnings`) **or** an **error line** (`status`, `errorType`, `error`)
   if iteration failed mid-stream after the first batch was sent.
 
+Searches return results from supported storage backends. Participating
+remote-read storage that does not support search contributes a warning instead
+of results. Secondary search failures also become warnings, while unsupported
+primary storage makes search unavailable. No-op backends, including remote-read
+storage excluded by the requested time range, do not contribute warnings.
+Warnings can indicate incomplete discovery independently of `has_more`, which
+only describes truncation of the available results by the requested limit.
+
 ```json
 {"results":[{"name":"http_requests_total","type":"counter","help":"Total HTTP requests."}]}
 {"status":"success","has_more":false}
@@ -618,6 +626,25 @@ Additional parameters for `/api/v1/search/metric_names`:
 
 - `include_metadata=<bool>`: Include metric metadata in each result.
 - `sort_by=<alpha | score>`
+
+Metadata is matched by the exact metric name first, then by the metric family
+name for suffixes supported by that family's type:
+
+- `_total` for counters.
+- `_bucket`, `_sum`, and `_count` for histograms.
+- `_bucket`, `_sum`, `_count`, `_gsum`, and `_gcount` for gauge histograms.
+- `_sum` and `_count` for summaries.
+- `_info` for info metrics.
+
+A metric family name that already ends with `_total` or `_info` is not matched
+for the same suffix again: e.g. `requests_total_total` does not get the
+metadata of a `requests_total` counter.
+
+The returned `type`, `help`, and `unit` describe the metric family, not the
+individual series: e.g. `http_request_duration_seconds_bucket` is reported with
+type `histogram`. Matching is done by name against metadata from active
+targets, so it is best-effort. Metadata fields are omitted when no matching
+metadata is available.
 
 Additional parameters for `/api/v1/search/label_names`:
 

@@ -74,12 +74,13 @@ func TestDB_InvalidSeries_AppendV2(t *testing.T) {
 
 		e = exemplar.Exemplar{Labels: labels.FromStrings("a_somewhat_long_trace_id", "nYJSNtFrFTY37VR7mHzEE/LIDt7cdAQcuOzFajgmLDAdBSRHYPDzrxhMA4zz7el8naI/AoXFv9/e/G0vcETcIoNUi3OieeLfaIRQci2oa")}
 		_, err = app.Append(0, labels.FromStrings("a", "2"), 0, 0, 0, nil, nil, storage.AOptions{
-			Exemplars: []exemplar.Exemplar{e},
+			Exemplars: []exemplar.Exemplar{{Labels: labels.FromStrings("a", "1")}, e},
 		})
 		partErr = &storage.AppendPartialError{}
 		require.ErrorAs(t, err, &partErr)
 		require.Len(t, partErr.ExemplarErrors, 1)
 		require.ErrorIs(t, partErr.ExemplarErrors[0], storage.ErrExemplarLabelLength, "should reject too long label length")
+		require.Equal(t, 1, partErr.ExemplarErrors[0].Index, "should report the position of the rejected exemplar")
 
 		// Inverse check.
 		e = exemplar.Exemplar{Labels: labels.FromStrings("a", "1"), Value: 20, Ts: 10, HasTs: true}
@@ -321,9 +322,8 @@ func TestCommit_AppendV2(t *testing.T) {
 			require.Equal(t, expectedHistogramSTs, gotHistogramSTs, "unexpected histogram STs received")
 			require.Equal(t, expectedFloatHistogramSTs, gotFloatHistogramSTs, "unexpected float histogram STs received")
 
-			// Check that we can still create both kinds of Appender.
+			// Check that we can still create an AppenderV2.
 			// Regression test against https://github.com/prometheus/prometheus/issues/17800.
-			_ = s.Appender(t.Context())
 			_ = s.AppenderV2(t.Context())
 		})
 	}
@@ -696,94 +696,103 @@ func TestWALReplay_AppendV2(t *testing.T) {
 		lastTs        = 500
 	)
 
-	s := createTestAgentDB(t, nil, DefaultOptions())
-	app := s.AppenderV2(context.TODO())
+	for _, unknownRecord := range []bool{false, true} {
+		t.Run(fmt.Sprintf("unknownRecord=%t", unknownRecord), func(t *testing.T) {
+			s := createTestAgentDB(t, nil, DefaultOptions())
+			if unknownRecord {
+				// Valid records following an unknown type must still be replayed.
+				require.NoError(t, s.wal.Log([]byte{255, 1, 2, 3}))
+			}
+			app := s.AppenderV2(context.TODO())
 
-	lbls := labelsForTest(t.Name(), numSeries)
-	for _, l := range lbls {
-		lset := labels.New(l...)
+			lbls := labelsForTest(t.Name(), numSeries)
+			for _, l := range lbls {
+				lset := labels.New(l...)
 
-		for range numDatapoints {
-			_, err := app.Append(0, lset, 0, lastTs, 0, nil, nil, storage.AOptions{})
-			require.NoError(t, err)
-		}
-	}
+				for range numDatapoints {
+					_, err := app.Append(0, lset, 0, lastTs, 0, nil, nil, storage.AOptions{})
+					require.NoError(t, err)
+				}
+			}
 
-	lbls = labelsForTest(t.Name()+"_histogram", numSeries)
-	for _, l := range lbls {
-		lset := labels.New(l...)
+			lbls = labelsForTest(t.Name()+"_histogram", numSeries)
+			for _, l := range lbls {
+				lset := labels.New(l...)
 
-		histograms := tsdbutil.GenerateTestHistograms(numHistograms)
+				histograms := tsdbutil.GenerateTestHistograms(numHistograms)
 
-		for i := range numHistograms {
-			_, err := app.Append(0, lset, 0, lastTs, 0, histograms[i], nil, storage.AOptions{})
-			require.NoError(t, err)
-		}
-	}
+				for i := range numHistograms {
+					_, err := app.Append(0, lset, 0, lastTs, 0, histograms[i], nil, storage.AOptions{})
+					require.NoError(t, err)
+				}
+			}
 
-	lbls = labelsForTest(t.Name()+"_custom_buckets_histogram", numSeries)
-	for _, l := range lbls {
-		lset := labels.New(l...)
+			lbls = labelsForTest(t.Name()+"_custom_buckets_histogram", numSeries)
+			for _, l := range lbls {
+				lset := labels.New(l...)
 
-		histograms := tsdbutil.GenerateTestCustomBucketsHistograms(numHistograms)
+				histograms := tsdbutil.GenerateTestCustomBucketsHistograms(numHistograms)
 
-		for i := range numHistograms {
-			_, err := app.Append(0, lset, 0, lastTs, 0, histograms[i], nil, storage.AOptions{})
-			require.NoError(t, err)
-		}
-	}
+				for i := range numHistograms {
+					_, err := app.Append(0, lset, 0, lastTs, 0, histograms[i], nil, storage.AOptions{})
+					require.NoError(t, err)
+				}
+			}
 
-	lbls = labelsForTest(t.Name()+"_float_histogram", numSeries)
-	for _, l := range lbls {
-		lset := labels.New(l...)
+			lbls = labelsForTest(t.Name()+"_float_histogram", numSeries)
+			for _, l := range lbls {
+				lset := labels.New(l...)
 
-		floatHistograms := tsdbutil.GenerateTestFloatHistograms(numHistograms)
+				floatHistograms := tsdbutil.GenerateTestFloatHistograms(numHistograms)
 
-		for i := range numHistograms {
-			_, err := app.Append(0, lset, 0, lastTs, 0, nil, floatHistograms[i], storage.AOptions{})
-			require.NoError(t, err)
-		}
-	}
+				for i := range numHistograms {
+					_, err := app.Append(0, lset, 0, lastTs, 0, nil, floatHistograms[i], storage.AOptions{})
+					require.NoError(t, err)
+				}
+			}
 
-	lbls = labelsForTest(t.Name()+"_custom_buckets_float_histogram", numSeries)
-	for _, l := range lbls {
-		lset := labels.New(l...)
+			lbls = labelsForTest(t.Name()+"_custom_buckets_float_histogram", numSeries)
+			for _, l := range lbls {
+				lset := labels.New(l...)
 
-		floatHistograms := tsdbutil.GenerateTestCustomBucketsFloatHistograms(numHistograms)
+				floatHistograms := tsdbutil.GenerateTestCustomBucketsFloatHistograms(numHistograms)
 
-		for i := range numHistograms {
-			_, err := app.Append(0, lset, 0, lastTs, 0, nil, floatHistograms[i], storage.AOptions{})
-			require.NoError(t, err)
-		}
-	}
+				for i := range numHistograms {
+					_, err := app.Append(0, lset, 0, lastTs, 0, nil, floatHistograms[i], storage.AOptions{})
+					require.NoError(t, err)
+				}
+			}
 
-	require.NoError(t, app.Commit())
-	require.NoError(t, s.Close())
+			require.NoError(t, app.Commit())
+			require.NoError(t, s.Close())
 
-	// Hack: s.wal.Dir() is the /wal subdirectory of the original storage path.
-	// We need the original directory so we can recreate the storage for replay.
-	storageDir := filepath.Dir(s.wal.Dir())
+			// Hack: s.wal.Dir() is the /wal subdirectory of the original storage path.
+			// We need the original directory so we can recreate the storage for replay.
+			storageDir := filepath.Dir(s.wal.Dir())
 
-	reg := prometheus.NewRegistry()
-	replayStorage, err := Open(s.logger, reg, nil, storageDir, s.opts)
-	if err != nil {
-		t.Fatalf("unable to create storage for the agent: %v", err)
-	}
-	defer func() {
-		require.NoError(t, replayStorage.Close())
-	}()
+			// Replay twice to ensure unknown records do not trigger destructive WAL repair.
+			for range 2 {
+				reg := prometheus.NewRegistry()
+				replayStorage, err := Open(s.logger, reg, nil, storageDir, s.opts)
+				if err != nil {
+					t.Fatalf("unable to create storage for the agent: %v", err)
+				}
 
-	// Check if all the series are retrieved back from the WAL.
-	m := gatherFamily(t, reg, "prometheus_agent_active_series")
-	require.Equal(t, float64(numSeries*5), m.Metric[0].Gauge.GetValue(), "agent wal replay mismatch of active series count")
+				// Check if all the series are retrieved back from the WAL.
+				m := gatherFamily(t, reg, "prometheus_agent_active_series")
+				require.Equal(t, float64(numSeries*5), m.Metric[0].Gauge.GetValue(), "agent wal replay mismatch of active series count")
 
-	// Check if lastTs of the samples retrieved from the WAL is retained.
-	metrics := replayStorage.series.series
-	for i := range metrics {
-		mp := metrics[i]
-		for _, v := range mp {
-			require.Equal(t, v.lastTs, int64(lastTs))
-		}
+				// Check if lastTs of the samples retrieved from the WAL is retained.
+				metrics := replayStorage.series.series
+				for i := range metrics {
+					mp := metrics[i]
+					for _, v := range mp {
+						require.Equal(t, v.lastTs, int64(lastTs))
+					}
+				}
+				require.NoError(t, replayStorage.Close())
+			}
+		})
 	}
 }
 
@@ -870,6 +879,60 @@ func TestStorage_DuplicateExemplarsIgnored_AppendV2(t *testing.T) {
 
 	// We had 9 calls to AppendExemplar but only 4 of those should have gotten through.
 	require.Equal(t, 4, walExemplarsCount)
+}
+
+func TestStorage_AppendExemplars_AppendV2(t *testing.T) {
+	s := createTestAgentDB(t, nil, DefaultOptions())
+	defer s.Close()
+
+	app, ok := s.AppenderV2(context.Background()).(storage.ExemplarAppenderV2)
+	require.True(t, ok)
+
+	// Unknown series should return storage.ErrNotFound.
+	_, err := app.AppendExemplars(0, labels.FromStrings("a", "unknown"), []exemplar.Exemplar{{Labels: labels.FromStrings("id", "1"), Value: 1, Ts: 10}})
+	require.ErrorIs(t, err, storage.ErrNotFound)
+
+	lset := labels.FromStrings("a", "1")
+	ref, err := app.Append(0, lset, 0, 10, 1, nil, nil, storage.AOptions{})
+	require.NoError(t, err)
+
+	// Empty exemplars slice should still validate series and return SeriesRef.
+	retRef, err := app.AppendExemplars(ref, lset, nil)
+	require.NoError(t, err)
+	require.Equal(t, ref, retRef)
+
+	e1 := exemplar.Exemplar{Labels: labels.FromStrings("id", "1"), Value: 20, Ts: 10, HasTs: true}
+	e2 := exemplar.Exemplar{Labels: labels.FromStrings("id", "2"), Value: 42, Ts: 25, HasTs: true}
+
+	// Append via ref.
+	retRef, err = app.AppendExemplars(ref, labels.EmptyLabels(), []exemplar.Exemplar{e1, e1})
+	require.NoError(t, err)
+	require.Equal(t, ref, retRef)
+
+	// Append via labels lookup (with empty label value that gets canonicalized).
+	retRef, err = app.AppendExemplars(0, labels.FromStrings("a", "1", "empty", ""), []exemplar.Exemplar{e2})
+	require.NoError(t, err)
+	require.Equal(t, ref, retRef)
+
+	require.NoError(t, app.Commit())
+
+	var walExemplarsCount int
+	sr, err := wlog.NewSegmentsReader(s.wal.Dir())
+	require.NoError(t, err)
+	defer sr.Close()
+	r := wlog.NewReader(sr)
+
+	dec := record.NewDecoder(labels.NewSymbolTable(), promslog.NewNopLogger())
+	for r.Next() {
+		rec := r.Record()
+		if dec.Type(rec) == record.Exemplars {
+			var exemplars []record.RefExemplar
+			exemplars, err = dec.Exemplars(rec, exemplars)
+			require.NoError(t, err)
+			walExemplarsCount += len(exemplars)
+		}
+	}
+	require.Equal(t, 2, walExemplarsCount)
 }
 
 func TestDBAllowOOOSamples_AppendV2(t *testing.T) {

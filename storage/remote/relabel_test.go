@@ -72,52 +72,6 @@ func relabelTestConfigFunc(cfgs []*relabel.Config, validationScheme model.Valida
 	}
 }
 
-func TestNewRelabelingAppendable(t *testing.T) {
-	keepLabels := labels.FromStrings("__name__", "keep_me", "env", "prod")
-	dropLabels := labels.FromStrings("__name__", "drop_me")
-	relabeledLabels := labels.FromStrings("__name__", "keep_me", "env", "prod", "environment", "prod")
-
-	for _, tc := range []struct {
-		name        string
-		configs     []*relabel.Config
-		scheme      model.ValidationScheme
-		in          labels.Labels
-		wantDropped bool
-		wantLabels  labels.Labels
-	}{
-		{name: "no configs, passthrough", configs: nil, scheme: model.UTF8Validation, in: keepLabels, wantLabels: keepLabels},
-		{name: "kept and relabeled", configs: relabelTestRewriteConfig, scheme: model.UTF8Validation, in: keepLabels, wantLabels: relabeledLabels},
-		{name: "dropped", configs: relabelTestDropConfig, scheme: model.UTF8Validation, in: dropLabels, wantDropped: true},
-		{name: "dropped because result loses __name__", configs: relabelTestStripNameConfig, scheme: model.UTF8Validation, in: keepLabels, wantDropped: true},
-		{name: "dropped because result is invalid under the configured legacy validation scheme", configs: relabelTestLegacyDottedNameConfig, scheme: model.LegacyValidation, in: keepLabels, wantDropped: true},
-	} {
-		t.Run(tc.name, func(t *testing.T) {
-			appendable := teststorage.NewAppendable()
-			wrapped := NewRelabelingAppendable(appendable, relabelTestConfigFunc(tc.configs, tc.scheme), NewRelabelCache(nil))
-			app := wrapped.Appender(context.Background())
-
-			ref, err := app.Append(0, tc.in, 10, 1)
-			require.NoError(t, err)
-			_, err = app.AppendExemplar(ref, tc.in, exemplar.Exemplar{Value: 1, Ts: 10})
-			require.NoError(t, err)
-			_, err = app.UpdateMetadata(ref, tc.in, metadata.Metadata{Type: model.MetricTypeCounter})
-			require.NoError(t, err)
-			require.NoError(t, app.Commit())
-
-			results := appendable.ResultSamples()
-			if tc.wantDropped {
-				require.Empty(t, results)
-				return
-			}
-
-			require.Len(t, results, 1)
-			require.True(t, labels.Equal(tc.wantLabels, results[0].L), "got labels %v, want %v", results[0].L, tc.wantLabels)
-			require.Len(t, results[0].ES, 1)
-			require.Equal(t, model.MetricTypeCounter, results[0].M.Type)
-		})
-	}
-}
-
 func TestNewRelabelingAppendableV2(t *testing.T) {
 	keepLabels := labels.FromStrings("__name__", "keep_me", "env", "prod")
 	dropLabels := labels.FromStrings("__name__", "drop_me")
@@ -439,35 +393,4 @@ func TestRelabelCache_ConcurrentReload(t *testing.T) {
 		})
 	}
 	wg.Wait()
-}
-
-func TestRelabelCache_SharedAcrossV1AndV2(t *testing.T) {
-	cache := NewRelabelCache(nil)
-	configFunc := relabelTestConfigFunc(relabelTestRewriteConfig, model.UTF8Validation)
-
-	v1 := NewRelabelingAppendable(teststorage.NewAppendable(), configFunc, cache)
-	v2Appendable := teststorage.NewAppendable()
-	v2 := NewRelabelingAppendableV2(v2Appendable, configFunc, cache)
-
-	l := labels.FromStrings("__name__", "keep_me", "env", "prod")
-	wantLabels := labels.FromStrings("__name__", "keep_me", "env", "prod", "environment", "prod")
-
-	app1 := v1.Appender(context.Background())
-	_, err := app1.Append(0, l, 10, 1)
-	require.NoError(t, err)
-	require.NoError(t, app1.Commit())
-
-	cache.mu.RLock()
-	_, ok := cache.entries[l.Hash()]
-	cache.mu.RUnlock()
-	require.True(t, ok, "expected the v1 (remote-write) append to populate the shared cache")
-
-	app2 := v2.AppenderV2(context.Background())
-	_, err = app2.Append(0, l, 0, 20, 2, nil, nil, storage.AOptions{})
-	require.NoError(t, err)
-	require.NoError(t, app2.Commit())
-
-	results := v2Appendable.ResultSamples()
-	require.Len(t, results, 1)
-	require.True(t, labels.Equal(wantLabels, results[0].L), "got labels %v, want %v", results[0].L, wantLabels)
 }

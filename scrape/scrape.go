@@ -797,7 +797,7 @@ func acceptHeader(sps []config.ScrapeProtocol, scheme model.EscapingScheme) stri
 	for _, sp := range sps {
 		val := config.ScrapeProtocolsHeaders[sp]
 		// Escaping header is only valid for newer versions of the text formats.
-		if sp == config.PrometheusText1_0_0 || sp == config.OpenMetricsText1_0_0 {
+		if sp == config.PrometheusText1_0_0 || sp == config.OpenMetricsText1_0_0 || sp == config.OpenMetricsText2_0_0 {
 			val += ";" + model.EscapingKey + "=" + scheme.String()
 		}
 		val += fmt.Sprintf(";q=0.%d", weight)
@@ -1566,7 +1566,8 @@ func (sl *scrapeLoop) scrapeAndReport(last, appendTime time.Time, errc chan<- er
 	scrapeCtx, cancel := context.WithTimeout(trace.ContextWithSpan(sl.parentCtx, span), sl.timeout)
 	resp, scrapeErr = sl.scraper.scrape(scrapeCtx)
 	if scrapeErr == nil {
-		b = sl.buffers.Get(sl.lastScrapeSize).([]byte)
+		// Avoid copying the body when bytes.Buffer.ReadFrom grows before reading EOF.
+		b = sl.buffers.Get(sl.lastScrapeSize + bytes.MinRead).([]byte)
 		defer sl.buffers.Put(b)
 		buf = bytes.NewBuffer(b)
 		// Trace the response body read and decompression into the buffer.

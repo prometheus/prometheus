@@ -15,6 +15,7 @@ package remote
 
 import (
 	"context"
+	"fmt"
 	"reflect"
 	"slices"
 	"sync"
@@ -28,7 +29,6 @@ import (
 	"github.com/prometheus/prometheus/model/exemplar"
 	"github.com/prometheus/prometheus/model/histogram"
 	"github.com/prometheus/prometheus/model/labels"
-	"github.com/prometheus/prometheus/model/metadata"
 	"github.com/prometheus/prometheus/model/relabel"
 	"github.com/prometheus/prometheus/storage"
 )
@@ -217,87 +217,9 @@ func (c *RelabelCache) sweep() int {
 	return deleted
 }
 
-// NewRelabelingAppendable applies Config.ReceiveRelabelConfigs to samples
-// before they reach next. Embedding storage.Appender does not promote
+// NewRelabelingAppendableV2 applies Config.ReceiveRelabelConfigs to samples
+// before they reach next. Embedding storage.AppenderV2 does not promote
 // storage.GetRef, so a ref lookup can't bypass relabeling.
-func NewRelabelingAppendable(next storage.Appendable, configFunc func() config.Config, cache *RelabelCache) storage.Appendable {
-	return &relabelingAppendable{next: next, configFunc: configFunc, cache: cache}
-}
-
-type relabelingAppendable struct {
-	next       storage.Appendable
-	configFunc func() config.Config
-	cache      *RelabelCache
-}
-
-func (a *relabelingAppendable) Appender(ctx context.Context) storage.Appender {
-	cfg := a.configFunc()
-	return &relabelingAppender{
-		Appender:         a.next.Appender(ctx),
-		configs:          cfg.ReceiveRelabelConfigs,
-		validationScheme: cfg.GlobalConfig.MetricNameValidationScheme,
-		cache:            a.cache,
-	}
-}
-
-type relabelingAppender struct {
-	storage.Appender
-
-	configs          []*relabel.Config
-	validationScheme model.ValidationScheme
-	cache            *RelabelCache
-}
-
-func (a *relabelingAppender) Append(ref storage.SeriesRef, l labels.Labels, t int64, v float64) (storage.SeriesRef, error) {
-	nl, keep := a.cache.relabel(l, a.configs, a.validationScheme)
-	if !keep {
-		return ref, nil
-	}
-	return a.Appender.Append(ref, nl, t, v)
-}
-
-func (a *relabelingAppender) AppendExemplar(ref storage.SeriesRef, l labels.Labels, e exemplar.Exemplar) (storage.SeriesRef, error) {
-	nl, keep := a.cache.relabel(l, a.configs, a.validationScheme)
-	if !keep {
-		return ref, nil
-	}
-	return a.Appender.AppendExemplar(ref, nl, e)
-}
-
-func (a *relabelingAppender) AppendHistogram(ref storage.SeriesRef, l labels.Labels, t int64, h *histogram.Histogram, fh *histogram.FloatHistogram) (storage.SeriesRef, error) {
-	nl, keep := a.cache.relabel(l, a.configs, a.validationScheme)
-	if !keep {
-		return ref, nil
-	}
-	return a.Appender.AppendHistogram(ref, nl, t, h, fh)
-}
-
-func (a *relabelingAppender) AppendHistogramSTZeroSample(ref storage.SeriesRef, l labels.Labels, t, st int64, h *histogram.Histogram, fh *histogram.FloatHistogram) (storage.SeriesRef, error) {
-	nl, keep := a.cache.relabel(l, a.configs, a.validationScheme)
-	if !keep {
-		return ref, nil
-	}
-	return a.Appender.AppendHistogramSTZeroSample(ref, nl, t, st, h, fh)
-}
-
-func (a *relabelingAppender) AppendSTZeroSample(ref storage.SeriesRef, l labels.Labels, t, st int64) (storage.SeriesRef, error) {
-	nl, keep := a.cache.relabel(l, a.configs, a.validationScheme)
-	if !keep {
-		return ref, nil
-	}
-	return a.Appender.AppendSTZeroSample(ref, nl, t, st)
-}
-
-func (a *relabelingAppender) UpdateMetadata(ref storage.SeriesRef, l labels.Labels, m metadata.Metadata) (storage.SeriesRef, error) {
-	nl, keep := a.cache.relabel(l, a.configs, a.validationScheme)
-	if !keep {
-		return ref, nil
-	}
-	return a.Appender.UpdateMetadata(ref, nl, m)
-}
-
-// NewRelabelingAppendableV2 is the AppenderV2 equivalent of NewRelabelingAppendable.
-// See NewRelabelingAppendable for the semantics.
 func NewRelabelingAppendableV2(next storage.AppendableV2, configFunc func() config.Config, cache *RelabelCache) storage.AppendableV2 {
 	return &relabelingAppendableV2{next: next, configFunc: configFunc, cache: cache}
 }
@@ -336,4 +258,19 @@ func (a *relabelingAppenderV2) Append(ref storage.SeriesRef, ls labels.Labels, s
 		opts.MetricFamilyName = ""
 	}
 	return a.AppenderV2.Append(ref, nl, st, t, v, h, fh, opts)
+}
+
+// AppendExemplars implements storage.ExemplarAppenderV2. Exemplars are
+// appended in a call separate from Append, so this needs its own relabeling
+// to keep the two consistent.
+func (a *relabelingAppenderV2) AppendExemplars(ref storage.SeriesRef, ls labels.Labels, exemplars []exemplar.Exemplar) (storage.SeriesRef, error) {
+	exNext, ok := a.AppenderV2.(storage.ExemplarAppenderV2)
+	if !ok {
+		return ref, fmt.Errorf("receive relabeling requires a storage.ExemplarAppenderV2, got %T", a.AppenderV2)
+	}
+	nl, keep := a.cache.relabel(ls, a.configs, a.validationScheme)
+	if !keep {
+		return ref, nil
+	}
+	return exNext.AppendExemplars(ref, nl, exemplars)
 }

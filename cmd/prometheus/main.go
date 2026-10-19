@@ -272,7 +272,6 @@ func (c *flagConfig) setFeatureListOptions(logger *slog.Logger) error {
 				// NOTE(bwplotka): Once AppendableV1 is removed, there will be only the TSDB and agent flags.
 				c.scrape.EnableStartTimestampZeroIngestion = true
 				c.scrape.ParseST = true
-				c.web.STZeroIngestionEnabled = true
 				c.tsdb.EnableSTAsZeroSample = true
 				c.agent.EnableSTAsZeroSample = true
 
@@ -1397,6 +1396,7 @@ func main() {
 				notifs.DeleteNotification(notifications.ConfigurationUnsuccessful)
 				return
 			}
+			checksum = ""
 			notifs.AddNotification(notifications.ConfigurationUnsuccessful)
 		}
 
@@ -1922,6 +1922,15 @@ func (s *readyStorage) ChunkQuerier(mint, maxt int64) (storage.ChunkQuerier, err
 	return nil, tsdb.ErrNotReady
 }
 
+// CostSamplingQueryable forwards bounded sampling to the ready storage.
+func (s *readyStorage) CostSamplingQueryable() (storage.SampleAndChunkQueryable, bool) {
+	provider, ok := s.get().(storage.CostSamplingQueryable)
+	if !ok {
+		return nil, false
+	}
+	return provider.CostSamplingQueryable()
+}
+
 func (s *readyStorage) ExemplarQuerier(ctx context.Context) (storage.ExemplarQuerier, error) {
 	if x := s.get(); x != nil {
 		switch db := x.(type) {
@@ -1987,9 +1996,16 @@ func (notReadyAppender) Rollback() error { return tsdb.ErrNotReady }
 
 type notReadyAppenderV2 struct{}
 
+var _ storage.ExemplarAppenderV2 = notReadyAppenderV2{}
+
 func (notReadyAppenderV2) Append(storage.SeriesRef, labels.Labels, int64, int64, float64, *histogram.Histogram, *histogram.FloatHistogram, storage.AOptions) (storage.SeriesRef, error) {
 	return 0, tsdb.ErrNotReady
 }
+
+func (notReadyAppenderV2) AppendExemplars(storage.SeriesRef, labels.Labels, []exemplar.Exemplar) (storage.SeriesRef, error) {
+	return 0, tsdb.ErrNotReady
+}
+
 func (notReadyAppenderV2) Commit() error { return tsdb.ErrNotReady }
 
 func (notReadyAppenderV2) Rollback() error { return tsdb.ErrNotReady }

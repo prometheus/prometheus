@@ -359,6 +359,163 @@ func sortAlerts(items []*Alert) {
 	})
 }
 
+func TestForStateRestoreHoldDuration(t *testing.T) {
+	for _, test := range []struct {
+		name               string
+		holdDuration       time.Duration
+		initialEvaluations []time.Duration
+		restoreDuration    time.Duration
+		priorState         AlertState
+		activeAt           time.Duration
+		nextState          AlertState
+	}{
+		{
+			name:               "firing below grace period",
+			holdDuration:       5 * time.Minute,
+			initialEvaluations: []time.Duration{0, 4 * time.Minute, 6 * time.Minute, 8 * time.Minute},
+			restoreDuration:    12 * time.Minute,
+			priorState:         StateFiring,
+			nextState:          StateFiring,
+		},
+		{
+			name:               "firing at grace period",
+			holdDuration:       10 * time.Minute,
+			initialEvaluations: []time.Duration{0, 9 * time.Minute, 11 * time.Minute, 13 * time.Minute},
+			restoreDuration:    17 * time.Minute,
+			priorState:         StateFiring,
+			nextState:          StateFiring,
+		},
+		{
+			name:               "firing above grace period",
+			holdDuration:       15 * time.Minute,
+			initialEvaluations: []time.Duration{0, 14 * time.Minute, 16 * time.Minute, 18 * time.Minute},
+			restoreDuration:    22 * time.Minute,
+			priorState:         StateFiring,
+			nextState:          StateFiring,
+		},
+		{
+			name:               "pending below grace period restarts hold duration",
+			holdDuration:       5 * time.Minute,
+			initialEvaluations: []time.Duration{0, 2 * time.Minute},
+			restoreDuration:    6 * time.Minute,
+			priorState:         StatePending,
+			activeAt:           5 * time.Minute,
+			nextState:          StatePending,
+		},
+		{
+			name:               "pending above grace period excludes outage",
+			holdDuration:       25 * time.Minute,
+			initialEvaluations: []time.Duration{0, 5 * time.Minute},
+			restoreDuration:    15 * time.Minute,
+			priorState:         StatePending,
+			activeAt:           10 * time.Minute,
+			nextState:          StatePending,
+		},
+		{
+			name:               "pending near hold duration receives grace period",
+			holdDuration:       25 * time.Minute,
+			initialEvaluations: []time.Duration{0, 20 * time.Minute},
+			restoreDuration:    25 * time.Minute,
+			priorState:         StatePending,
+			activeAt:           10 * time.Minute,
+			nextState:          StatePending,
+		},
+		{
+			name:               "firing outside outage tolerance restarts hold duration",
+			holdDuration:       5 * time.Minute,
+			initialEvaluations: []time.Duration{0, 4 * time.Minute, 6 * time.Minute, 8 * time.Minute},
+			restoreDuration:    40 * time.Minute,
+			priorState:         StateFiring,
+			activeAt:           39 * time.Minute,
+			nextState:          StatePending,
+		},
+		{
+			name:               "zero hold duration keeps evaluated firing timestamp",
+			initialEvaluations: []time.Duration{0, 2 * time.Minute},
+			restoreDuration:    6 * time.Minute,
+			priorState:         StateFiring,
+			nextState:          StateFiring,
+		},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			st := teststorage.New(t)
+			expr, err := testParser.ParseExpr(`vector(1)`)
+			require.NoError(t, err)
+			opts := &ManagerOptions{
+				QueryFunc:       EngineQueryFunc(testEngine(t), st),
+				AppendableV2:    st,
+				Queryable:       st,
+				Context:         context.Background(),
+				Logger:          promslog.NewNopLogger(),
+				NotifyFunc:      func(context.Context, string, ...*Alert) {},
+				OutageTolerance: 30 * time.Minute,
+				ForGracePeriod:  10 * time.Minute,
+			}
+			const alertName = "AlwaysActive"
+			baseTime := time.Unix(1_700_000_000, 0).UTC()
+			rule := NewAlertingRule(
+				alertName, expr, test.holdDuration, 0,
+				labels.EmptyLabels(), labels.EmptyLabels(), labels.EmptyLabels(), "", true, nil,
+			)
+			group := NewGroup(GroupOptions{
+				Name:     "default",
+				Interval: time.Minute,
+				Rules:    []Rule{rule},
+				Opts:     opts,
+			})
+			for _, evaluation := range test.initialEvaluations {
+				group.Eval(context.Background(), baseTime.Add(evaluation))
+			}
+			require.Equal(t, test.priorState, rule.State())
+			if test.priorState == StateFiring && test.holdDuration > 0 {
+				// The firing transition occurs at an evaluation, not at ActiveAt + for.
+				require.Equal(t, baseTime.Add(test.holdDuration+time.Minute), rule.ActiveAlerts()[0].FiredAt)
+			}
+
+			restoredRule := NewAlertingRule(
+				alertName, expr, test.holdDuration, 0,
+				labels.EmptyLabels(), labels.EmptyLabels(), labels.EmptyLabels(), "", false, nil,
+			)
+			restoredGroup := NewGroup(GroupOptions{
+				Name:          "default",
+				Interval:      time.Minute,
+				Rules:         []Rule{restoredRule},
+				ShouldRestore: true,
+				Opts:          opts,
+			})
+			restoreTime := baseTime.Add(test.restoreDuration)
+			// Group.run evaluates twice before restoring state after a restart.
+			restoredGroup.Eval(context.Background(), restoreTime.Add(-time.Minute))
+			restoredGroup.Eval(context.Background(), restoreTime)
+			restoredGroup.RestoreForState(restoreTime)
+			require.True(t, restoredRule.Restored())
+			require.Len(t, restoredRule.ActiveAlerts(), 1)
+			require.Equal(t, baseTime.Add(test.activeAt), restoredRule.ActiveAlerts()[0].ActiveAt)
+
+			// Eval sets FiredAt when the restored ActiveAt satisfies the hold duration.
+			nextEvaluation := restoreTime.Add(time.Minute)
+			restoredGroup.Eval(context.Background(), nextEvaluation)
+			require.Equal(t, test.nextState, restoredRule.State())
+			if test.nextState == StateFiring {
+				expectedFiredAt := nextEvaluation
+				if test.holdDuration == 0 {
+					expectedFiredAt = restoreTime.Add(-time.Minute)
+				}
+				require.Equal(t, expectedFiredAt, restoredRule.ActiveAlerts()[0].FiredAt)
+			} else {
+				require.Zero(t, restoredRule.ActiveAlerts()[0].FiredAt)
+				// Pending alerts must still wait for the entire remaining hold duration.
+				firingTime := baseTime.Add(test.activeAt + test.holdDuration)
+				restoredGroup.Eval(context.Background(), firingTime.Add(-time.Second))
+				require.Equal(t, StatePending, restoredRule.State())
+				restoredGroup.Eval(context.Background(), firingTime)
+				require.Equal(t, StateFiring, restoredRule.State())
+				require.Equal(t, firingTime, restoredRule.ActiveAlerts()[0].FiredAt)
+			}
+		})
+	}
+}
+
 func TestForStateRestore(t *testing.T) {
 	for _, queryOffset := range []time.Duration{0, time.Minute} {
 		t.Run(fmt.Sprintf("queryOffset %s", queryOffset.String()), func(t *testing.T) {
@@ -566,10 +723,13 @@ func TestStaleness(t *testing.T) {
 		})
 
 		// A time series that has two samples and then goes stale.
-		app := st.Appender(context.Background())
-		app.Append(0, labels.FromStrings(model.MetricNameLabel, "a"), 0, 1)
-		app.Append(0, labels.FromStrings(model.MetricNameLabel, "a"), 1000, 2)
-		app.Append(0, labels.FromStrings(model.MetricNameLabel, "a"), 2000, math.Float64frombits(value.StaleNaN))
+		app := st.AppenderV2(context.Background())
+		_, err = app.Append(0, labels.FromStrings(model.MetricNameLabel, "a"), 0, 0, 1, nil, nil, storage.AOptions{})
+		require.NoError(t, err)
+		_, err = app.Append(0, labels.FromStrings(model.MetricNameLabel, "a"), 0, 1000, 2, nil, nil, storage.AOptions{})
+		require.NoError(t, err)
+		_, err = app.Append(0, labels.FromStrings(model.MetricNameLabel, "a"), 0, 2000, math.Float64frombits(value.StaleNaN), nil, nil, storage.AOptions{})
+		require.NoError(t, err)
 
 		err = app.Commit()
 		require.NoError(t, err)
@@ -908,7 +1068,7 @@ func reloadAndValidate(rgs *rulefmt.RuleGroups, t *testing.T, tmpFile *os.File, 
 }
 
 func TestNotify(t *testing.T) {
-	storage := teststorage.New(t)
+	st := teststorage.New(t)
 
 	engineOpts := promql.EngineOpts{
 		Logger:     nil,
@@ -922,9 +1082,9 @@ func TestNotify(t *testing.T) {
 		lastNotified = alerts
 	}
 	opts := &ManagerOptions{
-		QueryFunc:    EngineQueryFunc(engine, storage),
-		AppendableV2: storage,
-		Queryable:    storage,
+		QueryFunc:    EngineQueryFunc(engine, st),
+		AppendableV2: st,
+		Queryable:    st,
 		Context:      context.Background(),
 		Logger:       promslog.NewNopLogger(),
 		NotifyFunc:   notifyFunc,
@@ -942,11 +1102,15 @@ func TestNotify(t *testing.T) {
 		Opts:          opts,
 	})
 
-	app := storage.Appender(context.Background())
-	app.Append(0, labels.FromStrings(model.MetricNameLabel, "a"), 1000, 2)
-	app.Append(0, labels.FromStrings(model.MetricNameLabel, "a"), 2000, 3)
-	app.Append(0, labels.FromStrings(model.MetricNameLabel, "a"), 5000, 3)
-	app.Append(0, labels.FromStrings(model.MetricNameLabel, "a"), 6000, 0)
+	app := st.AppenderV2(context.Background())
+	_, err = app.Append(0, labels.FromStrings(model.MetricNameLabel, "a"), 0, 1000, 2, nil, nil, storage.AOptions{})
+	require.NoError(t, err)
+	_, err = app.Append(0, labels.FromStrings(model.MetricNameLabel, "a"), 0, 2000, 3, nil, nil, storage.AOptions{})
+	require.NoError(t, err)
+	_, err = app.Append(0, labels.FromStrings(model.MetricNameLabel, "a"), 0, 5000, 3, nil, nil, storage.AOptions{})
+	require.NoError(t, err)
+	_, err = app.Append(0, labels.FromStrings(model.MetricNameLabel, "a"), 0, 6000, 0, nil, nil, storage.AOptions{})
+	require.NoError(t, err)
 
 	err = app.Commit()
 	require.NoError(t, err)
@@ -1315,9 +1479,11 @@ func TestRuleHealthUpdates(t *testing.T) {
 	})
 
 	// A time series that has two samples.
-	app := st.Appender(context.Background())
-	app.Append(0, labels.FromStrings(model.MetricNameLabel, "a"), 0, 1)
-	app.Append(0, labels.FromStrings(model.MetricNameLabel, "a"), 1000, 2)
+	app := st.AppenderV2(context.Background())
+	_, err = app.Append(0, labels.FromStrings(model.MetricNameLabel, "a"), 0, 0, 1, nil, nil, storage.AOptions{})
+	require.NoError(t, err)
+	_, err = app.Append(0, labels.FromStrings(model.MetricNameLabel, "a"), 0, 1000, 2, nil, nil, storage.AOptions{})
+	require.NoError(t, err)
 	err = app.Commit()
 	require.NoError(t, err)
 
@@ -1461,25 +1627,25 @@ func TestRuleGroupEvalIterationFunc(t *testing.T) {
 }
 
 func TestNativeHistogramsInRecordingRules(t *testing.T) {
-	storage := teststorage.New(t)
+	st := teststorage.New(t)
 
 	// Add some histograms.
-	db := storage.DB
+	db := st.DB
 	hists := tsdbutil.GenerateTestHistograms(5)
 	ts := time.Now()
-	app := db.Appender(context.Background())
+	app := db.AppenderV2(context.Background())
 	for i, h := range hists {
 		l := labels.FromStrings("__name__", "histogram_metric", "idx", strconv.Itoa(i))
-		_, err := app.AppendHistogram(0, l, ts.UnixMilli(), h.Copy(), nil)
+		_, err := app.Append(0, l, 0, ts.UnixMilli(), 0, h.Copy(), nil, storage.AOptions{})
 		require.NoError(t, err)
 	}
 	require.NoError(t, app.Commit())
 
 	ng := testEngine(t)
 	opts := &ManagerOptions{
-		QueryFunc:    EngineQueryFunc(ng, storage),
-		AppendableV2: storage,
-		Queryable:    storage,
+		QueryFunc:    EngineQueryFunc(ng, st),
+		AppendableV2: st,
+		Queryable:    st,
 		Context:      context.Background(),
 		Logger:       promslog.NewNopLogger(),
 	}

@@ -850,6 +850,8 @@ func (a *headAppender) AppendExemplar(ref storage.SeriesRef, lset labels.Labels,
 	}
 
 	b := a.getCurrentBatch(stNone, chunks.HeadSeriesRef(ref))
+	// Protect the series from ordinary compaction before the exemplar is committed.
+	s.updateExemplarTimestamp(e.Ts)
 	b.exemplars = append(b.exemplars, exemplarWithSeriesRef{ref, e})
 
 	return storage.SeriesRef(s.ref), nil

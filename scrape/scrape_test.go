@@ -444,6 +444,8 @@ func TestIsSeriesPartOfFamily(t *testing.T) {
 		require.False(t, isSeriesPartOfFamily("http_requests_total", []byte("http_requests"), model.MetricTypeUnknown)) // We don't know.
 		require.False(t, isSeriesPartOfFamily("http_requests2_total", []byte("http_requests_total"), model.MetricTypeCounter))
 		require.False(t, isSeriesPartOfFamily("http_requests_requests_total", []byte("http_requests"), model.MetricTypeCounter))
+
+		require.False(t, isSeriesPartOfFamily("http_requests_total_total", []byte("http_requests_total"), model.MetricTypeCounter))
 	})
 
 	t.Run("gauge", func(t *testing.T) {
@@ -480,6 +482,8 @@ func TestIsSeriesPartOfFamily(t *testing.T) {
 		require.False(t, isSeriesPartOfFamily("go_build_info", []byte("go_build"), model.MetricTypeUnknown)) // We don't know.
 		require.False(t, isSeriesPartOfFamily("go_build2_info", []byte("go_build_info"), model.MetricTypeInfo))
 		require.False(t, isSeriesPartOfFamily("go_build_build_info", []byte("go_build_info"), model.MetricTypeInfo))
+
+		require.False(t, isSeriesPartOfFamily("go_build_info_info", []byte("go_build_info"), model.MetricTypeInfo))
 	})
 }
 
@@ -1610,8 +1614,14 @@ func testScrapeLoopFailLegacyUnderUTF8(t *testing.T, appV2 bool) {
 
 func readTextParseTestMetrics(t testing.TB) []byte {
 	t.Helper()
+	return readTextParseTestdata(t, "alltypes.237mfs.prom.txt")
+}
 
-	b, err := os.ReadFile("../model/textparse/testdata/alltypes.237mfs.prom.txt")
+// readTextParseTestdata reads a file from model/textparse/testdata.
+func readTextParseTestdata(t testing.TB, file string) []byte {
+	t.Helper()
+
+	b, err := os.ReadFile(filepath.Join("..", "model", "textparse", "testdata", file))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -1761,6 +1771,112 @@ func TestPromTextToProto(t *testing.T) {
 	require.Equal(t, "go_gc_cycles_automatic_gc_cycles_total", got[0])
 	require.Equal(t, "prometheus_sd_kuma_fetch_duration_seconds", got[128])
 	require.Equal(t, "promhttp_metric_handler_requests_total", got[236])
+}
+
+func promTextToOM2(tb testing.TB, text []byte) []byte {
+	tb.Helper()
+
+	p := expfmt.NewTextParser(model.UTF8Validation)
+	fams, err := p.TextToMetricFamilies(bytes.NewReader(text))
+	if err != nil {
+		tb.Fatal("TextToMetricFamilies:", err)
+	}
+	// Order by name for the deterministic tests.
+	var names []string
+	for n := range fams {
+		names = append(names, n)
+	}
+	sort.Strings(names)
+
+	buf := bytes.Buffer{}
+	for _, n := range names {
+		if _, err := expfmt.MetricFamilyToOpenMetrics20(&buf, fams[n]); err != nil {
+			tb.Fatal(err)
+		}
+	}
+	if _, err := expfmt.FinalizeOpenMetrics(&buf); err != nil {
+		tb.Fatal(err)
+	}
+	return buf.Bytes()
+}
+
+// benchFormatCase is one scrape payload of a benchDataset in a given exposition format.
+type benchFormatCase struct {
+	name        string
+	contentType string
+	parsable    []byte
+}
+
+// benchDataset is a BenchmarkScrapeLoopAppend dataset: the same metrics in one
+// or more exposition formats.
+type benchDataset struct {
+	name          string
+	cases         []benchFormatCase
+	convertToNHCB bool
+}
+
+// allFormatCases exposes promText as Prometheus text and OM 1.0 text, and
+// converts it to protobuf and OM 2.0 text, so every format carries the same samples.
+func allFormatCases(tb testing.TB, promText []byte) []benchFormatCase {
+	tb.Helper()
+	return []benchFormatCase{
+		{name: "PromText", contentType: "text/plain", parsable: promText},
+		{name: "OMText", contentType: "application/openmetrics-text", parsable: promText},
+		{name: "OMText2", contentType: "application/openmetrics-text; version=2.0.0", parsable: promTextToOM2(tb, promText)},
+		{name: "PromProto", contentType: "application/vnd.google.protobuf", parsable: promTextToProto(tb, promText)},
+	}
+}
+
+// prometheusOMFormatCases is a real Prometheus server /metrics page
+// (prometheus.demo.prometheus.io) as OM 1.0 with _created lines for every
+// counter, summary and histogram, and the same metrics as OM 2.0 with the
+// start timestamps inline (st@). Both files were generated with expfmt from the
+// same families, with the created timestamp set to process_start_time_seconds.
+func prometheusOMFormatCases(tb testing.TB) []benchFormatCase {
+	tb.Helper()
+	return []benchFormatCase{
+		{name: "OMText", contentType: "application/openmetrics-text", parsable: readTextParseTestdata(tb, "prometheus.om1.txt")},
+		{name: "OMText2", contentType: "application/openmetrics-text; version=2.0.0", parsable: readTextParseTestdata(tb, "prometheus.om2.txt")},
+	}
+}
+
+func benchDatasets(tb testing.TB) []benchDataset {
+	tb.Helper()
+	return []benchDataset{
+		{name: "1Fam2000Gauges", cases: allFormatCases(tb, makeTestGauges(2000))},                // ~68.1 KB, ~77.9 KB in proto, ~72.1 KB in OM2.
+		{name: "265FamsPrometheus", cases: prometheusOMFormatCases(tb)},                          // ~253.4 KB in OM1 (with _created), ~120.4 KB in OM2.
+		{name: "265FamsPrometheusNHCB", cases: prometheusOMFormatCases(tb), convertToNHCB: true}, // ~253.4 KB in OM1 (with _created), ~120.4 KB in OM2.
+	}
+}
+
+// TestBenchDatasets checks that every format of a benchmark dataset appends the
+// same number of samples, so BenchmarkScrapeLoopAppend compares equal work.
+func TestBenchDatasets(t *testing.T) {
+	for _, data := range benchDatasets(t) {
+		t.Run(data.name, func(t *testing.T) {
+			var want int
+			for i, tc := range data.cases {
+				appTest := teststorage.NewAppendable()
+				sl, _ := newTestScrapeLoop(t, withAppendable(appTest, true), func(sl *scrapeLoop) {
+					sl.enableNativeHistogramScraping = true
+					sl.convertClassicHistToNHCB = data.convertToNHCB
+					sl.alwaysScrapeClassicHist = false
+					sl.enableOpenMetrics2 = true
+				})
+				app := sl.appender()
+				total, added, seriesAdded, err := app.append(tc.parsable, tc.contentType, time.Now())
+				require.NoError(t, err)
+				require.NoError(t, app.Commit())
+				got := len(appTest.ResultSamples())
+				t.Logf("fmt=%s: bytes=%d total=%d added=%d seriesAdded=%d samples=%d", tc.name, len(tc.parsable), total, added, seriesAdded, got)
+				if i == 0 {
+					want = got
+					continue
+				}
+				require.Equal(t, want, got, "sample count mismatch between %s and %s", data.cases[0].name, tc.name)
+			}
+		})
+	}
 }
 
 func seriesPerHistogramFor100HistsWithExemplars(appV2 bool) int {
@@ -2598,29 +2714,29 @@ metric: <
 
 // BenchmarkScrapeLoopAppend benchmarks scrape appends for typical cases.
 //
-// Benchmark compares append function run across 5 dimensions:
+// Benchmark uses AppenderV2 and compares append function run across 6 dimensions:
 // * `withStorage`: without storage isolates the benchmark to the scrape loop append code. With storage is an
 // integration benchmark with the TSDB head appender code. For acceptance criteria run with storage, without for debugging.
-// * `appV2`: appender V1 or V2.
 // * `appendMetadataToWAL`: metadata-wal-records feature enabled or not (problematic feature we might need to change
 // soon, see https://github.com/prometheus/prometheus/issues/15911.
-// * `data`: different sizes of metrics scraped e.g. one big gauge metric family
-//  with a thousand series and more realistic scenario with common types.
+// * `data`: different metrics scraped e.g. one big gauge metric family with
+//  two thousand series and a real Prometheus server /metrics page; the NHCB
+//  variant converts classic histograms to native histograms with custom buckets.
 // * `fmt`: different scrape formats which will benchmark different parsers e.g.
-//  promtext, omtext and promproto.
+//  promtext, omtext, omtext2 and promproto; see benchDatasets for which
+//  formats each dataset has. All formats of a dataset carry the same samples.
+// * `coldCache`: whether the scrape series cache is warm (steady state) or empty.
+// * `parseST`: whether start timestamps are parsed. OM 1.0 pays for this with a
+//  forward re-lex per counter/summary/histogram family (_created lookup),
+//  OM 2.0 carries st@ inline.
 //
 // NOTE: withStorage=true uses sync.Pool buffers which is heavily non-deterministic and shared across go routines.
 // As a result, it's recommended to run dimensions you want to compare with in e.g. separate go tool invocations.
 // Recommended CLI invocation(s):
 /*
-	# Acceptance: With storage with V1 and V2 in separate process:
-	export bench=appendV1 && go test ./scrape/... \
-		-run '^$' -bench '^BenchmarkScrapeLoopAppend/withStorage=true/appV2=false/$' \
-		-benchtime 2s -count 6 -cpu 2 -timeout 999m \
-		| tee ${bench}.txt
-
-	export bench=appendV2 && go test ./scrape/... \
-		-run '^$' -bench '^BenchmarkScrapeLoopAppend/withStorage=true/appV2=true/$' \
+	# Acceptance: With storage:
+	export bench=append && go test ./scrape/... \
+		-run '^$' -bench '^BenchmarkScrapeLoopAppend/withStorage=true/$' \
 		-benchtime 2s -count 6 -cpu 2 -timeout 999m \
 		| tee ${bench}.txt
 
@@ -2629,39 +2745,37 @@ metric: <
 		-run '^$' -bench '^BenchmarkScrapeLoopAppend/withStorage=false/$' \
 		-benchtime 2s -count 6 -cpu 2 -timeout 999m \
 		| tee ${bench}.txt
+
+	# OM 1.0 vs OM 2.0 parsing in the scrape loop, in separate processes, then:
+	# benchstat -col /fmt omtext.txt omtext2.txt
+	for fmt in OMText OMText2; do
+		export bench=$(echo ${fmt} | tr A-Z a-z) && go test ./scrape/... \
+			-run '^$' -bench "^BenchmarkScrapeLoopAppend/withStorage=false/appendMetadataToWAL=false/data=265FamsPrometheus$/fmt=${fmt}$/coldCache=false/parseST=.+$" \
+			-benchtime 2s -count 6 -cpu 2 -timeout 999m \
+			| tee ${bench}.txt
+	done
 */
 func BenchmarkScrapeLoopAppend(b *testing.B) {
+	datasets := benchDatasets(b)
 	for _, withStorage := range []bool{false, true} {
-		for _, appV2 := range []bool{false, true} {
-			for _, appendMetadataToWAL := range []bool{false, true} {
-				for _, data := range []struct {
-					name         string
-					parsableText []byte
-				}{
-					{name: "1Fam2000Gauges", parsableText: makeTestGauges(2000)},         // ~68.1 KB, ~77.9 KB in proto.
-					{name: "237FamsAllTypes", parsableText: readTextParseTestMetrics(b)}, // ~185.7 KB, ~70.6 KB in proto.
-				} {
-					b.Run(fmt.Sprintf("withStorage=%v/appV2=%v/appendMetadataToWAL=%v/data=%v", withStorage, appV2, appendMetadataToWAL, data.name), func(b *testing.B) {
-						metricsProto := promTextToProto(b, data.parsableText)
-
-						for _, bcase := range []struct {
-							name        string
-							contentType string
-							parsable    []byte
-						}{
-							{name: "PromText", contentType: "text/plain", parsable: data.parsableText},
-							{name: "OMText", contentType: "application/openmetrics-text", parsable: data.parsableText},
-							{name: "PromProto", contentType: "application/vnd.google.protobuf", parsable: metricsProto},
-						} {
-							b.Run(fmt.Sprintf("fmt=%v", bcase.name), func(b *testing.B) {
-								for _, coldCache := range []bool{false, true} {
-									b.Run(fmt.Sprintf("coldCache=%v", coldCache), func(b *testing.B) {
-										benchScrapeLoopAppend(b, withStorage, appV2, bcase.parsable, bcase.contentType, appendMetadataToWAL, false, false, false, coldCache)
-									})
-								}
+		for _, appendMetadataToWAL := range []bool{false, true} {
+			for _, data := range datasets {
+				for _, bcase := range data.cases {
+					for _, coldCache := range []bool{false, true} {
+						for _, parseST := range []bool{true, false} {
+							b.Run(fmt.Sprintf(
+								"withStorage=%v/"+
+									"appendMetadataToWAL=%v/"+
+									"data=%v/"+
+									"fmt=%v/"+
+									"coldCache=%v/"+
+									"parseST=%v",
+								withStorage, appendMetadataToWAL, data.name, bcase.name, coldCache, parseST,
+							), func(b *testing.B) {
+								benchScrapeLoopAppend(b, withStorage, true, bcase.parsable, bcase.contentType, appendMetadataToWAL, false, false, data.convertToNHCB, coldCache, parseST)
 							})
 						}
-					})
+					}
 				}
 			}
 		}
@@ -2684,7 +2798,7 @@ func BenchmarkScrapeLoopAppend_STSynthesis(b *testing.B) {
 				{name: "237FamsAllTypes", parsableText: readTextParseTestMetrics(b), contentType: "application/openmetrics-text", convertToNHCB: true}, // ~185.7 KB, ~70.6 KB in proto.
 			} {
 				b.Run(fmt.Sprintf("withStorage=%v/synthesizeST=%v/data=%v", withStorage, synthesizeST, data.name), func(b *testing.B) {
-					benchScrapeLoopAppend(b, withStorage, true, data.parsableText, data.contentType, false, false, synthesizeST, data.convertToNHCB, false)
+					benchScrapeLoopAppend(b, withStorage, true, data.parsableText, data.contentType, false, false, synthesizeST, data.convertToNHCB, false, true)
 				})
 			}
 		}
@@ -2702,6 +2816,7 @@ func benchScrapeLoopAppend(
 	synthesizeST bool,
 	convertToNHCB bool,
 	coldCache bool,
+	parseST bool,
 ) {
 	var a compatAppendable = teststorage.NewAppendable().SkipRecording(true) // Make it noop for benchmark purposes.
 	if withStorage {
@@ -2719,6 +2834,9 @@ func benchScrapeLoopAppend(
 		sl.enableNativeHistogramScraping = true
 		sl.convertClassicHistToNHCB = convertToNHCB
 		sl.alwaysScrapeClassicHist = false
+		sl.enableOpenMetrics2 = true
+		// Only AppenderV2 uses parseST; false skips p.StartTimestamp() entirely.
+		sl.parseST = parseST
 	})
 	ts := time.Time{}
 
@@ -2758,7 +2876,7 @@ func BenchmarkScrapeLoopAppend_HistogramsWithExemplars(b *testing.B) {
 	for _, appV2 := range []bool{false, true} {
 		b.Run(fmt.Sprintf("appV2=%v", appV2), func(b *testing.B) {
 			parsable := makeTestHistogramsWithExemplars(100) // ~255.8 KB in OM text.
-			benchScrapeLoopAppend(b, true, appV2, parsable, "application/openmetrics-text", false, true, false, false, false)
+			benchScrapeLoopAppend(b, true, appV2, parsable, "application/openmetrics-text", false, true, false, false, false, true)
 		})
 	}
 }
@@ -2801,29 +2919,36 @@ func testScrapeLoopScrapeAndReport(t *testing.T, appV2 bool) {
 */
 func BenchmarkScrapeLoopScrapeAndReport(b *testing.B) {
 	for _, appV2 := range []bool{false, true} {
-		b.Run(fmt.Sprintf("appV2=%v", appV2), func(b *testing.B) {
-			parsableText := readTextParseTestMetrics(b)
+		for _, pooled := range []bool{true, false} {
+			b.Run(fmt.Sprintf("appV2=%v/pooled=%v", appV2, pooled), func(b *testing.B) {
+				parsableText := readTextParseTestMetrics(b)
 
-			s := teststorage.New(b)
+				s := teststorage.New(b)
 
-			sl, scraper := newTestScrapeLoop(b, withAppendable(s, appV2), func(sl *scrapeLoop) {
-				sl.fallbackScrapeProtocol = "application/openmetrics-text"
+				sl, scraper := newTestScrapeLoop(b, withAppendable(s, appV2), func(sl *scrapeLoop) {
+					sl.fallbackScrapeProtocol = "application/openmetrics-text"
+					if !pooled {
+						// Use a small pool to model production bodies above 59 MB.
+						sl.buffers = pool.New(1e3, 1e3, 3, func(sz int) any { return make([]byte, 0, sz) })
+					}
+				})
+				scraper.scrapeFunc = func(_ context.Context, writer io.Writer) error {
+					// Exercise ReadFrom's EOF growth check, as in production.
+					_, err := io.Copy(writer, io.LimitReader(bytes.NewReader(parsableText), int64(len(parsableText))))
+					return err
+				}
+
+				ts := time.Time{}
+
+				b.ReportAllocs()
+				b.ResetTimer()
+				for b.Loop() {
+					ts = ts.Add(time.Second)
+					sl.scrapeAndReport(time.Time{}, ts, nil)
+					require.NoError(b, scraper.lastError)
+				}
 			})
-			scraper.scrapeFunc = func(_ context.Context, writer io.Writer) error {
-				_, err := writer.Write(parsableText)
-				return err
-			}
-
-			ts := time.Time{}
-
-			b.ReportAllocs()
-			b.ResetTimer()
-			for b.Loop() {
-				ts = ts.Add(time.Second)
-				sl.scrapeAndReport(time.Time{}, ts, nil)
-				require.NoError(b, scraper.lastError)
-			}
-		})
+		}
 	}
 }
 
@@ -4837,11 +4962,16 @@ func TestAcceptHeader(t *testing.T) {
 			expectedHeader:  "application/vnd.google.protobuf;proto=io.prometheus.client.MetricFamily;encoding=delimited;q=0.7,application/openmetrics-text;version=1.0.0;escaping=allow-utf-8;q=0.6,application/openmetrics-text;version=0.0.1;q=0.5,text/plain;version=1.0.0;escaping=allow-utf-8;q=0.4,text/plain;version=0.0.4;q=0.3,*/*;q=0.2",
 		},
 		{
-			// OpenMetrics 2.0 is UTF-8 native, so it carries no escaping parameter.
 			name:            "openmetrics 2.0.0 first, with underscore escaping",
 			scrapeProtocols: []config.ScrapeProtocol{config.OpenMetricsText2_0_0, config.OpenMetricsText1_0_0},
 			scheme:          model.UnderscoreEscaping,
-			expectedHeader:  "application/openmetrics-text;version=2.0.0;q=0.7,application/openmetrics-text;version=1.0.0;escaping=underscores;q=0.6,*/*;q=0.5",
+			expectedHeader:  "application/openmetrics-text;version=2.0.0;escaping=underscores;q=0.7,application/openmetrics-text;version=1.0.0;escaping=underscores;q=0.6,*/*;q=0.5",
+		},
+		{
+			name:            "openmetrics 2.0.0 only, with no escaping",
+			scrapeProtocols: []config.ScrapeProtocol{config.OpenMetricsText2_0_0},
+			scheme:          model.NoEscaping,
+			expectedHeader:  "application/openmetrics-text;version=2.0.0;escaping=allow-utf-8;q=0.7,*/*;q=0.6",
 		},
 	}
 
@@ -6600,6 +6730,21 @@ metric: <
 `, name, classic, expo)
 	}
 
+	genTestHistOM2 := func(name string, hasClassic, hasExponential bool) string {
+		fields := []string{"count:1", "sum:10"}
+		if hasExponential {
+			fields = append(fields, "schema:3", "zero_threshold:2.938735877055719e-39", "zero_count:0", "positive_spans:[2:1]", "positive_buckets:[1]")
+		}
+		if hasClassic {
+			fields = append(fields, "bucket:[0.005:0,0.01:0,0.025:0,0.05:0,0.1:0,0.25:0,0.5:0,1.0:0,2.5:0,5.0:0,10.0:1,+Inf:1]")
+		}
+		return fmt.Sprintf(`
+# HELP %s This is a histogram with default buckets
+# TYPE %s histogram
+%s{address="0.0.0.0",port="5001"} {%s}
+`, name, name, name, strings.Join(fields, ","))
+	}
+
 	metricsTexts := map[string]struct {
 		text           []string
 		contentType    string
@@ -6729,6 +6874,91 @@ metric: <
 				genTestHistProto("test_histogram_3", false, true),
 			},
 			contentType:    "application/vnd.google.protobuf",
+			hasExponential: true,
+		},
+		"openmetrics2": {
+			text: []string{
+				genTestCounterText("test_metric_1"),
+				genTestCounterText("test_metric_1_count"),
+				genTestCounterText("test_metric_1_sum"),
+				genTestCounterText("test_metric_1_bucket"),
+				genTestHistOM2("test_histogram_1", true, false),
+				genTestCounterText("test_metric_2"),
+				genTestCounterText("test_metric_2_count"),
+				genTestCounterText("test_metric_2_sum"),
+				genTestCounterText("test_metric_2_bucket"),
+				genTestHistOM2("test_histogram_2", true, false),
+				genTestCounterText("test_metric_3"),
+				genTestCounterText("test_metric_3_count"),
+				genTestCounterText("test_metric_3_sum"),
+				genTestCounterText("test_metric_3_bucket"),
+				genTestHistOM2("test_histogram_3", true, false),
+			},
+			contentType: "application/openmetrics-text; version=2.0.0",
+			hasClassic:  true,
+		},
+		"openmetrics2, in different order": {
+			text: []string{
+				genTestHistOM2("test_histogram_1", true, false),
+				genTestCounterText("test_metric_1"),
+				genTestCounterText("test_metric_1_count"),
+				genTestCounterText("test_metric_1_sum"),
+				genTestCounterText("test_metric_1_bucket"),
+				genTestHistOM2("test_histogram_2", true, false),
+				genTestCounterText("test_metric_2"),
+				genTestCounterText("test_metric_2_count"),
+				genTestCounterText("test_metric_2_sum"),
+				genTestCounterText("test_metric_2_bucket"),
+				genTestHistOM2("test_histogram_3", true, false),
+				genTestCounterText("test_metric_3"),
+				genTestCounterText("test_metric_3_count"),
+				genTestCounterText("test_metric_3_sum"),
+				genTestCounterText("test_metric_3_bucket"),
+			},
+			contentType: "application/openmetrics-text; version=2.0.0",
+			hasClassic:  true,
+		},
+		"openmetrics2, with additional native exponential histogram": {
+			text: []string{
+				genTestCounterText("test_metric_1"),
+				genTestCounterText("test_metric_1_count"),
+				genTestCounterText("test_metric_1_sum"),
+				genTestCounterText("test_metric_1_bucket"),
+				genTestHistOM2("test_histogram_1", true, true),
+				genTestCounterText("test_metric_2"),
+				genTestCounterText("test_metric_2_count"),
+				genTestCounterText("test_metric_2_sum"),
+				genTestCounterText("test_metric_2_bucket"),
+				genTestHistOM2("test_histogram_2", true, true),
+				genTestCounterText("test_metric_3"),
+				genTestCounterText("test_metric_3_count"),
+				genTestCounterText("test_metric_3_sum"),
+				genTestCounterText("test_metric_3_bucket"),
+				genTestHistOM2("test_histogram_3", true, true),
+			},
+			contentType:    "application/openmetrics-text; version=2.0.0",
+			hasClassic:     true,
+			hasExponential: true,
+		},
+		"openmetrics2, with only native exponential histogram": {
+			text: []string{
+				genTestCounterText("test_metric_1"),
+				genTestCounterText("test_metric_1_count"),
+				genTestCounterText("test_metric_1_sum"),
+				genTestCounterText("test_metric_1_bucket"),
+				genTestHistOM2("test_histogram_1", false, true),
+				genTestCounterText("test_metric_2"),
+				genTestCounterText("test_metric_2_count"),
+				genTestCounterText("test_metric_2_sum"),
+				genTestCounterText("test_metric_2_bucket"),
+				genTestHistOM2("test_histogram_2", false, true),
+				genTestCounterText("test_metric_3"),
+				genTestCounterText("test_metric_3_count"),
+				genTestCounterText("test_metric_3_sum"),
+				genTestCounterText("test_metric_3_bucket"),
+				genTestHistOM2("test_histogram_3", false, true),
+			},
+			contentType:    "application/openmetrics-text; version=2.0.0",
 			hasExponential: true,
 		},
 	}
@@ -6869,6 +7099,7 @@ metric: <
 					sl.alwaysScrapeClassicHist = tc.alwaysScrapeClassicHistograms
 					sl.convertClassicHistToNHCB = tc.convertClassicHistToNHCB
 					sl.enableNativeHistogramScraping = true
+					sl.enableOpenMetrics2 = true
 				})
 
 				var content []byte
@@ -6885,6 +7116,13 @@ metric: <
 						buf.Write(protoMarshalDelimited(t, pb))
 					}
 					content = buf.Bytes()
+				case "application/openmetrics-text; version=2.0.0":
+					var b strings.Builder
+					for _, text := range metricsText.text {
+						b.WriteString(strings.TrimLeft(text, "\n"))
+					}
+					b.WriteString("# EOF\n")
+					content = []byte(b.String())
 				case "text/plain", "":
 					// The input text fragments already have a newline at the
 					// end, so we just concatenate them without separator.

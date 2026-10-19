@@ -1643,6 +1643,15 @@ func TestCalculateDesiredShardsDetail(t *testing.T) {
 			expectedShards:  1,
 		},
 		{
+			name:            "sent timestamp in the future",
+			prevShards:      40,
+			dataIn:          1000,
+			dataOut:         1000,
+			dataOutDuration: 40,
+			backlog:         -(5 * time.Hour).Seconds(),
+			expectedShards:  40,
+		},
+		{
 			name:            "scale down",
 			prevShards:      10,
 			dataIn:          10,
