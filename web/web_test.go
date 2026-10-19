@@ -113,6 +113,58 @@ func TestWithStackTracer(t *testing.T) {
 	}
 }
 
+func TestRenderReactIndex(t *testing.T) {
+	consolesDir := t.TempDir()
+	require.NoError(t, os.WriteFile(filepath.Join(consolesDir, "index.html"), nil, 0o600))
+
+	for _, tc := range []struct {
+		name        string
+		externalURL string
+		pageTitle   string
+		wantLink    string
+		wantTitle   string
+	}{
+		{
+			name:        "plain values",
+			externalURL: "http://localhost:9090/prometheus",
+			pageTitle:   "Prometheus Time Series Collection and Processing Server",
+			wantLink:    "/prometheus/consoles/index.html",
+			wantTitle:   "Prometheus Time Series Collection and Processing Server",
+		},
+		{
+			name:        "quotes, backslash and angle bracket in the external URL path",
+			externalURL: "http://localhost:9090/it%27s/a%5Cb%22%3C",
+			pageTitle:   "Prometheus",
+			wantLink:    `/it\'s/a\\b\"\u003C/consoles/index.html`,
+			wantTitle:   "Prometheus",
+		},
+		{
+			name:        "markup in the page title",
+			externalURL: "http://localhost:9090",
+			pageTitle:   `Staging & "QA" </title><b>x</b>`,
+			wantLink:    "/consoles/index.html",
+			wantTitle:   "Staging &amp; &#34;QA&#34; &lt;/title&gt;&lt;b&gt;x&lt;/b&gt;",
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			externalURL, err := url.Parse(tc.externalURL)
+			require.NoError(t, err)
+			h := &Handler{options: &Options{
+				ExternalURL:          externalURL,
+				PageTitle:            tc.pageTitle,
+				ConsoleTemplatesPath: consolesDir,
+			}}
+			for _, indexPath := range []string{"ui/mantine-ui/index.html", "ui/react-app/public/index.html"} {
+				idx, err := os.ReadFile(indexPath)
+				require.NoError(t, err)
+				got := string(h.renderReactIndex(idx))
+				require.Contains(t, got, "const GLOBAL_CONSOLES_LINK='"+tc.wantLink+"';", indexPath)
+				require.Contains(t, got, "<title>"+tc.wantTitle+"</title>", indexPath)
+			}
+		})
+	}
+}
+
 func TestReadyAndHealthy(t *testing.T) {
 	t.Parallel()
 
