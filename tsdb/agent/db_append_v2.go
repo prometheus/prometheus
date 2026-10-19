@@ -17,6 +17,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"log/slog"
 
 	"github.com/prometheus/prometheus/model/exemplar"
 	"github.com/prometheus/prometheus/model/histogram"
@@ -196,11 +197,11 @@ func (a *appenderV2) appendExemplars(s *memSeries, exemplar []exemplar.Exemplar)
 func (a *appenderV2) bestEffortAppendSTZeroSample(s *memSeries, ls labels.Labels, lastTS, st, t int64, h *histogram.Histogram, fh *histogram.FloatHistogram) {
 	// NOTE: Use lset instead of s.lset to avoid locking memSeries. Using s.ref is acceptable without locking.
 	if st >= t {
-		a.logger.Debug("Error when appending ST", "series", ls.String(), "st", st, "t", t, "err", storage.ErrSTNewerThanSample)
+		a.logSTZeroSampleError(ls, st, t, storage.ErrSTNewerThanSample)
 		return
 	}
 	if st <= lastTS {
-		a.logger.Debug("Error when appending ST", "series", ls.String(), "st", st, "t", t, "err", storage.ErrOutOfOrderST)
+		a.logSTZeroSampleError(ls, st, t, storage.ErrOutOfOrderST)
 		return
 	}
 
@@ -234,4 +235,14 @@ func (a *appenderV2) bestEffortAppendSTZeroSample(s *memSeries, ls labels.Labels
 		a.sampleSeries = append(a.sampleSeries, s)
 		a.metrics.totalAppendedSamples.WithLabelValues(sampleMetricTypeFloat).Inc()
 	}
+}
+
+// logSTZeroSampleError logs at debug level why no zero sample was appended for st.
+// It checks the level first, since it runs for every sample of long-running
+// counters and building the log arguments allocates.
+func (a *appenderV2) logSTZeroSampleError(ls labels.Labels, st, t int64, err error) {
+	if !a.logger.Enabled(context.Background(), slog.LevelDebug) {
+		return
+	}
+	a.logger.Debug("Error when appending ST", "series", ls.String(), "st", st, "t", t, "err", err)
 }
