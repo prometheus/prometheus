@@ -1314,3 +1314,40 @@ func TestDB_EnableSTZeroInjection_AppendV2(t *testing.T) {
 		})
 	}
 }
+
+// BenchmarkAppenderV2_Append_OldST appends to long-running counters, whose start timestamp is
+// older than their last sample, so they get no zero sample.
+func BenchmarkAppenderV2_Append_OldST(b *testing.B) {
+	series := labelsForTest(b.Name(), 1000)
+	for _, zeroIngestion := range []bool{false, true} {
+		b.Run(fmt.Sprintf("EnableSTAsZeroSample=%t", zeroIngestion), func(b *testing.B) {
+			opts := DefaultOptions()
+			opts.EnableSTAsZeroSample = zeroIngestion
+			db := createTestAgentDB(b, prometheus.NewRegistry(), opts)
+			b.Cleanup(func() {
+				require.NoError(b, db.Close())
+			})
+
+			const st = 1
+			ts := int64(1000)
+			refs := make([]storage.SeriesRef, len(series))
+			appendAll := func() {
+				app := db.AppenderV2(b.Context())
+				for i, lbls := range series {
+					var err error
+					refs[i], err = app.Append(refs[i], labels.New(lbls...), st, ts, 1, nil, nil, storage.AOptions{})
+					require.NoError(b, err)
+				}
+				require.NoError(b, app.Commit())
+				ts += 15_000
+			}
+			appendAll() // Gives every series a sample newer than st.
+
+			b.ReportAllocs()
+			b.ResetTimer()
+			for b.Loop() {
+				appendAll()
+			}
+		})
+	}
+}
