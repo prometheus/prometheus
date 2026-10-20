@@ -157,6 +157,27 @@ func TestNewParser(t *testing.T) {
 			contentType:    "application/openmetrics-text; version=1.0.0; charset=utf-8",
 			validateParser: requireOpenMetricsParser,
 		},
+		"openmetrics-v2-rc": {
+			contentType:        "application/openmetrics-text; version=2.0.0-rc",
+			enableOpenMetrics2: true,
+			validateParser:     requireOpenMetrics2Parser,
+		},
+		"openmetrics-v2-rc-with-charset": {
+			contentType:        "application/openmetrics-text; version=2.0.0-rc; charset=utf-8",
+			enableOpenMetrics2: true,
+			validateParser:     requireOpenMetrics2Parser,
+		},
+		"openmetrics-v2-rc-disabled": {
+			contentType:    "application/openmetrics-text; version=2.0.0-rc",
+			validateParser: requireNilParser,
+			err:            "received OpenMetrics 2.0 Content-Type \"application/openmetrics-text; version=2.0.0-rc\", but the openmetrics2 feature flag is not enabled and no fallback_scrape_protocol specified for target",
+		},
+		"openmetrics-v2-rc-disabled-fallback-openmetrics": {
+			contentType:            "application/openmetrics-text; version=2.0.0-rc",
+			fallbackScrapeProtocol: config.OpenMetricsText1_0_0,
+			validateParser:         requireOpenMetricsParser,
+			err:                    "received OpenMetrics 2.0 Content-Type \"application/openmetrics-text; version=2.0.0-rc\", but the openmetrics2 feature flag is not enabled, using fallback_scrape_protocol \"application/openmetrics-text\"",
+		},
 		"openmetrics-v2": {
 			contentType:        "application/openmetrics-text; version=2.0.0",
 			enableOpenMetrics2: true,
