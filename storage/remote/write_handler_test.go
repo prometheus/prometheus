@@ -31,6 +31,7 @@ import (
 	"github.com/gogo/protobuf/proto"
 	"github.com/google/go-cmp/cmp"
 	remoteapi "github.com/prometheus/client_golang/exp/api/remote"
+	"github.com/prometheus/common/model"
 	"github.com/prometheus/common/promslog"
 	"github.com/stretchr/testify/require"
 
@@ -2206,4 +2207,63 @@ func TestTimeLimitAppenderV2_LimitExemplars(t *testing.T) {
 		require.Len(t, appendable.exemplars, 1)
 		require.Equal(t, int64(900), appendable.exemplars[0].t)
 	})
+}
+
+func TestWriteHandlerV2TypeAndUnitFallbackFromLabels(t *testing.T) {
+	for _, enableTypeAndUnitLabels := range []bool{false, true} {
+		t.Run(fmt.Sprintf("enableTypeAndUnitLabels=%v", enableTypeAndUnitLabels), func(t *testing.T) {
+			appendable := &mockAppendable{
+				latestSample:    map[uint64]int64{},
+				latestExemplar:  map[uint64]int64{},
+				latestHistogram: map[uint64]int64{},
+				latestFloatHist: map[uint64]int64{},
+			}
+			handler := NewWriteHandler(
+				promslog.NewNopLogger(),
+				nil,
+				appendable,
+				[]remoteapi.WriteMessageType{remoteapi.WriteV2MessageType},
+				enableTypeAndUnitLabels,
+				true,
+			)
+
+			// Series has __type__ and __unit__ in LabelsRefs, while Metadata struct only has HelpRef.
+			symbols := []string{"", "__name__", "http_requests_total", "__type__", "counter", "__unit__", "requests", "job", "api", "Total HTTP requests"}
+			ts := []writev2.TimeSeries{
+				{
+					LabelsRefs: []uint32{1, 2, 3, 4, 5, 6, 7, 8},
+					Metadata: writev2.Metadata{
+						Type:    writev2.Metadata_METRIC_TYPE_UNSPECIFIED,
+						HelpRef: 9,
+					},
+					Samples: []writev2.Sample{{Timestamp: 1000, Value: 42}},
+				},
+			}
+			payload, _, _, _, err := buildV2WriteRequest(promslog.NewNopLogger(), ts, symbols, nil, nil, nil, "snappy")
+			require.NoError(t, err)
+
+			req, err := http.NewRequest(http.MethodPost, "", bytes.NewReader(payload))
+			require.NoError(t, err)
+			req.Header.Set("Content-Type", remoteWriteContentTypeHeaders[remoteapi.WriteV2MessageType])
+			req.Header.Set("Content-Encoding", compression.Snappy)
+
+			recorder := httptest.NewRecorder()
+			handler.ServeHTTP(recorder, req)
+			require.Equal(t, http.StatusNoContent, recorder.Result().StatusCode)
+
+			require.Len(t, appendable.samples, 1)
+			require.Len(t, appendable.metadata, 1)
+			require.Equal(t, metadata.Metadata{
+				Type: model.MetricTypeCounter,
+				Unit: "requests",
+				Help: "Total HTTP requests",
+			}, appendable.metadata[0].m)
+
+			if enableTypeAndUnitLabels {
+				testutil.RequireEqual(t, labels.FromStrings("__name__", "http_requests_total", "__type__", "counter", "__unit__", "requests", "job", "api"), appendable.samples[0].l)
+			} else {
+				testutil.RequireEqual(t, labels.FromStrings("__name__", "http_requests_total", "job", "api"), appendable.samples[0].l)
+			}
+		})
+	}
 }
