@@ -23,6 +23,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"os"
+	"path/filepath"
 	"runtime"
 	"runtime/pprof"
 	"slices"
@@ -60,6 +61,7 @@ import (
 	"github.com/prometheus/prometheus/tsdb"
 	"github.com/prometheus/prometheus/tsdb/chunks"
 	"github.com/prometheus/prometheus/tsdb/record"
+	"github.com/prometheus/prometheus/tsdb/wlog"
 	"github.com/prometheus/prometheus/util/compression"
 	"github.com/prometheus/prometheus/util/runutil"
 	"github.com/prometheus/prometheus/util/testutil"
@@ -217,7 +219,7 @@ func TestSampleDelivery(t *testing.T) {
 	writeConfig := baseRemoteWriteConfig("http://test-storage.com")
 	writeConfig.QueueConfig = queueConfig
 	writeConfig.SendExemplars = true
-	writeConfig.SendNativeHistograms = true
+	writeConfig.SetSendNativeHistograms(true)
 
 	conf := &config.Config{
 		GlobalConfig: config.DefaultGlobalConfig,
@@ -3081,6 +3083,98 @@ func TestAppendHistogramsWithStartTimestamp(t *testing.T) {
 
 	require.True(t, m.AppendHistograms(histograms))
 	require.True(t, m.AppendFloatHistograms(floatHistograms))
+
+	c.waitForExpectedData(t, 30*time.Second)
+}
+
+// TestSendNativeHistogramsEnabled verifies the send_native_histograms
+// resolution: for RW2 the default is true, but an explicit false opts out.
+func TestSendNativeHistogramsEnabled(t *testing.T) {
+	ptr := func(v bool) *bool { return &v }
+	for _, tc := range []struct {
+		name     string
+		msg      remoteapi.WriteMessageType
+		explicit *bool
+		want     bool
+	}{
+		{"v1 default", remoteapi.WriteV1MessageType, nil, false},
+		{"v1 enabled", remoteapi.WriteV1MessageType, ptr(true), true},
+		{"v1 explicit false", remoteapi.WriteV1MessageType, ptr(false), false},
+		{"v2 default", remoteapi.WriteV2MessageType, nil, true},
+		{"v2 explicit false", remoteapi.WriteV2MessageType, ptr(false), false},
+		{"v2 explicit true", remoteapi.WriteV2MessageType, ptr(true), true},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			c := &config.RemoteWriteConfig{ProtobufMessage: tc.msg}
+			if tc.explicit != nil {
+				c.SetSendNativeHistograms(*tc.explicit)
+			}
+			require.Equal(t, tc.want, c.SendNativeHistogramsEnabled())
+		})
+	}
+}
+
+// TestV2ReadsNativeHistogramsFromWAL is the WAL-level counterpart of
+// TestSendNativeHistogramsEnabled. The queue manager only receives histograms
+// through its WAL watcher, so the watcher itself must be created with histogram
+// reading enabled; calling AppendHistograms directly bypasses that wiring.
+func TestV2ReadsNativeHistogramsFromWAL(t *testing.T) {
+	protoMsg := remoteapi.WriteV2MessageType
+	dir := t.TempDir()
+
+	series := []record.RefSeries{
+		{
+			Ref:    chunks.HeadSeriesRef(0),
+			Labels: labels.FromStrings("__name__", "test_histogram"),
+		},
+	}
+	histograms := []record.RefHistogramSample{
+		{
+			Ref: chunks.HeadSeriesRef(0),
+			// The watcher starts at the wall clock of Start(); use a future
+			// timestamp so a pre-written record is not filtered out.
+			T: time.Now().Add(time.Hour).UnixMilli(),
+			H: &histogram.Histogram{
+				Schema:          0,
+				ZeroThreshold:   1e-128,
+				Count:           1,
+				Sum:             0,
+				PositiveSpans:   []histogram.Span{{Offset: 0, Length: 1}},
+				PositiveBuckets: []int64{1},
+			},
+		},
+	}
+
+	w, err := wlog.New(nil, nil, filepath.Join(dir, "wal"), compression.None)
+	require.NoError(t, err)
+	defer func() { require.NoError(t, w.Close()) }()
+
+	enc := record.Encoder{}
+	require.NoError(t, w.Log(enc.Series(series, nil)))
+
+	cfg := testDefaultQueueConfig()
+	cfg.MaxShards = 1
+	c := NewTestWriteClient(protoMsg)
+	m := NewQueueManager(
+		newQueueManagerMetrics(nil, "", ""), wlog.NewWatcherMetrics(nil), wlog.NewLiveReaderMetrics(nil), nil, dir,
+		newEWMARate(ewmaWeight, shardUpdateDuration), cfg, config.DefaultMetadataConfig,
+		labels.EmptyLabels(), nil, c, defaultFlushDeadline, newPool(),
+		newHighestTimestampMetric(), nil, false, true, false, protoMsg,
+		record.NewBuffersPool(), false, false,
+	)
+
+	c.expectHistograms(histograms, series)
+
+	m.Start()
+	defer m.Stop()
+
+	// Let the watcher enter its tail loop before appending, so Notify is not
+	// dropped by the non-blocking send.
+	time.Sleep(100 * time.Millisecond)
+	hs, cbHs := enc.HistogramSamples(histograms, nil)
+	require.Empty(t, cbHs)
+	require.NoError(t, w.Log(hs))
+	m.watcher.Notify()
 
 	c.waitForExpectedData(t, 30*time.Second)
 }

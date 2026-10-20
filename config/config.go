@@ -1514,14 +1514,23 @@ func CheckTargetAddress(address model.LabelValue) error {
 
 // RemoteWriteConfig is the configuration for writing to remote storage.
 type RemoteWriteConfig struct {
-	URL                  *config.URL       `yaml:"url"`
-	RemoteTimeout        model.Duration    `yaml:"remote_timeout,omitempty"`
-	Headers              map[string]string `yaml:"headers,omitempty"`
-	WriteRelabelConfigs  []*relabel.Config `yaml:"write_relabel_configs,omitempty"`
-	Name                 string            `yaml:"name,omitempty"`
-	SendExemplars        bool              `yaml:"send_exemplars,omitempty"`
-	SendNativeHistograms bool              `yaml:"send_native_histograms,omitempty"`
-	RoundRobinDNS        bool              `yaml:"round_robin_dns,omitempty"`
+	URL                 *config.URL       `yaml:"url"`
+	RemoteTimeout       model.Duration    `yaml:"remote_timeout,omitempty"`
+	Headers             map[string]string `yaml:"headers,omitempty"`
+	WriteRelabelConfigs []*relabel.Config `yaml:"write_relabel_configs,omitempty"`
+	Name                string            `yaml:"name,omitempty"`
+	SendExemplars       bool              `yaml:"send_exemplars,omitempty"`
+	// SendNativeHistograms controls forwarding of native histograms.
+	// For the io.prometheus.write.v2.Request message histograms are forwarded
+	// by default; set this to false explicitly to opt out.
+	//
+	// Deprecated: for remote write v2 this option is planned for removal. An
+	// explicit false still opts out, and remote write v1 keeps using the value.
+	SendNativeHistograms bool `yaml:"send_native_histograms,omitempty"`
+	// sendNativeHistogramsSet records whether the YAML key was present, so an
+	// explicit false can be told apart from the default.
+	sendNativeHistogramsSet bool
+	RoundRobinDNS           bool `yaml:"round_robin_dns,omitempty"`
 	// ProtobufMessage specifies the protobuf message to use against the remote
 	// receiver as specified in https://prometheus.io/docs/specs/remote_write_spec_2_0/
 	ProtobufMessage remoteapi.WriteMessageType `yaml:"protobuf_message,omitempty"`
@@ -1545,6 +1554,26 @@ type RemoteWriteConfig struct {
 	ConvertNHCBToClassic bool `yaml:"convert_nhcb_to_classic,omitempty"`
 }
 
+// SendNativeHistogramsEnabled reports whether native histograms should be
+// forwarded for this remote write configuration. For the v2 protobuf message
+// the default is true; an explicit false opts out.
+func (c *RemoteWriteConfig) SendNativeHistogramsEnabled() bool {
+	if c.SendNativeHistograms {
+		return true
+	}
+	if c.sendNativeHistogramsSet {
+		return false
+	}
+	return c.ProtobufMessage == remoteapi.WriteV2MessageType
+}
+
+// SetSendNativeHistograms marks the option as explicitly configured. It is for
+// callers that build a RemoteWriteConfig in code rather than from YAML.
+func (c *RemoteWriteConfig) SetSendNativeHistograms(v bool) {
+	c.SendNativeHistograms = v
+	c.sendNativeHistogramsSet = true
+}
+
 // SetDirectory joins any relative file paths with dir.
 func (c *RemoteWriteConfig) SetDirectory(dir string) {
 	c.HTTPClientConfig.SetDirectory(dir)
@@ -1557,6 +1586,11 @@ func (c *RemoteWriteConfig) UnmarshalYAML(unmarshal func(any) error) error {
 	if err := unmarshal((*plain)(c)); err != nil {
 		return err
 	}
+	var raw map[string]any
+	if err := unmarshal(&raw); err != nil {
+		return err
+	}
+	_, c.sendNativeHistogramsSet = raw["send_native_histograms"]
 	if c.URL == nil {
 		return errors.New("url for remote_write is empty")
 	}
