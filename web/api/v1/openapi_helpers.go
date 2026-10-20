@@ -17,10 +17,10 @@ import (
 	"time"
 
 	jsoniter "github.com/json-iterator/go"
+	yaml "github.com/pb33f/go-yaml"
 	"github.com/pb33f/libopenapi/datamodel/high/base"
 	v3 "github.com/pb33f/libopenapi/datamodel/high/v3"
 	"github.com/pb33f/libopenapi/orderedmap"
-	yaml "github.com/pb33f/go-yaml"
 
 	"github.com/prometheus/prometheus/promql"
 )
