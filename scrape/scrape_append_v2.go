@@ -14,6 +14,7 @@
 package scrape
 
 import (
+	"bytes"
 	"errors"
 	"fmt"
 	"io"
@@ -27,6 +28,7 @@ import (
 	"github.com/prometheus/prometheus/model/exemplar"
 	"github.com/prometheus/prometheus/model/histogram"
 	"github.com/prometheus/prometheus/model/labels"
+	"github.com/prometheus/prometheus/model/metadata"
 	"github.com/prometheus/prometheus/model/textparse"
 	"github.com/prometheus/prometheus/model/timestamp"
 	"github.com/prometheus/prometheus/model/value"
@@ -132,6 +134,11 @@ func (sl *scrapeLoopAppenderV2) append(b []byte, contentType string, ts time.Tim
 		e              exemplar.Exemplar // Escapes to heap so hoisted out of loop.
 		lastMeta       *metaEntry
 		lastMFName     []byte
+		parsedMeta     metaEntry
+		parsedMFName   []byte
+		lastSetMFName  string
+		lastSetMeta    metadata.Metadata
+		hasMRC         = len(sl.mrc) > 0
 	)
 
 	exemplars := make([]exemplar.Exemplar, 0, 1)
@@ -173,13 +180,28 @@ loop:
 		case textparse.EntryType:
 			// TODO(bwplotka): Build meta entry directly instead of locking and updating the map. This will
 			// allow to properly update metadata when e.g unit was added, then removed;
-			lastMFName, lastMeta = sl.cache.setType(p.Type())
+			if !hasMRC {
+				lastMFName, lastMeta = sl.cache.setType(p.Type())
+				continue
+			}
+			mfName, typ := p.Type()
+			lastMFName, lastMeta = sl.setParsedType(mfName, typ, &parsedMFName, &parsedMeta)
 			continue
 		case textparse.EntryHelp:
-			lastMFName, lastMeta = sl.cache.setHelp(p.Help())
+			if !hasMRC {
+				lastMFName, lastMeta = sl.cache.setHelp(p.Help())
+				continue
+			}
+			mfName, help := p.Help()
+			lastMFName, lastMeta = sl.setParsedHelp(mfName, help, &parsedMFName, &parsedMeta)
 			continue
 		case textparse.EntryUnit:
-			lastMFName, lastMeta = sl.cache.setUnit(p.Unit())
+			if !hasMRC {
+				lastMFName, lastMeta = sl.cache.setUnit(p.Unit())
+				continue
+			}
+			mfName, unit := p.Unit()
+			lastMFName, lastMeta = sl.setParsedUnit(mfName, unit, &parsedMFName, &parsedMeta)
 			continue
 		case textparse.EntryComment:
 			continue
@@ -202,40 +224,121 @@ loop:
 			t = *parsedTimestamp
 		}
 
-		if sl.cache.getDropped(met) {
-			continue
-		}
-		ce, seriesCached, seriesAlreadyScraped := sl.cache.get(met)
-		var ref storage.SeriesRef
+		var (
+			ce                   *cacheEntry
+			seriesCached         bool
+			seriesAlreadyScraped bool
+			ref                  storage.SeriesRef
+			sampleMeta           metadata.Metadata
+			origMeta             metadata.Metadata
+			origMFName           string
+			sampleMFName         string
+		)
 
-		if seriesCached {
-			ref = ce.ref
-			lset = ce.lset
-		} else {
-			p.Labels(&lset)
-
-			// Add target labels and apply relabeling before storing the final label set.
-			lset = sl.sampleMutator(lset)
-
-			// The label set may be set to empty to indicate dropping.
-			if lset.IsEmpty() {
-				sl.cache.addDropped(met)
+		if !hasMRC {
+			if sl.cache.getDropped(met) {
 				continue
 			}
+			ce, seriesCached, seriesAlreadyScraped = sl.cache.get(met)
+			if seriesCached {
+				ref = ce.ref
+				lset = ce.lset
+			} else {
+				p.Labels(&lset)
 
-			if !lset.Has(model.MetricNameLabel) {
-				err = errNameLabelMandatory
-				break loop
+				// Add target labels and apply relabeling before storing the final label set.
+				lset = sl.sampleMutator(lset)
+
+				// The label set may be set to empty to indicate dropping.
+				if lset.IsEmpty() {
+					sl.cache.addDropped(met)
+					continue
+				}
+
+				if !lset.Has(model.MetricNameLabel) {
+					err = errNameLabelMandatory
+					break loop
+				}
+				if !lset.IsValid(sl.validationScheme) {
+					err = fmt.Errorf("invalid metric name or label names: %s", lset.String())
+					break loop
+				}
+
+				// If any label limits is exceeded the scrape should fail.
+				if err = verifyLabelLimits(lset, sl.labelLimits); err != nil {
+					sl.metrics.targetScrapePoolExceededLabelLimits.Inc()
+					break loop
+				}
 			}
-			if !lset.IsValid(sl.validationScheme) {
-				err = fmt.Errorf("invalid metric name or label names: %s", lset.String())
-				break loop
+		} else {
+			if sl.cache.getDropped(met) && (lastMeta == nil || lastMeta.lastIterChange != sl.cache.iter) {
+				continue
+			}
+			ce, seriesCached, seriesAlreadyScraped = sl.cache.get(met)
+			if lastMeta != nil {
+				origMeta = lastMeta.Metadata
+				origMFName = yoloString(lastMFName)
+			}
+			var (
+				sm            seriesMetaEntry
+				hasCachedMeta bool
+			)
+			if seriesCached && sl.cache.seriesMeta != nil {
+				sm, hasCachedMeta = sl.cache.seriesMeta[ce]
 			}
 
-			// If any label limits is exceeded the scrape should fail.
-			if err = verifyLabelLimits(lset, sl.labelLimits); err != nil {
-				sl.metrics.targetScrapePoolExceededLabelLimits.Inc()
-				break loop
+			if seriesCached && hasCachedMeta && sm.origMFName == origMFName && sm.origMeta.Equals(origMeta) {
+				ref = ce.ref
+				lset = ce.lset
+				sampleMeta = sm.meta
+				sampleMFName = sm.mfName
+				if sampleMFName != "" && (sampleMFName != lastSetMFName || !sampleMeta.Equals(lastSetMeta)) {
+					sl.cache.setMetadata(sampleMFName, sampleMeta)
+					lastSetMFName = sampleMFName
+					lastSetMeta = sampleMeta
+				}
+			} else {
+				p.Labels(&lset)
+
+				// Add target labels and apply relabeling before storing the final label set and metadata.
+				lset, sampleMeta, sampleMFName = sl.mutateSample(lset, lastMFName, lastMeta)
+
+				// The label set may be set to empty to indicate dropping.
+				if lset.IsEmpty() {
+					if seriesCached {
+						sl.cache.deleteSeries(met, ce)
+					}
+					sl.cache.addDropped(met)
+					continue
+				}
+
+				if !lset.Has(model.MetricNameLabel) {
+					err = errNameLabelMandatory
+					break loop
+				}
+				if !lset.IsValid(sl.validationScheme) {
+					err = fmt.Errorf("invalid metric name or label names: %s", lset.String())
+					break loop
+				}
+
+				// If any label limits is exceeded the scrape should fail.
+				if err = verifyLabelLimits(lset, sl.labelLimits); err != nil {
+					sl.metrics.targetScrapePoolExceededLabelLimits.Inc()
+					break loop
+				}
+
+				if sampleMFName != "" && (sampleMFName != lastSetMFName || !sampleMeta.Equals(lastSetMeta)) {
+					sl.cache.setMetadata(sampleMFName, sampleMeta)
+					lastSetMFName = sampleMFName
+					lastSetMeta = sampleMeta
+				}
+				if seriesCached {
+					if ce.lset.Hash() == lset.Hash() && labels.Equal(ce.lset, lset) {
+						ref = ce.ref
+					}
+					ce.lset = lset
+					sl.cache.setSeriesMeta(ce, origMeta, sampleMeta, origMFName, sampleMFName)
+				}
 			}
 		}
 
@@ -262,7 +365,15 @@ loop:
 
 			// TODO(ridwanmsharif): Consider injecting a 0 value with the st == t here, instead of skipping an append.
 			if sl.synthesizeST && st == 0 {
-				st, val, h, fh, skipAppend, stCache = sl.checkAndSynthesizeStartTime(st, lset, ce, lastMFName, val, h, fh, t)
+				if !hasMRC {
+					var stType model.MetricType
+					if lastMeta != nil {
+						stType = lastMeta.Type
+					}
+					st, val, h, fh, skipAppend, stCache = sl.checkAndSynthesizeStartTime(st, lset, ce, yoloString(lastMFName), stType, val, h, fh, t)
+				} else {
+					st, val, h, fh, skipAppend, stCache = sl.checkAndSynthesizeStartTime(st, lset, ce, sampleMFName, sampleMeta.Type, val, h, fh, t)
+				}
 				appOpts.RejectOutOfOrder = true
 			}
 
@@ -303,16 +414,23 @@ loop:
 			//
 			// TODO(https://github.com/prometheus/prometheus/issues/17900): Optimize this, notably move this check to parsers that require this (ensuring parser
 			// interface always yields correct metadata), deliver OpenMetrics 2.0 that removes suffixes.
-			if sl.appendMetadataToWAL && lastMeta != nil {
-				// In majority cases we can trust that the current series/histogram is matching the lastMeta and lastMFName.
-				// However, optional TYPE, etc metadata and broken OM text can break this, detect those cases here.
-				if !isSeriesPartOfFamily(lset.Get(model.MetricNameLabel), lastMFName, lastMeta.Type) {
-					lastMeta = nil // Don't pass knowingly broken metadata, now, nor on the next line.
-				}
-				if lastMeta != nil {
-					// Metric family name has the same source as metadata.
-					appOpts.MetricFamilyName = yoloString(lastMFName)
-					appOpts.Metadata = lastMeta.Metadata
+			if sl.appendMetadataToWAL {
+				if !hasMRC {
+					if lastMeta != nil {
+						// In majority cases we can trust that the current series/histogram is matching the lastMeta and lastMFName.
+						// However, optional TYPE, etc metadata and broken OM text can break this, detect those cases here.
+						if !isSeriesPartOfFamily(lset.Get(model.MetricNameLabel), lastMFName, lastMeta.Type) {
+							lastMeta = nil // Don't pass knowingly broken metadata, now, nor on the next line.
+						}
+						if lastMeta != nil {
+							// Metric family name has the same source as metadata.
+							appOpts.MetricFamilyName = yoloString(lastMFName)
+							appOpts.Metadata = lastMeta.Metadata
+						}
+					}
+				} else if sampleMFName != "" {
+					appOpts.MetricFamilyName = sampleMFName
+					appOpts.Metadata = sampleMeta
 				}
 			}
 
@@ -339,6 +457,9 @@ loop:
 		// it in the scrape cache because we don't need to emit StaleNaNs for it when it disappears.
 		if !seriesCached && sampleAdded {
 			ce = sl.cache.addRef(met, ref, lset)
+			if hasMRC {
+				sl.cache.setSeriesMeta(ce, origMeta, sampleMeta, origMFName, sampleMFName)
+			}
 
 			if sampleLimitErr == nil && bucketLimitErr == nil {
 				seriesAdded++
@@ -439,11 +560,12 @@ func (sl *scrapeLoopAppenderV2) addReportSample(s reportSample, t int64, v float
 	}
 }
 
-func (sl *scrapeLoop) checkAndSynthesizeStartTime(
+func (*scrapeLoop) checkAndSynthesizeStartTime(
 	st int64,
 	lset labels.Labels,
 	ce *cacheEntry,
-	lastMFName []byte,
+	sampleMFName string,
+	sampleType model.MetricType,
 	val float64,
 	h *histogram.Histogram,
 	fh *histogram.FloatHistogram,
@@ -454,21 +576,19 @@ func (sl *scrapeLoop) checkAndSynthesizeStartTime(
 
 	// TODO(https://github.com/prometheus/prometheus/issues/1790): Move isSeriesPartOfFamily inside parsers.
 	if ce == nil || ce.st == nil {
-		metadata, ok := sl.cache.GetMetadata(string(lastMFName))
-		if !ok || !isSeriesPartOfFamily(lset.Get(model.MetricNameLabel), lastMFName, metadata.Type) {
-			return st, val, h, fh, skipAppend, c
-		}
-
-		switch metadata.Type {
+		var mName string
+		switch sampleType {
 		case model.MetricTypeCounter, model.MetricTypeHistogram:
-			// Proceed to synthesis.
+			mName = lset.Get(model.MetricNameLabel)
 		case model.MetricTypeSummary:
-			mName := lset.Get(model.MetricNameLabel)
+			mName = lset.Get(model.MetricNameLabel)
 			if !strings.HasSuffix(mName, "_count") && !strings.HasSuffix(mName, "_sum") {
 				return st, val, h, fh, skipAppend, c
 			}
-			// Proceed to synthesis.
 		default:
+			return st, val, h, fh, skipAppend, c
+		}
+		if !isSeriesPartOfFamilyStr(mName, sampleMFName, sampleType) {
 			return st, val, h, fh, skipAppend, c
 		}
 		c = &stCache{}
@@ -486,4 +606,97 @@ func (sl *scrapeLoop) checkAndSynthesizeStartTime(
 	}
 
 	return st, val, h, fh, skipAppend, c
+}
+
+// metricFamilyName computes the post-relabel metric family name from the pre-relabel
+// metric name, pre-relabel metric family name, post-relabel metric name, and post-relabel type.
+func metricFamilyName(preName string, preMFName []byte, postName string, postType model.MetricType) string {
+	preMFStr := yoloString(preMFName)
+	if preMFStr != "" && preName == postName {
+		if strings.HasPrefix(postName, preMFStr) {
+			return postName[:len(preMFStr)]
+		}
+		return string(preMFName)
+	}
+	if preMFStr != "" && strings.HasPrefix(preName, preMFStr) {
+		suffix := preName[len(preMFStr):]
+		if suffix != "" {
+			if cut, ok := strings.CutSuffix(postName, suffix); ok {
+				return cut
+			}
+		}
+	}
+	switch postType {
+	case model.MetricTypeHistogram:
+		for _, s := range []string{"_bucket", "_sum", "_count"} {
+			if cut, ok := strings.CutSuffix(postName, s); ok {
+				return cut
+			}
+		}
+	case model.MetricTypeGaugeHistogram:
+		for _, s := range []string{"_bucket", "_gsum", "_gcount"} {
+			if cut, ok := strings.CutSuffix(postName, s); ok {
+				return cut
+			}
+		}
+	case model.MetricTypeSummary:
+		for _, s := range []string{"_sum", "_count"} {
+			if cut, ok := strings.CutSuffix(postName, s); ok {
+				return cut
+			}
+		}
+	}
+	return postName
+}
+
+func (sl *scrapeLoop) setParsedType(mfName []byte, t model.MetricType, parsedMFName *[]byte, parsedMeta *metaEntry) ([]byte, *metaEntry) {
+	if !bytes.Equal(*parsedMFName, mfName) {
+		*parsedMFName = append((*parsedMFName)[:0], mfName...)
+		*parsedMeta = metaEntry{Metadata: metadata.Metadata{Type: model.MetricTypeUnknown}}
+	}
+	parsedMeta.Type = t
+	parsedMeta.lastIter = sl.cache.iter
+	parsedMeta.lastIterChange = sl.cache.iter
+	return *parsedMFName, parsedMeta
+}
+
+func (sl *scrapeLoop) setParsedHelp(mfName, help []byte, parsedMFName *[]byte, parsedMeta *metaEntry) ([]byte, *metaEntry) {
+	if !bytes.Equal(*parsedMFName, mfName) {
+		*parsedMFName = append((*parsedMFName)[:0], mfName...)
+		*parsedMeta = metaEntry{Metadata: metadata.Metadata{Type: model.MetricTypeUnknown}}
+	}
+	parsedMeta.Help = string(help)
+	parsedMeta.lastIter = sl.cache.iter
+	parsedMeta.lastIterChange = sl.cache.iter
+	return *parsedMFName, parsedMeta
+}
+
+func (sl *scrapeLoop) setParsedUnit(mfName, unit []byte, parsedMFName *[]byte, parsedMeta *metaEntry) ([]byte, *metaEntry) {
+	if !bytes.Equal(*parsedMFName, mfName) {
+		*parsedMFName = append((*parsedMFName)[:0], mfName...)
+		*parsedMeta = metaEntry{Metadata: metadata.Metadata{Type: model.MetricTypeUnknown}}
+	}
+	parsedMeta.Unit = string(unit)
+	parsedMeta.lastIter = sl.cache.iter
+	parsedMeta.lastIterChange = sl.cache.iter
+	return *parsedMFName, parsedMeta
+}
+
+func (sl *scrapeLoop) mutateSample(lset labels.Labels, lastMFName []byte, lastMeta *metaEntry) (labels.Labels, metadata.Metadata, string) {
+	preName := lset.Get(model.MetricNameLabel)
+	hasFamilyMeta := lastMeta != nil && isSeriesPartOfFamily(preName, lastMFName, lastMeta.Type)
+	var sampleMeta metadata.Metadata
+	if hasFamilyMeta {
+		sampleMeta = lastMeta.Metadata
+	} else {
+		sampleMeta = metadata.Metadata{Type: model.MetricTypeUnknown}
+	}
+
+	lset = sl.sampleMutator(lset)
+	if lset.IsEmpty() || !hasFamilyMeta {
+		return lset, metadata.Metadata{}, ""
+	}
+
+	postMFName := metricFamilyName(preName, lastMFName, lset.Get(model.MetricNameLabel), sampleMeta.Type)
+	return lset, sampleMeta, postMFName
 }
