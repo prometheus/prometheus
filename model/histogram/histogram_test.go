@@ -1531,19 +1531,47 @@ func TestHistogramValidation(t *testing.T) {
 				NegativeSpans:   []Span{{Offset: 0, Length: 1}, {Offset: math.MaxInt32, Length: 1}},
 				NegativeBuckets: []int64{1, 0},
 			},
-			errMsg: `negative side: span number 2 ends at bucket index 2147483648: histogram has a span whose bucket index does not fit in int32`,
+			errMsg: `negative side: span number 2 ends at bucket index 2147483648: histogram has a span whose bucket index is out of range`,
 		},
 		"rejects a histogram that has positive spans whose bucket index overflows int32": {
 			h: &Histogram{
 				PositiveSpans:   []Span{{Offset: 0, Length: 1}, {Offset: math.MaxInt32, Length: 1}, {Offset: math.MaxInt32, Length: 1}},
 				PositiveBuckets: []int64{1, 0, 0},
 			},
-			errMsg: `positive side: span number 2 ends at bucket index 2147483648: histogram has a span whose bucket index does not fit in int32`,
+			errMsg: `positive side: span number 2 ends at bucket index 2147483648: histogram has a span whose bucket index is out of range`,
 		},
 		"valid histogram with a bucket at the largest int32 index": {
 			h: &Histogram{
 				Count:           1,
 				PositiveSpans:   []Span{{Offset: math.MaxInt32, Length: 1}},
+				PositiveBuckets: []int64{1},
+			},
+		},
+		"rejects a histogram whose positive span offsets each fit in int32 but add up past it": {
+			h: &Histogram{
+				PositiveSpans:   []Span{{Offset: math.MaxInt32 / 2, Length: 1}, {Offset: math.MaxInt32 / 2, Length: 1}, {Offset: 1, Length: 1}},
+				PositiveBuckets: []int64{1, 0, 0},
+			},
+			errMsg: `positive side: span number 3 ends at bucket index 2147483649: histogram has a span whose bucket index is out of range`,
+		},
+		"rejects a histogram that has a negative span starting at the smallest int32 index": {
+			h: &Histogram{
+				NegativeSpans:   []Span{{Offset: math.MinInt32, Length: 1}},
+				NegativeBuckets: []int64{1},
+			},
+			errMsg: `negative side: span number 1 starts at bucket index -2147483648: histogram has a span whose bucket index is out of range`,
+		},
+		"rejects a histogram that has a positive span starting at the smallest int32 index": {
+			h: &Histogram{
+				PositiveSpans:   []Span{{Offset: math.MinInt32, Length: 1}},
+				PositiveBuckets: []int64{1},
+			},
+			errMsg: `positive side: span number 1 starts at bucket index -2147483648: histogram has a span whose bucket index is out of range`,
+		},
+		"valid histogram with a bucket at the smallest allowed index": {
+			h: &Histogram{
+				Count:           1,
+				PositiveSpans:   []Span{{Offset: math.MinInt32 + 1, Length: 1}},
 				PositiveBuckets: []int64{1},
 			},
 		},

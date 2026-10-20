@@ -43,7 +43,7 @@ var (
 	ErrHistogramNegativeBucketCount     = Error{error: errors.New("histogram has a bucket whose observation count is negative")}
 	ErrHistogramSpanNegativeOffset      = Error{error: errors.New("histogram has a span whose offset is negative")}
 	ErrHistogramSpansBucketsMismatch    = Error{error: errors.New("histogram spans specify different number of buckets than provided")}
-	ErrHistogramSpanIndexOutOfRange     = Error{error: errors.New("histogram has a span whose bucket index does not fit in int32")}
+	ErrHistogramSpanIndexOutOfRange     = Error{error: errors.New("histogram has a span whose bucket index is out of range")}
 	ErrHistogramCustomBucketsMismatch   = Error{error: errors.New("histogram custom bounds are too few")}
 	ErrHistogramCustomBucketsInvalid    = Error{error: errors.New("histogram custom bounds must be in strictly increasing order")}
 	ErrHistogramCustomBucketsInfinite   = Error{error: errors.New("histogram custom bounds must be finite")}
@@ -526,6 +526,8 @@ func checkHistogramSpans(spans []Span, numBuckets int) error {
 	for n, span := range spans {
 		if n > 0 && span.Offset < 0 {
 			return fmt.Errorf("span number %d with offset %d: %w", n+1, span.Offset, ErrHistogramSpanNegativeOffset)
+		} else if n == 0 && span.Offset == math.MinInt32 {
+			return fmt.Errorf("span number %d starts at bucket index %d: %w", n+1, span.Offset, ErrHistogramSpanIndexOutOfRange)
 		}
 		spanBuckets += int(span.Length)
 		endIdx += int64(span.Offset) + int64(span.Length)
