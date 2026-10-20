@@ -43,6 +43,7 @@ import (
 	"github.com/prometheus/prometheus/storage"
 	"github.com/prometheus/prometheus/tsdb"
 	"github.com/prometheus/prometheus/tsdb/chunkenc"
+	"github.com/prometheus/prometheus/tsdb/chunks"
 	"github.com/prometheus/prometheus/util/annotations"
 	"github.com/prometheus/prometheus/util/logging"
 	"github.com/prometheus/prometheus/util/stats"
@@ -6036,6 +6037,114 @@ func TestHistogramRateWithFloatStaleness(t *testing.T) {
 	require.Equal(t, 0.0, vec[0].H.Count)
 	require.Equal(t, 0.0, vec[0].H.Sum)
 }
+
+// TestInvalidHistogramBucketLayoutFailsQuery checks that a query fails with an
+// error when it has to reduce the resolution of a stored histogram with an
+// invalid bucket layout, rather than silently dropping or miscomputing the
+// result. The histograms are served by a mock querier, because the TSDB rejects
+// invalid histograms when they are appended.
+func TestInvalidHistogramBucketLayoutFailsQuery(t *testing.T) {
+	// The second span has a negative offset. Its schema is higher than valid's,
+	// so combining the two reduces its resolution.
+	invalid := &histogram.FloatHistogram{
+		CounterResetHint: histogram.GaugeType,
+		Schema:           1,
+		Count:            5,
+		Sum:              10,
+		PositiveSpans:    []histogram.Span{{Offset: 0, Length: 1}, {Offset: -2, Length: 1}},
+		PositiveBuckets:  []float64{2, 3},
+	}
+	valid := &histogram.FloatHistogram{
+		CounterResetHint: histogram.GaugeType,
+		Schema:           0,
+		Count:            5,
+		Sum:              10,
+		PositiveSpans:    []histogram.Span{{Offset: 0, Length: 2}},
+		PositiveBuckets:  []float64{2, 3},
+	}
+
+	// Counter versions of the same histograms. rate reduces the last sample to
+	// the lowest schema in the range before it handles counter resets, but it
+	// discards the first sample if there is a reset between the first two, so
+	// the invalid sample comes after two valid ones.
+	invalidCounter := invalid.Copy()
+	invalidCounter.CounterResetHint = histogram.UnknownCounterReset
+	validCounter := valid.Copy()
+	validCounter.CounterResetHint = histogram.UnknownCounterReset
+
+	series := map[string][]chunks.Sample{
+		"invalid_higher_schema": {fhSample{t: 60000, fh: invalid}},
+		"valid_lower_schema":    {fhSample{t: 60000, fh: valid}},
+		// The schema increases, so functions over both samples reduce the invalid one.
+		"schema_increase":         {fhSample{t: 0, fh: valid}, fhSample{t: 60000, fh: invalid}},
+		"counter_schema_increase": {fhSample{t: 0, fh: validCounter}, fhSample{t: 30000, fh: validCounter}, fhSample{t: 60000, fh: invalidCounter}},
+		// The schema decreases, so the invalid histogram that is reduced is the
+		// one that is subtracted, not the one that is subtracted from.
+		"schema_decrease": {fhSample{t: 30000, fh: invalid}, fhSample{t: 60000, fh: valid}},
+	}
+	querier := storage.MockQuerier{
+		SelectMockFunction: func(_ bool, _ *storage.SelectHints, matchers ...*labels.Matcher) storage.SeriesSet {
+		nextSeries:
+			for name, samples := range series {
+				lset := labels.FromStrings("__name__", name)
+				for _, m := range matchers {
+					if !m.Matches(lset.Get(m.Name)) {
+						continue nextSeries
+					}
+				}
+				return &singleSeriesSet{series: storage.NewListSeries(lset, samples)}
+			}
+			return storage.EmptySeriesSet()
+		},
+	}
+	queryable := storage.MockQueryable{MockQuerier: &querier}
+	engine := promqltest.NewTestEngine(t, false, 0, promqltest.DefaultMaxSamplesPerQuery)
+
+	for _, expr := range []string{
+		"invalid_higher_schema + valid_lower_schema",
+		"valid_lower_schema + invalid_higher_schema",
+		"invalid_higher_schema - valid_lower_schema",
+		"valid_lower_schema - invalid_higher_schema",
+		"rate(counter_schema_increase[2m])",
+		"increase(counter_schema_increase[2m])",
+		"delta(schema_increase[2m])",
+		"idelta(schema_increase[2m])",
+		"delta(schema_decrease[2m])",
+		"idelta(schema_decrease[2m])",
+		// irate is not included, because it detects a counter reset with this
+		// data and returns the later sample without a subtraction.
+		"rate(counter_schema_increase[2m] anchored)",
+		"increase(counter_schema_increase[2m] anchored)",
+		"delta(schema_increase[30s] anchored)",
+		// Smoothed selectors interpolate between the two samples at 30s.
+		"schema_increase offset 30s smoothed",
+		"delta(schema_increase[30s] smoothed)",
+		"delta(schema_increase[30s] offset 30s smoothed)",
+	} {
+		t.Run(expr, func(t *testing.T) {
+			q, err := engine.NewInstantQuery(context.Background(), &queryable, nil, expr, timestamp.Time(60000))
+			require.NoError(t, err)
+			defer q.Close()
+
+			res := q.Exec(context.Background())
+			require.ErrorIs(t, res.Err, histogram.ErrHistogramSpanNegativeOffset)
+		})
+	}
+}
+
+// fhSample is a float histogram sample for storage.NewListSeries.
+type fhSample struct {
+	t  int64
+	fh *histogram.FloatHistogram
+}
+
+func (s fhSample) T() int64                      { return s.t }
+func (fhSample) ST() int64                       { return 0 }
+func (fhSample) F() float64                      { return 0 }
+func (fhSample) H() *histogram.Histogram         { return nil }
+func (s fhSample) FH() *histogram.FloatHistogram { return s.fh }
+func (fhSample) Type() chunkenc.ValueType        { return chunkenc.ValFloatHistogram }
+func (s fhSample) Copy() chunks.Sample           { return fhSample{t: s.t, fh: s.fh.Copy()} }
 
 type singleSeriesSet struct {
 	series   storage.Series
