@@ -290,7 +290,10 @@ func (h *FloatHistogram) ZeroBucket() Bucket[float64] {
 // pointer to the receiving histogram for convenience. If factor is negative,
 // the counter reset hint is set to GaugeType.
 func (h *FloatHistogram) Mul(factor float64) *FloatHistogram {
-	h.ZeroCount *= factor
+	// Custom buckets have no zero bucket, and 0*NaN or 0*Inf would make ZeroCount invalid.
+	if !h.UsesCustomBuckets() {
+		h.ZeroCount *= factor
+	}
 	h.Count *= factor
 	h.Sum *= factor
 	for i := range h.PositiveBuckets {
@@ -309,7 +312,10 @@ func (h *FloatHistogram) Mul(factor float64) *FloatHistogram {
 // When dividing by 0, everything will be set to Inf. If scalar is negative,
 // the counter reset hint is set to GaugeType.
 func (h *FloatHistogram) Div(scalar float64) *FloatHistogram {
-	h.ZeroCount /= scalar
+	// Custom buckets have no zero bucket, and 0/0 or 0/NaN would make ZeroCount invalid.
+	if !h.UsesCustomBuckets() {
+		h.ZeroCount /= scalar
+	}
 	h.Count /= scalar
 	h.Sum /= scalar
 	// Division by zero removes all buckets.

@@ -221,6 +221,26 @@ func TestFloatHistogramMul(t *testing.T) {
 				CustomValues:    []float64{1, 2, 3, 4},
 			},
 		},
+		{
+			"infinite multiplier with custom buckets",
+			&FloatHistogram{
+				Schema:          CustomBucketsSchema,
+				Count:           30,
+				Sum:             23,
+				PositiveSpans:   []Span{{0, 2}, {1, 3}},
+				PositiveBuckets: []float64{1, 2, 3, 4, 7},
+				CustomValues:    []float64{1, 2, 3, 4},
+			},
+			math.Inf(1),
+			&FloatHistogram{
+				Schema:          CustomBucketsSchema,
+				Count:           math.Inf(1),
+				Sum:             math.Inf(1),
+				PositiveSpans:   []Span{{0, 2}, {1, 3}},
+				PositiveBuckets: []float64{math.Inf(1), math.Inf(1), math.Inf(1), math.Inf(1), math.Inf(1)},
+				CustomValues:    []float64{1, 2, 3, 4},
+			},
+		},
 	}
 
 	for _, c := range cases {
@@ -543,6 +563,24 @@ func TestFloatHistogramDiv(t *testing.T) {
 				PositiveSpans:   []Span{{0, 2}, {1, 3}},
 				PositiveBuckets: []float64{0.5, 0, 1.5, 2, 3.5},
 				CustomValues:    []float64{1, 2, 3, 4},
+			},
+		},
+		{
+			"zero divisor with custom buckets",
+			&FloatHistogram{
+				Schema:          CustomBucketsSchema,
+				Count:           30,
+				Sum:             23,
+				PositiveSpans:   []Span{{0, 2}, {1, 3}},
+				PositiveBuckets: []float64{1, 0, 3, 4, 7},
+				CustomValues:    []float64{1, 2, 3, 4},
+			},
+			0,
+			&FloatHistogram{
+				Schema:       CustomBucketsSchema,
+				Count:        math.Inf(1),
+				Sum:          math.Inf(1),
+				CustomValues: []float64{1, 2, 3, 4},
 			},
 		},
 	}
