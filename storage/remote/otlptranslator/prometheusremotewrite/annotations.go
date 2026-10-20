@@ -41,6 +41,10 @@ const (
 	// point defines +Inf as an explicit bound; its le="+Inf" series is taken
 	// from count instead.
 	WarningCategoryHistogramPlusInfBound WarningCategory = "histogram_plus_inf_bound"
+	// WarningCategoryInvalidEntityRefs is set when a Resource's entity
+	// references violate the OTLP rules, with entity support enabled. The
+	// Resource is dropped unless only a description key is missing.
+	WarningCategoryInvalidEntityRefs WarningCategory = "invalid_entity_refs"
 	// WarningCategoryOther is the fallback for any warning that has not been
 	// assigned a category. It keeps the label space bounded.
 	WarningCategoryOther WarningCategory = "other"

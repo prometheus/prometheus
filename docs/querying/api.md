@@ -2234,6 +2234,7 @@ curl http://localhost:9090/api/v1/features
     },
     "otlp_receiver": {
       "delta_conversion": false,
+      "entities": false,
       "native_delta_ingestion": false
     },
     "prometheus": {
