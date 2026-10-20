@@ -250,7 +250,10 @@ and `__unit__` labels as designed in the [PROM-39 proposal](https://github.com/p
 
 Those labels are sourced from the metadata structures of the existing scrape and ingestion formats
 like OpenMetrics Text, Prometheus Text, Prometheus Proto, Remote Write 2 and OTLP. All the user provided labels with
-`__type__` and `__unit__` will be overridden.
+`__type__` and `__unit__` will be overridden. Note that in `metric_relabel_configs` and Remote Write 2.0 `write_relabel_configs`,
+`__type__`, `__unit__`, and `__help__` are always available for reading and modifying metric metadata regardless of whether
+`--enable-feature=type-and-unit-labels` is enabled; this feature flag controls whether `__type__` and `__unit__` are kept as
+series labels in TSDB and PromQL.
 
 PromQL layer will handle those labels the same way `__name__` is handled, e.g. dropped
 on certain operations like `-` or `+` and affected by `promql-delayed-name-removal` feature.
