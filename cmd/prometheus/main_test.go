@@ -16,12 +16,14 @@ package main
 import (
 	"bytes"
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
 	"math"
 	"net/http"
 	"net/http/httptest"
+	"net/url"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -1114,6 +1116,120 @@ runtime:
 			require.NoError(t, os.WriteFile(configFile, []byte(newConfig), 0o777))
 			reloadPrometheusConfig(t, reloadURL)
 			ensureGOGCValue(99.0)
+		})
+	}
+}
+
+// TestQueryCostLimitsConfig verifies that the query cost limits in the
+// configuration file apply to queries only with the query-cost feature
+// enabled, and that a reload updates them.
+func TestQueryCostLimitsConfig(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping test in short mode.")
+	}
+	t.Parallel()
+
+	type queryResponse struct {
+		ErrorType string `json:"errorType"`
+		Error     string `json:"error"`
+		Data      struct {
+			Result []json.RawMessage `json:"result"`
+		} `json:"data"`
+	}
+
+	for _, tc := range []struct {
+		name    string
+		enabled bool
+	}{
+		{name: "feature enabled", enabled: true},
+		{name: "feature disabled"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+
+			tmpDir := t.TempDir()
+			configFile := filepath.Join(tmpDir, "prometheus.yml")
+			port := testutil.RandomUnprivilegedPort(t)
+			// Prometheus scrapes itself, so the query below soon matches two
+			// series, one more than the configured limit.
+			writeConfig := func(maxSeries int) {
+				cfg := fmt.Sprintf(`
+global:
+  scrape_interval: 100ms
+  query_max_series: %d
+scrape_configs:
+  - job_name: prometheus
+    static_configs:
+      - targets: ['127.0.0.1:%d']
+`, maxSeries, port)
+				require.NoError(t, os.WriteFile(configFile, []byte(cfg), 0o644))
+			}
+			writeConfig(1)
+
+			args := []string{
+				fmt.Sprintf("--storage.tsdb.path=%s", tmpDir),
+				"--web.enable-lifecycle",
+				"--scrape.discovery-reload-interval=100ms", // Reduce initial wait time from default of 5 seconds.
+			}
+			if tc.enabled {
+				args = append(args, "--enable-feature=query-cost")
+			}
+			prom := prometheusCommandWithLogging(t, configFile, port, args...)
+			require.NoError(t, prom.Start())
+			waitForPrometheusReady(t, port)
+
+			query := func(extra ...string) (int, queryResponse, error) {
+				params := url.Values{"query": {`{__name__=~"up|scrape_duration_seconds"}`}}
+				for i := 0; i+1 < len(extra); i += 2 {
+					params.Set(extra[i], extra[i+1])
+				}
+				var body queryResponse
+				resp, err := http.PostForm(fmt.Sprintf("http://127.0.0.1:%d/api/v1/query", port), params)
+				if err != nil {
+					return 0, body, err
+				}
+				defer resp.Body.Close()
+				err = json.NewDecoder(resp.Body).Decode(&body)
+				return resp.StatusCode, body, err
+			}
+			// waitForQuery waits until both series have been scraped and the
+			// query gets the expected status.
+			waitForQuery := func(wantStatus int, extra ...string) queryResponse {
+				t.Helper()
+				var last queryResponse
+				require.Eventually(t, func() bool {
+					status, body, err := query(extra...)
+					if err != nil {
+						return false
+					}
+					last = body
+					if status == http.StatusOK {
+						return wantStatus == http.StatusOK && len(body.Data.Result) == 2
+					}
+					return status == wantStatus
+				}, readyTimeout, 100*time.Millisecond)
+				return last
+			}
+
+			if !tc.enabled {
+				waitForQuery(http.StatusOK)
+				return
+			}
+
+			rejected := waitForQuery(http.StatusUnprocessableEntity)
+			require.Equal(t, "cost_limit", rejected.ErrorType)
+			// The samples-read limit also reports cost_limit, so check that the
+			// configured series limit is the one that applied.
+			require.Contains(t, rejected.Error, "too many series")
+			// A request may only lower the configured ceiling.
+			status, body, err := query("max_series", "2")
+			require.NoError(t, err)
+			require.Equal(t, http.StatusBadRequest, status)
+			require.Equal(t, "bad_data", body.ErrorType)
+
+			writeConfig(0)
+			reloadPrometheusConfig(t, fmt.Sprintf("http://127.0.0.1:%d/-/reload", port))
+			waitForQuery(http.StatusOK)
 		})
 	}
 }

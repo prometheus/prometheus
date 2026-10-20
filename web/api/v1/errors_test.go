@@ -100,6 +100,30 @@ func TestApiStatusCodes(t *testing.T) {
 			expectedString: "context canceled",
 			expectedCode:   statusClientClosedConnection,
 		},
+
+		"promql.ErrTooManySeries": {
+			err:            promql.ErrTooManySeries("some error"),
+			expectedString: `"errorType":"cost_limit"`,
+			expectedCode:   http.StatusUnprocessableEntity,
+		},
+
+		"promql.ErrTooManySamplesRead": {
+			err:            promql.ErrTooManySamplesRead("some error"),
+			expectedString: `"errorType":"cost_limit"`,
+			expectedCode:   http.StatusUnprocessableEntity,
+		},
+
+		"overridden error code for cost limit": {
+			err:            promql.ErrTooManySeries("some error"),
+			expectedString: "too many series",
+			overrideErrorCode: func(errNum errorNum, _ error) (code int, override bool) {
+				if errNum == ErrorCostLimit {
+					return 999, true
+				}
+				return 0, false
+			},
+			expectedCode: 999,
+		},
 	} {
 		for k, q := range map[string]storage.SampleAndChunkQueryable{
 			"error from queryable": errorTestQueryable{err: tc.err},
@@ -173,6 +197,8 @@ func createPrometheusAPI(t *testing.T, q storage.SampleAndChunkQueryable, overri
 		nil,
 		OpenAPIOptions{},
 		parser.NewParser(parser.Options{}),
+		false, // Disable query cost.
+		0,     // No --query.timeout ceiling.
 	)
 
 	promRouter := route.New().WithPrefix("/api/v1")
