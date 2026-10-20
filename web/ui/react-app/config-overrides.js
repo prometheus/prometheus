@@ -102,21 +102,12 @@ function override(config) {
   return config;
 }
 
-function resolveEntitiesDecode() {
-  const sanitizeHTMLDir = path.dirname(require.resolve('sanitize-html'));
-  const htmlparser2Dir = path.dirname(require.resolve('htmlparser2', { paths: [sanitizeHTMLDir] }));
-  return require.resolve('entities/decode', { paths: [htmlparser2Dir] });
-}
-
 override.jest = function overrideJest(config) {
+  config.resolver = path.resolve(__dirname, 'jest-resolver.cjs');
   config.moduleNameMapper = Object.assign(
     {},
     config.moduleNameMapper,
-    Object.fromEntries(singletons.map((pkg) => [`^${pkg}$`, `<rootDir>/node_modules/${pkg}`])),
-    // Jest 27 ignores package.json "exports", so it cannot resolve the
-    // exports-only "entities/decode" subpath imported by htmlparser2. Resolve
-    // it with Node from htmlparser2's location instead.
-    { '^entities/decode$': resolveEntitiesDecode() }
+    Object.fromEntries(singletons.map((pkg) => [`^${pkg}$`, `<rootDir>/node_modules/${pkg}`]))
   );
   // Jest 27 does not honor conditional CommonJS exports for these dependencies,
   // so transpile their ESM entrypoints while leaving other node modules untouched.
