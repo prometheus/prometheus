@@ -601,7 +601,8 @@ Common URL query parameters:
 - `match[]=<series_selector>`: Repeated series selector used to scope the
   search. Optional.
 - `search[]=<string>`: Repeated search string matched against names or values.
-  Multiple values use OR semantics. Optional.
+  Multiple values use OR semantics. At most 32 values, adding up to at most
+  1024 bytes in total. Optional.
 - `fuzz_threshold=<number>`: Fuzzy threshold from 0 to 100. Optional. A value
   of 0 is the lowest fuzzy threshold.
 - `fuzz_alg=<subsequence | jarowinkler>`: Matching algorithm. Optional. Default
