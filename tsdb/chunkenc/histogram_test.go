@@ -1895,7 +1895,7 @@ func TestHistogramRecodeIteratorError(t *testing.T) {
 	require.NoError(t, err)
 
 	h1 := &histogram.Histogram{
-		Count:         27, ZeroCount: 2, Sum: 18.4, ZeroThreshold: 1e-125, Schema: 1,
+		Count: 27, ZeroCount: 2, Sum: 18.4, ZeroThreshold: 1e-125, Schema: 1,
 		PositiveSpans: []histogram.Span{
 			{Offset: 0, Length: 2}, {Offset: 2, Length: 1}, {Offset: 3, Length: 2}, {Offset: 3, Length: 1}, {Offset: 1, Length: 1},
 		},
