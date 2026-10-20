@@ -486,7 +486,6 @@ func (w *Watcher) garbageCollectSeries(segmentNum int) error {
 	if dir == "" || dir == w.lastCheckpoint {
 		return nil
 	}
-	w.lastCheckpoint = dir
 
 	index, err := checkpointNum(dir)
 	if err != nil {
@@ -503,6 +502,7 @@ func (w *Watcher) garbageCollectSeries(segmentNum int) error {
 	if err = w.readCheckpoint(dir, (*Watcher).readSegmentForGC); err != nil {
 		return fmt.Errorf("readCheckpoint: %w", err)
 	}
+	w.lastCheckpoint = dir
 
 	// Clear series with a checkpoint or segment index # lower than the checkpoint we just read.
 	w.writer.SeriesReset(index)
