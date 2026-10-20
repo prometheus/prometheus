@@ -2045,6 +2045,94 @@ func TestQueueManagerMetrics(t *testing.T) {
 	}
 }
 
+func TestQueueManagerWithoutMetadataMetricsRegistration(t *testing.T) {
+	metricNames := []string{
+		"prometheus_remote_storage_samples_without_metadata_total",
+		"prometheus_remote_storage_histograms_without_metadata_total",
+	}
+
+	for _, tc := range []struct {
+		name       string
+		protoMsg   remoteapi.WriteMessageType
+		registered bool
+	}{
+		{name: "remote write 1.0", protoMsg: remoteapi.WriteV1MessageType, registered: false},
+		{name: "remote write 2.0", protoMsg: remoteapi.WriteV2MessageType, registered: true},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			reg := prometheus.NewPedanticRegistry()
+			metrics := newQueueManagerMetrics(reg, "name", "http://localhost:1234")
+			metrics.register(tc.protoMsg)
+
+			metricFamilies, err := reg.Gather()
+			require.NoError(t, err)
+			registeredMetrics := make(map[string]struct{}, len(metricFamilies))
+			for _, metricFamily := range metricFamilies {
+				registeredMetrics[metricFamily.GetName()] = struct{}{}
+			}
+			for _, metricName := range metricNames {
+				_, ok := registeredMetrics[metricName]
+				require.Equal(t, tc.registered, ok, metricName)
+			}
+		})
+	}
+}
+
+func TestV2DataWithoutMetadataMetrics(t *testing.T) {
+	for _, tc := range []struct {
+		name               string
+		timeSeries         []writev2.TimeSeries
+		expectedSamples    float64
+		expectedHistograms float64
+	}{
+		{
+			name: "without metadata",
+			timeSeries: []writev2.TimeSeries{{
+				Samples:    make([]writev2.Sample, 2),
+				Histograms: make([]writev2.Histogram, 1),
+			}},
+			expectedSamples:    2,
+			expectedHistograms: 1,
+		},
+		{
+			name: "with type",
+			timeSeries: []writev2.TimeSeries{{
+				Samples:  make([]writev2.Sample, 1),
+				Metadata: writev2.Metadata{Type: writev2.Metadata_METRIC_TYPE_COUNTER},
+			}},
+		},
+		{
+			name: "with unit",
+			timeSeries: []writev2.TimeSeries{{
+				Histograms: make([]writev2.Histogram, 1),
+				Metadata:   writev2.Metadata{UnitRef: 1},
+			}},
+		},
+		{
+			name: "with help",
+			timeSeries: []writev2.TimeSeries{{
+				Samples:  make([]writev2.Sample, 1),
+				Metadata: writev2.Metadata{HelpRef: 1},
+			}},
+		},
+		{
+			name: "exemplars are ignored",
+			timeSeries: []writev2.TimeSeries{{
+				Exemplars: make([]writev2.Exemplar, 1),
+			}},
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			metrics := newQueueManagerMetrics(nil, "", "")
+			updater := batchMetricsUpdater{metrics: metrics}
+			updater.recordV2WithoutMetadataAttempt(countV2DataWithoutMetadata(tc.timeSeries))
+
+			require.Equal(t, tc.expectedSamples, client_testutil.ToFloat64(metrics.samplesWithoutMetadataTotal))
+			require.Equal(t, tc.expectedHistograms, client_testutil.ToFloat64(metrics.histogramsWithoutMetadataTotal))
+		})
+	}
+}
+
 func TestQueue_FlushAndShutdownDoesNotDeadlock(t *testing.T) {
 	capacity := 100
 	batchSize := 10
