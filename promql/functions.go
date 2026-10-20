@@ -577,19 +577,19 @@ func correctForCounterResetsHistogram(
 	metricName string,
 	pos posrange.PositionRange,
 ) (*histogram.FloatHistogram, annotations.Annotations, bool) {
-	first := firstSampleIndex
-	if h[firstSampleIndex].T <= rangeStart {
-		first++
-	}
 	var (
 		prev   = left
 		prevT  = rangeStart
 		prevST = leftST
+
+		first = firstSampleIndex
+		last  = lastSampleIndex
 	)
-	// lastSampleIndex is excluded when it's beyond the range end, or when it's at it (which means that
-	// it matches the right boundary).
-	last := lastSampleIndex
-	if h[lastSampleIndex].T >= rangeEnd {
+
+	if h[first].T <= rangeStart {
+		first++
+	}
+	if h[last].T >= rangeEnd {
 		last--
 	}
 
