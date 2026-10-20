@@ -926,6 +926,16 @@ type cacheEntry struct {
 	st *stCache
 }
 
+// seriesMetaEntry caches a series' post-relabel metadata and metric family name (meta, mfName)
+// alongside the pre-relabel parser state (origMeta, origMFName) that produced them.
+// When metric_relabel_configs is configured, the fast path checks origMeta and origMFName
+// before parsing labels or running relabeling so unchanged series can reuse
+// meta and mfName directly.
+type seriesMetaEntry struct {
+	origMeta, meta     metadata.Metadata
+	origMFName, mfName string
+}
+
 type scrapeLoop struct {
 	// ctx represents a local context that is cancellable via s.cancel.
 	// It's meant to synchronize run() with stop().
@@ -1020,6 +1030,9 @@ type scrapeCache struct {
 	seriesCur  map[storage.SeriesRef]*cacheEntry
 	seriesPrev map[storage.SeriesRef]*cacheEntry
 
+	// Per-series post-relabel metadata cache, lazily allocated only when metric_relabel_configs is non-empty.
+	seriesMeta map[*cacheEntry]seriesMetaEntry
+
 	// TODO(bwplotka): Consider moving metadata caching to head. See
 	// https://github.com/prometheus/prometheus/issues/17619.
 	metaMtx  sync.Mutex            // Mutex is needed due to api touching it when metadata is queried.
@@ -1080,6 +1093,9 @@ func (c *scrapeCache) iterDone(flushCache bool) {
 		for s, e := range c.series {
 			if c.iter != e.lastIter {
 				delete(c.series, s)
+				if c.seriesMeta != nil {
+					delete(c.seriesMeta, e)
+				}
 			}
 		}
 		for s, iter := range c.droppedSeries {
@@ -1119,6 +1135,36 @@ func (c *scrapeCache) addRef(met []byte, ref storage.SeriesRef, lset labels.Labe
 	ce = &cacheEntry{ref: ref, lastIter: c.iter, lset: lset}
 	c.series[string(met)] = ce
 	return ce
+}
+
+func (c *scrapeCache) setSeriesMeta(ce *cacheEntry, origMeta, meta metadata.Metadata, origMFName, mfName string) {
+	if c.seriesMeta == nil {
+		c.seriesMeta = make(map[*cacheEntry]seriesMetaEntry)
+	}
+	// origMFName comes from yoloString(lastMFName) backed by a reusable buffer, so we must
+	// not retain its backing array. Reuse existing immutable strings when possible to avoid
+	// allocating on the heap.
+	switch {
+	case origMFName == mfName:
+		origMFName = mfName
+	case strings.HasPrefix(ce.lset.Get(model.MetricNameLabel), origMFName):
+		origMFName = ce.lset.Get(model.MetricNameLabel)[:len(origMFName)]
+	default:
+		origMFName = strings.Clone(origMFName)
+	}
+	c.seriesMeta[ce] = seriesMetaEntry{
+		origMeta:   origMeta,
+		meta:       meta,
+		origMFName: origMFName,
+		mfName:     mfName,
+	}
+}
+
+func (c *scrapeCache) deleteSeries(met []byte, ce *cacheEntry) {
+	delete(c.series, string(met))
+	if c.seriesMeta != nil {
+		delete(c.seriesMeta, ce)
+	}
 }
 
 func (c *scrapeCache) addDropped(met []byte) {
@@ -1239,6 +1285,26 @@ func (c *scrapeCache) setUnit(mfName, unit []byte) ([]byte, *metaEntry) {
 	e.lastIter = c.iter
 	c.metadataSize += e.size() - oldSize
 	return mfName, e
+}
+
+func (c *scrapeCache) setMetadata(mfName string, m metadata.Metadata) {
+	c.metaMtx.Lock()
+	defer c.metaMtx.Unlock()
+
+	e, ok := c.metadata[mfName]
+	var oldSize int
+	if !ok {
+		e = &metaEntry{Metadata: metadata.Metadata{Type: model.MetricTypeUnknown}}
+		c.metadata[mfName] = e
+	} else {
+		oldSize = e.size()
+	}
+	if !e.Equals(m) {
+		e.Metadata = m
+		e.lastIterChange = c.iter
+	}
+	e.lastIter = c.iter
+	c.metadataSize += e.size() - oldSize
 }
 
 // GetMetadata returns metadata given the metric family name.
@@ -2087,7 +2153,10 @@ loop:
 
 // TODO(https://github.com/prometheus/prometheus/issues/17900): Move this to text and OM parser.
 func isSeriesPartOfFamily(mName string, mfName []byte, typ model.MetricType) bool {
-	mfNameStr := yoloString(mfName)
+	return isSeriesPartOfFamilyStr(mName, yoloString(mfName), typ)
+}
+
+func isSeriesPartOfFamilyStr(mName, mfNameStr string, typ model.MetricType) bool {
 	if !strings.HasPrefix(mName, mfNameStr) { // Fast path.
 		return false
 	}
