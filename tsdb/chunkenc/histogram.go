@@ -719,7 +719,7 @@ func (a *HistogramAppender) recode(
 		num = happ.appendHistogram(num, tOld, hOld)
 	}
 	if err := it.Err(); err != nil {
-		return nil, nil, err
+		return nil, happ, err
 	}
 	happ.setNumSamples(num)
 
@@ -832,7 +832,7 @@ func (a *HistogramAppender) AppendHistogram(prev Appender, _, t int64, h *histog
 				h.PositiveSpans, h.NegativeSpans,
 			)
 			if err != nil {
-				return nil, false, nil, err
+				return nil, false, happ, err
 			}
 			happ.setNumSamples(happ.appendHistogram(happ.NumSamples(), t, h))
 			return chk, true, happ, nil
@@ -875,7 +875,7 @@ func (a *HistogramAppender) AppendHistogram(prev Appender, _, t int64, h *histog
 			h.PositiveSpans, h.NegativeSpans,
 		)
 		if err != nil {
-			return nil, false, nil, err
+			return nil, false, happ, err
 		}
 		happ.setNumSamples(happ.appendHistogram(happ.NumSamples(), t, h))
 		return chk, true, happ, nil

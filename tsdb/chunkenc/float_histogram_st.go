@@ -398,7 +398,7 @@ func (a *FloatHistogramSTAppender) AppendFloatHistogram(prev Appender, st, t int
 				fh.PositiveSpans, fh.NegativeSpans,
 			)
 			if err != nil {
-				return nil, false, nil, err
+				return nil, false, happ, err
 			}
 			happ.setNumSamples(happ.appendFloatHistogramST(happ.NumSamples(), st, t, fh))
 			return chk, true, happ, nil
@@ -442,7 +442,7 @@ func (a *FloatHistogramSTAppender) AppendFloatHistogram(prev Appender, st, t int
 			fh.PositiveSpans, fh.NegativeSpans,
 		)
 		if err != nil {
-			return nil, false, nil, err
+			return nil, false, happ, err
 		}
 		happ.setNumSamples(happ.appendFloatHistogramST(happ.NumSamples(), st, t, fh))
 		return chk, true, happ, nil
@@ -490,7 +490,7 @@ func (a *FloatHistogramSTAppender) recodeST(
 		num = happ.appendFloatHistogramST(num, stOld, tOld, fhOld)
 	}
 	if err := it.Err(); err != nil {
-		return nil, nil, err
+		return nil, happ, err
 	}
 	happ.setNumSamples(num)
 
