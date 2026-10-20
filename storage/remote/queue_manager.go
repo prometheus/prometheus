@@ -24,6 +24,7 @@ import (
 	"strconv"
 	"sync"
 	"time"
+	"unique"
 
 	"github.com/gogo/protobuf/proto"
 	remoteapi "github.com/prometheus/client_golang/exp/api/remote"
@@ -448,7 +449,7 @@ type QueueManager struct {
 
 	seriesMtx        sync.Mutex // Covers seriesLabels, seriesMetadata, droppedSeries, the NHCB fields and builder.
 	seriesLabels     map[chunks.HeadSeriesRef]labels.Labels
-	seriesMetadata   map[chunks.HeadSeriesRef]*metadata.Metadata
+	seriesMetadata   map[chunks.HeadSeriesRef]unique.Handle[metadata.Metadata]
 	droppedSeries    map[chunks.HeadSeriesRef]struct{}
 	nhcbSeriesBounds map[chunks.HeadSeriesRef]*nhcbLayout // Layout of each converted NHCB series.
 	nhcbLayouts      map[string]*nhcbLayout               // Keyed by the encoded bounds.
@@ -526,7 +527,7 @@ func NewQueueManager(
 		failedRequestLogging:    failedRequestLogging,
 
 		seriesLabels:         make(map[chunks.HeadSeriesRef]labels.Labels),
-		seriesMetadata:       make(map[chunks.HeadSeriesRef]*metadata.Metadata),
+		seriesMetadata:       make(map[chunks.HeadSeriesRef]unique.Handle[metadata.Metadata]),
 		seriesSegmentIndexes: make(map[chunks.HeadSeriesRef]int),
 		droppedSeries:        make(map[chunks.HeadSeriesRef]struct{}),
 		nhcbSeriesBounds:     make(map[chunks.HeadSeriesRef]*nhcbLayout),
@@ -935,7 +936,7 @@ func (t *QueueManager) releaseNHCBLayout(layout *nhcbLayout) {
 // into classic _bucket, _count, and _sum samples while holding seriesMtx, then enqueues them
 // after releasing the lock. Caller must hold t.seriesMtx on entry; this method unlocks it.
 // A replacement follows the converted stale markers when changing sample type.
-func (t *QueueManager) convertAndEnqueueNHCB(ref chunks.HeadSeriesRef, st, ts int64, nhcb any, customValues []float64, isStale bool, lbls labels.Labels, meta *metadata.Metadata, replacement *timeSeries) bool {
+func (t *QueueManager) convertAndEnqueueNHCB(ref chunks.HeadSeriesRef, st, ts int64, nhcb any, customValues []float64, isStale bool, lbls labels.Labels, meta unique.Handle[metadata.Metadata], replacement *timeSeries) bool {
 	prev, wasActive := t.nhcbSeriesBounds[ref]
 	var prevBounds []float64
 	if wasActive {
@@ -1337,11 +1338,11 @@ func (t *QueueManager) StoreMetadata(meta []record.RefMetadata) {
 	t.seriesMtx.Lock()
 	defer t.seriesMtx.Unlock()
 	for _, m := range meta {
-		t.seriesMetadata[m.Ref] = &metadata.Metadata{
+		t.seriesMetadata[m.Ref] = unique.Make(metadata.Metadata{
 			Type: record.ToMetricType(m.Type),
 			Unit: m.Unit,
 			Help: m.Help,
-		}
+		})
 	}
 }
 
@@ -1711,7 +1712,7 @@ type timeSeries struct {
 	value                     float64
 	histogram                 *histogram.Histogram
 	floatHistogram            *histogram.FloatHistogram
-	metadata                  *metadata.Metadata
+	metadata                  unique.Handle[metadata.Metadata]
 	startTimestamp, timestamp int64
 	exemplarLabels            labels.Labels
 	// The type of series: sample, exemplar, or histogram.
@@ -2288,14 +2289,15 @@ func populateV2TimeSeries(symbolTable *writev2.SymbolsTable, batch []timeSeries,
 			pendingData[nPending].Metadata.UnitRef = symbolTable.Symbolize(m.Unit)
 			pendingData[nPending].Metadata.HelpRef = 0 // Type and unit does not give us help.
 			// Use Help from d.metadata if available.
-			if d.metadata != nil {
-				pendingData[nPending].Metadata.HelpRef = symbolTable.Symbolize(d.metadata.Help)
+			if !metadata.IsZeroHandle(d.metadata) {
+				pendingData[nPending].Metadata.HelpRef = symbolTable.Symbolize(d.metadata.Value().Help)
 				nPendingMetadata++
 			}
-		case d.metadata != nil:
-			pendingData[nPending].Metadata.Type = writev2.FromMetadataType(d.metadata.Type)
-			pendingData[nPending].Metadata.HelpRef = symbolTable.Symbolize(d.metadata.Help)
-			pendingData[nPending].Metadata.UnitRef = symbolTable.Symbolize(d.metadata.Unit)
+		case !metadata.IsZeroHandle(d.metadata):
+			meta := d.metadata.Value()
+			pendingData[nPending].Metadata.Type = writev2.FromMetadataType(meta.Type)
+			pendingData[nPending].Metadata.HelpRef = symbolTable.Symbolize(meta.Help)
+			pendingData[nPending].Metadata.UnitRef = symbolTable.Symbolize(meta.Unit)
 			nPendingMetadata++
 		default:
 			// Safeguard against sending garbage in case of not having metadata
