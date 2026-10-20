@@ -286,6 +286,28 @@ This is currently implemented using direct I/O.
 
 For more details, see the [proposal](https://github.com/prometheus/proposals/pull/45).
 
+## Skip series without data during WAL replay
+
+`--enable-feature=wal-replay-skip-series`
+
+On startup, WAL replay creates a series for every series record in the WAL,
+even when all of the series' samples are older than the newest block and
+replay drops them. These series are only deleted at the end of the replay.
+After a restart that follows head compaction, the WAL segments that the
+checkpoint did not cover can hold many more series records than the head had
+before the restart, so startup can need much more memory than the running
+Prometheus did, especially with series churn.
+
+With this feature, Prometheus first reads the WAL and the WBL once to find the
+series that have samples, exemplars or tombstones replay keeps, and replay does
+not create the others. This lowers the peak memory of the replay, and usually
+its duration too, when there are many such series. When there are none, the
+extra read makes the replay a few percent slower.
+
+Series that replay skips are not counted in
+`prometheus_tsdb_head_series_created_total` and
+`prometheus_tsdb_head_series_removed_total`.
+
 ## XOR2 chunk encoding
 
 `--enable-feature=xor2-encoding`

@@ -18,8 +18,11 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"hash/maphash"
+	"io"
 	"maps"
 	"math"
+	"math/bits"
 	"os"
 	"path/filepath"
 	"strconv"
@@ -28,7 +31,9 @@ import (
 	"time"
 
 	"github.com/prometheus/client_golang/prometheus"
+	"github.com/prometheus/common/promslog"
 	"go.uber.org/atomic"
+	"golang.org/x/sync/errgroup"
 
 	"github.com/prometheus/prometheus/model/exemplar"
 	"github.com/prometheus/prometheus/model/histogram"
@@ -78,7 +83,277 @@ func counterAddNonZero(v *prometheus.CounterVec, value float64, lvs ...string) {
 	}
 }
 
-func (h *Head) loadWAL(r *wlog.Reader, syms *labels.SymbolTable, multiRef map[chunks.HeadSeriesRef]chunks.HeadSeriesRef, mmappedChunks, oooMmappedChunks map[chunks.HeadSeriesRef][]*mmappedChunk, lastMmapRef chunks.ChunkDiskMapperRef) (err error) {
+// seriesRefBitmap is a set of series references. It allocates bits for 1024
+// references at a time, because references keep growing and the ones in use
+// can be spread over a wide range.
+type seriesRefBitmap map[chunks.HeadSeriesRef]*[16]uint64
+
+func (b seriesRefBitmap) add(ref chunks.HeadSeriesRef) {
+	page := b[ref>>10]
+	if page == nil {
+		page = new([16]uint64)
+		b[ref>>10] = page
+	}
+	page[(ref>>6)&15] |= 1 << (ref & 63)
+}
+
+func (b seriesRefBitmap) remove(ref chunks.HeadSeriesRef) {
+	if page := b[ref>>10]; page != nil {
+		page[(ref>>6)&15] &^= 1 << (ref & 63)
+	}
+}
+
+func (b seriesRefBitmap) contains(ref chunks.HeadSeriesRef) bool {
+	page := b[ref>>10]
+	return page != nil && page[(ref>>6)&15]&(1<<(ref&63)) != 0
+}
+
+// merge adds the references in other to b. It takes over pages of other.
+func (b seriesRefBitmap) merge(other seriesRefBitmap) {
+	for k, src := range other {
+		dst := b[k]
+		if dst == nil {
+			b[k] = src
+			continue
+		}
+		for i := range dst {
+			dst[i] |= src[i]
+		}
+	}
+}
+
+func (b seriesRefBitmap) forEach(f func(chunks.HeadSeriesRef)) {
+	for k, page := range b {
+		for i, w := range page {
+			for ; w != 0; w &= w - 1 {
+				f(k<<10 | chunks.HeadSeriesRef(i<<6+bits.TrailingZeros64(w)))
+			}
+		}
+	}
+}
+
+// walReplayFilter tells WAL replay which series records it can skip.
+type walReplayFilter struct {
+	// withData holds the series references that have data replay keeps.
+	withData seriesRefBitmap
+	// skipped holds the references of skipped series records that replay would
+	// have created a series for.
+	skipped seriesRefBitmap
+	// skippedByHash finds the first skipped reference for the labels of a later
+	// series record. Replay does not keep the labels of skipped records, so a
+	// second, independent hash of the labels stands in for them: two label sets
+	// are taken as equal if both hashes are. If skipped records with different
+	// labels have the same first hash, only the first of them is found, and a
+	// later record with the labels of another one creates its series under its
+	// own reference.
+	skippedByHash map[uint64]skippedSeries
+	seed          maphash.Seed
+	buf           []byte
+}
+
+type skippedSeries struct {
+	ref  chunks.HeadSeriesRef
+	hash uint64 // Second hash of the labels.
+}
+
+// check reports whether replay can skip the series record s, whose labels
+// have the given hash and are not in the head. hasData tells whether s has data
+// that replay keeps or m-mapped chunks. If an earlier skipped record has the
+// same labels, check returns its reference and found is true. Replay must then
+// create the series under that reference, or map s onto it if s is skipped.
+func (f *walReplayFilter) check(s record.RefSeries, hash uint64, hasData bool) (skip bool, first chunks.HeadSeriesRef, found bool) {
+	prev, found := f.skippedByHash[hash]
+	var hash2 uint64
+	if found || !hasData {
+		f.buf = s.Labels.Bytes(f.buf[:0])
+		hash2 = maphash.Bytes(f.seed, f.buf)
+		found = found && prev.hash == hash2
+	}
+	switch {
+	case hasData && found:
+		f.skipped.remove(prev.ref)
+		delete(f.skippedByHash, hash)
+		return false, prev.ref, true
+	case hasData:
+		return false, 0, false
+	case found:
+		return true, prev.ref, true
+	}
+	f.skipped.add(s.Ref)
+	if _, ok := f.skippedByHash[hash]; !ok {
+		f.skippedByHash[hash] = skippedSeries{ref: s.Ref, hash: hash2}
+	}
+	return true, 0, false
+}
+
+// newWALReplayFilter reads the WAL from where replay starts, and the WBL, before
+// replay does. It finds the series references with data that replay keeps:
+// samples, histogram samples and exemplars at or after the min valid time,
+// tombstones, and any WBL record. Without such data, a series record only
+// creates a series that h.gc() deletes at the end of Init.
+//
+// The files are read concurrently, one goroutine per segment, at most
+// WALReplayConcurrency at a time. If a record cannot be read or decoded, the
+// rest of that segment is not scanned. Replay stops at the same record, so it
+// does not load data after it either. An error is returned only if a file
+// cannot be opened.
+func (h *Head) newWALReplayFilter(checkpointDir string, walFrom, walTo, snapIdx, snapOffset int) (*walReplayFilter, error) {
+	wblFirst, wblLast := 0, -1
+	if h.wbl != nil {
+		var err error
+		if wblFirst, wblLast, err = wlog.Segments(h.wbl.Dir()); err != nil {
+			return nil, err
+		}
+	}
+
+	var (
+		g        errgroup.Group
+		mtx      sync.Mutex
+		withData = seriesRefBitmap{}
+	)
+	g.SetLimit(h.opts.WALReplayConcurrency)
+	scan := func(mint int64, open func() (io.ReadCloser, error)) {
+		g.Go(func() error {
+			rc, err := open()
+			if rc != nil {
+				defer rc.Close()
+			}
+			if errors.Is(err, io.EOF) {
+				return nil // The offset is at the end of the segment, like in Init.
+			}
+			if err != nil {
+				return err
+			}
+			refs := seriesRefBitmap{}
+			// Keep what is marked before a corrupted record, see above.
+			markSeriesWithReplayData(wlog.NewReader(rc), mint, refs)
+			mtx.Lock()
+			withData.merge(refs)
+			mtx.Unlock()
+			return nil
+		})
+	}
+
+	minValidTime := h.minValidTime.Load()
+	if checkpointDir != "" {
+		scan(minValidTime, func() (io.ReadCloser, error) {
+			return wlog.NewSegmentsReader(checkpointDir)
+		})
+	}
+	for i := walFrom; i <= walTo; i++ {
+		offset := 0
+		if i == snapIdx {
+			offset = snapOffset
+		}
+		scan(minValidTime, func() (io.ReadCloser, error) {
+			s, err := wlog.OpenReadSegment(wlog.SegmentName(h.wal.Dir(), i))
+			if err != nil {
+				return nil, err
+			}
+			return wlog.NewSegmentBufReaderWithOffset(offset, s)
+		})
+	}
+	for i := wblFirst; i <= wblLast; i++ {
+		// WBL replay does not drop data by time.
+		scan(math.MinInt64, func() (io.ReadCloser, error) {
+			s, err := wlog.OpenReadSegment(wlog.SegmentName(h.wbl.Dir(), i))
+			if err != nil {
+				return nil, err
+			}
+			return wlog.NewSegmentBufReader(s), nil
+		})
+	}
+	if err := g.Wait(); err != nil {
+		return nil, err
+	}
+	return &walReplayFilter{
+		withData:      withData,
+		skipped:       seriesRefBitmap{},
+		skippedByHash: map[uint64]skippedSeries{},
+		seed:          maphash.MakeSeed(),
+	}, nil
+}
+
+// markSeriesWithReplayData adds to refs the series references of samples,
+// histogram samples and exemplars at or after mint, and of all tombstones and
+// m-map markers in r. It does not decode series records. It stops at the first
+// record that cannot be read or decoded, where replay stops too.
+func markSeriesWithReplayData(r *wlog.Reader, mint int64, refs seriesRefBitmap) {
+	var (
+		// Replay logs what the decoder warns about, for example unknown histogram schemas.
+		dec             = record.NewDecoder(labels.NewSymbolTable(), promslog.NewNopLogger())
+		samples         []record.RefSample
+		histograms      []record.RefHistogramSample
+		floatHistograms []record.RefFloatHistogramSample
+		exemplars       []record.RefExemplar
+		stones          []tombstones.Stone
+		markers         []record.RefMmapMarker
+		err             error
+	)
+	for r.Next() {
+		rec := r.Record()
+		switch dec.Type(rec) {
+		case record.Samples, record.SamplesV2:
+			if samples, err = dec.Samples(rec, samples[:0]); err != nil {
+				return
+			}
+			for _, s := range samples {
+				if s.T >= mint {
+					refs.add(s.Ref)
+				}
+			}
+		case record.HistogramSamples, record.CustomBucketsHistogramSamples, record.HistogramSamplesV2:
+			if histograms, err = dec.HistogramSamples(rec, histograms[:0]); err != nil {
+				return
+			}
+			for _, s := range histograms {
+				if s.T >= mint {
+					refs.add(s.Ref)
+				}
+			}
+			clear(histograms)
+		case record.FloatHistogramSamples, record.CustomBucketsFloatHistogramSamples, record.FloatHistogramSamplesV2:
+			if floatHistograms, err = dec.FloatHistogramSamples(rec, floatHistograms[:0]); err != nil {
+				return
+			}
+			for _, s := range floatHistograms {
+				if s.T >= mint {
+					refs.add(s.Ref)
+				}
+			}
+			clear(floatHistograms)
+		case record.Exemplars:
+			if exemplars, err = dec.Exemplars(rec, exemplars[:0]); err != nil {
+				return
+			}
+			for _, e := range exemplars {
+				if e.T >= mint {
+					refs.add(e.Ref)
+				}
+			}
+			clear(exemplars)
+		case record.Tombstones:
+			if stones, err = dec.Tombstones(rec, stones[:0]); err != nil {
+				return
+			}
+			for _, s := range stones {
+				refs.add(chunks.HeadSeriesRef(s.Ref))
+			}
+		case record.MmapMarkers:
+			if markers, err = dec.MmapMarkers(rec, markers[:0]); err != nil {
+				return
+			}
+			for _, m := range markers {
+				refs.add(m.Ref)
+			}
+		}
+	}
+}
+
+// loadWAL replays the records of r. If filter is not nil, series records whose
+// references have no data in filter.withData, and no m-mapped chunks, do not
+// create series and are added to filter.skipped.
+func (h *Head) loadWAL(r *wlog.Reader, syms *labels.SymbolTable, multiRef map[chunks.HeadSeriesRef]chunks.HeadSeriesRef, mmappedChunks, oooMmappedChunks map[chunks.HeadSeriesRef][]*mmappedChunk, lastMmapRef chunks.ChunkDiskMapperRef, filter *walReplayFilter) (err error) {
 	// Track number of missing series records that were referenced by other records.
 	unknownSeriesRefs := &seriesRefSet{refs: make(map[chunks.HeadSeriesRef]struct{}), mtx: sync.Mutex{}}
 	// Track number of different records that referenced a series we don't know about
@@ -261,7 +536,40 @@ Outer:
 		switch v := d.(type) {
 		case []record.RefSeries:
 			for _, walSeries := range v {
-				mSeries, created, err := h.getOrCreateWithOptionalID(walSeries.Ref, walSeries.Labels.Hash(), walSeries.Labels, false)
+				hash := walSeries.Labels.Hash()
+				var hasData, sameHash bool
+				if filter != nil {
+					hasData = filter.withData.contains(walSeries.Ref) ||
+						mmappedChunks[walSeries.Ref] != nil || oooMmappedChunks[walSeries.Ref] != nil
+					_, sameHash = filter.skippedByHash[hash]
+				}
+				if filter != nil && (!hasData || sameHash) && h.series.getByHash(hash, walSeries.Labels) == nil {
+					skip, first, found := filter.check(walSeries, hash, hasData)
+					if skip {
+						// Replay drops all data of this series, so h.gc() would delete it
+						// at the end of Init. Don't create it. Init sets its WAL expiry.
+						if chunks.HeadSeriesRef(h.lastSeriesID.Load()) < walSeries.Ref {
+							h.lastSeriesID.Store(uint64(walSeries.Ref))
+						}
+						if found {
+							multiRef[walSeries.Ref] = first
+						}
+						continue
+					}
+					if found {
+						// An earlier record with these labels was skipped. Create the
+						// series under its reference, and map this record onto it below.
+						mSeries, _, err := h.getOrCreateWithOptionalID(first, hash, walSeries.Labels, false)
+						if err != nil {
+							seriesCreationErr = err
+							break Outer
+						}
+						idx := uint64(mSeries.ref) % uint64(concurrency)
+						processors[idx].input <- walSubsetProcessorInputItem{walSeriesRef: first, existingSeries: mSeries}
+					}
+				}
+
+				mSeries, created, err := h.getOrCreateWithOptionalID(walSeries.Ref, hash, walSeries.Labels, false)
 				if err != nil {
 					seriesCreationErr = err
 					break Outer
@@ -465,6 +773,9 @@ Outer:
 				}
 				s := h.series.getByID(m.Ref)
 				if s == nil {
+					if filter != nil && filter.skipped.contains(m.Ref) {
+						continue
+					}
 					unknownMetadataRefs.Inc()
 					missingSeries[m.Ref] = struct{}{}
 					continue
