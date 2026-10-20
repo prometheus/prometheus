@@ -1216,7 +1216,7 @@ paths:
                         value: 20
                 - name: batch_size
                   in: query
-                  description: Preferred number of results per NDJSON batch.
+                  description: Preferred number of results per NDJSON batch. Clamped to 1000 and the effective result limit.
                   required: false
                   explode: false
                   schema:
@@ -1452,7 +1452,7 @@ paths:
                         value: 20
                 - name: batch_size
                   in: query
-                  description: Preferred number of results per NDJSON batch.
+                  description: Preferred number of results per NDJSON batch. Clamped to 1000 and the effective result limit.
                   required: false
                   explode: false
                   schema:
@@ -1699,7 +1699,7 @@ paths:
                         value: 10
                 - name: batch_size
                   in: query
-                  description: Preferred number of results per NDJSON batch.
+                  description: Preferred number of results per NDJSON batch. Clamped to 1000 and the effective result limit.
                   required: false
                   explode: false
                   schema:
@@ -4122,7 +4122,7 @@ components:
                     type: integer
                     minimum: 1
                     format: int64
-                    description: 'Form field: Preferred number of results per NDJSON batch.'
+                    description: 'Form field: Preferred number of results per NDJSON batch. Clamped to 1000 and the effective result limit.'
                     default: 100
                     example: 20
                 include_metadata:
@@ -4198,7 +4198,7 @@ components:
                     type: integer
                     minimum: 1
                     format: int64
-                    description: 'Form field: Preferred number of results per NDJSON batch.'
+                    description: 'Form field: Preferred number of results per NDJSON batch. Clamped to 1000 and the effective result limit.'
                     default: 100
                     example: 20
             additionalProperties: false
@@ -4275,7 +4275,7 @@ components:
                     type: integer
                     minimum: 1
                     format: int64
-                    description: 'Form field: Preferred number of results per NDJSON batch.'
+                    description: 'Form field: Preferred number of results per NDJSON batch. Clamped to 1000 and the effective result limit.'
                     default: 100
                     example: 20
             required:

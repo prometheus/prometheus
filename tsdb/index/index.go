@@ -1371,12 +1371,19 @@ func (r *Reader) LabelValues(ctx context.Context, name string, hints *storage.La
 		if !ok {
 			return nil, nil
 		}
+		// The offsets are held in a map, so they are read in an arbitrary
+		// order. Stopping at the limit would return an arbitrary subset, which
+		// a caller asking for the smallest values cannot use.
+		earlyLimit := hints.AllowsEarlyStop()
 		values := make([]string, 0, len(e))
 		for k := range e {
-			if hints != nil && hints.Limit > 0 && len(values) >= hints.Limit {
+			if earlyLimit && len(values) >= hints.Limit {
 				break
 			}
 			values = append(values, k)
+		}
+		if !earlyLimit {
+			values, _ = hints.ApplyLimit(values)
 		}
 		return values, nil
 	}
@@ -1701,6 +1708,9 @@ func (r *Reader) ShardedPostings(p Postings, shardIndex, shardCount uint64) Post
 		}
 
 		out = append(out, id)
+	}
+	if err := p.Err(); err != nil {
+		return ErrPostings(fmt.Errorf("expand postings: %w", err))
 	}
 
 	return NewListPostings(out)

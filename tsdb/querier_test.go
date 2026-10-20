@@ -40,6 +40,7 @@ import (
 	"github.com/prometheus/prometheus/tsdb/tombstones"
 	"github.com/prometheus/prometheus/tsdb/tsdbutil"
 	"github.com/prometheus/prometheus/util/annotations"
+	"github.com/prometheus/prometheus/util/compression"
 	"github.com/prometheus/prometheus/util/testutil"
 )
 
@@ -2383,6 +2384,55 @@ func TestDeletedIterator(t *testing.T) {
 		require.GreaterOrEqual(t, i, int64(1000))
 		require.NoError(t, it.Err())
 	}
+
+	t.Run("reuse", func(t *testing.T) {
+		for _, tc := range []struct {
+			name  string
+			seek  bool
+			shift int64
+		}{
+			{name: "next/same_range"},
+			{name: "next/next_chunk", shift: 20},
+			{name: "seek/same_range", seek: true},
+			{name: "seek/next_chunk", seek: true, shift: 20},
+		} {
+			t.Run(tc.name, func(t *testing.T) {
+				it := &DeletedIterator{}
+				for iteration := range 2 {
+					start := int64(iteration) * tc.shift
+					chk := chunkenc.NewXORChunk()
+					app, err := chk.Appender()
+					require.NoError(t, err)
+					for ts := start; ts < start+20; ts++ {
+						app.Append(0, ts, float64(ts))
+					}
+
+					// Reuse the wrapper by resetting only its exported fields, as external callers do.
+					it.Intervals = it.Intervals[:0]
+					// Leave samples after the deletion interval so iteration advances past it
+					// before the wrapper is reused.
+					it.Intervals = it.Intervals.Add(tombstones.Interval{Mint: start, Maxt: start + 9})
+					it.Iter = chk.Iterator(nil)
+
+					var valueType chunkenc.ValueType
+					if tc.seek {
+						valueType = it.Seek(start)
+					} else {
+						valueType = it.Next()
+					}
+					for ts := start + 10; ts < start+20; ts++ {
+						require.Equal(t, chunkenc.ValFloat, valueType, "iteration %d", iteration+1)
+						gotTs, gotValue := it.At()
+						require.Equal(t, ts, gotTs, "iteration %d", iteration+1)
+						require.Equal(t, float64(ts), gotValue, "iteration %d", iteration+1)
+						valueType = it.Next()
+					}
+					require.Equal(t, chunkenc.ValNone, valueType, "iteration %d", iteration+1)
+					require.NoError(t, it.Err())
+				}
+			})
+		}
+	})
 }
 
 func TestDeletedIterator_WithSeek(t *testing.T) {
@@ -4309,4 +4359,184 @@ func TestBlockBaseQuerierSearchLabelValues(t *testing.T) {
 		}
 		require.Equal(t, []string{"staging", "prod", "dev"}, gotValues)
 	})
+}
+
+// forEachSearchBackend appends the given label sets to a head, in the order
+// given, persists an equivalent block, and runs fn against a searcher for each.
+// Head insertion order is preserved in the in-memory label value lists, so the
+// caller controls whether that order differs from ascending value order.
+func forEachSearchBackend(t *testing.T, labelSets []labels.Labels, fn func(t *testing.T, q storage.Searcher)) {
+	t.Helper()
+
+	h, _ := newTestHead(t, 1000, compression.None, false)
+	app := h.Appender(t.Context())
+	for _, ls := range labelSets {
+		_, err := app.Append(0, ls, 2100, 1)
+		require.NoError(t, err)
+	}
+	require.NoError(t, app.Commit())
+
+	block, err := OpenBlock(nil, createBlockFromHead(t, t.TempDir(), h), nil, nil)
+	require.NoError(t, err)
+	t.Cleanup(func() { require.NoError(t, block.Close()) })
+
+	for _, backend := range []struct {
+		name   string
+		reader BlockReader
+	}{
+		{"Head", h},
+		{"Block", block},
+	} {
+		t.Run(backend.name, func(t *testing.T) {
+			q, err := NewBlockQuerier(backend.reader, 1500, 2500)
+			require.NoError(t, err)
+			t.Cleanup(func() { require.NoError(t, q.Close()) })
+			fn(t, q.(storage.Searcher))
+		})
+	}
+}
+
+// requireSearchValues collects rs and asserts that it yields exactly want, in order.
+func requireSearchValues(t *testing.T, rs storage.SearchResultSet, want []string, msgAndArgs ...any) {
+	t.Helper()
+	got := collectSearchResultSet(t, rs)
+	gotValues := make([]string, len(got))
+	for i, r := range got {
+		gotValues[i] = r.Value
+	}
+	require.Equal(t, want, gotValues, msgAndArgs...)
+}
+
+// TestSearchLabelValuesLimitAppliedAfterOrdering checks that a limited ascending
+// search returns the lexically smallest values. The limit must be applied after
+// ordering: the head holds label values unsorted, and labelValuesWithMatchers
+// collects them in postings-intersection order, so truncating first selects an
+// arbitrary subset.
+func TestSearchLabelValuesLimitAppliedAfterOrdering(t *testing.T) {
+	// Appended in descending order, so the head's in-memory value list for
+	// __name__ is the reverse of the expected result.
+	unorderedInsertion := []labels.Labels{
+		labels.FromStrings("__name__", "z_metric", "job", "api"),
+		labels.FromStrings("__name__", "m_metric", "job", "api"),
+		labels.FromStrings("__name__", "a_metric", "job", "api"),
+	}
+	// Blocks store series sorted by label set, so the series carrying the
+	// smallest "pod" value gets the highest series reference.
+	// FindIntersectingPostings yields values in series-reference order, which
+	// here is the reverse of ascending "pod" order.
+	unorderedSeriesRefs := []labels.Labels{
+		labels.FromStrings("__name__", "a_metric", "job", "api", "pod", "z_pod"),
+		labels.FromStrings("__name__", "b_metric", "job", "api", "pod", "m_pod"),
+		labels.FromStrings("__name__", "c_metric", "job", "api", "pod", "a_pod"),
+	}
+	jobAPI := []*labels.Matcher{labels.MustNewMatcher(labels.MatchEqual, "job", "api")}
+
+	t.Run("no matchers", func(t *testing.T) {
+		forEachSearchBackend(t, unorderedInsertion, func(t *testing.T, q storage.Searcher) {
+			want := []string{"a_metric", "m_metric", "z_metric"}
+			for limit := 1; limit <= len(want); limit++ {
+				t.Run(strconv.Itoa(limit), func(t *testing.T) {
+					// A nil filter and an accept-all filter must agree.
+					for _, filter := range []storage.Filter{nil, prefixFilter{""}} {
+						rs := q.SearchLabelValues(t.Context(), "__name__", &storage.SearchHints{
+							OrderBy: storage.OrderByValueAsc,
+							Limit:   limit,
+							Filter:  filter,
+						})
+						requireSearchValues(t, rs, want[:limit], "filter: %T", filter)
+					}
+				})
+			}
+		})
+	})
+
+	t.Run("matcher on another label", func(t *testing.T) {
+		forEachSearchBackend(t, unorderedSeriesRefs, func(t *testing.T, q storage.Searcher) {
+			want := []string{"a_pod", "m_pod", "z_pod"}
+			for limit := 1; limit <= len(want); limit++ {
+				t.Run(strconv.Itoa(limit), func(t *testing.T) {
+					rs := q.SearchLabelValues(t.Context(), "pod", &storage.SearchHints{
+						OrderBy: storage.OrderByValueAsc,
+						Limit:   limit,
+					}, jobAPI...)
+					requireSearchValues(t, rs, want[:limit])
+				})
+			}
+		})
+	})
+
+	t.Run("matcher on the searched label", func(t *testing.T) {
+		forEachSearchBackend(t, unorderedInsertion, func(t *testing.T, q storage.Searcher) {
+			rs := q.SearchLabelValues(t.Context(), "__name__", &storage.SearchHints{
+				OrderBy: storage.OrderByValueAsc,
+				Limit:   2,
+			}, labels.MustNewMatcher(labels.MatchRegexp, "__name__", ".*_metric"))
+			requireSearchValues(t, rs, []string{"a_metric", "m_metric"})
+		})
+	})
+
+	// ApplySearchHints documents that its input must be ascending by value. With
+	// a nil filter the score ordering degenerates to value ascending, so the
+	// index-level sort cannot be skipped.
+	t.Run("OrderByScoreDesc without a filter", func(t *testing.T) {
+		forEachSearchBackend(t, unorderedInsertion, func(t *testing.T, q storage.Searcher) {
+			rs := q.SearchLabelValues(t.Context(), "__name__", &storage.SearchHints{
+				OrderBy: storage.OrderByScoreDesc,
+				Limit:   2,
+			})
+			requireSearchValues(t, rs, []string{"a_metric", "m_metric"})
+		})
+	})
+
+	// OrderByValueDesc walks the ascending input in reverse, so it also needs
+	// ordered input.
+	t.Run("OrderByValueDesc", func(t *testing.T) {
+		forEachSearchBackend(t, unorderedInsertion, func(t *testing.T, q storage.Searcher) {
+			rs := q.SearchLabelValues(t.Context(), "__name__", &storage.SearchHints{
+				OrderBy: storage.OrderByValueDesc,
+				Limit:   2,
+			})
+			requireSearchValues(t, rs, []string{"z_metric", "m_metric"})
+		})
+	})
+}
+
+// TestSearchLabelValuesLimitAcrossMergedQueriers checks the merged case. The
+// merge truncates the k-way merge of its children, which is only correct if
+// every child returned its own smallest N.
+func TestSearchLabelValuesLimitAcrossMergedQueriers(t *testing.T) {
+	ctx := t.Context()
+
+	persisted, _ := newTestHead(t, 1000, compression.None, false)
+	app := persisted.Appender(ctx)
+	for _, name := range []string{"n_metric", "p_metric", "r_metric"} {
+		_, err := app.Append(0, labels.FromStrings("__name__", name, "job", "api"), 2100, 1)
+		require.NoError(t, err)
+	}
+	require.NoError(t, app.Commit())
+	block, err := OpenBlock(nil, createBlockFromHead(t, t.TempDir(), persisted), nil, nil)
+	require.NoError(t, err)
+	t.Cleanup(func() { require.NoError(t, block.Close()) })
+	blockQ, err := NewBlockQuerier(block, 1500, 2500)
+	require.NoError(t, err)
+
+	// Appended in descending order so the head's value list is unordered.
+	head, _ := newTestHead(t, 1000, compression.None, false)
+	app = head.Appender(ctx)
+	for _, name := range []string{"z_metric", "m_metric", "a_metric"} {
+		_, err := app.Append(0, labels.FromStrings("__name__", name, "job", "api"), 2100, 1)
+		require.NoError(t, err)
+	}
+	require.NoError(t, app.Commit())
+	headQ, err := NewBlockQuerier(head, 1500, 2500)
+	require.NoError(t, err)
+
+	q := storage.NewMergeQuerier([]storage.Querier{headQ, blockQ}, nil, storage.ChainedSeriesMerge)
+	t.Cleanup(func() { require.NoError(t, q.Close()) })
+
+	rs := q.(storage.Searcher).SearchLabelValues(ctx, "__name__", &storage.SearchHints{
+		OrderBy: storage.OrderByValueAsc,
+		Limit:   2,
+	})
+	requireSearchValues(t, rs, []string{"a_metric", "m_metric"})
 }

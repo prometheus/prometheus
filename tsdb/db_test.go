@@ -18,6 +18,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/binary"
+	"encoding/json"
 	"errors"
 	"flag"
 	"fmt"
@@ -49,6 +50,7 @@ import (
 	"go.uber.org/goleak"
 
 	"github.com/prometheus/prometheus/config"
+	"github.com/prometheus/prometheus/model/exemplar"
 	"github.com/prometheus/prometheus/model/histogram"
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/model/metadata"
@@ -767,6 +769,39 @@ func TestDB_Snapshot(t *testing.T) {
 	require.NoError(t, seriesSet.Err())
 	require.Empty(t, seriesSet.Warnings())
 	require.Equal(t, 1000.0, sum)
+}
+
+func TestDBSnapshotJSONLoggerBlock(t *testing.T) {
+	var output bytes.Buffer
+	format := promslog.NewFormat()
+	require.NoError(t, format.Set("json"))
+	logger := promslog.New(&promslog.Config{Writer: &output, Format: format})
+
+	dbDir := t.TempDir()
+	blockDir := createBlock(t, dbDir, genSeries(1, 1, 0, 10))
+	db, err := Open(dbDir, logger, nil, DefaultOptions(), nil)
+	require.NoError(t, err)
+	t.Cleanup(func() { require.NoError(t, db.Close()) })
+	db.DisableCompactions()
+
+	require.NoError(t, db.Snapshot(t.TempDir(), false))
+
+	found := false
+	scanner := bufio.NewScanner(&output)
+	for scanner.Scan() {
+		var entry struct {
+			Message string `json:"msg"`
+			Block   string `json:"block"`
+		}
+		require.NoError(t, json.Unmarshal(scanner.Bytes(), &entry))
+		if entry.Message != "Snapshotting block" {
+			continue
+		}
+		require.Equal(t, filepath.Base(blockDir), entry.Block)
+		found = true
+	}
+	require.NoError(t, scanner.Err())
+	require.True(t, found, "snapshot block log not found")
 }
 
 // TestDB_Snapshot_ChunksOutsideOfCompactedRange ensures that a snapshot removes chunks samples
@@ -1614,7 +1649,7 @@ func TestSizeRetention(t *testing.T) {
 			// Create a WAL checkpoint, and compare sizes.
 			first, last, err := wlog.Segments(db.Head().wal.Dir())
 			require.NoError(t, err)
-			_, err = wlog.Checkpoint(promslog.NewNopLogger(), db.Head().wal, first, last-1, func(chunks.HeadSeriesRef) bool { return false }, 0, enableSTStorage)
+			_, err = wlog.Checkpoint(promslog.NewNopLogger(), db.Head().wal, first, last-1, func(chunks.HeadSeriesRef) bool { return false }, 0, enableSTStorage, false)
 			require.NoError(t, err)
 			blockSize = int64(prom_testutil.ToFloat64(db.metrics.blocksBytes)) // Use the actual internal metrics.
 			walSize, err = db.Head().wal.Size()
@@ -3642,6 +3677,395 @@ func TestOpen_VariousBlockStates(t *testing.T) {
 	require.True(t, os.IsNotExist(err))
 }
 
+type exemplarCompactionAppender interface {
+	storage.LimitedAppenderV1
+	storage.ExemplarAppender
+}
+
+type exemplarCompactionAppenderV2 struct {
+	storage.LimitedAppenderV1
+	exemplars storage.ExemplarAppenderV2
+}
+
+func (a exemplarCompactionAppenderV2) AppendExemplar(ref storage.SeriesRef, lset labels.Labels, e exemplar.Exemplar) (storage.SeriesRef, error) {
+	return a.exemplars.AppendExemplars(ref, lset, []exemplar.Exemplar{e})
+}
+
+// newExemplarCompactionAppender lets both appender versions share the compaction tests.
+func newExemplarCompactionAppender(ctx context.Context, t *testing.T, db *DB, appV2 bool) exemplarCompactionAppender {
+	t.Helper()
+	if !appV2 {
+		return db.Appender(ctx)
+	}
+	app := db.AppenderV2(ctx)
+	exemplars, ok := app.(storage.ExemplarAppenderV2)
+	require.True(t, ok)
+	return exemplarCompactionAppenderV2{storage.AppenderV2AsLimitedV1(app), exemplars}
+}
+
+// TestExemplarAfterLastSampleSurvivesCompaction verifies that an exemplar newer
+// than its series's last sample survives ordinary, selected, and stale compaction,
+// WAL cleanup, and subsequent compaction after restart.
+func TestExemplarAfterLastSampleSurvivesCompaction(t *testing.T) {
+	t.Parallel()
+	for _, appV2 := range []bool{false, true} {
+		for _, compaction := range []string{"ordinary", "selected", "stale"} {
+			for _, enableSnapshot := range []bool{false, true} {
+				t.Run(fmt.Sprintf("%s/snapshot=%t/appV2=%t", compaction, enableSnapshot, appV2), func(t *testing.T) {
+					const blockRange = 1000
+					opts := DefaultOptions()
+					opts.MinBlockDuration = blockRange
+					opts.MaxBlockDuration = blockRange
+					opts.EnableExemplarStorage = true
+					opts.MaxExemplars = 10
+					opts.EnableMemorySnapshotOnShutdown = enableSnapshot
+					db := newTestDB(t, withOpts(opts))
+					db.DisableCompactions()
+					ctx := context.Background()
+
+					seriesLabels := labels.FromStrings("name", "exemplar_only")
+					app := newExemplarCompactionAppender(ctx, t, db, appV2)
+					ref, err := app.Append(0, seriesLabels, 100, 1)
+					require.NoError(t, err)
+					if compaction == "stale" {
+						_, err = app.Append(ref, seriesLabels, 200, math.Float64frombits(value.StaleNaN))
+						require.NoError(t, err)
+					}
+					require.NoError(t, app.Commit())
+
+					// Leave the series record in an old segment and the exemplar in a recent one.
+					const exemplarSegment = 8
+					for range exemplarSegment {
+						_, err := db.head.wal.NextSegment()
+						require.NoError(t, err)
+					}
+					e := exemplar.Exemplar{
+						Labels: labels.FromStrings("trace_id", "abc123"),
+						Value:  1,
+						Ts:     10 * blockRange,
+					}
+					app = newExemplarCompactionAppender(ctx, t, db, appV2)
+					_, err = app.AppendExemplar(ref, seriesLabels, e)
+					require.NoError(t, err)
+					require.NoError(t, app.Commit())
+
+					// Selected and stale compaction persist this series before unrelated
+					// sample ingestion advances the head. Its exemplar is not in the block.
+					// Ordinary compaction is triggered by the unrelated ingestion below.
+					if compaction != "ordinary" {
+						switch compaction {
+						case "selected":
+							require.NoError(t, db.CompactSelectedSeries([]storage.SeriesRef{ref}))
+						case "stale":
+							require.NoError(t, db.CompactStaleHead())
+						}
+						require.Len(t, db.Blocks(), 1)
+					}
+
+					activeLabels := labels.FromStrings("name", "active")
+					app = newExemplarCompactionAppender(ctx, t, db, appV2)
+					activeRef, err := app.Append(0, activeLabels, blockRange*3/2+101, 1)
+					require.NoError(t, err)
+					require.NoError(t, app.Commit())
+					require.NoError(t, db.Compact(ctx))
+					if compaction == "ordinary" {
+						require.Len(t, db.Blocks(), 1)
+					}
+					series := db.Head().series.getByID(chunks.HeadSeriesRef(ref))
+					require.NotNil(t, series)
+					require.Nil(t, series.headChunks)
+					require.Nil(t, series.app, "the retained identity must not keep the compacted chunk alive")
+					_, firstCheckpoint, err := wlog.LastCheckpoint(db.head.wal.Dir())
+					require.NoError(t, err)
+
+					// Advance beyond the expiry that sample-only eviction would assign.
+					// Without exemplar protection, WAL cleanup drops the series record
+					// while its exemplar remains in a segment that still needs replay.
+					app = newExemplarCompactionAppender(ctx, t, db, appV2)
+					_, err = app.Append(activeRef, activeLabels, blockRange*5/2+101, 2)
+					require.NoError(t, err)
+					_, err = app.Append(activeRef, activeLabels, blockRange*7/2+101, 3)
+					require.NoError(t, err)
+					require.NoError(t, app.Commit())
+					require.NoError(t, db.Compact(ctx))
+					if compaction == "ordinary" {
+						require.Len(t, db.Blocks(), 2)
+					}
+					_, secondCheckpoint, err := wlog.LastCheckpoint(db.head.wal.Dir())
+					require.NoError(t, err)
+					require.Greater(t, secondCheckpoint, firstCheckpoint)
+					require.Less(t, secondCheckpoint, exemplarSegment, "the exemplar segment must still await replay")
+					require.Less(t, db.Head().MinTime(), e.Ts)
+
+					matcher := labels.MustNewMatcher(labels.MatchEqual, "name", "exemplar_only")
+					expected := []exemplar.QueryResult{{SeriesLabels: seriesLabels, Exemplars: []exemplar.Exemplar{e}}}
+					q, err := db.ExemplarQuerier(ctx)
+					require.NoError(t, err)
+					beforeRestart, err := q.Select(0, e.Ts, []*labels.Matcher{matcher})
+					require.NoError(t, err)
+					testutil.RequireEqual(t, expected, beforeRestart)
+
+					require.NoError(t, db.Close())
+					reopened := newTestDB(t, withDir(db.Dir()), withOpts(opts))
+					reopened.DisableCompactions()
+					q, err = reopened.ExemplarQuerier(ctx)
+					require.NoError(t, err)
+					afterRestart, err := q.Select(0, e.Ts, []*labels.Matcher{matcher})
+					require.NoError(t, err)
+					testutil.RequireEqual(t, expected, afterRestart, "the exemplar must survive %s compaction and restart", compaction)
+					require.Zero(t, prom_testutil.ToFloat64(reopened.head.metrics.walReplayUnknownRefsTotal.WithLabelValues("exemplars")))
+
+					// Replay must restore the exemplar's eviction protection, so another compaction
+					// and restart cannot lose an exemplar that survived the first restart.
+					app = newExemplarCompactionAppender(ctx, t, reopened, appV2)
+					_, err = app.Append(0, activeLabels, blockRange*11/2+101, 4)
+					require.NoError(t, err)
+					require.NoError(t, app.Commit())
+					require.NoError(t, reopened.Compact(ctx))
+					require.NoError(t, reopened.Close())
+					reopened = newTestDB(t, withDir(db.Dir()), withOpts(opts))
+					reopened.DisableCompactions()
+					q, err = reopened.ExemplarQuerier(ctx)
+					require.NoError(t, err)
+					afterRestart, err = q.Select(0, e.Ts, []*labels.Matcher{matcher})
+					require.NoError(t, err)
+					testutil.RequireEqual(t, expected, afterRestart, "replayed exemplars must survive subsequent compaction and restart")
+					require.Zero(t, prom_testutil.ToFloat64(reopened.head.metrics.walReplayUnknownRefsTotal.WithLabelValues("exemplars")))
+				})
+			}
+		}
+	}
+}
+
+// TestExemplarBeforeLastSampleSurvivesSeriesCompaction verifies that selected and
+// stale compaction preserve exemplars until the global replay cutoff passes them,
+// even when their timestamps precede the samples being compacted.
+func TestExemplarBeforeLastSampleSurvivesSeriesCompaction(t *testing.T) {
+	t.Parallel()
+	for _, appV2 := range []bool{false, true} {
+		for _, stale := range []bool{false, true} {
+			for _, cutoff := range []int64{100, 500} {
+				t.Run(fmt.Sprintf("stale=%t/cutoff=%d/appV2=%t", stale, cutoff, appV2), func(t *testing.T) {
+					const blockRange = 1000
+					opts := DefaultOptions()
+					opts.MinBlockDuration = blockRange
+					opts.MaxBlockDuration = blockRange
+					opts.EnableExemplarStorage = true
+					opts.MaxExemplars = 10
+					db := newTestDB(t, withOpts(opts))
+					db.DisableCompactions()
+					ctx := context.Background()
+
+					seriesLabels := labels.FromStrings("name", "exemplar_series")
+					app := newExemplarCompactionAppender(ctx, t, db, appV2)
+					ref, err := app.Append(0, seriesLabels, 100, 1)
+					require.NoError(t, err)
+					sampleValue := 2.0
+					if stale {
+						sampleValue = math.Float64frombits(value.StaleNaN)
+					}
+					_, err = app.Append(ref, seriesLabels, 900, sampleValue)
+					require.NoError(t, err)
+					e := exemplar.Exemplar{
+						Labels: labels.FromStrings("trace_id", "abc123"),
+						Value:  1,
+						Ts:     500,
+					}
+					_, err = app.AppendExemplar(ref, seriesLabels, e)
+					require.NoError(t, err)
+					require.NoError(t, app.Commit())
+					db.Head().SetMinValidTime(cutoff)
+
+					if stale {
+						require.NoError(t, db.CompactStaleHead())
+					} else {
+						require.NoError(t, db.CompactSelectedSeries([]storage.SeriesRef{ref}))
+					}
+					require.Len(t, db.Blocks(), 1)
+					require.Equal(t, uint64(1), db.Head().NumSeries(), "the exemplar still needs its series identity")
+
+					require.NoError(t, db.Close())
+					reopened := newTestDB(t, withDir(db.Dir()), withOpts(opts))
+					reopened.DisableCompactions()
+					matcher := labels.MustNewMatcher(labels.MatchEqual, "name", "exemplar_series")
+					q, err := reopened.ExemplarQuerier(ctx)
+					require.NoError(t, err)
+					actual, err := q.Select(0, e.Ts, []*labels.Matcher{matcher})
+					require.NoError(t, err)
+					testutil.RequireEqual(t, []exemplar.QueryResult{{SeriesLabels: seriesLabels, Exemplars: []exemplar.Exemplar{e}}}, actual)
+					require.Zero(t, prom_testutil.ToFloat64(reopened.head.metrics.walReplayUnknownRefsTotal.WithLabelValues("exemplars")))
+
+					// Once replay can skip the exemplar, it no longer prevents eviction.
+					reopened.Head().SetMinValidTime(e.Ts + 1)
+					if stale {
+						require.NoError(t, reopened.CompactStaleHead())
+					} else {
+						require.NoError(t, reopened.CompactSelectedSeries([]storage.SeriesRef{ref}))
+					}
+					require.Zero(t, reopened.Head().NumSeries())
+				})
+			}
+		}
+	}
+}
+
+// TestSeriesCompactionReclaimsChunksWithExemplars verifies that selected and stale
+// compaction release persisted chunks and their appenders while retaining exemplar
+// recovery state. Concurrent appends must prevent chunk reclamation. WAL replay may
+// restore the samples, which a subsequent compaction can reclaim again.
+func TestSeriesCompactionReclaimsChunksWithExemplars(t *testing.T) {
+	for _, appV2 := range []bool{false, true} {
+		for _, compaction := range []string{"selected", "stale"} {
+			for _, sampleType := range []string{"float", "histogram", "float histogram"} {
+				for _, scenario := range []string{"unchanged", "mmapped", "in-order append", "out-of-order append"} {
+					t.Run(fmt.Sprintf("%s/%s/%s/appV2=%t", compaction, sampleType, scenario, appV2), func(t *testing.T) {
+						const blockRange = 1000
+						opts := DefaultOptions()
+						opts.MinBlockDuration = blockRange
+						opts.MaxBlockDuration = blockRange
+						opts.EnableExemplarStorage = true
+						opts.MaxExemplars = 10
+						opts.OutOfOrderTimeWindow = blockRange
+						db := newTestDB(t, withOpts(opts))
+						db.DisableCompactions()
+						ctx := context.Background()
+						seriesLabels := labels.FromStrings("name", "exemplar_series")
+						app := newExemplarCompactionAppender(ctx, t, db, appV2)
+						// A float followed by histograms creates an older chunk while
+						// leaving a histogram appender on the current chunk.
+						ref, err := app.Append(0, seriesLabels, 50, 0)
+						require.NoError(t, err)
+						for _, ts := range []int64{100, 900} {
+							stale := compaction == "stale" && ts == 900
+							v := float64(2)
+							if stale {
+								v = math.Float64frombits(value.StaleNaN)
+							}
+							switch sampleType {
+							case "histogram":
+								h := tsdbutil.GenerateTestHistogram(ts)
+								if stale {
+									h = &histogram.Histogram{Sum: v}
+								}
+								_, err = app.AppendHistogram(ref, seriesLabels, ts, h, nil)
+							case "float histogram":
+								h := tsdbutil.GenerateTestFloatHistogram(ts)
+								if stale {
+									h = &histogram.FloatHistogram{Sum: v}
+								}
+								_, err = app.AppendHistogram(ref, seriesLabels, ts, nil, h)
+							default:
+								_, err = app.Append(ref, seriesLabels, ts, v)
+							}
+							require.NoError(t, err)
+						}
+						// Keep concurrent samples within the appendable time range and
+						// below maxt, so timestamp checks alone cannot protect them.
+						_, err = app.Append(0, labels.FromStrings("name", "active"), 1100, 1)
+						require.NoError(t, err)
+						e := exemplar.Exemplar{Labels: labels.FromStrings("trace_id", "abc123"), Value: 1, Ts: 500}
+						_, err = app.AppendExemplar(ref, seriesLabels, e)
+						require.NoError(t, err)
+						require.NoError(t, app.Commit())
+						if scenario == "mmapped" {
+							db.ForceHeadMMap()
+						}
+
+						seriesRef := chunks.HeadSeriesRef(ref)
+						series := db.Head().series.getByID(seriesRef)
+						require.NotNil(t, series)
+						chunkCount := int(series.headChunkCount.Load()) + len(series.mmappedChunks)
+						require.Positive(t, chunkCount)
+						if scenario == "mmapped" && sampleType != "float" {
+							require.NotEmpty(t, series.mmappedChunks)
+						}
+						removedBefore := prom_testutil.ToFloat64(db.Head().metrics.chunksRemoved)
+						db.Head().SetMinValidTime(100)
+
+						expectedTimes := []int64{50, 100, 900}
+						concurrentAppend := scenario == "in-order append" || scenario == "out-of-order append"
+						if concurrentAppend {
+							compactHeadViewBeforeEvictTestingCallback = func() {
+								app := newExemplarCompactionAppender(ctx, t, db, appV2)
+								ts, v := int64(950), float64(3)
+								if scenario == "out-of-order append" {
+									ts = 850
+									expectedTimes = []int64{50, 100, 850, 900}
+								} else {
+									expectedTimes = append(expectedTimes, ts)
+									if compaction == "stale" {
+										v = math.Float64frombits(value.StaleNaN)
+									}
+								}
+								_, err := app.Append(ref, seriesLabels, ts, v)
+								require.NoError(t, err)
+								require.NoError(t, app.Commit())
+							}
+							t.Cleanup(func() { compactHeadViewBeforeEvictTestingCallback = nil })
+						}
+						compact := func(d *DB) {
+							if compaction == "stale" {
+								require.NoError(t, d.CompactStaleHead())
+							} else {
+								require.NoError(t, d.CompactSelectedSeries([]storage.SeriesRef{ref}))
+							}
+						}
+						compact(db)
+						require.Len(t, db.Blocks(), 1)
+						require.Equal(t, uint64(2), db.Head().NumSeries())
+						require.Same(t, series, db.Head().series.getByID(seriesRef))
+						if concurrentAppend {
+							require.Positive(t, series.headChunkCount.Load(), "unpersisted samples must keep their chunks")
+							require.Equal(t, removedBefore, prom_testutil.ToFloat64(db.Head().metrics.chunksRemoved))
+						} else {
+							require.Zero(t, series.headChunkCount.Load())
+							require.Empty(t, series.mmappedChunks)
+							require.Nil(t, series.app, "the appender must not retain the compacted chunk")
+							require.Equal(t, removedBefore+float64(chunkCount), prom_testutil.ToFloat64(db.Head().metrics.chunksRemoved))
+							require.Equal(t, float64(1), prom_testutil.ToFloat64(db.Head().metrics.chunks), "only the active series retains a chunk")
+							// Compacting the retained identity again must neither write another
+							// block nor count the removed chunks twice.
+							compact(db)
+							require.Len(t, db.Blocks(), 1)
+							require.Equal(t, removedBefore+float64(chunkCount), prom_testutil.ToFloat64(db.Head().metrics.chunksRemoved))
+						}
+
+						matcher := labels.MustNewMatcher(labels.MatchEqual, "name", "exemplar_series")
+						checkData := func(d *DB) {
+							q, err := d.ExemplarQuerier(ctx)
+							require.NoError(t, err)
+							got, err := q.Select(0, e.Ts, []*labels.Matcher{matcher})
+							require.NoError(t, err)
+							testutil.RequireEqual(t, []exemplar.QueryResult{{SeriesLabels: seriesLabels, Exemplars: []exemplar.Exemplar{e}}}, got)
+							sq, err := d.Querier(0, blockRange)
+							require.NoError(t, err)
+							samples := query(t, sq, matcher)[seriesLabels.String()]
+							require.Len(t, samples, len(expectedTimes))
+							for i, ts := range expectedTimes {
+								require.Equal(t, ts, samples[i].T())
+							}
+						}
+						checkData(db)
+						require.NoError(t, db.Close())
+						reopened := newTestDB(t, withDir(db.Dir()), withOpts(opts))
+						reopened.DisableCompactions()
+						checkData(reopened)
+						require.Zero(t, prom_testutil.ToFloat64(reopened.head.metrics.walReplayUnknownRefsTotal.WithLabelValues("exemplars")))
+						if !concurrentAppend {
+							// Reclamation is local to the running head: WAL replay restores
+							// these samples until the global replay cutoff passes them.
+							require.Positive(t, reopened.Head().series.getByID(seriesRef).headChunkCount.Load())
+							compact(reopened)
+							require.Zero(t, reopened.Head().series.getByID(seriesRef).headChunkCount.Load())
+							checkData(reopened)
+						}
+					})
+				}
+			}
+		}
+	}
+}
+
 func TestOneCheckpointPerCompactCall(t *testing.T) {
 	t.Parallel()
 	blockRange := int64(1000)
@@ -4955,7 +5379,7 @@ func TestDBPanicOnMmappingHeadChunk(t *testing.T) {
 		require.NoError(t, app.Commit())
 	}
 
-	// Ingest samples upto 2h50m to make the head "about to compact".
+	// Ingest samples up to 2h50m to make the head "about to compact".
 	numSamples := int(170*time.Minute/time.Millisecond) / int(itvl)
 	addSamples(numSamples)
 
@@ -4969,7 +5393,7 @@ func TestDBPanicOnMmappingHeadChunk(t *testing.T) {
 	db = newTestDB(t, withDir(db.Dir()))
 	db.DisableCompactions()
 
-	// Ingest samples upto 20m more to make the head compact.
+	// Ingest samples up to 20m more to make the head compact.
 	numSamples = int(20*time.Minute/time.Millisecond) / int(itvl)
 	addSamples(numSamples)
 
@@ -5123,7 +5547,7 @@ func TestMetadataCheckpointingOnlyKeepsLatestEntry(t *testing.T) {
 			keep := func(id chunks.HeadSeriesRef) bool {
 				return id != 3
 			}
-			_, err = wlog.Checkpoint(promslog.NewNopLogger(), w, first, last-1, keep, 0, enableSTStorage)
+			_, err = wlog.Checkpoint(promslog.NewNopLogger(), w, first, last-1, keep, 0, enableSTStorage, false)
 			require.NoError(t, err)
 
 			// Confirm there's been a checkpoint.
@@ -5194,10 +5618,10 @@ func TestMetadataAssertInMemoryData(t *testing.T) {
 	series2 := db.head.series.getByHash(s2.Hash(), s2)
 	series3 := db.head.series.getByHash(s3.Hash(), s3)
 	series4 := db.head.series.getByHash(s4.Hash(), s4)
-	require.Equal(t, *series1.meta, m1)
-	require.Equal(t, *series2.meta, m2)
-	require.Equal(t, *series3.meta, m3)
-	require.Nil(t, series4.meta)
+	require.Equal(t, series1.meta.Value(), m1)
+	require.Equal(t, series2.meta.Value(), m2)
+	require.Equal(t, series3.meta.Value(), m3)
+	require.True(t, metadata.IsZeroHandle(series4.meta))
 
 	// Add a replicated metadata entry to the first series,
 	// a changed metadata entry to the second series,
@@ -5215,10 +5639,10 @@ func TestMetadataAssertInMemoryData(t *testing.T) {
 	series2 = db.head.series.getByHash(s2.Hash(), s2)
 	series3 = db.head.series.getByHash(s3.Hash(), s3)
 	series4 = db.head.series.getByHash(s4.Hash(), s4)
-	require.Equal(t, *series1.meta, m1)
-	require.Equal(t, *series2.meta, m5)
-	require.Equal(t, *series3.meta, m3)
-	require.Equal(t, *series4.meta, m4)
+	require.Equal(t, series1.meta.Value(), m1)
+	require.Equal(t, series2.meta.Value(), m5)
+	require.Equal(t, series3.meta.Value(), m3)
+	require.Equal(t, series4.meta.Value(), m4)
 
 	require.NoError(t, db.Close())
 
@@ -5228,10 +5652,10 @@ func TestMetadataAssertInMemoryData(t *testing.T) {
 	_, err := db.head.wal.Size()
 	require.NoError(t, err)
 
-	require.Equal(t, *db.head.series.getByHash(s1.Hash(), s1).meta, m1)
-	require.Equal(t, *db.head.series.getByHash(s2.Hash(), s2).meta, m5)
-	require.Equal(t, *db.head.series.getByHash(s3.Hash(), s3).meta, m3)
-	require.Equal(t, *db.head.series.getByHash(s4.Hash(), s4).meta, m4)
+	require.Equal(t, db.head.series.getByHash(s1.Hash(), s1).meta.Value(), m1)
+	require.Equal(t, db.head.series.getByHash(s2.Hash(), s2).meta.Value(), m5)
+	require.Equal(t, db.head.series.getByHash(s3.Hash(), s3).meta.Value(), m3)
+	require.Equal(t, db.head.series.getByHash(s4.Hash(), s4).meta.Value(), m4)
 }
 
 // TestMultipleEncodingsCommitOrder mainly serves to demonstrate when happens when committing a batch of samples for the
@@ -7179,6 +7603,135 @@ func testOOODisabled(t *testing.T, scenario sampleTypeScenario) {
 	require.Nil(t, ms.ooo)
 }
 
+// TestOOOSampleLossOnWALCheckpointBeforeOOOCompaction covers the loss of
+// acknowledged out-of-order samples when a WAL checkpoint drops a series record
+// that the WBL still references.
+//
+// A series that is evicted from the head and appended to again is recreated
+// under a new reference, while the earlier reference's series record stays in
+// the WAL. WAL replay collapses both onto a single in-memory series and holds
+// that mapping in multiRef, which is never persisted. Out-of-order samples
+// appended before such a replay are logged to the WBL under the newer
+// reference, so they can only be resolved while the WAL still carries that
+// reference's series record.
+//
+// An in-order head compaction checkpoints the WAL before out-of-order
+// compaction persists the WBL. The checkpoint drops the newer reference,
+// because it is not live in the head and its WAL expiry lies below the
+// checkpoint's mint. If the process stops in that window the WBL holds the only
+// copy of those samples, and they are skipped by the next replay.
+func TestOOOSampleLossOnWALCheckpointBeforeOOOCompaction(t *testing.T) {
+	for name, scenario := range sampleTypeScenarios {
+		t.Run(name, func(t *testing.T) {
+			var (
+				evictedTime = 100 * time.Minute.Milliseconds()
+				inOrderTime = 300 * time.Minute.Milliseconds()
+				oooTime     = 250 * time.Minute.Milliseconds()
+			)
+
+			series := labels.FromStrings("foo", "bar")
+			dir := t.TempDir()
+
+			openDB := func() *DB {
+				opts := DefaultOptions()
+				opts.WALSegmentSize = 32 * 1024
+				opts.OutOfOrderTimeWindow = 300 * time.Minute.Milliseconds()
+				db := newTestDB(t, withDir(dir), withOpts(opts))
+				db.DisableCompactions() // We want to call the compactions manually.
+				return db
+			}
+
+			appendSample := func(db *DB, ts int64) chunks.HeadSeriesRef {
+				app := db.Appender(context.Background())
+				ref, _, err := scenario.appendFunc(app, series, ts, ts)
+				require.NoError(t, err)
+				require.NoError(t, app.Commit())
+				return chunks.HeadSeriesRef(ref)
+			}
+
+			// Appending large label values fills WAL segments, so that the in-order
+			// compaction below has enough segments to checkpoint. Checkpointing only
+			// considers the lower two thirds of the existing segments.
+			fillWALSegments := func(db *DB) {
+				app := db.Appender(context.Background())
+				padding := string(bytes.Repeat([]byte("x"), 8192))
+				for i := range 32 {
+					_, err := app.Append(0, labels.FromStrings("foo", "pad", "id", strconv.Itoa(i), "padding", padding), inOrderTime, float64(i))
+					require.NoError(t, err)
+				}
+				require.NoError(t, app.Commit())
+			}
+
+			querySeries := func(db *DB) map[string][]chunks.Sample {
+				q, err := db.Querier(math.MinInt64, math.MaxInt64)
+				require.NoError(t, err)
+				return query(t, q, labels.MustNewMatcher(labels.MatchEqual, "foo", "bar"))
+			}
+
+			// Compact the series into a block and evict it from the head, so that the
+			// next append recreates it under a new series reference. The WAL is too
+			// short to be checkpointed here, so the evicted reference's series record
+			// survives in the WAL.
+			db := openDB()
+			evictedRef := appendSample(db, evictedTime)
+			require.NoError(t, db.CompactHead(NewRangeHead(db.head, 0, evictedTime)))
+			require.Equal(t, uint64(0), db.head.NumSeries(), "the series must be evicted from the head")
+
+			// Recreate the series under a new reference and append an out-of-order
+			// sample, which is written to the WBL under that new reference.
+			recreatedRef := appendSample(db, inOrderTime)
+			require.NotEqual(t, evictedRef, recreatedRef, "the series must be recreated under a new reference")
+			appendSample(db, oooTime)
+			fillWALSegments(db)
+			require.NoError(t, db.Close())
+
+			// Replaying the WAL maps the newer reference onto the evicted one. The
+			// mapping only exists in memory, and the out-of-order sample recovered from
+			// the WBL does not extend the newer reference's WAL retention.
+			db = openDB()
+			expected := map[string][]chunks.Sample{
+				series.String(): {
+					scenario.sampleFunc(evictedTime, evictedTime),
+					scenario.sampleFunc(oooTime, oooTime),
+					scenario.sampleFunc(inOrderTime, inOrderTime),
+				},
+			}
+			requireEqualSeries(t, expected, querySeries(db), true)
+
+			// Only the WBL addresses the out-of-order sample, through a reference that
+			// no longer identifies a series in the head. Its WAL expiry is the in-order
+			// sample's timestamp, which the checkpoint below truncates past.
+			require.Nil(t, db.head.series.getByID(recreatedRef), "the recreated reference must not be live in the head")
+			keepUntil, ok := db.head.getWALExpiry(recreatedRef)
+			require.True(t, ok)
+			require.Equal(t, inOrderTime, keepUntil)
+
+			// Compacting the in-order head checkpoints the WAL. Out-of-order compaction
+			// would persist the WBL afterwards, but is not reached here.
+			require.NoError(t, db.CompactHead(NewRangeHead(db.head, db.head.MinTime(), inOrderTime)))
+			require.Positive(t, prom_testutil.ToFloat64(db.head.metrics.checkpointCreationTotal), "the in-order compaction must checkpoint the WAL")
+			require.NoError(t, db.Close())
+
+			// The WBL is now the only copy of the out-of-order sample.
+			db = openDB()
+			requireEqualSeries(t, expected, querySeries(db), true)
+			require.Zero(t,
+				prom_testutil.ToFloat64(db.head.metrics.wblReplayUnknownRefsTotal.WithLabelValues("series")),
+				"WBL replay must not encounter unknown series references",
+			)
+
+			// Out-of-order compaction persists the WBL into a block and truncates it,
+			// after which the reference the WBL used is no longer needed.
+			require.NoError(t, db.CompactOOOHead(context.Background()))
+			require.False(t, db.head.isWBLPinnedSeriesRef(recreatedRef), "the reference must be released once the WBL is truncated")
+			require.NoError(t, db.Close())
+
+			db = openDB()
+			requireEqualSeries(t, expected, querySeries(db), true)
+		})
+	}
+}
+
 func TestWBLAndMmapReplay(t *testing.T) {
 	for name, scenario := range sampleTypeScenarios {
 		t.Run(name, func(t *testing.T) {
@@ -7326,7 +7879,7 @@ func testWBLAndMmapReplay(t *testing.T, scenario sampleTypeScenario) {
 	})
 
 	t.Run("Restart DB with WBL+Mmap while having no m-map markers in WBL", func(t *testing.T) {
-		resetMmapToOriginal() // We neet to reset because new duplicate chunks can be written above.
+		resetMmapToOriginal() // We need to reset because new duplicate chunks can be written above.
 
 		// Removing m-map markers in WBL by rewriting it.
 		newWbl, err := wlog.New(promslog.NewNopLogger(), nil, filepath.Join(t.TempDir(), "new_wbl"), compression.None)
@@ -8307,7 +8860,7 @@ func testOutOfOrderRuntimeConfig(t *testing.T, scenario sampleTypeScenario) {
 		// In-order.
 		allSamples = addSamples(t, db, 300, 310, true, allSamples)
 
-		// OOO upto 30m old is success.
+		// OOO up to 30m old is success.
 		allSamples = addSamples(t, db, 281, 290, true, allSamples)
 
 		// OOO of 59m old fails.
@@ -8337,7 +8890,7 @@ func testOutOfOrderRuntimeConfig(t *testing.T, scenario sampleTypeScenario) {
 		// In-order.
 		allSamples = addSamples(t, db, 300, 310, true, allSamples)
 
-		// OOO upto 59m old is success.
+		// OOO up to 59m old is success.
 		allSamples = addSamples(t, db, 251, 260, true, allSamples)
 
 		oldWblPtr := fmt.Sprintf("%p", db.head.wbl)
@@ -8405,7 +8958,7 @@ func testOutOfOrderRuntimeConfig(t *testing.T, scenario sampleTypeScenario) {
 		// In-order.
 		allSamples = addSamples(t, db, 300, 310, true, allSamples)
 
-		// OOO upto 59m old is success.
+		// OOO up to 59m old is success.
 		allSamples = addSamples(t, db, 251, 260, true, allSamples)
 
 		oldWblPtr := fmt.Sprintf("%p", db.head.wbl)
@@ -10414,6 +10967,67 @@ func TestStaleSeriesCompactionWithZeroSeries(t *testing.T) {
 	require.Empty(t, db.Blocks())
 }
 
+// TestCompactStaleHead_LateStaleAppendSurvives verifies that a stale series is not evicted
+// when another sample is appended after CompactStaleHead writes the block but before eviction,
+// even if the new sample is also a stale marker.
+//
+// This is the CompactStaleHead counterpart of
+// TestCompactSelectedSeries_LateAppendDuringCompactionSurvivesRestart. A live isStaleSeries
+// re-check cannot detect this case because the series is stale both before and after the append.
+// The fingerprint detects that the series changed and prevents its eviction.
+func TestCompactStaleHead_LateStaleAppendSurvives(t *testing.T) {
+	const chunkRange = 1000
+	opts := DefaultOptions()
+	opts.MinBlockDuration = chunkRange
+	opts.MaxBlockDuration = chunkRange
+	db := newTestDB(t, withOpts(opts))
+	db.DisableCompactions()
+	t.Cleanup(func() { require.NoError(t, db.Close()) })
+
+	staleV := math.Float64frombits(value.StaleNaN)
+
+	// Filler series keeps head.MaxTime at 700, ensuring the late append at t=400 remains
+	// within appendableMinValidTime() = max(700-500, 0) = 200.
+	filler := labels.FromStrings("name", "filler")
+	sel := labels.FromStrings("name", "stale-selected")
+
+	app := db.Appender(context.Background())
+	_, err := app.Append(0, filler, 100, 0.1)
+	require.NoError(t, err)
+	_, err = app.Append(0, filler, 700, 0.7)
+	require.NoError(t, err)
+	selRef, err := app.Append(0, sel, 100, 10.0)
+	require.NoError(t, err)
+	_, err = app.Append(selRef, sel, 200, staleV)
+	require.NoError(t, err)
+	require.NoError(t, app.Commit())
+
+	require.Equal(t, int64(700), db.Head().MaxTime())
+	require.Equal(t, uint64(1), db.Head().NumStaleSeries())
+
+	// The hook fires after the block is written but before eviction.
+	const lateT = int64(400)
+	var hookErr error
+	compactHeadViewBeforeEvictTestingCallback = func() {
+		hookApp := db.Appender(context.Background())
+		if _, err := hookApp.Append(selRef, sel, lateT, staleV); err != nil {
+			hookErr = err
+			return
+		}
+		hookErr = hookApp.Commit()
+	}
+	t.Cleanup(func() { compactHeadViewBeforeEvictTestingCallback = nil })
+
+	require.NoError(t, db.CompactStaleHead())
+	require.NoError(t, hookErr, "the late stale append/commit inside the hook must itself succeed")
+
+	// A block is written regardless -- it captures sel's t=100,200 samples as they stood when
+	// the write started. What the fingerprint protects is eviction: sel must still be in the
+	// head afterward too, so the late sample at t=400 isn't lost.
+	require.Len(t, db.Blocks(), 1)
+	require.Equal(t, uint64(2), db.Head().NumSeries(), "filler + sel: sel must survive eviction")
+}
+
 // TestCompactStaleHead_EvictedSeriesRecordKeptInCheckpoint verifies that after
 // CompactStaleHead evicts a stale series, the series's label record is retained
 // in the next WAL checkpoint while the WAL still holds sample records
@@ -10876,15 +11490,112 @@ func TestInOrderBlocksMaxTime_ExcludesSelectedSeriesBlocks(t *testing.T) {
 	require.False(t, ok, "selected-series block must be excluded from inOrderBlocksMaxTime")
 }
 
+// TestDBOpen_MinValidTime pins down the max() in open() between the min valid time computed
+// from on-disk blocks (inOrderBlocksMaxTime) and the one persisted in the WAL's checkpoint
+// (wlog.ReadMinValidTime): whichever of the two is higher must win, a missing record must fall
+// back to the blocks-derived value, and a checkpoint that fails to read back must do the same
+// while logging a warning rather than failing Open.
+func TestDBOpen_MinValidTime(t *testing.T) {
+	// newDBDirWithBlock creates a fresh DB directory containing a single in-order block, and
+	// returns that block's actual on-disk maxt (rather than the mint/maxt passed to genSeries,
+	// which createBlock's compaction doesn't necessarily preserve verbatim).
+	newDBDirWithBlock := func(t *testing.T) (dir string, blockMaxTime int64) {
+		t.Helper()
+		dir = t.TempDir()
+		blockDir := createBlock(t, dir, genSeries(1, 1, 0, 5000))
+		meta, _, err := readMetaFile(blockDir)
+		require.NoError(t, err)
+		return dir, meta.MaxTime
+	}
+
+	// writeMinValidTimeCheckpoint writes a standalone checkpoint carrying mint as its
+	// persisted min valid time, into a WAL that open() will then pick up as db's own.
+	writeMinValidTimeCheckpoint := func(t *testing.T, dir string, mint int64) {
+		t.Helper()
+		w, err := wlog.New(nil, nil, filepath.Join(dir, "wal"), compression.None)
+		require.NoError(t, err)
+		_, err = wlog.Checkpoint(promslog.NewNopLogger(), w, 0, 1000, func(chunks.HeadSeriesRef) bool { return true }, mint, false, true)
+		require.NoError(t, err)
+		require.NoError(t, w.Close())
+	}
+
+	// corruptLastCheckpoint flips a byte in the checkpoint's first record, which is always the
+	// min valid time record written by writeMinValidTimeCheckpoint above, making
+	// wlog.ReadMinValidTime fail instead of returning ok == false.
+	corruptLastCheckpoint := func(t *testing.T, dir string) {
+		t.Helper()
+		cpDir, _, err := wlog.LastCheckpoint(filepath.Join(dir, "wal"))
+		require.NoError(t, err)
+		f, err := os.OpenFile(wlog.SegmentName(cpDir, 0), os.O_WRONLY, 0o666)
+		require.NoError(t, err)
+		_, err = f.WriteAt([]byte{42}, 1)
+		require.NoError(t, err)
+		require.NoError(t, f.Close())
+	}
+
+	const warnMsg = "Failed to read persisted min valid time"
+
+	for _, tc := range []struct {
+		name         string
+		setup        func(t *testing.T, dir string)
+		wantMinValid func(blockMaxTime int64) int64
+		wantWarn     bool
+	}{
+		{
+			name: "stored wins when higher than the blocks-derived value",
+			setup: func(t *testing.T, dir string) {
+				writeMinValidTimeCheckpoint(t, dir, 999999)
+			},
+			wantMinValid: func(int64) int64 { return 999999 },
+		},
+		{
+			name: "blocks win when higher than the stored value",
+			setup: func(t *testing.T, dir string) {
+				writeMinValidTimeCheckpoint(t, dir, 1)
+			},
+			wantMinValid: func(blockMaxTime int64) int64 { return blockMaxTime },
+		},
+		{
+			name:         "no record falls back to the blocks-derived value",
+			setup:        func(*testing.T, string) {},
+			wantMinValid: func(blockMaxTime int64) int64 { return blockMaxTime },
+		},
+		{
+			name: "corrupt checkpoint falls back to the blocks-derived value and warns",
+			setup: func(t *testing.T, dir string) {
+				writeMinValidTimeCheckpoint(t, dir, 999999)
+				corruptLastCheckpoint(t, dir)
+			},
+			wantMinValid: func(blockMaxTime int64) int64 { return blockMaxTime },
+			wantWarn:     true,
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			dir, blockMaxTime := newDBDirWithBlock(t)
+			tc.setup(t, dir)
+
+			var logs bytes.Buffer
+			db, err := Open(dir, slog.New(slog.NewTextHandler(&logs, nil)), nil, DefaultOptions(), nil)
+			require.NoError(t, err)
+			t.Cleanup(func() { require.NoError(t, db.Close()) })
+
+			require.Equal(t, tc.wantMinValid(blockMaxTime), db.head.minValidTime.Load())
+			if tc.wantWarn {
+				require.Contains(t, logs.String(), warnMsg)
+			} else {
+				require.NotContains(t, logs.String(), warnMsg)
+			}
+		})
+	}
+}
+
 // TestCompactSelectedSeries_LateAppendDuringCompactionSurvivesRestart
 // verifies that a sample appended after the block write starts but
 // before eviction is not lost.
 //
 // The sample is committed too late to be included in the generated
 // block, but early enough that its timestamp still falls within the
-// compaction range. Without the appendID watermark check, the series
-// would be evicted, causing the late sample to disappear from both the
-// head and the WAL replay path after restart.
+// compaction range.
 //
 // The test injects such an append via
 // compactHeadViewBeforeEvictTestingCallback and verifies that the
@@ -10943,35 +11654,14 @@ func TestCompactSelectedSeries_LateAppendDuringCompactionSurvivesRestart(t *test
 
 	require.Len(t, db.Blocks(), 1)
 
-	// The watermark guard only fires when isolation is enabled, because it
-	// relies on per-sample append-IDs that s.txs only tracks in that mode.
-	//   - isolation enabled: hasAppendIDAbove catches the post-watermark
-	//     commit, sel survives eviction, and all three samples are queryable.
-	//   - isolation disabled: per-sample append-IDs aren't tracked, the guard
-	//     is a no-op, sel gets evicted along with the late sample, and the
-	//     WAL tombstone drops the late sample permanently on replay. Only the
-	//     two samples the block captured remain queryable.
-	var (
-		expectedHeadSeries uint64
-		expectedSamples    []chunks.Sample
-	)
-	if defaultIsolationDisabled {
-		expectedHeadSeries = 1 // only filler remains; sel was evicted
-		expectedSamples = []chunks.Sample{
-			sample{t: 100, f: 10.0},
-			sample{t: 200, f: 20.0},
-		}
-	} else {
-		expectedHeadSeries = 2 // filler + sel
-		expectedSamples = []chunks.Sample{
-			sample{t: 100, f: 10.0},
-			sample{t: 200, f: 20.0},
-			sample{t: lateT, f: lateV},
-		}
+	// sel survives regardless of isolation, so all three samples remain queryable.
+	expectedSamples := []chunks.Sample{
+		sample{t: 100, f: 10.0},
+		sample{t: 200, f: 20.0},
+		sample{t: lateT, f: lateV},
 	}
 
-	require.Equal(t, expectedHeadSeries, db.Head().NumSeries(),
-		"head series count must match the expected watermark-guard outcome for this isolation mode")
+	require.Equal(t, uint64(2), db.Head().NumSeries(), "filler + sel: sel must survive eviction")
 
 	querySelected := func(d *DB) []chunks.Sample {
 		q, err := d.Querier(0, chunkRange)
@@ -10981,8 +11671,7 @@ func TestCompactSelectedSeries_LateAppendDuringCompactionSurvivesRestart(t *test
 	}
 
 	beforeRestart := querySelected(db)
-	require.Equal(t, expectedSamples, beforeRestart,
-		"visible samples before restart must match the expected watermark-guard outcome")
+	require.Equal(t, expectedSamples, beforeRestart, "all three samples must be visible before restart")
 
 	// Verify the same data is visible after a restart driven by WAL replay.
 	require.NoError(t, db.Close())
@@ -10991,8 +11680,198 @@ func TestCompactSelectedSeries_LateAppendDuringCompactionSurvivesRestart(t *test
 	t.Cleanup(func() { require.NoError(t, db.Close()) })
 
 	afterRestart := querySelected(db)
-	require.Equal(t, expectedSamples, afterRestart,
-		"visible samples after restart must match the expected watermark-guard outcome")
+	require.Equal(t, expectedSamples, afterRestart, "all three samples must survive restart")
+}
+
+// TestCompactSelectedSeries_RestartDoesNotReplayOrphanedSampleAsUnknownSeriesRef checks that WAL
+// replay, after a restart, does not report an unknown series reference for a sample left
+// behind by CompactSelectedSeries.
+//
+// sel has one sample per chunk range: t=100 (range [0,999]) and t=1200 (range [1000,1999]).
+// CompactSelectedSeries writes one block per range and evicts sel from the head, recording a
+// WAL expiry for sel equal to head.MaxTime() (1200) at that point -- the WAL keeps sel's
+// series record for at least that long, in case a sample for it still needs it.
+//
+// sel's second sample, and the tombstone CompactSelectedSeries logs while evicting sel, sit
+// in a WAL segment created well after the segment that declared sel as a series. Two
+// checkpoints are then forced: the first, with a mint still within the expiry, carries sel's
+// series record forward while deleting the now-obsolete segment that originally declared it;
+// the second, with a mint past the expiry, drops that carried-forward record for good. In
+// both cases sel's own segment, holding its second sample, is left untouched: a checkpoint
+// only ever rewrites the older two thirds of the segments that currently exist.
+//
+// After the DB is closed and reopened, the test asserts that WAL replay does not flag sel's
+// leftover sample as an unknown series reference.
+func TestCompactSelectedSeries_RestartDoesNotReplayOrphanedSampleAsUnknownSeriesRef(t *testing.T) {
+	const chunkRange = 1000
+	opts := DefaultOptions()
+	opts.MinBlockDuration = chunkRange
+	opts.MaxBlockDuration = chunkRange
+	db := newTestDB(t, withOpts(opts))
+	db.DisableCompactions()
+
+	sel := labels.FromStrings("name", "selected")
+	app := db.Appender(context.Background())
+	selRef, err := app.Append(0, sel, 100, 1.0)
+	require.NoError(t, err)
+	require.NoError(t, app.Commit())
+
+	// Roll the WAL well past the segment that declared sel, so sel's second sample (and the
+	// tombstone from its later eviction) land far enough ahead to still be untouched once two
+	// checkpoints have run below.
+	const preRollSegments = 30
+	for range preRollSegments {
+		_, err := db.head.wal.NextSegment()
+		require.NoError(t, err)
+	}
+
+	app = db.Appender(context.Background())
+	_, err = app.Append(selRef, sel, 1200, 2.0)
+	require.NoError(t, err)
+	require.NoError(t, app.Commit())
+	require.Equal(t, int64(1200), db.Head().MaxTime())
+
+	require.NoError(t, db.CompactSelectedSeries([]storage.SeriesRef{selRef}))
+	require.Equal(t, uint64(0), db.Head().NumSeries(), "sel must be evicted from the head")
+	require.Len(t, db.Blocks(), 2, "one selected-series block per chunk range")
+	for _, b := range db.Blocks() {
+		bm := b.Meta()
+		require.True(t, bm.Compaction.FromSelectedSeries(), "block must carry the selected-series hint")
+	}
+
+	keepUntil, ok := db.Head().getWALExpiry(chunks.HeadSeriesRef(selRef))
+	require.True(t, ok, "walExpiry must be recorded for the evicted ref")
+	require.Equal(t, int64(1200), keepUntil)
+
+	// forceCheckpointAt repeatedly retries truncateWAL with the given mint, resetting
+	// lastWALTruncationTime each time, until it actually produces a new checkpoint. Each call
+	// rolls to a new WAL segment regardless, so once enough segments have accumulated, a
+	// checkpoint is produced immediately. The checkpoint index is captured before the loop and
+	// required to strictly increase: once a first checkpoint exists on disk, a bare
+	// LastCheckpoint success would otherwise keep finding that same old checkpoint on the very
+	// first iteration, regardless of whether this call produced a fresh one.
+	forceCheckpointAt := func(mint int64) {
+		t.Helper()
+		_, lastIdx, err := wlog.LastCheckpoint(db.head.wal.Dir())
+		if errors.Is(err, record.ErrNotFound) {
+			lastIdx = -1
+		} else {
+			require.NoError(t, err)
+		}
+		for range 10 {
+			db.head.lastWALTruncationTime.Store(0)
+			require.NoError(t, db.head.truncateWAL(mint))
+			if _, idx, err := wlog.LastCheckpoint(db.head.wal.Dir()); err == nil && idx > lastIdx {
+				return
+			}
+		}
+		t.Fatalf("no new checkpoint produced for mint=%d", mint)
+	}
+	checkpointHasSelRecord := func() bool {
+		checkpointDir, _, err := wlog.LastCheckpoint(db.head.wal.Dir())
+		require.NoError(t, err)
+		for _, rec := range readTestWAL(t, checkpointDir) {
+			seriesRecs, ok := rec.([]record.RefSeries)
+			if !ok {
+				continue
+			}
+			for _, s := range seriesRecs {
+				if storage.SeriesRef(s.Ref) == selRef {
+					return true
+				}
+			}
+		}
+		return false
+	}
+
+	// mint stays within the expiry: sel's record must survive, carried forward into the
+	// checkpoint even though sel is no longer in the head.
+	forceCheckpointAt(150)
+	require.True(t, checkpointHasSelRecord(), "sel's record must be carried forward while still within its walExpiry")
+
+	// mint now exceeds the expiry: sel's record is finally dropped, but sel's own segment,
+	// holding its second sample and eviction tombstone, is still untouched.
+	forceCheckpointAt(1201)
+	require.False(t, checkpointHasSelRecord(), "sel's record must be dropped once its walExpiry has passed")
+
+	require.NoError(t, db.Close())
+	reopened, err := Open(db.Dir(), nil, nil, opts, nil)
+	require.NoError(t, err)
+	t.Cleanup(func() { require.NoError(t, reopened.Close()) })
+
+	// minValidTime must reflect the real WAL truncation point, not just the maxt of blocks
+	// that happen to carry neither the FromSelectedSeries nor the FromStaleSeries hint. Before
+	// this fix, it did not: both blocks on disk are selected-series blocks, inOrderBlocksMaxTime
+	// finds no qualifying block, and minValidTime fell back to math.MinInt64. That let replay
+	// walk straight into sel's leftover sample instead of skipping it as "before minValidTime",
+	// so replay looked up sel's series, did not find it, and logged an unknown series reference.
+	unknownSamples := prom_testutil.ToFloat64(reopened.head.metrics.walReplayUnknownRefsTotal.WithLabelValues("samples"))
+	require.Zero(t, unknownSamples,
+		"WAL replay must not report unknown series references for sel's leftover sample; its "+
+			"data is safely in a selected-series block, but a too-low minValidTime let replay "+
+			"try to match it against a series record that no longer exists")
+}
+
+// TestCompactSelectedSeries_OOOAppendDuringCompactionSurvives verifies that a series is not
+// evicted when an out-of-order sample transitions it from s.ooo == nil to non-nil during
+// compaction.
+//
+// Unlike a late in-order append, an OOO sample changes neither headChunkCount nor the current
+// chunk’s sample count, so the fingerprint cannot detect it. Instead, isSeriesWithoutOOO is
+// re-evaluated at eviction time and detects the transition, preventing the series from being
+// evicted.
+func TestCompactSelectedSeries_OOOAppendDuringCompactionSurvives(t *testing.T) {
+	const chunkRange = 1000
+	opts := DefaultOptions()
+	opts.MinBlockDuration = chunkRange
+	opts.MaxBlockDuration = chunkRange
+	opts.OutOfOrderTimeWindow = chunkRange // enable OOO ingestion
+	db := newTestDB(t, withOpts(opts))
+	db.DisableCompactions()
+
+	filler := labels.FromStrings("name", "filler")
+	sel := labels.FromStrings("name", "selected")
+
+	app := db.Appender(context.Background())
+	_, err := app.Append(0, filler, 100, 0.1)
+	require.NoError(t, err)
+	_, err = app.Append(0, filler, 700, 0.7)
+	require.NoError(t, err)
+	selRef, err := app.Append(0, sel, 100, 10.0)
+	require.NoError(t, err)
+	_, err = app.Append(selRef, sel, 200, 20.0)
+	require.NoError(t, err)
+	require.NoError(t, app.Commit())
+
+	require.Equal(t, uint64(2), db.Head().NumSeries())
+
+	// The hook fires after the block is written but before eviction. This sample, earlier
+	// than sel's max (200) but within the OOO window, flips sel's s.ooo from nil to non-nil.
+	const oooT, oooV = int64(150), 15.0
+	var hookErr error
+	compactHeadViewBeforeEvictTestingCallback = func() {
+		hookApp := db.Appender(context.Background())
+		if _, err := hookApp.Append(selRef, sel, oooT, oooV); err != nil {
+			hookErr = err
+			return
+		}
+		hookErr = hookApp.Commit()
+	}
+	t.Cleanup(func() { compactHeadViewBeforeEvictTestingCallback = nil })
+
+	require.NoError(t, db.CompactSelectedSeries([]storage.SeriesRef{selRef}))
+	require.NoError(t, hookErr, "the OOO append/commit inside the hook must itself succeed")
+
+	require.Equal(t, uint64(2), db.Head().NumSeries(), "filler + sel: sel must survive eviction")
+
+	q, err := db.Querier(0, chunkRange)
+	require.NoError(t, err)
+	seriesSet := query(t, q, labels.MustNewMatcher(labels.MatchEqual, "name", "selected"))
+	require.Equal(t, []chunks.Sample{
+		sample{t: 100, f: 10.0},
+		sample{t: oooT, f: oooV},
+		sample{t: 200, f: 20.0},
+	}, seriesSet[`{name="selected"}`], "all three samples, including the OOO one, must be visible")
 }
 
 // TestCompactSelectedSeries_OpenAppenderCommittingDuringCompaction verifies
@@ -11001,15 +11880,12 @@ func TestCompactSelectedSeries_LateAppendDuringCompactionSurvivesRestart(t *test
 // The test covers the case where a write starts before compaction begins but
 // only commits after block generation and before eviction. Such a sample may
 // not be included in the generated blocks, so compaction must ensure the
-// corresponding series is retained in the head.
+// corresponding series is retained in the head. The commit lands after the
+// fingerprint snapshot is taken, so the check catches it regardless of isolation.
 //
 // The test verifies that the sample remains queryable both immediately after
 // compaction and after a restart.
 func TestCompactSelectedSeries_OpenAppenderCommittingDuringCompaction(t *testing.T) {
-	if defaultIsolationDisabled {
-		t.Skip("watermark guard relies on per-sample append-IDs that s.txs only tracks when isolation is enabled")
-	}
-
 	const chunkRange = 1000
 	opts := DefaultOptions()
 	opts.MinBlockDuration = chunkRange
@@ -11040,12 +11916,10 @@ func TestCompactSelectedSeries_OpenAppenderCommittingDuringCompaction(t *testing
 		lateV = 40.0
 	)
 
-	// Open the appender BEFORE CompactSelectedSeries: this is the key
-	// difference from TestCompactSelectedSeries_LateAppendDuringCompactionSurvivesRestart,
-	// where the appender is opened inside the hook (and so gets an appendID
-	// strictly greater than the captured watermark). Here, the appender's ID
-	// is issued before the watermark capture, so a watermark based on
-	// lastAppendID() would incorrectly cover it.
+	// Open the appender BEFORE CompactSelectedSeries -- the key difference from
+	// TestCompactSelectedSeries_LateAppendDuringCompactionSurvivesRestart, where the appender
+	// is opened inside the hook. Append() only reserves a pending commit here; the chunk
+	// mutation that the fingerprint notices happens later, at Commit() time inside the hook.
 	late := db.Appender(context.Background())
 	_, err = late.Append(selRef, sel, lateT, lateV)
 	require.NoError(t, err)
@@ -11064,7 +11938,7 @@ func TestCompactSelectedSeries_OpenAppenderCommittingDuringCompaction(t *testing
 
 	require.Len(t, db.Blocks(), 1)
 	require.Equal(t, uint64(2), db.Head().NumSeries(),
-		"sel must survive eviction because its late commit has an appendID > watermark")
+		"sel must survive eviction: its late commit changed the fingerprint taken before the block was written")
 
 	expected := []chunks.Sample{
 		sample{t: 100, f: 10.0},
@@ -11898,4 +12772,257 @@ func testInOrderCompactionAcrossChunkIDWrap(t *testing.T, scenario sampleTypeSce
 	querier, err = db.Querier(0, maxT)
 	require.NoError(t, err)
 	requireEqualSeries(t, map[string][]chunks.Sample{l.String(): expSamples}, query(t, querier, matcher), true)
+}
+
+// TestCompactionSurvivesChunkRollAndMmap verifies that a series receiving a sample that cuts a
+// new chunk, immediately followed by mmap of the now-inactive previous chunk, is still
+// correctly retained by selected-series and stale-series compaction. That sequence can leave
+// the head chunk count and the active chunk's sample count exactly as they were before the
+// append, so the fingerprint must identify the chunk itself rather than rely on those counts.
+func TestCompactionSurvivesChunkRollAndMmap(t *testing.T) {
+	for _, stale := range []bool{false, true} {
+		name := "selected"
+		if stale {
+			name = "stale"
+		}
+		t.Run(name, func(t *testing.T) {
+			opts := DefaultOptions()
+			opts.MinBlockDuration = 1000
+			opts.MaxBlockDuration = 1000
+			db := newTestDB(t, withOpts(opts))
+			db.DisableCompactions()
+			sel := labels.FromStrings("name", "selected")
+			v := 1.0
+			if stale {
+				v = math.Float64frombits(value.StaleNaN)
+			}
+			app := db.Appender(context.Background())
+			_, err := app.Append(0, labels.FromStrings("name", "filler"), 1400, 1)
+			require.NoError(t, err)
+			ref, err := app.Append(0, sel, 900, v)
+			require.NoError(t, err)
+			require.NoError(t, app.Commit())
+			refs := []storage.SeriesRef{ref}
+			before := db.head.snapshotFingerprints(refs, math.MaxUint64)
+			compactHeadViewBeforeEvictTestingCallback = func() {
+				app := db.Appender(context.Background())
+				_, err := app.Append(ref, sel, 1000, v)
+				require.NoError(t, err)
+				require.NoError(t, app.Commit())
+				db.ForceHeadMMap()
+				// The chunk roll and mmap alone must not make the fingerprint look unchanged --
+				// otherwise the eviction check below would wrongly trust it.
+				require.NotEqual(t, before, db.head.snapshotFingerprints(refs, math.MaxUint64), "the fingerprint must reflect the append across a chunk roll and mmap")
+			}
+			t.Cleanup(func() { compactHeadViewBeforeEvictTestingCallback = nil })
+			if stale {
+				require.NoError(t, db.CompactStaleHead())
+			} else {
+				require.NoError(t, db.CompactSelectedSeries(refs))
+			}
+			q, err := db.Querier(0, 2000)
+			require.NoError(t, err)
+			got := query(t, q, labels.MustNewMatcher(labels.MatchEqual, "name", "selected"))
+			require.Len(t, got[`{name="selected"}`], 2, "The sample at 1000 must survive compaction.")
+		})
+	}
+}
+
+// TestCompactSelectedSeries_SurvivesMutationFromStillOpenTransaction verifies that a sample
+// survives compaction even when it's already in the chunk before the fingerprint snapshot is
+// taken, as long as its transaction was still open (not isolation-closed) at that point.
+//
+// A multi-series Commit() writes each series in turn and only closes the whole transaction at
+// the end. This test pauses Commit() right after it writes the selected series but before it
+// can close the transaction, so the fingerprint snapshot already reflects the new sample and
+// can never see it change. Only the durable watermarkViolatedAtSnapshot flag, captured via
+// hasAppendIDAbove at snapshot time, catches this case.
+func TestCompactSelectedSeries_SurvivesMutationFromStillOpenTransaction(t *testing.T) {
+	if defaultIsolationDisabled {
+		t.Skip("This reproduction needs isolation to exclude the incomplete appender.")
+	}
+	opts := DefaultOptions()
+	opts.MinBlockDuration = 1000
+	opts.MaxBlockDuration = 1000
+	db := newTestDB(t, withOpts(opts))
+	db.DisableCompactions()
+	sel := labels.FromStrings("name", "selected")
+	filler := labels.FromStrings("name", "filler")
+	app := db.Appender(context.Background())
+	ref, err := app.Append(0, sel, 100, 1)
+	require.NoError(t, err)
+	fillerRef, err := app.Append(0, filler, 700, 1)
+	require.NoError(t, err)
+	require.NoError(t, app.Commit())
+	app = db.Appender(context.Background())
+	_, err = app.Append(ref, sel, 400, 2)
+	require.NoError(t, err)
+	_, err = app.Append(fillerRef, filler, 700, 1)
+	require.NoError(t, err)
+
+	// Pause Commit on its second series after it mutates the selected series.
+	blocker := db.head.series.getByID(chunks.HeadSeriesRef(fillerRef))
+	blocker.Lock()
+	var unlockOnce sync.Once
+	unlock := func() { unlockOnce.Do(blocker.Unlock) }
+	defer unlock()
+	done := make(chan error, 1)
+	go func() { done <- app.Commit() }()
+	series := db.head.series.getByID(chunks.HeadSeriesRef(ref))
+	require.Eventually(t, func() bool {
+		series.Lock()
+		defer series.Unlock()
+		return series.maxTime() == 400 && !series.hasPendingCommit()
+	}, 5*time.Second, time.Millisecond)
+
+	compactHeadViewBeforeEvictTestingCallback = func() {
+		unlock()
+		require.NoError(t, <-done)
+	}
+	t.Cleanup(func() { compactHeadViewBeforeEvictTestingCallback = nil })
+	require.NoError(t, db.CompactSelectedSeries([]storage.SeriesRef{ref}))
+	q, err := db.Querier(0, 1000)
+	require.NoError(t, err)
+	got := query(t, q, labels.MustNewMatcher(labels.MatchEqual, "name", "selected"))
+	require.Len(t, got[`{name="selected"}`], 2, "The sample at 400 must survive compaction.")
+}
+
+// TestCompactSelectedSeries_SurvivesEvidenceErasedByUnrelatedCleanup verifies that a sample
+// survives compaction even when the one piece of evidence that would have proven it's missing
+// from the block gets erased before the eviction check ever looks at it.
+//
+// The sequence: a transaction writes the sample, then closes. Afterward, a totally unrelated
+// write lands on the same series -- an exact duplicate that changes no data -- but even that
+// no-op write triggers routine append-ID cleanup, which happens to wipe out the record of the
+// original write ever happening. If that record were the only evidence, eviction would see
+// nothing wrong and delete the series. It doesn't, because the violation was already recorded
+// as a durable fact the moment it was first seen (see seriesFingerprint.watermarkViolatedAtSnapshot),
+// so later cleanup can't erase it.
+func TestCompactSelectedSeries_SurvivesEvidenceErasedByUnrelatedCleanup(t *testing.T) {
+	if defaultIsolationDisabled {
+		t.Skip("This reproduction needs isolation to exclude the incomplete appender.")
+	}
+	opts := DefaultOptions()
+	opts.MinBlockDuration = 1000
+	opts.MaxBlockDuration = 1000
+	db := newTestDB(t, withOpts(opts))
+	db.DisableCompactions()
+	sel := labels.FromStrings("name", "selected")
+	filler := labels.FromStrings("name", "filler")
+	app := db.Appender(context.Background())
+	ref, err := app.Append(0, sel, 100, 1)
+	require.NoError(t, err)
+	fillerRef, err := app.Append(0, filler, 700, 1)
+	require.NoError(t, err)
+	require.NoError(t, app.Commit())
+	app = db.Appender(context.Background())
+	_, err = app.Append(ref, sel, 400, 2)
+	require.NoError(t, err)
+	_, err = app.Append(fillerRef, filler, 700, 1)
+	require.NoError(t, err)
+
+	// Pause Commit on its second series after it mutates the selected series.
+	blocker := db.head.series.getByID(chunks.HeadSeriesRef(fillerRef))
+	blocker.Lock()
+	var unlockOnce sync.Once
+	unlock := func() { unlockOnce.Do(blocker.Unlock) }
+	defer unlock()
+	done := make(chan error, 1)
+	go func() { done <- app.Commit() }()
+	series := db.head.series.getByID(chunks.HeadSeriesRef(ref))
+	require.Eventually(t, func() bool {
+		series.Lock()
+		defer series.Unlock()
+		return series.maxTime() == 400 && !series.hasPendingCommit()
+	}, 5*time.Second, time.Millisecond)
+
+	compactHeadViewBeforeEvictTestingCallback = func() {
+		unlock()
+		require.NoError(t, <-done)
+		// A duplicate sample changes no chunks but runs append-ID cleanup.
+		cleanup := db.Appender(context.Background())
+		_, err := cleanup.Append(ref, sel, 400, 2)
+		require.NoError(t, err)
+		require.NoError(t, cleanup.Commit())
+		series.Lock()
+		if series.txs != nil {
+			require.Zero(t, series.txs.txIDCount)
+		}
+		series.Unlock()
+	}
+	t.Cleanup(func() { compactHeadViewBeforeEvictTestingCallback = nil })
+	require.NoError(t, db.CompactSelectedSeries([]storage.SeriesRef{ref}))
+	q, err := db.Querier(0, 1000)
+	require.NoError(t, err)
+	got := query(t, q, labels.MustNewMatcher(labels.MatchEqual, "name", "selected"))
+	require.Len(t, got[`{name="selected"}`], 2, "The sample at 400 must survive compaction.")
+}
+
+// TestCompactionSurvivesLateAppendWithErasedWatermarkEvidence verifies that a sample appended
+// after the fingerprint snapshot survives compaction even when a later, unrelated duplicate
+// write erases the only watermark evidence that it happened.
+//
+// The append itself is real, not a duplicate, so it mutates the chunk -- the fingerprint alone
+// would already catch that. What this test adds is the duplicate that follows: it changes no
+// data, but its Commit() still runs routine append-ID cleanup, which wipes out the append-ID
+// that would have proven the earlier sample wasn't committed yet. Nothing is lost, because the
+// fingerprint never depended on that append-ID in the first place -- it's comparing chunk
+// shape, which the cleanup can't touch.
+func TestCompactionSurvivesLateAppendWithErasedWatermarkEvidence(t *testing.T) {
+	for _, stale := range []bool{false, true} {
+		name := "selected"
+		if stale {
+			name = "stale"
+		}
+		t.Run(name, func(t *testing.T) {
+			opts := DefaultOptions()
+			opts.MinBlockDuration = 1000
+			opts.MaxBlockDuration = 1000
+			db := newTestDB(t, withOpts(opts))
+			db.DisableCompactions()
+			sel := labels.FromStrings("name", "selected")
+			v := 2.0
+			if stale {
+				v = math.Float64frombits(value.StaleNaN)
+			}
+			app := db.Appender(t.Context())
+			ref, err := app.Append(0, sel, 100, 1)
+			require.NoError(t, err)
+			_, err = app.Append(ref, sel, 200, v)
+			require.NoError(t, err)
+			_, err = app.Append(0, labels.FromStrings("name", "filler"), 700, 1)
+			require.NoError(t, err)
+			require.NoError(t, app.Commit())
+
+			compactHeadViewBeforeEvictTestingCallback = func() {
+				// Both transactions start after the snapshot and block generation.
+				for range 2 {
+					app := db.Appender(t.Context())
+					_, err := app.Append(ref, sel, 400, v)
+					require.NoError(t, err)
+					require.NoError(t, app.Commit())
+				}
+			}
+			t.Cleanup(func() { compactHeadViewBeforeEvictTestingCallback = nil })
+			if stale {
+				require.NoError(t, db.CompactStaleHead())
+			} else {
+				require.NoError(t, db.CompactSelectedSeries([]storage.SeriesRef{ref}))
+			}
+			q, err := db.Querier(0, 1000)
+			require.NoError(t, err)
+			got := query(t, q, labels.MustNewMatcher(labels.MatchEqual, "name", "selected"))
+			if len(got[sel.String()]) != 3 {
+				t.Errorf("Before restart: want 3 samples, got %v", got[sel.String()])
+			}
+			require.NoError(t, db.Close())
+			db, err = Open(db.Dir(), nil, nil, opts, nil)
+			require.NoError(t, err)
+			t.Cleanup(func() { require.NoError(t, db.Close()) })
+			q, err = db.Querier(0, 1000)
+			require.NoError(t, err)
+			got = query(t, q, labels.MustNewMatcher(labels.MatchEqual, "name", "selected"))
+			require.Len(t, got[sel.String()], 3, "The sample at 400 must survive restart.")
+		})
+	}
 }

@@ -348,3 +348,20 @@ This record format is backwards compatible with type 8.
 │                              . . .                                    │
 └───────────────────────────────────────────────────────────────────────┘
 ```
+
+#### Min valid time records
+
+Min valid time records are checkpoint-only: never written to a live WAL segment. Each
+checkpoint carries at most one, recording the highest `mint` any WAL truncation has used
+so far. On restart, this lets the min valid time used to gate WAL replay be read directly
+from the checkpoint, rather than solely re-derived from block max times on disk.
+
+```
+┌────────────────────┐
+│ type = 14 <1b>     │
+├────────────────────┤
+│ ┌────────────────┐ │
+│ │ mint <8b>      │ │
+│ └────────────────┘ │
+└────────────────────┘
+```

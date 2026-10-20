@@ -22,6 +22,7 @@ import (
 	"maps"
 	"math"
 	"net"
+	"net/netip"
 	"net/url"
 	"sort"
 	"strings"
@@ -191,8 +192,7 @@ func NewTemplateExpander(
 				if err != nil {
 					host = hostPort
 				}
-				ip := net.ParseIP(host)
-				if ip != nil {
+				if _, err := netip.ParseAddr(host); err == nil {
 					return hostPort
 				}
 				host = strings.Split(host, ".")[0]

@@ -14,11 +14,15 @@
 package histogram
 
 import (
+	"math"
+	"slices"
 	"testing"
 
+	"github.com/prometheus/common/model"
 	"github.com/stretchr/testify/require"
 
 	"github.com/prometheus/prometheus/model/labels"
+	"github.com/prometheus/prometheus/model/value"
 )
 
 type sample struct {
@@ -239,23 +243,23 @@ func TestConvertNHCBToClassicHistogram(t *testing.T) {
 					{4, 1},
 					{1, 2},
 				},
-				PositiveBuckets: []int64{1, 2, 3, 4, 5}, // 1 -> 3 -> 3 -> 3 -> 3 -> 3 -> 6 ->6 ->10 -> 15
-				Count:           35,                     // 1 -> 4 -> 7 -> 10 -> 13 -> 16 -> 22 -> 28 -> 38 -> 53
+				PositiveBuckets: []int64{1, 2, 3, 4, 5}, // 1 -> 3 -> 0 -> 0 -> 0 -> 0 -> 6 -> 0 -> 10 -> 15
+				Count:           35,                     // 1 -> 4 -> 4 -> 4 -> 4 -> 4 -> 10 -> 10 -> 20 -> 35
 				Sum:             123,
 			},
 			labels: labels.FromStrings("__name__", "test_metric"),
 			expected: []sample{
 				{lset: labels.FromStrings("__name__", "test_metric_bucket", "le", "1.0"), val: 1},
 				{lset: labels.FromStrings("__name__", "test_metric_bucket", "le", "2.0"), val: 4},
-				{lset: labels.FromStrings("__name__", "test_metric_bucket", "le", "3.0"), val: 7},
-				{lset: labels.FromStrings("__name__", "test_metric_bucket", "le", "4.0"), val: 10},
-				{lset: labels.FromStrings("__name__", "test_metric_bucket", "le", "5.0"), val: 13},
-				{lset: labels.FromStrings("__name__", "test_metric_bucket", "le", "6.0"), val: 16},
-				{lset: labels.FromStrings("__name__", "test_metric_bucket", "le", "7.0"), val: 22},
-				{lset: labels.FromStrings("__name__", "test_metric_bucket", "le", "8.0"), val: 28},
-				{lset: labels.FromStrings("__name__", "test_metric_bucket", "le", "9.0"), val: 38},
-				{lset: labels.FromStrings("__name__", "test_metric_bucket", "le", "10.0"), val: 53},
-				{lset: labels.FromStrings("__name__", "test_metric_bucket", "le", "+Inf"), val: 53},
+				{lset: labels.FromStrings("__name__", "test_metric_bucket", "le", "3.0"), val: 4},
+				{lset: labels.FromStrings("__name__", "test_metric_bucket", "le", "4.0"), val: 4},
+				{lset: labels.FromStrings("__name__", "test_metric_bucket", "le", "5.0"), val: 4},
+				{lset: labels.FromStrings("__name__", "test_metric_bucket", "le", "6.0"), val: 4},
+				{lset: labels.FromStrings("__name__", "test_metric_bucket", "le", "7.0"), val: 10},
+				{lset: labels.FromStrings("__name__", "test_metric_bucket", "le", "8.0"), val: 10},
+				{lset: labels.FromStrings("__name__", "test_metric_bucket", "le", "9.0"), val: 20},
+				{lset: labels.FromStrings("__name__", "test_metric_bucket", "le", "10.0"), val: 35},
+				{lset: labels.FromStrings("__name__", "test_metric_bucket", "le", "+Inf"), val: 35},
 				{lset: labels.FromStrings("__name__", "test_metric_count"), val: 35},
 				{lset: labels.FromStrings("__name__", "test_metric_sum"), val: 123},
 			},
@@ -291,6 +295,25 @@ func TestConvertNHCBToClassicHistogram(t *testing.T) {
 				{lset: labels.FromStrings("__name__", "test_metric_sum"), val: 123},
 			},
 		},
+		{
+			name: "stale histogram",
+			nhcb: &Histogram{
+				CustomValues:    []float64{1, 2},
+				PositiveBuckets: []int64{2, 1, 1},
+				PositiveSpans:   []Span{{Offset: 0, Length: 3}},
+				Count:           9,
+				Sum:             math.Float64frombits(value.StaleNaN),
+				Schema:          CustomBucketsSchema,
+			},
+			labels: labels.FromStrings("__name__", "test_metric"),
+			expected: []sample{
+				{lset: labels.FromStrings("__name__", "test_metric_bucket", "le", "1.0"), val: math.Float64frombits(value.StaleNaN)},
+				{lset: labels.FromStrings("__name__", "test_metric_bucket", "le", "2.0"), val: math.Float64frombits(value.StaleNaN)},
+				{lset: labels.FromStrings("__name__", "test_metric_bucket", "le", "+Inf"), val: math.Float64frombits(value.StaleNaN)},
+				{lset: labels.FromStrings("__name__", "test_metric_count"), val: math.Float64frombits(value.StaleNaN)},
+				{lset: labels.FromStrings("__name__", "test_metric_sum"), val: math.Float64frombits(value.StaleNaN)},
+			},
+		},
 	}
 
 	labelBuilder := labels.NewBuilder(labels.EmptyLabels())
@@ -306,9 +329,79 @@ func TestConvertNHCBToClassicHistogram(t *testing.T) {
 				require.Len(t, emittedSamples, len(tt.expected))
 				for i, expSample := range tt.expected {
 					require.True(t, labels.Equal(expSample.lset, emittedSamples[i].lset), "labels mismatch at index %d: expected %v, got %v", i, expSample.lset, emittedSamples[i].lset)
-					require.Equal(t, expSample.val, emittedSamples[i].val, "value mismatch at index %d", i)
+					if value.IsStaleNaN(expSample.val) {
+						require.True(t, value.IsStaleNaN(emittedSamples[i].val), "expected stale NaN at index %d", i)
+					} else {
+						require.Equal(t, expSample.val, emittedSamples[i].val, "value mismatch at index %d", i)
+					}
+				}
+
+				// A reused buffer must not leak earlier values into skipped buckets.
+				buckets, count, sum, err := ClassicBucketCounts(tt.nhcb, slices.Repeat([]float64{42}, 16))
+				require.NoError(t, err)
+				counts := append(buckets, count, sum)
+				require.Len(t, counts, len(emittedSamples))
+				for i, s := range emittedSamples {
+					if value.IsStaleNaN(s.val) {
+						require.True(t, value.IsStaleNaN(counts[i]), "expected stale NaN count at index %d", i)
+					} else {
+						require.Equal(t, s.val, counts[i], "count mismatch at index %d", i)
+					}
 				}
 			}
 		})
 	}
+}
+
+// TestConvertNHCBToClassicIntFloatAgreement checks that an integer NHCB and its
+// exact FloatHistogram representation convert to the same classic series, and
+// that the +Inf bucket matches the count.
+func TestConvertNHCBToClassicIntFloatAgreement(t *testing.T) {
+	h := &Histogram{
+		Schema:       CustomBucketsSchema,
+		CustomValues: []float64{1, 2, 3, 4, 5, 6, 7, 8, 9, 10},
+		PositiveSpans: []Span{
+			{Offset: 0, Length: 2},
+			{Offset: 4, Length: 1},
+			{Offset: 1, Length: 2},
+		},
+		PositiveBuckets: []int64{1, 2, 3, 4, 5},
+		Count:           35,
+		Sum:             123,
+	}
+	require.NoError(t, h.Validate())
+
+	convert := func(nhcb any) []sample {
+		var got []sample
+		lb := labels.NewBuilder(labels.EmptyLabels())
+		require.NoError(t, ConvertNHCBToClassic(nhcb, labels.FromStrings("__name__", "test_metric"), lb,
+			func(l labels.Labels, v float64) error {
+				got = append(got, sample{lset: l, val: v})
+				return nil
+			}))
+		return got
+	}
+
+	fromInt := convert(h)
+	fromFloat := convert(h.ToFloat(nil))
+
+	require.Len(t, fromInt, len(fromFloat))
+	for i := range fromInt {
+		require.True(t, labels.Equal(fromInt[i].lset, fromFloat[i].lset), "labels mismatch at index %d", i)
+		require.Equal(t, fromFloat[i].val, fromInt[i].val, "value mismatch at index %d for %s", i, fromInt[i].lset)
+	}
+
+	// In a classic histogram the +Inf bucket holds every observation.
+	var infBucket, count float64
+	for _, s := range fromInt {
+		switch s.lset.Get(model.MetricNameLabel) {
+		case "test_metric_bucket":
+			if s.lset.Get(model.BucketLabel) == "+Inf" {
+				infBucket = s.val
+			}
+		case "test_metric_count":
+			count = s.val
+		}
+	}
+	require.Equal(t, count, infBucket)
 }

@@ -30,6 +30,7 @@ import (
 	storage2 "github.com/prometheus/prometheus/storage"
 	"github.com/prometheus/prometheus/tsdb"
 	"github.com/prometheus/prometheus/tsdb/chunkenc"
+	"github.com/prometheus/prometheus/tsdb/tsdbutil"
 	"github.com/prometheus/prometheus/util/teststorage"
 )
 
@@ -47,7 +48,7 @@ func TestDeriv(t *testing.T) {
 	}
 	engine := promqltest.NewTestEngineWithOpts(t, opts)
 
-	a := storage.Appender(context.Background())
+	a := storage.AppenderV2(context.Background())
 
 	var start, interval, i int64
 	metric := labels.FromStrings("__name__", "foo")
@@ -57,7 +58,8 @@ func TestDeriv(t *testing.T) {
 	// https://github.com/prometheus/prometheus/issues/7180
 	for i = range int64(15) {
 		jitter := 12 * i % 2
-		a.Append(0, metric, start+interval*i+jitter, 1)
+		_, err := a.Append(0, metric, 0, start+interval*i+jitter, 1, nil, nil, storage2.AOptions{})
+		require.NoError(t, err)
 	}
 
 	require.NoError(t, a.Commit())
@@ -72,6 +74,29 @@ func TestDeriv(t *testing.T) {
 	vec, _ := result.Vector()
 	require.Len(t, vec, 1, "Expected 1 result, got %d", len(vec))
 	require.Equal(t, 0.0, vec[0].F, "Expected 0.0 as value, got %f", vec[0].F)
+}
+
+func TestTsOfLastOverTimeBeforeEpoch(t *testing.T) {
+	ctx := context.Background()
+	storage := teststorage.New(t)
+	app := storage.AppenderV2(ctx)
+
+	_, err := app.Append(0, labels.FromStrings("__name__", "float_metric"), 0, -1000, 1, nil, nil, storage2.AOptions{})
+	require.NoError(t, err)
+	_, err = app.Append(0, labels.FromStrings("__name__", "histogram_metric"), 0, -1000, 0, nil, tsdbutil.GenerateTestFloatHistogram(0), storage2.AOptions{})
+	require.NoError(t, err)
+	require.NoError(t, app.Commit())
+
+	engine := promqltest.NewTestEngine(t, false, 0, 10000)
+	for _, metric := range []string{"float_metric", "histogram_metric"} {
+		query, err := engine.NewInstantQuery(ctx, storage, nil, "ts_of_last_over_time("+metric+"[1s])", timestamp.Time(-1000))
+		require.NoError(t, err)
+		result := query.Exec(ctx)
+		require.NoError(t, result.Err)
+		vector, _ := result.Vector()
+		require.Len(t, vector, 1)
+		require.Equal(t, -1.0, vector[0].F, metric)
+	}
 }
 
 func TestFunctionList(t *testing.T) {

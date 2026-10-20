@@ -252,6 +252,45 @@ func TestPrometheusConverter_addSumNumberDataPoints(t *testing.T) {
 			},
 		},
 		{
+			name: "sum with exemplars out of timestamp order",
+			metric: func() pmetric.Metric {
+				m := getIntSumMetric(
+					"test",
+					pcommon.NewMap(),
+					1,
+					uint64(ts.AsTime().UnixNano()),
+				)
+				exemplars := m.Sum().DataPoints().At(0).Exemplars()
+				newer := exemplars.AppendEmpty()
+				newer.SetTimestamp(ts)
+				newer.SetDoubleValue(2)
+				older := exemplars.AppendEmpty()
+				older.SetTimestamp(ts - pcommon.Timestamp(time.Second))
+				older.SetDoubleValue(1)
+				return m
+			},
+			scope:        defaultScope,
+			promoteScope: false,
+			want: func() []sample {
+				lbls := labels.FromStrings(
+					model.MetricNameLabel, "test",
+				)
+				return []sample{
+					{
+						MF: "test",
+						L:  lbls,
+						M:  metadata.Metadata{},
+						T:  convertTimeStamp(ts),
+						V:  1,
+						ES: []exemplar.Exemplar{
+							{Value: 1, Ts: convertTimeStamp(ts - pcommon.Timestamp(time.Second)), HasTs: true},
+							{Value: 2, Ts: convertTimeStamp(ts), HasTs: true},
+						},
+					},
+				}
+			},
+		},
+		{
 			name: "monotonic cumulative sum with start timestamp and without scope promotion",
 			metric: func() pmetric.Metric {
 				metric := pmetric.NewMetric()

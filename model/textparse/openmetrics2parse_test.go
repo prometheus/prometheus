@@ -15,6 +15,7 @@ package textparse
 
 import (
 	"io"
+	"math"
 	"strings"
 	"testing"
 
@@ -24,6 +25,7 @@ import (
 	"github.com/prometheus/prometheus/model/exemplar"
 	"github.com/prometheus/prometheus/model/histogram"
 	"github.com/prometheus/prometheus/model/labels"
+	"github.com/prometheus/prometheus/model/value"
 )
 
 func TestOpenMetrics2Parse(t *testing.T) {
@@ -366,6 +368,15 @@ rpc_duration_seconds {count:100,sum:30000.0,quantile:[0.5:100.0,0.9:200.0,0.99:3
 	p := NewOpenMetrics2Parser([]byte(input), labels.NewSymbolTable(), ParserOptions{})
 	got := testParse(t, p)
 	requireEntries(t, exp, got)
+
+	// testParse drained the input to io.EOF, so the pooled composite buffers
+	// must be detached from the parser and a stray Next() must not touch them.
+	op := p.(*openMetrics2Parser)
+	require.Nil(t, op.scratch)
+	require.Nil(t, op.pending)
+	require.Nil(t, op.seriesBuf)
+	_, err := p.Next()
+	require.Error(t, err)
 }
 
 func TestOpenMetrics2ParseCompositeClassicHistogram(t *testing.T) {
@@ -409,18 +420,64 @@ req_duration {count:3,sum:6.0,bucket:[0.1:1,1.0:2,+Inf:3]}
 	requireEntries(t, exp, got)
 }
 
+// TestOpenMetrics2ParseClassicHistogramNegInfBucket verifies that -Inf is
+// accepted as the first classic histogram bucket threshold, as permitted by the
+// OM2 ABNF.
+func TestOpenMetrics2ParseClassicHistogramNegInfBucket(t *testing.T) {
+	input := `# TYPE req_duration histogram
+req_duration {count:3,sum:6.0,bucket:[-Inf:1,1.0:2,+Inf:3]}
+# EOF
+`
+	exp := []parsedEntry{
+		{m: "req_duration", typ: model.MetricTypeHistogram},
+		{
+			m:    "req_duration_count",
+			v:    3,
+			lset: labels.FromStrings("__name__", "req_duration_count"),
+		},
+		{
+			m:    "req_duration_sum",
+			v:    6.0,
+			lset: labels.FromStrings("__name__", "req_duration_sum"),
+		},
+		{
+			m:    "req_duration_bucket\xffle\xff-Inf",
+			v:    1,
+			lset: labels.FromStrings("__name__", "req_duration_bucket", "le", "-Inf"),
+		},
+		{
+			m:    "req_duration_bucket\xffle\xff1.0",
+			v:    2,
+			lset: labels.FromStrings("__name__", "req_duration_bucket", "le", "1.0"),
+		},
+		{
+			m:    "req_duration_bucket\xffle\xff+Inf",
+			v:    3,
+			lset: labels.FromStrings("__name__", "req_duration_bucket", "le", "+Inf"),
+		},
+	}
+
+	p := NewOpenMetrics2Parser([]byte(input), labels.NewSymbolTable(), ParserOptions{})
+	got := testParse(t, p)
+	requireEntries(t, exp, got)
+}
+
 func TestOpenMetrics2ParseCompositeNativeAndClassicHistogram(t *testing.T) {
 	// A composite value exposing both representations in one line: native
 	// histogram fields (schema, positive_spans, positive_buckets, ...) AND a
 	// classic bucket list. The KeepClassicOnNativeHistogram option mirrors
 	// the protobuf parser's parseClassicHistograms flag: when off, only the
 	// native histogram is emitted and the classic bucket list is dropped;
-	// when on, classic _count/_sum/_bucket flat series are also emitted.
+	// when on, classic _count/_sum/_bucket flat series are also emitted, and
+	// exemplars are returned with both the native histogram and the matching
+	// classic _bucket series.
 	input := `# HELP req_duration Request duration histogram with both representations.
 # TYPE req_duration histogram
-req_duration {count:3,sum:6.0,schema:0,zero_threshold:0.001,zero_count:0,positive_spans:[0:2],positive_buckets:[1,2],bucket:[0.1:1,1.0:2,+Inf:3]}
+req_duration {count:3,sum:6.0,schema:0,zero_threshold:0.001,zero_count:0,positive_spans:[0:2],positive_buckets:[1,2],bucket:[0.1:1,1.0:2,+Inf:3]} # {id="req-1"} 0.8 1234566.0 # {id="req-2"} 5.0 1234567.0
 # EOF
 `
+	ex1 := exemplar.Exemplar{Labels: labels.FromStrings("id", "req-1"), Value: 0.8, HasTs: true, Ts: 1234566000}
+	ex2 := exemplar.Exemplar{Labels: labels.FromStrings("id", "req-2"), Value: 5.0, HasTs: true, Ts: 1234567000}
 	header := []parsedEntry{
 		{m: "req_duration", help: "Request duration histogram with both representations."},
 		{m: "req_duration", typ: model.MetricTypeHistogram},
@@ -428,6 +485,7 @@ req_duration {count:3,sum:6.0,schema:0,zero_threshold:0.001,zero_count:0,positiv
 	nativeEntry := parsedEntry{
 		m:    "req_duration",
 		lset: labels.FromStrings("__name__", "req_duration"),
+		es:   []exemplar.Exemplar{ex1, ex2},
 		shs: &histogram.Histogram{
 			Schema:          0,
 			ZeroThreshold:   0.001,
@@ -442,8 +500,8 @@ req_duration {count:3,sum:6.0,schema:0,zero_threshold:0.001,zero_count:0,positiv
 		{m: "req_duration_count", v: 3, lset: labels.FromStrings("__name__", "req_duration_count")},
 		{m: "req_duration_sum", v: 6.0, lset: labels.FromStrings("__name__", "req_duration_sum")},
 		{m: "req_duration_bucket\xffle\xff0.1", v: 1, lset: labels.FromStrings("__name__", "req_duration_bucket", "le", "0.1")},
-		{m: "req_duration_bucket\xffle\xff1.0", v: 2, lset: labels.FromStrings("__name__", "req_duration_bucket", "le", "1.0")},
-		{m: "req_duration_bucket\xffle\xff+Inf", v: 3, lset: labels.FromStrings("__name__", "req_duration_bucket", "le", "+Inf")},
+		{m: "req_duration_bucket\xffle\xff1.0", v: 2, lset: labels.FromStrings("__name__", "req_duration_bucket", "le", "1.0"), es: []exemplar.Exemplar{ex1}},
+		{m: "req_duration_bucket\xffle\xff+Inf", v: 3, lset: labels.FromStrings("__name__", "req_duration_bucket", "le", "+Inf"), es: []exemplar.Exemplar{ex2}},
 	}
 
 	for _, tc := range []struct {
@@ -460,6 +518,16 @@ req_duration {count:3,sum:6.0,schema:0,zero_threshold:0.001,zero_count:0,positiv
 			opts: ParserOptions{KeepClassicOnClassicAndNativeHistograms: true},
 			exp:  append(append(append([]parsedEntry{}, header...), nativeEntry), classicSeries...),
 		},
+		{
+			name: "convert_nhcb_keep_classic_off",
+			opts: ParserOptions{ConvertClassicHistogramsToNHCB: true},
+			exp:  append(append([]parsedEntry{}, header...), nativeEntry),
+		},
+		{
+			name: "convert_nhcb_keep_classic_on",
+			opts: ParserOptions{ConvertClassicHistogramsToNHCB: true, KeepClassicOnClassicAndNativeHistograms: true},
+			exp:  append(append(append([]parsedEntry{}, header...), nativeEntry), classicSeries...),
+		},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			p := NewOpenMetrics2Parser([]byte(input), labels.NewSymbolTable(), tc.opts)
@@ -469,10 +537,145 @@ req_duration {count:3,sum:6.0,schema:0,zero_threshold:0.001,zero_count:0,positiv
 	}
 }
 
+func TestOpenMetrics2ParseConvertClassicHistogramToNHCB(t *testing.T) {
+	ts := int64(1234567000)
+	for _, tc := range []struct {
+		name  string
+		input string
+		opts  ParserOptions
+		exp   []parsedEntry
+	}{
+		{
+			name: "classic_int_histogram_to_nhcb",
+			input: `# HELP req_duration Request duration.
+# TYPE req_duration histogram
+# UNIT req_duration seconds
+req_duration{job="api"} {count:3,sum:6.0,bucket:[0.1:1,1.0:2,+Inf:3]} 1234567.0 st@1000.0 # {id="req-1"} 0.8 1234566.0
+# EOF
+`,
+			opts: ParserOptions{ConvertClassicHistogramsToNHCB: true, EnableTypeAndUnitLabels: true},
+			exp: []parsedEntry{
+				{m: "req_duration", help: "Request duration."},
+				{m: "req_duration", typ: model.MetricTypeHistogram},
+				{m: "req_duration", unit: "seconds"},
+				{
+					m:    `req_duration{job="api"}`,
+					lset: labels.FromStrings("__name__", "req_duration", "__type__", "histogram", "__unit__", "seconds", "job", "api"),
+					t:    &ts,
+					st:   1000000,
+					es:   []exemplar.Exemplar{{Labels: labels.FromStrings("id", "req-1"), Value: 0.8, HasTs: true, Ts: 1234566000}},
+					shs: &histogram.Histogram{
+						Schema:          histogram.CustomBucketsSchema,
+						Count:           3,
+						Sum:             6.0,
+						PositiveSpans:   []histogram.Span{{Offset: 0, Length: 3}},
+						PositiveBuckets: []int64{1, 0, 0},
+						CustomValues:    []float64{0.1, 1.0},
+					},
+				},
+			},
+		},
+		{
+			// Corresponds to convert_classic_histograms_to_nhcb: true and
+			// always_scrape_classic_histograms: true in scrape config (see #13532),
+			// emitting both the converted NHCB and the classic histogram series.
+			name: "classic_int_histogram_to_nhcb_with_keep_classic",
+			input: `# TYPE req_duration histogram
+req_duration {count:3,sum:6.0,bucket:[0.1:1,1.0:2,+Inf:3]} 1234567.0 st@1000.0 # {id="req-1"} 0.8 1234566.0
+# EOF
+`,
+			opts: ParserOptions{ConvertClassicHistogramsToNHCB: true, KeepClassicOnClassicAndNativeHistograms: true},
+			exp: []parsedEntry{
+				{m: "req_duration", typ: model.MetricTypeHistogram},
+				{
+					m:    "req_duration",
+					lset: labels.FromStrings("__name__", "req_duration"),
+					t:    &ts,
+					st:   1000000,
+					es:   []exemplar.Exemplar{{Labels: labels.FromStrings("id", "req-1"), Value: 0.8, HasTs: true, Ts: 1234566000}},
+					shs: &histogram.Histogram{
+						Schema:          histogram.CustomBucketsSchema,
+						Count:           3,
+						Sum:             6.0,
+						PositiveSpans:   []histogram.Span{{Offset: 0, Length: 3}},
+						PositiveBuckets: []int64{1, 0, 0},
+						CustomValues:    []float64{0.1, 1.0},
+					},
+				},
+				{m: "req_duration_count", v: 3, t: &ts, st: 1000000, lset: labels.FromStrings("__name__", "req_duration_count")},
+				{m: "req_duration_sum", v: 6.0, t: &ts, st: 1000000, lset: labels.FromStrings("__name__", "req_duration_sum")},
+				{m: "req_duration_bucket\xffle\xff0.1", v: 1, t: &ts, st: 1000000, lset: labels.FromStrings("__name__", "req_duration_bucket", "le", "0.1")},
+				{
+					m:    "req_duration_bucket\xffle\xff1.0",
+					v:    2,
+					t:    &ts,
+					st:   1000000,
+					lset: labels.FromStrings("__name__", "req_duration_bucket", "le", "1.0"),
+					es:   []exemplar.Exemplar{{Labels: labels.FromStrings("id", "req-1"), Value: 0.8, HasTs: true, Ts: 1234566000}},
+				},
+				{m: "req_duration_bucket\xffle\xff+Inf", v: 3, t: &ts, st: 1000000, lset: labels.FromStrings("__name__", "req_duration_bucket", "le", "+Inf")},
+			},
+		},
+		{
+			name: "classic_float_histogram_to_nhcb",
+			input: `# TYPE req_duration histogram
+req_duration {count:3.5,sum:6.0,bucket:[0.1:1.5,1.0:2.5,+Inf:3.5]}
+# EOF
+`,
+			opts: ParserOptions{ConvertClassicHistogramsToNHCB: true},
+			exp: []parsedEntry{
+				{m: "req_duration", typ: model.MetricTypeHistogram},
+				{
+					m:    "req_duration",
+					lset: labels.FromStrings("__name__", "req_duration"),
+					fhs: &histogram.FloatHistogram{
+						Schema:          histogram.CustomBucketsSchema,
+						Count:           3.5,
+						Sum:             6.0,
+						PositiveSpans:   []histogram.Span{{Offset: 0, Length: 3}},
+						PositiveBuckets: []float64{1.5, 1.0, 1.0},
+						CustomValues:    []float64{0.1, 1.0},
+					},
+				},
+			},
+		},
+		{
+			name: "classic_gaugehistogram_to_nhcb",
+			input: `# TYPE queue_size gaugehistogram
+queue_size {gcount:4,gsum:100.0,bucket:[10:1,50:3,+Inf:4]}
+# EOF
+`,
+			opts: ParserOptions{ConvertClassicHistogramsToNHCB: true},
+			exp: []parsedEntry{
+				{m: "queue_size", typ: model.MetricTypeGaugeHistogram},
+				{
+					m:    "queue_size",
+					lset: labels.FromStrings("__name__", "queue_size"),
+					shs: &histogram.Histogram{
+						CounterResetHint: histogram.GaugeType,
+						Schema:           histogram.CustomBucketsSchema,
+						Count:            4,
+						Sum:              100.0,
+						PositiveSpans:    []histogram.Span{{Offset: 0, Length: 3}},
+						PositiveBuckets:  []int64{1, 1, -1},
+						CustomValues:     []float64{10, 50},
+					},
+				},
+			},
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			p := NewOpenMetrics2Parser([]byte(tc.input), labels.NewSymbolTable(), tc.opts)
+			got := testParse(t, p)
+			requireEntries(t, tc.exp, got)
+		})
+	}
+}
+
 func TestOpenMetrics2ParseNativeHistogram(t *testing.T) {
 	input := `# HELP test_histogram Native histogram.
 # TYPE test_histogram histogram
-test_histogram {count:6,sum:12.1,schema:0,zero_threshold:0.001,zero_count:2,positive_spans:[0:3],positive_buckets:[1,2,1],negative_spans:[],negative_buckets:[]}
+test_histogram {count:6,sum:12.1,schema:0,zero_threshold:0.001,zero_count:2,negative_spans:[],negative_buckets:[],positive_spans:[0:3],positive_buckets:[1,2,1]}
 # EOF
 `
 	exp := []parsedEntry{
@@ -812,6 +1015,52 @@ foo_total 1.0 # {id="x"} 1.0
 			input: "# TYPE foo_total counter\nfoo_total NaN\n# EOF\n",
 			err:   "counter sample value must not be NaN",
 		},
+		{
+			// A NaN sum relaxes the Validate check to "count is at least the
+			// bucket total", so the wrapped count was accepted as 18446744073709551615.
+			input: "# TYPE foo histogram\nfoo {count:-1,sum:NaN,schema:0,zero_threshold:0,zero_count:0,positive_spans:[0:2],positive_buckets:[2,1]}\n# EOF\n",
+			err:   "count must not be negative",
+		},
+		{
+			// A gauge histogram takes the same integer path, and no histogram type
+			// can hold a negative count, so gcount is checked too.
+			input: "# TYPE foo gaugehistogram\nfoo {gcount:-1,gsum:NaN,schema:0,zero_threshold:0,zero_count:0,positive_spans:[0:2],positive_buckets:[2,1]}\n# EOF\n",
+			err:   "gcount must not be negative",
+		},
+		{
+			input: "# TYPE foo histogram\nfoo {count:1,sum:1.0,schema:0,zero_threshold:0,zero_count:-1}\n# EOF\n",
+			err:   "zero_count must not be negative",
+		},
+		{
+			// Histogram bucket values are counters, so they must not be negative.
+			input: "# TYPE foo histogram\nfoo {count:3,sum:6.0,bucket:[1.0:-1,+Inf:3]}\n# EOF\n",
+			err:   "value must not be negative",
+		},
+		{
+			input: "# TYPE foo histogram\nfoo {count:3,sum:6.0,bucket:[abc:1,+Inf:3]}\n# EOF\n",
+			err:   "invalid bucket threshold",
+		},
+		{
+			input: "# TYPE foo histogram\nfoo {count:3,sum:6.0,bucket:[NaN:1,+Inf:3]}\n# EOF\n",
+			err:   "bucket threshold must not be NaN",
+		},
+		{
+			// -Inf is only permitted as the first threshold.
+			input: "# TYPE foo histogram\nfoo {count:3,sum:6.0,bucket:[1.0:1,-Inf:2,+Inf:3]}\n# EOF\n",
+			err:   "classic histogram buckets must be sorted in increasing order",
+		},
+		{
+			input: "# TYPE foo summary\nfoo {count:1,sum:2.0,quantile:[abc:1.0]}\n# EOF\n",
+			err:   "invalid quantile",
+		},
+		{
+			input: "# TYPE foo summary\nfoo {count:1,sum:2.0,quantile:[1.5:1.0]}\n# EOF\n",
+			err:   "quantile must be between 0.0 and 1.0",
+		},
+		{
+			input: "# TYPE foo summary\nfoo {count:1,sum:2.0,quantile:[NaN:1.0]}\n# EOF\n",
+			err:   "quantile must not be NaN",
+		},
 	} {
 		t.Run(tc.err, func(t *testing.T) {
 			p := NewOpenMetrics2Parser([]byte(tc.input), labels.NewSymbolTable(), ParserOptions{})
@@ -911,27 +1160,27 @@ req_duration{job="api",env="prod"} {count:3,sum:6.0,bucket:[0.1:1,1.0:2,+Inf:3]}
 	exp := []parsedEntry{
 		{m: "req_duration", typ: model.MetricTypeHistogram},
 		{
-			m:    "req_duration_count\xffenv\xffprod\xffjob\xffapi",
+			m:    "req_duration_count\xffjob\xffapi\xffenv\xffprod",
 			v:    3,
 			lset: labels.FromStrings("__name__", "req_duration_count", "env", "prod", "job", "api"),
 		},
 		{
-			m:    "req_duration_sum\xffenv\xffprod\xffjob\xffapi",
+			m:    "req_duration_sum\xffjob\xffapi\xffenv\xffprod",
 			v:    6.0,
 			lset: labels.FromStrings("__name__", "req_duration_sum", "env", "prod", "job", "api"),
 		},
 		{
-			m:    "req_duration_bucket\xffenv\xffprod\xffjob\xffapi\xffle\xff0.1",
+			m:    "req_duration_bucket\xffjob\xffapi\xffenv\xffprod\xffle\xff0.1",
 			v:    1,
 			lset: labels.FromStrings("__name__", "req_duration_bucket", "env", "prod", "job", "api", "le", "0.1"),
 		},
 		{
-			m:    "req_duration_bucket\xffenv\xffprod\xffjob\xffapi\xffle\xff1.0",
+			m:    "req_duration_bucket\xffjob\xffapi\xffenv\xffprod\xffle\xff1.0",
 			v:    2,
 			lset: labels.FromStrings("__name__", "req_duration_bucket", "env", "prod", "job", "api", "le", "1.0"),
 		},
 		{
-			m:    "req_duration_bucket\xffenv\xffprod\xffjob\xffapi\xffle\xff+Inf",
+			m:    "req_duration_bucket\xffjob\xffapi\xffenv\xffprod\xffle\xff+Inf",
 			v:    3,
 			lset: labels.FromStrings("__name__", "req_duration_bucket", "env", "prod", "job", "api", "le", "+Inf"),
 		},
@@ -942,36 +1191,102 @@ req_duration{job="api",env="prod"} {count:3,sum:6.0,bucket:[0.1:1,1.0:2,+Inf:3]}
 	requireEntries(t, exp, got)
 }
 
-// TestOpenMetrics2ParseCompositeExtraLabelsQuoted verifies that a quoted
-// extra label (OM2 UTF-8 label names) on a composite line is extracted
-// correctly — same as it already is on a plain (non-composite) sample line.
+// TestOpenMetrics2ParseCompositeExtraLabelsQuoted verifies that quoted metric
+// and label names as well as escaped label values on a composite line are
+// extracted and unescaped with the expected Series() bytes and Labels().
 func TestOpenMetrics2ParseCompositeExtraLabelsQuoted(t *testing.T) {
-	input := `# TYPE foo summary
+	for _, tc := range []struct {
+		name  string
+		input string
+		exp   []parsedEntry
+	}{
+		{
+			name: "utf8 label name",
+			input: `# TYPE foo summary
 foo{"user.id"="x"} {count:1,sum:2.0,quantile:[0.5:1.0]}
 # EOF
-`
-	exp := []parsedEntry{
-		{m: "foo", typ: model.MetricTypeSummary},
-		{
-			m:    "foo_count\xffuser.id\xffx",
-			v:    1,
-			lset: labels.FromStrings("__name__", "foo_count", "user.id", "x"),
+`,
+			exp: []parsedEntry{
+				{m: "foo", typ: model.MetricTypeSummary},
+				{
+					m:    "foo_count\xffuser.id\xffx",
+					v:    1,
+					lset: labels.FromStrings("__name__", "foo_count", "user.id", "x"),
+				},
+				{
+					m:    "foo_sum\xffuser.id\xffx",
+					v:    2.0,
+					lset: labels.FromStrings("__name__", "foo_sum", "user.id", "x"),
+				},
+				{
+					m:    "foo\xffuser.id\xffx\xffquantile\xff0.5",
+					v:    1.0,
+					lset: labels.FromStrings("__name__", "foo", "quantile", "0.5", "user.id", "x"),
+				},
+			},
 		},
 		{
-			m:    "foo_sum\xffuser.id\xffx",
-			v:    2.0,
-			lset: labels.FromStrings("__name__", "foo_sum", "user.id", "x"),
+			name: "escaped values and quoted names on histogram",
+			input: `# TYPE "my\"metric" histogram
+{"my\"metric","a\"k"="x\"y\n",b="\\",c=""} {count:2,sum:3.0,bucket:[1.0:1,+Inf:2]}
+# EOF
+`,
+			exp: []parsedEntry{
+				{m: `my\"metric`, typ: model.MetricTypeHistogram},
+				{
+					m:    "my\\\"metric_count\xffa\\\"k\xffx\\\"y\\n\xffb\xff\\\\\xffc\xff",
+					v:    2,
+					lset: labels.FromStrings("__name__", `my"metric_count`, `a"k`, "x\"y\n", "b", `\`, "c", ""),
+				},
+				{
+					m:    "my\\\"metric_sum\xffa\\\"k\xffx\\\"y\\n\xffb\xff\\\\\xffc\xff",
+					v:    3.0,
+					lset: labels.FromStrings("__name__", `my"metric_sum`, `a"k`, "x\"y\n", "b", `\`, "c", ""),
+				},
+				{
+					m:    "my\\\"metric_bucket\xffa\\\"k\xffx\\\"y\\n\xffb\xff\\\\\xffc\xff\xffle\xff1.0",
+					v:    1,
+					lset: labels.FromStrings("__name__", `my"metric_bucket`, `a"k`, "x\"y\n", "b", `\`, "c", "", "le", "1.0"),
+				},
+				{
+					m:    "my\\\"metric_bucket\xffa\\\"k\xffx\\\"y\\n\xffb\xff\\\\\xffc\xff\xffle\xff+Inf",
+					v:    2,
+					lset: labels.FromStrings("__name__", `my"metric_bucket`, `a"k`, "x\"y\n", "b", `\`, "c", "", "le", "+Inf"),
+				},
+			},
 		},
 		{
-			m:    "foo\xffquantile\xff0.5\xffuser.id\xffx",
-			v:    1.0,
-			lset: labels.FromStrings("__name__", "foo", "quantile", "0.5", "user.id", "x"),
+			name: "escaped values and quoted names on summary",
+			input: `# TYPE "my\"metric" summary
+{"my\"metric","a\"k"="x\"y\n",b="\\",c=""} {count:2,sum:3.0,quantile:[0.5:1.5]}
+# EOF
+`,
+			exp: []parsedEntry{
+				{m: `my\"metric`, typ: model.MetricTypeSummary},
+				{
+					m:    "my\\\"metric_count\xffa\\\"k\xffx\\\"y\\n\xffb\xff\\\\\xffc\xff",
+					v:    2,
+					lset: labels.FromStrings("__name__", `my"metric_count`, `a"k`, "x\"y\n", "b", `\`, "c", ""),
+				},
+				{
+					m:    "my\\\"metric_sum\xffa\\\"k\xffx\\\"y\\n\xffb\xff\\\\\xffc\xff",
+					v:    3.0,
+					lset: labels.FromStrings("__name__", `my"metric_sum`, `a"k`, "x\"y\n", "b", `\`, "c", ""),
+				},
+				{
+					m:    "my\\\"metric\xffa\\\"k\xffx\\\"y\\n\xffb\xff\\\\\xffc\xff\xffquantile\xff0.5",
+					v:    1.5,
+					lset: labels.FromStrings("__name__", `my"metric`, `a"k`, "x\"y\n", "b", `\`, "c", "", "quantile", "0.5"),
+				},
+			},
 		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			p := NewOpenMetrics2Parser([]byte(tc.input), labels.NewSymbolTable(), ParserOptions{})
+			got := testParse(t, p)
+			requireEntries(t, tc.exp, got)
+		})
 	}
-
-	p := NewOpenMetrics2Parser([]byte(input), labels.NewSymbolTable(), ParserOptions{})
-	got := testParse(t, p)
-	requireEntries(t, exp, got)
 }
 
 // TestOpenMetrics2ParseCompositeExtraLabelsQuotedWithEquals verifies that a
@@ -1092,7 +1407,7 @@ req_duration {count:2,sum:4.0,bucket:[+Inf:2]} 1234567.0 st@1000.0
 
 func TestOpenMetrics2ParseFloatHistogram(t *testing.T) {
 	input := `# TYPE test_histogram histogram
-test_histogram {count:5.5,sum:12.1,schema:0,zero_threshold:0.001,zero_count:2.5,positive_spans:[0:2],positive_buckets:[2.0,1.0],negative_spans:[],negative_buckets:[]}
+test_histogram {count:5.5,sum:12.1,schema:0,zero_threshold:0.001,zero_count:2.5,negative_spans:[],negative_buckets:[],positive_spans:[0:2],positive_buckets:[2.0,1.0]}
 # EOF
 `
 	exp := []parsedEntry{
@@ -1184,6 +1499,33 @@ func TestOpenMetrics2ParseNativeHistogramIntVsFloatDiscriminator(t *testing.T) {
 			},
 		},
 		{
+			name:  "count with no uint64 representation -> FloatHistogram",
+			input: `h {count:1e20,sum:12.1,schema:0,zero_threshold:0.001,zero_count:2,positive_spans:[0:2],positive_buckets:[2,1]}`,
+			fhs: &histogram.FloatHistogram{
+				Schema: 0, ZeroThreshold: 0.001, ZeroCount: 2, Count: 1e20, Sum: 12.1,
+				PositiveSpans:   []histogram.Span{{Offset: 0, Length: 2}},
+				PositiveBuckets: []float64{2, 1},
+			},
+		},
+		{
+			name:  "infinite count -> FloatHistogram",
+			input: `h {count:+Inf,sum:12.1,schema:0,zero_threshold:0.001,zero_count:2,positive_spans:[0:2],positive_buckets:[2,1]}`,
+			fhs: &histogram.FloatHistogram{
+				Schema: 0, ZeroThreshold: 0.001, ZeroCount: 2, Count: math.Inf(1), Sum: 12.1,
+				PositiveSpans:   []histogram.Span{{Offset: 0, Length: 2}},
+				PositiveBuckets: []float64{2, 1},
+			},
+		},
+		{
+			name:  "zero_count with no uint64 representation -> FloatHistogram",
+			input: `h {count:5,sum:12.1,schema:0,zero_threshold:0.001,zero_count:1e20,positive_spans:[0:2],positive_buckets:[2,1]}`,
+			fhs: &histogram.FloatHistogram{
+				Schema: 0, ZeroThreshold: 0.001, ZeroCount: 1e20, Count: 5, Sum: 12.1,
+				PositiveSpans:   []histogram.Span{{Offset: 0, Length: 2}},
+				PositiveBuckets: []float64{2, 1},
+			},
+		},
+		{
 			name:  "fractional sum only -> Histogram (sum does not discriminate)",
 			input: `h {count:5,sum:12.5,schema:0,zero_threshold:0.001,zero_count:2,positive_spans:[0:2],positive_buckets:[2,1]}`,
 			shs: &histogram.Histogram{
@@ -1213,7 +1555,7 @@ func TestOpenMetrics2ParseNativeHistogramIntVsFloatDiscriminator(t *testing.T) {
 
 func TestOpenMetrics2ParseCompositeGaugeHistogram(t *testing.T) {
 	input := `# TYPE req_size gaugehistogram
-req_size {gcount:6,gsum:100.0,schema:0,zero_threshold:0.001,zero_count:1,positive_spans:[0:2],positive_buckets:[3,2],negative_spans:[],negative_buckets:[]}
+req_size {gcount:6,gsum:100.0,schema:0,zero_threshold:0.001,zero_count:1,negative_spans:[],negative_buckets:[],positive_spans:[0:2],positive_buckets:[3,2]}
 # EOF
 `
 	exp := []parsedEntry{
@@ -1246,6 +1588,8 @@ process_open_fds 8.0
 # TYPE rpc_duration_seconds summary
 # UNIT rpc_duration_seconds seconds
 rpc_duration_seconds {count:10,sum:5.0,quantile:[0.5:1.0]}
+# TYPE rpc_duration_seconds_count gauge
+rpc_duration_seconds_count 99.0
 # EOF
 `
 	exp := []parsedEntry{
@@ -1273,11 +1617,20 @@ rpc_duration_seconds {count:10,sum:5.0,quantile:[0.5:1.0]}
 			v:    1.0,
 			lset: labels.FromStrings("__name__", "rpc_duration_seconds", "__type__", "summary", "__unit__", "seconds", "quantile", "0.5"),
 		},
+		{m: "rpc_duration_seconds_count", typ: model.MetricTypeGauge},
+		{
+			m:    "rpc_duration_seconds_count",
+			v:    99.0,
+			lset: labels.FromStrings("__name__", "rpc_duration_seconds_count", "__type__", "gauge"),
+		},
 	}
 
 	p := NewOpenMetrics2Parser([]byte(input), labels.NewSymbolTable(), ParserOptions{EnableTypeAndUnitLabels: true})
 	got := testParse(t, p)
 	requireEntries(t, exp, got)
+	// Summary _count and flat gauge with the same metric name must have distinct
+	// Series() cache keys so the scrape cache does not conflate them.
+	require.NotEqual(t, got[5].m, got[9].m)
 }
 
 func TestOpenMetrics2ParseTypeAndUnitLabelsScalarTypes(t *testing.T) {
@@ -1329,6 +1682,7 @@ func TestOpenMetrics2ParseTypeAndUnitLabelsClassicHistogram(t *testing.T) {
 	input := `# TYPE http_request_duration_seconds histogram
 # UNIT http_request_duration_seconds seconds
 http_request_duration_seconds {count:3,sum:6.0,bucket:[0.1:1,0.5:2,+Inf:3]}
+http_request_duration_seconds{__type__="counter",__unit__="bytes",x="y"} {count:1,sum:2.0,bucket:[+Inf:1]}
 # EOF
 `
 	exp := []parsedEntry{
@@ -1359,11 +1713,36 @@ http_request_duration_seconds {count:3,sum:6.0,bucket:[0.1:1,0.5:2,+Inf:3]}
 			v:    3,
 			lset: labels.FromStrings("__name__", "http_request_duration_seconds_bucket", "__type__", "histogram", "__unit__", "seconds", "le", "+Inf"),
 		},
+		{
+			m:    "http_request_duration_seconds_count\xff__type__\xffhistogram\xff__unit__\xffseconds\xff__type__\xffcounter\xff__unit__\xffbytes\xffx\xffy",
+			v:    1,
+			lset: labels.FromStrings("__name__", "http_request_duration_seconds_count", "__type__", "histogram", "__unit__", "seconds", "x", "y"),
+		},
+		{
+			m:    "http_request_duration_seconds_sum\xff__type__\xffhistogram\xff__unit__\xffseconds\xff__type__\xffcounter\xff__unit__\xffbytes\xffx\xffy",
+			v:    2.0,
+			lset: labels.FromStrings("__name__", "http_request_duration_seconds_sum", "__type__", "histogram", "__unit__", "seconds", "x", "y"),
+		},
+		{
+			m:    "http_request_duration_seconds_bucket\xff__type__\xffhistogram\xff__unit__\xffseconds\xff__type__\xffcounter\xff__unit__\xffbytes\xffx\xffy\xffle\xff+Inf",
+			v:    1,
+			lset: labels.FromStrings("__name__", "http_request_duration_seconds_bucket", "__type__", "histogram", "__unit__", "seconds", "le", "+Inf", "x", "y"),
+		},
 	}
 
 	p := NewOpenMetrics2Parser([]byte(input), labels.NewSymbolTable(), ParserOptions{EnableTypeAndUnitLabels: true})
 	got := testParse(t, p)
 	requireEntries(t, exp, got)
+
+	// Changing TYPE or UNIT on a subsequent scrape must produce distinct Series()
+	// bytes for shared series like _bucket so the scrape cache refreshes Labels().
+	inputGaugeHist := `# TYPE http_request_duration_seconds gaugehistogram
+http_request_duration_seconds {gcount:3,gsum:6.0,bucket:[0.1:1,0.5:2,+Inf:3]}
+# EOF
+`
+	p2 := NewOpenMetrics2Parser([]byte(inputGaugeHist), labels.NewSymbolTable(), ParserOptions{EnableTypeAndUnitLabels: true})
+	got2 := testParse(t, p2)
+	require.NotEqual(t, got[4].m, got2[3].m)
 }
 
 func TestOpenMetrics2ParseTypeAndUnitLabelsGaugeHistogram(t *testing.T) {
@@ -1430,36 +1809,96 @@ req_duration {count:144,sum:53.4,bucket:[+Inf:144,0.1:24,0.2:33,0.4:100,1.0:144]
 
 func TestOpenMetrics2ParseExemplarOnCompositeLine(t *testing.T) {
 	input := `# TYPE req_duration histogram
-req_duration {count:2,sum:4.0,bucket:[1.0:1,+Inf:2]} # {id="req-1"} 3.8 9999999.0
+req_duration {count:5,sum:10.0,bucket:[-Inf:1,1.0:3,2.5:4,+Inf:5]} # {id="inf-ex"} 3.8 9999999.0 # {id="neginf-ex"} -Inf 9999995.0 # {id="b1-ex1"} 1.0 9999996.0 # {id="b1-ex2"} 0.5 9999997.0 # {id="nan-ex"} NaN 9999998.0
+# TYPE queue_size gaugehistogram
+queue_size {gcount:2,gsum:3.0,bucket:[1.0:1,+Inf:2]} # {id="g-ex"} 0.9 9999999.0
+# TYPE native_ignored histogram
+native_ignored {count:2,sum:4.0,schema:0,zero_threshold:0.001,zero_count:0,positive_spans:[0:1],positive_buckets:[2]} # {id="ni-ex"} 1.5 9999999.0
 # EOF
 `
 	exp := []parsedEntry{
 		{m: "req_duration", typ: model.MetricTypeHistogram},
-		// Exemplar is accessible only on the first pending entry served.
 		{
 			m:    "req_duration_count",
-			v:    2,
+			v:    5,
 			lset: labels.FromStrings("__name__", "req_duration_count"),
-			es:   []exemplar.Exemplar{{Labels: labels.FromStrings("id", "req-1"), Value: 3.8, HasTs: true, Ts: 9999999000}},
 		},
 		{
 			m:    "req_duration_sum",
-			v:    4.0,
+			v:    10.0,
 			lset: labels.FromStrings("__name__", "req_duration_sum"),
 		},
 		{
-			m:    "req_duration_bucket\xffle\xff1.0",
+			m:    "req_duration_bucket\xffle\xff-Inf",
 			v:    1,
+			lset: labels.FromStrings("__name__", "req_duration_bucket", "le", "-Inf"),
+			es:   []exemplar.Exemplar{{Labels: labels.FromStrings("id", "neginf-ex"), Value: math.Inf(-1), HasTs: true, Ts: 9999995000}},
+		},
+		{
+			m:    "req_duration_bucket\xffle\xff1.0",
+			v:    3,
 			lset: labels.FromStrings("__name__", "req_duration_bucket", "le", "1.0"),
+			es: []exemplar.Exemplar{
+				{Labels: labels.FromStrings("id", "b1-ex1"), Value: 1.0, HasTs: true, Ts: 9999996000},
+				{Labels: labels.FromStrings("id", "b1-ex2"), Value: 0.5, HasTs: true, Ts: 9999997000},
+			},
+		},
+		{
+			m:    "req_duration_bucket\xffle\xff2.5",
+			v:    4,
+			lset: labels.FromStrings("__name__", "req_duration_bucket", "le", "2.5"),
 		},
 		{
 			m:    "req_duration_bucket\xffle\xff+Inf",
-			v:    2,
+			v:    5,
 			lset: labels.FromStrings("__name__", "req_duration_bucket", "le", "+Inf"),
+			es: []exemplar.Exemplar{
+				{Labels: labels.FromStrings("id", "inf-ex"), Value: 3.8, HasTs: true, Ts: 9999999000},
+				{Labels: labels.FromStrings("id", "nan-ex"), Value: math.Float64frombits(value.NormalNaN), HasTs: true, Ts: 9999998000},
+			},
+		},
+		{m: "queue_size", typ: model.MetricTypeGaugeHistogram},
+		{
+			m:    "queue_size_gcount",
+			v:    2,
+			lset: labels.FromStrings("__name__", "queue_size_gcount"),
+		},
+		{
+			m:    "queue_size_gsum",
+			v:    3.0,
+			lset: labels.FromStrings("__name__", "queue_size_gsum"),
+		},
+		{
+			m:    "queue_size_bucket\xffle\xff1.0",
+			v:    1,
+			lset: labels.FromStrings("__name__", "queue_size_bucket", "le", "1.0"),
+			es:   []exemplar.Exemplar{{Labels: labels.FromStrings("id", "g-ex"), Value: 0.9, HasTs: true, Ts: 9999999000}},
+		},
+		{
+			m:    "queue_size_bucket\xffle\xff+Inf",
+			v:    2,
+			lset: labels.FromStrings("__name__", "queue_size_bucket", "le", "+Inf"),
+		},
+		{m: "native_ignored", typ: model.MetricTypeHistogram},
+		{
+			m:    "native_ignored_count",
+			v:    2,
+			lset: labels.FromStrings("__name__", "native_ignored_count"),
+		},
+		{
+			m:    "native_ignored_sum",
+			v:    4.0,
+			lset: labels.FromStrings("__name__", "native_ignored_sum"),
+		},
+		{
+			m:    "native_ignored_bucket\xffle\xff+Inf",
+			v:    2,
+			lset: labels.FromStrings("__name__", "native_ignored_bucket", "le", "+Inf"),
+			es:   []exemplar.Exemplar{{Labels: labels.FromStrings("id", "ni-ex"), Value: 1.5, HasTs: true, Ts: 9999999000}},
 		},
 	}
 
-	p := NewOpenMetrics2Parser([]byte(input), labels.NewSymbolTable(), ParserOptions{})
+	p := NewOpenMetrics2Parser([]byte(input), labels.NewSymbolTable(), ParserOptions{IgnoreNativeHistograms: true})
 	got := testParse(t, p)
 	requireEntries(t, exp, got)
 }
@@ -1584,4 +2023,274 @@ foo_total 1.0
 			requireEntries(t, tc.exp, got)
 		})
 	}
+}
+
+func TestOpenMetrics2ParseExemplarEscapedLabelNamesAndNullBytes(t *testing.T) {
+	input := "foo_total 1.0 1700000000.0 # {\"trace\\\\id\\n\\\"1\\\"\"=\"a\x00b\\nc\"} 1.0 1700000000.5\n# EOF\n"
+	p := NewOpenMetrics2Parser([]byte(input), labels.NewSymbolTable(), ParserOptions{})
+	got := testParse(t, p)
+	exp := []parsedEntry{
+		{
+			m:    "foo_total",
+			v:    1.0,
+			t:    int64p(1700000000000),
+			lset: labels.FromStrings("__name__", "foo_total"),
+			es: []exemplar.Exemplar{
+				{
+					Labels: labels.FromStrings("trace\\id\n\"1\"", "a\x00b\nc"),
+					Value:  1.0,
+					HasTs:  true,
+					Ts:     1700000000500,
+				},
+			},
+		},
+	}
+	requireEntries(t, exp, got)
+}
+
+func TestOpenMetrics2ParseIgnoreNativeHistograms(t *testing.T) {
+	t.Run("native-only histogram emits count sum and +Inf bucket", func(t *testing.T) {
+		input := `# TYPE req_seconds histogram
+req_seconds{service="api"} {count:12,sum:5.5,schema:0,zero_threshold:0.001,zero_count:2,positive_spans:[0:2],positive_buckets:[3,7]} 1700000000.0
+# EOF
+`
+		p := NewOpenMetrics2Parser([]byte(input), labels.NewSymbolTable(), ParserOptions{
+			IgnoreNativeHistograms: true,
+		})
+		got := testParse(t, p)
+		exp := []parsedEntry{
+			{m: "req_seconds", typ: model.MetricTypeHistogram},
+			{
+				m:    "req_seconds_count\xffservice\xffapi",
+				v:    12,
+				t:    int64p(1700000000000),
+				lset: labels.FromStrings("__name__", "req_seconds_count", "service", "api"),
+			},
+			{
+				m:    "req_seconds_sum\xffservice\xffapi",
+				v:    5.5,
+				t:    int64p(1700000000000),
+				lset: labels.FromStrings("__name__", "req_seconds_sum", "service", "api"),
+			},
+			{
+				m:    "req_seconds_bucket\xffservice\xffapi\xffle\xff+Inf",
+				v:    12,
+				t:    int64p(1700000000000),
+				lset: labels.FromStrings("__name__", "req_seconds_bucket", "le", "+Inf", "service", "api"),
+			},
+		}
+		requireEntries(t, exp, got)
+	})
+
+	t.Run("dual classic and native histogram emits classic series only", func(t *testing.T) {
+		input := `# TYPE req_seconds histogram
+req_seconds {count:12,sum:5.5,schema:0,zero_threshold:0.001,zero_count:2,positive_spans:[0:2],positive_buckets:[3,7],bucket:[1.0:3,2.0:7,+Inf:12]}
+# EOF
+`
+		p := NewOpenMetrics2Parser([]byte(input), labels.NewSymbolTable(), ParserOptions{
+			IgnoreNativeHistograms: true,
+		})
+		got := testParse(t, p)
+		exp := []parsedEntry{
+			{m: "req_seconds", typ: model.MetricTypeHistogram},
+			{
+				m:    "req_seconds_count",
+				v:    12,
+				lset: labels.FromStrings("__name__", "req_seconds_count"),
+			},
+			{
+				m:    "req_seconds_sum",
+				v:    5.5,
+				lset: labels.FromStrings("__name__", "req_seconds_sum"),
+			},
+			{
+				m:    "req_seconds_bucket\xffle\xff1.0",
+				v:    3,
+				lset: labels.FromStrings("__name__", "req_seconds_bucket", "le", "1.0"),
+			},
+			{
+				m:    "req_seconds_bucket\xffle\xff2.0",
+				v:    7,
+				lset: labels.FromStrings("__name__", "req_seconds_bucket", "le", "2.0"),
+			},
+			{
+				m:    "req_seconds_bucket\xffle\xff+Inf",
+				v:    12,
+				lset: labels.FromStrings("__name__", "req_seconds_bucket", "le", "+Inf"),
+			},
+		}
+		requireEntries(t, exp, got)
+	})
+
+	t.Run("native-only histogram with NHCB conversion emits single +Inf custom bucket", func(t *testing.T) {
+		input := `# TYPE req_seconds histogram
+req_seconds{service="api"} {count:12,sum:5.5,schema:0,zero_threshold:0.001,zero_count:2,positive_spans:[0:2],positive_buckets:[3,7]} 1700000000.0
+# EOF
+`
+		p := NewOpenMetrics2Parser([]byte(input), labels.NewSymbolTable(), ParserOptions{
+			IgnoreNativeHistograms:         true,
+			ConvertClassicHistogramsToNHCB: true,
+		})
+		got := testParse(t, p)
+		exp := []parsedEntry{
+			{m: "req_seconds", typ: model.MetricTypeHistogram},
+			{
+				m:    `req_seconds{service="api"}`,
+				t:    int64p(1700000000000),
+				lset: labels.FromStrings("__name__", "req_seconds", "service", "api"),
+				shs: &histogram.Histogram{
+					Schema:          histogram.CustomBucketsSchema,
+					Count:           12,
+					Sum:             5.5,
+					PositiveSpans:   []histogram.Span{{Offset: 0, Length: 1}},
+					PositiveBuckets: []int64{12},
+				},
+			},
+		}
+		requireEntries(t, exp, got)
+	})
+
+	t.Run("dual classic and native histogram with native ignored and with NHCB conversion emits NHCB", func(t *testing.T) {
+		input := `# TYPE req_seconds histogram
+req_seconds {count:12,sum:5.5,schema:0,zero_threshold:0.001,zero_count:2,positive_spans:[0:2],positive_buckets:[3,7],bucket:[1.0:3,2.0:7,+Inf:12]}
+# EOF
+`
+		p := NewOpenMetrics2Parser([]byte(input), labels.NewSymbolTable(), ParserOptions{
+			IgnoreNativeHistograms:         true,
+			ConvertClassicHistogramsToNHCB: true,
+		})
+		got := testParse(t, p)
+		exp := []parsedEntry{
+			{m: "req_seconds", typ: model.MetricTypeHistogram},
+			{
+				m:    "req_seconds",
+				lset: labels.FromStrings("__name__", "req_seconds"),
+				shs: &histogram.Histogram{
+					Schema:          histogram.CustomBucketsSchema,
+					Count:           12,
+					Sum:             5.5,
+					PositiveSpans:   []histogram.Span{{Offset: 0, Length: 3}},
+					PositiveBuckets: []int64{3, 1, 1},
+					CustomValues:    []float64{1.0, 2.0},
+				},
+			},
+		}
+		requireEntries(t, exp, got)
+	})
+}
+
+func TestOpenMetrics2ParseSpecValidationErrors(t *testing.T) {
+	for _, tc := range []struct {
+		name    string
+		input   string
+		wantErr string
+	}{
+		{
+			name:    "empty quoted label name in sample",
+			input:   "foo{\"\"=\"val\"} 1.0\n# EOF\n",
+			wantErr: "label name must not be empty",
+		},
+		{
+			name:    "empty quoted label name in exemplar",
+			input:   "foo 1.0 # {\"\"=\"val\"} 1.0 1700000000.0\n# EOF\n",
+			wantErr: "label name must not be empty",
+		},
+		{
+			name:    "info metric with non-empty unit (TYPE before UNIT)",
+			input:   "# TYPE build_info info\n# UNIT build_info seconds\nbuild_info{v=\"1\"} 1\n# EOF\n",
+			wantErr: "info metric \"build_info\" must have an empty unit",
+		},
+		{
+			name:    "info metric with non-empty unit (UNIT before TYPE)",
+			input:   "# UNIT build_info seconds\n# TYPE build_info info\nbuild_info{v=\"1\"} 1\n# EOF\n",
+			wantErr: "info metric \"build_info\" must have an empty unit",
+		},
+		{
+			name:    "stateset metric with non-empty unit (TYPE before UNIT)",
+			input:   "# TYPE flags stateset\n# UNIT flags seconds\nflags{flags=\"a\"} 1\n# EOF\n",
+			wantErr: "stateset metric \"flags\" must have an empty unit",
+		},
+		{
+			name:    "stateset metric with non-empty unit (UNIT before TYPE)",
+			input:   "# UNIT flags seconds\n# TYPE flags stateset\nflags{flags=\"a\"} 1\n# EOF\n",
+			wantErr: "stateset metric \"flags\" must have an empty unit",
+		},
+		{
+			name:    "info metric family name missing _info suffix",
+			input:   "# TYPE build info\nbuild{v=\"1\"} 1\n# EOF\n",
+			wantErr: "info metric family name \"build\" must end with _info",
+		},
+		{
+			name:    "info metric sample value not 1 (zero)",
+			input:   "# TYPE build_info info\nbuild_info{v=\"1\"} 0\n# EOF\n",
+			wantErr: "info sample value must be 1",
+		},
+		{
+			name:    "info metric sample value not 1 (two)",
+			input:   "# TYPE build_info info\nbuild_info{v=\"1\"} 2.0\n# EOF\n",
+			wantErr: "info sample value must be 1",
+		},
+		{
+			name:    "carriage return in HELP line",
+			input:   "# HELP foo help text\r\nfoo 1.0\n# EOF\n",
+			wantErr: "unexpected carriage return",
+		},
+		{
+			name:    "carriage return in TYPE line",
+			input:   "# TYPE foo gauge\r\nfoo 1.0\n# EOF\n",
+			wantErr: "unexpected carriage return",
+		},
+		{
+			name:    "carriage return in UNIT line",
+			input:   "# UNIT foo seconds\r\nfoo 1.0\n# EOF\n",
+			wantErr: "unexpected carriage return",
+		},
+		{
+			name:    "carriage return in scalar sample line",
+			input:   "foo 1.0\r\n# EOF\n",
+			wantErr: "while parsing",
+		},
+		{
+			name:    "carriage return in composite sample line",
+			input:   "# TYPE foo histogram\nfoo {count:1,sum:1,bucket:[+Inf:1]}\r\n# EOF\n",
+			wantErr: "unexpected carriage return",
+		},
+		{
+			name:    "carriage return in EOF line",
+			input:   "foo 1.0\n# EOF\r\n",
+			wantErr: "unexpected data after # EOF",
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			p := NewOpenMetrics2Parser([]byte(tc.input), labels.NewSymbolTable(), ParserOptions{})
+			var err error
+			for {
+				_, err = p.Next()
+				if err != nil {
+					break
+				}
+			}
+			require.Error(t, err)
+			require.NotErrorIs(t, err, io.EOF)
+			require.ErrorContains(t, err, tc.wantErr)
+		})
+	}
+}
+
+func TestOpenMetrics2ParseCarriageReturnInHelp(t *testing.T) {
+	input := "# HELP foo first\rsecond\nfoo 1\n# EOF\n"
+	p := NewOpenMetrics2Parser([]byte(input), labels.NewSymbolTable(), ParserOptions{})
+	got := testParse(t, p)
+	exp := []parsedEntry{
+		{
+			m:    "foo",
+			help: "first\rsecond",
+		},
+		{
+			m:    "foo",
+			v:    1,
+			lset: labels.FromStrings("__name__", "foo"),
+		},
+	}
+	requireEntries(t, exp, got)
 }

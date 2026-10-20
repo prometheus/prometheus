@@ -340,7 +340,7 @@ func (m *Manager) Stop() {
 	defer m.mtxScrape.Unlock()
 
 	// Stop pools in parallel as each stop() blocks until all its scrape
-	// loops have exited, which can take a long time if there'a a lot of
+	// loops have exited, which can take a long time if there's a lot of
 	// pools with high number of targets.
 	// Limit the number of pools stopping at once to avoid unbounded goroutines.
 	g := new(errgroup.Group)

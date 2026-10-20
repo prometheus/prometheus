@@ -104,6 +104,10 @@ URL query parameters:
 - `lookback_delta=<duration | float>`: Override the [lookback period](#staleness) just for this query in `duration` format or float number of seconds. Optional.
 - `stats=<string>`: Include query statistics in the response. Supported values are `true` (basic statistics) and `all` (additionally includes detailed per-step statistics: timings and sample counts). Any other non-empty value currently behaves like `true`, but is deprecated, adds a warning to the response, and will be rejected in the next major release. Optional. See [Query statistics](#query-statistics).
 
+Optional HTTP request headers:
+
+- `X-Prometheus-Use-Start-Timestamps: <bool>`: Override the engine-level start timestamp processing setting (`--promql.use-start-timestamps`) for this query. When set to `true`, functions such as `rate()` will use start timestamps from ingested data. When set to `false`, start timestamp processing is disabled for this query. Optional. If omitted, the engine-level default is used.
+
 The current server time is used if the `time` parameter is omitted.
 
 You can URL-encode these parameters directly in the request body by using the `POST` method and
@@ -177,6 +181,10 @@ URL query parameters:
 - `limit=<number>`: Maximum number of returned series. Optional. 0 means disabled.
 - `lookback_delta=<duration | float>`: Override the [lookback period](#staleness) just for this query in `duration` format or float number of seconds. Optional.
 - `stats=<string>`: Include query statistics in the response. Supported values are `true` (basic statistics) and `all` (additionally includes detailed per-step statistics: timings and sample counts). Any other non-empty value currently behaves like `true`, but is deprecated, adds a warning to the response, and will be rejected in the next major release. Optional. See [Query statistics](#query-statistics).
+
+Optional HTTP request headers:
+
+- `X-Prometheus-Use-Start-Timestamps: <bool>`: Override the engine-level start timestamp processing setting (`--promql.use-start-timestamps`) for this query. When set to `true`, functions such as `rate()` will use start timestamps from ingested data. When set to `false`, start timestamp processing is disabled for this query. Optional. If omitted, the engine-level default is used.
 
 You can URL-encode these parameters directly in the request body by using the `POST` method and
 `Content-Type: application/x-www-form-urlencoded` header. This is useful when specifying a large
@@ -561,6 +569,14 @@ These endpoints return newline-delimited JSON with content type
   optional `warnings`) **or** an **error line** (`status`, `errorType`, `error`)
   if iteration failed mid-stream after the first batch was sent.
 
+Searches return results from supported storage backends. Participating
+remote-read storage that does not support search contributes a warning instead
+of results. Secondary search failures also become warnings, while unsupported
+primary storage makes search unavailable. No-op backends, including remote-read
+storage excluded by the requested time range, do not contribute warnings.
+Warnings can indicate incomplete discovery independently of `has_more`, which
+only describes truncation of the available results by the requested limit.
+
 ```json
 {"results":[{"name":"http_requests_total","type":"counter","help":"Total HTTP requests."}]}
 {"status":"success","has_more":false}
@@ -600,7 +616,7 @@ Common URL query parameters:
 - `limit=<number>`: Maximum number of returned results. Optional. Default is
   100.
 - `batch_size=<number>`: Preferred number of results per NDJSON batch.
-  Optional. Default is 100.
+  Optional. Default is 100. Clamped to 1000 and the effective result limit.
 
 The `start` and `end` parameters narrow results to the selected time window.
 Results may include values from series active slightly outside that window,
@@ -610,6 +626,25 @@ Additional parameters for `/api/v1/search/metric_names`:
 
 - `include_metadata=<bool>`: Include metric metadata in each result.
 - `sort_by=<alpha | score>`
+
+Metadata is matched by the exact metric name first, then by the metric family
+name for suffixes supported by that family's type:
+
+- `_total` for counters.
+- `_bucket`, `_sum`, and `_count` for histograms.
+- `_bucket`, `_sum`, `_count`, `_gsum`, and `_gcount` for gauge histograms.
+- `_sum` and `_count` for summaries.
+- `_info` for info metrics.
+
+A metric family name that already ends with `_total` or `_info` is not matched
+for the same suffix again: e.g. `requests_total_total` does not get the
+metadata of a `requests_total` counter.
+
+The returned `type`, `help`, and `unit` describe the metric family, not the
+individual series: e.g. `http_request_duration_seconds_bucket` is reported with
+type `histogram`. Matching is done by name against metadata from active
+targets, so it is best-effort. Metadata fields are omitted when no matching
+metadata is available.
 
 Additional parameters for `/api/v1/search/label_names`:
 

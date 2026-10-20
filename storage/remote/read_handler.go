@@ -16,11 +16,13 @@ package remote
 import (
 	"context"
 	"errors"
+	"io"
 	"log/slog"
 	"net/http"
 	"slices"
 	"strings"
 	"sync"
+	"time"
 
 	"github.com/prometheus/client_golang/prometheus"
 
@@ -40,11 +42,13 @@ type readHandler struct {
 	remoteReadMaxBytesInFrame int
 	remoteReadGate            *gate.Gate
 	queries                   prometheus.Gauge
+	gateWaitDuration          prometheus.Histogram
 	marshalPool               *sync.Pool
 }
 
 // NewReadHandler creates a http.Handler that accepts remote read requests and
 // writes them to the provided queryable.
+// The handler panics with http.ErrAbortHandler if a streaming response fails after it has started.
 func NewReadHandler(logger *slog.Logger, r prometheus.Registerer, queryable storage.SampleAndChunkQueryable, config func() config.Config, remoteReadSampleLimit, remoteReadConcurrencyLimit, remoteReadMaxBytesInFrame int) http.Handler {
 	h := &readHandler{
 		logger:                    logger,
@@ -61,16 +65,30 @@ func NewReadHandler(logger *slog.Logger, r prometheus.Registerer, queryable stor
 			Name:      "queries",
 			Help:      "The current number of remote read queries that are either in execution or queued on the handler.",
 		}),
+		gateWaitDuration: prometheus.NewHistogram(prometheus.HistogramOpts{
+			Namespace:                       namespace,
+			Subsystem:                       "remote_read_handler",
+			Name:                            "gate_wait_duration_seconds",
+			Help:                            "How long a remote read request spent waiting for the concurrency gate, including requests canceled while waiting.",
+			NativeHistogramBucketFactor:     1.1,
+			NativeHistogramMaxBucketNumber:  100,
+			NativeHistogramMinResetDuration: 1 * time.Hour,
+		}),
 	}
 	if r != nil {
-		r.MustRegister(h.queries)
+		r.MustRegister(h.queries, h.gateWaitDuration)
 	}
 	return h
 }
 
 func (h *readHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
-	if err := h.remoteReadGate.Start(ctx); err != nil {
+	gateStart := time.Now()
+	err := h.remoteReadGate.Start(ctx)
+	// Observe before checking the error so requests that are canceled while waiting on the gate
+	// are recorded too.
+	h.gateWaitDuration.Observe(time.Since(gateStart).Seconds())
+	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
@@ -195,8 +213,8 @@ func (h *readHandler) remoteReadStreamedXORChunks(ctx context.Context, w http.Re
 		return
 	}
 
-	cw := NewChunkedWriter(w, f)
-	defer cw.Close()
+	sw := &streamedReadWriter{Writer: w}
+	cw := NewChunkedWriter(sw, f)
 
 	for i, query := range req.Queries {
 		if err := func() error {
@@ -246,6 +264,13 @@ func (h *readHandler) remoteReadStreamedXORChunks(ctx context.Context, w http.Re
 			}
 			return nil
 		}(); err != nil {
+			if sw.started {
+				if h.logger != nil {
+					h.logger.Error("Error streaming remote read response", "err", err, "query_index", i)
+				}
+				// Returning normally would make the incomplete stream appear successful.
+				panic(http.ErrAbortHandler)
+			}
 			if httpErr, ok := errors.AsType[HTTPError](err); ok {
 				http.Error(w, httpErr.Error(), httpErr.Status())
 				return
@@ -254,6 +279,18 @@ func (h *readHandler) remoteReadStreamedXORChunks(ctx context.Context, w http.Re
 			return
 		}
 	}
+	cw.Close()
+}
+
+type streamedReadWriter struct {
+	io.Writer
+	started bool
+}
+
+func (w *streamedReadWriter) Write(p []byte) (int, error) {
+	// A write can commit headers even when it returns no bytes and an error.
+	w.started = true
+	return w.Writer.Write(p)
 }
 
 // filterExtLabelsFromMatchers change equality matchers which match external labels

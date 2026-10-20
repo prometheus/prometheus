@@ -45,7 +45,7 @@ func (a alertmanagerLabels) url() *url.URL {
 
 // AlertmanagerFromGroup extracts a list of alertmanagers from a target group
 // and an associated AlertmanagerConfig.
-func AlertmanagerFromGroup(tg *targetgroup.Group, cfg *config.AlertmanagerConfig) ([]alertmanager, []alertmanager, error) {
+func AlertmanagerFromGroup(tg *targetgroup.Group, cfg *config.AlertmanagerConfig) ([]alertmanager, []alertmanager, error) { //nolint:revive // unexported-return
 	var res []alertmanager
 	var droppedAlertManagers []alertmanager
 	lb := labels.NewBuilder(labels.EmptyLabels())

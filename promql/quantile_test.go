@@ -16,6 +16,7 @@ package promql
 import (
 	"fmt"
 	"math"
+	"slices"
 	"testing"
 
 	"github.com/stretchr/testify/require"
@@ -25,6 +26,36 @@ import (
 )
 
 func TestBucketQuantile_ForcedMonotonicity(t *testing.T) {
+	t.Run("empty buckets", func(t *testing.T) {
+		for name, buckets := range map[string]Buckets{"nil": nil, "empty": {}} {
+			for _, tc := range []struct {
+				name    string
+				q, want float64
+			}{
+				{"zero", 0, math.NaN()},
+				{"middle", 0.5, math.NaN()},
+				{"one", 1, math.NaN()},
+				{"NaN", math.NaN(), math.NaN()},
+				{"below zero", -1, math.Inf(-1)},
+				{"above one", 2, math.Inf(1)},
+			} {
+				t.Run(name+"/"+tc.name, func(t *testing.T) {
+					got, forced, fixed, minBucket, maxBucket, maxDiff := BucketQuantile(tc.q, buckets)
+					if math.IsNaN(tc.want) {
+						require.True(t, math.IsNaN(got))
+					} else {
+						require.Equal(t, tc.want, got)
+					}
+					require.False(t, forced)
+					require.False(t, fixed)
+					require.Zero(t, minBucket)
+					require.Zero(t, maxBucket)
+					require.Zero(t, maxDiff)
+				})
+			}
+		}
+	})
+
 	eps := 1e-12
 
 	for name, tc := range map[string]struct {
@@ -316,6 +347,49 @@ func TestBucketQuantile_ForcedMonotonicity(t *testing.T) {
 				require.Equal(t, tc.expectedForced, forced)
 				require.Equal(t, tc.expectedFixed, fixed)
 				require.InEpsilon(t, v, quantile, eps)
+			}
+		})
+	}
+}
+
+func TestBucketFraction(t *testing.T) {
+	// Counts are cumulative, with all observations above zero.
+	buckets := Buckets{
+		{UpperBound: 1, Count: 10},
+		{UpperBound: math.Inf(1), Count: 30},
+	}
+
+	for _, tc := range []struct {
+		name         string
+		buckets      Buckets
+		lower, upper float64
+		want         float64
+	}{
+		{"nil/finite bounds", nil, 0, 1, math.NaN()},
+		{"nil/reversed bounds", nil, 1, 0, math.NaN()},
+		{"nil/infinite bounds", nil, math.Inf(-1), math.Inf(1), math.NaN()},
+		{"nil/NaN lower bound", nil, math.NaN(), 1, math.NaN()},
+		{"nil/NaN upper bound", nil, 0, math.NaN(), math.NaN()},
+		{"empty/finite bounds", Buckets{}, 0, 1, math.NaN()},
+		{"empty/reversed bounds", Buckets{}, 1, 0, math.NaN()},
+		{"empty/infinite bounds", Buckets{}, math.Inf(-1), math.Inf(1), math.NaN()},
+		{"empty/NaN lower bound", Buckets{}, math.NaN(), 1, math.NaN()},
+		{"empty/NaN upper bound", Buckets{}, 0, math.NaN(), math.NaN()},
+		{"zero count", Buckets{{UpperBound: math.Inf(1), Count: 0}}, 0, 1, math.NaN()},
+		// Interpolation in the first bucket gives 10 * (0.5 - 0) / (1 - 0) = 5 out of 30 observations.
+		{"interpolated fraction", buckets, 0, 0.5, 5.0 / 30.0},
+		{"full range", buckets, 0, math.Inf(1), 1},
+		{"reversed bounds", buckets, 1, 0, 0},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			got := BucketFraction(tc.lower, tc.upper, slices.Clone(tc.buckets))
+			switch {
+			case math.IsNaN(tc.want):
+				require.True(t, math.IsNaN(got))
+			case tc.want == 0:
+				require.Zero(t, got)
+			default:
+				require.InEpsilon(t, tc.want, got, 1e-12)
 			}
 		})
 	}

@@ -15,7 +15,7 @@ Maintainers for specific parts of the codebase:
   * `promtool`: David Leadbeater (<dgl@dgl.cx> / @dgl)
 * `discovery`
   * `hetzner`: Jonas Lammler (<jonas.lammler@hetzner-cloud.de> / @jooola), Julian Tölle (<julian.toelle@hetzner-cloud.de> / @apricote)
-  * `k8s`: Frederic Branczyk (<fbranczyk@gmail.com> / @brancz), Pranshu Srivastava (<rexagod@gmail.com> / @rexagod)
+  * `k8s`: Frederic Branczyk (<fbranczyk@gmail.com> / @brancz)
   * `stackit`: Jan-Otto Kröpke (<mail@jkroepke.de> / @jkroepke)
   * `consul`: Mohammad Varmazyar (<mrvarmazyar@gmail.com> / @mrvarmazyar)
   * `scaleway`: Rémy Léone (rleone@scaleway.com / @remyleone)
@@ -37,13 +37,3 @@ size of this repository, the natural changes in focus of maintainers over time,
 and nuances of where particular features live, this list will always be
 incomplete and out of date. However the listed maintainer(s) should be able to
 direct a PR/question to the right person.
-
-v3 release coordinators:
-* Alex Greenbank (<alexgreenbank@yahoo.com> / @alexgreenbank)
-* Carrie Edwards (<carrie.edwards@grafana.com> / @carrieedwards)
-* Fiona Liao (<fiona.liao@grafana.com> / @fionaliao)
-* Jan Fajerski (<github@fajerski.name> / @jan--f)
-* Jesús Vázquez (<jesus.vazquez@grafana.com> / @jesusvazquez)
-* Nico Pazos (<nicolas.pazos-mendez@grafana.com> / @npazosmendez)
-* Owen Williams (<owen.williams@grafana.com> / @ywwg)
-* Tom Braack (<me@shorez.de> / @sh0rez)

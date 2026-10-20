@@ -383,9 +383,12 @@ type_and_unit_test2{__type__="counter"} 123`
 				},
 			}
 
-			p := NewPromParser([]byte(input), labels.NewSymbolTable(), typeAndUnitEnabled)
-			got := testParse(t, p)
-			requireEntries(t, exp, got)
+			for _, suffix := range []string{"", "\n"} {
+				t.Run(fmt.Sprintf("newline=%v", suffix != ""), func(t *testing.T) {
+					p := NewPromParser([]byte(input+suffix), labels.NewSymbolTable(), typeAndUnitEnabled)
+					requireEntries(t, exp, testParse(t, p))
+				})
+			}
 		})
 	}
 }
@@ -626,5 +629,13 @@ func TestPromNullByteHandling(t *testing.T) {
 		}
 
 		require.EqualError(t, err, c.err, "test %d", i)
+	}
+}
+
+func TestPromParseEmpty(t *testing.T) {
+	for _, input := range [][]byte{nil, {}, {'\n'}} {
+		p := NewPromParser(input, labels.NewSymbolTable(), false)
+		_, err := p.Next()
+		require.ErrorIs(t, err, io.EOF)
 	}
 }

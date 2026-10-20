@@ -23,8 +23,6 @@ func (pql *promQLParser) RegisterFeatures(r features.Collector) {
 	for keyword, itemType := range key {
 		if itemType.IsKeyword() {
 			switch keyword {
-			case "anchored", "smoothed":
-				r.Set(features.PromQL, keyword, pql.options.EnableExtendedRangeSelectors)
 			case "fill", "fill_left", "fill_right":
 				r.Set(features.PromQL, keyword, pql.options.EnableBinopFillModifiers)
 			default:
@@ -49,10 +47,10 @@ func (pql *promQLParser) RegisterFeatures(r features.Collector) {
 	}
 
 	// Register functions.
-	for f, fc := range Functions {
+	for f, fc := range pql.options.functions() {
 		r.Set(features.PromQLFunctions, f, !fc.Experimental || pql.options.EnableExperimentalFunctions)
 	}
 
-	// Register experimental parser features.
-	r.Set(features.PromQL, "duration_expr", pql.options.ExperimentalDurationExpr)
+	// Register duration expressions.
+	r.Enable(features.PromQL, "duration_expr")
 }

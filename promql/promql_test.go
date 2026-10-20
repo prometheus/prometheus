@@ -41,13 +41,13 @@ func TestConcurrentRangeQueries(t *testing.T) {
 	stor := teststorage.New(t)
 
 	opts := promql.EngineOpts{
-		Logger:     nil,
-		Reg:        nil,
-		MaxSamples: 50000000,
-		Timeout:    100 * time.Second,
+		Logger:           nil,
+		Reg:              nil,
+		MaxSamples:       50000000,
+		Timeout:          100 * time.Second,
+		EnableAtModifier: true,
 		Parser: parser.NewParser(parser.Options{
-			EnableExperimentalFunctions:  true,
-			EnableExtendedRangeSelectors: true,
+			EnableExperimentalFunctions: true,
 		}),
 	}
 	engine := promqltest.NewTestEngineWithOpts(t, opts)

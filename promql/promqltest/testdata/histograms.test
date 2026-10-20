@@ -136,6 +136,45 @@ eval instant at 50m histogram_fraction(0, 3.5, testhistogram2_bucket)
 	expect no_warn
 	{} 0.5833333333333334
 
+# A populated le="0" bucket belongs to the (-Inf, 0] side, as it does for the
+# classic histogram this was converted from.
+load_with_nhcb 5m
+	testhistogram4_bucket{le="0"}	 0+4x10
+	testhistogram4_bucket{le="1"}	 0+7x10
+	testhistogram4_bucket{le="2"}	 0+9x10
+	testhistogram4_bucket{le="+Inf"} 0+10x10
+
+eval instant at 50m histogram_fraction(-Inf, 0, testhistogram4)
+	expect no_warn
+	{} 0.4
+
+eval instant at 50m histogram_fraction(-Inf, 0, testhistogram4_bucket)
+	expect no_warn
+	{} 0.4
+
+eval instant at 50m histogram_fraction(0, Inf, testhistogram4)
+	expect no_warn
+	{} 0.6
+
+eval instant at 50m histogram_fraction(0, Inf, testhistogram4_bucket)
+	expect no_warn
+	{} 0.6
+
+# A custom bucket that spans zero is an ordinary bucket, not an exponential
+# zero bucket, so its bounds must not be rewritten to 0.
+load_with_nhcb 5m
+	testhistogram5_bucket{le="-5"}	 0+1x10
+	testhistogram5_bucket{le="1"}	 0+3x10
+	testhistogram5_bucket{le="+Inf"} 0+4x10
+
+eval instant at 50m histogram_fraction(-Inf, 0, testhistogram5)
+	expect no_warn
+	{} 0.6666666666666666
+
+eval instant at 50m histogram_fraction(-Inf, 0, testhistogram5_bucket)
+	expect no_warn
+	{} 0.6666666666666666
+
 
 eval instant at 50m histogram_fraction(0, 0.2, testhistogram3)
 	expect no_warn

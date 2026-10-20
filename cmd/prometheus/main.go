@@ -248,6 +248,8 @@ func (c *flagConfig) setFeatureListOptions(logger *slog.Logger) error {
 			case "metadata-wal-records":
 				c.scrape.AppendMetadata = true
 				c.web.AppendMetadata = true
+				c.tsdb.EnableMetadataWALRecords = true
+				c.agent.EnableMetadataWALRecords = true
 				features.Enable(features.TSDB, "metadata_wal_records")
 				logger.Info("Experimental metadata records in WAL enabled")
 			case "promql-per-step-stats":
@@ -272,7 +274,6 @@ func (c *flagConfig) setFeatureListOptions(logger *slog.Logger) error {
 				// NOTE(bwplotka): Once AppendableV1 is removed, there will be only the TSDB and agent flags.
 				c.scrape.EnableStartTimestampZeroIngestion = true
 				c.scrape.ParseST = true
-				c.web.STZeroIngestionEnabled = true
 				c.tsdb.EnableSTAsZeroSample = true
 				c.agent.EnableSTAsZeroSample = true
 
@@ -313,8 +314,7 @@ func (c *flagConfig) setFeatureListOptions(logger *slog.Logger) error {
 				c.promqlEnableDelayedNameRemoval = true
 				logger.Info("Experimental PromQL delayed name removal enabled.")
 			case "promql-extended-range-selectors":
-				c.parserOpts.EnableExtendedRangeSelectors = true
-				logger.Info("Experimental PromQL extended range selectors enabled.")
+				logger.Warn("This option for --enable-feature is now permanently enabled and therefore a no-op.", "option", o)
 			case "promql-binop-fill-modifiers":
 				c.parserOpts.EnableBinopFillModifiers = true
 				logger.Info("Experimental PromQL binary operator fill modifiers enabled.")
@@ -403,9 +403,6 @@ func main() {
 			FeatureRegistry: features.DefaultRegistry,
 		},
 		promslogConfig: promslog.Config{},
-		// Duration expressions are enabled by default; the promql-duration-expr
-		// feature flag is now a no-op.
-		parserOpts: parser.Options{ExperimentalDurationExpr: true},
 		scrape: scrape.Options{
 			FeatureRegistry: features.DefaultRegistry,
 		},
@@ -653,7 +650,7 @@ func main() {
 	a.Flag("scrape.discovery-reload-interval", "Interval used by scrape manager to throttle target groups updates.").
 		Hidden().Default("5s").SetValue(&cfg.scrape.DiscoveryReloadInterval)
 
-	a.Flag("enable-feature", "Comma separated feature names to enable. Valid options: concurrent-rule-eval, created-timestamp-zero-ingestion, delayed-compaction, exemplar-storage, extra-scrape-metrics, histograms-st-encoding, memory-snapshot-on-shutdown, metadata-wal-records, old-ui, openmetrics2, otlp-deltatocumulative, otlp-native-delta-ingestion, promql-binop-fill-modifiers, promql-delayed-name-removal, promql-experimental-functions, promql-extended-range-selectors, promql-per-step-stats, search-api, st-storage, st-synthesis, type-and-unit-labels, use-start-timestamps, use-uncached-io, xor2-encoding, zstd-scrape. See https://prometheus.io/docs/prometheus/latest/feature_flags/ for more details.").
+	a.Flag("enable-feature", "Comma separated feature names to enable. Valid options: concurrent-rule-eval, created-timestamp-zero-ingestion, delayed-compaction, exemplar-storage, extra-scrape-metrics, histograms-st-encoding, memory-snapshot-on-shutdown, metadata-wal-records, old-ui, openmetrics2, otlp-deltatocumulative, otlp-native-delta-ingestion, promql-binop-fill-modifiers, promql-delayed-name-removal, promql-experimental-functions, promql-per-step-stats, search-api, st-storage, st-synthesis, type-and-unit-labels, use-start-timestamps, use-uncached-io, xor2-encoding, zstd-scrape. See https://prometheus.io/docs/prometheus/latest/feature_flags/ for more details.").
 		StringsVar(&cfg.featureList)
 
 	a.Flag("agent", "Run Prometheus in 'Agent mode'.").BoolVar(&agentMode)
@@ -922,7 +919,7 @@ func main() {
 	klog.SetOutputBySeverity("INFO", klogv1Writer{})
 	// Avoid duplicate API deprecation warnings (e.g., "v1 Endpoints is deprecated in v1.33+...")
 	// that can pollute the logs.
-	rest.SetDefaultWarningHandlerWithContext(logging.NewDedupDeprecationWarningLogger())
+	rest.SetDefaultWarningHandlerWithContext(newDedupDeprecationWarningLogger())
 
 	modeAppName := "Prometheus Server"
 	mode := "server"
@@ -1047,7 +1044,7 @@ func main() {
 
 		ruleManager = rules.NewManager(&rules.ManagerOptions{
 			NameValidationScheme:   cfgFile.GlobalConfig.MetricNameValidationScheme,
-			Appendable:             fanoutStorage,
+			AppendableV2:           fanoutStorage,
 			Queryable:              localStorage,
 			QueryFunc:              rules.EngineQueryFunc(queryEngine, fanoutStorage),
 			NotifyFunc:             rules.SendAlerts(notifierManager, cfg.web.ExternalURL.String()),
@@ -1398,6 +1395,7 @@ func main() {
 				notifs.DeleteNotification(notifications.ConfigurationUnsuccessful)
 				return
 			}
+			checksum = ""
 			notifs.AddNotification(notifications.ConfigurationUnsuccessful)
 		}
 
@@ -1594,6 +1592,7 @@ func main() {
 					"OutOfOrderTimeWindow", cfg.agent.OutOfOrderTimeWindow,
 					"EnableSTAsZeroSample", cfg.agent.EnableSTAsZeroSample,
 					"EnableSTStorage", cfg.tsdb.EnableSTStorage,
+					"EnableMetadataWALRecords", cfg.agent.EnableMetadataWALRecords,
 				)
 
 				localStorage.Set(db, 0)
@@ -1951,6 +1950,15 @@ func (s *readyStorage) ChunkQuerier(mint, maxt int64) (storage.ChunkQuerier, err
 	return nil, tsdb.ErrNotReady
 }
 
+// CostSamplingQueryable forwards bounded sampling to the ready storage.
+func (s *readyStorage) CostSamplingQueryable() (storage.SampleAndChunkQueryable, bool) {
+	provider, ok := s.get().(storage.CostSamplingQueryable)
+	if !ok {
+		return nil, false
+	}
+	return provider.CostSamplingQueryable()
+}
+
 func (s *readyStorage) ExemplarQuerier(ctx context.Context) (storage.ExemplarQuerier, error) {
 	if x := s.get(); x != nil {
 		switch db := x.(type) {
@@ -2016,9 +2024,16 @@ func (notReadyAppender) Rollback() error { return tsdb.ErrNotReady }
 
 type notReadyAppenderV2 struct{}
 
+var _ storage.ExemplarAppenderV2 = notReadyAppenderV2{}
+
 func (notReadyAppenderV2) Append(storage.SeriesRef, labels.Labels, int64, int64, float64, *histogram.Histogram, *histogram.FloatHistogram, storage.AOptions) (storage.SeriesRef, error) {
 	return 0, tsdb.ErrNotReady
 }
+
+func (notReadyAppenderV2) AppendExemplars(storage.SeriesRef, labels.Labels, []exemplar.Exemplar) (storage.SeriesRef, error) {
+	return 0, tsdb.ErrNotReady
+}
+
 func (notReadyAppenderV2) Commit() error { return tsdb.ErrNotReady }
 
 func (notReadyAppenderV2) Rollback() error { return tsdb.ErrNotReady }
@@ -2174,6 +2189,7 @@ type tsdbOptions struct {
 	StaleSeriesCompactionThreshold float64
 	EnableFastStartup              bool
 	FloatChunkEncoding             chunkenc.Encoding
+	EnableMetadataWALRecords       bool
 }
 
 func (opts tsdbOptions) ToTSDBOptions() tsdb.Options {
@@ -2207,6 +2223,7 @@ func (opts tsdbOptions) ToTSDBOptions() tsdb.Options {
 		StaleSeriesCompactionThreshold: opts.StaleSeriesCompactionThreshold,
 		EnableFastStartup:              opts.EnableFastStartup,
 		FloatChunkEncoding:             opts.FloatChunkEncoding,
+		EnableMetadataWALRecords:       opts.EnableMetadataWALRecords,
 	}
 }
 
@@ -2222,6 +2239,7 @@ type agentOptions struct {
 	OutOfOrderTimeWindow         int64 // TODO(bwplotka): Unused option, fix it or remove.
 	EnableSTAsZeroSample         bool
 	EnableSTStorage              bool
+	EnableMetadataWALRecords     bool
 	CheckpointFromInMemorySeries bool
 	CheckpointBatchSize          int
 }
@@ -2241,6 +2259,7 @@ func (opts agentOptions) ToAgentOptions(outOfOrderTimeWindow int64) agent.Option
 		OutOfOrderTimeWindow:         outOfOrderTimeWindow,
 		EnableSTAsZeroSample:         opts.EnableSTAsZeroSample,
 		EnableSTStorage:              opts.EnableSTStorage,
+		EnableMetadataWALRecords:     opts.EnableMetadataWALRecords,
 		CheckpointFromInMemorySeries: opts.CheckpointFromInMemorySeries,
 		CheckpointBatchSize:          opts.CheckpointBatchSize,
 	}

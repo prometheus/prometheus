@@ -32,7 +32,7 @@ export function containsAtLeastOneChild(node: SyntaxNode, ...child: (number | st
     // return false immediately if the current node doesn't have any child
     return false;
   }
-  let result = false;
+  let result: boolean;
   do {
     result = child.some((n) => cursor.type.id === n || cursor.type.name === n);
   } while (!result && cursor.nextSibling());

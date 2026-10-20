@@ -173,8 +173,14 @@ func (p *MemPostings) LabelValues(_ context.Context, name string, hints *storage
 	values := p.lvs[name]
 	p.mtx.RUnlock()
 
-	if hints != nil && hints.Limit > 0 && len(values) > hints.Limit {
-		values = values[:hints.Limit]
+	// The values are not held in order, so keeping the leading Limit of them
+	// returns an arbitrary subset. ApplyLimit selects the smallest values when
+	// the caller needs them.
+	values, allocated := hints.ApplyLimit(values)
+	if allocated {
+		// The result no longer aliases p.lvs[name], so the copy below would be
+		// a second copy of the same values.
+		return values
 	}
 
 	// The slice from p.lvs[name] is shared between all readers, and it is append-only.

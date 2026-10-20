@@ -69,21 +69,161 @@ func funcTime(_ []Vector, _ Matrix, _ parser.Expressions, enh *EvalNodeHelper) (
 // pickOrInterpolateLeft returns the value at the left boundary of the range.
 // If interpolation is needed (when smoothed is true and the first sample is before the range start),
 // it returns the interpolated value at the left boundary; otherwise, it returns the first sample's value.
-func pickOrInterpolateLeft(floats []FPoint, first int, rangeStart int64, smoothed, isCounter bool) float64 {
-	if smoothed && floats[first].T < rangeStart {
-		return interpolate(floats[first], floats[first+1], rangeStart, isCounter)
+// 'first' is expected to point to the most recent sample which is before or at 'rangeStart', or if no samples
+// satisfy this condition, the first sample in the slice.
+func pickOrInterpolateLeft(
+	floats []FPoint,
+	startTimestamps []int64,
+	first int,
+	rangeStart int64,
+	lookbackStart int64,
+	smoothed, isCounter bool,
+) (float64, int64) {
+	var (
+		firstDP = floats[first]
+		firstST = stOrDefault(startTimestamps, first, 0)
+
+		returnedST = firstST
+	)
+	if returnedST > rangeStart {
+		returnedST = 0
 	}
-	return floats[first].F
+
+	if firstDP.T == rangeStart {
+		return firstDP.F, firstST
+	}
+
+	if firstDP.T > rangeStart {
+		// 'first' is meant to be the index of the most recent sample with T <= rangeStart.
+		// If that is not the case, then there are no other samples before it.
+
+		if !isCounter {
+			return firstDP.F, returnedST
+		}
+
+		if !isStartTimestampResetAfter(lookbackStart, firstST, firstDP.T) {
+			// Check if there's an ST reset in the visible lookback.
+			return firstDP.F, returnedST
+		}
+
+		if isStartTimestampResetAfter(rangeStart, firstST, firstDP.T) {
+			// Check if there's an ST reset since the range start.
+			return 0, returnedST
+		}
+
+		if smoothed {
+			return interpolate(FPoint{T: firstST, F: 0}, firstDP, rangeStart, isCounter), returnedST
+		}
+
+		return 0, returnedST
+	}
+
+	var (
+		nextDP = floats[first+1]
+		nextST = stOrDefault(startTimestamps, first+1, 0)
+	)
+
+	switch {
+	case !isCounter:
+		// No adjustments.
+	case isStartTimestampResetAfter(rangeStart, nextST, nextDP.T):
+		// If there is an ST reset with 'nextST' > 'rangeStart', we adjust nextDP.
+		nextDP = FPoint{
+			T: nextST,
+			F: 0,
+		}
+	case isStartTimestampReset(firstST, firstDP.T, nextST, nextDP.T):
+		// Otherwise if there is an ST reset in '(firstDP.T, rangeStart]', we adjust firstDP.
+		firstDP = FPoint{
+			T: nextST,
+			F: 0,
+		}
+		returnedST = nextST
+	}
+
+	if smoothed {
+		return interpolate(firstDP, nextDP, rangeStart, isCounter), returnedST
+	}
+
+	return firstDP.F, returnedST
 }
 
 // pickOrInterpolateRight returns the value at the right boundary of the range.
 // If interpolation is needed (when smoothed is true and the last sample is after the range end),
 // it returns the interpolated value at the right boundary; otherwise, it returns the last sample's value.
-func pickOrInterpolateRight(floats []FPoint, last int, rangeEnd int64, smoothed, isCounter bool) float64 {
-	if smoothed && last > 0 && floats[last].T > rangeEnd {
-		return interpolate(floats[last-1], floats[last], rangeEnd, isCounter)
+func pickOrInterpolateRight(
+	floats []FPoint,
+	startTimestamps []int64,
+	last int,
+	rangeEnd int64,
+	lookbackStart int64,
+	smoothed, isCounter bool,
+) (float64, int64) {
+	var (
+		lastDP = floats[last]
+		lastST = stOrDefault(startTimestamps, last, 0)
+
+		returnedST = lastST
+	)
+	if returnedST > rangeEnd {
+		returnedST = 0
 	}
-	return floats[last].F
+
+	if lastDP.T <= rangeEnd {
+		return lastDP.F, returnedST
+	}
+
+	if last == 0 {
+		if !isCounter {
+			return lastDP.F, returnedST
+		}
+
+		if !isStartTimestampResetAfter(lookbackStart, lastST, lastDP.T) {
+			// Check if there's an ST reset in the visible lookback.
+			return lastDP.F, returnedST
+		}
+
+		if isStartTimestampResetAfter(rangeEnd, lastST, lastDP.T) {
+			// Check if there's an ST reset since the range end.
+			return 0, returnedST
+		}
+
+		if smoothed {
+			v := interpolate(FPoint{T: lastST, F: 0}, lastDP, rangeEnd, isCounter)
+			return v, returnedST
+		}
+
+		return 0, returnedST
+	}
+
+	var (
+		prevDP = floats[last-1]
+		prevST = stOrDefault(startTimestamps, last-1, 0)
+	)
+
+	switch {
+	case !isCounter:
+		// No adjustments.
+	case isStartTimestampResetAfter(rangeEnd, lastST, lastDP.T):
+		// If there is an ST reset with 'lastST' > 'rangeEnd', we adjust lastDP.
+		lastDP = FPoint{
+			T: lastST,
+			F: 0,
+		}
+		returnedST = prevST
+	case isStartTimestampReset(prevST, prevDP.T, lastST, lastDP.T):
+		// Otherwise if there is an ST reset in '(prevDP.T, rangeEnd]', we adjust prevDP.
+		prevDP = FPoint{
+			T: lastST,
+			F: 0,
+		}
+	}
+
+	if smoothed {
+		return interpolate(prevDP, lastDP, rangeEnd, isCounter), returnedST
+	}
+
+	return prevDP.F, returnedST
 }
 
 // interpolate performs linear interpolation between two points.
@@ -162,16 +302,29 @@ func pickOrInterpolateRightHistogram(hists []HPoint, last int, rangeEnd int64, s
 
 // correctForCounterResets calculates the correction for counter resets.
 // This function is only used for extendedRate functions with smoothed or anchored rates.
-func correctForCounterResets(left, right float64, points []FPoint) float64 {
+func correctForCounterResets(
+	left, right float64,
+	leftT, rightT int64,
+	leftST, rightST int64,
+	points []FPoint,
+	startTimestamps []int64,
+) float64 {
 	var correction float64
-	prev := left
-	for _, p := range points {
-		if p.F < prev {
+	var (
+		prev   = left
+		prevT  = leftT
+		prevST = leftST
+	)
+	for i, p := range points {
+		st := stOrDefault(startTimestamps, i, 0)
+		if p.F < prev || isStartTimestampReset(prevST, prevT, st, p.T) {
 			correction += prev
 		}
 		prev = p.F
+		prevT = p.T
+		prevST = st
 	}
-	if right < prev {
+	if right < prev || isStartTimestampReset(prevST, prevT, rightST, rightT) {
 		correction += prev
 	}
 	return correction
@@ -315,9 +468,15 @@ func extendedRate(vals Matrix, args parser.Expressions, enh *EvalNodeHelper, isC
 		lastSampleIndex = len(f) - 1
 		rangeStart      = enh.Ts - durationMilliseconds(ms.Range+vs.Offset)
 		rangeEnd        = enh.Ts - durationMilliseconds(vs.Offset)
+		lookbackStart   = rangeStart - durationMilliseconds(enh.LookbackDelta)
 		annos           annotations.Annotations
 		smoothed        = vs.Smoothed
+		startTimestamps []int64
 	)
+
+	if sts := enh.StartTimestamps; sts != nil {
+		startTimestamps = sts.Floats
+	}
 
 	firstSampleIndex := max(0, sort.Search(lastSampleIndex, func(i int) bool { return f[i].T > rangeStart })-1)
 	if smoothed {
@@ -327,12 +486,17 @@ func extendedRate(vals Matrix, args parser.Expressions, enh *EvalNodeHelper, isC
 	if f[lastSampleIndex].T <= rangeStart {
 		return enh.Out, annos
 	}
-	if smoothed && f[firstSampleIndex].T > rangeEnd {
-		return enh.Out, annos
+	if firstT := f[firstSampleIndex].T; smoothed && firstT > rangeEnd {
+		firstST := stOrDefault(startTimestamps, firstSampleIndex, 0)
+		if !isCounter || !isStartTimestampResetAfter(lookbackStart, firstST, firstT) || isStartTimestampResetAfter(rangeEnd, firstST, firstT) {
+			// We cannot calculate a rate if there's no ST reset inside the lookback range, or if the reset is after
+			// the range end.
+			return enh.Out, annos
+		}
 	}
 
-	left := pickOrInterpolateLeft(f, firstSampleIndex, rangeStart, smoothed, isCounter)
-	right := pickOrInterpolateRight(f, lastSampleIndex, rangeEnd, smoothed, isCounter)
+	left, leftST := pickOrInterpolateLeft(f, startTimestamps, firstSampleIndex, rangeStart, lookbackStart, smoothed, isCounter)
+	right, rightST := pickOrInterpolateRight(f, startTimestamps, lastSampleIndex, rangeEnd, lookbackStart, smoothed, isCounter)
 
 	resultFloat := right - left
 
@@ -347,7 +511,9 @@ func extendedRate(vals Matrix, args parser.Expressions, enh *EvalNodeHelper, isC
 			lastSampleIndex--
 		}
 
-		resultFloat += correctForCounterResets(left, right, f[firstSampleIndex:lastSampleIndex+1])
+		stLen := len(startTimestamps)
+		sts := startTimestamps[min(stLen, firstSampleIndex):min(stLen, lastSampleIndex+1)]
+		resultFloat += correctForCounterResets(left, right, rangeStart, rangeEnd, leftST, rightST, f[firstSampleIndex:lastSampleIndex+1], sts)
 	}
 	if isRate {
 		resultFloat /= ms.Range.Seconds()
@@ -787,6 +953,18 @@ func isStartTimestampReset(prevStartTimestamp, prevTimestamp, currStartTimestamp
 		return false
 	}
 	return prevStartTimestamp != 0 && prevStartTimestamp != prevTimestamp
+}
+
+// isStartTimestampResetAfter tells whether there is a start timestamp reset after a particular time.
+func isStartTimestampResetAfter(t, startTimestamp, timestamp int64) bool {
+	if startTimestamp <= t || timestamp <= t {
+		return false
+	}
+	// To check whether there is a start timestamp reset after a time t, we use the same function
+	// which checks for resets between two datapoints. However, for the previous datapoint we pass an imaginary
+	// datapoint with T=t and ST=t. This creates an unknown start timestamp datapoint (ST==T),
+	// which only allows resets if the following datapoint ST is after it.
+	return isStartTimestampReset(t, t, startTimestamp, timestamp)
 }
 
 // checkStartTimeOverlap detects when a sample's start timestamp overlaps with a
@@ -1495,12 +1673,12 @@ func funcTsOfLastOverTime(_ []Vector, matrixVal Matrix, _ parser.Expressions, en
 	}
 	el := matrixVal[0]
 
-	var tf int64
+	var tf int64 = math.MinInt64
 	if len(el.Floats) > 0 {
 		tf = el.Floats[len(el.Floats)-1].T
 	}
 
-	var th int64
+	var th int64 = math.MinInt64
 	if len(el.Histograms) > 0 {
 		th = el.Histograms[len(el.Histograms)-1].T
 	}
@@ -1646,6 +1824,153 @@ func funcSumOverTime(_ []Vector, matrixVal Matrix, args parser.Expressions, enh 
 		}
 		return sum + c
 	}), nil
+}
+
+const (
+	integralLeftPoint = iota
+	integralRightPoint
+	integralTrapezoidal
+)
+
+// === integral(Matrix parser.ValueTypeMatrix, strategy=2 Scalar) (Vector, Annotations) ===
+func funcIntegral(vectorVals []Vector, matrixVal Matrix, args parser.Expressions, enh *EvalNodeHelper) (Vector, annotations.Annotations) {
+	if len(matrixVal) == 0 {
+		return enh.Out, nil
+	}
+	samples := matrixVal[0]
+	var annos annotations.Annotations
+	if len(samples.Floats) == 0 {
+		return enh.Out, nil
+	}
+	if len(samples.Histograms) > 0 {
+		annos.Add(annotations.NewHistogramIgnoredInMixedRangeInfo(getMetricName(samples.Metric), args[0].PositionRange()))
+	}
+
+	strategy := integralTrapezoidal
+	if len(vectorVals) > 0 && len(vectorVals[0]) > 0 {
+		strategyArg := vectorVals[0][0].F
+		if math.IsNaN(strategyArg) || math.IsInf(strategyArg, 0) || math.Trunc(strategyArg) != strategyArg || strategyArg < integralLeftPoint || strategyArg > integralTrapezoidal {
+			annos.Add(annotations.NewInvalidIntegralStrategyWarning(strategyArg, args[1].PositionRange()))
+		} else {
+			strategy = int(strategyArg)
+		}
+	}
+
+	nanAsZero := func(v float64) float64 {
+		if math.IsNaN(v) {
+			return 0
+		}
+		return v
+	}
+
+	return aggrOverTime(matrixVal, enh, func(s Series) float64 {
+		var sum, c float64
+		var prev FPoint
+		for i, f := range s.Floats {
+			var value, cValue float64
+			// Treat NaN as zero, to let "neighboring" non-zero values handle it
+			currVal := nanAsZero(f.F)
+			prevVal := nanAsZero(prev.F)
+
+			// Discrete integral using the selected quadrature strategy.
+			switch strategy {
+			case integralLeftPoint:
+				// Left-point rectangle rule.
+				//
+				//   metric
+				//     ^
+				//     |
+				//     |         v1
+				//     |         *........>.                  v4
+				//     |         |#########:                   *........>.
+				//     |         |######## v2                  |         :
+				//     |         |######## *........>.         |         :
+				//     |         |#########|#########:         |         :
+				//     |         |#########|#########:         |         :
+				//     |         |#########|###### (NaN)......>|       (NaN)
+				//     +---------+---------+---------+---------+---------+-------> t
+				//               t1        t2        t3        t4        t5
+				//               [<--------------------------->)
+				//
+				// integral(metric)[] @t4: +         +         +
+				//                         v1        v2        0
+				//                         *         *
+				//                      (t2-t1)   (t3-t2)
+				value = prevVal
+			case integralRightPoint:
+				// Right-point rectangle rule.
+				//
+				//   metric
+				//     ^
+				//     |
+				//     |         v1
+				//     |:<.......*                            v4
+				//     |:        |                   .<........*
+				//     |:        |         v2        :#########|
+				//     |:        |<........*         :#########|
+				//     |:        |#########|         :#########|
+				//     |:        |#########|         :#########|
+				//     |:        |#########|<......(NaN) ######|<......(NaN)
+				//     +---------+---------+---------+---------+---------+-------> t
+				//               t1        t2        t3        t4        t5
+				//               (<--------------------------->]
+				//
+				// integral(metric)[] @t4: +         +         +
+				//                         v2        0         v4
+				//                         *                   *
+				//                      (t2-t1)             (t4-t3)
+				value = currVal
+			case integralTrapezoidal:
+				// Trapezoidal rule (default).
+				// With NaN as zero, "neighboring" non-zero values are
+				// aggregated (halved at each interval eval).
+				//
+				//   metric
+				//     ^
+				//     |
+				//     |         v1
+				//     |    ....>*<....                       v4
+				//     |    :    |####:                   ....>*<....
+				//     |    :    |####:    v2             :####|    :
+				//     |    :    |####:...>*<....         :####|    :
+				//     |    :    |####:####|####:         :####|    :
+				//     |    :    |####:####|####:         :####|    :
+				//     |    :    |####:####|####:.>(NaN)<.:####|    :.>(NaN)
+				//     +---------+---------+---------+---------+---------+-------> t
+				//               t1        t2        t3        t4        t5
+				//               [<--------------------------->]
+				//
+				// integral(metric)[] @t4: +         +         +
+				//                      (v1+v2)/2 (v2+0)/2   (0+v4)/2
+				//                         *         *         *
+				//                      (t2-t1)   (t3-t2)   (t4-t3)
+				//
+
+				// Use kahansum.Inc() here also for big vs small number precision
+				// to implement (currVal+prevVal)/2.
+				if prevVal != 0 || currVal != 0 {
+					value, cValue = kahansum.Inc(currVal, prevVal, 0)
+					if math.IsInf(value, 0) && !math.IsInf(currVal, 0) && !math.IsInf(prevVal, 0) {
+						// Avoid overflow when averaging finite samples.
+						value, cValue = kahansum.Inc(currVal/2, prevVal/2, 0)
+					} else {
+						value /= 2
+						cValue /= 2
+					}
+				}
+			}
+			// Skip the first sample, aggregate non-zero values.
+			if i > 0 && (value != 0 || cValue != 0) {
+				deltaT := float64(f.T-prev.T) / 1000
+				sum, c = kahansum.Inc(value*deltaT, sum, c+cValue*deltaT)
+			}
+			prev = f
+		}
+		if math.IsInf(sum, 0) {
+			return sum
+		}
+		return sum + c
+	}), annos
 }
 
 // === quantile_over_time(Matrix parser.ValueTypeMatrix) (Vector, Annotations) ===
@@ -1870,14 +2195,14 @@ func funcAtanh(vectorVals []Vector, _ Matrix, _ parser.Expressions, enh *EvalNod
 // === rad(Vector parser.ValueTypeVector) (Vector, Annotations) ===
 func funcRad(vectorVals []Vector, _ Matrix, _ parser.Expressions, enh *EvalNodeHelper) (Vector, annotations.Annotations) {
 	return simpleFloatFunc(vectorVals, enh, func(v float64) float64 {
-		return v * math.Pi / 180
+		return v * (math.Pi / 180)
 	}), nil
 }
 
 // === deg(Vector parser.ValueTypeVector) (Vector, Annotations) ===
 func funcDeg(vectorVals []Vector, _ Matrix, _ parser.Expressions, enh *EvalNodeHelper) (Vector, annotations.Annotations) {
 	return simpleFloatFunc(vectorVals, enh, func(v float64) float64 {
-		return v * 180 / math.Pi
+		return v * (180 / math.Pi)
 	}), nil
 }
 
@@ -2045,7 +2370,7 @@ func simpleHistogramFunc(vectorVals []Vector, enh *EvalNodeHelper, f func(h *his
 	for _, el := range vectorVals[0] {
 		if el.H != nil { // Process only histogram samples.
 			if !enh.enableDelayedNameRemoval {
-				el.Metric = el.Metric.DropReserved(func(n string) bool { return n == labels.MetricName })
+				el.Metric = el.Metric.DropReserved(schema.IsMetadataLabel)
 			}
 			enh.Out = append(enh.Out, Sample{
 				Metric:   el.Metric,
@@ -2698,6 +3023,7 @@ var FunctionCalls = map[string]FunctionCall{
 	"idelta":                       funcIdelta,
 	"increase":                     funcIncrease,
 	"info":                         nil,
+	"integral":                     funcIntegral,
 	"irate":                        funcIrate,
 	"max_of":                       funcMaxOf,
 	"label_replace":                nil, // evalLabelReplace not called via this map.
@@ -2863,7 +3189,7 @@ func createLabelsForAbsentFunction(expr parser.Expr) labels.Labels {
 	// Note this gives arguably wrong behaviour for `absent(x{job="a",job="a",foo="bar"})`.
 	has := make(map[string]bool, len(lm))
 	for _, ma := range lm {
-		if ma.Name == labels.MetricName {
+		if schema.IsMetadataLabel(ma.Name) {
 			continue
 		}
 		if ma.Type == labels.MatchEqual && !has[ma.Name] {
@@ -2891,4 +3217,11 @@ func stringSliceFromArgs(args parser.Expressions) []string {
 
 func getMetricName(metric labels.Labels) string {
 	return metric.Get(model.MetricNameLabel)
+}
+
+func stOrDefault(startTimestamps []int64, idx int, def int64) int64 {
+	if idx < len(startTimestamps) {
+		return startTimestamps[idx]
+	}
+	return def
 }

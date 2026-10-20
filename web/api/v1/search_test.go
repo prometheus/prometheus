@@ -18,9 +18,12 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
+	"math"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
+	"strconv"
 	"strings"
 	"testing"
 	"time"
@@ -157,20 +160,41 @@ func (q errorSearchQuerier) SearchLabelValues(context.Context, string, *storage.
 	return storage.ErrSearchResultSet(q.err)
 }
 
-func TestSearchEndpointsMapTSDBNotReadyToUnavailable(t *testing.T) {
+func TestAPI_SearchEndpoints_UnavailableStorage(t *testing.T) {
 	testCases := []struct {
-		name      string
-		queryable errorTestQueryable
+		name          string
+		newQueryable  func() errorTestQueryable
+		expectedError string
 	}{
 		{
-			name:      "querier error",
-			queryable: errorTestQueryable{err: tsdb.ErrNotReady},
+			name:          "querier error",
+			newQueryable:  func() errorTestQueryable { return errorTestQueryable{err: tsdb.ErrNotReady} },
+			expectedError: tsdb.ErrNotReady.Error(),
 		},
 		{
 			name: "search result error",
-			queryable: errorTestQueryable{
-				q: errorSearchQuerier{err: tsdb.ErrNotReady},
+			newQueryable: func() errorTestQueryable {
+				return errorTestQueryable{q: errorSearchQuerier{err: tsdb.ErrNotReady}}
 			},
+			expectedError: tsdb.ErrNotReady.Error(),
+		},
+		{
+			name: "unsupported primary",
+			newQueryable: func() errorTestQueryable {
+				return errorTestQueryable{q: &closeCountingQuerier{Querier: errorTestQuerier{}}}
+			},
+			expectedError: "search not supported by storage",
+		},
+		{
+			name: "unsupported primary in a merge",
+			newQueryable: func() errorTestQueryable {
+				return errorTestQueryable{q: &closeCountingQuerier{Querier: storage.NewMergeQuerier(
+					[]storage.Querier{fixedSearchQuerier{rs: storage.EmptySearchResultSet()}, errorTestQuerier{}},
+					nil,
+					storage.ChainedSeriesMerge,
+				)}}
+			},
+			expectedError: "search not supported by storage",
 		},
 	}
 
@@ -187,19 +211,219 @@ func TestSearchEndpointsMapTSDBNotReadyToUnavailable(t *testing.T) {
 	for _, tc := range testCases {
 		t.Run(tc.name, func(t *testing.T) {
 			api := minimalSearchAPI()
-			api.Queryable = tc.queryable
+			r := route.New()
+			api.Register(r)
 
 			for _, endpoint := range endpoints {
-				t.Run(endpoint.name, func(t *testing.T) {
-					rec := doSearchRequest(t, api, endpoint.path, endpoint.params)
-					require.Equal(t, http.StatusInternalServerError, rec.Code)
+				for _, method := range []string{http.MethodGet, http.MethodPost} {
+					t.Run(method+" "+endpoint.name, func(t *testing.T) {
+						queryable := tc.newQueryable()
+						api.Queryable = queryable
+						var req *http.Request
+						if method == http.MethodPost {
+							req = httptest.NewRequest(method, "http://example.com"+endpoint.path, strings.NewReader(endpoint.params.Encode()))
+							req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+						} else {
+							req = httptest.NewRequest(method, "http://example.com"+endpoint.path+"?"+endpoint.params.Encode(), http.NoBody)
+						}
+						rec := httptest.NewRecorder()
+						r.ServeHTTP(rec, req.WithContext(t.Context()))
+						if q, ok := queryable.q.(*closeCountingQuerier); ok {
+							require.Equal(t, 1, q.closeCalls)
+						}
+						require.Equal(t, http.StatusInternalServerError, rec.Code)
+						require.Equal(t, "application/json", rec.Header().Get("Content-Type"))
 
-					var response Response
-					require.NoError(t, json.Unmarshal(rec.Body.Bytes(), &response))
-					require.Equal(t, statusError, response.Status)
-					require.Equal(t, errorUnavailable.str, response.ErrorType)
-					require.Contains(t, response.Error, tsdb.ErrNotReady.Error())
-				})
+						var response Response
+						require.NoError(t, json.Unmarshal(rec.Body.Bytes(), &response))
+						require.Equal(t, statusError, response.Status)
+						require.Equal(t, errorUnavailable.str, response.ErrorType)
+						require.Equal(t, tc.expectedError, response.Error)
+					})
+				}
+			}
+		})
+	}
+}
+
+type closeCountingQuerier struct {
+	storage.Querier
+	closeCalls int
+}
+
+type searchTestQueryable struct {
+	storage.Queryable
+	storage.ChunkQueryable
+}
+
+func (q *closeCountingQuerier) Close() error {
+	q.closeCalls++
+	return q.Querier.Close()
+}
+
+type closeCountingSearchQuerier struct {
+	*closeCountingQuerier
+	sets []*closeCountingSearchSet
+}
+
+func (q *closeCountingSearchQuerier) track(rs storage.SearchResultSet) storage.SearchResultSet {
+	set := &closeCountingSearchSet{SearchResultSet: rs}
+	q.sets = append(q.sets, set)
+	return set
+}
+
+func (q *closeCountingSearchQuerier) SearchLabelNames(ctx context.Context, hints *storage.SearchHints, matchers ...*labels.Matcher) storage.SearchResultSet {
+	return q.track(q.Querier.(storage.Searcher).SearchLabelNames(ctx, hints, matchers...))
+}
+
+func (q *closeCountingSearchQuerier) SearchLabelValues(ctx context.Context, name string, hints *storage.SearchHints, matchers ...*labels.Matcher) storage.SearchResultSet {
+	return q.track(q.Querier.(storage.Searcher).SearchLabelValues(ctx, name, hints, matchers...))
+}
+
+type closeCountingSearchSet struct {
+	storage.SearchResultSet
+	closeCalls int
+}
+
+func (s *closeCountingSearchSet) Close() error {
+	s.closeCalls++
+	return s.SearchResultSet.Close()
+}
+
+func TestAPI_SearchEndpoints_SecondaryWarnings(t *testing.T) {
+	local := promqltest.LoadedStorage(t, `
+		load 1m
+			up{job="prometheus"} 1+0x2
+			requests_total{job="node"} 0+1x2
+	`)
+
+	for _, tc := range []struct {
+		name          string
+		nested        bool
+		secondaryOnly bool
+		noopSecondary bool
+		empty         bool
+		emptyRange    bool
+	}{
+		{name: "unsupported secondary"},
+		{name: "nested unsupported secondaries", nested: true},
+		{name: "unsupported secondary only", secondaryOnly: true, empty: true},
+		{name: "empty matching results", empty: true},
+		{name: "noop secondary", noopSecondary: true},
+		{name: "empty time range", empty: true, emptyRange: true},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			for _, endpoint := range []struct {
+				name     string
+				path     string
+				field    string
+				expected []string
+			}{
+				{"metric names", "/search/metric_names", "name", []string{"requests_total", "up"}},
+				{"label names", "/search/label_names", "name", []string{"__name__", "job"}},
+				{"label values", "/search/label_values", "value", []string{"node", "prometheus"}},
+			} {
+				for _, method := range []string{http.MethodGet, http.MethodPost} {
+					for _, limit := range []int{1, 100} {
+						t.Run(fmt.Sprintf("%s/%s/limit=%d", endpoint.name, method, limit), func(t *testing.T) {
+							api := minimalSearchAPI()
+							var queriers []*closeCountingQuerier
+							var searchers []*closeCountingSearchQuerier
+							api.Queryable = searchTestQueryable{Queryable: storage.QueryableFunc(func(mint, maxt int64) (storage.Querier, error) {
+								if tc.emptyRange {
+									return local.Querier(mint, maxt)
+								}
+								var primaries []storage.Querier
+								if !tc.secondaryOnly {
+									q, err := local.Querier(mint, maxt)
+									if err != nil {
+										return nil, err
+									}
+									primary := &closeCountingSearchQuerier{closeCountingQuerier: &closeCountingQuerier{Querier: q}}
+									queriers = append(queriers, primary.closeCountingQuerier)
+									searchers = append(searchers, primary)
+									primaries = []storage.Querier{primary}
+								}
+								secondary := storage.NoopQuerier()
+								if !tc.noopSecondary {
+									unsupported := &closeCountingQuerier{Querier: errorTestQuerier{}}
+									queriers = append(queriers, unsupported)
+									secondary = unsupported
+									if tc.nested {
+										other := &closeCountingQuerier{Querier: errorTestQuerier{}}
+										queriers = append(queriers, other)
+										secondary = storage.NewMergeQuerier(nil, []storage.Querier{unsupported, other}, storage.ChainedSeriesMerge)
+									}
+								}
+								merged := storage.NewMergeQuerier(primaries, []storage.Querier{secondary}, storage.ChainedSeriesMerge)
+								root := &closeCountingSearchQuerier{closeCountingQuerier: &closeCountingQuerier{Querier: merged}}
+								queriers = append(queriers, root.closeCountingQuerier)
+								searchers = append(searchers, root)
+								return root, nil
+							}), ChunkQueryable: local}
+							params := url.Values{"start": {"0"}, "end": {"120"}, "limit": {strconv.Itoa(limit)}, "batch_size": {"1"}}
+							if endpoint.field == "value" {
+								params.Set("label", "job")
+							}
+							if tc.emptyRange {
+								params.Set("start", "-120")
+								params.Set("end", "-60")
+							} else if tc.empty {
+								params.Set("match[]", "absent")
+							}
+							var req *http.Request
+							if method == http.MethodPost {
+								req = httptest.NewRequest(method, endpoint.path, strings.NewReader(params.Encode()))
+								req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+							} else {
+								req = httptest.NewRequest(method, endpoint.path+"?"+params.Encode(), http.NoBody)
+							}
+							r := route.New()
+							api.Register(r)
+							rec := httptest.NewRecorder()
+							r.ServeHTTP(rec, req.WithContext(t.Context()))
+							require.Equal(t, http.StatusOK, rec.Code)
+							require.Equal(t, "application/x-ndjson; charset=utf-8", rec.Header().Get("Content-Type"))
+
+							lines := parseNDJSON(t, rec.Body.String())
+							require.GreaterOrEqual(t, len(lines), 2)
+							var results, warnings []string
+							for _, line := range lines[:len(lines)-1] {
+								var batch searchBatch[map[string]string]
+								require.NoError(t, json.Unmarshal(line, &batch))
+								for _, result := range batch.Results {
+									results = append(results, result[endpoint.field])
+								}
+								warnings = append(warnings, batch.Warnings...)
+							}
+							var trailer searchTrailer
+							require.NoError(t, json.Unmarshal(lines[len(lines)-1], &trailer))
+							require.Equal(t, "success", trailer.Status)
+							require.Empty(t, trailer.Warnings)
+							expected := endpoint.expected
+							if tc.empty {
+								expected = nil
+							}
+							require.Equal(t, !tc.empty && limit < len(expected), trailer.HasMore)
+							if limit < len(expected) {
+								expected = expected[:limit]
+							}
+							require.Equal(t, expected, results)
+							if tc.noopSecondary || tc.emptyRange {
+								require.Empty(t, warnings)
+							} else {
+								require.Equal(t, []string{"search is not supported by a secondary storage backend; results may be incomplete"}, warnings)
+							}
+							for _, q := range queriers {
+								require.Equal(t, 1, q.closeCalls)
+							}
+							for _, q := range searchers {
+								require.Len(t, q.sets, 1)
+								require.Equal(t, 1, q.sets[0].closeCalls)
+							}
+						})
+					}
+				}
 			}
 		})
 	}
@@ -262,20 +486,176 @@ func TestSearchMetricNames(t *testing.T) {
 	})
 
 	t.Run("with metadata", func(t *testing.T) {
-		rec := doSearchRequest(t, api, "/search/metric_names", url.Values{
-			"search[]":         []string{"go_gc_duration"},
-			"include_metadata": []string{"true"},
-		})
-		require.Equal(t, http.StatusOK, rec.Code)
+		for _, tc := range []struct {
+			name     string
+			metadata scrape.MetricMetadata
+			// Extra metadata is exposed by a second target.
+			extra      []scrape.MetricMetadata
+			extraFirst bool
+			search     string
+			matching   []string
+			missing    []string
+			// Filtered series are loaded but excluded by the search term.
+			filtered []string
+		}{
+			{
+				name:     "gauge",
+				metadata: scrape.MetricMetadata{MetricFamily: "go_goroutines", Type: model.MetricTypeGauge, Help: "Number of goroutines."},
+				matching: []string{"go_goroutines"},
+				missing:  []string{"go_goroutines_total", "go_goroutines_count", "go_goroutines_bucket", "go_goroutines_info"},
+			},
+			{
+				name:     "search filter",
+				metadata: scrape.MetricMetadata{MetricFamily: "go_goroutines", Type: model.MetricTypeGauge, Help: "Number of goroutines."},
+				search:   "go_goroutines",
+				matching: []string{"go_goroutines"},
+				filtered: []string{"go_threads"},
+			},
+			{
+				name:     "name without underscore",
+				metadata: scrape.MetricMetadata{MetricFamily: "up", Type: model.MetricTypeGauge, Help: "Target is up."},
+				matching: []string{"up"},
+				missing:  []string{"uptime"},
+			},
+			{
+				name:     "OpenMetrics counter",
+				metadata: scrape.MetricMetadata{MetricFamily: "process_cpu_seconds", Type: model.MetricTypeCounter, Help: "Total CPU time.", Unit: "seconds"},
+				matching: []string{"process_cpu_seconds_total"},
+				missing:  []string{"process_cpu_seconds_created", "process_cpu_seconds_sum", "process_cpu_seconds_bucket", "process_cpu_seconds_total_total"},
+			},
+			{
+				name:     "Prometheus counter",
+				metadata: scrape.MetricMetadata{MetricFamily: "process_cpu_seconds_total", Type: model.MetricTypeCounter, Help: "Total CPU time.", Unit: "seconds"},
+				matching: []string{"process_cpu_seconds_total"},
+				missing:  []string{"process_cpu_seconds"},
+			},
+			{
+				// A counter family named with _total is in the Prometheus text
+				// style, so its series has the family name, as in
+				// isSeriesPartOfFamily in scrape/scrape.go.
+				name:     "Prometheus counter with doubled suffix",
+				metadata: scrape.MetricMetadata{MetricFamily: "process_cpu_seconds_total", Type: model.MetricTypeCounter, Help: "Total CPU time.", Unit: "seconds"},
+				matching: []string{"process_cpu_seconds_total"},
+				missing:  []string{"process_cpu_seconds_total_total"},
+			},
+			{
+				name:     "exact metadata for doubled suffix",
+				metadata: scrape.MetricMetadata{MetricFamily: "requests_total_total", Type: model.MetricTypeGauge, Help: "Independent gauge."},
+				extra:    []scrape.MetricMetadata{{MetricFamily: "requests_total", Type: model.MetricTypeCounter, Help: "Requests."}},
+				matching: []string{"requests_total_total"},
+			},
+			{
+				name:     "conflicting types across targets",
+				metadata: scrape.MetricMetadata{MetricFamily: "requests", Type: model.MetricTypeCounter, Help: "Requests."},
+				extra:    []scrape.MetricMetadata{{MetricFamily: "requests", Type: model.MetricTypeGauge, Help: "In-flight requests."}},
+				matching: []string{"requests_total"},
+			},
+			{
+				name:       "conflicting types across targets with incompatible type first",
+				metadata:   scrape.MetricMetadata{MetricFamily: "requests", Type: model.MetricTypeCounter, Help: "Requests."},
+				extra:      []scrape.MetricMetadata{{MetricFamily: "requests", Type: model.MetricTypeGauge, Help: "In-flight requests."}},
+				extraFirst: true,
+				matching:   []string{"requests_total"},
+			},
+			{
+				name:     "exact metadata takes precedence",
+				metadata: scrape.MetricMetadata{MetricFamily: "http_request_duration_seconds_count", Type: model.MetricTypeGauge, Help: "Independent gauge."},
+				extra:    []scrape.MetricMetadata{{MetricFamily: "http_request_duration_seconds", Type: model.MetricTypeHistogram, Help: "Request duration.", Unit: "seconds"}},
+				matching: []string{"http_request_duration_seconds_count"},
+			},
+			{
+				name:     "histogram",
+				metadata: scrape.MetricMetadata{MetricFamily: "http_request_duration_seconds", Type: model.MetricTypeHistogram, Help: "Request duration.", Unit: "seconds"},
+				matching: []string{"http_request_duration_seconds", "http_request_duration_seconds_bucket", "http_request_duration_seconds_sum", "http_request_duration_seconds_count"},
+				missing:  []string{"http_request_duration_seconds_created", "http_request_duration_seconds_total", "http_request_duration_seconds_gsum", "http_request_duration_seconds_gcount"},
+			},
+			{
+				name:     "summary",
+				metadata: scrape.MetricMetadata{MetricFamily: "go_gc_duration_seconds", Type: model.MetricTypeSummary, Help: "GC duration.", Unit: "seconds"},
+				matching: []string{"go_gc_duration_seconds", "go_gc_duration_seconds_sum", "go_gc_duration_seconds_count"},
+				missing:  []string{"go_gc_duration_seconds_created", "go_gc_duration_seconds_bucket", "go_gc_duration_seconds_total"},
+			},
+			{
+				// OpenMetrics text uses _gsum and _gcount, the protobuf format
+				// uses _sum and _count.
+				name:     "gauge histogram",
+				metadata: scrape.MetricMetadata{MetricFamily: "queue_size", Type: model.MetricTypeGaugeHistogram, Help: "Queue size."},
+				matching: []string{"queue_size", "queue_size_bucket", "queue_size_gsum", "queue_size_gcount", "queue_size_sum", "queue_size_count"},
+				missing:  []string{"queue_size_total", "queue_size_created"},
+			},
+			{
+				name:     "info",
+				metadata: scrape.MetricMetadata{MetricFamily: "target", Type: model.MetricTypeInfo, Help: "Target information."},
+				matching: []string{"target_info"},
+				missing:  []string{"target_total", "target_created"},
+			},
+			{
+				name:     "Prometheus info with doubled suffix",
+				metadata: scrape.MetricMetadata{MetricFamily: "go_build_info", Type: model.MetricTypeInfo, Help: "Build information."},
+				matching: []string{"go_build_info"},
+				missing:  []string{"go_build_info_info"},
+			},
+			{
+				name:     "unknown type",
+				metadata: scrape.MetricMetadata{MetricFamily: "custom_metric", Type: model.MetricTypeUnknown, Help: "Custom metric."},
+				matching: []string{"custom_metric"},
+				missing:  []string{"custom_metric_total", "custom_metric_sum", "custom_metric_count", "custom_metric_created"},
+			},
+		} {
+			t.Run(tc.name, func(t *testing.T) {
+				api := minimalSearchAPI()
+				var input strings.Builder
+				input.WriteString("load 1m\n")
+				for _, names := range [][]string{tc.matching, tc.missing, tc.filtered} {
+					for _, name := range names {
+						fmt.Fprintf(&input, "  %s{job=\"test\"} 0+1x100\n", name)
+					}
+				}
+				api.Queryable = promqltest.LoadedStorage(t, input.String())
+				tr := newTestTargetRetriever([]*testTargetParams{
+					{Identifier: "a", Labels: labels.FromStrings(model.AddressLabel, "a:9090"), Params: url.Values{}, Active: true},
+					{Identifier: "b", Labels: labels.FromStrings(model.AddressLabel, "b:9090"), Params: url.Values{}, Active: true},
+				})
+				require.NoError(t, tr.SetMetadataStoreForTargets("a", &testMetaStore{Metadata: []scrape.MetricMetadata{tc.metadata}}))
+				require.NoError(t, tr.SetMetadataStoreForTargets("b", &testMetaStore{Metadata: tc.extra}))
+				// Keep both targets in one pool so their traversal order is deterministic.
+				targets := []*scrape.Target{tr.activeTargets["a"][0], tr.activeTargets["b"][0]}
+				if tc.extraFirst {
+					targets[0], targets[1] = targets[1], targets[0]
+				}
+				tr.activeTargets = map[string][]*scrape.Target{"test": targets}
+				api.targetRetriever = tr.toFactory()
 
-		lines := parseNDJSON(t, rec.Body.String())
-		var batch searchBatch[searchMetricNameResult]
-		require.NoError(t, json.Unmarshal(lines[0], &batch))
-		require.Len(t, batch.Results, 1)
-		require.Equal(t, "go_gc_duration_seconds", batch.Results[0].Name)
-		require.Equal(t, "gauge", batch.Results[0].Type)
-		require.Equal(t, "GC duration.", batch.Results[0].Help)
-		require.Equal(t, "seconds", batch.Results[0].Unit)
+				for _, includeMetadata := range []bool{true, false} {
+					params := url.Values{
+						"include_metadata": []string{strconv.FormatBool(includeMetadata)},
+					}
+					if tc.search != "" {
+						params.Set("search[]", tc.search)
+					}
+					rec := doSearchRequest(t, api, "/search/metric_names", params)
+					require.Equal(t, http.StatusOK, rec.Code)
+
+					lines := parseNDJSON(t, rec.Body.String())
+					var batch searchBatch[searchMetricNameResult]
+					require.NoError(t, json.Unmarshal(lines[0], &batch))
+					var want []searchMetricNameResult
+					for _, name := range tc.matching {
+						result := searchMetricNameResult{Name: name}
+						if includeMetadata {
+							result.Type = string(tc.metadata.Type)
+							result.Help = tc.metadata.Help
+							result.Unit = tc.metadata.Unit
+						}
+						want = append(want, result)
+					}
+					for _, name := range tc.missing {
+						want = append(want, searchMetricNameResult{Name: name})
+					}
+					require.ElementsMatch(t, want, batch.Results)
+				}
+			})
+		}
 	})
 
 	t.Run("with include_score", func(t *testing.T) {
@@ -1319,4 +1699,76 @@ func TestSearchParamsRejectsExcessSearchTerms(t *testing.T) {
 	})
 	require.Equal(t, http.StatusOK, rec.Code,
 		"a request with exactly maxSearchTermsPerRequest terms must be accepted")
+}
+
+func TestSearchBatchSize(t *testing.T) {
+	api := newSearchTestAPI(t)
+	t.Run("oversized batch on all endpoints", func(t *testing.T) {
+		for _, path := range []string{"/search/metric_names", "/search/label_names", "/search/label_values"} {
+			t.Run(path, func(t *testing.T) {
+				rec := doSearchRequest(t, api, path, url.Values{
+					"batch_size": {strconv.Itoa(math.MaxInt)},
+					"limit":      {"1"},
+					"label":      {"job"},
+				})
+				require.Equal(t, http.StatusOK, rec.Code)
+				lines := parseNDJSON(t, rec.Body.String())
+				require.Len(t, lines, 2)
+				var batch searchBatch[json.RawMessage]
+				require.NoError(t, json.Unmarshal(lines[0], &batch))
+				require.Len(t, batch.Results, 1)
+				var trailer searchTrailer
+				require.NoError(t, json.Unmarshal(lines[1], &trailer))
+				require.Equal(t, "success", trailer.Status)
+				require.True(t, trailer.HasMore)
+			})
+		}
+	})
+
+	for _, tc := range []struct {
+		name      string
+		batchSize string
+		limit     string
+		maxLimit  int
+		want      int
+	}{
+		{name: "default", want: 100},
+		{name: "small batch", batchSize: "2", want: 2},
+		{name: "default limited by result limit", limit: "1", want: 1},
+		{name: "default limited by operator cap", maxLimit: 3, want: 3},
+		{name: "large batch limited by result limit", batchSize: strconv.Itoa(math.MaxInt), limit: "1", want: 1},
+		{name: "large batch limited by operator cap", batchSize: strconv.Itoa(math.MaxInt), maxLimit: 3, want: 3},
+		{name: "large batch with uncapped limit", batchSize: strconv.Itoa(math.MaxInt), limit: strconv.Itoa(math.MaxInt), want: 1000},
+		{name: "batch at maximum", batchSize: "1000", limit: "2000", want: 1000},
+		{name: "batch above maximum", batchSize: "1001", limit: "2000", want: 1000},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			api.maxSearchLimit = tc.maxLimit
+			params := url.Values{"batch_size": {tc.batchSize}, "limit": {tc.limit}}
+			req := httptest.NewRequest(http.MethodGet, "/search/metric_names?"+params.Encode(), http.NoBody)
+			sp, err := api.parseSearchParams(req)
+			require.Nil(t, err)
+			require.Equal(t, tc.want, sp.batchSize)
+		})
+	}
+}
+
+func TestSearchResultStreamerBatchCapacity(t *testing.T) {
+	for _, count := range []int{3, 4} {
+		t.Run(strconv.Itoa(count), func(t *testing.T) {
+			rs := storage.NewSearchResultSetFromSlice(make([]storage.SearchResult, count), nil)
+			t.Cleanup(func() { require.NoError(t, rs.Close()) })
+			streamer := searchResultStreamer[string]{
+				rs: rs, limit: 3, batchSize: 2,
+				toResult: func(sr storage.SearchResult) string { return sr.Value },
+			}
+			for _, want := range []int{2, 1, 0} {
+				batch, err := streamer.nextBatch()
+				require.NoError(t, err)
+				require.Len(t, batch, want)
+				require.LessOrEqual(t, cap(batch), want)
+			}
+			require.Equal(t, count > 3, streamer.hasMore)
+		})
+	}
 }

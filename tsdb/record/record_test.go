@@ -17,6 +17,7 @@ package record
 import (
 	"bytes"
 	"fmt"
+	"math"
 	"math/rand"
 	"testing"
 
@@ -398,11 +399,33 @@ func TestRecord_EncodeDecode(t *testing.T) {
 	})
 }
 
+func TestRecord_MinValidTime(t *testing.T) {
+	var enc Encoder
+	var dec Decoder
+
+	for _, mint := range []int64{0, 1, -1, 12345, math.MinInt64, math.MaxInt64} {
+		encoded := enc.MinValidTime(mint, nil)
+		require.Equal(t, MinValidTime, dec.Type(encoded))
+
+		decoded, err := dec.MinValidTime(encoded)
+		require.NoError(t, err)
+		require.Equal(t, mint, decoded)
+	}
+}
+
+func TestRecord_MinValidTimeDecodeWrongType(t *testing.T) {
+	var enc Encoder
+	var dec Decoder
+
+	_, err := dec.MinValidTime(enc.Series(nil, nil))
+	require.Error(t, err)
+}
+
 // TestRecord_V1MixedRegularAndCustomBucketHistogramPermutations verifies that
 // V1 encoding correctly splits mixed regular and custom-bucket histograms into
 // separate records regardless of input ordering. The split is only meaningful
 // for V1, which keeps the two record types distinct for backwards
-// compatibility. See TestRecord_V2MixedRegularAndCustomBucketHistogram for the
+// compatibility. See TestRecord_V2HistogramRoundTrip for the
 // V2 behaviour.
 func TestRecord_V1MixedRegularAndCustomBucketHistogramPermutations(t *testing.T) {
 	dec := NewDecoder(labels.NewSymbolTable(), promslog.NewNopLogger())
@@ -570,7 +593,7 @@ func TestRecord_V1MixedRegularAndCustomBucketHistogramPermutations(t *testing.T)
 	}
 }
 
-// TestRecord_V2MixedRegularAndCustomBucketHistogram verifies that V2 encodes
+// TestRecord_V2HistogramRoundTrip verifies that V2 encodes
 // regular and custom-bucket histograms into a single HistogramSamplesV2 /
 // FloatHistogramSamplesV2 record. V2 drops the V1 split because the on-wire
 // format has no need to preserve backwards compatibility with readers that

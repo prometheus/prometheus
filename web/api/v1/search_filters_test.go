@@ -196,20 +196,46 @@ func TestFuzzyFilter(t *testing.T) {
 	}
 }
 
-func TestFuzzyFilterConcurrency(_ *testing.T) {
-	filter := NewFuzzyFilter("prometheus", 0.8)
-	values := []string{"prometheus", "promethus", "promethius", "prmetheus", "prometeus"} //nolint:misspell
+func TestFuzzyFilterConcurrency(t *testing.T) {
+	values := []string{
+		"prometheus",
+		"promethus",  //nolint:misspell
+		"promethius", //nolint:misspell
+		"prmetheus",  //nolint:misspell
+		"prometeus",  //nolint:misspell
+		"prometheus" + strings.Repeat("x", 128),
+		"prométheus" + strings.Repeat("x", 128),
+	}
 
+	type result struct {
+		accepted bool
+		score    float64
+	}
+
+	want := make([]result, len(values))
+	wantFilter := NewFuzzyFilter("prometheus", 0.8)
+	for i, value := range values {
+		want[i].accepted, want[i].score = wantFilter.Accept(value)
+	}
+
+	const workers = 10
+	filter := NewFuzzyFilter("prometheus", 0.8)
+	got := make([]result, workers*len(values))
 	var wg sync.WaitGroup
-	for range 10 {
+	for worker := range workers {
 		wg.Go(func() {
-			for _, value := range values {
-				_, _ = filter.Accept(value)
+			for i, value := range values {
+				got[worker*len(values)+i].accepted, got[worker*len(values)+i].score = filter.Accept(value)
 			}
 		})
 	}
 
 	wg.Wait()
+	for worker := range workers {
+		for i, value := range values {
+			require.Equal(t, want[i], got[worker*len(values)+i], "worker %d, value %q", worker, value)
+		}
+	}
 }
 
 func TestSubsequenceFilter(t *testing.T) {

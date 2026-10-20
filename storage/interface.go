@@ -30,6 +30,9 @@ import (
 // The errors exposed.
 var (
 	ErrNotFound = errors.New("not found")
+	// ErrCostSamplingUnsupported means the requested window cannot be sampled incrementally.
+	// It must not be returned with other failures, including failures closing rejected readers.
+	ErrCostSamplingUnsupported = errors.New("bounded query cost sampling is unavailable")
 	// ErrOutOfOrderSample is when out of order support is disabled and the sample is out of order.
 	ErrOutOfOrderSample = errors.New("out of order sample")
 	// ErrOutOfBounds is when out of order support is disabled and the sample is older than the min valid time for the append.
@@ -161,6 +164,16 @@ func (q *MockQuerier) Select(_ context.Context, sortSeries bool, hints *SelectHi
 type ChunkQueryable interface {
 	// ChunkQuerier returns a new ChunkQuerier on the storage.
 	ChunkQuerier(mint, maxt int64) (ChunkQuerier, error)
+}
+
+// CostSamplingQueryable optionally provides incremental density and point-size sampling.
+// The source must retain its selected backends across reloads and must not eagerly
+// encode a whole series or window. Unsupported windows return ErrCostSamplingUnsupported
+// after closing any opened readers; other failures remain errors.
+// False means unsupported; nil with true means a definitively empty backend.
+// Callers own each returned querier, but not the source itself.
+type CostSamplingQueryable interface {
+	CostSamplingQueryable() (SampleAndChunkQueryable, bool)
 }
 
 // ChunkQuerier provides querying access over time series data of a fixed time range.
@@ -331,6 +344,34 @@ func ErrSearchResultSet(err error, warnings ...annotations.Annotations) SearchRe
 type LabelHints struct {
 	// Maximum number of results returned. Use a value of 0 to disable.
 	Limit int
+
+	// LimitSmallest requires Limit and will select the lexically smallest N
+	// values of the full set.
+	LimitSmallest bool
+}
+
+// AllowsEarlyStop reports whether a read may stop as soon as it holds Limit
+// values. It will return false when no Limit is set or LimitSmallest is true.
+func (h *LabelHints) AllowsEarlyStop() bool {
+	return h != nil && h.Limit > 0 && !h.LimitSmallest
+}
+
+// ApplyLimit reduces values to at most Limit entries. It keeps the lexically
+// smallest values when LimitSmallest is set, and otherwise the leading ones. A
+// nil receiver, and a Limit of zero or less, both leave values unchanged.
+//
+// The limited result set is returned, along with a bool which indicates if the result
+// has re-used the same input slice or if a newly allocated slice has been created.
+//
+// Do not mutate the returned slice if the returned allocated=false.
+func (h *LabelHints) ApplyLimit(values []string) (limited []string, allocated bool) {
+	if h == nil || h.Limit <= 0 || len(values) <= h.Limit {
+		return values, false
+	}
+	if h.LimitSmallest {
+		return smallestNValues(values, h.Limit), true
+	}
+	return values[:h.Limit], false
 }
 
 // SearchHints configures search operations with filtering and scoring.

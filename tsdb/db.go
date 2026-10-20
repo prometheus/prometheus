@@ -37,6 +37,7 @@ import (
 	"golang.org/x/sync/errgroup"
 
 	"github.com/prometheus/prometheus/config"
+	"github.com/prometheus/prometheus/model/exemplar"
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/storage"
 	"github.com/prometheus/prometheus/tsdb/chunkenc"
@@ -742,6 +743,9 @@ func (db *DBReadOnly) loadDataAsQueryable(maxt int64) (storage.SampleAndChunkQue
 
 // Querier loads the blocks and wal and returns a new querier over the data partition for the given time range.
 // Current implementation doesn't support multiple Queriers.
+// The querier is not safe for concurrent use from multiple goroutines, and
+// neither are the series sets and series obtained from it: different series
+// must not be iterated concurrently either.
 func (db *DBReadOnly) Querier(mint, maxt int64) (storage.Querier, error) {
 	q, err := db.loadDataAsQueryable(maxt)
 	if err != nil {
@@ -752,6 +756,9 @@ func (db *DBReadOnly) Querier(mint, maxt int64) (storage.Querier, error) {
 
 // ChunkQuerier loads blocks and the wal and returns a new chunk querier over the data partition for the given time range.
 // Current implementation doesn't support multiple ChunkQueriers.
+// The querier is not safe for concurrent use from multiple goroutines, and
+// neither are the series sets and series obtained from it: different series
+// must not be iterated concurrently either.
 func (db *DBReadOnly) ChunkQuerier(mint, maxt int64) (storage.ChunkQuerier, error) {
 	q, err := db.loadDataAsQueryable(maxt)
 	if err != nil {
@@ -1206,6 +1213,21 @@ func open(dir string, l *slog.Logger, r prometheus.Registerer, opts *Options, rn
 	if ok {
 		minValidTime = inOrderMaxTime
 	}
+	// inOrderMaxTime alone can come back lower than where the WAL was actually truncated: a
+	// block produced by CompactSelectedSeries or CompactStaleHead carries the
+	// FromSelectedSeries or FromStaleSeries hint and is excluded from that search above, and a
+	// truncation whose range had nothing left to write never produces a block at all. Fall
+	// back to the truncation mint persisted by truncateWAL, and use whichever of the two is
+	// higher, so minValidTime never regresses below a point the WAL was already truncated to.
+	// wal is nil when WAL writes are disabled (WALSegmentSize < 0), in which case truncateWAL
+	// never runs and never had anything to persist either.
+	if wal != nil {
+		if storedMinValidTime, ok, err := wlog.ReadMinValidTime(wal.Dir()); err != nil {
+			db.logger.Warn("Failed to read persisted min valid time, falling back to the value computed from blocks", "err", err)
+		} else if ok && storedMinValidTime > minValidTime {
+			minValidTime = storedMinValidTime
+		}
+	}
 
 	if initErr := db.head.Init(minValidTime); initErr != nil {
 		db.head.metrics.walCorruptionsTotal.Inc()
@@ -1483,7 +1505,20 @@ type dbAppenderV2 struct {
 	db *DB
 }
 
-var _ storage.GetRef = dbAppenderV2{}
+var (
+	_ storage.GetRef             = dbAppenderV2{}
+	_ storage.ExemplarAppenderV2 = dbAppenderV2{}
+)
+
+// AppendExemplars implements storage.ExemplarAppenderV2 by delegating to the
+// wrapped head appender.
+func (a dbAppenderV2) AppendExemplars(ref storage.SeriesRef, ls labels.Labels, exemplars []exemplar.Exemplar) (storage.SeriesRef, error) {
+	ea, ok := a.AppenderV2.(storage.ExemplarAppenderV2)
+	if !ok {
+		return 0, fmt.Errorf("appender %T does not implement storage.ExemplarAppenderV2", a.AppenderV2)
+	}
+	return ea.AppendExemplars(ref, ls, exemplars)
+}
 
 func (a dbAppenderV2) GetRef(lset labels.Labels, hash uint64) (storage.SeriesRef, labels.Labels) {
 	if g, ok := a.AppenderV2.(storage.GetRef); ok {
@@ -1783,20 +1818,11 @@ type headViewFactory func(head *Head, mint, maxt int64) BlockReader
 //
 // The evictor must preserve any series that may have received samples
 // after compaction began, as those samples might not be present in the
-// generated blocks.
+// generated blocks -- see hasMutatedSinceSnapshot.
 //
 // maxt is the head's MaxTime at compaction start and is used to detect
 // obvious late writes via sample timestamps.
-//
-// appendIDWatermark is the head's append-ID counter at compaction
-// start. A series containing samples with appendID >
-// appendIDWatermark must not be evicted, as those samples were appended
-// after compaction began and may not be present in any block.
-//
-// When isolation is disabled, appendIDWatermark is always 0 and the
-// append-ID check becomes a no-op. In that mode, the caller must ensure
-// that no concurrent writes target the selected series.
-type headSeriesEvictor func(maxt int64, appendIDWatermark uint64) error
+type headSeriesEvictor func(maxt int64) error
 
 // compactHeadViewLocked writes a block (or sequence of blocks, one per chunk range) for the
 // restricted head view produced by viewFactory, then runs evictor to remove those series from the
@@ -1806,22 +1832,6 @@ type headSeriesEvictor func(maxt int64, appendIDWatermark uint64) error
 // The caller must hold db.cmtx.
 func (db *DB) compactHeadViewLocked(viewFactory headViewFactory, evict headSeriesEvictor, configure func(*BlockMeta)) error {
 	mint, maxt := db.head.opts.ChunkRange*(db.head.MinTime()/db.head.opts.ChunkRange), db.head.MaxTime()
-	// Capture the highest guaranteed-committed appendID as an eviction watermark
-	// before writing any blocks.
-	//
-	// Samples with appendID <= watermark are guaranteed to be present in some
-	// generated block. Samples with higher IDs may or may not be present,
-	// depending on block-writer snapshot timing.
-	//
-	// The watermark is used during eviction: a series is removed only if it has
-	// not received any samples with appendID > watermark since compaction began.
-	//
-	// We use committedAppendID instead of lastAppendID because open appenders are
-	// excluded from all block snapshots via incompleteAppends. If one of those
-	// appenders commits between the write and evict phases, using lastAppendID
-	// could evict a series whose newest sample is present in neither the block nor
-	// the head, causing that sample to be lost on WAL replay.
-	appendIDWatermark := db.head.iso.committedAppendID()
 	// The bound is inclusive so that a sample sitting exactly on a chunk-range boundary
 	// (mint == maxt) still gets a block written before its series is evicted.
 	for ; mint <= maxt; mint += db.head.chunkRange.Load() {
@@ -1861,7 +1871,7 @@ func (db *DB) compactHeadViewLocked(viewFactory headViewFactory, evict headSerie
 		compactHeadViewBeforeEvictTestingCallback = nil
 	}
 
-	if err := evict(maxt, appendIDWatermark); err != nil {
+	if err := evict(maxt); err != nil {
 		return fmt.Errorf("head truncate: %w", err)
 	}
 	db.head.RebuildSymbolTable(db.logger)
@@ -1869,6 +1879,11 @@ func (db *DB) compactHeadViewLocked(viewFactory headViewFactory, evict headSerie
 	return nil
 }
 
+// CompactStaleHead writes stale series into blocks and evicts those that are still
+// eligible for removal. Series whose exemplars still need replay remain in the head,
+// but their persisted sample chunks are released if otherwise eligible for eviction.
+// WAL replay may restore those samples after a restart until the global replay
+// cutoff passes them.
 func (db *DB) CompactStaleHead() (err error) {
 	db.cmtx.Lock()
 	defer func() {
@@ -1889,12 +1904,23 @@ func (db *DB) CompactStaleHead() (err error) {
 	if err != nil {
 		return err
 	}
+
+	// Capture the committed append-ID watermark before snapshotting any series.
+	// The snapshotFingerprints call records each series' watermark check under its lock,
+	// so later append-ID cleanup cannot erase the result. See seriesFingerprint.
+	appendIDWatermark := db.head.iso.committedAppendID()
+
+	// Snapshot each stale series' in-memory shape before writing any blocks. The eviction
+	// check below compares against this snapshot to catch a sample -- stale or not -- that
+	// arrived for the series after this point, independently of whether isolation is enabled.
+	fingerprints := db.head.snapshotFingerprints(staleSeriesRefs.sortedByRef, appendIDWatermark)
+
 	if err := db.compactHeadViewLocked(
 		func(h *Head, mint, maxt int64) BlockReader {
 			return NewSelectedSeriesHead(h, mint, maxt, staleSeriesRefs)
 		},
-		func(maxt int64, appendIDWatermark uint64) error {
-			return db.head.truncateStaleSeries(staleSeriesRefs.sortedByRef, maxt, appendIDWatermark)
+		func(maxt int64) error {
+			return db.head.truncateStaleSeries(staleSeriesRefs.sortedByRef, maxt, fingerprints)
 		},
 		func(meta *BlockMeta) { meta.Compaction.SetStaleSeries() },
 	); err != nil {
@@ -1923,6 +1949,10 @@ func (db *DB) CompactStaleHead() (err error) {
 //
 // Series that received new samples after the ref list was collected are skipped during eviction
 // and remain in the head. They may be reconsidered during a subsequent compaction cycle.
+// Series with exemplars at or after the global replay cutoff also remain in the head,
+// until the cutoff passes the exemplar timestamps. Their persisted sample chunks are
+// released if the series is otherwise eligible for eviction. WAL replay may restore
+// those samples after a restart until the global replay cutoff passes them.
 //
 // This operation persists only in-order chunks. Series with non-empty out-of-order state at the
 // time of compaction are therefore skipped as well, since evicting them would orphan their
@@ -1972,12 +2002,22 @@ func (db *DB) CompactSelectedSeries(seriesRefs []storage.SeriesRef) (err error) 
 		return nil
 	}
 
+	// Capture the committed append-ID watermark before snapshotting any series.
+	// The snapshotFingerprints call records each series' watermark check under its lock,
+	// so later append-ID cleanup cannot erase the result. See seriesFingerprint.
+	appendIDWatermark := db.head.iso.committedAppendID()
+
+	// Snapshot each selected series' in-memory shape before writing any blocks. The eviction
+	// check below compares against this snapshot to catch a sample that arrived for the series
+	// after this point, independently of whether isolation is enabled.
+	fingerprints := db.head.snapshotFingerprints(selectedSeriesRefs.sortedByRef, appendIDWatermark)
+
 	if err := db.compactHeadViewLocked(
 		func(h *Head, mint, maxt int64) BlockReader {
 			return NewSelectedSeriesHead(h, mint, maxt, selectedSeriesRefs)
 		},
-		func(maxt int64, appendIDWatermark uint64) error {
-			return db.head.truncateSelectedSeries(selectedSeriesRefs.sortedByRef, maxt, appendIDWatermark)
+		func(maxt int64) error {
+			return db.head.truncateSelectedSeries(selectedSeriesRefs.sortedByRef, maxt, fingerprints)
 		},
 		func(meta *BlockMeta) { meta.Compaction.SetSelectedSeries() },
 	); err != nil {
@@ -2580,6 +2620,9 @@ func (db *DB) Snapshot(dir string, withHead bool) error {
 }
 
 // Querier returns a new querier over the data partition for the given time range.
+// The querier is not safe for concurrent use from multiple goroutines, and
+// neither are the series sets and series obtained from it: different series
+// must not be iterated concurrently either.
 func (db *DB) Querier(mint, maxt int64) (_ storage.Querier, err error) {
 	var blocks []BlockReader
 
@@ -2747,6 +2790,9 @@ func (db *DB) floatChunkEncoding() chunkenc.Encoding {
 }
 
 // ChunkQuerier returns a new chunk querier over the data partition for the given time range.
+// The querier is not safe for concurrent use from multiple goroutines, and
+// neither are the series sets and series obtained from it: different series
+// must not be iterated concurrently either.
 func (db *DB) ChunkQuerier(mint, maxt int64) (storage.ChunkQuerier, error) {
 	blockQueriers, err := db.blockChunkQuerierForRange(mint, maxt)
 	if err != nil {

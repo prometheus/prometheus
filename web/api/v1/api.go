@@ -228,6 +228,7 @@ type TSDBAdminStats interface {
 type QueryOpts interface {
 	EnablePerStepStats() bool
 	LookbackDelta() time.Duration
+	UseStartTimestamps() *bool
 }
 
 // API can register a set of endpoints in a router and handle
@@ -282,7 +283,7 @@ type API struct {
 func NewAPI(
 	qe promql.QueryEngine,
 	q storage.SampleAndChunkQueryable,
-	ap storage.Appendable, apV2 storage.AppendableV2,
+	apV2 storage.AppendableV2,
 	eq storage.ExemplarQueryable,
 	spsr func(context.Context) ScrapePoolsRetriever,
 	tr func(context.Context) TargetRetriever,
@@ -313,7 +314,6 @@ func NewAPI(
 	rwEnabled bool,
 	acceptRemoteWriteProtoMsgs remoteapi.MessageTypes,
 	otlpEnabled, otlpDeltaToCumulative, otlpNativeDeltaIngestion bool,
-	stZeroIngestionEnabled bool,
 	lookbackDelta time.Duration,
 	enableTypeAndUnitLabels bool,
 	appendMetadata bool,
@@ -371,12 +371,12 @@ func NewAPI(
 		a.customStatsRenderer = true
 	}
 
-	if (ap == nil || apV2 == nil) && (rwEnabled || otlpEnabled) {
+	if apV2 == nil && (rwEnabled || otlpEnabled) {
 		panic("remote write or otlp write enabled, but no appender passed in.")
 	}
 
 	if rwEnabled {
-		a.remoteWriteHandler = remote.NewWriteHandler(logger, registerer, ap, acceptRemoteWriteProtoMsgs, stZeroIngestionEnabled, enableTypeAndUnitLabels, appendMetadata)
+		a.remoteWriteHandler = remote.NewWriteHandler(logger, registerer, apV2, acceptRemoteWriteProtoMsgs, enableTypeAndUnitLabels, appendMetadata)
 	}
 	if otlpEnabled {
 		a.otlpWriteHandler = remote.NewOTLPWriteHandler(logger, registerer, apV2, configFunc, remote.OTLPOptions{
@@ -664,7 +664,16 @@ func extractQueryOpts(r *http.Request) (promql.QueryOpts, error) {
 		duration = parsedDuration
 	}
 
-	return promql.NewPrometheusQueryOpts(r.FormValue("stats") == statsAll, duration), nil
+	var useStartTimestamps *bool
+	if val := r.Header.Get("X-Prometheus-Use-Start-Timestamps"); val != "" {
+		b, err := strconv.ParseBool(val)
+		if err != nil {
+			return nil, fmt.Errorf("error parsing X-Prometheus-Use-Start-Timestamps header: %w", err)
+		}
+		useStartTimestamps = &b
+	}
+
+	return promql.NewPrometheusQueryOpts(r.FormValue("stats") == statsAll, duration, useStartTimestamps), nil
 }
 
 // Accepted values of the `stats` query parameter on /query and /query_range
@@ -2406,7 +2415,8 @@ func parseTime(s string) (time.Time, error) {
 func parseDuration(s string) (time.Duration, error) {
 	if d, err := strconv.ParseFloat(s, 64); err == nil {
 		ts := d * float64(time.Second)
-		if ts > float64(math.MaxInt64) || ts < float64(math.MinInt64) {
+		// float64(math.MaxInt64) is 2^63, which int64 cannot hold, and NaN passes every comparison.
+		if math.IsNaN(ts) || ts >= float64(math.MaxInt64) || ts < float64(math.MinInt64) {
 			return 0, fmt.Errorf("cannot parse %q to a valid duration. It overflows int64", s)
 		}
 		return time.Duration(ts), nil
