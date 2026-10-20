@@ -331,6 +331,8 @@ func (c *PrometheusConverter) addHistogramDataPoints(
 				}
 				appOpts.Exemplars = append(appOpts.Exemplars, ex)
 			}
+			// Appenders require exemplars sorted by timestamp.
+			slices.SortFunc(appOpts.Exemplars, exemplar.Compare)
 			val := float64(cumulativeCount)
 			if pt.Flags().NoRecordedValue() {
 				val = math.Float64frombits(value.StaleNaN)
@@ -343,6 +345,7 @@ func (c *PrometheusConverter) addHistogramDataPoints(
 		}
 
 		appOpts.Exemplars = exemplars[nextExemplarIdx:]
+		slices.SortFunc(appOpts.Exemplars, exemplar.Compare)
 		// Add le=+Inf bucket.
 		val = float64(pt.Count())
 		if pt.Flags().NoRecordedValue() {
@@ -385,12 +388,15 @@ func (c *PrometheusConverter) getPromExemplars(ctx context.Context, exemplars pm
 			return nil, fmt.Errorf("unsupported exemplar value type: %v", ex.ValueType())
 		}
 
+		var hasTraceID, hasSpanID bool
 		if traceID := ex.TraceID(); !traceID.IsEmpty() {
+			hasTraceID = true
 			val := hex.EncodeToString(traceID[:])
 			exemplarRunes += utf8.RuneCountInString(traceIDKey) + utf8.RuneCountInString(val)
 			c.scratchBuilder.Add(traceIDKey, val)
 		}
 		if spanID := ex.SpanID(); !spanID.IsEmpty() {
+			hasSpanID = true
 			val := hex.EncodeToString(spanID[:])
 			exemplarRunes += utf8.RuneCountInString(spanIDKey) + utf8.RuneCountInString(val)
 			c.scratchBuilder.Add(spanIDKey, val)
@@ -398,6 +404,9 @@ func (c *PrometheusConverter) getPromExemplars(ctx context.Context, exemplars pm
 
 		attrs := ex.FilteredAttributes()
 		attrs.Range(func(key string, value pcommon.Value) bool {
+			if isOverriddenByTraceContext(key, hasTraceID, hasSpanID) {
+				return true
+			}
 			exemplarRunes += utf8.RuneCountInString(key) + utf8.RuneCountInString(value.AsString())
 			return true
 		})
@@ -406,6 +415,9 @@ func (c *PrometheusConverter) getPromExemplars(ctx context.Context, exemplars pm
 		// labels to exceed the max number of runes.
 		if exemplarRunes <= maxExemplarRunes {
 			attrs.Range(func(key string, value pcommon.Value) bool {
+				if isOverriddenByTraceContext(key, hasTraceID, hasSpanID) {
+					return true
+				}
 				c.scratchBuilder.Add(key, value.AsString())
 				return true
 			})
@@ -416,6 +428,14 @@ func (c *PrometheusConverter) getPromExemplars(ctx context.Context, exemplars pm
 	}
 
 	return outputExemplars, nil
+}
+
+// isOverriddenByTraceContext reports whether the exemplar filtered attribute
+// with the given key collides with a trace_id or span_id label that was set
+// from the exemplar's trace context. Such attributes are dropped, as the trace
+// context takes precedence.
+func isOverriddenByTraceContext(key string, hasTraceID, hasSpanID bool) bool {
+	return (hasTraceID && key == traceIDKey) || (hasSpanID && key == spanIDKey)
 }
 
 // findMinAndMaxTimestamps returns the minimum of minTimestamp and the earliest timestamp in metric and

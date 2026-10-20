@@ -46,9 +46,63 @@ import (
 	"github.com/prometheus/prometheus/config"
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/notifier"
+	"github.com/prometheus/prometheus/promql"
+	"github.com/prometheus/prometheus/promql/parser"
+	"github.com/prometheus/prometheus/promql/promqltest"
 	"github.com/prometheus/prometheus/rules"
+	"github.com/prometheus/prometheus/storage"
+	"github.com/prometheus/prometheus/storage/remote"
 	"github.com/prometheus/prometheus/util/testutil"
 )
+
+func TestReadyStorageCostSamplingQueryable(t *testing.T) {
+	db := promqltest.LoadedStorage(t, `
+load 10s
+  metric 0+1x100
+  nh {{schema:0 sum:10 count:5 buckets:[1 2 2]}}x100
+`)
+	t.Cleanup(func() { require.NoError(t, db.Close()) })
+	remoteStorage := remote.NewStorage(nil, prometheus.NewRegistry(), nil, t.TempDir(), time.Second, nil, false)
+	t.Cleanup(func() { require.NoError(t, remoteStorage.Close()) })
+
+	for _, tc := range []struct {
+		name      string
+		db        storage.Storage
+		supported bool
+	}{
+		{name: "not ready"},
+		{name: "unsupported", db: struct{ storage.Storage }{db}},
+		{name: "native", db: db, supported: true},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			local := &readyStorage{}
+			local.Set(tc.db, 0)
+			fanout := storage.NewFanout(nil, local, remoteStorage)
+			source, supported := fanout.(storage.CostSamplingQueryable).CostSamplingQueryable()
+			require.Equal(t, tc.supported, supported)
+			if !tc.supported {
+				require.Nil(t, source)
+				return
+			}
+			require.NotNil(t, source)
+			for _, expr := range []string{"rate(metric[5m])", "rate(nh[5m])"} {
+				t.Run(expr, func(t *testing.T) {
+					ts := time.Unix(1000, 0)
+					p := parser.NewParser(parser.Options{})
+					// Use a different configured interval so missing density sampling changes the estimate.
+					direct, warnings, err := promql.EstimateCost(t.Context(), db, p, expr, ts, ts, 0, 5*time.Minute, time.Minute, time.Minute)
+					require.NoError(t, err)
+					require.Empty(t, warnings)
+					require.GreaterOrEqual(t, direct.SamplesRead, int64(30))
+					wrapped, warnings, err := promql.EstimateCost(t.Context(), fanout, p, expr, ts, ts, 0, 5*time.Minute, time.Minute, time.Minute)
+					require.NoError(t, err)
+					require.Empty(t, warnings)
+					require.Equal(t, direct, wrapped)
+				})
+			}
+		})
+	}
+}
 
 func init() {
 	// This can be removed when the legacy global mode is fully deprecated.
@@ -545,12 +599,12 @@ func TestTimeMetrics(t *testing.T) {
 		"prometheus_tsdb_head_max_time_seconds",
 	))
 
-	app := db.Appender(context.Background())
-	_, err = app.Append(0, labels.FromStrings(model.MetricNameLabel, "a"), 1000, 1)
+	app := db.AppenderV2(context.Background())
+	_, err = app.Append(0, labels.FromStrings(model.MetricNameLabel, "a"), 0, 1000, 1, nil, nil, storage.AOptions{})
 	require.NoError(t, err)
-	_, err = app.Append(0, labels.FromStrings(model.MetricNameLabel, "a"), 2000, 1)
+	_, err = app.Append(0, labels.FromStrings(model.MetricNameLabel, "a"), 0, 2000, 1, nil, nil, storage.AOptions{})
 	require.NoError(t, err)
-	_, err = app.Append(0, labels.FromStrings(model.MetricNameLabel, "a"), 3000, 1)
+	_, err = app.Append(0, labels.FromStrings(model.MetricNameLabel, "a"), 0, 3000, 1, nil, nil, storage.AOptions{})
 	require.NoError(t, err)
 	require.NoError(t, app.Commit())
 

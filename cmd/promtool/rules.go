@@ -52,7 +52,7 @@ type ruleImporterConfig struct {
 	start                time.Time
 	end                  time.Time
 	evalInterval         time.Duration
-	maxBlockDuration     time.Duration
+	blockDuration        time.Duration
 	nameValidationScheme model.ValidationScheme
 }
 
@@ -80,14 +80,14 @@ func (importer *ruleImporter) loadGroups(_ context.Context, filenames []string) 
 	return nil
 }
 
-// importAll evaluates all the recording rules and creates new time series and writes them to disk in blocks.
+// blockDuration value will be used as-is is not validated against the list of compatible durations that prometheus supports.
 func (importer *ruleImporter) importAll(ctx context.Context) (errs []error) {
 	for name, group := range importer.groups {
 		importer.logger.Info("processing group", "component", "backfiller", "name", name)
 
 		for i, r := range group.Rules() {
 			importer.logger.Info("processing rule", "component", "backfiller", "id", i, "name", r.Name())
-			if err := importer.importRule(ctx, r.Query().String(), r.Name(), r.Labels(), importer.config.start, importer.config.end, int64(importer.config.maxBlockDuration/time.Millisecond), group); err != nil {
+			if err := importer.importRule(ctx, r.Query().String(), r.Name(), r.Labels(), importer.config.start, importer.config.end, int64(importer.config.blockDuration/time.Millisecond), group); err != nil {
 				errs = append(errs, err)
 			}
 		}
@@ -95,11 +95,10 @@ func (importer *ruleImporter) importAll(ctx context.Context) (errs []error) {
 	return errs
 }
 
-// importRule queries a prometheus API to evaluate rules at times in the past.
+// blockDuration value will be used as-is is not validated against the list of compatible durations that prometheus supports.
 func (importer *ruleImporter) importRule(ctx context.Context, ruleExpr, ruleName string, ruleLabels labels.Labels, start, end time.Time,
-	maxBlockDuration int64, grp *rules.Group,
+	blockDuration int64, grp *rules.Group,
 ) (err error) {
-	blockDuration := getCompatibleBlockDuration(maxBlockDuration)
 	startInMs := start.Unix() * int64(time.Second/time.Millisecond)
 	endInMs := end.Unix() * int64(time.Second/time.Millisecond)
 
@@ -195,7 +194,7 @@ func newMultipleAppender(ctx context.Context, blockWriter *tsdb.BlockWriter) *mu
 	return &multipleAppender{
 		maxSamplesInMemory: maxSamplesInMemory,
 		writer:             blockWriter,
-		appender:           blockWriter.Appender(ctx),
+		appender:           blockWriter.AppenderV2(ctx),
 	}
 }
 
@@ -205,11 +204,11 @@ type multipleAppender struct {
 	maxSamplesInMemory int
 	currentSampleCount int
 	writer             *tsdb.BlockWriter
-	appender           storage.Appender
+	appender           storage.AppenderV2
 }
 
 func (m *multipleAppender) add(ctx context.Context, l labels.Labels, t int64, v float64) error {
-	if _, err := m.appender.Append(0, l, t, v); err != nil {
+	if _, err := m.appender.Append(0, l, 0, t, v, nil, nil, storage.AOptions{}); err != nil {
 		return fmt.Errorf("multiappender append: %w", err)
 	}
 	m.currentSampleCount++
@@ -226,7 +225,7 @@ func (m *multipleAppender) commit(ctx context.Context) error {
 	if err := m.appender.Commit(); err != nil {
 		return fmt.Errorf("multiappender commit: %w", err)
 	}
-	m.appender = m.writer.Appender(ctx)
+	m.appender = m.writer.AppenderV2(ctx)
 	m.currentSampleCount = 0
 	return nil
 }

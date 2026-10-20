@@ -172,6 +172,13 @@ func (s *Storage) Querier(mint, maxt int64) (storage.Querier, error) {
 	return storage.NewMergeQuerier(nil, queriers, storage.ChainedSeriesMerge), nil
 }
 
+// CostSamplingQueryable reports an empty source only when no remote readers are configured.
+func (s *Storage) CostSamplingQueryable() (storage.SampleAndChunkQueryable, bool) {
+	s.mtx.Lock()
+	defer s.mtx.Unlock()
+	return nil, len(s.queryables) == 0
+}
+
 // ChunkQuerier returns a storage.MergeQuerier combining the remote client queriers
 // of each configured remote read endpoint.
 func (s *Storage) ChunkQuerier(mint, maxt int64) (storage.ChunkQuerier, error) {
