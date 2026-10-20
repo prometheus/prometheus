@@ -5466,10 +5466,14 @@ func canSkipHistogramBuckets(path []parser.Node) bool {
 
 		case *parser.BinaryExpr:
 			switch p.Op {
-			case parser.ADD, parser.SUB, parser.MUL, parser.DIV, parser.LAND, parser.LOR, parser.LUNLESS:
+			case parser.MUL, parser.DIV, parser.LAND, parser.LOR, parser.LUNLESS:
 			default:
 				// Notably, == and != compare the buckets, trimming
 				// changes them, and the others drop histograms.
+				// Adding or subtracting histograms drops the
+				// result on conflicting counter resets, and
+				// HistogramStatsIterator sets more explicit counter
+				// reset hints than full decoding does.
 				return false
 			}
 

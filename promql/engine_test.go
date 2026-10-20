@@ -5464,8 +5464,12 @@ func TestDetectHistogramStatsDecoding(t *testing.T) {
 		{expr: `histogram_count(metric != other)`, expectSkip: false},
 		{expr: `timestamp(metric != other)`, expectSkip: false},
 		{expr: `absent(metric == other)`, expectSkip: false},
-		// Other binary operators do not prevent skipping buckets.
-		{expr: `histogram_count(metric + other)`, expectSkip: true},
+		// Adding or subtracting histograms can drop the result on
+		// conflicting counter resets, and the counter reset hints
+		// depend on whether the buckets are decoded.
+		{expr: `histogram_count(metric + other)`, expectSkip: false},
+		{expr: `histogram_count(first_over_time(metric[2m]) - last_over_time(metric[2m]))`, expectSkip: false},
+		{expr: `histogram_count(metric + (other - third))`, expectSkip: false},
 		// Detecting changes and counting distinct values needs the buckets.
 		{expr: `timestamp(changes(metric[5m]))`, expectSkip: false},
 		{expr: `timestamp(count_values("value", metric))`, expectSkip: false},
