@@ -332,7 +332,7 @@ func (c *flagConfig) setFeatureListOptions(logger *slog.Logger) error {
 				logger.Info("Enabling native ingestion of delta OTLP metrics, storing the raw sample values without conversion. WARNING: Delta support is in an early stage of development. The ingestion and querying process is likely to change over time.")
 			case "openmetrics2":
 				c.scrape.EnableOpenMetrics2 = true
-				logger.Info("Experimental OpenMetrics 2.0 scrape format enabled. To negotiate OpenMetrics 2.0 with targets, add OpenMetricsText2.0.0 and/or OpenMetricsText2.0.0-rc to scrape_protocols in the configuration. WARNING: OpenMetrics 2.0 is not stable yet, the parser will be made stricter before stabilization and the exposition format may still change.")
+				logger.Info("Experimental OpenMetrics 2.0 scrape format enabled. To negotiate OpenMetrics 2.0 with targets, add OpenMetricsText2.0.0 and OpenMetricsText2.0.0-rc to scrape_protocols in the configuration. WARNING: OpenMetrics 2.0 is not stable yet, the parser will be made stricter before stabilization and the exposition format may still change.")
 			case "type-and-unit-labels":
 				c.scrape.EnableTypeAndUnitLabels = true
 				c.web.EnableTypeAndUnitLabels = true
