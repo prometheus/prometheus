@@ -841,7 +841,6 @@ un_seconds 1.5
 
 func TestOpenMetrics2ParseErrors(t *testing.T) {
 	for _, tc := range []struct {
-		name  string
 		input string
 		err   string
 	}{
@@ -947,6 +946,20 @@ foo_total 1.0 # {id="x"} 1.0
 		},
 		{
 			input: "# TYPE foo histogram\nfoo {count:0,sum:0.0,bucket:[+Inf:0],schema:0,zero_threshold:0,zero_count:0}\n# EOF\n",
+			err:   "composite fields must appear in specification order",
+		},
+		{
+			// The native bucket lists must follow their span definitions.
+			input: "# TYPE foo histogram\nfoo {count:1,sum:2.0,schema:0,zero_threshold:0,zero_count:0,positive_buckets:[1],positive_spans:[0:1]}\n# EOF\n",
+			err:   "composite fields must appear in specification order",
+		},
+		{
+			input: "# TYPE foo histogram\nfoo {count:1,sum:2.0,schema:0,zero_threshold:0,zero_count:0,negative_buckets:[1],negative_spans:[0:1]}\n# EOF\n",
+			err:   "composite fields must appear in specification order",
+		},
+		{
+			// The same native field ordering applies to gauge histograms.
+			input: "# TYPE foo gaugehistogram\nfoo {gcount:1,gsum:2.0,schema:0,zero_count:0,zero_threshold:0}\n# EOF\n",
 			err:   "composite fields must appear in specification order",
 		},
 		{
