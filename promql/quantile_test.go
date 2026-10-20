@@ -47,6 +47,11 @@ func TestBucketQuantile_ZeroQuantileWithEmptyLeadingBuckets(t *testing.T) {
 			want:    -2,
 		},
 		{
+			name:    "empty negative infinity bucket",
+			buckets: Buckets{{UpperBound: math.Inf(-1)}, {UpperBound: -1, Count: 10}, {UpperBound: math.Inf(1), Count: 10}},
+			want:    math.Inf(-1),
+		},
+		{
 			name:    "only infinite bucket populated",
 			buckets: Buckets{{UpperBound: 1}, {UpperBound: 2}, {UpperBound: math.Inf(1), Count: 10}},
 			want:    2,
@@ -78,6 +83,15 @@ func TestBucketQuantile_ZeroQuantileWithEmptyLeadingBuckets(t *testing.T) {
 			require.False(t, fixed)
 		})
 	}
+}
+
+func TestBucketQuantile_UnderflowedRankSkipsEmptyLeadingBuckets(t *testing.T) {
+	buckets := Buckets{{UpperBound: 1}, {UpperBound: 2, Count: 0.25}, {UpperBound: math.Inf(1), Count: 0.5}}
+
+	got, forced, fixed, _, _, _ := BucketQuantile(math.SmallestNonzeroFloat64, buckets)
+	require.Equal(t, 1.0, got)
+	require.False(t, forced)
+	require.False(t, fixed)
 }
 
 func TestBucketQuantile_ForcedMonotonicity(t *testing.T) {
