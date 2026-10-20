@@ -1,0 +1,5 @@
+receive_relabel_configs:
+  - source_labels: [__name__]
+    regex: "legacy_(.*)"
+    target_label: __name__
+    replacement: "${1}"
