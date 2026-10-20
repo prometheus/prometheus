@@ -786,6 +786,20 @@ func main() {
 		os.Exit(2)
 	}
 
+	if err := remote.ValidateRemoteWriteFeatures(
+		cfgFile.RemoteWriteConfigs,
+		cfg.scrape.EnableTypeAndUnitLabels,
+		cfg.tsdb.EnableMetadataWALRecords || cfg.agent.EnableMetadataWALRecords,
+		cfg.tsdb.EnableSTStorage || cfg.agent.EnableSTStorage,
+	); err != nil {
+		absPath, pathErr := filepath.Abs(cfg.configFile)
+		if pathErr != nil {
+			absPath = cfg.configFile
+		}
+		logger.Error(fmt.Sprintf("Error validating remote_write config (--config.file=%s)", cfg.configFile), "file", absPath, "err", err)
+		os.Exit(2)
+	}
+
 	if cfg.tsdb.EnableExemplarStorage {
 		if cfgFile.StorageConfig.ExemplarsConfig == nil {
 			cfgFile.StorageConfig.ExemplarsConfig = &config.DefaultExemplarsConfig
@@ -948,7 +962,17 @@ func main() {
 	var (
 		localStorage  = &readyStorage{stats: tsdb.NewDBStats()}
 		scraper       = &readyScrapeManager{}
-		remoteStorage = remote.NewStorage(logger.With("component", "remote"), prometheus.DefaultRegisterer, localStorage.StartTime, localStoragePath, time.Duration(cfg.RemoteFlushDeadline), scraper, cfg.scrape.EnableTypeAndUnitLabels)
+		remoteStorage = remote.NewStorage(
+			logger.With("component", "remote"),
+			prometheus.DefaultRegisterer,
+			localStorage.StartTime,
+			localStoragePath,
+			time.Duration(cfg.RemoteFlushDeadline),
+			scraper,
+			cfg.scrape.EnableTypeAndUnitLabels,
+			cfg.tsdb.EnableMetadataWALRecords || cfg.agent.EnableMetadataWALRecords,
+			cfg.tsdb.EnableSTStorage || cfg.agent.EnableSTStorage,
+		)
 		fanoutStorage = storage.NewFanout(logger, localStorage, remoteStorage)
 	)
 
