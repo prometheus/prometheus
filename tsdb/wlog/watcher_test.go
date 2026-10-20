@@ -725,6 +725,9 @@ func TestCheckpointSeriesReset(t *testing.T) {
 
 			_, cpi, err := LastCheckpoint(wdir)
 			require.NoError(t, err)
+			// When current segment is at or behind the checkpoint, garbageCollectSeries
+			// must skip the checkpoint without marking it as already processed.
+			require.NoError(t, watcher.garbageCollectSeries(cpi))
 			err = watcher.garbageCollectSeries(cpi + 1)
 			require.NoError(t, err)
 
