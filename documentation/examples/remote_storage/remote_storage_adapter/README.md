@@ -1,5 +1,7 @@
 # Remote storage adapter
 
+> **Note:** This adapter is an example intended only to demonstrate how Prometheus's remote write and remote read protocols work. It is not maintained or hardened for production use.
+
 This is a write adapter that receives samples via Prometheus's remote write
 protocol and stores them in Graphite, InfluxDB, or OpenTSDB. It is meant as a
 replacement for the built-in specific remote storage implementations that have

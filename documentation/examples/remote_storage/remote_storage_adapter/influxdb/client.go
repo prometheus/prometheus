@@ -19,6 +19,8 @@ import (
 	"fmt"
 	"log/slog"
 	"math"
+	"regexp"
+	"strconv"
 	"strings"
 	"time"
 
@@ -166,9 +168,13 @@ func (c *Client) buildCommand(q *prompb.Query) (string, error) {
 		if m.Name == model.MetricNameLabel {
 			switch m.Type {
 			case prompb.LabelMatcher_EQ:
-				fmt.Fprintf(&measurement, " == \"%s\"", m.Value)
+				fmt.Fprintf(&measurement, " == %s", quoteFluxString(m.Value))
 			case prompb.LabelMatcher_RE:
-				fmt.Fprintf(&measurement, " =~ /%s/", escapeSlashes(m.Value))
+				re, err := escapeFluxRegex(m.Value)
+				if err != nil {
+					return "", err
+				}
+				fmt.Fprintf(&measurement, " =~ /%s/", re)
 			default:
 				// TODO: Figure out how to support these efficiently.
 				return "", errors.New("non-equal or regex-non-equal matchers are not supported on the metric name yet")
@@ -178,13 +184,21 @@ func (c *Client) buildCommand(q *prompb.Query) (string, error) {
 
 		switch m.Type {
 		case prompb.LabelMatcher_EQ:
-			matchers = append(matchers, fmt.Sprintf("r.%s == \"%s\"", m.Name, escapeSingleQuotes(m.Value)))
+			matchers = append(matchers, fmt.Sprintf("r[%s] == %s", quoteFluxString(m.Name), quoteFluxString(m.Value)))
 		case prompb.LabelMatcher_NEQ:
-			matchers = append(matchers, fmt.Sprintf("r.%s != \"%s\"", m.Name, escapeSingleQuotes(m.Value)))
+			matchers = append(matchers, fmt.Sprintf("r[%s] != %s", quoteFluxString(m.Name), quoteFluxString(m.Value)))
 		case prompb.LabelMatcher_RE:
-			matchers = append(matchers, fmt.Sprintf("r.%s =~ /%s/", m.Name, escapeSingleQuotes(m.Value)))
+			re, err := escapeFluxRegex(m.Value)
+			if err != nil {
+				return "", err
+			}
+			matchers = append(matchers, fmt.Sprintf("r[%s] =~ /%s/", quoteFluxString(m.Name), re))
 		case prompb.LabelMatcher_NRE:
-			matchers = append(matchers, fmt.Sprintf("r.%s !~ /%s/", m.Name, escapeSingleQuotes(m.Value)))
+			re, err := escapeFluxRegex(m.Value)
+			if err != nil {
+				return "", err
+			}
+			matchers = append(matchers, fmt.Sprintf("r[%s] !~ /%s/", quoteFluxString(m.Name), re))
 		default:
 			return "", fmt.Errorf("unknown match type %v", m.Type)
 		}
@@ -195,19 +209,37 @@ func (c *Client) buildCommand(q *prompb.Query) (string, error) {
 
 	// _measurement must be retained, otherwise "invalid metric name" shall be thrown
 	command := fmt.Sprintf(
-		"from(bucket: \"%s\") |> range(%s) |> filter(fn: (r) => %s%s)",
-		c.bucket, rangeInNs, measurement.String(), joinedMatchers,
+		"from(bucket: %s) |> range(%s) |> filter(fn: (r) => %s%s)",
+		quoteFluxString(c.bucket), rangeInNs, measurement.String(), joinedMatchers,
 	)
 
 	return command, nil
 }
 
-func escapeSingleQuotes(str string) string {
-	return strings.ReplaceAll(str, `'`, `\'`)
+// quoteFluxString quotes a string literal for Flux and escapes string interpolation sequences.
+func quoteFluxString(str string) string {
+	return strings.ReplaceAll(strconv.Quote(str), "${", `\${`)
 }
 
-func escapeSlashes(str string) string {
-	return strings.ReplaceAll(str, `/`, `\/`)
+// escapeFluxRegex validates a regular expression and escapes it for a Flux /.../ literal.
+func escapeFluxRegex(str string) (string, error) {
+	if _, err := regexp.Compile(str); err != nil {
+		return "", fmt.Errorf("invalid regex %q: %w", str, err)
+	}
+	if str == "" {
+		return "(?:)", nil
+	}
+	escaped := strings.NewReplacer(
+		"/", `\/`,
+		"\n", `\n`,
+		"\r", `\r`,
+	).Replace(str)
+	// Flux's regex scanner treats any `\/` as an escaped slash, even after `\\`.
+	// Append a no-op group when the pattern ends with `\` so the closing `/` is not consumed.
+	if strings.HasSuffix(escaped, `\`) {
+		escaped += "(?:)"
+	}
+	return escaped, nil
 }
 
 func mergeResult(labelsToSeries map[string]*prompb.TimeSeries, record *query.FluxRecord) error {
