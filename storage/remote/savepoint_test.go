@@ -21,26 +21,51 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-func TestSavepointRoundTrip(t *testing.T) {
-	dir := t.TempDir()
-
-	sp := Savepoint{
-		"abc123": {Segment: 42},
-		"def456": {Segment: 7},
+func TestSavepointSaveLoad(t *testing.T) {
+	tests := []struct {
+		name  string
+		saves []Savepoint
+		want  Savepoint
+	}{
+		{
+			name: "missing file loads empty",
+		},
+		{
+			name: "round trip",
+			saves: []Savepoint{
+				{"abc123": {Segment: 42}, "def456": {Segment: 7}},
+			},
+			want: Savepoint{"abc123": {Segment: 42}, "def456": {Segment: 7}},
+		},
+		{
+			name: "overwrite replaces previous",
+			saves: []Savepoint{
+				{"a": {Segment: 1}},
+				{"b": {Segment: 5}},
+			},
+			want: Savepoint{"b": {Segment: 5}},
+		},
 	}
-	require.NoError(t, sp.Save(dir))
 
-	loaded, err := LoadSavepoint(dir)
-	require.NoError(t, err)
-	require.Equal(t, sp, loaded)
-}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			dir := t.TempDir()
+			for _, sp := range tc.saves {
+				require.NoError(t, sp.Save(dir))
+			}
 
-func TestLoadSavepointMissing(t *testing.T) {
-	dir := t.TempDir()
+			_, err := os.Stat(savepointFilePath(dir) + ".tmp")
+			require.True(t, os.IsNotExist(err), "temp file should not remain after successful save")
 
-	sp, err := LoadSavepoint(dir)
-	require.NoError(t, err)
-	require.Empty(t, sp)
+			loaded, err := LoadSavepoint(dir)
+			require.NoError(t, err)
+			if len(tc.want) == 0 {
+				require.Empty(t, loaded)
+			} else {
+				require.Equal(t, tc.want, loaded)
+			}
+		})
+	}
 }
 
 func TestLoadSavepointCorrupted(t *testing.T) {
@@ -50,28 +75,4 @@ func TestLoadSavepointCorrupted(t *testing.T) {
 	_, err := LoadSavepoint(dir)
 	require.Error(t, err)
 	require.Contains(t, err.Error(), "parse savepoint")
-}
-
-func TestSaveAtomicNoTmpLeftOver(t *testing.T) {
-	dir := t.TempDir()
-
-	sp := Savepoint{"a": {Segment: 1}}
-	require.NoError(t, sp.Save(dir))
-
-	_, err := os.Stat(savepointFilePath(dir) + ".tmp")
-	require.True(t, os.IsNotExist(err), "temp file should not remain after successful save")
-}
-
-func TestSavepointOverwrite(t *testing.T) {
-	dir := t.TempDir()
-
-	sp1 := Savepoint{"a": {Segment: 1}}
-	require.NoError(t, sp1.Save(dir))
-
-	sp2 := Savepoint{"b": {Segment: 5}}
-	require.NoError(t, sp2.Save(dir))
-
-	loaded, err := LoadSavepoint(dir)
-	require.NoError(t, err)
-	require.Equal(t, sp2, loaded)
 }
