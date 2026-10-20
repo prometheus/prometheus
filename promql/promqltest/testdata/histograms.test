@@ -1253,6 +1253,17 @@ eval instant at 0 histogram_fraction(-Inf, 1, series)
 
 clear
 
+# A histogram with only an invalid NaN boundary must not produce output.
+load 1m
+  invalid_only{le="NaN"} 1
+
+eval instant at 0 histogram_quantile(0.5, invalid_only)
+	expect no_info
+	expect warn msg: PromQL warning: bucket label "le" is missing or has a malformed value of "NaN" for metric name "invalid_only" (1:25)
+	# Should return no results.
+
+clear
+
 # Test histogram functions ignore NaN bucket boundaries and warn.
 load 1m
   series{le="0.5"} 1
