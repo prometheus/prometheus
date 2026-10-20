@@ -117,26 +117,105 @@ func TestWriteStorageSavepointDisabled(t *testing.T) {
 }
 
 func TestWriteStorageSavepointPersistOnClose(t *testing.T) {
+	cfg := testRemoteWriteConfigForHost("http://persist-test.com")
+	hash, err := toHash(cfg)
+	require.NoError(t, err)
+
+	tests := []struct {
+		name          string
+		reloads       [][]*config.RemoteWriteConfig
+		wantSavepoint Savepoint
+	}{
+		{
+			name:          "configured queue is persisted",
+			reloads:       [][]*config.RemoteWriteConfig{{cfg}},
+			wantSavepoint: Savepoint{hash: {Segment: 3}},
+		},
+		{
+			name:          "removed queues are cleared",
+			reloads:       [][]*config.RemoteWriteConfig{{cfg}, {}},
+			wantSavepoint: Savepoint{},
+		},
+		{
+			// Shutdown during startup must not replace the loaded savepoint with an empty one.
+			name:          "no config applied keeps existing savepoint",
+			reloads:       nil,
+			wantSavepoint: Savepoint{hash: {Segment: 3}},
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			dir := t.TempDir()
+			require.NoError(t, Savepoint{hash: {Segment: 3}}.Save(dir))
+
+			s := NewWriteStorage(nil, nil, dir, defaultFlushDeadline, nil, false, true)
+			for _, rwConfs := range tc.reloads {
+				require.NoError(t, s.ApplyConfig(&config.Config{
+					GlobalConfig:       config.DefaultGlobalConfig,
+					RemoteWriteConfigs: rwConfs,
+				}))
+			}
+			require.NoError(t, s.Close())
+
+			loaded, err := LoadSavepoint(dir)
+			require.NoError(t, err)
+			require.Equal(t, tc.wantSavepoint, loaded)
+		})
+	}
+}
+
+// TestWriteStorageSavepointNotPersistedBeforeApplyConfig verifies that a persist tick
+// during startup, before queues exist, does not overwrite the loaded savepoint.
+func TestWriteStorageSavepointNotPersistedBeforeApplyConfig(t *testing.T) {
+	cfg := testRemoteWriteConfigForHost("http://persist-before-config.com")
+	hash, err := toHash(cfg)
+	require.NoError(t, err)
+
 	dir := t.TempDir()
+	want := Savepoint{hash: {Segment: 3}}
+	require.NoError(t, want.Save(dir))
 
 	s := NewWriteStorage(nil, nil, dir, defaultFlushDeadline, nil, false, true)
+	t.Cleanup(func() { require.NoError(t, s.Close()) })
 
-	cfg := testRemoteWriteConfigForHost("http://persist-test.com")
+	// Same call the persist ticker makes.
+	s.persistSavepoint()
+
+	loaded, err := LoadSavepoint(dir)
+	require.NoError(t, err)
+	require.Equal(t, want, loaded, "persist before ApplyConfig must not touch the savepoint file")
+
 	require.NoError(t, s.ApplyConfig(&config.Config{
 		GlobalConfig:       config.DefaultGlobalConfig,
 		RemoteWriteConfigs: []*config.RemoteWriteConfig{cfg},
 	}))
+	require.Equal(t, 3, s.queues[hash].watcher.LastProcessedSegment(), "queue should resume from the loaded savepoint")
+}
 
-	hash, err := toHash(cfg)
-	require.NoError(t, err)
-	require.Contains(t, s.queues, hash)
+// TestWriteStorageSavepointPersistConcurrentApplyConfig exercises a persist racing
+// ApplyConfig's savepoint refresh. Run under -race.
+func TestWriteStorageSavepointPersistConcurrentApplyConfig(t *testing.T) {
+	cfg := testRemoteWriteConfigForHost("http://persist-concurrent.com")
+	conf := &config.Config{
+		GlobalConfig:       config.DefaultGlobalConfig,
+		RemoteWriteConfigs: []*config.RemoteWriteConfig{cfg},
+	}
 
-	require.NoError(t, s.Close())
+	s := NewWriteStorage(nil, nil, t.TempDir(), defaultFlushDeadline, nil, false, true)
+	t.Cleanup(func() { require.NoError(t, s.Close()) })
+	require.NoError(t, s.ApplyConfig(conf))
 
-	// Verify savepoint file was written on close.
-	loaded, err := LoadSavepoint(dir)
-	require.NoError(t, err)
-	require.Contains(t, loaded, hash, "savepoint should contain entry for the configured queue")
+	var wg sync.WaitGroup
+	wg.Go(func() {
+		for range 100 {
+			s.persistSavepoint()
+		}
+	})
+	for range 100 {
+		require.NoError(t, s.ApplyConfig(conf))
+	}
+	wg.Wait()
 }
 
 func TestWriteStorageSavepointStaleCleanup(t *testing.T) {

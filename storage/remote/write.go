@@ -81,6 +81,8 @@ type WriteStorage struct {
 	recordBuf *record.BuffersPool
 
 	savepoint Savepoint
+	// configApplied is set once the first ApplyConfig succeeds.
+	configApplied bool
 
 	// For timestampTracker.
 	highestTimestamp *maxTimestamp
@@ -218,8 +220,14 @@ func (rws *WriteStorage) snapshotSavepoint() Savepoint {
 
 func (rws *WriteStorage) persistSavepoint() {
 	rws.mtx.Lock()
+	// Until the first ApplyConfig creates queues, an empty snapshot would wipe the loaded savepoint.
+	if !rws.configApplied {
+		rws.mtx.Unlock()
+		return
+	}
+	// sp is marshaled outside the lock, so it must not be shared with rws.savepoint.
+	// ApplyConfig refreshes rws.savepoint from the live queues itself.
 	sp := rws.snapshotSavepoint()
-	rws.savepoint = sp
 	rws.mtx.Unlock()
 
 	err := sp.Save(rws.dir)
@@ -400,6 +408,7 @@ func (rws *WriteStorage) ApplyConfig(conf *config.Config, options ...ApplyConfig
 			}
 		}
 	}
+	rws.configApplied = true
 
 	return nil
 }
@@ -461,15 +470,15 @@ func (rws *WriteStorage) Close() error {
 	}
 
 	// Persist final savepoint after queues have stopped so LastProcessedSegment
-	// reflects the final, drained position of each watcher.
-	if rws.enableSavepoint {
-		if sp := rws.snapshotSavepoint(); len(sp) > 0 {
-			err := sp.Save(rws.dir)
-			if err != nil {
-				rws.logger.Error("Failed to persist remote write savepoint", "err", err)
-			}
-			rws.recordPersistResult(sp, err == nil)
+	// reflects the final, drained position of each watcher. An empty snapshot is
+	// still written so removed queues are cleared, but only once config was applied.
+	if rws.enableSavepoint && rws.configApplied {
+		sp := rws.snapshotSavepoint()
+		err := sp.Save(rws.dir)
+		if err != nil {
+			rws.logger.Error("Failed to persist remote write savepoint", "err", err)
 		}
+		rws.recordPersistResult(sp, err == nil)
 	}
 
 	rws.watcherMetrics.Unregister()
