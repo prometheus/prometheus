@@ -38,9 +38,11 @@ import (
 	"go.uber.org/atomic"
 
 	"github.com/prometheus/prometheus/config"
+	"github.com/prometheus/prometheus/model/exemplar"
 	"github.com/prometheus/prometheus/model/histogram"
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/model/metadata"
+	"github.com/prometheus/prometheus/model/value"
 	"github.com/prometheus/prometheus/storage"
 	"github.com/prometheus/prometheus/tsdb/chunkenc"
 	"github.com/prometheus/prometheus/tsdb/chunks"
@@ -88,7 +90,7 @@ func TestDataAvailableOnlyAfterCommit_AppendV2(t *testing.T) {
 	require.Equal(t, map[string][]chunks.Sample{`{foo="bar"}`: {sample{t: 0, f: 0}}}, seriesSet)
 }
 
-// TestNoPanicAfterWALCorruption ensures that querying the db after a WAL corruption doesn't cause a panic.
+// TestNoPanicAfterWALCorruption_AppendV2 ensures that querying the db after a WAL corruption doesn't cause a panic.
 // https://github.com/prometheus/prometheus/issues/7548
 func TestNoPanicAfterWALCorruption_AppendV2(t *testing.T) {
 	db := newTestDB(t, withOpts(&Options{WALSegmentSize: 32 * 1024}))
@@ -571,7 +573,7 @@ func TestDB_Snapshot_AppendV2(t *testing.T) {
 	require.Equal(t, 1000.0, sum)
 }
 
-// TestDB_Snapshot_ChunksOutsideOfCompactedRange ensures that a snapshot removes chunks samples
+// TestDB_Snapshot_ChunksOutsideOfCompactedRange_AppendV2 ensures that a snapshot removes chunks samples
 // that are outside the set block time range.
 // See https://github.com/prometheus/prometheus/issues/5105
 func TestDB_Snapshot_ChunksOutsideOfCompactedRange_AppendV2(t *testing.T) {
@@ -1135,7 +1137,7 @@ func TestTombstoneClean_AppendV2(t *testing.T) {
 	}
 }
 
-// TestTombstoneCleanResultEmptyBlock tests that a TombstoneClean that results in empty blocks (no timeseries)
+// TestTombstoneCleanResultEmptyBlock_AppendV2 tests that a TombstoneClean that results in empty blocks (no timeseries)
 // will also delete the resultant block.
 func TestTombstoneCleanResultEmptyBlock_AppendV2(t *testing.T) {
 	t.Parallel()
@@ -1481,7 +1483,7 @@ func TestQuerierWithBoundaryChunks_AppendV2(t *testing.T) {
 	require.Equal(t, []string{"1", "2"}, b)
 }
 
-// TestInitializeHeadTimestamp ensures that the h.minTime is set properly.
+// TestInitializeHeadTimestamp_AppendV2 ensures that the h.minTime is set properly.
 //   - no blocks no WAL: set to the time of the first  appended sample
 //   - no blocks with WAL: set to the smallest sample from the WAL
 //   - with blocks no WAL: set to the last block maxT
@@ -1823,7 +1825,7 @@ func TestCorrectNumTombstones_AppendV2(t *testing.T) {
 	require.Equal(t, uint64(3), db.blocks[0].meta.Stats.NumTombstones)
 }
 
-// TestBlockRanges checks the following use cases:
+// TestBlockRanges_AppendV2 checks the following use cases:
 //   - No samples can be added with timestamps lower than the last block maxt.
 //   - The compactor doesn't create overlapping blocks
 //
@@ -1908,7 +1910,7 @@ func TestBlockRanges_AppendV2(t *testing.T) {
 		"new block overlaps  old:%v,new:%v", blocks[2].Meta(), blocks[3].Meta())
 }
 
-// TestDBReadOnly ensures that opening a DB in readonly mode doesn't modify any files on the disk.
+// TestDBReadOnly_AppendV2 ensures that opening a DB in readonly mode doesn't modify any files on the disk.
 // It also checks that the API calls return equivalent results as a normal db.Open() mode.
 func TestDBReadOnly_AppendV2(t *testing.T) {
 	t.Parallel()
@@ -2286,7 +2288,7 @@ func TestDBQueryDoesntSeeAppendsAfterCreation_AppendV2(t *testing.T) {
 	require.Equal(t, map[string][]sample{`{foo="bar"}`: {{t: 0, f: 0}}}, seriesSet)
 }
 
-// TestCompactHead ensures that the head compaction
+// TestCompactHead_AppendV2 ensures that the head compaction
 // creates a block that is ready for loading and
 // does not cause data loss.
 // This test:
@@ -2349,7 +2351,7 @@ func TestCompactHead_AppendV2(t *testing.T) {
 	require.NoError(t, seriesSet.Err())
 }
 
-// TestCompactHeadWithDeletion tests https://github.com/prometheus/prometheus/issues/11585.
+// TestCompactHeadWithDeletion_AppendV2 tests https://github.com/prometheus/prometheus/issues/11585.
 func TestCompactHeadWithDeletion_AppendV2(t *testing.T) {
 	db := newTestDB(t)
 
@@ -3399,7 +3401,6 @@ func TestDBPanicOnMmappingHeadChunk_AppendV2(t *testing.T) {
 	require.NoError(t, db.Close())
 }
 
-// TODO(bwplotka): Add cases ensuring stale sample appends will skipp metadata persisting.
 func TestMetadataInWAL_AppenderV2(t *testing.T) {
 	opts := DefaultOptions()
 	opts.EnableMetadataWALRecords = true
@@ -3463,6 +3464,78 @@ func TestMetadataInWAL_AppenderV2(t *testing.T) {
 	require.Len(t, gotMetadataBlocks, 2)
 	require.Equal(t, expectedMetadata[:3], gotMetadataBlocks[0])
 	require.Equal(t, expectedMetadata[3:], gotMetadataBlocks[1])
+
+	t.Run("stale samples", func(t *testing.T) {
+		staleNaN := math.Float64frombits(value.StaleNaN)
+		exemplarsAt := func(ts int64) []exemplar.Exemplar {
+			return []exemplar.Exemplar{{Labels: labels.FromStrings("trace_id", "abc"), Value: 1, Ts: ts, HasTs: true}}
+		}
+		for _, tc := range []struct {
+			name         string
+			samples      []sample
+			appendOpts   []storage.AOptions // One per sample.
+			wantMetadata []metadata.Metadata
+		}{
+			{
+				name:       "stale float",
+				samples:    []sample{{f: staleNaN}},
+				appendOpts: []storage.AOptions{{Metadata: m1, Exemplars: exemplarsAt(0)}},
+			},
+			{
+				name:       "stale histogram",
+				samples:    []sample{{h: &histogram.Histogram{Sum: staleNaN}}},
+				appendOpts: []storage.AOptions{{Metadata: m1, Exemplars: exemplarsAt(0)}},
+			},
+			{
+				name:       "stale float histogram",
+				samples:    []sample{{fh: &histogram.FloatHistogram{Sum: staleNaN}}},
+				appendOpts: []storage.AOptions{{Metadata: m1, Exemplars: exemplarsAt(0)}},
+			},
+			{
+				name:         "stale float after histogram",
+				samples:      []sample{{h: tsdbutil.GenerateTestHistogram(1)}, {f: staleNaN}},
+				appendOpts:   []storage.AOptions{{Metadata: m1}, {Metadata: m2, Exemplars: exemplarsAt(1)}},
+				wantMetadata: []metadata.Metadata{m1},
+			},
+			{
+				name:         "stale float after float histogram",
+				samples:      []sample{{fh: tsdbutil.GenerateTestFloatHistogram(1)}, {f: staleNaN}},
+				appendOpts:   []storage.AOptions{{Metadata: m1}, {Metadata: m2, Exemplars: exemplarsAt(1)}},
+				wantMetadata: []metadata.Metadata{m1},
+			},
+		} {
+			t.Run(tc.name, func(t *testing.T) {
+				opts := DefaultOptions()
+				opts.EnableMetadataWALRecords = true
+				opts.EnableExemplarStorage = true
+				opts.MaxExemplars = 10
+				db := newTestDB(t, withOpts(opts))
+
+				app := db.AppenderV2(ctx)
+				for i, s := range tc.samples {
+					_, err := app.Append(0, s1, 0, int64(i), s.f, s.h, s.fh, tc.appendOpts[i])
+					require.NoError(t, err)
+				}
+				require.NoError(t, app.Commit())
+
+				var wantMetadata, gotMetadata []record.RefMetadata
+				for _, m := range tc.wantMetadata {
+					wantMetadata = append(wantMetadata, record.RefMetadata{Ref: 1, Type: record.GetMetricType(m.Type), Unit: m.Unit, Help: m.Help})
+				}
+				var gotExemplars []record.RefExemplar
+				for _, rec := range readTestWAL(t, path.Join(db.Dir(), "wal")) {
+					switch rec := rec.(type) {
+					case []record.RefMetadata:
+						gotMetadata = append(gotMetadata, rec...)
+					case []record.RefExemplar:
+						gotExemplars = append(gotExemplars, rec...)
+					}
+				}
+				require.Equal(t, wantMetadata, gotMetadata)
+				require.Empty(t, gotExemplars)
+			})
+		}
+	})
 }
 
 func TestMetadataCheckpointingOnlyKeepsLatestEntry_AppendV2(t *testing.T) {
@@ -3661,7 +3734,7 @@ func TestMetadataAssertInMemoryData_AppendV2(t *testing.T) {
 	require.Equal(t, *reopenDB.head.series.getByHash(s4.Hash(), s4).meta, m4)
 }
 
-// TestMultipleEncodingsCommitOrder mainly serves to demonstrate when happens when committing a batch of samples for the
+// TestMultipleEncodingsCommitOrder_AppendV2 mainly serves to demonstrate when happens when committing a batch of samples for the
 // same series when there are multiple encodings. With issue #15177 fixed, this now all works as expected.
 func TestMultipleEncodingsCommitOrder_AppendV2(t *testing.T) {
 	opts := DefaultOptions()
@@ -3998,7 +4071,7 @@ func testOOOCompactionAppenderV2(t *testing.T, scenario sampleTypeScenario, addE
 	verifyDBSamples() // Final state. Blocks from normal and OOO head are merged.
 }
 
-// TestOOOCompactionWithNormalCompaction tests if OOO compaction is performed
+// TestOOOCompactionWithNormalCompaction_AppendV2 tests if OOO compaction is performed
 // when the normal head's compaction is done.
 func TestOOOCompactionWithNormalCompaction_AppendV2(t *testing.T) {
 	t.Parallel()
@@ -4102,7 +4175,7 @@ func testOOOCompactionWithNormalCompactionAppendV2(t *testing.T, scenario sample
 	verifySamples(db.Blocks()[1], 250, 350)
 }
 
-// TestOOOCompactionWithDisabledWriteLog tests the scenario where the TSDB is
+// TestOOOCompactionWithDisabledWriteLog_AppendV2 tests the scenario where the TSDB is
 // configured to not have wal and wbl but its able to compact both the in-order
 // and out-of-order head.
 func TestOOOCompactionWithDisabledWriteLog_AppendV2(t *testing.T) {
@@ -4966,7 +5039,7 @@ func testChunkQuerierOOOQueryAppendV2(t *testing.T,
 	}
 }
 
-// TestOOONativeHistogramsWithCounterResets verifies the counter reset headers for in-order and out-of-order samples
+// TestOOONativeHistogramsWithCounterResets_AppendV2 verifies the counter reset headers for in-order and out-of-order samples
 // upon ingestion. Note that when the counter reset(s) occur in OOO samples, the header is set to UnknownCounterReset
 // rather than CounterReset. This is because with OOO native histogram samples, it cannot be definitely
 // determined if a counter reset occurred because the samples are not consecutive, and another sample
@@ -7427,7 +7500,7 @@ func TestOOONativeHistogramsSettings_AppendV2(t *testing.T) {
 	})
 }
 
-// TestChunkQuerierReadWriteRace looks for any possible race between appending
+// TestChunkQuerierReadWriteRace_AppendV2 looks for any possible race between appending
 // samples and reading chunks because the head chunk that is being appended to
 // can be read in parallel and we should be able to make a copy of the chunk without
 // worrying about the parallel write.

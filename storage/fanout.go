@@ -99,6 +99,30 @@ func (f *fanout) Querier(mint, maxt int64) (Querier, error) {
 	return NewMergeQuerier([]Querier{primary}, secondaries, ChainedSeriesMerge), nil
 }
 
+// CostSamplingQueryable forwards a safe primary when every secondary is empty.
+func (f *fanout) CostSamplingQueryable() (SampleAndChunkQueryable, bool) {
+	provider, ok := f.primary.(CostSamplingQueryable)
+	if !ok {
+		return nil, false
+	}
+	source, supported := provider.CostSamplingQueryable()
+	if !supported {
+		return nil, false
+	}
+	for _, secondary := range f.secondaries {
+		provider, ok := secondary.(CostSamplingQueryable)
+		if !ok {
+			return nil, false
+		}
+		secondarySource, supported := provider.CostSamplingQueryable()
+		if !supported || secondarySource != nil {
+			// Merging even native sources can eagerly compact overlapping chunks.
+			return nil, false
+		}
+	}
+	return source, true
+}
+
 func (f *fanout) ChunkQuerier(mint, maxt int64) (ChunkQuerier, error) {
 	primary, err := f.primary.ChunkQuerier(mint, maxt)
 	if err != nil {

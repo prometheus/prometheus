@@ -425,14 +425,12 @@ var sampleFlagMap = map[string]string{
 func appendExemplars(t testing.TB, s storage.Storage, ex []exemplar.QueryResult) {
 	t.Helper()
 
-	// TODO(bwplotka): Use AppenderV2.AppendExemplar per series flow
-	// once its implemented: https://github.com/prometheus/prometheus/issues/17632#issuecomment-3759315095
-	app := s.Appender(t.Context())
+	app := s.AppenderV2(t.Context())
+	exApp, ok := app.(storage.ExemplarAppenderV2)
+	require.True(t, ok)
 	for _, ed := range ex {
-		for _, e := range ed.Exemplars {
-			_, err := app.AppendExemplar(0, ed.SeriesLabels, e)
-			require.NoError(t, err)
-		}
+		_, err := exApp.AppendExemplars(0, ed.SeriesLabels, ed.Exemplars)
+		require.NoError(t, err)
 	}
 	require.NoError(t, app.Commit())
 }

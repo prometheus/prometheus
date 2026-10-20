@@ -2994,7 +2994,7 @@ func TestChunkSnapshotTakenAfterIncompleteSnapshot_AppenderV2(t *testing.T) {
 	require.Positive(t, offset)
 }
 
-// TestWBLReplay checks the replay at a low level.
+// TestWBLReplay_AppenderV2 checks the replay at a low level.
 func TestWBLReplay_AppenderV2(t *testing.T) {
 	for name, scenario := range sampleTypeScenarios {
 		for _, enableSTstorage := range []bool{false, true} {
@@ -3095,7 +3095,7 @@ func testWBLReplayAppenderV2(t *testing.T, scenario sampleTypeScenario, enableST
 	require.NoError(t, h.Close())
 }
 
-// TestOOOMmapReplay checks the replay at a low level.
+// TestOOOMmapReplay_AppenderV2 checks the replay at a low level.
 func TestOOOMmapReplay_AppenderV2(t *testing.T) {
 	for name, scenario := range sampleTypeScenarios {
 		t.Run(name, func(t *testing.T) {
@@ -3891,7 +3891,7 @@ func TestCuttingNewHeadChunks_AppenderV2(t *testing.T) {
 	}
 }
 
-// TestHeadDetectsDuplicateSampleAtSizeLimit tests a regression where a duplicate sample
+// TestHeadDetectsDuplicateSampleAtSizeLimit_AppenderV2 tests a regression where a duplicate sample
 // is appended to the head, right when the head chunk is at the size limit.
 // The test adds all samples as duplicate, thus expecting that the result has
 // exactly half of the samples.
@@ -4850,7 +4850,7 @@ func TestHeadAppenderV2_NumStaleSeries(t *testing.T) {
 	verifySeriesCounts(4, 5)
 }
 
-// TestHistogramStalenessConversionMetrics verifies that staleness marker conversion correctly
+// TestHeadAppenderV2_Append_HistogramStalenessConversionMetrics verifies that staleness marker conversion correctly
 // increments the right appender metrics for both histogram and float histogram scenarios.
 func TestHeadAppenderV2_Append_HistogramStalenessConversionMetrics(t *testing.T) {
 	testCases := []struct {
@@ -4956,7 +4956,7 @@ func TestHeadAppenderV2_Append_HistogramStalenessConversionMetrics(t *testing.T)
 	}
 }
 
-// TestHeadAppender_STStorage verifies that when EnableSTStorage is true,
+// TestHeadAppenderV2_STStorage verifies that when EnableSTStorage is true,
 // start timestamps are properly stored in chunks and returned by queries.
 // This test uses AppenderV2 which has native ST support.
 func TestHeadAppenderV2_STStorage(t *testing.T) {
@@ -5331,11 +5331,13 @@ func TestHeadAppenderV2_ExemplarAppenderV2(t *testing.T) {
 	tooLongLabel := strings.Repeat("x", exemplar.ExemplarMaxLabelSetLength+1)
 	invalidEx := exemplar.Exemplar{Labels: labels.FromStrings("trace_id", tooLongLabel), Value: 3, Ts: 250, HasTs: true}
 	ex3 := exemplar.Exemplar{Labels: labels.FromStrings("trace_id", "t3"), Value: 3, Ts: 300, HasTs: true}
-	retRef, err = headApp.AppendExemplars(0, lsetWithEmpty, []exemplar.Exemplar{invalidEx, ex3})
+	// The ignored duplicate ex2 still counts towards the index of invalidEx.
+	retRef, err = headApp.AppendExemplars(0, lsetWithEmpty, []exemplar.Exemplar{ex2, invalidEx, ex3})
 	var pErr *storage.AppendPartialError
 	require.ErrorAs(t, err, &pErr)
 	require.Len(t, pErr.ExemplarErrors, 1)
 	require.ErrorIs(t, pErr.ExemplarErrors[0], storage.ErrExemplarLabelLength)
+	require.Equal(t, 1, pErr.ExemplarErrors[0].Index)
 	require.Equal(t, ref, retRef)
 
 	// Unknown series must return ErrNotFound even when exemplars is empty.

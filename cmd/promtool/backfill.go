@@ -26,6 +26,7 @@ import (
 
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/model/textparse"
+	"github.com/prometheus/prometheus/storage"
 	"github.com/prometheus/prometheus/tsdb"
 )
 
@@ -84,8 +85,7 @@ func getCompatibleBlockDuration(maxBlockDuration int64) int64 {
 	return blockDuration
 }
 
-func createBlocks(input []byte, mint, maxt, maxBlockDuration int64, maxSamplesInAppender int, outputDir string, humanReadable, quiet bool, customLabels map[string]string) (returnErr error) {
-	blockDuration := getCompatibleBlockDuration(maxBlockDuration)
+func createBlocks(input []byte, mint, maxt, blockDuration int64, maxSamplesInAppender int, outputDir string, humanReadable, quiet bool, customLabels map[string]string) (returnErr error) {
 	mint = blockDuration * (mint / blockDuration)
 
 	db, err := tsdb.OpenDBReadOnly(outputDir, "", nil)
@@ -128,7 +128,7 @@ func createBlocks(input []byte, mint, maxt, maxBlockDuration int64, maxSamplesIn
 			}()
 
 			ctx := context.Background()
-			app := w.Appender(ctx)
+			app := w.AppenderV2(ctx)
 			symbolTable := labels.NewSymbolTable() // One table per block means it won't grow too large.
 			p := textparse.NewOpenMetricsParser(input, symbolTable)
 			samplesCount := 0
@@ -169,7 +169,7 @@ func createBlocks(input []byte, mint, maxt, maxBlockDuration int64, maxSamplesIn
 				}
 				lbls := lb.Labels()
 
-				if _, err := app.Append(0, lbls, *ts, v); err != nil {
+				if _, err := app.Append(0, lbls, 0, *ts, v, nil, nil, storage.AOptions{}); err != nil {
 					return fmt.Errorf("add sample: %w", err)
 				}
 
@@ -185,7 +185,7 @@ func createBlocks(input []byte, mint, maxt, maxBlockDuration int64, maxSamplesIn
 					return fmt.Errorf("commit: %w", err)
 				}
 
-				app = w.Appender(ctx)
+				app = w.AppenderV2(ctx)
 				samplesCount = 0
 			}
 
@@ -228,13 +228,13 @@ func createBlocks(input []byte, mint, maxt, maxBlockDuration int64, maxSamplesIn
 	return nil
 }
 
-func backfill(maxSamplesInAppender int, input []byte, outputDir string, humanReadable, quiet bool, maxBlockDuration time.Duration, customLabels map[string]string) (err error) {
+func backfill(maxSamplesInAppender int, input []byte, outputDir string, humanReadable, quiet bool, blockDuration time.Duration, customLabels map[string]string) (err error) {
 	p := textparse.NewOpenMetricsParser(input, nil) // Don't need a SymbolTable to get max and min timestamps.
 	maxt, mint, err := getMinAndMaxTimestamps(p)
 	if err != nil {
 		return fmt.Errorf("getting min and max timestamp: %w", err)
 	}
-	if err = createBlocks(input, mint, maxt, int64(maxBlockDuration/time.Millisecond), maxSamplesInAppender, outputDir, humanReadable, quiet, customLabels); err != nil {
+	if err = createBlocks(input, mint, maxt, int64(blockDuration/time.Millisecond), maxSamplesInAppender, outputDir, humanReadable, quiet, customLabels); err != nil {
 		return fmt.Errorf("block creation: %w", err)
 	}
 	return nil

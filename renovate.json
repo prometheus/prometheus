@@ -50,6 +50,19 @@
       "internalChecksFilter": "strict"
     },
     {
+      "description": "Update indirect deps in the remote_storage example so it stays in sync with the root module through its replace directive",
+      "matchManagers": [
+        "gomod"
+      ],
+      "matchFileNames": [
+        "documentation/examples/remote_storage/go.mod"
+      ],
+      "matchDepTypes": [
+        "indirect"
+      ],
+      "enabled": true
+    },
+    {
       "description": "Don't update replace directives",
       "matchPackageNames": [
         "github.com/fsnotify/fsnotify"

@@ -51,10 +51,32 @@ func FormatOpenMetricsFloat(f float64) string {
 	bp := floatFormatBufPool.Get().(*[]byte)
 	defer floatFormatBufPool.Put(bp)
 
-	*bp = strconv.AppendFloat((*bp)[:0], f, 'g', -1, 64)
-	if bytes.ContainsAny(*bp, "e.") {
-		return string(*bp)
-	}
-	*bp = append(*bp, '.', '0')
+	*bp = AppendOpenMetricsFloat((*bp)[:0], f)
 	return string(*bp)
+}
+
+// AppendOpenMetricsFloat appends the OpenMetrics float representation of f to
+// dst and returns the extended buffer. Like FormatOpenMetricsFloat, it appends
+// ".0" if the formatted number would otherwise contain neither a "." nor an "e".
+func AppendOpenMetricsFloat(dst []byte, f float64) []byte {
+	switch {
+	case f == 1:
+		return append(dst, "1.0"...)
+	case f == 0:
+		return append(dst, "0.0"...)
+	case f == -1:
+		return append(dst, "-1.0"...)
+	case math.IsNaN(f):
+		return append(dst, "NaN"...)
+	case math.IsInf(f, +1):
+		return append(dst, "+Inf"...)
+	case math.IsInf(f, -1):
+		return append(dst, "-Inf"...)
+	}
+	start := len(dst)
+	dst = strconv.AppendFloat(dst, f, 'g', -1, 64)
+	if !bytes.ContainsAny(dst[start:], "e.") {
+		dst = append(dst, '.', '0')
+	}
+	return dst
 }
