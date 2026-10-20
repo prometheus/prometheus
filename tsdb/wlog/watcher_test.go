@@ -904,40 +904,45 @@ func TestRun_AvoidNotifyWhenBehind(t *testing.T) {
 	}
 }
 
-// TestWatcher_StartSegment verifies that SetStartSegment controls which
-// historical segments deliver samples vs only series.
+// savepointSegmentRecords generates one batch of records per WAL segment. Segment i is
+// stamped at (i+1)*1000ms, well before now, so delivered records identify their segment by timestamp.
+func savepointSegmentRecords(seriesCount, numSegments int) []testwal.Records {
+	recs := make([]testwal.Records, numSegments)
+	for i := range recs {
+		recs[i] = testwal.GenerateRecords(testwal.RecordsCase{
+			NoST:                     true,
+			TsFn:                     func(_, _ int) int64 { return int64(i+1) * 1000 },
+			Series:                   seriesCount,
+			SamplesPerSeries:         1,
+			ExemplarsPerSeries:       1,
+			HistogramsPerSeries:      1,
+			FloatHistogramsPerSeries: 1,
+		})
+	}
+	return recs
+}
+
+// savepointSegmentTimestamps returns the timestamps delivered for one record type when the
+// given segments of savepointSegmentRecords are sent, in order.
+func savepointSegmentTimestamps(seriesCount int, segments ...int) []int64 {
+	var ts []int64
+	for _, seg := range segments {
+		for range seriesCount {
+			ts = append(ts, int64(seg+1)*1000)
+		}
+	}
+	return ts
+}
+
+// TestWatcher_StartSegment verifies that startSegment controls which historical
+// segments deliver samples, exemplars and histograms vs only series.
 func TestWatcher_StartSegment(t *testing.T) {
 	const (
 		seriesCount = 10
 		numSegments = 4 // Last segment is the tail that would block, so MaxSegment stops before it.
 	)
 
-	makeSeries := func(n int) []record.RefSeries {
-		s := make([]record.RefSeries, n)
-		for i := range n {
-			s[i] = record.RefSeries{
-				Ref:    chunks.HeadSeriesRef(i),
-				Labels: labels.FromStrings("__name__", fmt.Sprintf("metric_%d", i), "job", "test"),
-			}
-		}
-		return s
-	}
-
-	makeSamples := func(refs []record.RefSeries, ts int64, val float64) []record.RefSample {
-		s := make([]record.RefSample, len(refs))
-		for i, r := range refs {
-			s[i] = record.RefSample{Ref: r.Ref, T: ts, V: val}
-		}
-		return s
-	}
-
-	series := makeSeries(seriesCount)
-	segSamples := [numSegments][]record.RefSample{
-		makeSamples(series, 1000, 0),
-		makeSamples(series, 2000, 1),
-		makeSamples(series, 3000, 2),
-		makeSamples(series, 4000, 3),
-	}
+	segRecs := savepointSegmentRecords(seriesCount, numSegments)
 
 	// Watcher stops after processing this segment (before the tail).
 	maxSegment := numSegments - 2
@@ -952,11 +957,16 @@ func TestWatcher_StartSegment(t *testing.T) {
 		require.NoError(t, err)
 
 		var enc record.Encoder
-		for i := range numSegments {
+		for i, recs := range segRecs {
 			if i == 0 {
-				require.NoError(t, w.Log(enc.Series(series, nil)))
+				require.NoError(t, w.Log(enc.Series(recs.Series, nil)))
 			}
-			require.NoError(t, w.Log(enc.Samples(segSamples[i], nil)))
+			require.NoError(t, w.Log(enc.Samples(recs.Samples, nil)))
+			require.NoError(t, w.Log(enc.Exemplars(recs.Exemplars, nil)))
+			hs, _ := enc.HistogramSamples(recs.Histograms, nil)
+			require.NoError(t, w.Log(hs))
+			fhs, _ := enc.FloatHistogramSamples(recs.FloatHistograms, nil)
+			require.NoError(t, w.Log(fhs))
 			if i < numSegments-1 {
 				_, err := w.NextSegment()
 				require.NoError(t, err)
@@ -966,67 +976,45 @@ func TestWatcher_StartSegment(t *testing.T) {
 		return dir
 	}
 
-	valsOf := func(samples []record.RefSample) []float64 {
-		v := make([]float64, len(samples))
-		for i, s := range samples {
-			v[i] = s.V
-		}
-		return v
-	}
-
-	concat := func(slices ...[]float64) []float64 {
-		var out []float64
-		for _, s := range slices {
-			out = append(out, s...)
-		}
-		return out
-	}
-
 	// Run scans through maxSegment even when startSegment suppresses sample delivery.
 	// Therefore, the reported segment is maxSegment unless startSegment is higher.
 	tests := []struct {
-		name           string
-		startSegment   int
-		wantSampleVals []float64
-		wantSegment    int
+		name         string
+		startSegment int
+		// Segments whose records are delivered, for every record type.
+		wantSegments []int
+		wantSegment  int
 	}{
 		{
-			name:           "no savepoint skips historical samples",
-			startSegment:   -1,
-			wantSampleVals: nil,
-			wantSegment:    maxSegment,
+			name:         "no savepoint skips historical samples",
+			startSegment: -1,
+			wantSegments: nil,
+			wantSegment:  maxSegment,
 		},
 		{
 			name:         "savepoint at segment 1",
 			startSegment: 1,
-			wantSampleVals: concat(
-				valsOf(segSamples[1]),
-				valsOf(segSamples[2]),
-			),
-			wantSegment: maxSegment,
+			wantSegments: []int{1, 2},
+			wantSegment:  maxSegment,
 		},
 		{
 			name:         "savepoint at first segment replays everything",
 			startSegment: 0,
-			wantSampleVals: concat(
-				valsOf(segSamples[0]),
-				valsOf(segSamples[1]),
-				valsOf(segSamples[2]),
-			),
-			wantSegment: maxSegment,
+			wantSegments: []int{0, 1, 2},
+			wantSegment:  maxSegment,
 		},
 		{
-			name:           "savepoint at last historical segment",
-			startSegment:   2,
-			wantSampleVals: valsOf(segSamples[2]),
-			wantSegment:    maxSegment,
+			name:         "savepoint at last historical segment",
+			startSegment: 2,
+			wantSegments: []int{2},
+			wantSegment:  maxSegment,
 		},
 		{
 			// A start beyond maxSegment remains the reported floor without emitting samples.
-			name:           "savepoint ahead of stop point holds the floor",
-			startSegment:   numSegments - 1, // 3, beyond maxSegment (2).
-			wantSampleVals: nil,
-			wantSegment:    numSegments - 1,
+			name:         "savepoint ahead of stop point holds the floor",
+			startSegment: numSegments - 1, // 3, beyond maxSegment (2).
+			wantSegments: nil,
+			wantSegment:  numSegments - 1,
 		},
 	}
 
@@ -1035,10 +1023,11 @@ func TestWatcher_StartSegment(t *testing.T) {
 			dir := createWAL(t)
 
 			wt := newWriteToMock(0)
-			watcher := NewWatcher(wMetrics, nil, promslog.NewNopLogger(), "test", wt, dir, false, false, false, nil, tc.startSegment)
+			watcher := NewWatcher(wMetrics, nil, promslog.NewNopLogger(), "test", wt, dir, true, true, false, nil, tc.startSegment)
 			watcher.MaxSegment = maxSegment
 			watcher.SetMetrics()
 
+			watcher.SetStartTime(time.Now())
 			require.NoError(t, watcher.Run())
 
 			wt.mu.Lock()
@@ -1046,11 +1035,32 @@ func TestWatcher_StartSegment(t *testing.T) {
 
 			require.Len(t, wt.seriesStored, seriesCount, "series count mismatch")
 
-			gotVals := valsOf(wt.samplesAppended)
-			if tc.wantSampleVals == nil {
-				require.Empty(t, gotVals, "expected no samples delivered")
-			} else {
-				require.Equal(t, tc.wantSampleVals, gotVals, "delivered sample values mismatch")
+			var gotSampleTs, gotExemplarTs, gotHistogramTs, gotFloatHistogramTs []int64
+			for _, s := range wt.samplesAppended {
+				gotSampleTs = append(gotSampleTs, s.T)
+			}
+			for _, e := range wt.exemplarsAppended {
+				gotExemplarTs = append(gotExemplarTs, e.T)
+			}
+			for _, h := range wt.histogramsAppended {
+				gotHistogramTs = append(gotHistogramTs, h.T)
+			}
+			for _, fh := range wt.floatHistogramsAppended {
+				gotFloatHistogramTs = append(gotFloatHistogramTs, fh.T)
+			}
+
+			wantTs := savepointSegmentTimestamps(seriesCount, tc.wantSegments...)
+			for recordType, gotTs := range map[string][]int64{
+				"sample":          gotSampleTs,
+				"exemplar":        gotExemplarTs,
+				"histogram":       gotHistogramTs,
+				"float histogram": gotFloatHistogramTs,
+			} {
+				if tc.wantSegments == nil {
+					require.Empty(t, gotTs, "expected no %s records delivered", recordType)
+				} else {
+					require.Equal(t, wantTs, gotTs, "delivered %s timestamps mismatch", recordType)
+				}
 			}
 
 			// Savepoints and retries use the reported segment, which sample assertions do not cover.
@@ -1059,20 +1069,15 @@ func TestWatcher_StartSegment(t *testing.T) {
 	}
 }
 
-// TestWatcher_StartSegment_ResumeMonotonic verifies that the reported segment advances monotonically across repeated Run calls.
+// TestWatcher_StartSegment_ResumeMonotonic verifies that the reported segment advances monotonically across repeated Run calls,
+// and that a retry only replays historical samples when a savepoint was given.
 func TestWatcher_StartSegment_ResumeMonotonic(t *testing.T) {
 	const (
 		seriesCount = 5
 		numSegments = 4 // Segment 3 is an unread tail.
 	)
 
-	series := make([]record.RefSeries, seriesCount)
-	for i := range series {
-		series[i] = record.RefSeries{
-			Ref:    chunks.HeadSeriesRef(i),
-			Labels: labels.FromStrings("__name__", fmt.Sprintf("metric_%d", i)),
-		}
-	}
+	segRecs := savepointSegmentRecords(seriesCount, numSegments)
 
 	dir := t.TempDir()
 	wdir := path.Join(dir, "wal")
@@ -1080,11 +1085,11 @@ func TestWatcher_StartSegment_ResumeMonotonic(t *testing.T) {
 	w, err := NewSize(nil, nil, wdir, 32*1024, compression.None)
 	require.NoError(t, err)
 	var enc record.Encoder
-	for i := range numSegments {
+	for i, recs := range segRecs {
 		if i == 0 {
-			require.NoError(t, w.Log(enc.Series(series, nil)))
+			require.NoError(t, w.Log(enc.Series(recs.Series, nil)))
 		}
-		require.NoError(t, w.Log(enc.Samples([]record.RefSample{{Ref: series[0].Ref, T: int64(i + 1), V: float64(i)}}, nil)))
+		require.NoError(t, w.Log(enc.Samples(recs.Samples, nil)))
 		if i < numSegments-1 {
 			_, err := w.NextSegment()
 			require.NoError(t, err)
@@ -1092,16 +1097,55 @@ func TestWatcher_StartSegment_ResumeMonotonic(t *testing.T) {
 	}
 	require.NoError(t, w.Close())
 
-	watcher := NewWatcher(wMetrics, nil, promslog.NewNopLogger(), "test", newWriteToMock(0), dir, false, false, false, nil, -1)
-	watcher.SetMetrics()
+	tests := []struct {
+		name         string
+		startSegment int
+		// Segments whose samples are delivered across both runs, in order.
+		wantSegments []int
+	}{
+		{
+			name:         "no savepoint never replays historical samples",
+			startSegment: -1,
+			wantSegments: nil,
+		},
+		{
+			// The retry resumes at the high-water segment, so only segment 1 is sent twice.
+			name:         "savepoint resumes at high-water on retry",
+			startSegment: 1,
+			wantSegments: []int{1, 1, 2},
+		},
+	}
 
-	watcher.MaxSegment = 1
-	require.NoError(t, watcher.Run())
-	require.Equal(t, 1, watcher.LastProcessedSegment(), "first run should reach segment 1")
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			wt := newWriteToMock(0)
+			watcher := NewWatcher(wMetrics, nil, promslog.NewNopLogger(), "test", wt, dir, false, false, false, nil, tc.startSegment)
+			watcher.SetMetrics()
+			require.Equal(t, tc.startSegment, watcher.LastProcessedSegment(), "reported segment should be seeded before Run")
 
-	watcher.MaxSegment = 2
-	require.NoError(t, watcher.Run())
-	require.Equal(t, 2, watcher.LastProcessedSegment(), "second run should advance to segment 2")
+			watcher.MaxSegment = 1
+			watcher.SetStartTime(time.Now())
+			require.NoError(t, watcher.Run())
+			require.Equal(t, 1, watcher.LastProcessedSegment(), "first run should reach segment 1")
+
+			watcher.MaxSegment = 2
+			watcher.SetStartTime(time.Now())
+			require.NoError(t, watcher.Run())
+			require.Equal(t, 2, watcher.LastProcessedSegment(), "second run should advance to segment 2")
+
+			wt.mu.Lock()
+			defer wt.mu.Unlock()
+			var gotTs []int64
+			for _, s := range wt.samplesAppended {
+				gotTs = append(gotTs, s.T)
+			}
+			if tc.wantSegments == nil {
+				require.Empty(t, gotTs, "expected no samples delivered")
+			} else {
+				require.Equal(t, savepointSegmentTimestamps(seriesCount, tc.wantSegments...), gotTs, "delivered sample timestamps mismatch")
+			}
+		})
+	}
 }
 
 // TestWatcher_StartSegment_CheckpointNotReplayed verifies that a startSegment at or
@@ -1111,30 +1155,8 @@ func TestWatcher_StartSegment_ResumeMonotonic(t *testing.T) {
 func TestWatcher_StartSegment_CheckpointNotReplayed(t *testing.T) {
 	const seriesCount = 10
 
-	makeSeries := func(n int) []record.RefSeries {
-		s := make([]record.RefSeries, n)
-		for i := range n {
-			s[i] = record.RefSeries{
-				Ref:    chunks.HeadSeriesRef(i),
-				Labels: labels.FromStrings("__name__", fmt.Sprintf("metric_%d", i), "job", "test"),
-			}
-		}
-		return s
-	}
-	makeSamples := func(refs []record.RefSeries, ts int64, val float64) []record.RefSample {
-		s := make([]record.RefSample, len(refs))
-		for i, r := range refs {
-			s[i] = record.RefSample{Ref: r.Ref, T: ts, V: val}
-		}
-		return s
-	}
-
-	series := makeSeries(seriesCount)
-	// Samples per segment, identified by value. Segments 0 and 1 are checkpointed.
-	seg0 := makeSamples(series, 1000, 0)
-	seg1 := makeSamples(series, 2000, 1)
-	seg2 := makeSamples(series, 3000, 2)
-	seg3 := makeSamples(series, 4000, 3) // Tail; not read (MaxSegment stops before it).
+	// Segments 0 and 1 are checkpointed; segment 3 is the tail, not read (MaxSegment stops before it).
+	segRecs := savepointSegmentRecords(seriesCount, 4)
 
 	dir := t.TempDir()
 	wdir := path.Join(dir, "wal")
@@ -1145,12 +1167,12 @@ func TestWatcher_StartSegment_CheckpointNotReplayed(t *testing.T) {
 
 	var enc record.Encoder
 	// Segment 0: series + samples.
-	require.NoError(t, w.Log(enc.Series(series, nil)))
-	require.NoError(t, w.Log(enc.Samples(seg0, nil)))
+	require.NoError(t, w.Log(enc.Series(segRecs[0].Series, nil)))
+	require.NoError(t, w.Log(enc.Samples(segRecs[0].Samples, nil)))
 	_, err = w.NextSegment() // -> segment 1
 	require.NoError(t, err)
 	// Segment 1: samples.
-	require.NoError(t, w.Log(enc.Samples(seg1, nil)))
+	require.NoError(t, w.Log(enc.Samples(segRecs[1].Samples, nil)))
 	_, err = w.NextSegment() // -> segment 2
 	require.NoError(t, err)
 
@@ -1160,11 +1182,11 @@ func TestWatcher_StartSegment_CheckpointNotReplayed(t *testing.T) {
 	require.NoError(t, w.Truncate(2))
 
 	// Segment 2: samples.
-	require.NoError(t, w.Log(enc.Samples(seg2, nil)))
+	require.NoError(t, w.Log(enc.Samples(segRecs[2].Samples, nil)))
 	_, err = w.NextSegment() // -> segment 3
 	require.NoError(t, err)
 	// Segment 3 (tail): samples.
-	require.NoError(t, w.Log(enc.Samples(seg3, nil)))
+	require.NoError(t, w.Log(enc.Samples(segRecs[3].Samples, nil)))
 	require.NoError(t, w.Close())
 
 	// Confirm the checkpoint is at index 1 — at or ahead of the savepoint below.
@@ -1173,7 +1195,7 @@ func TestWatcher_StartSegment_CheckpointNotReplayed(t *testing.T) {
 	require.Equal(t, 1, cpIndex)
 
 	// Savepoint behind the checkpoint index. Pre-fix this caused the checkpoint's
-	// samples (seg0, seg1) to be replayed.
+	// samples (segments 0 and 1) to be replayed.
 	const startSegment = 1
 
 	wt := newWriteToMock(0)
@@ -1181,6 +1203,7 @@ func TestWatcher_StartSegment_CheckpointNotReplayed(t *testing.T) {
 	watcher.MaxSegment = 2 // Stop after segment 2, before the blocking tail.
 	watcher.SetMetrics()
 
+	watcher.SetStartTime(time.Now())
 	require.NoError(t, watcher.Run())
 
 	wt.mu.Lock()
@@ -1189,14 +1212,10 @@ func TestWatcher_StartSegment_CheckpointNotReplayed(t *testing.T) {
 	// Series from the checkpoint still resolve.
 	require.Len(t, wt.seriesStored, seriesCount, "series count mismatch")
 
-	// Only segment 2 samples are delivered. Checkpoint samples (seg0, seg1) are NOT.
-	gotVals := make([]float64, len(wt.samplesAppended))
-	for i, s := range wt.samplesAppended {
-		gotVals[i] = s.V
+	// Only segment 2 samples are delivered. Checkpoint samples (segments 0 and 1) are NOT.
+	var gotTs []int64
+	for _, s := range wt.samplesAppended {
+		gotTs = append(gotTs, s.T)
 	}
-	wantVals := make([]float64, seriesCount)
-	for i := range wantVals {
-		wantVals[i] = 2
-	}
-	require.Equal(t, wantVals, gotVals, "expected only segment 2 samples, no checkpoint replay")
+	require.Equal(t, savepointSegmentTimestamps(seriesCount, 2), gotTs, "expected only segment 2 samples, no checkpoint replay")
 }
