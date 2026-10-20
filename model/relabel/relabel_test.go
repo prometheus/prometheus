@@ -23,6 +23,7 @@ import (
 	"go.yaml.in/yaml/v2"
 
 	"github.com/prometheus/prometheus/model/labels"
+	"github.com/prometheus/prometheus/model/metadata"
 	"github.com/prometheus/prometheus/util/testutil"
 )
 
@@ -760,6 +761,335 @@ func TestRelabel(t *testing.T) {
 	}
 }
 
+func TestRelabelWithMetadata(t *testing.T) {
+	tests := []struct {
+		name       string
+		input      labels.Labels
+		inputMeta  metadata.Metadata
+		relabel    []*Config
+		output     labels.Labels
+		outputMeta metadata.Metadata
+		drop       bool
+	}{
+		{
+			name: "infer type, unit, help from metric name",
+			input: labels.FromMap(map[string]string{
+				"__name__": "http_requests_total",
+			}),
+			relabel: []*Config{
+				{
+					SourceLabels: model.LabelNames{"__name__", "__type__"},
+					Regex:        MustNewRegexp(".*_total;"),
+					TargetLabel:  "__type__",
+					Replacement:  "counter",
+					Action:       Replace,
+				},
+				{
+					SourceLabels: model.LabelNames{"__name__", "__unit__"},
+					Regex:        MustNewRegexp(".*_requests_total;"),
+					TargetLabel:  "__unit__",
+					Replacement:  "requests",
+					Action:       Replace,
+				},
+				{
+					SourceLabels: model.LabelNames{"__name__", "__help__"},
+					Regex:        MustNewRegexp("http_requests_total;"),
+					TargetLabel:  "__help__",
+					Replacement:  "Total number of HTTP requests.",
+					Action:       Replace,
+				},
+			},
+			output: labels.FromMap(map[string]string{
+				"__name__": "http_requests_total",
+			}),
+			outputMeta: metadata.Metadata{
+				Type: model.MetricTypeCounter,
+				Unit: "requests",
+				Help: "Total number of HTTP requests.",
+			},
+		},
+		{
+			name: "preserve existing type when inferring only on empty __type__",
+			input: labels.FromMap(map[string]string{
+				"__name__": "memory_usage_total",
+			}),
+			inputMeta: metadata.Metadata{
+				Type: model.MetricTypeGauge,
+				Unit: "bytes",
+				Help: "Current memory usage.",
+			},
+			relabel: []*Config{
+				{
+					SourceLabels: model.LabelNames{"__name__", "__type__"},
+					Regex:        MustNewRegexp(".*_total;"),
+					TargetLabel:  "__type__",
+					Replacement:  "counter",
+					Action:       Replace,
+				},
+			},
+			output: labels.FromMap(map[string]string{
+				"__name__": "memory_usage_total",
+			}),
+			outputMeta: metadata.Metadata{
+				Type: model.MetricTypeGauge,
+				Unit: "bytes",
+				Help: "Current memory usage.",
+			},
+		},
+		{
+			name: "unknown type reads as empty string in source_labels",
+			input: labels.FromMap(map[string]string{
+				"__name__": "http_requests_total",
+			}),
+			inputMeta: metadata.Metadata{
+				Type: model.MetricTypeUnknown,
+			},
+			relabel: []*Config{
+				{
+					SourceLabels: model.LabelNames{"__name__", "__type__"},
+					Regex:        MustNewRegexp(".*_total;"),
+					TargetLabel:  "__type__",
+					Replacement:  "counter",
+					Action:       Replace,
+				},
+			},
+			output: labels.FromMap(map[string]string{
+				"__name__": "http_requests_total",
+			}),
+			outputMeta: metadata.Metadata{
+				Type: model.MetricTypeCounter,
+			},
+		},
+		{
+			name: "clear help, unit, and type via empty replacement",
+			input: labels.FromMap(map[string]string{
+				"__name__": "http_requests_total",
+			}),
+			inputMeta: metadata.Metadata{
+				Type: model.MetricTypeCounter,
+				Unit: "requests",
+				Help: "Some very long help string.",
+			},
+			relabel: []*Config{
+				{
+					TargetLabel: "__help__",
+					Replacement: "",
+					Action:      Replace,
+				},
+				{
+					TargetLabel: "__unit__",
+					Replacement: "",
+					Action:      Replace,
+				},
+				{
+					TargetLabel: "__type__",
+					Replacement: "",
+					Action:      Replace,
+				},
+			},
+			output: labels.FromMap(map[string]string{
+				"__name__": "http_requests_total",
+			}),
+			outputMeta: metadata.Metadata{
+				Type: model.MetricTypeUnknown,
+				Unit: "",
+				Help: "",
+			},
+		},
+		{
+			name: "invalid dynamic __type__ resets type to unknown",
+			input: labels.FromMap(map[string]string{
+				"__name__": "http_requests_total",
+				"custom":   "not_a_type",
+			}),
+			inputMeta: metadata.Metadata{
+				Type: model.MetricTypeCounter,
+			},
+			relabel: []*Config{
+				{
+					SourceLabels: model.LabelNames{"custom"},
+					TargetLabel:  "__type__",
+					Replacement:  "$1",
+					Action:       Replace,
+				},
+			},
+			output: labels.FromMap(map[string]string{
+				"__name__": "http_requests_total",
+				"custom":   "not_a_type",
+			}),
+			outputMeta: metadata.Metadata{
+				Type: model.MetricTypeUnknown,
+			},
+		},
+		{
+			name: "lowercase and uppercase on metadata",
+			input: labels.FromMap(map[string]string{
+				"__name__": "http_requests_total",
+				"raw_type": "COUNTER",
+			}),
+			inputMeta: metadata.Metadata{
+				Help: "Mixed Case Help",
+			},
+			relabel: []*Config{
+				{
+					SourceLabels: model.LabelNames{"raw_type"},
+					TargetLabel:  "__type__",
+					Action:       Lowercase,
+				},
+				{
+					SourceLabels: model.LabelNames{"__help__"},
+					TargetLabel:  "__help__",
+					Action:       Uppercase,
+				},
+			},
+			output: labels.FromMap(map[string]string{
+				"__name__": "http_requests_total",
+				"raw_type": "COUNTER",
+			}),
+			outputMeta: metadata.Metadata{
+				Type: model.MetricTypeCounter,
+				Help: "MIXED CASE HELP",
+			},
+		},
+		{
+			name: "drop and keep based on metadata",
+			input: labels.FromMap(map[string]string{
+				"__name__": "some_untyped_metric",
+			}),
+			inputMeta: metadata.Metadata{
+				Type: model.MetricTypeUnknown,
+			},
+			relabel: []*Config{
+				{
+					SourceLabels: model.LabelNames{"__type__"},
+					Regex:        MustNewRegexp(""),
+					Action:       Drop,
+				},
+			},
+			drop: true,
+		},
+		{
+			name: "keepequal and dropequal with metadata",
+			input: labels.FromMap(map[string]string{
+				"__name__":      "http_requests_total",
+				"expected_unit": "requests",
+			}),
+			inputMeta: metadata.Metadata{
+				Unit: "requests",
+			},
+			relabel: []*Config{
+				{
+					SourceLabels: model.LabelNames{"expected_unit"},
+					TargetLabel:  "__unit__",
+					Action:       KeepEqual,
+				},
+			},
+			output: labels.FromMap(map[string]string{
+				"__name__":      "http_requests_total",
+				"expected_unit": "requests",
+			}),
+			outputMeta: metadata.Metadata{
+				Unit: "requests",
+			},
+		},
+		{
+			name: "labeldrop __.* and labelkeep do not drop metadata",
+			input: labels.FromMap(map[string]string{
+				"__name__":     "http_requests_total",
+				"__tmp_custom": "temp",
+				"job":          "api",
+			}),
+			inputMeta: metadata.Metadata{
+				Type: model.MetricTypeCounter,
+				Unit: "requests",
+				Help: "Total HTTP requests.",
+			},
+			relabel: []*Config{
+				{
+					Regex:  MustNewRegexp("__tmp_.*"),
+					Action: LabelDrop,
+				},
+				{
+					Regex:  MustNewRegexp("__name__|job"),
+					Action: LabelKeep,
+				},
+			},
+			output: labels.FromMap(map[string]string{
+				"__name__": "http_requests_total",
+				"job":      "api",
+			}),
+			outputMeta: metadata.Metadata{
+				Type: model.MetricTypeCounter,
+				Unit: "requests",
+				Help: "Total HTTP requests.",
+			},
+		},
+		{
+			name: "labeldrop __.* does not drop metadata even if __type__ and __unit__ were in builder",
+			input: labels.FromMap(map[string]string{
+				"__name__": "http_requests_total",
+				"__type__": "counter",
+				"__unit__": "requests",
+				"job":      "api",
+			}),
+			inputMeta: metadata.Metadata{
+				Type: model.MetricTypeCounter,
+				Unit: "requests",
+				Help: "Total HTTP requests.",
+			},
+			relabel: []*Config{
+				{
+					Regex:  MustNewRegexp("__(type|unit|help)__"),
+					Action: LabelDrop,
+				},
+			},
+			output: labels.FromMap(map[string]string{
+				"__name__": "http_requests_total",
+				"job":      "api",
+			}),
+			outputMeta: metadata.Metadata{
+				Type: model.MetricTypeCounter,
+				Unit: "requests",
+				Help: "Total HTTP requests.",
+			},
+		},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			for _, cfg := range test.relabel {
+				if cfg.Action == "" {
+					cfg.Action = DefaultRelabelConfig.Action
+				}
+				if cfg.Separator == "" {
+					cfg.Separator = DefaultRelabelConfig.Separator
+				}
+				if cfg.Regex.Regexp == nil || cfg.Regex.String() == "" {
+					if cfg.Action != Drop && cfg.Action != Keep {
+						cfg.Regex = DefaultRelabelConfig.Regex
+					} else if cfg.Regex.Regexp == nil {
+						cfg.Regex = DefaultRelabelConfig.Regex
+					}
+				}
+				if cfg.Replacement == "" && (cfg.Action == KeepEqual || cfg.Action == DropEqual || cfg.Action == Lowercase || cfg.Action == Uppercase || cfg.Action == LabelDrop || cfg.Action == LabelKeep) {
+					cfg.Replacement = DefaultRelabelConfig.Replacement
+				}
+				cfg.NameValidationScheme = model.UTF8Validation
+				require.NoError(t, cfg.Validate(model.UTF8Validation))
+			}
+
+			lb := labels.NewBuilder(test.input)
+			meta := test.inputMeta
+			keep := ProcessBuilderWithMetadata(lb, &meta, test.relabel...)
+			require.Equal(t, !test.drop, keep)
+			if keep {
+				testutil.RequireEqual(t, test.output, lb.Labels())
+				require.Equal(t, test.outputMeta, meta)
+			}
+		})
+	}
+}
+
 func TestRelabelValidate(t *testing.T) {
 	tests := []struct {
 		config   Config
@@ -847,6 +1177,47 @@ func TestRelabelValidate(t *testing.T) {
 				Replacement:          "${1}",
 				NameValidationScheme: model.LegacyValidation,
 			},
+		},
+		{
+			config: Config{
+				Action:               Replace,
+				TargetLabel:          "__type__",
+				Replacement:          "counter",
+				NameValidationScheme: model.UTF8Validation,
+			},
+		},
+		{
+			config: Config{
+				Action:               Replace,
+				TargetLabel:          "__type__",
+				Replacement:          "",
+				NameValidationScheme: model.UTF8Validation,
+			},
+		},
+		{
+			config: Config{
+				Action:               Replace,
+				TargetLabel:          "__type__",
+				Replacement:          "unknown",
+				NameValidationScheme: model.UTF8Validation,
+			},
+		},
+		{
+			config: Config{
+				Action:               Replace,
+				TargetLabel:          "__type__",
+				Replacement:          "${1}",
+				NameValidationScheme: model.UTF8Validation,
+			},
+		},
+		{
+			config: Config{
+				Action:               Replace,
+				TargetLabel:          "__type__",
+				Replacement:          "invalid_type",
+				NameValidationScheme: model.UTF8Validation,
+			},
+			expected: `"invalid_type" is invalid 'replacement' for replace action on __type__`,
 		},
 	}
 	for i, test := range tests {

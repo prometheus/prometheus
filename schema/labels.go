@@ -19,6 +19,10 @@ import (
 	"github.com/prometheus/prometheus/model/labels"
 )
 
+// HelpLabel is the reserved label name used to reference metric help text in relabeling.
+// Unlike __name__, __type__, and __unit__, it is never materialized as a series label.
+const HelpLabel = "__help__"
+
 // IsMetadataLabel returns true if the given label name is a special
 // schema Metadata label.
 func IsMetadataLabel(name string) bool {
