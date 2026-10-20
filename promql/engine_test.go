@@ -5515,6 +5515,71 @@ func TestDetectHistogramStatsDecoding(t *testing.T) {
 	}
 }
 
+// TestSkipHistogramBucketsKeepsResults checks that skipping histogram buckets
+// does not change query results. The histograms of the two series have the
+// same count and sum but different buckets and schemas, and some counter
+// resets are only visible in the buckets. TestDetectHistogramStatsDecoding
+// checks which vector selectors skip the buckets.
+func TestSkipHistogramBucketsKeepsResults(t *testing.T) {
+	storage := promqltest.LoadedStorage(t, `
+load 1m
+  hist{job="a"} {{schema:0 count:4 sum:10 buckets:[1 2 1]}} {{schema:0 count:6 sum:14 buckets:[2 3 1]}} {{schema:0 count:7 sum:15 buckets:[4 1 2]}} {{schema:0 count:9 sum:20 buckets:[5 2 2]}} {{schema:0 count:12 sum:26 buckets:[6 3 3]}}
+  hist{job="b"} {{schema:1 count:4 sum:10 buckets:[1 1 1 1]}} {{schema:1 count:6 sum:14 buckets:[1 2 1 2]}} {{schema:1 count:7 sum:15 buckets:[2 2 1 2]}} {{schema:1 count:9 sum:20 buckets:[3 2 2 2]}} {{schema:1 count:12 sum:26 buckets:[5 1 2 4]}}
+  gauge {{schema:0 count:4 sum:10 buckets:[1 2 1] counter_reset_hint:gauge}} {{schema:0 count:3 sum:5 buckets:[2 0 1] counter_reset_hint:gauge}} {{schema:0 count:6 sum:12 buckets:[1 4 1] counter_reset_hint:gauge}} {{schema:0 count:2 sum:3 buckets:[0 1 1] counter_reset_hint:gauge}} {{schema:0 count:5 sum:9 buckets:[3 1 1] counter_reset_hint:gauge}}
+`)
+	t.Cleanup(func() { require.NoError(t, storage.Close()) })
+	engine := promqltest.NewTestEngine(t, false, 0, promqltest.DefaultMaxSamplesPerQuery)
+
+	for _, qs := range []string{
+		`histogram_count(rate(hist[2m]))`,
+		`histogram_sum(increase(hist[3m]))`,
+		`histogram_count(irate(hist[2m]))`,
+		`histogram_avg(delta(gauge[3m]))`,
+		`histogram_count(idelta(gauge[2m]))`,
+		`histogram_count(sum_over_time(hist[2m]))`,
+		`histogram_sum(avg_over_time(hist[3m]))`,
+		`histogram_count(first_over_time(hist[2m]) - last_over_time(hist[2m]))`,
+		`histogram_count(hist and on(job) count_over_time(hist[2m]) unless on(job) absent_over_time(hist[2m]))`,
+		`histogram_count(hist and on(job) present_over_time(hist[2m]) and on(job) ts_of_first_over_time(hist[2m]) and on(job) ts_of_last_over_time(hist[2m]))`,
+		`histogram_count(sort_by_label(label_replace(hist, "x", "$1", "job", "(.*)"), "x"))`,
+		`histogram_sum(sort_by_label_desc(label_join(hist, "x", "-", "job"), "x"))`,
+		`histogram_count(sum(rate(hist[2m])))`,
+		`histogram_sum(avg by (job) (hist))`,
+		`histogram_count(hist and on(job) count by (job) (hist) and on(job) group by (job) (hist))`,
+		// Select all series, as the selection is not deterministic otherwise.
+		`histogram_count(limitk(2, hist)) + histogram_count(limit_ratio(1, hist))`,
+		`histogram_avg(hist{job="a"} + ignoring(job) hist{job="b"})`,
+		`histogram_sum(-hist * 2 / 4 - hist)`,
+		`histogram_count(hist{job="a"} or hist{job="b"})`,
+		`timestamp(hist)`,
+		`histogram_count(rate(hist[2m])) != 0`,
+		`count_values("value", histogram_sum(hist))`,
+		`timestamp(resets(gauge[2m]) > 0)`,
+		`histogram_count(hist) + ignoring(le) histogram_quantile(0.5, hist)`,
+	} {
+		t.Run(qs, func(t *testing.T) {
+			exec := func(skipBuckets bool) parser.Value {
+				q, err := engine.NewRangeQuery(t.Context(), storage, nil, qs, time.Unix(0, 0), time.Unix(240, 0), time.Minute)
+				require.NoError(t, err)
+				t.Cleanup(q.Close)
+				parser.Inspect(q.Statement().(*parser.EvalStmt).Expr, func(node parser.Node, _ []parser.Node) error {
+					if vs, ok := node.(*parser.VectorSelector); ok {
+						vs.SkipHistogramBuckets = vs.SkipHistogramBuckets && skipBuckets
+					}
+					return nil
+				})
+				res := q.Exec(t.Context())
+				require.NoError(t, res.Err)
+				require.NotEmpty(t, res.Value.(promql.Matrix))
+				return res.Value
+			}
+			// Compare string representations, as reflection does not
+			// treat NaN as equal to NaN.
+			require.Equal(t, exec(false).String(), exec(true).String())
+		})
+	}
+}
+
 func TestEngineOptsValidation(t *testing.T) {
 	cases := []struct {
 		opts     promql.EngineOpts
