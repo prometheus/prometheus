@@ -5299,9 +5299,8 @@ func TestPreprocessExpr(t *testing.T) {
 								Func: parser.MustGetFunction("abs"),
 								Args: parser.Expressions{
 									&parser.VectorSelector{
-										Name:                 "metric",
-										Timestamp:            makeInt64Pointer(10000),
-										SkipHistogramBuckets: true,
+										Name:      "metric",
+										Timestamp: makeInt64Pointer(10000),
 										LabelMatchers: []*labels.Matcher{
 											parser.MustLabelMatcher(labels.MatchEqual, "__name__", "metric"),
 										},
@@ -5418,6 +5417,9 @@ func TestDetectHistogramStatsDecoding(t *testing.T) {
 		// expectSkip is whether the vector selector in the expression is
 		// expected to have SkipHistogramBuckets set after preprocessing.
 		expectSkip bool
+		// expectSkipBySelector overrides expectSkip for the vector
+		// selectors with the given metric names.
+		expectSkipBySelector map[string]bool
 	}{
 		{expr: `metric`, expectSkip: false},
 		{expr: `histogram_count(metric)`, expectSkip: true},
@@ -5425,6 +5427,21 @@ func TestDetectHistogramStatsDecoding(t *testing.T) {
 		{expr: `histogram_avg(metric)`, expectSkip: true},
 		{expr: `histogram_count(rate(metric[1m]))`, expectSkip: true},
 		{expr: `histogram_count(sum(rate(metric[1m])))`, expectSkip: true},
+		{expr: `histogram_avg(sum by (job) (increase(metric[5m] @ 100)))`, expectSkip: true},
+		{expr: `histogram_count(-metric * 2 / 3)`, expectSkip: true},
+		{expr: `histogram_count((metric or other) unless third)`, expectSkip: true},
+		{expr: `histogram_count(label_replace(last_over_time(metric[5m]), "x", "$1", "y", "(.*)"))`, expectSkip: true},
+		{expr: `histogram_count(limitk(1, avg_over_time(metric[5m])))`, expectSkip: true},
+		{expr: `histogram_count(metric and count_over_time(other[5m]))`, expectSkip: true},
+		{expr: `histogram_count(irate(metric[5m]) and delta(other[5m]) unless idelta(third[5m]))`, expectSkip: true},
+		{expr: `histogram_count(sum_over_time(metric[5m]) or first_over_time(other[5m]))`, expectSkip: true},
+		{expr: `histogram_count(metric and present_over_time(other[5m]) unless absent_over_time(third[5m]))`, expectSkip: true},
+		{expr: `histogram_count(metric and ts_of_first_over_time(other[5m]) and ts_of_last_over_time(third[5m]))`, expectSkip: true},
+		{expr: `histogram_count(sort_by_label(label_join(metric, "x", "-", "job"), "x") or sort_by_label_desc(other, "job"))`, expectSkip: true},
+		{expr: `histogram_count(avg(metric) and on() count(other) and on() group(third))`, expectSkip: true},
+		{expr: `histogram_count(limit_ratio(0.5, metric))`, expectSkip: true},
+		// Functions not known to be safe need the buckets.
+		{expr: `histogram_count(sort(metric))`, expectSkip: false},
 		{expr: `histogram_quantile(0.9, metric)`, expectSkip: false},
 		{expr: `histogram_fraction(0, 0.5, metric)`, expectSkip: false},
 		// timestamp(), start_timestamp() and absent() do not look at
@@ -5441,8 +5458,10 @@ func TestDetectHistogramStatsDecoding(t *testing.T) {
 		{expr: `timestamp(histogram_stdvar(metric))`, expectSkip: false},
 		// Buckets are needed for counter reset detection inside subqueries.
 		{expr: `histogram_count(last_over_time(metric[5m:1m]))`, expectSkip: false},
+		{expr: `max_over_time(histogram_count(metric)[5m:1m])`, expectSkip: false},
 		// Comparing histograms for (in)equality needs the buckets.
 		{expr: `histogram_count(metric == other)`, expectSkip: false},
+		{expr: `histogram_count(metric != other)`, expectSkip: false},
 		{expr: `timestamp(metric != other)`, expectSkip: false},
 		{expr: `absent(metric == other)`, expectSkip: false},
 		// Other binary operators do not prevent skipping buckets.
@@ -5450,6 +5469,23 @@ func TestDetectHistogramStatsDecoding(t *testing.T) {
 		// Detecting changes and counting distinct values needs the buckets.
 		{expr: `timestamp(changes(metric[5m]))`, expectSkip: false},
 		{expr: `timestamp(count_values("value", metric))`, expectSkip: false},
+		// Some resets of gauge histograms are only visible in the buckets.
+		{expr: `timestamp(resets(metric[5m]) > 0)`, expectSkip: false},
+		{expr: `absent(resets(metric[5m]) > 0)`, expectSkip: false},
+		{expr: `histogram_count(metric and changes(other[5m]) > 0)`, expectSkip: true, expectSkipBySelector: map[string]bool{"other": false}},
+		{expr: `histogram_count(metric and on() count_values("value", other))`, expectSkip: true, expectSkipBySelector: map[string]bool{"other": false}},
+		{expr: `histogram_count(metric) + histogram_quantile(0.9, other)`, expectSkip: true, expectSkipBySelector: map[string]bool{"other": false}},
+		// Trimming changes the buckets.
+		{expr: `histogram_sum(metric </ 5)`, expectSkip: false},
+		// Only floats flow above the histogram statistics functions.
+		{expr: `histogram_count(increase(metric[5m])) == 0`, expectSkip: true},
+		{expr: `histogram_sum(rate(metric[5m])) != 0`, expectSkip: true},
+		{expr: `histogram_count(metric) > 0`, expectSkip: true},
+		{expr: `histogram_count(metric) == histogram_count(other)`, expectSkip: true},
+		{expr: `histogram_count(metric) != histogram_sum(other)`, expectSkip: true},
+		{expr: `count_values("value", histogram_sum(metric))`, expectSkip: true},
+		{expr: `timestamp(metric) == 0`, expectSkip: true},
+		{expr: `histogram_quantile(0.9, histogram_count(metric))`, expectSkip: true},
 	}
 
 	// start_timestamp is an experimental function.
@@ -5469,7 +5505,11 @@ func TestDetectHistogramStatsDecoding(t *testing.T) {
 			})
 			require.NotEmpty(t, selectors)
 			for _, vs := range selectors {
-				require.Equal(t, tc.expectSkip, vs.SkipHistogramBuckets, "error on input '%s'", tc.expr)
+				expectSkip := tc.expectSkip
+				if v, ok := tc.expectSkipBySelector[vs.Name]; ok {
+					expectSkip = v
+				}
+				require.Equal(t, expectSkip, vs.SkipHistogramBuckets, "error on input '%s', selector %s", tc.expr, vs.Name)
 			}
 		})
 	}

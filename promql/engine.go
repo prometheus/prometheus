@@ -5381,69 +5381,105 @@ func detectHistogramStatsDecoding(expr parser.Expr) {
 		if !ok {
 			return nil
 		}
-
-	pathLoop:
-		for _, v := range slices.Backward(path) { // Walk backwards up the path.
-			switch p := v.(type) {
-			case *parser.SubqueryExpr:
-				// If we ever see a subquery in the path, we
-				// will not skip the buckets. We need the
-				// buckets for correct counter reset detection.
-				n.SkipHistogramBuckets = false
-				break pathLoop
-
-			case *parser.Call:
-				switch p.Func.Name {
-				case "histogram_count", "histogram_sum", "histogram_avg", "timestamp", "start_timestamp", "absent":
-					// These functions only need the count and sum
-					// of a histogram (histogram_count, histogram_sum,
-					// histogram_avg), or do not look at sample values
-					// at all (timestamp, start_timestamp, absent).
-					// We allow skipping buckets preliminarily. But
-					// we will continue through the path to see if
-					// we find a subquery (or a histogram function)
-					// further up (the latter wouldn't make sense,
-					// but no harm in detecting it).
-					n.SkipHistogramBuckets = true
-				case "histogram_quantile", "histogram_quantiles", "histogram_fraction", "histogram_stddev", "histogram_stdvar":
-					// If we ever see a function that needs the
-					// whole histogram, we will not skip the
-					// buckets.
-					n.SkipHistogramBuckets = false
-					break pathLoop
-				case "changes":
-					// Detecting a change compares whole
-					// histograms, including their buckets.
-					n.SkipHistogramBuckets = false
-					break pathLoop
-				}
-
-			case *parser.AggregateExpr:
-				if p.Op == parser.COUNT_VALUES {
-					// The value label is the string
-					// representation of the whole histogram,
-					// including its buckets.
-					n.SkipHistogramBuckets = false
-					break pathLoop
-				}
-
-			case *parser.BinaryExpr:
-				switch p.Op {
-				case parser.TRIM_UPPER, parser.TRIM_LOWER:
-					// Trimming depends on buckets, we will not skip them.
-					n.SkipHistogramBuckets = false
-					break pathLoop
-				case parser.EQLC, parser.NEQ:
-					// Comparing histograms for (in)equality
-					// takes the buckets into account, we will
-					// not skip them.
-					n.SkipHistogramBuckets = false
-					break pathLoop
-				}
-			}
-		}
+		n.SkipHistogramBuckets = canSkipHistogramBuckets(path)
 		return nil
 	})
+}
+
+// histogramStatsSafeFunctions lists the functions that may appear between a
+// vector selector and a histogram statistics function (see
+// canSkipHistogramBuckets) without requiring histogram buckets. They either
+// pass histograms through, combine them using only count and sum, or only look
+// at timestamps and labels. Any function not listed here is assumed to need
+// the buckets. Functions that ignore histograms are not listed, as below a
+// histogram statistics function they always give an empty result.
+var histogramStatsSafeFunctions = map[string]struct{}{
+	// Counter reset detection, where needed, happens in
+	// HistogramStatsIterator, which still sees the buckets.
+	"rate":     {},
+	"increase": {},
+	"irate":    {},
+	"delta":    {},
+	"idelta":   {},
+
+	"sum_over_time":         {},
+	"avg_over_time":         {},
+	"first_over_time":       {},
+	"last_over_time":        {},
+	"count_over_time":       {},
+	"present_over_time":     {},
+	"absent_over_time":      {},
+	"ts_of_first_over_time": {},
+	"ts_of_last_over_time":  {},
+
+	"label_replace":      {},
+	"label_join":         {},
+	"sort_by_label":      {},
+	"sort_by_label_desc": {},
+}
+
+// canSkipHistogramBuckets reports whether a vector selector with the given
+// path (from the root to the parent of the selector) only needs histogram
+// statistics. Only nodes known not to look at buckets may appear between the
+// selector and a histogram statistics function, so that any new function or
+// operator needs buckets by default, rather than silently giving wrong results.
+func canSkipHistogramBuckets(path []parser.Node) bool {
+	statsFuncFound := false
+	for _, v := range slices.Backward(path) { // Walk backwards up the path.
+		if _, ok := v.(*parser.SubqueryExpr); ok {
+			// If we ever see a subquery in the path, we will not
+			// skip the buckets. We need the buckets for correct
+			// counter reset detection.
+			return false
+		}
+		if statsFuncFound {
+			// Only floats flow above the histogram statistics
+			// function, so only subqueries are relevant from here.
+			continue
+		}
+		switch p := v.(type) {
+		case *parser.Call:
+			switch p.Func.Name {
+			case "histogram_count", "histogram_sum", "histogram_avg", "timestamp", "start_timestamp", "absent":
+				// These histogram statistics functions only need
+				// the count and sum of a histogram
+				// (histogram_count, histogram_sum, histogram_avg),
+				// or do not look at sample values at all
+				// (timestamp, start_timestamp, absent), and return
+				// floats.
+				statsFuncFound = true
+				continue
+			}
+			if _, ok := histogramStatsSafeFunctions[p.Func.Name]; !ok {
+				return false
+			}
+
+		case *parser.AggregateExpr:
+			switch p.Op {
+			case parser.SUM, parser.AVG, parser.COUNT, parser.GROUP, parser.LIMITK, parser.LIMIT_RATIO:
+			default:
+				// Notably, count_values uses the string
+				// representation of the whole histogram, and the
+				// others ignore histograms.
+				return false
+			}
+
+		case *parser.BinaryExpr:
+			switch p.Op {
+			case parser.ADD, parser.SUB, parser.MUL, parser.DIV, parser.LAND, parser.LOR, parser.LUNLESS:
+			default:
+				// Notably, == and != compare the buckets, trimming
+				// changes them, and the others drop histograms.
+				return false
+			}
+
+		case *parser.ParenExpr, *parser.UnaryExpr, *parser.StepInvariantExpr, *parser.MatrixSelector:
+
+		default:
+			return false
+		}
+	}
+	return statsFuncFound
 }
 
 func makeInt64Pointer(val int64) *int64 {
