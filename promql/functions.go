@@ -1832,6 +1832,10 @@ const (
 	integralTrapezoidal
 )
 
+// DefaultLabelValueLengthLimit is the default maximum length of a label value in bytes.
+// This is used as a fallback when no explicit limit is configured.
+const DefaultLabelValueLengthLimit = 200
+
 // === integral(Matrix parser.ValueTypeMatrix, strategy=2 Scalar) (Vector, Annotations) ===
 func funcIntegral(vectorVals []Vector, matrixVal Matrix, args parser.Expressions, enh *EvalNodeHelper) (Vector, annotations.Annotations) {
 	if len(matrixVal) == 0 {
@@ -2830,6 +2834,9 @@ func (ev *evaluator) evalLabelReplace(ctx context.Context, args parser.Expressio
 		indexes := regex.FindStringSubmatchIndex(srcVal)
 		if indexes != nil { // Only replace when regexp matches.
 			res := regex.ExpandString([]byte{}, repl, srcVal, indexes)
+			if len(res) > DefaultLabelValueLengthLimit {
+				panic(fmt.Errorf("label value length limit exceeded in label_replace(): value length %d exceeds limit %d", len(res), DefaultLabelValueLengthLimit))
+			}
 			lb.Reset(el.Metric)
 			lb.Set(dst, string(res))
 			matrix[i].Metric = lb.Labels()
@@ -2881,6 +2888,9 @@ func (ev *evaluator) evalLabelJoin(ctx context.Context, args parser.Expressions)
 			srcVals[i] = el.Metric.Get(src)
 		}
 		strval := strings.Join(srcVals, sep)
+		if len(strval) > DefaultLabelValueLengthLimit {
+			panic(fmt.Errorf("label value length limit exceeded in label_join(): value length %d exceeds limit %d", len(strval), DefaultLabelValueLengthLimit))
+		}
 		lb.Reset(el.Metric)
 		lb.Set(dst, strval)
 		matrix[i].Metric = lb.Labels()

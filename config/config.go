@@ -190,6 +190,7 @@ var (
 		ExtraScrapeMetrics:             boolPtr(false),
 		MetricNameValidationScheme:     model.UTF8Validation,
 		MetricNameEscapingScheme:       model.AllowUTF8,
+		LabelValueLengthLimit:          200,
 	}
 
 	DefaultRuntimeConfig = RuntimeConfig{
