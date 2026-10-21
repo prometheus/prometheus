@@ -1,6 +1,10 @@
 # Changelog
 
-## main / unreleased
+## 3.15.1 / 2026-10-21
+
+- [SECURITY] Container images: Update CA certificates to distrust "emSign ECC Root CA - G3" and "Comodo AAA Services root" following the compromise of eMudhra intermediate CA private keys.
+- [SECURITY] Build with Go 1.27.3 to fix vulnerabilities in `net/http`, `net/textproto`, `crypto/tls` and `html/template`.
+- [SECURITY] Bump golang.org/x/net to v0.60.0 to fix HTTP/2 vulnerabilities (GO-2026-6603, GO-2026-6610, GO-2026-6611, GO-2026-6612, GO-2026-6617).
 
 ## 3.15.0 / 2026-09-24
 - [CHANGE] PromQL: A range query whose `end` was not aligned to `step` caused subqueries inside it to evaluate past the parent's last actual step, inflating `peakSamples` in the query stats and against the `query.max-samples` limit, and wasting storage I/O reading samples that were never used in the result. Add tests to prevent regression of the fix made in #18081. #18598
