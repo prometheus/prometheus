@@ -50,7 +50,7 @@ func testRemoteWriteConfigForHost(host string) *config.RemoteWriteConfig {
 }
 
 // TestWriteStorageSavepointDisabled verifies that a disabled run ignores and
-// removes an existing savepoint, does not persist a replacement on shutdown,
+// removes an existing savepoint, does not write a replacement on shutdown,
 // and does not replay old WAL segments after savepoints are re-enabled.
 func TestWriteStorageSavepointDisabled(t *testing.T) {
 	const (
@@ -77,7 +77,7 @@ func TestWriteStorageSavepointDisabled(t *testing.T) {
 	require.NoError(t, err)
 
 	// A prior enabled run left a savepoint pointing at an early segment.
-	require.NoError(t, Savepoint{hash: {Segment: 1}}.Save(dir))
+	require.NoError(t, Savepoint{hash: {Segment: 1}}.Write(dir))
 
 	// Disabled run: the savepoint is not loaded and the stale file is deleted on startup.
 	disabled := NewWriteStorage(nil, nil, dir, defaultFlushDeadline, nil, false, false)
@@ -116,7 +116,7 @@ func TestWriteStorageSavepointDisabled(t *testing.T) {
 	}, noStartupSamplesAssertDuration, noStartupSamplesAssertTick)
 }
 
-func TestWriteStorageSavepointPersistOnClose(t *testing.T) {
+func TestWriteStorageSavepointWriteOnClose(t *testing.T) {
 	cfg := testRemoteWriteConfigForHost("http://persist-test.com")
 	hash, err := toHash(cfg)
 	require.NoError(t, err)
@@ -147,7 +147,7 @@ func TestWriteStorageSavepointPersistOnClose(t *testing.T) {
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
 			dir := t.TempDir()
-			require.NoError(t, Savepoint{hash: {Segment: 3}}.Save(dir))
+			require.NoError(t, Savepoint{hash: {Segment: 3}}.Write(dir))
 
 			s := NewWriteStorage(nil, nil, dir, defaultFlushDeadline, nil, false, true)
 			for _, rwConfs := range tc.reloads {
@@ -165,26 +165,68 @@ func TestWriteStorageSavepointPersistOnClose(t *testing.T) {
 	}
 }
 
-// TestWriteStorageSavepointNotPersistedBeforeApplyConfig verifies that a persist tick
+// TestWriteStorageSavepointCloseWhileBehind verifies that Close writes the position
+// reached before shutdown, not the segments the watcher drops while queues stop.
+func TestWriteStorageSavepointCloseWhileBehind(t *testing.T) {
+	series := makeSeries(10, 0)
+	dir := createWALWithSegments(t, []walSegmentData{
+		{series: series, samples: makeSamples(series, 1_000, 0)},
+		{samples: makeSamples(series, 2_000, 1)},
+		{samples: makeSamples(series, 3_000, 2)},
+	})
+
+	cfg := testRemoteWriteConfigForHost("http://close-while-behind.com")
+	qc := config.DefaultQueueConfig
+	qc.MinShards, qc.MaxShards = 1, 1
+	qc.Capacity, qc.MaxSamplesPerSend = 1, 1
+	cfg.QueueConfig = qc
+	hash, err := toHash(cfg)
+	require.NoError(t, err)
+	require.NoError(t, Savepoint{hash: {Segment: 0}}.Write(dir))
+
+	// The client never acknowledges, so the watcher blocks on segment 0 with the shard full.
+	client := NewTestBlockedWriteClient()
+	s := NewWriteStorage(nil, nil, dir, 100*time.Millisecond, nil, false, true)
+	require.NoError(t, s.ApplyConfig(&config.Config{
+		GlobalConfig:       config.DefaultGlobalConfig,
+		RemoteWriteConfigs: []*config.RemoteWriteConfig{cfg},
+	}, WithWriteClientFactory(func(string, *ClientConfig) (WriteClient, error) { return client, nil })))
+
+	s.mtx.Lock()
+	q := s.queues[hash]
+	s.mtx.Unlock()
+	require.Eventually(t, func() bool {
+		return client_testutil.ToFloat64(q.metrics.enqueueRetriesTotal) > 0
+	}, 10*time.Second, 10*time.Millisecond)
+	require.Equal(t, 0, q.watcher.LastProcessedSegment())
+
+	require.NoError(t, s.Close())
+
+	loaded, err := LoadSavepoint(dir)
+	require.NoError(t, err)
+	require.Equal(t, Savepoint{hash: {Segment: 0}}, loaded)
+}
+
+// TestWriteStorageSavepointNotWrittenBeforeApplyConfig verifies that a write tick
 // during startup, before queues exist, does not overwrite the loaded savepoint.
-func TestWriteStorageSavepointNotPersistedBeforeApplyConfig(t *testing.T) {
+func TestWriteStorageSavepointNotWrittenBeforeApplyConfig(t *testing.T) {
 	cfg := testRemoteWriteConfigForHost("http://persist-before-config.com")
 	hash, err := toHash(cfg)
 	require.NoError(t, err)
 
 	dir := t.TempDir()
 	want := Savepoint{hash: {Segment: 3}}
-	require.NoError(t, want.Save(dir))
+	require.NoError(t, want.Write(dir))
 
 	s := NewWriteStorage(nil, nil, dir, defaultFlushDeadline, nil, false, true)
 	t.Cleanup(func() { require.NoError(t, s.Close()) })
 
-	// Same call the persist ticker makes.
-	s.persistSavepoint()
+	// Same call the write ticker makes.
+	s.writeSavepoint()
 
 	loaded, err := LoadSavepoint(dir)
 	require.NoError(t, err)
-	require.Equal(t, want, loaded, "persist before ApplyConfig must not touch the savepoint file")
+	require.Equal(t, want, loaded, "write before ApplyConfig must not touch the savepoint file")
 
 	require.NoError(t, s.ApplyConfig(&config.Config{
 		GlobalConfig:       config.DefaultGlobalConfig,
@@ -193,9 +235,9 @@ func TestWriteStorageSavepointNotPersistedBeforeApplyConfig(t *testing.T) {
 	require.Equal(t, 3, s.queues[hash].watcher.LastProcessedSegment(), "queue should resume from the loaded savepoint")
 }
 
-// TestWriteStorageSavepointPersistConcurrentApplyConfig exercises a persist racing
+// TestWriteStorageSavepointWriteConcurrentApplyConfig exercises a write racing
 // ApplyConfig's savepoint refresh. Run under -race.
-func TestWriteStorageSavepointPersistConcurrentApplyConfig(t *testing.T) {
+func TestWriteStorageSavepointWriteConcurrentApplyConfig(t *testing.T) {
 	cfg := testRemoteWriteConfigForHost("http://persist-concurrent.com")
 	conf := &config.Config{
 		GlobalConfig:       config.DefaultGlobalConfig,
@@ -209,7 +251,7 @@ func TestWriteStorageSavepointPersistConcurrentApplyConfig(t *testing.T) {
 	var wg sync.WaitGroup
 	wg.Go(func() {
 		for range 100 {
-			s.persistSavepoint()
+			s.writeSavepoint()
 		}
 	})
 	for range 100 {
@@ -232,7 +274,7 @@ func TestWriteStorageSavepointStaleCleanup(t *testing.T) {
 		hashA:     {Segment: 3},
 		staleHash: {Segment: 7},
 	}
-	require.NoError(t, sp.Save(dir))
+	require.NoError(t, sp.Write(dir))
 
 	s := NewWriteStorage(nil, nil, dir, defaultFlushDeadline, nil, false, true)
 	t.Cleanup(func() { require.NoError(t, s.Close()) })
@@ -268,7 +310,7 @@ func TestWriteStorageSavepointRecreateResumesFromLivePosition(t *testing.T) {
 	require.NoError(t, err)
 
 	// Seed a stale savepoint; the watcher will advance to segment 2.
-	require.NoError(t, Savepoint{hash: {Segment: 0}}.Save(dir))
+	require.NoError(t, Savepoint{hash: {Segment: 0}}.Write(dir))
 
 	client := NewTestWriteClient(remoteapi.WriteV1MessageType)
 	factory := WithWriteClientFactory(func(string, *ClientConfig) (WriteClient, error) {
@@ -323,7 +365,7 @@ func TestWriteStorageSavepointMultipleDestinations(t *testing.T) {
 		hashA: {Segment: 2},
 		hashB: {Segment: 4},
 	}
-	require.NoError(t, sp.Save(dir))
+	require.NoError(t, sp.Write(dir))
 
 	s := NewWriteStorage(nil, nil, dir, defaultFlushDeadline, nil, false, true)
 	t.Cleanup(func() { require.NoError(t, s.Close()) })
@@ -355,19 +397,17 @@ func TestWriteStorageSavepointMetrics(t *testing.T) {
 			RemoteWriteConfigs: []*config.RemoteWriteConfig{cfg},
 		}))
 
-		s.persistSavepoint()
+		s.writeSavepoint()
 
-		require.Equal(t, 1.0, client_testutil.ToFloat64(s.savepointPersistTotal))
-		require.Equal(t, 0.0, client_testutil.ToFloat64(s.savepointPersistFailed))
-		require.Greater(t, client_testutil.ToFloat64(s.savepointLastPersistTime), 0.0)
+		require.Equal(t, 1.0, client_testutil.ToFloat64(s.savepointWritesTotal))
+		require.Equal(t, 0.0, client_testutil.ToFloat64(s.savepointWritesFailed))
+		require.Greater(t, client_testutil.ToFloat64(s.savepointLastWriteTime), 0.0)
 		require.Equal(t, 1.0, client_testutil.ToFloat64(s.savepointEntries))
 	})
 
 	t.Run("failure", func(t *testing.T) {
-		// Make sp.Save fail by creating a directory where the savepoint file
-		// should be written. os.Rename cannot replace a directory with a file.
-		dir := t.TempDir()
-		require.NoError(t, os.Mkdir(savepointFilePath(dir), 0o755))
+		// Make sp.Write fail by pointing at a directory that does not exist.
+		dir := filepath.Join(t.TempDir(), "missing")
 
 		reg := prometheus.NewRegistry()
 		s := NewWriteStorage(nil, reg, dir, defaultFlushDeadline, nil, false, true)
@@ -379,11 +419,11 @@ func TestWriteStorageSavepointMetrics(t *testing.T) {
 			RemoteWriteConfigs: []*config.RemoteWriteConfig{cfg},
 		}))
 
-		s.persistSavepoint()
+		s.writeSavepoint()
 
-		require.Equal(t, 1.0, client_testutil.ToFloat64(s.savepointPersistTotal))
-		require.Equal(t, 1.0, client_testutil.ToFloat64(s.savepointPersistFailed))
-		require.Equal(t, 0.0, client_testutil.ToFloat64(s.savepointLastPersistTime),
+		require.Equal(t, 1.0, client_testutil.ToFloat64(s.savepointWritesTotal))
+		require.Equal(t, 1.0, client_testutil.ToFloat64(s.savepointWritesFailed))
+		require.Equal(t, 0.0, client_testutil.ToFloat64(s.savepointLastWriteTime),
 			"timestamp must not advance on failure")
 		require.Equal(t, 1.0, client_testutil.ToFloat64(s.savepointEntries))
 	})
@@ -394,9 +434,9 @@ func TestWriteStorageSavepointMetrics(t *testing.T) {
 		s := NewWriteStorage(nil, reg, dir, defaultFlushDeadline, nil, false, false)
 		t.Cleanup(func() { require.NoError(t, s.Close()) })
 
-		require.Nil(t, s.savepointPersistTotal)
-		require.Nil(t, s.savepointPersistFailed)
-		require.Nil(t, s.savepointLastPersistTime)
+		require.Nil(t, s.savepointWritesTotal)
+		require.Nil(t, s.savepointWritesFailed)
+		require.Nil(t, s.savepointLastWriteTime)
 		require.Nil(t, s.savepointEntries)
 
 		mfs, err := reg.Gather()
@@ -406,9 +446,9 @@ func TestWriteStorageSavepointMetrics(t *testing.T) {
 			names = append(names, mf.GetName())
 		}
 		for _, n := range []string{
-			"prometheus_remote_storage_savepoint_persist_total",
-			"prometheus_remote_storage_savepoint_persist_failed_total",
-			"prometheus_remote_storage_savepoint_last_persist_timestamp_seconds",
+			"prometheus_remote_storage_savepoint_writes_total",
+			"prometheus_remote_storage_savepoint_writes_failed_total",
+			"prometheus_remote_storage_savepoint_last_write_timestamp_seconds",
 			"prometheus_remote_storage_savepoint_entries",
 		} {
 			require.NotContains(t, names, n)
@@ -561,7 +601,7 @@ func TestWriteStorageSavepointE2E(t *testing.T) {
 			if tc.savepointSegment != nil {
 				require.NoError(t, Savepoint{
 					hash: {Segment: *tc.savepointSegment},
-				}.Save(dir))
+				}.Write(dir))
 			}
 
 			s := NewWriteStorage(nil, nil, dir, defaultFlushDeadline, nil, false, true)
@@ -636,22 +676,22 @@ func ptrInt(v int) *int {
 	return &v
 }
 
-// overwriteSavepointPersistDuration shortens the persist ticker interval for the
+// overwriteSavepointWriteInterval shortens the write ticker interval for the
 // duration of a test and restores it on cleanup. Tests using this must not run in
-// parallel, since savepointPersistDuration is a shared package-level var.
-func overwriteSavepointPersistDuration(t *testing.T, val time.Duration) {
+// parallel, since savepointWriteInterval is a shared package-level var.
+func overwriteSavepointWriteInterval(t *testing.T, val time.Duration) {
 	t.Helper()
-	initial := savepointPersistDuration
-	savepointPersistDuration = val
-	t.Cleanup(func() { savepointPersistDuration = initial })
+	initial := savepointWriteInterval
+	savepointWriteInterval = val
+	t.Cleanup(func() { savepointWriteInterval = initial })
 }
 
-// TestWriteStorageSavepointCloseRace exercises Close while the persist ticker fires
+// TestWriteStorageSavepointCloseRace exercises Close while the write ticker fires
 // aggressively, and asserts the done-channel contract: Close does not return until
-// run() has exited. Run under -race to cover concurrent persist vs. shutdown.
+// run() has exited. Run under -race to cover concurrent write vs. shutdown.
 func TestWriteStorageSavepointCloseRace(t *testing.T) {
-	// Fire the persist ticker aggressively so it overlaps Close.
-	overwriteSavepointPersistDuration(t, time.Millisecond)
+	// Fire the write ticker aggressively so it overlaps Close.
+	overwriteSavepointWriteInterval(t, time.Millisecond)
 
 	dir := t.TempDir()
 	s := NewWriteStorage(nil, nil, dir, defaultFlushDeadline, nil, false, true)
@@ -662,9 +702,9 @@ func TestWriteStorageSavepointCloseRace(t *testing.T) {
 		RemoteWriteConfigs: []*config.RemoteWriteConfig{cfg},
 	}))
 
-	// Wait until the ticker has persisted a few times so Close overlaps live persists.
+	// Wait until the ticker has written a few times so Close overlaps live writes.
 	require.Eventually(t, func() bool {
-		return client_testutil.ToFloat64(s.savepointPersistTotal) >= 3
+		return client_testutil.ToFloat64(s.savepointWritesTotal) >= 3
 	}, 2*time.Second, time.Millisecond)
 
 	require.NoError(t, s.Close())
@@ -676,11 +716,11 @@ func TestWriteStorageSavepointCloseRace(t *testing.T) {
 		t.Fatal("Close returned before run() goroutine exited")
 	}
 
-	// No persist may happen after Close: run() is gone, so the counter is stable.
-	total := client_testutil.ToFloat64(s.savepointPersistTotal)
+	// No write may happen after Close: run() is gone, so the counter is stable.
+	total := client_testutil.ToFloat64(s.savepointWritesTotal)
 	time.Sleep(20 * time.Millisecond) // Much larger than the 1ms ticker interval.
-	require.Equal(t, total, client_testutil.ToFloat64(s.savepointPersistTotal),
-		"no savepoint persist should happen after Close returns")
+	require.Equal(t, total, client_testutil.ToFloat64(s.savepointWritesTotal),
+		"no savepoint write should happen after Close returns")
 
 	// The savepoint file must be well-formed (never left half-written).
 	_, err := LoadSavepoint(dir)
