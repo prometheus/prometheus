@@ -32,6 +32,7 @@ import (
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/tsdb/chunks"
 	"github.com/prometheus/prometheus/tsdb/fileutil"
+	"github.com/prometheus/prometheus/tsdb/nativemetadata"
 	"github.com/prometheus/prometheus/tsdb/record"
 	"github.com/prometheus/prometheus/tsdb/tombstones"
 	"github.com/prometheus/prometheus/tsdb/tsdbutil"
@@ -49,6 +50,17 @@ type CheckpointStats struct {
 	TotalTombstones   int // Processed tombstones including dropped ones.
 	TotalExemplars    int // Processed exemplars including dropped ones.
 	TotalMetadata     int // Processed metadata including dropped ones.
+	// UntrustedMetadata counts kept native metadata entries that the
+	// reduction skipped because it didn't trust them.
+	UntrustedMetadata int
+	// Provenance reports whether the checkpoint carries a provenance marker.
+	Provenance bool
+	// Handoffs counts the handoffs written: one per label set whose current
+	// incarnation a kept handoff declared after its latest kept series record.
+	Handoffs int
+	// UndeclaredHandoffs counts kept handoffs for refs without an earlier kept
+	// series record, which declare nothing.
+	UndeclaredHandoffs int
 }
 
 // LastCheckpoint returns the directory name and index of the most recent checkpoint.
@@ -137,13 +149,92 @@ const (
 	metadataBatchSize = 1000
 	// flushThreshold is how many encoded bytes accumulate before they are written out.
 	flushThreshold = 1 * 1024 * 1024
+	// checkpointMetadataInternerLimit bounds the distinct values a checkpoint shares.
+	checkpointMetadataInternerLimit = 1 << 16
 )
+
+// checkpointMetadata is a series' metadata reduced from WAL entries. Series
+// that only had legacy entries keep a legacy entry with the latest value.
+type checkpointMetadata struct {
+	nativemetadata.State
+	native bool
+}
+
+// checkpointLabelSet is a label set with kept series records. Its current
+// incarnation is the ref of its latest kept series record or handoff, in input
+// order.
+type checkpointLabelSet struct {
+	labels  labels.Labels
+	current chunks.HeadSeriesRef
+	// series is the ref of its latest kept series record.
+	series chunks.HeadSeriesRef
+}
+
+// checkpointLabelSets tracks the label sets of kept series records.
+type checkpointLabelSets struct {
+	byHash map[uint64][]*checkpointLabelSet
+	byRef  map[chunks.HeadSeriesRef]*checkpointLabelSet
+}
+
+// declare records a kept series record for ref.
+func (c *checkpointLabelSets) declare(ref chunks.HeadSeriesRef, lset labels.Labels) {
+	set := c.byRef[ref]
+	if set == nil {
+		hash := lset.Hash()
+		for _, candidate := range c.byHash[hash] {
+			if labels.Equal(candidate.labels, lset) {
+				set = candidate
+				break
+			}
+		}
+		if set == nil {
+			set = &checkpointLabelSet{labels: lset}
+			c.byHash[hash] = append(c.byHash[hash], set)
+		}
+		c.byRef[ref] = set
+	}
+	set.current, set.series = ref, ref
+}
+
+// handoff records a kept handoff for ref as its declaration, if a series record
+// for ref has been kept.
+func (c *checkpointLabelSets) handoff(ref chunks.HeadSeriesRef, stats *CheckpointStats) {
+	if set := c.byRef[ref]; set != nil {
+		set.current = ref
+	} else {
+		stats.UndeclaredHandoffs++
+	}
+}
+
+// winners returns the current incarnation of every label set that a handoff
+// declared after its latest kept series record. A checkpoint keeps series
+// records in input order, so it needs handoffs for those only.
+func (c *checkpointLabelSets) winners() map[chunks.HeadSeriesRef]struct{} {
+	out := map[chunks.HeadSeriesRef]struct{}{}
+	for _, sets := range c.byHash {
+		for _, set := range sets {
+			if set.current != set.series {
+				out[set.current] = struct{}{}
+			}
+		}
+	}
+	return out
+}
 
 // Checkpoint creates a compacted checkpoint of segments in range [from, to] in the given WAL.
 // It includes the most recent checkpoint if it exists.
-// All series not satisfying keep, samples/exemplars below mint, tombstones not
-// satisfying keep or with all intervals below mint, and metadata that are not the
-// latest are dropped.
+// All series not satisfying keep, samples/exemplars below mint, and tombstones not
+// satisfying keep or with all intervals below mint are dropped. Metadata entries
+// are reduced per kept series to the latest one. With reduceNativeMetadata,
+// native metadata entries, in compact records, are reduced per kept series to
+// an override carrying the reduced history and truncation flag; without it,
+// they are dropped, as records of an unknown type are. A native reduction
+// applies only the entries it trusts, by nativemetadata.Trust, and marks the
+// checkpoint with a provenance marker if it ends trusted. A compact record that
+// doesn't decode fails the checkpoint, whatever the reason.
+// Metadata follows every series record, so a label set whose current
+// incarnation, the ref of its latest kept series record or handoff in the
+// input, was declared by a handoff gets a handoff for it, even an empty one.
 //
 // keep is evaluated per record as segments are read, so its result for a given ref
 // must not change while Checkpoint runs. Otherwise records for the same ref could be
@@ -160,9 +251,10 @@ const (
 // back with ReadMinValidTime. It is opt-in because not every caller's own replay path
 // tolerates an unrecognized record type equally gracefully; callers that don't consume
 // ReadMinValidTime should pass false.
-func Checkpoint(logger *slog.Logger, w *WL, from, to int, keep func(id chunks.HeadSeriesRef) bool, mint int64, enableSTStorage, writeMinValidTime bool) (*CheckpointStats, error) {
+func Checkpoint(logger *slog.Logger, w *WL, from, to int, keep func(id chunks.HeadSeriesRef) bool, mint int64, enableSTStorage, writeMinValidTime, reduceNativeMetadata bool) (*CheckpointStats, error) {
 	stats := &CheckpointStats{}
 	var sgmReader io.ReadCloser
+	var trust nativemetadata.Trust
 
 	logger.Info("Creating checkpoint", "from_segment", from, "to_segment", to, "mint", mint)
 
@@ -179,6 +271,7 @@ func Checkpoint(logger *slog.Logger, w *WL, from, to int, keep func(id chunks.He
 			}
 			// Ignore WAL files below the checkpoint. They shouldn't exist to begin with.
 			from = last
+			trust.StartCheckpoint()
 
 			sgmRange = append(sgmRange, SegmentRange{Dir: dir, Last: math.MaxInt32})
 		}
@@ -250,13 +343,18 @@ func Checkpoint(logger *slog.Logger, w *WL, from, to int, keep func(id chunks.He
 		tstones               []tombstones.Stone
 		exemplars             []record.RefExemplar
 		metadata              []record.RefMetadata
+		metadataValues        []nativemetadata.Point
 		st                    = labels.NewSymbolTable() // Needed for decoding; labels do not outlive this function.
 		dec                   = record.NewDecoder(st, logger)
 		enc                   = record.Encoder{EnableSTStorage: enableSTStorage}
 		buf                   []byte
 		recs                  [][]byte
 
-		latestMetadataMap = make(map[chunks.HeadSeriesRef]record.RefMetadata)
+		reducedMetadata = make(map[chunks.HeadSeriesRef]checkpointMetadata)
+		interner        = nativemetadata.NewInterner(checkpointMetadataInternerLimit)
+		labelSets       = checkpointLabelSets{byHash: map[uint64][]*checkpointLabelSet{}, byRef: map[chunks.HeadSeriesRef]*checkpointLabelSet{}}
+		compact         record.CompactNativeMetadata
+		dictionary      nativemetadata.Dictionary
 	)
 	for r.Next() {
 		series, samples, histogramSamples, floatHistogramSamples, tstones, exemplars, metadata = series[:0], samples[:0], histogramSamples[:0], floatHistogramSamples[:0], tstones[:0], exemplars[:0], metadata[:0]
@@ -278,6 +376,9 @@ func Checkpoint(logger *slog.Logger, w *WL, from, to int, keep func(id chunks.He
 			for _, s := range series {
 				if keep(s.Ref) {
 					repl = append(repl, s)
+					if reduceNativeMetadata {
+						labelSets.declare(s.Ref, s.Labels)
+					}
 				}
 			}
 			if len(repl) > 0 {
@@ -441,16 +542,20 @@ func Checkpoint(logger *slog.Logger, w *WL, from, to int, keep func(id chunks.He
 			if err != nil {
 				return nil, fmt.Errorf("decode metadata: %w", err)
 			}
-			// Only keep reference to the latest found metadata for each refID.
+			// Keep one reduced entry per series, in WAL order.
 			repl := 0
 			for _, m := range metadata {
-				if keep(m.Ref) {
-					if _, ok := latestMetadataMap[m.Ref]; !ok {
-						repl++
-					}
-					latestMetadataMap[m.Ref] = m
+				if !keep(m.Ref) {
+					continue
 				}
+				reduced, ok := reducedMetadata[m.Ref]
+				if !ok {
+					repl++
+				}
+				reduced.Apply(record.NativeMetadataLegacy, false, append(metadataValues[:0], nativemetadata.LegacyPoint(m, interner.Intern)))
+				reducedMetadata[m.Ref] = reduced
 			}
+			clear(metadataValues)
 			stats.TotalMetadata += len(metadata)
 			stats.DroppedMetadata += len(metadata) - repl
 		case record.MinValidTime:
@@ -458,6 +563,46 @@ func Checkpoint(logger *slog.Logger, w *WL, from, to int, keep func(id chunks.He
 			// already read back and folded into the record written above, via max(mint, this
 			// same value), so nothing it could contribute is lost.
 			continue
+		case record.NativeMetadataCompact:
+			if !reduceNativeMetadata {
+				continue
+			}
+			if err := dec.CompactNativeMetadata(rec, &compact); err != nil {
+				return nil, fmt.Errorf("decode compact native metadata: %w", err)
+			}
+			// Reduce as above, resolving each used value once. Untrusted
+			// entries are skipped, but their handoffs still declare.
+			dictionary.Reset(compact.Values, interner.Intern)
+			repl := 0
+			for _, m := range compact.Entries {
+				switch {
+				case m.Kind == record.NativeMetadataProvenance || m.Kind == record.NativeMetadataBoundary:
+					trust.Mark()
+					continue
+				case !keep(m.Ref):
+					continue
+				}
+				if m.Handoff {
+					labelSets.handoff(m.Ref, stats)
+				}
+				if !trust.Trusted() {
+					stats.UntrustedMetadata++
+					continue
+				}
+				reduced, ok := reducedMetadata[m.Ref]
+				if !ok {
+					repl++
+				}
+				metadataValues = dictionary.AppendPoints(metadataValues[:0], m.Points)
+				reduced.Apply(m.Kind, m.Truncated, metadataValues)
+				reduced.native = true
+				reducedMetadata[m.Ref] = reduced
+			}
+			clear(metadataValues)
+			stats.TotalMetadata += len(compact.Entries)
+			stats.DroppedMetadata += len(compact.Entries) - repl
+			dictionary.Reset(nil, nil)
+			compact.Reset()
 		default:
 			// Unknown record type, probably from a future Prometheus version.
 			continue
@@ -485,34 +630,109 @@ func Checkpoint(logger *slog.Logger, w *WL, from, to int, keep func(id chunks.He
 		return nil, fmt.Errorf("flush records: %w", err)
 	}
 
-	// Flush the latest metadata record for each series. Batching caps the size of
-	// a single record, which bounds both the buffer built here and the buffer a
-	// Reader reassembles the record into on the way back out.
-	buf, recs = buf[:0], recs[:0]
+	// Flush the reduced metadata of each series, in bounded records: native
+	// histories as overrides in compact records, whose dictionaries hold each
+	// distinct value once, and legacy values as legacy entries. A trusted
+	// reduction's provenance marker precedes its compact records, so that
+	// readers trust them. Every series record precedes it, so only a handoff
+	// can declare a current incarnation other than the latest series record's.
+	// A winner was declared by a kept handoff for it. In an unmarked checkpoint,
+	// which only an untrusted reduction writes and so holds no native history,
+	// a winner's handoff is empty, so that readers take only its declaration.
+	winners := labelSets.winners()
 	metadata = metadata[:0]
-	remaining := len(latestMetadataMap)
-	for _, m := range latestMetadataMap {
-		metadata = append(metadata, m)
-		remaining--
-		if len(metadata) < metadataBatchSize && remaining > 0 {
-			continue
+	marked := reduceNativeMetadata && trust.Trusted()
+	if marked {
+		if err := cp.Log(enc.NativeMetadataMarker(record.NativeMetadataProvenance, buf[:0])); err != nil {
+			return nil, fmt.Errorf("flush provenance marker: %w", err)
 		}
-
-		start := len(buf)
-		buf = enc.Metadata(metadata, buf)
-		recs = append(recs, buf[start:])
+		stats.Provenance = true
+	}
+	var (
+		overrides      []record.RefCompactNativeMetadata
+		overridePoints []record.CompactNativeMetadataPoint
+		values         []record.NativeMetadataValue
+		valueIndices   = map[record.NativeMetadataValue]uint32{}
+	)
+	flushOverrides := func() error {
+		buf = enc.CompactNativeMetadata(values, overrides, buf[:0])
+		if err := cp.Log(buf); err != nil {
+			return fmt.Errorf("flush metadata records: %w", err)
+		}
+		clear(overrides)
+		clear(values)
+		clear(valueIndices)
+		overrides, overridePoints, values = overrides[:0], overridePoints[:0], values[:0]
+		return nil
+	}
+	flushLegacy := func() error {
+		if err := cp.Log(enc.Metadata(metadata, buf[:0])); err != nil {
+			return fmt.Errorf("flush metadata records: %w", err)
+		}
+		clear(metadata)
 		metadata = metadata[:0]
-
-		if len(buf) > flushThreshold {
-			if err := cp.Log(recs...); err != nil {
-				return nil, fmt.Errorf("flush metadata records: %w", err)
-			}
-			buf, recs = buf[:0], recs[:0]
+		return nil
+	}
+	for ref := range winners {
+		if _, ok := reducedMetadata[ref]; !ok {
+			reducedMetadata[ref] = checkpointMetadata{}
 		}
 	}
-	if len(recs) > 0 {
-		if err := cp.Log(recs...); err != nil {
-			return nil, fmt.Errorf("flush metadata records: %w", err)
+	for ref, reduced := range reducedMetadata {
+		_, winner := winners[ref]
+		if winner {
+			stats.Handoffs++
+		}
+		if reduced.native || winner {
+			entry := record.RefCompactNativeMetadata{Ref: ref, Kind: record.NativeMetadataOverride, Truncated: reduced.Truncated, Handoff: winner}
+			points := reduced.AppendPoints(metadataValues[:0])
+			if !marked && reduced.Metadata != nil {
+				// Readers skip the compact entries of an unmarked checkpoint,
+				// but always apply legacy entries: the legacy value stays a
+				// legacy entry, and the handoff only declares.
+				metadata = append(metadata, record.RefMetadata{Ref: ref, Type: record.GetMetricType(reduced.Metadata.Type), Unit: reduced.Metadata.Unit, Help: reduced.Metadata.Help})
+				if len(metadata) == metadataBatchSize {
+					if err := flushLegacy(); err != nil {
+						return nil, err
+					}
+				}
+				points, entry.Truncated = nil, false
+			}
+			start := len(overridePoints)
+			for _, p := range points {
+				v := record.NativeMetadataValue{Type: record.GetMetricType(p.Metadata.Type), Unit: p.Metadata.Unit, Help: p.Metadata.Help}
+				index, ok := valueIndices[v]
+				if !ok {
+					index = uint32(len(values))
+					valueIndices[v] = index
+					values = append(values, v)
+				}
+				overridePoints = append(overridePoints, record.CompactNativeMetadataPoint{EffectiveFrom: p.EffectiveFrom, Value: index})
+			}
+			entry.Points = overridePoints[start:len(overridePoints):len(overridePoints)]
+			overrides = append(overrides, entry)
+			if len(overrides) == metadataBatchSize {
+				if err := flushOverrides(); err != nil {
+					return nil, err
+				}
+			}
+			continue
+		}
+		metadata = append(metadata, record.RefMetadata{Ref: ref, Type: record.GetMetricType(reduced.Metadata.Type), Unit: reduced.Metadata.Unit, Help: reduced.Metadata.Help})
+		if len(metadata) == metadataBatchSize {
+			if err := flushLegacy(); err != nil {
+				return nil, err
+			}
+		}
+	}
+	if len(overrides) > 0 {
+		if err := flushOverrides(); err != nil {
+			return nil, err
+		}
+	}
+	if len(metadata) > 0 {
+		if err := flushLegacy(); err != nil {
+			return nil, err
 		}
 	}
 

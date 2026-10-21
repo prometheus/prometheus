@@ -19,8 +19,12 @@ import (
 	"path"
 	"path/filepath"
 	"runtime"
+	"slices"
+	"strconv"
+	"strings"
 	"sync"
 	"testing"
+	"testing/synctest"
 	"time"
 
 	"github.com/prometheus/client_golang/prometheus"
@@ -453,7 +457,7 @@ func TestReadToEndWithCheckpoint(t *testing.T) {
 					}
 				}
 
-				Checkpoint(promslog.NewNopLogger(), w, 0, 1, func(chunks.HeadSeriesRef) bool { return true }, 0, enableSTStorage, true)
+				Checkpoint(promslog.NewNopLogger(), w, 0, 1, func(chunks.HeadSeriesRef) bool { return true }, 0, enableSTStorage, true, false)
 				w.Truncate(1)
 
 				// Write more records after checkpointing.
@@ -546,7 +550,7 @@ func TestReadCheckpoint(t *testing.T) {
 				}
 				_, err = w.NextSegmentSync()
 				require.NoError(t, err)
-				_, err = Checkpoint(promslog.NewNopLogger(), w, 30, 31, func(chunks.HeadSeriesRef) bool { return true }, 0, enableSTStorage, true)
+				_, err = Checkpoint(promslog.NewNopLogger(), w, 30, 31, func(chunks.HeadSeriesRef) bool { return true }, 0, enableSTStorage, true, false)
 				require.NoError(t, err)
 				require.NoError(t, w.Truncate(32))
 
@@ -717,7 +721,7 @@ func TestCheckpointSeriesReset(t *testing.T) {
 				return wt.checkNumSeries() == seriesCount
 			}, 10*time.Second, 1*time.Second)
 
-			_, err = Checkpoint(promslog.NewNopLogger(), w, 2, 4, func(chunks.HeadSeriesRef) bool { return true }, 0, true, false)
+			_, err = Checkpoint(promslog.NewNopLogger(), w, 2, 4, func(chunks.HeadSeriesRef) bool { return true }, 0, true, false, false)
 			require.NoError(t, err)
 
 			err = w.Truncate(5)
@@ -901,5 +905,444 @@ func TestRun_AvoidNotifyWhenBehind(t *testing.T) {
 				require.NoError(t, w.Close())
 			})
 		}
+	}
+}
+
+// nativeWriteToMock records what a watcher passes a native metadata writer
+// since its last reset: entries as describeCompactNativeMetadata describes
+// them, latest-value entries as "legacy ref help", the segment each record was
+// read from, and the refs garbage collection kept.
+type nativeWriteToMock struct {
+	*writeToMock
+	entries  []string
+	segments []int
+	kept     map[chunks.HeadSeriesRef]int
+	// resets holds the checkpoint flag of each reset.
+	resets []bool
+}
+
+func newNativeWriteToMock() *nativeWriteToMock {
+	return &nativeWriteToMock{writeToMock: newWriteToMock(0)}
+}
+
+func (m *nativeWriteToMock) StoreNativeMetadataRecord(rec *record.CompactNativeMetadata, segment int) {
+	m.segments = append(m.segments, segment)
+	// The record's strings alias the watcher's buffer; describing copies them.
+	for _, s := range describeCompactNativeMetadata(rec) {
+		m.entries = append(m.entries, strings.Clone(s))
+	}
+}
+
+func (m *nativeWriteToMock) StoreLegacyNativeMetadata(meta []record.RefMetadata, segment int) {
+	m.segments = append(m.segments, segment)
+	for _, e := range meta {
+		m.entries = append(m.entries, fmt.Sprintf("legacy %d %s", e.Ref, e.Help))
+	}
+}
+
+func (m *nativeWriteToMock) UpdateNativeMetadataSegment(refs []chunks.HeadSeriesRef, segment int) {
+	if m.kept == nil {
+		m.kept = map[chunks.HeadSeriesRef]int{}
+	}
+	for _, ref := range refs {
+		m.kept[ref] = max(m.kept[ref], segment)
+	}
+}
+
+func (m *nativeWriteToMock) ResetNativeMetadata(checkpoint bool) {
+	m.entries, m.segments = nil, nil
+	m.resets = append(m.resets, checkpoint)
+}
+
+func TestWatcher_NativeMetadata(t *testing.T) {
+	var enc record.Encoder
+	// Each segment holds one series record and the listed records.
+	segments := [][][]byte{
+		{nativeMetadataGroupRecord(t, 1, "A@100"), nativeMetadataGroupRecord(t, 2, "A@10", "B@20", "C@30", "D@40", "E@50")},
+		{nativeMetadataGroupRecord(t, 1, "B@150", "C@180"), nativeMetadataGroupRecord(t, 2, "F@60")},
+		{enc.Metadata([]record.RefMetadata{{Ref: 3, Help: "L"}}, nil), nativeMetadataGroupRecord(t, 1, "D@200")},
+		{nativeMetadataGroupRecord(t, 2, "D@50"), nativeMetadataGroupRecord(t, 3, "M@5")},
+		{nativeMetadataOverrideRecord(t, 1, true, true, "A@120"), nativeMetadataGroupRecord(t, 2, "G@70")},
+	}
+	type setup struct {
+		dir     string
+		w       *WL
+		entries []string
+	}
+	newWAL := func(t *testing.T) setup {
+		dir := t.TempDir()
+		w, err := NewSize(nil, nil, filepath.Join(dir, "wal"), 32*1024, compression.None)
+		require.NoError(t, err)
+		t.Cleanup(func() { require.NoError(t, w.Close()) })
+		var all []string
+		for i, recs := range segments {
+			require.NoError(t, w.Log(enc.Series([]record.RefSeries{{Ref: chunks.HeadSeriesRef(i + 1), Labels: labels.FromStrings("__name__", strconv.Itoa(i))}}, nil)))
+			for _, rec := range recs {
+				require.NoError(t, w.Log(rec))
+				all = append(all, describeNativeMetadataRecord(t, rec)...)
+			}
+			// Leave an empty tail segment, so that replay reads every segment
+			// to its end and returns.
+			_, err := w.NextSegment()
+			require.NoError(t, err)
+		}
+		return setup{dir: dir, w: w, entries: all}
+	}
+	newWatcher := func(s setup) (*Watcher, *nativeWriteToMock) {
+		wt := newNativeWriteToMock()
+		watcher := NewWatcher(wMetrics, nil, nil, "", wt, s.dir, false, false, true, nil)
+		watcher.SetMetrics()
+		watcher.MaxSegment = len(segments) - 1
+		return watcher, wt
+	}
+	checkpoint := func(t *testing.T, s setup, from, to int) {
+		_, err := Checkpoint(promslog.NewNopLogger(), s.w, from, to, func(chunks.HeadSeriesRef) bool { return true }, 0, false, false, true)
+		require.NoError(t, err)
+	}
+
+	t.Run("records are forwarded in WAL order", func(t *testing.T) {
+		s := newWAL(t)
+		watcher, wt := newWatcher(s)
+		require.NoError(t, watcher.Run())
+		require.Equal(t, s.entries, wt.entries)
+		require.Zero(t, wt.metadataStores, "latest-value entries reach the native writer")
+		require.Equal(t, []bool{false}, wt.resets)
+	})
+
+	t.Run("each replay starts from reset state", func(t *testing.T) {
+		for _, withCheckpoint := range []bool{false, true} {
+			s := newWAL(t)
+			if withCheckpoint {
+				checkpoint(t, s, 0, 1)
+				require.NoError(t, s.w.Truncate(2))
+			}
+			watcher, wt := newWatcher(s)
+			require.NoError(t, watcher.Run())
+			first := wt.entries
+			require.NoError(t, watcher.Run())
+			// The writer learns whether a checkpoint starts the replay.
+			require.Equal(t, []bool{withCheckpoint, withCheckpoint}, wt.resets)
+			require.Equal(t, first, wt.entries)
+		}
+	})
+
+	t.Run("replay starts after the checkpoint's own segment", func(t *testing.T) {
+		// A failed truncation leaves the checkpointed segments in place.
+		s := newWAL(t)
+		checkpoint(t, s, 0, 1)
+		watcher, wt := newWatcher(s)
+		require.NoError(t, watcher.Run())
+		// The checkpoint's marker and reduced overrides, then segments 2 to 4.
+		var want []string
+		for _, recs := range segments[2:] {
+			for _, rec := range recs {
+				want = append(want, describeNativeMetadataRecord(t, rec)...)
+			}
+		}
+		require.Equal(t, "provenance", wt.entries[0])
+		require.Equal(t, want, wt.entries[len(wt.entries)-len(want):])
+		require.Equal(t, sortedStrings([]string{"provenance", "override 1 A@100 B@150 C@180", "override 2 truncated B@20 C@30 D@40 E@50 F@60"}), sortedStrings(wt.entries[:len(wt.entries)-len(want)]))
+	})
+
+	t.Run("a newer checkpoint restarts replay", func(t *testing.T) {
+		s := newWAL(t)
+		checkpoint(t, s, 0, 1)
+		require.NoError(t, s.w.Truncate(2))
+		watcher, wt := newWatcher(s)
+		raced := false
+		watcher.testAfterCheckpoint = func() {
+			if raced {
+				return
+			}
+			raced = true
+			// Checkpointing races the watcher, deleting the next segments.
+			checkpoint(t, s, 2, 3)
+			require.NoError(t, s.w.Truncate(4))
+			require.NoError(t, DeleteCheckpoints(s.w.Dir(), 3))
+		}
+		require.NoError(t, watcher.Run())
+		require.Equal(t, []bool{true, true}, wt.resets)
+		_, index, err := LastCheckpoint(s.w.Dir())
+		require.NoError(t, err)
+		require.Equal(t, 3, index)
+	})
+
+	t.Run("missing segments without a newer checkpoint", func(t *testing.T) {
+		s := newWAL(t)
+		checkpoint(t, s, 0, 1)
+		require.NoError(t, s.w.Truncate(2))
+		require.NoError(t, os.Remove(SegmentName(s.w.Dir(), 2)))
+		watcher, wt := newWatcher(s)
+		require.NoError(t, watcher.Run())
+		require.Len(t, wt.resets, 1)
+		require.NotEmpty(t, wt.entries)
+	})
+
+	t.Run("records carry the segment they were read from", func(t *testing.T) {
+		// A checkpoint's are read from its index: its marker, then its
+		// reduced records.
+		for _, c := range []struct {
+			name       string
+			checkpoint bool
+			want       []int
+		}{
+			{name: "segments", want: []int{0, 0, 1, 1, 2, 2, 3, 3, 4, 4}},
+			{name: "a checkpoint, then segments", checkpoint: true, want: []int{1, 1, 2, 2, 3, 3, 4, 4}},
+		} {
+			t.Run(c.name, func(t *testing.T) {
+				s := newWAL(t)
+				if c.checkpoint {
+					checkpoint(t, s, 0, 1)
+					require.NoError(t, s.w.Truncate(2))
+				}
+				watcher, wt := newWatcher(s)
+				require.NoError(t, watcher.Run())
+				require.Equal(t, c.want, wt.segments)
+			})
+		}
+	})
+
+	t.Run("garbage collection keeps the checkpoint's metadata refs", func(t *testing.T) {
+		// Segments 0 to 2 hold metadata for refs 1, 2 and 3, including a
+		// latest-value entry for ref 3; a checkpoint of them keeps all three.
+		s := newWAL(t)
+		watcher, wt := newWatcher(s)
+		require.NoError(t, watcher.Run())
+		checkpoint(t, s, 0, 2)
+		require.NoError(t, watcher.garbageCollectSeries(4))
+		require.Equal(t, map[chunks.HeadSeriesRef]int{1: 2, 2: 2, 3: 2}, wt.kept)
+	})
+
+	t.Run("writers without native metadata never see compact records", func(t *testing.T) {
+		s := newWAL(t)
+		wt := newWriteToMock(0)
+		watcher := NewWatcher(wMetrics, nil, nil, "", wt, s.dir, false, false, true, nil)
+		watcher.SetMetrics()
+		watcher.MaxSegment = len(segments) - 1
+		require.NoError(t, watcher.Run())
+		require.Equal(t, []record.RefMetadata{{Ref: 3, Help: "L"}}, wt.metadataStored)
+	})
+
+	t.Run("strings outlive the reused record buffer", func(t *testing.T) {
+		// One segment of many records, whose reader reuses its record buffer.
+		dir := t.TempDir()
+		w, err := NewSize(nil, nil, filepath.Join(dir, "wal"), 1<<20, compression.None)
+		require.NoError(t, err)
+		t.Cleanup(func() { require.NoError(t, w.Close()) })
+		require.NoError(t, w.Log(enc.Series([]record.RefSeries{{Ref: 1, Labels: labels.FromStrings("__name__", "a")}}, nil)))
+		var want []string
+		for i := range 200 {
+			help := strings.Repeat(strconv.Itoa(i), 1+i%7)
+			rec := nativeMetadataGroupRecord(t, 1, fmt.Sprintf("%s@%d", help, 2*i), fmt.Sprintf("%s@%d", help, 2*i+1))
+			require.NoError(t, w.Log(rec))
+			want = append(want, describeNativeMetadataRecord(t, rec)...)
+		}
+		_, err = w.NextSegment()
+		require.NoError(t, err)
+		watcher, wt := newWatcher(setup{dir: dir})
+		watcher.MaxSegment = 0
+		require.NoError(t, watcher.Run())
+		require.Equal(t, want, wt.entries)
+	})
+
+	t.Run("garbage collection keeps the refs of compact checkpoint records", func(t *testing.T) {
+		// A checkpoint that keeps metadata only in compact records: without
+		// their refs, the writer would drop the histories the checkpoint
+		// keeps once it resets older series.
+		dir := t.TempDir()
+		walDir := filepath.Join(dir, "wal")
+		w, err := NewSize(nil, nil, walDir, 32*1024, compression.None)
+		require.NoError(t, err)
+		t.Cleanup(func() { require.NoError(t, w.Close()) })
+		for range 4 {
+			_, err := w.NextSegment()
+			require.NoError(t, err)
+		}
+		cp, err := New(nil, nil, filepath.Join(walDir, checkpointPrefix+"00000002"), compression.None)
+		require.NoError(t, err)
+		require.NoError(t, cp.Log(nativeMetadataMarkerRecord(record.NativeMetadataProvenance)))
+		require.NoError(t, cp.Log(nativeMetadataOverrideRecord(t, 1, false, false, "A@1")))
+		require.NoError(t, cp.Log(nativeMetadataOverrideRecord(t, 2, false, true, "A@2")))
+		require.NoError(t, cp.Log(nativeMetadataOverrideRecord(t, 3, true, false)))
+		require.NoError(t, cp.Close())
+		watcher, wt := newWatcher(setup{dir: dir})
+		require.NoError(t, watcher.garbageCollectSeries(4))
+		require.Equal(t, map[chunks.HeadSeriesRef]int{1: 2, 2: 2, 3: 2}, wt.kept)
+	})
+}
+
+// TestWatcher_NativeMetadataDecodeFailure checks that a watcher forwarding
+// native metadata delivers nothing past a record it can't decode, wherever the
+// record is, and however often it retries.
+// recordingGauge records the values a gauge is set to.
+type recordingGauge struct {
+	prometheus.Gauge
+	mtx sync.Mutex
+	set []float64
+}
+
+func (g *recordingGauge) Set(v float64) {
+	g.mtx.Lock()
+	defer g.mtx.Unlock()
+	g.set = append(g.set, v)
+	g.Gauge.Set(v)
+}
+
+func (g *recordingGauge) values() []float64 {
+	g.mtx.Lock()
+	defer g.mtx.Unlock()
+	return slices.Clone(g.set)
+}
+
+func TestWatcher_NativeMetadataDecodeFailure(t *testing.T) {
+	var enc record.Encoder
+	for name, bad := range undecodableNativeMetadataRecords(t) {
+		t.Run(name, func(t *testing.T) {
+			// newWAL writes segment 0, holding a series and a sample, and
+			// then the bad record either in a checkpoint of segment 0 or in
+			// segment 1, followed in segment 1 by a sample at 200.
+			newWAL := func(t *testing.T, inCheckpoint bool) (string, *WL) {
+				dir := t.TempDir()
+				w, err := NewSize(nil, nil, filepath.Join(dir, "wal"), 32*1024, compression.None)
+				require.NoError(t, err)
+				t.Cleanup(func() { require.NoError(t, w.Close()) })
+				require.NoError(t, w.Log(enc.Series([]record.RefSeries{{Ref: 1, Labels: labels.FromStrings("__name__", "a")}}, nil)))
+				require.NoError(t, w.Log(enc.Samples([]record.RefSample{{Ref: 1, T: 100, V: 1}}, nil)))
+				_, err = w.NextSegment()
+				require.NoError(t, err)
+				if inCheckpoint {
+					cp, err := New(nil, nil, filepath.Join(dir, "wal", checkpointPrefix+"00000000"), compression.None)
+					require.NoError(t, err)
+					require.NoError(t, cp.Log(enc.Series([]record.RefSeries{{Ref: 1, Labels: labels.FromStrings("__name__", "a")}}, nil)))
+					require.NoError(t, cp.Log(bad))
+					require.NoError(t, cp.Close())
+				} else {
+					require.NoError(t, w.Log(bad))
+				}
+				require.NoError(t, w.Log(enc.Samples([]record.RefSample{{Ref: 1, T: 200, V: 2}}, nil)))
+				return dir, w
+			}
+			newWatcher := func(dir string) (*Watcher, *nativeWriteToMock) {
+				wt := newNativeWriteToMock()
+				watcher := NewWatcher(wMetrics, nil, nil, "", wt, dir, false, false, true, nil)
+				watcher.SetMetrics()
+				watcher.SetStartTime(time.UnixMilli(0))
+				return watcher, wt
+			}
+			requireHeld := func(t *testing.T, err error, wt *nativeWriteToMock) {
+				t.Helper()
+				var decodeErr *NativeMetadataDecodeError
+				require.ErrorAs(t, err, &decodeErr)
+				for _, s := range wt.samplesAppended {
+					require.Less(t, s.T, int64(200), "nothing past the record is delivered")
+				}
+			}
+			// runTail runs the watcher on a WAL whose tail holds the bad
+			// record until Run returns, notifying it of writes meanwhile.
+			runTail := func(watcher *Watcher, poke func()) error {
+				done := make(chan error, 1)
+				go func() { done <- watcher.Run() }()
+				for {
+					select {
+					case err := <-done:
+						return err
+					case <-time.After(20 * time.Millisecond):
+						poke()
+					}
+				}
+			}
+
+			t.Run("in the checkpoint", func(t *testing.T) {
+				dir, w := newWAL(t, true)
+				_, err := w.NextSegment()
+				require.NoError(t, err)
+				watcher, wt := newWatcher(dir)
+				watcher.MaxSegment = 2
+				for range 2 {
+					requireHeld(t, watcher.Run(), wt)
+				}
+			})
+
+			t.Run("in a segment read before the tail", func(t *testing.T) {
+				dir, w := newWAL(t, false)
+				_, err := w.NextSegment()
+				require.NoError(t, err)
+				watcher, wt := newWatcher(dir)
+				watcher.MaxSegment = 2
+				for range 2 {
+					requireHeld(t, watcher.Run(), wt)
+				}
+			})
+
+			t.Run("in the active tail", func(t *testing.T) {
+				dir, _ := newWAL(t, false)
+				watcher, wt := newWatcher(dir)
+				requireHeld(t, runTail(watcher, watcher.Notify), wt)
+			})
+
+			t.Run("in the tail, retried after the segment rotated", func(t *testing.T) {
+				dir, w := newWAL(t, false)
+				watcher, wt := newWatcher(dir)
+				rotated := false
+				requireHeld(t, runTail(watcher, func() {
+					if !rotated {
+						_, err := w.NextSegment()
+						require.NoError(t, err)
+						rotated = true
+					}
+				}), wt)
+				// The retry reads the segment before its new tail.
+				watcher.MaxSegment = 2
+				requireHeld(t, watcher.Run(), wt)
+			})
+
+			t.Run("the held gauge", func(t *testing.T) {
+				synctest.Test(t, func(t *testing.T) {
+					dir, w := newWAL(t, false)
+					watcher, _ := newWatcher(dir)
+					gauge := &recordingGauge{Gauge: prometheus.NewGauge(prometheus.GaugeOpts{Name: "held"})}
+					watcher.nativeMetadataHeld = gauge
+					go watcher.loop()
+					defer func() {
+						close(watcher.quit)
+						<-watcher.done
+					}()
+					// Every retry holds at the record, and the gauge never
+					// reports otherwise in between.
+					time.Sleep(time.Minute)
+					synctest.Wait()
+					require.Greater(t, len(gauge.values()), 1)
+					require.NotContains(t, gauge.values(), 0.0)
+
+					// A checkpoint of the record's segment, without it, lets
+					// the next retry get past it.
+					cp, err := New(nil, nil, filepath.Join(dir, "wal", checkpointPrefix+"00000001"), compression.None)
+					require.NoError(t, err)
+					require.NoError(t, cp.Log(enc.Series([]record.RefSeries{{Ref: 1, Labels: labels.FromStrings("__name__", "a")}}, nil)))
+					require.NoError(t, cp.Close())
+					_, err = w.NextSegment()
+					require.NoError(t, err)
+					time.Sleep(time.Minute)
+					synctest.Wait()
+					values := gauge.values()
+					require.Equal(t, 0.0, values[len(values)-1])
+				})
+			})
+
+			t.Run("in a checkpoint that garbage collection scans", func(t *testing.T) {
+				dir, w := newWAL(t, true)
+				for range 2 {
+					_, err := w.NextSegment()
+					require.NoError(t, err)
+				}
+				watcher, wt := newWatcher(dir)
+				wt.seriesSegmentIndexes[1] = 0
+				err := watcher.garbageCollectSeries(2)
+				var decodeErr *NativeMetadataDecodeError
+				require.ErrorAs(t, err, &decodeErr)
+				// The scan failed before any reset, so the series is kept.
+				require.Equal(t, 1, wt.checkNumSeries())
+			})
+		})
 	}
 }

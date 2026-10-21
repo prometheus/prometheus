@@ -17,8 +17,10 @@ package wlog
 import (
 	"bytes"
 	"crypto/rand"
+	"errors"
 	"fmt"
 	"io"
+	"maps"
 	"os"
 	"path/filepath"
 	"testing"
@@ -457,7 +459,7 @@ func TestLogPartialWrite(t *testing.T) {
 
 			for i := 1; i <= testData.numRecords; i++ {
 				if err := w.Log(record); i == testData.faultyRecord {
-					require.ErrorIs(t, io.ErrShortWrite, err)
+					require.ErrorIs(t, err, io.ErrShortWrite)
 				} else {
 					require.NoError(t, err)
 				}
@@ -480,6 +482,100 @@ func TestLogPartialWrite(t *testing.T) {
 			require.NoError(t, r.Err())
 		})
 	}
+}
+
+func TestLogRetainedRecord(t *testing.T) {
+	errFault := errors.New("injected flush failure")
+	// Each case logs records in order. A fault fails the first flush of each
+	// record in fails at its position; every other flush succeeds.
+	for _, c := range []struct {
+		name  string
+		sizes []int
+		fails map[int]FlushPoint
+		// Whether each failed record is retained.
+		retained map[int]bool
+		// Records expected to land, by index, or nil if the log is torn.
+		landed []int
+	}{
+		{
+			name:  "final flush",
+			sizes: []int{5, 5, 5}, fails: map[int]FlushPoint{1: FlushAfterRecord}, retained: map[int]bool{1: true},
+			landed: []int{0, 1, 2},
+		},
+		{
+			// The record fills the page, whose flush fails after its last fragment.
+			name:  "page filled by the last fragment",
+			sizes: []int{pageSize - recordHeaderSize, 5}, fails: map[int]FlushPoint{0: FlushAfterRecord}, retained: map[int]bool{0: true},
+			landed: []int{0, 1},
+		},
+		{
+			// The first record leaves the page full, so the second record's
+			// flush of it fails before anything of the second is copied.
+			name:  "full page before a record",
+			sizes: []int{pageSize - recordHeaderSize, 5, 5}, fails: map[int]FlushPoint{0: FlushAfterRecord, 1: FlushBeforeRecord},
+			retained: map[int]bool{0: true, 1: false},
+			landed:   []int{0, 2},
+		},
+		{
+			// The second record doesn't fit in the two-page segment, so the
+			// segment rotates first.
+			name:  "segment rotation before a record",
+			sizes: []int{5, 2 * pageSize, 5}, fails: map[int]FlushPoint{1: FlushBeforeRecord}, retained: map[int]bool{1: false},
+			landed: []int{0, 2},
+		},
+		{
+			name:  "page filled between fragments",
+			sizes: []int{5, 2 * pageSize}, fails: map[int]FlushPoint{1: FlushWithinRecord}, retained: map[int]bool{1: false},
+		},
+	} {
+		t.Run(c.name, func(t *testing.T) {
+			dir := t.TempDir()
+			w, err := NewSize(nil, nil, dir, 2*pageSize, compression.None)
+			require.NoError(t, err)
+			recs := make([][]byte, len(c.sizes))
+			for i, size := range c.sizes {
+				recs[i] = bytes.Repeat([]byte{byte(i + 1)}, size)
+			}
+			pending := maps.Clone(c.fails)
+			w.SetFlushFault(func(rec []byte, at FlushPoint) error {
+				for i, failAt := range pending {
+					if at == failAt && bytes.Equal(rec, recs[i]) {
+						delete(pending, i)
+						return errFault
+					}
+				}
+				return nil
+			})
+			for i, rec := range recs {
+				err := w.Log(rec)
+				retained, failed := c.retained[i]
+				if !failed {
+					require.NoError(t, err)
+					continue
+				}
+				require.ErrorIs(t, err, errFault)
+				require.Equal(t, retained, RecordRetained(err))
+			}
+			require.Empty(t, pending)
+			require.NoError(t, w.Close())
+			if c.landed == nil {
+				return
+			}
+
+			sr, err := NewSegmentsReader(dir)
+			require.NoError(t, err)
+			defer func() { require.NoError(t, sr.Close()) }()
+			r := NewReader(sr)
+			for _, i := range c.landed {
+				require.True(t, r.Next())
+				require.Equal(t, recs[i], r.Record())
+			}
+			require.False(t, r.Next())
+			require.NoError(t, r.Err())
+		})
+	}
+	require.False(t, RecordRetained(errFault))
+	require.False(t, RecordRetained(nil))
 }
 
 type faultySegmentFile struct {

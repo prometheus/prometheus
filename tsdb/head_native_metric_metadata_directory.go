@@ -284,7 +284,7 @@ func (s *nativeMetricMetadataStore) delete(refs map[storage.SeriesRef]struct{}) 
 	var versions int64
 	for _, series := range retired {
 		series.Lock()
-		versions += int64(len(series.nativeMetadataLocked().older) + 1)
+		versions += int64(len(series.nativeMetadataLocked().Older) + 1)
 		series.Unlock()
 	}
 	s.series.Add(-int64(len(retired)))

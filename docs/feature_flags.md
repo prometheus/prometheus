@@ -168,9 +168,10 @@ When enabled, Prometheus ingests metric type, unit, and help from scrapes, OTLP,
 and Remote Write 2.0 as versioned metadata attached to each series. The
 metadata is exposed by the experimental `/api/v1/series/metadata` endpoint.
 
-This prototype stores metadata only in the Head's memory. It is not written to
-the WAL, checkpoints, snapshots, or blocks, so it is lost on restart and when
-the corresponding Head series is removed. Remote Write 1.0 does not populate
+Without [native metadata persistence](#native-metadata-persistence), metadata
+is stored only in the Head's memory. It is not written to the WAL, checkpoints,
+snapshots, or blocks, so it is lost on restart and when the corresponding Head
+series is removed. Remote Write 1.0 does not populate
 this store. At most 5 versions are retained per series.
 
 The store costs Head memory per series, along two axes. For example,
@@ -222,6 +223,73 @@ a lower timestamp and different metadata. The same applies to overlapping
 writers: if one transaction observes the current metadata while another changes
 it and commits first, the first has nothing left to re-assert, and the change is
 not reverted at the later timestamp.
+
+## Native metadata persistence
+
+`--enable-feature=native-metadata-persistence`
+
+> **This feature is experimental and may change in future releases.** Its WAL
+> records are in an unreleased format, which may change incompatibly.
+
+Requires `native-metadata`. When enabled, Prometheus server logs each series'
+native metadata history in the WAL at commit, before the samples, reduces it
+into WAL checkpoints, and restores it on restart: each series' retained versions
+(up to 5) and whether older ones were evicted. Blocks and memory snapshots still
+hold no native metadata. It can't be combined with `metadata-wal-records`,
+`memory-snapshot-on-shutdown` or `fast-startup`, and Prometheus refuses to start
+with any of them. Agent mode ignores it.
+
+Concurrent writers to one series, and WAL writes that fail but may land later,
+are corrected by override records, which a background worker retries. While WAL
+writes keep failing, the Head keeps the affected series in memory, and
+`prometheus_tsdb_native_metric_metadata_repairs_pending` reports how many. At
+shutdown, repair writes are admitted for up to 5 seconds; this doesn't bound how
+long shutdown takes. After a crash, or a shutdown that leaves repairs unwritten
+(`prometheus_tsdb_native_metric_metadata_repairs_dropped_total`), the restored
+history may hold a version or an order that the Head never held, until later
+versions evict it. Only the current value corrects itself, at the series' next
+commit with metadata.
+
+Startup fails, leaving the WAL unchanged, if the WAL holds a native metadata
+record that this version can't read or that is malformed, or any other WAL
+corruption, which is otherwise repaired by truncation. The one exception is a
+final record that a crash left incomplete between its page writes, in the last
+segment holding records: replay ends there, and startup removes the incomplete
+record before writing anything. A final record that a crash or a failed write
+left partly written within one page isn't covered, so Prometheus doesn't
+start until the WAL is repaired; starting once without this feature repairs it
+by truncation. Corruption of the out-of-order WAL is repaired as without this
+feature.
+
+After Prometheus ran without this feature, or a version without it ran, the
+native metadata written before that interval is carried over without the
+interval's changes, unless a checkpoint written in the interval may have dropped
+part of it. It is then discarded rather than restored from what remains.
+Latest-value metadata from `metadata-wal-records` is restored as one version
+whose start is unknown.
+`prometheus_tsdb_native_metric_metadata_untrusted_wal_entries_total` counts the
+records skipped. Without this feature, Prometheus ignores the records at
+replay, and checkpoints drop them.
+
+## Native metadata forwarding
+
+`--enable-feature=native-metadata-forwarding`
+
+> **This feature is experimental and may change in future releases.**
+
+Requires `native-metadata-persistence`. When enabled, Remote-Write 2.0 queues
+read native metadata from the WAL instead of the latest-value metadata records,
+and label each sample, histogram and exemplar with the version in effect at its
+timestamp, as recorded in the WAL before it. A sample is labelled the same
+however far behind the queue is: metadata backfilled after it was written
+doesn't relabel it, and versions the Head has since evicted still label it.
+Remote-Write 1.0 queues are unaffected.
+
+A queue stops reading the WAL at a native metadata record it can't read, rather
+than skip it, and sets `prometheus_wal_watcher_native_metadata_held`. Each
+queue keeps the histories of the series it may still send, reported by
+`prometheus_remote_storage_native_metadata_series`. It releases those of
+removed series as WAL checkpoints are written; while they fail, it keeps them.
 
 ## Delay compaction start time
 

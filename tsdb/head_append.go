@@ -32,6 +32,7 @@ import (
 	"github.com/prometheus/prometheus/tsdb/chunkenc"
 	"github.com/prometheus/prometheus/tsdb/chunks"
 	"github.com/prometheus/prometheus/tsdb/record"
+	"github.com/prometheus/prometheus/tsdb/wlog"
 )
 
 // initAppender is a helper to initialize the time bounds of the head
@@ -447,7 +448,7 @@ func (a *headAppenderBase) shouldObserveNativeMetricMetadataLocked(s *memSeries,
 	native := s.nativeMetadataLocked()
 	// Matching the newest value does not establish what applied at an older
 	// timestamp; that observation may move the start of the matching version.
-	return native == nil || native.effectiveFrom > timestamp || *native.metadata != *m
+	return native == nil || native.EffectiveFrom > timestamp || *native.Metadata != *m
 }
 
 func (a *headAppenderBase) recordNativeMetricMetadata(s *memSeries, timestamp int64, m metadata.Metadata) {
@@ -466,11 +467,30 @@ func (a *headAppenderBase) clearNativeMetricMetadata() {
 	a.head.nativeMetricMetadata.putAppender(appender)
 }
 
+// registerFailedNativeMetricMetadata registers repairs for the series of native
+// metadata this failed transaction logged, if that record can still land.
+// Native storage never merges it. The caller still holds the transaction's
+// reservations.
+func (a *headAppenderBase) registerFailedNativeMetricMetadata() {
+	appender := a.nativeMetricMetadata
+	if appender == nil || !appender.walMayLand {
+		return
+	}
+	for _, series := range appender.walSeries {
+		series.Lock()
+		a.head.registerNativeMetadataRepairLocked(series, nativeMetadataRepairFailedCommit)
+		series.Unlock()
+	}
+}
+
 func (a *headAppenderBase) commitNativeMetricMetadata() {
 	if a.nativeMetricMetadata == nil {
 		return
 	}
 	a.head.nativeMetricMetadata.commitAppender(a.nativeMetricMetadata)
+	if len(a.nativeMetricMetadata.overrides) > 0 {
+		a.head.writeNativeMetadataOverrides(a.nativeMetricMetadata)
+	}
 	a.clearNativeMetricMetadata()
 }
 
@@ -1116,7 +1136,13 @@ func (a *headAppender) AppendHistogramSTZeroSample(ref storage.SeriesRef, lset l
 
 // UpdateMetadata for headAppender assumes the series ref already exists, and so it doesn't
 // use getOrCreate or make any of the lset sanity checks that Append does.
+// With native metadata persisted, it returns ErrNativeMetadataLegacyUpdate:
+// the legacy entry it would log changes what the WAL's readers reduce without
+// changing native history.
 func (a *headAppender) UpdateMetadata(ref storage.SeriesRef, lset labels.Labels, meta metadata.Metadata) (storage.SeriesRef, error) {
+	if a.head.opts.EnableNativeMetadataPersistence {
+		return 0, ErrNativeMetadataLegacyUpdate
+	}
 	s := a.head.series.getByID(chunks.HeadSeriesRef(ref))
 	if s == nil {
 		s = a.head.series.getByHash(lset.Hash(), lset)
@@ -1158,8 +1184,9 @@ func (a *headAppenderBase) GetRef(lset labels.Labels, hash uint64) (storage.Seri
 	return storage.SeriesRef(s.ref), s.labels()
 }
 
-// log writes all headAppender's data to the WAL.
-func (a *headAppenderBase) log() error {
+// log writes all headAppender's data to the WAL. Only Commit emits native
+// metadata merge groups, after series records and before samples.
+func (a *headAppenderBase) log(emitNativeMetadata bool) error {
 	if a.head.wal == nil {
 		return nil
 	}
@@ -1176,6 +1203,18 @@ func (a *headAppenderBase) log() error {
 
 		if err := a.head.wal.Log(rec); err != nil {
 			return fmt.Errorf("log series: %w", err)
+		}
+	}
+	if emitNativeMetadata && a.nativeMetricMetadata != nil && a.head.opts.EnableNativeMetadataPersistence {
+		if values, entries := a.nativeMetricMetadata.appendWALRecord(); len(entries) > 0 {
+			rec = enc.CompactNativeMetadata(values, entries, buf)
+			buf = rec[:0]
+
+			err := a.head.wal.Log(rec)
+			a.nativeMetricMetadata.walMayLand = err == nil || wlog.RecordRetained(err)
+			if err != nil {
+				return fmt.Errorf("log native metadata: %w", err)
+			}
 		}
 	}
 	for _, b := range a.batches {
@@ -1830,7 +1869,9 @@ func (a *headAppenderBase) Commit() (err error) {
 		a.closed = true
 	}()
 
-	if err := a.log(); err != nil {
+	if err := a.log(true); err != nil {
+		// The rolled back series stay reserved until their repairs are registered.
+		a.registerFailedNativeMetricMetadata()
 		_ = a.Rollback() // Most likely the same error will happen again.
 		return fmt.Errorf("write to WAL: %w", err)
 	}
@@ -1873,6 +1914,9 @@ func (a *headAppenderBase) Commit() (err error) {
 		}
 	}()
 
+	if hooks := h.nativeMetadataTestHooks; hooks != nil && hooks.commitAfterLog != nil && a.nativeMetricMetadata != nil {
+		hooks.commitAfterLog(a.nativeMetricMetadata)
+	}
 	// Publish native metadata before sample commits release the reservations
 	// that keep their series indexed. A sample rejected below, for example as
 	// out of order after a concurrent commit, can still leave its metadata
@@ -2396,7 +2440,10 @@ func (a *headAppenderBase) Rollback() (err error) {
 		b.close(h)
 	}
 	a.batches = a.batches[:0]
+	if hooks := h.nativeMetadataTestHooks; hooks != nil && hooks.rollbackAfterRelease != nil {
+		hooks.rollbackAfterRelease()
+	}
 	// Series are created in the head memory regardless of rollback. Thus we have
 	// to log them to the WAL in any case.
-	return a.log()
+	return a.log(false)
 }

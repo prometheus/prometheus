@@ -219,6 +219,8 @@ type flagConfig struct {
 	enableConcurrentRuleEval bool
 	useStartTimestamps       bool
 	enableQueryCost          bool
+	// nativeMetadataForwarding forwards native metadata over Remote-Write 2.0.
+	nativeMetadataForwarding bool
 
 	prometheusURL   string
 	corsRegexString string
@@ -259,6 +261,14 @@ func (c *flagConfig) setFeatureListOptions(logger *slog.Logger) error {
 				c.tsdb.EnableNativeMetadata = true
 				features.Enable(features.TSDB, "native_metadata")
 				logger.Info("Experimental in-memory native metric metadata enabled")
+			case "native-metadata-persistence":
+				c.tsdb.EnableNativeMetadataPersist = true
+				features.Enable(features.TSDB, "native_metadata_persistence")
+				logger.Info("Experimental native metric metadata persistence in the WAL enabled")
+			case "native-metadata-forwarding":
+				c.nativeMetadataForwarding = true
+				features.Enable(features.TSDB, "native_metadata_forwarding")
+				logger.Info("Experimental native metric metadata forwarding over Remote-Write 2.0 enabled")
 			case "promql-per-step-stats":
 				c.enablePerStepStats = true
 				logger.Info("Experimental per-step statistics reporting")
@@ -374,6 +384,36 @@ func (c *flagConfig) setFeatureListOptions(logger *slog.Logger) error {
 		return errors.New("cannot enable otlp-deltatocumulative and otlp-native-delta-ingestion features at the same time")
 	}
 
+	return nil
+}
+
+// validateNativeMetadataFeatures rejects, in server mode, native metadata
+// features without the features they build on, and native metadata
+// persistence with the features it can't be combined with. The feature list
+// must have been parsed.
+func (c *flagConfig) validateNativeMetadataFeatures() error {
+	if c.nativeMetadataForwarding && !c.tsdb.EnableNativeMetadataPersist {
+		return errors.New("native-metadata-forwarding requires native-metadata-persistence")
+	}
+	if !c.tsdb.EnableNativeMetadataPersist {
+		return nil
+	}
+	if !c.tsdb.EnableNativeMetadata {
+		return errors.New("native-metadata-persistence requires native-metadata")
+	}
+	var conflicts []string
+	if c.tsdb.EnableMetadataWALRecords {
+		conflicts = append(conflicts, "metadata-wal-records")
+	}
+	if c.tsdb.EnableMemorySnapshotOnShutdown {
+		conflicts = append(conflicts, "memory-snapshot-on-shutdown")
+	}
+	if c.tsdb.EnableFastStartup {
+		conflicts = append(conflicts, "fast-startup")
+	}
+	if len(conflicts) > 0 {
+		return fmt.Errorf("native-metadata-persistence can't be combined with %s", strings.Join(conflicts, ", "))
+	}
 	return nil
 }
 
@@ -661,7 +701,7 @@ func main() {
 	a.Flag("scrape.discovery-reload-interval", "Interval used by scrape manager to throttle target groups updates.").
 		Hidden().Default("5s").SetValue(&cfg.scrape.DiscoveryReloadInterval)
 
-	a.Flag("enable-feature", "Comma separated feature names to enable. Valid options: concurrent-rule-eval, created-timestamp-zero-ingestion, delayed-compaction, exemplar-storage, extra-scrape-metrics, histograms-st-encoding, memory-snapshot-on-shutdown, metadata-wal-records, native-metadata, old-ui, openmetrics2, otlp-deltatocumulative, otlp-native-delta-ingestion, promql-binop-fill-modifiers, promql-delayed-name-removal, promql-experimental-functions, promql-per-step-stats, query-cost, search-api, st-storage, st-synthesis, type-and-unit-labels, use-start-timestamps, use-uncached-io, xor2-encoding, zstd-scrape. See https://prometheus.io/docs/prometheus/latest/feature_flags/ for more details.").
+	a.Flag("enable-feature", "Comma separated feature names to enable. Valid options: concurrent-rule-eval, created-timestamp-zero-ingestion, delayed-compaction, exemplar-storage, extra-scrape-metrics, histograms-st-encoding, memory-snapshot-on-shutdown, metadata-wal-records, native-metadata, native-metadata-forwarding, native-metadata-persistence, old-ui, openmetrics2, otlp-deltatocumulative, otlp-native-delta-ingestion, promql-binop-fill-modifiers, promql-delayed-name-removal, promql-experimental-functions, promql-per-step-stats, query-cost, search-api, st-storage, st-synthesis, type-and-unit-labels, use-start-timestamps, use-uncached-io, xor2-encoding, zstd-scrape. See https://prometheus.io/docs/prometheus/latest/feature_flags/ for more details.").
 		StringsVar(&cfg.featureList)
 
 	a.Flag("agent", "Run Prometheus in 'Agent mode'.").BoolVar(&agentMode)
@@ -726,6 +766,13 @@ func main() {
 	if !agentMode && len(agentOnlyFlags) > 0 {
 		fmt.Fprintf(os.Stderr, "The following flag(s) can only be used in agent mode: %q", agentOnlyFlags)
 		os.Exit(3)
+	}
+
+	if !agentMode {
+		if err := cfg.validateNativeMetadataFeatures(); err != nil {
+			fmt.Fprintf(os.Stderr, "Error parsing feature list: %s\n", err)
+			os.Exit(1)
+		}
 	}
 
 	if agentMode && cfg.agent.CheckpointBatchSize <= 0 {
@@ -958,9 +1005,13 @@ func main() {
 	template.RegisterFeatures(features.DefaultRegistry)
 
 	var (
-		localStorage  = &readyStorage{stats: tsdb.NewDBStats()}
-		scraper       = &readyScrapeManager{}
-		remoteStorage = remote.NewStorage(logger.With("component", "remote"), prometheus.DefaultRegisterer, localStorage.StartTime, localStoragePath, time.Duration(cfg.RemoteFlushDeadline), scraper, cfg.scrape.EnableTypeAndUnitLabels)
+		localStorage = &readyStorage{stats: tsdb.NewDBStats()}
+		scraper      = &readyScrapeManager{}
+		// Native metadata is forwarded from the WAL, as merged by the TSDB.
+		nativeMetadataForwarding = cfg.nativeMetadataForwarding && !agentMode
+	)
+	var (
+		remoteStorage = remote.NewStorage(logger.With("component", "remote"), prometheus.DefaultRegisterer, localStorage.StartTime, localStoragePath, time.Duration(cfg.RemoteFlushDeadline), scraper, cfg.scrape.EnableTypeAndUnitLabels, nativeMetadataForwarding)
 		fanoutStorage = storage.NewFanout(logger, localStorage, remoteStorage)
 	)
 
@@ -2232,6 +2283,7 @@ type tsdbOptions struct {
 	EnableSTStorage                bool
 	EnableHistogramSTEncoding      bool
 	EnableNativeMetadata           bool
+	EnableNativeMetadataPersist    bool
 	StaleSeriesCompactionThreshold float64
 	EnableFastStartup              bool
 	FloatChunkEncoding             chunkenc.Encoding
@@ -2271,6 +2323,8 @@ func (opts tsdbOptions) ToTSDBOptions() tsdb.Options {
 		EnableFastStartup:              opts.EnableFastStartup,
 		FloatChunkEncoding:             opts.FloatChunkEncoding,
 		EnableMetadataWALRecords:       opts.EnableMetadataWALRecords,
+
+		EnableNativeMetadataPersistence: opts.EnableNativeMetadataPersist,
 	}
 }
 

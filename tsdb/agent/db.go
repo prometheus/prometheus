@@ -840,7 +840,7 @@ func (db *DB) truncate(mint int64) error {
 		// Head's own replay, the agent's replay treats any unrecognized record type as
 		// corruption. Writing that record here would risk data loss on a downgrade to an
 		// older agent that doesn't know about it.
-		_, err = wlog.Checkpoint(db.logger, db.wal, first, last, db.keepSeriesInWALCheckpointFn(last), mint, db.opts.EnableSTStorage, false)
+		_, err = wlog.Checkpoint(db.logger, db.wal, first, last, db.keepSeriesInWALCheckpointFn(last), mint, db.opts.EnableSTStorage, false, false)
 	}
 
 	if err != nil {

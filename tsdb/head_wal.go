@@ -79,7 +79,9 @@ func counterAddNonZero(v *prometheus.CounterVec, value float64, lvs ...string) {
 	}
 }
 
-func (h *Head) loadWAL(r *wlog.Reader, syms *labels.SymbolTable, multiRef map[chunks.HeadSeriesRef]chunks.HeadSeriesRef, mmappedChunks, oooMmappedChunks map[chunks.HeadSeriesRef][]*mmappedChunk, lastMmapRef chunks.ChunkDiskMapperRef) (err error) {
+// loadWAL replays r. A non-nil nativeReplay reduces native metadata entries
+// across calls, for seeding after the whole WAL has been replayed.
+func (h *Head) loadWAL(r *wlog.Reader, syms *labels.SymbolTable, multiRef map[chunks.HeadSeriesRef]chunks.HeadSeriesRef, mmappedChunks, oooMmappedChunks map[chunks.HeadSeriesRef][]*mmappedChunk, lastMmapRef chunks.ChunkDiskMapperRef, nativeReplay *nativeMetadataReplay) (err error) {
 	// Track number of missing series records that were referenced by other records.
 	unknownSeriesRefs := &seriesRefSet{refs: make(map[chunks.HeadSeriesRef]struct{}), mtx: sync.Mutex{}}
 	// Track number of different records that referenced a series we don't know about
@@ -107,9 +109,9 @@ func (h *Head) loadWAL(r *wlog.Reader, syms *labels.SymbolTable, multiRef map[ch
 	)
 
 	defer func() {
-		// For CorruptionErr ensure to terminate all workers before exiting.
-		_, ok := err.(*wlog.CorruptionErr)
-		if ok || seriesCreationErr != nil {
+		// For a decoding error, a CorruptionErr or an unsupported native
+		// metadata record, ensure to terminate all workers before exiting.
+		if decodeErr != nil || seriesCreationErr != nil {
 			for i := range concurrency {
 				processors[i].closeAndDrain()
 			}
@@ -248,6 +250,31 @@ func (h *Head) loadWAL(r *wlog.Reader, syms *labels.SymbolTable, multiRef map[ch
 					return
 				}
 				decoded <- meta
+			case record.NativeMetadataCompact:
+				// Without native metadata persistence, compact records are
+				// ignored, as records of an unknown type are.
+				if nativeReplay == nil {
+					continue
+				}
+				native := h.wlReplayNativeMetadataPool.Get()
+				if native == nil {
+					native = &nativeMetadataReplayRecord{}
+				}
+				if err := dec.CompactNativeMetadata(r.Record(), &native.compact); err != nil {
+					// An unsupported record isn't corruption, and must never be
+					// repaired away; a malformed one is corruption.
+					if errors.Is(err, record.ErrUnsupportedNativeMetadata) {
+						decodeErr = fmt.Errorf("replay native metadata in segment %d at offset %d: %w", r.Segment(), r.Offset(), err)
+					} else {
+						decodeErr = &wlog.CorruptionErr{
+							Err:     fmt.Errorf("decode compact native metadata: %w", err),
+							Segment: r.Segment(),
+							Offset:  r.Offset(),
+						}
+					}
+					return
+				}
+				decoded <- native
 			default:
 				// Unknown records are ignored, enabling users to roll back.
 				// If this behaviour changes, update both server and agent replay.
@@ -273,6 +300,9 @@ Outer:
 				}
 				if !created {
 					multiRef[walSeries.Ref] = mSeries.ref
+				}
+				if nativeReplay != nil {
+					nativeReplay.declare(mSeries.ref, walSeries.Ref)
 				}
 
 				idx := uint64(mSeries.ref) % uint64(concurrency)
@@ -460,6 +490,9 @@ Outer:
 			clear(v) // Zero out to avoid retaining histogram data.
 			h.wlReplayFloatHistogramsPool.Put(v[:0])
 		case []record.RefMetadata:
+			if nativeReplay != nil {
+				nativeReplay.applyLegacy(v)
+			}
 			for _, m := range v {
 				if r, ok := multiRef[m.Ref]; ok {
 					m.Ref = r
@@ -483,6 +516,18 @@ Outer:
 			}
 			clear(v) // Zero out to avoid retaining metadata strings.
 			h.wlReplayMetadataPool.Put(v[:0])
+		case *nativeMetadataReplayRecord:
+			nativeReplay.applyCompact(&v.compact, multiRef, h.series)
+			for _, e := range v.compact.Entries {
+				// An entry means its ref was allocated, even if the ref's Series
+				// record never reached the WAL. Advance lastSeriesID so that the
+				// ref isn't reissued to a series that would inherit the entry.
+				if chunks.HeadSeriesRef(h.lastSeriesID.Load()) < e.Ref {
+					h.lastSeriesID.Store(uint64(e.Ref))
+				}
+			}
+			v.compact.Reset() // Avoid retaining metadata strings.
+			h.wlReplayNativeMetadataPool.Put(v)
 		default:
 			panic(fmt.Errorf("unexpected decoded type: %T", d))
 		}

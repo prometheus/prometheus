@@ -144,7 +144,7 @@ func TestNativeMetricMetadataDirectory(t *testing.T) {
 		// pages only, so history reached through it remains unchanged.
 		series := nativeMetadataDirectorySeries(captured, 0)
 		require.NotNil(t, series)
-		require.Equal(t, "test", series.metadata.native.metadata.Help)
+		require.Equal(t, "test", series.metadata.native.Metadata.Help)
 		require.Zero(t, store.versions.Load())
 	})
 

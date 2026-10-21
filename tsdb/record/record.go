@@ -67,6 +67,9 @@ const (
 	// MinValidTime is used to match checkpoint records that carry the mint a WAL truncation
 	// used. It is only ever written into checkpoints, never into a live WAL segment.
 	MinValidTime Type = 14
+	// NativeMetadataCompact is used to match WAL records of native metric metadata
+	// entries, whose values are defined inline.
+	NativeMetadataCompact Type = 15
 )
 
 func (rt Type) String() string {
@@ -99,6 +102,8 @@ func (rt Type) String() string {
 		return "metadata"
 	case MinValidTime:
 		return "min_valid_time"
+	case NativeMetadataCompact:
+		return "native_metadata_compact"
 	default:
 		return "unknown"
 	}
@@ -239,7 +244,7 @@ func (*Decoder) Type(rec []byte) Type {
 	switch t := Type(rec[0]); t {
 	case Series, Samples, SamplesV2, Tombstones, Exemplars, MmapMarkers, Metadata,
 		HistogramSamples, FloatHistogramSamples, CustomBucketsHistogramSamples, CustomBucketsFloatHistogramSamples,
-		HistogramSamplesV2, FloatHistogramSamplesV2, MinValidTime:
+		HistogramSamplesV2, FloatHistogramSamplesV2, MinValidTime, NativeMetadataCompact:
 		return t
 	}
 	return Unknown
