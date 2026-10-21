@@ -14,14 +14,14 @@ require (
 	github.com/aws/aws-sdk-go-v2 v1.47.3
 	github.com/aws/aws-sdk-go-v2/config v1.33.9
 	github.com/aws/aws-sdk-go-v2/credentials v1.20.9
-	github.com/aws/aws-sdk-go-v2/service/ec2 v1.339.0
-	github.com/aws/aws-sdk-go-v2/service/ecs v1.101.0
-	github.com/aws/aws-sdk-go-v2/service/elasticache v1.63.3
+	github.com/aws/aws-sdk-go-v2/service/ec2 v1.340.0
+	github.com/aws/aws-sdk-go-v2/service/ecs v1.102.0
+	github.com/aws/aws-sdk-go-v2/service/elasticache v1.64.0
 	github.com/aws/aws-sdk-go-v2/service/kafka v1.65.5
-	github.com/aws/aws-sdk-go-v2/service/lightsail v1.66.5
-	github.com/aws/aws-sdk-go-v2/service/rds v1.130.3
+	github.com/aws/aws-sdk-go-v2/service/lightsail v1.67.0
+	github.com/aws/aws-sdk-go-v2/service/rds v1.131.0
 	github.com/aws/aws-sdk-go-v2/service/sts v1.51.4
-	github.com/aws/smithy-go v1.28.5
+	github.com/aws/smithy-go v1.28.6
 	github.com/bboreham/go-loser v0.0.0-20230920113527-fcc2c21820a3
 	github.com/cespare/xxhash/v2 v2.3.0
 	github.com/dennwc/varint v1.0.0
