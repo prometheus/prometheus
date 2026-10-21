@@ -233,11 +233,11 @@ loop:
 		)
 
 		metHash, ce, seriesCached, seriesAlreadyScraped := sl.cache.get(met)
-		if !seriesCached && sl.cache.getDropped(metHash) {
-			continue
-		}
 
 		if !hasMRC {
+			if !seriesCached && sl.cache.getDropped(metHash) {
+				continue
+			}
 			if seriesCached {
 				ref = ce.ref
 				lset = ce.lset
@@ -273,6 +273,9 @@ loop:
 				origMeta = lastMeta.Metadata
 				origMFName = yoloString(lastMFName)
 			}
+			if !seriesCached && sl.cache.getDroppedWithMeta(metHash, origMFName, origMeta) {
+				continue
+			}
 			var (
 				sm            seriesMetaEntry
 				hasCachedMeta bool
@@ -302,7 +305,7 @@ loop:
 					if seriesCached {
 						sl.cache.deleteSeries(metHash)
 					}
-					sl.cache.addDropped(metHash)
+					sl.cache.addDroppedWithMeta(metHash, origMFName, origMeta)
 					continue
 				}
 
@@ -696,11 +699,37 @@ func (sl *scrapeLoop) mutateSample(lset labels.Labels, lastMFName []byte, lastMe
 		sampleMeta = metadata.Metadata{Type: model.MetricTypeUnknown}
 	}
 
-	lset = sl.sampleMutator(lset)
-	if lset.IsEmpty() || !hasFamilyMeta {
+	if sl.sampleMutatorWithMetadata != nil {
+		lset, sampleMeta = sl.sampleMutatorWithMetadata(lset, sampleMeta)
+		// A series like foo_total does not match a pre-relabel family named foo when the family
+		// has unknown type (since _total suffix stripping only applies to counters). If relabeling
+		// sets the series type (e.g. to counter) such that it now belongs to lastMFName, inherit
+		// any help or unit from lastMeta that relabeling did not explicitly set.
+		if !hasFamilyMeta && lastMeta != nil && isSeriesPartOfFamily(preName, lastMFName, sampleMeta.Type) {
+			hasFamilyMeta = true
+			if sampleMeta.Help == "" {
+				sampleMeta.Help = lastMeta.Help
+			}
+			if sampleMeta.Unit == "" && lastMeta.Unit != "" {
+				sampleMeta.Unit = lastMeta.Unit
+				if sl.enableTypeAndUnitLabels {
+					lb := labels.NewBuilder(lset)
+					lb.Set(model.MetricUnitLabel, sampleMeta.Unit)
+					lset = lb.Labels()
+				}
+			}
+		}
+	} else if sl.sampleMutator != nil {
+		lset = sl.sampleMutator(lset)
+	}
+	if lset.IsEmpty() || (!hasFamilyMeta && sampleMeta.IsEmpty()) {
 		return lset, metadata.Metadata{}, ""
 	}
 
-	postMFName := metricFamilyName(preName, lastMFName, lset.Get(model.MetricNameLabel), sampleMeta.Type)
+	var preMF []byte
+	if hasFamilyMeta {
+		preMF = lastMFName
+	}
+	postMFName := metricFamilyName(preName, preMF, lset.Get(model.MetricNameLabel), sampleMeta.Type)
 	return lset, sampleMeta, postMFName
 }
