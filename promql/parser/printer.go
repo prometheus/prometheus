@@ -115,7 +115,7 @@ func writeLabels(b *bytes.Buffer, ss []string, unquotedUTF8Names bool) {
 		if i > 0 {
 			b.WriteString(", ")
 		}
-		if !canPrintLabelName(s, unquotedUTF8Names) {
+		if labelNameRequiresQuoting(s, unquotedUTF8Names) {
 			b.Write(strconv.AppendQuote(b.AvailableBuffer(), s))
 		} else {
 			b.WriteString(s)
@@ -123,20 +123,20 @@ func writeLabels(b *bytes.Buffer, ss []string, unquotedUTF8Names bool) {
 	}
 }
 
-func canPrintLabelName(s string, unquotedUTF8Names bool) bool {
+func labelNameRequiresQuoting(s string, unquotedUTF8Names bool) bool {
 	if !unquotedUTF8Names {
-		return model.LegacyValidation.IsValidLabelName(s)
+		return !model.LegacyValidation.IsValidLabelName(s)
 	}
 	if s == "" {
-		return false
+		return true
 	}
 	l := Lexer{unquotedUTF8Names: true}
 	for i, r := range s {
 		if (i == 0 && !l.isNameStart(r)) || (i > 0 && !l.isNameContinue(r)) {
-			return false
+			return true
 		}
 	}
-	return true
+	return false
 }
 
 // writeStringsJoin is like strings.Join but appending to a bytes.Buffer.
@@ -439,7 +439,7 @@ func (node *VectorSelector) String() string {
 		if matcher.Name == labels.MetricName && matcher.Type == labels.MatchEqual && matcher.Value == node.Name && matcher.Value != "" {
 			continue
 		}
-		if node.unquotedUTF8Names && canPrintLabelName(matcher.Name, true) {
+		if !labelNameRequiresQuoting(matcher.Name, node.unquotedUTF8Names) {
 			labelStrings = append(labelStrings, matcher.Name+matcher.Type.String()+strconv.Quote(matcher.Value))
 		} else {
 			labelStrings = append(labelStrings, matcher.String())

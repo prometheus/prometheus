@@ -77,10 +77,11 @@ func TestUnquotedUTF8Names(t *testing.T) {
 
 	for _, input := range []string{
 		".foo", "5foo", "foo{.label=\"x\"}", "foo{5label=\"x\"}",
-		"foo{a:b=\"x\"}", "sum by (a:b) (foo)", "foo + on (a:b) bar",
+		"foo{a:b=\"x\"}",
 		"foo😀", "foo١", "foo²", "o\u0308", "foo·bar", "foo\u200dbar", "foo\ufffd", "foo\xff",
 		"sum by (o\u0308) (foo)", "foo{é😀=\"x\"}",
 		"rate.total(foo)", "温度(foo)", "on", "bool", "foo[5m.foo]",
+		`my.metric.name{"my.metric.name"}`, `my.metric.name{__name__="my.metric.name"}`,
 	} {
 		t.Run(input, func(t *testing.T) {
 			_, err := enabled.ParseExpr(input)
@@ -88,7 +89,16 @@ func TestUnquotedUTF8Names(t *testing.T) {
 		})
 	}
 
-	for _, input := range []string{".5", "5.", "1.5", "1e3", "0x10", "Inf", "NaN", "5m"} {
+	for _, input := range []string{"sum by (a:b) (foo)", "foo + on (a:b) bar"} {
+		t.Run(input, func(t *testing.T) {
+			_, err := disabled.ParseExpr(input)
+			require.NoError(t, err)
+			_, err = enabled.ParseExpr(input)
+			require.ErrorContains(t, err, `invalid label name for grouping: "a:b"`)
+		})
+	}
+
+	for _, input := range []string{".5", "5.", "1.5", "1e3", "0x10", "Inf", "inf", "NaN", "nan", "5m"} {
 		t.Run(input, func(t *testing.T) {
 			expr, err := enabled.ParseExpr(input)
 			require.NoError(t, err)
@@ -99,7 +109,7 @@ func TestUnquotedUTF8Names(t *testing.T) {
 		})
 	}
 
-	for _, name := range []string{".5", "5", "5foo", ".foo"} {
+	for _, name := range []string{".5", "5", "5foo", ".foo", "Inf", "inf", "NaN", "nan", "5m"} {
 		_, err := enabled.ParseMetricSelector(name)
 		require.Error(t, err)
 		matchers, err := enabled.ParseMetricSelector(fmt.Sprintf("{%q}", name))

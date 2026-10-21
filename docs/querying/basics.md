@@ -373,6 +373,11 @@ Names beginning with a dot or digit still require quoting; `.5` is a numeric
 literal. Combining marks, non-ASCII digits, emoji, spaces, and other punctuation
 also require quoting.
 
+`Inf` and `NaN` (case insensitive) remain numeric literals, as do durations such
+as `5m`. To select metrics with these names, use quoted selectors such as
+`{"Inf"}`, `{"NaN"}`, or `{"5m"}`. Dotted names such as `Inf.total` and `NaN.total`
+are metric names.
+
 Names retain their exact spelling without Unicode normalization or case folding.
 For example, Latin `a` and Cyrillic `а` are distinct names. Precomposed `ö` can be
 unquoted, while `o` followed by a combining diaeresis requires quotes and denotes
