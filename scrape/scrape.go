@@ -57,6 +57,7 @@ import (
 	"github.com/prometheus/prometheus/model/textparse"
 	"github.com/prometheus/prometheus/model/timestamp"
 	"github.com/prometheus/prometheus/model/value"
+	"github.com/prometheus/prometheus/schema"
 	"github.com/prometheus/prometheus/storage"
 	"github.com/prometheus/prometheus/util/logging"
 	"github.com/prometheus/prometheus/util/pool"
@@ -131,6 +132,10 @@ const maxAheadTime = 10 * time.Minute
 
 // returning an empty label set is interpreted as "drop".
 type labelsMutator func(labels.Labels) labels.Labels
+
+// labelsAndMetadataMutator mutates both the label set and metadata of a scraped sample.
+// Returning an empty label set is interpreted as "drop".
+type labelsAndMetadataMutator func(labels.Labels, metadata.Metadata) (labels.Labels, metadata.Metadata)
 
 // scrapeLoopAppendAdapter allows support for multiple storage.Appender versions.
 type scrapeLoopAppendAdapter interface {
@@ -649,7 +654,37 @@ func verifyLabelLimits(lset labels.Labels, limits *labelLimits) error {
 
 func mutateSampleLabels(lset labels.Labels, target *Target, honor bool, rc []*relabel.Config) labels.Labels {
 	lb := labels.NewBuilder(lset)
+	applyTargetLabels(lb, lset, target, honor)
+	if keep := relabel.ProcessBuilder(lb, rc...); !keep {
+		return labels.EmptyLabels()
+	}
+	return lb.Labels()
+}
 
+func mutateSampleLabelsAndMetadata(lset labels.Labels, meta metadata.Metadata, target *Target, honor, enableTypeAndUnitLabels bool, rc []*relabel.Config) (labels.Labels, metadata.Metadata) {
+	lb := labels.NewBuilder(lset)
+	// Strip parser-injected __type__ and __unit__ before relabeling so an untyped/unitless
+	// series does not inherit a preceding family's sticky parser state.
+	lb.Del(model.MetricTypeLabel)
+	lb.Del(model.MetricUnitLabel)
+	applyTargetLabels(lb, lset, target, honor)
+	if keep := relabel.ProcessBuilderWithMetadata(lb, &meta, rc...); !keep {
+		return labels.EmptyLabels(), metadata.Metadata{}
+	}
+	if enableTypeAndUnitLabels {
+		schema.Metadata{
+			Name: lb.Get(model.MetricNameLabel),
+			Type: meta.Type,
+			Unit: meta.Unit,
+		}.SetToLabels(lb)
+	} else {
+		lb.Del(model.MetricTypeLabel)
+		lb.Del(model.MetricUnitLabel)
+	}
+	return lb.Labels(), meta
+}
+
+func applyTargetLabels(lb *labels.Builder, lset labels.Labels, target *Target, honor bool) {
 	if honor {
 		target.LabelsRange(func(l labels.Label) {
 			if !lset.Has(l.Name) {
@@ -671,12 +706,6 @@ func mutateSampleLabels(lset labels.Labels, target *Target, honor bool, rc []*re
 			resolveConflictingExposedLabels(lb, conflictingExposedLabels)
 		}
 	}
-
-	if keep := relabel.ProcessBuilder(lb, rc...); !keep {
-		return labels.EmptyLabels()
-	}
-
-	return lb.Labels()
 }
 
 func resolveConflictingExposedLabels(lb *labels.Builder, conflictingExposedLabels []labels.Label) {
@@ -952,11 +981,12 @@ type scrapeLoop struct {
 	l           *slog.Logger
 	cache       *scrapeCache
 
-	interval            time.Duration
-	timeout             time.Duration
-	sampleMutator       labelsMutator
-	reportSampleMutator labelsMutator
-	scraper             scraper
+	interval                  time.Duration
+	timeout                   time.Duration
+	sampleMutator             labelsMutator
+	sampleMutatorWithMetadata labelsAndMetadataMutator
+	reportSampleMutator       labelsMutator
+	scraper                   scraper
 
 	// Static params per scrapePool.
 	appendable   storage.Appendable
@@ -1399,6 +1429,9 @@ func newScrapeLoop(opts scrapeLoopOptions) *scrapeLoop {
 		timeout:  opts.timeout,
 		sampleMutator: func(l labels.Labels) labels.Labels {
 			return mutateSampleLabels(l, opts.target, opts.sp.config.HonorLabels, opts.sp.config.MetricRelabelConfigs)
+		},
+		sampleMutatorWithMetadata: func(l labels.Labels, m metadata.Metadata) (labels.Labels, metadata.Metadata) {
+			return mutateSampleLabelsAndMetadata(l, m, opts.target, opts.sp.config.HonorLabels, opts.sp.options.EnableTypeAndUnitLabels, opts.sp.config.MetricRelabelConfigs)
 		},
 		reportSampleMutator: func(l labels.Labels) labels.Labels { return mutateReportSampleLabels(l, opts.target) },
 		scraper:             opts.scraper,
