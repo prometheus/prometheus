@@ -354,7 +354,7 @@ single client can then request the entire index in one response.
 Enables scraping targets that expose the [OpenMetrics 2.0](https://prometheus.io/docs/specs/om/open_metrics_spec_2_0/)
 text format, advertised with the `application/openmetrics-text; version=2.0.0` or
 `application/openmetrics-text; version=2.0.0-rc` content type. To negotiate OpenMetrics 2.0
-with scrape targets, add `OpenMetricsText2.0.0` and/or `OpenMetricsText2.0.0-rc` to
+with scrape targets, add `OpenMetricsText2.0.0` and `OpenMetricsText2.0.0-rc` to
 `scrape_protocols` in the configuration.
 
 OpenMetrics 2.0 support is **experimental**. The parser is not stable
