@@ -1,7 +1,7 @@
 {
   "name": "@prometheus-io/mantine-ui",
   "private": true,
-  "version": "0.315.1",
+  "version": "0.316.0-rc.0",
   "type": "module",
   "scripts": {
     "start": "vite",
