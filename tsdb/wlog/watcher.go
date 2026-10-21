@@ -317,11 +317,18 @@ func (w *Watcher) Run() error {
 		return fmt.Errorf("Segments: %w", err)
 	}
 
-	// On retry, resume from the furthest segment reached rather than re-replaying the whole savepoint range.
+	// On retry, resume from the furthest segment reached rather than re-replaying from the original start segment.
 	// The override is never cleared: reverting to time.Now() filtering mid-replay would drop unsent samples.
-	// Without a savepoint there is nothing to resume, so leave it disabled.
+	// Without a start segment there is nothing to resume, so leave it disabled.
 	if current := int(w.segment.Load()); w.startSegment >= 0 && current > w.startSegment {
 		w.startSegment = current
+	}
+
+	// A start segment past the last segment means the WAL was reset, so resume from its tail.
+	if lastSegment >= 0 && w.startSegment > lastSegment {
+		w.logger.Warn("Start segment is past the last WAL segment, resuming from the last segment", "queue", w.name, "startSegment", w.startSegment, "lastSegment", lastSegment)
+		w.startSegment = lastSegment
+		w.segment.Store(int64(lastSegment))
 	}
 
 	// We want to ensure this is false across iterations since
@@ -537,13 +544,13 @@ func (w *Watcher) garbageCollectSeries(segmentNum int) error {
 // Read from a segment and pass the details to w.writer.
 // Also used with readCheckpoint - implements segmentReadFn.
 func (w *Watcher) readSegment(r *LiveReader, segmentNum int, onlySeries, isCheckpoint bool) error {
-	// When replaying from a savepoint: send samples from the savepoint segment onwards.
-	// Segments before the savepoint are read in "series only" mode to populate the QueueManager's series cache.
+	// When replaying from a start segment: send samples from the start segment onwards.
+	// Segments before it are read in "series only" mode to populate the QueueManager's series cache.
 	//
-	// Checkpoint content is excluded: a checkpoint is series-only by design and
-	// its index lives in the same number space as WAL segments, so a savepoint at
-	// or behind the checkpoint would otherwise replay the entire compacted payload.
-	fromSavepoint := !isCheckpoint && w.startSegment >= 0 && segmentNum >= w.startSegment
+	// Checkpoint samples are never sent: they restore in-memory state rather than
+	// data to deliver. The checkpoint index shares the WAL segment number space, so
+	// a start segment at or behind it would otherwise resend the whole compacted range.
+	fromStartSegment := !isCheckpoint && w.startSegment >= 0 && segmentNum >= w.startSegment
 	series := w.recordBuf.GetRefSeries(512)
 	samples := w.recordBuf.GetSamples(512)
 	exemplars := w.recordBuf.GetExemplars(512)
@@ -577,7 +584,7 @@ func (w *Watcher) readSegment(r *LiveReader, segmentNum int, onlySeries, isCheck
 		case record.Samples, record.SamplesV2:
 			// When only caching series we can ignore any samples records we see.
 			// This speeds up replay of the WAL by > 10x.
-			if onlySeries && !fromSavepoint {
+			if onlySeries && !fromStartSegment {
 				break
 			}
 			samples, err = dec.Samples(rec, samples[:0])
@@ -589,7 +596,7 @@ func (w *Watcher) readSegment(r *LiveReader, segmentNum int, onlySeries, isCheck
 			// It's valid to do, because we override elements that we no longer need to read when filtering.
 			samplesToSend := samples[:0]
 			for _, s := range samples {
-				if fromSavepoint || s.T > w.startTimestamp {
+				if fromStartSegment || s.T > w.startTimestamp {
 					if !w.sendSamples {
 						w.sendSamples = true
 						duration := time.Since(w.startTime)
@@ -609,7 +616,7 @@ func (w *Watcher) readSegment(r *LiveReader, segmentNum int, onlySeries, isCheck
 			}
 			// When only caching series we can ignore any exemplars records we see.
 			// This speeds up replay of the WAL significantly.
-			if onlySeries && !fromSavepoint {
+			if onlySeries && !fromStartSegment {
 				break
 			}
 			exemplars, err = dec.Exemplars(rec, exemplars[:0])
@@ -624,7 +631,7 @@ func (w *Watcher) readSegment(r *LiveReader, segmentNum int, onlySeries, isCheck
 			if !w.sendHistograms {
 				break
 			}
-			if onlySeries && !fromSavepoint {
+			if onlySeries && !fromStartSegment {
 				break
 			}
 			histograms, err = dec.HistogramSamples(rec, histograms[:0])
@@ -636,7 +643,7 @@ func (w *Watcher) readSegment(r *LiveReader, segmentNum int, onlySeries, isCheck
 			// It's valid to do, because we override elements that we no longer need to read when filtering.
 			histogramsToSend := histograms[:0]
 			for _, h := range histograms {
-				if fromSavepoint || h.T > w.startTimestamp {
+				if fromStartSegment || h.T > w.startTimestamp {
 					if !w.sendSamples {
 						w.sendSamples = true
 						duration := time.Since(w.startTime)
@@ -654,7 +661,7 @@ func (w *Watcher) readSegment(r *LiveReader, segmentNum int, onlySeries, isCheck
 			if !w.sendHistograms {
 				break
 			}
-			if onlySeries && !fromSavepoint {
+			if onlySeries && !fromStartSegment {
 				break
 			}
 			floatHistograms, err = dec.FloatHistogramSamples(rec, floatHistograms[:0])
@@ -666,7 +673,7 @@ func (w *Watcher) readSegment(r *LiveReader, segmentNum int, onlySeries, isCheck
 			// It's valid to do, because we override elements that we no longer need to read when filtering.
 			floatHistogramsToSend := floatHistograms[:0]
 			for _, fh := range floatHistograms {
-				if fromSavepoint || fh.T > w.startTimestamp {
+				if fromStartSegment || fh.T > w.startTimestamp {
 					if !w.sendSamples {
 						w.sendSamples = true
 						duration := time.Since(w.startTime)
