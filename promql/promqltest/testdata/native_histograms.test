@@ -2700,12 +2700,14 @@ eval instant at 2m count(timestamp(hist_eq_a != hist_eq_b))
 
 clear
 
-# Detecting changes and counting distinct values needs the buckets, even if
+# Detecting changes and counter resets, counting distinct values and
+# calculating the standard deviation or variance needs the buckets, even if
 # the surrounding function would otherwise allow skipping them.
 load 1m
   hist_changes {{schema:0 count:4 sum:10 buckets:[1 2 1]}} {{schema:0 count:4 sum:10 buckets:[2 1 1]}}x2
   hist_values_a {{schema:0 count:4 sum:10 buckets:[1 2 1]}}x2
   hist_values_b {{schema:0 count:4 sum:10 buckets:[2 1 1]}}x2
+  hist_gauge_resets {{schema:0 count:4 sum:10 buckets:[1 2 1] counter_reset_hint:gauge}} {{schema:0 count:5 sum:10 buckets:[2 1 2] counter_reset_hint:gauge}}
 
 eval instant at 2m changes(hist_changes[5m])
   {} 1
@@ -2727,4 +2729,47 @@ eval instant at 2m absent(changes(hist_changes[5m]) > 0)
 eval instant at 2m count(timestamp(count_values("value", {__name__=~"hist_values_.*"})))
   {} 2
 
+eval instant at 2m resets(hist_gauge_resets[5m])
+  {} 1
+
+eval instant at 2m timestamp(resets(hist_gauge_resets[5m]) > 0)
+  {} 120
+
+eval instant at 2m absent(resets(hist_gauge_resets[5m]) > 0)
+
+# Division does not need the buckets, so these cases check that the function
+# below it gets the buckets.
+eval instant at 2m histogram_count(hist_values_a / on() changes(hist_changes[5m]))
+  {} 4
+
+eval instant at 2m histogram_count(hist_values_a / on() resets(hist_gauge_resets[5m]))
+  {} 4
+
+eval instant at 2m histogram_count(hist_values_a / on() histogram_stddev(hist_values_b))
+  {} 2.8800598391512384
+
+eval instant at 2m histogram_count(hist_values_a / on() histogram_stdvar(hist_values_b))
+  {} 2.0736861692729645
+
 clear
+
+# Adding or subtracting histograms needs the buckets, because the counter
+# reset hints depend on them. These histograms have counter resets that only
+# show in the buckets (at 2m for job="a" and at 4m for job="b"), and must not
+# cause conflicting counter resets.
+load 1m
+  hist_add_sub{job="a"} {{schema:0 count:4 sum:10 buckets:[1 2 1]}} {{schema:0 count:6 sum:14 buckets:[2 3 1]}} {{schema:0 count:7 sum:15 buckets:[4 1 2]}} {{schema:0 count:9 sum:20 buckets:[5 2 2]}} {{schema:0 count:12 sum:26 buckets:[6 3 3]}}
+  hist_add_sub{job="b"} {{schema:1 count:4 sum:10 buckets:[1 1 1 1]}} {{schema:1 count:6 sum:14 buckets:[1 2 1 2]}} {{schema:1 count:7 sum:15 buckets:[2 2 1 2]}} {{schema:1 count:9 sum:20 buckets:[3 2 2 2]}} {{schema:1 count:12 sum:26 buckets:[5 1 2 4]}}
+
+eval range from 0 to 4m step 1m histogram_count(hist_add_sub{job="a"} + ignoring(job) hist_add_sub{job="b"})
+  expect no_warn
+  {} 8 12 14 18 24
+
+eval range from 0 to 4m step 1m histogram_avg(hist_add_sub{job="a"} + ignoring(job) hist_add_sub{job="b"})
+  expect no_warn
+  {} 2.5 2.3333333333333335 2.142857142857143 2.2222222222222223 2.1666666666666665
+
+eval range from 0 to 4m step 1m histogram_count(first_over_time(hist_add_sub[2m]) - last_over_time(hist_add_sub[2m]))
+  expect no_warn
+  {job="a"} 0 -2 -1 -2 -3
+  {job="b"} 0 -2 -1 -2 -3
