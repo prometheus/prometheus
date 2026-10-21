@@ -332,11 +332,15 @@ func correctForCounterResets(
 
 // annosFromInterpolationError classifies an error returned by
 // interpolateHistograms (via pickOrInterpolate*Histogram) into the appropriate
-// annotation. If the error is not recognised, annos is left unchanged.
+// annotation. It panics if the error is not recognised.
 func annosFromInterpolationError(annos *annotations.Annotations, err error, metricName string, pos posrange.PositionRange) {
 	if errors.Is(err, histogram.ErrHistogramsIncompatibleSchema) {
 		annos.Add(annotations.NewMixedExponentialCustomHistogramsWarning(metricName, pos))
+		return
 	}
+	// Any other error means a histogram has an invalid bucket layout.
+	// Fail the query rather than silently drop the result.
+	panic(err)
 }
 
 // addHistogramWithAnnotations adds other into base in place, translating
@@ -347,8 +351,11 @@ func addHistogramWithAnnotations(base, other *histogram.FloatHistogram, annos *a
 	if err != nil {
 		if errors.Is(err, histogram.ErrHistogramsIncompatibleSchema) {
 			annos.Add(annotations.NewMixedExponentialCustomHistogramsWarning(metricName, pos))
+			return false
 		}
-		return false
+		// Any other error means a histogram has an invalid bucket layout.
+		// Fail the query rather than silently drop the result.
+		panic(err)
 	}
 	if nhcbBoundsReconciled {
 		annos.Add(annotations.NewMismatchedCustomBucketsHistogramsInfo(pos, annotations.HistogramAdd))
@@ -364,8 +371,11 @@ func subHistogramWithAnnotations(base, other *histogram.FloatHistogram, annos *a
 	if err != nil {
 		if errors.Is(err, histogram.ErrHistogramsIncompatibleSchema) {
 			annos.Add(annotations.NewMixedExponentialCustomHistogramsWarning(metricName, pos))
+			return false
 		}
-		return false
+		// Any other error means a histogram has an invalid bucket layout.
+		// Fail the query rather than silently drop the result.
+		panic(err)
 	}
 	if nhcbBoundsReconciled {
 		annos.Add(annotations.NewMismatchedCustomBucketsHistogramsInfo(pos, annotations.HistogramSub))
@@ -872,7 +882,12 @@ func histogramRate(
 		}
 	}
 
-	h := last.CopyToSchema(minSchema)
+	h, err := last.CopyToSchema(minSchema)
+	if err != nil {
+		// The histogram has an invalid bucket layout. Fail the query, as
+		// the result would otherwise be wrong.
+		panic(err)
+	}
 	// This subtraction may deliberately include conflicting counter resets.
 	// Counter resets are treated explicitly in this function, so the
 	// information about conflicting counter resets is ignored here.
@@ -881,6 +896,9 @@ func histogramRate(
 		if errors.Is(err, histogram.ErrHistogramsIncompatibleSchema) {
 			return nil, annotations.New().Add(annotations.NewMixedExponentialCustomHistogramsWarning(getMetricName(labels), pos))
 		}
+		// Any other error means a histogram has an invalid bucket layout.
+		// Fail the query rather than silently drop the result.
+		panic(err)
 	}
 	if nhcbBoundsReconciled {
 		annos.Add(annotations.NewMismatchedCustomBucketsHistogramsInfo(pos, annotations.HistogramSub))
@@ -907,6 +925,9 @@ func histogramRate(
 					if errors.Is(err, histogram.ErrHistogramsIncompatibleSchema) {
 						return nil, annotations.New().Add(annotations.NewMixedExponentialCustomHistogramsWarning(getMetricName(labels), pos))
 					}
+					// Any other error means a histogram has an invalid bucket layout.
+					// Fail the query rather than silently drop the result.
+					panic(err)
 				}
 				if nhcbBoundsReconciled {
 					annos.Add(annotations.NewMismatchedCustomBucketsHistogramsInfo(pos, annotations.HistogramAdd))
@@ -1107,6 +1128,12 @@ func instantValue(vals Matrix, args parser.Expressions, enh *EvalNodeHelper, isR
 			_, _, nhcbBoundsReconciled, err := resultSample.H.Sub(ss[0].H)
 			if errors.Is(err, histogram.ErrHistogramsIncompatibleSchema) {
 				return out, annos.Add(annotations.NewMixedExponentialCustomHistogramsWarning(getMetricName(samples.Metric), args.PositionRange()))
+			}
+			if err != nil {
+				// Any other error means a histogram has an invalid bucket
+				// layout. Fail the query, as the result would otherwise be the
+				// unsubtracted later sample.
+				panic(err)
 			}
 			if nhcbBoundsReconciled {
 				annos.Add(annotations.NewMismatchedCustomBucketsHistogramsInfo(args.PositionRange(), annotations.HistogramSub))
@@ -1509,6 +1536,9 @@ func funcAvgOverTime(_ []Vector, matrixVal Matrix, args parser.Expressions, enh 
 			if errors.Is(err, histogram.ErrHistogramsIncompatibleSchema) {
 				return enh.Out, annotations.New().Add(annotations.NewMixedExponentialCustomHistogramsWarning(getMetricName(firstSeries.Metric), args[0].PositionRange()))
 			}
+			// Fail the query on any other error rather than return a wrong
+			// result.
+			panic(err)
 		}
 		return vec, annos
 	}
@@ -1811,6 +1841,9 @@ func funcSumOverTime(_ []Vector, matrixVal Matrix, args parser.Expressions, enh 
 			if errors.Is(err, histogram.ErrHistogramsIncompatibleSchema) {
 				return enh.Out, annotations.New().Add(annotations.NewMixedExponentialCustomHistogramsWarning(getMetricName(firstSeries.Metric), args[0].PositionRange()))
 			}
+			// Fail the query on any other error rather than return a wrong
+			// result.
+			panic(err)
 		}
 		return vec, annos
 	}

@@ -117,7 +117,13 @@ func (c *stCache) synthesizeHistogram(h *histogram.Histogram, t int64) (*histogr
 	// natively for histograms.
 
 	// Subtract the origin anchor.
-	subFloat, _, _, _ := currFloat.Sub(n.starting)
+	subFloat, _, _, err := currFloat.Sub(n.starting)
+	if err != nil {
+		// Sub returns an error only when a histogram has an invalid bucket
+		// layout. Panic rather than append a sample that was not adjusted,
+		// which would be wrong data.
+		panic(err)
+	}
 	subFloat = subFloat.Compact(0)
 
 	// Since we are synthesizing an integer histogram, we must cast the float subtraction back to ints.
@@ -196,7 +202,13 @@ func (c *stCache) synthesizeFloatHistogram(fh *histogram.FloatHistogram, t int64
 	}
 
 	// Subtract the origin anchor.
-	adjusted, _, _, _ := fh.Sub(n.starting)
+	adjusted, _, _, err := fh.Sub(n.starting)
+	if err != nil {
+		// Sub returns an error only when a histogram has an invalid bucket
+		// layout. Panic rather than append a sample that was not adjusted,
+		// which would be wrong data.
+		panic(err)
+	}
 	adjusted = adjusted.Compact(0)
 
 	return adjusted, c.st, false

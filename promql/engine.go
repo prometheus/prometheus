@@ -5054,11 +5054,16 @@ func (*evaluator) nextValues(ts int64, series *Series) (f float64, h *histogram.
 }
 
 // handleAggregationError adds the appropriate annotation based on the aggregation error.
+// It panics if the error is not recognised.
 func handleAggregationError(err error, e *parser.AggregateExpr, metricName string, annos *annotations.Annotations) {
 	pos := e.Expr.PositionRange()
 	if errors.Is(err, histogram.ErrHistogramsIncompatibleSchema) {
 		annos.Add(annotations.NewMixedExponentialCustomHistogramsWarning(metricName, pos))
+		return
 	}
+	// Any other error means a histogram has an invalid bucket layout.
+	// Fail the query rather than silently drop the result.
+	panic(err)
 }
 
 // handleVectorBinopError returns the appropriate annotation based on the vector binary operation error.
@@ -5075,7 +5080,9 @@ func handleVectorBinopError(err error, e *parser.BinaryExpr) annotations.Annotat
 		pos := e.PositionRange()
 		return annotations.New().Add(annotations.NewIncompatibleBucketLayoutInBinOpWarning(op, pos))
 	}
-	return nil
+	// Any other error means a histogram has an invalid bucket layout.
+	// Fail the query rather than silently drop the result.
+	panic(err)
 }
 
 // generateGroupingKey builds and returns the grouping key for the given metric and
