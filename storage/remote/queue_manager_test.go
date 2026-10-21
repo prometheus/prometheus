@@ -199,8 +199,15 @@ func TestBasicContentNegotiation(t *testing.T) {
 			}
 
 			// samplesTotal means attempts.
-			require.Equal(t, float64(len(tc.injectErrs)), client_testutil.ToFloat64(qm.metrics.samplesTotal))
-			require.Equal(t, float64(len(tc.injectErrs)-1), client_testutil.ToFloat64(qm.metrics.retriedSamplesTotal))
+			attempts := len(tc.injectErrs)
+			require.Equal(t, float64(attempts), client_testutil.ToFloat64(qm.metrics.samplesTotal))
+			require.Equal(t, float64(attempts-1), client_testutil.ToFloat64(qm.metrics.retriedSamplesTotal))
+			if tc.senderProtoMsg == remoteapi.WriteV2MessageType {
+				for _, metadata := range metadataFieldNames {
+					require.Equal(t, float64(attempts), client_testutil.ToFloat64(qm.metrics.samplesWithMetadataTotal.WithLabelValues(metadata)), metadata)
+					require.Equal(t, 0.0, client_testutil.ToFloat64(qm.metrics.histogramsWithMetadataTotal.WithLabelValues(metadata)), metadata)
+				}
+			}
 		})
 	}
 }
@@ -299,6 +306,12 @@ func TestSampleDelivery(t *testing.T) {
 				require.Equal(t, float64(len(samples)), client_testutil.ToFloat64(qm.metrics.samplesTotal))
 				require.Equal(t, float64(len(exemplars)), client_testutil.ToFloat64(qm.metrics.exemplarsTotal))
 				require.Equal(t, float64(len(histograms)+len(floatHistograms)), client_testutil.ToFloat64(qm.metrics.histogramsTotal))
+				if protoMsg == remoteapi.WriteV2MessageType {
+					for _, metadata := range metadataFieldNames {
+						require.Equal(t, float64(len(samples)), client_testutil.ToFloat64(qm.metrics.samplesWithMetadataTotal.WithLabelValues(metadata)), metadata)
+						require.Equal(t, float64(len(histograms)+len(floatHistograms)), client_testutil.ToFloat64(qm.metrics.histogramsWithMetadataTotal.WithLabelValues(metadata)), metadata)
+					}
+				}
 				var durationMetric dto.Metric
 				require.NoError(t, qm.metrics.sentBatchDuration.Write(&durationMetric))
 				require.GreaterOrEqual(t, *durationMetric.Histogram.SampleSum, (10 * time.Millisecond).Seconds())
@@ -2000,11 +2013,15 @@ func forceEMWA(r *ewmaRate, rate int64) {
 
 func TestQueueManagerMetrics(t *testing.T) {
 	// These legacy metadata metrics are deprecated and not registered for Remote Write 2.0.
-	metadataMetricNames := []string{
+	rw1MetadataMetricNames := []string{
 		"prometheus_remote_storage_metadata_total",
 		"prometheus_remote_storage_metadata_failed_total",
 		"prometheus_remote_storage_metadata_retried_total",
 		"prometheus_remote_storage_metadata_bytes_total",
+	}
+	rw2MetadataMetricNames := []string{
+		"prometheus_remote_storage_samples_with_metadata_total",
+		"prometheus_remote_storage_histograms_with_metadata_total",
 	}
 
 	for _, tc := range []struct {
@@ -2031,9 +2048,13 @@ func TestQueueManagerMetrics(t *testing.T) {
 			for _, metricFamily := range metricFamilies {
 				registeredMetrics[metricFamily.GetName()] = struct{}{}
 			}
-			for _, metricName := range metadataMetricNames {
+			for _, metricName := range rw1MetadataMetricNames {
 				_, ok := registeredMetrics[metricName]
 				require.Equal(t, tc.expectMetadataMetric, ok, metricName)
+			}
+			for _, metricName := range rw2MetadataMetricNames {
+				_, ok := registeredMetrics[metricName]
+				require.Equal(t, !tc.expectMetadataMetric, ok, metricName)
 			}
 
 			// Make sure all metrics were unregistered. A failure here means you need
@@ -2045,45 +2066,12 @@ func TestQueueManagerMetrics(t *testing.T) {
 	}
 }
 
-func TestQueueManagerWithoutMetadataMetricsRegistration(t *testing.T) {
-	metricNames := []string{
-		"prometheus_remote_storage_samples_without_metadata_total",
-		"prometheus_remote_storage_histograms_without_metadata_total",
-	}
-
-	for _, tc := range []struct {
-		name       string
-		protoMsg   remoteapi.WriteMessageType
-		registered bool
-	}{
-		{name: "remote write 1.0", protoMsg: remoteapi.WriteV1MessageType, registered: false},
-		{name: "remote write 2.0", protoMsg: remoteapi.WriteV2MessageType, registered: true},
-	} {
-		t.Run(tc.name, func(t *testing.T) {
-			reg := prometheus.NewPedanticRegistry()
-			metrics := newQueueManagerMetrics(reg, "name", "http://localhost:1234")
-			metrics.register(tc.protoMsg)
-
-			metricFamilies, err := reg.Gather()
-			require.NoError(t, err)
-			registeredMetrics := make(map[string]struct{}, len(metricFamilies))
-			for _, metricFamily := range metricFamilies {
-				registeredMetrics[metricFamily.GetName()] = struct{}{}
-			}
-			for _, metricName := range metricNames {
-				_, ok := registeredMetrics[metricName]
-				require.Equal(t, tc.registered, ok, metricName)
-			}
-		})
-	}
-}
-
-func TestV2DataWithoutMetadataMetrics(t *testing.T) {
+func TestV2DataWithMetadataMetrics(t *testing.T) {
 	for _, tc := range []struct {
 		name               string
 		timeSeries         []writev2.TimeSeries
-		expectedSamples    float64
-		expectedHistograms float64
+		expectedSamples    [metadataFieldCount]float64
+		expectedHistograms [metadataFieldCount]float64
 	}{
 		{
 			name: "without metadata",
@@ -2091,8 +2079,6 @@ func TestV2DataWithoutMetadataMetrics(t *testing.T) {
 				Samples:    make([]writev2.Sample, 2),
 				Histograms: make([]writev2.Histogram, 1),
 			}},
-			expectedSamples:    2,
-			expectedHistograms: 1,
 		},
 		{
 			name: "with type",
@@ -2100,6 +2086,7 @@ func TestV2DataWithoutMetadataMetrics(t *testing.T) {
 				Samples:  make([]writev2.Sample, 1),
 				Metadata: writev2.Metadata{Type: writev2.Metadata_METRIC_TYPE_COUNTER},
 			}},
+			expectedSamples: [metadataFieldCount]float64{1, 0, 0},
 		},
 		{
 			name: "with unit",
@@ -2107,6 +2094,7 @@ func TestV2DataWithoutMetadataMetrics(t *testing.T) {
 				Histograms: make([]writev2.Histogram, 1),
 				Metadata:   writev2.Metadata{UnitRef: 1},
 			}},
+			expectedHistograms: [metadataFieldCount]float64{0, 1, 0},
 		},
 		{
 			name: "with help",
@@ -2114,6 +2102,21 @@ func TestV2DataWithoutMetadataMetrics(t *testing.T) {
 				Samples:  make([]writev2.Sample, 1),
 				Metadata: writev2.Metadata{HelpRef: 1},
 			}},
+			expectedSamples: [metadataFieldCount]float64{0, 0, 1},
+		},
+		{
+			name: "with all metadata",
+			timeSeries: []writev2.TimeSeries{{
+				Samples:    make([]writev2.Sample, 2),
+				Histograms: make([]writev2.Histogram, 1),
+				Metadata: writev2.Metadata{
+					Type:    writev2.Metadata_METRIC_TYPE_COUNTER,
+					UnitRef: 1,
+					HelpRef: 2,
+				},
+			}},
+			expectedSamples:    [metadataFieldCount]float64{2, 2, 2},
+			expectedHistograms: [metadataFieldCount]float64{1, 1, 1},
 		},
 		{
 			name: "exemplars are ignored",
@@ -2125,10 +2128,12 @@ func TestV2DataWithoutMetadataMetrics(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			metrics := newQueueManagerMetrics(nil, "", "")
 			updater := batchMetricsUpdater{metrics: metrics}
-			updater.recordV2WithoutMetadataAttempt(countV2DataWithoutMetadata(tc.timeSeries))
+			updater.recordV2WithMetadataAttempt(countV2DataWithMetadata(tc.timeSeries))
 
-			require.Equal(t, tc.expectedSamples, client_testutil.ToFloat64(metrics.samplesWithoutMetadataTotal))
-			require.Equal(t, tc.expectedHistograms, client_testutil.ToFloat64(metrics.histogramsWithoutMetadataTotal))
+			for i, metadata := range metadataFieldNames {
+				require.Equal(t, tc.expectedSamples[i], client_testutil.ToFloat64(metrics.samplesWithMetadataTotal.WithLabelValues(metadata)), metadata)
+				require.Equal(t, tc.expectedHistograms[i], client_testutil.ToFloat64(metrics.histogramsWithMetadataTotal.WithLabelValues(metadata)), metadata)
+			}
 		})
 	}
 }

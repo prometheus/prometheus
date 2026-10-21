@@ -104,8 +104,8 @@ type queueManagerMetrics struct {
 	metadataBytesTotal     prometheus.Counter
 	maxSamplesPerSend      prometheus.Gauge
 
-	samplesWithoutMetadataTotal    prometheus.Counter
-	histogramsWithoutMetadataTotal prometheus.Counter
+	samplesWithMetadataTotal    *prometheus.CounterVec
+	histogramsWithMetadataTotal *prometheus.CounterVec
 }
 
 func newQueueManagerMetrics(r prometheus.Registerer, rn, e string) *queueManagerMetrics {
@@ -124,13 +124,13 @@ func newQueueManagerMetrics(r prometheus.Registerer, rn, e string) *queueManager
 		Help:        "Total number of samples sent to remote storage.",
 		ConstLabels: constLabels,
 	})
-	m.samplesWithoutMetadataTotal = prometheus.NewCounter(prometheus.CounterOpts{
+	m.samplesWithMetadataTotal = prometheus.NewCounterVec(prometheus.CounterOpts{
 		Namespace:   namespace,
 		Subsystem:   subsystem,
-		Name:        "samples_without_metadata_total",
-		Help:        "Total number of samples sent to remote storage using Remote Write 2.0 without metadata. Metadata is considered absent when type, unit, and help are unset.",
+		Name:        "samples_with_metadata_total",
+		Help:        "Total number of samples sent to remote storage using Remote Write 2.0 with the specified metadata field set.",
 		ConstLabels: constLabels,
-	})
+	}, []string{"metadata"})
 	m.exemplarsTotal = prometheus.NewCounter(prometheus.CounterOpts{
 		Namespace:   namespace,
 		Subsystem:   subsystem,
@@ -145,13 +145,17 @@ func newQueueManagerMetrics(r prometheus.Registerer, rn, e string) *queueManager
 		Help:        "Total number of histograms sent to remote storage.",
 		ConstLabels: constLabels,
 	})
-	m.histogramsWithoutMetadataTotal = prometheus.NewCounter(prometheus.CounterOpts{
+	m.histogramsWithMetadataTotal = prometheus.NewCounterVec(prometheus.CounterOpts{
 		Namespace:   namespace,
 		Subsystem:   subsystem,
-		Name:        "histograms_without_metadata_total",
-		Help:        "Total number of histograms sent to remote storage using Remote Write 2.0 without metadata. Metadata is considered absent when type, unit, and help are unset.",
+		Name:        "histograms_with_metadata_total",
+		Help:        "Total number of histograms sent to remote storage using Remote Write 2.0 with the specified metadata field set.",
 		ConstLabels: constLabels,
-	})
+	}, []string{"metadata"})
+	for _, metadata := range metadataFieldNames {
+		m.samplesWithMetadataTotal.WithLabelValues(metadata)
+		m.histogramsWithMetadataTotal.WithLabelValues(metadata)
+	}
 	m.metadataTotal = prometheus.NewCounter(prometheus.CounterOpts{
 		Namespace:   namespace,
 		Subsystem:   subsystem,
@@ -392,8 +396,8 @@ func (m *queueManagerMetrics) register(protoMsg remoteapi.WriteMessageType) {
 			)
 		} else {
 			m.reg.MustRegister(
-				m.samplesWithoutMetadataTotal,
-				m.histogramsWithoutMetadataTotal,
+				m.samplesWithMetadataTotal,
+				m.histogramsWithMetadataTotal,
 			)
 		}
 	}
@@ -433,8 +437,8 @@ func (m *queueManagerMetrics) unregister(protoMsg remoteapi.WriteMessageType) {
 			m.reg.Unregister(m.retriedMetadataTotal)
 			m.reg.Unregister(m.metadataBytesTotal)
 		} else {
-			m.reg.Unregister(m.samplesWithoutMetadataTotal)
-			m.reg.Unregister(m.histogramsWithoutMetadataTotal)
+			m.reg.Unregister(m.samplesWithMetadataTotal)
+			m.reg.Unregister(m.histogramsWithMetadataTotal)
 		}
 	}
 }
@@ -2218,7 +2222,7 @@ func (s *shards) sendV2SamplesWithBackoff(ctx context.Context, samples []writev2
 	metricsUpdater := batchMetricsUpdater{
 		metrics: s.qm.metrics,
 	}
-	withoutMetadataCounts := countV2DataWithoutMetadata(samples)
+	withMetadataCounts := countV2DataWithMetadata(samples)
 
 	// Since we retry writes via attemptStore and sendWriteRequestWithBackoff we need
 	// to track the total amount of accepted data across the various attempts.
@@ -2261,7 +2265,7 @@ func (s *shards) sendV2SamplesWithBackoff(ctx context.Context, samples []writev2
 
 		begin := time.Now()
 		metricsUpdater.recordBatchAttempt(sc)
-		metricsUpdater.recordV2WithoutMetadataAttempt(withoutMetadataCounts)
+		metricsUpdater.recordV2WithMetadataAttempt(withMetadataCounts)
 		rs, err := cl.Store(ctx, req, try)
 		metricsUpdater.recordLatency(begin)
 		// TODO(bwplotka): Revisit this once we have Receivers doing retriable partial error
@@ -2630,17 +2634,37 @@ type batchMetricsUpdater struct {
 	metrics *queueManagerMetrics
 }
 
-type v2WithoutMetadataCounts struct {
-	samples    int
-	histograms int
+const (
+	metadataFieldType = iota
+	metadataFieldUnit
+	metadataFieldHelp
+	metadataFieldCount
+)
+
+var metadataFieldNames = [metadataFieldCount]string{"type", "unit", "help"}
+
+type v2WithMetadataCounts struct {
+	samples    [metadataFieldCount]int
+	histograms [metadataFieldCount]int
 }
 
-func countV2DataWithoutMetadata(timeSeries []writev2.TimeSeries) v2WithoutMetadataCounts {
-	var counts v2WithoutMetadataCounts
+func countV2DataWithMetadata(timeSeries []writev2.TimeSeries) v2WithMetadataCounts {
+	var counts v2WithMetadataCounts
 	for _, ts := range timeSeries {
-		if ts.Metadata.Type == writev2.Metadata_METRIC_TYPE_UNSPECIFIED && ts.Metadata.UnitRef == 0 && ts.Metadata.HelpRef == 0 {
-			counts.samples += len(ts.Samples)
-			counts.histograms += len(ts.Histograms)
+		sampleCount := len(ts.Samples)
+		histogramCount := len(ts.Histograms)
+
+		if ts.Metadata.Type != writev2.Metadata_METRIC_TYPE_UNSPECIFIED {
+			counts.samples[metadataFieldType] += sampleCount
+			counts.histograms[metadataFieldType] += histogramCount
+		}
+		if ts.Metadata.UnitRef != 0 {
+			counts.samples[metadataFieldUnit] += sampleCount
+			counts.histograms[metadataFieldUnit] += histogramCount
+		}
+		if ts.Metadata.HelpRef != 0 {
+			counts.samples[metadataFieldHelp] += sampleCount
+			counts.histograms[metadataFieldHelp] += histogramCount
 		}
 	}
 	return counts
@@ -2653,9 +2677,11 @@ func (b *batchMetricsUpdater) recordBatchAttempt(sc sendBatchContext) {
 	b.metrics.histogramsTotal.Add(float64(sc.histogramCount))
 }
 
-func (b *batchMetricsUpdater) recordV2WithoutMetadataAttempt(counts v2WithoutMetadataCounts) {
-	b.metrics.samplesWithoutMetadataTotal.Add(float64(counts.samples))
-	b.metrics.histogramsWithoutMetadataTotal.Add(float64(counts.histograms))
+func (b *batchMetricsUpdater) recordV2WithMetadataAttempt(counts v2WithMetadataCounts) {
+	for i, metadata := range metadataFieldNames {
+		b.metrics.samplesWithMetadataTotal.WithLabelValues(metadata).Add(float64(counts.samples[i]))
+		b.metrics.histogramsWithMetadataTotal.WithLabelValues(metadata).Add(float64(counts.histograms[i]))
+	}
 }
 
 // recordLatency records the observed send duration for a batch attempt.
