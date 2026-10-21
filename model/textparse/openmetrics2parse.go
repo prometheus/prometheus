@@ -1639,8 +1639,8 @@ func (p *openMetrics2Parser) buildSummaryPending(cf compositeFields) ([]pendingE
 	if err != nil {
 		return nil, fmt.Errorf("invalid sum: %w", err)
 	}
-	if math.IsNaN(v) || v < 0 {
-		return nil, fmt.Errorf("sum must not be negative or NaN, got %v", v)
+	if math.IsNaN(v) {
+		return nil, fmt.Errorf("sum must not be NaN, got %v", v)
 	}
 	pending = append(pending, p.appendPendingSeriesBytes("_sum", "", 0, v))
 
@@ -1795,10 +1795,6 @@ func parseQuantiles(s string) iter.Seq2[quantileEntry, error] {
 			val, err := strconv.ParseFloat(strings.TrimSpace(after), 64)
 			if err != nil {
 				yield(quantileEntry{}, fmt.Errorf("invalid quantile value %q: %w", after, err))
-				return
-			}
-			if val < 0 {
-				yield(quantileEntry{}, fmt.Errorf("quantile value must not be negative, got %v", val))
 				return
 			}
 			if math.IsNaN(val) {

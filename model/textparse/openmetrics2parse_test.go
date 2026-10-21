@@ -413,6 +413,40 @@ rpc_duration_seconds {count:0,sum:0.0,quantile:[0.5:NaN,0.9:NaN]}
 	requireEntries(t, exp, got)
 }
 
+func TestOpenMetrics2ParseCompositeSummaryNegativeObservations(t *testing.T) {
+	input := `# TYPE temp_celsius summary
+temp_celsius {count:2,sum:-15.0,quantile:[0.5:-10.0,0.9:-5.0]}
+# EOF
+`
+	exp := []parsedEntry{
+		{m: "temp_celsius", typ: model.MetricTypeSummary},
+		{
+			m:    "temp_celsius_count",
+			v:    2,
+			lset: labels.FromStrings("__name__", "temp_celsius_count"),
+		},
+		{
+			m:    "temp_celsius_sum",
+			v:    -15.0,
+			lset: labels.FromStrings("__name__", "temp_celsius_sum"),
+		},
+		{
+			m:    "temp_celsius\xffquantile\xff0.5",
+			v:    -10.0,
+			lset: labels.FromStrings("__name__", "temp_celsius", "quantile", "0.5"),
+		},
+		{
+			m:    "temp_celsius\xffquantile\xff0.9",
+			v:    -5.0,
+			lset: labels.FromStrings("__name__", "temp_celsius", "quantile", "0.9"),
+		},
+	}
+
+	p := NewOpenMetrics2Parser([]byte(input), labels.NewSymbolTable(), ParserOptions{})
+	got := testParse(t, p)
+	requireEntries(t, exp, got)
+}
+
 func TestOpenMetrics2ParseCompositeClassicHistogram(t *testing.T) {
 	input := `# HELP req_duration Request duration histogram.
 # TYPE req_duration histogram
@@ -1140,16 +1174,8 @@ foo_total 1.0 # {id="x"} 1.0
 			err:   "count must be an integer",
 		},
 		{
-			input: "# TYPE foo summary\nfoo {count:1,sum:-2.0,quantile:[0.5:1.0]}\n# EOF\n",
-			err:   "sum must not be negative or NaN",
-		},
-		{
 			input: "# TYPE foo summary\nfoo {count:1,sum:NaN,quantile:[0.5:1.0]}\n# EOF\n",
-			err:   "sum must not be negative or NaN",
-		},
-		{
-			input: "# TYPE foo summary\nfoo {count:1,sum:2.0,quantile:[0.5:-1.0]}\n# EOF\n",
-			err:   "quantile value must not be negative",
+			err:   "sum must not be NaN",
 		},
 	} {
 		t.Run(tc.err, func(t *testing.T) {
