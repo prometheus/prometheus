@@ -392,9 +392,9 @@ func TestDuplicateSeriesRefsByHash(t *testing.T) {
 				s := db.series.GetByID(ref)
 				require.NotNil(t, s)
 				if i == 0 {
-					require.Equal(t, &initialMeta, s.Metadata())
+					require.Equal(t, initialMeta, s.Metadata().Value())
 				} else {
-					require.Equal(t, &updatedMeta, s.Metadata())
+					require.Equal(t, updatedMeta, s.Metadata().Value())
 				}
 				require.NotContains(t, db.deleted, ref)
 			}
@@ -404,7 +404,7 @@ func TestDuplicateSeriesRefsByHash(t *testing.T) {
 				require.Nil(t, db.series.GetByID(ref))
 				require.Contains(t, db.deleted, ref)
 				if inMemCheckpoint && i > 0 {
-					require.Equal(t, &updatedMeta, db.deleted[ref].meta)
+					require.Equal(t, updatedMeta, db.deleted[ref].meta.Value())
 				}
 			}
 		})
@@ -629,7 +629,7 @@ func TestUpdateMetadata(t *testing.T) {
 
 		memS := s.series.GetByID(chunks.HeadSeriesRef(ref))
 		require.NotNil(t, memS)
-		require.Nil(t, memS.Metadata())
+		require.True(t, metadata.IsZeroHandle(memS.Metadata()))
 
 		recs := readTestWAL(t, s.wal.Dir())
 		require.NotEmpty(t, recs)
@@ -684,11 +684,11 @@ func TestUpdateMetadata(t *testing.T) {
 		// Check in-memory metadata.
 		memS1 := s.series.GetByID(chunks.HeadSeriesRef(ref1))
 		require.NotNil(t, memS1)
-		require.Equal(t, &m1, memS1.Metadata())
+		require.Equal(t, m1, memS1.Metadata().Value())
 
 		memS2 := s.series.GetByID(chunks.HeadSeriesRef(ref2))
 		require.NotNil(t, memS2)
-		require.Equal(t, &m2, memS2.Metadata())
+		require.Equal(t, m2, memS2.Metadata().Value())
 
 		// Second transaction: append same metadata (dedup) for s1, new metadata for s2.
 		m2Updated := metadata.Metadata{Type: model.MetricTypeCounter, Unit: "bytes", Help: "help 2 updated"}
@@ -705,7 +705,7 @@ func TestUpdateMetadata(t *testing.T) {
 		require.NoError(t, app.Commit())
 
 		// Verify in-memory updated metadata.
-		require.Equal(t, &m2Updated, memS2.Metadata())
+		require.Equal(t, m2Updated, memS2.Metadata().Value())
 
 		// Verify WAL content: expected 2 metadata blocks (first has m1, m2; second has only m2Updated).
 		recs := readTestWAL(t, s.wal.Dir())
@@ -752,7 +752,7 @@ func TestUpdateMetadata(t *testing.T) {
 		// Verify in-memory metadata was NOT changed.
 		memS1 := s.series.GetByID(chunks.HeadSeriesRef(ref1))
 		require.NotNil(t, memS1)
-		require.Equal(t, &m1, memS1.Metadata())
+		require.Equal(t, m1, memS1.Metadata().Value())
 	})
 }
 
@@ -790,11 +790,11 @@ func TestWALReplayMetadata(t *testing.T) {
 
 	mem1 := db2.series.GetByID(chunks.HeadSeriesRef(ref1))
 	require.NotNil(t, mem1)
-	require.Equal(t, &m1, mem1.Metadata())
+	require.Equal(t, m1, mem1.Metadata().Value())
 
 	mem2 := db2.series.GetByID(chunks.HeadSeriesRef(ref2))
 	require.NotNil(t, mem2)
-	require.Equal(t, &m2, mem2.Metadata())
+	require.Equal(t, m2, mem2.Metadata().Value())
 	require.NoError(t, db2.Close())
 
 	// Reopen DB with EnableMetadataWALRecords=false and verify existing metadata in WAL is still restored.
@@ -806,9 +806,9 @@ func TestWALReplayMetadata(t *testing.T) {
 
 	mem1 = db3.series.GetByID(chunks.HeadSeriesRef(ref1))
 	require.NotNil(t, mem1)
-	require.Equal(t, &m1, mem1.Metadata())
+	require.Equal(t, m1, mem1.Metadata().Value())
 
 	mem2 = db3.series.GetByID(chunks.HeadSeriesRef(ref2))
 	require.NotNil(t, mem2)
-	require.Equal(t, &m2, mem2.Metadata())
+	require.Equal(t, m2, mem2.Metadata().Value())
 }
