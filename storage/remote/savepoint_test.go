@@ -21,7 +21,7 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-func TestSavepointSaveLoad(t *testing.T) {
+func TestSavepointWriteLoad(t *testing.T) {
 	tests := []struct {
 		name  string
 		saves []Savepoint
@@ -29,6 +29,10 @@ func TestSavepointSaveLoad(t *testing.T) {
 	}{
 		{
 			name: "missing file loads empty",
+		},
+		{
+			name:  "nil savepoint loads empty",
+			saves: []Savepoint{nil},
 		},
 		{
 			name: "round trip",
@@ -51,7 +55,7 @@ func TestSavepointSaveLoad(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			dir := t.TempDir()
 			for _, sp := range tc.saves {
-				require.NoError(t, sp.Save(dir))
+				require.NoError(t, sp.Write(dir))
 			}
 
 			_, err := os.Stat(savepointFilePath(dir) + ".tmp")
@@ -59,6 +63,7 @@ func TestSavepointSaveLoad(t *testing.T) {
 
 			loaded, err := LoadSavepoint(dir)
 			require.NoError(t, err)
+			require.NotNil(t, loaded)
 			if len(tc.want) == 0 {
 				require.Empty(t, loaded)
 			} else {
@@ -68,11 +73,41 @@ func TestSavepointSaveLoad(t *testing.T) {
 	}
 }
 
-func TestLoadSavepointCorrupted(t *testing.T) {
-	dir := t.TempDir()
-	require.NoError(t, os.WriteFile(filepath.Join(dir, savepointFileName), []byte("{invalid"), 0o644))
+func TestLoadSavepointInvalid(t *testing.T) {
+	tests := []struct {
+		name    string
+		data    string
+		wantErr string
+	}{
+		{
+			name:    "corrupted",
+			data:    "{invalid",
+			wantErr: "parse savepoint",
+		},
+		{
+			name:    "unversioned",
+			data:    `{"abc123":{"segment":42}}`,
+			wantErr: "unexpected savepoint version 0",
+		},
+		{
+			name:    "null",
+			data:    "null",
+			wantErr: "unexpected savepoint version 0",
+		},
+		{
+			name:    "unknown version",
+			data:    `{"version":2,"remoteWrite":{"abc123":{"segment":42}}}`,
+			wantErr: "unexpected savepoint version 2",
+		},
+	}
 
-	_, err := LoadSavepoint(dir)
-	require.Error(t, err)
-	require.Contains(t, err.Error(), "parse savepoint")
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			dir := t.TempDir()
+			require.NoError(t, os.WriteFile(filepath.Join(dir, savepointFileName), []byte(tc.data), 0o644))
+
+			_, err := LoadSavepoint(dir)
+			require.ErrorContains(t, err, tc.wantErr)
+		})
+	}
 }

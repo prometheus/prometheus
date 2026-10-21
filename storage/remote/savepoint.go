@@ -20,9 +20,14 @@ import (
 	"io/fs"
 	"os"
 	"path/filepath"
+
+	"github.com/prometheus/prometheus/tsdb/fileutil"
 )
 
-const savepointFileName = "savepoint.json"
+const (
+	savepointFileName = "savepoint.json"
+	savepointVersion1 = 1
+)
 
 // SavepointEntry holds the persisted position for a single remote write queue.
 type SavepointEntry struct {
@@ -32,6 +37,12 @@ type SavepointEntry struct {
 // Savepoint maps queue hash to position. The key is the same hash used in
 // WriteStorage.queues (MD5 of YAML-marshaled RemoteWriteConfig).
 type Savepoint map[string]SavepointEntry
+
+// savepointFile is the on-disk format of a Savepoint.
+type savepointFile struct {
+	Version     int       `json:"version"`
+	RemoteWrite Savepoint `json:"remoteWrite"`
+}
 
 func savepointFilePath(dir string) string {
 	return filepath.Join(dir, savepointFileName)
@@ -48,40 +59,46 @@ func LoadSavepoint(dir string) (Savepoint, error) {
 		return nil, fmt.Errorf("read savepoint: %w", err)
 	}
 
-	var sp Savepoint
-	if err := json.Unmarshal(data, &sp); err != nil {
+	var f savepointFile
+	if err := json.Unmarshal(data, &f); err != nil {
 		return nil, fmt.Errorf("parse savepoint: %w", err)
 	}
-	return sp, nil
-}
-
-// removeSavepoint deletes the savepoint file from dir.
-// It is a no-op if the file does not exist.
-//
-// Used to drop a stale file when the feature is disabled,
-// so it cannot be acted upon if the feature is later re-enabled.
-func removeSavepoint(dir string) error {
-	if err := os.Remove(savepointFilePath(dir)); err != nil && !errors.Is(err, fs.ErrNotExist) {
-		return fmt.Errorf("remove savepoint: %w", err)
+	if f.Version != savepointVersion1 {
+		return nil, fmt.Errorf("unexpected savepoint version %d", f.Version)
 	}
-	return nil
+	if f.RemoteWrite == nil {
+		return make(Savepoint), nil
+	}
+	return f.RemoteWrite, nil
 }
 
-// Save writes the savepoint to dir. It writes to a temporary file first
-// and renames it to avoid partial writes on crash.
-func (s Savepoint) Save(dir string) error {
-	data, err := json.Marshal(s)
+// Write writes the savepoint to dir.
+func (s Savepoint) Write(dir string) error {
+	data, err := json.Marshal(savepointFile{Version: savepointVersion1, RemoteWrite: s})
 	if err != nil {
 		return fmt.Errorf("marshal savepoint: %w", err)
 	}
 
-	tmp := savepointFilePath(dir) + ".tmp"
-	if err := os.WriteFile(tmp, data, 0o644); err != nil {
-		return fmt.Errorf("write savepoint tmp: %w", err)
-	}
+	// Make any changes to the file appear atomic.
+	path := savepointFilePath(dir)
+	tmp := path + ".tmp"
+	defer os.Remove(tmp)
 
-	if err := os.Rename(tmp, savepointFilePath(dir)); err != nil {
-		os.Remove(tmp)
+	f, err := os.Create(tmp)
+	if err != nil {
+		return fmt.Errorf("create savepoint tmp: %w", err)
+	}
+	if _, err := f.Write(data); err != nil {
+		return errors.Join(fmt.Errorf("write savepoint tmp: %w", err), f.Close())
+	}
+	// Force the kernel to persist the file on disk to avoid data loss if the host crashes.
+	if err := f.Sync(); err != nil {
+		return errors.Join(fmt.Errorf("sync savepoint tmp: %w", err), f.Close())
+	}
+	if err := f.Close(); err != nil {
+		return fmt.Errorf("close savepoint tmp: %w", err)
+	}
+	if err := fileutil.Replace(tmp, path); err != nil {
 		return fmt.Errorf("rename savepoint: %w", err)
 	}
 	return nil
