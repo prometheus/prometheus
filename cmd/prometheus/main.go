@@ -832,9 +832,9 @@ func main() {
 	}
 
 	if cfg.memlimitEnable {
-		if _, err := memlimit.SetGoMemLimitWithOpts(
+		if _, err := memlimit.Set(
 			memlimit.WithRatio(cfg.memlimitRatio),
-			memlimit.WithRefreshInterval(time.Duration(cfg.memlimitRefreshInterval)),
+			memlimit.WithRefreshInterval(context.Background(), time.Duration(cfg.memlimitRefreshInterval)),
 			memlimit.WithProvider(
 				memlimit.ApplyFallback(
 					memlimit.FromCgroup,
