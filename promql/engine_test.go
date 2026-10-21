@@ -5440,6 +5440,8 @@ func TestDetectHistogramStatsDecoding(t *testing.T) {
 		{expr: `histogram_count(sort_by_label(label_join(metric, "x", "-", "job"), "x") or sort_by_label_desc(other, "job"))`, expectSkip: true},
 		{expr: `histogram_count(avg(metric) and on() count(other) and on() group(third))`, expectSkip: true},
 		{expr: `histogram_count(limit_ratio(0.5, metric))`, expectSkip: true},
+		{expr: `histogram_count(info(rate(metric[5m])))`, expectSkip: true},
+		{expr: `histogram_avg(info(metric, {env="prod"}))`, expectSkip: true},
 		// Functions not known to be safe need the buckets.
 		{expr: `histogram_count(sort(metric))`, expectSkip: false},
 		{expr: `histogram_quantile(0.9, metric)`, expectSkip: false},
@@ -5530,6 +5532,8 @@ load 1m
   hist{job="a"} {{schema:0 count:4 sum:10 buckets:[1 2 1]}} {{schema:0 count:6 sum:14 buckets:[2 3 1]}} {{schema:0 count:7 sum:15 buckets:[4 1 2]}} {{schema:0 count:9 sum:20 buckets:[5 2 2]}} {{schema:0 count:12 sum:26 buckets:[6 3 3]}}
   hist{job="b"} {{schema:1 count:4 sum:10 buckets:[1 1 1 1]}} {{schema:1 count:6 sum:14 buckets:[1 2 1 2]}} {{schema:1 count:7 sum:15 buckets:[2 2 1 2]}} {{schema:1 count:9 sum:20 buckets:[3 2 2 2]}} {{schema:1 count:12 sum:26 buckets:[5 1 2 4]}}
   gauge {{schema:0 count:4 sum:10 buckets:[1 2 1] counter_reset_hint:gauge}} {{schema:0 count:3 sum:5 buckets:[2 0 1] counter_reset_hint:gauge}} {{schema:0 count:6 sum:12 buckets:[1 4 1] counter_reset_hint:gauge}} {{schema:0 count:2 sum:3 buckets:[0 1 1] counter_reset_hint:gauge}} {{schema:0 count:5 sum:9 buckets:[3 1 1] counter_reset_hint:gauge}}
+  target_info{job="a", env="prod"} 1x4
+  target_info{job="b", env="dev"} 1x4
 `)
 	t.Cleanup(func() { require.NoError(t, storage.Close()) })
 	engine := promqltest.NewTestEngine(t, false, 0, promqltest.DefaultMaxSamplesPerQuery)
@@ -5547,6 +5551,8 @@ load 1m
 		`histogram_count(hist and on(job) present_over_time(hist[2m]) and on(job) ts_of_first_over_time(hist[2m]) and on(job) ts_of_last_over_time(hist[2m]))`,
 		`histogram_count(sort_by_label(label_replace(hist, "x", "$1", "job", "(.*)"), "x"))`,
 		`histogram_sum(sort_by_label_desc(label_join(hist, "x", "-", "job"), "x"))`,
+		`histogram_count(info(rate(hist[2m])))`,
+		`histogram_avg(info(hist, {env="prod"}))`,
 		`histogram_count(sum(rate(hist[2m])))`,
 		`histogram_sum(avg by (job) (hist))`,
 		`histogram_count(hist and on(job) count by (job) (hist) and on(job) group by (job) (hist))`,

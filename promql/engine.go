@@ -5416,6 +5416,10 @@ var histogramStatsSafeFunctions = map[string]struct{}{
 	"label_join":         {},
 	"sort_by_label":      {},
 	"sort_by_label_desc": {},
+
+	// info only adds labels from the info series, and passes the
+	// histograms through unchanged.
+	"info": {},
 }
 
 // canSkipHistogramBuckets reports whether a vector selector with the given
