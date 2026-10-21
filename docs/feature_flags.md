@@ -278,14 +278,32 @@ Consequences:
   identifying attribute also gives a new `instance`. That includes attributes no
   entity references, such as `telemetry.sdk.version` without a matching entity. A
   description change doesn't change `instance`.
-* Resources with the same identity but different descriptions in one request
-  produce more than one `target_info` series for the same `instance`.
-* With `otlp-deltatocumulative`, delta conversion identifies streams by their
-  Resource attributes only. A description change therefore resets the cumulative
-  series. Resources whose attributes are equal, but that differ in which
-  attributes are descriptions, get different `instance`s but share one
-  accumulator: their points are merged, and points that are not newer than the
-  latest one are dropped.
+* As without the feature, Resources that get the same `instance` but differ in
+  other attributes produce more than one `target_info` series for it. With the
+  feature, that happens when only their descriptions differ.
+* With `otlp-deltatocumulative`, delta conversion tells streams apart by all
+  Resource attributes, descriptions included:
+  * A description change, such as `host.name` going from `node-1` to `node-2`,
+    keeps `instance` but starts a new stream, so the cumulative value starts
+    over, as after a counter reset. Without the feature, that happens when any
+    attribute but the service ones changes.
+  * Two Resources with equal attributes, where only one lists `host.name` in
+    `description_keys`, get different `instance`s but share one stream: their
+    points are merged, and points that are not newer than the latest one are
+    dropped.
+
+To prepare for the feature, set `keep_identifying_resource_attributes: true` in
+the `otlp` configuration, so that `target_info` carries the service attributes,
+and select services by them rather than by `job` and `instance`, for example:
+
+```
+http_requests_total
+  * on (job, instance) group_left (service_name)
+  target_info{service_name="checkout"}
+```
+
+Such queries keep working when you enable the feature. Promoting the service
+attributes with `promote_resource_attributes` works too.
 
 If an entity reference has an empty type or no `id_keys`, or one of its `id_keys`
 is not a Resource attribute, the Resource's identity is undefined, and its
