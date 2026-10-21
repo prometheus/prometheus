@@ -2090,6 +2090,111 @@ test_metric 32
 	requireSample(t, got[8], "test_metric", 7, timestamp.FromTime(tsF), timestamp.FromTime(tsE), false)
 }
 
+// TestScrapeLoopAppend_NewSeriesZeroSample verifies that sl.newSeriesZeroSample seeds a
+// synthetic start timestamp, half a scrape interval before the first sample, for newly
+// appeared counter and histogram series only, and that it doesn't override a real start
+// timestamp already parsed from the scrape format, nor reseed a series once it's cached.
+func TestScrapeLoopAppend_NewSeriesZeroSample(t *testing.T) {
+	const interval = 10 * time.Second
+	ts := time.Now()
+	tsMs := timestamp.FromTime(ts)
+	halfInterval := interval.Milliseconds() / 2
+
+	byName := func(got []sample) map[string][]sample {
+		m := map[string][]sample{}
+		for _, s := range got {
+			name := s.L.Get(model.MetricNameLabel)
+			m[name] = append(m[name], s)
+		}
+		return m
+	}
+	requireST := func(t *testing.T, samples []sample, wantST int64) {
+		t.Helper()
+		for _, s := range samples {
+			require.Equal(t, wantST, s.ST)
+		}
+	}
+
+	appTest := teststorage.NewAppendable()
+	sl, _ := newTestScrapeLoop(t, withAppendable(appTest, true), func(sl *scrapeLoop) {
+		sl.interval = interval
+		sl.newSeriesZeroSample = true
+		sl.parseST = true
+	})
+
+	scrapeA := []byte(`# TYPE test_counter counter
+test_counter 10
+# TYPE test_gauge gauge
+test_gauge 3
+# TYPE test_summary summary
+test_summary_sum 1
+test_summary_count 1
+# TYPE test_histogram histogram
+test_histogram_bucket{le="1"} 1
+test_histogram_bucket{le="+Inf"} 2
+test_histogram_sum 4
+test_histogram_count 2
+# TYPE test_counter_with_ct counter
+test_counter_with_ct 7
+test_counter_with_ct_created 1700000000.000
+# EOF
+`)
+	app := sl.appender()
+	_, _, _, err := app.append(scrapeA, "application/openmetrics-text", ts)
+	require.NoError(t, err)
+	require.NoError(t, app.Commit())
+
+	got := byName(appTest.ResultSamples())
+
+	// New counter and histogram-family series get seeded half a scrape interval before t.
+	require.Len(t, got["test_counter"], 1)
+	requireST(t, got["test_counter"], tsMs-halfInterval)
+	require.Len(t, got["test_histogram_bucket"], 2)
+	requireST(t, got["test_histogram_bucket"], tsMs-halfInterval)
+	require.Len(t, got["test_histogram_sum"], 1)
+	requireST(t, got["test_histogram_sum"], tsMs-halfInterval)
+	require.Len(t, got["test_histogram_count"], 1)
+	requireST(t, got["test_histogram_count"], tsMs-halfInterval)
+
+	// Gauges and summaries are not eligible.
+	require.Len(t, got["test_gauge"], 1)
+	requireST(t, got["test_gauge"], 0)
+	require.Len(t, got["test_summary_sum"], 1)
+	requireST(t, got["test_summary_sum"], 0)
+	require.Len(t, got["test_summary_count"], 1)
+	requireST(t, got["test_summary_count"], 0)
+
+	// A series with a real, parsed start timestamp keeps it; it's not overridden.
+	require.Len(t, got["test_counter_with_ct"], 1)
+	requireST(t, got["test_counter_with_ct"], 1700000000000)
+
+	// Second scrape: series are now cached, so no more seeding even though a new counter
+	// keeps appearing alongside them.
+	n := len(appTest.ResultSamples())
+	ts2 := ts.Add(interval)
+	tsMs2 := timestamp.FromTime(ts2)
+	scrapeB := []byte(`# TYPE test_counter counter
+test_counter 15
+# TYPE test_gauge gauge
+test_gauge 4
+# TYPE test_new_counter counter
+test_new_counter 1
+# EOF
+`)
+	app = sl.appender()
+	_, _, _, err = app.append(scrapeB, "application/openmetrics-text", ts2)
+	require.NoError(t, err)
+	require.NoError(t, app.Commit())
+
+	got = byName(appTest.ResultSamples()[n:])
+	require.Len(t, got["test_counter"], 1)
+	requireST(t, got["test_counter"], 0)
+	require.Len(t, got["test_gauge"], 1)
+	requireST(t, got["test_gauge"], 0)
+	require.Len(t, got["test_new_counter"], 1)
+	requireST(t, got["test_new_counter"], tsMs2-halfInterval)
+}
+
 func TestScrapeLoopAppend_StartTimeSynthesis_WithSTStorage(t *testing.T) {
 	ts := time.Now()
 

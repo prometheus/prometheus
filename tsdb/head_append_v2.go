@@ -139,15 +139,16 @@ func (a *headAppenderV2) Append(ref storage.SeriesRef, ls labels.Labels, st, t i
 	if hook := a.head.testAfterSeriesLookup; hook != nil {
 		hook(s)
 	}
+	created := false
 	if s == nil {
 		var err error
-		s, _, err = a.getOrCreate(ls)
+		s, created, err = a.getOrCreate(ls)
 		if err != nil {
 			return 0, err
 		}
 	}
 
-	if a.head.opts.EnableSTAsZeroSample && st != 0 {
+	if a.head.opts.EnableSTAsZeroSample && st != 0 && (!opts.OnlyIfNewSeries || created) {
 		s = a.bestEffortAppendSTZeroSample(s, ls, st, t, h, fh)
 	}
 

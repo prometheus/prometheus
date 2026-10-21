@@ -127,6 +127,18 @@ Enables the synthesis of start timestamps (ST) for cumulative metrics (Counters,
 > * Synthesis requires ordered samples. As a result, cumulative samples without ST that are out of order will be rejected despite the `tsdb. out_of_order_time_window` setting.
 > * If an append fails for a series (e.g., due to out-of-order samples being rejected), the synthesis state for that series is cleared. As a result, the next sample received after the failure will be treated as the first sample again and will be dropped to establish a new reference point.
 
+## New series zero sample seeding
+
+`--enable-feature=new-series-zero-sample`
+
+Seeds a synthetic start timestamp, half a scrape interval before the first sample, for newly appeared counter and histogram series (native or classic, including the `_bucket`/`_sum`/`_count` component series of a classic histogram) that don't already carry a start timestamp from the scrape format.
+
+By itself this option only computes and attaches a start timestamp to the first sample of a new series. Combine it with `--enable-feature=created-timestamp-zero-ingestion` for the storage layer to turn that start timestamp into a stored zero-valued sample, of the same sample type (float or native histogram) as the first observed sample.
+
+> NOTE: This is an experimental feature.
+> * Eligibility is scoped to the scrape loop's local per-target series cache. A scrape loop restart (e.g. on configuration reload) forgets which series it has already seen, so an already-established series can occasionally be treated as new again and get another zero sample seeded.
+> * Requires a storage layer that materializes start timestamps as zero samples, such as tsdb's `created-timestamp-zero-ingestion`; on its own it has no observable effect.
+
 ## Concurrent evaluation of independent rules
 
 `--enable-feature=concurrent-rule-eval`

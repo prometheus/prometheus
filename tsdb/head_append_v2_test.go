@@ -4063,11 +4063,12 @@ func TestHeadAppenderV2_Append_EnableSTAsZeroSample(t *testing.T) {
 	}
 
 	type appendableSamples struct {
-		ts      int64
-		fSample float64
-		h       *histogram.Histogram
-		fh      *histogram.FloatHistogram
-		st      int64
+		ts              int64
+		fSample         float64
+		h               *histogram.Histogram
+		fh              *histogram.FloatHistogram
+		st              int64
+		onlyIfNewSeries bool
 	}
 	for _, tc := range []struct {
 		name              string
@@ -4568,6 +4569,30 @@ func TestHeadAppenderV2_Append_EnableSTAsZeroSample(t *testing.T) {
 				}
 			}(),
 		},
+		{
+			name: "OnlyIfNewSeries suppresses st zero sample for pre-existing series/float",
+			appendableSamples: []appendableSamples{
+				{ts: 100, fSample: 10},
+				{ts: 300, fSample: 20, st: 150, onlyIfNewSeries: true},
+			},
+			// st=150 is in order relative to the ts=100 sample, so absent the
+			// OnlyIfNewSeries gate the zero sample would be injected even
+			// though the series already existed.
+			expectedSamples: []chunks.Sample{
+				sample{t: 100, f: 10},
+				sample{t: 300, f: 20},
+			},
+		},
+		{
+			name: "OnlyIfNewSeries allows st zero sample for a genuinely new series/float",
+			appendableSamples: []appendableSamples{
+				{ts: 100, fSample: 10, st: 1, onlyIfNewSeries: true},
+			},
+			expectedSamples: []chunks.Sample{
+				sample{t: 1, f: 0},
+				sample{t: 100, f: 10},
+			},
+		},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			opts := newTestHeadDefaultOptions(DefaultBlockDuration, false)
@@ -4581,7 +4606,7 @@ func TestHeadAppenderV2_Append_EnableSTAsZeroSample(t *testing.T) {
 			lbls := labels.FromStrings("foo", "bar")
 
 			for _, s := range tc.appendableSamples {
-				_, err := a.Append(0, lbls, s.st, s.ts, s.fSample, s.h, s.fh, storage.AOptions{})
+				_, err := a.Append(0, lbls, s.st, s.ts, s.fSample, s.h, s.fh, storage.AOptions{OnlyIfNewSeries: s.onlyIfNewSeries})
 				require.NoError(t, err)
 			}
 			require.NoError(t, a.Commit())

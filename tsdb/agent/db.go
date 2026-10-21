@@ -904,7 +904,7 @@ func (a *appender) SetOptions(opts *storage.AppendOptions) {
 }
 
 func (a *appender) Append(ref storage.SeriesRef, l labels.Labels, t int64, v float64) (storage.SeriesRef, error) {
-	series, err := a.getOrCreate(chunks.HeadSeriesRef(ref), l)
+	series, _, err := a.getOrCreate(chunks.HeadSeriesRef(ref), l)
 	if err != nil {
 		return 0, err
 	}
@@ -929,11 +929,11 @@ func (a *appender) Append(ref storage.SeriesRef, l labels.Labels, t int64, v flo
 	return storage.SeriesRef(series.ref), nil
 }
 
-func (a *appenderBase) getOrCreate(ref chunks.HeadSeriesRef, l labels.Labels) (series *memSeries, err error) {
+func (a *appenderBase) getOrCreate(ref chunks.HeadSeriesRef, l labels.Labels) (series *memSeries, created bool, err error) {
 	// Fastest path: caller already has a valid ref from a prior append.
 	if ref != 0 {
 		if series = a.series.GetByID(ref); series != nil {
-			return series, nil
+			return series, false, nil
 		}
 	}
 
@@ -941,11 +941,11 @@ func (a *appenderBase) getOrCreate(ref chunks.HeadSeriesRef, l labels.Labels) (s
 	// equivalent validation code in the TSDB's headAppender.
 	l = l.WithoutEmpty()
 	if l.IsEmpty() {
-		return nil, fmt.Errorf("empty labelset: %w", tsdb.ErrInvalidSample)
+		return nil, false, fmt.Errorf("empty labelset: %w", tsdb.ErrInvalidSample)
 	}
 
 	if lbl, dup := l.HasDuplicateLabelNames(); dup {
-		return nil, fmt.Errorf(`label name "%s" is not unique: %w`, lbl, tsdb.ErrInvalidSample)
+		return nil, false, fmt.Errorf(`label name "%s" is not unique: %w`, lbl, tsdb.ErrInvalidSample)
 	}
 
 	hash := l.Hash()
@@ -953,17 +953,16 @@ func (a *appenderBase) getOrCreate(ref chunks.HeadSeriesRef, l labels.Labels) (s
 	// Fast path: series already exists. This avoids burning a ref via
 	// nextRef.Inc() on every append for an already-known series.
 	if series = a.series.GetByHash(hash, l); series != nil {
-		return series, nil
+		return series, false, nil
 	}
 
 	// Note this ref is wasted if a concurrent goroutine inserts the same series first.
 	newRef := chunks.HeadSeriesRef(a.nextRef.Inc())
-	var created bool
 	series, created = a.series.SetUnlessAlreadySet(hash, &memSeries{ref: newRef, lset: l, lastTs: math.MinInt64})
 	if !created {
 		// A concurrent goroutine inserted this series first; skip the WAL
 		// record and metric update.
-		return series, nil
+		return series, false, nil
 	}
 
 	// Known limitation: unlike the TSDB head, agent memSeries has no
@@ -976,7 +975,7 @@ func (a *appenderBase) getOrCreate(ref chunks.HeadSeriesRef, l labels.Labels) (s
 		Labels: l,
 	})
 	a.metrics.numActiveSeries.Inc()
-	return series, nil
+	return series, true, nil
 }
 
 func (a *appender) AppendExemplar(ref storage.SeriesRef, _ labels.Labels, e exemplar.Exemplar) (storage.SeriesRef, error) {
@@ -1051,7 +1050,7 @@ func (a *appender) AppendHistogram(ref storage.SeriesRef, l labels.Labels, t int
 		}
 	}
 
-	series, err := a.getOrCreate(chunks.HeadSeriesRef(ref), l)
+	series, _, err := a.getOrCreate(chunks.HeadSeriesRef(ref), l)
 	if err != nil {
 		return 0, err
 	}
@@ -1107,7 +1106,7 @@ func (a *appender) AppendHistogramSTZeroSample(ref storage.SeriesRef, l labels.L
 		return 0, storage.ErrSTNewerThanSample
 	}
 
-	series, err := a.getOrCreate(chunks.HeadSeriesRef(ref), l)
+	series, _, err := a.getOrCreate(chunks.HeadSeriesRef(ref), l)
 	if err != nil {
 		return 0, err
 	}
@@ -1155,7 +1154,7 @@ func (a *appender) AppendSTZeroSample(ref storage.SeriesRef, l labels.Labels, t,
 		return 0, storage.ErrSTNewerThanSample
 	}
 
-	series, err := a.getOrCreate(chunks.HeadSeriesRef(ref), l)
+	series, _, err := a.getOrCreate(chunks.HeadSeriesRef(ref), l)
 	if err != nil {
 		return 0, err
 	}

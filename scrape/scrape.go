@@ -978,6 +978,7 @@ type scrapeLoop struct {
 	// Options from scrape.Options.
 	enableSTZeroIngestion   bool
 	parseST                 bool // Used by AppenderV2 only.
+	newSeriesZeroSample     bool // Used by AppenderV2 only.
 	enableTypeAndUnitLabels bool
 	enableOpenMetrics2      bool
 	reportExtraMetrics      bool
@@ -1375,6 +1376,7 @@ func newScrapeLoop(opts scrapeLoopOptions) *scrapeLoop {
 		// This will be removed when EnableStartTimestampZeroIngestion is removed.
 		parseST:                 opts.sp.options.ParseST || opts.sp.options.EnableStartTimestampZeroIngestion,
 		synthesizeST:            opts.sp.options.SynthesizeST,
+		newSeriesZeroSample:     opts.sp.options.EnableNewSeriesZeroSample,
 		enableTypeAndUnitLabels: opts.sp.options.EnableTypeAndUnitLabels,
 		enableOpenMetrics2:      opts.sp.options.EnableOpenMetrics2,
 		appendMetadataToWAL:     opts.sp.options.AppendMetadata,

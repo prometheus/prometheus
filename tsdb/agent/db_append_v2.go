@@ -59,7 +59,7 @@ func (a *appenderV2) Append(ref storage.SeriesRef, ls labels.Labels, st, t int64
 	}
 
 	// series references and chunk references are identical for agent mode.
-	s, err := a.getOrCreate(chunks.HeadSeriesRef(ref), ls)
+	s, created, err := a.getOrCreate(chunks.HeadSeriesRef(ref), ls)
 	if err != nil {
 		return 0, err
 	}
@@ -68,7 +68,7 @@ func (a *appenderV2) Append(ref storage.SeriesRef, ls labels.Labels, st, t int64
 	lastTS := s.lastTs
 	s.Unlock()
 
-	if a.opts.EnableSTAsZeroSample && st != 0 {
+	if a.opts.EnableSTAsZeroSample && st != 0 && (!opts.OnlyIfNewSeries || created) {
 		a.bestEffortAppendSTZeroSample(s, ls, lastTS, st, t, h, fh)
 	}
 
