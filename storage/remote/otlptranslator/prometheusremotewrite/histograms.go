@@ -193,7 +193,10 @@ func convertBucketsLayout(bucketCounts []uint64, offset, scaleDown int32, adjust
 	// moving it into a local variable.
 	numBuckets := len(bucketCounts)
 
+	// bucketIdx is the index of the bucket currently being collected in count.
 	bucketIdx := offset>>scaleDown + 1
+	// lastIdx is the index of the last bucket appended to the spans.
+	lastIdx := bucketIdx - 1
 
 	initialOffset := offset
 	if adjustOffset {
@@ -205,18 +208,8 @@ func convertBucketsLayout(bucketCounts []uint64, offset, scaleDown int32, adjust
 		Length: 0,
 	})
 
-	for i := range numBuckets {
-		nextBucketIdx := (int32(i)+offset)>>scaleDown + 1
-		if bucketIdx == nextBucketIdx { // We have not collected enough buckets to merge yet.
-			count += int64(bucketCounts[i])
-			continue
-		}
-		if count == 0 {
-			count = int64(bucketCounts[i])
-			continue
-		}
-
-		gap := nextBucketIdx - bucketIdx - 1
+	appendBucket := func() {
+		gap := bucketIdx - lastIdx - 1
 		if gap > 2 {
 			// We have to create a new span, because we have found a gap
 			// of more than two buckets. The constant 2 is copied from the logic in
@@ -233,28 +226,26 @@ func convertBucketsLayout(bucketCounts []uint64, offset, scaleDown int32, adjust
 			}
 		}
 		appendDelta(count)
+		lastIdx = bucketIdx
+	}
+
+	for i := range numBuckets {
+		nextBucketIdx := (int32(i)+offset)>>scaleDown + 1
+		if bucketIdx == nextBucketIdx { // We have not collected enough buckets to merge yet.
+			count += int64(bucketCounts[i])
+			continue
+		}
+		// Empty buckets are not appended, they are covered by the gap
+		// before the next appended bucket.
+		if count != 0 {
+			appendBucket()
+		}
 		count = int64(bucketCounts[i])
 		bucketIdx = nextBucketIdx
 	}
 
-	// Need to use the last item's index. The offset is scaled and adjusted by 1 as described above.
-	gap := (int32(numBuckets)+offset-1)>>scaleDown + 1 - bucketIdx
-	if gap > 2 {
-		// We have to create a new span, because we have found a gap
-		// of more than two buckets. The constant 2 is copied from the logic in
-		// https://github.com/prometheus/client_golang/blob/27f0506d6ebbb117b6b697d0552ee5be2502c5f2/prometheus/histogram.go#L1296
-		spans = append(spans, histogram.Span{
-			Offset: gap,
-			Length: 0,
-		})
-	} else {
-		// We have found a small gap (or no gap at all).
-		// Insert empty buckets as needed.
-		for range gap {
-			appendDelta(0)
-		}
-	}
-	appendDelta(count)
+	// Always append the last bucket.
+	appendBucket()
 
 	return spans, deltas
 }
