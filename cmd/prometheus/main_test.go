@@ -66,7 +66,7 @@ load 10s
   nh {{schema:0 sum:10 count:5 buckets:[1 2 2]}}x100
 `)
 	t.Cleanup(func() { require.NoError(t, db.Close()) })
-	remoteStorage := remote.NewStorage(nil, prometheus.NewRegistry(), nil, t.TempDir(), time.Second, nil, false)
+	remoteStorage := remote.NewStorage(nil, prometheus.NewRegistry(), nil, t.TempDir(), time.Second, nil, false, false)
 	t.Cleanup(func() { require.NoError(t, remoteStorage.Close()) })
 
 	for _, tc := range []struct {
@@ -1552,7 +1552,9 @@ remote_write:
 
 func TestNativeMetadataFeatureConfiguration(t *testing.T) {
 	t.Cleanup(func() {
-		features.Disable(features.TSDB, "native_metadata")
+		for _, feature := range []string{"native_metadata", "native_metadata_persistence", "native_metadata_forwarding", "metadata_wal_records"} {
+			features.Disable(features.TSDB, feature)
+		}
 	})
 	cfg := flagConfig{featureList: []string{"native-metadata"}}
 	require.NoError(t, cfg.setFeatureListOptions(promslog.NewNopLogger()))
@@ -1560,6 +1562,107 @@ func TestNativeMetadataFeatureConfiguration(t *testing.T) {
 	require.True(t, cfg.web.AppendMetadata)
 	require.True(t, cfg.tsdb.EnableNativeMetadata)
 	require.False(t, cfg.tsdb.ToTSDBOptions().EnableMetadataWALRecords)
+	require.False(t, cfg.tsdb.ToTSDBOptions().EnableNativeMetadataPersistence)
+	require.NoError(t, cfg.validateNativeMetadataFeatures())
+
+	t.Run("persistence and forwarding", func(t *testing.T) {
+		cfg := flagConfig{featureList: []string{"native-metadata,native-metadata-persistence", "native-metadata-forwarding"}}
+		require.NoError(t, cfg.setFeatureListOptions(promslog.NewNopLogger()))
+		require.NoError(t, cfg.validateNativeMetadataFeatures())
+		require.True(t, cfg.tsdb.ToTSDBOptions().EnableNativeMetadataPersistence)
+		require.True(t, cfg.nativeMetadataForwarding)
+	})
+
+	t.Run("required features", func(t *testing.T) {
+		for _, c := range []struct {
+			list []string
+			err  string
+		}{
+			{list: []string{"native-metadata-persistence"}, err: "native-metadata-persistence requires native-metadata"},
+			{list: []string{"native-metadata-forwarding"}, err: "native-metadata-forwarding requires native-metadata-persistence"},
+			{list: []string{"native-metadata,native-metadata-forwarding"}, err: "native-metadata-forwarding requires native-metadata-persistence"},
+		} {
+			cfg := flagConfig{featureList: c.list}
+			require.NoError(t, cfg.setFeatureListOptions(promslog.NewNopLogger()))
+			require.EqualError(t, cfg.validateNativeMetadataFeatures(), c.err, "features %q", c.list)
+		}
+	})
+
+	t.Run("unsupported features", func(t *testing.T) {
+		for _, feature := range []string{"metadata-wal-records", "memory-snapshot-on-shutdown", "fast-startup"} {
+			t.Run(feature, func(t *testing.T) {
+				// In-memory native metadata combines with each.
+				inMemory := flagConfig{featureList: []string{"native-metadata", feature}}
+				require.NoError(t, inMemory.setFeatureListOptions(promslog.NewNopLogger()))
+				require.NoError(t, inMemory.validateNativeMetadataFeatures())
+
+				for _, list := range [][]string{
+					{"native-metadata,native-metadata-persistence," + feature},
+					{feature + ",native-metadata,native-metadata-persistence"},
+					{"native-metadata", "native-metadata-persistence", feature},
+					{feature, "native-metadata,native-metadata-persistence"},
+				} {
+					persisted := flagConfig{featureList: list}
+					require.NoError(t, persisted.setFeatureListOptions(promslog.NewNopLogger()))
+					require.EqualError(t, persisted.validateNativeMetadataFeatures(), "native-metadata-persistence can't be combined with "+feature, "features %q", list)
+				}
+			})
+		}
+	})
+
+	t.Run("startup", func(t *testing.T) {
+		if testing.Short() {
+			t.Skip("skipping test in short mode.")
+		}
+		for _, c := range []struct {
+			name  string
+			args  []string
+			agent bool
+		}{
+			{name: "server mode with one feature list", args: []string{"--enable-feature=native-metadata,native-metadata-persistence,metadata-wal-records"}},
+			{name: "server mode with separate features", args: []string{"--enable-feature=metadata-wal-records", "--enable-feature=native-metadata,native-metadata-persistence"}},
+			{name: "agent mode", args: []string{"--enable-feature=native-metadata,native-metadata-persistence,metadata-wal-records"}, agent: true},
+		} {
+			t.Run(c.name, func(t *testing.T) {
+				t.Parallel()
+				args := append([]string{"-test.main", "--web.listen-address=0.0.0.0:0"}, c.args...)
+				dataDir := filepath.Join(t.TempDir(), "data")
+				if c.agent {
+					args = append(args, "--agent", "--config.file="+agentConfig, "--storage.agent.path="+dataDir)
+				} else {
+					args = append(args, "--config.file="+promConfig, "--storage.tsdb.path="+dataDir)
+				}
+				prom := exec.Command(promPath, args...)
+				var output bytes.Buffer
+				prom.Stderr = &output
+				require.NoError(t, prom.Start())
+				done := make(chan error, 1)
+				go func() { done <- prom.Wait() }()
+
+				if c.agent {
+					// Agent mode never enables native metadata, so it starts.
+					select {
+					case err := <-done:
+						t.Fatalf("prometheus agent exited early: %v\n%s", err, output.String())
+					case <-time.After(startupTime):
+						require.NoError(t, prom.Process.Kill())
+						<-done
+					}
+					return
+				}
+				select {
+				case <-done:
+				case <-time.After(startupTime):
+					require.NoError(t, prom.Process.Kill())
+					<-done
+					t.Fatalf("prometheus started:\n%s", output.String())
+				}
+				require.Equal(t, 1, prom.ProcessState.ExitCode())
+				require.Contains(t, output.String(), "native-metadata-persistence can't be combined with metadata-wal-records")
+				require.NoDirExists(t, dataDir, "the check precedes opening storage")
+			})
+		}
+	})
 }
 
 func TestReadyStorageNativeMetricMetadata(t *testing.T) {

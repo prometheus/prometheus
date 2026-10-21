@@ -365,3 +365,72 @@ from the checkpoint, rather than solely re-derived from block max times on disk.
 │ └────────────────┘ │
 └────────────────────┘
 ```
+
+#### Native metadata records
+
+Native metadata records hold series' native metric metadata histories. They are
+written only with the experimental `native-metadata-persistence` feature, in a
+format that may still change. Each point of an entry refers to a value of its
+record, defined at its first use.
+
+```
+┌─────────────────────────────────────────────────────┐
+│ type = 15 <1b>                                      │
+├─────────────────────────────────────────────────────┤
+│ format = 1 <1b>                                     │
+├─────────────────────────────────────────────────────┤
+│ base <varint>                                       │
+├─────────────────────────────────────────────────────┤
+│ num_entries <uvarint>                               │
+├─────────────────────────────────────────────────────┤
+│ ┌─────────────────────────────────────────────────┐ │
+│ │ kind <1b>                                       │ │
+│ ├─────────────────────────────────────────────────┤ │
+│ │ series_id_delta <varint>                        │ │
+│ ├─────────────────────────────────────────────────┤ │
+│ │ num_points <uvarint>                            │ │
+│ ├─────────────────────────────────────────────────┤ │
+│ │ ┌─────────────────────────────────────────────┐ │ │
+│ │ │ effective_from_delta <uvarint>              │ │ │
+│ │ ├─────────────────────────────────────────────┤ │ │
+│ │ │ value <uvarint>                             │ │ │
+│ │ ├─────────────────────────────────────────────┤ │ │
+│ │ │ metric_type <1b>           (if value = 0)   │ │ │
+│ │ ├──────────────────────┬──────────────────────┤ │ │
+│ │ │ len(unit) <uvarint>  │ unit <bytes>         │ │ │
+│ │ ├──────────────────────┼──────────────────────┤ │ │
+│ │ │ len(help) <uvarint>  │ help <bytes>         │ │ │
+│ │ └──────────────────────┴──────────────────────┘ │ │
+│ │                    . . .                        │ │
+│ └─────────────────────────────────────────────────┘ │
+│                       . . .                         │
+└─────────────────────────────────────────────────────┘
+```
+
+Varints are zigzag-encoded. The base is the record's smallest effective time,
+in milliseconds, or 0 without points. A point's effective time is the base plus
+its delta, and an entry's series ID is the previous entry's plus its delta,
+both modulo 2^64. A point's value of 0 defines the record's next value, whose
+metric type, unit and help follow; a value of n ≥ 1 refers to the n-th value
+defined.
+
+The kind byte's lowest 3 bits select the entry's kind:
+
+* `0`: a group, one series' points from one transaction, merged into its history as one;
+* `1`: an override, which replaces the series' history with its points, at most 5, or with none;
+* `2`: a provenance marker;
+* `3`: a boundary.
+
+Bit 3 marks an override whose series had older versions evicted, and bit 4 an
+override that declares its series ID the current one of its labels from its
+position on. Groups and overrides have a non-zero series ID, groups have
+points, and an entry's effective times strictly increase. A provenance marker
+or a boundary is its record's only entry, with series ID 0 and no points.
+
+A checkpoint's provenance marker, if it has one, precedes its native metadata
+records. Readers of a checkpoint without one skip native metadata entries until
+the next boundary, which startup writes if needed. Metadata records apply in
+either case.
+
+A record whose format, entry kinds or flags a reader doesn't know is
+unsupported. One that is otherwise invalid is corrupt.

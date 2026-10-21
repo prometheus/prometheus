@@ -809,7 +809,7 @@ func TestWALReplay_AppendV2(t *testing.T) {
 
 func Test_ExistingWAL_NextRef_AppendV2(t *testing.T) {
 	dbDir := t.TempDir()
-	rs := remote.NewStorage(promslog.NewNopLogger(), nil, startTime, dbDir, time.Second*30, nil, false)
+	rs := remote.NewStorage(promslog.NewNopLogger(), nil, startTime, dbDir, time.Second*30, nil, false, false)
 	defer func() {
 		require.NoError(t, rs.Close())
 	}()
@@ -1616,7 +1616,7 @@ func TestMetadataCheckpointing_AppenderV2(t *testing.T) {
 				err = Checkpoint(promslog.NewNopLogger(), s.wal, 0, 1000, s.series.allSeries(), deletedSeriesIter(s.deleted, 0))
 				require.NoError(t, err)
 			} else {
-				_, err = wlog.Checkpoint(promslog.NewNopLogger(), s.wal, first, 0, s.keepSeriesInWALCheckpointFn(0), 0, false)
+				_, err = wlog.Checkpoint(promslog.NewNopLogger(), s.wal, first, 0, s.keepSeriesInWALCheckpointFn(0), 0, false, false)
 				require.NoError(t, err)
 			}
 

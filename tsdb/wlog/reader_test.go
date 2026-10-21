@@ -558,3 +558,79 @@ func closeAll(cs []io.Closer) error {
 	}
 	return errors.Join(errs...)
 }
+
+func TestReader_TornRecord(t *testing.T) {
+	// writeSegment writes a small record and then one spanning pages, and
+	// cuts the segment at size bytes.
+	writeSegment := func(t *testing.T, cut func(firstEnd int64) int64) (string, int64) {
+		dir := t.TempDir()
+		w, err := NewSize(nil, nil, dir, 4*pageSize, compression.None)
+		require.NoError(t, err)
+		require.NoError(t, w.Log([]byte("first")))
+		require.NoError(t, w.Log(make([]byte, 2*pageSize)))
+		require.NoError(t, w.Close())
+		name := SegmentName(dir, 0)
+		// The first record and its header fill the start of the first page.
+		firstEnd := int64(recordHeaderSize + len("first"))
+		require.NoError(t, os.Truncate(name, cut(firstEnd)))
+		return name, firstEnd
+	}
+	read := func(t *testing.T, name string) (int, error) {
+		s, err := OpenReadSegment(name)
+		require.NoError(t, err)
+		defer s.Close()
+		r := NewReader(NewSegmentBufReader(s))
+		n := 0
+		for r.Next() {
+			n++
+		}
+		return n, r.Err()
+	}
+
+	t.Run("it reports where the torn record starts", func(t *testing.T) {
+		for _, cut := range []func(int64) int64{
+			func(firstEnd int64) int64 { return firstEnd + recordHeaderSize + 10 },
+			func(int64) int64 { return pageSize + 100 },
+		} {
+			name, firstEnd := writeSegment(t, cut)
+			n, err := read(t, name)
+			require.Equal(t, 1, n)
+			require.ErrorIs(t, err, ErrTornRecord)
+			var torn *TornRecordError
+			require.ErrorAs(t, err, &torn)
+			require.Equal(t, firstEnd, torn.Start)
+			var corruption *CorruptionErr
+			require.ErrorAs(t, err, &corruption, "it is still corruption to upstream's repair")
+		}
+	})
+
+	t.Run("without a complete record before it, it starts where reading did", func(t *testing.T) {
+		// Only the record spanning pages, cut after its first page, as a crash
+		// between its page writes leaves it.
+		dir := t.TempDir()
+		w, err := NewSize(nil, nil, dir, 4*pageSize, compression.None)
+		require.NoError(t, err)
+		require.NoError(t, w.Log(make([]byte, 2*pageSize)))
+		require.NoError(t, w.Close())
+		name := SegmentName(dir, 0)
+		require.NoError(t, os.Truncate(name, pageSize))
+		n, err := read(t, name)
+		require.Zero(t, n)
+		var torn *TornRecordError
+		require.ErrorAs(t, err, &torn)
+		require.Zero(t, torn.Start)
+	})
+
+	t.Run("other corruption isn't torn", func(t *testing.T) {
+		name, _ := writeSegment(t, func(firstEnd int64) int64 { return firstEnd + recordHeaderSize + pageSize })
+		f, err := os.OpenFile(name, os.O_WRONLY, 0o666)
+		require.NoError(t, err)
+		// A flipped byte in the first record's data fails its checksum.
+		_, err = f.WriteAt([]byte{'x'}, recordHeaderSize)
+		require.NoError(t, err)
+		require.NoError(t, f.Close())
+		_, err = read(t, name)
+		require.Error(t, err)
+		require.NotErrorIs(t, err, ErrTornRecord)
+	})
+}

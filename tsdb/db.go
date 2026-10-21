@@ -266,6 +266,10 @@ type Options struct {
 	// EnableNativeMetadata enables experimental in-memory native metadata.
 	EnableNativeMetadata bool
 
+	// EnableNativeMetadataPersistence persists native metadata histories in
+	// the WAL, so that they survive restarts. It requires EnableNativeMetadata.
+	EnableNativeMetadataPersistence bool
+
 	// BlockCompactionExcludeFunc is a function which returns true for blocks that should NOT be compacted.
 	// It's passed down to the TSDB compactor.
 	BlockCompactionExcludeFunc BlockExcludeFilterFunc
@@ -1002,6 +1006,57 @@ func validateOpts(opts *Options, rngs []int64) (*Options, []int64, error) {
 	return opts, rngs, nil
 }
 
+// closeAfterFailedInit releases what open loaded before the Head's
+// initialization failed: it cancels the compactor's context, and closes the
+// loaded blocks and the Head, whose WAL lands what a failed write retained.
+// The DB never ran, and open's deferred cleanup closes none of these once a
+// Head exists.
+func (db *DB) closeAfterFailedInit() error {
+	db.compactCancel()
+	db.mtx.RLock()
+	blocks := db.blocks
+	db.mtx.RUnlock()
+	var g errgroup.Group
+	for _, b := range blocks {
+		g.Go(b.Close)
+	}
+	return errors.Join(g.Wait(), db.head.Close())
+}
+
+// initHead initializes h from its WAL and WBL. It takes a replay error for
+// corruption and repairs it, except for a WAL error with native metadata
+// persisted: that fails the open, since repairing and continuing would leave
+// native metadata unseeded and without its startup handoffs. The WBL holds no
+// native metadata and is replayed after them, so it is repaired in any case.
+func initHead(h *Head, minValidTime int64, wal, wbl *wlog.WL, logger *slog.Logger) error {
+	initErr := h.Init(minValidTime)
+	if initErr == nil {
+		return nil
+	}
+	e, wblErr := errors.AsType[*errLoadWbl](initErr)
+	if h.opts.EnableNativeMetadataPersistence && !wblErr {
+		if _, ok := errors.AsType[*wlog.CorruptionErr](initErr); ok {
+			h.metrics.walCorruptionsTotal.Inc()
+		}
+		return fmt.Errorf("initialize the head: %w", initErr)
+	}
+	h.metrics.walCorruptionsTotal.Inc()
+	if wblErr {
+		logger.Warn("Encountered WBL read error, attempting repair", "err", initErr)
+		if err := wbl.Repair(e.err); err != nil {
+			return fmt.Errorf("repair corrupted WBL: %w", err)
+		}
+		logger.Info("Successfully repaired WBL")
+		return nil
+	}
+	logger.Warn("Encountered WAL read error, attempting repair", "err", initErr)
+	if err := wal.Repair(initErr); err != nil {
+		return fmt.Errorf("repair corrupted WAL: %w", err)
+	}
+	logger.Info("Successfully repaired WAL")
+	return nil
+}
+
 // open returns a new DB in the given directory.
 // It initializes the lockfile, WAL, compactor, and Head (by replaying the WAL), and runs the database.
 // It is not safe to open more than one DB in the same directory.
@@ -1182,6 +1237,7 @@ func open(dir string, l *slog.Logger, r prometheus.Registerer, opts *Options, rn
 	headOpts.EnableHistogramSTEncoding.Store(opts.EnableHistogramSTEncoding)
 	headOpts.EnableMetadataWALRecords = opts.EnableMetadataWALRecords
 	headOpts.EnableNativeMetadata = opts.EnableNativeMetadata
+	headOpts.EnableNativeMetadataPersistence = opts.EnableNativeMetadataPersistence
 	headOpts.EnableFastStartup = opts.EnableFastStartup
 	if opts.WALReplayConcurrency > 0 {
 		headOpts.WALReplayConcurrency = opts.WALReplayConcurrency
@@ -1237,21 +1293,11 @@ func open(dir string, l *slog.Logger, r prometheus.Registerer, opts *Options, rn
 		}
 	}
 
-	if initErr := db.head.Init(minValidTime); initErr != nil {
-		db.head.metrics.walCorruptionsTotal.Inc()
-		if e, ok := errors.AsType[*errLoadWbl](initErr); ok {
-			db.logger.Warn("Encountered WBL read error, attempting repair", "err", initErr)
-			if err := wbl.Repair(e.err); err != nil {
-				return nil, fmt.Errorf("repair corrupted WBL: %w", err)
-			}
-			db.logger.Info("Successfully repaired WBL")
-		} else {
-			db.logger.Warn("Encountered WAL read error, attempting repair", "err", initErr)
-			if err := wal.Repair(initErr); err != nil {
-				return nil, fmt.Errorf("repair corrupted WAL: %w", err)
-			}
-			db.logger.Info("Successfully repaired WAL")
+	if err := initHead(db.head, minValidTime, wal, wbl, db.logger); err != nil {
+		if opts.EnableNativeMetadataPersistence {
+			err = errors.Join(err, db.closeAfterFailedInit())
 		}
+		return nil, err
 	}
 
 	if db.head.MinOOOTime() != int64(math.MaxInt64) {

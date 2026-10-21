@@ -116,6 +116,7 @@ type Head struct {
 	wlReplayHistogramsPool      zeropool.Pool[[]record.RefHistogramSample]
 	wlReplayFloatHistogramsPool zeropool.Pool[[]record.RefFloatHistogramSample]
 	wlReplayMetadataPool        zeropool.Pool[[]record.RefMetadata]
+	wlReplayNativeMetadataPool  zeropool.Pool[*nativeMetadataReplayRecord]
 	wlReplayMmapMarkersPool     zeropool.Pool[[]record.RefMmapMarker]
 
 	// All series addressable by their ID or hash.
@@ -171,6 +172,10 @@ type Head struct {
 	// testAfterSeriesLookup is invoked after getByID in appenders, before the
 	// series is locked. Tests use it to race GC against a resolved pointer.
 	testAfterSeriesLookup func(*memSeries)
+
+	// nativeMetadataRepairs is set with native metadata persistence.
+	nativeMetadataRepairs   *nativeMetadataRepairs
+	nativeMetadataTestHooks *nativeMetadataTestHooks
 }
 
 type ExemplarStorage interface {
@@ -249,6 +254,10 @@ type HeadOptions struct {
 	// EnableNativeMetadata enables experimental in-memory native metadata.
 	EnableNativeMetadata bool
 
+	// EnableNativeMetadataPersistence persists native metadata histories in
+	// the WAL. It requires EnableNativeMetadata.
+	EnableNativeMetadataPersistence bool
+
 	// EnableFastStartup enables scraping in parallel with WAL replay but with queries still disabled.
 	EnableFastStartup bool
 }
@@ -319,6 +328,9 @@ func NewHead(r prometheus.Registerer, l *slog.Logger, wal, wbl *wlog.WL, opts *H
 	if opts.ChunkRange < 1 {
 		return nil, fmt.Errorf("invalid chunk range %d", opts.ChunkRange)
 	}
+	if err := validateNativeMetadataOptions(opts); err != nil {
+		return nil, err
+	}
 	if opts.SeriesCallback == nil {
 		opts.SeriesCallback = &noopSeriesLifecycleCallback{}
 	}
@@ -347,6 +359,9 @@ func NewHead(r prometheus.Registerer, l *slog.Logger, wal, wbl *wlog.WL, opts *H
 	}
 	if opts.EnableNativeMetadata {
 		h.nativeMetricMetadata = newNativeMetricMetadataStore()
+	}
+	if opts.EnableNativeMetadataPersistence {
+		h.nativeMetadataRepairs = newNativeMetadataRepairs()
 	}
 	if err := h.resetInMemoryState(); err != nil {
 		return nil, err
@@ -417,6 +432,9 @@ func (h *Head) resetInMemoryState() error {
 	if h.nativeMetricMetadata != nil {
 		h.nativeMetricMetadata.reset()
 	}
+	if h.nativeMetadataRepairs != nil {
+		h.nativeMetadataRepairs.reset()
+	}
 	h.chunkRange.Store(h.opts.ChunkRange)
 	h.minTime.Store(math.MaxInt64)
 	h.maxTime.Store(math.MinInt64)
@@ -435,6 +453,7 @@ func (h *Head) resetWLReplayResources() {
 	h.wlReplayHistogramsPool = zeropool.Pool[[]record.RefHistogramSample]{}
 	h.wlReplayFloatHistogramsPool = zeropool.Pool[[]record.RefFloatHistogramSample]{}
 	h.wlReplayMetadataPool = zeropool.Pool[[]record.RefMetadata]{}
+	h.wlReplayNativeMetadataPool = zeropool.Pool[*nativeMetadataReplayRecord]{}
 	h.wlReplayMmapMarkersPool = zeropool.Pool[[]record.RefMmapMarker]{}
 }
 
@@ -473,6 +492,17 @@ type headMetrics struct {
 	mmapChunksTotal           prometheus.Counter
 	walReplayUnknownRefsTotal *prometheus.CounterVec
 	wblReplayUnknownRefsTotal *prometheus.CounterVec
+
+	nativeMetadataUntrustedEntries    prometheus.Counter
+	nativeMetadataBoundariesWritten   prometheus.Counter
+	nativeMetadataOverridesWritten    *prometheus.CounterVec
+	nativeMetadataRepairRegistrations *prometheus.CounterVec
+	nativeMetadataRepairsPending      prometheus.Gauge
+	nativeMetadataRepairsDischarged   prometheus.Counter
+	nativeMetadataRepairsDropped      prometheus.Counter
+	nativeMetadataRepairViolations    prometheus.Counter
+	nativeMetadataHandoffsWritten     *prometheus.CounterVec
+	nativeMetadataUndeclaredHandoffs  prometheus.Counter
 }
 
 const (
@@ -634,6 +664,46 @@ func newHeadMetrics(h *Head, r prometheus.Registerer) *headMetrics {
 			Name: "prometheus_tsdb_wal_replay_unknown_refs_total",
 			Help: "Total number of unknown series references encountered during WAL replay.",
 		}, []string{"type"}),
+		nativeMetadataUntrustedEntries: prometheus.NewCounter(prometheus.CounterOpts{
+			Name: "prometheus_tsdb_native_metric_metadata_untrusted_wal_entries_total",
+			Help: "Total number of native metadata WAL entries that replay or checkpoints skipped, because they followed a checkpoint written without native metadata persistence.",
+		}),
+		nativeMetadataBoundariesWritten: prometheus.NewCounter(prometheus.CounterOpts{
+			Name: "prometheus_tsdb_native_metric_metadata_wal_boundaries_written_total",
+			Help: "Total number of native metadata boundaries written to the WAL at startup, after native metadata written without persistence was skipped.",
+		}),
+		nativeMetadataOverridesWritten: prometheus.NewCounterVec(prometheus.CounterOpts{
+			Name: "prometheus_tsdb_native_metric_metadata_wal_overrides_written_total",
+			Help: "Total number of native metadata overrides written to the WAL at runtime, by cause.",
+		}, []string{"cause"}),
+		nativeMetadataRepairRegistrations: prometheus.NewCounterVec(prometheus.CounterOpts{
+			Name: "prometheus_tsdb_native_metric_metadata_repair_registrations_total",
+			Help: "Total number of times a series' native metadata was found to need a WAL repair, by cause.",
+		}, []string{"cause"}),
+		nativeMetadataRepairsPending: prometheus.NewGauge(prometheus.GaugeOpts{
+			Name: "prometheus_tsdb_native_metric_metadata_repairs_pending",
+			Help: "Number of series whose native metadata WAL repair is outstanding. Each is kept in the head until it is written.",
+		}),
+		nativeMetadataRepairsDischarged: prometheus.NewCounter(prometheus.CounterOpts{
+			Name: "prometheus_tsdb_native_metric_metadata_repairs_discharged_total",
+			Help: "Total number of native metadata WAL repairs written and discharged.",
+		}),
+		nativeMetadataRepairsDropped: prometheus.NewCounter(prometheus.CounterOpts{
+			Name: "prometheus_tsdb_native_metric_metadata_repairs_dropped_total",
+			Help: "Total number of native metadata WAL repairs dropped at shutdown.",
+		}),
+		nativeMetadataRepairViolations: prometheus.NewCounter(prometheus.CounterOpts{
+			Name: "prometheus_tsdb_native_metric_metadata_repair_invariant_violations_total",
+			Help: "Total number of native metadata repair invariant violations. Any is a bug.",
+		}),
+		nativeMetadataHandoffsWritten: prometheus.NewCounterVec(prometheus.CounterOpts{
+			Name: "prometheus_tsdb_native_metric_metadata_wal_handoffs_written_total",
+			Help: "Total number of native metadata handoffs written to the WAL, at startup or by checkpoints.",
+		}, []string{"cause"}),
+		nativeMetadataUndeclaredHandoffs: prometheus.NewCounter(prometheus.CounterOpts{
+			Name: "prometheus_tsdb_native_metric_metadata_undeclared_handoffs_total",
+			Help: "Total number of native metadata handoffs for refs without an earlier series record, applied by replay or checkpoints as overrides that declare nothing.",
+		}),
 		wblReplayUnknownRefsTotal: prometheus.NewCounterVec(prometheus.CounterOpts{
 			Name: "prometheus_tsdb_wbl_replay_unknown_refs_total",
 			Help: "Total number of unknown series references encountered during WBL replay.",
@@ -714,6 +784,20 @@ func newHeadMetrics(h *Head, r prometheus.Registerer) *headMetrics {
 			m.walReplayUnknownRefsTotal,
 			m.wblReplayUnknownRefsTotal,
 		)
+		if h.opts.EnableNativeMetadataPersistence {
+			r.MustRegister(
+				m.nativeMetadataUntrustedEntries,
+				m.nativeMetadataBoundariesWritten,
+				m.nativeMetadataOverridesWritten,
+				m.nativeMetadataRepairRegistrations,
+				m.nativeMetadataRepairsPending,
+				m.nativeMetadataRepairsDischarged,
+				m.nativeMetadataRepairsDropped,
+				m.nativeMetadataRepairViolations,
+				m.nativeMetadataHandoffsWritten,
+				m.nativeMetadataUndeclaredHandoffs,
+			)
+		}
 		if store := h.nativeMetricMetadata; store != nil {
 			r.MustRegister(
 				prometheus.NewGaugeFunc(prometheus.GaugeOpts{
@@ -926,6 +1010,10 @@ func (h *Head) Init(minValidTime int64) error {
 
 	syms := labels.NewSymbolTable() // One table for the whole WAL.
 	multiRef := map[chunks.HeadSeriesRef]chunks.HeadSeriesRef{}
+	var nativeReplay *nativeMetadataReplay
+	if h.opts.EnableNativeMetadataPersistence {
+		nativeReplay = newNativeMetadataReplay()
+	}
 	if err == nil && startFrom >= snapIdx {
 		sr, err := wlog.NewSegmentsReader(dir)
 		if err != nil {
@@ -937,9 +1025,12 @@ func (h *Head) Init(minValidTime int64) error {
 			}
 		}()
 
+		if nativeReplay != nil {
+			nativeReplay.trust.StartCheckpoint()
+		}
 		// A corrupted checkpoint is a hard error for now and requires user
 		// intervention. There's likely little data that can be recovered anyway.
-		if err := h.loadWAL(wlog.NewReader(sr), syms, multiRef, mmappedChunks, oooMmappedChunks, lastMmapRef); err != nil {
+		if err := h.loadWAL(wlog.NewReader(sr), syms, multiRef, mmappedChunks, oooMmappedChunks, lastMmapRef, nativeReplay); err != nil {
 			return fmt.Errorf("backfill checkpoint: %w", err)
 		}
 		h.updateWALReplayStatusRead(startFrom)
@@ -954,6 +1045,8 @@ func (h *Head) Init(minValidTime int64) error {
 		startFrom = snapIdx
 	}
 	// Backfill segments from the most recent checkpoint onwards.
+	var tornTail *wlog.TornRecordError
+	tornSegment := -1
 	for i := startFrom; i <= endAt; i++ {
 		walSegmentStart := time.Now()
 		s, err := wlog.OpenReadSegment(wlog.SegmentName(h.wal.Dir(), i))
@@ -973,15 +1066,39 @@ func (h *Head) Init(minValidTime int64) error {
 		if err != nil {
 			return fmt.Errorf("segment reader (offset=%d): %w", offset, err)
 		}
-		err = h.loadWAL(wlog.NewReader(sr), syms, multiRef, mmappedChunks, oooMmappedChunks, lastMmapRef)
+		err = h.loadWAL(wlog.NewReader(sr), syms, multiRef, mmappedChunks, oooMmappedChunks, lastMmapRef, nativeReplay)
 		if err := sr.Close(); err != nil {
 			h.logger.Warn("Error while closing the wal segments reader", "err", err)
 		}
 		if err != nil {
-			return err
+			// With native metadata persisted, corruption fails the replay
+			// rather than being repaired, except for an eligible torn final
+			// record: replay has applied every record before it, and ends
+			// the segment there.
+			torn, eligible := h.eligibleTornWALTail(err, i, endAt)
+			if !eligible {
+				return err
+			}
+			h.logger.Warn("Ending WAL replay at a torn final record", "segment", i, "offset", torn.Start)
+			tornTail, tornSegment = torn, i
 		}
 		h.logger.Info("WAL segment loaded", "segment", i, "maxSegment", endAt, "duration", time.Since(walSegmentStart).String())
 		h.updateWALReplayStatusRead(i)
+	}
+	if tornTail != nil {
+		// Only after the whole replay, and before anything is written.
+		if err := h.truncateTornWALTail(tornSegment, tornTail.Start); err != nil {
+			return err
+		}
+	}
+	if nativeReplay != nil {
+		h.seedNativeMetricMetadata(nativeReplay, multiRef)
+		if err := h.writeNativeMetadataBoundary(nativeReplay); err != nil {
+			return err
+		}
+		if err := h.writeNativeMetadataHandoffs(multiRef); err != nil {
+			return err
+		}
 	}
 	walReplayDuration := time.Since(walReplayStart)
 
@@ -1757,13 +1874,17 @@ func (h *Head) truncateWAL(mint int64) error {
 	}
 
 	h.metrics.checkpointCreationTotal.Inc()
-	if _, err = wlog.Checkpoint(h.logger, h.wal, first, last, h.keepSeriesInWALCheckpointFn(mint), mint, h.opts.EnableSTStorage.Load()); err != nil {
+	stats, err := wlog.Checkpoint(h.logger, h.wal, first, last, h.keepSeriesInWALCheckpointFn(mint), mint, h.opts.EnableSTStorage.Load(), h.opts.EnableNativeMetadataPersistence)
+	if err != nil {
 		h.metrics.checkpointCreationFail.Inc()
 		if _, ok := errors.AsType[*wlog.CorruptionErr](err); ok {
 			h.metrics.walCorruptionsTotal.Inc()
 		}
 		return fmt.Errorf("create checkpoint: %w", err)
 	}
+	h.metrics.nativeMetadataUntrustedEntries.Add(float64(stats.UntrustedMetadata))
+	h.metrics.nativeMetadataHandoffsWritten.WithLabelValues(nativeMetadataHandoffCheckpoint).Add(float64(stats.Handoffs))
+	h.metrics.nativeMetadataUndeclaredHandoffs.Add(float64(stats.UndeclaredHandoffs))
 	if err := h.wal.Truncate(last + 1); err != nil {
 		// If truncating fails, we'll just try again at the next checkpoint.
 		// Leftover segments will just be ignored in the future if there's a checkpoint
@@ -2250,6 +2371,9 @@ func (h *Head) Close() error {
 	defer h.closedMtx.Unlock()
 	h.closed = true
 
+	// Write or drop outstanding native metadata repairs before the WAL closes.
+	h.stopNativeMetadataRepairs()
+
 	// Stop the background series_state.json writer.
 	if h.opts.EnableFastStartup && h.seriesStateQuit != nil {
 		close(h.seriesStateQuit)
@@ -2505,7 +2629,7 @@ type stripeSeries struct {
 }
 
 type stripeLock struct {
-	sync.RWMutex
+	stripeMutex
 	// Padding to avoid multiple locks being on the same cache line.
 	_ [40]byte
 }
@@ -2632,7 +2756,7 @@ func (s *stripeSeries) gc(mint int64, minOOOMmapRef chunks.ChunkDiskMapperRef) (
 		deleted[storage.SeriesRef(series.ref)] = struct{}{}
 		series.setGCed()
 		if native := series.nativeMetadataLocked(); native != nil {
-			nativeVersions += int64(len(native.older) + 1)
+			nativeVersions += int64(len(native.Older) + 1)
 		}
 		series.lset.Range(func(l labels.Label) { affected[l] = struct{}{} })
 		s.hashes[hashShard].del(hash, series.ref)
@@ -2757,7 +2881,7 @@ func (h *Head) deleteSeriesByID(refs []chunks.HeadSeriesRef) {
 		if h.nativeMetricMetadata != nil {
 			series.Lock()
 			if native := series.nativeMetadataLocked(); native != nil {
-				nativeVersions += int64(len(native.older) + 1)
+				nativeVersions += int64(len(native.Older) + 1)
 			}
 			series.Unlock()
 		}
@@ -2875,7 +2999,7 @@ func (s *stripeSeries) gcSeries(seriesRefs []storage.SeriesRef, maxt int64, shou
 		// Keep head chunks intact for readers that still reference the series.
 		series.setGCed()
 		if native := series.nativeMetadataLocked(); native != nil {
-			nativeVersions += int64(len(native.older) + 1)
+			nativeVersions += int64(len(native.Older) + 1)
 		}
 		stale, isHist, buckets := series.sampleState()
 		if stale {
@@ -3044,8 +3168,8 @@ type memSeries struct {
 	// been explicitly enabled in TSDB.
 	shardHash uint64
 
-	// Everything after here should only be accessed with the lock held.
-	sync.Mutex
+	// Fields below require the lock unless documented otherwise.
+	seriesMutex
 
 	lset labels.Labels // Locking required with -tags dedupelabels, not otherwise.
 	// Lazily allocated after either metadata path commits state for this series.
@@ -3129,19 +3253,40 @@ func (s *memSeries) setLegacyMetadataLocked(m unique.Handle[metadata.Metadata]) 
 	s.ensureMetadataLocked().legacy = m
 }
 
+// nativeMetadataLocked returns the series' native state, or nil if it has no
+// versions.
 func (s *memSeries) nativeMetadataLocked() *nativeSeriesMetadata {
-	if s.metadata == nil {
+	if s.metadata == nil || s.metadata.native == nil || s.metadata.native.Metadata == nil {
 		return nil
 	}
 	return s.metadata.native
 }
 
-// initNativeMetadataLocked attaches empty native state to the series, keeping
-// any sidecar already published by legacy metadata.
+// initNativeMetadataLocked returns empty native state for a series without
+// versions, keeping any sidecar already published by legacy metadata, and the
+// epoch of any native state without versions.
 func (s *memSeries) initNativeMetadataLocked() *nativeSeriesMetadata {
-	native := &nativeSeriesMetadata{}
-	s.ensureMetadataLocked().native = native
-	return native
+	md := s.ensureMetadataLocked()
+	if md.native == nil {
+		md.native = &nativeSeriesMetadata{}
+	}
+	return md.native
+}
+
+// nativeMetadataEpochLocked returns the series' native metadata epoch, which
+// is zero until it first changes.
+func (s *memSeries) nativeMetadataEpochLocked() uint32 {
+	if s.metadata == nil || s.metadata.native == nil {
+		return 0
+	}
+	return s.metadata.native.epoch
+}
+
+// bumpNativeMetadataEpochLocked changes the series' native metadata epoch. A
+// series without native state gets native state without versions to hold it,
+// which only the epoch accessors and initNativeMetadataLocked see.
+func (s *memSeries) bumpNativeMetadataEpochLocked() {
+	s.initNativeMetadataLocked().epoch++
 }
 
 // Layout of memSeries.state. After construction, it is only read or written with

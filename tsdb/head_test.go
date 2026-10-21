@@ -135,6 +135,13 @@ func populateTestWL(t testing.TB, w *wlog.WL, recs []any, buf []byte, enableSTSt
 			buf = enc.MmapMarkers(v, buf)
 		case []record.RefMetadata:
 			buf = enc.Metadata(v, buf)
+		case record.CompactNativeMetadata:
+			buf = enc.CompactNativeMetadata(v.Values, v.Entries, buf)
+		case []nativeMetadataEntryForTest:
+			rec := compactNativeMetadataForTest(v...)
+			buf = enc.CompactNativeMetadata(rec.Values, rec.Entries, buf)
+		case []byte:
+			buf = append(buf, v...)
 		default:
 			continue
 		}

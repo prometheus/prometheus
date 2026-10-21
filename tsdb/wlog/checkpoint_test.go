@@ -15,6 +15,7 @@
 package wlog
 
 import (
+	"errors"
 	"fmt"
 	"math"
 	"os"
@@ -130,7 +131,7 @@ func TestReadMinValidTime_AfterCheckpoint(t *testing.T) {
 	require.NoError(t, err)
 	defer w.Close()
 
-	_, err = Checkpoint(promslog.NewNopLogger(), w, 0, 1000, func(chunks.HeadSeriesRef) bool { return true }, 100, false)
+	_, err = Checkpoint(promslog.NewNopLogger(), w, 0, 1000, func(chunks.HeadSeriesRef) bool { return true }, 100, false, false)
 	require.NoError(t, err)
 
 	mint, ok, err := ReadMinValidTime(dir)
@@ -145,10 +146,10 @@ func TestReadMinValidTime_ReflectsOnlyLatestCheckpoint(t *testing.T) {
 	require.NoError(t, err)
 	defer w.Close()
 
-	_, err = Checkpoint(promslog.NewNopLogger(), w, 0, 1000, func(chunks.HeadSeriesRef) bool { return true }, 100, false)
+	_, err = Checkpoint(promslog.NewNopLogger(), w, 0, 1000, func(chunks.HeadSeriesRef) bool { return true }, 100, false, false)
 	require.NoError(t, err)
 
-	_, err = Checkpoint(promslog.NewNopLogger(), w, 1001, 2000, func(chunks.HeadSeriesRef) bool { return true }, 200, false)
+	_, err = Checkpoint(promslog.NewNopLogger(), w, 1001, 2000, func(chunks.HeadSeriesRef) bool { return true }, 200, false, false)
 	require.NoError(t, err)
 
 	// The second checkpoint's own mint must win, and the first checkpoint's carried-forward
@@ -187,7 +188,7 @@ func TestCheckpoint_MinValidTimeNeverRegressesAcrossRestarts(t *testing.T) {
 	require.NoError(t, err)
 	defer w.Close()
 
-	_, err = Checkpoint(promslog.NewNopLogger(), w, 0, 1000, func(chunks.HeadSeriesRef) bool { return true }, 5000, false)
+	_, err = Checkpoint(promslog.NewNopLogger(), w, 0, 1000, func(chunks.HeadSeriesRef) bool { return true }, 5000, false, false)
 	require.NoError(t, err)
 
 	mint, ok, err := ReadMinValidTime(dir)
@@ -198,7 +199,7 @@ func TestCheckpoint_MinValidTimeNeverRegressesAcrossRestarts(t *testing.T) {
 	// A restart happened here: lastWALTruncationTime is gone, so this next checkpoint is free
 	// to use a mint lower than 5000 -- it's still a legitimate, real truncation point for the
 	// process it's running in now, just not the highest one ever seen.
-	_, err = Checkpoint(promslog.NewNopLogger(), w, 1001, 2000, func(chunks.HeadSeriesRef) bool { return true }, 100, false)
+	_, err = Checkpoint(promslog.NewNopLogger(), w, 1001, 2000, func(chunks.HeadSeriesRef) bool { return true }, 100, false, false)
 	require.NoError(t, err)
 
 	mint, ok, err = ReadMinValidTime(dir)
@@ -414,7 +415,7 @@ func TestCheckpoint(t *testing.T) {
 
 				stats, err := Checkpoint(promslog.NewNopLogger(), w, 100, 106, func(x chunks.HeadSeriesRef) bool {
 					return x%2 == 0
-				}, last/2, enableSTStorage)
+				}, last/2, enableSTStorage, false)
 				require.NoError(t, err)
 				require.NoError(t, w.Truncate(107))
 				require.NoError(t, DeleteCheckpoints(w.Dir(), 106))
@@ -552,7 +553,7 @@ func TestCheckpointMetadataAcrossBatches(t *testing.T) {
 	require.NoError(t, err)
 	require.NoError(t, w.Close())
 
-	stats, err := Checkpoint(promslog.NewNopLogger(), w, first, last, func(chunks.HeadSeriesRef) bool { return true }, 0, false)
+	stats, err := Checkpoint(promslog.NewNopLogger(), w, first, last, func(chunks.HeadSeriesRef) bool { return true }, 0, false, false)
 	require.NoError(t, err)
 	require.Equal(t, numSeries, stats.TotalMetadata)
 
@@ -615,7 +616,7 @@ func TestCheckpoint_Tombstones(t *testing.T) {
 
 	_, err = Checkpoint(promslog.NewNopLogger(), w, first, last, func(id chunks.HeadSeriesRef) bool {
 		return id == 2 || id == 3 || id == 4
-	}, 10, false)
+	}, 10, false, false)
 	require.NoError(t, err)
 	require.NoError(t, w.Close())
 
@@ -643,6 +644,337 @@ func TestCheckpoint_Tombstones(t *testing.T) {
 		{Ref: 3, Intervals: tombstones.Intervals{{Mint: 0, Maxt: 100}}},
 	}
 	require.Equal(t, expected, stones)
+}
+
+// checkpointRecords describes the records of the newest checkpoint in dir, in
+// order: native metadata as describeNativeMetadataRecord does, series as
+// "series ref", and anything else by its type.
+func checkpointRecords(t *testing.T, dir string) []string {
+	t.Helper()
+	cpDir, _, err := LastCheckpoint(dir)
+	require.NoError(t, err)
+	sr, err := NewSegmentsReader(cpDir)
+	require.NoError(t, err)
+	defer sr.Close()
+	var dec record.Decoder
+	var out []string
+	r := NewReader(sr)
+	for r.Next() {
+		rec := r.Record()
+		switch dec.Type(rec) {
+		case record.Metadata, record.NativeMetadataCompact:
+			out = append(out, describeNativeMetadataRecord(t, rec)...)
+		case record.Series:
+			series, err := dec.Series(rec, nil)
+			require.NoError(t, err)
+			for _, s := range series {
+				out = append(out, fmt.Sprintf("series %d", s.Ref))
+			}
+		default:
+			out = append(out, dec.Type(rec).String())
+		}
+	}
+	require.NoError(t, r.Err())
+	return out
+}
+
+// checkpointNativeMetadata returns the native metadata of the newest checkpoint in
+// dir, in order, but with the entries that follow its provenance marker, which
+// the checkpoint writes in map order, sorted.
+func checkpointNativeMetadata(t *testing.T, dir string) []string {
+	t.Helper()
+	var out []string
+	for _, r := range checkpointRecords(t, dir) {
+		if strings.HasPrefix(r, "series ") || r == "min_valid_time" {
+			continue
+		}
+		out = append(out, r)
+	}
+	if len(out) > 0 && out[0] == "provenance" {
+		return append([]string{"provenance"}, sortedStrings(out[1:])...)
+	}
+	return sortedStrings(out)
+}
+
+func TestCheckpoint_NativeMetadata(t *testing.T) {
+	t.Parallel()
+	var enc record.Encoder
+	series := func(refs ...chunks.HeadSeriesRef) []byte {
+		var s []record.RefSeries
+		for _, ref := range refs {
+			s = append(s, record.RefSeries{Ref: ref, Labels: labels.FromStrings(labels.MetricName, strconv.Itoa(int(ref)))})
+		}
+		return enc.Series(s, nil)
+	}
+	// newWAL writes each round of records to its own segment.
+	newWAL := func(t *testing.T, rounds ...[][]byte) *WL {
+		w, err := NewSize(nil, nil, t.TempDir(), 128*1024, compression.None)
+		require.NoError(t, err)
+		t.Cleanup(func() { require.NoError(t, w.Close()) })
+		for _, round := range rounds {
+			for _, rec := range round {
+				require.NoError(t, w.Log(rec))
+			}
+			_, err := w.NextSegment()
+			require.NoError(t, err)
+		}
+		return w
+	}
+	checkpoint := func(t *testing.T, w *WL, from, to int, reduce bool, keep func(chunks.HeadSeriesRef) bool) *CheckpointStats {
+		t.Helper()
+		if keep == nil {
+			keep = func(chunks.HeadSeriesRef) bool { return true }
+		}
+		stats, err := Checkpoint(promslog.NewNopLogger(), w, from, to, keep, 0, false, reduce)
+		require.NoError(t, err)
+		return stats
+	}
+	round := [][]byte{
+		series(1, 2, 3, 4),
+		nativeMetadataGroupRecord(t, 1, "A@100"),
+		nativeMetadataGroupRecord(t, 2, "A@10", "B@20", "C@30", "D@40", "E@50"),
+		nativeMetadataGroupRecord(t, 3, "X@1"),
+		enc.Metadata([]record.RefMetadata{{Ref: 4, Help: "L"}}, nil),
+		nativeMetadataGroupRecord(t, 1, "B@150", "C@180"),
+		nativeMetadataGroupRecord(t, 2, "F@60"),
+		nativeMetadataOverrideRecord(t, 1, false, false, "Z@5"),
+		nativeMetadataGroupRecord(t, 1, "A@300"),
+	}
+
+	t.Run("native metadata is reduced per kept series", func(t *testing.T) {
+		w := newWAL(t, round)
+		checkpoint(t, w, 0, 0, true, func(ref chunks.HeadSeriesRef) bool { return ref != 3 })
+		require.Equal(t, []string{
+			"provenance",
+			"legacy 4 L",
+			"override 1 Z@5 A@300",
+			"override 2 truncated B@20 C@30 D@40 E@50 F@60",
+		}, checkpointNativeMetadata(t, w.Dir()))
+	})
+
+	t.Run("without persistence, compact records are dropped", func(t *testing.T) {
+		w := newWAL(t, round, [][]byte{nativeMetadataMarkerRecord(record.NativeMetadataBoundary)})
+		stats := checkpoint(t, w, 0, 1, false, nil)
+		require.False(t, stats.Provenance)
+		require.Equal(t, []string{"legacy 4 L"}, checkpointNativeMetadata(t, w.Dir()))
+	})
+
+	t.Run("an unmarked checkpoint is trusted only after a boundary", func(t *testing.T) {
+		// A checkpoint without persistence leaves round 0's history behind.
+		// Segment 1's first group follows the unmarked checkpoint, before the
+		// boundary, so it isn't trusted; the rest is.
+		w := newWAL(t, round, [][]byte{
+			nativeMetadataGroupRecord(t, 1, "U@400"),
+			enc.Metadata([]record.RefMetadata{{Ref: 2, Help: "M"}}, nil),
+			nativeMetadataMarkerRecord(record.NativeMetadataBoundary),
+			nativeMetadataGroupRecord(t, 1, "T@500"),
+			nativeMetadataGroupRecord(t, 3, "T@6"),
+		})
+		checkpoint(t, w, 0, 0, false, nil)
+		stats := checkpoint(t, w, 1, 1, true, nil)
+		require.True(t, stats.Provenance)
+		require.Equal(t, 1, stats.UntrustedMetadata)
+		require.Equal(t, []string{
+			"provenance",
+			// Latest-value entries apply while untrusted, too, and stay
+			// latest-value entries.
+			"legacy 2 M",
+			"legacy 4 L",
+			"override 1 T@500",
+			"override 3 T@6",
+		}, checkpointNativeMetadata(t, w.Dir()))
+	})
+
+	t.Run("a checkpoint stays unmarked until it covers the boundary", func(t *testing.T) {
+		w := newWAL(t, round,
+			[][]byte{nativeMetadataGroupRecord(t, 1, "U@400")},
+			[][]byte{nativeMetadataMarkerRecord(record.NativeMetadataBoundary), nativeMetadataGroupRecord(t, 1, "T@500")},
+		)
+		checkpoint(t, w, 0, 0, false, nil)
+		stats := checkpoint(t, w, 1, 1, true, nil)
+		require.False(t, stats.Provenance)
+		require.Equal(t, []string{"legacy 4 L"}, checkpointNativeMetadata(t, w.Dir()))
+		stats = checkpoint(t, w, 2, 2, true, nil)
+		require.True(t, stats.Provenance)
+		require.Equal(t, []string{"provenance", "legacy 4 L", "override 1 T@500"}, checkpointNativeMetadata(t, w.Dir()))
+	})
+
+	t.Run("a record that doesn't decode fails the checkpoint without truncating", func(t *testing.T) {
+		for name, bad := range undecodableNativeMetadataRecords(t) {
+			t.Run(name, func(t *testing.T) {
+				w := newWAL(t, [][]byte{series(1), bad})
+				_, err := Checkpoint(promslog.NewNopLogger(), w, 0, 0, func(chunks.HeadSeriesRef) bool { return true }, 0, false, true)
+				require.Error(t, err)
+				require.Equal(t, name != "a malformed supported record", errors.Is(err, record.ErrUnsupportedNativeMetadata))
+				_, _, err = LastCheckpoint(w.Dir())
+				require.ErrorIs(t, err, record.ErrNotFound)
+				first, _, err := Segments(w.Dir())
+				require.NoError(t, err)
+				require.Zero(t, first, "no segment was removed")
+				// Without persistence, the record is opaque.
+				checkpoint(t, w, 0, 0, false, nil)
+			})
+		}
+	})
+
+	t.Run("metadata is flushed in bounded batches", func(t *testing.T) {
+		const native, legacy = 2*metadataBatchSize + 1, metadataBatchSize + 1
+		values := make([]record.NativeMetadataValue, 10)
+		for i := range values {
+			values[i] = record.NativeMetadataValue{Help: strconv.Itoa(i)}
+		}
+		var groups []record.RefCompactNativeMetadata
+		for i := range native {
+			groups = append(groups, record.RefCompactNativeMetadata{Ref: chunks.HeadSeriesRef(i + 1), Kind: record.NativeMetadataGroup, Points: []record.CompactNativeMetadataPoint{{EffectiveFrom: 1, Value: uint32(i % 10)}}})
+		}
+		var metas []record.RefMetadata
+		for i := range legacy {
+			metas = append(metas, record.RefMetadata{Ref: chunks.HeadSeriesRef(native + i + 1), Help: "legacy"})
+		}
+		w := newWAL(t, [][]byte{enc.CompactNativeMetadata(values, groups, nil), enc.Metadata(metas, nil)})
+		checkpoint(t, w, 0, 0, true, nil)
+		cpDir, _, err := LastCheckpoint(w.Dir())
+		require.NoError(t, err)
+		sr, err := NewSegmentsReader(cpDir)
+		require.NoError(t, err)
+		defer sr.Close()
+		var dec record.Decoder
+		sizes := map[record.Type][]int{}
+		r := NewReader(sr)
+		for r.Next() {
+			sizes[dec.Type(r.Record())] = append(sizes[dec.Type(r.Record())], len(describeNativeMetadataRecord(t, r.Record())))
+		}
+		require.NoError(t, r.Err())
+		require.Equal(t, map[record.Type][]int{
+			record.MinValidTime:          {0},
+			record.NativeMetadataCompact: {1, metadataBatchSize, metadataBatchSize, 1},
+			record.Metadata:              {metadataBatchSize, 1},
+		}, sizes)
+	})
+
+	t.Run("the min valid time record stays first", func(t *testing.T) {
+		w := newWAL(t, round)
+		_, err := Checkpoint(promslog.NewNopLogger(), w, 0, 0, func(chunks.HeadSeriesRef) bool { return true }, 1234, false, true)
+		require.NoError(t, err)
+		mint, ok, err := ReadMinValidTime(w.Dir())
+		require.NoError(t, err)
+		require.True(t, ok)
+		require.Equal(t, int64(1234), mint)
+		require.Equal(t, "min_valid_time", checkpointRecords(t, w.Dir())[0])
+	})
+}
+
+// TestCheckpoint_NativeMetadataHandoffs checks the incarnations a checkpoint
+// declares with handoffs, over two rounds, against hand-specified outputs.
+func TestCheckpoint_NativeMetadataHandoffs(t *testing.T) {
+	t.Parallel()
+	var enc record.Encoder
+	series := func(ref chunks.HeadSeriesRef, name string) record.RefSeries {
+		return record.RefSeries{Ref: ref, Labels: labels.FromStrings(labels.MetricName, name)}
+	}
+	// group and handoff build entries of one compact record.
+	type entry struct {
+		ref     chunks.HeadSeriesRef
+		handoff bool
+		points  []string
+	}
+	native := func(entries ...entry) []byte {
+		var values []record.NativeMetadataValue
+		var compact []record.RefCompactNativeMetadata
+		for _, e := range entries {
+			v, points := nativeMetadataPoints(t, e.points...)
+			for i := range points {
+				points[i].Value += uint32(len(values))
+			}
+			values = append(values, v...)
+			c := record.RefCompactNativeMetadata{Ref: e.ref, Kind: record.NativeMetadataGroup, Points: points}
+			if e.handoff {
+				c.Kind, c.Handoff = record.NativeMetadataOverride, true
+			}
+			compact = append(compact, c)
+		}
+		return enc.CompactNativeMetadata(values, compact, nil)
+	}
+	rounds := [][][]byte{
+		{
+			// a: the later Series record declares ref 2.
+			enc.Series([]record.RefSeries{series(1, "a")}, nil),
+			native(entry{ref: 1, points: []string{"a1@10"}}),
+			enc.Series([]record.RefSeries{series(2, "a")}, nil),
+			native(entry{ref: 2, points: []string{"a2@20"}}),
+			// b: a handoff after both Series records declares ref 3.
+			enc.Series([]record.RefSeries{series(3, "b"), series(4, "b")}, nil),
+			native(entry{ref: 3, points: []string{"b3@10"}}, entry{ref: 4, points: []string{"b4@10"}}, entry{ref: 3, handoff: true, points: []string{"c@30"}}),
+			// c: the current incarnation has no metadata.
+			enc.Series([]record.RefSeries{series(5, "c")}, nil),
+			native(entry{ref: 5, points: []string{"c5@10"}}),
+			enc.Series([]record.RefSeries{series(6, "c")}, nil),
+			// d: an expired duplicate leaves one kept ref, and no handoff.
+			enc.Series([]record.RefSeries{series(7, "d"), series(8, "d")}, nil),
+			native(entry{ref: 7, points: []string{"d7@10"}}, entry{ref: 8, points: []string{"d8@10"}}),
+			// e: the current incarnation has only legacy metadata.
+			enc.Series([]record.RefSeries{series(9, "e"), series(10, "e")}, nil),
+			enc.Metadata([]record.RefMetadata{{Ref: 10, Type: uint8(record.Gauge), Help: "e10"}}, nil),
+			// No Series record declares ref 11.
+			native(entry{ref: 11, handoff: true, points: []string{"z@5"}}),
+			// f: an empty handoff after both Series records declares ref 13.
+			enc.Series([]record.RefSeries{series(13, "f"), series(14, "f")}, nil),
+			native(entry{ref: 13, points: []string{"f13@10"}}, entry{ref: 14, points: []string{"f14@10"}}, entry{ref: 13, handoff: true}),
+		},
+		{
+			// b: a later Series record supersedes the previous checkpoint's handoff.
+			enc.Series([]record.RefSeries{series(12, "b")}, nil),
+			// a: a handoff declares ref 1 over the previous checkpoint's ref 2.
+			native(entry{ref: 1, handoff: true, points: []string{"a2@20"}}, entry{ref: 1, points: []string{"a1'@40"}}),
+		},
+	}
+	keep := func(id chunks.HeadSeriesRef) bool { return id != 8 }
+	legacy := "legacy 10 e10"
+	want := [][]string{
+		{
+			"provenance", legacy,
+			"override 1 a1@10", "override 11 z@5", "override 13 handoff", "override 14 f14@10",
+			"override 2 a2@20", "override 3 handoff c@30", "override 4 b4@10", "override 5 c5@10", "override 7 d7@10",
+		},
+		{
+			"provenance", legacy,
+			"override 1 handoff a2@20 a1'@40", "override 11 z@5", "override 13 handoff", "override 14 f14@10",
+			"override 2 a2@20", "override 3 c@30", "override 4 b4@10", "override 5 c5@10", "override 7 d7@10",
+		},
+	}
+	wantStats := []CheckpointStats{{Handoffs: 2, UndeclaredHandoffs: 1}, {Handoffs: 2}}
+
+	w, err := NewSize(nil, nil, t.TempDir(), 128*1024, compression.None)
+	require.NoError(t, err)
+	defer func() { require.NoError(t, w.Close()) }()
+	for i, round := range rounds {
+		for _, rec := range round {
+			require.NoError(t, w.Log(rec))
+		}
+		first, last, err := Segments(w.Dir())
+		require.NoError(t, err)
+		_, err = w.NextSegment()
+		require.NoError(t, err)
+		if _, idx, err := LastCheckpoint(w.Dir()); err == nil {
+			first = idx + 1
+		}
+		// The winners follow from the input alone, not from map iteration:
+		// checkpoints of identical copies of the input agree.
+		for range 5 {
+			copied := t.TempDir()
+			require.NoError(t, os.CopyFS(copied, os.DirFS(w.Dir())))
+			cw, err := NewSize(nil, nil, copied, 128*1024, compression.None)
+			require.NoError(t, err)
+			stats, err := Checkpoint(promslog.NewNopLogger(), cw, first, last, keep, 0, false, true)
+			require.NoError(t, err)
+			require.Equal(t, wantStats[i].Handoffs, stats.Handoffs, "round %d", i)
+			require.Equal(t, wantStats[i].UndeclaredHandoffs, stats.UndeclaredHandoffs, "round %d", i)
+			require.Equal(t, append(want[i][:2:2], sortedStrings(want[i][2:])...), checkpointNativeMetadata(t, copied), "round %d", i)
+			require.NoError(t, cw.Close())
+		}
+		_, err = Checkpoint(promslog.NewNopLogger(), w, first, last, keep, 0, false, true)
+		require.NoError(t, err)
+	}
 }
 
 // TestCheckpointV2HistogramsToV1 verifies that when a WAL contains V2 histogram
@@ -715,7 +1047,7 @@ func TestCheckpointV2HistogramsToV1(t *testing.T) {
 
 	// Run Checkpoint with V1 encoding (enableSTStorage=false) to force the
 	// V1 leftover path in checkpoint.go.
-	stats, err := Checkpoint(promslog.NewNopLogger(), w, 0, last, func(_ chunks.HeadSeriesRef) bool { return true }, 0, false)
+	stats, err := Checkpoint(promslog.NewNopLogger(), w, 0, last, func(_ chunks.HeadSeriesRef) bool { return true }, 0, false, false)
 	require.NoError(t, err)
 	require.Equal(t, len(histSamples)+len(floatHistSamples), stats.TotalSamples)
 	require.Zero(t, stats.DroppedSamples, "no histogram samples should be dropped")
@@ -800,7 +1132,7 @@ func TestCheckpointNoTmpFolderAfterError(t *testing.T) {
 			require.NoError(t, f.Close())
 
 			// Run the checkpoint and since the wlog contains corrupt data this should return an error.
-			_, err = Checkpoint(promslog.NewNopLogger(), w, 0, 1, nil, 0, enableSTStorage)
+			_, err = Checkpoint(promslog.NewNopLogger(), w, 0, 1, nil, 0, enableSTStorage, false)
 			require.Error(t, err)
 
 			// Walk the wlog dir to make sure there are no tmp folder left behind after the error.
@@ -828,7 +1160,7 @@ func TestCheckpointDeletesTemporaryCheckpoints(t *testing.T) {
 	require.NoError(t, err)
 	defer w.Close()
 
-	_, err = Checkpoint(promslog.NewNopLogger(), w, 0, 1000, func(_ chunks.HeadSeriesRef) bool { return true }, 1000, false)
+	_, err = Checkpoint(promslog.NewNopLogger(), w, 0, 1000, func(_ chunks.HeadSeriesRef) bool { return true }, 1000, false, false)
 	require.NoError(t, err)
 
 	files, err := os.ReadDir(dir)
@@ -1000,7 +1332,7 @@ func BenchmarkCheckpointMetadata(b *testing.B) {
 
 				b.ReportAllocs()
 				for b.Loop() {
-					_, err := Checkpoint(promslog.NewNopLogger(), w, first, last, keep, 0, false)
+					_, err := Checkpoint(promslog.NewNopLogger(), w, first, last, keep, 0, false, false)
 					require.NoError(b, err)
 
 					b.StopTimer()
@@ -1012,7 +1344,7 @@ func BenchmarkCheckpointMetadata(b *testing.B) {
 			})
 
 			b.Run("read", func(b *testing.B) {
-				_, err := Checkpoint(promslog.NewNopLogger(), w, first, last, keep, 0, false)
+				_, err := Checkpoint(promslog.NewNopLogger(), w, first, last, keep, 0, false, false)
 				require.NoError(b, err)
 				b.Cleanup(func() { require.NoError(b, os.RemoveAll(cpDir)) })
 

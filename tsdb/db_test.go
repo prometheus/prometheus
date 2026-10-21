@@ -4052,7 +4052,7 @@ func TestDBOpen_MinValidTime(t *testing.T) {
 		t.Helper()
 		w, err := wlog.New(nil, nil, filepath.Join(dir, "wal"), compression.None)
 		require.NoError(t, err)
-		_, err = wlog.Checkpoint(promslog.NewNopLogger(), w, 0, 1000, func(chunks.HeadSeriesRef) bool { return true }, mint, false)
+		_, err = wlog.Checkpoint(promslog.NewNopLogger(), w, 0, 1000, func(chunks.HeadSeriesRef) bool { return true }, mint, false, false)
 		require.NoError(t, err)
 		require.NoError(t, w.Close())
 	}
