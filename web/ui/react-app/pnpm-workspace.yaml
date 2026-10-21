@@ -19,3 +19,6 @@ allowBuilds:
 minimumReleaseAge: 4320
 minimumReleaseAgeStrict: true
 blockExoticSubdeps: true
+minimumReleaseAgeExclude:
+  # Renovate security update: sanitize-html@2.18.0
+  - sanitize-html@2.18.0
