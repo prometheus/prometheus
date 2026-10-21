@@ -19,6 +19,7 @@ import (
 	"iter"
 	"log/slog"
 	"os"
+	"unique"
 
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/model/metadata"
@@ -46,10 +47,9 @@ type ActiveSeries interface {
 // can provide metadata without depending on Prometheus internal series types.
 type ActiveSeriesWithMetadata interface {
 	ActiveSeries
-	// Metadata returns the metadata associated with the series, or nil if the
-	// series has no metadata. The returned value must not be mutated after return,
-	// as Checkpoint reads it without holding any lock.
-	Metadata() *metadata.Metadata
+	// Metadata returns the metadata handle associated with the series, or the
+	// zero handle if the series has no metadata.
+	Metadata() unique.Handle[metadata.Metadata]
 }
 
 // DeletedSeries describes a deleted series to be written by [Checkpoint].
@@ -67,10 +67,9 @@ type DeletedSeries interface {
 // can provide metadata without depending on Prometheus internal series types.
 type DeletedSeriesWithMetadata interface {
 	DeletedSeries
-	// Metadata returns the metadata associated with the series, or nil if the
-	// series has no metadata. The returned value must not be mutated after return,
-	// as Checkpoint reads it without holding any lock.
-	Metadata() *metadata.Metadata
+	// Metadata returns the metadata handle associated with the series, or the
+	// zero handle if the series has no metadata.
+	Metadata() unique.Handle[metadata.Metadata]
 }
 
 // Checkpoint creates an unindexed checkpoint containing record.RefSeries,
@@ -234,13 +233,15 @@ func (cf *checkpointWriter) writeSeries(seriesIter iter.Seq[ActiveSeries]) error
 		})
 
 		if sm, ok := series.(ActiveSeriesWithMetadata); ok {
-			if m := sm.Metadata(); m != nil && !m.IsEmpty() {
-				cf.metaRecords = append(cf.metaRecords, record.RefMetadata{
-					Ref:  series.Ref(),
-					Type: record.GetMetricType(m.Type),
-					Unit: m.Unit,
-					Help: m.Help,
-				})
+			if mh := sm.Metadata(); !metadata.IsZeroHandle(mh) {
+				if m := mh.Value(); !m.IsEmpty() {
+					cf.metaRecords = append(cf.metaRecords, record.RefMetadata{
+						Ref:  series.Ref(),
+						Type: record.GetMetricType(m.Type),
+						Unit: m.Unit,
+						Help: m.Help,
+					})
+				}
 			}
 		}
 
@@ -276,13 +277,15 @@ func (cf *checkpointWriter) writeDeletedRecords(seriesRefIter iter.Seq[DeletedSe
 		})
 
 		if sm, ok := series.(DeletedSeriesWithMetadata); ok {
-			if m := sm.Metadata(); m != nil && !m.IsEmpty() {
-				cf.metaRecords = append(cf.metaRecords, record.RefMetadata{
-					Ref:  series.Ref(),
-					Type: record.GetMetricType(m.Type),
-					Unit: m.Unit,
-					Help: m.Help,
-				})
+			if mh := sm.Metadata(); !metadata.IsZeroHandle(mh) {
+				if m := mh.Value(); !m.IsEmpty() {
+					cf.metaRecords = append(cf.metaRecords, record.RefMetadata{
+						Ref:  series.Ref(),
+						Type: record.GetMetricType(m.Type),
+						Unit: m.Unit,
+						Help: m.Help,
+					})
+				}
 			}
 		}
 	}

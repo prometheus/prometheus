@@ -23,6 +23,7 @@ import (
 	"sync"
 	"time"
 	"unicode/utf8"
+	"unique"
 
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/common/model"
@@ -253,7 +254,7 @@ func (m *dbMetrics) Unregister() {
 type deletedRefMeta struct {
 	lastSegment int
 	labels      labels.Labels
-	meta        *metadata.Metadata
+	meta        unique.Handle[metadata.Metadata]
 }
 
 // DB represents a WAL-only storage. It implements storage.DB.
@@ -690,11 +691,11 @@ func (db *DB) loadWAL(r *wlog.Reader, duplicateRefToValidRef map[chunks.HeadSeri
 			// Metadata records are replayed unconditionally regardless of EnableMetadataWALRecords
 			// to preserve existing metadata from the WAL for forward compatibility (matching TSDB Head replay).
 			for _, entry := range v {
-				m := &metadata.Metadata{
+				m := unique.Make(metadata.Metadata{
 					Type: record.ToMetricType(entry.Type),
 					Unit: entry.Unit,
 					Help: entry.Help,
-				}
+				})
 				origRef := entry.Ref
 				if ref, ok := duplicateRefToValidRef[entry.Ref]; ok {
 					if meta, ok := db.deleted[entry.Ref]; ok && meta.lastSegment <= currentSegmentOrCheckpoint {
@@ -714,7 +715,7 @@ func (db *DB) loadWAL(r *wlog.Reader, duplicateRefToValidRef map[chunks.HeadSeri
 				// NOTE: agent.Checkpoint writes activeSeries before deletedSeries, so an older
 				// deleted series (origRef < entry.Ref) can be replayed after a recreated active
 				// series and must not overwrite its metadata.
-				if origRef < entry.Ref && series.meta != nil {
+				if origRef < entry.Ref && !metadata.IsZeroHandle(series.meta) {
 					continue
 				}
 
@@ -1175,7 +1176,7 @@ func (a *appender) UpdateMetadata(ref storage.SeriesRef, l labels.Labels, meta m
 	}
 
 	series.Lock()
-	hasNewMetadata := series.meta == nil || !series.meta.Equals(meta)
+	hasNewMetadata := metadata.IsZeroHandle(series.meta) || !series.meta.Value().Equals(meta)
 	series.Unlock()
 
 	if hasNewMetadata {
@@ -1414,11 +1415,11 @@ func (a *appenderBase) log() error {
 	for i, m := range a.pendingMetadata {
 		series = a.metadataSeries[i]
 		series.Lock()
-		series.meta = &metadata.Metadata{
+		series.meta = unique.Make(metadata.Metadata{
 			Type: record.ToMetricType(m.Type),
 			Unit: m.Unit,
 			Help: m.Help,
-		}
+		})
 		series.Unlock()
 	}
 

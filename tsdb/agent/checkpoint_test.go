@@ -208,7 +208,7 @@ func requireStripeSeriesEqual(t *testing.T, want, got *stripeSeries) {
 			"ref %d labels mismatch: wlog=%s agent=%s", ref, w.lset.String(), g.lset.String())
 		require.Equalf(t, w.lastTs, g.lastTs, "ref %d lastTs mismatch", ref)
 		require.Equalf(t, w.Metadata(), g.Metadata(), "ref %d metadata mismatch", ref)
-		if g.Metadata() != nil {
+		if !metadata.IsZeroHandle(g.Metadata()) {
 			metadataCount++
 		}
 	}
