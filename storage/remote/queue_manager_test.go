@@ -2482,6 +2482,57 @@ func TestSendSamplesWithBackoffWithSampleAgeLimit(t *testing.T) {
 	}
 }
 
+func TestSendSamplesWithBackoffMetricsAfterSampleAgeLimit(t *testing.T) {
+	for _, protoMsg := range []remoteapi.WriteMessageType{remoteapi.WriteV1MessageType, remoteapi.WriteV2MessageType} {
+		t.Run(fmt.Sprint(protoMsg), func(t *testing.T) {
+			for _, tc := range []struct {
+				name                 string
+				sampleAgeLimit       time.Duration
+				expectedDroppedTotal float64
+				expectedSamplesTotal float64
+			}{
+				{name: "sample expires", sampleAgeLimit: 100 * time.Millisecond, expectedDroppedTotal: 1, expectedSamplesTotal: 1},
+				{name: "sample remains current", sampleAgeLimit: 5 * time.Second, expectedSamplesTotal: 2},
+			} {
+				t.Run(tc.name, func(t *testing.T) {
+					cfg := config.DefaultQueueConfig
+					cfg.MaxShards = 1
+					cfg.MaxSamplesPerSend = 1
+					cfg.SampleAgeLimit = model.Duration(tc.sampleAgeLimit)
+					cfg.MinBackoff = model.Duration(300 * time.Millisecond)
+					cfg.MaxBackoff = model.Duration(300 * time.Millisecond)
+
+					c := NewTestWriteClient(protoMsg)
+					c.injectErrors([]error{RecoverableError{errors.New("pretend 500"), 0}, nil})
+					m := newTestQueueManager(t, cfg, config.DefaultMetadataConfig, defaultFlushDeadline, c, protoMsg)
+
+					recs := testwal.GenerateRecords(recCase{
+						NoST:             protoMsg == remoteapi.WriteV1MessageType,
+						Series:           1,
+						SamplesPerSeries: 1,
+						TsFn: func(_, _ int) int64 {
+							return timestamp.FromTime(time.Now())
+						},
+					})
+					m.StoreSeries(recs.Series, 0)
+					m.Start()
+					defer m.Stop()
+
+					require.True(t, m.Append(recs.Samples))
+					require.Eventually(t, func() bool {
+						c.mtx.Lock()
+						defer c.mtx.Unlock()
+						return c.writesReceived == 1 && m.shards.enqueuedSamples.Load() == 0
+					}, 5*time.Second, 10*time.Millisecond)
+
+					require.Equal(t, tc.expectedDroppedTotal, client_testutil.ToFloat64(m.metrics.droppedSamplesTotal.WithLabelValues(reasonTooOld)))
+					require.Equal(t, tc.expectedSamplesTotal, client_testutil.ToFloat64(m.metrics.samplesTotal))
+				})
+			}
+		})
+	}
+}
+
 func filterTsLimit(limit int64, ts prompb.TimeSeries) bool {
 	return limit > ts.Samples[0].Timestamp
 }

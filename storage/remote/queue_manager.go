@@ -2136,12 +2136,22 @@ func (s *shards) sendSamplesWithBackoff(ctx context.Context, samples []prompb.Ti
 		lowest := s.qm.buildRequestLimitTimestamp.Load()
 		if isSampleOld(currentTime, time.Duration(s.qm.cfg.SampleAgeLimit), lowest) {
 			// This will filter out old samples during retries.
+			filter := isTimeSeriesOldFilter(s.qm.metrics, currentTime, time.Duration(s.qm.cfg.SampleAgeLimit))
+			var nextSampleCount, nextExemplarCount, nextHistogramCount int
 			req2, _, lowest, err := buildWriteRequest(
 				s.qm.logger,
 				samples,
 				nil,
 				pBuf,
-				isTimeSeriesOldFilter(s.qm.metrics, currentTime, time.Duration(s.qm.cfg.SampleAgeLimit)),
+				func(ts prompb.TimeSeries) bool {
+					if filter(ts) {
+						return true
+					}
+					nextSampleCount += len(ts.Samples)
+					nextExemplarCount += len(ts.Exemplars)
+					nextHistogramCount += len(ts.Histograms)
+					return false
+				},
 				buf,
 				compr,
 			)
@@ -2150,6 +2160,7 @@ func (s *shards) sendSamplesWithBackoff(ctx context.Context, samples []prompb.Ti
 				return err
 			}
 			req = req2
+			sc.sampleCount, sc.exemplarCount, sc.histogramCount, sc.reqSize = nextSampleCount, nextExemplarCount, nextHistogramCount, len(req2)
 		}
 
 		cl := s.qm.client()
@@ -2242,12 +2253,22 @@ func (s *shards) sendV2SamplesWithBackoff(ctx context.Context, samples []writev2
 		lowest := s.qm.buildRequestLimitTimestamp.Load()
 		if isSampleOld(currentTime, time.Duration(s.qm.cfg.SampleAgeLimit), lowest) {
 			// This will filter out old samples during retries.
+			filter := isV2TimeSeriesOldFilter(s.qm.metrics, currentTime, time.Duration(s.qm.cfg.SampleAgeLimit))
+			var nextSampleCount, nextExemplarCount, nextHistogramCount int
 			req2, v2Req2, _, lowest, err := buildV2WriteRequest(
 				s.qm.logger,
 				samples,
 				labels,
 				pBuf,
-				isV2TimeSeriesOldFilter(s.qm.metrics, currentTime, time.Duration(s.qm.cfg.SampleAgeLimit)),
+				func(ts writev2.TimeSeries) bool {
+					if filter(ts) {
+						return true
+					}
+					nextSampleCount += len(ts.Samples)
+					nextExemplarCount += len(ts.Exemplars)
+					nextHistogramCount += len(ts.Histograms)
+					return false
+				},
 				buf,
 				compr,
 			)
@@ -2257,6 +2278,8 @@ func (s *shards) sendV2SamplesWithBackoff(ctx context.Context, samples []writev2
 			}
 			req = req2
 			v2Req = v2Req2
+			sc.sampleCount, sc.exemplarCount, sc.histogramCount, sc.reqSize = nextSampleCount, nextExemplarCount, nextHistogramCount, len(req2)
+			withMetadataCounts = countV2DataWithMetadata(v2Req2.Timeseries)
 		}
 
 		cl := s.qm.client()
@@ -2275,11 +2298,11 @@ func (s *shards) sendV2SamplesWithBackoff(ctx context.Context, samples []writev2
 		if err == nil {
 			// Check the case mentioned in PRW 2.0
 			// https://prometheus.io/docs/specs/remote_write_spec_2_0/#required-written-response-headers.
-			if sampleCount+histogramCount+exemplarCount > 0 && rs.NoDataWritten() {
+			if sc.sampleCount+sc.histogramCount+sc.exemplarCount > 0 && rs.NoDataWritten() {
 				err = fmt.Errorf(
 					"sent v2 request with %v samples, %v histograms and %v exemplars; got 2xx, but PRW 2.0 response header statistics indicate %v samples, %v histograms and %v exemplars were accepted;"+
 						" assuming failure e.g. the target only supports PRW 1.0 prometheus.WriteRequest, but does not check the Content-Type header correctly",
-					sampleCount, histogramCount, exemplarCount,
+					sc.sampleCount, sc.histogramCount, sc.exemplarCount,
 					rs.Samples, rs.Histograms, rs.Exemplars,
 				)
 				span.RecordError(err)
