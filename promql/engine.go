@@ -1888,14 +1888,13 @@ func (enh *EvalNodeHelper) resetHistograms(inVec Vector, arg parser.Expr) annota
 			continue
 		}
 
-		upperBound, err := strconv.ParseFloat(
-			sample.Metric.Get(model.BucketLabel), 64,
-		)
-		if err != nil {
+		bucketLabel := sample.Metric.Get(model.BucketLabel)
+		upperBound, err := strconv.ParseFloat(bucketLabel, 64)
+		if err != nil || math.IsNaN(upperBound) {
 			if enh.enableDelayedNameRemoval {
-				annos.Add(annotations.NewBadBucketLabelWarning(sample.Metric.Get(labels.MetricName), sample.Metric.Get(model.BucketLabel), arg.PositionRange()))
+				annos.Add(annotations.NewBadBucketLabelWarning(sample.Metric.Get(labels.MetricName), bucketLabel, arg.PositionRange()))
 			} else {
-				annos.Add(annotations.NewBadBucketLabelWarning("", sample.Metric.Get(model.BucketLabel), arg.PositionRange()))
+				annos.Add(annotations.NewBadBucketLabelWarning("", bucketLabel, arg.PositionRange()))
 			}
 			continue
 		}
