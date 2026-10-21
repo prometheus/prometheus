@@ -248,11 +248,11 @@ loop:
 		)
 
 		metHash, ce, seriesCached, seriesAlreadyScraped := sl.cache.get(met)
-		if !seriesCached && sl.cache.getDropped(metHash) {
-			continue
-		}
 
 		if !hasMRC {
+			if !seriesCached && sl.cache.getDropped(metHash) {
+				continue
+			}
 			if seriesCached {
 				ref = ce.ref
 				lset = ce.lset
@@ -288,10 +288,14 @@ loop:
 				sm            seriesMetaEntry
 				hasCachedMeta bool
 			)
-			if seriesCached && sl.cache.seriesMeta != nil {
-				sm, hasCachedMeta = sl.cache.seriesMeta[metHash]
+			if seriesCached {
+				if sl.cache.seriesMeta != nil {
+					sm, hasCachedMeta = sl.cache.seriesMeta[metHash]
+				}
+			} else if sl.cache.droppedSeriesMeta != nil {
+				sm, hasCachedMeta = sl.cache.droppedSeriesMeta[metHash]
 			}
-			// Intern the current family's parsed metadata and name once for all non-dropped series in the family.
+			// Intern the current family's parsed metadata and name once for all series in the family.
 			// On warm scrapes where the series already has cached handles matching parsedMeta and parsedMFName,
 			// reuse those handles directly to avoid calling unique.Make.
 			if parsedMetaDirty {
@@ -303,6 +307,9 @@ loop:
 					origMFNameHandle = internBytes(parsedMFName)
 				}
 				parsedMetaDirty = false
+			}
+			if !seriesCached && sl.cache.getDroppedWithMeta(metHash, origMFNameHandle, origMetaHandle) {
+				continue
 			}
 
 			if seriesCached && hasCachedMeta && sm.origMFName == origMFNameHandle && sm.origMeta == origMetaHandle {
@@ -330,7 +337,7 @@ loop:
 					if seriesCached {
 						sl.cache.deleteSeries(metHash)
 					}
-					sl.cache.addDropped(metHash)
+					sl.cache.addDroppedWithMeta(metHash, origMFNameHandle, origMetaHandle)
 					continue
 				}
 
@@ -722,18 +729,56 @@ func (sl *scrapeLoop) mutateSample(
 	origMD := metadataValue(origMeta)
 	origMFStr := stringValue(origMFName)
 	hasFamilyMeta := !metadata.IsZeroHandle(origMeta) && isSeriesPartOfFamilyStr(preName, origMFStr, origMD.Type)
+	var sampleMeta metadata.Metadata
+	if hasFamilyMeta {
+		sampleMeta = origMD
+	} else {
+		sampleMeta = metadata.Metadata{Type: model.MetricTypeUnknown}
+	}
 
-	lset = sl.sampleMutator(lset)
-	if lset.IsEmpty() || !hasFamilyMeta {
+	if sl.sampleMutatorWithMetadata != nil {
+		lset, sampleMeta = sl.sampleMutatorWithMetadata(lset, sampleMeta)
+		// A series like foo_total does not match a pre-relabel family named foo when the family
+		// has unknown type (since _total suffix stripping only applies to counters). If relabeling
+		// sets the series type (e.g. to counter) such that it now belongs to origMFStr, inherit
+		// any help or unit from origMD that relabeling did not explicitly set.
+		if !hasFamilyMeta && !metadata.IsZeroHandle(origMeta) && isSeriesPartOfFamilyStr(preName, origMFStr, sampleMeta.Type) {
+			hasFamilyMeta = true
+			if sampleMeta.Help == "" {
+				sampleMeta.Help = origMD.Help
+			}
+			if sampleMeta.Unit == "" && origMD.Unit != "" {
+				sampleMeta.Unit = origMD.Unit
+				if sl.enableTypeAndUnitLabels {
+					lb := labels.NewBuilder(lset)
+					lb.Set(model.MetricUnitLabel, sampleMeta.Unit)
+					lset = lb.Labels()
+				}
+			}
+		}
+	} else if sl.sampleMutator != nil {
+		lset = sl.sampleMutator(lset)
+	}
+	if lset.IsEmpty() || (!hasFamilyMeta && sampleMeta.IsEmpty()) {
 		return lset, unique.Handle[metadata.Metadata]{}, unique.Handle[string]{}
 	}
 
-	postMFName := metricFamilyName(preName, origMFStr, lset.Get(model.MetricNameLabel), origMD.Type)
+	var preMFStr string
+	if hasFamilyMeta {
+		preMFStr = origMFStr
+	}
+	postMFName := metricFamilyName(preName, preMFStr, lset.Get(model.MetricNameLabel), sampleMeta.Type)
+	var sampleMetaHandle unique.Handle[metadata.Metadata]
+	if hasFamilyMeta && sampleMeta.Equals(origMD) {
+		sampleMetaHandle = origMeta
+	} else {
+		sampleMetaHandle = unique.Make(sampleMeta)
+	}
 	if postMFName == "" {
-		return lset, origMeta, unique.Handle[string]{}
+		return lset, sampleMetaHandle, unique.Handle[string]{}
 	}
 	if postMFName == origMFStr {
-		return lset, origMeta, origMFName
+		return lset, sampleMetaHandle, origMFName
 	}
-	return lset, origMeta, unique.Make(postMFName)
+	return lset, sampleMetaHandle, unique.Make(postMFName)
 }
