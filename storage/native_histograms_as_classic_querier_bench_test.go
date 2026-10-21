@@ -70,7 +70,7 @@ func buildBenchNHCBSeries(numSeries, numBuckets, numSamples int) []Series {
 	return series
 }
 
-func benchmarkNHCBAsClassicSelect(b *testing.B, suffix string) {
+func benchmarkNativeHistogramsAsClassicSelect(b *testing.B, suffix string) {
 	const (
 		numSeries  = 1000
 		numBuckets = 30
@@ -82,7 +82,7 @@ func benchmarkNHCBAsClassicSelect(b *testing.B, suffix string) {
 		classicSeries: []Series{},
 		nhcbSeries:    nhcbSeries,
 	}
-	q := NewNHCBAsClassicQuerier(mock)
+	q := NewNativeHistogramsAsClassicQuerier(mock)
 	matcher := labels.MustNewMatcher(labels.MatchEqual, model.MetricNameLabel, "bench_request_duration_seconds"+suffix)
 
 	b.ResetTimer()
@@ -103,14 +103,14 @@ func benchmarkNHCBAsClassicSelect(b *testing.B, suffix string) {
 	}
 }
 
-func BenchmarkNHCBAsClassicSelect_Bucket(b *testing.B) {
-	benchmarkNHCBAsClassicSelect(b, "_bucket")
+func BenchmarkNativeHistogramsAsClassicSelect_Bucket(b *testing.B) {
+	benchmarkNativeHistogramsAsClassicSelect(b, "_bucket")
 }
 
-func BenchmarkNHCBAsClassicSelect_Count(b *testing.B) {
-	benchmarkNHCBAsClassicSelect(b, "_count")
+func BenchmarkNativeHistogramsAsClassicSelect_Count(b *testing.B) {
+	benchmarkNativeHistogramsAsClassicSelect(b, "_count")
 }
 
-func BenchmarkNHCBAsClassicSelect_Sum(b *testing.B) {
-	benchmarkNHCBAsClassicSelect(b, "_sum")
+func BenchmarkNativeHistogramsAsClassicSelect_Sum(b *testing.B) {
+	benchmarkNativeHistogramsAsClassicSelect(b, "_sum")
 }

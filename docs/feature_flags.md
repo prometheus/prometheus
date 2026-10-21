@@ -376,12 +376,13 @@ When enabled, Prometheus advertises support for Zstandard-compressed scrape resp
 
 When the flag is disabled, Prometheus does not advertise `zstd`. A target that answers with `Content-Encoding: zstd` regardless fails the scrape, because Prometheus cannot decode the body.
 
-## NHCB as classic histograms in PromQL
+## Native histograms as classic histograms in PromQL
 
-`--enable-feature=promql-nhcb-as-classic`
+`--enable-feature=promql-native-histograms-as-classic`
 
 When enabled, PromQL queries for classic histogram series (e.g. `_bucket`, `_count`, `_sum`) will
-automatically convert Native Histograms with Custom Buckets (NHCB) into classic histogram series.
+automatically convert native histograms into classic histogram series. Currently only Native
+Histograms with Custom Buckets (NHCB) are converted.
 
 For example, if `request_duration_seconds` is stored as an NHCB native histogram:
 

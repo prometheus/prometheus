@@ -48,47 +48,47 @@ import (
 //     - Merge differing le formatting (e.g. 1 vs 1.0)
 //   - Stale NHCB should produce a stale marker per generated series.
 
-// NHCBAsClassicQuerier wraps a Querier and converts NHCB (Native Histogram Custom Buckets)
+// NativeHistogramsAsClassicQuerier wraps a Querier and converts NHCB (Native Histogram Custom Buckets)
 // queries to classic histogram format when classic series don't exist.
-type NHCBAsClassicQuerier struct {
+type NativeHistogramsAsClassicQuerier struct {
 	Querier
 }
 
-// NewNHCBAsClassicQuerier returns a new querier that wraps the given querier
+// NewNativeHistogramsAsClassicQuerier returns a new querier that wraps the given querier
 // and converts NHCB to classic histogram format for queries.
-func NewNHCBAsClassicQuerier(q Querier) Querier {
-	return &NHCBAsClassicQuerier{Querier: q}
+func NewNativeHistogramsAsClassicQuerier(q Querier) Querier {
+	return &NativeHistogramsAsClassicQuerier{Querier: q}
 }
 
-// NHCBAsClassicQueryable wraps a Queryable and applies NHCB-to-classic
+// NativeHistogramsAsClassicQueryable wraps a Queryable and applies NHCB-to-classic
 // conversion to its queriers.
 //
 // NOTE: This is meant to wrap the Queryable used by the PromQL engine (see
-// promql.EngineOpts.EnableNHCBAsClassic), above any fanout. Wrapping only one
+// promql.EngineOpts.EnableNativeHistogramsAsClassic), above any fanout. Wrapping only one
 // fanout leg (e.g. local storage) would leave remote-read secondaries
 // unconverted and would also convert data served to non-PromQL consumers like
 // the remote read API.
-type NHCBAsClassicQueryable struct {
+type NativeHistogramsAsClassicQueryable struct {
 	Queryable
 }
 
-// NewNHCBAsClassicQueryable returns a new queryable that wraps the given
+// NewNativeHistogramsAsClassicQueryable returns a new queryable that wraps the given
 // queryable and applies NHCB-to-classic conversion to queriers.
-func NewNHCBAsClassicQueryable(q Queryable) Queryable {
-	return &NHCBAsClassicQueryable{Queryable: q}
+func NewNativeHistogramsAsClassicQueryable(q Queryable) Queryable {
+	return &NativeHistogramsAsClassicQueryable{Queryable: q}
 }
 
 // Querier implements the Queryable interface.
-func (s *NHCBAsClassicQueryable) Querier(mint, maxt int64) (Querier, error) {
+func (s *NativeHistogramsAsClassicQueryable) Querier(mint, maxt int64) (Querier, error) {
 	q, err := s.Queryable.Querier(mint, maxt)
 	if err != nil {
 		return nil, err
 	}
-	return NewNHCBAsClassicQuerier(q), nil
+	return NewNativeHistogramsAsClassicQuerier(q), nil
 }
 
 // Select implements the Querier interface.
-func (q *NHCBAsClassicQuerier) Select(ctx context.Context, sortSeries bool, hints *SelectHints, matchers ...*labels.Matcher) SeriesSet {
+func (q *NativeHistogramsAsClassicQuerier) Select(ctx context.Context, sortSeries bool, hints *SelectHints, matchers ...*labels.Matcher) SeriesSet {
 	nameMatcher, suffix, baseMatchers := extractHistogramSuffix(matchers)
 	if suffix == "" {
 		// Not a classic histogram query, pass through.

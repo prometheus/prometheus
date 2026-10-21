@@ -6668,7 +6668,7 @@ func TestQueryStartTimestampsOverride(t *testing.T) {
 	}
 }
 
-func TestEngine_NHCBAsClassic(t *testing.T) {
+func TestEngine_NativeHistogramsAsClassic(t *testing.T) {
 	const load = `
 load 1m
 	%s {{schema:-53 sum:5 count:4 custom_values:[1 2] buckets:[1 2 1]}}
@@ -6682,9 +6682,9 @@ load 1m
 	for _, enabled := range []bool{false, true} {
 		t.Run(fmt.Sprintf("enabled=%v", enabled), func(t *testing.T) {
 			opts := promql.EngineOpts{
-				MaxSamples:          1000,
-				Timeout:             10 * time.Second,
-				EnableNHCBAsClassic: enabled,
+				MaxSamples:                      1000,
+				Timeout:                         10 * time.Second,
+				EnableNativeHistogramsAsClassic: enabled,
 			}
 			ng := promqltest.NewTestEngineWithOpts(t, opts)
 
@@ -6719,6 +6719,7 @@ load 1m
 		})
 	}
 }
+
 func TestTypeAndUnitMetadataLabelsInFunctionsAndMatching(t *testing.T) {
 	load := `load 1m
   hist_metric{__type__="histogram", __unit__="seconds", job="api"} {{schema:1 sum:10 count:5 buckets:[1 2 2]}}

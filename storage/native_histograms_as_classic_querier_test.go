@@ -108,7 +108,7 @@ func TestExtractHistogramSuffix(t *testing.T) {
 	}
 }
 
-func TestNHCBAsClassicQuerier_Select(t *testing.T) {
+func TestNativeHistogramsAsClassicQuerier_Select(t *testing.T) {
 	nhcb := &histogram.Histogram{
 		Schema:          histogram.CustomBucketsSchema,
 		Count:           16,
@@ -602,7 +602,7 @@ func TestNHCBAsClassicQuerier_Select(t *testing.T) {
 						nhcbSeries:        tc.nhcbSeries,
 						passthroughSeries: tc.passthroughSeries,
 					}
-					q := NewNHCBAsClassicQuerier(mock)
+					q := NewNativeHistogramsAsClassicQuerier(mock)
 
 					ss := q.Select(context.Background(), false, nil, tc.queryMatchers...)
 					var collected []Series
@@ -655,7 +655,7 @@ func TestNHCBAsClassicQuerier_Select(t *testing.T) {
 	}
 }
 
-func TestNHCBAsClassicQuerier_ConsistentOrder(t *testing.T) {
+func TestNativeHistogramsAsClassicQuerier_ConsistentOrder(t *testing.T) {
 	nhcb := &histogram.Histogram{
 		Schema:          histogram.CustomBucketsSchema,
 		Count:           16,
@@ -672,7 +672,7 @@ func TestNHCBAsClassicQuerier_ConsistentOrder(t *testing.T) {
 			NewListSeries(labels.FromStrings("__name__", "http_requests", "job", "web"), []chunks.Sample{hSample{t: 1, h: nhcb}}),
 		},
 	}
-	q := NewNHCBAsClassicQuerier(mock)
+	q := NewNativeHistogramsAsClassicQuerier(mock)
 
 	// Run the same query multiple times and verify order is consistent.
 	for range 5 {
@@ -701,9 +701,9 @@ func TestNHCBAsClassicQuerier_ConsistentOrder(t *testing.T) {
 	}
 }
 
-func TestNHCBAsClassicQuerier_SortedSelect(t *testing.T) {
+func TestNativeHistogramsAsClassicQuerier_SortedSelect(t *testing.T) {
 	// z_job sorts after le, so sorted order interleaves the buckets of both NHCB series.
-	q := NewNHCBAsClassicQuerier(&nhcbMockQuerier{
+	q := NewNativeHistogramsAsClassicQuerier(&nhcbMockQuerier{
 		nhcbSeries: []Series{
 			NewListSeries(labels.FromStrings("__name__", "http_requests", "z_job", "api"), []chunks.Sample{hSample{t: 1, h: makeNHCB([]float64{1.0, 5.0}, []int64{2, 3, 5})}}),
 			NewListSeries(labels.FromStrings("__name__", "http_requests", "z_job", "web"), []chunks.Sample{hSample{t: 1, h: makeNHCB([]float64{1.0, 5.0}, []int64{2, 3, 5})}}),
@@ -730,7 +730,7 @@ func TestNHCBAsClassicQuerier_SortedSelect(t *testing.T) {
 	}, seriesLabels)
 }
 
-func TestNHCBAsClassicQuerier_FloatHistogram(t *testing.T) {
+func TestNativeHistogramsAsClassicQuerier_FloatHistogram(t *testing.T) {
 	fhNHCB := &histogram.FloatHistogram{
 		Schema:          histogram.CustomBucketsSchema,
 		Count:           15,
@@ -746,7 +746,7 @@ func TestNHCBAsClassicQuerier_FloatHistogram(t *testing.T) {
 			NewListSeries(labels.FromStrings("__name__", "latency"), []chunks.Sample{fhSample{t: 1, fh: fhNHCB}}),
 		},
 	}
-	q := NewNHCBAsClassicQuerier(mock)
+	q := NewNativeHistogramsAsClassicQuerier(mock)
 
 	ss := q.Select(context.Background(), false, nil, labels.MustNewMatcher(labels.MatchEqual, model.MetricNameLabel, "latency_bucket"))
 	var count int
@@ -921,7 +921,7 @@ func (*nhcbSetQuerier) LabelNames(context.Context, *LabelHints, ...*labels.Match
 
 func (*nhcbSetQuerier) Close() error { return nil }
 
-func TestNHCBAsClassicQuerier_ErrorPropagation(t *testing.T) {
+func TestNativeHistogramsAsClassicQuerier_ErrorPropagation(t *testing.T) {
 	nhcb := &histogram.Histogram{
 		Schema:          histogram.CustomBucketsSchema,
 		Count:           3,
@@ -966,7 +966,7 @@ func TestNHCBAsClassicQuerier_ErrorPropagation(t *testing.T) {
 
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
-			q := NewNHCBAsClassicQuerier(tc.querier)
+			q := NewNativeHistogramsAsClassicQuerier(tc.querier)
 			ss := q.Select(context.Background(), false, nil,
 				labels.MustNewMatcher(labels.MatchEqual, model.MetricNameLabel, "http_requests_bucket"))
 			for ss.Next() {
@@ -976,7 +976,7 @@ func TestNHCBAsClassicQuerier_ErrorPropagation(t *testing.T) {
 	}
 }
 
-func TestNHCBAsClassicQuerier_WarningPropagation(t *testing.T) {
+func TestNativeHistogramsAsClassicQuerier_WarningPropagation(t *testing.T) {
 	nhcb := &histogram.Histogram{
 		Schema:          histogram.CustomBucketsSchema,
 		Count:           3,
@@ -992,7 +992,7 @@ func TestNHCBAsClassicQuerier_WarningPropagation(t *testing.T) {
 
 	t.Run("nhcb set warnings propagate", func(t *testing.T) {
 		warn := annotations.New().Add(errors.New("nhcb warning"))
-		q := NewNHCBAsClassicQuerier(&nhcbMockQuerier{
+		q := NewNativeHistogramsAsClassicQuerier(&nhcbMockQuerier{
 			classicSeries: []Series{},
 			nhcbSeries:    []Series{nhcbSeries},
 			nhcbWarnings:  warn,
@@ -1009,7 +1009,7 @@ func TestNHCBAsClassicQuerier_WarningPropagation(t *testing.T) {
 	t.Run("non-histogram passthrough preserves warnings", func(t *testing.T) {
 		warn := annotations.New().Add(errors.New("passthrough warning"))
 		series := []Series{NewListSeries(labels.FromStrings("__name__", "my_gauge"), []chunks.Sample{fSample{t: 1, f: 1}})}
-		q := NewNHCBAsClassicQuerier(&nhcbSetQuerier{
+		q := NewNativeHistogramsAsClassicQuerier(&nhcbSetQuerier{
 			nhcbSet: &mockSeriesSet{idx: -1, series: series, warnings: warn},
 		})
 

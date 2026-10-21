@@ -495,13 +495,13 @@ type EngineOpts struct {
 	// UseStartTimestamps enables start timestamp usage in functions such as rate().
 	UseStartTimestamps bool
 
-	// EnableNHCBAsClassic makes selectors for classic histogram series (_bucket,
+	// EnableNativeHistogramsAsClassic makes selectors for classic histogram series (_bucket,
 	// _count, _sum) also return series converted from native histograms with
 	// custom buckets (NHCB). The conversion wraps the Queryable passed to each
 	// query, so it applies to all data the engine reads (including remote-read
 	// sources behind a fanout), but not to other consumers of the same storage
 	// (e.g. the remote read API, federation or the series API).
-	EnableNHCBAsClassic bool
+	EnableNativeHistogramsAsClassic bool
 	// EnableQueryCost enables enforcement of the reloadable query-cost limits
 	// (max series, max samples read, max query duration) and the honoring of
 	// per-query limit overrides. Disabled otherwise.
@@ -517,24 +517,24 @@ type EngineOpts struct {
 // Engine handles the lifetime of queries from beginning to end.
 // It is connected to a querier.
 type Engine struct {
-	logger                   *slog.Logger
-	metrics                  *engineMetrics
-	timeout                  time.Duration
-	maxSamplesPerQuery       int
-	activeQueryTracker       QueryTracker
-	queryLogger              QueryLogger
-	queryLoggerLock          sync.RWMutex
-	lookbackDelta            time.Duration
-	noStepSubqueryIntervalFn func(rangeMillis int64) int64
-	enableAtModifier         bool
-	enableNegativeOffset     bool
-	enablePerStepStats       bool
-	enableDelayedNameRemoval bool
-	enableTypeAndUnitLabels  bool
-	useStartTimestamps       bool
-	enableNHCBAsClassic      bool
-	enableQueryCost          bool
-	parser                   parser.Parser
+	logger                          *slog.Logger
+	metrics                         *engineMetrics
+	timeout                         time.Duration
+	maxSamplesPerQuery              int
+	activeQueryTracker              QueryTracker
+	queryLogger                     QueryLogger
+	queryLoggerLock                 sync.RWMutex
+	lookbackDelta                   time.Duration
+	noStepSubqueryIntervalFn        func(rangeMillis int64) int64
+	enableAtModifier                bool
+	enableNegativeOffset            bool
+	enablePerStepStats              bool
+	enableDelayedNameRemoval        bool
+	enableTypeAndUnitLabels         bool
+	useStartTimestamps              bool
+	enableNativeHistogramsAsClassic bool
+	enableQueryCost                 bool
+	parser                          parser.Parser
 
 	// queryLimitsLock guards the reloadable query-cost limits below.
 	queryLimitsLock  sync.RWMutex
@@ -728,22 +728,22 @@ func NewEngine(opts EngineOpts) *Engine {
 	}
 
 	return &Engine{
-		timeout:                  opts.Timeout,
-		logger:                   opts.Logger,
-		metrics:                  metrics,
-		maxSamplesPerQuery:       opts.MaxSamples,
-		activeQueryTracker:       opts.ActiveQueryTracker,
-		lookbackDelta:            opts.LookbackDelta,
-		noStepSubqueryIntervalFn: opts.NoStepSubqueryIntervalFn,
-		enableAtModifier:         opts.EnableAtModifier,
-		enableNegativeOffset:     opts.EnableNegativeOffset,
-		enablePerStepStats:       opts.EnablePerStepStats,
-		enableDelayedNameRemoval: opts.EnableDelayedNameRemoval,
-		enableTypeAndUnitLabels:  opts.EnableTypeAndUnitLabels,
-		useStartTimestamps:       opts.UseStartTimestamps,
-		enableNHCBAsClassic:      opts.EnableNHCBAsClassic,
-		enableQueryCost:          opts.EnableQueryCost,
-		parser:                   opts.Parser,
+		timeout:                         opts.Timeout,
+		logger:                          opts.Logger,
+		metrics:                         metrics,
+		maxSamplesPerQuery:              opts.MaxSamples,
+		activeQueryTracker:              opts.ActiveQueryTracker,
+		lookbackDelta:                   opts.LookbackDelta,
+		noStepSubqueryIntervalFn:        opts.NoStepSubqueryIntervalFn,
+		enableAtModifier:                opts.EnableAtModifier,
+		enableNegativeOffset:            opts.EnableNegativeOffset,
+		enablePerStepStats:              opts.EnablePerStepStats,
+		enableDelayedNameRemoval:        opts.EnableDelayedNameRemoval,
+		enableTypeAndUnitLabels:         opts.EnableTypeAndUnitLabels,
+		useStartTimestamps:              opts.UseStartTimestamps,
+		enableNativeHistogramsAsClassic: opts.EnableNativeHistogramsAsClassic,
+		enableQueryCost:                 opts.EnableQueryCost,
+		parser:                          opts.Parser,
 	}
 }
 
@@ -887,11 +887,11 @@ func (ng *Engine) newQuery(q storage.Queryable, qs string, opts QueryOpts, start
 	if opts == nil {
 		opts = NewPrometheusQueryOpts(false, 0, nil)
 	}
-	if ng.enableNHCBAsClassic {
+	if ng.enableNativeHistogramsAsClassic {
 		// NOTE: Wrapping here, not in the storage, keeps the conversion scoped to
 		// PromQL evaluation while still covering every source behind q (e.g.
 		// remote-read secondaries of a fanout).
-		q = storage.NewNHCBAsClassicQueryable(q)
+		q = storage.NewNativeHistogramsAsClassicQueryable(q)
 	}
 
 	lookbackDelta := opts.LookbackDelta()
