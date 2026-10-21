@@ -34,6 +34,7 @@ import (
 
 	"github.com/alecthomas/kingpin/v2"
 	"github.com/google/pprof/profile"
+	"github.com/prometheus/cfaccess"
 	"github.com/prometheus/client_golang/api"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/testutil/promlint"
@@ -348,7 +349,7 @@ func main() {
 			kingpin.Fatalf("Failed to load HTTP config file: %v", err)
 		}
 
-		httpRoundTripper, err = promconfig.NewRoundTripperFromConfig(*httpConfig, "promtool", promconfig.WithUserAgent(version.ComponentUserAgent("promtool")))
+		httpRoundTripper, err = newPromtoolRoundTripper(*httpConfig)
 		if err != nil {
 			kingpin.Fatalf("Failed to create a new HTTP round tripper: %v", err)
 		}
@@ -493,6 +494,22 @@ func main() {
 		checkExperimental(*experimental)
 		os.Exit(checkErr(labelsDeletePromQL(*promQLLabelsDeleteQuery, *promQLLabelsDeleteName, promtoolParser)))
 	}
+}
+
+func newPromtoolRoundTripper(httpConfig promconfig.HTTPClientConfig) (http.RoundTripper, error) {
+	httpConfig, cfAccessEnabled, err := cfaccess.PrepareHTTPClientConfig(httpConfig)
+	if err != nil {
+		return nil, err
+	}
+
+	roundTripper, err := promconfig.NewRoundTripperFromConfig(httpConfig, "promtool", promconfig.WithUserAgent(version.ComponentUserAgent("promtool")))
+	if err != nil {
+		return nil, err
+	}
+	if cfAccessEnabled {
+		roundTripper = cfaccess.NewRoundTripper(roundTripper)
+	}
+	return roundTripper, nil
 }
 
 func checkExperimental(f bool) {
