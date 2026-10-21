@@ -347,7 +347,9 @@ func TestMetadataDelivery(t *testing.T) {
 
 	m.AppendWatcherMetadata(context.Background(), metadata)
 
+	require.Equal(t, float64(numMetadata), client_testutil.ToFloat64(m.metrics.metadataTotal))
 	require.Equal(t, 0.0, client_testutil.ToFloat64(m.metrics.failedMetadataTotal))
+	require.Positive(t, client_testutil.ToFloat64(m.metrics.metadataBytesTotal))
 	require.Len(t, c.receivedMetadata, numMetadata)
 	// One more write than the rounded quotient should be performed in order to get samples that didn't
 	// fit into MaxSamplesPerSend.
@@ -1997,19 +1999,50 @@ func forceEMWA(r *ewmaRate, rate int64) {
 }
 
 func TestQueueManagerMetrics(t *testing.T) {
-	reg := prometheus.NewPedanticRegistry()
-	metrics := newQueueManagerMetrics(reg, "name", "http://localhost:1234")
+	// These legacy metadata metrics are deprecated and not registered for Remote Write 2.0.
+	metadataMetricNames := []string{
+		"prometheus_remote_storage_metadata_total",
+		"prometheus_remote_storage_metadata_failed_total",
+		"prometheus_remote_storage_metadata_retried_total",
+		"prometheus_remote_storage_metadata_bytes_total",
+	}
 
-	// Make sure metrics pass linting.
-	problems, err := client_testutil.GatherAndLint(reg)
-	require.NoError(t, err)
-	require.Empty(t, problems, "Metric linting problems detected: %v", problems)
+	for _, tc := range []struct {
+		name                 string
+		protoMsg             remoteapi.WriteMessageType
+		expectMetadataMetric bool
+	}{
+		{name: "remote write 1.0", protoMsg: remoteapi.WriteV1MessageType, expectMetadataMetric: true},
+		{name: "remote write 2.0", protoMsg: remoteapi.WriteV2MessageType, expectMetadataMetric: false},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			reg := prometheus.NewPedanticRegistry()
+			metrics := newQueueManagerMetrics(reg, "name", "http://localhost:1234")
+			metrics.register(tc.protoMsg)
 
-	// Make sure all metrics were unregistered. A failure here means you need
-	// unregister a metric in `queueManagerMetrics.unregister()`.
-	metrics.unregister()
-	err = client_testutil.GatherAndCompare(reg, strings.NewReader(""))
-	require.NoError(t, err)
+			// Make sure metrics pass linting.
+			problems, err := client_testutil.GatherAndLint(reg)
+			require.NoError(t, err)
+			require.Empty(t, problems, "Metric linting problems detected: %v", problems)
+
+			metricFamilies, err := reg.Gather()
+			require.NoError(t, err)
+			registeredMetrics := make(map[string]struct{}, len(metricFamilies))
+			for _, metricFamily := range metricFamilies {
+				registeredMetrics[metricFamily.GetName()] = struct{}{}
+			}
+			for _, metricName := range metadataMetricNames {
+				_, ok := registeredMetrics[metricName]
+				require.Equal(t, tc.expectMetadataMetric, ok, metricName)
+			}
+
+			// Make sure all metrics were unregistered. A failure here means you need
+			// unregister a metric in `queueManagerMetrics.unregister()`.
+			metrics.unregister(tc.protoMsg)
+			err = client_testutil.GatherAndCompare(reg, strings.NewReader(""))
+			require.NoError(t, err)
+		})
+	}
 }
 
 func TestQueue_FlushAndShutdownDoesNotDeadlock(t *testing.T) {
@@ -2565,14 +2598,13 @@ func TestPopulateV2TimeSeries_UnexpectedMetadata(t *testing.T) {
 		{sType: tMetadata, seriesLabels: labels.FromStrings("__name__", "metric4")},
 	}
 
-	nSamples, nExemplars, nHistograms, nMetadata, nUnexpected := populateV2TimeSeries(
+	nSamples, nExemplars, nHistograms, nUnexpected := populateV2TimeSeries(
 		&symbolTable, batch, pendingData, false, false, false,
 	)
 
 	require.Equal(t, 2, nSamples, "Should count 2 samples")
 	require.Equal(t, 0, nExemplars, "Should count 0 exemplars")
 	require.Equal(t, 0, nHistograms, "Should count 0 histograms")
-	require.Equal(t, 0, nMetadata, "Should count 0 processed metadata")
 	require.Equal(t, 2, nUnexpected, "Should count 2 unexpected metadata")
 }
 
@@ -2680,7 +2712,7 @@ func TestPopulateV2TimeSeries_TypeAndUnitLabels(t *testing.T) {
 			pendingData := make([]writev2.TimeSeries, 1)
 
 			symbolTable.Reset()
-			nSamples, nExemplars, nHistograms, _, _ := populateV2TimeSeries(
+			nSamples, nExemplars, nHistograms, _ := populateV2TimeSeries(
 				&symbolTable,
 				batch,
 				pendingData,
@@ -2804,7 +2836,7 @@ func TestPopulateV2TimeSeries_MetadataAndTypeAndUnit(t *testing.T) {
 			pendingData := make([]writev2.TimeSeries, 1)
 
 			symbolTable.Reset()
-			nSamples, nExemplars, nHistograms, nMetadata, _ := populateV2TimeSeries(
+			nSamples, nExemplars, nHistograms, _ := populateV2TimeSeries(
 				&symbolTable,
 				batch,
 				pendingData,
@@ -2829,10 +2861,8 @@ func TestPopulateV2TimeSeries_MetadataAndTypeAndUnit(t *testing.T) {
 				actualUnit = symbols[unitRef]
 			}
 			require.Equal(t, tc.expectedUnit, actualUnit, "Unit should match for %s", tc.name)
-
-			// Verify metadata count.
 			if tc.metadata != nil && tc.enableTypeAndUnit {
-				require.Equal(t, 1, nMetadata, "Should count metadata when d.metadata is provided")
+				require.Equal(t, tc.metadata.Help, symbols[pendingData[0].Metadata.HelpRef])
 			}
 		})
 	}

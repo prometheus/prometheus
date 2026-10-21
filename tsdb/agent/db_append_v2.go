@@ -21,6 +21,7 @@ import (
 	"github.com/prometheus/prometheus/model/exemplar"
 	"github.com/prometheus/prometheus/model/histogram"
 	"github.com/prometheus/prometheus/model/labels"
+	"github.com/prometheus/prometheus/model/metadata"
 	"github.com/prometheus/prometheus/model/value"
 	"github.com/prometheus/prometheus/storage"
 	"github.com/prometheus/prometheus/tsdb/chunks"
@@ -123,7 +124,7 @@ func (a *appenderV2) Append(ref storage.SeriesRef, ls labels.Labels, st, t int64
 	}
 	if a.opts.EnableMetadataWALRecords && !opts.Metadata.IsEmpty() {
 		s.Lock()
-		metaChanged := s.meta == nil || !s.meta.Equals(opts.Metadata)
+		metaChanged := metadata.IsZeroHandle(s.meta) || !s.meta.Value().Equals(opts.Metadata)
 		s.Unlock()
 		if metaChanged {
 			a.pendingMetadata = append(a.pendingMetadata, record.RefMetadata{

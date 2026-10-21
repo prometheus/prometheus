@@ -55,6 +55,7 @@ import (
 	toolkit_web "github.com/prometheus/exporter-toolkit/web"
 	"go.uber.org/atomic"
 	"go.uber.org/automaxprocs/maxprocs"
+	"go.yaml.in/yaml/v2"
 	"k8s.io/client-go/rest"
 	"k8s.io/klog"
 	klogv2 "k8s.io/klog/v2"
@@ -217,6 +218,7 @@ type flagConfig struct {
 	enablePerStepStats       bool
 	enableConcurrentRuleEval bool
 	useStartTimestamps       bool
+	enableQueryCost          bool
 
 	// enableRemoteWriteSavepoint enables remote write to track current segment and to restart from a savepoint.
 	enableRemoteWriteSavepoint bool
@@ -358,6 +360,10 @@ func (c *flagConfig) setFeatureListOptions(logger *slog.Logger) error {
 			case "remote-write-savepoint":
 				c.enableRemoteWriteSavepoint = true
 				logger.Info("Experimental remote write savepoint enabled. WAL replay will resume from last known segment.")
+			case "query-cost":
+				c.enableQueryCost = true
+				c.web.EnableQueryCost = true
+				logger.Info("Experimental query cost guardrails enabled.")
 			default:
 				logger.Warn("Unknown option for --enable-feature", "option", o)
 			}
@@ -655,7 +661,7 @@ func main() {
 	a.Flag("scrape.discovery-reload-interval", "Interval used by scrape manager to throttle target groups updates.").
 		Hidden().Default("5s").SetValue(&cfg.scrape.DiscoveryReloadInterval)
 
-	a.Flag("enable-feature", "Comma separated feature names to enable. Valid options: concurrent-rule-eval, created-timestamp-zero-ingestion, delayed-compaction, exemplar-storage, extra-scrape-metrics, histograms-st-encoding, memory-snapshot-on-shutdown, metadata-wal-records, old-ui, openmetrics2, otlp-deltatocumulative, otlp-native-delta-ingestion, promql-binop-fill-modifiers, promql-delayed-name-removal, promql-experimental-functions, promql-per-step-stats, remote-write-savepoint, search-api, st-storage, st-synthesis, type-and-unit-labels, use-start-timestamps, use-uncached-io, xor2-encoding, zstd-scrape. See https://prometheus.io/docs/prometheus/latest/feature_flags/ for more details.").
+	a.Flag("enable-feature", "Comma separated feature names to enable. Valid options: concurrent-rule-eval, created-timestamp-zero-ingestion, delayed-compaction, exemplar-storage, extra-scrape-metrics, histograms-st-encoding, memory-snapshot-on-shutdown, metadata-wal-records, old-ui, openmetrics2, otlp-deltatocumulative, otlp-native-delta-ingestion, promql-binop-fill-modifiers, promql-delayed-name-removal, promql-experimental-functions, promql-per-step-stats, query-cost, remote-write-savepoint, search-api, st-storage, st-synthesis, type-and-unit-labels, use-start-timestamps, use-uncached-io, xor2-encoding, zstd-scrape. See https://prometheus.io/docs/prometheus/latest/feature_flags/ for more details.").
 		StringsVar(&cfg.featureList)
 
 	a.Flag("agent", "Run Prometheus in 'Agent mode'.").BoolVar(&agentMode)
@@ -737,7 +743,7 @@ func main() {
 		localStoragePath = cfg.agentStoragePath
 	}
 
-	cfg.web.ExternalURL, err = computeExternalURL(cfg.prometheusURL, cfg.web.ListenAddresses[0])
+	cfg.web.ExternalURL, err = computeExternalURL(cfg.prometheusURL, cfg.web.ListenAddresses[0], *webConfig)
 	if err != nil {
 		fmt.Fprintln(os.Stderr, fmt.Errorf("parse external URL %q: %w", cfg.prometheusURL, err))
 		os.Exit(2)
@@ -832,9 +838,9 @@ func main() {
 	}
 
 	if cfg.memlimitEnable {
-		if _, err := memlimit.SetGoMemLimitWithOpts(
+		if _, err := memlimit.Set(
 			memlimit.WithRatio(cfg.memlimitRatio),
-			memlimit.WithRefreshInterval(time.Duration(cfg.memlimitRefreshInterval)),
+			memlimit.WithRefreshInterval(context.Background(), time.Duration(cfg.memlimitRefreshInterval)),
 			memlimit.WithProvider(
 				memlimit.ApplyFallback(
 					memlimit.FromCgroup,
@@ -1041,6 +1047,7 @@ func main() {
 			EnableDelayedNameRemoval: cfg.promqlEnableDelayedNameRemoval,
 			EnableTypeAndUnitLabels:  cfg.scrape.EnableTypeAndUnitLabels,
 			UseStartTimestamps:       cfg.useStartTimestamps,
+			EnableQueryCost:          cfg.enableQueryCost,
 			FeatureRegistry:          features.DefaultRegistry,
 			Parser:                   promqlParser,
 		}
@@ -1085,6 +1092,7 @@ func main() {
 	cfg.web.RuleManager = ruleManager
 	cfg.web.Notifier = notifierManager
 	cfg.web.LookbackDelta = time.Duration(cfg.lookbackDelta)
+	cfg.web.QueryTimeout = time.Duration(cfg.queryTimeout)
 	cfg.web.IsAgent = agentMode
 	cfg.web.AppName = modeAppName
 	cfg.web.Parser = promqlParser
@@ -1120,6 +1128,9 @@ func main() {
 
 	// This is passed to ruleManager.Update().
 	externalURL := cfg.web.ExternalURL.String()
+
+	// Captured for the query_engine reloader, whose parameter shadows cfg.
+	enableQueryCost := cfg.enableQueryCost
 
 	reloaders := []reloader{
 		{
@@ -1158,6 +1169,16 @@ func main() {
 				if agentMode {
 					// No-op in Agent mode.
 					return nil
+				}
+
+				// Apply the reloadable query-cost limits only when the
+				// query-cost feature is enabled.
+				if enableQueryCost {
+					queryEngine.SetQueryLimits(
+						cfg.GlobalConfig.QueryMaxSeries,
+						cfg.GlobalConfig.QueryMaxSamplesRead,
+						time.Duration(cfg.GlobalConfig.QueryMaxDuration),
+					)
 				}
 
 				if cfg.GlobalConfig.QueryLogFile == "" {
@@ -1797,8 +1818,9 @@ func compileCORSRegexString(s string) (*regexp.Regexp, error) {
 }
 
 // computeExternalURL computes a sanitized external URL from a raw input. It infers unset
-// URL parts from the OS and the given listen address.
-func computeExternalURL(u, listenAddr string) (*url.URL, error) {
+// URL parts from the OS and the given listen address. When u is empty, the scheme of the
+// inferred URL is set to https if webConfigFile configures TLS.
+func computeExternalURL(u, listenAddr, webConfigFile string) (*url.URL, error) {
 	if u == "" {
 		hostname, err := os.Hostname()
 		if err != nil {
@@ -1808,7 +1830,11 @@ func computeExternalURL(u, listenAddr string) (*url.URL, error) {
 		if err != nil {
 			return nil, err
 		}
-		u = fmt.Sprintf("http://%s:%s/", hostname, port)
+		scheme := "http"
+		if webConfigHasTLSServerConfig(webConfigFile) {
+			scheme = "https"
+		}
+		u = fmt.Sprintf("%s://%s:%s/", scheme, hostname, port)
 	}
 
 	if startsOrEndsWithQuote(u) {
@@ -1827,6 +1853,29 @@ func computeExternalURL(u, listenAddr string) (*url.URL, error) {
 	eu.Path = ppref
 
 	return eu, nil
+}
+
+// webConfigHasTLSServerConfig reports whether the web config file at path configures TLS,
+// i.e. contains a tls_server_config section that sets at least one TLS-enabling field, as
+// decided by exporter-toolkit's own TLSConfig.IsEnabled(). An empty path, or a file that
+// cannot be read or parsed as YAML, is treated as not configuring TLS; a definitive error
+// for such cases is reported later by toolkit_web.Validate.
+func webConfigHasTLSServerConfig(path string) bool {
+	if path == "" {
+		return false
+	}
+
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return false
+	}
+
+	var webConfig toolkit_web.Config
+	if err := yaml.Unmarshal(data, &webConfig); err != nil {
+		return false
+	}
+
+	return webConfig.TLSConfig.IsEnabled()
 }
 
 // storagePathFsSize returns the filesystem size for path or its closest existing parent.

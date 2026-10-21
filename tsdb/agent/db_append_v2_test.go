@@ -1460,10 +1460,10 @@ func TestMetadataAssertInMemoryData_AppenderV2(t *testing.T) {
 	series2 := s.series.GetByHash(s2.Hash(), s2)
 	series3 := s.series.GetByHash(s3.Hash(), s3)
 	series4 := s.series.GetByHash(s4.Hash(), s4)
-	require.Equal(t, m1, *series1.Metadata())
-	require.Equal(t, m2, *series2.Metadata())
-	require.Equal(t, m3, *series3.Metadata())
-	require.Nil(t, series4.Metadata())
+	require.Equal(t, m1, series1.Metadata().Value())
+	require.Equal(t, m2, series2.Metadata().Value())
+	require.Equal(t, m3, series3.Metadata().Value())
+	require.True(t, metadata.IsZeroHandle(series4.Metadata()))
 
 	// Update metadata.
 	m4 := metadata.Metadata{Type: "counter", Unit: "unit_4", Help: "help_4"}
@@ -1478,10 +1478,10 @@ func TestMetadataAssertInMemoryData_AppenderV2(t *testing.T) {
 	require.NoError(t, err)
 	require.NoError(t, app.Commit())
 
-	require.Equal(t, m1, *series1.Metadata())
-	require.Equal(t, m5, *series2.Metadata())
-	require.Equal(t, m3, *series3.Metadata())
-	require.Equal(t, m4, *series4.Metadata())
+	require.Equal(t, m1, series1.Metadata().Value())
+	require.Equal(t, m5, series2.Metadata().Value())
+	require.Equal(t, m3, series3.Metadata().Value())
+	require.Equal(t, m4, series4.Metadata().Value())
 }
 
 func TestMetadataCheckpointing_AppenderV2(t *testing.T) {
@@ -1628,7 +1628,7 @@ func TestMetadataCheckpointing_AppenderV2(t *testing.T) {
 				require.NoError(t, replayed.loadWAL(wlog.NewReader(sr), map[chunks.HeadSeriesRef]chunks.HeadSeriesRef{}, 0))
 				replayedS4 := replayed.series.GetByHash(s4.Hash(), s4)
 				require.NotNil(t, replayedS4)
-				require.Equal(t, &m5, replayedS4.Metadata())
+				require.Equal(t, m5, replayedS4.Metadata().Value())
 			}
 		})
 	}

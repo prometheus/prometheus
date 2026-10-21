@@ -21,6 +21,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"maps"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
@@ -1354,6 +1355,27 @@ func testEndpoints(t *testing.T, api *API, tr *testTargetRetriever, testLabelAPI
 				"query": []string{"2"},
 				"time":  []string{"123.4"},
 				"limit": []string{"-1"},
+			},
+			errType: errorBadData,
+		},
+		// A non-positive timeout could only produce an already-expired deadline.
+		{
+			endpoint: api.query,
+			query: url.Values{
+				"query":   []string{"2"},
+				"time":    []string{"123.4"},
+				"timeout": []string{"0s"},
+			},
+			errType: errorBadData,
+		},
+		{
+			endpoint: api.queryRange,
+			query: url.Values{
+				"query":   []string{"time()"},
+				"start":   []string{"0"},
+				"end":     []string{"2"},
+				"step":    []string{"1"},
+				"timeout": []string{"-1"},
 			},
 			errType: errorBadData,
 		},
@@ -5038,18 +5060,23 @@ func TestExtractQueryOpts(t *testing.T) {
 		},
 	}
 
-	for _, test := range tests {
-		t.Run(test.name, func(t *testing.T) {
-			req := &http.Request{Form: test.form, Header: test.header}
-			if req.Header == nil {
-				req.Header = make(http.Header)
-			}
-			opts, err := extractQueryOpts(req)
-			require.Equal(t, test.expect, opts)
-			if test.err == nil {
-				require.NoError(t, err)
-			} else {
-				require.EqualError(t, err, test.err.Error())
+	for _, enableQueryCost := range []bool{false, true} {
+		t.Run(fmt.Sprintf("query-cost=%t", enableQueryCost), func(t *testing.T) {
+			for _, test := range tests {
+				t.Run(test.name, func(t *testing.T) {
+					req := &http.Request{Form: test.form, Header: test.header}
+					if req.Header == nil {
+						req.Header = make(http.Header)
+					}
+					api := &API{enableQueryCost: enableQueryCost}
+					opts, err := api.extractQueryOpts(req)
+					require.Equal(t, test.expect, opts)
+					if test.err == nil {
+						require.NoError(t, err)
+					} else {
+						require.EqualError(t, err, test.err.Error())
+					}
+				})
 			}
 		})
 	}
@@ -5181,4 +5208,886 @@ func TestGetRuleGroupNextToken(t *testing.T) {
 	// Distinct file and group inputs must produce distinct tokens.
 	require.NotEqual(t, token, getRuleGroupNextToken("/path/to/file", "other"))
 	require.NotEqual(t, token, getRuleGroupNextToken("/other/file", "group"))
+}
+
+// newQueryCostTestAPI builds an API wired to a small test storage with the
+// query-cost feature enabled (or disabled when enabled is false). As in
+// production, the flag enables the feature in both the API and the engine; the
+// engine has no query-cost limits until a test sets them.
+func newQueryCostTestAPI(t *testing.T, enabled, isAgent bool) *API {
+	t.Helper()
+	s := promqltest.LoadedStorage(t, `
+		load 1m
+			test_metric1{foo="bar"} 0+100x100
+			test_metric1{foo="boo"} 1+0x100
+			test_metric2{foo="boo"} 1+0x100
+	`)
+	t.Cleanup(func() { _ = s.Close() })
+
+	now := time.Now()
+	return &API{
+		Queryable: s,
+		QueryEngine: promqltest.NewTestEngineWithOpts(t, promql.EngineOpts{
+			MaxSamples:               10000,
+			Timeout:                  100 * time.Second,
+			NoStepSubqueryIntervalFn: func(int64) int64 { return 60 * 1000 },
+			EnableAtModifier:         true,
+			EnableNegativeOffset:     true,
+			EnablePerStepStats:       true,
+			EnableQueryCost:          enabled,
+		}),
+		now:             func() time.Time { return now },
+		config:          func() config.Config { return samplePrometheusCfg },
+		ready:           func(f http.HandlerFunc) http.HandlerFunc { return f },
+		parser:          testParser,
+		statsRenderer:   DefaultStatsRenderer,
+		enableQueryCost: enabled,
+		isAgent:         isAgent,
+	}
+}
+
+// queryCostConfig returns a configuration carrying the operator-set query-cost
+// ceilings, for tests that exercise the per-query override rules.
+func queryCostConfig(maxSeries, maxSamplesRead uint64, maxDuration time.Duration) config.Config {
+	cfg := samplePrometheusCfg
+	cfg.GlobalConfig.QueryMaxSeries = maxSeries
+	cfg.GlobalConfig.QueryMaxSamplesRead = maxSamplesRead
+	cfg.GlobalConfig.QueryMaxDuration = model.Duration(maxDuration)
+	return cfg
+}
+
+// queryCostRequest builds a request carrying params either in the URL query
+// (GET) or as a form-encoded body (POST), so a case can be run over both
+// methods.
+func queryCostRequest(t *testing.T, method string, params url.Values) *http.Request {
+	t.Helper()
+	if method == http.MethodGet {
+		req, err := http.NewRequest(method, "http://example.com?"+params.Encode(), http.NoBody)
+		require.NoError(t, err)
+		return req
+	}
+	req, err := http.NewRequest(method, "http://example.com", strings.NewReader(params.Encode()))
+	require.NoError(t, err)
+	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	return req
+}
+
+// withParams returns a copy of base with the given key/value pairs set, so a
+// table can extend a shared parameter set without mutating it.
+func withParams(base url.Values, kv ...string) url.Values {
+	out := url.Values{}
+	maps.Copy(out, base)
+	for i := 0; i+1 < len(kv); i += 2 {
+		out.Set(kv[i], kv[i+1])
+	}
+	return out
+}
+
+// jsonFields marshals v as JSON and returns the field names of the resulting
+// object, so tests can assert on the exact wire shape of a payload.
+func jsonFields(t *testing.T, v any) []string {
+	t.Helper()
+	b, err := json.Marshal(v)
+	require.NoError(t, err)
+	var obj map[string]json.RawMessage
+	require.NoError(t, json.Unmarshal(b, &obj))
+	fields := make([]string, 0, len(obj))
+	for k := range obj {
+		fields = append(fields, k)
+	}
+	return fields
+}
+
+// queryCostEndpoint is one of the endpoints that accept the query-cost
+// parameters, together with the parameters it requires.
+type queryCostEndpoint struct {
+	name    string
+	handler func(*http.Request) apiFuncResult
+	params  url.Values
+}
+
+// queryCostEndpoints returns the instant and range query endpoints together
+// with their cost-estimation counterparts. The proposal requires the cost
+// endpoints to take the same parameters as the query endpoints, so every case
+// built on this list runs against all four.
+func queryCostEndpoints(api *API) []queryCostEndpoint {
+	instant := url.Values{"query": {"test_metric1"}, "time": {"120"}}
+	rangeParams := url.Values{"query": {"test_metric1"}, "start": {"0"}, "end": {"120"}, "step": {"60"}}
+	return []queryCostEndpoint{
+		{name: "query", handler: api.query, params: instant},
+		{name: "query_range", handler: api.queryRange, params: rangeParams},
+		{name: "query_cost", handler: api.queryCost, params: instant},
+		{name: "query_range_cost", handler: api.queryRangeCost, params: rangeParams},
+	}
+}
+
+// TestQueryCostEstimateEndpoint verifies that both cost endpoints return, over
+// GET and POST, a payload that is exactly {"estimate": {"seriesTouched": N,
+// "samplesRead": N}}: the estimate carries no third field.
+func TestQueryCostEstimateEndpoint(t *testing.T) {
+	api := newQueryCostTestAPI(t, true, false)
+
+	for _, ep := range queryCostEndpoints(api) {
+		if ep.name != "query_cost" && ep.name != "query_range_cost" {
+			continue
+		}
+		for _, method := range []string{http.MethodGet, http.MethodPost} {
+			t.Run(ep.name+" "+method, func(t *testing.T) {
+				res := ep.handler(queryCostRequest(t, method, ep.params))
+				require.Nil(t, res.err)
+
+				data, ok := res.data.(*QueryCostData)
+				require.True(t, ok, "expected *QueryCostData, got %T", res.data)
+				require.GreaterOrEqual(t, data.Estimate.SeriesTouched, int64(1))
+				require.GreaterOrEqual(t, data.Estimate.SamplesRead, int64(1))
+				// The estimate never reports peak samples, so the field is omitted.
+				require.Zero(t, data.Estimate.PeakSamples)
+
+				require.Equal(t, []string{"estimate"}, jsonFields(t, data))
+				require.ElementsMatch(t, []string{"seriesTouched", "samplesRead"}, jsonFields(t, data.Estimate))
+			})
+		}
+	}
+}
+
+// TestQueryCostEndpointParameterParity verifies that the cost endpoints accept
+// and validate parameters the same way the query endpoints do, so a request
+// accepted by one endpoint is accepted by the other. That covers the parameters
+// that only shape an executed query's response as well as the per-query cost
+// overrides.
+func TestQueryCostEndpointParameterParity(t *testing.T) {
+	api := newQueryCostTestAPI(t, true, false)
+
+	for _, tc := range []struct {
+		name    string
+		params  []string
+		errType errorType
+		warning bool
+	}{
+		{name: "valid limit", params: []string{"limit", "10"}},
+		{name: "invalid limit", params: []string{"limit", "notanumber"}, errType: errorBadData},
+		{name: "negative limit", params: []string{"limit", "-1"}, errType: errorBadData},
+		{name: "valid stats", params: []string{"stats", "all"}},
+		{name: "deprecated stats value warns", params: []string{"stats", "bogus"}, warning: true},
+		{name: "valid cost", params: []string{"cost", "true"}},
+		{name: "invalid cost", params: []string{"cost", "maybe"}, errType: errorBadData},
+		{name: "invalid max_series", params: []string{"max_series", "notanumber"}, errType: errorBadData},
+		{name: "invalid max_samples_read", params: []string{"max_samples_read", "-1"}, errType: errorBadData},
+		{name: "invalid max_query_duration", params: []string{"max_query_duration", "notaduration"}, errType: errorBadData},
+		// A malformed expression is a client error on /query, so it must be one
+		// here too rather than looking like an execution failure.
+		{name: "malformed query", params: []string{"query", "up{"}, errType: errorBadData},
+		// A non-positive timeout could only produce an already-expired deadline.
+		{name: "zero timeout", params: []string{"timeout", "0s"}, errType: errorBadData},
+		{name: "negative timeout", params: []string{"timeout", "-1"}, errType: errorBadData},
+		// Zero means no override, but a negative duration is never valid.
+		{name: "negative max_query_duration", params: []string{"max_query_duration", "-1"}, errType: errorBadData},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			for _, ep := range queryCostEndpoints(api) {
+				t.Run(ep.name, func(t *testing.T) {
+					res := ep.handler(queryCostRequest(t, http.MethodGet, withParams(ep.params, tc.params...)))
+					assertAPIError(t, res.err, tc.errType)
+					if tc.warning {
+						require.NotEmpty(t, res.warnings.AsErrors())
+					}
+				})
+			}
+		})
+	}
+}
+
+// TestQueryRangeCostEndpointValidation verifies that the queryRangeCost handler
+// validates step and the start/end ordering like queryRange.
+func TestQueryRangeCostEndpointValidation(t *testing.T) {
+	api := newQueryCostTestAPI(t, true, false)
+
+	for _, tc := range []struct {
+		name    string
+		query   url.Values
+		errType errorType
+	}{
+		{
+			name:    "zero step",
+			query:   url.Values{"query": {"test_metric1"}, "start": {"0"}, "end": {"120"}, "step": {"0"}},
+			errType: errorBadData,
+		},
+		{
+			name:    "negative step",
+			query:   url.Values{"query": {"test_metric1"}, "start": {"0"}, "end": {"120"}, "step": {"-1"}},
+			errType: errorBadData,
+		},
+		{
+			name:    "end before start",
+			query:   url.Values{"query": {"test_metric1"}, "start": {"120"}, "end": {"0"}, "step": {"60"}},
+			errType: errorBadData,
+		},
+		{
+			name:    "matrix expression",
+			query:   url.Values{"query": {"test_metric1[5m]"}, "start": {"0"}, "end": {"120"}, "step": {"60"}},
+			errType: errorBadData,
+		},
+		{
+			name:    "string expression",
+			query:   url.Values{"query": {`"hello"`}, "start": {"0"}, "end": {"120"}, "step": {"60"}},
+			errType: errorBadData,
+		},
+		{
+			name:  "valid range",
+			query: url.Values{"query": {"test_metric1"}, "start": {"0"}, "end": {"120"}, "step": {"60"}},
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			req, err := http.NewRequest(http.MethodGet, "http://example.com?"+tc.query.Encode(), http.NoBody)
+			require.NoError(t, err)
+
+			res := api.queryRangeCost(req)
+			assertAPIError(t, res.err, tc.errType)
+			if tc.errType == errorNone {
+				_, ok := res.data.(*QueryCostData)
+				require.True(t, ok, "expected *QueryCostData, got %T", res.data)
+			}
+		})
+	}
+}
+
+// TestQueryCostComparisonGating verifies that the cost comparison object is
+// present on a query response only when the cost parameter is true, the feature
+// is enabled and estimation succeeds. A failing estimate must never turn a
+// successful query into an API error: the result is returned without a
+// comparison, and the estimation error becomes a warning.
+func TestQueryCostComparisonGating(t *testing.T) {
+	for _, tc := range []struct {
+		name         string
+		enabled      bool
+		cost         string
+		failEstimate bool
+		errType      errorType
+		wantCost     bool
+	}{
+		{name: "present when cost=1 and feature enabled", enabled: true, cost: "1", wantCost: true},
+		{name: "absent without cost param", enabled: true},
+		{name: "absent when feature disabled even with cost=1", cost: "1"},
+		{name: "absent when cost=false", enabled: true, cost: "false"},
+		{name: "rejected when cost is not a boolean", enabled: true, cost: "maybe", errType: errorBadData},
+		{name: "absent with a warning when estimation fails", enabled: true, cost: "1", failEstimate: true},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			api := newQueryCostTestAPI(t, tc.enabled, false)
+			if tc.failEstimate {
+				api.Queryable = failEstimateQueryable{SampleAndChunkQueryable: api.Queryable}
+			}
+			for _, ep := range queryCostEndpoints(api) {
+				if ep.name != "query" && ep.name != "query_range" {
+					continue
+				}
+				t.Run(ep.name, func(t *testing.T) {
+					params := ep.params
+					if tc.cost != "" {
+						params = withParams(params, "cost", tc.cost)
+					}
+					res := ep.handler(queryCostRequest(t, http.MethodGet, params))
+					if res.finalizer != nil {
+						defer res.finalizer()
+					}
+					assertAPIError(t, res.err, tc.errType)
+					if tc.errType != errorNone {
+						return
+					}
+
+					data, ok := res.data.(*QueryData)
+					require.True(t, ok, "expected *QueryData, got %T", res.data)
+					require.NotNil(t, data.Result)
+					if tc.wantCost {
+						require.NotNil(t, data.Cost)
+						require.GreaterOrEqual(t, data.Cost.Estimated.SeriesTouched, int64(1))
+						require.GreaterOrEqual(t, data.Cost.Actual.SeriesTouched, int64(1))
+					} else {
+						require.Nil(t, data.Cost)
+					}
+					if tc.failEstimate {
+						require.NotEmpty(t, res.warnings.AsErrors())
+					}
+				})
+			}
+		})
+	}
+}
+
+// TestQueryCostRoutesUnavailableInAgentMode verifies that the cost endpoints are
+// registered when the feature is enabled but respond with an error in agent
+// mode, and that they are not registered at all when the feature is disabled.
+func TestQueryCostRoutesUnavailableInAgentMode(t *testing.T) {
+	t.Run("agent mode returns error", func(t *testing.T) {
+		api := newQueryCostTestAPI(t, true, true)
+		r := route.New()
+		api.Register(r)
+		s := httptest.NewServer(r)
+		defer s.Close()
+
+		for _, path := range []string{
+			"/query_cost?query=test_metric1&time=120",
+			"/query_range_cost?query=test_metric1&start=0&end=120&step=60",
+		} {
+			resp, err := http.Get(s.URL + path)
+			require.NoError(t, err)
+			body, err := io.ReadAll(resp.Body)
+			resp.Body.Close()
+			require.NoError(t, err)
+			require.Contains(t, string(body), "unavailable with Prometheus Agent")
+		}
+	})
+
+	t.Run("routes not registered when feature disabled", func(t *testing.T) {
+		api := newQueryCostTestAPI(t, false, false)
+		r := route.New()
+		api.Register(r)
+		s := httptest.NewServer(r)
+		defer s.Close()
+
+		resp, err := http.Get(s.URL + "/query_cost?query=test_metric1&time=120")
+		require.NoError(t, err)
+		resp.Body.Close()
+		require.Equal(t, http.StatusNotFound, resp.StatusCode)
+	})
+}
+
+// TestQueryCostLimitExceeded verifies that a query which trips a cost limit
+// surfaces as an errorCostLimit API error mapping to HTTP 422 Unprocessable
+// Entity, for both the series and the scanned-samples limit, on the instant and
+// the range query handlers.
+func TestQueryCostLimitExceeded(t *testing.T) {
+	newAPI := func(t *testing.T, maxSeries, maxSamplesRead uint64) *API {
+		t.Helper()
+		api := newQueryCostTestAPI(t, true, false)
+		api.QueryEngine.(*promql.Engine).SetQueryLimits(maxSeries, maxSamplesRead, 0)
+		return api
+	}
+
+	// The loaded dataset has two series matching test_metric1, each with many
+	// samples, so a max_series of 1 trips ErrTooManySeries and a
+	// max_samples_read of 1 trips ErrTooManySamplesRead.
+	for _, tc := range []struct {
+		name           string
+		maxSeries      uint64
+		maxSamplesRead uint64
+	}{
+		{name: "max_series", maxSeries: 1},
+		{name: "max_samples_read", maxSamplesRead: 1},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Run("instant query", func(t *testing.T) {
+				api := newAPI(t, tc.maxSeries, tc.maxSamplesRead)
+				req, err := http.NewRequest(http.MethodGet, "http://example.com?query=test_metric1&time=120", http.NoBody)
+				require.NoError(t, err)
+
+				res := api.query(req)
+				require.NotNil(t, res.err)
+				require.Equal(t, errorCostLimit, res.err.typ)
+				require.Equal(t, http.StatusUnprocessableEntity, getDefaultErrorCode(res.err.typ))
+			})
+
+			t.Run("range query", func(t *testing.T) {
+				api := newAPI(t, tc.maxSeries, tc.maxSamplesRead)
+				req, err := http.NewRequest(http.MethodGet, "http://example.com?query=test_metric1&start=0&end=120&step=60", http.NoBody)
+				require.NoError(t, err)
+
+				res := api.queryRange(req)
+				require.NotNil(t, res.err)
+				require.Equal(t, errorCostLimit, res.err.typ)
+				require.Equal(t, http.StatusUnprocessableEntity, getDefaultErrorCode(res.err.typ))
+			})
+		})
+	}
+}
+
+// failEstimateQueryable fails chunk probes used by cost estimation while leaving
+// the plain querier used by normal query execution untouched.
+type failEstimateQueryable struct {
+	storage.SampleAndChunkQueryable
+}
+
+// CostSamplingQueryable enables the injected estimation probe.
+func (q failEstimateQueryable) CostSamplingQueryable() (storage.SampleAndChunkQueryable, bool) {
+	return q, true
+}
+
+func (q failEstimateQueryable) ChunkQuerier(mint, maxt int64) (storage.ChunkQuerier, error) {
+	inner, err := q.SampleAndChunkQueryable.ChunkQuerier(mint, maxt)
+	if err != nil {
+		return nil, err
+	}
+	return failEstimateChunkQuerier{ChunkQuerier: inner}, nil
+}
+
+// failEstimateChunkQuerier delegates every method to the wrapped chunk querier
+// except Select, which it always fails to simulate an estimation-probe failure.
+type failEstimateChunkQuerier struct {
+	storage.ChunkQuerier
+}
+
+func (failEstimateChunkQuerier) Select(context.Context, bool, *storage.SelectHints, ...*labels.Matcher) storage.ChunkSeriesSet {
+	return storage.ErrChunkSeriesSet(errors.New("injected estimation failure"))
+}
+
+// TestQueryCostComparisonShape verifies the wire shape of the estimated-vs-actual
+// comparison returned on data.cost: estimated carries the two estimate fields and
+// actual additionally carries the peak samples, which only exist for the measured
+// cost.
+func TestQueryCostComparisonShape(t *testing.T) {
+	api := newQueryCostTestAPI(t, true, false)
+
+	for _, ep := range queryCostEndpoints(api) {
+		if ep.name != "query" && ep.name != "query_range" {
+			continue
+		}
+		for _, method := range []string{http.MethodGet, http.MethodPost} {
+			t.Run(ep.name+" "+method, func(t *testing.T) {
+				res := ep.handler(queryCostRequest(t, method, withParams(ep.params, "cost", "true")))
+				require.Nil(t, res.err)
+
+				data, ok := res.data.(*QueryData)
+				require.True(t, ok, "expected *QueryData, got %T", res.data)
+				require.NotNil(t, data.Cost)
+				require.ElementsMatch(t, []string{"estimated", "actual"}, jsonFields(t, data.Cost))
+				require.ElementsMatch(t, []string{"seriesTouched", "samplesRead"}, jsonFields(t, data.Cost.Estimated))
+				require.ElementsMatch(t, []string{"seriesTouched", "samplesRead", "peakSamples"}, jsonFields(t, data.Cost.Actual))
+				require.Positive(t, data.Cost.Actual.PeakSamples)
+
+				// Basic stats expose actual input costs without another estimation.
+				statsResult := ep.handler(queryCostRequest(t, method, withParams(ep.params, "stats", "true")))
+				require.Nil(t, statsResult.err)
+				statsData := statsResult.data.(*QueryData)
+				require.Nil(t, statsData.Cost)
+				samples := statsData.Stats.Builtin().Samples
+				require.Equal(t, data.Cost.Actual.SeriesTouched, samples.SeriesTouched)
+				require.Equal(t, data.Cost.Actual.SamplesRead, samples.SamplesRead)
+				require.Positive(t, samples.SeriesTouched)
+				require.Contains(t, jsonFields(t, samples), "seriesTouched")
+			})
+		}
+	}
+}
+
+// TestQueryCostOverrideAboveCeilingRejected verifies that a per-query override
+// asking for more than the operator-set ceiling is rejected with a bad_data
+// error naming the limit, rather than being silently clamped down, on every
+// endpoint that accepts the override.
+func TestQueryCostOverrideAboveCeilingRejected(t *testing.T) {
+	const (
+		seriesCeiling  = 10
+		samplesCeiling = 100
+	)
+	durationCeiling := 30 * time.Second
+
+	newAPI := func(t *testing.T) *API {
+		t.Helper()
+		api := newQueryCostTestAPI(t, true, false)
+		cfg := queryCostConfig(seriesCeiling, samplesCeiling, durationCeiling)
+		api.config = func() config.Config { return cfg }
+		return api
+	}
+
+	for _, tc := range []struct {
+		limit, above, atCeiling string
+	}{
+		{limit: "max_series", above: "11", atCeiling: "10"},
+		{limit: "max_samples_read", above: "101", atCeiling: "100"},
+		{limit: "max_query_duration", above: "31s", atCeiling: "30s"},
+	} {
+		t.Run(tc.limit, func(t *testing.T) {
+			api := newAPI(t)
+			for _, ep := range queryCostEndpoints(api) {
+				t.Run(ep.name, func(t *testing.T) {
+					res := ep.handler(queryCostRequest(t, http.MethodGet, withParams(ep.params, tc.limit, tc.above)))
+					require.NotNil(t, res.err)
+					require.Equal(t, errorBadData, res.err.typ)
+					require.Equal(t, http.StatusBadRequest, getDefaultErrorCode(res.err.typ))
+					require.Contains(t, res.err.err.Error(), tc.limit)
+
+					// A request equal to the ceiling is accepted: only asking for
+					// more than the ceiling is an error.
+					res = ep.handler(queryCostRequest(t, http.MethodGet, withParams(ep.params, tc.limit, tc.atCeiling)))
+					require.Nil(t, res.err)
+				})
+			}
+		})
+	}
+
+	t.Run("below the ceiling the override applies", func(t *testing.T) {
+		api := newAPI(t)
+		req := queryCostRequest(t, http.MethodGet, url.Values{
+			"max_series":         {"5"},
+			"max_samples_read":   {"50"},
+			"max_query_duration": {"10s"},
+		})
+		opts, err := api.extractQueryOpts(req)
+		require.NoError(t, err)
+		costOpts, ok := opts.(promql.QueryCostOpts)
+		require.True(t, ok, "the returned opts must carry the per-query cost overrides")
+		require.Equal(t, uint64(5), costOpts.MaxSeries())
+		require.Equal(t, uint64(50), costOpts.MaxSamplesRead())
+		require.Equal(t, 10*time.Second, costOpts.MaxQueryDuration())
+	})
+
+	t.Run("below the ceiling the override is enforced", func(t *testing.T) {
+		// The loaded dataset has two series matching test_metric1, so a per-query
+		// max_series of 1 must reject the query even though the operator ceiling
+		// of 10 would allow it.
+		api := newAPI(t)
+		api.QueryEngine.(*promql.Engine).SetQueryLimits(seriesCeiling, samplesCeiling, 0)
+
+		for _, ep := range queryCostEndpoints(api) {
+			if ep.name != "query" && ep.name != "query_range" {
+				continue
+			}
+			t.Run(ep.name, func(t *testing.T) {
+				res := ep.handler(queryCostRequest(t, http.MethodGet, withParams(ep.params, "max_series", "1")))
+				require.NotNil(t, res.err)
+				require.Equal(t, errorCostLimit, res.err.typ)
+			})
+		}
+	})
+}
+
+// TestQueryCostDisabledIgnoresCeilings verifies that with the query-cost feature
+// disabled the endpoints behave as they did before the feature existed: the
+// configured ceilings are not enforced and the per-query overrides are ignored,
+// without even being parsed.
+func TestQueryCostDisabledIgnoresCeilings(t *testing.T) {
+	api := newQueryCostTestAPI(t, false, false)
+	cfg := queryCostConfig(10, 100, 30*time.Second)
+	api.config = func() config.Config { return cfg }
+
+	t.Run("overrides are ignored", func(t *testing.T) {
+		for _, tc := range []struct {
+			name   string
+			params url.Values
+		}{
+			{
+				name: "above the ceiling",
+				params: url.Values{
+					"max_series":         {"1000000"},
+					"max_samples_read":   {"1000000"},
+					"max_query_duration": {"1h"},
+				},
+			},
+			{
+				name: "malformed",
+				params: url.Values{
+					"max_series":         {"notanumber"},
+					"max_samples_read":   {"notanumber"},
+					"max_query_duration": {"notaduration"},
+				},
+			},
+		} {
+			t.Run(tc.name, func(t *testing.T) {
+				opts, err := api.extractQueryOpts(queryCostRequest(t, http.MethodGet, tc.params))
+				require.NoError(t, err)
+				costOpts, ok := opts.(promql.QueryCostOpts)
+				require.True(t, ok, "the returned opts must carry the per-query cost overrides")
+				require.Zero(t, costOpts.MaxSeries())
+				require.Zero(t, costOpts.MaxSamplesRead())
+				require.Zero(t, costOpts.MaxQueryDuration())
+			})
+		}
+	})
+}
+
+// TestQueryCostConstructionErrorMapped verifies how errors raised by the engine
+// while building the query are reported. None of them is an invalid "query"
+// parameter: an ErrLimitAboveCeiling is a bad_data error carrying the engine's
+// message, and running out of time or being canceled while waiting for a query
+// slot is a timeout or a cancellation.
+func TestQueryCostConstructionErrorMapped(t *testing.T) {
+	t.Run("limit above the ceiling is bad data", func(t *testing.T) {
+		// The engine is the authority for executed queries, so this path is
+		// exercised with ceilings set on the engine only.
+		api := newQueryCostTestAPI(t, true, false)
+		api.QueryEngine.(*promql.Engine).SetQueryLimits(10, 0, 0)
+
+		for _, ep := range queryCostEndpoints(api) {
+			if ep.name != "query" && ep.name != "query_range" {
+				continue
+			}
+			t.Run(ep.name, func(t *testing.T) {
+				res := ep.handler(queryCostRequest(t, http.MethodGet, withParams(ep.params, "max_series", "11")))
+				require.NotNil(t, res.err)
+				require.Equal(t, errorBadData, res.err.typ)
+				require.Contains(t, res.err.err.Error(), "max_series")
+				require.NotContains(t, res.err.err.Error(), `invalid parameter "query"`)
+			})
+		}
+	})
+
+	t.Run("waiting for a query slot", func(t *testing.T) {
+		tracker, err := promql.NewActiveQueryTracker(t.TempDir(), 1, promslog.NewNopLogger())
+		require.NoError(t, err)
+		api := newQueryCostTestAPI(t, true, false)
+		eng := promqltest.NewTestEngineWithOpts(t, promql.EngineOpts{
+			MaxSamples:               10000,
+			Timeout:                  100 * time.Millisecond,
+			NoStepSubqueryIntervalFn: func(int64) int64 { return 60 * 1000 },
+			ActiveQueryTracker:       tracker,
+			EnableQueryCost:          true,
+		})
+		api.QueryEngine = eng
+
+		// Hold the only slot, so building the query waits until its deadline
+		// passes or its request is canceled. The slot is released before the
+		// engine cleanup closes the tracker.
+		release, err := eng.AcquireQuerySlot(t.Context(), "held")
+		require.NoError(t, err)
+		defer release()
+
+		canceled, cancel := context.WithCancel(t.Context())
+		cancel()
+		for _, tc := range []struct {
+			name string
+			ctx  context.Context
+			want errorType
+		}{
+			{name: "deadline exceeded", ctx: t.Context(), want: errorTimeout},
+			{name: "request canceled", ctx: canceled, want: errorCanceled},
+		} {
+			t.Run(tc.name, func(t *testing.T) {
+				for _, ep := range queryCostEndpoints(api) {
+					if ep.name != "query" && ep.name != "query_range" {
+						continue
+					}
+					t.Run(ep.name, func(t *testing.T) {
+						req := queryCostRequest(t, http.MethodGet, ep.params).WithContext(tc.ctx)
+						res := ep.handler(req)
+						require.NotNil(t, res.err)
+						require.Equal(t, tc.want, res.err.typ)
+						require.NotContains(t, res.err.err.Error(), `invalid parameter "query"`)
+					})
+				}
+			})
+		}
+	})
+}
+
+// estimationSlotEngine tracks the slot reserved for estimation, independently
+// of the underlying engine's normal execution slot, and whether a query had
+// already executed when that slot was requested.
+type estimationSlotEngine struct {
+	promql.QueryEngine
+	active            bool
+	acquired          int
+	released          int
+	wait              bool
+	executed          bool
+	acquiredAfterExec bool
+	// builtAt is no earlier than the start of the built query's duration limit.
+	built               bool
+	builtAt             time.Time
+	acquiredBeforeBuild bool
+}
+
+func (e *estimationSlotEngine) NewInstantQuery(ctx context.Context, q storage.Queryable, opts promql.QueryOpts, qs string, ts time.Time) (promql.Query, error) {
+	qry, err := e.QueryEngine.NewInstantQuery(ctx, q, opts, qs, ts)
+	if err != nil {
+		return nil, err
+	}
+	e.built, e.builtAt = true, time.Now()
+	return execTrackingQuery{Query: qry, engine: e}, nil
+}
+
+func (e *estimationSlotEngine) NewRangeQuery(ctx context.Context, q storage.Queryable, opts promql.QueryOpts, qs string, start, end time.Time, interval time.Duration) (promql.Query, error) {
+	qry, err := e.QueryEngine.NewRangeQuery(ctx, q, opts, qs, start, end, interval)
+	if err != nil {
+		return nil, err
+	}
+	e.built, e.builtAt = true, time.Now()
+	return execTrackingQuery{Query: qry, engine: e}, nil
+}
+
+func (e *estimationSlotEngine) AcquireQuerySlot(ctx context.Context, _ string) (func(), error) {
+	e.acquired++
+	e.acquiredAfterExec = e.acquiredAfterExec || e.executed
+	e.acquiredBeforeBuild = e.acquiredBeforeBuild || !e.built
+	release := func() {
+		e.active = false
+		e.released++
+	}
+	if e.wait {
+		<-ctx.Done()
+		return release, ctx.Err()
+	}
+	e.active = true
+	return release, nil
+}
+
+// execTrackingQuery records on its engine that the query has executed.
+type execTrackingQuery struct {
+	promql.Query
+	engine *estimationSlotEngine
+}
+
+func (q execTrackingQuery) Exec(ctx context.Context) *promql.Result {
+	q.engine.executed = true
+	return q.Query.Exec(ctx)
+}
+
+type estimationBoundsQueryable struct {
+	storage.SampleAndChunkQueryable
+	t        *testing.T
+	engine   *estimationSlotEngine
+	duration time.Duration
+	observed bool
+}
+
+// CostSamplingQueryable enables the deadline and concurrency probe.
+func (q *estimationBoundsQueryable) CostSamplingQueryable() (storage.SampleAndChunkQueryable, bool) {
+	return q, true
+}
+
+func (q *estimationBoundsQueryable) ChunkQuerier(mint, maxt int64) (storage.ChunkQuerier, error) {
+	inner, err := q.SampleAndChunkQueryable.ChunkQuerier(mint, maxt)
+	return estimationBoundsQuerier{ChunkQuerier: inner, owner: q}, err
+}
+
+type estimationBoundsQuerier struct {
+	storage.ChunkQuerier
+	owner *estimationBoundsQueryable
+}
+
+func (q estimationBoundsQuerier) Select(ctx context.Context, sorted bool, hints *storage.SelectHints, matchers ...*labels.Matcher) storage.ChunkSeriesSet {
+	q.owner.observed = true
+	require.True(q.owner.t, q.owner.engine.active, "estimation must hold a concurrency slot")
+	deadline, ok := ctx.Deadline()
+	require.True(q.owner.t, ok, "estimation must have a deadline")
+	// The deadline was set before this call, so at most the expected duration
+	// remains; a remainder far below it means a shorter limit was applied.
+	remaining := time.Until(deadline)
+	require.LessOrEqual(q.owner.t, remaining, q.owner.duration, "estimation must honor the shortest duration limit")
+	require.Greater(q.owner.t, remaining, q.owner.duration/2, "estimation must not apply a shorter duration limit")
+	if e := q.owner.engine; e.built {
+		require.False(q.owner.t, deadline.After(e.builtAt.Add(q.owner.duration)), "estimation must not outlast the query's duration limit")
+	}
+	return q.ChunkQuerier.Select(ctx, sorted, hints, matchers...)
+}
+
+func TestQueryCostEstimationBounds(t *testing.T) {
+	for _, tc := range []struct {
+		name     string
+		ceiling  time.Duration
+		params   []string
+		duration time.Duration
+	}{
+		{name: "flag fallback", duration: time.Minute},
+		{name: "configured ceiling", ceiling: 30 * time.Second, duration: 30 * time.Second},
+		{name: "query duration", ceiling: 30 * time.Second, params: []string{"max_query_duration", "1s"}, duration: time.Second},
+		{name: "request timeout", ceiling: 30 * time.Second, params: []string{"timeout", "1s"}, duration: time.Second},
+		{name: "request timeout above the configured ceiling", ceiling: 30 * time.Second, params: []string{"timeout", "1m"}, duration: 30 * time.Second},
+		{name: "request timeout above the flag", params: []string{"timeout", "5m"}, duration: time.Minute},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			api := newQueryCostTestAPI(t, true, false)
+			api.config = func() config.Config { return queryCostConfig(0, 0, tc.ceiling) }
+			api.queryTimeoutFlag = time.Minute
+			e := &estimationSlotEngine{QueryEngine: api.QueryEngine}
+			api.QueryEngine = e
+			q := &estimationBoundsQueryable{SampleAndChunkQueryable: api.Queryable, t: t, engine: e, duration: tc.duration}
+			api.Queryable = q
+			for _, ep := range queryCostEndpoints(api) {
+				t.Run(ep.name, func(t *testing.T) {
+					q.t = t
+					q.observed = false
+					e.executed = false
+					e.acquiredAfterExec = false
+					e.built = false
+					e.acquiredBeforeBuild = false
+					params := withParams(ep.params, "cost", "true")
+					params = withParams(params, tc.params...)
+					res := ep.handler(queryCostRequest(t, http.MethodGet, params))
+					if res.finalizer != nil {
+						defer res.finalizer()
+					}
+					require.Nil(t, res.err)
+					require.True(t, q.observed)
+					require.False(t, e.active)
+					require.Equal(t, e.acquired, e.released)
+					// Estimating before execution means no finished result is
+					// held while the estimation waits for a slot.
+					require.False(t, e.acquiredAfterExec, "estimation must run before the query executes")
+					if ep.name == "query" || ep.name == "query_range" {
+						// Building the query first starts its duration limit,
+						// which the estimation then counts against.
+						require.False(t, e.acquiredBeforeBuild, "the query must be built before it is estimated")
+					}
+				})
+			}
+		})
+	}
+
+	t.Run("malformed query is rejected before estimating", func(t *testing.T) {
+		api := newQueryCostTestAPI(t, true, false)
+		e := &estimationSlotEngine{QueryEngine: api.QueryEngine}
+		api.QueryEngine = e
+		for _, ep := range queryCostEndpoints(api) {
+			if ep.name != "query" && ep.name != "query_range" {
+				continue
+			}
+			t.Run(ep.name, func(t *testing.T) {
+				e.acquired = 0
+				params := withParams(ep.params, "cost", "true", "query", "sum(")
+				res := ep.handler(queryCostRequest(t, http.MethodGet, params))
+				assertAPIError(t, res.err, errorBadData)
+				require.Zero(t, e.acquired, "a malformed query must not wait for an estimation slot")
+			})
+		}
+	})
+}
+
+// TestQueryCostEstimationQueueTimeout verifies what happens when the estimation
+// never gets a query slot. The cost endpoints fail. For a cost comparison, an
+// estimation that runs out of time only drops the comparison: the engine here
+// enforces no duration limit of its own, so the query still runs. Once the
+// request times out or is canceled, the query fails too.
+func TestQueryCostEstimationQueueTimeout(t *testing.T) {
+	canceled, cancel := context.WithCancel(t.Context())
+	cancel()
+	for _, tc := range []struct {
+		name    string
+		ceiling time.Duration
+		params  []string
+		ctx     context.Context
+		// queryErr is the error of the query endpoints, where errorNone means a
+		// successful result with a warning and no cost comparison.
+		queryErr errorType
+		costErr  errorType
+	}{
+		{name: "duration limit", ceiling: 10 * time.Millisecond, ctx: t.Context(), costErr: errorTimeout},
+		{name: "request timeout", params: []string{"timeout", "50ms"}, ctx: t.Context(), queryErr: errorTimeout, costErr: errorTimeout},
+		{name: "request canceled", ctx: canceled, queryErr: errorCanceled, costErr: errorCanceled},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			api := newQueryCostTestAPI(t, true, false)
+			api.config = func() config.Config { return queryCostConfig(0, 0, tc.ceiling) }
+			e := &estimationSlotEngine{QueryEngine: api.QueryEngine, wait: true}
+			api.QueryEngine = e
+			for _, ep := range queryCostEndpoints(api) {
+				t.Run(ep.name, func(t *testing.T) {
+					params := withParams(ep.params, "cost", "true")
+					params = withParams(params, tc.params...)
+					res := ep.handler(queryCostRequest(t, http.MethodGet, params).WithContext(tc.ctx))
+					if res.finalizer != nil {
+						defer res.finalizer()
+					}
+					want := tc.costErr
+					if ep.name == "query" || ep.name == "query_range" {
+						want = tc.queryErr
+					}
+					assertAPIError(t, res.err, want)
+					if want == errorNone {
+						require.Nil(t, res.data.(*QueryData).Cost)
+						require.NotEmpty(t, res.warnings)
+					}
+					require.Equal(t, e.acquired, e.released)
+				})
+			}
+		})
+	}
 }
