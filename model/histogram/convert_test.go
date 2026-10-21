@@ -14,12 +14,15 @@
 package histogram
 
 import (
+	"math"
+	"slices"
 	"testing"
 
 	"github.com/prometheus/common/model"
 	"github.com/stretchr/testify/require"
 
 	"github.com/prometheus/prometheus/model/labels"
+	"github.com/prometheus/prometheus/model/value"
 )
 
 type sample struct {
@@ -292,6 +295,25 @@ func TestConvertNHCBToClassicHistogram(t *testing.T) {
 				{lset: labels.FromStrings("__name__", "test_metric_sum"), val: 123},
 			},
 		},
+		{
+			name: "stale histogram",
+			nhcb: &Histogram{
+				CustomValues:    []float64{1, 2},
+				PositiveBuckets: []int64{2, 1, 1},
+				PositiveSpans:   []Span{{Offset: 0, Length: 3}},
+				Count:           9,
+				Sum:             math.Float64frombits(value.StaleNaN),
+				Schema:          CustomBucketsSchema,
+			},
+			labels: labels.FromStrings("__name__", "test_metric"),
+			expected: []sample{
+				{lset: labels.FromStrings("__name__", "test_metric_bucket", "le", "1.0"), val: math.Float64frombits(value.StaleNaN)},
+				{lset: labels.FromStrings("__name__", "test_metric_bucket", "le", "2.0"), val: math.Float64frombits(value.StaleNaN)},
+				{lset: labels.FromStrings("__name__", "test_metric_bucket", "le", "+Inf"), val: math.Float64frombits(value.StaleNaN)},
+				{lset: labels.FromStrings("__name__", "test_metric_count"), val: math.Float64frombits(value.StaleNaN)},
+				{lset: labels.FromStrings("__name__", "test_metric_sum"), val: math.Float64frombits(value.StaleNaN)},
+			},
+		},
 	}
 
 	labelBuilder := labels.NewBuilder(labels.EmptyLabels())
@@ -307,7 +329,24 @@ func TestConvertNHCBToClassicHistogram(t *testing.T) {
 				require.Len(t, emittedSamples, len(tt.expected))
 				for i, expSample := range tt.expected {
 					require.True(t, labels.Equal(expSample.lset, emittedSamples[i].lset), "labels mismatch at index %d: expected %v, got %v", i, expSample.lset, emittedSamples[i].lset)
-					require.Equal(t, expSample.val, emittedSamples[i].val, "value mismatch at index %d", i)
+					if value.IsStaleNaN(expSample.val) {
+						require.True(t, value.IsStaleNaN(emittedSamples[i].val), "expected stale NaN at index %d", i)
+					} else {
+						require.Equal(t, expSample.val, emittedSamples[i].val, "value mismatch at index %d", i)
+					}
+				}
+
+				// A reused buffer must not leak earlier values into skipped buckets.
+				buckets, count, sum, err := ClassicBucketCounts(tt.nhcb, slices.Repeat([]float64{42}, 16))
+				require.NoError(t, err)
+				counts := append(buckets, count, sum)
+				require.Len(t, counts, len(emittedSamples))
+				for i, s := range emittedSamples {
+					if value.IsStaleNaN(s.val) {
+						require.True(t, value.IsStaleNaN(counts[i]), "expected stale NaN count at index %d", i)
+					} else {
+						require.Equal(t, s.val, counts[i], "count mismatch at index %d", i)
+					}
 				}
 			}
 		})

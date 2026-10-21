@@ -327,9 +327,9 @@ func HistogramQuantile(q float64, h *histogram.FloatHistogram, metricName string
 	// and +Inf at some point, which made the Sum == NaN.
 	if math.IsNaN(h.Sum) {
 		// Detect if h.Count is greater than sum of buckets.
+		// Preserve the selected bucket for interpolation below.
 		for it.Next() {
-			bucket = it.At()
-			count += bucket.Count
+			count += it.At().Count
 		}
 		if count < h.Count {
 			annos.Add(annotations.NewNativeHistogramQuantileNaNSkewInfo(metricName, pos))
@@ -531,6 +531,10 @@ func HistogramFraction(lower, upper float64, h *histogram.FloatHistogram, metric
 
 // BucketFraction is a version of HistogramFraction for classic histograms.
 func BucketFraction(lower, upper float64, buckets Buckets) float64 {
+	if len(buckets) == 0 {
+		return math.NaN()
+	}
+
 	slices.SortFunc(buckets, func(a, b Bucket) int {
 		// We don't expect the bucket boundary to be a NaN.
 		if a.UpperBound < b.UpperBound {
@@ -541,9 +545,6 @@ func BucketFraction(lower, upper float64, buckets Buckets) float64 {
 		}
 		return 0
 	})
-	if len(buckets) == 0 {
-		return math.NaN()
-	}
 	if !math.IsInf(buckets[len(buckets)-1].UpperBound, +1) {
 		return math.NaN()
 	}
@@ -751,5 +752,8 @@ func quantile(q float64, values vectorByValueHeap) float64 {
 	upperIndex := math.Min(n-1, lowerIndex+1)
 
 	weight := rank - math.Floor(rank)
+	if weight == 0 {
+		return values[int(lowerIndex)].F
+	}
 	return values[int(lowerIndex)].F*(1-weight) + values[int(upperIndex)].F*weight
 }

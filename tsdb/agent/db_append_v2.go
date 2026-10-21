@@ -21,6 +21,7 @@ import (
 	"github.com/prometheus/prometheus/model/exemplar"
 	"github.com/prometheus/prometheus/model/histogram"
 	"github.com/prometheus/prometheus/model/labels"
+	"github.com/prometheus/prometheus/model/metadata"
 	"github.com/prometheus/prometheus/model/value"
 	"github.com/prometheus/prometheus/storage"
 	"github.com/prometheus/prometheus/tsdb/chunks"
@@ -37,7 +38,6 @@ type appenderV2 struct {
 }
 
 // Append appends pending sample to agent's DB.
-// TODO: Wire metadata in the Agent's appender.
 func (a *appenderV2) Append(ref storage.SeriesRef, ls labels.Labels, st, t int64, v float64, h *histogram.Histogram, fh *histogram.FloatHistogram, opts storage.AOptions) (storage.SeriesRef, error) {
 	var (
 		// Avoid shadowing err variables for reliability.
@@ -122,6 +122,20 @@ func (a *appenderV2) Append(ref storage.SeriesRef, ls labels.Labels, st, t int64
 		// Currently only exemplars can return partial errors.
 		partialErr = a.appendExemplars(s, opts.Exemplars)
 	}
+	if a.opts.EnableMetadataWALRecords && !opts.Metadata.IsEmpty() {
+		s.Lock()
+		metaChanged := metadata.IsZeroHandle(s.meta) || !s.meta.Value().Equals(opts.Metadata)
+		s.Unlock()
+		if metaChanged {
+			a.pendingMetadata = append(a.pendingMetadata, record.RefMetadata{
+				Ref:  s.ref,
+				Type: record.GetMetricType(opts.Metadata.Type),
+				Unit: opts.Metadata.Unit,
+				Help: opts.Metadata.Help,
+			})
+			a.metadataSeries = append(a.metadataSeries, s)
+		}
+	}
 	return storage.SeriesRef(s.ref), partialErr
 }
 
@@ -157,15 +171,15 @@ func (a *appenderV2) Rollback() error {
 }
 
 func (a *appenderV2) appendExemplars(s *memSeries, exemplar []exemplar.Exemplar) error {
-	var errs []error
-	for _, e := range exemplar {
+	var errs []storage.ExemplarError
+	for i, e := range exemplar {
 		// Ensure no empty labels have gotten through.
 		e.Labels = e.Labels.WithoutEmpty()
 
 		if err := a.validateExemplar(s.ref, e); err != nil {
 			if !errors.Is(err, storage.ErrDuplicateExemplar) {
 				// Except duplicates, return partial errors.
-				errs = append(errs, err)
+				errs = append(errs, storage.ExemplarError{Index: i, Err: err})
 				continue
 			}
 			if !errors.Is(err, storage.ErrOutOfOrderExemplar) {

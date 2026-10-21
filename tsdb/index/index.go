@@ -1709,6 +1709,9 @@ func (r *Reader) ShardedPostings(p Postings, shardIndex, shardCount uint64) Post
 
 		out = append(out, id)
 	}
+	if err := p.Err(); err != nil {
+		return ErrPostings(fmt.Errorf("expand postings: %w", err))
+	}
 
 	return NewListPostings(out)
 }

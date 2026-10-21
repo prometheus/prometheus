@@ -24,12 +24,15 @@ import (
 	"testing"
 	"time"
 
+	"github.com/prometheus/common/model"
 	"github.com/prometheus/common/promslog"
 	"github.com/stretchr/testify/require"
 
 	"github.com/prometheus/prometheus/model/exemplar"
 	"github.com/prometheus/prometheus/model/histogram"
 	"github.com/prometheus/prometheus/model/labels"
+	"github.com/prometheus/prometheus/model/metadata"
+	"github.com/prometheus/prometheus/storage"
 	"github.com/prometheus/prometheus/storage/remote"
 	"github.com/prometheus/prometheus/tsdb/chunks"
 	"github.com/prometheus/prometheus/tsdb/record"
@@ -56,6 +59,7 @@ func TestCheckpointReplayCompatibility(t *testing.T) {
 		defer rs.Close()
 
 		opts := DefaultOptions()
+		opts.EnableMetadataWALRecords = true
 		opts.CheckpointFromInMemorySeries = isInMemCheckpoint
 		opts.WALSegmentSize = walSegmentSize // Set minimum size to get more segments for checkpoint.
 
@@ -73,7 +77,7 @@ func TestCheckpointReplayCompatibility(t *testing.T) {
 	})
 
 	appendData := func(db *DB) {
-		app := db.Appender(t.Context())
+		app := db.AppenderV2(t.Context())
 		const flushEvery = 1000
 		n := 0
 		maybeFlush := func() {
@@ -81,7 +85,7 @@ func TestCheckpointReplayCompatibility(t *testing.T) {
 				return
 			}
 			require.NoError(t, app.Commit())
-			app = db.Appender(t.Context())
+			app = db.AppenderV2(t.Context())
 			n = 0
 		}
 
@@ -90,10 +94,22 @@ func TestCheckpointReplayCompatibility(t *testing.T) {
 			lset := labels.New(l...)
 			for j, sample := range samples.datapointSamples {
 				st := sample[0].T()
+				if i%3 != 0 {
+					st += int64(j + 1)
+				}
 				sf := sample[0].F()
 
+				var aopts storage.AOptions
+				if j == 0 && i%2 == 0 {
+					aopts.Metadata = metadata.Metadata{
+						Type: model.MetricTypeGauge,
+						Unit: "bytes",
+						Help: "test help",
+					}
+				}
+
 				// replay doesn't include exemplars, thus don't include them to remove them from assertion.
-				_, err := app.Append(0, lset, st, sf)
+				_, err := app.Append(0, lset, 0, st, sf, nil, nil, aopts)
 				require.NoErrorf(t, err, "L: %v; S: %v", i, j)
 				n++
 				maybeFlush()
@@ -104,7 +120,7 @@ func TestCheckpointReplayCompatibility(t *testing.T) {
 			lset := labels.New(l...)
 			histograms := samples.histogramSamples[i]
 			for j, sample := range histograms {
-				_, err := app.AppendHistogram(0, lset, int64(j), sample, nil)
+				_, err := app.Append(0, lset, 0, int64(j+1), 0, sample, nil, storage.AOptions{})
 				require.NoError(t, err)
 				n++
 				maybeFlush()
@@ -124,8 +140,9 @@ func TestCheckpointReplayCompatibility(t *testing.T) {
 	openDBAndDo(false, wlogStateRoot, func(db *DB) {
 		appendData(db)
 
-		// Trigger checkpoint call.
-		err := db.truncate(-1)
+		// Trigger checkpoint call with mint=1 so series with i%3 == 0 (lastTs=0) are
+		// garbage-collected into db.deleted while remaining in the checkpoint.
+		err := db.truncate(1)
 		require.NoError(t, err, "db.truncate")
 		require.NoError(t, db.Close())
 	})
@@ -145,7 +162,7 @@ func TestCheckpointReplayCompatibility(t *testing.T) {
 	openDBAndDo(true, agentStateRoot, func(db *DB) {
 		appendData(db)
 
-		err := db.truncate(-1)
+		err := db.truncate(1)
 		require.NoError(t, err, "db.truncate")
 		require.NoError(t, db.Close())
 	})
@@ -183,13 +200,19 @@ func requireStripeSeriesEqual(t *testing.T, want, got *stripeSeries) {
 
 	require.Len(t, gotByRef, len(wantByRef), "series count mismatch")
 
+	var metadataCount int
 	for ref, w := range wantByRef {
 		g, ok := gotByRef[ref]
 		require.Truef(t, ok, "ref %d present in wlog path, missing in agent path", ref)
 		require.Truef(t, labels.Equal(w.lset, g.lset),
 			"ref %d labels mismatch: wlog=%s agent=%s", ref, w.lset.String(), g.lset.String())
 		require.Equalf(t, w.lastTs, g.lastTs, "ref %d lastTs mismatch", ref)
+		require.Equalf(t, w.Metadata(), g.Metadata(), "ref %d metadata mismatch", ref)
+		if !metadata.IsZeroHandle(g.Metadata()) {
+			metadataCount++
+		}
 	}
+	require.NotZero(t, metadataCount, "expected non-nil metadata on replayed series")
 }
 
 func assertCheckpointExists(t *testing.T, walDir string, checkpointID int) {
@@ -321,7 +344,7 @@ func benchCheckpoint(b *testing.B, p benchCheckpointParams) {
 	db, err := Open(l, nil, rs, p.storageDir, opts)
 	require.NoError(b, err, "Open")
 
-	app := db.Appender(b.Context())
+	app := db.AppenderV2(b.Context())
 	const flushEvery = 1000
 	n := 0
 	maybeFlush := func() {
@@ -329,7 +352,7 @@ func benchCheckpoint(b *testing.B, p benchCheckpointParams) {
 			return
 		}
 		require.NoError(b, app.Commit())
-		app = db.Appender(b.Context())
+		app = db.AppenderV2(b.Context())
 		n = 0
 	}
 
@@ -339,9 +362,6 @@ func benchCheckpoint(b *testing.B, p benchCheckpointParams) {
 		for j, sample := range p.samples.datapointSamples {
 			st := sample[0].T()
 			sf := sample[0].F()
-			ref, err := app.Append(0, lset, st, sf)
-			require.NoErrorf(b, err, "L: %v; S: %v", i, j)
-
 			e := exemplar.Exemplar{
 				Labels: lset,
 				Ts:     sample[0].T() + int64(i),
@@ -349,8 +369,10 @@ func benchCheckpoint(b *testing.B, p benchCheckpointParams) {
 				HasTs:  true,
 			}
 
-			_, err = app.AppendExemplar(ref, lset, e)
-			require.NoError(b, err)
+			_, err := app.Append(0, lset, 0, st, sf, nil, nil, storage.AOptions{
+				Exemplars: []exemplar.Exemplar{e},
+			})
+			require.NoErrorf(b, err, "L: %v; S: %v", i, j)
 
 			n += 2
 			maybeFlush()
@@ -361,7 +383,7 @@ func benchCheckpoint(b *testing.B, p benchCheckpointParams) {
 		lset := labels.New(l...)
 		histograms := p.samples.histogramSamples[i]
 		for j, sample := range histograms {
-			_, err := app.AppendHistogram(0, lset, int64(j), sample, nil)
+			_, err := app.Append(0, lset, 0, int64(j), 0, sample, nil, storage.AOptions{})
 			require.NoError(b, err)
 			n++
 			maybeFlush()
@@ -434,11 +456,17 @@ func createCheckpointFixtures(t testing.TB, p checkpointFixtureParams) {
 	require.NoError(t, err)
 
 	series := make([]record.RefSeries, 0, len(p.seriesLabels))
+	meta := make([]record.RefMetadata, 0, len(p.seriesLabels))
 	for i, lset := range p.seriesLabels {
-		// NOTE: don't append RefMetadata as agent.DB doesn't support it during WAL replay.
 		series = append(series, record.RefSeries{
 			Ref:    chunks.HeadSeriesRef(i),
 			Labels: labels.New(lset...),
+		})
+		meta = append(meta, record.RefMetadata{
+			Ref:  chunks.HeadSeriesRef(i),
+			Type: record.GetMetricType(model.MetricTypeGauge),
+			Unit: "bytes",
+			Help: "test help",
 		})
 	}
 
@@ -446,8 +474,10 @@ func createCheckpointFixtures(t testing.TB, p checkpointFixtureParams) {
 	samples := make([]record.RefSample, 0, len(series))
 	for i := range p.numSegments {
 		if i == 0 {
-			// Write series required for samples
+			// Write series and metadata required for samples.
 			b := enc.Series(series, nil)
+			require.NoError(t, w.Log(b))
+			b = enc.Metadata(meta, nil)
 			require.NoError(t, w.Log(b))
 		}
 

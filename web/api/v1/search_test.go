@@ -160,20 +160,41 @@ func (q errorSearchQuerier) SearchLabelValues(context.Context, string, *storage.
 	return storage.ErrSearchResultSet(q.err)
 }
 
-func TestSearchEndpointsMapTSDBNotReadyToUnavailable(t *testing.T) {
+func TestAPI_SearchEndpoints_UnavailableStorage(t *testing.T) {
 	testCases := []struct {
-		name      string
-		queryable errorTestQueryable
+		name          string
+		newQueryable  func() errorTestQueryable
+		expectedError string
 	}{
 		{
-			name:      "querier error",
-			queryable: errorTestQueryable{err: tsdb.ErrNotReady},
+			name:          "querier error",
+			newQueryable:  func() errorTestQueryable { return errorTestQueryable{err: tsdb.ErrNotReady} },
+			expectedError: tsdb.ErrNotReady.Error(),
 		},
 		{
 			name: "search result error",
-			queryable: errorTestQueryable{
-				q: errorSearchQuerier{err: tsdb.ErrNotReady},
+			newQueryable: func() errorTestQueryable {
+				return errorTestQueryable{q: errorSearchQuerier{err: tsdb.ErrNotReady}}
 			},
+			expectedError: tsdb.ErrNotReady.Error(),
+		},
+		{
+			name: "unsupported primary",
+			newQueryable: func() errorTestQueryable {
+				return errorTestQueryable{q: &closeCountingQuerier{Querier: errorTestQuerier{}}}
+			},
+			expectedError: "search not supported by storage",
+		},
+		{
+			name: "unsupported primary in a merge",
+			newQueryable: func() errorTestQueryable {
+				return errorTestQueryable{q: &closeCountingQuerier{Querier: storage.NewMergeQuerier(
+					[]storage.Querier{fixedSearchQuerier{rs: storage.EmptySearchResultSet()}, errorTestQuerier{}},
+					nil,
+					storage.ChainedSeriesMerge,
+				)}}
+			},
+			expectedError: "search not supported by storage",
 		},
 	}
 
@@ -190,19 +211,219 @@ func TestSearchEndpointsMapTSDBNotReadyToUnavailable(t *testing.T) {
 	for _, tc := range testCases {
 		t.Run(tc.name, func(t *testing.T) {
 			api := minimalSearchAPI()
-			api.Queryable = tc.queryable
+			r := route.New()
+			api.Register(r)
 
 			for _, endpoint := range endpoints {
-				t.Run(endpoint.name, func(t *testing.T) {
-					rec := doSearchRequest(t, api, endpoint.path, endpoint.params)
-					require.Equal(t, http.StatusInternalServerError, rec.Code)
+				for _, method := range []string{http.MethodGet, http.MethodPost} {
+					t.Run(method+" "+endpoint.name, func(t *testing.T) {
+						queryable := tc.newQueryable()
+						api.Queryable = queryable
+						var req *http.Request
+						if method == http.MethodPost {
+							req = httptest.NewRequest(method, "http://example.com"+endpoint.path, strings.NewReader(endpoint.params.Encode()))
+							req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+						} else {
+							req = httptest.NewRequest(method, "http://example.com"+endpoint.path+"?"+endpoint.params.Encode(), http.NoBody)
+						}
+						rec := httptest.NewRecorder()
+						r.ServeHTTP(rec, req.WithContext(t.Context()))
+						if q, ok := queryable.q.(*closeCountingQuerier); ok {
+							require.Equal(t, 1, q.closeCalls)
+						}
+						require.Equal(t, http.StatusInternalServerError, rec.Code)
+						require.Equal(t, "application/json", rec.Header().Get("Content-Type"))
 
-					var response Response
-					require.NoError(t, json.Unmarshal(rec.Body.Bytes(), &response))
-					require.Equal(t, statusError, response.Status)
-					require.Equal(t, errorUnavailable.str, response.ErrorType)
-					require.Contains(t, response.Error, tsdb.ErrNotReady.Error())
-				})
+						var response Response
+						require.NoError(t, json.Unmarshal(rec.Body.Bytes(), &response))
+						require.Equal(t, statusError, response.Status)
+						require.Equal(t, errorUnavailable.str, response.ErrorType)
+						require.Equal(t, tc.expectedError, response.Error)
+					})
+				}
+			}
+		})
+	}
+}
+
+type closeCountingQuerier struct {
+	storage.Querier
+	closeCalls int
+}
+
+type searchTestQueryable struct {
+	storage.Queryable
+	storage.ChunkQueryable
+}
+
+func (q *closeCountingQuerier) Close() error {
+	q.closeCalls++
+	return q.Querier.Close()
+}
+
+type closeCountingSearchQuerier struct {
+	*closeCountingQuerier
+	sets []*closeCountingSearchSet
+}
+
+func (q *closeCountingSearchQuerier) track(rs storage.SearchResultSet) storage.SearchResultSet {
+	set := &closeCountingSearchSet{SearchResultSet: rs}
+	q.sets = append(q.sets, set)
+	return set
+}
+
+func (q *closeCountingSearchQuerier) SearchLabelNames(ctx context.Context, hints *storage.SearchHints, matchers ...*labels.Matcher) storage.SearchResultSet {
+	return q.track(q.Querier.(storage.Searcher).SearchLabelNames(ctx, hints, matchers...))
+}
+
+func (q *closeCountingSearchQuerier) SearchLabelValues(ctx context.Context, name string, hints *storage.SearchHints, matchers ...*labels.Matcher) storage.SearchResultSet {
+	return q.track(q.Querier.(storage.Searcher).SearchLabelValues(ctx, name, hints, matchers...))
+}
+
+type closeCountingSearchSet struct {
+	storage.SearchResultSet
+	closeCalls int
+}
+
+func (s *closeCountingSearchSet) Close() error {
+	s.closeCalls++
+	return s.SearchResultSet.Close()
+}
+
+func TestAPI_SearchEndpoints_SecondaryWarnings(t *testing.T) {
+	local := promqltest.LoadedStorage(t, `
+		load 1m
+			up{job="prometheus"} 1+0x2
+			requests_total{job="node"} 0+1x2
+	`)
+
+	for _, tc := range []struct {
+		name          string
+		nested        bool
+		secondaryOnly bool
+		noopSecondary bool
+		empty         bool
+		emptyRange    bool
+	}{
+		{name: "unsupported secondary"},
+		{name: "nested unsupported secondaries", nested: true},
+		{name: "unsupported secondary only", secondaryOnly: true, empty: true},
+		{name: "empty matching results", empty: true},
+		{name: "noop secondary", noopSecondary: true},
+		{name: "empty time range", empty: true, emptyRange: true},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			for _, endpoint := range []struct {
+				name     string
+				path     string
+				field    string
+				expected []string
+			}{
+				{"metric names", "/search/metric_names", "name", []string{"requests_total", "up"}},
+				{"label names", "/search/label_names", "name", []string{"__name__", "job"}},
+				{"label values", "/search/label_values", "value", []string{"node", "prometheus"}},
+			} {
+				for _, method := range []string{http.MethodGet, http.MethodPost} {
+					for _, limit := range []int{1, 100} {
+						t.Run(fmt.Sprintf("%s/%s/limit=%d", endpoint.name, method, limit), func(t *testing.T) {
+							api := minimalSearchAPI()
+							var queriers []*closeCountingQuerier
+							var searchers []*closeCountingSearchQuerier
+							api.Queryable = searchTestQueryable{Queryable: storage.QueryableFunc(func(mint, maxt int64) (storage.Querier, error) {
+								if tc.emptyRange {
+									return local.Querier(mint, maxt)
+								}
+								var primaries []storage.Querier
+								if !tc.secondaryOnly {
+									q, err := local.Querier(mint, maxt)
+									if err != nil {
+										return nil, err
+									}
+									primary := &closeCountingSearchQuerier{closeCountingQuerier: &closeCountingQuerier{Querier: q}}
+									queriers = append(queriers, primary.closeCountingQuerier)
+									searchers = append(searchers, primary)
+									primaries = []storage.Querier{primary}
+								}
+								secondary := storage.NoopQuerier()
+								if !tc.noopSecondary {
+									unsupported := &closeCountingQuerier{Querier: errorTestQuerier{}}
+									queriers = append(queriers, unsupported)
+									secondary = unsupported
+									if tc.nested {
+										other := &closeCountingQuerier{Querier: errorTestQuerier{}}
+										queriers = append(queriers, other)
+										secondary = storage.NewMergeQuerier(nil, []storage.Querier{unsupported, other}, storage.ChainedSeriesMerge)
+									}
+								}
+								merged := storage.NewMergeQuerier(primaries, []storage.Querier{secondary}, storage.ChainedSeriesMerge)
+								root := &closeCountingSearchQuerier{closeCountingQuerier: &closeCountingQuerier{Querier: merged}}
+								queriers = append(queriers, root.closeCountingQuerier)
+								searchers = append(searchers, root)
+								return root, nil
+							}), ChunkQueryable: local}
+							params := url.Values{"start": {"0"}, "end": {"120"}, "limit": {strconv.Itoa(limit)}, "batch_size": {"1"}}
+							if endpoint.field == "value" {
+								params.Set("label", "job")
+							}
+							if tc.emptyRange {
+								params.Set("start", "-120")
+								params.Set("end", "-60")
+							} else if tc.empty {
+								params.Set("match[]", "absent")
+							}
+							var req *http.Request
+							if method == http.MethodPost {
+								req = httptest.NewRequest(method, endpoint.path, strings.NewReader(params.Encode()))
+								req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+							} else {
+								req = httptest.NewRequest(method, endpoint.path+"?"+params.Encode(), http.NoBody)
+							}
+							r := route.New()
+							api.Register(r)
+							rec := httptest.NewRecorder()
+							r.ServeHTTP(rec, req.WithContext(t.Context()))
+							require.Equal(t, http.StatusOK, rec.Code)
+							require.Equal(t, "application/x-ndjson; charset=utf-8", rec.Header().Get("Content-Type"))
+
+							lines := parseNDJSON(t, rec.Body.String())
+							require.GreaterOrEqual(t, len(lines), 2)
+							var results, warnings []string
+							for _, line := range lines[:len(lines)-1] {
+								var batch searchBatch[map[string]string]
+								require.NoError(t, json.Unmarshal(line, &batch))
+								for _, result := range batch.Results {
+									results = append(results, result[endpoint.field])
+								}
+								warnings = append(warnings, batch.Warnings...)
+							}
+							var trailer searchTrailer
+							require.NoError(t, json.Unmarshal(lines[len(lines)-1], &trailer))
+							require.Equal(t, "success", trailer.Status)
+							require.Empty(t, trailer.Warnings)
+							expected := endpoint.expected
+							if tc.empty {
+								expected = nil
+							}
+							require.Equal(t, !tc.empty && limit < len(expected), trailer.HasMore)
+							if limit < len(expected) {
+								expected = expected[:limit]
+							}
+							require.Equal(t, expected, results)
+							if tc.noopSecondary || tc.emptyRange {
+								require.Empty(t, warnings)
+							} else {
+								require.Equal(t, []string{"search is not supported by a secondary storage backend; results may be incomplete"}, warnings)
+							}
+							for _, q := range queriers {
+								require.Equal(t, 1, q.closeCalls)
+							}
+							for _, q := range searchers {
+								require.Len(t, q.sets, 1)
+								require.Equal(t, 1, q.sets[0].closeCalls)
+							}
+						})
+					}
+				}
 			}
 		})
 	}

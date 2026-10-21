@@ -281,6 +281,7 @@ type Options struct {
 	ExemplarStorage       storage.ExemplarQueryable
 	QueryEngine           *promql.Engine
 	LookbackDelta         time.Duration
+	QueryTimeout          time.Duration
 	ScrapeManager         *scrape.Manager
 	RuleManager           *rules.Manager
 	Notifier              *notifier.Manager
@@ -303,6 +304,7 @@ type Options struct {
 	EnableLifecycle            bool
 	EnableAdminAPI             bool
 	EnableSearch               bool
+	EnableQueryCost            bool
 	MaxSearchLimit             int
 	PageTitle                  string
 	RemoteReadSampleLimit      int
@@ -313,7 +315,6 @@ type Options struct {
 	ConvertOTLPDelta           bool
 	NativeOTLPDeltaIngestion   bool
 	IsAgent                    bool
-	STZeroIngestionEnabled     bool
 	EnableTypeAndUnitLabels    bool
 	AppendMetadata             bool
 	AppName                    string
@@ -381,12 +382,9 @@ func New(logger *slog.Logger, o *Options) *Handler {
 	factoryAr := func(context.Context) api_v1.AlertmanagerRetriever { return h.notifier }
 	FactoryRr := func(context.Context) api_v1.RulesRetriever { return h.ruleManager }
 
-	var (
-		app   storage.Appendable
-		appV2 storage.AppendableV2
-	)
+	var appV2 storage.AppendableV2
 	if o.EnableRemoteWriteReceiver || o.EnableOTLPWriteReceiver {
-		app, appV2 = h.storage, h.storage
+		appV2 = h.storage
 	}
 
 	version := ""
@@ -394,7 +392,7 @@ func New(logger *slog.Logger, o *Options) *Handler {
 		version = o.Version.Version
 	}
 
-	h.apiV1 = api_v1.NewAPI(h.queryEngine, h.storage, app, appV2, h.exemplarStorage, factorySPr, factoryTr, factoryAr,
+	h.apiV1 = api_v1.NewAPI(h.queryEngine, h.storage, appV2, h.exemplarStorage, factorySPr, factoryTr, factoryAr,
 		func() config.Config {
 			h.mtx.RLock()
 			defer h.mtx.RUnlock()
@@ -431,7 +429,6 @@ func New(logger *slog.Logger, o *Options) *Handler {
 		o.EnableOTLPWriteReceiver,
 		o.ConvertOTLPDelta,
 		o.NativeOTLPDeltaIngestion,
-		o.STZeroIngestionEnabled,
 		o.LookbackDelta,
 		o.EnableTypeAndUnitLabels,
 		o.AppendMetadata,
@@ -443,6 +440,8 @@ func New(logger *slog.Logger, o *Options) *Handler {
 			MaxSearchLimit: o.MaxSearchLimit,
 		},
 		o.Parser,
+		o.EnableQueryCost,
+		o.QueryTimeout,
 	)
 
 	if r := o.FeatureRegistry; r != nil {
@@ -451,6 +450,7 @@ func New(logger *slog.Logger, o *Options) *Handler {
 		r.Set(features.API, "admin", o.EnableAdminAPI)
 		r.Set(features.API, "remote_write_receiver", o.EnableRemoteWriteReceiver)
 		r.Set(features.API, "otlp_write_receiver", o.EnableOTLPWriteReceiver)
+		r.Set(features.API, "query_cost", o.EnableQueryCost)
 		r.Set(features.API, "search", o.EnableSearch)
 		for _, alg := range api_v1.FuzzAlgorithms() {
 			r.Enable(features.API, "search_fuzz_alg_"+alg)

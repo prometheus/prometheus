@@ -16,6 +16,7 @@ package tsdb
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"math"
@@ -46,6 +47,7 @@ import (
 	"github.com/prometheus/prometheus/model/exemplar"
 	"github.com/prometheus/prometheus/model/histogram"
 	"github.com/prometheus/prometheus/model/labels"
+	"github.com/prometheus/prometheus/model/metadata"
 	"github.com/prometheus/prometheus/model/timestamp"
 	"github.com/prometheus/prometheus/model/value"
 	"github.com/prometheus/prometheus/storage"
@@ -523,6 +525,49 @@ func BenchmarkLoadWLs(b *testing.B) {
 	}
 }
 
+// Recommended CLI invocation:
+//
+//	export bench=commitMetadata && go test ./tsdb \
+//		-run '^$' -bench '^BenchmarkCommitMetadata' \
+//		-benchtime 1s -count 6 -cpu 2 -timeout 999m -benchmem \
+//		| tee ${bench}.txt
+func BenchmarkCommitMetadata(b *testing.B) {
+	const numSeries = 1000
+	for _, numFamilies := range []int{10, 100} {
+		b.Run(fmt.Sprintf("series=%d/families=%d", numSeries, numFamilies), func(b *testing.B) {
+			helps := make([]string, numFamilies)
+			units := make([]string, numFamilies)
+			for f := range numFamilies {
+				helps[f] = fmt.Sprintf("Total time spent in subsystem %d across all worker goroutines in seconds.", f)
+				if f%2 == 0 {
+					units[f] = fmt.Sprintf("seconds_%d", f)
+				}
+			}
+
+			batch := &appendBatch{
+				metadata:       make([]record.RefMetadata, numSeries),
+				metadataSeries: make([]*memSeries, numSeries),
+			}
+			for i := range numSeries {
+				fam := i % numFamilies
+				batch.metadataSeries[i] = &memSeries{ref: chunks.HeadSeriesRef(i + 1)}
+				batch.metadata[i] = record.RefMetadata{
+					Ref:  chunks.HeadSeriesRef(i + 1),
+					Type: uint8(record.Counter),
+					Unit: units[fam],
+					Help: helps[fam],
+				}
+			}
+
+			b.ReportAllocs()
+			b.ResetTimer()
+			for b.Loop() {
+				commitMetadata(batch)
+			}
+		})
+	}
+}
+
 // BenchmarkLoadRealWLs will be skipped unless the BENCHMARK_LOAD_REAL_WLS_DIR environment variable is set.
 // BENCHMARK_LOAD_REAL_WLS_DIR should be the folder where `wal` and `chunks_head` are located.
 //
@@ -913,9 +958,9 @@ func TestHead_ReadWAL(t *testing.T) {
 				require.NotEmpty(t, e[0].Exemplars)
 				require.True(t, exemplar.Exemplar{Ts: 101, Value: 7, Labels: labels.FromStrings("trace_id", "zxcv")}.Equals(e[0].Exemplars[0]))
 
-				require.NotNil(t, s100.meta)
-				require.Equal(t, "foo", s100.meta.Unit)
-				require.Equal(t, "total foo", s100.meta.Help)
+				require.False(t, metadata.IsZeroHandle(s100.meta))
+				require.Equal(t, "foo", s100.meta.Value().Unit)
+				require.Equal(t, "total foo", s100.meta.Value().Help)
 
 				intervals, err := head.tombstones.Get(storage.SeriesRef(s100.ref))
 				require.NoError(t, err)
@@ -4150,6 +4195,22 @@ func TestHeadShardedPostings(t *testing.T) {
 			require.NoError(t, ir.Series(id, &lbls, nil))
 			require.Equal(t, shardIndex, labels.StableHash(lbls.Labels())%shardCount)
 		}
+	}
+
+	errExpected := errors.New("postings error")
+	for _, tc := range []struct {
+		name string
+		refs []storage.SeriesRef
+	}{
+		{name: "empty"},
+		{name: "non-empty", refs: expected},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			p := index.Merge(ctx, index.NewListPostings(tc.refs), index.ErrPostings(errExpected))
+			p = ir.ShardedPostings(p, 0, shardCount)
+			require.False(t, p.Next())
+			require.ErrorIs(t, p.Err(), errExpected)
+		})
 	}
 }
 

@@ -1,0 +1,2 @@
+global:
+  query_max_duration: -1s

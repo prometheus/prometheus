@@ -17,10 +17,12 @@ import (
 	"errors"
 	"fmt"
 	"math"
+	"slices"
 
 	"github.com/prometheus/common/model"
 
 	"github.com/prometheus/prometheus/model/labels"
+	"github.com/prometheus/prometheus/model/value"
 )
 
 // Suffixes identifying which classic series a caller wants out of
@@ -88,16 +90,6 @@ func (c *ClassicSeriesCache) bucketsMatch(customValues []float64) bool {
 	return c.haveBuckets && c.customValuesMatch(customValues)
 }
 
-func (c *ClassicSeriesCache) allocPositiveBuckets(n int) []float64 {
-	if cap(c.positiveBuckets) < n {
-		c.positiveBuckets = make([]float64, n)
-	} else {
-		c.positiveBuckets = c.positiveBuckets[:n]
-		clear(c.positiveBuckets)
-	}
-	return c.positiveBuckets
-}
-
 // bucketLabelsFor returns the label set for bucket index idx (len(customValues)
 // for the +Inf bucket). If cache is non-nil, the caller must have already
 // populated cache.bucketLabels.
@@ -109,6 +101,94 @@ func bucketLabelsFor(cache *ClassicSeriesCache, idx int, lsetBuilder *labels.Bui
 	lsetBuilder.Set(model.MetricNameLabel, baseName+ClassicSuffixBucket)
 	lsetBuilder.Set(model.BucketLabel, labels.FormatOpenMetricsFloat(boundary))
 	return lsetBuilder.Labels()
+}
+
+// ClassicBucketCounts returns the cumulative bucket counts of a valid NHCB, one per
+// custom bound followed by +Inf, along with its count and sum. It reuses buf.
+// Every returned value of a stale marker is a stale marker.
+func ClassicBucketCounts(nhcb any, buf []float64) (buckets []float64, count, sum float64, err error) {
+	var (
+		customValues    []float64
+		positiveBuckets []float64
+		idx             int // This index is to track buckets in Classic Histogram
+		currIdx         int // This index is to track buckets in Native Histogram
+	)
+
+	switch h := nhcb.(type) {
+	case *Histogram:
+		if !IsCustomBucketsSchema(h.Schema) {
+			return nil, 0, 0, errors.New("unsupported histogram schema, not a NHCB")
+		}
+
+		// Validate the histogram before conversion.
+		// The caller must ensure that the provided histogram is valid NHCB.
+		if h.Validate() != nil {
+			return nil, 0, 0, errors.New(h.Validate().Error())
+		}
+
+		customValues = h.CustomValues
+		positiveBuckets = slices.Grow(buf[:0], len(customValues)+1)[:len(customValues)+1]
+		clear(positiveBuckets)
+
+		// Histograms are in delta format so we first bring them to absolute format.
+		acc := int64(0)
+		for _, s := range h.PositiveSpans {
+			// Skipped buckets are empty, so leave them at zero.
+			idx += int(s.Offset)
+			for i := 0; i < int(s.Length); i++ {
+				acc += h.PositiveBuckets[currIdx]
+				positiveBuckets[idx] = float64(acc)
+				idx++
+				currIdx++
+			}
+		}
+		count = float64(h.Count)
+		sum = h.Sum
+	case *FloatHistogram:
+		if !IsCustomBucketsSchema(h.Schema) {
+			return nil, 0, 0, errors.New("unsupported histogram schema, not a NHCB")
+		}
+
+		// Validate the histogram before conversion.
+		// The caller must ensure that the provided histogram is valid NHCB.
+		if h.Validate() != nil {
+			return nil, 0, 0, errors.New(h.Validate().Error())
+		}
+		customValues = h.CustomValues
+		positiveBuckets = slices.Grow(buf[:0], len(customValues)+1)[:len(customValues)+1]
+		clear(positiveBuckets)
+
+		for _, span := range h.PositiveSpans {
+			// Since Float Histogram is already in absolute format we should
+			// keep the sparse buckets empty so we jump and go to next filled
+			// bucket index.
+			idx += int(span.Offset)
+			for i := 0; i < int(span.Length); i++ {
+				positiveBuckets[idx] = h.PositiveBuckets[currIdx]
+				idx++
+				currIdx++
+			}
+		}
+		count = h.Count
+		sum = h.Sum
+	default:
+		return nil, 0, 0, fmt.Errorf("unsupported histogram type: %T", h)
+	}
+
+	// Classic buckets are cumulative, and every value of a stale marker is stale.
+	isStale := value.IsStaleNaN(sum)
+	currCount := float64(0)
+	for i := range positiveBuckets {
+		currCount += positiveBuckets[i]
+		positiveBuckets[i] = currCount
+		if isStale {
+			positiveBuckets[i] = sum
+		}
+	}
+	if isStale {
+		count = sum
+	}
+	return positiveBuckets, count, sum, nil
 }
 
 // ConvertNHCBToClassic converts Native Histogram Custom Buckets (NHCB) to classic histogram series.
@@ -142,84 +222,23 @@ func ConvertNHCBToClassic(nhcb any, lset labels.Labels, lsetBuilder *labels.Buil
 	wantCount := onlySuffix == "" || onlySuffix == ClassicSuffixCount
 	wantSum := onlySuffix == "" || onlySuffix == ClassicSuffixSum
 
-	var (
-		customValues    []float64
-		positiveBuckets []float64
-		count, sum      float64
-		idx             int // This index is to track buckets in Classic Histogram
-		currIdx         int // This index is to track buckets in Native Histogram
-	)
-
+	var buf []float64
+	if cache != nil {
+		buf = cache.positiveBuckets
+	}
+	buckets, count, sum, err := ClassicBucketCounts(nhcb, buf)
+	if err != nil {
+		return err
+	}
+	if cache != nil {
+		cache.positiveBuckets = buckets
+	}
+	var customValues []float64
 	switch h := nhcb.(type) {
 	case *Histogram:
-		if !IsCustomBucketsSchema(h.Schema) {
-			return errors.New("unsupported histogram schema, not a NHCB")
-		}
-
-		// Validate the histogram before conversion.
-		// The caller must ensure that the provided histogram is valid NHCB.
-		if err := h.Validate(); err != nil {
-			return err
-		}
-
-		if wantBuckets {
-			customValues = h.CustomValues
-			if cache != nil {
-				positiveBuckets = cache.allocPositiveBuckets(len(customValues) + 1)
-			} else {
-				positiveBuckets = make([]float64, len(customValues)+1)
-			}
-
-			// Histograms are in delta format so we first bring them to absolute format.
-			acc := int64(0)
-			for _, s := range h.PositiveSpans {
-				// Skipped buckets are empty, so leave them at zero.
-				idx += int(s.Offset)
-				for i := 0; i < int(s.Length); i++ {
-					acc += h.PositiveBuckets[currIdx]
-					positiveBuckets[idx] = float64(acc)
-					idx++
-					currIdx++
-				}
-			}
-		}
-		count = float64(h.Count)
-		sum = h.Sum
+		customValues = h.CustomValues
 	case *FloatHistogram:
-		if !IsCustomBucketsSchema(h.Schema) {
-			return errors.New("unsupported histogram schema, not a NHCB")
-		}
-
-		// Validate the histogram before conversion.
-		// The caller must ensure that the provided histogram is valid NHCB.
-		if err := h.Validate(); err != nil {
-			return err
-		}
-
-		if wantBuckets {
-			customValues = h.CustomValues
-			if cache != nil {
-				positiveBuckets = cache.allocPositiveBuckets(len(customValues) + 1)
-			} else {
-				positiveBuckets = make([]float64, len(customValues)+1)
-			}
-
-			for _, span := range h.PositiveSpans {
-				// Since Float Histogram is already in absolute format we should
-				// keep the sparse buckets empty so we jump and go to next filled
-				// bucket index.
-				idx += int(span.Offset)
-				for i := 0; i < int(span.Length); i++ {
-					positiveBuckets[idx] = h.PositiveBuckets[currIdx]
-					idx++
-					currIdx++
-				}
-			}
-		}
-		count = h.Count
-		sum = h.Sum
-	default:
-		return fmt.Errorf("unsupported histogram type: %T", h)
+		customValues = h.CustomValues
 	}
 
 	if wantBuckets {
@@ -252,19 +271,15 @@ func ConvertNHCBToClassic(nhcb any, lset labels.Labels, lsetBuilder *labels.Buil
 			cache.haveBuckets = true
 		}
 
-		currCount := float64(0)
 		for i, val := range customValues {
-			currCount += positiveBuckets[i]
 			bucketLabels := bucketLabelsFor(cache, i, lsetBuilder, lset, baseName, val)
-			if err := emitSeriesFn(bucketLabels, currCount); err != nil {
+			if err := emitSeriesFn(bucketLabels, buckets[i]); err != nil {
 				return err
 			}
 		}
 
-		currCount += positiveBuckets[len(positiveBuckets)-1]
-
 		infLabels := bucketLabelsFor(cache, len(customValues), lsetBuilder, lset, baseName, math.Inf(1))
-		if err := emitSeriesFn(infLabels, currCount); err != nil {
+		if err := emitSeriesFn(infLabels, buckets[len(customValues)]); err != nil {
 			return err
 		}
 	}

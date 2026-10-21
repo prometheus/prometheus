@@ -27,12 +27,14 @@ import (
 	"strings"
 	"sync"
 	"testing"
+	"testing/synctest"
 	"time"
 
 	"github.com/gogo/protobuf/proto"
 	"github.com/golang/snappy"
 	"github.com/prometheus/client_golang/prometheus"
 	prom_testutil "github.com/prometheus/client_golang/prometheus/testutil"
+	dto "github.com/prometheus/client_model/go"
 	"github.com/stretchr/testify/require"
 	"go.opentelemetry.io/contrib/instrumentation/net/http/otelhttp"
 	"go.uber.org/atomic"
@@ -221,14 +223,14 @@ func BenchmarkSampledReadEndpointWithoutExternalLabels(b *testing.B) {
 		for _, labelCount := range []int{3, 12, 24} {
 			b.Run(fmt.Sprintf("series_%d_labels_%d", seriesCount, labelCount), func(b *testing.B) {
 				store := teststorage.New(b)
-				app := store.Appender(b.Context())
+				app := store.AppenderV2(b.Context())
 				for i := range seriesCount {
 					labelStrings := make([]string, 0, 2*labelCount)
 					labelStrings = append(labelStrings, "__name__", "test_metric", "series", strconv.Itoa(i))
 					for j := 2; j < labelCount; j++ {
 						labelStrings = append(labelStrings, fmt.Sprintf("label_%d", j), "value")
 					}
-					_, err := app.Append(0, labels.FromStrings(labelStrings...), 0, 1)
+					_, err := app.Append(0, labels.FromStrings(labelStrings...), 0, 0, 1, nil, nil, storage.AOptions{})
 					require.NoError(b, err)
 				}
 				require.NoError(b, app.Commit())
@@ -940,20 +942,204 @@ func (w *failingReadResponseWriter) Flush() {
 	w.flushes++
 }
 
-func addNativeHistogramsToTestSuite(t *testing.T, storage *teststorage.TestStorage, n int) {
+func addNativeHistogramsToTestSuite(t *testing.T, s *teststorage.TestStorage, n int) {
 	lbls := labels.FromStrings("__name__", "test_histogram_metric1", "baz", "qux")
 
-	app := storage.Appender(t.Context())
+	app := s.AppenderV2(t.Context())
 	for i, fh := range tsdbutil.GenerateTestFloatHistograms(n) {
-		_, err := app.AppendHistogram(0, lbls, int64(i)*int64(60*time.Second/time.Millisecond), nil, fh)
+		_, err := app.Append(0, lbls, 0, int64(i)*int64(60*time.Second/time.Millisecond), 0, nil, fh, storage.AOptions{})
 		require.NoError(t, err)
 	}
 
 	lbls = labels.FromStrings("__name__", "test_nhcb_metric1", "baz", "qux")
 	for i, fh := range tsdbutil.GenerateTestCustomBucketsFloatHistograms(n) {
-		_, err := app.AppendHistogram(0, lbls, int64(i)*int64(60*time.Second/time.Millisecond), nil, fh)
+		_, err := app.Append(0, lbls, 0, int64(i)*int64(60*time.Second/time.Millisecond), 0, nil, fh, storage.AOptions{})
 		require.NoError(t, err)
 	}
 
 	require.NoError(t, app.Commit())
+}
+
+func TestRemoteReadGateWaitDurationObserved(t *testing.T) {
+	const (
+		waitDuration  = 200 * time.Millisecond
+		queryDuration = 100 * time.Millisecond
+	)
+
+	newHandlerAndRequest := func(t *testing.T, concurrencyLimit int, beforeQuery func()) (*readHandler, *prometheus.Registry, *http.Request) {
+		t.Helper()
+		queryable := gateWaitQueryable{Queryable: storage.QueryableFunc(func(int64, int64) (storage.Querier, error) {
+			beforeQuery()
+			return &storage.MockQuerier{
+				SelectMockFunction: func(bool, *storage.SelectHints, ...*labels.Matcher) storage.SeriesSet {
+					return storage.EmptySeriesSet()
+				},
+			}, nil
+		})}
+
+		reg := prometheus.NewRegistry()
+		h, ok := NewReadHandler(nil, reg, queryable, func() config.Config {
+			return config.Config{}
+		}, 1e6, concurrencyLimit, 0).(*readHandler)
+		require.True(t, ok)
+
+		matcher, err := labels.NewMatcher(labels.MatchEqual, "__name__", "test_metric1")
+		require.NoError(t, err)
+		query, err := ToQuery(0, 1, []*labels.Matcher{matcher}, &storage.SelectHints{Step: 0, Func: "avg"})
+		require.NoError(t, err)
+		data, err := proto.Marshal(&prompb.ReadRequest{Queries: []*prompb.Query{query}})
+		require.NoError(t, err)
+		request, err := http.NewRequestWithContext(t.Context(), http.MethodPost, "", bytes.NewBuffer(snappy.Encode(nil, data)))
+		require.NoError(t, err)
+		return h, reg, request
+	}
+
+	isClosed := func(ch <-chan struct{}) bool {
+		select {
+		case <-ch:
+			return true
+		default:
+			return false
+		}
+	}
+
+	for _, tc := range []struct {
+		name             string
+		concurrencyLimit int
+		contended        bool
+		canceled         bool
+		wantStatus       int
+	}{
+		{name: "successful acquisition", concurrencyLimit: 1, wantStatus: http.StatusOK},
+		{name: "canceled acquisition", concurrencyLimit: 0, canceled: true, wantStatus: http.StatusInternalServerError},
+		{name: "contended acquisition", concurrencyLimit: 1, contended: true, wantStatus: http.StatusOK},
+		{name: "contended canceled acquisition", concurrencyLimit: 1, contended: true, canceled: true, wantStatus: http.StatusInternalServerError},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			synctest.Test(t, func(t *testing.T) {
+				queryStarted := make(chan struct{})
+				queryContinue := make(chan struct{})
+				releaseQuery := sync.OnceFunc(func() { close(queryContinue) })
+				h, reg, request := newHandlerAndRequest(t, tc.concurrencyLimit, func() {
+					close(queryStarted)
+					<-queryContinue
+				})
+				ctx, cancel := context.WithCancel(t.Context())
+				request = request.WithContext(ctx)
+				recorder := httptest.NewRecorder()
+				done := make(chan struct{})
+
+				releaseGate := func() {}
+				if tc.contended {
+					require.NoError(t, h.remoteReadGate.Start(t.Context()))
+					releaseGate = sync.OnceFunc(h.remoteReadGate.Done)
+				}
+				if !tc.contended || tc.canceled {
+					releaseQuery()
+				}
+				if tc.canceled && !tc.contended {
+					// With zero capacity, only the canceled context is ready in Gate.Start.
+					cancel()
+				}
+				t.Cleanup(func() {
+					cancel()
+					releaseQuery()
+					releaseGate()
+					synctest.Wait()
+					if !isClosed(done) {
+						t.Error("remote read handler did not finish during cleanup")
+					}
+				})
+				go func() {
+					defer close(done)
+					h.ServeHTTP(recorder, request)
+				}()
+
+				synctest.Wait()
+				var wantWait time.Duration
+				if tc.contended {
+					require.False(t, isClosed(done), "request should be waiting on the gate")
+					require.False(t, isClosed(queryStarted), "storage should not be queried before acquisition")
+					hist := gatherHistogram(t, reg, "prometheus_remote_read_handler_gate_wait_duration_seconds")
+					require.Zero(t, hist.GetSampleCount())
+					require.Zero(t, hist.GetSampleSum())
+
+					wantWait = waitDuration
+					time.Sleep(waitDuration)
+					if tc.canceled {
+						// Keep the slot occupied until cancellation has completed.
+						cancel()
+					} else {
+						releaseGate()
+					}
+					synctest.Wait()
+
+					if !tc.canceled {
+						require.True(t, isClosed(queryStarted), "request should have entered query processing")
+						require.False(t, isClosed(done), "query processing should still be blocked")
+						hist = gatherHistogram(t, reg, "prometheus_remote_read_handler_gate_wait_duration_seconds")
+						require.Equal(t, uint64(1), hist.GetSampleCount())
+						require.Equal(t, wantWait.Seconds(), hist.GetSampleSum())
+
+						// Query processing must not add to the already-observed gate wait.
+						time.Sleep(queryDuration)
+						releaseQuery()
+						synctest.Wait()
+					}
+				}
+
+				require.True(t, isClosed(done), "remote read handler should have finished")
+				require.Equal(t, tc.wantStatus, recorder.Code)
+				require.Equal(t, !tc.canceled, isClosed(queryStarted), "canceled acquisition must not query storage")
+				hist := gatherHistogram(t, reg, "prometheus_remote_read_handler_gate_wait_duration_seconds")
+				require.Equal(t, uint64(1), hist.GetSampleCount())
+				require.Equal(t, wantWait.Seconds(), hist.GetSampleSum())
+				require.Zero(t, gatherGauge(t, reg, "prometheus_remote_read_handler_queries"))
+
+				if tc.concurrencyLimit > 0 {
+					releaseGate()
+					gateCtx, gateCancel := context.WithTimeout(t.Context(), 2*time.Second)
+					defer gateCancel()
+					require.NoError(t, h.remoteReadGate.Start(gateCtx))
+					h.remoteReadGate.Done()
+				}
+			})
+		})
+	}
+}
+
+type gateWaitQueryable struct {
+	storage.Queryable
+}
+
+func (gateWaitQueryable) ChunkQuerier(int64, int64) (storage.ChunkQuerier, error) {
+	return nil, errors.New("unexpected chunk query in gate wait test")
+}
+
+func gatherHistogram(t *testing.T, reg *prometheus.Registry, name string) *dto.Histogram {
+	t.Helper()
+	metric := gatherMetric(t, reg, name)
+	require.NotNil(t, metric.GetHistogram())
+	return metric.GetHistogram()
+}
+
+func gatherGauge(t *testing.T, reg *prometheus.Registry, name string) float64 {
+	t.Helper()
+	metric := gatherMetric(t, reg, name)
+	require.NotNil(t, metric.GetGauge())
+	return metric.GetGauge().GetValue()
+}
+
+func gatherMetric(t *testing.T, reg *prometheus.Registry, name string) *dto.Metric {
+	t.Helper()
+	mfs, err := reg.Gather()
+	require.NoError(t, err)
+	for _, mf := range mfs {
+		if mf.GetName() == name {
+			require.Len(t, mf.GetMetric(), 1)
+			return mf.GetMetric()[0]
+		}
+	}
+	t.Fatalf("metric %q not found", name)
+	return nil
 }

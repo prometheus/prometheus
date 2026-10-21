@@ -26,6 +26,7 @@ import (
 
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/promql/parser"
+	"github.com/prometheus/prometheus/schema"
 	"github.com/prometheus/prometheus/storage"
 	"github.com/prometheus/prometheus/util/annotations"
 )
@@ -278,7 +279,8 @@ func (ev *evaluator) fetchInfoSeries(ctx context.Context, mat Matrix, ignoreSeri
 		matchers = append(matchers, effectiveNameMatchers...)
 
 		infoIt := ev.querier.Select(ctx, false, &selectHints, matchers...)
-		series, ws, err := expandSeriesSet(ctx, infoIt)
+		// Account for each info series in the shared query cost budget.
+		series, ws, err := ev.expandSeriesSet(ctx, infoIt)
 		warnings.Merge(ws)
 		if err != nil {
 			return nil, warnings, err
@@ -589,7 +591,7 @@ func (ev *evaluator) combineWithInfoVector(base, info Vector, ignoreSeries map[u
 			}
 
 			err := is.Metric.Validate(func(l labels.Label) error {
-				if l.Name == model.MetricNameLabel {
+				if schema.IsMetadataLabel(l.Name) {
 					return nil
 				}
 				if _, exists := dataLabelMatchers[l.Name]; len(dataLabelMatchers) > 0 && !exists {

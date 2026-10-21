@@ -86,7 +86,30 @@ type AppendV2Options struct {
 // It's up to the caller to decide if it's an ignorable error or not, plus
 // it allows extra reporting (e.g. for Remote Write 2.0 X-Remote-Write-Written headers).
 type AppendPartialError struct {
-	ExemplarErrors []error
+	// ExemplarErrors reports the exemplars that were not written. Several
+	// entries can share an Index when more than one storage rejects the same
+	// exemplar, e.g. behind a fanout storage.
+	ExemplarErrors []ExemplarError
+}
+
+// ExemplarError reports why an exemplar was not written.
+type ExemplarError struct {
+	// Index is the position of the exemplar in the slice passed to
+	// AppenderV2.Append (AppendV2Options.Exemplars) or
+	// ExemplarAppenderV2.AppendExemplars.
+	Index int
+	// Err is why the exemplar was not written. It must not be nil.
+	Err error
+}
+
+// Error returns the message of Err.
+func (e ExemplarError) Error() string {
+	return e.Err.Error()
+}
+
+// Unwrap returns Err.
+func (e ExemplarError) Unwrap() error {
+	return e.Err
 }
 
 // Error returns combined error string.
@@ -95,11 +118,15 @@ func (e *AppendPartialError) Error() string {
 		return "<nil>"
 	}
 
-	errs := errors.Join(e.ExemplarErrors...)
-	if errs == nil {
+	errs := make([]error, 0, len(e.ExemplarErrors))
+	for _, eErr := range e.ExemplarErrors {
+		errs = append(errs, eErr.Err)
+	}
+	joined := errors.Join(errs...)
+	if joined == nil {
 		return ""
 	}
-	return errs.Error()
+	return joined.Error()
 }
 
 // ToError returns AppendPartialError as error, returning nil
@@ -181,7 +208,8 @@ type AppenderV2 interface {
 	// TODO(bwplotka): We plan to experiment on using generics for complex sampleType, but do it after we unify interface (derisk) and before we add native summaries.
 	//
 	// Implementations MUST attempt to append sample even if metadata, exemplar or (st) start timestamp appends fail.
-	// Implementations MAY return AppendPartialError as an error. Use errors.As to detect.
+	// Implementations MAY return AppendPartialError as an error to report which of the
+	// given opts.Exemplars failed. Use errors.As to detect.
 	// For the successful Append, Implementations MUST return valid SeriesRef that represents ls.
 	//   NOTE(bwplotka): Given OTLP and native histograms and the relaxation of the requirement for
 	//   type and unit suffixes in metric names we start to hit cases of ls being not enough for id

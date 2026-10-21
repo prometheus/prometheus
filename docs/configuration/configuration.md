@@ -95,6 +95,33 @@ global:
   # Reloading the configuration will reopen the file.
   [ query_log_file: <string> ]
 
+  # Maximum number of series a query may load before it is rejected. The limit
+  # is enforced during execution against the query's actual running cost, never
+  # against the cost estimate returned by the query cost API: the query is
+  # rejected as soon as it loads more series than this. 0 means no limit.
+  # These three query cost limits are reloadable and only enforced when the
+  # query-cost feature flag is enabled (--enable-feature=query-cost).
+  # They apply to every query the engine evaluates, including recording and
+  # alerting rule evaluation.
+  # A client may lower any of them for a single request with the max_series,
+  # max_samples_read and max_query_duration query parameters. A request that
+  # asks for a value above the ceiling set here is an error, it is not silently
+  # clamped down.
+  [ query_max_series: <int> | default = 0 ]
+
+  # Maximum number of samples a query may read before it is rejected. Like
+  # query_max_series, it is enforced during execution against the samples the
+  # query actually reads, never against the estimate: the query is
+  # rejected as soon as it reads more samples than this. 0 means no limit.
+  [ query_max_samples_read: <int> | default = 0 ]
+
+  # Maximum wall-clock duration a query may take. It surfaces as a query
+  # timeout: the query is aborted once it has run for this long. 0s falls back
+  # to --query.timeout. A nonzero value overrides that flag only when the
+  # query-cost feature is enabled. The per-query timeout parameter
+  # of the query endpoints is capped at this ceiling.
+  [ query_max_duration: <duration> | default = 0s ]
+
   # File to which scrape failures are logged.
   # Reloading the configuration will reopen the file.
   [ scrape_failure_log_file: <string> ]
@@ -2472,6 +2499,10 @@ service port.
 Available meta labels:
 
 * `__meta_kubernetes_namespace`: The namespace of the service object.
+* `__meta_kubernetes_namespace_label_<labelname>`: Each label from the namespace object, with any unsupported characters converted to an underscore. Requires `attach_metadata: {namespace: true}`.
+* `__meta_kubernetes_namespace_labelpresent_<labelname>`: `true` for each label from the namespace object, with any unsupported characters converted to an underscore. Requires `attach_metadata: {namespace: true}`.
+* `__meta_kubernetes_namespace_annotation_<annotationname>`: Each annotation from the namespace object. Requires `attach_metadata: {namespace: true}`.
+* `__meta_kubernetes_namespace_annotationpresent_<annotationname>`: `true` for each annotation from the namespace object. Requires `attach_metadata: {namespace: true}`.
 * `__meta_kubernetes_service_annotation_<annotationname>`: Each annotation from the service object.
 * `__meta_kubernetes_service_annotationpresent_<annotationname>`: "true" for each annotation of the service object.
 * `__meta_kubernetes_service_cluster_ip`: The cluster IP address of the service. (Does not apply to services of type ExternalName)
@@ -2495,6 +2526,10 @@ In that case `__address__` is set to the pod IP only, without a port.
 Available meta labels:
 
 * `__meta_kubernetes_namespace`: The namespace of the pod object.
+* `__meta_kubernetes_namespace_label_<labelname>`: Each label from the namespace object, with any unsupported characters converted to an underscore. Requires `attach_metadata: {namespace: true}`.
+* `__meta_kubernetes_namespace_labelpresent_<labelname>`: `true` for each label from the namespace object, with any unsupported characters converted to an underscore. Requires `attach_metadata: {namespace: true}`.
+* `__meta_kubernetes_namespace_annotation_<annotationname>`: Each annotation from the namespace object. Requires `attach_metadata: {namespace: true}`.
+* `__meta_kubernetes_namespace_annotationpresent_<annotationname>`: `true` for each annotation from the namespace object. Requires `attach_metadata: {namespace: true}`.
 * `__meta_kubernetes_pod_name`: The name of the pod object.
 * `__meta_kubernetes_pod_ip`: The pod IP of the pod object.
 * `__meta_kubernetes_pod_label_<labelname>`: Each label from the pod object, with any unsupported characters converted to an underscore.
@@ -2532,6 +2567,10 @@ it is recommended to use EndpointSlices instead and switch to the `endpointslice
 Available meta labels:
 
 * `__meta_kubernetes_namespace`: The namespace of the endpoints object.
+* `__meta_kubernetes_namespace_label_<labelname>`: Each label from the namespace object, with any unsupported characters converted to an underscore. Requires `attach_metadata: {namespace: true}`.
+* `__meta_kubernetes_namespace_labelpresent_<labelname>`: `true` for each label from the namespace object, with any unsupported characters converted to an underscore. Requires `attach_metadata: {namespace: true}`.
+* `__meta_kubernetes_namespace_annotation_<annotationname>`: Each annotation from the namespace object. Requires `attach_metadata: {namespace: true}`.
+* `__meta_kubernetes_namespace_annotationpresent_<annotationname>`: `true` for each annotation from the namespace object. Requires `attach_metadata: {namespace: true}`.
 * `__meta_kubernetes_endpoints_name`: The names of the endpoints object.
 * `__meta_kubernetes_endpoints_label_<labelname>`: Each label from the endpoints object, with any unsupported characters converted to an underscore.
 * `__meta_kubernetes_endpoints_labelpresent_<labelname>`: `true` for each label from the endpoints object, with any unsupported characters converted to an underscore.
@@ -2560,6 +2599,10 @@ The role requires the `discovery.k8s.io/v1` API version (available since Kuberne
 Available meta labels:
 
 * `__meta_kubernetes_namespace`: The namespace of the endpointslice object.
+* `__meta_kubernetes_namespace_label_<labelname>`: Each label from the namespace object, with any unsupported characters converted to an underscore. Requires `attach_metadata: {namespace: true}`.
+* `__meta_kubernetes_namespace_labelpresent_<labelname>`: `true` for each label from the namespace object, with any unsupported characters converted to an underscore. Requires `attach_metadata: {namespace: true}`.
+* `__meta_kubernetes_namespace_annotation_<annotationname>`: Each annotation from the namespace object. Requires `attach_metadata: {namespace: true}`.
+* `__meta_kubernetes_namespace_annotationpresent_<annotationname>`: `true` for each annotation from the namespace object. Requires `attach_metadata: {namespace: true}`.
 * `__meta_kubernetes_endpointslice_name`: The name of endpointslice object.
 * `__meta_kubernetes_endpointslice_label_<labelname>`: Each label from the endpointslice object, with any unsupported characters converted to an underscore.
 * `__meta_kubernetes_endpointslice_labelpresent_<labelname>`: `true` for each label from the endpointslice object, with any unsupported characters converted to an underscore.
@@ -2581,6 +2624,7 @@ Available meta labels:
   * `__meta_kubernetes_endpointslice_port`: Port of the referenced endpoint.
   * `__meta_kubernetes_endpointslice_port_name`: Named port of the referenced endpoint.
   * `__meta_kubernetes_endpointslice_port_protocol`: Protocol of the referenced endpoint.
+  * `__meta_kubernetes_endpointslice_port_app_protocol`: The application protocol of the referenced endpoint's port, if set
 * If the endpoints belong to a service, all labels of the `role: service` discovery are attached.
 * For all targets backed by a pod, all labels of the `role: pod` discovery are attached.
 
@@ -2595,6 +2639,10 @@ The role requires the `networking.k8s.io/v1` API version (available since Kubern
 Available meta labels:
 
 * `__meta_kubernetes_namespace`: The namespace of the ingress object.
+* `__meta_kubernetes_namespace_label_<labelname>`: Each label from the namespace object, with any unsupported characters converted to an underscore. Requires `attach_metadata: {namespace: true}`.
+* `__meta_kubernetes_namespace_labelpresent_<labelname>`: `true` for each label from the namespace object, with any unsupported characters converted to an underscore. Requires `attach_metadata: {namespace: true}`.
+* `__meta_kubernetes_namespace_annotation_<annotationname>`: Each annotation from the namespace object. Requires `attach_metadata: {namespace: true}`.
+* `__meta_kubernetes_namespace_annotationpresent_<annotationname>`: `true` for each annotation from the namespace object. Requires `attach_metadata: {namespace: true}`.
 * `__meta_kubernetes_ingress_name`: The name of the ingress object.
 * `__meta_kubernetes_ingress_label_<labelname>`: Each label from the ingress object, with any unsupported characters converted to an underscore.
 * `__meta_kubernetes_ingress_labelpresent_<labelname>`: `true` for each label from the ingress object, with any unsupported characters converted to an underscore.
@@ -2603,6 +2651,7 @@ Available meta labels:
 * `__meta_kubernetes_ingress_class_name`: Class name from ingress spec, if present.
 * `__meta_kubernetes_ingress_scheme`: Protocol scheme of ingress, `https` if TLS
   config is set. Defaults to `http`.
+* `__meta_kubernetes_ingress_host`: Host from ingress spec.
 * `__meta_kubernetes_ingress_path`: Path from ingress spec. Defaults to `/`.
 
 See below for the configuration options for Kubernetes discovery:
@@ -4104,6 +4153,21 @@ metadata_config:
   [ send_interval: <duration> | default = 1m ]
   # Maximum number of samples per send.
   [ max_samples_per_send: <int> | default = 2000]
+
+# EXPERIMENTAL: Converts native histograms with custom buckets (NHCB)
+# to classic histograms after applying write_relabel_configs. This enables
+# using NHCB locally (for cheaper storage and histogram atomicity) while
+# sending classic histograms to external systems that do not support
+# native histograms yet. Also useful for migration scenarios.
+# NHCBs are converted even when send_native_histograms is enabled; that setting
+# controls forwarding of other native histograms. Classic series ingested
+# alongside NHCBs, for example with always_scrape_classic_histograms, are sent
+# too, so the converted series duplicate them; drop one copy with
+# write_relabel_configs. Gauge histograms are converted with _count and _sum
+# series. Conversion state is not persisted across restarts, so bucket layout or
+# sample type changes that span a restart do not produce stale markers for
+# retired classic series.
+[ convert_nhcb_to_classic: <boolean> | default = false ]
 
 # HTTP client settings, including authentication methods (such as basic auth and
 # authorization), proxy configurations, TLS options, custom HTTP headers, etc.

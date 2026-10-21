@@ -25,7 +25,9 @@ Please see [the v2.55 RELEASE.md](https://github.com/prometheus/prometheus/blob/
 | v3.13          | 2026-06-17                                 | György Krajcsovits (Github: @krajorama)                                 |
 | v3.14          | 2026-07-29                                 | Ayoub Mrini (Github: @machine424)                                       |
 | v3.15          | 2026-09-09                                 | Jan Fajerski (GitHub: @jan--f)                                          |
-| v3.16          | 2026-10-21                                 | **volunteer welcome**                                                   |
+| v3.16          | 2026-10-21                                 | Owen Williams (GitHub: @ywwg)                                           |
+| v3.17          | 2026-12-02                                 | György Krajcsovits (Github: @krajorama)                                 |
+| v3.18          | 2026-01-13                                 | **volunteer welcome**                                                   |
 
 If you are interested in volunteering please create a pull request against the [prometheus/prometheus](https://github.com/prometheus/prometheus) repository and propose yourself for the release series of your choice.
 

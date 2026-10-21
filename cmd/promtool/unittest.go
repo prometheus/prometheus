@@ -61,6 +61,7 @@ func RulesUnitTestResult(results io.Writer, queryOpts promqltest.LazyLoaderOpts,
 	}
 
 	for _, f := range files {
+		fmt.Printf("Processing test file: %s\n", f)
 		if errs := ruleUnitTest(f, queryOpts, p, run, diffFlag, debug, ignoreUnknownFields, junit.Suite(f)); errs != nil {
 			fmt.Fprintln(os.Stderr, "  FAILED:")
 			for _, e := range errs {
@@ -236,6 +237,9 @@ func (tg *testGroup) test(testname string, evalInterval time.Duration, groupOrde
 	// Setup testing suite.
 	// Set the start time from the test group.
 	queryOpts.StartTime = tg.StartTimestamp.Time
+	// Evaluate with the same parser the rule files are loaded with, so that
+	// syntax enabled by a feature flag survives into evaluation.
+	queryOpts.Parser = tg.parser
 	suite, err := promqltest.NewLazyLoader(tg.seriesLoadingString(), queryOpts)
 	if err != nil {
 		return []error{err}
