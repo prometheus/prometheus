@@ -1302,11 +1302,13 @@ func (a *appender) Rollback() error {
 }
 
 func (a *appenderBase) commit() error {
+	// Clear on failure too, since the appender goes back to the pool. Like Head, a
+	// failed write drops the batch, including series that were never logged.
+	defer a.clearData()
+
 	if err := a.log(); err != nil {
 		return err
 	}
-
-	a.clearData()
 
 	if a.writeNotified != nil {
 		a.writeNotified.Notify()
@@ -1443,15 +1445,12 @@ func (a *appenderBase) clearData() {
 }
 
 func (a *appenderBase) rollback() error {
+	defer a.clearData()
+
 	// Series are created in-memory regardless of rollback. This means we must
 	// log them to the WAL, otherwise subsequent commits may reference a series
 	// which was never written to the WAL.
-	if err := a.logSeries(); err != nil {
-		return err
-	}
-
-	a.clearData()
-	return nil
+	return a.logSeries()
 }
 
 // logSeries logs only pending series records to the WAL.
