@@ -2122,6 +2122,11 @@ func TestV2DataWithMetadataMetrics(t *testing.T) {
 			name: "exemplars are ignored",
 			timeSeries: []writev2.TimeSeries{{
 				Exemplars: make([]writev2.Exemplar, 1),
+				Metadata: writev2.Metadata{
+					Type:    writev2.Metadata_METRIC_TYPE_COUNTER,
+					UnitRef: 1,
+					HelpRef: 2,
+				},
 			}},
 		},
 	} {
