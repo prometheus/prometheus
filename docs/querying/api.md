@@ -2256,7 +2256,6 @@ curl http://localhost:9090/api/v1/features
       "keep_firing_for": true
     },
     "scrape": {
-      "start_timestamp_zero_ingestion": false,
       "extra_metrics": false
     },
     "service_discovery": {
@@ -2269,7 +2268,8 @@ curl http://localhost:9090/api/v1/features
     },
     "tsdb": {
       "delayed_compaction": false,
-      "exemplar_storage": false
+      "exemplar_storage": false,
+      "start_timestamp_zero_ingestion": false
     }
   }
 }
