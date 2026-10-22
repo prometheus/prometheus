@@ -203,7 +203,7 @@ func TestBasicContentNegotiation(t *testing.T) {
 			require.Equal(t, float64(attempts), client_testutil.ToFloat64(qm.metrics.samplesTotal))
 			require.Equal(t, float64(attempts-1), client_testutil.ToFloat64(qm.metrics.retriedSamplesTotal))
 			if tc.senderProtoMsg == remoteapi.WriteV2MessageType {
-				for _, metadata := range metadataFieldNames {
+				for _, metadata := range []string{metadataFieldType, metadataFieldUnit, metadataFieldHelp} {
 					require.Equal(t, float64(attempts), client_testutil.ToFloat64(qm.metrics.samplesMetadataTotal.WithLabelValues(metadata)), metadata)
 					require.Equal(t, 0.0, client_testutil.ToFloat64(qm.metrics.histogramsMetadataTotal.WithLabelValues(metadata)), metadata)
 				}
@@ -307,7 +307,7 @@ func TestSampleDelivery(t *testing.T) {
 				require.Equal(t, float64(len(exemplars)), client_testutil.ToFloat64(qm.metrics.exemplarsTotal))
 				require.Equal(t, float64(len(histograms)+len(floatHistograms)), client_testutil.ToFloat64(qm.metrics.histogramsTotal))
 				if protoMsg == remoteapi.WriteV2MessageType {
-					for _, metadata := range metadataFieldNames {
+					for _, metadata := range []string{metadataFieldType, metadataFieldUnit, metadataFieldHelp} {
 						require.Equal(t, float64(len(samples)), client_testutil.ToFloat64(qm.metrics.samplesMetadataTotal.WithLabelValues(metadata)), metadata)
 						require.Equal(t, float64(len(histograms)+len(floatHistograms)), client_testutil.ToFloat64(qm.metrics.histogramsMetadataTotal.WithLabelValues(metadata)), metadata)
 					}
@@ -2070,8 +2070,8 @@ func TestV2DataWithMetadataMetrics(t *testing.T) {
 	for _, tc := range []struct {
 		name               string
 		timeSeries         []writev2.TimeSeries
-		expectedSamples    [metadataFieldCount]float64
-		expectedHistograms [metadataFieldCount]float64
+		expectedSamples    metadataFieldCounts
+		expectedHistograms metadataFieldCounts
 	}{
 		{
 			name: "without metadata",
@@ -2086,7 +2086,7 @@ func TestV2DataWithMetadataMetrics(t *testing.T) {
 				Samples:  make([]writev2.Sample, 1),
 				Metadata: writev2.Metadata{Type: writev2.Metadata_METRIC_TYPE_COUNTER},
 			}},
-			expectedSamples: [metadataFieldCount]float64{1, 0, 0},
+			expectedSamples: metadataFieldCounts{typ: 1},
 		},
 		{
 			name: "with unit",
@@ -2094,7 +2094,7 @@ func TestV2DataWithMetadataMetrics(t *testing.T) {
 				Histograms: make([]writev2.Histogram, 1),
 				Metadata:   writev2.Metadata{UnitRef: 1},
 			}},
-			expectedHistograms: [metadataFieldCount]float64{0, 1, 0},
+			expectedHistograms: metadataFieldCounts{unit: 1},
 		},
 		{
 			name: "with help",
@@ -2102,7 +2102,7 @@ func TestV2DataWithMetadataMetrics(t *testing.T) {
 				Samples:  make([]writev2.Sample, 1),
 				Metadata: writev2.Metadata{HelpRef: 1},
 			}},
-			expectedSamples: [metadataFieldCount]float64{0, 0, 1},
+			expectedSamples: metadataFieldCounts{help: 1},
 		},
 		{
 			name: "with all metadata",
@@ -2115,8 +2115,8 @@ func TestV2DataWithMetadataMetrics(t *testing.T) {
 					HelpRef: 2,
 				},
 			}},
-			expectedSamples:    [metadataFieldCount]float64{2, 2, 2},
-			expectedHistograms: [metadataFieldCount]float64{1, 1, 1},
+			expectedSamples:    metadataFieldCounts{typ: 2, unit: 2, help: 2},
+			expectedHistograms: metadataFieldCounts{typ: 1, unit: 1, help: 1},
 		},
 		{
 			name: "exemplars are ignored",
@@ -2135,10 +2135,12 @@ func TestV2DataWithMetadataMetrics(t *testing.T) {
 			updater := batchMetricsUpdater{metrics: metrics}
 			updater.recordV2WithMetadataAttempt(countV2DataWithMetadata(tc.timeSeries))
 
-			for i, metadata := range metadataFieldNames {
-				require.Equal(t, tc.expectedSamples[i], client_testutil.ToFloat64(metrics.samplesMetadataTotal.WithLabelValues(metadata)), metadata)
-				require.Equal(t, tc.expectedHistograms[i], client_testutil.ToFloat64(metrics.histogramsMetadataTotal.WithLabelValues(metadata)), metadata)
-			}
+			require.Equal(t, float64(tc.expectedSamples.typ), client_testutil.ToFloat64(metrics.samplesMetadataTotal.WithLabelValues(metadataFieldType)))
+			require.Equal(t, float64(tc.expectedSamples.unit), client_testutil.ToFloat64(metrics.samplesMetadataTotal.WithLabelValues(metadataFieldUnit)))
+			require.Equal(t, float64(tc.expectedSamples.help), client_testutil.ToFloat64(metrics.samplesMetadataTotal.WithLabelValues(metadataFieldHelp)))
+			require.Equal(t, float64(tc.expectedHistograms.typ), client_testutil.ToFloat64(metrics.histogramsMetadataTotal.WithLabelValues(metadataFieldType)))
+			require.Equal(t, float64(tc.expectedHistograms.unit), client_testutil.ToFloat64(metrics.histogramsMetadataTotal.WithLabelValues(metadataFieldUnit)))
+			require.Equal(t, float64(tc.expectedHistograms.help), client_testutil.ToFloat64(metrics.histogramsMetadataTotal.WithLabelValues(metadataFieldHelp)))
 		})
 	}
 }
