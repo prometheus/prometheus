@@ -2020,8 +2020,8 @@ func TestQueueManagerMetrics(t *testing.T) {
 		"prometheus_remote_storage_metadata_bytes_total",
 	}
 	rw2MetadataMetricNames := []string{
-		"prometheus_remote_storage_samples_with_metadata_total",
-		"prometheus_remote_storage_histograms_with_metadata_total",
+		"prometheus_remote_storage_samples_metadata_total",
+		"prometheus_remote_storage_histograms_metadata_total",
 	}
 
 	for _, tc := range []struct {
