@@ -939,6 +939,7 @@ func TestDB_SnapshotWithDelete(t *testing.T) {
 }
 
 func TestDB_e2e(t *testing.T) {
+	t.Parallel()
 	const (
 		numDatapoints = 1000
 		numRanges     = 1000

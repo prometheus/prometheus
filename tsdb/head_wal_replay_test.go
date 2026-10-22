@@ -31,6 +31,7 @@ import (
 )
 
 func TestWALReplayPreservesMappedChunksAcrossSeriesRefs(t *testing.T) {
+	t.Parallel()
 	for _, appV2 := range []bool{false, true} {
 		for name, scenario := range sampleTypeScenarios {
 			for _, tc := range []struct {
