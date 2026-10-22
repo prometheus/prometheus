@@ -242,7 +242,9 @@ func (c *PrometheusConverter) FromMetrics(ctx context.Context, md pmetric.Metric
 		WithMetricSuffixes: settings.AddMetricSuffixes,
 		UTF8Allowed:        settings.AllowUTF8,
 	}
-	unitNamer := otlptranslator.UnitNamer{}
+	unitNamer := otlptranslator.UnitNamer{
+		UTF8Allowed: settings.AllowUTF8,
+	}
 	c.everyN = everyNTimes{n: 128}
 	c.seenTargetInfo = make(map[targetInfoKey]struct{})
 	c.collisionAnnots = nil

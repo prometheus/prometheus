@@ -3735,6 +3735,18 @@ relabeling does not apply to automatically generated timeseries such as `up`.
 
 One use for this is to exclude time series that are too expensive to ingest.
 
+During metric relabeling, the metric's metadata is exposed via the reserved
+`__type__`, `__unit__`, and `__help__` labels. These labels can be read (for
+example, to drop or filter series by type or unit) and modified (for example,
+using `replace` to set or override a metric's type, unit, or help text).
+Replacing one of these labels with an empty value (`""`) clears that metadata
+field. `labeldrop` and `labelkeep` actions do not remove metric metadata.
+Unless `--enable-feature=type-and-unit-labels` is enabled, `__type__`,
+`__unit__`, and `__help__` are only exposed during relabeling and are not stored
+as series labels in TSDB (with `--enable-feature=type-and-unit-labels`,
+`__type__` and `__unit__` are kept on the series while `__help__` remains
+metadata-only).
+
 ### `<alert_relabel_configs>`
 
 Alert relabeling is applied to alerts before they are sent to the Alertmanager.
@@ -3959,7 +3971,10 @@ alert_relabel_configs:
 
 `write_relabel_configs` is relabeling applied to samples before sending them
 to the remote endpoint. Write relabeling is applied after external labels. This
-could be used to limit which samples are sent.
+could be used to limit which samples are sent. When using Remote Write 2.0
+(`io.prometheus.write.v2.Request`), the series' metadata is also exposed via
+`__type__`, `__unit__`, and `__help__` during `write_relabel_configs` in the
+same way as in `<metric_relabel_configs>`.
 
 There is a [small demo](/documentation/examples/remote_storage) of how to use
 this functionality.
