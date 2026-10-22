@@ -154,6 +154,143 @@ metadata changes as WAL records on a per-series basis.
 
 This must be used if you would like to send metadata using the new remote write 2.0.
 
+This flag controls the legacy WAL-backed metadata path. The separate
+`native-metadata` feature can expose versioned per-series metadata without
+writing metadata WAL records.
+
+## Native metadata
+
+`--enable-feature=native-metadata`
+
+> **This feature is experimental and may change in future releases.**
+
+When enabled, Prometheus ingests metric type, unit, and help from scrapes, OTLP,
+and Remote Write 2.0 as versioned metadata attached to each series. The
+metadata is exposed by the experimental `/api/v1/series/metadata` endpoint.
+
+Without [native metadata persistence](#native-metadata-persistence), metadata
+is stored only in the Head's memory. It is not written to the WAL, checkpoints,
+snapshots, or blocks, so it is lost on restart and when the corresponding Head
+series is removed. Remote Write 1.0 does not populate
+this store. At most 5 versions are retained per series.
+
+The store costs Head memory per series, along two axes. For example,
+retained-heap benchmarks on Go 1.27, linux/amd64, measured roughly 75 extra
+bytes per series whose metadata never changes, and around 144 at the 5-version
+limit, where 100 metric families share their values. Actual costs depend on
+metadata cardinality, string lengths, and allocation overhead.
+Metadata cardinality can cost more: values are shared only opportunistically and
+within bounds. A value is the whole type, unit and help combination, so values
+that differ in any of type, unit or help are stored separately, though values
+first copied in the same transaction share identical strings of 64 bytes or
+more. Within a transaction, up to 128 distinct values are each stored once.
+Beyond that, and across transactions, values are shared through a cache of at
+most 64 × 64 values and 4 MiB of strings. A value enters the cache when it
+recurs among a shard's recent misses, and each shard evicts its oldest entries
+first. Series that hold the copy made before admission keep reusing it, so a
+value used by series in several transactions is typically held twice, and in
+large transactions or beyond the cache's limits series may hold their own
+copies. The cache itself retains up to 4 MiB of strings. A series carrying help
+text unique to it, measured with 25,000 distinct values in one transaction,
+costs around 220 bytes even at a single version. The version limit does not
+bound this cost. Sizing therefore runs from roughly 75 MB per million series
+where a metric family shares its metadata, to around 220 MB per million where
+every series has its own.
+
+Metadata whose type, unit and help text, with an empty type counted as
+`unknown`, together exceed 8192 bytes is not stored; the series keeps its
+previous versions. The
+`prometheus_tsdb_head_native_metric_metadata_oversized_total` counter reports
+how many appended samples carried such metadata. This bounds the metadata
+strings one series retains to 5 versions of 8 KiB each. Copies held while a
+transaction is pending are not covered by this bound: once a transaction has
+seen 128 distinct values, each sample with another value that neither its
+series' stored versions nor the cache already holds can keep its own copy of the
+value, of up to 8 KiB when its strings of 64 bytes or more have not yet been
+copied in the transaction, until the transaction ends. A transaction copies each
+distinct type, unit or help string of 64 bytes or more at most once, keeping an
+index of a few hundred bytes, or under 100 bytes per such string in larger
+transactions, so Remote Write 2.0 requests whose entries combine one help text
+with different units, and scrapes that switch between metric families with
+`# TYPE` lines, cost about 200 bytes per pending sample beyond those copies.
+Metadata with no type (or an unknown type), no unit and no help is never stored,
+so a series whose metadata disappears keeps its last version.
+
+Unchanged metadata is normally discarded during sample validation, avoiding a
+second series-lock acquisition and metadata-transaction work. A discarded observation
+cannot be reconstructed if a later append in the same transaction arrives with
+a lower timestamp and different metadata. The same applies to overlapping
+writers: if one transaction observes the current metadata while another changes
+it and commits first, the first has nothing left to re-assert, and the change is
+not reverted at the later timestamp.
+
+## Native metadata persistence
+
+`--enable-feature=native-metadata-persistence`
+
+> **This feature is experimental and may change in future releases.** Its WAL
+> records are in an unreleased format, which may change incompatibly.
+
+Requires `native-metadata`. When enabled, Prometheus server logs each series'
+native metadata history in the WAL at commit, before the samples, reduces it
+into WAL checkpoints, and restores it on restart: each series' retained versions
+(up to 5) and whether older ones were evicted. Blocks and memory snapshots still
+hold no native metadata. It can't be combined with `metadata-wal-records`,
+`memory-snapshot-on-shutdown` or `fast-startup`, and Prometheus refuses to start
+with any of them. Agent mode ignores it.
+
+Concurrent writers to one series, and WAL writes that fail but may land later,
+are corrected by override records, which a background worker retries. While WAL
+writes keep failing, the Head keeps the affected series in memory, and
+`prometheus_tsdb_native_metric_metadata_repairs_pending` reports how many. At
+shutdown, repair writes are admitted for up to 5 seconds; this doesn't bound how
+long shutdown takes. After a crash, or a shutdown that leaves repairs unwritten
+(`prometheus_tsdb_native_metric_metadata_repairs_dropped_total`), the restored
+history may hold a version or an order that the Head never held, until later
+versions evict it. Only the current value corrects itself, at the series' next
+commit with metadata.
+
+Startup fails, leaving the WAL unchanged, if the WAL holds a native metadata
+record that this version can't read or that is malformed, or any other WAL
+corruption, which is otherwise repaired by truncation. The one exception is a
+final record that a crash left incomplete between its page writes, in the last
+segment holding records: replay ends there, and startup removes the incomplete
+record before writing anything. A final record that a crash or a failed write
+left partly written within one page isn't covered, so Prometheus doesn't
+start until the WAL is repaired; starting once without this feature repairs it
+by truncation. Corruption of the out-of-order WAL is repaired as without this
+feature.
+
+After Prometheus ran without this feature, or a version without it ran, the
+native metadata written before that interval is carried over without the
+interval's changes, unless a checkpoint written in the interval may have dropped
+part of it. It is then discarded rather than restored from what remains.
+Latest-value metadata from `metadata-wal-records` is restored as one version
+whose start is unknown.
+`prometheus_tsdb_native_metric_metadata_untrusted_wal_entries_total` counts the
+records skipped. Without this feature, Prometheus ignores the records at
+replay, and checkpoints drop them.
+
+## Native metadata forwarding
+
+`--enable-feature=native-metadata-forwarding`
+
+> **This feature is experimental and may change in future releases.**
+
+Requires `native-metadata-persistence`. When enabled, Remote-Write 2.0 queues
+read native metadata from the WAL instead of the latest-value metadata records,
+and label each sample, histogram and exemplar with the version in effect at its
+timestamp, as recorded in the WAL before it. A sample is labelled the same
+however far behind the queue is: metadata backfilled after it was written
+doesn't relabel it, and versions the Head has since evicted still label it.
+Remote-Write 1.0 queues are unaffected.
+
+A queue stops reading the WAL at a native metadata record it can't read, rather
+than skip it, and sets `prometheus_wal_watcher_native_metadata_held`. Each
+queue keeps the histories of the series it may still send, reported by
+`prometheus_remote_storage_native_metadata_series`. It releases those of
+removed series as WAL checkpoints are written; while they fail, it keeps them.
+
 ## Delay compaction start time
 
 `--enable-feature=delayed-compaction`

@@ -1649,7 +1649,7 @@ func TestSizeRetention(t *testing.T) {
 			// Create a WAL checkpoint, and compare sizes.
 			first, last, err := wlog.Segments(db.Head().wal.Dir())
 			require.NoError(t, err)
-			_, err = wlog.Checkpoint(promslog.NewNopLogger(), db.Head().wal, first, last-1, func(chunks.HeadSeriesRef) bool { return false }, 0, enableSTStorage, false)
+			_, err = wlog.Checkpoint(promslog.NewNopLogger(), db.Head().wal, first, last-1, func(chunks.HeadSeriesRef) bool { return false }, 0, enableSTStorage, false, false)
 			require.NoError(t, err)
 			blockSize = int64(prom_testutil.ToFloat64(db.metrics.blocksBytes)) // Use the actual internal metrics.
 			walSize, err = db.Head().wal.Size()
@@ -5547,7 +5547,7 @@ func TestMetadataCheckpointingOnlyKeepsLatestEntry(t *testing.T) {
 			keep := func(id chunks.HeadSeriesRef) bool {
 				return id != 3
 			}
-			_, err = wlog.Checkpoint(promslog.NewNopLogger(), w, first, last-1, keep, 0, enableSTStorage, false)
+			_, err = wlog.Checkpoint(promslog.NewNopLogger(), w, first, last-1, keep, 0, enableSTStorage, false, false)
 			require.NoError(t, err)
 
 			// Confirm there's been a checkpoint.
@@ -5618,10 +5618,10 @@ func TestMetadataAssertInMemoryData(t *testing.T) {
 	series2 := db.head.series.getByHash(s2.Hash(), s2)
 	series3 := db.head.series.getByHash(s3.Hash(), s3)
 	series4 := db.head.series.getByHash(s4.Hash(), s4)
-	require.Equal(t, series1.meta.Value(), m1)
-	require.Equal(t, series2.meta.Value(), m2)
-	require.Equal(t, series3.meta.Value(), m3)
-	require.True(t, metadata.IsZeroHandle(series4.meta))
+	require.Equal(t, *legacyMetadataForTest(series1), m1)
+	require.Equal(t, *legacyMetadataForTest(series2), m2)
+	require.Equal(t, *legacyMetadataForTest(series3), m3)
+	require.Nil(t, legacyMetadataForTest(series4))
 
 	// Add a replicated metadata entry to the first series,
 	// a changed metadata entry to the second series,
@@ -5639,10 +5639,10 @@ func TestMetadataAssertInMemoryData(t *testing.T) {
 	series2 = db.head.series.getByHash(s2.Hash(), s2)
 	series3 = db.head.series.getByHash(s3.Hash(), s3)
 	series4 = db.head.series.getByHash(s4.Hash(), s4)
-	require.Equal(t, series1.meta.Value(), m1)
-	require.Equal(t, series2.meta.Value(), m5)
-	require.Equal(t, series3.meta.Value(), m3)
-	require.Equal(t, series4.meta.Value(), m4)
+	require.Equal(t, *legacyMetadataForTest(series1), m1)
+	require.Equal(t, *legacyMetadataForTest(series2), m5)
+	require.Equal(t, *legacyMetadataForTest(series3), m3)
+	require.Equal(t, *legacyMetadataForTest(series4), m4)
 
 	require.NoError(t, db.Close())
 
@@ -5652,10 +5652,10 @@ func TestMetadataAssertInMemoryData(t *testing.T) {
 	_, err := db.head.wal.Size()
 	require.NoError(t, err)
 
-	require.Equal(t, db.head.series.getByHash(s1.Hash(), s1).meta.Value(), m1)
-	require.Equal(t, db.head.series.getByHash(s2.Hash(), s2).meta.Value(), m5)
-	require.Equal(t, db.head.series.getByHash(s3.Hash(), s3).meta.Value(), m3)
-	require.Equal(t, db.head.series.getByHash(s4.Hash(), s4).meta.Value(), m4)
+	require.Equal(t, *legacyMetadataForTest(db.head.series.getByHash(s1.Hash(), s1)), m1)
+	require.Equal(t, *legacyMetadataForTest(db.head.series.getByHash(s2.Hash(), s2)), m5)
+	require.Equal(t, *legacyMetadataForTest(db.head.series.getByHash(s3.Hash(), s3)), m3)
+	require.Equal(t, *legacyMetadataForTest(db.head.series.getByHash(s4.Hash(), s4)), m4)
 }
 
 // TestMultipleEncodingsCommitOrder mainly serves to demonstrate when happens when committing a batch of samples for the
@@ -11514,7 +11514,7 @@ func TestDBOpen_MinValidTime(t *testing.T) {
 		t.Helper()
 		w, err := wlog.New(nil, nil, filepath.Join(dir, "wal"), compression.None)
 		require.NoError(t, err)
-		_, err = wlog.Checkpoint(promslog.NewNopLogger(), w, 0, 1000, func(chunks.HeadSeriesRef) bool { return true }, mint, false, true)
+		_, err = wlog.Checkpoint(promslog.NewNopLogger(), w, 0, 1000, func(chunks.HeadSeriesRef) bool { return true }, mint, false, true, false)
 		require.NoError(t, err)
 		require.NoError(t, w.Close())
 	}

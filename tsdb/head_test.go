@@ -47,7 +47,6 @@ import (
 	"github.com/prometheus/prometheus/model/exemplar"
 	"github.com/prometheus/prometheus/model/histogram"
 	"github.com/prometheus/prometheus/model/labels"
-	"github.com/prometheus/prometheus/model/metadata"
 	"github.com/prometheus/prometheus/model/timestamp"
 	"github.com/prometheus/prometheus/model/value"
 	"github.com/prometheus/prometheus/storage"
@@ -137,6 +136,13 @@ func populateTestWL(t testing.TB, w *wlog.WL, recs []any, buf []byte, enableSTSt
 			buf = enc.MmapMarkers(v, buf)
 		case []record.RefMetadata:
 			buf = enc.Metadata(v, buf)
+		case record.CompactNativeMetadata:
+			buf = enc.CompactNativeMetadata(v.Values, v.Entries, buf)
+		case []nativeMetadataEntryForTest:
+			rec := compactNativeMetadataForTest(v...)
+			buf = enc.CompactNativeMetadata(rec.Values, rec.Entries, buf)
+		case []byte:
+			buf = append(buf, v...)
 		default:
 			continue
 		}
@@ -958,9 +964,10 @@ func TestHead_ReadWAL(t *testing.T) {
 				require.NotEmpty(t, e[0].Exemplars)
 				require.True(t, exemplar.Exemplar{Ts: 101, Value: 7, Labels: labels.FromStrings("trace_id", "zxcv")}.Equals(e[0].Exemplars[0]))
 
-				require.False(t, metadata.IsZeroHandle(s100.meta))
-				require.Equal(t, "foo", s100.meta.Value().Unit)
-				require.Equal(t, "total foo", s100.meta.Value().Help)
+				seriesMetadata := legacyMetadataForTest(s100)
+				require.NotNil(t, seriesMetadata)
+				require.Equal(t, "foo", seriesMetadata.Unit)
+				require.Equal(t, "total foo", seriesMetadata.Help)
 
 				intervals, err := head.tombstones.Get(storage.SeriesRef(s100.ref))
 				require.NoError(t, err)

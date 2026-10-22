@@ -49,6 +49,7 @@ import (
 	"github.com/prometheus/prometheus/schema"
 	"github.com/prometheus/prometheus/scrape"
 	"github.com/prometheus/prometheus/tsdb/chunks"
+	"github.com/prometheus/prometheus/tsdb/nativemetadata"
 	"github.com/prometheus/prometheus/tsdb/record"
 	"github.com/prometheus/prometheus/tsdb/wlog"
 	"github.com/prometheus/prometheus/util/compression"
@@ -89,6 +90,8 @@ type queueManagerMetrics struct {
 	droppedExemplarsTotal  *prometheus.CounterVec
 	droppedHistogramsTotal *prometheus.CounterVec
 	enqueueRetriesTotal    prometheus.Counter
+	untrustedMetadataTotal prometheus.Counter
+	nativeMetadataSeries   prometheus.Gauge
 	sentBatchDuration      prometheus.Histogram
 	highestTimestamp       *maxTimestamp
 	highestSentTimestamp   *maxTimestamp
@@ -297,6 +300,20 @@ func newQueueManagerMetrics(r prometheus.Registerer, rn, e string) *queueManager
 		Help:        "The maximum number of shards that the queue is allowed to run.",
 		ConstLabels: constLabels,
 	})
+	m.untrustedMetadataTotal = prometheus.NewCounter(prometheus.CounterOpts{
+		Namespace:   namespace,
+		Subsystem:   subsystem,
+		Name:        "native_metadata_untrusted_entries_total",
+		Help:        "Total number of native metadata WAL entries the queue skipped, because they followed a checkpoint written without native metadata persistence.",
+		ConstLabels: constLabels,
+	})
+	m.nativeMetadataSeries = prometheus.NewGauge(prometheus.GaugeOpts{
+		Namespace:   namespace,
+		Subsystem:   subsystem,
+		Name:        "native_metadata_series",
+		Help:        "Number of series whose native metadata history the queue retains, including series retired from the Head until a checkpoint releases them.",
+		ConstLabels: constLabels,
+	})
 	m.minNumShards = prometheus.NewGauge(prometheus.GaugeOpts{
 		Namespace:   namespace,
 		Subsystem:   subsystem,
@@ -352,6 +369,8 @@ func (m *queueManagerMetrics) register(protoMsg remoteapi.WriteMessageType) {
 			m.droppedExemplarsTotal,
 			m.droppedHistogramsTotal,
 			m.enqueueRetriesTotal,
+			m.untrustedMetadataTotal,
+			m.nativeMetadataSeries,
 			m.sentBatchDuration,
 			m.highestTimestamp,
 			m.highestSentTimestamp,
@@ -392,6 +411,8 @@ func (m *queueManagerMetrics) unregister(protoMsg remoteapi.WriteMessageType) {
 		m.reg.Unregister(m.droppedExemplarsTotal)
 		m.reg.Unregister(m.droppedHistogramsTotal)
 		m.reg.Unregister(m.enqueueRetriesTotal)
+		m.reg.Unregister(m.untrustedMetadataTotal)
+		m.reg.Unregister(m.nativeMetadataSeries)
 		m.reg.Unregister(m.sentBatchDuration)
 		m.reg.Unregister(m.highestTimestamp)
 		m.reg.Unregister(m.highestSentTimestamp)
@@ -453,7 +474,7 @@ type QueueManager struct {
 	protoMsg    remoteapi.WriteMessageType
 	compr       compression.Type
 
-	seriesMtx        sync.Mutex // Covers seriesLabels, seriesMetadata, droppedSeries, the NHCB fields and builder.
+	seriesMtx        sync.Mutex // Covers seriesLabels, seriesMetadata, droppedSeries, the NHCB fields, builder and the native metadata fields below.
 	seriesLabels     map[chunks.HeadSeriesRef]labels.Labels
 	seriesMetadata   map[chunks.HeadSeriesRef]unique.Handle[metadata.Metadata]
 	droppedSeries    map[chunks.HeadSeriesRef]struct{}
@@ -462,9 +483,19 @@ type QueueManager struct {
 	nhcbLayoutKey    []byte                               // Scratch space for layout keys.
 	nhcbCounts       []float64                            // Scratch space for bucket counts.
 	builder          *labels.Builder
+	// seriesNativeMetadata holds native metadata histories reduced from the
+	// WAL in order, by WAL ref, including refs whose series record is unread.
+	seriesNativeMetadata map[chunks.HeadSeriesRef]senderNativeMetadata
+	nativePoints         []nativemetadata.Point
+	nativeDictionary     nativemetadata.Dictionary
+	nativeTrust          nativemetadata.Trust
 
 	seriesSegmentMtx     sync.Mutex // Covers seriesSegmentIndexes - if you also lock seriesMtx, take seriesMtx first.
 	seriesSegmentIndexes map[chunks.HeadSeriesRef]int
+
+	// nativeMetadata labels each item with the native metadata version in
+	// effect at its timestamp, as of its WAL position. It is immutable.
+	nativeMetadata bool
 
 	shards      *shards
 	numShards   int
@@ -507,6 +538,7 @@ func NewQueueManager(
 	recordBuf *record.BuffersPool,
 	failedRequestLogging bool,
 	convertNHCBToClassic bool,
+	nativeMetadata bool,
 ) *QueueManager {
 	if logger == nil {
 		logger = promslog.NewNopLogger()
@@ -562,7 +594,14 @@ func NewQueueManager(
 
 	walMetadata := t.protoMsg != remoteapi.WriteV1MessageType
 
-	t.watcher = wlog.NewWatcher(watcherMetrics, readerMetrics, logger, client.Name(), t, dir, enableExemplarRemoteWrite, enableNativeHistogramRemoteWrite || convertNHCBToClassic, walMetadata, recordBuf)
+	var writer wlog.WriteTo = t
+	if walMetadata && nativeMetadata {
+		t.nativeMetadata = true
+		t.seriesNativeMetadata = make(map[chunks.HeadSeriesRef]senderNativeMetadata)
+		writer = nativeMetadataWriter{t}
+	}
+
+	t.watcher = wlog.NewWatcher(watcherMetrics, readerMetrics, logger, client.Name(), writer, dir, enableExemplarRemoteWrite, enableNativeHistogramRemoteWrite || convertNHCBToClassic, walMetadata, recordBuf)
 
 	// The current MetadataWatcher implementation is mutually exclusive
 	// with the new approach, which stores metadata as WAL records and
@@ -772,7 +811,7 @@ outer:
 		}
 		// TODO(cstyan): Handle or at least log an error if no metadata is found.
 		// See https://github.com/prometheus/prometheus/issues/14405
-		meta := t.seriesMetadata[s.Ref]
+		meta := t.metadataAtLocked(s.Ref, s.T)
 		if t.convertNHCBToClassic {
 			if _, ok := t.nhcbSeriesBounds[s.Ref]; ok {
 				// A float sample for a converted NHCB series is either its stale marker or
@@ -868,7 +907,7 @@ outer:
 				}
 			}
 		}
-		meta := t.seriesMetadata[e.Ref]
+		meta := t.metadataAtLocked(e.Ref, e.T)
 		t.seriesMtx.Unlock()
 		// This will only loop if the queues are being resharded.
 		backoff := t.cfg.MinBackoff
@@ -1121,7 +1160,7 @@ outer:
 			t.seriesMtx.Unlock()
 			continue
 		}
-		meta := t.seriesMetadata[h.Ref]
+		meta := t.metadataAtLocked(h.Ref, h.T)
 		if transition {
 			var replacement *timeSeries
 			if t.sendNativeHistograms {
@@ -1217,7 +1256,7 @@ outer:
 			t.seriesMtx.Unlock()
 			continue
 		}
-		meta := t.seriesMetadata[h.Ref]
+		meta := t.metadataAtLocked(h.Ref, h.T)
 		if transition {
 			var replacement *timeSeries
 			if t.sendNativeHistograms {
@@ -1352,6 +1391,146 @@ func (t *QueueManager) StoreMetadata(meta []record.RefMetadata) {
 	}
 }
 
+// metadataAtLocked returns the metadata to send for ref's item at timestamp
+// ts, or a zero handle. The caller holds seriesMtx.
+func (t *QueueManager) metadataAtLocked(ref chunks.HeadSeriesRef, ts int64) unique.Handle[metadata.Metadata] {
+	if t.nativeMetadata {
+		state := t.seriesNativeMetadata[ref]
+		return state.at(ts)
+	}
+	return t.seriesMetadata[ref]
+}
+
+// senderNativeMetadata is a series' native metadata history reduced from the
+// WAL, with the handle of each retained version, and the latest segment that
+// holds or keeps it: the segment of its latest entry, or of the latest
+// checkpoint whose garbage collection found it. Neither tailing nor garbage
+// collection lowers the segment.
+type senderNativeMetadata struct {
+	nativemetadata.State
+	// handles holds the retained versions' handles in chronological order.
+	handles []unique.Handle[metadata.Metadata]
+	segment int
+}
+
+// at returns the handle of the version in effect at ts, or a zero handle
+// before the first version.
+func (s *senderNativeMetadata) at(ts int64) unique.Handle[metadata.Metadata] {
+	if s.Metadata == nil {
+		return unique.Handle[metadata.Metadata]{}
+	}
+	if s.EffectiveFrom <= ts {
+		return s.handles[len(s.handles)-1]
+	}
+	for i, point := range slices.Backward(s.Older) {
+		if point.EffectiveFrom <= ts {
+			return s.handles[i]
+		}
+	}
+	return unique.Handle[metadata.Metadata]{}
+}
+
+// refreshHandles recomputes the handles after the history changed.
+func (s *senderNativeMetadata) refreshHandles() {
+	clear(s.handles)
+	s.handles = s.handles[:0]
+	if s.Metadata == nil {
+		s.handles = nil
+		return
+	}
+	for _, point := range s.Older {
+		s.handles = append(s.handles, unique.Make(*point.Metadata))
+	}
+	s.handles = append(s.handles, unique.Make(*s.Metadata))
+}
+
+// internNativeMetadata returns an immutable copy of m that shares its strings
+// with every equal value. It never retains m's own strings.
+func internNativeMetadata(m metadata.Metadata) *metadata.Metadata {
+	v := unique.Make(m).Value()
+	return &v
+}
+
+// nativeMetadataWriter is the watcher's destination for queues that forward
+// native metadata.
+type nativeMetadataWriter struct{ *QueueManager }
+
+// StoreNativeMetadataRecord implements wlog.NativeMetadataWriteTo. It
+// resolves each used dictionary value once, and applies only the entries it
+// trusts, by nativemetadata.Trust.
+func (w nativeMetadataWriter) StoreNativeMetadataRecord(rec *record.CompactNativeMetadata, segment int) {
+	t := w.QueueManager
+	t.seriesMtx.Lock()
+	defer t.seriesMtx.Unlock()
+	t.nativeDictionary.Reset(rec.Values, internNativeMetadata)
+	for _, e := range rec.Entries {
+		switch {
+		case e.Kind == record.NativeMetadataProvenance || e.Kind == record.NativeMetadataBoundary:
+			t.nativeTrust.Mark()
+			continue
+		case !t.nativeTrust.Trusted():
+			t.metrics.untrustedMetadataTotal.Inc()
+			continue
+		}
+		t.nativePoints = t.nativeDictionary.AppendPoints(t.nativePoints[:0], e.Points)
+		t.applyNativeMetadataLocked(e.Ref, e.Kind, e.Truncated, segment)
+	}
+	clear(t.nativePoints)
+	t.nativeDictionary.Reset(nil, nil)
+	t.metrics.nativeMetadataSeries.Set(float64(len(t.seriesNativeMetadata)))
+}
+
+// StoreLegacyNativeMetadata implements wlog.NativeMetadataWriteTo.
+func (w nativeMetadataWriter) StoreLegacyNativeMetadata(meta []record.RefMetadata, segment int) {
+	t := w.QueueManager
+	t.seriesMtx.Lock()
+	defer t.seriesMtx.Unlock()
+	for _, m := range meta {
+		t.nativePoints = append(t.nativePoints[:0], nativemetadata.LegacyPoint(m, internNativeMetadata))
+		t.applyNativeMetadataLocked(m.Ref, record.NativeMetadataLegacy, false, segment)
+	}
+	clear(t.nativePoints)
+	t.metrics.nativeMetadataSeries.Set(float64(len(t.seriesNativeMetadata)))
+}
+
+// applyNativeMetadataLocked applies an entry of ref read from segment, whose
+// points are in t.nativePoints. The caller holds seriesMtx.
+func (t *QueueManager) applyNativeMetadataLocked(ref chunks.HeadSeriesRef, kind record.NativeMetadataKind, truncated bool, segment int) {
+	state, ok := t.seriesNativeMetadata[ref]
+	state.Apply(kind, truncated, t.nativePoints)
+	state.refreshHandles()
+	if !ok || segment > state.segment {
+		state.segment = segment
+	}
+	t.seriesNativeMetadata[ref] = state
+}
+
+// UpdateNativeMetadataSegment implements wlog.NativeMetadataWriteTo.
+func (w nativeMetadataWriter) UpdateNativeMetadataSegment(refs []chunks.HeadSeriesRef, segment int) {
+	t := w.QueueManager
+	t.seriesMtx.Lock()
+	defer t.seriesMtx.Unlock()
+	for _, ref := range refs {
+		if state, ok := t.seriesNativeMetadata[ref]; ok && segment > state.segment {
+			state.segment = segment
+			t.seriesNativeMetadata[ref] = state
+		}
+	}
+}
+
+// ResetNativeMetadata implements wlog.NativeMetadataWriteTo.
+func (w nativeMetadataWriter) ResetNativeMetadata(checkpoint bool) {
+	t := w.QueueManager
+	t.seriesMtx.Lock()
+	defer t.seriesMtx.Unlock()
+	clear(t.seriesNativeMetadata)
+	t.nativeTrust = nativemetadata.Trust{}
+	if checkpoint {
+		t.nativeTrust.StartCheckpoint()
+	}
+	t.metrics.nativeMetadataSeries.Set(0)
+}
+
 // UpdateSeriesSegment updates the segment number held against the series,
 // so we can trim older ones in SeriesReset.
 func (t *QueueManager) UpdateSeriesSegment(series []record.RefSeries, index int) {
@@ -1365,6 +1544,10 @@ func (t *QueueManager) UpdateSeriesSegment(series []record.RefSeries, index int)
 // SeriesReset is used when reading a checkpoint. WAL Watcher should have
 // stored series records with the checkpoints index number, so we can now
 // delete any ref ID's lower than that # from the two maps.
+//
+// Native metadata may precede its series record, or outlive it, so it is
+// dropped by its own segment instead: once neither a series record nor the
+// metadata itself is at or after the checkpoint.
 func (t *QueueManager) SeriesReset(index int) {
 	t.seriesMtx.Lock()
 	defer t.seriesMtx.Unlock()
@@ -1384,6 +1567,14 @@ func (t *QueueManager) SeriesReset(index int) {
 			t.releaseNHCBLayout(layout)
 		}
 		delete(t.nhcbSeriesBounds, k)
+	}
+	if t.nativeMetadata {
+		for k, state := range t.seriesNativeMetadata {
+			if _, ok := t.seriesSegmentIndexes[k]; !ok && state.segment < index {
+				delete(t.seriesNativeMetadata, k)
+			}
+		}
+		t.metrics.nativeMetadataSeries.Set(float64(len(t.seriesNativeMetadata)))
 	}
 }
 

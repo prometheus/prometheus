@@ -30,6 +30,7 @@ import (
 
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/model/timestamp"
+	"github.com/prometheus/prometheus/tsdb/chunks"
 	"github.com/prometheus/prometheus/tsdb/record"
 )
 
@@ -72,6 +73,50 @@ type WriteTo interface {
 	SeriesReset(int)
 }
 
+// NativeMetadataWriteTo is a WriteTo that forwards native metadata histories.
+// A watcher passes it every native metadata record, and every latest-value
+// metadata entry, in WAL order, instead of legacy metadata. Merge groups are
+// not idempotent, so each replay starts from reset state and reads segments
+// only after the last checkpoint's own.
+type NativeMetadataWriteTo interface {
+	WriteTo
+	// ResetNativeMetadata discards all native metadata before a replay, which
+	// starts with a checkpoint if checkpoint is set.
+	ResetNativeMetadata(checkpoint bool)
+	// StoreNativeMetadataRecord applies rec's entries read from segment in WAL
+	// order; their points index rec.Values. A checkpoint's entries are read
+	// from its index. The values' strings alias the watcher's reused record
+	// buffer, and the watcher reuses rec after the call, so rec and all it
+	// refers to are valid only during the call. It must not retain or modify
+	// any of them, and must copy any string contents it retains into memory it
+	// owns.
+	StoreNativeMetadataRecord(rec *record.CompactNativeMetadata, segment int)
+	// StoreLegacyNativeMetadata applies latest-value metadata entries read
+	// from segment in WAL order, each replacing its series' history with one
+	// version whose start is unknown. It must not retain meta.
+	StoreLegacyNativeMetadata(meta []record.RefMetadata, segment int)
+	// UpdateNativeMetadataSegment records that the checkpoint at segment keeps
+	// the metadata of refs, as UpdateSeriesSegment does for series records. It
+	// must not retain refs.
+	UpdateNativeMetadataSegment(refs []chunks.HeadSeriesRef, segment int)
+}
+
+// NativeMetadataDecodeError reports a native metadata record that a watcher
+// forwarding native metadata couldn't decode: unsupported or malformed, as Err
+// tells. Delivering what follows it would label samples with a history that
+// misses the record, so the watcher stops at it, whichever segment holds it,
+// and retries without getting past it.
+type NativeMetadataDecodeError struct {
+	Segment int
+	Err     error
+}
+
+func (e *NativeMetadataDecodeError) Error() string {
+	return fmt.Sprintf("decode native metadata record in segment %d: %v", e.Segment, e.Err)
+}
+
+func (e *NativeMetadataDecodeError) Unwrap() error { return e.Err }
+
 // WriteNotified notifies the watcher that data has been written so that it can read.
 type WriteNotified interface {
 	Notify()
@@ -84,12 +129,14 @@ type WatcherMetrics struct {
 	samplesSentPreTailing *prometheus.CounterVec
 	currentSegment        *prometheus.GaugeVec
 	notificationsSkipped  *prometheus.CounterVec
+	nativeMetadataHeld    *prometheus.GaugeVec
 }
 
 // Watcher watches the TSDB WAL for a given WriteTo.
 type Watcher struct {
 	name           string
 	writer         WriteTo
+	native         NativeMetadataWriteTo // Set when writer forwards native metadata.
 	recordBuf      *record.BuffersPool
 	logger         *slog.Logger
 	walDir         string
@@ -109,6 +156,10 @@ type Watcher struct {
 	samplesSentPreTailing   prometheus.Counter
 	currentSegmentMetric    prometheus.Gauge
 	notificationsSkipped    prometheus.Counter
+	nativeMetadataHeld      prometheus.Gauge
+	// heldSegment is the segment, or checkpoint, holding the native metadata
+	// record the watcher last failed to decode, or -1.
+	heldSegment int
 
 	readNotify chan struct{}
 	quit       chan struct{}
@@ -116,6 +167,8 @@ type Watcher struct {
 
 	// For testing, stop when we hit this segment.
 	MaxSegment int
+	// For testing, called after each replay of the last checkpoint.
+	testAfterCheckpoint func()
 }
 
 func NewWatcherMetrics(reg prometheus.Registerer) *WatcherMetrics {
@@ -166,6 +219,15 @@ func NewWatcherMetrics(reg prometheus.Registerer) *WatcherMetrics {
 			},
 			[]string{consumer},
 		),
+		nativeMetadataHeld: prometheus.NewGaugeVec(
+			prometheus.GaugeOpts{
+				Namespace: "prometheus",
+				Subsystem: "wal_watcher",
+				Name:      "native_metadata_held",
+				Help:      "1 while the WAL watcher holds at a native metadata record it couldn't decode, delivering nothing from it on.",
+			},
+			[]string{consumer},
+		),
 	}
 
 	if reg != nil {
@@ -174,6 +236,7 @@ func NewWatcherMetrics(reg prometheus.Registerer) *WatcherMetrics {
 		reg.MustRegister(m.samplesSentPreTailing)
 		reg.MustRegister(m.currentSegment)
 		reg.MustRegister(m.notificationsSkipped)
+		reg.MustRegister(m.nativeMetadataHeld)
 	}
 
 	return m
@@ -190,6 +253,7 @@ func (m *WatcherMetrics) Unregister() {
 	m.reg.Unregister(m.samplesSentPreTailing)
 	m.reg.Unregister(m.currentSegment)
 	m.reg.Unregister(m.notificationsSkipped)
+	m.reg.Unregister(m.nativeMetadataHeld)
 }
 
 // NewWatcher creates a new WAL watcher for a given WriteTo.
@@ -209,10 +273,15 @@ func NewWatcher(
 	if recordBuf == nil {
 		recordBuf = record.NewBuffersPool()
 	}
+	var native NativeMetadataWriteTo
+	if sendMetadata {
+		native, _ = writer.(NativeMetadataWriteTo)
+	}
 	return &Watcher{
 		logger:         logger,
 		recordBuf:      recordBuf,
 		writer:         writer,
+		native:         native,
 		metrics:        metrics,
 		readerMetrics:  readerMetrics,
 		walDir:         filepath.Join(dir, "wal"),
@@ -225,7 +294,8 @@ func NewWatcher(
 		quit:       make(chan struct{}),
 		done:       make(chan struct{}),
 
-		MaxSegment: -1,
+		MaxSegment:  -1,
+		heldSegment: -1,
 	}
 }
 
@@ -250,6 +320,7 @@ func (w *Watcher) SetMetrics() {
 		w.samplesSentPreTailing = w.metrics.samplesSentPreTailing.WithLabelValues(w.name)
 		w.currentSegmentMetric = w.metrics.currentSegment.WithLabelValues(w.name)
 		w.notificationsSkipped = w.metrics.notificationsSkipped.WithLabelValues(w.name)
+		w.nativeMetadataHeld = w.metrics.nativeMetadataHeld.WithLabelValues(w.name)
 	}
 }
 
@@ -273,6 +344,7 @@ func (w *Watcher) Stop() {
 		w.metrics.recordDecodeFails.DeleteLabelValues(w.name)
 		w.metrics.samplesSentPreTailing.DeleteLabelValues(w.name)
 		w.metrics.currentSegment.DeleteLabelValues(w.name)
+		w.metrics.nativeMetadataHeld.DeleteLabelValues(w.name)
 	}
 
 	w.logger.Info("WAL watcher stopped", "queue", w.name)
@@ -285,6 +357,12 @@ func (w *Watcher) loop() {
 	for !isClosed(w.quit) {
 		w.SetStartTime(time.Now())
 		if err := w.Run(); err != nil {
+			if decodeErr := (*NativeMetadataDecodeError)(nil); errors.As(err, &decodeErr) {
+				w.heldSegment = decodeErr.Segment
+				if w.nativeMetadataHeld != nil {
+					w.nativeMetadataHeld.Set(1)
+				}
+			}
 			w.logger.Error("error tailing WAL", "err", err)
 		}
 
@@ -311,30 +389,25 @@ func (w *Watcher) Run() error {
 	w.logger.Info("Replaying WAL", "queue", w.name)
 
 	// Backfill from the checkpoint first if it exists.
-	lastCheckpoint, checkpointIndex, err := LastCheckpoint(w.walDir)
-	if err != nil && !errors.Is(err, record.ErrNotFound) {
-		return fmt.Errorf("tsdb.LastCheckpoint: %w", err)
-	}
-
-	if err == nil {
-		if err = w.readCheckpoint(lastCheckpoint, (*Watcher).readSegment); err != nil {
-			return fmt.Errorf("readCheckpoint: %w", err)
-		}
-	}
-	w.lastCheckpoint = lastCheckpoint
-
-	currentSegment, err := w.findSegmentForIndex(checkpointIndex)
+	currentSegment, err := w.replayCheckpoint()
 	if err != nil {
 		return err
 	}
 
-	w.logger.Debug("Tailing WAL", "lastCheckpoint", lastCheckpoint, "checkpointIndex", checkpointIndex, "currentSegment", currentSegment, "lastSegment", lastSegment)
+	w.logger.Debug("Tailing WAL", "lastCheckpoint", w.lastCheckpoint, "currentSegment", currentSegment, "lastSegment", lastSegment)
 	for !isClosed(w.quit) {
 		w.currentSegmentMetric.Set(float64(currentSegment))
 
 		// On start, after reading the existing WAL for series records, we have a pointer to what is the latest segment.
 		// On subsequent calls to this function, currentSegment will have been incremented and we should open that segment.
 		w.logger.Debug("Processing segment", "currentSegment", currentSegment)
+		if w.heldSegment >= 0 && currentSegment > w.heldSegment {
+			// The watcher got past the record it held at.
+			w.heldSegment = -1
+			if w.nativeMetadataHeld != nil {
+				w.nativeMetadataHeld.Set(0)
+			}
+		}
 		if err := w.watch(currentSegment, currentSegment < lastSegment); err != nil && !errors.Is(err, ErrIgnorable) {
 			return err
 		}
@@ -348,6 +421,43 @@ func (w *Watcher) Run() error {
 	}
 
 	return nil
+}
+
+// replayCheckpoint reads the last checkpoint, if any, and returns the first
+// segment to read after it. For native metadata, that is the segment after the
+// checkpoint's own. If a newer checkpoint deleted it, replay restarts from the
+// newer checkpoint.
+func (w *Watcher) replayCheckpoint() (int, error) {
+	for {
+		lastCheckpoint, checkpointIndex, err := LastCheckpoint(w.walDir)
+		if err != nil && !errors.Is(err, record.ErrNotFound) {
+			return -1, fmt.Errorf("tsdb.LastCheckpoint: %w", err)
+		}
+		if w.native != nil {
+			w.native.ResetNativeMetadata(err == nil)
+		}
+		if err == nil {
+			if err = w.readCheckpoint(lastCheckpoint, (*Watcher).readSegment); err != nil {
+				return -1, fmt.Errorf("readCheckpoint: %w", err)
+			}
+		}
+		w.lastCheckpoint = lastCheckpoint
+		if hook := w.testAfterCheckpoint; hook != nil {
+			hook()
+		}
+		if w.native == nil || lastCheckpoint == "" {
+			return w.findSegmentForIndex(checkpointIndex)
+		}
+		segment, err := w.findSegmentForIndex(checkpointIndex + 1)
+		if err != nil || segment == checkpointIndex+1 {
+			return segment, err
+		}
+		if newer, _, err := LastCheckpoint(w.walDir); err == nil && newer != lastCheckpoint {
+			continue
+		}
+		w.logger.Warn("WAL segments are missing after the last checkpoint", "checkpoint", lastCheckpoint, "next_segment", segment)
+		return segment, nil
+	}
 }
 
 // findSegmentForIndex finds the first segment greater than or equal to index.
@@ -369,6 +479,12 @@ func (w *Watcher) findSegmentForIndex(index int) (int, error) {
 func (w *Watcher) readAndHandleError(r *LiveReader, segmentNum int, onlySeries bool, size int64) error {
 	err := w.readSegment(r, segmentNum, onlySeries)
 
+	// A native metadata record the watcher couldn't decode is never skipped,
+	// in replay as in tailing: delivering what follows it would label samples
+	// with a history that misses it.
+	if decodeErr := (*NativeMetadataDecodeError)(nil); errors.As(err, &decodeErr) {
+		return err
+	}
 	// Ignore all errors reading to end of segment whilst replaying the WAL.
 	if onlySeries {
 		if err != nil && !errors.Is(err, io.EOF) {
@@ -527,6 +643,7 @@ func (w *Watcher) readSegment(r *LiveReader, segmentNum int, onlySeries bool) er
 		w.recordBuf.PutMetadata(metadata)
 	}()
 
+	var compact record.CompactNativeMetadata
 	dec := record.NewDecoder(labels.NewSymbolTable(), w.logger) // One table per WAL segment means it won't grow indefinitely.
 	for r.Next() && !isClosed(w.quit) {
 		var err error
@@ -656,7 +773,25 @@ func (w *Watcher) readSegment(r *LiveReader, segmentNum int, onlySeries bool) er
 				w.recordDecodeFailsMetric.Inc()
 				return err
 			}
+			if w.native != nil {
+				w.native.StoreLegacyNativeMetadata(metadata, segmentNum)
+				break
+			}
 			w.writer.StoreMetadata(metadata)
+
+		case record.NativeMetadataCompact:
+			// Without native metadata forwarding, compact records are opaque.
+			if w.native == nil {
+				break
+			}
+			// The record's strings alias rec, which the reader reuses after
+			// this record.
+			if err := dec.CompactNativeMetadataBorrowed(rec, &compact); err != nil {
+				w.recordDecodeFailsMetric.Inc()
+				return &NativeMetadataDecodeError{Segment: segmentNum, Err: err}
+			}
+			w.native.StoreNativeMetadataRecord(&compact, segmentNum)
+			compact.Reset()
 
 		case record.Unknown:
 			// Could be corruption, or reading from a WAL from a newer Prometheus.
@@ -672,10 +807,18 @@ func (w *Watcher) readSegment(r *LiveReader, segmentNum int, onlySeries bool) er
 }
 
 // Go through all series in a segment updating the segmentNum, so we can delete older series.
+// For native metadata writers, the refs of metadata entries are updated too,
+// whether or not the writer trusts them: that can only keep a history longer.
+// A native metadata record that doesn't decode fails the scan before any
+// series is reset, so nothing is released early.
 // Used with readCheckpoint - implements segmentReadFn.
 func (w *Watcher) readSegmentForGC(r *LiveReader, segmentNum int, _ bool) error {
 	series := w.recordBuf.GetRefSeries(512)
 	defer w.recordBuf.PutRefSeries(series)
+	metadata := w.recordBuf.GetMetadata(512)
+	defer w.recordBuf.PutMetadata(metadata)
+	var refs []chunks.HeadSeriesRef
+	var compact record.CompactNativeMetadata
 
 	dec := record.NewDecoder(labels.NewSymbolTable(), w.logger) // Needed for decoding; labels do not outlive this function.
 	for r.Next() && !isClosed(w.quit) {
@@ -691,12 +834,47 @@ func (w *Watcher) readSegmentForGC(r *LiveReader, segmentNum int, _ bool) error 
 			}
 			w.writer.UpdateSeriesSegment(series, segmentNum)
 
+		case record.Metadata:
+			if w.native == nil {
+				break
+			}
+			var err error
+			metadata, err = dec.Metadata(rec, metadata[:0])
+			if err != nil {
+				w.recordDecodeFailsMetric.Inc()
+				return err
+			}
+			refs = refs[:0]
+			for _, m := range metadata {
+				refs = append(refs, m.Ref)
+			}
+			w.native.UpdateNativeMetadataSegment(refs, segmentNum)
+
+		case record.NativeMetadataCompact:
+			if w.native == nil {
+				break
+			}
+			// Only the refs are needed; the values alias rec.
+			if err := dec.CompactNativeMetadataBorrowed(rec, &compact); err != nil {
+				w.recordDecodeFailsMetric.Inc()
+				return &NativeMetadataDecodeError{Segment: segmentNum, Err: err}
+			}
+			refs = refs[:0]
+			for _, e := range compact.Entries {
+				// Provenance markers and boundaries have no ref.
+				if e.Ref != 0 {
+					refs = append(refs, e.Ref)
+				}
+			}
+			w.native.UpdateNativeMetadataSegment(refs, segmentNum)
+			compact.Reset()
+
 		case record.Unknown:
 			// Could be corruption, or reading from a WAL from a newer Prometheus.
 			w.recordDecodeFailsMetric.Inc()
 
 		default:
-			// We're only interested in series.
+			// We're only interested in series and metadata.
 		}
 	}
 	// NOTE: r.Err == io.EOF is a common case when tailing.

@@ -24,6 +24,20 @@ import (
 	"github.com/prometheus/prometheus/util/compression"
 )
 
+// ErrTornRecord is the error of a record that the input ends inside of, as a
+// crash between the page writes of a record leaves the last one.
+var ErrTornRecord = errors.New("last record is torn")
+
+// TornRecordError is ErrTornRecord with the offset, in the segment read last,
+// at which the torn record starts: the end of the complete records before it.
+type TornRecordError struct {
+	Start int64
+}
+
+func (*TornRecordError) Error() string { return ErrTornRecord.Error() }
+
+func (*TornRecordError) Unwrap() error { return ErrTornRecord }
+
 // Reader reads WAL records from an io.Reader.
 type Reader struct {
 	rdr io.Reader
@@ -35,6 +49,10 @@ type Reader struct {
 	buf         [pageSize]byte
 	total       int64   // Total bytes processed.
 	curRecTyp   recType // Used for checking that the last record is not torn.
+	// recordEnd is the offset after the last complete record, or where
+	// reading started.
+	recordEnd int64
+	started   bool
 }
 
 // NewReader returns a new reader.
@@ -45,17 +63,23 @@ func NewReader(r io.Reader) *Reader {
 // Next advances the reader to the next records and returns true if it exists.
 // It must not be called again after it returned false.
 func (r *Reader) Next() bool {
+	if !r.started {
+		r.recordEnd, r.started = r.Offset(), true
+	}
 	err := r.nextNew()
 	if err != nil && errors.Is(err, io.EOF) {
 		// The last WAL segment record shouldn't be torn(should be full or last).
 		// The last record would be torn after a crash just before
 		// the last record part could be persisted to disk.
 		if r.curRecTyp == recFirst || r.curRecTyp == recMiddle {
-			r.err = errors.New("last record is torn")
+			r.err = &TornRecordError{Start: r.recordEnd}
 		}
 		return false
 	}
 	r.err = err
+	if r.err == nil {
+		r.recordEnd = r.Offset()
+	}
 	return r.err == nil
 }
 
