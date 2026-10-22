@@ -22,6 +22,7 @@ import (
 	"math"
 	"slices"
 	"strconv"
+	"strings"
 	"sync"
 	"time"
 	"unique"
@@ -68,6 +69,11 @@ const (
 	reasonUnintentionalDroppedSeries = "unintentionally_dropped_series"
 	reasonNHCBNotSupported           = "nhcb_in_rw1_not_supported"
 	reasonNHCBConversionError        = "nhcb_to_classic_conversion_error"
+	reasonClassicHistogramNotAllowed = "classic_histogram_not_allowed"
+	// TODO(bwplotka): Temporary, fixed in https://github.com/prometheus/prometheus/pull/20070.
+	reasonDetachedExemplarNotAllowed = "detached_exemplar_not_allowed"
+	reasonMissingMetadataType        = "missing_metadata_type"
+	reasonMissingStartTimestamp      = "missing_start_timestamp"
 )
 
 type queueManagerMetrics struct {
@@ -480,6 +486,7 @@ type QueueManager struct {
 	clientMtx   sync.RWMutex
 	storeClient WriteClient
 	protoMsg    remoteapi.WriteMessageType
+	mode        config.RemoteWriteMode
 	compr       compression.Type
 
 	seriesMtx        sync.Mutex // Covers seriesLabels, seriesMetadata, droppedSeries, the NHCB fields and builder.
@@ -533,6 +540,7 @@ func NewQueueManager(
 	enableNativeHistogramRemoteWrite bool,
 	enableTypeAndUnitLabels bool,
 	protoMsg remoteapi.WriteMessageType,
+	mode config.RemoteWriteMode,
 	recordBuf *record.BuffersPool,
 	failedRequestLogging bool,
 	convertNHCBToClassic bool,
@@ -584,6 +592,7 @@ func NewQueueManager(
 		highestRecvTimestamp: highestRecvTimestamp,
 
 		protoMsg: protoMsg,
+		mode:     mode,
 		compr:    compression.Snappy, // Hardcoded for now, but scaffolding exists for likely future use.
 
 		convertNHCBToClassic: convertNHCBToClassic,
@@ -776,6 +785,78 @@ func isV2TimeSeriesOldFilter(metrics *queueManagerMetrics, baseTime time.Time, s
 	}
 }
 
+// seriesMetricType returns the effective MetricType for a series from type-and-unit labels or cached WAL metadata.
+func (t *QueueManager) seriesMetricType(lbls labels.Labels, meta unique.Handle[metadata.Metadata]) model.MetricType {
+	if t.enableTypeAndUnitLabels {
+		if mType := schema.NewMetadataFromLabels(lbls).Type; mType != model.MetricTypeUnknown {
+			return mType
+		}
+	}
+	if !metadata.IsZeroHandle(meta) {
+		return meta.Value().Type
+	}
+	return model.MetricTypeUnknown
+}
+
+// shouldDropSampleForMode checks whether a float sample violates the configured Remote-Write 2.0 mode.
+// Staleness markers (isStale) are exempt from classic-histogram and start-timestamp checks because
+// scrape and recording rules emit StaleNaN with st=0, and separate scrape transactions log native
+// histogram staleness markers to the WAL as float RefSample records.
+func (t *QueueManager) shouldDropSampleForMode(ref chunks.HeadSeriesRef, st int64, isStale bool, lbls labels.Labels, meta unique.Handle[metadata.Metadata]) bool {
+	switch t.mode {
+	case config.RemoteWriteModeNone:
+		return false
+	case config.RemoteWriteModeStateless, config.RemoteWriteModeStatelessST:
+		mType := t.seriesMetricType(lbls, meta)
+		if !isStale && (mType == model.MetricTypeHistogram || mType == model.MetricTypeGaugeHistogram) {
+			t.dataDropped.incr(1)
+			t.metrics.droppedSamplesTotal.WithLabelValues(reasonClassicHistogramNotAllowed).Inc()
+			t.logger.Debug("Dropped classic histogram float sample; remote_write mode requires structured native histograms; enable convert_classic_histograms_to_nhcb in scrape_config or drop the series via write_relabel_configs", "mode", t.mode, "ref", ref, "series", lbls.String(), "type", mType)
+			return true
+		}
+		if writev2.FromMetadataType(mType) == writev2.Metadata_METRIC_TYPE_UNSPECIFIED {
+			t.dataDropped.incr(1)
+			t.metrics.droppedSamplesTotal.WithLabelValues(reasonMissingMetadataType).Inc()
+			t.logger.Debug("Dropped sample with unknown metric type; remote_write mode does not allow untyped series; ensure the target exposes TYPE metadata, set __type__ via write_relabel_configs with --enable-feature=type-and-unit-labels, or drop the series via write_relabel_configs", "mode", t.mode, "ref", ref, "series", lbls.String(), "type", mType)
+			return true
+		}
+		if t.mode == config.RemoteWriteModeStatelessST && st == 0 && !isStale {
+			name := lbls.Get(model.MetricNameLabel)
+			if mType == model.MetricTypeCounter || (mType == model.MetricTypeSummary && (strings.HasSuffix(name, "_sum") || strings.HasSuffix(name, "_count"))) {
+				t.dataDropped.incr(1)
+				t.metrics.droppedSamplesTotal.WithLabelValues(reasonMissingStartTimestamp).Inc()
+				t.logger.Debug("Dropped sample without start timestamp; remote_write stateless-st mode requires start_timestamp for cumulative metrics; ensure the target exposes created timestamps, enable --enable-feature=st-synthesis, switch to stateless mode, or drop the series via write_relabel_configs", "mode", t.mode, "ref", ref, "series", lbls.String(), "type", mType)
+				return true
+			}
+		}
+	}
+	return false
+}
+
+// shouldDropHistogramForMode checks whether a histogram sample violates the configured Remote-Write 2.0 mode.
+// Staleness markers (isStale) are exempt from the start-timestamp check because staleness markers are emitted with st=0.
+func (t *QueueManager) shouldDropHistogramForMode(ref chunks.HeadSeriesRef, st int64, isStale bool, lbls labels.Labels, meta unique.Handle[metadata.Metadata]) bool {
+	switch t.mode {
+	case config.RemoteWriteModeNone:
+		return false
+	case config.RemoteWriteModeStateless, config.RemoteWriteModeStatelessST:
+		mType := t.seriesMetricType(lbls, meta)
+		if mType != model.MetricTypeHistogram && mType != model.MetricTypeGaugeHistogram {
+			t.dataDropped.incr(1)
+			t.metrics.droppedHistogramsTotal.WithLabelValues(reasonMissingMetadataType).Inc()
+			t.logger.Debug("Dropped histogram with missing or non-histogram metadata type; remote_write mode requires histogram or gaugehistogram metadata type; ensure the target exposes histogram TYPE metadata or set __type__ via write_relabel_configs with --enable-feature=type-and-unit-labels", "mode", t.mode, "ref", ref, "series", lbls.String(), "type", mType)
+			return true
+		}
+		if t.mode == config.RemoteWriteModeStatelessST && st == 0 && !isStale && mType == model.MetricTypeHistogram {
+			t.dataDropped.incr(1)
+			t.metrics.droppedHistogramsTotal.WithLabelValues(reasonMissingStartTimestamp).Inc()
+			t.logger.Debug("Dropped histogram without start timestamp; remote_write stateless-st mode requires start_timestamp for cumulative histograms; ensure the target exposes created timestamps, enable --enable-feature=st-synthesis, switch to stateless mode, or drop the series via write_relabel_configs", "mode", t.mode, "ref", ref, "series", lbls.String(), "type", mType)
+			return true
+		}
+	}
+	return false
+}
+
 // Append queues a sample to be sent to the remote storage. Blocks until all samples are
 // enqueued on their shards or a shutdown signal is received.
 func (t *QueueManager) Append(samples []record.RefSample) bool {
@@ -820,6 +901,9 @@ outer:
 			}
 		}
 		t.seriesMtx.Unlock()
+		if t.mode != config.RemoteWriteModeNone && t.shouldDropSampleForMode(s.Ref, s.ST, value.IsStaleNaN(s.V), lbls, meta) {
+			continue
+		}
 		// Start with a very small backoff. This should not be t.cfg.MinBackoff
 		// as it can happen without errors, and we want to pickup work after
 		// filling a queue/resharding as quickly as possible.
@@ -899,6 +983,13 @@ outer:
 		}
 		meta := t.seriesMetadata[e.Ref]
 		t.seriesMtx.Unlock()
+		if t.mode != config.RemoteWriteModeNone {
+			// TODO(bwplotka): Coalesce exemplars onto matching TimeSeries in populateV2TimeSeries instead of dropping detached exemplars (being fixed in https://github.com/prometheus/prometheus/pull/20070).
+			t.dataDropped.incr(1)
+			t.metrics.droppedExemplarsTotal.WithLabelValues(reasonDetachedExemplarNotAllowed).Inc()
+			t.logger.Debug("Dropped detached exemplar; remote_write mode requires exemplars to be attached to a series with samples or histograms", "mode", t.mode, "ref", e.Ref, "series", lbls.String())
+			continue
+		}
 		// This will only loop if the queues are being resharded.
 		backoff := t.cfg.MinBackoff
 		for {
@@ -1175,6 +1266,9 @@ outer:
 			continue
 		}
 		t.seriesMtx.Unlock()
+		if t.mode != config.RemoteWriteModeNone && t.shouldDropHistogramForMode(h.Ref, h.ST, isStale, lbls, meta) {
+			continue
+		}
 
 		backoff := model.Duration(5 * time.Millisecond)
 		for {
@@ -1271,6 +1365,9 @@ outer:
 			continue
 		}
 		t.seriesMtx.Unlock()
+		if t.mode != config.RemoteWriteModeNone && t.shouldDropHistogramForMode(h.Ref, h.ST, isStale, lbls, meta) {
+			continue
+		}
 
 		backoff := model.Duration(5 * time.Millisecond)
 		for {
