@@ -2301,7 +2301,7 @@ func BenchmarkBuildV2WriteRequest(b *testing.B) {
 
 		totalSize := 0
 		for b.Loop() {
-			populateV2TimeSeries(&symbolTable, batch, seriesBuff, true, true, false)
+			populateV2TimeSeries(&symbolTable, batch, seriesBuff, true, true, false, config.RemoteWriteModeNone)
 			req, _, _, _, err := buildV2WriteRequest(noopLogger, seriesBuff, symbolTable.Symbols(), &pBuf, nil, cEnc, "snappy")
 			if err != nil {
 				b.Fatal(err)
@@ -2699,7 +2699,7 @@ func TestPopulateV2TimeSeries_UnexpectedMetadata(t *testing.T) {
 	}
 
 	nSamples, nExemplars, nHistograms, nUnexpected := populateV2TimeSeries(
-		&symbolTable, batch, pendingData, false, false, false,
+		&symbolTable, batch, pendingData, false, false, false, config.RemoteWriteModeNone,
 	)
 
 	require.Equal(t, 2, nSamples, "Should count 2 samples")
@@ -2819,6 +2819,7 @@ func TestPopulateV2TimeSeries_TypeAndUnitLabels(t *testing.T) {
 				false, // sendExemplars
 				false, // sendNativeHistograms
 				true,  // enableTypeAndUnitLabels
+				config.RemoteWriteModeNone,
 			)
 
 			require.Equal(t, 1, nSamples, "Should have 1 sample")
@@ -2956,6 +2957,7 @@ func TestPopulateV2TimeSeries_MetadataAndTypeAndUnit(t *testing.T) {
 				false,
 				false,
 				tc.enableTypeAndUnit,
+				config.RemoteWriteModeNone,
 			)
 
 			require.Equal(t, 1, nSamples, "Should have 1 sample")
@@ -4071,14 +4073,14 @@ func TestQueueManager_RemoteWriteModes(t *testing.T) {
 	for _, metaSource := range []string{"metadata-wal-records", "type-and-unit-labels"} {
 		enableTypeAndUnitLabels := metaSource == "type-and-unit-labels"
 
-		makeSeries := func(ref chunks.HeadSeriesRef, name string, mType model.MetricType, extra ...string) (record.RefSeries, record.RefMetadata) {
+		makeSeries := func(ref chunks.HeadSeriesRef, name string, mType model.MetricType, help string, extra ...string) (record.RefSeries, record.RefMetadata) {
 			lbls := []string{"__name__", name}
 			if enableTypeAndUnitLabels && mType != "" {
 				lbls = append(lbls, "__type__", string(mType))
 			}
 			lbls = append(lbls, extra...)
 			s := record.RefSeries{Ref: ref, Labels: labels.FromStrings(lbls...)}
-			m := record.RefMetadata{Ref: ref, Type: record.GetMetricType(mType)}
+			m := record.RefMetadata{Ref: ref, Type: record.GetMetricType(mType), Help: help}
 			return s, m
 		}
 
@@ -4104,25 +4106,28 @@ func TestQueueManager_RemoteWriteModes(t *testing.T) {
 			stop := sync.OnceFunc(m.shards.stop)
 			t.Cleanup(stop)
 
-			sClassicBucket, mClassicBucket := makeSeries(1, "http_dur_bucket", model.MetricTypeHistogram, "le", "+Inf")
-			sClassicGaugeHist, mClassicGaugeHist := makeSeries(2, "http_gh_count", model.MetricTypeGaugeHistogram)
-			sUntyped, mUntyped := makeSeries(3, "untyped_metric", model.MetricTypeUnknown)
-			sUntypedHist, mUntypedHist := makeSeries(4, "untyped_hist", model.MetricTypeUnknown)
-			sCounterNoST, mCounterNoST := makeSeries(5, "requests_total", model.MetricTypeCounter)
-			sNativeHist, mNativeHist := makeSeries(6, "native_dur", model.MetricTypeHistogram)
+			sClassicBucket, mClassicBucket := makeSeries(1, "http_dur_bucket", model.MetricTypeHistogram, "Duration.", "le", "+Inf")
+			sClassicGaugeHist, mClassicGaugeHist := makeSeries(2, "http_gh_count", model.MetricTypeGaugeHistogram, "Gauge hist.")
+			sUntypedGauge, _ := makeSeries(3, "recording_rule:metric", model.MetricTypeUnknown, "")
+			sUntypedCounter, mUntypedCounter := makeSeries(4, "untyped_requests_total", model.MetricTypeUnknown, "Total requests.")
+			sUntypedHist, mUntypedHist := makeSeries(5, "untyped_hist", model.MetricTypeUnknown, "")
+			sCounterNoST, mCounterNoST := makeSeries(6, "requests_total", model.MetricTypeCounter, "Requests.")
+			sNativeHist, mNativeHist := makeSeries(7, "native_dur", model.MetricTypeHistogram, "Native hist.")
 
-			allSeries := []record.RefSeries{sClassicBucket, sClassicGaugeHist, sUntyped, sUntypedHist, sCounterNoST, sNativeHist}
+			allSeries := []record.RefSeries{sClassicBucket, sClassicGaugeHist, sUntypedGauge, sUntypedCounter, sUntypedHist, sCounterNoST, sNativeHist}
 			m.StoreSeries(allSeries, 0)
-			if !enableTypeAndUnitLabels {
-				m.StoreMetadata([]record.RefMetadata{mClassicBucket, mClassicGaugeHist, mUntyped, mUntypedHist, mCounterNoST, mNativeHist})
-			}
+			// StoreMetadata is called even when enableTypeAndUnitLabels is true so Help is populated when available;
+			// sUntypedGauge intentionally has no StoreMetadata entry (zero handle, e.g. recording rule output).
+			m.StoreMetadata([]record.RefMetadata{mClassicBucket, mClassicGaugeHist, mUntypedCounter, mUntypedHist, mCounterNoST, mNativeHist})
 
-			// Classic histogram float samples and untyped samples must be dropped; counter without ST and float staleness
-			// markers on native histogram series (written by separate scrape transactions) are allowed in stateless mode.
+			// Classic histogram float samples must be dropped; untyped float samples have their type inferred
+			// (gauge or counter for _total suffix), and counter without ST and float staleness markers on native
+			// histogram series (written by separate scrape transactions) are allowed in stateless mode.
 			require.True(t, m.Append([]record.RefSample{
 				{Ref: sClassicBucket.Ref, T: 1000, V: 1},
 				{Ref: sClassicGaugeHist.Ref, T: 1000, V: 2},
-				{Ref: sUntyped.Ref, T: 1000, V: 3},
+				{Ref: sUntypedGauge.Ref, T: 1000, V: 3},
+				{Ref: sUntypedCounter.Ref, T: 1000, V: 3.5},
 				{Ref: sCounterNoST.Ref, T: 1000, V: 4},
 				{Ref: sNativeHist.Ref, T: 2000, V: stale},
 			}))
@@ -4145,16 +4150,24 @@ func TestQueueManager_RemoteWriteModes(t *testing.T) {
 			stop()
 
 			require.Equal(t, 2.0, client_testutil.ToFloat64(metrics.droppedSamplesTotal.WithLabelValues(reasonClassicHistogramNotAllowed)))
-			require.Equal(t, 1.0, client_testutil.ToFloat64(metrics.droppedSamplesTotal.WithLabelValues(reasonMissingMetadataType)))
+			require.Equal(t, 0.0, client_testutil.ToFloat64(metrics.droppedSamplesTotal.WithLabelValues(reasonMissingMetadataType)))
 			require.Equal(t, 0.0, client_testutil.ToFloat64(metrics.droppedSamplesTotal.WithLabelValues(reasonMissingStartTimestamp)))
 			require.Equal(t, 3.0, client_testutil.ToFloat64(metrics.droppedHistogramsTotal.WithLabelValues(reasonMissingMetadataType)))
 			require.Equal(t, 0.0, client_testutil.ToFloat64(metrics.droppedHistogramsTotal.WithLabelValues(reasonMissingStartTimestamp)))
 			require.Equal(t, 2.0, client_testutil.ToFloat64(metrics.droppedExemplarsTotal.WithLabelValues(reasonDetachedExemplarNotAllowed)))
 
-			require.Len(t, c.receivedSamples, 2)
+			require.Len(t, c.receivedSamples, 4)
+			require.Contains(t, c.receivedSamples, sUntypedGauge.Labels.String())
+			require.Contains(t, c.receivedSamples, sUntypedCounter.Labels.String())
 			require.Contains(t, c.receivedSamples, sCounterNoST.Labels.String())
 			require.Contains(t, c.receivedSamples, sNativeHist.Labels.String())
 			require.True(t, value.IsStaleNaN(c.receivedSamples[sNativeHist.Labels.String()][0].Value))
+
+			require.Equal(t, prompb.MetricMetadata_GAUGE, c.receivedMetadata[sUntypedGauge.Labels.String()][0].Type)
+			require.Equal(t, "(type inferred from untyped)", c.receivedMetadata[sUntypedGauge.Labels.String()][0].Help)
+			require.Equal(t, prompb.MetricMetadata_COUNTER, c.receivedMetadata[sUntypedCounter.Labels.String()][0].Type)
+			require.Equal(t, "Total requests. (type inferred from untyped)", c.receivedMetadata[sUntypedCounter.Labels.String()][0].Help)
+
 			require.Len(t, c.receivedHistograms, 1)
 			require.Contains(t, c.receivedHistograms, sNativeHist.Labels.String())
 			require.Empty(t, c.receivedFloatHistograms)
@@ -4183,46 +4196,50 @@ func TestQueueManager_RemoteWriteModes(t *testing.T) {
 			stop := sync.OnceFunc(m.shards.stop)
 			t.Cleanup(stop)
 
-			sClassicBucket, mClassicBucket := makeSeries(1, "http_dur_bucket", model.MetricTypeHistogram, "le", "+Inf")
-			sUntyped, mUntyped := makeSeries(2, "untyped_metric", model.MetricTypeUnknown)
-			sUntypedHist, mUntypedHist := makeSeries(3, "untyped_hist", model.MetricTypeUnknown)
-			sCounterNoST, mCounterNoST := makeSeries(4, "requests_total", model.MetricTypeCounter)
-			sCounterWithST, mCounterWithST := makeSeries(5, "requests_st_total", model.MetricTypeCounter)
-			sSummarySum, mSummarySum := makeSeries(6, "rpc_duration_sum", model.MetricTypeSummary)
-			sSummaryCount, mSummaryCount := makeSeries(7, "rpc_duration_count", model.MetricTypeSummary)
-			sSummaryQuantileNoST, mSummaryQuantileNoST := makeSeries(8, "rpc_duration", model.MetricTypeSummary, "quantile", "0.9")
-			sGaugeNoST, mGaugeNoST := makeSeries(9, "memory_bytes", model.MetricTypeGauge)
-			sHistNoST, mHistNoST := makeSeries(10, "native_dur_no_st", model.MetricTypeHistogram)
-			sHistWithST, mHistWithST := makeSeries(11, "native_dur_st", model.MetricTypeHistogram)
-			sGaugeHistNoST, mGaugeHistNoST := makeSeries(12, "native_gauge_hist", model.MetricTypeGaugeHistogram)
+			sClassicBucket, mClassicBucket := makeSeries(1, "http_dur_bucket", model.MetricTypeHistogram, "Duration.", "le", "+Inf")
+			sUntypedGauge, _ := makeSeries(2, "recording_rule:metric", model.MetricTypeUnknown, "")
+			sUntypedCounterNoST, mUntypedCounterNoST := makeSeries(3, "untyped_no_st_total", model.MetricTypeUnknown, "Untyped counter.")
+			sUntypedCounterWithST, mUntypedCounterWithST := makeSeries(4, "untyped_st_total", model.MetricTypeUnknown, "Untyped counter.")
+			sUntypedHist, mUntypedHist := makeSeries(5, "untyped_hist", model.MetricTypeUnknown, "")
+			sCounterNoST, mCounterNoST := makeSeries(6, "requests_total", model.MetricTypeCounter, "Requests.")
+			sCounterWithST, mCounterWithST := makeSeries(7, "requests_st_total", model.MetricTypeCounter, "Requests.")
+			sSummarySum, mSummarySum := makeSeries(8, "rpc_duration_sum", model.MetricTypeSummary, "RPC.")
+			sSummaryCount, mSummaryCount := makeSeries(9, "rpc_duration_count", model.MetricTypeSummary, "RPC.")
+			sSummaryQuantileNoST, mSummaryQuantileNoST := makeSeries(10, "rpc_duration", model.MetricTypeSummary, "RPC.", "quantile", "0.9")
+			sGaugeNoST, mGaugeNoST := makeSeries(11, "memory_bytes", model.MetricTypeGauge, "Memory.")
+			sHistNoST, mHistNoST := makeSeries(12, "native_dur_no_st", model.MetricTypeHistogram, "Native hist.")
+			sHistWithST, mHistWithST := makeSeries(13, "native_dur_st", model.MetricTypeHistogram, "Native hist.")
+			sGaugeHistNoST, mGaugeHistNoST := makeSeries(14, "native_gauge_hist", model.MetricTypeGaugeHistogram, "Native gauge hist.")
 
 			allSeries := []record.RefSeries{
-				sClassicBucket, sUntyped, sUntypedHist, sCounterNoST, sCounterWithST,
+				sClassicBucket, sUntypedGauge, sUntypedCounterNoST, sUntypedCounterWithST,
+				sUntypedHist, sCounterNoST, sCounterWithST,
 				sSummarySum, sSummaryCount, sSummaryQuantileNoST, sGaugeNoST,
 				sHistNoST, sHistWithST, sGaugeHistNoST,
 			}
 			m.StoreSeries(allSeries, 0)
-			if !enableTypeAndUnitLabels {
-				m.StoreMetadata([]record.RefMetadata{
-					mClassicBucket, mUntyped, mUntypedHist, mCounterNoST, mCounterWithST,
-					mSummarySum, mSummaryCount, mSummaryQuantileNoST, mGaugeNoST,
-					mHistNoST, mHistWithST, mGaugeHistNoST,
-				})
-			}
+			m.StoreMetadata([]record.RefMetadata{
+				mClassicBucket, mUntypedCounterNoST, mUntypedCounterWithST,
+				mUntypedHist, mCounterNoST, mCounterWithST,
+				mSummarySum, mSummaryCount, mSummaryQuantileNoST, mGaugeNoST,
+				mHistNoST, mHistWithST, mGaugeHistNoST,
+			})
 
 			require.True(t, m.Append([]record.RefSample{
-				{Ref: sClassicBucket.Ref, ST: 500, T: 1000, V: 1},       // Drop: classic histogram
-				{Ref: sUntyped.Ref, ST: 500, T: 1000, V: 2},             // Drop: missing metadata type
-				{Ref: sCounterNoST.Ref, ST: 0, T: 1000, V: 3},           // Drop: counter missing ST
-				{Ref: sSummarySum.Ref, ST: 0, T: 1000, V: 4},            // Drop: summary _sum missing ST
-				{Ref: sSummaryCount.Ref, ST: 0, T: 1000, V: 5},          // Drop: summary _count missing ST
-				{Ref: sSummarySum.Ref, ST: 500, T: 2000, V: 4.5},        // Keep: summary _sum with ST
-				{Ref: sSummaryCount.Ref, ST: 500, T: 2000, V: 5.5},      // Keep: summary _count with ST
-				{Ref: sCounterWithST.Ref, ST: 500, T: 1000, V: 6},       // Keep: counter with ST
-				{Ref: sCounterWithST.Ref, ST: 0, T: 2000, V: stale},     // Keep: counter staleness marker without ST
-				{Ref: sSummaryQuantileNoST.Ref, ST: 0, T: 1000, V: 0.5}, // Keep: summary quantile without ST
-				{Ref: sGaugeNoST.Ref, ST: 0, T: 1000, V: 42},            // Keep: gauge without ST
-				{Ref: sHistWithST.Ref, ST: 0, T: 4000, V: stale},        // Keep: float staleness marker on histogram series
+				{Ref: sClassicBucket.Ref, ST: 500, T: 1000, V: 1},          // Drop: classic histogram
+				{Ref: sUntypedGauge.Ref, ST: 0, T: 1000, V: 2},             // Keep: inferred as gauge (no ST needed)
+				{Ref: sUntypedCounterNoST.Ref, ST: 0, T: 1000, V: 2.5},     // Drop: inferred as counter (_total), missing ST
+				{Ref: sUntypedCounterWithST.Ref, ST: 500, T: 1000, V: 2.8}, // Keep: inferred as counter (_total) with ST
+				{Ref: sCounterNoST.Ref, ST: 0, T: 1000, V: 3},              // Drop: counter missing ST
+				{Ref: sSummarySum.Ref, ST: 0, T: 1000, V: 4},               // Drop: summary _sum missing ST
+				{Ref: sSummaryCount.Ref, ST: 0, T: 1000, V: 5},             // Drop: summary _count missing ST
+				{Ref: sSummarySum.Ref, ST: 500, T: 2000, V: 4.5},           // Keep: summary _sum with ST
+				{Ref: sSummaryCount.Ref, ST: 500, T: 2000, V: 5.5},         // Keep: summary _count with ST
+				{Ref: sCounterWithST.Ref, ST: 500, T: 1000, V: 6},          // Keep: counter with ST
+				{Ref: sCounterWithST.Ref, ST: 0, T: 2000, V: stale},        // Keep: counter staleness marker without ST
+				{Ref: sSummaryQuantileNoST.Ref, ST: 0, T: 1000, V: 0.5},    // Keep: summary quantile without ST
+				{Ref: sGaugeNoST.Ref, ST: 0, T: 1000, V: 42},               // Keep: gauge without ST
+				{Ref: sHistWithST.Ref, ST: 0, T: 4000, V: stale},           // Keep: float staleness marker on histogram series
 			}))
 			require.True(t, m.AppendHistograms([]record.RefHistogramSample{
 				{Ref: sUntypedHist.Ref, ST: 500, T: 1000, H: nativeHist}, // Drop: missing metadata type
@@ -4244,15 +4261,19 @@ func TestQueueManager_RemoteWriteModes(t *testing.T) {
 			stop()
 
 			require.Equal(t, 1.0, client_testutil.ToFloat64(metrics.droppedSamplesTotal.WithLabelValues(reasonClassicHistogramNotAllowed)))
-			require.Equal(t, 1.0, client_testutil.ToFloat64(metrics.droppedSamplesTotal.WithLabelValues(reasonMissingMetadataType)))
-			require.Equal(t, 3.0, client_testutil.ToFloat64(metrics.droppedSamplesTotal.WithLabelValues(reasonMissingStartTimestamp)))
+			require.Equal(t, 0.0, client_testutil.ToFloat64(metrics.droppedSamplesTotal.WithLabelValues(reasonMissingMetadataType)))
+			require.Equal(t, 4.0, client_testutil.ToFloat64(metrics.droppedSamplesTotal.WithLabelValues(reasonMissingStartTimestamp)))
 
 			require.Equal(t, 2.0, client_testutil.ToFloat64(metrics.droppedHistogramsTotal.WithLabelValues(reasonMissingMetadataType)))
 			require.Equal(t, 2.0, client_testutil.ToFloat64(metrics.droppedHistogramsTotal.WithLabelValues(reasonMissingStartTimestamp)))
 
 			require.Equal(t, 1.0, client_testutil.ToFloat64(metrics.droppedExemplarsTotal.WithLabelValues(reasonDetachedExemplarNotAllowed)))
 
-			require.Len(t, c.receivedSamples, 6)
+			require.Len(t, c.receivedSamples, 8)
+			require.Contains(t, c.receivedSamples, sUntypedGauge.Labels.String())
+			require.Equal(t, int64(500), c.receivedSamples[sUntypedCounterWithST.Labels.String()][0].StartTimestamp)
+			require.Equal(t, prompb.MetricMetadata_COUNTER, c.receivedMetadata[sUntypedCounterWithST.Labels.String()][0].Type)
+			require.Equal(t, "Untyped counter. (type inferred from untyped)", c.receivedMetadata[sUntypedCounterWithST.Labels.String()][0].Help)
 			require.Equal(t, int64(500), c.receivedSamples[sSummarySum.Labels.String()][0].StartTimestamp)
 			require.Equal(t, int64(500), c.receivedSamples[sSummaryCount.Labels.String()][0].StartTimestamp)
 			require.Len(t, c.receivedSamples[sCounterWithST.Labels.String()], 2)
