@@ -149,6 +149,12 @@ func TestBinaryExprPretty(t *testing.T) {
   foo_2`,
 		},
 		{
+			in: `Inf ^ foo_1`,
+			out: `  (+Inf)
+^
+  foo_1`,
+		},
+		{
 			in: `foo_1 + foo_2 + foo_3`,
 			out: `    foo_1
   +
