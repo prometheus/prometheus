@@ -2,6 +2,8 @@
 
 ## main / unreleased
 
+- [CHANGE] Scraping: Default `label_name_length_limit` and `label_value_length_limit` to `16777216` (16MiB), the longest label name or value the labels package is able to encode. Oversized labels now fail the scrape with a clear error instead of failing later when the label is encoded. Tighter limits can still be configured per global or per scrape config. #16525
+
 - [BUGFIX] Web: Upgrade `exporter-toolkit` to v0.20.0, fixing HTTP/2 ALPN negotiation loss under Go 1.27+ when TLS is enabled with `http2: true`. The server no longer silently falls back to HTTP/1.1, preventing excess TCP connections under concurrent load. #19807
 - [ENHANCEMENT] promtool: Add `--allow-incompatible-block-duration` so users can specify any max-block-duration instead of being restricted to the default Prometheus block durations.
 - [ENHANCEMENT] Remote write / Alertmanager: Upgrade `github.com/prometheus/sigv4` to v0.5.0, adding `session_name` and `tags` fields to the `sigv4` configuration block for STS AssumeRole sessions. The existing but previously undocumented `service_name` field is also documented.
