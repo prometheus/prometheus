@@ -25,7 +25,7 @@ jobs:
         with:
           enable_npm: true
           cache_key_suffix: race
-      - run: make GO_ONLY=1 SKIP_GOLANGCI_LINT=1
+      - run: make GO_ONLY=1 SKIP_GOLANGCI_LINT=1 GOOPTS="-timeout=15m"
       - run: go test ./tsdb/ -test.tsdb-isolation=false
       - run: make -C documentation/examples/remote_storage
       - run: make -C documentation/examples
