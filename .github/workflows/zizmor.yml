@@ -54,7 +54,7 @@ jobs:
         uses: zizmorcore/zizmor-action@3dc1ecc9bcb9e94e9b2c709687979e1298497054 # v0.6.2
         with:
           advanced-security: false
-          version: 1.29.0
+          version: 1.31.1
 
       - name: Explain how to resolve findings
         if: failure() && steps.zizmor.outcome == 'failure'
