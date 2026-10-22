@@ -48,3 +48,26 @@ func TestPool(t *testing.T) {
 		testPool.Put(ret)
 	}
 }
+
+func TestPoolCoversMaxSize(t *testing.T) {
+	calls := 0
+	countingMake := func(size int) any {
+		calls++
+		return make([]byte, 0, size)
+	}
+
+	// 1000 * 3^k never lands on 1000000; without a bucket for the documented maximum, Get allocates
+	// for it and Put drops the buffer.
+	p := New(1000, 1000000, 3, countingMake)
+
+	buf := p.Get(1000000)
+	require.Equal(t, 1000000, cap(buf.([]byte)))
+	p.Put(buf)
+	p.Get(1000000)
+
+	require.Equal(t, 1, calls, "the maximum size must be pooled, not reallocated on every Get")
+}
+
+func TestPoolRejectsFactorOne(t *testing.T) {
+	require.Panics(t, func() { New(1, 10, 1, makeFunc) })
+}
