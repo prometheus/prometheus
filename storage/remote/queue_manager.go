@@ -130,7 +130,7 @@ func newQueueManagerMetrics(r prometheus.Registerer, rn, e string) *queueManager
 		Name:        "samples_metadata_total",
 		Help:        "Total number of samples sent to remote storage using Remote Write 2.0 with the specified metadata field set.",
 		ConstLabels: constLabels,
-	}, []string{"metadata"})
+	}, []string{"field"})
 	m.exemplarsTotal = prometheus.NewCounter(prometheus.CounterOpts{
 		Namespace:   namespace,
 		Subsystem:   subsystem,
@@ -151,10 +151,10 @@ func newQueueManagerMetrics(r prometheus.Registerer, rn, e string) *queueManager
 		Name:        "histograms_metadata_total",
 		Help:        "Total number of histograms sent to remote storage using Remote Write 2.0 with the specified metadata field set.",
 		ConstLabels: constLabels,
-	}, []string{"metadata"})
-	for _, metadata := range []string{metadataFieldType, metadataFieldUnit, metadataFieldHelp} {
-		m.samplesMetadataTotal.WithLabelValues(metadata)
-		m.histogramsMetadataTotal.WithLabelValues(metadata)
+	}, []string{"field"})
+	for _, field := range []string{metadataFieldType, metadataFieldUnit, metadataFieldHelp} {
+		m.samplesMetadataTotal.WithLabelValues(field)
+		m.histogramsMetadataTotal.WithLabelValues(field)
 	}
 	m.metadataTotal = prometheus.NewCounter(prometheus.CounterOpts{
 		Namespace:   namespace,
