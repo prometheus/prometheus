@@ -391,10 +391,10 @@ jobs:
           working-directory: documentation/examples/remote_storage
           version: ${{ steps.golangci-lint-version.outputs.version }}
   fuzzing:
-    uses: ./.github/workflows/fuzzing.yml
+    uses: $/.github/workflows/fuzzing.yml
     if: github.event_name == 'pull_request'
   codeql:
-    uses: ./.github/workflows/codeql-analysis.yml
+    uses: $/.github/workflows/codeql-analysis.yml
     permissions:
       contents: read
       security-events: write
