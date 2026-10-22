@@ -234,6 +234,8 @@ func TestSampleDelivery(t *testing.T) {
 	}
 
 	for _, protoMsg := range []remoteapi.WriteMessageType{remoteapi.WriteV1MessageType, remoteapi.WriteV2MessageType} {
+		// Remote write v2 always sends native histograms, regardless of the option.
+		writeConfig.SendNativeHistograms = protoMsg == remoteapi.WriteV1MessageType
 		for _, rc := range []recCase{
 			{Series: n, SamplesPerSeries: n, HistogramsPerSeries: 0, FloatHistogramsPerSeries: 0, ExemplarsPerSeries: 0, Name: "samples only"},
 			{Series: n, SamplesPerSeries: 0, HistogramsPerSeries: n, FloatHistogramsPerSeries: 0, ExemplarsPerSeries: 0, Name: "histograms only"},

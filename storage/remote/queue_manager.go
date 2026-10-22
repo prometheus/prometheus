@@ -557,7 +557,7 @@ func NewQueueManager(
 		relabelConfigs:          relabelConfigs,
 		storeClient:             client,
 		sendExemplars:           enableExemplarRemoteWrite,
-		sendNativeHistograms:    enableNativeHistogramRemoteWrite,
+		sendNativeHistograms:    enableNativeHistogramRemoteWrite || protoMsg == remoteapi.WriteV2MessageType,
 		enableTypeAndUnitLabels: enableTypeAndUnitLabels,
 		failedRequestLogging:    failedRequestLogging,
 
