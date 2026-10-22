@@ -785,6 +785,17 @@ func isV2TimeSeriesOldFilter(metrics *queueManagerMetrics, baseTime time.Time, s
 	}
 }
 
+const inferredFromUntypedHelp = "(type inferred from untyped)"
+
+// inferMetricTypeFromName infers a gauge or counter metric type from the series name
+// for untyped float series in Remote-Write 2.0 stateless modes.
+func inferMetricTypeFromName(lbls labels.Labels) model.MetricType {
+	if strings.HasSuffix(lbls.Get(model.MetricNameLabel), "_total") {
+		return model.MetricTypeCounter
+	}
+	return model.MetricTypeGauge
+}
+
 // seriesMetricType returns the effective MetricType for a series from type-and-unit labels or cached WAL metadata.
 func (t *QueueManager) seriesMetricType(lbls labels.Labels, meta unique.Handle[metadata.Metadata]) model.MetricType {
 	if t.enableTypeAndUnitLabels {
@@ -815,10 +826,7 @@ func (t *QueueManager) shouldDropSampleForMode(ref chunks.HeadSeriesRef, st int6
 			return true
 		}
 		if writev2.FromMetadataType(mType) == writev2.Metadata_METRIC_TYPE_UNSPECIFIED {
-			t.dataDropped.incr(1)
-			t.metrics.droppedSamplesTotal.WithLabelValues(reasonMissingMetadataType).Inc()
-			t.logger.Debug("Dropped sample with missing metadata type; remote_write mode requires known metadata type", "mode", t.mode, "ref", ref, "series", lbls.String(), "type", mType)
-			return true
+			mType = inferMetricTypeFromName(lbls)
 		}
 		if t.mode == config.RemoteWriteModeStatelessST && st == 0 && !isStale {
 			name := lbls.Get(model.MetricNameLabel)
@@ -2040,7 +2048,7 @@ func (s *shards) runShard(ctx context.Context, shardID int, queue *queue) {
 			}
 			_ = s.sendSamples(ctx, pendingData[:n], nPendingSamples, nPendingExemplars, nPendingHistograms, pBuf, encBuf, compr)
 		case remoteapi.WriteV2MessageType:
-			nPendingSamples, nPendingExemplars, nPendingHistograms, nUnexpectedMetadata := populateV2TimeSeries(&symbolTable, batch, pendingDataV2, s.qm.sendExemplars, s.qm.sendNativeHistograms, s.qm.enableTypeAndUnitLabels)
+			nPendingSamples, nPendingExemplars, nPendingHistograms, nUnexpectedMetadata := populateV2TimeSeries(&symbolTable, batch, pendingDataV2, s.qm.sendExemplars, s.qm.sendNativeHistograms, s.qm.enableTypeAndUnitLabels, s.qm.mode)
 			n := nPendingSamples + nPendingExemplars + nPendingHistograms
 			if nUnexpectedMetadata > 0 {
 				s.qm.logger.Warn("unexpected metadata sType in populateV2TimeSeries", "count", nUnexpectedMetadata)
@@ -2410,7 +2418,7 @@ func (s *shards) sendV2SamplesWithBackoff(ctx context.Context, samples []writev2
 	return accumulatedStats, err
 }
 
-func populateV2TimeSeries(symbolTable *writev2.SymbolsTable, batch []timeSeries, pendingData []writev2.TimeSeries, sendExemplars, sendNativeHistograms, enableTypeAndUnitLabels bool) (int, int, int, int) {
+func populateV2TimeSeries(symbolTable *writev2.SymbolsTable, batch []timeSeries, pendingData []writev2.TimeSeries, sendExemplars, sendNativeHistograms, enableTypeAndUnitLabels bool, mode config.RemoteWriteMode) (int, int, int, int) {
 	var nPendingSamples, nPendingExemplars, nPendingHistograms, nUnexpectedMetadata int
 	for nPending, d := range batch {
 		pendingData[nPending].Samples = pendingData[nPending].Samples[:0]
@@ -2434,7 +2442,16 @@ func populateV2TimeSeries(symbolTable *writev2.SymbolsTable, batch []timeSeries,
 				unit = m.Unit
 			}
 		}
-		pendingData[nPending].Metadata.Type = writev2.FromMetadataType(mType)
+		protoType := writev2.FromMetadataType(mType)
+		if mode != config.RemoteWriteModeNone && protoType == writev2.Metadata_METRIC_TYPE_UNSPECIFIED {
+			protoType = writev2.FromMetadataType(inferMetricTypeFromName(d.seriesLabels))
+			if help == "" {
+				help = inferredFromUntypedHelp
+			} else {
+				help += " " + inferredFromUntypedHelp
+			}
+		}
+		pendingData[nPending].Metadata.Type = protoType
 		pendingData[nPending].Metadata.UnitRef = symbolTable.Symbolize(unit)
 		pendingData[nPending].Metadata.HelpRef = symbolTable.Symbolize(help)
 
