@@ -2492,6 +2492,7 @@ func requireSampleHist(t *testing.T, s teststorage.Sample, name, expectedHist st
 func TestScrapeLoopAppend_StartTimeSynthesis_Histograms(t *testing.T) {
 	t.Run("ClassicToNative", testScrapeLoopAppendStartTimeSynthesisHistogram)
 	t.Run("FloatNative", testScrapeLoopAppendStartTimeSynthesisFloatHistogram)
+	t.Run("InvalidNative", testScrapeLoopAppendStartTimeSynthesisInvalidHistogram)
 }
 
 func testScrapeLoopAppendStartTimeSynthesisHistogram(t *testing.T) {
@@ -2710,6 +2711,93 @@ metric: <
 	require.Len(t, got, 2)
 	requireSample(t, got[0], "test_float_hist", "{count:3, sum:5.5, (0.9170040432046711,1]:1, (1,1.0905077326652577]:2}", timestamp.FromTime(ts2), timestamp.FromTime(ts), false)
 	requireSample(t, got[1], "test_float_hist", "{count:2, sum:4, (0.9170040432046711,1]:1, (1,1.0905077326652577]:1}", timestamp.FromTime(ts3), timestamp.FromTime(ts3)-1, false)
+}
+
+// testScrapeLoopAppendStartTimeSynthesisInvalidHistogram checks that a native
+// histogram with an invalid bucket layout is rejected on append, and that it does
+// not become the anchor for start timestamp synthesis.
+func testScrapeLoopAppendStartTimeSynthesisInvalidHistogram(t *testing.T) {
+	t.Helper()
+	const contentType = "application/vnd.google.protobuf;proto=io.prometheus.client.MetricFamily;encoding=delimited"
+
+	for _, tc := range []struct {
+		name  string
+		float bool
+	}{
+		{name: "Float", float: true},
+		{name: "Integer", float: false},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			// histogramProto returns a native histogram with the given schema,
+			// positive spans and absolute positive bucket counts.
+			histogramProto := func(schema int32, count, sum int, spans []histogram.Span, buckets ...int) []byte {
+				var text strings.Builder
+				fmt.Fprintf(&text, "name: \"test_hist\"\nhelp: \"test help\"\ntype: HISTOGRAM\nmetric: <\n  histogram: <\n    schema: %d\n    sample_sum: %d\n", schema, sum)
+				if tc.float {
+					fmt.Fprintf(&text, "    sample_count_float: %d\n", count)
+				} else {
+					fmt.Fprintf(&text, "    sample_count: %d\n", count)
+				}
+				for _, s := range spans {
+					fmt.Fprintf(&text, "    positive_span: <\n      offset: %d\n      length: %d\n    >\n", s.Offset, s.Length)
+				}
+				last := 0
+				for _, b := range buckets {
+					if tc.float {
+						fmt.Fprintf(&text, "    positive_count: %d\n", b)
+					} else {
+						fmt.Fprintf(&text, "    positive_delta: %d\n", b-last)
+						last = b
+					}
+				}
+				text.WriteString("  >\n>\n")
+				buf := &bytes.Buffer{}
+				require.NoError(t, textToProto(text.String(), buf))
+				return buf.Bytes()
+			}
+
+			ts := time.Now()
+			// The TSDB underneath is what rejects the invalid histogram.
+			s := teststorage.New(t)
+			appTest := teststorage.NewAppendable().Then(s)
+			sl, _ := newTestScrapeLoop(t, withAppendable(appTest, true), func(sl *scrapeLoop) {
+				sl.synthesizeST = true
+				sl.enableNativeHistogramScraping = true
+				sl.alwaysScrapeClassicHist = false
+				sl.fallbackScrapeProtocol = contentType
+			})
+
+			// First scrape: the second span has a negative offset, so the
+			// histogram is invalid. The append rejects it, and it must not
+			// become the anchor.
+			app := sl.appender()
+			_, _, _, err := app.append(histogramProto(1, 5, 10, []histogram.Span{{Offset: 0, Length: 1}, {Offset: -2, Length: 1}}, 2, 3), contentType, ts)
+			require.ErrorIs(t, err, histogram.ErrHistogramSpanNegativeOffset)
+			require.NoError(t, app.Rollback())
+			require.Empty(t, appTest.ResultSamples())
+
+			// Second scrape: a valid histogram with a lower schema. No sample is
+			// appended, because this scrape anchors the start time, which
+			// shows that the first scrape did not.
+			ts2 := ts.Add(time.Second)
+			app = sl.appender()
+			_, _, _, err = app.append(histogramProto(0, 300, 600, []histogram.Span{{Offset: -1, Length: 3}}, 100, 100, 100), contentType, ts2)
+			require.NoError(t, err)
+			require.NoError(t, app.Commit())
+			require.Empty(t, appTest.ResultSamples())
+
+			// Third scrape: adjusted against the second scrape.
+			ts3 := ts2.Add(time.Second)
+			app = sl.appender()
+			_, _, _, err = app.append(histogramProto(0, 600, 1200, []histogram.Span{{Offset: -1, Length: 3}}, 200, 200, 200), contentType, ts3)
+			require.NoError(t, err)
+			require.NoError(t, app.Commit())
+
+			got := appTest.ResultSamples()
+			require.Len(t, got, 1)
+			requireSampleHist(t, got[0], "test_hist", "{count:300, sum:600, (0.25,0.5]:100, (0.5,1]:100, (1,2]:100}", timestamp.FromTime(ts3), timestamp.FromTime(ts2), false)
+		})
+	}
 }
 
 // BenchmarkScrapeLoopAppend benchmarks scrape appends for typical cases.

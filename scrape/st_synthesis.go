@@ -85,6 +85,15 @@ func (c *stCache) synthesizeHistogram(h *histogram.Histogram, t int64) (*histogr
 		c.h = &histogramSynthesis{}
 	}
 	n := c.h
+
+	if err := h.Validate(); err != nil {
+		// An invalid histogram must not become the anchor or the previous
+		// sample, as later samples are compared with and subtracted from them.
+		// Return it unchanged, so that it is handled as it would be without
+		// start timestamp synthesis, and rejected when it is appended.
+		return h, c.st, false
+	}
+
 	currFloat := h.ToFloat(nil)
 
 	if c.st == 0 {
@@ -176,6 +185,14 @@ func (c *stCache) synthesizeFloatHistogram(fh *histogram.FloatHistogram, t int64
 		c.h = &histogramSynthesis{}
 	}
 	n := c.h
+
+	if err := fh.Validate(); err != nil {
+		// An invalid histogram must not become the anchor or the previous
+		// sample, as later samples are compared with and subtracted from them.
+		// Return it unchanged, so that it is handled as it would be without
+		// start timestamp synthesis, and rejected when it is appended.
+		return fh, c.st, false
+	}
 
 	if c.st == 0 {
 		// First sample.
