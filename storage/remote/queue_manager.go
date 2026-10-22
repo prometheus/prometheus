@@ -104,8 +104,8 @@ type queueManagerMetrics struct {
 	metadataBytesTotal     prometheus.Counter
 	maxSamplesPerSend      prometheus.Gauge
 
-	samplesWithMetadataTotal    *prometheus.CounterVec
-	histogramsWithMetadataTotal *prometheus.CounterVec
+	samplesMetadataTotal    *prometheus.CounterVec
+	histogramsMetadataTotal *prometheus.CounterVec
 }
 
 func newQueueManagerMetrics(r prometheus.Registerer, rn, e string) *queueManagerMetrics {
@@ -124,7 +124,7 @@ func newQueueManagerMetrics(r prometheus.Registerer, rn, e string) *queueManager
 		Help:        "Total number of samples sent to remote storage.",
 		ConstLabels: constLabels,
 	})
-	m.samplesWithMetadataTotal = prometheus.NewCounterVec(prometheus.CounterOpts{
+	m.samplesMetadataTotal = prometheus.NewCounterVec(prometheus.CounterOpts{
 		Namespace:   namespace,
 		Subsystem:   subsystem,
 		Name:        "samples_metadata_total",
@@ -145,7 +145,7 @@ func newQueueManagerMetrics(r prometheus.Registerer, rn, e string) *queueManager
 		Help:        "Total number of histograms sent to remote storage.",
 		ConstLabels: constLabels,
 	})
-	m.histogramsWithMetadataTotal = prometheus.NewCounterVec(prometheus.CounterOpts{
+	m.histogramsMetadataTotal = prometheus.NewCounterVec(prometheus.CounterOpts{
 		Namespace:   namespace,
 		Subsystem:   subsystem,
 		Name:        "histograms_metadata_total",
@@ -153,8 +153,8 @@ func newQueueManagerMetrics(r prometheus.Registerer, rn, e string) *queueManager
 		ConstLabels: constLabels,
 	}, []string{"metadata"})
 	for _, metadata := range metadataFieldNames {
-		m.samplesWithMetadataTotal.WithLabelValues(metadata)
-		m.histogramsWithMetadataTotal.WithLabelValues(metadata)
+		m.samplesMetadataTotal.WithLabelValues(metadata)
+		m.histogramsMetadataTotal.WithLabelValues(metadata)
 	}
 	m.metadataTotal = prometheus.NewCounter(prometheus.CounterOpts{
 		Namespace:   namespace,
@@ -396,8 +396,8 @@ func (m *queueManagerMetrics) register(protoMsg remoteapi.WriteMessageType) {
 			)
 		} else {
 			m.reg.MustRegister(
-				m.samplesWithMetadataTotal,
-				m.histogramsWithMetadataTotal,
+				m.samplesMetadataTotal,
+				m.histogramsMetadataTotal,
 			)
 		}
 	}
@@ -437,8 +437,8 @@ func (m *queueManagerMetrics) unregister(protoMsg remoteapi.WriteMessageType) {
 			m.reg.Unregister(m.retriedMetadataTotal)
 			m.reg.Unregister(m.metadataBytesTotal)
 		} else {
-			m.reg.Unregister(m.samplesWithMetadataTotal)
-			m.reg.Unregister(m.histogramsWithMetadataTotal)
+			m.reg.Unregister(m.samplesMetadataTotal)
+			m.reg.Unregister(m.histogramsMetadataTotal)
 		}
 	}
 }
@@ -2679,8 +2679,8 @@ func (b *batchMetricsUpdater) recordBatchAttempt(sc sendBatchContext) {
 
 func (b *batchMetricsUpdater) recordV2WithMetadataAttempt(counts v2WithMetadataCounts) {
 	for i, metadata := range metadataFieldNames {
-		b.metrics.samplesWithMetadataTotal.WithLabelValues(metadata).Add(float64(counts.samples[i]))
-		b.metrics.histogramsWithMetadataTotal.WithLabelValues(metadata).Add(float64(counts.histograms[i]))
+		b.metrics.samplesMetadataTotal.WithLabelValues(metadata).Add(float64(counts.samples[i]))
+		b.metrics.histogramsMetadataTotal.WithLabelValues(metadata).Add(float64(counts.histograms[i]))
 	}
 }
 

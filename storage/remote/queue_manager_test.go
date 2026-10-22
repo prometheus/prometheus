@@ -204,8 +204,8 @@ func TestBasicContentNegotiation(t *testing.T) {
 			require.Equal(t, float64(attempts-1), client_testutil.ToFloat64(qm.metrics.retriedSamplesTotal))
 			if tc.senderProtoMsg == remoteapi.WriteV2MessageType {
 				for _, metadata := range metadataFieldNames {
-					require.Equal(t, float64(attempts), client_testutil.ToFloat64(qm.metrics.samplesWithMetadataTotal.WithLabelValues(metadata)), metadata)
-					require.Equal(t, 0.0, client_testutil.ToFloat64(qm.metrics.histogramsWithMetadataTotal.WithLabelValues(metadata)), metadata)
+					require.Equal(t, float64(attempts), client_testutil.ToFloat64(qm.metrics.samplesMetadataTotal.WithLabelValues(metadata)), metadata)
+					require.Equal(t, 0.0, client_testutil.ToFloat64(qm.metrics.histogramsMetadataTotal.WithLabelValues(metadata)), metadata)
 				}
 			}
 		})
@@ -308,8 +308,8 @@ func TestSampleDelivery(t *testing.T) {
 				require.Equal(t, float64(len(histograms)+len(floatHistograms)), client_testutil.ToFloat64(qm.metrics.histogramsTotal))
 				if protoMsg == remoteapi.WriteV2MessageType {
 					for _, metadata := range metadataFieldNames {
-						require.Equal(t, float64(len(samples)), client_testutil.ToFloat64(qm.metrics.samplesWithMetadataTotal.WithLabelValues(metadata)), metadata)
-						require.Equal(t, float64(len(histograms)+len(floatHistograms)), client_testutil.ToFloat64(qm.metrics.histogramsWithMetadataTotal.WithLabelValues(metadata)), metadata)
+						require.Equal(t, float64(len(samples)), client_testutil.ToFloat64(qm.metrics.samplesMetadataTotal.WithLabelValues(metadata)), metadata)
+						require.Equal(t, float64(len(histograms)+len(floatHistograms)), client_testutil.ToFloat64(qm.metrics.histogramsMetadataTotal.WithLabelValues(metadata)), metadata)
 					}
 				}
 				var durationMetric dto.Metric
@@ -2136,8 +2136,8 @@ func TestV2DataWithMetadataMetrics(t *testing.T) {
 			updater.recordV2WithMetadataAttempt(countV2DataWithMetadata(tc.timeSeries))
 
 			for i, metadata := range metadataFieldNames {
-				require.Equal(t, tc.expectedSamples[i], client_testutil.ToFloat64(metrics.samplesWithMetadataTotal.WithLabelValues(metadata)), metadata)
-				require.Equal(t, tc.expectedHistograms[i], client_testutil.ToFloat64(metrics.histogramsWithMetadataTotal.WithLabelValues(metadata)), metadata)
+				require.Equal(t, tc.expectedSamples[i], client_testutil.ToFloat64(metrics.samplesMetadataTotal.WithLabelValues(metadata)), metadata)
+				require.Equal(t, tc.expectedHistograms[i], client_testutil.ToFloat64(metrics.histogramsMetadataTotal.WithLabelValues(metadata)), metadata)
 			}
 		})
 	}
