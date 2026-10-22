@@ -26,6 +26,7 @@ import (
 
 	"github.com/gogo/protobuf/proto"
 	"github.com/golang/snappy"
+	"github.com/prometheus/client_golang/prometheus"
 	config_util "github.com/prometheus/common/config"
 	"github.com/prometheus/common/model"
 	"github.com/stretchr/testify/require"
@@ -358,6 +359,8 @@ func TestReadClient(t *testing.T) {
 
 			u, err := url.Parse(server.URL)
 			require.NoError(t, err)
+			// The password must not leak into errors or metric labels.
+			u.User = url.UserPassword("user", "secret-password")
 
 			if test.timeout == 0 {
 				test.timeout = 5 * time.Second
@@ -377,8 +380,20 @@ func TestReadClient(t *testing.T) {
 			}
 
 			ss, err := c.Read(context.Background(), query, test.sortSeries)
+
+			mfs, gatherErr := prometheus.DefaultGatherer.Gather()
+			require.NoError(t, gatherErr)
+			for _, mf := range mfs {
+				for _, m := range mf.GetMetric() {
+					for _, lp := range m.GetLabel() {
+						require.NotContains(t, lp.GetValue(), "secret-password")
+					}
+				}
+			}
+
 			if test.expectedErrorContains != "" {
 				require.ErrorContains(t, err, test.expectedErrorContains)
+				require.NotContains(t, err.Error(), "secret-password")
 				if test.unwrap {
 					err = errors.Unwrap(err)
 					require.EqualError(t, err, test.expectedErrorContains)
