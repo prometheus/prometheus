@@ -3475,6 +3475,7 @@ func TestMetadataInWAL_AppenderV2(t *testing.T) {
 			samples      []sample
 			appendOpts   []storage.AOptions // One per sample.
 			wantMetadata []metadata.Metadata
+			wantNative   []NativeMetricMetadataVersion // Native metadata skips stale samples too.
 		}{
 			{
 				name:       "stale float",
@@ -3496,17 +3497,20 @@ func TestMetadataInWAL_AppenderV2(t *testing.T) {
 				samples:      []sample{{h: tsdbutil.GenerateTestHistogram(1)}, {f: staleNaN}},
 				appendOpts:   []storage.AOptions{{Metadata: m1}, {Metadata: m2, Exemplars: exemplarsAt(1)}},
 				wantMetadata: []metadata.Metadata{m1},
+				wantNative:   []NativeMetricMetadataVersion{{EffectiveFrom: 0, Metadata: m1}},
 			},
 			{
 				name:         "stale float after float histogram",
 				samples:      []sample{{fh: tsdbutil.GenerateTestFloatHistogram(1)}, {f: staleNaN}},
 				appendOpts:   []storage.AOptions{{Metadata: m1}, {Metadata: m2, Exemplars: exemplarsAt(1)}},
 				wantMetadata: []metadata.Metadata{m1},
+				wantNative:   []NativeMetricMetadataVersion{{EffectiveFrom: 0, Metadata: m1}},
 			},
 		} {
 			t.Run(tc.name, func(t *testing.T) {
 				opts := DefaultOptions()
 				opts.EnableMetadataWALRecords = true
+				opts.EnableNativeMetadata = true
 				opts.EnableExemplarStorage = true
 				opts.MaxExemplars = 10
 				db := newTestDB(t, withOpts(opts))
@@ -3533,6 +3537,8 @@ func TestMetadataInWAL_AppenderV2(t *testing.T) {
 				}
 				require.Equal(t, wantMetadata, gotMetadata)
 				require.Empty(t, gotExemplars)
+				gotNative, _, _ := db.head.nativeMetricMetadata.get(1)
+				require.Equal(t, tc.wantNative, gotNative)
 			})
 		}
 	})
@@ -3654,6 +3660,7 @@ func TestMetadataCheckpointingOnlyKeepsLatestEntry_AppendV2(t *testing.T) {
 func TestMetadataAssertInMemoryData_AppendV2(t *testing.T) {
 	opts := DefaultOptions()
 	opts.EnableMetadataWALRecords = true
+	opts.EnableNativeMetadata = true
 	db := newTestDB(t, withOpts(opts))
 	ctx := context.Background()
 
@@ -3662,6 +3669,7 @@ func TestMetadataAssertInMemoryData_AppendV2(t *testing.T) {
 	s2 := labels.FromStrings("c", "d")
 	s3 := labels.FromStrings("e", "f")
 	s4 := labels.FromStrings("g", "h")
+	s5 := labels.FromStrings("i", "j") // Never gets metadata.
 
 	// Add a first round of metadata to the first three series.
 	// The in-memory data held in the db Head should hold the metadata.
@@ -3679,16 +3687,18 @@ func TestMetadataAssertInMemoryData_AppendV2(t *testing.T) {
 	require.NoError(t, err)
 	_, err = app.Append(0, s4, 0, ts, 0, nil, nil, storage.AOptions{})
 	require.NoError(t, err)
+	_, err = app.Append(0, s5, 0, ts, 0, nil, nil, storage.AOptions{})
+	require.NoError(t, err)
 	require.NoError(t, app.Commit())
 
 	series1 := db.head.series.getByHash(s1.Hash(), s1)
 	series2 := db.head.series.getByHash(s2.Hash(), s2)
 	series3 := db.head.series.getByHash(s3.Hash(), s3)
 	series4 := db.head.series.getByHash(s4.Hash(), s4)
-	require.Equal(t, series1.meta.Value(), m1)
-	require.Equal(t, series2.meta.Value(), m2)
-	require.Equal(t, series3.meta.Value(), m3)
-	require.True(t, metadata.IsZeroHandle(series4.meta))
+	require.Equal(t, *legacyMetadataForTest(series1), m1)
+	require.Equal(t, *legacyMetadataForTest(series2), m2)
+	require.Equal(t, *legacyMetadataForTest(series3), m3)
+	require.Nil(t, legacyMetadataForTest(series4))
 
 	// Add a replicated metadata entry to the first series,
 	// a changed metadata entry to the second series,
@@ -3710,16 +3720,16 @@ func TestMetadataAssertInMemoryData_AppendV2(t *testing.T) {
 	series2 = db.head.series.getByHash(s2.Hash(), s2)
 	series3 = db.head.series.getByHash(s3.Hash(), s3)
 	series4 = db.head.series.getByHash(s4.Hash(), s4)
-	require.Equal(t, series1.meta.Value(), m1)
-	require.Equal(t, series2.meta.Value(), m5)
-	require.Equal(t, series3.meta.Value(), m3)
-	require.Equal(t, series4.meta.Value(), m4)
+	require.Equal(t, *legacyMetadataForTest(series1), m1)
+	require.Equal(t, *legacyMetadataForTest(series2), m5)
+	require.Equal(t, *legacyMetadataForTest(series3), m3)
+	require.Equal(t, *legacyMetadataForTest(series4), m4)
 
 	require.NoError(t, db.Close())
 
 	// Reopen the DB, replaying the WAL. The Head must have been replayed
 	// correctly in memory.
-	reopenDB, err := Open(db.Dir(), nil, nil, nil, nil)
+	reopenDB, err := Open(db.Dir(), nil, nil, opts, nil)
 	require.NoError(t, err)
 	t.Cleanup(func() {
 		require.NoError(t, reopenDB.Close())
@@ -3728,10 +3738,17 @@ func TestMetadataAssertInMemoryData_AppendV2(t *testing.T) {
 	_, err = reopenDB.head.wal.Size()
 	require.NoError(t, err)
 
-	require.Equal(t, reopenDB.head.series.getByHash(s1.Hash(), s1).meta.Value(), m1)
-	require.Equal(t, reopenDB.head.series.getByHash(s2.Hash(), s2).meta.Value(), m5)
-	require.Equal(t, reopenDB.head.series.getByHash(s3.Hash(), s3).meta.Value(), m3)
-	require.Equal(t, reopenDB.head.series.getByHash(s4.Hash(), s4).meta.Value(), m4)
+	require.Equal(t, *legacyMetadataForTest(reopenDB.head.series.getByHash(s1.Hash(), s1)), m1)
+	require.Equal(t, *legacyMetadataForTest(reopenDB.head.series.getByHash(s2.Hash(), s2)), m5)
+	require.Equal(t, *legacyMetadataForTest(reopenDB.head.series.getByHash(s3.Hash(), s3)), m3)
+	require.Equal(t, *legacyMetadataForTest(reopenDB.head.series.getByHash(s4.Hash(), s4)), m4)
+
+	// Native metadata isn't persisted, so replay restores only the legacy state.
+	require.Zero(t, reopenDB.head.nativeMetricMetadata.series.Load())
+	for _, s := range []labels.Labels{s1, s2, s3, s4} {
+		require.Nil(t, nativeMetadataForTest(reopenDB.head.series.getByHash(s.Hash(), s)))
+	}
+	require.False(t, hasSidecarForTest(reopenDB.head.series.getByHash(s5.Hash(), s5)))
 }
 
 // TestMultipleEncodingsCommitOrder_AppendV2 mainly serves to demonstrate when happens when committing a batch of samples for the
