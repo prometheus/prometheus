@@ -23,6 +23,7 @@ import (
 	"slices"
 	"sort"
 	"strconv"
+	"strings"
 	"testing"
 
 	"github.com/stretchr/testify/require"
@@ -474,50 +475,153 @@ func TestNewFileReaderErrorNoOpenFiles(t *testing.T) {
 }
 
 func TestSymbols(t *testing.T) {
+	for _, version := range []int{FormatV2, FormatV3} {
+		t.Run(fmt.Sprintf("format=%d", version), func(t *testing.T) {
+			buf := encoding.Encbuf{}
+
+			// Add prefix to the buffer to simulate symbols as part of larger buffer.
+			buf.PutUvarintStr("something")
+
+			symbolsStart := buf.Len()
+			buf.PutBE32int(204) // Length of symbols table.
+			buf.PutBE32int(100) // Number of symbols.
+			for i := range 100 {
+				// i represents index in unicode characters table.
+				buf.PutUvarintStr(string(rune(i))) // Symbol.
+			}
+			checksum := crc32.Checksum(buf.Get()[symbolsStart+4:], castagnoliTable)
+			buf.PutBE32(checksum) // Check sum at the end.
+
+			s, err := NewSymbols(realByteSlice(buf.Get()), version, symbolsStart)
+			require.NoError(t, err)
+			require.Equal(t, 100*2, s.Size())
+
+			for i := 99; i >= 0; i-- {
+				got, err := s.Lookup(uint32(i))
+				require.NoError(t, err)
+				require.Equal(t, string(rune(i)), got)
+			}
+			_, err = s.Lookup(100)
+			require.Error(t, err)
+			_, err = s.Lookup(^uint32(0))
+			require.Error(t, err)
+
+			for i := 99; i >= 0; i-- {
+				r, err := s.ReverseLookup(string(rune(i)))
+				require.NoError(t, err)
+				require.Equal(t, uint32(i), r)
+			}
+			_, err = s.ReverseLookup(string(rune(100)))
+			require.Error(t, err)
+
+			iter := s.Iter()
+			i := 0
+			for iter.Next() {
+				require.Equal(t, string(rune(i)), iter.At())
+				i++
+			}
+			require.NoError(t, iter.Err())
+
+			t.Run("offset above signed 16-bit range", func(t *testing.T) {
+				// The fourth offset has its high bit set in the final lane of its word.
+				symbols := []string{
+					"a",
+					strings.Repeat("b", 20_000),
+					strings.Repeat("c", 20_000),
+					strings.Repeat("d", 5_000),
+					"e",
+				}
+				var symbolData encoding.Encbuf
+				symbolData.PutBE32int(len(symbols))
+				for _, symbol := range symbols {
+					symbolData.PutUvarintStr(symbol)
+				}
+				var symbolFile encoding.Encbuf
+				symbolFile.PutBE32int(symbolData.Len())
+				symbolFile.PutBytes(symbolData.Get())
+				symbolFile.PutBE32(crc32.Checksum(symbolData.Get(), castagnoliTable))
+
+				gotSymbols, err := NewSymbols(realByteSlice(symbolFile.Get()), version, 0)
+				require.NoError(t, err)
+				require.True(t, gotSymbols.direct)
+				require.Greater(t, gotSymbols.directOffset(3), 1<<15)
+				got, err := gotSymbols.Lookup(3)
+				require.NoError(t, err)
+				require.Equal(t, symbols[3], got)
+				offset, err := gotSymbols.ReverseLookup(symbols[3])
+				require.NoError(t, err)
+				require.Equal(t, uint32(3), offset)
+			})
+		})
+	}
+}
+
+func TestSymbolsLargeTable(t *testing.T) {
+	const count = 1000
 	buf := encoding.Encbuf{}
-
-	// Add prefix to the buffer to simulate symbols as part of larger buffer.
-	buf.PutUvarintStr("something")
-
+	buf.PutUvarintStr("prefix")
 	symbolsStart := buf.Len()
-	buf.PutBE32int(204) // Length of symbols table.
-	buf.PutBE32int(100) // Number of symbols.
-	for i := range 100 {
-		// i represents index in unicode characters table.
-		buf.PutUvarintStr(string(rune(i))) // Symbol.
-	}
-	checksum := crc32.Checksum(buf.Get()[symbolsStart+4:], castagnoliTable)
-	buf.PutBE32(checksum) // Check sum at the end.
 
-	s, err := NewSymbols(realByteSlice(buf.Get()), FormatV2, symbolsStart)
+	content := encoding.Encbuf{}
+	content.PutBE32int(count)
+	for i := range count {
+		content.PutUvarintStr(fmt.Sprintf("%05d-%0100d", i, i))
+	}
+	buf.PutBE32int(content.Len())
+	buf.PutBytes(content.Get())
+	buf.PutBE32(crc32.Checksum(content.Get(), castagnoliTable))
+
+	s, err := NewSymbols(realByteSlice(buf.Get()), FormatV3, symbolsStart)
 	require.NoError(t, err)
-
-	// We store only 4 offsets to symbols.
-	require.Equal(t, 32, s.Size())
-
-	for i := 99; i >= 0; i-- {
-		s, err := s.Lookup(uint32(i))
+	require.Equal(t, (count+symbolFactor-1)/symbolFactor*8, s.Size())
+	for _, i := range []int{0, 31, 32, count - 1} {
+		want := fmt.Sprintf("%05d-%0100d", i, i)
+		got, err := s.Lookup(uint32(i))
 		require.NoError(t, err)
-		require.Equal(t, string(rune(i)), s)
-	}
-	_, err = s.Lookup(100)
-	require.Error(t, err)
-
-	for i := 99; i >= 0; i-- {
-		r, err := s.ReverseLookup(string(rune(i)))
+		require.Equal(t, want, got)
+		o, err := s.ReverseLookup(want)
 		require.NoError(t, err)
-		require.Equal(t, uint32(i), r)
+		require.Equal(t, uint32(i), o)
 	}
-	_, err = s.ReverseLookup(string(rune(100)))
-	require.Error(t, err)
+}
 
-	iter := s.Iter()
-	i := 0
-	for iter.Next() {
-		require.Equal(t, string(rune(i)), iter.At())
-		i++
-	}
-	require.NoError(t, iter.Err())
+func TestSymbolsInvalidTable(t *testing.T) {
+	t.Run("negative symbol count", func(t *testing.T) {
+		var content encoding.Encbuf
+		content.PutBE32int(-1)
+		var buf encoding.Encbuf
+		buf.PutBE32int(content.Len())
+		buf.PutBytes(content.Get())
+		buf.PutBE32(crc32.Checksum(content.Get(), castagnoliTable))
+
+		_, err := NewSymbols(realByteSlice(buf.Get()), FormatV2, 0)
+		require.ErrorIs(t, err, encoding.ErrInvalidSize)
+	})
+
+	t.Run("symbol count exceeds remaining bytes", func(t *testing.T) {
+		var content encoding.Encbuf
+		content.PutBE32int(100)
+		var buf encoding.Encbuf
+		buf.PutBE32int(content.Len())
+		buf.PutBytes(content.Get())
+		buf.PutBE32(crc32.Checksum(content.Get(), castagnoliTable))
+
+		_, err := NewSymbols(realByteSlice(buf.Get()), FormatV2, 0)
+		require.ErrorIs(t, err, encoding.ErrInvalidSize)
+	})
+
+	t.Run("truncated symbol record", func(t *testing.T) {
+		var content encoding.Encbuf
+		content.PutBE32int(1)
+		content.PutByte(1) // Length of the symbol, without the symbol bytes.
+		var buf encoding.Encbuf
+		buf.PutBE32int(content.Len())
+		buf.PutBytes(content.Get())
+		buf.PutBE32(crc32.Checksum(content.Get(), castagnoliTable))
+
+		_, err := NewSymbols(realByteSlice(buf.Get()), FormatV3, 0)
+		require.ErrorIs(t, err, encoding.ErrInvalidSize)
+	})
 }
 
 func BenchmarkReader_ShardedPostings(b *testing.B) {
