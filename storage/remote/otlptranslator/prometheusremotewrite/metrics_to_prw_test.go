@@ -20,15 +20,19 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"math"
+	"slices"
 	"testing"
 	"time"
 
+	"github.com/google/uuid"
 	"github.com/prometheus/common/model"
 	"github.com/prometheus/otlptranslator"
 	"github.com/stretchr/testify/require"
 	"go.opentelemetry.io/collector/pdata/pcommon"
 	"go.opentelemetry.io/collector/pdata/pmetric"
 	"go.opentelemetry.io/collector/pdata/pmetric/pmetricotlp"
+	"go.opentelemetry.io/collector/pdata/xpdata/entity"
 
 	"github.com/prometheus/prometheus/config"
 	"github.com/prometheus/prometheus/model/histogram"
@@ -950,6 +954,430 @@ func TestFromMetrics(t *testing.T) {
 		}
 		require.NotEmpty(t, metricSamples, "expected metric samples")
 		require.Equal(t, "promoted-value", metricSamples[0].L.Get("custom_promoted_attr"), "metric should have promoted resource attribute")
+	})
+
+	t.Run("entity-aware instance synthesis", func(t *testing.T) {
+		type entityRef struct {
+			typ       string
+			schemaURL string
+			idKeys    []string
+			descKeys  []string
+		}
+		// resource describes an OTLP Resource, with attrs alternating keys and
+		// raw values.
+		type resource struct {
+			attrs []any
+			refs  []entityRef
+		}
+		ts := pcommon.NewTimestampFromTime(time.Now())
+		// addResource appends a ResourceMetrics for r with one test_gauge sample.
+		addResource := func(t *testing.T, md pmetric.Metrics, r resource) {
+			rm := md.ResourceMetrics().AppendEmpty()
+			attrs := rm.Resource().Attributes()
+			for i := 0; i < len(r.attrs); i += 2 {
+				require.NoError(t, attrs.PutEmpty(r.attrs[i].(string)).FromRaw(r.attrs[i+1]))
+			}
+			refs := entity.ResourceEntityRefs(rm.Resource())
+			for _, ref := range r.refs {
+				er := refs.AppendEmpty()
+				er.SetType(ref.typ)
+				er.SetSchemaUrl(ref.schemaURL)
+				er.IdKeys().FromRaw(ref.idKeys)
+				er.DescriptionKeys().FromRaw(ref.descKeys)
+			}
+			m := rm.ScopeMetrics().AppendEmpty().Metrics().AppendEmpty()
+			m.SetName("test_gauge")
+			dp := m.SetEmptyGauge().DataPoints().AppendEmpty()
+			dp.SetTimestamp(ts)
+			dp.SetDoubleValue(1)
+		}
+		convert := func(t *testing.T, md pmetric.Metrics, settings Settings) ([]sample, annotations.Annotations) {
+			appTest := teststorage.NewAppendable()
+			app := appTest.AppenderV2(t.Context())
+			annots, err := NewPrometheusConverter(app).FromMetrics(t.Context(), md, settings)
+			require.NoError(t, err)
+			require.NoError(t, app.Commit())
+			return appTest.ResultSamples(), annots
+		}
+		// gaugeInstances returns the instance labels of the test_gauge samples.
+		gaugeInstances := func(samples []sample) []string {
+			var instances []string
+			for _, s := range samples {
+				if s.MF == "test_gauge" {
+					instances = append(instances, s.L.Get(model.InstanceLabel))
+				}
+			}
+			return instances
+		}
+		// with returns a copy of r with attribute key set to value.
+		with := func(r resource, key string, value any) resource {
+			attrs := slices.Clone(r.attrs)
+			for i := 0; i < len(attrs); i += 2 {
+				if attrs[i] == key {
+					attrs[i+1] = value
+					return resource{attrs: attrs, refs: r.refs}
+				}
+			}
+			return resource{attrs: append(attrs, key, value), refs: r.refs}
+		}
+		gauge := func(ls ...string) sample {
+			return sample{
+				MF: "test_gauge",
+				M:  metadata.Metadata{Type: model.MetricTypeGauge},
+				L:  labels.FromStrings(append([]string{model.MetricNameLabel, "test_gauge"}, ls...)...),
+				T:  ts.AsTime().UnixMilli(),
+				V:  1,
+			}
+		}
+		targetInfo := func(ls ...string) sample {
+			return sample{
+				MF: "target_info",
+				M:  metadata.Metadata{Type: model.MetricTypeGauge, Help: "Target metadata"},
+				L:  labels.FromStrings(append([]string{model.MetricNameLabel, "target_info"}, ls...)...),
+				T:  ts.AsTime().UnixMilli(),
+				V:  1,
+			}
+		}
+
+		serviceRef := entityRef{typ: "service", idKeys: []string{"service.name", "service.namespace", "service.instance.id"}}
+		hostRef := entityRef{typ: "host", idKeys: []string{"host.id"}, descKeys: []string{"host.name"}}
+		base := resource{
+			attrs: []any{
+				"service.name", "checkout",
+				"service.namespace", "shop",
+				"service.instance.id", "id-1",
+				"host.id", "h-1",
+				"host.name", "node-1",
+				"telemetry.sdk.version", "1.2.3",
+			},
+			refs: []entityRef{serviceRef, hostRef},
+		}
+		// goldenInstance is the instance of base, which is the test vector in
+		// the OTLP Entities section of docs/feature_flags.md. It pins the
+		// identity encoding.
+		const goldenInstance = "d34e7886-9da9-5635-9f3c-8c52a8e25538"
+		serviceOnly := resource{
+			attrs: []any{"service.name", "checkout", "service.instance.id", "id-1"},
+			refs:  []entityRef{{typ: "service", idKeys: []string{"service.name", "service.instance.id"}}},
+		}
+		const (
+			serviceOnlyInstance = "c074ff5e-4c36-5bda-8f66-fe4fc47721e1"
+			// resourceJobInstance is the instance of serviceOnly with a job attribute.
+			resourceJobInstance = "2de63cff-5948-5ef0-8590-57dee8230272"
+		)
+
+		t.Run("labels", func(t *testing.T) {
+			for _, tc := range []struct {
+				name       string
+				settings   Settings
+				resource   resource
+				pointAttrs map[string]any
+				want       []sample
+			}{
+				{
+					name:     "entity references are ignored when disabled",
+					resource: base,
+					want: []sample{
+						gauge("job", "shop/checkout", "instance", "id-1"),
+						targetInfo("job", "shop/checkout", "instance", "id-1", "host_id", "h-1", "host_name", "node-1", "telemetry_sdk_version", "1.2.3"),
+					},
+				},
+				{
+					name:     "service.instance.id is the instance without entity references",
+					settings: Settings{EnableEntities: true},
+					resource: resource{attrs: base.attrs},
+					want: []sample{
+						gauge("job", "shop/checkout", "instance", "id-1"),
+						targetInfo("job", "shop/checkout", "instance", "id-1", "host_id", "h-1", "host_name", "node-1", "telemetry_sdk_version", "1.2.3"),
+					},
+				},
+				{
+					name:     "instance is synthesized from entity references, with an empty job",
+					settings: Settings{EnableEntities: true},
+					resource: base,
+					want: []sample{
+						gauge("instance", goldenInstance),
+						targetInfo("instance", goldenInstance, "host_id", "h-1", "host_name", "node-1", "service_instance_id", "id-1", "service_name", "checkout", "service_namespace", "shop", "telemetry_sdk_version", "1.2.3"),
+					},
+				},
+				{
+					name:     "target_info carries the service attributes of a synthesized instance",
+					settings: Settings{EnableEntities: true},
+					resource: serviceOnly,
+					want: []sample{
+						gauge("instance", serviceOnlyInstance),
+						targetInfo("instance", serviceOnlyInstance, "service_instance_id", "id-1", "service_name", "checkout"),
+					},
+				},
+				{
+					name:       "data point attributes don't override the synthesized identity labels",
+					settings:   Settings{EnableEntities: true},
+					resource:   serviceOnly,
+					pointAttrs: map[string]any{"job": "point-job", "instance": "point-instance"},
+					want: []sample{
+						gauge("instance", serviceOnlyInstance),
+						targetInfo("instance", serviceOnlyInstance, "service_instance_id", "id-1", "service_name", "checkout"),
+					},
+				},
+				{
+					name: "resource attributes don't set job alongside a synthesized instance",
+					settings: Settings{
+						EnableEntities: true,
+						PromoteResourceAttributes: NewPromoteResourceAttributes(config.OTLPConfig{
+							PromoteResourceAttributes: []string{"job"},
+						}),
+					},
+					resource: with(serviceOnly, "job", "resource-job"),
+					want: []sample{
+						gauge("instance", resourceJobInstance),
+						targetInfo("instance", resourceJobInstance, "service_instance_id", "id-1", "service_name", "checkout"),
+					},
+				},
+				{
+					name:     "target_info is skipped for service attributes without entity references",
+					settings: Settings{EnableEntities: true},
+					resource: resource{attrs: serviceOnly.attrs},
+					want: []sample{
+						gauge("job", "checkout", "instance", "id-1"),
+					},
+				},
+			} {
+				t.Run(tc.name, func(t *testing.T) {
+					md := pmetric.NewMetrics()
+					addResource(t, md, tc.resource)
+					dp := md.ResourceMetrics().At(0).ScopeMetrics().At(0).Metrics().At(0).Gauge().DataPoints().At(0)
+					require.NoError(t, dp.Attributes().FromRaw(tc.pointAttrs))
+					got, annots := convert(t, md, tc.settings)
+					require.Empty(t, annots)
+					teststorage.RequireEqual(t, tc.want, got)
+				})
+			}
+		})
+
+		t.Run("identity", func(t *testing.T) {
+			// instance returns the synthesized instance of r. Target info is
+			// disabled, since its labels can differ for equal identities.
+			instance := func(t *testing.T, md pmetric.Metrics) string {
+				samples, _ := convert(t, md, Settings{EnableEntities: true, DisableTargetInfo: true})
+				instances := gaugeInstances(samples)
+				require.Len(t, instances, 1)
+				_, err := uuid.Parse(instances[0])
+				require.NoError(t, err)
+				return instances[0]
+			}
+			// keyIDAndDescription lists host.name in description_keys of the host
+			// entity and in id_keys of another entity.
+			keyIDAndDescription := resource{attrs: base.attrs, refs: []entityRef{
+				serviceRef, hostRef, {typ: "node", idKeys: []string{"host.name"}},
+			}}
+			for _, tc := range []struct {
+				name string
+				a, b resource
+				same bool
+			}{
+				{name: "description change", a: base, b: with(base, "host.name", "node-2"), same: true},
+				{name: "entity id change", a: base, b: with(base, "host.id", "h-2")},
+				{name: "raw attribute change", a: base, b: with(base, "telemetry.sdk.version", "1.2.4")},
+				{
+					name: "entity grouping",
+					a:    base,
+					b: resource{attrs: base.attrs, refs: []entityRef{
+						{typ: "service", idKeys: []string{"service.name", "service.namespace"}},
+						{typ: "service.instance", idKeys: []string{"service.instance.id"}},
+						hostRef,
+					}},
+					same: true,
+				},
+				{
+					name: "entity type",
+					a:    base,
+					b: resource{attrs: base.attrs, refs: []entityRef{
+						serviceRef, {typ: "node", idKeys: hostRef.idKeys, descKeys: hostRef.descKeys},
+					}},
+					same: true,
+				},
+				{
+					name: "identifying and unreferenced attributes",
+					a:    resource{attrs: base.attrs, refs: []entityRef{serviceRef, {typ: "host", idKeys: hostRef.idKeys}}},
+					b:    resource{attrs: base.attrs, refs: []entityRef{serviceRef}},
+					same: true,
+				},
+				{
+					name: "attribute, reference and key order",
+					a:    base,
+					b: resource{
+						attrs: []any{
+							"telemetry.sdk.version", "1.2.3",
+							"host.name", "node-1",
+							"host.id", "h-1",
+							"service.instance.id", "id-1",
+							"service.namespace", "shop",
+							"service.name", "checkout",
+						},
+						refs: []entityRef{
+							hostRef,
+							{typ: "service", idKeys: []string{"service.instance.id", "service.namespace", "service.name"}},
+						},
+					},
+					same: true,
+				},
+				{
+					name: "schema URL",
+					a:    base,
+					b: resource{attrs: base.attrs, refs: []entityRef{
+						serviceRef,
+						{typ: "host", schemaURL: "https://opentelemetry.io/schemas/1.40.0", idKeys: hostRef.idKeys, descKeys: hostRef.descKeys},
+					}},
+					same: true,
+				},
+				{
+					name: "duplicate entity reference",
+					a:    base,
+					b:    resource{attrs: base.attrs, refs: []entityRef{serviceRef, hostRef, hostRef}},
+					same: true,
+				},
+				{
+					name: "duplicate id key",
+					a:    base,
+					b: resource{attrs: base.attrs, refs: []entityRef{
+						serviceRef, {typ: "host", idKeys: []string{"host.id", "host.id"}, descKeys: hostRef.descKeys},
+					}},
+					same: true,
+				},
+				{
+					name: "key in id_keys and description_keys",
+					a:    keyIDAndDescription,
+					b:    with(keyIDAndDescription, "host.name", "node-2"),
+				},
+				{name: "int and string values", a: with(base, "process.pid", 1), b: with(base, "process.pid", "1")},
+				{name: "bytes and string values", a: with(base, "x.bytes", []byte("a")), b: with(base, "x.bytes", "a")},
+				{name: "array order", a: with(base, "x.array", []any{"a", "b"}), b: with(base, "x.array", []any{"b", "a"})},
+				{name: "negative zero", a: with(base, "x.ratio", math.Copysign(0, -1)), b: with(base, "x.ratio", 0.0), same: true},
+				{name: "NaN payload", a: with(base, "x.ratio", math.NaN()), b: with(base, "x.ratio", math.Float64frombits(0x7FF8000000000002)), same: true},
+			} {
+				t.Run(tc.name, func(t *testing.T) {
+					a, b := pmetric.NewMetrics(), pmetric.NewMetrics()
+					addResource(t, a, tc.a)
+					addResource(t, b, tc.b)
+					if tc.same {
+						require.Equal(t, instance(t, a), instance(t, b))
+					} else {
+						require.NotEqual(t, instance(t, a), instance(t, b))
+					}
+				})
+			}
+
+			t.Run("duplicate attribute keys", func(t *testing.T) {
+				// Map.Put* overwrites existing keys, so build the Resources from
+				// JSON. The first of duplicate keys wins.
+				fromJSON := func(t *testing.T, attrs string) pmetric.Metrics {
+					md, err := (&pmetric.JSONUnmarshaler{}).UnmarshalMetrics([]byte(`{"resourceMetrics":[{` +
+						`"resource":{"attributes":[` + attrs + `],"entityRefs":[{"type":"host","idKeys":["host.id"]}]},` +
+						`"scopeMetrics":[{"metrics":[{"name":"test_gauge","gauge":{"dataPoints":[{"timeUnixNano":"1000000","asDouble":1}]}}]}]}]}`))
+					require.NoError(t, err)
+					return md
+				}
+				unique := `{"key":"host.id","value":{"stringValue":"h-1"}},{"key":"os.type","value":{"stringValue":"linux"}}`
+				duplicated := unique + `,{"key":"os.type","value":{"stringValue":"windows"}},{"key":"host.id","value":{"stringValue":"h-2"}}`
+				require.Equal(t, instance(t, fromJSON(t, unique)), instance(t, fromJSON(t, duplicated)))
+			})
+
+			t.Run("every value type", func(t *testing.T) {
+				// Pins the encoding of each value type, which the golden instance,
+				// having only string values, doesn't cover.
+				array := []any{"a", "a", int64(1)}
+				kvlist := map[string]any{"k": false}
+				raw := []byte{0, 1}
+				md := pmetric.NewMetrics()
+				addResource(t, md, resource{
+					attrs: []any{
+						"host.id", "h-1",
+						"x.bool", true,
+						"x.int", int64(-2),
+						"x.double", math.Copysign(0, -1),
+						"x.nan", math.NaN(),
+						"x.array", array,
+						"x.kvlist", kvlist,
+						"x.bytes", raw,
+						"x.empty", nil,
+					},
+					refs: []entityRef{{typ: "host", idKeys: []string{"host.id"}}},
+				})
+				require.Equal(t, "d268647e-cc6f-5e45-b479-c6e9d034c271", instance(t, md))
+			})
+		})
+
+		t.Run("invalid entity references", func(t *testing.T) {
+			for _, tc := range []struct {
+				name string
+				refs []entityRef
+				// wantWarning is formatted with the index of the Resource.
+				wantWarning string
+				dropped     bool
+			}{
+				{
+					name:        "empty type",
+					refs:        []entityRef{serviceRef, {idKeys: []string{"host.id"}}},
+					wantWarning: `dropping resource %d: entity reference 1 (type ""): empty type`,
+					dropped:     true,
+				},
+				{
+					name:        "no id_keys",
+					refs:        []entityRef{serviceRef, {typ: "host"}},
+					wantWarning: `dropping resource %d: entity reference 1 (type "host"): no id_keys`,
+					dropped:     true,
+				},
+				{
+					name:        "missing id key",
+					refs:        []entityRef{serviceRef, {typ: "host", idKeys: []string{"host.id", "host.arch"}}},
+					wantWarning: `dropping resource %d: entity reference 1 (type "host"): id_keys key "host.arch" missing from resource attributes`,
+					dropped:     true,
+				},
+				{
+					name: "missing id key after missing description key",
+					refs: []entityRef{
+						{typ: "service", idKeys: serviceRef.idKeys, descKeys: []string{"service.version"}},
+						{typ: "host", idKeys: []string{"host.arch"}},
+					},
+					wantWarning: `dropping resource %d: entity reference 1 (type "host"): id_keys key "host.arch" missing from resource attributes`,
+					dropped:     true,
+				},
+				{
+					name:        "missing description key",
+					refs:        []entityRef{serviceRef, {typ: "host", idKeys: hostRef.idKeys, descKeys: []string{"host.name", "host.arch"}}},
+					wantWarning: `resource %d: entity reference 1 (type "host"): description_keys key "host.arch" missing from resource attributes; ignoring the key`,
+				},
+			} {
+				t.Run(tc.name, func(t *testing.T) {
+					// A valid Resource, followed by two with invalid entity
+					// references.
+					md := pmetric.NewMetrics()
+					addResource(t, md, base)
+					addResource(t, md, resource{attrs: base.attrs, refs: tc.refs})
+					addResource(t, md, resource{attrs: with(base, "host.id", "h-2").attrs, refs: tc.refs})
+					got, annots := convert(t, md, Settings{EnableEntities: true})
+
+					require.Equal(t, map[WarningCategory]int{WarningCategoryInvalidEntityRefs: 2}, CountWarningsByCategory(annots))
+					ws, infos := annots.AsStrings("", 0, 0)
+					require.Empty(t, infos)
+					require.ElementsMatch(t, []string{fmt.Sprintf(tc.wantWarning, 1), fmt.Sprintf(tc.wantWarning, 2)}, ws)
+
+					if tc.dropped {
+						teststorage.RequireEqual(t, []sample{
+							gauge("instance", goldenInstance),
+							targetInfo("instance", goldenInstance, "host_id", "h-1", "host_name", "node-1", "service_instance_id", "id-1", "service_name", "checkout", "service_namespace", "shop", "telemetry_sdk_version", "1.2.3"),
+						}, got)
+						return
+					}
+					// The missing description key doesn't affect the identity.
+					instances := gaugeInstances(got)
+					require.Len(t, instances, 3)
+					require.Equal(t, goldenInstance, instances[0])
+					require.Equal(t, goldenInstance, instances[1])
+					require.NotEqual(t, goldenInstance, instances[2])
+				})
+			}
+		})
 	})
 }
 

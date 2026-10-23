@@ -39,6 +39,7 @@ import (
 	"go.opentelemetry.io/collector/pdata/pcommon"
 	"go.opentelemetry.io/collector/pdata/pmetric"
 	"go.opentelemetry.io/collector/pdata/pmetric/pmetricotlp"
+	"go.opentelemetry.io/collector/pdata/xpdata/entity"
 
 	"github.com/prometheus/prometheus/config"
 	"github.com/prometheus/prometheus/model/exemplar"
@@ -337,6 +338,40 @@ func TestOTLPWriteHandler(t *testing.T) {
 		samples := appendable.ResultSamples()
 		require.Len(t, samples, 1)
 		require.Equal(t, "healthy_metric", samples[0].L.Get(labels.MetricName))
+	})
+
+	t.Run("entity references synthesize the instance label", func(t *testing.T) {
+		request := pmetricotlp.NewExportRequest()
+		rm := request.Metrics().ResourceMetrics().AppendEmpty()
+		rm.Resource().Attributes().PutStr("service.name", "test-service")
+		rm.Resource().Attributes().PutStr("service.instance.id", "test-instance")
+		ref := entity.ResourceEntityRefs(rm.Resource()).AppendEmpty()
+		ref.SetType("service")
+		ref.IdKeys().FromRaw([]string{"service.name", "service.instance.id"})
+		m := rm.ScopeMetrics().AppendEmpty().Metrics().AppendEmpty()
+		m.SetName("test_gauge")
+		dp := m.SetEmptyGauge().DataPoints().AppendEmpty()
+		dp.SetTimestamp(pcommon.NewTimestampFromTime(ts))
+		dp.SetIntValue(1)
+
+		appendable := handleOTLP(t, request, config.OTLPConfig{}, OTLPOptions{EnableEntities: true})
+		const instance = "67f8eb49-3efb-59ad-b560-44f1fa69ea36"
+		teststorage.RequireEqual(t, []sample{
+			{
+				MF: "test_gauge",
+				M:  metadata.Metadata{Type: model.MetricTypeGauge},
+				L:  labels.FromStrings(model.MetricNameLabel, "test_gauge", model.InstanceLabel, instance),
+				T:  ts.UnixMilli(),
+				V:  1,
+			},
+			{
+				MF: "target_info",
+				M:  metadata.Metadata{Type: model.MetricTypeGauge, Help: "Target metadata"},
+				L:  labels.FromStrings(model.MetricNameLabel, "target_info", model.InstanceLabel, instance, "service.instance.id", "test-instance", "service.name", "test-service"),
+				T:  ts.UnixMilli(),
+				V:  1,
+			},
+		}, appendable.ResultSamples())
 	})
 
 	t.Run("future exemplar is dropped without failing request", func(t *testing.T) {

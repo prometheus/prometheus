@@ -51,6 +51,10 @@ type OTLPOptions struct {
 	LookbackDelta time.Duration
 	// Add type and unit labels to the metrics.
 	EnableTypeAndUnitLabels bool
+	// EnableEntities enables experimental OTel entity support: for Resources
+	// with entity references, the instance label is synthesized from the
+	// Entity-aware Resource identity, and the job label is empty.
+	EnableEntities bool
 }
 
 // NewOTLPWriteHandler creates a http.Handler that accepts OTLP write requests and
@@ -68,6 +72,7 @@ func NewOTLPWriteHandler(logger *slog.Logger, reg prometheus.Registerer, appenda
 		allowDeltaTemporality:   opts.NativeDelta,
 		lookbackDelta:           opts.LookbackDelta,
 		enableTypeAndUnitLabels: opts.EnableTypeAndUnitLabels,
+		enableEntities:          opts.EnableEntities,
 		converterPool: sync.Pool{
 			New: func() any {
 				return otlptranslator.NewPrometheusConverter(nil)
@@ -118,6 +123,7 @@ type rwExporter struct {
 	allowDeltaTemporality   bool
 	lookbackDelta           time.Duration
 	enableTypeAndUnitLabels bool
+	enableEntities          bool
 	translationWarnings     *prometheus.CounterVec
 	converterPool           sync.Pool
 }
@@ -139,6 +145,7 @@ func (rw *rwExporter) ConsumeMetrics(ctx context.Context, md pmetric.Metrics) er
 		EnableTypeAndUnitLabels:              rw.enableTypeAndUnitLabels,
 		LabelNameUnderscoreSanitization:      otlpCfg.LabelNameUnderscoreSanitization,
 		LabelNamePreserveMultipleUnderscores: otlpCfg.LabelNamePreserveMultipleUnderscores,
+		EnableEntities:                       rw.enableEntities,
 	})
 
 	defer func() {

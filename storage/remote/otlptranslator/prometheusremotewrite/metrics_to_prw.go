@@ -61,15 +61,24 @@ type Settings struct {
 	// LabelNamePreserveMultipleUnderscores enables preserving of multiple
 	// consecutive underscores in label names when AllowUTF8 is false.
 	LabelNamePreserveMultipleUnderscores bool
+	// EnableEntities enables experimental OTel entity support: for Resources
+	// with entity references, the instance label is synthesized from the
+	// Entity-aware Resource identity instead of service.instance.id, and the
+	// job label is empty.
+	EnableEntities bool
 }
 
 // cachedResourceLabels holds precomputed labels constant for all datapoints in a ResourceMetrics.
 // These are computed once per ResourceMetrics boundary and reused for all datapoints.
 type cachedResourceLabels struct {
-	jobLabel       string        // from service.name + service.namespace.
-	instanceLabel  string        // from service.instance.id.
+	jobLabel       string        // from service.name + service.namespace, unless instance is synthesized.
+	instanceLabel  string        // from service.instance.id, or synthesized from entities.
 	promotedLabels labels.Labels // promoted resource attributes.
 	externalLabels map[string]string
+	// instanceSynthesized is true if instanceLabel is synthesized from the
+	// Resource identity. Then the job label is empty, whatever the attributes,
+	// so neither job nor instance encodes a Resource attribute.
+	instanceSynthesized bool
 }
 
 // cachedScopeLabels holds precomputed scope metadata labels.
@@ -261,6 +270,9 @@ func (c *PrometheusConverter) FromMetrics(ctx context.Context, md pmetric.Metric
 		scopeMetricsSlice := resourceMetrics.ScopeMetrics()
 		if err := c.setResourceContext(resource, settings); err != nil {
 			errs = errors.Join(errs, err)
+			continue
+		}
+		if settings.EnableEntities && !c.setEntityInstance(resource, i, &annots) {
 			continue
 		}
 

@@ -338,7 +338,7 @@ func NewAPI(
 	statsRenderer StatsRenderer,
 	rwEnabled bool,
 	acceptRemoteWriteProtoMsgs remoteapi.MessageTypes,
-	otlpEnabled, otlpDeltaToCumulative, otlpNativeDeltaIngestion bool,
+	otlpEnabled, otlpDeltaToCumulative, otlpNativeDeltaIngestion, otlpEntities bool,
 	lookbackDelta time.Duration,
 	enableTypeAndUnitLabels bool,
 	appendMetadata bool,
@@ -414,6 +414,7 @@ func NewAPI(
 			NativeDelta:             otlpNativeDeltaIngestion,
 			LookbackDelta:           lookbackDelta,
 			EnableTypeAndUnitLabels: enableTypeAndUnitLabels,
+			EnableEntities:          otlpEntities,
 		})
 	}
 
