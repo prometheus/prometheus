@@ -1127,6 +1127,8 @@ Loop:
 		switch r := l.next(); {
 		case isAlphaNumeric(r) || r == ':':
 			// absorb.
+		case r == '.':
+			return l.errorf("unexpected character after identifier: %q", r)
 		default:
 			l.backup()
 			word := l.input[l.start:l.pos]
