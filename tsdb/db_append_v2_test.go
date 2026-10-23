@@ -2160,6 +2160,126 @@ func TestDBReadOnly_Querier_NoAlteration_AppendV2(t *testing.T) {
 	})
 }
 
+func TestDBQuerierSelectPreservesSeriesDuringLatePosting(t *testing.T) {
+	ctx := context.Background()
+	db := newTestDB(t)
+
+	seedNames := []string{"first", "second", "third"}
+	seedApp := db.AppenderV2(ctx)
+	for i, name := range seedNames {
+		_, err := seedApp.Append(0, labels.FromStrings("group", "app-main", "series", name), 0, int64(i), float64(i), nil, nil, storage.AOptions{})
+		require.NoError(t, err)
+	}
+	require.NoError(t, seedApp.Commit())
+	require.Equal(t, uint64(3), db.head.lastSeriesID.Load())
+
+	lateRef := chunks.HeadSeriesRef(4)
+	lateStripe := db.head.series.refStripe(lateRef)
+	chooseLabels := func(prefix string) labels.Labels {
+		t.Helper()
+		for i := range db.head.series.size + 1 {
+			lset := labels.FromStrings("group", "app-main", "series", fmt.Sprintf("%s-%d", prefix, i))
+			hashStripe := int(lset.Hash() & uint64(db.head.series.size-1))
+			if hashStripe != lateStripe {
+				return lset
+			}
+		}
+		t.Fatal("could not find a label hash outside the delayed series stripe")
+		return labels.EmptyLabels()
+	}
+	lateLabels := chooseLabels("late")
+	nextLabels := chooseLabels("next")
+
+	lateApp := db.AppenderV2(ctx)
+	lateResult := make(chan error, 1)
+	stripeLock := &db.head.series.locks[lateStripe].RWMutex
+	stripeLock.Lock()
+	locked := true
+	lateStarted := false
+	lateFinished := false
+	defer func() {
+		if locked {
+			stripeLock.Unlock()
+		}
+		if lateStarted && !lateFinished {
+			select {
+			case <-lateResult:
+				_ = lateApp.Rollback()
+			case <-time.After(5 * time.Second):
+				t.Error("delayed appender did not finish after the series stripe was released")
+			}
+		}
+	}()
+
+	go func() {
+		_, err := lateApp.Append(0, lateLabels, 0, 3, 3, nil, nil, storage.AOptions{})
+		lateResult <- err
+	}()
+	lateStarted = true
+
+	deadline := time.Now().Add(5 * time.Second)
+	for db.head.lastSeriesID.Load() != uint64(lateRef) {
+		if time.Now().After(deadline) {
+			t.Fatalf("series ref allocation did not reach %d", lateRef)
+		}
+		runtime.Gosched()
+	}
+
+	nextApp := db.AppenderV2(ctx)
+	_, err := nextApp.Append(0, nextLabels, 0, 4, 4, nil, nil, storage.AOptions{})
+	require.NoError(t, err)
+	require.NoError(t, nextApp.Commit())
+	require.Equal(t, uint64(5), db.head.lastSeriesID.Load())
+	retainedRefs, err := index.ExpandPostings(db.head.postings.Postings(ctx, "group", "app-main"))
+	require.NoError(t, err)
+	require.Equal(t, []storage.SeriesRef{1, 2, 3, 5}, retainedRefs)
+
+	querier, err := db.Querier(0, 10)
+	require.NoError(t, err)
+	defer func() { require.NoError(t, querier.Close()) }()
+
+	seriesSet := querier.Select(ctx, false, nil, labels.MustNewMatcher(labels.MatchRegexp, "group", "app.+"))
+	require.True(t, seriesSet.Next())
+	got := []string{seriesSet.At().Labels().Get("series")}
+
+	stripeLock.Unlock()
+	locked = false
+	lateAppendErr := <-lateResult
+	lateFinished = true
+	if lateAppendErr != nil {
+		_ = lateApp.Rollback()
+		require.NoError(t, lateAppendErr)
+	}
+	if err := lateApp.Commit(); err != nil {
+		_ = lateApp.Rollback()
+		require.NoError(t, err)
+	}
+
+	for seriesSet.Next() {
+		got = append(got, seriesSet.At().Labels().Get("series"))
+	}
+	require.NoError(t, seriesSet.Err())
+	require.Empty(t, seriesSet.Warnings())
+
+	positions := make(map[string]int, len(got))
+	for i, name := range got {
+		positions[name] = i
+	}
+	expectedNames := []string{seedNames[0], seedNames[1], seedNames[2], nextLabels.Get("series")}
+	lastPosition := -1
+	for _, name := range expectedNames {
+		position, ok := positions[name]
+		require.True(t, ok, "DB.Querier.Select must preserve previously committed matching series after late ID publication")
+		require.Greater(t, position, lastPosition, "DB.Querier.Select must preserve the order of previously committed matching series after late ID publication")
+		lastPosition = position
+	}
+	uniqueNames := make(map[string]struct{}, len(got))
+	for _, name := range got {
+		uniqueNames[name] = struct{}{}
+	}
+	require.Len(t, uniqueNames, len(got), "DB.Querier.Select must not duplicate series during late ID publication")
+}
+
 func TestDBCannotSeePartialCommits_AppendV2(t *testing.T) {
 	if defaultIsolationDisabled {
 		t.Skip("skipping test since tsdb isolation is disabled")

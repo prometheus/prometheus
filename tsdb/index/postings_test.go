@@ -1489,6 +1489,95 @@ func TestMemPostings_PostingsForLabelMatching(t *testing.T) {
 	require.Equal(t, []storage.SeriesRef{2, 4}, refs)
 }
 
+func TestMemPostings_LateInsertionPreservesRetainedPostings(t *testing.T) {
+	for _, operation := range []string{"Next", "Seek"} {
+		t.Run(operation, func(t *testing.T) {
+			p := NewMemPostings()
+			lset := labels.FromStrings("group", "app-main")
+			p.Add(2, lset)
+			p.Add(4, lset)
+
+			refs := p.m["group"]["app-main"]
+			require.Equal(t, []storage.SeriesRef{2, 4}, refs)
+			require.Equal(t, 3, cap(refs), "the late insertion must fit in the existing backing array")
+
+			match := regexp.MustCompile("^app.+$").MatchString
+			it := p.PostingsForLabelMatching(context.Background(), "group", match)
+			require.NoError(t, it.Err())
+			require.True(t, it.Next())
+			require.Equal(t, storage.SeriesRef(2), it.At())
+
+			p.Add(1, lset)
+			require.Equal(t, []storage.SeriesRef{1, 2, 4}, p.m["group"]["app-main"])
+
+			if operation == "Next" {
+				require.True(t, it.Next(), "retained Next must preserve the remaining ref after late insertion")
+				require.Equal(t, storage.SeriesRef(4), it.At(), "retained Next must preserve ref 4 after late insertion")
+			} else {
+				require.True(t, it.Seek(4), "retained Seek must find ref 4 after late insertion")
+				require.Equal(t, storage.SeriesRef(4), it.At(), "retained Seek must return ref 4 after late insertion")
+			}
+		})
+	}
+}
+
+func TestMemPostings_ConcurrentAddWithRetainedNextAndSeek(t *testing.T) {
+	for _, operation := range []string{"Next", "Seek"} {
+		t.Run(operation, func(t *testing.T) {
+			p := NewMemPostings()
+			lset := labels.FromStrings("group", "app-main")
+			p.Add(2, lset)
+			p.Add(4, lset)
+
+			it := p.PostingsForLabelMatching(context.Background(), "group", regexp.MustCompile("^app.+$").MatchString)
+			require.NoError(t, it.Err())
+
+			start := make(chan struct{})
+			readDone := make(chan []storage.SeriesRef, 1)
+			writeDone := make(chan struct{})
+			var ready sync.WaitGroup
+			ready.Add(2)
+			go func() {
+				ready.Done()
+				<-start
+
+				var got []storage.SeriesRef
+				if operation == "Next" {
+					for it.Next() {
+						got = append(got, it.At())
+					}
+				} else if it.Seek(4) {
+					got = append(got, it.At())
+				}
+				readDone <- got
+			}()
+			go func() {
+				ready.Done()
+				<-start
+				p.Add(1, lset)
+				close(writeDone)
+			}()
+			ready.Wait()
+			close(start)
+
+			got := <-readDone
+			<-writeDone
+			expected := []storage.SeriesRef{2, 4}
+			if operation == "Seek" {
+				expected = []storage.SeriesRef{4}
+			}
+			if len(got) != len(expected) {
+				t.Fatalf("concurrent retained iterator must preserve all refs: got %v, want %v", got, expected)
+			}
+			for i, ref := range expected {
+				if got[i] != ref {
+					t.Fatalf("concurrent retained iterator must preserve ref %d at position %d, got %d", ref, i, got[i])
+				}
+			}
+		})
+	}
+}
+
 func TestMemPostings_PostingsForAllLabelValues(t *testing.T) {
 	mp := NewMemPostings()
 	mp.Add(1, labels.FromStrings("foo", "1"))
