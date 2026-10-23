@@ -3364,6 +3364,51 @@ func TestNativeHistogram_HistogramQuantile(t *testing.T) {
 			},
 		},
 		{
+			text: "4 equally sized groups of observations with empty buckets before, in between, and after them",
+			// The populated buckets are (1, 2], (4, 8], (16, 32], and
+			// (64, 128], with one observation each. They are separated by
+			// empty buckets, and there are also empty buckets (0.5, 1] and
+			// (128, 256] below and above the populated buckets.
+			h: &histogram.Histogram{
+				Count:  4,
+				Sum:    99, // Does not matter.
+				Schema: 0,
+				PositiveSpans: []histogram.Span{
+					{Offset: 0, Length: 9},
+				},
+				PositiveBuckets: []int64{0, 1, -1, 1, -1, 1, -1, 1, -1},
+			},
+			subCases: []subCase{
+				{
+					// The 0 quantile falls into the empty lowest bucket, so
+					// the interpolation within the bucket divides by its
+					// count of zero and yields NaN.
+					quantile: "0",
+					value:    math.NaN(),
+				},
+				// The quantiles 0.25, 0.5, 0.75, and 1 each fall on the
+				// boundary between a populated bucket and the empty buckets
+				// above it. The returned value is the upper bound of the
+				// populated bucket below the empty buckets.
+				{
+					quantile: "0.25",
+					value:    2,
+				},
+				{
+					quantile: "0.5",
+					value:    8,
+				},
+				{
+					quantile: "0.75",
+					value:    32,
+				},
+				{
+					quantile: "1",
+					value:    128,
+				},
+			},
+		},
+		{
 			text: "all negative buckets with zero bucket",
 			h: &histogram.Histogram{
 				Count:         12,
@@ -3522,7 +3567,7 @@ func TestNativeHistogram_HistogramQuantile(t *testing.T) {
 
 						require.Len(t, vector, 1)
 						require.Nil(t, vector[0].H)
-						require.True(t, almostEqual(sc.value, vector[0].F))
+						require.InDelta(t, sc.value, vector[0].F, 1e-8)
 					})
 				}
 				idx++

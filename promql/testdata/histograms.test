@@ -233,3 +233,39 @@ load 5m
 	request_duration_seconds2_bucket{job="job1", instance="ins1", le="+Inf"}	0+4x10
 
 eval_fail instant at 50m histogram_quantile(0.99, {__name__=~"request_duration.*"})
+
+# A histogram with 4 equally sized groups of observations, with empty buckets
+# before, in between, and after them. The populated buckets are (1, 2],
+# (4, 8], (16, 32], and (64, 128], with one observation each.
+load 5m
+	gap_histogram_bucket{le="0.5"}	0x10
+	gap_histogram_bucket{le="1"}	0x10
+	gap_histogram_bucket{le="2"}	0+1x10
+	gap_histogram_bucket{le="4"}	0+1x10
+	gap_histogram_bucket{le="8"}	0+2x10
+	gap_histogram_bucket{le="16"}	0+2x10
+	gap_histogram_bucket{le="32"}	0+3x10
+	gap_histogram_bucket{le="64"}	0+3x10
+	gap_histogram_bucket{le="128"}	0+4x10
+	gap_histogram_bucket{le="256"}	0+4x10
+	gap_histogram_bucket{le="+Inf"}	0+4x10
+
+# The 0 quantile falls into the empty lowest bucket (its count is 0), so the
+# interpolation within the bucket divides by zero and yields NaN.
+eval instant at 50m histogram_quantile(0, gap_histogram_bucket)
+	{} NaN
+
+# The quantiles 0.25, 0.5, 0.75, and 1 each fall on the boundary between a
+# populated bucket and the empty buckets above it. The returned value is the
+# upper bound of the populated bucket below the empty buckets.
+eval instant at 50m histogram_quantile(0.25, gap_histogram_bucket)
+	{} 2
+
+eval instant at 50m histogram_quantile(0.5, gap_histogram_bucket)
+	{} 8
+
+eval instant at 50m histogram_quantile(0.75, gap_histogram_bucket)
+	{} 32
+
+eval instant at 50m histogram_quantile(1, gap_histogram_bucket)
+	{} 128
