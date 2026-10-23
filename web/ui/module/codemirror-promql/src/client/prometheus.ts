@@ -13,7 +13,7 @@
 
 import { FetchFn } from './index';
 import { Matcher } from '../types';
-import { labelMatchersToString } from '../parser';
+import { escapeLabelNameForAPI, labelMatchersToString } from '../parser';
 import { LRUCache } from 'lru-cache';
 
 export interface MetricMetadata {
@@ -151,12 +151,14 @@ export class HTTPPrometheusClient implements PrometheusClient {
     }
 
     // See https://prometheus.io/docs/prometheus/latest/querying/api/#querying-label-values
-    return this.fetchAPI<string[]>(`${this.labelValuesEndpoint().replace(/:name/gi, labelName)}?${params}`).catch((error) => {
-      if (this.errorHandler) {
-        this.errorHandler(error);
+    return this.fetchAPI<string[]>(`${this.labelValuesEndpoint().replace(/:name/gi, () => escapeLabelNameForAPI(labelName))}?${params}`).catch(
+      (error) => {
+        if (this.errorHandler) {
+          this.errorHandler(error);
+        }
+        return [];
       }
-      return [];
-    });
+    );
   }
 
   metricMetadata(): Promise<Record<string, MetricMetadata[]>> {

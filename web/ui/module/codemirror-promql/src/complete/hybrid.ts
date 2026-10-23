@@ -67,7 +67,20 @@ import {
 } from '@prometheus-io/lezer-promql';
 import { Completion, CompletionContext, CompletionResult } from '@codemirror/autocomplete';
 import { EditorState } from '@codemirror/state';
-import { buildLabelMatchers, containsAtLeastOneChild, containsChild, walkBackward } from '../parser';
+import { EditorView } from '@codemirror/view';
+import {
+  buildLabelMatchers,
+  containsAtLeastOneChild,
+  containsChild,
+  escapePromQLString,
+  findUnquotedUtf8Name,
+  isTerminatedStringLiteral,
+  labelNameNeedsQuoting,
+  metricNameNeedsQuoting,
+  quotePromQLString,
+  unquotePromQLString,
+  walkBackward,
+} from '../parser';
 import {
   aggregateOpModifierTerms,
   aggregateOpTerms,
@@ -151,16 +164,29 @@ function getMetricNameInGroupBy(tree: SyntaxNode, state: EditorState): string {
 function getMetricNameInVectorSelector(tree: SyntaxNode, state: EditorState): string {
   // Find if there is a defined metric name. Should be used to autocomplete a labelValue or a labelName
   // First find the parent "VectorSelector" to be able to find then the subChild "Identifier" if it exists.
-  let currentNode: SyntaxNode | null = walkBackward(tree, VectorSelector);
+  const currentNode: SyntaxNode | null = walkBackward(tree, VectorSelector);
   if (!currentNode) {
     // Weird case that shouldn't happen, because "VectorSelector" is by definition the parent of the LabelMatchers.
     return '';
   }
-  currentNode = currentNode.getChild(Identifier);
-  if (!currentNode) {
-    return '';
+  const identifier = currentNode.getChild(Identifier);
+  if (identifier) {
+    // A name that has to be quoted but is typed without quotes only has its first characters in the Identifier.
+    const line = state.doc.lineAt(identifier.from);
+    const unquotedName = findUnquotedUtf8Name(line.text, identifier.from - line.from);
+    if (unquotedName && line.from + unquotedName.from === identifier.from) {
+      return line.text.slice(unquotedName.from, unquotedName.to);
+    }
+    return state.sliceDoc(identifier.from, identifier.to);
   }
-  return state.sliceDoc(currentNode.from, currentNode.to);
+  // The metric name can also be quoted inside the braces: `{"metric.name", foo="bar"}`.
+  // The quoted name being currently completed is not a metric name to rely on.
+  for (let child = currentNode.getChild(LabelMatchers)?.firstChild ?? null; child; child = child.nextSibling) {
+    if (child.type.id === QuotedLabelName && !(child.from <= tree.from && tree.to <= child.to)) {
+      return unquotePromQLString(state.sliceDoc(child.from, child.to));
+    }
+  }
+  return '';
 }
 
 function arrayToCompletionResult(data: Completion[], from: number, to: number, includeSnippet = false, span = true): CompletionResult {
@@ -178,11 +204,84 @@ function arrayToCompletionResult(data: Completion[], from: number, to: number, i
   } as CompletionResult;
 }
 
-function escapePromQLString(str: string): string {
-  // PromQL only evaluates escape sequences in single- and double-quoted strings.
-  // Backtick-quoted string completions are not handled separately today, so keep
-  // the inserted value escaped unconditionally.
-  return str.replace(/([\\"])/g, '\\$1');
+// Replaces the string literal surrounding the completion range [from, to) with the given quoted name.
+function replaceQuotedString(quotedName: string): (view: EditorView, completion: Completion, from: number, to: number) => void {
+  return (view, _completion, from, to) => {
+    const delimiter = view.state.sliceDoc(from - 1, from);
+    const end = view.state.sliceDoc(to, to + 1) === delimiter ? to + 1 : to;
+    view.dispatch({
+      changes: { from: from - 1, to: end, insert: quotedName },
+      selection: { anchor: from - 1 + quotedName.length },
+      userEvent: 'input.complete',
+    });
+  };
+}
+
+// Returns how the label name has to be inserted, or undefined when inserting its label is enough.
+// `inString` tells whether the name is inserted inside a quoted string, in which case the completion range
+// is the content of the string, and the quotes around it are replaced by the completion.
+function applyLabelName(name: string, inString: boolean): Completion['apply'] {
+  if (inString) {
+    return replaceQuotedString(quotePromQLString(name));
+  }
+  return labelNameNeedsQuoting(name) ? quotePromQLString(name) : undefined;
+}
+
+// Returns how the metric name has to be inserted, or undefined when inserting its label is enough.
+// A metric name that requires quotes has to be written inside the braces of the selector, next to the other matchers:
+// `foo{a="b"}` becomes `{"foo.bar", a="b"}`.
+// The document is inspected when the completion is applied, because it can have changed since the completion was computed.
+function applyMetricName(name: string, inString: boolean): Completion['apply'] {
+  const quotedName = quotePromQLString(name);
+  if (inString) {
+    return replaceQuotedString(quotedName);
+  }
+  if (!metricNameNeedsQuoting(name)) {
+    return undefined;
+  }
+  return (view, _completion, from, to) => {
+    // Matchers right after the name, or after the position of the completion when there is no name yet.
+    const braces = /^\s*\{(\s*)(\}?)/.exec(view.state.sliceDoc(to, to + 1000));
+    if (!braces) {
+      const selector = `{${quotedName}}`;
+      view.dispatch({
+        changes: { from, to, insert: selector },
+        selection: { anchor: from + selector.length - 1 },
+        userEvent: 'input.complete',
+      });
+      return;
+    }
+    const open = to + braces[0].indexOf('{');
+    const hasMatchers = braces[2] === '' && view.state.sliceDoc(open + 1 + braces[1].length, open + 2 + braces[1].length) !== '';
+    view.dispatch({
+      changes: [
+        { from, to, insert: '' },
+        { from: open + 1, insert: hasMatchers ? `${quotedName},${braces[1] === '' ? ' ' : ''}` : quotedName },
+      ],
+      selection: { anchor: open + 1 - (to - from) + quotedName.length },
+      userEvent: 'input.complete',
+    });
+  };
+}
+
+// Returns the contexts to complete a name that starts with the given error node, which is a name that is not
+// a legacy name, and that starts with a non-ASCII character.
+function analyzeErrorNodeAsName(state: EditorState, node: SyntaxNode): Context[] {
+  for (let ancestor = node.parent; ancestor; ancestor = ancestor.parent) {
+    switch (ancestor.type.id) {
+      case GroupingLabels:
+        return [{ kind: ContextKind.LabelName, metricName: getMetricNameInGroupBy(ancestor, state) }];
+      case LabelMatchers:
+        return [{ kind: ContextKind.LabelName, metricName: getMetricNameInVectorSelector(ancestor, state) }];
+      case MatrixSelector:
+      case SubqueryExpr:
+      case OffsetExpr:
+      case DurationExpr:
+        // A duration is expected here, not a name.
+        return [];
+    }
+  }
+  return [{ kind: ContextKind.MetricName, metricName: '' }];
 }
 
 function isAfterClosedFunctionCallBody(state: EditorState, node: SyntaxNode, pos: number): boolean {
@@ -238,6 +337,13 @@ export function computeEndCompletePosition(state: EditorState, node: SyntaxNode,
     return node.parent.to - 1;
   }
 
+  if (node.type.id === StringLiteral && node.parent?.type.id === QuotedLabelName) {
+    // For quoted names, we want to replace all content inside the quotes.
+    // A string that is missing its closing quote runs until the end of the line, which is not part of the name:
+    // only the content before the cursor is replaced.
+    return isTerminatedStringLiteral(state.sliceDoc(node.from, node.to)) ? node.to - 1 : pos;
+  }
+
   // For all other nodes, extend the end position to include the entire token.
   return node.to;
 }
@@ -283,7 +389,8 @@ export function computeStartCompletePosition(state: EditorState, node: SyntaxNod
     start = computeStartCompleteLabelPositionInLabelMatcherOrInGroupingLabel(node, pos);
   } else if (
     (node.type.id === FunctionCallBody && node.firstChild === null) ||
-    (node.type.id === StringLiteral && (node.parent?.type.id === UnquotedLabelMatcher || node.parent?.type.id === QuotedLabelMatcher))
+    (node.type.id === StringLiteral &&
+      (node.parent?.type.id === UnquotedLabelMatcher || node.parent?.type.id === QuotedLabelMatcher || node.parent?.type.id === QuotedLabelName))
   ) {
     // When the cursor is between bracket, quote, we need to increment the starting position to avoid to consider the open bracket/ first string.
     start++;
@@ -556,7 +663,7 @@ export function analyzeCompletion(state: EditorState, node: SyntaxNode, pos: num
         if (node.parent.firstChild?.type.id === LabelName) {
           labelName = state.sliceDoc(node.parent.firstChild.from, node.parent.firstChild.to);
         } else if (node.parent.firstChild?.type.id === QuotedLabelName) {
-          labelName = state.sliceDoc(node.parent.firstChild.from, node.parent.firstChild.to).slice(1, -1);
+          labelName = unquotePromQLString(state.sliceDoc(node.parent.firstChild.from, node.parent.firstChild.to));
         }
         // then find the metricName if it exists
         const metricName = getMetricNameInVectorSelector(node, state);
@@ -581,8 +688,23 @@ export function analyzeCompletion(state: EditorState, node: SyntaxNode, pos: num
       } else if (node.parent?.parent?.type.id === LabelMatchers) {
         // In that case we are in the given situation:
         //       {""} or {"metric_"}
-        // since this is for the QuotedMetricName we need to continue to autocomplete for the metric names
-        result.push({ kind: ContextKind.MetricName, metricName: state.sliceDoc(node.from, node.to).slice(1, -1) });
+        // The quoted string is either a QuotedMetricName or the name of a label that is going to be matched,
+        // so we need to continue to autocomplete for the metric names and the label names.
+        // A metric name is only possible when the selector doesn't already have one.
+        const selector = walkBackward(node, VectorSelector);
+        const hasMetricName =
+          selector?.getChild(Identifier) != null ||
+          selector
+            ?.getChild(LabelMatchers)
+            ?.getChildren(QuotedLabelName)
+            .some((n) => n.from !== node.parent?.from);
+        if (!hasMetricName) {
+          result.push({ kind: ContextKind.MetricName, metricName: unquotePromQLString(state.sliceDoc(node.from, node.to)) });
+        }
+        result.push({ kind: ContextKind.LabelName, metricName: getMetricNameInVectorSelector(node, state) });
+      } else if (node.parent?.parent?.type.id === QuotedLabelMatcher) {
+        // In that case the cursor is in the name of a quoted matcher, like `{"labelNa"="value"}`.
+        result.push({ kind: ContextKind.LabelName, metricName: getMetricNameInVectorSelector(node, state) });
       }
       break;
     case NumberDurationLiteral:
@@ -710,12 +832,21 @@ export class HybridComplete implements CompleteStrategy {
 
   promQL(context: CompletionContext): Promise<CompletionResult | null> | CompletionResult | null {
     const { state, pos } = context;
-    const tree = syntaxTree(state).resolve(pos, -1);
+    let tree = syntaxTree(state).resolve(pos, -1);
     // The lines above can help you to print the current lezer tree.
     // It's useful when you are trying to understand why it doesn't autocomplete.
     // console.log(syntaxTree(state).topNode.toString());
     // console.log(`current node: ${tree.type.name}`);
-    const contexts = analyzeCompletion(state, tree, pos, context.explicit);
+    let contexts = analyzeCompletion(state, tree, pos, context.explicit);
+    let from = computeStartCompletePosition(state, tree, pos);
+    let to = computeEndCompletePosition(state, tree, pos);
+    // A name that has to be quoted but is typed without quotes (e.g. `http.requests`) is not parsed as a single node.
+    // In that case the whole word is completed, and the completion adds the missing quotes.
+    const unquotedName = this.analyzeUnquotedName(state, pos, context.explicit);
+    if (unquotedName) {
+      ({ tree, contexts, from, to } = unquotedName);
+    }
+    const inString = tree.type.id === StringLiteral;
     let asyncResult: Promise<Completion[]> = Promise.resolve([]);
     let completeSnippet = false;
     let span = true;
@@ -793,12 +924,12 @@ export class HybridComplete implements CompleteStrategy {
           break;
         case ContextKind.MetricName:
           asyncResult = asyncResult.then((result) => {
-            return this.autocompleteMetricName(result, context);
+            return this.autocompleteMetricName(result, context, inString);
           });
           break;
         case ContextKind.LabelName:
           asyncResult = asyncResult.then((result) => {
-            return this.autocompleteLabelName(result, context);
+            return this.autocompleteLabelName(result, context, inString);
           });
           break;
         case ContextKind.LabelValue:
@@ -808,17 +939,39 @@ export class HybridComplete implements CompleteStrategy {
       }
     }
     return asyncResult.then((result) => {
-      return arrayToCompletionResult(
-        result,
-        computeStartCompletePosition(state, tree, pos),
-        computeEndCompletePosition(state, tree, pos),
-        completeSnippet,
-        span
-      );
+      return arrayToCompletionResult(result, from, to, completeSnippet, span);
     });
   }
 
-  private autocompleteMetricName(result: Completion[], context: Context): Completion[] | Promise<Completion[]> {
+  // Handles the completion of a name that requires quotes but is written without them.
+  // The lezer grammar only knows about legacy names, so such a name leads to an Identifier or a LabelName
+  // followed by error nodes, or to error nodes only when it starts with a non-ASCII character.
+  // It returns null when the cursor is not on such a name.
+  private analyzeUnquotedName(
+    state: EditorState,
+    pos: number,
+    explicit: boolean
+  ): { tree: SyntaxNode; contexts: Context[]; from: number; to: number } | null {
+    const line = state.doc.lineAt(pos);
+    const name = findUnquotedUtf8Name(line.text, pos - line.from);
+    if (!name) {
+      return null;
+    }
+    const from = line.from + name.from;
+    const to = line.from + name.to;
+    const tree = syntaxTree(state).resolve(from, 1);
+    let contexts: Context[] = [];
+    if (tree.type.id === Identifier || tree.type.id === LabelName) {
+      contexts = analyzeCompletion(state, tree, pos, explicit).filter((c) => c.kind === ContextKind.MetricName || c.kind === ContextKind.LabelName);
+    } else if (tree.type.id === 0) {
+      // The name starts with an error node: the context only depends on where the error node is.
+      contexts = analyzeErrorNodeAsName(state, tree);
+    }
+    contexts = contexts.map((c) => (c.kind === ContextKind.MetricName ? { ...c, metricName: state.sliceDoc(from, to) } : c));
+    return contexts.length > 0 ? { tree, contexts, from, to } : null;
+  }
+
+  private autocompleteMetricName(result: Completion[], context: Context, inString: boolean): Completion[] | Promise<Completion[]> {
     if (!this.prometheusClient) {
       return result;
     }
@@ -827,7 +980,7 @@ export class HybridComplete implements CompleteStrategy {
       .metricNames(context.metricName)
       .then((metricNames: string[]) => {
         for (const metricName of metricNames) {
-          metricCompletion.set(metricName, { label: metricName, type: 'constant' });
+          metricCompletion.set(metricName, { label: metricName, type: 'constant', apply: applyMetricName(metricName, inString) });
         }
 
         // avoid to get all metric metadata if the prometheus server is too big
@@ -887,12 +1040,12 @@ export class HybridComplete implements CompleteStrategy {
       });
   }
 
-  private autocompleteLabelName(result: Completion[], context: Context): Completion[] | Promise<Completion[]> {
+  private autocompleteLabelName(result: Completion[], context: Context, inString: boolean): Completion[] | Promise<Completion[]> {
     if (!this.prometheusClient) {
       return result;
     }
     return this.prometheusClient.labelNames(context.metricName).then((labelNames: string[]) => {
-      return result.concat(labelNames.map((value) => ({ label: value, type: 'constant' })));
+      return result.concat(labelNames.map((value) => ({ label: value, type: 'constant', apply: applyLabelName(value, inString) })));
     });
   }
 
