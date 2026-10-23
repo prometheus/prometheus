@@ -128,10 +128,11 @@ func newTestDB(t testing.TB, opts ...testDBOpt) (db *DB) {
 
 	t.Cleanup(func() {
 		// Always close. DB is safe for close-after-close.
-		require.NoError(t, db.Close())
+		err := db.Close()
 		// Clear the captured reference so parallel subtests retained in
 		// testing.T.sub do not pin closed DBs via the t.cleanups backing array.
 		db = nil
+		require.NoError(t, err)
 	})
 	return db
 }

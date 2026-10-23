@@ -8854,6 +8854,8 @@ func TestHead_NumNativeHistogramSeriesAndBuckets(t *testing.T) {
 	t.Cleanup(func() {
 		// Captures head by reference, so it closes the final head after restarts.
 		_ = head.Close()
+		// Release the captured reference so completed parallel tests do not retain the head.
+		head = nil
 	})
 	require.NoError(t, head.Init(0))
 
