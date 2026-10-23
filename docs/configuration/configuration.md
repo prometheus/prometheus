@@ -1819,6 +1819,11 @@ This service discovery method only supports basic DNS A, AAAA, MX, NS and SRV
 record queries, but not the advanced DNS-SD approach specified in
 [RFC6763](https://tools.ietf.org/html/rfc6763).
 
+Names are resolved with unicast DNS queries only. Multicast DNS (mDNS) is not
+supported, so names such as `host.local` are not resolved unless the configured
+DNS servers can answer for them. To discover such targets, use
+[`file_sd_config`](#file_sd_config) or [`http_sd_config`](#http_sd_config).
+
 The following meta labels are available on targets during [relabeling](#relabel_config):
 
 * `__meta_dns_name`: the record name that produced the discovered target.
