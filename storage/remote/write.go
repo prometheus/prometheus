@@ -262,11 +262,11 @@ func (rws *WriteStorage) writeSavepoint() {
 // Precondition: rws.enableSavepoint is true, so the metric fields are non-nil.
 func (rws *WriteStorage) recordWriteResult(sp Savepoint, success bool) {
 	rws.savepointWritesTotal.Inc()
-	rws.savepointEntries.Set(float64(len(sp)))
 	if !success {
 		rws.savepointWritesFailed.Inc()
 		return
 	}
+	rws.savepointEntries.Set(float64(len(sp)))
 	rws.savepointLastWriteTime.SetToCurrentTime()
 }
 

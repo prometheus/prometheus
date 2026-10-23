@@ -23,27 +23,27 @@ import (
 
 func TestSavepointWriteLoad(t *testing.T) {
 	tests := []struct {
-		name  string
-		saves []Savepoint
-		want  Savepoint
+		name   string
+		writes []Savepoint
+		want   Savepoint
 	}{
 		{
 			name: "missing file loads empty",
 		},
 		{
-			name:  "nil savepoint loads empty",
-			saves: []Savepoint{nil},
+			name:   "nil savepoint loads empty",
+			writes: []Savepoint{nil},
 		},
 		{
 			name: "round trip",
-			saves: []Savepoint{
+			writes: []Savepoint{
 				{"abc123": {Segment: 42}, "def456": {Segment: 7}},
 			},
 			want: Savepoint{"abc123": {Segment: 42}, "def456": {Segment: 7}},
 		},
 		{
 			name: "overwrite replaces previous",
-			saves: []Savepoint{
+			writes: []Savepoint{
 				{"a": {Segment: 1}},
 				{"b": {Segment: 5}},
 			},
@@ -54,12 +54,12 @@ func TestSavepointWriteLoad(t *testing.T) {
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
 			dir := t.TempDir()
-			for _, sp := range tc.saves {
+			for _, sp := range tc.writes {
 				require.NoError(t, sp.Write(dir))
 			}
 
 			_, err := os.Stat(savepointFilePath(dir) + ".tmp")
-			require.True(t, os.IsNotExist(err), "temp file should not remain after successful save")
+			require.True(t, os.IsNotExist(err), "temp file should not remain after successful write")
 
 			loaded, err := LoadSavepoint(dir)
 			require.NoError(t, err)

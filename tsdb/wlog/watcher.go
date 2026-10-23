@@ -115,12 +115,10 @@ type Watcher struct {
 	quit       chan struct{}
 	done       chan struct{}
 
-	// startSegment overrides the segment to start reading from.
-	// When >= 0, the watcher replays samples from this segment onwards
-	// instead of starting from time.Now(). Default: -1 (disabled).
+	// startSegment is the segment samples are sent from, or -1 to only send samples newer than the start time.
 	startSegment int
 
-	// segment tracks the segment currently being processed.
+	// segment is the value reported by LastProcessedSegment.
 	segment atomic.Int64
 
 	// For testing, stop when we hit this segment.
@@ -399,7 +397,7 @@ func (w *Watcher) findSegmentForIndex(index int) (int, error) {
 }
 
 func (w *Watcher) readAndHandleError(r *LiveReader, segmentNum int, onlySeries bool, size int64) error {
-	// only runs while tailing live WAL segments, never checkpoints.
+	// Only called for WAL segments, never checkpoints.
 	err := w.readSegment(r, segmentNum, onlySeries, false)
 
 	// Ignore all errors reading to end of segment whilst replaying the WAL.

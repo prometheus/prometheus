@@ -1255,8 +1255,8 @@ func TestWatcher_StartSegment_CheckpointNotReplayed(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, 1, cpIndex)
 
-	// Start segment behind the checkpoint index. Pre-fix this caused the checkpoint's
-	// samples (segments 0 and 1) to be replayed.
+	// Start segment behind the checkpoint index. The checkpoint's samples (segments 0
+	// and 1) must not be replayed.
 	const startSegment = 1
 
 	wt := newWriteToMock(0)
