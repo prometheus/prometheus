@@ -357,6 +357,7 @@ func (c *flagConfig) setFeatureListOptions(logger *slog.Logger) error {
 				logger.Info("Experimental search API enabled.")
 			case "promql-native-histograms-as-classic":
 				c.enableNativeHistogramsAsClassic = true
+				logger.Info("Experimental PromQL native histograms as classic conversion enabled.")
 			case "query-cost":
 				c.enableQueryCost = true
 				c.web.EnableQueryCost = true
