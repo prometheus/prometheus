@@ -224,6 +224,7 @@ func (a *headAppenderV2) Append(ref storage.SeriesRef, ls labels.Labels, st, t i
 		// Currently only exemplars can return partial errors.
 		partialErr = a.appendExemplars(s, opts.Exemplars)
 	}
+
 	if a.head.opts.EnableMetadataWALRecords && !opts.Metadata.IsEmpty() {
 		s.Lock()
 		metaChanged := metadata.IsZeroHandle(s.meta) || !s.meta.Value().Equals(opts.Metadata)
