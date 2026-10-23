@@ -434,29 +434,34 @@ func (p *MemPostings) addFor(id storage.SeriesRef, l labels.Label) {
 	if !ok {
 		p.lvs[l.Name] = appendWithExponentialGrowth(p.lvs[l.Name], l.Value)
 	}
-	list := appendWithExponentialGrowth(vm, id)
-	nm[l.Value] = list
 
-	if !p.ordered {
-		return
+	// Series IDs are allocated before they are added to postings, so they may
+	// arrive out of order.
+	var list []storage.SeriesRef
+	if p.ordered && len(vm) > 0 && id < vm[len(vm)-1] {
+		list = insertOrderedPostings(vm, id)
+	} else {
+		list = appendWithExponentialGrowth(vm, id)
 	}
-	// There is no guarantee that no higher ID was inserted before as they may
-	// be generated independently before adding them to postings.
-	// We repair order violations on insert. The invariant is that the first n-1
-	// items in the list are already sorted.
+	nm[l.Value] = list
+}
+
+// Insert id into a copy of vm, leaving the existing list unchanged for readers.
+func insertOrderedPostings(vm []storage.SeriesRef, id storage.SeriesRef) []storage.SeriesRef {
+	capacity := cap(vm)
+	if capacity < len(vm)+1 {
+		capacity = len(vm)*exponentialSliceGrowthFactor + 1
+	}
+	list := make([]storage.SeriesRef, len(vm), capacity)
+	copy(list, vm)
+	list = append(list, id)
 	for i := len(list) - 1; i >= 1; i-- {
 		if list[i] >= list[i-1] {
 			break
 		}
-		if i == len(list)-1 && &list[0] == &vm[0] {
-			// The append reused the published array, so copy before moving any existing IDs.
-			newList := make([]storage.SeriesRef, len(list), cap(list))
-			copy(newList, list)
-			list = newList
-			nm[l.Value] = list
-		}
 		list[i], list[i-1] = list[i-1], list[i]
 	}
+	return list
 }
 
 func (p *MemPostings) PostingsForLabelMatching(ctx context.Context, name string, match func(string) bool) Postings {
