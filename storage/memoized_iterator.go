@@ -76,6 +76,10 @@ func (b *MemoizedSeriesIterator) PeekPrev() (st, t int64, v float64, fh *histogr
 // Seek advances the iterator to the element at time t or greater.
 func (b *MemoizedSeriesIterator) Seek(t int64) chunkenc.ValueType {
 	t0 := t - b.delta
+	if b.delta > 0 && t < math.MinInt64+b.delta {
+		// The lookback starts before any representable timestamp.
+		t0 = math.MinInt64
+	}
 
 	if b.valueType != chunkenc.ValNone && t0 > b.lastTime {
 		// Reset the previously stored element because the seek advanced
