@@ -279,18 +279,10 @@ eval instant at 5m histogram_avg(balanced_histogram)
 eval instant at 5m histogram_fraction(0, 4, balanced_histogram)
 	{} 0.5
 
-# If the quantile happens to be located in a span of empty buckets, the actually returned value is the lower bound of
-# the first populated bucket after the span of empty buckets.
-eval instant at 5m histogram_quantile(0.5, balanced_histogram)
-	{} 0.5
-
 clear
 
-# Regression test: histogram_quantiles() should select buckets in consistent manner irrespective whether
-# the reverse iteration order optimization is applied or not (i.e. independent on from which end the code
-# iterates the buckets). This is only visible when the quantile falls among empty buckets, because
-# then the upper bound of previous populated bucket is not equal to the lower bound of the next populated
-# bucket.
+# If the quantile happens to be located in a span of empty buckets, the actually returned value is the lower bound of
+# the first populated bucket after the span of empty buckets.
 #
 # Non-empty buckets of hist{case="no_gaps"}:  (0.5, 1] (1, 2] (2,  4] ( 4,  8]
 # Non-empty buckets of hist{case="gaps"}:     (0.5, 1] (2, 4] (8, 16] (32, 64]
