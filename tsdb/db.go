@@ -248,6 +248,11 @@ type Options struct {
 	// is implemented.
 	EnableSTAsZeroSample bool
 
+	// EnableCommitStats makes appenders collect per-series CommitStats for
+	// samples dropped at Commit. The duplicate samples metric is updated
+	// either way.
+	EnableCommitStats bool
+
 	// EnableHistogramSTEncoding enables the ST-capable chunk encoding for
 	// integer and float histograms (EncHistogramST and EncFloatHistogramST).
 	// Independent of FloatChunkEncoding; only controls histogram families.
@@ -1170,6 +1175,7 @@ func open(dir string, l *slog.Logger, r prometheus.Registerer, opts *Options, rn
 	headOpts.OutOfOrderCapMax.Store(opts.OutOfOrderCapMax)
 	headOpts.EnableSharding = opts.EnableSharding
 	headOpts.EnableSTAsZeroSample = opts.EnableSTAsZeroSample
+	headOpts.EnableCommitStats = opts.EnableCommitStats
 	headOpts.EnableSTStorage.Store(opts.EnableSTStorage)
 	headOpts.FloatChunkEncoding.Store(uint32(opts.FloatChunkEncoding))
 	headOpts.EnableHistogramSTEncoding.Store(opts.EnableHistogramSTEncoding)
