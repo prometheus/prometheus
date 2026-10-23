@@ -398,7 +398,16 @@ This feature only affects PromQL query evaluation (e.g. the query APIs and rule 
 conversion is applied on top of all data the query engine reads, including series fetched from
 `remote_read` endpoints. It does not apply to remote write (NHCB series are not converted when being
 forwarded to remote endpoints), the remote read API, federation, or the series API (the
-`/api/v1/series` endpoint will not return the converted classic series).
+`/api/v1/series` endpoint will not return the converted classic series). Note that remote write has its
+own `convert_nhcb_to_classic` setting, see the [`remote_write`](configuration/configuration.md#remote_write)
+configuration.
+
+Known limitations:
+
+* The conversion only triggers on exact metric name matchers (e.g. `request_duration_seconds_bucket`), not on
+  regex or negative name matchers.
+* If both classic series and NHCB series that convert to the same classic series are stored, the results are
+  not deduplicated yet.
 
 ## Query cost
 
