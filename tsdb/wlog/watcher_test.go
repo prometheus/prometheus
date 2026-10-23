@@ -986,10 +986,11 @@ func TestWatcher_StartSegment(t *testing.T) {
 		wantSegment  int
 	}{
 		{
+			// Stopping before the last segment means only series were replayed.
 			name:         "no start segment skips historical samples",
 			startSegment: -1,
 			wantSegments: nil,
-			wantSegment:  maxSegment,
+			wantSegment:  -1,
 		},
 		{
 			name:         "start at segment 1",
@@ -1123,7 +1124,7 @@ func TestWatcher_StartSegment_PastLastSegment(t *testing.T) {
 }
 
 // TestWatcher_StartSegment_ResumeMonotonic verifies that the reported segment advances monotonically across repeated Run calls,
-// and that a retry only replays historical samples when a start segment was given.
+// that series-only replay doesn't advance it, and that a retry only replays historical samples when a start segment was given.
 func TestWatcher_StartSegment_ResumeMonotonic(t *testing.T) {
 	const (
 		seriesCount = 5
@@ -1153,18 +1154,25 @@ func TestWatcher_StartSegment_ResumeMonotonic(t *testing.T) {
 	tests := []struct {
 		name         string
 		startSegment int
+		// Reported segment after each run.
+		wantFirst, wantSecond int
 		// Segments whose samples are delivered across both runs, in order.
 		wantSegments []int
 	}{
 		{
+			// Both runs stop before the last segment, so they only replay series.
 			name:         "no start segment never replays historical samples",
 			startSegment: -1,
+			wantFirst:    -1,
+			wantSecond:   -1,
 			wantSegments: nil,
 		},
 		{
 			// The retry resumes at the high-water segment, so only segment 1 is sent twice.
 			name:         "start segment resumes at high-water on retry",
 			startSegment: 1,
+			wantFirst:    1,
+			wantSecond:   2,
 			wantSegments: []int{1, 1, 2},
 		},
 	}
@@ -1179,12 +1187,12 @@ func TestWatcher_StartSegment_ResumeMonotonic(t *testing.T) {
 			watcher.MaxSegment = 1
 			watcher.SetStartTime(time.Now())
 			require.NoError(t, watcher.Run())
-			require.Equal(t, 1, watcher.LastProcessedSegment(), "first run should reach segment 1")
+			require.Equal(t, tc.wantFirst, watcher.LastProcessedSegment(), "reported segment after first run")
 
 			watcher.MaxSegment = 2
 			watcher.SetStartTime(time.Now())
 			require.NoError(t, watcher.Run())
-			require.Equal(t, 2, watcher.LastProcessedSegment(), "second run should advance to segment 2")
+			require.Equal(t, tc.wantSecond, watcher.LastProcessedSegment(), "reported segment after second run")
 
 			wt.mu.Lock()
 			defer wt.mu.Unlock()

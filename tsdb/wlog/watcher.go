@@ -358,7 +358,8 @@ func (w *Watcher) Run() error {
 	w.logger.Debug("Tailing WAL", "lastCheckpoint", lastCheckpoint, "checkpointIndex", checkpointIndex, "currentSegment", currentSegment, "lastSegment", lastSegment)
 	for !isClosed(w.quit) {
 		w.currentSegmentMetric.Set(float64(currentSegment))
-		if int64(currentSegment) > w.segment.Load() {
+		// Without a start segment, segments before the last one are only read for series.
+		if (w.startSegment >= 0 || currentSegment >= lastSegment) && int64(currentSegment) > w.segment.Load() {
 			w.segment.Store(int64(currentSegment))
 		}
 
@@ -749,8 +750,8 @@ func (w *Watcher) SetStartTime(t time.Time) {
 }
 
 // LastProcessedSegment returns the highest WAL segment the watcher has begun
-// processing. The value is monotonic and never regresses. Before Run advances it,
-// it returns the startSegment passed to NewWatcher.
+// sending samples from. The value is monotonic and never regresses. Before Run
+// advances it, it returns the startSegment passed to NewWatcher.
 func (w *Watcher) LastProcessedSegment() int {
 	return int(w.segment.Load())
 }
