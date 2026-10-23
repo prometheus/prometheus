@@ -244,7 +244,57 @@ func (d *Discovery) Run(ctx context.Context, ch chan<- []*targetgroup.Group) {
 		return
 	}
 	d.watcher = watcher
-	defer d.stop()
+
+	// Drain watcher events and errors in a dedicated goroutine for the entire
+	// lifetime of the watcher. Closing or adding watches (e.g. on Windows in
+	// refresh -> watchFiles) will deadlock unless all events and errors are
+	// continuously drained while the watcher's backend goroutine is active.
+	refreshCh := make(chan struct{}, 1)
+	done := make(chan struct{})
+	var wg sync.WaitGroup
+	wg.Add(1)
+	go func() {
+		defer wg.Done()
+		for {
+			select {
+			case event, ok := <-d.watcher.Events:
+				if !ok {
+					return
+				}
+				// fsnotify sometimes sends a bunch of events without name or operation.
+				// It's unclear what they are and why they are sent - filter them out.
+				if event.Name == "" {
+					break
+				}
+				// Everything but a chmod requires rereading.
+				if event.Op^fsnotify.Chmod == 0 {
+					break
+				}
+				// Changes to a file can spawn various sequences of events with
+				// different combinations of operations. For all practical purposes
+				// this is inaccurate.
+				// The most reliable solution is to reload everything if anything happens.
+				select {
+				case refreshCh <- struct{}{}:
+				default:
+				}
+			case err, ok := <-d.watcher.Errors:
+				if !ok {
+					return
+				}
+				if err != nil {
+					d.logger.Error("Error watching file", "err", err)
+				}
+			case <-done:
+				return
+			}
+		}
+	}()
+	defer func() {
+		d.stop()
+		close(done)
+		wg.Wait()
+	}()
 
 	d.refresh(ctx, ch)
 
@@ -256,31 +306,13 @@ func (d *Discovery) Run(ctx context.Context, ch chan<- []*targetgroup.Group) {
 		case <-ctx.Done():
 			return
 
-		case event := <-d.watcher.Events:
-			// fsnotify sometimes sends a bunch of events without name or operation.
-			// It's unclear what they are and why they are sent - filter them out.
-			if event.Name == "" {
-				break
-			}
-			// Everything but a chmod requires rereading.
-			if event.Op^fsnotify.Chmod == 0 {
-				break
-			}
-			// Changes to a file can spawn various sequences of events with
-			// different combinations of operations. For all practical purposes
-			// this is inaccurate.
-			// The most reliable solution is to reload everything if anything happens.
+		case <-refreshCh:
 			d.refresh(ctx, ch)
 
 		case <-ticker.C:
 			// Setting a new watch after an update might fail. Make sure we don't lose
 			// those files forever.
 			d.refresh(ctx, ch)
-
-		case err := <-d.watcher.Errors:
-			if err != nil {
-				d.logger.Error("Error watching file", "err", err)
-			}
 		}
 	}
 }
@@ -301,23 +333,8 @@ func (d *Discovery) deleteTimestamp(filename string) {
 func (d *Discovery) stop() {
 	d.logger.Debug("Stopping file discovery...", "paths", fmt.Sprintf("%v", d.paths))
 
-	done := make(chan struct{})
-	defer close(done)
-
 	d.metrics.fileSDTimeStamp.removeDiscoverer(d)
 
-	// Closing the watcher will deadlock unless all events and errors are drained.
-	go func() {
-		for {
-			select {
-			case <-d.watcher.Errors:
-			case <-d.watcher.Events:
-				// Drain all events and errors.
-			case <-done:
-				return
-			}
-		}
-	}()
 	if err := d.watcher.Close(); err != nil {
 		d.logger.Error("Error closing file watcher", "paths", fmt.Sprintf("%v", d.paths), "err", err)
 	}
