@@ -379,6 +379,74 @@ rpc_duration_seconds {count:100,sum:30000.0,quantile:[0.5:100.0,0.9:200.0,0.99:3
 	require.Error(t, err)
 }
 
+func TestOpenMetrics2ParseCompositeSummaryNaNQuantiles(t *testing.T) {
+	input := `# TYPE rpc_duration_seconds summary
+rpc_duration_seconds {count:0,sum:0.0,quantile:[0.5:NaN,0.9:NaN]}
+# EOF
+`
+	exp := []parsedEntry{
+		{m: "rpc_duration_seconds", typ: model.MetricTypeSummary},
+		{
+			m:    "rpc_duration_seconds_count",
+			v:    0,
+			lset: labels.FromStrings("__name__", "rpc_duration_seconds_count"),
+		},
+		{
+			m:    "rpc_duration_seconds_sum",
+			v:    0.0,
+			lset: labels.FromStrings("__name__", "rpc_duration_seconds_sum"),
+		},
+		{
+			m:    "rpc_duration_seconds\xffquantile\xff0.5",
+			v:    math.Float64frombits(value.NormalNaN),
+			lset: labels.FromStrings("__name__", "rpc_duration_seconds", "quantile", "0.5"),
+		},
+		{
+			m:    "rpc_duration_seconds\xffquantile\xff0.9",
+			v:    math.Float64frombits(value.NormalNaN),
+			lset: labels.FromStrings("__name__", "rpc_duration_seconds", "quantile", "0.9"),
+		},
+	}
+
+	p := NewOpenMetrics2Parser([]byte(input), labels.NewSymbolTable(), ParserOptions{})
+	got := testParse(t, p)
+	requireEntries(t, exp, got)
+}
+
+func TestOpenMetrics2ParseCompositeSummaryNegativeObservations(t *testing.T) {
+	input := `# TYPE temp_celsius summary
+temp_celsius {count:2,sum:-15.0,quantile:[0.5:-10.0,0.9:-5.0]}
+# EOF
+`
+	exp := []parsedEntry{
+		{m: "temp_celsius", typ: model.MetricTypeSummary},
+		{
+			m:    "temp_celsius_count",
+			v:    2,
+			lset: labels.FromStrings("__name__", "temp_celsius_count"),
+		},
+		{
+			m:    "temp_celsius_sum",
+			v:    -15.0,
+			lset: labels.FromStrings("__name__", "temp_celsius_sum"),
+		},
+		{
+			m:    "temp_celsius\xffquantile\xff0.5",
+			v:    -10.0,
+			lset: labels.FromStrings("__name__", "temp_celsius", "quantile", "0.5"),
+		},
+		{
+			m:    "temp_celsius\xffquantile\xff0.9",
+			v:    -5.0,
+			lset: labels.FromStrings("__name__", "temp_celsius", "quantile", "0.9"),
+		},
+	}
+
+	p := NewOpenMetrics2Parser([]byte(input), labels.NewSymbolTable(), ParserOptions{})
+	got := testParse(t, p)
+	requireEntries(t, exp, got)
+}
+
 func TestOpenMetrics2ParseCompositeClassicHistogram(t *testing.T) {
 	input := `# HELP req_duration Request duration histogram.
 # TYPE req_duration histogram
@@ -1060,6 +1128,54 @@ foo_total 1.0 # {id="x"} 1.0
 		{
 			input: "# TYPE foo summary\nfoo {count:1,sum:2.0,quantile:[NaN:1.0]}\n# EOF\n",
 			err:   "quantile must not be NaN",
+		},
+		{
+			input: "# TYPE foo histogram\nfoo {count:-1,sum:1.0,bucket:[+Inf:1]}\n# EOF\n",
+			err:   "count must not be negative",
+		},
+		{
+			input: "# TYPE foo gaugehistogram\nfoo {gcount:-1,gsum:1.0,bucket:[+Inf:1]}\n# EOF\n",
+			err:   "gcount must not be negative",
+		},
+		{
+			input: "# TYPE foo histogram\nfoo {count:3,sum:6.0,bucket:[1.0:2,2.0:1,+Inf:3]}\n# EOF\n",
+			err:   "classic histogram bucket values must be cumulative",
+		},
+		{
+			input: "# TYPE foo histogram\nfoo {count:3,sum:6.0,bucket:[1.0:1,2.0:2,+Inf:4]}\n# EOF\n",
+			err:   "classic histogram +Inf bucket value (4) must equal count (3)",
+		},
+		{
+			input: "# TYPE foo gaugehistogram\nfoo {gcount:3,gsum:6.0,bucket:[1.0:-1,+Inf:3]}\n# EOF\n",
+			err:   "value must not be negative",
+		},
+		{
+			input: "# TYPE foo gaugehistogram\nfoo {gcount:3,gsum:6.0,bucket:[1.0:2,2.0:1,+Inf:3]}\n# EOF\n",
+			err:   "classic histogram bucket values must be cumulative",
+		},
+		{
+			input: "# TYPE foo gaugehistogram\nfoo {gcount:3,gsum:6.0,bucket:[1.0:1,2.0:2,+Inf:4]}\n# EOF\n",
+			err:   "classic histogram +Inf bucket value (4) must equal gcount (3)",
+		},
+		{
+			input: "# TYPE foo summary\nfoo {count:-1,sum:2.0,quantile:[0.5:1.0]}\n# EOF\n",
+			err:   "count must not be negative or NaN",
+		},
+		{
+			input: "# TYPE foo summary\nfoo {count:NaN,sum:2.0,quantile:[0.5:1.0]}\n# EOF\n",
+			err:   "count must not be negative or NaN",
+		},
+		{
+			input: "# TYPE foo summary\nfoo {count:1.5,sum:2.0,quantile:[0.5:1.0]}\n# EOF\n",
+			err:   "count must be an integer",
+		},
+		{
+			input: "# TYPE foo summary\nfoo {count:+Inf,sum:2.0,quantile:[0.5:1.0]}\n# EOF\n",
+			err:   "count must be an integer",
+		},
+		{
+			input: "# TYPE foo summary\nfoo {count:1,sum:NaN,quantile:[0.5:1.0]}\n# EOF\n",
+			err:   "sum must not be NaN",
 		},
 	} {
 		t.Run(tc.err, func(t *testing.T) {
