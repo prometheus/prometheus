@@ -23,6 +23,7 @@ TSDB_BENCHMARK_OUTPUT_DIR ?= ./benchout
 
 GOLANGCI_LINT_OPTS ?= --timeout 4m
 GOYACC_VERSION ?= v0.6.0
+GOLEX_VERSION ?= v1.1.0
 
 include Makefile.common
 
@@ -169,6 +170,21 @@ check-generated-parser: clean-parser promql/parser/generated_parser.y.go
 install-goyacc:
 	@echo ">> installing goyacc $(GOYACC_VERSION)"
 	@go install golang.org/x/tools/cmd/goyacc@$(GOYACC_VERSION)
+
+.PHONY: generate-textparse-lexers
+generate-textparse-lexers:
+	@echo ">> generating textparse lexers"
+	@PATH="$(FIRST_GOPATH)/bin:$$PATH" $(GO) generate ./model/textparse
+
+.PHONY: check-generated-textparse-lexers
+check-generated-textparse-lexers: generate-textparse-lexers
+	@echo ">> checking generated textparse lexers"
+	@git diff --exit-code -- model/textparse/promlex.l.go model/textparse/openmetricslex.l.go || (echo "Generated textparse lexer files are out of date. Please run 'make generate-textparse-lexers' and commit the changes." && false)
+
+.PHONY: install-golex
+install-golex:
+	@echo ">> installing golex $(GOLEX_VERSION)"
+	@$(GO) install modernc.org/golex@$(GOLEX_VERSION)
 
 .PHONY: test
 # If we only want to test go code we have to change the test target
