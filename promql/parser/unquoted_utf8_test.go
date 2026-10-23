@@ -25,8 +25,7 @@ import (
 )
 
 func TestUnquotedUTF8Names(t *testing.T) {
-	enabled := NewParser(Options{EnableUnquotedUTF8Names: true})
-	disabled := NewParser(Options{})
+	p := NewParser(Options{})
 	for _, name := range []string{
 		"Björn", "温度", "θερμοκρασία", "температура", "حرارة", "𐐀", "a𐐀9",
 		"http.server.request.duration", "foo..bar", "foo.", "_:温度.total",
@@ -35,19 +34,16 @@ func TestUnquotedUTF8Names(t *testing.T) {
 		"İnf", "а", "ö",
 	} {
 		t.Run(name, func(t *testing.T) {
-			expr, err := enabled.ParseExpr(name)
+			expr, err := p.ParseExpr(name)
 			require.NoError(t, err)
 			require.Equal(t, name, expr.(*VectorSelector).Name)
 			require.Equal(t, name, expr.String())
-			actual, err := enabled.ParseMetricSelector(name)
+			actual, err := p.ParseMetricSelector(name)
 			require.NoError(t, err)
-			expected, err := disabled.ParseMetricSelector(fmt.Sprintf("{%q}", name))
+			expected, err := p.ParseMetricSelector(fmt.Sprintf("{%q}", name))
 			require.NoError(t, err)
 			require.Equal(t, expected, actual)
-			// Alternate parser instances to also exercise reuse from the parser pool.
-			_, err = disabled.ParseExpr(name)
-			require.Error(t, err)
-			_, err = enabled.ParseExpr(expr.String())
+			_, err = p.ParseExpr(expr.String())
 			require.NoError(t, err)
 		})
 	}
@@ -64,14 +60,12 @@ func TestUnquotedUTF8Names(t *testing.T) {
 		"http.server.requests + .5", "Inf.total + Inf", "NaN.total or foo",
 	} {
 		t.Run(input, func(t *testing.T) {
-			expr, err := enabled.ParseExpr(input)
+			expr, err := p.ParseExpr(input)
 			require.NoError(t, err)
 			printed := expr.String()
-			roundTrip, err := enabled.ParseExpr(printed)
+			roundTrip, err := p.ParseExpr(printed)
 			require.NoError(t, err)
 			require.Equal(t, printed, roundTrip.String())
-			_, err = disabled.ParseExpr(input)
-			require.Error(t, err)
 		})
 	}
 
@@ -84,102 +78,86 @@ func TestUnquotedUTF8Names(t *testing.T) {
 		`my.metric.name{"my.metric.name"}`, `my.metric.name{__name__="my.metric.name"}`,
 	} {
 		t.Run(input, func(t *testing.T) {
-			_, err := enabled.ParseExpr(input)
+			_, err := p.ParseExpr(input)
 			require.Error(t, err)
 		})
 	}
 
 	for _, input := range []string{"sum by (a:b) (foo)", "foo + on (a:b) bar"} {
 		t.Run(input, func(t *testing.T) {
-			_, err := disabled.ParseExpr(input)
-			require.NoError(t, err)
-			_, err = enabled.ParseExpr(input)
+			_, err := p.ParseExpr(input)
 			require.ErrorContains(t, err, `invalid label name for grouping: "a:b"`)
 		})
 	}
 
 	for _, input := range []string{".5", "5.", "1.5", "1e3", "0x10", "Inf", "inf", "NaN", "nan", "5m"} {
 		t.Run(input, func(t *testing.T) {
-			expr, err := enabled.ParseExpr(input)
+			expr, err := p.ParseExpr(input)
 			require.NoError(t, err)
 			require.IsType(t, &NumberLiteral{}, expr)
-			expected, err := disabled.ParseExpr(input)
+			roundTrip, err := p.ParseExpr(expr.String())
 			require.NoError(t, err)
-			require.Equal(t, expected.String(), expr.String())
+			require.Equal(t, expr.String(), roundTrip.String())
 		})
 	}
 
 	for _, name := range []string{".5", "5", "5foo", ".foo", "Inf", "inf", "NaN", "nan", "5m"} {
-		_, err := enabled.ParseMetricSelector(name)
+		_, err := p.ParseMetricSelector(name)
 		require.Error(t, err)
-		matchers, err := enabled.ParseMetricSelector(fmt.Sprintf("{%q}", name))
+		matchers, err := p.ParseMetricSelector(fmt.Sprintf("{%q}", name))
 		require.NoError(t, err)
 		require.Equal(t, name, matchers[0].Value)
 	}
 
-	metric, err := enabled.ParseMetric(`温度{場所="東京"}`)
+	metric, err := p.ParseMetric(`温度{場所="東京"}`)
 	require.NoError(t, err)
 	testutil.RequireEqual(t, labels.FromStrings("__name__", "温度", "場所", "東京"), metric)
-	series, values, err := enabled.ParseSeriesDesc(`温度{場所="東京"} 1+1x2`)
+	series, values, err := p.ParseSeriesDesc(`温度{場所="東京"} 1+1x2`)
 	require.NoError(t, err)
 	testutil.RequireEqual(t, metric, series)
 	require.Equal(t, []SequenceValue{{Value: 1}, {Value: 2}, {Value: 3}}, values)
 
-	for _, enabled := range []bool{false, true} {
-		registry := features.NewRegistry()
-		NewParser(Options{EnableUnquotedUTF8Names: enabled}).RegisterFeatures(registry)
-		require.Equal(t, enabled, registry.Get()[features.PromQL]["unquoted_utf8_names"])
-	}
+	registry := features.NewRegistry()
+	p.RegisterFeatures(registry)
+	require.True(t, registry.Get()[features.PromQL]["unquoted_utf8_names"])
 }
 
 func TestUnquotedUTF8NamesPrinting(t *testing.T) {
-	for _, tc := range []struct{ input, enabled, disabled string }{
-		{`foo{"service.name"="api"}`, `foo{service.name="api"}`, `foo{"service.name"="api"}`},
-		{`sum by ("service.name", "équipe") (foo)`, `sum by (service.name, équipe) (foo)`, `sum by ("service.name", "équipe") (foo)`},
-		{`foo + on ("service.name") group_left ("équipe") bar`, `foo + on (service.name) group_left (équipe) bar`, `foo + on ("service.name") group_left ("équipe") bar`},
-		{`foo{".name"="x", "ö"="y", "😀"="z"}`, `foo{".name"="x","ö"="y","😀"="z"}`, `foo{".name"="x","ö"="y","😀"="z"}`},
+	p := NewParser(Options{})
+	for _, tc := range []struct{ input, expected string }{
+		{`foo{"service.name"="api"}`, `foo{service.name="api"}`},
+		{`sum by ("service.name", "équipe") (foo)`, `sum by (service.name, équipe) (foo)`},
+		{`foo + on ("service.name") group_left ("équipe") bar`, `foo + on (service.name) group_left (équipe) bar`},
+		{`foo{".name"="x", "ö"="y", "😀"="z"}`, `foo{".name"="x","ö"="y","😀"="z"}`},
+		{`sum by ("a:b") (foo)`, `sum by ("a:b") (foo)`},
+		{`foo + on ("a:b") bar`, `foo + on ("a:b") bar`},
 	} {
 		t.Run(tc.input, func(t *testing.T) {
-			for _, enabled := range []bool{false, true} {
-				p := NewParser(Options{EnableUnquotedUTF8Names: enabled})
-				expr, err := p.ParseExpr(tc.input)
-				require.NoError(t, err)
-				expected := tc.disabled
-				if enabled {
-					expected = tc.enabled
-				}
-				require.Equal(t, expected, expr.String())
-				roundTrip, err := p.ParseExpr(expr.String())
-				require.NoError(t, err)
-				require.Equal(t, expected, roundTrip.String())
-			}
+			expr, err := p.ParseExpr(tc.input)
+			require.NoError(t, err)
+			require.Equal(t, tc.expected, expr.String())
+			roundTrip, err := p.ParseExpr(expr.String())
+			require.NoError(t, err)
+			require.Equal(t, tc.expected, roundTrip.String())
 		})
 	}
 }
 
 func BenchmarkParseNames(b *testing.B) {
-	for _, tc := range []struct {
-		name, query string
-		extended    bool
-	}{
-		{"ASCII", `sum by (service_name) (rate(http_server_requests_total[5m]))`, false},
-		{"quoted", `sum by ("service.name") (rate({"http.server.requests"}[5m]))`, false},
-		{"dots", `sum by (service.name) (rate(http.server.requests[5m]))`, true},
-		{"Unicode", `sum by (場所) (rate(温度[5m]))`, true},
+	for _, tc := range []struct{ name, query string }{
+		{"ASCII", `sum by (service_name) (rate(http_server_requests_total[5m]))`},
+		{"quoted", `sum by ("service.name") (rate({"http.server.requests"}[5m]))`},
+		{"dots", `sum by (service.name) (rate(http.server.requests[5m]))`},
+		{"Unicode", `sum by (場所) (rate(温度[5m]))`},
 	} {
-		for _, enabled := range []bool{false, true} {
-			if tc.extended && !enabled {
-				continue
-			}
-			b.Run(fmt.Sprintf("%s/enabled=%t", tc.name, enabled), func(b *testing.B) {
-				p := NewParser(Options{EnableUnquotedUTF8Names: enabled})
-				b.ReportAllocs()
-				for b.Loop() {
-					if _, err := p.ParseExpr(tc.query); err != nil {
-						b.Fatal(err)
-					}
+		b.Run(tc.name, func(b *testing.B) {
+			p := NewParser(Options{})
+			b.ReportAllocs()
+			for b.Loop() {
+				if _, err := p.ParseExpr(tc.query); err != nil {
+					b.Fatal(err)
 				}
-			})
-		}
+			}
+		})
 	}
 }
