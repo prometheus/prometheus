@@ -1650,6 +1650,10 @@ func (db *DB) Compact(ctx context.Context) (returnErr error) {
 }
 
 // CompactHead compacts the given RangeHead.
+// Callers using TSDB as a library must stop ingestion before calling CompactHead.
+// CompactHead serializes against other compactions via db.cmtx, but not against
+// concurrent appends, so samples appended while it runs may be missed by the
+// persisted block and then removed from memory by the truncation that follows.
 func (db *DB) CompactHead(head *RangeHead) error {
 	db.cmtx.Lock()
 	defer db.cmtx.Unlock()
