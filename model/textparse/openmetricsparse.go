@@ -18,6 +18,7 @@ package textparse
 
 import (
 	"bytes"
+	"encoding/binary"
 	"errors"
 	"fmt"
 	"io"
@@ -390,12 +391,16 @@ func (p *OpenMetricsParser) seriesHash(offsetsArr *[]byte, metricFamilyName []by
 		if p.mtype == model.MetricTypeHistogram && bytes.Equal(label, leBytes) {
 			continue
 		}
+		// Frame each component so distinct name/value boundaries cannot alias.
+		*offsetsArr = binary.AppendUvarint(*offsetsArr, uint64(lEnd-lStart))
 		*offsetsArr = append(*offsetsArr, p.series[lStart:lEnd]...)
 		vStart := p.offsets[i+2] - p.start
 		vEnd := p.offsets[i+3] - p.start
+		*offsetsArr = binary.AppendUvarint(*offsetsArr, uint64(vEnd-vStart))
 		*offsetsArr = append(*offsetsArr, p.series[vStart:vEnd]...)
 	}
 
+	*offsetsArr = binary.AppendUvarint(*offsetsArr, uint64(len(metricFamilyName)))
 	*offsetsArr = append(*offsetsArr, metricFamilyName...)
 	hashedOffsets := xxhash.Sum64(*offsetsArr)
 

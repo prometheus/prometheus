@@ -14,6 +14,7 @@
 package textparse
 
 import (
+	"errors"
 	"fmt"
 	"io"
 	"math"
@@ -1273,5 +1274,50 @@ func resetValAndLset(e []parsedEntry) {
 	for i := range e {
 		e[i].v = 0
 		e[i].lset = labels.EmptyLabels()
+	}
+}
+
+func TestOpenMetricsStartTimestampLabelBoundaries(t *testing.T) {
+	for _, tc := range []struct{ name, firstFamily, secondFamily, firstLabels, secondLabels string }{
+		{"name_value", "calls", "calls", `a="bc"`, `ab="c"`},
+		{"multiple_labels", "calls", "calls", `a="b",c="de"`, `a="bc",d="e"`},
+		{"family_boundary", "foo", "cfoo", `a="bc"`, `a="b"`},
+		{"distinct_control", "calls", "calls", `a="bc"`, `a="bd"`},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			input := fmt.Sprintf("# TYPE %s counter\n%s_total{%s} 1\n%s_created{%s} 3\n", tc.firstFamily, tc.firstFamily, tc.firstLabels, tc.firstFamily, tc.firstLabels)
+			if tc.secondFamily != tc.firstFamily {
+				input += fmt.Sprintf("# TYPE %s counter\n", tc.secondFamily)
+			}
+			input += fmt.Sprintf("%s_total{%s} 2\n%s_created{%s} 4\n# EOF\n", tc.secondFamily, tc.secondLabels, tc.secondFamily, tc.secondLabels)
+			p := NewOpenMetricsParser([]byte(input), labels.NewSymbolTable(), WithOMParserSTSeriesSkipped())
+			seen := 0
+			for {
+				entry, err := p.Next()
+				if errors.Is(err, io.EOF) {
+					require.Equal(t, EntryInvalid, entry)
+					break
+				}
+				require.NoError(t, err)
+				if entry == EntryType {
+					continue
+				}
+				require.Equal(t, EntrySeries, entry)
+				raw, ts, value := p.Series()
+				var lset labels.Labels
+				p.Labels(&lset)
+				family, literal := tc.firstFamily, tc.firstLabels
+				if seen == 1 {
+					family, literal = tc.secondFamily, tc.secondLabels
+				}
+				require.Equal(t, fmt.Sprintf("%s_total{%s}", family, literal), string(raw))
+				require.Nil(t, ts)
+				require.Equal(t, float64(seen+1), value)
+				require.Equal(t, family+"_total", lset.Get("__name__"))
+				require.Equal(t, int64(3000+seen*1000), p.StartTimestamp())
+				seen++
+			}
+			require.Equal(t, 2, seen)
+		})
 	}
 }
