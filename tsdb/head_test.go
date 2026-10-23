@@ -10603,12 +10603,23 @@ func TestHead_mmapHeadChunks(t *testing.T) {
 		require.NotNil(t, s)
 		require.GreaterOrEqual(t, s.headChunkCount.Load(), uint32(2), "need >=2 head chunks pending mmap")
 
-		// Break the chunk write path in an OS agnostic way: dropping a segment
-		// file with a far higher sequence number into the head chunks directory
-		// makes the next cut file's sequence differ from the one the chunk
-		// reference was handed out for, which fails the write.
-		rogue := filepath.Join(mmappedChunksDir(h.opts.ChunkDirRoot), "000100")
-		require.NoError(t, os.WriteFile(rogue, nil, 0o666))
+		// Break the chunk write path in an OS agnostic way: occupy the next
+		// segment name(s) with directories, so creating the cut file fails and
+		// handleChunkWriteError panics. A high-numbered rogue file no longer
+		// works, because cut() names files from the chunk reference instead of
+		// the highest file on disk.
+		chunkDir := mmappedChunksDir(h.opts.ChunkDirRoot)
+		entries, err := os.ReadDir(chunkDir)
+		require.NoError(t, err)
+		maxSeq := 0
+		for _, e := range entries {
+			if n, err := strconv.Atoi(e.Name()); err == nil && n > maxSeq {
+				maxSeq = n
+			}
+		}
+		for i := 1; i <= 3; i++ {
+			require.NoError(t, os.Mkdir(filepath.Join(chunkDir, fmt.Sprintf("%06d", maxSeq+i)), 0o777))
+		}
 
 		// newTestHead's cleanup calls Head.Close() -> mmapHeadChunks(), which would
 		// otherwise re-trigger the panic on the now-missing directory. Closing the
