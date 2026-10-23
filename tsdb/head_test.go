@@ -9343,63 +9343,81 @@ func TestHeadAppender_WBLEncoder_EnableSTStorage(t *testing.T) {
 }
 
 // TestHeadAppender_STStorage_Disabled verifies that when EnableSTStorage is false,
-// start timestamps are NOT stored in chunks (AtST returns 0).
+// start timestamps are NOT stored in chunks (AtST returns 0), including with
+// ST-capable chunk encodings and for out-of-order samples.
 func TestHeadAppender_STStorage_Disabled(t *testing.T) {
+	testHistogram := tsdbutil.GenerateTestHistogram(1)
+	testFloatHistogram := tsdbutil.GenerateTestFloatHistogram(1)
+
 	type sampleData struct {
 		st      int64
 		ts      int64
 		fSample float64
+		h       *histogram.Histogram
+		fh      *histogram.FloatHistogram
 	}
 
-	samples := []sampleData{
-		{st: 10, ts: 100, fSample: 1.0},
-		{st: 20, ts: 200, fSample: 2.0},
-		{st: 30, ts: 300, fSample: 3.0},
-	}
+	for _, tc := range []struct {
+		name    string
+		samples []sampleData
+	}{
+		{
+			name: "floats",
+			samples: []sampleData{
+				{st: 10, ts: 100, fSample: 1.0},
+				{st: 20, ts: 200, fSample: 2.0},
+				{st: 30, ts: 300, fSample: 3.0},
+				{st: 5, ts: 50, fSample: 0.5}, // Out of order.
+			},
+		},
+		{
+			name: "histograms",
+			samples: []sampleData{
+				{st: 10, ts: 100, h: testHistogram},
+				{st: 20, ts: 200, h: testHistogram},
+				{st: 30, ts: 300, h: testHistogram},
+				{st: 5, ts: 50, h: testHistogram}, // Out of order.
+			},
+		},
+		{
+			name: "float histograms",
+			samples: []sampleData{
+				{st: 10, ts: 100, fh: testFloatHistogram},
+				{st: 20, ts: 200, fh: testFloatHistogram},
+				{st: 30, ts: 300, fh: testFloatHistogram},
+				{st: 5, ts: 50, fh: testFloatHistogram}, // Out of order.
+			},
+		},
+	} {
+		for _, stEncodings := range []bool{false, true} {
+			t.Run(fmt.Sprintf("%s/ST-capable chunk encodings=%t", tc.name, stEncodings), func(t *testing.T) {
+				opts := DefaultOptions()
+				opts.EnableSTStorage = false // Explicitly disable ST storage.
+				opts.OutOfOrderTimeWindow = 10 * time.Minute.Milliseconds()
+				if stEncodings {
+					opts.FloatChunkEncoding = chunkenc.EncXOR2
+					opts.EnableHistogramSTEncoding = true
+				}
+				db := newTestDB(t, withOpts(opts))
 
-	opts := newTestHeadDefaultOptions(DefaultBlockDuration, false)
-	opts.EnableSTStorage.Store(false) // Explicitly disable ST storage.
-	h, _ := newTestHeadWithOptions(t, compression.None, opts)
+				lbls := labels.FromStrings("foo", "bar")
+				for _, s := range tc.samples {
+					// Commit each sample on its own, so the last one goes to the out-of-order head.
+					a := db.AppenderV2(context.Background())
+					_, err := a.Append(0, lbls, s.st, s.ts, s.fSample, s.h, s.fh, storage.AOptions{})
+					require.NoError(t, err)
+					require.NoError(t, a.Commit())
+				}
 
-	lbls := labels.FromStrings("foo", "bar")
-
-	a := h.AppenderV2(context.Background())
-	for _, s := range samples {
-		_, err := a.Append(0, lbls, s.st, s.ts, s.fSample, nil, nil, storage.AOptions{})
-		require.NoError(t, err)
-	}
-	require.NoError(t, a.Commit())
-
-	ctx := context.Background()
-	idxReader, err := h.Index()
-	require.NoError(t, err)
-	defer idxReader.Close()
-
-	chkReader, err := h.Chunks()
-	require.NoError(t, err)
-	defer chkReader.Close()
-
-	p, err := idxReader.Postings(ctx, "foo", "bar")
-	require.NoError(t, err)
-
-	var lblBuilder labels.ScratchBuilder
-	require.True(t, p.Next())
-	sRef := p.At()
-
-	var chkMetas []chunks.Meta
-	require.NoError(t, idxReader.Series(sRef, &lblBuilder, &chkMetas))
-
-	for _, meta := range chkMetas {
-		chk, iterable, err := chkReader.ChunkOrIterable(meta)
-		require.NoError(t, err)
-		require.Nil(t, iterable)
-
-		it := chk.Iterator(nil)
-		for it.Next() != chunkenc.ValNone {
-			st := it.AtST()
-			require.Equal(t, int64(0), st, "ST should be 0 when EnableSTStorage is false")
+				q, err := db.Querier(math.MinInt64, math.MaxInt64)
+				require.NoError(t, err)
+				result := query(t, q, labels.MustNewMatcher(labels.MatchEqual, "foo", "bar"))
+				require.Len(t, result[`{foo="bar"}`], len(tc.samples))
+				for _, s := range result[`{foo="bar"}`] {
+					require.Equal(t, int64(0), s.ST(), "ST should be 0 when EnableSTStorage is false")
+				}
+			})
 		}
-		require.NoError(t, it.Err())
 	}
 }
 
