@@ -1,6 +1,6 @@
 module github.com/prometheus/prometheus/documentation/examples/remote_storage
 
-go 1.26.9
+go 1.26.10
 
 replace github.com/prometheus/prometheus => ../../..
 
