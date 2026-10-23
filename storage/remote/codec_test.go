@@ -666,29 +666,45 @@ func TestConcreteSeriesIterator_ReducesHighResolutionHistograms(t *testing.T) {
 }
 
 func TestFromQueryResultWithDuplicates(t *testing.T) {
-	ts1 := prompb.TimeSeries{
-		Labels: []prompb.Label{
-			{Name: "foo", Value: "bar"},
-			{Name: "foo", Value: "def"},
+	for _, tc := range []struct {
+		name   string
+		labels []prompb.Label
+	}{
+		{
+			name: "adjacent",
+			labels: []prompb.Label{
+				{Name: "foo", Value: "bar"},
+				{Name: "foo", Value: "def"},
+			},
 		},
-		Samples: []prompb.Sample{
-			{Value: 0.0, Timestamp: 0},
+		{
+			name: "not adjacent in unsorted input",
+			labels: []prompb.Label{
+				{Name: "foo", Value: "bar"},
+				{Name: "baz", Value: "qux"},
+				{Name: "foo", Value: "def"},
+			},
 		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			res := prompb.QueryResult{
+				Timeseries: []*prompb.TimeSeries{{
+					Labels: tc.labels,
+					Samples: []prompb.Sample{
+						{Value: 0.0, Timestamp: 0},
+					},
+				}},
+			}
+
+			series := FromQueryResult(false, &res)
+
+			errSeries, isErrSeriesSet := series.(errSeriesSet)
+
+			require.True(t, isErrSeriesSet, "Expected resulting series to be an errSeriesSet")
+			errMessage := errSeries.Err().Error()
+			require.Equalf(t, "duplicate label with name: foo", errMessage, "Expected error to be from duplicate label, but got: %s", errMessage)
+		})
 	}
-
-	res := prompb.QueryResult{
-		Timeseries: []*prompb.TimeSeries{
-			&ts1,
-		},
-	}
-
-	series := FromQueryResult(false, &res)
-
-	errSeries, isErrSeriesSet := series.(errSeriesSet)
-
-	require.True(t, isErrSeriesSet, "Expected resulting series to be an errSeriesSet")
-	errMessage := errSeries.Err().Error()
-	require.Equalf(t, "duplicate label with name: foo", errMessage, "Expected error to be from duplicate label, but got: %s", errMessage)
 }
 
 func TestNegotiateResponseType(t *testing.T) {
