@@ -1064,6 +1064,9 @@ func BenchmarkRelabel(b *testing.B) {
 	for i := range tests {
 		err := yaml.UnmarshalStrict([]byte(tests[i].config), &tests[i].cfgs)
 		require.NoError(b, err)
+		for _, cfg := range tests[i].cfgs {
+			require.NoError(b, cfg.Validate(model.UTF8Validation))
+		}
 	}
 	for _, tt := range tests {
 		lb := labels.NewBuilder(labels.EmptyLabels())
