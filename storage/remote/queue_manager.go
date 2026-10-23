@@ -548,6 +548,9 @@ func NewQueueManager(
 	})
 
 	logger = logger.With(remoteName, client.Name(), endpoint, client.Endpoint())
+	// The caller resolves send_native_histograms (see
+	// RemoteWriteConfig.SendNativeHistogramsEnabled), so use it as-is for both
+	// the queue manager and the WAL watcher.
 	t := &QueueManager{
 		logger:                  logger,
 		flushDeadline:           flushDeadline,
