@@ -35,6 +35,7 @@ import (
 	"golang.org/x/sync/semaphore"
 
 	"github.com/prometheus/prometheus/model/labels"
+	"github.com/prometheus/prometheus/model/metadata"
 	"github.com/prometheus/prometheus/model/rulefmt"
 	"github.com/prometheus/prometheus/notifier"
 	"github.com/prometheus/prometheus/promql"
@@ -413,10 +414,11 @@ func (m *Manager) LoadGroups(
 					))
 					continue
 				}
-				rules = append(rules, NewRecordingRule(
+				rules = append(rules, NewRecordingRuleWithMetadata(
 					r.Record,
 					expr,
 					mLabels,
+					metadata.Metadata{Type: r.Type, Help: r.Description},
 				))
 			}
 
