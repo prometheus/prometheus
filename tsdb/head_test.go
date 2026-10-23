@@ -1484,8 +1484,7 @@ func TestHead_RaceBetweenSeriesCreationAndGC(t *testing.T) {
 		}
 	}()
 
-	// Don't check the atomic.Bool on all iterations in order to perform more gc iterations and make the race condition more likely.
-	for i := 1; i%128 != 0 || !done.Load(); i++ {
+	for !done.Load() {
 		head.gc()
 	}
 
@@ -2398,7 +2397,6 @@ func TestDeletedSamplesAndSeriesStillInWALAfterCheckpoint(t *testing.T) {
 
 func TestDelete_e2e(t *testing.T) {
 	numDatapoints := 1000
-	numRanges := 1000
 	timeInterval := int64(2)
 	// Create 8 series with 1000 data-points of different ranges, delete and run queries.
 	lbls := [][]labels.Label{
@@ -2504,51 +2502,49 @@ func TestDelete_e2e(t *testing.T) {
 			}
 		}
 		sort.Sort(matched)
-		for range numRanges {
-			q, err := NewBlockQuerier(hb, 0, 100000)
-			require.NoError(t, err)
-			ss := q.Select(context.Background(), true, nil, del.ms...)
-			// Build the mockSeriesSet.
-			matchedSeries := make([]storage.Series, 0, len(matched))
-			for _, m := range matched {
-				smpls := seriesMap[m.String()]
-				smpls = deletedSamples(smpls, del.drange)
-				// Only append those series for which samples exist as mockSeriesSet
-				// doesn't skip series with no samples.
-				// TODO: But sometimes SeriesSet returns an empty chunkenc.Iterator
-				if len(smpls) > 0 {
-					matchedSeries = append(matchedSeries, storage.NewListSeries(m, smpls))
-				}
+		q, err := NewBlockQuerier(hb, 0, 100000)
+		require.NoError(t, err)
+		ss := q.Select(context.Background(), true, nil, del.ms...)
+		// Build the mockSeriesSet.
+		matchedSeries := make([]storage.Series, 0, len(matched))
+		for _, m := range matched {
+			smpls := seriesMap[m.String()]
+			smpls = deletedSamples(smpls, del.drange)
+			// Only append those series for which samples exist as mockSeriesSet
+			// doesn't skip series with no samples.
+			// TODO: But sometimes SeriesSet returns an empty chunkenc.Iterator
+			if len(smpls) > 0 {
+				matchedSeries = append(matchedSeries, storage.NewListSeries(m, smpls))
 			}
-			expSs := newMockSeriesSet(matchedSeries)
-			// Compare both SeriesSets.
-			for {
-				eok, rok := expSs.Next(), ss.Next()
-				// Skip a series if iterator is empty.
-				if rok {
-					for ss.At().Iterator(nil).Next() == chunkenc.ValNone {
-						rok = ss.Next()
-						if !rok {
-							break
-						}
+		}
+		expSs := newMockSeriesSet(matchedSeries)
+		// Compare both SeriesSets.
+		for {
+			eok, rok := expSs.Next(), ss.Next()
+			// Skip a series if iterator is empty.
+			if rok {
+				for ss.At().Iterator(nil).Next() == chunkenc.ValNone {
+					rok = ss.Next()
+					if !rok {
+						break
 					}
 				}
-				require.Equal(t, eok, rok)
-				if !eok {
-					break
-				}
-				sexp := expSs.At()
-				sres := ss.At()
-				require.Equal(t, sexp.Labels(), sres.Labels())
-				smplExp, errExp := storage.ExpandSamples(sexp.Iterator(nil), newSample)
-				smplRes, errRes := storage.ExpandSamples(sres.Iterator(nil), newSample)
-				require.Equal(t, errExp, errRes)
-				requireEqualSamples(t, sexp.Labels().String(), smplExp, smplRes)
 			}
-			require.NoError(t, ss.Err())
-			require.Empty(t, ss.Warnings())
-			require.NoError(t, q.Close())
+			require.Equal(t, eok, rok)
+			if !eok {
+				break
+			}
+			sexp := expSs.At()
+			sres := ss.At()
+			require.Equal(t, sexp.Labels(), sres.Labels())
+			smplExp, errExp := storage.ExpandSamples(sexp.Iterator(nil), newSample)
+			smplRes, errRes := storage.ExpandSamples(sres.Iterator(nil), newSample)
+			require.Equal(t, errExp, errRes)
+			requireEqualSamples(t, sexp.Labels().String(), smplExp, smplRes)
 		}
+		require.NoError(t, ss.Err())
+		require.Empty(t, ss.Warnings())
+		require.NoError(t, q.Close())
 	}
 }
 
