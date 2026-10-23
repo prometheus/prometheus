@@ -179,6 +179,7 @@ var expectedConf = &Config{
 			"k8s.cluster.name", "k8s.job.name", "k8s.namespace.name",
 		},
 		TranslationStrategy:                  otlptranslator.UnderscoreEscapingWithSuffixes,
+		KeepIdentifyingResourceAttributes:    true,
 		LabelNameUnderscoreSanitization:      true,
 		LabelNamePreserveMultipleUnderscores: true,
 	},
@@ -2154,6 +2155,7 @@ func TestOTLPLabelUnderscoreSanitization(t *testing.T) {
 		require.NoError(t, err)
 
 		// Empty config should use default values (true)
+		require.True(t, conf.OTLPConfig.KeepIdentifyingResourceAttributes)
 		require.True(t, conf.OTLPConfig.LabelNameUnderscoreSanitization)
 		require.True(t, conf.OTLPConfig.LabelNamePreserveMultipleUnderscores)
 	})
