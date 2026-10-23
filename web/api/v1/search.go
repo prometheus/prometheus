@@ -78,6 +78,14 @@ const maxSearchBatchSize = 1000
 // worst-case per-value evaluation stays bounded.
 const maxSearchTermsPerRequest = 32
 
+// maxSearchTermsTotalLength caps the combined length in bytes of all search[]
+// terms in a request. Every term is scored against every scanned value, and
+// Jaro-Winkler scoring costs O(len(term) * len(value)) per value, so the
+// per-value cost grows with the total bytes of all terms rather than with the
+// count or the length of any one term. 1024 bytes is far above realistic
+// autocomplete input.
+const maxSearchTermsTotalLength = 1024
+
 // fuzzAlgorithms is the canonical list of supported fuzzy matching algorithms,
 // used by validation, feature registration, and API documentation. It is kept
 // unexported so it cannot be mutated by external packages; use FuzzAlgorithms()
@@ -220,6 +228,16 @@ func (api *API) parseSearchParams(r *http.Request) (searchParams, *apiError) {
 		return sp, &apiError{errorBadData, fmt.Errorf(
 			"too many search[] terms: got %d, maximum is %d",
 			len(sp.searches), maxSearchTermsPerRequest,
+		)}
+	}
+	totalLen := 0
+	for _, s := range sp.searches {
+		totalLen += len(s)
+	}
+	if totalLen > maxSearchTermsTotalLength {
+		return sp, &apiError{errorBadData, fmt.Errorf(
+			"search[] terms too long: got %d bytes in total, maximum is %d",
+			totalLen, maxSearchTermsTotalLength,
 		)}
 	}
 
