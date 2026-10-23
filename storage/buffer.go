@@ -84,6 +84,10 @@ func (b *BufferedSeriesIterator) Buffer() *SampleRingIterator {
 // Seek advances the iterator to the element at time t or greater.
 func (b *BufferedSeriesIterator) Seek(t int64) chunkenc.ValueType {
 	t0 := t - b.buf.delta
+	if b.buf.delta > 0 && t < math.MinInt64+b.buf.delta {
+		// The lookback starts before any representable timestamp.
+		t0 = math.MinInt64
+	}
 
 	// If the delta would cause us to seek backwards, preserve the buffer
 	// and just continue regular advancement while filling the buffer on the way.
