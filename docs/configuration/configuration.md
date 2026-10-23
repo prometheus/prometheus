@@ -4361,6 +4361,8 @@ with this feature.
 # When out_of_order_time_window is greater than 0, it also affects experimental agent. It allows
 # the agent's WAL to accept out-of-order samples that fall within the specified time window relative
 # to the timestamp of the last appended sample for the same series.
+# The agent ignores float samples identical to the latest committed sample (timestamp and value),
+# even when this window is zero.
 [ out_of_order_time_window: <duration> | default = 0s ]
 
 # Configures the trigger point for compacting the stale series from the memory into persistent blocks
