@@ -2207,3 +2207,163 @@ func TestTimeLimitAppenderV2_LimitExemplars(t *testing.T) {
 		require.Equal(t, int64(900), appendable.exemplars[0].t)
 	})
 }
+
+func TestRemoteWriteHandlerLabelLengthLimits_V1Message(t *testing.T) {
+	// Metric name is kept short (1 char) so it never collides with the
+	// configured maxLabelValueLength in any subtest - otherwise the fixture
+	// itself would be rejected on the __name__ value and the subtest would
+	// not exercise the dimension it claims to test.
+	newSeries := func(name, value string) []prompb.TimeSeries {
+		return []prompb.TimeSeries{{
+			Labels: []prompb.Label{
+				{Name: "__name__", Value: "m"},
+				{Name: name, Value: value},
+			},
+			Samples: []prompb.Sample{{Value: 1, Timestamp: 1000}},
+		}}
+	}
+
+	for _, tc := range []struct {
+		name            string
+		series          []prompb.TimeSeries
+		maxNameLength   int
+		maxValueLength  int
+		expectedSamples int
+	}{
+		{
+			name:            "within limits",
+			series:          newSeries("foo", "bar"),
+			maxNameLength:   10,
+			maxValueLength:  10,
+			expectedSamples: 1,
+		},
+		{
+			name:            "exactly at limits",
+			series:          newSeries("ab", "xy"),
+			maxNameLength:   8,
+			maxValueLength:  6,
+			expectedSamples: 1,
+		},
+		{
+			name:            "label name too long",
+			series:          newSeries("this_name_is_too_long", "bar"),
+			maxNameLength:   10,
+			maxValueLength:  10,
+			expectedSamples: 0,
+		},
+		{
+			name:            "label value too long",
+			series:          newSeries("foo", "this_value_is_too_long"),
+			maxNameLength:   100,
+			maxValueLength:  10,
+			expectedSamples: 0,
+		},
+		{
+			name:            "zero limits disable validation",
+			series:          newSeries("any_name", "any_value"),
+			maxNameLength:   0,
+			maxValueLength:  0,
+			expectedSamples: 1,
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			payload, _, _, err := buildWriteRequest(nil, tc.series, nil, nil, nil, nil, "snappy")
+			require.NoError(t, err)
+
+			req, err := http.NewRequest(http.MethodPost, "", bytes.NewReader(payload))
+			require.NoError(t, err)
+
+			appendable := &mockAppendable{}
+			handler := NewWriteHandler(promslog.NewNopLogger(), nil, appendable, []remoteapi.WriteMessageType{remoteapi.WriteV1MessageType}, false, false,
+				WithWriteHandlerLabelLengthLimits(tc.maxNameLength, tc.maxValueLength))
+
+			recorder := httptest.NewRecorder()
+			handler.ServeHTTP(recorder, req)
+
+			resp := recorder.Result()
+			require.Equal(t, http.StatusNoContent, resp.StatusCode)
+			require.Len(t, appendable.samples, tc.expectedSamples)
+		})
+	}
+}
+
+func TestRemoteWriteHandlerLabelLengthLimits_V2Message(t *testing.T) {
+	newV2Input := func(name, value string) ([]writev2.TimeSeries, []string) {
+		symbolTable := writev2.NewSymbolTable()
+		labelRefs := symbolTable.SymbolizeLabels(labels.FromStrings("__name__", "m", name, value), nil)
+		return []writev2.TimeSeries{{
+			LabelsRefs: labelRefs,
+			Samples:    []writev2.Sample{{Value: 1, Timestamp: 1000}},
+		}}, symbolTable.Symbols()
+	}
+
+	for _, tc := range []struct {
+		name            string
+		labelName       string
+		labelValue      string
+		maxNameLength   int
+		maxValueLength  int
+		expectedCode    int
+		expectedSamples int
+	}{
+		{
+			name:            "within limits",
+			labelName:       "foo",
+			labelValue:      "bar",
+			maxNameLength:   10,
+			maxValueLength:  10,
+			expectedCode:    http.StatusNoContent,
+			expectedSamples: 1,
+		},
+		{
+			name:            "exactly at limits",
+			labelName:       "xy",
+			labelValue:      "123456",
+			maxNameLength:   8,
+			maxValueLength:  6,
+			expectedCode:    http.StatusNoContent,
+			expectedSamples: 1,
+		},
+		{
+			name:            "label name too long",
+			labelName:       "this_name_is_too_long",
+			labelValue:      "bar",
+			maxNameLength:   10,
+			maxValueLength:  10,
+			expectedCode:    http.StatusBadRequest,
+			expectedSamples: 0,
+		},
+		{
+			name:            "label value too long",
+			labelName:       "foo",
+			labelValue:      "this_value_is_too_long",
+			maxNameLength:   100,
+			maxValueLength:  10,
+			expectedCode:    http.StatusBadRequest,
+			expectedSamples: 0,
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			ts, symbols := newV2Input(tc.labelName, tc.labelValue)
+			payload, _, _, _, err := buildV2WriteRequest(promslog.NewNopLogger(), ts, symbols, nil, nil, nil, "snappy")
+			require.NoError(t, err)
+
+			req, err := http.NewRequest(http.MethodPost, "", bytes.NewReader(payload))
+			require.NoError(t, err)
+			req.Header.Set("Content-Type", remoteWriteContentTypeHeaders[remoteapi.WriteV2MessageType])
+			req.Header.Set("Content-Encoding", compression.Snappy)
+			req.Header.Set(RemoteWriteVersionHeader, RemoteWriteVersion20HeaderValue)
+
+			appendable := &mockAppendable{}
+			handler := NewWriteHandler(promslog.NewNopLogger(), nil, appendable, []remoteapi.WriteMessageType{remoteapi.WriteV2MessageType}, false, false,
+				WithWriteHandlerLabelLengthLimits(tc.maxNameLength, tc.maxValueLength))
+
+			recorder := httptest.NewRecorder()
+			handler.ServeHTTP(recorder, req)
+
+			resp := recorder.Result()
+			require.Equal(t, tc.expectedCode, resp.StatusCode)
+			require.Len(t, appendable.samples, tc.expectedSamples)
+		})
+	}
+}
