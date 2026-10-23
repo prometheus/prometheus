@@ -19,6 +19,7 @@ import (
 	"os"
 	"path/filepath"
 	"slices"
+	"strings"
 	"sync"
 	"testing"
 	"time"
@@ -208,7 +209,8 @@ func TestWriteStorageSavepointCloseWhileBehind(t *testing.T) {
 }
 
 // TestWriteStorageSavepointNotWrittenBeforeApplyConfig verifies that a write tick
-// during startup, before queues exist, does not overwrite the loaded savepoint.
+// before the first successful ApplyConfig does not overwrite the loaded savepoint,
+// and that a failed ApplyConfig does not discard it.
 func TestWriteStorageSavepointNotWrittenBeforeApplyConfig(t *testing.T) {
 	cfg := testRemoteWriteConfigForHost("http://persist-before-config.com")
 	hash, err := toHash(cfg)
@@ -228,6 +230,15 @@ func TestWriteStorageSavepointNotWrittenBeforeApplyConfig(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, want, loaded, "write before ApplyConfig must not touch the savepoint file")
 
+	require.Error(t, s.ApplyConfig(&config.Config{
+		GlobalConfig:       config.DefaultGlobalConfig,
+		RemoteWriteConfigs: []*config.RemoteWriteConfig{cfg, cfg},
+	}), "duplicate remote write configs must fail")
+	s.writeSavepoint()
+	loaded, err = LoadSavepoint(dir)
+	require.NoError(t, err)
+	require.Equal(t, want, loaded, "write after a failed ApplyConfig must not touch the savepoint file")
+
 	require.NoError(t, s.ApplyConfig(&config.Config{
 		GlobalConfig:       config.DefaultGlobalConfig,
 		RemoteWriteConfigs: []*config.RemoteWriteConfig{cfg},
@@ -235,8 +246,8 @@ func TestWriteStorageSavepointNotWrittenBeforeApplyConfig(t *testing.T) {
 	require.Equal(t, 3, s.queues[hash].watcher.LastProcessedSegment(), "queue should resume from the loaded savepoint")
 }
 
-// TestWriteStorageSavepointWriteConcurrentApplyConfig exercises a write racing
-// ApplyConfig's savepoint refresh. Run under -race.
+// TestWriteStorageSavepointWriteConcurrentApplyConfig runs writes concurrently with ApplyConfig.
+// It exists to fail under the race detector if writeSavepoint reads rws.queues without rws.mtx.
 func TestWriteStorageSavepointWriteConcurrentApplyConfig(t *testing.T) {
 	cfg := testRemoteWriteConfigForHost("http://persist-concurrent.com")
 	conf := &config.Config{
@@ -277,27 +288,24 @@ func TestWriteStorageSavepointStaleCleanup(t *testing.T) {
 	require.NoError(t, sp.Write(dir))
 
 	s := NewWriteStorage(nil, nil, dir, defaultFlushDeadline, nil, false, true)
-	t.Cleanup(func() { require.NoError(t, s.Close()) })
-
-	// Both entries should be loaded.
-	require.Contains(t, s.savepoint, hashA)
-	require.Contains(t, s.savepoint, staleHash)
 
 	// Apply config with only cfgA.
 	require.NoError(t, s.ApplyConfig(&config.Config{
 		GlobalConfig:       config.DefaultGlobalConfig,
 		RemoteWriteConfigs: []*config.RemoteWriteConfig{cfgA},
 	}))
+	require.NoError(t, s.Close())
 
-	// Stale entry should be removed.
-	require.Contains(t, s.savepoint, hashA, "active queue entry should remain")
-	require.NotContains(t, s.savepoint, staleHash, "stale entry should be removed after ApplyConfig")
+	loaded, err := LoadSavepoint(dir)
+	require.NoError(t, err)
+	require.Contains(t, loaded, hashA, "active queue entry should remain")
+	require.NotContains(t, loaded, staleHash, "stale entry should be removed")
 }
 
 func TestWriteStorageSavepointRecreateResumesFromLivePosition(t *testing.T) {
 	// Changing external labels recreates all remote write queues.
-	// Replacements must resume from each outgoing watcher's live segment rather than an older
-	// persisted segment to avoid unnecessary replay.
+	// Replacements must resume from each outgoing watcher's live segment rather than the
+	// segment loaded at startup to avoid unnecessary replay.
 	series := makeSeries(2, 0)
 	dir := createWALWithSegments(t, []walSegmentData{
 		{series: series, samples: makeSamples(series, 1_000, 0)},
@@ -309,7 +317,7 @@ func TestWriteStorageSavepointRecreateResumesFromLivePosition(t *testing.T) {
 	hash, err := toHash(cfg)
 	require.NoError(t, err)
 
-	// Seed a stale savepoint; the watcher will advance to segment 2.
+	// Seed a savepoint behind the live position; the watcher will advance to segment 2.
 	require.NoError(t, Savepoint{hash: {Segment: 0}}.Write(dir))
 
 	client := NewTestWriteClient(remoteapi.WriteV1MessageType)
@@ -329,24 +337,38 @@ func TestWriteStorageSavepointRecreateResumesFromLivePosition(t *testing.T) {
 		}, factory))
 	}
 
-	applyWithLabels(labels.EmptyLabels())
-	require.Contains(t, s.queues, hash)
-	origQueue := s.queues[hash]
+	// Tail reads wait for a notification, so keep notifying until each count is reached.
+	waitForSamples := func(n int) {
+		require.Eventually(t, func() bool {
+			s.Notify()
+			client.mtx.Lock()
+			defer client.mtx.Unlock()
+			return deepLen(client.receivedSamples) >= n
+		}, 10*time.Second, 50*time.Millisecond)
+	}
 
-	// Wait for the watcher to reach the last existing WAL segment.
-	var live int
-	require.Eventually(t, func() bool {
-		s.mtx.Lock()
-		defer s.mtx.Unlock()
-		live = s.queues[hash].watcher.LastProcessedSegment()
-		return live == 2
-	}, 5*time.Second, 20*time.Millisecond)
+	applyWithLabels(labels.EmptyLabels())
+	origQueue := s.queues[hash]
+	waitForSamples(6)
 
 	applyWithLabels(labels.FromStrings("cluster", "a"))
-
 	require.NotSame(t, origQueue, s.queues[hash], "queue should have been recreated")
-	require.Equal(t, live, s.savepoint[hash].Segment,
-		"reload must capture the live segment, not resume from the older persisted one")
+
+	waitForSamples(8)
+	client.mtx.Lock()
+	defer client.mtx.Unlock()
+	for name, samples := range client.receivedSamples {
+		var ts []int64
+		for _, smpl := range samples {
+			ts = append(ts, smpl.Timestamp)
+		}
+		want := []int64{1_000, 2_000, 3_000}
+		if strings.Contains(name, `cluster="a"`) {
+			// Resumed from segment 2; resuming from 0 would also resend 1000 and 2000.
+			want = []int64{3_000}
+		}
+		require.Equal(t, want, ts, name)
+	}
 }
 
 func TestWriteStorageSavepointMultipleDestinations(t *testing.T) {
@@ -354,16 +376,20 @@ func TestWriteStorageSavepointMultipleDestinations(t *testing.T) {
 
 	cfgA := testRemoteWriteConfigForHost("http://host-a.com")
 	cfgB := testRemoteWriteConfigForHost("http://host-b.com")
+	cfgC := testRemoteWriteConfigForHost("http://host-c.com")
 
 	hashA, err := toHash(cfgA)
 	require.NoError(t, err)
 	hashB, err := toHash(cfgB)
+	require.NoError(t, err)
+	hashC, err := toHash(cfgC)
 	require.NoError(t, err)
 
 	// Pre-populate savepoint with different segment positions.
 	sp := Savepoint{
 		hashA: {Segment: 2},
 		hashB: {Segment: 4},
+		hashC: {Segment: 6},
 	}
 	require.NoError(t, sp.Write(dir))
 
@@ -379,9 +405,16 @@ func TestWriteStorageSavepointMultipleDestinations(t *testing.T) {
 	require.Contains(t, s.queues, hashA)
 	require.Contains(t, s.queues, hashB)
 
-	// Verify savepoint entries were loaded with correct segments.
-	require.Equal(t, 2, s.savepoint[hashA].Segment)
-	require.Equal(t, 4, s.savepoint[hashB].Segment)
+	// Each queue should start from its own savepoint entry.
+	require.Equal(t, 2, s.queues[hashA].watcher.LastProcessedSegment())
+	require.Equal(t, 4, s.queues[hashB].watcher.LastProcessedSegment())
+
+	// A queue added by a later reload starts at the tip, not from its startup entry.
+	require.NoError(t, s.ApplyConfig(&config.Config{
+		GlobalConfig:       config.DefaultGlobalConfig,
+		RemoteWriteConfigs: []*config.RemoteWriteConfig{cfgA, cfgB, cfgC},
+	}))
+	require.Equal(t, -1, s.queues[hashC].watcher.LastProcessedSegment())
 }
 
 func TestWriteStorageSavepointMetrics(t *testing.T) {

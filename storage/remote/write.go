@@ -83,6 +83,7 @@ type WriteStorage struct {
 
 	recordBuf *record.BuffersPool
 
+	// savepoint holds the positions loaded at startup, used by the first successful ApplyConfig.
 	savepoint Savepoint
 	// configApplied is set once the first ApplyConfig succeeds.
 	configApplied bool
@@ -221,6 +222,25 @@ func (rws *WriteStorage) newSavepoint() Savepoint {
 	return sp
 }
 
+// startSegment returns the segment a new queue for hash starts sending from, or -1 for the tip.
+// prev is the queue being replaced, or nil. Must be called with rws.mtx held.
+func (rws *WriteStorage) startSegment(hash string, prev *QueueManager) int {
+	if !rws.enableSavepoint {
+		return -1
+	}
+	if prev != nil {
+		return prev.watcher.LastProcessedSegment()
+	}
+	// The startup savepoint only applies until the first successful ApplyConfig.
+	if rws.configApplied {
+		return -1
+	}
+	if entry, ok := rws.savepoint[hash]; ok {
+		return entry.Segment
+	}
+	return -1
+}
+
 func (rws *WriteStorage) writeSavepoint() {
 	rws.mtx.Lock()
 	// Until the first ApplyConfig creates queues, an empty snapshot would wipe the loaded savepoint.
@@ -228,8 +248,6 @@ func (rws *WriteStorage) writeSavepoint() {
 		rws.mtx.Unlock()
 		return
 	}
-	// sp is marshaled outside the lock, so it must not be shared with rws.savepoint.
-	// ApplyConfig refreshes rws.savepoint from the live queues itself.
 	sp := rws.newSavepoint()
 	rws.mtx.Unlock()
 
@@ -293,16 +311,6 @@ func (rws *WriteStorage) ApplyConfig(conf *config.Config, options ...ApplyConfig
 	// external labels change.
 	externalLabelUnchanged := labels.Equal(conf.GlobalConfig.ExternalLabels, rws.externalLabels)
 
-	// Capture live positions before building replacement queues. A reload can recreate
-	// queues, for example when external labels change, and replacements resume from
-	// rws.savepoint. Refreshing it here avoids replaying from a periodically persisted
-	// position that may be up to savepointWriteInterval stale.
-	if rws.enableSavepoint {
-		for hash, q := range rws.queues {
-			rws.savepoint[hash] = SavepointEntry{Segment: q.watcher.LastProcessedSegment()}
-		}
-	}
-
 	// Nothing in rws is modified until every config has been built, so an
 	// error leaves the previous state intact.
 	newQueues := make(map[string]*QueueManager)
@@ -355,12 +363,7 @@ func (rws *WriteStorage) ApplyConfig(conf *config.Config, options ...ApplyConfig
 		// only used for metric labels.
 		endpoint := rwConf.URL.Redacted()
 
-		startSegment := -1
-		if rws.enableSavepoint {
-			if entry, ok := rws.savepoint[hash]; ok {
-				startSegment = entry.Segment
-			}
-		}
+		startSegment := rws.startSegment(hash, queue)
 
 		newQueues[hash] = NewQueueManager(
 			newQueueManagerMetrics(rws.reg, name, endpoint),
@@ -410,15 +413,6 @@ func (rws *WriteStorage) ApplyConfig(conf *config.Config, options ...ApplyConfig
 	}
 
 	rws.queues = newQueues
-
-	// Remove savepoint entries for queues that no longer exist.
-	if rws.enableSavepoint {
-		for hash := range rws.savepoint {
-			if _, ok := newQueues[hash]; !ok {
-				delete(rws.savepoint, hash)
-			}
-		}
-	}
 	rws.configApplied = true
 
 	return nil
