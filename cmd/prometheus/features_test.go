@@ -142,3 +142,15 @@ func TestSetFeatureListOptions_UnquotedUTF8Names(t *testing.T) {
 		require.Equal(t, enabled, c.parserOpts.EnableUnquotedUTF8Names)
 	}
 }
+
+func TestSetFeatureListOptions_OTLPDeltaToCumulativeDeprecated(t *testing.T) {
+	var output bytes.Buffer
+	logger := promslog.New(&promslog.Config{Writer: &output})
+	c := &flagConfig{featureList: []string{"otlp-deltatocumulative"}}
+	require.NoError(t, c.setFeatureListOptions(logger))
+
+	require.True(t, c.web.ConvertOTLPDelta)
+	require.Contains(t, output.String(), "otlp-deltatocumulative")
+	require.Contains(t, output.String(), "deprecated")
+	require.Contains(t, output.String(), "Use otlp-native-delta-ingestion instead")
+}
