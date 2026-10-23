@@ -468,6 +468,7 @@ func TestHeadAppenderV2_DeleteSamplesAndSeriesStillInWALAfterCheckpoint(t *testi
 }
 
 func TestHeadAppenderV2_Delete_e2e(t *testing.T) {
+	t.Parallel()
 	numDatapoints := 1000
 	numRanges := 1000
 	timeInterval := int64(2)

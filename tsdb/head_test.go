@@ -2397,6 +2397,7 @@ func TestDeletedSamplesAndSeriesStillInWALAfterCheckpoint(t *testing.T) {
 }
 
 func TestDelete_e2e(t *testing.T) {
+	t.Parallel()
 	numDatapoints := 1000
 	numRanges := 1000
 	timeInterval := int64(2)
