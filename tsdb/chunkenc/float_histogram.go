@@ -103,6 +103,9 @@ func (c *FloatHistogramChunk) Appender() (Appender, error) {
 		return nil, err
 	}
 
+	// Recover the writable bits after loading a serialized chunk.
+	c.b.count = it.br.valid
+
 	pBuckets := make([]xorValue, len(it.pBuckets))
 	for i := 0; i < len(it.pBuckets); i++ {
 		pBuckets[i] = xorValue{
