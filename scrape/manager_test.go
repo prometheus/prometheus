@@ -947,7 +947,8 @@ func TestManagerSTZeroIngestion(t *testing.T) {
 							ctx, cancel := context.WithCancel(context.Background())
 							defer cancel()
 
-							sampleTs := time.Now()
+							// Use whole seconds to avoid rounding across millisecond boundaries in OpenMetrics encoding.
+							sampleTs := time.Now().Truncate(time.Second)
 							stTs := time.Time{}
 							if testWithST {
 								stTs = sampleTs.Add(-2 * time.Minute)
