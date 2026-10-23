@@ -20,6 +20,46 @@ import { ValueType } from '../types';
 describe('promql operations', () => {
   const testCases = [
     {
+      expr: 'foo{service.name="api"}',
+      expectedValueType: ValueType.vector,
+      expectedDiag: [] as Diagnostic[],
+    },
+    {
+      expr: 'sum by (service.name, équipe) (rate(http.server.requests[5m]))',
+      expectedValueType: ValueType.vector,
+      expectedDiag: [] as Diagnostic[],
+    },
+    {
+      expr: '温度{場所="東京"}',
+      expectedValueType: ValueType.vector,
+      expectedDiag: [] as Diagnostic[],
+    },
+    {
+      expr: '𐐀{𐐀="x"}',
+      expectedValueType: ValueType.vector,
+      expectedDiag: [] as Diagnostic[],
+    },
+    {
+      expr: 'requests_total + on (service.name) group_left (équipe) service_info',
+      expectedValueType: ValueType.vector,
+      expectedDiag: [] as Diagnostic[],
+    },
+    {
+      expr: 'foo > bool.5',
+      expectedValueType: ValueType.vector,
+      expectedDiag: [] as Diagnostic[],
+    },
+    {
+      expr: 'topK',
+      expectedValueType: ValueType.vector,
+      expectedDiag: [] as Diagnostic[],
+    },
+    {
+      expr: 'Inf.total + Inf',
+      expectedValueType: ValueType.vector,
+      expectedDiag: [] as Diagnostic[],
+    },
+    {
       expr: '1',
       expectedValueType: ValueType.scalar,
       expectedDiag: [] as Diagnostic[],
