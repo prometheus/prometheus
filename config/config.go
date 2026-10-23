@@ -161,6 +161,14 @@ func boolPtr(b bool) *bool {
 	return &b
 }
 
+// MaxLabelLength is the longest label name or value, in bytes, that the
+// labels package is able to encode (2^24, see
+// https://github.com/prometheus/prometheus/pull/16069). Labels longer than
+// this cannot be stored, so it is used as the default for the global label
+// length limits: an oversized label then fails the scrape with a clear error
+// instead of failing later, when the label is encoded.
+const MaxLabelLength = 1 << 24 // 16 MiB
+
 // The defaults applied before parsing the respective config sections.
 var (
 	// DefaultConfig is the default top-level configuration.
@@ -190,6 +198,12 @@ var (
 		ExtraScrapeMetrics:             boolPtr(false),
 		MetricNameValidationScheme:     model.UTF8Validation,
 		MetricNameEscapingScheme:       model.AllowUTF8,
+		// Cap label names and values at the length the labels package can
+		// encode, so that a runaway label fails the scrape instead of the
+		// storage layer. Tighter limits can still be configured per global
+		// config or per scrape config.
+		LabelNameLengthLimit:  MaxLabelLength,
+		LabelValueLengthLimit: MaxLabelLength,
 	}
 
 	DefaultRuntimeConfig = RuntimeConfig{
@@ -527,10 +541,12 @@ type GlobalConfig struct {
 	// fail. 0 means no limit.
 	LabelLimit uint `yaml:"label_limit,omitempty"`
 	// More than this label name length post metric-relabeling will cause the
-	// scrape to fail. 0 means no limit.
+	// scrape to fail. Defaults to MaxLabelLength, the longest label name the
+	// labels package can encode.
 	LabelNameLengthLimit uint `yaml:"label_name_length_limit,omitempty"`
 	// More than this label value length post metric-relabeling will cause the
-	// scrape to fail. 0 means no limit.
+	// scrape to fail. Defaults to MaxLabelLength, the longest label value the
+	// labels package can encode.
 	LabelValueLengthLimit uint `yaml:"label_value_length_limit,omitempty"`
 	// Keep no more than this many dropped targets per job.
 	// 0 means no limit.
@@ -699,6 +715,12 @@ func (c *GlobalConfig) UnmarshalYAML(unmarshal func(any) error) error {
 	if gc.ExtraScrapeMetrics == nil {
 		gc.ExtraScrapeMetrics = DefaultGlobalConfig.ExtraScrapeMetrics
 	}
+	if gc.LabelNameLengthLimit == 0 {
+		gc.LabelNameLengthLimit = DefaultGlobalConfig.LabelNameLengthLimit
+	}
+	if gc.LabelValueLengthLimit == 0 {
+		gc.LabelValueLengthLimit = DefaultGlobalConfig.LabelValueLengthLimit
+	}
 	if gc.ScrapeProtocols == nil {
 		if DefaultGlobalConfig.ScrapeProtocols != nil {
 			// This is the case where the defaults are set due to a feature flag.
@@ -850,10 +872,10 @@ type ScrapeConfig struct {
 	// fail. 0 means no limit.
 	LabelLimit uint `yaml:"label_limit,omitempty"`
 	// More than this label name length post metric-relabeling will cause the
-	// scrape to fail. 0 means no limit.
+	// scrape to fail. If 0, the global label name length limit applies.
 	LabelNameLengthLimit uint `yaml:"label_name_length_limit,omitempty"`
 	// More than this label value length post metric-relabeling will cause the
-	// scrape to fail. 0 means no limit.
+	// scrape to fail. If 0, the global label value length limit applies.
 	LabelValueLengthLimit uint `yaml:"label_value_length_limit,omitempty"`
 	// If there are more than this many buckets in a native histogram,
 	// buckets will be merged to stay within the limit.

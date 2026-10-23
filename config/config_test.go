@@ -3205,6 +3205,9 @@ func TestGetScrapeConfigs(t *testing.T) {
 			AlwaysScrapeClassicHistograms:  boolPtr(opts.AlwaysScrapeClassicHistograms),
 			ConvertClassicHistogramsToNHCB: boolPtr(opts.ConvertClassicHistToNHCB),
 			ExtraScrapeMetrics:             boolPtr(opts.ExtraScrapeMetrics),
+			// Inherited from the default global config.
+			LabelNameLengthLimit:  MaxLabelLength,
+			LabelValueLengthLimit: MaxLabelLength,
 		}
 		if opts.ScrapeProtocols == nil {
 			sc.ScrapeProtocols = DefaultScrapeProtocols
@@ -3289,6 +3292,8 @@ func TestGetScrapeConfigs(t *testing.T) {
 					AlwaysScrapeClassicHistograms:  boolPtr(false),
 					ConvertClassicHistogramsToNHCB: boolPtr(false),
 					ExtraScrapeMetrics:             boolPtr(false),
+					LabelNameLengthLimit:           MaxLabelLength,
+					LabelValueLengthLimit:          MaxLabelLength,
 
 					MetricsPath: DefaultScrapeConfig.MetricsPath,
 					Scheme:      DefaultScrapeConfig.Scheme,
@@ -3328,6 +3333,8 @@ func TestGetScrapeConfigs(t *testing.T) {
 					AlwaysScrapeClassicHistograms:  boolPtr(false),
 					ConvertClassicHistogramsToNHCB: boolPtr(false),
 					ExtraScrapeMetrics:             boolPtr(false),
+					LabelNameLengthLimit:           MaxLabelLength,
+					LabelValueLengthLimit:          MaxLabelLength,
 
 					HTTPClientConfig: config.HTTPClientConfig{
 						TLSConfig: config.TLSConfig{
@@ -3770,4 +3777,31 @@ func TestGetScrapeConfigs_Loaded(t *testing.T) {
 		_, err = c.GetScrapeConfigs()
 		require.NoError(t, err)
 	})
+}
+
+// The global label length limits default to MaxLabelLength, the longest label
+// the labels package can encode, and scrape configs inherit them unless they
+// set a tighter limit of their own.
+func TestLabelLengthLimitDefaults(t *testing.T) {
+	c, err := Load("", promslog.NewNopLogger())
+	require.NoError(t, err)
+	require.Equal(t, uint(MaxLabelLength), c.GlobalConfig.LabelNameLengthLimit)
+	require.Equal(t, uint(MaxLabelLength), c.GlobalConfig.LabelValueLengthLimit)
+
+	c, err = Load(`
+global:
+  scrape_interval: 1m
+scrape_configs:
+  - job_name: inherited
+  - job_name: tightened
+    label_value_length_limit: 200
+`, promslog.NewNopLogger())
+	require.NoError(t, err)
+	require.Len(t, c.ScrapeConfigs, 2)
+
+	require.Equal(t, uint(MaxLabelLength), c.ScrapeConfigs[0].LabelNameLengthLimit)
+	require.Equal(t, uint(MaxLabelLength), c.ScrapeConfigs[0].LabelValueLengthLimit)
+
+	require.Equal(t, uint(MaxLabelLength), c.ScrapeConfigs[1].LabelNameLengthLimit)
+	require.Equal(t, uint(200), c.ScrapeConfigs[1].LabelValueLengthLimit)
 }
