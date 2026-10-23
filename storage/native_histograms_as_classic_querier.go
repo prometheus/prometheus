@@ -89,16 +89,13 @@ func (s *NativeHistogramsAsClassicQueryable) Querier(mint, maxt int64) (Querier,
 
 // Select implements the Querier interface.
 func (q *NativeHistogramsAsClassicQuerier) Select(ctx context.Context, sortSeries bool, hints *SelectHints, matchers ...*labels.Matcher) SeriesSet {
-	nameMatcher, suffix, baseMatchers := extractHistogramSuffix(matchers)
+	baseName, suffix, baseMatchers := extractHistogramSuffix(matchers)
 	if suffix == "" {
 		// Not a classic histogram query, pass through.
 		return q.Querier.Select(ctx, sortSeries, hints, matchers...)
 	}
 
-	metricNameMatcher := newBaseNameMatcher(nameMatcher.Type, nameMatcher.Value, suffix)
-	if metricNameMatcher == nil {
-		return q.Querier.Select(ctx, sortSeries, hints, matchers...)
-	}
+	metricNameMatcher := &labels.Matcher{Type: labels.MatchEqual, Name: model.MetricNameLabel, Value: baseName}
 
 	classicSet := q.Querier.Select(ctx, sortSeries, hints, matchers...)
 	if classicSet.Err() != nil {
@@ -147,50 +144,39 @@ var emptyLeMatcher = &labels.Matcher{Type: labels.MatchEqual, Name: labels.Bucke
 // from the given metric name, or empty string if none matches.
 func histogramSuffix(metricName string) string {
 	switch {
-	case strings.HasSuffix(metricName, "_bucket"):
-		return "_bucket"
-	case strings.HasSuffix(metricName, "_count"):
-		return "_count"
-	case strings.HasSuffix(metricName, "_sum"):
-		return "_sum"
+	case strings.HasSuffix(metricName, histogram.ClassicSuffixBucket):
+		return histogram.ClassicSuffixBucket
+	case strings.HasSuffix(metricName, histogram.ClassicSuffixCount):
+		return histogram.ClassicSuffixCount
+	case strings.HasSuffix(metricName, histogram.ClassicSuffixSum):
+		return histogram.ClassicSuffixSum
 	default:
 		return ""
 	}
 }
 
-// newBaseNameMatcher creates a new __name__ matcher with the histogram suffix removed.
-// Returns nil if the base name matcher cannot be created.
-func newBaseNameMatcher(matchType labels.MatchType, metricName, suffix string) *labels.Matcher {
-	baseName := metricName[:len(metricName)-len(suffix)]
-	m, err := labels.NewMatcher(matchType, model.MetricNameLabel, baseName)
-	if err != nil {
-		return nil
-	}
-	return m
-}
-
 // extractHistogramSuffix separates the __name__ matcher from other matchers and
 // determines the classic histogram suffix (_bucket, _count, _sum).
-// Returns the __name__ matcher, the suffix, and the remaining matchers.
+// Returns the metric name without the suffix, the suffix, and the remaining matchers.
 // Returns empty suffix if not a classic histogram query.
-func extractHistogramSuffix(matchers []*labels.Matcher) (*labels.Matcher, string, []*labels.Matcher) {
+func extractHistogramSuffix(matchers []*labels.Matcher) (string, string, []*labels.Matcher) {
 	var nameMatcher *labels.Matcher
 	for _, m := range matchers {
 		if m.Name != model.MetricNameLabel {
 			continue
 		}
 		if nameMatcher != nil || m.Type != labels.MatchEqual {
-			return nil, "", matchers
+			return "", "", matchers
 		}
 		nameMatcher = m
 	}
 	if nameMatcher == nil {
-		return nil, "", matchers
+		return "", "", matchers
 	}
 
 	suffix := histogramSuffix(nameMatcher.Value)
-	if suffix == "" {
-		return nil, "", matchers
+	if suffix == "" || suffix == nameMatcher.Value {
+		return "", "", matchers
 	}
 
 	baseMatchers := make([]*labels.Matcher, 0, len(matchers)+1)
@@ -200,7 +186,7 @@ func extractHistogramSuffix(matchers []*labels.Matcher) (*labels.Matcher, string
 		}
 	}
 
-	return nameMatcher, suffix, baseMatchers
+	return strings.TrimSuffix(nameMatcher.Value, suffix), suffix, baseMatchers
 }
 
 type multipleSeriesSet struct {

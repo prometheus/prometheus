@@ -36,46 +36,50 @@ import (
 
 func TestExtractHistogramSuffix(t *testing.T) {
 	tests := []struct {
-		name           string
-		matchers       []*labels.Matcher
-		expectedName   string
-		expectedSuffix string
+		name             string
+		matchers         []*labels.Matcher
+		expectedBaseName string
+		expectedSuffix   string
 	}{
 		{
-			name:           "bucket suffix",
-			matchers:       []*labels.Matcher{labels.MustNewMatcher(labels.MatchEqual, model.MetricNameLabel, "http_requests_bucket")},
-			expectedName:   "http_requests_bucket",
-			expectedSuffix: "_bucket",
+			name:             "bucket suffix",
+			matchers:         []*labels.Matcher{labels.MustNewMatcher(labels.MatchEqual, model.MetricNameLabel, "http_requests_bucket")},
+			expectedBaseName: "http_requests",
+			expectedSuffix:   "_bucket",
 		},
 		{
-			name:           "count suffix",
-			matchers:       []*labels.Matcher{labels.MustNewMatcher(labels.MatchEqual, model.MetricNameLabel, "http_requests_count")},
-			expectedName:   "http_requests_count",
-			expectedSuffix: "_count",
+			name:             "count suffix",
+			matchers:         []*labels.Matcher{labels.MustNewMatcher(labels.MatchEqual, model.MetricNameLabel, "http_requests_count")},
+			expectedBaseName: "http_requests",
+			expectedSuffix:   "_count",
 		},
 		{
-			name:           "sum suffix",
-			matchers:       []*labels.Matcher{labels.MustNewMatcher(labels.MatchEqual, model.MetricNameLabel, "http_requests_sum")},
-			expectedName:   "http_requests_sum",
-			expectedSuffix: "_sum",
+			name:             "sum suffix",
+			matchers:         []*labels.Matcher{labels.MustNewMatcher(labels.MatchEqual, model.MetricNameLabel, "http_requests_sum")},
+			expectedBaseName: "http_requests",
+			expectedSuffix:   "_sum",
 		},
 		{
-			name:           "no suffix - regular metric",
-			matchers:       []*labels.Matcher{labels.MustNewMatcher(labels.MatchEqual, model.MetricNameLabel, "my_gauge")},
-			expectedName:   "",
-			expectedSuffix: "",
+			name:             "no suffix - regular metric",
+			matchers:         []*labels.Matcher{labels.MustNewMatcher(labels.MatchEqual, model.MetricNameLabel, "my_gauge")},
+			expectedBaseName: "",
+			expectedSuffix:   "",
 		},
 		{
-			name:           "no metric name matcher",
-			matchers:       []*labels.Matcher{labels.MustNewMatcher(labels.MatchEqual, "job", "prometheus")},
-			expectedName:   "",
-			expectedSuffix: "",
+			name:     "bare bucket suffix is not rewritten",
+			matchers: []*labels.Matcher{labels.MustNewMatcher(labels.MatchEqual, model.MetricNameLabel, "_bucket")},
 		},
 		{
-			name:           "bucket regex suffix",
-			matchers:       []*labels.Matcher{labels.MustNewMatcher(labels.MatchEqual, model.MetricNameLabel, ".+_bucket")},
-			expectedName:   ".+_bucket",
-			expectedSuffix: "_bucket",
+			name:             "no metric name matcher",
+			matchers:         []*labels.Matcher{labels.MustNewMatcher(labels.MatchEqual, "job", "prometheus")},
+			expectedBaseName: "",
+			expectedSuffix:   "",
+		},
+		{
+			name:             "bucket regex suffix",
+			matchers:         []*labels.Matcher{labels.MustNewMatcher(labels.MatchEqual, model.MetricNameLabel, ".+_bucket")},
+			expectedBaseName: ".+",
+			expectedSuffix:   "_bucket",
 		},
 		{
 			name:     "bucket regex matcher is not rewritten",
@@ -96,13 +100,8 @@ func TestExtractHistogramSuffix(t *testing.T) {
 
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
-			matcher, suffix, _ := extractHistogramSuffix(tc.matchers)
-			if tc.expectedName == "" {
-				require.Nil(t, matcher)
-			} else {
-				require.NotNil(t, matcher)
-				require.Equal(t, tc.expectedName, matcher.Value)
-			}
+			baseName, suffix, _ := extractHistogramSuffix(tc.matchers)
+			require.Equal(t, tc.expectedBaseName, baseName)
 			require.Equal(t, tc.expectedSuffix, suffix)
 		})
 	}
