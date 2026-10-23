@@ -1482,8 +1482,7 @@ yydefault:
 	case 69:
 		yyDollar = yyS[yypt-1 : yypt+1]
 		{
-			// Preserve legacy acceptance of unquoted colon-containing labels when the feature is disabled.
-			if !model.UTF8Validation.IsValidLabelName(yyDollar[1].item.Val) || (yylex.(*parser).options.EnableUnquotedUTF8Names && labelNameRequiresQuoting(yyDollar[1].item.Val, true)) {
+			if !model.UTF8Validation.IsValidLabelName(yyDollar[1].item.Val) || labelNameRequiresQuoting(yyDollar[1].item.Val) {
 				yylex.(*parser).addParseErrf(yyDollar[1].item.PositionRange(), "invalid label name for grouping: %q", yyDollar[1].item.Val)
 			}
 			yyVAL.item = yyDollar[1].item

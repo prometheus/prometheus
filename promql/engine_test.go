@@ -6824,7 +6824,7 @@ load 1m
 	engine := promqltest.NewTestEngineWithOpts(t, promql.EngineOpts{
 		MaxSamples: 10000,
 		Timeout:    time.Minute,
-		Parser:     parser.NewParser(parser.Options{EnableUnquotedUTF8Names: true}),
+		Parser:     parser.NewParser(parser.Options{}),
 	})
 	for _, tc := range []struct{ unquoted, quoted string }{
 		{`http.server.requests{resource.k8s.namespace="system",service.name="api"}`, `{"http.server.requests","resource.k8s.namespace"="system","service.name"="api"}`},
