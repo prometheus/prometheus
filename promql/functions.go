@@ -1277,11 +1277,9 @@ func funcSortByLabel(vectorVals []Vector, _ Matrix, args parser.Expressions, _ *
 				continue
 			}
 
-			if natsort.Compare(lv1, lv2) {
-				return -1
+			if cmp := compareNaturalLabelValues(lv1, lv2); cmp != 0 {
+				return cmp
 			}
-
-			return +1
 		}
 
 		// If all labels provided as arguments were equal, sort by the full label set. This ensures a consistent ordering.
@@ -1303,11 +1301,9 @@ func funcSortByLabelDesc(vectorVals []Vector, _ Matrix, args parser.Expressions,
 				continue
 			}
 
-			if natsort.Compare(lv1, lv2) {
-				return +1
+			if cmp := compareNaturalLabelValues(lv1, lv2); cmp != 0 {
+				return -cmp
 			}
-
-			return -1
 		}
 
 		// If all labels provided as arguments were equal, sort by the full label set. This ensures a consistent ordering.
@@ -1315,6 +1311,23 @@ func funcSortByLabelDesc(vectorVals []Vector, _ Matrix, args parser.Expressions,
 	})
 
 	return vectorVals[0], nil
+}
+
+func compareNaturalLabelValues(a, b string) int {
+	aBeforeB := natsort.Compare(a, b)
+	bBeforeA := natsort.Compare(b, a)
+
+	if aBeforeB == bBeforeA {
+		// No clear natural ordering between the two label values (e.g. "1" and "01"),
+		// fall back to lexicographic comparison.
+		return strings.Compare(a, b)
+	}
+
+	if aBeforeB {
+		return -1
+	}
+
+	return 1
 }
 
 func clamp(vec Vector, minVal, maxVal float64, enh *EvalNodeHelper) (Vector, annotations.Annotations) {
