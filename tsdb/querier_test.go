@@ -4006,6 +4006,7 @@ func TestQueryWithOneChunkCompletelyDeleted(t *testing.T) {
 // number of samples is chosen to exceed math.MaxUint16 so that the
 // querier must split the merged iterable into multiple output chunks.
 func TestChunkQuerier_OverlappingInOrderAndOOOChunks(t *testing.T) {
+	t.Parallel()
 	for _, storeST := range []bool{false, true} {
 		t.Run(fmt.Sprintf("store-st=%v", storeST), func(t *testing.T) {
 			for _, tc := range []struct {

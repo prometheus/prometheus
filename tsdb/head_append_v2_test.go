@@ -164,6 +164,7 @@ func TestHeadAppenderV2_AppendersMetrics(t *testing.T) {
 }
 
 func TestHeadAppenderV2_RaceBetweenSeriesCreationAndGC(t *testing.T) {
+	t.Parallel()
 	head, _ := newTestHead(t, 1000, compression.None, false)
 	require.NoError(t, head.Init(0))
 
@@ -241,6 +242,7 @@ func TestHeadAppenderV2_CanGCSeriesCreatedWithoutSamples(t *testing.T) {
 }
 
 func TestHeadAppenderV2_DeleteSimple(t *testing.T) {
+	t.Parallel()
 	buildSmpls := func(s []int64) []sample {
 		ss := make([]sample, 0, len(s))
 		for _, t := range s {
@@ -467,6 +469,7 @@ func TestHeadAppenderV2_DeleteSamplesAndSeriesStillInWALAfterCheckpoint(t *testi
 }
 
 func TestHeadAppenderV2_Delete_e2e(t *testing.T) {
+	t.Parallel()
 	numDatapoints := 1000
 	timeInterval := int64(2)
 	// Create 8 series with 1000 data-points of different ranges, delete and run queries.
@@ -788,6 +791,7 @@ func TestHeadAppenderV2_MemSeriesIsolation(t *testing.T) {
 	if defaultIsolationDisabled {
 		t.Skip("skipping test since tsdb isolation is disabled")
 	}
+	t.Parallel()
 
 	// Put a series, select it. GC it and then access it.
 	lastValue := func(h *Head, maxAppendID uint64) int {
@@ -1928,8 +1932,10 @@ func TestHistogramInWALAndMmapChunk_AppenderV2(t *testing.T) {
 }
 
 func TestChunkSnapshot_AppenderV2(t *testing.T) {
+	t.Parallel()
 	for _, enableSTStorage := range []bool{false, true} {
 		t.Run("enableSTStorage="+strconv.FormatBool(enableSTStorage), func(t *testing.T) {
+			t.Parallel()
 			head, _ := newTestHead(t, 120*4, compression.None, false)
 			defer func() {
 				head.opts.EnableMemorySnapshotOnShutdown = false
@@ -4642,6 +4648,7 @@ func TestHeadAppenderV2_BestEffortSTZeroSample_OOO(t *testing.T) {
 
 // Regression test for data race https://github.com/prometheus/prometheus/issues/15139.
 func TestHeadAppenderV2_Append_HistogramAndCommitConcurrency(t *testing.T) {
+	t.Parallel()
 	h := tsdbutil.GenerateTestHistogram(1)
 	fh := tsdbutil.GenerateTestFloatHistogram(1)
 
@@ -4657,6 +4664,7 @@ func TestHeadAppenderV2_Append_HistogramAndCommitConcurrency(t *testing.T) {
 	}
 	for name, tc := range testCases {
 		t.Run(name, func(t *testing.T) {
+			t.Parallel()
 			testHeadAppenderV2AppendHistogramAndCommitConcurrency(t, tc)
 		})
 	}

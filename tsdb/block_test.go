@@ -194,6 +194,7 @@ func BenchmarkOpenBlock(b *testing.B) {
 }
 
 func TestCorruptedChunk(t *testing.T) {
+	t.Parallel()
 	for _, tc := range []struct {
 		name     string
 		corrFunc func(f *os.File) // Func that applies the corruption.
