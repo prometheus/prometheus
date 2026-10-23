@@ -647,8 +647,8 @@ func verifyLabelLimits(lset labels.Labels, limits *labelLimits) error {
 	})
 }
 
-func mutateSampleLabels(lset labels.Labels, target *Target, honor bool, rc []*relabel.Config) labels.Labels {
-	lb := labels.NewBuilder(lset)
+func mutateSampleLabels(lb *labels.Builder, lset labels.Labels, target *Target, honor bool, rc []*relabel.Config) labels.Labels {
+	lb.Reset(lset)
 
 	if honor {
 		target.LabelsRange(func(l labels.Label) {
@@ -696,8 +696,8 @@ func resolveConflictingExposedLabels(lb *labels.Builder, conflictingExposedLabel
 	}
 }
 
-func mutateReportSampleLabels(lset labels.Labels, target *Target) labels.Labels {
-	lb := labels.NewBuilder(lset)
+func mutateReportSampleLabels(lb *labels.Builder, lset labels.Labels, target *Target) labels.Labels {
+	lb.Reset(lset)
 
 	target.LabelsRange(func(l labels.Label) {
 		lb.Set(model.ExportedLabelPrefix+l.Name, lset.Get(l.Name))
@@ -1320,6 +1320,9 @@ func newScrapeLoop(opts scrapeLoopOptions) *scrapeLoop {
 	}
 
 	ctx, cancel := context.WithCancel(opts.sp.ctx)
+	// Reuse a single builder across sample and report label mutations within this scrapeLoop.
+	// scrapeLoop runs sequentially on a single goroutine, so sharing lb is safe.
+	lb := labels.NewBuilderWithSymbolTable(opts.sp.symbolTable)
 	return &scrapeLoop{
 		ctx:         ctx,
 		cancel:      cancel,
@@ -1332,9 +1335,9 @@ func newScrapeLoop(opts scrapeLoopOptions) *scrapeLoop {
 		interval: opts.interval,
 		timeout:  opts.timeout,
 		sampleMutator: func(l labels.Labels) labels.Labels {
-			return mutateSampleLabels(l, opts.target, opts.sp.config.HonorLabels, opts.sp.config.MetricRelabelConfigs)
+			return mutateSampleLabels(lb, l, opts.target, opts.sp.config.HonorLabels, opts.sp.config.MetricRelabelConfigs)
 		},
-		reportSampleMutator: func(l labels.Labels) labels.Labels { return mutateReportSampleLabels(l, opts.target) },
+		reportSampleMutator: func(l labels.Labels) labels.Labels { return mutateReportSampleLabels(lb, l, opts.target) },
 		scraper:             opts.scraper,
 
 		// Static params per scrapePool.
@@ -2331,7 +2334,7 @@ func (sl *scrapeLoop) report(app scrapeLoopAppendAdapter, start time.Time, durat
 func (sl *scrapeLoop) reportStale(app scrapeLoopAppendAdapter, start time.Time) (err error) {
 	ts := timestamp.FromTime(start)
 	stale := math.Float64frombits(value.StaleNaN)
-	b := labels.NewBuilder(labels.EmptyLabels())
+	b := labels.NewBuilderWithSymbolTable(sl.symbolTable)
 
 	if err = app.addReportSample(scrapeHealthMetric, ts, stale, b, true); err != nil {
 		return err
