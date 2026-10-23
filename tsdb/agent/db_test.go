@@ -118,6 +118,59 @@ func TestAppenderBufferResetAfterWALWriteError(t *testing.T) {
 	}
 }
 
+func TestAppenderClearedAfterWALWriteError(t *testing.T) {
+	lset := labels.FromStrings("__name__", "test_metric")
+	appenders := []struct {
+		name   string
+		append func(t *testing.T, db *DB) (*appenderBase, storage.AppenderTransaction)
+	}{
+		{
+			name: "appender",
+			append: func(t *testing.T, db *DB) (*appenderBase, storage.AppenderTransaction) {
+				app := db.Appender(t.Context())
+				_, err := app.Append(0, lset, 1, 1)
+				require.NoError(t, err)
+				return &app.(*appender).appenderBase, app
+			},
+		},
+		{
+			name: "appenderV2",
+			append: func(t *testing.T, db *DB) (*appenderBase, storage.AppenderTransaction) {
+				app := db.AppenderV2(t.Context())
+				_, err := app.Append(0, lset, 0, 1, 1, nil, nil, storage.AOptions{})
+				require.NoError(t, err)
+				return &app.(*appenderV2).appenderBase, app
+			},
+		},
+	}
+	finishers := []struct {
+		name   string
+		finish func(storage.AppenderTransaction) error
+	}{
+		{name: "commit", finish: storage.AppenderTransaction.Commit},
+		{name: "rollback", finish: storage.AppenderTransaction.Rollback},
+	}
+
+	for _, a := range appenders {
+		for _, f := range finishers {
+			t.Run(a.name+"/"+f.name, func(t *testing.T) {
+				db := createTestAgentDB(t, nil, DefaultOptions())
+				// Close the WAL so writes fail. db.Close then fails on the second WAL close.
+				require.NoError(t, db.wal.Close())
+				t.Cleanup(func() { require.Error(t, db.Close()) })
+
+				base, app := a.append(t, db)
+				require.Error(t, f.finish(app))
+
+				// The appender is back in the pool, so pending data would leak into the next one.
+				require.Empty(t, base.pendingSeries)
+				require.Empty(t, base.pendingSamples)
+				require.Empty(t, base.sampleSeries)
+			})
+		}
+	}
+}
+
 // TestConcurrentAppendSameLabels verifies that concurrent appends for the same
 // label set produce exactly one series in memory and one series record in the WAL.
 func TestConcurrentAppendSameLabels(t *testing.T) {

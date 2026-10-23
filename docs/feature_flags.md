@@ -53,6 +53,24 @@ The Prometheus server exposes two counters for observability: `prometheus_engine
 When disabled in either the engine or the query, per-step statistics are not
 computed at all.
 
+## Unquoted UTF-8 names in PromQL
+
+`--enable-feature=promql-unquoted-utf8-names`
+
+Allows Unicode letters and dots after the first character in unquoted metric and
+label names. For example:
+
+```promql
+http.server.request.duration{service.name="api"}
+温度{場所="東京"}
+sum by (service.name) (rate(http.server.requests[5m]))
+requests_total + on (service.name) group_left (équipe) service_info
+```
+
+See [metric and label names](querying/basics.md#metric-and-label-names) for the
+character rules and compatibility details. This flag is also supported by
+promtool when checking or testing rules and parsing or formatting queries.
+
 ## Experimental PromQL functions
 
 `--enable-feature=promql-experimental-functions`
@@ -202,6 +220,8 @@ It is possible to craft a query that aggregates by `__name__` and puts samples w
 
 `--enable-feature=otlp-deltatocumulative`
 
+> **Note:** This feature flag is deprecated and will be removed in a future major version. Use `--enable-feature=otlp-native-delta-ingestion` for native delta ingestion instead.
+
 When enabled, Prometheus will convert OTLP metrics from delta temporality to their
 cumulative equivalent, instead of dropping them. This cannot be enabled in conjunction with `otlp-native-delta-ingestion`.
 
@@ -224,17 +244,17 @@ state is mutex guarded. Cumulative-only OTLP requests are not affected.
 
 `--enable-feature=otlp-native-delta-ingestion`
 
-When enabled, allows for the native ingestion of delta OTLP metrics, storing the raw sample values without conversion. This cannot be enabled in conjunction with `otlp-deltatocumulative`.
+This is the recommended feature flag for ingesting OTLP metrics with delta temporality. When enabled, Prometheus stores the raw sample values without conversion. This cannot be enabled in conjunction with the deprecated `otlp-deltatocumulative` flag.
 
-Currently, the StartTimeUnixNano field is ignored, and deltas are given the unknown metric metadata type.
+To retain the OTLP `StartTimeUnixNano` field, also enable [`st-storage`](#start-timestamp-st-native-storage). To use the retained start timestamps in PromQL functions such as `rate()` and `increase()`, enable [`use-start-timestamps`](#start-timestamp-st-usage-in-promql-functions). Delta metrics are currently given the unknown metric metadata type.
 
-Delta support is in a very early stage of development and the ingestion and querying process my change over time. For the open proposal see [prometheus/proposals#48](https://github.com/prometheus/proposals/pull/48).
+Native delta support remains experimental, and the ingestion and querying process may change over time. Ongoing work is tracked in [prometheus/prometheus#17649](https://github.com/prometheus/prometheus/issues/17649).
 
 ### Querying
 
-We encourage users to experiment with deltas and existing PromQL functions; we will collect feedback and likely build features to improve the experience around querying deltas.
+When `st-storage` and `use-start-timestamps` are also enabled and incoming delta samples have valid start timestamps, PromQL functions such as `rate()` and `increase()` use those timestamps to account for the interval represented by each delta.
 
-Note that standard PromQL counter functions like `rate()` and `increase()` are designed for cumulative metrics and will produce incorrect results when used with delta metrics. This may change in the future, but for now, to get similar results for delta metrics, you need `sum_over_time()`:
+Without start-timestamp storage and processing, use `sum_over_time()` to query delta metrics:
 
 * `sum_over_time(delta_metric[<range>])`: Calculates the sum of delta values over the specified time range.
 * `sum_over_time(delta_metric[<range>]) / <range>`: Calculates the per-second rate of the delta metric.
@@ -360,8 +380,10 @@ single client can then request the entire index in one response.
 `--enable-feature=openmetrics2`
 
 Enables scraping targets that expose the [OpenMetrics 2.0](https://prometheus.io/docs/specs/om/open_metrics_spec_2_0/)
-text format, advertised with the `application/openmetrics-text; version=2.0.0`
-content type.
+text format, advertised with the `application/openmetrics-text; version=2.0.0` or
+`application/openmetrics-text; version=2.0.0-rc` content type. To negotiate OpenMetrics 2.0
+with scrape targets, add `OpenMetricsText2.0.0` and `OpenMetricsText2.0.0-rc` to
+`scrape_protocols` in the configuration.
 
 OpenMetrics 2.0 support is **experimental**. The parser is not stable
 yet, so expositions that Prometheus accepts today may be rejected by a later release.

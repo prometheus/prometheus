@@ -128,7 +128,11 @@ func newTestDB(t testing.TB, opts ...testDBOpt) (db *DB) {
 
 	t.Cleanup(func() {
 		// Always close. DB is safe for close-after-close.
-		require.NoError(t, db.Close())
+		err := db.Close()
+		// Clear the captured reference so parallel subtests retained in
+		// testing.T.sub do not pin closed DBs via the t.cleanups backing array.
+		db = nil
+		require.NoError(t, err)
 	})
 	return db
 }
@@ -242,6 +246,7 @@ func queryChunks(t testing.TB, q storage.ChunkQuerier, matchers ...*labels.Match
 // Ensure that blocks are held in memory in their time order
 // and not in ULID order as they are read from the directory.
 func TestDB_reloadOrder(t *testing.T) {
+	t.Parallel()
 	db := newTestDB(t)
 
 	metas := []BlockMeta{
@@ -939,6 +944,7 @@ func TestDB_SnapshotWithDelete(t *testing.T) {
 }
 
 func TestDB_e2e(t *testing.T) {
+	t.Parallel()
 	const (
 		numDatapoints = 1000
 		numRanges     = 1000
@@ -1195,6 +1201,7 @@ func TestWALSegmentSizeOptions(t *testing.T) {
 // https://github.com/prometheus/prometheus/issues/9846
 // https://github.com/prometheus/prometheus/issues/9859
 func TestWALReplayRaceOnSamplesLoggedBeforeSeries(t *testing.T) {
+	t.Parallel()
 	const (
 		numRuns                        = 1
 		numSamplesBeforeSeriesCreation = 1000
@@ -1206,6 +1213,7 @@ func TestWALReplayRaceOnSamplesLoggedBeforeSeries(t *testing.T) {
 		for _, numSamplesAfterSeriesCreation := range []int{1, 1000} {
 			for run := 1; run <= numRuns; run++ {
 				t.Run(fmt.Sprintf("samples after series creation = %d, run = %d, stStorage=%v", numSamplesAfterSeriesCreation, run, enableSTStorage), func(t *testing.T) {
+					t.Parallel()
 					testWALReplayRaceOnSamplesLoggedBeforeSeries(t, numSamplesBeforeSeriesCreation, numSamplesAfterSeriesCreation, enableSTStorage)
 				})
 			}
@@ -1748,6 +1756,7 @@ func TestSizeRetentionMetric(t *testing.T) {
 // deletes blocks when retention is shortened. This test also ensures race-free
 // concurrent access to retention settings.
 func TestRuntimeRetentionConfigChange(t *testing.T) {
+	t.Parallel()
 	const (
 		initialRetentionDuration = int64(10 * time.Hour / time.Millisecond) // 10 hours
 		shorterRetentionDuration = int64(1 * time.Hour / time.Millisecond)  // 1 hour
@@ -1959,6 +1968,7 @@ func requireBlockFloatChunkEncoding(t *testing.T, b *Block, expected chunkenc.En
 // while compacting overlapping blocks use the configured float chunk encoding,
 // including after a runtime configuration reload.
 func TestVerticalCompactionFloatChunkEncoding(t *testing.T) {
+	t.Parallel()
 	xorCfg := func(floats string) *config.Config {
 		return &config.Config{StorageConfig: config.StorageConfig{
 			TSDBConfig: &config.TSDBConfig{ChunkEncoding: config.ChunkEncodingConfig{Floats: floats}},
@@ -3565,6 +3575,7 @@ func deleteNonBlocks(dbDir string) error {
 }
 
 func TestOpen_VariousBlockStates(t *testing.T) {
+	t.Parallel()
 	tmpDir := t.TempDir()
 
 	var (
@@ -3914,11 +3925,13 @@ func TestExemplarBeforeLastSampleSurvivesSeriesCompaction(t *testing.T) {
 // recovery state. Concurrent appends must prevent chunk reclamation. WAL replay may
 // restore the samples, which a subsequent compaction can reclaim again.
 func TestSeriesCompactionReclaimsChunksWithExemplars(t *testing.T) {
+	t.Parallel()
 	for _, appV2 := range []bool{false, true} {
 		for _, compaction := range []string{"selected", "stale"} {
 			for _, sampleType := range []string{"float", "histogram", "float histogram"} {
 				for _, scenario := range []string{"unchanged", "mmapped", "in-order append", "out-of-order append"} {
 					t.Run(fmt.Sprintf("%s/%s/%s/appV2=%t", compaction, sampleType, scenario, appV2), func(t *testing.T) {
+						t.Parallel()
 						const blockRange = 1000
 						opts := DefaultOptions()
 						opts.MinBlockDuration = blockRange
@@ -3985,7 +3998,7 @@ func TestSeriesCompactionReclaimsChunksWithExemplars(t *testing.T) {
 						expectedTimes := []int64{50, 100, 900}
 						concurrentAppend := scenario == "in-order append" || scenario == "out-of-order append"
 						if concurrentAppend {
-							compactHeadViewBeforeEvictTestingCallback = func() {
+							db.compactHeadViewBeforeEvictTestingCallback = func() {
 								app := newExemplarCompactionAppender(ctx, t, db, appV2)
 								ts, v := int64(950), float64(3)
 								if scenario == "out-of-order append" {
@@ -4001,7 +4014,6 @@ func TestSeriesCompactionReclaimsChunksWithExemplars(t *testing.T) {
 								require.NoError(t, err)
 								require.NoError(t, app.Commit())
 							}
-							t.Cleanup(func() { compactHeadViewBeforeEvictTestingCallback = nil })
 						}
 						compact := func(d *DB) {
 							if compaction == "stale" {
@@ -5800,11 +5812,14 @@ func TestMultipleEncodingsCommitOrder(t *testing.T) {
 //
 //	are not included in this compaction.
 func TestOOOCompaction(t *testing.T) {
+	t.Parallel()
 	for name, scenario := range sampleTypeScenarios {
 		t.Run(name, func(t *testing.T) {
+			t.Parallel()
 			testOOOCompaction(t, scenario, false)
 		})
 		t.Run(name+"+extra", func(t *testing.T) {
+			t.Parallel()
 			testOOOCompaction(t, scenario, true)
 		})
 	}
@@ -5906,7 +5921,7 @@ func testOOOCompaction(t *testing.T, scenario sampleTypeScenario, addExtraSample
 	require.Greater(t, f.Size(), int64(100))
 
 	if addExtraSamples {
-		compactOOOHeadTestingCallback = func() {
+		db.compactOOOHeadTestingCallback = func() {
 			addSample(90, 120)  // Back in time, to generate a new OOO chunk.
 			addSample(300, 330) // Now some samples after the previous highest timestamp.
 			addSample(300, 330) // Repeat to generate an OOO chunk at these timestamps.
@@ -6319,6 +6334,7 @@ func testOOOQueryAfterRestartWithSnapshotAndRemovedWBL(t *testing.T, scenario sa
 }
 
 func TestQuerierOOOQuery(t *testing.T) {
+	t.Parallel()
 	scenarios := map[string]struct {
 		appendFunc func(app storage.Appender, ts int64, counterReset bool) (storage.SeriesRef, error)
 		sampleFunc func(ts int64) chunks.Sample
@@ -6370,6 +6386,7 @@ func TestQuerierOOOQuery(t *testing.T) {
 
 	for name, scenario := range scenarios {
 		t.Run(name, func(t *testing.T) {
+			t.Parallel()
 			testQuerierOOOQuery(t, scenario.appendFunc, scenario.sampleFunc)
 		})
 	}
@@ -6613,6 +6630,7 @@ func testQuerierOOOQuery(t *testing.T,
 }
 
 func TestChunkQuerierOOOQuery(t *testing.T) {
+	t.Parallel()
 	nBucketHistogram := func(n int64) *histogram.Histogram {
 		h := &histogram.Histogram{
 			Count: uint64(n),
@@ -6694,6 +6712,7 @@ func TestChunkQuerierOOOQuery(t *testing.T) {
 	}
 	for name, scenario := range scenarios {
 		t.Run(name, func(t *testing.T) {
+			t.Parallel()
 			testChunkQuerierOOOQuery(t, scenario.appendFunc, scenario.sampleFunc, scenario.checkInUseBucket)
 		})
 	}
@@ -7621,8 +7640,10 @@ func testOOODisabled(t *testing.T, scenario sampleTypeScenario) {
 // checkpoint's mint. If the process stops in that window the WBL holds the only
 // copy of those samples, and they are skipped by the next replay.
 func TestOOOSampleLossOnWALCheckpointBeforeOOOCompaction(t *testing.T) {
+	t.Parallel()
 	for name, scenario := range sampleTypeScenarios {
 		t.Run(name, func(t *testing.T) {
+			t.Parallel()
 			var (
 				evictedTime = 100 * time.Minute.Milliseconds()
 				inOrderTime = 300 * time.Minute.Milliseconds()
@@ -7733,8 +7754,10 @@ func TestOOOSampleLossOnWALCheckpointBeforeOOOCompaction(t *testing.T) {
 }
 
 func TestWBLAndMmapReplay(t *testing.T) {
+	t.Parallel()
 	for name, scenario := range sampleTypeScenarios {
 		t.Run(name, func(t *testing.T) {
+			t.Parallel()
 			testWBLAndMmapReplay(t, scenario)
 		})
 	}
@@ -7914,6 +7937,7 @@ func testWBLAndMmapReplay(t *testing.T, scenario sampleTypeScenario) {
 }
 
 func TestOOOHistogramCompactionWithCounterResets(t *testing.T) {
+	t.Parallel()
 	for _, floatHistogram := range []bool{false, true} {
 		ctx := context.Background()
 
@@ -8269,6 +8293,7 @@ func TestOOOHistogramCompactionWithCounterResets(t *testing.T) {
 }
 
 func TestInterleavedInOrderAndOOOHistogramCompactionWithCounterResets(t *testing.T) {
+	t.Parallel()
 	for _, floatHistogram := range []bool{false, true} {
 		ctx := context.Background()
 
@@ -8651,8 +8676,10 @@ func TestWBLCorruption(t *testing.T) {
 }
 
 func TestOOOMmapCorruption(t *testing.T) {
+	t.Parallel()
 	for name, scenario := range sampleTypeScenarios {
 		t.Run(name, func(t *testing.T) {
+			t.Parallel()
 			testOOOMmapCorruption(t, scenario)
 		})
 	}
@@ -10733,6 +10760,7 @@ func TestStaleSeriesResurrectionOverlapNotMerged(t *testing.T) {
 // regardless of the segregation logic. The dedicated overlap/segregation case is
 // covered by TestStaleSeriesResurrectionOverlapNotMerged.
 func TestCompactBlocksLoopDoesNotStarveStaleBlocks(t *testing.T) {
+	t.Parallel()
 	opts := DefaultOptions()
 	// MinBlockDuration 1000 with MaxBlockDuration 3000 yields compactor ranges
 	// ExponentialBlockRanges(1000, 10, 3) capped at 3000 = [1000, 3000]. We build
@@ -11008,7 +11036,7 @@ func TestCompactStaleHead_LateStaleAppendSurvives(t *testing.T) {
 	// The hook fires after the block is written but before eviction.
 	const lateT = int64(400)
 	var hookErr error
-	compactHeadViewBeforeEvictTestingCallback = func() {
+	db.compactHeadViewBeforeEvictTestingCallback = func() {
 		hookApp := db.Appender(context.Background())
 		if _, err := hookApp.Append(selRef, sel, lateT, staleV); err != nil {
 			hookErr = err
@@ -11016,7 +11044,6 @@ func TestCompactStaleHead_LateStaleAppendSurvives(t *testing.T) {
 		}
 		hookErr = hookApp.Commit()
 	}
-	t.Cleanup(func() { compactHeadViewBeforeEvictTestingCallback = nil })
 
 	require.NoError(t, db.CompactStaleHead())
 	require.NoError(t, hookErr, "the late stale append/commit inside the hook must itself succeed")
@@ -11639,7 +11666,7 @@ func TestCompactSelectedSeries_LateAppendDuringCompactionSurvivesRestart(t *test
 	// (700), so it falls within the compaction range yet is not present in
 	// the generated block.
 	var hookErr error
-	compactHeadViewBeforeEvictTestingCallback = func() {
+	db.compactHeadViewBeforeEvictTestingCallback = func() {
 		hookApp := db.Appender(context.Background())
 		if _, err := hookApp.Append(selRef, sel, lateT, lateV); err != nil {
 			hookErr = err
@@ -11647,7 +11674,6 @@ func TestCompactSelectedSeries_LateAppendDuringCompactionSurvivesRestart(t *test
 		}
 		hookErr = hookApp.Commit()
 	}
-	t.Cleanup(func() { compactHeadViewBeforeEvictTestingCallback = nil })
 
 	require.NoError(t, db.CompactSelectedSeries([]storage.SeriesRef{selRef}))
 	require.NoError(t, hookErr, "the late append/commit inside the hook must itself succeed")
@@ -11849,7 +11875,7 @@ func TestCompactSelectedSeries_OOOAppendDuringCompactionSurvives(t *testing.T) {
 	// than sel's max (200) but within the OOO window, flips sel's s.ooo from nil to non-nil.
 	const oooT, oooV = int64(150), 15.0
 	var hookErr error
-	compactHeadViewBeforeEvictTestingCallback = func() {
+	db.compactHeadViewBeforeEvictTestingCallback = func() {
 		hookApp := db.Appender(context.Background())
 		if _, err := hookApp.Append(selRef, sel, oooT, oooV); err != nil {
 			hookErr = err
@@ -11857,7 +11883,6 @@ func TestCompactSelectedSeries_OOOAppendDuringCompactionSurvives(t *testing.T) {
 		}
 		hookErr = hookApp.Commit()
 	}
-	t.Cleanup(func() { compactHeadViewBeforeEvictTestingCallback = nil })
 
 	require.NoError(t, db.CompactSelectedSeries([]storage.SeriesRef{selRef}))
 	require.NoError(t, hookErr, "the OOO append/commit inside the hook must itself succeed")
@@ -11928,10 +11953,9 @@ func TestCompactSelectedSeries_OpenAppenderCommittingDuringCompaction(t *testing
 	// eviction runs, so the late sample exists only in the head when the
 	// evictor consults shouldEvict.
 	var hookErr error
-	compactHeadViewBeforeEvictTestingCallback = func() {
+	db.compactHeadViewBeforeEvictTestingCallback = func() {
 		hookErr = late.Commit()
 	}
-	t.Cleanup(func() { compactHeadViewBeforeEvictTestingCallback = nil })
 
 	require.NoError(t, db.CompactSelectedSeries([]storage.SeriesRef{selRef}))
 	require.NoError(t, hookErr, "the late commit inside the hook must itself succeed")
@@ -11965,6 +11989,7 @@ func TestCompactSelectedSeries_OpenAppenderCommittingDuringCompaction(t *testing
 // TestCompactSelectedSeries_AppenderEvictionRaces verifies that selected-series
 // eviction remains safe while appenders are resolving or updating a series.
 func TestCompactSelectedSeries_AppenderEvictionRaces(t *testing.T) {
+	t.Parallel()
 	type testAppender struct {
 		storage.AppenderTransaction
 		append func(storage.SeriesRef, labels.Labels, int64, float64) (storage.SeriesRef, error)
@@ -12701,8 +12726,10 @@ func testOOOCompactionAcrossChunkIDWrap(t *testing.T, scenario sampleTypeScenari
 // compaction work on a series whose in-order chunk IDs wrap past the 23-bit
 // boundary.
 func TestInOrderCompactionAcrossChunkIDWrap(t *testing.T) {
+	t.Parallel()
 	for name, scenario := range sampleTypeScenarios {
 		t.Run(name, func(t *testing.T) {
+			t.Parallel()
 			testInOrderCompactionAcrossChunkIDWrap(t, scenario)
 		})
 	}
@@ -12804,7 +12831,7 @@ func TestCompactionSurvivesChunkRollAndMmap(t *testing.T) {
 			require.NoError(t, app.Commit())
 			refs := []storage.SeriesRef{ref}
 			before := db.head.snapshotFingerprints(refs, math.MaxUint64)
-			compactHeadViewBeforeEvictTestingCallback = func() {
+			db.compactHeadViewBeforeEvictTestingCallback = func() {
 				app := db.Appender(context.Background())
 				_, err := app.Append(ref, sel, 1000, v)
 				require.NoError(t, err)
@@ -12814,7 +12841,6 @@ func TestCompactionSurvivesChunkRollAndMmap(t *testing.T) {
 				// otherwise the eviction check below would wrongly trust it.
 				require.NotEqual(t, before, db.head.snapshotFingerprints(refs, math.MaxUint64), "the fingerprint must reflect the append across a chunk roll and mmap")
 			}
-			t.Cleanup(func() { compactHeadViewBeforeEvictTestingCallback = nil })
 			if stale {
 				require.NoError(t, db.CompactStaleHead())
 			} else {
@@ -12875,11 +12901,10 @@ func TestCompactSelectedSeries_SurvivesMutationFromStillOpenTransaction(t *testi
 		return series.maxTime() == 400 && !series.hasPendingCommit()
 	}, 5*time.Second, time.Millisecond)
 
-	compactHeadViewBeforeEvictTestingCallback = func() {
+	db.compactHeadViewBeforeEvictTestingCallback = func() {
 		unlock()
 		require.NoError(t, <-done)
 	}
-	t.Cleanup(func() { compactHeadViewBeforeEvictTestingCallback = nil })
 	require.NoError(t, db.CompactSelectedSeries([]storage.SeriesRef{ref}))
 	q, err := db.Querier(0, 1000)
 	require.NoError(t, err)
@@ -12936,7 +12961,7 @@ func TestCompactSelectedSeries_SurvivesEvidenceErasedByUnrelatedCleanup(t *testi
 		return series.maxTime() == 400 && !series.hasPendingCommit()
 	}, 5*time.Second, time.Millisecond)
 
-	compactHeadViewBeforeEvictTestingCallback = func() {
+	db.compactHeadViewBeforeEvictTestingCallback = func() {
 		unlock()
 		require.NoError(t, <-done)
 		// A duplicate sample changes no chunks but runs append-ID cleanup.
@@ -12950,7 +12975,6 @@ func TestCompactSelectedSeries_SurvivesEvidenceErasedByUnrelatedCleanup(t *testi
 		}
 		series.Unlock()
 	}
-	t.Cleanup(func() { compactHeadViewBeforeEvictTestingCallback = nil })
 	require.NoError(t, db.CompactSelectedSeries([]storage.SeriesRef{ref}))
 	q, err := db.Querier(0, 1000)
 	require.NoError(t, err)
@@ -12994,7 +13018,7 @@ func TestCompactionSurvivesLateAppendWithErasedWatermarkEvidence(t *testing.T) {
 			require.NoError(t, err)
 			require.NoError(t, app.Commit())
 
-			compactHeadViewBeforeEvictTestingCallback = func() {
+			db.compactHeadViewBeforeEvictTestingCallback = func() {
 				// Both transactions start after the snapshot and block generation.
 				for range 2 {
 					app := db.Appender(t.Context())
@@ -13003,7 +13027,6 @@ func TestCompactionSurvivesLateAppendWithErasedWatermarkEvidence(t *testing.T) {
 					require.NoError(t, app.Commit())
 				}
 			}
-			t.Cleanup(func() { compactHeadViewBeforeEvictTestingCallback = nil })
 			if stale {
 				require.NoError(t, db.CompactStaleHead())
 			} else {

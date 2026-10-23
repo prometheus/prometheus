@@ -292,7 +292,6 @@ func (rws *WriteStorage) ApplyConfig(conf *config.Config, options ...ApplyConfig
 	// Remote write queues only need to change if the remote write config or
 	// external labels change.
 	externalLabelUnchanged := labels.Equal(conf.GlobalConfig.ExternalLabels, rws.externalLabels)
-	rws.externalLabels = conf.GlobalConfig.ExternalLabels
 
 	// Capture live positions before building replacement queues. A reload can recreate
 	// queues, for example when external labels change, and replacements resume from
@@ -304,7 +303,10 @@ func (rws *WriteStorage) ApplyConfig(conf *config.Config, options ...ApplyConfig
 		}
 	}
 
+	// Nothing in rws is modified until every config has been built, so an
+	// error leaves the previous state intact.
 	newQueues := make(map[string]*QueueManager)
+	reusedClients := make(map[string]WriteClient)
 	newHashes := []string{}
 	for _, rwConf := range conf.RemoteWriteConfigs {
 		hash, err := toHash(rwConf)
@@ -343,10 +345,8 @@ func (rws *WriteStorage) ApplyConfig(conf *config.Config, options ...ApplyConfig
 
 		queue, ok := rws.queues[hash]
 		if externalLabelUnchanged && ok {
-			// Update the client in case any secret configuration has changed.
-			queue.SetClient(c)
 			newQueues[hash] = queue
-			delete(rws.queues, hash)
+			reusedClients[hash] = c
 			continue
 		}
 
@@ -389,6 +389,14 @@ func (rws *WriteStorage) ApplyConfig(conf *config.Config, options ...ApplyConfig
 		)
 		// Keep track of which queues are new so we know which to start.
 		newHashes = append(newHashes, hash)
+	}
+
+	rws.externalLabels = conf.GlobalConfig.ExternalLabels
+
+	for hash, c := range reusedClients {
+		// Update the client in case any secret configuration has changed.
+		newQueues[hash].SetClient(c)
+		delete(rws.queues, hash)
 	}
 
 	// Anything remaining in rws.queues is a queue who's config has

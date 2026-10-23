@@ -97,6 +97,7 @@ func LoadedStorage(t testing.TB, input string, opts ...teststorage.Option) *test
 var TestParserOpts = parser.Options{
 	EnableExperimentalFunctions: true,
 	EnableBinopFillModifiers:    true,
+	EnableUnquotedUTF8Names:     true,
 }
 
 // NewTestEngine creates a promql.Engine with enablePerStepStats, lookbackDelta and maxSamples, and returns it.

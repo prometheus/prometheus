@@ -136,9 +136,11 @@ func TestSynthesizeHistogram_ValidAndReset(t *testing.T) {
 	st := &stCache{}
 
 	h1 := &histogram.Histogram{
-		Count:     10,
-		Sum:       50.5,
-		ZeroCount: 2,
+		Count:           10,
+		Sum:             50.5,
+		ZeroCount:       2,
+		PositiveSpans:   []histogram.Span{{Offset: 0, Length: 1}},
+		PositiveBuckets: []int64{8},
 	}
 
 	// Scrape loop anchors first sample.
@@ -150,9 +152,11 @@ func TestSynthesizeHistogram_ValidAndReset(t *testing.T) {
 
 	// Next scrape.
 	h2 := &histogram.Histogram{
-		Count:     25,
-		Sum:       120.0,
-		ZeroCount: 5,
+		Count:           25,
+		Sum:             120.0,
+		ZeroCount:       5,
+		PositiveSpans:   []histogram.Span{{Offset: 0, Length: 1}},
+		PositiveBuckets: []int64{20},
 	}
 	v, ct, skip = st.synthesizeHistogram(h2, 2000)
 	require.Equal(t, uint64(15), v.Count)
@@ -163,9 +167,11 @@ func TestSynthesizeHistogram_ValidAndReset(t *testing.T) {
 
 	// Reset scrape (values go down).
 	h3 := &histogram.Histogram{
-		Count:     5,
-		Sum:       12.0,
-		ZeroCount: 1,
+		Count:           5,
+		Sum:             12.0,
+		ZeroCount:       1,
+		PositiveSpans:   []histogram.Span{{Offset: 0, Length: 1}},
+		PositiveBuckets: []int64{4},
 	}
 	v, ct, skip = st.synthesizeHistogram(h3, 3000)
 	require.Equal(t, uint64(5), v.Count)
@@ -177,9 +183,11 @@ func TestSynthesizeHistogram_ValidAndReset(t *testing.T) {
 
 	// Next scrape.
 	h4 := &histogram.Histogram{
-		Count:     25,
-		Sum:       120.0,
-		ZeroCount: 5,
+		Count:           25,
+		Sum:             120.0,
+		ZeroCount:       5,
+		PositiveSpans:   []histogram.Span{{Offset: 0, Length: 1}},
+		PositiveBuckets: []int64{20},
 	}
 	v, ct, skip = st.synthesizeHistogram(h4, 4000)
 	require.Equal(t, uint64(25), v.Count)
@@ -268,14 +276,14 @@ func TestSynthesizeHistogram_SubtractionMapping(t *testing.T) {
 		PositiveSpans: []histogram.Span{
 			{Offset: 0, Length: 3}, // Buckets at index 0, 1, 2
 		},
-		PositiveBuckets: []int64{4, 3, -1}, // Absolute: 4, 7, 6
+		PositiveBuckets: []int64{4, 3, 4}, // Absolute: 4, 7, 11
 	}
 
 	// Expect absolute subtraction result:
 	// fh1 buckets absolute: 3, 5
-	// fh2 buckets absolute: 4, 7, 6
-	// Result absolute: 1, 2, 6
-	// Back to Delta -> [1, 1, 4]
+	// fh2 buckets absolute: 4, 7, 11
+	// Result absolute: 1, 2, 11
+	// Back to Delta -> [1, 1, 9]
 	v, ct, skip = st.synthesizeHistogram(h2, 2000)
 
 	require.False(t, skip)
@@ -365,4 +373,95 @@ func TestSynthesizeHistogram_BucketReset(t *testing.T) {
 	require.Equal(t, 60.0, v.Sum)
 	require.Equal(t, []int64{2, 6}, v.PositiveBuckets)
 	require.Nil(t, st.h.starting)
+}
+
+func TestSynthesizeHistogram_InvalidSample(t *testing.T) {
+	// The second span has a negative offset.
+	invalidFH := &histogram.FloatHistogram{
+		Count:           5,
+		Sum:             10,
+		PositiveSpans:   []histogram.Span{{Offset: 0, Length: 1}, {Offset: -2, Length: 1}},
+		PositiveBuckets: []float64{2, 3},
+	}
+	invalidH := &histogram.Histogram{
+		Count:           5,
+		Sum:             10,
+		PositiveSpans:   []histogram.Span{{Offset: 0, Length: 1}, {Offset: -2, Length: 1}},
+		PositiveBuckets: []int64{2, 1},
+	}
+	validFH := func(count float64) *histogram.FloatHistogram {
+		return &histogram.FloatHistogram{
+			Count:           count,
+			Sum:             count,
+			PositiveSpans:   []histogram.Span{{Offset: 0, Length: 1}},
+			PositiveBuckets: []float64{count},
+		}
+	}
+	validH := func(count uint64) *histogram.Histogram {
+		return &histogram.Histogram{
+			Count:           count,
+			Sum:             float64(count),
+			PositiveSpans:   []histogram.Span{{Offset: 0, Length: 1}},
+			PositiveBuckets: []int64{int64(count)},
+		}
+	}
+
+	t.Run("float histogram: invalid first sample does not become the anchor", func(t *testing.T) {
+		st := &stCache{}
+		// The invalid sample is returned unchanged, to be rejected when it is appended.
+		v, ct, skip := st.synthesizeFloatHistogram(invalidFH.Copy(), 1000)
+		require.Equal(t, invalidFH, v)
+		require.Equal(t, int64(0), ct)
+		require.False(t, skip)
+
+		// The next valid sample becomes the anchor.
+		_, ct, skip = st.synthesizeFloatHistogram(validFH(5), 2000)
+		require.Equal(t, int64(2000), ct)
+		require.True(t, skip)
+	})
+
+	t.Run("float histogram: invalid later sample leaves the anchor in place", func(t *testing.T) {
+		st := &stCache{}
+		_, _, skip := st.synthesizeFloatHistogram(validFH(5), 1000)
+		require.True(t, skip)
+
+		v, ct, skip := st.synthesizeFloatHistogram(invalidFH.Copy(), 2000)
+		require.Equal(t, invalidFH, v)
+		require.Equal(t, int64(1000), ct)
+		require.False(t, skip)
+
+		// The next valid sample is adjusted against the original anchor.
+		v, ct, skip = st.synthesizeFloatHistogram(validFH(8), 3000)
+		require.Equal(t, 3.0, v.Count)
+		require.Equal(t, int64(1000), ct)
+		require.False(t, skip)
+	})
+
+	t.Run("integer histogram: invalid first sample does not become the anchor", func(t *testing.T) {
+		st := &stCache{}
+		v, ct, skip := st.synthesizeHistogram(invalidH.Copy(), 1000)
+		require.Equal(t, invalidH, v)
+		require.Equal(t, int64(0), ct)
+		require.False(t, skip)
+
+		_, ct, skip = st.synthesizeHistogram(validH(5), 2000)
+		require.Equal(t, int64(2000), ct)
+		require.True(t, skip)
+	})
+
+	t.Run("integer histogram: invalid later sample leaves the anchor in place", func(t *testing.T) {
+		st := &stCache{}
+		_, _, skip := st.synthesizeHistogram(validH(5), 1000)
+		require.True(t, skip)
+
+		v, ct, skip := st.synthesizeHistogram(invalidH.Copy(), 2000)
+		require.Equal(t, invalidH, v)
+		require.Equal(t, int64(1000), ct)
+		require.False(t, skip)
+
+		v, ct, skip = st.synthesizeHistogram(validH(8), 3000)
+		require.Equal(t, uint64(3), v.Count)
+		require.Equal(t, int64(1000), ct)
+		require.False(t, skip)
+	})
 }

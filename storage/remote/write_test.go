@@ -368,6 +368,103 @@ func TestWriteStorageApplyConfig_PartialUpdate(t *testing.T) {
 	require.NoError(t, s.Close())
 }
 
+func TestWriteStorageApplyConfig_ErrorKeepsPreviousState(t *testing.T) {
+	newRWConfig := func(name string) *config.RemoteWriteConfig {
+		c := testRemoteWriteConfig()
+		c.Name = name
+		return c
+	}
+
+	extLabels := labels.FromStrings("foo", "bar")
+	for _, tc := range []struct {
+		name string
+		// Remote write configs that fail to apply.
+		failed func() []*config.RemoteWriteConfig
+		// External labels for the failed apply and the follow-up fixed apply.
+		newLabels labels.Labels
+	}{
+		{
+			name: "duplicate config",
+			failed: func() []*config.RemoteWriteConfig {
+				return []*config.RemoteWriteConfig{newRWConfig("a"), newRWConfig("b"), newRWConfig("b")}
+			},
+			newLabels: extLabels,
+		},
+		{
+			name: "client creation error",
+			failed: func() []*config.RemoteWriteConfig {
+				bad := newRWConfig("b")
+				bad.HTTPClientConfig.TLSConfig.CAFile = "/does/not/exist.pem"
+				return []*config.RemoteWriteConfig{newRWConfig("a"), bad}
+			},
+			newLabels: extLabels,
+		},
+		{
+			name: "client creation error with changed external labels",
+			failed: func() []*config.RemoteWriteConfig {
+				bad := newRWConfig("b")
+				bad.HTTPClientConfig.TLSConfig.CAFile = "/does/not/exist.pem"
+				return []*config.RemoteWriteConfig{newRWConfig("a"), bad}
+			},
+			newLabels: labels.FromStrings("foo", "baz"),
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			// A real registry, as Prometheus uses, so a second queue for the same config fails metric registration.
+			reg := prometheus.NewRegistry()
+			s := NewWriteStorage(nil, reg, t.TempDir(), time.Millisecond, nil, false, false)
+
+			require.NoError(t, s.ApplyConfig(&config.Config{
+				GlobalConfig:       config.GlobalConfig{ExternalLabels: extLabels},
+				RemoteWriteConfigs: []*config.RemoteWriteConfig{newRWConfig("a")},
+			}))
+			require.Len(t, s.queues, 1)
+			var hash string
+			var queueA *QueueManager
+			for hash, queueA = range s.queues {
+			}
+
+			// A failed ApplyConfig must leave the previous queues and external labels untouched.
+			require.Error(t, s.ApplyConfig(&config.Config{
+				GlobalConfig:       config.GlobalConfig{ExternalLabels: tc.newLabels},
+				RemoteWriteConfigs: tc.failed(),
+			}))
+			require.Len(t, s.queues, 1)
+			require.Same(t, queueA, s.queues[hash], "The queue should have survived the failed ApplyConfig")
+			require.Equal(t, extLabels, s.externalLabels)
+			select {
+			case <-queueA.quit:
+				require.FailNow(t, "The queue should not have been stopped")
+			default:
+			}
+
+			// Fixing the config and reloading must not start a second queue for "a" or keep stale external labels.
+			require.NoError(t, s.ApplyConfig(&config.Config{
+				GlobalConfig:       config.GlobalConfig{ExternalLabels: tc.newLabels},
+				RemoteWriteConfigs: []*config.RemoteWriteConfig{newRWConfig("a"), newRWConfig("b")},
+			}))
+			require.Len(t, s.queues, 2)
+			require.Equal(t, tc.newLabels, labels.New(s.queues[hash].externalLabels...))
+			if labels.Equal(tc.newLabels, extLabels) {
+				require.Same(t, queueA, s.queues[hash], "The queue should have been reused")
+			} else {
+				require.NotSame(t, queueA, s.queues[hash], "The queue should have been rebuilt for the new external labels")
+			}
+
+			// Every queue must still be managed: removing them stops them.
+			require.NoError(t, s.ApplyConfig(&config.Config{GlobalConfig: config.GlobalConfig{ExternalLabels: tc.newLabels}}))
+			require.Empty(t, s.queues)
+			select {
+			case <-queueA.quit:
+			default:
+				require.FailNow(t, "The queue should have been stopped by the follow-up ApplyConfig")
+			}
+
+			require.NoError(t, s.Close())
+		})
+	}
+}
+
 func TestWriteStorage_CanRegisterMetricsAfterClosing(t *testing.T) {
 	dir := t.TempDir()
 	reg := prometheus.NewPedanticRegistry()

@@ -391,10 +391,10 @@ jobs:
           working-directory: documentation/examples/remote_storage
           version: ${{ steps.golangci-lint-version.outputs.version }}
   fuzzing:
-    uses: ./.github/workflows/fuzzing.yml
+    uses: $/.github/workflows/fuzzing.yml
     if: github.event_name == 'pull_request'
   codeql:
-    uses: ./.github/workflows/codeql-analysis.yml
+    uses: $/.github/workflows/codeql-analysis.yml
     permissions:
       contents: read
       security-events: write
@@ -448,7 +448,7 @@ jobs:
         with:
           persist-credentials: false
       - name: Install nodejs
-        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
           node-version-file: "web/ui/.nvmrc"
           registry-url: "https://registry.npmjs.org"

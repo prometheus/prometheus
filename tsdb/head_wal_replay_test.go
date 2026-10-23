@@ -31,6 +31,7 @@ import (
 )
 
 func TestWALReplayPreservesMappedChunksAcrossSeriesRefs(t *testing.T) {
+	t.Parallel()
 	for _, appV2 := range []bool{false, true} {
 		for name, scenario := range sampleTypeScenarios {
 			for _, tc := range []struct {
@@ -52,8 +53,10 @@ func TestWALReplayPreservesMappedChunksAcrossSeriesRefs(t *testing.T) {
 				{name: "WAL repair with two references", refs: 2, mappedInOrder: true, corruptWAL: true},
 			} {
 				t.Run(fmt.Sprintf("%s/%s/appV2=%v", tc.name, name, appV2), func(t *testing.T) {
+					t.Parallel()
 					dir := t.TempDir()
 					opts := DefaultOptions()
+					opts.StripeSize = 16
 					opts.WALSegmentSize = 32 * 1024
 					opts.MaxBlockChunkSegmentSize = 1024 * 1024
 					opts.OutOfOrderTimeWindow = 300 * time.Minute.Milliseconds()

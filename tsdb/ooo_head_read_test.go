@@ -289,6 +289,7 @@ func TestOOOHeadIndexReader_Series(t *testing.T) {
 
 	s1Lset := labels.FromStrings("foo", "bar")
 	s1ID := uint64(1)
+	t.Parallel()
 
 	for _, tc := range tests {
 		var permutations [][]chunkInterval
@@ -480,8 +481,10 @@ func testOOOHeadChunkReader_LabelValues(t *testing.T, scenario sampleTypeScenari
 // It does so by appending out of order samples to the db and then initializing
 // an OOOHeadChunkReader to read chunks from it.
 func TestOOOHeadChunkReader_Chunk(t *testing.T) {
+	t.Parallel()
 	for name, scenario := range sampleTypeScenarios {
 		t.Run(name, func(t *testing.T) {
+			t.Parallel()
 			testOOOHeadChunkReader_Chunk(t, scenario)
 		})
 	}

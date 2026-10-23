@@ -16,6 +16,7 @@ package parser
 import (
 	"bytes"
 	"fmt"
+	"math"
 	"sort"
 	"strconv"
 	"strings"
@@ -101,26 +102,42 @@ func (node *AggregateExpr) writeAggOpStr(b *bytes.Buffer) {
 	switch {
 	case node.Without:
 		b.WriteString(" without (")
-		writeLabels(b, node.Grouping)
+		writeLabels(b, node.Grouping, node.unquotedUTF8Names)
 		b.WriteString(") ")
 	case len(node.Grouping) > 0:
 		b.WriteString(" by (")
-		writeLabels(b, node.Grouping)
+		writeLabels(b, node.Grouping, node.unquotedUTF8Names)
 		b.WriteString(") ")
 	}
 }
 
-func writeLabels(b *bytes.Buffer, ss []string) {
+func writeLabels(b *bytes.Buffer, ss []string, unquotedUTF8Names bool) {
 	for i, s := range ss {
 		if i > 0 {
 			b.WriteString(", ")
 		}
-		if !model.LegacyValidation.IsValidLabelName(s) {
+		if labelNameRequiresQuoting(s, unquotedUTF8Names) {
 			b.Write(strconv.AppendQuote(b.AvailableBuffer(), s))
 		} else {
 			b.WriteString(s)
 		}
 	}
+}
+
+func labelNameRequiresQuoting(s string, unquotedUTF8Names bool) bool {
+	if !unquotedUTF8Names {
+		return !model.LegacyValidation.IsValidLabelName(s)
+	}
+	if s == "" {
+		return true
+	}
+	l := Lexer{unquotedUTF8Names: true}
+	for i, r := range s {
+		if (i == 0 && !l.isNameStart(r)) || (i > 0 && !l.isNameContinue(r)) {
+			return true
+		}
+	}
+	return false
 }
 
 // writeStringsJoin is like strings.Join but appending to a bytes.Buffer.
@@ -144,7 +161,32 @@ func (node *BinaryExpr) returnBool() string {
 
 func (node *BinaryExpr) String() string {
 	matching := node.getMatchingStr()
-	return node.LHS.String() + " " + node.Op.String() + node.returnBool() + matching + " " + node.RHS.String()
+	return node.lhs().String() + " " + node.Op.String() + node.returnBool() + matching + " " + node.RHS.String()
+}
+
+// lhs returns the left operand to print, in parentheses if it is the base of
+// ^ and prints with a leading sign. ^ binds tighter than a unary sign, so a
+// bare +Inf ^ 2 or -x ^ 2 would parse back as the sign applied to the power.
+func (node *BinaryExpr) lhs() Expr {
+	if node.Op == POW && printsWithSign(node.LHS) {
+		return &ParenExpr{Expr: node.LHS}
+	}
+	return node.LHS
+}
+
+// printsWithSign reports whether e's String() may start with + or -. It errs
+// towards true: a NaN or a zero duration with the sign bit set gets harmless
+// parentheses.
+func printsWithSign(e Expr) bool {
+	switch e := e.(type) {
+	case *NumberLiteral:
+		return math.Signbit(e.Val) || math.IsInf(e.Val, 1)
+	case *UnaryExpr:
+		return true
+	case *StepInvariantExpr:
+		return printsWithSign(e.Expr)
+	}
+	return false
 }
 
 func (node *BinaryExpr) ShortString() string {
@@ -162,7 +204,7 @@ func (node *BinaryExpr) getMatchingStr() string {
 				vmTag = "on"
 			}
 			b.WriteString(" " + vmTag + " (")
-			writeLabels(&b, vm.MatchingLabels)
+			writeLabels(&b, vm.MatchingLabels, node.unquotedUTF8Names)
 			b.WriteString(")")
 			matching = b.String()
 		}
@@ -174,7 +216,7 @@ func (node *BinaryExpr) getMatchingStr() string {
 			}
 			b.Reset()
 			b.WriteString(" group_" + vmCard + " (")
-			writeLabels(&b, vm.Include)
+			writeLabels(&b, vm.Include, node.unquotedUTF8Names)
 			b.WriteString(")")
 			matching += b.String()
 		}
@@ -423,7 +465,11 @@ func (node *VectorSelector) String() string {
 		if matcher.Name == labels.MetricName && matcher.Type == labels.MatchEqual && matcher.Value == node.Name && matcher.Value != "" {
 			continue
 		}
-		labelStrings = append(labelStrings, matcher.String())
+		if !labelNameRequiresQuoting(matcher.Name, node.unquotedUTF8Names) {
+			labelStrings = append(labelStrings, matcher.Name+matcher.Type.String()+strconv.Quote(matcher.Value))
+		} else {
+			labelStrings = append(labelStrings, matcher.String())
+		}
 	}
 	b := bytes.NewBuffer(make([]byte, 0, 1024))
 	b.WriteString(node.Name)
