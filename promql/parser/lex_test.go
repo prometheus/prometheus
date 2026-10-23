@@ -572,6 +572,26 @@ var tests = []struct {
 			{
 				input: "`\xff`", fail: true,
 			},
+			{
+				// U+FFFD itself is a valid rune.
+				input:    "\"\uFFFD\"",
+				expected: []Item{{STRING, 0, "\"\uFFFD\""}},
+			},
+			{
+				input:    "`\uFFFD`",
+				expected: []Item{{STRING, 0, "`\uFFFD`"}},
+			},
+			{
+				input:    "'\uFFFD'",
+				expected: []Item{{STRING, 0, "'\uFFFD'"}},
+			},
+			{
+				input: "\"\uFFFD\xff\"", fail: true,
+			},
+			{
+				// A truncated U+FFFD is still invalid.
+				input: "\"\xef\xbf\"", fail: true,
+			},
 		},
 	},
 	{
