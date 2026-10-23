@@ -708,6 +708,7 @@ func TestDB_SnapshotWithDelete_AppendV2(t *testing.T) {
 }
 
 func TestDB_e2e_AppendV2(t *testing.T) {
+	t.Parallel()
 	const (
 		numDatapoints = 1000
 		numRanges     = 1000
@@ -964,6 +965,7 @@ func TestWALSegmentSizeOptions_AppendV2(t *testing.T) {
 // https://github.com/prometheus/prometheus/issues/9846
 // https://github.com/prometheus/prometheus/issues/9859
 func TestWALReplayRaceOnSamplesLoggedBeforeSeries_AppendV2(t *testing.T) {
+	t.Parallel()
 	const (
 		numRuns                        = 1
 		numSamplesBeforeSeriesCreation = 1000
@@ -975,6 +977,7 @@ func TestWALReplayRaceOnSamplesLoggedBeforeSeries_AppendV2(t *testing.T) {
 		for _, numSamplesAfterSeriesCreation := range []int{1, 1000} {
 			for run := 1; run <= numRuns; run++ {
 				t.Run(fmt.Sprintf("samples after series creation = %d, run = %d, stStorage = %v", numSamplesAfterSeriesCreation, run, enableSTStorage), func(t *testing.T) {
+					t.Parallel()
 					testWALReplayRaceOnSamplesLoggedBeforeSeriesAppendV2(t, numSamplesBeforeSeriesCreation, numSamplesAfterSeriesCreation, enableSTStorage)
 				})
 			}
@@ -3876,11 +3879,14 @@ func TestMultipleEncodingsCommitOrder_AppendV2(t *testing.T) {
 //
 //	are not included in this compaction.
 func TestOOOCompaction_AppendV2(t *testing.T) {
+	t.Parallel()
 	for name, scenario := range sampleTypeScenarios {
 		t.Run(name, func(t *testing.T) {
+			t.Parallel()
 			testOOOCompactionAppenderV2(t, scenario, false)
 		})
 		t.Run(name+"+extra", func(t *testing.T) {
+			t.Parallel()
 			testOOOCompactionAppenderV2(t, scenario, true)
 		})
 	}
@@ -3982,7 +3988,7 @@ func testOOOCompactionAppenderV2(t *testing.T, scenario sampleTypeScenario, addE
 	require.Greater(t, f.Size(), int64(100))
 
 	if addExtraSamples {
-		compactOOOHeadTestingCallback = func() {
+		db.compactOOOHeadTestingCallback = func() {
 			addSample(90, 120)  // Back in time, to generate a new OOO chunk.
 			addSample(300, 330) // Now some samples after the previous highest timestamp.
 			addSample(300, 330) // Repeat to generate an OOO chunk at these timestamps.
@@ -4395,6 +4401,7 @@ func testOOOQueryAfterRestartWithSnapshotAndRemovedWBLAppendV2(t *testing.T, sce
 }
 
 func TestQuerierOOOQuery_AppendV2(t *testing.T) {
+	t.Parallel()
 	scenarios := map[string]struct {
 		appendFunc func(app storage.AppenderV2, ts int64, counterReset bool) (storage.SeriesRef, error)
 		sampleFunc func(ts int64) chunks.Sample
@@ -4446,6 +4453,7 @@ func TestQuerierOOOQuery_AppendV2(t *testing.T) {
 
 	for name, scenario := range scenarios {
 		t.Run(name, func(t *testing.T) {
+			t.Parallel()
 			testQuerierOOOQueryAppendV2(t, scenario.appendFunc, scenario.sampleFunc)
 		})
 	}
@@ -4689,6 +4697,7 @@ func testQuerierOOOQueryAppendV2(t *testing.T,
 }
 
 func TestChunkQuerierOOOQuery_AppendV2(t *testing.T) {
+	t.Parallel()
 	nBucketHistogram := func(n int64) *histogram.Histogram {
 		h := &histogram.Histogram{
 			Count: uint64(n),
@@ -4770,6 +4779,7 @@ func TestChunkQuerierOOOQuery_AppendV2(t *testing.T) {
 	}
 	for name, scenario := range scenarios {
 		t.Run(name, func(t *testing.T) {
+			t.Parallel()
 			testChunkQuerierOOOQueryAppendV2(t, scenario.appendFunc, scenario.sampleFunc, scenario.checkInUseBucket)
 		})
 	}
@@ -5680,8 +5690,10 @@ func testOOODisabledAppendV2(t *testing.T, scenario sampleTypeScenario) {
 }
 
 func TestWBLAndMmapReplay_AppendV2(t *testing.T) {
+	t.Parallel()
 	for name, scenario := range sampleTypeScenarios {
 		t.Run(name, func(t *testing.T) {
+			t.Parallel()
 			testWBLAndMmapReplayAppendV2(t, scenario)
 		})
 	}
@@ -5861,6 +5873,7 @@ func testWBLAndMmapReplayAppendV2(t *testing.T, scenario sampleTypeScenario) {
 }
 
 func TestOOOHistogramCompactionWithCounterResets_AppendV2(t *testing.T) {
+	t.Parallel()
 	for _, floatHistogram := range []bool{false, true} {
 		ctx := context.Background()
 
@@ -6216,6 +6229,7 @@ func TestOOOHistogramCompactionWithCounterResets_AppendV2(t *testing.T) {
 }
 
 func TestInterleavedInOrderAndOOOHistogramCompactionWithCounterResets_AppendV2(t *testing.T) {
+	t.Parallel()
 	for _, floatHistogram := range []bool{false, true} {
 		ctx := context.Background()
 
@@ -6589,8 +6603,10 @@ func TestWBLCorruption_AppendV2(t *testing.T) {
 }
 
 func TestOOOMmapCorruption_AppendV2(t *testing.T) {
+	t.Parallel()
 	for name, scenario := range sampleTypeScenarios {
 		t.Run(name, func(t *testing.T) {
+			t.Parallel()
 			testOOOMmapCorruptionAppendV2(t, scenario)
 		})
 	}
