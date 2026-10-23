@@ -6017,12 +6017,15 @@ metric: <
 }
 
 func TestProtobufParseZeroFloatHistogram(t *testing.T) {
-	buf := metricFamiliesToProtobuf(t, []string{`
-name: "test_float_histogram"
-help: "Test zero float histogram with a retained bucket layout."
-type: HISTOGRAM
-metric: <
-  histogram: <
+	for _, tc := range []struct {
+		name      string
+		histogram string
+		count     float64
+		zeroCount float64
+	}{
+		{
+			name: "zero counts with a retained bucket layout",
+			histogram: `
     sample_count_float: 0
     sample_sum: 0
     schema: 3
@@ -6036,23 +6039,47 @@ metric: <
     positive_count: 0
     positive_count: 0
     positive_count: 0
-    positive_count: 0
+    positive_count: 0`,
+		},
+		{
+			// Without buckets or a zero threshold, only zero_count_float marks
+			// the histogram as native, as zero_count does for an integer one.
+			name: "observations only in a zero bucket with no threshold",
+			histogram: `
+    sample_count_float: 3
+    sample_sum: 0
+    schema: 3
+    zero_threshold: 0
+    zero_count_float: 3`,
+			count:     3,
+			zeroCount: 3,
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			buf := metricFamiliesToProtobuf(t, []string{`
+name: "test_float_histogram"
+help: "Test float histogram."
+type: HISTOGRAM
+metric: <
+  histogram: <` + tc.histogram + `
   >
 >
 	`})
 
-	p := NewProtobufParser(buf.Bytes(), false, false, false, false, labels.NewSymbolTable())
-	for _, expected := range []Entry{EntryHelp, EntryType, EntryHistogram} {
-		entry, err := p.Next()
-		require.NoError(t, err)
-		require.Equal(t, expected, entry)
-	}
+			p := NewProtobufParser(buf.Bytes(), false, false, false, false, labels.NewSymbolTable())
+			for _, expected := range []Entry{EntryHelp, EntryType, EntryHistogram} {
+				entry, err := p.Next()
+				require.NoError(t, err)
+				require.Equal(t, expected, entry)
+			}
 
-	_, _, h, fh := p.Histogram()
-	require.Nil(t, h)
-	require.NotNil(t, fh)
-	require.Zero(t, fh.Count)
-	require.Zero(t, fh.ZeroCount)
+			_, _, h, fh := p.Histogram()
+			require.Nil(t, h)
+			require.NotNil(t, fh)
+			require.Equal(t, tc.count, fh.Count)
+			require.Equal(t, tc.zeroCount, fh.ZeroCount)
+		})
+	}
 }
 
 // TestProtobufParseMixedNativeAndClassicHistograms tests a metric family that
