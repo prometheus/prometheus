@@ -17,6 +17,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"math"
 
 	"github.com/prometheus/prometheus/model/exemplar"
 	"github.com/prometheus/prometheus/model/histogram"
@@ -66,21 +67,29 @@ func (a *appenderV2) Append(ref storage.SeriesRef, ls labels.Labels, st, t int64
 
 	s.Lock()
 	lastTS := s.lastTs
+	duplicate := h == nil && fh == nil && t == lastTS && s.lastSampleIsFloat
+	if duplicate && math.Float64bits(v) != math.Float64bits(s.lastValue) {
+		err := storage.NewDuplicateFloatErr(t, s.lastValue, v)
+		s.Unlock()
+		return 0, err
+	}
 	s.Unlock()
 
 	if a.opts.EnableSTAsZeroSample && st != 0 {
 		a.bestEffortAppendSTZeroSample(s, ls, lastTS, st, t, h, fh)
 	}
 
-	if t <= a.minValidTime(lastTS) {
+	if !duplicate && t <= a.minValidTime(lastTS) {
 		a.metrics.totalOutOfOrderSamples.Inc()
 		return 0, storage.ErrOutOfOrderSample
 	}
 
 	switch {
+	case duplicate:
+		isStale = value.IsStaleNaN(v)
 	case fh != nil:
 		isStale = value.IsStaleNaN(fh.Sum)
-		// NOTE: always modify pendingFloatHistograms and floatHistogramSeries together
+		// NOTE: Always modify pendingFloatHistograms and floatHistogramSeries together.
 		a.pendingFloatHistograms = append(a.pendingFloatHistograms, record.RefFloatHistogramSample{
 			Ref: s.ref,
 			ST:  st,
@@ -90,7 +99,7 @@ func (a *appenderV2) Append(ref storage.SeriesRef, ls labels.Labels, st, t int64
 		a.floatHistogramSeries = append(a.floatHistogramSeries, s)
 	case h != nil:
 		isStale = value.IsStaleNaN(h.Sum)
-		// NOTE: always modify pendingHistograms and histogramSeries together
+		// NOTE: Always modify pendingHistograms and histogramSeries together.
 		a.pendingHistograms = append(a.pendingHistograms, record.RefHistogramSample{
 			Ref: s.ref,
 			ST:  st,
@@ -110,7 +119,9 @@ func (a *appenderV2) Append(ref storage.SeriesRef, ls labels.Labels, st, t int64
 		})
 		a.sampleSeries = append(a.sampleSeries, s)
 	}
-	a.metrics.totalAppendedSamples.WithLabelValues(sampleMetricType).Inc()
+	if !duplicate {
+		a.metrics.totalAppendedSamples.WithLabelValues(sampleMetricType).Inc()
+	}
 	if isStale {
 		// For stale values we never attempt to process metadata/exemplars, claim the success.
 		return storage.SeriesRef(s.ref), nil
