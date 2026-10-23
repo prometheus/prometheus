@@ -874,6 +874,10 @@ func main() {
 	// RoutePrefix must always be at least '/'.
 	cfg.web.RoutePrefix = "/" + strings.Trim(cfg.web.RoutePrefix, "/")
 
+	// Whether --storage.tsdb.max-block-duration was set explicitly, in which
+	// case it is not derived from the retention time.
+	maxBlockDurationFromFlag := false
+
 	if !agentMode {
 		// Check for overflows. This limits our max retention to 100y.
 		if cfg.tsdb.RetentionDuration < 0 {
@@ -897,16 +901,9 @@ func main() {
 
 		// Max block size settings.
 		if cfg.tsdb.MaxBlockDuration == 0 {
-			maxBlockDuration, err := model.ParseDuration("31d")
-			if err != nil {
-				panic(err)
-			}
-			// When the time retention is set and not too big use to define the max block duration.
-			if cfg.tsdb.RetentionDuration != 0 && cfg.tsdb.RetentionDuration/10 < maxBlockDuration {
-				maxBlockDuration = cfg.tsdb.RetentionDuration / 10
-			}
-
-			cfg.tsdb.MaxBlockDuration = maxBlockDuration
+			cfg.tsdb.MaxBlockDuration = defaultMaxBlockDuration(cfg.tsdb.RetentionDuration)
+		} else {
+			maxBlockDurationFromFlag = true
 		}
 
 		// Delayed compaction checks
@@ -1151,6 +1148,7 @@ func main() {
 						"percentage", curr.Percentage,
 					)
 					lastTSDBRetention = *curr
+					updateMaxBlockDuration(maxBlockDurationFromFlag, curr.Time, localStorage.SetMaxBlockDuration)
 					return nil
 				}
 			}(),
@@ -1911,6 +1909,13 @@ func (s *readyStorage) ApplyConfig(conf *config.Config) error {
 	return nil
 }
 
+// SetMaxBlockDuration changes the maximum block duration of the TSDB, if there is one.
+func (s *readyStorage) SetMaxBlockDuration(d int64) {
+	if db, ok := s.get().(*tsdb.DB); ok {
+		db.SetMaxBlockDuration(d)
+	}
+}
+
 // Set the storage.
 func (s *readyStorage) Set(db storage.Storage, startTimeMargin int64) {
 	s.mtx.Lock()
@@ -2179,6 +2184,30 @@ func (rm *readyScrapeManager) Get() (*scrape.Manager, error) {
 	}
 
 	return nil, ErrNotReady
+}
+
+// defaultMaxBlockDuration returns the max block duration used when
+// --storage.tsdb.max-block-duration is not set: 31d, or a tenth of the
+// retention time if that is set and shorter.
+func defaultMaxBlockDuration(retention model.Duration) model.Duration {
+	maxBlockDuration, err := model.ParseDuration("31d")
+	if err != nil {
+		panic(err)
+	}
+	if retention != 0 && retention/10 < maxBlockDuration {
+		maxBlockDuration = retention / 10
+	}
+	return maxBlockDuration
+}
+
+// updateMaxBlockDuration passes the max block duration derived from the
+// reloaded retention time to set, unless --storage.tsdb.max-block-duration was
+// set explicitly.
+func updateMaxBlockDuration(fromFlag bool, retention model.Duration, set func(int64)) {
+	if fromFlag {
+		return
+	}
+	set(int64(time.Duration(defaultMaxBlockDuration(retention)) / time.Millisecond))
 }
 
 // tsdbOptions is tsdb.Option version with defined units.
