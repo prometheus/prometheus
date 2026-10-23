@@ -29,7 +29,7 @@ const (
 	savepointVersion1 = 1
 )
 
-// SavepointEntry holds the persisted position for a single remote write queue.
+// SavepointEntry holds the written position for a single remote write queue.
 type SavepointEntry struct {
 	Segment int `json:"segment"`
 }

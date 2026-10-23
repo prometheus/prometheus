@@ -118,7 +118,7 @@ func TestWriteStorageSavepointDisabled(t *testing.T) {
 }
 
 func TestWriteStorageSavepointWriteOnClose(t *testing.T) {
-	cfg := testRemoteWriteConfigForHost("http://persist-test.com")
+	cfg := testRemoteWriteConfigForHost("http://write-on-close.com")
 	hash, err := toHash(cfg)
 	require.NoError(t, err)
 
@@ -128,7 +128,7 @@ func TestWriteStorageSavepointWriteOnClose(t *testing.T) {
 		wantSavepoint Savepoint
 	}{
 		{
-			name:          "configured queue is persisted",
+			name:          "configured queue is written",
 			reloads:       [][]*config.RemoteWriteConfig{{cfg}},
 			wantSavepoint: Savepoint{hash: {Segment: 3}},
 		},
@@ -212,7 +212,7 @@ func TestWriteStorageSavepointCloseWhileBehind(t *testing.T) {
 // before the first successful ApplyConfig does not overwrite the loaded savepoint,
 // and that a failed ApplyConfig does not discard it.
 func TestWriteStorageSavepointNotWrittenBeforeApplyConfig(t *testing.T) {
-	cfg := testRemoteWriteConfigForHost("http://persist-before-config.com")
+	cfg := testRemoteWriteConfigForHost("http://write-before-config.com")
 	hash, err := toHash(cfg)
 	require.NoError(t, err)
 
@@ -249,7 +249,7 @@ func TestWriteStorageSavepointNotWrittenBeforeApplyConfig(t *testing.T) {
 // TestWriteStorageSavepointWriteConcurrentApplyConfig runs writes concurrently with ApplyConfig.
 // It exists to fail under the race detector if writeSavepoint reads rws.queues without rws.mtx.
 func TestWriteStorageSavepointWriteConcurrentApplyConfig(t *testing.T) {
-	cfg := testRemoteWriteConfigForHost("http://persist-concurrent.com")
+	cfg := testRemoteWriteConfigForHost("http://write-concurrent.com")
 	conf := &config.Config{
 		GlobalConfig:       config.DefaultGlobalConfig,
 		RemoteWriteConfigs: []*config.RemoteWriteConfig{cfg},
@@ -458,7 +458,8 @@ func TestWriteStorageSavepointMetrics(t *testing.T) {
 		require.Equal(t, 1.0, client_testutil.ToFloat64(s.savepointWritesFailed))
 		require.Equal(t, 0.0, client_testutil.ToFloat64(s.savepointLastWriteTime),
 			"timestamp must not advance on failure")
-		require.Equal(t, 1.0, client_testutil.ToFloat64(s.savepointEntries))
+		require.Equal(t, 0.0, client_testutil.ToFloat64(s.savepointEntries),
+			"entries must not change on failure")
 	})
 
 	t.Run("disabled_not_registered", func(t *testing.T) {
@@ -569,7 +570,7 @@ func appendToWAL(t *testing.T, dir string, seg walSegmentData) {
 //   - A loaded savepoint reaches the watcher as its start segment.
 //   - Replayed samples are delivered end-to-end to the remote client.
 //   - Live samples appended after startup are delivered via the notify path.
-//   - The savepoint is persisted on close.
+//   - The savepoint is written on close.
 //
 // The per-segment replay matrix (which segments emit samples for a given savepoint/checkpoint position)
 // is owned by watcher tests:
@@ -696,11 +697,11 @@ func TestWriteStorageSavepointE2E(t *testing.T) {
 			require.NoError(t, err)
 			require.Contains(t, saved, hash)
 
-			// The persisted savepoint must record the actual WAL tail the watcher reached.
+			// The written savepoint must record the actual WAL tail the watcher reached.
 			_, lastSegment, err := wlog.Segments(filepath.Join(dir, "wal"))
 			require.NoError(t, err)
 			require.Equal(t, lastSegment, saved[hash].Segment,
-				"persisted savepoint should record the last processed (tail) segment")
+				"written savepoint should record the last processed (tail) segment")
 		})
 	}
 }
