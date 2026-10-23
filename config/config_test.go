@@ -3771,3 +3771,153 @@ func TestGetScrapeConfigs_Loaded(t *testing.T) {
 		require.NoError(t, err)
 	})
 }
+
+func TestRemoteWriteConfig_Mode(t *testing.T) {
+	for _, tc := range []struct {
+		name                       string
+		config                     string
+		expectMode                 RemoteWriteMode
+		expectSendNativeHistograms bool
+		errString                  string
+	}{
+		{
+			name: "default mode (none)",
+			config: `
+remote_write:
+  - url: http://localhost:9090/api/v1/write
+    protobuf_message: io.prometheus.write.v2.Request
+`,
+			expectMode:                 RemoteWriteModeNone,
+			expectSendNativeHistograms: false,
+		},
+		{
+			name: "explicit none mode with v2",
+			config: `
+remote_write:
+  - url: http://localhost:9090/api/v1/write
+    protobuf_message: io.prometheus.write.v2.Request
+    mode: none
+`,
+			expectMode:                 RemoteWriteModeNone,
+			expectSendNativeHistograms: false,
+		},
+		{
+			name: "none mode with v1 protobuf_message fails",
+			config: `
+remote_write:
+  - url: http://localhost:9090/api/v1/write
+    protobuf_message: prometheus.WriteRequest
+    mode: none
+`,
+			errString: `mode "none" is only supported with protobuf_message "io.prometheus.write.v2.Request", got "prometheus.WriteRequest"`,
+		},
+		{
+			name: "stateless mode defaults send_native_histograms to true",
+			config: `
+remote_write:
+  - url: http://localhost:9090/api/v1/write
+    protobuf_message: io.prometheus.write.v2.Request
+    mode: stateless
+`,
+			expectMode:                 RemoteWriteModeStateless,
+			expectSendNativeHistograms: true,
+		},
+		{
+			name: "stateless-st mode defaults send_native_histograms to true",
+			config: `
+remote_write:
+  - url: http://localhost:9090/api/v1/write
+    protobuf_message: io.prometheus.write.v2.Request
+    mode: stateless-st
+`,
+			expectMode:                 RemoteWriteModeStatelessST,
+			expectSendNativeHistograms: true,
+		},
+		{
+			name: "stateless mode with explicit send_native_histograms=true",
+			config: `
+remote_write:
+  - url: http://localhost:9090/api/v1/write
+    protobuf_message: io.prometheus.write.v2.Request
+    mode: stateless
+    send_native_histograms: true
+`,
+			expectMode:                 RemoteWriteModeStateless,
+			expectSendNativeHistograms: true,
+		},
+		{
+			name: "stateless mode with explicit send_native_histograms=false fails",
+			config: `
+remote_write:
+  - url: http://localhost:9090/api/v1/write
+    protobuf_message: io.prometheus.write.v2.Request
+    mode: stateless
+    send_native_histograms: false
+`,
+			errString: `send_native_histograms cannot be false when remote_write mode is "stateless"`,
+		},
+		{
+			name: "stateless-st mode with explicit send_native_histograms=false fails",
+			config: `
+remote_write:
+  - url: http://localhost:9090/api/v1/write
+    protobuf_message: io.prometheus.write.v2.Request
+    mode: stateless-st
+    send_native_histograms: false
+`,
+			errString: `send_native_histograms cannot be false when remote_write mode is "stateless-st"`,
+		},
+		{
+			name: "stateless mode with convert_nhcb_to_classic=true fails",
+			config: `
+remote_write:
+  - url: http://localhost:9090/api/v1/write
+    protobuf_message: io.prometheus.write.v2.Request
+    mode: stateless
+    convert_nhcb_to_classic: true
+`,
+			errString: `convert_nhcb_to_classic cannot be enabled when remote_write mode is "stateless"`,
+		},
+		{
+			name: "stateless mode with v1 protobuf_message fails",
+			config: `
+remote_write:
+  - url: http://localhost:9090/api/v1/write
+    protobuf_message: prometheus.WriteRequest
+    mode: stateless
+`,
+			errString: `mode "stateless" is only supported with protobuf_message "io.prometheus.write.v2.Request", got "prometheus.WriteRequest"`,
+		},
+		{
+			name: "stateless mode with default (v1) protobuf_message fails",
+			config: `
+remote_write:
+  - url: http://localhost:9090/api/v1/write
+    mode: stateless
+`,
+			errString: `mode "stateless" is only supported with protobuf_message "io.prometheus.write.v2.Request", got "prometheus.WriteRequest"`,
+		},
+		{
+			name: "unknown mode fails",
+			config: `
+remote_write:
+  - url: http://localhost:9090/api/v1/write
+    protobuf_message: io.prometheus.write.v2.Request
+    mode: invalid
+`,
+			errString: `unknown remote_write mode "invalid", supported: "none", "stateless", "stateless-st"`,
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			cfg, err := Load(tc.config, promslog.NewNopLogger())
+			if tc.errString != "" {
+				require.ErrorContains(t, err, tc.errString)
+				return
+			}
+			require.NoError(t, err)
+			require.Len(t, cfg.RemoteWriteConfigs, 1)
+			require.Equal(t, tc.expectMode, cfg.RemoteWriteConfigs[0].Mode)
+			require.Equal(t, tc.expectSendNativeHistograms, cfg.RemoteWriteConfigs[0].SendNativeHistograms)
+		})
+	}
+}

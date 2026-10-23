@@ -1515,6 +1515,33 @@ func CheckTargetAddress(address model.LabelValue) error {
 	return nil
 }
 
+// RemoteWriteMode specifies the Remote-Write 2.0 mode for a remote write endpoint.
+type RemoteWriteMode string
+
+const (
+	// RemoteWriteModeNone is the default Remote-Write mode (no mode parameter in Content-Type).
+	RemoteWriteModeNone RemoteWriteMode = ""
+	// RemoteWriteModeStateless is the "stateless" Remote-Write 2.0 mode.
+	RemoteWriteModeStateless RemoteWriteMode = "stateless"
+	// RemoteWriteModeStatelessST is the "stateless-st" Remote-Write 2.0 mode.
+	RemoteWriteModeStatelessST RemoteWriteMode = "stateless-st"
+)
+
+// Validate checks that the RemoteWriteMode is valid for the given protobuf message type.
+func (m RemoteWriteMode) Validate(protoMsg remoteapi.WriteMessageType) error {
+	switch m {
+	case RemoteWriteModeNone:
+		return nil
+	case "none", RemoteWriteModeStateless, RemoteWriteModeStatelessST:
+		if protoMsg != remoteapi.WriteV2MessageType {
+			return fmt.Errorf("mode %q is only supported with protobuf_message %q, got %q", m, remoteapi.WriteV2MessageType, protoMsg)
+		}
+		return nil
+	default:
+		return fmt.Errorf("unknown remote_write mode %q, supported: %q, %q, %q", m, "none", RemoteWriteModeStateless, RemoteWriteModeStatelessST)
+	}
+}
+
 // RemoteWriteConfig is the configuration for writing to remote storage.
 type RemoteWriteConfig struct {
 	URL                  *config.URL       `yaml:"url"`
@@ -1528,6 +1555,9 @@ type RemoteWriteConfig struct {
 	// ProtobufMessage specifies the protobuf message to use against the remote
 	// receiver as specified in https://prometheus.io/docs/specs/remote_write_spec_2_0/
 	ProtobufMessage remoteapi.WriteMessageType `yaml:"protobuf_message,omitempty"`
+	// Mode specifies the optional Remote-Write 2.0 mode (e.g. "stateless", "stateless-st")
+	// as specified in https://prometheus.io/docs/specs/prw/remote_write_spec_2_0/#modes
+	Mode RemoteWriteMode `yaml:"mode,omitempty"`
 	// FailedRequestLogging enables debug logging of remote write V2 request on send error.
 	FailedRequestLogging bool `yaml:"failed_request_logging,omitempty"`
 
@@ -1574,6 +1604,25 @@ func (c *RemoteWriteConfig) UnmarshalYAML(unmarshal func(any) error) error {
 
 	if err := c.ProtobufMessage.Validate(); err != nil {
 		return fmt.Errorf("invalid protobuf_message value: %w", err)
+	}
+	if err := c.Mode.Validate(c.ProtobufMessage); err != nil {
+		return err
+	}
+	if c.Mode == "none" {
+		c.Mode = RemoteWriteModeNone
+	}
+	if c.Mode != RemoteWriteModeNone {
+		if c.ConvertNHCBToClassic {
+			return fmt.Errorf("convert_nhcb_to_classic cannot be enabled when remote_write mode is %q", c.Mode)
+		}
+		var raw map[string]any
+		if err := unmarshal(&raw); err != nil {
+			return err
+		}
+		if _, set := raw["send_native_histograms"]; set && !c.SendNativeHistograms {
+			return fmt.Errorf("send_native_histograms cannot be false when remote_write mode is %q", c.Mode)
+		}
+		c.SendNativeHistograms = true
 	}
 
 	// The UnmarshalYAML method of HTTPClientConfig is not being called because it's not a pointer.

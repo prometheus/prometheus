@@ -954,7 +954,17 @@ func main() {
 	var (
 		localStorage  = &readyStorage{stats: tsdb.NewDBStats()}
 		scraper       = &readyScrapeManager{}
-		remoteStorage = remote.NewStorage(logger.With("component", "remote"), prometheus.DefaultRegisterer, localStorage.StartTime, localStoragePath, time.Duration(cfg.RemoteFlushDeadline), scraper, cfg.scrape.EnableTypeAndUnitLabels)
+		remoteStorage = remote.NewStorage(
+			logger.With("component", "remote"),
+			prometheus.DefaultRegisterer,
+			localStorage.StartTime,
+			localStoragePath,
+			time.Duration(cfg.RemoteFlushDeadline),
+			scraper,
+			cfg.scrape.EnableTypeAndUnitLabels,
+			cfg.tsdb.EnableMetadataWALRecords || cfg.agent.EnableMetadataWALRecords,
+			cfg.tsdb.EnableSTStorage || cfg.agent.EnableSTStorage,
+		)
 		fanoutStorage = storage.NewFanout(logger, localStorage, remoteStorage)
 	)
 
