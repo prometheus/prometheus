@@ -588,7 +588,7 @@ func (db *DB) loadWAL(r *wlog.Reader, duplicateRefToValidRef map[chunks.HeadSeri
 					lastRef = entry.Ref
 				}
 
-				series := &memSeries{ref: entry.Ref, lset: entry.Labels}
+				series := &memSeries{ref: entry.Ref, lset: entry.Labels, lastTs: math.MinInt64}
 				series, created := db.series.SetUnlessAlreadySet(series.lset.Hash(), series)
 
 				if !created {
@@ -633,10 +633,8 @@ func (db *DB) loadWAL(r *wlog.Reader, duplicateRefToValidRef map[chunks.HeadSeri
 					continue
 				}
 
-				// Update the lastTs for the series if this sample is newer.
-				if entry.T > series.lastTs {
-					series.lastTs = entry.T
-				}
+				// Restore the latest sample for duplicate detection.
+				series.updateSample(entry.T, entry.V, true)
 			}
 			db.walReplaySamplesPool.Put(v)
 		case []record.RefHistogramSample:
@@ -656,10 +654,8 @@ func (db *DB) loadWAL(r *wlog.Reader, duplicateRefToValidRef map[chunks.HeadSeri
 					continue
 				}
 
-				// Update the lastTs for the series if this sample is newer.
-				if entry.T > series.lastTs {
-					series.lastTs = entry.T
-				}
+				// Restore the latest sample type as well as its timestamp.
+				series.updateSample(entry.T, 0, false)
 			}
 			clear(v) // Zero out to avoid retaining histogram data.
 			db.walReplayHistogramsPool.Put(v[:0])
@@ -680,10 +676,8 @@ func (db *DB) loadWAL(r *wlog.Reader, duplicateRefToValidRef map[chunks.HeadSeri
 					continue
 				}
 
-				// Update the lastTs for the series if this sample is newer.
-				if entry.T > series.lastTs {
-					series.lastTs = entry.T
-				}
+				// Restore the latest sample type as well as its timestamp.
+				series.updateSample(entry.T, 0, false)
 			}
 			clear(v) // Zero out to avoid retaining histogram data.
 			db.walReplayFloatHistogramsPool.Put(v[:0])
@@ -984,6 +978,13 @@ func (a *appender) Append(ref storage.SeriesRef, l labels.Labels, t int64, v flo
 	series.Lock()
 	defer series.Unlock()
 
+	if t == series.lastTs && series.lastSampleIsFloat {
+		if math.Float64bits(v) != math.Float64bits(series.lastValue) {
+			return 0, storage.NewDuplicateFloatErr(t, series.lastValue, v)
+		}
+		return storage.SeriesRef(series.ref), nil
+	}
+
 	if t <= a.minValidTime(series.lastTs) {
 		a.metrics.totalOutOfOrderSamples.Inc()
 		return 0, storage.ErrOutOfOrderSample
@@ -1227,6 +1228,7 @@ func (a *appender) AppendHistogramSTZeroSample(ref storage.SeriesRef, l labels.L
 	// to satisfy incorrect TestDBStartTimestampSamplesIngestion test. We are leaving it as-is given the planned removal
 	// of AppenderV1 as per https://github.com/prometheus/prometheus/issues/17632.
 	series.lastTs = st
+	series.lastSampleIsFloat = false
 
 	switch {
 	case h != nil:
@@ -1276,6 +1278,7 @@ func (a *appender) AppendSTZeroSample(ref storage.SeriesRef, l labels.Labels, t,
 	// to satisfy incorrect TestDBStartTimestampSamplesIngestion test. We are leaving it as-is given the planned removal
 	// of AppenderV1 as per https://github.com/prometheus/prometheus/issues/17632.
 	series.lastTs = st
+	series.lastSampleIsFloat = false
 
 	// NOTE: always modify pendingSamples and sampleSeries together.
 	a.pendingSamples = append(a.pendingSamples, record.RefSample{
@@ -1396,19 +1399,19 @@ func (a *appenderBase) log() error {
 	var series *memSeries
 	for i, s := range a.pendingSamples {
 		series = a.sampleSeries[i]
-		if !series.updateTimestamp(s.T) {
+		if !series.updateSample(s.T, s.V, true) {
 			a.metrics.totalOutOfOrderSamples.Inc()
 		}
 	}
 	for i, s := range a.pendingHistograms {
 		series = a.histogramSeries[i]
-		if !series.updateTimestamp(s.T) {
+		if !series.updateSample(s.T, 0, false) {
 			a.metrics.totalOutOfOrderSamples.Inc()
 		}
 	}
 	for i, s := range a.pendingFloatHistograms {
 		series = a.floatHistogramSeries[i]
-		if !series.updateTimestamp(s.T) {
+		if !series.updateSample(s.T, 0, false) {
 			a.metrics.totalOutOfOrderSamples.Inc()
 		}
 	}

@@ -1147,7 +1147,11 @@ func TestDBOutOfOrderTimeWindow_AppendV2(t *testing.T) {
 			err = app.Commit()
 			require.NoError(t, err)
 			_, err = app.Append(0, lset, 0, c.secondTs, 0, nil, nil, storage.AOptions{})
-			require.ErrorIs(t, err, c.expectedError)
+			if c.firstTs == c.secondTs {
+				require.NoError(t, err)
+			} else {
+				require.ErrorIs(t, err, c.expectedError)
+			}
 
 			expectedAppendedSamples := float64(2)
 			if c.expectedError != nil {
@@ -1465,11 +1469,10 @@ func TestMetadataAssertInMemoryData_AppenderV2(t *testing.T) {
 	require.Equal(t, m3, series3.Metadata().Value())
 	require.True(t, metadata.IsZeroHandle(series4.Metadata()))
 
-	// Update metadata.
+	// Update metadata even when the sample is a duplicate.
 	m4 := metadata.Metadata{Type: "counter", Unit: "unit_4", Help: "help_4"}
 	m5 := metadata.Metadata{Type: "counter", Unit: "unit_5", Help: "help_5"}
 	app = s.AppenderV2(ctx)
-	ts++
 	_, err = app.Append(0, s1, 0, ts, 0, nil, nil, storage.AOptions{Metadata: m1})
 	require.NoError(t, err)
 	_, err = app.Append(0, s4, 0, ts, 0, nil, nil, storage.AOptions{Metadata: m4})
