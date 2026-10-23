@@ -111,7 +111,7 @@ func (q *NativeHistogramsAsClassicQuerier) Select(ctx context.Context, sortSerie
 	)
 	if suffix == histogram.ClassicSuffixBucket {
 		// Filter in place: extractHistogramSuffix allocates baseMatchers with
-		// capacity len(matchers), leaving room to append metricNameMatcher.
+		// capacity len(matchers)+1, leaving room to append metricNameMatcher and emptyLeMatcher.
 		matchersWithoutLe = baseMatchers[:0]
 		for _, matcher := range baseMatchers {
 			if matcher.Name == labels.BucketLabel {
@@ -122,7 +122,7 @@ func (q *NativeHistogramsAsClassicQuerier) Select(ctx context.Context, sortSerie
 		}
 	}
 
-	matchersWithoutLe = append(matchersWithoutLe, metricNameMatcher, labels.MustNewMatcher(labels.MatchEqual, labels.BucketLabel, ""))
+	matchersWithoutLe = append(matchersWithoutLe, metricNameMatcher, emptyLeMatcher)
 	nhcbSet := q.Querier.Select(ctx, sortSeries, hints, matchersWithoutLe...)
 	if nhcbSet.Err() != nil {
 		return nhcbSet
@@ -140,6 +140,8 @@ func (q *NativeHistogramsAsClassicQuerier) Select(ctx context.Context, sortSerie
 		},
 	}
 }
+
+var emptyLeMatcher = &labels.Matcher{Type: labels.MatchEqual, Name: labels.BucketLabel}
 
 // histogramSuffix returns the classic histogram suffix (_bucket, _count, _sum)
 // from the given metric name, or empty string if none matches.
@@ -191,7 +193,7 @@ func extractHistogramSuffix(matchers []*labels.Matcher) (*labels.Matcher, string
 		return nil, "", matchers
 	}
 
-	baseMatchers := make([]*labels.Matcher, 0, len(matchers))
+	baseMatchers := make([]*labels.Matcher, 0, len(matchers)+1)
 	for _, m := range matchers {
 		if m.Name != model.MetricNameLabel {
 			baseMatchers = append(baseMatchers, m)
