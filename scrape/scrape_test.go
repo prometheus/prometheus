@@ -1570,8 +1570,9 @@ func testScrapeLoopFailWithInvalidLabelsAfterRelabel(t *testing.T, appV2 bool) {
 		NameValidationScheme: model.UTF8Validation,
 	}}
 	sl, _ := newTestScrapeLoop(t, withAppendable(teststorage.NewAppendable(), appV2), func(sl *scrapeLoop) {
+		lb := labels.NewBuilder(labels.EmptyLabels())
 		sl.sampleMutator = func(l labels.Labels) labels.Labels {
-			return mutateSampleLabels(l, target, true, relabelConfig)
+			return mutateSampleLabels(lb, l, target, true, relabelConfig)
 		}
 	})
 
@@ -3616,11 +3617,12 @@ func testScrapeLoopAppendHonorLabels(t *testing.T, appV2 bool) {
 
 			appTest := teststorage.NewAppendable()
 			sl, _ := newTestScrapeLoop(t, withAppendable(appTest, appV2), func(sl *scrapeLoop) {
+				lb := labels.NewBuilder(labels.EmptyLabels())
 				sl.sampleMutator = func(l labels.Labels) labels.Labels {
-					return mutateSampleLabels(l, discoveryLabels, test.honorLabels, nil)
+					return mutateSampleLabels(lb, l, discoveryLabels, test.honorLabels, nil)
 				}
 				sl.reportSampleMutator = func(l labels.Labels) labels.Labels {
-					return mutateReportSampleLabels(l, discoveryLabels)
+					return mutateReportSampleLabels(lb, l, discoveryLabels)
 				}
 			})
 
@@ -3708,8 +3710,9 @@ func testScrapeLoopAppendForConflictingPrefixedLabels(t *testing.T, appV2 bool) 
 		t.Run(tc.name, func(t *testing.T) {
 			appTest := teststorage.NewAppendable()
 			sl, _ := newTestScrapeLoop(t, withAppendable(appTest, appV2), func(sl *scrapeLoop) {
+				lb := labels.NewBuilder(labels.EmptyLabels())
 				sl.sampleMutator = func(l labels.Labels) labels.Labels {
-					return mutateSampleLabels(l, &Target{labels: labels.FromStrings(tc.targetLabels...)}, false, nil)
+					return mutateSampleLabels(lb, l, &Target{labels: labels.FromStrings(tc.targetLabels...)}, false, nil)
 				}
 			})
 
@@ -4722,12 +4725,13 @@ metric: <
 
 			appTest := teststorage.NewAppendable()
 			sl, _ := newTestScrapeLoop(t, withAppendable(appTest, appV2), func(sl *scrapeLoop) {
+				lb := labels.NewBuilder(labels.EmptyLabels())
 				sl.enableNativeHistogramScraping = test.enableNativeHistogramsIngestion
 				sl.sampleMutator = func(l labels.Labels) labels.Labels {
-					return mutateSampleLabels(l, discoveryLabels, false, nil)
+					return mutateSampleLabels(lb, l, discoveryLabels, false, nil)
 				}
 				sl.reportSampleMutator = func(l labels.Labels) labels.Labels {
-					return mutateReportSampleLabels(l, discoveryLabels)
+					return mutateReportSampleLabels(lb, l, discoveryLabels)
 				}
 				sl.alwaysScrapeClassicHist = test.alwaysScrapeClassicHist
 				// This test does not care about metadata.
@@ -4824,11 +4828,12 @@ func testScrapeLoopAppendExemplarSeries(t *testing.T, appV2 bool) {
 
 	appTest := teststorage.NewAppendable()
 	sl, _ := newTestScrapeLoop(t, withAppendable(appTest, appV2), func(sl *scrapeLoop) {
+		lb := labels.NewBuilder(labels.EmptyLabels())
 		sl.sampleMutator = func(l labels.Labels) labels.Labels {
-			return mutateSampleLabels(l, discoveryLabels, false, nil)
+			return mutateSampleLabels(lb, l, discoveryLabels, false, nil)
 		}
 		sl.reportSampleMutator = func(l labels.Labels) labels.Labels {
-			return mutateReportSampleLabels(l, discoveryLabels)
+			return mutateReportSampleLabels(lb, l, discoveryLabels)
 		}
 		// This test does not care about metadata. Having this true would mean we need to add metadata to sample
 		// expectations.
@@ -6439,11 +6444,12 @@ func testScrapeLoopLabelLimit(t *testing.T, appV2 bool) {
 		}
 
 		sl, _ := newTestScrapeLoop(t, withAppendable(teststorage.NewAppendable(), appV2), func(sl *scrapeLoop) {
+			lb := labels.NewBuilder(labels.EmptyLabels())
 			sl.sampleMutator = func(l labels.Labels) labels.Labels {
-				return mutateSampleLabels(l, discoveryLabels, false, nil)
+				return mutateSampleLabels(lb, l, discoveryLabels, false, nil)
 			}
 			sl.reportSampleMutator = func(l labels.Labels) labels.Labels {
-				return mutateReportSampleLabels(l, discoveryLabels)
+				return mutateReportSampleLabels(lb, l, discoveryLabels)
 			}
 			sl.labelLimits = &test.labelLimits
 		})
@@ -8558,8 +8564,9 @@ func testDropsSeriesFromMetricRelabeling(t *testing.T, appV2 bool) {
 		},
 	}
 	sl, _ := newTestScrapeLoop(t, withAppendable(teststorage.NewAppendable(), appV2), func(sl *scrapeLoop) {
+		lb := labels.NewBuilder(labels.EmptyLabels())
 		sl.sampleMutator = func(l labels.Labels) labels.Labels {
-			return mutateSampleLabels(l, target, true, relabelConfig)
+			return mutateSampleLabels(lb, l, target, true, relabelConfig)
 		}
 	})
 
@@ -8734,4 +8741,60 @@ func TestScrapeOffsetDistribution(t *testing.T) {
 			require.Greater(t, len(uniqueTimes), 2, "Expected targets to be scraped at staggered offsets rather than simultaneously at scrape index %d", i)
 		}
 	})
+}
+
+// Recommended CLI invocation:
+/*
+	export bench=mutateSampleLabels && go test ./scrape/... \
+		-run '^$' -bench '^BenchmarkMutateSampleLabels$' \
+		-benchtime 2s -count 6 -cpu 2 -timeout 999m -benchmem \
+		| tee ${bench}.txt
+*/
+func BenchmarkMutateSampleLabels(b *testing.B) {
+	target := &Target{
+		labels: labels.FromStrings(
+			model.JobLabel, "node-exporter",
+			model.InstanceLabel, "10.0.0.1:9100",
+			"cluster", "us-central1-a",
+			"env", "prod",
+		),
+	}
+	lset := labels.FromStrings(
+		model.MetricNameLabel, "node_cpu_seconds_total",
+		"cpu", "0",
+		"mode", "idle",
+		"env", "staging",
+	)
+	rc := []*relabel.Config{
+		{
+			SourceLabels:         model.LabelNames{"__name__"},
+			Regex:                relabel.MustNewRegexp("node_.*"),
+			Action:               relabel.Keep,
+			NameValidationScheme: model.UTF8Validation,
+		},
+	}
+
+	for _, honor := range []bool{false, true} {
+		b.Run(fmt.Sprintf("honor=%v", honor), func(b *testing.B) {
+			sl := newScrapeLoop(scrapeLoopOptions{
+				target: target,
+				sp: &scrapePool{
+					ctx:         b.Context(),
+					logger:      promslog.NewNopLogger(),
+					symbolTable: labels.NewSymbolTable(),
+					config: &config.ScrapeConfig{
+						HonorLabels:          honor,
+						MetricRelabelConfigs: rc,
+					},
+					options: &Options{},
+				},
+			})
+
+			b.ReportAllocs()
+			b.ResetTimer()
+			for b.Loop() {
+				_ = sl.sampleMutator(lset)
+			}
+		})
+	}
 }
