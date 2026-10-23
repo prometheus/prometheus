@@ -781,10 +781,12 @@ func TestHeadChunkReaderCache(t *testing.T) {
 		h, _ := newTestHeadWithOptions(t, compression.None, opts)
 
 		// The big series gets more than headChunksBufMaxCap head chunks
-		// (ChunkRange=1 cuts a chunk per sample); the small series a few.
+		// (ChunkRange=1 cuts a chunk per sample), the small series a few,
+		// and the single series exactly one.
 		app := h.Appender(t.Context())
 		big := labels.FromStrings("__name__", "big")
 		small := labels.FromStrings("__name__", "small")
+		single := labels.FromStrings("__name__", "single")
 		for i := range int64(headChunksBufMaxCap) + 10 {
 			_, err := app.Append(0, big, i, float64(i))
 			require.NoError(t, err)
@@ -793,12 +795,19 @@ func TestHeadChunkReaderCache(t *testing.T) {
 			_, err := app.Append(0, small, i, float64(i))
 			require.NoError(t, err)
 		}
+		_, err := app.Append(0, single, 0, 0)
+		require.NoError(t, err)
 		require.NoError(t, app.Commit())
 
 		bigSeries := h.series.getByHash(big.Hash(), big)
 		require.NotNil(t, bigSeries)
 		smallSeries := h.series.getByHash(small.Hash(), small)
 		require.NotNil(t, smallSeries)
+		singleSeries := h.series.getByHash(single.Hash(), single)
+		require.NotNil(t, singleSeries)
+		require.Greater(t, bigSeries.headChunkCount.Load(), uint32(headChunksBufMaxCap))
+		require.Greater(t, smallSeries.headChunkCount.Load(), uint32(1))
+		require.Equal(t, uint32(1), singleSeries.headChunkCount.Load())
 
 		cr, err := h.chunksRange(0, 10000, nil)
 		require.NoError(t, err)
@@ -816,6 +825,48 @@ func TestHeadChunkReaderCache(t *testing.T) {
 		_, _, err = cr.chunk(chunks.Meta{Ref: chunks.ChunkRef(smallRef)}, false)
 		require.NoError(t, err)
 		require.LessOrEqual(t, cap(cr.cachedHeadChunks), headChunksBufMaxCap)
+
+		// Repopulate the oversized cache, then switch to a series whose
+		// single-chunk fast path does not need the cache. The old cache and
+		// its key must both be released.
+		_, _, err = cr.chunk(chunks.Meta{Ref: chunks.ChunkRef(bigRef)}, false)
+		require.NoError(t, err)
+		require.Greater(t, cap(cr.cachedHeadChunks), headChunksBufMaxCap)
+		require.NotEqual(t, headChunkCacheKey{}, cr.cachedKey)
+
+		singleRef := chunks.NewHeadChunkRef(singleSeries.ref, singleSeries.firstChunkID)
+		_, _, err = cr.chunk(chunks.Meta{Ref: chunks.ChunkRef(singleRef)}, false)
+		require.NoError(t, err)
+		require.Nil(t, cr.cachedHeadChunks)
+		require.Equal(t, headChunkCacheKey{}, cr.cachedKey)
+
+		// Cache enablement is unchanged after releasing the oversized cache.
+		_, _, err = cr.chunk(chunks.Meta{Ref: chunks.ChunkRef(bigRef)}, false)
+		require.NoError(t, err)
+		require.Greater(t, cap(cr.cachedHeadChunks), headChunksBufMaxCap)
+
+		// The Head+OOO reader can return materialized OOO chunks without
+		// collecting in-order head chunks. It must still observe the series
+		// switch and release the oversized in-order cache.
+		wrappedCR := NewHeadAndOOOChunkReader(h, 0, 10000, cr, nil, 0)
+		materializedOOOChunk := chunkenc.NewXORChunk()
+		oooRef := chunks.NewHeadChunkRef(singleSeries.ref, oooChunkIDMask)
+		gotChunk, gotIterable, err := wrappedCR.ChunkOrIterable(chunks.Meta{
+			Ref:     chunks.ChunkRef(oooRef),
+			Chunk:   materializedOOOChunk,
+			MinTime: 0,
+			MaxTime: 0,
+		})
+		require.NoError(t, err)
+		require.Same(t, materializedOOOChunk, gotChunk)
+		require.Nil(t, gotIterable)
+		require.Nil(t, cr.cachedHeadChunks)
+		require.Equal(t, headChunkCacheKey{}, cr.cachedKey)
+
+		// Cache enablement is unchanged after release through the wrapper.
+		_, _, err = cr.chunk(chunks.Meta{Ref: chunks.ChunkRef(bigRef)}, false)
+		require.NoError(t, err)
+		require.Greater(t, cap(cr.cachedHeadChunks), headChunksBufMaxCap)
 	})
 
 	t.Run("released_on_close", func(t *testing.T) {
