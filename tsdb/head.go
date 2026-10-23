@@ -889,6 +889,19 @@ func (h *Head) Init(minValidTime int64) error {
 		}
 	}
 
+	if snapIdx >= 0 && (err != nil || startFrom < snapIdx) {
+		// The snapshot only holds series that were in the head when it was taken. The WAL
+		// data skipped below can still hold series records with higher refs, and a later
+		// checkpoint keeps such a record if a new series reuses its ref. Never reuse them.
+		skipped := []wlog.SegmentRange{{Dir: h.wal.Dir(), First: 0, Last: snapIdx}}
+		if err == nil {
+			skipped = []wlog.SegmentRange{{Dir: dir, First: -1, Last: -1}, {Dir: h.wal.Dir(), First: startFrom + 1, Last: snapIdx}}
+		}
+		if err := h.reserveSeriesRefs(skipped...); err != nil {
+			h.logger.Warn("Reading series refs from WAL data before the chunk snapshot failed", "err", err)
+		}
+	}
+
 	h.startWALReplayStatus(startFrom, endAt)
 
 	syms := labels.NewSymbolTable() // One table for the whole WAL.

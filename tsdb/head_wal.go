@@ -2063,6 +2063,36 @@ func (h *Head) runSeriesStateTicker() {
 	}
 }
 
+// reserveSeriesRefs raises lastSeriesID to the highest series ref found in the given WAL
+// segments, so that new series cannot reuse these refs. Only series records are decoded.
+func (h *Head) reserveSeriesRefs(segments ...wlog.SegmentRange) error {
+	sr, err := wlog.NewSegmentsRangeReader(segments...)
+	if err != nil {
+		return err
+	}
+	defer sr.Close()
+
+	r := wlog.NewReader(sr)
+	dec := record.NewDecoder(labels.NewSymbolTable(), h.logger)
+	var series []record.RefSeries
+	for r.Next() {
+		rec := r.Record()
+		if dec.Type(rec) != record.Series {
+			continue
+		}
+		series, err = dec.Series(rec, series[:0])
+		if err != nil {
+			return fmt.Errorf("decode series: %w", err)
+		}
+		for _, s := range series {
+			if uint64(s.Ref) > h.lastSeriesID.Load() {
+				h.lastSeriesID.Store(uint64(s.Ref))
+			}
+		}
+	}
+	return r.Err()
+}
+
 // findLastSeriesID performs a bounded reverse scan of WAL segments to find the highest series ID.
 func (h *Head) findLastSeriesID(state SeriesLifecycleState, endSegment int) (uint64, error) {
 	startSegment := state.LastWALSegment
