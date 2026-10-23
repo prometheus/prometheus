@@ -57,12 +57,13 @@ const (
 
 // DefaultDockerSDConfig is the default Docker SD configuration.
 var DefaultDockerSDConfig = DockerSDConfig{
-	RefreshInterval:    model.Duration(60 * time.Second),
-	Port:               80,
-	Filters:            []Filter{},
-	HostNetworkingHost: "localhost",
-	HTTPClientConfig:   config.DefaultHTTPClientConfig,
-	MatchFirstNetwork:  true,
+	RefreshInterval:         model.Duration(60 * time.Second),
+	Port:                    80,
+	Filters:                 []Filter{},
+	HostNetworkingHost:      "localhost",
+	HTTPClientConfig:        config.DefaultHTTPClientConfig,
+	MatchFirstNetwork:       true,
+	IncludeNoNetworkTargets: false,
 }
 
 func init() {
@@ -78,8 +79,9 @@ type DockerSDConfig struct {
 	Filters            []Filter `yaml:"filters"`
 	HostNetworkingHost string   `yaml:"host_networking_host"`
 
-	RefreshInterval   model.Duration `yaml:"refresh_interval"`
-	MatchFirstNetwork bool           `yaml:"match_first_network"`
+	RefreshInterval         model.Duration `yaml:"refresh_interval"`
+	MatchFirstNetwork       bool           `yaml:"match_first_network"`
+	IncludeNoNetworkTargets bool           `yaml:"include_no_network_targets"`
 }
 
 // NewDiscovererMetrics implements discovery.Config.
@@ -121,11 +123,12 @@ func (c *DockerSDConfig) UnmarshalYAML(unmarshal func(any) error) error {
 
 type DockerDiscovery struct {
 	*refresh.Discovery
-	client             *client.Client
-	port               int
-	hostNetworkingHost string
-	filters            client.Filters
-	matchFirstNetwork  bool
+	client                  *client.Client
+	port                    int
+	hostNetworkingHost      string
+	filters                 client.Filters
+	matchFirstNetwork       bool
+	includeNoNetworkTargets bool
 }
 
 // NewDockerDiscovery returns a new DockerDiscovery which periodically refreshes its targets.
@@ -136,9 +139,10 @@ func NewDockerDiscovery(conf *DockerSDConfig, opts discovery.DiscovererOptions) 
 	}
 
 	d := &DockerDiscovery{
-		port:               conf.Port,
-		hostNetworkingHost: conf.HostNetworkingHost,
-		matchFirstNetwork:  conf.MatchFirstNetwork,
+		port:                    conf.Port,
+		hostNetworkingHost:      conf.HostNetworkingHost,
+		matchFirstNetwork:       conf.MatchFirstNetwork,
+		includeNoNetworkTargets: conf.IncludeNoNetworkTargets,
 	}
 
 	hostURL, err := url.Parse(conf.Host)
@@ -276,6 +280,7 @@ func (d *DockerDiscovery) refresh(ctx context.Context) ([]*targetgroup.Group, er
 			}
 		}
 
+		var containerAdded bool
 		for _, n := range networks {
 			if n == nil {
 				continue
@@ -321,6 +326,7 @@ func (d *DockerDiscovery) refresh(ctx context.Context) ([]*targetgroup.Group, er
 				labels[model.AddressLabel] = model.LabelValue(addr)
 				tg.Targets = append(tg.Targets, labels)
 				added = true
+				containerAdded = true
 			}
 
 			if !added {
@@ -355,7 +361,16 @@ func (d *DockerDiscovery) refresh(ctx context.Context) ([]*targetgroup.Group, er
 
 				labels[model.AddressLabel] = model.LabelValue(addr)
 				tg.Targets = append(tg.Targets, labels)
+				containerAdded = true
 			}
+		}
+
+		if d.includeNoNetworkTargets && !containerAdded {
+			labels := model.LabelSet{}
+			for k, v := range commonLabels {
+				labels[model.LabelName(k)] = model.LabelValue(v)
+			}
+			tg.Targets = append(tg.Targets, labels)
 		}
 	}
 
