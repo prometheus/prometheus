@@ -48,3 +48,10 @@ func TestPool(t *testing.T) {
 		testPool.Put(ret)
 	}
 }
+
+func TestPoolRejectsNonGrowingFactor(t *testing.T) {
+	// A factor this small rounds back to the same integer, so the sequence would never advance.
+	require.Panics(t, func() { New(1, 10, 1.5, makeFunc) })
+	require.Panics(t, func() { New(1, 10, 1, makeFunc) })
+	require.Panics(t, func() { New(1, 10, 0.5, makeFunc) })
+}
