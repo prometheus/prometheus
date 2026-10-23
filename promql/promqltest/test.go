@@ -142,18 +142,14 @@ func GetBuiltInExprs() ([]string, error) {
 			return nil, err
 		}
 
-		// Create a minimal test struct just for parsing
-		testInstance := &test{
-			cmds: []testCommand{},
-		}
-		if err := testInstance.parse(string(content)); err != nil {
+		cmds, err := ParseCommands(string(content))
+		if err != nil {
 			return nil, err
 		}
 
-		// Extract expressions from eval commands
-		for _, cmd := range testInstance.cmds {
-			if evalCmd, ok := cmd.(*evalCmd); ok {
-				exprs = append(exprs, evalCmd.expr)
+		for _, cmd := range cmds {
+			if cmd.Kind == EvalCommand {
+				exprs = append(exprs, cmd.Expr)
 			}
 		}
 	}
@@ -257,6 +253,8 @@ type test struct {
 	testingMode bool
 
 	cmds []testCommand
+	// cmdLines holds the 0-based first and last line of each command in cmds.
+	cmdLines [][2]int
 
 	open    func(testing.TB) storage.Storage
 	storage storage.Storage
@@ -841,6 +839,7 @@ func (t *test) parse(input string) error {
 			continue
 		}
 		var cmd testCommand
+		start := i
 
 		switch c := strings.ToLower(patSpace.Split(l, 2)[0]); {
 		case c == "clear":
@@ -856,8 +855,60 @@ func (t *test) parse(input string) error {
 			return err
 		}
 		t.cmds = append(t.cmds, cmd)
+		t.cmdLines = append(t.cmdLines, [2]int{start, i})
 	}
 	return nil
+}
+
+// CommandKind is the kind of a command in a test script.
+type CommandKind int
+
+const (
+	// LoadCommand loads series into the storage ("load" and "load_with_nhcb").
+	LoadCommand CommandKind = iota
+	// ClearCommand clears the storage.
+	ClearCommand
+	// EvalCommand evaluates a query and checks the result ("eval", "eval_fail", and so on).
+	EvalCommand
+)
+
+// ParsedCommand describes a command in a test script, as returned by ParseCommands.
+type ParsedCommand struct {
+	Kind CommandKind
+	// StartLine and EndLine are the 1-based numbers of the first and last line of the command in the
+	// script, including its expected results. For an eval command, StartLine is the line number used in
+	// the names of the subtests that RunTest creates.
+	StartLine, EndLine int
+	// Expr is the query of an eval command.
+	Expr string
+	// IsRange is true if an eval command is a range query, and false if it is an instant query.
+	IsRange bool
+}
+
+// ParseCommands parses a test script in the format that RunTest runs, without running it, and returns its
+// commands in order. It returns an error if the script is not valid.
+func ParseCommands(input string) ([]ParsedCommand, error) {
+	t := &test{}
+	if err := t.parse(input); err != nil {
+		return nil, err
+	}
+
+	cmds := make([]ParsedCommand, 0, len(t.cmds))
+	for i, cmd := range t.cmds {
+		pc := ParsedCommand{StartLine: t.cmdLines[i][0] + 1, EndLine: t.cmdLines[i][1] + 1}
+		switch c := cmd.(type) {
+		case *loadCmd:
+			pc.Kind = LoadCommand
+		case *clearCmd:
+			pc.Kind = ClearCommand
+		case *evalCmd:
+			pc.Kind = EvalCommand
+			pc.Expr = c.expr
+			pc.IsRange = c.isRange
+		}
+		cmds = append(cmds, pc)
+	}
+	return cmds, nil
 }
 
 // testCommand is an interface that ensures that only the package internal
