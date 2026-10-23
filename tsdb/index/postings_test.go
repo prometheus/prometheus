@@ -1521,6 +1521,69 @@ func TestMemPostings_LateInsertionPreservesRetainedPostings(t *testing.T) {
 	}
 }
 
+func TestMemPostings_LateInsertPreservesOtherRetainedReaders(t *testing.T) {
+	readers := []struct {
+		name string
+		make func(*testing.T, *MemPostings) Postings
+	}{
+		{
+			name: "equality",
+			make: func(_ *testing.T, p *MemPostings) Postings {
+				return p.Postings(context.Background(), "group", "app-main")
+			},
+		},
+		{
+			name: "all values",
+			make: func(_ *testing.T, p *MemPostings) Postings {
+				return p.PostingsForAllLabelValues(context.Background(), "group")
+			},
+		},
+		{
+			name: "all postings",
+			make: func(_ *testing.T, p *MemPostings) Postings {
+				return p.All()
+			},
+		},
+		{
+			name: "Iter callback",
+			make: func(t *testing.T, p *MemPostings) Postings {
+				var retained Postings
+				err := p.Iter(func(l labels.Label, it Postings) error {
+					if l.Name == "group" && l.Value == "app-main" {
+						retained = it
+					}
+					return nil
+				})
+				require.NoError(t, err)
+				require.NotNil(t, retained)
+				return retained
+			},
+		},
+	}
+
+	for _, reader := range readers {
+		t.Run(reader.name, func(t *testing.T) {
+			p := NewMemPostings()
+			lset := labels.FromStrings("group", "app-main")
+			p.Add(2, lset)
+			p.Add(4, lset)
+
+			refs := p.m["group"]["app-main"]
+			require.Equal(t, []storage.SeriesRef{2, 4}, refs)
+			require.Equal(t, 3, cap(refs), "the late insertion must fit in the existing backing array")
+
+			it := reader.make(t, p)
+			require.NoError(t, it.Err())
+			require.True(t, it.Next())
+			require.Equal(t, storage.SeriesRef(2), it.At())
+
+			p.Add(1, lset)
+			require.True(t, it.Next(), "retained reader must preserve its remaining ref after late insertion")
+			require.Equal(t, storage.SeriesRef(4), it.At(), "retained reader must preserve ref 4 after late insertion")
+		})
+	}
+}
+
 func TestMemPostings_ConcurrentAddWithRetainedNextAndSeek(t *testing.T) {
 	for _, operation := range []string{"Next", "Seek"} {
 		t.Run(operation, func(t *testing.T) {

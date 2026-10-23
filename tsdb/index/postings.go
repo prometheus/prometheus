@@ -64,9 +64,7 @@ type MemPostings struct {
 	//
 	// mtx must be held when interacting with m (the appropriate one for reading or writing).
 	// It is safe to retain a reference to a postings list after releasing the lock.
-	//
-	// BUG: There's currently a data race in addFor, which might modify the tail of the postings list:
-	// https://github.com/prometheus/prometheus/issues/15317
+	// The addFor method replaces the backing array when an insertion would reorder existing IDs.
 	m map[string]map[string][]storage.SeriesRef
 
 	// lvs holds the label values for each label name.
@@ -449,6 +447,13 @@ func (p *MemPostings) addFor(id storage.SeriesRef, l labels.Label) {
 	for i := len(list) - 1; i >= 1; i-- {
 		if list[i] >= list[i-1] {
 			break
+		}
+		if i == len(list)-1 && &list[0] == &vm[0] {
+			// The append reused the published array, so copy before moving any existing IDs.
+			newList := make([]storage.SeriesRef, len(list), cap(list))
+			copy(newList, list)
+			list = newList
+			nm[l.Value] = list
 		}
 		list[i], list[i-1] = list[i-1], list[i]
 	}
