@@ -112,6 +112,12 @@ type OpenMetricsParser struct {
 	visitedMFName           []byte
 	skipSTSeries            bool
 	enableTypeAndUnitLabels bool
+
+	// metaFamilyName is the metric family name from the last TYPE/HELP/UNIT metadata.
+	// This is used to validate that series belong to the correct metric family.
+	metaFamilyName []byte
+	// metaType is the type from the last TYPE metadata.
+	metaType model.MetricType
 }
 
 type openMetricsParserOptions struct {
@@ -194,7 +200,13 @@ func (p *OpenMetricsParser) Help() ([]byte, []byte) {
 // Must only be called after Next returned a type entry.
 // The returned byte slices become invalid after the next call to Next.
 func (p *OpenMetricsParser) Type() ([]byte, model.MetricType) {
-	return p.l.b[p.offsets[0]:p.offsets[1]], p.mtype
+	m := p.l.b[p.offsets[0]:p.offsets[1]]
+
+	// Store the metric family name and type for later validation.
+	p.metaFamilyName = m
+	p.metaType = p.mtype
+
+	return m, p.mtype
 }
 
 // Unit returns the metric name and unit in the current entry.
@@ -220,10 +232,20 @@ func (p *OpenMetricsParser) Labels(l *labels.Labels) {
 	p.builder.Reset()
 	metricName := unreplace(s[p.offsets[0]-p.start : p.offsets[1]-p.start])
 
+	// Validate if this series belongs to the current metric family.
+	// If not, clear the metadata to prevent wrong associations.
+	metaType := p.metaType
+	metaUnit := p.unit
+	if len(p.metaFamilyName) > 0 && !isSeriesPartOfFamily(metricName, p.metaFamilyName, p.metaType) {
+		// Series doesn't belong to the current metric family, use unknown type and empty unit.
+		metaType = model.MetricTypeUnknown
+		metaUnit = ""
+	}
+
 	m := schema.Metadata{
 		Name: metricName,
-		Type: p.mtype,
-		Unit: p.unit,
+		Type: metaType,
+		Unit: metaUnit,
 	}
 	if p.enableTypeAndUnitLabels {
 		m.AddToLabels(&p.builder)
