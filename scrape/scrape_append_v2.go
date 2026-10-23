@@ -306,13 +306,13 @@ loop:
 			if sl.appendMetadataToWAL && lastMeta != nil {
 				// In majority cases we can trust that the current series/histogram is matching the lastMeta and lastMFName.
 				// However, optional TYPE, etc metadata and broken OM text can break this, detect those cases here.
-				if !isSeriesPartOfFamily(lset.Get(model.MetricNameLabel), lastMFName, lastMeta.Type) {
+				if !isSeriesPartOfFamily(lset.Get(model.MetricNameLabel), lastMFName, lastMeta.typ) {
 					lastMeta = nil // Don't pass knowingly broken metadata, now, nor on the next line.
 				}
 				if lastMeta != nil {
 					// Metric family name has the same source as metadata.
-					appOpts.MetricFamilyName = yoloString(lastMFName)
-					appOpts.Metadata = lastMeta.Metadata
+					appOpts.MetricFamilyName = lastMeta.mfName.Value()
+					appOpts.Metadata = lastMeta.metadata()
 				}
 			}
 
