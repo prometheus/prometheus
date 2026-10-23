@@ -649,6 +649,61 @@ func TestCheckpoint_Tombstones(t *testing.T) {
 func TestCheckpointV2HistogramsToV1(t *testing.T) {
 	t.Parallel()
 
+	// Converting a custom-only V2 record must retain earlier batched records.
+	for _, floating := range []bool{false, true} {
+		for _, nameLength := range []int{1, 100} {
+			t.Run(fmt.Sprintf("custom-only/float=%t/nameLength=%d", floating, nameLength), func(t *testing.T) {
+				dir := t.TempDir()
+				encoder := record.Encoder{EnableSTStorage: true}
+				series := []record.RefSeries{{Ref: 1, Labels: labels.FromStrings("__name__", strings.Repeat("a", nameLength))}}
+				w, err := NewSize(nil, nil, dir, 128*1024, compression.None)
+				require.NoError(t, err)
+				require.NoError(t, w.Log(encoder.Series(series, nil)))
+				var wire []byte
+				if floating {
+					input := []record.RefFloatHistogramSample{{Ref: 1, T: 10, FH: &histogram.FloatHistogram{Schema: histogram.CustomBucketsSchema, Count: 1, Sum: 0.5, PositiveSpans: []histogram.Span{{Length: 1}}, PositiveBuckets: []float64{1}, CustomValues: []float64{1}}}}
+					require.NoError(t, input[0].FH.Validate())
+					wire, _ = encoder.FloatHistogramSamples(input, nil)
+				} else {
+					input := []record.RefHistogramSample{{Ref: 1, T: 10, H: &histogram.Histogram{Schema: histogram.CustomBucketsSchema, Count: 1, Sum: 0.5, PositiveSpans: []histogram.Span{{Length: 1}}, PositiveBuckets: []int64{1}, CustomValues: []float64{1}}}}
+					require.NoError(t, input[0].H.Validate())
+					wire, _ = encoder.HistogramSamples(input, nil)
+				}
+				require.NoError(t, w.Log(wire))
+				require.NoError(t, w.Close())
+				w, err = NewSize(nil, nil, dir, 128*1024, compression.None)
+				require.NoError(t, err)
+				t.Cleanup(func() { require.NoError(t, w.Close()) })
+				require.NotPanics(t, func() {
+					_, err = Checkpoint(promslog.NewNopLogger(), w, 0, 0, func(chunks.HeadSeriesRef) bool { return true }, 0, false, false)
+				})
+				require.NoError(t, err)
+				sr, err := NewSegmentsReader(CheckpointDir(dir, 0))
+				require.NoError(t, err)
+				t.Cleanup(func() { require.NoError(t, sr.Close()) })
+				reader := NewReader(sr)
+				decoder := record.NewDecoder(labels.NewSymbolTable(), promslog.NewNopLogger())
+				require.True(t, reader.Next())
+				require.Equal(t, record.Series, decoder.Type(reader.Record()))
+				gotSeries, err := decoder.Series(reader.Record(), nil)
+				require.NoError(t, err)
+				require.Equal(t, series, gotSeries)
+				require.True(t, reader.Next())
+				if floating {
+					got, err := decoder.FloatHistogramSamples(reader.Record(), nil)
+					require.NoError(t, err)
+					require.Equal(t, []record.RefFloatHistogramSample{{Ref: 1, T: 10, FH: &histogram.FloatHistogram{Schema: histogram.CustomBucketsSchema, Count: 1, Sum: 0.5, PositiveSpans: []histogram.Span{{Length: 1}}, PositiveBuckets: []float64{1}, CustomValues: []float64{1}}}}, got)
+				} else {
+					got, err := decoder.HistogramSamples(reader.Record(), nil)
+					require.NoError(t, err)
+					require.Equal(t, []record.RefHistogramSample{{Ref: 1, T: 10, H: &histogram.Histogram{Schema: histogram.CustomBucketsSchema, Count: 1, Sum: 0.5, PositiveSpans: []histogram.Span{{Length: 1}}, PositiveBuckets: []int64{1}, CustomValues: []float64{1}}}}, got)
+				}
+				require.False(t, reader.Next())
+				require.NoError(t, reader.Err())
+			})
+		}
+	}
+
 	expH := &histogram.Histogram{
 		Count: 5, ZeroCount: 2, ZeroThreshold: 0.001, Sum: 18.4, Schema: 1,
 		PositiveSpans:   []histogram.Span{{Offset: 0, Length: 2}, {Offset: 1, Length: 2}},
