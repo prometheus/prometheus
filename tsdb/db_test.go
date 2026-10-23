@@ -36,6 +36,7 @@ import (
 	"strconv"
 	"sync"
 	"testing"
+	"testing/synctest"
 	"time"
 
 	"github.com/gogo/protobuf/proto"
@@ -10307,6 +10308,58 @@ func TestBlockReloadInterval(t *testing.T) {
 				5*time.Second,
 				100*time.Millisecond,
 			)
+		})
+	}
+}
+
+func TestFrequentCommitsDoNotStarveMaintenance(t *testing.T) {
+	cases := []struct {
+		name        string
+		autoCompact bool
+	}{
+		{"automatic compaction disabled", false},
+		{"automatic compaction enabled", true},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			synctest.Test(t, func(t *testing.T) {
+				db := newTestDB(t, withOpts(&Options{
+					BlockReloadInterval: time.Second,
+					CompactionDelay:     time.Hour,
+				}), withRngs(10))
+				if !c.autoCompact {
+					db.DisableCompactions()
+				}
+
+				lset := labels.FromStrings("series", "frequent-commit")
+
+				// Make the head compactable before the loop.
+				app := db.Appender(context.Background())
+				_, err := app.Append(0, lset, 0, 0)
+				require.NoError(t, err)
+				_, err = app.Append(0, lset, 19, 0)
+				require.NoError(t, err)
+				require.NoError(t, app.Commit())
+				synctest.Wait()
+
+				for ts := int64(20); ts < 120; ts++ {
+					app := db.Appender(context.Background())
+					_, err := app.Append(0, lset, ts, 0)
+					require.NoError(t, err)
+					compactionsBefore := prom_testutil.ToFloat64(db.metrics.compactionsTriggered)
+					require.NoError(t, app.Commit())
+					// Commit faster than BlockReloadInterval.
+					time.Sleep(100 * time.Millisecond)
+					synctest.Wait()
+					require.True(t, db.Head().compactable())
+					require.Greater(t, prom_testutil.ToFloat64(db.metrics.compactionsTriggered), compactionsBefore)
+				}
+
+				// Verify that maintenance ran without head compaction.
+				require.Empty(t, db.Blocks())
+				require.Greater(t, prom_testutil.ToFloat64(db.metrics.reloads), 1.0)
+				require.Greater(t, prom_testutil.ToFloat64(db.Head().metrics.mmapChunksTotal), 0.0)
+			})
 		})
 	}
 }
