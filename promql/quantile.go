@@ -151,7 +151,10 @@ func BucketQuantile(q float64, buckets Buckets) (
 		return quantile, forcedMonotonic, fixedPrecision, minBucket, maxBucket, maxDiff
 	}
 	rank := q * observations
-	b := sort.Search(len(buckets)-1, func(i int) bool { return buckets[i].Count >= rank })
+	// The predicate stays monotonic: the counts are non-decreasing after
+	// ensureMonotonicAndIgnoreSmallDeltas, so once a count reaches the rank,
+	// every later count does too.
+	b := sort.Search(len(buckets)-1, func(i int) bool { return countReachesRank(buckets[i].Count, rank) })
 
 	switch {
 	case b == len(buckets)-1:
@@ -169,9 +172,23 @@ func BucketQuantile(q float64, buckets Buckets) (
 			count -= buckets[b-1].Count
 			rank -= buckets[b-1].Count
 		}
-		quantile = bucketStart + (bucketEnd-bucketStart)*(rank/count)
+		// countReachesRank can select a bucket whose count is marginally
+		// below the rank. Clamp the fraction so that the result does not
+		// exceed the bucket's upper bound.
+		quantile = bucketStart + (bucketEnd-bucketStart)*math.Min(rank/count, 1)
 	}
 	return quantile, forcedMonotonic, fixedPrecision, minBucket, maxBucket, maxDiff
+}
+
+// countReachesRank reports whether a cumulative bucket count reaches the rank
+// of the requested quantile. A count that is below the rank by a relative
+// difference of at most smallDeltaTolerance also reaches it. This way, a rank
+// that ties with a bucket count under exact arithmetic selects the same bucket
+// regardless of how the counts were rounded (for example when they are sums of
+// partial results added in a different order), instead of jumping to the next
+// non-empty bucket.
+func countReachesRank(count, rank float64) bool {
+	return count >= rank || almost.Equal(count, rank, smallDeltaTolerance)
 }
 
 // HistogramQuantile calculates the quantile 'q' based on the given histogram.
@@ -264,7 +281,7 @@ func HistogramQuantile(q float64, h *histogram.FloatHistogram, metricName string
 			continue
 		}
 		count += bucket.Count
-		if count >= rank {
+		if countReachesRank(count, rank) {
 			break
 		}
 	}
@@ -301,7 +318,7 @@ func HistogramQuantile(q float64, h *histogram.FloatHistogram, metricName string
 	// the value NaN, in which case Sum is also NaN), in which case we simply
 	// return NaN.
 	// See https://github.com/prometheus/prometheus/issues/16578
-	if count < rank {
+	if !countReachesRank(count, rank) {
 		if math.IsNaN(h.Sum) {
 			return math.NaN(), annos.Add(annotations.NewNativeHistogramQuantileNaNResultInfo(metricName, pos))
 		}
@@ -336,8 +353,10 @@ func HistogramQuantile(q float64, h *histogram.FloatHistogram, metricName string
 		}
 	}
 
-	// The fraction of how far we are into the current bucket.
-	fraction := rank / bucket.Count
+	// The fraction of how far we are into the current bucket. Clamp it to
+	// [0, 1] because countReachesRank can select a bucket whose count is
+	// marginally below the rank.
+	fraction := math.Min(math.Max(rank/bucket.Count, 0), 1)
 
 	// Return linear interpolation for custom buckets and for quantiles that
 	// end up in the zero bucket.
