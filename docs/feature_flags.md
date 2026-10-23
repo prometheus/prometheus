@@ -154,6 +154,75 @@ metadata changes as WAL records on a per-series basis.
 
 This must be used if you would like to send metadata using the new remote write 2.0.
 
+This flag controls the legacy WAL-backed metadata path. The separate
+`native-metadata` feature can expose versioned per-series metadata without
+writing metadata WAL records.
+
+## Native metadata
+
+`--enable-feature=native-metadata`
+
+> **This feature is experimental and may change in future releases.**
+
+When enabled, Prometheus ingests metric type, unit, and help from scrapes, OTLP,
+and Remote Write 2.0 as versioned metadata attached to each series. The
+metadata is exposed by the experimental `/api/v1/series/metadata` endpoint.
+
+This prototype stores metadata only in the Head's memory. It is not written to
+the WAL, checkpoints, snapshots, or blocks, so it is lost on restart and when
+the corresponding Head series is removed. Remote Write 1.0 does not populate
+this store. At most 5 versions are retained per series.
+
+The store costs Head memory per series, along two axes. For example,
+retained-heap benchmarks on Go 1.27, linux/amd64, measured roughly 75 extra
+bytes per series whose metadata never changes, and around 144 at the 5-version
+limit, where 100 metric families share their values. Actual costs depend on
+metadata cardinality, string lengths, and allocation overhead.
+Metadata cardinality can cost more: values are shared only opportunistically and
+within bounds. A value is the whole type, unit and help combination, so values
+that differ in any of type, unit or help are stored separately, though values
+first copied in the same transaction share identical strings of 64 bytes or
+more. Within a transaction, up to 128 distinct values are each stored once.
+Beyond that, and across transactions, values are shared through a cache of at
+most 64 × 64 values and 4 MiB of strings. A value enters the cache when it
+recurs among a shard's recent misses, and each shard evicts its oldest entries
+first. Series that hold the copy made before admission keep reusing it, so a
+value used by series in several transactions is typically held twice, and in
+large transactions or beyond the cache's limits series may hold their own
+copies. The cache itself retains up to 4 MiB of strings. A series carrying help
+text unique to it, measured with 25,000 distinct values in one transaction,
+costs around 220 bytes even at a single version. The version limit does not
+bound this cost. Sizing therefore runs from roughly 75 MB per million series
+where a metric family shares its metadata, to around 220 MB per million where
+every series has its own.
+
+Metadata whose type, unit and help text, with an empty type counted as
+`unknown`, together exceed 8192 bytes is not stored; the series keeps its
+previous versions. The
+`prometheus_tsdb_head_native_metric_metadata_oversized_total` counter reports
+how many appended samples carried such metadata. This bounds the metadata
+strings one series retains to 5 versions of 8 KiB each. Copies held while a
+transaction is pending are not covered by this bound: once a transaction has
+seen 128 distinct values, each sample with another value that neither its
+series' stored versions nor the cache already holds can keep its own copy of the
+value, of up to 8 KiB when its strings of 64 bytes or more have not yet been
+copied in the transaction, until the transaction ends. A transaction copies each
+distinct type, unit or help string of 64 bytes or more at most once, keeping an
+index of a few hundred bytes, or under 100 bytes per such string in larger
+transactions, so Remote Write 2.0 requests whose entries combine one help text
+with different units, and scrapes that switch between metric families with
+`# TYPE` lines, cost about 200 bytes per pending sample beyond those copies.
+Metadata with no type (or an unknown type), no unit and no help is never stored,
+so a series whose metadata disappears keeps its last version.
+
+Unchanged metadata is normally discarded during sample validation, avoiding a
+second series-lock acquisition and metadata-transaction work. A discarded observation
+cannot be reconstructed if a later append in the same transaction arrives with
+a lower timestamp and different metadata. The same applies to overlapping
+writers: if one transaction observes the current metadata while another changes
+it and commits first, the first has nothing left to re-assert, and the change is
+not reverted at the later timestamp.
+
 ## Delay compaction start time
 
 `--enable-feature=delayed-compaction`
