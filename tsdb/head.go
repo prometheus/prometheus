@@ -1851,6 +1851,75 @@ func (h *Head) Stats(statsByLabelName string, limit int) *Stats {
 	}
 }
 
+// StatsForMatchers is like Stats, but if matcherSets is not empty, NumSeries and
+// the cardinality statistics only cover series matching at least one of the
+// sets. MinTime and MaxTime always cover the whole head. Without matcher sets
+// it is equivalent to Stats. Matched requests are much more expensive than
+// unmatched ones, as they are not cached and scale with the number of matched
+// series. The computation is aborted if ctx is done.
+func (h *Head) StatsForMatchers(ctx context.Context, statsByLabelName string, limit int, matcherSets [][]*labels.Matcher) (*Stats, error) {
+	if len(matcherSets) == 0 {
+		return h.Stats(statsByLabelName, limit), nil
+	}
+	return h.matchedStats(ctx, statsByLabelName, limit, matcherSets)
+}
+
+// matchedStats computes the same statistics as Stats, restricted to series
+// matching at least one of matcherSets.
+// It rebuilds an in-memory postings index over the matched series on every
+// call, so the cost is O(matched series * labels), the result is not cached and
+// the work is not bounded by limit.
+func (h *Head) matchedStats(ctx context.Context, statsByLabelName string, limit int, matcherSets [][]*labels.Matcher) (*Stats, error) {
+	ir, err := h.Index()
+	if err != nil {
+		return nil, err
+	}
+	defer ir.Close()
+
+	sets := make([]index.Postings, 0, len(matcherSets))
+	for _, ms := range matcherSets {
+		p, err := PostingsForMatchers(ctx, ir, ms...)
+		if err != nil {
+			return nil, err
+		}
+		sets = append(sets, p)
+	}
+
+	mp := index.NewMemPostings()
+	var (
+		builder   labels.ScratchBuilder
+		numSeries uint64
+	)
+	it := index.Merge(ctx, sets...)
+	for i := 0; it.Next(); i++ {
+		if i%checkContextEveryNIterations == 0 {
+			if err := ctx.Err(); err != nil {
+				return nil, err
+			}
+		}
+		ref := it.At()
+		if err := ir.Series(ref, &builder, nil); err != nil {
+			if errors.Is(err, storage.ErrNotFound) {
+				// Series was garbage collected after the postings were read.
+				continue
+			}
+			return nil, err
+		}
+		mp.Add(ref, builder.Labels())
+		numSeries++
+	}
+	if err := it.Err(); err != nil {
+		return nil, err
+	}
+
+	return &Stats{
+		NumSeries:         numSeries,
+		MaxTime:           h.MaxTime(),
+		MinTime:           h.MinTime(),
+		IndexPostingStats: mp.Stats(statsByLabelName, limit, labels.SizeOfLabels),
+	}, nil
+}
+
 // RangeHead allows querying Head via an IndexReader, ChunkReader and tombstones.Reader
 // but only within a restricted range.  Used for queries and compactions.
 // Its readers, and queriers over it, are not safe for concurrent use from
