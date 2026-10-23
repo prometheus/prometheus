@@ -279,10 +279,28 @@ eval instant at 5m histogram_avg(balanced_histogram)
 eval instant at 5m histogram_fraction(0, 4, balanced_histogram)
 	{} 0.5
 
+clear
+
 # If the quantile happens to be located in a span of empty buckets, the actually returned value is the lower bound of
 # the first populated bucket after the span of empty buckets.
-eval instant at 5m histogram_quantile(0.5, balanced_histogram)
-	{} 0.5
+#
+# Non-empty buckets of hist{case="no_gaps"}:  (0.5, 1] (1, 2] (2,  4] ( 4,  8]
+# Non-empty buckets of hist{case="gaps"}:     (0.5, 1] (2, 4] (8, 16] (32, 64]
+load 1m
+  hist{case="no_gaps"}  {{schema:0 sum:15 count:4 buckets:[1 1 1 1]}}
+  hist{case="gaps"}     {{schema:0 sum:85 count:4 buckets:[1 0 1 0 1 0 1]}}
+
+eval instant at 0 histogram_quantile(0.25, hist)
+  {case="no_gaps"}  1
+  {case="gaps"}     2
+
+eval instant at 0 histogram_quantile(0.5, hist)
+  {case="no_gaps"}  2
+  {case="gaps"}     8
+
+eval instant at 0 histogram_quantile(0.75, hist)
+  {case="no_gaps"}  4
+  {case="gaps"}     32
 
 clear
 
