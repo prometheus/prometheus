@@ -520,6 +520,65 @@ func TestSymbols(t *testing.T) {
 	require.NoError(t, iter.Err())
 }
 
+func TestSymbolsLookupRejectsOutOfRangeReferences(t *testing.T) {
+	var buf encoding.Encbuf
+	buf.PutUvarintStr("prefix")
+	symbolsStart := buf.Len()
+	var symbolsData encoding.Encbuf
+	symbolsData.PutBE32int(1)
+	symbolsData.PutUvarintStr("symbol")
+	buf.PutBE32int(symbolsData.Len())
+	buf.PutBytes(symbolsData.Get())
+	buf.PutBE32(crc32.Checksum(symbolsData.Get(), castagnoliTable))
+
+	for _, version := range []int{FormatV1, FormatV2, FormatV3} {
+		t.Run(fmt.Sprintf("format_%d", version), func(t *testing.T) {
+			s, err := NewSymbols(realByteSlice(buf.Get()), version, symbolsStart)
+			require.NoError(t, err)
+
+			validRef := uint32(0)
+			if version == FormatV1 {
+				validRef = uint32(symbolsStart + 8)
+			}
+			got, err := s.Lookup(validRef)
+			require.NoError(t, err)
+			require.Equal(t, "symbol", got)
+
+			invalidRefs := []uint32{0x7fffffff, 0x80000000, 0xffffffff}
+			if version != FormatV1 {
+				invalidRefs = append([]uint32{1}, invalidRefs...)
+			}
+			for _, ref := range invalidRefs {
+				t.Run(fmt.Sprintf("reference_%d", ref), func(t *testing.T) {
+					var lookupErr error
+					require.NotPanics(t, func() {
+						_, lookupErr = s.Lookup(ref)
+					})
+					require.Error(t, lookupErr)
+				})
+			}
+		})
+	}
+}
+
+func TestSymbolsLookupRejectsEmptyTable(t *testing.T) {
+	var buf encoding.Encbuf
+	var symbolsData encoding.Encbuf
+	symbolsData.PutBE32int(0)
+	buf.PutBE32int(symbolsData.Len())
+	buf.PutBytes(symbolsData.Get())
+	buf.PutBE32(crc32.Checksum(symbolsData.Get(), castagnoliTable))
+
+	for _, version := range []int{FormatV2, FormatV3} {
+		t.Run(fmt.Sprintf("format_%d", version), func(t *testing.T) {
+			s, err := NewSymbols(realByteSlice(buf.Get()), version, 0)
+			require.NoError(t, err)
+			_, err = s.Lookup(0)
+			require.ErrorContains(t, err, "unknown symbol offset 0")
+		})
+	}
+}
+
 func BenchmarkReader_ShardedPostings(b *testing.B) {
 	const (
 		numSeries = 10000
