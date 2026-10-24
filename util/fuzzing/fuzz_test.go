@@ -482,7 +482,7 @@ func newFuzzAPI(tb testing.TB) http.Handler {
 	api := v1.NewAPI(
 		queryEngine,
 		testhelpers.NewEmptyQueryable(),
-		nil, nil,
+		nil,
 		testhelpers.NewEmptyExemplarQueryable(),
 		nil, nil, nil,
 		func() config.Config { return config.Config{} },
@@ -509,7 +509,6 @@ func newFuzzAPI(tb testing.TB) http.Handler {
 		false,
 		nil,
 		false, false, false,
-		false,
 		5*time.Minute,
 		false,
 		false,
@@ -517,6 +516,8 @@ func newFuzzAPI(tb testing.TB) http.Handler {
 		nil,
 		v1.OpenAPIOptions{},
 		parser.NewParser(parser.Options{}),
+		false,
+		0,
 	)
 
 	router := route.New()
