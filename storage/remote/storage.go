@@ -106,7 +106,7 @@ func (s *Storage) ApplyConfig(conf *config.Config) error {
 
 		// Don't allow duplicate remote read configs.
 		if _, ok := readHashes[hash]; ok {
-			return fmt.Errorf("duplicate remote read configs are not allowed, found duplicate for URL: %s", rrConf.URL)
+			return fmt.Errorf("duplicate remote read configs are not allowed, found duplicate for URL: %s", rrConf.URL.Redacted())
 		}
 		readHashes[hash] = struct{}{}
 

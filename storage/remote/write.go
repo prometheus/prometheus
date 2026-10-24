@@ -161,7 +161,7 @@ func (rws *WriteStorage) ApplyConfig(conf *config.Config) error {
 
 		// Don't allow duplicate remote write configs.
 		if _, ok := newQueues[hash]; ok {
-			return fmt.Errorf("duplicate remote write configs are not allowed, found duplicate for URL: %s", rwConf.URL)
+			return fmt.Errorf("duplicate remote write configs are not allowed, found duplicate for URL: %s", rwConf.URL.Redacted())
 		}
 
 		// Set the queue name to the config hash if the user has not set
@@ -195,12 +195,8 @@ func (rws *WriteStorage) ApplyConfig(conf *config.Config) error {
 			continue
 		}
 
-		// Redacted to remove any passwords in the URL (that are
-		// technically accepted but not recommended) since this is
-		// only used for metric labels.
-		endpoint := rwConf.URL.Redacted()
 		newQueues[hash] = NewQueueManager(
-			newQueueManagerMetrics(rws.reg, name, endpoint),
+			newQueueManagerMetrics(rws.reg, name, c.Endpoint()),
 			rws.watcherMetrics,
 			rws.liveReaderMetrics,
 			rws.logger,

@@ -21,11 +21,13 @@ import (
 	"net/http/httptest"
 	"net/url"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
 	"github.com/gogo/protobuf/proto"
 	"github.com/golang/snappy"
+	"github.com/prometheus/client_golang/prometheus"
 	config_util "github.com/prometheus/common/config"
 	"github.com/prometheus/common/model"
 	"github.com/stretchr/testify/require"
@@ -353,11 +355,48 @@ func TestReadClient(t *testing.T) {
 
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
-			server := httptest.NewServer(test.httpHandler)
-			defer server.Close()
+			var (
+				mtx                       sync.Mutex
+				gotUser, gotPass          string
+				gotBasicAuth, gotRequests bool
+			)
+			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				mtx.Lock()
+				gotUser, gotPass, gotBasicAuth = r.BasicAuth()
+				gotRequests = true
+				mtx.Unlock()
+				test.httpHandler.ServeHTTP(w, r)
+			}))
 
 			u, err := url.Parse(server.URL)
 			require.NoError(t, err)
+			// The password must not leak into errors or metric labels.
+			u.User = url.UserPassword("user", "secret-password")
+
+			defer func() {
+				// Close waits for in-flight requests, so the handler has run.
+				server.Close()
+
+				// The real credentials must still be sent on the wire.
+				mtx.Lock()
+				require.True(t, gotRequests)
+				require.True(t, gotBasicAuth)
+				require.Equal(t, "user", gotUser)
+				require.Equal(t, "secret-password", gotPass)
+				mtx.Unlock()
+
+				// Gathered after the series set is drained, so counters
+				// incremented on close of a streamed response are included.
+				mfs, gatherErr := prometheus.DefaultGatherer.Gather()
+				require.NoError(t, gatherErr)
+				for _, mf := range mfs {
+					for _, m := range mf.GetMetric() {
+						for _, lp := range m.GetLabel() {
+							require.NotContains(t, lp.GetValue(), "secret-password")
+						}
+					}
+				}
+			}()
 
 			if test.timeout == 0 {
 				test.timeout = 5 * time.Second
@@ -370,6 +409,11 @@ func TestReadClient(t *testing.T) {
 			}
 			c, err := NewReadClient("test", conf)
 			require.NoError(t, err)
+			require.Equal(t, u.Redacted(), c.(*Client).Endpoint())
+
+			wc, err := NewWriteClient("test", conf)
+			require.NoError(t, err)
+			require.Equal(t, u.Redacted(), wc.Endpoint())
 
 			query := &prompb.Query{}
 			if test.query != nil {
@@ -379,6 +423,7 @@ func TestReadClient(t *testing.T) {
 			ss, err := c.Read(context.Background(), query, test.sortSeries)
 			if test.expectedErrorContains != "" {
 				require.ErrorContains(t, err, test.expectedErrorContains)
+				require.NotContains(t, err.Error(), "secret-password")
 				if test.unwrap {
 					err = errors.Unwrap(err)
 					require.EqualError(t, err, test.expectedErrorContains)
