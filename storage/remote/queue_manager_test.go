@@ -2490,6 +2490,7 @@ func TestSendSamplesWithBackoffMetricsAfterSampleAgeLimit(t *testing.T) {
 				sampleAgeLimit       time.Duration
 				expectedDroppedTotal float64
 				expectedSamplesTotal float64
+				expectedFailedTotal  float64
 			}{
 				{name: "sample expires", sampleAgeLimit: 100 * time.Millisecond, expectedDroppedTotal: 1, expectedSamplesTotal: 1},
 				{name: "sample remains current", sampleAgeLimit: 5 * time.Second, expectedSamplesTotal: 2},
@@ -2527,6 +2528,7 @@ func TestSendSamplesWithBackoffMetricsAfterSampleAgeLimit(t *testing.T) {
 
 					require.Equal(t, tc.expectedDroppedTotal, client_testutil.ToFloat64(m.metrics.droppedSamplesTotal.WithLabelValues(reasonTooOld)))
 					require.Equal(t, tc.expectedSamplesTotal, client_testutil.ToFloat64(m.metrics.samplesTotal))
+					require.Equal(t, tc.expectedFailedTotal, client_testutil.ToFloat64(m.metrics.failedSamplesTotal))
 				})
 			}
 		})

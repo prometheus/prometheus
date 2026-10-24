@@ -2039,7 +2039,10 @@ func populateTimeSeries(batch []timeSeries, pendingData []prompb.TimeSeries, sen
 
 func (s *shards) sendSamples(ctx context.Context, samples []prompb.TimeSeries, sampleCount, exemplarCount, histogramCount int, pBuf *proto.Buffer, buf compression.EncodeBuffer, compr compression.Type) error {
 	begin := time.Now()
-	rs, err := s.sendSamplesWithBackoff(ctx, samples, sampleCount, exemplarCount, histogramCount, pBuf, buf, compr)
+	rs, dropped, err := s.sendSamplesWithBackoff(ctx, samples, sampleCount, exemplarCount, histogramCount, pBuf, buf, compr)
+	rs.Samples += dropped.Samples
+	rs.Exemplars += dropped.Exemplars
+	rs.Histograms += dropped.Histograms
 	s.updateMetrics(ctx, err, sampleCount, exemplarCount, histogramCount, rs, time.Since(begin))
 	return err
 }
@@ -2048,7 +2051,10 @@ func (s *shards) sendSamples(ctx context.Context, samples []prompb.TimeSeries, s
 // See https://github.com/prometheus/prometheus/issues/14409
 func (s *shards) sendV2Samples(ctx context.Context, samples []writev2.TimeSeries, labels []string, sampleCount, exemplarCount, histogramCount int, pBuf *[]byte, buf compression.EncodeBuffer, compr compression.Type) error {
 	begin := time.Now()
-	rs, err := s.sendV2SamplesWithBackoff(ctx, samples, labels, sampleCount, exemplarCount, histogramCount, pBuf, buf, compr)
+	rs, dropped, err := s.sendV2SamplesWithBackoff(ctx, samples, labels, sampleCount, exemplarCount, histogramCount, pBuf, buf, compr)
+	rs.Samples += dropped.Samples
+	rs.Exemplars += dropped.Exemplars
+	rs.Histograms += dropped.Histograms
 	s.updateMetrics(ctx, err, sampleCount, exemplarCount, histogramCount, rs, time.Since(begin))
 	return err
 }
@@ -2095,14 +2101,14 @@ func (s *shards) updateMetrics(_ context.Context, err error, sampleCount, exempl
 }
 
 // sendSamplesWithBackoff to the remote storage with backoff for recoverable errors.
-func (s *shards) sendSamplesWithBackoff(ctx context.Context, samples []prompb.TimeSeries, sampleCount, exemplarCount, histogramCount int, pBuf *proto.Buffer, buf compression.EncodeBuffer, compr compression.Type) (WriteResponseStats, error) {
+func (s *shards) sendSamplesWithBackoff(ctx context.Context, samples []prompb.TimeSeries, sampleCount, exemplarCount, histogramCount int, pBuf *proto.Buffer, buf compression.EncodeBuffer, compr compression.Type) (WriteResponseStats, WriteResponseStats, error) {
 	// Build the WriteRequest with no metadata.
 	req, highest, lowest, err := buildWriteRequest(s.qm.logger, samples, nil, pBuf, nil, buf, compr)
 	s.qm.buildRequestLimitTimestamp.Store(lowest)
 	if err != nil {
 		// Failing to build the write request is non-recoverable, since it will
 		// only error if marshaling the proto to bytes fails.
-		return WriteResponseStats{}, err
+		return WriteResponseStats{}, WriteResponseStats{}, err
 	}
 
 	reqSize := len(req)
@@ -2117,6 +2123,7 @@ func (s *shards) sendSamplesWithBackoff(ctx context.Context, samples []prompb.Ti
 	metricsUpdater := batchMetricsUpdater{
 		metrics: s.qm.metrics,
 	}
+	droppedStats := WriteResponseStats{}
 
 	// Since we retry writes via attemptStore and sendWriteRequestWithBackoff we need
 	// to track the total amount of accepted data across the various attempts.
@@ -2160,6 +2167,9 @@ func (s *shards) sendSamplesWithBackoff(ctx context.Context, samples []prompb.Ti
 				return err
 			}
 			req = req2
+			droppedStats.Samples += sc.sampleCount - nextSampleCount
+			droppedStats.Exemplars += sc.exemplarCount - nextExemplarCount
+			droppedStats.Histograms += sc.histogramCount - nextHistogramCount
 			sc.sampleCount, sc.exemplarCount, sc.histogramCount, sc.reqSize = nextSampleCount, nextExemplarCount, nextHistogramCount, len(req2)
 		}
 
@@ -2192,7 +2202,7 @@ func (s *shards) sendSamplesWithBackoff(ctx context.Context, samples []prompb.Ti
 	if errors.Is(err, context.Canceled) {
 		// When there is resharding, we cancel the context for this queue, which means the data is not sent.
 		// So we exit early to not update the metrics.
-		return accumulatedStats, err
+		return accumulatedStats, droppedStats, err
 	}
 
 	s.qm.metrics.sentBytesTotal.Add(float64(reqSize))
@@ -2202,23 +2212,23 @@ func (s *shards) sendSamplesWithBackoff(ctx context.Context, samples []prompb.Ti
 		// No 2.0 response headers, and we sent v1 message, so likely it's 1.0 Receiver.
 		// Assume success, don't rely on headers.
 		return WriteResponseStats{
-			Samples:    sampleCount,
-			Histograms: histogramCount,
-			Exemplars:  exemplarCount,
-		}, nil
+			Samples:    sc.sampleCount,
+			Histograms: sc.histogramCount,
+			Exemplars:  sc.exemplarCount,
+		}, droppedStats, nil
 	}
-	return accumulatedStats, err
+	return accumulatedStats, droppedStats, err
 }
 
 // sendV2SamplesWithBackoff to the remote storage with backoff for recoverable errors.
-func (s *shards) sendV2SamplesWithBackoff(ctx context.Context, samples []writev2.TimeSeries, labels []string, sampleCount, exemplarCount, histogramCount int, pBuf *[]byte, buf compression.EncodeBuffer, compr compression.Type) (WriteResponseStats, error) {
+func (s *shards) sendV2SamplesWithBackoff(ctx context.Context, samples []writev2.TimeSeries, labels []string, sampleCount, exemplarCount, histogramCount int, pBuf *[]byte, buf compression.EncodeBuffer, compr compression.Type) (WriteResponseStats, WriteResponseStats, error) {
 	// Build the WriteRequest with no metadata.
 	req, v2Req, highest, lowest, err := buildV2WriteRequest(s.qm.logger, samples, labels, pBuf, nil, buf, compr)
 	s.qm.buildRequestLimitTimestamp.Store(lowest)
 	if err != nil {
 		// Failing to build the write request is non-recoverable, since it will
 		// only error if marshaling the proto to bytes fails.
-		return WriteResponseStats{}, err
+		return WriteResponseStats{}, WriteResponseStats{}, err
 	}
 
 	reqSize := len(req)
@@ -2233,6 +2243,7 @@ func (s *shards) sendV2SamplesWithBackoff(ctx context.Context, samples []writev2
 	metricsUpdater := batchMetricsUpdater{
 		metrics: s.qm.metrics,
 	}
+	droppedStats := WriteResponseStats{}
 	withMetadataCounts := countV2DataWithMetadata(samples)
 
 	// Since we retry writes via attemptStore and sendWriteRequestWithBackoff we need
@@ -2278,6 +2289,9 @@ func (s *shards) sendV2SamplesWithBackoff(ctx context.Context, samples []writev2
 			}
 			req = req2
 			v2Req = v2Req2
+			droppedStats.Samples += sc.sampleCount - nextSampleCount
+			droppedStats.Exemplars += sc.exemplarCount - nextExemplarCount
+			droppedStats.Histograms += sc.histogramCount - nextHistogramCount
 			sc.sampleCount, sc.exemplarCount, sc.histogramCount, sc.reqSize = nextSampleCount, nextExemplarCount, nextHistogramCount, len(req2)
 			withMetadataCounts = countV2DataWithMetadata(v2Req2.Timeseries)
 		}
@@ -2328,12 +2342,12 @@ func (s *shards) sendV2SamplesWithBackoff(ctx context.Context, samples []writev2
 	if errors.Is(err, context.Canceled) {
 		// When there is resharding, we cancel the context for this queue, which means the data is not sent.
 		// So we exit early to not update the metrics.
-		return accumulatedStats, err
+		return accumulatedStats, droppedStats, err
 	}
 
 	s.qm.metrics.sentBytesTotal.Add(float64(reqSize))
 	s.qm.metrics.highestSentTimestamp.Set(float64(highest / 1000))
-	return accumulatedStats, err
+	return accumulatedStats, droppedStats, err
 }
 
 func populateV2TimeSeries(symbolTable *writev2.SymbolsTable, batch []timeSeries, pendingData []writev2.TimeSeries, sendExemplars, sendNativeHistograms, enableTypeAndUnitLabels bool) (int, int, int, int) {
