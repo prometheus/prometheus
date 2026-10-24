@@ -154,3 +154,16 @@ func TestSetFeatureListOptions_OTLPDeltaToCumulativeDeprecated(t *testing.T) {
 	require.Contains(t, output.String(), "deprecated")
 	require.Contains(t, output.String(), "Use otlp-native-delta-ingestion instead")
 }
+
+func TestSetFeatureListOptions_WarnDuplicateTargets(t *testing.T) {
+	for _, enabled := range []bool{false, true} {
+		t.Run(fmt.Sprintf("enabled=%t", enabled), func(t *testing.T) {
+			c := &flagConfig{}
+			if enabled {
+				c.featureList = []string{"warn-duplicate-targets"}
+			}
+			require.NoError(t, c.setFeatureListOptions(promslog.NewNopLogger()))
+			require.Equal(t, enabled, c.scrape.WarnDuplicateTargets)
+		})
+	}
+}
