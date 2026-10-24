@@ -828,6 +828,9 @@ func (p *populateWithDelSeriesIterator) Next() chunkenc.ValueType {
 		if valueType := p.curr.Next(); valueType != chunkenc.ValNone {
 			return valueType
 		}
+		if p.curr.Err() != nil {
+			return chunkenc.ValNone
+		}
 	}
 
 	for p.next(false) {
@@ -838,6 +841,9 @@ func (p *populateWithDelSeriesIterator) Next() chunkenc.ValueType {
 		}
 		if valueType := p.curr.Next(); valueType != chunkenc.ValNone {
 			return valueType
+		}
+		if p.curr.Err() != nil {
+			return chunkenc.ValNone
 		}
 	}
 	return chunkenc.ValNone
