@@ -94,6 +94,7 @@ require (
 	go.uber.org/goleak v1.3.0
 	go.yaml.in/yaml/v2 v2.4.4
 	go.yaml.in/yaml/v3 v3.0.5
+	go.yaml.in/yaml/v4 v4.0.0-rc.6.0.20261022163417-9e3517b60b51
 	golang.org/x/oauth2 v0.37.0
 	golang.org/x/sync v0.24.0
 	golang.org/x/sys v0.49.0
