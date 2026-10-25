@@ -598,6 +598,92 @@ func TestDeleteSimple(t *testing.T) {
 	}
 }
 
+// TestDeleteOutOfOrderSamples checks that deleting series also deletes their
+// out-of-order samples, including samples older than the in-order head and
+// series that only have out-of-order samples, and that the deleted samples do
+// not come back after a head compaction, a restart, or an out-of-order compaction.
+func TestDeleteOutOfOrderSamples(t *testing.T) {
+	ctx := context.Background()
+	dir := t.TempDir()
+	opts := DefaultOptions()
+	opts.OutOfOrderTimeWindow = 300 * time.Minute.Milliseconds()
+	openDB := func() *DB {
+		db := newTestDB(t, withDir(dir), withOpts(opts))
+		db.DisableCompactions() // We want to manually call it.
+		return db
+	}
+	db := openDB()
+
+	minute := time.Minute.Milliseconds()
+	inOrderSeries := labels.FromStrings("foo", "bar1")
+	oooOnlySeries := labels.FromStrings("foo", "bar2")
+	expected := map[string][]chunks.Sample{}
+	appendSamples := func(lbls labels.Labels, fromMins, toMins, offset int64) {
+		app := db.Appender(ctx)
+		for m := fromMins; m <= toMins; m++ {
+			ts := m*minute + offset
+			_, err := app.Append(0, lbls, ts, float64(ts))
+			require.NoError(t, err)
+			expected[lbls.String()] = append(expected[lbls.String()], sample{t: ts, f: float64(ts)})
+		}
+		require.NoError(t, app.Commit())
+	}
+
+	// In-order samples make the head span [200m, 400m].
+	appendSamples(inOrderSeries, 200, 400, 0)
+	// Out-of-order samples older than the head, both for a series that also
+	// has in-order samples and for a series that only has out-of-order samples.
+	appendSamples(inOrderSeries, 120, 179, 30*time.Second.Milliseconds())
+	appendSamples(oooOnlySeries, 120, 179, 0)
+	require.Equal(t, 200*minute, db.head.MinTime())
+
+	// Delete [150m, 160m) from both series.
+	delMint, delMaxt := 150*minute, 160*minute-1
+	require.NoError(t, db.Delete(ctx, delMint, delMaxt, labels.MustNewMatcher(labels.MatchRegexp, "foo", "bar.*")))
+	for name, samples := range expected {
+		remaining := make([]chunks.Sample, 0, len(samples))
+		for _, s := range samples {
+			if s.T() < delMint || s.T() > delMaxt {
+				remaining = append(remaining, s)
+			}
+		}
+		sort.Slice(remaining, func(i, j int) bool { return remaining[i].T() < remaining[j].T() })
+		expected[name] = remaining
+	}
+
+	verify := func(step string) {
+		t.Helper()
+		q, err := db.Querier(math.MinInt64, math.MaxInt64)
+		require.NoError(t, err)
+		actual := query(t, q, labels.MustNewMatcher(labels.MatchRegexp, "foo", "bar.*"))
+		require.Len(t, actual, len(expected), step)
+		requireEqualSeries(t, expected, actual, true)
+	}
+	verify("after delete")
+
+	// Compacting the in-order head truncates the head past the deleted
+	// out-of-order samples, which are still in the out-of-order head.
+	require.NoError(t, db.CompactHead(NewRangeHead(db.head, 200*minute, 240*minute-1)))
+	require.Greater(t, db.head.MinTime(), delMaxt)
+	verify("after in-order head compaction")
+
+	// The tombstones must survive WAL replay.
+	require.NoError(t, db.Close())
+	db = openDB()
+	verify("after restart")
+
+	// The deleted samples must not be written to out-of-order blocks.
+	require.NoError(t, db.CompactOOOHead(ctx))
+	oooBlocks := 0
+	for _, b := range db.Blocks() {
+		if meta := b.Meta(); meta.Compaction.FromOutOfOrder() {
+			oooBlocks++
+		}
+	}
+	require.Positive(t, oooBlocks, "the out-of-order samples must have been compacted into blocks")
+	verify("after out-of-order compaction")
+}
+
 func TestAmendHistogramDatapointCausesError(t *testing.T) {
 	db := newTestDB(t)
 

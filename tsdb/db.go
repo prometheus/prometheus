@@ -2821,7 +2821,7 @@ func (db *DB) Delete(ctx context.Context, mint, maxt int64, ms ...*labels.Matche
 			}(b))
 		}
 	}
-	if db.head.OverlapsClosedInterval(mint, maxt) {
+	if db.head.OverlapsClosedInterval(mint, maxt) || overlapsClosedInterval(mint, maxt, db.head.MinOOOTime(), db.head.MaxOOOTime()) {
 		g.Go(func() error {
 			return db.head.Delete(ctx, mint, maxt, ms...)
 		})

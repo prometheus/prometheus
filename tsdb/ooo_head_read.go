@@ -445,8 +445,10 @@ func (ch *OOOCompactionHead) Chunks() (ChunkReader, error) {
 	return NewHeadAndOOOChunkReader(ch.head, ch.mint, ch.maxt, nil, nil, ch.lastMmapRef), nil
 }
 
-func (*OOOCompactionHead) Tombstones() (tombstones.Reader, error) {
-	return tombstones.NewMemTombstones(), nil
+// Tombstones returns the tombstones of the head, so that deleted out-of-order
+// samples are not written to the compacted blocks.
+func (ch *OOOCompactionHead) Tombstones() (tombstones.Reader, error) {
+	return ch.head.tombstones, nil
 }
 
 var oooCompactionHeadULID = ulid.MustParse("0000000000XX000COMPACTHEAD")

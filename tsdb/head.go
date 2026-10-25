@@ -1987,8 +1987,9 @@ func (h *SelectedSeriesHead) String() string {
 // Delete all samples in the range of [mint, maxt] for series that satisfy the given
 // label matchers.
 func (h *Head) Delete(ctx context.Context, mint, maxt int64, ms ...*labels.Matcher) error {
-	// Do not delete anything beyond the currently valid range.
-	mint, maxt = clampInterval(mint, maxt, h.MinTime(), h.MaxTime())
+	// Do not delete anything beyond the currently valid range, which includes
+	// out-of-order samples that can be older than the in-order head.
+	mint, maxt = clampInterval(mint, maxt, min(h.MinTime(), h.MinOOOTime()), max(h.MaxTime(), h.MaxOOOTime()))
 
 	ir := h.indexRange(mint, maxt)
 
@@ -2011,8 +2012,15 @@ func (h *Head) Delete(ctx context.Context, mint, maxt int64, ms ...*labels.Match
 
 		series.Lock()
 		t0, t1 := series.minTime(), series.maxTime()
-		series.Unlock()
 		if t0 == math.MinInt64 || t1 == math.MinInt64 {
+			// The series has no in-order samples, it may still have out-of-order ones.
+			t0, t1 = math.MaxInt64, math.MinInt64
+		}
+		if oooMint, oooMaxt, ok := series.oooTimeRange(); ok {
+			t0, t1 = min(t0, oooMint), max(t1, oooMaxt)
+		}
+		series.Unlock()
+		if t0 > t1 {
 			continue
 		}
 		// Delete only until the current values and not beyond.
@@ -2069,7 +2077,9 @@ func (h *Head) gc() (actualInOrderMint, minOOOTime int64, minMmapFile int) {
 
 	// Remove tombstones referring to the deleted series.
 	h.tombstones.DeleteTombstones(deleted)
-	h.tombstones.TruncateBefore(mint)
+	// Keep the tombstones that still apply to out-of-order samples older than
+	// mint, which stay in the head until the out-of-order head is compacted.
+	h.tombstones.TruncateBefore(min(mint, minOOOTime))
 
 	if h.wal != nil {
 		h.walExpiriesMtx.Lock()
@@ -3157,6 +3167,23 @@ func (s *memSeries) minTime() int64 {
 		return s.headChunks.oldest().minTime
 	}
 	return math.MinInt64
+}
+
+// oooTimeRange returns the time range covered by the out-of-order chunks of the
+// series, and false if the series has no out-of-order chunks.
+// The series lock must be held.
+func (s *memSeries) oooTimeRange() (mint, maxt int64, ok bool) {
+	if s.ooo == nil {
+		return 0, 0, false
+	}
+	mint, maxt = math.MaxInt64, math.MinInt64
+	for _, c := range s.ooo.oooMmappedChunks {
+		mint, maxt = min(mint, c.minTime), max(maxt, c.maxTime)
+	}
+	if c := s.ooo.oooHeadChunk; c != nil {
+		mint, maxt = min(mint, c.minTime), max(maxt, c.maxTime)
+	}
+	return mint, maxt, mint <= maxt
 }
 
 func (s *memSeries) maxTime() int64 {
