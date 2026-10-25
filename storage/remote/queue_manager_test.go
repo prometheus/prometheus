@@ -911,6 +911,73 @@ func TestDisableReshardOnRetry(t *testing.T) {
 	}, time.Minute, retryAfter, "shouldReshard should have been re-enabled")
 }
 
+func TestDisableReshardWhileRetrying(t *testing.T) {
+	permanentErr := errors.New("non-recoverable error")
+	for _, tc := range []struct {
+		name string
+		err  error
+	}{
+		{name: "success"},
+		{name: "permanent error", err: permanentErr},
+		{name: "cancellation", err: context.Canceled},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			synctest.Test(t, func(t *testing.T) {
+				m := &QueueManager{
+					cfg:       config.DefaultQueueConfig,
+					logger:    promslog.NewNopLogger(),
+					numShards: 2,
+				}
+				const requests = 2
+				var release [requests]chan struct{}
+				var cancel [requests]context.CancelFunc
+				results := make(chan error, requests)
+				for i := range requests {
+					release[i] = make(chan struct{})
+					var ctx context.Context
+					ctx, cancel[i] = context.WithCancel(t.Context())
+					defer cancel[i]()
+					go func() {
+						results <- m.sendWriteRequestWithBackoff(ctx, func(attempt int) error {
+							if attempt < 2 {
+								return RecoverableError{error: errors.New("temporary error"), retryAfter: model.Duration(time.Second)}
+							}
+							select {
+							case <-ctx.Done():
+								return ctx.Err()
+							case <-release[i]:
+								return tc.err
+							}
+						}, func() {})
+					}()
+				}
+				synctest.Wait()
+
+				// The retry backoff and its resharding cooldown expire while the
+				// next requests are still in flight.
+				time.Sleep(4 * time.Second)
+				synctest.Wait()
+				// A different shard may still send successfully during the outage.
+				m.lastSendTimestamp.Store(time.Now().Unix())
+				require.False(t, m.shouldReshard(3))
+
+				for i := range requests {
+					if errors.Is(tc.err, context.Canceled) {
+						cancel[i]()
+					} else {
+						close(release[i])
+					}
+					synctest.Wait()
+					require.ErrorIs(t, <-results, tc.err)
+					// Finishing one retrying request must not enable resharding
+					// while another request is still retrying.
+					require.Equal(t, i == requests-1, m.shouldReshard(3))
+				}
+			})
+		})
+	}
+}
+
 func createProtoTimeseriesWithOld(numSamples, baseTs int64) []prompb.TimeSeries {
 	samples := make([]prompb.TimeSeries, numSamples)
 	// use a fixed rand source so tests are consistent

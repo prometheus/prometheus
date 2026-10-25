@@ -462,6 +462,7 @@ type QueueManager struct {
 	buildRequestLimitTimestamp   atomic.Int64
 	reshardDisableStartTimestamp atomic.Int64 // Time that reshard was disabled.
 	reshardDisableEndTimestamp   atomic.Int64 // Time that reshard is disabled until.
+	requestsRetrying             atomic.Int64 // Requests retrying recoverable errors.
 
 	logger                  *slog.Logger
 	flushDeadline           time.Duration
@@ -1480,6 +1481,10 @@ func (t *QueueManager) shouldReshard(desiredShards int) bool {
 		t.logger.Warn("Skipping resharding, last successful send was beyond threshold", "lastSendTimestamp", lsts, "minSendTimestamp", minSendTimestamp)
 		return false
 	}
+	if retrying := t.requestsRetrying.Load(); retrying > 0 {
+		t.logger.Warn("Skipping resharding, requests are retrying recoverable errors", "requests_retrying", retrying)
+		return false
+	}
 	if disableTimestamp := t.reshardDisableEndTimestamp.Load(); time.Now().Unix() < disableTimestamp {
 		disabledAt := time.Unix(t.reshardDisableStartTimestamp.Load(), 0)
 		disabledFor := time.Until(time.Unix(disableTimestamp, 0))
@@ -2401,6 +2406,12 @@ func (t *QueueManager) sendWriteRequestWithBackoff(ctx context.Context, attempt 
 		var backoffErr RecoverableError
 		if !errors.As(err, &backoffErr) {
 			return err
+		}
+		// Keep resharding disabled throughout the retry, including requests
+		// that remain in flight after the backoff cooldown expires.
+		if try == 0 {
+			t.requestsRetrying.Inc()
+			defer t.requestsRetrying.Dec()
 		}
 
 		sleepDuration = backoff
