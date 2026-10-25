@@ -11996,8 +11996,9 @@ func TestCompactSelectedSeries_AppenderEvictionRaces(t *testing.T) {
 	}
 
 	appenders := []struct {
-		name string
-		new  func(*testing.T, *Head) testAppender
+		name       string
+		unknownRef bool
+		new        func(*testing.T, *Head) testAppender
 	}{
 		{
 			name: "v1",
@@ -12017,6 +12018,19 @@ func TestCompactSelectedSeries_AppenderEvictionRaces(t *testing.T) {
 					AppenderTransaction: a,
 					append: func(ref storage.SeriesRef, lset labels.Labels, ts int64, v float64) (storage.SeriesRef, error) {
 						return a.Append(ref, lset, 0, ts, v, nil, nil, storage.AOptions{})
+					},
+				}
+			},
+		},
+		{
+			name:       "v2/unknown-ref",
+			unknownRef: true,
+			new: func(t *testing.T, h *Head) testAppender {
+				a := h.AppenderV2(t.Context())
+				return testAppender{
+					AppenderTransaction: a,
+					append: func(_ storage.SeriesRef, lset labels.Labels, ts int64, v float64) (storage.SeriesRef, error) {
+						return a.Append(0, lset, 0, ts, v, nil, nil, storage.AOptions{})
 					},
 				}
 			},
@@ -12048,10 +12062,14 @@ func TestCompactSelectedSeries_AppenderEvictionRaces(t *testing.T) {
 				pending := appender.new(t, h)
 				lookupDone := make(chan struct{})
 				resumeAppend := make(chan struct{})
-				// Pause after the appender resolves oldSeries but before it can append,
-				// leaving it with a pointer that GC will unlink.
+				// Pause after the ID lookup so compaction can evict the series before
+				// the appender proceeds to append or resolve it by labels.
 				h.testAfterSeriesLookup = func(series *memSeries) {
-					if series != oldSeries {
+					if appender.unknownRef {
+						if series != nil {
+							return
+						}
+					} else if series != oldSeries {
 						return
 					}
 					close(lookupDone)
@@ -12059,9 +12077,13 @@ func TestCompactSelectedSeries_AppenderEvictionRaces(t *testing.T) {
 				}
 				t.Cleanup(func() { h.testAfterSeriesLookup = nil })
 
+				appendRef := oldRef
+				if appender.unknownRef {
+					appendRef = 0
+				}
 				appendDone := make(chan error, 1)
 				go func() {
-					_, err := pending.append(oldRef, lset, 200, 2)
+					_, err := pending.append(appendRef, lset, 200, 2)
 					appendDone <- err
 				}()
 				select {
@@ -12135,14 +12157,18 @@ func TestCompactSelectedSeries_AppenderEvictionRaces(t *testing.T) {
 
 					// Leave the newer sample uncommitted so the series remains eligible for deletion
 					// by maxTime but must still be protected from GC.
+					appendRef := ref
+					if appender.unknownRef {
+						appendRef = 0
+					}
 					pending := appender.new(t, h)
-					_, err = pending.append(ref, lset, 200, 2)
+					_, err = pending.append(appendRef, lset, 200, 2)
 					require.NoError(t, err)
 
 					// Use a duplicate so closing this appender exercises pending-state bookkeeping
 					// without advancing the series timestamp and masking the bug.
 					interfering := appender.new(t, h)
-					_, err = interfering.append(ref, lset, 100, 1)
+					_, err = interfering.append(appendRef, lset, 100, 1)
 					require.NoError(t, err)
 					require.NoError(t, closer.close(interfering))
 

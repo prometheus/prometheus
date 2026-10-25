@@ -163,6 +163,83 @@ func TestHeadAppenderV2_AppendersMetrics(t *testing.T) {
 	require.Equal(t, 4.0, prom_testutil.ToFloat64(head.metrics.appendersCreated))
 }
 
+func TestHeadAppenderV2_AppendUnknownRefWithCollidingLabels(t *testing.T) {
+	head, _ := newTestHead(t, 1000, compression.None, false)
+	require.NoError(t, head.Init(0))
+
+	firstLabels, secondLabels := labelsWithHashCollision()
+	require.Equal(t, firstLabels.Hash(), secondLabels.Hash())
+
+	app := head.AppenderV2(context.Background())
+	firstRef, err := app.Append(0, firstLabels, 0, 100, 1, nil, nil, storage.AOptions{})
+	require.NoError(t, err)
+	secondRef, err := app.Append(0, secondLabels, 0, 100, 2, nil, nil, storage.AOptions{})
+	require.NoError(t, err)
+	require.NotEqual(t, firstRef, secondRef)
+	require.NoError(t, app.Commit())
+
+	q, err := NewBlockQuerier(head, 0, 100)
+	require.NoError(t, err)
+	got := query(t, q, labels.MustNewMatcher(labels.MatchEqual, labels.MetricName, "metric"))
+	require.Equal(t, map[string][]chunks.Sample{
+		firstLabels.String():  {sample{0, 100, 1, nil, nil}},
+		secondLabels.String(): {sample{0, 100, 2, nil, nil}},
+	}, got)
+}
+
+func TestHeadAppenderV2_NonzeroReferenceOnStripeZeroUsesIDLookup(t *testing.T) {
+	opts := newTestHeadDefaultOptions(1000, false)
+	opts.StripeSize = 2
+	head, _ := newTestHeadWithOptions(t, compression.None, opts)
+	require.NoError(t, head.Init(0))
+
+	firstLabels := labels.FromStrings("series", "first")
+	var targetLabels labels.Labels
+	for i := range 100 {
+		candidate := labels.FromStrings("series", "target-"+strconv.Itoa(i))
+		if candidate.Hash()&1 == 1 {
+			targetLabels = candidate
+			break
+		}
+	}
+	require.NotEmpty(t, targetLabels)
+
+	setup := head.AppenderV2(context.Background())
+	_, err := setup.Append(0, firstLabels, 0, 100, 1, nil, nil, storage.AOptions{})
+	require.NoError(t, err)
+	targetRef, err := setup.Append(0, targetLabels, 0, 100, 2, nil, nil, storage.AOptions{})
+	require.NoError(t, err)
+	require.NoError(t, setup.Commit())
+	require.NotZero(t, targetRef)
+	require.Equal(t, 0, head.series.refStripe(chunks.HeadSeriesRef(targetRef)))
+	require.Equal(t, uint64(1), targetLabels.Hash()&1)
+	targetSeries := head.series.getByID(chunks.HeadSeriesRef(targetRef))
+	require.NotNil(t, targetSeries)
+
+	var lookupResult *memSeries
+	head.testAfterSeriesLookup = func(series *memSeries) {
+		lookupResult = series
+	}
+	t.Cleanup(func() { head.testAfterSeriesLookup = nil })
+
+	app := head.AppenderV2(context.Background())
+	ref, err := app.Append(targetRef, targetLabels, 0, 200, 3, nil, nil, storage.AOptions{})
+	require.NoError(t, err)
+	require.NoError(t, app.Commit())
+	require.Same(t, targetSeries, lookupResult)
+	require.Equal(t, targetRef, ref)
+
+	q, err := NewBlockQuerier(head, 0, 200)
+	require.NoError(t, err)
+	got := query(t, q, labels.MustNewMatcher(labels.MatchEqual, "series", targetLabels.Get("series")))
+	require.Equal(t, map[string][]chunks.Sample{
+		targetLabels.String(): {
+			sample{0, 100, 2, nil, nil},
+			sample{0, 200, 3, nil, nil},
+		},
+	}, got)
+}
+
 func TestHeadAppenderV2_RaceBetweenSeriesCreationAndGC(t *testing.T) {
 	t.Parallel()
 	head, _ := newTestHead(t, 1000, compression.None, false)
