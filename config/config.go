@@ -480,6 +480,9 @@ func (c *Config) UnmarshalYAML(unmarshal func(any) error) error {
 	return nil
 }
 
+// MaxLabelLengthLimit represents the upper bound supported by stringlabels encoding (16MiB).
+const MaxLabelLengthLimit uint = 16 * 1024 * 1024
+
 // GlobalConfig configures values that are used across other configuration
 // objects.
 type GlobalConfig struct {
@@ -716,6 +719,13 @@ func (c *GlobalConfig) UnmarshalYAML(unmarshal func(any) error) error {
 		if err := validateAcceptScrapeProtocols(gc.ScrapeProtocols); err != nil {
 			return fmt.Errorf("%w for global config", err)
 		}
+	}
+
+	if gc.LabelNameLengthLimit > MaxLabelLengthLimit {
+		return fmt.Errorf("global label_name_length_limit %d exceeds maximum allowed limit of 16MiB", gc.LabelNameLengthLimit)
+	}
+	if gc.LabelValueLengthLimit > MaxLabelLengthLimit {
+		return fmt.Errorf("global label_value_length_limit %d exceeds maximum allowed limit of 16MiB", gc.LabelValueLengthLimit)
 	}
 
 	*c = *gc
@@ -967,6 +977,12 @@ func (c *ScrapeConfig) Validate(globalConfig GlobalConfig) error {
 	}
 	if c.LabelValueLengthLimit == 0 {
 		c.LabelValueLengthLimit = globalConfig.LabelValueLengthLimit
+	}
+	if c.LabelNameLengthLimit > MaxLabelLengthLimit {
+		return fmt.Errorf("scrape config %q: label_name_length_limit %d exceeds maximum allowed limit of 16MiB", c.JobName, c.LabelNameLengthLimit)
+	}
+	if c.LabelValueLengthLimit > MaxLabelLengthLimit {
+		return fmt.Errorf("scrape config %q: label_value_length_limit %d exceeds maximum allowed limit of 16MiB", c.JobName, c.LabelValueLengthLimit)
 	}
 	if c.KeepDroppedTargets == 0 {
 		c.KeepDroppedTargets = globalConfig.KeepDroppedTargets

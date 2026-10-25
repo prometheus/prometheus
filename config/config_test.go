@@ -3771,3 +3771,36 @@ func TestGetScrapeConfigs_Loaded(t *testing.T) {
 		require.NoError(t, err)
 	})
 }
+
+func TestLabelLengthLimitsExceedsMax(t *testing.T) {
+	t.Run("global label_value_length_limit exceeds 16MiB", func(t *testing.T) {
+		cfg := `
+global:
+  label_value_length_limit: 17000000
+`
+		_, err := Load(cfg, promslog.NewNopLogger())
+		require.Error(t, err)
+		require.Contains(t, err.Error(), "exceeds maximum allowed limit of 16MiB")
+	})
+
+	t.Run("global label_name_length_limit exceeds 16MiB", func(t *testing.T) {
+		cfg := `
+global:
+  label_name_length_limit: 17000000
+`
+		_, err := Load(cfg, promslog.NewNopLogger())
+		require.Error(t, err)
+		require.Contains(t, err.Error(), "exceeds maximum allowed limit of 16MiB")
+	})
+
+	t.Run("scrape config label_value_length_limit exceeds 16MiB", func(t *testing.T) {
+		cfg := `
+scrape_configs:
+  - job_name: "test"
+    label_value_length_limit: 17000000
+`
+		_, err := Load(cfg, promslog.NewNopLogger())
+		require.Error(t, err)
+		require.Contains(t, err.Error(), "exceeds maximum allowed limit of 16MiB")
+	})
+}
