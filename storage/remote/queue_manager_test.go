@@ -403,10 +403,18 @@ func TestWALMetadataDelivery(t *testing.T) {
 	qm.SetClient(c)
 
 	qm.StoreSeries(recs.Series, 0)
-	qm.StoreMetadata(recs.Metadata)
+	qm.StoreMetadata(nil)
+	require.Zero(t, client_testutil.ToFloat64(qm.metrics.walMetadataReceivedTotal))
 
+	qm.StoreMetadata(recs.Metadata)
 	require.Len(t, qm.seriesLabels, n)
 	require.Len(t, qm.seriesMetadata, n)
+	require.Equal(t, float64(n), client_testutil.ToFloat64(qm.metrics.walMetadataReceivedTotal))
+
+	// Count repeated metadata for an existing series as another entry received from the WAL.
+	qm.StoreMetadata(recs.Metadata[:1])
+	require.Len(t, qm.seriesMetadata, n)
+	require.Equal(t, float64(n+1), client_testutil.ToFloat64(qm.metrics.walMetadataReceivedTotal))
 
 	c.expectSamples(recs.Samples, recs.Series)
 	c.expectMetadataForBatch(recs.Metadata, recs.Series, recs.Samples, nil, nil, nil)
@@ -2022,6 +2030,7 @@ func TestQueueManagerMetrics(t *testing.T) {
 	rw2MetadataMetricNames := []string{
 		"prometheus_remote_storage_samples_metadata_total",
 		"prometheus_remote_storage_histograms_metadata_total",
+		"prometheus_remote_storage_wal_metadata_received_total",
 	}
 
 	for _, tc := range []struct {

@@ -104,8 +104,9 @@ type queueManagerMetrics struct {
 	metadataBytesTotal     prometheus.Counter
 	maxSamplesPerSend      prometheus.Gauge
 
-	samplesMetadataTotal    *prometheus.CounterVec
-	histogramsMetadataTotal *prometheus.CounterVec
+	samplesMetadataTotal     *prometheus.CounterVec
+	histogramsMetadataTotal  *prometheus.CounterVec
+	walMetadataReceivedTotal prometheus.Counter
 }
 
 func newQueueManagerMetrics(r prometheus.Registerer, rn, e string) *queueManagerMetrics {
@@ -152,6 +153,13 @@ func newQueueManagerMetrics(r prometheus.Registerer, rn, e string) *queueManager
 		Help:        "Total number of histograms sent to remote storage using Remote Write 2.0 with the specified metadata field set.",
 		ConstLabels: constLabels,
 	}, []string{"field"})
+	m.walMetadataReceivedTotal = prometheus.NewCounter(prometheus.CounterOpts{
+		Namespace:   namespace,
+		Subsystem:   subsystem,
+		Name:        "wal_metadata_received_total",
+		Help:        "Total number of metadata entries received from the WAL by the remote write queue.",
+		ConstLabels: constLabels,
+	})
 	for _, field := range []string{metadataFieldType, metadataFieldUnit, metadataFieldHelp} {
 		m.samplesMetadataTotal.WithLabelValues(field)
 		m.histogramsMetadataTotal.WithLabelValues(field)
@@ -398,6 +406,7 @@ func (m *queueManagerMetrics) register(protoMsg remoteapi.WriteMessageType) {
 			m.reg.MustRegister(
 				m.samplesMetadataTotal,
 				m.histogramsMetadataTotal,
+				m.walMetadataReceivedTotal,
 			)
 		}
 	}
@@ -439,6 +448,7 @@ func (m *queueManagerMetrics) unregister(protoMsg remoteapi.WriteMessageType) {
 		} else {
 			m.reg.Unregister(m.samplesMetadataTotal)
 			m.reg.Unregister(m.histogramsMetadataTotal)
+			m.reg.Unregister(m.walMetadataReceivedTotal)
 		}
 	}
 }
@@ -1379,6 +1389,7 @@ func (t *QueueManager) StoreMetadata(meta []record.RefMetadata) {
 			Help: m.Help,
 		})
 	}
+	t.metrics.walMetadataReceivedTotal.Add(float64(len(meta)))
 }
 
 // UpdateSeriesSegment updates the segment number held against the series,
