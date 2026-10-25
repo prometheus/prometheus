@@ -1498,7 +1498,6 @@ remote_write:
 		configFile,
 		port,
 		fmt.Sprintf("--storage.tsdb.path=%s", tmpDir),
-		"--log.level=debug",
 	)
 	require.NoError(t, prom.Start())
 
