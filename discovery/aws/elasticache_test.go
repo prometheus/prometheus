@@ -247,6 +247,15 @@ func TestAddServerlessCacheTargets(t *testing.T) {
 				"__meta_elasticache_serverless_cache_endpoint_address":     "my-cache.serverless.use1.cache.amazonaws.com",
 				"__meta_elasticache_serverless_cache_endpoint_port":        "6379",
 
+				"__meta_elasticache_serverless_cache_reader_endpoint_address": "my-cache-ro.serverless.use1.cache.amazonaws.com",
+				"__meta_elasticache_serverless_cache_reader_endpoint_port":    "6379",
+
+				"__meta_elasticache_serverless_cache_cache_usage_limit_data_storage_maximum":    "10",
+				"__meta_elasticache_serverless_cache_cache_usage_limit_data_storage_minimum":    "1",
+				"__meta_elasticache_serverless_cache_cache_usage_limit_data_storage_unit":       "GB",
+				"__meta_elasticache_serverless_cache_cache_usage_limit_ecpu_per_second_maximum": "5000",
+				"__meta_elasticache_serverless_cache_cache_usage_limit_ecpu_per_second_minimum": "1000",
+
 				"__meta_elasticache_serverless_cache_security_group_id_0": "sg-12345",
 				"__meta_elasticache_serverless_cache_subnet_id_0":         "subnet-abcdef",
 
