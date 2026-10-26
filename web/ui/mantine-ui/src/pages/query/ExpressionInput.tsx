@@ -45,10 +45,13 @@ import {
 } from "@codemirror/language";
 import classes from "./ExpressionInput.module.css";
 import {
+  acceptCompletion,
   autocompletion,
   closeBrackets,
   closeBracketsKeymap,
   completionKeymap,
+  completionStatus,
+  selectedCompletion,
 } from "@codemirror/autocomplete";
 import {
   defaultKeymap,
@@ -263,7 +266,7 @@ const ExpressionInput: FC<ExpressionInputProps> = ({
           indentOnInput(),
           bracketMatching(),
           closeBrackets(),
-          autocompletion(),
+          autocompletion({ selectOnOpen: false }),
           highlightSelectionMatches(),
           EditorView.lineWrapping,
           keymap.of([
@@ -294,7 +297,13 @@ const ExpressionInput: FC<ExpressionInputProps> = ({
             keymap.of([
               {
                 key: "Enter",
-                run: (): boolean => {
+                run: (view: EditorView): boolean => {
+                  if (
+                    completionStatus(view.state) === "active" &&
+                    selectedCompletion(view.state) !== null
+                  ) {
+                    return acceptCompletion(view);
+                  }
                   executeQuery(expr);
                   return true;
                 },
