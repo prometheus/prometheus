@@ -406,8 +406,10 @@ Known limitations:
 
 * The conversion only triggers on exact metric name matchers (e.g. `request_duration_seconds_bucket`), not on
   regex or negative name matchers.
-* If both classic series and NHCB series that convert to the same classic series are stored, the results are
-  not deduplicated yet.
+* Handling of collisions and transitions between stored classic series and converted NHCB series is not
+  implemented yet, so results may contain duplicates.
+* Native histograms with exponential buckets are not converted yet; support may be added later.
+* There is no control label yet; one will be added to disable and debug the conversion.
 
 ## Query cost
 
