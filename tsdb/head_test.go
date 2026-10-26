@@ -7725,7 +7725,7 @@ func TestStripeSeries_gc(t *testing.T) {
 		// Construct the series directly to verify that zero-valued exemplar state
 		// does not imply an exemplar at timestamp zero. With no chunks or exemplars,
 		// the series must be collected at mint<=0 without constructor initialization.
-		for _, mint := range []int64{-1, 0} {
+		for _, mint := range []int64{math.MinInt64, -1, 0} {
 			lset := labels.FromStrings("a", "1")
 			series := &memSeries{lset: lset, ref: 1}
 			s := newStripeSeries(1, noopSeriesLifecycleCallback{})
@@ -7739,8 +7739,8 @@ func TestStripeSeries_gc(t *testing.T) {
 		}
 	})
 
-	t.Run("keeps series with zero or negative exemplar timestamps", func(t *testing.T) {
-		for _, ts := range []int64{-1, 0} {
+	t.Run("keeps series until mint passes their latest exemplar", func(t *testing.T) {
+		for _, ts := range []int64{math.MinInt64 + 1, -1, 0, math.MaxInt64 - 1} {
 			lset := labels.FromStrings("a", "1")
 			series := &memSeries{lset: lset, ref: 1}
 			s := newStripeSeries(1, noopSeriesLifecycleCallback{})
@@ -7756,6 +7756,21 @@ func TestStripeSeries_gc(t *testing.T) {
 			s.gc(ts+1, 0)
 			require.Nil(t, s.getByID(series.ref), "exemplar timestamp=%d", ts)
 		}
+	})
+
+	t.Run("keeps series with an exemplar at the minimum timestamp", func(t *testing.T) {
+		lset := labels.FromStrings("a", "1")
+		series := &memSeries{lset: lset, ref: 1}
+		s := newStripeSeries(1, noopSeriesLifecycleCallback{})
+		_, created := s.setUnlessAlreadySet(lset.Hash(), lset, series)
+		require.True(t, created)
+
+		series.updateExemplarTimestamp(math.MinInt64)
+		s.gc(math.MinInt64, 0)
+		require.Same(t, series, s.getByID(series.ref))
+
+		s.gc(math.MinInt64+2, 0)
+		require.Nil(t, s.getByID(series.ref))
 	})
 
 	t.Run("keeps series until all reservations are released", func(t *testing.T) {

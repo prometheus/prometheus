@@ -2567,7 +2567,7 @@ func (s *stripeSeries) gc(mint int64, minOOOMmapRef chunks.ChunkDiskMapperRef) (
 		// Exemplars are not persisted in blocks. Keep their series reference resolvable
 		// until WAL truncation and replay can discard them by timestamp. An empty
 		// series retained for exemplars must not affect the minimum sample time.
-		if series.hasExemplar && series.lastExemplarTs >= mint {
+		if ts, ok := series.lastExemplarTimestamp(); ok && ts >= mint {
 			// Clear the appender so it does not retain the removed sample chunk.
 			series.app = nil
 			return
@@ -2626,7 +2626,9 @@ func (h *Head) gcSeries(seriesRefs []storage.SeriesRef, maxt int64, shouldEvict 
 			return false
 		}
 		// Delete the series if it has no exemplar at or after the WAL replay cutoff.
-		if !s.hasExemplar || s.lastExemplarTs < minValidTime {
+		// Check presence separately, since the cutoff can be zero or negative,
+		// e.g. math.MinInt64 before the first compaction.
+		if ts, ok := s.lastExemplarTimestamp(); !ok || ts < minValidTime {
 			return true
 		}
 
@@ -2992,11 +2994,11 @@ type memSeries struct {
 	lset labels.Labels // Locking required with -tags dedupelabels, not otherwise.
 	meta unique.Handle[metadata.Metadata]
 
-	// Latest accepted exemplar timestamp, including exemplars awaiting commit.
-	// A rolled-back exemplar may conservatively delay eviction until this time.
-	lastExemplarTs int64
-	// Whether an exemplar timestamp has been recorded, including zero or negative timestamps.
-	hasExemplar bool
+	// Latest accepted exemplar timestamp, including exemplars awaiting commit,
+	// offset by exemplarTsBias; zero means no exemplar. A rolled-back exemplar
+	// may conservatively delay eviction until this time. Read it with
+	// lastExemplarTimestamp.
+	lastExemplarTsBiased uint64
 
 	// Immutable chunks on disk that have not yet gone into a block, in order of ascending time stamps.
 	// When compaction runs, chunks get moved into a block and all pointers are shifted like so:
@@ -3139,14 +3141,25 @@ func newMemSeries(lset labels.Labels, id chunks.HeadSeriesRef, shardHash uint64,
 	return s
 }
 
+// exemplarTsBias offsets exemplar timestamps so that they order as unsigned
+// integers, leaving zero to mean no exemplar.
+const exemplarTsBias uint64 = 1 << 63
+
 // updateExemplarTimestamp records the latest exemplar time while holding the series lock.
 func (s *memSeries) updateExemplarTimestamp(ts int64) {
 	s.Lock()
-	if !s.hasExemplar || ts > s.lastExemplarTs {
-		s.lastExemplarTs = ts
-	}
-	s.hasExemplar = true
+	// Record math.MinInt64 as math.MinInt64+1, which would otherwise encode as no exemplar.
+	s.lastExemplarTsBiased = max(s.lastExemplarTsBiased, uint64(ts)^exemplarTsBias, 1)
 	s.Unlock()
+}
+
+// lastExemplarTimestamp returns the latest recorded exemplar timestamp, if any.
+// The caller must hold the series lock.
+func (s *memSeries) lastExemplarTimestamp() (int64, bool) {
+	if s.lastExemplarTsBiased == 0 {
+		return 0, false
+	}
+	return int64(s.lastExemplarTsBiased ^ exemplarTsBias), true
 }
 
 func (s *memSeries) minTime() int64 {
