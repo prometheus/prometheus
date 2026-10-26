@@ -54,6 +54,7 @@ import (
 	"github.com/prometheus/prometheus/rules"
 	"github.com/prometheus/prometheus/storage"
 	"github.com/prometheus/prometheus/storage/remote"
+	"github.com/prometheus/prometheus/util/features"
 	"github.com/prometheus/prometheus/util/testutil"
 )
 
@@ -1546,6 +1547,19 @@ remote_write:
 		return true
 		// 3*shardUpdateDuration to allow for the resharding logic to run.
 	}, 30*time.Second, time.Second)
+}
+
+func TestNativeMetadataFeatureConfiguration(t *testing.T) {
+	t.Cleanup(func() {
+		features.Disable(features.TSDB, "native_metadata")
+	})
+	cfg := flagConfig{featureList: []string{"native-metadata"}}
+	require.NoError(t, cfg.setFeatureListOptions(promslog.NewNopLogger()))
+	require.True(t, cfg.scrape.AppendMetadata)
+	require.True(t, cfg.web.AppendMetadata)
+	require.True(t, cfg.tsdb.EnableNativeMetadata)
+	require.True(t, cfg.tsdb.ToTSDBOptions().EnableNativeMetadata)
+	require.False(t, cfg.tsdb.ToTSDBOptions().EnableMetadataWALRecords)
 }
 
 // TestFeatureFlagsDocumented ensures the --enable-feature help text in main.go

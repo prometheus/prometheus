@@ -154,6 +154,20 @@ metadata changes as WAL records on a per-series basis.
 
 This must be used if you would like to send metadata using the new remote write 2.0.
 
+This flag controls the legacy WAL-backed metadata path. The separate
+`native-metadata` feature can store versioned per-series metadata in memory
+without writing metadata WAL records.
+
+## Native metadata
+
+`--enable-feature=native-metadata`
+
+> **This feature is experimental and may change in future releases.**
+
+When enabled, Prometheus ingests metric type, unit, and help from scrapes, OTLP,
+and Remote Write 2.0 as versioned metadata attached to each series in the TSDB
+Head's memory.
+
 ## Delay compaction start time
 
 `--enable-feature=delayed-compaction`
