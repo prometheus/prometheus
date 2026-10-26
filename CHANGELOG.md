@@ -9,7 +9,6 @@
 - [CHANGE] Remote write: Stop exposing the deprecated `prometheus_remote_storage_metadata_total`, `prometheus_remote_storage_metadata_failed_total`, `prometheus_remote_storage_metadata_retried_total`, and `prometheus_remote_storage_metadata_bytes_total` metrics for Remote Write 2.0 queues. (#20080, @shilohlee98)
 - [CHANGE] Remote write receiver: Count Remote Write 2.x samples and histograms ingested without metadata in `prometheus_api_remote_write_without_metadata_appended_samples_total` even when `metadata-wal-records` is disabled. (#19812, @bwplotka)
 - [CHANGE] TSDB: Reject exemplars whose label names are not unique, instead of storing them and serving a duplicate JSON key from `/api/v1/query_exemplars`. (#19896, @Ramya-9353)
-- [CHANGE] API: Remove unused `storage.Appendable` parameter from `api_v1.NewAPI`. (#20011, @bwplotka)
 - [FEATURE] API: Allow overriding PromQL Start Timestamp processing on a per-query basis using the `X-Prometheus-Use-Start-Timestamps` HTTP header. (#19066, @69iqqq)
 - [FEATURE] Agent: Support metadata-wal-records in Prometheus Agent mode. (#19684, @bwplotka)
 - [FEATURE] PromQL: Add experimental `integral()` function for computing integral-over-time of range vectors behind the `--enable-feature=promql-experimental-functions` flag. (#14440, @jjo)
@@ -17,7 +16,7 @@
 - [FEATURE] PromQL: Smoothed and Anchored vector selectors are now stable and always-on. (#19697, @roidelapluie)
 - [FEATURE] PromQL: Use start timestamps to detect counter resets when float timeseries are queried using extended range selector modifiers (`anchored`, `smoothed`). This feature is hidden behind `use-start-timestamps` feature flag. (#18966, @vpranckaitis)
 - [FEATURE] Promtool: print test filename during promtool tests (#18271, @dnwe)
-- [ENHANCEMENT] Search API: Warn when participating remote-read storage does not support search.
+- [ENHANCEMENT] Search API: Warn when participating remote-read storage does not support search. (#19992, @aknuds1)
 - [ENHANCEMENT] Remote Read: Add native histogram prometheus_remote_read_handler_gate_wait_duration_seconds to measure concurrency-gate wait duration, including requests canceled while waiting. (#18355, @ogulcanaydogan)
 - [ENHANCEMENT] Remote Write: Add experimental flag `convert_nhcb_to_classic` to convert NHCB to classic histograms for external systems that dont support NHCBs. (#17205, @Naman-B-Parlecha)
 - [ENHANCEMENT] promtool: Add `--allow-incompatible-block-duration` so users can specify any max-block-duration instead of being restricted to the default Prometheus block durations. (#19363, @sarthaksarthak9)
@@ -46,7 +45,7 @@
 - [BUGFIX] Fix ts_of_last_over_time for samples before the Unix epoch. (#19828, @fallintoplace)
 - [BUGFIX] Histograms: Fix ConvertNHCBToClassic inflating classic bucket counts for integer native histograms whose spans have gaps. (#19659, @youdie006)
 - [BUGFIX] Logging: Preserve rule and TSDB block values in JSON logs. (#19572, @shilohlee98)
-- [BUGFIX] OTLP receiver: Drop exemplars with timestamps more than 10 minutes in the future instead of storing them and blocking subsequent exemplars for that series.
+- [BUGFIX] OTLP receiver: Drop exemplars with timestamps more than 10 minutes in the future instead of storing them and blocking subsequent exemplars for that series. (#19812, @bwplotka)
 - [BUGFIX] OTLP: Count only out-of-order exemplars in `prometheus_api_otlp_out_of_order_exemplars_total`, not every rejected exemplar. (#20030, @aknuds1)
 - [BUGFIX] OTLP: Do not drop exemplars that have a `trace_id` or `span_id` filtered attribute in addition to a trace or span ID. The trace context now takes precedence over the colliding attribute, as required by the OpenTelemetry specification. (#20004, @krajorama)
 - [BUGFIX] OTLP: Do not emit `le="+Inf"` twice when a histogram's explicit bounds end at `+Inf`, and warn about the bound. (#19425, @serhiy-bzhezytskyy)
@@ -67,7 +66,7 @@
 - [BUGFIX] PromQL: Preserve subquery step expressions when printing queries after preprocessing. (#19743, @roidelapluie)
 - [BUGFIX] PromQL: Range vector functions no longer raise a spurious "vector cannot contain metrics with the same labelset" error when series have different metric names but the same remaining labels, as long as their timestamps do not overlap within the evaluated range window (#18631, @kasharkzy)
 - [BUGFIX] PromQL: do not count subquery materialized samples in total samples statistics (#19873, @roidelapluie)
-- [BUGFIX] Remote write: Prevent future-dated exemplars from scaling shards down to the minimum.
+- [BUGFIX] Remote write: Prevent future-dated exemplars from scaling shards down to the minimum. (#19866, @thampiotr)
 - [BUGFIX] Agent: Prevent future sent timestamps from advancing WAL truncation beyond the minimum retention window. (#19866, @thampiotr)
 - [BUGFIX] Rules: Restore firing alerts with for durations shorter than --rules.alert.for-grace-period after a restart. (#19882, @ajaykr0905)
 - [BUGFIX] Scrape: fix failing scrape when float histogram is emitted over protobuf with count, zero count and buckets all zero, for example a result of recording `rate(x[1m])` over constant histogram. (#19682, @MichaHoffmann)

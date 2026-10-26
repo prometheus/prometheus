@@ -121,7 +121,7 @@ should be merged into the previously mentioned release branch via pull request.
 
 Bump the version in the `VERSION` file and update `CHANGELOG.md`. Do this in a proper PR pointing to the release branch as this gives others the opportunity to chime in on the release in general and on the addition to `CHANGELOG.md` in particular. For a release candidate, append something like `-rc.0` to the version (with the corresponding changes to the tag name, the release name etc.).
 
-Use [`scripts/generate_release_notes.sh`](scripts/generate_release_notes.sh) to produce a starting point for the `CHANGELOG.md` entries. It requires the [`release-notes`](https://github.com/kubernetes/release/tree/master/cmd/release-notes) tool and a `GITHUB_TOKEN` with read access to the repository:
+Use [`scripts/generate_release_notes.sh`](scripts/generate_release_notes.sh) to produce a rough starting point for the `CHANGELOG.md` entries. It requires the [`release-notes`](https://github.com/kubernetes/release/tree/master/cmd/release-notes) tool and a `GITHUB_TOKEN` with read access to the repository:
 
 Run it for the target release version (RC, final, or patch; for example `3.11.0-rc.0`, `3.11.0`, or `3.11.1`):
 
@@ -131,9 +131,10 @@ GITHUB_TOKEN=<token> scripts/generate_release_notes.sh 3.Y_SET_ME.Z_SET_ME
 
 Review the output carefully before adding it manually to `CHANGELOG.md`:
 
+- The release-notes tool may construct malformed entries, read through them to make sure each entry is indented properly with a leading `-`.
+- Ensure entries are in the correct order: `[SECURITY]`, `[CHANGE]`, `[FEATURE]`, `[ENHANCEMENT]`, `[PERF]`, `[BUGFIX]`.
 - Remove entries already present in a previous release's Changelog. Duplicates can appear for fixes merged to the previous release branch.
 - `CHANGELOG.md` should only document changes relevant to users of Prometheus, including external API changes, performance improvements, and new features. Do not document changes of internal interfaces, code refactorings and clean-ups, changes to the build process, etc. People interested in these are asked to refer to the git history.
-- Ensure entries are in the correct order: `[SECURITY]`, `[CHANGE]`, `[FEATURE]`, `[ENHANCEMENT]`, `[PERF]`, `[BUGFIX]`.
 
 Then bump the UI module version:
 
