@@ -7757,7 +7757,6 @@ func TestWBLAndMmapReplay(t *testing.T) {
 	t.Parallel()
 	for name, scenario := range sampleTypeScenarios {
 		t.Run(name, func(t *testing.T) {
-			t.Parallel()
 			testWBLAndMmapReplay(t, scenario)
 		})
 	}
@@ -7835,6 +7834,10 @@ func testWBLAndMmapReplay(t *testing.T, scenario sampleTypeScenario) {
 
 	// Making a copy of original state of WBL and Mmap files to use it later.
 	mmapDir := mmappedChunksDir(db.head.opts.ChunkDirRoot)
+	// On Windows, head chunk files are preallocated to 128 MiB (MaxHeadChunkFileSize)
+	// with trailing zeros. Truncate the closed file to the non-Windows preallocation
+	// size (128 KiB) before copying mmapDir repeatedly across subtests.
+	require.NoError(t, os.Truncate(filepath.Join(mmapDir, "000001"), chunks.MinWriteBufferSize*2))
 	wblDir := db.head.wbl.Dir()
 	originalWblDir := filepath.Join(t.TempDir(), "original_wbl")
 	originalMmapDir := filepath.Join(t.TempDir(), "original_mmap")
