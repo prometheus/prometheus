@@ -83,9 +83,9 @@ flags for promotion to stable or for deprecation or ultimately removal. Do any
 of these in pull requests, one per feature.
 
 > NOTE: As a validation step check if all security alerts are closed after this step: https://github.com/prometheus/prometheus/security/dependabot. Sometimes it's ok
-> if not critical and e.g. fix is not released yet (or it does not relate to 
+> if not critical and e.g. fix is not released yet (or it does not relate to
 > upgrading) or when we are unaffected.
- 
+
 #### Manually updating Go dependencies
 
 This is usually only needed for `+incompatible` and `v0.0.0` non-semver updates.
@@ -113,22 +113,26 @@ though this may be done at convenient times (e.g. by the UI maintainers) that ar
 
 ### 1. Prepare your release
 
-At the start of a new major or minor release cycle create the corresponding release branch based on the main branch. For example if we're releasing `3.7.0` and the previous stable release is `3.6.0` we need to create a `release-3.7` branch. Note that all releases are handled in protected release branches, see the [Branch management and versioning strategy](#branch-management-and-versioning-strategy) section. Release candidates and patch releases for any given major or minor release happen in the same `release-<major>.<minor>` branch. Do not create `release-<version>` for patch or release candidate releases.
+At the start of a new major or minor release cycle, create the corresponding release branch based on the main branch. For example if we're releasing `3.7.0` and the previous stable release is `3.6.0` we need to create a `release-3.7` branch. Note that all releases are handled in protected release branches, see the [Branch management and versioning strategy](#branch-management-and-versioning-strategy) section. Release candidates and patch releases for any given major or minor release happen in the same `release-<major>.<minor>` branch.
 
-Changes for a patch release or release candidate should be merged into the previously mentioned release branch via pull request.
+Once the release branch is created, you can start making release-related changes
+in working branches. Those changes for a patch release or release candidate
+should be merged into the previously mentioned release branch via pull request.
 
 Bump the version in the `VERSION` file and update `CHANGELOG.md`. Do this in a proper PR pointing to the release branch as this gives others the opportunity to chime in on the release in general and on the addition to `CHANGELOG.md` in particular. For a release candidate, append something like `-rc.0` to the version (with the corresponding changes to the tag name, the release name etc.).
 
-Use [`scripts/generate_release_notes.sh`](scripts/generate_release_notes.sh) to produce a starting point for the `CHANGELOG.md` entries. It requires the [`release-notes`](https://github.com/kubernetes/release/tree/master/cmd/release-notes) tool and a `GITHUB_TOKEN` with read access to the repository:
+Use [`scripts/generate_release_notes.sh`](scripts/generate_release_notes.sh) to produce a rough starting point for the `CHANGELOG.md` entries. It requires the [`release-notes`](https://github.com/kubernetes/release/tree/master/cmd/release-notes) tool and a `GITHUB_TOKEN` with read access to the repository:
 
-Run it for the target release version (RC, final, or patch; for example `v3.11.0-rc.0`, `v3.11.0`, or `v3.11.1`):
+Run it for the target release version (RC, final, or patch; for example `3.11.0-rc.0`, `3.11.0`, or `3.11.1`):
 
 ```bash
 GITHUB_TOKEN=<token> scripts/generate_release_notes.sh 3.Y_SET_ME.Z_SET_ME
 ```
 
-Review the output carefully before adding it to `CHANGELOG.md`:
+Review the output carefully before adding it manually to `CHANGELOG.md`:
 
+- The release-notes tool may construct malformed entries, read through them to make sure each entry is indented properly with a leading `-`.
+- Ensure entries are in the correct order: `[SECURITY]`, `[CHANGE]`, `[FEATURE]`, `[ENHANCEMENT]`, `[PERF]`, `[BUGFIX]`.
 - Remove entries already present in a previous release's Changelog. Duplicates can appear for fixes merged to the previous release branch.
 - `CHANGELOG.md` should only document changes relevant to users of Prometheus, including external API changes, performance improvements, and new features. Do not document changes of internal interfaces, code refactorings and clean-ups, changes to the build process, etc. People interested in these are asked to refer to the git history.
 
