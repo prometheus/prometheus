@@ -1,0 +1,125 @@
+# Unquoted metric and label names may contain Unicode letters and, after the
+# first character, dots. Every unquoted query below is paired with its quoted
+# spelling, which must select the same series.
+
+load 1m
+  {"http.server.requests", "service.name"="api", "resource.k8s.namespace"="system"} 0+60x2
+  {"http.server.requests", "service.name"="web", "resource.k8s.namespace"="system"} 0+120x2
+  service_info{"service.name"="api", "équipe"="infra"} 1x2
+  service_info{"service.name"="web", "équipe"="frontend"} 1x2
+  温度{場所="東京"} 10+10x2
+  Björn{région="eu"} 5x2
+
+eval instant at 2m http.server.requests{service.name="api"}
+  {"http.server.requests", "service.name"="api", "resource.k8s.namespace"="system"} 120
+
+eval instant at 2m {"http.server.requests", "service.name"="api"}
+  {"http.server.requests", "service.name"="api", "resource.k8s.namespace"="system"} 120
+
+eval instant at 2m http.server.requests{resource.k8s.namespace="system", service.name=~"w.*"}
+  {"http.server.requests", "service.name"="web", "resource.k8s.namespace"="system"} 240
+
+eval instant at 2m {"http.server.requests", "resource.k8s.namespace"="system", "service.name"=~"w.*"}
+  {"http.server.requests", "service.name"="web", "resource.k8s.namespace"="system"} 240
+
+# Expected series can name the metric in front of the braces as well.
+eval instant at 2m http.server.requests{service.name="web"}
+  http.server.requests{service.name="web", resource.k8s.namespace="system"} 240
+
+# Unquoted names in series descriptions, as used by load above.
+eval instant at 2m 温度{場所="東京"}
+  温度{場所="東京"} 30
+
+eval instant at 2m {"温度", "場所"="東京"}
+  {"温度", "場所"="東京"} 30
+
+eval instant at 2m Björn
+  Björn{région="eu"} 5
+
+eval instant at 2m sum by (service.name) (http.server.requests)
+  {"service.name"="api"} 120
+  {"service.name"="web"} 240
+
+eval instant at 2m sum by ("service.name") ({"http.server.requests"})
+  {"service.name"="api"} 120
+  {"service.name"="web"} 240
+
+eval instant at 2m sum without (service.name) (http.server.requests)
+  {"resource.k8s.namespace"="system"} 360
+
+eval instant at 2m sum without ("service.name") ({"http.server.requests"})
+  {"resource.k8s.namespace"="system"} 360
+
+eval instant at 2m max_over_time(http.server.requests{service.name="api"}[2m])
+  {"service.name"="api", "resource.k8s.namespace"="system"} 120
+
+eval instant at 2m http.server.requests * on (service.name) group_left (équipe) service_info
+  {"service.name"="api", "resource.k8s.namespace"="system", "équipe"="infra"} 120
+  {"service.name"="web", "resource.k8s.namespace"="system", "équipe"="frontend"} 240
+
+eval instant at 2m {"http.server.requests"} * on ("service.name") group_left ("équipe") service_info
+  {"service.name"="api", "resource.k8s.namespace"="system", "équipe"="infra"} 120
+  {"service.name"="web", "resource.k8s.namespace"="system", "équipe"="frontend"} 240
+
+eval instant at 2m service_info * on (service.name) group_right (équipe) http.server.requests
+  {"service.name"="api", "resource.k8s.namespace"="system", "équipe"="infra"} 120
+  {"service.name"="web", "resource.k8s.namespace"="system", "équipe"="frontend"} 240
+
+eval instant at 2m http.server.requests * ignoring (resource.k8s.namespace, équipe) service_info
+  {"service.name"="api"} 120
+  {"service.name"="web"} 240
+
+clear
+
+# Dots carry no meaning of their own: these are plain metric names, not
+# histogram field access or metadata lookups, and consecutive or trailing dots
+# are allowed.
+load 1m
+  {"histogram.count"} 1
+  {"target.info", "k8s.pod.name"="p"} 2
+  {"foo..bar."} 3
+  {"Inf.total"} 4
+  {"bool.total"} 5
+  {"rate.total"} 6
+
+eval instant at 0m histogram.count
+  {"histogram.count"} 1
+
+eval instant at 0m target.info
+  {"target.info", "k8s.pod.name"="p"} 2
+
+eval instant at 0m foo..bar.
+  {"foo..bar."} 3
+
+eval instant at 0m Inf.total + Inf
+  {} +Inf
+
+eval instant at 0m bool.total
+  {"bool.total"} 5
+
+eval instant at 0m rate.total
+  {"rate.total"} 6
+
+clear
+
+# Names keep their exact identity: no Unicode normalization, case folding, or
+# lookalike matching.
+load 1m
+  a 1
+  {"а"} 2
+  {"ö"} 3
+  {"o\u0308"} 4
+
+# Latin a (U+0061) and Cyrillic а (U+0430).
+eval instant at 0m а
+  {"а"} 2
+
+eval instant at 0m a
+  a 1
+
+# Precomposed ö (U+00F6) does not select o followed by a combining diaeresis.
+eval instant at 0m ö
+  {"ö"} 3
+
+eval instant at 0m {"o\u0308"}
+  {"o\u0308"} 4
