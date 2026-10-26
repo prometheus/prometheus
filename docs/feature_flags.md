@@ -255,14 +255,14 @@ are translated as before.
 
 > NOTE: This is an experimental feature.
 
-For a Resource with entity references, `instance` is a UUIDv5 of its identifying
-attributes: those listed in an entity's `id_keys`, plus the attributes no entity
-references, which the [Resource data model](https://opentelemetry.io/docs/specs/otel/resource/data-model/)
+For a Resource with entity references, `instance` is a UUIDv5 of its set of
+entity types and its identifying attributes: those listed in an entity's
+`id_keys`, plus the attributes no entity references, which the [Resource data model](https://opentelemetry.io/docs/specs/otel/resource/data-model/)
 considers identifying. An attribute listed in any entity's `id_keys` is
 identifying, even if another entity lists it in `description_keys`. Attributes
-listed only in `description_keys` are not. Entity types, how attributes are
-grouped into entities, and entity schema URLs don't affect `instance`. Ordinary
-series and `target_info` get the same `instance`.
+listed only in `description_keys` are not. How attributes are grouped into
+entities and entity schema URLs don't affect `instance`. Ordinary series and
+`target_info` get the same `instance`.
 
 `job` and `instance` still identify such Resources, but `job` is empty, since it
 belongs to the mapping from service attributes, which is not mixed with the
@@ -277,9 +277,10 @@ Consequences:
   or when its producer starts sending them while the feature is enabled.
   Disabling the feature, or the producer no longer sending entity references,
   switches back to labels derived from service attributes. Any change to an
-  identifying attribute also gives a new `instance`. That includes attributes no
-  entity references, such as `telemetry.sdk.version` without a matching entity. A
-  description change doesn't change `instance`.
+  identifying attribute or to the set of entity types also gives a new
+  `instance`. That includes attributes no entity references, such as
+  `telemetry.sdk.version` without a matching entity. A description change doesn't
+  change `instance`.
 * As without the feature, Resources that get the same `instance` but differ in
   other attributes produce more than one `target_info` series for it. With the
   feature, that happens when only their descriptions differ.
@@ -319,11 +320,13 @@ Resource attribute is ignored. Both cases are logged as warnings and counted by
 The synthesized `instance` and its encoding are experimental and may change. The
 UUIDv5 namespace is `590a306a-6a3b-5d60-ba93-38bef3715a7b`, the UUIDv5 of the URL
 `https://prometheus.io/otlp/entities/resource-identity/v1`. The UUIDv5 name is
-this encoding (version 1) of the identifying attributes:
+this encoding (version 1) of the entity types and identifying attributes:
 
 * Counts and lengths are unsigned LEB128 varints, as in protobuf. Sorting is
   bytewise. A string is its length followed by its bytes.
-* The identifying attributes are encoded as an attribute map: the number of
+* The entity types come first: the number of distinct types, followed by each
+  type, sorted.
+* The identifying attributes follow, encoded as an attribute map: the number of
   distinct keys, followed by each key and value, sorted by key. Of duplicate
   keys, the first one counts.
 * A value is a type tag followed by a payload. The tag is the field number of the
@@ -340,17 +343,18 @@ For example, take a Resource with the attributes `service.name="checkout"`,
 `host.name="node-1"` and `telemetry.sdk.version="1.2.3"`, and the entity
 references `{type: "service", id_keys: ["service.name", "service.namespace", "service.instance.id"]}`
 and `{type: "host", id_keys: ["host.id"], description_keys: ["host.name"]}`.
-Its identifying attributes are all but `host.name`. Their encoding, in hex and
-wrapped, is:
+Its entity types are `host` and `service`, and its identifying attributes are all
+but `host.name`. Their encoding, in hex and wrapped, is:
 
 ```
-0507686f73742e69640103682d3113736572766963652e696e7374616e63652e
-6964010469642d310c736572766963652e6e616d650108636865636b6f757411
-736572766963652e6e616d657370616365010473686f701574656c656d657472
-792e73646b2e76657273696f6e0105312e322e33
+0204686f737407736572766963650507686f73742e69640103682d3113736572
+766963652e696e7374616e63652e6964010469642d310c736572766963652e6e
+616d650108636865636b6f757411736572766963652e6e616d65737061636501
+0473686f701574656c656d657472792e73646b2e76657273696f6e0105312e32
+2e33
 ```
 
-Its `instance` is `d34e7886-9da9-5635-9f3c-8c52a8e25538`.
+Its `instance` is `af75bdb7-d4ad-5522-a93c-61e00148c979`.
 
 ## Type and Unit Labels
 

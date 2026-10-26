@@ -1055,15 +1055,15 @@ func TestFromMetrics(t *testing.T) {
 		// goldenInstance is the instance of base, which is the test vector in
 		// the OTLP Entities section of docs/feature_flags.md. It pins the
 		// identity encoding.
-		const goldenInstance = "d34e7886-9da9-5635-9f3c-8c52a8e25538"
+		const goldenInstance = "af75bdb7-d4ad-5522-a93c-61e00148c979"
 		serviceOnly := resource{
 			attrs: []any{"service.name", "checkout", "service.instance.id", "id-1"},
 			refs:  []entityRef{{typ: "service", idKeys: []string{"service.name", "service.instance.id"}}},
 		}
 		const (
-			serviceOnlyInstance = "c074ff5e-4c36-5bda-8f66-fe4fc47721e1"
+			serviceOnlyInstance = "a364b7ed-d270-5ac0-a6af-3d495713680d"
 			// resourceJobInstance is the instance of serviceOnly with a job attribute.
-			resourceJobInstance = "2de63cff-5948-5ef0-8590-57dee8230272"
+			resourceJobInstance = "febdb6ef-f823-57f1-a248-447aca602593"
 		)
 
 		t.Run("labels", func(t *testing.T) {
@@ -1183,8 +1183,7 @@ func TestFromMetrics(t *testing.T) {
 					a:    base,
 					b: resource{attrs: base.attrs, refs: []entityRef{
 						{typ: "service", idKeys: []string{"service.name", "service.namespace"}},
-						{typ: "service.instance", idKeys: []string{"service.instance.id"}},
-						hostRef,
+						{typ: "host", idKeys: []string{"host.id", "service.instance.id"}, descKeys: hostRef.descKeys},
 					}},
 					same: true,
 				},
@@ -1194,12 +1193,21 @@ func TestFromMetrics(t *testing.T) {
 					b: resource{attrs: base.attrs, refs: []entityRef{
 						serviceRef, {typ: "node", idKeys: hostRef.idKeys, descKeys: hostRef.descKeys},
 					}},
-					same: true,
+				},
+				{
+					name: "additional entity type",
+					a:    base,
+					b: resource{attrs: base.attrs, refs: []entityRef{
+						serviceRef, hostRef, {typ: "node", idKeys: hostRef.idKeys},
+					}},
 				},
 				{
 					name: "identifying and unreferenced attributes",
-					a:    resource{attrs: base.attrs, refs: []entityRef{serviceRef, {typ: "host", idKeys: hostRef.idKeys}}},
-					b:    resource{attrs: base.attrs, refs: []entityRef{serviceRef}},
+					a:    base,
+					b: resource{attrs: base.attrs, refs: []entityRef{
+						{typ: "service", idKeys: []string{"service.name", "service.namespace"}},
+						hostRef,
+					}},
 					same: true,
 				},
 				{
@@ -1303,7 +1311,7 @@ func TestFromMetrics(t *testing.T) {
 					},
 					refs: []entityRef{{typ: "host", idKeys: []string{"host.id"}}},
 				})
-				require.Equal(t, "d268647e-cc6f-5e45-b479-c6e9d034c271", instance(t, md))
+				require.Equal(t, "3a143973-f26e-55eb-83e8-7b8f4d31f556", instance(t, md))
 			})
 		})
 

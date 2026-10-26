@@ -78,13 +78,14 @@ func (c *PrometheusConverter) setEntityInstance(resource pcommon.Resource, index
 	return true
 }
 
-// resourceIdentity returns the canonical encoding (v1) of the identifying
-// attributes of a Resource with entity references: those any entity lists in
-// id_keys, plus the raw attributes that no entity references. Attributes
-// listed only in description_keys are not identifying. Entity types, the
-// grouping of attributes into entities, and schema URLs are not part of the
-// identity. The encoding is specified in docs/feature_flags.md; changing it
-// changes every synthesized instance label.
+// resourceIdentity returns the canonical encoding (v1) of the identity of a
+// Resource with entity references: its set of entity types and its
+// identifying attributes, which are those any entity lists in id_keys, plus
+// the raw attributes that no entity references. Attributes listed only in
+// description_keys are not identifying. The grouping of attributes into
+// entities and schema URLs are not part of the identity. The encoding is
+// specified in docs/feature_flags.md; changing it changes every synthesized
+// instance label.
 //
 // If an entity reference has an empty type, no id_keys, or an id_keys key
 // missing from attrs, the identity is undefined, and err describes the first
@@ -92,6 +93,7 @@ func (c *PrometheusConverter) setEntityInstance(resource pcommon.Resource, index
 // missing from attrs, if any; such a key doesn't affect the identity.
 func resourceIdentity(attrs pcommon.Map, refs entity.EntityRefSlice) (identity []byte, warning, err error) {
 	values := attributeValues(attrs)
+	types := map[string]struct{}{}
 	idKeys := map[string]struct{}{}
 	descKeys := map[string]struct{}{}
 	for i, ref := range refs.All() {
@@ -101,6 +103,7 @@ func resourceIdentity(attrs pcommon.Map, refs entity.EntityRefSlice) (identity [
 		case ref.IdKeys().Len() == 0:
 			return nil, nil, fmt.Errorf("entity reference %d (type %q): no id_keys", i, ref.Type())
 		}
+		types[ref.Type()] = struct{}{}
 		for _, k := range ref.IdKeys().All() {
 			if _, ok := values[k]; !ok {
 				return nil, nil, fmt.Errorf("entity reference %d (type %q): id_keys key %q missing from resource attributes", i, ref.Type(), k)
@@ -121,7 +124,11 @@ func resourceIdentity(attrs pcommon.Map, refs entity.EntityRefSlice) (identity [
 			delete(values, k)
 		}
 	}
-	return appendIdentityAttributes(nil, values), warning, nil
+	identity = binary.AppendUvarint(nil, uint64(len(types)))
+	for _, t := range slices.Sorted(maps.Keys(types)) {
+		identity = appendIdentityString(identity, t)
+	}
+	return appendIdentityAttributes(identity, values), warning, nil
 }
 
 // attributeValues indexes the attributes of m by key. Of duplicate keys, the

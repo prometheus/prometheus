@@ -355,7 +355,7 @@ func TestOTLPWriteHandler(t *testing.T) {
 		dp.SetIntValue(1)
 
 		appendable := handleOTLP(t, request, config.OTLPConfig{}, OTLPOptions{EnableEntities: true})
-		const instance = "67f8eb49-3efb-59ad-b560-44f1fa69ea36"
+		const instance = "4e834c45-9c3b-5f51-b348-711b0bd10f67"
 		teststorage.RequireEqual(t, []sample{
 			{
 				MF: "test_gauge",
