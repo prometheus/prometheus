@@ -70,6 +70,14 @@ query($owner: String!, $name: String!, $limit: Int!, $after: String) {
             body
           }
         }
+        latestOpinionatedReviews(first: 10) {
+          nodes {
+            author { login }
+            state
+            submittedAt
+            body
+          }
+        }
         comments(last: 10) {
           totalCount
           nodes {
@@ -276,7 +284,10 @@ def get_proposed_owners(model, files, author):
 
 def get_current_owners(pr, author):
     curr = []
-    for r in pr.get("latestReviews", {}).get("nodes", []):
+    review_nodes = pr.get("latestReviews", {}).get("nodes", []) + pr.get(
+        "latestOpinionatedReviews", {}
+    ).get("nodes", [])
+    for r in review_nodes:
         if r.get("state") == "PENDING":
             continue
         login = (r.get("author") or {}).get("login")
@@ -438,13 +449,31 @@ def analyze_prs(repos, max_prs, maintainer_filter=None):
                 if rollup and rollup.get("state"):
                     ci_state = rollup["state"]
 
-            reviews = [
+            opinionated_reviews = [
+                r
+                for r in pr.get("latestOpinionatedReviews", {}).get("nodes", [])
+                if r.get("state") != "PENDING"
+                and r.get("author")
+                and not is_bot(r["author"].get("login"))
+            ]
+            latest_reviews = [
                 r
                 for r in pr.get("latestReviews", {}).get("nodes", [])
                 if r.get("state") != "PENDING"
                 and r.get("author")
                 and not is_bot(r["author"].get("login"))
             ]
+            reviews = []
+            seen_reviews = set()
+            for r in opinionated_reviews + latest_reviews:
+                key = (
+                    r["author"]["login"].lower(),
+                    r.get("state") or "",
+                    r.get("submittedAt") or "",
+                )
+                if key not in seen_reviews:
+                    seen_reviews.add(key)
+                    reviews.append(r)
             comments = [
                 c
                 for c in pr.get("comments", {}).get("nodes", [])
@@ -555,10 +584,28 @@ def analyze_prs(repos, max_prs, maintainer_filter=None):
             non_author_reviews = [
                 r for r in reviews if r["author"]["login"].lower() != author_low
             ]
+            non_author_opinionated = [
+                r
+                for r in opinionated_reviews
+                if r["author"]["login"].lower() != author_low
+            ]
             latest_review_ts = max(
                 (r.get("submittedAt") or "" for r in non_author_reviews), default=""
             )
-            approved = any(r.get("state") == "APPROVED" for r in non_author_reviews)
+            changes_requested = (
+                pr.get("reviewDecision") == "CHANGES_REQUESTED"
+                or any(
+                    r.get("state") == "CHANGES_REQUESTED" for r in non_author_opinionated
+                )
+                or any(
+                    r.get("state") == "CHANGES_REQUESTED" for r in non_author_reviews
+                )
+            )
+            approved = not changes_requested and (
+                pr.get("reviewDecision") == "APPROVED"
+                or any(r.get("state") == "APPROVED" for r in non_author_opinionated)
+                or any(r.get("state") == "APPROVED" for r in non_author_reviews)
+            )
             labels = [l["name"] for l in pr.get("labels", {}).get("nodes", [])]
 
             ci_green = ci_state == "SUCCESS"

@@ -15,6 +15,8 @@ This skill generates a GitHub-flavored Markdown PR Triage Board for any GitHub r
    - All review threads and comments are either resolved or responded to by the author.
    - CI is green, or the author commented after the latest commit explaining why CI is not green.
 
+   A PR is marked `*(approved)*` and prioritized within its bucket only when it has at least one maintainer approval and no active `CHANGES_REQUESTED` review.
+
    PRs are grouped into the following buckets:
    - **Quick Wins**: `<= 60` LOC, green CI, clean hygiene, waiting on maintainer.
    - **Updated After Review**: Waiting on maintainer after a prior maintainer review, with new commits or author replies since that review.
