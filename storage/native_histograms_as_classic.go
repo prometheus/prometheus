@@ -244,6 +244,7 @@ type convertedClassicSeries struct {
 type classicSeriesBuilder struct {
 	series  []convertedClassicSeries
 	byLabel map[uint64][]int
+	currST  int64
 	currT   int64
 	emitIdx int
 }
@@ -259,29 +260,30 @@ func (b *classicSeriesBuilder) reset() {
 	clear(b.byLabel)
 }
 
-func (b *classicSeriesBuilder) beginTimestamp(t int64) {
+func (b *classicSeriesBuilder) beginTimestamp(st, t int64) {
+	b.currST = st
 	b.currT = t
 	b.emitIdx = 0
 }
 
 func (b *classicSeriesBuilder) emitSample(l labels.Labels, val float64) error {
-	b.addSample(l, b.currT, val)
+	b.addSample(l, fSample{st: b.currST, t: b.currT, f: val})
 	return nil
 }
 
-func (b *classicSeriesBuilder) addSample(l labels.Labels, t int64, val float64) int {
+func (b *classicSeriesBuilder) addSample(l labels.Labels, s fSample) int {
 	// Fast path: when bucket layout has not changed across samples in this NHCB series,
 	// ConvertNHCBToClassic emits buckets in the exact same order as b.series.
 	idx := b.emitIdx
 	b.emitIdx++
 	if idx < len(b.series) && labels.Equal(b.series[idx].labels, l) {
-		b.series[idx].samples = append(b.series[idx].samples, fSample{t: t, f: val})
+		b.series[idx].samples = append(b.series[idx].samples, s)
 		return idx
 	}
 
 	if idx == len(b.series) && len(b.byLabel) == 0 {
 		b.growSeries(l)
-		b.series[idx].samples = append(b.series[idx].samples, fSample{t: t, f: val})
+		b.series[idx].samples = append(b.series[idx].samples, s)
 		return idx
 	}
 
@@ -309,7 +311,7 @@ func (b *classicSeriesBuilder) addSample(l labels.Labels, t int64, val float64) 
 		b.byLabel[h] = append(b.byLabel[h], idx)
 		b.growSeries(l)
 	}
-	b.series[idx].samples = append(b.series[idx].samples, fSample{t: t, f: val})
+	b.series[idx].samples = append(b.series[idx].samples, s)
 	return idx
 }
 
@@ -474,7 +476,7 @@ func (s *nhcbToClassicSeriesSet) convertSeries(dst []Series, nhcbSeries Series) 
 			continue
 		}
 
-		s.builder.beginTimestamp(t)
+		s.builder.beginTimestamp(it.AtST(), t)
 		if err := histogram.ConvertNHCBToClassic(nhcb, nhcbLabels, s.lsetBuilder, s.suffix, &s.seriesCache, s.emitFn); err != nil {
 			s.err = err
 			return nil
@@ -569,8 +571,8 @@ func (it *fSampleIterator) AtT() int64 {
 	return it.samples[it.idx].t
 }
 
-func (*fSampleIterator) AtST() int64 {
-	return 0
+func (it *fSampleIterator) AtST() int64 {
+	return it.samples[it.idx].st
 }
 
 func (*fSampleIterator) Err() error { return nil }

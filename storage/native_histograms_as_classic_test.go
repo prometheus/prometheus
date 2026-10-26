@@ -427,6 +427,22 @@ func TestNativeHistogramsAsClassicQuerier_Select(t *testing.T) {
 						{labels: `{__name__="http_requests_bucket", job="web", le="+Inf"}`, samples: []fSample{{t: 1, f: 30}, {t: 2, f: 36}}},
 					},
 				},
+				{
+					name:          "start timestamps are preserved",
+					queryMatchers: []*labels.Matcher{labels.MustNewMatcher(labels.MatchEqual, model.MetricNameLabel, "http_requests_bucket")},
+					nhcbSeries: []Series{
+						NewListSeries(labels.FromStrings("__name__", "http_requests"), []chunks.Sample{
+							hSample{st: 10, t: 20, h: makeNHCB([]float64{1.0}, []int64{2, 3})},
+							hSample{st: 25, t: 30, h: makeNHCB([]float64{1.0}, []int64{1, 1})},
+						}),
+					},
+					expectedCount:  2,
+					expectedSuffix: "_bucket",
+					expectedSamples: []seriesSamples{
+						{labels: `{__name__="http_requests_bucket", le="1.0"}`, samples: []fSample{{st: 10, t: 20, f: 2}, {st: 25, t: 30, f: 1}}},
+						{labels: `{__name__="http_requests_bucket", le="+Inf"}`, samples: []fSample{{st: 10, t: 20, f: 5}, {st: 25, t: 30, f: 2}}},
+					},
+				},
 			},
 		},
 		{
@@ -652,8 +668,7 @@ func TestNativeHistogramsAsClassicQuerier_Select(t *testing.T) {
 							for it.Next() == chunkenc.ValFloat {
 								ts, v := it.At()
 								require.Equal(t, ts, it.AtT())
-								require.Equal(t, int64(0), it.AtST())
-								samples = append(samples, fSample{t: ts, f: v})
+								samples = append(samples, fSample{st: it.AtST(), t: ts, f: v})
 							}
 							require.NoError(t, it.Err())
 							gotSamples = append(gotSamples, seriesSamples{labels: s.Labels().String(), samples: samples})
