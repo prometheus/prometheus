@@ -925,11 +925,12 @@ func (db *DB) Appender(context.Context) storage.Appender {
 
 // Close implements the Storage interface.
 func (db *DB) Close() error {
-	db.mtx.Lock()
-	defer db.mtx.Unlock()
-
+	// Stop the truncate loop before taking db.mtx, since truncate needs it.
 	close(db.stopc)
 	<-db.donec
+
+	db.mtx.Lock()
+	defer db.mtx.Unlock()
 
 	db.metrics.Unregister()
 

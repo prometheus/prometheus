@@ -14,9 +14,11 @@
 package agent
 
 import (
+	"bytes"
 	"context"
 	"fmt"
 	"io"
+	"log/slog"
 	"math"
 	"path/filepath"
 	"strconv"
@@ -887,6 +889,56 @@ func TestWALTruncationTime(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			require.Equal(t, tc.want, walTruncationTime(opts, tc.sent, nowTS))
 		})
+	}
+}
+
+// blockingWriter blocks writes containing msg until release is closed.
+type blockingWriter struct {
+	msg     []byte
+	once    sync.Once
+	reached chan struct{}
+	release chan struct{}
+}
+
+func (w *blockingWriter) Write(p []byte) (int, error) {
+	if bytes.Contains(p, w.msg) {
+		w.once.Do(func() { close(w.reached) })
+		<-w.release
+	}
+	return len(p), nil
+}
+
+func TestCloseDuringTruncate(t *testing.T) {
+	// Pause the truncate loop on the log line just before truncate takes db.mtx.
+	w := &blockingWriter{
+		msg:     []byte("series GC started"),
+		reached: make(chan struct{}),
+		release: make(chan struct{}),
+	}
+
+	dbDir := t.TempDir()
+	rs := remote.NewStorage(promslog.NewNopLogger(), nil, startTime, dbDir, time.Second*30, nil, false, false, false)
+	t.Cleanup(func() {
+		require.NoError(t, rs.Close())
+	})
+
+	opts := DefaultOptions()
+	opts.TruncateFrequency = time.Millisecond
+	db, err := Open(slog.New(slog.NewTextHandler(w, nil)), nil, rs, dbDir, opts)
+	require.NoError(t, err)
+
+	<-w.reached
+	closed := make(chan error)
+	go func() { closed <- db.Close() }()
+	// Close has started stopping the loop. Let truncate continue.
+	<-db.stopc
+	close(w.release)
+
+	select {
+	case err := <-closed:
+		require.NoError(t, err)
+	case <-time.After(10 * time.Second):
+		t.Fatal("Close deadlocked against truncate")
 	}
 }
 
