@@ -259,6 +259,27 @@ func (n *nativeSeriesMetadata) snapshotLocked() nativeMetricMetadataSnapshot {
 	return snapshot
 }
 
+// atLocked returns the metadata version effective at ts.
+// NOTE: If ts precedes the earliest retained change point (for example, an
+// exemplar observed slightly before the first scrape timestamp, or after older
+// versions were evicted), it falls back to the oldest retained version so callers
+// such as Remote Write 2.0 still attach series metadata rather than unknown type.
+// The caller holds the series lock.
+func (n *nativeSeriesMetadata) atLocked(ts int64) (metadata.Metadata, bool) {
+	if n == nil || n.metadata == nil {
+		return metadata.Metadata{}, false
+	}
+	if ts >= n.effectiveFrom || len(n.older) == 0 {
+		return *n.metadata, true
+	}
+	for i := len(n.older) - 1; i >= 0; i-- {
+		if ts >= n.older[i].effectiveFrom {
+			return *n.older[i].metadata, true
+		}
+	}
+	return *n.older[0].metadata, true
+}
+
 func (s *nativeMetricMetadataSnapshot) expand() []NativeMetricMetadataVersion {
 	versions := make([]NativeMetricMetadataVersion, s.count)
 	for i, point := range s.points[:s.count] {
@@ -392,4 +413,26 @@ func (h *Head) nativeMetricMetadataForPostings(ctx context.Context, p index.Post
 // the series limit, independently of per-series history truncation.
 func (db *DB) NativeMetricMetadata(ctx context.Context, matcherSets [][]*labels.Matcher, limit int) ([]NativeMetricMetadataSeries, bool, error) {
 	return db.head.nativeMetricMetadataForMatchers(ctx, matcherSets, limit)
+}
+
+// SeriesNativeMetricMetadata returns the native metric metadata for ref at ts.
+func (h *Head) SeriesNativeMetricMetadata(ref chunks.HeadSeriesRef, ts int64) (metadata.Metadata, bool) {
+	if h == nil || h.nativeMetricMetadata == nil {
+		return metadata.Metadata{}, false
+	}
+	series := h.series.getByID(ref)
+	if series == nil {
+		return metadata.Metadata{}, false
+	}
+	series.Lock()
+	defer series.Unlock()
+	if series.isGCed() {
+		return metadata.Metadata{}, false
+	}
+	return series.nativeMetadataLocked().atLocked(ts)
+}
+
+// SeriesNativeMetricMetadata returns the native metric metadata from the Head for ref at ts.
+func (db *DB) SeriesNativeMetricMetadata(ref chunks.HeadSeriesRef, ts int64) (metadata.Metadata, bool) {
+	return db.head.SeriesNativeMetricMetadata(ref, ts)
 }

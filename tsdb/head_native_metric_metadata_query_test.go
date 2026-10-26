@@ -353,3 +353,70 @@ func TestHeadNativeMetricMetadataMatchersAndLimit(t *testing.T) {
 		require.False(t, result[1].Truncated)
 	})
 }
+
+func TestHeadSeriesNativeMetricMetadata(t *testing.T) {
+	ctx := t.Context()
+
+	t.Run("disabled native metadata returns false", func(t *testing.T) {
+		opts := DefaultHeadOptions()
+		opts.ChunkDirRoot = t.TempDir()
+		head, err := NewHead(nil, nil, nil, nil, opts, nil)
+		require.NoError(t, err)
+		require.NoError(t, head.Init(0))
+		t.Cleanup(func() { require.NoError(t, head.Close()) })
+
+		app := head.AppenderV2(ctx)
+		ref := mustAppendV2(t, app, 0, labels.FromStrings(labels.MetricName, "a"), 100, 1, storage.AOptions{
+			Metadata: metadata.Metadata{Type: model.MetricTypeCounter, Unit: "seconds", Help: "help"},
+		})
+		require.NoError(t, app.Commit())
+
+		_, ok := head.SeriesNativeMetricMetadata(chunks.HeadSeriesRef(ref), 100)
+		require.False(t, ok)
+	})
+
+	t.Run("point lookup resolves version at timestamp and handles GC", func(t *testing.T) {
+		head := newNativeMetadataTestHead(t, withoutOOO)
+
+		m1 := metadata.Metadata{Type: model.MetricTypeCounter, Unit: "seconds", Help: "v1"}
+		m2 := metadata.Metadata{Type: model.MetricTypeCounter, Unit: "seconds", Help: "v2"}
+		m3 := metadata.Metadata{Type: model.MetricTypeGauge, Unit: "bytes", Help: "v3"}
+
+		app := head.AppenderV2(ctx)
+		ref := mustAppendV2(t, app, 0, labels.FromStrings(labels.MetricName, "a"), 100, 1, storage.AOptions{Metadata: m1})
+		mustAppendV2(t, app, ref, labels.FromStrings(labels.MetricName, "a"), 200, 2, storage.AOptions{Metadata: m2})
+		mustAppendV2(t, app, ref, labels.FromStrings(labels.MetricName, "a"), 300, 3, storage.AOptions{Metadata: m3})
+		noMetaRef := mustAppendV2(t, app, 0, labels.FromStrings(labels.MetricName, "b"), 100, 1, storage.AOptions{})
+		require.NoError(t, app.Commit())
+
+		headRef := chunks.HeadSeriesRef(ref)
+		for _, tc := range []struct {
+			name string
+			ts   int64
+			want metadata.Metadata
+		}{
+			{name: "before earliest falls back to oldest", ts: 50, want: m1},
+			{name: "at v1", ts: 100, want: m1},
+			{name: "between v1 and v2", ts: 150, want: m1},
+			{name: "at v2", ts: 200, want: m2},
+			{name: "between v2 and v3", ts: 250, want: m2},
+			{name: "at v3", ts: 300, want: m3},
+			{name: "after v3", ts: 500, want: m3},
+		} {
+			t.Run(tc.name, func(t *testing.T) {
+				got, ok := head.SeriesNativeMetricMetadata(headRef, tc.ts)
+				require.True(t, ok)
+				require.Equal(t, tc.want, got)
+			})
+		}
+
+		_, ok := head.SeriesNativeMetricMetadata(chunks.HeadSeriesRef(noMetaRef), 100)
+		require.False(t, ok)
+		_, ok = head.SeriesNativeMetricMetadata(999999, 100)
+		require.False(t, ok)
+
+		setGCedForTest(head.series.getByID(headRef))
+		_, ok = head.SeriesNativeMetricMetadata(headRef, 300)
+		require.False(t, ok)
+	})
+}
