@@ -135,6 +135,7 @@ Review the output carefully before adding it manually to `CHANGELOG.md`:
 - Ensure entries are in the correct order: `[SECURITY]`, `[CHANGE]`, `[FEATURE]`, `[ENHANCEMENT]`, `[PERF]`, `[BUGFIX]`.
 - Remove entries already present in a previous release's Changelog. Duplicates can appear for fixes merged to the previous release branch.
 - `CHANGELOG.md` should only document changes relevant to users of Prometheus, including external API changes, performance improvements, and new features. Do not document changes of internal interfaces, code refactorings and clean-ups, changes to the build process, etc. People interested in these are asked to refer to the git history.
+- Set the date for the changelog entry header, even for an RC.
 
 Then bump the UI module version:
 
@@ -166,7 +167,7 @@ Then release with `git tag-release`.
 
 Signing a tag with a GPG key is appreciated, but in case you can't add a GPG key to your Github account using the following [procedure](https://help.github.com/articles/generating-a-gpg-key/), you can replace the `-s` flag by `-a` flag of the `git tag` command to only annotate the tag without signing.
 
-Once a tag is created, the release process through Github Actions will be triggered for this tag and Github Actions will draft the GitHub release using the `prombot` account.
+Once a tag is created, the publish_release job in the CI workflow will run for this tag and draft the GitHub release.
 
 Finally, wait for the build step for the tag to finish. The point here is to wait for tarballs to be uploaded to the Github release and the container images to be pushed to the Docker Hub and Quay.io. Once that has happened, click _Publish release_, which will make the release publicly visible and create a GitHub notification.
 **Note:** for a release candidate version ensure the _This is a pre-release_ box is checked when drafting the release in the Github UI. The CI job should take care of this but it's a good idea to double check before clicking _Publish release_.`
