@@ -16,6 +16,7 @@
 - [FEATURE] PromQL: Smoothed and Anchored vector selectors are now stable and always-on. (#19697, @roidelapluie)
 - [FEATURE] PromQL: Use start timestamps to detect counter resets when float timeseries are queried using extended range selector modifiers (`anchored`, `smoothed`). This feature is hidden behind `use-start-timestamps` feature flag. (#18966, @vpranckaitis)
 - [FEATURE] Promtool: print test filename during promtool tests (#18271, @dnwe)
+- [FEATURE] PromQL: Allow unquoted Unicode letters and dots behind a feature flag (#20162, @roidelapluie)
 - [ENHANCEMENT] Search API: Warn when participating remote-read storage does not support search. (#19992, @aknuds1)
 - [ENHANCEMENT] Remote Read: Add native histogram prometheus_remote_read_handler_gate_wait_duration_seconds to measure concurrency-gate wait duration, including requests canceled while waiting. (#18355, @ogulcanaydogan)
 - [ENHANCEMENT] Remote Write: Add experimental flag `convert_nhcb_to_classic` to convert NHCB to classic histograms for external systems that dont support NHCBs. (#17205, @Naman-B-Parlecha)
