@@ -398,7 +398,7 @@ func TestConvertNHCBToClassicHistogram_CacheMatchesNoCache(t *testing.T) {
 
 // BenchmarkConvertNHCBToClassic simulates the real hot path: the same NHCB
 // series converted once per scrape/timestamp over a query range. with_cache
-// reuses one ClassicSeriesCache across iterations, as storage/native_histograms_as_classic_querier.go
+// reuses one ClassicSeriesCache across iterations, as storage/native_histograms_as_classic.go
 // does per raw NHCB series; no_cache rebuilds names, le strings and label
 // sets from scratch every call, as the code did before caching.
 func BenchmarkConvertNHCBToClassic(b *testing.B) {
