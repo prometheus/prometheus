@@ -22,20 +22,16 @@ import (
 	"sync"
 
 	"github.com/prometheus/client_golang/prometheus"
-	"github.com/prometheus/client_golang/prometheus/promauto"
 	"go.uber.org/atomic"
 )
-
-var noReferenceReleases = promauto.NewCounter(prometheus.CounterOpts{
-	Namespace: namespace,
-	Subsystem: subsystem,
-	Name:      "string_interner_zero_reference_releases_total",
-	Help:      "The number of times release has been called for strings that are not interned.",
-})
 
 type pool struct {
 	mtx  sync.RWMutex
 	pool map[string]*entry
+
+	// noReferenceReleases belongs to the pool, not to the package, so that the
+	// owner of the pool can register and unregister it with its other metrics.
+	noReferenceReleases prometheus.Counter
 }
 
 type entry struct {
@@ -48,9 +44,17 @@ func newEntry(s string) *entry {
 	return &entry{s: s}
 }
 
+// newPool returns a pool with an unregistered counter. The caller registers
+// p.noReferenceReleases if it wants the counter exposed.
 func newPool() *pool {
 	return &pool{
 		pool: map[string]*entry{},
+		noReferenceReleases: prometheus.NewCounter(prometheus.CounterOpts{
+			Namespace: namespace,
+			Subsystem: subsystem,
+			Name:      "string_interner_zero_reference_releases_total",
+			Help:      "The number of times release has been called for strings that are not interned.",
+		}),
 	}
 }
 
@@ -88,7 +92,7 @@ func (p *pool) release(s string) {
 	p.mtx.RUnlock()
 
 	if !ok {
-		noReferenceReleases.Inc()
+		p.noReferenceReleases.Inc()
 		return
 	}
 
