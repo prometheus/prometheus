@@ -28,7 +28,8 @@ import (
 // Known limitations of the NHCB-to-classic conversion:
 //
 // TODO: Add control labels marking converted series once the naming is
-// agreed on. A design doc would be great (current proposal: __opt_classic_from).
+// agreed on, see https://github.com/prometheus/proposals/pull/105 (current
+// candidates: __opt_classic_from, __stored_as__).
 //
 // TODO: Support and test a single query, which might be better for remote
 // storage, e.g. {__name__=~"<base name>(<suffix>)?", le=~"<le>|"}.
@@ -46,6 +47,8 @@ import (
 //   - Transition polish:
 //     - Prefer live samples over stale markers at transitions
 //     - Merge differing le formatting (e.g. 1 vs 1.0)
+//   - Numeric le matching, so le="1" matches OpenMetrics le="1.0" (see
+//     https://github.com/prometheus/prometheus/pull/19886)
 //   - Stale NHCB should produce a stale marker per generated series.
 
 // NativeHistogramsAsClassicQuerier wraps a Querier and converts NHCB (Native Histogram Custom Buckets)
