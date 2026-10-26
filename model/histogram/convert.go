@@ -203,7 +203,7 @@ func ClassicBucketCounts(nhcb any, buf []float64) (buckets []float64, count, sum
 // identical to a previous call for the same series (see ClassicSeriesCache).
 //
 // When calling this function, caller must ensure that provided nhcb is valid NHCB histogram.
-func ConvertNHCBToClassic(nhcb any, lset labels.Labels, lsetBuilder *labels.Builder, onlySuffix string, cache *ClassicSeriesCache, emitSeriesFn func(labels labels.Labels, value float64) error) error {
+func ConvertNHCBToClassic[T *Histogram|*FloatHistogram](nhcb T, lset labels.Labels, lsetBuilder *labels.Builder, onlySuffix string, cache *ClassicSeriesCache, emitSeriesFn func(labels labels.Labels, value float64) error) error {
 	baseName := lset.Get(model.MetricNameLabel)
 	if baseName == "" {
 		return errors.New("metric name label '__name__' is missing")
