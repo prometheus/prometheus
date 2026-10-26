@@ -14,6 +14,7 @@
 package rwcommon
 
 import (
+	"strconv"
 	"testing"
 
 	"github.com/prometheus/common/model"
@@ -239,6 +240,44 @@ func TestFromIntToFloatOrIntHistogram(t *testing.T) {
 		require.Equal(t, testIntHist, *h.ToIntHistogram())
 		require.Equal(t, testFloatHist, *h.ToFloatHistogram())
 	})
+}
+
+func TestFromIntToFloatHistogramLargeBucketCounts(t *testing.T) {
+	const largeCount = 1<<53 + 1
+	for _, schema := range []int32{0, histogram.CustomBucketsSchema} {
+		t.Run(strconv.Itoa(int(schema)), func(t *testing.T) {
+			h := &histogram.Histogram{
+				Schema:           schema,
+				CounterResetHint: histogram.GaugeType,
+				Count:            largeCount + 1,
+				Sum:              1,
+				PositiveSpans:    []histogram.Span{{Length: 1}, {Offset: 2, Length: 2}},
+				PositiveBuckets:  []int64{largeCount, 1 - largeCount, -1},
+			}
+			if h.UsesCustomBuckets() {
+				h.CustomValues = []float64{1, 2, 3, 4}
+			} else {
+				h.NegativeSpans = []histogram.Span{{Offset: 1, Length: 1}, {Offset: 1, Length: 2}}
+				h.NegativeBuckets = []int64{largeCount, 1 - largeCount, -1}
+				h.Count *= 2
+			}
+			require.NoError(t, h.Validate())
+			for name, convert := range map[string]func() *histogram.FloatHistogram{
+				"v1": func() *histogram.FloatHistogram { return prompb.FromIntHistogram(123, h).ToFloatHistogram() },
+				"v2": func() *histogram.FloatHistogram { return writev2.FromIntHistogram(0, 123, h).ToFloatHistogram() },
+			} {
+				t.Run(name, func(t *testing.T) {
+					got := convert()
+					require.Equal(t, []float64{float64(largeCount), 1, 0}, got.PositiveBuckets)
+					if !h.UsesCustomBuckets() {
+						require.Equal(t, []float64{float64(largeCount), 1, 0}, got.NegativeBuckets)
+					}
+					require.Equal(t, h.CounterResetHint, got.CounterResetHint)
+					require.NoError(t, got.Validate())
+				})
+			}
+		})
+	}
 }
 
 func TestFromFloatToFloatHistogram(t *testing.T) {

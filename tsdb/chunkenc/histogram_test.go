@@ -1186,6 +1186,66 @@ func TestAtFloatHistogram(t *testing.T) {
 	}
 }
 
+func TestAtFloatHistogramLargeBucketCounts(t *testing.T) {
+	const largeCount = 1<<53 + 1
+	for _, schema := range []int32{0, histogram.CustomBucketsSchema} {
+		for _, newChunk := range []func() Chunk{
+			func() Chunk { return NewHistogramChunk() },
+			func() Chunk { return NewHistogramSTChunk() },
+		} {
+			chk := newChunk()
+			t.Run(fmt.Sprintf("%s/schema_%d", chk.Encoding(), schema), func(t *testing.T) {
+				h := &histogram.Histogram{
+					Schema:          schema,
+					Count:           largeCount + 1,
+					Sum:             1,
+					PositiveSpans:   []histogram.Span{{Length: 1}, {Offset: 2, Length: 2}},
+					PositiveBuckets: []int64{largeCount, 1 - largeCount, -1},
+				}
+				if h.UsesCustomBuckets() {
+					h.CustomValues = []float64{1, 2, 3, 4}
+				} else {
+					h.NegativeSpans = []histogram.Span{{Offset: 1, Length: 1}, {Offset: 1, Length: 2}}
+					h.NegativeBuckets = []int64{largeCount, 1 - largeCount, -1}
+					h.Count *= 2
+				}
+				require.NoError(t, h.Validate())
+				app, err := chk.Appender()
+				require.NoError(t, err)
+				for i := range 2 {
+					newc, _, _, err := app.AppendHistogram(nil, 0, int64(i), h, false)
+					require.NoError(t, err)
+					require.Nil(t, newc)
+				}
+
+				it := chk.Iterator(nil)
+				dst := &histogram.FloatHistogram{}
+				for i := range 2 {
+					require.Equal(t, ValHistogram, it.Next())
+					ts, allocated := it.AtFloatHistogram(nil)
+					require.Equal(t, int64(i), ts)
+					expectedHint := histogram.UnknownCounterReset
+					if i > 0 {
+						expectedHint = histogram.NotCounterReset
+					}
+					require.Equal(t, expectedHint, allocated.CounterResetHint)
+					require.Equal(t, []float64{float64(largeCount), 1, 0}, allocated.PositiveBuckets)
+					if !h.UsesCustomBuckets() {
+						require.Equal(t, []float64{float64(largeCount), 1, 0}, allocated.NegativeBuckets)
+					}
+					ts, reused := it.AtFloatHistogram(dst)
+					require.Equal(t, int64(i), ts)
+					require.Same(t, dst, reused)
+					require.Equal(t, allocated, reused)
+					require.NoError(t, reused.Validate())
+				}
+				require.Equal(t, ValNone, it.Next())
+				require.NoError(t, it.Err())
+			})
+		}
+	}
+}
+
 func TestHistogramChunkAppendableGauge(t *testing.T) {
 	eh := &histogram.Histogram{
 		CounterResetHint: histogram.GaugeType,

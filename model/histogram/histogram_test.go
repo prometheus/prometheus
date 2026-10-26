@@ -632,6 +632,56 @@ func TestHistogramToFloat(t *testing.T) {
 	}
 }
 
+func TestHistogramToFloatLargeBucketCounts(t *testing.T) {
+	const largeCount = 1<<53 + 1
+	for _, schema := range []int32{0, CustomBucketsSchema} {
+		t.Run(strconv.Itoa(int(schema)), func(t *testing.T) {
+			h := &Histogram{
+				Schema:           schema,
+				CounterResetHint: GaugeType,
+				Count:            largeCount + 1,
+				Sum:              1,
+				PositiveSpans:    []Span{{Length: 1}, {Offset: 2, Length: 2}},
+				PositiveBuckets:  []int64{largeCount, 1 - largeCount, -1},
+			}
+			if h.UsesCustomBuckets() {
+				h.CustomValues = []float64{1, 2, 3, 4}
+			} else {
+				h.NegativeSpans = []Span{{Offset: 1, Length: 1}, {Offset: 1, Length: 2}}
+				h.NegativeBuckets = []int64{largeCount, 1 - largeCount, -1}
+				h.Count *= 2
+			}
+			require.NoError(t, h.Validate())
+			original := h.Copy()
+
+			for _, reuse := range []bool{false, true} {
+				t.Run(strconv.FormatBool(reuse), func(t *testing.T) {
+					var dst *FloatHistogram
+					if reuse {
+						dst = &FloatHistogram{
+							PositiveBuckets: make([]float64, 4),
+							NegativeBuckets: make([]float64, 4),
+						}
+					}
+					got := h.ToFloat(dst)
+					if reuse {
+						require.Same(t, dst, got)
+					}
+					// Only the large count needs rounding; the following counts
+					// of one and zero must not inherit that rounding error.
+					require.Equal(t, []float64{float64(largeCount), 1, 0}, got.PositiveBuckets)
+					if !h.UsesCustomBuckets() {
+						require.Equal(t, []float64{float64(largeCount), 1, 0}, got.NegativeBuckets)
+					}
+					require.Equal(t, h.CounterResetHint, got.CounterResetHint)
+					require.NoError(t, got.Validate())
+					require.Equal(t, original, h)
+				})
+			}
+		})
+	}
+}
+
 func TestCustomBucketsHistogramToFloat(t *testing.T) {
 	h := Histogram{
 		Schema: CustomBucketsSchema,

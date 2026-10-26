@@ -1064,17 +1064,17 @@ func (it *histogramIterator) AtFloatHistogram(fh *histogram.FloatHistogram) (int
 	copy(fh.NegativeSpans, it.nSpans)
 
 	fh.PositiveBuckets = resize(fh.PositiveBuckets, len(it.pBuckets))
-	var currentPositive float64
+	var currentPositive int64
 	for i, b := range it.pBuckets {
-		currentPositive += float64(b)
-		fh.PositiveBuckets[i] = currentPositive
+		currentPositive += b
+		fh.PositiveBuckets[i] = float64(currentPositive)
 	}
 
 	fh.NegativeBuckets = resize(fh.NegativeBuckets, len(it.nBuckets))
-	var currentNegative float64
+	var currentNegative int64
 	for i, b := range it.nBuckets {
-		currentNegative += float64(b)
-		fh.NegativeBuckets[i] = currentNegative
+		currentNegative += b
+		fh.NegativeBuckets[i] = float64(currentNegative)
 	}
 
 	// Custom values are interned. The single copy is here in the iterator.

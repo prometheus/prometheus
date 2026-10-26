@@ -159,10 +159,10 @@ func spansProtoToSpans(s []BucketSpan) []histogram.Span {
 
 func deltasToCounts(deltas []int64) []float64 {
 	counts := make([]float64, len(deltas))
-	var cur float64
+	var cur int64
 	for i, d := range deltas {
-		cur += float64(d)
-		counts[i] = cur
+		cur += d
+		counts[i] = float64(cur)
 	}
 	return counts
 }

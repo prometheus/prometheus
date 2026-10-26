@@ -386,10 +386,10 @@ func (h *Histogram) ToFloat(fh *FloatHistogram) *FloatHistogram {
 		copy(fh.NegativeSpans, h.NegativeSpans)
 
 		fh.NegativeBuckets = resize(fh.NegativeBuckets, len(h.NegativeBuckets))
-		var currentNegative float64
+		var currentNegative int64
 		for i, b := range h.NegativeBuckets {
-			currentNegative += float64(b)
-			fh.NegativeBuckets[i] = currentNegative
+			currentNegative += b
+			fh.NegativeBuckets[i] = float64(currentNegative)
 		}
 		// Custom values are interned, no need to reset.
 		fh.CustomValues = nil
@@ -399,10 +399,10 @@ func (h *Histogram) ToFloat(fh *FloatHistogram) *FloatHistogram {
 	copy(fh.PositiveSpans, h.PositiveSpans)
 
 	fh.PositiveBuckets = resize(fh.PositiveBuckets, len(h.PositiveBuckets))
-	var currentPositive float64
+	var currentPositive int64
 	for i, b := range h.PositiveBuckets {
-		currentPositive += float64(b)
-		fh.PositiveBuckets[i] = currentPositive
+		currentPositive += b
+		fh.PositiveBuckets[i] = float64(currentPositive)
 	}
 
 	return fh
