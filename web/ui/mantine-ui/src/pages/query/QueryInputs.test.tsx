@@ -17,6 +17,9 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { useAPIQuery } from "../../api/api";
 import ExpressionInput from "./ExpressionInput";
 import RangeInput from "./RangeInput";
+import ResolutionInput from "./ResolutionInput";
+import LabelsExplorer from "./MetricsExplorer/LabelsExplorer";
+import { GraphResolution } from "../../state/queryPageSlice";
 
 vi.mock("../../state/settingsSlice", () => ({
   useSettings: () => ({
@@ -86,6 +89,7 @@ async function reply(value: string) {
 
 beforeEach(() => {
   client = new QueryClient();
+  Element.prototype.scrollIntoView = vi.fn();
   vi.stubGlobal(
     "matchMedia",
     vi.fn().mockReturnValue({
@@ -115,9 +119,80 @@ afterEach(() => {
   pending.length = 0;
   vi.clearAllMocks();
   vi.unstubAllGlobals();
+  Reflect.deleteProperty(Element.prototype, "scrollIntoView");
 });
 
 describe("query input drafts", () => {
+  it.each<{ label: string; resolution: GraphResolution }>([
+    { label: "Low res.", resolution: { type: "auto", density: "low" } },
+    { label: "30s", resolution: { type: "fixed", step: 30000 } },
+    { label: "Enter value...", resolution: { type: "custom", step: 60000 } },
+  ])(
+    "selects $label and ignores deselection",
+    async ({ label, resolution }) => {
+      const onChangeResolution = vi.fn();
+      const { rerender } = render(
+        <ResolutionInput
+          resolution={{ type: "fixed", step: 60000 }}
+          range={600000}
+          onChangeResolution={onChangeResolution}
+        />,
+        { wrapper },
+      );
+      fireEvent.click(screen.getByTitle("Resolution"));
+      fireEvent.click(await screen.findByRole("option", { name: label }));
+      expect(onChangeResolution).toHaveBeenCalledExactlyOnceWith(resolution);
+
+      rerender(
+        <ResolutionInput
+          resolution={resolution}
+          range={600000}
+          onChangeResolution={onChangeResolution}
+        />,
+      );
+      onChangeResolution.mockClear();
+      fireEvent.click(screen.getByTitle("Resolution"));
+      fireEvent.click(await screen.findByRole("option", { name: label }));
+      expect(onChangeResolution).not.toHaveBeenCalled();
+      expect(screen.getByTitle("Resolution")).toHaveValue(label);
+    },
+  );
+
+  it("keeps the selected matcher operator when it is deselected", async () => {
+    const insertText = vi.fn();
+    render(
+      <LabelsExplorer
+        metricName="up"
+        insertText={insertText}
+        hideLabelsExplorer={vi.fn()}
+      />,
+      { wrapper },
+    );
+    await act(async () =>
+      pending[0].resolve({
+        ok: true,
+        json: async () => ({
+          status: "success",
+          data: [{ __name__: "up", job: "prometheus" }],
+        }),
+      }),
+    );
+    fireEvent.click(await screen.findByRole("button", { name: "Filter..." }));
+    fireEvent.change(screen.getByPlaceholderText("label value"), {
+      target: { value: "prometheus" },
+    });
+    const operator = screen.getAllByRole("combobox")[0];
+    fireEvent.click(operator);
+    fireEvent.click(await screen.findByRole("option", { name: "!=" }));
+    expect(operator).toHaveValue("!=");
+    fireEvent.click(operator);
+    fireEvent.click(await screen.findByRole("option", { name: "!=" }));
+    expect(operator).toHaveValue("!=");
+    fireEvent.click(screen.getByRole("button", { name: "Apply" }));
+    fireEvent.click(screen.getByRole("button", { name: "Insert" }));
+    expect(insertText).toHaveBeenCalledExactlyOnceWith('up{job!="prometheus"}');
+  });
+
   it("preserves expression edits and focus until the initial expression changes", () => {
     const { rerender } = render(<ExpressionInput {...props} />, { wrapper });
     const editor = screen.getByRole("textbox", { name: "Expression" });

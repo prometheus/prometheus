@@ -131,3 +131,26 @@ func TestSetFeatureListOptions_MetadataWALRecords(t *testing.T) {
 	require.True(t, c.tsdb.EnableMetadataWALRecords)
 	require.True(t, c.agent.EnableMetadataWALRecords)
 }
+
+func TestSetFeatureListOptions_UnquotedUTF8Names(t *testing.T) {
+	for _, enabled := range []bool{false, true} {
+		c := &flagConfig{}
+		if enabled {
+			c.featureList = []string{"promql-unquoted-utf8-names"}
+		}
+		require.NoError(t, c.setFeatureListOptions(promslog.NewNopLogger()))
+		require.Equal(t, enabled, c.parserOpts.EnableUnquotedUTF8Names)
+	}
+}
+
+func TestSetFeatureListOptions_OTLPDeltaToCumulativeDeprecated(t *testing.T) {
+	var output bytes.Buffer
+	logger := promslog.New(&promslog.Config{Writer: &output})
+	c := &flagConfig{featureList: []string{"otlp-deltatocumulative"}}
+	require.NoError(t, c.setFeatureListOptions(logger))
+
+	require.True(t, c.web.ConvertOTLPDelta)
+	require.Contains(t, output.String(), "otlp-deltatocumulative")
+	require.Contains(t, output.String(), "deprecated")
+	require.Contains(t, output.String(), "Use otlp-native-delta-ingestion instead")
+}

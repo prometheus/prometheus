@@ -24,6 +24,7 @@ import (
 )
 
 func TestDB_CostSamplingQueryable(t *testing.T) {
+	t.Parallel()
 	t.Run("layouts", func(t *testing.T) {
 		for _, tc := range []struct {
 			name                   string

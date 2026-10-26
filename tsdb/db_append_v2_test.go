@@ -708,6 +708,7 @@ func TestDB_SnapshotWithDelete_AppendV2(t *testing.T) {
 }
 
 func TestDB_e2e_AppendV2(t *testing.T) {
+	t.Parallel()
 	const (
 		numDatapoints = 1000
 		numRanges     = 1000
@@ -964,6 +965,7 @@ func TestWALSegmentSizeOptions_AppendV2(t *testing.T) {
 // https://github.com/prometheus/prometheus/issues/9846
 // https://github.com/prometheus/prometheus/issues/9859
 func TestWALReplayRaceOnSamplesLoggedBeforeSeries_AppendV2(t *testing.T) {
+	t.Parallel()
 	const (
 		numRuns                        = 1
 		numSamplesBeforeSeriesCreation = 1000
@@ -975,6 +977,7 @@ func TestWALReplayRaceOnSamplesLoggedBeforeSeries_AppendV2(t *testing.T) {
 		for _, numSamplesAfterSeriesCreation := range []int{1, 1000} {
 			for run := 1; run <= numRuns; run++ {
 				t.Run(fmt.Sprintf("samples after series creation = %d, run = %d, stStorage = %v", numSamplesAfterSeriesCreation, run, enableSTStorage), func(t *testing.T) {
+					t.Parallel()
 					testWALReplayRaceOnSamplesLoggedBeforeSeriesAppendV2(t, numSamplesBeforeSeriesCreation, numSamplesAfterSeriesCreation, enableSTStorage)
 				})
 			}
@@ -3876,11 +3879,14 @@ func TestMultipleEncodingsCommitOrder_AppendV2(t *testing.T) {
 //
 //	are not included in this compaction.
 func TestOOOCompaction_AppendV2(t *testing.T) {
+	t.Parallel()
 	for name, scenario := range sampleTypeScenarios {
 		t.Run(name, func(t *testing.T) {
+			t.Parallel()
 			testOOOCompactionAppenderV2(t, scenario, false)
 		})
 		t.Run(name+"+extra", func(t *testing.T) {
+			t.Parallel()
 			testOOOCompactionAppenderV2(t, scenario, true)
 		})
 	}
@@ -3982,7 +3988,7 @@ func testOOOCompactionAppenderV2(t *testing.T, scenario sampleTypeScenario, addE
 	require.Greater(t, f.Size(), int64(100))
 
 	if addExtraSamples {
-		compactOOOHeadTestingCallback = func() {
+		db.compactOOOHeadTestingCallback = func() {
 			addSample(90, 120)  // Back in time, to generate a new OOO chunk.
 			addSample(300, 330) // Now some samples after the previous highest timestamp.
 			addSample(300, 330) // Repeat to generate an OOO chunk at these timestamps.
@@ -4395,6 +4401,7 @@ func testOOOQueryAfterRestartWithSnapshotAndRemovedWBLAppendV2(t *testing.T, sce
 }
 
 func TestQuerierOOOQuery_AppendV2(t *testing.T) {
+	t.Parallel()
 	scenarios := map[string]struct {
 		appendFunc func(app storage.AppenderV2, ts int64, counterReset bool) (storage.SeriesRef, error)
 		sampleFunc func(ts int64) chunks.Sample
@@ -4446,6 +4453,7 @@ func TestQuerierOOOQuery_AppendV2(t *testing.T) {
 
 	for name, scenario := range scenarios {
 		t.Run(name, func(t *testing.T) {
+			t.Parallel()
 			testQuerierOOOQueryAppendV2(t, scenario.appendFunc, scenario.sampleFunc)
 		})
 	}
@@ -4689,6 +4697,7 @@ func testQuerierOOOQueryAppendV2(t *testing.T,
 }
 
 func TestChunkQuerierOOOQuery_AppendV2(t *testing.T) {
+	t.Parallel()
 	nBucketHistogram := func(n int64) *histogram.Histogram {
 		h := &histogram.Histogram{
 			Count: uint64(n),
@@ -4770,6 +4779,7 @@ func TestChunkQuerierOOOQuery_AppendV2(t *testing.T) {
 	}
 	for name, scenario := range scenarios {
 		t.Run(name, func(t *testing.T) {
+			t.Parallel()
 			testChunkQuerierOOOQueryAppendV2(t, scenario.appendFunc, scenario.sampleFunc, scenario.checkInUseBucket)
 		})
 	}
@@ -5680,6 +5690,7 @@ func testOOODisabledAppendV2(t *testing.T, scenario sampleTypeScenario) {
 }
 
 func TestWBLAndMmapReplay_AppendV2(t *testing.T) {
+	t.Parallel()
 	for name, scenario := range sampleTypeScenarios {
 		t.Run(name, func(t *testing.T) {
 			testWBLAndMmapReplayAppendV2(t, scenario)
@@ -5759,6 +5770,10 @@ func testWBLAndMmapReplayAppendV2(t *testing.T, scenario sampleTypeScenario) {
 
 	// Making a copy of original state of WBL and Mmap files to use it later.
 	mmapDir := mmappedChunksDir(db.head.opts.ChunkDirRoot)
+	// On Windows, head chunk files are preallocated to 128 MiB (MaxHeadChunkFileSize)
+	// with trailing zeros. Truncate the closed file to the non-Windows preallocation
+	// size (128 KiB) before copying mmapDir repeatedly across subtests.
+	require.NoError(t, os.Truncate(filepath.Join(mmapDir, "000001"), chunks.MinWriteBufferSize*2))
 	wblDir := db.head.wbl.Dir()
 	originalWblDir := filepath.Join(t.TempDir(), "original_wbl")
 	originalMmapDir := filepath.Join(t.TempDir(), "original_mmap")
@@ -5861,6 +5876,7 @@ func testWBLAndMmapReplayAppendV2(t *testing.T, scenario sampleTypeScenario) {
 }
 
 func TestOOOHistogramCompactionWithCounterResets_AppendV2(t *testing.T) {
+	t.Parallel()
 	for _, floatHistogram := range []bool{false, true} {
 		ctx := context.Background()
 
@@ -6216,6 +6232,7 @@ func TestOOOHistogramCompactionWithCounterResets_AppendV2(t *testing.T) {
 }
 
 func TestInterleavedInOrderAndOOOHistogramCompactionWithCounterResets_AppendV2(t *testing.T) {
+	t.Parallel()
 	for _, floatHistogram := range []bool{false, true} {
 		ctx := context.Background()
 
@@ -6491,14 +6508,25 @@ func TestWBLCorruption_AppendV2(t *testing.T) {
 	// We corrupt WBL after the sample at 255. So everything added later
 	// should be deleted after replay.
 
+	// segmentSize returns the on-disk size of the named WBL segment. It opens
+	// the file and stats the handle instead of relying on os.ReadDir's cached
+	// directory metadata, which on Windows can be stale for a segment that was
+	// just closed asynchronously by WL.NextSegment.
+	segmentSize := func(name string) int64 {
+		f, err := os.Open(path.Join(db.head.wbl.Dir(), name))
+		require.NoError(t, err)
+		defer f.Close()
+		fi, err := f.Stat()
+		require.NoError(t, err)
+		return fi.Size()
+	}
+
 	// Checking where we corrupt it.
 	require.NoError(t, db.head.wbl.Sync()) // Syncing to make sure wbl is flushed in windows.
 	files, err := os.ReadDir(db.head.wbl.Dir())
 	require.NoError(t, err)
 	require.Len(t, files, 2)
-	f1, err := files[1].Info()
-	require.NoError(t, err)
-	corruptIndex := f1.Size()
+	corruptIndex := segmentSize(files[1].Name())
 	corruptFilePath := path.Join(db.head.wbl.Dir(), files[1].Name())
 
 	// Corrupt the WBL by adding a malformed record.
@@ -6519,15 +6547,9 @@ func TestWBLCorruption_AppendV2(t *testing.T) {
 	files, err = os.ReadDir(db.head.wbl.Dir())
 	require.NoError(t, err)
 	require.Len(t, files, 3)
-	f1, err = files[1].Info()
-	require.NoError(t, err)
-	require.Greater(t, f1.Size(), corruptIndex)
-	f0, err := files[0].Info()
-	require.NoError(t, err)
-	require.Greater(t, f0.Size(), int64(100))
-	f2, err := files[2].Info()
-	require.NoError(t, err)
-	require.Greater(t, f2.Size(), int64(100))
+	require.Greater(t, segmentSize(files[1].Name()), corruptIndex)
+	require.Greater(t, segmentSize(files[0].Name()), int64(100))
+	require.Greater(t, segmentSize(files[2].Name()), int64(100))
 
 	verifySamples := func(expSamples []chunks.Sample) {
 		sort.Slice(expSamples, func(i, j int) bool {
@@ -6563,12 +6585,8 @@ func TestWBLCorruption_AppendV2(t *testing.T) {
 	files, err = os.ReadDir(db.head.wbl.Dir())
 	require.NoError(t, err)
 	require.Len(t, files, 3)
-	f0, err = files[0].Info()
-	require.NoError(t, err)
-	require.Greater(t, f0.Size(), int64(100))
-	f2, err = files[2].Info()
-	require.NoError(t, err)
-	require.Equal(t, int64(0), f2.Size())
+	require.Greater(t, segmentSize(files[0].Name()), int64(100))
+	require.Equal(t, int64(0), segmentSize(files[2].Name()))
 	require.Equal(t, corruptFilePath, path.Join(db.head.wbl.Dir(), files[1].Name()))
 
 	// Verifying that everything after the corruption point is set to 0.
@@ -6589,8 +6607,10 @@ func TestWBLCorruption_AppendV2(t *testing.T) {
 }
 
 func TestOOOMmapCorruption_AppendV2(t *testing.T) {
+	t.Parallel()
 	for name, scenario := range sampleTypeScenarios {
 		t.Run(name, func(t *testing.T) {
+			t.Parallel()
 			testOOOMmapCorruptionAppendV2(t, scenario)
 		})
 	}

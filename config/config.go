@@ -590,16 +590,19 @@ var (
 	PrometheusText1_0_0  ScrapeProtocol = "PrometheusText1.0.0"
 	OpenMetricsText0_0_1 ScrapeProtocol = "OpenMetricsText0.0.1"
 	OpenMetricsText1_0_0 ScrapeProtocol = "OpenMetricsText1.0.0"
-	OpenMetricsText2_0_0 ScrapeProtocol = "OpenMetricsText2.0.0"
-	UTF8NamesHeader      string         = model.EscapingKey + "=" + model.AllowUTF8
+	//nolint:revive // Allow for underscores.
+	OpenMetricsText2_0_0_rc ScrapeProtocol = "OpenMetricsText2.0.0-rc"
+	OpenMetricsText2_0_0    ScrapeProtocol = "OpenMetricsText2.0.0"
+	UTF8NamesHeader         string         = model.EscapingKey + "=" + model.AllowUTF8
 
 	ScrapeProtocolsHeaders = map[ScrapeProtocol]string{
-		PrometheusProto:      "application/vnd.google.protobuf;proto=io.prometheus.client.MetricFamily;encoding=delimited",
-		PrometheusText0_0_4:  "text/plain;version=0.0.4",
-		PrometheusText1_0_0:  "text/plain;version=1.0.0",
-		OpenMetricsText0_0_1: "application/openmetrics-text;version=0.0.1",
-		OpenMetricsText1_0_0: "application/openmetrics-text;version=1.0.0",
-		OpenMetricsText2_0_0: "application/openmetrics-text;version=2.0.0",
+		PrometheusProto:         "application/vnd.google.protobuf;proto=io.prometheus.client.MetricFamily;encoding=delimited",
+		PrometheusText0_0_4:     "text/plain;version=0.0.4",
+		PrometheusText1_0_0:     "text/plain;version=1.0.0",
+		OpenMetricsText0_0_1:    "application/openmetrics-text;version=0.0.1",
+		OpenMetricsText1_0_0:    "application/openmetrics-text;version=1.0.0",
+		OpenMetricsText2_0_0_rc: "application/openmetrics-text;version=2.0.0-rc",
+		OpenMetricsText2_0_0:    "application/openmetrics-text;version=2.0.0",
 	}
 
 	// DefaultScrapeProtocols is the set of scrape protocols that will be proposed

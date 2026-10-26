@@ -1755,6 +1755,52 @@ eval instant at 1ms time()
 eval instant at 50m time()
   3000
 
+# Negative fractional timestamps belong to the preceding second.
+eval instant at 0m year(vector(-0.5))
+  {} 1969
+
+eval instant at 0m month(vector(-0.5))
+  {} 12
+
+eval instant at 0m day_of_month(vector(-0.5))
+  {} 31
+
+eval instant at 0m day_of_week(vector(-0.5))
+  {} 3
+
+eval instant at 0m day_of_year(vector(-0.5))
+  {} 365
+
+eval instant at 0m days_in_month(vector(-0.5))
+  {} 31
+
+eval instant at 0m hour(vector(-0.5))
+  {} 23
+
+eval instant at 0m minute(vector(-60.5))
+  {} 58
+
+# Even values just below zero must use the preceding second.
+eval instant at 0m minute(vector(-0.001))
+  {} 59
+
+eval instant at 0m hour(vector(-3600.001))
+  {} 22
+
+# The implicit query timestamp must also handle negative milliseconds.
+eval instant at 0m last_over_time(year()[1ms:1ms] @ -0.001)
+  {} 1969
+
+eval instant at 0m last_over_time(hour()[1ms:1ms] @ -0.001)
+  {} 23
+
+eval instant at 0m last_over_time(minute()[1ms:1ms] @ -60.001)
+  {} 58
+
+# Positive fractional timestamps remain in the current second.
+eval instant at 0m year(vector(0.5))
+  {} 1970
+
 eval instant at 0m year(vector(1136239445))
   {} 2006
 
