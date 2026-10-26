@@ -185,24 +185,25 @@ func agentOnlyFlag(app *kingpin.Application, name, help string) *kingpin.FlagCla
 type flagConfig struct {
 	configFile string
 
-	agentStoragePath            string
-	serverStoragePath           string
-	notifier                    notifier.Options
-	forGracePeriod              model.Duration
-	outageTolerance             model.Duration
-	resendDelay                 model.Duration
-	maxConcurrentEvals          int64
-	web                         web.Options
-	scrape                      scrape.Options
-	tsdb                        tsdbOptions
-	agent                       agentOptions
-	lookbackDelta               model.Duration
-	webTimeout                  model.Duration
-	queryTimeout                model.Duration
-	queryConcurrency            int
-	queryMaxSamples             int
-	RemoteFlushDeadline         model.Duration
-	maxNotificationsSubscribers int
+	agentStoragePath             string
+	serverStoragePath            string
+	notifier                     notifier.Options
+	forGracePeriod               model.Duration
+	outageTolerance              model.Duration
+	resendDelay                  model.Duration
+	maxConcurrentEvals           int64
+	web                          web.Options
+	scrape                       scrape.Options
+	tsdb                         tsdbOptions
+	agent                        agentOptions
+	lookbackDelta                model.Duration
+	webTimeout                   model.Duration
+	queryTimeout                 model.Duration
+	queryConcurrency             int
+	queryMaxSamples              int
+	convertClassicHistogramsFrom []string
+	RemoteFlushDeadline          model.Duration
+	maxNotificationsSubscribers  int
 
 	enableAutoReload   bool
 	autoReloadInterval model.Duration
@@ -656,6 +657,9 @@ func main() {
 	serverOnlyFlag(a, "query.max-samples", "Maximum number of samples a single query can load into memory. Note that queries will fail if they try to load more samples than this into memory, so this also limits the number of samples a query can return.").
 		Default("50000000").IntVar(&cfg.queryMaxSamples)
 
+	serverOnlyFlag(a, "query.convert-classic-histograms-from", "Native histogram kinds that PromQL converts to classic histograms when classic histogram series are selected. Valid values: nhcb. Requires --enable-feature=promql-native-histograms-as-classic.").
+		Hidden().PlaceHolder("<kind>").EnumsVar(&cfg.convertClassicHistogramsFrom, "nhcb")
+
 	a.Flag("scrape.discovery-reload-interval", "Interval used by scrape manager to throttle target groups updates.").
 		Hidden().Default("5s").SetValue(&cfg.scrape.DiscoveryReloadInterval)
 
@@ -707,6 +711,11 @@ func main() {
 			cfg.autoReloadInterval, _ = model.ParseDuration("1s")
 		}
 		logger.Info("Automatic configuration file reloading enabled", "interval", cfg.autoReloadInterval)
+	}
+
+	if len(cfg.convertClassicHistogramsFrom) > 0 && !cfg.enableNativeHistogramsAsClassic {
+		fmt.Fprintln(os.Stderr, "--query.convert-classic-histograms-from requires --enable-feature=promql-native-histograms-as-classic")
+		os.Exit(1)
 	}
 
 	if cfg.web.MaxSearchLimit < 0 {
@@ -1045,7 +1054,7 @@ func main() {
 			EnableDelayedNameRemoval:        cfg.promqlEnableDelayedNameRemoval,
 			EnableTypeAndUnitLabels:         cfg.scrape.EnableTypeAndUnitLabels,
 			UseStartTimestamps:              cfg.useStartTimestamps,
-			EnableNativeHistogramsAsClassic: cfg.enableNativeHistogramsAsClassic,
+			EnableNativeHistogramsAsClassic: slices.Contains(cfg.convertClassicHistogramsFrom, "nhcb"),
 			EnableQueryCost:                 cfg.enableQueryCost,
 			FeatureRegistry:                 features.DefaultRegistry,
 			Parser:                          promqlParser,
