@@ -105,21 +105,22 @@ func (q *NativeHistogramsAsClassicQuerier) Select(ctx context.Context, sortSerie
 		return classicSet
 	}
 
-	var (
-		leMatchers        []*labels.Matcher
-		matchersWithoutLe = baseMatchers
-	)
-	if suffix == histogram.ClassicSuffixBucket {
-		// Filter in place: extractHistogramSuffix allocates baseMatchers with
-		// capacity len(matchers)+1, leaving room to append metricNameMatcher and emptyLeMatcher.
-		matchersWithoutLe = baseMatchers[:0]
-		for _, matcher := range baseMatchers {
-			if matcher.Name == labels.BucketLabel {
-				leMatchers = append(leMatchers, matcher)
-			} else {
-				matchersWithoutLe = append(matchersWithoutLe, matcher)
-			}
+	// Filter in place: extractHistogramSuffix allocates baseMatchers with
+	// capacity len(matchers)+1, leaving room to append metricNameMatcher and emptyLeMatcher.
+	var leMatchers []*labels.Matcher
+	matchersWithoutLe := baseMatchers[:0]
+	for _, matcher := range baseMatchers {
+		if matcher.Name == labels.BucketLabel {
+			leMatchers = append(leMatchers, matcher)
+		} else {
+			matchersWithoutLe = append(matchersWithoutLe, matcher)
 		}
+	}
+	if suffix != histogram.ClassicSuffixBucket {
+		if !matchesLe(labels.EmptyLabels(), leMatchers) {
+			return classicSet
+		}
+		leMatchers = nil
 	}
 
 	matchersWithoutLe = append(matchersWithoutLe, metricNameMatcher, emptyLeMatcher)

@@ -123,6 +123,7 @@ func TestNativeHistogramsAsClassicQuerier_Select(t *testing.T) {
 		classicSeries     []Series
 		nhcbSeries        []Series
 		passthroughSeries []Series
+		nhcbErr           error
 		expectedCount     int
 		expectedSuffix    string
 		expectedSamples   []seriesSamples
@@ -331,6 +332,29 @@ func TestNativeHistogramsAsClassicQuerier_Select(t *testing.T) {
 					},
 					expectedCount:  0,
 					expectedSuffix: "_sum",
+				},
+				{
+					name: "le matcher not matching empty le on count query skips NHCB select",
+					queryMatchers: []*labels.Matcher{
+						labels.MustNewMatcher(labels.MatchEqual, model.MetricNameLabel, "http_requests_count"),
+						labels.MustNewMatcher(labels.MatchEqual, labels.BucketLabel, "1.0"),
+					},
+					classicSeries: []Series{},
+					nhcbErr:       errors.New("NHCB select must be skipped"),
+					expectedCount: 0,
+				},
+				{
+					name: "le matcher matching empty le on count query converts NHCB",
+					queryMatchers: []*labels.Matcher{
+						labels.MustNewMatcher(labels.MatchEqual, model.MetricNameLabel, "http_requests_count"),
+						labels.MustNewMatcher(labels.MatchNotEqual, labels.BucketLabel, "1.0"),
+					},
+					classicSeries: []Series{},
+					nhcbSeries: []Series{
+						NewListSeries(labels.FromStrings("__name__", "http_requests"), []chunks.Sample{hSample{t: 1, h: nhcb}}),
+					},
+					expectedCount:  1,
+					expectedSuffix: "_count",
 				},
 				{
 					name: "le matcher on count query returns stored classic count series with le label and excludes NHCB",
@@ -600,6 +624,7 @@ func TestNativeHistogramsAsClassicQuerier_Select(t *testing.T) {
 						classicSeries:     tc.classicSeries,
 						nhcbSeries:        tc.nhcbSeries,
 						passthroughSeries: tc.passthroughSeries,
+						nhcbErr:           tc.nhcbErr,
 					}
 					q := NewNativeHistogramsAsClassicQuerier(mock)
 
