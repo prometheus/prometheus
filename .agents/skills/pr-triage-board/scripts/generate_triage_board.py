@@ -67,23 +67,27 @@ query($owner: String!, $name: String!, $limit: Int!, $after: String) {
             author { login }
             state
             submittedAt
+            body
           }
         }
-        comments(last: 5) {
+        comments(last: 10) {
           totalCount
           nodes {
             author { login }
             createdAt
+            body
           }
         }
-        reviewThreads(last: 20) {
+        reviewThreads(last: 30) {
           totalCount
           nodes {
             isResolved
-            comments(last: 1) {
+            comments(last: 10) {
               nodes {
                 author { login }
+                state
                 createdAt
+                body
               }
             }
           }
@@ -273,6 +277,8 @@ def get_proposed_owners(model, files, author):
 def get_current_owners(pr, author):
     curr = []
     for r in pr.get("latestReviews", {}).get("nodes", []):
+        if r.get("state") == "PENDING":
+            continue
         login = (r.get("author") or {}).get("login")
         if (
             login
@@ -364,6 +370,36 @@ def fetch_repo_prs(owner, name, max_prs):
     return total_count, nodes
 
 
+CI_TOPIC_RE = re.compile(
+    r"\b(ci|checks?|tests?|jobs?|workflows?|actions?|build|lint\w*|windows|fuzz\w*)\b",
+    re.I,
+)
+CI_ISSUE_RE = re.compile(
+    r"\b(fail\w*|flak\w*|timeout|timed out|unrelated|re-?run|broken|stall\w*|hang\w*|red|don't run|didn't run|not running)\b",
+    re.I,
+)
+
+
+def is_bot(login):
+    if not login:
+        return True
+    low = login.lower()
+    return (
+        "[bot]" in low
+        or "dependabot" in low
+        or "renovate" in low
+        or "copilot" in low
+        or low in ("prombot", "cla-bot", "netlify")
+    )
+
+
+def has_author_ci_explanation(author_comments_after_commit):
+    for _, body in author_comments_after_commit:
+        if CI_TOPIC_RE.search(body) and CI_ISSUE_RE.search(body):
+            return True
+    return False
+
+
 def analyze_prs(repos, max_prs, maintainer_filter=None):
     now = datetime.datetime.now(datetime.timezone.utc)
     all_prs = []
@@ -377,13 +413,9 @@ def analyze_prs(repos, max_prs, maintainer_filter=None):
 
         for pr in raw_prs:
             author = pr["author"]["login"] if pr.get("author") else "ghost"
-            if (
-                "[bot]" in author
-                or "dependabot" in author.lower()
-                or "renovate" in author.lower()
-                or author == "prombot"
-            ):
+            if is_bot(author):
                 continue
+            author_low = author.lower()
 
             files = [f["path"] for f in pr.get("files", {}).get("nodes", [])]
             current_owners = get_current_owners(pr, author)
@@ -392,7 +424,7 @@ def analyze_prs(repos, max_prs, maintainer_filter=None):
             if maintainer_filter:
                 mf = maintainer_filter.lstrip("@").lower()
                 all_owners_low = {o.lower() for o in current_owners + proposed_owners}
-                if mf not in all_owners_low and author.lower() != mf:
+                if mf not in all_owners_low and author_low != mf:
                     continue
 
             hygiene = check_hygiene(model, pr)
@@ -406,26 +438,136 @@ def analyze_prs(repos, max_prs, maintainer_filter=None):
                 if rollup and rollup.get("state"):
                     ci_state = rollup["state"]
 
-            reviews = pr.get("latestReviews", {}).get("nodes", [])
-            comments = pr.get("comments", {}).get("nodes", [])
+            reviews = [
+                r
+                for r in pr.get("latestReviews", {}).get("nodes", [])
+                if r.get("state") != "PENDING"
+                and r.get("author")
+                and not is_bot(r["author"].get("login"))
+            ]
+            comments = [
+                c
+                for c in pr.get("comments", {}).get("nodes", [])
+                if c.get("author") and not is_bot(c["author"].get("login"))
+            ]
             threads = pr.get("reviewThreads", {}).get("nodes", [])
-            unresolved_threads = sum(1 for t in threads if not t.get("isResolved"))
 
-            events = []
+            events = [(commit_date, author, "commit")]
+            author_comment_times = []
+            author_top_comment_times = []
+            author_comments_after_commit = []
+
             for r in reviews:
-                if r.get("submittedAt") and r.get("author"):
+                if r.get("submittedAt"):
                     events.append((r["submittedAt"], r["author"]["login"], f"review:{r['state']}"))
             for c in comments:
-                if c.get("createdAt") and c.get("author"):
-                    events.append((c["createdAt"], c["author"]["login"], "comment"))
-            events.append((commit_date, author, "commit"))
+                c_login = c["author"]["login"]
+                c_ts = c.get("createdAt") or ""
+                c_body = c.get("body") or ""
+                if c_ts:
+                    events.append((c_ts, c_login, "comment"))
+                    if c_login.lower() == author_low:
+                        author_comment_times.append(c_ts)
+                        author_top_comment_times.append(c_ts)
+                        if c_ts >= commit_date:
+                            author_comments_after_commit.append((c_ts, c_body))
+
+            for t in threads:
+                for tc in t.get("comments", {}).get("nodes", []):
+                    if (
+                        tc.get("state") != "PENDING"
+                        and tc.get("author")
+                        and not is_bot(tc["author"].get("login"))
+                    ):
+                        tc_login = tc["author"]["login"]
+                        tc_ts = tc.get("createdAt") or ""
+                        tc_body = tc.get("body") or ""
+                        if tc_ts:
+                            events.append((tc_ts, tc_login, "review-thread"))
+                            if tc_login.lower() == author_low:
+                                author_comment_times.append(tc_ts)
+                                if tc_ts >= commit_date:
+                                    author_comments_after_commit.append((tc_ts, tc_body))
+
             events.sort(key=lambda x: x[0])
             _, last_actor, last_type = events[-1]
 
-            changes_requested = any(r.get("state") == "CHANGES_REQUESTED" for r in reviews)
-            approved = any(r.get("state") == "APPROVED" for r in reviews)
+            latest_author_activity = max([commit_date] + author_comment_times)
+            latest_author_top_comment = (
+                max(author_top_comment_times) if author_top_comment_times else ""
+            )
+
+            approved_at_by_reviewer = {
+                r["author"]["login"].lower(): r["submittedAt"]
+                for r in reviews
+                if r.get("state") == "APPROVED" and r.get("submittedAt")
+            }
+
+            unanswered_events = []
+            for t in threads:
+                if t.get("isResolved"):
+                    continue
+                t_comments = [
+                    tc
+                    for tc in t.get("comments", {}).get("nodes", [])
+                    if tc.get("state") != "PENDING"
+                    and tc.get("author")
+                    and not is_bot(tc["author"].get("login"))
+                ]
+                if not t_comments:
+                    continue
+                last_tc = t_comments[-1]
+                last_tc_login = last_tc["author"]["login"]
+                last_tc_ts = last_tc.get("createdAt") or ""
+                if last_tc_login.lower() != author_low:
+                    if latest_author_top_comment > last_tc_ts:
+                        continue
+                    author_in_thread = any(
+                        tc["author"]["login"].lower() == author_low for tc in t_comments
+                    )
+                    app_ts = approved_at_by_reviewer.get(last_tc_login.lower(), "")
+                    if author_in_thread and app_ts >= last_tc_ts:
+                        continue
+                    unanswered_events.append((last_tc_ts, last_tc_login, "review-thread"))
+
+            for c in comments:
+                c_login = c["author"]["login"]
+                c_ts = c.get("createdAt") or ""
+                if c_login.lower() != author_low and c_ts > latest_author_activity:
+                    unanswered_events.append((c_ts, c_login, "comment"))
+
+            for r in reviews:
+                r_login = r["author"]["login"]
+                r_ts = r.get("submittedAt") or ""
+                r_state = r.get("state") or ""
+                r_body = (r.get("body") or "").strip()
+                if r_login.lower() == author_low:
+                    continue
+                if r_state == "CHANGES_REQUESTED" and r_ts > latest_author_activity:
+                    unanswered_events.append((r_ts, r_login, "review:CHANGES_REQUESTED"))
+                elif r_state == "COMMENTED" and r_body and r_ts > latest_author_activity:
+                    unanswered_events.append((r_ts, r_login, "review:COMMENTED"))
+
+            if unanswered_events:
+                unanswered_events.sort(key=lambda x: x[0])
+                _, last_actor, last_type = unanswered_events[-1]
+
+            non_author_reviews = [
+                r for r in reviews if r["author"]["login"].lower() != author_low
+            ]
+            latest_review_ts = max(
+                (r.get("submittedAt") or "" for r in non_author_reviews), default=""
+            )
+            approved = any(r.get("state") == "APPROVED" for r in non_author_reviews)
             labels = [l["name"] for l in pr.get("labels", {}).get("nodes", [])]
 
+            ci_green = ci_state == "SUCCESS"
+            ci_explained = (not ci_green) and has_author_ci_explanation(
+                author_comments_after_commit
+            )
+
+            # A PR is waiting on a maintainer only when all comments/threads are
+            # resolved or responded to, and CI is green (or explained by the author).
             if pr["isDraft"]:
                 status_bucket = "Draft"
             elif pr.get("mergeable") == "CONFLICTING" or "needs-rebase" in labels:
@@ -436,13 +578,11 @@ def analyze_prs(repos, max_prs, maintainer_filter=None):
                 "NONE",
             ):
                 status_bucket = "Needs /workflow-approve"
-            elif ci_state in ("FAILURE", "ERROR"):
+            elif unanswered_events:
+                status_bucket = "Waiting on Author"
+            elif not (ci_green or ci_explained):
                 status_bucket = "Failing CI"
-            elif changes_requested and last_actor != author:
-                status_bucket = "Waiting on Author"
-            elif last_actor != author and unresolved_threads > 0:
-                status_bucket = "Waiting on Author"
-            elif len(reviews) > 0 and last_actor == author:
+            elif non_author_reviews and latest_author_activity > latest_review_ts:
                 status_bucket = "Updated After Review"
             else:
                 status_bucket = "Waiting on Maintainer"
@@ -459,6 +599,7 @@ def analyze_prs(repos, max_prs, maintainer_filter=None):
                     "owners_cell": format_owners_cell(current_owners, proposed_owners),
                     "status_bucket": status_bucket,
                     "ci_state": ci_state,
+                    "ci_explained": ci_explained,
                     "hygiene": hygiene,
                     "additions": pr.get("additions", 0),
                     "deletions": pr.get("deletions", 0),
@@ -490,9 +631,11 @@ def render_markdown(repos, now, repo_totals, prs, max_prs, maintainer_filter=Non
     def fmt_hygiene(h):
         return "clean" if not h else ", ".join(f"`{x}`" for x in h)
 
-    def fmt_ci(state):
+    def fmt_ci(state, explained=False):
         if state == "SUCCESS":
             return "pass"
+        if explained:
+            return "fail (commented)" if state in ("FAILURE", "ERROR") else "running (commented)"
         if state == "PENDING_APPROVAL":
             return "awaiting-approval"
         if state == "PENDING":
@@ -579,7 +722,7 @@ def render_markdown(repos, now, repo_totals, prs, max_prs, maintainer_filter=Non
     updated.sort(key=sort_key)
 
     lines.append("## Updated After Review (Author Pushed Fixes)")
-    lines.append("*A maintainer already reviewed these and the author pushed new commits since the last review/comment.*")
+    lines.append("*A maintainer already reviewed these. All comments are resolved or responded to, and CI is green (or the author commented why it is not green).*")
     lines.append("")
     if updated:
         lines.append("| PR | Title | Author | CI | Diff | Hygiene | Pushed | Owners |")
@@ -587,7 +730,7 @@ def render_markdown(repos, now, repo_totals, prs, max_prs, maintainer_filter=Non
         for p in updated:
             app = " *(approved)*" if p["approved"] else ""
             lines.append(
-                f"| {pr_link(p)}{app} | {clean_title(p['title'])} | @{p['author']} | `{fmt_ci(p['ci_state'])}` | `+{p['additions']}/-{p['deletions']}` | {fmt_hygiene(p['hygiene'])} | {age_str(p['commitDate'])} | {p['owners_cell']} |"
+                f"| {pr_link(p)}{app} | {clean_title(p['title'])} | @{p['author']} | `{fmt_ci(p['ci_state'], p.get('ci_explained', False))}` | `+{p['additions']}/-{p['deletions']}` | {fmt_hygiene(p['hygiene'])} | {age_str(p['commitDate'])} | {p['owners_cell']} |"
             )
     else:
         lines.append("_No PRs currently in this bucket._")
@@ -629,7 +772,7 @@ def render_markdown(repos, now, repo_totals, prs, max_prs, maintainer_filter=Non
     waiting.sort(key=sort_key)
 
     lines.append("## Waiting on Maintainer (Oldest First)")
-    lines.append("*Green/running CI, no merge conflicts, waiting for initial review or maintainer reply.*")
+    lines.append("*All comments are resolved or responded to, CI is green (or the author commented why it is not green), and there are no merge conflicts.*")
     lines.append("")
     if waiting:
         lines.append("| PR | Title | Author | CI | Diff | Hygiene | Waiting Since | Owners |")
@@ -637,7 +780,7 @@ def render_markdown(repos, now, repo_totals, prs, max_prs, maintainer_filter=Non
         for p in waiting:
             app = " *(approved)*" if p["approved"] else ""
             lines.append(
-                f"| {pr_link(p)}{app} | {clean_title(p['title'])} | @{p['author']} | `{fmt_ci(p['ci_state'])}` | `+{p['additions']}/-{p['deletions']}` ({p['changedFiles']}f) | {fmt_hygiene(p['hygiene'])} | {age_str(p['commitDate'])} ({p['commitDate'][:10]}) | {p['owners_cell']} |"
+                f"| {pr_link(p)}{app} | {clean_title(p['title'])} | @{p['author']} | `{fmt_ci(p['ci_state'], p.get('ci_explained', False))}` | `+{p['additions']}/-{p['deletions']}` ({p['changedFiles']}f) | {fmt_hygiene(p['hygiene'])} | {age_str(p['commitDate'])} ({p['commitDate'][:10]}) | {p['owners_cell']} |"
             )
     else:
         lines.append("_No PRs currently waiting on maintainer._")
@@ -650,13 +793,13 @@ def render_markdown(repos, now, repo_totals, prs, max_prs, maintainer_filter=Non
             "Waiting on Author",
             "Maintainer left feedback or requested changes; ball is in the author's court.",
         ),
-        ("Failing CI", "Failing CI", "Latest commit has failing status checks."),
+        ("Failing CI", "Failing CI", "CI is not green and there is no author comment explaining why."),
         ("Needs Rebase (Merge Conflicts)", "Needs Rebase", "Conflicting with base branch."),
     ]:
         b_prs = [p for p in prs if p["status_bucket"] == b_key]
         b_prs.sort(key=sort_key)
         lines.append("<details>")
-        lines.append(f"<summary><b>{b_title} ({len(b_prs)})</b> — {b_desc}</summary>")
+        lines.append(f"<summary><b>{b_title} ({len(b_prs)})</b>: {b_desc}</summary>")
         lines.append("")
         if b_prs:
             lines.append("| PR | Title | Author | Last Actor | Hygiene | Updated | Owners |")
