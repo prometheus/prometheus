@@ -206,9 +206,14 @@ cli-documentation:
 	$(GO) run ./cmd/promtool/ write-documentation > docs/command-line/promtool.md
 
 .PHONY: check-go-mod-version
-check-go-mod-version:
+check-go-mod-version: test-sync-go-versions
 	@echo ">> checking go.mod version matching"
 	@./scripts/check-go-mod-version.sh
+
+.PHONY: test-sync-go-versions
+test-sync-go-versions:
+	@echo ">> testing Go version synchronization"
+	@bash ./scripts/test-sync-go-versions.sh
 
 .PHONY: update-features-testdata
 update-features-testdata:
