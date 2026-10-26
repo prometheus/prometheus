@@ -199,6 +199,9 @@ func (m *multipleSeriesSet) Next() bool {
 		return false
 	}
 	if !m.seriesSet[m.idx].Next() {
+		if m.seriesSet[m.idx].Err() != nil {
+			return false
+		}
 		m.idx++
 		return m.Next()
 	}
