@@ -86,6 +86,11 @@ func (s *Storage) Notify() {
 	s.rws.Notify()
 }
 
+// SetSeriesMetadataGetter sets the optional native metadata lookup source for remote write queues.
+func (s *Storage) SetSeriesMetadataGetter(g SeriesMetadataGetter) {
+	s.rws.SetSeriesMetadataGetter(g)
+}
+
 // ApplyConfig updates the state as the new config requires.
 func (s *Storage) ApplyConfig(conf *config.Config) error {
 	s.mtx.Lock()

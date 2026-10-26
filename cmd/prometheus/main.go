@@ -80,6 +80,7 @@ import (
 	"github.com/prometheus/prometheus/tsdb"
 	"github.com/prometheus/prometheus/tsdb/agent"
 	"github.com/prometheus/prometheus/tsdb/chunkenc"
+	"github.com/prometheus/prometheus/tsdb/chunks"
 	"github.com/prometheus/prometheus/tsdb/fileutil"
 	"github.com/prometheus/prometheus/util/compression"
 	"github.com/prometheus/prometheus/util/documentcli"
@@ -963,6 +964,7 @@ func main() {
 		remoteStorage = remote.NewStorage(logger.With("component", "remote"), prometheus.DefaultRegisterer, localStorage.StartTime, localStoragePath, time.Duration(cfg.RemoteFlushDeadline), scraper, cfg.scrape.EnableTypeAndUnitLabels)
 		fanoutStorage = storage.NewFanout(logger, localStorage, remoteStorage)
 	)
+	remoteStorage.SetSeriesMetadataGetter(localStorage)
 
 	var (
 		ctxWeb, cancelWeb = context.WithCancel(context.Background())
@@ -2153,6 +2155,16 @@ func (s *readyStorage) WALReplayStatus() (tsdb.WALReplayStatus, error) {
 		return x.Head.WALReplayStatus.GetWALReplayStatus(), nil
 	}
 	return tsdb.WALReplayStatus{}, tsdb.ErrNotReady
+}
+
+var _ remote.SeriesMetadataGetter = (*readyStorage)(nil)
+
+// SeriesNativeMetricMetadata implements remote.SeriesMetadataGetter.
+func (s *readyStorage) SeriesNativeMetricMetadata(ref chunks.HeadSeriesRef, ts int64) (metadata.Metadata, bool) {
+	if db, ok := s.get().(*tsdb.DB); ok {
+		return db.SeriesNativeMetricMetadata(ref, ts)
+	}
+	return metadata.Metadata{}, false
 }
 
 // ErrNotReady is returned if the underlying scrape manager is not ready yet.

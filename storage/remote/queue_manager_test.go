@@ -404,6 +404,67 @@ func TestWALMetadataDelivery(t *testing.T) {
 	require.Equal(t, int64(len(recs.Samples)), qm.dataOut.newEvents.Load())
 }
 
+type testSeriesMetadataGetter map[chunks.HeadSeriesRef]metadata.Metadata
+
+func (g testSeriesMetadataGetter) SeriesNativeMetricMetadata(ref chunks.HeadSeriesRef, _ int64) (metadata.Metadata, bool) {
+	m, ok := g[ref]
+	return m, ok
+}
+
+func TestNativeMetadataDelivery(t *testing.T) {
+	dir := t.TempDir()
+	s := NewStorage(nil, nil, nil, dir, defaultFlushDeadline, nil, false)
+	t.Cleanup(func() { require.NoError(t, s.Close()) })
+
+	cfg := config.DefaultQueueConfig
+	cfg.BatchSendDeadline = model.Duration(100 * time.Millisecond)
+	cfg.MaxShards = 1
+
+	writeConfig := baseRemoteWriteConfig("http://test-storage.com")
+	writeConfig.QueueConfig = cfg
+	writeConfig.ProtobufMessage = remoteapi.WriteV2MessageType
+
+	conf := &config.Config{
+		GlobalConfig: config.DefaultGlobalConfig,
+		RemoteWriteConfigs: []*config.RemoteWriteConfig{
+			writeConfig,
+		},
+	}
+
+	n := 3
+	recs := testwal.GenerateRecords(recCase{Series: n, SamplesPerSeries: n})
+
+	getter := make(testSeriesMetadataGetter, len(recs.Metadata))
+	for _, m := range recs.Metadata {
+		getter[m.Ref] = metadata.Metadata{
+			Type: record.ToMetricType(m.Type),
+			Unit: m.Unit,
+			Help: m.Help,
+		}
+	}
+	s.SetSeriesMetadataGetter(getter)
+
+	require.NoError(t, s.ApplyConfig(conf))
+	hash, err := toHash(writeConfig)
+	require.NoError(t, err)
+	qm := s.rws.queues[hash]
+
+	c := NewTestWriteClient(remoteapi.WriteV2MessageType)
+	qm.SetClient(c)
+
+	qm.StoreSeries(recs.Series, 0)
+	// Do not call qm.StoreMetadata: metadata must be resolved via SeriesMetadataGetter.
+	require.Empty(t, qm.seriesMetadata)
+
+	c.expectSamples(recs.Samples, recs.Series)
+	c.expectMetadataForBatch(recs.Metadata, recs.Series, recs.Samples, nil, nil, nil)
+	qm.Append(recs.Samples)
+	c.waitForExpectedData(t, 30*time.Second)
+
+	require.Len(t, qm.seriesMetadata, n)
+	require.Equal(t, int64(len(recs.Samples)), qm.dataOut.newEvents.Load())
+}
+
 func TestSampleDeliveryTimeout(t *testing.T) {
 	t.Parallel()
 	for _, protoMsg := range []remoteapi.WriteMessageType{remoteapi.WriteV1MessageType, remoteapi.WriteV2MessageType} {

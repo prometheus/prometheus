@@ -78,6 +78,7 @@ type WriteStorage struct {
 	// For timestampTracker.
 	highestTimestamp        *maxTimestamp
 	enableTypeAndUnitLabels bool
+	metadataGetter          SeriesMetadataGetter
 }
 
 // NewWriteStorage creates and runs a WriteStorage.
@@ -135,6 +136,17 @@ func (rws *WriteStorage) Notify() {
 	for _, q := range rws.queues {
 		// These should all be non blocking
 		q.watcher.Notify()
+	}
+}
+
+// SetSeriesMetadataGetter sets the optional native metadata lookup source for remote write queues.
+func (rws *WriteStorage) SetSeriesMetadataGetter(g SeriesMetadataGetter) {
+	rws.mtx.Lock()
+	defer rws.mtx.Unlock()
+
+	rws.metadataGetter = g
+	for _, q := range rws.queues {
+		q.SetSeriesMetadataGetter(g)
 	}
 }
 
@@ -223,6 +235,7 @@ func (rws *WriteStorage) ApplyConfig(conf *config.Config) error {
 			rwConf.FailedRequestLogging,
 			rwConf.ConvertNHCBToClassic,
 		)
+		newQueues[hash].SetSeriesMetadataGetter(rws.metadataGetter)
 		// Keep track of which queues are new so we know which to start.
 		newHashes = append(newHashes, hash)
 	}

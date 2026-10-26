@@ -425,6 +425,11 @@ type WriteClient interface {
 	Endpoint() string
 }
 
+// SeriesMetadataGetter looks up per-series metric metadata by HeadSeriesRef and timestamp.
+type SeriesMetadataGetter interface {
+	SeriesNativeMetricMetadata(ref chunks.HeadSeriesRef, ts int64) (metadata.Metadata, bool)
+}
+
 // QueueManager manages a queue of samples to be sent to the Storage
 // indicated by the provided WriteClient. Implements writeTo interface
 // used by WAL Watcher.
@@ -453,9 +458,10 @@ type QueueManager struct {
 	protoMsg    remoteapi.WriteMessageType
 	compr       compression.Type
 
-	seriesMtx        sync.Mutex // Covers seriesLabels, seriesMetadata, droppedSeries, the NHCB fields and builder.
+	seriesMtx        sync.Mutex // Covers seriesLabels, seriesMetadata, metadataGetter, droppedSeries, the NHCB fields and builder.
 	seriesLabels     map[chunks.HeadSeriesRef]labels.Labels
 	seriesMetadata   map[chunks.HeadSeriesRef]unique.Handle[metadata.Metadata]
+	metadataGetter   SeriesMetadataGetter
 	droppedSeries    map[chunks.HeadSeriesRef]struct{}
 	nhcbSeriesBounds map[chunks.HeadSeriesRef]*nhcbLayout // Layout of each converted NHCB series.
 	nhcbLayouts      map[string]*nhcbLayout               // Keyed by the encoded bounds.
@@ -569,7 +575,7 @@ func NewQueueManager(
 	// ships them alongside series. If both mechanisms are set, the new one
 	// takes precedence by implicitly disabling the older one.
 	if t.mcfg.Send && t.protoMsg != remoteapi.WriteV1MessageType {
-		logger.Warn("'metadata_config.send' is ignored when using Remote Write 2.0; metadata is sent when --enable-feature=metadata-wal-records or --enable-feature=type-and-unit-labels is enabled")
+		logger.Warn("'metadata_config.send' is ignored when using Remote Write 2.0; metadata is sent when --enable-feature=metadata-wal-records, --enable-feature=native-metadata, or --enable-feature=type-and-unit-labels is enabled")
 		t.mcfg.Send = false
 	}
 
@@ -772,7 +778,7 @@ outer:
 		}
 		// TODO(cstyan): Handle or at least log an error if no metadata is found.
 		// See https://github.com/prometheus/prometheus/issues/14405
-		meta := t.seriesMetadata[s.Ref]
+		meta := t.metadataForSeriesLocked(s.Ref, s.T)
 		if t.convertNHCBToClassic {
 			if _, ok := t.nhcbSeriesBounds[s.Ref]; ok {
 				// A float sample for a converted NHCB series is either its stale marker or
@@ -868,7 +874,7 @@ outer:
 				}
 			}
 		}
-		meta := t.seriesMetadata[e.Ref]
+		meta := t.metadataForSeriesLocked(e.Ref, e.T)
 		t.seriesMtx.Unlock()
 		// This will only loop if the queues are being resharded.
 		backoff := t.cfg.MinBackoff
@@ -1121,7 +1127,7 @@ outer:
 			t.seriesMtx.Unlock()
 			continue
 		}
-		meta := t.seriesMetadata[h.Ref]
+		meta := t.metadataForSeriesLocked(h.Ref, h.T)
 		if transition {
 			var replacement *timeSeries
 			if t.sendNativeHistograms {
@@ -1217,7 +1223,7 @@ outer:
 			t.seriesMtx.Unlock()
 			continue
 		}
-		meta := t.seriesMetadata[h.Ref]
+		meta := t.metadataForSeriesLocked(h.Ref, h.T)
 		if transition {
 			var replacement *timeSeries
 			if t.sendNativeHistograms {
@@ -1350,6 +1356,35 @@ func (t *QueueManager) StoreMetadata(meta []record.RefMetadata) {
 			Help: m.Help,
 		})
 	}
+}
+
+// SetSeriesMetadataGetter sets the optional native metadata lookup source for remote write v2.
+func (t *QueueManager) SetSeriesMetadataGetter(g SeriesMetadataGetter) {
+	t.seriesMtx.Lock()
+	defer t.seriesMtx.Unlock()
+	t.metadataGetter = g
+}
+
+// metadataForSeriesLocked resolves the metadata handle for ref at ts.
+// NOTE: When native metadata is available from local storage, the resolved
+// handle is cached in seriesMetadata so subsequent samples with unchanged
+// metadata reuse the handle without re-interning via unique.Make.
+// Caller must hold t.seriesMtx.
+func (t *QueueManager) metadataForSeriesLocked(ref chunks.HeadSeriesRef, ts int64) unique.Handle[metadata.Metadata] {
+	meta := t.seriesMetadata[ref]
+	if t.protoMsg == remoteapi.WriteV1MessageType || t.metadataGetter == nil {
+		return meta
+	}
+	m, ok := t.metadataGetter.SeriesNativeMetricMetadata(ref, ts)
+	if !ok {
+		return meta
+	}
+	if !metadata.IsZeroHandle(meta) && meta.Value() == m {
+		return meta
+	}
+	meta = unique.Make(m)
+	t.seriesMetadata[ref] = meta
+	return meta
 }
 
 // UpdateSeriesSegment updates the segment number held against the series,
