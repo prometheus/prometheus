@@ -699,12 +699,20 @@ func TestWALReplay_AppendV2(t *testing.T) {
 		lastTs        = 500
 	)
 
-	for _, unknownRecord := range []bool{false, true} {
-		t.Run(fmt.Sprintf("unknownRecord=%t", unknownRecord), func(t *testing.T) {
+	var enc record.Encoder
+	for _, tc := range []struct {
+		name   string
+		record []byte
+	}{
+		{name: "baseline"},
+		{name: "unknown", record: []byte{255, 1, 2, 3}},
+		{name: "min valid time", record: enc.MinValidTime(100, nil)},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
 			s := createTestAgentDB(t, nil, DefaultOptions())
-			if unknownRecord {
-				// Valid records following an unknown type must still be replayed.
-				require.NoError(t, s.wal.Log([]byte{255, 1, 2, 3}))
+			if tc.record != nil {
+				// Valid records following an ignored type must still be replayed.
+				require.NoError(t, s.wal.Log(tc.record))
 			}
 			app := s.AppenderV2(context.TODO())
 
@@ -1340,26 +1348,52 @@ func TestMetadataInWAL_AppenderV2(t *testing.T) {
 		}
 	})
 
-	t.Run("stale sample skips metadata", func(t *testing.T) {
-		opts := DefaultOptions()
-		opts.EnableMetadataWALRecords = true
-		s := createTestAgentDB(t, nil, opts)
-		defer s.Close()
+	for _, tc := range []struct {
+		name string
+		h    *histogram.Histogram
+		fh   *histogram.FloatHistogram
+	}{
+		{name: "float"},
+		{name: "histogram", h: &histogram.Histogram{Sum: math.Float64frombits(value.StaleNaN)}},
+		{name: "float histogram", fh: &histogram.FloatHistogram{Sum: math.Float64frombits(value.StaleNaN)}},
+	} {
+		t.Run("stale "+tc.name+" preserves metadata", func(t *testing.T) {
+			opts := DefaultOptions()
+			opts.EnableMetadataWALRecords = true
+			s := createTestAgentDB(t, nil, opts)
+			defer s.Close()
 
-		app := s.AppenderV2(t.Context())
-		lbls := labels.FromStrings("a", "b")
-		m := metadata.Metadata{Type: "gauge", Unit: "unit_1", Help: "help_1"}
-		_, err := app.Append(0, lbls, 0, 1000, math.Float64frombits(value.StaleNaN), nil, nil, storage.AOptions{Metadata: m})
-		require.NoError(t, err)
-		require.NoError(t, app.Commit())
+			lbls := labels.FromStrings("a", "b")
+			var wantMetadata []record.RefMetadata
+			for i, help := range []string{"help_1", "help_2"} {
+				app := s.AppenderV2(t.Context())
+				m := metadata.Metadata{Type: "gauge", Unit: "unit_1", Help: help}
+				ref, err := app.Append(0, lbls, 0, int64(1000+i), math.Float64frombits(value.StaleNaN), tc.h, tc.fh, storage.AOptions{
+					Metadata: m,
+					Exemplars: []exemplar.Exemplar{{
+						Labels: labels.FromStrings("trace_id", "abc"),
+						Value:  1, Ts: int64(1000 + i), HasTs: true,
+					}},
+				})
+				require.NoError(t, err)
+				require.NoError(t, app.Commit())
+				wantMetadata = append(wantMetadata, record.RefMetadata{
+					Ref: chunks.HeadSeriesRef(ref), Type: record.GetMetricType(m.Type), Unit: m.Unit, Help: m.Help,
+				})
+			}
 
-		recs := readTestWAL(t, s.wal.Dir())
-		require.NotEmpty(t, recs)
-		for _, rec := range recs {
-			_, ok := rec.([]record.RefMetadata)
-			require.False(t, ok, "stale sample append should not write metadata to WAL")
-		}
-	})
+			var gotMetadata []record.RefMetadata
+			for _, rec := range readTestWAL(t, s.wal.Dir()) {
+				switch rec := rec.(type) {
+				case []record.RefMetadata:
+					gotMetadata = append(gotMetadata, rec...)
+				case []record.RefExemplar:
+					require.Empty(t, rec, "stale samples must not append exemplars")
+				}
+			}
+			require.Equal(t, wantMetadata, gotMetadata)
+		})
+	}
 
 	t.Run("metadata logged and deduplicated", func(t *testing.T) {
 		opts := DefaultOptions()
@@ -1582,7 +1616,7 @@ func TestMetadataCheckpointing_AppenderV2(t *testing.T) {
 				err = Checkpoint(promslog.NewNopLogger(), s.wal, 0, 1000, s.series.allSeries(), deletedSeriesIter(s.deleted, 0))
 				require.NoError(t, err)
 			} else {
-				_, err = wlog.Checkpoint(promslog.NewNopLogger(), s.wal, first, 0, s.keepSeriesInWALCheckpointFn(0), 0, false, false)
+				_, err = wlog.Checkpoint(promslog.NewNopLogger(), s.wal, first, 0, s.keepSeriesInWALCheckpointFn(0), 0, false)
 				require.NoError(t, err)
 			}
 
