@@ -16,6 +16,8 @@ package tsdb
 import (
 	"math"
 	"sync"
+
+	"go.uber.org/atomic"
 )
 
 // isolationState holds the isolation information.
@@ -36,8 +38,20 @@ type isolationState struct {
 func (i *isolationState) Close() {
 	i.isolation.readMtx.Lock()
 	defer i.isolation.readMtx.Unlock()
+	// The oldest open read is the tail (readsOpen.prev), and it holds the read side
+	// of the low watermark. Only closing that read can raise the watermark, so the
+	// store below runs only in that case. It stays under readMtx, so no extra lock
+	// is needed.
+	wasOldest := i == i.isolation.readsOpen.prev
 	i.next.prev = i.prev
 	i.prev.next = i.next
+	if wasOldest {
+		if i.isolation.readsOpen.prev != i.isolation.readsOpen {
+			i.isolation.oldestReadLowWatermark.Store(i.isolation.readsOpen.prev.lowWatermark)
+		} else {
+			i.isolation.oldestReadLowWatermark.Store(math.MaxUint64)
+		}
+	}
 }
 
 func (i *isolationState) IsolationDisabled() bool {
@@ -53,6 +67,25 @@ type isolationAppender struct {
 
 // isolation is the global isolation state.
 type isolation struct {
+	// The low watermark is min(lowestOpenAppendID, oldestReadLowWatermark). Both
+	// fields are atomics, so any goroutine can read the watermark without a lock.
+	//   - lowestOpenAppendID is the lowest open appendID. It is the last issued ID
+	//     when no appenders are open.
+	//   - oldestReadLowWatermark is the low watermark of the oldest open read. It
+	//     is math.MaxUint64 when no reads are open.
+	// A lock-free read can return a stale, lower value. This is safe. It only
+	// delays txRing cleanup a little.
+	//
+	// The append path writes lowestOpenAppendID under appendMtx. The read path
+	// writes oldestReadLowWatermark under readMtx. The padding puts each field on
+	// its own cache line, so the two paths do not share a line and slow each other.
+	lowestOpenAppendID atomic.Uint64
+	// Padding to avoid the two watermark atomics being on the same cache line.
+	_                      [56]byte
+	oldestReadLowWatermark atomic.Uint64
+	// Padding to avoid the next fields being on the watermark cache line.
+	_ [56]byte
+
 	// Mutex for accessing lastAppendID and appendsOpen.
 	appendMtx sync.RWMutex
 	// Which appends are currently in progress.
@@ -82,40 +115,26 @@ func newIsolation(disabled bool) *isolation {
 	appender.next = appender
 	appender.prev = appender
 
-	return &isolation{
+	i := &isolation{
 		appendsOpen:     map[uint64]*isolationAppender{},
 		appendsOpenList: appender,
 		readsOpen:       isoState,
 		disabled:        disabled,
 		appendersPool:   sync.Pool{New: func() any { return &isolationAppender{} }},
 	}
+	// No reads open yet, so reads put no constraint on the low watermark.
+	i.oldestReadLowWatermark.Store(math.MaxUint64)
+	return i
 }
 
 // lowWatermark returns the appendID below which we no longer need to track
-// which appends were from which appendID.
+// which appends were from which appendID. It reads both atomics without holding
+// any lock.
 func (i *isolation) lowWatermark() uint64 {
 	if i.disabled {
 		return 0
 	}
-
-	i.appendMtx.RLock() // Take appendMtx first.
-	defer i.appendMtx.RUnlock()
-	return i.lowWatermarkLocked()
-}
-
-func (i *isolation) lowWatermarkLocked() uint64 {
-	if i.disabled {
-		return 0
-	}
-
-	i.readMtx.RLock()
-	defer i.readMtx.RUnlock()
-	if i.readsOpen.prev != i.readsOpen {
-		return i.readsOpen.prev.lowWatermark
-	}
-
-	// Lowest appendID from appenders, or lastAppendId.
-	return i.appendsOpenList.next.appendID
+	return min(i.lowestOpenAppendID.Load(), i.oldestReadLowWatermark.Load())
 }
 
 // lowestAppendTime returns the lowest minTime for any open appender,
@@ -154,11 +173,14 @@ func (i *isolation) State(mint, maxt int64) *isolationState {
 	}
 
 	i.readMtx.Lock()
-	defer i.readMtx.Unlock()
 	isoState.prev = i.readsOpen
 	isoState.next = i.readsOpen.next
 	i.readsOpen.next.prev = isoState
 	i.readsOpen.next = isoState
+	// The oldest open read (readsOpen.prev) sets the read side of the low
+	// watermark. Update it here, under readMtx, so no extra locking is needed.
+	i.oldestReadLowWatermark.Store(i.readsOpen.prev.lowWatermark)
+	i.readMtx.Unlock()
 
 	return isoState
 }
@@ -187,8 +209,6 @@ func (i *isolation) newAppendID(minTime int64) (uint64, uint64) {
 	}
 
 	i.appendMtx.Lock()
-	defer i.appendMtx.Unlock()
-
 	// Last used appendID is stored in head element.
 	i.appendsOpenList.appendID++
 
@@ -202,7 +222,11 @@ func (i *isolation) newAppendID(minTime int64) (uint64, uint64) {
 	i.appendsOpenList.prev = app
 
 	i.appendsOpen[app.appendID] = app
-	return app.appendID, i.lowWatermarkLocked()
+	// appendsOpenList.next is the lowest open appendID.
+	i.lowestOpenAppendID.Store(i.appendsOpenList.next.appendID)
+	i.appendMtx.Unlock()
+
+	return app.appendID, i.lowWatermark()
 }
 
 func (i *isolation) lastAppendID() uint64 {
@@ -260,6 +284,10 @@ func (i *isolation) closeAppend(appendID uint64) {
 		// Clear all fields, and return to the pool.
 		*app = isolationAppender{}
 		i.appendersPool.Put(app)
+		// Closing an appender can raise the low watermark. appendsOpenList.next is now
+		// the lowest open appendID. It is the sentinel with the last issued ID when no
+		// appenders remain open. Update it here, under appendMtx, so no extra lock is needed.
+		i.lowestOpenAppendID.Store(i.appendsOpenList.next.appendID)
 	}
 }
 
