@@ -234,15 +234,20 @@ func StreamChunkedReadResponses(
 	marshalPool *sync.Pool,
 ) (annotations.Annotations, error) {
 	var (
-		chks []prompb.Chunk
-		lbls []prompb.Label
-		iter chunks.Iterator
+		chks       []prompb.Chunk
+		seriesLbls []prompb.Label
+		lbls       []prompb.Label
+		iter       chunks.Iterator
 	)
 
 	for ss.Next() {
 		series := ss.At()
 		iter = series.Iterator(iter)
-		lbls = MergeLabels(prompb.FromLabels(series.Labels(), lbls), sortedExternalLabels)
+		seriesLbls = prompb.FromLabels(series.Labels(), seriesLbls)
+
+		// lbls is reused across series, so every frame referencing it
+		// must be marshalled before the next iteration.
+		lbls = mergedLabelsInto(lbls, seriesLbls, sortedExternalLabels)
 
 		maxDataLength := maxBytesInFrame
 		for _, lbl := range lbls {
@@ -306,7 +311,13 @@ func StreamChunkedReadResponses(
 // MergeLabels merges two sets of sorted proto labels, preferring those in
 // primary to those in secondary when there is an overlap.
 func MergeLabels(primary, secondary []prompb.Label) []prompb.Label {
-	result := make([]prompb.Label, 0, len(primary)+len(secondary))
+	return mergedLabelsInto(make([]prompb.Label, 0, len(primary)+len(secondary)), primary, secondary)
+}
+
+// mergedLabelsInto is like MergeLabels but appends the result to dst[:0],
+// reusing its array. dst must not alias primary or secondary.
+func mergedLabelsInto(dst, primary, secondary []prompb.Label) []prompb.Label {
+	result := dst[:0]
 	i, j := 0, 0
 	for i < len(primary) && j < len(secondary) {
 		switch {
