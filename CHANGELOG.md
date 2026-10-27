@@ -2,7 +2,7 @@
 
 ## main / unreleased
 
-## 3.16.0-rc.0 / 2026-10-26
+## 3.16.0-rc.1 / 2026-10-27
 - [CHANGE] API: The experimental search endpoints now clamp `batch_size` to 1000. (#19731, @roidelapluie)
 - [CHANGE] Configuration: Default --web.external-url to https when --web.config.file enables TLS. (#19241, @hexonal)
 - [CHANGE] PromQL: Subquery samples are now included in the query TotalSamples and TotalSamplesPerStep statistics, and SamplesRead now counts reads from subqueries with an @ modifier in range queries. (#19165, @DanCech)
