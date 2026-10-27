@@ -18,6 +18,7 @@ import (
 	"fmt"
 	"math"
 	"testing"
+	"time"
 
 	prom_testutil "github.com/prometheus/client_golang/prometheus/testutil"
 	"github.com/stretchr/testify/require"
@@ -567,6 +568,62 @@ func TestSeriesEviction_ExportedHeadAndOOOQueriersDoNotSkipRemovedSeries(t *test
 			_, err := reading.read()
 			require.ErrorIs(t, err, storage.ErrNotFound)
 			require.Equal(t, float64(0), prom_testutil.ToFloat64(db.Head().metrics.chunkReadsOfRemovedSeries))
+		})
+	}
+}
+
+// TestSeriesEviction_QueryStartingAtLastTimestampIsWaitedForByNextEviction verifies that an eviction waits for a
+// query that starts exactly at the last timestamp it persists.
+//
+// A series that is selected by an eviction, but gets a late sample, is not evicted. A query opened meanwhile has the
+// series in the set being evicted, and does not find the late sample in the blocks. If a following eviction, which
+// persists the late sample, didn't wait for the query, it would remove the series, and the query would skip it, and
+// silently omit the late sample.
+func TestSeriesEviction_QueryStartingAtLastTimestampIsWaitedForByNextEviction(t *testing.T) {
+	const lateSampleTs = 400
+
+	queriers := map[string]func(*testing.T, *DB, int64, int64) *readingSeries{
+		"Querier":      openSampleQuerier,
+		"ChunkQuerier": openChunkQuerier,
+	}
+	for name, openQuery := range queriers {
+		t.Run(name, func(t *testing.T) {
+			testDB := newSeriesEvictionTestDB(t)
+			db := testDB.db
+
+			// The first eviction selects the series to evict, then series 0 gets a late sample, and so it is not
+			// evicted. A query for the timestamp of the late sample is opened after the first eviction waited for the
+			// readers, so it has the series 0 in the set being evicted, and the late sample is in the head only.
+			db.compactHeadViewBeforeEvictTestingCallback = func() {
+				app := db.Appender(context.Background())
+				_, err := app.Append(0, evictionTestLabels(0), lateSampleTs, 42)
+				require.NoError(t, err)
+				require.NoError(t, app.Commit())
+			}
+			var reading *readingSeries
+			db.Head().testAfterWaitingForReadersToEvictSeries = func() {
+				reading = openQuery(t, db, lateSampleTs, lateSampleTs)
+			}
+			require.NoError(t, db.CompactSelectedSeries(testDB.evictedRefs))
+			require.NotNil(t, reading)
+			require.Equal(t, uint64(evictionTestSeries-evictionTestEvictedSeries+1), db.Head().NumSeries())
+
+			// The second eviction persists the late sample, and its last timestamp is the one the query starts at.
+			done := make(chan error, 1)
+			go func() { done <- db.CompactSelectedSeries(testDB.evictedRefs[:1]) }()
+
+			// The query is still open, so the eviction must keep waiting for it, with the series in the head.
+			select {
+			case err := <-done:
+				require.FailNow(t, "the eviction must wait for the query that starts at its last timestamp", "eviction returned: %v", err)
+			case <-time.After(time.Second):
+			}
+			samples, err := reading.read()
+			require.NoError(t, err)
+			require.Equal(t, map[string]int{evictionTestLabels(0).String(): 1}, samples)
+			require.NoError(t, reading.close())
+
+			require.NoError(t, <-done)
 		})
 	}
 }
