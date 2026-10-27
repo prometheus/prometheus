@@ -25,8 +25,396 @@ import (
 	"github.com/prometheus/prometheus/util/teststorage"
 )
 
+// testTransformRegistry returns a compact in-memory registry covering all
+// transform/2.0 features exercised by the policy and PromQL rewriter tests.
+func testTransformRegistry() map[string][]byte {
+	return map[string][]byte{
+		"1.0.0": []byte(`groups:
+  - id: metric.test.counter
+    type: metric
+    metric_name: test.counter
+    instrument: counter
+    unit: By
+`),
+		"http_1.20.0_to_1.23.1.yaml": []byte(`file_format: transform/2.0
+source:
+  schema_url: https://opentelemetry.io/schemas/1.20.0
+target:
+  schema_url: https://opentelemetry.io/schemas/1.23.1
+policies:
+  - id: http-server-duration
+    metric_transform:
+      matches:
+        - target: {descriptor_field: METRIC_DESCRIPTOR_FIELD_NAME}
+          predicate: {equals: http.server.duration}
+        - target: {datapoint_attribute: [http.method]}
+          predicate: {exists: {}}
+      rename:
+        - {from: {datapoint_attribute: [http.method]}, to: http.request.method}
+        - {from: {datapoint_attribute: [http.status_code]}, to: http.response.status_code}
+        - {from: {datapoint_attribute: [http.scheme]}, to: url.scheme}
+        - {from: {datapoint_attribute: [net.protocol.version]}, to: network.protocol.version}
+        - {from: {datapoint_attribute: [net.host.name]}, to: server.address}
+      add:
+        - {target: {descriptor_field: METRIC_DESCRIPTOR_FIELD_NAME}, value: http.server.request.duration, upsert: true}
+      map:
+        - {target: {datapoint_attribute: [network.protocol.version]}, values: {"2.0": "2", "3.0": "3"}, unmapped: keep}
+  - id: http-server-duration-method-other
+    metric_transform:
+      matches:
+        - target: {descriptor_field: METRIC_DESCRIPTOR_FIELD_NAME}
+          predicate: {equals: http.server.duration}
+        - target: {datapoint_attribute: [http.method]}
+          predicate: {exists: {}}
+        - target: {datapoint_attribute: [http.method]}
+          predicate: {regex: "^(CONNECT|DELETE|GET|HEAD|OPTIONS|PATCH|POST|PUT|TRACE)$"}
+          negate: true
+      add:
+        - {target: {datapoint_attribute: [http.request.method]}, value: _OTHER, upsert: true}
+  - id: http-server-duration-error-type
+    metric_transform:
+      matches:
+        - target: {descriptor_field: METRIC_DESCRIPTOR_FIELD_NAME}
+          predicate: {equals: http.server.duration}
+        - target: {datapoint_attribute: [http.method]}
+          predicate: {exists: {}}
+        - target: {datapoint_attribute: [http.status_code]}
+          predicate: {gte: 500}
+      add:
+        - {target: {datapoint_attribute: [error.type]}, from: {datapoint_attribute: [http.response.status_code]}}
+      convert:
+        - {target: {datapoint_attribute: [error.type]}, type: string}
+  - id: http-server-duration-v121
+    metric_transform:
+      matches:
+        - target: {descriptor_field: METRIC_DESCRIPTOR_FIELD_NAME}
+          predicate: {equals: http.server.duration}
+        - target: {datapoint_attribute: [http.request.method]}
+          predicate: {exists: {}}
+        - target: {datapoint_attribute: [http.method]}
+          predicate: {exists: {}}
+          negate: true
+      add:
+        - {target: {descriptor_field: METRIC_DESCRIPTOR_FIELD_NAME}, value: http.server.request.duration, upsert: true}
+  - id: http-server-active-requests
+    metric_transform:
+      matches:
+        - target: {descriptor_field: METRIC_DESCRIPTOR_FIELD_NAME}
+          predicate: {equals: http.server.active_requests}
+        - target: {datapoint_attribute: [http.method]}
+          predicate: {exists: {}}
+      rename:
+        - {from: {datapoint_attribute: [http.method]}, to: http.request.method}
+        - {from: {datapoint_attribute: [http.scheme]}, to: url.scheme}
+        - {from: {datapoint_attribute: [net.host.name]}, to: server.address}
+`),
+		"http_1.23.1_to_1.20.0.yaml": []byte(`file_format: transform/2.0
+source:
+  schema_url: https://opentelemetry.io/schemas/1.23.1
+target:
+  schema_url: https://opentelemetry.io/schemas/1.20.0
+policies:
+  - id: http-server-duration-reverse
+    metric_transform:
+      matches:
+        - target: {descriptor_field: METRIC_DESCRIPTOR_FIELD_NAME}
+          predicate: {equals: http.server.request.duration}
+      rename:
+        - {from: {datapoint_attribute: [http.request.method]}, to: http.method}
+        - {from: {datapoint_attribute: [http.response.status_code]}, to: http.status_code}
+        - {from: {datapoint_attribute: [url.scheme]}, to: http.scheme}
+        - {from: {datapoint_attribute: [network.protocol.version]}, to: net.protocol.version}
+        - {from: {datapoint_attribute: [server.address]}, to: net.host.name}
+      add:
+        - {target: {descriptor_field: METRIC_DESCRIPTOR_FIELD_NAME}, value: http.server.duration, upsert: true}
+      map:
+        - {target: {datapoint_attribute: [net.protocol.version]}, values: {"2": "2.0", "3": "3.0"}, unmapped: keep}
+  - id: http-server-request-duration-protocol-name-rev
+    metric_transform:
+      matches:
+        - target: {descriptor_field: METRIC_DESCRIPTOR_FIELD_NAME}
+          predicate: {equals: http.server.request.duration}
+        - target: {datapoint_attribute: [network.protocol.name]}
+          predicate: {exists: {}}
+          negate: true
+        - target: {datapoint_attribute: [network.protocol.version]}
+          predicate: {exists: {}}
+      add:
+        - {target: {datapoint_attribute: [net.protocol.name]}, value: http}
+`),
+		"k8s_1.18.0_to_1.44.0.yaml": []byte(`file_format: transform/2.0
+source:
+  schema_url: https://opentelemetry.io/schemas/1.18.0
+target:
+  schema_url: https://opentelemetry.io/schemas/1.44.0
+policies:
+  - id: k8s-resourcequota-name
+    entity_transform:
+      matches:
+        - target: {resource_attribute: [k8s.resource_quota.name]}
+          predicate: {exists: {}}
+      rename: [{from: {resource_attribute: [k8s.resource_quota.name]}, to: k8s.resourcequota.name}]
+  - id: k8s-pod-labels-annotations
+    entity_transform:
+      matches:
+        - target: {resource_attribute: [k8s.pod.name]}
+          predicate: {exists: {}}
+      rename_prefix:
+        - {from: {resource_attribute: [k8s.pod.labels.]}, to: k8s.pod.label.}
+        - {from: {resource_attribute: [k8s.pod.annotations.]}, to: k8s.pod.annotation.}
+  - id: k8s-rq-hard-memory-limit
+    metric_transform:
+      matches:
+        - target: {descriptor_field: METRIC_DESCRIPTOR_FIELD_NAME}
+          predicate: {equals: k8s.resource_quota.hard_limit}
+        - target: {datapoint_attribute: [resource]}
+          predicate: {equals: limits.memory}
+      remove: [{target: {datapoint_attribute: [resource]}}]
+      add: [{target: {descriptor_field: METRIC_DESCRIPTOR_FIELD_NAME}, value: k8s.resourcequota.memory.limit.hard, upsert: true}]
+  - id: k8s-rq-hard-storage-request-class
+    metric_transform:
+      matches:
+        - target: {descriptor_field: METRIC_DESCRIPTOR_FIELD_NAME}
+          predicate: {equals: k8s.resource_quota.hard_limit}
+        - target: {datapoint_attribute: [resource]}
+          predicate: {regex: "\\.storageclass\\.storage\\.k8s\\.io/requests\\.storage$"}
+      split: [{from: {datapoint_attribute: [resource]}, separator: ".storageclass.storage.k8s.io/", to: [k8s.storageclass.name, resource]}]
+      add: [{target: {descriptor_field: METRIC_DESCRIPTOR_FIELD_NAME}, value: k8s.resourcequota.storage.request.hard, upsert: true}]
+      discard: [{target: {datapoint_attribute: [resource]}}]
+  - id: k8s-rq-hard-hugepage-request
+    metric_transform:
+      matches:
+        - target: {descriptor_field: METRIC_DESCRIPTOR_FIELD_NAME}
+          predicate: {equals: k8s.resource_quota.hard_limit}
+        - target: {datapoint_attribute: [resource]}
+          predicate: {regex: "^requests\\.hugepages-"}
+      split: [{from: {datapoint_attribute: [resource]}, separator: "requests.hugepages-", to: [resource, k8s.hugepage.size]}]
+      add: [{target: {descriptor_field: METRIC_DESCRIPTOR_FIELD_NAME}, value: k8s.resourcequota.hugepage_count.request.hard, upsert: true}]
+      discard: [{target: {datapoint_attribute: [resource]}}]
+  - id: k8s-pod-network-io-attrs
+    metric_transform:
+      matches:
+        - target: {descriptor_field: METRIC_DESCRIPTOR_FIELD_NAME}
+          predicate: {equals: k8s.pod.network.io}
+      rename:
+        - {from: {datapoint_attribute: [interface]}, to: network.interface.name}
+        - {from: {datapoint_attribute: [direction]}, to: network.io.direction}
+  - id: k8s-pod-phase
+    metric_transform:
+      matches:
+        - target: {descriptor_field: METRIC_DESCRIPTOR_FIELD_NAME}
+          predicate: {equals: k8s.pod.phase}
+      rename: [{from: {datapoint_field: DATAPOINT_FIELD_VALUE}, to: k8s.pod.status.phase}]
+      add:
+        - {target: {descriptor_field: METRIC_DESCRIPTOR_FIELD_NAME}, value: k8s.pod.status.phase, upsert: true}
+        - {target: {datapoint_field: DATAPOINT_FIELD_VALUE}, value: 1, upsert: true}
+      map: [{target: {datapoint_attribute: [k8s.pod.status.phase]}, values: {1: Pending, 2: Running, 3: Succeeded, 4: Failed, 5: Unknown}}]
+`),
+		"k8s_1.44.0_to_1.18.0.yaml": []byte(`file_format: transform/2.0
+source:
+  schema_url: https://opentelemetry.io/schemas/1.44.0
+target:
+  schema_url: https://opentelemetry.io/schemas/1.18.0
+policies:
+  - id: rev-k8s-pod-phase-drop-zero
+    metric_filter:
+      matches:
+        - target: {descriptor_field: METRIC_DESCRIPTOR_FIELD_NAME}
+          predicate: {equals: k8s.pod.status.phase}
+        - target: {datapoint_field: DATAPOINT_FIELD_VALUE}
+          predicate: {equals: 0}
+      action: ACTION_DROP
+  - id: rev-k8s-pod-phase
+    metric_transform:
+      matches:
+        - target: {descriptor_field: METRIC_DESCRIPTOR_FIELD_NAME}
+          predicate: {equals: k8s.pod.status.phase}
+        - target: {datapoint_field: DATAPOINT_FIELD_VALUE}
+          predicate: {equals: 1}
+      rename: [{from: {datapoint_attribute: [k8s.pod.status.phase]}, to_target: {datapoint_field: DATAPOINT_FIELD_VALUE}, upsert: true}]
+      add: [{target: {descriptor_field: METRIC_DESCRIPTOR_FIELD_NAME}, value: k8s.pod.phase, upsert: true}]
+      map: [{target: {datapoint_field: DATAPOINT_FIELD_VALUE}, values: {Pending: 1, Running: 2, Succeeded: 3, Failed: 4, Unknown: 5}}]
+`),
+		"grpc_to_1.45.0.yaml": []byte(`file_format: transform/2.0
+source:
+  schema_url: https://grpc.io/schemas/42.42.0
+target:
+  schema_url: https://opentelemetry.io/schemas/1.45.0
+policies:
+  - id: grpc-client-call-duration
+    metric_transform:
+      matches:
+        - target: {descriptor_field: METRIC_DESCRIPTOR_FIELD_NAME}
+          predicate: {equals: grpc.client.call.duration}
+      rename:
+        - {from: {datapoint_attribute: [grpc.method]}, to: rpc.method}
+        - {from: {datapoint_attribute: [grpc.status]}, to: rpc.status_code}
+        - {from: {datapoint_attribute: [grpc.target]}, to: server.address}
+      add:
+        - {target: {descriptor_field: METRIC_DESCRIPTOR_FIELD_NAME}, value: rpc.client.call.duration, upsert: true}
+        - {target: {datapoint_attribute: [rpc.system.name]}, value: grpc}
+      map: [{target: {datapoint_attribute: [rpc.method]}, values: {other: _OTHER}, unmapped: keep}]
+  - id: grpc-client-call-duration-error-type
+    metric_transform:
+      matches:
+        - target: {descriptor_field: METRIC_DESCRIPTOR_FIELD_NAME}
+          predicate: {equals: grpc.client.call.duration}
+        - target: {datapoint_attribute: [grpc.status]}
+          predicate: {exists: {}}
+        - target: {datapoint_attribute: [grpc.status]}
+          predicate: {equals: OK}
+          negate: true
+      add: [{target: {datapoint_attribute: [error.type]}, from: {datapoint_attribute: [rpc.status_code]}}]
+`),
+		"rpc_1.37.0_to_1.45.0.yaml": []byte(`file_format: transform/2.0
+source:
+  schema_url: https://opentelemetry.io/schemas/1.37.0
+target:
+  schema_url: https://opentelemetry.io/schemas/1.45.0
+policies:
+  - id: rpc-server-duration
+    metric_transform:
+      matches:
+        - target: {descriptor_field: METRIC_DESCRIPTOR_FIELD_NAME}
+          predicate: {equals: rpc.server.duration}
+      rename: [{from: {datapoint_attribute: [rpc.system]}, to: rpc.system.name}]
+      add:
+        - {target: {descriptor_field: METRIC_DESCRIPTOR_FIELD_NAME}, value: rpc.server.call.duration, upsert: true}
+        - target: {datapoint_attribute: [rpc.method]}
+          from: [{datapoint_attribute: [rpc.service]}, {datapoint_attribute: [rpc.method]}]
+          separator: /
+          upsert: true
+      map:
+        - target: {datapoint_attribute: [rpc.system.name]}
+          values: {apache_dubbo: dubbo, connect_rpc: connectrpc}
+          unmapped: keep
+      discard: [{target: {datapoint_attribute: [rpc.service]}}]
+  - id: rpc-server-duration-grpc-status
+    metric_transform:
+      matches:
+        - target: {descriptor_field: METRIC_DESCRIPTOR_FIELD_NAME}
+          predicate: {equals: rpc.server.duration}
+        - target: {datapoint_attribute: [rpc.grpc.status_code]}
+          predicate: {exists: {}}
+      rename: [{from: {datapoint_attribute: [rpc.grpc.status_code]}, to: rpc.status_code}]
+      add: [{target: {datapoint_attribute: [error.type]}, from: {datapoint_attribute: [rpc.status_code]}}]
+      map:
+        - target: {datapoint_attribute: [rpc.status_code]}
+          values: {0: OK, 14: UNAVAILABLE}
+        - target: {datapoint_attribute: [error.type]}
+          values: {14: UNAVAILABLE}
+          unmapped: remove
+  - id: rpc-client-duration
+    metric_transform:
+      matches:
+        - target: {descriptor_field: METRIC_DESCRIPTOR_FIELD_NAME}
+          predicate: {equals: rpc.client.duration}
+      rename: [{from: {datapoint_attribute: [rpc.system]}, to: rpc.system.name}]
+      add:
+        - {target: {descriptor_field: METRIC_DESCRIPTOR_FIELD_NAME}, value: rpc.client.call.duration, upsert: true}
+        - target: {datapoint_attribute: [rpc.method]}
+          from: [{datapoint_attribute: [rpc.service]}, {datapoint_attribute: [rpc.method]}]
+          separator: /
+          upsert: true
+      map:
+        - target: {datapoint_attribute: [rpc.system.name]}
+          values: {apache_dubbo: dubbo, connect_rpc: connectrpc}
+          unmapped: keep
+      discard: [{target: {datapoint_attribute: [rpc.service]}}]
+  - id: rpc-client-duration-grpc-status
+    metric_transform:
+      matches:
+        - target: {descriptor_field: METRIC_DESCRIPTOR_FIELD_NAME}
+          predicate: {equals: rpc.client.duration}
+        - target: {datapoint_attribute: [rpc.grpc.status_code]}
+          predicate: {exists: {}}
+      rename: [{from: {datapoint_attribute: [rpc.grpc.status_code]}, to: rpc.status_code}]
+      add: [{target: {datapoint_attribute: [error.type]}, from: {datapoint_attribute: [rpc.status_code]}}]
+      map:
+        - target: {datapoint_attribute: [rpc.status_code]}
+          values: {0: OK, 14: UNAVAILABLE}
+        - target: {datapoint_attribute: [error.type]}
+          values: {14: UNAVAILABLE}
+          unmapped: remove
+`),
+		"genai_1.41.0_to_1.42.0.yaml": []byte(`file_format: transform/2.0
+source:
+  schema_url: https://opentelemetry.io/schemas/1.41.0
+target:
+  schema_url: https://opentelemetry.io/schemas/1.42.0-dev
+policies:
+  - id: genai-374-input-tokens
+    metric_transform:
+      matches:
+        - target: {descriptor_field: METRIC_DESCRIPTOR_FIELD_NAME}
+          predicate: {equals: gen_ai.client.token.usage}
+        - target: {datapoint_attribute: [gen_ai.token.type]}
+          predicate: {equals: input}
+        - target: {datapoint_attribute: [gen_ai.operation.name]}
+          predicate: {regex: "^(chat|generate_content|text_completion)$"}
+      remove:
+        - target: {datapoint_attribute: [gen_ai.token.type]}
+      add:
+        - {target: {descriptor_field: METRIC_DESCRIPTOR_FIELD_NAME}, value: gen_ai.client.inference.operation.input_tokens, upsert: true}
+`),
+		"prometheus_to_otel.yaml": []byte(`file_format: transform/2.0
+source:
+  schema_url: https://prometheus.io/schemas/classic
+target:
+  schema_url: https://opentelemetry.io/schemas/otel-canonical
+policies:
+  - id: prom-http-server-request-duration
+    metric_transform:
+      matches:
+        - target: {descriptor_field: METRIC_DESCRIPTOR_FIELD_NAME}
+          predicate: {equals: http_server_request_duration_seconds}
+      rename:
+        - {from: {datapoint_attribute: [method]}, to: http.request.method}
+        - {from: {datapoint_attribute: [status_code]}, to: http.response.status_code}
+        - {from: {datapoint_attribute: [scheme]}, to: url.scheme}
+        - {from: {datapoint_attribute: [protocol_version]}, to: network.protocol.version}
+      add:
+        - {target: {descriptor_field: METRIC_DESCRIPTOR_FIELD_NAME}, value: http.server.request.duration, upsert: true}
+      map:
+        - {target: {datapoint_attribute: [network.protocol.version]}, values: {"2.0": "2", "3.0": "3"}, unmapped: keep}
+  - id: prom-http-server-request-duration-5xx
+    metric_transform:
+      matches:
+        - target: {descriptor_field: METRIC_DESCRIPTOR_FIELD_NAME}
+          predicate: {equals: http_server_request_duration_seconds}
+        - target: {datapoint_attribute: [status_code]}
+          predicate: {gte: 500}
+      add:
+        - {target: {datapoint_attribute: [error.type]}, from: {datapoint_attribute: [http.response.status_code]}}
+      convert:
+        - {target: {datapoint_attribute: [error.type]}, type: string}
+  - id: prom-k8s-pod-network-receive
+    metric_transform:
+      matches:
+        - target: {descriptor_field: METRIC_DESCRIPTOR_FIELD_NAME}
+          predicate: {equals: container_network_receive_bytes_total}
+      rename:
+        - {from: {datapoint_attribute: [pod]}, to: k8s.pod.name}
+        - {from: {datapoint_attribute: [namespace]}, to: k8s.namespace.name}
+        - {from: {datapoint_attribute: [interface]}, to: network.interface.name}
+      add:
+        - {target: {descriptor_field: METRIC_DESCRIPTOR_FIELD_NAME}, value: k8s.pod.network.io, upsert: true}
+        - {target: {datapoint_attribute: [network.io.direction]}, value: receive, upsert: true}
+`),
+	}
+}
+
+func newTransformTestStorage(t *testing.T) (storage.Storage, *teststorage.TestStorage) {
+	t.Helper()
+	underlying := teststorage.New(t)
+	t.Cleanup(func() { require.NoError(t, underlying.Close()) })
+	wrapped, err := semconv.AwareStorageWithRegistry(underlying, testTransformRegistry())
+	require.NoError(t, err)
+	return wrapped, underlying
+}
+
 func TestTransformPolicyHTTPForwardAndReverse(t *testing.T) {
-	wrapped, underlying := newAwareStorage(t)
+	wrapped, underlying := newTransformTestStorage(t)
 
 	// v1.20.0 series: old metric name, old attribute keys, protocol version "2.0", 200 OK.
 	appendSeries(t, underlying, "http.server.duration", 1, 10.0,
@@ -149,7 +537,7 @@ func TestTransformPolicyHTTPForwardAndReverse(t *testing.T) {
 	})
 
 	t.Run("reverse 1.23.1 to 1.20.0 translates stable series back to legacy shape", func(t *testing.T) {
-		revWrapped, revUnderlying := newAwareStorage(t)
+		revWrapped, revUnderlying := newTransformTestStorage(t)
 		appendSeries(t, revUnderlying, "http.server.request.duration", 1, 15.0,
 			"http.request.method", "GET",
 			"http.response.status_code", "200",
@@ -174,7 +562,7 @@ func TestTransformPolicyHTTPForwardAndReverse(t *testing.T) {
 }
 
 func TestTransformPolicyK8sSplitsAndEntityTransforms(t *testing.T) {
-	wrapped, underlying := newAwareStorage(t)
+	wrapped, underlying := newTransformTestStorage(t)
 
 	// ResourceQuota series under the old Collector metric name with different `resource` values.
 	appendSeries(t, underlying, "k8s.resource_quota.hard_limit", 1, 1024.0,
@@ -282,7 +670,7 @@ func TestTransformPolicyK8sSplitsAndEntityTransforms(t *testing.T) {
 
 func TestTransformPolicyGRPCAndRPCAndGenAI(t *testing.T) {
 	t.Run("gRPC A66 to OTel RPC 1.45.0 adds rpc.system.name and derives error.type", func(t *testing.T) {
-		wrapped, underlying := newAwareStorage(t)
+		wrapped, underlying := newTransformTestStorage(t)
 		appendSeries(t, underlying, "grpc.client.call.duration", 1, 0.042,
 			"grpc.method", "other",
 			"grpc.status", "UNAVAILABLE",
@@ -304,7 +692,7 @@ func TestTransformPolicyGRPCAndRPCAndGenAI(t *testing.T) {
 	})
 
 	t.Run("RPC 1.37.0 to 1.45.0 joins service and method, maps int status codes, and discards service", func(t *testing.T) {
-		wrapped, underlying := newAwareStorage(t)
+		wrapped, underlying := newTransformTestStorage(t)
 		// Error call (status 14 = UNAVAILABLE): should get error.type="UNAVAILABLE".
 		appendSeries(t, underlying, "rpc.server.duration", 1, 12.0,
 			"rpc.system", "apache_dubbo",
@@ -338,7 +726,7 @@ func TestTransformPolicyGRPCAndRPCAndGenAI(t *testing.T) {
 	})
 
 	t.Run("GenAI 1.41.0 to 1.42.0-dev splits input and output token usage", func(t *testing.T) {
-		wrapped, underlying := newAwareStorage(t)
+		wrapped, underlying := newTransformTestStorage(t)
 		appendSeries(t, underlying, "gen_ai.client.token.usage", 1, 1200.0,
 			"gen_ai.operation.name", "chat",
 			"gen_ai.token.type", "input",
@@ -401,7 +789,7 @@ policies:
 	})
 
 	t.Run("target schema_url discovery fans out across both gRPC A66 and RPC 1.37.0 to 1.45.0", func(t *testing.T) {
-		wrapped, underlying := newAwareStorage(t)
+		wrapped, underlying := newTransformTestStorage(t)
 		// Era 1: gRPC A66 native metric.
 		appendSeries(t, underlying, "grpc.client.call.duration", 1, 0.015,
 			"grpc.method", "checkout.CheckoutService/PlaceOrder",
@@ -449,7 +837,7 @@ policies:
 	})
 
 	t.Run("reverse K8s 1.44.0 to 1.18.0 translates attribute phase back to DATAPOINT_FIELD_VALUE", func(t *testing.T) {
-		wrapped, underlying := newAwareStorage(t)
+		wrapped, underlying := newTransformTestStorage(t)
 		appendSeries(t, underlying, "k8s.pod.status.phase", 1, 0.0,
 			"k8s.pod.name", "web-0",
 			"k8s.pod.status.phase", "Pending",
@@ -472,7 +860,7 @@ policies:
 	})
 
 	t.Run("Prometheus classic to OTel and reverse policies bridge metric, label, and histogram names", func(t *testing.T) {
-		wrapped, underlying := newAwareStorage(t)
+		wrapped, underlying := newTransformTestStorage(t)
 		appendSeries(t, underlying, "http_server_request_duration_seconds_bucket", 1, 10.0,
 			"method", "GET",
 			"status_code", "500",

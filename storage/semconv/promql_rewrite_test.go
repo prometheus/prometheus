@@ -25,7 +25,6 @@ import (
 	"github.com/prometheus/prometheus/promql"
 	"github.com/prometheus/prometheus/storage"
 	"github.com/prometheus/prometheus/storage/semconv"
-	"github.com/prometheus/prometheus/util/teststorage"
 )
 
 func newPromQLEngine(t *testing.T) *promql.Engine {
@@ -52,9 +51,8 @@ func evalInstant(t *testing.T, engine *promql.Engine, q storage.Queryable, expr 
 }
 
 func TestRewritePromQLQuery_SideBySideWithStorageTranslation(t *testing.T) {
-	underlying := teststorage.New(t)
-	t.Cleanup(func() { _ = underlying.Close() })
-	wrapped := semconv.AwareStorage(underlying)
+	reg := testTransformRegistry()
+	wrapped, underlying := newTransformTestStorage(t)
 	engine := newPromQLEngine(t)
 
 	evalTime := time.UnixMilli(1000)
@@ -138,7 +136,7 @@ func TestRewritePromQLQuery_SideBySideWithStorageTranslation(t *testing.T) {
 
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
-			rewritten, annos, err := semconv.RewritePromQLQuery(tc.query, "")
+			rewritten, annos, err := semconv.RewritePromQLQueryWithRegistry(tc.query, "", reg)
 			require.NoError(t, err)
 			require.Empty(t, annos)
 			require.NotContains(t, rewritten, "__schema_url__")
@@ -170,9 +168,8 @@ func TestCounterRateAcrossSchemaBoundary_StorageVsASTRewriter(t *testing.T) {
 	// Demonstrate why query-time storage chaining (AwareStorage) is exact on counter
 	// rate() across a schema upgrade boundary whereas authoring-time AST `or` union
 	// evaluates rate() on each metric name separately.
-	underlying := teststorage.New(t)
-	t.Cleanup(func() { _ = underlying.Close() })
-	wrapped := semconv.AwareStorage(underlying)
+	reg := testTransformRegistry()
+	wrapped, underlying := newTransformTestStorage(t)
 	engine := newPromQLEngine(t)
 
 	// Counter increments by +10 every 60s across a schema upgrade at t=120s:
@@ -203,7 +200,7 @@ func TestCounterRateAcrossSchemaBoundary_StorageVsASTRewriter(t *testing.T) {
 	// Because the counter transition from t=60s (110) to t=120s (120) is split across two
 	// metric names, the AST branch only observes 2 samples spanning 60s of the 180s window
 	// and under-reports the rate by half (15.0/180.0 = 0.083333/s).
-	rewritten, _, err := semconv.RewritePromQLQuery(query, "")
+	rewritten, _, err := semconv.RewritePromQLQueryWithRegistry(query, "", reg)
 	require.NoError(t, err)
 	astVec := evalInstant(t, engine, underlying, rewritten, evalTime)
 	require.Len(t, astVec, 1)
