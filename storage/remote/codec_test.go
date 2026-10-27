@@ -838,6 +838,104 @@ func TestStreamResponse(t *testing.T) {
 	require.Equal(t, expectData, writer.actual)
 }
 
+func BenchmarkStreamChunkedReadResponses(b *testing.B) {
+	const numSeries = 1000
+
+	chk := chunkenc.NewXORChunk()
+	app, err := chk.Appender()
+	require.NoError(b, err)
+	for i := range 120 {
+		app.Append(0, int64(i)*15000, float64(i))
+	}
+
+	series := make([]storage.ChunkSeries, 0, numSeries)
+	for i := range numSeries {
+		lset := labels.FromStrings(
+			"__name__", "http_requests_total",
+			"app", "app-server",
+			"code", "200",
+			"container", "server",
+			"endpoint", "metrics",
+			"handler", "/api/v1/query",
+			"instance", fmt.Sprintf("10.0.%d.%d:8080", i/256, i%256),
+			"job", "test-namespace/test-service",
+			"method", "GET",
+			"namespace", "test-namespace",
+			"pod", fmt.Sprintf("test-service-%d", i),
+			"service", "test-service",
+		)
+		series = append(series, &benchChunkSeries{lset: lset, chks: []chunks.Meta{{Chunk: chk, MinTime: 0, MaxTime: 119 * 15000}}})
+	}
+
+	externalLabels := []prompb.Label{
+		{Name: "bar", Value: "foo"},
+		{Name: "cluster", Value: "prod-af-north-0"},
+		{Name: "env", Value: "prod"},
+		{Name: "foo", Value: "bar"},
+		{Name: "monitor", Value: "codelab"},
+		{Name: "prometheus", Value: "some-namespace/prometheus"},
+		{Name: "region", Value: "europe"},
+		{Name: "replica", Value: "1"},
+		{Name: "zone", Value: "ie"},
+	}
+
+	pool := &sync.Pool{}
+	ss := &benchChunkSeriesSet{series: series}
+
+	b.ReportAllocs()
+	for b.Loop() {
+		ss.idx = -1
+		if _, err := StreamChunkedReadResponses(io.Discard, 0, ss, externalLabels, 1048576, pool); err != nil {
+			b.Fatal(err)
+		}
+	}
+}
+
+type benchChunkSeriesSet struct {
+	series []storage.ChunkSeries
+	idx    int
+}
+
+func (s *benchChunkSeriesSet) Next() bool {
+	s.idx++
+	return s.idx < len(s.series)
+}
+
+func (s *benchChunkSeriesSet) At() storage.ChunkSeries { return s.series[s.idx] }
+
+func (*benchChunkSeriesSet) Warnings() annotations.Annotations { return nil }
+
+func (*benchChunkSeriesSet) Err() error { return nil }
+
+type benchChunkSeries struct {
+	lset labels.Labels
+	chks []chunks.Meta
+}
+
+func (s *benchChunkSeries) Labels() labels.Labels { return s.lset }
+
+func (s *benchChunkSeries) Iterator(it chunks.Iterator) chunks.Iterator {
+	if bit, ok := it.(*benchChunkIterator); ok {
+		bit.chks, bit.idx = s.chks, -1
+		return bit
+	}
+	return &benchChunkIterator{chks: s.chks, idx: -1}
+}
+
+type benchChunkIterator struct {
+	chks []chunks.Meta
+	idx  int
+}
+
+func (it *benchChunkIterator) At() chunks.Meta { return it.chks[it.idx] }
+
+func (it *benchChunkIterator) Next() bool {
+	it.idx++
+	return it.idx < len(it.chks)
+}
+
+func (*benchChunkIterator) Err() error { return nil }
+
 type mockWriter struct {
 	actual []*prompb.ChunkedSeries
 }
