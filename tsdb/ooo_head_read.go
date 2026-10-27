@@ -252,6 +252,11 @@ func (cr *HeadAndOOOChunkReader) chunkOrIterable(meta chunks.Meta, copyLastChunk
 	s := cr.head.series.getByID(sid)
 	// This means that the series has been garbage collected.
 	if s == nil {
+		// The reader of the in-order chunks is nil when the reader is used to write a block.
+		if cr.cr != nil && cr.cr.tolerateRemovedSeries {
+			cr.head.metrics.chunkReadsOfRemovedSeries.Inc()
+			return nil, noSamples{}, 0, nil
+		}
 		return nil, nil, 0, storage.ErrNotFound
 	}
 	var isoState *isolationState
@@ -583,11 +588,19 @@ type HeadAndOOOQuerier struct {
 var _ storage.Searcher = &HeadAndOOOQuerier{}
 
 func NewHeadAndOOOQuerier(inoMint, mint, maxt int64, head *Head, oooIsoState *oooIsolationState, querier storage.Querier) storage.Querier {
+	return newHeadAndOOOQuerier(inoMint, mint, maxt, head, oooIsoState, querier, false)
+}
+
+// newHeadAndOOOQuerier is NewHeadAndOOOQuerier, and if tolerateRemovedSeries is true, the querier skips the chunks
+// of the series that were removed from the head after it selected them, instead of failing to read them.
+// See headChunkReader.tolerateRemovedSeries.
+func newHeadAndOOOQuerier(inoMint, mint, maxt int64, head *Head, oooIsoState *oooIsolationState, querier storage.Querier, tolerateRemovedSeries bool) storage.Querier {
 	cr := &headChunkReader{
-		head:     head,
-		mint:     mint,
-		maxt:     maxt,
-		isoState: head.iso.State(inoMint, maxt),
+		head:                  head,
+		mint:                  mint,
+		maxt:                  maxt,
+		isoState:              head.iso.State(inoMint, maxt),
+		tolerateRemovedSeries: tolerateRemovedSeries,
 	}
 	return &HeadAndOOOQuerier{
 		mint:    mint,
@@ -660,11 +673,19 @@ type HeadAndOOOChunkQuerier struct {
 }
 
 func NewHeadAndOOOChunkQuerier(inoMint, mint, maxt int64, head *Head, oooIsoState *oooIsolationState, querier storage.ChunkQuerier) storage.ChunkQuerier {
+	return newHeadAndOOOChunkQuerier(inoMint, mint, maxt, head, oooIsoState, querier, false)
+}
+
+// newHeadAndOOOChunkQuerier is NewHeadAndOOOChunkQuerier, and if tolerateRemovedSeries is true, the querier skips
+// the chunks of the series that were removed from the head after it selected them, instead of failing to read them.
+// See headChunkReader.tolerateRemovedSeries.
+func newHeadAndOOOChunkQuerier(inoMint, mint, maxt int64, head *Head, oooIsoState *oooIsolationState, querier storage.ChunkQuerier, tolerateRemovedSeries bool) storage.ChunkQuerier {
 	cr := &headChunkReader{
-		head:     head,
-		mint:     mint,
-		maxt:     maxt,
-		isoState: head.iso.State(inoMint, maxt),
+		head:                  head,
+		mint:                  mint,
+		maxt:                  maxt,
+		isoState:              head.iso.State(inoMint, maxt),
+		tolerateRemovedSeries: tolerateRemovedSeries,
 	}
 	return &HeadAndOOOChunkQuerier{
 		mint:    mint,

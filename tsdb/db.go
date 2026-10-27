@@ -1795,6 +1795,8 @@ func (db *DB) compactHead(head *RangeHead) error {
 		}
 		return errors.Join(errs...)
 	}
+	// The block has been written, and added to the DB by reloadBlocks, above. The series must not be
+	// removed from the head before that. See headChunkReader.tolerateRemovedSeries.
 	if err = db.head.truncateMemory(head.BlockMaxTime()); err != nil {
 		return fmt.Errorf("head memory truncate: %w", err)
 	}
@@ -1868,6 +1870,8 @@ func (db *DB) compactHeadViewLocked(viewFactory headViewFactory, evict headSerie
 		db.compactHeadViewBeforeEvictTestingCallback = nil
 	}
 
+	// The blocks have been written, and added to the DB by reloadBlocks, above. The series must not be
+	// evicted before that. See headChunkReader.tolerateRemovedSeries.
 	if err := evict(maxt); err != nil {
 		return fmt.Errorf("head truncate: %w", err)
 	}
@@ -2649,7 +2653,7 @@ func (db *DB) Querier(mint, maxt int64) (_ storage.Querier, err error) {
 	var headQuerier storage.Querier
 	inoMint := max(db.head.MinTime(), mint)
 	if maxt >= db.head.MinTime() || overlapsOOO {
-		rh := NewRangeHead(db.head, mint, maxt)
+		rh := newRangeHeadForQuery(db.head, mint, maxt)
 		var err error
 		headQuerier, err = db.blockQuerierFunc(rh, mint, maxt)
 		if err != nil {
@@ -2668,7 +2672,7 @@ func (db *DB) Querier(mint, maxt int64) (_ storage.Querier, err error) {
 			headQuerier = nil
 		}
 		if getNew {
-			rh := NewRangeHead(db.head, newMint, maxt)
+			rh := newRangeHeadForQuery(db.head, newMint, maxt)
 			headQuerier, err = db.blockQuerierFunc(rh, newMint, maxt)
 			if err != nil {
 				return nil, fmt.Errorf("open block querier for head while getting new querier %s: %w", rh, err)
@@ -2679,7 +2683,7 @@ func (db *DB) Querier(mint, maxt int64) (_ storage.Querier, err error) {
 	if overlapsOOO {
 		// We need to fetch from in-order and out-of-order chunks: wrap the headQuerier.
 		isoState := db.head.oooIso.TrackReadAfter(db.lastGarbageCollectedMmapRef)
-		headQuerier = NewHeadAndOOOQuerier(inoMint, mint, maxt, db.head, isoState, headQuerier)
+		headQuerier = newHeadAndOOOQuerier(inoMint, mint, maxt, db.head, isoState, headQuerier, true)
 	}
 
 	if headQuerier != nil {
@@ -2728,7 +2732,7 @@ func (db *DB) blockChunkQuerierForRange(mint, maxt int64) (_ []storage.ChunkQuer
 	var headQuerier storage.ChunkQuerier
 	inoMint := max(db.head.MinTime(), mint)
 	if maxt >= db.head.MinTime() || overlapsOOO {
-		rh := NewRangeHead(db.head, mint, maxt)
+		rh := newRangeHeadForQuery(db.head, mint, maxt)
 		headQuerier, err = db.blockChunkQuerierFunc(rh, mint, maxt)
 		if err != nil {
 			return nil, fmt.Errorf("open querier for head %s: %w", rh, err)
@@ -2746,7 +2750,7 @@ func (db *DB) blockChunkQuerierForRange(mint, maxt int64) (_ []storage.ChunkQuer
 			headQuerier = nil
 		}
 		if getNew {
-			rh := NewRangeHead(db.head, newMint, maxt)
+			rh := newRangeHeadForQuery(db.head, newMint, maxt)
 			headQuerier, err = db.blockChunkQuerierFunc(rh, newMint, maxt)
 			if err != nil {
 				return nil, fmt.Errorf("open querier for head while getting new querier %s: %w", rh, err)
@@ -2757,7 +2761,7 @@ func (db *DB) blockChunkQuerierForRange(mint, maxt int64) (_ []storage.ChunkQuer
 	if overlapsOOO {
 		// We need to fetch from in-order and out-of-order chunks: wrap the headQuerier.
 		isoState := db.head.oooIso.TrackReadAfter(db.lastGarbageCollectedMmapRef)
-		headQuerier = NewHeadAndOOOChunkQuerier(inoMint, mint, maxt, db.head, isoState, headQuerier)
+		headQuerier = newHeadAndOOOChunkQuerier(inoMint, mint, maxt, db.head, isoState, headQuerier, true)
 	}
 
 	if headQuerier != nil {

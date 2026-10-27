@@ -167,6 +167,10 @@ type Head struct {
 	// testAfterSeriesLookup is invoked after getByID in appenders, before the
 	// series is locked. Tests use it to race GC against a resolved pointer.
 	testAfterSeriesLookup func(*memSeries)
+	// testAfterWaitingForReadersToEvictSeries is invoked by truncateSeries after it has waited for
+	// the open readers, and before it removes the series. Tests use it to open a reader at the point
+	// where a reader would otherwise not be waited for.
+	testAfterWaitingForReadersToEvictSeries func()
 }
 
 type ExemplarStorage interface {
@@ -435,6 +439,7 @@ type headMetrics struct {
 	seriesCreated             prometheus.Counter
 	seriesRemoved             prometheus.Counter
 	seriesNotFound            prometheus.Counter
+	chunkReadsOfRemovedSeries prometheus.Counter
 	pendingCommitUnderflow    prometheus.Counter
 	chunks                    prometheus.Gauge
 	chunksCreated             prometheus.Counter
@@ -512,6 +517,10 @@ func newHeadMetrics(h *Head, r prometheus.Registerer) *headMetrics {
 		seriesNotFound: prometheus.NewCounter(prometheus.CounterOpts{
 			Name: "prometheus_tsdb_head_series_not_found_total",
 			Help: "Total number of requests for series that were not found.",
+		}),
+		chunkReadsOfRemovedSeries: prometheus.NewCounter(prometheus.CounterOpts{
+			Name: "prometheus_tsdb_head_chunk_reads_of_removed_series_total",
+			Help: "Total number of chunks that queries tried to read from the head, whose series was removed from the head in the meantime. The chunks are skipped, because the samples of the series are available from a block.",
 		}),
 		pendingCommitUnderflow: prometheus.NewCounter(prometheus.CounterOpts{
 			Name: "prometheus_tsdb_head_series_pending_commit_underflow_total",
@@ -641,6 +650,7 @@ func newHeadMetrics(h *Head, r prometheus.Registerer) *headMetrics {
 			m.seriesCreated,
 			m.seriesRemoved,
 			m.seriesNotFound,
+			m.chunkReadsOfRemovedSeries,
 			m.pendingCommitUnderflow,
 			m.gcDuration,
 			m.walTruncateDuration,
@@ -1504,6 +1514,10 @@ func (h *Head) snapshotFingerprints(seriesRefs []storage.SeriesRef, appendIDWate
 // maxt is inclusive: it matches the highest sample timestamp that the caller has just persisted
 // to a block, so a head whose MinTime equals maxt still has data eligible for eviction.
 // It returns the number of series that were actually evicted.
+//
+// The caller must have written the samples of the series to a block, and added the block to the DB, before
+// calling it. The readers that find a series removed skip its chunks, because they read the block.
+// See headChunkReader.tolerateRemovedSeries.
 func (h *Head) truncateSeries(seriesRefs []storage.SeriesRef, maxt int64, shouldEvict func(*memSeries) bool) (int, error) {
 	h.chunkSnapshotMtx.Lock()
 	defer h.chunkSnapshotMtx.Unlock()
@@ -1513,6 +1527,10 @@ func (h *Head) truncateSeries(seriesRefs []storage.SeriesRef, maxt int64, should
 	}
 
 	h.WaitForPendingReadersInTimeRange(h.MinTime(), maxt)
+
+	if h.testAfterWaitingForReadersToEvictSeries != nil {
+		h.testAfterWaitingForReadersToEvictSeries()
+	}
 
 	deleted := h.gcSeries(seriesRefs, maxt, shouldEvict)
 
@@ -1860,6 +1878,11 @@ type RangeHead struct {
 	mint, maxt int64
 
 	isolationOff bool
+
+	// tolerateRemovedSeries makes the chunk reader skip the chunks of the series that were removed from the
+	// head after the reader selected them. It must be set only for the readers used by queries. See
+	// headChunkReader.tolerateRemovedSeries.
+	tolerateRemovedSeries bool
 }
 
 // NewRangeHead returns a *RangeHead.
@@ -1870,6 +1893,14 @@ func NewRangeHead(head *Head, mint, maxt int64) *RangeHead {
 		mint: mint,
 		maxt: maxt,
 	}
+}
+
+// newRangeHeadForQuery returns a *RangeHead for the queriers, whose chunk reader skips the chunks of the
+// series that are removed from the head while the query is reading them.
+func newRangeHeadForQuery(head *Head, mint, maxt int64) *RangeHead {
+	rh := NewRangeHead(head, mint, maxt)
+	rh.tolerateRemovedSeries = true
+	return rh
 }
 
 // NewRangeHeadWithIsolationDisabled returns a *RangeHead that does not create an isolationState.
@@ -1888,7 +1919,12 @@ func (h *RangeHead) Chunks() (ChunkReader, error) {
 	if !h.isolationOff {
 		isoState = h.head.iso.State(h.mint, h.maxt)
 	}
-	return h.head.chunksRange(h.mint, h.maxt, isoState)
+	cr, err := h.head.chunksRange(h.mint, h.maxt, isoState)
+	if err != nil {
+		return nil, err
+	}
+	cr.tolerateRemovedSeries = h.tolerateRemovedSeries
+	return cr, nil
 }
 
 func (h *RangeHead) Tombstones() (tombstones.Reader, error) {

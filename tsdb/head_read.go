@@ -510,6 +510,22 @@ type headChunkReader struct {
 	head       *Head
 	mint, maxt int64
 	isoState   *isolationState
+	// tolerateRemovedSeries makes the reader skip a chunk, instead of failing to read it, if the series it belongs
+	// to has been removed from the head after the reader selected the chunk.
+	//
+	// Series are removed from the head once their samples are available from a block, which is added to the DB
+	// before the series are removed, by the truncation of the head, CompactStaleHead and CompactSelectedSeries.
+	// They wait for the readers that are open, so the readers that can find a series removed are those that
+	// were opened after that wait, and those read the block too.
+	//
+	// It must be set only for the readers used by queries. A reader used to write a block must fail instead of
+	// silently writing a block without the samples of the removed series.
+	//
+	// INVARIANT: the block that has the samples of a series must be added to the DB before the series is removed
+	// from the head. Nothing checks it when a chunk is skipped: the labels of a removed series are gone, so the
+	// blocks can't be searched for it. TestSeriesRemoval_BlockIsAddedBeforeSeriesAreRemoved checks that every
+	// way of removing series follows that order. Any new way of removing series from the head must follow it too.
+	tolerateRemovedSeries bool
 	// When true, enables the head-chunks cache. Range queries benefit from
 	// caching because they look up every chunk of a series; instant queries
 	// only need one chunk per series, so the cache is wasted overhead.
@@ -591,6 +607,9 @@ func (h *headChunkReader) getOrCollectHeadChunks(s *memSeries) []*memChunk {
 // ChunkOrIterable returns the chunk for the reference number.
 func (h *headChunkReader) ChunkOrIterable(meta chunks.Meta) (chunkenc.Chunk, chunkenc.Iterable, error) {
 	chk, _, err := h.chunk(meta, false)
+	if err != nil && h.skipRemovedSeries(err, meta) {
+		return nil, noSamples{}, nil
+	}
 	return chk, nil, err
 }
 
@@ -602,7 +621,34 @@ type ChunkReaderWithCopy interface {
 // If the chunk is the in-memory chunk, then it makes a copy and returns the copied chunk, plus the max time of the chunk.
 func (h *headChunkReader) ChunkOrIterableWithCopy(meta chunks.Meta) (chunkenc.Chunk, chunkenc.Iterable, int64, error) {
 	chk, maxTime, err := h.chunk(meta, true)
+	if err != nil && h.skipRemovedSeries(err, meta) {
+		return nil, noSamples{}, 0, nil
+	}
 	return chk, nil, maxTime, err
+}
+
+// skipRemovedSeries returns whether err, returned when reading the chunk meta, is to be ignored because the series
+// the chunk belongs to has been removed from the head. See tolerateRemovedSeries.
+//
+// A series that is removed from the head is never added back, because the refs of the series are not reused,
+// so it is safe to look the series up after the chunk read failed.
+func (h *headChunkReader) skipRemovedSeries(err error, meta chunks.Meta) bool {
+	if !h.tolerateRemovedSeries || !errors.Is(err, storage.ErrNotFound) {
+		return false
+	}
+	sid, _, _ := unpackHeadChunkRef(meta.Ref)
+	if h.head.series.getByID(sid) != nil {
+		return false
+	}
+	h.head.metrics.chunkReadsOfRemovedSeries.Inc()
+	return true
+}
+
+// noSamples is a chunkenc.Iterable without samples.
+type noSamples struct{}
+
+func (noSamples) Iterator(chunkenc.Iterator) chunkenc.Iterator {
+	return chunkenc.NewNopIterator()
 }
 
 // chunk returns the chunk for the reference number.
