@@ -432,6 +432,8 @@ Known limitations:
   implemented yet, so results may contain duplicates.
 * Native histograms with exponential buckets are not converted yet; support may be added later.
 * There is no control label yet; one will be added to disable and debug the conversion.
+* There is no metric counting the converted series yet; one will be added to help track the progress of
+  a migration from classic histograms to NHCB.
 
 ## Query cost
 
