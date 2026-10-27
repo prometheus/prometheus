@@ -720,6 +720,9 @@ func main() {
 		fmt.Fprintln(os.Stderr, "--query.convert-classic-histograms-from requires --enable-feature=promql-native-histograms-as-classic")
 		os.Exit(1)
 	}
+	if cfg.enableNativeHistogramsAsClassic && len(cfg.convertClassicHistogramsFrom) == 0 {
+		cfg.convertClassicHistogramsFrom = []string{"nhcb"}
+	}
 
 	if cfg.web.MaxSearchLimit < 0 {
 		fmt.Fprintf(os.Stderr, "--web.search.max-limit must be non-negative; got %d (use 0 to disable the cap)\n", cfg.web.MaxSearchLimit)
