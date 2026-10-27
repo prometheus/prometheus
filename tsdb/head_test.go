@@ -7320,6 +7320,101 @@ func TestSnapshotAheadOfWALError(t *testing.T) {
 	require.NoError(t, head.Close())
 }
 
+// TestChunkSnapshotSkippedCheckpointSeriesRefs checks that series refs stay unique when the
+// chunk snapshot is newer than the last WAL checkpoint and that checkpoint still contains
+// series that were garbage collected from the head before the snapshot was taken.
+func TestChunkSnapshotSkippedCheckpointSeriesRefs(t *testing.T) {
+	const numSeries = 100
+	head, w := newTestHead(t, 1000, compression.None, false)
+	head.opts.EnableMemorySnapshotOnShutdown = true
+	require.NoError(t, head.Init(0))
+	walDir, opts := w.Dir(), head.opts
+
+	reopen := func() *Head {
+		w, err := wlog.NewSize(nil, nil, walDir, 32768, compression.None)
+		require.NoError(t, err)
+		h, err := NewHead(nil, nil, w, nil, opts, nil)
+		require.NoError(t, err)
+		require.NoError(t, h.Init(math.MinInt64))
+		return h
+	}
+	appendSeries := func(h *Head, name string, ts int64) []storage.SeriesRef {
+		app := h.Appender(context.Background())
+		refs := make([]storage.SeriesRef, 0, numSeries)
+		for i := range numSeries {
+			ref, err := app.Append(0, labels.FromStrings("__name__", name, "i", strconv.Itoa(i)), ts, float64(i))
+			require.NoError(t, err)
+			refs = append(refs, ref)
+		}
+		require.NoError(t, app.Commit())
+		return refs
+	}
+	checkpoint := func(h *Head, mint int64) {
+		for range 3 {
+			_, err := h.wal.NextSegment()
+			require.NoError(t, err)
+		}
+		require.NoError(t, h.Truncate(mint))
+	}
+
+	// The checkpoint is written while the churned series are still in the head.
+	kept := labels.FromStrings("__name__", "kept")
+	app := head.Appender(context.Background())
+	_, err := app.Append(0, kept, 100, 1)
+	require.NoError(t, err)
+	require.NoError(t, app.Commit())
+	churnedRefs := appendSeries(head, "churned", 100)
+	checkpoint(head, 50)
+	_, cpIdx, err := wlog.LastCheckpoint(walDir)
+	require.NoError(t, err)
+
+	// The churned series are garbage collected without a new checkpoint, so only the kept
+	// series ends up in the snapshot.
+	app = head.Appender(context.Background())
+	_, err = app.Append(0, kept, 1000, 1)
+	require.NoError(t, err)
+	require.NoError(t, app.Commit())
+	require.NoError(t, head.Truncate(500))
+	require.Equal(t, uint64(1), head.NumSeries())
+	_, idx, err := wlog.LastCheckpoint(walDir)
+	require.NoError(t, err)
+	require.Equal(t, cpIdx, idx)
+	require.NoError(t, head.Close())
+	_, snapIdx, _, err := LastChunkSnapshot(opts.ChunkDirRoot)
+	require.NoError(t, err)
+	require.Greater(t, snapIdx, cpIdx, "the snapshot must supersede the checkpoint")
+
+	// New series must not reuse refs that the skipped checkpoint still holds.
+	head = reopen()
+	freshRefs := appendSeries(head, "fresh", 2000)
+	for _, ref := range freshRefs {
+		require.NotContains(t, churnedRefs, ref)
+	}
+
+	// A checkpoint followed by a shutdown without snapshot leaves the old snapshot behind,
+	// so the next start replays that checkpoint.
+	checkpoint(head, 1500)
+	head.opts.EnableMemorySnapshotOnShutdown = false
+	require.NoError(t, head.Close())
+	head.opts.EnableMemorySnapshotOnShutdown = true
+	head = reopen()
+	defer func() {
+		require.NoError(t, head.Close())
+	}()
+
+	for _, name := range []string{"churned", "fresh"} {
+		q, err := NewBlockQuerier(head, math.MinInt64, math.MaxInt64)
+		require.NoError(t, err)
+		got := query(t, q, labels.MustNewMatcher(labels.MatchEqual, "__name__", name))
+		for lset := range got {
+			require.Contains(t, lset, `__name__="`+name+`"`)
+		}
+		if name == "fresh" {
+			require.Len(t, got, numSeries)
+		}
+	}
+}
+
 // TODO(bwplotka): Bad benchmark (no b.Loop/b.N), fix or remove.
 func BenchmarkCuttingHeadHistogramChunks(b *testing.B) {
 	const (
