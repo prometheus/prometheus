@@ -164,8 +164,8 @@ type Head struct {
 
 	memTruncationInProcess atomic.Bool
 	memTruncationCallBack  func() // For testing purposes.
-	// testAfterSeriesLookup is invoked after getByID in appenders, before the
-	// series is locked. Tests use it to race GC against a resolved pointer.
+	// testAfterSeriesLookup is invoked after an appender's optional ID lookup,
+	// before the series is locked. Tests use it to race GC with series resolution.
 	testAfterSeriesLookup func(*memSeries)
 }
 
