@@ -24,6 +24,7 @@ import (
 
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/storage"
+	"github.com/prometheus/prometheus/tsdb/chunkenc"
 	"github.com/prometheus/prometheus/util/annotations"
 )
 
@@ -210,7 +211,7 @@ func classifyMatchers(matchers []*labels.Matcher) (semconvURL, schemaURL, warnin
 
 	if semconvURL == "" {
 		if schemaURL != "" {
-			return "", "", fmt.Sprintf("__schema_url__ requires __semconv_url__, schematization logic is skipped for %v", matchers), false
+			return "", schemaURL, "", true
 		}
 		return "", "", "", false // Nothing requested.
 	}
@@ -224,6 +225,9 @@ func classifyMatchers(matchers []*labels.Matcher) (semconvURL, schemaURL, warnin
 
 // variantErrorWarning formats the passthrough warning for a findMatcherVariants failure.
 func variantErrorWarning(matchers []*labels.Matcher, err error) string {
+	if errors.Is(err, errSemconvURLRequired) {
+		return fmt.Sprintf("__schema_url__ requires __semconv_url__, schematization logic is skipped for %v", matchers)
+	}
 	return fmt.Sprintf("failed to find variants, schematization logic is skipped for %v: %v", matchers, err)
 }
 
@@ -833,6 +837,12 @@ func queryLabelValues(ctx context.Context, q labelQuerier, e *schemaEngine, name
 		for _, v := range p.values {
 			if metricNameQuery && p.mapping != nil {
 				v = p.mapping.translatedMetric
+			} else if p.mapping != nil && p.mapping.policyTransform != nil {
+				var keep bool
+				v, keep = p.mapping.policyTransform.mapLabelValue(name, v)
+				if !keep {
+					continue
+				}
 			}
 			if _, ok := seen[v]; ok {
 				continue
@@ -1044,11 +1054,11 @@ func (s *limitedChunkSeriesSet) Next() bool {
 // mappingNeedsResort reports whether attribute rewriting can change a variant's
 // series order or collapse distinct input labels.
 func mappingNeedsResort(mapping *labelMapping) bool {
-	return mapping != nil && len(mapping.translatedLabels) > 0
+	return mapping != nil && (len(mapping.translatedLabels) > 0 || mapping.policyTransform != nil)
 }
 
 func identityMatcherVariant(variant matcherVariant) bool {
-	if variant.mapping == nil || len(variant.mapping.translatedLabels) > 0 || len(variant.canonicalMatchers) > 0 {
+	if variant.mapping == nil || len(variant.mapping.translatedLabels) > 0 || variant.mapping.policyTransform != nil || len(variant.canonicalMatchers) > 0 {
 		return false
 	}
 	return !metricMappingChanges(variant)
@@ -1337,13 +1347,31 @@ func (s *awareSeriesSet) Next() bool {
 		result := at
 		lbls := at.Labels()
 		if s.alwaysTransform || labelMappingChangesLabels(lbls, s.mapping) {
-			transformed, err := transformOTelSchemaLabels(lbls, s.mapping)
+			var (
+				transformed labels.Labels
+				sampleRule  *sampleValueRule
+				err         error
+			)
+			if s.mapping != nil && s.mapping.policyTransform != nil {
+				transformed, sampleRule, err = s.mapping.policyTransform.transformSeries(lbls)
+			} else {
+				transformed, err = transformOTelSchemaLabels(lbls, s.mapping)
+			}
 			if err != nil {
 				s.err = err
 				return false
 			}
+			if transformed.IsEmpty() {
+				continue
+			}
+			if sampleRule != nil && (sampleRule.hasMatchValue || len(sampleRule.dropValues) > 0) {
+				peek := &valueTransformedIterator{Iterator: at.Iterator(nil), rule: *sampleRule}
+				if peek.Next() == chunkenc.ValNone {
+					continue
+				}
+			}
 			lbls = transformed
-			result = &awareSeries{Series: at, lbls: lbls}
+			result = &awareSeries{Series: at, lbls: lbls, sampleRule: sampleRule}
 		}
 		if !matchesCanonicalMatchers(lbls, s.canonicalMatchers) {
 			continue
@@ -1361,11 +1389,75 @@ func (s *awareSeriesSet) Err() error {
 type awareSeries struct {
 	storage.Series
 
-	lbls labels.Labels
+	lbls       labels.Labels
+	sampleRule *sampleValueRule
 }
 
 func (s *awareSeries) Labels() labels.Labels {
 	return s.lbls
+}
+
+func (s *awareSeries) Iterator(it chunkenc.Iterator) chunkenc.Iterator {
+	inner := s.Series.Iterator(it)
+	if s.sampleRule == nil || s.sampleRule.isIdentity() {
+		return inner
+	}
+	return &valueTransformedIterator{
+		Iterator: inner,
+		rule:     *s.sampleRule,
+	}
+}
+
+type valueTransformedIterator struct {
+	chunkenc.Iterator
+
+	rule sampleValueRule
+}
+
+func (it *valueTransformedIterator) sampleMatches(v float64) bool {
+	if slices.Contains(it.rule.dropValues, v) {
+		return false
+	}
+	if it.rule.hasMatchValue && v != it.rule.matchValue {
+		return false
+	}
+	return true
+}
+
+func (it *valueTransformedIterator) Next() chunkenc.ValueType {
+	for {
+		vt := it.Iterator.Next()
+		if vt != chunkenc.ValFloat {
+			return vt
+		}
+		_, v := it.Iterator.At()
+		if it.sampleMatches(v) {
+			return vt
+		}
+	}
+}
+
+func (it *valueTransformedIterator) Seek(t int64) chunkenc.ValueType {
+	vt := it.Iterator.Seek(t)
+	if vt != chunkenc.ValFloat {
+		return vt
+	}
+	_, v := it.Iterator.At()
+	if it.sampleMatches(v) {
+		return vt
+	}
+	return it.Next()
+}
+
+func (it *valueTransformedIterator) At() (int64, float64) {
+	ts, v := it.Iterator.At()
+	if it.rule.hasReplaceValue {
+		v = it.rule.replaceValue
+	}
+	if it.rule.scale != 0 && it.rule.scale != 1 {
+		v *= it.rule.scale
+	}
+	return ts, v
 }
 
 type awareChunkSeriesSet struct {

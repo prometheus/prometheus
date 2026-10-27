@@ -1,0 +1,1325 @@
+# K8s migration: pre-stability (Collector k8scluster / kubeletstats /
+# k8sattributes) conventions -> semantic conventions v1.44.0.
+#
+# Source: docs/non-normative/k8s-migration.md ("Old (Collector)" column).
+# The Collector receivers stamp sem_conv_version 1.18.0 on this data, so that
+# is the source schema URL. Most "old" names never existed in any semconv
+# release.
+#
+# Only metrics and resource attributes change; there are no span or log
+# changes in the guide.
+#
+# Changes intentionally left out (not bridgeable / not expressible):
+#   - instrument changes gauge -> updowncounter (all metrics below; values
+#     are the same point-in-time numbers, Prometheus exports both as gauges)
+#   - same-name instrument changes: k8s.{node,pod}.filesystem.*,
+#     container.filesystem.*, k8s.{pod,node}.memory.usage,
+#     container.memory.usage, k8s.container.ready (nothing to rename)
+#   - *.memory.page_faults -> *.paging.faults{type=minor}: semconv defines
+#     minor = PageFaults - MajorPageFaults, the old metric is the total
+#   - k8s.pod.cpu_{limit,request}_utilization: denominator changed (sum of
+#     container limits -> Pod-level limit); target metric is not in v1.44.0
+#   - ResourceQuota / ClusterResourceQuota CPU values: unit change millicores
+#     -> cores (query time only; the metrics are renamed)
+#
+# Approximate: k8s.node.condition_*, k8s.pod.phase, k8s.pod.status_reason
+# and k8s.namespace.phase carry the current state only, so the 0-valued
+# series for the other states can't be created.
+file_format: transform/2.0
+source:
+  schema_url: https://opentelemetry.io/schemas/1.18.0
+target:
+  schema_url: https://opentelemetry.io/schemas/1.44.0
+# gaps: not checked, no registry for source (1.18.0)
+policies:
+  # --- Network metrics (kubeletstats): attribute renames, same metric name --
+  - id: k8s-pod-network-io-attrs
+    name: k8s.pod.network.io attributes interface/direction renamed
+    description: >
+      Target-safe: stable records carry network.interface.name /
+      network.io.direction and never the bare `interface` / `direction` keys.
+    metric_transform:
+      matches:
+        - target: {descriptor_field: METRIC_DESCRIPTOR_FIELD_NAME}
+          predicate: {equals: k8s.pod.network.io}
+      rename:
+        - {from: {datapoint_attribute: [interface]}, to: network.interface.name}
+        - {from: {datapoint_attribute: [direction]}, to: network.io.direction}
+
+  - id: k8s-pod-network-errors-attrs
+    name: k8s.pod.network.errors attributes interface/direction renamed
+    metric_transform:
+      matches:
+        - target: {descriptor_field: METRIC_DESCRIPTOR_FIELD_NAME}
+          predicate: {equals: k8s.pod.network.errors}
+      rename:
+        - {from: {datapoint_attribute: [interface]}, to: network.interface.name}
+        - {from: {datapoint_attribute: [direction]}, to: network.io.direction}
+
+  - id: k8s-node-network-io-attrs
+    name: k8s.node.network.io attributes interface/direction renamed
+    metric_transform:
+      matches:
+        - target: {descriptor_field: METRIC_DESCRIPTOR_FIELD_NAME}
+          predicate: {equals: k8s.node.network.io}
+      rename:
+        - {from: {datapoint_attribute: [interface]}, to: network.interface.name}
+        - {from: {datapoint_attribute: [direction]}, to: network.io.direction}
+
+  - id: k8s-node-network-errors-attrs
+    name: k8s.node.network.errors attributes interface/direction renamed
+    metric_transform:
+      matches:
+        - target: {descriptor_field: METRIC_DESCRIPTOR_FIELD_NAME}
+          predicate: {equals: k8s.node.network.errors}
+      rename:
+        - {from: {datapoint_attribute: [interface]}, to: network.interface.name}
+        - {from: {datapoint_attribute: [direction]}, to: network.io.direction}
+
+  # --- Node allocatable -----------------------------------------------------
+  - id: k8s-node-allocatable-cpu
+    name: k8s.node.allocatable_cpu becomes k8s.node.cpu.allocatable
+    metric_transform:
+      matches:
+        - target: {descriptor_field: METRIC_DESCRIPTOR_FIELD_NAME}
+          predicate: {equals: k8s.node.allocatable_cpu}
+      add: [{target: {descriptor_field: METRIC_DESCRIPTOR_FIELD_NAME}, value: k8s.node.cpu.allocatable, upsert: true}]
+
+  - id: k8s-node-allocatable-memory
+    name: k8s.node.allocatable_memory becomes k8s.node.memory.allocatable
+    metric_transform:
+      matches:
+        - target: {descriptor_field: METRIC_DESCRIPTOR_FIELD_NAME}
+          predicate: {equals: k8s.node.allocatable_memory}
+      add: [{target: {descriptor_field: METRIC_DESCRIPTOR_FIELD_NAME}, value: k8s.node.memory.allocatable, upsert: true}]
+
+  - id: k8s-node-allocatable-ephemeral-storage
+    name: k8s.node.allocatable_ephemeral_storage becomes k8s.node.ephemeral_storage.allocatable
+    metric_transform:
+      matches:
+        - target: {descriptor_field: METRIC_DESCRIPTOR_FIELD_NAME}
+          predicate: {equals: k8s.node.allocatable_ephemeral_storage}
+      add: [{target: {descriptor_field: METRIC_DESCRIPTOR_FIELD_NAME}, value: k8s.node.ephemeral_storage.allocatable, upsert: true}]
+
+  - id: k8s-node-allocatable-pods
+    name: k8s.node.allocatable_pods becomes k8s.node.pod.allocatable
+    metric_transform:
+      matches:
+        - target: {descriptor_field: METRIC_DESCRIPTOR_FIELD_NAME}
+          predicate: {equals: k8s.node.allocatable_pods}
+      add: [{target: {descriptor_field: METRIC_DESCRIPTOR_FIELD_NAME}, value: k8s.node.pod.allocatable, upsert: true}]
+
+  # --- Workload metrics (k8scluster) ----------------------------------------
+  - id: k8s-deployment-desired
+    name: k8s.deployment.desired becomes k8s.deployment.pod.desired
+    metric_transform:
+      matches:
+        - target: {descriptor_field: METRIC_DESCRIPTOR_FIELD_NAME}
+          predicate: {equals: k8s.deployment.desired}
+      add: [{target: {descriptor_field: METRIC_DESCRIPTOR_FIELD_NAME}, value: k8s.deployment.pod.desired, upsert: true}]
+
+  - id: k8s-deployment-available
+    name: k8s.deployment.available becomes k8s.deployment.pod.available
+    metric_transform:
+      matches:
+        - target: {descriptor_field: METRIC_DESCRIPTOR_FIELD_NAME}
+          predicate: {equals: k8s.deployment.available}
+      add: [{target: {descriptor_field: METRIC_DESCRIPTOR_FIELD_NAME}, value: k8s.deployment.pod.available, upsert: true}]
+
+  - id: k8s-replicaset-desired
+    name: k8s.replicaset.desired becomes k8s.replicaset.pod.desired
+    metric_transform:
+      matches:
+        - target: {descriptor_field: METRIC_DESCRIPTOR_FIELD_NAME}
+          predicate: {equals: k8s.replicaset.desired}
+      add: [{target: {descriptor_field: METRIC_DESCRIPTOR_FIELD_NAME}, value: k8s.replicaset.pod.desired, upsert: true}]
+
+  - id: k8s-replicaset-available
+    name: k8s.replicaset.available becomes k8s.replicaset.pod.available
+    metric_transform:
+      matches:
+        - target: {descriptor_field: METRIC_DESCRIPTOR_FIELD_NAME}
+          predicate: {equals: k8s.replicaset.available}
+      add: [{target: {descriptor_field: METRIC_DESCRIPTOR_FIELD_NAME}, value: k8s.replicaset.pod.available, upsert: true}]
+
+  - id: k8s-replicationcontroller-desired
+    name: k8s.replication_controller.desired becomes k8s.replicationcontroller.pod.desired
+    metric_transform:
+      matches:
+        - target: {descriptor_field: METRIC_DESCRIPTOR_FIELD_NAME}
+          predicate: {equals: k8s.replication_controller.desired}
+      add: [{target: {descriptor_field: METRIC_DESCRIPTOR_FIELD_NAME}, value: k8s.replicationcontroller.pod.desired, upsert: true}]
+
+  - id: k8s-replicationcontroller-available
+    name: k8s.replication_controller.available becomes k8s.replicationcontroller.pod.available
+    metric_transform:
+      matches:
+        - target: {descriptor_field: METRIC_DESCRIPTOR_FIELD_NAME}
+          predicate: {equals: k8s.replication_controller.available}
+      add: [{target: {descriptor_field: METRIC_DESCRIPTOR_FIELD_NAME}, value: k8s.replicationcontroller.pod.available, upsert: true}]
+
+  - id: k8s-statefulset-desired
+    name: k8s.statefulset.desired_pods becomes k8s.statefulset.pod.desired
+    metric_transform:
+      matches:
+        - target: {descriptor_field: METRIC_DESCRIPTOR_FIELD_NAME}
+          predicate: {equals: k8s.statefulset.desired_pods}
+      add: [{target: {descriptor_field: METRIC_DESCRIPTOR_FIELD_NAME}, value: k8s.statefulset.pod.desired, upsert: true}]
+
+  - id: k8s-statefulset-ready
+    name: k8s.statefulset.ready_pods becomes k8s.statefulset.pod.ready
+    metric_transform:
+      matches:
+        - target: {descriptor_field: METRIC_DESCRIPTOR_FIELD_NAME}
+          predicate: {equals: k8s.statefulset.ready_pods}
+      add: [{target: {descriptor_field: METRIC_DESCRIPTOR_FIELD_NAME}, value: k8s.statefulset.pod.ready, upsert: true}]
+
+  - id: k8s-statefulset-current
+    name: k8s.statefulset.current_pods becomes k8s.statefulset.pod.current
+    metric_transform:
+      matches:
+        - target: {descriptor_field: METRIC_DESCRIPTOR_FIELD_NAME}
+          predicate: {equals: k8s.statefulset.current_pods}
+      add: [{target: {descriptor_field: METRIC_DESCRIPTOR_FIELD_NAME}, value: k8s.statefulset.pod.current, upsert: true}]
+
+  - id: k8s-statefulset-updated
+    name: k8s.statefulset.updated_pods becomes k8s.statefulset.pod.updated
+    metric_transform:
+      matches:
+        - target: {descriptor_field: METRIC_DESCRIPTOR_FIELD_NAME}
+          predicate: {equals: k8s.statefulset.updated_pods}
+      add: [{target: {descriptor_field: METRIC_DESCRIPTOR_FIELD_NAME}, value: k8s.statefulset.pod.updated, upsert: true}]
+
+  - id: k8s-hpa-desired
+    name: k8s.hpa.desired_replicas becomes k8s.hpa.pod.desired
+    metric_transform:
+      matches:
+        - target: {descriptor_field: METRIC_DESCRIPTOR_FIELD_NAME}
+          predicate: {equals: k8s.hpa.desired_replicas}
+      add: [{target: {descriptor_field: METRIC_DESCRIPTOR_FIELD_NAME}, value: k8s.hpa.pod.desired, upsert: true}]
+
+  - id: k8s-hpa-current
+    name: k8s.hpa.current_replicas becomes k8s.hpa.pod.current
+    metric_transform:
+      matches:
+        - target: {descriptor_field: METRIC_DESCRIPTOR_FIELD_NAME}
+          predicate: {equals: k8s.hpa.current_replicas}
+      add: [{target: {descriptor_field: METRIC_DESCRIPTOR_FIELD_NAME}, value: k8s.hpa.pod.current, upsert: true}]
+
+  - id: k8s-hpa-max
+    name: k8s.hpa.max_replicas becomes k8s.hpa.pod.max
+    metric_transform:
+      matches:
+        - target: {descriptor_field: METRIC_DESCRIPTOR_FIELD_NAME}
+          predicate: {equals: k8s.hpa.max_replicas}
+      add: [{target: {descriptor_field: METRIC_DESCRIPTOR_FIELD_NAME}, value: k8s.hpa.pod.max, upsert: true}]
+
+  - id: k8s-hpa-min
+    name: k8s.hpa.min_replicas becomes k8s.hpa.pod.min
+    metric_transform:
+      matches:
+        - target: {descriptor_field: METRIC_DESCRIPTOR_FIELD_NAME}
+          predicate: {equals: k8s.hpa.min_replicas}
+      add: [{target: {descriptor_field: METRIC_DESCRIPTOR_FIELD_NAME}, value: k8s.hpa.pod.min, upsert: true}]
+
+  - id: k8s-daemonset-current-scheduled
+    name: k8s.daemonset.current_scheduled_nodes becomes k8s.daemonset.node.current_scheduled
+    metric_transform:
+      matches:
+        - target: {descriptor_field: METRIC_DESCRIPTOR_FIELD_NAME}
+          predicate: {equals: k8s.daemonset.current_scheduled_nodes}
+      add: [{target: {descriptor_field: METRIC_DESCRIPTOR_FIELD_NAME}, value: k8s.daemonset.node.current_scheduled, upsert: true}]
+
+  - id: k8s-daemonset-desired-scheduled
+    name: k8s.daemonset.desired_scheduled_nodes becomes k8s.daemonset.node.desired_scheduled
+    metric_transform:
+      matches:
+        - target: {descriptor_field: METRIC_DESCRIPTOR_FIELD_NAME}
+          predicate: {equals: k8s.daemonset.desired_scheduled_nodes}
+      add: [{target: {descriptor_field: METRIC_DESCRIPTOR_FIELD_NAME}, value: k8s.daemonset.node.desired_scheduled, upsert: true}]
+
+  - id: k8s-daemonset-misscheduled
+    name: k8s.daemonset.misscheduled_nodes becomes k8s.daemonset.node.misscheduled
+    metric_transform:
+      matches:
+        - target: {descriptor_field: METRIC_DESCRIPTOR_FIELD_NAME}
+          predicate: {equals: k8s.daemonset.misscheduled_nodes}
+      add: [{target: {descriptor_field: METRIC_DESCRIPTOR_FIELD_NAME}, value: k8s.daemonset.node.misscheduled, upsert: true}]
+
+  - id: k8s-daemonset-ready
+    name: k8s.daemonset.ready_nodes becomes k8s.daemonset.node.ready
+    metric_transform:
+      matches:
+        - target: {descriptor_field: METRIC_DESCRIPTOR_FIELD_NAME}
+          predicate: {equals: k8s.daemonset.ready_nodes}
+      add: [{target: {descriptor_field: METRIC_DESCRIPTOR_FIELD_NAME}, value: k8s.daemonset.node.ready, upsert: true}]
+
+  - id: k8s-job-active
+    name: k8s.job.active_pods becomes k8s.job.pod.active
+    metric_transform:
+      matches:
+        - target: {descriptor_field: METRIC_DESCRIPTOR_FIELD_NAME}
+          predicate: {equals: k8s.job.active_pods}
+      add: [{target: {descriptor_field: METRIC_DESCRIPTOR_FIELD_NAME}, value: k8s.job.pod.active, upsert: true}]
+
+  - id: k8s-job-failed
+    name: k8s.job.failed_pods becomes k8s.job.pod.failed
+    metric_transform:
+      matches:
+        - target: {descriptor_field: METRIC_DESCRIPTOR_FIELD_NAME}
+          predicate: {equals: k8s.job.failed_pods}
+      add: [{target: {descriptor_field: METRIC_DESCRIPTOR_FIELD_NAME}, value: k8s.job.pod.failed, upsert: true}]
+
+  - id: k8s-job-desired-successful
+    name: k8s.job.desired_successful_pods becomes k8s.job.pod.desired_successful
+    metric_transform:
+      matches:
+        - target: {descriptor_field: METRIC_DESCRIPTOR_FIELD_NAME}
+          predicate: {equals: k8s.job.desired_successful_pods}
+      add: [{target: {descriptor_field: METRIC_DESCRIPTOR_FIELD_NAME}, value: k8s.job.pod.desired_successful, upsert: true}]
+
+  - id: k8s-job-max-parallel
+    name: k8s.job.max_parallel_pods becomes k8s.job.pod.max_parallel
+    metric_transform:
+      matches:
+        - target: {descriptor_field: METRIC_DESCRIPTOR_FIELD_NAME}
+          predicate: {equals: k8s.job.max_parallel_pods}
+      add: [{target: {descriptor_field: METRIC_DESCRIPTOR_FIELD_NAME}, value: k8s.job.pod.max_parallel, upsert: true}]
+
+  - id: k8s-job-successful
+    name: k8s.job.successful_pods becomes k8s.job.pod.successful
+    description: >
+      Not listed in the guide. The Collector emits k8s.job.successful_pods and
+      the semconv schema (1.38.0) renames it to k8s.job.pod.successful, the
+      same pattern as the other Job metrics.
+    metric_transform:
+      matches:
+        - target: {descriptor_field: METRIC_DESCRIPTOR_FIELD_NAME}
+          predicate: {equals: k8s.job.successful_pods}
+      add: [{target: {descriptor_field: METRIC_DESCRIPTOR_FIELD_NAME}, value: k8s.job.pod.successful, upsert: true}]
+
+  - id: k8s-cronjob-active
+    name: k8s.cronjob.active_jobs becomes k8s.cronjob.job.active
+    metric_transform:
+      matches:
+        - target: {descriptor_field: METRIC_DESCRIPTOR_FIELD_NAME}
+          predicate: {equals: k8s.cronjob.active_jobs}
+      add: [{target: {descriptor_field: METRIC_DESCRIPTOR_FIELD_NAME}, value: k8s.cronjob.job.active, upsert: true}]
+
+  # --- Container metrics ----------------------------------------------------
+  # The Collector reads limits/requests from the Pod spec, which semconv
+  # calls `desired`. `current` (from ContainerStatus) has no source data.
+  - id: k8s-container-cpu-limit
+    name: k8s.container.cpu_limit becomes k8s.container.cpu.limit.desired
+    metric_transform:
+      matches:
+        - target: {descriptor_field: METRIC_DESCRIPTOR_FIELD_NAME}
+          predicate: {equals: k8s.container.cpu_limit}
+      add: [{target: {descriptor_field: METRIC_DESCRIPTOR_FIELD_NAME}, value: k8s.container.cpu.limit.desired, upsert: true}]
+
+  - id: k8s-container-cpu-request
+    name: k8s.container.cpu_request becomes k8s.container.cpu.request.desired
+    metric_transform:
+      matches:
+        - target: {descriptor_field: METRIC_DESCRIPTOR_FIELD_NAME}
+          predicate: {equals: k8s.container.cpu_request}
+      add: [{target: {descriptor_field: METRIC_DESCRIPTOR_FIELD_NAME}, value: k8s.container.cpu.request.desired, upsert: true}]
+
+  - id: k8s-container-memory-limit
+    name: k8s.container.memory_limit becomes k8s.container.memory.limit.desired
+    metric_transform:
+      matches:
+        - target: {descriptor_field: METRIC_DESCRIPTOR_FIELD_NAME}
+          predicate: {equals: k8s.container.memory_limit}
+      add: [{target: {descriptor_field: METRIC_DESCRIPTOR_FIELD_NAME}, value: k8s.container.memory.limit.desired, upsert: true}]
+
+  - id: k8s-container-memory-request
+    name: k8s.container.memory_request becomes k8s.container.memory.request.desired
+    metric_transform:
+      matches:
+        - target: {descriptor_field: METRIC_DESCRIPTOR_FIELD_NAME}
+          predicate: {equals: k8s.container.memory_request}
+      add: [{target: {descriptor_field: METRIC_DESCRIPTOR_FIELD_NAME}, value: k8s.container.memory.request.desired, upsert: true}]
+
+  - id: k8s-container-storage-limit
+    name: k8s.container.storage_limit becomes k8s.container.storage.limit
+    metric_transform:
+      matches:
+        - target: {descriptor_field: METRIC_DESCRIPTOR_FIELD_NAME}
+          predicate: {equals: k8s.container.storage_limit}
+      add: [{target: {descriptor_field: METRIC_DESCRIPTOR_FIELD_NAME}, value: k8s.container.storage.limit, upsert: true}]
+
+  - id: k8s-container-storage-request
+    name: k8s.container.storage_request becomes k8s.container.storage.request
+    metric_transform:
+      matches:
+        - target: {descriptor_field: METRIC_DESCRIPTOR_FIELD_NAME}
+          predicate: {equals: k8s.container.storage_request}
+      add: [{target: {descriptor_field: METRIC_DESCRIPTOR_FIELD_NAME}, value: k8s.container.storage.request, upsert: true}]
+
+  - id: k8s-container-ephemeral-storage-limit
+    name: k8s.container.ephemeralstorage_limit becomes k8s.container.ephemeral_storage.limit
+    metric_transform:
+      matches:
+        - target: {descriptor_field: METRIC_DESCRIPTOR_FIELD_NAME}
+          predicate: {equals: k8s.container.ephemeralstorage_limit}
+      add: [{target: {descriptor_field: METRIC_DESCRIPTOR_FIELD_NAME}, value: k8s.container.ephemeral_storage.limit, upsert: true}]
+
+  - id: k8s-container-ephemeral-storage-request
+    name: k8s.container.ephemeralstorage_request becomes k8s.container.ephemeral_storage.request
+    metric_transform:
+      matches:
+        - target: {descriptor_field: METRIC_DESCRIPTOR_FIELD_NAME}
+          predicate: {equals: k8s.container.ephemeralstorage_request}
+      add: [{target: {descriptor_field: METRIC_DESCRIPTOR_FIELD_NAME}, value: k8s.container.ephemeral_storage.request, upsert: true}]
+
+  - id: k8s-container-restarts
+    name: k8s.container.restarts becomes k8s.container.restart.count
+    metric_transform:
+      matches:
+        - target: {descriptor_field: METRIC_DESCRIPTOR_FIELD_NAME}
+          predicate: {equals: k8s.container.restarts}
+      add: [{target: {descriptor_field: METRIC_DESCRIPTOR_FIELD_NAME}, value: k8s.container.restart.count, upsert: true}]
+
+  - id: k8s-container-cpu-limit-utilization
+    name: k8s.container.cpu_limit_utilization becomes k8s.container.cpu.limit.utilization
+    description: >
+      Caveat: the Collector divides by the spec (desired) limit, semconv by the
+      current limit from ContainerStatus. They differ only while an in-place
+      resize is pending.
+    metric_transform:
+      matches:
+        - target: {descriptor_field: METRIC_DESCRIPTOR_FIELD_NAME}
+          predicate: {equals: k8s.container.cpu_limit_utilization}
+      add: [{target: {descriptor_field: METRIC_DESCRIPTOR_FIELD_NAME}, value: k8s.container.cpu.limit.utilization, upsert: true}]
+
+  - id: k8s-container-cpu-request-utilization
+    name: k8s.container.cpu_request_utilization becomes k8s.container.cpu.request.utilization
+    description: >
+      Caveat: spec (desired) request vs current request from ContainerStatus;
+      differ only while an in-place resize is pending.
+    metric_transform:
+      matches:
+        - target: {descriptor_field: METRIC_DESCRIPTOR_FIELD_NAME}
+          predicate: {equals: k8s.container.cpu_request_utilization}
+      add: [{target: {descriptor_field: METRIC_DESCRIPTOR_FIELD_NAME}, value: k8s.container.cpu.request.utilization, upsert: true}]
+
+  # --- Pod volume metrics ---------------------------------------------------
+  # k8s.volume.name / k8s.volume.type move from the resource to the data
+  # points. A kubeletstats volume resource carries only volume metrics, so
+  # moving them off the resource doesn't affect other metrics.
+  - id: k8s-pod-volume-available
+    name: k8s.volume.available becomes k8s.pod.volume.available
+    metric_transform:
+      matches:
+        - target: {descriptor_field: METRIC_DESCRIPTOR_FIELD_NAME}
+          predicate: {equals: k8s.volume.available}
+      rename:
+        - {from: {resource_attribute: [k8s.volume.name]}, to_target: {datapoint_attribute: [k8s.volume.name]}}
+        - {from: {resource_attribute: [k8s.volume.type]}, to_target: {datapoint_attribute: [k8s.volume.type]}}
+      add: [{target: {descriptor_field: METRIC_DESCRIPTOR_FIELD_NAME}, value: k8s.pod.volume.available, upsert: true}]
+
+  - id: k8s-pod-volume-capacity
+    name: k8s.volume.capacity becomes k8s.pod.volume.capacity
+    metric_transform:
+      matches:
+        - target: {descriptor_field: METRIC_DESCRIPTOR_FIELD_NAME}
+          predicate: {equals: k8s.volume.capacity}
+      rename:
+        - {from: {resource_attribute: [k8s.volume.name]}, to_target: {datapoint_attribute: [k8s.volume.name]}}
+        - {from: {resource_attribute: [k8s.volume.type]}, to_target: {datapoint_attribute: [k8s.volume.type]}}
+      add: [{target: {descriptor_field: METRIC_DESCRIPTOR_FIELD_NAME}, value: k8s.pod.volume.capacity, upsert: true}]
+
+  - id: k8s-pod-volume-inode-count
+    name: k8s.volume.inodes becomes k8s.pod.volume.inode.count
+    metric_transform:
+      matches:
+        - target: {descriptor_field: METRIC_DESCRIPTOR_FIELD_NAME}
+          predicate: {equals: k8s.volume.inodes}
+      rename:
+        - {from: {resource_attribute: [k8s.volume.name]}, to_target: {datapoint_attribute: [k8s.volume.name]}}
+        - {from: {resource_attribute: [k8s.volume.type]}, to_target: {datapoint_attribute: [k8s.volume.type]}}
+      add: [{target: {descriptor_field: METRIC_DESCRIPTOR_FIELD_NAME}, value: k8s.pod.volume.inode.count, upsert: true}]
+
+  - id: k8s-pod-volume-inode-free
+    name: k8s.volume.inodes.free becomes k8s.pod.volume.inode.free
+    metric_transform:
+      matches:
+        - target: {descriptor_field: METRIC_DESCRIPTOR_FIELD_NAME}
+          predicate: {equals: k8s.volume.inodes.free}
+      rename:
+        - {from: {resource_attribute: [k8s.volume.name]}, to_target: {datapoint_attribute: [k8s.volume.name]}}
+        - {from: {resource_attribute: [k8s.volume.type]}, to_target: {datapoint_attribute: [k8s.volume.type]}}
+      add: [{target: {descriptor_field: METRIC_DESCRIPTOR_FIELD_NAME}, value: k8s.pod.volume.inode.free, upsert: true}]
+
+  - id: k8s-pod-volume-inode-used
+    name: k8s.volume.inodes.used becomes k8s.pod.volume.inode.used
+    metric_transform:
+      matches:
+        - target: {descriptor_field: METRIC_DESCRIPTOR_FIELD_NAME}
+          predicate: {equals: k8s.volume.inodes.used}
+      rename:
+        - {from: {resource_attribute: [k8s.volume.name]}, to_target: {datapoint_attribute: [k8s.volume.name]}}
+        - {from: {resource_attribute: [k8s.volume.type]}, to_target: {datapoint_attribute: [k8s.volume.type]}}
+      add: [{target: {descriptor_field: METRIC_DESCRIPTOR_FIELD_NAME}, value: k8s.pod.volume.inode.used, upsert: true}]
+
+  # --- Paging faults: only the major partition is exact ---------------------
+  - id: k8s-pod-major-page-faults
+    name: k8s.pod.memory.major_page_faults becomes k8s.pod.paging.faults{type=major}
+    metric_transform:
+      matches:
+        - target: {descriptor_field: METRIC_DESCRIPTOR_FIELD_NAME}
+          predicate: {equals: k8s.pod.memory.major_page_faults}
+      add:
+        - {target: {descriptor_field: METRIC_DESCRIPTOR_FIELD_NAME}, value: k8s.pod.paging.faults, upsert: true}
+        - {target: {datapoint_attribute: [system.paging.fault.type]}, value: major}
+
+  - id: k8s-node-major-page-faults
+    name: k8s.node.memory.major_page_faults becomes k8s.node.paging.faults{type=major}
+    metric_transform:
+      matches:
+        - target: {descriptor_field: METRIC_DESCRIPTOR_FIELD_NAME}
+          predicate: {equals: k8s.node.memory.major_page_faults}
+      add:
+        - {target: {descriptor_field: METRIC_DESCRIPTOR_FIELD_NAME}, value: k8s.node.paging.faults, upsert: true}
+        - {target: {datapoint_attribute: [system.paging.fault.type]}, value: major}
+
+  - id: container-major-page-faults
+    name: container.memory.major_page_faults becomes container.paging.faults{type=major}
+    metric_transform:
+      matches:
+        - target: {descriptor_field: METRIC_DESCRIPTOR_FIELD_NAME}
+          predicate: {equals: container.memory.major_page_faults}
+      add:
+        - {target: {descriptor_field: METRIC_DESCRIPTOR_FIELD_NAME}, value: container.paging.faults, upsert: true}
+        - {target: {datapoint_attribute: [system.paging.fault.type]}, value: major}
+
+  # --- State metrics: state in the value -> state in an attribute -----------
+  # The value moves to an attribute and becomes 1. Approximate: only the
+  # current state is reported, so the 0-valued series for the other states
+  # (which semconv producers emit) can't be created.
+  - id: k8s-pod-phase
+    name: k8s.pod.phase (1-5) becomes k8s.pod.status.phase{k8s.pod.status.phase=<phase>} = 1
+    description: >
+      Target-safe: v1.44 has no k8s.pod.phase metric.
+    metric_transform:
+      matches:
+        - target: {descriptor_field: METRIC_DESCRIPTOR_FIELD_NAME}
+          predicate: {equals: k8s.pod.phase}
+      rename: [{from: {datapoint_field: DATAPOINT_FIELD_VALUE}, to: k8s.pod.status.phase}]
+      add:
+        - {target: {descriptor_field: METRIC_DESCRIPTOR_FIELD_NAME}, value: k8s.pod.status.phase, upsert: true}
+        - {target: {datapoint_field: DATAPOINT_FIELD_VALUE}, value: 1, upsert: true}
+      map: [{target: {datapoint_attribute: [k8s.pod.status.phase]}, values: {1: Pending, 2: Running, 3: Succeeded, 4: Failed, 5: Unknown}}]
+
+  - id: k8s-namespace-phase
+    name: value-encoded k8s.namespace.phase (1 active, 0 terminating) becomes k8s.namespace.phase{k8s.namespace.phase=<phase>} = 1
+    description: >
+      Same metric name in both shapes. Target-safe: requiring the phase
+      attribute to be absent keeps semconv records out.
+    metric_transform:
+      matches:
+        - target: {descriptor_field: METRIC_DESCRIPTOR_FIELD_NAME}
+          predicate: {equals: k8s.namespace.phase}
+        - target: {datapoint_attribute: [k8s.namespace.phase]}
+          predicate: {exists: {}}
+          negate: true
+      rename: [{from: {datapoint_field: DATAPOINT_FIELD_VALUE}, to: k8s.namespace.phase}]
+      add: [{target: {datapoint_field: DATAPOINT_FIELD_VALUE}, value: 1, upsert: true}]
+      map: [{target: {datapoint_attribute: [k8s.namespace.phase]}, values: {1: active, 0: terminating}}]
+
+  - id: k8s-pod-status-reason-drop-unknown
+    name: k8s.pod.status_reason series with value 6 (no or other reason) are dropped
+    description: >
+      Semconv has no value for it: a Pod without one of the known reasons has
+      all k8s.pod.status.reason series at 0. Data point level: the matcher
+      reads the value.
+    metric_filter:
+      matches:
+        - target: {descriptor_field: METRIC_DESCRIPTOR_FIELD_NAME}
+          predicate: {equals: k8s.pod.status_reason}
+        - target: {datapoint_field: DATAPOINT_FIELD_VALUE}
+          predicate: {equals: 6}
+      action: ACTION_DROP
+
+  - id: k8s-pod-status-reason
+    name: k8s.pod.status_reason (1-5) becomes k8s.pod.status.reason{k8s.pod.status.reason=<reason>} = 1
+    metric_transform:
+      matches:
+        - target: {descriptor_field: METRIC_DESCRIPTOR_FIELD_NAME}
+          predicate: {equals: k8s.pod.status_reason}
+      rename: [{from: {datapoint_field: DATAPOINT_FIELD_VALUE}, to: k8s.pod.status.reason}]
+      add:
+        - {target: {descriptor_field: METRIC_DESCRIPTOR_FIELD_NAME}, value: k8s.pod.status.reason, upsert: true}
+        - {target: {datapoint_field: DATAPOINT_FIELD_VALUE}, value: 1, upsert: true}
+      map: [{target: {datapoint_attribute: [k8s.pod.status.reason]}, values: {1: Evicted, 2: NodeAffinity, 3: NodeLost, 4: Shutdown, 5: UnexpectedAdmissionError}}]
+
+  - id: k8s-node-condition-ready
+    name: k8s.node.condition_ready becomes k8s.node.condition.status{type=Ready, status=<status>} = 1
+    metric_transform:
+      matches:
+        - target: {descriptor_field: METRIC_DESCRIPTOR_FIELD_NAME}
+          predicate: {equals: k8s.node.condition_ready}
+      rename: [{from: {datapoint_field: DATAPOINT_FIELD_VALUE}, to: k8s.node.condition.status}]
+      add:
+        - {target: {descriptor_field: METRIC_DESCRIPTOR_FIELD_NAME}, value: k8s.node.condition.status, upsert: true}
+        - {target: {datapoint_attribute: [k8s.node.condition.type]}, value: Ready}
+        - {target: {datapoint_field: DATAPOINT_FIELD_VALUE}, value: 1, upsert: true}
+      map: [{target: {datapoint_attribute: [k8s.node.condition.status]}, values: {1: "true", 0: "false", -1: unknown}}]
+
+  - id: k8s-node-condition-memory-pressure
+    name: k8s.node.condition_memory_pressure becomes k8s.node.condition.status{type=MemoryPressure, status=<status>} = 1
+    metric_transform:
+      matches:
+        - target: {descriptor_field: METRIC_DESCRIPTOR_FIELD_NAME}
+          predicate: {equals: k8s.node.condition_memory_pressure}
+      rename: [{from: {datapoint_field: DATAPOINT_FIELD_VALUE}, to: k8s.node.condition.status}]
+      add:
+        - {target: {descriptor_field: METRIC_DESCRIPTOR_FIELD_NAME}, value: k8s.node.condition.status, upsert: true}
+        - {target: {datapoint_attribute: [k8s.node.condition.type]}, value: MemoryPressure}
+        - {target: {datapoint_field: DATAPOINT_FIELD_VALUE}, value: 1, upsert: true}
+      map: [{target: {datapoint_attribute: [k8s.node.condition.status]}, values: {1: "true", 0: "false", -1: unknown}}]
+
+  - id: k8s-node-condition-disk-pressure
+    name: k8s.node.condition_disk_pressure becomes k8s.node.condition.status{type=DiskPressure, status=<status>} = 1
+    metric_transform:
+      matches:
+        - target: {descriptor_field: METRIC_DESCRIPTOR_FIELD_NAME}
+          predicate: {equals: k8s.node.condition_disk_pressure}
+      rename: [{from: {datapoint_field: DATAPOINT_FIELD_VALUE}, to: k8s.node.condition.status}]
+      add:
+        - {target: {descriptor_field: METRIC_DESCRIPTOR_FIELD_NAME}, value: k8s.node.condition.status, upsert: true}
+        - {target: {datapoint_attribute: [k8s.node.condition.type]}, value: DiskPressure}
+        - {target: {datapoint_field: DATAPOINT_FIELD_VALUE}, value: 1, upsert: true}
+      map: [{target: {datapoint_attribute: [k8s.node.condition.status]}, values: {1: "true", 0: "false", -1: unknown}}]
+
+  - id: k8s-node-condition-pid-pressure
+    name: k8s.node.condition_pid_pressure becomes k8s.node.condition.status{type=PIDPressure, status=<status>} = 1
+    metric_transform:
+      matches:
+        - target: {descriptor_field: METRIC_DESCRIPTOR_FIELD_NAME}
+          predicate: {equals: k8s.node.condition_pid_pressure}
+      rename: [{from: {datapoint_field: DATAPOINT_FIELD_VALUE}, to: k8s.node.condition.status}]
+      add:
+        - {target: {descriptor_field: METRIC_DESCRIPTOR_FIELD_NAME}, value: k8s.node.condition.status, upsert: true}
+        - {target: {datapoint_attribute: [k8s.node.condition.type]}, value: PIDPressure}
+        - {target: {datapoint_field: DATAPOINT_FIELD_VALUE}, value: 1, upsert: true}
+      map: [{target: {datapoint_attribute: [k8s.node.condition.status]}, values: {1: "true", 0: "false", -1: unknown}}]
+
+  - id: k8s-node-condition-network-unavailable
+    name: k8s.node.condition_network_unavailable becomes k8s.node.condition.status{type=NetworkUnavailable, status=<status>} = 1
+    metric_transform:
+      matches:
+        - target: {descriptor_field: METRIC_DESCRIPTOR_FIELD_NAME}
+          predicate: {equals: k8s.node.condition_network_unavailable}
+      rename: [{from: {datapoint_field: DATAPOINT_FIELD_VALUE}, to: k8s.node.condition.status}]
+      add:
+        - {target: {descriptor_field: METRIC_DESCRIPTOR_FIELD_NAME}, value: k8s.node.condition.status, upsert: true}
+        - {target: {datapoint_attribute: [k8s.node.condition.type]}, value: NetworkUnavailable}
+        - {target: {datapoint_field: DATAPOINT_FIELD_VALUE}, value: 1, upsert: true}
+      map: [{target: {datapoint_attribute: [k8s.node.condition.status]}, values: {1: "true", 0: "false", -1: unknown}}]
+
+  # --- ResourceQuota metrics: one policy per (metric, resource key) ---------
+  # `resource` is pinned by the matcher, so removing it never merges series.
+  # The bare `memory` / `ephemeral-storage` keys are aliases of the
+  # requests.* keys and share their policies.
+  - id: k8s-rq-hard-cpu-limit
+    name: k8s.resource_quota.hard_limit{resource=limits.cpu} becomes k8s.resourcequota.cpu.limit.hard
+    description: >
+      Unit change millicores -> cores is not expressible; query rewriters
+      multiply results by 0.001; data in flight needs an SDK View or a
+      Collector processor.
+    metric_transform:
+      matches:
+        - target: {descriptor_field: METRIC_DESCRIPTOR_FIELD_NAME}
+          predicate: {equals: k8s.resource_quota.hard_limit}
+        - target: {datapoint_attribute: [resource]}
+          predicate: {equals: limits.cpu}
+      remove: [{target: {datapoint_attribute: [resource]}}]
+      add: [{target: {descriptor_field: METRIC_DESCRIPTOR_FIELD_NAME}, value: k8s.resourcequota.cpu.limit.hard, upsert: true}]
+
+  - id: k8s-rq-used-cpu-limit
+    name: k8s.resource_quota.used{resource=limits.cpu} becomes k8s.resourcequota.cpu.limit.used
+    metric_transform:
+      matches:
+        - target: {descriptor_field: METRIC_DESCRIPTOR_FIELD_NAME}
+          predicate: {equals: k8s.resource_quota.used}
+        - target: {datapoint_attribute: [resource]}
+          predicate: {equals: limits.cpu}
+      remove: [{target: {datapoint_attribute: [resource]}}]
+      add: [{target: {descriptor_field: METRIC_DESCRIPTOR_FIELD_NAME}, value: k8s.resourcequota.cpu.limit.used, upsert: true}]
+
+  - id: k8s-rq-hard-cpu-request
+    name: k8s.resource_quota.hard_limit{resource=requests.cpu} becomes k8s.resourcequota.cpu.request.hard
+    metric_transform:
+      matches:
+        - target: {descriptor_field: METRIC_DESCRIPTOR_FIELD_NAME}
+          predicate: {equals: k8s.resource_quota.hard_limit}
+        - target: {datapoint_attribute: [resource]}
+          predicate: {equals: requests.cpu}
+      remove: [{target: {datapoint_attribute: [resource]}}]
+      add: [{target: {descriptor_field: METRIC_DESCRIPTOR_FIELD_NAME}, value: k8s.resourcequota.cpu.request.hard, upsert: true}]
+
+  - id: k8s-rq-used-cpu-request
+    name: k8s.resource_quota.used{resource=requests.cpu} becomes k8s.resourcequota.cpu.request.used
+    metric_transform:
+      matches:
+        - target: {descriptor_field: METRIC_DESCRIPTOR_FIELD_NAME}
+          predicate: {equals: k8s.resource_quota.used}
+        - target: {datapoint_attribute: [resource]}
+          predicate: {equals: requests.cpu}
+      remove: [{target: {datapoint_attribute: [resource]}}]
+      add: [{target: {descriptor_field: METRIC_DESCRIPTOR_FIELD_NAME}, value: k8s.resourcequota.cpu.request.used, upsert: true}]
+
+  - id: k8s-rq-hard-cpu-request-alias
+    name: k8s.resource_quota.hard_limit{resource=cpu} becomes k8s.resourcequota.cpu.request.hard
+    description: >
+      The bare `cpu` key is the requests.cpu alias. The Collector reports it
+      in cores (rounded up), not millicores, so there's no unit change but
+      fractional values are lost.
+    metric_transform:
+      matches:
+        - target: {descriptor_field: METRIC_DESCRIPTOR_FIELD_NAME}
+          predicate: {equals: k8s.resource_quota.hard_limit}
+        - target: {datapoint_attribute: [resource]}
+          predicate: {equals: cpu}
+      remove: [{target: {datapoint_attribute: [resource]}}]
+      add: [{target: {descriptor_field: METRIC_DESCRIPTOR_FIELD_NAME}, value: k8s.resourcequota.cpu.request.hard, upsert: true}]
+
+  - id: k8s-rq-used-cpu-request-alias
+    name: k8s.resource_quota.used{resource=cpu} becomes k8s.resourcequota.cpu.request.used
+    metric_transform:
+      matches:
+        - target: {descriptor_field: METRIC_DESCRIPTOR_FIELD_NAME}
+          predicate: {equals: k8s.resource_quota.used}
+        - target: {datapoint_attribute: [resource]}
+          predicate: {equals: cpu}
+      remove: [{target: {datapoint_attribute: [resource]}}]
+      add: [{target: {descriptor_field: METRIC_DESCRIPTOR_FIELD_NAME}, value: k8s.resourcequota.cpu.request.used, upsert: true}]
+
+  - id: k8s-rq-hard-memory-limit
+    name: k8s.resource_quota.hard_limit{resource=limits.memory} becomes k8s.resourcequota.memory.limit.hard
+    metric_transform:
+      matches:
+        - target: {descriptor_field: METRIC_DESCRIPTOR_FIELD_NAME}
+          predicate: {equals: k8s.resource_quota.hard_limit}
+        - target: {datapoint_attribute: [resource]}
+          predicate: {equals: limits.memory}
+      remove: [{target: {datapoint_attribute: [resource]}}]
+      add: [{target: {descriptor_field: METRIC_DESCRIPTOR_FIELD_NAME}, value: k8s.resourcequota.memory.limit.hard, upsert: true}]
+
+  - id: k8s-rq-used-memory-limit
+    name: k8s.resource_quota.used{resource=limits.memory} becomes k8s.resourcequota.memory.limit.used
+    metric_transform:
+      matches:
+        - target: {descriptor_field: METRIC_DESCRIPTOR_FIELD_NAME}
+          predicate: {equals: k8s.resource_quota.used}
+        - target: {datapoint_attribute: [resource]}
+          predicate: {equals: limits.memory}
+      remove: [{target: {datapoint_attribute: [resource]}}]
+      add: [{target: {descriptor_field: METRIC_DESCRIPTOR_FIELD_NAME}, value: k8s.resourcequota.memory.limit.used, upsert: true}]
+
+  - id: k8s-rq-hard-memory-request
+    name: k8s.resource_quota.hard_limit{resource=requests.memory|memory} becomes k8s.resourcequota.memory.request.hard
+    metric_transform:
+      matches:
+        - target: {descriptor_field: METRIC_DESCRIPTOR_FIELD_NAME}
+          predicate: {equals: k8s.resource_quota.hard_limit}
+        - target: {datapoint_attribute: [resource]}
+          predicate: {regex: "^(requests\\.memory|memory)$"}
+      remove: [{target: {datapoint_attribute: [resource]}}]
+      add: [{target: {descriptor_field: METRIC_DESCRIPTOR_FIELD_NAME}, value: k8s.resourcequota.memory.request.hard, upsert: true}]
+
+  - id: k8s-rq-used-memory-request
+    name: k8s.resource_quota.used{resource=requests.memory|memory} becomes k8s.resourcequota.memory.request.used
+    metric_transform:
+      matches:
+        - target: {descriptor_field: METRIC_DESCRIPTOR_FIELD_NAME}
+          predicate: {equals: k8s.resource_quota.used}
+        - target: {datapoint_attribute: [resource]}
+          predicate: {regex: "^(requests\\.memory|memory)$"}
+      remove: [{target: {datapoint_attribute: [resource]}}]
+      add: [{target: {descriptor_field: METRIC_DESCRIPTOR_FIELD_NAME}, value: k8s.resourcequota.memory.request.used, upsert: true}]
+
+  - id: k8s-rq-hard-ephemeral-storage-limit
+    name: k8s.resource_quota.hard_limit{resource=limits.ephemeral-storage} becomes k8s.resourcequota.ephemeral_storage.limit.hard
+    metric_transform:
+      matches:
+        - target: {descriptor_field: METRIC_DESCRIPTOR_FIELD_NAME}
+          predicate: {equals: k8s.resource_quota.hard_limit}
+        - target: {datapoint_attribute: [resource]}
+          predicate: {equals: limits.ephemeral-storage}
+      remove: [{target: {datapoint_attribute: [resource]}}]
+      add: [{target: {descriptor_field: METRIC_DESCRIPTOR_FIELD_NAME}, value: k8s.resourcequota.ephemeral_storage.limit.hard, upsert: true}]
+
+  - id: k8s-rq-used-ephemeral-storage-limit
+    name: k8s.resource_quota.used{resource=limits.ephemeral-storage} becomes k8s.resourcequota.ephemeral_storage.limit.used
+    metric_transform:
+      matches:
+        - target: {descriptor_field: METRIC_DESCRIPTOR_FIELD_NAME}
+          predicate: {equals: k8s.resource_quota.used}
+        - target: {datapoint_attribute: [resource]}
+          predicate: {equals: limits.ephemeral-storage}
+      remove: [{target: {datapoint_attribute: [resource]}}]
+      add: [{target: {descriptor_field: METRIC_DESCRIPTOR_FIELD_NAME}, value: k8s.resourcequota.ephemeral_storage.limit.used, upsert: true}]
+
+  - id: k8s-rq-hard-ephemeral-storage-request
+    name: k8s.resource_quota.hard_limit{resource=requests.ephemeral-storage|ephemeral-storage} becomes k8s.resourcequota.ephemeral_storage.request.hard
+    metric_transform:
+      matches:
+        - target: {descriptor_field: METRIC_DESCRIPTOR_FIELD_NAME}
+          predicate: {equals: k8s.resource_quota.hard_limit}
+        - target: {datapoint_attribute: [resource]}
+          predicate: {regex: "^(requests\\.ephemeral-storage|ephemeral-storage)$"}
+      remove: [{target: {datapoint_attribute: [resource]}}]
+      add: [{target: {descriptor_field: METRIC_DESCRIPTOR_FIELD_NAME}, value: k8s.resourcequota.ephemeral_storage.request.hard, upsert: true}]
+
+  - id: k8s-rq-used-ephemeral-storage-request
+    name: k8s.resource_quota.used{resource=requests.ephemeral-storage|ephemeral-storage} becomes k8s.resourcequota.ephemeral_storage.request.used
+    metric_transform:
+      matches:
+        - target: {descriptor_field: METRIC_DESCRIPTOR_FIELD_NAME}
+          predicate: {equals: k8s.resource_quota.used}
+        - target: {datapoint_attribute: [resource]}
+          predicate: {regex: "^(requests\\.ephemeral-storage|ephemeral-storage)$"}
+      remove: [{target: {datapoint_attribute: [resource]}}]
+      add: [{target: {descriptor_field: METRIC_DESCRIPTOR_FIELD_NAME}, value: k8s.resourcequota.ephemeral_storage.request.used, upsert: true}]
+
+  - id: k8s-rq-hard-storage-request
+    name: k8s.resource_quota.hard_limit{resource=requests.storage} becomes k8s.resourcequota.storage.request.hard
+    description: Namespace-wide storage quota; semconv omits k8s.storageclass.name for it.
+    metric_transform:
+      matches:
+        - target: {descriptor_field: METRIC_DESCRIPTOR_FIELD_NAME}
+          predicate: {equals: k8s.resource_quota.hard_limit}
+        - target: {datapoint_attribute: [resource]}
+          predicate: {equals: requests.storage}
+      remove: [{target: {datapoint_attribute: [resource]}}]
+      add: [{target: {descriptor_field: METRIC_DESCRIPTOR_FIELD_NAME}, value: k8s.resourcequota.storage.request.hard, upsert: true}]
+
+  - id: k8s-rq-used-storage-request
+    name: k8s.resource_quota.used{resource=requests.storage} becomes k8s.resourcequota.storage.request.used
+    metric_transform:
+      matches:
+        - target: {descriptor_field: METRIC_DESCRIPTOR_FIELD_NAME}
+          predicate: {equals: k8s.resource_quota.used}
+        - target: {datapoint_attribute: [resource]}
+          predicate: {equals: requests.storage}
+      remove: [{target: {datapoint_attribute: [resource]}}]
+      add: [{target: {descriptor_field: METRIC_DESCRIPTOR_FIELD_NAME}, value: k8s.resourcequota.storage.request.used, upsert: true}]
+
+  - id: k8s-rq-hard-pvc-count
+    name: k8s.resource_quota.hard_limit{resource=persistentvolumeclaims} becomes k8s.resourcequota.persistentvolumeclaim_count.hard
+    metric_transform:
+      matches:
+        - target: {descriptor_field: METRIC_DESCRIPTOR_FIELD_NAME}
+          predicate: {equals: k8s.resource_quota.hard_limit}
+        - target: {datapoint_attribute: [resource]}
+          predicate: {equals: persistentvolumeclaims}
+      remove: [{target: {datapoint_attribute: [resource]}}]
+      add: [{target: {descriptor_field: METRIC_DESCRIPTOR_FIELD_NAME}, value: k8s.resourcequota.persistentvolumeclaim_count.hard, upsert: true}]
+
+  - id: k8s-rq-used-pvc-count
+    name: k8s.resource_quota.used{resource=persistentvolumeclaims} becomes k8s.resourcequota.persistentvolumeclaim_count.used
+    metric_transform:
+      matches:
+        - target: {descriptor_field: METRIC_DESCRIPTOR_FIELD_NAME}
+          predicate: {equals: k8s.resource_quota.used}
+        - target: {datapoint_attribute: [resource]}
+          predicate: {equals: persistentvolumeclaims}
+      remove: [{target: {datapoint_attribute: [resource]}}]
+      add: [{target: {descriptor_field: METRIC_DESCRIPTOR_FIELD_NAME}, value: k8s.resourcequota.persistentvolumeclaim_count.used, upsert: true}]
+
+  - id: k8s-rq-hard-storage-request-class
+    name: k8s.resource_quota.hard_limit{resource=<class>.storageclass.storage.k8s.io/requests.storage} becomes k8s.resourcequota.storage.request.hard{k8s.storageclass.name=<class>}
+    description: >
+      Per-storage-class keys. `discard` drops the rest of the key after `split`
+      reads it.
+    metric_transform:
+      matches:
+        - target: {descriptor_field: METRIC_DESCRIPTOR_FIELD_NAME}
+          predicate: {equals: k8s.resource_quota.hard_limit}
+        - target: {datapoint_attribute: [resource]}
+          predicate: {regex: "\\.storageclass\\.storage\\.k8s\\.io/requests\\.storage$"}
+      split: [{from: {datapoint_attribute: [resource]}, separator: ".storageclass.storage.k8s.io/", to: [k8s.storageclass.name, resource]}]
+      add: [{target: {descriptor_field: METRIC_DESCRIPTOR_FIELD_NAME}, value: k8s.resourcequota.storage.request.hard, upsert: true}]
+      discard: [{target: {datapoint_attribute: [resource]}}]
+
+  - id: k8s-rq-hard-pvc-count-class
+    name: k8s.resource_quota.hard_limit{resource=<class>.storageclass.storage.k8s.io/persistentvolumeclaims} becomes k8s.resourcequota.persistentvolumeclaim_count.hard{k8s.storageclass.name=<class>}
+    metric_transform:
+      matches:
+        - target: {descriptor_field: METRIC_DESCRIPTOR_FIELD_NAME}
+          predicate: {equals: k8s.resource_quota.hard_limit}
+        - target: {datapoint_attribute: [resource]}
+          predicate: {regex: "\\.storageclass\\.storage\\.k8s\\.io/persistentvolumeclaims$"}
+      split: [{from: {datapoint_attribute: [resource]}, separator: ".storageclass.storage.k8s.io/", to: [k8s.storageclass.name, resource]}]
+      add: [{target: {descriptor_field: METRIC_DESCRIPTOR_FIELD_NAME}, value: k8s.resourcequota.persistentvolumeclaim_count.hard, upsert: true}]
+      discard: [{target: {datapoint_attribute: [resource]}}]
+
+  - id: k8s-rq-used-storage-request-class
+    name: k8s.resource_quota.used{resource=<class>.storageclass.storage.k8s.io/requests.storage} becomes k8s.resourcequota.storage.request.used{k8s.storageclass.name=<class>}
+    metric_transform:
+      matches:
+        - target: {descriptor_field: METRIC_DESCRIPTOR_FIELD_NAME}
+          predicate: {equals: k8s.resource_quota.used}
+        - target: {datapoint_attribute: [resource]}
+          predicate: {regex: "\\.storageclass\\.storage\\.k8s\\.io/requests\\.storage$"}
+      split: [{from: {datapoint_attribute: [resource]}, separator: ".storageclass.storage.k8s.io/", to: [k8s.storageclass.name, resource]}]
+      add: [{target: {descriptor_field: METRIC_DESCRIPTOR_FIELD_NAME}, value: k8s.resourcequota.storage.request.used, upsert: true}]
+      discard: [{target: {datapoint_attribute: [resource]}}]
+
+  - id: k8s-rq-used-pvc-count-class
+    name: k8s.resource_quota.used{resource=<class>.storageclass.storage.k8s.io/persistentvolumeclaims} becomes k8s.resourcequota.persistentvolumeclaim_count.used{k8s.storageclass.name=<class>}
+    metric_transform:
+      matches:
+        - target: {descriptor_field: METRIC_DESCRIPTOR_FIELD_NAME}
+          predicate: {equals: k8s.resource_quota.used}
+        - target: {datapoint_attribute: [resource]}
+          predicate: {regex: "\\.storageclass\\.storage\\.k8s\\.io/persistentvolumeclaims$"}
+      split: [{from: {datapoint_attribute: [resource]}, separator: ".storageclass.storage.k8s.io/", to: [k8s.storageclass.name, resource]}]
+      add: [{target: {descriptor_field: METRIC_DESCRIPTOR_FIELD_NAME}, value: k8s.resourcequota.persistentvolumeclaim_count.used, upsert: true}]
+      discard: [{target: {datapoint_attribute: [resource]}}]
+
+  - id: k8s-rq-hard-hugepage-request
+    name: k8s.resource_quota.hard_limit{resource=requests.hugepages-<size>} becomes k8s.resourcequota.hugepage_count.request.hard{k8s.hugepage.size=<size>}
+    description: >
+      `split` leaves the size in k8s.hugepage.size; `discard` drops the empty
+      rest of the key.
+    metric_transform:
+      matches:
+        - target: {descriptor_field: METRIC_DESCRIPTOR_FIELD_NAME}
+          predicate: {equals: k8s.resource_quota.hard_limit}
+        - target: {datapoint_attribute: [resource]}
+          predicate: {regex: "^requests\\.hugepages-"}
+      split: [{from: {datapoint_attribute: [resource]}, separator: "requests.hugepages-", to: [resource, k8s.hugepage.size]}]
+      add: [{target: {descriptor_field: METRIC_DESCRIPTOR_FIELD_NAME}, value: k8s.resourcequota.hugepage_count.request.hard, upsert: true}]
+      discard: [{target: {datapoint_attribute: [resource]}}]
+
+  - id: k8s-rq-used-hugepage-request
+    name: k8s.resource_quota.used{resource=requests.hugepages-<size>} becomes k8s.resourcequota.hugepage_count.request.used{k8s.hugepage.size=<size>}
+    metric_transform:
+      matches:
+        - target: {descriptor_field: METRIC_DESCRIPTOR_FIELD_NAME}
+          predicate: {equals: k8s.resource_quota.used}
+        - target: {datapoint_attribute: [resource]}
+          predicate: {regex: "^requests\\.hugepages-"}
+      split: [{from: {datapoint_attribute: [resource]}, separator: "requests.hugepages-", to: [resource, k8s.hugepage.size]}]
+      add: [{target: {descriptor_field: METRIC_DESCRIPTOR_FIELD_NAME}, value: k8s.resourcequota.hugepage_count.request.used, upsert: true}]
+      discard: [{target: {datapoint_attribute: [resource]}}]
+
+  - id: k8s-rq-hard-object-count
+    name: k8s.resource_quota.hard_limit object-count keys become k8s.resourcequota.object_count.hard
+    description: >
+      Object-count keys (count/<resource>[.<group>] or a core resource name)
+      keep their value under k8s.resourcequota.resource_name.
+    metric_transform:
+      matches:
+        - target: {descriptor_field: METRIC_DESCRIPTOR_FIELD_NAME}
+          predicate: {equals: k8s.resource_quota.hard_limit}
+        - target: {datapoint_attribute: [resource]}
+          predicate: {regex: "^(count/.+|pods|services|services\\.loadbalancers|services\\.nodeports|configmaps|secrets|replicationcontrollers|resourcequotas)$"}
+      rename:
+        - {from: {datapoint_attribute: [resource]}, to: k8s.resourcequota.resource_name}
+      add:
+        - {target: {descriptor_field: METRIC_DESCRIPTOR_FIELD_NAME}, value: k8s.resourcequota.object_count.hard, upsert: true}
+
+  - id: k8s-rq-used-object-count
+    name: k8s.resource_quota.used object-count keys become k8s.resourcequota.object_count.used
+    metric_transform:
+      matches:
+        - target: {descriptor_field: METRIC_DESCRIPTOR_FIELD_NAME}
+          predicate: {equals: k8s.resource_quota.used}
+        - target: {datapoint_attribute: [resource]}
+          predicate: {regex: "^(count/.+|pods|services|services\\.loadbalancers|services\\.nodeports|configmaps|secrets|replicationcontrollers|resourcequotas)$"}
+      rename:
+        - {from: {datapoint_attribute: [resource]}, to: k8s.resourcequota.resource_name}
+      add:
+        - {target: {descriptor_field: METRIC_DESCRIPTOR_FIELD_NAME}, value: k8s.resourcequota.object_count.used, upsert: true}
+
+  # --- OpenShift ClusterResourceQuota metrics -------------------------------
+  # The guide says openshift.clusterquota.hard_limit; the Collector metric is
+  # openshift.clusterquota.limit (verified in k8sclusterreceiver metadata.yaml).
+  - id: os-crq-hard-cpu-limit
+    name: openshift.clusterquota.limit{resource=limits.cpu} becomes openshift.clusterquota.cpu.limit.hard
+    description: >
+      Unit change millicores -> cores is not expressible; query rewriters
+      multiply results by 0.001; data in flight needs an SDK View or a
+      Collector processor.
+    metric_transform:
+      matches:
+        - target: {descriptor_field: METRIC_DESCRIPTOR_FIELD_NAME}
+          predicate: {equals: openshift.clusterquota.limit}
+        - target: {datapoint_attribute: [resource]}
+          predicate: {equals: limits.cpu}
+      remove: [{target: {datapoint_attribute: [resource]}}]
+      add: [{target: {descriptor_field: METRIC_DESCRIPTOR_FIELD_NAME}, value: openshift.clusterquota.cpu.limit.hard, upsert: true}]
+
+  - id: os-crq-used-cpu-limit
+    name: openshift.clusterquota.used{resource=limits.cpu} becomes openshift.clusterquota.cpu.limit.used
+    metric_transform:
+      matches:
+        - target: {descriptor_field: METRIC_DESCRIPTOR_FIELD_NAME}
+          predicate: {equals: openshift.clusterquota.used}
+        - target: {datapoint_attribute: [resource]}
+          predicate: {equals: limits.cpu}
+      remove: [{target: {datapoint_attribute: [resource]}}]
+      add: [{target: {descriptor_field: METRIC_DESCRIPTOR_FIELD_NAME}, value: openshift.clusterquota.cpu.limit.used, upsert: true}]
+
+  - id: os-crq-hard-cpu-request
+    name: openshift.clusterquota.limit{resource=requests.cpu} becomes openshift.clusterquota.cpu.request.hard
+    metric_transform:
+      matches:
+        - target: {descriptor_field: METRIC_DESCRIPTOR_FIELD_NAME}
+          predicate: {equals: openshift.clusterquota.limit}
+        - target: {datapoint_attribute: [resource]}
+          predicate: {equals: requests.cpu}
+      remove: [{target: {datapoint_attribute: [resource]}}]
+      add: [{target: {descriptor_field: METRIC_DESCRIPTOR_FIELD_NAME}, value: openshift.clusterquota.cpu.request.hard, upsert: true}]
+
+  - id: os-crq-used-cpu-request
+    name: openshift.clusterquota.used{resource=requests.cpu} becomes openshift.clusterquota.cpu.request.used
+    metric_transform:
+      matches:
+        - target: {descriptor_field: METRIC_DESCRIPTOR_FIELD_NAME}
+          predicate: {equals: openshift.clusterquota.used}
+        - target: {datapoint_attribute: [resource]}
+          predicate: {equals: requests.cpu}
+      remove: [{target: {datapoint_attribute: [resource]}}]
+      add: [{target: {descriptor_field: METRIC_DESCRIPTOR_FIELD_NAME}, value: openshift.clusterquota.cpu.request.used, upsert: true}]
+
+  - id: os-crq-hard-cpu-request-alias
+    name: openshift.clusterquota.limit{resource=cpu} becomes openshift.clusterquota.cpu.request.hard
+    description: >
+      The bare `cpu` key is the requests.cpu alias. The Collector reports it
+      in cores (rounded up), not millicores, so there's no unit change but
+      fractional values are lost.
+    metric_transform:
+      matches:
+        - target: {descriptor_field: METRIC_DESCRIPTOR_FIELD_NAME}
+          predicate: {equals: openshift.clusterquota.limit}
+        - target: {datapoint_attribute: [resource]}
+          predicate: {equals: cpu}
+      remove: [{target: {datapoint_attribute: [resource]}}]
+      add: [{target: {descriptor_field: METRIC_DESCRIPTOR_FIELD_NAME}, value: openshift.clusterquota.cpu.request.hard, upsert: true}]
+
+  - id: os-crq-used-cpu-request-alias
+    name: openshift.clusterquota.used{resource=cpu} becomes openshift.clusterquota.cpu.request.used
+    metric_transform:
+      matches:
+        - target: {descriptor_field: METRIC_DESCRIPTOR_FIELD_NAME}
+          predicate: {equals: openshift.clusterquota.used}
+        - target: {datapoint_attribute: [resource]}
+          predicate: {equals: cpu}
+      remove: [{target: {datapoint_attribute: [resource]}}]
+      add: [{target: {descriptor_field: METRIC_DESCRIPTOR_FIELD_NAME}, value: openshift.clusterquota.cpu.request.used, upsert: true}]
+
+  - id: os-crq-hard-memory-limit
+    name: openshift.clusterquota.limit{resource=limits.memory} becomes openshift.clusterquota.memory.limit.hard
+    metric_transform:
+      matches:
+        - target: {descriptor_field: METRIC_DESCRIPTOR_FIELD_NAME}
+          predicate: {equals: openshift.clusterquota.limit}
+        - target: {datapoint_attribute: [resource]}
+          predicate: {equals: limits.memory}
+      remove: [{target: {datapoint_attribute: [resource]}}]
+      add: [{target: {descriptor_field: METRIC_DESCRIPTOR_FIELD_NAME}, value: openshift.clusterquota.memory.limit.hard, upsert: true}]
+
+  - id: os-crq-used-memory-limit
+    name: openshift.clusterquota.used{resource=limits.memory} becomes openshift.clusterquota.memory.limit.used
+    metric_transform:
+      matches:
+        - target: {descriptor_field: METRIC_DESCRIPTOR_FIELD_NAME}
+          predicate: {equals: openshift.clusterquota.used}
+        - target: {datapoint_attribute: [resource]}
+          predicate: {equals: limits.memory}
+      remove: [{target: {datapoint_attribute: [resource]}}]
+      add: [{target: {descriptor_field: METRIC_DESCRIPTOR_FIELD_NAME}, value: openshift.clusterquota.memory.limit.used, upsert: true}]
+
+  - id: os-crq-hard-memory-request
+    name: openshift.clusterquota.limit{resource=requests.memory|memory} becomes openshift.clusterquota.memory.request.hard
+    metric_transform:
+      matches:
+        - target: {descriptor_field: METRIC_DESCRIPTOR_FIELD_NAME}
+          predicate: {equals: openshift.clusterquota.limit}
+        - target: {datapoint_attribute: [resource]}
+          predicate: {regex: "^(requests\\.memory|memory)$"}
+      remove: [{target: {datapoint_attribute: [resource]}}]
+      add: [{target: {descriptor_field: METRIC_DESCRIPTOR_FIELD_NAME}, value: openshift.clusterquota.memory.request.hard, upsert: true}]
+
+  - id: os-crq-used-memory-request
+    name: openshift.clusterquota.used{resource=requests.memory|memory} becomes openshift.clusterquota.memory.request.used
+    metric_transform:
+      matches:
+        - target: {descriptor_field: METRIC_DESCRIPTOR_FIELD_NAME}
+          predicate: {equals: openshift.clusterquota.used}
+        - target: {datapoint_attribute: [resource]}
+          predicate: {regex: "^(requests\\.memory|memory)$"}
+      remove: [{target: {datapoint_attribute: [resource]}}]
+      add: [{target: {descriptor_field: METRIC_DESCRIPTOR_FIELD_NAME}, value: openshift.clusterquota.memory.request.used, upsert: true}]
+
+  - id: os-crq-hard-ephemeral-storage-limit
+    name: openshift.clusterquota.limit{resource=limits.ephemeral-storage} becomes openshift.clusterquota.ephemeral_storage.limit.hard
+    metric_transform:
+      matches:
+        - target: {descriptor_field: METRIC_DESCRIPTOR_FIELD_NAME}
+          predicate: {equals: openshift.clusterquota.limit}
+        - target: {datapoint_attribute: [resource]}
+          predicate: {equals: limits.ephemeral-storage}
+      remove: [{target: {datapoint_attribute: [resource]}}]
+      add: [{target: {descriptor_field: METRIC_DESCRIPTOR_FIELD_NAME}, value: openshift.clusterquota.ephemeral_storage.limit.hard, upsert: true}]
+
+  - id: os-crq-used-ephemeral-storage-limit
+    name: openshift.clusterquota.used{resource=limits.ephemeral-storage} becomes openshift.clusterquota.ephemeral_storage.limit.used
+    metric_transform:
+      matches:
+        - target: {descriptor_field: METRIC_DESCRIPTOR_FIELD_NAME}
+          predicate: {equals: openshift.clusterquota.used}
+        - target: {datapoint_attribute: [resource]}
+          predicate: {equals: limits.ephemeral-storage}
+      remove: [{target: {datapoint_attribute: [resource]}}]
+      add: [{target: {descriptor_field: METRIC_DESCRIPTOR_FIELD_NAME}, value: openshift.clusterquota.ephemeral_storage.limit.used, upsert: true}]
+
+  - id: os-crq-hard-ephemeral-storage-request
+    name: openshift.clusterquota.limit{resource=requests.ephemeral-storage|ephemeral-storage} becomes openshift.clusterquota.ephemeral_storage.request.hard
+    metric_transform:
+      matches:
+        - target: {descriptor_field: METRIC_DESCRIPTOR_FIELD_NAME}
+          predicate: {equals: openshift.clusterquota.limit}
+        - target: {datapoint_attribute: [resource]}
+          predicate: {regex: "^(requests\\.ephemeral-storage|ephemeral-storage)$"}
+      remove: [{target: {datapoint_attribute: [resource]}}]
+      add: [{target: {descriptor_field: METRIC_DESCRIPTOR_FIELD_NAME}, value: openshift.clusterquota.ephemeral_storage.request.hard, upsert: true}]
+
+  - id: os-crq-used-ephemeral-storage-request
+    name: openshift.clusterquota.used{resource=requests.ephemeral-storage|ephemeral-storage} becomes openshift.clusterquota.ephemeral_storage.request.used
+    metric_transform:
+      matches:
+        - target: {descriptor_field: METRIC_DESCRIPTOR_FIELD_NAME}
+          predicate: {equals: openshift.clusterquota.used}
+        - target: {datapoint_attribute: [resource]}
+          predicate: {regex: "^(requests\\.ephemeral-storage|ephemeral-storage)$"}
+      remove: [{target: {datapoint_attribute: [resource]}}]
+      add: [{target: {descriptor_field: METRIC_DESCRIPTOR_FIELD_NAME}, value: openshift.clusterquota.ephemeral_storage.request.used, upsert: true}]
+
+  - id: os-crq-hard-storage-request
+    name: openshift.clusterquota.limit{resource=requests.storage} becomes openshift.clusterquota.storage.request.hard
+    metric_transform:
+      matches:
+        - target: {descriptor_field: METRIC_DESCRIPTOR_FIELD_NAME}
+          predicate: {equals: openshift.clusterquota.limit}
+        - target: {datapoint_attribute: [resource]}
+          predicate: {equals: requests.storage}
+      remove: [{target: {datapoint_attribute: [resource]}}]
+      add: [{target: {descriptor_field: METRIC_DESCRIPTOR_FIELD_NAME}, value: openshift.clusterquota.storage.request.hard, upsert: true}]
+
+  - id: os-crq-used-storage-request
+    name: openshift.clusterquota.used{resource=requests.storage} becomes openshift.clusterquota.storage.request.used
+    metric_transform:
+      matches:
+        - target: {descriptor_field: METRIC_DESCRIPTOR_FIELD_NAME}
+          predicate: {equals: openshift.clusterquota.used}
+        - target: {datapoint_attribute: [resource]}
+          predicate: {equals: requests.storage}
+      remove: [{target: {datapoint_attribute: [resource]}}]
+      add: [{target: {descriptor_field: METRIC_DESCRIPTOR_FIELD_NAME}, value: openshift.clusterquota.storage.request.used, upsert: true}]
+
+  - id: os-crq-hard-pvc-count
+    name: openshift.clusterquota.limit{resource=persistentvolumeclaims} becomes openshift.clusterquota.persistentvolumeclaim_count.hard
+    metric_transform:
+      matches:
+        - target: {descriptor_field: METRIC_DESCRIPTOR_FIELD_NAME}
+          predicate: {equals: openshift.clusterquota.limit}
+        - target: {datapoint_attribute: [resource]}
+          predicate: {equals: persistentvolumeclaims}
+      remove: [{target: {datapoint_attribute: [resource]}}]
+      add: [{target: {descriptor_field: METRIC_DESCRIPTOR_FIELD_NAME}, value: openshift.clusterquota.persistentvolumeclaim_count.hard, upsert: true}]
+
+  - id: os-crq-used-pvc-count
+    name: openshift.clusterquota.used{resource=persistentvolumeclaims} becomes openshift.clusterquota.persistentvolumeclaim_count.used
+    metric_transform:
+      matches:
+        - target: {descriptor_field: METRIC_DESCRIPTOR_FIELD_NAME}
+          predicate: {equals: openshift.clusterquota.used}
+        - target: {datapoint_attribute: [resource]}
+          predicate: {equals: persistentvolumeclaims}
+      remove: [{target: {datapoint_attribute: [resource]}}]
+      add: [{target: {descriptor_field: METRIC_DESCRIPTOR_FIELD_NAME}, value: openshift.clusterquota.persistentvolumeclaim_count.used, upsert: true}]
+
+  - id: os-crq-hard-storage-request-class
+    name: openshift.clusterquota.limit{resource=<class>.storageclass.storage.k8s.io/requests.storage} becomes openshift.clusterquota.storage.request.hard{k8s.storageclass.name=<class>}
+    description: >
+      Per-storage-class keys. `discard` drops the rest of the key after `split`
+      reads it.
+    metric_transform:
+      matches:
+        - target: {descriptor_field: METRIC_DESCRIPTOR_FIELD_NAME}
+          predicate: {equals: openshift.clusterquota.limit}
+        - target: {datapoint_attribute: [resource]}
+          predicate: {regex: "\\.storageclass\\.storage\\.k8s\\.io/requests\\.storage$"}
+      split: [{from: {datapoint_attribute: [resource]}, separator: ".storageclass.storage.k8s.io/", to: [k8s.storageclass.name, resource]}]
+      add: [{target: {descriptor_field: METRIC_DESCRIPTOR_FIELD_NAME}, value: openshift.clusterquota.storage.request.hard, upsert: true}]
+      discard: [{target: {datapoint_attribute: [resource]}}]
+
+  - id: os-crq-hard-pvc-count-class
+    name: openshift.clusterquota.limit{resource=<class>.storageclass.storage.k8s.io/persistentvolumeclaims} becomes openshift.clusterquota.persistentvolumeclaim_count.hard{k8s.storageclass.name=<class>}
+    metric_transform:
+      matches:
+        - target: {descriptor_field: METRIC_DESCRIPTOR_FIELD_NAME}
+          predicate: {equals: openshift.clusterquota.limit}
+        - target: {datapoint_attribute: [resource]}
+          predicate: {regex: "\\.storageclass\\.storage\\.k8s\\.io/persistentvolumeclaims$"}
+      split: [{from: {datapoint_attribute: [resource]}, separator: ".storageclass.storage.k8s.io/", to: [k8s.storageclass.name, resource]}]
+      add: [{target: {descriptor_field: METRIC_DESCRIPTOR_FIELD_NAME}, value: openshift.clusterquota.persistentvolumeclaim_count.hard, upsert: true}]
+      discard: [{target: {datapoint_attribute: [resource]}}]
+
+  - id: os-crq-used-storage-request-class
+    name: openshift.clusterquota.used{resource=<class>.storageclass.storage.k8s.io/requests.storage} becomes openshift.clusterquota.storage.request.used{k8s.storageclass.name=<class>}
+    metric_transform:
+      matches:
+        - target: {descriptor_field: METRIC_DESCRIPTOR_FIELD_NAME}
+          predicate: {equals: openshift.clusterquota.used}
+        - target: {datapoint_attribute: [resource]}
+          predicate: {regex: "\\.storageclass\\.storage\\.k8s\\.io/requests\\.storage$"}
+      split: [{from: {datapoint_attribute: [resource]}, separator: ".storageclass.storage.k8s.io/", to: [k8s.storageclass.name, resource]}]
+      add: [{target: {descriptor_field: METRIC_DESCRIPTOR_FIELD_NAME}, value: openshift.clusterquota.storage.request.used, upsert: true}]
+      discard: [{target: {datapoint_attribute: [resource]}}]
+
+  - id: os-crq-used-pvc-count-class
+    name: openshift.clusterquota.used{resource=<class>.storageclass.storage.k8s.io/persistentvolumeclaims} becomes openshift.clusterquota.persistentvolumeclaim_count.used{k8s.storageclass.name=<class>}
+    metric_transform:
+      matches:
+        - target: {descriptor_field: METRIC_DESCRIPTOR_FIELD_NAME}
+          predicate: {equals: openshift.clusterquota.used}
+        - target: {datapoint_attribute: [resource]}
+          predicate: {regex: "\\.storageclass\\.storage\\.k8s\\.io/persistentvolumeclaims$"}
+      split: [{from: {datapoint_attribute: [resource]}, separator: ".storageclass.storage.k8s.io/", to: [k8s.storageclass.name, resource]}]
+      add: [{target: {descriptor_field: METRIC_DESCRIPTOR_FIELD_NAME}, value: openshift.clusterquota.persistentvolumeclaim_count.used, upsert: true}]
+      discard: [{target: {datapoint_attribute: [resource]}}]
+
+  - id: os-crq-hard-hugepage-request
+    name: openshift.clusterquota.limit{resource=requests.hugepages-<size>} becomes openshift.clusterquota.hugepage_count.request.hard{k8s.hugepage.size=<size>}
+    description: >
+      `split` leaves the size in k8s.hugepage.size; `discard` drops the empty
+      rest of the key.
+    metric_transform:
+      matches:
+        - target: {descriptor_field: METRIC_DESCRIPTOR_FIELD_NAME}
+          predicate: {equals: openshift.clusterquota.limit}
+        - target: {datapoint_attribute: [resource]}
+          predicate: {regex: "^requests\\.hugepages-"}
+      split: [{from: {datapoint_attribute: [resource]}, separator: "requests.hugepages-", to: [resource, k8s.hugepage.size]}]
+      add: [{target: {descriptor_field: METRIC_DESCRIPTOR_FIELD_NAME}, value: openshift.clusterquota.hugepage_count.request.hard, upsert: true}]
+      discard: [{target: {datapoint_attribute: [resource]}}]
+
+  - id: os-crq-used-hugepage-request
+    name: openshift.clusterquota.used{resource=requests.hugepages-<size>} becomes openshift.clusterquota.hugepage_count.request.used{k8s.hugepage.size=<size>}
+    metric_transform:
+      matches:
+        - target: {descriptor_field: METRIC_DESCRIPTOR_FIELD_NAME}
+          predicate: {equals: openshift.clusterquota.used}
+        - target: {datapoint_attribute: [resource]}
+          predicate: {regex: "^requests\\.hugepages-"}
+      split: [{from: {datapoint_attribute: [resource]}, separator: "requests.hugepages-", to: [resource, k8s.hugepage.size]}]
+      add: [{target: {descriptor_field: METRIC_DESCRIPTOR_FIELD_NAME}, value: openshift.clusterquota.hugepage_count.request.used, upsert: true}]
+      discard: [{target: {datapoint_attribute: [resource]}}]
+
+  - id: os-crq-hard-object-count
+    name: openshift.clusterquota.limit object-count keys become openshift.clusterquota.object_count.hard
+    metric_transform:
+      matches:
+        - target: {descriptor_field: METRIC_DESCRIPTOR_FIELD_NAME}
+          predicate: {equals: openshift.clusterquota.limit}
+        - target: {datapoint_attribute: [resource]}
+          predicate: {regex: "^(count/.+|pods|services|services\\.loadbalancers|services\\.nodeports|configmaps|secrets|replicationcontrollers|resourcequotas)$"}
+      rename:
+        - {from: {datapoint_attribute: [resource]}, to: k8s.resourcequota.resource_name}
+      add:
+        - {target: {descriptor_field: METRIC_DESCRIPTOR_FIELD_NAME}, value: openshift.clusterquota.object_count.hard, upsert: true}
+
+  - id: os-crq-used-object-count
+    name: openshift.clusterquota.used object-count keys become openshift.clusterquota.object_count.used
+    metric_transform:
+      matches:
+        - target: {descriptor_field: METRIC_DESCRIPTOR_FIELD_NAME}
+          predicate: {equals: openshift.clusterquota.used}
+        - target: {datapoint_attribute: [resource]}
+          predicate: {regex: "^(count/.+|pods|services|services\\.loadbalancers|services\\.nodeports|configmaps|secrets|replicationcontrollers|resourcequotas)$"}
+      rename:
+        - {from: {datapoint_attribute: [resource]}, to: k8s.resourcequota.resource_name}
+      add:
+        - {target: {descriptor_field: METRIC_DESCRIPTOR_FIELD_NAME}, value: openshift.clusterquota.object_count.used, upsert: true}
+
+  # --- Resource attributes (entity) -----------------------------------------
+  - id: k8s-resourcequota-name
+    name: k8s.resource_quota.name becomes k8s.resourcequota.name
+    entity_transform:
+      matches:
+        - target: {resource_attribute: [k8s.resource_quota.name]}
+          predicate: {exists: {}}
+      rename: [{from: {resource_attribute: [k8s.resource_quota.name]}, to: k8s.resourcequota.name}]
+
+  - id: k8s-resourcequota-uid
+    name: k8s.resource_quota.uid becomes k8s.resourcequota.uid
+    entity_transform:
+      matches:
+        - target: {resource_attribute: [k8s.resource_quota.uid]}
+          predicate: {exists: {}}
+      rename: [{from: {resource_attribute: [k8s.resource_quota.uid]}, to: k8s.resourcequota.uid}]
+
+  - id: k8s-replicationcontroller-name
+    name: k8s.replication_controller.name becomes k8s.replicationcontroller.name
+    entity_transform:
+      matches:
+        - target: {resource_attribute: [k8s.replication_controller.name]}
+          predicate: {exists: {}}
+      rename: [{from: {resource_attribute: [k8s.replication_controller.name]}, to: k8s.replicationcontroller.name}]
+
+  - id: k8s-replicationcontroller-uid
+    name: k8s.replication_controller.uid becomes k8s.replicationcontroller.uid
+    entity_transform:
+      matches:
+        - target: {resource_attribute: [k8s.replication_controller.uid]}
+          predicate: {exists: {}}
+      rename: [{from: {resource_attribute: [k8s.replication_controller.uid]}, to: k8s.replicationcontroller.uid}]
+
+  - id: container-runtime-name
+    name: container.runtime becomes container.runtime.name
+    entity_transform:
+      matches:
+        - target: {resource_attribute: [container.runtime]}
+          predicate: {exists: {}}
+      rename: [{from: {resource_attribute: [container.runtime]}, to: container.runtime.name}]
+
+  - id: k8s-pod-labels-annotations
+    name: k8s.pod.labels.<key> / k8s.pod.annotations.<key> become k8s.pod.label.<key> / k8s.pod.annotation.<key>
+    description: >
+      Target-safe: k8s.pod.label.<key> never starts with k8s.pod.labels.
+      (same for the other prefixes).
+    entity_transform:
+      matches:
+        - target: {resource_attribute: [k8s.pod.name]}
+          predicate: {exists: {}}
+      rename_prefix:
+        - {from: {resource_attribute: [k8s.pod.labels.]}, to: k8s.pod.label.}
+        - {from: {resource_attribute: [k8s.pod.annotations.]}, to: k8s.pod.annotation.}
+
+  - id: k8s-node-labels-annotations
+    name: k8s.node.labels.<key> / k8s.node.annotations.<key> become k8s.node.label.<key> / k8s.node.annotation.<key>
+    entity_transform:
+      matches:
+        - target: {resource_attribute: [k8s.node.name]}
+          predicate: {exists: {}}
+      rename_prefix:
+        - {from: {resource_attribute: [k8s.node.labels.]}, to: k8s.node.label.}
+        - {from: {resource_attribute: [k8s.node.annotations.]}, to: k8s.node.annotation.}
+
+  - id: k8s-namespace-labels-annotations
+    name: k8s.namespace.labels.<key> / k8s.namespace.annotations.<key> become k8s.namespace.label.<key> / k8s.namespace.annotation.<key>
+    entity_transform:
+      matches:
+        - target: {resource_attribute: [k8s.namespace.name]}
+          predicate: {exists: {}}
+      rename_prefix:
+        - {from: {resource_attribute: [k8s.namespace.labels.]}, to: k8s.namespace.label.}
+        - {from: {resource_attribute: [k8s.namespace.annotations.]}, to: k8s.namespace.annotation.}

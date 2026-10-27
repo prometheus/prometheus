@@ -1,0 +1,413 @@
+# RPC pre-stability (v1.37.0) -> stable RPC conventions (main after v1.44.0).
+#
+# Guide: https://github.com/open-telemetry/semantic-conventions/blob/main/docs/non-normative/rpc-migration.md
+#
+# The source URL is v1.37.0, the version the guide starts from. The target URL
+# 1.45.0 is a placeholder for the first release that contains the stable RPC
+# conventions: rpc.status_code (#3921) and rpc.request.header.* (#3924) are
+# only on main (.chloggen) at the time of writing. Per `rules-cover-one-migration`
+# the set also carries the 1.39..1.44 -> target renames that are expressible
+# (rpc.response.status_code -> rpc.status_code) so data from intermediate
+# producers is covered too.
+#
+# Uses proposed operations (not in proto#865): metric name and span status
+# message as write targets, `map`, `convert`, `from` in `add`, `rename_prefix`,
+# `to_target` in `rename` and `discard`.
+#
+# Left out:
+#   - server.address / server.port meaning change: not bridgeable.
+#   - error.type for failures without a status code (exceptions): no source data.
+#   - rpc.message span events, exception span events -> log events: events.
+#   - The ms -> s unit change of the duration histograms is not expressible:
+#     query rewriters multiply results; data in flight needs an SDK View or a
+#     Collector processor. PromQL rejects queries that would need to rescale
+#     histogram buckets.
+file_format: transform/2.0
+source:
+  schema_url: https://opentelemetry.io/schemas/1.37.0
+target:
+  schema_url: https://opentelemetry.io/schemas/1.45.0
+gaps:
+  events:
+    rpc.client.call.exception:
+      missing: true
+    rpc.server.call.exception:
+      missing: true
+  spans:
+    span.rpc.call.client:
+      missing_attributes: [error.type, rpc.method_original]
+    span.rpc.call.server:
+      missing_attributes: [error.type, rpc.method_original]
+    span.rpc.connect_rpc.call.client:
+      missing_attributes: [rpc.method_original]
+    span.rpc.connect_rpc.call.server:
+      missing_attributes: [rpc.method_original]
+    span.rpc.dubbo.call.client:
+      missing_attributes: [error.type, rpc.method_original]
+    span.rpc.dubbo.call.server:
+      missing_attributes: [error.type, rpc.method_original]
+    span.rpc.grpc.call.client:
+      missing_attributes: [rpc.method_original]
+    span.rpc.grpc.call.server:
+      missing_attributes: [rpc.method_original]
+    span.rpc.jsonrpc.call.client:
+      missing_attributes: [rpc.method_original]
+    span.rpc.jsonrpc.call.server:
+      missing_attributes: [rpc.method_original]
+policies:
+  # --- Spans: rpc.system -> rpc.system.name ----------------------------------
+  - id: rpc-span-system-rename
+    name: rpc.system renamed to rpc.system.name on spans, apache_dubbo and connect_rpc values changed
+    description: >
+      Target-safe: stable spans carry rpc.system only for AWS SDK calls
+      (aws-api), which every rpc.system policy excludes.
+    trace_transform:
+      matches:
+        - target: {span_attribute: [rpc.system]}
+          predicate: {exists: {}}
+        - target: {span_attribute: [rpc.system]}
+          predicate: {equals: aws-api}
+          negate: true
+      rename: [{from: {span_attribute: [rpc.system]}, to: rpc.system.name}]
+      map:
+        - target: {span_attribute: [rpc.system.name]}
+          values: {apache_dubbo: dubbo, connect_rpc: connectrpc}
+          unmapped: keep
+
+  # --- Spans: rpc.service + rpc.method -> fully-qualified rpc.method ---------
+  - id: rpc-span-method-fully-qualified
+    name: rpc.service and rpc.method joined into the fully-qualified rpc.method
+    description: rpc.service is dropped with `discard`, which runs after `add` reads it.
+    trace_transform:
+      matches:
+        - target: {span_attribute: [rpc.system]}
+          predicate: {exists: {}}
+        - target: {span_attribute: [rpc.system]}
+          predicate: {equals: aws-api}
+          negate: true
+        - target: {span_attribute: [rpc.service]}
+          predicate: {exists: {}}
+      add:
+        - target: {span_attribute: [rpc.method]}
+          from: [{span_attribute: [rpc.service]}, {span_attribute: [rpc.method]}]
+          separator: /
+          upsert: true
+      discard: [{target: {span_attribute: [rpc.service]}}]
+
+  # --- Spans: removed attributes ---------------------------------------------
+  - id: rpc-span-removed-attributes
+    name: network.transport and network.type removed from RPC spans
+    description: >
+      Matching on rpc.system (source-only) keeps the rule away from
+      target-shaped spans.
+    trace_transform:
+      matches:
+        - target: {span_attribute: [rpc.system]}
+          predicate: {exists: {}}
+        - target: {span_attribute: [rpc.system]}
+          predicate: {equals: aws-api}
+          negate: true
+      remove:
+        - {target: {span_attribute: [network.transport]}}
+        - {target: {span_attribute: [network.type]}}
+
+  - id: rpc-span-server-client-address-removed
+    name: client.address and client.port removed from RPC server spans
+    trace_transform:
+      matches:
+        - target: {record_field: SPAN_RECORD_FIELD_KIND}
+          predicate: {equals: SERVER}
+        - target: {span_attribute: [rpc.system]}
+          predicate: {exists: {}}
+        - target: {span_attribute: [rpc.system]}
+          predicate: {equals: aws-api}
+          negate: true
+      remove:
+        - {target: {span_attribute: [client.address]}}
+        - {target: {span_attribute: [client.port]}}
+
+  # --- Spans: status codes ---------------------------------------------------
+  - id: rpc-span-grpc-status
+    name: rpc.grpc.status_code (int) becomes rpc.status_code (code name)
+    trace_transform:
+      matches:
+        - target: {span_attribute: [rpc.grpc.status_code]}
+          predicate: {exists: {}}
+      rename: [{from: {span_attribute: [rpc.grpc.status_code]}, to: rpc.status_code}]
+      map:
+        - target: {span_attribute: [rpc.status_code]}
+          values: {0: OK, 1: CANCELLED, 2: UNKNOWN, 3: INVALID_ARGUMENT, 4: DEADLINE_EXCEEDED,
+                   5: NOT_FOUND, 6: ALREADY_EXISTS, 7: PERMISSION_DENIED, 8: RESOURCE_EXHAUSTED,
+                   9: FAILED_PRECONDITION, 10: ABORTED, 11: OUT_OF_RANGE, 12: UNIMPLEMENTED,
+                   13: INTERNAL, 14: UNAVAILABLE, 15: DATA_LOSS, 16: UNAUTHENTICATED}
+
+  # `from` reads rpc.status_code after rename and before map, so the map keys
+  # here are the int codes. Unmapped (non-error) codes leave no error.type.
+  - id: rpc-span-grpc-error-type-client
+    name: error.type derived from the gRPC status code on client spans (every code except OK)
+    trace_transform:
+      matches:
+        - target: {record_field: SPAN_RECORD_FIELD_KIND}
+          predicate: {equals: CLIENT}
+        - target: {span_attribute: [rpc.grpc.status_code]}
+          predicate: {exists: {}}
+        - target: {span_attribute: [error.type]}
+          predicate: {exists: {}}
+          negate: true
+      add: [{target: {span_attribute: [error.type]}, from: {span_attribute: [rpc.status_code]}}]
+      map:
+        - target: {span_attribute: [error.type]}
+          values: {1: CANCELLED, 2: UNKNOWN, 3: INVALID_ARGUMENT, 4: DEADLINE_EXCEEDED,
+                   5: NOT_FOUND, 6: ALREADY_EXISTS, 7: PERMISSION_DENIED, 8: RESOURCE_EXHAUSTED,
+                   9: FAILED_PRECONDITION, 10: ABORTED, 11: OUT_OF_RANGE, 12: UNIMPLEMENTED,
+                   13: INTERNAL, 14: UNAVAILABLE, 15: DATA_LOSS, 16: UNAUTHENTICATED}
+          unmapped: remove
+
+  - id: rpc-span-grpc-error-type-server
+    name: error.type derived from the gRPC status code on server spans (server error codes only)
+    trace_transform:
+      matches:
+        - target: {record_field: SPAN_RECORD_FIELD_KIND}
+          predicate: {equals: SERVER}
+        - target: {span_attribute: [rpc.grpc.status_code]}
+          predicate: {exists: {}}
+        - target: {span_attribute: [error.type]}
+          predicate: {exists: {}}
+          negate: true
+      add: [{target: {span_attribute: [error.type]}, from: {span_attribute: [rpc.status_code]}}]
+      map:
+        - target: {span_attribute: [error.type]}
+          values: {2: UNKNOWN, 4: DEADLINE_EXCEEDED, 12: UNIMPLEMENTED, 13: INTERNAL,
+                   14: UNAVAILABLE, 15: DATA_LOSS}
+          unmapped: remove
+
+  - id: rpc-span-connect-error-code
+    name: rpc.connect_rpc.error_code renamed to rpc.status_code
+    description: >
+      Values are unchanged (Connect codes, lower snake case). Source spans only
+      carry the code on errors; successful source spans have no rpc.status_code.
+    trace_transform:
+      matches:
+        - target: {span_attribute: [rpc.connect_rpc.error_code]}
+          predicate: {exists: {}}
+      rename: [{from: {span_attribute: [rpc.connect_rpc.error_code]}, to: rpc.status_code}]
+
+  - id: rpc-span-connect-error-type-client
+    name: error.type derived from the Connect error code on client spans
+    description: Source spans only carry the code on errors, so every value is an error.
+    trace_transform:
+      matches:
+        - target: {record_field: SPAN_RECORD_FIELD_KIND}
+          predicate: {equals: CLIENT}
+        - target: {span_attribute: [rpc.connect_rpc.error_code]}
+          predicate: {exists: {}}
+        - target: {span_attribute: [error.type]}
+          predicate: {exists: {}}
+          negate: true
+      add: [{target: {span_attribute: [error.type]}, from: {span_attribute: [rpc.status_code]}}]
+
+  - id: rpc-span-connect-error-type-server
+    name: error.type derived from the Connect error code on server spans (server error codes only)
+    trace_transform:
+      matches:
+        - target: {record_field: SPAN_RECORD_FIELD_KIND}
+          predicate: {equals: SERVER}
+        - target: {span_attribute: [rpc.connect_rpc.error_code]}
+          predicate: {regex: "^(unknown|deadline_exceeded|unimplemented|internal|unavailable|data_loss)$"}
+        - target: {span_attribute: [error.type]}
+          predicate: {exists: {}}
+          negate: true
+      add: [{target: {span_attribute: [error.type]}, from: {span_attribute: [rpc.status_code]}}]
+
+  - id: rpc-span-response-status-code
+    name: rpc.response.status_code (v1.39-v1.44) renamed to rpc.status_code
+    description: Covers intermediate producers; v1.37 data never has this key.
+    trace_transform:
+      matches:
+        - target: {span_attribute: [rpc.response.status_code]}
+          predicate: {exists: {}}
+      rename: [{from: {span_attribute: [rpc.response.status_code]}, to: rpc.status_code}]
+
+  # --- Spans: JSON-RPC (in the v1.39 changelog and schema, not in the guide) --
+  - id: rpc-span-jsonrpc-error-code
+    name: rpc.jsonrpc.error_code (int) becomes rpc.status_code (string), error.type derived from it
+    description: Source spans only carry the code on errors, so every value is an error.
+    trace_transform:
+      matches:
+        - target: {span_attribute: [rpc.jsonrpc.error_code]}
+          predicate: {exists: {}}
+      rename: [{from: {span_attribute: [rpc.jsonrpc.error_code]}, to: rpc.status_code}]
+      add: [{target: {span_attribute: [error.type]}, from: {span_attribute: [rpc.status_code]}}]
+      convert:
+        - {target: {span_attribute: [rpc.status_code]}, type: string}
+        - {target: {span_attribute: [error.type]}, type: string}
+
+  - id: rpc-span-jsonrpc-error-message
+    name: rpc.jsonrpc.error_message moved to the span status message
+    description: An existing status message is kept (upsert false).
+    trace_transform:
+      matches:
+        - target: {span_attribute: [rpc.jsonrpc.error_message]}
+          predicate: {exists: {}}
+      rename:
+        - from: {span_attribute: [rpc.jsonrpc.error_message]}
+          to_target: {record_field: SPAN_RECORD_FIELD_STATUS_MESSAGE}
+
+  - id: rpc-span-jsonrpc-request-id
+    name: rpc.jsonrpc.request_id renamed to jsonrpc.request.id
+    trace_transform:
+      matches:
+        - target: {span_attribute: [rpc.jsonrpc.request_id]}
+          predicate: {exists: {}}
+      rename: [{from: {span_attribute: [rpc.jsonrpc.request_id]}, to: jsonrpc.request.id}]
+
+  - id: rpc-span-jsonrpc-version
+    name: rpc.jsonrpc.version renamed to jsonrpc.protocol.version
+    trace_transform:
+      matches:
+        - target: {span_attribute: [rpc.jsonrpc.version]}
+          predicate: {exists: {}}
+      rename: [{from: {span_attribute: [rpc.jsonrpc.version]}, to: jsonrpc.protocol.version}]
+
+  # --- Spans: metadata -> headers/trailers -----------------------------------
+  - id: rpc-span-metadata
+    name: rpc.{grpc,connect_rpc}.{request,response}.metadata.<key> become rpc.{request,response}.header.<key>
+    description: >
+      Approximate for responses: the source doesn't say whether response
+      metadata was a header or a trailer, so it all becomes rpc.response.header.
+    trace_transform:
+      matches:
+        - target: {span_attribute: [rpc.system]}
+          predicate: {exists: {}}
+        - target: {span_attribute: [rpc.system]}
+          predicate: {equals: aws-api}
+          negate: true
+      rename_prefix:
+        - {from: {span_attribute: [rpc.grpc.request.metadata.]}, to: rpc.request.header.}
+        - {from: {span_attribute: [rpc.grpc.response.metadata.]}, to: rpc.response.header.}
+        - {from: {span_attribute: [rpc.connect_rpc.request.metadata.]}, to: rpc.request.header.}
+        - {from: {span_attribute: [rpc.connect_rpc.response.metadata.]}, to: rpc.response.header.}
+
+  # --- Spans: Dubbo status code ---------------------------------------------
+  - id: rpc-span-dubbo-status-code
+    name: rpc.status_code set to _OTHER on Dubbo spans
+    description: >
+      v1.37 has no Dubbo status attribute, but the target requires
+      rpc.status_code on Dubbo spans. Existing values are kept (upsert false).
+    trace_transform:
+      matches:
+        - target: {span_attribute: [rpc.system]}
+          predicate: {equals: apache_dubbo}
+      add:
+        - {target: {span_attribute: [rpc.status_code]}, value: _OTHER}
+
+  # --- Metrics: rpc.server.duration (ms) -> rpc.server.call.duration (s) -----
+  # network.transport and network.type aren't removed: that would merge series.
+  # Aggregation over target attributes ignores them. Discarding rpc.service
+  # doesn't merge series: the joined rpc.method carries it.
+  - id: rpc-server-duration
+    name: rpc.server.duration (ms) becomes rpc.server.call.duration (s)
+    description: >
+      The ms -> s unit change isn't expressible (see the header).
+    metric_transform:
+      matches:
+        - target: {descriptor_field: METRIC_DESCRIPTOR_FIELD_NAME}
+          predicate: {equals: rpc.server.duration}
+      rename: [{from: {datapoint_attribute: [rpc.system]}, to: rpc.system.name}]
+      add:
+        - {target: {descriptor_field: METRIC_DESCRIPTOR_FIELD_NAME}, value: rpc.server.call.duration, upsert: true}
+        - target: {datapoint_attribute: [rpc.method]}
+          from: [{datapoint_attribute: [rpc.service]}, {datapoint_attribute: [rpc.method]}]
+          separator: /
+          upsert: true
+      map:
+        - target: {datapoint_attribute: [rpc.system.name]}
+          values: {apache_dubbo: dubbo, connect_rpc: connectrpc}
+          unmapped: keep
+      discard: [{target: {datapoint_attribute: [rpc.service]}}]
+
+  - id: rpc-server-duration-grpc-status
+    name: rpc.grpc.status_code becomes rpc.status_code and error.type on rpc.server.duration
+    metric_transform:
+      matches:
+        - target: {descriptor_field: METRIC_DESCRIPTOR_FIELD_NAME}
+          predicate: {equals: rpc.server.duration}
+        - target: {datapoint_attribute: [rpc.grpc.status_code]}
+          predicate: {exists: {}}
+      rename: [{from: {datapoint_attribute: [rpc.grpc.status_code]}, to: rpc.status_code}]
+      add: [{target: {datapoint_attribute: [error.type]}, from: {datapoint_attribute: [rpc.status_code]}}]
+      map:
+        - target: {datapoint_attribute: [rpc.status_code]}
+          values: {0: OK, 1: CANCELLED, 2: UNKNOWN, 3: INVALID_ARGUMENT, 4: DEADLINE_EXCEEDED,
+                   5: NOT_FOUND, 6: ALREADY_EXISTS, 7: PERMISSION_DENIED, 8: RESOURCE_EXHAUSTED,
+                   9: FAILED_PRECONDITION, 10: ABORTED, 11: OUT_OF_RANGE, 12: UNIMPLEMENTED,
+                   13: INTERNAL, 14: UNAVAILABLE, 15: DATA_LOSS, 16: UNAUTHENTICATED}
+        - target: {datapoint_attribute: [error.type]}
+          values: {2: UNKNOWN, 4: DEADLINE_EXCEEDED, 12: UNIMPLEMENTED, 13: INTERNAL,
+                   14: UNAVAILABLE, 15: DATA_LOSS}
+          unmapped: remove
+
+  - id: rpc-server-call-duration-response-status-code
+    name: rpc.response.status_code (v1.39-v1.44) renamed to rpc.status_code on rpc.server.call.duration
+    metric_transform:
+      matches:
+        - target: {descriptor_field: METRIC_DESCRIPTOR_FIELD_NAME}
+          predicate: {equals: rpc.server.call.duration}
+        - target: {datapoint_attribute: [rpc.response.status_code]}
+          predicate: {exists: {}}
+      rename: [{from: {datapoint_attribute: [rpc.response.status_code]}, to: rpc.status_code}]
+
+  # --- Metrics: rpc.client.duration (ms) -> rpc.client.call.duration (s) -----
+  - id: rpc-client-duration
+    name: rpc.client.duration (ms) becomes rpc.client.call.duration (s)
+    description: >
+      The ms -> s unit change isn't expressible (see the header).
+    metric_transform:
+      matches:
+        - target: {descriptor_field: METRIC_DESCRIPTOR_FIELD_NAME}
+          predicate: {equals: rpc.client.duration}
+      rename: [{from: {datapoint_attribute: [rpc.system]}, to: rpc.system.name}]
+      add:
+        - {target: {descriptor_field: METRIC_DESCRIPTOR_FIELD_NAME}, value: rpc.client.call.duration, upsert: true}
+        - target: {datapoint_attribute: [rpc.method]}
+          from: [{datapoint_attribute: [rpc.service]}, {datapoint_attribute: [rpc.method]}]
+          separator: /
+          upsert: true
+      map:
+        - target: {datapoint_attribute: [rpc.system.name]}
+          values: {apache_dubbo: dubbo, connect_rpc: connectrpc}
+          unmapped: keep
+      discard: [{target: {datapoint_attribute: [rpc.service]}}]
+
+  - id: rpc-client-duration-grpc-status
+    name: rpc.grpc.status_code becomes rpc.status_code and error.type on rpc.client.duration
+    metric_transform:
+      matches:
+        - target: {descriptor_field: METRIC_DESCRIPTOR_FIELD_NAME}
+          predicate: {equals: rpc.client.duration}
+        - target: {datapoint_attribute: [rpc.grpc.status_code]}
+          predicate: {exists: {}}
+      rename: [{from: {datapoint_attribute: [rpc.grpc.status_code]}, to: rpc.status_code}]
+      add: [{target: {datapoint_attribute: [error.type]}, from: {datapoint_attribute: [rpc.status_code]}}]
+      map:
+        - target: {datapoint_attribute: [rpc.status_code]}
+          values: {0: OK, 1: CANCELLED, 2: UNKNOWN, 3: INVALID_ARGUMENT, 4: DEADLINE_EXCEEDED,
+                   5: NOT_FOUND, 6: ALREADY_EXISTS, 7: PERMISSION_DENIED, 8: RESOURCE_EXHAUSTED,
+                   9: FAILED_PRECONDITION, 10: ABORTED, 11: OUT_OF_RANGE, 12: UNIMPLEMENTED,
+                   13: INTERNAL, 14: UNAVAILABLE, 15: DATA_LOSS, 16: UNAUTHENTICATED}
+        - target: {datapoint_attribute: [error.type]}
+          values: {1: CANCELLED, 2: UNKNOWN, 3: INVALID_ARGUMENT, 4: DEADLINE_EXCEEDED,
+                   5: NOT_FOUND, 6: ALREADY_EXISTS, 7: PERMISSION_DENIED, 8: RESOURCE_EXHAUSTED,
+                   9: FAILED_PRECONDITION, 10: ABORTED, 11: OUT_OF_RANGE, 12: UNIMPLEMENTED,
+                   13: INTERNAL, 14: UNAVAILABLE, 15: DATA_LOSS, 16: UNAUTHENTICATED}
+          unmapped: remove
+
+  - id: rpc-client-call-duration-response-status-code
+    name: rpc.response.status_code (v1.39-v1.44) renamed to rpc.status_code on rpc.client.call.duration
+    metric_transform:
+      matches:
+        - target: {descriptor_field: METRIC_DESCRIPTOR_FIELD_NAME}
+          predicate: {equals: rpc.client.call.duration}
+        - target: {datapoint_attribute: [rpc.response.status_code]}
+          predicate: {exists: {}}
+      rename: [{from: {datapoint_attribute: [rpc.response.status_code]}, to: rpc.status_code}]

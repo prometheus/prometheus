@@ -1,0 +1,297 @@
+# GenAI v1.41.0 (last release in open-telemetry/semantic-conventions) ->
+# GenAI conventions at lmolkova/semantic-conventions-genai@1780533 (manifest
+# schema_url gen-ai-dev/1.42.0-dev).
+#
+# Guide: https://github.com/lmolkova/semantic-conventions-genai/blob/1780533536101fee409056c8ff24ed99ab861f0a/docs/gen-ai/non-normative/migration.md
+#
+# The target side follows the model YAML at that commit, except for #521:
+#   - #521 (gen_ai.client.operation.duration -> gen_ai.client.inference.duration,
+#     time_to_first_chunk / time_per_output_chunk renames) follows the guide.
+#     The pinned model doesn't have #521 yet (no changelog.d fragment, no
+#     inference metrics, no docs/gen-ai/client-inference.md), so the genai-521-*
+#     policies aren't target-safe against it: they would move target-shaped
+#     inference data off gen_ai.client.operation.duration.
+#
+# Left out:
+#   - gen_ai.client.token.usage _sum -> gen_ai.client.inference.usage.* counters:
+#     needs fan-out (one source series feeding two target metrics) plus an
+#     instrument change (histogram sum -> counter).
+#   - gen_ai.system_instructions limited to text parts: needs a JSON-content
+#     filter op.
+#   - gen_ai.agent.id on client / create_agent spans: same name, narrower
+#     meaning, but client-side values were already correct, so they pass
+#     through unchanged (no client-side policy).
+#   - New agent / tool / workflow / cache / reasoning metrics: no source metric.
+file_format: transform/2.0
+source:
+  schema_url: https://opentelemetry.io/schemas/1.41.0
+target:
+  schema_url: https://opentelemetry.io/schemas/gen-ai-dev/1.42.0-dev
+gaps:
+  events:
+    gen_ai.client.inference.operation.details:
+      missing_attributes: [gen_ai.conversation.compacted, gen_ai.prompt.name, gen_ai.prompt.version, gen_ai.request.previous_response.id, gen_ai.request.reasoning.level, gen_ai.request.top_k, gen_ai.usage.audio.cache_read.input_tokens, gen_ai.usage.audio.input_tokens, gen_ai.usage.audio.output_tokens, gen_ai.usage.image.cache_read.input_tokens, gen_ai.usage.image.input_tokens, gen_ai.usage.image.output_tokens, gen_ai.usage.text.cache_read.input_tokens, gen_ai.usage.text.input_tokens, gen_ai.usage.text.output_tokens]
+  metrics:
+    gen_ai.client.inference.duration:
+      missing_attributes: [openai.response.service_tier, openai.response.system_fingerprint]
+    gen_ai.client.inference.operation.input_tokens:
+      missing_attributes: [error.type, openai.response.service_tier, openai.response.system_fingerprint]
+    gen_ai.client.inference.operation.output_tokens:
+      missing_attributes: [error.type, openai.response.service_tier, openai.response.system_fingerprint]
+    gen_ai.client.inference.usage.cache_read.input_tokens:
+      missing: true
+    gen_ai.client.inference.usage.cache_write.input_tokens:
+      missing: true
+    gen_ai.client.inference.usage.input_tokens:
+      missing: true
+    gen_ai.client.inference.usage.output_tokens:
+      missing: true
+    gen_ai.client.inference.usage.reasoning.output_tokens:
+      missing: true
+    gen_ai.client.operation.duration:
+      missing_attributes: [openai.response.service_tier, openai.response.system_fingerprint]
+    gen_ai.execute_tool.duration:
+      missing: true
+    gen_ai.invoke_agent.duration:
+      missing: true
+    gen_ai.invoke_agent.inference_calls:
+      missing: true
+    gen_ai.invoke_agent.tool_calls:
+      missing: true
+    gen_ai.invoke_workflow.duration:
+      missing: true
+  spans:
+    gen_ai.execute_tool.command.internal:
+      missing: true
+    gen_ai.execute_tool.load_skill.internal:
+      missing: true
+    gen_ai.execute_tool.read_skill_resource.internal:
+      missing: true
+    span.gen_ai.client.inference:
+      missing_attributes: [gen_ai.conversation.compacted, gen_ai.prompt.name, gen_ai.prompt.version, gen_ai.request.previous_response.id, gen_ai.request.reasoning.level, gen_ai.usage.audio.cache_read.input_tokens, gen_ai.usage.audio.input_tokens, gen_ai.usage.audio.output_tokens, gen_ai.usage.image.cache_read.input_tokens, gen_ai.usage.image.input_tokens, gen_ai.usage.image.output_tokens, gen_ai.usage.text.cache_read.input_tokens, gen_ai.usage.text.input_tokens, gen_ai.usage.text.output_tokens]
+    span.gen_ai.execute_tool.internal:
+      missing_attributes: [gen_ai.agent.name, gen_ai.conversation.id]
+    span.gen_ai.fetch_response.client:
+      missing: true
+    span.gen_ai.invoke_agent.client:
+      missing_attributes: [gen_ai.request.previous_response.id, gen_ai.usage.audio.cache_read.input_tokens, gen_ai.usage.audio.input_tokens, gen_ai.usage.audio.output_tokens, gen_ai.usage.image.cache_read.input_tokens, gen_ai.usage.image.input_tokens, gen_ai.usage.image.output_tokens, gen_ai.usage.text.cache_read.input_tokens, gen_ai.usage.text.input_tokens, gen_ai.usage.text.output_tokens]
+    span.gen_ai.invoke_workflow.internal:
+      missing_attributes: [gen_ai.conversation.id]
+    span.gen_ai.memory.client:
+      missing: true
+    span.gen_ai.plan.internal:
+      missing: true
+policies:
+  # --- #440: cache_creation -> cache_write (spans and the details event) ------
+  - id: genai-440-cache-write-span
+    name: gen_ai.usage.cache_creation.input_tokens renamed to gen_ai.usage.cache_write.input_tokens on spans
+    description: >
+      Target-safe: the target registry has no cache_creation key. On internal
+      invoke_agent spans, genai-internal-agent-removed removes the key first
+      (remove runs before rename), so it isn't renamed there.
+    trace_transform:
+      matches:
+        - target: {span_attribute: [gen_ai.usage.cache_creation.input_tokens]}
+          predicate: {exists: {}}
+      rename:
+        - {from: {span_attribute: [gen_ai.usage.cache_creation.input_tokens]}, to: gen_ai.usage.cache_write.input_tokens}
+
+  - id: genai-440-cache-write-event
+    name: gen_ai.usage.cache_creation.input_tokens renamed on the gen_ai.client.inference.operation.details event
+    description: >
+      The event carries the inference span's attributes (v1.41: extends
+      attributes.gen_ai.inference.client; target: ref_group
+      span.gen_ai.inference.client), so the rename applies to the event too.
+    log_transform:
+      matches:
+        - target: {record_field: LOG_RECORD_FIELD_EVENT_NAME}
+          predicate: {equals: gen_ai.client.inference.operation.details}
+        - target: {log_attribute: [gen_ai.usage.cache_creation.input_tokens]}
+          predicate: {exists: {}}
+      rename:
+        - {from: {log_attribute: [gen_ai.usage.cache_creation.input_tokens]}, to: gen_ai.usage.cache_write.input_tokens}
+
+  # --- #217: gen_ai.request.top_k double -> int; retrieval -> retrieval.top_k -
+  - id: genai-217-request-top-k-int
+    name: gen_ai.request.top_k is an int (non-retrieval spans)
+    description: >
+      Target-safe: target values are already int, so the conversion changes
+      nothing. Matches any non-retrieval span with the key, including
+      inference spans that use a custom operation name. Caveat: convert is
+      fail-open, so a fractional double has no exact int and stays a double.
+      top_k is integral by definition, so v1.41 producers shouldn't send
+      fractional values. Producers that wrongly put OpenAI top_logprobs
+      here can't be detected (#217 clarification).
+    trace_transform:
+      matches:
+        - target: {span_attribute: [gen_ai.request.top_k]}
+          predicate: {exists: {}}
+        - target: {span_attribute: [gen_ai.operation.name]}
+          predicate: {equals: retrieval}
+          negate: true
+      convert:
+        - {target: {span_attribute: [gen_ai.request.top_k]}, type: int}
+
+  - id: genai-217-retrieval-top-k
+    name: gen_ai.request.top_k becomes gen_ai.retrieval.top_k (int) on retrieval spans
+    description: >
+      Target-safe: target retrieval spans never carry gen_ai.request.top_k.
+      Disjoint from genai-217-request-top-k-int because of the operation.name
+      matcher.
+    trace_transform:
+      matches:
+        - target: {span_attribute: [gen_ai.operation.name]}
+          predicate: {equals: retrieval}
+        - target: {span_attribute: [gen_ai.request.top_k]}
+          predicate: {exists: {}}
+      rename:
+        - {from: {span_attribute: [gen_ai.request.top_k]}, to: gen_ai.retrieval.top_k}
+      convert:
+        - {target: {span_attribute: [gen_ai.retrieval.top_k]}, type: int}
+
+  # --- gen_ai.provider.name is required on the details event in the target ----
+  - id: genai-details-event-provider-name
+    name: gen_ai.provider.name set to _OTHER on the gen_ai.client.inference.operation.details event
+    description: >
+      The v1.41 event doesn't define the provider, but the target requires it.
+      Existing values are kept (upsert false).
+    log_transform:
+      matches:
+        - target: {record_field: LOG_RECORD_FIELD_EVENT_NAME}
+          predicate: {equals: gen_ai.client.inference.operation.details}
+      add:
+        - {target: {log_attribute: [gen_ai.provider.name]}, value: _OTHER}
+
+  # --- #242, #322, #289, #469: removed from internal invoke_agent spans -------
+  - id: genai-internal-agent-removed
+    name: agent.id, agent.version, provider.name and cache token counts removed from internal invoke_agent spans
+    description: >
+      Only internal invoke_agent spans. gen_ai.agent.id and agent.version stay
+      on client invoke_agent and create_agent spans, where agent.id was
+      already correct, so no client-side policy. Target-safe:
+      none of these keys is defined on the target internal invoke_agent span.
+      gen_ai.usage.cache_creation.input_tokens is listed under its source name,
+      and remove runs before genai-440's rename.
+    trace_transform:
+      matches:
+        - target: {record_field: SPAN_RECORD_FIELD_KIND}
+          predicate: {equals: INTERNAL}
+        - target: {span_attribute: [gen_ai.operation.name]}
+          predicate: {equals: invoke_agent}
+      remove:
+        - target: {span_attribute: [gen_ai.agent.id]}
+        - target: {span_attribute: [gen_ai.agent.version]}
+        - target: {span_attribute: [gen_ai.provider.name]}
+        - target: {span_attribute: [gen_ai.usage.cache_read.input_tokens]}
+        - target: {span_attribute: [gen_ai.usage.cache_creation.input_tokens]}
+
+  # --- #374: gen_ai.client.token.usage split into per-direction histograms ----
+  - id: genai-374-input-tokens
+    name: gen_ai.client.token.usage with token.type=input becomes gen_ai.client.inference.operation.input_tokens
+    description: >
+      Same instrument (histogram), same unit ({token}), same attributes minus
+      gen_ai.token.type. Removing it doesn't merge series: it's pinned by the
+      matcher. Target-safe: matches a source-only metric name.
+      The target metrics cover inference only, so token usage of other
+      operations (e.g. embeddings) stays on gen_ai.client.token.usage.
+      The deprecated token.type value `completion` has the value "output",
+      so input/output covers every defined value. The derived
+      gen_ai.client.inference.usage.input_tokens counter needs fan-out plus an
+      instrument change and isn't produced.
+    metric_transform:
+      matches:
+        - target: {descriptor_field: METRIC_DESCRIPTOR_FIELD_NAME}
+          predicate: {equals: gen_ai.client.token.usage}
+        - target: {datapoint_attribute: [gen_ai.token.type]}
+          predicate: {equals: input}
+        - target: {datapoint_attribute: [gen_ai.operation.name]}
+          predicate: {regex: "^(chat|generate_content|text_completion)$"}
+      remove:
+        - target: {datapoint_attribute: [gen_ai.token.type]}
+      add:
+        - {target: {descriptor_field: METRIC_DESCRIPTOR_FIELD_NAME}, value: gen_ai.client.inference.operation.input_tokens, upsert: true}
+
+  - id: genai-374-output-tokens
+    name: gen_ai.client.token.usage with token.type=output becomes gen_ai.client.inference.operation.output_tokens
+    metric_transform:
+      matches:
+        - target: {descriptor_field: METRIC_DESCRIPTOR_FIELD_NAME}
+          predicate: {equals: gen_ai.client.token.usage}
+        - target: {datapoint_attribute: [gen_ai.token.type]}
+          predicate: {equals: output}
+        - target: {datapoint_attribute: [gen_ai.operation.name]}
+          predicate: {regex: "^(chat|generate_content|text_completion)$"}
+      remove:
+        - target: {datapoint_attribute: [gen_ai.token.type]}
+      add:
+        - {target: {descriptor_field: METRIC_DESCRIPTOR_FIELD_NAME}, value: gen_ai.client.inference.operation.output_tokens, upsert: true}
+
+  # --- #521 (guide only, not in the pinned model): inference metrics ----------
+  - id: genai-521-inference-duration
+    name: gen_ai.client.operation.duration for inference operations becomes gen_ai.client.inference.duration
+    description: >
+      Inference calls with a custom gen_ai.operation.name can't be told apart
+      from other operations, so they stay on gen_ai.client.operation.duration.
+    metric_transform:
+      matches:
+        - target: {descriptor_field: METRIC_DESCRIPTOR_FIELD_NAME}
+          predicate: {equals: gen_ai.client.operation.duration}
+        - target: {datapoint_attribute: [gen_ai.operation.name]}
+          predicate: {regex: "^(chat|generate_content|text_completion)$"}
+      add:
+        - {target: {descriptor_field: METRIC_DESCRIPTOR_FIELD_NAME}, value: gen_ai.client.inference.duration, upsert: true}
+
+  - id: genai-521-ttfc
+    name: gen_ai.client.operation.time_to_first_chunk renamed to gen_ai.client.inference.time_to_first_chunk
+    metric_transform:
+      matches:
+        - target: {descriptor_field: METRIC_DESCRIPTOR_FIELD_NAME}
+          predicate: {equals: gen_ai.client.operation.time_to_first_chunk}
+      add:
+        - {target: {descriptor_field: METRIC_DESCRIPTOR_FIELD_NAME}, value: gen_ai.client.inference.time_to_first_chunk, upsert: true}
+
+  - id: genai-521-tpoc
+    name: gen_ai.client.operation.time_per_output_chunk renamed to gen_ai.client.inference.time_per_output_chunk
+    metric_transform:
+      matches:
+        - target: {descriptor_field: METRIC_DESCRIPTOR_FIELD_NAME}
+          predicate: {equals: gen_ai.client.operation.time_per_output_chunk}
+      add:
+        - {target: {descriptor_field: METRIC_DESCRIPTOR_FIELD_NAME}, value: gen_ai.client.inference.time_per_output_chunk, upsert: true}
+
+  # --- #389 (not in the guide): MCP server no longer flags client-side errors -
+  - id: mcp-389-server-client-errors-span
+    name: MCP server spans with client-side JSON-RPC error codes lose error.type and ERROR status
+    description: >
+      v1.41 set error.type to the JSON-RPC error code for every error
+      response. The target says that, on the server, -32700, -32600, -32601,
+      -32602 and -32002 SHOULD NOT be considered errors, so error.type is
+      removed and span status is reset to UNSET. Target-safe: target server
+      spans never carry error.type with these values.
+    trace_transform:
+      matches:
+        - target: {record_field: SPAN_RECORD_FIELD_KIND}
+          predicate: {equals: SERVER}
+        - target: {span_attribute: [mcp.method.name]}
+          predicate: {exists: {}}
+        - target: {span_attribute: [error.type]}
+          predicate: {regex: "^(-32700|-32600|-32601|-32602|-32002)$"}
+      remove:
+        - target: {span_attribute: [error.type]}
+      add:
+        - {target: {record_field: SPAN_RECORD_FIELD_STATUS_CODE}, value: UNSET, upsert: true}
+
+  - id: mcp-389-server-client-errors-metric
+    name: error.type removed from mcp.server.operation.duration for client-side JSON-RPC error codes
+    description: >
+      Same as the span policy. Target-safe for the same reason. No series
+      merge: rpc.response.status_code (conditionally required when the
+      response has an error code) keeps these series distinct.
+    metric_transform:
+      matches:
+        - target: {descriptor_field: METRIC_DESCRIPTOR_FIELD_NAME}
+          predicate: {equals: mcp.server.operation.duration}
+        - target: {datapoint_attribute: [error.type]}
+          predicate: {regex: "^(-32700|-32600|-32601|-32602|-32002)$"}
+      remove:
+        - target: {datapoint_attribute: [error.type]}

@@ -1,0 +1,101 @@
+# Prometheus classic metric/label conventions -> OpenTelemetry semantic conventions.
+#
+# Bridges classic Prometheus exporter and instrumentation naming (e.g.
+# cAdvisor, kube-state-metrics, go-grpc-prometheus, and classic HTTP metrics)
+# to OpenTelemetry UTF-8 semantic conventions using OTel Telemetry Policies
+# (file_format: transform/2.0, open-telemetry/weaver#1850).
+file_format: transform/2.0
+source:
+  schema_url: https://prometheus.io/schemas/classic
+target:
+  schema_url: https://opentelemetry.io/schemas/otel-canonical
+gaps: {}
+policies:
+  - id: prom-http-server-request-duration
+    name: http_server_request_duration_seconds becomes http.server.request.duration
+    metric_transform:
+      matches:
+        - target: {descriptor_field: METRIC_DESCRIPTOR_FIELD_NAME}
+          predicate: {equals: http_server_request_duration_seconds}
+      rename:
+        - {from: {datapoint_attribute: [method]}, to: http.request.method}
+        - {from: {datapoint_attribute: [status_code]}, to: http.response.status_code}
+        - {from: {datapoint_attribute: [code]}, to: http.response.status_code}
+        - {from: {datapoint_attribute: [scheme]}, to: url.scheme}
+        - {from: {datapoint_attribute: [protocol_version]}, to: network.protocol.version}
+      add:
+        - {target: {descriptor_field: METRIC_DESCRIPTOR_FIELD_NAME}, value: http.server.request.duration, upsert: true}
+      map:
+        - {target: {datapoint_attribute: [network.protocol.version]}, values: {"2.0": "2", "3.0": "3", "HTTP/1.1": "1.1", "HTTP/2.0": "2"}, unmapped: keep}
+
+  - id: prom-http-server-request-duration-5xx
+    name: Classic HTTP server requests with 5xx status_code get error.type
+    metric_transform:
+      matches:
+        - target: {descriptor_field: METRIC_DESCRIPTOR_FIELD_NAME}
+          predicate: {equals: http_server_request_duration_seconds}
+        - target: {datapoint_attribute: [status_code]}
+          predicate: {gte: 500}
+      add:
+        - {target: {datapoint_attribute: [error.type]}, from: {datapoint_attribute: [http.response.status_code]}}
+      convert:
+        - {target: {datapoint_attribute: [error.type]}, type: string}
+
+  - id: prom-k8s-pod-network-receive
+    name: cAdvisor container_network_receive_bytes_total becomes k8s.pod.network.io{network.io.direction="receive"}
+    metric_transform:
+      matches:
+        - target: {descriptor_field: METRIC_DESCRIPTOR_FIELD_NAME}
+          predicate: {equals: container_network_receive_bytes_total}
+      rename:
+        - {from: {datapoint_attribute: [pod]}, to: k8s.pod.name}
+        - {from: {datapoint_attribute: [namespace]}, to: k8s.namespace.name}
+        - {from: {datapoint_attribute: [interface]}, to: network.interface.name}
+      add:
+        - {target: {descriptor_field: METRIC_DESCRIPTOR_FIELD_NAME}, value: k8s.pod.network.io, upsert: true}
+        - {target: {datapoint_attribute: [network.io.direction]}, value: receive, upsert: true}
+
+  - id: prom-k8s-pod-network-transmit
+    name: cAdvisor container_network_transmit_bytes_total becomes k8s.pod.network.io{network.io.direction="transmit"}
+    metric_transform:
+      matches:
+        - target: {descriptor_field: METRIC_DESCRIPTOR_FIELD_NAME}
+          predicate: {equals: container_network_transmit_bytes_total}
+      rename:
+        - {from: {datapoint_attribute: [pod]}, to: k8s.pod.name}
+        - {from: {datapoint_attribute: [namespace]}, to: k8s.namespace.name}
+        - {from: {datapoint_attribute: [interface]}, to: network.interface.name}
+      add:
+        - {target: {descriptor_field: METRIC_DESCRIPTOR_FIELD_NAME}, value: k8s.pod.network.io, upsert: true}
+        - {target: {datapoint_attribute: [network.io.direction]}, value: transmit, upsert: true}
+
+  - id: prom-kube-pod-status-phase
+    name: kube-state-metrics kube_pod_status_phase becomes k8s.pod.status.phase
+    metric_transform:
+      matches:
+        - target: {descriptor_field: METRIC_DESCRIPTOR_FIELD_NAME}
+          predicate: {equals: kube_pod_status_phase}
+      rename:
+        - {from: {datapoint_attribute: [pod]}, to: k8s.pod.name}
+        - {from: {datapoint_attribute: [namespace]}, to: k8s.namespace.name}
+        - {from: {datapoint_attribute: [phase]}, to: k8s.pod.status.phase}
+      add:
+        - {target: {descriptor_field: METRIC_DESCRIPTOR_FIELD_NAME}, value: k8s.pod.status.phase, upsert: true}
+
+  - id: prom-grpc-client-handling-seconds
+    name: go-grpc-prometheus grpc_client_handling_seconds becomes rpc.client.call.duration
+    metric_transform:
+      matches:
+        - target: {descriptor_field: METRIC_DESCRIPTOR_FIELD_NAME}
+          predicate: {equals: grpc_client_handling_seconds}
+      remove:
+        - target: {datapoint_attribute: [grpc_type]}
+      rename:
+        - {from: {datapoint_attribute: [grpc_code]}, to: rpc.response.status_code}
+      add:
+        - {target: {descriptor_field: METRIC_DESCRIPTOR_FIELD_NAME}, value: rpc.client.call.duration, upsert: true}
+        - {target: {datapoint_attribute: [rpc.system.name]}, value: grpc, upsert: true}
+        - {target: {datapoint_attribute: [rpc.method]}, from: [{datapoint_attribute: [grpc_service]}, {datapoint_attribute: [grpc_method]}], separator: "/", upsert: true}
+      discard:
+        - target: {datapoint_attribute: [grpc_service]}
+        - target: {datapoint_attribute: [grpc_method]}

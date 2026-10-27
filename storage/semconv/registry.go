@@ -82,6 +82,38 @@ func newRegistrySource(files map[string][]byte) registrySource {
 	return prefixedRegistry{prefix: registryPrefix, inner: registryFiles(files)}
 }
 
+// listRegistryYAMLFiles returns the sorted registry/<name>.yaml paths available
+// in src so transform/2.0 policies can be discovered by target schema_url.
+func listRegistryYAMLFiles(src registrySource) []string {
+	switch s := src.(type) {
+	case fs.ReadDirFS:
+		entries, err := s.ReadDir(registryPrefix)
+		if err != nil {
+			return nil
+		}
+		var names []string
+		for _, e := range entries {
+			if !e.IsDir() && strings.HasSuffix(e.Name(), ".yaml") {
+				names = append(names, registryPrefix+"/"+e.Name())
+			}
+		}
+		slices.Sort(names)
+		return names
+	case prefixedRegistry:
+		if rf, ok := s.inner.(registryFiles); ok {
+			var names []string
+			for k := range rf {
+				if strings.HasSuffix(k, ".yaml") {
+					names = append(names, s.prefix+"/"+k)
+				}
+			}
+			slices.Sort(names)
+			return names
+		}
+	}
+	return nil
+}
+
 func cloneRegistryFiles(files map[string][]byte) map[string][]byte {
 	cloned := make(map[string][]byte, len(files))
 	for name, b := range files {

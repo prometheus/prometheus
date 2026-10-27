@@ -160,6 +160,9 @@ type otelSchema struct {
 	// allVersions lists every declared schema version in ascending order,
 	// including versions without transformations.
 	allVersions []string
+
+	// transform holds the parsed policy definition when FileFormat is transform/2.0.
+	transform *transformFile
 }
 
 // predecessorOfWithBudget returns the version immediately before v in the
@@ -726,8 +729,19 @@ func loadOTelSchema(b []byte) (otelSchema, error) {
 	if err := yaml.Unmarshal(b, &s); err != nil {
 		return otelSchema{}, fmt.Errorf("unmarshal: %w", err)
 	}
+	if s.FileFormat == transformFileFormat {
+		tf, err := loadTransformFile(b)
+		if err != nil {
+			return otelSchema{}, err
+		}
+		s.transform = tf
+		if s.SchemaURL == "" {
+			s.SchemaURL = tf.targetURL
+		}
+		return s, nil
+	}
 	if s.FileFormat != "1.1.0" && s.FileFormat != "1.0.0" {
-		return otelSchema{}, fmt.Errorf("unsupported OTel schema file format %q (expected 1.0.0 or 1.1.0)", s.FileFormat)
+		return otelSchema{}, fmt.Errorf("unsupported OTel schema file format %q (expected 1.0.0, 1.1.0, or transform/2.0)", s.FileFormat)
 	}
 
 	s.revisions = make([]schemaRevision, 0, len(s.Versions))

@@ -1,0 +1,161 @@
+# Native gRPC conventions (A66 metrics, A72 tracing) -> OpenTelemetry RPC
+# conventions (gRPC flavor).
+#
+# Guide: https://github.com/open-telemetry/semantic-conventions/blob/main/docs/non-normative/compatibility/grpc.md
+# gRPC:  https://github.com/grpc/proposal/blob/master/A66-otel-stats.md
+#        https://github.com/grpc/proposal/blob/master/A72-open-telemetry-tracing.md
+#
+# The source schema URL is invented: gRPC doesn't publish a schema URL.
+# 42.42.0 stands for "the A66/A72 conventions". The target is the OTel RPC
+# shape on main (rpc.status_code, fully-qualified rpc.method). 1.45.0 is a
+# placeholder for the first release that contains it, as in
+# rpc/1.37.0_to_1.45.0.yaml.
+#
+# Uses proposed operations (not in proto#865): metric name and span status
+# code as write targets, `map` and `from` in `add`.
+#
+# Every policy matches on a gRPC-only signal name (grpc.*) or on the
+# Sent./Recv. span-name prefix, so OTel-shaped data passes through unchanged.
+#
+# Left out (see the appendix in ../../schema-transformations.md):
+#   - Span name Sent.{method} / Recv.{method} -> {rpc.method}: the prefix
+#     stays in the span name and in rpc.method.
+#   - rpc.status_code and error.type on spans: the code is only in the status
+#     description ("CODE, description"), and there's no op to extract it.
+#   - grpc.client.attempt.*, grpc.server.call.started and the message-size
+#     metrics have no OTel equivalent. They're left as-is, not dropped: their
+#     names don't collide with anything in OTel.
+#   - gRPC attempt spans have no OTel equivalent. They're left as-is: dropping
+#     them would orphan their children.
+#   - error.type for failures without a status code (exceptions) can't be
+#     derived. Instrumentations may also configure other error-code sets.
+file_format: transform/2.0
+source:
+  schema_url: https://grpc.io/schemas/42.42.0
+  registry_path: ./grpc-native-model   # local Weaver schema for A66/A72
+target:
+  schema_url: https://opentelemetry.io/schemas/1.45.0
+gaps:
+  metrics:
+    rpc.client.call.duration:
+      missing_attributes: [server.port]
+policies:
+  # --- grpc.client.call.duration ---------------------------------------------
+  - id: grpc-client-call-duration
+    name: grpc.client.call.duration becomes rpc.client.call.duration
+    description: >
+      Same instrument (histogram) and unit (s). grpc.method and grpc.status
+      map to rpc.method and rpc.status_code; the values use the same format
+      (full method name, status code name) except grpc.method "other", which
+      becomes "_OTHER". rpc.system.name is always grpc. grpc.target becomes
+      server.address as is (approximate): targets like dns:///host:443,
+      xds:///name or unix:path aren't a plain host, and parsing them isn't a
+      goal.
+    metric_transform:
+      matches:
+        - target: {descriptor_field: METRIC_DESCRIPTOR_FIELD_NAME}
+          predicate: {equals: grpc.client.call.duration}
+      rename:
+        - {from: {datapoint_attribute: [grpc.method]}, to: rpc.method}
+        - {from: {datapoint_attribute: [grpc.status]}, to: rpc.status_code}
+        - {from: {datapoint_attribute: [grpc.target]}, to: server.address}
+      add:
+        - {target: {descriptor_field: METRIC_DESCRIPTOR_FIELD_NAME}, value: rpc.client.call.duration, upsert: true}
+        - {target: {datapoint_attribute: [rpc.system.name]}, value: grpc}
+      map: [{target: {datapoint_attribute: [rpc.method]}, values: {other: _OTHER}, unmapped: keep}]
+
+  # The matcher reads grpc.status on the incoming record; `from` reads the
+  # value after rename, so it's rpc.status_code.
+  - id: grpc-client-call-duration-error
+    name: error.type derived from grpc.status on grpc.client.call.duration (every code except OK)
+    metric_transform:
+      matches:
+        - target: {descriptor_field: METRIC_DESCRIPTOR_FIELD_NAME}
+          predicate: {equals: grpc.client.call.duration}
+        - target: {datapoint_attribute: [grpc.status]}
+          predicate: {exists: {}}
+        - target: {datapoint_attribute: [grpc.status]}
+          predicate: {equals: OK}
+          negate: true
+      add: [{target: {datapoint_attribute: [error.type]}, from: {datapoint_attribute: [rpc.status_code]}}]
+
+  # --- grpc.server.call.duration ---------------------------------------------
+  - id: grpc-server-call-duration
+    name: grpc.server.call.duration becomes rpc.server.call.duration
+    description: >
+      Same instrument (histogram) and unit (s). grpc.method and grpc.status
+      map to rpc.method and rpc.status_code; the values use the same format
+      (full method name, status code name) except grpc.method "other", which
+      becomes "_OTHER". rpc.system.name is always grpc.
+    metric_transform:
+      matches:
+        - target: {descriptor_field: METRIC_DESCRIPTOR_FIELD_NAME}
+          predicate: {equals: grpc.server.call.duration}
+      rename:
+        - {from: {datapoint_attribute: [grpc.method]}, to: rpc.method}
+        - {from: {datapoint_attribute: [grpc.status]}, to: rpc.status_code}
+      add:
+        - {target: {descriptor_field: METRIC_DESCRIPTOR_FIELD_NAME}, value: rpc.server.call.duration, upsert: true}
+        - {target: {datapoint_attribute: [rpc.system.name]}, value: grpc}
+      map: [{target: {datapoint_attribute: [rpc.method]}, values: {other: _OTHER}, unmapped: keep}]
+
+  - id: grpc-server-call-duration-error
+    name: error.type derived from grpc.status on grpc.server.call.duration (server error codes only)
+    metric_transform:
+      matches:
+        - target: {descriptor_field: METRIC_DESCRIPTOR_FIELD_NAME}
+          predicate: {equals: grpc.server.call.duration}
+        - target: {datapoint_attribute: [grpc.status]}
+          predicate: {regex: "^(UNKNOWN|DEADLINE_EXCEEDED|UNIMPLEMENTED|INTERNAL|UNAVAILABLE|DATA_LOSS)$"}
+      add: [{target: {datapoint_attribute: [error.type]}, from: {datapoint_attribute: [rpc.status_code]}}]
+
+  # --- Spans ---------------------------------------------------------------
+  - id: grpc-span-client-system
+    name: gRPC client call spans (Sent.*) get rpc.system.name grpc and rpc.method from the span name
+    description: >
+      rpc.method is copied from the span name, so it keeps the Sent. prefix
+      (approximate); the span name keeps it too. Target-safe: OTel span names
+      are {rpc.method}, which never start with "Sent.", and add without upsert
+      keeps an existing value.
+    trace_transform:
+      matches:
+        - target: {record_field: SPAN_RECORD_FIELD_KIND}
+          predicate: {equals: CLIENT}
+        - target: {record_field: SPAN_RECORD_FIELD_NAME}
+          predicate: {regex: '^Sent\.'}
+      add:
+        - {target: {span_attribute: [rpc.system.name]}, value: grpc}
+        - {target: {span_attribute: [rpc.method]}, from: {record_field: SPAN_RECORD_FIELD_NAME}}
+
+  - id: grpc-span-server-system
+    name: gRPC server spans (Recv.*) get rpc.system.name grpc and rpc.method from the span name
+    description: Same as the client policy, for the Recv. prefix.
+    trace_transform:
+      matches:
+        - target: {record_field: SPAN_RECORD_FIELD_KIND}
+          predicate: {equals: SERVER}
+        - target: {record_field: SPAN_RECORD_FIELD_NAME}
+          predicate: {regex: '^Recv\.'}
+      add:
+        - {target: {span_attribute: [rpc.system.name]}, value: grpc}
+        - {target: {span_attribute: [rpc.method]}, from: {record_field: SPAN_RECORD_FIELD_NAME}}
+
+  - id: grpc-span-server-status
+    name: gRPC server spans with a non-error status code get span status UNSET
+    description: >
+      gRPC sets ERROR for every non-OK code; OTel server spans only for
+      UNKNOWN, DEADLINE_EXCEEDED, UNIMPLEMENTED, INTERNAL, UNAVAILABLE and
+      DATA_LOSS. The code is read from the start of the status description:
+      A72 sets non-OK statuses to ERROR with the code as the description
+      prefix, e.g. "UNAVAILABLE, unable to resolve host".
+    trace_transform:
+      matches:
+        - target: {record_field: SPAN_RECORD_FIELD_KIND}
+          predicate: {equals: SERVER}
+        - target: {record_field: SPAN_RECORD_FIELD_NAME}
+          predicate: {regex: '^Recv\.'}
+        - target: {record_field: SPAN_RECORD_FIELD_STATUS_CODE}
+          predicate: {equals: ERROR}
+        - target: {record_field: SPAN_RECORD_FIELD_STATUS_MESSAGE}
+          predicate: {regex: '^(CANCELLED|INVALID_ARGUMENT|NOT_FOUND|ALREADY_EXISTS|PERMISSION_DENIED|RESOURCE_EXHAUSTED|FAILED_PRECONDITION|ABORTED|OUT_OF_RANGE|UNAUTHENTICATED)\b'}
+      add: [{target: {record_field: SPAN_RECORD_FIELD_STATUS_CODE}, value: UNSET, upsert: true}]

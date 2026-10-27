@@ -2112,20 +2112,40 @@ func (e *schemaEngine) getOTelSchema(url string) (otelSchema, error) {
 	return s, nil
 }
 
+// getTransformSchemasByTarget returns all transform/2.0 schemas in the registry
+// whose target.schema_url matches targetURL (either as the full target URL or as
+// registry/<path.Base(targetURL)>).
+func (e *schemaEngine) getTransformSchemasByTarget(targetURL string) []*otelSchema {
+	if targetURL == "" {
+		return nil
+	}
+	var matched []*otelSchema
+	for _, yamlPath := range listRegistryYAMLFiles(e.registry) {
+		s, err := e.getOTelSchema(yamlPath)
+		if err != nil || s.FileFormat != transformFileFormat || s.transform == nil {
+			continue
+		}
+		tURL := s.transform.targetURL
+		if tURL == "" {
+			continue
+		}
+		if tURL == targetURL || registryPrefix+"/"+path.Base(tURL) == targetURL {
+			sCopy := s
+			matched = append(matched, &sCopy)
+		}
+	}
+	return matched
+}
+
+var errSemconvURLRequired = errors.New("semconvURL is required")
+
 // findMatcherVariants returns all variants to match for a single schematized
-// metric selection. semconvURL points to a semantic conventions file and is
-// always required. In production schemaURL (an OTel schema file with versioned
-// renames) is also always set, because classifyMatchers only triggers fan-out
-// when both are present; the empty-schemaURL path exists only for the direct
-// unit test. It returns one variant per schema-version rename of the metric,
-// plus a label mapping for transforming results back to the requested version.
-// The returned matchers do not include the reserved schema matchers. It returns
-// an error if semconvURL or a non-empty equality __name__ matcher is not provided.
-// Each resolved lineage carries its own label mapping because scoped attribute
-// changes can differ between branches.
+// metric selection. For 1.0.0/1.1.0 schemas, semconvURL points to a semantic
+// conventions file and is required. For transform/2.0 policy files, semconvURL
+// is optional because the transformation file is self-contained and directional.
 func (e *schemaEngine) findMatcherVariants(semconvURL, schemaURL string, originalMatchers []*labels.Matcher) ([]matcherVariant, queryContext, error) {
-	if semconvURL == "" {
-		return nil, queryContext{}, errors.New("semconvURL is required")
+	if semconvURL == "" && schemaURL == "" {
+		return nil, queryContext{}, errSemconvURLRequired
 	}
 
 	// Filter out the wrapper's reserved matchers.
@@ -2142,6 +2162,40 @@ func (e *schemaEngine) findMatcherVariants(semconvURL, schemaURL string, origina
 		return []matcherVariant{{matchers: matchers}}, queryContext{}, nil
 	}
 	matchers = normalizedMatchers
+
+	if schemaURL != "" {
+		schema, err := e.getOTelSchema(schemaURL)
+		if err != nil {
+			// If schemaURL is a target schema URL or registry/<target-version> rather than
+			// a direct .yaml filename, check if one or more transform/2.0 policies target it.
+			if targetSchemas := e.getTransformSchemasByTarget(schemaURL); len(targetSchemas) > 0 {
+				if semconvURL != "" && !registryURLRe.MatchString(semconvURL) {
+					return nil, queryContext{}, fmt.Errorf("invalid semconv URL %q: must match %s", semconvURL, registryURLRe.String())
+				}
+				budget := newSchemaExpansionBudget(e.limits)
+				variants, warnings, genErr := generateTransformPolicyVariantsMulti(targetSchemas, matchers, budget)
+				if genErr != nil {
+					return nil, queryContext{}, genErr
+				}
+				return variants, queryContext{warnings: warnings}, nil
+			}
+			return nil, queryContext{}, err
+		}
+		if schema.FileFormat == transformFileFormat {
+			if semconvURL != "" && !registryURLRe.MatchString(semconvURL) {
+				return nil, queryContext{}, fmt.Errorf("invalid semconv URL %q: must match %s", semconvURL, registryURLRe.String())
+			}
+			budget := newSchemaExpansionBudget(e.limits)
+			variants, warnings, err := generateTransformPolicyVariants(&schema, matchers, budget)
+			if err != nil {
+				return nil, queryContext{}, err
+			}
+			return variants, queryContext{warnings: warnings}, nil
+		}
+		if semconvURL == "" {
+			return nil, queryContext{}, errSemconvURLRequired
+		}
+	}
 
 	// Fetch semantic conventions for the anchor version (also validates the URL).
 	sc, err := e.getSemconv(semconvURL)
@@ -2209,6 +2263,7 @@ func (e *schemaEngine) findMatcherVariants(semconvURL, schemaURL string, origina
 type labelMapping struct {
 	translatedLabels map[string]string // historical attribute alias → anchor name, e.g. "user" -> "tenant"
 	translatedMetric string
+	policyTransform  *policySeriesTransformer
 }
 
 // buildLabelMapping creates the mapping used to rewrite result labels back to
@@ -2239,6 +2294,9 @@ func (m *labelMapping) aliasesOf(name string) []string {
 // transformOTelSchemaLabels transforms series labels to the current semantic
 // conventions version using the label mapping.
 func transformOTelSchemaLabels(originalLabels labels.Labels, mapping *labelMapping) (labels.Labels, error) {
+	if mapping != nil && mapping.policyTransform != nil {
+		return mapping.policyTransform.transformLabels(originalLabels)
+	}
 	type mappedLabel struct {
 		source string
 		value  string
@@ -2282,6 +2340,9 @@ func transformOTelSchemaLabels(originalLabels labels.Labels, mapping *labelMappi
 }
 
 func labelMappingChangesLabels(lbls labels.Labels, mapping *labelMapping) bool {
+	if mapping != nil && mapping.policyTransform != nil {
+		return true
+	}
 	changed := false
 	lbls.Range(func(label labels.Label) {
 		if changed {
