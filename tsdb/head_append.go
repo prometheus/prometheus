@@ -441,7 +441,7 @@ type headAppenderBase struct {
 func (a *headAppenderBase) shouldObserveNativeMetricMetadataLocked(s *memSeries, timestamp int64, m *metadata.Metadata) bool {
 	// A pending change can make a return to the committed value significant:
 	// with committed A, the transaction must retain both B and a following A.
-	if a.nativeMetricMetadata != nil && a.nativeMetricMetadata.mayHaveObservedSeries(s.ref) {
+	if s.pendingCommitCount() > 1 && a.nativeMetricMetadata != nil && a.nativeMetricMetadata.mayHaveObservedSeries(s.ref) {
 		return true
 	}
 	native := s.nativeMetadataLocked()
