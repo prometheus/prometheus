@@ -49,7 +49,7 @@ query($owner: String!, $name: String!, $limit: Int!, $after: String) {
         additions
         deletions
         changedFiles
-        author { login }
+        author { __typename login }
         authorAssociation
         body
         labels(first: 10) { nodes { name } }
@@ -64,7 +64,7 @@ query($owner: String!, $name: String!, $limit: Int!, $after: String) {
         }
         latestReviews(first: 10) {
           nodes {
-            author { login }
+            author { __typename login }
             state
             submittedAt
             body
@@ -72,7 +72,7 @@ query($owner: String!, $name: String!, $limit: Int!, $after: String) {
         }
         latestOpinionatedReviews(first: 10) {
           nodes {
-            author { login }
+            author { __typename login }
             state
             submittedAt
             body
@@ -81,7 +81,7 @@ query($owner: String!, $name: String!, $limit: Int!, $after: String) {
         comments(last: 10) {
           totalCount
           nodes {
-            author { login }
+            author { __typename login }
             createdAt
             body
           }
@@ -92,7 +92,7 @@ query($owner: String!, $name: String!, $limit: Int!, $after: String) {
             isResolved
             comments(last: 10) {
               nodes {
-                author { login }
+                author { __typename login }
                 state
                 createdAt
                 body
@@ -290,19 +290,15 @@ def get_current_owners(pr, author):
     for r in review_nodes:
         if r.get("state") == "PENDING":
             continue
-        login = (r.get("author") or {}).get("login")
-        if (
-            login
-            and login.lower() != author.lower()
-            and "copilot" not in login.lower()
-            and "[bot]" not in login.lower()
-        ):
+        r_author = r.get("author") or {}
+        login = r_author.get("login")
+        if login and login.lower() != author.lower() and not is_bot(r_author):
             if login not in curr:
                 curr.append(login)
     for n in pr.get("reviewRequests", {}).get("nodes", []):
         rr = n.get("requestedReviewer") or {}
         login = rr.get("login")
-        if login and login.lower() != author.lower() and "copilot" not in login.lower():
+        if login and login.lower() != author.lower() and not is_bot(rr):
             if login not in curr:
                 curr.append(login)
     return curr
@@ -391,7 +387,15 @@ CI_ISSUE_RE = re.compile(
 )
 
 
-def is_bot(login):
+def is_bot(actor):
+    if not actor:
+        return True
+    if isinstance(actor, dict):
+        if actor.get("__typename") == "Bot":
+            return True
+        login = actor.get("login")
+    else:
+        login = str(actor)
     if not login:
         return True
     low = login.lower()
@@ -400,7 +404,7 @@ def is_bot(login):
         or "dependabot" in low
         or "renovate" in low
         or "copilot" in low
-        or low in ("prombot", "cla-bot", "netlify")
+        or low in ("prombot", "cla-bot", "netlify", "codecov")
     )
 
 
@@ -424,7 +428,7 @@ def analyze_prs(repos, max_prs, maintainer_filter=None):
 
         for pr in raw_prs:
             author = pr["author"]["login"] if pr.get("author") else "ghost"
-            if is_bot(author):
+            if is_bot(pr.get("author")):
                 continue
             author_low = author.lower()
 
@@ -454,14 +458,14 @@ def analyze_prs(repos, max_prs, maintainer_filter=None):
                 for r in pr.get("latestOpinionatedReviews", {}).get("nodes", [])
                 if r.get("state") != "PENDING"
                 and r.get("author")
-                and not is_bot(r["author"].get("login"))
+                and not is_bot(r.get("author"))
             ]
             latest_reviews = [
                 r
                 for r in pr.get("latestReviews", {}).get("nodes", [])
                 if r.get("state") != "PENDING"
                 and r.get("author")
-                and not is_bot(r["author"].get("login"))
+                and not is_bot(r.get("author"))
             ]
             reviews = []
             seen_reviews = set()
@@ -477,7 +481,7 @@ def analyze_prs(repos, max_prs, maintainer_filter=None):
             comments = [
                 c
                 for c in pr.get("comments", {}).get("nodes", [])
-                if c.get("author") and not is_bot(c["author"].get("login"))
+                if c.get("author") and not is_bot(c.get("author"))
             ]
             threads = pr.get("reviewThreads", {}).get("nodes", [])
 
@@ -506,7 +510,7 @@ def analyze_prs(repos, max_prs, maintainer_filter=None):
                     if (
                         tc.get("state") != "PENDING"
                         and tc.get("author")
-                        and not is_bot(tc["author"].get("login"))
+                        and not is_bot(tc.get("author"))
                     ):
                         tc_login = tc["author"]["login"]
                         tc_ts = tc.get("createdAt") or ""
@@ -541,7 +545,7 @@ def analyze_prs(repos, max_prs, maintainer_filter=None):
                     for tc in t.get("comments", {}).get("nodes", [])
                     if tc.get("state") != "PENDING"
                     and tc.get("author")
-                    and not is_bot(tc["author"].get("login"))
+                    and not is_bot(tc.get("author"))
                 ]
                 if not t_comments:
                     continue
