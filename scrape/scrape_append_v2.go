@@ -612,6 +612,9 @@ func (*scrapeLoop) checkAndSynthesizeStartTime(
 // metric name, pre-relabel metric family name, post-relabel metric name, and post-relabel type.
 func metricFamilyName(preName string, preMFName []byte, postName string, postType model.MetricType) string {
 	preMFStr := yoloString(preMFName)
+	if preName == preMFStr {
+		return postName
+	}
 	if preMFStr != "" && preName == postName {
 		if strings.HasPrefix(postName, preMFStr) {
 			return postName[:len(preMFStr)]

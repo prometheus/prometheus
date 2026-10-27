@@ -1510,6 +1510,16 @@ func TestScrapeLoopMetricRelabelMetadata(t *testing.T) {
 			Action:               relabel.Replace,
 			NameValidationScheme: model.UTF8Validation,
 		},
+		// Rename old_summary -> summary_count (no component suffix on pre-relabel name).
+		{
+			SourceLabels:         model.LabelNames{"__name__"},
+			Separator:            ";",
+			Regex:                relabel.MustNewRegexp("old_summary"),
+			TargetLabel:          "__name__",
+			Replacement:          "summary_count",
+			Action:               relabel.Replace,
+			NameValidationScheme: model.UTF8Validation,
+		},
 	}
 
 	sl, _ := newTestScrapeLoop(t, withAppendable(appTest, true), func(sl *scrapeLoop) {
@@ -1532,6 +1542,9 @@ old_http_requests_total 42
 old_latency_bucket{le="+Inf"} 1
 old_latency_sum 0.5
 old_latency_count 1
+# TYPE old_summary summary
+# HELP old_summary Summary renamed to end with _count
+old_summary{quantile="0.5"} 0.25
 # TYPE foo gauge
 foo 1
 bar 1
@@ -1541,9 +1554,9 @@ bar 1
 	total, added, seriesAdded, err := app.append(scrapeText, "application/openmetrics-text", now)
 	require.NoError(t, err)
 	require.NoError(t, app.Commit())
-	require.Equal(t, 7, total)
-	require.Equal(t, 6, added)
-	require.Equal(t, 6, seriesAdded)
+	require.Equal(t, 8, total)
+	require.Equal(t, 7, added)
+	require.Equal(t, 7, seriesAdded)
 
 	// Dropped metric metadata must not be stored in scrapeCache (#14013).
 	_, ok := sl.cache.GetMetadata("dropped_metric")
@@ -1572,6 +1585,12 @@ bar 1
 	require.Equal(t, model.MetricTypeHistogram, md.Type)
 	require.Equal(t, "Request latency", md.Help)
 
+	// When pre-relabel series name equals its family name ("old_summary"), no suffix is stripped from the renamed name ("summary_count").
+	md, ok = sl.cache.GetMetadata("summary_count")
+	require.True(t, ok)
+	require.Equal(t, model.MetricTypeSummary, md.Type)
+	require.Equal(t, "Summary renamed to end with _count", md.Help)
+
 	// bar had no metadata on the first scrape and must not inherit foo's metadata.
 	_, ok = sl.cache.GetMetadata("bar")
 	require.False(t, ok, "expected bar metadata to be absent on first scrape")
@@ -1593,6 +1612,10 @@ bar 1
 		{
 			L: labels.FromStrings("__name__", "latency_count", "instance", "localhost:9090", "job", "test"),
 			M: metadata.Metadata{Type: model.MetricTypeHistogram, Help: "Request latency"},
+		},
+		{
+			L: labels.FromStrings("__name__", "summary_count", "instance", "localhost:9090", "job", "test", "quantile", "0.5"),
+			M: metadata.Metadata{Type: model.MetricTypeSummary, Help: "Summary renamed to end with _count"},
 		},
 		{
 			L: labels.FromStrings("__name__", "foo", "instance", "localhost:9090", "job", "test"),
@@ -1629,7 +1652,7 @@ bar 2
 			L: labels.FromStrings("__name__", "bar", "instance", "localhost:9090", "job", "test"),
 			M: metadata.Metadata{Type: model.MetricTypeGauge},
 		},
-	}, appTest.ResultMetadata()[5:])
+	}, appTest.ResultMetadata()[6:])
 }
 
 func TestScrapeLoopSeriesAdded(t *testing.T) {
