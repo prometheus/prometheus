@@ -498,7 +498,7 @@ func TestLogInterruptedRecordRejectsLaterLog(t *testing.T) {
 
 			for _, test := range []struct {
 				name           string
-				writeCall      int // -1 selects the final fragment flush.
+				writeCall      int // Use -1 to select the final fragment flush.
 				bytesBeforeErr int
 				rejectLater    bool
 			}{
