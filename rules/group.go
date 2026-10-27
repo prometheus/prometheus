@@ -41,7 +41,7 @@ import (
 	"github.com/prometheus/prometheus/tsdb/chunkenc"
 )
 
-// ruleSeries tracks a rule output's labels and storage reference.
+// Series state tracks a rule output's labels and storage reference.
 type ruleSeries struct {
 	lset labels.Labels
 	ref  storage.SeriesRef
