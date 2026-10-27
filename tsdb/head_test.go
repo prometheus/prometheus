@@ -25,6 +25,8 @@ import (
 	"path"
 	"path/filepath"
 	"reflect"
+	"runtime"
+	"runtime/metrics"
 	"slices"
 	"sort"
 	"strconv"
@@ -502,6 +504,7 @@ func BenchmarkLoadWLs(b *testing.B) {
 								}
 							}
 
+							peak := trackPeakLiveHeap()
 							b.ResetTimer()
 
 							// Load the WAL.
@@ -517,6 +520,7 @@ func BenchmarkLoadWLs(b *testing.B) {
 								h.Init(0)
 							}
 							b.StopTimer()
+							peak.report(b)
 							wal.Close()
 							if wbl != nil {
 								wbl.Close()
@@ -585,6 +589,23 @@ func BenchmarkLoadRealWLs(b *testing.B) {
 		b.SkipNow()
 	}
 
+	// Like DB.Open, drop samples older than the newest in-order block or the
+	// persisted WAL truncation time. Without either, keep 0 as before.
+	minValidTime := int64(0)
+	entries, err := os.ReadDir(srcDir)
+	require.NoError(b, err)
+	for _, e := range entries {
+		meta, _, err := readMetaFile(filepath.Join(srcDir, e.Name()))
+		if err != nil || meta.Compaction.FromOutOfOrder() || meta.Compaction.FromStaleSeries() || meta.Compaction.FromSelectedSeries() {
+			continue
+		}
+		minValidTime = max(minValidTime, meta.MaxTime)
+	}
+	if t, ok, err := wlog.ReadMinValidTime(filepath.Join(srcDir, "wal")); err == nil && ok {
+		minValidTime = max(minValidTime, t)
+	}
+
+	peak := trackPeakLiveHeap()
 	// Load the WAL.
 	for b.Loop() {
 		b.StopTimer()
@@ -604,11 +625,61 @@ func BenchmarkLoadRealWLs(b *testing.B) {
 		opts.ChunkDirRoot = dir
 		h, err := NewHead(nil, nil, wal, wbl, opts, nil)
 		require.NoError(b, err)
-		require.NoError(b, h.Init(0))
+		require.NoError(b, h.Init(minValidTime))
 
 		b.StopTimer()
 		require.NoError(b, os.RemoveAll(dir))
+		b.StartTimer()
 	}
+	peak.report(b)
+}
+
+// peakLiveHeap records the largest live heap seen at the end of a GC cycle.
+// B/op and allocs/op count allocated bytes, so they do not show how much
+// memory WAL replay keeps reachable at once.
+type peakLiveHeap struct {
+	peak atomic.Uint64
+	done atomic.Bool
+}
+
+// trackPeakLiveHeap starts recording the live heap after every GC cycle.
+func trackPeakLiveHeap() *peakLiveHeap {
+	p := &peakLiveHeap{}
+	p.watchNextGC()
+	return p
+}
+
+// watchNextGC attaches a cleanup to an unreachable object. The cleanup runs
+// after the next GC cycle frees the object, records the live heap that cycle
+// marked and arms the next one.
+func (p *peakLiveHeap) watchNextGC() {
+	runtime.AddCleanup(new([64]byte), func(p *peakLiveHeap) {
+		p.observe()
+		if !p.done.Load() {
+			p.watchNextGC()
+		}
+	}, p)
+}
+
+func (p *peakLiveHeap) observe() {
+	s := []metrics.Sample{{Name: "/gc/heap/live:bytes"}}
+	metrics.Read(s)
+	live := s[0].Value.Uint64()
+	for {
+		peak := p.peak.Load()
+		if live <= peak || p.peak.CompareAndSwap(peak, live) {
+			return
+		}
+	}
+}
+
+// report stops the tracking, records the live heap after a final GC cycle and
+// reports the peak as the peak-live-B metric.
+func (p *peakLiveHeap) report(b *testing.B) {
+	p.done.Store(true)
+	runtime.GC()
+	p.observe()
+	b.ReportMetric(float64(p.peak.Load()), "peak-live-B")
 }
 
 // TestHead_InitAppenderRace_ErrOutOfBounds tests against init races with maxTime vs minTime on empty head concurrent appends.
