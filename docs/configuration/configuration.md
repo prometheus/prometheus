@@ -4410,6 +4410,25 @@ with this feature.
   #
   # This is an experimental feature, this behaviour could change or be removed in the future.
   [ percentage: <uint> | default = 0 ]
+
+  # Shorter retention times for the series matching a selector. Matching series are
+  # removed from a persisted block once the whole block is older than the override's
+  # time, measured like the time option. The head block is not affected, so the
+  # effective minimum is the block duration. Overrides cannot extend retention.
+  #
+  # This is an experimental feature, this behaviour could change or be removed in the future.
+  overrides:
+    [ - <retention_override> ... ]
+```
+
+### `<retention_override>`
+
+```yaml
+# A series selector, e.g. '{__name__=~"debug_.*"}' or '{job="noisy"}'.
+selector: <string>
+
+# How long to retain samples of the matching series.
+time: <duration>
 ```
 
 ### `<exemplars>`

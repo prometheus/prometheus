@@ -128,6 +128,12 @@ type Options struct {
 	// Typically it is in milliseconds.
 	RetentionDuration int64
 
+	// RetentionOverrides set a shorter retention duration for the series
+	// matching their matchers. They are applied at block granularity: matching
+	// series are dropped from a block once the whole block is beyond the
+	// override's duration. Data in the head is not affected.
+	RetentionOverrides []RetentionOverride
+
 	// Maximum number of bytes in blocks to be retained.
 	// 0 or less means disabled.
 	// NOTE: For proper storage calculations need to consider
@@ -1420,6 +1426,13 @@ func (db *DB) ApplyConfig(conf *config.Config) error {
 			db.metrics.maxBytes.Set(float64(db.opts.MaxBytes))
 			db.opts.MaxPercentage = conf.StorageConfig.TSDBConfig.Retention.Percentage
 			db.metrics.maxPercentage.Set(db.opts.MaxPercentage)
+			db.opts.RetentionOverrides = nil
+			for _, o := range conf.StorageConfig.TSDBConfig.Retention.Overrides {
+				db.opts.RetentionOverrides = append(db.opts.RetentionOverrides, RetentionOverride{
+					Matchers: o.Matchers,
+					Duration: int64(time.Duration(o.Time) / time.Millisecond),
+				})
+			}
 			db.retentionMtx.Unlock()
 		}
 		db.head.opts.FloatChunkEncoding.Store(uint32(effectiveEncoding))
@@ -1460,6 +1473,15 @@ func (db *DB) ApplyConfig(conf *config.Config) error {
 	return nil
 }
 
+// RetentionOverride sets a retention duration for the series matching Matchers.
+type RetentionOverride struct {
+	// Matchers select the series the override applies to.
+	Matchers []*labels.Matcher
+	// Duration of persisted data to keep for the matching series.
+	// It uses the same unit as Options.RetentionDuration.
+	Duration int64
+}
+
 // getRetentionDuration returns the current retention duration in a thread-safe manner.
 func (db *DB) getRetentionDuration() int64 {
 	db.retentionMtx.RLock()
@@ -1472,6 +1494,13 @@ func (db *DB) getRetentionSettings() (int64, float64) {
 	db.retentionMtx.RLock()
 	defer db.retentionMtx.RUnlock()
 	return db.opts.MaxBytes, db.opts.MaxPercentage
+}
+
+// getRetentionOverrides returns the retention overrides in a thread-safe manner.
+func (db *DB) getRetentionOverrides() []RetentionOverride {
+	db.retentionMtx.RLock()
+	defer db.retentionMtx.RUnlock()
+	return db.opts.RetentionOverrides
 }
 
 // dbAppender wraps the DB's head appender and triggers compactions on commit
@@ -1648,7 +1677,10 @@ func (db *DB) Compact(ctx context.Context) (returnErr error) {
 		}
 	}
 
-	return db.compactBlocks()
+	if err := db.compactBlocks(); err != nil {
+		return err
+	}
+	return db.applyRetentionOverrides(ctx)
 }
 
 // CompactHead compacts the given RangeHead.
@@ -2280,6 +2312,95 @@ func deletableBlocks(db *DB, blocks []*Block) map[ulid.ULID]struct{} {
 	}
 
 	return deletable
+}
+
+// applyRetentionOverrides drops the series matching a retention override from
+// every block whose whole time range is beyond that override's duration. Like
+// time retention, the age of a block is measured from the newest block's
+// MaxTime. Matching series are tombstoned for the whole block, which hides them
+// from queries, and the block is then rewritten without them.
+// The db.cmtx mutex should be held before calling this method.
+func (db *DB) applyRetentionOverrides(ctx context.Context) error {
+	overrides := db.getRetentionOverrides()
+	if len(overrides) == 0 {
+		return nil
+	}
+	retention := db.getRetentionDuration()
+
+	// Each rewrite reloads the blocks, so start over until no block changes.
+	for {
+		select {
+		case <-db.stopc:
+			return nil
+		default:
+		}
+
+		blocks := db.Blocks()
+		if len(blocks) == 0 {
+			return nil
+		}
+		newest := blocks[0].Meta().MaxTime
+		for _, b := range blocks[1:] {
+			newest = max(newest, b.Meta().MaxTime)
+		}
+
+		rewritten := false
+		for _, b := range blocks {
+			age := newest - b.Meta().MaxTime
+			if retention > 0 && age >= retention {
+				// The whole block is removed by time retention.
+				continue
+			}
+
+			deleted := false
+			for _, o := range overrides {
+				if age < o.Duration {
+					continue
+				}
+				ok, err := blockHasSeries(ctx, b, o.Matchers)
+				if err != nil {
+					return fmt.Errorf("select series for retention override: %s: %w", b.Dir(), err)
+				}
+				if !ok {
+					continue
+				}
+				if err := b.Delete(ctx, b.Meta().MinTime, b.Meta().MaxTime, o.Matchers...); err != nil {
+					return fmt.Errorf("delete series for retention override: %s: %w", b.Dir(), err)
+				}
+				deleted = true
+			}
+			if !deleted {
+				continue
+			}
+
+			cleaned, err := db.cleanBlockTombstones(b)
+			if err != nil {
+				return err
+			}
+			if cleaned {
+				rewritten = true
+				break
+			}
+		}
+		if !rewritten {
+			return nil
+		}
+	}
+}
+
+// blockHasSeries reports whether the block contains any series matching ms.
+func blockHasSeries(ctx context.Context, b *Block, ms []*labels.Matcher) (bool, error) {
+	ir, err := b.Index()
+	if err != nil {
+		return false, err
+	}
+	defer ir.Close()
+
+	p, err := PostingsForMatchers(ctx, ir, ms...)
+	if err != nil {
+		return false, err
+	}
+	return p.Next(), p.Err()
 }
 
 // BeyondTimeRetention returns those blocks which are beyond the time retention

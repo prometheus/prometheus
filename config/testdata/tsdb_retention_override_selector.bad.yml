@@ -1,0 +1,6 @@
+storage:
+  tsdb:
+    retention:
+      overrides:
+        - selector: '{job="api"'
+          time: 1d

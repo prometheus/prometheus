@@ -1158,7 +1158,12 @@ func main() {
 					}
 
 					curr := cfg.StorageConfig.TSDBConfig.Retention
-					if *curr == lastTSDBRetention {
+					if curr.Time == lastTSDBRetention.Time &&
+						curr.Size == lastTSDBRetention.Size &&
+						curr.Percentage == lastTSDBRetention.Percentage &&
+						slices.EqualFunc(curr.Overrides, lastTSDBRetention.Overrides, func(a, b config.TSDBRetentionOverride) bool {
+							return a.Selector == b.Selector && a.Time == b.Time
+						}) {
 						return nil
 					}
 
@@ -1166,6 +1171,7 @@ func main() {
 						"duration", curr.Time,
 						"size", curr.Size,
 						"percentage", curr.Percentage,
+						"overrides", len(curr.Overrides),
 					)
 					lastTSDBRetention = *curr
 					return nil
