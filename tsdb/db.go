@@ -2848,42 +2848,57 @@ func (db *DB) CleanTombstones() (err error) {
 		cleanUpCompleted = true
 
 		for _, pb := range db.Blocks() {
-			uids, safeToDelete, cleanErr := pb.CleanTombstones(db.Dir(), db.compactor)
-			if cleanErr != nil {
-				return fmt.Errorf("clean tombstones: %s: %w", pb.Dir(), cleanErr)
+			cleaned, err := db.cleanBlockTombstones(pb)
+			if err != nil {
+				return err
 			}
-			if !safeToDelete {
-				// There was nothing to clean.
-				continue
-			}
-
-			// In case tombstones of the old block covers the whole block,
-			// then there would be no resultant block to tell the parent.
-			// The lock protects against race conditions when deleting blocks
-			// during an already running reload.
-			db.mtx.Lock()
-			pb.meta.Compaction.Deletable = safeToDelete
-			db.mtx.Unlock()
-			cleanUpCompleted = false
-			if err = db.reloadBlocks(); err == nil { // Will try to delete old block.
+			if cleaned {
 				// Successful reload will change the existing blocks.
 				// We need to loop over the new set of blocks.
+				cleanUpCompleted = false
 				break
 			}
-
-			// Delete new block if it was created.
-			for _, uid := range uids {
-				dir := filepath.Join(db.Dir(), uid.String())
-				if err := os.RemoveAll(dir); err != nil {
-					db.logger.Error("failed to delete block after failed `CleanTombstones`", "dir", dir, "err", err)
-				}
-			}
-
-			// This should only be reached if an error occurred.
-			return fmt.Errorf("reload blocks: %w", err)
 		}
 	}
 	return nil
+}
+
+// cleanBlockTombstones rewrites the given block without its tombstoned data and
+// reloads the blocks so that the old block is deleted. It returns false if the
+// block had nothing to clean.
+// The db.cmtx mutex should be held before calling this method.
+func (db *DB) cleanBlockTombstones(pb *Block) (bool, error) {
+	uids, safeToDelete, cleanErr := pb.CleanTombstones(db.Dir(), db.compactor)
+	if cleanErr != nil {
+		return false, fmt.Errorf("clean tombstones: %s: %w", pb.Dir(), cleanErr)
+	}
+	if !safeToDelete {
+		// There was nothing to clean.
+		return false, nil
+	}
+
+	// In case tombstones of the old block covers the whole block,
+	// then there would be no resultant block to tell the parent.
+	// The lock protects against race conditions when deleting blocks
+	// during an already running reload.
+	db.mtx.Lock()
+	pb.meta.Compaction.Deletable = safeToDelete
+	db.mtx.Unlock()
+	err := db.reloadBlocks() // Will try to delete old block.
+	if err == nil {
+		return true, nil
+	}
+
+	// Delete new block if it was created.
+	for _, uid := range uids {
+		dir := filepath.Join(db.Dir(), uid.String())
+		if err := os.RemoveAll(dir); err != nil {
+			db.logger.Error("failed to delete block after failed `CleanTombstones`", "dir", dir, "err", err)
+		}
+	}
+
+	// This should only be reached if an error occurred.
+	return false, fmt.Errorf("reload blocks: %w", err)
 }
 
 func (db *DB) SetWriteNotified(wn wlog.WriteNotified) {
