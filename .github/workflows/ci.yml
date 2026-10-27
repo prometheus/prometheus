@@ -54,6 +54,10 @@ jobs:
     runs-on: ubuntu-latest
     container:
       image: quay.io/prometheus/golang-builder:1.27-base
+      # Docker 29.4.2 on ubuntu-26.04 blocks socketcall(2) in its default seccomp profile
+      # (https://github.com/actions/runner-images/issues/14790), which Go on linux/386
+      # still uses for socket operations (https://github.com/golang/go/issues/79200).
+      options: --security-opt seccomp=unconfined
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
