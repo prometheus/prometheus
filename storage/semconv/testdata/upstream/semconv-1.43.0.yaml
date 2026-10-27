@@ -1,0 +1,13 @@
+# Verbatim excerpt from open-telemetry/semantic-conventions v1.43.0
+# (commit 89aae438b3b3b0a8dd33003c9d70592baf7dbd0d): model/jvm/metrics.yaml.
+groups:
+  - id: metric.jvm.class.loaded
+    type: metric
+    metric_name: jvm.class.loaded
+    annotations:
+      code_generation:
+        metric_value_type: int
+    brief: "Number of classes loaded since JVM start."
+    instrument: counter
+    unit: "{class}"
+    stability: stable
