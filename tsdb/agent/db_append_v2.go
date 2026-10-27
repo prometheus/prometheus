@@ -112,12 +112,13 @@ func (a *appenderV2) Append(ref storage.SeriesRef, ls labels.Labels, st, t int64
 	}
 	a.metrics.totalAppendedSamples.WithLabelValues(sampleMetricType).Inc()
 
-	// Append exemplars only for non-stale samples, preserving metadata for all samples.
+	// Append exemplars only for non-stale samples.
 	// TODO(bwplotka): Agent does not have equivalent of a.head.opts.EnableExemplarStorage && a.head.opts.MaxExemplars.Load() > 0 ?
 	if !isStale && len(opts.Exemplars) > 0 {
 		// Currently only exemplars can return partial errors.
 		partialErr = a.appendExemplars(s, opts.Exemplars)
 	}
+	// Preserve metadata for all samples, including stale samples.
 	if a.opts.EnableMetadataWALRecords && !opts.Metadata.IsEmpty() {
 		s.Lock()
 		metaChanged := metadata.IsZeroHandle(s.meta) || !s.meta.Value().Equals(opts.Metadata)
