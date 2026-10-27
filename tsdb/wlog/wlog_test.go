@@ -489,6 +489,11 @@ func TestLogInterruptedRecordRejectsLaterLog(t *testing.T) {
 			prefix := makeWALTestBytes(pageSize - recordHeaderSize - 32)
 			record := makeWALTestRecord(pageSize * 3)
 			encodedLen := walEncodedRecordLen(t, compress, record)
+			if compress != compression.None {
+				encoded, err := compression.Encode(compress, record, compression.NewSyncEncodeBuffer())
+				require.NoError(t, err)
+				require.Less(t, len(encoded), len(record), "the multi-page record must exercise compression")
+			}
 			require.Equal(t, len(prefix), walEncodedRecordLen(t, compress, prefix), "prefix must leave the page close to full")
 
 			for _, test := range []struct {
@@ -675,20 +680,16 @@ func makeWALTestBytes(n int) []byte {
 		state ^= state << 13
 		state ^= state >> 17
 		state ^= state << 5
-		data[i] = byte(state)
+		data[i] = byte(state >> 24)
 	}
 	return data
 }
 
 func makeWALTestRecord(n int) []byte {
-	data := make([]byte, n)
-	state := uint32(0x243f6a88)
-	for i := range data {
-		state ^= state << 13
-		state ^= state >> 17
-		state ^= state << 5
-		if i%4 != 0 {
-			data[i] = byte(state)
+	data := makeWALTestBytes(n)
+	for start := 0; start < n; start += 10 * 1024 {
+		for i := start + 7*1024; i < min(start+10*1024, n); i++ {
+			data[i] = 0
 		}
 	}
 	return data
