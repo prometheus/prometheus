@@ -539,7 +539,7 @@ func TestLogInterruptedRecordRejectsLaterLog(t *testing.T) {
 					if test.rejectLater {
 						for i := range 2 {
 							later := []byte(fmt.Sprintf("later-%d", i))
-							if laterErr := w.Log(later); laterErr != writeErr {
+							if laterErr := w.Log(later); !errors.Is(laterErr, writeErr) {
 								t.Fatalf("later append did not return the retained write error: got %v, want %v", laterErr, writeErr)
 							}
 						}
@@ -593,7 +593,7 @@ func TestLogInterruptedRecordAtSegmentBoundary(t *testing.T) {
 
 			writeErr := w.Log(record)
 			require.ErrorIs(t, writeErr, faultErr)
-			if laterErr := w.Log([]byte("later")); laterErr != writeErr {
+			if laterErr := w.Log([]byte("later")); !errors.Is(laterErr, writeErr) {
 				t.Fatalf("later append after a segment-boundary failure returned %v, want %v", laterErr, writeErr)
 			}
 			verifyInterruptedWALRepair(t, w, dir, segmentSize, compress, prefix)
