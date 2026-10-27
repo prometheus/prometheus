@@ -41,6 +41,12 @@ import (
 	"github.com/prometheus/prometheus/tsdb/chunkenc"
 )
 
+// ruleSeries tracks a rule output's labels and storage reference.
+type ruleSeries struct {
+	lset labels.Labels
+	ref  storage.SeriesRef
+}
+
 // Group is a set of rules that have a logical relation.
 type Group struct {
 	name                  string
@@ -49,7 +55,7 @@ type Group struct {
 	queryOffset           *time.Duration
 	limit                 int
 	rules                 []Rule
-	seriesInPreviousEval  []map[string]labels.Labels // One per Rule.
+	seriesInPreviousEval  []map[string]ruleSeries // One per Rule.
 	staleSeries           []labels.Labels
 	opts                  *ManagerOptions
 	mtx                   sync.Mutex
@@ -136,7 +142,7 @@ func NewGroup(o GroupOptions) *Group {
 		rules:                o.Rules,
 		shouldRestore:        o.ShouldRestore,
 		opts:                 opts,
-		seriesInPreviousEval: make([]map[string]labels.Labels, len(o.Rules)),
+		seriesInPreviousEval: make([]map[string]ruleSeries, len(o.Rules)),
 		done:                 make(chan struct{}),
 		managerDone:          o.done,
 		terminated:           make(chan struct{}),
@@ -236,7 +242,7 @@ func (g *Group) run(ctx context.Context) {
 		go func(now time.Time) {
 			for _, rule := range g.seriesInPreviousEval {
 				for _, r := range rule {
-					g.staleSeries = append(g.staleSeries, r)
+					g.staleSeries = append(g.staleSeries, r.lset)
 				}
 			}
 			// That can be garbage collected at this point.
@@ -471,7 +477,13 @@ func (g *Group) CopyState(from *Group) {
 			continue
 		}
 		fi := indexes[0]
-		g.seriesInPreviousEval[i] = from.seriesInPreviousEval[fi]
+		// Refs are tied to their originating storage. Carry labels for staleness,
+		// but resolve again after a group reload.
+		g.seriesInPreviousEval[i] = maps.Clone(from.seriesInPreviousEval[fi])
+		for metric, series := range g.seriesInPreviousEval[i] {
+			series.ref = 0
+			g.seriesInPreviousEval[i][metric] = series
+		}
 		ruleMap[nameAndLabels] = indexes[1:]
 
 		ar, ok := rule.(*AlertingRule)
@@ -493,7 +505,7 @@ func (g *Group) CopyState(from *Group) {
 		l := ruleMap[nameAndLabels]
 		if len(l) != 0 {
 			for _, series := range from.seriesInPreviousEval[fi] {
-				g.staleSeries = append(g.staleSeries, series)
+				g.staleSeries = append(g.staleSeries, series.lset)
 			}
 		}
 	}
@@ -569,7 +581,7 @@ func (g *Group) Eval(ctx context.Context, ts time.Time) {
 		_, appenderSp := otel.Tracer("").Start(ctx, "newAppender")
 		app := g.opts.AppendableV2.AppenderV2(ctx)
 		appenderSp.End()
-		seriesReturned := make(map[string]labels.Labels, len(g.seriesInPreviousEval[i]))
+		seriesReturned := make(map[string]ruleSeries, len(g.seriesInPreviousEval[i]))
 		defer func() {
 			_, commitSp := otel.Tracer("").Start(ctx, "ruleCommit")
 			err := app.Commit()
@@ -596,7 +608,10 @@ func (g *Group) Eval(ctx context.Context, ts time.Time) {
 		defer appendSp.End()
 
 		for _, s := range vector {
-			_, err = app.Append(0, s.Metric, 0, s.T, s.F, nil, s.H, g.appOpts)
+			buf := [1024]byte{}
+			metric := string(s.Metric.Bytes(buf[:]))
+			ref := g.seriesInPreviousEval[i][metric].ref
+			ref, err = app.Append(ref, s.Metric, 0, s.T, s.F, nil, s.H, g.appOpts)
 
 			if err != nil {
 				rule.SetHealth(HealthBad)
@@ -620,8 +635,7 @@ func (g *Group) Eval(ctx context.Context, ts time.Time) {
 					logger.Warn("Rule evaluation result discarded", "err", err, "sample", s)
 				}
 			} else {
-				buf := [1024]byte{}
-				seriesReturned[string(s.Metric.Bytes(buf[:]))] = s.Metric
+				seriesReturned[metric] = ruleSeries{lset: s.Metric, ref: ref}
 			}
 		}
 		if numOutOfOrder > 0 {
@@ -634,10 +648,10 @@ func (g *Group) Eval(ctx context.Context, ts time.Time) {
 			logger.Warn("Error on ingesting results from rule evaluation with different value but same timestamp", "num_dropped", numDuplicates)
 		}
 
-		for metric, lset := range g.seriesInPreviousEval[i] {
+		for metric, series := range g.seriesInPreviousEval[i] {
 			if _, ok := seriesReturned[metric]; !ok {
 				// Series no longer exposed, mark it stale.
-				_, err = app.Append(0, lset, 0, timestamp.FromTime(ts.Add(-ruleQueryOffset)), math.Float64frombits(value.StaleNaN), nil, nil, g.appOpts)
+				_, err = app.Append(series.ref, series.lset, 0, timestamp.FromTime(ts.Add(-ruleQueryOffset)), math.Float64frombits(value.StaleNaN), nil, nil, g.appOpts)
 				unwrappedErr := errors.Unwrap(err)
 				if unwrappedErr == nil {
 					unwrappedErr = err
@@ -650,7 +664,7 @@ func (g *Group) Eval(ctx context.Context, ts time.Time) {
 					// Do not count these in logging, as this is expected if series
 					// is exposed from a different rule.
 				default:
-					logger.Warn("Adding stale sample failed", "sample", lset.String(), "err", err)
+					logger.Warn("Adding stale sample failed", "sample", series.lset.String(), "err", err)
 				}
 			}
 		}
