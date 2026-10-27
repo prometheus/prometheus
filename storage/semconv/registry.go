@@ -85,26 +85,12 @@ func newRegistrySource(files map[string][]byte) registrySource {
 // listRegistryYAMLFiles returns the sorted registry/<name>.yaml paths available
 // in src so transform/2.0 policies can be discovered by target schema_url.
 func listRegistryYAMLFiles(src registrySource) []string {
-	switch s := src.(type) {
-	case fs.ReadDirFS:
-		entries, err := s.ReadDir(registryPrefix)
-		if err != nil {
-			return nil
-		}
-		var names []string
-		for _, e := range entries {
-			if !e.IsDir() && strings.HasSuffix(e.Name(), ".yaml") {
-				names = append(names, registryPrefix+"/"+e.Name())
-			}
-		}
-		slices.Sort(names)
-		return names
-	case prefixedRegistry:
-		if rf, ok := s.inner.(registryFiles); ok {
+	if p, ok := src.(prefixedRegistry); ok {
+		if rf, ok := p.inner.(registryFiles); ok {
 			var names []string
 			for k := range rf {
 				if strings.HasSuffix(k, ".yaml") {
-					names = append(names, s.prefix+"/"+k)
+					names = append(names, p.prefix+"/"+k)
 				}
 			}
 			slices.Sort(names)
@@ -123,14 +109,7 @@ func cloneRegistryFiles(files map[string][]byte) map[string][]byte {
 }
 
 // validateRegistryFiles reports whether files form a usable registry: a non-empty
-// set in which every semver-named file (e.g. "1.0.0") parses as a semconv file,
-// every other file (e.g. "registry.yaml") parses as an OTel schema, and at least
-// one OTel schema is present. Semconv materialization is bounded cumulatively
-// across the registry. It rejects invalid input at startup instead of letting it
-// fail only at query time. Only versions queried as __semconv_url__ anchors
-// require a semconv file; a missing sibling version disables corroboration for
-// that boundary and produces a query warning. It reuses loadSemconv/loadOTelSchema
-// so validation matches what queries rely on.
+// set in which every file parses as a valid transform/2.0 schema.
 func validateRegistryFiles(files map[string][]byte) error {
 	if len(files) == 0 {
 		return errors.New("registry is empty")
@@ -140,23 +119,10 @@ func validateRegistryFiles(files map[string][]byte) error {
 		names = append(names, name)
 	}
 	slices.Sort(names)
-	registryBudget := &semconvRegistryMaterializationBudget{}
-	hasSchema := false
 	for _, name := range names {
-		b := files[name]
-		if semverRe.MatchString(name) {
-			if _, err := loadSemconvWithBudget(b, name, registryBudget); err != nil {
-				return fmt.Errorf("registry semconv %q: %w", name, err)
-			}
-			continue
-		}
-		if _, err := loadOTelSchema(b); err != nil {
+		if _, err := loadOTelSchema(files[name]); err != nil {
 			return fmt.Errorf("registry schema %q: %w", name, err)
 		}
-		hasSchema = true
-	}
-	if !hasSchema {
-		return errors.New("registry has no OTel schema file")
 	}
 	return nil
 }

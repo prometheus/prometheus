@@ -29,24 +29,23 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-// embeddedRegistryFiles reads the embedded registry into a base-name → bytes
-// map, the shape an operator-provided registry takes. Each call returns a fresh
-// map so tests may mutate it.
-func embeddedRegistryFiles(t *testing.T) map[string][]byte {
-	t.Helper()
-	entries, err := embeddedRegistry.ReadDir(registryPrefix)
-	require.NoError(t, err)
-	files := map[string][]byte{}
-	for _, e := range entries {
-		if e.IsDir() {
-			continue
-		}
-		b, err := embeddedRegistry.ReadFile(registryPrefix + "/" + e.Name())
-		require.NoError(t, err)
-		files[e.Name()] = b
+func sampleRegistryFiles() map[string][]byte {
+	return map[string][]byte{
+		"policy.yaml": []byte(`file_format: transform/2.0
+source:
+  schema_url: https://example.com/schemas/1.0.0
+target:
+  schema_url: https://example.com/schemas/2.0.0
+policies:
+  - id: rename-test
+    metric_transform:
+      matches:
+        - target: {descriptor_field: METRIC_DESCRIPTOR_FIELD_NAME}
+          predicate: {equals: test.counter}
+      add:
+        - {target: {descriptor_field: METRIC_DESCRIPTOR_FIELD_NAME}, value: test, upsert: true}
+`),
 	}
-	require.NotEmpty(t, files)
-	return files
 }
 
 // tarGz builds a gzip-compressed tar of files (keyed by entry name) for tests.
@@ -66,110 +65,46 @@ func tarGz(t *testing.T, files map[string][]byte) []byte {
 }
 
 func TestNewRegistrySource(t *testing.T) {
-	files := embeddedRegistryFiles(t)
+	files := sampleRegistryFiles()
 	e := newSchemaEngine(newRegistrySource(files))
 
 	t.Run("resolves a registry/<name> path", func(t *testing.T) {
-		b, err := e.readRegistryFile("registry/1.0.0")
+		b, err := e.readRegistryFile("registry/policy.yaml")
 		require.NoError(t, err)
-		require.Equal(t, files["1.0.0"], b)
-	})
-
-	t.Run("resolves the schema index", func(t *testing.T) {
-		b, err := e.readRegistryFile("registry/registry.yaml")
-		require.NoError(t, err)
-		require.NotEmpty(t, b)
+		require.Equal(t, files["policy.yaml"], b)
 	})
 
 	t.Run("rejects unprefixed, traversal, and remote paths", func(t *testing.T) {
-		for _, bad := range []string{"1.0.0", "registry/..", "registry/../etc/passwd", "/etc/passwd", "http://example.com/x"} {
+		for _, bad := range []string{"policy.yaml", "registry/..", "registry/../etc/passwd", "/etc/passwd", "http://example.com/x"} {
 			_, err := e.readRegistryFile(bad)
 			require.Errorf(t, err, "expected %q to be rejected", bad)
 		}
 	})
 
 	t.Run("reports a missing entry", func(t *testing.T) {
-		_, err := e.readRegistryFile("registry/9.9.9")
+		_, err := e.readRegistryFile("registry/missing.yaml")
 		require.Error(t, err)
 	})
 }
 
 func TestValidateRegistryFiles(t *testing.T) {
-	t.Run("accepts the embedded layout", func(t *testing.T) {
-		require.NoError(t, validateRegistryFiles(embeddedRegistryFiles(t)))
-	})
-
-	registryWithFanoutVersions := func(t *testing.T, versionCount int) map[string][]byte {
-		t.Helper()
-		exactFanoutChildren := int(maxSemconvFileAttributeSlots)/maxSchemaExpansion - 1
-		semconvFile := inheritedAttributeFanoutSemconv(t, exactFanoutChildren)
-		files := map[string][]byte{"registry.yaml": []byte("file_format: 1.1.0\n")}
-		for i := range versionCount {
-			files[fmt.Sprintf("1.%d.0", i)] = semconvFile
-		}
-		return files
-	}
-
-	registryVersionsAtLimit := int(maxSemconvRegistryAttributeSlots / maxSemconvFileAttributeSlots)
-	t.Run("accepts exact registry attribute slot limit", func(t *testing.T) {
-		require.NoError(t, validateRegistryFiles(registryWithFanoutVersions(t, registryVersionsAtLimit)))
-	})
-
-	t.Run("rejects registry attribute slots above limit", func(t *testing.T) {
-		err := validateRegistryFiles(registryWithFanoutVersions(t, registryVersionsAtLimit+1))
-		require.ErrorContains(t, err, "semconv registry attribute slots would exceed 1048576")
+	t.Run("accepts a valid transform/2.0 registry", func(t *testing.T) {
+		require.NoError(t, validateRegistryFiles(sampleRegistryFiles()))
 	})
 
 	t.Run("rejects an empty registry", func(t *testing.T) {
 		require.Error(t, validateRegistryFiles(nil))
 	})
 
-	t.Run("rejects an unparseable schema", func(t *testing.T) {
-		require.Error(t, validateRegistryFiles(map[string][]byte{"registry.yaml": []byte("file_format: 9.9.9\n")}))
-	})
-
-	t.Run("rejects a registry with no schema", func(t *testing.T) {
-		files := embeddedRegistryFiles(t)
-		for name := range files {
-			if !semverRe.MatchString(name) {
-				delete(files, name)
-			}
-		}
-		require.Error(t, validateRegistryFiles(files))
-	})
-
-	t.Run("accepts a registry shipping a subset of referenced versions", func(t *testing.T) {
-		// The schema references 1.0.0/1.1.0/1.2.0; shipping only some is valid —
-		// operators provide the versions they query as anchors, not the whole history.
-		files := embeddedRegistryFiles(t)
-		delete(files, "1.2.0")
-		require.NoError(t, validateRegistryFiles(files))
-	})
-
-	t.Run("rejects an unparseable semconv version file", func(t *testing.T) {
-		files := embeddedRegistryFiles(t)
-		files["1.0.0"] = []byte("groups: [unterminated")
-		require.Error(t, validateRegistryFiles(files))
-	})
-
-	t.Run("validates files in name order", func(t *testing.T) {
-		files := map[string][]byte{
-			"registry.yaml": []byte("file_format: 1.1.0\n"),
-			"2.0.0":         []byte("groups: [second"),
-			"1.0.0":         []byte("groups: [first"),
-		}
-		err := validateRegistryFiles(files)
-		require.ErrorContains(t, err, `registry semconv "1.0.0"`)
+	t.Run("rejects an unparseable or unsupported schema format", func(t *testing.T) {
+		require.Error(t, validateRegistryFiles(map[string][]byte{"policy.yaml": []byte("file_format: 9.9.9\n")}))
+		require.Error(t, validateRegistryFiles(map[string][]byte{"policy.yaml": []byte("file_format: 1.1.0\n")}))
 	})
 }
 
 func TestUntargz(t *testing.T) {
 	t.Run("flattens entry paths to base names", func(t *testing.T) {
-		want := map[string][]byte{
-			"registry.yaml": []byte("file_format: 1.1.0\n"),
-			"1.0.0":         []byte("groups: []\n"),
-		}
-		// Lay entries under a top-level directory to exercise flattening.
+		want := sampleRegistryFiles()
 		nested := map[string][]byte{}
 		for name, b := range want {
 			nested["registry/"+name] = b
@@ -180,7 +115,7 @@ func TestUntargz(t *testing.T) {
 	})
 
 	t.Run("rejects a duplicate base name", func(t *testing.T) {
-		archive := tarGz(t, map[string][]byte{"a/1.0.0": []byte("x"), "b/1.0.0": []byte("y")})
+		archive := tarGz(t, map[string][]byte{"a/policy.yaml": []byte("x"), "b/policy.yaml": []byte("y")})
 		_, err := untargz(bytes.NewReader(archive))
 		require.Error(t, err)
 		require.Contains(t, err.Error(), "duplicate")
@@ -202,7 +137,7 @@ func TestUntargz(t *testing.T) {
 		tw := tar.NewWriter(gz)
 		size := int64(maxRegistryDecompressedBytes) + (1 << 20)
 		require.NoError(t, tw.WriteHeader(&tar.Header{Name: "big", Typeflag: tar.TypeReg, Mode: 0o644, Size: size}))
-		chunk := make([]byte, 1<<20) // Zeros compress to almost nothing.
+		chunk := make([]byte, 1<<20)
 		for written := int64(0); written < size; {
 			n := int64(len(chunk))
 			if rem := size - written; rem < n {
@@ -224,7 +159,7 @@ func TestUntargz(t *testing.T) {
 func TestLoadRegistryFiles(t *testing.T) {
 	t.Run("reads matched files keyed by base name", func(t *testing.T) {
 		dir := t.TempDir()
-		want := embeddedRegistryFiles(t)
+		want := sampleRegistryFiles()
 		for name, b := range want {
 			require.NoError(t, os.WriteFile(filepath.Join(dir, name), b, 0o644))
 		}
@@ -240,8 +175,8 @@ func TestLoadRegistryFiles(t *testing.T) {
 
 	t.Run("rejects a duplicate base name across globs", func(t *testing.T) {
 		dirA, dirB := t.TempDir(), t.TempDir()
-		require.NoError(t, os.WriteFile(filepath.Join(dirA, "1.0.0"), []byte("a"), 0o644))
-		require.NoError(t, os.WriteFile(filepath.Join(dirB, "1.0.0"), []byte("b"), 0o644))
+		require.NoError(t, os.WriteFile(filepath.Join(dirA, "policy.yaml"), []byte("a"), 0o644))
+		require.NoError(t, os.WriteFile(filepath.Join(dirB, "policy.yaml"), []byte("b"), 0o644))
 		_, err := LoadRegistryFiles([]string{filepath.Join(dirA, "*"), filepath.Join(dirB, "*")})
 		require.Error(t, err)
 		require.Contains(t, err.Error(), "duplicate")
@@ -249,7 +184,7 @@ func TestLoadRegistryFiles(t *testing.T) {
 }
 
 func TestFetchRegistry(t *testing.T) {
-	want := embeddedRegistryFiles(t)
+	want := sampleRegistryFiles()
 
 	t.Run("downloads and unpacks an archive", func(t *testing.T) {
 		srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {

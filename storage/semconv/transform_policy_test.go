@@ -29,13 +29,6 @@ import (
 // transform/2.0 features exercised by the policy and PromQL rewriter tests.
 func testTransformRegistry() map[string][]byte {
 	return map[string][]byte{
-		"1.0.0": []byte(`groups:
-  - id: metric.test.counter
-    type: metric
-    metric_name: test.counter
-    instrument: counter
-    unit: By
-`),
 		"http_1.20.0_to_1.23.1.yaml": []byte(`file_format: transform/2.0
 source:
   schema_url: https://opentelemetry.io/schemas/1.20.0

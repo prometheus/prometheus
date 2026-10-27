@@ -64,7 +64,7 @@ func schemaWarning(msg string) error {
 // canonical naming. Queries without those matchers are passed through
 // unchanged.
 func AwareStorage(s storage.Storage) storage.Storage {
-	return newAwareStorage(s, newSchemaEngine(embeddedRegistry))
+	return newAwareStorage(s, newSchemaEngine(newRegistrySource(nil)))
 }
 
 // AwareStorageWithRegistry behaves like AwareStorage but resolves __semconv_url__

@@ -33,7 +33,7 @@ import (
 // matchers, label_replace / label_join wrappers, and sample value filters so the
 // resulting query can be executed against an unmodified Prometheus engine.
 func RewritePromQLQuery(query, defaultSchemaURL string) (string, annotations.Annotations, error) {
-	return rewritePromQLWithEngine(newSchemaEngine(embeddedRegistry), query, defaultSchemaURL)
+	return rewritePromQLWithEngine(newSchemaEngine(newRegistrySource(nil)), query, defaultSchemaURL)
 }
 
 // RewritePromQLQueryWithRegistry is RewritePromQLQuery backed by an operator-provided
