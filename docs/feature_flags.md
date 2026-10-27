@@ -384,12 +384,15 @@ Wraps the query path with a semconv-aware storage layer that recognises two
 special matchers in PromQL queries:
 
 - `__semconv_url__="registry/<version>"` selects the semantic conventions
-  version that supplies metric metadata. It is required by `__schema_url__` and
-  has no effect on its own.
-- `__schema_url__="registry/<file>"` selects an OTel schema file that declares
-  per-version attribute and metric renames; it triggers version-rename fan-out,
-  matching the metric's historical names and rendering the merged results under
-  the queried version's name.
+  version that supplies metric metadata. It is required when `__schema_url__`
+  points to a `1.0.0` or `1.1.0` schema file, optional when `__schema_url__`
+  points to a `transform/2.0` policy file, and has no effect on its own.
+- `__schema_url__="registry/<file-or-target>"` selects an OTel schema file
+  (`1.0.0`, `1.1.0`, or `transform/2.0`) or a target `transform/2.0` schema
+  version (such as `registry/1.45.0` or `https://opentelemetry.io/schemas/1.45.0`)
+  and triggers version-rename or policy fan-out, matching the metric's
+  historical names and rendering the merged results under the queried version's
+  name.
 
 A schema-aware selector must also contain a non-empty equality matcher on
 `__name__`. Other `__name__` constraints may accompany it, but a selector with
@@ -434,9 +437,19 @@ surfacing only at query time. It is read once; the block is re-validated on
 configuration reload but changes take effect only on restart, and it is ignored
 unless the feature flag is set.
 
-Schema-aware metric reads support `rename_metrics` and `rename_attributes`
-transformations. A schema containing a metric `split` transformation is rejected
-because split conversion is not supported.
+Schema-aware metric reads support two schema file formats:
+
+- **Legacy OTel Schema (`file_format: 1.0.0` / `1.1.0`)**: Supports
+  `rename_metrics` and `rename_attributes` transformations across `versions`. A
+  `1.0.0`/`1.1.0` schema containing a metric `split` transformation is rejected
+  because value-factor split conversion is not supported.
+- **OTel Telemetry Policies (`file_format: transform/2.0`)**: Supports
+  declarative policy rules (`metric_transform`, `entity_transform`, and
+  `metric_filter`) with predicates (`exists`, `equals`, `regex`, `gt`, `gte`,
+  `lt`, `lte`, with optional `negate`) and the 7-stage transformation pipeline
+  (`remove` → `rename`/`rename_prefix` → `split` → `add` → `map` → `convert` →
+  `discard`). Policies that reference `DATAPOINT_FIELD_VALUE` are skipped with a
+  PromQL warning because sample values cannot be evaluated on series labels.
 
 For a remote `url`, the archive is fetched once at startup using `http_client_config`
 (so redirects follow `follow_redirects`, default `true`; set it to `false` to

@@ -1,28 +1,26 @@
-# Semantic Conventions Versioned Read Demo
+# Semantic Conventions & Telemetry Policies Read Demo
 
-This demo showcases Prometheus's ability to maintain query continuity when a metric and one of its attributes are renamed across semantic-conventions versions.
+This demo showcases Prometheus's ability to maintain query continuity across semantic-conventions evolutions using both legacy OTel schema `1.1.0` files and OTel Telemetry Policies (`file_format: transform/2.0`, [open-telemetry/weaver#1850](https://github.com/open-telemetry/weaver/pull/1850)).
 
 ## The Problem
 
-When names change between semconv versions, both the metric and its attributes
-can be renamed:
+When semantic conventions evolve, metrics and attributes can be renamed, enum values can be normalized, new attributes can be conditionally derived, or multiplexed metrics can be split into dedicated metrics:
 
-| semconv version | Metric name | Attribute |
-|-----------------|-------------|-----------|
-| 1.0.0 (before)  | `test.counter` | `user` |
-| 1.1.0 (after)   | `test` | `tenant` |
+| Evolution | Before (1h–2h ago) | After (last 1h) |
+|-----------|--------------------|-----------------|
+| Semconv `1.0.0 → 1.1.0` (`registry.yaml`) | `test.counter{user="acme"}` | `test{tenant="acme"}` |
+| HTTP `1.20.0 → 1.23.1` (`http_1.20.0_to_1.23.1.yaml`) | `http.server.duration{http.method="POST", http.status_code="503", net.protocol.version="2.0", http.scheme="https"}` | `http.server.request.duration{http.request.method="POST", http.response.status_code="503", network.protocol.version="2", url.scheme="https", error.type="503"}` |
+| K8s `1.18.0 → 1.44.0` (`k8s_1.18.0_to_1.44.0.yaml`) | `k8s.resource_quota.hard_limit{resource="limits.memory" \| "requests.hugepages-2Mi", k8s.resource_quota.name="compute-quota"}` | `k8s.resourcequota.memory.limit.hard{k8s.resourcequota.name="compute-quota"}` & `k8s.resourcequota.hugepage_count.request.hard{k8s.hugepage.size="2Mi", k8s.resourcequota.name="compute-quota"}` |
 
 **This breaks existing queries and dashboards:**
-- Queries for `{"test.counter"}` only return data from before the rename.
-- Queries for `test` only return data from after the rename.
-- Even once both eras resolve under `test`, the result would split on
-  `user` vs `tenant` unless the attribute is normalised too.
-- Dashboards show a gap at the rename point.
+- Queries for the old or new name only return data from one side of the upgrade.
+- Even when metric names are bridged, mismatched attribute names, unmapped enum values (`"2.0"` vs `"2"`), or missing derived attributes (`error.type`) split the series.
 
-(Native OTel names contain dots, so they're written with PromQL's quoted
-selector syntax, e.g. `{"test.counter"}`.)
+(Native OTel names contain dots, so they're written with PromQL's quoted selector syntax, e.g. `{"test.counter"}`.)
 
 ## The Solution
+
+### 1. Legacy OTel Schema (`file_format: 1.1.0`)
 
 Add `__semconv_url__` (which registry version to consult) together with
 `__schema_url__` (which turns on schema-version rename fan-out). Prometheus
@@ -31,16 +29,32 @@ and merges the results under the requested version's name:
 
 ```promql
 test{__semconv_url__="registry/1.1.0", __schema_url__="registry/registry.yaml"}
-```
-
-This single query matches both the 1.0.0 (`test.counter`) and 1.1.0 (`test`)
-eras, returning all data under the canonical `test` name. Renamed attributes are
-normalised too, so aggregating by the new attribute name folds in the old era
-instead of dropping it:
-
-```promql
 sum by (tenant) (test{__semconv_url__="registry/1.1.0", __schema_url__="registry/registry.yaml"})
 ```
+
+### 2. OTel Telemetry Policies (`file_format: transform/2.0`)
+
+When `__schema_url__` selects a `transform/2.0` policy file (`__semconv_url__` is optional because `source` and `target` schema URLs are declared in the policy file itself), Prometheus executes the 7-stage policy pipeline (`remove` → `rename`/`rename_prefix` → `split` → `add` → `map` → `convert` → `discard`) across matching `entity_transform`, `metric_transform`, and `metric_filter` rules:
+
+```promql
+# HTTP 1.20.0 → 1.23.1: metric/attribute renames + enum value mapping ("2.0" → "2") + 5xx error.type derivation
+{"http.server.request.duration", __schema_url__="registry/http_1.20.0_to_1.23.1.yaml", "http.request.method"="POST", "network.protocol.version"="2", "error.type"="503"}
+
+# K8s 1.18.0 → 1.44.0: predicate-based metric splits + regex split/discard attribute extraction + entity_transform renames
+{"k8s.resourcequota.memory.limit.hard", __schema_url__="registry/k8s_1.18.0_to_1.44.0.yaml"}
+{"k8s.resourcequota.hugepage_count.request.hard", __schema_url__="registry/k8s_1.18.0_to_1.44.0.yaml", "k8s.hugepage.size"="2Mi"}
+{"k8s.pod.status.phase", __schema_url__="registry/k8s_1.18.0_to_1.44.0.yaml", "k8s.pod.status.phase"="Running"}
+
+# Multi-policy target schema_url discovery (fans out across both gRPC A66 and RPC 1.37.0 -> 1.45.0):
+{"rpc.client.call.duration", __schema_url__="registry/1.45.0", "rpc.method"="checkout.CheckoutService/PlaceOrder"}
+
+# Classic Prometheus <-> OTel UTF-8 conventions (prometheus_to_otel.yaml / otel_to_prometheus.yaml):
+{"k8s.pod.network.io", __schema_url__="registry/prometheus_to_otel.yaml", "network.io.direction"="receive"}
+```
+
+### 3. Authoring-Time PromQL AST Rewriter (`semconv.RewritePromQLQuery`)
+
+In addition to query-time storage translation (`semconv.AwareStorage`), `semconv.RewritePromQLQuery(query, defaultSchemaURL)` rewrites schema-aware PromQL queries at authoring time into standard PromQL (`or`, `label_replace`, `label_join`, and sample value filters) that can execute against an unmodified Prometheus TSDB.
 
 ## Running the Demo
 
@@ -50,11 +64,7 @@ sum by (tenant) (test{__semconv_url__="registry/1.1.0", __schema_url__="registry
 go run ./documentation/examples/semconv-translation
 ```
 
-This runs five phases: writing two eras (semconv 1.0.0 `test.counter{user}`,
-semconv 1.1.0 `test{tenant}`), showing how each raw name covers only its own
-era, how `__schema_url__` spans the rename under one name, and how it also
-normalises the `user`→`tenant` attribute rename so `sum by (tenant)` stays
-continuous.
+This runs seven phases: writing two eras (historical `1.0.0` / HTTP `1.20.0` / K8s `1.18.0` and upgraded `1.1.0` / HTTP `1.23.1` / K8s `1.44.0`), demonstrating how raw queries break at the upgrade boundary, and showing how `1.1.0` schemas and `transform/2.0` policies unify both eras.
 
 ### Option 2: Browser Demo with Prometheus UI
 
@@ -70,6 +80,9 @@ and opens the UI. Then try:
 - `test` — only the semconv 1.1.0 era
 - `test{__semconv_url__="registry/1.1.0", __schema_url__="registry/registry.yaml"}` — both eras under `test`
 - `sum by (tenant) (test{__semconv_url__="registry/1.1.0", __schema_url__="registry/registry.yaml"})` — the 1.0.0 `user` series folded into `tenant`
+- `{"http.server.request.duration", __schema_url__="registry/http_1.20.0_to_1.23.1.yaml", "network.protocol.version"="2", "error.type"="503"}` — HTTP `1.20.0` and `1.23.1` unified
+- `{"k8s.resourcequota.memory.limit.hard", __schema_url__="registry/k8s_1.18.0_to_1.44.0.yaml"}` — K8s `1.18.0` multiplexed quota split into `1.44.0` memory limit
+- `{"k8s.resourcequota.hugepage_count.request.hard", __schema_url__="registry/k8s_1.18.0_to_1.44.0.yaml", "k8s.hugepage.size"="2Mi"}` — K8s `1.18.0` hugepage quota split and size extracted
 
 ### Option 3: Manual Browser Demo
 
