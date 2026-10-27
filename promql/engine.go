@@ -2709,6 +2709,8 @@ func (ev *evaluator) eval(ctx context.Context, expr parser.Expr) (parser.Value, 
 		ev.currentSamples = originalNumSamples + result.TotalSamples()
 		ev.samplesStats.UpdatePeak(ev.currentSamples)
 
+		span.SetAttributes(attribute.Int("num_series_output", len(result)))
+
 		return result, warnings
 
 	case *parser.Call:
@@ -3096,45 +3098,55 @@ func (ev *evaluator) eval(ctx context.Context, expr parser.Expr) (parser.Value, 
 		return mat, ws
 
 	case *parser.BinaryExpr:
+		var (
+			matching   *parser.VectorMatching
+			opFunction func([]Vector, Matrix, [][]EvalSeriesHelper, *EvalNodeHelper) (Vector, annotations.Annotations)
+		)
+
 		switch lt, rt := e.LHS.Type(), e.RHS.Type(); {
 		case lt == parser.ValueTypeScalar && rt == parser.ValueTypeScalar:
-			return ev.rangeEval(ctx, nil, func(v []Vector, _ Matrix, _ [][]EvalSeriesHelper, enh *EvalNodeHelper) (Vector, annotations.Annotations) {
+			opFunction = func(v []Vector, _ Matrix, _ [][]EvalSeriesHelper, enh *EvalNodeHelper) (Vector, annotations.Annotations) {
 				val := scalarBinop(e.Op, v[0][0].F, v[1][0].F)
 				return append(enh.Out, Sample{F: val}), nil
-			}, e.LHS, e.RHS)
+			}
 		case lt == parser.ValueTypeVector && rt == parser.ValueTypeVector:
+			matching = e.VectorMatching
 			switch e.Op {
 			case parser.LAND:
-				return ev.rangeEval(ctx, e.VectorMatching, func(v []Vector, _ Matrix, sh [][]EvalSeriesHelper, enh *EvalNodeHelper) (Vector, annotations.Annotations) {
+				opFunction = func(v []Vector, _ Matrix, sh [][]EvalSeriesHelper, enh *EvalNodeHelper) (Vector, annotations.Annotations) {
 					return ev.VectorAnd(v[0], v[1], e.VectorMatching, sh[0], sh[1], enh), nil
-				}, e.LHS, e.RHS)
+				}
 			case parser.LOR:
-				return ev.rangeEval(ctx, e.VectorMatching, func(v []Vector, _ Matrix, sh [][]EvalSeriesHelper, enh *EvalNodeHelper) (Vector, annotations.Annotations) {
+				opFunction = func(v []Vector, _ Matrix, sh [][]EvalSeriesHelper, enh *EvalNodeHelper) (Vector, annotations.Annotations) {
 					return ev.VectorOr(v[0], v[1], e.VectorMatching, sh[0], sh[1], enh), nil
-				}, e.LHS, e.RHS)
+				}
 			case parser.LUNLESS:
-				return ev.rangeEval(ctx, e.VectorMatching, func(v []Vector, _ Matrix, sh [][]EvalSeriesHelper, enh *EvalNodeHelper) (Vector, annotations.Annotations) {
+				opFunction = func(v []Vector, _ Matrix, sh [][]EvalSeriesHelper, enh *EvalNodeHelper) (Vector, annotations.Annotations) {
 					return ev.VectorUnless(v[0], v[1], e.VectorMatching, sh[0], sh[1], enh), nil
-				}, e.LHS, e.RHS)
+				}
 			default:
-				return ev.rangeEval(ctx, e.VectorMatching, func(v []Vector, _ Matrix, sh [][]EvalSeriesHelper, enh *EvalNodeHelper) (Vector, annotations.Annotations) {
+				opFunction = func(v []Vector, _ Matrix, sh [][]EvalSeriesHelper, enh *EvalNodeHelper) (Vector, annotations.Annotations) {
 					vec, err := ev.VectorBinop(e.Op, v[0], v[1], e.VectorMatching, e.ReturnBool, sh[0], sh[1], enh, e.PositionRange())
 					return vec, handleVectorBinopError(err, e)
-				}, e.LHS, e.RHS)
+				}
 			}
 
 		case lt == parser.ValueTypeVector && rt == parser.ValueTypeScalar:
-			return ev.rangeEval(ctx, nil, func(v []Vector, _ Matrix, _ [][]EvalSeriesHelper, enh *EvalNodeHelper) (Vector, annotations.Annotations) {
+			opFunction = func(v []Vector, _ Matrix, _ [][]EvalSeriesHelper, enh *EvalNodeHelper) (Vector, annotations.Annotations) {
 				vec, err := ev.VectorscalarBinop(e.Op, v[0], Scalar{V: v[1][0].F}, false, e.ReturnBool, enh, e.PositionRange())
 				return vec, handleVectorBinopError(err, e)
-			}, e.LHS, e.RHS)
+			}
 
 		case lt == parser.ValueTypeScalar && rt == parser.ValueTypeVector:
-			return ev.rangeEval(ctx, nil, func(v []Vector, _ Matrix, _ [][]EvalSeriesHelper, enh *EvalNodeHelper) (Vector, annotations.Annotations) {
+			opFunction = func(v []Vector, _ Matrix, _ [][]EvalSeriesHelper, enh *EvalNodeHelper) (Vector, annotations.Annotations) {
 				vec, err := ev.VectorscalarBinop(e.Op, v[1], Scalar{V: v[0][0].F}, true, e.ReturnBool, enh, e.PositionRange())
 				return vec, handleVectorBinopError(err, e)
-			}, e.LHS, e.RHS)
+			}
 		}
+
+		result, annos := ev.rangeEval(ctx, matching, opFunction, e.LHS, e.RHS)
+		span.SetAttributes(attribute.Int("num_series_output", len(result)))
+		return result, annos
 
 	case *parser.NumberLiteral:
 		span.SetAttributes(attribute.Float64("value", e.Val))
