@@ -178,6 +178,10 @@ type Discovery struct {
 	port    int
 	cache   *cache.Cache[string, *armnetwork.Interface]
 	metrics *azureMetrics
+
+	// powerStatesMtx protects powerStates, the last successfully listed power states.
+	powerStatesMtx sync.Mutex
+	powerStates    map[string]string
 }
 
 // NewDiscovery returns a new AzureDiscovery which periodically refreshes its targets.
@@ -215,6 +219,7 @@ func NewDiscovery(cfg *SDConfig, opts discovery.DiscovererOptions) (*Discovery, 
 
 type client interface {
 	getVMs(ctx context.Context, resourceGroup string) ([]virtualMachine, error)
+	getVMPowerStates(ctx context.Context) (map[string]string, error)
 	getScaleSets(ctx context.Context, resourceGroup string) ([]armcompute.VirtualMachineScaleSet, error)
 	getScaleSetVMs(ctx context.Context, scaleSet armcompute.VirtualMachineScaleSet) ([]virtualMachine, error)
 	getVMNetworkInterfaceByID(ctx context.Context, networkInterfaceID string) (*armnetwork.Interface, error)
@@ -455,6 +460,15 @@ func newAzureResourceFromID(id string, logger *slog.Logger) (*arm.ResourceID, er
 }
 
 func (d *Discovery) refreshAzureClient(ctx context.Context, client client) ([]*targetgroup.Group, error) {
+	ctx, cancel := context.WithCancel(ctx)
+	defer cancel()
+
+	// The power states come from a separate request, so fetch them concurrently with the machines.
+	powerStatesCh := make(chan map[string]string, 1)
+	go func() {
+		powerStatesCh <- d.vmPowerStates(ctx, client)
+	}()
+
 	machines, err := client.getVMs(ctx, d.cfg.ResourceGroup)
 	if err != nil {
 		d.metrics.failuresCount.Inc()
@@ -477,6 +491,14 @@ func (d *Discovery) refreshAzureClient(ctx context.Context, client client) ([]*t
 			return nil, fmt.Errorf("could not get virtual machine scale set vms: %w", err)
 		}
 		machines = append(machines, scaleSetVms...)
+	}
+
+	// Uniform scale set VMs already have their power state from their instance view.
+	powerStates := <-powerStatesCh
+	for i := range machines {
+		if machines[i].PowerState == "" {
+			machines[i].PowerState = powerStates[strings.ToLower(machines[i].ID)]
+		}
 	}
 
 	// We have the slice of machines. Now turn them into targets.
@@ -623,9 +645,7 @@ func (d *Discovery) vmToLabelSet(ctx context.Context, client client, vm virtualM
 func (client *azureClient) getVMs(ctx context.Context, resourceGroup string) ([]virtualMachine, error) {
 	var vms []virtualMachine
 	if resourceGroup == "" {
-		pager := client.vm.NewListAllPager(&armcompute.VirtualMachinesClientListAllOptions{
-			Expand: to.Ptr(armcompute.ExpandTypesForListVMsInstanceView),
-		})
+		pager := client.vm.NewListAllPager(nil)
 		for pager.More() {
 			nextResult, err := pager.NextPage(ctx)
 			if err != nil {
@@ -636,9 +656,7 @@ func (client *azureClient) getVMs(ctx context.Context, resourceGroup string) ([]
 			}
 		}
 	} else {
-		pager := client.vm.NewListPager(resourceGroup, &armcompute.VirtualMachinesClientListOptions{
-			Expand: to.Ptr(armcompute.ExpandTypeForListVMsInstanceView),
-		})
+		pager := client.vm.NewListPager(resourceGroup, nil)
 		for pager.More() {
 			nextResult, err := pager.NextPage(ctx)
 			if err != nil {
@@ -650,6 +668,49 @@ func (client *azureClient) getVMs(ctx context.Context, resourceGroup string) ([]
 		}
 	}
 	return vms, nil
+}
+
+// vmPowerStates returns the power states of the virtual machines in the subscription.
+// If they cannot be listed, the last successfully listed power states are returned, so that
+// a transient error such as throttling does not empty the machine_state label of every target.
+func (d *Discovery) vmPowerStates(ctx context.Context, client client) map[string]string {
+	powerStates, err := client.getVMPowerStates(ctx)
+
+	d.powerStatesMtx.Lock()
+	defer d.powerStatesMtx.Unlock()
+	if err != nil {
+		if ctx.Err() == nil {
+			d.metrics.failuresCount.Inc()
+			d.logger.Warn("Could not get virtual machine power states, using the last known ones.", "err", err)
+		}
+		return d.powerStates
+	}
+	d.powerStates = powerStates
+	return powerStates
+}
+
+// getVMPowerStates returns the power state of every virtual machine in the subscription,
+// keyed by the lower-cased virtual machine ID.
+// The virtual machine list endpoints reject $expand=instanceView unless a scale set filter
+// is applied, and statusOnly is only honored when listing the whole subscription.
+func (client *azureClient) getVMPowerStates(ctx context.Context) (map[string]string, error) {
+	powerStates := map[string]string{}
+	pager := client.vm.NewListAllPager(&armcompute.VirtualMachinesClientListAllOptions{
+		StatusOnly: to.Ptr("true"),
+	})
+	for pager.More() {
+		nextResult, err := pager.NextPage(ctx)
+		if err != nil {
+			return nil, fmt.Errorf("could not list virtual machine statuses: %w", err)
+		}
+		for _, vm := range nextResult.Value {
+			if vm.ID == nil || vm.Properties == nil || vm.Properties.InstanceView == nil {
+				continue
+			}
+			powerStates[strings.ToLower(*vm.ID)] = powerStateFromStatuses(vm.Properties.InstanceView.Statuses)
+		}
+	}
+	return powerStates, nil
 }
 
 func (client *azureClient) getScaleSets(ctx context.Context, resourceGroup string) ([]armcompute.VirtualMachineScaleSet, error) {
@@ -688,7 +749,15 @@ func (client *azureClient) getScaleSetVMs(ctx context.Context, scaleSet armcompu
 		return nil, fmt.Errorf("could not parse scale set ID: %w", err)
 	}
 
-	pager := client.vmssvm.NewListPager(r.ResourceGroupName, *scaleSet.Name, nil)
+	// Flexible scale sets reject $expand=instanceView; their VMs are also listed as
+	// regular virtual machines, which get their power state from getVMPowerStates.
+	var options *armcompute.VirtualMachineScaleSetVMsClientListOptions
+	if scaleSet.Properties == nil || scaleSet.Properties.OrchestrationMode == nil || *scaleSet.Properties.OrchestrationMode != armcompute.OrchestrationModeFlexible {
+		options = &armcompute.VirtualMachineScaleSetVMsClientListOptions{
+			Expand: to.Ptr("instanceView"),
+		}
+	}
+	pager := client.vmssvm.NewListPager(r.ResourceGroupName, *scaleSet.Name, options)
 	for pager.More() {
 		nextResult, err := pager.NextPage(ctx)
 		if err != nil {
@@ -708,7 +777,6 @@ func mapFromVM(vm armcompute.VirtualMachine) virtualMachine {
 	networkInterfaces := []string{}
 	var computerName string
 	var size string
-	var powerState string
 
 	if vm.Tags != nil {
 		tags = vm.Tags
@@ -732,16 +800,6 @@ func mapFromVM(vm armcompute.VirtualMachine) virtualMachine {
 		if vm.Properties.HardwareProfile != nil {
 			size = string(*vm.Properties.HardwareProfile.VMSize)
 		}
-
-		// Extract power state from InstanceView
-		if vm.Properties.InstanceView != nil && vm.Properties.InstanceView.Statuses != nil {
-			for _, status := range vm.Properties.InstanceView.Statuses {
-				if status.Code != nil && strings.HasPrefix(*status.Code, "PowerState/") {
-					powerState = strings.TrimPrefix(*status.Code, "PowerState/")
-					break
-				}
-			}
-		}
 	}
 
 	return virtualMachine{
@@ -755,7 +813,6 @@ func mapFromVM(vm armcompute.VirtualMachine) virtualMachine {
 		Tags:              tags,
 		NetworkInterfaces: networkInterfaces,
 		Size:              size,
-		PowerState:        powerState,
 	}
 }
 
@@ -789,15 +846,8 @@ func mapFromVMScaleSetVM(vm armcompute.VirtualMachineScaleSetVM, scaleSetName st
 		if vm.Properties.HardwareProfile != nil {
 			size = string(*vm.Properties.HardwareProfile.VMSize)
 		}
-
-		// Extract power state from InstanceView
-		if vm.Properties.InstanceView != nil && vm.Properties.InstanceView.Statuses != nil {
-			for _, status := range vm.Properties.InstanceView.Statuses {
-				if status.Code != nil && strings.HasPrefix(*status.Code, "PowerState/") {
-					powerState = strings.TrimPrefix(*status.Code, "PowerState/")
-					break
-				}
-			}
+		if vm.Properties.InstanceView != nil {
+			powerState = powerStateFromStatuses(vm.Properties.InstanceView.Statuses)
 		}
 	}
 
@@ -815,6 +865,17 @@ func mapFromVMScaleSetVM(vm armcompute.VirtualMachineScaleSetVM, scaleSetName st
 		Size:              size,
 		PowerState:        powerState,
 	}
+}
+
+// powerStateFromStatuses returns the power state from instance view statuses,
+// e.g. "running" for the "PowerState/running" status code.
+func powerStateFromStatuses(statuses []*armcompute.InstanceViewStatus) string {
+	for _, status := range statuses {
+		if status != nil && status.Code != nil && strings.HasPrefix(*status.Code, "PowerState/") {
+			return strings.TrimPrefix(*status.Code, "PowerState/")
+		}
+	}
+	return ""
 }
 
 var errorNotFound = errors.New("network interface does not exist")
