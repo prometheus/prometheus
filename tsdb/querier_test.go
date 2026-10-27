@@ -540,11 +540,11 @@ func TestBlockQuerier_AgainstHeadWithOpenChunks(t *testing.T) {
 			require.NoError(t, err)
 			defer h.Close()
 
-			app := h.Appender(context.Background())
+			app := h.AppenderV2(context.Background())
 			for _, s := range testData {
 				for _, chk := range s.chunks {
 					for _, sample := range chk {
-						_, err = app.Append(0, labels.FromMap(s.lset), sample.t, sample.f)
+						_, err = app.Append(0, labels.FromMap(s.lset), 0, sample.t, sample.f, nil, nil, storage.AOptions{})
 						require.NoError(t, err)
 					}
 				}
@@ -2985,13 +2985,13 @@ func TestPostingsForMatchers(t *testing.T) {
 		require.NoError(t, h.Close())
 	}()
 
-	app := h.Appender(context.Background())
-	app.Append(0, labels.FromStrings("n", "1"), 0, 0)
-	app.Append(0, labels.FromStrings("n", "1", "i", "a"), 0, 0)
-	app.Append(0, labels.FromStrings("n", "1", "i", "b"), 0, 0)
-	app.Append(0, labels.FromStrings("n", "1", "i", "\n"), 0, 0)
-	app.Append(0, labels.FromStrings("n", "2"), 0, 0)
-	app.Append(0, labels.FromStrings("n", "2.5"), 0, 0)
+	app := h.AppenderV2(context.Background())
+	app.Append(0, labels.FromStrings("n", "1"), 0, 0, 0, nil, nil, storage.AOptions{})
+	app.Append(0, labels.FromStrings("n", "1", "i", "a"), 0, 0, 0, nil, nil, storage.AOptions{})
+	app.Append(0, labels.FromStrings("n", "1", "i", "b"), 0, 0, 0, nil, nil, storage.AOptions{})
+	app.Append(0, labels.FromStrings("n", "1", "i", "\n"), 0, 0, 0, nil, nil, storage.AOptions{})
+	app.Append(0, labels.FromStrings("n", "2"), 0, 0, 0, nil, nil, storage.AOptions{})
+	app.Append(0, labels.FromStrings("n", "2.5"), 0, 0, 0, nil, nil, storage.AOptions{})
 	require.NoError(t, app.Commit())
 
 	cases := []struct {
@@ -3407,8 +3407,8 @@ func appendSeries(t *testing.T, ctx context.Context, wg *sync.WaitGroup, h *Head
 	defer wg.Done()
 
 	for i := 0; ctx.Err() == nil; i++ {
-		app := h.Appender(context.Background())
-		_, err := app.Append(0, labels.FromStrings(labels.MetricName, "metric", "seq", strconv.Itoa(i), "always_0", "0"), 0, 0)
+		app := h.AppenderV2(context.Background())
+		_, err := app.Append(0, labels.FromStrings(labels.MetricName, "metric", "seq", strconv.Itoa(i), "always_0", "0"), 0, 0, 0, nil, nil, storage.AOptions{})
 		require.NoError(t, err)
 		err = app.Commit()
 		require.NoError(t, err)
@@ -3778,15 +3778,15 @@ func BenchmarkHeadChunkQuerier(b *testing.B) {
 
 	// 3h of data.
 	numTimeseries := 100
-	app := db.Appender(context.Background())
+	app := db.AppenderV2(context.Background())
 	for i := range 120 * 6 {
 		for j := range numTimeseries {
 			lbls := labels.FromStrings("foo", fmt.Sprintf("bar%d", j))
 			if i%10 == 0 {
 				require.NoError(b, app.Commit())
-				app = db.Appender(context.Background())
+				app = db.AppenderV2(context.Background())
 			}
-			_, err := app.Append(0, lbls, int64(i*15)*time.Second.Milliseconds(), float64(i*100))
+			_, err := app.Append(0, lbls, 0, int64(i*15)*time.Second.Milliseconds(), float64(i*100), nil, nil, storage.AOptions{})
 			require.NoError(b, err)
 		}
 	}
@@ -3820,15 +3820,15 @@ func BenchmarkHeadQuerier(b *testing.B) {
 
 	// 3h of data.
 	numTimeseries := 100
-	app := db.Appender(context.Background())
+	app := db.AppenderV2(context.Background())
 	for i := range 120 * 6 {
 		for j := range numTimeseries {
 			lbls := labels.FromStrings("foo", fmt.Sprintf("bar%d", j))
 			if i%10 == 0 {
 				require.NoError(b, app.Commit())
-				app = db.Appender(context.Background())
+				app = db.AppenderV2(context.Background())
 			}
-			_, err := app.Append(0, lbls, int64(i*15)*time.Second.Milliseconds(), float64(i*100))
+			_, err := app.Append(0, lbls, 0, int64(i*15)*time.Second.Milliseconds(), float64(i*100), nil, nil, storage.AOptions{})
 			require.NoError(b, err)
 		}
 	}
@@ -3879,7 +3879,7 @@ func TestQueryWithDeletedHistograms(t *testing.T) {
 	for name, tc := range testcases {
 		t.Run(name, func(t *testing.T) {
 			db := newTestDB(t)
-			app := db.Appender(context.Background())
+			app := db.AppenderV2(context.Background())
 
 			var (
 				err       error
@@ -3889,7 +3889,7 @@ func TestQueryWithDeletedHistograms(t *testing.T) {
 
 			for i := range 100 {
 				h, fh := tc(i)
-				seriesRef, err = app.AppendHistogram(seriesRef, lbs, int64(i), h, fh)
+				seriesRef, err = app.Append(seriesRef, lbs, 0, int64(i), 0, h, fh, storage.AOptions{})
 				require.NoError(t, err)
 			}
 
@@ -3932,7 +3932,7 @@ func TestQueryWithDeletedHistograms(t *testing.T) {
 func TestQueryWithOneChunkCompletelyDeleted(t *testing.T) {
 	ctx := context.Background()
 	db := newTestDB(t)
-	app := db.Appender(context.Background())
+	app := db.AppenderV2(context.Background())
 
 	var (
 		err       error
@@ -3943,12 +3943,12 @@ func TestQueryWithOneChunkCompletelyDeleted(t *testing.T) {
 	// Create an int histogram chunk with samples between 0 - 20 and 30 - 40.
 	for i := range 20 {
 		h := tsdbutil.GenerateTestHistogram(1)
-		seriesRef, err = app.AppendHistogram(seriesRef, lbs, int64(i), h, nil)
+		seriesRef, err = app.Append(seriesRef, lbs, 0, int64(i), 0, h, nil, storage.AOptions{})
 		require.NoError(t, err)
 	}
 	for i := 30; i < 40; i++ {
 		h := tsdbutil.GenerateTestHistogram(1)
-		seriesRef, err = app.AppendHistogram(seriesRef, lbs, int64(i), h, nil)
+		seriesRef, err = app.Append(seriesRef, lbs, 0, int64(i), 0, h, nil, storage.AOptions{})
 		require.NoError(t, err)
 	}
 
@@ -3956,7 +3956,7 @@ func TestQueryWithOneChunkCompletelyDeleted(t *testing.T) {
 	// type from int histograms so a new chunk is created.
 	for i := 60; i < 100; i++ {
 		fh := tsdbutil.GenerateTestFloatHistogram(1)
-		seriesRef, err = app.AppendHistogram(seriesRef, lbs, int64(i), nil, fh)
+		seriesRef, err = app.Append(seriesRef, lbs, 0, int64(i), 0, nil, fh, storage.AOptions{})
 		require.NoError(t, err)
 	}
 
@@ -4047,16 +4047,16 @@ func testChunkQuerierOverlappingInOrderAndOOOChunks(t *testing.T, valType chunke
 
 	lbls := labels.FromStrings("foo", "bar")
 
-	appendSample := func(app storage.Appender, ts int64) error {
+	appendSample := func(app storage.AppenderV2, ts int64) error {
 		switch valType {
 		case chunkenc.ValFloat:
-			_, err := app.Append(0, lbls, ts, float64(ts))
+			_, err := app.Append(0, lbls, 0, ts, float64(ts), nil, nil, storage.AOptions{})
 			return err
 		case chunkenc.ValHistogram:
-			_, err := app.AppendHistogram(0, lbls, ts, tsdbutil.GenerateTestHistogram(ts), nil)
+			_, err := app.Append(0, lbls, 0, ts, 0, tsdbutil.GenerateTestHistogram(ts), nil, storage.AOptions{})
 			return err
 		case chunkenc.ValFloatHistogram:
-			_, err := app.AppendHistogram(0, lbls, ts, nil, tsdbutil.GenerateTestFloatHistogram(ts))
+			_, err := app.Append(0, lbls, 0, ts, 0, nil, tsdbutil.GenerateTestFloatHistogram(ts), storage.AOptions{})
 			return err
 		default:
 			return fmt.Errorf("unsupported value type: %v", valType)
@@ -4066,7 +4066,7 @@ func testChunkQuerierOverlappingInOrderAndOOOChunks(t *testing.T, valType chunke
 	// Append the two in-order samples at the start and end of the range,
 	// so that the in-order chunk spans the full range that the OOO samples
 	// will land in.
-	app := db.Appender(context.Background())
+	app := db.AppenderV2(context.Background())
 	for _, i := range []int{firstIndex, lastIndex} {
 		require.NoError(t, appendSample(app, int64(10000+i*10)))
 	}
@@ -4085,7 +4085,7 @@ func testChunkQuerierOverlappingInOrderAndOOOChunks(t *testing.T, valType chunke
 	require.Equal(t, 2, ms.headChunks.chunk.NumSamples())
 
 	// Append the OOO samples in the gap between the two in-order samples.
-	app = db.Appender(context.Background())
+	app = db.AppenderV2(context.Background())
 	for i := firstIndex + 1; i < lastIndex; i++ {
 		require.NoError(t, appendSample(app, int64(10000+i*10)))
 	}
@@ -4370,9 +4370,9 @@ func forEachSearchBackend(t *testing.T, labelSets []labels.Labels, fn func(t *te
 	t.Helper()
 
 	h, _ := newTestHead(t, 1000, compression.None, false)
-	app := h.Appender(t.Context())
+	app := h.AppenderV2(t.Context())
 	for _, ls := range labelSets {
-		_, err := app.Append(0, ls, 2100, 1)
+		_, err := app.Append(0, ls, 0, 2100, 1, nil, nil, storage.AOptions{})
 		require.NoError(t, err)
 	}
 	require.NoError(t, app.Commit())
@@ -4509,9 +4509,9 @@ func TestSearchLabelValuesLimitAcrossMergedQueriers(t *testing.T) {
 	ctx := t.Context()
 
 	persisted, _ := newTestHead(t, 1000, compression.None, false)
-	app := persisted.Appender(ctx)
+	app := persisted.AppenderV2(ctx)
 	for _, name := range []string{"n_metric", "p_metric", "r_metric"} {
-		_, err := app.Append(0, labels.FromStrings("__name__", name, "job", "api"), 2100, 1)
+		_, err := app.Append(0, labels.FromStrings("__name__", name, "job", "api"), 0, 2100, 1, nil, nil, storage.AOptions{})
 		require.NoError(t, err)
 	}
 	require.NoError(t, app.Commit())
@@ -4523,9 +4523,9 @@ func TestSearchLabelValuesLimitAcrossMergedQueriers(t *testing.T) {
 
 	// Appended in descending order so the head's value list is unordered.
 	head, _ := newTestHead(t, 1000, compression.None, false)
-	app = head.Appender(ctx)
+	app = head.AppenderV2(ctx)
 	for _, name := range []string{"z_metric", "m_metric", "a_metric"} {
-		_, err := app.Append(0, labels.FromStrings("__name__", name, "job", "api"), 2100, 1)
+		_, err := app.Append(0, labels.FromStrings("__name__", name, "job", "api"), 0, 2100, 1, nil, nil, storage.AOptions{})
 		require.NoError(t, err)
 	}
 	require.NoError(t, app.Commit())

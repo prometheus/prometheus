@@ -55,15 +55,6 @@ import (
 	"github.com/prometheus/prometheus/util/testutil"
 )
 
-// TODO(bwplotka): Ensure non-ported tests are not deleted from head_test.go when removing AppenderV1 flow (#17632),
-// for example:
-// * TestChunkNotFoundHeadGCRace
-// * TestHeadSeriesChunkRace
-// * TestHeadLabelValuesWithMatchers
-// * TestHeadLabelNamesWithMatchers
-// * TestHeadShardedPostings
-// * TestHead_HighConcurrencyReadAndWrite
-
 func TestHeadAppenderV2_WALMultiRef(t *testing.T) {
 	head, w := newTestHead(t, 1000, compression.None, false)
 
@@ -1088,7 +1079,7 @@ func testHeadAppenderV2OutOfOrderSamplesMetric(t *testing.T, scenario sampleType
 
 	appendSample := func(app storage.AppenderV2, ts int64) (storage.SeriesRef, error) {
 		// TODO(bwplotka): Migrate to V2 natively.
-		ref, _, err := scenario.appendFunc(storage.AppenderV2AsLimitedV1(app), labels.FromStrings("a", "b"), ts, 99)
+		ref, _, err := scenario.appendFunc(app, labels.FromStrings("a", "b"), ts, 99)
 		return ref, err
 	}
 
@@ -3034,7 +3025,7 @@ func testWBLReplayAppenderV2(t *testing.T, scenario sampleTypeScenario, enableST
 	l := labels.FromStrings("foo", "bar")
 	appendSample := func(mins int64, _ float64, isOOO bool) {
 		app := h.AppenderV2(context.Background())
-		_, s, err := scenario.appendFunc(storage.AppenderV2AsLimitedV1(app), l, mins*time.Minute.Milliseconds(), mins)
+		_, s, err := scenario.appendFunc(app, l, mins*time.Minute.Milliseconds(), mins)
 		require.NoError(t, err)
 		require.NoError(t, app.Commit())
 
@@ -3126,7 +3117,7 @@ func testOOOMmapReplayAppenderV2(t *testing.T, scenario sampleTypeScenario) {
 	l := labels.FromStrings("foo", "bar")
 	appendSample := func(mins int64) {
 		app := h.AppenderV2(context.Background())
-		_, _, err := scenario.appendFunc(storage.AppenderV2AsLimitedV1(app), l, mins*time.Minute.Milliseconds(), mins)
+		_, _, err := scenario.appendFunc(app, l, mins*time.Minute.Milliseconds(), mins)
 		require.NoError(t, err)
 		require.NoError(t, app.Commit())
 	}
@@ -3390,7 +3381,7 @@ func TestHeadAppenderV2_Append_OOOWithNoSeries(t *testing.T) {
 	}
 }
 
-func testHeadAppenderV2AppendOOOWithNoSeries(t *testing.T, appendFunc func(appender storage.LimitedAppenderV1, lbls labels.Labels, ts, value int64) (storage.SeriesRef, sample, error)) {
+func testHeadAppenderV2AppendOOOWithNoSeries(t *testing.T, appendFunc func(appender storage.AppenderV2, lbls labels.Labels, ts, value int64) (storage.SeriesRef, sample, error)) {
 	dir := t.TempDir()
 	wal, err := wlog.NewSize(nil, nil, filepath.Join(dir, "wal"), 32768, compression.Snappy)
 	require.NoError(t, err)
@@ -3411,7 +3402,7 @@ func testHeadAppenderV2AppendOOOWithNoSeries(t *testing.T, appendFunc func(appen
 
 	appendSample := func(lbls labels.Labels, ts int64) {
 		app := h.AppenderV2(context.Background())
-		_, _, err := appendFunc(storage.AppenderV2AsLimitedV1(app), lbls, ts*time.Minute.Milliseconds(), ts)
+		_, _, err := appendFunc(app, lbls, ts*time.Minute.Milliseconds(), ts)
 		require.NoError(t, err)
 		require.NoError(t, app.Commit())
 	}
@@ -3459,7 +3450,7 @@ func testHeadAppenderV2AppendOOOWithNoSeries(t *testing.T, appendFunc func(appen
 	// Now 179m is too old.
 	s4 := newLabels(4)
 	app := h.AppenderV2(context.Background())
-	_, _, err = appendFunc(storage.AppenderV2AsLimitedV1(app), s4, 179*time.Minute.Milliseconds(), 179)
+	_, _, err = appendFunc(app, s4, 179*time.Minute.Milliseconds(), 179)
 	require.Equal(t, storage.ErrTooOldSample, err)
 	require.NoError(t, app.Rollback())
 	verifyOOOSamples(s3, 1)
@@ -3501,7 +3492,7 @@ func testHeadMinOOOTimeUpdateAppenderV2(t *testing.T, scenario sampleTypeScenari
 
 	appendSample := func(ts int64) {
 		app := h.AppenderV2(context.Background())
-		_, _, err = scenario.appendFunc(storage.AppenderV2AsLimitedV1(app), labels.FromStrings("a", "b"), ts*time.Minute.Milliseconds(), ts)
+		_, _, err = scenario.appendFunc(app, labels.FromStrings("a", "b"), ts*time.Minute.Milliseconds(), ts)
 		require.NoError(t, err)
 		require.NoError(t, app.Commit())
 	}
@@ -4644,6 +4635,42 @@ func TestHeadAppenderV2_BestEffortSTZeroSample_OOO(t *testing.T) {
 			require.Len(t, result[`{foo="bar"}`], 2)
 		})
 	}
+
+	t.Run("rejected ST injected zero does not retain series", func(t *testing.T) {
+		for _, tc := range []struct {
+			name string
+			v    float64
+			h    *histogram.Histogram
+			fh   *histogram.FloatHistogram
+		}{
+			{name: "float", v: 10},
+			{name: "histogram", h: testHistogram},
+			{name: "float_histogram", fh: testFloatHistogram},
+		} {
+			t.Run(tc.name, func(t *testing.T) {
+				opts := newTestHeadDefaultOptions(DefaultBlockDuration, true)
+				opts.EnableSTAsZeroSample = true
+				h, _ := newTestHeadWithOptions(t, compression.None, opts)
+
+				lset := labels.FromStrings("a", "1")
+				baseline := h.AppenderV2(t.Context())
+				ref, err := baseline.Append(0, lset, 0, 200, tc.v, tc.h, tc.fh, storage.AOptions{})
+				require.NoError(t, err)
+				require.NoError(t, baseline.Commit())
+
+				app := h.AppenderV2(t.Context())
+				// Both st=100 (always fastRejectOOO=true) and ts=150 (RejectOutOfOrder=true)
+				// are OOO relative to headMaxt=200 and rejected without retaining the series.
+				_, err = app.Append(ref, lset, 100, 150, tc.v, tc.h, tc.fh, storage.AOptions{RejectOutOfOrder: true})
+				require.ErrorIs(t, err, storage.ErrOutOfOrderSample)
+				require.NoError(t, app.Rollback())
+
+				require.NoError(t, h.Truncate(201))
+				require.Zero(t, h.NumSeries(), "the rejected sample must not protect the collectable series")
+				require.Zero(t, prom_testutil.ToFloat64(h.metrics.pendingCommitUnderflow))
+			})
+		}
+	})
 }
 
 // Regression test for data race https://github.com/prometheus/prometheus/issues/15139.
