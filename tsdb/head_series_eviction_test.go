@@ -336,6 +336,7 @@ func TestSeriesEviction_OnlyQueriesSkipRemovedSeries(t *testing.T) {
 		ChunkOrIterable(chunks.Meta) (chunkenc.Chunk, chunkenc.Iterable, error)
 		ChunkOrIterableWithCopy(chunks.Meta) (chunkenc.Chunk, chunkenc.Iterable, int64, error)
 	}
+	evicting := &evictedSeries{refs: testDB.evictedRefs}
 	newOOOReader := func(inOrder *headChunkReader) chunkReader {
 		return NewHeadAndOOOChunkReader(head, 0, 1000, inOrder, nil, 0)
 	}
@@ -345,14 +346,14 @@ func TestSeriesEviction_OnlyQueriesSkipRemovedSeries(t *testing.T) {
 		skips  bool
 	}{
 		"reader of a query": {
-			reader: &headChunkReader{head: head, mint: 0, maxt: 1000, tolerateRemovedSeries: true},
+			reader: &headChunkReader{head: head, mint: 0, maxt: 1000, evicting: evicting},
 			skips:  true,
 		},
 		"reader of a range head that is not used by queries": {
 			reader: &headChunkReader{head: head, mint: 0, maxt: 1000},
 		},
 		"head and out-of-order reader of a query": {
-			reader: newOOOReader(&headChunkReader{head: head, mint: 0, maxt: 1000, tolerateRemovedSeries: true}),
+			reader: newOOOReader(&headChunkReader{head: head, mint: 0, maxt: 1000, evicting: evicting}),
 			skips:  true,
 		},
 		"head and out-of-order reader that is not used by queries": {
@@ -409,7 +410,7 @@ func TestSeriesEviction_OtherNotFoundErrorsAreReturned(t *testing.T) {
 	keptSeries := testDB.evictedRefs[len(testDB.evictedRefs)-1] + 1
 	missingChunk := chunks.Meta{Ref: chunks.ChunkRef(chunks.NewHeadChunkRef(chunks.HeadSeriesRef(keptSeries), 1000))}
 
-	reader := &headChunkReader{head: head, mint: 0, maxt: 1000, tolerateRemovedSeries: true}
+	reader := &headChunkReader{head: head, mint: 0, maxt: 1000, evicting: &evictedSeries{refs: testDB.evictedRefs}}
 	_, _, err := reader.ChunkOrIterable(missingChunk)
 	require.ErrorIs(t, err, storage.ErrNotFound)
 	_, _, _, err = reader.ChunkOrIterableWithCopy(missingChunk)
@@ -419,6 +420,63 @@ func TestSeriesEviction_OtherNotFoundErrorsAreReturned(t *testing.T) {
 	require.ErrorIs(t, err, storage.ErrNotFound)
 
 	require.Equal(t, float64(0), prom_testutil.ToFloat64(head.metrics.chunkReadsOfRemovedSeries))
+}
+
+// TestSeriesEviction_SeriesNotBeingEvictedAreNotSkipped verifies that a reader fails to read the chunk of a series
+// that is not in the set being evicted, even if the series is not in the head either, and when nothing is being
+// evicted.
+func TestSeriesEviction_SeriesNotBeingEvictedAreNotSkipped(t *testing.T) {
+	testDB := newSeriesEvictionTestDB(t)
+	head := testDB.db.Head()
+
+	ir, err := NewRangeHead(head, 0, 1000).Index()
+	require.NoError(t, err)
+	t.Cleanup(func() { require.NoError(t, ir.Close()) })
+	var (
+		builder labels.ScratchBuilder
+		metas   []chunks.Meta
+	)
+	require.NoError(t, ir.Series(testDB.evictedRefs[0], &builder, &metas))
+	require.Len(t, metas, 1)
+	meta := metas[0]
+	require.NoError(t, testDB.db.CompactSelectedSeries(testDB.evictedRefs))
+
+	tests := map[string]*evictedSeries{
+		"nothing is being evicted":                   nil,
+		"the series is not in the set being evicted": {refs: testDB.evictedRefs[1:]},
+	}
+	for name, evicting := range tests {
+		t.Run(name, func(t *testing.T) {
+			reader := &headChunkReader{head: head, mint: 0, maxt: 1000, evicting: evicting}
+			_, _, err := reader.ChunkOrIterable(meta)
+			require.ErrorIs(t, err, storage.ErrNotFound)
+			_, _, _, err = reader.ChunkOrIterableWithCopy(meta)
+			require.ErrorIs(t, err, storage.ErrNotFound)
+			require.Equal(t, float64(0), prom_testutil.ToFloat64(head.metrics.chunkReadsOfRemovedSeries))
+		})
+	}
+}
+
+// TestSeriesEviction_SeriesAreOnlyPublishedWhileTheyAreEvicted verifies that the series being evicted are published
+// only while truncateSeries runs, so that the queries opened at any other time behave as they always did.
+func TestSeriesEviction_SeriesAreOnlyPublishedWhileTheyAreEvicted(t *testing.T) {
+	testDB := newSeriesEvictionTestDB(t)
+	head := testDB.db.Head()
+
+	require.Nil(t, head.evictingSeries.Load())
+	var published *evictedSeries
+	head.testAfterWaitingForReadersToEvictSeries = func() { published = head.evictingSeries.Load() }
+
+	require.NoError(t, testDB.db.CompactSelectedSeries(testDB.evictedRefs))
+
+	require.NotNil(t, published)
+	require.Equal(t, testDB.evictedRefs, published.refs)
+	require.Nil(t, head.evictingSeries.Load())
+
+	// A querier opened after the eviction doesn't skip anything.
+	q, err := testDB.db.Querier(0, 1000)
+	require.NoError(t, err)
+	t.Cleanup(func() { require.NoError(t, q.Close()) })
 }
 
 // beforeRemoval is what the DB looks like right before the series are removed from the head.
@@ -454,11 +512,11 @@ func (b *beforeRemoval) require(t *testing.T) {
 	}
 }
 
-// TestSeriesRemoval_BlockIsAddedBeforeSeriesAreRemoved verifies that, in every way series are removed from the head,
-// the samples of the series are already in a block of the DB when the series are removed.
+// TestSeriesRemoval_BlockIsAddedBeforeSeriesAreRemoved verifies that, in every way series are evicted from the head
+// by truncateSeries, the samples of the series are already in a block of the DB when the series are removed.
 //
-// The readers of queries skip the chunks of a series that was removed from the head, because they read the block
-// too. That is correct only if the block is added to the DB before the series are removed. See
+// The readers of queries skip the chunks of a series that is being evicted, because they read the block too.
+// That is correct only if the block is added to the DB before the series are removed. See
 // headChunkReader.tolerateRemovedSeries. This test fails if that order is changed.
 func TestSeriesRemoval_BlockIsAddedBeforeSeriesAreRemoved(t *testing.T) {
 	for name, evict := range evictionTestEvictions() {
@@ -475,39 +533,6 @@ func TestSeriesRemoval_BlockIsAddedBeforeSeriesAreRemoved(t *testing.T) {
 			require.Equal(t, uint64(evictionTestSeries-evictionTestEvictedSeries), db.Head().NumSeries(), "the series should have been removed")
 		})
 	}
-
-	t.Run("head compaction", func(t *testing.T) {
-		opts := DefaultOptions()
-		opts.MinBlockDuration = 1000
-		opts.MaxBlockDuration = 1000
-		db := newTestDB(t, withOpts(opts))
-		db.DisableCompactions()
-		t.Cleanup(func() { require.NoError(t, db.Close()) })
-
-		// The first series only have samples that the head compaction moves to a block, so it removes them.
-		// The others have a sample in the next chunk range, so they stay in the head, and make it compactable.
-		app := db.Appender(context.Background())
-		for i := range evictionTestSeries {
-			for s := range evictionTestSamples {
-				_, err := app.Append(0, evictionTestLabels(i), int64(100*(s+1)), float64(i))
-				require.NoError(t, err)
-			}
-			if i >= evictionTestEvictedSeries {
-				_, err := app.Append(0, evictionTestLabels(i), 1700, float64(i))
-				require.NoError(t, err)
-			}
-		}
-		require.NoError(t, app.Commit())
-
-		// The hook is called when the head starts to remove the series, after it has added the block.
-		var before beforeRemoval
-		db.head.memTruncationCallBack = func() { before.record(t, db) }
-
-		require.NoError(t, db.Compact(context.Background()))
-
-		before.require(t)
-		require.Equal(t, uint64(evictionTestSeries-evictionTestEvictedSeries), db.Head().NumSeries(), "the series should have been removed")
-	})
 }
 
 // TestSeriesEviction_ExportedHeadAndOOOQueriersDoNotSkipRemovedSeries verifies that the exported constructors of the

@@ -171,6 +171,11 @@ type Head struct {
 	// the open readers, and before it removes the series. Tests use it to open a reader at the point
 	// where a reader would otherwise not be waited for.
 	testAfterWaitingForReadersToEvictSeries func()
+
+	// evictingSeries is the set of series that truncateSeries is removing, or nil if it is not running.
+	// The readers of queries opened while it is set skip the chunks of those series that are removed
+	// before they read them. See headChunkReader.evicting.
+	evictingSeries atomic.Pointer[evictedSeries]
 }
 
 type ExemplarStorage interface {
@@ -1516,8 +1521,8 @@ func (h *Head) snapshotFingerprints(seriesRefs []storage.SeriesRef, appendIDWate
 // It returns the number of series that were actually evicted.
 //
 // The caller must have written the samples of the series to a block, and added the block to the DB, before
-// calling it. The readers that find a series removed skip its chunks, because they read the block.
-// See headChunkReader.tolerateRemovedSeries.
+// calling it. The readers of queries that find a series removed skip its chunks, because they read the block.
+// See headChunkReader.evicting.
 func (h *Head) truncateSeries(seriesRefs []storage.SeriesRef, maxt int64, shouldEvict func(*memSeries) bool) (int, error) {
 	h.chunkSnapshotMtx.Lock()
 	defer h.chunkSnapshotMtx.Unlock()
@@ -1525,6 +1530,11 @@ func (h *Head) truncateSeries(seriesRefs []storage.SeriesRef, maxt int64, should
 	if h.MinTime() > maxt {
 		return 0, nil
 	}
+
+	// Publish the series before waiting for the readers, so that the readers that are opened after the wait,
+	// and are not waited for, know that the series may be removed while they read them.
+	h.evictingSeries.Store(&evictedSeries{refs: seriesRefs})
+	defer h.evictingSeries.Store(nil)
 
 	h.WaitForPendingReadersInTimeRange(h.MinTime(), maxt)
 
@@ -1869,6 +1879,31 @@ func (h *Head) Stats(statsByLabelName string, limit int) *Stats {
 	}
 }
 
+// evictedSeries is the set of series that truncateSeries is removing from the head.
+type evictedSeries struct {
+	refs []storage.SeriesRef
+
+	// The set is built from refs by the first call to contains, so that an eviction that never calls it
+	// doesn't pay for it. once makes sure it is built only once, also when contains is called concurrently.
+	once sync.Once
+	set  map[chunks.HeadSeriesRef]struct{}
+}
+
+// contains returns whether the series is one that is being removed. It is safe to call on a nil *evictedSeries.
+func (e *evictedSeries) contains(ref chunks.HeadSeriesRef) bool {
+	if e == nil {
+		return false
+	}
+	e.once.Do(func() {
+		e.set = make(map[chunks.HeadSeriesRef]struct{}, len(e.refs))
+		for _, r := range e.refs {
+			e.set[chunks.HeadSeriesRef(r)] = struct{}{}
+		}
+	})
+	_, ok := e.set[ref]
+	return ok
+}
+
 // RangeHead allows querying Head via an IndexReader, ChunkReader and tombstones.Reader
 // but only within a restricted range.  Used for queries and compactions.
 // Its readers, and queriers over it, are not safe for concurrent use from
@@ -1879,10 +1914,10 @@ type RangeHead struct {
 
 	isolationOff bool
 
-	// tolerateRemovedSeries makes the chunk reader skip the chunks of the series that were removed from the
-	// head after the reader selected them. It must be set only for the readers used by queries. See
-	// headChunkReader.tolerateRemovedSeries.
-	tolerateRemovedSeries bool
+	// skipEvictedSeries makes the chunk reader skip the chunks of the series that CompactSelectedSeries or
+	// CompactStaleHead remove from the head after the reader selected them. It must be set only for the readers
+	// used by queries. See headChunkReader.evicting.
+	skipEvictedSeries bool
 }
 
 // NewRangeHead returns a *RangeHead.
@@ -1896,10 +1931,10 @@ func NewRangeHead(head *Head, mint, maxt int64) *RangeHead {
 }
 
 // newRangeHeadForQuery returns a *RangeHead for the queriers, whose chunk reader skips the chunks of the
-// series that are removed from the head while the query is reading them.
+// series that CompactSelectedSeries or CompactStaleHead remove from the head while the query is reading them.
 func newRangeHeadForQuery(head *Head, mint, maxt int64) *RangeHead {
 	rh := NewRangeHead(head, mint, maxt)
-	rh.tolerateRemovedSeries = true
+	rh.skipEvictedSeries = true
 	return rh
 }
 
@@ -1923,7 +1958,11 @@ func (h *RangeHead) Chunks() (ChunkReader, error) {
 	if err != nil {
 		return nil, err
 	}
-	cr.tolerateRemovedSeries = h.tolerateRemovedSeries
+	// Load the series being evicted after the isolation state was created, so that a reader that is not waited
+	// for by truncateSeries sees them.
+	if h.skipEvictedSeries {
+		cr.evicting = h.head.evictingSeries.Load()
+	}
 	return cr, nil
 }
 

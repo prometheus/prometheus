@@ -1795,8 +1795,6 @@ func (db *DB) compactHead(head *RangeHead) error {
 		}
 		return errors.Join(errs...)
 	}
-	// The block has been written, and added to the DB by reloadBlocks, above. The series must not be
-	// removed from the head before that. See headChunkReader.tolerateRemovedSeries.
 	if err = db.head.truncateMemory(head.BlockMaxTime()); err != nil {
 		return fmt.Errorf("head memory truncate: %w", err)
 	}
@@ -1870,8 +1868,9 @@ func (db *DB) compactHeadViewLocked(viewFactory headViewFactory, evict headSerie
 		db.compactHeadViewBeforeEvictTestingCallback = nil
 	}
 
-	// The blocks have been written, and added to the DB by reloadBlocks, above. The series must not be
-	// evicted before that. See headChunkReader.tolerateRemovedSeries.
+	// Every block written above has been added to the DB by reloadBlocks. evict must run after that: the
+	// readers of queries skip the chunks of the series it removes, because they read those blocks instead.
+	// See headChunkReader.evicting.
 	if err := evict(maxt); err != nil {
 		return fmt.Errorf("head truncate: %w", err)
 	}
