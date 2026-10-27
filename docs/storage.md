@@ -82,7 +82,9 @@ For further details on file format, see [TSDB format](/tsdb/docs/format/README.m
 The initial two-hour blocks are eventually compacted into longer blocks in the background.
 
 Compaction will create larger blocks containing data spanning up to 10% of the retention time,
-or 31 days, whichever is smaller. Because both the source blocks and the new compacted block
+or 31 days, whichever is smaller. If size-based retention is configured, compaction also does
+not merge blocks whose combined size exceeds 10% of the retention size, as size-based retention
+deletes whole blocks at a time. Because both the source blocks and the new compacted block
 must coexist on disk, on-disk size can briefly exceed `storage.tsdb.retention.size`; the
 excess is released when the next retention cleanup removes the source blocks.
 
