@@ -19,6 +19,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"math"
 	"net/http"
 	"strings"
 	"sync"
@@ -42,6 +43,7 @@ import (
 	"github.com/prometheus/prometheus/tsdb/chunks"
 	"github.com/prometheus/prometheus/tsdb/tsdbutil"
 	"github.com/prometheus/prometheus/util/annotations"
+	"github.com/prometheus/prometheus/util/compression"
 )
 
 var (
@@ -783,6 +785,102 @@ func TestDecodeWriteRequest(t *testing.T) {
 	actual, err := DecodeWriteRequest(bytes.NewReader(buf))
 	require.NoError(t, err)
 	require.Equal(t, writeRequestFixture, actual)
+}
+
+func TestBuildWriteRequestReusesBuffer(t *testing.T) {
+	logger := promslog.NewNopLogger()
+	pBuf := proto.NewBuffer(nil)
+	smallRequestSize := (&prompb.WriteRequest{Timeseries: writeRequestFixture.Timeseries[:1]}).Size()
+	metadata := []prompb.MetricMetadata{{
+		Type:             prompb.MetricMetadata_GAUGE,
+		MetricFamilyName: "test_metric1",
+		Help:             strings.Repeat("help", smallRequestSize),
+		Unit:             "seconds",
+	}}
+
+	var largeBuffer []byte
+	for _, tc := range []struct {
+		name           string
+		timeSeries     []prompb.TimeSeries
+		metadata       []prompb.MetricMetadata
+		filter         func(prompb.TimeSeries) bool
+		compression    compression.Type
+		want           *prompb.WriteRequest
+		wantHighest    int64
+		wantLowest     int64
+		rememberBuffer bool
+		reuseBuffer    bool
+		wantRawBuffer  bool
+	}{
+		{
+			name:        "small request",
+			timeSeries:  writeRequestFixture.Timeseries[:1],
+			compression: compression.Snappy,
+			want:        &prompb.WriteRequest{Timeseries: writeRequestFixture.Timeseries[:1]},
+			wantHighest: 1,
+			wantLowest:  1,
+		},
+		{
+			name:           "larger request with metadata",
+			timeSeries:     writeRequestFixture.Timeseries,
+			metadata:       metadata,
+			compression:    compression.Snappy,
+			want:           &prompb.WriteRequest{Timeseries: writeRequestFixture.Timeseries, Metadata: metadata},
+			wantHighest:    3,
+			wantLowest:     1,
+			rememberBuffer: true,
+		},
+		{
+			name:          "partial raw request reuses grown buffer",
+			timeSeries:    writeRequestFixture.Timeseries,
+			metadata:      metadata,
+			filter:        func(ts prompb.TimeSeries) bool { return ts.Samples[0].Timestamp == 1 },
+			compression:   compression.None,
+			want:          &prompb.WriteRequest{Timeseries: writeRequestFixture.Timeseries[1:], Metadata: metadata},
+			wantHighest:   3,
+			wantLowest:    2,
+			reuseBuffer:   true,
+			wantRawBuffer: true,
+		},
+		{
+			name:        "empty age-filtered request retains buffer",
+			timeSeries:  writeRequestFixture.Timeseries,
+			filter:      func(prompb.TimeSeries) bool { return true },
+			compression: compression.None,
+			want:        &prompb.WriteRequest{},
+			wantHighest: 0,
+			wantLowest:  math.MaxInt64,
+			reuseBuffer: true,
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			timeSeries := append([]prompb.TimeSeries(nil), tc.timeSeries...)
+			payload, highest, lowest, err := buildWriteRequest(logger, timeSeries, tc.metadata, pBuf, tc.filter, nil, tc.compression)
+			require.NoError(t, err)
+			require.Equal(t, tc.wantHighest, highest)
+			require.Equal(t, tc.wantLowest, lowest)
+
+			data, err := compression.Decode(tc.compression, payload, nil)
+			require.NoError(t, err)
+			var actual prompb.WriteRequest
+			require.NoError(t, proto.Unmarshal(data, &actual))
+			require.Equal(t, tc.want, &actual)
+
+			if tc.rememberBuffer {
+				largeBuffer = pBuf.Bytes()
+			}
+			if tc.reuseBuffer {
+				require.NotEmpty(t, largeBuffer)
+				reusedBuffer := pBuf.Bytes()
+				require.Positive(t, cap(reusedBuffer))
+				require.Equal(t, cap(largeBuffer), cap(reusedBuffer))
+				require.Equal(t, &largeBuffer[0], &reusedBuffer[:cap(reusedBuffer)][0])
+			}
+			if tc.wantRawBuffer {
+				require.Equal(t, &pBuf.Bytes()[0], &payload[0])
+			}
+		})
+	}
 }
 
 func TestDecodeWriteV2Request(t *testing.T) {

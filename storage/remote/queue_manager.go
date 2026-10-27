@@ -446,7 +446,8 @@ func (m *queueManagerMetrics) unregister(protoMsg remoteapi.WriteMessageType) {
 // WriteClient defines an interface for sending a batch of samples to an
 // external timeseries database.
 type WriteClient interface {
-	// Store stores the given samples in the remote storage.
+	// Store stores the given samples in the remote storage. The caller may reuse req after Store returns.
+	// Implementations must copy its contents if they need them after returning.
 	Store(ctx context.Context, req []byte, retryAttempt int) (WriteResponseStats, error)
 	// Name uniquely identifies the remote storage.
 	Name() string
@@ -2506,9 +2507,21 @@ func buildWriteRequest(logger *slog.Logger, timeSeries []prompb.TimeSeries, meta
 	} else {
 		pBuf.Reset()
 	}
-	if err := pBuf.Marshal(req); err != nil {
+
+	marshalBuf := pBuf.Bytes()
+	size := req.Size()
+	if cap(marshalBuf) < size {
+		marshalBuf = make([]byte, size)
+	}
+	marshalBuf = marshalBuf[:size]
+	// Queue buffers use the default non-deterministic mode; the generated method avoids Buffer.Marshal's append.
+	// XXX_Marshal writes backward from the end of the buffer, so its capacity must match Size.
+	marshaled, err := req.XXX_Marshal(marshalBuf[:size:size], false)
+	if err != nil {
+		pBuf.SetBuf(marshalBuf[:0])
 		return nil, stats.highest, stats.lowest, err
 	}
+	pBuf.SetBuf(marshalBuf[:len(marshaled)])
 
 	compressed, err := compression.Encode(compr, pBuf.Bytes(), buf)
 	if err != nil {
