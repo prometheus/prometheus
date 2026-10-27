@@ -458,11 +458,9 @@ type WriteClient interface {
 // indicated by the provided WriteClient. Implements writeTo interface
 // used by WAL Watcher.
 type QueueManager struct {
-	lastSendTimestamp            atomic.Int64
-	buildRequestLimitTimestamp   atomic.Int64
-	reshardDisableStartTimestamp atomic.Int64 // Time that reshard was disabled.
-	reshardDisableEndTimestamp   atomic.Int64 // Time that reshard is disabled until.
-	requestsRetrying             atomic.Int64 // Requests retrying recoverable errors.
+	lastSendTimestamp          atomic.Int64
+	buildRequestLimitTimestamp atomic.Int64
+	requestsRetrying           atomic.Int64 // Requests retrying recoverable errors.
 
 	logger                  *slog.Logger
 	flushDeadline           time.Duration
@@ -1485,13 +1483,6 @@ func (t *QueueManager) shouldReshard(desiredShards int) bool {
 		t.logger.Warn("Skipping resharding, requests are retrying recoverable errors", "requests_retrying", retrying)
 		return false
 	}
-	if disableTimestamp := t.reshardDisableEndTimestamp.Load(); time.Now().Unix() < disableTimestamp {
-		disabledAt := time.Unix(t.reshardDisableStartTimestamp.Load(), 0)
-		disabledFor := time.Until(time.Unix(disableTimestamp, 0))
-
-		t.logger.Warn("Skipping resharding, resharding is disabled while waiting for recoverable errors", "disabled_at", disabledAt, "disabled_for", disabledFor)
-		return false
-	}
 	return true
 }
 
@@ -2423,23 +2414,6 @@ func (t *QueueManager) sendWriteRequestWithBackoff(ctx context.Context, attempt 
 			t.logger.Debug("retry-after cannot be in past, retrying using default backoff mechanism")
 		}
 
-		// We should never reshard for a recoverable error; increasing shards could
-		// make the problem worse, particularly if we're getting rate limited.
-		//
-		// reshardDisableTimestamp holds the unix timestamp until which resharding
-		// is disabled. We'll update that timestamp if the period we were just told
-		// to sleep for is newer than the existing disabled timestamp.
-		reshardWaitPeriod := time.Now().Add(time.Duration(sleepDuration) * 2)
-		if oldTS, updated := setAtomicToNewer(&t.reshardDisableEndTimestamp, reshardWaitPeriod.Unix()); updated {
-			// If the old timestamp was in the past, then resharding was previously
-			// enabled. We want to track the time where it initially got disabled for
-			// logging purposes.
-			disableTime := time.Now().Unix()
-			if oldTS < disableTime {
-				t.reshardDisableStartTimestamp.Store(disableTime)
-			}
-		}
-
 		select {
 		case <-ctx.Done():
 		case <-time.After(time.Duration(sleepDuration)):
@@ -2452,26 +2426,6 @@ func (t *QueueManager) sendWriteRequestWithBackoff(ctx context.Context, attempt 
 		backoff = min(sleepDuration*2, t.cfg.MaxBackoff)
 
 		try++
-	}
-}
-
-// setAtomicToNewer atomically sets a value to the newer int64 between itself
-// and the provided newValue argument. setAtomicToNewer returns whether the
-// atomic value was updated and what the previous value was.
-func setAtomicToNewer(value *atomic.Int64, newValue int64) (previous int64, updated bool) {
-	for {
-		current := value.Load()
-		if current >= newValue {
-			// If the current stored value is newer than newValue; abort.
-			return current, false
-		}
-
-		// Try to swap the value. If the atomic value has changed, we loop back to
-		// the beginning until we've successfully swapped out the value or the
-		// value stored in it is newer than newValue.
-		if value.CompareAndSwap(current, newValue) {
-			return current, true
-		}
 	}
 }
 
