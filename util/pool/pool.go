@@ -36,6 +36,9 @@ func New(minSize, maxSize int, factor float64, makeFunc func(int) any) *Pool {
 	if maxSize < 1 {
 		panic("invalid maximum pool size")
 	}
+	if minSize > maxSize {
+		panic("invalid pool size range")
+	}
 	if factor < 1 {
 		panic("invalid factor")
 	}
@@ -47,7 +50,7 @@ func New(minSize, maxSize int, factor float64, makeFunc func(int) any) *Pool {
 	}
 	// The sequence rarely lands exactly on maxSize, and without a bucket that large the largest
 	// documented size has no home: Get allocates for it and Put drops the slice.
-	if len(sizes) == 0 || sizes[len(sizes)-1] < maxSize {
+	if sizes[len(sizes)-1] < maxSize {
 		sizes = append(sizes, maxSize)
 	}
 

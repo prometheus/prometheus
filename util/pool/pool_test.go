@@ -49,6 +49,11 @@ func TestPool(t *testing.T) {
 	}
 }
 
+func TestPoolRejectsInvertedRange(t *testing.T) {
+	// minSize > maxSize used to build an empty bucket table; reject it instead.
+	require.Panics(t, func() { New(10, 5, 2, makeFunc) })
+}
+
 func TestPoolCoversMaxSize(t *testing.T) {
 	p := New(1000, 1000000, 3, makeFunc)
 
