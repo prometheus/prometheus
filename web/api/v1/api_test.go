@@ -4046,6 +4046,9 @@ func assertAPIResponseMetadataLen(t *testing.T, got any, expLen int) {
 type fakeDB struct {
 	err        error
 	blockMetas []tsdb.BlockMeta
+
+	// statsMatcherSets records the matcher sets of the last Stats call.
+	statsMatcherSets [][]*labels.Matcher
 }
 
 func (f *fakeDB) CleanTombstones() error { return f.err }
@@ -4055,21 +4058,22 @@ func (f *fakeDB) BlockMetas() ([]tsdb.BlockMeta, error) {
 }
 func (f *fakeDB) Delete(context.Context, int64, int64, ...*labels.Matcher) error { return f.err }
 func (f *fakeDB) Snapshot(string, bool) error                                    { return f.err }
-func (*fakeDB) Stats(statsByLabelName string, limit int) (_ *tsdb.Stats, retErr error) {
+func (f *fakeDB) Stats(ctx context.Context, statsByLabelName string, limit int, matcherSets ...[]*labels.Matcher) (_ *tsdb.Stats, retErr error) {
+	f.statsMatcherSets = matcherSets
 	dbDir, err := os.MkdirTemp("", "tsdb-api-ready")
 	if err != nil {
 		return nil, err
 	}
 	defer func() {
 		err := os.RemoveAll(dbDir)
-		if retErr != nil {
+		if retErr == nil {
 			retErr = err
 		}
 	}()
 	opts := tsdb.DefaultHeadOptions()
 	opts.ChunkRange = 1000
 	h, _ := tsdb.NewHead(nil, nil, nil, nil, opts, nil)
-	return h.Stats(statsByLabelName, limit), nil
+	return h.StatsForMatchers(ctx, statsByLabelName, limit, matcherSets)
 }
 
 func (*fakeDB) WALReplayStatus() (tsdb.WALReplayStatus, error) {
@@ -4654,8 +4658,13 @@ func TestTSDBStatus(t *testing.T) {
 		endpoint func(api *API) apiFunc
 		method   string
 		values   url.Values
+		// canceled makes the request context canceled.
+		canceled bool
 
 		errType errorType
+		// wantMatcherSets are the selectors the DB is expected to receive, one
+		// comma separated string per match[] set.
+		wantMatcherSets []string
 	}{
 		// Tests for the TSDB Status endpoint.
 		{
@@ -4687,14 +4696,65 @@ func TestTSDBStatus(t *testing.T) {
 			values:   map[string][]string{"limit": {"10001"}},
 			errType:  errorBadData,
 		},
+		{
+			db:              tsdb,
+			endpoint:        tsdbStatusAPI,
+			values:          map[string][]string{"match[]": {`{job="prometheus",__name__="up"}`}},
+			errType:         errorNone,
+			wantMatcherSets: []string{`job="prometheus",__name__="up"`},
+		},
+		{
+			db:              tsdb,
+			endpoint:        tsdbStatusAPI,
+			values:          map[string][]string{"match[]": {`{job="a"}`, `{instance=~"b.*"}`}, "limit": {"5"}},
+			errType:         errorNone,
+			wantMatcherSets: []string{`job="a"`, `instance=~"b.*"`},
+		},
+		{
+			db:       tsdb,
+			endpoint: tsdbStatusAPI,
+			values:   map[string][]string{"match[]": {`up{job=`}},
+			errType:  errorBadData,
+		},
+		{
+			db:       tsdb,
+			endpoint: tsdbStatusAPI,
+			values:   map[string][]string{"match[]": {`up`, `up{job=`}},
+			errType:  errorBadData,
+		},
+		{
+			db:       tsdb,
+			endpoint: tsdbStatusAPI,
+			values:   map[string][]string{"match[]": {`up`}},
+			canceled: true,
+			errType:  errorInternal,
+		},
 	} {
 		t.Run(strconv.Itoa(i), func(t *testing.T) {
-			api := &API{db: tc.db, gatherer: prometheus.DefaultGatherer}
+			tc.db.statsMatcherSets = nil
+			api := &API{db: tc.db, gatherer: prometheus.DefaultGatherer, parser: testParser}
 			endpoint := tc.endpoint(api)
 			req, err := http.NewRequest(tc.method, fmt.Sprintf("?%s", tc.values.Encode()), http.NoBody)
 			require.NoError(t, err, "Error when creating test request")
+			if tc.canceled {
+				ctx, cancel := context.WithCancel(req.Context())
+				cancel()
+				req = req.WithContext(ctx)
+			}
 			res := endpoint(req)
 			assertAPIError(t, res.err, tc.errType)
+			if tc.errType != errorNone {
+				return
+			}
+			var gotMatcherSets []string
+			for _, ms := range tc.db.statsMatcherSets {
+				strs := make([]string, 0, len(ms))
+				for _, m := range ms {
+					strs = append(strs, m.String())
+				}
+				gotMatcherSets = append(gotMatcherSets, strings.Join(strs, ","))
+			}
+			require.Equal(t, tc.wantMatcherSets, gotMatcherSets)
 		})
 	}
 }
