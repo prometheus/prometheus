@@ -21,7 +21,6 @@ import (
 
 	"github.com/grafana/regexp"
 	"github.com/grafana/regexp/syntax"
-	"golang.org/x/text/unicode/norm"
 )
 
 const (
@@ -899,7 +898,7 @@ func (m *equalMultiStringSliceMatcher) Matches(s string) bool {
 // or against a set of prefix matchers.
 type equalMultiStringMapMatcher struct {
 	// values contains values to match a string against. If the matching is case insensitive,
-	// the values here must be lowercase.
+	// the values here are stored in their case folded canonical form, see toFoldedCanonical.
 	values map[string]struct{}
 	// lengthsMask is a bitmask of the lengths of the strings in values.
 	// If the bit at position i is set, it means that there's at least one string of length i in values.
@@ -908,17 +907,20 @@ type equalMultiStringMapMatcher struct {
 	// This can be used to filter case-sensitive values.
 	// Case-insensitive Unicode strings can have different lengths when case folded.
 	lengthsMask uint64
-	// prefixes maps strings, all of length minPrefixLen, to sets of matchers to check the rest of the string.
-	// If the matching is case insensitive, prefixes are all lowercase.
+	// prefixes maps prefixes of length minPrefixLen to sets of matchers to check the rest of the string.
+	// If the matching is case insensitive, prefixes are stored in their case folded canonical form,
+	// see toFoldedCanonical.
 	prefixes map[string][]StringMatcher
-	// minPrefixLen can be zero, meaning there are no prefix matchers.
+	// minPrefixLen can be zero, meaning there are no prefix matchers. It's a number of bytes if the
+	// matching is case sensitive, and a number of runes otherwise: case folding maps runes one to
+	// one, but it does not preserve their encoded length.
 	minPrefixLen  int
 	caseSensitive bool
 }
 
 func (m *equalMultiStringMapMatcher) add(s string) {
 	if !m.caseSensitive {
-		s = toNormalisedLower(s, nil) // Don't pass a stack buffer here - it will always escape to heap.
+		s = toFoldedCanonical(s, nil) // Don't pass a stack buffer here - it will always escape to heap.
 	} else {
 		m.lengthsMask |= lengthMask(s)
 	}
@@ -930,16 +932,12 @@ func (m *equalMultiStringMapMatcher) addPrefix(prefix string, prefixCaseSensitiv
 	if m.minPrefixLen == 0 {
 		panic("addPrefix called when no prefix length defined")
 	}
-	if len(prefix) < m.minPrefixLen {
+	s, ok := m.prefixKey(prefix, nil)
+	if !ok {
 		panic("addPrefix called with a too short prefix")
 	}
 	if m.caseSensitive != prefixCaseSensitive {
 		panic("addPrefix called with a prefix whose case sensitivity is different than the expected one")
-	}
-
-	s := prefix[:m.minPrefixLen]
-	if !m.caseSensitive {
-		s = strings.ToLower(s)
 	}
 
 	m.prefixes[s] = append(m.prefixes[s], matcher)
@@ -965,46 +963,63 @@ func (m *equalMultiStringMapMatcher) Matches(s string) bool {
 		sNorm := s
 		var a [32]byte
 		if !m.caseSensitive {
-			sNorm = toNormalisedLower(s, a[:])
+			sNorm = toFoldedCanonical(s, a[:])
 		}
 		if _, ok := m.values[sNorm]; ok {
 			return true
 		}
 	}
 
-	if m.minPrefixLen > 0 && len(s) >= m.minPrefixLen {
-		prefix := s[:m.minPrefixLen]
+	if m.minPrefixLen > 0 {
 		var a [32]byte
-		if !m.caseSensitive {
-			prefix = toNormalisedLower(s[:m.minPrefixLen], a[:])
-		}
-		for _, matcher := range m.prefixes[prefix] {
-			if matcher.Matches(s) {
-				return true
+		if prefix, ok := m.prefixKey(s, a[:]); ok {
+			for _, matcher := range m.prefixes[prefix] {
+				if matcher.Matches(s) {
+					return true
+				}
 			}
 		}
 	}
 	return false
 }
 
-// toNormalisedLower normalise the input string using "Unicode Normalization Form D" and then convert
-// it to lower case.
-func toNormalisedLower(s string, a []byte) string {
+// prefixKey returns the key under which the matchers whose prefix may match s
+// are stored in the prefixes map, and whether s is long enough to have one.
+// The optional buffer a is used to avoid an allocation if it's big enough.
+func (m *equalMultiStringMapMatcher) prefixKey(s string, a []byte) (string, bool) {
+	if m.caseSensitive {
+		if len(s) < m.minPrefixLen {
+			return "", false
+		}
+		return s[:m.minPrefixLen], true
+	}
+	return toFoldedCanonicalPrefix(s, m.minPrefixLen, a)
+}
+
+// toFoldedCanonical returns the canonical form of s under Unicode simple case
+// folding, which is the folding the regexp engine applies for case-insensitive
+// matching: every rune is replaced by the canonical rune of the set of runes it
+// folds with, see toFoldedCanonicalRune. Two strings have the same canonical
+// form if and only if the regexp engine considers them equal ignoring case, so
+// e.g. "ſtreet" and "STREET" both canonicalise to "street".
+// The optional buffer a is used to avoid an allocation if it's big enough.
+func toFoldedCanonical(s string, a []byte) string {
 	for i := 0; i < len(s); i++ {
 		c := s[i]
 		if c >= utf8.RuneSelf {
-			return strings.Map(unicode.ToLower, norm.NFKD.String(s))
+			return toFoldedCanonicalSlow(s, a)
 		}
 		if 'A' <= c && c <= 'Z' {
-			return toNormalisedLowerSlow(s, i, a)
+			return toFoldedCanonicalASCII(s, i, a)
 		}
 	}
 	return s
 }
 
-// toNormalisedLowerSlow is split from toNormalisedLower because having a call
-// to `copy` slows it down even when it is not called.
-func toNormalisedLowerSlow(s string, i int, a []byte) string {
+// toFoldedCanonicalASCII canonicalises s, which is ASCII up to the byte at
+// index i. It is split from toFoldedCanonical because having a call to `copy`
+// slows it down even when it is not called.
+func toFoldedCanonicalASCII(s string, i int, a []byte) string {
 	var buf []byte
 	if cap(a) > len(s) {
 		buf = a[:len(s)]
@@ -1015,13 +1030,95 @@ func toNormalisedLowerSlow(s string, i int, a []byte) string {
 	for ; i < len(s); i++ {
 		c := s[i]
 		if c >= utf8.RuneSelf {
-			return strings.Map(unicode.ToLower, norm.NFKD.String(s))
+			// Start over, runes have to be canonicalised one by one. The buffer
+			// can be reused because the slow path reads from s.
+			return toFoldedCanonicalSlow(s, a)
 		}
 		if 'A' <= c && c <= 'Z' {
 			buf[i] = c + 'a' - 'A'
 		}
 	}
 	return yoloString(buf)
+}
+
+// toFoldedCanonicalSlow canonicalises s rune by rune. It is only used when s
+// contains a non-ASCII rune, as ranging over runes is slower than scanning
+// bytes.
+func toFoldedCanonicalSlow(s string, a []byte) string {
+	buf := foldingBuffer(a, len(s))
+	for _, r := range s {
+		buf = utf8.AppendRune(buf, toFoldedCanonicalRune(r))
+	}
+	return yoloString(buf)
+}
+
+// toFoldedCanonicalPrefix returns the canonical form (see toFoldedCanonical) of
+// the first n runes of s, and whether s has at least n runes. Prefixes are
+// measured in runes because case folding maps runes one to one, while it does
+// not preserve their encoded length: 'k' folds with 'K' (Kelvin sign, U+212A),
+// which is 3 bytes long.
+func toFoldedCanonicalPrefix(s string, n int, a []byte) (string, bool) {
+	// Fast path: if the first n bytes are ASCII then they are also the first n runes.
+	if len(s) >= n {
+		i := 0
+		for ; i < n; i++ {
+			if s[i] >= utf8.RuneSelf {
+				break
+			}
+		}
+		if i == n {
+			return toFoldedCanonical(s[:n], a), true
+		}
+	}
+
+	buf := foldingBuffer(a, len(s))
+	count := 0
+	for _, r := range s {
+		if count == n {
+			break
+		}
+		buf = utf8.AppendRune(buf, toFoldedCanonicalRune(r))
+		count++
+	}
+	if count < n {
+		return "", false
+	}
+	return yoloString(buf), true
+}
+
+// toFoldedCanonicalRune returns the canonical rune of the set of runes r folds
+// with under Unicode simple case folding: the lowest of them, lower cased if it
+// is an ASCII letter. Lower casing keeps ASCII strings, which are the common
+// case, unchanged by the canonicalisation, and it is unambiguous because runes
+// folding with an ASCII letter also fold with its lower case form.
+func toFoldedCanonicalRune(r rune) rune {
+	if r < utf8.RuneSelf {
+		if 'A' <= r && r <= 'Z' {
+			return r + 'a' - 'A'
+		}
+		return r
+	}
+	// The runes folding with each other form a cycle ordered by code point,
+	// which unicode.SimpleFold walks, so the lowest one identifies the cycle.
+	c := r
+	for f := unicode.SimpleFold(r); f != r; f = unicode.SimpleFold(f) {
+		if f < c {
+			c = f
+		}
+	}
+	if 'A' <= c && c <= 'Z' {
+		c += 'a' - 'A'
+	}
+	return c
+}
+
+// foldingBuffer returns an empty buffer with room for size bytes, reusing a if
+// it is large enough.
+func foldingBuffer(a []byte, size int) []byte {
+	if cap(a) >= size {
+		return a[:0]
+	}
+	return make([]byte, 0, size)
 }
 
 // anyStringWithoutNewlineMatcher is a stringMatcher which matches any string
@@ -1120,8 +1217,14 @@ func optimizeEqualOrPrefixStringMatchers(input StringMatcher, threshold int) Str
 			caseSensitive = prefixCaseSensitive
 			caseSensitiveSet = true
 		}
-		if numPrefixes == 0 || len(prefix) < minPrefixLength {
-			minPrefixLength = len(prefix)
+		// Case-insensitive prefixes are keyed by their first minPrefixLength runes
+		// instead of bytes, see equalMultiStringMapMatcher.minPrefixLen.
+		prefixLength := len(prefix)
+		if !prefixCaseSensitive {
+			prefixLength = utf8.RuneCountInString(prefix)
+		}
+		if numPrefixes == 0 || prefixLength < minPrefixLength {
+			minPrefixLength = prefixLength
 		}
 
 		numPrefixes++
