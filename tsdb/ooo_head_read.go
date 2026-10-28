@@ -253,8 +253,7 @@ func (cr *HeadAndOOOChunkReader) chunkOrIterable(meta chunks.Meta, copyLastChunk
 	// This means that the series has been garbage collected.
 	if s == nil {
 		// The reader of the in-order chunks is nil when the reader is used to write a block.
-		if cr.cr != nil && cr.cr.evicting.contains(sid) {
-			cr.head.metrics.chunkReadsOfRemovedSeries.Inc()
+		if cr.cr != nil && cr.cr.skipEvictedSeries(storage.ErrNotFound, meta) {
 			return nil, noSamples{}, 0, nil
 		}
 		return nil, nil, 0, storage.ErrNotFound
@@ -587,14 +586,13 @@ type HeadAndOOOQuerier struct {
 
 var _ storage.Searcher = &HeadAndOOOQuerier{}
 
-func NewHeadAndOOOQuerier(inoMint, mint, maxt int64, head *Head, oooIsoState *oooIsolationState, querier storage.Querier) storage.Querier {
-	return newHeadAndOOOQuerier(inoMint, mint, maxt, head, oooIsoState, querier, false)
-}
-
-// newHeadAndOOOQuerier is NewHeadAndOOOQuerier, and if skipEvictedSeries is true, the querier skips the chunks
-// of the series that CompactSelectedSeries or CompactStaleHead are removing from the head, instead of failing to
-// read them if they are removed after the querier selected them. See headChunkReader.evicting.
-func newHeadAndOOOQuerier(inoMint, mint, maxt int64, head *Head, oooIsoState *oooIsolationState, querier storage.Querier, skipEvictedSeries bool) storage.Querier {
+// NewHeadAndOOOQuerier returns a Querier that queries both the head and the
+// out-of-order head.
+//
+// If skipEvictedSeries is true, chunks removed by the series eviction in progress
+// when the Querier is created are skipped instead of failing the query.
+// See headChunkReader.evicting.
+func NewHeadAndOOOQuerier(inoMint, mint, maxt int64, head *Head, oooIsoState *oooIsolationState, querier storage.Querier, skipEvictedSeries bool) storage.Querier {
 	cr := &headChunkReader{
 		head:     head,
 		mint:     mint,
@@ -676,14 +674,13 @@ type HeadAndOOOChunkQuerier struct {
 	querier    storage.ChunkQuerier
 }
 
-func NewHeadAndOOOChunkQuerier(inoMint, mint, maxt int64, head *Head, oooIsoState *oooIsolationState, querier storage.ChunkQuerier) storage.ChunkQuerier {
-	return newHeadAndOOOChunkQuerier(inoMint, mint, maxt, head, oooIsoState, querier, false)
-}
-
-// newHeadAndOOOChunkQuerier is NewHeadAndOOOChunkQuerier, and if skipEvictedSeries is true, the querier skips
-// the chunks of the series that CompactSelectedSeries or CompactStaleHead are removing from the head, instead of
-// failing to read them if they are removed after the querier selected them. See headChunkReader.evicting.
-func newHeadAndOOOChunkQuerier(inoMint, mint, maxt int64, head *Head, oooIsoState *oooIsolationState, querier storage.ChunkQuerier, skipEvictedSeries bool) storage.ChunkQuerier {
+// NewHeadAndOOOChunkQuerier returns a ChunkQuerier that queries both the head
+// and the out-of-order head.
+//
+// If skipEvictedSeries is true, chunks removed by the series eviction in progress
+// when the ChunkQuerier is created are skipped instead of failing the query.
+// See headChunkReader.evicting.
+func NewHeadAndOOOChunkQuerier(inoMint, mint, maxt int64, head *Head, oooIsoState *oooIsolationState, querier storage.ChunkQuerier, skipEvictedSeries bool) storage.ChunkQuerier {
 	cr := &headChunkReader{
 		head:     head,
 		mint:     mint,

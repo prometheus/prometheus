@@ -2652,7 +2652,9 @@ func (db *DB) Querier(mint, maxt int64) (_ storage.Querier, err error) {
 	var headQuerier storage.Querier
 	inoMint := max(db.head.MinTime(), mint)
 	if maxt >= db.head.MinTime() || overlapsOOO {
-		rh := newRangeHeadForQuery(db.head, mint, maxt)
+		rh := NewRangeHead(db.head, mint, maxt)
+		// Skip the chunks of series evicted while the query runs, because the blocks have their samples.
+		rh.skipEvictedSeries = true
 		var err error
 		headQuerier, err = db.blockQuerierFunc(rh, mint, maxt)
 		if err != nil {
@@ -2671,7 +2673,9 @@ func (db *DB) Querier(mint, maxt int64) (_ storage.Querier, err error) {
 			headQuerier = nil
 		}
 		if getNew {
-			rh := newRangeHeadForQuery(db.head, newMint, maxt)
+			rh := NewRangeHead(db.head, newMint, maxt)
+			// Skip the chunks of series evicted while the query runs, because the blocks have their samples.
+			rh.skipEvictedSeries = true
 			headQuerier, err = db.blockQuerierFunc(rh, newMint, maxt)
 			if err != nil {
 				return nil, fmt.Errorf("open block querier for head while getting new querier %s: %w", rh, err)
@@ -2682,7 +2686,7 @@ func (db *DB) Querier(mint, maxt int64) (_ storage.Querier, err error) {
 	if overlapsOOO {
 		// We need to fetch from in-order and out-of-order chunks: wrap the headQuerier.
 		isoState := db.head.oooIso.TrackReadAfter(db.lastGarbageCollectedMmapRef)
-		headQuerier = newHeadAndOOOQuerier(inoMint, mint, maxt, db.head, isoState, headQuerier, true)
+		headQuerier = NewHeadAndOOOQuerier(inoMint, mint, maxt, db.head, isoState, headQuerier, true)
 	}
 
 	if headQuerier != nil {
@@ -2731,7 +2735,9 @@ func (db *DB) blockChunkQuerierForRange(mint, maxt int64) (_ []storage.ChunkQuer
 	var headQuerier storage.ChunkQuerier
 	inoMint := max(db.head.MinTime(), mint)
 	if maxt >= db.head.MinTime() || overlapsOOO {
-		rh := newRangeHeadForQuery(db.head, mint, maxt)
+		rh := NewRangeHead(db.head, mint, maxt)
+		// Skip the chunks of series evicted while the query runs, because the blocks have their samples.
+		rh.skipEvictedSeries = true
 		headQuerier, err = db.blockChunkQuerierFunc(rh, mint, maxt)
 		if err != nil {
 			return nil, fmt.Errorf("open querier for head %s: %w", rh, err)
@@ -2749,7 +2755,9 @@ func (db *DB) blockChunkQuerierForRange(mint, maxt int64) (_ []storage.ChunkQuer
 			headQuerier = nil
 		}
 		if getNew {
-			rh := newRangeHeadForQuery(db.head, newMint, maxt)
+			rh := NewRangeHead(db.head, newMint, maxt)
+			// Skip the chunks of series evicted while the query runs, because the blocks have their samples.
+			rh.skipEvictedSeries = true
 			headQuerier, err = db.blockChunkQuerierFunc(rh, newMint, maxt)
 			if err != nil {
 				return nil, fmt.Errorf("open querier for head while getting new querier %s: %w", rh, err)
@@ -2760,7 +2768,7 @@ func (db *DB) blockChunkQuerierForRange(mint, maxt int64) (_ []storage.ChunkQuer
 	if overlapsOOO {
 		// We need to fetch from in-order and out-of-order chunks: wrap the headQuerier.
 		isoState := db.head.oooIso.TrackReadAfter(db.lastGarbageCollectedMmapRef)
-		headQuerier = newHeadAndOOOChunkQuerier(inoMint, mint, maxt, db.head, isoState, headQuerier, true)
+		headQuerier = NewHeadAndOOOChunkQuerier(inoMint, mint, maxt, db.head, isoState, headQuerier, true)
 	}
 
 	if headQuerier != nil {

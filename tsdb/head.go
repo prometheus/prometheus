@@ -1924,14 +1924,6 @@ func NewRangeHead(head *Head, mint, maxt int64) *RangeHead {
 	}
 }
 
-// newRangeHeadForQuery returns a *RangeHead for the queriers, whose chunk reader skips the chunks of the
-// series that CompactSelectedSeries or CompactStaleHead remove from the head while the query is reading them.
-func newRangeHeadForQuery(head *Head, mint, maxt int64) *RangeHead {
-	rh := NewRangeHead(head, mint, maxt)
-	rh.skipEvictedSeries = true
-	return rh
-}
-
 // NewRangeHeadWithIsolationDisabled returns a *RangeHead that does not create an isolationState.
 func NewRangeHeadWithIsolationDisabled(head *Head, mint, maxt int64) *RangeHead {
 	rh := NewRangeHead(head, mint, maxt)

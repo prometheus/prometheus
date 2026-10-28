@@ -591,18 +591,18 @@ func TestSeriesRemoval_BlockIsAddedBeforeSeriesAreRemoved(t *testing.T) {
 	}
 }
 
-// TestSeriesEviction_ExportedHeadAndOOOQueriersDoNotSkipRemovedSeries verifies that the exported constructors of the
-// head and out-of-order queriers still fail to read the chunks of a series that was removed from the head, as they
-// always did.
-func TestSeriesEviction_ExportedHeadAndOOOQueriersDoNotSkipRemovedSeries(t *testing.T) {
+// TestSeriesEviction_HeadAndOOOQueriersWithoutSkipEvictedSeriesDoNotSkipRemovedSeries verifies that the head and
+// out-of-order queriers, if they are not asked to skip the evicted series, still fail to read the chunks of a series
+// that was removed from the head, as they always did.
+func TestSeriesEviction_HeadAndOOOQueriersWithoutSkipEvictedSeriesDoNotSkipRemovedSeries(t *testing.T) {
 	const mint, maxt = 0, 1000
 
 	tests := map[string]func(t *testing.T, db *DB, isoState *oooIsolationState) *readingSeries{
 		"NewHeadAndOOOQuerier": func(t *testing.T, db *DB, iso *oooIsolationState) *readingSeries {
-			return selectSamples(t, NewHeadAndOOOQuerier(0, mint, maxt, db.head, iso, nil))
+			return selectSamples(t, NewHeadAndOOOQuerier(0, mint, maxt, db.head, iso, nil, false))
 		},
 		"NewHeadAndOOOChunkQuerier": func(t *testing.T, db *DB, iso *oooIsolationState) *readingSeries {
-			return selectChunks(t, NewHeadAndOOOChunkQuerier(0, mint, maxt, db.head, iso, nil))
+			return selectChunks(t, NewHeadAndOOOChunkQuerier(0, mint, maxt, db.head, iso, nil, false))
 		},
 	}
 
