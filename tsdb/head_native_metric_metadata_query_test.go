@@ -32,7 +32,7 @@ import (
 )
 
 func TestNativeMetricMetadataSnapshotOwnership(t *testing.T) {
-	store := newNativeMetricMetadataStore()
+	store := newNativeMetricMetadataTestStore()
 	m := metadata.Metadata{Type: model.MetricTypeUnknown, Help: "initial"}
 	commitNativeMetricMetadata(store, 1, makeNativeMetricMetadataPoint(100, m))
 	var snapshot nativeMetricMetadataSnapshot
@@ -117,32 +117,32 @@ func TestNativeMetricMetadataPostings(t *testing.T) {
 			want, generationChanged bool
 		}{
 			{name: "absent page published", add: []int{0}, want: true, generationChanged: true},
-			{name: "singleton grows", seed: 1, add: []int{1}, target: 1, want: true, generationChanged: true},
-			{name: "sparse slot inserted", seed: 2, add: []int{2}, target: 2, want: true},
+			{name: "singleton grows", seed: 1, add: []int{1}, target: 1, want: true},
+			{name: "member inserted", seed: 2, add: []int{2}, target: 2, want: true},
 			{name: "next bitmap word inserted", seed: 2, add: []int{32}, target: 32, want: true},
 			{name: "last bitmap word inserted", seed: 2, add: []int{224}, target: 224, want: true},
-			{name: "sparse page replaced", seed: 3, add: []int{3}, target: 3, want: true, generationChanged: true},
-			{name: "dense slot inserted", seed: 97, add: []int{97}, target: 97, want: true},
-			{name: "sparse slot removed", seed: 3, remove: []int{2}, target: 2},
-			{name: "dense slot removed", seed: 100, remove: []int{99}, target: 99},
-			{name: "half-tombstoned sparse page kept", seed: 48, remove: span(24, 48), target: 0, want: true},
-			{name: "mostly tombstoned sparse page rebuilt", seed: 48, remove: span(23, 48), target: 0, want: true, generationChanged: true},
-			{name: "dense page retained", seed: 97, remove: span(80, 97), target: 79, want: true},
-			{name: "page becomes singleton", seed: 2, remove: []int{1}, want: true, generationChanged: true},
+			{name: "fourth member inserted", seed: 3, add: []int{3}, target: 3, want: true},
+			{name: "member inserted in occupied page", seed: 97, add: []int{97}, target: 97, want: true},
+			{name: "member removed", seed: 3, remove: []int{2}, target: 2},
+			{name: "member removed from occupied page", seed: 100, remove: []int{99}, target: 99},
+			{name: "half the members removed", seed: 48, remove: span(24, 48), target: 0, want: true},
+			{name: "most members removed", seed: 48, remove: span(23, 48), target: 0, want: true},
+			{name: "partial deletion retains page", seed: 97, remove: span(80, 97), target: 79, want: true},
+			{name: "page becomes singleton", seed: 2, remove: []int{1}, want: true},
 			{name: "last member removed", seed: 1, remove: []int{0}, generationChanged: true},
 			{name: "reset", seed: 2, reset: true, generationChanged: true},
 			{name: "reset and recreate", seed: 2, reset: true, add: []int{0}, want: true, generationChanged: true},
 			{name: "history update", seed: 3, update: true, want: true},
-			{name: "last full width reference", seed: 1, add: []int{255}, target: 255, want: true, generationChanged: true},
+			{name: "last full width reference", seed: 1, add: []int{255}, target: 255, want: true},
 		} {
 			for _, seek := range []bool{false, true} {
 				t.Run(tc.name+"/seek="+strconv.FormatBool(seek), func(t *testing.T) {
-					store := newNativeMetricMetadataStore()
+					store := newNativeMetricMetadataTestStore()
 					base := chunks.HeadSeriesRef(math.MaxUint64 & ^uint64(nativeMetadataPageSize-1))
 					for offset := range tc.seed {
 						commitNativeMetricMetadata(store, base+chunks.HeadSeriesRef(offset), makeNativeMetricMetadataPoint(100, metadata.Metadata{Help: "initial"}))
 					}
-					p := &nativeMetricMetadataPostings{store: store}
+					p := &nativeMetricMetadataPostings{store: store.nativeMetricMetadataStore}
 					require.Equal(t, tc.seed > 0, p.has(base))
 					before := store.directoryGeneration.Load()
 					if tc.reset {
@@ -176,34 +176,35 @@ func TestNativeMetricMetadataPostings(t *testing.T) {
 					require.Equal(t, tc.want, got)
 					if got {
 						require.Equal(t, storage.SeriesRef(ref), p.At())
-						require.Same(t, store.indexedSeries(ref), nativeMetadataDirectorySeries(p.page, ref))
+						require.True(t, p.page.contains(ref))
 					}
 				})
 			}
 		}
 	})
 	t.Run("capture racing replacement retains the earlier generation", func(t *testing.T) {
-		store := newNativeMetricMetadataStore()
+		store := newNativeMetricMetadataTestStore()
 		point := makeNativeMetricMetadataPoint(100, metadata.Metadata{Help: "initial"})
 		commitNativeMetricMetadata(store, 0, point)
 		generation := store.directoryGeneration.Load()
 		page, _ := store.directory.Load(uint64(0))
+		store.delete(map[storage.SeriesRef]struct{}{0: {}})
 		commitNativeMetricMetadata(store, 1, point)
-		p := &nativeMetricMetadataPostings{store: store, page: page, pageKey: 0, pageGeneration: generation, pageCached: true}
+		p := &nativeMetricMetadataPostings{store: store.nativeMetricMetadataStore, page: page.(*nativeMetricMetadataPage), pageKey: 0, pageGeneration: generation, pageCached: true}
 		require.True(t, p.has(1))
 		require.Equal(t, store.directoryGeneration.Load(), p.pageGeneration)
 		require.False(t, p.has(256), "a different page must not reuse the cached value")
-		require.True(t, p.has(0), "returning to page zero must reload it")
+		require.True(t, p.has(1), "returning to page zero must reload it")
 	})
 	t.Run("bitmap offsets do not alias between full page keys", func(t *testing.T) {
-		store := newNativeMetricMetadataStore()
+		store := newNativeMetricMetadataTestStore()
 		point := makeNativeMetricMetadataPoint(100, metadata.Metadata{Help: "test"})
 		for _, ref := range []chunks.HeadSeriesRef{1, 3, 1<<32 + 2, 1<<32 + 4} {
 			commitNativeMetricMetadata(store, ref, point)
 		}
 		p := &nativeMetricMetadataPostings{
 			Postings: index.NewListPostings([]storage.SeriesRef{1, 2, 3, 257, 259, 1<<32 + 1, 1<<32 + 2, 1<<32 + 3, 1<<32 + 4}),
-			store:    store,
+			store:    store.nativeMetricMetadataStore,
 		}
 		require.True(t, p.Next())
 		require.Equal(t, storage.SeriesRef(1), p.At())
@@ -237,31 +238,33 @@ func TestHeadNativeMetricMetadataMatchersAndLimit(t *testing.T) {
 	}
 
 	app := head.AppenderV2(ctx)
-	mustAppendV2(t, app, 0, labels.FromStrings(labels.MetricName, "c", "job", "api"), 102, 2, storage.AOptions{Metadata: metadata.Metadata{Type: model.MetricTypeGauge, Help: "c"}})
+	mustAppendV2(t, app, 0, labels.FromStrings(labels.MetricName, "c", "job", "worker"), 102, 2, storage.AOptions{Metadata: metadata.Metadata{Type: model.MetricTypeGauge, Help: "c"}})
 	require.NoError(t, app.Commit())
 
 	jobMatcher := labels.MustNewMatcher(labels.MatchEqual, "job", "api")
 	nameMatcher := labels.MustNewMatcher(labels.MatchEqual, labels.MetricName, "a")
+	cMatcher := labels.MustNewMatcher(labels.MatchEqual, labels.MetricName, "c")
 	for _, tc := range []struct {
 		name          string
+		matchers      [][]*labels.Matcher
 		limit         int
 		wantNames     []string
 		wantTruncated bool
 	}{
-		{
-			name:          "limit one reports truncation",
-			limit:         1,
-			wantNames:     []string{"a"},
-			wantTruncated: true,
-		},
-		{
-			name:      "limit equal to result count",
-			limit:     3,
-			wantNames: []string{"a", "b", "c"},
-		},
+		{name: "OR branches contribute independently", matchers: [][]*labels.Matcher{{jobMatcher}, {cMatcher}}, wantNames: []string{"a", "b", "c"}},
+		{name: "overlapping OR branches deduplicate", matchers: [][]*labels.Matcher{{jobMatcher}, {nameMatcher}, {cMatcher}}, wantNames: []string{"a", "b", "c"}},
+		{name: "AND within a set", matchers: [][]*labels.Matcher{{jobMatcher, nameMatcher}}, wantNames: []string{"a"}},
+		{name: "contradictory AND", matchers: [][]*labels.Matcher{{jobMatcher, cMatcher}}},
+		{name: "no sets"},
+		{name: "empty set", matchers: [][]*labels.Matcher{{}}},
+		{name: "nil set", matchers: [][]*labels.Matcher{nil}},
+		{name: "empty sets contribute no matches", matchers: [][]*labels.Matcher{{}, {jobMatcher}, nil}, wantNames: []string{"a", "b"}},
+		{name: "limit one reports truncation", matchers: [][]*labels.Matcher{{jobMatcher}, {cMatcher}}, limit: 1, wantNames: []string{"a"}, wantTruncated: true},
+		{name: "limit equal to result count", matchers: [][]*labels.Matcher{{jobMatcher}, {cMatcher}}, limit: 3, wantNames: []string{"a", "b", "c"}},
+		{name: "negative limit is unlimited", matchers: [][]*labels.Matcher{{jobMatcher}, {cMatcher}}, limit: -1, wantNames: []string{"a", "b", "c"}},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			result, truncated, err := head.nativeMetricMetadataForMatchers(ctx, [][]*labels.Matcher{{jobMatcher}, {nameMatcher}}, tc.limit)
+			result, truncated, err := head.nativeMetricMetadataForMatchers(ctx, tc.matchers, tc.limit)
 			require.NoError(t, err)
 			require.Equal(t, tc.wantTruncated, truncated)
 			require.Len(t, result, len(tc.wantNames))
@@ -296,7 +299,7 @@ func TestHeadNativeMetricMetadataMatchersAndLimit(t *testing.T) {
 		//
 		// TestHeadNativeMetricMetadataQueryConcurrentDeletion covers deletion
 		// after references have been selected, while consuming the postings.
-		deleted, _, _, _, _, _, _, _, _ := head.series.gc(500, 0)
+		deleted, _, _, _, _, _, _, _, _, _ := head.series.gc(500, 0)
 		require.Len(t, deleted, 1, "gc must expire exactly the trailing series")
 		for ref := range deleted {
 			zRef = ref

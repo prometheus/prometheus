@@ -62,18 +62,54 @@ func nativeMetadataTxn(app storage.AppenderV2) *nativeMetricMetadataAppender {
 	return app.(*headAppenderV2).nativeMetricMetadata
 }
 
-func (s *nativeMetricMetadataStore) indexedSeries(ref chunks.HeadSeriesRef) *memSeries {
-	page, _ := s.directory.Load(uint64(ref) >> nativeMetadataPageBits)
-	return nativeMetadataDirectorySeries(page, ref)
+// nativeMetricMetadataTestStore owns stand-in series separately from presence.
+type nativeMetricMetadataTestStore struct {
+	*nativeMetricMetadataStore
+	seriesByRef sync.Map
 }
 
-// seriesForTest reuses the series that owns committed history, or constructs a
-// stand-in for a new reference. Uncommitted observations are grouped by reference.
-func (s *nativeMetricMetadataStore) seriesForTest(ref chunks.HeadSeriesRef) *memSeries {
-	if series := s.indexedSeries(ref); series != nil {
-		return series
+func newNativeMetricMetadataTestStore() *nativeMetricMetadataTestStore {
+	return &nativeMetricMetadataTestStore{nativeMetricMetadataStore: newNativeMetricMetadataStore()}
+}
+
+func (s *nativeMetricMetadataTestStore) indexedSeries(ref chunks.HeadSeriesRef) *memSeries {
+	if !s.has(ref) {
+		return nil
 	}
-	return &memSeries{ref: ref}
+	series, _ := s.seriesByRef.Load(ref)
+	if series == nil {
+		return nil
+	}
+	return series.(*memSeries)
+}
+
+func (s *nativeMetricMetadataTestStore) seriesForTest(ref chunks.HeadSeriesRef) *memSeries {
+	series, _ := s.seriesByRef.LoadOrStore(ref, &memSeries{ref: ref})
+	return series.(*memSeries)
+}
+
+func (s *nativeMetricMetadataTestStore) delete(refs map[storage.SeriesRef]struct{}) {
+	var versions int64
+	for ref := range refs {
+		value, ok := s.seriesByRef.LoadAndDelete(chunks.HeadSeriesRef(ref))
+		if !ok {
+			continue
+		}
+		series := value.(*memSeries)
+		series.Lock()
+		series.setGCed()
+		if native := series.nativeMetadataLocked(); native != nil {
+			versions += int64(len(native.older) + 1)
+		}
+		series.Unlock()
+	}
+
+	s.nativeMetricMetadataStore.delete(refs, versions)
+}
+
+func (s *nativeMetricMetadataTestStore) reset() {
+	s.seriesByRef.Clear()
+	s.nativeMetricMetadataStore.reset()
 }
 
 func legacyMetadataForTest(s *memSeries) *metadata.Metadata {
@@ -147,12 +183,13 @@ func setGCedForTest(s *memSeries) {
 }
 
 func (s *nativeMetricMetadataStore) has(ref chunks.HeadSeriesRef) bool {
-	return s.indexedSeries(ref) != nil
+	p := nativeMetricMetadataPostings{store: s}
+	return p.has(ref)
 }
 
 // snapshot copies ref's series-owned history while holding its series lock.
 // It reports whether the history exists, leaving snapshot unchanged on a miss.
-func (s *nativeMetricMetadataStore) snapshot(ref chunks.HeadSeriesRef, snapshot *nativeMetricMetadataSnapshot) bool {
+func (s *nativeMetricMetadataTestStore) snapshot(ref chunks.HeadSeriesRef, snapshot *nativeMetricMetadataSnapshot) bool {
 	series := s.indexedSeries(ref)
 	if series == nil {
 		return false
@@ -163,7 +200,7 @@ func (s *nativeMetricMetadataStore) snapshot(ref chunks.HeadSeriesRef, snapshot 
 	return true
 }
 
-func (s *nativeMetricMetadataStore) get(ref chunks.HeadSeriesRef) ([]NativeMetricMetadataVersion, bool, bool) {
+func (s *nativeMetricMetadataTestStore) get(ref chunks.HeadSeriesRef) ([]NativeMetricMetadataVersion, bool, bool) {
 	var snapshot nativeMetricMetadataSnapshot
 	ok := s.snapshot(ref, &snapshot)
 	if !ok {
@@ -182,10 +219,29 @@ func mustAppendV2(t testing.TB, app storage.AppenderV2, ref storage.SeriesRef, l
 	return ref
 }
 
-// requireNativeVersions requires that ref has exactly want, with no truncation.
-func requireNativeVersions(t *testing.T, store *nativeMetricMetadataStore, ref chunks.HeadSeriesRef, want []NativeMetricMetadataVersion) {
+// nativeMetricMetadataVersionsForTest snapshots a series independently of presence.
+func nativeMetricMetadataVersionsForTest(series *memSeries) ([]NativeMetricMetadataVersion, bool, bool) {
+	if series == nil {
+		return nil, false, false
+	}
+	series.Lock()
+	defer series.Unlock()
+	native := series.nativeMetadataLocked()
+	if native == nil || series.isGCed() {
+		return nil, false, false
+	}
+	snapshot := native.snapshotLocked()
+	return snapshot.expand(), snapshot.truncated, true
+}
+
+func (h *Head) nativeMetricMetadataForTest(ref chunks.HeadSeriesRef) ([]NativeMetricMetadataVersion, bool, bool) {
+	return nativeMetricMetadataVersionsForTest(h.series.getByID(ref))
+}
+
+// requireNativeVersions requires that series has exactly want, without truncation.
+func requireNativeVersions(t *testing.T, series *memSeries, want []NativeMetricMetadataVersion) {
 	t.Helper()
-	got, truncated, ok := store.get(ref)
+	got, truncated, ok := nativeMetricMetadataVersionsForTest(series)
 	require.True(t, ok)
 	require.False(t, truncated)
 	require.Equal(t, want, got)
@@ -193,7 +249,7 @@ func requireNativeVersions(t *testing.T, store *nativeMetricMetadataStore, ref c
 
 // commitNativeMetricMetadata applies observations for ref as one transaction
 // through the same path ingestion uses.
-func commitNativeMetricMetadata(store *nativeMetricMetadataStore, ref chunks.HeadSeriesRef, observations ...nativeMetricMetadataPoint) {
+func commitNativeMetricMetadata(store *nativeMetricMetadataTestStore, ref chunks.HeadSeriesRef, observations ...nativeMetricMetadataPoint) {
 	appender := store.getAppender()
 	for _, observation := range observations {
 		appender.observe(store.seriesForTest(ref), observation.effectiveFrom, *observation.metadata)
@@ -235,7 +291,7 @@ func applyNativeHistoryModel(want []NativeMetricMetadataVersion, points []native
 
 func TestNativeMetricMetadataStore(t *testing.T) {
 	t.Run("atomic counter alignment", func(t *testing.T) {
-		store := newNativeMetricMetadataStore()
+		store := newNativeMetricMetadataTestStore()
 		for _, tc := range []struct {
 			name    string
 			pointer unsafe.Pointer
@@ -251,7 +307,7 @@ func TestNativeMetricMetadataStore(t *testing.T) {
 	})
 
 	t.Run("presence uses full references and resets without mutating removed history", func(t *testing.T) {
-		store := newNativeMetricMetadataStore()
+		store := newNativeMetricMetadataTestStore()
 		refs := []chunks.HeadSeriesRef{1, 1 + (1 << 32), 1 + (2 << 32)}
 		for _, ref := range refs {
 			for version := range maxNativeMetricMetadataVersions + 1 {
@@ -275,7 +331,7 @@ func TestNativeMetricMetadataStore(t *testing.T) {
 	})
 
 	t.Run("concurrent first publication has one owner and one count", func(t *testing.T) {
-		store := newNativeMetricMetadataStore()
+		store := newNativeMetricMetadataTestStore()
 		series := store.seriesForTest(1)
 		start := make(chan struct{})
 		var workers sync.WaitGroup
@@ -302,7 +358,7 @@ func TestNativeMetricMetadataStore(t *testing.T) {
 	t.Run("merge matches an independent bounded history model", func(t *testing.T) {
 		random := rand.New(rand.NewPCG(19, 73))
 		for trial := range 32 {
-			store := newNativeMetricMetadataStore()
+			store := newNativeMetricMetadataTestStore()
 			var want []NativeMetricMetadataVersion
 			var evictions uint64
 			for round := range 64 {
@@ -357,11 +413,11 @@ func TestNativeMetricMetadataStore(t *testing.T) {
 		}
 		random := rand.New(rand.NewPCG(23, 41))
 		for trial := range 4 {
-			store := newNativeMetricMetadataStore()
+			store := newNativeMetricMetadataTestStore()
 			// Fetch each series once, so grouping by reference or pointer is equivalent.
 			models := make(map[chunks.HeadSeriesRef]*model, len(refs))
 			for _, ref := range refs {
-				models[ref] = &model{series: &memSeries{ref: ref}}
+				models[ref] = &model{series: store.seriesForTest(ref)}
 			}
 			for round := range 6 {
 				pending := make(map[chunks.HeadSeriesRef][]nativeMetricMetadataPoint, len(refs))
@@ -478,7 +534,7 @@ func TestNativeMetricMetadataAppender(t *testing.T) {
 		require.Equal(t, uintptr(4), unsafe.Sizeof(nativeMetricMetadataValueRef(0)))
 		require.Equal(t, uintptr(4), unsafe.Sizeof(nativeMetricMetadataObservationRef(0)))
 		appender := newNativeMetricMetadataAppender(newNativeMetricMetadataValueCache())
-		store := newNativeMetricMetadataStore()
+		store := newNativeMetricMetadataTestStore()
 		for i := range maxNativeMetricMetadataValues {
 			m := metadata.Metadata{Help: strconv.Itoa(i)}
 			ref := appender.metadataReference(store.seriesForTest(1), m)
@@ -501,7 +557,7 @@ func TestNativeMetricMetadataAppender(t *testing.T) {
 	})
 
 	t.Run("reuses adjacent metadata across series", func(t *testing.T) {
-		store := newNativeMetricMetadataStore()
+		store := newNativeMetricMetadataTestStore()
 		appender := store.getAppender()
 		m := metadata.Metadata{Type: model.MetricTypeUnknown, Help: "shared"}
 
@@ -519,7 +575,7 @@ func TestNativeMetricMetadataAppender(t *testing.T) {
 	})
 
 	t.Run("defers cloning and bounds raw values", func(t *testing.T) {
-		store := newNativeMetricMetadataStore()
+		store := newNativeMetricMetadataTestStore()
 		appender := store.getAppender()
 		m := metadata.Metadata{Type: model.MetricTypeUnknown, Help: "A"}
 
@@ -540,7 +596,7 @@ func TestNativeMetricMetadataAppender(t *testing.T) {
 	})
 
 	t.Run("reuses a committed pointer after the raw value limit", func(t *testing.T) {
-		store := newNativeMetricMetadataStore()
+		store := newNativeMetricMetadataTestStore()
 		appender := store.getAppender()
 		ref := chunks.HeadSeriesRef(1)
 		m := metadata.Metadata{Type: model.MetricTypeUnknown, Help: "stable"}
@@ -568,7 +624,7 @@ func TestNativeMetricMetadataAppender(t *testing.T) {
 			for selected := range versions {
 				for _, raw := range []int{0, 127, 128, 129} {
 					t.Run(strconv.Itoa(versions)+" versions/"+strconv.Itoa(selected)+" selected/"+strconv.Itoa(raw)+" raw", func(t *testing.T) {
-						store := newNativeMetricMetadataStore()
+						store := newNativeMetricMetadataTestStore()
 						series := store.seriesForTest(1)
 						points := make([]nativeMetricMetadataPoint, versions)
 						for i := range points {
@@ -638,7 +694,7 @@ func TestNativeMetricMetadataAppender(t *testing.T) {
 	})
 
 	t.Run("evicted history values are owned again", func(t *testing.T) {
-		store := newNativeMetricMetadataStore()
+		store := newNativeMetricMetadataTestStore()
 		series := store.seriesForTest(1)
 		original := metadata.Metadata{Type: model.MetricTypeUnknown, Help: "evicted"}
 		commitNativeMetricMetadata(store, series.ref, makeNativeMetricMetadataPoint(100, original))
@@ -656,7 +712,7 @@ func TestNativeMetricMetadataAppender(t *testing.T) {
 	})
 
 	t.Run("pool reset releases transaction state", func(t *testing.T) {
-		store := newNativeMetricMetadataStore()
+		store := newNativeMetricMetadataTestStore()
 		appender := store.getAppender()
 		m := metadata.Metadata{Type: model.MetricTypeUnknown, Help: "A"}
 		appender.observe(store.seriesForTest(1), 100, m)
@@ -697,7 +753,7 @@ func TestNativeMetricMetadataAppender(t *testing.T) {
 			{values: nativeMetadataPooledStrings + 1, dropped: true},
 		} {
 			t.Run(strconv.Itoa(tc.values)+" strings", func(t *testing.T) {
-				store := newNativeMetricMetadataStore()
+				store := newNativeMetricMetadataTestStore()
 				appender := store.getAppender()
 				ref := chunks.HeadSeriesRef(1)
 				for i := range maxNativeMetricMetadataValues {
@@ -725,7 +781,7 @@ func TestNativeMetricMetadataAppender(t *testing.T) {
 	})
 
 	t.Run("tracks observations in shared stripes", func(t *testing.T) {
-		store := newNativeMetricMetadataStore()
+		store := newNativeMetricMetadataTestStore()
 		appender := store.getAppender()
 		m := metadata.Metadata{Type: model.MetricTypeUnknown, Help: "A"}
 		firstRef := chunks.HeadSeriesRef(1)
@@ -750,7 +806,7 @@ func TestNativeMetricMetadataAppenderCommit(t *testing.T) {
 	c := metadata.Metadata{Type: model.MetricTypeUnknown, Help: "C"}
 
 	t.Run("accounts for growth collapse and eviction within one batch", func(t *testing.T) {
-		store := newNativeMetricMetadataStore()
+		store := newNativeMetricMetadataTestStore()
 		first := chunks.HeadSeriesRef(1)
 		second := first + nativeMetricMetadataStripes
 		third := second + nativeMetricMetadataStripes
@@ -826,7 +882,7 @@ func TestNativeMetricMetadataAppenderCommit(t *testing.T) {
 		},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			store := newNativeMetricMetadataStore()
+			store := newNativeMetricMetadataTestStore()
 			// Both series share a stripe.
 			refs := []chunks.HeadSeriesRef{1, 1 + nativeMetricMetadataStripes}
 			for i, txn := range tc.txns {
@@ -847,13 +903,13 @@ func TestNativeMetricMetadataAppenderCommit(t *testing.T) {
 				store.putAppender(appender)
 			}
 			for i, want := range tc.want {
-				requireNativeVersions(t, store, refs[i], want)
+				requireNativeVersions(t, store.indexedSeries(refs[i]), want)
 			}
 		})
 	}
 
 	t.Run("advances past a stable batch and commits later bounded batches", func(t *testing.T) {
-		store := newNativeMetricMetadataStore()
+		store := newNativeMetricMetadataTestStore()
 		appender := store.getAppender()
 		// One stable batch is followed by more changing series than one batch holds.
 		const series = 2*maxNativeMetricMetadataBatch + 1
@@ -873,7 +929,7 @@ func TestNativeMetricMetadataAppenderCommit(t *testing.T) {
 		require.Equal(t, int64(series+maxNativeMetricMetadataBatch+1), store.versions.Load())
 		for _, i := range []int{maxNativeMetricMetadataBatch, series - 1} {
 			ref := chunks.HeadSeriesRef(1 + i*nativeMetricMetadataStripes)
-			requireNativeVersions(t, store, ref, []NativeMetricMetadataVersion{
+			requireNativeVersions(t, store.indexedSeries(ref), []NativeMetricMetadataVersion{
 				{EffectiveFrom: 100, Metadata: a},
 				{EffectiveFrom: 200, Metadata: b},
 			})
@@ -882,7 +938,7 @@ func TestNativeMetricMetadataAppenderCommit(t *testing.T) {
 	})
 
 	t.Run("keeps a large observation group intact", func(t *testing.T) {
-		store := newNativeMetricMetadataStore()
+		store := newNativeMetricMetadataTestStore()
 		appender := store.getAppender()
 		const observations = maxNativeMetricMetadataBatch + 1
 		for i := range observations {
@@ -894,14 +950,14 @@ func TestNativeMetricMetadataAppenderCommit(t *testing.T) {
 			appender.observe(store.seriesForTest(1), 100, m)
 		}
 		store.commitAppender(appender)
-		requireNativeVersions(t, store, 1, []NativeMetricMetadataVersion{{EffectiveFrom: 100, Metadata: a}})
+		requireNativeVersions(t, store.indexedSeries(1), []NativeMetricMetadataVersion{{EffectiveFrom: 100, Metadata: a}})
 		require.Len(t, appender.groups, 1)
 		require.Equal(t, observations, appender.groups[0].end-appender.groups[0].start)
 		store.putAppender(appender)
 	})
 
 	t.Run("older transaction cannot overwrite the newest value", func(t *testing.T) {
-		store := newNativeMetricMetadataStore()
+		store := newNativeMetricMetadataTestStore()
 		ref := chunks.HeadSeriesRef(1)
 		commitNativeMetricMetadata(store, ref, makeNativeMetricMetadataPoint(100, a))
 		series := store.seriesForTest(ref)
@@ -918,7 +974,7 @@ func TestNativeMetricMetadataAppenderCommit(t *testing.T) {
 	})
 
 	t.Run("coalesces repeated metadata into one version", func(t *testing.T) {
-		store := newNativeMetricMetadataStore()
+		store := newNativeMetricMetadataTestStore()
 		ref := chunks.HeadSeriesRef(1)
 
 		const observations = 4096
@@ -1127,7 +1183,7 @@ func TestHeadAppenderV2MetadataSidecar(t *testing.T) {
 			var wantSeries int64
 			if tc.wantNative {
 				wantSeries = 1
-				requireNativeVersions(t, store, chunks.HeadSeriesRef(ref), []NativeMetricMetadataVersion{{EffectiveFrom: ts, Metadata: tc.meta}})
+				requireNativeVersions(t, head.series.getByID(chunks.HeadSeriesRef(ref)), []NativeMetricMetadataVersion{{EffectiveFrom: ts, Metadata: tc.meta}})
 			} else {
 				require.Nil(t, nativeMetadataForTest(series))
 			}
@@ -1228,13 +1284,13 @@ func TestHeadAppenderV2NativeMetricMetadataTransactions(t *testing.T) {
 			require.NoError(t, app.Commit())
 
 			for i := range numSeries {
-				got, _, ok := head.nativeMetricMetadata.get(refs[i])
+				got, _, ok := head.nativeMetricMetadataForTest(refs[i])
 				require.True(t, ok, "round %d series %d", round, i)
 				require.Equal(t, want[i], got, "round %d series %d", round, i)
 			}
 			require.Equal(t, int64(numSeries), head.nativeMetricMetadata.series.Load())
 			if round == 2 {
-				got, _, _ := head.nativeMetricMetadata.get(refs[sIdx])
+				got, _, _ := head.nativeMetricMetadataForTest(refs[sIdx])
 				require.Equal(t, got[len(got)-1].Metadata, got[len(got)-3].Metadata, "S returns to its committed value")
 			}
 		}
@@ -1299,7 +1355,7 @@ func TestHeadAppenderV2NativeMetricMetadataTransactions(t *testing.T) {
 				require.NoError(t, app.Commit())
 				require.Zero(t, pendingCommitsForTest(series))
 			}
-			requireNativeVersions(t, head.nativeMetricMetadata, chunks.HeadSeriesRef(ref), tc.want)
+			requireNativeVersions(t, head.series.getByID(chunks.HeadSeriesRef(ref)), tc.want)
 		})
 	}
 
@@ -1322,7 +1378,7 @@ func TestHeadAppenderV2NativeMetricMetadataTransactions(t *testing.T) {
 		// recorded nothing and has nothing left to re-assert once intervening
 		// moves the series to b. The history therefore ends at b rather than
 		// restoring a at 200. This is the cost of deciding at append time.
-		requireNativeVersions(t, head.nativeMetricMetadata, chunks.HeadSeriesRef(ref), []NativeMetricMetadataVersion{
+		requireNativeVersions(t, head.series.getByID(chunks.HeadSeriesRef(ref)), []NativeMetricMetadataVersion{
 			{EffectiveFrom: 100, Metadata: a},
 			{EffectiveFrom: 150, Metadata: b},
 		})
@@ -1350,7 +1406,7 @@ func TestHeadAppenderV2NativeMetricMetadataTransactions(t *testing.T) {
 			pending := pendingCommitsForTest(series)
 			require.Equal(t, uint32(1), pending)
 			require.Empty(t, head.gcSeries([]storage.SeriesRef{ref}, math.MaxInt64, func(*memSeries) bool { return true }))
-			_, _, ok := head.nativeMetricMetadata.get(chunks.HeadSeriesRef(ref))
+			_, _, ok := head.nativeMetricMetadataForTest(chunks.HeadSeriesRef(ref))
 			require.False(t, ok)
 
 			if tc.rollback {
@@ -1358,7 +1414,7 @@ func TestHeadAppenderV2NativeMetricMetadataTransactions(t *testing.T) {
 				pending = pendingCommitsForTest(series)
 				require.Zero(t, pending)
 				require.Contains(t, head.gcSeries([]storage.SeriesRef{ref}, math.MaxInt64, func(*memSeries) bool { return true }), ref)
-				_, _, ok = head.nativeMetricMetadata.get(chunks.HeadSeriesRef(ref))
+				_, _, ok = head.nativeMetricMetadataForTest(chunks.HeadSeriesRef(ref))
 				require.False(t, ok)
 				return
 			}
@@ -1366,7 +1422,7 @@ func TestHeadAppenderV2NativeMetricMetadataTransactions(t *testing.T) {
 			require.NoError(t, app.Commit())
 			pending = pendingCommitsForTest(series)
 			require.Zero(t, pending)
-			requireNativeVersions(t, head.nativeMetricMetadata, chunks.HeadSeriesRef(ref), []NativeMetricMetadataVersion{{EffectiveFrom: 100, Metadata: meta}})
+			requireNativeVersions(t, head.series.getByID(chunks.HeadSeriesRef(ref)), []NativeMetricMetadataVersion{{EffectiveFrom: 100, Metadata: meta}})
 		})
 	}
 
@@ -1419,7 +1475,7 @@ func TestHeadAppenderV2NativeMetricMetadataTransactions(t *testing.T) {
 		mustAppendV2(t, app, ref, lset, 100, 1, storage.AOptions{Metadata: a})
 		require.NoError(t, app.Commit())
 
-		requireNativeVersions(t, head.nativeMetricMetadata, chunks.HeadSeriesRef(ref), []NativeMetricMetadataVersion{{EffectiveFrom: 100, Metadata: a}})
+		requireNativeVersions(t, head.series.getByID(chunks.HeadSeriesRef(ref)), []NativeMetricMetadataVersion{{EffectiveFrom: 100, Metadata: a}})
 	})
 
 	t.Run("oversized metadata is skipped and counted", func(t *testing.T) {
@@ -1458,7 +1514,7 @@ func TestHeadAppenderV2NativeMetricMetadataTransactions(t *testing.T) {
 					want = append(want, NativeMetricMetadataVersion{EffectiveFrom: 200, Metadata: stored})
 					skipped = 0
 				}
-				requireNativeVersions(t, head.nativeMetricMetadata, chunks.HeadSeriesRef(ref), want)
+				requireNativeVersions(t, head.series.getByID(chunks.HeadSeriesRef(ref)), want)
 				require.Equal(t, skipped, float64(head.nativeMetricMetadata.oversized.Load()))
 			})
 		}
@@ -1620,7 +1676,7 @@ func TestHeadAppenderV2NativeMetricMetadataTransactions(t *testing.T) {
 			first := chunks.HeadSeriesRef(key.(uint64) << nativeMetadataPageBits)
 			for offset := range nativeMetadataPageSize {
 				ref := first + chunks.HeadSeriesRef(offset)
-				if nativeMetadataDirectorySeries(value, ref) != nil {
+				if value.(*nativeMetricMetadataPage).contains(ref) {
 					stored++
 					if head.series.getByID(ref) == nil {
 						orphans = append(orphans, ref)
@@ -1635,31 +1691,81 @@ func TestHeadAppenderV2NativeMetricMetadataTransactions(t *testing.T) {
 	})
 }
 
-func TestHeadNativeMetricMetadataWALReplayDeletion(t *testing.T) {
-	head := newNativeMetadataTestHead(t, withoutOOO)
-
-	app := head.AppenderV2(context.Background())
-	ref, err := app.Append(0, labels.FromStrings(labels.MetricName, "requests_total"), 0, 100, 1, nil, nil, storage.AOptions{
-		Metadata: metadata.Metadata{Type: model.MetricTypeCounter},
-	})
-	require.NoError(t, err)
-	require.NoError(t, app.Commit())
-
-	_, _, ok := head.nativeMetricMetadata.get(chunks.HeadSeriesRef(ref))
-	require.True(t, ok)
-	require.Equal(t, int64(1), head.nativeMetricMetadata.series.Load())
-	require.Equal(t, int64(1), head.nativeMetricMetadata.versions.Load())
-	require.Equal(t, uint64(1), head.NumSeries())
-
-	// Native metadata is not reconstructed during WAL replay, so call the
-	// replay-only deletion path directly to verify it cleans a populated store.
-	head.deleteSeriesByID([]chunks.HeadSeriesRef{chunks.HeadSeriesRef(ref)})
-
-	_, _, ok = head.nativeMetricMetadata.get(chunks.HeadSeriesRef(ref))
-	require.False(t, ok)
-	require.Zero(t, head.nativeMetricMetadata.series.Load())
-	require.Zero(t, head.nativeMetricMetadata.versions.Load())
-	require.Zero(t, head.NumSeries())
+func TestHeadNativeMetricMetadataDeletion(t *testing.T) {
+	for _, mode := range []string{"gc", "evict", "replay"} {
+		t.Run(mode, func(t *testing.T) {
+			head := newNativeMetadataTestHead(t, withoutOOO)
+			refs := map[string]storage.SeriesRef{}
+			for _, name := range []string{"capped", "changed", "absent", "fresh", "exemplar", "pending"} {
+				versions := 1
+				if name == "capped" {
+					versions = maxNativeMetricMetadataVersions + 1
+				}
+				if name == "changed" {
+					versions = 2
+				}
+				app := head.AppenderV2(t.Context())
+				for version := range versions {
+					timestamp := int64(100 + version)
+					if name == "fresh" {
+						timestamp = 400
+					}
+					var opts storage.AOptions
+					if name != "absent" {
+						opts.Metadata = metadata.Metadata{Type: model.MetricTypeGauge, Help: strconv.Itoa(version)}
+					}
+					refs[name] = mustAppendV2(t, app, refs[name], labels.FromStrings(labels.MetricName, "metadata_deletion", "id", name), timestamp, float64(version), opts)
+				}
+				require.NoError(t, app.Commit())
+			}
+			protected := head.series.getByID(chunks.HeadSeriesRef(refs["exemplar"]))
+			protected.updateExemplarTimestamp(400)
+			pending := head.AppenderV2(t.Context())
+			mustAppendV2(t, pending, refs["pending"], labels.EmptyLabels(), 200, 2, storage.AOptions{})
+			retired := head.series.getByID(chunks.HeadSeriesRef(refs["capped"]))
+			before := nativeMetadataForTest(retired)
+			require.Equal(t, int64(5), head.nativeMetricMetadata.series.Load())
+			require.Equal(t, int64(maxNativeMetricMetadataVersions+5), head.nativeMetricMetadata.versions.Load())
+			require.Equal(t, uint64(1), head.nativeMetricMetadata.evictions.Load())
+			head.minValidTime.Store(300)
+			for range 2 {
+				switch mode {
+				case "gc":
+					head.minTime.Store(300)
+					head.gc()
+				case "evict":
+					var candidates []storage.SeriesRef
+					for _, ref := range refs {
+						candidates = append(candidates, ref)
+					}
+					candidates = append(candidates, refs["capped"], math.MaxUint64)
+					head.gcSeries(candidates, 300, func(*memSeries) bool { return true })
+				case "replay":
+					// Replay never reconstructs native histories. Exercise its deletion
+					// bookkeeping directly with populated histories and duplicate references.
+					head.deleteSeriesByID([]chunks.HeadSeriesRef{
+						chunks.HeadSeriesRef(refs["capped"]), chunks.HeadSeriesRef(refs["changed"]),
+						chunks.HeadSeriesRef(refs["absent"]), chunks.HeadSeriesRef(refs["capped"]), math.MaxUint64,
+					})
+				}
+				for _, name := range []string{"capped", "changed", "absent"} {
+					require.Nil(t, head.series.getByID(chunks.HeadSeriesRef(refs[name])))
+					require.False(t, head.nativeMetricMetadata.has(chunks.HeadSeriesRef(refs[name])))
+				}
+				require.Equal(t, uint64(3), head.NumSeries())
+				require.Equal(t, int64(3), head.nativeMetricMetadata.series.Load())
+				require.Equal(t, int64(3), head.nativeMetricMetadata.versions.Load())
+				require.Equal(t, before, nativeMetadataForTest(retired), "retirement must not mutate captured history")
+			}
+			require.NoError(t, pending.Rollback())
+			require.Empty(t, head.gcSeries([]storage.SeriesRef{refs["pending"]}, math.MaxInt64, func(*memSeries) bool { return false }))
+			require.Equal(t, int64(3), head.nativeMetricMetadata.versions.Load())
+			require.NoError(t, head.resetInMemoryState())
+			require.Zero(t, head.nativeMetricMetadata.series.Load())
+			require.Zero(t, head.nativeMetricMetadata.versions.Load())
+			require.Equal(t, uint64(1), head.nativeMetricMetadata.evictions.Load())
+		})
+	}
 }
 
 func TestHeadNativeMetricMetadataIsFeatureGatedAndNonPersistent(t *testing.T) {
@@ -1768,7 +1874,7 @@ func TestHeadNativeMetricMetadataSampleKinds(t *testing.T) {
 			require.NoError(t, err)
 			require.Nil(t, nativeMetadataTxn(app), "unchanged content must not stage metadata")
 			require.NoError(t, app.Commit())
-			versions, _, ok := head.nativeMetricMetadata.get(chunks.HeadSeriesRef(ref))
+			versions, _, ok := head.nativeMetricMetadataForTest(chunks.HeadSeriesRef(ref))
 			require.True(t, ok)
 			wantMetadata := metadata.Metadata{Type: model.MetricTypeUnknown, Help: m.Help, Unit: m.Unit}
 			require.Equal(t, []NativeMetricMetadataVersion{{EffectiveFrom: 100, Metadata: wantMetadata}}, versions, "synthetic ST samples must not carry metadata")
@@ -1788,7 +1894,7 @@ func TestNativeMetricMetadataCacheOwnership(t *testing.T) {
 	}
 
 	t.Run("deletion leaves deleted history immutable", func(t *testing.T) {
-		store := newNativeMetricMetadataStore()
+		store := newNativeMetricMetadataTestStore()
 		commitNativeMetricMetadata(store, 1,
 			makeNativeMetricMetadataPoint(100, metadata.Metadata{Help: "old"}),
 			makeNativeMetricMetadataPoint(200, metadata.Metadata{Help: "current"}))
@@ -1811,7 +1917,7 @@ func TestNativeMetricMetadataCacheOwnership(t *testing.T) {
 }
 
 func testNativeMetricMetadataCacheOwnership(t *testing.T, mode string, helpBytes int) {
-	store := newNativeMetricMetadataStore()
+	store := newNativeMetricMetadataTestStore()
 	buf := strings.Repeat("p", 3*helpBytes)
 	m := metadata.Metadata{Type: model.MetricTypeUnknown, Help: buf[helpBytes : 2*helpBytes], Unit: "seconds"}
 	first, second := store.seriesForTest(1), store.seriesForTest(1+nativeMetricMetadataStripes)

@@ -269,7 +269,7 @@ func TestNativeMetricMetadataValueCache(t *testing.T) {
 	})
 
 	t.Run("reset drops cache ownership and pooled appenders use the new cache", func(t *testing.T) {
-		store := newNativeMetricMetadataStore()
+		store := newNativeMetricMetadataTestStore()
 		m := metadata.Metadata{Help: "retained result"}
 		store.values.resolve(m, nil)
 		retained := store.values.resolve(m, nil)

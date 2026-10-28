@@ -73,7 +73,7 @@ type nativeMetricMetadataStore struct {
 	// Directory identity changes invalidate query-local page caches.
 	directoryGeneration atomic.Uint64
 
-	// directory maps full-width page keys to singleton series or typed pages.
+	// directory maps full-width page keys to presence bitmaps.
 	// Membership implies initialized native state.
 	directory      sync.Map
 	directoryLocks [nativeMetadataDirectoryLocks]sync.Mutex
@@ -270,7 +270,7 @@ func (s *nativeMetricMetadataSnapshot) expand() []NativeMetricMetadataVersion {
 type nativeMetricMetadataPostings struct {
 	index.Postings
 	store          *nativeMetricMetadataStore
-	page           any
+	page           *nativeMetricMetadataPage
 	pageKey        uint64
 	pageGeneration uint64
 	pageCached     bool
@@ -282,15 +282,12 @@ func (p *nativeMetricMetadataPostings) has(ref chunks.HeadSeriesRef) bool {
 	// captured value, not let it inherit the replacement's newer generation.
 	generation := p.store.directoryGeneration.Load()
 	if !p.pageCached || key != p.pageKey || generation != p.pageGeneration {
-		p.page, _ = p.store.directory.Load(key)
+		value, _ := p.store.directory.Load(key)
+		p.page, _ = value.(*nativeMetricMetadataPage)
 		p.pageKey, p.pageGeneration, p.pageCached = key, generation, true
 	}
-	if page, ok := p.page.(*nativeMetricMetadataPage); ok && !page.dense {
-		// The full page key is resolved above. Membership is only a prefilter;
-		// nativeMetricMetadataForPostings revalidates the series in the Head.
-		return page.contains(ref)
-	}
-	return nativeMetadataDirectorySeries(p.page, ref) != nil
+	// Membership is a prefilter; collection revalidates the series in the Head.
+	return p.page.contains(ref)
 }
 
 func (p *nativeMetricMetadataPostings) Next() bool {

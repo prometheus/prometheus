@@ -3534,7 +3534,7 @@ func TestMetadataInWAL_AppenderV2(t *testing.T) {
 				}
 				require.Equal(t, wantMetadata, gotMetadata)
 				require.Empty(t, gotExemplars)
-				gotNative, _, _ := db.head.nativeMetricMetadata.get(1)
+				gotNative, _, _ := db.head.nativeMetricMetadataForTest(1)
 				require.Equal(t, tc.wantNative, gotNative)
 			})
 		}
