@@ -460,6 +460,11 @@ type WriteClient interface {
 	Endpoint() string
 }
 
+type seriesMetadata struct {
+	meta        unique.Handle[metadata.Metadata]
+	helpSentGen uint64
+}
+
 // QueueManager manages a queue of samples to be sent to the Storage
 // indicated by the provided WriteClient. Implements writeTo interface
 // used by WAL Watcher.
@@ -489,15 +494,19 @@ type QueueManager struct {
 	mode        remoteapi.WriteMode
 	compr       compression.Type
 
-	seriesMtx        sync.Mutex // Covers seriesLabels, seriesMetadata, droppedSeries, the NHCB fields and builder.
-	seriesLabels     map[chunks.HeadSeriesRef]labels.Labels
-	seriesMetadata   map[chunks.HeadSeriesRef]unique.Handle[metadata.Metadata]
-	droppedSeries    map[chunks.HeadSeriesRef]struct{}
-	nhcbSeriesBounds map[chunks.HeadSeriesRef]*nhcbLayout // Layout of each converted NHCB series.
-	nhcbLayouts      map[string]*nhcbLayout               // Keyed by the encoded bounds.
-	nhcbLayoutKey    []byte                               // Scratch space for layout keys.
-	nhcbCounts       []float64                            // Scratch space for bucket counts.
-	builder          *labels.Builder
+	seriesMtx         sync.Mutex // Covers seriesLabels, seriesMetadata, helpSentGen, lastHelpSentReset, droppedSeries, the NHCB fields and builder.
+	seriesLabels      map[chunks.HeadSeriesRef]labels.Labels
+	seriesMetadata    map[chunks.HeadSeriesRef]seriesMetadata
+	helpSentGen       uint64
+	lastHelpSentReset time.Time
+	droppedSeries     map[chunks.HeadSeriesRef]struct{}
+	nhcbSeriesBounds  map[chunks.HeadSeriesRef]*nhcbLayout // Layout of each converted NHCB series.
+	nhcbLayouts       map[string]*nhcbLayout               // Keyed by the encoded bounds.
+	nhcbLayoutKey     []byte                               // Scratch space for layout keys.
+	nhcbCounts        []float64                            // Scratch space for bucket counts.
+	builder           *labels.Builder
+
+	now func() time.Time
 
 	seriesSegmentMtx     sync.Mutex // Covers seriesSegmentIndexes - if you also lock seriesMtx, take seriesMtx first.
 	seriesSegmentIndexes map[chunks.HeadSeriesRef]int
@@ -570,7 +579,7 @@ func NewQueueManager(
 		failedRequestLogging:    failedRequestLogging,
 
 		seriesLabels:         make(map[chunks.HeadSeriesRef]labels.Labels),
-		seriesMetadata:       make(map[chunks.HeadSeriesRef]unique.Handle[metadata.Metadata]),
+		seriesMetadata:       make(map[chunks.HeadSeriesRef]seriesMetadata),
 		seriesSegmentIndexes: make(map[chunks.HeadSeriesRef]int),
 		droppedSeries:        make(map[chunks.HeadSeriesRef]struct{}),
 		nhcbSeriesBounds:     make(map[chunks.HeadSeriesRef]*nhcbLayout),
@@ -596,6 +605,7 @@ func NewQueueManager(
 		compr:    compression.Snappy, // Hardcoded for now, but scaffolding exists for likely future use.
 
 		convertNHCBToClassic: convertNHCBToClassic,
+		now:                  time.Now,
 	}
 
 	walMetadata := t.protoMsg != remoteapi.WriteV1MessageType
@@ -861,10 +871,40 @@ func (t *QueueManager) shouldDropHistogramForMode(ref chunks.HeadSeriesRef, st i
 	return false
 }
 
+func (t *QueueManager) currentTime() time.Time {
+	if t.now != nil {
+		return t.now()
+	}
+	return time.Now()
+}
+
+// omitHelpForSend reports whether Help should be omitted for an outgoing sample or histogram.
+// When send_help_interval > 0, Help is sent once after StoreMetadata and once per interval;
+// synchronizing interval expiry via helpSentGen aligns series from the same family into the same batch.
+// Caller must hold t.seriesMtx.
+func (t *QueueManager) omitHelpForSend(ref chunks.HeadSeriesRef, sm seriesMetadata, now time.Time) bool {
+	if t.mcfg.SendHelpInterval <= 0 {
+		return false
+	}
+	if metadata.IsZeroHandle(sm.meta) {
+		return true
+	}
+	if t.helpSentGen == 0 || now.Sub(t.lastHelpSentReset) >= time.Duration(t.mcfg.SendHelpInterval) {
+		t.helpSentGen++
+		t.lastHelpSentReset = now
+	}
+	if sm.helpSentGen == t.helpSentGen {
+		return true
+	}
+	sm.helpSentGen = t.helpSentGen
+	t.seriesMetadata[ref] = sm
+	return sm.meta.Value().Help == ""
+}
+
 // Append queues a sample to be sent to the remote storage. Blocks until all samples are
 // enqueued on their shards or a shutdown signal is received.
 func (t *QueueManager) Append(samples []record.RefSample) bool {
-	currentTime := time.Now()
+	currentTime := t.currentTime()
 outer:
 	for _, s := range samples {
 		if isSampleOld(currentTime, time.Duration(t.cfg.SampleAgeLimit), s.T) {
@@ -886,28 +926,31 @@ outer:
 		}
 		// TODO(cstyan): Handle or at least log an error if no metadata is found.
 		// See https://github.com/prometheus/prometheus/issues/14405
-		meta := t.seriesMetadata[s.Ref]
+		sm := t.seriesMetadata[s.Ref]
 		if t.convertNHCBToClassic {
 			if _, ok := t.nhcbSeriesBounds[s.Ref]; ok {
 				// A float sample for a converted NHCB series is either its stale marker or
 				// a change of sample type. Both retire the classic series; a type change
 				// also forwards the float, whose start time stays off the retired series.
+				omitHelp := t.omitHelpForSend(s.Ref, sm, currentTime)
 				st := s.ST
 				var replacement *timeSeries
 				if !value.IsStaleNaN(s.V) {
 					st = 0
-					replacement = &timeSeries{seriesLabels: lbls, metadata: meta, startTimestamp: s.ST, timestamp: s.T, value: s.V, sType: tSample}
+					replacement = &timeSeries{seriesLabels: lbls, metadata: sm.meta, startTimestamp: s.ST, timestamp: s.T, value: s.V, sType: tSample, omitHelp: omitHelp}
 				}
-				if !t.convertAndEnqueueNHCB(s.Ref, st, s.T, nil, nil, true, lbls, meta, replacement) {
+				if !t.convertAndEnqueueNHCB(s.Ref, st, s.T, nil, nil, true, lbls, sm.meta, omitHelp, replacement) {
 					return false
 				}
 				continue
 			}
 		}
-		t.seriesMtx.Unlock()
-		if t.mode != remoteapi.WriteModeNone && t.shouldDropFloatSampleForMode(s.Ref, s.ST, value.IsStaleNaN(s.V), lbls, meta) {
+		if t.mode != remoteapi.WriteModeNone && t.shouldDropFloatSampleForMode(s.Ref, s.ST, value.IsStaleNaN(s.V), lbls, sm.meta) {
+			t.seriesMtx.Unlock()
 			continue
 		}
+		omitHelp := t.omitHelpForSend(s.Ref, sm, currentTime)
+		t.seriesMtx.Unlock()
 		// Start with a very small backoff. This should not be t.cfg.MinBackoff
 		// as it can happen without errors, and we want to pickup work after
 		// filling a queue/resharding as quickly as possible.
@@ -921,11 +964,12 @@ outer:
 			}
 			if t.shards.enqueue(s.Ref, timeSeries{
 				seriesLabels:   lbls,
-				metadata:       meta,
+				metadata:       sm.meta,
 				startTimestamp: s.ST,
 				timestamp:      s.T,
 				value:          s.V,
 				sType:          tSample,
+				omitHelp:       omitHelp,
 			}) {
 				continue outer
 			}
@@ -947,7 +991,7 @@ func (t *QueueManager) AppendExemplars(exemplars []record.RefExemplar) bool {
 	if !t.sendExemplars {
 		return true
 	}
-	currentTime := time.Now()
+	currentTime := t.currentTime()
 outer:
 	for _, e := range exemplars {
 		if isSampleOld(currentTime, time.Duration(t.cfg.SampleAgeLimit), e.T) {
@@ -985,7 +1029,7 @@ outer:
 				}
 			}
 		}
-		meta := t.seriesMetadata[e.Ref]
+		meta := t.seriesMetadata[e.Ref].meta
 		t.seriesMtx.Unlock()
 		if t.mode != remoteapi.WriteModeNone {
 			// TODO(bwplotka): Dropping detached exemplars after series/NHCB lookup above is a temporary stop-gap until
@@ -1010,6 +1054,9 @@ outer:
 				value:          e.V,
 				exemplarLabels: e.Labels,
 				sType:          tExemplar,
+				// Detached exemplars omit Help when send_help_interval > 0 so they do not
+				// emit Help on every exemplar or consume the series' Help interval.
+				omitHelp: t.mcfg.SendHelpInterval > 0,
 			}) {
 				continue outer
 			}
@@ -1067,7 +1114,7 @@ func (t *QueueManager) releaseNHCBLayout(layout *nhcbLayout) {
 // into classic _bucket, _count, and _sum samples while holding seriesMtx, then enqueues them
 // after releasing the lock. Caller must hold t.seriesMtx on entry; this method unlocks it.
 // A replacement follows the converted stale markers when changing sample type.
-func (t *QueueManager) convertAndEnqueueNHCB(ref chunks.HeadSeriesRef, st, ts int64, nhcb any, customValues []float64, isStale bool, lbls labels.Labels, meta unique.Handle[metadata.Metadata], replacement *timeSeries) bool {
+func (t *QueueManager) convertAndEnqueueNHCB(ref chunks.HeadSeriesRef, st, ts int64, nhcb any, customValues []float64, isStale bool, lbls labels.Labels, meta unique.Handle[metadata.Metadata], omitHelp bool, replacement *timeSeries) bool {
 	prev, wasActive := t.nhcbSeriesBounds[ref]
 	var prevBounds []float64
 	if wasActive {
@@ -1099,6 +1146,7 @@ func (t *QueueManager) convertAndEnqueueNHCB(ref chunks.HeadSeriesRef, st, ts in
 			timestamp:      ts,
 			value:          value,
 			sType:          tSample,
+			omitHelp:       omitHelp,
 		})
 	}
 	baseName := lbls.Get(model.MetricNameLabel)
@@ -1147,6 +1195,7 @@ func (t *QueueManager) convertAndEnqueueNHCB(ref chunks.HeadSeriesRef, st, ts in
 				timestamp:      ts,
 				value:          staleVal,
 				sType:          tSample,
+				omitHelp:       omitHelp,
 			})
 		}
 	}
@@ -1209,7 +1258,7 @@ func (t *QueueManager) AppendHistograms(histograms []record.RefHistogramSample) 
 	if !t.sendNativeHistograms && !t.convertNHCBToClassic {
 		return true
 	}
-	currentTime := time.Now()
+	currentTime := t.currentTime()
 outer:
 	for _, h := range histograms {
 		isNHCB := h.H != nil && h.H.Schema == histogram.CustomBucketsSchema
@@ -1246,34 +1295,38 @@ outer:
 			t.seriesMtx.Unlock()
 			continue
 		}
-		meta := t.seriesMetadata[h.Ref]
+		sm := t.seriesMetadata[h.Ref]
 		if transition {
+			omitHelp := t.omitHelpForSend(h.Ref, sm, currentTime)
 			var replacement *timeSeries
 			if t.sendNativeHistograms {
-				replacement = &timeSeries{seriesLabels: lbls, metadata: meta, startTimestamp: h.ST, timestamp: h.T, histogram: h.H, sType: tHistogram}
+				replacement = &timeSeries{seriesLabels: lbls, metadata: sm.meta, startTimestamp: h.ST, timestamp: h.T, histogram: h.H, sType: tHistogram, omitHelp: omitHelp}
 			}
-			if !t.convertAndEnqueueNHCB(h.Ref, 0, h.T, nil, nil, true, lbls, meta, replacement) {
+			if !t.convertAndEnqueueNHCB(h.Ref, 0, h.T, nil, nil, true, lbls, sm.meta, omitHelp, replacement) {
 				return false
 			}
 			continue
 		}
 		// Check if `convert_nhcb_to_classic` flag is enabled to convert NHCB histograms to classic histograms.
 		if convertNHCB {
+			omitHelp := t.omitHelpForSend(h.Ref, sm, currentTime)
 			var nhcb any
 			var customValues []float64
 			if isNHCB {
 				nhcb = h.H
 				customValues = h.H.CustomValues
 			}
-			if !t.convertAndEnqueueNHCB(h.Ref, h.ST, h.T, nhcb, customValues, isStale, lbls, meta, nil) {
+			if !t.convertAndEnqueueNHCB(h.Ref, h.ST, h.T, nhcb, customValues, isStale, lbls, sm.meta, omitHelp, nil) {
 				return false
 			}
 			continue
 		}
-		t.seriesMtx.Unlock()
-		if t.mode != remoteapi.WriteModeNone && t.shouldDropHistogramForMode(h.Ref, h.ST, isStale, lbls, meta) {
+		if t.mode != remoteapi.WriteModeNone && t.shouldDropHistogramForMode(h.Ref, h.ST, isStale, lbls, sm.meta) {
+			t.seriesMtx.Unlock()
 			continue
 		}
+		omitHelp := t.omitHelpForSend(h.Ref, sm, currentTime)
+		t.seriesMtx.Unlock()
 
 		backoff := model.Duration(5 * time.Millisecond)
 		for {
@@ -1284,11 +1337,12 @@ outer:
 			}
 			if t.shards.enqueue(h.Ref, timeSeries{
 				seriesLabels:   lbls,
-				metadata:       meta,
+				metadata:       sm.meta,
 				startTimestamp: h.ST,
 				timestamp:      h.T,
 				histogram:      h.H,
 				sType:          tHistogram,
+				omitHelp:       omitHelp,
 			}) {
 				continue outer
 			}
@@ -1308,7 +1362,7 @@ func (t *QueueManager) AppendFloatHistograms(floatHistograms []record.RefFloatHi
 	if !t.sendNativeHistograms && !t.convertNHCBToClassic {
 		return true
 	}
-	currentTime := time.Now()
+	currentTime := t.currentTime()
 outer:
 	for _, h := range floatHistograms {
 		isNHCB := h.FH != nil && h.FH.Schema == histogram.CustomBucketsSchema
@@ -1345,34 +1399,38 @@ outer:
 			t.seriesMtx.Unlock()
 			continue
 		}
-		meta := t.seriesMetadata[h.Ref]
+		sm := t.seriesMetadata[h.Ref]
 		if transition {
+			omitHelp := t.omitHelpForSend(h.Ref, sm, currentTime)
 			var replacement *timeSeries
 			if t.sendNativeHistograms {
-				replacement = &timeSeries{seriesLabels: lbls, metadata: meta, startTimestamp: h.ST, timestamp: h.T, floatHistogram: h.FH, sType: tFloatHistogram}
+				replacement = &timeSeries{seriesLabels: lbls, metadata: sm.meta, startTimestamp: h.ST, timestamp: h.T, floatHistogram: h.FH, sType: tFloatHistogram, omitHelp: omitHelp}
 			}
-			if !t.convertAndEnqueueNHCB(h.Ref, 0, h.T, nil, nil, true, lbls, meta, replacement) {
+			if !t.convertAndEnqueueNHCB(h.Ref, 0, h.T, nil, nil, true, lbls, sm.meta, omitHelp, replacement) {
 				return false
 			}
 			continue
 		}
 		// Check if `convert_nhcb_to_classic` flag is enabled to convert NHCB Float histograms to classic histograms.
 		if convertNHCB {
+			omitHelp := t.omitHelpForSend(h.Ref, sm, currentTime)
 			var nhcb any
 			var customValues []float64
 			if isNHCB {
 				nhcb = h.FH
 				customValues = h.FH.CustomValues
 			}
-			if !t.convertAndEnqueueNHCB(h.Ref, h.ST, h.T, nhcb, customValues, isStale, lbls, meta, nil) {
+			if !t.convertAndEnqueueNHCB(h.Ref, h.ST, h.T, nhcb, customValues, isStale, lbls, sm.meta, omitHelp, nil) {
 				return false
 			}
 			continue
 		}
-		t.seriesMtx.Unlock()
-		if t.mode != remoteapi.WriteModeNone && t.shouldDropHistogramForMode(h.Ref, h.ST, isStale, lbls, meta) {
+		if t.mode != remoteapi.WriteModeNone && t.shouldDropHistogramForMode(h.Ref, h.ST, isStale, lbls, sm.meta) {
+			t.seriesMtx.Unlock()
 			continue
 		}
+		omitHelp := t.omitHelpForSend(h.Ref, sm, currentTime)
+		t.seriesMtx.Unlock()
 
 		backoff := model.Duration(5 * time.Millisecond)
 		for {
@@ -1383,11 +1441,12 @@ outer:
 			}
 			if t.shards.enqueue(h.Ref, timeSeries{
 				seriesLabels:   lbls,
-				metadata:       meta,
+				metadata:       sm.meta,
 				startTimestamp: h.ST,
 				timestamp:      h.T,
 				floatHistogram: h.FH,
 				sType:          tFloatHistogram,
+				omitHelp:       omitHelp,
 			}) {
 				continue outer
 			}
@@ -1475,11 +1534,15 @@ func (t *QueueManager) StoreMetadata(meta []record.RefMetadata) {
 	t.seriesMtx.Lock()
 	defer t.seriesMtx.Unlock()
 	for _, m := range meta {
-		t.seriesMetadata[m.Ref] = unique.Make(metadata.Metadata{
-			Type: record.ToMetricType(m.Type),
-			Unit: m.Unit,
-			Help: m.Help,
-		})
+		// TSDB only logs metadata records on series creation or change; leaving helpSentGen
+		// at 0 ensures Help is emitted on the next send for this series.
+		t.seriesMetadata[m.Ref] = seriesMetadata{
+			meta: unique.Make(metadata.Metadata{
+				Type: record.ToMetricType(m.Type),
+				Unit: m.Unit,
+				Help: m.Help,
+			}),
+		}
 	}
 }
 
@@ -1853,10 +1916,11 @@ type timeSeries struct {
 	startTimestamp, timestamp int64
 	exemplarLabels            labels.Labels
 	// The type of series: sample, exemplar, or histogram.
-	sType seriesType
+	sType    seriesType
+	omitHelp bool
 }
 
-type seriesType int
+type seriesType uint8
 
 const (
 	tSample seriesType = iota
@@ -2428,7 +2492,9 @@ func populateV2TimeSeries(symbolTable *writev2.SymbolsTable, batch []timeSeries,
 			meta := d.metadata.Value()
 			mType = meta.Type
 			unit = meta.Unit
-			help = meta.Help
+			if !d.omitHelp {
+				help = meta.Help
+			}
 		}
 		if enableTypeAndUnitLabels {
 			m := schema.NewMetadataFromLabels(d.seriesLabels)

@@ -3778,6 +3778,7 @@ func TestRemoteWriteConfig_Mode(t *testing.T) {
 		config                     string
 		expectMode                 remoteapi.WriteMode
 		expectSendNativeHistograms bool
+		expectSendHelpInterval     model.Duration
 		errString                  string
 	}{
 		{
@@ -3927,6 +3928,29 @@ remote_write:
 `,
 			errString: `unknown remote write mode "invalid", supported: none, stateless, stateless-st`,
 		},
+		{
+			name: "send_help_interval with v2 succeeds",
+			config: `
+remote_write:
+  - url: http://localhost:9090/api/v1/write
+    protobuf_message: io.prometheus.write.v2.Request
+    metadata_config:
+      send_help_interval: 5m
+`,
+			expectMode:             remoteapi.WriteModeNone,
+			expectSendHelpInterval: model.Duration(5 * time.Minute),
+		},
+		{
+			name: "send_help_interval with v1 fails",
+			config: `
+remote_write:
+  - url: http://localhost:9090/api/v1/write
+    protobuf_message: prometheus.WriteRequest
+    metadata_config:
+      send_help_interval: 5m
+`,
+			errString: `metadata_config.send_help_interval is only supported with protobuf message "io.prometheus.write.v2.Request", got "prometheus.WriteRequest"`,
+		},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			cfg, err := Load(tc.config, promslog.NewNopLogger())
@@ -3938,6 +3962,7 @@ remote_write:
 			require.Len(t, cfg.RemoteWriteConfigs, 1)
 			require.Equal(t, tc.expectMode, cfg.RemoteWriteConfigs[0].Mode)
 			require.Equal(t, tc.expectSendNativeHistograms, cfg.RemoteWriteConfigs[0].SendNativeHistograms)
+			require.Equal(t, tc.expectSendHelpInterval, cfg.RemoteWriteConfigs[0].MetadataConfig.SendHelpInterval)
 		})
 	}
 }
