@@ -4264,19 +4264,28 @@ queue_config:
   # which means that all samples are sent.
   [ sample_age_limit: <duration> | default = 0s ]
 
-# Configures the sending of series metadata to remote storage
-# if the `prometheus.WriteRequest` message was chosen. When
-# `io.prometheus.write.v2.Request` is used, metadata is always sent.
+# Configures the sending of series metadata to remote storage.
+# `send`, `send_interval`, and `max_samples_per_send` only apply when the
+# `prometheus.WriteRequest` message is used. When `io.prometheus.write.v2.Request`
+# is used, type and unit metadata are always sent with each series, and HELP
+# sending can be controlled via `send_help_interval`.
 #
 # Metadata configuration is subject to change at any point
 # or be removed in future releases.
 metadata_config:
-  # Whether metric metadata is sent to remote storage or not.
+  # Whether metric metadata is sent to remote storage or not (Remote Write 1.0 only).
   [ send: <boolean> | default = true ]
-  # How frequently metric metadata is sent to remote storage.
+  # How frequently metric metadata is sent to remote storage (Remote Write 1.0 only).
   [ send_interval: <duration> | default = 1m ]
-  # Maximum number of samples per send.
+  # Maximum number of samples per send (Remote Write 1.0 only).
   [ max_samples_per_send: <int> | default = 2000]
+  # EXPERIMENTAL: Controls how frequently HELP metadata is sent per series when
+  # `protobuf_message` is `io.prometheus.write.v2.Request`.
+  # When set to 0s (the default), HELP is sent with every sample and histogram.
+  # When set to a positive duration, HELP is sent only on the first sample or
+  # histogram for a series, whenever its metadata changes, and periodically
+  # once per `send_help_interval` for active series.
+  [ send_help_interval: <duration> | default = 0s ]
 
 # EXPERIMENTAL: Converts native histograms with custom buckets (NHCB)
 # to classic histograms after applying write_relabel_configs. This enables
