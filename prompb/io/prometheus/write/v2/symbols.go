@@ -37,6 +37,9 @@ func NewSymbolTable() SymbolsTable {
 // Symbolize adds (if not added before) a string to the symbols table,
 // while returning its reference number.
 func (t *SymbolsTable) Symbolize(str string) uint32 {
+	if str == "" {
+		return 0
+	}
 	if ref, ok := t.symbolsMap[str]; ok {
 		return ref
 	}
