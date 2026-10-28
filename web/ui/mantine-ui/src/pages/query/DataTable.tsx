@@ -138,15 +138,10 @@ const DataTable: FC<DataTableProps> = ({
                     {[...(s.values ?? []), ...(s.histograms ?? [])]
                       .sort((a, b) => a[0] - b[0])
                       .map((v, idx) => (
-                        <div key={idx}>
-                          {typeof v[1] === "string" ? (
-                            v[1]
-                          ) : (
-                            <>
-                              <strong>Count:</strong> {v[1].count}{" "}
-                              <strong>Sum:</strong> {v[1].sum}
-                            </>
-                          )}{" "}
+                        <div key={idx} style={{ whiteSpace: "nowrap" }}>
+                          {typeof v[1] === "string"
+                            ? v[1]
+                            : `Buckets: ${v[1].buckets?.length ?? 0} Count: ${v[1].count} Sum: ${v[1].sum}`}{" "}
                           <Text
                             span
                             c="gray.7"
@@ -155,7 +150,6 @@ const DataTable: FC<DataTableProps> = ({
                           >
                             @ {v[0]}
                           </Text>
-                          {typeof v[1] !== "string" && histogramTable(v[1])}
                         </div>
                       ))}
                   </Table.Td>

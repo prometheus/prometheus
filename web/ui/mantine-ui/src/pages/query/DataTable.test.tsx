@@ -1,7 +1,7 @@
 // Copyright The Prometheus Authors
 
 import { MantineProvider } from "@mantine/core";
-import { cleanup, render, screen, within } from "@testing-library/react";
+import { cleanup, render, screen } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { Histogram, RangeSamples } from "../../api/responseTypes/query";
 import DataTable from "./DataTable";
@@ -32,6 +32,11 @@ const histogram: Histogram = {
   buckets: [[0, "0", "1", "5"]],
 };
 const emptyHistogram: Histogram = { count: "0", sum: "0" };
+const manyBucketsHistogram: Histogram = {
+  count: "125",
+  sum: "7812.5",
+  buckets: Array.from({ length: 125 }, (_, i) => [0, `${i}`, `${i + 1}`, "1"]),
+};
 const metric = { __name__: "request_duration_seconds" };
 
 describe("DataTable", () => {
@@ -91,6 +96,14 @@ describe("DataTable", () => {
       },
       expected: [{ timestamp: 1572097950.93, value: emptyHistogram }],
     },
+    {
+      name: "histogram with many buckets",
+      series: {
+        metric,
+        histograms: [[1572097950.93, manyBucketsHistogram]],
+      },
+      expected: [{ timestamp: 1572097950.93, value: manyBucketsHistogram }],
+    },
   ])(
     "renders $name range samples in timestamp order",
     ({ series, expected }) => {
@@ -105,6 +118,7 @@ describe("DataTable", () => {
       );
 
       expect(screen.getByText(metric.__name__)).toBeInTheDocument();
+      expect(screen.getAllByRole("table")).toHaveLength(1);
       const timestamps = screen.getAllByText(/^@ /);
       expect(timestamps.map((el) => el.textContent)).toEqual(
         expected.map(({ timestamp }) => `@ ${timestamp}`)
@@ -118,16 +132,9 @@ describe("DataTable", () => {
         if (typeof value === "string") {
           expect(sample).toHaveTextContent(`${value} @ ${timestamp}`);
         } else {
-          expect(sample).toHaveTextContent(`Count: ${value.count}`);
-          expect(sample).toHaveTextContent(`Sum: ${value.sum}`);
-          const rows = within(sample).getAllByRole("row");
-          expect(rows).toHaveLength(1 + (value.buckets?.length ?? 0));
-          if (value.buckets?.length) {
-            expect(rows[1]).toHaveTextContent("(0 -> 1]");
-            expect(within(rows[1]).getAllByRole("cell")[1]).toHaveTextContent(
-              "5"
-            );
-          }
+          expect(sample).toHaveTextContent(
+            `Buckets: ${value.buckets?.length ?? 0} Count: ${value.count} Sum: ${value.sum} @ ${timestamp}`
+          );
         }
       });
     }
