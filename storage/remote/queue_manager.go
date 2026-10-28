@@ -798,11 +798,11 @@ func (t *QueueManager) seriesMetricType(lbls labels.Labels, meta unique.Handle[m
 	return model.MetricTypeUnknown
 }
 
-// shouldDropSampleForMode checks whether a float sample violates the configured Remote-Write 2.0 mode.
+// shouldDropFloatSampleForMode checks whether a float sample violates the configured Remote-Write 2.0 mode.
 // Staleness markers (isStale) are exempt from classic-histogram and start-timestamp checks because
 // scrape and recording rules emit StaleNaN with st=0, and separate scrape transactions log native
 // histogram staleness markers to the WAL as float RefSample records.
-func (t *QueueManager) shouldDropSampleForMode(ref chunks.HeadSeriesRef, st int64, isStale bool, lbls labels.Labels, meta unique.Handle[metadata.Metadata]) bool {
+func (t *QueueManager) shouldDropFloatSampleForMode(ref chunks.HeadSeriesRef, st int64, isStale bool, lbls labels.Labels, meta unique.Handle[metadata.Metadata]) bool {
 	switch t.mode {
 	case remoteapi.WriteModeNone:
 		return false
@@ -901,7 +901,7 @@ outer:
 			}
 		}
 		t.seriesMtx.Unlock()
-		if t.mode != remoteapi.WriteModeNone && t.shouldDropSampleForMode(s.Ref, s.ST, value.IsStaleNaN(s.V), lbls, meta) {
+		if t.mode != remoteapi.WriteModeNone && t.shouldDropFloatSampleForMode(s.Ref, s.ST, value.IsStaleNaN(s.V), lbls, meta) {
 			continue
 		}
 		// Start with a very small backoff. This should not be t.cfg.MinBackoff
