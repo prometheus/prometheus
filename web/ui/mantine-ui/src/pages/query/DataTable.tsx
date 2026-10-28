@@ -14,6 +14,8 @@ import {
   InstantQueryResult,
   InstantSample,
   RangeSamples,
+  SampleHistogram,
+  SampleValue,
 } from "../../api/responseTypes/query";
 import SeriesName from "./SeriesName";
 import classes from "./DataTable.module.css";
@@ -37,6 +39,27 @@ const limitSeries = <S extends InstantSample | RangeSamples>(
     return series.slice(0, maxDisplayableSeries);
   }
   return series;
+};
+
+// The API sorts floats and histograms separately, so merge them by timestamp.
+const mergeSamples = ({ values = [], histograms = [] }: RangeSamples) => {
+  const samples: (SampleValue | SampleHistogram)[] = [];
+  let valuePos = 0;
+  let histogramPos = 0;
+
+  while (valuePos < values.length || histogramPos < histograms.length) {
+    if (
+      histogramPos === histograms.length ||
+      (valuePos < values.length &&
+        values[valuePos][0] <= histograms[histogramPos][0])
+    ) {
+      samples.push(values[valuePos++]);
+    } else {
+      samples.push(histograms[histogramPos++]);
+    }
+  }
+
+  return samples;
 };
 
 export interface DataTableProps {
@@ -135,23 +158,27 @@ const DataTable: FC<DataTableProps> = ({
                     <SeriesName labels={s.metric} format={doFormat} />
                   </Table.Td>
                   <Table.Td className={classes.numberCell}>
-                    {[...(s.values ?? []), ...(s.histograms ?? [])]
-                      .sort((a, b) => a[0] - b[0])
-                      .map((v, idx) => (
-                        <div key={idx} style={{ whiteSpace: "nowrap" }}>
-                          {typeof v[1] === "string"
-                            ? v[1]
-                            : `Buckets: ${v[1].buckets?.length ?? 0} Count: ${v[1].count} Sum: ${v[1].sum}`}{" "}
-                          <Text
-                            span
-                            c="gray.7"
-                            size="1em"
-                            title={formatTimestamp(v[0], useLocalTime)}
-                          >
-                            @ {v[0]}
-                          </Text>
-                        </div>
-                      ))}
+                    {mergeSamples(s).map((v, idx) => (
+                      <div key={idx} style={{ whiteSpace: "nowrap" }}>
+                        {typeof v[1] === "string" ? (
+                          v[1]
+                        ) : (
+                          <>
+                            <strong>Buckets:</strong>{" "}
+                            {v[1].buckets?.length ?? 0} <strong>Count:</strong>{" "}
+                            {v[1].count} <strong>Sum:</strong> {v[1].sum}
+                          </>
+                        )}{" "}
+                        <Text
+                          span
+                          c="gray.7"
+                          size="1em"
+                          title={formatTimestamp(v[0], useLocalTime)}
+                        >
+                          @ {v[0]}
+                        </Text>
+                      </div>
+                    ))}
                   </Table.Td>
                 </Table.Tr>
               ))

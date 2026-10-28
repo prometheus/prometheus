@@ -1,7 +1,7 @@
 // Copyright The Prometheus Authors
 
 import { MantineProvider } from "@mantine/core";
-import { cleanup, render, screen } from "@testing-library/react";
+import { cleanup, render, screen, within } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { Histogram, RangeSamples } from "../../api/responseTypes/query";
 import DataTable from "./DataTable";
@@ -88,6 +88,26 @@ describe("DataTable", () => {
       ],
     },
     {
+      name: "mixed samples with floats first and histograms last",
+      series: {
+        metric,
+        values: [
+          [1572097950.93, "9"],
+          [1572097980.932, "10"],
+        ],
+        histograms: [
+          [1572097965.931, histogram],
+          [1572097995.933, emptyHistogram],
+        ],
+      },
+      expected: [
+        { timestamp: 1572097950.93, value: "9" },
+        { timestamp: 1572097965.931, value: histogram },
+        { timestamp: 1572097980.932, value: "10" },
+        { timestamp: 1572097995.933, value: emptyHistogram },
+      ],
+    },
+    {
       name: "histogram without buckets and an empty float array",
       series: {
         metric,
@@ -95,6 +115,11 @@ describe("DataTable", () => {
         histograms: [[1572097950.93, emptyHistogram]],
       },
       expected: [{ timestamp: 1572097950.93, value: emptyHistogram }],
+    },
+    {
+      name: "empty",
+      series: { metric, values: [], histograms: [] },
+      expected: [],
     },
     {
       name: "histogram with many buckets",
@@ -107,6 +132,7 @@ describe("DataTable", () => {
   ])(
     "renders $name range samples in timestamp order",
     ({ series, expected }) => {
+      const originalSeries = structuredClone(series);
       render(
         <MantineProvider env="test">
           <DataTable
@@ -119,7 +145,7 @@ describe("DataTable", () => {
 
       expect(screen.getByText(metric.__name__)).toBeInTheDocument();
       expect(screen.getAllByRole("table")).toHaveLength(1);
-      const timestamps = screen.getAllByText(/^@ /);
+      const timestamps = screen.queryAllByText(/^@ /);
       expect(timestamps.map((el) => el.textContent)).toEqual(
         expected.map(({ timestamp }) => `@ ${timestamp}`)
       );
@@ -135,8 +161,14 @@ describe("DataTable", () => {
           expect(sample).toHaveTextContent(
             `Buckets: ${value.buckets?.length ?? 0} Count: ${value.count} Sum: ${value.sum} @ ${timestamp}`
           );
+          expect(
+            within(sample)
+              .getAllByRole("strong")
+              .map((el) => el.textContent)
+          ).toEqual(["Buckets:", "Count:", "Sum:"]);
         }
       });
+      expect(series).toEqual(originalSeries);
     }
   );
 });
