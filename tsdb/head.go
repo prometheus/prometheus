@@ -1548,6 +1548,7 @@ func (h *Head) truncateSeries(seriesRefs []storage.SeriesRef, maxt int64, should
 
 	if h.testAfterWaitingForReadersToEvictSeries != nil {
 		h.testAfterWaitingForReadersToEvictSeries()
+		h.testAfterWaitingForReadersToEvictSeries = nil
 	}
 
 	deleted := h.gcSeries(seriesRefs, maxt, shouldEvict)

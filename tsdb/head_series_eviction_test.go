@@ -419,20 +419,28 @@ func TestSeriesEviction_OtherNotFoundErrorsAreReturned(t *testing.T) {
 	testDB := newSeriesEvictionTestDB(t)
 	head := testDB.db.Head()
 
-	// The series that follows the series to evict is in the head, and doesn't have the chunk 1000.
-	keptSeries := testDB.evictedRefs[len(testDB.evictedRefs)-1] + 1
-	missingChunk := chunks.Meta{Ref: chunks.ChunkRef(chunks.NewHeadChunkRef(chunks.HeadSeriesRef(keptSeries), 1000))}
+	// No eviction has run, so both series are in the head, and neither has the chunk 1000.
+	tests := map[string]storage.SeriesRef{
+		"a series being evicted":     testDB.evictedRefs[0],
+		"a series not being evicted": testDB.evictedRefs[len(testDB.evictedRefs)-1] + 1,
+	}
+	for name, ref := range tests {
+		t.Run(name, func(t *testing.T) {
+			require.NotNil(t, head.series.getByID(chunks.HeadSeriesRef(ref)), "the series must be in the head")
+			missingChunk := chunks.Meta{Ref: chunks.ChunkRef(chunks.NewHeadChunkRef(chunks.HeadSeriesRef(ref), 1000))}
 
-	reader := &headChunkReader{head: head, mint: 0, maxt: 1000, evicting: &evictedSeries{refs: testDB.evictedRefs}}
-	_, _, err := reader.ChunkOrIterable(missingChunk)
-	require.ErrorIs(t, err, storage.ErrNotFound)
-	_, _, _, err = reader.ChunkOrIterableWithCopy(missingChunk)
-	require.ErrorIs(t, err, storage.ErrNotFound)
+			reader := &headChunkReader{head: head, mint: 0, maxt: 1000, evicting: &evictedSeries{refs: testDB.evictedRefs}}
+			_, _, err := reader.ChunkOrIterable(missingChunk)
+			require.ErrorIs(t, err, storage.ErrNotFound)
+			_, _, _, err = reader.ChunkOrIterableWithCopy(missingChunk)
+			require.ErrorIs(t, err, storage.ErrNotFound)
 
-	_, _, err = NewHeadAndOOOChunkReader(head, 0, 1000, reader, nil, 0).ChunkOrIterable(missingChunk)
-	require.ErrorIs(t, err, storage.ErrNotFound)
+			_, _, err = NewHeadAndOOOChunkReader(head, 0, 1000, reader, nil, 0).ChunkOrIterable(missingChunk)
+			require.ErrorIs(t, err, storage.ErrNotFound)
 
-	require.Equal(t, float64(0), prom_testutil.ToFloat64(head.metrics.chunkReadsOfRemovedSeries))
+			require.Equal(t, float64(0), prom_testutil.ToFloat64(head.metrics.chunkReadsOfRemovedSeries))
+		})
+	}
 }
 
 // TestSeriesEviction_SeriesNotBeingEvictedAreNotSkipped verifies that a reader fails to read the chunk of a series
@@ -490,12 +498,8 @@ func TestSeriesEviction_SeriesAreOnlyPublishedWhileTheyAreEvicted(t *testing.T) 
 			require.NotNil(t, published)
 			require.Equal(t, testDB.evictedRefs, published.refs)
 			require.True(t, slices.IsSorted(published.refs))
+			// A reader opened after the eviction loads nothing from here, so it doesn't skip anything.
 			require.Nil(t, head.evictingSeries.Load())
-
-			// A querier opened after the eviction doesn't skip anything.
-			q, err := testDB.db.Querier(0, 1000)
-			require.NoError(t, err)
-			t.Cleanup(func() { require.NoError(t, q.Close()) })
 		})
 	}
 }
