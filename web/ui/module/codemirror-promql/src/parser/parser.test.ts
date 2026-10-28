@@ -20,6 +20,51 @@ import { ValueType } from '../types';
 describe('promql operations', () => {
   const testCases = [
     {
+      expr: '5 bitand 3',
+      expectedValueType: ValueType.scalar,
+      expectedDiag: [] as Diagnostic[],
+    },
+    {
+      expr: 'status bitand 64',
+      expectedValueType: ValueType.vector,
+      expectedDiag: [] as Diagnostic[],
+    },
+    {
+      expr: 'status bitand on(instance) group_left(model) mask',
+      expectedValueType: ValueType.vector,
+      expectedDiag: [] as Diagnostic[],
+    },
+    {
+      expr: '5 bitor 3',
+      expectedValueType: ValueType.scalar,
+      expectedDiag: [] as Diagnostic[],
+    },
+    {
+      expr: 'status bitor 64',
+      expectedValueType: ValueType.vector,
+      expectedDiag: [] as Diagnostic[],
+    },
+    {
+      expr: 'status bitor on(instance) group_left(model) mask',
+      expectedValueType: ValueType.vector,
+      expectedDiag: [] as Diagnostic[],
+    },
+    {
+      expr: '5 bitxor 3',
+      expectedValueType: ValueType.scalar,
+      expectedDiag: [] as Diagnostic[],
+    },
+    {
+      expr: 'status bitxor 64',
+      expectedValueType: ValueType.vector,
+      expectedDiag: [] as Diagnostic[],
+    },
+    {
+      expr: 'status bitxor on(instance) group_left(model) mask',
+      expectedValueType: ValueType.vector,
+      expectedDiag: [] as Diagnostic[],
+    },
+    {
       expr: '1',
       expectedValueType: ValueType.scalar,
       expectedDiag: [] as Diagnostic[],

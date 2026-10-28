@@ -43,6 +43,9 @@ const binOpPrecedence = {
   [binaryOperatorType.or]: 6,
   [binaryOperatorType.unless]: 5,
   [binaryOperatorType.atan2]: 2,
+  [binaryOperatorType.bitand]: 2,
+  [binaryOperatorType.bitor]: 2,
+  [binaryOperatorType.bitxor]: 2,
 };
 
 export const maybeParenthesizeBinopChild = (
