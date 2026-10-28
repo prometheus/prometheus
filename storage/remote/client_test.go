@@ -1100,31 +1100,31 @@ func TestClientWriteModeContentType(t *testing.T) {
 	for _, tc := range []struct {
 		name                string
 		protoMsg            remoteapi.WriteMessageType
-		mode                config.RemoteWriteMode
+		mode                remoteapi.WriteMode
 		expectedContentType string
 	}{
 		{
 			name:                "v1 default",
 			protoMsg:            remoteapi.WriteV1MessageType,
-			mode:                config.RemoteWriteModeNone,
+			mode:                remoteapi.WriteModeNone,
 			expectedContentType: "application/x-protobuf",
 		},
 		{
 			name:                "v2 default",
 			protoMsg:            remoteapi.WriteV2MessageType,
-			mode:                config.RemoteWriteModeNone,
+			mode:                remoteapi.WriteModeNone,
 			expectedContentType: "application/x-protobuf;proto=io.prometheus.write.v2.Request",
 		},
 		{
 			name:                "v2 stateless",
 			protoMsg:            remoteapi.WriteV2MessageType,
-			mode:                config.RemoteWriteModeStateless,
+			mode:                remoteapi.WriteModeStateless,
 			expectedContentType: "application/x-protobuf;proto=io.prometheus.write.v2.Request;mode=stateless",
 		},
 		{
 			name:                "v2 stateless-st",
 			protoMsg:            remoteapi.WriteV2MessageType,
-			mode:                config.RemoteWriteModeStatelessST,
+			mode:                remoteapi.WriteModeStatelessST,
 			expectedContentType: "application/x-protobuf;proto=io.prometheus.write.v2.Request;mode=stateless-st",
 		},
 	} {

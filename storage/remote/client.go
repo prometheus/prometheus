@@ -39,7 +39,6 @@ import (
 	"go.opentelemetry.io/otel"
 	"go.opentelemetry.io/otel/trace"
 
-	"github.com/prometheus/prometheus/config"
 	"github.com/prometheus/prometheus/prompb"
 	"github.com/prometheus/prometheus/storage"
 	"github.com/prometheus/prometheus/storage/remote/azuread"
@@ -122,7 +121,7 @@ type Client struct {
 	readQueriesDuration prometheus.ObserverVec
 
 	writeProtoMsg    remoteapi.WriteMessageType
-	writeMode        config.RemoteWriteMode
+	writeMode        remoteapi.WriteMode
 	writeCompression remoteapi.Compression
 }
 
@@ -137,7 +136,7 @@ type ClientConfig struct {
 	Headers               map[string]string
 	RetryOnRateLimit      bool
 	WriteProtoMsg         remoteapi.WriteMessageType
-	WriteMode             config.RemoteWriteMode
+	WriteMode             remoteapi.WriteMode
 	ChunkedReadLimit      uint64
 	RoundRobinDNS         bool
 	AcceptedResponseTypes []prompb.ReadRequest_ResponseType
@@ -276,11 +275,7 @@ func (c *Client) Store(ctx context.Context, req []byte, attempt int) (WriteRespo
 	}
 
 	httpReq.Header.Add("Content-Encoding", string(c.writeCompression))
-	contentType := remoteWriteContentTypeHeaders[c.writeProtoMsg]
-	if c.writeProtoMsg == remoteapi.WriteV2MessageType && c.writeMode != config.RemoteWriteModeNone {
-		contentType += ";mode=" + string(c.writeMode)
-	}
-	httpReq.Header.Set("Content-Type", contentType)
+	httpReq.Header.Set("Content-Type", remoteapi.ContentTypeHeader(c.writeProtoMsg, c.writeMode))
 	httpReq.Header.Set("User-Agent", UserAgent)
 	if c.writeProtoMsg == remoteapi.WriteV1MessageType {
 		// Compatibility mode for 1.0.

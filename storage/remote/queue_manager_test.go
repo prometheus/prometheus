@@ -330,7 +330,7 @@ func newTestClientAndQueueManager(t testing.TB, flushDeadline time.Duration, pro
 func newTestQueueManager(t testing.TB, cfg config.QueueConfig, mcfg config.MetadataConfig, deadline time.Duration, c WriteClient, protoMsg remoteapi.WriteMessageType) *QueueManager {
 	dir := t.TempDir()
 	metrics := newQueueManagerMetrics(nil, "", "")
-	m := NewQueueManager(metrics, nil, nil, nil, dir, newEWMARate(ewmaWeight, shardUpdateDuration), cfg, mcfg, labels.EmptyLabels(), nil, c, deadline, newPool(), newHighestTimestampMetric(), nil, false, false, false, protoMsg, config.RemoteWriteModeNone, record.NewBuffersPool(), false, false)
+	m := NewQueueManager(metrics, nil, nil, nil, dir, newEWMARate(ewmaWeight, shardUpdateDuration), cfg, mcfg, labels.EmptyLabels(), nil, c, deadline, newPool(), newHighestTimestampMetric(), nil, false, false, false, protoMsg, remoteapi.WriteModeNone, record.NewBuffersPool(), false, false)
 
 	return m
 }
@@ -877,7 +877,7 @@ func TestDisableReshardOnRetry(t *testing.T) {
 		}
 	)
 
-	m := NewQueueManager(metrics, nil, nil, nil, "", newEWMARate(ewmaWeight, shardUpdateDuration), cfg, mcfg, labels.EmptyLabels(), nil, client, 0, newPool(), newHighestTimestampMetric(), nil, false, false, false, remoteapi.WriteV1MessageType, config.RemoteWriteModeNone, nil, false, false)
+	m := NewQueueManager(metrics, nil, nil, nil, "", newEWMARate(ewmaWeight, shardUpdateDuration), cfg, mcfg, labels.EmptyLabels(), nil, client, 0, newPool(), newHighestTimestampMetric(), nil, false, false, false, remoteapi.WriteV1MessageType, remoteapi.WriteModeNone, nil, false, false)
 	m.StoreSeries(recs.Series, 0)
 
 	// Attempt to samples while the manager is running. We immediately stop the
@@ -1566,7 +1566,7 @@ func BenchmarkStoreSeries(b *testing.B) {
 				mcfg := config.DefaultMetadataConfig
 				metrics := newQueueManagerMetrics(nil, "", "")
 
-				m := NewQueueManager(metrics, nil, nil, nil, dir, newEWMARate(ewmaWeight, shardUpdateDuration), cfg, mcfg, labels.EmptyLabels(), nil, c, defaultFlushDeadline, newPool(), newHighestTimestampMetric(), nil, false, false, false, remoteapi.WriteV1MessageType, config.RemoteWriteModeNone, record.NewBuffersPool(), false, false)
+				m := NewQueueManager(metrics, nil, nil, nil, dir, newEWMARate(ewmaWeight, shardUpdateDuration), cfg, mcfg, labels.EmptyLabels(), nil, c, defaultFlushDeadline, newPool(), newHighestTimestampMetric(), nil, false, false, false, remoteapi.WriteV1MessageType, remoteapi.WriteModeNone, record.NewBuffersPool(), false, false)
 				m.externalLabels = tc.externalLabels
 				m.relabelConfigs = tc.relabelConfigs
 
@@ -3287,7 +3287,7 @@ func newTestNHCBQueueManager(t testing.TB, c WriteClient, opts nhcbQueueTestOpti
 	}
 	m := NewQueueManager(newQueueManagerMetrics(nil, "", ""), nil, nil, nil, t.TempDir(), opts.samplesIn,
 		cfg, mcfg, labels.EmptyLabels(), nil, c, defaultFlushDeadline, newPool(), opts.highestRecvTimestamp,
-		nil, opts.sendExemplars, opts.sendNativeHistograms, false, opts.protoMsg, config.RemoteWriteModeNone, record.NewBuffersPool(), false, true)
+		nil, opts.sendExemplars, opts.sendNativeHistograms, false, opts.protoMsg, remoteapi.WriteModeNone, record.NewBuffersPool(), false, true)
 	// Start the production senders without the WAL watcher or automatic resharding loop.
 	m.numShards = opts.numShards
 	m.shards.start(opts.numShards)
@@ -4122,7 +4122,7 @@ func TestQueueManager_RemoteWriteModes(t *testing.T) {
 			m := NewQueueManager(
 				metrics, nil, nil, nil, t.TempDir(), newEWMARate(ewmaWeight, shardUpdateDuration),
 				cfg, mcfg, labels.EmptyLabels(), nil, c, defaultFlushDeadline, newPool(), newHighestTimestampMetric(),
-				nil, true, true, enableTypeAndUnitLabels, remoteapi.WriteV2MessageType, config.RemoteWriteModeStateless,
+				nil, true, true, enableTypeAndUnitLabels, remoteapi.WriteV2MessageType, remoteapi.WriteModeStateless,
 				record.NewBuffersPool(), false, false,
 			)
 			m.numShards = 1
@@ -4201,7 +4201,7 @@ func TestQueueManager_RemoteWriteModes(t *testing.T) {
 			m := NewQueueManager(
 				metrics, nil, nil, nil, t.TempDir(), newEWMARate(ewmaWeight, shardUpdateDuration),
 				cfg, mcfg, labels.EmptyLabels(), nil, c, defaultFlushDeadline, newPool(), newHighestTimestampMetric(),
-				nil, true, true, enableTypeAndUnitLabels, remoteapi.WriteV2MessageType, config.RemoteWriteModeStatelessST,
+				nil, true, true, enableTypeAndUnitLabels, remoteapi.WriteV2MessageType, remoteapi.WriteModeStatelessST,
 				record.NewBuffersPool(), false, false,
 			)
 			m.numShards = 1

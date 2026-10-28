@@ -508,7 +508,7 @@ func TestWriteStorage_AppenderV2_AppendExemplars(t *testing.T) {
 func TestWriteStorageApplyConfig_ValidateRemoteWriteFeatures(t *testing.T) {
 	for _, tc := range []struct {
 		name                    string
-		mode                    config.RemoteWriteMode
+		mode                    remoteapi.WriteMode
 		enableTypeAndUnitLabels bool
 		enableMetadataWAL       bool
 		enableSTStorage         bool
@@ -516,26 +516,26 @@ func TestWriteStorageApplyConfig_ValidateRemoteWriteFeatures(t *testing.T) {
 	}{
 		{
 			name:                    "stateless missing metadata features",
-			mode:                    config.RemoteWriteModeStateless,
+			mode:                    remoteapi.WriteModeStateless,
 			enableTypeAndUnitLabels: false,
 			enableMetadataWAL:       false,
 			expectedErr:             "remote_write mode \"stateless\" requires --enable-feature=metadata-wal-records or --enable-feature=type-and-unit-labels",
 		},
 		{
 			name:                    "stateless with type-and-unit-labels",
-			mode:                    config.RemoteWriteModeStateless,
+			mode:                    remoteapi.WriteModeStateless,
 			enableTypeAndUnitLabels: true,
 			enableMetadataWAL:       false,
 		},
 		{
 			name:                    "stateless with metadata-wal-records",
-			mode:                    config.RemoteWriteModeStateless,
+			mode:                    remoteapi.WriteModeStateless,
 			enableTypeAndUnitLabels: false,
 			enableMetadataWAL:       true,
 		},
 		{
 			name:                    "stateless-st missing metadata features",
-			mode:                    config.RemoteWriteModeStatelessST,
+			mode:                    remoteapi.WriteModeStatelessST,
 			enableTypeAndUnitLabels: false,
 			enableMetadataWAL:       false,
 			enableSTStorage:         true,
@@ -543,7 +543,7 @@ func TestWriteStorageApplyConfig_ValidateRemoteWriteFeatures(t *testing.T) {
 		},
 		{
 			name:                    "stateless-st missing st-storage",
-			mode:                    config.RemoteWriteModeStatelessST,
+			mode:                    remoteapi.WriteModeStatelessST,
 			enableTypeAndUnitLabels: true,
 			enableMetadataWAL:       false,
 			enableSTStorage:         false,
@@ -551,14 +551,14 @@ func TestWriteStorageApplyConfig_ValidateRemoteWriteFeatures(t *testing.T) {
 		},
 		{
 			name:                    "stateless-st with type-and-unit-labels and st-storage",
-			mode:                    config.RemoteWriteModeStatelessST,
+			mode:                    remoteapi.WriteModeStatelessST,
 			enableTypeAndUnitLabels: true,
 			enableMetadataWAL:       false,
 			enableSTStorage:         true,
 		},
 		{
 			name:                    "stateless-st with metadata-wal-records and st-storage",
-			mode:                    config.RemoteWriteModeStatelessST,
+			mode:                    remoteapi.WriteModeStatelessST,
 			enableTypeAndUnitLabels: false,
 			enableMetadataWAL:       true,
 			enableSTStorage:         true,

@@ -21,6 +21,7 @@ import (
 	"sync"
 	"time"
 
+	remoteapi "github.com/prometheus/client_golang/exp/api/remote"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promauto"
 	"github.com/prometheus/common/promslog"
@@ -86,11 +87,11 @@ type WriteStorage struct {
 func validateRemoteWriteFeatures(rwConfs []*config.RemoteWriteConfig, enableTypeAndUnitLabels, enableMetadataWALRecords, enableSTStorage bool) error {
 	for _, rwConf := range rwConfs {
 		switch rwConf.Mode {
-		case config.RemoteWriteModeStateless, config.RemoteWriteModeStatelessST:
+		case remoteapi.WriteModeStateless, remoteapi.WriteModeStatelessST:
 			if !enableTypeAndUnitLabels && !enableMetadataWALRecords {
 				return fmt.Errorf("remote_write mode %q requires --enable-feature=metadata-wal-records or --enable-feature=type-and-unit-labels", rwConf.Mode)
 			}
-			if rwConf.Mode == config.RemoteWriteModeStatelessST && !enableSTStorage {
+			if rwConf.Mode == remoteapi.WriteModeStatelessST && !enableSTStorage {
 				return fmt.Errorf("remote_write mode %q requires --enable-feature=st-storage", rwConf.Mode)
 			}
 		}
