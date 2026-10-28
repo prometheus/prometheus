@@ -37,14 +37,14 @@ func BenchmarkHeadMetricMetadataQuerySmall(b *testing.B) {
 
 func benchmarkHeadMetricMetadataQuery(b *testing.B, numSeries int) {
 	for _, versions := range []int{1, 5} {
-		for _, every := range []int{0, 1, 100} {
+		for _, every := range []int{0, 1, 100, 256} {
 			for _, limit := range []int{10, 0} {
 				// Empty metadata needs only one history-depth and limit control.
 				if every == 0 && (versions != 1 || limit != 10) {
 					continue
 				}
 				// Both densities select the same series in a singleton fixture.
-				if numSeries == 1 && every == 100 {
+				if numSeries == 1 && every > 1 {
 					continue
 				}
 				b.Run(fmt.Sprintf("versions=%d/every=%d/limit=%d", versions, every, limit), func(b *testing.B) {

@@ -210,7 +210,7 @@ func validateMetricMetadataBenchmarkState(b *testing.B, h *Head, mode metricMeta
 			b.Fatalf("unexpected native metadata eviction count: got %d, want %d", got, want)
 		}
 		for _, i := range []int{0, len(refs) - 1} {
-			versions, truncated, ok := h.nativeMetricMetadata.get(chunks.HeadSeriesRef(refs[i]))
+			versions, truncated, ok := h.nativeMetricMetadataForTest(chunks.HeadSeriesRef(refs[i]))
 			if !ok {
 				b.Fatalf("native metadata for series %d was not found", refs[i])
 			}
@@ -585,7 +585,7 @@ func BenchmarkHeadMetricMetadataAppendFixedConcurrency(b *testing.B) {
 						variant = maxNativeMetricMetadataVersions + int((n-1)%2)
 						evictions += n
 					}
-					versions, truncated, ok := h.nativeMetricMetadata.get(chunks.HeadSeriesRef(ref))
+					versions, truncated, ok := h.nativeMetricMetadataForTest(chunks.HeadSeriesRef(ref))
 					if !ok || len(versions) != maxNativeMetricMetadataVersions || truncated != updated || !versions[len(versions)-1].Metadata.Equals(fixture.options[variant][fixture.familyBySeries[i]].Metadata) {
 						b.Fatalf("unexpected metadata for series %d after %d rounds", i, n)
 					}
