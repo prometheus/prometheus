@@ -1094,6 +1094,127 @@ describe('promql operations', () => {
         },
       ],
     },
+    {
+      expr: 'info(metric, {})',
+      expectedValueType: ValueType.vector,
+      expectedDiag: [
+        {
+          from: 13,
+          to: 15,
+          message: 'data label selector must contain at least one label matcher',
+          severity: 'error',
+        },
+      ],
+    },
+    {
+      expr: 'info(metric, { })',
+      expectedValueType: ValueType.vector,
+      expectedDiag: [
+        {
+          from: 13,
+          to: 16,
+          message: 'data label selector must contain at least one label matcher',
+          severity: 'error',
+        },
+      ],
+    },
+    {
+      expr: 'info(metric, {data!="foo"})',
+      expectedValueType: ValueType.vector,
+      expectedDiag: [],
+    },
+    {
+      expr: 'info(metric, {data=""})',
+      expectedValueType: ValueType.vector,
+      expectedDiag: [],
+    },
+    {
+      expr: 'info(metric, {data=~".*"})',
+      expectedValueType: ValueType.vector,
+      expectedDiag: [],
+    },
+    {
+      expr: 'info(metric, {data!="foo"} @ 120)',
+      expectedValueType: ValueType.vector,
+      expectedDiag: [],
+    },
+    {
+      expr: 'info(metric, {data!="foo"} offset 1m)',
+      expectedValueType: ValueType.vector,
+      expectedDiag: [],
+    },
+    {
+      expr: 'info(metric, {} @ 120)',
+      expectedValueType: ValueType.vector,
+      expectedDiag: [
+        {
+          from: 13,
+          to: 15,
+          message: 'data label selector must contain at least one label matcher',
+          severity: 'error',
+        },
+      ],
+    },
+    {
+      expr: 'info(metric, target_info{foo="bar"} @ 120)',
+      expectedValueType: ValueType.vector,
+      expectedDiag: [
+        {
+          from: 0,
+          to: 42,
+          message: `expected label selectors as the second argument to "info" function, got [object Object]`,
+          severity: 'error',
+        },
+      ],
+    },
+    {
+      expr: 'info(metric, target_info{foo="bar"} offset 1m)',
+      expectedValueType: ValueType.vector,
+      expectedDiag: [
+        {
+          from: 0,
+          to: 46,
+          message: `expected label selectors as the second argument to "info" function, got [object Object]`,
+          severity: 'error',
+        },
+      ],
+    },
+    {
+      expr: 'info({data!="foo"})',
+      expectedValueType: ValueType.vector,
+      expectedDiag: [
+        {
+          from: 5,
+          to: 18,
+          message: 'vector selector must contain at least one non-empty matcher',
+          severity: 'error',
+        },
+      ],
+    },
+    {
+      expr: 'info({})',
+      expectedValueType: ValueType.vector,
+      expectedDiag: [
+        {
+          from: 5,
+          to: 7,
+          message: 'vector selector must contain at least one non-empty matcher',
+          severity: 'error',
+        },
+      ],
+    },
+    {
+      expr: '{data!="foo"}',
+      expectedValueType: ValueType.vector,
+      expectedDiag: [
+        {
+          from: 0,
+          to: 13,
+          message: 'vector selector must contain at least one non-empty matcher',
+          severity: 'error',
+        },
+      ],
+    },
   ];
   testCases.forEach((value) => {
     const state = createEditorState(value.expr);

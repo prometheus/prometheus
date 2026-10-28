@@ -68,6 +68,20 @@ import { syntaxTree } from '@codemirror/language';
 import { getFunction, Matcher, ValueType, VectorMatchCardinality } from '../types';
 import { buildVectorMatching } from './vector';
 
+// unwrapInfoDataSelector returns the selector inside info()'s optional @ or
+// offset modifiers, so metric-name validation sees the actual data selector.
+function unwrapInfoDataSelector(node: SyntaxNode): SyntaxNode {
+  let current = node;
+  while (current.type.id === StepInvariantExpr || current.type.id === OffsetExpr) {
+    const child = current.getChild('Expr');
+    if (!child) {
+      break;
+    }
+    current = child;
+  }
+  return current;
+}
+
 export class Parser {
   private readonly tree: Tree;
   private readonly state: EditorState;
@@ -120,7 +134,7 @@ export class Parser {
 
   // checkAST is inspired of the same named method from prometheus/prometheus:
   // https://github.com/prometheus/prometheus/blob/3470ee1fbf9d424784eb2613bab5ab0f14b4d222/promql/parser/parse.go#L433
-  checkAST(node: SyntaxNode | null): ValueType {
+  checkAST(node: SyntaxNode | null, infoDataSelector = false): ValueType {
     if (!node) {
       return ValueType.none;
     }
@@ -175,7 +189,7 @@ export class Parser {
       case OffsetExpr: {
         // `checkAST` only recurses for explicit node kinds; there is no default
         // branch that walks all children, so we must visit the vector operand.
-        this.checkAST(node.getChild('Expr'));
+        this.checkAST(node.getChild('Expr'), infoDataSelector);
         if (!node.getChild(OffsetDurationExpr)) {
           // Always emit this message (do not gate on `OffsetExpr.to === topNode.to`:
           // the query box often has trailing space, so that check never matched in the UI).
@@ -189,10 +203,10 @@ export class Parser {
         this.checkAST(node.getChild('Expr'));
         break;
       case VectorSelector:
-        this.checkVectorSelector(node);
+        this.checkVectorSelector(node, infoDataSelector);
         break;
       case StepInvariantExpr: {
-        const exprValue = this.checkAST(node.getChild('Expr'));
+        const exprValue = this.checkAST(node.getChild('Expr'), infoDataSelector);
         if (exprValue !== ValueType.vector && exprValue !== ValueType.matrix) {
           this.addDiagnostic(node, `@ modifier must be preceded by an instant selector vector or range vector selector or a subquery`);
         }
@@ -343,12 +357,14 @@ export class Parser {
 
     if (funcSignature.name === 'info') {
       // Verify that the data label selector expression is not prefixed with metric name.
-      if (args.length > 1 && args[1].getChild(Identifier)) {
+      const dataSelector = args.length > 1 ? unwrapInfoDataSelector(args[1]) : null;
+      if (dataSelector?.getChild(Identifier)) {
         this.addDiagnostic(node, `expected label selectors as the second argument to "info" function, got ${args[1].type}`);
       }
     }
 
     for (let i = 0; i < args.length; i++) {
+      const isInfoDataSelector = funcSignature.name === 'info' && i === 1;
       let j = i;
       if (j >= funcSignature.argTypes.length) {
         if (funcSignature.variadic === 0) {
@@ -358,7 +374,7 @@ export class Parser {
         }
         j = funcSignature.argTypes.length - 1;
       }
-      this.expectType(args[i], funcSignature.argTypes[j], `call to function "${funcSignature.name}"`);
+      this.expectType(args[i], funcSignature.argTypes[j], `call to function "${funcSignature.name}"`, isInfoDataSelector);
     }
   }
 
@@ -387,7 +403,7 @@ export class Parser {
     }
   }
 
-  private checkVectorSelector(node: SyntaxNode): void {
+  private checkVectorSelector(node: SyntaxNode, infoDataSelector = false): void {
     const matchList = node.getChild(LabelMatchers);
     const labelMatcherOpts = [QuotedLabelName, QuotedLabelMatcher, UnquotedLabelMatcher];
     let labelMatchers: Matcher[] = [];
@@ -422,6 +438,15 @@ export class Parser {
       }
     }
 
+    // info()'s data label selector is special: it must contain at least one
+    // matcher, but its matchers may all match the empty string.
+    if (infoDataSelector) {
+      if (labelMatchers.length === 0) {
+        this.addDiagnostic(node, 'data label selector must contain at least one label matcher');
+      }
+      return;
+    }
+
     // A Vector selector must contain at least one non-empty matcher to prevent
     // implicit selection of all metrics (e.g. by a typo).
     const empty = labelMatchers.every((lm) => lm.matchesEmpty());
@@ -430,8 +455,8 @@ export class Parser {
     }
   }
 
-  private expectType(node: SyntaxNode, want: ValueType, context: string): void {
-    const t = this.checkAST(node);
+  private expectType(node: SyntaxNode, want: ValueType, context: string, infoDataSelector = false): void {
+    const t = this.checkAST(node, infoDataSelector);
     if (t !== want) {
       this.addDiagnostic(node, `expected type ${want} in ${context}, got ${t}`);
     }
