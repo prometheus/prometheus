@@ -315,8 +315,8 @@ github.com/pmezard/go-difflib v1.0.1-0.20181226105442-5d4384ee4fb2 h1:Jamvg5psRI
 github.com/pmezard/go-difflib v1.0.1-0.20181226105442-5d4384ee4fb2/go.mod h1:iKH77koFhYxTK1pcRnkKkqfTogsbg7gZNVY4sRDYZ/4=
 github.com/prometheus/client_golang v1.25.0 h1:cDtW1TcFsMi1RJc8khwCKB4VhzwV04aKqbYtNOXuiK0=
 github.com/prometheus/client_golang v1.25.0/go.mod h1:j2X/4/kaQHLPnmyEU8zjmkndo1T317VpCIQEml8LTKk=
-github.com/prometheus/client_golang/exp v0.0.0-20261026045710-70c0a469a56a h1:OoEy/u/pZ5f40MNac+y1j5kQM0R25ax0WRjm3uxqYTQ=
-github.com/prometheus/client_golang/exp v0.0.0-20261026045710-70c0a469a56a/go.mod h1:tNd0xTnUQoyfRnpWzS8mCykqNyqGUdoduK0LeEMC1+Y=
+github.com/prometheus/client_golang/exp v0.0.0-20261028105007-0b2f01f00376 h1:fgyLVcW39lvvZ4xeN1Um+BJ/n/RE6o41v0esLUFnR2Q=
+github.com/prometheus/client_golang/exp v0.0.0-20261028105007-0b2f01f00376/go.mod h1:tNd0xTnUQoyfRnpWzS8mCykqNyqGUdoduK0LeEMC1+Y=
 github.com/prometheus/client_model v0.6.3 h1:O0jaTVAYNxTHYInEPFJt5I3+sN8zqBtVMPTB1qyxiEo=
 github.com/prometheus/client_model v0.6.3/go.mod h1:gpN5P9S7Rr6Yr92PiQ+Ixvhf6JZEkF1dnxsYL2aPBEM=
 github.com/prometheus/common v0.72.1 h1:ZAiQed/nk8IIcsdzb2TlJu23NEUDyDLQ9TXTN2WRK6Y=
