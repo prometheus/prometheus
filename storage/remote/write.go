@@ -152,7 +152,6 @@ func (rws *WriteStorage) ApplyConfig(conf *config.Config) error {
 	// error leaves the previous state intact.
 	newQueues := make(map[string]*QueueManager)
 	reusedClients := make(map[string]WriteClient)
-	newHashes := []string{}
 	for _, rwConf := range conf.RemoteWriteConfigs {
 		hash, err := toHash(rwConf)
 		if err != nil {
@@ -223,8 +222,6 @@ func (rws *WriteStorage) ApplyConfig(conf *config.Config) error {
 			rwConf.FailedRequestLogging,
 			rwConf.ConvertNHCBToClassic,
 		)
-		// Keep track of which queues are new so we know which to start.
-		newHashes = append(newHashes, hash)
 	}
 
 	rws.externalLabels = conf.GlobalConfig.ExternalLabels
@@ -232,17 +229,21 @@ func (rws *WriteStorage) ApplyConfig(conf *config.Config) error {
 	for hash, c := range reusedClients {
 		// Update the client in case any secret configuration has changed.
 		newQueues[hash].SetClient(c)
-		delete(rws.queues, hash)
 	}
 
-	// Anything remaining in rws.queues is a queue who's config has
-	// changed or was removed from the overall remote write config.
-	for _, q := range rws.queues {
-		q.Stop()
+	// Stop queues whose config changed or that were removed from the remote
+	// write config.
+	for hash, q := range rws.queues {
+		if newQueues[hash] != q {
+			q.Stop()
+		}
 	}
 
-	for _, hash := range newHashes {
-		newQueues[hash].Start()
+	// Only start queues that are new; reused ones are already running.
+	for hash, q := range newQueues {
+		if rws.queues[hash] != q {
+			q.Start()
+		}
 	}
 
 	rws.queues = newQueues

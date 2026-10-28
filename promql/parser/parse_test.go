@@ -4515,6 +4515,41 @@ var testExpr = []struct {
 		},
 	},
 	{
+		input: `info(http_request_counter_total{namespace="zzz"}, {})`,
+		fail:  true,
+		errors: ParseErrors{
+			ParseErr{
+				PositionRange: posrange.PositionRange{Start: 50, End: 52},
+				Err:           errors.New("data label selector must contain at least one label matcher"),
+				Query:         `info(http_request_counter_total{namespace="zzz"}, {})`,
+			},
+		},
+	},
+	{
+		input: `info(http_request_counter_total{namespace="zzz"}, {data!="foo"})`,
+		expected: &Call{
+			Func: MustGetFunction("info"),
+			Args: Expressions{
+				&VectorSelector{
+					Name: "http_request_counter_total",
+					LabelMatchers: []*labels.Matcher{
+						MustLabelMatcher(labels.MatchEqual, "namespace", "zzz"),
+						MustLabelMatcher(labels.MatchEqual, model.MetricNameLabel, "http_request_counter_total"),
+					},
+					PosRange: posrange.PositionRange{Start: 5, End: 48},
+				},
+				&VectorSelector{
+					LabelMatchers: []*labels.Matcher{
+						MustLabelMatcher(labels.MatchNotEqual, "data", "foo"),
+					},
+					PosRange:                posrange.PositionRange{Start: 50, End: 63},
+					BypassEmptyMatcherCheck: true,
+				},
+			},
+			PosRange: posrange.PositionRange{Start: 0, End: 64},
+		},
+	},
+	{
 		input: `info(http_request_counter_total{namespace="zzz"}, {foo="bar"} == 1)`,
 		fail:  true,
 		errors: ParseErrors{
@@ -6622,4 +6657,51 @@ func TestNewParser(t *testing.T) {
 	// Invalid input should return errors.
 	_, err = p.ParseExpr("===")
 	require.Error(t, err)
+}
+
+func TestParseBitwiseOperators(t *testing.T) {
+	for _, op := range []ItemType{BITAND, BITOR, BITXOR} {
+		t.Run(op.String(), func(t *testing.T) {
+			p := NewParser(Options{})
+			for _, input := range []string{
+				"5 " + op.String() + " 3",
+				"status " + op.String() + " 64",
+				"64 " + op.String() + " status",
+				"status " + op.String() + " on (instance) group_left (model) mask",
+				"mask " + op.String() + " ignoring (device) group_right () status",
+			} {
+				t.Run(input, func(t *testing.T) {
+					expr, err := p.ParseExpr(input)
+					require.NoError(t, err)
+					require.Equal(t, op, expr.(*BinaryExpr).Op)
+					require.Equal(t, input, expr.String())
+				})
+			}
+
+			// Match atan2 precedence, including left associativity with multiplication.
+			expr, err := p.ParseExpr("1 + 6 " + op.String() + " 3 * 2 ^ 3")
+			require.NoError(t, err)
+			add := expr.(*BinaryExpr)
+			require.EqualValues(t, ADD, add.Op)
+			mul := add.RHS.(*BinaryExpr)
+			require.EqualValues(t, MUL, mul.Op)
+			require.Equal(t, op, mul.LHS.(*BinaryExpr).Op)
+			require.EqualValues(t, POW, mul.RHS.(*BinaryExpr).Op)
+
+			for _, tc := range []struct{ input, err string }{
+				{"status " + op.String() + " bool 1", "bool modifier can only be used on comparison operators"},
+				{"status[5m] " + op.String() + " 1", "binary expression must contain only scalar and instant vector types"},
+				{"status " + op.String() + " on(instance) 1", "vector matching only allowed between instant vectors"},
+			} {
+				_, err := p.ParseExpr(tc.input)
+				require.ErrorContains(t, err, tc.err)
+			}
+
+			// New keywords remain usable as metric names and grouping labels.
+			for _, input := range []string{op.String(), "sum by (" + op.String() + ") (status)"} {
+				_, err := testParser.ParseExpr(input)
+				require.NoError(t, err)
+			}
+		})
+	}
 }
