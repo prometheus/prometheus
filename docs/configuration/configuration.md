@@ -4139,7 +4139,7 @@ write_relabel_configs:
 [ send_exemplars: <boolean> | default = false ]
 
 # Enables sending of native histograms, also known as sparse histograms, over remote write.
-# Defaults to `true` when `mode` is `stateless` or `stateless-st`.
+# When `mode` is `stateless` or `stateless-st`, this is set to `true` and manually setting it to `false` is an error.
 [ send_native_histograms: <boolean> | default = false ]
 
 # When enabled, remote-write will resolve the URL host name via DNS, choose one of the IP addresses at random, and connect to it.
