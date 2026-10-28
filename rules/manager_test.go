@@ -1202,8 +1202,11 @@ func TestMetricsUpdate(t *testing.T) {
 		}
 
 		cases := []struct {
-			files   []string
-			metrics int
+			files []string
+			// The keys in unload replace an update with files.
+			unload   []string
+			unloaded int
+			metrics  int
 		}{
 			{
 				files:   files,
@@ -1224,11 +1227,40 @@ func TestMetricsUpdate(t *testing.T) {
 				files:   files[1:],
 				metrics: 10,
 			},
+			{
+				files:   files,
+				metrics: 20,
+			},
+			{
+				// Unloading one group should delete only its metrics. UnloadGroups should ignore a
+				// duplicate key and an unknown key.
+				unload:   []string{GroupKey("fixtures/rules.yaml", "test"), GroupKey("fixtures/rules.yaml", "test"), "unknown"},
+				unloaded: 1,
+				metrics:  10,
+			},
+			{
+				unload:   []string{GroupKey("fixtures/rules2.yaml", "test_2")},
+				unloaded: 1,
+				metrics:  0,
+			},
+			{
+				files:   files,
+				metrics: 20,
+			},
+			{
+				unload:   []string{GroupKey("fixtures/rules.yaml", "test"), GroupKey("fixtures/rules2.yaml", "test_2")},
+				unloaded: 2,
+				metrics:  0,
+			},
 		}
 
 		for i, c := range cases {
-			err := ruleManager.Update(time.Second, c.files, labels.EmptyLabels(), "", nil)
-			require.NoError(t, err)
+			if c.unload != nil {
+				require.Equal(t, c.unloaded, ruleManager.UnloadGroups(c.unload...), "test %d: invalid count of unloaded groups", i)
+			} else {
+				err := ruleManager.Update(time.Second, c.files, labels.EmptyLabels(), "", nil)
+				require.NoError(t, err)
+			}
 			time.Sleep(2 * time.Second)
 			require.Equal(t, c.metrics, countMetrics(), "test %d: invalid count of metrics", i)
 		}
@@ -1270,7 +1302,9 @@ func TestGroupStalenessOnRemoval(t *testing.T) {
 		}()
 
 		cases := []struct {
-			files    []string
+			files []string
+			// The keys in unload replace an update with files.
+			unload   []string
 			staleNaN int
 		}{
 			{
@@ -1295,6 +1329,33 @@ func TestGroupStalenessOnRemoval(t *testing.T) {
 				staleNaN: 1,
 			},
 			{
+				// Load the groups again. The next case unloads them.
+				files:    files,
+				staleNaN: 0,
+			},
+			{
+				// Unloading the groups stands for a hand-off to another evaluator. So it should not
+				// produce staleness markers.
+				unload:   []string{GroupKey("fixtures/rules2.yaml", "test_2")},
+				staleNaN: 0,
+			},
+			{
+				// The groups are unloaded already. So removing the files should not produce
+				// staleness markers.
+				files:    files[:0],
+				staleNaN: 0,
+			},
+			{
+				// Loading the same groups again stands for a move back to this evaluator.
+				files:    files,
+				staleNaN: 0,
+			},
+			{
+				// The groups that are loaded again should produce a staleness marker on removal.
+				files:    files[:0],
+				staleNaN: 1,
+			},
+			{
 				// Add rules back so we have rules loaded when we stop the manager
 				// and check for the absence of staleness markers.
 				files:    sameFiles,
@@ -1304,8 +1365,12 @@ func TestGroupStalenessOnRemoval(t *testing.T) {
 
 		var totalStaleNaN int
 		for i, c := range cases {
-			err := ruleManager.Update(time.Second, c.files, labels.EmptyLabels(), "", nil)
-			require.NoError(t, err)
+			if c.unload != nil {
+				require.Equal(t, len(c.unload), ruleManager.UnloadGroups(c.unload...), "test %d: invalid count of unloaded groups", i)
+			} else {
+				err := ruleManager.Update(time.Second, c.files, labels.EmptyLabels(), "", nil)
+				require.NoError(t, err)
+			}
 			time.Sleep(3 * time.Second)
 			totalStaleNaN += c.staleNaN
 			require.Equal(t, totalStaleNaN, countStaleNaN(t, storage), "test %d/%q: invalid count of staleness markers", i, c.files)
@@ -1313,6 +1378,47 @@ func TestGroupStalenessOnRemoval(t *testing.T) {
 		ruleManager.Stop()
 		stopped = true
 		require.Equal(t, totalStaleNaN, countStaleNaN(t, storage), "invalid count of staleness markers after stopping the engine")
+
+		// Unloading groups from a stopped manager should do nothing.
+		require.Zero(t, ruleManager.UnloadGroups(GroupKey("fixtures/rules2_copy.yaml", "test_2 copy")))
+		require.Len(t, ruleManager.RuleGroups(), 1)
+	})
+}
+
+func TestUnloadGroupsWaitsForGroupStop(t *testing.T) {
+	synctest.Test(t, func(t *testing.T) {
+		evaluating := make(chan struct{}, 10)
+		release := make(chan struct{})
+		storage := teststorage.New(t)
+		ruleManager := NewManager(&ManagerOptions{
+			AppendableV2: storage,
+			Queryable:    storage,
+			QueryFunc: func(context.Context, string, time.Time) (promql.Vector, error) {
+				evaluating <- struct{}{}
+				<-release
+				return promql.Vector{}, nil
+			},
+			Context: context.Background(),
+			Logger:  promslog.NewNopLogger(),
+		})
+		ruleManager.start()
+		defer ruleManager.Stop()
+
+		require.NoError(t, ruleManager.Update(time.Second, []string{"fixtures/rules.yaml"}, labels.EmptyLabels(), "", nil))
+		<-evaluating
+
+		unloaded := make(chan int, 1)
+		go func() {
+			unloaded <- ruleManager.UnloadGroups(GroupKey("fixtures/rules.yaml", "test"))
+		}()
+		// The group waits in a query. So UnloadGroups should not return yet.
+		synctest.Wait()
+		if len(unloaded) != 0 {
+			t.Error("UnloadGroups returned before the group stopped")
+		}
+
+		close(release)
+		require.Equal(t, 1, <-unloaded)
 	})
 }
 
