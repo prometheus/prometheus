@@ -259,7 +259,6 @@ func TestNativeMetricMetadataRepair(t *testing.T) {
 	newDB := func(t *testing.T) *DB {
 		opts := DefaultOptions()
 		opts.EnableNativeMetadata = true
-		opts.EnableNativeMetadataPersistence = true
 		opts.OutOfOrderTimeWindow = math.MaxInt32
 		return newTestDB(t, withOpts(opts))
 	}
@@ -342,7 +341,6 @@ func newRepairHarness(t *testing.T, configure ...func(*Options)) *repairHarness 
 	t.Cleanup(func() { requireNoLockOrderViolations(t) })
 	opts := DefaultOptions()
 	opts.EnableNativeMetadata = true
-	opts.EnableNativeMetadataPersistence = true
 	opts.OutOfOrderTimeWindow = math.MaxInt32
 	for _, f := range configure {
 		f(opts)
@@ -641,6 +639,36 @@ func (x *repairHarness) gcSeries(ref chunks.HeadSeriesRef) bool {
 }
 
 func TestNativeMetricMetadataRepair_Retirement(t *testing.T) {
+	t.Run("bitmap accounting excludes epoch-only state", func(t *testing.T) {
+		x := newRepairHarness(t)
+		ref := x.failCommit(labels.FromStrings(labels.MetricName, "empty"), 100, "phantom")
+		require.Zero(t, x.h.nativeMetricMetadata.series.Load())
+		require.Zero(t, x.h.nativeMetricMetadata.versions.Load())
+		_, _, exists := x.h.nativeMetricMetadataForTest(ref)
+		require.False(t, exists)
+		require.False(t, x.gcSeries(ref))
+		require.True(t, x.pass())
+		x.h.gc()
+		require.Nil(t, x.h.series.getByID(ref))
+		require.Zero(t, x.h.nativeMetricMetadata.series.Load())
+		require.Zero(t, x.h.nativeMetricMetadata.versions.Load())
+	})
+	t.Run("bitmap membership survives repair pin", func(t *testing.T) {
+		x := newRepairHarness(t)
+		ls := labels.FromStrings(labels.MetricName, "metric")
+		ref := x.mustCommit(ls, 100, "a")
+		x.failCommit(ls, 200, "phantom")
+		require.False(t, x.gcSeries(ref))
+		_, _, exists := x.h.nativeMetricMetadataForTest(ref)
+		require.True(t, exists)
+		require.Equal(t, int64(1), x.h.nativeMetricMetadata.versions.Load())
+		require.True(t, x.pass())
+		require.True(t, x.gcSeries(ref))
+		require.Zero(t, x.h.nativeMetricMetadata.series.Load())
+		require.Zero(t, x.h.nativeMetricMetadata.versions.Load())
+		_, _, exists = x.h.nativeMetricMetadataForTest(ref)
+		require.False(t, exists)
+	})
 	t.Run("GC between a repair's write and its lock", func(t *testing.T) {
 		// A failed first commit leaves a series without samples, which GC
 		// retires once nothing pins it.
@@ -1588,7 +1616,6 @@ func TestNativeMetricMetadataRepair_RecordSizes(t *testing.T) {
 		before := len(readWALRecords(t, filepath.Join(dir, "wal")))
 		opts := DefaultOptions()
 		opts.EnableNativeMetadata = true
-		opts.EnableNativeMetadataPersistence = true
 		db := newTestDB(t, withDir(dir), withOpts(opts))
 		landed := readWALRecords(t, db.head.wal.Dir())[before:]
 		written := requireBoundedOverrideRecords(t, landed, true)

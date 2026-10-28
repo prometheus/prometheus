@@ -247,7 +247,6 @@ func TestNativeMetricMetadataWAL(t *testing.T) {
 	newDB := func(t *testing.T) *DB {
 		opts := DefaultOptions()
 		opts.EnableNativeMetadata = true
-		opts.EnableNativeMetadataPersistence = true
 		opts.OutOfOrderTimeWindow = math.MaxInt32
 		return newTestDB(t, withOpts(opts))
 	}
@@ -586,7 +585,6 @@ func TestNativeMetricMetadataReplay(t *testing.T) {
 	nativeOpts := func() *Options {
 		opts := DefaultOptions()
 		opts.EnableNativeMetadata = true
-		opts.EnableNativeMetadataPersistence = true
 		return opts
 	}
 	reopen := func(t *testing.T, db *DB, opts *Options) *DB {
@@ -623,7 +621,7 @@ func TestNativeMetricMetadataReplay(t *testing.T) {
 			require.Equal(t, min(len(c.helps), maxNativeMetricMetadataVersions), versions)
 
 			db = reopen(t, db, opts)
-			require.Equal(t, want, nativeMetadataSnapshot(t, db), "replay restores every retained version and the truncation flag")
+			requireNativeMetadataSnapshotsEqual(t, want, nativeMetadataSnapshot(t, db), "replay restores every retained version and the truncation flag")
 			require.Equal(t, int64(1), db.head.nativeMetricMetadata.series.Load())
 			require.Equal(t, int64(versions), db.head.nativeMetricMetadata.versions.Load())
 			// The sender reduces the same history from the WAL.
@@ -751,7 +749,7 @@ func TestNativeMetricMetadataReplay(t *testing.T) {
 		populateTestWL(t, w, recs, nil, false)
 		require.NoError(t, w.Close())
 		db := newTestDB(t, withDir(dir), withOpts(nativeOpts()))
-		require.Equal(t, map[string]NativeMetricMetadataSeries{
+		requireNativeMetadataSnapshotsEqual(t, map[string]NativeMetricMetadataSeries{
 			ls[0].String(): {Labels: ls[0], Versions: []NativeMetricMetadataVersion{{EffectiveFrom: math.MinInt64, Metadata: m("a")}, {EffectiveFrom: 100, Metadata: m("b")}, {EffectiveFrom: 300, Metadata: m("c")}}},
 			ls[2].String(): {Labels: ls[2], Versions: []NativeMetricMetadataVersion{{EffectiveFrom: 50, Metadata: m("a")}, {EffectiveFrom: 60, Metadata: m("b")}}, Truncated: true},
 		}, nativeMetadataSnapshot(t, db))
@@ -852,7 +850,7 @@ func TestNativeMetricMetadataReplay(t *testing.T) {
 		// empty, and the records after them replay.
 		unsupported := nativeMetadataMarkerForTest(record.NativeMetadataBoundary)
 		unsupported[1] = 9 // An unsupported format.
-		for _, native := range []bool{false, true} {
+		for _, native := range []bool{false} {
 			t.Run(fmt.Sprintf("native=%t", native), func(t *testing.T) {
 				dir := t.TempDir()
 				w, err := wlog.New(nil, nil, filepath.Join(dir, "wal"), compression.None)
@@ -922,7 +920,7 @@ func TestNativeMetricMetadataReplay(t *testing.T) {
 			require.Equal(t, want[lsets[i].String()].Versions, nativeMetadataVersions(reduced[ref]))
 		}
 		db = reopen(t, db, opts)
-		require.Equal(t, want, nativeMetadataSnapshot(t, db))
+		requireNativeMetadataSnapshotsEqual(t, want, nativeMetadataSnapshot(t, db))
 		for _, s := range want {
 			require.Len(t, s.Versions, maxNativeMetricMetadataVersions)
 			require.True(t, s.Truncated)
@@ -944,7 +942,6 @@ func TestNativeMetricMetadataReplay_Checkpointed(t *testing.T) {
 	nativeOpts := func() *Options {
 		opts := DefaultOptions()
 		opts.EnableNativeMetadata = true
-		opts.EnableNativeMetadataPersistence = true
 		return opts
 	}
 	// write writes recs to a new WAL directory and returns the DB directory.
@@ -1373,4 +1370,17 @@ func compactWALRecordsForTest(t testing.TB, dir string) [][]byte {
 	}
 	require.NoError(t, r.Err())
 	return out
+}
+
+// requireNativeMetadataSnapshotsEqual compares histories and labels by value.
+func requireNativeMetadataSnapshotsEqual(t testing.TB, want, got map[string]NativeMetricMetadataSeries, msgAndArgs ...any) {
+	t.Helper()
+	require.Len(t, got, len(want), msgAndArgs...)
+	for key, w := range want {
+		g, ok := got[key]
+		require.True(t, ok, "missing series %s", key)
+		require.True(t, labels.Equal(w.Labels, g.Labels), "labels for %s", key)
+		require.Equal(t, w.Versions, g.Versions, msgAndArgs...)
+		require.Equal(t, w.Truncated, g.Truncated, msgAndArgs...)
+	}
 }

@@ -42,7 +42,7 @@ type metricMetadataBenchmarkMode struct {
 
 // metricMetadataBenchmarkModes returns the metadata storage configurations
 // under test: "off" stores none, "legacy" writes metadata WAL records,
-// and "native" fills the in-memory versioned store.
+// and "native" stores versioned metadata, persisting it when a WAL is configured.
 //
 // All modes receive fixture metadata, matching callers that supply it
 // independently of the enabled storage features.

@@ -48,14 +48,12 @@ type nativeMetadataMode string
 
 const (
 	nativeMetadataOff       nativeMetadataMode = "off"
-	nativeMetadataInMemory  nativeMetadataMode = "in-memory"
 	nativeMetadataPersisted nativeMetadataMode = "persisted"
 )
 
 func (m nativeMetadataMode) options() *Options {
 	opts := DefaultOptions()
 	opts.EnableNativeMetadata = m != nativeMetadataOff
-	opts.EnableNativeMetadataPersistence = m == nativeMetadataPersisted
 	opts.OutOfOrderTimeWindow = math.MaxInt32
 	return opts
 }
@@ -212,7 +210,7 @@ func TestNativeMetricMetadataReplay_Modes(t *testing.T) {
 		return metadata.Metadata{Type: model.MetricTypeCounter, Unit: "seconds", Help: help}
 	}
 	l := labels.FromStrings(labels.MetricName, "metric")
-	modes := []nativeMetadataMode{nativeMetadataOff, nativeMetadataInMemory, nativeMetadataPersisted}
+	modes := []nativeMetadataMode{nativeMetadataOff, nativeMetadataPersisted}
 	commitForMode := func(t *testing.T, db *DB, ts int64, md metadata.Metadata) {
 		app := db.AppenderV2(t.Context())
 		_, err := app.Append(0, l, 0, ts, float64(ts), nil, nil, storage.AOptions{Metadata: md})
@@ -257,11 +255,8 @@ func TestNativeMetricMetadataReplay_Modes(t *testing.T) {
 				s := db.head.series.getByHash(l.Hash(), l)
 				require.NotNil(t, s)
 				require.Nil(t, legacyMetadataForTest(s))
-				switch mode {
-				case nativeMetadataPersisted:
+				if mode == nativeMetadataPersisted {
 					require.Equal(t, []NativeMetricMetadataVersion{{EffectiveFrom: 100, Metadata: m("a")}, {EffectiveFrom: 200, Metadata: m("b")}}, nativeMetadataSnapshot(t, db)[l.String()].Versions)
-				case nativeMetadataInMemory:
-					require.Empty(t, nativeMetadataSnapshot(t, db))
 				}
 				// Startup wrote nothing beside the new segment.
 				requireWALFilesUnchanged(t, before, walDir)
@@ -328,7 +323,7 @@ func TestNativeMetricMetadataReplay_UndecodableRecords(t *testing.T) {
 
 				// Without it, the record is opaque: everything after it is
 				// replayed, and nothing is repaired.
-				for _, mode := range []nativeMetadataMode{nativeMetadataOff, nativeMetadataInMemory} {
+				for _, mode := range []nativeMetadataMode{nativeMetadataOff} {
 					db, err := Open(dir, nil, nil, mode.options(), nil)
 					require.NoError(t, err, mode)
 					require.Equal(t, []chunks.Sample{sample{t: 100, f: 1}, sample{t: 200, f: 2}}, samples(t, db), mode)
@@ -509,7 +504,6 @@ func TestNativeMetricMetadataReplay_TrustBoundary(t *testing.T) {
 		headOpts := newTestHeadDefaultOptions(1000, false)
 		headOpts.ChunkDirRoot = dir
 		headOpts.EnableNativeMetadata = true
-		headOpts.EnableNativeMetadataPersistence = true
 		h, err := NewHead(nil, nil, w, nil, headOpts, nil)
 		require.NoError(t, err)
 		err = initHead(h, math.MinInt64, w, nil, promslog.NewNopLogger())
@@ -911,7 +905,6 @@ func TestNativeMetricMetadataReplay_TornTail(t *testing.T) {
 			opts := newTestHeadDefaultOptions(1000, false)
 			opts.ChunkDirRoot = w.dir
 			opts.EnableNativeMetadata = true
-			opts.EnableNativeMetadataPersistence = true
 			h, err := NewHead(nil, nil, wl, nil, opts, nil)
 			require.NoError(t, err)
 			h.nativeMetadataTestHooks = hooks
@@ -988,7 +981,7 @@ func TestNativeMetricMetadataReplay_TornTail(t *testing.T) {
 	})
 
 	t.Run("WBL corruption is repaired in every mode", func(t *testing.T) {
-		for _, mode := range []nativeMetadataMode{nativeMetadataOff, nativeMetadataInMemory, nativeMetadataPersisted} {
+		for _, mode := range []nativeMetadataMode{nativeMetadataOff, nativeMetadataPersisted} {
 			t.Run(string(mode), func(t *testing.T) {
 				db := newTestDB(t, withOpts(mode.options()))
 				for _, ts := range []int64{200, 100} {
@@ -1012,5 +1005,47 @@ func TestNativeMetricMetadataReplay_TornTail(t *testing.T) {
 				require.NoError(t, db.Close())
 			})
 		}
+	})
+}
+
+func TestNativeMetricMetadataOptions(t *testing.T) {
+	for _, conflict := range []string{"legacy", "snapshot", "fast startup"} {
+		t.Run(conflict, func(t *testing.T) {
+			opts := DefaultOptions()
+			opts.EnableNativeMetadata = true
+			headOpts := newTestHeadDefaultOptions(1000, false)
+			headOpts.EnableNativeMetadata = true
+			headOpts.ChunkDirRoot = t.TempDir()
+			switch conflict {
+			case "legacy":
+				opts.EnableMetadataWALRecords = true
+				headOpts.EnableMetadataWALRecords = true
+			case "snapshot":
+				opts.EnableMemorySnapshotOnShutdown = true
+				headOpts.EnableMemorySnapshotOnShutdown = true
+			case "fast startup":
+				opts.EnableFastStartup = true
+				headOpts.EnableFastStartup = true
+			}
+			_, err := Open(t.TempDir(), nil, nil, opts, nil)
+			require.ErrorIs(t, err, ErrNativeMetadataUnsupported)
+			_, err = NewHead(nil, nil, nil, nil, headOpts, nil)
+			require.ErrorIs(t, err, ErrNativeMetadataUnsupported)
+		})
+	}
+	t.Run("WAL disabled", func(t *testing.T) {
+		opts := DefaultOptions()
+		opts.EnableNativeMetadata = true
+		opts.WALSegmentSize = -1
+		db := newTestDB(t, withOpts(opts))
+		app := db.AppenderV2(t.Context())
+		_, err := app.Append(0, labels.FromStrings(labels.MetricName, "metric"), 0, 100, 1, nil, nil, storage.AOptions{Metadata: metadata.Metadata{Type: model.MetricTypeGauge}})
+		require.NoError(t, err)
+		require.NoError(t, app.Commit())
+		require.Len(t, nativeMetadataSnapshot(t, db), 1)
+		require.Nil(t, db.head.wal)
+		require.Empty(t, pendingNativeMetadataRepairs(db.head))
+		require.False(t, db.head.nativeMetadataRepairs.started)
+		require.NoError(t, db.Close())
 	})
 }

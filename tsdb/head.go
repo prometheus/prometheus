@@ -251,12 +251,9 @@ type HeadOptions struct {
 	// is implemented.
 	EnableMetadataWALRecords bool
 
-	// EnableNativeMetadata enables experimental in-memory native metadata.
+	// EnableNativeMetadata enables experimental native metadata storage,
+	// including persistence when a WAL is configured.
 	EnableNativeMetadata bool
-
-	// EnableNativeMetadataPersistence persists native metadata histories in
-	// the WAL. It requires EnableNativeMetadata.
-	EnableNativeMetadataPersistence bool
 
 	// EnableFastStartup enables scraping in parallel with WAL replay but with queries still disabled.
 	EnableFastStartup bool
@@ -359,8 +356,6 @@ func NewHead(r prometheus.Registerer, l *slog.Logger, wal, wbl *wlog.WL, opts *H
 	}
 	if opts.EnableNativeMetadata {
 		h.nativeMetricMetadata = newNativeMetricMetadataStore()
-	}
-	if opts.EnableNativeMetadataPersistence {
 		h.nativeMetadataRepairs = newNativeMetadataRepairs()
 	}
 	if err := h.resetInMemoryState(); err != nil {
@@ -784,7 +779,7 @@ func newHeadMetrics(h *Head, r prometheus.Registerer) *headMetrics {
 			m.walReplayUnknownRefsTotal,
 			m.wblReplayUnknownRefsTotal,
 		)
-		if h.opts.EnableNativeMetadataPersistence {
+		if h.opts.EnableNativeMetadata {
 			r.MustRegister(
 				m.nativeMetadataUntrustedEntries,
 				m.nativeMetadataBoundariesWritten,
@@ -1011,7 +1006,7 @@ func (h *Head) Init(minValidTime int64) error {
 	syms := labels.NewSymbolTable() // One table for the whole WAL.
 	multiRef := map[chunks.HeadSeriesRef]chunks.HeadSeriesRef{}
 	var nativeReplay *nativeMetadataReplay
-	if h.opts.EnableNativeMetadataPersistence {
+	if h.opts.EnableNativeMetadata {
 		nativeReplay = newNativeMetadataReplay()
 	}
 	if err == nil && startFrom >= snapIdx {
@@ -1874,7 +1869,7 @@ func (h *Head) truncateWAL(mint int64) error {
 	}
 
 	h.metrics.checkpointCreationTotal.Inc()
-	stats, err := wlog.Checkpoint(h.logger, h.wal, first, last, h.keepSeriesInWALCheckpointFn(mint), mint, h.opts.EnableSTStorage.Load(), h.opts.EnableNativeMetadataPersistence)
+	stats, err := wlog.Checkpoint(h.logger, h.wal, first, last, h.keepSeriesInWALCheckpointFn(mint), mint, h.opts.EnableSTStorage.Load(), h.opts.EnableNativeMetadata)
 	if err != nil {
 		h.metrics.checkpointCreationFail.Inc()
 		if _, ok := errors.AsType[*wlog.CorruptionErr](err); ok {

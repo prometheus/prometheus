@@ -23,6 +23,7 @@ import (
 	"strings"
 	"sync"
 	"testing"
+	"unique"
 	"unsafe"
 
 	"github.com/prometheus/client_golang/prometheus"
@@ -175,8 +176,6 @@ func newNativeMetadataTestHead(t *testing.T, opts ...func(*HeadOptions)) *Head {
 }
 
 func withoutOOO(o *HeadOptions) { o.OutOfOrderTimeWindow.Store(0) }
-
-func withLegacyMetadata(o *HeadOptions) { o.EnableMetadataWALRecords = true }
 
 func setGCedForTest(s *memSeries) {
 	s.Lock()
@@ -1083,9 +1082,13 @@ func TestHeadAppenderV2MetadataSidecar(t *testing.T) {
 			require.Nil(t, series.metadata)
 
 			legacyValue := metadata.Metadata{Type: model.MetricTypeGauge, Help: "legacy"}
-			legacy := head.Appender(t.Context())
-			_, err = legacy.UpdateMetadata(ref, labels.EmptyLabels(), legacyValue)
-			require.NoError(t, err)
+			// Seed legacy state directly to exercise sidecar reuse, including the
+			// state a legacy WAL can leave behind during an upgrade.
+			legacy := func() {
+				series.Lock()
+				series.setLegacyMetadataLocked(unique.Make(legacyValue))
+				series.Unlock()
+			}
 			native := head.AppenderV2(t.Context())
 			mustAppendV2(t, native, ref, labels.EmptyLabels(), 200, 2, storage.AOptions{Metadata: meta})
 			require.Nil(t, series.metadata, "preparing either transaction must remain lazy")
@@ -1096,9 +1099,9 @@ func TestHeadAppenderV2MetadataSidecar(t *testing.T) {
 				require.NoError(t, native.Commit())
 				first = series.metadata
 				require.Same(t, first.native, series.nativeMetadataLocked())
-				require.NoError(t, legacy.Commit())
+				legacy()
 			case "legacy first":
-				require.NoError(t, legacy.Commit())
+				legacy()
 				first = series.metadata
 				require.Nil(t, series.nativeMetadataLocked(), "a legacy sidecar is not committed native history")
 				require.Zero(t, head.nativeMetricMetadata.series.Load())
@@ -1108,7 +1111,7 @@ func TestHeadAppenderV2MetadataSidecar(t *testing.T) {
 			case "concurrent":
 				start := make(chan struct{})
 				done := make(chan error, 2)
-				go func() { <-start; done <- legacy.Commit() }()
+				go func() { <-start; legacy(); done <- nil }()
 				go func() { <-start; done <- native.Commit() }()
 				close(start)
 				// Join both writers before assertions can end the subtest.
@@ -1130,11 +1133,8 @@ func TestHeadAppenderV2MetadataSidecar(t *testing.T) {
 			backing := series.nativeMetadataLocked()
 			series.Unlock()
 
-			legacy = head.Appender(t.Context())
 			legacyValue.Help = "updated legacy"
-			_, err = legacy.UpdateMetadata(ref, labels.EmptyLabels(), legacyValue)
-			require.NoError(t, err)
-			require.NoError(t, legacy.Commit())
+			legacy()
 			require.Same(t, first, series.metadata)
 			series.Lock()
 			unchanged := backing == series.nativeMetadataLocked()
@@ -1158,15 +1158,17 @@ func TestHeadAppenderV2MetadataSidecar(t *testing.T) {
 		{name: "off", meta: meta},
 		{name: "legacy", legacy: true, meta: meta, wantLegacy: true},
 		{name: "native", native: true, meta: meta, wantNative: true},
-		{name: "dual", legacy: true, native: true, meta: meta, wantLegacy: true, wantNative: true},
 		// Legacy metadata does not depend on the native size limit.
 		{name: "oversized native", native: true, meta: tooLarge, skipped: true},
-		{name: "oversized dual", legacy: true, native: true, meta: tooLarge, wantLegacy: true, skipped: true},
 		{name: "oversized legacy", legacy: true, meta: tooLarge, wantLegacy: true},
-		{name: "empty metadata", legacy: true, native: true},
-		{name: "rollback", legacy: true, native: true, meta: meta, end: "rollback"},
-		{name: "rejected append", legacy: true, native: true, meta: meta, end: "reject"},
-		{name: "WAL failure", legacy: true, native: true, meta: meta, end: "WAL failure"},
+		{name: "empty legacy metadata", legacy: true},
+		{name: "legacy rollback", legacy: true, meta: meta, end: "rollback"},
+		{name: "legacy rejected append", legacy: true, meta: meta, end: "reject"},
+		{name: "legacy WAL failure", legacy: true, meta: meta, end: "WAL failure"},
+		{name: "empty metadata", native: true},
+		{name: "rollback", native: true, meta: meta, end: "rollback"},
+		{name: "rejected append", native: true, meta: meta, end: "reject"},
+		{name: "WAL failure", native: true, meta: meta, end: "WAL failure"},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			opts := newTestHeadDefaultOptions(1000, true)
@@ -1488,28 +1490,14 @@ func TestHeadAppenderV2NativeMetricMetadataTransactions(t *testing.T) {
 		}
 	})
 
-	t.Run("metadata WAL state does not stand in for native state", func(t *testing.T) {
-		head := newNativeMetadataTestHead(t, withLegacyMetadata)
-		ctx := context.Background()
-
-		// The V1 appender sets legacy metadata without going near the native
-		// store. A later V2 append carrying the same metadata must still record.
-		v1 := head.Appender(ctx)
-		ref, err := v1.Append(0, lset, 50, 1)
+	t.Run("legacy updates are rejected", func(t *testing.T) {
+		head := newNativeMetadataTestHead(t)
+		app := head.Appender(t.Context())
+		ref, err := app.Append(0, lset, 50, 1)
 		require.NoError(t, err)
-		_, err = v1.UpdateMetadata(ref, lset, a)
-		require.NoError(t, err)
-		require.NoError(t, v1.Commit())
-
-		series := head.series.getByID(chunks.HeadSeriesRef(ref))
-		require.Equal(t, &a, legacyMetadataForTest(series))
-		require.Nil(t, nativeMetadataForTest(series))
-
-		app := head.AppenderV2(ctx)
-		mustAppendV2(t, app, ref, lset, 100, 1, storage.AOptions{Metadata: a})
-		require.NoError(t, app.Commit())
-
-		requireNativeVersions(t, head.series.getByID(chunks.HeadSeriesRef(ref)), []NativeMetricMetadataVersion{{EffectiveFrom: 100, Metadata: a}})
+		_, err = app.UpdateMetadata(ref, lset, a)
+		require.ErrorIs(t, err, ErrNativeMetadataLegacyUpdate)
+		require.NoError(t, app.Rollback())
 	})
 
 	t.Run("oversized metadata is skipped and counted", func(t *testing.T) {
@@ -1802,7 +1790,7 @@ func TestHeadNativeMetricMetadataDeletion(t *testing.T) {
 	}
 }
 
-func TestHeadNativeMetricMetadataIsFeatureGatedAndNonPersistent(t *testing.T) {
+func TestHeadNativeMetricMetadataFeatureGate(t *testing.T) {
 	ctx := context.Background()
 	matcher := labels.MustNewMatcher(labels.MatchRegexp, labels.MetricName, ".+")
 

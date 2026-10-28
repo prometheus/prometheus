@@ -41,8 +41,7 @@ const (
 var ErrNativeMetadataDisabled = errors.New("native metadata is disabled")
 
 // ErrNativeMetadataUnsupported is returned when native metadata persistence is
-// enabled without native metadata storage, or together with an option it
-// doesn't support.
+// enabled together with an option it does not support.
 var ErrNativeMetadataUnsupported = errors.New("native metadata persistence is not supported")
 
 // ErrNativeMetadataLegacyUpdate is returned for metadata updates through the
@@ -50,18 +49,12 @@ var ErrNativeMetadataUnsupported = errors.New("native metadata persistence is no
 // AppenderV2 only.
 var ErrNativeMetadataLegacyUpdate = errors.New("persisted native metadata takes metadata through AppenderV2 only")
 
-// validateNativeMetadataOptions rejects native metadata persistence without
-// native metadata storage, and with the options it doesn't support. Memory
-// snapshots carry no native metadata. Fast startup is meant to let ingestion
-// run alongside replay. Metadata WAL records would replace every reduced
-// history with its latest legacy value.
+// validateNativeMetadataOptions rejects native metadata with unsupported options.
 func validateNativeMetadataOptions(opts *HeadOptions) error {
-	if !opts.EnableNativeMetadataPersistence {
+	if !opts.EnableNativeMetadata {
 		return nil
 	}
 	switch {
-	case !opts.EnableNativeMetadata:
-		return fmt.Errorf("%w without native metadata", ErrNativeMetadataUnsupported)
 	case opts.EnableMemorySnapshotOnShutdown:
 		return fmt.Errorf("%w with memory snapshots on shutdown", ErrNativeMetadataUnsupported)
 	case opts.EnableFastStartup:

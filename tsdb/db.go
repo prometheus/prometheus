@@ -263,12 +263,9 @@ type Options struct {
 	// is implemented.
 	EnableMetadataWALRecords bool
 
-	// EnableNativeMetadata enables experimental in-memory native metadata.
+	// EnableNativeMetadata enables experimental native metadata storage,
+	// including persistence when a WAL is configured.
 	EnableNativeMetadata bool
-
-	// EnableNativeMetadataPersistence persists native metadata histories in
-	// the WAL, so that they survive restarts. It requires EnableNativeMetadata.
-	EnableNativeMetadataPersistence bool
 
 	// BlockCompactionExcludeFunc is a function which returns true for blocks that should NOT be compacted.
 	// It's passed down to the TSDB compactor.
@@ -1034,7 +1031,7 @@ func initHead(h *Head, minValidTime int64, wal, wbl *wlog.WL, logger *slog.Logge
 		return nil
 	}
 	e, wblErr := errors.AsType[*errLoadWbl](initErr)
-	if h.opts.EnableNativeMetadataPersistence && !wblErr {
+	if h.opts.EnableNativeMetadata && !wblErr {
 		if _, ok := errors.AsType[*wlog.CorruptionErr](initErr); ok {
 			h.metrics.walCorruptionsTotal.Inc()
 		}
@@ -1237,7 +1234,6 @@ func open(dir string, l *slog.Logger, r prometheus.Registerer, opts *Options, rn
 	headOpts.EnableHistogramSTEncoding.Store(opts.EnableHistogramSTEncoding)
 	headOpts.EnableMetadataWALRecords = opts.EnableMetadataWALRecords
 	headOpts.EnableNativeMetadata = opts.EnableNativeMetadata
-	headOpts.EnableNativeMetadataPersistence = opts.EnableNativeMetadataPersistence
 	headOpts.EnableFastStartup = opts.EnableFastStartup
 	if opts.WALReplayConcurrency > 0 {
 		headOpts.WALReplayConcurrency = opts.WALReplayConcurrency
@@ -1294,7 +1290,7 @@ func open(dir string, l *slog.Logger, r prometheus.Registerer, opts *Options, rn
 	}
 
 	if err := initHead(db.head, minValidTime, wal, wbl, db.logger); err != nil {
-		if opts.EnableNativeMetadataPersistence {
+		if opts.EnableNativeMetadata {
 			err = errors.Join(err, db.closeAfterFailedInit())
 		}
 		return nil, err

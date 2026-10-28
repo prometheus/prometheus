@@ -170,11 +170,11 @@ Fall back to serving the old (Prometheus 2.x) web UI instead of the new UI. The 
 When enabled, Prometheus (both in server and agent modes) will store metadata in-memory and keep track of
 metadata changes as WAL records on a per-series basis.
 
-This must be used if you would like to send metadata using the new remote write 2.0.
+This must be used to send metadata using Remote Write 2.0 through the legacy path.
+The experimental native path uses `native-metadata` and `native-metadata-forwarding`.
 
 This flag controls the legacy WAL-backed metadata path. The separate
-`native-metadata` feature can expose versioned per-series metadata without
-writing metadata WAL records.
+`native-metadata` feature persists versioned per-series histories in a separate WAL format.
 
 ## Native metadata
 
@@ -186,14 +186,16 @@ When enabled, Prometheus ingests metric type, unit, and help from scrapes, OTLP,
 and Remote Write 2.0 as versioned metadata attached to each series. The
 metadata is exposed by the experimental `/api/v1/series/metadata` endpoint.
 
-Without [native metadata persistence](#native-metadata-persistence), metadata
-is stored only in the Head's memory. It is not written to the WAL, checkpoints,
-snapshots, or blocks, so it is lost on restart and when the corresponding Head
-series is removed. Remote Write 1.0 does not populate
-this store. At most 5 versions are retained per series.
+Metadata is retained in the Head and persisted through the WAL and checkpoints,
+so its retained history survives restarts. Blocks and memory snapshots hold no
+native metadata. Remote Write 1.0 does not populate this store. At most 5 versions
+are retained per series. Agent mode ignores this feature.
+When the WAL is explicitly disabled through the Go options, metadata remains
+in memory only and does not survive a restart.
 
 The store costs Head memory per series, along two axes. For example,
-retained-heap benchmarks on Go 1.27, linux/amd64, measured roughly 75 extra
+retained-heap benchmarks of the earlier Head-only implementation on Go 1.27,
+linux/amd64, measured roughly 75 extra
 bytes per series whose metadata never changes, and around 144 at the 5-version
 limit, where 100 metric families share their values. Actual costs depend on
 metadata cardinality, string lengths, and allocation overhead.
@@ -242,14 +244,12 @@ writers: if one transaction observes the current metadata while another changes
 it and commits first, the first has nothing left to re-assert, and the change is
 not reverted at the later timestamp.
 
-## Native metadata persistence
-
-`--enable-feature=native-metadata-persistence`
+### Persistence
 
 > **This feature is experimental and may change in future releases.** Its WAL
 > records are in an unreleased format, which may change incompatibly.
 
-Requires `native-metadata`. When enabled, Prometheus server logs each series'
+Prometheus server logs each series'
 native metadata history in the WAL at commit, before the samples, reduces it
 into WAL checkpoints, and restores it on restart: each series' retained versions
 (up to 5) and whether older ones were evicted. Blocks and memory snapshots still
@@ -295,7 +295,7 @@ replay, and checkpoints drop them.
 
 > **This feature is experimental and may change in future releases.**
 
-Requires `native-metadata-persistence`. When enabled, Remote-Write 2.0 queues
+Requires `native-metadata`. When enabled, Remote-Write 2.0 queues
 read native metadata from the WAL instead of the latest-value metadata records,
 and label each sample, histogram and exemplar with the version in effect at its
 timestamp, as recorded in the WAL before it. A sample is labelled the same

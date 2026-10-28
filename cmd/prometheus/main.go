@@ -262,11 +262,7 @@ func (c *flagConfig) setFeatureListOptions(logger *slog.Logger) error {
 				c.web.AppendMetadata = true
 				c.tsdb.EnableNativeMetadata = true
 				features.Enable(features.TSDB, "native_metadata")
-				logger.Info("Experimental in-memory native metric metadata enabled")
-			case "native-metadata-persistence":
-				c.tsdb.EnableNativeMetadataPersist = true
-				features.Enable(features.TSDB, "native_metadata_persistence")
-				logger.Info("Experimental native metric metadata persistence in the WAL enabled")
+				logger.Info("Experimental native metric metadata storage and WAL persistence enabled")
 			case "native-metadata-forwarding":
 				c.nativeMetadataForwarding = true
 				features.Enable(features.TSDB, "native_metadata_forwarding")
@@ -395,19 +391,14 @@ func (c *flagConfig) setFeatureListOptions(logger *slog.Logger) error {
 	return nil
 }
 
-// validateNativeMetadataFeatures rejects, in server mode, native metadata
-// features without the features they build on, and native metadata
-// persistence with the features it can't be combined with. The feature list
-// must have been parsed.
+// validateNativeMetadataFeatures checks server-mode dependencies and conflicts
+// after parsing the feature list.
 func (c *flagConfig) validateNativeMetadataFeatures() error {
-	if c.nativeMetadataForwarding && !c.tsdb.EnableNativeMetadataPersist {
-		return errors.New("native-metadata-forwarding requires native-metadata-persistence")
-	}
-	if !c.tsdb.EnableNativeMetadataPersist {
-		return nil
+	if c.nativeMetadataForwarding && !c.tsdb.EnableNativeMetadata {
+		return errors.New("native-metadata-forwarding requires native-metadata")
 	}
 	if !c.tsdb.EnableNativeMetadata {
-		return errors.New("native-metadata-persistence requires native-metadata")
+		return nil
 	}
 	var conflicts []string
 	if c.tsdb.EnableMetadataWALRecords {
@@ -420,7 +411,7 @@ func (c *flagConfig) validateNativeMetadataFeatures() error {
 		conflicts = append(conflicts, "fast-startup")
 	}
 	if len(conflicts) > 0 {
-		return fmt.Errorf("native-metadata-persistence can't be combined with %s", strings.Join(conflicts, ", "))
+		return fmt.Errorf("native-metadata can't be combined with %s", strings.Join(conflicts, ", "))
 	}
 	return nil
 }
@@ -712,7 +703,7 @@ func main() {
 	a.Flag("scrape.discovery-reload-interval", "Interval used by scrape manager to throttle target groups updates.").
 		Hidden().Default("5s").SetValue(&cfg.scrape.DiscoveryReloadInterval)
 
-	a.Flag("enable-feature", "Comma separated feature names to enable. Valid options: concurrent-rule-eval, created-timestamp-zero-ingestion, delayed-compaction, exemplar-storage, extra-scrape-metrics, histograms-st-encoding, memory-snapshot-on-shutdown, metadata-wal-records, native-metadata, native-metadata-forwarding, native-metadata-persistence, old-ui, openmetrics2, otlp-deltatocumulative, otlp-native-delta-ingestion, promql-binop-fill-modifiers, promql-delayed-name-removal, promql-experimental-functions, promql-native-histograms-as-classic, promql-per-step-stats, promql-unquoted-utf8-names, query-cost, search-api, st-storage, st-synthesis, type-and-unit-labels, use-start-timestamps, use-uncached-io, xor2-encoding, zstd-scrape. See https://prometheus.io/docs/prometheus/latest/feature_flags/ for more details.").
+	a.Flag("enable-feature", "Comma separated feature names to enable. Valid options: concurrent-rule-eval, created-timestamp-zero-ingestion, delayed-compaction, exemplar-storage, extra-scrape-metrics, histograms-st-encoding, memory-snapshot-on-shutdown, metadata-wal-records, native-metadata, native-metadata-forwarding, old-ui, openmetrics2, otlp-deltatocumulative, otlp-native-delta-ingestion, promql-binop-fill-modifiers, promql-delayed-name-removal, promql-experimental-functions, promql-native-histograms-as-classic, promql-per-step-stats, promql-unquoted-utf8-names, query-cost, search-api, st-storage, st-synthesis, type-and-unit-labels, use-start-timestamps, use-uncached-io, xor2-encoding, zstd-scrape. See https://prometheus.io/docs/prometheus/latest/feature_flags/ for more details.").
 		StringsVar(&cfg.featureList)
 
 	a.Flag("agent", "Run Prometheus in 'Agent mode'.").BoolVar(&agentMode)
@@ -2303,7 +2294,6 @@ type tsdbOptions struct {
 	EnableSTStorage                bool
 	EnableHistogramSTEncoding      bool
 	EnableNativeMetadata           bool
-	EnableNativeMetadataPersist    bool
 	StaleSeriesCompactionThreshold float64
 	EnableFastStartup              bool
 	FloatChunkEncoding             chunkenc.Encoding
@@ -2343,8 +2333,6 @@ func (opts tsdbOptions) ToTSDBOptions() tsdb.Options {
 		EnableFastStartup:              opts.EnableFastStartup,
 		FloatChunkEncoding:             opts.FloatChunkEncoding,
 		EnableMetadataWALRecords:       opts.EnableMetadataWALRecords,
-
-		EnableNativeMetadataPersistence: opts.EnableNativeMetadataPersist,
 	}
 }
 

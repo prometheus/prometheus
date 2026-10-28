@@ -294,7 +294,6 @@ func runRandomizedNativeMetadataRepairs(t *testing.T, seed uint64, coverage *ran
 	})
 	opts := DefaultOptions()
 	opts.EnableNativeMetadata = true
-	opts.EnableNativeMetadataPersistence = true
 	opts.OutOfOrderTimeWindow = math.MaxInt32
 	// Small segments rotate often, so that some flushes precede records.
 	opts.WALSegmentSize = 32 << 10

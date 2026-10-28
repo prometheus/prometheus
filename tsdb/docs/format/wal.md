@@ -369,7 +369,7 @@ from the checkpoint, rather than solely re-derived from block max times on disk.
 #### Native metadata records
 
 Native metadata records hold series' native metric metadata histories. They are
-written only with the experimental `native-metadata-persistence` feature, in a
+written only with the experimental `native-metadata` feature, in a
 format that may still change. Each point of an entry refers to a value of its
 record, defined at its first use.
 

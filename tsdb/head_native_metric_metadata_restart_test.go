@@ -352,7 +352,6 @@ func TestNativeMetricMetadataReplay_Handoffs(t *testing.T) {
 	opts := func() *Options {
 		opts := DefaultOptions()
 		opts.EnableNativeMetadata = true
-		opts.EnableNativeMetadataPersistence = true
 		opts.OutOfOrderTimeWindow = math.MaxInt32
 		return opts
 	}
@@ -510,7 +509,7 @@ func TestNativeMetricMetadataReplay_Handoffs(t *testing.T) {
 		checkpointNativeMetadataWAL(t, db.head, db.head.keepSeriesInWALCheckpointFn(501), 501)
 		db, recovery := restart(t, db)
 		require.Equal(t, 1, recovery.refs[l.String()])
-		require.Equal(t, want, nativeMetadataSnapshot(t, db))
+		requireNativeMetadataSnapshotsEqual(t, want, nativeMetadataSnapshot(t, db))
 		// Kept, ref 2 makes the checkpoint write a handoff for ref 1.
 		db2, _ := replaySynthetic(t, []any{
 			[]record.RefSeries{{Ref: 1, Labels: l}},
@@ -623,7 +622,6 @@ func TestNativeMetricMetadataReplay_Handoffs(t *testing.T) {
 		headOpts := newTestHeadDefaultOptions(1000, false)
 		headOpts.ChunkDirRoot = dir
 		headOpts.EnableNativeMetadata = true
-		headOpts.EnableNativeMetadataPersistence = true
 		h, err := NewHead(nil, nil, w, nil, headOpts, nil)
 		require.NoError(t, err)
 		err = initHead(h, math.MinInt64, w, nil, promslog.NewNopLogger())
@@ -783,7 +781,6 @@ func TestNativeMetricMetadataReplay_Handoffs(t *testing.T) {
 			opts := newTestHeadDefaultOptions(1000, false)
 			opts.ChunkDirRoot = dir
 			opts.EnableNativeMetadata = true
-			opts.EnableNativeMetadataPersistence = true
 			h, err := NewHead(nil, nil, w, nil, opts, nil)
 			require.NoError(t, err)
 			return h, h.Init(math.MinInt64)
@@ -933,7 +930,6 @@ func TestNativeMetricMetadataReplay_Restarts(t *testing.T) {
 	opts := func() *Options {
 		opts := DefaultOptions()
 		opts.EnableNativeMetadata = true
-		opts.EnableNativeMetadataPersistence = true
 		opts.OutOfOrderTimeWindow = math.MaxInt32
 		return opts
 	}
@@ -975,7 +971,7 @@ func TestNativeMetricMetadataReplay_Restarts(t *testing.T) {
 		want := readNativeMetadataRecovery(t, filepath.Join(dir, "wal"))
 		db := newTestDB(t, withDir(dir), withOpts(opts()))
 		requireNativeMetadataRecovered(t, db.head, want)
-		require.Equal(t, before, nativeMetadataSnapshot(t, db), "G-exact")
+		requireNativeMetadataSnapshotsEqual(t, before, nativeMetadataSnapshot(t, db), "G-exact")
 	})
 
 	t.Run("a quiescent crash-like restart", func(t *testing.T) {
@@ -988,7 +984,7 @@ func TestNativeMetricMetadataReplay_Restarts(t *testing.T) {
 		require.NoError(t, os.RemoveAll(x.db.Dir()))
 		db, absent := frozen.open(t, opts())
 		require.Zero(t, absent)
-		require.Equal(t, before, nativeMetadataSnapshot(t, db), "G-exact")
+		requireNativeMetadataSnapshotsEqual(t, before, nativeMetadataSnapshot(t, db), "G-exact")
 	})
 
 	t.Run("a commit logged but not merged", func(t *testing.T) {
@@ -1125,7 +1121,6 @@ func TestNativeMetricMetadataReplay_Combined(t *testing.T) {
 	opts := func() *Options {
 		opts := DefaultOptions()
 		opts.EnableNativeMetadata = true
-		opts.EnableNativeMetadataPersistence = true
 		opts.OutOfOrderTimeWindow = math.MaxInt32
 		return opts
 	}

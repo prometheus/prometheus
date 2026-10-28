@@ -262,7 +262,7 @@ func (h *Head) writeNativeMetadataHandoffs(multiRef map[chunks.HeadSeriesRef]chu
 // and malformed records, checksum failures and any other corruption are never
 // eligible.
 func (h *Head) eligibleTornWALTail(err error, i, last int) (*wlog.TornRecordError, bool) {
-	if !h.opts.EnableNativeMetadataPersistence {
+	if !h.opts.EnableNativeMetadata {
 		return nil, false
 	}
 	var torn *wlog.TornRecordError

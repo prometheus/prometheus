@@ -3504,39 +3504,48 @@ func TestMetadataInWAL_AppenderV2(t *testing.T) {
 				wantNative:   []NativeMetricMetadataVersion{{EffectiveFrom: 0, Metadata: m1}},
 			},
 		} {
-			t.Run(tc.name, func(t *testing.T) {
-				opts := DefaultOptions()
-				opts.EnableMetadataWALRecords = true
-				opts.EnableNativeMetadata = true
-				opts.EnableExemplarStorage = true
-				opts.MaxExemplars = 10
-				db := newTestDB(t, withOpts(opts))
+			for _, native := range []bool{false, true} {
+				t.Run(fmt.Sprintf("%s/native=%t", tc.name, native), func(t *testing.T) {
+					opts := DefaultOptions()
+					opts.EnableMetadataWALRecords = !native
+					opts.EnableNativeMetadata = native
+					opts.EnableExemplarStorage = true
+					opts.MaxExemplars = 10
+					db := newTestDB(t, withOpts(opts))
 
-				app := db.AppenderV2(ctx)
-				for i, s := range tc.samples {
-					_, err := app.Append(0, s1, 0, int64(i), s.f, s.h, s.fh, tc.appendOpts[i])
-					require.NoError(t, err)
-				}
-				require.NoError(t, app.Commit())
-
-				var wantMetadata, gotMetadata []record.RefMetadata
-				for _, m := range tc.wantMetadata {
-					wantMetadata = append(wantMetadata, record.RefMetadata{Ref: 1, Type: record.GetMetricType(m.Type), Unit: m.Unit, Help: m.Help})
-				}
-				var gotExemplars []record.RefExemplar
-				for _, rec := range readTestWAL(t, path.Join(db.Dir(), "wal")) {
-					switch rec := rec.(type) {
-					case []record.RefMetadata:
-						gotMetadata = append(gotMetadata, rec...)
-					case []record.RefExemplar:
-						gotExemplars = append(gotExemplars, rec...)
+					app := db.AppenderV2(ctx)
+					for i, s := range tc.samples {
+						_, err := app.Append(0, s1, 0, int64(i), s.f, s.h, s.fh, tc.appendOpts[i])
+						require.NoError(t, err)
 					}
-				}
-				require.Equal(t, wantMetadata, gotMetadata)
-				require.Empty(t, gotExemplars)
-				gotNative, _, _ := db.head.nativeMetricMetadataForTest(1)
-				require.Equal(t, tc.wantNative, gotNative)
-			})
+					require.NoError(t, app.Commit())
+
+					var wantMetadata, gotMetadata []record.RefMetadata
+					for _, m := range tc.wantMetadata {
+						wantMetadata = append(wantMetadata, record.RefMetadata{Ref: 1, Type: record.GetMetricType(m.Type), Unit: m.Unit, Help: m.Help})
+					}
+					var gotExemplars []record.RefExemplar
+					dec := record.NewDecoder(nil, nil)
+					for _, rec := range readWALRecords(t, path.Join(db.Dir(), "wal")) {
+						switch dec.Type(rec) {
+						case record.Metadata:
+							gotMetadata, err = dec.Metadata(rec, gotMetadata)
+							require.NoError(t, err)
+						case record.Exemplars:
+							gotExemplars, err = dec.Exemplars(rec, gotExemplars)
+							require.NoError(t, err)
+						}
+					}
+					if !native {
+						require.Equal(t, wantMetadata, gotMetadata)
+					} else {
+						require.Empty(t, gotMetadata)
+						gotNative, _, _ := db.head.nativeMetricMetadataForTest(1)
+						require.Equal(t, tc.wantNative, gotNative)
+					}
+					require.Empty(t, gotExemplars)
+				})
+			}
 		}
 	})
 }
@@ -3657,7 +3666,6 @@ func TestMetadataCheckpointingOnlyKeepsLatestEntry_AppendV2(t *testing.T) {
 func TestMetadataAssertInMemoryData_AppendV2(t *testing.T) {
 	opts := DefaultOptions()
 	opts.EnableMetadataWALRecords = true
-	opts.EnableNativeMetadata = true
 	db := newTestDB(t, withOpts(opts))
 	ctx := context.Background()
 
@@ -3740,11 +3748,6 @@ func TestMetadataAssertInMemoryData_AppendV2(t *testing.T) {
 	require.Equal(t, *legacyMetadataForTest(reopenDB.head.series.getByHash(s3.Hash(), s3)), m3)
 	require.Equal(t, *legacyMetadataForTest(reopenDB.head.series.getByHash(s4.Hash(), s4)), m4)
 
-	// Native metadata isn't persisted, so replay restores only the legacy state.
-	require.Zero(t, reopenDB.head.nativeMetricMetadata.series.Load())
-	for _, s := range []labels.Labels{s1, s2, s3, s4} {
-		require.Nil(t, nativeMetadataForTest(reopenDB.head.series.getByHash(s.Hash(), s)))
-	}
 	require.False(t, hasSidecarForTest(reopenDB.head.series.getByHash(s5.Hash(), s5)))
 }
 

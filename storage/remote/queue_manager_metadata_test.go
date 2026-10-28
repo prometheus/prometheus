@@ -597,7 +597,6 @@ func TestNativeMetadataWALDelivery(t *testing.T) {
 			dir := t.TempDir()
 			opts := tsdb.DefaultOptions()
 			opts.EnableNativeMetadata = true
-			opts.EnableNativeMetadataPersistence = true
 			opts.EnableMetadataWALRecords = false
 			opts.EnableExemplarStorage = true
 			opts.MaxExemplars = 100
@@ -775,7 +774,6 @@ func TestNativeMetadataWALDelivery(t *testing.T) {
 				dir := t.TempDir()
 				opts := tsdb.DefaultOptions()
 				opts.EnableNativeMetadata = true
-				opts.EnableNativeMetadataPersistence = true
 				opts.OutOfOrderTimeWindow = time.Hour.Milliseconds()
 				db, err := tsdb.Open(dir, nil, nil, opts, nil)
 				require.NoError(t, err)
@@ -888,7 +886,6 @@ func deliverNativeMetadataAcrossRestarts(t *testing.T) {
 	oracleDir := t.TempDir()
 	opts := tsdb.DefaultOptions()
 	opts.EnableNativeMetadata = true
-	opts.EnableNativeMetadataPersistence = true
 	open := func() *tsdb.DB {
 		db, err := tsdb.Open(dir, nil, nil, opts, nil)
 		require.NoError(t, err)
@@ -1272,7 +1269,6 @@ func deliverNativeMetadataAcrossSenderReset(t *testing.T) bool {
 	opts := tsdb.DefaultHeadOptions()
 	opts.ChunkDirRoot = dir
 	opts.EnableNativeMetadata = true
-	opts.EnableNativeMetadataPersistence = true
 	reg := prometheus.NewRegistry()
 	h, err := tsdb.NewHead(reg, nil, wal, nil, opts, nil)
 	require.NoError(t, err)

@@ -1140,7 +1140,7 @@ func (a *headAppender) AppendHistogramSTZeroSample(ref storage.SeriesRef, lset l
 // the legacy entry it would log changes what the WAL's readers reduce without
 // changing native history.
 func (a *headAppender) UpdateMetadata(ref storage.SeriesRef, lset labels.Labels, meta metadata.Metadata) (storage.SeriesRef, error) {
-	if a.head.opts.EnableNativeMetadataPersistence {
+	if a.head.opts.EnableNativeMetadata {
 		return 0, ErrNativeMetadataLegacyUpdate
 	}
 	s := a.head.series.getByID(chunks.HeadSeriesRef(ref))
@@ -1205,7 +1205,7 @@ func (a *headAppenderBase) log(emitNativeMetadata bool) error {
 			return fmt.Errorf("log series: %w", err)
 		}
 	}
-	if emitNativeMetadata && a.nativeMetricMetadata != nil && a.head.opts.EnableNativeMetadataPersistence {
+	if emitNativeMetadata && a.nativeMetricMetadata != nil && a.head.opts.EnableNativeMetadata {
 		if values, entries := a.nativeMetricMetadata.appendWALRecord(); len(entries) > 0 {
 			rec = enc.CompactNativeMetadata(values, entries, buf)
 			buf = rec[:0]
