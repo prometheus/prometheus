@@ -81,7 +81,11 @@ const DataTable: FC<DataTableProps> = ({
         </Alert>
       )}
 
-      <Box pos="relative" className={classes.tableWrapper}>
+      <Box
+        pos="relative"
+        className={classes.tableWrapper}
+        style={resultType === "matrix" ? { overflowX: "auto" } : undefined}
+      >
         <Table fz="xs">
           <Table.Tbody>
             {resultType === "vector" ? (
@@ -131,10 +135,18 @@ const DataTable: FC<DataTableProps> = ({
                     <SeriesName labels={s.metric} format={doFormat} />
                   </Table.Td>
                   <Table.Td className={classes.numberCell}>
-                    {s.values &&
-                      s.values.map((v, idx) => (
+                    {[...(s.values ?? []), ...(s.histograms ?? [])]
+                      .sort((a, b) => a[0] - b[0])
+                      .map((v, idx) => (
                         <div key={idx}>
-                          {v[1]}{" "}
+                          {typeof v[1] === "string" ? (
+                            v[1]
+                          ) : (
+                            <>
+                              <strong>Count:</strong> {v[1].count}{" "}
+                              <strong>Sum:</strong> {v[1].sum}
+                            </>
+                          )}{" "}
                           <Text
                             span
                             c="gray.7"
@@ -143,6 +155,7 @@ const DataTable: FC<DataTableProps> = ({
                           >
                             @ {v[0]}
                           </Text>
+                          {typeof v[1] !== "string" && histogramTable(v[1])}
                         </div>
                       ))}
                   </Table.Td>
