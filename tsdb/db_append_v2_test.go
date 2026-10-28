@@ -57,12 +57,6 @@ import (
 	"github.com/prometheus/prometheus/util/testutil"
 )
 
-// TODO(bwplotka): Ensure non-ported tests are not deleted from db_test.go when removing AppenderV1 flow (#17632):
-// * TestQuerier_ShouldNotPanicIfHeadChunkIsTruncatedWhileReadingQueriedChunks
-// * TestChunkQuerier_ShouldNotPanicIfHeadChunkIsTruncatedWhileReadingQueriedChunks
-// * TestEmptyLabelsetCausesError
-// * TestQueryHistogramFromBlocksWithCompaction
-
 // TODO(krajorama): Add histograms test cases.
 func TestDataAvailableOnlyAfterCommit_AppendV2(t *testing.T) {
 	db := newTestDB(t)
@@ -1249,7 +1243,7 @@ func TestSizeRetention_AppendV2(t *testing.T) {
 			// Create a WAL checkpoint, and compare sizes.
 			first, last, err := wlog.Segments(db.Head().wal.Dir())
 			require.NoError(t, err)
-			_, err = wlog.Checkpoint(promslog.NewNopLogger(), db.Head().wal, first, last-1, func(chunks.HeadSeriesRef) bool { return false }, 0, enableSTStorage, false)
+			_, err = wlog.Checkpoint(promslog.NewNopLogger(), db.Head().wal, first, last-1, func(chunks.HeadSeriesRef) bool { return false }, 0, enableSTStorage)
 			require.NoError(t, err)
 			blockSize = int64(prom_testutil.ToFloat64(db.metrics.blocksBytes)) // Use the actual internal metrics.
 			walSize, err = db.Head().wal.Size()
@@ -3620,7 +3614,7 @@ func TestMetadataCheckpointingOnlyKeepsLatestEntry_AppendV2(t *testing.T) {
 			keep := func(id chunks.HeadSeriesRef) bool {
 				return id != 3
 			}
-			_, err = wlog.Checkpoint(promslog.NewNopLogger(), w, first, last-1, keep, 0, enableSTStorage, false)
+			_, err = wlog.Checkpoint(promslog.NewNopLogger(), w, first, last-1, keep, 0, enableSTStorage)
 			require.NoError(t, err)
 
 			// Confirm there's been a checkpoint.
@@ -3908,9 +3902,9 @@ func testOOOCompactionAppenderV2(t *testing.T, scenario sampleTypeScenario, addE
 		app := db.AppenderV2(context.Background())
 		for m := fromMins; m <= toMins; m++ {
 			ts := m * time.Minute.Milliseconds()
-			_, _, err := scenario.appendFunc(storage.AppenderV2AsLimitedV1(app), series1, ts, ts)
+			_, _, err := scenario.appendFunc(app, series1, ts, ts)
 			require.NoError(t, err)
-			_, _, err = scenario.appendFunc(storage.AppenderV2AsLimitedV1(app), series2, ts, 2*ts)
+			_, _, err = scenario.appendFunc(app, series2, ts, 2*ts)
 			require.NoError(t, err)
 		}
 		require.NoError(t, app.Commit())
@@ -4106,9 +4100,9 @@ func testOOOCompactionWithNormalCompactionAppendV2(t *testing.T, scenario sample
 		app := db.AppenderV2(context.Background())
 		for m := fromMins; m <= toMins; m++ {
 			ts := m * time.Minute.Milliseconds()
-			_, _, err := scenario.appendFunc(storage.AppenderV2AsLimitedV1(app), series1, ts, ts)
+			_, _, err := scenario.appendFunc(app, series1, ts, ts)
 			require.NoError(t, err)
-			_, _, err = scenario.appendFunc(storage.AppenderV2AsLimitedV1(app), series2, ts, 2*ts)
+			_, _, err = scenario.appendFunc(app, series2, ts, 2*ts)
 			require.NoError(t, err)
 		}
 		require.NoError(t, app.Commit())
@@ -4212,9 +4206,9 @@ func testOOOCompactionWithDisabledWriteLogAppend2(t *testing.T, scenario sampleT
 		app := db.AppenderV2(context.Background())
 		for m := fromMins; m <= toMins; m++ {
 			ts := m * time.Minute.Milliseconds()
-			_, _, err := scenario.appendFunc(storage.AppenderV2AsLimitedV1(app), series1, ts, ts)
+			_, _, err := scenario.appendFunc(app, series1, ts, ts)
 			require.NoError(t, err)
-			_, _, err = scenario.appendFunc(storage.AppenderV2AsLimitedV1(app), series2, ts, 2*ts)
+			_, _, err = scenario.appendFunc(app, series2, ts, 2*ts)
 			require.NoError(t, err)
 		}
 		require.NoError(t, app.Commit())
@@ -4317,9 +4311,9 @@ func testOOOQueryAfterRestartWithSnapshotAndRemovedWBLAppendV2(t *testing.T, sce
 		app := db.AppenderV2(context.Background())
 		for m := fromMins; m <= toMins; m++ {
 			ts := m * time.Minute.Milliseconds()
-			_, _, err := scenario.appendFunc(storage.AppenderV2AsLimitedV1(app), series1, ts, ts)
+			_, _, err := scenario.appendFunc(app, series1, ts, ts)
 			require.NoError(t, err)
-			_, _, err = scenario.appendFunc(storage.AppenderV2AsLimitedV1(app), series2, ts, 2*ts)
+			_, _, err = scenario.appendFunc(app, series2, ts, 2*ts)
 			require.NoError(t, err)
 		}
 		require.NoError(t, app.Commit())
@@ -5185,7 +5179,7 @@ func testOOONativeHistogramsWithCounterResetsAppendV2(t *testing.T, scenario sam
 					if resetCount {
 						j = 0
 					}
-					_, s, err := scenario.appendFunc(storage.AppenderV2AsLimitedV1(app), lbls, minutes(i), j)
+					_, s, err := scenario.appendFunc(app, lbls, minutes(i), j)
 					require.NoError(t, err)
 					if s.Type() == chunkenc.ValHistogram {
 						s.H().CounterResetHint = batch.expCounterResetHints[smplIdx]
@@ -5517,7 +5511,7 @@ func testOOOAppendAndQueryAppendV2(t *testing.T, scenario sampleTypeScenario) {
 		from, to := minutes(fromMins), minutes(toMins)
 		for m := from; m <= to; m += time.Minute.Milliseconds() {
 			val := rand.Intn(1000)
-			_, s, err := scenario.appendFunc(storage.AppenderV2AsLimitedV1(app), lbls, m, int64(val))
+			_, s, err := scenario.appendFunc(app, lbls, m, int64(val))
 			if faceError {
 				require.Error(t, err)
 			} else {
@@ -5644,7 +5638,7 @@ func testOOODisabledAppendV2(t *testing.T, scenario sampleTypeScenario) {
 		key := lbls.String()
 		from, to := minutes(fromMins), minutes(toMins)
 		for m := from; m <= to; m += time.Minute.Milliseconds() {
-			_, _, err := scenario.appendFunc(storage.AppenderV2AsLimitedV1(app), lbls, m, m)
+			_, _, err := scenario.appendFunc(app, lbls, m, m)
 			if faceError {
 				require.Error(t, err)
 				failedSamples++
@@ -5693,7 +5687,6 @@ func TestWBLAndMmapReplay_AppendV2(t *testing.T) {
 	t.Parallel()
 	for name, scenario := range sampleTypeScenarios {
 		t.Run(name, func(t *testing.T) {
-			t.Parallel()
 			testWBLAndMmapReplayAppendV2(t, scenario)
 		})
 	}
@@ -5718,7 +5711,7 @@ func testWBLAndMmapReplayAppendV2(t *testing.T, scenario sampleTypeScenario) {
 		from, to := minutes(fromMins), minutes(toMins)
 		for m := from; m <= to; m += time.Minute.Milliseconds() {
 			val := rand.Intn(1000)
-			_, s, err := scenario.appendFunc(storage.AppenderV2AsLimitedV1(app), lbls, m, int64(val))
+			_, s, err := scenario.appendFunc(app, lbls, m, int64(val))
 			require.NoError(t, err)
 			expSamples[key] = append(expSamples[key], s)
 			totalSamples++
@@ -5771,6 +5764,10 @@ func testWBLAndMmapReplayAppendV2(t *testing.T, scenario sampleTypeScenario) {
 
 	// Making a copy of original state of WBL and Mmap files to use it later.
 	mmapDir := mmappedChunksDir(db.head.opts.ChunkDirRoot)
+	// On Windows, head chunk files are preallocated to 128 MiB (MaxHeadChunkFileSize)
+	// with trailing zeros. Truncate the closed file to the non-Windows preallocation
+	// size (128 KiB) before copying mmapDir repeatedly across subtests.
+	require.NoError(t, os.Truncate(filepath.Join(mmapDir, "000001"), chunks.MinWriteBufferSize*2))
 	wblDir := db.head.wbl.Dir()
 	originalWblDir := filepath.Join(t.TempDir(), "original_wbl")
 	originalMmapDir := filepath.Join(t.TempDir(), "original_mmap")
@@ -6346,7 +6343,7 @@ func testOOOCompactionFailureAppendV2(t *testing.T, scenario sampleTypeScenario)
 		app := db.AppenderV2(context.Background())
 		for m := fromMins; m <= toMins; m++ {
 			ts := m * time.Minute.Milliseconds()
-			_, _, err := scenario.appendFunc(storage.AppenderV2AsLimitedV1(app), series1, ts, ts)
+			_, _, err := scenario.appendFunc(app, series1, ts, ts)
 			require.NoError(t, err)
 		}
 		require.NoError(t, app.Commit())
@@ -6505,14 +6502,25 @@ func TestWBLCorruption_AppendV2(t *testing.T) {
 	// We corrupt WBL after the sample at 255. So everything added later
 	// should be deleted after replay.
 
+	// segmentSize returns the on-disk size of the named WBL segment. It opens
+	// the file and stats the handle instead of relying on os.ReadDir's cached
+	// directory metadata, which on Windows can be stale for a segment that was
+	// just closed asynchronously by WL.NextSegment.
+	segmentSize := func(name string) int64 {
+		f, err := os.Open(path.Join(db.head.wbl.Dir(), name))
+		require.NoError(t, err)
+		defer f.Close()
+		fi, err := f.Stat()
+		require.NoError(t, err)
+		return fi.Size()
+	}
+
 	// Checking where we corrupt it.
 	require.NoError(t, db.head.wbl.Sync()) // Syncing to make sure wbl is flushed in windows.
 	files, err := os.ReadDir(db.head.wbl.Dir())
 	require.NoError(t, err)
 	require.Len(t, files, 2)
-	f1, err := files[1].Info()
-	require.NoError(t, err)
-	corruptIndex := f1.Size()
+	corruptIndex := segmentSize(files[1].Name())
 	corruptFilePath := path.Join(db.head.wbl.Dir(), files[1].Name())
 
 	// Corrupt the WBL by adding a malformed record.
@@ -6533,15 +6541,9 @@ func TestWBLCorruption_AppendV2(t *testing.T) {
 	files, err = os.ReadDir(db.head.wbl.Dir())
 	require.NoError(t, err)
 	require.Len(t, files, 3)
-	f1, err = files[1].Info()
-	require.NoError(t, err)
-	require.Greater(t, f1.Size(), corruptIndex)
-	f0, err := files[0].Info()
-	require.NoError(t, err)
-	require.Greater(t, f0.Size(), int64(100))
-	f2, err := files[2].Info()
-	require.NoError(t, err)
-	require.Greater(t, f2.Size(), int64(100))
+	require.Greater(t, segmentSize(files[1].Name()), corruptIndex)
+	require.Greater(t, segmentSize(files[0].Name()), int64(100))
+	require.Greater(t, segmentSize(files[2].Name()), int64(100))
 
 	verifySamples := func(expSamples []chunks.Sample) {
 		sort.Slice(expSamples, func(i, j int) bool {
@@ -6577,12 +6579,8 @@ func TestWBLCorruption_AppendV2(t *testing.T) {
 	files, err = os.ReadDir(db.head.wbl.Dir())
 	require.NoError(t, err)
 	require.Len(t, files, 3)
-	f0, err = files[0].Info()
-	require.NoError(t, err)
-	require.Greater(t, f0.Size(), int64(100))
-	f2, err = files[2].Info()
-	require.NoError(t, err)
-	require.Equal(t, int64(0), f2.Size())
+	require.Greater(t, segmentSize(files[0].Name()), int64(100))
+	require.Equal(t, int64(0), segmentSize(files[2].Name()))
 	require.Equal(t, corruptFilePath, path.Join(db.head.wbl.Dir(), files[1].Name()))
 
 	// Verifying that everything after the corruption point is set to 0.
@@ -6625,7 +6623,7 @@ func testOOOMmapCorruptionAppendV2(t *testing.T, scenario sampleTypeScenario) {
 		app := db.AppenderV2(context.Background())
 		for m := fromMins; m <= toMins; m++ {
 			ts := m * time.Minute.Milliseconds()
-			_, s, err := scenario.appendFunc(storage.AppenderV2AsLimitedV1(app), series1, ts, ts)
+			_, s, err := scenario.appendFunc(app, series1, ts, ts)
 			require.NoError(t, err)
 			allSamples = append(allSamples, s)
 			if inMmapAfterCorruption {
@@ -6763,7 +6761,7 @@ func testOutOfOrderRuntimeConfigAppendV2(t *testing.T, scenario sampleTypeScenar
 		app := db.AppenderV2(context.Background())
 		for m := fromMins; m <= toMins; m++ {
 			ts := m * time.Minute.Milliseconds()
-			_, s, err := scenario.appendFunc(storage.AppenderV2AsLimitedV1(app), series1, ts, ts)
+			_, s, err := scenario.appendFunc(app, series1, ts, ts)
 			if success {
 				require.NoError(t, err)
 				allSamples = append(allSamples, s)
@@ -6975,7 +6973,7 @@ func testNoGapAfterRestartWithOOOAppendV2(t *testing.T, scenario sampleTypeScena
 		app := db.AppenderV2(context.Background())
 		for m := fromMins; m <= toMins; m++ {
 			ts := m * time.Minute.Milliseconds()
-			_, _, err := scenario.appendFunc(storage.AppenderV2AsLimitedV1(app), series1, ts, ts)
+			_, _, err := scenario.appendFunc(app, series1, ts, ts)
 			if success {
 				require.NoError(t, err)
 			} else {
@@ -7089,7 +7087,7 @@ func testWblReplayAfterOOODisableAndRestartAppendV2(t *testing.T, scenario sampl
 		app := db.AppenderV2(context.Background())
 		for m := fromMins; m <= toMins; m++ {
 			ts := m * time.Minute.Milliseconds()
-			_, s, err := scenario.appendFunc(storage.AppenderV2AsLimitedV1(app), series1, ts, ts)
+			_, s, err := scenario.appendFunc(app, series1, ts, ts)
 			require.NoError(t, err)
 			allSamples = append(allSamples, s)
 		}
@@ -7149,7 +7147,7 @@ func testPanicOnApplyConfigAppendV2(t *testing.T, scenario sampleTypeScenario) {
 		app := db.AppenderV2(context.Background())
 		for m := fromMins; m <= toMins; m++ {
 			ts := m * time.Minute.Milliseconds()
-			_, s, err := scenario.appendFunc(storage.AppenderV2AsLimitedV1(app), series1, ts, ts)
+			_, s, err := scenario.appendFunc(app, series1, ts, ts)
 			require.NoError(t, err)
 			allSamples = append(allSamples, s)
 		}
