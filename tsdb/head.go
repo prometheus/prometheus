@@ -166,9 +166,11 @@ type Head struct {
 
 	memTruncationInProcess atomic.Bool
 	memTruncationCallBack  func() // For testing purposes.
+	// TODO: find a better solution than this test hook in production code.
 	// testAfterSeriesLookup is invoked after getByID in appenders, before the
 	// series is locked. Tests use it to race GC against a resolved pointer.
 	testAfterSeriesLookup func(*memSeries)
+	// TODO: find a better solution than this test hook in production code.
 	// testAfterWaitingForReadersToEvictSeries is invoked by truncateSeries after it has waited for
 	// the open readers, and before it removes the series. Tests use it to open a reader at the point
 	// where a reader would otherwise not be waited for.

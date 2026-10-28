@@ -510,22 +510,12 @@ type headChunkReader struct {
 	head       *Head
 	mint, maxt int64
 	isoState   *isolationState
-	// evicting, if not nil, makes the reader skip a chunk, instead of failing to read it, if the series it
-	// belongs to is one that CompactSelectedSeries or CompactStaleHead removed from the head after the reader
-	// selected the chunk. It is the set that Head.truncateSeries was removing when the reader was opened, and
-	// it is nil when no series were being removed, so the reader behaves as it always did.
+	// evicting captures the series eviction in progress when this reader is opened.
+	// It allows missing chunks from that eviction to be skipped. Set only for query
+	// readers that also read the blocks containing those samples.
 	//
-	// The series are removed from the head once their samples are in a block, which is added to the DB before
-	// the series are removed. truncateSeries waits for the readers that are open, so the readers that can find
-	// one of the series removed are those that were opened after that wait, and those read the block too.
-	//
-	// It must be set only for the readers used by queries. A reader used to write a block must fail instead of
-	// silently writing a block without the samples of the removed series.
-	//
-	// INVARIANT: the block that has the samples of a series must be added to the DB before truncateSeries is
-	// called for it. Nothing checks it when a chunk is skipped: the labels of a removed series are gone, so the
-	// blocks can't be searched for it. TestSeriesRemoval_BlockIsAddedBeforeSeriesAreRemoved checks that the
-	// callers follow that order. Any new caller of truncateSeries must follow it too.
+	// Before setting evicting, the caller must ensure that the series' samples have
+	// been written to blocks and those blocks have been added to the DB.
 	evicting *evictedSeries
 	// When true, enables the head-chunks cache. Range queries benefit from
 	// caching because they look up every chunk of a series; instant queries
