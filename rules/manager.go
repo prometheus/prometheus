@@ -340,20 +340,7 @@ func (m *Manager) Update(interval time.Duration, files []string, externalLabels 
 	for n, oldg := range m.groups {
 		go func(n string, g *Group) {
 			g.markStale = true
-			g.stop()
-			if m := g.metrics; m != nil {
-				m.IterationsMissed.DeleteLabelValues(n)
-				m.IterationsScheduled.DeleteLabelValues(n)
-				m.EvalTotal.DeleteLabelValues(n)
-				m.EvalFailures.DeleteLabelValues(n)
-				m.GroupInterval.DeleteLabelValues(n)
-				m.GroupLastEvalTime.DeleteLabelValues(n)
-				m.GroupLastDuration.DeleteLabelValues(n)
-				m.GroupRules.DeleteLabelValues(n)
-				m.GroupSamples.DeleteLabelValues(n)
-				m.GroupLastRuleDurationSum.DeleteLabelValues(n)
-				m.GroupLastRestoreDuration.DeleteLabelValues(n)
-			}
+			stopRemovedGroup(n, g)
 			wg.Done()
 		}(n, oldg)
 	}
@@ -362,6 +349,24 @@ func (m *Manager) Update(interval time.Duration, files []string, externalLabels 
 	m.groups = groups
 
 	return nil
+}
+
+// stopRemovedGroup stops a group that leaves the manager and deletes its metrics.
+func stopRemovedGroup(key string, g *Group) {
+	g.stop()
+	if m := g.metrics; m != nil {
+		m.IterationsMissed.DeleteLabelValues(key)
+		m.IterationsScheduled.DeleteLabelValues(key)
+		m.EvalTotal.DeleteLabelValues(key)
+		m.EvalFailures.DeleteLabelValues(key)
+		m.GroupInterval.DeleteLabelValues(key)
+		m.GroupLastEvalTime.DeleteLabelValues(key)
+		m.GroupLastDuration.DeleteLabelValues(key)
+		m.GroupRules.DeleteLabelValues(key)
+		m.GroupSamples.DeleteLabelValues(key)
+		m.GroupLastRuleDurationSum.DeleteLabelValues(key)
+		m.GroupLastRestoreDuration.DeleteLabelValues(key)
+	}
 }
 
 // GroupLoader is responsible for loading rule groups from arbitrary sources and parsing them.
