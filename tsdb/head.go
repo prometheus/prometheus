@@ -1518,6 +1518,7 @@ func (h *Head) snapshotFingerprints(seriesRefs []storage.SeriesRef, appendIDWate
 // the caller collected the ref list are skipped before the predicate is consulted.
 // maxt is inclusive: it matches the highest sample timestamp that the caller has just persisted
 // to a block, so a head whose MinTime equals maxt still has data eligible for eviction.
+// seriesRefs must be sorted in ascending order.
 // It returns the number of series that were actually evicted.
 //
 // The caller must have written the samples of the series to a block, and added the block to the DB, before
@@ -1884,12 +1885,8 @@ func (h *Head) Stats(statsByLabelName string, limit int) *Stats {
 
 // evictedSeries is the set of series that truncateSeries is removing from the head.
 type evictedSeries struct {
+	// refs are the refs of the series, sorted in ascending order.
 	refs []storage.SeriesRef
-
-	// The set is built from refs by the first call to contains, so that an eviction that never calls it
-	// doesn't pay for it. once makes sure it is built only once, also when contains is called concurrently.
-	once sync.Once
-	set  map[chunks.HeadSeriesRef]struct{}
 }
 
 // contains returns whether the series is one that is being removed. It is safe to call on a nil *evictedSeries.
@@ -1897,13 +1894,7 @@ func (e *evictedSeries) contains(ref chunks.HeadSeriesRef) bool {
 	if e == nil {
 		return false
 	}
-	e.once.Do(func() {
-		e.set = make(map[chunks.HeadSeriesRef]struct{}, len(e.refs))
-		for _, r := range e.refs {
-			e.set[chunks.HeadSeriesRef(r)] = struct{}{}
-		}
-	})
-	_, ok := e.set[ref]
+	_, ok := slices.BinarySearch(e.refs, storage.SeriesRef(ref))
 	return ok
 }
 

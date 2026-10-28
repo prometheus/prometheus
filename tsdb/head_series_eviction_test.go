@@ -17,6 +17,7 @@ import (
 	"context"
 	"fmt"
 	"math"
+	"slices"
 	"testing"
 	"time"
 
@@ -102,6 +103,16 @@ func evictionTestEvictions() map[string]func(*DB, []storage.SeriesRef) error {
 		"CompactSelectedSeries": func(db *DB, refs []storage.SeriesRef) error { return db.CompactSelectedSeries(refs) },
 		"CompactStaleHead":      func(db *DB, _ []storage.SeriesRef) error { return db.CompactStaleHead() },
 	}
+}
+
+// requireEvictingSeriesSorted checks, from a hook called by truncateSeries, that the series being evicted are
+// published sorted, because evictedSeries.contains does a binary search on them.
+func requireEvictingSeriesSorted(t *testing.T, head *Head) {
+	t.Helper()
+
+	evicting := head.evictingSeries.Load()
+	require.NotNil(t, evicting)
+	require.True(t, slices.IsSorted(evicting.refs), "evictedSeries.contains needs the refs to be sorted")
 }
 
 // readingSeries is a query whose series have been selected, but whose samples have not been read yet, like
@@ -287,6 +298,7 @@ func TestSeriesEviction_QueryOpenedAfterWaitingForReaders(t *testing.T) {
 						numSeriesInCallback uint64
 					)
 					db.Head().testAfterWaitingForReadersToEvictSeries = func() {
+						requireEvictingSeriesSorted(t, db.Head())
 						numSeriesInCallback = db.Head().NumSeries()
 
 						// Open the query now. No one waits for it, and the series are removed after this function returns.
@@ -460,24 +472,64 @@ func TestSeriesEviction_SeriesNotBeingEvictedAreNotSkipped(t *testing.T) {
 
 // TestSeriesEviction_SeriesAreOnlyPublishedWhileTheyAreEvicted verifies that the series being evicted are published
 // only while truncateSeries runs, so that the queries opened at any other time behave as they always did.
+//
+// The published refs must be sorted, because evictedSeries.contains does a binary search on them. Refs that are not
+// sorted can't reach truncateSeries: the block writer rejects them, and the eviction fails before it.
 func TestSeriesEviction_SeriesAreOnlyPublishedWhileTheyAreEvicted(t *testing.T) {
-	testDB := newSeriesEvictionTestDB(t)
-	head := testDB.db.Head()
+	for name, evict := range evictionTestEvictions() {
+		t.Run(name, func(t *testing.T) {
+			testDB := newSeriesEvictionTestDB(t)
+			head := testDB.db.Head()
 
-	require.Nil(t, head.evictingSeries.Load())
-	var published *evictedSeries
-	head.testAfterWaitingForReadersToEvictSeries = func() { published = head.evictingSeries.Load() }
+			require.Nil(t, head.evictingSeries.Load())
+			var published *evictedSeries
+			head.testAfterWaitingForReadersToEvictSeries = func() { published = head.evictingSeries.Load() }
 
-	require.NoError(t, testDB.db.CompactSelectedSeries(testDB.evictedRefs))
+			require.NoError(t, evict(testDB.db, testDB.evictedRefs))
 
-	require.NotNil(t, published)
-	require.Equal(t, testDB.evictedRefs, published.refs)
-	require.Nil(t, head.evictingSeries.Load())
+			require.NotNil(t, published)
+			require.Equal(t, testDB.evictedRefs, published.refs)
+			require.True(t, slices.IsSorted(published.refs))
+			require.Nil(t, head.evictingSeries.Load())
 
-	// A querier opened after the eviction doesn't skip anything.
-	q, err := testDB.db.Querier(0, 1000)
-	require.NoError(t, err)
-	t.Cleanup(func() { require.NoError(t, q.Close()) })
+			// A querier opened after the eviction doesn't skip anything.
+			q, err := testDB.db.Querier(0, 1000)
+			require.NoError(t, err)
+			t.Cleanup(func() { require.NoError(t, q.Close()) })
+		})
+	}
+}
+
+func TestEvictedSeries_Contains(t *testing.T) {
+	refs := []storage.SeriesRef{3, 5, 6, 100, 1 << 40}
+
+	tests := map[string]struct {
+		evicted   *evictedSeries
+		in, notIn []chunks.HeadSeriesRef
+	}{
+		"nil": {
+			notIn: []chunks.HeadSeriesRef{0, 3},
+		},
+		"no refs": {
+			evicted: &evictedSeries{},
+			notIn:   []chunks.HeadSeriesRef{0, 3},
+		},
+		"refs": {
+			evicted: &evictedSeries{refs: refs},
+			in:      []chunks.HeadSeriesRef{3, 5, 6, 100, 1 << 40},
+			notIn:   []chunks.HeadSeriesRef{0, 2, 4, 7, 99, 101, 1<<40 - 1, 1<<40 + 1},
+		},
+	}
+	for name, tc := range tests {
+		t.Run(name, func(t *testing.T) {
+			for _, ref := range tc.in {
+				require.True(t, tc.evicted.contains(ref), "ref %d", ref)
+			}
+			for _, ref := range tc.notIn {
+				require.False(t, tc.evicted.contains(ref), "ref %d", ref)
+			}
+		})
+	}
 }
 
 // beforeRemoval is what the DB looks like right before the series are removed from the head.
@@ -526,7 +578,10 @@ func TestSeriesRemoval_BlockIsAddedBeforeSeriesAreRemoved(t *testing.T) {
 			db := testDB.db
 
 			var before beforeRemoval
-			db.Head().testAfterWaitingForReadersToEvictSeries = func() { before.record(t, db) }
+			db.Head().testAfterWaitingForReadersToEvictSeries = func() {
+				requireEvictingSeriesSorted(t, db.Head())
+				before.record(t, db)
+			}
 
 			require.NoError(t, evict(db, testDB.evictedRefs))
 

@@ -283,7 +283,7 @@ type seriesRefs struct {
 //
 // The returned series are provided in two orders:
 //
-//   - sortedByRef preserves the order of the input postings
+//   - sortedByRef preserves the order of the input postings, which are sorted in ascending order of the refs
 //   - sortedByLabels is sorted by series labels
 //
 // When keep is non-nil, it is invoked while holding the series lock and
