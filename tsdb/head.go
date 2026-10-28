@@ -529,7 +529,7 @@ func newHeadMetrics(h *Head, r prometheus.Registerer) *headMetrics {
 		}),
 		chunkReadsOfRemovedSeries: prometheus.NewCounter(prometheus.CounterOpts{
 			Name: "prometheus_tsdb_head_chunk_reads_of_removed_series_total",
-			Help: "Total number of chunks that queries tried to read from the head, whose series was removed from the head in the meantime. The chunks are skipped, because the samples of the series are available from a block.",
+			Help: "Total number of chunks that queries tried to read from the head after their series or chunks were evicted. The chunks are skipped because their samples are available from blocks.",
 		}),
 		pendingCommitUnderflow: prometheus.NewCounter(prometheus.CounterOpts{
 			Name: "prometheus_tsdb_head_series_pending_commit_underflow_total",
@@ -1892,6 +1892,14 @@ func (h *Head) Stats(statsByLabelName string, limit int) *Stats {
 type evictedSeries struct {
 	// refs are the refs of the series, sorted in ascending order.
 	refs []storage.SeriesRef
+	// truncatedChunks maps series refs to evictedChunkRange for series retained for exemplars.
+	truncatedChunks sync.Map
+}
+
+// evictedChunkRange identifies in-order chunks reclaimed while their series is retained.
+type evictedChunkRange struct {
+	first chunks.HeadChunkID
+	count int
 }
 
 // contains returns whether the series is one that is being removed. It is safe to call on a nil *evictedSeries.
@@ -2698,6 +2706,7 @@ func (s *stripeSeries) gc(mint int64, minOOOMmapRef chunks.ChunkDiskMapperRef) (
 // The returned references are the series that got deleted.
 func (h *Head) gcSeries(seriesRefs []storage.SeriesRef, maxt int64, shouldEvict func(*memSeries) bool) map[storage.SeriesRef]struct{} {
 	minValidTime := h.minValidTime.Load()
+	evicting := h.evictingSeries.Load()
 	var protectedChunksRemoved int
 	deleted, affected, chunksRemoved, staleSeriesDeleted, histogramSeriesDeleted, histogramBucketsDeleted := h.series.gcSeries(seriesRefs, maxt, func(s *memSeries) bool {
 		// Keep unpersisted samples before considering chunk removal or series eviction.
@@ -2712,7 +2721,12 @@ func (h *Head) gcSeries(seriesRefs []storage.SeriesRef, maxt int64, shouldEvict 
 		// Free the persisted sample chunks, but keep the series identity for exemplar replay.
 		// Memory mapping keeps the newest chunk in memory, so it needs at least two head chunks.
 		wasMmapReady := s.headChunkCount.Load() >= 2
-		protectedChunksRemoved += s.truncateChunksBefore(math.MaxInt64, 0)
+		firstChunkID := s.firstChunkID
+		removed := s.truncateChunksBefore(math.MaxInt64, 0)
+		protectedChunksRemoved += removed
+		if evicting != nil && removed > 0 {
+			evicting.truncatedChunks.Store(s.ref, evictedChunkRange{first: firstChunkID, count: removed})
+		}
 		// Clear the appender because it references the removed head chunk.
 		s.app = nil
 		// The series no longer has enough chunks to be ready for memory mapping.

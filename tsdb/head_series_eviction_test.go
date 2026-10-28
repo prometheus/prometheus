@@ -18,12 +18,14 @@ import (
 	"fmt"
 	"math"
 	"slices"
+	"strconv"
 	"testing"
 	"time"
 
 	prom_testutil "github.com/prometheus/client_golang/prometheus/testutil"
 	"github.com/stretchr/testify/require"
 
+	"github.com/prometheus/prometheus/model/exemplar"
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/model/value"
 	"github.com/prometheus/prometheus/storage"
@@ -46,12 +48,15 @@ type seriesEvictionTestDB struct {
 
 // newSeriesEvictionTestDB returns a DB where the series to evict have a stale sample as last sample, so that
 // they can be evicted by both CompactSelectedSeries and CompactStaleHead.
-func newSeriesEvictionTestDB(t *testing.T) *seriesEvictionTestDB {
+// The specified exemplarSeries also receive an exemplar.
+func newSeriesEvictionTestDB(t *testing.T, exemplarSeries ...int) *seriesEvictionTestDB {
 	t.Helper()
 
 	opts := DefaultOptions()
 	opts.MinBlockDuration = 1000
 	opts.MaxBlockDuration = 1000
+	opts.EnableExemplarStorage = len(exemplarSeries) > 0
+	opts.MaxExemplars = int64(len(exemplarSeries))
 	db := newTestDB(t, withOpts(opts))
 	db.DisableCompactions()
 	t.Cleanup(func() { require.NoError(t, db.Close()) })
@@ -73,6 +78,12 @@ func newSeriesEvictionTestDB(t *testing.T) *seriesEvictionTestDB {
 		}
 		if evicted {
 			res.evictedRefs = append(res.evictedRefs, ref)
+		}
+		if slices.Contains(exemplarSeries, i) {
+			_, err := app.AppendExemplar(ref, evictionTestLabels(i), exemplar.Exemplar{
+				Labels: labels.FromStrings("trace_id", strconv.Itoa(i)), Value: 1, Ts: 200,
+			})
+			require.NoError(t, err)
 		}
 	}
 	require.NoError(t, app.Commit())
@@ -254,9 +265,20 @@ func newEvictionTestCase(eviction, querier, timeRange string) evictionTestCase {
 // A series that is selected, but receives a sample before it is evicted, is not evicted. The query must read its
 // late sample from the head.
 func TestSeriesEviction_QueryOpenedAfterWaitingForReaders(t *testing.T) {
+	var exemplarCases []evictionTestCase
+	for eviction := range evictionTestEvictions() {
+		for _, querier := range []string{"Querier", "ChunkQuerier"} {
+			for _, timeRange := range []string{"bounded", "unbounded"} {
+				exemplarCases = append(exemplarCases, newEvictionTestCase(eviction, querier, timeRange))
+			}
+		}
+	}
 	tests := map[string]struct {
-		lateSeries []int
-		cases      []evictionTestCase
+		lateSeries          []int
+		exemplarSeries      []int
+		appendAfterEviction bool
+		wrapChunkIDs        bool
+		cases               []evictionTestCase
 	}{
 		"series to evict": {
 			cases: []evictionTestCase{
@@ -274,14 +296,42 @@ func TestSeriesEviction_QueryOpenedAfterWaitingForReaders(t *testing.T) {
 				newEvictionTestCase("CompactSelectedSeries", "Querier", "unbounded"),
 			},
 		},
+		"series with exemplars": {
+			exemplarSeries: []int{0},
+			cases:          exemplarCases,
+		},
+		"series with exemplars and a late sample": {
+			exemplarSeries: []int{0, 1},
+			lateSeries:     []int{0},
+			cases:          exemplarCases,
+		},
+		"series with exemplars and new samples after eviction": {
+			exemplarSeries:      []int{0},
+			appendAfterEviction: true,
+			cases:               exemplarCases,
+		},
+		"series with exemplars and wrapped chunk IDs": {
+			exemplarSeries: []int{0},
+			wrapChunkIDs:   true,
+			cases:          exemplarCases,
+		},
 	}
 
 	for name, tt := range tests {
 		t.Run(name, func(t *testing.T) {
 			for _, c := range tt.cases {
 				t.Run(c.name, func(t *testing.T) {
-					testDB := newSeriesEvictionTestDB(t)
+					testDB := newSeriesEvictionTestDB(t, tt.exemplarSeries...)
 					db := testDB.db
+					if len(tt.exemplarSeries) > 0 {
+						db.Head().SetMinValidTime(200)
+					}
+					if tt.wrapChunkIDs {
+						s := db.Head().series.getByID(chunks.HeadSeriesRef(testDB.evictedRefs[0]))
+						s.Lock()
+						s.firstChunkID = oooChunkIDMask - 1
+						s.Unlock()
+					}
 
 					// The late samples are appended after the series are selected, and before they are evicted.
 					db.compactHeadViewBeforeEvictTestingCallback = func() {
@@ -308,8 +358,23 @@ func TestSeriesEviction_QueryOpenedAfterWaitingForReaders(t *testing.T) {
 					require.NoError(t, c.evict(db, testDB.evictedRefs))
 
 					removed := evictionTestEvictedSeries - len(tt.lateSeries)
+					for _, i := range tt.exemplarSeries {
+						s := db.Head().series.getByID(chunks.HeadSeriesRef(testDB.evictedRefs[i]))
+						require.NotNil(t, s, "the exemplar keeps the series identity")
+						if !slices.Contains(tt.lateSeries, i) {
+							removed--
+							require.Zero(t, s.headChunkCount.Load())
+							require.Empty(t, s.mmappedChunks)
+						}
+					}
 					require.Equal(t, uint64(evictionTestSeries), numSeriesInCallback, "the series must be removed after the callback")
 					require.Equal(t, uint64(evictionTestSeries-removed), db.Head().NumSeries())
+					if tt.appendAfterEviction {
+						app := db.Appender(context.Background())
+						_, err := app.Append(testDB.evictedRefs[0], evictionTestLabels(0), 400, 42)
+						require.NoError(t, err)
+						require.NoError(t, app.Commit())
+					}
 
 					// The samples of the evicted series are read after the series were removed from the head,
 					// and must be served from the block.
@@ -317,8 +382,13 @@ func TestSeriesEviction_QueryOpenedAfterWaitingForReaders(t *testing.T) {
 					require.Equal(t, evictionTestExpectedSamples(tt.lateSeries...), reading.mustRead(t))
 					require.NoError(t, reading.close())
 
-					// Each evicted series has one chunk, whose read was skipped.
-					require.Equal(t, float64(removed), prom_testutil.ToFloat64(db.Head().metrics.chunkReadsOfRemovedSeries))
+					// Each persisted series has one chunk, whose read was skipped unless a late sample kept it.
+					require.Equal(t, float64(evictionTestEvictedSeries-len(tt.lateSeries)), prom_testutil.ToFloat64(db.Head().metrics.chunkReadsOfRemovedSeries))
+					if tt.appendAfterEviction {
+						current := c.openQuery(t, db, c.mint, c.maxt)
+						require.Equal(t, evictionTestExpectedSamples(0), current.mustRead(t))
+						require.NoError(t, current.close())
+					}
 				})
 			}
 		})
@@ -412,33 +482,44 @@ func TestSeriesEviction_OnlyQueriesSkipRemovedSeries(t *testing.T) {
 	}
 }
 
-// TestSeriesEviction_OtherNotFoundErrorsAreReturned verifies that the readers of queries only skip the chunks of the
-// series that were removed from the head. If the series is in the head, and its chunk can't be found, the error is
-// returned, because the samples of the series are not known to be available from a block.
+// TestSeriesEviction_OtherNotFoundErrorsAreReturned verifies that query readers do not skip missing chunks
+// unless the series or the particular chunk was removed by the eviction.
 func TestSeriesEviction_OtherNotFoundErrorsAreReturned(t *testing.T) {
-	testDB := newSeriesEvictionTestDB(t)
-	head := testDB.db.Head()
+	for _, truncate := range []bool{false, true} {
+		t.Run(fmt.Sprintf("chunks reclaimed=%t", truncate), func(t *testing.T) {
+			testDB := newSeriesEvictionTestDB(t, 0)
+			head := testDB.db.Head()
+			evicting := &evictedSeries{refs: testDB.evictedRefs}
+			if truncate {
+				head.testAfterWaitingForReadersToEvictSeries = func() { evicting = head.evictingSeries.Load() }
+				require.NoError(t, testDB.db.CompactSelectedSeries(testDB.evictedRefs))
+			}
 
-	// No eviction has run, so both series are in the head, and neither has the chunk 1000.
-	tests := map[string]storage.SeriesRef{
-		"a series being evicted":     testDB.evictedRefs[0],
-		"a series not being evicted": testDB.evictedRefs[len(testDB.evictedRefs)-1] + 1,
-	}
-	for name, ref := range tests {
-		t.Run(name, func(t *testing.T) {
-			require.NotNil(t, head.series.getByID(chunks.HeadSeriesRef(ref)), "the series must be in the head")
-			missingChunk := chunks.Meta{Ref: chunks.ChunkRef(chunks.NewHeadChunkRef(chunks.HeadSeriesRef(ref), 1000))}
+			// Both series remain in the head, and neither ever had chunk 1000.
+			tests := map[string]storage.SeriesRef{
+				"a series being evicted":     testDB.evictedRefs[0],
+				"a series not being evicted": testDB.evictedRefs[len(testDB.evictedRefs)-1] + 1,
+			}
+			for name, ref := range tests {
+				t.Run(name, func(t *testing.T) {
+					require.NotNil(t, head.series.getByID(chunks.HeadSeriesRef(ref)), "the series must be in the head")
+					missingChunk := chunks.Meta{Ref: chunks.ChunkRef(chunks.NewHeadChunkRef(chunks.HeadSeriesRef(ref), 1000))}
 
-			reader := &headChunkReader{head: head, mint: 0, maxt: 1000, evicting: &evictedSeries{refs: testDB.evictedRefs}}
-			_, _, err := reader.ChunkOrIterable(missingChunk)
-			require.ErrorIs(t, err, storage.ErrNotFound)
-			_, _, _, err = reader.ChunkOrIterableWithCopy(missingChunk)
-			require.ErrorIs(t, err, storage.ErrNotFound)
+					reader := &headChunkReader{head: head, mint: 0, maxt: 1000, evicting: evicting}
+					_, _, err := reader.ChunkOrIterable(missingChunk)
+					require.ErrorIs(t, err, storage.ErrNotFound)
+					_, _, _, err = reader.ChunkOrIterableWithCopy(missingChunk)
+					require.ErrorIs(t, err, storage.ErrNotFound)
 
-			_, _, err = NewHeadAndOOOChunkReader(head, 0, 1000, reader, nil, 0).ChunkOrIterable(missingChunk)
-			require.ErrorIs(t, err, storage.ErrNotFound)
+					oooReader := NewHeadAndOOOChunkReader(head, 0, 1000, reader, nil, 0)
+					_, _, err = oooReader.ChunkOrIterable(missingChunk)
+					require.ErrorIs(t, err, storage.ErrNotFound)
+					_, _, _, err = oooReader.ChunkOrIterableWithCopy(missingChunk)
+					require.ErrorIs(t, err, storage.ErrNotFound)
 
-			require.Equal(t, float64(0), prom_testutil.ToFloat64(head.metrics.chunkReadsOfRemovedSeries))
+					require.Equal(t, float64(0), prom_testutil.ToFloat64(head.metrics.chunkReadsOfRemovedSeries))
+				})
+			}
 		})
 	}
 }

@@ -248,14 +248,19 @@ func (cr *HeadAndOOOChunkReader) ChunkOrIterableWithCopy(meta chunks.Meta) (chun
 }
 
 func (cr *HeadAndOOOChunkReader) chunkOrIterable(meta chunks.Meta, copyLastChunk bool) (chunkenc.Chunk, chunkenc.Iterable, int64, error) {
+	c, iterable, maxt, err := cr.chunk(meta, copyLastChunk)
+	// Check after chunk releases the series lock, since skipEvictedSeries looks up the series again.
+	if errors.Is(err, storage.ErrNotFound) && cr.cr != nil && cr.cr.skipEvictedSeries(meta) {
+		return nil, noSamples{}, 0, nil
+	}
+	return c, iterable, maxt, err
+}
+
+func (cr *HeadAndOOOChunkReader) chunk(meta chunks.Meta, copyLastChunk bool) (chunkenc.Chunk, chunkenc.Iterable, int64, error) {
 	sid, cid, isOOO := unpackHeadChunkRef(meta.Ref)
 	s := cr.head.series.getByID(sid)
 	// This means that the series has been garbage collected.
 	if s == nil {
-		// The reader of the in-order chunks is nil when the reader is used to write a block.
-		if cr.cr != nil && cr.cr.skipEvictedSeries(meta) {
-			return nil, noSamples{}, 0, nil
-		}
 		return nil, nil, 0, storage.ErrNotFound
 	}
 	var isoState *isolationState
