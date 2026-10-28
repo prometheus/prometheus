@@ -1702,6 +1702,17 @@ func testEndpoints(t *testing.T, api *API, tr *testTargetRetriever, testLabelAPI
 			},
 			errType: errorBadData,
 		},
+		// Step below the millisecond resolution of Prometheus timestamps.
+		{
+			endpoint: api.queryRange,
+			query: url.Values{
+				"query": []string{"time()"},
+				"start": []string{"0"},
+				"end":   []string{"0.001"},
+				"step":  []string{"0.0005"},
+			},
+			errType: errorBadData,
+		},
 		// Start after end.
 		{
 			endpoint: api.queryRange,
@@ -5415,6 +5426,11 @@ func TestQueryRangeCostEndpointValidation(t *testing.T) {
 		{
 			name:    "negative step",
 			query:   url.Values{"query": {"test_metric1"}, "start": {"0"}, "end": {"120"}, "step": {"-1"}},
+			errType: errorBadData,
+		},
+		{
+			name:    "sub-millisecond step",
+			query:   url.Values{"query": {"test_metric1"}, "start": {"0"}, "end": {"0.001"}, "step": {"0.0005"}},
 			errType: errorBadData,
 		},
 		{
