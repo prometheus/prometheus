@@ -48,3 +48,22 @@ func TestPool(t *testing.T) {
 		testPool.Put(ret)
 	}
 }
+
+func TestPoolRejectsInvertedRange(t *testing.T) {
+	// minSize > maxSize used to build an empty bucket table; reject it instead.
+	require.Panics(t, func() { New(10, 5, 2, makeFunc) })
+}
+
+func TestPoolCoversMaxSize(t *testing.T) {
+	p := New(1000, 1000000, 3, makeFunc)
+
+	// 1000 * 3^k never lands on 1000000; without a bucket for the documented
+	// maximum, Get falls through to make(sz) and Put has nowhere to return the
+	// buffer. Assert the bucket table rather than allocation counts: sync.Pool
+	// may drop entries on GC, which makes the latter flaky.
+	require.Equal(t, []int{1000, 3000, 9000, 27000, 81000, 243000, 729000, 1000000}, p.sizes)
+
+	s := p.Get(1000000)
+	require.Equal(t, 1000000, cap(s.([]int)))
+	p.Put(s)
+}
