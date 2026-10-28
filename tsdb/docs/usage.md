@@ -29,8 +29,8 @@ The `Head` is responsible for a lot. Here are its main components:
 
 ## Adding data
 
-Use [`db.Appender()`](https://pkg.go.dev/github.com/prometheus/prometheus/tsdb#DB.Appender) to obtain an "appender".
-The [golang docs](https://pkg.go.dev/github.com/prometheus/prometheus/storage#Appender) speak mostly for themselves.
+Use [`db.AppenderV2()`](https://pkg.go.dev/github.com/prometheus/prometheus/tsdb#DB.AppenderV2) to obtain an "appender".
+The [golang docs](https://pkg.go.dev/github.com/prometheus/prometheus/storage#AppenderV2) speak mostly for themselves.
 
 Remember:
 

@@ -398,6 +398,43 @@ When enabled, Prometheus advertises support for Zstandard-compressed scrape resp
 
 When the flag is disabled, Prometheus does not advertise `zstd`. A target that answers with `Content-Encoding: zstd` regardless fails the scrape, because Prometheus cannot decode the body.
 
+## Native histograms as classic histograms in PromQL
+
+`--enable-feature=promql-native-histograms-as-classic`
+
+When enabled, PromQL queries for classic histogram series (e.g. `_bucket`, `_count`, `_sum`) will
+automatically convert native histograms into classic histogram series. Currently only Native
+Histograms with Custom Buckets (NHCB) are converted.
+
+For example, if `request_duration_seconds` is stored as an NHCB native histogram:
+
+```promql
+# Querying with a classic histogram suffix triggers the conversion:
+histogram_quantile(0.95, rate(request_duration_seconds_bucket[5m]))
+
+# Querying without a suffix returns the regular NHCB native histogram:
+rate(request_duration_seconds[5m])
+```
+
+This feature only affects PromQL query evaluation (e.g. the query APIs and rule evaluation). The
+conversion is applied on top of all data the query engine reads, including series fetched from
+`remote_read` endpoints. It does not apply to remote write (NHCB series are not converted when being
+forwarded to remote endpoints), the remote read API, federation, or the series API (the
+`/api/v1/series` endpoint will not return the converted classic series). Note that remote write has its
+own `convert_nhcb_to_classic` setting, see the [`remote_write`](configuration/configuration.md#remote_write)
+configuration.
+
+Known limitations:
+
+* The conversion only triggers on exact metric name matchers (e.g. `request_duration_seconds_bucket`), not on
+  regex or negative name matchers.
+* Handling of collisions and transitions between stored classic series and converted NHCB series is not
+  implemented yet, so results may contain duplicates.
+* Native histograms with exponential buckets are not converted yet; support may be added later.
+* There is no control label yet; one will be added to disable and debug the conversion.
+* There is no metric counting the converted series yet; one will be added to help track the progress of
+  a migration from classic histograms to NHCB.
+
 ## Query cost
 
 `--enable-feature=query-cost`

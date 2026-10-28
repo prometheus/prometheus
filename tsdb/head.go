@@ -133,6 +133,8 @@ type Head struct {
 
 	// TODO(codesome): Extend MemPostings to return only OOOPostings, Set OOOStatus, ... Like an additional map of ooo postings.
 	postings *index.MemPostings // Postings lists for terms.
+	// seriesCreationMtx serialises series ID assignment with the postings insert.
+	seriesCreationMtx sync.Mutex
 
 	tombstones *tombstones.MemTombstones
 
@@ -2322,10 +2324,6 @@ func (h *Head) getOrCreateWithOptionalID(id chunks.HeadSeriesRef, hash uint64, l
 	if preCreationErr := h.series.seriesLifecycleCallback.PreCreation(lset); preCreationErr != nil {
 		return nil, false, preCreationErr
 	}
-	if id == 0 {
-		// Note this id is wasted in the case where a concurrent operation creates the same series first.
-		id = chunks.HeadSeriesRef(h.lastSeriesID.Inc())
-	}
 
 	shardHash := uint64(0)
 	if h.opts.EnableSharding {
@@ -2333,8 +2331,22 @@ func (h *Head) getOrCreateWithOptionalID(id chunks.HeadSeriesRef, hash uint64, l
 	}
 	optimisticallyCreatedSeries := newMemSeries(lset, id, shardHash, h.opts.IsolationDisabled, pendingCommit)
 
+	assignID := id == 0
+	if assignID {
+		// Assigning the ID and adding to the postings under one lock keeps new IDs
+		// in order in the postings, so MemPostings.Add does not have to repair the
+		// order of lists that already hold every concurrently assigned higher ID.
+		h.seriesCreationMtx.Lock()
+		// Note this id is wasted in the case where a concurrent operation creates the same series first.
+		id = chunks.HeadSeriesRef(h.lastSeriesID.Inc())
+		optimisticallyCreatedSeries.ref = id
+	}
+
 	s, created := h.series.setUnlessAlreadySet(hash, lset, optimisticallyCreatedSeries)
 	if !created {
+		if assignID {
+			h.seriesCreationMtx.Unlock()
+		}
 		return s, false, nil
 	}
 
@@ -2342,6 +2354,9 @@ func (h *Head) getOrCreateWithOptionalID(id chunks.HeadSeriesRef, hash uint64, l
 	h.numSeries.Inc()
 
 	h.postings.Add(storage.SeriesRef(id), lset)
+	if assignID {
+		h.seriesCreationMtx.Unlock()
+	}
 
 	// Adding the series in the postings marks the creation of series
 	// as any further calls to this and the read methods would return that series.
