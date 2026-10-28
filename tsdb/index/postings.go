@@ -53,10 +53,9 @@ var ensureOrderBatchPool = sync.Pool{
 	},
 }
 
-// MemPostings holds postings list for series ID per label pair. They may be written
-// to out of order.
-// EnsureOrder() must be called once before any reads are done. This allows for quick
-// unordered batch fills on startup.
+// MemPostings holds postings lists of series IDs per label pair.
+// Unordered instances must be sorted with EnsureOrder before reading.
+// Once ordered, inserts must satisfy the ordering requirement of Add.
 type MemPostings struct {
 	mtx sync.RWMutex
 
@@ -64,9 +63,6 @@ type MemPostings struct {
 	//
 	// mtx must be held when interacting with m (the appropriate one for reading or writing).
 	// It is safe to retain a reference to a postings list after releasing the lock.
-	//
-	// BUG: There's currently a data race in addFor, which might modify the tail of the postings list:
-	// https://github.com/prometheus/prometheus/issues/15317
 	m map[string]map[string][]storage.SeriesRef
 
 	// lvs holds the label values for each label name.
@@ -76,6 +72,10 @@ type MemPostings struct {
 	lvs map[string][]string
 
 	ordered bool
+
+	// When ordered and mtx is released, maxID is the all-series tail or zero if empty.
+	// Its value is unspecified while unordered.
+	maxID storage.SeriesRef
 }
 
 const defaultLabelNamesMapSize = 512
@@ -250,11 +250,9 @@ func (p *MemPostings) All() Postings {
 	return p.Postings(context.Background(), allPostingsKey.Name, allPostingsKey.Value)
 }
 
-// EnsureOrder ensures that all postings lists are sorted. After it returns all further
-// calls to add and addFor will insert new IDs in a sorted manner.
-// Parameter numberOfConcurrentProcesses is used to specify the maximal number of
-// CPU cores used for this operation. If it is <= 0, GOMAXPROCS is used.
-// GOMAXPROCS was the default before introducing this parameter.
+// EnsureOrder sorts all postings lists and activates the ordering requirement of Add.
+// It does nothing if the postings are already ordered.
+// numberOfConcurrentProcesses limits sorting concurrency; if <= 0, GOMAXPROCS is used.
 func (p *MemPostings) EnsureOrder(numberOfConcurrentProcesses int) {
 	p.mtx.Lock()
 	defer p.mtx.Unlock()
@@ -306,6 +304,11 @@ func (p *MemPostings) EnsureOrder(numberOfConcurrentProcesses int) {
 	close(workc)
 	wg.Wait()
 
+	all := p.m[allPostingsKey.Name][allPostingsKey.Value]
+	p.maxID = 0
+	if len(all) > 0 {
+		p.maxID = all[len(all)-1]
+	}
 	p.ordered = true
 }
 
@@ -329,6 +332,12 @@ func (p *MemPostings) Delete(deleted map[storage.SeriesRef]struct{}, affected ma
 		} else {
 			delete(p.m[l.Name], l.Value)
 			affectedLabelNames[l.Name] = struct{}{}
+		}
+		if l == allPostingsKey {
+			p.maxID = 0
+			if len(repl) > 0 {
+				p.maxID = repl[len(repl)-1]
+			}
 		}
 	}
 
@@ -405,14 +414,23 @@ func (p *MemPostings) Iter(f func(labels.Label, Postings) error) error {
 	return nil
 }
 
-// Add a label set to the postings index.
+// Add adds a label set to the postings index. Once ordered, id must be at least
+// the largest currently indexed ID; otherwise Add panics without modifying the index.
+// Concurrent callers must coordinate ID assignment with insertion to preserve this order.
 func (p *MemPostings) Add(id storage.SeriesRef, lset labels.Labels) {
 	p.mtx.Lock()
+
+	maxID := p.maxID
+	if p.ordered && id < maxID {
+		p.mtx.Unlock()
+		panic(fmt.Sprintf("cannot add series ID %d to ordered postings with maximum ID %d", id, maxID))
+	}
 
 	lset.Range(func(l labels.Label) {
 		p.addFor(id, l)
 	})
 	p.addFor(id, allPostingsKey)
+	p.maxID = id
 
 	p.mtx.Unlock()
 }
@@ -436,22 +454,7 @@ func (p *MemPostings) addFor(id storage.SeriesRef, l labels.Label) {
 	if !ok {
 		p.lvs[l.Name] = appendWithExponentialGrowth(p.lvs[l.Name], l.Value)
 	}
-	list := appendWithExponentialGrowth(vm, id)
-	nm[l.Value] = list
-
-	if !p.ordered {
-		return
-	}
-	// There is no guarantee that no higher ID was inserted before as they may
-	// be generated independently before adding them to postings.
-	// We repair order violations on insert. The invariant is that the first n-1
-	// items in the list are already sorted.
-	for i := len(list) - 1; i >= 1; i-- {
-		if list[i] >= list[i-1] {
-			break
-		}
-		list[i], list[i-1] = list[i-1], list[i]
-	}
+	nm[l.Value] = appendWithExponentialGrowth(vm, id)
 }
 
 func (p *MemPostings) PostingsForLabelMatching(ctx context.Context, name string, match func(string) bool) Postings {
