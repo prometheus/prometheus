@@ -1,4 +1,31 @@
-import { findZeroAxisLeft } from "./HistogramHelpers";
+import { Histogram } from "../../types/types";
+import {
+  calculateDefaultExpBucketWidth,
+  findZeroAxisLeft,
+} from "./HistogramHelpers";
+
+describe("calculateDefaultExpBucketWidth", () => {
+  it.each<{
+    buckets: NonNullable<Histogram["buckets"]>;
+    expected: number;
+  }>([
+    { buckets: [[3, "-0", "0", "5"]], expected: 1 },
+    { buckets: [[3, "-0.001", "0.001", "5"]], expected: 1 },
+    { buckets: [[0, "1", "2", "5"]], expected: Math.log(2) },
+    { buckets: [[1, "-2", "-1", "5"]], expected: Math.log(2) },
+    {
+      buckets: [
+        [1, "-2", "-1", "5"],
+        [3, "-0", "0", "5"],
+      ],
+      expected: Math.log(2),
+    },
+  ])("calculates the width for $buckets", ({ buckets, expected }) => {
+    expect(
+      calculateDefaultExpBucketWidth(buckets[buckets.length - 1], buckets),
+    ).toBeCloseTo(expected);
+  });
+});
 
 describe("findZeroAxisLeft", () => {
   describe("linear scale", () => {
@@ -8,6 +35,12 @@ describe("findZeroAxisLeft", () => {
       rangeMax: number;
       expected: string;
     }[] = [
+      {
+        name: "centers the zero axis for a zero-width range",
+        rangeMin: -0,
+        rangeMax: 0,
+        expected: "50%",
+      },
       {
         name: "positions the zero axis proportionally when zero is in range",
         rangeMin: -10,
@@ -61,6 +94,12 @@ describe("findZeroAxisLeft", () => {
   });
 
   describe("exponential scale", () => {
+    test("centers the zero axis for a zero-width range", () => {
+      expect(findZeroAxisLeft("exponential", -0, 0, 0, 0, 0, 0, 1, 1)).toBe(
+        "50%",
+      );
+    });
+
     test("clamps to the left edge for all-positive buckets", () => {
       expect(
         findZeroAxisLeft("exponential", 0.001, 1024, 0.001, 0, -1, 0, 10, 1),
