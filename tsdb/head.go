@@ -1536,13 +1536,9 @@ func (h *Head) truncateSeries(seriesRefs []storage.SeriesRef, maxt int64, should
 	h.evictingSeries.Store(&evictedSeries{refs: seriesRefs})
 	defer h.evictingSeries.Store(nil)
 
-	// maxt is inclusive here, but exclusive for WaitForPendingReadersInTimeRange. A reader that starts at maxt
-	// must be waited for too: if it were not, it could be left with a set of evicted series from a previous
-	// eviction, and skip a series whose latest samples, written to a block by this one, it doesn't have.
-	waitMaxt := maxt
-	if waitMaxt < math.MaxInt64 {
-		waitMaxt++
-	}
+	// Also wait for the readers opened at maxt. Such a reader could otherwise skip a series removed by this eviction
+	// and miss its newest samples, which are available only in the block written by this eviction.
+	waitMaxt := min(maxt, math.MaxInt64-1) + 1
 	h.WaitForPendingReadersInTimeRange(h.MinTime(), waitMaxt)
 
 	if h.testAfterWaitingForReadersToEvictSeries != nil {
