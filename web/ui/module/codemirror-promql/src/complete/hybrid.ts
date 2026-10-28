@@ -20,6 +20,9 @@ import {
   AggregateModifier,
   And,
   BinaryExpr,
+  BitAnd,
+  BitOr,
+  BitXor,
   BoolModifier,
   Div,
   Eql,
@@ -683,6 +686,9 @@ export function analyzeCompletion(state: EditorState, node: SyntaxNode, pos: num
     case And:
     case Unless:
     case Or:
+    case BitAnd:
+    case BitOr:
+    case BitXor:
     case BinaryExpr:
       result.push({ kind: ContextKind.BinOp });
       break;

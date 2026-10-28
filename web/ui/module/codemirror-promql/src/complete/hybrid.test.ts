@@ -36,6 +36,24 @@ import nock from 'nock';
 describe('analyzeCompletion test', () => {
   const testCases = [
     {
+      title: 'complete bitand operator',
+      expr: 'metric bitand',
+      pos: 13,
+      expectedContext: [{ kind: ContextKind.BinOp }],
+    },
+    {
+      title: 'complete bitor operator',
+      expr: 'metric bitor',
+      pos: 12,
+      expectedContext: [{ kind: ContextKind.BinOp }],
+    },
+    {
+      title: 'complete bitxor operator',
+      expr: 'metric bitxor',
+      pos: 13,
+      expectedContext: [{ kind: ContextKind.BinOp }],
+    },
+    {
       title: 'empty expr',
       expr: '',
       pos: 0,

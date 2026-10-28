@@ -904,3 +904,66 @@ PromQL(
     VectorSelector(Identifier)
   )
 )
+
+# Testing bitand precedence.
+
+1 + foo bitand bar
+
+==>
+PromQL(BinaryExpr(NumberDurationLiteral,Add,BinaryExpr(VectorSelector(Identifier),BitAnd,VectorSelector(Identifier))))
+
+# Testing bitor precedence.
+
+1 + foo bitor bar
+
+==>
+PromQL(BinaryExpr(NumberDurationLiteral,Add,BinaryExpr(VectorSelector(Identifier),BitOr,VectorSelector(Identifier))))
+
+# Testing bitxor precedence.
+
+1 + foo bitxor bar
+
+==>
+PromQL(BinaryExpr(NumberDurationLiteral,Add,BinaryExpr(VectorSelector(Identifier),BitXor,VectorSelector(Identifier))))
+
+# Testing bitand as a metric name.
+
+bitand
+
+==>
+PromQL(VectorSelector(Identifier))
+
+# Testing bitand left associativity with multiplication.
+
+2 * 3 bitand 4
+
+==>
+PromQL(BinaryExpr(BinaryExpr(NumberDurationLiteral,Mul,NumberDurationLiteral),BitAnd,NumberDurationLiteral))
+
+# Testing bitor as a metric name.
+
+bitor
+
+==>
+PromQL(VectorSelector(Identifier))
+
+# Testing bitor left associativity with multiplication.
+
+2 * 3 bitor 4
+
+==>
+PromQL(BinaryExpr(BinaryExpr(NumberDurationLiteral,Mul,NumberDurationLiteral),BitOr,NumberDurationLiteral))
+
+# Testing bitxor as a metric name.
+
+bitxor
+
+==>
+PromQL(VectorSelector(Identifier))
+
+# Testing bitxor left associativity with multiplication.
+
+2 * 3 bitxor 4
+
+==>
+PromQL(BinaryExpr(BinaryExpr(NumberDurationLiteral,Mul,NumberDurationLiteral),BitXor,NumberDurationLiteral))

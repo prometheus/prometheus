@@ -451,7 +451,15 @@ const formatNodeInternal = (
               showChildren,
               childMaxDepth
             )}{" "}
-          {["atan2", "and", "or", "unless"].includes(node.op) ? (
+          {[
+            "atan2",
+            "bitand",
+            "bitor",
+            "bitxor",
+            "and",
+            "or",
+            "unless",
+          ].includes(node.op) ? (
             <span className="promql-keyword">{node.op}</span>
           ) : (
             <span className="promql-operator">{node.op}</span>
