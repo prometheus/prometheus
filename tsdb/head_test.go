@@ -3790,7 +3790,7 @@ func TestStripeSeries_gc(t *testing.T) {
 			{mint: 151, minFile: 2, remaining: 1},
 			{mint: 251, minFile: math.MaxInt32, remaining: 0},
 		} {
-			_, _, _, _, _, _, _, _, minFile := s.gc(tc.mint, 0)
+			_, _, _, _, _, _, _, _, minFile, _ := s.gc(tc.mint, 0)
 			require.Equal(t, tc.minFile, minFile, "mint=%d", tc.mint)
 			require.Len(t, series.mmappedChunks, tc.remaining)
 		}
@@ -3865,14 +3865,14 @@ func TestStripeSeries_gc(t *testing.T) {
 		require.True(t, created)
 		require.Same(t, series, got)
 
-		deleted, _, _, _, _, _, _, _, _ := s.gc(0, 0)
+		deleted, _, _, _, _, _, _, _, _, _ := s.gc(0, 0)
 		require.Empty(t, deleted)
 		require.Same(t, series, s.getByID(series.ref))
 
 		series.Lock()
 		require.True(t, series.unmarkPendingCommit())
 		series.Unlock()
-		deleted, _, _, _, _, _, _, _, _ = s.gc(0, 0)
+		deleted, _, _, _, _, _, _, _, _, _ = s.gc(0, 0)
 		require.Contains(t, deleted, storage.SeriesRef(series.ref))
 		require.Nil(t, s.getByID(series.ref))
 	})
