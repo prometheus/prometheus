@@ -2342,31 +2342,9 @@ func (h *Head) getOrCreateWithOptionalID(id chunks.HeadSeriesRef, hash uint64, l
 	}
 	optimisticallyCreatedSeries := newMemSeries(lset, id, shardHash, h.opts.IsolationDisabled, pendingCommit)
 
-	assignID := id == 0
-	if assignID {
-		// Assigning the ID and adding to the postings under one lock keeps new IDs
-		// in order in the postings, so MemPostings.Add does not have to repair the
-		// order of lists that already hold every concurrently assigned higher ID.
-		h.seriesCreationMtx.Lock()
-		// Note this id is wasted in the case where a concurrent operation creates the same series first.
-		id = chunks.HeadSeriesRef(h.lastSeriesID.Inc())
-		optimisticallyCreatedSeries.ref = id
-	}
-
-	s, created := h.series.setUnlessAlreadySet(hash, lset, optimisticallyCreatedSeries)
+	s, created := h.indexSeries(hash, lset, optimisticallyCreatedSeries)
 	if !created {
-		if assignID {
-			h.seriesCreationMtx.Unlock()
-		}
 		return s, false, nil
-	}
-
-	h.metrics.seriesCreated.Inc()
-	h.numSeries.Inc()
-
-	h.postings.Add(storage.SeriesRef(id), lset)
-	if assignID {
-		h.seriesCreationMtx.Unlock()
 	}
 
 	// Adding the series in the postings marks the creation of series
@@ -2374,6 +2352,32 @@ func (h *Head) getOrCreateWithOptionalID(id chunks.HeadSeriesRef, hash uint64, l
 	h.series.postCreation(lset)
 
 	return s, true, nil
+}
+
+// indexSeries adds s to the series and postings indexes unless a series with
+// lset already exists. It returns s and true if s was added, and the existing
+// series and false otherwise. If s has no ID, one is assigned.
+func (h *Head) indexSeries(hash uint64, lset labels.Labels, s *memSeries) (*memSeries, bool) {
+	if s.ref == 0 {
+		// MemPostings.Add rejects decreasing IDs once ordered, so serialize ID
+		// assignment with postings insertion. Deferring the unlock keeps series
+		// creation available if a caller, such as net/http, recovers a panic.
+		h.seriesCreationMtx.Lock()
+		defer h.seriesCreationMtx.Unlock()
+		// Note this id is wasted in the case where a concurrent operation creates the same series first.
+		s.ref = chunks.HeadSeriesRef(h.lastSeriesID.Inc())
+	}
+
+	actual, created := h.series.setUnlessAlreadySet(hash, lset, s)
+	if !created {
+		return actual, false
+	}
+
+	h.metrics.seriesCreated.Inc()
+	h.numSeries.Inc()
+
+	h.postings.Add(storage.SeriesRef(s.ref), lset)
+	return actual, true
 }
 
 // onChunkCreated bumps the head chunk metrics for any newly created chunk, in-order or OOO.
