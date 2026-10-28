@@ -253,7 +253,7 @@ func (cr *HeadAndOOOChunkReader) chunkOrIterable(meta chunks.Meta, copyLastChunk
 	// This means that the series has been garbage collected.
 	if s == nil {
 		// The reader of the in-order chunks is nil when the reader is used to write a block.
-		if cr.cr != nil && cr.cr.skipEvictedSeries(storage.ErrNotFound, meta) {
+		if cr.cr != nil && cr.cr.skipEvictedSeries(meta) {
 			return nil, noSamples{}, 0, nil
 		}
 		return nil, nil, 0, storage.ErrNotFound

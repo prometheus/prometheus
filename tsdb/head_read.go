@@ -598,7 +598,7 @@ func (h *headChunkReader) getOrCollectHeadChunks(s *memSeries) []*memChunk {
 // ChunkOrIterable returns the chunk for the reference number.
 func (h *headChunkReader) ChunkOrIterable(meta chunks.Meta) (chunkenc.Chunk, chunkenc.Iterable, error) {
 	chk, _, err := h.chunk(meta, false)
-	if err != nil && h.skipEvictedSeries(err, meta) {
+	if errors.Is(err, storage.ErrNotFound) && h.skipEvictedSeries(meta) {
 		return nil, noSamples{}, nil
 	}
 	return chk, nil, err
@@ -612,21 +612,15 @@ type ChunkReaderWithCopy interface {
 // If the chunk is the in-memory chunk, then it makes a copy and returns the copied chunk, plus the max time of the chunk.
 func (h *headChunkReader) ChunkOrIterableWithCopy(meta chunks.Meta) (chunkenc.Chunk, chunkenc.Iterable, int64, error) {
 	chk, maxTime, err := h.chunk(meta, true)
-	if err != nil && h.skipEvictedSeries(err, meta) {
+	if errors.Is(err, storage.ErrNotFound) && h.skipEvictedSeries(meta) {
 		return nil, noSamples{}, 0, nil
 	}
 	return chk, nil, maxTime, err
 }
 
-// skipEvictedSeries returns whether err, returned when reading the chunk meta, is to be ignored because the series
-// the chunk belongs to was removed from the head by truncateSeries. See evicting.
-//
-// A series that is removed from the head is never added back, because the refs of the series are not reused,
-// so it is safe to look the series up after the chunk read failed.
-func (h *headChunkReader) skipEvictedSeries(err error, meta chunks.Meta) bool {
-	if h.evicting == nil || !errors.Is(err, storage.ErrNotFound) {
-		return false
-	}
+// skipEvictedSeries reports whether a chunk can be skipped because its series
+// is being evicted and is no longer in the head.
+func (h *headChunkReader) skipEvictedSeries(meta chunks.Meta) bool {
 	sid, _, _ := unpackHeadChunkRef(meta.Ref)
 	if !h.evicting.contains(sid) || h.head.series.getByID(sid) != nil {
 		return false
