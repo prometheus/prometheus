@@ -368,6 +368,12 @@ export const functionIdentifierTerms = [
     type: 'function',
   },
   {
+    label: 'log1p',
+    detail: 'function',
+    info: 'Calculate the natural logarithm of one plus each input value',
+    type: 'function',
+  },
+  {
     label: 'log10',
     detail: 'function',
     info: 'Calulcate base-10 logarithm of input series',

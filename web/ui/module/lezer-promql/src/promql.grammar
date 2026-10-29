@@ -188,6 +188,7 @@ FunctionIdentifier {
   LabelJoin |
   LastOverTime |
   Ln |
+  Log1p |
   Log10 |
   Log2 |
   MadOverTime |
@@ -485,6 +486,7 @@ durationPrimary[@inline] {
   LabelJoin { condFn<"label_join"> }
   LastOverTime {condFn<"last_over_time">}
   Ln { condFn<"ln"> }
+  Log1p { condFn<"log1p"> }
   Log10 { condFn<"log10"> }
   Log2 { condFn<"log2"> }
   MadOverTime { condFn<"mad_over_time"> }

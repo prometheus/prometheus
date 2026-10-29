@@ -2287,6 +2287,38 @@ eval instant at 1m ln({__name__=~"exp_root_log(_h)?"})
 	{l="x"} 2.302585092994046
 	{l="y"} 2.995732273553991
 
+eval instant at 1m log1p({__name__=~"exp_root_log(_h)?"})
+	{l="x"} 2.3978952727983707
+	{l="y"} 3.044522437723423
+
+# Small values remain nonzero even when adding them to 1 would round to 1.
+eval instant at 1m log1p(vector(1e-16)) / 1e-16
+	{} 1
+
+eval instant at 1m log1p(vector(-1e-16)) / -1e-16
+	{} 1
+
+eval instant at 1m log1p(vector(+Inf))
+	{} +Inf
+
+eval instant at 1m log1p(vector(-Inf))
+	{} NaN
+
+eval instant at 1m log1p(vector(-1))
+	{} -Inf
+
+eval instant at 1m log1p(vector(-2))
+	{} NaN
+
+eval instant at 1m log1p(vector(NaN))
+	{} NaN
+
+eval instant at 1m 1 / log1p(vector(-0))
+	{} -Inf
+
+eval instant at 1m 1 / log1p(vector(0))
+	{} +Inf
+
 eval instant at 1m ln(exp_root_log - 10)
 	{l="y"} 2.302585092994046
 	{l="x"} -Inf

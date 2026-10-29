@@ -101,6 +101,7 @@
     "last_over_time": true,
     "ln": true,
     "log10": true,
+    "log1p": false,
     "log2": true,
     "mad_over_time": false,
     "max_of": false,

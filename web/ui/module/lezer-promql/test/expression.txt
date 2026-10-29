@@ -494,6 +494,13 @@ PromQL(
     )
 )
 
+# Function log1p
+
+log1p(data)
+
+==>
+PromQL(FunctionCall(FunctionIdentifier(Log1p), FunctionCallBody(VectorSelector(Identifier))))
+
 # Function sgn
 
 sgn(data)
