@@ -804,7 +804,12 @@ func (t *QueueManager) shouldDropFloatSampleForMode(ref chunks.HeadSeriesRef, st
 		return false
 	}
 	mType := t.seriesMetricType(lbls, meta)
-	if mType == model.MetricTypeHistogram || mType == model.MetricTypeGaugeHistogram {
+	// NOTE(bwplotka): Separate scrape transactions log native histogram staleness markers to the WAL as float RefSample
+	// records with StaleNaN before converting them in memory. Exempt isStale here so native histogram staleness markers
+	// are not dropped. We accept that this also allows staleness markers for classic histograms; in practice we expect
+	// this to be rare as users with classic histograms will notice their regular samples being dropped and should
+	// either enable convert_classic_histograms_to_nhcb or drop them via write_relabel_configs.
+	if !isStale && (mType == model.MetricTypeHistogram || mType == model.MetricTypeGaugeHistogram) {
 		t.dataDropped.incr(1)
 		t.metrics.droppedSamplesTotal.WithLabelValues(reasonClassicHistogramNotAllowed).Inc()
 		t.logger.Debug("Dropped classic histogram float sample; remote_write mode requires structured native histograms; enable convert_classic_histograms_to_nhcb in scrape_config or drop the series via write_relabel_configs", "mode", t.mode, "ref", ref, "series", lbls, "type", mType)
