@@ -4143,14 +4143,14 @@ func TestQueueManager_RemoteWriteModes(t *testing.T) {
 				m.StoreMetadata([]record.RefMetadata{mClassicBucket, mClassicGaugeHist, mUntyped, mUntypedHist, mCounterNoST, mNativeHist})
 			}
 
-			// Classic histogram float samples and untyped samples must be dropped; counter without ST and float staleness
-			// markers on native histogram series (written by separate scrape transactions) are allowed in stateless mode.
+			// Classic histogram float samples (including staleness markers) and untyped samples must be dropped;
+			// counter without ST is allowed in stateless mode.
 			require.True(t, m.Append([]record.RefSample{
 				{Ref: sClassicBucket.Ref, T: 1000, V: 1},
+				{Ref: sClassicBucket.Ref, T: 2000, V: stale},
 				{Ref: sClassicGaugeHist.Ref, T: 1000, V: 2},
 				{Ref: sUntyped.Ref, T: 1000, V: 3},
 				{Ref: sCounterNoST.Ref, T: 1000, V: 4},
-				{Ref: sNativeHist.Ref, T: 2000, V: stale},
 			}))
 			// Native histograms with known histogram type (even without ST) are allowed in stateless mode;
 			// histograms with unknown or non-histogram metadata type are dropped.
@@ -4170,17 +4170,15 @@ func TestQueueManager_RemoteWriteModes(t *testing.T) {
 
 			stop()
 
-			require.Equal(t, 2.0, client_testutil.ToFloat64(metrics.droppedSamplesTotal.WithLabelValues(reasonClassicHistogramNotAllowed)))
+			require.Equal(t, 3.0, client_testutil.ToFloat64(metrics.droppedSamplesTotal.WithLabelValues(reasonClassicHistogramNotAllowed)))
 			require.Equal(t, 1.0, client_testutil.ToFloat64(metrics.droppedSamplesTotal.WithLabelValues(reasonMissingMetadataType)))
 			require.Equal(t, 0.0, client_testutil.ToFloat64(metrics.droppedSamplesTotal.WithLabelValues(reasonMissingStartTimestamp)))
 			require.Equal(t, 3.0, client_testutil.ToFloat64(metrics.droppedHistogramsTotal.WithLabelValues(reasonMissingMetadataType)))
 			require.Equal(t, 0.0, client_testutil.ToFloat64(metrics.droppedHistogramsTotal.WithLabelValues(reasonMissingStartTimestamp)))
 			require.Equal(t, 2.0, client_testutil.ToFloat64(metrics.droppedExemplarsTotal.WithLabelValues(reasonDetachedExemplarNotAllowed)))
 
-			require.Len(t, c.receivedSamples, 2)
+			require.Len(t, c.receivedSamples, 1)
 			require.Contains(t, c.receivedSamples, sCounterNoST.Labels.String())
-			require.Contains(t, c.receivedSamples, sNativeHist.Labels.String())
-			require.True(t, value.IsStaleNaN(c.receivedSamples[sNativeHist.Labels.String()][0].Value))
 			require.Len(t, c.receivedHistograms, 1)
 			require.Contains(t, c.receivedHistograms, sNativeHist.Labels.String())
 			require.Empty(t, c.receivedFloatHistograms)
@@ -4237,18 +4235,18 @@ func TestQueueManager_RemoteWriteModes(t *testing.T) {
 			}
 
 			require.True(t, m.Append([]record.RefSample{
-				{Ref: sClassicBucket.Ref, ST: 500, T: 1000, V: 1},       // Drop: classic histogram
-				{Ref: sUntyped.Ref, ST: 500, T: 1000, V: 2},             // Drop: missing metadata type
-				{Ref: sCounterNoST.Ref, ST: 0, T: 1000, V: 3},           // Drop: counter missing ST
-				{Ref: sSummarySum.Ref, ST: 0, T: 1000, V: 4},            // Drop: summary _sum missing ST
-				{Ref: sSummaryCount.Ref, ST: 0, T: 1000, V: 5},          // Drop: summary _count missing ST
-				{Ref: sSummarySum.Ref, ST: 500, T: 2000, V: 4.5},        // Keep: summary _sum with ST
-				{Ref: sSummaryCount.Ref, ST: 500, T: 2000, V: 5.5},      // Keep: summary _count with ST
-				{Ref: sCounterWithST.Ref, ST: 500, T: 1000, V: 6},       // Keep: counter with ST
-				{Ref: sCounterWithST.Ref, ST: 0, T: 2000, V: stale},     // Keep: counter staleness marker without ST
-				{Ref: sSummaryQuantileNoST.Ref, ST: 0, T: 1000, V: 0.5}, // Keep: summary quantile without ST
-				{Ref: sGaugeNoST.Ref, ST: 0, T: 1000, V: 42},            // Keep: gauge without ST
-				{Ref: sHistWithST.Ref, ST: 0, T: 4000, V: stale},        // Keep: float staleness marker on histogram series
+				{Ref: sClassicBucket.Ref, ST: 500, T: 1000, V: 1},        // Drop: classic histogram
+				{Ref: sClassicBucket.Ref, ST: 0, T: 2000, V: stale},      // Drop: classic histogram staleness marker
+				{Ref: sUntyped.Ref, ST: 500, T: 1000, V: 2},              // Drop: missing metadata type
+				{Ref: sCounterNoST.Ref, ST: 0, T: 1000, V: 3},            // Drop: counter missing ST
+				{Ref: sSummarySum.Ref, ST: 0, T: 1000, V: 4},             // Drop: summary _sum missing ST
+				{Ref: sSummaryCount.Ref, ST: 0, T: 1000, V: 5},           // Drop: summary _count missing ST
+				{Ref: sSummarySum.Ref, ST: 500, T: 2000, V: 4.5},         // Keep: summary _sum with ST
+				{Ref: sSummaryCount.Ref, ST: 500, T: 2000, V: 5.5},       // Keep: summary _count with ST
+				{Ref: sCounterWithST.Ref, ST: 500, T: 1000, V: 6},        // Keep: counter with ST
+				{Ref: sCounterWithST.Ref, ST: 0, T: 2000, V: stale},      // Keep: counter staleness marker without ST
+				{Ref: sSummaryQuantileNoST.Ref, ST: 0, T: 1000, V: 0.5},  // Keep: summary quantile without ST
+				{Ref: sGaugeNoST.Ref, ST: 0, T: 1000, V: 42},             // Keep: gauge without ST
 			}))
 			require.True(t, m.AppendHistograms([]record.RefHistogramSample{
 				{Ref: sUntypedHist.Ref, ST: 500, T: 1000, H: nativeHist}, // Drop: missing metadata type
@@ -4269,7 +4267,7 @@ func TestQueueManager_RemoteWriteModes(t *testing.T) {
 
 			stop()
 
-			require.Equal(t, 1.0, client_testutil.ToFloat64(metrics.droppedSamplesTotal.WithLabelValues(reasonClassicHistogramNotAllowed)))
+			require.Equal(t, 2.0, client_testutil.ToFloat64(metrics.droppedSamplesTotal.WithLabelValues(reasonClassicHistogramNotAllowed)))
 			require.Equal(t, 1.0, client_testutil.ToFloat64(metrics.droppedSamplesTotal.WithLabelValues(reasonMissingMetadataType)))
 			require.Equal(t, 3.0, client_testutil.ToFloat64(metrics.droppedSamplesTotal.WithLabelValues(reasonMissingStartTimestamp)))
 
@@ -4278,7 +4276,7 @@ func TestQueueManager_RemoteWriteModes(t *testing.T) {
 
 			require.Equal(t, 1.0, client_testutil.ToFloat64(metrics.droppedExemplarsTotal.WithLabelValues(reasonDetachedExemplarNotAllowed)))
 
-			require.Len(t, c.receivedSamples, 6)
+			require.Len(t, c.receivedSamples, 5)
 			require.Equal(t, int64(500), c.receivedSamples[sSummarySum.Labels.String()][0].StartTimestamp)
 			require.Equal(t, int64(500), c.receivedSamples[sSummaryCount.Labels.String()][0].StartTimestamp)
 			require.Len(t, c.receivedSamples[sCounterWithST.Labels.String()], 2)
@@ -4286,8 +4284,6 @@ func TestQueueManager_RemoteWriteModes(t *testing.T) {
 			require.True(t, value.IsStaleNaN(c.receivedSamples[sCounterWithST.Labels.String()][1].Value))
 			require.Contains(t, c.receivedSamples, sSummaryQuantileNoST.Labels.String())
 			require.Contains(t, c.receivedSamples, sGaugeNoST.Labels.String())
-			require.Len(t, c.receivedSamples[sHistWithST.Labels.String()], 1)
-			require.True(t, value.IsStaleNaN(c.receivedSamples[sHistWithST.Labels.String()][0].Value))
 
 			require.Len(t, c.receivedHistograms, 1)
 			require.Len(t, c.receivedHistograms[sHistWithST.Labels.String()], 2)

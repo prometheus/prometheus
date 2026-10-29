@@ -799,15 +799,12 @@ func (t *QueueManager) seriesMetricType(lbls labels.Labels, meta unique.Handle[m
 }
 
 // shouldDropFloatSampleForMode checks whether a float sample violates the configured Remote-Write 2.0 mode.
-// Staleness markers (isStale) are exempt from classic-histogram and start-timestamp checks because
-// scrape and recording rules emit StaleNaN with st=0, and separate scrape transactions log native
-// histogram staleness markers to the WAL as float RefSample records.
 func (t *QueueManager) shouldDropFloatSampleForMode(ref chunks.HeadSeriesRef, st int64, isStale bool, lbls labels.Labels, meta unique.Handle[metadata.Metadata]) bool {
 	if t.mode != remoteapi.WriteModeStateless && t.mode != remoteapi.WriteModeStatelessST {
 		return false
 	}
 	mType := t.seriesMetricType(lbls, meta)
-	if !isStale && (mType == model.MetricTypeHistogram || mType == model.MetricTypeGaugeHistogram) {
+	if mType == model.MetricTypeHistogram || mType == model.MetricTypeGaugeHistogram {
 		t.dataDropped.incr(1)
 		t.metrics.droppedSamplesTotal.WithLabelValues(reasonClassicHistogramNotAllowed).Inc()
 		t.logger.Debug("Dropped classic histogram float sample; remote_write mode requires structured native histograms; enable convert_classic_histograms_to_nhcb in scrape_config or drop the series via write_relabel_configs", "mode", t.mode, "ref", ref, "series", lbls.String(), "type", mType)
@@ -819,6 +816,7 @@ func (t *QueueManager) shouldDropFloatSampleForMode(ref chunks.HeadSeriesRef, st
 		t.logger.Debug("Dropped sample with unknown metric type; remote_write mode does not allow untyped series; ensure the target exposes TYPE metadata, set __type__ via write_relabel_configs with --enable-feature=type-and-unit-labels, or drop the series via write_relabel_configs", "mode", t.mode, "ref", ref, "series", lbls.String(), "type", mType)
 		return true
 	}
+	// Staleness markers (isStale) are exempt from the start-timestamp check because scrape and recording rules emit StaleNaN with st=0.
 	if t.mode == remoteapi.WriteModeStatelessST && st == 0 && !isStale {
 		name := lbls.Get(model.MetricNameLabel)
 		if mType == model.MetricTypeCounter || (mType == model.MetricTypeSummary && (strings.HasSuffix(name, "_sum") || strings.HasSuffix(name, "_count"))) {
