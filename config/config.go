@@ -1578,10 +1578,10 @@ func (c *RemoteWriteConfig) UnmarshalYAML(unmarshal func(any) error) error {
 	if err := c.ProtobufMessage.Validate(); err != nil {
 		return fmt.Errorf("invalid protobuf_message value: %w", err)
 	}
+	c.Mode = c.Mode.Normalize()
 	if err := c.Mode.Validate(c.ProtobufMessage); err != nil {
 		return err
 	}
-	c.Mode = c.Mode.Normalize()
 	if c.Mode != remoteapi.WriteModeNone {
 		if c.ConvertNHCBToClassic {
 			return fmt.Errorf("convert_nhcb_to_classic cannot be enabled when remote_write mode is %q", c.Mode)
