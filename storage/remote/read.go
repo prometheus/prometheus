@@ -29,6 +29,17 @@ type sampleAndChunkQueryableClient struct {
 	requiredMatchers []*labels.Matcher
 	readRecent       bool
 	callback         startTimeCallback
+	floatEncoding    storage.FloatEncodingFunc
+}
+
+// SampleAndChunkQueryableClientOptions holds the optional settings of the
+// storage.SampleAndChunkQueryable returned by
+// NewSampleAndChunkQueryableClientWithOptions.
+type SampleAndChunkQueryableClientOptions struct {
+	// FloatEncoding returns the encoding used for the float chunks encoded from
+	// the samples returned by the client, in chunk queries. See
+	// storage.FloatEncodingFunc.
+	FloatEncoding storage.FloatEncodingFunc
 }
 
 // NewSampleAndChunkQueryableClient returns a storage.SampleAndChunkQueryable which queries the given client to select series sets.
@@ -39,6 +50,19 @@ func NewSampleAndChunkQueryableClient(
 	readRecent bool,
 	callback startTimeCallback,
 ) storage.SampleAndChunkQueryable {
+	return NewSampleAndChunkQueryableClientWithOptions(c, externalLabels, requiredMatchers, readRecent, callback, SampleAndChunkQueryableClientOptions{})
+}
+
+// NewSampleAndChunkQueryableClientWithOptions is like
+// NewSampleAndChunkQueryableClient, with additional options.
+func NewSampleAndChunkQueryableClientWithOptions(
+	c ReadClient,
+	externalLabels labels.Labels,
+	requiredMatchers []*labels.Matcher,
+	readRecent bool,
+	callback startTimeCallback,
+	opts SampleAndChunkQueryableClientOptions,
+) storage.SampleAndChunkQueryable {
 	return &sampleAndChunkQueryableClient{
 		client: c,
 
@@ -46,6 +70,7 @@ func NewSampleAndChunkQueryableClient(
 		requiredMatchers: requiredMatchers,
 		readRecent:       readRecent,
 		callback:         callback,
+		floatEncoding:    opts.FloatEncoding,
 	}
 }
 
@@ -84,6 +109,7 @@ func (c *sampleAndChunkQueryableClient) ChunkQuerier(mint, maxt int64) (storage.
 			externalLabels:   c.externalLabels,
 			requiredMatchers: c.requiredMatchers,
 		},
+		floatEncoding: c.floatEncoding,
 	}
 	if c.readRecent {
 		return cq, nil
@@ -229,13 +255,15 @@ func (*querier) Close() error {
 // chunkQuerier is an adapter to make a client usable as a storage.ChunkQuerier.
 type chunkQuerier struct {
 	querier
+	// floatEncoding is consulted once per series encoded.
+	floatEncoding storage.FloatEncodingFunc
 }
 
 // Select implements storage.ChunkQuerier and uses the given matchers to read chunk series sets from the client.
 // It uses remote.querier.Select so it supports external labels and required matchers if specified.
 func (q *chunkQuerier) Select(ctx context.Context, sortSeries bool, hints *storage.SelectHints, matchers ...*labels.Matcher) storage.ChunkSeriesSet {
 	// TODO(bwplotka) Support remote read chunked and allow returning chunks directly (TODO ticket).
-	return storage.NewSeriesSetToChunkSet(q.querier.Select(ctx, sortSeries, hints, matchers...))
+	return storage.NewSeriesSetToChunkSetWithFloatEncoding(q.querier.Select(ctx, sortSeries, hints, matchers...), q.floatEncoding)
 }
 
 // Note strings in toFilter must be sorted.
