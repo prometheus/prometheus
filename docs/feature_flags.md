@@ -264,11 +264,44 @@ listed only in `description_keys` are not. How attributes are grouped into
 entities and entity schema URLs don't affect `instance`. Ordinary series and
 `target_info` get the same `instance`.
 
-`job` and `instance` still identify such Resources, but `job` is empty, since it
-belongs to the mapping from service attributes, which is not mixed with the
-entity one. Since neither label encodes a Resource attribute, `target_info` keeps
-`service.namespace`, `service.name` and `service.instance.id`, which it drops by
-default, and `keep_identifying_resource_attributes` has no effect.
+### Identity example
+
+For example, take a Resource with the attributes `service.name="checkout"`,
+`service.namespace="shop"`, `service.instance.id="id-1"`, `host.id="h-1"`,
+`host.name="node-1"` and `telemetry.sdk.version="1.2.3"`, and the entity
+references `{type: "service", id_keys: ["service.name", "service.namespace", "service.instance.id"]}`
+and `{type: "host", id_keys: ["host.id"], description_keys: ["host.name"]}`.
+Its entity types are `host` and `service`, and its identifying attributes are all
+but `host.name`. Its `instance` is `af75bdb7-d4ad-5522-a93c-61e00148c979`.
+
+The version 1 encoding of its entity types and identifying attributes, with the
+encoded bytes on the left and their decoded meaning on the right, is:
+
+```
+02                                               2 entity types
+  04 686f7374                                    "host"
+  07 73657276696365                              "service"
+05                                               5 identifying attributes
+  07 686f73742e6964                              "host.id"
+    01 03 682d31                                 string "h-1"
+  13 736572766963652e696e7374616e63652e6964      "service.instance.id"
+    01 04 69642d31                               string "id-1"
+  0c 736572766963652e6e616d65                    "service.name"
+    01 08 636865636b6f7574                       string "checkout"
+  11 736572766963652e6e616d657370616365          "service.namespace"
+    01 04 73686f70                               string "shop"
+  15 74656c656d657472792e73646b2e76657273696f6e  "telemetry.sdk.version"
+    01 05 312e322e33                             string "1.2.3"
+```
+
+### Identity behavior
+
+`job` and `instance` still identify Resources with entity references, but `job`
+is empty, since it belongs to the mapping from service attributes, which is not
+mixed with the entity one. Since neither label encodes a Resource attribute,
+`target_info` keeps `service.namespace`, `service.name` and
+`service.instance.id`, which it drops by default, and
+`keep_identifying_resource_attributes` has no effect.
 
 Consequences:
 
@@ -338,23 +371,7 @@ this encoding (version 1) of the entity types and identifying attributes:
   order and including duplicates, for arrays; an attribute map for kvlists; and
   nothing for empty values.
 
-For example, take a Resource with the attributes `service.name="checkout"`,
-`service.namespace="shop"`, `service.instance.id="id-1"`, `host.id="h-1"`,
-`host.name="node-1"` and `telemetry.sdk.version="1.2.3"`, and the entity
-references `{type: "service", id_keys: ["service.name", "service.namespace", "service.instance.id"]}`
-and `{type: "host", id_keys: ["host.id"], description_keys: ["host.name"]}`.
-Its entity types are `host` and `service`, and its identifying attributes are all
-but `host.name`. Their encoding, in hex and wrapped, is:
-
-```
-0204686f737407736572766963650507686f73742e69640103682d3113736572
-766963652e696e7374616e63652e6964010469642d310c736572766963652e6e
-616d650108636865636b6f757411736572766963652e6e616d65737061636501
-0473686f701574656c656d657472792e73646b2e76657273696f6e0105312e32
-2e33
-```
-
-Its `instance` is `af75bdb7-d4ad-5522-a93c-61e00148c979`.
+See the [identity example](#identity-example) for a worked example.
 
 ## Type and Unit Labels
 

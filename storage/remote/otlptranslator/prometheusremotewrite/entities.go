@@ -23,8 +23,6 @@ import (
 	"github.com/google/uuid"
 	"go.opentelemetry.io/collector/pdata/pcommon"
 	"go.opentelemetry.io/collector/pdata/xpdata/entity"
-
-	"github.com/prometheus/prometheus/util/annotations"
 )
 
 // resourceIdentityNamespace is the UUIDv5 namespace of instance labels
@@ -49,35 +47,6 @@ const (
 // canonicalNaNBits is the bit pattern every NaN is hashed as.
 const canonicalNaNBits = 0x7FF8000000000001
 
-// setEntityInstance synthesizes the instance label as a UUIDv5 of the
-// Resource identity, with an empty job label, if the Resource has entity
-// references. It records warnings about invalid references in annots. It
-// returns false if the Resource must be skipped, because its identity is
-// undefined.
-func (c *PrometheusConverter) setEntityInstance(resource pcommon.Resource, index int, annots *annotations.Annotations) bool {
-	refs := entity.ResourceEntityRefs(resource)
-	if refs.Len() == 0 {
-		return true
-	}
-
-	identity, warning, err := resourceIdentity(resource.Attributes(), refs)
-	if err != nil {
-		annots.Add(newCategorizedWarningf(WarningCategoryInvalidEntityRefs, "dropping resource %d: %s", index, err))
-		c.clearResourceContext()
-		return false
-	}
-	if warning != nil {
-		annots.Add(newCategorizedWarningf(WarningCategoryInvalidEntityRefs, "resource %d: %s; ignoring the key", index, warning))
-	}
-	// Job and instance still identify the Resource, but job is empty: it
-	// belongs to the mapping from service attributes, which isn't mixed with
-	// the entity one.
-	c.resourceLabels.jobLabel = ""
-	c.resourceLabels.instanceLabel = uuid.NewSHA1(resourceIdentityNamespace, identity).String()
-	c.resourceLabels.instanceSynthesized = true
-	return true
-}
-
 // resourceIdentity returns the canonical encoding (v1) of the identity of a
 // Resource with entity references: its set of entity types and its
 // identifying attributes, which are those any entity lists in id_keys, plus
@@ -93,9 +62,8 @@ func (c *PrometheusConverter) setEntityInstance(resource pcommon.Resource, index
 // missing from attrs, if any; such a key doesn't affect the identity.
 func resourceIdentity(attrs pcommon.Map, refs entity.EntityRefSlice) (identity []byte, warning, err error) {
 	values := attributeValues(attrs)
-	types := map[string]struct{}{}
+	types := make(map[string]struct{}, refs.Len())
 	idKeys := map[string]struct{}{}
-	descKeys := map[string]struct{}{}
 	for i, ref := range refs.All() {
 		switch {
 		case ref.Type() == "":
@@ -114,14 +82,15 @@ func resourceIdentity(attrs pcommon.Map, refs entity.EntityRefSlice) (identity [
 			if _, ok := values[k]; !ok && warning == nil {
 				warning = fmt.Errorf("entity reference %d (type %q): description_keys key %q missing from resource attributes", i, ref.Type(), k)
 			}
-			descKeys[k] = struct{}{}
 		}
 	}
 	// A key in any entity's id_keys is identifying, even if another entity
 	// describes it.
-	for k := range descKeys {
-		if _, ok := idKeys[k]; !ok {
-			delete(values, k)
+	for _, ref := range refs.All() {
+		for _, k := range ref.DescriptionKeys().All() {
+			if _, ok := idKeys[k]; !ok {
+				delete(values, k)
+			}
 		}
 	}
 	identity = binary.AppendUvarint(nil, uint64(len(types)))

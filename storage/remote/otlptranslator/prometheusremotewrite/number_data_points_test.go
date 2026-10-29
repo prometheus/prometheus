@@ -123,7 +123,7 @@ func TestPrometheusConverter_addGaugeNumberDataPoints(t *testing.T) {
 			resource := pcommon.NewResource()
 
 			// Initialize resource and scope context as FromMetrics would.
-			require.NoError(t, converter.setResourceContext(resource, settings))
+			requireResourceContext(t, converter, resource, settings)
 			require.NoError(t, converter.setScopeContext(tt.scope, settings))
 
 			converter.addGaugeNumberDataPoints(
@@ -396,7 +396,7 @@ func TestPrometheusConverter_addSumNumberDataPoints(t *testing.T) {
 			resource := pcommon.NewResource()
 
 			// Initialize resource and scope context as FromMetrics would.
-			require.NoError(t, converter.setResourceContext(resource, settings))
+			requireResourceContext(t, converter, resource, settings)
 			require.NoError(t, converter.setScopeContext(tt.scope, settings))
 
 			converter.addSumNumberDataPoints(

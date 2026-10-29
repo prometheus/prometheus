@@ -23,9 +23,11 @@ import (
 	"math"
 	"time"
 
+	"github.com/google/uuid"
 	"github.com/prometheus/otlptranslator"
 	"go.opentelemetry.io/collector/pdata/pcommon"
 	"go.opentelemetry.io/collector/pdata/pmetric"
+	"go.opentelemetry.io/collector/pdata/xpdata/entity"
 	semconv "go.opentelemetry.io/otel/semconv/v1.26.0"
 
 	"github.com/prometheus/prometheus/config"
@@ -268,11 +270,12 @@ func (c *PrometheusConverter) FromMetrics(ctx context.Context, md pmetric.Metric
 		resourceMetrics := resourceMetricsSlice.At(i)
 		resource := resourceMetrics.Resource()
 		scopeMetricsSlice := resourceMetrics.ScopeMetrics()
-		if err := c.setResourceContext(resource, settings); err != nil {
+		keep, err := c.setResourceContext(resource, settings, i, &annots)
+		if err != nil {
 			errs = errors.Join(errs, err)
 			continue
 		}
-		if settings.EnableEntities && !c.setEntityInstance(resource, i, &annots) {
+		if !keep {
 			continue
 		}
 
@@ -488,8 +491,9 @@ func (s *PromoteResourceAttributes) addPromotedAttributes(builder *labels.Builde
 
 // setResourceContext precomputes and caches resource-level labels.
 // Called once per ResourceMetrics boundary, before processing any datapoints.
-// If an error is returned, resource level cache is reset.
-func (c *PrometheusConverter) setResourceContext(resource pcommon.Resource, settings Settings) error {
+// It returns false if the Resource has an undefined identity and must be
+// skipped. If an error is returned, resource level cache is reset.
+func (c *PrometheusConverter) setResourceContext(resource pcommon.Resource, settings Settings, index int, annots *annotations.Annotations) (bool, error) {
 	resourceAttrs := resource.Attributes()
 	c.resourceLabels = &cachedResourceLabels{
 		externalLabels: settings.ExternalLabels,
@@ -503,27 +507,51 @@ func (c *PrometheusConverter) setResourceContext(resource pcommon.Resource, sett
 		PreserveMultipleUnderscores: settings.LabelNamePreserveMultipleUnderscores,
 	}
 
-	if serviceName, ok := resourceAttrs.Get(string(semconv.ServiceNameKey)); ok {
-		val := serviceName.AsString()
-		if serviceNamespace, ok := resourceAttrs.Get(string(semconv.ServiceNamespaceKey)); ok {
-			val = serviceNamespace.AsString() + "/" + val
+	// Synthesize the instance label before deriving the legacy labels, so that
+	// a synthesized identity skips the service attribute lookups entirely.
+	if settings.EnableEntities {
+		refs := entity.ResourceEntityRefs(resource)
+		if refs.Len() > 0 {
+			identity, warning, err := resourceIdentity(resourceAttrs, refs)
+			if err != nil {
+				annots.Add(newCategorizedWarningf(WarningCategoryInvalidEntityRefs, "dropping resource %d: %s", index, err))
+				c.clearResourceContext()
+				return false, nil
+			}
+			if warning != nil {
+				annots.Add(newCategorizedWarningf(WarningCategoryInvalidEntityRefs, "resource %d: %s; ignoring the key", index, warning))
+			}
+			// Job and instance still identify the Resource, but job is empty:
+			// it belongs to the mapping from service attributes, which isn't
+			// mixed with the entity one.
+			c.resourceLabels.instanceLabel = uuid.NewSHA1(resourceIdentityNamespace, identity).String()
+			c.resourceLabels.instanceSynthesized = true
 		}
-		c.resourceLabels.jobLabel = val
 	}
 
-	if instance, ok := resourceAttrs.Get(string(semconv.ServiceInstanceIDKey)); ok {
-		c.resourceLabels.instanceLabel = instance.AsString()
+	if !c.resourceLabels.instanceSynthesized {
+		if serviceName, ok := resourceAttrs.Get(string(semconv.ServiceNameKey)); ok {
+			val := serviceName.AsString()
+			if serviceNamespace, ok := resourceAttrs.Get(string(semconv.ServiceNamespaceKey)); ok {
+				val = serviceNamespace.AsString() + "/" + val
+			}
+			c.resourceLabels.jobLabel = val
+		}
+
+		if instance, ok := resourceAttrs.Get(string(semconv.ServiceInstanceIDKey)); ok {
+			c.resourceLabels.instanceLabel = instance.AsString()
+		}
 	}
 
 	if settings.PromoteResourceAttributes != nil {
 		c.builder.Reset(labels.EmptyLabels())
 		if err := settings.PromoteResourceAttributes.addPromotedAttributes(c.builder, resourceAttrs, c.buildLabelName); err != nil {
 			c.clearResourceContext()
-			return err
+			return false, err
 		}
 		c.resourceLabels.promotedLabels = c.builder.Labels()
 	}
-	return nil
+	return true, nil
 }
 
 // setScopeContext precomputes and caches scope-level labels.

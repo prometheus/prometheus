@@ -43,6 +43,14 @@ import (
 	"github.com/prometheus/prometheus/util/teststorage"
 )
 
+// requireResourceContext initializes a converter's resource context in tests.
+func requireResourceContext(t *testing.T, c *PrometheusConverter, resource pcommon.Resource, settings Settings) {
+	t.Helper()
+	keep, err := c.setResourceContext(resource, settings, 0, &annotations.Annotations{})
+	require.NoError(t, err)
+	require.True(t, keep)
+}
+
 func TestPrometheusConverter_Reset(t *testing.T) {
 	t.Run("isolates requests", func(t *testing.T) {
 		request := pmetricotlp.NewExportRequest()
@@ -1134,6 +1142,36 @@ func TestFromMetrics(t *testing.T) {
 					},
 				},
 				{
+					name: "promoted resource attributes apply alongside a synthesized instance",
+					settings: Settings{
+						EnableEntities: true,
+						PromoteResourceAttributes: NewPromoteResourceAttributes(config.OTLPConfig{
+							PromoteResourceAttributes: []string{"service.name"},
+						}),
+					},
+					resource: base,
+					want: []sample{
+						gauge("instance", goldenInstance, "service_name", "checkout"),
+						targetInfo("instance", goldenInstance, "host_id", "h-1", "host_name", "node-1", "service_instance_id", "id-1", "service_name", "checkout", "service_namespace", "shop", "telemetry_sdk_version", "1.2.3"),
+					},
+				},
+				{
+					name: "external job and instance labels don't override a synthesized instance",
+					settings: Settings{
+						EnableEntities: true,
+						ExternalLabels: map[string]string{
+							"cluster":  "external-cluster",
+							"job":      "external-job",
+							"instance": "external-instance",
+						},
+					},
+					resource: base,
+					want: []sample{
+						gauge("instance", goldenInstance, "cluster", "external-cluster"),
+						targetInfo("instance", goldenInstance, "cluster", "external-cluster", "host_id", "h-1", "host_name", "node-1", "service_instance_id", "id-1", "service_name", "checkout", "service_namespace", "shop", "telemetry_sdk_version", "1.2.3"),
+					},
+				},
+				{
 					name:     "target_info is skipped for service attributes without entity references",
 					settings: Settings{EnableEntities: true},
 					resource: resource{attrs: serviceOnly.attrs},
@@ -1158,7 +1196,8 @@ func TestFromMetrics(t *testing.T) {
 			// instance returns the synthesized instance of r. Target info is
 			// disabled, since its labels can differ for equal identities.
 			instance := func(t *testing.T, md pmetric.Metrics) string {
-				samples, _ := convert(t, md, Settings{EnableEntities: true, DisableTargetInfo: true})
+				samples, annots := convert(t, md, Settings{EnableEntities: true, DisableTargetInfo: true})
+				require.Empty(t, annots)
 				instances := gaugeInstances(samples)
 				require.Len(t, instances, 1)
 				_, err := uuid.Parse(instances[0])
@@ -1260,6 +1299,7 @@ func TestFromMetrics(t *testing.T) {
 				{name: "int and string values", a: with(base, "process.pid", 1), b: with(base, "process.pid", "1")},
 				{name: "bytes and string values", a: with(base, "x.bytes", []byte("a")), b: with(base, "x.bytes", "a")},
 				{name: "array order", a: with(base, "x.array", []any{"a", "b"}), b: with(base, "x.array", []any{"b", "a"})},
+				{name: "double values", a: with(base, "x.ratio", 0.5), b: with(base, "x.ratio", 1.5)},
 				{name: "negative zero", a: with(base, "x.ratio", math.Copysign(0, -1)), b: with(base, "x.ratio", 0.0), same: true},
 				{name: "NaN payload", a: with(base, "x.ratio", math.NaN()), b: with(base, "x.ratio", math.Float64frombits(0x7FF8000000000002)), same: true},
 			} {
@@ -1352,7 +1392,7 @@ func TestFromMetrics(t *testing.T) {
 				},
 				{
 					name:        "missing description key",
-					refs:        []entityRef{serviceRef, {typ: "host", idKeys: hostRef.idKeys, descKeys: []string{"host.name", "host.arch"}}},
+					refs:        []entityRef{serviceRef, {typ: "host", idKeys: hostRef.idKeys, descKeys: []string{"host.name", "host.arch", "host.os"}}},
 					wantWarning: `resource %d: entity reference 1 (type "host"): description_keys key "host.arch" missing from resource attributes; ignoring the key`,
 				},
 			} {
