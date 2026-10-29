@@ -2593,7 +2593,7 @@ eval instant at 0s min_of(0, 1)
 eval instant at 0s max_of(0, 1)
   1
 
-# NaN propagation: any NaN input yields NaN.
+# NaN propagates unless the other argument is the matching infinity.
 eval instant at 0s min_of(NaN, 3)
   NaN
 
@@ -2605,6 +2605,37 @@ eval instant at 0s max_of(NaN, 3)
 
 eval instant at 0s max_of(3, NaN)
   NaN
+
+eval instant at 0s max_of(NaN, +Inf)
+  +Inf
+
+eval instant at 0s max_of(+Inf, NaN)
+  +Inf
+
+eval instant at 0s max_of(NaN, -Inf)
+  NaN
+
+eval instant at 0s min_of(NaN, -Inf)
+  -Inf
+
+eval instant at 0s min_of(-Inf, NaN)
+  -Inf
+
+eval instant at 0s min_of(NaN, +Inf)
+  NaN
+
+eval instant at 0s min_of(NaN, NaN)
+  NaN
+
+eval instant at 0s max_of(NaN, NaN)
+  NaN
+
+# Division distinguishes positive and negative zero.
+eval instant at 0s 1 / min_of(-0, +0)
+  -Inf
+
+eval instant at 0s 1 / max_of(-0, +0)
+  +Inf
 
 clear
 
