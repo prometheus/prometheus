@@ -146,12 +146,14 @@ global:
   # name in a scrape is longer than this number post metric-relabeling, the
   # entire scrape will be treated as failed. Note that label names are UTF-8
   # encoded, and characters can take up to 4 bytes. 0 means no limit.
+  # The maximum supported value is 16MB.
   [ label_name_length_limit: <int> | default = 0 ]
 
   # Limit on the length (in bytes) of each individual label value. If any label
   # value in a scrape is longer than this number post metric-relabeling, the
   # entire scrape will be treated as failed. Note that label values are UTF-8
   # encoded, and characters can take up to 4 bytes. 0 means no limit.
+  # The maximum supported value is 16MB.
   [ label_value_length_limit: <int> | default = 0 ]
 
   # Limit per scrape config on number of unique targets that will be
@@ -589,12 +591,14 @@ metric_relabel_configs:
 # name in a scrape is longer than this number post metric-relabeling, the
 # entire scrape will be treated as failed. Note that label names are UTF-8
 # encoded, and characters can take up to 4 bytes. 0 means no limit.
+# The maximum supported value is 16MB.
 [ label_name_length_limit: <int> | default = 0 ]
 
 # Limit on the length (in bytes) of each individual label value. If any label
 # value in a scrape is longer than this number post metric-relabeling, the
 # entire scrape will be treated as failed. Note that label values are UTF-8
 # encoded, and characters can take up to 4 bytes. 0 means no limit.
+# The maximum supported value is 16MB.
 [ label_value_length_limit: <int> | default = 0 ]
 
 # Limit per scrape config on number of unique targets that will be
