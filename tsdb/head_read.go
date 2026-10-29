@@ -283,7 +283,7 @@ type seriesRefs struct {
 //
 // The returned series are provided in two orders:
 //
-//   - sortedByRef preserves the order of the input postings
+//   - sortedByRef preserves the order of the input postings, which are sorted in ascending order of the refs
 //   - sortedByLabels is sorted by series labels
 //
 // When keep is non-nil, it is invoked while holding the series lock and
@@ -510,6 +510,13 @@ type headChunkReader struct {
 	head       *Head
 	mint, maxt int64
 	isoState   *isolationState
+	// evicting captures the series eviction in progress when this reader is opened.
+	// It allows missing chunks from that eviction to be skipped. Set only for query
+	// readers that also read the blocks containing those samples.
+	//
+	// Before setting evicting, the caller must ensure that the series' samples have
+	// been written to blocks and those blocks have been added to the DB.
+	evicting *evictedSeries
 	// When true, enables the head-chunks cache. Range queries benefit from
 	// caching because they look up every chunk of a series; instant queries
 	// only need one chunk per series, so the cache is wasted overhead.
@@ -591,6 +598,9 @@ func (h *headChunkReader) getOrCollectHeadChunks(s *memSeries) []*memChunk {
 // ChunkOrIterable returns the chunk for the reference number.
 func (h *headChunkReader) ChunkOrIterable(meta chunks.Meta) (chunkenc.Chunk, chunkenc.Iterable, error) {
 	chk, _, err := h.chunk(meta, false)
+	if errors.Is(err, storage.ErrNotFound) && h.skipEvictedSeries(meta) {
+		return nil, noSamples{}, nil
+	}
 	return chk, nil, err
 }
 
@@ -602,7 +612,43 @@ type ChunkReaderWithCopy interface {
 // If the chunk is the in-memory chunk, then it makes a copy and returns the copied chunk, plus the max time of the chunk.
 func (h *headChunkReader) ChunkOrIterableWithCopy(meta chunks.Meta) (chunkenc.Chunk, chunkenc.Iterable, int64, error) {
 	chk, maxTime, err := h.chunk(meta, true)
+	if errors.Is(err, storage.ErrNotFound) && h.skipEvictedSeries(meta) {
+		return nil, noSamples{}, 0, nil
+	}
 	return chk, nil, maxTime, err
+}
+
+// skipEvictedSeries reports whether a chunk can be skipped because its series
+// was removed or its chunks were reclaimed by this eviction.
+func (h *headChunkReader) skipEvictedSeries(meta chunks.Meta) bool {
+	sid, cid, isOOO := unpackHeadChunkRef(meta.Ref)
+	// Series with out-of-order data are excluded from these evictions, so missing
+	// out-of-order chunks must not be skipped.
+	if isOOO {
+		return false
+	}
+	if !h.evicting.contains(sid) {
+		return false
+	}
+	if h.head.series.getByID(sid) != nil {
+		truncated, ok := h.evicting.truncatedChunks.Load(sid)
+		if !ok {
+			return false
+		}
+		r := truncated.(evictedChunkRange)
+		if int(wrapChunkID(cid-r.first)) >= r.count {
+			return false
+		}
+	}
+	h.head.metrics.chunkReadsOfRemovedSeries.Inc()
+	return true
+}
+
+// noSamples is a chunkenc.Iterable without samples.
+type noSamples struct{}
+
+func (noSamples) Iterator(chunkenc.Iterator) chunkenc.Iterator {
+	return chunkenc.NewNopIterator()
 }
 
 // chunk returns the chunk for the reference number.

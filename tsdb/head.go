@@ -166,9 +166,20 @@ type Head struct {
 
 	memTruncationInProcess atomic.Bool
 	memTruncationCallBack  func() // For testing purposes.
+	// TODO: find a better solution than this test hook in production code.
 	// testAfterSeriesLookup is invoked after getByID in appenders, before the
 	// series is locked. Tests use it to race GC against a resolved pointer.
 	testAfterSeriesLookup func(*memSeries)
+	// TODO: find a better solution than this test hook in production code.
+	// testAfterWaitingForReadersToEvictSeries is invoked by truncateSeries after it has waited for
+	// the open readers, and before it removes the series. Tests use it to open a reader at the point
+	// where a reader would otherwise not be waited for.
+	testAfterWaitingForReadersToEvictSeries func()
+
+	// evictingSeries is the set of series that truncateSeries is removing, or nil if it is not running.
+	// The readers of queries opened while it is set skip the chunks of those series that are removed
+	// before they read them. See headChunkReader.evicting.
+	evictingSeries atomic.Pointer[evictedSeries]
 }
 
 type ExemplarStorage interface {
@@ -437,6 +448,7 @@ type headMetrics struct {
 	seriesCreated             prometheus.Counter
 	seriesRemoved             prometheus.Counter
 	seriesNotFound            prometheus.Counter
+	chunkReadsOfRemovedSeries prometheus.Counter
 	pendingCommitUnderflow    prometheus.Counter
 	chunks                    prometheus.Gauge
 	chunksCreated             prometheus.Counter
@@ -514,6 +526,10 @@ func newHeadMetrics(h *Head, r prometheus.Registerer) *headMetrics {
 		seriesNotFound: prometheus.NewCounter(prometheus.CounterOpts{
 			Name: "prometheus_tsdb_head_series_not_found_total",
 			Help: "Total number of requests for series that were not found.",
+		}),
+		chunkReadsOfRemovedSeries: prometheus.NewCounter(prometheus.CounterOpts{
+			Name: "prometheus_tsdb_head_chunk_reads_of_removed_series_total",
+			Help: "Total number of chunks that queries tried to read from the head after their series or chunks were evicted. The chunks are skipped because their samples are available from blocks.",
 		}),
 		pendingCommitUnderflow: prometheus.NewCounter(prometheus.CounterOpts{
 			Name: "prometheus_tsdb_head_series_pending_commit_underflow_total",
@@ -643,6 +659,7 @@ func newHeadMetrics(h *Head, r prometheus.Registerer) *headMetrics {
 			m.seriesCreated,
 			m.seriesRemoved,
 			m.seriesNotFound,
+			m.chunkReadsOfRemovedSeries,
 			m.pendingCommitUnderflow,
 			m.gcDuration,
 			m.walTruncateDuration,
@@ -1505,7 +1522,12 @@ func (h *Head) snapshotFingerprints(seriesRefs []storage.SeriesRef, appendIDWate
 // the caller collected the ref list are skipped before the predicate is consulted.
 // maxt is inclusive: it matches the highest sample timestamp that the caller has just persisted
 // to a block, so a head whose MinTime equals maxt still has data eligible for eviction.
+// seriesRefs must be sorted in ascending order.
 // It returns the number of series that were actually evicted.
+//
+// The caller must have written the samples of the series to a block, and added the block to the DB, before
+// calling it. The readers of queries that find a series removed skip its chunks, because they read the block.
+// See headChunkReader.evicting.
 func (h *Head) truncateSeries(seriesRefs []storage.SeriesRef, maxt int64, shouldEvict func(*memSeries) bool) (int, error) {
 	h.chunkSnapshotMtx.Lock()
 	defer h.chunkSnapshotMtx.Unlock()
@@ -1514,7 +1536,20 @@ func (h *Head) truncateSeries(seriesRefs []storage.SeriesRef, maxt int64, should
 		return 0, nil
 	}
 
-	h.WaitForPendingReadersInTimeRange(h.MinTime(), maxt)
+	// Publish the series before waiting for the readers, so that the readers that are opened after the wait,
+	// and are not waited for, know that the series may be removed while they read them.
+	h.evictingSeries.Store(&evictedSeries{refs: seriesRefs})
+	defer h.evictingSeries.Store(nil)
+
+	// Also wait for the readers opened at maxt. Such a reader could otherwise skip a series removed by this eviction
+	// and miss its newest samples, which are available only in the block written by this eviction.
+	waitMaxt := min(maxt, math.MaxInt64-1) + 1
+	h.WaitForPendingReadersInTimeRange(h.MinTime(), waitMaxt)
+
+	if h.testAfterWaitingForReadersToEvictSeries != nil {
+		h.testAfterWaitingForReadersToEvictSeries()
+		h.testAfterWaitingForReadersToEvictSeries = nil
+	}
 
 	deleted := h.gcSeries(seriesRefs, maxt, shouldEvict)
 
@@ -1853,6 +1888,29 @@ func (h *Head) Stats(statsByLabelName string, limit int) *Stats {
 	}
 }
 
+// evictedSeries is the set of series that truncateSeries is removing from the head.
+type evictedSeries struct {
+	// refs are the refs of the series, sorted in ascending order.
+	refs []storage.SeriesRef
+	// truncatedChunks maps series refs to evictedChunkRange for series retained for exemplars.
+	truncatedChunks sync.Map
+}
+
+// evictedChunkRange identifies in-order chunks reclaimed while their series is retained.
+type evictedChunkRange struct {
+	first chunks.HeadChunkID
+	count int
+}
+
+// contains returns whether the series is one that is being removed. It is safe to call on a nil *evictedSeries.
+func (e *evictedSeries) contains(ref chunks.HeadSeriesRef) bool {
+	if e == nil {
+		return false
+	}
+	_, ok := slices.BinarySearch(e.refs, storage.SeriesRef(ref))
+	return ok
+}
+
 // RangeHead allows querying Head via an IndexReader, ChunkReader and tombstones.Reader
 // but only within a restricted range.  Used for queries and compactions.
 // Its readers, and queriers over it, are not safe for concurrent use from
@@ -1862,6 +1920,11 @@ type RangeHead struct {
 	mint, maxt int64
 
 	isolationOff bool
+
+	// skipEvictedSeries makes the chunk reader skip the chunks of the series that CompactSelectedSeries or
+	// CompactStaleHead remove from the head after the reader selected them. It must be set only for the readers
+	// used by queries. See headChunkReader.evicting.
+	skipEvictedSeries bool
 }
 
 // NewRangeHead returns a *RangeHead.
@@ -1890,7 +1953,16 @@ func (h *RangeHead) Chunks() (ChunkReader, error) {
 	if !h.isolationOff {
 		isoState = h.head.iso.State(h.mint, h.maxt)
 	}
-	return h.head.chunksRange(h.mint, h.maxt, isoState)
+	cr, err := h.head.chunksRange(h.mint, h.maxt, isoState)
+	if err != nil {
+		return nil, err
+	}
+	// Load the series being evicted after the isolation state was created, so that a reader that is not waited
+	// for by truncateSeries sees them.
+	if h.skipEvictedSeries {
+		cr.evicting = h.head.evictingSeries.Load()
+	}
+	return cr, nil
 }
 
 func (h *RangeHead) Tombstones() (tombstones.Reader, error) {
@@ -2634,6 +2706,7 @@ func (s *stripeSeries) gc(mint int64, minOOOMmapRef chunks.ChunkDiskMapperRef) (
 // The returned references are the series that got deleted.
 func (h *Head) gcSeries(seriesRefs []storage.SeriesRef, maxt int64, shouldEvict func(*memSeries) bool) map[storage.SeriesRef]struct{} {
 	minValidTime := h.minValidTime.Load()
+	evicting := h.evictingSeries.Load()
 	var protectedChunksRemoved int
 	deleted, affected, chunksRemoved, staleSeriesDeleted, histogramSeriesDeleted, histogramBucketsDeleted := h.series.gcSeries(seriesRefs, maxt, func(s *memSeries) bool {
 		// Keep unpersisted samples before considering chunk removal or series eviction.
@@ -2648,7 +2721,12 @@ func (h *Head) gcSeries(seriesRefs []storage.SeriesRef, maxt int64, shouldEvict 
 		// Free the persisted sample chunks, but keep the series identity for exemplar replay.
 		// Memory mapping keeps the newest chunk in memory, so it needs at least two head chunks.
 		wasMmapReady := s.headChunkCount.Load() >= 2
-		protectedChunksRemoved += s.truncateChunksBefore(math.MaxInt64, 0)
+		firstChunkID := s.firstChunkID
+		removed := s.truncateChunksBefore(math.MaxInt64, 0)
+		protectedChunksRemoved += removed
+		if evicting != nil && removed > 0 {
+			evicting.truncatedChunks.Store(s.ref, evictedChunkRange{first: firstChunkID, count: removed})
+		}
 		// Clear the appender because it references the removed head chunk.
 		s.app = nil
 		// The series no longer has enough chunks to be ready for memory mapping.
