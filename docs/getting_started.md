@@ -16,7 +16,7 @@ your platform, then extract and run it:
 
 ```bash
 tar xvfz prometheus-*.tar.gz
-cd prometheus-*
+cd prometheus-*/
 ```
 
 Before starting Prometheus, let's configure it.
@@ -134,7 +134,7 @@ The Node Exporter is used as an example target, for more information on using it
 
 ```bash
 tar -xzvf node_exporter-*.*.tar.gz
-cd node_exporter-*.*
+cd node_exporter-*.*/
 
 # Start 3 example targets in separate terminals:
 ./node_exporter --web.listen-address 127.0.0.1:8080

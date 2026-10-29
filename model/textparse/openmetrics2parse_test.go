@@ -928,6 +928,41 @@ foo_total 1.0 # {id="x"} 1.0
 			err:   "classic histogram buckets must be sorted in increasing order",
 		},
 		{
+			// Composite fields have a fixed order in OpenMetrics 2.0.
+			input: "# TYPE foo histogram\nfoo {sum:2.0,count:1,bucket:[+Inf:1]}\n# EOF\n",
+			err:   "composite fields must appear in specification order",
+		},
+		{
+			input: "# TYPE foo summary\nfoo {count:1,quantile:[0.5:1.0],sum:2.0}\n# EOF\n",
+			err:   "composite fields must appear in specification order",
+		},
+		{
+			input: "# TYPE foo gaugehistogram\nfoo {gsum:2.0,gcount:1,bucket:[+Inf:1]}\n# EOF\n",
+			err:   "composite fields must appear in specification order",
+		},
+		{
+			input: "# TYPE foo histogram\nfoo {count:1,sum:2.0,schema:0,zero_threshold:0,positive_spans:[0:1],zero_count:0,positive_buckets:[1]}\n# EOF\n",
+			err:   "composite fields must appear in specification order",
+		},
+		{
+			input: "# TYPE foo histogram\nfoo {count:0,sum:0.0,bucket:[+Inf:0],schema:0,zero_threshold:0,zero_count:0}\n# EOF\n",
+			err:   "composite fields must appear in specification order",
+		},
+		{
+			// The native bucket lists must follow their span definitions.
+			input: "# TYPE foo histogram\nfoo {count:1,sum:2.0,schema:0,zero_threshold:0,zero_count:0,positive_buckets:[1],positive_spans:[0:1]}\n# EOF\n",
+			err:   "composite fields must appear in specification order",
+		},
+		{
+			input: "# TYPE foo histogram\nfoo {count:1,sum:2.0,schema:0,zero_threshold:0,zero_count:0,negative_buckets:[1],negative_spans:[0:1]}\n# EOF\n",
+			err:   "composite fields must appear in specification order",
+		},
+		{
+			// The same native field ordering applies to gauge histograms.
+			input: "# TYPE foo gaugehistogram\nfoo {gcount:1,gsum:2.0,schema:0,zero_count:0,zero_threshold:0}\n# EOF\n",
+			err:   "composite fields must appear in specification order",
+		},
+		{
 			input: "# TYPE foo histogram\nfoo {count:1,count:99,sum:2.0,bucket:[+Inf:1]}\n# EOF\n",
 			err:   "duplicate composite field",
 		},

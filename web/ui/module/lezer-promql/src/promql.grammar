@@ -83,6 +83,9 @@ BinaryExpr {
   expr !mul Div    binModifiers expr |
   expr !mul Mod    binModifiers expr |
   expr !mul Atan2  binModifiers expr |
+  expr !mul BitAnd binModifiers expr |
+  expr !mul BitOr  binModifiers expr |
+  expr !mul BitXor binModifiers expr |
   expr !add Add    binModifiers expr |
   expr !add Sub    binModifiers expr |
   expr !eql Eql    binModifiers expr |
@@ -356,8 +359,6 @@ durationPrimary[@inline] {
     ( ( std.digit+ "y" )? ( std.digit+ "w" )? ( std.digit+ "d" )? ( std.digit+ "h" )? ( std.digit+ "m" )? ( std.digit+ "s" ) ( std.digit+ "ms" )? ) |
     ( ( std.digit+ "y" )? ( std.digit+ "w" )? ( std.digit+ "d" )? ( std.digit+ "h" )? ( std.digit+ "m" )? ( std.digit+ "s" )? ( std.digit+ "ms" ) )
   }
-  Identifier { (std.asciiLetter | "_" | ":") (std.asciiLetter | std.digit | "_" | ":" )*}
-  LabelName { (std.asciiLetter | "_") (std.asciiLetter | std.digit | "_")* }
 
   // Operator
   Sub { "-" }
@@ -382,6 +383,8 @@ durationPrimary[@inline] {
   At { "@" }
 }
 
+@external tokens names from "./tokens" { Identifier, LabelName }
+
 // Keywords
 
 @external specialize {Identifier} specializeIdentifier from "./tokens" {
@@ -399,6 +402,9 @@ durationPrimary[@inline] {
 
 @external extend {Identifier} extendIdentifier from "./tokens" {
   Atan2,
+  BitAnd,
+  BitOr,
+  BitXor,
   Avg,
   Bottomk,
   Count,

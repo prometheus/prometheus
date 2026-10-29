@@ -106,6 +106,11 @@ Example:
     'these are unescaped: \n \\ \t'
     `these are not unescaped: \n ' " \t`
 
+This can be useful for [`regular expressions`](#regular-expressions) in [`label_replace()`](functions.md#label_replace), for example:
+
+    label_replace(up, "host", "$1", "instance", "(.*)\\.example\\.com")
+    label_replace(up, "host", "$1", "instance", `(.*)\.example\.com`)
+
 ### Float literals and time durations
 
 Scalar float values can be written as literal integer or floating-point numbers
@@ -280,6 +285,11 @@ For example, this selects all `http_requests_total` time series for `staging`,
 `testing`, and `development` environments and HTTP methods other than `GET`.
 
     http_requests_total{environment=~"staging|testing|development",method!="GET"}
+
+Label matcher values follow the same quoting and escaping rules as [string literals](#string-literals). This can be useful for [`regular expressions`](#regular-expressions) on the regex-match selectors, for example:
+
+    {le=~"0\\.5"}
+    {le=~`0\.5`}
 
 Label matchers that match empty label values also select all time series that
 do not have the specific label set at all. It is possible to have multiple matchers for the same label name.

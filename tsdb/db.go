@@ -1294,6 +1294,8 @@ func (db *DB) run(ctx context.Context) {
 	defer close(db.donec)
 
 	backoff := time.Duration(0)
+	blockReloadTick := time.NewTicker(db.opts.BlockReloadInterval)
+	defer blockReloadTick.Stop()
 
 	for {
 		select {
@@ -1303,7 +1305,7 @@ func (db *DB) run(ctx context.Context) {
 		}
 
 		select {
-		case <-time.After(db.opts.BlockReloadInterval):
+		case <-blockReloadTick.C:
 			db.cmtx.Lock()
 			if err := db.reloadBlocks(); err != nil {
 				db.logger.Error("reloadBlocks", "err", err)

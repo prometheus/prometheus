@@ -181,6 +181,33 @@ export const vectorElemBinop = (
       return { value: lhs, keep: lhs <= rhs };
     case binaryOperatorType.atan2:
       return { value: Math.atan2(lhs, rhs), keep: true };
+    case binaryOperatorType.bitand:
+    case binaryOperatorType.bitor:
+    case binaryOperatorType.bitxor: {
+      if (
+        !Number.isSafeInteger(lhs) ||
+        !Number.isSafeInteger(rhs) ||
+        lhs < 0 ||
+        rhs < 0
+      ) {
+        return { value: NaN, keep: true };
+      }
+      // BigInt avoids the 32-bit truncation of JavaScript number bitwise operators.
+      const l = BigInt(lhs);
+      const r = BigInt(rhs);
+      let value: bigint;
+      switch (op) {
+        case binaryOperatorType.bitand:
+          value = l & r;
+          break;
+        case binaryOperatorType.bitor:
+          value = l | r;
+          break;
+        default:
+          value = l ^ r;
+      }
+      return { value: Number(value), keep: true };
+    }
     default:
       throw new Error("invalid binop");
   }
@@ -196,6 +223,9 @@ const shouldDropMetricName = (op: binaryOperatorType): boolean =>
     binaryOperatorType.pow,
     binaryOperatorType.mod,
     binaryOperatorType.atan2,
+    binaryOperatorType.bitand,
+    binaryOperatorType.bitor,
+    binaryOperatorType.bitxor,
   ].includes(op);
 
 // Compute the time series labels for the result metric.

@@ -495,6 +495,13 @@ type EngineOpts struct {
 	// UseStartTimestamps enables start timestamp usage in functions such as rate().
 	UseStartTimestamps bool
 
+	// EnableNativeHistogramsAsClassic makes selectors for classic histogram series (_bucket,
+	// _count, _sum) also return series converted from native histograms with
+	// custom buckets (NHCB). The conversion wraps the Queryable passed to each
+	// query, so it applies to all data the engine reads (including remote-read
+	// sources behind a fanout), but not to other consumers of the same storage
+	// (e.g. the remote read API, federation or the series API).
+	EnableNativeHistogramsAsClassic bool
 	// EnableQueryCost enables enforcement of the reloadable query-cost limits
 	// (max series, max samples read, max query duration) and the honoring of
 	// per-query limit overrides. Disabled otherwise.
@@ -510,23 +517,24 @@ type EngineOpts struct {
 // Engine handles the lifetime of queries from beginning to end.
 // It is connected to a querier.
 type Engine struct {
-	logger                   *slog.Logger
-	metrics                  *engineMetrics
-	timeout                  time.Duration
-	maxSamplesPerQuery       int
-	activeQueryTracker       QueryTracker
-	queryLogger              QueryLogger
-	queryLoggerLock          sync.RWMutex
-	lookbackDelta            time.Duration
-	noStepSubqueryIntervalFn func(rangeMillis int64) int64
-	enableAtModifier         bool
-	enableNegativeOffset     bool
-	enablePerStepStats       bool
-	enableDelayedNameRemoval bool
-	enableTypeAndUnitLabels  bool
-	useStartTimestamps       bool
-	enableQueryCost          bool
-	parser                   parser.Parser
+	logger                          *slog.Logger
+	metrics                         *engineMetrics
+	timeout                         time.Duration
+	maxSamplesPerQuery              int
+	activeQueryTracker              QueryTracker
+	queryLogger                     QueryLogger
+	queryLoggerLock                 sync.RWMutex
+	lookbackDelta                   time.Duration
+	noStepSubqueryIntervalFn        func(rangeMillis int64) int64
+	enableAtModifier                bool
+	enableNegativeOffset            bool
+	enablePerStepStats              bool
+	enableDelayedNameRemoval        bool
+	enableTypeAndUnitLabels         bool
+	useStartTimestamps              bool
+	enableNativeHistogramsAsClassic bool
+	enableQueryCost                 bool
+	parser                          parser.Parser
 
 	// queryLimitsLock guards the reloadable query-cost limits below.
 	queryLimitsLock  sync.RWMutex
@@ -720,21 +728,22 @@ func NewEngine(opts EngineOpts) *Engine {
 	}
 
 	return &Engine{
-		timeout:                  opts.Timeout,
-		logger:                   opts.Logger,
-		metrics:                  metrics,
-		maxSamplesPerQuery:       opts.MaxSamples,
-		activeQueryTracker:       opts.ActiveQueryTracker,
-		lookbackDelta:            opts.LookbackDelta,
-		noStepSubqueryIntervalFn: opts.NoStepSubqueryIntervalFn,
-		enableAtModifier:         opts.EnableAtModifier,
-		enableNegativeOffset:     opts.EnableNegativeOffset,
-		enablePerStepStats:       opts.EnablePerStepStats,
-		enableDelayedNameRemoval: opts.EnableDelayedNameRemoval,
-		enableTypeAndUnitLabels:  opts.EnableTypeAndUnitLabels,
-		useStartTimestamps:       opts.UseStartTimestamps,
-		enableQueryCost:          opts.EnableQueryCost,
-		parser:                   opts.Parser,
+		timeout:                         opts.Timeout,
+		logger:                          opts.Logger,
+		metrics:                         metrics,
+		maxSamplesPerQuery:              opts.MaxSamples,
+		activeQueryTracker:              opts.ActiveQueryTracker,
+		lookbackDelta:                   opts.LookbackDelta,
+		noStepSubqueryIntervalFn:        opts.NoStepSubqueryIntervalFn,
+		enableAtModifier:                opts.EnableAtModifier,
+		enableNegativeOffset:            opts.EnableNegativeOffset,
+		enablePerStepStats:              opts.EnablePerStepStats,
+		enableDelayedNameRemoval:        opts.EnableDelayedNameRemoval,
+		enableTypeAndUnitLabels:         opts.EnableTypeAndUnitLabels,
+		useStartTimestamps:              opts.UseStartTimestamps,
+		enableNativeHistogramsAsClassic: opts.EnableNativeHistogramsAsClassic,
+		enableQueryCost:                 opts.EnableQueryCost,
+		parser:                          opts.Parser,
 	}
 }
 
@@ -877,6 +886,12 @@ func (ng *Engine) NewRangeQuery(ctx context.Context, q storage.Queryable, opts Q
 func (ng *Engine) newQuery(q storage.Queryable, qs string, opts QueryOpts, start, end time.Time, interval time.Duration) (*parser.Expr, *query, error) {
 	if opts == nil {
 		opts = NewPrometheusQueryOpts(false, 0, nil)
+	}
+	if ng.enableNativeHistogramsAsClassic {
+		// NOTE: Wrapping here, not in the storage, keeps the conversion scoped to
+		// PromQL evaluation while still covering every source behind q (e.g.
+		// remote-read secondaries of a fanout).
+		q = storage.NewNativeHistogramsAsClassicQueryable(q)
 	}
 
 	lookbackDelta := opts.LookbackDelta()
@@ -4146,8 +4161,30 @@ func scalarBinop(op parser.ItemType, lhs, rhs float64) float64 {
 		return btos(lhs <= rhs)
 	case parser.ATAN2:
 		return math.Atan2(lhs, rhs)
+	case parser.BITAND, parser.BITOR, parser.BITXOR:
+		return bitwiseBinop(op, lhs, rhs)
 	}
 	panic(fmt.Errorf("operator %q not allowed for Scalar operations", op))
+}
+
+// Evaluate bitwise operations on nonnegative integers that float64 can represent exactly.
+// Invalid operands produce NaN instead of being truncated or rounded to integers.
+func bitwiseBinop(op parser.ItemType, lhs, rhs float64) float64 {
+	const maxSafeInteger = 1<<53 - 1
+	if lhs < 0 || rhs < 0 || lhs > maxSafeInteger || rhs > maxSafeInteger ||
+		math.IsNaN(lhs) || math.IsNaN(rhs) || math.Trunc(lhs) != lhs || math.Trunc(rhs) != rhs {
+		return math.NaN()
+	}
+	l, r := uint64(lhs), uint64(rhs)
+	switch op {
+	case parser.BITAND:
+		return float64(l & r)
+	case parser.BITOR:
+		return float64(l | r)
+	case parser.BITXOR:
+		return float64(l ^ r)
+	}
+	panic(fmt.Errorf("operator %q is not a bitwise operator", op))
 }
 
 // vectorElemBinop evaluates a binary operation between two Vector elements.
@@ -4182,6 +4219,8 @@ func vectorElemBinop(op parser.ItemType, lhs, rhs float64, hlhs, hrhs *histogram
 				return lhs, nil, lhs <= rhs, nil, nil
 			case parser.ATAN2:
 				return math.Atan2(lhs, rhs), nil, true, nil, nil
+			case parser.BITAND, parser.BITOR, parser.BITXOR:
+				return bitwiseBinop(op, lhs, rhs), nil, true, nil, nil
 			case parser.TRIM_LOWER, parser.TRIM_UPPER:
 				return 0, nil, false, nil, annotations.NewIncompatibleTypesInBinOpInfo("float", parser.ItemTypeStr[op], "float", pos)
 			}
@@ -4191,7 +4230,7 @@ func vectorElemBinop(op parser.ItemType, lhs, rhs float64, hlhs, hrhs *histogram
 			switch op {
 			case parser.MUL:
 				return 0, hrhs.Copy().Mul(lhs).Compact(0), true, nil, nil
-			case parser.ADD, parser.SUB, parser.DIV, parser.POW, parser.MOD, parser.EQLC, parser.NEQ, parser.GTR, parser.TRIM_LOWER, parser.TRIM_UPPER, parser.LSS, parser.GTE, parser.LTE, parser.ATAN2:
+			case parser.ADD, parser.SUB, parser.DIV, parser.POW, parser.MOD, parser.EQLC, parser.NEQ, parser.GTR, parser.TRIM_LOWER, parser.TRIM_UPPER, parser.LSS, parser.GTE, parser.LTE, parser.ATAN2, parser.BITAND, parser.BITOR, parser.BITXOR:
 				return 0, nil, false, nil, annotations.NewIncompatibleTypesInBinOpInfo("float", parser.ItemTypeStr[op], "histogram", pos)
 			}
 		}
@@ -4208,7 +4247,7 @@ func vectorElemBinop(op parser.ItemType, lhs, rhs float64, hlhs, hrhs *histogram
 				return 0, hlhs.Copy().TrimBuckets(rhs, true), true, nil, nil
 			case parser.TRIM_LOWER:
 				return 0, hlhs.Copy().TrimBuckets(rhs, false), true, nil, nil
-			case parser.ADD, parser.SUB, parser.POW, parser.MOD, parser.EQLC, parser.NEQ, parser.GTR, parser.LSS, parser.GTE, parser.LTE, parser.ATAN2:
+			case parser.ADD, parser.SUB, parser.POW, parser.MOD, parser.EQLC, parser.NEQ, parser.GTR, parser.LSS, parser.GTE, parser.LTE, parser.ATAN2, parser.BITAND, parser.BITOR, parser.BITXOR:
 				return 0, nil, false, nil, annotations.NewIncompatibleTypesInBinOpInfo("histogram", parser.ItemTypeStr[op], "float", pos)
 			}
 		}
@@ -4248,7 +4287,7 @@ func vectorElemBinop(op parser.ItemType, lhs, rhs float64, hlhs, hrhs *histogram
 			case parser.NEQ:
 				// This operation expects that both histograms are compacted.
 				return 0, hlhs, !hlhs.Equals(hrhs), nil, nil
-			case parser.MUL, parser.DIV, parser.POW, parser.MOD, parser.GTR, parser.LSS, parser.GTE, parser.LTE, parser.ATAN2, parser.TRIM_LOWER, parser.TRIM_UPPER:
+			case parser.MUL, parser.DIV, parser.POW, parser.MOD, parser.GTR, parser.LSS, parser.GTE, parser.LTE, parser.ATAN2, parser.BITAND, parser.BITOR, parser.BITXOR, parser.TRIM_LOWER, parser.TRIM_UPPER:
 				return 0, nil, false, nil, annotations.NewIncompatibleTypesInBinOpInfo("histogram", parser.ItemTypeStr[op], "histogram", pos)
 			}
 		}
@@ -5127,7 +5166,7 @@ func btos(b bool) float64 {
 // schema of the metric.
 func changesMetricSchema(op parser.ItemType) bool {
 	switch op {
-	case parser.ADD, parser.SUB, parser.DIV, parser.MUL, parser.POW, parser.MOD, parser.ATAN2:
+	case parser.ADD, parser.SUB, parser.DIV, parser.MUL, parser.POW, parser.MOD, parser.ATAN2, parser.BITAND, parser.BITOR, parser.BITXOR:
 		return true
 	default:
 		return false

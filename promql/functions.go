@@ -2934,7 +2934,7 @@ func dateWrapper(vectorVals []Vector, enh *EvalNodeHelper, f func(time.Time) flo
 		return append(enh.Out,
 			Sample{
 				Metric: labels.Labels{},
-				F:      f(time.Unix(enh.Ts/1000, 0).UTC()),
+				F:      f(time.UnixMilli(enh.Ts).UTC()),
 			})
 	}
 
@@ -2943,7 +2943,7 @@ func dateWrapper(vectorVals []Vector, enh *EvalNodeHelper, f func(time.Time) flo
 			// Ignore histogram sample.
 			continue
 		}
-		t := time.Unix(int64(el.F), 0).UTC()
+		t := time.Unix(int64(math.Floor(el.F)), 0).UTC()
 		if !enh.enableDelayedNameRemoval {
 			el.Metric = el.Metric.DropReserved(schema.IsMetadataLabel)
 		}
