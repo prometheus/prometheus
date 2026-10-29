@@ -805,13 +805,13 @@ func (t *QueueManager) shouldDropFloatSampleForMode(ref chunks.HeadSeriesRef, st
 	if mType == model.MetricTypeHistogram || mType == model.MetricTypeGaugeHistogram {
 		t.dataDropped.incr(1)
 		t.metrics.droppedSamplesTotal.WithLabelValues(reasonClassicHistogramNotAllowed).Inc()
-		t.logger.Debug("Dropped classic histogram float sample; remote_write mode requires structured native histograms; enable convert_classic_histograms_to_nhcb in scrape_config or drop the series via write_relabel_configs", "mode", t.mode, "ref", ref, "series", lbls.String(), "type", mType)
+		t.logger.Debug("Dropped classic histogram float sample; remote_write mode requires structured native histograms; enable convert_classic_histograms_to_nhcb in scrape_config or drop the series via write_relabel_configs", "mode", t.mode, "ref", ref, "series", lbls, "type", mType)
 		return true
 	}
 	if writev2.FromMetadataType(mType) == writev2.Metadata_METRIC_TYPE_UNSPECIFIED {
 		t.dataDropped.incr(1)
 		t.metrics.droppedSamplesTotal.WithLabelValues(reasonMissingMetadataType).Inc()
-		t.logger.Debug("Dropped sample with unknown metric type; remote_write mode does not allow untyped series; ensure the target exposes TYPE metadata, set __type__ via write_relabel_configs with --enable-feature=type-and-unit-labels, or drop the series via write_relabel_configs", "mode", t.mode, "ref", ref, "series", lbls.String(), "type", mType)
+		t.logger.Debug("Dropped sample with unknown metric type; remote_write mode does not allow untyped series; ensure the target exposes TYPE metadata, set __type__ via write_relabel_configs with --enable-feature=type-and-unit-labels, or drop the series via write_relabel_configs", "mode", t.mode, "ref", ref, "series", lbls, "type", mType)
 		return true
 	}
 	// Staleness markers (isStale) are exempt from the start-timestamp check because scrape and recording rules emit StaleNaN with st=0.
@@ -820,7 +820,7 @@ func (t *QueueManager) shouldDropFloatSampleForMode(ref chunks.HeadSeriesRef, st
 		if mType == model.MetricTypeCounter || (mType == model.MetricTypeSummary && (strings.HasSuffix(name, "_sum") || strings.HasSuffix(name, "_count"))) {
 			t.dataDropped.incr(1)
 			t.metrics.droppedSamplesTotal.WithLabelValues(reasonMissingStartTimestamp).Inc()
-			t.logger.Debug("Dropped sample without start timestamp; remote_write stateless-st mode requires start_timestamp for cumulative metrics; ensure the target exposes created timestamps, enable --enable-feature=st-synthesis, switch to stateless mode, or drop the series via write_relabel_configs", "mode", t.mode, "ref", ref, "series", lbls.String(), "type", mType)
+			t.logger.Debug("Dropped sample without start timestamp; remote_write stateless-st mode requires start_timestamp for cumulative metrics; ensure the target exposes created timestamps, enable --enable-feature=st-synthesis, switch to stateless mode, or drop the series via write_relabel_configs", "mode", t.mode, "ref", ref, "series", lbls, "type", mType)
 			return true
 		}
 	}
@@ -837,13 +837,13 @@ func (t *QueueManager) shouldDropHistogramForMode(ref chunks.HeadSeriesRef, st i
 	if mType != model.MetricTypeHistogram && mType != model.MetricTypeGaugeHistogram {
 		t.dataDropped.incr(1)
 		t.metrics.droppedHistogramsTotal.WithLabelValues(reasonMissingMetadataType).Inc()
-		t.logger.Debug("Dropped histogram with missing or non-histogram metadata type; remote_write mode requires histogram or gaugehistogram metadata type; ensure the target exposes histogram TYPE metadata or set __type__ via write_relabel_configs with --enable-feature=type-and-unit-labels", "mode", t.mode, "ref", ref, "series", lbls.String(), "type", mType)
+		t.logger.Debug("Dropped histogram with missing or non-histogram metadata type; remote_write mode requires histogram or gaugehistogram metadata type; ensure the target exposes histogram TYPE metadata or set __type__ via write_relabel_configs with --enable-feature=type-and-unit-labels", "mode", t.mode, "ref", ref, "series", lbls, "type", mType)
 		return true
 	}
 	if t.mode == remoteapi.WriteModeStatelessST && st == 0 && !isStale && mType == model.MetricTypeHistogram {
 		t.dataDropped.incr(1)
 		t.metrics.droppedHistogramsTotal.WithLabelValues(reasonMissingStartTimestamp).Inc()
-		t.logger.Debug("Dropped histogram without start timestamp; remote_write stateless-st mode requires start_timestamp for cumulative histograms; ensure the target exposes created timestamps, enable --enable-feature=st-synthesis, switch to stateless mode, or drop the series via write_relabel_configs", "mode", t.mode, "ref", ref, "series", lbls.String(), "type", mType)
+		t.logger.Debug("Dropped histogram without start timestamp; remote_write stateless-st mode requires start_timestamp for cumulative histograms; ensure the target exposes created timestamps, enable --enable-feature=st-synthesis, switch to stateless mode, or drop the series via write_relabel_configs", "mode", t.mode, "ref", ref, "series", lbls, "type", mType)
 		return true
 	}
 	return false
@@ -980,7 +980,7 @@ outer:
 			// https://github.com/prometheus/prometheus/pull/20070 coalesces exemplars onto matching TimeSeries in populateV2TimeSeries.
 			t.dataDropped.incr(1)
 			t.metrics.droppedExemplarsTotal.WithLabelValues(reasonDetachedExemplarNotAllowed).Inc()
-			t.logger.Debug("Dropped detached exemplar; remote_write mode requires exemplars to be attached to a series with samples or histograms", "mode", t.mode, "ref", e.Ref, "series", lbls.String())
+			t.logger.Debug("Dropped detached exemplar; remote_write mode requires exemplars to be attached to a series with samples or histograms", "mode", t.mode, "ref", e.Ref, "series", lbls)
 			continue
 		}
 		// This will only loop if the queues are being resharded.
