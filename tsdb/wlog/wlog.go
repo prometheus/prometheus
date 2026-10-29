@@ -192,6 +192,7 @@ type WL struct {
 	closed      bool // To allow calling Close() more than once without blocking.
 	compress    compression.Type
 	cEnc        compression.EncodeBuffer
+	flushFault  func(rec []byte, at FlushPoint) error // For testing.
 
 	WriteNotified WriteNotified
 
@@ -477,7 +478,7 @@ func (w *WL) Repair(origErr error) error {
 	// We expect an error here from r.Err(), so nothing to handle.
 
 	// We need to pad to the end of the last page in the repaired segment
-	if err := w.flushPage(true); err != nil {
+	if err := w.flushPage(true, FlushOther, nil); err != nil {
 		return fmt.Errorf("flush page in repair: %w", err)
 	}
 
@@ -528,13 +529,22 @@ func (w *WL) NextSegmentSync() (int, error) {
 // nextSegment creates the next segment and closes the previous one.
 // It returns the file number of the new file.
 func (w *WL) nextSegment(async bool) (int, error) {
+	return w.nextSegmentFor(async, nil)
+}
+
+// nextSegmentFor is nextSegment before logging rec, if rec is not nil.
+func (w *WL) nextSegmentFor(async bool, rec []byte) (int, error) {
 	if w.closed {
 		return 0, errors.New("wlog is closed")
 	}
 
 	// Only flush the current page if it actually holds data.
 	if w.page.alloc > 0 {
-		if err := w.flushPage(true); err != nil {
+		at := FlushOther
+		if rec != nil {
+			at = FlushBeforeRecord
+		}
+		if err := w.flushPage(true, at, rec); err != nil {
 			return 0, err
 		}
 	}
@@ -577,11 +587,60 @@ func (w *WL) setSegment(segment *Segment) error {
 	return nil
 }
 
+// FlushPoint identifies where a page flush happens relative to the record
+// being logged, if any.
+type FlushPoint int
+
+const (
+	// FlushOther is a flush outside Log, at segment rotation or Close.
+	FlushOther FlushPoint = iota
+	// FlushBeforeRecord happens before any of the record is copied. If it
+	// fails, nothing of the record is retained.
+	FlushBeforeRecord
+	// FlushWithinRecord happens when the page fills between two fragments of
+	// the record. If it fails, the record is torn.
+	FlushWithinRecord
+	// FlushAfterRecord happens once the whole record is copied. If it fails,
+	// the record is retained.
+	FlushAfterRecord
+)
+
+// SetFlushFault makes each page flush call fault first, with the record being
+// logged, if any, and the flush's position relative to it. A non-nil error
+// fails the flush without writing. A nil fault disables injection. It is meant
+// for tests.
+func (w *WL) SetFlushFault(fault func(rec []byte, at FlushPoint) error) {
+	w.mtx.Lock()
+	defer w.mtx.Unlock()
+	w.flushFault = fault
+}
+
+// retainedRecordError is a Log error after which the failed record is whole in
+// the page buffer.
+type retainedRecordError struct{ error }
+
+func (e retainedRecordError) Unwrap() error { return e.error }
+
+// RecordRetained reports whether err, returned by Log, left the failed record
+// whole in the page buffer. The next successful flush then writes it in its
+// place, ahead of any record logged after it.
+func RecordRetained(err error) bool {
+	_, ok := errors.AsType[retainedRecordError](err)
+	return ok
+}
+
 // flushPage writes the new contents of the page to disk. If no more records will fit into
 // the page, the remaining bytes will be set to zero and a new page will be started.
 // If forceClear is true, this is enforced regardless of how many bytes are left in the page.
-func (w *WL) flushPage(forceClear bool) error {
+// The flush is at position at relative to rec, the record being logged, if any.
+func (w *WL) flushPage(forceClear bool, at FlushPoint, rec []byte) error {
 	w.metrics.pageFlushes.Inc()
+
+	if w.flushFault != nil {
+		if err := w.flushFault(rec, at); err != nil {
+			return err
+		}
+	}
 
 	p := w.page
 	shouldClear := forceClear || p.full()
@@ -654,6 +713,11 @@ func (w *WL) pagesPerSegment() int {
 
 // Log writes the records into the log.
 // Multiple records can be passed at once to reduce writes and increase throughput.
+//
+// After an error, the records before the failed one are whole in the page
+// buffer or written. RecordRetained reports whether the failed record is whole
+// in the page buffer too. Otherwise none of it is retained, unless the failure
+// tore it between two pages, which corrupts the log.
 func (w *WL) Log(recs ...[]byte) error {
 	w.mtx.Lock()
 	defer w.mtx.Unlock()
@@ -676,7 +740,7 @@ func (w *WL) log(rec []byte, final bool) error {
 	// When the last page flush failed the page will remain full.
 	// When the page is full, need to flush it before trying to add more records to it.
 	if w.page.full() {
-		if err := w.flushPage(true); err != nil {
+		if err := w.flushPage(true, FlushBeforeRecord, rec); err != nil {
 			return err
 		}
 	}
@@ -708,7 +772,7 @@ func (w *WL) log(rec []byte, final bool) error {
 	left += (pageSize - recordHeaderSize) * (w.pagesPerSegment() - w.donePages - 1) // Free pages in the active segment.
 
 	if len(enc) > left {
-		if _, err := w.nextSegment(true); err != nil {
+		if _, err := w.nextSegmentFor(true, rec); err != nil {
 			return err
 		}
 	}
@@ -760,7 +824,14 @@ func (w *WL) log(rec []byte, final bool) error {
 		w.metrics.recordPartBytes.Add(float64(len(part) + recordHeaderSize))
 
 		if w.page.full() {
-			if err := w.flushPage(true); err != nil {
+			at := FlushWithinRecord
+			if l == len(enc) {
+				at = FlushAfterRecord
+			}
+			if err := w.flushPage(true, at, rec); err != nil {
+				if at == FlushAfterRecord {
+					return retainedRecordError{err}
+				}
 				// TODO When the flushing fails at this point and the record has not been
 				// fully written to the buffer, we end up with a corrupted WAL because some part of the
 				// record have been written to the buffer, while the rest of the record will be discarded.
@@ -772,8 +843,8 @@ func (w *WL) log(rec []byte, final bool) error {
 
 	// If it's the final record of the batch and the page is not empty, flush it.
 	if final && w.page.alloc > 0 {
-		if err := w.flushPage(false); err != nil {
-			return err
+		if err := w.flushPage(false, FlushAfterRecord, rec); err != nil {
+			return retainedRecordError{err}
 		}
 	}
 
@@ -851,7 +922,7 @@ func (w *WL) Close() (err error) {
 	// We must not flush an empty page as it would falsely signal
 	// the segment is done if we start writing to it again after opening.
 	if w.page.alloc > 0 {
-		if err := w.flushPage(true); err != nil {
+		if err := w.flushPage(true, FlushOther, nil); err != nil {
 			return err
 		}
 	}

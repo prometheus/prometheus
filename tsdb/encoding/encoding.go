@@ -207,7 +207,8 @@ func (d *Decbuf) UvarintBytes() []byte {
 	if d.E != nil {
 		return []byte{}
 	}
-	if len(d.B) < int(l) {
+	// Compare as uint64: converting l to int can wrap and pass the check.
+	if uint64(len(d.B)) < l {
 		d.E = ErrInvalidSize
 		return []byte{}
 	}

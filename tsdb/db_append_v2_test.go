@@ -1243,7 +1243,7 @@ func TestSizeRetention_AppendV2(t *testing.T) {
 			// Create a WAL checkpoint, and compare sizes.
 			first, last, err := wlog.Segments(db.Head().wal.Dir())
 			require.NoError(t, err)
-			_, err = wlog.Checkpoint(promslog.NewNopLogger(), db.Head().wal, first, last-1, func(chunks.HeadSeriesRef) bool { return false }, 0, enableSTStorage)
+			_, err = wlog.Checkpoint(promslog.NewNopLogger(), db.Head().wal, first, last-1, func(chunks.HeadSeriesRef) bool { return false }, 0, enableSTStorage, false)
 			require.NoError(t, err)
 			blockSize = int64(prom_testutil.ToFloat64(db.metrics.blocksBytes)) // Use the actual internal metrics.
 			walSize, err = db.Head().wal.Size()
@@ -3472,6 +3472,7 @@ func TestMetadataInWAL_AppenderV2(t *testing.T) {
 			samples      []sample
 			appendOpts   []storage.AOptions // One per sample.
 			wantMetadata []metadata.Metadata
+			wantNative   []NativeMetricMetadataVersion // Native metadata skips stale samples too.
 		}{
 			{
 				name:       "stale float",
@@ -3493,44 +3494,58 @@ func TestMetadataInWAL_AppenderV2(t *testing.T) {
 				samples:      []sample{{h: tsdbutil.GenerateTestHistogram(1)}, {f: staleNaN}},
 				appendOpts:   []storage.AOptions{{Metadata: m1}, {Metadata: m2, Exemplars: exemplarsAt(1)}},
 				wantMetadata: []metadata.Metadata{m1},
+				wantNative:   []NativeMetricMetadataVersion{{EffectiveFrom: 0, Metadata: m1}},
 			},
 			{
 				name:         "stale float after float histogram",
 				samples:      []sample{{fh: tsdbutil.GenerateTestFloatHistogram(1)}, {f: staleNaN}},
 				appendOpts:   []storage.AOptions{{Metadata: m1}, {Metadata: m2, Exemplars: exemplarsAt(1)}},
 				wantMetadata: []metadata.Metadata{m1},
+				wantNative:   []NativeMetricMetadataVersion{{EffectiveFrom: 0, Metadata: m1}},
 			},
 		} {
-			t.Run(tc.name, func(t *testing.T) {
-				opts := DefaultOptions()
-				opts.EnableMetadataWALRecords = true
-				opts.EnableExemplarStorage = true
-				opts.MaxExemplars = 10
-				db := newTestDB(t, withOpts(opts))
+			for _, native := range []bool{false, true} {
+				t.Run(fmt.Sprintf("%s/native=%t", tc.name, native), func(t *testing.T) {
+					opts := DefaultOptions()
+					opts.EnableMetadataWALRecords = !native
+					opts.EnableNativeMetadata = native
+					opts.EnableExemplarStorage = true
+					opts.MaxExemplars = 10
+					db := newTestDB(t, withOpts(opts))
 
-				app := db.AppenderV2(ctx)
-				for i, s := range tc.samples {
-					_, err := app.Append(0, s1, 0, int64(i), s.f, s.h, s.fh, tc.appendOpts[i])
-					require.NoError(t, err)
-				}
-				require.NoError(t, app.Commit())
-
-				var wantMetadata, gotMetadata []record.RefMetadata
-				for _, m := range tc.wantMetadata {
-					wantMetadata = append(wantMetadata, record.RefMetadata{Ref: 1, Type: record.GetMetricType(m.Type), Unit: m.Unit, Help: m.Help})
-				}
-				var gotExemplars []record.RefExemplar
-				for _, rec := range readTestWAL(t, path.Join(db.Dir(), "wal")) {
-					switch rec := rec.(type) {
-					case []record.RefMetadata:
-						gotMetadata = append(gotMetadata, rec...)
-					case []record.RefExemplar:
-						gotExemplars = append(gotExemplars, rec...)
+					app := db.AppenderV2(ctx)
+					for i, s := range tc.samples {
+						_, err := app.Append(0, s1, 0, int64(i), s.f, s.h, s.fh, tc.appendOpts[i])
+						require.NoError(t, err)
 					}
-				}
-				require.Equal(t, wantMetadata, gotMetadata)
-				require.Empty(t, gotExemplars)
-			})
+					require.NoError(t, app.Commit())
+
+					var wantMetadata, gotMetadata []record.RefMetadata
+					for _, m := range tc.wantMetadata {
+						wantMetadata = append(wantMetadata, record.RefMetadata{Ref: 1, Type: record.GetMetricType(m.Type), Unit: m.Unit, Help: m.Help})
+					}
+					var gotExemplars []record.RefExemplar
+					dec := record.NewDecoder(nil, nil)
+					for _, rec := range readWALRecords(t, path.Join(db.Dir(), "wal")) {
+						switch dec.Type(rec) {
+						case record.Metadata:
+							gotMetadata, err = dec.Metadata(rec, gotMetadata)
+							require.NoError(t, err)
+						case record.Exemplars:
+							gotExemplars, err = dec.Exemplars(rec, gotExemplars)
+							require.NoError(t, err)
+						}
+					}
+					if !native {
+						require.Equal(t, wantMetadata, gotMetadata)
+					} else {
+						require.Empty(t, gotMetadata)
+						gotNative, _, _ := db.head.nativeMetricMetadataForTest(1)
+						require.Equal(t, tc.wantNative, gotNative)
+					}
+					require.Empty(t, gotExemplars)
+				})
+			}
 		}
 	})
 }
@@ -3614,7 +3629,7 @@ func TestMetadataCheckpointingOnlyKeepsLatestEntry_AppendV2(t *testing.T) {
 			keep := func(id chunks.HeadSeriesRef) bool {
 				return id != 3
 			}
-			_, err = wlog.Checkpoint(promslog.NewNopLogger(), w, first, last-1, keep, 0, enableSTStorage)
+			_, err = wlog.Checkpoint(promslog.NewNopLogger(), w, first, last-1, keep, 0, enableSTStorage, false)
 			require.NoError(t, err)
 
 			// Confirm there's been a checkpoint.
@@ -3659,6 +3674,7 @@ func TestMetadataAssertInMemoryData_AppendV2(t *testing.T) {
 	s2 := labels.FromStrings("c", "d")
 	s3 := labels.FromStrings("e", "f")
 	s4 := labels.FromStrings("g", "h")
+	s5 := labels.FromStrings("i", "j") // Never gets metadata.
 
 	// Add a first round of metadata to the first three series.
 	// The in-memory data held in the db Head should hold the metadata.
@@ -3676,16 +3692,18 @@ func TestMetadataAssertInMemoryData_AppendV2(t *testing.T) {
 	require.NoError(t, err)
 	_, err = app.Append(0, s4, 0, ts, 0, nil, nil, storage.AOptions{})
 	require.NoError(t, err)
+	_, err = app.Append(0, s5, 0, ts, 0, nil, nil, storage.AOptions{})
+	require.NoError(t, err)
 	require.NoError(t, app.Commit())
 
 	series1 := db.head.series.getByHash(s1.Hash(), s1)
 	series2 := db.head.series.getByHash(s2.Hash(), s2)
 	series3 := db.head.series.getByHash(s3.Hash(), s3)
 	series4 := db.head.series.getByHash(s4.Hash(), s4)
-	require.Equal(t, series1.meta.Value(), m1)
-	require.Equal(t, series2.meta.Value(), m2)
-	require.Equal(t, series3.meta.Value(), m3)
-	require.True(t, metadata.IsZeroHandle(series4.meta))
+	require.Equal(t, *legacyMetadataForTest(series1), m1)
+	require.Equal(t, *legacyMetadataForTest(series2), m2)
+	require.Equal(t, *legacyMetadataForTest(series3), m3)
+	require.Nil(t, legacyMetadataForTest(series4))
 
 	// Add a replicated metadata entry to the first series,
 	// a changed metadata entry to the second series,
@@ -3707,16 +3725,16 @@ func TestMetadataAssertInMemoryData_AppendV2(t *testing.T) {
 	series2 = db.head.series.getByHash(s2.Hash(), s2)
 	series3 = db.head.series.getByHash(s3.Hash(), s3)
 	series4 = db.head.series.getByHash(s4.Hash(), s4)
-	require.Equal(t, series1.meta.Value(), m1)
-	require.Equal(t, series2.meta.Value(), m5)
-	require.Equal(t, series3.meta.Value(), m3)
-	require.Equal(t, series4.meta.Value(), m4)
+	require.Equal(t, *legacyMetadataForTest(series1), m1)
+	require.Equal(t, *legacyMetadataForTest(series2), m5)
+	require.Equal(t, *legacyMetadataForTest(series3), m3)
+	require.Equal(t, *legacyMetadataForTest(series4), m4)
 
 	require.NoError(t, db.Close())
 
 	// Reopen the DB, replaying the WAL. The Head must have been replayed
 	// correctly in memory.
-	reopenDB, err := Open(db.Dir(), nil, nil, nil, nil)
+	reopenDB, err := Open(db.Dir(), nil, nil, opts, nil)
 	require.NoError(t, err)
 	t.Cleanup(func() {
 		require.NoError(t, reopenDB.Close())
@@ -3725,10 +3743,12 @@ func TestMetadataAssertInMemoryData_AppendV2(t *testing.T) {
 	_, err = reopenDB.head.wal.Size()
 	require.NoError(t, err)
 
-	require.Equal(t, reopenDB.head.series.getByHash(s1.Hash(), s1).meta.Value(), m1)
-	require.Equal(t, reopenDB.head.series.getByHash(s2.Hash(), s2).meta.Value(), m5)
-	require.Equal(t, reopenDB.head.series.getByHash(s3.Hash(), s3).meta.Value(), m3)
-	require.Equal(t, reopenDB.head.series.getByHash(s4.Hash(), s4).meta.Value(), m4)
+	require.Equal(t, *legacyMetadataForTest(reopenDB.head.series.getByHash(s1.Hash(), s1)), m1)
+	require.Equal(t, *legacyMetadataForTest(reopenDB.head.series.getByHash(s2.Hash(), s2)), m5)
+	require.Equal(t, *legacyMetadataForTest(reopenDB.head.series.getByHash(s3.Hash(), s3)), m3)
+	require.Equal(t, *legacyMetadataForTest(reopenDB.head.series.getByHash(s4.Hash(), s4)), m4)
+
+	require.False(t, hasSidecarForTest(reopenDB.head.series.getByHash(s5.Hash(), s5)))
 }
 
 // TestMultipleEncodingsCommitOrder_AppendV2 mainly serves to demonstrate when happens when committing a batch of samples for the
