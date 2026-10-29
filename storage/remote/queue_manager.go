@@ -808,6 +808,8 @@ func (t *QueueManager) shouldDropFloatSampleForMode(ref chunks.HeadSeriesRef, st
 		t.logger.Debug("Dropped classic histogram float sample; remote_write mode requires structured native histograms; enable convert_classic_histograms_to_nhcb in scrape_config or drop the series via write_relabel_configs", "mode", t.mode, "ref", ref, "series", lbls, "type", mType)
 		return true
 	}
+	// TODO(bwplotka): Consider inferring metric type from the metric name as recommended by
+	// https://prometheus.io/docs/specs/prw/remote_write_spec_2_0/#stateless-mode.
 	if writev2.FromMetadataType(mType) == writev2.Metadata_METRIC_TYPE_UNSPECIFIED {
 		t.dataDropped.incr(1)
 		t.metrics.droppedSamplesTotal.WithLabelValues(reasonMissingMetadataType).Inc()
