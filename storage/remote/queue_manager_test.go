@@ -847,68 +847,71 @@ func TestShouldReshard(t *testing.T) {
 	}
 }
 
-// TestDisableReshardOnRetry asserts that resharding should be disabled when a
-// recoverable error is returned from remote_write.
-func TestDisableReshardOnRetry(t *testing.T) {
-	t.Parallel()
-	onStoredContext, onStoreCalled := context.WithCancel(context.Background())
-	defer onStoreCalled()
-
-	var (
-		recs = testwal.GenerateRecords(recCase{Series: 100, SamplesPerSeries: 100})
-
-		cfg        = config.DefaultQueueConfig
-		mcfg       = config.DefaultMetadataConfig
-		retryAfter = time.Second
-
-		metrics = newQueueManagerMetrics(nil, "", "")
-
-		client = &MockWriteClient{
-			StoreFunc: func(context.Context, []byte, int) (WriteResponseStats, error) {
-				onStoreCalled()
-
-				return WriteResponseStats{}, RecoverableError{
-					error:      errors.New("fake error"),
-					retryAfter: model.Duration(retryAfter),
+func TestDisableReshardWhileRetrying(t *testing.T) {
+	permanentErr := errors.New("non-recoverable error")
+	for _, tc := range []struct {
+		name string
+		err  error
+	}{
+		{name: "success"},
+		{name: "permanent error", err: permanentErr},
+		{name: "cancellation", err: context.Canceled},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			synctest.Test(t, func(t *testing.T) {
+				m := &QueueManager{
+					cfg:       config.DefaultQueueConfig,
+					logger:    promslog.NewNopLogger(),
+					numShards: 2,
 				}
-			},
-			NameFunc:     func() string { return "mock" },
-			EndpointFunc: func() string { return "http://fake:9090/api/v1/write" },
-		}
-	)
+				const requests = 2
+				var release [requests]chan struct{}
+				var cancel [requests]context.CancelFunc
+				results := make(chan error, requests)
+				for i := range requests {
+					release[i] = make(chan struct{})
+					var ctx context.Context
+					ctx, cancel[i] = context.WithCancel(t.Context())
+					defer cancel[i]()
+					go func() {
+						results <- m.sendWriteRequestWithBackoff(ctx, func(attempt int) error {
+							if attempt < 2 {
+								return RecoverableError{error: errors.New("temporary error"), retryAfter: model.Duration(time.Second)}
+							}
+							select {
+							case <-ctx.Done():
+								return ctx.Err()
+							case <-release[i]:
+								return tc.err
+							}
+						}, func() {})
+					}()
+				}
+				synctest.Wait()
 
-	m := NewQueueManager(metrics, nil, nil, nil, "", newEWMARate(ewmaWeight, shardUpdateDuration), cfg, mcfg, labels.EmptyLabels(), nil, client, 0, newPool(), newHighestTimestampMetric(), nil, false, false, false, remoteapi.WriteV1MessageType, nil, false, false)
-	m.StoreSeries(recs.Series, 0)
+				// The retry backoff and its resharding cooldown expire while the
+				// next requests are still in flight.
+				time.Sleep(4 * time.Second)
+				synctest.Wait()
+				// A different shard may still send successfully during the outage.
+				m.lastSendTimestamp.Store(time.Now().Unix())
+				require.False(t, m.shouldReshard(3))
 
-	// Attempt to samples while the manager is running. We immediately stop the
-	// manager after the recoverable error is generated to prevent the manager
-	// from resharding itself.
-	m.Start()
-	{
-		m.Append(recs.Samples)
-
-		select {
-		case <-onStoredContext.Done():
-		case <-time.After(time.Minute):
-			require.FailNow(t, "timed out waiting for client to be sent metrics")
-		}
+				for i := range requests {
+					if errors.Is(tc.err, context.Canceled) {
+						cancel[i]()
+					} else {
+						close(release[i])
+					}
+					synctest.Wait()
+					require.ErrorIs(t, <-results, tc.err)
+					// Finishing one retrying request must not enable resharding
+					// while another request is still retrying.
+					require.Equal(t, i == requests-1, m.shouldReshard(3))
+				}
+			})
+		})
 	}
-	m.Stop()
-
-	require.Eventually(t, func() bool {
-		// Force m.lastSendTimestamp to be current so the last send timestamp isn't
-		// the reason resharding is disabled.
-		m.lastSendTimestamp.Store(time.Now().Unix())
-		return m.shouldReshard(m.numShards+1) == false
-	}, time.Minute, 10*time.Millisecond, "shouldReshard was never disabled")
-
-	// After 2x retryAfter, resharding should be enabled again.
-	require.Eventually(t, func() bool {
-		// Force m.lastSendTimestamp to be current so the last send timestamp isn't
-		// the reason resharding is disabled.
-		m.lastSendTimestamp.Store(time.Now().Unix())
-		return m.shouldReshard(m.numShards+1) == true
-	}, time.Minute, retryAfter, "shouldReshard should have been re-enabled")
 }
 
 func createProtoTimeseriesWithOld(numSamples, baseTs int64) []prompb.TimeSeries {
