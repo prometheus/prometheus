@@ -109,6 +109,7 @@ func init() {
 type Client struct {
 	remoteName string // Used to differentiate clients in metrics.
 	urlString  string // url.String()
+	endpoint   string // url.Redacted(), used in logs, traces, errors and metrics.
 	Client     *http.Client
 	timeout    time.Duration
 
@@ -166,16 +167,19 @@ func NewReadClient(name string, conf *ClientConfig, optFuncs ...config_util.HTTP
 		acceptedResponseTypes = AcceptedResponseTypes
 	}
 
+	// Redacted to remove any passwords in the URL.
+	redactedURL := conf.URL.Redacted()
 	return &Client{
 		remoteName:            name,
 		urlString:             conf.URL.String(),
+		endpoint:              redactedURL,
 		Client:                httpClient,
 		timeout:               time.Duration(conf.Timeout),
 		chunkedReadLimit:      conf.ChunkedReadLimit,
 		acceptedResponseTypes: acceptedResponseTypes,
-		readQueries:           remoteReadQueries.WithLabelValues(name, conf.URL.String()),
-		readQueriesTotal:      remoteReadQueriesTotal.MustCurryWith(prometheus.Labels{remoteName: name, endpoint: conf.URL.String()}),
-		readQueriesDuration:   remoteReadQueryDuration.MustCurryWith(prometheus.Labels{remoteName: name, endpoint: conf.URL.String()}),
+		readQueries:           remoteReadQueries.WithLabelValues(name, redactedURL),
+		readQueriesTotal:      remoteReadQueriesTotal.MustCurryWith(prometheus.Labels{remoteName: name, endpoint: redactedURL}),
+		readQueriesDuration:   remoteReadQueryDuration.MustCurryWith(prometheus.Labels{remoteName: name, endpoint: redactedURL}),
 	}, nil
 }
 
@@ -230,6 +234,7 @@ func NewWriteClient(name string, conf *ClientConfig) (WriteClient, error) {
 	return &Client{
 		remoteName:       name,
 		urlString:        conf.URL.String(),
+		endpoint:         conf.URL.Redacted(),
 		Client:           httpClient,
 		retryOnRateLimit: conf.RetryOnRateLimit,
 		timeout:          time.Duration(conf.Timeout),
@@ -347,9 +352,9 @@ func (c *Client) Name() string {
 	return c.remoteName
 }
 
-// Endpoint is the remote read or write endpoint.
+// Endpoint is the remote read or write endpoint, with any password in the URL redacted.
 func (c *Client) Endpoint() string {
-	return c.urlString
+	return c.endpoint
 }
 
 // Read reads from a remote endpoint. The sortSeries parameter is only respected in the case of a samples response;
@@ -423,7 +428,7 @@ func (c *Client) handleReadResponse(httpResp *http.Response, req *prompb.ReadReq
 		cancel()
 		errStr := strings.Trim(string(body), "\n")
 		err := errors.New(errStr)
-		return nil, fmt.Errorf("remote server %s returned http status %s: %w", c.urlString, httpResp.Status, err)
+		return nil, fmt.Errorf("remote server %s returned http status %s: %w", c.endpoint, httpResp.Status, err)
 	}
 
 	contentType := httpResp.Header.Get("Content-Type")
