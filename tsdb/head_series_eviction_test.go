@@ -327,8 +327,18 @@ func TestSeriesEviction_QueryOpenedAfterWaitingForReaders(t *testing.T) {
 						db.Head().SetMinValidTime(200)
 					}
 					if tt.wrapChunkIDs {
+						// A sample in the next chunk range gives the series a second chunk. It is a stale marker, to
+						// keep the series evictable by CompactStaleHead.
+						app := db.Appender(context.Background())
+						_, err := app.Append(testDB.evictedRefs[0], evictionTestLabels(0), 1000, math.Float64frombits(value.StaleNaN))
+						require.NoError(t, err)
+						require.NoError(t, app.Commit())
+
+						// The first chunk has the last chunk ID, so the ID of the second chunk wraps to 0, which is
+						// lower than the ID of the first chunk.
 						s := db.Head().series.getByID(chunks.HeadSeriesRef(testDB.evictedRefs[0]))
 						s.Lock()
+						require.Equal(t, 2, int(s.headChunkCount.Load()), "the series must have two chunks")
 						s.firstChunkID = oooChunkIDMask - 1
 						s.Unlock()
 					}
@@ -379,11 +389,17 @@ func TestSeriesEviction_QueryOpenedAfterWaitingForReaders(t *testing.T) {
 					// The samples of the evicted series are read after the series were removed from the head,
 					// and must be served from the block.
 					require.NotNil(t, reading)
-					require.Equal(t, evictionTestExpectedSamples(tt.lateSeries...), reading.mustRead(t))
+					expectedSamples := evictionTestExpectedSamples(tt.lateSeries...)
+					expectedSkippedChunks := evictionTestEvictedSeries - len(tt.lateSeries)
+					if tt.wrapChunkIDs {
+						expectedSamples[evictionTestLabels(0).String()]++ // The sample of the second chunk.
+						expectedSkippedChunks++
+					}
+					require.Equal(t, expectedSamples, reading.mustRead(t))
 					require.NoError(t, reading.close())
 
 					// Each persisted series has one chunk, whose read was skipped unless a late sample kept it.
-					require.Equal(t, float64(evictionTestEvictedSeries-len(tt.lateSeries)), prom_testutil.ToFloat64(db.Head().metrics.chunkReadsOfRemovedSeries))
+					require.Equal(t, float64(expectedSkippedChunks), prom_testutil.ToFloat64(db.Head().metrics.chunkReadsOfRemovedSeries))
 					if tt.appendAfterEviction {
 						current := c.openQuery(t, db, c.mint, c.maxt)
 						require.Equal(t, evictionTestExpectedSamples(0), current.mustRead(t))
@@ -655,7 +671,7 @@ func (b *beforeRemoval) require(t *testing.T) {
 //
 // The readers of queries skip the chunks of a series that is being evicted, because they read the block too.
 // That is correct only if the block is added to the DB before the series are removed. See
-// headChunkReader.tolerateRemovedSeries. This test fails if that order is changed.
+// headChunkReader.evicting. This test fails if that order is changed.
 func TestSeriesRemoval_BlockIsAddedBeforeSeriesAreRemoved(t *testing.T) {
 	for name, evict := range evictionTestEvictions() {
 		t.Run(name, func(t *testing.T) {
