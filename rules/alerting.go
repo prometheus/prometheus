@@ -27,6 +27,7 @@ import (
 	"go.uber.org/atomic"
 	"go.yaml.in/yaml/v2"
 
+	internaltemplate "github.com/prometheus/prometheus/internal/template"
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/model/rulefmt"
 	"github.com/prometheus/prometheus/model/timestamp"
@@ -44,6 +45,8 @@ const (
 
 	// AlertStateLabel is the label name indicating the state of an alert.
 	alertStateLabel = "alertstate"
+
+	alertTemplateDefinitions = "{{$labels := .Labels}}{{$externalLabels := .ExternalLabels}}{{$externalURL := .ExternalURL}}{{$value := .Value}}"
 )
 
 // ErrDuplicateAlertLabelSet is returned when an alerting rule evaluation produces
@@ -399,49 +402,49 @@ func (r *AlertingRule) Eval(ctx context.Context, queryOffset time.Duration, ts t
 	sb := labels.NewScratchBuilder(0)
 	var vec promql.Vector
 	alerts := make(map[uint64]*Alert, len(res))
+	var (
+		templateFuncs       internaltemplate.FuncMap
+		labelTemplates      map[string]*internaltemplate.BoundTemplate
+		annotationTemplates map[string]*internaltemplate.BoundTemplate
+	)
+	expand := func(templates map[string]*internaltemplate.BoundTemplate, fieldName, text string, data any) string {
+		if templateFuncs == nil {
+			templateFuncs = internaltemplate.NewFuncMap(ctx, model.Time(timestamp.FromTime(ts)), template.QueryFunc(query), externalURL)
+		}
+		bound, ok := templates[fieldName]
+		if !ok {
+			bound = internaltemplate.CompileBoundTemplate("__alert_"+r.Name(), alertTemplateDefinitions+text, templateFuncs, nil)
+			templates[fieldName] = bound
+		}
+		result, err := internaltemplate.ExpandBoundTemplate(bound, data)
+		if err != nil {
+			result = fmt.Sprintf("<error expanding template: %s>", err)
+			r.logger.Warn("Expanding alert template failed", "err", err, "data", data)
+		}
+		return result
+	}
 	for _, smpl := range res {
 		// Provide the alert information to the template.
 		l := smpl.Metric.Map()
 
 		tmplData := template.AlertTemplateData(l, r.externalLabels, r.externalURL, smpl)
-		// Inject some convenience variables that are easier to remember for users
-		// who are not used to Go's templating system.
-		defs := []string{
-			"{{$labels := .Labels}}",
-			"{{$externalLabels := .ExternalLabels}}",
-			"{{$externalURL := .ExternalURL}}",
-			"{{$value := .Value}}",
+		if r.labels.Len() > 0 && labelTemplates == nil {
+			labelTemplates = make(map[string]*internaltemplate.BoundTemplate, r.labels.Len())
 		}
-
-		expand := func(text string) string {
-			tmpl := template.NewTemplateExpander(
-				ctx,
-				strings.Join(append(defs, text), ""),
-				"__alert_"+r.Name(),
-				tmplData,
-				model.Time(timestamp.FromTime(ts)),
-				template.QueryFunc(query),
-				externalURL,
-				nil,
-			)
-			result, err := tmpl.Expand()
-			if err != nil {
-				result = fmt.Sprintf("<error expanding template: %s>", err)
-				r.logger.Warn("Expanding alert template failed", "err", err, "data", tmplData)
-			}
-			return result
+		if r.annotations.Len() > 0 && annotationTemplates == nil {
+			annotationTemplates = make(map[string]*internaltemplate.BoundTemplate, r.annotations.Len())
 		}
 
 		lb.Reset(smpl.Metric)
 		lb.Del(labels.MetricName)
 		r.labels.Range(func(l labels.Label) {
-			lb.Set(l.Name, expand(l.Value))
+			lb.Set(l.Name, expand(labelTemplates, l.Name, l.Value, tmplData))
 		})
 		lb.Set(labels.AlertName, r.Name())
 
 		sb.Reset()
 		r.annotations.Range(func(a labels.Label) {
-			sb.Add(a.Name, expand(a.Value))
+			sb.Add(a.Name, expand(annotationTemplates, a.Name, a.Value, tmplData))
 		})
 		annotations := sb.Labels()
 
