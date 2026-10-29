@@ -504,3 +504,98 @@ func TestWriteStorage_AppenderV2_AppendExemplars(t *testing.T) {
 	require.Equal(t, before+3, prom_testutil.ToFloat64(exemplarsIn))
 	require.Equal(t, float64(now/1000), s.highestTimestamp.Get())
 }
+
+// TestWriteStorageApplyConfig_V2DefaultsToNativeHistograms walks the real
+// configuration path: a remote-write entry using
+// io.prometheus.write.v2.Request with send_native_histograms unset must produce
+// a queue manager that forwards native histograms.
+func TestWriteStorageApplyConfig_V2DefaultsToNativeHistograms(t *testing.T) {
+	dir := t.TempDir()
+
+	rwCfg := &config.RemoteWriteConfig{
+		Name: "v2",
+		URL: &common_config.URL{
+			URL: &url.URL{Scheme: "http", Host: "localhost"},
+		},
+		QueueConfig:     config.DefaultQueueConfig,
+		MetadataConfig:  config.DefaultMetadataConfig,
+		ProtobufMessage: remoteapi.WriteV2MessageType,
+		// SendNativeHistograms left unset: RW2 defaults to true.
+	}
+
+	hash, err := toHash(rwCfg)
+	require.NoError(t, err)
+
+	s := NewWriteStorage(nil, nil, dir, time.Millisecond, nil, false)
+	require.NoError(t, s.ApplyConfig(&config.Config{
+		GlobalConfig:       config.DefaultGlobalConfig,
+		RemoteWriteConfigs: []*config.RemoteWriteConfig{rwCfg},
+	}))
+
+	qm, ok := s.queues[hash]
+	require.True(t, ok, "queue manager was not created")
+	require.Equal(t, remoteapi.WriteV2MessageType, qm.protoMsg)
+	require.True(t, qm.sendNativeHistograms,
+		"RW2 must forward native histograms when send_native_histograms is unset")
+
+	require.NoError(t, s.Close())
+}
+
+// An explicit false must override the RW2 default.
+func TestWriteStorageApplyConfig_V2ExplicitFalseDisablesNativeHistograms(t *testing.T) {
+	rwCfg := &config.RemoteWriteConfig{
+		Name: "v2",
+		URL: &common_config.URL{
+			URL: &url.URL{Scheme: "http", Host: "localhost"},
+		},
+		QueueConfig:     config.DefaultQueueConfig,
+		MetadataConfig:  config.DefaultMetadataConfig,
+		ProtobufMessage: remoteapi.WriteV2MessageType,
+	}
+	rwCfg.SetSendNativeHistograms(false)
+
+	hash, err := toHash(rwCfg)
+	require.NoError(t, err)
+
+	s := NewWriteStorage(nil, nil, t.TempDir(), time.Millisecond, nil, false)
+	require.NoError(t, s.ApplyConfig(&config.Config{
+		GlobalConfig:       config.DefaultGlobalConfig,
+		RemoteWriteConfigs: []*config.RemoteWriteConfig{rwCfg},
+	}))
+
+	qm, ok := s.queues[hash]
+	require.True(t, ok, "queue manager was not created")
+	require.False(t, qm.sendNativeHistograms,
+		"an explicit send_native_histograms: false must disable native histograms for RW2")
+
+	require.NoError(t, s.Close())
+}
+
+// Same configuration with RW1 keeps honouring the option.
+func TestWriteStorageApplyConfig_V1HonoursSendNativeHistograms(t *testing.T) {
+	dir := t.TempDir()
+
+	rwCfg := &config.RemoteWriteConfig{
+		Name: "v1",
+		URL: &common_config.URL{
+			URL: &url.URL{Scheme: "http", Host: "localhost"},
+		},
+		QueueConfig:     config.DefaultQueueConfig,
+		MetadataConfig:  config.DefaultMetadataConfig,
+		ProtobufMessage: remoteapi.WriteV1MessageType,
+	}
+	hash, err := toHash(rwCfg)
+	require.NoError(t, err)
+
+	s := NewWriteStorage(nil, nil, dir, time.Millisecond, nil, false)
+	require.NoError(t, s.ApplyConfig(&config.Config{
+		GlobalConfig:       config.DefaultGlobalConfig,
+		RemoteWriteConfigs: []*config.RemoteWriteConfig{rwCfg},
+	}))
+
+	qm, ok := s.queues[hash]
+	require.True(t, ok)
+	require.False(t, qm.sendNativeHistograms, "RW1 must keep honouring send_native_histograms")
+
+	require.NoError(t, s.Close())
+}

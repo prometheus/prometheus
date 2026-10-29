@@ -215,7 +215,7 @@ func (rws *WriteStorage) ApplyConfig(conf *config.Config) error {
 			rws.highestTimestamp,
 			rws.scraper,
 			rwConf.SendExemplars,
-			rwConf.SendNativeHistograms,
+			rwConf.SendNativeHistogramsEnabled(),
 			rws.enableTypeAndUnitLabels,
 			rwConf.ProtobufMessage,
 			rws.recordBuf,
