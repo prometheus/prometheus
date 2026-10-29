@@ -16,6 +16,7 @@ package parser
 import (
 	"errors"
 	"fmt"
+	"maps"
 	"math"
 	"strings"
 	"testing"
@@ -52,6 +53,7 @@ var testExpr = []struct {
 	expected Expr        // The expected expression AST.
 	fail     bool        // Whether parsing is supposed to fail.
 	errors   ParseErrors // The errors that should be returned.
+	printed  string      // For failing cases, the String() of the partially-built AST; empty skips the check.
 }{
 	// Scalars and scalar-to-scalar operations.
 	{
@@ -1714,6 +1716,81 @@ var testExpr = []struct {
 		},
 	},
 	{
+		input: "foo offset +(5)",
+		expected: &VectorSelector{
+			Name: "foo",
+			LabelMatchers: []*labels.Matcher{
+				MustLabelMatcher(labels.MatchEqual, model.MetricNameLabel, "foo"),
+			},
+			PosRange: posrange.PositionRange{Start: 0, End: 15},
+			OriginalOffsetExpr: &DurationExpr{
+				Op:       ADD,
+				RHS:      &NumberLiteral{Val: 5, PosRange: posrange.PositionRange{Start: 13, End: 14}},
+				Wrapped:  true,
+				StartPos: 13,
+				EndPos:   14,
+			},
+		},
+	},
+	{
+		input: "foo offset -(5)",
+		expected: &VectorSelector{
+			Name: "foo",
+			LabelMatchers: []*labels.Matcher{
+				MustLabelMatcher(labels.MatchEqual, model.MetricNameLabel, "foo"),
+			},
+			PosRange: posrange.PositionRange{Start: 0, End: 15},
+			OriginalOffsetExpr: &DurationExpr{
+				Op:       SUB,
+				StartPos: 11,
+				RHS: &DurationExpr{
+					Op:       ADD,
+					RHS:      &NumberLiteral{Val: 5, PosRange: posrange.PositionRange{Start: 13, End: 14}},
+					Wrapped:  true,
+					StartPos: 13,
+					EndPos:   14,
+				},
+			},
+		},
+	},
+	{
+		input: "foo offset (5)",
+		expected: &VectorSelector{
+			Name: "foo",
+			LabelMatchers: []*labels.Matcher{
+				MustLabelMatcher(labels.MatchEqual, model.MetricNameLabel, "foo"),
+			},
+			PosRange: posrange.PositionRange{Start: 0, End: 14},
+			OriginalOffsetExpr: &DurationExpr{
+				Op:       ADD,
+				RHS:      &NumberLiteral{Val: 5, PosRange: posrange.PositionRange{Start: 12, End: 13}},
+				Wrapped:  true,
+				StartPos: 11,
+				EndPos:   14,
+			},
+		},
+	},
+	{
+		input: "foo[(5s)]",
+		expected: &MatrixSelector{
+			VectorSelector: &VectorSelector{
+				Name: "foo",
+				LabelMatchers: []*labels.Matcher{
+					MustLabelMatcher(labels.MatchEqual, model.MetricNameLabel, "foo"),
+				},
+				PosRange: posrange.PositionRange{Start: 0, End: 3},
+			},
+			RangeExpr: &DurationExpr{
+				Op:       ADD,
+				RHS:      &NumberLiteral{Val: 5, Duration: true, PosRange: posrange.PositionRange{Start: 5, End: 7}},
+				Wrapped:  true,
+				StartPos: 4,
+				EndPos:   8,
+			},
+			EndPos: 9,
+		},
+	},
+	{
 		input: `http_requests{group="production"} + on(instance) group_left(job,instance) cpu_count{type="smp"}`,
 		fail:  true,
 		errors: ParseErrors{
@@ -2319,6 +2396,17 @@ var testExpr = []struct {
 			},
 		},
 	},
+	{
+		input: `foo{a="b",c=~"[a-z"}`,
+		fail:  true,
+		errors: ParseErrors{
+			ParseErr{
+				PositionRange: posrange.PositionRange{Start: 10, End: 19},
+				Err:           errors.New("error parsing regexp: missing closing ]: `[a-z`"),
+				Query:         `foo{a="b",c=~"[a-z"}`,
+			},
+		},
+	},
 	// Test matrix selector.
 	{
 		input: "test[1000ms]",
@@ -2782,6 +2870,39 @@ var testExpr = []struct {
 		},
 	},
 	{
+		input: `some_metric @ start() [5m]`,
+		fail:  true,
+		errors: ParseErrors{
+			ParseErr{
+				PositionRange: posrange.PositionRange{Start: 22, End: 26},
+				Err:           errors.New("no @ modifiers allowed before range"),
+				Query:         `some_metric @ start() [5m]`,
+			},
+		},
+	},
+	{
+		input: `some_metric @ end()[5m]`,
+		fail:  true,
+		errors: ParseErrors{
+			ParseErr{
+				PositionRange: posrange.PositionRange{Start: 19, End: 23},
+				Err:           errors.New("no @ modifiers allowed before range"),
+				Query:         `some_metric @ end()[5m]`,
+			},
+		},
+	},
+	{
+		input: `some_metric offset step()[5m]`,
+		fail:  true,
+		errors: ParseErrors{
+			ParseErr{
+				PositionRange: posrange.PositionRange{Start: 25, End: 29},
+				Err:           errors.New("no offset modifiers allowed before range"),
+				Query:         `some_metric offset step()[5m]`,
+			},
+		},
+	},
+	{
 		input: `(foo + bar)[5m]`,
 		fail:  true,
 		errors: ParseErrors{
@@ -3122,8 +3243,9 @@ var testExpr = []struct {
 		},
 	},
 	{
-		input: `sum () by (test)`,
-		fail:  true,
+		input:   `sum () by (test)`,
+		fail:    true,
+		printed: `sum by (test) ()`,
 		errors: ParseErrors{
 			ParseErr{
 				PositionRange: posrange.PositionRange{Start: 0, End: 16},
@@ -3177,8 +3299,9 @@ var testExpr = []struct {
 		},
 	},
 	{
-		input: `topk(some_metric)`,
-		fail:  true,
+		input:   `topk(some_metric)`,
+		fail:    true,
+		printed: `topk(some_metric)`,
 		errors: ParseErrors{
 			ParseErr{
 				PositionRange: posrange.PositionRange{Start: 0, End: 17},
@@ -3188,8 +3311,9 @@ var testExpr = []struct {
 		},
 	},
 	{
-		input: `topk(some_metric,)`,
-		fail:  true,
+		input:   `topk(some_metric,)`,
+		fail:    true,
+		printed: `topk(some_metric)`,
 		errors: ParseErrors{
 			ParseErr{
 				PositionRange: posrange.PositionRange{Start: 16, End: 17},
@@ -3385,8 +3509,9 @@ var testExpr = []struct {
 		},
 	},
 	{
-		input: "non_existent_function_far_bar()",
-		fail:  true,
+		input:   "non_existent_function_far_bar()",
+		fail:    true,
+		printed: `non_existent_function_far_bar()`,
 		errors: ParseErrors{
 			ParseErr{
 				PositionRange: posrange.PositionRange{Start: 0, End: 29},
@@ -3468,8 +3593,9 @@ var testExpr = []struct {
 		},
 	},
 	{
-		input: "a>b()",
-		fail:  true,
+		input:   "a>b()",
+		fail:    true,
+		printed: `a > b()`,
 		errors: ParseErrors{
 			ParseErr{
 				PositionRange: posrange.PositionRange{Start: 2, End: 3},
@@ -4389,6 +4515,41 @@ var testExpr = []struct {
 		},
 	},
 	{
+		input: `info(http_request_counter_total{namespace="zzz"}, {})`,
+		fail:  true,
+		errors: ParseErrors{
+			ParseErr{
+				PositionRange: posrange.PositionRange{Start: 50, End: 52},
+				Err:           errors.New("data label selector must contain at least one label matcher"),
+				Query:         `info(http_request_counter_total{namespace="zzz"}, {})`,
+			},
+		},
+	},
+	{
+		input: `info(http_request_counter_total{namespace="zzz"}, {data!="foo"})`,
+		expected: &Call{
+			Func: MustGetFunction("info"),
+			Args: Expressions{
+				&VectorSelector{
+					Name: "http_request_counter_total",
+					LabelMatchers: []*labels.Matcher{
+						MustLabelMatcher(labels.MatchEqual, "namespace", "zzz"),
+						MustLabelMatcher(labels.MatchEqual, model.MetricNameLabel, "http_request_counter_total"),
+					},
+					PosRange: posrange.PositionRange{Start: 5, End: 48},
+				},
+				&VectorSelector{
+					LabelMatchers: []*labels.Matcher{
+						MustLabelMatcher(labels.MatchNotEqual, "data", "foo"),
+					},
+					PosRange:                posrange.PositionRange{Start: 50, End: 63},
+					BypassEmptyMatcherCheck: true,
+				},
+			},
+			PosRange: posrange.PositionRange{Start: 0, End: 64},
+		},
+	},
+	{
 		input: `info(http_request_counter_total{namespace="zzz"}, {foo="bar"} == 1)`,
 		fail:  true,
 		errors: ParseErrors{
@@ -4610,7 +4771,7 @@ var testExpr = []struct {
 		},
 	},
 	{
-		input: `foo[max(step(),5s)]`,
+		input: `foo[max_of(step(),5s)]`,
 		expected: &MatrixSelector{
 			VectorSelector: &VectorSelector{
 				Name: "foo",
@@ -4620,84 +4781,125 @@ var testExpr = []struct {
 				PosRange: posrange.PositionRange{Start: 0, End: 3},
 			},
 			RangeExpr: &DurationExpr{
-				Op: MAX,
+				Op: MAX_OF,
 				LHS: &DurationExpr{
 					Op:       STEP,
-					StartPos: 8,
-					EndPos:   14,
+					StartPos: 11,
+					EndPos:   17,
 				},
 				RHS: &NumberLiteral{
 					Val:      5,
 					Duration: true,
-					PosRange: posrange.PositionRange{Start: 15, End: 17},
+					PosRange: posrange.PositionRange{Start: 18, End: 20},
 				},
 				StartPos: 4,
+				EndPos:   21,
+			},
+			EndPos: 22,
+		},
+	},
+	{
+		input: `foo offset max_of(step(),5s)`,
+		expected: &VectorSelector{
+			Name: "foo",
+			LabelMatchers: []*labels.Matcher{
+				MustLabelMatcher(labels.MatchEqual, model.MetricNameLabel, "foo"),
+			},
+			PosRange: posrange.PositionRange{Start: 0, End: 28},
+			OriginalOffsetExpr: &DurationExpr{
+				Op: MAX_OF,
+				LHS: &DurationExpr{
+					Op:       STEP,
+					StartPos: 18,
+					EndPos:   24,
+				},
+				RHS: &NumberLiteral{
+					Val:      5,
+					Duration: true,
+					PosRange: posrange.PositionRange{Start: 25, End: 27},
+				},
+				StartPos: 11,
+				EndPos:   28,
+			},
+		},
+	},
+	{
+		input: `foo offset -min_of(5s,step()+8s)`,
+		expected: &VectorSelector{
+			Name: "foo",
+			LabelMatchers: []*labels.Matcher{
+				MustLabelMatcher(labels.MatchEqual, model.MetricNameLabel, "foo"),
+			},
+			PosRange: posrange.PositionRange{Start: 0, End: 32},
+			OriginalOffsetExpr: &DurationExpr{
+				Op: SUB,
+				RHS: &DurationExpr{
+					Op: MIN_OF,
+					LHS: &NumberLiteral{
+						Val:      5,
+						Duration: true,
+						PosRange: posrange.PositionRange{Start: 19, End: 21},
+					},
+					RHS: &DurationExpr{
+						Op: ADD,
+						LHS: &DurationExpr{
+							Op:       STEP,
+							StartPos: 22,
+							EndPos:   28,
+						},
+						RHS: &NumberLiteral{
+							Val:      8,
+							Duration: true,
+							PosRange: posrange.PositionRange{Start: 29, End: 31},
+						},
+					},
+					StartPos: 12,
+					EndPos:   32,
+				},
+				StartPos: 11,
+				EndPos:   32,
+			},
+		},
+	},
+	{
+		input: `foo[range():step()]`,
+		expected: &SubqueryExpr{
+			Expr: &VectorSelector{
+				Name: "foo",
+				LabelMatchers: []*labels.Matcher{
+					MustLabelMatcher(labels.MatchEqual, model.MetricNameLabel, "foo"),
+				},
+				PosRange: posrange.PositionRange{Start: 0, End: 3},
+			},
+			RangeExpr: &DurationExpr{
+				Op:       RANGE,
+				StartPos: 4,
+				EndPos:   11,
+			},
+			StepExpr: &DurationExpr{
+				Op:       STEP,
+				StartPos: 12,
 				EndPos:   18,
 			},
 			EndPos: 19,
 		},
 	},
 	{
-		input: `foo offset max(step(),5s)`,
-		expected: &VectorSelector{
-			Name: "foo",
-			LabelMatchers: []*labels.Matcher{
-				MustLabelMatcher(labels.MatchEqual, model.MetricNameLabel, "foo"),
-			},
-			PosRange: posrange.PositionRange{Start: 0, End: 25},
-			OriginalOffsetExpr: &DurationExpr{
-				Op: MAX,
-				LHS: &DurationExpr{
-					Op:       STEP,
-					StartPos: 15,
-					EndPos:   21,
+		input: `foo[step():]`,
+		expected: &SubqueryExpr{
+			Expr: &VectorSelector{
+				Name: "foo",
+				LabelMatchers: []*labels.Matcher{
+					MustLabelMatcher(labels.MatchEqual, model.MetricNameLabel, "foo"),
 				},
-				RHS: &NumberLiteral{
-					Val:      5,
-					Duration: true,
-					PosRange: posrange.PositionRange{Start: 22, End: 24},
-				},
-				StartPos: 11,
-				EndPos:   25,
+				PosRange: posrange.PositionRange{Start: 0, End: 3},
 			},
-		},
-	},
-	{
-		input: `foo offset -min(5s,step()+8s)`,
-		expected: &VectorSelector{
-			Name: "foo",
-			LabelMatchers: []*labels.Matcher{
-				MustLabelMatcher(labels.MatchEqual, model.MetricNameLabel, "foo"),
+			RangeExpr: &DurationExpr{
+				Op:       STEP,
+				StartPos: 4,
+				EndPos:   10,
 			},
-			PosRange: posrange.PositionRange{Start: 0, End: 29},
-			OriginalOffsetExpr: &DurationExpr{
-				Op: SUB,
-				RHS: &DurationExpr{
-					Op: MIN,
-					LHS: &NumberLiteral{
-						Val:      5,
-						Duration: true,
-						PosRange: posrange.PositionRange{Start: 16, End: 18},
-					},
-					RHS: &DurationExpr{
-						Op: ADD,
-						LHS: &DurationExpr{
-							Op:       STEP,
-							StartPos: 19,
-							EndPos:   25,
-						},
-						RHS: &NumberLiteral{
-							Val:      8,
-							Duration: true,
-							PosRange: posrange.PositionRange{Start: 26, End: 28},
-						},
-					},
-					StartPos: 12,
-					EndPos:   28,
-				},
-				StartPos: 11,
-				EndPos:   28,
-			},
+			EndPos: 12,
 		},
 	},
 	{
@@ -4793,7 +4995,7 @@ var testExpr = []struct {
 		},
 	},
 	{
-		input: `foo[max(range(),5s)]`,
+		input: `foo[max_of(range(),5s)]`,
 		expected: &MatrixSelector{
 			VectorSelector: &VectorSelector{
 				Name: "foo",
@@ -4803,21 +5005,21 @@ var testExpr = []struct {
 				PosRange: posrange.PositionRange{Start: 0, End: 3},
 			},
 			RangeExpr: &DurationExpr{
-				Op: MAX,
+				Op: MAX_OF,
 				LHS: &DurationExpr{
 					Op:       RANGE,
-					StartPos: 8,
-					EndPos:   15,
+					StartPos: 11,
+					EndPos:   18,
 				},
 				RHS: &NumberLiteral{
 					Val:      5,
 					Duration: true,
-					PosRange: posrange.PositionRange{Start: 16, End: 18},
+					PosRange: posrange.PositionRange{Start: 19, End: 21},
 				},
 				StartPos: 4,
-				EndPos:   19,
+				EndPos:   22,
 			},
-			EndPos: 20,
+			EndPos: 23,
 		},
 	},
 	{
@@ -5255,8 +5457,9 @@ var testExpr = []struct {
 		},
 	},
 	{
-		input: "sum(",
-		fail:  true,
+		input:   "sum(",
+		fail:    true,
+		printed: `sum()`,
 		errors: ParseErrors{
 			ParseErr{
 				PositionRange: posrange.PositionRange{Start: 4, End: 4},
@@ -5271,8 +5474,9 @@ var testExpr = []struct {
 		},
 	},
 	{
-		input: "sum(rate(",
-		fail:  true,
+		input:   "sum(rate(",
+		fail:    true,
+		printed: `sum()`,
 		errors: ParseErrors{
 			ParseErr{
 				PositionRange: posrange.PositionRange{Start: 9, End: 9},
@@ -5308,6 +5512,248 @@ var testExpr = []struct {
 			},
 		},
 	},
+	// Anchored/smoothed on non-selector range must not panic.
+	{
+		input: "1[5m] smoothed",
+		fail:  true,
+		errors: ParseErrors{
+			{
+				PositionRange: posrange.PositionRange{Start: 1, End: 5},
+				Err:           errors.New("ranges only allowed for vector selectors"),
+				Query:         "1[5m] smoothed",
+			},
+		},
+	},
+	{
+		input: "1[5m] anchored",
+		fail:  true,
+		errors: ParseErrors{
+			{
+				PositionRange: posrange.PositionRange{Start: 1, End: 5},
+				Err:           errors.New("ranges only allowed for vector selectors"),
+				Query:         "1[5m] anchored",
+			},
+		},
+	},
+	// Failing parses must return a partially-built AST that stays printable. These
+	// cover each way the parser used to leave a malformed node behind; the generic
+	// checks in TestParseExpressions apply to every failing case.
+	{
+		input: `metric{a="1",b=~"[a-z)("}`,
+		fail:  true,
+		errors: ParseErrors{
+			ParseErr{
+				PositionRange: posrange.PositionRange{Start: 13, End: 24},
+				Err:           errors.New("error parsing regexp: missing closing ]: `[a-z)(`"),
+				Query:         `metric{a="1",b=~"[a-z)("}`,
+			},
+		},
+	},
+	{
+		input: `{__name__=~".*(bucket",foo="bar"}`,
+		fail:  true,
+		errors: ParseErrors{
+			ParseErr{
+				PositionRange: posrange.PositionRange{Start: 1, End: 22},
+				Err:           errors.New("error parsing regexp: missing closing ): `.*(bucket`"),
+				Query:         `{__name__=~".*(bucket",foo="bar"}`,
+			},
+		},
+	},
+	{
+		input: `count by (__name__) ({foo="bar",__name__=~".*(bucket"})`,
+		fail:  true,
+		errors: ParseErrors{
+			ParseErr{
+				PositionRange: posrange.PositionRange{Start: 32, End: 53},
+				Err:           errors.New("error parsing regexp: missing closing ): `.*(bucket`"),
+				Query:         `count by (__name__) ({foo="bar",__name__=~".*(bucket"})`,
+			},
+		},
+	},
+	{
+		input: `metric{a="1",b=~}`,
+		fail:  true,
+		errors: ParseErrors{
+			ParseErr{
+				PositionRange: posrange.PositionRange{Start: 16, End: 17},
+				Err:           errors.New(`unexpected "}" in label matching, expected string`),
+				Query:         `metric{a="1",b=~}`,
+			},
+		},
+	},
+	{
+		input: `metric{a="1",b=}`,
+		fail:  true,
+		errors: ParseErrors{
+			ParseErr{
+				PositionRange: posrange.PositionRange{Start: 15, End: 16},
+				Err:           errors.New(`unexpected "}" in label matching, expected string`),
+				Query:         `metric{a="1",b=}`,
+			},
+		},
+	},
+	{
+		input: `{a="1",b=~}`,
+		fail:  true,
+		errors: ParseErrors{
+			ParseErr{
+				PositionRange: posrange.PositionRange{Start: 10, End: 11},
+				Err:           errors.New(`unexpected "}" in label matching, expected string`),
+				Query:         `{a="1",b=~}`,
+			},
+		},
+	},
+	{
+		input: `1[5m]`,
+		fail:  true,
+		errors: ParseErrors{
+			ParseErr{
+				PositionRange: posrange.PositionRange{Start: 1, End: 5},
+				Err:           errors.New("ranges only allowed for vector selectors"),
+				Query:         `1[5m]`,
+			},
+		},
+	},
+	{
+		input: `""[5m]`,
+		fail:  true,
+		errors: ParseErrors{
+			ParseErr{
+				PositionRange: posrange.PositionRange{Start: 2, End: 6},
+				Err:           errors.New("ranges only allowed for vector selectors"),
+				Query:         `""[5m]`,
+			},
+		},
+	},
+	{
+		input: `a[5m][5m]`,
+		fail:  true,
+		errors: ParseErrors{
+			ParseErr{
+				PositionRange: posrange.PositionRange{Start: 5, End: 9},
+				Err:           errors.New("ranges only allowed for vector selectors"),
+				Query:         `a[5m][5m]`,
+			},
+		},
+	},
+	{
+		input:   `unknown(1)`,
+		fail:    true,
+		printed: `unknown(1)`,
+		errors: ParseErrors{
+			ParseErr{
+				PositionRange: posrange.PositionRange{Start: 0, End: 7},
+				Err:           errors.New(`unknown function with name "unknown"`),
+				Query:         `unknown(1)`,
+			},
+		},
+	},
+	{
+		input:   `unknown(a, b)`,
+		fail:    true,
+		printed: `unknown(a, b)`,
+		errors: ParseErrors{
+			ParseErr{
+				PositionRange: posrange.PositionRange{Start: 0, End: 7},
+				Err:           errors.New(`unknown function with name "unknown"`),
+				Query:         `unknown(a, b)`,
+			},
+		},
+	},
+	{
+		input:   `unknown(1)[5m]`,
+		fail:    true,
+		printed: `unknown(1)[5m]`,
+		errors: ParseErrors{
+			ParseErr{
+				PositionRange: posrange.PositionRange{Start: 0, End: 7},
+				Err:           errors.New(`unknown function with name "unknown"`),
+				Query:         `unknown(1)[5m]`,
+			},
+			ParseErr{
+				PositionRange: posrange.PositionRange{Start: 10, End: 14},
+				Err:           errors.New("ranges only allowed for vector selectors"),
+				Query:         `unknown(1)[5m]`,
+			},
+		},
+	},
+	{
+		input:   `sum()`,
+		fail:    true,
+		printed: `sum()`,
+		errors: ParseErrors{
+			ParseErr{
+				PositionRange: posrange.PositionRange{Start: 0, End: 5},
+				Err:           errors.New("no arguments for aggregate expression provided"),
+				Query:         `sum()`,
+			},
+		},
+	},
+	{
+		input:   `topk()`,
+		fail:    true,
+		printed: `topk()`,
+		errors: ParseErrors{
+			ParseErr{
+				PositionRange: posrange.PositionRange{Start: 0, End: 6},
+				Err:           errors.New("no arguments for aggregate expression provided"),
+				Query:         `topk()`,
+			},
+		},
+	},
+	{
+		input: `topk(5, a, b)`,
+		fail:  true,
+		errors: ParseErrors{
+			ParseErr{
+				PositionRange: posrange.PositionRange{Start: 0, End: 13},
+				Err:           errors.New("wrong number of arguments for aggregate expression provided, expected 2, got 3"),
+				Query:         `topk(5, a, b)`,
+			},
+		},
+	},
+	{
+		input:   `quantile(0.5)`,
+		fail:    true,
+		printed: `quantile(0.5)`,
+		errors: ParseErrors{
+			ParseErr{
+				PositionRange: posrange.PositionRange{Start: 0, End: 13},
+				Err:           errors.New("wrong number of arguments for aggregate expression provided, expected 2, got 1"),
+				Query:         `quantile(0.5)`,
+			},
+		},
+	},
+	{
+		input:   `count_values("x")`,
+		fail:    true,
+		printed: `count_values("x")`,
+		errors: ParseErrors{
+			ParseErr{
+				PositionRange: posrange.PositionRange{Start: 0, End: 17},
+				Err:           errors.New("wrong number of arguments for aggregate expression provided, expected 2, got 1"),
+				Query:         `count_values("x")`,
+			},
+		},
+	},
+	{
+		input:   `sum()[5m]`,
+		fail:    true,
+		printed: `sum()[5m]`,
+		errors: ParseErrors{
+			ParseErr{
+				PositionRange: posrange.PositionRange{Start: 0, End: 5},
+				Err:           errors.New("no arguments for aggregate expression provided"),
+				Query:         `sum()[5m]`,
+			},
+			ParseErr{
+				PositionRange: posrange.PositionRange{Start: 5, End: 9},
+				Err:           errors.New("ranges only allowed for vector selectors"),
+				Query:         `sum()[5m]`,
+			},
+		},
+	},
 }
 
 func makeInt64Pointer(val int64) *int64 {
@@ -5324,6 +5770,50 @@ func readable(s string) string {
 	return s[:maxReadableStringLen] + "..."
 }
 
+func TestDurationExprPositionRange(t *testing.T) {
+	for _, tc := range []struct {
+		input string
+		span  string
+	}{
+		{input: "foo[min_of(1m, 2m)]", span: "min_of(1m, 2m)"},
+		{input: "foo[max_of(1m, 2m):]", span: "max_of(1m, 2m)"},
+		{input: "foo[1h:min_of(1m, 2m)]", span: "min_of(1m, 2m)"},
+		{input: "foo offset min_of(1m, 2m)", span: "min_of(1m, 2m)"},
+		{input: "foo offset +min_of(1m, 2m)", span: "+min_of(1m, 2m)"},
+		{input: "foo offset -min_of(1m, 2m)", span: "-min_of(1m, 2m)"},
+		{input: "foo offset +max_of(1m, 2m)", span: "+max_of(1m, 2m)"},
+		{input: "foo offset -max_of(1m, 2m)", span: "-max_of(1m, 2m)"},
+		{input: "foo[min_of(1m, max_of(2m, 3m)) + 1m]", span: "min_of(1m, max_of(2m, 3m)) + 1m"},
+		{input: "foo[1m + max_of(2m, 3m)]", span: "1m + max_of(2m, 3m)"},
+		{input: "foo[1m + 2m]", span: "1m + 2m"},
+		{input: "foo offset -step()", span: "-step()"},
+		{input: "foo[range()]", span: "range()"},
+	} {
+		t.Run(tc.input, func(t *testing.T) {
+			expr, err := testParser.ParseExpr(tc.input)
+			require.NoError(t, err)
+			var duration *DurationExpr
+			switch e := expr.(type) {
+			case *MatrixSelector:
+				duration = e.RangeExpr
+			case *SubqueryExpr:
+				duration = e.RangeExpr
+				if e.StepExpr != nil {
+					duration = e.StepExpr
+				}
+			case *VectorSelector:
+				duration = e.OriginalOffsetExpr
+			}
+			require.NotNil(t, duration)
+			start := strings.Index(tc.input, tc.span)
+			require.Equal(t, posrange.PositionRange{
+				Start: posrange.Pos(start),
+				End:   posrange.Pos(start + len(tc.span)),
+			}, duration.PositionRange())
+		})
+	}
+}
+
 func TestParseExpressions(t *testing.T) {
 	optsParser := NewParser(Options{
 		EnableExperimentalFunctions: true,
@@ -5334,7 +5824,7 @@ func TestParseExpressions(t *testing.T) {
 			expr, err := optsParser.ParseExpr(test.input)
 
 			// Unexpected errors are always caused by a bug.
-			require.NotEqual(t, err, errUnexpected, "unexpected error occurred")
+			require.NotEqual(t, err, ErrUnexpected, "unexpected error occurred")
 
 			if !test.fail {
 				require.NoError(t, err)
@@ -5373,6 +5863,25 @@ func TestParseExpressions(t *testing.T) {
 
 				if diff := cmp.Diff(test.errors, errorList, equalParseErr()); diff != "" {
 					t.Errorf("mismatch (-want +got):\n%s\nErrors: %+v", diff, errorList)
+				}
+
+				// A failed parse may still return a partially-built AST. Callers that
+				// inspect or print it must not panic, so it must never hold a nil label
+				// matcher and must always be printable.
+				if expr != nil {
+					Inspect(expr, func(node Node, _ []Node) error {
+						if vs, ok := node.(*VectorSelector); ok {
+							for i, m := range vs.LabelMatchers {
+								require.NotNilf(t, m, "label matcher %d is nil for input '%s'", i, test.input)
+							}
+						}
+						return nil
+					})
+					var got string
+					require.NotPanics(t, func() { got = expr.String() }, "String() panicked on partial AST for input '%s'", test.input)
+					if test.printed != "" {
+						require.Equal(t, test.printed, got, "unexpected String() of partial AST for input '%s'", test.input)
+					}
 				}
 
 				for _, e := range errorList {
@@ -5988,7 +6497,7 @@ func TestParseSeries(t *testing.T) {
 		metric, vals, err := testParser.ParseSeriesDesc(test.input)
 
 		// Unexpected errors are always caused by a bug.
-		require.NotEqual(t, err, errUnexpected, "unexpected error occurred")
+		require.NotEqual(t, err, ErrUnexpected, "unexpected error occurred")
 
 		if !test.fail {
 			require.NoError(t, err)
@@ -6005,7 +6514,7 @@ func TestRecoverParserRuntime(t *testing.T) {
 	var err error
 
 	defer func() {
-		require.Equal(t, errUnexpected, err)
+		require.Equal(t, ErrUnexpected, err)
 	}()
 	defer p.recover(&err)
 	// Cause a runtime panic.
@@ -6064,20 +6573,65 @@ func TestExtractSelectors(t *testing.T) {
 }
 
 func TestParseCustomFunctions(t *testing.T) {
-	funcs := Functions
-	funcs["custom_func"] = &Function{
+	customFunc := &Function{
 		Name:       "custom_func",
 		ArgTypes:   []ValueType{ValueTypeMatrix},
 		ReturnType: ValueTypeVector,
 	}
-	input := "custom_func(metric[1m])"
-	p := newParserWithFunctions(input, Options{}, funcs)
-	expr, err := p.parseExpr()
-	require.NoError(t, err)
+	withCustomFunc := maps.Clone(Functions)
+	withCustomFunc[customFunc.Name] = customFunc
 
-	call, ok := expr.(*Call)
-	require.True(t, ok)
-	require.Equal(t, "custom_func", call.Func.Name)
+	t.Run("custom function is parsed", func(t *testing.T) {
+		expr, err := NewParser(Options{Functions: withCustomFunc}).ParseExpr("custom_func(metric[1m])")
+		require.NoError(t, err)
+
+		call, ok := expr.(*Call)
+		require.True(t, ok)
+		require.Same(t, customFunc, call.Func)
+	})
+
+	t.Run("default parser does not accept the custom function", func(t *testing.T) {
+		_, err := NewParser(Options{}).ParseExpr("custom_func(metric[1m])")
+		require.ErrorContains(t, err, `unknown function with name "custom_func"`)
+		require.NotContains(t, Functions, customFunc.Name)
+	})
+
+	t.Run("custom functions replace the default set", func(t *testing.T) {
+		p := NewParser(Options{Functions: map[string]*Function{customFunc.Name: customFunc}})
+		_, err := p.ParseExpr("rate(metric[1m])")
+		require.ErrorContains(t, err, `unknown function with name "rate"`)
+	})
+
+	t.Run("empty functions map accepts no functions", func(t *testing.T) {
+		p := NewParser(Options{Functions: map[string]*Function{}})
+		_, err := p.ParseExpr("rate(metric[1m])")
+		require.ErrorContains(t, err, `unknown function with name "rate"`)
+	})
+
+	t.Run("experimental custom function must be enabled", func(t *testing.T) {
+		experimentalFunc := &Function{
+			Name:         "experimental_func",
+			ArgTypes:     []ValueType{ValueTypeMatrix},
+			ReturnType:   ValueTypeVector,
+			Experimental: true,
+		}
+		funcs := map[string]*Function{experimentalFunc.Name: experimentalFunc}
+
+		_, err := NewParser(Options{Functions: funcs}).ParseExpr("experimental_func(metric[1m])")
+		require.ErrorContains(t, err, `function "experimental_func" is not enabled`)
+
+		_, err = NewParser(Options{Functions: funcs, EnableExperimentalFunctions: true}).ParseExpr("experimental_func(metric[1m])")
+		require.NoError(t, err)
+	})
+
+	t.Run("changing the functions map after creating the parser has no effect", func(t *testing.T) {
+		funcs := map[string]*Function{customFunc.Name: customFunc}
+		p := NewParser(Options{Functions: funcs})
+		delete(funcs, customFunc.Name)
+
+		_, err := p.ParseExpr("custom_func(metric[1m])")
+		require.NoError(t, err)
+	})
 }
 
 func TestNewParser(t *testing.T) {
@@ -6103,4 +6657,51 @@ func TestNewParser(t *testing.T) {
 	// Invalid input should return errors.
 	_, err = p.ParseExpr("===")
 	require.Error(t, err)
+}
+
+func TestParseBitwiseOperators(t *testing.T) {
+	for _, op := range []ItemType{BITAND, BITOR, BITXOR} {
+		t.Run(op.String(), func(t *testing.T) {
+			p := NewParser(Options{})
+			for _, input := range []string{
+				"5 " + op.String() + " 3",
+				"status " + op.String() + " 64",
+				"64 " + op.String() + " status",
+				"status " + op.String() + " on (instance) group_left (model) mask",
+				"mask " + op.String() + " ignoring (device) group_right () status",
+			} {
+				t.Run(input, func(t *testing.T) {
+					expr, err := p.ParseExpr(input)
+					require.NoError(t, err)
+					require.Equal(t, op, expr.(*BinaryExpr).Op)
+					require.Equal(t, input, expr.String())
+				})
+			}
+
+			// Match atan2 precedence, including left associativity with multiplication.
+			expr, err := p.ParseExpr("1 + 6 " + op.String() + " 3 * 2 ^ 3")
+			require.NoError(t, err)
+			add := expr.(*BinaryExpr)
+			require.EqualValues(t, ADD, add.Op)
+			mul := add.RHS.(*BinaryExpr)
+			require.EqualValues(t, MUL, mul.Op)
+			require.Equal(t, op, mul.LHS.(*BinaryExpr).Op)
+			require.EqualValues(t, POW, mul.RHS.(*BinaryExpr).Op)
+
+			for _, tc := range []struct{ input, err string }{
+				{"status " + op.String() + " bool 1", "bool modifier can only be used on comparison operators"},
+				{"status[5m] " + op.String() + " 1", "binary expression must contain only scalar and instant vector types"},
+				{"status " + op.String() + " on(instance) 1", "vector matching only allowed between instant vectors"},
+			} {
+				_, err := p.ParseExpr(tc.input)
+				require.ErrorContains(t, err, tc.err)
+			}
+
+			// New keywords remain usable as metric names and grouping labels.
+			for _, input := range []string{op.String(), "sum by (" + op.String() + ") (status)"} {
+				_, err := testParser.ParseExpr(input)
+				require.NoError(t, err)
+			}
+		})
+	}
 }

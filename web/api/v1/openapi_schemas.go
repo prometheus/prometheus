@@ -44,6 +44,13 @@ func (b *OpenAPIBuilder) buildComponents() *v3.Components {
 	schemas.Set("ParseQueryPostInputBody", b.parseQueryPostInputBodySchema())
 	schemas.Set("QueryData", b.queryDataSchema())
 	schemas.Set("QueryStats", b.queryStatsSchema())
+	schemas.Set("CostEstimate", b.costEstimateSchema())
+	schemas.Set("ActualCost", b.actualCostSchema())
+	schemas.Set("QueryCostComparison", b.queryCostComparisonSchema())
+	schemas.Set("QueryCostData", b.queryCostDataSchema())
+	schemas.Set("QueryCostOutputBody", b.refResponseBodySchema("QueryCostData", "Response body for query cost estimation."))
+	schemas.Set("QueryCostPostInputBody", b.queryCostPostInputBodySchema())
+	schemas.Set("QueryRangeCostPostInputBody", b.queryRangeCostPostInputBodySchema())
 	schemas.Set("FloatSample", b.floatSampleSchema())
 	schemas.Set("HistogramSample", b.histogramSampleSchema())
 	schemas.Set("FloatSeries", b.floatSeriesSchema())
@@ -54,6 +61,9 @@ func (b *OpenAPIBuilder) buildComponents() *v3.Components {
 	schemas.Set("LabelsOutputBody", b.stringArrayResponseBodySchema())
 	schemas.Set("LabelsPostInputBody", b.labelsPostInputBodySchema())
 	schemas.Set("LabelValuesOutputBody", b.stringArrayResponseBodySchema())
+	schemas.Set("SearchMetricNamesPostInputBody", b.searchMetricNamesPostInputBodySchema())
+	schemas.Set("SearchLabelNamesPostInputBody", b.searchLabelNamesPostInputBodySchema())
+	schemas.Set("SearchLabelValuesPostInputBody", b.searchLabelValuesPostInputBodySchema())
 
 	// Series schemas.
 	schemas.Set("SeriesOutputBody", b.labelsArrayResponseBodySchema())
@@ -72,6 +82,8 @@ func (b *OpenAPIBuilder) buildComponents() *v3.Components {
 	schemas.Set("TargetMetadataOutputBody", b.metricMetadataArrayResponseBodySchema())
 	schemas.Set("ScrapePoolsDiscovery", b.scrapePoolsDiscoverySchema())
 	schemas.Set("ScrapePoolsOutputBody", b.refResponseBodySchema("ScrapePoolsDiscovery", "Response body for scrape pools endpoint."))
+	schemas.Set("ScrapePoolConfigData", b.scrapePoolConfigDataSchema())
+	schemas.Set("ScrapePoolConfigOutputBody", b.refResponseBodySchema("ScrapePoolConfigData", "Response body for scrape pool config endpoint."))
 
 	// Relabel schemas.
 	schemas.Set("Config", b.configSchema())
@@ -452,6 +464,7 @@ func (*OpenAPIBuilder) queryDataSchema() *base.SchemaProxy {
 		})},
 	}))
 	vectorProps.Set("stats", schemaRef("#/components/schemas/QueryStats"))
+	vectorProps.Set("cost", schemaRef("#/components/schemas/QueryCostComparison"))
 
 	// Matrix query result.
 	matrixProps := orderedmap.New[string, *base.SchemaProxy]()
@@ -467,6 +480,7 @@ func (*OpenAPIBuilder) queryDataSchema() *base.SchemaProxy {
 		})},
 	}))
 	matrixProps.Set("stats", schemaRef("#/components/schemas/QueryStats"))
+	matrixProps.Set("cost", schemaRef("#/components/schemas/QueryCostComparison"))
 
 	// Scalar query result.
 	scalarProps := orderedmap.New[string, *base.SchemaProxy]()
@@ -484,6 +498,7 @@ func (*OpenAPIBuilder) queryDataSchema() *base.SchemaProxy {
 		MaxItems: int64Ptr(2),
 	}))
 	scalarProps.Set("stats", schemaRef("#/components/schemas/QueryStats"))
+	scalarProps.Set("cost", schemaRef("#/components/schemas/QueryCostComparison"))
 
 	// String query result.
 	stringResultProps := orderedmap.New[string, *base.SchemaProxy]()
@@ -496,6 +511,7 @@ func (*OpenAPIBuilder) queryDataSchema() *base.SchemaProxy {
 		MaxItems:    int64Ptr(2),
 	}))
 	stringResultProps.Set("stats", schemaRef("#/components/schemas/QueryStats"))
+	stringResultProps.Set("cost", schemaRef("#/components/schemas/QueryCostComparison"))
 
 	return base.CreateSchemaProxy(&base.Schema{
 		Description: "Query result data. The structure of 'result' depends on 'resultType'.",
@@ -573,7 +589,7 @@ func (*OpenAPIBuilder) queryStatsSchema() *base.SchemaProxy {
 	samplesProps := orderedmap.New[string, *base.SchemaProxy]()
 	samplesProps.Set("totalQueryableSamples", base.CreateSchemaProxy(&base.Schema{
 		Type:        []string{"integer"},
-		Description: "Total number of samples that were queryable.",
+		Description: "Logical underlying sample consumption, including subqueries but excluding their materialized results. Overlapping windows can count the same sample repeatedly.",
 	}))
 	samplesProps.Set("peakSamples", base.CreateSchemaProxy(&base.Schema{
 		Type:        []string{"integer"},
@@ -581,7 +597,23 @@ func (*OpenAPIBuilder) queryStatsSchema() *base.SchemaProxy {
 	}))
 	samplesProps.Set("totalQueryableSamplesPerStep", base.CreateSchemaProxy(&base.Schema{
 		Type:        []string{"array"},
-		Description: "Total queryable samples per step (only included with stats=all).",
+		Description: "Logical underlying sample consumption per step (only included with stats=all).",
+		Items: &base.DynamicValue[*base.SchemaProxy, bool]{A: base.CreateSchemaProxy(&base.Schema{
+			Type:        []string{"array"},
+			Description: "Timestamp and sample count as [timestamp, count].",
+			Items:       &base.DynamicValue[*base.SchemaProxy, bool]{A: base.CreateSchemaProxy(&base.Schema{Type: []string{"number"}})},
+			MinItems:    int64Ptr(2),
+			MaxItems:    int64Ptr(2),
+		})},
+	}))
+	samplesProps.Set("seriesTouched", integerSchemaWithDescription("Number of series consumed during execution, summed across selectors. Repeated selectors can count the same series more than once."))
+	samplesProps.Set("samplesRead", base.CreateSchemaProxy(&base.Schema{
+		Type:        []string{"integer"},
+		Description: "Evaluator input samples, counting only new points across overlapping range-vector windows. With query-cost enabled, includes all evaluated subquery steps; otherwise only consumed windows. Not physical storage I/O.",
+	}))
+	samplesProps.Set("samplesReadPerStep", base.CreateSchemaProxy(&base.Schema{
+		Type:        []string{"array"},
+		Description: "Samples read per step (only included with stats=all when per-step stats enabled).",
 		Items: &base.DynamicValue[*base.SchemaProxy, bool]{A: base.CreateSchemaProxy(&base.Schema{
 			Type:        []string{"array"},
 			Description: "Timestamp and sample count as [timestamp, count].",
@@ -609,14 +641,127 @@ func (*OpenAPIBuilder) queryStatsSchema() *base.SchemaProxy {
 	})
 }
 
+// costEstimateSchema describes a cost estimate computed without executing the
+// query. See the query-cost documentation for its accuracy limitations.
+func (*OpenAPIBuilder) costEstimateSchema() *base.SchemaProxy {
+	props := orderedmap.New[string, *base.SchemaProxy]()
+	props.Set("seriesTouched", integerSchemaWithDescription("Estimated series reads, summed across explicit selectors. Shared series may be counted repeatedly; implicit info() reads are omitted with a warning."))
+	props.Set("samplesRead", integerSchemaWithDescription("Storage input in sample units: one per float, weighted by in-memory size for native histograms."))
+
+	return base.CreateSchemaProxy(&base.Schema{
+		Type:                 []string{"object"},
+		Description:          "Estimated storage input. Values may overestimate or underestimate actual cost; warnings identify incomplete estimates.",
+		AdditionalProperties: &base.DynamicValue[*base.SchemaProxy, bool]{N: 1, B: false},
+		Required:             []string{"seriesTouched", "samplesRead"},
+		Properties:           props,
+	})
+}
+
+// actualCostSchema describes the resource cost measured while the query ran. It
+// is the estimate shape plus peakSamples, which only an executed query has.
+func (*OpenAPIBuilder) actualCostSchema() *base.SchemaProxy {
+	props := orderedmap.New[string, *base.SchemaProxy]()
+	props.Set("seriesTouched", integerSchemaWithDescription("Number of series the query loaded, summed per selector. Series shared between selectors may be counted more than once, so this is an upper bound."))
+	props.Set("samplesRead", integerSchemaWithDescription("Samples read by the evaluator in the engine's sample units; the same quantity as the samplesRead query statistic."))
+	props.Set("peakSamples", integerSchemaWithDescription("Highest number of samples held in memory at once. Omitted when zero."))
+
+	return base.CreateSchemaProxy(&base.Schema{
+		Type:                 []string{"object"},
+		Description:          "Actual resource cost measured while the query executed.",
+		AdditionalProperties: &base.DynamicValue[*base.SchemaProxy, bool]{N: 1, B: false},
+		Required:             []string{"seriesTouched", "samplesRead"},
+		Properties:           props,
+	})
+}
+
+// queryCostComparisonSchema describes the estimated-vs-actual cost comparison
+// returned on query and query_range when the cost form parameter is set.
+func (*OpenAPIBuilder) queryCostComparisonSchema() *base.SchemaProxy {
+	props := orderedmap.New[string, *base.SchemaProxy]()
+	props.Set("estimated", schemaRef("#/components/schemas/CostEstimate"))
+	props.Set("actual", schemaRef("#/components/schemas/ActualCost"))
+
+	return base.CreateSchemaProxy(&base.Schema{
+		Type:                 []string{"object"},
+		Description:          "Estimated storage input paired with the actual cost measured during execution. The estimated cost has no peakSamples; the actual cost includes it. Requires the query-cost feature flag (--enable-feature=query-cost).",
+		AdditionalProperties: &base.DynamicValue[*base.SchemaProxy, bool]{N: 1, B: false},
+		Required:             []string{"estimated", "actual"},
+		Properties:           props,
+	})
+}
+
+// queryCostDataSchema describes the data payload of the query cost endpoints.
+func (*OpenAPIBuilder) queryCostDataSchema() *base.SchemaProxy {
+	props := orderedmap.New[string, *base.SchemaProxy]()
+	props.Set("estimate", schemaRef("#/components/schemas/CostEstimate"))
+
+	return base.CreateSchemaProxy(&base.Schema{
+		Type:                 []string{"object"},
+		Description:          "Estimated cost of a query computed without executing it.",
+		AdditionalProperties: &base.DynamicValue[*base.SchemaProxy, bool]{N: 1, B: false},
+		Required:             []string{"estimate"},
+		Properties:           props,
+	})
+}
+
+func (*OpenAPIBuilder) queryCostPostInputBodySchema() *base.SchemaProxy {
+	props := orderedmap.New[string, *base.SchemaProxy]()
+	props.Set("query", stringSchemaWithDescriptionAndExample("Form field: The PromQL query to estimate.", "up"))
+	props.Set("time", stringSchemaWithDescriptionAndExample("Form field: The evaluation timestamp (optional, defaults to current time).", "2023-07-21T20:10:51.781Z"))
+	props.Set("timeout", stringSchemaWithDescriptionAndExample("Form field: Evaluation timeout. Optional. Must be positive. Defaults to and is capped by the effective server-side maximum: global.query_max_duration when the query-cost feature is enabled and the value is set, otherwise the -query.timeout flag.", "30s"))
+	props.Set("lookback_delta", stringSchemaWithDescriptionAndExample("Form field: Override the lookback period for this query (optional).", "5m"))
+	props.Set("limit", integerSchemaWithDescriptionAndExample("Form field: The maximum number of metrics to return. Validated identically to /api/v1/query but ignored, as no series are returned.", 100))
+	props.Set("stats", stringSchemaWithDescriptionAndExample("Form field: Validated identically to /api/v1/query but ignored, as no query statistics are returned.", "all"))
+	props.Set("cost", booleanSchemaWithDescription("Form field: Validated identically to /api/v1/query but ignored, as the response is already a cost estimate. Any non-boolean value is an error."))
+	props.Set("max_series", integerSchemaWithDescriptionAndExample("Form field: Lower the maximum number of series this query may load. Optional. Honored only with the query-cost feature flag (--enable-feature=query-cost). It may only lower the query_max_series ceiling, never raise it: a higher value is rejected.", 1000))
+	props.Set("max_samples_read", integerSchemaWithDescriptionAndExample("Form field: Lower the maximum number of samples this query may read. Optional. Honored only with the query-cost feature flag (--enable-feature=query-cost). It may only lower the query_max_samples_read ceiling, never raise it: a higher value is rejected.", 100000))
+	props.Set("max_query_duration", stringSchemaWithDescriptionAndExample("Form field: Lower the maximum execution duration of this query. Optional. Honored only with the query-cost feature flag (--enable-feature=query-cost). It may only lower the effective duration ceiling (query_max_duration when set, otherwise the -query.timeout flag), never raise it: a higher value is rejected.", "30s"))
+
+	return base.CreateSchemaProxy(&base.Schema{
+		Type:                 []string{"object"},
+		Description:          "POST request body for instant query cost estimation.",
+		AdditionalProperties: &base.DynamicValue[*base.SchemaProxy, bool]{N: 1, B: false},
+		Required:             []string{"query"},
+		Properties:           props,
+	})
+}
+
+func (*OpenAPIBuilder) queryRangeCostPostInputBodySchema() *base.SchemaProxy {
+	props := orderedmap.New[string, *base.SchemaProxy]()
+	props.Set("query", stringSchemaWithDescriptionAndExample("Form field: The PromQL query to estimate.", "rate(http_requests_total[5m])"))
+	props.Set("start", stringSchemaWithDescriptionAndExample("Form field: The start time of the query.", "2023-07-21T20:10:30.781Z"))
+	props.Set("end", stringSchemaWithDescriptionAndExample("Form field: The end time of the query.", "2023-07-21T20:20:30.781Z"))
+	props.Set("step", stringSchemaWithDescriptionAndExample("Form field: The step size of the query.", "15s"))
+	props.Set("timeout", stringSchemaWithDescriptionAndExample("Form field: Evaluation timeout. Optional. Must be positive. Defaults to and is capped by the effective server-side maximum: global.query_max_duration when the query-cost feature is enabled and the value is set, otherwise the -query.timeout flag.", "30s"))
+	props.Set("lookback_delta", stringSchemaWithDescriptionAndExample("Form field: Override the lookback period for this query (optional).", "5m"))
+	props.Set("limit", integerSchemaWithDescriptionAndExample("Form field: The maximum number of metrics to return. Validated identically to /api/v1/query but ignored, as no series are returned.", 100))
+	props.Set("stats", stringSchemaWithDescriptionAndExample("Form field: Validated identically to /api/v1/query but ignored, as no query statistics are returned.", "all"))
+	props.Set("cost", booleanSchemaWithDescription("Form field: Validated identically to /api/v1/query but ignored, as the response is already a cost estimate. Any non-boolean value is an error."))
+	props.Set("max_series", integerSchemaWithDescriptionAndExample("Form field: Lower the maximum number of series this query may load. Optional. Honored only with the query-cost feature flag (--enable-feature=query-cost). It may only lower the query_max_series ceiling, never raise it: a higher value is rejected.", 1000))
+	props.Set("max_samples_read", integerSchemaWithDescriptionAndExample("Form field: Lower the maximum number of samples this query may read. Optional. Honored only with the query-cost feature flag (--enable-feature=query-cost). It may only lower the query_max_samples_read ceiling, never raise it: a higher value is rejected.", 100000))
+	props.Set("max_query_duration", stringSchemaWithDescriptionAndExample("Form field: Lower the maximum execution duration of this query. Optional. Honored only with the query-cost feature flag (--enable-feature=query-cost). It may only lower the effective duration ceiling (query_max_duration when set, otherwise the -query.timeout flag), never raise it: a higher value is rejected.", "30s"))
+
+	return base.CreateSchemaProxy(&base.Schema{
+		Type:                 []string{"object"},
+		Description:          "POST request body for range query cost estimation.",
+		AdditionalProperties: &base.DynamicValue[*base.SchemaProxy, bool]{N: 1, B: false},
+		Required:             []string{"query", "start", "end", "step"},
+		Properties:           props,
+	})
+}
+
 func (*OpenAPIBuilder) queryPostInputBodySchema() *base.SchemaProxy {
 	props := orderedmap.New[string, *base.SchemaProxy]()
 	props.Set("query", stringSchemaWithDescriptionAndExample("Form field: The PromQL query to execute.", "up"))
 	props.Set("time", stringSchemaWithDescriptionAndExample("Form field: The evaluation timestamp (optional, defaults to current time).", "2023-07-21T20:10:51.781Z"))
 	props.Set("limit", integerSchemaWithDescriptionAndExample("Form field: The maximum number of metrics to return.", 100))
-	props.Set("timeout", stringSchemaWithDescriptionAndExample("Form field: Evaluation timeout (optional, defaults to and is capped by the value of the -query.timeout flag).", "30s"))
+	props.Set("timeout", stringSchemaWithDescriptionAndExample("Form field: Evaluation timeout. Optional. Must be positive. Defaults to and is capped by the effective server-side maximum: global.query_max_duration when the query-cost feature is enabled and the value is set, otherwise the -query.timeout flag.", "30s"))
 	props.Set("lookback_delta", stringSchemaWithDescriptionAndExample("Form field: Override the lookback period for this query (optional).", "5m"))
 	props.Set("stats", stringSchemaWithDescriptionAndExample("Form field: When provided, include query statistics in the response (the special value 'all' enables more comprehensive statistics).", "all"))
+	props.Set("cost", booleanSchemaWithDescription("Form field: When true, include an estimated-vs-actual cost comparison in the response. Any non-boolean value is an error. Requires the query-cost feature flag (--enable-feature=query-cost)."))
+	props.Set("max_series", integerSchemaWithDescriptionAndExample("Form field: Lower the maximum number of series this query may load. Optional. Honored only with the query-cost feature flag (--enable-feature=query-cost). It may only lower the query_max_series ceiling, never raise it: a higher value is rejected.", 1000))
+	props.Set("max_samples_read", integerSchemaWithDescriptionAndExample("Form field: Lower the maximum number of samples this query may read. Optional. Honored only with the query-cost feature flag (--enable-feature=query-cost). It may only lower the query_max_samples_read ceiling, never raise it: a higher value is rejected.", 100000))
+	props.Set("max_query_duration", stringSchemaWithDescriptionAndExample("Form field: Lower the maximum execution duration of this query. Optional. Honored only with the query-cost feature flag (--enable-feature=query-cost). It may only lower the effective duration ceiling (query_max_duration when set, otherwise the -query.timeout flag), never raise it: a higher value is rejected.", "30s"))
 
 	return base.CreateSchemaProxy(&base.Schema{
 		Type:                 []string{"object"},
@@ -634,9 +779,13 @@ func (*OpenAPIBuilder) queryRangePostInputBodySchema() *base.SchemaProxy {
 	props.Set("end", stringSchemaWithDescriptionAndExample("Form field: The end time of the query.", "2023-07-21T20:20:30.781Z"))
 	props.Set("step", stringSchemaWithDescriptionAndExample("Form field: The step size of the query.", "15s"))
 	props.Set("limit", integerSchemaWithDescriptionAndExample("Form field: The maximum number of metrics to return.", 100))
-	props.Set("timeout", stringSchemaWithDescriptionAndExample("Form field: Evaluation timeout (optional, defaults to and is capped by the value of the -query.timeout flag).", "30s"))
+	props.Set("timeout", stringSchemaWithDescriptionAndExample("Form field: Evaluation timeout. Optional. Must be positive. Defaults to and is capped by the effective server-side maximum: global.query_max_duration when the query-cost feature is enabled and the value is set, otherwise the -query.timeout flag.", "30s"))
 	props.Set("lookback_delta", stringSchemaWithDescriptionAndExample("Form field: Override the lookback period for this query (optional).", "5m"))
 	props.Set("stats", stringSchemaWithDescriptionAndExample("Form field: When provided, include query statistics in the response (the special value 'all' enables more comprehensive statistics).", "all"))
+	props.Set("cost", booleanSchemaWithDescription("Form field: When true, include an estimated-vs-actual cost comparison in the response. Any non-boolean value is an error. Requires the query-cost feature flag (--enable-feature=query-cost)."))
+	props.Set("max_series", integerSchemaWithDescriptionAndExample("Form field: Lower the maximum number of series this query may load. Optional. Honored only with the query-cost feature flag (--enable-feature=query-cost). It may only lower the query_max_series ceiling, never raise it: a higher value is rejected.", 1000))
+	props.Set("max_samples_read", integerSchemaWithDescriptionAndExample("Form field: Lower the maximum number of samples this query may read. Optional. Honored only with the query-cost feature flag (--enable-feature=query-cost). It may only lower the query_max_samples_read ceiling, never raise it: a higher value is rejected.", 100000))
+	props.Set("max_query_duration", stringSchemaWithDescriptionAndExample("Form field: Lower the maximum execution duration of this query. Optional. Honored only with the query-cost feature flag (--enable-feature=query-cost). It may only lower the effective duration ceiling (query_max_duration when set, otherwise the -query.timeout flag), never raise it: a higher value is rejected.", "30s"))
 
 	return base.CreateSchemaProxy(&base.Schema{
 		Type:                 []string{"object"},
@@ -732,6 +881,82 @@ func (*OpenAPIBuilder) seriesPostInputBodySchema() *base.SchemaProxy {
 		AdditionalProperties: &base.DynamicValue[*base.SchemaProxy, bool]{N: 1, B: false},
 		Required:             []string{"match[]"},
 		Properties:           props,
+	})
+}
+
+// schemaProp is a name/schema pair used to build ordered property maps.
+type schemaProp struct {
+	name   string
+	schema *base.SchemaProxy
+}
+
+// propsMap converts a slice of schemaProp into an ordered map, preserving order.
+func propsMap(pairs []schemaProp) *orderedmap.Map[string, *base.SchemaProxy] {
+	m := orderedmap.New[string, *base.SchemaProxy]()
+	for _, p := range pairs {
+		m.Set(p.name, p.schema)
+	}
+	return m
+}
+
+// commonSearchPostProps returns the properties shared by all three search POST bodies.
+func (b *OpenAPIBuilder) commonSearchPostProps() []schemaProp {
+	return []schemaProp{
+		{"fuzz_threshold", integerSchemaWithDescriptionAndExample("Form field: Fuzzy threshold in the range 0-100. Default is 0, the lowest fuzzy threshold.", 80)},
+		{"fuzz_alg", enumStringSchemaWithDescription("Form field: Fuzzy algorithm. Supported values are subsequence (default) and jarowinkler.", FuzzAlgorithms()...)},
+		{"case_sensitive", booleanSchemaWithDescription("Form field: Whether matching is case-sensitive.")},
+		{"sort_by", enumStringSchemaWithDescription("Form field: Sort mode. Supported values are alpha and score. If unset, results are returned in natural order.", "alpha", "score")},
+		{"sort_dir", enumStringSchemaWithDescription("Form field: Sort direction. Only valid with sort_by=alpha. Supported values are asc and dsc.", "asc", "dsc")},
+		{"include_score", booleanSchemaWithDescription("Form field: Include the relevance score in each result record.")},
+		{"start", stringSchemaWithDescriptionAndExample("Form field: The start time of the query.", "2026-01-02T12:37:00.000Z")},
+		{"end", stringSchemaWithDescriptionAndExample("Form field: The end time of the query.", "2026-01-02T13:37:00.000Z")},
+		{"limit", integerSchemaWithDescriptionDefaultAndExample("Form field: The maximum number of results to return.", b.searchDefaultLimit(), 20)},
+		{"batch_size", integerSchemaWithDescriptionDefaultAndExample("Form field: Preferred number of results per NDJSON batch. Clamped to 1000 and the effective result limit.", defaultSearchBatchSize, 20)},
+	}
+}
+
+func (b *OpenAPIBuilder) searchMetricNamesPostInputBodySchema() *base.SchemaProxy {
+	props := append([]schemaProp{
+		{"match[]", stringArraySchemaWithDescriptionAndExample("Form field: Series selector argument used to scope metric discovery.", []string{"{job=\"prometheus\"}"})},
+		{"search[]", stringArraySchemaWithDescriptionAndExample("Form field: One or more search terms matched against metric names (OR logic).", []string{"http_req"})},
+	}, b.commonSearchPostProps()...)
+	props = append(props, schemaProp{"include_metadata", booleanSchemaWithDescription("Form field: Include metric metadata in each result.")})
+
+	return base.CreateSchemaProxy(&base.Schema{
+		Type:                 []string{"object"},
+		Description:          "POST request body for metric name search.",
+		AdditionalProperties: &base.DynamicValue[*base.SchemaProxy, bool]{N: 1, B: false},
+		Properties:           propsMap(props),
+	})
+}
+
+func (b *OpenAPIBuilder) searchLabelNamesPostInputBodySchema() *base.SchemaProxy {
+	props := append([]schemaProp{
+		{"match[]", stringArraySchemaWithDescriptionAndExample("Form field: Series selector argument used to scope label discovery.", []string{"{__name__=\"up\"}"})},
+		{"search[]", stringArraySchemaWithDescriptionAndExample("Form field: One or more search terms matched against label names (OR logic).", []string{"inst"})},
+	}, b.commonSearchPostProps()...)
+
+	return base.CreateSchemaProxy(&base.Schema{
+		Type:                 []string{"object"},
+		Description:          "POST request body for label name search.",
+		AdditionalProperties: &base.DynamicValue[*base.SchemaProxy, bool]{N: 1, B: false},
+		Properties:           propsMap(props),
+	})
+}
+
+func (b *OpenAPIBuilder) searchLabelValuesPostInputBodySchema() *base.SchemaProxy {
+	props := append([]schemaProp{
+		{"label", stringSchemaWithDescriptionAndExample("Form field: Label name whose values should be searched.", "instance")},
+		{"match[]", stringArraySchemaWithDescriptionAndExample("Form field: Series selector argument used to scope label value discovery.", []string{"up"})},
+		{"search[]", stringArraySchemaWithDescriptionAndExample("Form field: One or more search terms matched against label values (OR logic).", []string{"909"})},
+	}, b.commonSearchPostProps()...)
+
+	return base.CreateSchemaProxy(&base.Schema{
+		Type:                 []string{"object"},
+		Description:          "POST request body for label value search.",
+		AdditionalProperties: &base.DynamicValue[*base.SchemaProxy, bool]{N: 1, B: false},
+		Required:             []string{"label"},
+		Properties:           propsMap(props),
 	})
 }
 
@@ -864,6 +1089,19 @@ func (*OpenAPIBuilder) scrapePoolsDiscoverySchema() *base.SchemaProxy {
 		Description:          "List of all configured scrape pools.",
 		AdditionalProperties: &base.DynamicValue[*base.SchemaProxy, bool]{N: 1, B: false},
 		Required:             []string{"scrapePools"},
+		Properties:           props,
+	})
+}
+
+func (*OpenAPIBuilder) scrapePoolConfigDataSchema() *base.SchemaProxy {
+	props := orderedmap.New[string, *base.SchemaProxy]()
+	props.Set("yaml", stringSchemaWithDescription("Effective scrape pool configuration in YAML format."))
+
+	return base.CreateSchemaProxy(&base.Schema{
+		Type:                 []string{"object"},
+		Description:          "Effective configuration for a scrape pool.",
+		AdditionalProperties: &base.DynamicValue[*base.SchemaProxy, bool]{N: 1, B: false},
+		Required:             []string{"yaml"},
 		Properties:           props,
 	})
 }

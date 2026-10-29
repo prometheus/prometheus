@@ -172,7 +172,7 @@ expect <type> <match_type>: <string>
     * `msg` for exact string match.
     * `regex` for regular expression match.
     * **Not applicable** for `ordered`, `no_info`, and `no_warn`.
-* `<string>` is the expected annotation message.
+* `<string>` is the expected annotation message, or for `fail` the expected error message. `warn` and `info` annotation strings end with a position, which an exact `msg` match must include, see [Annotation Positions](#annotation-positions).
 
 For example:
 
@@ -184,8 +184,8 @@ eval instant at 1m sum by (env) (my_metric)
     {env="test"} 20
     
 eval range from 0 to 3m step 1m sum by (env) (my_metric)
-    expect warn msg: something went wrong
-    expect info regex: something went (wrong|boom)
+    expect warn msg: PromQL warning: something went wrong (1:15)
+    expect info regex: PromQL info: something went (wrong|boom) \(1:15\)
     {env="prod"} 2 5 10 20
     {env="test"} 10 20 30 45
 
@@ -209,6 +209,44 @@ There can be multiple `<expect>` lines for a given `<type>`. Each `<type>` valid
 Every `<expect>` line must match at least one corresponding annotation or error.
 
 If at least one `<expect>` line of type `warn` or `info` is present, then all corresponding annotations must have a matching `expect` line.
+
+#### Annotation Positions
+
+`warn` and `info` expectations are matched against the annotation as the API
+renders it, which ends with the position of the expression that triggered it:
+
+```
+eval instant at 0m sum(metric)
+    expect warn msg: PromQL warning: encountered a mix of histograms and floats for aggregation (1:5)
+```
+
+Here `1:5` is the line and column of `metric`, the expression the annotation is
+about. Asserting it keeps an annotation pointing at the right part of the query.
+`fail` expectations are matched against the query error, which carries no
+position.
+
+Two things make an exact position impractical, and `regex` is the way out of
+both.
+
+Some annotations reveal further detail once the position is attached, and that
+detail may depend on the evaluation time:
+
+```
+eval instant at 50m histogram_quantiles(nonmonotonic_bucket, "q", 0.01, 0.5, 0.99)
+    expect info regex: PromQL info: input to histogram_quantile needed to be fixed for monotonicity .* \(1:21\)
+```
+
+Instant queries are also re-run with an `@` modifier appended to every selector,
+to check that the result is step invariant. Re-serializing the expression can
+normalize spacing and always lengthens each selector, which shifts the column of
+everything after the first one. An exact position therefore only holds when the
+annotated expression starts no later than the first selector, which is the case
+in both examples above. Otherwise match the position loosely:
+
+```
+eval instant at 50m histogram_quantiles(non_existent, "q", NaN)
+    expect warn regex: PromQL warning: quantile value should be between 0 and 1, got NaN \([0-9]+:[0-9]+\)
+```
 
 #### Migrating Test Files to the New Syntax
 

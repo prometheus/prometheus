@@ -95,6 +95,33 @@ global:
   # Reloading the configuration will reopen the file.
   [ query_log_file: <string> ]
 
+  # Maximum number of series a query may load before it is rejected. The limit
+  # is enforced during execution against the query's actual running cost, never
+  # against the cost estimate returned by the query cost API: the query is
+  # rejected as soon as it loads more series than this. 0 means no limit.
+  # These three query cost limits are reloadable and only enforced when the
+  # query-cost feature flag is enabled (--enable-feature=query-cost).
+  # They apply to every query the engine evaluates, including recording and
+  # alerting rule evaluation.
+  # A client may lower any of them for a single request with the max_series,
+  # max_samples_read and max_query_duration query parameters. A request that
+  # asks for a value above the ceiling set here is an error, it is not silently
+  # clamped down.
+  [ query_max_series: <int> | default = 0 ]
+
+  # Maximum number of samples a query may read before it is rejected. Like
+  # query_max_series, it is enforced during execution against the samples the
+  # query actually reads, never against the estimate: the query is
+  # rejected as soon as it reads more samples than this. 0 means no limit.
+  [ query_max_samples_read: <int> | default = 0 ]
+
+  # Maximum wall-clock duration a query may take. It surfaces as a query
+  # timeout: the query is aborted once it has run for this long. 0s falls back
+  # to --query.timeout. A nonzero value overrides that flag only when the
+  # query-cost feature is enabled. The per-query timeout parameter
+  # of the query endpoints is capped at this ceiling.
+  [ query_max_duration: <duration> | default = 0s ]
+
   # File to which scrape failures are logged.
   # Reloading the configuration will reopen the file.
   [ scrape_failure_log_file: <string> ]
@@ -159,12 +186,6 @@ global:
   # native histogram with custom buckets.
   [ always_scrape_classic_histograms: <boolean> | default = false ]
 
-  # When enabled, Prometheus stores additional time series for each scrape:
-  # scrape_timeout_seconds, scrape_sample_limit, and scrape_body_size_bytes.
-  # These metrics help monitor how close targets are to their configured limits.
-  # This option can be overridden per scrape config.
-  [ extra_scrape_metrics: <boolean> | default = false ]
-
   # The following explains the various combinations of the last three options
   # in various exposition cases.
   #
@@ -201,7 +222,17 @@ global:
   # actual native histogram). However, there will be a classic histogram if (and
   # only if) always_scrape_classic_histograms is set to true.
 
+  # When enabled, Prometheus stores additional time series for each scrape:
+  # scrape_timeout_seconds, scrape_sample_limit, and scrape_body_size_bytes.
+  # These metrics help monitor how close targets are to their configured limits.
+  # This option can be overridden per scrape config.
+  [ extra_scrape_metrics: <boolean> | default = false ]
+
 runtime:
+  # The minimum severity of messages emitted by the process logger.
+  # This setting can be changed by reloading the configuration.
+  [ log_level: <string> | default = info ]
+
   # Configure the Go garbage collector GOGC parameter
   # See: https://tip.golang.org/doc/gc-guide#GOGC
   # Lowering this number increases CPU usage.
@@ -486,6 +517,10 @@ nerve_sd_configs:
 nomad_sd_configs:
   [ - <nomad_sd_config> ... ]
 
+# List of OCI service discovery configurations.
+oci_sd_configs:
+  [ - <oci_sd_config> ... ]
+
 # List of OpenStack service discovery configurations.
 openstack_sd_configs:
   [ - <openstack_sd_config> ... ]
@@ -657,14 +692,14 @@ metric_relabel_configs:
 # native histogram with custom buckets.
 [ always_scrape_classic_histograms: <boolean> | default = <global.always_scrape_classic_histograms> ]
 
+# See global configuration above for further explanations of how the last three
+# options combine their effects.
+
 # When enabled, Prometheus stores additional time series for this scrape job:
 # scrape_timeout_seconds, scrape_sample_limit, and scrape_body_size_bytes.
 # These metrics help monitor how close targets are to their configured limits.
 # If not set, inherits the value from the global configuration.
 [ extra_scrape_metrics: <boolean> | default = <global.extra_scrape_metrics> ]
-
-# See global configuration above for further explanations of how the last three
-# options combine their effects.
 
 ```
 
@@ -718,7 +753,7 @@ tls_config:
 # that should be excluded from proxying. IP and domain names can
 # contain port numbers.
 [ no_proxy: <string> ]
-# Use proxy URL indicated by environment variables (HTTP_PROXY, https_proxy, HTTPs_PROXY, https_proxy, and no_proxy)
+# Use proxy URL indicated by environment variables (HTTP_PROXY, HTTPS_PROXY, NO_PROXY, and their lowercase versions)
 [ proxy_from_environment: <boolean> | default: false ]
 # Specifies headers to send to proxies during CONNECT requests.
 [ proxy_connect_header:
@@ -853,23 +888,11 @@ tls_config:
 # that should be excluded from proxying. IP and domain names can
 # contain port numbers.
 [ no_proxy: <string> ]
-# Use proxy URL indicated by environment variables (HTTP_PROXY, https_proxy, HTTPs_PROXY, https_proxy, and no_proxy)
+# Use proxy URL indicated by environment variables (HTTP_PROXY, HTTPS_PROXY, NO_PROXY, and their lowercase versions)
 [ proxy_from_environment: <boolean> | default: false ]
 # Specifies headers to send to proxies during CONNECT requests.
 [ proxy_connect_header:
   [ <string>: [<secret>, ...] ] ]
-
-# Custom HTTP headers to be sent along with each request.
-# Headers that are set by Prometheus itself can't be overwritten.
-http_headers:
-  # Header name.
-  [ <string>:
-    # Header values.
-    [ values: [<string>, ...] ]
-    # Headers values. Hidden in configuration page.
-    [ secrets: [<secret>, ...] ]
-    # Files to read header values from.
-    [ files: [<string>, ...] ] ]
 ```
 
 ### `<aws_sd_config>`
@@ -902,6 +925,7 @@ The following meta labels are available on targets during [relabeling](#relabel_
 * `__meta_ec2_ipv6_addresses`: comma separated list of IPv6 addresses assigned to the instance's network interfaces, if present
 * `__meta_ec2_owner_id`: the ID of the AWS account that owns the EC2 instance
 * `__meta_ec2_platform`: the Operating System platform, set to 'windows' on Windows servers, absent otherwise
+* `__meta_ec2_default_ipv6_address`: the first primary IPv6 address found if present, otherwise first non-primary IPv6 address, if present
 * `__meta_ec2_primary_ipv6_addresses`: comma separated list of the Primary IPv6 addresses of the instance, if present. The list is ordered based on the position of each corresponding network interface in the attachment order.
 * `__meta_ec2_primary_subnet_id`: the subnet ID of the primary network interface, if available
 * `__meta_ec2_private_dns_name`: the private DNS name of the instance, if available
@@ -1014,12 +1038,12 @@ The following meta labels are available on targets during [relabeling](#relabel_
 * `__meta_msk_cluster_name`: the name of the MSK cluster
 * `__meta_msk_cluster_arn`: the ARN of the MSK cluster
 * `__meta_msk_cluster_state`: the state of the MSK cluster (e.g., ACTIVE, CREATING, DELETING)
-* `__meta_msk_cluster_type`: the type of the MSK cluster (e.g., PROVISIONED, SERVERLESS)
+* `__meta_msk_cluster_type`: the type of the MSK cluster (always PROVISIONED, as serverless clusters are skipped)
 * `__meta_msk_cluster_version`: the current version of the MSK cluster
 * `__meta_msk_cluster_kafka_version`: the Kafka version running on the cluster
-* `__meta_msk_cluster_jmx_exporter_enabled`: whether JMX exporter is enabled on the cluster
-* `__meta_msk_cluster_configuration_arn`: the ARN of the MSK configuration
-* `__meta_msk_cluster_configuration_revision`: the revision of the MSK configuration
+* `__meta_msk_cluster_jmx_exporter_enabled`: whether JMX exporter is enabled on the cluster; this label is absent (not `false`) when Open Monitoring is not enabled on the cluster
+* `__meta_msk_cluster_configuration_arn`: the ARN of the MSK configuration; this label is absent when the cluster is not using custom config
+* `__meta_msk_cluster_configuration_revision`: the revision of the MSK configuration; this label is absent when the cluster is not using custom config
 * `__meta_msk_cluster_tag_<tagkey>`: each cluster tag value, keyed by tag name
 * `__meta_msk_node_type`: the type of the node (BROKER or CONTROLLER)
 * `__meta_msk_node_arn`: the ARN of the node
@@ -1030,7 +1054,7 @@ The following meta labels are available on targets during [relabeling](#relabel_
 * `__meta_msk_broker_endpoint_index`: the index of the broker endpoint (broker nodes only)
 * `__meta_msk_broker_client_subnet`: the client subnet of the broker (broker nodes only)
 * `__meta_msk_broker_client_vpc_ip`: the VPC IP address of the broker (broker nodes only)
-* `__meta_msk_broker_node_exporter_enabled`: whether node exporter is enabled on brokers (broker nodes only)
+* `__meta_msk_broker_node_exporter_enabled`: whether node exporter is enabled on brokers (broker nodes only); this label is absent (not `false`) when Open Monitoring is not enabled on the cluster
 * `__meta_msk_controller_endpoint_index`: the index of the controller endpoint (controller nodes only)
 
 #### `elasticache`
@@ -1305,11 +1329,117 @@ The following meta labels are available on targets during [relabeling](#relabel_
 * `__meta_rds_instance_timezone`: the time zone of the DB instance
 * `__meta_rds_instance_upgrade_rollout_order`: the upgrade rollout order
 
+#### `mq`
+
+The `mq` role discovers targets from [AWS MQ](https://aws.amazon.com/amazon-mq/)
+brokers, for both the ActiveMQ and RabbitMQ engines. One target is created for
+each `https` endpoint exposed by a broker's instance(s).
+
+**Important**: [only RabbitMQ 4.2+ brokers support Prometheus
+metrics](https://docs.aws.amazon.com/amazon-mq/latest/developer-guide/rabbitmq-prometheus-metrics.html);
+ActiveMQ brokers do not.
+
+**Important**: how instances map to `https` endpoints differs by deployment mode:
+
+* `SINGLE_INSTANCE` and `ACTIVE_STANDBY_MULTI_AZ` (ActiveMQ) brokers report one
+  broker instance per node, each with its own host and a single `https`
+  endpoint, so one target is created per node. The API does not indicate which
+  instance is currently active, so in `ACTIVE_STANDBY_MULTI_AZ` mode both the
+  active and standby instance are discovered as targets; neither will scrape
+  successfully (see above).
+* `SINGLE_INSTANCE` and `CLUSTER_MULTI_AZ` (RabbitMQ) brokers report all of
+  their nodes as a single broker instance with one or more `https` endpoints
+  (same host, distinct ports, one per node), so one target is still created
+  per node. RabbitMQ brokers do not expose a per-node IP address or identifier
+  through this API, so `__meta_mq_broker_instance_ip_address` is absent on
+  these targets and nodes can only be told apart by their endpoint/port.
+
+A broker with no running instances (for example, while it is still being
+created) yields no targets.
+
+The IAM credentials used must have the following permissions to discover
+scrape targets:
+
+- `mq:ListBrokers`
+- `mq:DescribeBroker`
+
+The following meta labels are available on targets during [relabeling](#relabel_config):
+
+**Broker labels (common to every target of a broker):**
+
+* `__meta_mq_authentication_strategy`: the authentication strategy used by the broker
+* `__meta_mq_auto_minor_version_upgrade`: whether automatic minor version upgrades are enabled
+* `__meta_mq_broker_arn`: the ARN of the broker
+* `__meta_mq_broker_id`: the ID of the broker
+* `__meta_mq_broker_name`: the name of the broker
+* `__meta_mq_broker_state`: the state of the broker (e.g., RUNNING, CREATION_IN_PROGRESS, REBOOT_IN_PROGRESS)
+* `__meta_mq_configurations_current_id`: the ID of the broker's current configuration
+* `__meta_mq_configurations_current_revision`: the revision of the broker's current configuration
+* `__meta_mq_created`: the creation time of the broker in RFC3339 format
+* `__meta_mq_data_replication_mode`: the data replication mode of the broker (NONE or CRDR)
+* `__meta_mq_data_replication_metadata_data_replication_role`: the replication role of the broker (data replication deployments only)
+* `__meta_mq_data_replication_metadata_data_replication_counterpart_broker_id`: the broker ID of the replication counterpart (data replication deployments only)
+* `__meta_mq_data_replication_metadata_data_replication_counterpart_region`: the region of the replication counterpart (data replication deployments only)
+* `__meta_mq_deployment_mode`: the deployment mode of the broker (e.g., SINGLE_INSTANCE, ACTIVE_STANDBY_MULTI_AZ, CLUSTER_MULTI_AZ)
+* `__meta_mq_encryption_options_use_aws_owned_key`: whether the broker uses an AWS-owned encryption key
+* `__meta_mq_encryption_options_kms_key_id`: the ID of the customer-managed KMS key used for encryption, if any
+* `__meta_mq_engine_type`: the broker engine (ACTIVEMQ or RABBITMQ)
+* `__meta_mq_engine_version`: the broker engine version
+* `__meta_mq_host_instance_type`: the broker's instance type (e.g., mq.m5.large)
+* `__meta_mq_ldap_server_metadata_hosts`: comma-separated list of LDAP server hosts used for authentication, if configured
+* `__meta_mq_ldap_server_metadata_role_base`: the LDAP role base DN, if configured
+* `__meta_mq_ldap_server_metadata_role_search_matching`: the LDAP role search filter, if configured
+* `__meta_mq_ldap_server_metadata_role_search_subtree`: whether the LDAP role search is recursive, if configured
+* `__meta_mq_ldap_server_metadata_role_name`: the LDAP role name attribute, if configured
+* `__meta_mq_ldap_server_metadata_service_account_username`: the LDAP service account username, if configured
+* `__meta_mq_ldap_server_metadata_user_base`: the LDAP user base DN, if configured
+* `__meta_mq_ldap_server_metadata_user_role_name`: the LDAP user role name attribute, if configured
+* `__meta_mq_ldap_server_metadata_user_search_matching`: the LDAP user search filter, if configured
+* `__meta_mq_ldap_server_metadata_user_search_subtree`: whether the LDAP user search is recursive, if configured
+* `__meta_mq_logs_audit`: whether audit logging is enabled on the broker
+* `__meta_mq_logs_audit_log_group`: the CloudWatch Logs log group audit logs are sent to, if audit logging is enabled
+* `__meta_mq_logs_general`: whether general logging is enabled on the broker
+* `__meta_mq_logs_general_log_group`: the CloudWatch Logs log group general logs are sent to
+* `__meta_mq_logs_pending_audit`: whether audit logging will be enabled once a pending logging change is applied, if a change is pending
+* `__meta_mq_logs_pending_general`: whether general logging will be enabled once a pending logging change is applied, if a change is pending
+* `__meta_mq_maintenance_window_start_time_day_of_week`: the day of the week of the broker's maintenance window
+* `__meta_mq_maintenance_window_start_time_time_of_day`: the time of day of the broker's maintenance window
+* `__meta_mq_maintenance_window_start_time_time_zone`: the time zone of the broker's maintenance window
+* `__meta_mq_pending_authentication_strategy`: the pending authentication strategy, if a change is pending
+* `__meta_mq_pending_data_replication_mode`: the pending data replication mode, if a change is pending
+* `__meta_mq_pending_data_replication_metadata_data_replication_role`: the pending replication role, if a change is pending
+* `__meta_mq_pending_data_replication_metadata_data_replication_counterpart_broker_id`: the pending replication counterpart broker ID, if a change is pending
+* `__meta_mq_pending_data_replication_metadata_data_replication_counterpart_region`: the pending replication counterpart region, if a change is pending
+* `__meta_mq_pending_engine_version`: the pending engine version, if an upgrade is pending
+* `__meta_mq_pending_host_instance_type`: the pending instance type, if a change is pending
+* `__meta_mq_pending_ldap_server_metadata_hosts`: comma-separated list of pending LDAP server hosts, if a change is pending
+* `__meta_mq_pending_ldap_server_metadata_role_base`: the pending LDAP role base DN, if a change is pending
+* `__meta_mq_pending_ldap_server_metadata_role_search_matching`: the pending LDAP role search filter, if a change is pending
+* `__meta_mq_pending_ldap_server_metadata_role_search_subtree`: the pending LDAP role search recursiveness, if a change is pending
+* `__meta_mq_pending_ldap_server_metadata_role_name`: the pending LDAP role name attribute, if a change is pending
+* `__meta_mq_pending_ldap_server_metadata_service_account_username`: the pending LDAP service account username, if a change is pending
+* `__meta_mq_pending_ldap_server_metadata_user_base`: the pending LDAP user base DN, if a change is pending
+* `__meta_mq_pending_ldap_server_metadata_user_role_name`: the pending LDAP user role name attribute, if a change is pending
+* `__meta_mq_pending_ldap_server_metadata_user_search_matching`: the pending LDAP user search filter, if a change is pending
+* `__meta_mq_pending_ldap_server_metadata_user_search_subtree`: the pending LDAP user search recursiveness, if a change is pending
+* `__meta_mq_pending_security_groups`: comma-separated list of pending security group IDs, if a change is pending
+* `__meta_mq_pending_storage_size`: the pending storage size in gibibytes (GiB), if a change is pending
+* `__meta_mq_publicly_accessible`: whether the broker is publicly accessible
+* `__meta_mq_security_groups`: comma-separated list of security group IDs attached to the broker
+* `__meta_mq_storage_size`: the storage size of the broker in gibibytes (GiB)
+* `__meta_mq_storage_type`: the storage type of the broker (EBS or EFS)
+* `__meta_mq_subnet_ids`: comma-separated list of subnet IDs the broker is deployed into
+* `__meta_mq_tags_<tagkey>`: each tag value of the broker, keyed by tag name
+
+**Broker instance labels (target-specific):**
+
+* `__meta_mq_broker_instance_endpoint`: the `https` endpoint used as the target's scrape address
+
 See below for the configuration options for AWS discovery:
 
 ```yaml
 # The AWS role to use for service discovery.
-# Must be one of: ec2, lightsail, ecs, msk, elasticache, or rds.
+# Must be one of: ec2, lightsail, ecs, msk, elasticache, mq, or rds.
 role: <string>
 
 # The AWS region. If blank, the region from the instance metadata is used.
@@ -1340,10 +1470,14 @@ role: <string>
 # instead be specified in the relabeling rule.
 [ port: <int> | default = 80 ]
 
-# Filters can be used optionally to filter the instance list by other criteria (ec2 role only).
+# Filters can be used optionally to filter the instance list by other criteria (ec2 & rds role only).
 # Available filter criteria can be found here:
-# https://docs.aws.amazon.com/AWSEC2/latest/APIReference/API_DescribeInstances.html
-# Filter API documentation: https://docs.aws.amazon.com/AWSEC2/latest/APIReference/API_Filter.html
+# EC2:
+#  - https://docs.aws.amazon.com/AWSEC2/latest/APIReference/API_DescribeInstances.html
+#  - Filter API documentation: https://docs.aws.amazon.com/AWSEC2/latest/APIReference/API_Filter.html
+# RDS:
+#  - https://docs.aws.amazon.com/AmazonRDS/latest/APIReference/API_DescribeDBInstances.html
+#  - Filter API documentation: https://docs.aws.amazon.com/AmazonRDS/latest/APIReference/API_Filter.html
 filters:
   [ - name: <string>
       values: <string>, [...] ]
@@ -1380,7 +1514,7 @@ The following meta labels are available on targets during [relabeling](#relabel_
 * `__meta_azure_machine_public_ip`: the machine's public IP if it exists
 * `__meta_azure_machine_resource_group`: the machine's resource group
 * `__meta_azure_machine_tag_<tagname>`: each tag value of the machine
-* `__meta_azure_machine_scale_set`: the name of the scale set which the vm is part of (this value is only set if you are using a [scale set](https://docs.microsoft.com/en-us/azure/virtual-machine-scale-sets/))
+* `__meta_azure_machine_scale_set`: the name of the scale set which the vm is part of (this value is only set if you are using a [scale set](https://learn.microsoft.com/en-us/azure/virtual-machine-scale-sets/))
 * `__meta_azure_machine_size`: the machine size
 * `__meta_azure_subscription_id`: the subscription ID
 * `__meta_azure_tenant_id`: the tenant ID
@@ -1392,10 +1526,14 @@ See below for the configuration options for Azure discovery:
 # The Azure environment.
 [ environment: <string> | default = AzurePublicCloud ]
 
-# The authentication method, either OAuth, ManagedIdentity or SDK.
-# See https://docs.microsoft.com/en-us/azure/active-directory/managed-identities-azure-resources/overview
+# The authentication method, either OAuth, ManagedIdentity, SDK or WorkloadIdentity.
+# See https://learn.microsoft.com/en-us/entra/identity/managed-identities-azure-resources/overview
 # SDK authentication method uses environment variables by default.
 # See https://learn.microsoft.com/en-us/azure/developer/go/azure-sdk-authentication
+# WorkloadIdentity authentication method uses the environment variables injected
+# by the Azure Workload Identity webhook (AZURE_CLIENT_ID, AZURE_TENANT_ID and
+# AZURE_FEDERATED_TOKEN_FILE).
+# See https://learn.microsoft.com/en-us/azure/aks/workload-identity-overview
 [ authentication_method: <string> | default = OAuth]
 # The subscription ID. Always required.
 subscription_id: <string>
@@ -1492,7 +1630,7 @@ tags:
 # The string by which Consul tags are joined into the tag label.
 [ tag_separator: <string> | default = , ]
 
-# Allow stale Consul results (see https://www.consul.io/api/features/consistency.html). Will reduce load on Consul.
+# Allow stale Consul results (see https://developer.hashicorp.com/consul/api-docs/features/consistency). Will reduce load on Consul.
 [ allow_stale: <boolean> | default = true ]
 
 # The time after which the provided names are refreshed.
@@ -1589,6 +1727,8 @@ Available meta labels:
 
 * `__meta_docker_container_id`: the id of the container
 * `__meta_docker_container_name`: the name of the container
+* `__meta_docker_container_image`: the image of the container
+* `__meta_docker_container_image_id`: the SHA256 hash of the image of the container
 * `__meta_docker_container_network_mode`: the network mode of the container
 * `__meta_docker_container_label_<labelname>`: each label of the container, with any unsupported characters converted to an underscore
 * `__meta_docker_network_id`: the ID of the network
@@ -1685,7 +1825,7 @@ created using the `port` parameter defined in the SD configuration.
 
 Available meta labels:
 
-* `__meta_dockerswarm_container_label_<labelname>`: each label of the container, with any unsupported characters converted to an underscore
+* `__meta_dockerswarm_container_label_<labelname>`: each label configured in the task's `ContainerSpec`, with any unsupported characters converted to an underscore. Labels defined in the image are not available through the Docker Swarm task API. To expose image metadata, copy the required values to a container or service label when deploying the service.
 * `__meta_dockerswarm_task_id`: the id of the task
 * `__meta_dockerswarm_task_container_id`: the container id of the task
 * `__meta_dockerswarm_task_desired_state`: the desired state of the task
@@ -1832,6 +1972,7 @@ The following meta labels are available on targets during [relabeling](#relabel_
 * `__meta_ec2_ipv6_addresses`: comma separated list of IPv6 addresses assigned to the instance's network interfaces, if present
 * `__meta_ec2_owner_id`: the ID of the AWS account that owns the EC2 instance
 * `__meta_ec2_platform`: the Operating System platform, set to 'windows' on Windows servers, absent otherwise
+* `__meta_ec2_default_ipv6_address`: the first primary IPv6 address found if present, otherwise first non-primary IPv6 address, if present
 * `__meta_ec2_primary_ipv6_addresses`: comma separated list of the Primary IPv6 addresses of the instance, if present. The list is ordered based on the position of each corresponding network interface in the attachment order.
 * `__meta_ec2_primary_subnet_id`: the subnet ID of the primary network interface, if available
 * `__meta_ec2_private_dns_name`: the private DNS name of the instance, if available
@@ -2287,9 +2428,7 @@ The following meta labels are available on all targets during [relabeling](#rela
 * `__meta_hetzner_public_ipv4`: the public ipv4 address of the server
 * `__meta_hetzner_public_ipv6_network`: the public ipv6 network (/64) of the server
 
-Note that the `__meta_hetzner_datacenter` label is deprecated for both roles `robot` and `hcloud`:
-- For the `robot` role, the replacement label is `__meta_hetzner_robot_datacenter`.
-- For the `hcloud` role, the label will be removed after 1 July 2026. For more details, see the [changelog](https://docs.hetzner.cloud/changelog#2025-12-16-phasing-out-datacenters).
+Note that the `__meta_hetzner_datacenter` label is deprecated for the `robot` role, the replacement label is `__meta_hetzner_robot_datacenter`.
 
 The labels below are only available for targets with `role` set to `hcloud`:
 
@@ -2466,10 +2605,14 @@ service port.
 Available meta labels:
 
 * `__meta_kubernetes_namespace`: The namespace of the service object.
+* `__meta_kubernetes_namespace_label_<labelname>`: Each label from the namespace object, with any unsupported characters converted to an underscore. Requires `attach_metadata: {namespace: true}`.
+* `__meta_kubernetes_namespace_labelpresent_<labelname>`: `true` for each label from the namespace object, with any unsupported characters converted to an underscore. Requires `attach_metadata: {namespace: true}`.
+* `__meta_kubernetes_namespace_annotation_<annotationname>`: Each annotation from the namespace object. Requires `attach_metadata: {namespace: true}`.
+* `__meta_kubernetes_namespace_annotationpresent_<annotationname>`: `true` for each annotation from the namespace object. Requires `attach_metadata: {namespace: true}`.
 * `__meta_kubernetes_service_annotation_<annotationname>`: Each annotation from the service object.
 * `__meta_kubernetes_service_annotationpresent_<annotationname>`: "true" for each annotation of the service object.
 * `__meta_kubernetes_service_cluster_ip`: The cluster IP address of the service. (Does not apply to services of type ExternalName)
-* `__meta_kubernetes_service_loadbalancer_ip`: The IP address of the loadbalancer. (Applies to services of type LoadBalancer)
+* `__meta_kubernetes_service_loadbalancer_ip`: The IP address of the load balancer, taken from `status.loadBalancer.ingress` (comma-separated when there are multiple). Falls back to the deprecated `spec.loadBalancerIP`. (Applies to services of type LoadBalancer)
 * `__meta_kubernetes_service_external_name`: The DNS name of the service. (Applies to services of type ExternalName)
 * `__meta_kubernetes_service_label_<labelname>`: Each label from the service object, with any unsupported characters converted to an underscore.
 * `__meta_kubernetes_service_labelpresent_<labelname>`: `true` for each label of the service object, with any unsupported characters converted to an underscore.
@@ -2484,10 +2627,15 @@ Available meta labels:
 The `pod` role discovers all pods and exposes their containers as targets. For each declared
 port of a container, a single target is generated. If a container has no specified ports,
 a port-free target per container is created for manually adding a port via relabeling.
+In that case `__address__` is set to the pod IP only, without a port.
 
 Available meta labels:
 
 * `__meta_kubernetes_namespace`: The namespace of the pod object.
+* `__meta_kubernetes_namespace_label_<labelname>`: Each label from the namespace object, with any unsupported characters converted to an underscore. Requires `attach_metadata: {namespace: true}`.
+* `__meta_kubernetes_namespace_labelpresent_<labelname>`: `true` for each label from the namespace object, with any unsupported characters converted to an underscore. Requires `attach_metadata: {namespace: true}`.
+* `__meta_kubernetes_namespace_annotation_<annotationname>`: Each annotation from the namespace object. Requires `attach_metadata: {namespace: true}`.
+* `__meta_kubernetes_namespace_annotationpresent_<annotationname>`: `true` for each annotation from the namespace object. Requires `attach_metadata: {namespace: true}`.
 * `__meta_kubernetes_pod_name`: The name of the pod object.
 * `__meta_kubernetes_pod_ip`: The pod IP of the pod object.
 * `__meta_kubernetes_pod_label_<labelname>`: Each label from the pod object, with any unsupported characters converted to an underscore.
@@ -2525,6 +2673,10 @@ it is recommended to use EndpointSlices instead and switch to the `endpointslice
 Available meta labels:
 
 * `__meta_kubernetes_namespace`: The namespace of the endpoints object.
+* `__meta_kubernetes_namespace_label_<labelname>`: Each label from the namespace object, with any unsupported characters converted to an underscore. Requires `attach_metadata: {namespace: true}`.
+* `__meta_kubernetes_namespace_labelpresent_<labelname>`: `true` for each label from the namespace object, with any unsupported characters converted to an underscore. Requires `attach_metadata: {namespace: true}`.
+* `__meta_kubernetes_namespace_annotation_<annotationname>`: Each annotation from the namespace object. Requires `attach_metadata: {namespace: true}`.
+* `__meta_kubernetes_namespace_annotationpresent_<annotationname>`: `true` for each annotation from the namespace object. Requires `attach_metadata: {namespace: true}`.
 * `__meta_kubernetes_endpoints_name`: The names of the endpoints object.
 * `__meta_kubernetes_endpoints_label_<labelname>`: Each label from the endpoints object, with any unsupported characters converted to an underscore.
 * `__meta_kubernetes_endpoints_labelpresent_<labelname>`: `true` for each label from the endpoints object, with any unsupported characters converted to an underscore.
@@ -2553,6 +2705,10 @@ The role requires the `discovery.k8s.io/v1` API version (available since Kuberne
 Available meta labels:
 
 * `__meta_kubernetes_namespace`: The namespace of the endpointslice object.
+* `__meta_kubernetes_namespace_label_<labelname>`: Each label from the namespace object, with any unsupported characters converted to an underscore. Requires `attach_metadata: {namespace: true}`.
+* `__meta_kubernetes_namespace_labelpresent_<labelname>`: `true` for each label from the namespace object, with any unsupported characters converted to an underscore. Requires `attach_metadata: {namespace: true}`.
+* `__meta_kubernetes_namespace_annotation_<annotationname>`: Each annotation from the namespace object. Requires `attach_metadata: {namespace: true}`.
+* `__meta_kubernetes_namespace_annotationpresent_<annotationname>`: `true` for each annotation from the namespace object. Requires `attach_metadata: {namespace: true}`.
 * `__meta_kubernetes_endpointslice_name`: The name of endpointslice object.
 * `__meta_kubernetes_endpointslice_label_<labelname>`: Each label from the endpointslice object, with any unsupported characters converted to an underscore.
 * `__meta_kubernetes_endpointslice_labelpresent_<labelname>`: `true` for each label from the endpointslice object, with any unsupported characters converted to an underscore.
@@ -2574,6 +2730,7 @@ Available meta labels:
   * `__meta_kubernetes_endpointslice_port`: Port of the referenced endpoint.
   * `__meta_kubernetes_endpointslice_port_name`: Named port of the referenced endpoint.
   * `__meta_kubernetes_endpointslice_port_protocol`: Protocol of the referenced endpoint.
+  * `__meta_kubernetes_endpointslice_port_app_protocol`: The application protocol of the referenced endpoint's port, if set
 * If the endpoints belong to a service, all labels of the `role: service` discovery are attached.
 * For all targets backed by a pod, all labels of the `role: pod` discovery are attached.
 
@@ -2588,6 +2745,10 @@ The role requires the `networking.k8s.io/v1` API version (available since Kubern
 Available meta labels:
 
 * `__meta_kubernetes_namespace`: The namespace of the ingress object.
+* `__meta_kubernetes_namespace_label_<labelname>`: Each label from the namespace object, with any unsupported characters converted to an underscore. Requires `attach_metadata: {namespace: true}`.
+* `__meta_kubernetes_namespace_labelpresent_<labelname>`: `true` for each label from the namespace object, with any unsupported characters converted to an underscore. Requires `attach_metadata: {namespace: true}`.
+* `__meta_kubernetes_namespace_annotation_<annotationname>`: Each annotation from the namespace object. Requires `attach_metadata: {namespace: true}`.
+* `__meta_kubernetes_namespace_annotationpresent_<annotationname>`: `true` for each annotation from the namespace object. Requires `attach_metadata: {namespace: true}`.
 * `__meta_kubernetes_ingress_name`: The name of the ingress object.
 * `__meta_kubernetes_ingress_label_<labelname>`: Each label from the ingress object, with any unsupported characters converted to an underscore.
 * `__meta_kubernetes_ingress_labelpresent_<labelname>`: `true` for each label from the ingress object, with any unsupported characters converted to an underscore.
@@ -2596,6 +2757,7 @@ Available meta labels:
 * `__meta_kubernetes_ingress_class_name`: Class name from ingress spec, if present.
 * `__meta_kubernetes_ingress_scheme`: Protocol scheme of ingress, `https` if TLS
   config is set. Defaults to `http`.
+* `__meta_kubernetes_ingress_host`: Host from ingress spec.
 * `__meta_kubernetes_ingress_path`: Path from ingress spec. Defaults to `/`.
 
 See below for the configuration options for Kubernetes discovery:
@@ -2928,6 +3090,138 @@ The following meta labels are available on targets during [relabeling](#relabel_
 # HTTP client settings, including authentication methods (such as basic auth and
 # authorization), proxy configurations, TLS options, custom HTTP headers, etc.
 [ <http_config> ]
+```
+
+### `<oci_sd_config>`
+
+OCI SD configurations allow retrieving scrape targets from Oracle Cloud Infrastructure (OCI)
+compute instances. The private IP of the primary VNIC is used as the default address.
+Where no private IP is present, the public IP is used instead, and where neither is
+present the first IPv6 address of the primary VNIC is used.
+
+The following OCI IAM policies are required. For API key authentication (user credentials):
+
+```text
+Allow group <group-name> to read instances in tenancy
+Allow group <group-name> to read compartments in tenancy
+Allow group <group-name> to read vnic-attachments in tenancy
+Allow group <group-name> to read vnics in tenancy
+```
+
+For instance principal authentication (Prometheus running on OCI compute):
+
+```text
+Allow dynamic-group <dynamic-group-name> to read instances in tenancy
+Allow dynamic-group <dynamic-group-name> to read compartments in tenancy
+Allow dynamic-group <dynamic-group-name> to read vnic-attachments in tenancy
+Allow dynamic-group <dynamic-group-name> to read vnics in tenancy
+```
+
+The following meta labels are available on all targets during
+[relabeling](#relabel_config):
+
+* `__meta_oci_availability_domain`: the availability domain of the instance (e.g. `US-ASHBURN-AD-1`)
+* `__meta_oci_compartment_id`: the OCID of the compartment the instance belongs to
+* `__meta_oci_defined_tag_<namespace>_<key>`: each defined tag of the instance. Scalar values (strings, numbers, booleans) are stringified; non-scalar values are dropped
+* `__meta_oci_fault_domain`: the fault domain of the instance (e.g. `FAULT-DOMAIN-1`)
+* `__meta_oci_hostname_label`: the hostname label of the primary VNIC, if assigned
+* `__meta_oci_image_id`: the OCID of the image the instance was launched from
+* `__meta_oci_instance_id`: the OCID of the instance
+* `__meta_oci_instance_name`: the display name of the instance
+* `__meta_oci_instance_shape`: the shape of the instance (e.g. `VM.Standard.E4.Flex`)
+* `__meta_oci_instance_state`: the lifecycle state of the instance (e.g. `RUNNING`, `STOPPED`, `TERMINATED`). Use relabeling to restrict scraping to states you care about.
+* `__meta_oci_ipv6_addresses`: the IPv6 addresses of the primary VNIC, comma-separated and surrounded by commas (e.g. `,2001:db8::1,2001:db8::2,`); empty when none are assigned
+* `__meta_oci_private_ip`: the private IP address of the primary VNIC
+* `__meta_oci_public_ip`: the public IP address of the primary VNIC, if assigned
+* `__meta_oci_region`: the OCI region identifier (e.g. `us-ashburn-1`)
+* `__meta_oci_tag_<key>`: each freeform tag of the instance
+* `__meta_oci_tenancy_id`: the OCID of the tenancy the instance belongs to
+* `__meta_oci_vnic_id`: the OCID of the primary VNIC
+
+In tag and namespace names, any character outside `[a-zA-Z0-9_]` is replaced
+with an underscore; case is preserved. For example, a freeform tag named
+`appOwner` is exposed as `__meta_oci_tag_appOwner`, and a defined tag in
+namespace `Operations` with key `Cost Center` is exposed as
+`__meta_oci_defined_tag_Operations_Cost_Center`. Because case is preserved,
+tag keys that differ only in case (`Env` and `env`) produce distinct labels.
+
+To restrict targets to instances carrying a specific tag, use
+[`relabel_configs`](#relabel_config) with `keep` or `drop` actions matching the
+relevant `__meta_oci_tag_*` or `__meta_oci_defined_tag_*` label.
+
+Targets with no resolvable primary-VNIC IP (neither private nor public) are
+dropped to avoid emitting unscrapeable `:<port>` addresses. The address used
+is the private IP when available, falling back to the public IP.
+
+```yaml
+# Authentication method. Supported values: "api_key" (default), "instance_principal".
+# "instance_principal" uses IMDS-based credentials and requires no credential fields;
+# it is the recommended method when Prometheus runs on OCI compute.
+[ auth: <string> | default = "api_key" ]
+
+# API key auth fields. Required when auth is "api_key".
+[ tenancy: <string> ]
+[ user: <string> ]
+[ fingerprint: <string> ]
+[ key_file: <string> ]
+# Passphrase for the private key. Mutually exclusive with key_passphrase_file.
+[ key_passphrase: <secret> ]
+# Path to a file containing the passphrase for the private key. Mutually
+# exclusive with key_passphrase. The file is read at configuration load
+# time; rotating the file requires reloading Prometheus.
+[ key_passphrase_file: <string> ]
+
+# OCI region identifier. Required.
+region: <string>
+
+# Explicit list of compartment OCIDs to scan. When empty, all active
+# compartments reachable from the tenancy root are discovered automatically
+# via the OCI Identity API using a breadth-first walk. Compartments that
+# cannot be listed due to missing permissions are skipped with a warning so
+# that a single permission gap does not abort the walk.
+[ compartments:
+  [ - <string> ... ] ]
+
+# Authentication information used to authenticate to the API server.
+# Note that `basic_auth`, `authorization`, and `oauth2` options are
+# mutually exclusive. `password` and `password_file` are mutually exclusive.
+# It is mostly useful to configure `proxy_url`, `tls_config`, and the
+# underlying HTTP transport when targeting OCI through a corporate proxy
+# or with a custom CA bundle.
+# Optional HTTP basic authentication information, currently not supported by OCI.
+[ basic_auth: <basic_auth> ]
+# Optional `Authorization` header configuration, currently not supported by OCI.
+[ authorization: <authorization> ]
+# Optional OAuth 2.0 configuration, currently not supported by OCI.
+[ oauth2: <oauth2> ]
+
+# Optional proxy URL.
+[ proxy_url: <string> ]
+# Comma-separated string that can contain IPs, CIDR notation, domain names
+# that should be excluded from proxying. IP and domain names can
+# contain port numbers.
+[ no_proxy: <string> ]
+# Use proxy URL indicated by environment variables (HTTP_PROXY, HTTPS_PROXY, NO_PROXY, and their lowercase versions)
+[ proxy_from_environment: <boolean> | default: false ]
+# Specifies headers to send to proxies during CONNECT requests.
+[ proxy_connect_header:
+  [ <string>: [<secret>, ...] ] ]
+
+# Configure whether HTTP requests follow HTTP 3xx redirects.
+[ follow_redirects: <boolean> | default = true ]
+
+# Whether to enable HTTP2.
+[ enable_http2: <boolean> | default: true ]
+
+# Configures the TLS settings.
+tls_config:
+  [ <tls_config> ]
+
+# The port to scrape metrics from.
+[ port: <int> | default = 80 ]
+
+# The time after which the instances are refreshed.
+[ refresh_interval: <duration> | default = 60s ]
 ```
 
 ### `<serverset_sd_config>`
@@ -3425,10 +3719,15 @@ Initially, aside from the configured per-target labels, a target's `job`
 label is set to the `job_name` value of the respective scrape configuration.
 
 You can also use special labels like `__address__`, `__scheme__`, `__metrics_path__`,
-`__scrape_interval__`, `__scrape_timeout__` to customize the defined targets. These will
+`__scrape_interval__`, `__scrape_timeout__`, `__convert_classic_histograms_to_nhcb__`,
+`__always_scrape_classic_histograms__`, `__scrape_native_histograms__`,
+`__unix_socket__` to customize the defined targets. These will
 override the respective settings in the scrape configuration.
 
 The `__address__` label is set to the `<host>:<port>` address of the target.
+Some service discovery implementations omit the port when none is known, so
+that it can be added via relabeling. Kubernetes pod discovery does this for
+containers that declare no ports; `__address__` is then the pod IP only.
 After relabeling, the `instance` label is set to the value of `__address__` by default if
 it was not set during relabeling.
 
@@ -3440,6 +3739,31 @@ label is set to the value of the first passed URL parameter called `<name>`, as 
 
 The `__scrape_interval__` and `__scrape_timeout__` labels are set to the target's
 interval and timeout, as specified in `scrape_config`.
+
+The `__convert_classic_histograms_to_nhcb__` label is set to the target's
+`convert_classic_histograms_to_nhcb` value, as specified in `scrape_config`
+(defaulting to the configured global). Setting it during relabeling overrides,
+per target, whether classic histograms are converted to native histograms with
+custom buckets. Its value must parse as a boolean; a target with an invalid
+value is dropped.
+
+The `__always_scrape_classic_histograms__` label is set to the target's
+`always_scrape_classic_histograms` value, as specified in `scrape_config`
+(defaulting to the configured global). Setting it during relabeling overrides,
+per target, whether a classic histogram is also ingested when it is exposed as
+a native histogram. Its value must parse as a boolean; a target with an invalid
+value is dropped.
+
+The `__scrape_native_histograms__` label is set to the target's
+`scrape_native_histograms` value, as specified in `scrape_config` (defaulting to
+the configured global). Setting it during relabeling overrides, per target,
+whether native histograms are scraped. Its value must parse as a boolean; a
+target with an invalid value is dropped.
+
+The `__unix_socket__` label, when set, causes the scrape client to connect via
+the specified Unix domain socket path instead of the target's `__address__`.
+Set `__scheme__` to `http` or `https` to specify the protocol used over
+the socket (defaults to `http`).
 
 Additional labels prefixed with `__meta_` may be available during the
 relabeling phase. They are set by the service discovery mechanism that provided
@@ -3575,6 +3899,22 @@ sigv4:
   # Can only be used with role_arn.
   [ external_id: <string> ]
 
+  # Session name used when assuming a role, mapped to the AWS RoleSessionName.
+  # Can only be used with role_arn. Must match the pattern ^[\w+=,.@-]{2,64}$.
+  # Requires Prometheus >= 3.15.0.
+  [ session_name: <string> ]
+
+  # STS session tags used for cost allocation when assuming a role.
+  # Can only be used with role_arn. Tag keys must not be empty and must be
+  # <= 128 characters; tag values must be <= 256 characters.
+  # Requires Prometheus >= 3.15.0.
+  [ tags:
+    [ <string>: <string> ... ] ]
+
+  # AWS service name used to scope the SigV4 signing (e.g. "aps" for
+  # Amazon Managed Service for Prometheus).
+  [ service_name: <string> ]
+
   # Defines the FIPS mode for the AWS STS endpoint.
   # Requires Prometheus >= 2.54.0
   # Note: FIPS STS selection should be configured via use_fips_sts_endpoint rather than environment variables. (The problem report that motivated this: AWS_USE_FIPS_ENDPOINT no longer works.)
@@ -3663,6 +4003,10 @@ nerve_sd_configs:
 # List of Nomad service discovery configurations.
 nomad_sd_configs:
   [ - <nomad_sd_config> ... ]
+
+# List of OCI service discovery configurations.
+oci_sd_configs:
+  [ - <oci_sd_config> ... ]
 
 # List of OpenStack service discovery configurations.
 openstack_sd_configs:
@@ -3794,6 +4138,22 @@ sigv4:
   # Can only be used with role_arn.
   [ external_id: <string> ]
 
+  # Session name used when assuming a role, mapped to the AWS RoleSessionName.
+  # Can only be used with role_arn. Must match the pattern ^[\w+=,.@-]{2,64}$.
+  # Requires Prometheus >= 3.15.0.
+  [ session_name: <string> ]
+
+  # STS session tags used for cost allocation when assuming a role.
+  # Can only be used with role_arn. Tag keys must not be empty and must be
+  # <= 128 characters; tag values must be <= 256 characters.
+  # Requires Prometheus >= 3.15.0.
+  [ tags:
+    [ <string>: <string> ... ] ]
+
+  # AWS service name used to scope the SigV4 signing (e.g. "aps" for
+  # Amazon Managed Service for Prometheus).
+  [ service_name: <string> ]
+
   # Defines the FIPS mode for the AWS STS endpoint.
   # Requires Prometheus >= 2.54.0
   # Note: FIPS STS selection should be configured via use_fips_sts_endpoint rather than environment variables. (The problem report that motivated this: AWS_USE_FIPS_ENDPOINT no longer works.)
@@ -3813,6 +4173,10 @@ azuread:
   [ workload_identity:
      client_id: <string>
      tenant_id: <string>
+     # Path to the projected service account token file. If unset, Prometheus
+     # uses the AZURE_FEDERATED_TOKEN_FILE environment variable (set by the
+     # Azure Workload Identity webhook); if that is also unset, it falls back
+     # to the default below.
      [ token_file_path: <string> | default = "/var/run/secrets/azure/tokens/azure-identity-token" ] ]
 
   # Azure OAuth.
@@ -3820,6 +4184,18 @@ azuread:
       [ client_id: <string> ]
       [ client_secret: <string> ]
       [ tenant_id: <string> ] ]
+
+  # Azure Certificate-based authentication.
+  [ certificate:
+      client_id: <string>
+      tenant_id: <string>
+      certificate_path: <file_name>
+      # Optional path to private key file if separate from certificate
+      [ certificate_key_path: <file_name> ]
+      # Optional password for password-protected certificate files (PFX/PKCS12)
+      [ certificate_password: <secret> ]
+      # Whether to send the certificate chain in the x5c header
+      [ send_certificate_chain: <boolean> | default = false ] ]
 
   # Azure SDK auth.
   # See https://learn.microsoft.com/en-us/azure/developer/go/azure-sdk-authentication
@@ -3882,7 +4258,22 @@ metadata_config:
   # How frequently metric metadata is sent to remote storage.
   [ send_interval: <duration> | default = 1m ]
   # Maximum number of samples per send.
-  [ max_samples_per_send: <int> | default = 500]
+  [ max_samples_per_send: <int> | default = 2000]
+
+# EXPERIMENTAL: Converts native histograms with custom buckets (NHCB)
+# to classic histograms after applying write_relabel_configs. This enables
+# using NHCB locally (for cheaper storage and histogram atomicity) while
+# sending classic histograms to external systems that do not support
+# native histograms yet. Also useful for migration scenarios.
+# NHCBs are converted even when send_native_histograms is enabled; that setting
+# controls forwarding of other native histograms. Classic series ingested
+# alongside NHCBs, for example with always_scrape_classic_histograms, are sent
+# too, so the converted series duplicate them; drop one copy with
+# write_relabel_configs. Gauge histograms are converted with _count and _sum
+# series. Conversion state is not persisted across restarts, so bucket layout or
+# sample type changes that span a restart do not produce stale markers for
+# retired classic series.
+[ convert_nhcb_to_classic: <boolean> | default = false ]
 
 # HTTP client settings, including authentication methods (such as basic auth and
 # authorization), proxy configurations, TLS options, custom HTTP headers, etc.
@@ -3967,6 +4358,31 @@ with this feature.
 # This is an experimental feature, this behaviour could change or be removed in the future.
 [ stale_series_compaction_threshold: <float> | default = 0 ]
 
+# Configures the float chunk encoding to use for new chunks.
+# Valid values are 'xor' and 'xor2'. XOR2 gives better disk compression than XOR for
+# typical Prometheus workloads and can store start timestamps.
+#
+# WARNING: chunks encoded with XOR2 cannot be read by older Prometheus versions that do
+# not support the encoding, nor by downstream tools and LTS systems that do not support
+# it yet (e.g. blocks uploaded by the Thanos sidecar). Once XOR2 chunks have been
+# written, downgrading to a version without XOR2 support requires deleting the affected
+# blocks from disk manually, otherwise Prometheus returns an error on all queries.
+#
+# When absent, the encoding is 'xor2' if --enable-feature=xor2-encoding or
+# --enable-feature=st-storage is set, and 'xor' otherwise.
+# Setting 'xor' is incompatible with --enable-feature=st-storage (XOR chunks do not store
+# start timestamps); Prometheus will refuse to start or reload in that case.
+# This field is runtime-reloadable.
+# When --enable-feature=st-storage is disabled, XOR and XOR2 are compatible
+# encodings and in-progress chunks are not cut on an encoding change; the new
+# encoding takes effect when the current chunk is next cut for any reason (size, time range, or sample count).
+# When --enable-feature=st-storage is enabled, XOR and XOR2 are not compatible
+# (XOR chunks do not store start timestamps), so an in-progress chunk is cut
+# on the next append after the encoding changes.
+# For the equivalent ST-capable encoding for native histograms, see the experimental
+# histograms-st-encoding feature flag. The st-storage feature enables that encoding too.
+[ chunk_encoding:
+  [ floats: <string> ] ]
 
 # Configures data retention settings for TSDB.
 #

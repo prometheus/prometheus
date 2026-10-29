@@ -50,6 +50,7 @@ func NewTestMetrics(t *testing.T, reg prometheus.Registerer) *SDMetrics {
 
 // TestTargetUpdatesOrder checks that the target updates are received in the expected order.
 func TestTargetUpdatesOrder(t *testing.T) {
+	t.Parallel()
 	// The order by which the updates are send is determined by the interval passed to the mock discovery adapter
 	// Final targets array is ordered alphabetically by the name of the discoverer.
 	// For example discoverer "A" with targets "t2,t3" and discoverer "B" with targets "t1,t2" will result in "t2,t3,t1,t2" after the merge.
@@ -673,6 +674,7 @@ func TestTargetUpdatesOrder(t *testing.T) {
 
 	for i, tc := range testCases {
 		t.Run(tc.title, func(t *testing.T) {
+			t.Parallel()
 			ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 			defer cancel()
 
@@ -787,6 +789,7 @@ func pk(provider, setName string, n int) poolKey {
 }
 
 func TestTargetSetTargetGroupsPresentOnStartup(t *testing.T) {
+	t.Parallel()
 	testCases := []struct {
 		name            string
 		updatert        time.Duration
@@ -814,6 +817,7 @@ func TestTargetSetTargetGroupsPresentOnStartup(t *testing.T) {
 
 	for _, tc := range testCases {
 		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
 			synctest.Test(t, func(t *testing.T) {
 				ctx := t.Context()
 
@@ -865,6 +869,7 @@ func TestTargetSetTargetGroupsPresentOnStartup(t *testing.T) {
 }
 
 func TestTargetSetTargetGroupsPresentOnConfigReload(t *testing.T) {
+	t.Parallel()
 	ctx := t.Context()
 
 	reg := prometheus.NewRegistry()
@@ -901,6 +906,7 @@ func TestTargetSetTargetGroupsPresentOnConfigReload(t *testing.T) {
 }
 
 func TestTargetSetTargetGroupsPresentOnConfigRename(t *testing.T) {
+	t.Parallel()
 	ctx := t.Context()
 
 	reg := prometheus.NewRegistry()
@@ -940,6 +946,7 @@ func TestTargetSetTargetGroupsPresentOnConfigRename(t *testing.T) {
 }
 
 func TestTargetSetTargetGroupsPresentOnConfigDuplicateAndDeleteOriginal(t *testing.T) {
+	t.Parallel()
 	ctx := t.Context()
 
 	reg := prometheus.NewRegistry()
@@ -982,6 +989,7 @@ func TestTargetSetTargetGroupsPresentOnConfigDuplicateAndDeleteOriginal(t *testi
 }
 
 func TestTargetSetTargetGroupsPresentOnConfigChange(t *testing.T) {
+	t.Parallel()
 	ctx := t.Context()
 
 	reg := prometheus.NewRegistry()
@@ -1049,6 +1057,7 @@ func TestTargetSetTargetGroupsPresentOnConfigChange(t *testing.T) {
 }
 
 func TestTargetSetRecreatesTargetGroupsOnConfigChange(t *testing.T) {
+	t.Parallel()
 	ctx := t.Context()
 
 	reg := prometheus.NewRegistry()
@@ -1092,6 +1101,7 @@ func TestTargetSetRecreatesTargetGroupsOnConfigChange(t *testing.T) {
 }
 
 func TestDiscovererConfigs(t *testing.T) {
+	t.Parallel()
 	ctx := t.Context()
 
 	reg := prometheus.NewRegistry()
@@ -1128,6 +1138,7 @@ func TestDiscovererConfigs(t *testing.T) {
 // removing all targets from the static_configs cleans the corresponding targetGroups entries to avoid leaks and sends an empty update.
 // The update is required to signal the consumers that the previous targets should be dropped.
 func TestTargetSetRecreatesEmptyStaticConfigs(t *testing.T) {
+	t.Parallel()
 	ctx := t.Context()
 
 	reg := prometheus.NewRegistry()
@@ -1169,6 +1180,7 @@ func TestTargetSetRecreatesEmptyStaticConfigs(t *testing.T) {
 }
 
 func TestIdenticalConfigurationsAreCoalesced(t *testing.T) {
+	t.Parallel()
 	ctx := t.Context()
 
 	reg := prometheus.NewRegistry()
@@ -1201,6 +1213,7 @@ func TestIdenticalConfigurationsAreCoalesced(t *testing.T) {
 }
 
 func TestApplyConfigDoesNotModifyStaticTargets(t *testing.T) {
+	t.Parallel()
 	originalConfig := Configs{
 		staticConfig("foo:9090", "bar:9090", "baz:9090"),
 	}
@@ -1250,7 +1263,7 @@ func (lockStaticConfig) NewDiscovererMetrics(prometheus.Registerer, RefreshMetri
 
 func (lockStaticConfig) Name() string { return "lockstatic" }
 func (s lockStaticConfig) NewDiscoverer(DiscovererOptions) (Discoverer, error) {
-	return (lockStaticDiscoverer)(s), nil
+	return lockStaticDiscoverer(s), nil
 }
 
 type lockStaticDiscoverer lockStaticConfig
@@ -1267,6 +1280,7 @@ func (s lockStaticDiscoverer) Run(ctx context.Context, up chan<- []*targetgroup.
 }
 
 func TestGaugeFailedConfigs(t *testing.T) {
+	t.Parallel()
 	ctx := t.Context()
 
 	reg := prometheus.NewRegistry()
@@ -1301,6 +1315,7 @@ func TestGaugeFailedConfigs(t *testing.T) {
 }
 
 func TestCoordinationWithReceiver(t *testing.T) {
+	t.Parallel()
 	updateDelay := 100 * time.Millisecond
 
 	type expect struct {
@@ -1422,6 +1437,7 @@ func TestCoordinationWithReceiver(t *testing.T) {
 
 	for _, tc := range testCases {
 		t.Run(tc.title, func(t *testing.T) {
+			t.Parallel()
 			ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 			defer cancel()
 
@@ -1517,6 +1533,7 @@ func (o onceProvider) Run(_ context.Context, ch chan<- []*targetgroup.Group) {
 // TestTargetSetTargetGroupsUpdateDuringApplyConfig is used to detect races when
 // ApplyConfig happens at the same time as targets update.
 func TestTargetSetTargetGroupsUpdateDuringApplyConfig(t *testing.T) {
+	t.Parallel()
 	ctx := t.Context()
 
 	reg := prometheus.NewRegistry()
@@ -1612,6 +1629,7 @@ func (t *testDiscoverer) update(tgs []*targetgroup.Group) {
 }
 
 func TestUnregisterMetrics(t *testing.T) {
+	t.Parallel()
 	reg := prometheus.NewRegistry()
 	// Check that all metrics can be unregistered, allowing a second manager to be created.
 	for range 2 {
@@ -1632,59 +1650,241 @@ func TestUnregisterMetrics(t *testing.T) {
 	}
 }
 
+// refreshConfig is a config for a discoverer that instantiates refresh metrics
+// when created, like discoverers using the refresh package.
+type refreshConfig struct{ url string }
+
+type refreshDiscovererMetrics struct {
+	NoopDiscovererMetrics
+	RefreshMetricsInstantiator
+}
+
+// NewDiscovererMetrics implements discovery.Config.
+func (refreshConfig) NewDiscovererMetrics(_ prometheus.Registerer, rmi RefreshMetricsInstantiator) DiscovererMetrics {
+	return &refreshDiscovererMetrics{RefreshMetricsInstantiator: rmi}
+}
+
+func (refreshConfig) Name() string { return "refresh" }
+func (c refreshConfig) NewDiscoverer(opts DiscovererOptions) (Discoverer, error) {
+	return newRefreshDiscoverer(opts, c.Name()), nil
+}
+
+// refreshDiscoverer instantiates refresh metrics when created or given a new config name,
+// like discoverers using the refresh package.
+type refreshDiscoverer struct {
+	*testDiscoverer
+	rmi  RefreshMetricsInstantiator
+	mech string
+}
+
+func newRefreshDiscoverer(opts DiscovererOptions, mech string) *refreshDiscoverer {
+	d := &refreshDiscoverer{testDiscoverer: newTestDiscoverer(), rmi: opts.Metrics.(*refreshDiscovererMetrics), mech: mech}
+	d.UpdateSetName(opts.SetName)
+	return d
+}
+
+func (d *refreshDiscoverer) UpdateSetName(setName string) { d.rmi.Instantiate(d.mech, setName) }
+
+// awsConfig is like aws_sd_configs, whose refresh metrics use the role as mechanism.
+type awsConfig struct {
+	refreshConfig
+	role string
+}
+
+func (awsConfig) Name() string               { return "aws" }
+func (c awsConfig) RefreshMechanism() string { return c.role }
+func (c awsConfig) NewDiscoverer(opts DiscovererOptions) (Discoverer, error) {
+	return newRefreshDiscoverer(opts, c.role), nil
+}
+
 // Refresh and discovery metrics should be deleted for providers that are removed.
+// Refresh metrics should *also* be kept for jobs that still have a provider for the same mechanism after a reload.
 func TestMetricsCleanupAfterConfigReload(t *testing.T) {
-	ctx := t.Context()
-
-	reg := prometheus.NewRegistry()
-	sdMetrics := NewTestMetrics(t, reg)
-
-	discoveryManager := NewManager(ctx, promslog.NewNopLogger(), reg, sdMetrics)
-	require.NotNil(t, discoveryManager)
-	discoveryManager.updatert = 100 * time.Millisecond
-	go discoveryManager.Run()
-
-	c := map[string]Configs{
-		"prometheus": {
-			staticConfig("foo:9090", "bar:9090"),
+	t.Parallel()
+	for _, tc := range []struct {
+		name                string
+		before              map[string]Configs
+		during              map[string]Configs
+		after               map[string]Configs
+		refreshSeriesBefore int // Defaults to len(before).
+		refreshSeries       int
+		refreshConfigLabel  string
+	}{
+		{
+			name: "job removed",
+			before: map[string]Configs{
+				"prometheus": {refreshConfig{"foo"}},
+				"other":      {refreshConfig{"bar"}},
+			},
+			after: map[string]Configs{
+				"other": {refreshConfig{"bar"}},
+			},
+			refreshSeries: 1,
 		},
-		"other": {
-			staticConfig("baz:9090"),
+		{
+			name: "job changes mechanism",
+			before: map[string]Configs{
+				"prometheus": {refreshConfig{"foo"}},
+			},
+			after: map[string]Configs{
+				"prometheus": {staticConfig("foo:9090")},
+			},
+			refreshSeries: 0,
 		},
+		{
+			name: "job changes config",
+			before: map[string]Configs{
+				"prometheus": {refreshConfig{"foo"}},
+			},
+			after: map[string]Configs{
+				"prometheus": {refreshConfig{"bar"}},
+			},
+			refreshSeries: 1,
+		},
+		{
+			name: "job removes one of its configs",
+			before: map[string]Configs{
+				"prometheus": {refreshConfig{"foo"}, refreshConfig{"bar"}},
+			},
+			after: map[string]Configs{
+				"prometheus": {refreshConfig{"bar"}},
+			},
+			refreshSeries: 1,
+		},
+		{
+			// The provider keeps running, and its metrics are labelled with the new job name.
+			name: "job renamed",
+			before: map[string]Configs{
+				"prometheus": {refreshConfig{"foo"}},
+			},
+			after: map[string]Configs{
+				"renamed": {refreshConfig{"foo"}},
+			},
+			refreshSeries:      1,
+			refreshConfigLabel: "renamed",
+		},
+		{
+			// Jobs with identical configs share one provider.
+			name: "job changes to another job's config",
+			before: map[string]Configs{
+				"prometheus": {refreshConfig{"foo"}},
+				"other":      {refreshConfig{"bar"}},
+			},
+			after: map[string]Configs{
+				"prometheus": {refreshConfig{"foo"}},
+				"other":      {refreshConfig{"foo"}},
+			},
+			refreshSeries: 1,
+		},
+		{
+			// The provider keeps running for the other job, and its metrics are labelled with it.
+			name: "job removed while another job uses its config",
+			before: map[string]Configs{
+				"prometheus": {refreshConfig{"foo"}},
+			},
+			during: map[string]Configs{
+				"prometheus": {refreshConfig{"foo"}},
+				"other":      {refreshConfig{"foo"}},
+			},
+			after: map[string]Configs{
+				"other": {refreshConfig{"foo"}},
+			},
+			refreshSeriesBefore: 1,
+			refreshSeries:       1,
+			refreshConfigLabel:  "other",
+		},
+		{
+			name: "aws job removed",
+			before: map[string]Configs{
+				"prometheus": {awsConfig{role: "ec2"}},
+			},
+			after:         map[string]Configs{},
+			refreshSeries: 0,
+		},
+		{
+			// Like moving from ec2_sd_configs to aws_sd_configs with role ec2.
+			name: "job changes to aws config with the same mechanism",
+			before: map[string]Configs{
+				"prometheus": {refreshConfig{"foo"}},
+			},
+			after: map[string]Configs{
+				"prometheus": {awsConfig{role: "refresh"}},
+			},
+			refreshSeries: 1,
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			reg := prometheus.NewRegistry()
+			sdMetrics := NewTestMetrics(t, reg)
+			sdMetrics.MechanismMetrics["refresh"] = refreshConfig{}.NewDiscovererMetrics(reg, sdMetrics.RefreshManager)
+			sdMetrics.MechanismMetrics["aws"] = awsConfig{}.NewDiscovererMetrics(reg, sdMetrics.RefreshManager)
+
+			discoveryManager := NewManager(t.Context(), promslog.NewNopLogger(), reg, sdMetrics)
+			require.NotNil(t, discoveryManager)
+			discoveryManager.updatert = 100 * time.Millisecond
+			go discoveryManager.Run()
+
+			discoveryManager.ApplyConfig(tc.before)
+			<-discoveryManager.SyncCh()
+
+			// Ensure we have metrics for every job.
+			refreshSeriesBefore := len(tc.before)
+			if tc.refreshSeriesBefore != 0 {
+				refreshSeriesBefore = tc.refreshSeriesBefore
+			}
+			requireSeriesCount(t, reg, "prometheus_sd_discovered_targets", len(tc.before))
+			requireSeriesCount(t, reg, "prometheus_sd_last_update_timestamp_seconds", len(tc.before))
+			requireSeriesCount(t, reg, "prometheus_sd_refresh_failures_total", refreshSeriesBefore)
+			requireSeriesCount(t, reg, "prometheus_sd_refresh_duration_seconds", refreshSeriesBefore)
+
+			if tc.during != nil {
+				discoveryManager.ApplyConfig(tc.during)
+				<-discoveryManager.SyncCh()
+			}
+
+			// Simulate a config refresh.
+			discoveryManager.ApplyConfig(tc.after)
+			<-discoveryManager.SyncCh()
+
+			// Ensure we still have metrics for the remaining jobs.
+			requireSeriesCount(t, reg, "prometheus_sd_discovered_targets", len(tc.after))
+			requireSeriesCount(t, reg, "prometheus_sd_last_update_timestamp_seconds", len(tc.after))
+			requireSeriesCount(t, reg, "prometheus_sd_refresh_failures_total", tc.refreshSeries)
+			requireSeriesCount(t, reg, "prometheus_sd_refresh_duration_seconds", tc.refreshSeries)
+			if tc.refreshConfigLabel != "" {
+				metricFamilies, err := reg.Gather()
+				require.NoError(t, err)
+				var configLabels []string
+				for _, family := range metricFamilies {
+					if family.GetName() != "prometheus_sd_refresh_failures_total" {
+						continue
+					}
+					for _, metric := range family.GetMetric() {
+						for _, label := range metric.GetLabel() {
+							if label.GetName() == "config" {
+								configLabels = append(configLabels, label.GetValue())
+							}
+						}
+					}
+				}
+				require.Equal(t, []string{tc.refreshConfigLabel}, configLabels)
+			}
+		})
 	}
-	discoveryManager.ApplyConfig(c)
-	<-discoveryManager.SyncCh()
+}
 
-	// Manually instantiate refresh metrics to make them visible
-	sdMetrics.RefreshManager.Instantiate("static", "prometheus").Failures.Add(0)
-	sdMetrics.RefreshManager.Instantiate("static", "other").Failures.Add(0)
-
-	count, err := client_testutil.GatherAndCount(reg, "prometheus_sd_discovered_targets")
+// requireSeriesCount checks the number of series exported for a metric.
+func requireSeriesCount(t *testing.T, reg prometheus.Gatherer, metric string, expected int) {
+	t.Helper()
+	count, err := client_testutil.GatherAndCount(reg, metric)
 	require.NoError(t, err)
-	require.Equal(t, 2, count)
-
-	count, err = client_testutil.GatherAndCount(reg, "prometheus_sd_refresh_failures_total")
-	require.NoError(t, err)
-	require.Equal(t, 2, count)
-
-	// Simulate a config refresh.
-	delete(c, "prometheus")
-	discoveryManager.ApplyConfig(c)
-	<-discoveryManager.SyncCh()
-
-	// Ensure we still have metrics for the remaining provider.
-	count, err = client_testutil.GatherAndCount(reg, "prometheus_sd_discovered_targets")
-	require.NoError(t, err)
-	require.Equal(t, 1, count)
-
-	count, err = client_testutil.GatherAndCount(reg, "prometheus_sd_refresh_failures_total")
-	require.NoError(t, err)
-	require.Equal(t, 1, count)
+	require.Equal(t, expected, count, metric)
 }
 
 // Calling ApplyConfig() that removes providers at the same time as shutting down
 // the manager should not hang.
 func TestConfigReloadAndShutdownRace(t *testing.T) {
+	t.Parallel()
 	reg := prometheus.NewRegistry()
 	sdMetrics := NewTestMetrics(t, reg)
 
@@ -1729,6 +1929,7 @@ func TestConfigReloadAndShutdownRace(t *testing.T) {
 }
 
 func TestGaugeLastUpdateTimestamp(t *testing.T) {
+	t.Parallel()
 	ctx := t.Context()
 
 	reg := prometheus.NewRegistry()

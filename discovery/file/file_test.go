@@ -14,6 +14,7 @@
 package file
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"os"
@@ -216,31 +217,45 @@ func (t *testRunner) targets() []*targetgroup.Group {
 func (t *testRunner) requireUpdate(ref time.Time, expected []*targetgroup.Group) {
 	t.Helper()
 
+	want, err := json.Marshal(expected)
+	require.NoError(t, err)
+
 	timeout := time.After(defaultWait)
 	for {
 		select {
 		case <-timeout:
-			t.Fatalf("Expected update but got none")
+			t.Fatalf("Expected update but got none, last: %s", t.targetGroupsJSON(t.targets()))
 		case <-time.After(defaultWait / 10):
 			if ref.Equal(t.lastReceive()) {
 				// No update received.
 				break
 			}
 
-			// We can receive partial updates so only check the result when the
-			// expected number of groups is reached.
+			// File SD can emit an empty snapshot (matching group count) before
+			// the file contents are visible. Keep waiting until the groups
+			// match rather than failing on the first incomplete update.
 			tgs := t.targets()
-			if len(tgs) != len(expected) {
-				t.Logf("skipping update: expected %d targets, got %d", len(expected), len(tgs))
+			got, err := json.Marshal(tgs)
+			require.NoError(t, err)
+			if !bytes.Equal(want, got) {
+				t.Logf("skipping incomplete update: %s", got)
 				break
 			}
-			t.requireTargetGroups(expected, tgs)
 			if ref.After(time.Time{}) {
 				t.Logf("update received after %v", t.lastReceive().Sub(ref))
 			}
 			return
 		}
 	}
+}
+
+func (t *testRunner) targetGroupsJSON(tgs []*targetgroup.Group) string {
+	t.Helper()
+	b, err := json.Marshal(tgs)
+	if err != nil {
+		return err.Error()
+	}
+	return string(b)
 }
 
 func (t *testRunner) requireTargetGroups(expected, got []*targetgroup.Group) {
@@ -501,4 +516,26 @@ func TestRemoveFile(t *testing.T) {
 			},
 		},
 	)
+}
+
+func TestFileUpdateBurst(t *testing.T) {
+	t.Parallel()
+
+	runner := newTestRunner(t)
+	sdFile := runner.copyFile("fixtures/valid.yml")
+
+	runner.run("*.yml")
+	defer runner.stop()
+
+	runner.requireUpdate(time.Time{}, validTg(sdFile))
+
+	// Generate more events than fsnotify's 50-event buffer in the watched
+	// directory while discovery is refreshing and re-adding directory watches.
+	ref := runner.lastReceive()
+	noiseFile := filepath.Join(runner.dir, "noise.txt")
+	for range 100 {
+		require.NoError(t, os.WriteFile(noiseFile, []byte("x"), 0o600))
+	}
+	runner.copyFileTo("fixtures/valid2.yml", "valid.yml")
+	runner.requireUpdate(ref, valid2Tg(sdFile))
 }

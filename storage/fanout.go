@@ -16,6 +16,7 @@ package storage
 import (
 	"context"
 	"errors"
+	"fmt"
 	"log/slog"
 
 	"github.com/prometheus/common/model"
@@ -96,6 +97,30 @@ func (f *fanout) Querier(mint, maxt int64) (Querier, error) {
 		}
 	}
 	return NewMergeQuerier([]Querier{primary}, secondaries, ChainedSeriesMerge), nil
+}
+
+// CostSamplingQueryable forwards a safe primary when every secondary is empty.
+func (f *fanout) CostSamplingQueryable() (SampleAndChunkQueryable, bool) {
+	provider, ok := f.primary.(CostSamplingQueryable)
+	if !ok {
+		return nil, false
+	}
+	source, supported := provider.CostSamplingQueryable()
+	if !supported {
+		return nil, false
+	}
+	for _, secondary := range f.secondaries {
+		provider, ok := secondary.(CostSamplingQueryable)
+		if !ok {
+			return nil, false
+		}
+		secondarySource, supported := provider.CostSamplingQueryable()
+		if !supported || secondarySource != nil {
+			// Merging even native sources can eagerly compact overlapping chunks.
+			return nil, false
+		}
+	}
+	return source, true
 }
 
 func (f *fanout) ChunkQuerier(mint, maxt int64) (ChunkQuerier, error) {
@@ -310,6 +335,39 @@ func (f *fanoutAppenderV2) Append(ref SeriesRef, l labels.Labels, st, t int64, v
 
 	for _, appender := range f.secondaries {
 		_, serr := appender.Append(ref, l, st, t, v, h, fh, opts)
+		partialErr, serr = partialErr.Handle(serr)
+		if serr != nil {
+			return ref, serr
+		}
+	}
+	return ref, partialErr.ToError()
+}
+
+var _ ExemplarAppenderV2 = &fanoutAppenderV2{}
+
+// AppendExemplars implements ExemplarAppenderV2.
+// It dispatches the exemplars to the primary that is required to and all
+// secondaries that optionally implement ExemplarAppenderV2.
+func (f *fanoutAppenderV2) AppendExemplars(ref SeriesRef, l labels.Labels, exemplars []exemplar.Exemplar) (SeriesRef, error) {
+	pa, ok := f.primary.(ExemplarAppenderV2)
+	if !ok {
+		return 0, fmt.Errorf("primary appender %T does not implement ExemplarAppenderV2", f.primary)
+	}
+
+	var partialErr *AppendPartialError
+
+	ref, err := pa.AppendExemplars(ref, l, exemplars)
+	partialErr, err = partialErr.Handle(err)
+	if err != nil {
+		return ref, err
+	}
+
+	for _, appender := range f.secondaries {
+		sa, ok := appender.(ExemplarAppenderV2)
+		if !ok {
+			continue
+		}
+		_, serr := sa.AppendExemplars(ref, l, exemplars)
 		partialErr, serr = partialErr.Handle(serr)
 		if serr != nil {
 			return ref, serr

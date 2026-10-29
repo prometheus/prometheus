@@ -64,6 +64,9 @@ const (
 	HistogramSamplesV2 Type = 12
 	// FloatHistogramSamplesV2 is an enhanced float histogram record that supports start time per sample.
 	FloatHistogramSamplesV2 Type = 13
+	// MinValidTime is used to match checkpoint records that carry the mint a WAL truncation
+	// used. It is only ever written into checkpoints, never into a live WAL segment.
+	MinValidTime Type = 14
 )
 
 func (rt Type) String() string {
@@ -94,6 +97,8 @@ func (rt Type) String() string {
 		return "mmapmarkers"
 	case Metadata:
 		return "metadata"
+	case MinValidTime:
+		return "min_valid_time"
 	default:
 		return "unknown"
 	}
@@ -213,10 +218,16 @@ type RefMmapMarker struct {
 	MmapRef chunks.ChunkDiskMapperRef
 }
 
+// maxMetadataInternEntries caps the per-Decoder metadata string cache so a long-lived
+// Decoder cannot grow unboundedly if metric help/unit strings churn.
+const maxMetadataInternEntries = 8192
+
 // Decoder decodes series, sample, metadata and tombstone records.
+// Decoder is not safe for concurrent use.
 type Decoder struct {
-	builder labels.ScratchBuilder
-	logger  *slog.Logger
+	builder     labels.ScratchBuilder
+	logger      *slog.Logger
+	metaStrings map[string]string
 }
 
 func NewDecoder(_ *labels.SymbolTable, logger *slog.Logger) Decoder { // FIXME remove t (or use scratch builder with symbols)
@@ -234,7 +245,7 @@ func (*Decoder) Type(rec []byte) Type {
 	switch t := Type(rec[0]); t {
 	case Series, Samples, SamplesV2, Tombstones, Exemplars, MmapMarkers, Metadata,
 		HistogramSamples, FloatHistogramSamples, CustomBucketsHistogramSamples, CustomBucketsFloatHistogramSamples,
-		HistogramSamplesV2, FloatHistogramSamplesV2:
+		HistogramSamplesV2, FloatHistogramSamplesV2, MinValidTime:
 		return t
 	}
 	return Unknown
@@ -265,8 +276,25 @@ func (d *Decoder) Series(rec []byte, series []RefSeries) ([]RefSeries, error) {
 	return series, nil
 }
 
+// MinValidTime decodes a min valid time record.
+func (*Decoder) MinValidTime(rec []byte) (int64, error) {
+	dec := encoding.Decbuf{B: rec}
+
+	if Type(dec.Byte()) != MinValidTime {
+		return 0, errors.New("invalid record type")
+	}
+	mint := dec.Be64int64()
+	if dec.Err() != nil {
+		return 0, dec.Err()
+	}
+	if len(dec.B) > 0 {
+		return 0, fmt.Errorf("unexpected %d bytes left in entry", len(dec.B))
+	}
+	return mint, nil
+}
+
 // Metadata appends metadata in rec to the given slice.
-func (*Decoder) Metadata(rec []byte, metadata []RefMetadata) ([]RefMetadata, error) {
+func (d *Decoder) Metadata(rec []byte, metadata []RefMetadata) ([]RefMetadata, error) {
 	dec := encoding.Decbuf{B: rec}
 
 	if Type(dec.Byte()) != Metadata {
@@ -282,13 +310,17 @@ func (*Decoder) Metadata(rec []byte, metadata []RefMetadata) ([]RefMetadata, err
 		// so we can correctly align with the start with the next metadata record.
 		var unit, help string
 		for range numFields {
-			fieldName := dec.UvarintStr()
-			fieldValue := dec.UvarintStr()
+			fieldName := yoloString(dec.UvarintBytes())
+			fieldValue := dec.UvarintBytes()
+			if len(fieldValue) == 0 {
+				continue
+			}
+			// Intern unit and help strings across series sharing a metric family.
 			switch fieldName {
 			case unitMetaName:
-				unit = fieldValue
+				unit = d.internMetadataString(fieldValue)
 			case helpMetaName:
-				help = fieldValue
+				help = d.internMetadataString(fieldValue)
 			}
 		}
 
@@ -306,6 +338,20 @@ func (*Decoder) Metadata(rec []byte, metadata []RefMetadata) ([]RefMetadata, err
 		return nil, fmt.Errorf("unexpected %d bytes left in entry", len(dec.B))
 	}
 	return metadata, nil
+}
+
+func (d *Decoder) internMetadataString(b []byte) string {
+	if s, ok := d.metaStrings[string(b)]; ok {
+		return s
+	}
+	if d.metaStrings == nil {
+		d.metaStrings = make(map[string]string, 64)
+	} else if len(d.metaStrings) >= maxMetadataInternEntries {
+		clear(d.metaStrings)
+	}
+	s := string(b)
+	d.metaStrings[s] = s
+	return s
 }
 
 func yoloString(b []byte) string {
@@ -593,22 +639,21 @@ func (d *Decoder) histogramSamplesV2(dec *encoding.Decbuf, histograms []RefHisto
 	firstRef := chunks.HeadSeriesRef(dec.Varint64())
 	firstT := dec.Varint64()
 	firstST := dec.Varint64()
-	var prev *RefHistogramSample
+	var (
+		prevRef chunks.HeadSeriesRef
+		prevST  int64
+	)
+	hasPrev := false
 
 	for len(dec.B) > 0 && dec.Err() == nil {
 		var ref, t, st int64
-		if prev == nil {
-			prev = &RefHistogramSample{
-				Ref: firstRef,
-				ST:  firstST,
-			}
-			ref = int64(firstRef)
-			t = firstT
-			st = firstST
+		if !hasPrev {
+			ref, t, st = int64(firstRef), firstT, firstST
+			hasPrev = true
 		} else {
-			ref = int64(prev.Ref) + dec.Varint64()
+			ref = int64(prevRef) + dec.Varint64()
 			t = firstT + dec.Varint64()
-			st = readSTMarker(dec, prev.ST, firstST)
+			st = readSTMarker(dec, prevST, firstST)
 		}
 
 		rh := RefHistogramSample{
@@ -617,7 +662,7 @@ func (d *Decoder) histogramSamplesV2(dec *encoding.Decbuf, histograms []RefHisto
 			T:   t,
 			H:   &histogram.Histogram{},
 		}
-		prev = &rh
+		prevRef, prevST = rh.Ref, rh.ST
 		DecodeHistogram(dec, rh.H)
 
 		if !histogram.IsKnownSchema(rh.H.Schema) {
@@ -768,22 +813,19 @@ func (d *Decoder) floatHistogramSamplesV2(dec *encoding.Decbuf, histograms []Ref
 	firstRef := chunks.HeadSeriesRef(dec.Varint64())
 	firstT := dec.Varint64()
 	firstST := dec.Varint64()
-	var prev *RefFloatHistogramSample
+	var prevRef chunks.HeadSeriesRef
+	var prevST int64
+	hasPrev := false
 
 	for len(dec.B) > 0 && dec.Err() == nil {
 		var ref, t, st int64
-		if prev == nil {
-			prev = &RefFloatHistogramSample{
-				Ref: firstRef,
-				ST:  firstST,
-			}
-			ref = int64(firstRef)
-			t = firstT
-			st = firstST
+		if !hasPrev {
+			ref, t, st = int64(firstRef), firstT, firstST
+			hasPrev = true
 		} else {
-			ref = int64(prev.Ref) + dec.Varint64()
+			ref = int64(prevRef) + dec.Varint64()
 			t = firstT + dec.Varint64()
-			st = readSTMarker(dec, prev.ST, firstST)
+			st = readSTMarker(dec, prevST, firstST)
 		}
 
 		rfh := RefFloatHistogramSample{
@@ -792,7 +834,7 @@ func (d *Decoder) floatHistogramSamplesV2(dec *encoding.Decbuf, histograms []Ref
 			T:   t,
 			FH:  &histogram.FloatHistogram{},
 		}
-		prev = &rfh
+		prevRef, prevST = rfh.Ref, rfh.ST
 		DecodeFloatHistogram(dec, rfh.FH)
 
 		if !histogram.IsKnownSchema(rfh.FH.Schema) {
@@ -893,6 +935,15 @@ func (*Encoder) Series(series []RefSeries, b []byte) []byte {
 		buf.PutBE64(uint64(s.Ref))
 		EncodeLabels(&buf, s.Labels)
 	}
+	return buf.Get()
+}
+
+// MinValidTime appends the encoded min valid time record to b and returns the resulting
+// slice. It is only ever written into checkpoints, never into a live WAL segment.
+func (*Encoder) MinValidTime(mint int64, b []byte) []byte {
+	buf := encoding.Encbuf{B: b}
+	buf.PutByte(byte(MinValidTime))
+	buf.PutBE64int64(mint)
 	return buf.Get()
 }
 

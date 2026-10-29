@@ -443,7 +443,10 @@ foobar{quantile="0.99"} 150.1`
 		},
 	}
 
-	p, err := New([]byte(input), "application/openmetrics-text", labels.NewSymbolTable(), ParserOptions{ConvertClassicHistogramsToNHCB: true})
+	p, err := New([]byte(input), "application/openmetrics-text", labels.NewSymbolTable(), ParserOptions{
+		ConvertClassicHistogramsToNHCB: true,
+		OpenMetricsSkipSTSeries:        true,
+	})
 	require.NoError(t, err)
 	require.NotNil(t, p)
 	got := testParse(t, p)
@@ -514,6 +517,84 @@ something_bucket{a="b",le="+Inf"} 9 # {id="something-test"} 2e100 123.000
 	require.NotNil(t, p)
 	got := testParse(t, p)
 	requireEntries(t, exp, got)
+}
+
+func TestNHCBParser_DoesNotConvertSumOnlyHistogram(t *testing.T) {
+	tests := []struct {
+		name        string
+		input       string
+		keepClassic bool
+		expected    []parsedEntry
+	}{
+		{
+			name: "drop classic histogram",
+			input: `# TYPE sum_only histogram
+sum_only_sum 123.5
+`,
+			expected: []parsedEntry{
+				{
+					m:   "sum_only",
+					typ: model.MetricTypeHistogram,
+				},
+			},
+		},
+		{
+			name: "keep classic histogram",
+			input: `# TYPE sum_only histogram
+sum_only_sum 123.5
+`,
+			keepClassic: true,
+			expected: []parsedEntry{
+				{
+					m:   "sum_only",
+					typ: model.MetricTypeHistogram,
+				},
+				{
+					m:    "sum_only_sum",
+					v:    123.5,
+					lset: labels.FromStrings("__name__", "sum_only_sum"),
+				},
+			},
+		},
+		{
+			name: "convert histogram with count and sum",
+			input: `# TYPE bucketless histogram
+bucketless_sum 123.5
+bucketless_count 42
+`,
+			expected: []parsedEntry{
+				{
+					m:   "bucketless",
+					typ: model.MetricTypeHistogram,
+				},
+				{
+					m: "bucketless",
+					shs: &histogram.Histogram{
+						Schema:          histogram.CustomBucketsSchema,
+						Count:           42,
+						Sum:             123.5,
+						PositiveSpans:   []histogram.Span{{Length: 1}},
+						PositiveBuckets: []int64{42},
+					},
+					lset: labels.FromStrings("__name__", "bucketless"),
+				},
+			},
+		},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			p, err := New([]byte(test.input), "text/plain", labels.NewSymbolTable(), ParserOptions{
+				ConvertClassicHistogramsToNHCB:          true,
+				KeepClassicOnClassicAndNativeHistograms: test.keepClassic,
+			})
+			require.NoError(t, err)
+			require.NotNil(t, p)
+
+			got := testParse(t, p)
+			requireEntries(t, test.expected, got)
+		})
+	}
 }
 
 // Verify the requirement tables from
@@ -603,7 +684,11 @@ func TestNHCBParser_NoNHCBWhenExponential(t *testing.T) {
 		func() (string, parserFactory, []int, parserOptions) {
 			factory := func(keepClassic, nhcb bool) (Parser, error) {
 				input := createTestOpenMetricsHistogram()
-				return New([]byte(input), "application/openmetrics-text", labels.NewSymbolTable(), ParserOptions{KeepClassicOnClassicAndNativeHistograms: keepClassic, ConvertClassicHistogramsToNHCB: nhcb})
+				return New([]byte(input), "application/openmetrics-text", labels.NewSymbolTable(), ParserOptions{
+					KeepClassicOnClassicAndNativeHistograms: keepClassic,
+					ConvertClassicHistogramsToNHCB:          nhcb,
+					OpenMetricsSkipSTSeries:                 true,
+				})
 			}
 			return "OpenMetrics", factory, []int{1}, parserOptions{hasStartTimestamp: true}
 		},
@@ -956,7 +1041,10 @@ something_bucket{a="b",le="+Inf"} 9
 		},
 	}
 
-	p, err := New([]byte(input), "application/openmetrics-text", labels.NewSymbolTable(), ParserOptions{ConvertClassicHistogramsToNHCB: true})
+	p, err := New([]byte(input), "application/openmetrics-text", labels.NewSymbolTable(), ParserOptions{
+		ConvertClassicHistogramsToNHCB: true,
+		OpenMetricsSkipSTSeries:        true,
+	})
 	require.NoError(t, err)
 	require.NotNil(t, p)
 	got := testParse(t, p)
@@ -1087,7 +1175,10 @@ metric: <
 		},
 	}
 
-	p, err := New(buf.Bytes(), "application/vnd.google.protobuf", labels.NewSymbolTable(), ParserOptions{ConvertClassicHistogramsToNHCB: true})
+	p, err := New(buf.Bytes(), "application/vnd.google.protobuf", labels.NewSymbolTable(), ParserOptions{
+		ConvertClassicHistogramsToNHCB: true,
+		OpenMetricsSkipSTSeries:        true,
+	})
 	require.NoError(t, err)
 	require.NotNil(t, p)
 	got := testParse(t, p)
@@ -1176,4 +1267,91 @@ metric: <
 			require.Equal(t, "test_histogram_seconds", string(lastMFName))
 		})
 	}
+}
+
+// TestNHCBUngroupedHistogramSeries documents a known limitation: NHCBParser is streaming and
+// expects all classic histogram series (_bucket, _count, _sum) of one label set to be contiguous,
+// so ungrouped (e.g. alphabetically sorted) input yields incomplete NHCB histograms.
+// See <https://github.com/prometheus/prometheus/pull/19050> for details.
+func TestNHCBUngroupedHistogramSeries(t *testing.T) {
+	input := `# TYPE test_histogram histogram
+test_histogram_bucket{a="1",le="1"} 1
+test_histogram_bucket{a="1",le="+Inf"} 1
+test_histogram_bucket{a="2",le="1"} 1
+test_histogram_bucket{a="2",le="+Inf"} 2
+test_histogram_count{a="1"} 1
+test_histogram_count{a="2"} 2
+test_histogram_sum{a="1"} 1.5
+test_histogram_sum{a="2"} 2.5
+`
+	p, err := New([]byte(input), "text/plain", labels.NewSymbolTable(), ParserOptions{ConvertClassicHistogramsToNHCB: true})
+	require.NoError(t, err)
+	require.NotNil(t, p)
+
+	got := testParse(t, p)
+	// Ideally, this input represents 2 complete histograms:
+	// - test_histogram{a="1"} with Count: 1, Sum: 1.5, CustomValues: [1], PositiveBuckets: [1]
+	// - test_histogram{a="2"} with Count: 2, Sum: 2.5, CustomValues: [1], PositiveBuckets: [1, 0]
+	// Instead, NHCBParser emits 4 incomplete duplicate-labelset histograms and drops the sums:
+	exp := []parsedEntry{
+		{
+			m:   "test_histogram",
+			typ: model.MetricTypeHistogram,
+		},
+		// Discrepancy 1: Emitted prematurely from _bucket lines only; Count is inferred from +Inf,
+		// but Sum is 0 (expected 1.5 and 2.5 respectively).
+		{
+			m: `test_histogram{a="1"}`,
+			shs: &histogram.Histogram{
+				Schema:          histogram.CustomBucketsSchema,
+				Count:           1,
+				Sum:             0,
+				PositiveSpans:   []histogram.Span{{Offset: 0, Length: 1}},
+				PositiveBuckets: []int64{1},
+				CustomValues:    []float64{1},
+			},
+			lset: labels.FromStrings("__name__", "test_histogram", "a", "1"),
+		},
+		{
+			m: `test_histogram{a="2"}`,
+			shs: &histogram.Histogram{
+				Schema:          histogram.CustomBucketsSchema,
+				Count:           2,
+				Sum:             0,
+				PositiveSpans:   []histogram.Span{{Offset: 0, Length: 2}},
+				PositiveBuckets: []int64{1, 0},
+				CustomValues:    []float64{1},
+			},
+			lset: labels.FromStrings("__name__", "test_histogram", "a", "2"),
+		},
+		// Discrepancy 2: Duplicate series emitted from _count lines only; CustomValues is empty
+		// (all observations placed in +Inf) and Sum is 0.
+		{
+			m: `test_histogram{a="1"}`,
+			shs: &histogram.Histogram{
+				Schema:          histogram.CustomBucketsSchema,
+				Count:           1,
+				Sum:             0,
+				PositiveSpans:   []histogram.Span{{Offset: 0, Length: 1}},
+				PositiveBuckets: []int64{1},
+				CustomValues:    []float64{},
+			},
+			lset: labels.FromStrings("__name__", "test_histogram", "a", "1"),
+		},
+		{
+			m: `test_histogram{a="2"}`,
+			shs: &histogram.Histogram{
+				Schema:          histogram.CustomBucketsSchema,
+				Count:           2,
+				Sum:             0,
+				PositiveSpans:   []histogram.Span{{Offset: 0, Length: 1}},
+				PositiveBuckets: []int64{2},
+				CustomValues:    []float64{},
+			},
+			lset: labels.FromStrings("__name__", "test_histogram", "a", "2"),
+		},
+		// Discrepancy 3: The trailing _sum lines (1.5 and 2.5) are flushing as sum-only histograms
+		// without count or buckets, which TempHistogram.Convert rejects and drops completely.
+	}
+	requireEntries(t, exp, got)
 }

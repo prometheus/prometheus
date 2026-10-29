@@ -649,6 +649,246 @@ func testHistogramsSeriesToChunks(t *testing.T, test histogramTest) {
 	}
 }
 
+func TestSeriesToChunkEncoderFloatEncoding(t *testing.T) {
+	lbs := labels.FromStrings("__name__", "up")
+
+	manyFloats := func(n int) []chunks.Sample {
+		s := make([]chunks.Sample, 0, n)
+		for i := range n {
+			s = append(s, fSample{0, int64(i), float64(i)})
+		}
+		return s
+	}
+
+	manyFloatsWithST := func(n int) []chunks.Sample {
+		s := make([]chunks.Sample, 0, n)
+		for i := range n {
+			s = append(s, fSample{int64(i*10 + 5), int64((i + 1) * 10), float64(i)})
+		}
+		return s
+	}
+
+	histogramSampleWithST := func(st, ts int64) hSample {
+		s := histogramSample(ts, uk)
+		s.st = st
+		return s
+	}
+	floatHistogramSampleWithST := func(st, ts int64) fhSample {
+		s := floatHistogramSample(ts, uk)
+		s.st = st
+		return s
+	}
+
+	floatsNoST := []chunks.Sample{fSample{0, 10, 1}, fSample{0, 20, 2}, fSample{0, 30, 3}}
+	floatsAllST := []chunks.Sample{fSample{5, 10, 1}, fSample{15, 20, 2}, fSample{25, 30, 3}}
+	floatsMixedST := []chunks.Sample{fSample{0, 10, 1}, fSample{0, 20, 2}, fSample{15, 30, 3}, fSample{0, 40, 4}}
+
+	type expectedChunk struct {
+		encoding chunkenc.Encoding
+		// samples are the expected samples after a round-trip through the chunk,
+		// i.e. with the start timestamp zeroed when the chunk cannot store it.
+		samples []chunks.Sample
+	}
+
+	tests := map[string]struct {
+		useDefaultConstructor bool
+		floatEncoding         chunkenc.Encoding
+		samples               []chunks.Sample
+		expected              []expectedChunk
+	}{
+		"default, no ST": {
+			useDefaultConstructor: true,
+			samples:               floatsNoST,
+			expected: []expectedChunk{
+				{chunkenc.EncXOR, floatsNoST},
+			},
+		},
+		"default, all ST": {
+			useDefaultConstructor: true,
+			samples:               floatsAllST,
+			expected: []expectedChunk{
+				{chunkenc.EncXOR2, floatsAllST},
+			},
+		},
+		"default, mixed ST cuts XOR chunk on first ST only": {
+			useDefaultConstructor: true,
+			samples:               floatsMixedST,
+			expected: []expectedChunk{
+				{chunkenc.EncXOR, floatsMixedST[:2]},
+				{chunkenc.EncXOR2, floatsMixedST[2:]},
+			},
+		},
+		"xor, no ST": {
+			floatEncoding: chunkenc.EncXOR,
+			samples:       floatsNoST,
+			expected: []expectedChunk{
+				{chunkenc.EncXOR, floatsNoST},
+			},
+		},
+		"xor, all ST": {
+			floatEncoding: chunkenc.EncXOR,
+			samples:       floatsAllST,
+			expected: []expectedChunk{
+				{chunkenc.EncXOR2, floatsAllST},
+			},
+		},
+		"xor, mixed ST cuts XOR chunk on first ST only": {
+			floatEncoding: chunkenc.EncXOR,
+			samples:       floatsMixedST,
+			expected: []expectedChunk{
+				{chunkenc.EncXOR, floatsMixedST[:2]},
+				{chunkenc.EncXOR2, floatsMixedST[2:]},
+			},
+		},
+		"xor2, no ST": {
+			floatEncoding: chunkenc.EncXOR2,
+			samples:       floatsNoST,
+			expected: []expectedChunk{
+				{chunkenc.EncXOR2, floatsNoST},
+			},
+		},
+		"xor2, all ST": {
+			floatEncoding: chunkenc.EncXOR2,
+			samples:       floatsAllST,
+			expected: []expectedChunk{
+				{chunkenc.EncXOR2, floatsAllST},
+			},
+		},
+		"xor2, mixed ST does not cut": {
+			floatEncoding: chunkenc.EncXOR2,
+			samples:       floatsMixedST,
+			expected: []expectedChunk{
+				{chunkenc.EncXOR2, floatsMixedST},
+			},
+		},
+		"default, type flips cut": {
+			useDefaultConstructor: true,
+			samples:               []chunks.Sample{fSample{0, 10, 1}, histogramSample(20, uk), fSample{0, 30, 3}},
+			expected: []expectedChunk{
+				{chunkenc.EncXOR, []chunks.Sample{fSample{0, 10, 1}}},
+				{chunkenc.EncHistogram, []chunks.Sample{histogramSample(20, uk)}},
+				{chunkenc.EncXOR, []chunks.Sample{fSample{0, 30, 3}}},
+			},
+		},
+		"xor2, type flips cut": {
+			floatEncoding: chunkenc.EncXOR2,
+			samples:       []chunks.Sample{fSample{0, 10, 1}, histogramSample(20, uk), fSample{0, 30, 3}},
+			expected: []expectedChunk{
+				{chunkenc.EncXOR2, []chunks.Sample{fSample{0, 10, 1}}},
+				{chunkenc.EncHistogram, []chunks.Sample{histogramSample(20, uk)}},
+				{chunkenc.EncXOR2, []chunks.Sample{fSample{0, 30, 3}}},
+			},
+		},
+		"default, histogram ST flips cut": {
+			useDefaultConstructor: true,
+			samples:               []chunks.Sample{histogramSample(10, uk), histogramSampleWithST(15, 20), histogramSample(30, uk)},
+			expected: []expectedChunk{
+				{chunkenc.EncHistogram, []chunks.Sample{histogramSample(10, uk)}},
+				{chunkenc.EncHistogramST, []chunks.Sample{histogramSampleWithST(15, 20)}},
+				{chunkenc.EncHistogram, []chunks.Sample{histogramSample(30, uk)}},
+			},
+		},
+		"xor2, histogram ST flips cut": {
+			floatEncoding: chunkenc.EncXOR2,
+			samples:       []chunks.Sample{histogramSample(10, uk), histogramSampleWithST(15, 20), histogramSample(30, uk)},
+			expected: []expectedChunk{
+				{chunkenc.EncHistogram, []chunks.Sample{histogramSample(10, uk)}},
+				{chunkenc.EncHistogramST, []chunks.Sample{histogramSampleWithST(15, 20)}},
+				{chunkenc.EncHistogram, []chunks.Sample{histogramSample(30, uk)}},
+			},
+		},
+		"xor2, float histogram ST flips cut": {
+			floatEncoding: chunkenc.EncXOR2,
+			samples:       []chunks.Sample{floatHistogramSample(10, uk), floatHistogramSampleWithST(15, 20), floatHistogramSample(30, uk)},
+			expected: []expectedChunk{
+				{chunkenc.EncFloatHistogram, []chunks.Sample{floatHistogramSample(10, uk)}},
+				{chunkenc.EncFloatHistogramST, []chunks.Sample{floatHistogramSampleWithST(15, 20)}},
+				{chunkenc.EncFloatHistogram, []chunks.Sample{floatHistogramSample(30, uk)}},
+			},
+		},
+		"default, 150 samples split at 120": {
+			useDefaultConstructor: true,
+			samples:               manyFloats(150),
+			expected: []expectedChunk{
+				{chunkenc.EncXOR, manyFloats(150)[:120]},
+				{chunkenc.EncXOR, manyFloats(150)[120:]},
+			},
+		},
+		"xor2, 150 samples split at 120": {
+			floatEncoding: chunkenc.EncXOR2,
+			samples:       manyFloats(150),
+			expected: []expectedChunk{
+				{chunkenc.EncXOR2, manyFloats(150)[:120]},
+				{chunkenc.EncXOR2, manyFloats(150)[120:]},
+			},
+		},
+		"default, 150 samples all ST split at 120": {
+			useDefaultConstructor: true,
+			samples:               manyFloatsWithST(150),
+			expected: []expectedChunk{
+				{chunkenc.EncXOR2, manyFloatsWithST(150)[:120]},
+				{chunkenc.EncXOR2, manyFloatsWithST(150)[120:]},
+			},
+		},
+		"xor2, 150 samples all ST split at 120": {
+			floatEncoding: chunkenc.EncXOR2,
+			samples:       manyFloatsWithST(150),
+			expected: []expectedChunk{
+				{chunkenc.EncXOR2, manyFloatsWithST(150)[:120]},
+				{chunkenc.EncXOR2, manyFloatsWithST(150)[120:]},
+			},
+		},
+		"xor2, ST appearing on the last sample before the split does not cut": {
+			floatEncoding: chunkenc.EncXOR2,
+			samples: append(
+				manyFloats(seriesToChunkEncoderSplit-1),
+				fSample{5, int64(seriesToChunkEncoderSplit), float64(seriesToChunkEncoderSplit)},
+				fSample{15, int64(seriesToChunkEncoderSplit + 1), float64(seriesToChunkEncoderSplit + 1)},
+			),
+			expected: []expectedChunk{
+				{chunkenc.EncXOR2, append(
+					manyFloats(seriesToChunkEncoderSplit-1),
+					fSample{5, int64(seriesToChunkEncoderSplit), float64(seriesToChunkEncoderSplit)},
+				)},
+				{chunkenc.EncXOR2, []chunks.Sample{
+					fSample{15, int64(seriesToChunkEncoderSplit + 1), float64(seriesToChunkEncoderSplit + 1)},
+				}},
+			},
+		},
+	}
+
+	for name, tc := range tests {
+		t.Run(name, func(t *testing.T) {
+			series := NewListSeries(lbs, tc.samples)
+			var encoder ChunkSeries
+			if tc.useDefaultConstructor {
+				encoder = NewSeriesToChunkEncoder(series)
+			} else {
+				encoder = NewSeriesToChunkEncoderWithFloatEncoding(series, tc.floatEncoding)
+			}
+
+			chks, err := ExpandChunks(encoder.Iterator(nil))
+			require.NoError(t, err)
+			require.Len(t, chks, len(tc.expected))
+
+			for i, exp := range tc.expected {
+				require.Equalf(t, exp.encoding, chks[i].Chunk.Encoding(), "chunk %d encoding", i)
+				actSamples, err := ExpandSamples(chks[i].Chunk.Iterator(nil), nil)
+				require.NoError(t, err)
+				require.Lenf(t, actSamples, len(exp.samples), "chunk %d sample count", i)
+				for j, expSample := range exp.samples {
+					require.Equalf(t, expSample.Type(), actSamples[j].Type(), "chunk %d sample %d type", i, j)
+					require.Equalf(t, expSample.T(), actSamples[j].T(), "chunk %d sample %d timestamp", i, j)
+					require.Equalf(t, expSample.ST(), actSamples[j].ST(), "chunk %d sample %d start timestamp", i, j)
+					if expSample.Type() == chunkenc.ValFloat {
+						require.Equalf(t, expSample.F(), actSamples[j].F(), "chunk %d sample %d value", i, j)
+					}
+				}
+			}
+		})
+	}
+}
+
 func getCounterResetHint(chunk chunks.Meta) chunkenc.CounterResetHeader {
 	switch chk := chunk.Chunk.(type) {
 	case *chunkenc.HistogramChunk:

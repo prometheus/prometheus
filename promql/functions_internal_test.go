@@ -24,6 +24,7 @@ import (
 	"github.com/prometheus/prometheus/model/histogram"
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/promql/parser/posrange"
+	"github.com/prometheus/prometheus/util/annotations"
 	"github.com/prometheus/prometheus/util/kahansum"
 )
 
@@ -117,5 +118,61 @@ func TestInterpolate(t *testing.T) {
 	for _, test := range tests {
 		result := interpolate(test.p1, test.p2, test.t, test.isCounter)
 		require.Equal(t, test.expected, result)
+	}
+}
+
+func TestInterpolateHistograms(t *testing.T) {
+	h1 := &histogram.FloatHistogram{Count: 1, Sum: 1, CounterResetHint: histogram.UnknownCounterReset}
+	h2 := &histogram.FloatHistogram{Count: 3, Sum: 3, CounterResetHint: histogram.UnknownCounterReset}
+	h2Reset := &histogram.FloatHistogram{Count: 1, Sum: 1, CounterResetHint: histogram.CounterReset}
+	pos := posrange.PositionRange{}
+
+	tests := []struct {
+		name      string
+		h1, h2    *histogram.FloatHistogram
+		t1, t2, t int64
+		isCounter bool
+		wantCount float64
+	}{
+		{
+			name: "exact match t1",
+			h1:   h1, h2: h2, t1: 0, t2: 20, t: 0,
+			isCounter: false, wantCount: 1,
+		},
+		{
+			name: "exact match t2",
+			h1:   h1, h2: h2, t1: 0, t2: 20, t: 20,
+			isCounter: false, wantCount: 3,
+		},
+		{
+			name: "midpoint no reset",
+			h1:   h1, h2: h2, t1: 0, t2: 20, t: 10,
+			isCounter: false, wantCount: 2,
+		},
+		{
+			name: "counter midpoint no reset",
+			h1:   h1, h2: h2, t1: 0, t2: 20, t: 10,
+			isCounter: true, wantCount: 2,
+		},
+		{
+			name: "counter midpoint with reset: scale from zero",
+			h1:   h1, h2: h2Reset, t1: 0, t2: 20, t: 10,
+			// h2Reset * (10/20) = count:1 * 0.5 = 0.5.
+			isCounter: true, wantCount: 0.5,
+		},
+		{
+			name: "quarter point",
+			h1:   h1, h2: h2, t1: 0, t2: 20, t: 5,
+			// h1 + (h2-h1)*0.25 = 1 + 2*0.25 = 1.5.
+			isCounter: false, wantCount: 1.5,
+		},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			var annos annotations.Annotations
+			result, err := interpolateHistograms(tc.h1, tc.t1, tc.h2, tc.t2, tc.t, tc.isCounter, &annos, pos)
+			require.NoError(t, err)
+			require.Equal(t, tc.wantCount, result.Count)
+		})
 	}
 }

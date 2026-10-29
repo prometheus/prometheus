@@ -34,7 +34,7 @@ func newTestAPI(t *testing.T, cfg testhelpers.APIConfig) *testhelpers.APIWrapper
 	api := NewAPI(
 		params.QueryEngine,
 		params.Queryable,
-		nil, nil, // appendables
+		nil, // appendable
 		params.ExemplarQueryable,
 		func(ctx context.Context) ScrapePoolsRetriever {
 			return adaptScrapePoolsRetriever(params.ScrapePoolsRetriever(ctx))
@@ -52,6 +52,8 @@ func newTestAPI(t *testing.T, cfg testhelpers.APIConfig) *testhelpers.APIWrapper
 		adaptTSDBAdminStats(params.TSDBAdmin),
 		params.DBDir,
 		false, // enableAdmin
+		false, // enableSearch
+		0,     // maxSearchLimit
 		params.Logger,
 		func(ctx context.Context) RulesRetriever {
 			return adaptRulesRetriever(params.RulesRetriever(ctx))
@@ -97,7 +99,6 @@ func newTestAPI(t *testing.T, cfg testhelpers.APIConfig) *testhelpers.APIWrapper
 		false,                              // otlpEnabled
 		false,                              // otlpDeltaToCumulative
 		false,                              // otlpNativeDeltaIngestion
-		false,                              // stZeroIngestionEnabled
 		5*time.Minute,                      // lookbackDelta
 		false,                              // enableTypeAndUnitLabels
 		false,                              // appendMetadata
@@ -105,6 +106,8 @@ func newTestAPI(t *testing.T, cfg testhelpers.APIConfig) *testhelpers.APIWrapper
 		nil,                                // featureRegistry
 		OpenAPIOptions{},                   // openAPIOptions
 		parser.NewParser(parser.Options{}), // promqlParser
+		false,                              // enableQueryCost
+		0,                                  // queryTimeoutFlag
 	)
 
 	// Register routes.

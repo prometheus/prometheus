@@ -1,45 +1,32 @@
-import * as React from 'react';
-import { shallow } from 'enzyme';
-import { Alert } from 'reactstrap';
+import React from 'react';
+import { render, screen } from '@testing-library/react';
 import { GraphTabContent } from './GraphTabContent';
+import { GraphDisplayMode } from './Panel';
+
+const defaultProps = {
+  exemplars: undefined,
+  displayMode: GraphDisplayMode.Lines,
+  useLocalTime: false,
+  showExemplars: false,
+  handleTimeRangeSelection: jest.fn(),
+  lastQueryParams: null,
+  id: 'panel-1',
+};
 
 describe('GraphTabContent', () => {
-  it('renders an alert if data result type is different than "matrix"', () => {
-    const props: any = {
-      data: { resultType: 'invalid', result: [{}] },
-      stacked: false,
-      queryParams: {
-        startTime: 1572100210000,
-        endTime: 1572100217898,
-        resolution: 10,
-      },
+  it.each([
+    { data: null, color: 'light', message: 'No data queried yet' },
+    { data: { resultType: 'matrix', result: [] }, color: 'secondary', message: 'Empty query result' },
+    {
+      data: { resultType: 'vector', result: [{}] },
       color: 'danger',
-      children: `Query result is of wrong type '`,
-    };
-    const graph = shallow(<GraphTabContent {...props} />);
-    const alert = graph.find(Alert);
-    expect(alert.prop('color')).toEqual(props.color);
-    expect(alert.childAt(0).text()).toEqual(props.children);
-  });
+      message: "Query result is of wrong type 'vector', should be 'matrix' (range vector).",
+    },
+  ])('renders the $color alert for unsupported data', ({ data, color, message }) => {
+    render(<GraphTabContent {...defaultProps} data={data} />);
 
-  it('renders an alert if data result empty', () => {
-    const props: any = {
-      data: {
-        resultType: 'matrix',
-        result: [],
-      },
-      color: 'secondary',
-      children: 'Empty query result',
-      stacked: false,
-      queryParams: {
-        startTime: 1572100210000,
-        endTime: 1572100217898,
-        resolution: 10,
-      },
-    };
-    const graph = shallow(<GraphTabContent {...props} />);
-    const alert = graph.find(Alert);
-    expect(alert.prop('color')).toEqual(props.color);
-    expect(alert.childAt(0).text()).toEqual(props.children);
+    const alert = screen.getByRole('alert');
+    expect(alert.classList.contains(`alert-${color}`)).toBe(true);
+    expect(alert.textContent).toBe(message);
   });
 });

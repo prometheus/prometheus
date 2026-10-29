@@ -1,188 +1,86 @@
-import * as React from 'react';
-import { shallow } from 'enzyme';
+import React from 'react';
+import { fireEvent, render, screen } from '@testing-library/react';
 import GraphControls from './GraphControls';
-import { Button, ButtonGroup, Form, InputGroup, InputGroupAddon, Input } from 'reactstrap';
-import { FontAwesomeIcon } from '@fortawesome/react-fontawesome';
-import { faPlus, faMinus, faChartArea, faChartLine } from '@fortawesome/free-solid-svg-icons';
-import TimeInput from './TimeInput';
 import { GraphDisplayMode } from './Panel';
 
-const defaultGraphControlProps = {
-  range: 60 * 60 * 24 * 1000,
+jest.mock('./TimeInput', () => {
+  const React = jest.requireActual('react');
+  return {
+    __esModule: true,
+    default: ({ placeholder, onChangeTime }: { placeholder: string; onChangeTime: (time: number) => void }) =>
+      React.createElement('button', { type: 'button', onClick: () => onChangeTime(5) }, placeholder),
+  };
+});
+
+const createProps = () => ({
+  range: 24 * 60 * 60 * 1000,
   endTime: 1572100217898,
   useLocalTime: false,
   resolution: 10,
   displayMode: GraphDisplayMode.Lines,
   isHeatmapData: false,
   showExemplars: false,
-
-  onChangeRange: (): void => {
-    // Do nothing.
-  },
-  onChangeEndTime: (): void => {
-    // Do nothing.
-  },
-  onChangeResolution: (): void => {
-    // Do nothing.
-  },
-  onChangeStacking: (): void => {
-    // Do nothing.
-  },
-  onChangeShowExemplars: (): void => {
-    // Do nothing.
-  },
-  onChangeDisplayMode: (): void => {
-    // Do nothing.
-  },
-};
+  onChangeRange: jest.fn(),
+  onChangeEndTime: jest.fn(),
+  onChangeResolution: jest.fn(),
+  onChangeShowExemplars: jest.fn(),
+  onChangeDisplayMode: jest.fn(),
+});
 
 describe('GraphControls', () => {
-  it('renders a form', () => {
-    const controls = shallow(<GraphControls {...defaultGraphControlProps} />);
-    const form = controls.find(Form);
-    expect(form).toHaveLength(1);
-    expect(form.prop('className')).toEqual('graph-controls');
-    expect(form.prop('inline')).toBe(true);
+  it('changes range using step buttons and parsed input', () => {
+    const props = createProps();
+    render(<GraphControls {...props} />);
+    const rangeInput = screen.getAllByRole('textbox')[0] as HTMLInputElement;
+
+    expect(rangeInput.value).toBe('1d');
+    fireEvent.click(screen.getByTitle('Decrease range'));
+    expect(props.onChangeRange).toHaveBeenLastCalledWith(12 * 60 * 60 * 1000);
+
+    fireEvent.click(screen.getByTitle('Increase range'));
+    expect(props.onChangeRange).toHaveBeenLastCalledWith(2 * 24 * 60 * 60 * 1000);
+
+    fireEvent.change(rangeInput, { target: { value: '2h' } });
+    fireEvent.blur(rangeInput);
+    expect(props.onChangeRange).toHaveBeenLastCalledWith(2 * 60 * 60 * 1000);
+
+    fireEvent.change(rangeInput, { target: { value: 'invalid' } });
+    fireEvent.blur(rangeInput);
+    expect(rangeInput.value).toBe('1d');
   });
 
-  it('renders an Input Group for range', () => {
-    const controls = shallow(<GraphControls {...defaultGraphControlProps} />);
-    const form = controls.find(InputGroup);
-    expect(form).toHaveLength(1);
-    expect(form.prop('className')).toEqual('range-input');
-    expect(form.prop('size')).toBe('sm');
+  it('reports end time and resolution changes', () => {
+    const props = createProps();
+    render(<GraphControls {...props} />);
+
+    fireEvent.click(screen.getByRole('button', { name: 'End time' }));
+    expect(props.onChangeEndTime).toHaveBeenCalledWith(5);
+
+    const resolution = screen.getByPlaceholderText('Res. (s)') as HTMLInputElement;
+    expect(resolution.value).toBe('10');
+    fireEvent.change(resolution, { target: { value: '30' } });
+    fireEvent.blur(resolution);
+    expect(props.onChangeResolution).toHaveBeenLastCalledWith(30);
+
+    fireEvent.change(resolution, { target: { value: '' } });
+    fireEvent.blur(resolution);
+    expect(props.onChangeResolution).toHaveBeenLastCalledWith(null);
   });
 
-  it('renders a decrease/increase range buttons', () => {
-    [
-      {
-        position: 'prepend',
-        title: 'Decrease range',
-        icon: faMinus,
-      },
-      {
-        position: 'append',
-        title: 'Increase range',
-        icon: faPlus,
-      },
-    ].forEach((testCase) => {
-      const controls = shallow(<GraphControls {...defaultGraphControlProps} />);
-      const addon = controls.find(InputGroupAddon).filterWhere((addon) => addon.prop('addonType') === testCase.position);
-      const button = addon.find(Button);
-      const icon = button.find(FontAwesomeIcon);
-      expect(button.prop('title')).toEqual(testCase.title);
-      expect(icon).toHaveLength(1);
-      expect(icon.prop('icon')).toEqual(testCase.icon);
-      expect(icon.prop('fixedWidth')).toBe(true);
-    });
-  });
+  it('selects graph display modes and exemplar visibility', () => {
+    const props = createProps();
+    const { rerender } = render(<GraphControls {...props} />);
 
-  it('renders an Input for range', () => {
-    const controls = shallow(<GraphControls {...defaultGraphControlProps} />);
-    const form = controls.find(InputGroup);
-    const input = form.find(Input);
-    expect(input).toHaveLength(1);
-    expect(input.prop('defaultValue')).toEqual('1d');
-    expect(input.prop('innerRef')).toEqual({ current: null });
-  });
+    expect(screen.getByTitle('Show unstacked line graph').classList.contains('active')).toBe(true);
+    fireEvent.click(screen.getByTitle('Show stacked graph'));
+    expect(props.onChangeDisplayMode).toHaveBeenCalledWith(GraphDisplayMode.Stacked);
+    expect(screen.queryByTitle('Show heatmap graph')).toBeNull();
 
-  it('renders a TimeInput with props', () => {
-    const controls = shallow(<GraphControls {...defaultGraphControlProps} />);
-    const timeInput = controls.find(TimeInput);
-    expect(timeInput).toHaveLength(1);
-    expect(timeInput.prop('time')).toEqual(1572100217898);
-    expect(timeInput.prop('range')).toEqual(86400000);
-    expect(timeInput.prop('placeholder')).toEqual('End time');
-  });
+    rerender(<GraphControls {...props} isHeatmapData />);
+    fireEvent.click(screen.getByTitle('Show heatmap graph'));
+    expect(props.onChangeDisplayMode).toHaveBeenLastCalledWith(GraphDisplayMode.Heatmap);
 
-  it('renders a TimeInput with a callback', () => {
-    const results: (number | null)[] = [];
-    const onChange = (endTime: number | null): void => {
-      results.push(endTime);
-    };
-    const controls = shallow(<GraphControls {...defaultGraphControlProps} onChangeEndTime={onChange} />);
-    const timeInput = controls.find(TimeInput);
-    const onChangeTime = timeInput.prop('onChangeTime');
-    if (onChangeTime) {
-      onChangeTime(5);
-      expect(results).toHaveLength(1);
-      expect(results[0]).toEqual(5);
-      results.pop();
-    } else {
-      fail('Expected onChangeTime to be defined but it was not');
-    }
-  });
-
-  it('renders a resolution Input with props', () => {
-    const controls = shallow(<GraphControls {...defaultGraphControlProps} />);
-    const input = controls.find(Input).filterWhere((input) => input.prop('className') === 'resolution-input');
-    expect(input.prop('placeholder')).toEqual('Res. (s)');
-    expect(input.prop('defaultValue')).toEqual('10');
-    expect(input.prop('innerRef')).toEqual({ current: null });
-    expect(input.prop('bsSize')).toEqual('sm');
-  });
-
-  it('renders button groups', () => {
-    [
-      { className: 'stacked-input', size: 'sm' },
-      { className: 'show-exemplars', size: 'sm' },
-    ].forEach((testCase, i) => {
-      const controls = shallow(<GraphControls {...defaultGraphControlProps} />);
-      const groups = controls.find(ButtonGroup);
-      expect(groups.get(i).props['className']).toEqual(testCase.className);
-      expect(groups.get(i).props['size']).toEqual(testCase.size);
-    });
-  });
-
-  it('renders buttons inside the button group', () => {
-    [
-      {
-        title: 'Show unstacked line graph',
-        icon: faChartLine,
-        active: true,
-      },
-      {
-        title: 'Show stacked graph',
-        icon: faChartArea,
-        active: false,
-      },
-    ].forEach((testCase) => {
-      const controls = shallow(<GraphControls {...defaultGraphControlProps} />);
-      const group = controls.find(ButtonGroup);
-      const btn = group.find(Button).filterWhere((btn) => btn.prop('title') === testCase.title);
-      expect(btn.prop('active')).toEqual(testCase.active);
-      const icon = btn.find(FontAwesomeIcon);
-      expect(icon.prop('icon')).toEqual(testCase.icon);
-    });
-  });
-
-  it('renders buttons with callbacks', () => {
-    [
-      {
-        title: 'Show unstacked line graph',
-        active: true,
-      },
-      {
-        title: 'Show stacked graph',
-        active: false,
-      },
-    ].forEach((testCase) => {
-      const results: boolean[] = [];
-      const onChange = (mode: GraphDisplayMode): void => {
-        results.push(mode === GraphDisplayMode.Stacked);
-      };
-      const controls = shallow(<GraphControls {...defaultGraphControlProps} onChangeDisplayMode={onChange} />);
-      const group = controls.find(ButtonGroup);
-      const btn = group.find(Button).filterWhere((btn) => btn.prop('title') === testCase.title);
-      const onClick = btn.prop('onClick');
-      if (onClick) {
-        btn.simulate('click');
-        expect(results).toHaveLength(1);
-        expect(results[0]).toBe(!testCase.active);
-        results.pop();
-      } else {
-        fail('Expected onClick to be defined but it was not');
-      }
-    });
+    fireEvent.click(screen.getByRole('button', { name: 'Show Exemplars' }));
+    expect(props.onChangeShowExemplars).toHaveBeenCalledWith(true);
   });
 });

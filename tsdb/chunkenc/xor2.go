@@ -65,40 +65,8 @@ import (
 )
 
 const (
-	chunkSTHeaderSize  = 1
-	maxFirstSTChangeOn = 0x7F
+	chunkSTHeaderSize = 1
 )
-
-func writeHeaderFirstSTKnown(b []byte) {
-	b[0] = 0x80
-}
-
-func writeHeaderFirstSTChangeOn(b []byte, firstSTChangeOn uint16) {
-	// First bit indicates the initial ST value.
-	// Here we save the sample number from where the first change occurs in the
-	// rest of the byte (7 bits)
-
-	if firstSTChangeOn > maxFirstSTChangeOn {
-		// This should never happen, would cause corruption (ST already skipped but shouldn't).
-		return
-	}
-	b[0] |= uint8(firstSTChangeOn)
-}
-
-func readSTHeader(b []byte) (firstSTKnown bool, firstSTChangeOn uint8) {
-	if b[0] == 0x00 {
-		return false, 0
-	}
-	if b[0] == 0x80 {
-		return true, 0
-	}
-	mask := byte(0x80)
-	if b[0]&mask != 0 {
-		firstSTKnown = true
-	}
-	mask = 0x7F
-	return firstSTKnown, b[0] & mask
-}
 
 // XOR2Chunk holds XOR2 encoded samples with optional start
 // timestamp per chunk or per sample.
@@ -250,6 +218,9 @@ func (a *xor2Appender) Append(st, t int64, v float64) {
 			writeHeaderFirstSTChangeOn(a.b.bytes()[chunkHeaderSize:], 1)
 			putVarbitIntFast(a.b, stDiff)
 		}
+
+	case math.MaxUint16:
+		panic("chunk capacity exceeded")
 
 	default:
 		tDelta = uint64(t - a.t)
@@ -452,10 +423,25 @@ func (a *xor2Appender) writeVDelta(v float64) {
 		newLeading = 31
 	}
 
-	if a.leading != 0xff && newLeading >= a.leading && newTrailing >= a.trailing {
+	// A new window costs 12 extra bits: one control bit and 11 window bits.
+	// Reuse has prefix 10; replacement has prefix 110 plus leading(5) and sigbits(6).
+	// Choose the lower cost for this delta and reuse on a tie. Narrowing can cost
+	// more overall if the next delta needs a wider window again.
+	if newLeading >= a.leading && newTrailing >= a.trailing && newLeading+newTrailing <= a.leading+a.trailing+12 {
 		a.b.writeBitsFast(0b10, 2)
 		a.b.writeBitsFast(delta>>a.trailing, 64-int(a.leading)-int(a.trailing))
 		return
+	}
+
+	// When widening, retain one or both narrower window boundaries if the union
+	// adds at most half a replacement header's cost in payload bits. This can
+	// avoid another header if the following delta needs the old boundaries
+	// again.
+	if a.leading != 0xff && (newLeading < a.leading || newTrailing < a.trailing) {
+		unionLeading, unionTrailing := min(newLeading, a.leading), min(newTrailing, a.trailing)
+		if newLeading+newTrailing-unionLeading-unionTrailing <= 6 {
+			newLeading, newTrailing = unionLeading, unionTrailing
+		}
 	}
 
 	a.leading, a.trailing = newLeading, newTrailing
@@ -484,10 +470,21 @@ func (a *xor2Appender) writeVDeltaKnownNonZero(delta uint64) {
 		newLeading = 31
 	}
 
-	if a.leading != 0xff && newLeading >= a.leading && newTrailing >= a.trailing {
+	// Both controls cost one bit, so a new window costs 11 extra window bits.
+	// As in writeVDelta, choose the lower cost for this delta and reuse on a tie.
+	if newLeading >= a.leading && newTrailing >= a.trailing && newLeading+newTrailing <= a.leading+a.trailing+11 {
 		a.b.writeBit(zero)
 		a.b.writeBitsFast(delta>>a.trailing, 64-int(a.leading)-int(a.trailing))
 		return
+	}
+
+	// As in writeVDelta, retain nearby old boundaries when widening. Half of
+	// this path's 11-bit replacement overhead allows five extra payload bits.
+	if a.leading != 0xff && (newLeading < a.leading || newTrailing < a.trailing) {
+		unionLeading, unionTrailing := min(newLeading, a.leading), min(newTrailing, a.trailing)
+		if newLeading+newTrailing-unionLeading-unionTrailing <= 5 {
+			newLeading, newTrailing = unionLeading, unionTrailing
+		}
 	}
 
 	a.leading, a.trailing = newLeading, newTrailing
@@ -500,11 +497,11 @@ func (a *xor2Appender) writeVDeltaKnownNonZero(delta uint64) {
 	a.b.writeBitsFast(delta>>newTrailing, int(sigbits))
 }
 
-func (*xor2Appender) AppendHistogram(*HistogramAppender, int64, int64, *histogram.Histogram, bool) (Chunk, bool, Appender, error) {
+func (*xor2Appender) AppendHistogram(Appender, int64, int64, *histogram.Histogram, bool) (Chunk, bool, Appender, error) {
 	panic("appended a histogram sample to a float chunk")
 }
 
-func (*xor2Appender) AppendFloatHistogram(*FloatHistogramAppender, int64, int64, *histogram.FloatHistogram, bool) (Chunk, bool, Appender, error) {
+func (*xor2Appender) AppendFloatHistogram(Appender, int64, int64, *histogram.FloatHistogram, bool) (Chunk, bool, Appender, error) {
 	panic("appended a float histogram sample to a float chunk")
 }
 

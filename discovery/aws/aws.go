@@ -47,6 +47,7 @@ const (
 	RoleECS         Role = "ecs"
 	RoleElasticache Role = "elasticache"
 	RoleLightsail   Role = "lightsail"
+	RoleMQ          Role = "mq"
 	RoleMSK         Role = "msk"
 	RoleRDS         Role = "rds"
 )
@@ -57,7 +58,7 @@ func (c *Role) UnmarshalYAML(unmarshal func(any) error) error {
 		return err
 	}
 	switch *c {
-	case RoleEC2, RoleECS, RoleElasticache, RoleLightsail, RoleMSK, RoleRDS:
+	case RoleEC2, RoleECS, RoleElasticache, RoleLightsail, RoleMQ, RoleMSK, RoleRDS:
 		return nil
 	default:
 		return fmt.Errorf("unknown AWS SD role %q", *c)
@@ -66,6 +67,12 @@ func (c *Role) UnmarshalYAML(unmarshal func(any) error) error {
 
 func (c Role) String() string {
 	return string(c)
+}
+
+// Filter is the configuration for filtering AWS resources.
+type Filter struct {
+	Name   string   `yaml:"name"`
+	Values []string `yaml:"values"`
 }
 
 // SDConfig is the configuration for AWS service discovery.
@@ -82,8 +89,8 @@ type SDConfig struct {
 	Port             int                     `yaml:"port,omitempty"`
 	HTTPClientConfig config.HTTPClientConfig `yaml:",inline"`
 
-	// ec2 specific
-	Filters []*EC2Filter `yaml:"filters,omitempty"`
+	// ec2, rds specific
+	Filters []*Filter `yaml:"filters,omitempty"`
 
 	// ecs, msk specific
 	Clusters []string `yaml:"clusters,omitempty"`
@@ -93,11 +100,14 @@ type SDConfig struct {
 	*ECSSDConfig         `yaml:"-"`
 	*ElasticacheSDConfig `yaml:"-"`
 	*LightsailSDConfig   `yaml:"-"`
+	*MQSDConfig          `yaml:"-"`
 	*MSKSDConfig         `yaml:"-"`
 	*RDSSDConfig         `yaml:"-"`
 }
 
 // UnmarshalYAML implements the yaml.Unmarshaler interface for SDConfig.
+// Region resolution is deferred to each concrete discovery's xxxClient
+// method; see loadRegion.
 func (c *SDConfig) UnmarshalYAML(unmarshal func(any) error) error {
 	// Alias to avoid recursion
 	type plain SDConfig
@@ -107,12 +117,6 @@ func (c *SDConfig) UnmarshalYAML(unmarshal func(any) error) error {
 		return err
 	}
 	*c = SDConfig(aux)
-
-	var err error
-	c.Region, err = loadRegion(context.Background(), c.Region)
-	if err != nil {
-		return fmt.Errorf("could not determine AWS region: %w", err)
-	}
 
 	switch c.Role {
 	case RoleEC2:
@@ -248,6 +252,34 @@ func (c *SDConfig) UnmarshalYAML(unmarshal func(any) error) error {
 		if c.RefreshInterval != 0 {
 			c.LightsailSDConfig.RefreshInterval = c.RefreshInterval
 		}
+	case RoleMQ:
+		if c.MQSDConfig == nil {
+			mqConfig := DefaultMQSDConfig
+			c.MQSDConfig = &mqConfig
+		}
+		c.MQSDConfig.HTTPClientConfig = c.HTTPClientConfig
+		c.MQSDConfig.Region = c.Region
+		if c.Endpoint != "" {
+			c.MQSDConfig.Endpoint = c.Endpoint
+		}
+		if c.AccessKey != "" {
+			c.MQSDConfig.AccessKey = c.AccessKey
+		}
+		if c.SecretKey != "" {
+			c.MQSDConfig.SecretKey = c.SecretKey
+		}
+		if c.Profile != "" {
+			c.MQSDConfig.Profile = c.Profile
+		}
+		if c.RoleARN != "" {
+			c.MQSDConfig.RoleARN = c.RoleARN
+		}
+		if c.ExternalID != "" {
+			c.MQSDConfig.ExternalID = c.ExternalID
+		}
+		if c.RefreshInterval != 0 {
+			c.MQSDConfig.RefreshInterval = c.RefreshInterval
+		}
 	case RoleMSK:
 		if c.MSKSDConfig == nil {
 			mskConfig := DefaultMSKSDConfig
@@ -313,6 +345,9 @@ func (c *SDConfig) UnmarshalYAML(unmarshal func(any) error) error {
 		if c.RefreshInterval != 0 {
 			c.RDSSDConfig.RefreshInterval = c.RefreshInterval
 		}
+		if c.Filters != nil {
+			c.RDSSDConfig.Filters = c.Filters
+		}
 		if c.Clusters != nil {
 			c.RDSSDConfig.Clusters = c.Clusters
 		}
@@ -324,6 +359,9 @@ func (c *SDConfig) UnmarshalYAML(unmarshal func(any) error) error {
 
 // Name returns the name of the AWS Config.
 func (*SDConfig) Name() string { return "aws" }
+
+// RefreshMechanism returns the role, which is the mechanism label of the refresh metrics.
+func (c *SDConfig) RefreshMechanism() string { return string(c.Role) }
 
 // NewDiscovererMetrics implements discovery.Config.
 func (*SDConfig) NewDiscovererMetrics(_ prometheus.Registerer, rmi discovery.RefreshMetricsInstantiator) discovery.DiscovererMetrics {
@@ -350,6 +388,9 @@ func (c *SDConfig) NewDiscoverer(opts discovery.DiscovererOptions) (discovery.Di
 	case RoleLightsail:
 		opts.Metrics = &lightsailMetrics{refreshMetrics: awsMetrics.refreshMetrics}
 		return NewLightsailDiscovery(c.LightsailSDConfig, opts)
+	case RoleMQ:
+		opts.Metrics = &mqMetrics{refreshMetrics: awsMetrics.refreshMetrics}
+		return NewMQDiscovery(c.MQSDConfig, opts)
 	case RoleMSK:
 		opts.Metrics = &mskMetrics{refreshMetrics: awsMetrics.refreshMetrics}
 		return NewMSKDiscovery(c.MSKSDConfig, opts)
@@ -380,6 +421,10 @@ func (c *SDConfig) SetDirectory(dir string) {
 		if c.LightsailSDConfig != nil {
 			c.LightsailSDConfig.SetDirectory(dir)
 		}
+	case RoleMQ:
+		if c.MQSDConfig != nil {
+			c.MQSDConfig.SetDirectory(dir)
+		}
 	case RoleMSK:
 		if c.MSKSDConfig != nil {
 			c.MSKSDConfig.SetDirectory(dir)
@@ -391,8 +436,17 @@ func (c *SDConfig) SetDirectory(dir string) {
 	}
 }
 
-// loadRegion finds the region in order: AWS config/env vars ->IMDS.
-func loadRegion(ctx context.Context, specifiedRegion string) (string, error) {
+// loadRegion finds the region in order: configured region -> AWS config/env vars -> IMDS.
+// Region resolution is intentionally deferred to SD init so config-only operations
+// (e.g. `promtool check config`) stay free of network I/O. See the UnmarshalYAML
+// docstrings in this package.
+func loadRegion(ctx context.Context, specifiedRegion string) (region string, err error) {
+	defer func() {
+		if err != nil {
+			err = fmt.Errorf("could not determine AWS region: %w", err)
+		}
+	}()
+
 	if specifiedRegion != "" {
 		return specifiedRegion, nil
 	}
@@ -408,14 +462,14 @@ func loadRegion(ctx context.Context, specifiedRegion string) (string, error) {
 
 	// Fallback (may fail in non-AWS environments)
 	imdsClient := imds.NewFromConfig(cfg)
-	region, err := imdsClient.GetRegion(ctx, &imds.GetRegionInput{})
+	imdsRegion, err := imdsClient.GetRegion(ctx, &imds.GetRegionInput{})
 	if err != nil {
 		return "", fmt.Errorf("failed to get region from IMDS: %w", err)
 	}
 
-	if region.Region == "" {
+	if imdsRegion.Region == "" {
 		return "", errors.New("region not found in AWS config or IMDS")
 	}
 
-	return region.Region, nil
+	return imdsRegion.Region, nil
 }

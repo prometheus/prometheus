@@ -15,6 +15,7 @@ package remote
 
 import (
 	"context"
+	"encoding/binary"
 	"errors"
 	"fmt"
 	"log/slog"
@@ -23,6 +24,7 @@ import (
 	"strconv"
 	"sync"
 	"time"
+	"unique"
 
 	"github.com/gogo/protobuf/proto"
 	remoteapi "github.com/prometheus/client_golang/exp/api/remote"
@@ -41,6 +43,7 @@ import (
 	"github.com/prometheus/prometheus/model/metadata"
 	"github.com/prometheus/prometheus/model/relabel"
 	"github.com/prometheus/prometheus/model/timestamp"
+	"github.com/prometheus/prometheus/model/value"
 	"github.com/prometheus/prometheus/prompb"
 	writev2 "github.com/prometheus/prometheus/prompb/io/prometheus/write/v2"
 	"github.com/prometheus/prometheus/schema"
@@ -64,6 +67,7 @@ const (
 	reasonDroppedSeries              = "dropped_series"
 	reasonUnintentionalDroppedSeries = "unintentionally_dropped_series"
 	reasonNHCBNotSupported           = "nhcb_in_rw1_not_supported"
+	reasonNHCBConversionError        = "nhcb_to_classic_conversion_error"
 )
 
 type queueManagerMetrics struct {
@@ -99,6 +103,9 @@ type queueManagerMetrics struct {
 	sentBytesTotal         prometheus.Counter
 	metadataBytesTotal     prometheus.Counter
 	maxSamplesPerSend      prometheus.Gauge
+
+	samplesMetadataTotal    *prometheus.CounterVec
+	histogramsMetadataTotal *prometheus.CounterVec
 }
 
 func newQueueManagerMetrics(r prometheus.Registerer, rn, e string) *queueManagerMetrics {
@@ -117,6 +124,13 @@ func newQueueManagerMetrics(r prometheus.Registerer, rn, e string) *queueManager
 		Help:        "Total number of samples sent to remote storage.",
 		ConstLabels: constLabels,
 	})
+	m.samplesMetadataTotal = prometheus.NewCounterVec(prometheus.CounterOpts{
+		Namespace:   namespace,
+		Subsystem:   subsystem,
+		Name:        "samples_metadata_total",
+		Help:        "Total number of samples sent to remote storage using Remote Write 2.0 with the specified metadata field set.",
+		ConstLabels: constLabels,
+	}, []string{"field"})
 	m.exemplarsTotal = prometheus.NewCounter(prometheus.CounterOpts{
 		Namespace:   namespace,
 		Subsystem:   subsystem,
@@ -131,11 +145,22 @@ func newQueueManagerMetrics(r prometheus.Registerer, rn, e string) *queueManager
 		Help:        "Total number of histograms sent to remote storage.",
 		ConstLabels: constLabels,
 	})
+	m.histogramsMetadataTotal = prometheus.NewCounterVec(prometheus.CounterOpts{
+		Namespace:   namespace,
+		Subsystem:   subsystem,
+		Name:        "histograms_metadata_total",
+		Help:        "Total number of histograms sent to remote storage using Remote Write 2.0 with the specified metadata field set.",
+		ConstLabels: constLabels,
+	}, []string{"field"})
+	for _, field := range []string{metadataFieldType, metadataFieldUnit, metadataFieldHelp} {
+		m.samplesMetadataTotal.WithLabelValues(field)
+		m.histogramsMetadataTotal.WithLabelValues(field)
+	}
 	m.metadataTotal = prometheus.NewCounter(prometheus.CounterOpts{
 		Namespace:   namespace,
 		Subsystem:   subsystem,
 		Name:        "metadata_total",
-		Help:        "Total number of metadata entries sent to remote storage.",
+		Help:        "Total number of metadata entries sent to remote storage. Deprecated: This metric only applies to Remote Write 1.0.",
 		ConstLabels: constLabels,
 	})
 	m.failedSamplesTotal = prometheus.NewCounter(prometheus.CounterOpts{
@@ -163,7 +188,7 @@ func newQueueManagerMetrics(r prometheus.Registerer, rn, e string) *queueManager
 		Namespace:   namespace,
 		Subsystem:   subsystem,
 		Name:        "metadata_failed_total",
-		Help:        "Total number of metadata entries which failed on send to remote storage, non-recoverable errors.",
+		Help:        "Total number of metadata entries which failed on send to remote storage, non-recoverable errors. Deprecated: This metric only applies to Remote Write 1.0.",
 		ConstLabels: constLabels,
 	})
 	m.retriedSamplesTotal = prometheus.NewCounter(prometheus.CounterOpts{
@@ -191,7 +216,7 @@ func newQueueManagerMetrics(r prometheus.Registerer, rn, e string) *queueManager
 		Namespace:   namespace,
 		Subsystem:   subsystem,
 		Name:        "metadata_retried_total",
-		Help:        "Total number of metadata entries which failed on send to remote storage but were retried because the send error was recoverable.",
+		Help:        "Total number of metadata entries which failed on send to remote storage but were retried because the send error was recoverable. Deprecated: This metric only applies to Remote Write 1.0.",
 		ConstLabels: constLabels,
 	})
 	m.droppedSamplesTotal = prometheus.NewCounterVec(prometheus.CounterOpts{
@@ -311,14 +336,14 @@ func newQueueManagerMetrics(r prometheus.Registerer, rn, e string) *queueManager
 		Namespace:   namespace,
 		Subsystem:   subsystem,
 		Name:        "bytes_total",
-		Help:        "The total number of bytes of data (not metadata) sent by the queue after compression. Note that when exemplars over remote write is enabled the exemplars included in a remote write request count towards this metric.",
+		Help:        "The total number of bytes of data sent by the queue after compression. For Remote Write 2.0, this includes metadata. Note that when exemplars over remote write is enabled the exemplars included in a remote write request count towards this metric.",
 		ConstLabels: constLabels,
 	})
 	m.metadataBytesTotal = prometheus.NewCounter(prometheus.CounterOpts{
 		Namespace:   namespace,
 		Subsystem:   subsystem,
 		Name:        "metadata_bytes_total",
-		Help:        "The total number of bytes of metadata sent by the queue after compression.",
+		Help:        "The total number of bytes of metadata sent by the queue after compression. Deprecated: This metric only applies to Remote Write 1.0.",
 		ConstLabels: constLabels,
 	})
 	m.maxSamplesPerSend = prometheus.NewGauge(prometheus.GaugeOpts{
@@ -332,21 +357,18 @@ func newQueueManagerMetrics(r prometheus.Registerer, rn, e string) *queueManager
 	return m
 }
 
-func (m *queueManagerMetrics) register() {
+func (m *queueManagerMetrics) register(protoMsg remoteapi.WriteMessageType) {
 	if m.reg != nil {
 		m.reg.MustRegister(
 			m.samplesTotal,
 			m.exemplarsTotal,
 			m.histogramsTotal,
-			m.metadataTotal,
 			m.failedSamplesTotal,
 			m.failedExemplarsTotal,
 			m.failedHistogramsTotal,
-			m.failedMetadataTotal,
 			m.retriedSamplesTotal,
 			m.retriedExemplarsTotal,
 			m.retriedHistogramsTotal,
-			m.retriedMetadataTotal,
 			m.droppedSamplesTotal,
 			m.droppedExemplarsTotal,
 			m.droppedHistogramsTotal,
@@ -363,26 +385,35 @@ func (m *queueManagerMetrics) register() {
 			m.minNumShards,
 			m.desiredNumShards,
 			m.sentBytesTotal,
-			m.metadataBytesTotal,
 			m.maxSamplesPerSend,
 		)
+		if protoMsg == remoteapi.WriteV1MessageType {
+			m.reg.MustRegister(
+				m.metadataTotal,
+				m.failedMetadataTotal,
+				m.retriedMetadataTotal,
+				m.metadataBytesTotal,
+			)
+		} else {
+			m.reg.MustRegister(
+				m.samplesMetadataTotal,
+				m.histogramsMetadataTotal,
+			)
+		}
 	}
 }
 
-func (m *queueManagerMetrics) unregister() {
+func (m *queueManagerMetrics) unregister(protoMsg remoteapi.WriteMessageType) {
 	if m.reg != nil {
 		m.reg.Unregister(m.samplesTotal)
 		m.reg.Unregister(m.exemplarsTotal)
 		m.reg.Unregister(m.histogramsTotal)
-		m.reg.Unregister(m.metadataTotal)
 		m.reg.Unregister(m.failedSamplesTotal)
 		m.reg.Unregister(m.failedExemplarsTotal)
 		m.reg.Unregister(m.failedHistogramsTotal)
-		m.reg.Unregister(m.failedMetadataTotal)
 		m.reg.Unregister(m.retriedSamplesTotal)
 		m.reg.Unregister(m.retriedExemplarsTotal)
 		m.reg.Unregister(m.retriedHistogramsTotal)
-		m.reg.Unregister(m.retriedMetadataTotal)
 		m.reg.Unregister(m.droppedSamplesTotal)
 		m.reg.Unregister(m.droppedExemplarsTotal)
 		m.reg.Unregister(m.droppedHistogramsTotal)
@@ -399,8 +430,16 @@ func (m *queueManagerMetrics) unregister() {
 		m.reg.Unregister(m.minNumShards)
 		m.reg.Unregister(m.desiredNumShards)
 		m.reg.Unregister(m.sentBytesTotal)
-		m.reg.Unregister(m.metadataBytesTotal)
 		m.reg.Unregister(m.maxSamplesPerSend)
+		if protoMsg == remoteapi.WriteV1MessageType {
+			m.reg.Unregister(m.metadataTotal)
+			m.reg.Unregister(m.failedMetadataTotal)
+			m.reg.Unregister(m.retriedMetadataTotal)
+			m.reg.Unregister(m.metadataBytesTotal)
+		} else {
+			m.reg.Unregister(m.samplesMetadataTotal)
+			m.reg.Unregister(m.histogramsMetadataTotal)
+		}
 	}
 }
 
@@ -433,6 +472,8 @@ type QueueManager struct {
 	sendExemplars           bool
 	sendNativeHistograms    bool
 	enableTypeAndUnitLabels bool
+	failedRequestLogging    bool
+	convertNHCBToClassic    bool
 	watcher                 *wlog.Watcher
 	metadataWatcher         *MetadataWatcher
 
@@ -441,11 +482,15 @@ type QueueManager struct {
 	protoMsg    remoteapi.WriteMessageType
 	compr       compression.Type
 
-	seriesMtx      sync.Mutex // Covers seriesLabels, seriesMetadata, droppedSeries and builder.
-	seriesLabels   map[chunks.HeadSeriesRef]labels.Labels
-	seriesMetadata map[chunks.HeadSeriesRef]*metadata.Metadata
-	droppedSeries  map[chunks.HeadSeriesRef]struct{}
-	builder        *labels.Builder
+	seriesMtx        sync.Mutex // Covers seriesLabels, seriesMetadata, droppedSeries, the NHCB fields and builder.
+	seriesLabels     map[chunks.HeadSeriesRef]labels.Labels
+	seriesMetadata   map[chunks.HeadSeriesRef]unique.Handle[metadata.Metadata]
+	droppedSeries    map[chunks.HeadSeriesRef]struct{}
+	nhcbSeriesBounds map[chunks.HeadSeriesRef]*nhcbLayout // Layout of each converted NHCB series.
+	nhcbLayouts      map[string]*nhcbLayout               // Keyed by the encoded bounds.
+	nhcbLayoutKey    []byte                               // Scratch space for layout keys.
+	nhcbCounts       []float64                            // Scratch space for bucket counts.
+	builder          *labels.Builder
 
 	seriesSegmentMtx     sync.Mutex // Covers seriesSegmentIndexes - if you also lock seriesMtx, take seriesMtx first.
 	seriesSegmentIndexes map[chunks.HeadSeriesRef]int
@@ -456,7 +501,7 @@ type QueueManager struct {
 	quit        chan struct{}
 	wg          sync.WaitGroup
 
-	dataIn, dataDropped, dataOut, dataOutDuration *ewmaRate
+	dataIn, dataInExpanded, dataDropped, dataOut, dataOutDuration *ewmaRate
 
 	metrics              *queueManagerMetrics
 	interner             *pool
@@ -489,6 +534,8 @@ func NewQueueManager(
 	enableTypeAndUnitLabels bool,
 	protoMsg remoteapi.WriteMessageType,
 	recordBuf *record.BuffersPool,
+	failedRequestLogging bool,
+	convertNHCBToClassic bool,
 ) *QueueManager {
 	if logger == nil {
 		logger = promslog.NewNopLogger()
@@ -512,11 +559,14 @@ func NewQueueManager(
 		sendExemplars:           enableExemplarRemoteWrite,
 		sendNativeHistograms:    enableNativeHistogramRemoteWrite,
 		enableTypeAndUnitLabels: enableTypeAndUnitLabels,
+		failedRequestLogging:    failedRequestLogging,
 
 		seriesLabels:         make(map[chunks.HeadSeriesRef]labels.Labels),
-		seriesMetadata:       make(map[chunks.HeadSeriesRef]*metadata.Metadata),
+		seriesMetadata:       make(map[chunks.HeadSeriesRef]unique.Handle[metadata.Metadata]),
 		seriesSegmentIndexes: make(map[chunks.HeadSeriesRef]int),
 		droppedSeries:        make(map[chunks.HeadSeriesRef]struct{}),
+		nhcbSeriesBounds:     make(map[chunks.HeadSeriesRef]*nhcbLayout),
+		nhcbLayouts:          make(map[string]*nhcbLayout),
 		builder:              labels.NewBuilder(labels.EmptyLabels()),
 
 		numShards:   cfg.MinShards,
@@ -524,6 +574,7 @@ func NewQueueManager(
 		quit:        make(chan struct{}),
 
 		dataIn:          samplesIn,
+		dataInExpanded:  newEWMARate(ewmaWeight, shardUpdateDuration),
 		dataDropped:     newEWMARate(ewmaWeight, shardUpdateDuration),
 		dataOut:         newEWMARate(ewmaWeight, shardUpdateDuration),
 		dataOutDuration: newEWMARate(ewmaWeight, shardUpdateDuration),
@@ -534,18 +585,20 @@ func NewQueueManager(
 
 		protoMsg: protoMsg,
 		compr:    compression.Snappy, // Hardcoded for now, but scaffolding exists for likely future use.
+
+		convertNHCBToClassic: convertNHCBToClassic,
 	}
 
 	walMetadata := t.protoMsg != remoteapi.WriteV1MessageType
 
-	t.watcher = wlog.NewWatcher(watcherMetrics, readerMetrics, logger, client.Name(), t, dir, enableExemplarRemoteWrite, enableNativeHistogramRemoteWrite, walMetadata, recordBuf)
+	t.watcher = wlog.NewWatcher(watcherMetrics, readerMetrics, logger, client.Name(), t, dir, enableExemplarRemoteWrite, enableNativeHistogramRemoteWrite || convertNHCBToClassic, walMetadata, recordBuf)
 
 	// The current MetadataWatcher implementation is mutually exclusive
 	// with the new approach, which stores metadata as WAL records and
 	// ships them alongside series. If both mechanisms are set, the new one
 	// takes precedence by implicitly disabling the older one.
 	if t.mcfg.Send && t.protoMsg != remoteapi.WriteV1MessageType {
-		logger.Warn("usage of 'metadata_config.send' is redundant when using remote write v2 (or higher) as metadata will always be gathered from the WAL and included for every series within each write request")
+		logger.Warn("'metadata_config.send' is ignored when using Remote Write 2.0; metadata is sent when --enable-feature=metadata-wal-records or --enable-feature=type-and-unit-labels is enabled")
 		t.mcfg.Send = false
 	}
 
@@ -598,14 +651,15 @@ func (t *QueueManager) sendMetadataWithBackoff(ctx context.Context, metadata []p
 	metadataCount := len(metadata)
 
 	attemptStore := func(try int) error {
+		cl := t.client()
 		ctx, span := otel.Tracer("").Start(ctx, "Remote Metadata Send Batch")
 		defer span.End()
 
 		span.SetAttributes(
 			attribute.Int("metadata", metadataCount),
 			attribute.Int("try", try),
-			attribute.String("remote_name", t.storeClient.Name()),
-			attribute.String("remote_url", t.storeClient.Endpoint()),
+			attribute.String("remote_name", cl.Name()),
+			attribute.String("remote_url", cl.Endpoint()),
 		)
 		// Attributes defined by OpenTelemetry semantic conventions.
 		if try > 0 {
@@ -615,7 +669,7 @@ func (t *QueueManager) sendMetadataWithBackoff(ctx context.Context, metadata []p
 		begin := time.Now()
 		// Ignoring WriteResponseStats, because there is nothing for metadata, since it's
 		// embedded in v2 calls now, and we do v1 here.
-		_, err := t.storeClient.Store(ctx, req, try)
+		_, err := cl.Store(ctx, req, try)
 		t.metrics.sentBatchDuration.Observe(time.Since(begin).Seconds())
 
 		if err != nil {
@@ -748,6 +802,23 @@ outer:
 		// TODO(cstyan): Handle or at least log an error if no metadata is found.
 		// See https://github.com/prometheus/prometheus/issues/14405
 		meta := t.seriesMetadata[s.Ref]
+		if t.convertNHCBToClassic {
+			if _, ok := t.nhcbSeriesBounds[s.Ref]; ok {
+				// A float sample for a converted NHCB series is either its stale marker or
+				// a change of sample type. Both retire the classic series; a type change
+				// also forwards the float, whose start time stays off the retired series.
+				st := s.ST
+				var replacement *timeSeries
+				if !value.IsStaleNaN(s.V) {
+					st = 0
+					replacement = &timeSeries{seriesLabels: lbls, metadata: meta, startTimestamp: s.ST, timestamp: s.T, value: s.V, sType: tSample}
+				}
+				if !t.convertAndEnqueueNHCB(s.Ref, st, s.T, nil, nil, true, lbls, meta, replacement) {
+					return false
+				}
+				continue
+			}
+		}
 		t.seriesMtx.Unlock()
 		// Start with a very small backoff. This should not be t.cfg.MinBackoff
 		// as it can happen without errors, and we want to pickup work after
@@ -809,6 +880,23 @@ outer:
 			t.seriesMtx.Unlock()
 			continue
 		}
+		if t.convertNHCBToClassic {
+			if layout, ok := t.nhcbSeriesBounds[e.Ref]; ok {
+				if baseName := lbls.Get(model.MetricNameLabel); baseName != "" {
+					le := layout.le[len(layout.bounds)] // +Inf, for values above every bound.
+					for i, b := range layout.bounds {
+						if e.V <= b {
+							le = layout.le[i]
+							break
+						}
+					}
+					t.builder.Reset(lbls)
+					t.builder.Set(model.MetricNameLabel, baseName+"_bucket")
+					t.builder.Set(model.BucketLabel, le)
+					lbls = t.builder.Labels()
+				}
+			}
+		}
 		meta := t.seriesMetadata[e.Ref]
 		t.seriesMtx.Unlock()
 		// This will only loop if the queues are being resharded.
@@ -841,24 +929,215 @@ outer:
 	return true
 }
 
+// nhcbLayout is a bucket layout shared by the NHCB series that use it.
+type nhcbLayout struct {
+	bounds []float64
+	le     []string // Formatted bounds, followed by +Inf.
+	key    string
+	refs   int // Series sharing the layout.
+}
+
+// acquireNHCBLayout requires seriesMtx and returns a new reference to the shared layout for bounds.
+// Each reference must be released with releaseNHCBLayout.
+func (t *QueueManager) acquireNHCBLayout(bounds []float64) *nhcbLayout {
+	// The key is the bounds' exact bit patterns. Converting it inside the map index avoids an allocation.
+	t.nhcbLayoutKey = t.nhcbLayoutKey[:0]
+	for _, b := range bounds {
+		t.nhcbLayoutKey = binary.LittleEndian.AppendUint64(t.nhcbLayoutKey, math.Float64bits(b))
+	}
+	layout, ok := t.nhcbLayouts[string(t.nhcbLayoutKey)]
+	if !ok {
+		// Copy the bounds, which belong to the caller's histogram.
+		layout = &nhcbLayout{bounds: slices.Clone(bounds), le: make([]string, 0, len(bounds)+1), key: string(t.nhcbLayoutKey)}
+		for _, b := range bounds {
+			layout.le = append(layout.le, labels.FormatOpenMetricsFloat(b))
+		}
+		layout.le = append(layout.le, labels.FormatOpenMetricsFloat(math.Inf(1)))
+		t.nhcbLayouts[layout.key] = layout
+	}
+	layout.refs++
+	return layout
+}
+
+// releaseNHCBLayout requires seriesMtx and drops a reference, forgetting the layout once unused.
+func (t *QueueManager) releaseNHCBLayout(layout *nhcbLayout) {
+	layout.refs--
+	if layout.refs == 0 {
+		delete(t.nhcbLayouts, layout.key)
+	}
+}
+
+// convertAndEnqueueNHCB converts an NHCB histogram (using the already-relabeled seriesLabels)
+// into classic _bucket, _count, and _sum samples while holding seriesMtx, then enqueues them
+// after releasing the lock. Caller must hold t.seriesMtx on entry; this method unlocks it.
+// A replacement follows the converted stale markers when changing sample type.
+func (t *QueueManager) convertAndEnqueueNHCB(ref chunks.HeadSeriesRef, st, ts int64, nhcb any, customValues []float64, isStale bool, lbls labels.Labels, meta unique.Handle[metadata.Metadata], replacement *timeSeries) bool {
+	prev, wasActive := t.nhcbSeriesBounds[ref]
+	var prevBounds []float64
+	if wasActive {
+		prevBounds = prev.bounds
+	}
+	if nhcb == nil {
+		customValues = prevBounds
+		nhcb = &histogram.Histogram{
+			Schema:       histogram.CustomBucketsSchema,
+			CustomValues: prevBounds,
+			Sum:          math.Float64frombits(value.StaleNaN),
+		}
+	}
+
+	sameBounds := wasActive && slices.Equal(prevBounds, customValues)
+	capacity := len(customValues) + 3
+	if wasActive && !sameBounds {
+		capacity += len(prevBounds)
+	}
+	if replacement != nil {
+		capacity++
+	}
+	classicSeries := make([]timeSeries, 0, capacity)
+	emit := func(bucketLabels labels.Labels, value float64) {
+		classicSeries = append(classicSeries, timeSeries{
+			seriesLabels:   bucketLabels,
+			metadata:       meta,
+			startTimestamp: st,
+			timestamp:      ts,
+			value:          value,
+			sType:          tSample,
+		})
+	}
+	baseName := lbls.Get(model.MetricNameLabel)
+	var (
+		count, sum float64
+		err        error
+	)
+	if baseName == "" {
+		err = errors.New("metric name label '__name__' is missing")
+	} else {
+		t.nhcbCounts, count, sum, err = histogram.ClassicBucketCounts(nhcb, t.nhcbCounts)
+	}
+	layout := prev
+	if err == nil {
+		if !sameBounds {
+			layout = t.acquireNHCBLayout(customValues)
+		}
+		bucketName := baseName + "_bucket"
+		for i, c := range t.nhcbCounts {
+			t.builder.Reset(lbls)
+			t.builder.Set(model.MetricNameLabel, bucketName)
+			t.builder.Set(model.BucketLabel, layout.le[i])
+			emit(t.builder.Labels(), c)
+		}
+		t.builder.Reset(lbls)
+		t.builder.Set(model.MetricNameLabel, baseName+"_count")
+		emit(t.builder.Labels(), count)
+		t.builder.Reset(lbls)
+		t.builder.Set(model.MetricNameLabel, baseName+"_sum")
+		emit(t.builder.Labels(), sum)
+	}
+	if err == nil && wasActive && !sameBounds {
+		staleVal := math.Float64frombits(value.StaleNaN)
+		for i, prevBound := range prevBounds {
+			if slices.Contains(customValues, prevBound) {
+				continue
+			}
+			t.builder.Reset(lbls)
+			t.builder.Set(model.MetricNameLabel, baseName+"_bucket")
+			t.builder.Set(model.BucketLabel, prev.le[i])
+			// Retired buckets get no start time; st belongs to the new layout.
+			classicSeries = append(classicSeries, timeSeries{
+				seriesLabels:   t.builder.Labels(),
+				metadata:       meta,
+				startTimestamp: 0,
+				timestamp:      ts,
+				value:          staleVal,
+				sType:          tSample,
+			})
+		}
+	}
+	if err == nil {
+		if isStale {
+			if !sameBounds {
+				// A stale marker needed the new layout only for its labels.
+				t.releaseNHCBLayout(layout)
+			}
+			if wasActive {
+				t.releaseNHCBLayout(prev)
+			}
+			delete(t.nhcbSeriesBounds, ref)
+		} else if !sameBounds {
+			if wasActive {
+				t.releaseNHCBLayout(prev)
+			}
+			t.nhcbSeriesBounds[ref] = layout
+		}
+		if replacement != nil {
+			classicSeries = append(classicSeries, *replacement)
+		}
+	}
+	t.seriesMtx.Unlock()
+	if err != nil {
+		t.logger.Error("Conversion error", "err", err)
+		t.metrics.droppedHistogramsTotal.WithLabelValues(reasonNHCBConversionError).Inc()
+		t.dataDropped.incr(1)
+		return true
+	}
+	if len(classicSeries) > 1 {
+		// WriteStorage counts the incoming sample as a single item in dataIn;
+		// account for the extra classic series produced by NHCB expansion here.
+		t.dataInExpanded.incr(int64(len(classicSeries) - 1))
+	}
+	for _, s := range classicSeries {
+		backoff := model.Duration(5 * time.Millisecond)
+		for {
+			select {
+			case <-t.quit:
+				return false
+			default:
+			}
+			if t.shards.enqueue(ref, s) {
+				break
+			}
+
+			t.metrics.enqueueRetriesTotal.Inc()
+			time.Sleep(time.Duration(backoff))
+			backoff *= 2
+			if backoff > t.cfg.MaxBackoff {
+				backoff = t.cfg.MaxBackoff
+			}
+		}
+	}
+	return true
+}
+
 func (t *QueueManager) AppendHistograms(histograms []record.RefHistogramSample) bool {
-	if !t.sendNativeHistograms {
+	if !t.sendNativeHistograms && !t.convertNHCBToClassic {
 		return true
 	}
 	currentTime := time.Now()
 outer:
 	for _, h := range histograms {
+		isNHCB := h.H != nil && h.H.Schema == histogram.CustomBucketsSchema
+		isStale := h.H != nil && value.IsStaleNaN(h.H.Sum)
+		t.seriesMtx.Lock()
+		_, isTrackedNHCB := t.nhcbSeriesBounds[h.Ref]
+		convertNHCB := t.convertNHCBToClassic && (isNHCB || (isStale && isTrackedNHCB))
+		transition := t.convertNHCBToClassic && isTrackedNHCB && !isNHCB && !isStale
+		if !t.sendNativeHistograms && !convertNHCB && !transition {
+			t.seriesMtx.Unlock()
+			continue
+		}
 		if isSampleOld(currentTime, time.Duration(t.cfg.SampleAgeLimit), h.T) {
+			t.seriesMtx.Unlock()
 			t.metrics.droppedHistogramsTotal.WithLabelValues(reasonTooOld).Inc()
 			continue
 		}
-		if t.protoMsg == remoteapi.WriteV1MessageType && h.H != nil && h.H.Schema == histogram.CustomBucketsSchema {
+		if !t.convertNHCBToClassic && t.protoMsg == remoteapi.WriteV1MessageType && isNHCB {
+			t.seriesMtx.Unlock()
 			// We cannot send native histograms with custom buckets (NHCB) via remote write v1.
 			t.metrics.droppedHistogramsTotal.WithLabelValues(reasonNHCBNotSupported).Inc()
-			t.logger.Warn("Dropped native histogram with custom buckets (NHCB) as remote write v1 does not support itB", "ref", h.Ref)
+			t.logger.Warn("Dropped native histogram with custom buckets (NHCB) as remote write v1 does not support it", "ref", h.Ref)
 			continue
 		}
-		t.seriesMtx.Lock()
 		lbls, ok := t.seriesLabels[h.Ref]
 		if !ok {
 			t.dataDropped.incr(1)
@@ -872,6 +1151,29 @@ outer:
 			continue
 		}
 		meta := t.seriesMetadata[h.Ref]
+		if transition {
+			var replacement *timeSeries
+			if t.sendNativeHistograms {
+				replacement = &timeSeries{seriesLabels: lbls, metadata: meta, startTimestamp: h.ST, timestamp: h.T, histogram: h.H, sType: tHistogram}
+			}
+			if !t.convertAndEnqueueNHCB(h.Ref, 0, h.T, nil, nil, true, lbls, meta, replacement) {
+				return false
+			}
+			continue
+		}
+		// Check if `convert_nhcb_to_classic` flag is enabled to convert NHCB histograms to classic histograms.
+		if convertNHCB {
+			var nhcb any
+			var customValues []float64
+			if isNHCB {
+				nhcb = h.H
+				customValues = h.H.CustomValues
+			}
+			if !t.convertAndEnqueueNHCB(h.Ref, h.ST, h.T, nhcb, customValues, isStale, lbls, meta, nil) {
+				return false
+			}
+			continue
+		}
 		t.seriesMtx.Unlock()
 
 		backoff := model.Duration(5 * time.Millisecond)
@@ -882,12 +1184,12 @@ outer:
 			default:
 			}
 			if t.shards.enqueue(h.Ref, timeSeries{
-				seriesLabels: lbls,
-				metadata:     meta,
-				// TODO(bwplotka): Populate ST once histogram Ref has it.
-				timestamp: h.T,
-				histogram: h.H,
-				sType:     tHistogram,
+				seriesLabels:   lbls,
+				metadata:       meta,
+				startTimestamp: h.ST,
+				timestamp:      h.T,
+				histogram:      h.H,
+				sType:          tHistogram,
 			}) {
 				continue outer
 			}
@@ -904,23 +1206,34 @@ outer:
 }
 
 func (t *QueueManager) AppendFloatHistograms(floatHistograms []record.RefFloatHistogramSample) bool {
-	if !t.sendNativeHistograms {
+	if !t.sendNativeHistograms && !t.convertNHCBToClassic {
 		return true
 	}
 	currentTime := time.Now()
 outer:
 	for _, h := range floatHistograms {
+		isNHCB := h.FH != nil && h.FH.Schema == histogram.CustomBucketsSchema
+		isStale := h.FH != nil && value.IsStaleNaN(h.FH.Sum)
+		t.seriesMtx.Lock()
+		_, isTrackedNHCB := t.nhcbSeriesBounds[h.Ref]
+		convertNHCB := t.convertNHCBToClassic && (isNHCB || (isStale && isTrackedNHCB))
+		transition := t.convertNHCBToClassic && isTrackedNHCB && !isNHCB && !isStale
+		if !t.sendNativeHistograms && !convertNHCB && !transition {
+			t.seriesMtx.Unlock()
+			continue
+		}
 		if isSampleOld(currentTime, time.Duration(t.cfg.SampleAgeLimit), h.T) {
+			t.seriesMtx.Unlock()
 			t.metrics.droppedHistogramsTotal.WithLabelValues(reasonTooOld).Inc()
 			continue
 		}
-		if t.protoMsg == remoteapi.WriteV1MessageType && h.FH != nil && h.FH.Schema == histogram.CustomBucketsSchema {
+		if !t.convertNHCBToClassic && t.protoMsg == remoteapi.WriteV1MessageType && isNHCB {
+			t.seriesMtx.Unlock()
 			// We cannot send native histograms with custom buckets (NHCB) via remote write v1.
 			t.metrics.droppedHistogramsTotal.WithLabelValues(reasonNHCBNotSupported).Inc()
-			t.logger.Warn("Dropped float native histogram with custom buckets (NHCB) as remote write v1 does not support itB", "ref", h.Ref)
+			t.logger.Warn("Dropped float native histogram with custom buckets (NHCB) as remote write v1 does not support it", "ref", h.Ref)
 			continue
 		}
-		t.seriesMtx.Lock()
 		lbls, ok := t.seriesLabels[h.Ref]
 		if !ok {
 			t.dataDropped.incr(1)
@@ -934,6 +1247,29 @@ outer:
 			continue
 		}
 		meta := t.seriesMetadata[h.Ref]
+		if transition {
+			var replacement *timeSeries
+			if t.sendNativeHistograms {
+				replacement = &timeSeries{seriesLabels: lbls, metadata: meta, startTimestamp: h.ST, timestamp: h.T, floatHistogram: h.FH, sType: tFloatHistogram}
+			}
+			if !t.convertAndEnqueueNHCB(h.Ref, 0, h.T, nil, nil, true, lbls, meta, replacement) {
+				return false
+			}
+			continue
+		}
+		// Check if `convert_nhcb_to_classic` flag is enabled to convert NHCB Float histograms to classic histograms.
+		if convertNHCB {
+			var nhcb any
+			var customValues []float64
+			if isNHCB {
+				nhcb = h.FH
+				customValues = h.FH.CustomValues
+			}
+			if !t.convertAndEnqueueNHCB(h.Ref, h.ST, h.T, nhcb, customValues, isStale, lbls, meta, nil) {
+				return false
+			}
+			continue
+		}
 		t.seriesMtx.Unlock()
 
 		backoff := model.Duration(5 * time.Millisecond)
@@ -944,9 +1280,9 @@ outer:
 			default:
 			}
 			if t.shards.enqueue(h.Ref, timeSeries{
-				seriesLabels: lbls,
-				metadata:     meta,
-				// TODO(bwplotka): Populate ST once histogram Ref has it.
+				seriesLabels:   lbls,
+				metadata:       meta,
+				startTimestamp: h.ST,
 				timestamp:      h.T,
 				floatHistogram: h.FH,
 				sType:          tFloatHistogram,
@@ -969,7 +1305,7 @@ outer:
 // Does not block.
 func (t *QueueManager) Start() {
 	// Register and initialise some metrics.
-	t.metrics.register()
+	t.metrics.register(t.protoMsg)
 	t.metrics.shardCapacity.Set(float64(t.cfg.Capacity))
 	t.metrics.maxNumShards.Set(float64(t.cfg.MaxShards))
 	t.metrics.minNumShards.Set(float64(t.cfg.MinShards))
@@ -1003,7 +1339,7 @@ func (t *QueueManager) Stop() {
 	if t.mcfg.Send {
 		t.metadataWatcher.Stop()
 	}
-	t.metrics.unregister()
+	t.metrics.unregister(t.protoMsg)
 }
 
 // StoreSeries keeps track of which series we know about for lookups when sending samples to remote.
@@ -1037,11 +1373,11 @@ func (t *QueueManager) StoreMetadata(meta []record.RefMetadata) {
 	t.seriesMtx.Lock()
 	defer t.seriesMtx.Unlock()
 	for _, m := range meta {
-		t.seriesMetadata[m.Ref] = &metadata.Metadata{
+		t.seriesMetadata[m.Ref] = unique.Make(metadata.Metadata{
 			Type: record.ToMetricType(m.Type),
 			Unit: m.Unit,
 			Help: m.Help,
-		}
+		})
 	}
 }
 
@@ -1066,12 +1402,17 @@ func (t *QueueManager) SeriesReset(index int) {
 	// Check for series that are in segments older than the checkpoint
 	// that were not also present in the checkpoint.
 	for k, v := range t.seriesSegmentIndexes {
-		if v < index {
-			delete(t.seriesSegmentIndexes, k)
-			delete(t.seriesLabels, k)
-			delete(t.seriesMetadata, k)
-			delete(t.droppedSeries, k)
+		if v >= index {
+			continue
 		}
+		delete(t.seriesSegmentIndexes, k)
+		delete(t.seriesLabels, k)
+		delete(t.seriesMetadata, k)
+		delete(t.droppedSeries, k)
+		if layout, ok := t.nhcbSeriesBounds[k]; ok {
+			t.releaseNHCBLayout(layout)
+		}
+		delete(t.nhcbSeriesBounds, k)
 	}
 }
 
@@ -1157,20 +1498,21 @@ func (t *QueueManager) calculateDesiredShards() int {
 	t.dataOut.tick()
 	t.dataDropped.tick()
 	t.dataOutDuration.tick()
+	t.dataInExpanded.tick()
 
 	// We use the number of incoming samples as a prediction of how much work we
 	// will need to do next iteration.  We add to this any pending samples
 	// (received - send) so we can catch up with any backlog. We use the average
 	// outgoing batch latency to work out how many shards we need.
 	var (
-		dataInRate      = t.dataIn.rate()
+		dataInRate      = t.dataIn.rate() + t.dataInExpanded.rate()
 		dataOutRate     = t.dataOut.rate()
 		dataKeptRatio   = dataOutRate / (t.dataDropped.rate() + dataOutRate)
 		dataOutDuration = t.dataOutDuration.rate() / float64(time.Second)
 		dataPendingRate = dataInRate*dataKeptRatio - dataOutRate
 		highestSent     = t.metrics.highestSentTimestamp.Get()
 		highestRecv     = t.highestRecvTimestamp.Get()
-		delay           = highestRecv - highestSent
+		delay           = max(highestRecv-highestSent, 0) // Delay must never be negative.
 		dataPending     = delay * dataInRate * dataKeptRatio
 	)
 
@@ -1186,7 +1528,8 @@ func (t *QueueManager) calculateDesiredShards() int {
 		desiredShards = timePerSample * (dataInRate*dataKeptRatio + backlogCatchup)
 	)
 	t.metrics.desiredNumShards.Set(desiredShards)
-	t.logger.Debug("QueueManager.calculateDesiredShards",
+	t.logger.Debug(
+		"QueueManager.calculateDesiredShards",
 		"dataInRate", dataInRate,
 		"dataOutRate", dataOutRate,
 		"dataKeptRatio", dataKeptRatio,
@@ -1404,7 +1747,7 @@ type timeSeries struct {
 	value                     float64
 	histogram                 *histogram.Histogram
 	floatHistogram            *histogram.FloatHistogram
-	metadata                  *metadata.Metadata
+	metadata                  unique.Handle[metadata.Metadata]
 	startTimestamp, timestamp int64
 	exemplarLabels            labels.Labels
 	// The type of series: sample, exemplar, or histogram.
@@ -1600,12 +1943,12 @@ func (s *shards) runShard(ctx context.Context, shardID int, queue *queue) {
 			}
 			_ = s.sendSamples(ctx, pendingData[:n], nPendingSamples, nPendingExemplars, nPendingHistograms, pBuf, encBuf, compr)
 		case remoteapi.WriteV2MessageType:
-			nPendingSamples, nPendingExemplars, nPendingHistograms, nPendingMetadata, nUnexpectedMetadata := populateV2TimeSeries(&symbolTable, batch, pendingDataV2, s.qm.sendExemplars, s.qm.sendNativeHistograms, s.qm.enableTypeAndUnitLabels)
+			nPendingSamples, nPendingExemplars, nPendingHistograms, nUnexpectedMetadata := populateV2TimeSeries(&symbolTable, batch, pendingDataV2, s.qm.sendExemplars, s.qm.sendNativeHistograms, s.qm.enableTypeAndUnitLabels)
 			n := nPendingSamples + nPendingExemplars + nPendingHistograms
 			if nUnexpectedMetadata > 0 {
 				s.qm.logger.Warn("unexpected metadata sType in populateV2TimeSeries", "count", nUnexpectedMetadata)
 			}
-			_ = s.sendV2Samples(ctx, pendingDataV2[:n], symbolTable.Symbols(), nPendingSamples, nPendingExemplars, nPendingHistograms, nPendingMetadata, &pBufRaw, encBuf, compr)
+			_ = s.sendV2Samples(ctx, pendingDataV2[:n], symbolTable.Symbols(), nPendingSamples, nPendingExemplars, nPendingHistograms, &pBufRaw, encBuf, compr)
 			symbolTable.Reset()
 		}
 	}
@@ -1696,21 +2039,21 @@ func populateTimeSeries(batch []timeSeries, pendingData []prompb.TimeSeries, sen
 
 func (s *shards) sendSamples(ctx context.Context, samples []prompb.TimeSeries, sampleCount, exemplarCount, histogramCount int, pBuf *proto.Buffer, buf compression.EncodeBuffer, compr compression.Type) error {
 	begin := time.Now()
-	rs, err := s.sendSamplesWithBackoff(ctx, samples, sampleCount, exemplarCount, histogramCount, 0, pBuf, buf, compr)
-	s.updateMetrics(ctx, err, sampleCount, exemplarCount, histogramCount, 0, rs, time.Since(begin))
+	rs, err := s.sendSamplesWithBackoff(ctx, samples, sampleCount, exemplarCount, histogramCount, pBuf, buf, compr)
+	s.updateMetrics(ctx, err, sampleCount, exemplarCount, histogramCount, rs, time.Since(begin))
 	return err
 }
 
 // TODO(bwplotka): DRY this (have one logic for both v1 and v2).
 // See https://github.com/prometheus/prometheus/issues/14409
-func (s *shards) sendV2Samples(ctx context.Context, samples []writev2.TimeSeries, labels []string, sampleCount, exemplarCount, histogramCount, metadataCount int, pBuf *[]byte, buf compression.EncodeBuffer, compr compression.Type) error {
+func (s *shards) sendV2Samples(ctx context.Context, samples []writev2.TimeSeries, labels []string, sampleCount, exemplarCount, histogramCount int, pBuf *[]byte, buf compression.EncodeBuffer, compr compression.Type) error {
 	begin := time.Now()
-	rs, err := s.sendV2SamplesWithBackoff(ctx, samples, labels, sampleCount, exemplarCount, histogramCount, metadataCount, pBuf, buf, compr)
-	s.updateMetrics(ctx, err, sampleCount, exemplarCount, histogramCount, metadataCount, rs, time.Since(begin))
+	rs, err := s.sendV2SamplesWithBackoff(ctx, samples, labels, sampleCount, exemplarCount, histogramCount, pBuf, buf, compr)
+	s.updateMetrics(ctx, err, sampleCount, exemplarCount, histogramCount, rs, time.Since(begin))
 	return err
 }
 
-func (s *shards) updateMetrics(_ context.Context, err error, sampleCount, exemplarCount, histogramCount, metadataCount int, rs WriteResponseStats, duration time.Duration) {
+func (s *shards) updateMetrics(_ context.Context, err error, sampleCount, exemplarCount, histogramCount int, rs WriteResponseStats, duration time.Duration) {
 	// Partial errors may happen -- account for that.
 	sampleDiff := sampleCount - rs.Samples
 	if sampleDiff > 0 {
@@ -1732,7 +2075,12 @@ func (s *shards) updateMetrics(_ context.Context, err error, sampleCount, exempl
 
 	// These counters are used to calculate the dynamic sharding, and as such
 	// should be maintained irrespective of success or failure.
-	s.qm.dataOut.incr(int64(sampleCount + exemplarCount + histogramCount + metadataCount))
+	// Count only queueable items so dataOut remains comparable with dataIn.
+	// Remote write v2 copies cached metadata into outgoing series, potentially
+	// many times per metadata update, so counting those copies would distort the
+	// per-item send time and backlog estimates. Their actual cost is already
+	// included in dataOutDuration. Remote write v1 sends metadata separately.
+	s.qm.dataOut.incr(int64(sampleCount + exemplarCount + histogramCount))
 	s.qm.dataOutDuration.incr(int64(duration))
 	s.qm.lastSendTimestamp.Store(time.Now().Unix())
 
@@ -1747,7 +2095,7 @@ func (s *shards) updateMetrics(_ context.Context, err error, sampleCount, exempl
 }
 
 // sendSamplesWithBackoff to the remote storage with backoff for recoverable errors.
-func (s *shards) sendSamplesWithBackoff(ctx context.Context, samples []prompb.TimeSeries, sampleCount, exemplarCount, histogramCount, metadataCount int, pBuf *proto.Buffer, buf compression.EncodeBuffer, compr compression.Type) (WriteResponseStats, error) {
+func (s *shards) sendSamplesWithBackoff(ctx context.Context, samples []prompb.TimeSeries, sampleCount, exemplarCount, histogramCount int, pBuf *proto.Buffer, buf compression.EncodeBuffer, compr compression.Type) (WriteResponseStats, error) {
 	// Build the WriteRequest with no metadata.
 	req, highest, lowest, err := buildWriteRequest(s.qm.logger, samples, nil, pBuf, nil, buf, compr)
 	s.qm.buildRequestLimitTimestamp.Store(lowest)
@@ -1763,7 +2111,6 @@ func (s *shards) sendSamplesWithBackoff(ctx context.Context, samples []prompb.Ti
 		sampleCount:    sampleCount,
 		exemplarCount:  exemplarCount,
 		histogramCount: histogramCount,
-		metadataCount:  metadataCount,
 		reqSize:        reqSize,
 	}
 
@@ -1805,14 +2152,15 @@ func (s *shards) sendSamplesWithBackoff(ctx context.Context, samples []prompb.Ti
 			req = req2
 		}
 
-		ctx, span := createBatchSpan(sc.ctx, sc, s.qm.storeClient.Name(), s.qm.storeClient.Endpoint(), try)
+		cl := s.qm.client()
+		ctx, span := createBatchSpan(sc.ctx, sc, cl.Name(), cl.Endpoint(), try)
 		defer span.End()
 
 		begin := time.Now()
 		metricsUpdater.recordBatchAttempt(sc)
 		// Technically for v1, we will likely have empty response stats, but for
 		// newer Receivers this might be not, so used it in a best effort.
-		rs, err := s.qm.client().Store(ctx, req, try)
+		rs, err := cl.Store(ctx, req, try)
 		metricsUpdater.recordLatency(begin)
 		// TODO(bwplotka): Revisit this once we have Receivers doing retriable partial error
 		// so far we don't have those, so it's ok to potentially skew statistics.
@@ -1852,9 +2200,9 @@ func (s *shards) sendSamplesWithBackoff(ctx context.Context, samples []prompb.Ti
 }
 
 // sendV2SamplesWithBackoff to the remote storage with backoff for recoverable errors.
-func (s *shards) sendV2SamplesWithBackoff(ctx context.Context, samples []writev2.TimeSeries, labels []string, sampleCount, exemplarCount, histogramCount, metadataCount int, pBuf *[]byte, buf compression.EncodeBuffer, compr compression.Type) (WriteResponseStats, error) {
+func (s *shards) sendV2SamplesWithBackoff(ctx context.Context, samples []writev2.TimeSeries, labels []string, sampleCount, exemplarCount, histogramCount int, pBuf *[]byte, buf compression.EncodeBuffer, compr compression.Type) (WriteResponseStats, error) {
 	// Build the WriteRequest with no metadata.
-	req, highest, lowest, err := buildV2WriteRequest(s.qm.logger, samples, labels, pBuf, nil, buf, compr)
+	req, v2Req, highest, lowest, err := buildV2WriteRequest(s.qm.logger, samples, labels, pBuf, nil, buf, compr)
 	s.qm.buildRequestLimitTimestamp.Store(lowest)
 	if err != nil {
 		// Failing to build the write request is non-recoverable, since it will
@@ -1868,13 +2216,13 @@ func (s *shards) sendV2SamplesWithBackoff(ctx context.Context, samples []writev2
 		sampleCount:    sampleCount,
 		exemplarCount:  exemplarCount,
 		histogramCount: histogramCount,
-		metadataCount:  metadataCount,
 		reqSize:        reqSize,
 	}
 
 	metricsUpdater := batchMetricsUpdater{
 		metrics: s.qm.metrics,
 	}
+	withMetadataCounts := countV2DataWithMetadata(samples)
 
 	// Since we retry writes via attemptStore and sendWriteRequestWithBackoff we need
 	// to track the total amount of accepted data across the various attempts.
@@ -1894,7 +2242,7 @@ func (s *shards) sendV2SamplesWithBackoff(ctx context.Context, samples []writev2
 		lowest := s.qm.buildRequestLimitTimestamp.Load()
 		if isSampleOld(currentTime, time.Duration(s.qm.cfg.SampleAgeLimit), lowest) {
 			// This will filter out old samples during retries.
-			req2, _, lowest, err := buildV2WriteRequest(
+			req2, v2Req2, _, lowest, err := buildV2WriteRequest(
 				s.qm.logger,
 				samples,
 				labels,
@@ -1908,14 +2256,17 @@ func (s *shards) sendV2SamplesWithBackoff(ctx context.Context, samples []writev2
 				return err
 			}
 			req = req2
+			v2Req = v2Req2
 		}
 
-		ctx, span := createBatchSpan(sc.ctx, sc, s.qm.storeClient.Name(), s.qm.storeClient.Endpoint(), try)
+		cl := s.qm.client()
+		ctx, span := createBatchSpan(sc.ctx, sc, cl.Name(), cl.Endpoint(), try)
 		defer span.End()
 
 		begin := time.Now()
 		metricsUpdater.recordBatchAttempt(sc)
-		rs, err := s.qm.client().Store(ctx, req, try)
+		metricsUpdater.recordV2WithMetadataAttempt(withMetadataCounts)
+		rs, err := cl.Store(ctx, req, try)
 		metricsUpdater.recordLatency(begin)
 		// TODO(bwplotka): Revisit this once we have Receivers doing retriable partial error
 		// so far we don't have those, so it's ok to potentially skew statistics.
@@ -1925,17 +2276,24 @@ func (s *shards) sendV2SamplesWithBackoff(ctx context.Context, samples []writev2
 			// Check the case mentioned in PRW 2.0
 			// https://prometheus.io/docs/specs/remote_write_spec_2_0/#required-written-response-headers.
 			if sampleCount+histogramCount+exemplarCount > 0 && rs.NoDataWritten() {
-				err = fmt.Errorf("sent v2 request with %v samples, %v histograms and %v exemplars; got 2xx, but PRW 2.0 response header statistics indicate %v samples, %v histograms and %v exemplars were accepted;"+
-					" assumining failure e.g. the target only supports PRW 1.0 prometheus.WriteRequest, but does not check the Content-Type header correctly",
+				err = fmt.Errorf(
+					"sent v2 request with %v samples, %v histograms and %v exemplars; got 2xx, but PRW 2.0 response header statistics indicate %v samples, %v histograms and %v exemplars were accepted;"+
+						" assuming failure e.g. the target only supports PRW 1.0 prometheus.WriteRequest, but does not check the Content-Type header correctly",
 					sampleCount, histogramCount, exemplarCount,
 					rs.Samples, rs.Histograms, rs.Exemplars,
 				)
 				span.RecordError(err)
+				if s.qm.failedRequestLogging {
+					s.qm.logger.Debug("Failed to send remote write v2 request", "req", v2Req, "err", err)
+				}
 				return err
 			}
 			return nil
 		}
 		span.RecordError(err)
+		if s.qm.failedRequestLogging {
+			s.qm.logger.Debug("Failed to send remote write v2 request", "req", v2Req, "err", err)
+		}
 		return err
 	}
 
@@ -1955,8 +2313,8 @@ func (s *shards) sendV2SamplesWithBackoff(ctx context.Context, samples []writev2
 	return accumulatedStats, err
 }
 
-func populateV2TimeSeries(symbolTable *writev2.SymbolsTable, batch []timeSeries, pendingData []writev2.TimeSeries, sendExemplars, sendNativeHistograms, enableTypeAndUnitLabels bool) (int, int, int, int, int) {
-	var nPendingSamples, nPendingExemplars, nPendingHistograms, nPendingMetadata, nUnexpectedMetadata int
+func populateV2TimeSeries(symbolTable *writev2.SymbolsTable, batch []timeSeries, pendingData []writev2.TimeSeries, sendExemplars, sendNativeHistograms, enableTypeAndUnitLabels bool) (int, int, int, int) {
+	var nPendingSamples, nPendingExemplars, nPendingHistograms, nUnexpectedMetadata int
 	for nPending, d := range batch {
 		pendingData[nPending].Samples = pendingData[nPending].Samples[:0]
 		switch {
@@ -1966,15 +2324,14 @@ func populateV2TimeSeries(symbolTable *writev2.SymbolsTable, batch []timeSeries,
 			pendingData[nPending].Metadata.UnitRef = symbolTable.Symbolize(m.Unit)
 			pendingData[nPending].Metadata.HelpRef = 0 // Type and unit does not give us help.
 			// Use Help from d.metadata if available.
-			if d.metadata != nil {
-				pendingData[nPending].Metadata.HelpRef = symbolTable.Symbolize(d.metadata.Help)
-				nPendingMetadata++
+			if !metadata.IsZeroHandle(d.metadata) {
+				pendingData[nPending].Metadata.HelpRef = symbolTable.Symbolize(d.metadata.Value().Help)
 			}
-		case d.metadata != nil:
-			pendingData[nPending].Metadata.Type = writev2.FromMetadataType(d.metadata.Type)
-			pendingData[nPending].Metadata.HelpRef = symbolTable.Symbolize(d.metadata.Help)
-			pendingData[nPending].Metadata.UnitRef = symbolTable.Symbolize(d.metadata.Unit)
-			nPendingMetadata++
+		case !metadata.IsZeroHandle(d.metadata):
+			meta := d.metadata.Value()
+			pendingData[nPending].Metadata.Type = writev2.FromMetadataType(meta.Type)
+			pendingData[nPending].Metadata.HelpRef = symbolTable.Symbolize(meta.Help)
+			pendingData[nPending].Metadata.UnitRef = symbolTable.Symbolize(meta.Unit)
 		default:
 			// Safeguard against sending garbage in case of not having metadata
 			// for whatever reason.
@@ -2010,18 +2367,16 @@ func populateV2TimeSeries(symbolTable *writev2.SymbolsTable, batch []timeSeries,
 			})
 			nPendingExemplars++
 		case tHistogram:
-			// TODO(bwplotka): Extend with ST once histograms populate it.
-			pendingData[nPending].Histograms = append(pendingData[nPending].Histograms, writev2.FromIntHistogram(d.timestamp, d.histogram))
+			pendingData[nPending].Histograms = append(pendingData[nPending].Histograms, writev2.FromIntHistogram(d.startTimestamp, d.timestamp, d.histogram))
 			nPendingHistograms++
 		case tFloatHistogram:
-			// TODO(bwplotka): Extend with ST once histograms populate it.
-			pendingData[nPending].Histograms = append(pendingData[nPending].Histograms, writev2.FromFloatHistogram(d.timestamp, d.floatHistogram))
+			pendingData[nPending].Histograms = append(pendingData[nPending].Histograms, writev2.FromFloatHistogram(d.startTimestamp, d.timestamp, d.floatHistogram))
 			nPendingHistograms++
 		case tMetadata:
 			nUnexpectedMetadata++
 		}
 	}
-	return nPendingSamples, nPendingExemplars, nPendingHistograms, nPendingMetadata, nUnexpectedMetadata
+	return nPendingSamples, nPendingExemplars, nPendingHistograms, nUnexpectedMetadata
 }
 
 func (t *QueueManager) sendWriteRequestWithBackoff(ctx context.Context, attempt func(int) error, onRetry func()) error {
@@ -2162,14 +2517,14 @@ func buildWriteRequest(logger *slog.Logger, timeSeries []prompb.TimeSeries, meta
 	return compressed, stats.highest, stats.lowest, nil
 }
 
-func buildV2WriteRequest(logger *slog.Logger, samples []writev2.TimeSeries, labels []string, pBuf *[]byte, filter func(writev2.TimeSeries) bool, buf compression.EncodeBuffer, compr compression.Type) (compressed []byte, highest, lowest int64, _ error) {
+func buildV2WriteRequest(logger *slog.Logger, samples []writev2.TimeSeries, labels []string, pBuf *[]byte, filter func(writev2.TimeSeries) bool, buf compression.EncodeBuffer, compr compression.Type) (compressed []byte, req *writev2.Request, highest, lowest int64, _ error) {
 	timeSeries, stats := buildV2TimeSeries(samples, filter)
 
 	if stats.droppedSamples > 0 || stats.droppedExemplars > 0 || stats.droppedHistograms > 0 {
 		logger.Debug("dropped data due to their age", "droppedSamples", stats.droppedSamples, "droppedExemplars", stats.droppedExemplars, "droppedHistograms", stats.droppedHistograms)
 	}
 
-	req := &writev2.Request{
+	req = &writev2.Request{
 		Symbols:    labels,
 		Timeseries: timeSeries,
 	}
@@ -2180,15 +2535,15 @@ func buildV2WriteRequest(logger *slog.Logger, samples []writev2.TimeSeries, labe
 
 	data, err := req.OptimizedMarshal(*pBuf)
 	if err != nil {
-		return nil, stats.highest, stats.lowest, err
+		return nil, req, stats.highest, stats.lowest, err
 	}
 	*pBuf = data
 
 	compressed, err = compression.Encode(compr, *pBuf, buf)
 	if err != nil {
-		return nil, stats.highest, stats.lowest, err
+		return nil, req, stats.highest, stats.lowest, err
 	}
-	return compressed, stats.highest, stats.lowest, nil
+	return compressed, req, stats.highest, stats.lowest, nil
 }
 
 func buildV2TimeSeries(timeSeries []writev2.TimeSeries, filter func(writev2.TimeSeries) bool) ([]writev2.TimeSeries, *timeSeriesStats) {
@@ -2271,7 +2626,6 @@ type sendBatchContext struct {
 	sampleCount    int
 	exemplarCount  int
 	histogramCount int
-	metadataCount  int
 	reqSize        int
 }
 
@@ -2280,12 +2634,59 @@ type batchMetricsUpdater struct {
 	metrics *queueManagerMetrics
 }
 
+const (
+	metadataFieldType = "type"
+	metadataFieldUnit = "unit"
+	metadataFieldHelp = "help"
+)
+
+type metadataFieldCounts struct {
+	typ  int
+	unit int
+	help int
+}
+
+type v2WithMetadataCounts struct {
+	samples    metadataFieldCounts
+	histograms metadataFieldCounts
+}
+
+func countV2DataWithMetadata(timeSeries []writev2.TimeSeries) v2WithMetadataCounts {
+	var counts v2WithMetadataCounts
+	for _, ts := range timeSeries {
+		sampleCount := len(ts.Samples)
+		histogramCount := len(ts.Histograms)
+
+		if ts.Metadata.Type != writev2.Metadata_METRIC_TYPE_UNSPECIFIED {
+			counts.samples.typ += sampleCount
+			counts.histograms.typ += histogramCount
+		}
+		if ts.Metadata.UnitRef != 0 {
+			counts.samples.unit += sampleCount
+			counts.histograms.unit += histogramCount
+		}
+		if ts.Metadata.HelpRef != 0 {
+			counts.samples.help += sampleCount
+			counts.histograms.help += histogramCount
+		}
+	}
+	return counts
+}
+
 // recordBatchAttempt records counter metrics for a batch send attempt.
 func (b *batchMetricsUpdater) recordBatchAttempt(sc sendBatchContext) {
 	b.metrics.samplesTotal.Add(float64(sc.sampleCount))
 	b.metrics.exemplarsTotal.Add(float64(sc.exemplarCount))
 	b.metrics.histogramsTotal.Add(float64(sc.histogramCount))
-	b.metrics.metadataTotal.Add(float64(sc.metadataCount))
+}
+
+func (b *batchMetricsUpdater) recordV2WithMetadataAttempt(counts v2WithMetadataCounts) {
+	b.metrics.samplesMetadataTotal.WithLabelValues(metadataFieldType).Add(float64(counts.samples.typ))
+	b.metrics.samplesMetadataTotal.WithLabelValues(metadataFieldUnit).Add(float64(counts.samples.unit))
+	b.metrics.samplesMetadataTotal.WithLabelValues(metadataFieldHelp).Add(float64(counts.samples.help))
+	b.metrics.histogramsMetadataTotal.WithLabelValues(metadataFieldType).Add(float64(counts.histograms.typ))
+	b.metrics.histogramsMetadataTotal.WithLabelValues(metadataFieldUnit).Add(float64(counts.histograms.unit))
+	b.metrics.histogramsMetadataTotal.WithLabelValues(metadataFieldHelp).Add(float64(counts.histograms.help))
 }
 
 // recordLatency records the observed send duration for a batch attempt.

@@ -106,8 +106,8 @@ be detected by PromQL and are flagged with a warn-level annotations.) Adding
 two counter histograms results in a counter histogram. All other combination of
 operands and all subtractions result in a gauge histogram.
 
-**In any arithmetic binary operation involving vectors**, the metric name is
-dropped. This occurs even if `__name__` is explicitly mentioned in `on`
+**In any arithmetic binary operation involving vectors**, the metric name (as well as `__type__` and `__unit__`, when the `type-and-unit-labels` feature flag is enabled) is
+dropped. This occurs even if `__name__`, `__type__`, or `__unit__` are explicitly mentioned in `on`
 (see https://github.com/prometheus/prometheus/issues/16631 for further discussion).
 
 **For any arithmetic binary operation that may result in a negative
@@ -125,6 +125,28 @@ They act in the same manner as arithmetic operators. They only operate on float
 samples. Operations involving histogram samples result in the removal of the
 corresponding vector elements from the output vector, flagged by an
 info-level annotation.
+
+### Bitwise binary operators
+
+The following bitwise binary operators exist in Prometheus:
+
+* `bitand` (bitwise AND)
+* `bitor` (bitwise OR)
+* `bitxor` (bitwise exclusive OR)
+
+These act like arithmetic operators, supporting scalar/scalar, vector/scalar,
+and vector/vector operands with the usual vector matching and group
+modifiers. Operands must be nonnegative integers up to `2^53 - 1`; any other
+value (fractional, negative, out-of-range, infinite, or `NaN`) produces
+`NaN`. Operations involving histogram samples remove the corresponding
+vector elements and emit an info-level annotation. The metric name is
+dropped from the result.
+
+For example, check whether the flag with value 64 is set:
+
+```promql
+(node_timex_status bitand 64) != 0
+```
 
 ### Histogram trim operators
 
@@ -195,7 +217,7 @@ modifier changes the behavior in the following ways:
   that do find a match and for which the expression is true have the value `1`.
   (Note that elements with no match or invalid operations involving histogram
   samples still return no result rather than the value `0`.)
-* The metric name is dropped.
+* The metric name (as well as `__type__` and `__unit__`, when the `type-and-unit-labels` feature flag is enabled) is dropped.
 
 If the `bool` modifier is not provided, then the metric name from the left side
 is retained, with some exceptions:
@@ -416,7 +438,7 @@ or
 `label list` is a list of unquoted labels that may include a trailing comma, i.e.
 both `(label1, label2)` and `(label1, label2,)` are valid syntax.
 
-`without` removes the listed labels from the result vector, while
+`without` removes the listed labels (along with the metric name, and `__type__` and `__unit__` when the `type-and-unit-labels` feature flag is enabled) from the result vector, while
 all other labels are preserved in the output. `by` does the opposite and drops
 labels that are not listed in the `by` clause, even if their label values are
 identical between all elements of the vector.
@@ -593,7 +615,7 @@ The following list shows the precedence of binary operators in Prometheus, from
 highest to lowest.
 
 1. `^`
-2. `*`, `/`, `%`, `atan2`
+2. `*`, `/`, `%`, `atan2`, `bitand`, `bitor`, `bitxor`
 3. `+`, `-`
 4. `==`, `!=`, `<=`, `<`, `>=`, `>`
 5. `and`, `unless`

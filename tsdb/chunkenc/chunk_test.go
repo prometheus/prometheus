@@ -15,11 +15,12 @@ package chunkenc
 
 import (
 	"errors"
-	"fmt"
 	"math/rand"
 	"testing"
 
 	"github.com/stretchr/testify/require"
+
+	"github.com/prometheus/prometheus/model/histogram"
 )
 
 type triple struct {
@@ -37,7 +38,7 @@ func TestChunk(t *testing.T) {
 		{encoding: EncXOR2, supportsST: true, factory: func() Chunk { return NewXOR2Chunk() }},
 	}
 	for _, tc := range testcases {
-		t.Run(fmt.Sprintf("%v", tc.encoding), func(t *testing.T) {
+		t.Run(tc.encoding.String(), func(t *testing.T) {
 			for range make([]struct{}, 1) {
 				c := tc.factory()
 				testChunk(t, c, tc.supportsST)
@@ -147,6 +148,14 @@ func TestPool(t *testing.T) {
 			encoding: EncXOR2,
 		},
 		{
+			name:     "histogram st",
+			encoding: EncHistogramST,
+		},
+		{
+			name:     "float histogram st",
+			encoding: EncFloatHistogramST,
+		},
+		{
 			name:     "invalid encoding",
 			encoding: EncNone,
 			expErr:   errors.New(`invalid chunk encoding "none"`),
@@ -169,6 +178,10 @@ func TestPool(t *testing.T) {
 				b = &c.(*FloatHistogramChunk).b
 			case EncXOR2:
 				b = &c.(*XOR2Chunk).b
+			case EncHistogramST:
+				b = &c.(*HistogramSTChunk).b
+			case EncFloatHistogramST:
+				b = &c.(*FloatHistogramSTChunk).b
 			default:
 				b = &c.(*XORChunk).b
 			}
@@ -217,4 +230,61 @@ func (c fakeChunk) Encoding() Encoding {
 
 func (c fakeChunk) Reset([]byte) {
 	c.t.Fatal("Reset should not be called")
+}
+
+func testChunkOverFlowPanics(t *testing.T, e Encoding, vt ValueType) {
+	chunk, err := NewEmptyChunk(e)
+	require.NoError(t, err)
+	app, err := chunk.Appender()
+	require.NoError(t, err)
+
+	require.PanicsWithValue(t, "chunk capacity exceeded", func() {
+		for i := range int64(1000000) {
+			switch vt {
+			case ValFloat:
+				app.Append(0, i, float64(i))
+			case ValHistogram:
+				app.AppendHistogram(nil, 0, i, &histogram.Histogram{Count: uint64(i), ZeroThreshold: 1e-128, ZeroCount: uint64(i)}, true)
+			case ValFloatHistogram:
+				app.AppendFloatHistogram(nil, 0, i, &histogram.FloatHistogram{Count: float64(i), ZeroThreshold: 1e-128, ZeroCount: float64(i)}, true)
+			}
+		}
+	})
+}
+
+func TestCompatibleValues(t *testing.T) {
+	// CompatibleValues is about whether a chunk can continue to receive appends for a
+	// different encoding without being cut. Only the XOR float family (EncXOR and
+	// EncXOR2) is mutually compatible. All other pairs — including same-type
+	// histogram pairs — return false because histogram encodings are not part of the
+	// XOR family and no cross-family compatibility is defined.
+	cases := []struct {
+		a, b Encoding
+		want bool
+	}{
+		{EncXOR, EncXOR, true},
+		{EncXOR2, EncXOR2, true},
+		{EncXOR, EncXOR2, true},
+		{EncXOR2, EncXOR, true},
+		{EncHistogram, EncHistogram, false},
+		{EncHistogram, EncFloatHistogram, false},
+		{EncFloatHistogram, EncHistogram, false},
+		{EncFloatHistogram, EncFloatHistogram, false},
+		{EncXOR, EncHistogram, false},
+		{EncXOR2, EncHistogram, false},
+		{EncXOR, EncFloatHistogram, false},
+		{EncXOR2, EncFloatHistogram, false},
+		{EncHistogram, EncXOR, false},
+		{EncHistogram, EncXOR2, false},
+		{EncFloatHistogram, EncXOR, false},
+		{EncFloatHistogram, EncXOR2, false},
+		{EncNone, EncXOR, false},
+		{EncNone, EncXOR2, false},
+		{EncXOR, EncNone, false},
+		{EncXOR2, EncNone, false},
+		{EncNone, EncNone, false},
+	}
+	for _, tc := range cases {
+		require.Equal(t, tc.want, CompatibleValues(tc.a, tc.b), "CompatibleValues(%v, %v)", tc.a, tc.b)
+	}
 }

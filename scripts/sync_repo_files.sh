@@ -52,8 +52,19 @@ if [ -z "${GITHUB_TOKEN}" ]; then
   exit 1
 fi
 
+# Each org requires a dedicated PAT for posting PRs: GITHUB_TOKEN_<ORG>
+# where the org name is uppercased and dashes replaced with underscores.
+for org in ${orgs}; do
+  org_var="GITHUB_TOKEN_${org^^}"
+  org_var="${org_var//-/_}"
+  if [ -z "${!org_var:-}" ]; then
+    echo_red "GitHub token ${org_var} not set. Terminating."
+    exit 1
+  fi
+done
+
 # List of files that should be synced.
-SYNC_FILES="CODE_OF_CONDUCT.md LICENSE Makefile.common SECURITY.md .dockerignore .yamllint scripts/golangci-lint.yml .github/workflows/govulncheck.yml .github/workflows/scorecards.yml .github/workflows/container_description.yml .github/workflows/stale.yml"
+SYNC_FILES="CODE_OF_CONDUCT.md LICENSE Makefile.common SECURITY.md .dockerignore .yamllint scripts/dependabot.yml scripts/golangci-lint.yml .github/workflows/approve-workflows.yml .github/workflows/govulncheck.yml .github/workflows/scorecards.yml .github/workflows/container_description.yml .github/workflows/stale.yml .github/workflows/zizmor.yml"
 
 # Go to the root of the repo
 cd "$(git rev-parse --show-cdup)" || exit 1
@@ -81,29 +92,78 @@ fetch_repos() {
     jq -r '.[] | select( .archived == false and .fork == false and .name != "prometheus" ) | .name'
 }
 
+# Fork ${1} into ${git_user}. The forks API is idempotent: it returns the
+# existing fork if one already exists. The fork name is prefixed with the
+# upstream org to avoid collisions between orgs (e.g. prometheus_node_exporter).
+# Returns the full_name of the fork (which may differ from the requested name
+# when a fork already exists under a different name).
+fork_repo() {
+  local org_repo="$1"
+  local fork_name="${org_repo//\//_}"
+  github_api "repos/${org_repo}/forks" \
+    -H "X-GitHub-Api-Version: 2026-03-10" \
+    --data "{\"name\":\"${fork_name}\"}" |
+    jq -r '.full_name' || return 1
+}
+
 push_branch() {
   local git_url
+  local safe_url
+  local force_push
   git_url="https://${git_user}:${GITHUB_TOKEN}@github.com/${1}"
+  safe_url="https://${git_user}:***@github.com/${1}"
+  # When set, force-update the existing PR branch in place instead of
+  # deleting it first.
+  force_push="${2:-}"
   # stdout and stderr are redirected to /dev/null otherwise git-push could leak
   # the token in the logs.
-  # Delete the remote branch in case it was merged but not deleted.
-  git push --quiet "${git_url}" ":${branch}" 1>/dev/null 2>&1
-  git push --quiet "${git_url}" --set-upstream "${branch}" 1>/dev/null 2>&1
+  local push_args=(--set-upstream)
+  if [[ -n "${force_push}" ]]; then
+    # An open PR points at this branch. Deleting it would close the PR, so
+    # force-push over it instead.
+    push_args+=(--force)
+  else
+    # Delete the remote branch in case it was merged but not deleted.
+    git push --quiet "${git_url}" ":${branch}" 1>/dev/null 2>&1
+  fi
+  # Forking is asynchronous; retry for up to 5 minutes until the git objects
+  # are available before giving up.
+  local deadline=$(( $(date +%s) + 300 ))
+  local push_output
+  until push_output="$(git push "${git_url}" "${push_args[@]}" "${branch}" 2>&1)"; do
+    if [[ $(date +%s) -ge ${deadline} ]]; then
+      repo_log_red "push to ${safe_url} failed: $(echo "${push_output}" | sed "s|${GITHUB_TOKEN}|***|g")"
+      return 1
+    fi
+    repo_log_yellow "push to ${safe_url} failed, retrying in 10 seconds."
+    sleep 10
+  done
 }
 
 post_pull_request() {
   local repo="$1"
   local default_branch="$2"
+  local fork_owner="$3"
+  local fork_org_repo="$4"
+  local pr_token="$5"
+  local checkout_hint="To check out this branch locally and push changes back:\\n\`\`\`\\ngit remote add ${fork_owner} https://github.com/${fork_org_repo}.git\\ngit fetch ${fork_owner} ${branch}\\ngit checkout -b ${branch} ${fork_owner}/${branch}\\n\`\`\`"
   local post_json
-  post_json="$(printf '{"title":"%s","base":"%s","head":"%s","body":"%s"}' "${pr_title}" "${default_branch}" "${branch}" "${pr_msg}")"
+  post_json="$(printf '{"title":"%s","base":"%s","head":"%s:%s","body":"%s","maintainer_can_modify":true}' "${pr_title}" "${default_branch}" "${fork_owner}" "${branch}" "${pr_msg}\\n\\n${checkout_hint}")"
   echo "Posting PR to ${default_branch} on ${repo}"
-  github_api "repos/${repo}/pulls" --data "${post_json}" --show-error |
+  curl --retry 5 --silent --fail --show-error \
+    -u "${git_user}:${!pr_token}" \
+    "https://api.github.com/repos/${repo}/pulls" \
+    --data "${post_json}" |
     jq -r '"PR URL " + .html_url'
 }
 
 check_license() {
-  # Check to see if the input is an Apache license of some kind
-  echo "$1" | grep --quiet --no-messages --ignore-case 'Apache License'
+  # Check to see if the input is an Apache license of some kind.
+  grep --quiet --no-messages --ignore-case 'Apache License' <<<"$1"
+}
+
+check_no_sync() {
+  grep --quiet --no-messages 'no_prometheus_repo_sync' <<<"$1"
 }
 
 check_go() {
@@ -127,7 +187,14 @@ check_docker() {
 process_repo() {
   local org_repo
   local default_branch
+  local pr_token
+  local force_fork
   org_repo="$1"
+  pr_token="$2"
+  # When set, an open bot-only PR already exists and this is its fork
+  # (owner/repo). We then force-update the existing branch instead of opening a
+  # new PR, but only if the synced content actually changed.
+  force_fork="${3:-}"
   repo_log "Analyzing '${org_repo}'"
 
   default_branch="$(get_default_branch "${org_repo}")"
@@ -160,11 +227,10 @@ process_repo() {
         continue
       fi
     fi
-    if [[ "${source_file}" == 'LICENSE' ]] && ! check_license "${target_file}" ; then
-      repo_log "LICENSE in ${org_repo} is not apache, skipping."
-      continue
-    fi
     target_filename="${source_file}"
+    if [[ "${source_file}" == 'scripts/dependabot.yml' ]] ; then
+      target_filename=".github/dependabot.yml"
+    fi
     if [[ "${source_file}" == 'scripts/golangci-lint.yml' ]] ; then
       target_filename=".github/workflows/golangci-lint.yml"
     fi
@@ -172,15 +238,23 @@ process_repo() {
     if [[ -z "${target_file}" ]]; then
       repo_log "${target_filename} doesn't exist in ${org_repo}"
       case "${source_file}" in
-        CODE_OF_CONDUCT.md | SECURITY.md | .dockerignore | .github/workflows/container_description.yml | .github/workflows/govulncheck.yml)
+        CODE_OF_CONDUCT.md | SECURITY.md | .dockerignore | .github/workflows/approve-workflows.yml | .github/workflows/container_description.yml | .github/workflows/govulncheck.yml | .github/workflows/zizmor.yml)
           repo_log_yellow "${source_file} missing in ${org_repo}, force updating."
           needs_update+=("${source_file}")
           ;;
       esac
       continue
     fi
+    if check_no_sync "${target_file}" ; then
+      repo_log "${target_filename} is marked as do not sync, skipping."
+      continue
+    fi
+    if [[ "${source_file}" == 'LICENSE' ]] && ! check_license "${target_file}" ; then
+      repo_log "LICENSE in ${org_repo} is not apache, skipping."
+      continue
+    fi
     target_checksum="$(echo "${target_file}" | sha256sum | cut -d' ' -f1)"
-    if [ "${source_checksum}" == "${target_checksum}" ]; then
+    if [[ "${source_checksum}" == "${target_checksum}" ]] ; then
       repo_log "${source_file} is already in sync."
       continue
     fi
@@ -202,14 +276,19 @@ process_repo() {
   mkdir -p "./.github/workflows"
 
   # Update the files in target repo by one from prometheus/prometheus.
+  local synced_paths=()
   for source_file in "${needs_update[@]}"; do
     target_filename="${source_file}"
+    if [[ "${source_file}" == 'scripts/dependabot.yml' ]] ; then
+      target_filename=".github/dependabot.yml"
+    fi
     if [[ "${source_file}" == 'scripts/golangci-lint.yml' ]] ; then
       target_filename=".github/workflows/golangci-lint.yml"
     fi
     case "${source_file}" in
       *) cp -f "${source_dir}/${source_file}" "./${target_filename}" ;;
     esac
+    synced_paths+=("${target_filename}")
   done
 
   repo_log "File sync complete"
@@ -217,16 +296,41 @@ process_repo() {
   if [[ -n "$(git status --porcelain)" ]]; then
     git config user.email "${git_mail}"
     git config user.name "${git_user}"
+
+    if [[ -n "${force_fork}" ]]; then
+      # An open, bot-only PR already exists. The branch is rebuilt from the
+      # default branch above so it stays current with the base; only force-push
+      # when the synced files themselves differ from the PR branch, otherwise we
+      # would rewrite it on every run with no real diff.
+      if ! git fetch --quiet "https://github.com/${force_fork}.git" "${branch}" 2> /dev/null; then
+        repo_log_red "Can't fetch '${branch}' from fork ${force_fork}."
+        return 1
+      fi
+      if git diff --quiet FETCH_HEAD -- "${synced_paths[@]}"; then
+        repo_log_green "Open PR is already up to date, not force-pushing."
+        return
+      fi
+      repo_log_yellow "Open PR is stale, force-updating the branch."
+    fi
+
     git add .
     git commit -s -m "${commit_msg}"
     repo_log "Commit created"
-    if push_branch "${org_repo}"; then
-      if ! post_pull_request "${org_repo}" "${default_branch}"; then
+    local fork_org_repo
+    if [[ -n "${force_fork}" ]]; then
+      fork_org_repo="${force_fork}"
+    else
+      fork_org_repo="$(fork_repo "${org_repo}")" || { repo_log_red "Forking ${org_repo} failed"; return 1; }
+    fi
+    if push_branch "${fork_org_repo}" "${force_fork}"; then
+      if [[ -n "${force_fork}" ]]; then
+        repo_log_green "Force-updated existing PR branch on ${fork_org_repo}"
+      elif ! post_pull_request "${org_repo}" "${default_branch}" "${git_user}" "${fork_org_repo}" "${pr_token}"; then
         repo_log_red "Posting PR failed"
         return 1
       fi
     else
-      repo_log_red "Pushing ${branch} to ${org_repo} failed"
+      repo_log_red "Pushing ${branch} to ${fork_org_repo} failed"
       return 1
     fi
   fi
@@ -235,20 +339,37 @@ process_repo() {
 ## main
 for org in ${orgs}; do
   mkdir -p "${tmp_dir}/${org}"
+  org_token_var="GITHUB_TOKEN_${org^^}"
+  org_token_var="${org_token_var//-/_}"
   # Iterate over all repositories in ${org}. The GitHub API can return 100 items
   # at most but it should be enough for us as there are less than 40 repositories
   # currently.
   fetch_repos "${org}" | while read -r repo; do
-    # Check if a PR is already opened for the branch.
-    fetch_uri="repos/${org}/${repo}/pulls?state=open&head=${org}:${branch}"
-    prLink="$(github_api "${fetch_uri}" --show-error | jq -r '.[0].html_url')"
+    # Check if a PR is already opened for the branch from the prombot fork.
+    fetch_uri="repos/${org}/${repo}/pulls?state=open&head=${git_user}:${branch}"
+    prData="$(github_api "${fetch_uri}" --show-error)"
+    prLink="$(echo "${prData}" | jq -r '.[0].html_url')"
     if [[ "${prLink}" != "null" ]]; then
-      echo_green "Pull request already opened for branch '${branch}': ${prLink}"
-      echo "Either close it or merge it before running this script again!"
+      prNumber="$(echo "${prData}" | jq -r '.[0].number')"
+      forkRepo="$(echo "${prData}" | jq -r '.[0].head.repo.full_name')"
+      # Count the commits on the PR. If a maintainer added their own commits we
+      # must not clobber them, so we leave the PR untouched. If it only carries
+      # the single bot commit we may safely force-update it with fresh content.
+      prCommits="$(github_api "repos/${org}/${repo}/pulls/${prNumber}" 2> /dev/null | jq -r '.commits')"
+      if [[ "${prCommits}" != "1" ]]; then
+        echo_green "Pull request '${branch}' has ${prCommits} commit(s), leaving it untouched: ${prLink}"
+        echo "Either close it or merge it before running this script again!"
+        continue
+      fi
+      echo_green "Pull request '${branch}' is bot-only, will force-update if content changed: ${prLink}"
+      if ! process_repo "${org}/${repo}" "${org_token_var}" "${forkRepo}"; then
+        echo_red "Failed to process '${org}/${repo}'"
+        exit 1
+      fi
       continue
     fi
 
-    if ! process_repo "${org}/${repo}"; then
+    if ! process_repo "${org}/${repo}" "${org_token_var}"; then
       echo_red "Failed to process '${org}/${repo}'"
       exit 1
     fi

@@ -1029,7 +1029,8 @@ func BenchmarkRelabel(b *testing.B) {
 				"__scheme__", "http",
 				"__scrape_interval__", "15s",
 				"__scrape_timeout__", "10s",
-				"job", "kubernetes-pods"),
+				"job", "kubernetes-pods",
+			),
 		},
 		{
 			name: "static label pair",
@@ -1109,6 +1110,19 @@ replacement: $1
 action: replace
 `,
 		},
+		{
+			// https://github.com/prometheus/prometheus/issues/18652:
+			// explicit empty separator/replacement/regex must survive a YAML round-trip
+			// because they are distinct from the defaults (";", "$1", "(.*)").
+			name: "Explicit empty separator and replacement",
+			inputYaml: `source_labels: [namespace, k8s_app]
+separator: ""
+regex: ""
+target_label: target_cluster
+replacement: ""
+action: replace
+`,
+		},
 	}
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
@@ -1144,15 +1158,15 @@ func TestRegexp_JSONUnmarshalThenMarshal(t *testing.T) {
 	}{
 		{
 			name:  "Empty regex",
-			input: `{"regex":""}`,
+			input: `{"separator":"","regex":"","replacement":""}`,
 		},
 		{
 			name:  "string literal",
-			input: `{"regex":"foo"}`,
+			input: `{"separator":"","regex":"foo","replacement":""}`,
 		},
 		{
 			name:  "regex",
-			input: `{"regex":".*foo.*"}`,
+			input: `{"separator":"","regex":".*foo.*","replacement":""}`,
 		},
 	}
 	for _, test := range tests {

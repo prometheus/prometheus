@@ -1,7 +1,11 @@
 import { useLocalStorage } from './useLocalStorage';
-import { renderHook, act } from '@testing-library/react-hooks';
+import { act, renderHook } from '@testing-library/react';
 
 describe('useLocalStorage', () => {
+  beforeEach(() => {
+    localStorage.clear();
+  });
+
   it('returns the initialState', () => {
     const initialState = { a: 1, b: 2 };
     const { result } = renderHook(() => useLocalStorage('mystorage', initialState));
@@ -36,6 +40,6 @@ describe('useLocalStorage', () => {
       result.current[1](newValue);
     });
     expect(spyStorage).toHaveBeenCalledTimes(1);
-    spyStorage.mockReset();
+    spyStorage.mockRestore();
   });
 });

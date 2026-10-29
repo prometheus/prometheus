@@ -1,0 +1,4 @@
+storage:
+  tsdb:
+    chunk_encoding:
+      floats: xor

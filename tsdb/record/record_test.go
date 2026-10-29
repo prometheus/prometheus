@@ -17,8 +17,11 @@ package record
 import (
 	"bytes"
 	"fmt"
+	"math"
 	"math/rand"
+	"runtime"
 	"testing"
+	"unsafe"
 
 	"github.com/prometheus/common/model"
 	"github.com/prometheus/common/promslog"
@@ -398,11 +401,33 @@ func TestRecord_EncodeDecode(t *testing.T) {
 	})
 }
 
+func TestRecord_MinValidTime(t *testing.T) {
+	var enc Encoder
+	var dec Decoder
+
+	for _, mint := range []int64{0, 1, -1, 12345, math.MinInt64, math.MaxInt64} {
+		encoded := enc.MinValidTime(mint, nil)
+		require.Equal(t, MinValidTime, dec.Type(encoded))
+
+		decoded, err := dec.MinValidTime(encoded)
+		require.NoError(t, err)
+		require.Equal(t, mint, decoded)
+	}
+}
+
+func TestRecord_MinValidTimeDecodeWrongType(t *testing.T) {
+	var enc Encoder
+	var dec Decoder
+
+	_, err := dec.MinValidTime(enc.Series(nil, nil))
+	require.Error(t, err)
+}
+
 // TestRecord_V1MixedRegularAndCustomBucketHistogramPermutations verifies that
 // V1 encoding correctly splits mixed regular and custom-bucket histograms into
 // separate records regardless of input ordering. The split is only meaningful
 // for V1, which keeps the two record types distinct for backwards
-// compatibility. See TestRecord_V2MixedRegularAndCustomBucketHistogram for the
+// compatibility. See TestRecord_V2HistogramRoundTrip for the
 // V2 behaviour.
 func TestRecord_V1MixedRegularAndCustomBucketHistogramPermutations(t *testing.T) {
 	dec := NewDecoder(labels.NewSymbolTable(), promslog.NewNopLogger())
@@ -570,7 +595,7 @@ func TestRecord_V1MixedRegularAndCustomBucketHistogramPermutations(t *testing.T)
 	}
 }
 
-// TestRecord_V2MixedRegularAndCustomBucketHistogram verifies that V2 encodes
+// TestRecord_V2HistogramRoundTrip verifies that V2 encodes
 // regular and custom-bucket histograms into a single HistogramSamplesV2 /
 // FloatHistogramSamplesV2 record. V2 drops the V1 split because the on-wire
 // format has no need to preserve backwards compatibility with readers that
@@ -1192,6 +1217,38 @@ func TestRecord_MetadataDecodeUnknownExtraFields(t *testing.T) {
 	require.Equal(t, expectedMetadata, decMetadata)
 }
 
+func TestRecord_MetadataInternsStrings(t *testing.T) {
+	var enc Encoder
+	dec := NewDecoder(labels.NewSymbolTable(), promslog.NewNopLogger())
+
+	input := []RefMetadata{
+		{Ref: 1, Type: uint8(Counter), Unit: "seconds", Help: "Total CPU time spent in seconds."},
+		{Ref: 2, Type: uint8(Counter), Unit: "seconds", Help: "Total CPU time spent in seconds."},
+	}
+	raw1 := enc.Metadata(input, nil)
+
+	out1, err := dec.Metadata(raw1, nil)
+	require.NoError(t, err)
+	require.Len(t, out1, 2)
+	require.Equal(t, unsafe.StringData(out1[0].Unit), unsafe.StringData(out1[1].Unit))
+	require.Equal(t, unsafe.StringData(out1[0].Help), unsafe.StringData(out1[1].Help))
+
+	// Mutating the input byte buffer must not mutate the decoded strings.
+	for i := range raw1 {
+		raw1[i] = 'X'
+	}
+	require.Equal(t, "seconds", out1[0].Unit)
+	require.Equal(t, "Total CPU time spent in seconds.", out1[0].Help)
+
+	// Interned strings on the same Decoder survive across GC cycles.
+	runtime.GC()
+	raw2 := enc.Metadata(input, nil)
+	out2, err := dec.Metadata(raw2, nil)
+	require.NoError(t, err)
+	require.Equal(t, unsafe.StringData(out1[0].Unit), unsafe.StringData(out2[0].Unit))
+	require.Equal(t, unsafe.StringData(out1[0].Help), unsafe.StringData(out2[0].Help))
+}
+
 type refsCreateFn func(labelCount, histograms, buckets int) ([]RefSeries, []RefSample, []RefHistogramSample)
 
 type recordsMaker struct {
@@ -1320,6 +1377,132 @@ func BenchmarkWAL_HistogramEncoding(b *testing.B) {
 					}
 				}
 			}
+		}
+	}
+}
+
+// BenchmarkDecodeHistogramSamples measures per-sample allocation cost for
+// histogram WAL decoding — both V1 and V2 paths. This exercises the hot
+// path identified in finding B/C of the allocation analysis: one
+// *histogram.Histogram allocation per sample (unavoidable with current
+// design) plus one escaped *RefHistogramSample per V2 iteration (fixable).
+func BenchmarkDecodeHistogramSamples(b *testing.B) {
+	const numSamples = 1000
+
+	makeHistogram := func(buckets int) *histogram.Histogram {
+		spans := make([]histogram.Span, buckets)
+		for i := range spans {
+			spans[i] = histogram.Span{Offset: int32(i), Length: 1}
+		}
+		bkts := make([]int64, buckets)
+		for i := range bkts {
+			bkts[i] = int64(i + 1)
+		}
+		return &histogram.Histogram{
+			Schema:          1,
+			Count:           uint64(buckets * 10),
+			Sum:             float64(buckets),
+			PositiveSpans:   spans,
+			PositiveBuckets: bkts,
+		}
+	}
+
+	for _, buckets := range []int{0, 4, 16} {
+		for _, version := range []string{"v1", "v2"} {
+			b.Run(fmt.Sprintf("buckets=%d/%s", buckets, version), func(b *testing.B) {
+				samples := make([]RefHistogramSample, numSamples)
+				for i := range samples {
+					samples[i] = RefHistogramSample{
+						Ref: chunks.HeadSeriesRef(i),
+						T:   int64(i) * 1000,
+						H:   makeHistogram(buckets),
+					}
+				}
+
+				var raw []byte
+				if version == "v1" {
+					enc := Encoder{}
+					raw, _ = enc.HistogramSamples(samples, raw)
+				} else {
+					enc := Encoder{EnableSTStorage: true}
+					raw, _ = enc.HistogramSamples(samples, raw)
+				}
+
+				dec := NewDecoder(labels.NewSymbolTable(), promslog.NewNopLogger())
+				buf := make([]RefHistogramSample, 0, numSamples)
+
+				b.ResetTimer()
+				b.ReportAllocs()
+				for b.Loop() {
+					buf, _ = dec.HistogramSamples(raw, buf[:0])
+				}
+				_ = buf
+			})
+		}
+	}
+}
+
+// Recommended CLI invocation:
+//
+//	export bench=decode_metadata && go test ./tsdb/record -run '^$' -bench '^BenchmarkDecodeMetadata' -benchtime 1s -count 6 -cpu 1,2,4 -timeout 999m -benchmem | tee ${bench}.txt
+func BenchmarkDecodeMetadata(b *testing.B) {
+	const numSeries = 1000
+
+	for _, numFamilies := range []int{10, 100} {
+		meta := make([]RefMetadata, numSeries)
+		for i := range meta {
+			fam := i % numFamilies
+			unit := ""
+			if fam%2 == 0 {
+				unit = "seconds"
+			}
+			meta[i] = RefMetadata{
+				Ref:  chunks.HeadSeriesRef(i + 1),
+				Type: uint8(Counter),
+				Unit: unit,
+				Help: fmt.Sprintf("Total time spent in subsystem %d across all worker goroutines in seconds.", fam),
+			}
+		}
+
+		var enc Encoder
+		raw := enc.Metadata(meta, nil)
+
+		b.Run(fmt.Sprintf("series=%d/families=%d", numSeries, numFamilies), func(b *testing.B) {
+			dec := NewDecoder(labels.NewSymbolTable(), promslog.NewNopLogger())
+			buf := make([]RefMetadata, 0, numSeries)
+
+			b.ReportAllocs()
+			b.ResetTimer()
+			for b.Loop() {
+				var err error
+				buf, err = dec.Metadata(raw, buf[:0])
+				if err != nil {
+					b.Fatal(err)
+				}
+			}
+		})
+
+		for _, gcPressure := range []bool{false, true} {
+			b.Run(fmt.Sprintf("parallel/series=%d/families=%d/gc=%t", numSeries, numFamilies, gcPressure), func(b *testing.B) {
+				b.ReportAllocs()
+				b.ResetTimer()
+				b.RunParallel(func(pb *testing.PB) {
+					dec := NewDecoder(labels.NewSymbolTable(), promslog.NewNopLogger())
+					buf := make([]RefMetadata, 0, numSeries)
+					var sink []byte
+					for pb.Next() {
+						if gcPressure {
+							sink = make([]byte, 256*1024)
+						}
+						var err error
+						buf, err = dec.Metadata(raw, buf[:0])
+						if err != nil {
+							b.Fatal(err)
+						}
+					}
+					runtime.KeepAlive(sink)
+				})
+			})
 		}
 	}
 }

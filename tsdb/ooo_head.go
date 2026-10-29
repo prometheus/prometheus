@@ -71,9 +71,11 @@ func (o *OOOChunk) NumSamples() int {
 }
 
 // ToEncodedChunks returns chunks with the samples in the OOOChunk.
+// useXOR2 selects XOR2 encoding for float samples; useHistogramST selects the
+// ST-capable chunk encoding for integer and float histogram samples.
 //
 //nolint:revive
-func (o *OOOChunk) ToEncodedChunks(mint, maxt int64, useXOR2 bool) (chks []memChunk, err error) {
+func (o *OOOChunk) ToEncodedChunks(mint, maxt int64, useXOR2, useHistogramST bool) (chks []memChunk, err error) {
 	if len(o.samples) == 0 {
 		return nil, nil
 	}
@@ -93,20 +95,18 @@ func (o *OOOChunk) ToEncodedChunks(mint, maxt int64, useXOR2 bool) (chks []memCh
 		if s.t > maxt {
 			break
 		}
-		encoding := chunkenc.ValFloat.ChunkEncoding(useXOR2)
+		encoding := chunkenc.ValFloat.ChunkEncoding(useXOR2, useHistogramST)
 		switch {
 		case s.h != nil:
-			// TODO(krajorama): use ST capable histogram chunk.
-			encoding = chunkenc.EncHistogram
+			encoding = chunkenc.ValHistogram.ChunkEncoding(useXOR2, useHistogramST)
 		case s.fh != nil:
-			// TODO(krajorama): use ST capable float histogram chunk.
-			encoding = chunkenc.EncFloatHistogram
+			encoding = chunkenc.ValFloatHistogram.ChunkEncoding(useXOR2, useHistogramST)
 		}
 
 		// prevApp is the appender for the previous sample.
 		prevApp := app
 
-		if encoding != prevEncoding { // For the first sample, this will always be true as EncNone != EncXOR | EncHistogram | EncFloatHistogram
+		if encoding != prevEncoding { // For the first sample, this will always be true as EncNone != EncXOR | EncXOR2 | EncHistogram | EncFloatHistogram
 			if prevEncoding != chunkenc.EncNone {
 				chks = append(chks, memChunk{chunk, cmint, cmaxt, nil})
 			}
@@ -125,15 +125,12 @@ func (o *OOOChunk) ToEncodedChunks(mint, maxt int64, useXOR2 bool) (chks []memCh
 		switch encoding {
 		case chunkenc.EncXOR, chunkenc.EncXOR2:
 			app.Append(s.st, s.t, s.f)
-		case chunkenc.EncHistogram:
-			// TODO(krajorama): handle ST capable histogram chunk.
-			// Ignoring ok is ok, since we don't want to compare to the wrong previous appender anyway.
-			prevHApp, _ := prevApp.(*chunkenc.HistogramAppender)
+		case chunkenc.EncHistogram, chunkenc.EncHistogramST:
 			var (
 				newChunk chunkenc.Chunk
 				recoded  bool
 			)
-			newChunk, recoded, app, _ = app.AppendHistogram(prevHApp, s.st, s.t, s.h, false)
+			newChunk, recoded, app, _ = app.AppendHistogram(prevApp, s.st, s.t, s.h, false)
 			if newChunk != nil { // A new chunk was allocated.
 				if !recoded {
 					chks = append(chks, memChunk{chunk, cmint, cmaxt, nil})
@@ -141,15 +138,12 @@ func (o *OOOChunk) ToEncodedChunks(mint, maxt int64, useXOR2 bool) (chks []memCh
 				}
 				chunk = newChunk
 			}
-		case chunkenc.EncFloatHistogram:
-			// TODO(krajorama): handle ST capable float histogram chunk.
-			// Ignoring ok is ok, since we don't want to compare to the wrong previous appender anyway.
-			prevHApp, _ := prevApp.(*chunkenc.FloatHistogramAppender)
+		case chunkenc.EncFloatHistogram, chunkenc.EncFloatHistogramST:
 			var (
 				newChunk chunkenc.Chunk
 				recoded  bool
 			)
-			newChunk, recoded, app, _ = app.AppendFloatHistogram(prevHApp, s.st, s.t, s.fh, false)
+			newChunk, recoded, app, _ = app.AppendFloatHistogram(prevApp, s.st, s.t, s.fh, false)
 			if newChunk != nil { // A new chunk was allocated.
 				if !recoded {
 					chks = append(chks, memChunk{chunk, cmint, cmaxt, nil})

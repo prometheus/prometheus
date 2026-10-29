@@ -1881,3 +1881,7 @@ func TestHistogramIteratorReduceSchema(t *testing.T) {
 		})
 	}
 }
+
+func TestHistogramChunkOverFlowPanics(t *testing.T) {
+	testChunkOverFlowPanics(t, EncHistogram, ValHistogram)
+}

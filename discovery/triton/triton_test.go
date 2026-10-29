@@ -102,6 +102,7 @@ func newTritonDiscovery(c SDConfig) (*Discovery, discovery.DiscovererMetrics, er
 }
 
 func TestTritonSDNew(t *testing.T) {
+	t.Parallel()
 	td, m, err := newTritonDiscovery(conf)
 	require.NoError(t, err)
 	require.NotNil(t, td)
@@ -116,12 +117,14 @@ func TestTritonSDNew(t *testing.T) {
 }
 
 func TestTritonSDNewBadConfig(t *testing.T) {
+	t.Parallel()
 	td, _, err := newTritonDiscovery(badconf)
 	require.Error(t, err)
 	require.Nil(t, td)
 }
 
 func TestTritonSDNewGroupsConfig(t *testing.T) {
+	t.Parallel()
 	td, m, err := newTritonDiscovery(groupsconf)
 	require.NoError(t, err)
 	require.NotNil(t, td)
@@ -137,6 +140,7 @@ func TestTritonSDNewGroupsConfig(t *testing.T) {
 }
 
 func TestTritonSDNewCNConfig(t *testing.T) {
+	t.Parallel()
 	td, m, err := newTritonDiscovery(cnconf)
 	require.NoError(t, err)
 	require.NotNil(t, td)
@@ -152,11 +156,13 @@ func TestTritonSDNewCNConfig(t *testing.T) {
 }
 
 func TestTritonSDRefreshNoTargets(t *testing.T) {
+	t.Parallel()
 	tgts := testTritonSDRefresh(t, conf, "{\"containers\":[]}")
 	require.Nil(t, tgts)
 }
 
 func TestTritonSDRefreshMultipleTargets(t *testing.T) {
+	t.Parallel()
 	dstr := `{"containers":[
 		 	{
                                 "groups":["foo","bar","baz"],
@@ -181,6 +187,7 @@ func TestTritonSDRefreshMultipleTargets(t *testing.T) {
 }
 
 func TestTritonSDRefreshNoServer(t *testing.T) {
+	t.Parallel()
 	td, m, _ := newTritonDiscovery(conf)
 
 	_, err := td.refresh(context.Background())
@@ -189,6 +196,7 @@ func TestTritonSDRefreshNoServer(t *testing.T) {
 }
 
 func TestTritonSDRefreshCancelled(t *testing.T) {
+	t.Parallel()
 	td, m, _ := newTritonDiscovery(conf)
 
 	ctx, cancel := context.WithCancel(context.Background())
@@ -199,6 +207,7 @@ func TestTritonSDRefreshCancelled(t *testing.T) {
 }
 
 func TestTritonSDRefreshCNsUUIDOnly(t *testing.T) {
+	t.Parallel()
 	dstr := `{"cns":[
 		 	{
 				"server_uuid":"44454c4c-5000-104d-8037-b7c04f5a5131"
@@ -214,6 +223,7 @@ func TestTritonSDRefreshCNsUUIDOnly(t *testing.T) {
 }
 
 func TestTritonSDRefreshCNsWithHostname(t *testing.T) {
+	t.Parallel()
 	dstr := `{"cns":[
 		 	{
 				"server_uuid":"44454c4c-5000-104d-8037-b7c04f5a5131",

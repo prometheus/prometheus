@@ -74,12 +74,12 @@ func createFlagRow(flag *kingpin.FlagModel) []string {
 	}
 
 	valueType := reflect.TypeOf(flag.Value)
-	if valueType.Kind() == reflect.Ptr {
+	if valueType.Kind() == reflect.Pointer {
 		valueType = valueType.Elem()
 	}
 	if valueType.Kind() == reflect.Struct {
 		if _, found := valueType.FieldByName("slice"); found {
-			name = fmt.Sprintf(`%s <code class="text-nowrap">...<code class="text-nowrap">`, name)
+			name = fmt.Sprintf(`%s <code class="text-nowrap">...</code>`, name)
 		}
 	}
 

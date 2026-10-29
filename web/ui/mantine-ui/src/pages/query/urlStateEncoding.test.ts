@@ -573,6 +573,18 @@ describe("encode and decode roundtrip", () => {
     expect(decoded[0].showTree).toBe(original.showTree);
   });
 
+  test("roundtrip preserves PromQL expressions with URL-sensitive characters", () => {
+    const expr =
+      'sum by (job) (rate(http_requests_total{status!="500",handler=~"/api/v1/.+"}[5m]))';
+
+    const original = createPanel({ expr });
+    const encoded = encodePanelOptionsToURLParams([original]);
+    const decoded = decodePanelOptionsFromURLParams(encoded.toString());
+
+    expect(decoded).toHaveLength(1);
+    expect(decoded[0].expr).toBe(expr);
+  });
+
   test("roundtrip preserves visualizer settings", () => {
     const original = createPanel({
       visualizer: {

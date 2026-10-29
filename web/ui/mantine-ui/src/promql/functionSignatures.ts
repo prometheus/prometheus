@@ -93,6 +93,12 @@ export const functionSignatures: Record<string, Func> = {
   idelta: { name: "idelta", argTypes: [valueType.matrix], variadic: 0, returnType: valueType.vector },
   increase: { name: "increase", argTypes: [valueType.matrix], variadic: 0, returnType: valueType.vector },
   info: { name: "info", argTypes: [valueType.vector, valueType.vector], variadic: 1, returnType: valueType.vector },
+  integral: {
+    name: "integral",
+    argTypes: [valueType.matrix, valueType.scalar],
+    variadic: 1,
+    returnType: valueType.vector,
+  },
   irate: { name: "irate", argTypes: [valueType.matrix], variadic: 0, returnType: valueType.vector },
   label_join: {
     name: "label_join",
@@ -111,7 +117,9 @@ export const functionSignatures: Record<string, Func> = {
   log10: { name: "log10", argTypes: [valueType.vector], variadic: 0, returnType: valueType.vector },
   log2: { name: "log2", argTypes: [valueType.vector], variadic: 0, returnType: valueType.vector },
   mad_over_time: { name: "mad_over_time", argTypes: [valueType.matrix], variadic: 0, returnType: valueType.vector },
+  max_of: { name: "max_of", argTypes: [valueType.scalar, valueType.scalar], variadic: 0, returnType: valueType.scalar },
   max_over_time: { name: "max_over_time", argTypes: [valueType.matrix], variadic: 0, returnType: valueType.vector },
+  min_of: { name: "min_of", argTypes: [valueType.scalar, valueType.scalar], variadic: 0, returnType: valueType.scalar },
   min_over_time: { name: "min_over_time", argTypes: [valueType.matrix], variadic: 0, returnType: valueType.vector },
   minute: { name: "minute", argTypes: [valueType.vector], variadic: 1, returnType: valueType.vector },
   month: { name: "month", argTypes: [valueType.vector], variadic: 1, returnType: valueType.vector },
@@ -159,6 +167,7 @@ export const functionSignatures: Record<string, Func> = {
   sort_desc: { name: "sort_desc", argTypes: [valueType.vector], variadic: 0, returnType: valueType.vector },
   sqrt: { name: "sqrt", argTypes: [valueType.vector], variadic: 0, returnType: valueType.vector },
   start: { name: "start", argTypes: [], variadic: 0, returnType: valueType.scalar },
+  start_timestamp: { name: "start_timestamp", argTypes: [valueType.vector], variadic: 0, returnType: valueType.vector },
   stddev_over_time: {
     name: "stddev_over_time",
     argTypes: [valueType.matrix],

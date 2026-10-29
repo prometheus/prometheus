@@ -19,6 +19,7 @@ import (
 	"github.com/pb33f/libopenapi/datamodel/high/base"
 	"github.com/pb33f/libopenapi/orderedmap"
 
+	"github.com/prometheus/prometheus/model/histogram"
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/promql"
 )
@@ -75,6 +76,63 @@ func queryRangePostExamples() *orderedmap.Map[string, *base.Example] {
 			"end":     "2026-01-02T13:37:00.000Z",
 			"step":    "30s",
 			"timeout": "30s",
+		}),
+	})
+
+	return examples
+}
+
+// queryCostPostExamples returns examples for the POST /query_cost endpoint.
+func queryCostPostExamples() *orderedmap.Map[string, *base.Example] {
+	examples := orderedmap.New[string, *base.Example]()
+
+	examples.Set("simpleQuery", &base.Example{
+		Summary: "Estimate the cost of an instant query",
+		Value:   createYAMLNode(map[string]any{"query": "up"}),
+	})
+
+	examples.Set("queryWithTime", &base.Example{
+		Summary: "Estimate the cost at a specific timestamp",
+		Value: createYAMLNode(map[string]any{
+			"query": "rate(prometheus_http_requests_total[5m])",
+			"time":  "2026-01-02T13:37:00.000Z",
+		}),
+	})
+
+	return examples
+}
+
+// queryRangeCostPostExamples returns examples for the POST /query_range_cost endpoint.
+func queryRangeCostPostExamples() *orderedmap.Map[string, *base.Example] {
+	examples := orderedmap.New[string, *base.Example]()
+
+	examples.Set("rangeQuery", &base.Example{
+		Summary: "Estimate the cost of a range query",
+		Value: createYAMLNode(map[string]any{
+			"query": "rate(prometheus_http_requests_total[5m])",
+			"start": "2026-01-02T12:37:00.000Z",
+			"end":   "2026-01-02T13:37:00.000Z",
+			"step":  "30s",
+		}),
+	})
+
+	return examples
+}
+
+// queryCostResponseExamples returns examples for the query cost endpoints response.
+func queryCostResponseExamples() *orderedmap.Map[string, *base.Example] {
+	examples := orderedmap.New[string, *base.Example]()
+
+	examples.Set("estimate", &base.Example{
+		Summary: "Cost estimate for a query",
+		Value: createYAMLNode(map[string]any{
+			"status": "success",
+			"data": map[string]any{
+				"estimate": map[string]any{
+					"seriesTouched": 42,
+					"samplesRead":   5040,
+				},
+			},
 		}),
 	})
 
@@ -163,6 +221,58 @@ func labelsPostExamples() *orderedmap.Map[string, *base.Example] {
 	return examples
 }
 
+// searchMetricNamesPostExamples returns examples for POST /search/metric_names endpoint.
+func searchMetricNamesPostExamples() *orderedmap.Map[string, *base.Example] {
+	examples := orderedmap.New[string, *base.Example]()
+
+	examples.Set("metricAutocomplete", &base.Example{
+		Summary: "Search metric names for autocomplete",
+		Value: createYAMLNode(map[string]any{
+			"search[]":         []string{"http_req"},
+			"include_metadata": true,
+			"sort_by":          "score",
+			"limit":            20,
+		}),
+	})
+
+	return examples
+}
+
+// searchLabelNamesPostExamples returns examples for POST /search/label_names endpoint.
+func searchLabelNamesPostExamples() *orderedmap.Map[string, *base.Example] {
+	examples := orderedmap.New[string, *base.Example]()
+
+	examples.Set("labelsForMetric", &base.Example{
+		Summary: "Search label names for a metric",
+		Value: createYAMLNode(map[string]any{
+			"match[]":  []string{"{__name__=\"http_requests_total\"}"},
+			"search[]": []string{"sta"},
+			"sort_by":  "score",
+			"limit":    20,
+		}),
+	})
+
+	return examples
+}
+
+// searchLabelValuesPostExamples returns examples for POST /search/label_values endpoint.
+func searchLabelValuesPostExamples() *orderedmap.Map[string, *base.Example] {
+	examples := orderedmap.New[string, *base.Example]()
+
+	examples.Set("valuesForLabel", &base.Example{
+		Summary: "Search values for a label",
+		Value: createYAMLNode(map[string]any{
+			"label":    "instance",
+			"match[]":  []string{"up"},
+			"search[]": []string{"909"},
+			"sort_by":  "score",
+			"limit":    10,
+		}),
+	})
+
+	return examples
+}
+
 // seriesPostExamples returns examples for POST /series endpoint.
 func seriesPostExamples() *orderedmap.Map[string, *base.Example] {
 	examples := orderedmap.New[string, *base.Example]()
@@ -236,7 +346,26 @@ func queryResponseExamples() *orderedmap.Map[string, *base.Example] {
 		Value:   matrixExample(matrixResult),
 	})
 
-	// TODO: Add native histogram example.
+	histogramResult := promql.Vector{
+		promql.Sample{
+			Metric: labels.FromStrings("__name__", "http_request_duration_seconds", "job", "prometheus", "instance", "demo.prometheus.io:9090"),
+			T:      1767436620000,
+			H: &histogram.FloatHistogram{
+				Schema:          1,
+				ZeroThreshold:   1e-128,
+				ZeroCount:       0,
+				Count:           12.5,
+				Sum:             42.1,
+				PositiveSpans:   []histogram.Span{{Offset: 0, Length: 2}},
+				PositiveBuckets: []float64{5, 7.5},
+			},
+		},
+	}
+
+	examples.Set("histogramResult", &base.Example{
+		Summary: "Instant vector query with native histograms",
+		Value:   vectorExample(histogramResult),
+	})
 
 	return examples
 }
@@ -261,7 +390,29 @@ func queryRangeResponseExamples() *orderedmap.Map[string, *base.Example] {
 		Value:   matrixExample(matrixResult),
 	})
 
-	// TODO: Add native histogram example.
+	histogramResult := promql.Matrix{
+		promql.Series{
+			Metric: labels.FromStrings("__name__", "http_request_duration_seconds", "job", "prometheus", "instance", "demo.prometheus.io:9090"),
+			Histograms: []promql.HPoint{
+				{
+					T: 1767433020000,
+					H: &histogram.FloatHistogram{
+						Schema:          1,
+						ZeroThreshold:   1e-128,
+						Count:           12.5,
+						Sum:             42.1,
+						PositiveSpans:   []histogram.Span{{Offset: 0, Length: 2}},
+						PositiveBuckets: []float64{5, 7.5},
+					},
+				},
+			},
+		},
+	}
+
+	examples.Set("histogramResult", &base.Example{
+		Summary: "Range query with native histograms",
+		Value:   matrixExample(histogramResult),
+	})
 
 	return examples
 }
@@ -581,6 +732,23 @@ func scrapePoolsResponseExamples() *orderedmap.Map[string, *base.Example] {
 			"status": "success",
 			"data": map[string]any{
 				"scrapePools": []string{"alertmanager", "blackbox", "caddy", "cadvisor", "grafana", "node", "prometheus", "random"},
+			},
+		}),
+	})
+
+	return examples
+}
+
+// scrapePoolConfigResponseExamples returns examples for /scrape_pools/config response.
+func scrapePoolConfigResponseExamples() *orderedmap.Map[string, *base.Example] {
+	examples := orderedmap.New[string, *base.Example]()
+
+	examples.Set("scrapePoolConfig", &base.Example{
+		Summary: "Effective configuration for a scrape pool",
+		Value: createYAMLNode(map[string]any{
+			"status": "success",
+			"data": map[string]any{
+				"yaml": "job_name: prometheus\nscrape_interval: 15s\nscrape_timeout: 10s\nmetrics_path: /metrics\nscheme: http\n",
 			},
 		}),
 	})
@@ -1026,6 +1194,42 @@ func featuresResponseExamples() *orderedmap.Map[string, *base.Example] {
 			"status": "success",
 			"data":   []string{"exemplar-storage", "remote-write-receiver"},
 		}),
+	})
+
+	return examples
+}
+
+// searchMetricNamesResponseExamples returns examples for /search/metric_names response.
+func searchMetricNamesResponseExamples() *orderedmap.Map[string, *base.Example] {
+	examples := orderedmap.New[string, *base.Example]()
+
+	examples.Set("metricNamesStream", &base.Example{
+		Summary: "NDJSON stream of metric names",
+		Value:   createYAMLNode("{\"results\":[{\"name\":\"http_requests_total\",\"type\":\"counter\",\"help\":\"Total HTTP requests.\"}]}\n{\"status\":\"success\",\"has_more\":false}\n"),
+	})
+
+	return examples
+}
+
+// searchLabelNamesResponseExamples returns examples for /search/label_names response.
+func searchLabelNamesResponseExamples() *orderedmap.Map[string, *base.Example] {
+	examples := orderedmap.New[string, *base.Example]()
+
+	examples.Set("labelNamesStream", &base.Example{
+		Summary: "NDJSON stream of label names",
+		Value:   createYAMLNode("{\"results\":[{\"name\":\"instance\"},{\"name\":\"job\"}]}\n{\"status\":\"success\",\"has_more\":false}\n"),
+	})
+
+	return examples
+}
+
+// searchLabelValuesResponseExamples returns examples for /search/label_values response.
+func searchLabelValuesResponseExamples() *orderedmap.Map[string, *base.Example] {
+	examples := orderedmap.New[string, *base.Example]()
+
+	examples.Set("labelValuesStream", &base.Example{
+		Summary: "NDJSON stream of label values",
+		Value:   createYAMLNode("{\"results\":[{\"value\":\"localhost:9090\"},{\"value\":\"localhost:9091\"}]}\n{\"status\":\"success\",\"has_more\":true}\n"),
 	})
 
 	return examples

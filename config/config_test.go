@@ -50,6 +50,7 @@ import (
 	"github.com/prometheus/prometheus/discovery/marathon"
 	"github.com/prometheus/prometheus/discovery/moby"
 	"github.com/prometheus/prometheus/discovery/nomad"
+	"github.com/prometheus/prometheus/discovery/oci"
 	"github.com/prometheus/prometheus/discovery/openstack"
 	"github.com/prometheus/prometheus/discovery/outscale"
 	"github.com/prometheus/prometheus/discovery/ovhcloud"
@@ -83,8 +84,9 @@ const (
 	globLabelNameLengthLimit  = 200
 	globLabelValueLengthLimit = 200
 	globalGoGC                = 42
-	globScrapeFailureLogFile  = "testdata/fail.log"
 )
+
+var globScrapeFailureLogFile = filepath.FromSlash("testdata/fail.log")
 
 var expectedConf = &Config{
 	loaded: true,
@@ -92,7 +94,7 @@ var expectedConf = &Config{
 		ScrapeInterval:       model.Duration(15 * time.Second),
 		ScrapeTimeout:        DefaultGlobalConfig.ScrapeTimeout,
 		EvaluationInterval:   model.Duration(30 * time.Second),
-		QueryLogFile:         "testdata/query.log",
+		QueryLogFile:         filepath.FromSlash("testdata/query.log"),
 		ScrapeFailureLogFile: globScrapeFailureLogFile,
 
 		ExternalLabels: labels.FromStrings("foo", "bar", "monitor", "codelab"),
@@ -111,7 +113,8 @@ var expectedConf = &Config{
 	},
 
 	Runtime: RuntimeConfig{
-		GoGC: globalGoGC,
+		GoGC:     globalGoGC,
+		LogLevel: LogLevel("info"),
 	},
 
 	RuleFiles: []string{
@@ -166,7 +169,8 @@ var expectedConf = &Config{
 				FollowRedirects: true,
 				EnableHTTP2:     false,
 			},
-			Headers: map[string]string{"name": "value"},
+			Headers:              map[string]string{"name": "value"},
+			ConvertNHCBToClassic: true,
 		},
 	},
 
@@ -228,7 +232,7 @@ var expectedConf = &Config{
 			LabelValueLengthLimit:          globLabelValueLengthLimit,
 			ScrapeProtocols:                DefaultScrapeProtocols,
 			ScrapeFallbackProtocol:         PrometheusText0_0_4,
-			ScrapeFailureLogFile:           "testdata/fail_prom.log",
+			ScrapeFailureLogFile:           filepath.FromSlash("testdata/fail_prom.log"),
 			MetricNameValidationScheme:     DefaultGlobalConfig.MetricNameValidationScheme,
 			MetricNameEscapingScheme:       DefaultGlobalConfig.MetricNameEscapingScheme,
 			ScrapeNativeHistograms:         boolPtr(false),
@@ -262,11 +266,15 @@ var expectedConf = &Config{
 
 			ServiceDiscoveryConfigs: discovery.Configs{
 				&file.SDConfig{
-					Files:           []string{"testdata/foo/*.slow.json", "testdata/foo/*.slow.yml", "testdata/single/file.yml"},
+					Files: []string{
+						filepath.FromSlash("testdata/foo/*.slow.json"),
+						filepath.FromSlash("testdata/foo/*.slow.yml"),
+						filepath.FromSlash("testdata/single/file.yml"),
+					},
 					RefreshInterval: model.Duration(10 * time.Minute),
 				},
 				&file.SDConfig{
-					Files:           []string{"testdata/bar/*.yaml"},
+					Files:           []string{filepath.FromSlash("testdata/bar/*.yaml")},
 					RefreshInterval: model.Duration(5 * time.Minute),
 				},
 				discovery.StaticConfig{
@@ -801,7 +809,7 @@ var expectedConf = &Config{
 					Profile:         "profile",
 					RefreshInterval: model.Duration(60 * time.Second),
 					Port:            80,
-					Filters: []*aws.EC2Filter{
+					Filters: []*aws.Filter{
 						{
 							Name:   "tag:environment",
 							Values: []string{"prod"},
@@ -1109,8 +1117,8 @@ var expectedConf = &Config{
 					RefreshInterval: model.Duration(60 * time.Second),
 					Version:         1,
 					TLSConfig: config.TLSConfig{
-						CertFile: "testdata/valid_cert_file",
-						KeyFile:  "testdata/valid_key_file",
+						CertFile: filepath.FromSlash("testdata/valid_cert_file"),
+						KeyFile:  filepath.FromSlash("testdata/valid_key_file"),
 					},
 				},
 			},
@@ -1233,6 +1241,48 @@ var expectedConf = &Config{
 			},
 		},
 		{
+			JobName: "service-oci",
+
+			HonorTimestamps:                true,
+			ScrapeInterval:                 model.Duration(15 * time.Second),
+			ScrapeTimeout:                  DefaultGlobalConfig.ScrapeTimeout,
+			EnableCompression:              true,
+			BodySizeLimit:                  globBodySizeLimit,
+			SampleLimit:                    globSampleLimit,
+			TargetLimit:                    globTargetLimit,
+			LabelLimit:                     globLabelLimit,
+			LabelNameLengthLimit:           globLabelNameLengthLimit,
+			LabelValueLengthLimit:          globLabelValueLengthLimit,
+			ScrapeProtocols:                DefaultScrapeProtocols,
+			ScrapeFailureLogFile:           globScrapeFailureLogFile,
+			MetricNameValidationScheme:     DefaultGlobalConfig.MetricNameValidationScheme,
+			MetricNameEscapingScheme:       DefaultGlobalConfig.MetricNameEscapingScheme,
+			ScrapeNativeHistograms:         boolPtr(false),
+			AlwaysScrapeClassicHistograms:  boolPtr(false),
+			ConvertClassicHistogramsToNHCB: boolPtr(false),
+			ExtraScrapeMetrics:             boolPtr(false),
+
+			MetricsPath:      DefaultScrapeConfig.MetricsPath,
+			Scheme:           DefaultScrapeConfig.Scheme,
+			HTTPClientConfig: config.DefaultHTTPClientConfig,
+
+			ServiceDiscoveryConfigs: discovery.Configs{
+				&oci.SDConfig{
+					Auth:             "api_key",
+					Region:           "us-ashburn-1",
+					Tenancy:          "ocid1.tenancy.oc1..tenancy001",
+					User:             "ocid1.user.oc1..user001",
+					Fingerprint:      "aa:bb:cc:dd:ee:ff",
+					KeyFile:          filepath.FromSlash("testdata/valid_key_file"),
+					KeyPassphrase:    "mysecret",
+					Compartments:     []string{"ocid1.compartment.oc1..comp001"},
+					Port:             9100,
+					RefreshInterval:  model.Duration(60 * time.Second),
+					HTTPClientConfig: config.DefaultHTTPClientConfig,
+				},
+			},
+		},
+		{
 			JobName: "service-openstack",
 
 			HonorTimestamps:                true,
@@ -1266,9 +1316,9 @@ var expectedConf = &Config{
 					Availability:    "public",
 					RefreshInterval: model.Duration(60 * time.Second),
 					TLSConfig: config.TLSConfig{
-						CAFile:   "testdata/valid_ca_file",
-						CertFile: "testdata/valid_cert_file",
-						KeyFile:  "testdata/valid_key_file",
+						CAFile:   filepath.FromSlash("testdata/valid_ca_file"),
+						CertFile: filepath.FromSlash("testdata/valid_cert_file"),
+						KeyFile:  filepath.FromSlash("testdata/valid_key_file"),
 					},
 				},
 			},
@@ -1310,9 +1360,9 @@ var expectedConf = &Config{
 						FollowRedirects: true,
 						EnableHTTP2:     true,
 						TLSConfig: config.TLSConfig{
-							CAFile:   "testdata/valid_ca_file",
-							CertFile: "testdata/valid_cert_file",
-							KeyFile:  "testdata/valid_key_file",
+							CAFile:   filepath.FromSlash("testdata/valid_ca_file"),
+							CertFile: filepath.FromSlash("testdata/valid_cert_file"),
+							KeyFile:  filepath.FromSlash("testdata/valid_key_file"),
 						},
 					},
 				},
@@ -1794,8 +1844,8 @@ var expectedConf = &Config{
 		Timeout:     model.Duration(5 * time.Second),
 		Headers:     map[string]string{"foo": "bar"},
 		TLSConfig: config.TLSConfig{
-			CertFile:           "testdata/valid_cert_file",
-			KeyFile:            "testdata/valid_key_file",
+			CertFile:           filepath.FromSlash("testdata/valid_cert_file"),
+			KeyFile:            filepath.FromSlash("testdata/valid_key_file"),
 			InsecureSkipVerify: true,
 		},
 	},
@@ -1819,6 +1869,104 @@ func TestYAMLRoundtrip(t *testing.T) {
 	require.Equal(t, want, got)
 }
 
+func TestQueryCostLimits(t *testing.T) {
+	t.Run("defaults are unlimited", func(t *testing.T) {
+		c, err := Load("", promslog.NewNopLogger())
+		require.NoError(t, err)
+		require.Zero(t, c.GlobalConfig.QueryMaxSeries)
+		require.Zero(t, c.GlobalConfig.QueryMaxSamplesRead)
+		require.Zero(t, c.GlobalConfig.QueryMaxDuration)
+
+		require.Zero(t, DefaultGlobalConfig.QueryMaxSeries)
+		require.Zero(t, DefaultGlobalConfig.QueryMaxSamplesRead)
+		require.Zero(t, DefaultGlobalConfig.QueryMaxDuration)
+	})
+
+	t.Run("explicit zero is unlimited", func(t *testing.T) {
+		c, err := Load("global:\n  query_max_series: 0\n  query_max_samples_read: 0\n  query_max_duration: 0s\n", promslog.NewNopLogger())
+		require.NoError(t, err)
+		require.Zero(t, c.GlobalConfig.QueryMaxSeries)
+		require.Zero(t, c.GlobalConfig.QueryMaxSamplesRead)
+		require.Zero(t, c.GlobalConfig.QueryMaxDuration)
+	})
+
+	t.Run("parses from file", func(t *testing.T) {
+		c, err := LoadFile("testdata/query_cost_limits.good.yml", false, promslog.NewNopLogger())
+		require.NoError(t, err)
+		require.Equal(t, uint64(1000000), c.GlobalConfig.QueryMaxSeries)
+		require.Equal(t, uint64(50000000), c.GlobalConfig.QueryMaxSamplesRead)
+		require.Equal(t, model.Duration(45*time.Second), c.GlobalConfig.QueryMaxDuration)
+	})
+
+	t.Run("round-trips through YAML", func(t *testing.T) {
+		want, err := LoadFile("testdata/query_cost_limits.good.yml", false, promslog.NewNopLogger())
+		require.NoError(t, err)
+
+		out, err := yaml.Marshal(want)
+		require.NoError(t, err)
+		require.Contains(t, string(out), "query_max_series: 1000000")
+		require.Contains(t, string(out), "query_max_samples_read: 50000000")
+		require.Contains(t, string(out), "query_max_duration: 45s")
+
+		got, err := Load(string(out), promslog.NewNopLogger())
+		require.NoError(t, err)
+		require.Equal(t, want, got)
+	})
+
+	t.Run("rejects bad values", func(t *testing.T) {
+		for _, tc := range []struct {
+			in     string
+			errMsg string
+		}{
+			{
+				in:     "global:\n  query_max_series: -1\n",
+				errMsg: "cannot unmarshal !!int `-1` into uint64",
+			},
+			{
+				in:     "global:\n  query_max_samples_read: -1\n",
+				errMsg: "cannot unmarshal !!int `-1` into uint64",
+			},
+			{
+				in:     "global:\n  query_max_duration: -1s\n",
+				errMsg: `not a valid duration string: "-1s"`,
+			},
+			{
+				in:     "global:\n  query_max_series: many\n",
+				errMsg: "cannot unmarshal !!str `many` into uint64",
+			},
+			{
+				in:     "global:\n  query_max_duration: 45\n",
+				errMsg: `not a valid duration string: "45"`,
+			},
+			{
+				in:     "global:\n  query_max_duration: forever\n",
+				errMsg: `not a valid duration string: "forever"`,
+			},
+		} {
+			t.Run(tc.in, func(t *testing.T) {
+				_, err := Load(tc.in, promslog.NewNopLogger())
+				require.ErrorContains(t, err, tc.errMsg)
+			})
+		}
+	})
+
+	t.Run("limits change on reload", func(t *testing.T) {
+		// The limits are reloadable: cmd/prometheus applies them to the
+		// running engine from the query_engine reloader, so a reloaded
+		// config must yield the new values without a restart.
+		before, err := LoadFile("testdata/query_cost_limits.good.yml", false, promslog.NewNopLogger())
+		require.NoError(t, err)
+
+		after, err := Load("global:\n  query_max_series: 7\n  query_max_samples_read: 8\n  query_max_duration: 9s\n", promslog.NewNopLogger())
+		require.NoError(t, err)
+
+		require.NotEqual(t, before.GlobalConfig.QueryMaxSeries, after.GlobalConfig.QueryMaxSeries)
+		require.Equal(t, uint64(7), after.GlobalConfig.QueryMaxSeries)
+		require.Equal(t, uint64(8), after.GlobalConfig.QueryMaxSamplesRead)
+		require.Equal(t, model.Duration(9*time.Second), after.GlobalConfig.QueryMaxDuration)
+	})
+}
+
 func TestRemoteWriteRetryOnRateLimit(t *testing.T) {
 	want, err := LoadFile("testdata/remote_write_retry_on_rate_limit.good.yml", false, promslog.NewNopLogger())
 	require.NoError(t, err)
@@ -1831,6 +1979,20 @@ func TestRemoteWriteRetryOnRateLimit(t *testing.T) {
 
 	require.True(t, got.RemoteWriteConfigs[0].QueueConfig.RetryOnRateLimit)
 	require.False(t, got.RemoteWriteConfigs[1].QueueConfig.RetryOnRateLimit)
+}
+
+func TestRemoteWriteFailedRequestLogging(t *testing.T) {
+	cfgYAML := `
+remote_write:
+  - url: http://remote1/api/v1/write
+    failed_request_logging: true
+  - url: http://remote2/api/v1/write
+`
+	cfg, err := Load(cfgYAML, promslog.NewNopLogger())
+	require.NoError(t, err)
+	require.Len(t, cfg.RemoteWriteConfigs, 2)
+	require.True(t, cfg.RemoteWriteConfigs[0].FailedRequestLogging)
+	require.False(t, cfg.RemoteWriteConfigs[1].FailedRequestLogging)
 }
 
 func TestOTLPSanitizeResourceAttributes(t *testing.T) {
@@ -2159,7 +2321,7 @@ func TestElideSecrets(t *testing.T) {
 	yamlConfig := string(config)
 
 	matches := secretRe.FindAllStringIndex(yamlConfig, -1)
-	require.Len(t, matches, 28, "wrong number of secret matches found")
+	require.Len(t, matches, 29, "wrong number of secret matches found")
 	require.NotContains(t, yamlConfig, "mysecret",
 		"yaml marshal reveals authentication credentials.")
 }
@@ -2523,6 +2685,10 @@ var expectedErrors = []struct {
 		errMsg:   "unknown authentication_type \"invalid\". Supported types are \"OAuth\", \"ManagedIdentity\", \"SDK\" or \"WorkloadIdentity\"",
 	},
 	{
+		filename: "oci_authentication_method.bad.yml",
+		errMsg:   `oci_sd: unknown auth method "invalid", expected "api_key" or "instance_principal"`,
+	},
+	{
 		filename: "azure_bearertoken_basicauth.bad.yml",
 		errMsg:   "at most one of basic_auth, oauth2, bearer_token & bearer_token_file must be configured",
 	},
@@ -2684,7 +2850,7 @@ var expectedErrors = []struct {
 	},
 	{
 		filename: "scrape_config_files_scrape_protocols.bad.yml",
-		errMsg:   `parsing YAML file testdata/scrape_config_files_scrape_protocols.bad.yml: scrape_protocols: unknown scrape protocol prometheusproto, supported: [OpenMetricsText0.0.1 OpenMetricsText1.0.0 PrometheusProto PrometheusText0.0.4 PrometheusText1.0.0] for scrape config with job name "node"`,
+		errMsg:   `parsing YAML file testdata/scrape_config_files_scrape_protocols.bad.yml: scrape_protocols: unknown scrape protocol prometheusproto, supported: [OpenMetricsText0.0.1 OpenMetricsText1.0.0 OpenMetricsText2.0.0 OpenMetricsText2.0.0-rc PrometheusProto PrometheusText0.0.4 PrometheusText1.0.0] for scrape config with job name "node"`,
 	},
 	{
 		filename: "scrape_config_files_scrape_protocols2.bad.yml",
@@ -2692,7 +2858,7 @@ var expectedErrors = []struct {
 	},
 	{
 		filename: "scrape_config_files_fallback_scrape_protocol1.bad.yml",
-		errMsg:   `parsing YAML file testdata/scrape_config_files_fallback_scrape_protocol1.bad.yml: invalid fallback_scrape_protocol for scrape config with job name "node": unknown scrape protocol prometheusproto, supported: [OpenMetricsText0.0.1 OpenMetricsText1.0.0 PrometheusProto PrometheusText0.0.4 PrometheusText1.0.0]`,
+		errMsg:   `parsing YAML file testdata/scrape_config_files_fallback_scrape_protocol1.bad.yml: invalid fallback_scrape_protocol for scrape config with job name "node": unknown scrape protocol prometheusproto, supported: [OpenMetricsText0.0.1 OpenMetricsText1.0.0 OpenMetricsText2.0.0 OpenMetricsText2.0.0-rc PrometheusProto PrometheusText0.0.4 PrometheusText1.0.0]`,
 	},
 	{
 		filename: "scrape_config_files_fallback_scrape_protocol2.bad.yml",
@@ -2722,6 +2888,34 @@ var expectedErrors = []struct {
 		filename: "tsdb_retention_percentage_negative.bad.yml",
 		errMsg:   "'storage.tsdb.retention.percentage' must be in the range [0, 100]",
 	},
+	{
+		filename: "tsdb_chunk_encoding_floats.bad.yml",
+		errMsg:   `'storage.tsdb.chunk_encoding.floats' must be 'xor' or 'xor2', or the field must be omitted entirely, got "xor3"`,
+	},
+	{
+		filename: "tsdb_chunk_encoding_floats_wrong_case.bad.yml",
+		errMsg:   `'storage.tsdb.chunk_encoding.floats' must be 'xor' or 'xor2', or the field must be omitted entirely, got "XOR"`,
+	},
+	{
+		filename: "tsdb_chunk_encoding_floats_wrong_case_xor2.bad.yml",
+		errMsg:   `'storage.tsdb.chunk_encoding.floats' must be 'xor' or 'xor2', or the field must be omitted entirely, got "XOR2"`,
+	},
+	{
+		filename: "metric_name_validation_scheme.bad.yml",
+		errMsg:   "unrecognized ValidationScheme: \"invalid_scheme\"",
+	},
+	{
+		filename: "query_max_series.bad.yml",
+		errMsg:   "cannot unmarshal !!int `-1` into uint64",
+	},
+	{
+		filename: "query_max_samples_read.bad.yml",
+		errMsg:   "cannot unmarshal !!str `many` into uint64",
+	},
+	{
+		filename: "query_max_duration.bad.yml",
+		errMsg:   `not a valid duration string: "-1s"`,
+	},
 }
 
 func TestBadConfigs(t *testing.T) {
@@ -2736,6 +2930,27 @@ func TestTSDBRetentionPercentageFloat(t *testing.T) {
 	c, err := LoadFile("testdata/tsdb_retention_percentage_float.good.yml", false, promslog.NewNopLogger())
 	require.NoError(t, err)
 	require.Equal(t, 0.5, c.StorageConfig.TSDBConfig.Retention.Percentage)
+}
+
+func TestTSDBChunkEncoding(t *testing.T) {
+	for _, tc := range []struct {
+		filename string
+		encoding string
+	}{
+		{filename: "tsdb_chunk_encoding_floats_xor.good.yml", encoding: FloatChunkEncodingXOR},
+		{filename: "tsdb_chunk_encoding_floats_xor2.good.yml", encoding: FloatChunkEncodingXOR2},
+	} {
+		t.Run(tc.encoding, func(t *testing.T) {
+			c, err := LoadFile("testdata/"+tc.filename, false, promslog.NewNopLogger())
+			require.NoError(t, err)
+			require.Equal(t, tc.encoding, c.StorageConfig.TSDBConfig.ChunkEncoding.Floats)
+		})
+	}
+
+	// Empty/absent value is also valid.
+	c, err := Load("", promslog.NewNopLogger())
+	require.NoError(t, err)
+	require.Empty(t, c.StorageConfig.TSDBConfig.ChunkEncoding.Floats)
 }
 
 func TestBadStaticConfigsYML(t *testing.T) {
@@ -2755,6 +2970,67 @@ func TestEmptyConfig(t *testing.T) {
 	exp.StorageConfig.TSDBConfig = &TSDBConfig{Retention: &retention}
 	require.Equal(t, exp, *c)
 	require.Equal(t, 75, c.Runtime.GoGC)
+	require.Equal(t, LogLevel("info"), c.Runtime.LogLevel)
+}
+
+func TestRuntimeLogLevelConfig(t *testing.T) {
+	for _, tc := range []struct {
+		name      string
+		config    string
+		expected  LogLevel
+		errString string
+	}{
+		{
+			name:     "default",
+			expected: LogLevel("info"),
+		},
+		{
+			name: "configured",
+			config: `runtime:
+  log_level: warn
+`,
+			expected: LogLevel("warn"),
+		},
+		{
+			name: "normalized",
+			config: `runtime:
+  log_level: DEBUG
+`,
+			expected: LogLevel("debug"),
+		},
+		{
+			name: "invalid",
+			config: `runtime:
+  log_level: verbose
+`,
+			errString: "unrecognized log level verbose",
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			cfg, err := Load(tc.config, promslog.NewNopLogger())
+			if tc.errString != "" {
+				require.ErrorContains(t, err, tc.errString)
+				return
+			}
+			require.NoError(t, err)
+			require.Equal(t, tc.expected, cfg.Runtime.LogLevel)
+		})
+	}
+
+	t.Run("configured process default", func(t *testing.T) {
+		previousRuntimeDefault := DefaultRuntimeConfig
+		previousConfigRuntime := DefaultConfig.Runtime
+		t.Cleanup(func() {
+			DefaultRuntimeConfig = previousRuntimeDefault
+			DefaultConfig.Runtime = previousConfigRuntime
+		})
+
+		DefaultRuntimeConfig.LogLevel = LogLevel("debug")
+		DefaultConfig.Runtime = DefaultRuntimeConfig
+		cfg, err := Load("runtime:\n  gogc: 77\n", promslog.NewNopLogger())
+		require.NoError(t, err)
+		require.Equal(t, LogLevel("debug"), cfg.Runtime.LogLevel)
+	})
 }
 
 func TestExpandExternalLabels(t *testing.T) {
@@ -3459,6 +3735,16 @@ func TestScrapeProtocolHeader(t *testing.T) {
 		{
 			name:          "openmetrics 1.0.0",
 			proto:         OpenMetricsText1_0_0,
+			expectedValue: "application/openmetrics-text",
+		},
+		{
+			name:          "openmetrics 2.0.0-rc",
+			proto:         OpenMetricsText2_0_0_rc,
+			expectedValue: "application/openmetrics-text",
+		},
+		{
+			name:          "openmetrics 2.0.0",
+			proto:         OpenMetricsText2_0_0,
 			expectedValue: "application/openmetrics-text",
 		},
 	}

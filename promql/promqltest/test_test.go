@@ -24,6 +24,7 @@ import (
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/promql"
 	"github.com/prometheus/prometheus/promql/parser"
+	"github.com/prometheus/prometheus/storage"
 	"github.com/prometheus/prometheus/tsdb"
 	"github.com/prometheus/prometheus/tsdb/chunkenc"
 	"github.com/prometheus/prometheus/util/teststorage"
@@ -33,7 +34,8 @@ func init() {
 	testStorageOptions = []teststorage.Option{
 		func(opts *tsdb.Options) {
 			opts.EnableSTStorage = true
-			opts.EnableXOR2Encoding = true
+			opts.FloatChunkEncoding = chunkenc.EncXOR2
+			opts.EnableHistogramSTEncoding = true
 		},
 	}
 }
@@ -393,7 +395,7 @@ eval instant at 50m sort(rate(http_requests[10m]))
 	{group="canary", instance="0", job="api-server"} 0.1
 	{group="canary", instance="1", job="api-server"} 0.13333333333333333
 `,
-			expectedError: `unexpected info annotations evaluating query "sort(rate(http_requests[10m]))" (line 10): [PromQL info: metric might not be a counter, name does not end in _total/_sum/_count/_bucket: "http_requests"]`,
+			expectedError: `unexpected info annotations evaluating query "sort(rate(http_requests[10m]))" (line 10): [PromQL info: metric might not be a counter, name does not end in _total/_sum/_count/_bucket: "http_requests" (1:11)]`,
 		},
 		"instant query with unexpectedly missing warn annotation": {
 			input: testData + `
@@ -740,7 +742,7 @@ load 5m
 	metric{src="b"} 1
 
 eval_warn instant at 0m sum(metric)
-	expect warn msg: PromQL warning: encountered a mix of histograms and floats for aggregation
+	expect warn msg: PromQL warning: encountered a mix of histograms and floats for aggregation (1:5)
 `,
 		},
 		"instant query expected to have warn but not with the specific message (with new eval syntax)": {
@@ -752,7 +754,7 @@ load 5m
 eval_warn instant at 0m sum(metric)
 	expect warn msg: PromQL warning: encountered a mix
 `,
-			expectedError: `expected warn annotation matching message "PromQL warning: encountered a mix" but no matching annotation was found for query "sum(metric)" (line 6), found: [PromQL warning: encountered a mix of histograms and floats for aggregation]`,
+			expectedError: `expected warn annotation matching message "PromQL warning: encountered a mix" but no matching annotation was found for query "sum(metric)" (line 6), found: [PromQL warning: encountered a mix of histograms and floats for aggregation (1:5)]`,
 		},
 		"instant query expected to have warn annotation with specific regex (with new eval syntax)": {
 			input: `
@@ -773,7 +775,7 @@ load 5m
 eval_warn instant at 0m sum(metric)
 	expect warn regex: PromQL warning: something went (wrong|boom)
 `,
-			expectedError: `expected warn annotation matching pattern "PromQL warning: something went (wrong|boom)" but no matching annotation was found for query "sum(metric)" (line 6), found: [PromQL warning: encountered a mix of histograms and floats for aggregation]`,
+			expectedError: `expected warn annotation matching pattern "PromQL warning: something went (wrong|boom)" but no matching annotation was found for query "sum(metric)" (line 6), found: [PromQL warning: encountered a mix of histograms and floats for aggregation (1:5)]`,
 		},
 		"instant query expected to have warn annotation and no info annotation (with new eval syntax)": {
 			input: `
@@ -807,7 +809,7 @@ load 5m
 eval_warn instant at 0m sum(metric)
 	expect no_warn
 `,
-			expectedError: `unexpected warning annotations evaluating query "sum(metric)" (line 6): [PromQL warning: encountered a mix of histograms and floats for aggregation]`,
+			expectedError: `unexpected warning annotations evaluating query "sum(metric)" (line 6): [PromQL warning: encountered a mix of histograms and floats for aggregation (1:5)]`,
 		},
 		"instant query expected to only have info annotation (with new eval syntax)": {
 			input: `
@@ -827,7 +829,7 @@ load 5m
 	metric{src="b"} 1
 
 eval_info instant at 0m min(metric)
-	expect info msg: PromQL info: ignored histogram in min aggregation
+	expect info msg: PromQL info: ignored histogram in min aggregation (1:5)
 	{} 1
 `,
 		},
@@ -841,7 +843,7 @@ eval_info instant at 0m min(metric)
 	expect info msg: something went wrong
 	{} 1
 `,
-			expectedError: `expected info annotation matching message "something went wrong" but no matching annotation was found for query "min(metric)" (line 6), found: [PromQL info: ignored histogram in min aggregation]`,
+			expectedError: `expected info annotation matching message "something went wrong" but no matching annotation was found for query "min(metric)" (line 6), found: [PromQL info: ignored histogram in min aggregation (1:5)]`,
 		},
 		"instant query expected to have info annotation with specific regex (with new eval syntax)": {
 			input: `
@@ -864,7 +866,7 @@ eval_info instant at 0m min(metric)
 	expect info regex: something went (wrong|boom)
 	{} 1
 `,
-			expectedError: `expected info annotation matching pattern "something went (wrong|boom)" but no matching annotation was found for query "min(metric)" (line 6), found: [PromQL info: ignored histogram in min aggregation]`,
+			expectedError: `expected info annotation matching pattern "something went (wrong|boom)" but no matching annotation was found for query "min(metric)" (line 6), found: [PromQL info: ignored histogram in min aggregation (1:5)]`,
 		},
 		"instant query expected to have info annotation and no warn annotation (with new eval syntax)": {
 			input: `
@@ -901,7 +903,7 @@ eval_info instant at 0m min(metric)
 	expect no_info
 	{} 1
 `,
-			expectedError: `unexpected info annotations evaluating query "min(metric)" (line 6): [PromQL info: ignored histogram in min aggregation]`,
+			expectedError: `unexpected info annotations evaluating query "min(metric)" (line 6): [PromQL info: ignored histogram in min aggregation (1:5)]`,
 		},
 		"instant query with results expected to match provided order, and result is in expected order (with new eval syntax)": {
 			input: testData + `
@@ -1265,43 +1267,50 @@ func TestLoadSTLine_StorageRoundtrip(t *testing.T) {
 	// Parse and load samples with @st offsets into a real TSDB instance,
 	// then read them back via chunkenc Iterator to verify the start timestamps
 	// were stored and retrieved correctly.
-	store := newTestStorage(t)
-	const step = 5 * time.Minute
-	lines := []string{
-		"load 5m",
-		"  my_counter@st -1mx4",
-		"  my_counter 0+1x4",
+	for name, newStorage := range map[string]func(testing.TB) storage.Storage{
+		"test storage":          newTestStorage,
+		"built-in test storage": func(t testing.TB) storage.Storage { return NewBuiltinTestStorage(t) },
+	} {
+		t.Run(name, func(t *testing.T) {
+			store := newStorage(t)
+			const step = 5 * time.Minute
+			lines := []string{
+				"load 5m",
+				"  my_counter@st -1mx4",
+				"  my_counter 0+1x4",
+			}
+			_, cmd, err := parseLoad(lines, 0, testStartTime)
+			require.NoError(t, err)
+
+			app := store.AppenderV2(context.Background())
+			require.NoError(t, cmd.append(app))
+			require.NoError(t, app.Commit())
+
+			q, err := store.Querier(math.MinInt64, math.MaxInt64)
+			require.NoError(t, err)
+			defer func() { require.NoError(t, q.Close()) }()
+
+			ss := q.Select(context.Background(), false, nil, labels.MustNewMatcher(labels.MatchEqual, "__name__", "my_counter"))
+			require.True(t, ss.Next(), "expected one series")
+
+			var it chunkenc.Iterator
+			it = ss.At().Iterator(it)
+
+			stepMs := step.Milliseconds()
+			for i := range 5 {
+				require.Equal(t, chunkenc.ValFloat, it.Next(), "sample %d", i)
+				wantT := int64(i) * stepMs
+				wantST := wantT - 60_000 // -1m offset in ms
+				gotT, _ := it.At()
+				gotST := it.AtST()
+				require.Equal(t, wantT, gotT, "sample %d timestamp", i)
+				require.Equal(t, wantST, gotST, "sample %d start timestamp", i)
+			}
+			require.Equal(t, chunkenc.ValNone, it.Next(), "expected no more samples")
+			require.NoError(t, it.Err())
+			require.False(t, ss.Next(), "expected only one series")
+		})
 	}
-	_, cmd, err := parseLoad(lines, 0, testStartTime)
-	require.NoError(t, err)
-
-	app := store.AppenderV2(context.Background())
-	require.NoError(t, cmd.append(app))
-	require.NoError(t, app.Commit())
-
-	q, err := store.Querier(math.MinInt64, math.MaxInt64)
-	require.NoError(t, err)
-	defer func() { require.NoError(t, q.Close()) }()
-
-	ss := q.Select(context.Background(), false, nil, labels.MustNewMatcher(labels.MatchEqual, "__name__", "my_counter"))
-	require.True(t, ss.Next(), "expected one series")
-
-	var it chunkenc.Iterator
-	it = ss.At().Iterator(it)
-
-	stepMs := step.Milliseconds()
-	for i := range 5 {
-		require.Equal(t, chunkenc.ValFloat, it.Next(), "sample %d", i)
-		wantT := int64(i) * stepMs
-		wantST := wantT - 60_000 // -1m offset in ms
-		gotT, _ := it.At()
-		gotST := it.AtST()
-		require.Equal(t, wantT, gotT, "sample %d timestamp", i)
-		require.Equal(t, wantST, gotST, "sample %d start timestamp", i)
-	}
-	require.Equal(t, chunkenc.ValNone, it.Next(), "expected no more samples")
-	require.NoError(t, it.Err())
-	require.False(t, ss.Next(), "expected only one series")
 }
 
 func TestAssertMatrixSorted(t *testing.T) {

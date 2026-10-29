@@ -110,7 +110,8 @@ func TestLabels_MatchLabels(t *testing.T) {
 		"alertstate", "pending",
 		"instance", "0",
 		"job", "app-server",
-		"severity", "critical")
+		"severity", "critical",
+	)
 
 	tests := []struct {
 		providedNames []string
@@ -130,7 +131,8 @@ func TestLabels_MatchLabels(t *testing.T) {
 				"__name__", "ALERTS",
 				"alertname", "HTTPRequestRateLow",
 				"alertstate", "pending",
-				"instance", "0"),
+				"instance", "0",
+			),
 		},
 		// on = false, explicitly excluding metric name from matching.
 		{
@@ -143,7 +145,8 @@ func TestLabels_MatchLabels(t *testing.T) {
 			on: false,
 			expected: FromStrings(
 				"job", "app-server",
-				"severity", "critical"),
+				"severity", "critical",
+			),
 		},
 		// on = true, explicitly excluding metric name from matching.
 		{
@@ -156,7 +159,8 @@ func TestLabels_MatchLabels(t *testing.T) {
 			expected: FromStrings(
 				"alertname", "HTTPRequestRateLow",
 				"alertstate", "pending",
-				"instance", "0"),
+				"instance", "0",
+			),
 		},
 		// on = false, implicitly excluding metric name from matching.
 		{
@@ -168,7 +172,8 @@ func TestLabels_MatchLabels(t *testing.T) {
 			on: false,
 			expected: FromStrings(
 				"job", "app-server",
-				"severity", "critical"),
+				"severity", "critical",
+			),
 		},
 	}
 
@@ -209,36 +214,42 @@ func TestLabels_WithoutEmpty(t *testing.T) {
 		{
 			input: FromStrings(
 				"foo", "",
-				"bar", ""),
+				"bar", "",
+			),
 			expected: EmptyLabels(),
 		},
 		{
 			input: FromStrings(
 				"foo", "",
 				"bar", "",
-				"baz", ""),
+				"baz", "",
+			),
 			expected: EmptyLabels(),
 		},
 		{
 			input: FromStrings(
 				"__name__", "test",
 				"hostname", "localhost",
-				"job", "check"),
+				"job", "check",
+			),
 			expected: FromStrings(
 				"__name__", "test",
 				"hostname", "localhost",
-				"job", "check"),
+				"job", "check",
+			),
 		},
 		{
 			input: FromStrings(
 				"__name__", "test",
 				"hostname", "localhost",
 				"bar", "",
-				"job", "check"),
+				"job", "check",
+			),
 			expected: FromStrings(
 				"__name__", "test",
 				"hostname", "localhost",
-				"job", "check"),
+				"job", "check",
+			),
 		},
 		{
 			input: FromStrings(
@@ -246,11 +257,13 @@ func TestLabels_WithoutEmpty(t *testing.T) {
 				"foo", "",
 				"hostname", "localhost",
 				"bar", "",
-				"job", "check"),
+				"job", "check",
+			),
 			expected: FromStrings(
 				"__name__", "test",
 				"hostname", "localhost",
-				"job", "check"),
+				"job", "check",
+			),
 		},
 		{
 			input: FromStrings(
@@ -259,11 +272,13 @@ func TestLabels_WithoutEmpty(t *testing.T) {
 				"baz", "",
 				"hostname", "localhost",
 				"bar", "",
-				"job", "check"),
+				"job", "check",
+			),
 			expected: FromStrings(
 				"__name__", "test",
 				"hostname", "localhost",
-				"job", "check"),
+				"job", "check",
+			),
 		},
 	} {
 		t.Run("", func(t *testing.T) {
@@ -346,6 +361,15 @@ func TestLabels_ValidationModes(t *testing.T) {
 		{
 			input: FromStrings(
 				"__name__", "test",
+				"host.name", "localhost",
+				"team/name", "platform",
+			),
+			callMode: model.UTF8Validation,
+			expected: true,
+		},
+		{
+			input: FromStrings(
+				"__name__", "test",
 				"\xc5 bad utf8", "localhost",
 				"job", "check",
 			),
@@ -378,7 +402,8 @@ func TestLabels_ValidationModes(t *testing.T) {
 func TestLabels_Equal(t *testing.T) {
 	labels := FromStrings(
 		"aaa", "111",
-		"bbb", "222")
+		"bbb", "222",
+	)
 
 	tests := []struct {
 		compared Labels
@@ -388,25 +413,29 @@ func TestLabels_Equal(t *testing.T) {
 			compared: FromStrings(
 				"aaa", "111",
 				"bbb", "222",
-				"ccc", "333"),
+				"ccc", "333",
+			),
 			expected: false,
 		},
 		{
 			compared: FromStrings(
 				"aaa", "111",
-				"bar", "222"),
+				"bar", "222",
+			),
 			expected: false,
 		},
 		{
 			compared: FromStrings(
 				"aaa", "111",
-				"bbb", "233"),
+				"bbb", "233",
+			),
 			expected: false,
 		},
 		{
 			compared: FromStrings(
 				"aaa", "111",
-				"bbb", "222"),
+				"bbb", "222",
+			),
 			expected: true,
 		},
 	}
@@ -438,7 +467,8 @@ func TestLabels_FromStrings(t *testing.T) {
 func TestLabels_Compare(t *testing.T) {
 	labels := FromStrings(
 		"aaa", "111",
-		"bbb", "222")
+		"bbb", "222",
+	)
 
 	tests := []struct {
 		compared Labels
@@ -447,42 +477,49 @@ func TestLabels_Compare(t *testing.T) {
 		{
 			compared: FromStrings(
 				"aaa", "110",
-				"bbb", "222"),
+				"bbb", "222",
+			),
 			expected: 1,
 		},
 		{
 			compared: FromStrings(
 				"aaa", "111",
-				"bbb", "233"),
+				"bbb", "233",
+			),
 			expected: -1,
 		},
 		{
 			compared: FromStrings(
 				"aaa", "111",
-				"bar", "222"),
+				"bar", "222",
+			),
 			expected: 1,
 		},
 		{
 			compared: FromStrings(
 				"aaa", "111",
-				"bbc", "222"),
+				"bbc", "222",
+			),
 			expected: -1,
 		},
 		{
 			compared: FromStrings(
 				"aaa", "111",
-				"bb", "222"),
+				"bb", "222",
+			),
 			expected: 1,
 		},
 		{
 			compared: FromStrings(
 				"aaa", "111",
-				"bbbb", "222"),
+				"bbbb", "222",
+			),
 			expected: -1,
 		},
 		{
 			compared: FromStrings(
-				"aaa", "111"),
+				"aaa", "111",
+			),
 			expected: 1,
 		},
 		{
@@ -490,13 +527,15 @@ func TestLabels_Compare(t *testing.T) {
 				"aaa", "111",
 				"bbb", "222",
 				"ccc", "333",
-				"ddd", "444"),
+				"ddd", "444",
+			),
 			expected: -2,
 		},
 		{
 			compared: FromStrings(
 				"aaa", "111",
-				"bbb", "222"),
+				"bbb", "222",
+			),
 			expected: 0,
 		},
 		{
@@ -540,7 +579,8 @@ func TestLabels_Has(t *testing.T) {
 
 	labelsSet := FromStrings(
 		"aaa", "111",
-		"bbb", "222")
+		"bbb", "222",
+	)
 
 	for i, test := range tests {
 		got := labelsSet.Has(test.input)

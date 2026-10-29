@@ -20,6 +20,7 @@ import (
 	"log/slog"
 	"net"
 	"strconv"
+	"strings"
 
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/common/model"
@@ -234,11 +235,27 @@ func (s *Service) buildService(svc *apiv1.Service) *targetgroup.Group {
 		}
 
 		if svc.Spec.Type == apiv1.ServiceTypeLoadBalancer {
-			labelSet[serviceLoadBalancerIP] = lv(svc.Spec.LoadBalancerIP)
+			labelSet[serviceLoadBalancerIP] = lv(loadBalancerIPs(svc))
 		}
 
 		tg.Targets = append(tg.Targets, labelSet)
 	}
 
 	return tg
+}
+
+// loadBalancerIPs returns the LoadBalancer addresses from status.ingress,
+// falling back to the deprecated spec.loadBalancerIP. Multiple ingress IPs
+// are joined with commas so relabeling can extract them.
+func loadBalancerIPs(svc *apiv1.Service) string {
+	var ips []string
+	for _, ing := range svc.Status.LoadBalancer.Ingress {
+		if ing.IP != "" {
+			ips = append(ips, ing.IP)
+		}
+	}
+	if len(ips) > 0 {
+		return strings.Join(ips, ",")
+	}
+	return svc.Spec.LoadBalancerIP
 }

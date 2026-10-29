@@ -16,6 +16,7 @@ package histogram
 import (
 	"math"
 	"math/rand"
+	"slices"
 	"strconv"
 	"testing"
 
@@ -1415,6 +1416,47 @@ func TestFloatHistogramDetectReset(t *testing.T) {
 			},
 			false, // No reset: all mapped buckets increase
 		},
+		{
+			// The previous histogram's first negative bucket is empty and a
+			// later one is populated. The current histogram has no negative
+			// buckets at all, so the populated previous bucket disappeared,
+			// which is a reset.
+			"reset when a populated bucket following an empty one disappears",
+			&FloatHistogram{
+				ZeroThreshold:   0.001,
+				Count:           10,
+				PositiveSpans:   []Span{{0, 1}},
+				PositiveBuckets: []float64{5},
+				NegativeSpans:   []Span{{1, 2}},
+				NegativeBuckets: []float64{0, 5},
+			},
+			&FloatHistogram{
+				ZeroThreshold:   0.001,
+				Count:           20,
+				PositiveSpans:   []Span{{0, 1}},
+				PositiveBuckets: []float64{20},
+			},
+			true,
+		},
+		{
+			// The current histogram runs out of buckets before a later
+			// populated bucket of the previous histogram, which sits behind an
+			// empty one. That populated bucket disappeared, so it is a reset.
+			"reset when current ends before a later populated previous bucket",
+			&FloatHistogram{
+				ZeroThreshold:   0.001,
+				Count:           7,
+				PositiveSpans:   []Span{{0, 3}},
+				PositiveBuckets: []float64{2, 0, 5},
+			},
+			&FloatHistogram{
+				ZeroThreshold:   0.001,
+				Count:           100,
+				PositiveSpans:   []Span{{0, 1}},
+				PositiveBuckets: []float64{100},
+			},
+			true,
+		},
 	}
 
 	for _, c := range cases {
@@ -1677,6 +1719,22 @@ func TestFloatHistogramCompact(t *testing.T) {
 			},
 		},
 		{
+			"more than one span merged in the same pass",
+			&FloatHistogram{
+				PositiveSpans:   []Span{{-2, 2}, {2, 2}, {2, 2}},
+				PositiveBuckets: []float64{1, 3.3, 4.2, 0.1, 3.3, 2},
+				NegativeSpans:   []Span{{0, 1}, {1, 1}, {1, 1}},
+				NegativeBuckets: []float64{3.1, 1000, 4},
+			},
+			3,
+			&FloatHistogram{
+				PositiveSpans:   []Span{{-2, 10}},
+				PositiveBuckets: []float64{1, 3.3, 0, 0, 4.2, 0.1, 0, 0, 3.3, 2},
+				NegativeSpans:   []Span{{0, 5}},
+				NegativeBuckets: []float64{3.1, 0, 1000, 0, 4},
+			},
+		},
+		{
 			"only empty buckets and maxEmptyBuckets greater zero",
 			&FloatHistogram{
 				PositiveSpans:   []Span{{-4, 6}, {3, 3}},
@@ -1776,11 +1834,35 @@ func TestFloatHistogramCompact(t *testing.T) {
 
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {
+			wasValid := c.in.Validate() == nil
 			require.Equal(t, c.expected, c.in.Compact(c.maxEmptyBuckets))
 			// Compact has happened in-place, too.
 			require.Equal(t, c.expected, c.in)
+			if wasValid {
+				require.NoError(t, c.in.Validate(), "Compact turned a valid histogram into an invalid one")
+			}
 		})
 	}
+}
+
+// TestFloatHistogramKahanCompactSpanMerge makes sure the Kahan compensation
+// terms stay aligned with the buckets they belong to when more than one span is
+// merged in the same pass.
+func TestFloatHistogramKahanCompactSpanMerge(t *testing.T) {
+	h := &FloatHistogram{
+		PositiveSpans:   []Span{{0, 1}, {1, 1}, {1, 1}},
+		PositiveBuckets: []float64{1, 2, 3},
+	}
+	c := &FloatHistogram{
+		PositiveSpans:   []Span{{0, 1}, {1, 1}, {1, 1}},
+		PositiveBuckets: []float64{0.1, 0.2, 0.3},
+	}
+
+	h, c = h.kahanCompact(3, c)
+
+	require.Equal(t, []Span{{0, 5}}, h.PositiveSpans)
+	require.Equal(t, []float64{1, 0, 2, 0, 3}, h.PositiveBuckets)
+	require.Equal(t, []float64{0.1, 0, 0.2, 0, 0.3}, c.PositiveBuckets)
 }
 
 func TestFloatHistogramAdd(t *testing.T) {
@@ -3168,12 +3250,154 @@ func TestFloatHistogramCopyToSchema(t *testing.T) {
 
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {
-			inCopy := c.in.Copy()
-			require.Equal(t, c.expected, c.in.CopyToSchema(c.targetSchema))
-			// Check that the receiver histogram was not mutated:
-			require.Equal(t, inCopy, c.in)
+			for _, hint := range []CounterResetHint{UnknownCounterReset, CounterReset, NotCounterReset, GaugeType} {
+				in := c.in.Copy()
+				in.CounterResetHint = hint
+				expected := c.expected.Copy()
+				expected.CounterResetHint = hint
+				inCopy := in.Copy()
+				res, err := in.CopyToSchema(c.targetSchema)
+				require.NoError(t, err)
+				require.Equal(t, expected, res)
+				// Check that the receiver histogram was not mutated:
+				require.Equal(t, inCopy, in)
+			}
 		})
 	}
+}
+
+// TestFloatHistogramInvalidBucketLayoutInResolutionReduction checks that Add, Sub,
+// and CopyToSchema return an error instead of panicking when the histogram whose
+// resolution they reduce has an invalid bucket layout, as can happen with
+// invalid stored data, and that they leave both histograms unmodified.
+func TestFloatHistogramInvalidBucketLayoutInResolutionReduction(t *testing.T) {
+	lowerSchema := &FloatHistogram{
+		Schema:          0,
+		Count:           5,
+		Sum:             10,
+		PositiveSpans:   []Span{{0, 2}},
+		PositiveBuckets: []float64{2, 3},
+	}
+
+	cases := []struct {
+		name string
+		// invalid has a higher schema than lowerSchema, so every operation below
+		// reduces its resolution.
+		invalid *FloatHistogram
+		expErr  error
+	}{
+		{
+			name: "positive span with a negative offset",
+			invalid: &FloatHistogram{
+				Schema:          1,
+				Count:           5,
+				Sum:             10,
+				PositiveSpans:   []Span{{0, 1}, {-2, 1}},
+				PositiveBuckets: []float64{2, 3},
+			},
+			expErr: ErrHistogramSpanNegativeOffset,
+		},
+		{
+			name: "negative span with a negative offset",
+			invalid: &FloatHistogram{
+				Schema:          1,
+				Count:           5,
+				Sum:             10,
+				NegativeSpans:   []Span{{0, 1}, {-2, 1}},
+				NegativeBuckets: []float64{2, 3},
+			},
+			expErr: ErrHistogramSpanNegativeOffset,
+		},
+		{
+			name: "fewer buckets than the spans need",
+			invalid: &FloatHistogram{
+				Schema:          1,
+				Count:           5,
+				Sum:             10,
+				PositiveSpans:   []Span{{0, 3}},
+				PositiveBuckets: []float64{2, 3},
+			},
+			expErr: ErrHistogramSpansBucketsMismatch,
+		},
+	}
+
+	operations := map[string]func(invalid, valid *FloatHistogram) error{
+		"invalid.Add(valid)": func(invalid, valid *FloatHistogram) error {
+			_, _, _, err := invalid.Add(valid)
+			return err
+		},
+		"valid.Add(invalid)": func(invalid, valid *FloatHistogram) error {
+			_, _, _, err := valid.Add(invalid)
+			return err
+		},
+		"invalid.Sub(valid)": func(invalid, valid *FloatHistogram) error {
+			_, _, _, err := invalid.Sub(valid)
+			return err
+		},
+		"valid.Sub(invalid)": func(invalid, valid *FloatHistogram) error {
+			_, _, _, err := valid.Sub(invalid)
+			return err
+		},
+		"invalid.CopyToSchema(valid.Schema)": func(invalid, valid *FloatHistogram) error {
+			_, err := invalid.CopyToSchema(valid.Schema)
+			return err
+		},
+	}
+
+	for _, c := range cases {
+		for opName, op := range operations {
+			t.Run(c.name+"/"+opName, func(t *testing.T) {
+				invalid := c.invalid.Copy()
+				valid := lowerSchema.Copy()
+
+				require.ErrorIs(t, op(invalid, valid), c.expErr)
+				require.Equal(t, c.invalid, invalid, "the invalid histogram must not be modified")
+				require.Equal(t, lowerSchema, valid, "the valid histogram must not be modified")
+			})
+		}
+	}
+
+	// Add and Sub check the bucket layout before they modify either histogram
+	// and then reduce it with mustReduceResolution, while CopyToSchema returns
+	// the error of reduceResolution directly. If the check and reduceResolution
+	// drift apart, Add and Sub either panic or reject a layout they could
+	// reduce. Try all small layouts, valid or not, to catch that.
+	t.Run("all operations agree on which bucket layouts are invalid", func(t *testing.T) {
+		layouts := [][]Span{nil}
+		for i := 0; i < len(layouts); i++ {
+			if len(layouts[i]) == 3 {
+				continue
+			}
+			for _, offset := range []int32{-2, -1, 0, 1} {
+				for _, length := range []uint32{0, 1, 2} {
+					layouts = append(layouts, append(slices.Clone(layouts[i]), Span{offset, length}))
+				}
+			}
+		}
+
+		for _, spans := range layouts {
+			for numBuckets := 0; numBuckets <= 4; numBuckets++ {
+				buckets := make([]float64, numBuckets)
+				for _, negative := range []bool{false, true} {
+					h := &FloatHistogram{Schema: 1, Count: float64(numBuckets), Sum: 10}
+					if negative {
+						h.NegativeSpans, h.NegativeBuckets = spans, buckets
+					} else {
+						h.PositiveSpans, h.PositiveBuckets = spans, buckets
+					}
+					_, expErr := h.Copy().CopyToSchema(lowerSchema.Schema)
+
+					for opName, op := range operations {
+						var err error
+						require.NotPanics(t, func() { err = op(h.Copy(), lowerSchema.Copy()) },
+							"%s with spans %v and %d buckets (negative: %t)", opName, spans, numBuckets, negative)
+						require.Equal(t, expErr != nil, err != nil,
+							"%s with spans %v and %d buckets (negative: %t): got error %v, CopyToSchema got %v", opName, spans, numBuckets, negative, err, expErr)
+					}
+				}
+			}
+		}
+	})
 }
 
 func TestReverseFloatBucketIterator(t *testing.T) {
@@ -4460,6 +4684,41 @@ func BenchmarkFloatHistogramAdd(b *testing.B) {
 	})
 }
 
+func BenchmarkFloatHistogramTrimBuckets(b *testing.B) {
+	var (
+		rng           = rand.New(rand.NewSource(0))
+		numHistograms = 120
+		fhs           = make([]*FloatHistogram, 0, numHistograms)
+	)
+
+	for range numHistograms {
+		fhs = append(fhs, createRandomFloatHistogram(rng, 5))
+	}
+
+	// In place: the caller owns the histogram and lets TrimBuckets mutate it.
+	b.Run("InPlace", func(b *testing.B) {
+		b.ReportAllocs()
+		b.ResetTimer()
+		for b.Loop() {
+			for _, hist := range fhs {
+				hist.TrimBuckets(3, true)
+			}
+		}
+	})
+
+	// Copy: the caller must preserve the input, so it copies first (the old
+	// behaviour, now expressed explicitly at the call site).
+	b.Run("Copy", func(b *testing.B) {
+		b.ReportAllocs()
+		b.ResetTimer()
+		for b.Loop() {
+			for _, hist := range fhs {
+				hist.Copy().TrimBuckets(3, true)
+			}
+		}
+	})
+}
+
 func createRandomFloatHistogram(rng *rand.Rand, spanNum int32) *FloatHistogram {
 	f := &FloatHistogram{}
 	f.PositiveSpans, f.PositiveBuckets = createRandomSpans(rng, spanNum)
@@ -4572,4 +4831,35 @@ func TestFloatHistogramReduceResolution(t *testing.T) {
 			require.Equal(t, tc.target, tc.origin)
 		})
 	}
+}
+
+func TestFloatHistogramTrimBucketsInPlace(t *testing.T) {
+	// Schema 0 native histogram with buckets straddling a trim point of 4.
+	newHist := func() *FloatHistogram {
+		return &FloatHistogram{
+			Schema:          0,
+			Count:           30,
+			Sum:             100,
+			PositiveSpans:   []Span{{Offset: 0, Length: 4}},
+			PositiveBuckets: []float64{5, 5, 10, 10}, // Bucket upper bounds: 1, 2, 4, 8.
+		}
+	}
+
+	t.Run("mutates the receiver and returns it", func(t *testing.T) {
+		h := newHist()
+		got := h.TrimBuckets(4, true)
+		// The returned histogram is the receiver, not a copy.
+		require.Same(t, h, got)
+		// The bucket entirely above the trim point (upper bound 8) is dropped.
+		require.NotEqual(t, newHist(), h)
+	})
+
+	t.Run("Copy preserves the original", func(t *testing.T) {
+		h := newHist()
+		trimmed := h.Copy().TrimBuckets(4, true)
+		// The original is untouched.
+		require.Equal(t, newHist(), h)
+		// The copy was actually trimmed.
+		require.NotEqual(t, h, trimmed)
+	})
 }

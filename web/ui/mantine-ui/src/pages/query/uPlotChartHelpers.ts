@@ -5,52 +5,79 @@ import { getSeriesColor } from "./colorPool";
 import { computePosition, shift, flip, offset } from "@floating-ui/dom";
 import uPlot, { AlignedData, Series } from "uplot";
 
-const formatYAxisTickValue = (y: number | null): string => {
+const formatYAxisTickValue = (y: number | null, precision = 2): string => {
   if (y === null) {
     return "null";
   }
   const absY = Math.abs(y);
 
   if (absY >= 1e24) {
-    return (y / 1e24).toFixed(2) + "Y";
+    return (y / 1e24).toFixed(precision) + "Y";
   } else if (absY >= 1e21) {
-    return (y / 1e21).toFixed(2) + "Z";
+    return (y / 1e21).toFixed(precision) + "Z";
   } else if (absY >= 1e18) {
-    return (y / 1e18).toFixed(2) + "E";
+    return (y / 1e18).toFixed(precision) + "E";
   } else if (absY >= 1e15) {
-    return (y / 1e15).toFixed(2) + "P";
+    return (y / 1e15).toFixed(precision) + "P";
   } else if (absY >= 1e12) {
-    return (y / 1e12).toFixed(2) + "T";
+    return (y / 1e12).toFixed(precision) + "T";
   } else if (absY >= 1e9) {
-    return (y / 1e9).toFixed(2) + "G";
+    return (y / 1e9).toFixed(precision) + "G";
   } else if (absY >= 1e6) {
-    return (y / 1e6).toFixed(2) + "M";
+    return (y / 1e6).toFixed(precision) + "M";
   } else if (absY >= 1e3) {
-    return (y / 1e3).toFixed(2) + "k";
+    return (y / 1e3).toFixed(precision) + "k";
   } else if (absY >= 1) {
-    return y.toFixed(2);
+    return y.toFixed(precision);
   } else if (absY === 0) {
-    return y.toFixed(2);
+    return y.toFixed(precision);
   } else if (absY < 1e-23) {
-    return (y / 1e-24).toFixed(2) + "y";
+    return (y / 1e-24).toFixed(precision) + "y";
   } else if (absY < 1e-20) {
-    return (y / 1e-21).toFixed(2) + "z";
+    return (y / 1e-21).toFixed(precision) + "z";
   } else if (absY < 1e-17) {
-    return (y / 1e-18).toFixed(2) + "a";
+    return (y / 1e-18).toFixed(precision) + "a";
   } else if (absY < 1e-14) {
-    return (y / 1e-15).toFixed(2) + "f";
+    return (y / 1e-15).toFixed(precision) + "f";
   } else if (absY < 1e-11) {
-    return (y / 1e-12).toFixed(2) + "p";
+    return (y / 1e-12).toFixed(precision) + "p";
   } else if (absY < 1e-8) {
-    return (y / 1e-9).toFixed(2) + "n";
+    return (y / 1e-9).toFixed(precision) + "n";
   } else if (absY < 1e-5) {
-    return (y / 1e-6).toFixed(2) + "µ";
+    return (y / 1e-6).toFixed(precision) + "µ";
   } else if (absY < 1e-2) {
-    return (y / 1e-3).toFixed(2) + "m";
+    return (y / 1e-3).toFixed(precision) + "m";
   } else if (absY <= 1) {
-    return y.toFixed(2);
+    return y.toFixed(precision);
   }
   throw Error("couldn't format a value, this is a bug");
+};
+
+const maxYAxisTickPrecision = 8;
+
+const hasDuplicateLabels = (labels: string[]): boolean =>
+  new Set(labels).size !== labels.length;
+
+const formatYAxisTickValues = (splits: number[]): string[] => {
+  const labels = splits.map((split) => formatYAxisTickValue(split));
+
+  if (!hasDuplicateLabels(labels)) {
+    return labels;
+  }
+
+  for (let precision = 3; precision <= maxYAxisTickPrecision; precision++) {
+    const preciseLabels = splits.map((split) =>
+      formatYAxisTickValue(split, precision),
+    );
+
+    if (!hasDuplicateLabels(preciseLabels)) {
+      return preciseLabels;
+    }
+  }
+
+  return splits.map((split) =>
+    formatYAxisTickValue(split, maxYAxisTickPrecision),
+  );
 };
 
 const escapeHTML = (str: string): string => {
@@ -82,42 +109,56 @@ const formatLabels = (labels: { [key: string]: string }): string => `
             </div>`;
 
 const tooltipPlugin = (useLocalTime: boolean, data: AlignedData) => {
-  let over: HTMLDivElement;
-  let selectedSeriesIdx: number | null = null;
-
-  const overlay = document.createElement("div");
-  overlay.className = "u-tooltip";
-  overlay.style.display = "none";
+  const instances = new WeakMap<
+    uPlot,
+    {
+      overlay: HTMLDivElement;
+      selectedSeriesIdx: number | null;
+      enter: () => void;
+      leave: () => void;
+    }
+  >();
 
   return {
     hooks: {
       // Set up event handlers and append overlay.
       init: (u: uPlot) => {
-        over = u.over;
-
-        over.addEventListener("mouseenter", () => {
+        const overlay = document.createElement("div");
+        overlay.className = "u-tooltip";
+        overlay.style.display = "none";
+        const enter = () => {
           overlay.style.display = "block";
-        });
-
-        over.addEventListener("mouseleave", () => {
+        };
+        const leave = () => {
           overlay.style.display = "none";
-        });
-
+        };
+        instances.set(u, { overlay, selectedSeriesIdx: null, enter, leave });
+        u.over.addEventListener("mouseenter", enter);
+        u.over.addEventListener("mouseleave", leave);
         document.body.appendChild(overlay);
       },
-      // When the chart is destroyed, remove the overlay from the DOM.
-      destroy: () => {
-        overlay.remove();
+      // Remove this chart's tooltip and event handlers on destruction.
+      destroy: (u: uPlot) => {
+        const state = instances.get(u);
+        if (state === undefined) return;
+        u.over.removeEventListener("mouseenter", state.enter);
+        u.over.removeEventListener("mouseleave", state.leave);
+        state.overlay.remove();
+        instances.delete(u);
       },
       // When a series is selected by hovering close to it, store the
       // index of the selected series, so we can update the hover tooltip
       // in setCursor.
-      setSeries: (_u: uPlot, seriesIdx: number | null, _opts: Series) => {
-        selectedSeriesIdx = seriesIdx;
+      setSeries: (u: uPlot, seriesIdx: number | null, _opts: Series) => {
+        const state = instances.get(u);
+        if (state !== undefined) state.selectedSeriesIdx = seriesIdx;
       },
       // When the cursor is moved, update the tooltip with the current
       // series value and position it near the cursor.
       setCursor: (u: uPlot) => {
+        const state = instances.get(u);
+        if (state === undefined) return;
+        const { overlay, selectedSeriesIdx } = state;
         const { left, top, idx } = u.cursor;
 
         if (
@@ -145,7 +186,7 @@ const tooltipPlugin = (useLocalTime: boolean, data: AlignedData) => {
         // Get the bounding rect fresh on every cursor move to account for
         // page scrolling, which would otherwise cause a growing Y offset
         // for charts further down the page.
-        const bbox = over.getBoundingClientRect();
+        const bbox = u.over.getBoundingClientRect();
         const x = left + bbox.left;
         const y = top + bbox.top;
 
@@ -177,6 +218,7 @@ const tooltipPlugin = (useLocalTime: boolean, data: AlignedData) => {
           placement: "right-start",
           middleware: [offset(5), flip(), shift()],
         }).then(({ x, y }) => {
+          if (instances.get(u) !== state) return;
           Object.assign(overlay.style, {
             top: `${y}px`,
             left: `${x}px`,
@@ -383,7 +425,7 @@ export const getUPlotOptions = (
     },
     // Y axis (sample value).
     {
-      values: (_u: uPlot, splits: number[]) => splits.map(formatYAxisTickValue),
+      values: (_u: uPlot, splits: number[]) => formatYAxisTickValues(splits),
       ticks: {
         stroke: light ? "#00000010" : "#ffffff20",
       },
@@ -401,18 +443,16 @@ export const getUPlotOptions = (
   ],
   series: [
     {},
-    ...result.map(
-      (r, idx): uPlot.Series => ({
-        points: {
-          filter: onlyDrawPointsForDisconnectedSamplesFilter,
-        },
-        label: formatSeries(r.metric),
-        width: 1.5,
-        // @ts-expect-error - uPlot doesn't have a field for labels, but we just attach some anyway.
-        labels: r.metric,
-        stroke: getSeriesColor(idx, light),
-      }),
-    ),
+    ...result.map((r, idx): uPlot.Series => ({
+      points: {
+        filter: onlyDrawPointsForDisconnectedSamplesFilter,
+      },
+      label: formatSeries(r.metric),
+      width: 1.5,
+      // @ts-expect-error - uPlot doesn't have a field for labels, but we just attach some anyway.
+      labels: r.metric,
+      stroke: getSeriesColor(idx, light),
+    })),
   ],
   hooks: {
     setSelect: [

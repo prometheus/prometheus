@@ -254,7 +254,7 @@ func (c *NamespaceDiscovery) UnmarshalYAML(unmarshal func(any) error) error {
 // targets from Kubernetes.
 type Discovery struct {
 	sync.RWMutex
-	client             kubernetes.Interface
+	client             k8sClient
 	role               Role
 	logger             *slog.Logger
 	namespaceDiscovery *NamespaceDiscovery
@@ -341,7 +341,7 @@ func New(l *slog.Logger, metrics discovery.DiscovererMetrics, conf *SDConfig) (*
 	}
 
 	d := &Discovery{
-		client:             c,
+		client:             newClientAdapter(c),
 		logger:             l,
 		role:               conf.Role,
 		namespaceDiscovery: &conf.NamespaceDiscovery,

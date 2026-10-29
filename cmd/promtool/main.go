@@ -64,7 +64,7 @@ import (
 
 var (
 	promqlEnableDelayedNameRemoval = false
-	promtoolParserOpts             parser.Options
+	promtoolParserOpts             = parser.Options{}
 	logger                         = promslog.New(&promslog.Config{})
 )
 
@@ -135,7 +135,8 @@ func main() {
 	).Default(lintOptionDuplicateRules).String()
 	checkConfigLintFatal := checkConfigCmd.Flag(
 		"lint-fatal",
-		"Make lint errors exit with exit code 3.").Default("false").Bool()
+		"Make lint errors exit with exit code 3.",
+	).Default("false").Bool()
 	checkConfigIgnoreUnknownFields := checkConfigCmd.Flag("ignore-unknown-fields", "Ignore unknown fields in the rule groups read by the config files. This is useful when you want to extend rule files with custom metadata. Ensure that those fields are removed before loading them into the Prometheus server as it performs strict checks by default.").Default("false").Bool()
 
 	checkWebConfigCmd := checkCmd.Command("web-config", "Check if the web config files are valid or not.")
@@ -163,7 +164,8 @@ func main() {
 	).Default(lintOptionDuplicateRules).String()
 	checkRulesLintFatal := checkRulesCmd.Flag(
 		"lint-fatal",
-		"Make lint errors exit with exit code 3.").Default("false").Bool()
+		"Make lint errors exit with exit code 3.",
+	).Default("false").Bool()
 	checkRulesIgnoreUnknownFields := checkRulesCmd.Flag("ignore-unknown-fields", "Ignore unknown fields in the rule files. This is useful when you want to extend rule files with custom metadata. Ensure that those fields are removed before loading them into the Prometheus server as it performs strict checks by default.").Default("false").Bool()
 
 	checkMetricsCmd := checkCmd.Command("metrics", checkMetricsUsage)
@@ -233,6 +235,7 @@ func main() {
 	pushMetricsTimeout := pushMetricsCmd.Flag("timeout", "The time to wait for pushing metrics.").Default("30s").Duration()
 	pushMetricsHeaders := pushMetricsCmd.Flag("header", "Prometheus remote write header.").StringMap()
 	pushMetricsProtoMsg := pushMetricsCmd.Flag("protobuf_message", "Protobuf message to use when writing (prometheus.WriteRequest or io.prometheus.write.v2.Request).").Default("prometheus.WriteRequest").String()
+	pushMetricsAPIPath := pushMetricsCmd.Flag("remote-write.path", "Override the default remote write API path.").Default("/api/v1/write").String()
 
 	testCmd := app.Command("test", "Unit testing.")
 	junitOutFile := testCmd.Flag("junit", "File path to store JUnit XML test results.").OpenFile(os.O_CREATE|os.O_WRONLY|os.O_TRUNC, 0o644)
@@ -286,6 +289,7 @@ func main() {
 	importHumanReadable := importCmd.Flag("human-readable", "Print human readable values.").Short('r').Bool()
 	importQuiet := importCmd.Flag("quiet", "Do not print created blocks.").Short('q').Bool()
 	maxBlockDuration := importCmd.Flag("max-block-duration", "Maximum duration created blocks may span. Anything less than 2h is ignored.").Hidden().PlaceHolder("<duration>").Duration()
+	allowIncompatibleBlockDuration := importCmd.Flag("allow-incompatible-block-duration", "Use --max-block-duration as is, instead of rounding it down to a Prometheus compaction range.").Hidden().Bool()
 	openMetricsImportCmd := importCmd.Command("openmetrics", "Import samples from OpenMetrics input and produce TSDB blocks. Please refer to the storage docs for more details.")
 	openMetricsLabels := openMetricsImportCmd.Flag("label", "Label to attach to metrics. Can be specified multiple times. Example --label=label_name=label_value").StringMap()
 	importFilePath := openMetricsImportCmd.Arg("input file", "OpenMetrics file to read samples from.").Required().String()
@@ -320,7 +324,7 @@ func main() {
 	promQLLabelsDeleteQuery := promQLLabelsDeleteCmd.Arg("query", "PromQL query.").Required().String()
 	promQLLabelsDeleteName := promQLLabelsDeleteCmd.Arg("name", "Name of the label to delete.").Required().String()
 
-	featureList := app.Flag("enable-feature", "Comma separated feature names to enable. Valid options: promql-experimental-functions, promql-delayed-name-removal, promql-extended-range-selectors. See https://prometheus.io/docs/prometheus/latest/feature_flags/ for more details").Default("").Strings()
+	featureList := app.Flag("enable-feature", "Comma separated feature names to enable. Valid options: promql-experimental-functions, promql-delayed-name-removal. See https://prometheus.io/docs/prometheus/latest/feature_flags/ for more details").Default("").Strings()
 
 	documentationCmd := app.Command("write-documentation", "Generate command line documentation. Internal use.").Hidden()
 
@@ -350,17 +354,30 @@ func main() {
 		}
 	}
 
+	blockDuration := *maxBlockDuration
+	if compatible := time.Duration(getCompatibleBlockDuration(blockDuration.Milliseconds())) * time.Millisecond; compatible != blockDuration {
+		if *allowIncompatibleBlockDuration && blockDuration.Milliseconds() > 0 {
+			logger.Info("Block duration does not match a default Prometheus compaction range.", "block_duration", blockDuration)
+		} else {
+			blockDuration = compatible
+		}
+	}
+
 	for _, f := range *featureList {
 		for o := range strings.SplitSeq(f, ",") {
 			switch o {
+			case "promql-unquoted-utf8-names":
+				// This feature is now permanently enabled and therefore a no-op.
 			case "promql-experimental-functions":
 				promtoolParserOpts.EnableExperimentalFunctions = true
 			case "promql-delayed-name-removal":
 				promqlEnableDelayedNameRemoval = true
 			case "promql-duration-expr":
-				fmt.Printf("  WARNING: promql-duration-expr is now permanently enabled and therefore a no-op")
+				// This feature is now permanently enabled and therefore a no-op.
 			case "promql-extended-range-selectors":
-				promtoolParserOpts.EnableExtendedRangeSelectors = true
+				// This feature is now permanently enabled and therefore a no-op.
+			case "promql-binop-fill-modifiers":
+				promtoolParserOpts.EnableBinopFillModifiers = true
 			case "":
 				continue
 			default:
@@ -393,7 +410,7 @@ func main() {
 		os.Exit(CheckMetrics(*checkMetricsExtended, *checkMetricsLint))
 
 	case pushMetricsCmd.FullCommand():
-		os.Exit(PushMetrics(remoteWriteURL, httpRoundTripper, *pushMetricsHeaders, *pushMetricsTimeout, *pushMetricsProtoMsg, *pushMetricsLabels, *metricFiles...))
+		os.Exit(PushMetrics(remoteWriteURL, httpRoundTripper, *pushMetricsHeaders, *pushMetricsTimeout, *pushMetricsProtoMsg, *pushMetricsAPIPath, *pushMetricsLabels, *metricFiles...))
 
 	case queryInstantCmd.FullCommand():
 		os.Exit(QueryInstant(serverURL, httpRoundTripper, *queryInstantHeaders, *queryInstantExpr, *queryInstantTime, p))
@@ -455,10 +472,10 @@ func main() {
 		os.Exit(checkErr(dumpTSDBData(ctx, *dumpOpenMetricsPath, *dumpOpenMetricsSandboxDirRoot, *dumpOpenMetricsMinTime, *dumpOpenMetricsMaxTime, *dumpOpenMetricsMatch, formatSeriesSetOpenMetrics, promtoolParser)))
 	// TODO(aSquare14): Work on adding support for custom block size.
 	case openMetricsImportCmd.FullCommand():
-		os.Exit(backfillOpenMetrics(*importFilePath, *importDBPath, *importHumanReadable, *importQuiet, *maxBlockDuration, *openMetricsLabels))
+		os.Exit(backfillOpenMetrics(*importFilePath, *importDBPath, *importHumanReadable, *importQuiet, blockDuration, *openMetricsLabels))
 
 	case importRulesCmd.FullCommand():
-		os.Exit(checkErr(importRules(serverURL, httpRoundTripper, *importRulesStart, *importRulesEnd, *importRulesOutputDir, *importRulesEvalInterval, *maxBlockDuration, model.UTF8Validation, *importRulesFiles...)))
+		os.Exit(checkErr(importRules(serverURL, httpRoundTripper, *importRulesStart, *importRulesEnd, *importRulesOutputDir, *importRulesEvalInterval, blockDuration, model.UTF8Validation, *importRulesFiles...)))
 
 	case queryAnalyzeCmd.FullCommand():
 		os.Exit(checkErr(queryAnalyzeCfg.run(serverURL, httpRoundTripper)))
@@ -569,8 +586,11 @@ func CheckServerStatus(serverURL *url.URL, checkEndpoint string, roundTripper ht
 		serverURL.Scheme = "http"
 	}
 
+	// Join the endpoint onto the server URL path so that a trailing slash in
+	// the user-provided URL does not result in a doubled slash (e.g.
+	// "//-/healthy"), which the Prometheus router does not match.
 	config := api.Config{
-		Address:      serverURL.String() + checkEndpoint,
+		Address:      serverURL.JoinPath(checkEndpoint).String(),
 		RoundTripper: roundTripper,
 	}
 
@@ -1086,7 +1106,7 @@ func CheckMetrics(extended bool, lint string) int {
 			return failureExitCode
 		}
 		w := tabwriter.NewWriter(os.Stdout, 4, 4, 4, ' ', tabwriter.TabIndent)
-		fmt.Fprintf(w, "Metric\tCardinality\tPercentage\t\n")
+		fmt.Fprint(w, "Metric\tCardinality\tPercentage\t\n")
 		for _, stat := range stats {
 			fmt.Fprintf(w, "%s\t%d\t%.2f%%\t\n", stat.name, stat.cardinality, stat.percentage*100)
 		}
@@ -1274,7 +1294,7 @@ func (*jsonPrinter) printLabelValues(v model.LabelValues) {
 
 // importRules backfills recording rules from the files provided. The output are blocks of data
 // at the outputDir location.
-func importRules(url *url.URL, roundTripper http.RoundTripper, start, end, outputDir string, evalInterval, maxBlockDuration time.Duration, nameValidationScheme model.ValidationScheme, files ...string) error {
+func importRules(url *url.URL, roundTripper http.RoundTripper, start, end, outputDir string, evalInterval, blockDuration time.Duration, nameValidationScheme model.ValidationScheme, files ...string) error {
 	ctx := context.Background()
 	var stime, etime time.Time
 	var err error
@@ -1301,7 +1321,7 @@ func importRules(url *url.URL, roundTripper http.RoundTripper, start, end, outpu
 		start:                stime,
 		end:                  etime,
 		evalInterval:         evalInterval,
-		maxBlockDuration:     maxBlockDuration,
+		blockDuration:        blockDuration,
 		nameValidationScheme: nameValidationScheme,
 	}
 	api, err := newAPI(url, roundTripper, nil)

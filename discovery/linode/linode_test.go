@@ -29,6 +29,7 @@ import (
 )
 
 func TestLinodeSDRefresh(t *testing.T) {
+	t.Parallel()
 	sdmock := NewSDMock(t)
 	sdmock.Setup()
 
@@ -60,7 +61,7 @@ func TestLinodeSDRefresh(t *testing.T) {
 				"__meta_linode_specs_disk_bytes":     model.LabelValue("85899345920"),
 				"__meta_linode_specs_memory_bytes":   model.LabelValue("4294967296"),
 				"__meta_linode_specs_vcpus":          model.LabelValue("2"),
-				"__meta_linode_specs_transfer_bytes": model.LabelValue("4194304000"),
+				"__meta_linode_specs_transfer_bytes": model.LabelValue("4294967296000"),
 				"__meta_linode_extra_ips":            model.LabelValue(",96.126.108.16,192.168.201.25,"),
 			},
 			{
@@ -85,7 +86,7 @@ func TestLinodeSDRefresh(t *testing.T) {
 				"__meta_linode_specs_disk_bytes":     model.LabelValue("85899345920"),
 				"__meta_linode_specs_memory_bytes":   model.LabelValue("4294967296"),
 				"__meta_linode_specs_vcpus":          model.LabelValue("2"),
-				"__meta_linode_specs_transfer_bytes": model.LabelValue("4194304000"),
+				"__meta_linode_specs_transfer_bytes": model.LabelValue("4294967296000"),
 			},
 			{
 				"__address__":                        model.LabelValue("192.53.120.25:80"),
@@ -109,7 +110,7 @@ func TestLinodeSDRefresh(t *testing.T) {
 				"__meta_linode_specs_disk_bytes":     model.LabelValue("53687091200"),
 				"__meta_linode_specs_memory_bytes":   model.LabelValue("2147483648"),
 				"__meta_linode_specs_vcpus":          model.LabelValue("1"),
-				"__meta_linode_specs_transfer_bytes": model.LabelValue("2097152000"),
+				"__meta_linode_specs_transfer_bytes": model.LabelValue("2147483648000"),
 				"__meta_linode_ipv6_ranges":          model.LabelValue(",2600:3c04:e001:456::/64,"),
 			},
 			{
@@ -134,7 +135,7 @@ func TestLinodeSDRefresh(t *testing.T) {
 				"__meta_linode_specs_disk_bytes":     model.LabelValue("26843545600"),
 				"__meta_linode_specs_memory_bytes":   model.LabelValue("1073741824"),
 				"__meta_linode_specs_vcpus":          model.LabelValue("1"),
-				"__meta_linode_specs_transfer_bytes": model.LabelValue("1048576000"),
+				"__meta_linode_specs_transfer_bytes": model.LabelValue("1073741824000"),
 				"__meta_linode_extra_ips":            model.LabelValue(",172.104.18.104,"),
 				"__meta_linode_ipv6_ranges":          model.LabelValue(",2600:3c03:e000:123::/64,"),
 			},
@@ -162,7 +163,7 @@ func TestLinodeSDRefresh(t *testing.T) {
 				"__meta_linode_specs_disk_bytes":     model.LabelValue("85899345920"),
 				"__meta_linode_specs_memory_bytes":   model.LabelValue("4294967296"),
 				"__meta_linode_specs_vcpus":          model.LabelValue("2"),
-				"__meta_linode_specs_transfer_bytes": model.LabelValue("4194304000"),
+				"__meta_linode_specs_transfer_bytes": model.LabelValue("4294967296000"),
 				"__meta_linode_extra_ips":            model.LabelValue(",96.126.108.16,192.168.201.25,"),
 			},
 			{
@@ -187,7 +188,7 @@ func TestLinodeSDRefresh(t *testing.T) {
 				"__meta_linode_specs_disk_bytes":     model.LabelValue("26843545600"),
 				"__meta_linode_specs_memory_bytes":   model.LabelValue("1073741824"),
 				"__meta_linode_specs_vcpus":          model.LabelValue("1"),
-				"__meta_linode_specs_transfer_bytes": model.LabelValue("1048576000"),
+				"__meta_linode_specs_transfer_bytes": model.LabelValue("1073741824000"),
 				"__meta_linode_extra_ips":            model.LabelValue(",172.104.18.104,"),
 				"__meta_linode_ipv6_ranges":          model.LabelValue(",2600:3c03:e000:123::/64,"),
 			},
@@ -215,7 +216,7 @@ func TestLinodeSDRefresh(t *testing.T) {
 				"__meta_linode_specs_disk_bytes":     model.LabelValue("53687091200"),
 				"__meta_linode_specs_memory_bytes":   model.LabelValue("2147483648"),
 				"__meta_linode_specs_vcpus":          model.LabelValue("1"),
-				"__meta_linode_specs_transfer_bytes": model.LabelValue("2097152000"),
+				"__meta_linode_specs_transfer_bytes": model.LabelValue("2147483648000"),
 				"__meta_linode_ipv6_ranges":          model.LabelValue(",2600:3c04:e001:456::/64,"),
 			},
 		}},

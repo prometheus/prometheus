@@ -56,7 +56,7 @@ func retry(t *testing.T, interval time.Duration, n int, f func() bool) {
 		<-ticker.C
 	}
 	ticker.Stop()
-	t.Logf("function returned false")
+	t.Log("function returned false")
 }
 
 // Overwrite readTimeout defined in watcher.go.
@@ -717,6 +717,14 @@ func TestCheckpointSeriesReset(t *testing.T) {
 				return wt.checkNumSeries() == seriesCount
 			}, 10*time.Second, 1*time.Second)
 
+			// Simulate a second watcher lagging at segment 1 before checkpoint and truncate.
+			restartWt := newWriteToMock(0)
+			restartWatcher := NewWatcher(wMetrics, nil, nil, "", restartWt, subdir, false, false, false, nil)
+			restartWatcher.SetMetrics()
+			restartWatcher.MaxSegment = 1
+			require.NoError(t, restartWatcher.Run())
+			require.Equal(t, seriesCount-tc.segments, restartWt.checkNumSeries())
+
 			_, err = Checkpoint(promslog.NewNopLogger(), w, 2, 4, func(chunks.HeadSeriesRef) bool { return true }, 0, true)
 			require.NoError(t, err)
 
@@ -725,6 +733,9 @@ func TestCheckpointSeriesReset(t *testing.T) {
 
 			_, cpi, err := LastCheckpoint(wdir)
 			require.NoError(t, err)
+			// When current segment is at or behind the checkpoint, garbageCollectSeries
+			// must skip the checkpoint without marking it as already processed.
+			require.NoError(t, watcher.garbageCollectSeries(cpi))
 			err = watcher.garbageCollectSeries(cpi + 1)
 			require.NoError(t, err)
 
@@ -735,6 +746,14 @@ func TestCheckpointSeriesReset(t *testing.T) {
 			require.Eventually(t, func() bool {
 				return wt.checkNumSeries() == tc.segments
 			}, 20*time.Second, 1*time.Second)
+
+			// When Run restarts on a checkpoint that garbageCollectSeries never processed,
+			// it must call SeriesReset to drop series from segments older than the checkpoint.
+			restartWatcher.MaxSegment = cpi + 1
+			require.NoError(t, restartWatcher.Run())
+			for ref, seg := range restartWt.seriesSegmentIndexes {
+				require.GreaterOrEqual(t, seg, cpi, "series %d from segment %d was not garbage collected on Run restart", ref, seg)
+			}
 		})
 	}
 }

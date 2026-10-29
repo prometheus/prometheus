@@ -29,10 +29,12 @@ func TestMain(m *testing.M) {
 // TestNewDiscoveryError can fail if the DNS resolver mistakenly resolves the domain below.
 // See https://github.com/prometheus/prometheus/issues/16191 for a precedent.
 func TestNewDiscoveryError(t *testing.T) {
+	t.Parallel()
 	_, err := NewDiscovery(
 		[]string{"unreachable.invalid"},
 		time.Second, []string{"/"},
 		nil,
-		func([]byte, string) (model.LabelSet, error) { return nil, nil })
+		func([]byte, string) (model.LabelSet, error) { return nil, nil },
+	)
 	require.Error(t, err)
 }

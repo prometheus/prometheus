@@ -55,15 +55,6 @@ import (
 	"github.com/prometheus/prometheus/util/testutil"
 )
 
-// TODO(bwplotka): Ensure non-ported tests are not deleted from head_test.go when removing AppenderV1 flow (#17632),
-// for example:
-// * TestChunkNotFoundHeadGCRace
-// * TestHeadSeriesChunkRace
-// * TestHeadLabelValuesWithMatchers
-// * TestHeadLabelNamesWithMatchers
-// * TestHeadShardedPostings
-// * TestHead_HighConcurrencyReadAndWrite
-
 func TestHeadAppenderV2_WALMultiRef(t *testing.T) {
 	head, w := newTestHead(t, 1000, compression.None, false)
 
@@ -124,7 +115,7 @@ func TestHeadAppenderV2_WALMultiRef(t *testing.T) {
 	}}, series)
 }
 
-func TestHeadAppenderV2_ActiveAppenders(t *testing.T) {
+func TestHeadAppenderV2_AppendersMetrics(t *testing.T) {
 	head, _ := newTestHead(t, 1000, compression.None, false)
 	defer head.Close()
 
@@ -133,21 +124,26 @@ func TestHeadAppenderV2_ActiveAppenders(t *testing.T) {
 	// First rollback with no samples.
 	app := head.AppenderV2(context.Background())
 	require.Equal(t, 1.0, prom_testutil.ToFloat64(head.metrics.activeAppenders))
+	require.Equal(t, 1.0, prom_testutil.ToFloat64(head.metrics.appendersCreated))
 	require.NoError(t, app.Rollback())
 	require.Equal(t, 0.0, prom_testutil.ToFloat64(head.metrics.activeAppenders))
+	require.Equal(t, 1.0, prom_testutil.ToFloat64(head.metrics.appendersCreated))
 
 	// Then commit with no samples.
 	app = head.AppenderV2(context.Background())
 	require.NoError(t, app.Commit())
 	require.Equal(t, 0.0, prom_testutil.ToFloat64(head.metrics.activeAppenders))
+	require.Equal(t, 2.0, prom_testutil.ToFloat64(head.metrics.appendersCreated))
 
 	// Now rollback with one sample.
 	app = head.AppenderV2(context.Background())
 	_, err := app.Append(0, labels.FromStrings("foo", "bar"), 0, 100, 1, nil, nil, storage.AOptions{})
 	require.NoError(t, err)
 	require.Equal(t, 1.0, prom_testutil.ToFloat64(head.metrics.activeAppenders))
+	require.Equal(t, 3.0, prom_testutil.ToFloat64(head.metrics.appendersCreated))
 	require.NoError(t, app.Rollback())
 	require.Equal(t, 0.0, prom_testutil.ToFloat64(head.metrics.activeAppenders))
+	require.Equal(t, 3.0, prom_testutil.ToFloat64(head.metrics.appendersCreated))
 
 	// Now commit with one sample.
 	app = head.AppenderV2(context.Background())
@@ -155,9 +151,11 @@ func TestHeadAppenderV2_ActiveAppenders(t *testing.T) {
 	require.NoError(t, err)
 	require.NoError(t, app.Commit())
 	require.Equal(t, 0.0, prom_testutil.ToFloat64(head.metrics.activeAppenders))
+	require.Equal(t, 4.0, prom_testutil.ToFloat64(head.metrics.appendersCreated))
 }
 
 func TestHeadAppenderV2_RaceBetweenSeriesCreationAndGC(t *testing.T) {
+	t.Parallel()
 	head, _ := newTestHead(t, 1000, compression.None, false)
 	require.NoError(t, head.Init(0))
 
@@ -185,8 +183,7 @@ func TestHeadAppenderV2_RaceBetweenSeriesCreationAndGC(t *testing.T) {
 		}
 	}()
 
-	// Don't check the atomic.Bool on all iterations in order to perform more gc iterations and make the race condition more likely.
-	for i := 1; i%128 != 0 || !done.Load(); i++ {
+	for !done.Load() {
 		head.gc()
 	}
 
@@ -236,6 +233,7 @@ func TestHeadAppenderV2_CanGCSeriesCreatedWithoutSamples(t *testing.T) {
 }
 
 func TestHeadAppenderV2_DeleteSimple(t *testing.T) {
+	t.Parallel()
 	buildSmpls := func(s []int64) []sample {
 		ss := make([]sample, 0, len(s))
 		for _, t := range s {
@@ -462,8 +460,8 @@ func TestHeadAppenderV2_DeleteSamplesAndSeriesStillInWALAfterCheckpoint(t *testi
 }
 
 func TestHeadAppenderV2_Delete_e2e(t *testing.T) {
+	t.Parallel()
 	numDatapoints := 1000
-	numRanges := 1000
 	timeInterval := int64(2)
 	// Create 8 series with 1000 data-points of different ranges, delete and run queries.
 	lbls := [][]labels.Label{
@@ -572,51 +570,49 @@ func TestHeadAppenderV2_Delete_e2e(t *testing.T) {
 			}
 		}
 		sort.Sort(matched)
-		for range numRanges {
-			q, err := NewBlockQuerier(hb, 0, 100000)
-			require.NoError(t, err)
-			ss := q.Select(context.Background(), true, nil, del.ms...)
-			// Build the mockSeriesSet.
-			matchedSeries := make([]storage.Series, 0, len(matched))
-			for _, m := range matched {
-				smpls := seriesMap[m.String()]
-				smpls = deletedSamples(smpls, del.drange)
-				// Only append those series for which samples exist as mockSeriesSet
-				// doesn't skip series with no samples.
-				// TODO: But sometimes SeriesSet returns an empty chunkenc.Iterator
-				if len(smpls) > 0 {
-					matchedSeries = append(matchedSeries, storage.NewListSeries(m, smpls))
-				}
+		q, err := NewBlockQuerier(hb, 0, 100000)
+		require.NoError(t, err)
+		ss := q.Select(context.Background(), true, nil, del.ms...)
+		// Build the mockSeriesSet.
+		matchedSeries := make([]storage.Series, 0, len(matched))
+		for _, m := range matched {
+			smpls := seriesMap[m.String()]
+			smpls = deletedSamples(smpls, del.drange)
+			// Only append those series for which samples exist as mockSeriesSet
+			// doesn't skip series with no samples.
+			// TODO: But sometimes SeriesSet returns an empty chunkenc.Iterator
+			if len(smpls) > 0 {
+				matchedSeries = append(matchedSeries, storage.NewListSeries(m, smpls))
 			}
-			expSs := newMockSeriesSet(matchedSeries)
-			// Compare both SeriesSets.
-			for {
-				eok, rok := expSs.Next(), ss.Next()
-				// Skip a series if iterator is empty.
-				if rok {
-					for ss.At().Iterator(nil).Next() == chunkenc.ValNone {
-						rok = ss.Next()
-						if !rok {
-							break
-						}
+		}
+		expSs := newMockSeriesSet(matchedSeries)
+		// Compare both SeriesSets.
+		for {
+			eok, rok := expSs.Next(), ss.Next()
+			// Skip a series if iterator is empty.
+			if rok {
+				for ss.At().Iterator(nil).Next() == chunkenc.ValNone {
+					rok = ss.Next()
+					if !rok {
+						break
 					}
 				}
-				require.Equal(t, eok, rok)
-				if !eok {
-					break
-				}
-				sexp := expSs.At()
-				sres := ss.At()
-				require.Equal(t, sexp.Labels(), sres.Labels())
-				smplExp, errExp := storage.ExpandSamples(sexp.Iterator(nil), newSample)
-				smplRes, errRes := storage.ExpandSamples(sres.Iterator(nil), newSample)
-				require.Equal(t, errExp, errRes)
-				requireEqualSamples(t, sexp.Labels().String(), smplExp, smplRes)
 			}
-			require.NoError(t, ss.Err())
-			require.Empty(t, ss.Warnings())
-			require.NoError(t, q.Close())
+			require.Equal(t, eok, rok)
+			if !eok {
+				break
+			}
+			sexp := expSs.At()
+			sres := ss.At()
+			require.Equal(t, sexp.Labels(), sres.Labels())
+			smplExp, errExp := storage.ExpandSamples(sexp.Iterator(nil), newSample)
+			smplRes, errRes := storage.ExpandSamples(sres.Iterator(nil), newSample)
+			require.Equal(t, errExp, errRes)
+			requireEqualSamples(t, sexp.Labels().String(), smplExp, smplRes)
 		}
+		require.NoError(t, ss.Err())
+		require.Empty(t, ss.Warnings())
+		require.NoError(t, q.Close())
 	}
 }
 
@@ -786,6 +782,7 @@ func TestHeadAppenderV2_MemSeriesIsolation(t *testing.T) {
 	if defaultIsolationDisabled {
 		t.Skip("skipping test since tsdb isolation is disabled")
 	}
+	t.Parallel()
 
 	// Put a series, select it. GC it and then access it.
 	lastValue := func(h *Head, maxAppendID uint64) int {
@@ -1082,7 +1079,7 @@ func testHeadAppenderV2OutOfOrderSamplesMetric(t *testing.T, scenario sampleType
 
 	appendSample := func(app storage.AppenderV2, ts int64) (storage.SeriesRef, error) {
 		// TODO(bwplotka): Migrate to V2 natively.
-		ref, _, err := scenario.appendFunc(storage.AppenderV2AsLimitedV1(app), labels.FromStrings("a", "b"), ts, 99)
+		ref, _, err := scenario.appendFunc(app, labels.FromStrings("a", "b"), ts, 99)
 		return ref, err
 	}
 
@@ -1153,6 +1150,53 @@ func testHeadAppenderV2OutOfOrderSamplesMetric(t *testing.T, scenario sampleType
 	require.Equal(t, expectOutOfOrderError, err)
 	require.Equal(t, 6.0, prom_testutil.ToFloat64(db.head.metrics.outOfOrderSamples.WithLabelValues(scenario.sampleType)))
 	require.NoError(t, app.Commit())
+}
+
+// TestHeadAppenderV2_HistogramErrorDoesNotSetPendingCommit is the V2
+// counterpart of TestAppendHistogramErrorDoesNotSetPendingCommit. The V2
+// histogram paths in head_append_v2.go already reserve pending state only on
+// success, so this test is here to lock that property in.
+func TestHeadAppenderV2_HistogramErrorDoesNotSetPendingCommit(t *testing.T) {
+	for _, tc := range []struct {
+		name string
+		h    *histogram.Histogram
+		fh   *histogram.FloatHistogram
+	}{
+		{name: "integer", h: tsdbutil.GenerateTestHistogram(0)},
+		{name: "float", fh: tsdbutil.GenerateTestFloatHistogram(0)},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			head, _ := newTestHead(t, 1000, compression.None, false)
+			require.NoError(t, head.Init(0))
+
+			lbls := labels.FromStrings("a", "b")
+			ctx := context.Background()
+
+			app := head.AppenderV2(ctx)
+			_, err := app.Append(0, lbls, 0, 200, 0, tc.h, tc.fh, storage.AOptions{})
+			require.NoError(t, err)
+			require.NoError(t, app.Commit())
+
+			ms, _, err := head.getOrCreate(lbls.Hash(), lbls, false)
+			require.NoError(t, err)
+			require.NotNil(t, ms)
+			ms.Lock()
+			pc := ms.hasPendingCommit()
+			ms.Unlock()
+			require.False(t, pc, "pending state should be cleared after a successful commit")
+
+			// Out-of-order append for the same series, OOO window disabled.
+			app = head.AppenderV2(ctx)
+			_, err = app.Append(0, lbls, 0, 100, 0, tc.h, tc.fh, storage.AOptions{})
+			require.ErrorIs(t, err, storage.ErrOutOfOrderSample)
+			require.NoError(t, app.Rollback())
+
+			ms.Lock()
+			pc = ms.hasPendingCommit()
+			ms.Unlock()
+			require.False(t, pc, "pending state should remain clear after a failed AppenderV2.Append")
+		})
+	}
 }
 
 func TestHeadLabelNamesValuesWithMinMaxRange_AppenderV2(t *testing.T) {
@@ -1387,10 +1431,14 @@ func TestIsQuerierCollidingWithTruncation_AppenderV2(t *testing.T) {
 		expShouldClose, expGetNew bool
 		expNewMint                int64
 	}{
-		{-200, -100, true, false, 0},
-		{-200, 300, true, false, 0},
-		{100, 1900, true, false, 0},
+		// Entirely below the truncation point: close without reopening, but newMint is still
+		// the truncation point so callers (e.g. the OOO wrapper) clamp their in-order read to it.
+		{-200, -100, true, false, 2000},
+		{-200, 300, true, false, 2000},
+		{100, 1900, true, false, 2000},
+		// Straddles the truncation point: close and reopen at the truncation point.
 		{1900, 2200, true, true, 2000},
+		// At/above the truncation point: no collision.
 		{2000, 2500, false, false, 0},
 	}
 
@@ -1399,7 +1447,7 @@ func TestIsQuerierCollidingWithTruncation_AppenderV2(t *testing.T) {
 			shouldClose, getNew, newMint := db.head.IsQuerierCollidingWithTruncation(c.mint, c.maxt)
 			require.Equal(t, c.expShouldClose, shouldClose)
 			require.Equal(t, c.expGetNew, getNew)
-			if getNew {
+			if shouldClose || getNew {
 				require.Equal(t, c.expNewMint, newMint)
 			}
 		})
@@ -1875,8 +1923,10 @@ func TestHistogramInWALAndMmapChunk_AppenderV2(t *testing.T) {
 }
 
 func TestChunkSnapshot_AppenderV2(t *testing.T) {
+	t.Parallel()
 	for _, enableSTStorage := range []bool{false, true} {
 		t.Run("enableSTStorage="+strconv.FormatBool(enableSTStorage), func(t *testing.T) {
+			t.Parallel()
 			head, _ := newTestHead(t, 120*4, compression.None, false)
 			defer func() {
 				head.opts.EnableMemorySnapshotOnShutdown = false
@@ -2146,8 +2196,8 @@ func TestChunkSnapshot_AppenderV2(t *testing.T) {
 				files, err := os.ReadDir(head.opts.ChunkDirRoot)
 				require.NoError(t, err)
 				snapshots := 0
-				for i := len(files) - 1; i >= 0; i-- {
-					fi := files[i]
+				for _, v := range slices.Backward(files) {
+					fi := v
 					if strings.HasPrefix(fi.Name(), chunkSnapshotPrefix) {
 						snapshots++
 						require.Equal(t, chunkSnapshotDir(wlast, woffset), fi.Name())
@@ -2485,7 +2535,7 @@ func testHeadAppenderV2AppendStaleHistogram(t *testing.T, floatHistogram bool) {
 }
 
 func TestHeadAppenderV2_Append_CounterResetHeader(t *testing.T) {
-	for _, floatHisto := range []bool{true} { // FIXME
+	for _, floatHisto := range []bool{true, false} {
 		t.Run(fmt.Sprintf("floatHistogram=%t", floatHisto), func(t *testing.T) {
 			l := labels.FromStrings("a", "b")
 			head, _ := newTestHead(t, 1000, compression.None, false)
@@ -2536,32 +2586,31 @@ func TestHeadAppenderV2_Append_CounterResetHeader(t *testing.T) {
 			h := tsdbutil.GenerateTestHistograms(1)[0]
 			h.PositiveBuckets = []int64{100, 1, 1, 1}
 			h.NegativeBuckets = []int64{100, 1, 1, 1}
-			h.Count = 1000
+			// Count = positive delta-decoded (100+101+102+103=406) + negative (406) + ZeroCount (2) = 814.
+			h.Count = 814
 
 			// First histogram is UnknownCounterReset.
 			appendHistogram(h)
 			checkExpCounterResetHeader(chunkenc.UnknownCounterReset)
 
-			// Another normal histogram.
-			h.Count++
+			// Another normal histogram: increment a bucket and Count consistently.
+			h.PositiveBuckets[len(h.PositiveBuckets)-1]++
+			h.Count++ // Count = 815.
 			appendHistogram(h)
 			checkExpCounterResetHeader()
 
-			// Counter reset via Count.
-			h.Count--
+			// Counter reset: decrement the same bucket and Count.
+			h.PositiveBuckets[len(h.PositiveBuckets)-1]--
+			h.Count-- // Count = 814.
 			appendHistogram(h)
 			checkExpCounterResetHeader(chunkenc.CounterReset)
 
-			// Add 2 non-counter reset histogram chunks (each chunk targets 1024 bytes which contains ~500 int histogram
-			// samples or ~1000 float histogram samples).
-			numAppend := 2000
-			if floatHisto {
-				numAppend = 1000
-			}
-			for i := 0; i < numAppend; i++ {
+			// Add 2 non-counter reset histogram chunks.
+			ms, _, err := head.getOrCreate(l.Hash(), l, false)
+			require.NoError(t, err)
+			for ms.headChunkCount.Load() < 3 {
 				appendHistogram(h)
 			}
-
 			checkExpCounterResetHeader(chunkenc.NotCounterReset, chunkenc.NotCounterReset)
 
 			// Changing schema will cut a new chunk with unknown counter reset.
@@ -2577,28 +2626,36 @@ func TestHeadAppenderV2_Append_CounterResetHeader(t *testing.T) {
 			// Counter reset by removing a positive bucket.
 			h.PositiveSpans[1].Length--
 			h.PositiveBuckets = h.PositiveBuckets[1:]
+			// After removal: positive delta-decoded (1+2+3=6) + negative (406) + ZeroCount (2) = 414.
+			h.Count = 414
 			appendHistogram(h)
 			checkExpCounterResetHeader(chunkenc.CounterReset)
 
 			// Counter reset by removing a negative bucket.
 			h.NegativeSpans[1].Length--
 			h.NegativeBuckets = h.NegativeBuckets[1:]
+			// After removal: positive (6) + negative delta-decoded (1+2+3=6) + ZeroCount (2) = 14.
+			h.Count = 14
 			appendHistogram(h)
 			checkExpCounterResetHeader(chunkenc.CounterReset)
 
 			// Add 2 non-counter reset histogram chunks. Just to have some non-counter reset chunks in between.
-			for range 2000 {
+			for ms.headChunkCount.Load() < 3 {
 				appendHistogram(h)
 			}
 			checkExpCounterResetHeader(chunkenc.NotCounterReset, chunkenc.NotCounterReset)
 
 			// Counter reset with counter reset in a positive bucket.
 			h.PositiveBuckets[len(h.PositiveBuckets)-1]--
+			// After: positive delta-decoded (1+2+2=5) + negative (6) + ZeroCount (2) = 13.
+			h.Count = 13
 			appendHistogram(h)
 			checkExpCounterResetHeader(chunkenc.CounterReset)
 
 			// Counter reset with counter reset in a negative bucket.
 			h.NegativeBuckets[len(h.NegativeBuckets)-1]--
+			// After: positive (5) + negative delta-decoded (1+2+2=5) + ZeroCount (2) = 12.
+			h.Count = 12
 			appendHistogram(h)
 			checkExpCounterResetHeader(chunkenc.CounterReset)
 		})
@@ -2930,7 +2987,7 @@ func TestChunkSnapshotTakenAfterIncompleteSnapshot_AppenderV2(t *testing.T) {
 	require.Positive(t, offset)
 }
 
-// TestWBLReplay checks the replay at a low level.
+// TestWBLReplay_AppenderV2 checks the replay at a low level.
 func TestWBLReplay_AppenderV2(t *testing.T) {
 	for name, scenario := range sampleTypeScenarios {
 		for _, enableSTstorage := range []bool{false, true} {
@@ -2953,7 +3010,12 @@ func testWBLReplayAppenderV2(t *testing.T, scenario sampleTypeScenario, enableST
 	opts.ChunkDirRoot = dir
 	opts.OutOfOrderTimeWindow.Store(30 * time.Minute.Milliseconds())
 	opts.EnableSTStorage.Store(enableSTstorage)
-	opts.EnableXOR2Encoding.Store(enableSTstorage)
+	if enableSTstorage {
+		opts.FloatChunkEncoding.Store(uint32(chunkenc.EncXOR2))
+	} else {
+		opts.FloatChunkEncoding.Store(uint32(chunkenc.EncXOR))
+	}
+	opts.EnableHistogramSTEncoding.Store(enableSTstorage)
 
 	h, err := NewHead(nil, nil, wal, oooWlog, opts, nil)
 	require.NoError(t, err)
@@ -2963,7 +3025,7 @@ func testWBLReplayAppenderV2(t *testing.T, scenario sampleTypeScenario, enableST
 	l := labels.FromStrings("foo", "bar")
 	appendSample := func(mins int64, _ float64, isOOO bool) {
 		app := h.AppenderV2(context.Background())
-		_, s, err := scenario.appendFunc(storage.AppenderV2AsLimitedV1(app), l, mins*time.Minute.Milliseconds(), mins)
+		_, s, err := scenario.appendFunc(app, l, mins*time.Minute.Milliseconds(), mins)
 		require.NoError(t, err)
 		require.NoError(t, app.Commit())
 
@@ -3005,7 +3067,7 @@ func testWBLReplayAppenderV2(t *testing.T, scenario sampleTypeScenario, enableST
 	require.False(t, ok)
 	require.NotNil(t, ms)
 
-	chks, err := ms.ooo.oooHeadChunk.chunk.ToEncodedChunks(math.MinInt64, math.MaxInt64, h.opts.EnableXOR2Encoding.Load())
+	chks, err := ms.ooo.oooHeadChunk.chunk.ToEncodedChunks(math.MinInt64, math.MaxInt64, h.opts.UseXOR2FloatEncoding(), h.opts.EnableHistogramSTEncoding.Load())
 	require.NoError(t, err)
 	require.Len(t, chks, 1)
 
@@ -3026,7 +3088,7 @@ func testWBLReplayAppenderV2(t *testing.T, scenario sampleTypeScenario, enableST
 	require.NoError(t, h.Close())
 }
 
-// TestOOOMmapReplay checks the replay at a low level.
+// TestOOOMmapReplay_AppenderV2 checks the replay at a low level.
 func TestOOOMmapReplay_AppenderV2(t *testing.T) {
 	for name, scenario := range sampleTypeScenarios {
 		t.Run(name, func(t *testing.T) {
@@ -3055,7 +3117,7 @@ func testOOOMmapReplayAppenderV2(t *testing.T, scenario sampleTypeScenario) {
 	l := labels.FromStrings("foo", "bar")
 	appendSample := func(mins int64) {
 		app := h.AppenderV2(context.Background())
-		_, _, err := scenario.appendFunc(storage.AppenderV2AsLimitedV1(app), l, mins*time.Minute.Milliseconds(), mins)
+		_, _, err := scenario.appendFunc(app, l, mins*time.Minute.Milliseconds(), mins)
 		require.NoError(t, err)
 		require.NoError(t, app.Commit())
 	}
@@ -3319,7 +3381,7 @@ func TestHeadAppenderV2_Append_OOOWithNoSeries(t *testing.T) {
 	}
 }
 
-func testHeadAppenderV2AppendOOOWithNoSeries(t *testing.T, appendFunc func(appender storage.LimitedAppenderV1, lbls labels.Labels, ts, value int64) (storage.SeriesRef, sample, error)) {
+func testHeadAppenderV2AppendOOOWithNoSeries(t *testing.T, appendFunc func(appender storage.AppenderV2, lbls labels.Labels, ts, value int64) (storage.SeriesRef, sample, error)) {
 	dir := t.TempDir()
 	wal, err := wlog.NewSize(nil, nil, filepath.Join(dir, "wal"), 32768, compression.Snappy)
 	require.NoError(t, err)
@@ -3340,7 +3402,7 @@ func testHeadAppenderV2AppendOOOWithNoSeries(t *testing.T, appendFunc func(appen
 
 	appendSample := func(lbls labels.Labels, ts int64) {
 		app := h.AppenderV2(context.Background())
-		_, _, err := appendFunc(storage.AppenderV2AsLimitedV1(app), lbls, ts*time.Minute.Milliseconds(), ts)
+		_, _, err := appendFunc(app, lbls, ts*time.Minute.Milliseconds(), ts)
 		require.NoError(t, err)
 		require.NoError(t, app.Commit())
 	}
@@ -3388,7 +3450,7 @@ func testHeadAppenderV2AppendOOOWithNoSeries(t *testing.T, appendFunc func(appen
 	// Now 179m is too old.
 	s4 := newLabels(4)
 	app := h.AppenderV2(context.Background())
-	_, _, err = appendFunc(storage.AppenderV2AsLimitedV1(app), s4, 179*time.Minute.Milliseconds(), 179)
+	_, _, err = appendFunc(app, s4, 179*time.Minute.Milliseconds(), 179)
 	require.Equal(t, storage.ErrTooOldSample, err)
 	require.NoError(t, app.Rollback())
 	verifyOOOSamples(s3, 1)
@@ -3430,7 +3492,7 @@ func testHeadMinOOOTimeUpdateAppenderV2(t *testing.T, scenario sampleTypeScenari
 
 	appendSample := func(ts int64) {
 		app := h.AppenderV2(context.Background())
-		_, _, err = scenario.appendFunc(storage.AppenderV2AsLimitedV1(app), labels.FromStrings("a", "b"), ts*time.Minute.Milliseconds(), ts)
+		_, _, err = scenario.appendFunc(app, labels.FromStrings("a", "b"), ts*time.Minute.Milliseconds(), ts)
 		require.NoError(t, err)
 		require.NoError(t, app.Commit())
 	}
@@ -3822,7 +3884,7 @@ func TestCuttingNewHeadChunks_AppenderV2(t *testing.T) {
 	}
 }
 
-// TestHeadDetectsDuplicateSampleAtSizeLimit tests a regression where a duplicate sample
+// TestHeadDetectsDuplicateSampleAtSizeLimit_AppenderV2 tests a regression where a duplicate sample
 // is appended to the head, right when the head chunk is at the size limit.
 // The test adds all samples as duplicate, thus expecting that the result has
 // exactly half of the samples.
@@ -4573,10 +4635,47 @@ func TestHeadAppenderV2_BestEffortSTZeroSample_OOO(t *testing.T) {
 			require.Len(t, result[`{foo="bar"}`], 2)
 		})
 	}
+
+	t.Run("rejected ST injected zero does not retain series", func(t *testing.T) {
+		for _, tc := range []struct {
+			name string
+			v    float64
+			h    *histogram.Histogram
+			fh   *histogram.FloatHistogram
+		}{
+			{name: "float", v: 10},
+			{name: "histogram", h: testHistogram},
+			{name: "float_histogram", fh: testFloatHistogram},
+		} {
+			t.Run(tc.name, func(t *testing.T) {
+				opts := newTestHeadDefaultOptions(DefaultBlockDuration, true)
+				opts.EnableSTAsZeroSample = true
+				h, _ := newTestHeadWithOptions(t, compression.None, opts)
+
+				lset := labels.FromStrings("a", "1")
+				baseline := h.AppenderV2(t.Context())
+				ref, err := baseline.Append(0, lset, 0, 200, tc.v, tc.h, tc.fh, storage.AOptions{})
+				require.NoError(t, err)
+				require.NoError(t, baseline.Commit())
+
+				app := h.AppenderV2(t.Context())
+				// Both st=100 (always fastRejectOOO=true) and ts=150 (RejectOutOfOrder=true)
+				// are OOO relative to headMaxt=200 and rejected without retaining the series.
+				_, err = app.Append(ref, lset, 100, 150, tc.v, tc.h, tc.fh, storage.AOptions{RejectOutOfOrder: true})
+				require.ErrorIs(t, err, storage.ErrOutOfOrderSample)
+				require.NoError(t, app.Rollback())
+
+				require.NoError(t, h.Truncate(201))
+				require.Zero(t, h.NumSeries(), "the rejected sample must not protect the collectable series")
+				require.Zero(t, prom_testutil.ToFloat64(h.metrics.pendingCommitUnderflow))
+			})
+		}
+	})
 }
 
 // Regression test for data race https://github.com/prometheus/prometheus/issues/15139.
 func TestHeadAppenderV2_Append_HistogramAndCommitConcurrency(t *testing.T) {
+	t.Parallel()
 	h := tsdbutil.GenerateTestHistogram(1)
 	fh := tsdbutil.GenerateTestFloatHistogram(1)
 
@@ -4592,6 +4691,7 @@ func TestHeadAppenderV2_Append_HistogramAndCommitConcurrency(t *testing.T) {
 	}
 	for name, tc := range testCases {
 		t.Run(name, func(t *testing.T) {
+			t.Parallel()
 			testHeadAppenderV2AppendHistogramAndCommitConcurrency(t, tc)
 		})
 	}
@@ -4781,7 +4881,7 @@ func TestHeadAppenderV2_NumStaleSeries(t *testing.T) {
 	verifySeriesCounts(4, 5)
 }
 
-// TestHistogramStalenessConversionMetrics verifies that staleness marker conversion correctly
+// TestHeadAppenderV2_Append_HistogramStalenessConversionMetrics verifies that staleness marker conversion correctly
 // increments the right appender metrics for both histogram and float histogram scenarios.
 func TestHeadAppenderV2_Append_HistogramStalenessConversionMetrics(t *testing.T) {
 	testCases := []struct {
@@ -4806,7 +4906,11 @@ func TestHeadAppenderV2_Append_HistogramStalenessConversionMetrics(t *testing.T)
 
 	for _, tc := range testCases {
 		t.Run(tc.name, func(t *testing.T) {
-			head, _ := newTestHead(t, 1000, compression.None, false)
+			opts := newTestHeadDefaultOptions(1000, false)
+			opts.EnableSTStorage.Store(true)
+			opts.FloatChunkEncoding.Store(uint32(chunkenc.EncXOR2))
+			opts.EnableHistogramSTEncoding.Store(true)
+			head, _ := newTestHeadWithOptions(t, compression.None, opts)
 			defer func() {
 				require.NoError(t, head.Close())
 			}()
@@ -4827,9 +4931,12 @@ func TestHeadAppenderV2_Append_HistogramStalenessConversionMetrics(t *testing.T)
 			require.NoError(t, err)
 			require.NoError(t, app.Commit())
 
-			// Step 2: Add a float staleness marker
+			// Step 2: Add a float staleness marker with a start timestamp. It is
+			// converted to a (float) histogram staleness marker, which must keep
+			// the start timestamp like the plain float staleness path does.
+			const markerST = int64(1900)
 			app = head.AppenderV2(context.Background())
-			_, err = app.Append(0, lbls, 0, 2000, math.Float64frombits(value.StaleNaN), nil, nil, storage.AOptions{})
+			_, err = app.Append(0, lbls, markerST, 2000, math.Float64frombits(value.StaleNaN), nil, nil, storage.AOptions{})
 			require.NoError(t, err)
 			require.NoError(t, app.Commit())
 
@@ -4846,6 +4953,8 @@ func TestHeadAppenderV2_Append_HistogramStalenessConversionMetrics(t *testing.T)
 
 			actualFloatSamples := 0
 			actualHistogramSamples := 0
+			markerFound := false
+			var markerGotST int64
 
 			for valType := it.Next(); valType != chunkenc.ValNone; valType = it.Next() {
 				switch valType {
@@ -4854,12 +4963,20 @@ func TestHeadAppenderV2_Append_HistogramStalenessConversionMetrics(t *testing.T)
 				case chunkenc.ValHistogram, chunkenc.ValFloatHistogram:
 					actualHistogramSamples++
 				}
+				if it.AtT() == 2000 {
+					markerFound = true
+					markerGotST = it.AtST()
+				}
 			}
 			require.NoError(t, it.Err())
 
 			// Verify what was actually stored - should be 0 floats, 2 histograms (original + converted staleness marker)
 			require.Equal(t, 0, actualFloatSamples, "Should have 0 float samples stored")
 			require.Equal(t, 2, actualHistogramSamples, "Should have 2 histogram samples: original + converted staleness marker")
+
+			// The converted staleness marker must keep the start timestamp.
+			require.True(t, markerFound, "converted staleness marker not found")
+			require.Equal(t, markerST, markerGotST, "start timestamp must be preserved on the converted staleness marker")
 
 			// The metrics should match what was actually stored
 			require.Equal(t, float64(actualFloatSamples), getSampleCounter(sampleMetricTypeFloat),
@@ -4870,7 +4987,7 @@ func TestHeadAppenderV2_Append_HistogramStalenessConversionMetrics(t *testing.T)
 	}
 }
 
-// TestHeadAppender_STStorage verifies that when EnableSTStorage is true,
+// TestHeadAppenderV2_STStorage verifies that when EnableSTStorage is true,
 // start timestamps are properly stored in chunks and returned by queries.
 // This test uses AppenderV2 which has native ST support.
 func TestHeadAppenderV2_STStorage(t *testing.T) {
@@ -4888,7 +5005,6 @@ func TestHeadAppenderV2_STStorage(t *testing.T) {
 		name        string
 		samples     []sampleData
 		expectedSTs []int64
-		isHistogram bool
 	}{
 		{
 			name: "Float samples with ST",
@@ -4898,7 +5014,6 @@ func TestHeadAppenderV2_STStorage(t *testing.T) {
 				{st: 30, ts: 300, fSample: 3.0},
 			},
 			expectedSTs: []int64{10, 20, 30},
-			isHistogram: false,
 		},
 		{
 			name: "Float samples with varying ST",
@@ -4908,7 +5023,6 @@ func TestHeadAppenderV2_STStorage(t *testing.T) {
 				{st: 150, ts: 300, fSample: 3.0},
 			},
 			expectedSTs: []int64{5, 5, 150},
-			isHistogram: false,
 		},
 		{
 			name: "Histogram samples",
@@ -4917,9 +5031,15 @@ func TestHeadAppenderV2_STStorage(t *testing.T) {
 				{st: 20, ts: 200, h: testHistogram},
 				{st: 30, ts: 300, h: testHistogram},
 			},
-			// Histograms don't support ST storage yet, should return 0.
-			expectedSTs: []int64{0, 0, 0},
-			isHistogram: true,
+			expectedSTs: []int64{10, 20, 30},
+		},
+		{
+			name: "Float staleness marker keeps ST",
+			samples: []sampleData{
+				{st: 10, ts: 100, fSample: 1.0},
+				{st: 20, ts: 200, fSample: math.Float64frombits(value.StaleNaN)},
+			},
+			expectedSTs: []int64{10, 20},
 		},
 	}
 
@@ -4927,7 +5047,8 @@ func TestHeadAppenderV2_STStorage(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			opts := newTestHeadDefaultOptions(DefaultBlockDuration, false)
 			opts.EnableSTStorage.Store(true)
-			opts.EnableXOR2Encoding.Store(true)
+			opts.FloatChunkEncoding.Store(uint32(chunkenc.EncXOR2))
+			opts.EnableHistogramSTEncoding.Store(true)
 			h, _ := newTestHeadWithOptions(t, compression.None, opts)
 
 			lbls := labels.FromStrings("foo", "bar")
@@ -4973,11 +5094,7 @@ func TestHeadAppenderV2_STStorage(t *testing.T) {
 				require.NoError(t, it.Err())
 			}
 
-			if tc.isHistogram {
-				require.Equal(t, tc.expectedSTs, actualSTs, "Histogram samples should return 0 for ST")
-			} else {
-				require.Equal(t, tc.expectedSTs, actualSTs, "Float samples should have ST stored")
-			}
+			require.Equal(t, tc.expectedSTs, actualSTs, "ST values should round-trip through chunks")
 
 			// Also verify via querier.
 			q, err := NewBlockQuerier(h, math.MinInt64, math.MaxInt64)
@@ -5000,4 +5117,292 @@ func TestHeadAppenderV2_STStorage(t *testing.T) {
 			require.Equal(t, tc.expectedSTs, queriedSTs, "Querier should return same ST values as chunk iterator")
 		})
 	}
+}
+
+// TestHeadAppenderV2_Histogram_STStorage verifies that start timestamps supplied
+// via AppenderV2.Append round-trip through histogram and float-histogram chunks
+// and are returned by both the chunk iterator and the querier. When ST encoding
+// is disabled the histograms fall back to V1 chunks and report ST=0.
+func TestHeadAppenderV2_Histogram_STStorage(t *testing.T) {
+	type histSample struct {
+		st int64
+		ts int64
+		h  *histogram.Histogram
+		fh *histogram.FloatHistogram
+	}
+
+	intHist := func(i int64) *histogram.Histogram {
+		hh := tsdbutil.GenerateTestHistogram(i)
+		hh.CounterResetHint = histogram.NotCounterReset
+		return hh
+	}
+	floatHist := func(i int64) *histogram.FloatHistogram {
+		fh := tsdbutil.GenerateTestFloatHistogram(i)
+		fh.CounterResetHint = histogram.NotCounterReset
+		return fh
+	}
+
+	testCases := []struct {
+		name             string
+		enableSTStorage  bool
+		samples          []histSample
+		expectedSTs      []int64
+		isFloatHistogram bool
+	}{
+		{
+			name:            "Integer histograms with ST enabled",
+			enableSTStorage: true,
+			samples:         []histSample{{st: 10, ts: 100, h: intHist(1)}, {st: 100, ts: 200, h: intHist(2)}, {st: 200, ts: 300, h: intHist(3)}},
+			expectedSTs:     []int64{10, 100, 200},
+		},
+		{
+			name:             "Float histograms with ST enabled",
+			enableSTStorage:  true,
+			samples:          []histSample{{st: 11, ts: 101, fh: floatHist(1)}, {st: 101, ts: 202, fh: floatHist(2)}, {st: 202, ts: 303, fh: floatHist(3)}},
+			expectedSTs:      []int64{11, 101, 202},
+			isFloatHistogram: true,
+		},
+		{
+			name:            "Integer histograms with ST disabled report ST=0",
+			enableSTStorage: false,
+			samples:         []histSample{{st: 10, ts: 100, h: intHist(1)}, {st: 100, ts: 200, h: intHist(2)}},
+			expectedSTs:     []int64{0, 0},
+		},
+		{
+			name:             "Float histograms with ST disabled report ST=0",
+			enableSTStorage:  false,
+			samples:          []histSample{{st: 11, ts: 101, fh: floatHist(1)}, {st: 101, ts: 202, fh: floatHist(2)}},
+			expectedSTs:      []int64{0, 0},
+			isFloatHistogram: true,
+		},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			opts := newTestHeadDefaultOptions(DefaultBlockDuration, false)
+			opts.EnableSTStorage.Store(tc.enableSTStorage)
+			opts.FloatChunkEncoding.Store(uint32(chunkenc.EncXOR2))
+			opts.EnableHistogramSTEncoding.Store(tc.enableSTStorage)
+			h, _ := newTestHeadWithOptions(t, compression.None, opts)
+
+			lbls := labels.FromStrings("foo", "bar")
+
+			a := h.AppenderV2(context.Background())
+			for _, s := range tc.samples {
+				_, err := a.Append(0, lbls, s.st, s.ts, 0, s.h, s.fh, storage.AOptions{})
+				require.NoError(t, err)
+			}
+			require.NoError(t, a.Commit())
+
+			ctx := context.Background()
+
+			// Verify ST values round-trip through the chunks.
+			idxReader, err := h.Index()
+			require.NoError(t, err)
+			defer idxReader.Close()
+
+			chkReader, err := h.Chunks()
+			require.NoError(t, err)
+			defer chkReader.Close()
+
+			p, err := idxReader.Postings(ctx, "foo", "bar")
+			require.NoError(t, err)
+
+			var lblBuilder labels.ScratchBuilder
+			require.True(t, p.Next())
+			sRef := p.At()
+
+			var chkMetas []chunks.Meta
+			require.NoError(t, idxReader.Series(sRef, &lblBuilder, &chkMetas))
+
+			var chunkSTs []int64
+			for _, meta := range chkMetas {
+				chk, iterable, err := chkReader.ChunkOrIterable(meta)
+				require.NoError(t, err)
+				require.Nil(t, iterable)
+
+				it := chk.Iterator(nil)
+				for it.Next() != chunkenc.ValNone {
+					chunkSTs = append(chunkSTs, it.AtST())
+				}
+				require.NoError(t, it.Err())
+			}
+			require.Equal(t, tc.expectedSTs, chunkSTs, "ST values should round-trip through chunks")
+
+			// Verify the querier returns the same ST values.
+			q, err := NewBlockQuerier(h, math.MinInt64, math.MaxInt64)
+			require.NoError(t, err)
+			defer q.Close()
+
+			ss := q.Select(ctx, false, nil, labels.MustNewMatcher(labels.MatchEqual, "foo", "bar"))
+			require.True(t, ss.Next())
+			series := ss.At()
+			require.NoError(t, ss.Err())
+
+			seriesIt := series.Iterator(nil)
+			var queriedSTs []int64
+			for seriesIt.Next() != chunkenc.ValNone {
+				queriedSTs = append(queriedSTs, seriesIt.AtST())
+			}
+			require.NoError(t, seriesIt.Err())
+			require.Equal(t, tc.expectedSTs, queriedSTs, "querier should return same ST values as chunk iterator")
+		})
+	}
+}
+
+func TestHeadAppenderV2_ExemplarsSurviveTruncation(t *testing.T) {
+	for _, withSample := range []bool{false, true} {
+		t.Run(fmt.Sprintf("withSample=%t", withSample), func(t *testing.T) {
+			opts := DefaultHeadOptions()
+			opts.ChunkRange = 1000
+			opts.MaxExemplars.Store(10)
+			opts.EnableExemplarStorage = true
+			h, err := NewHead(nil, nil, nil, nil, opts, nil)
+			require.NoError(t, err)
+			t.Cleanup(func() { require.NoError(t, h.Close()) })
+			require.NoError(t, h.Init(0))
+
+			lset := labels.FromStrings("name", "exemplar_series")
+			app := h.AppenderV2(t.Context())
+			ref, err := app.Append(0, lset, 0, 100, 1, nil, nil, storage.AOptions{})
+			require.NoError(t, err)
+			require.NoError(t, app.Commit())
+
+			e := exemplar.Exemplar{Labels: labels.FromStrings("trace_id", "abc123"), Value: 1, Ts: 10000, HasTs: true}
+			app = h.AppenderV2(t.Context())
+			if withSample {
+				_, err = app.Append(ref, lset, 0, 200, 2, nil, nil, storage.AOptions{Exemplars: []exemplar.Exemplar{e}})
+			} else {
+				_, err = app.(storage.ExemplarAppenderV2).AppendExemplars(ref, lset, []exemplar.Exemplar{e})
+			}
+			require.NoError(t, err)
+			series := h.series.getByID(chunks.HeadSeriesRef(ref))
+			require.NotNil(t, series)
+			// Protect accepted exemplars even before their transaction commits.
+			require.True(t, series.hasExemplar)
+			require.Equal(t, e.Ts, series.lastExemplarTs)
+			require.NoError(t, app.Commit())
+
+			require.NoError(t, h.Truncate(1000))
+			require.Same(t, series, h.series.getByID(chunks.HeadSeriesRef(ref)))
+			require.Nil(t, series.headChunks)
+			require.Nil(t, series.app)
+			q, err := h.ExemplarQuerier(t.Context())
+			require.NoError(t, err)
+			got, err := q.Select(0, e.Ts, []*labels.Matcher{labels.MustNewMatcher(labels.MatchEqual, "name", "exemplar_series")})
+			require.NoError(t, err)
+			require.Len(t, got, 1)
+			require.True(t, labels.Equal(lset, got[0].SeriesLabels))
+			require.Len(t, got[0].Exemplars, 1)
+			require.True(t, e.Equals(got[0].Exemplars[0]))
+
+			// New samples can use the retained identity and create a new chunk appender.
+			app = h.AppenderV2(t.Context())
+			newRef, err := app.Append(ref, lset, 0, e.Ts+1, 3, nil, nil, storage.AOptions{})
+			require.NoError(t, err)
+			require.Equal(t, ref, newRef)
+			require.NoError(t, app.Commit())
+			require.NotNil(t, series.headChunks)
+			require.NotNil(t, series.app)
+
+			// Once the cutoff passes both the exemplar and the samples, eviction is safe.
+			require.NoError(t, h.Truncate(e.Ts+2))
+			require.Nil(t, h.series.getByID(chunks.HeadSeriesRef(ref)))
+		})
+	}
+}
+
+func TestHeadAppenderV2_ExemplarAppenderV2(t *testing.T) {
+	opts := DefaultHeadOptions()
+	opts.ChunkRange = 1000
+	opts.MaxExemplars.Store(100)
+	opts.EnableExemplarStorage = true
+	h, err := NewHead(nil, nil, nil, nil, opts, nil)
+	require.NoError(t, err)
+	defer func() { require.NoError(t, h.Close()) }()
+	require.NoError(t, h.Init(0))
+
+	// Create two initAppenderV2 instances before any sample initializes head.
+	initApp, ok := h.AppenderV2(t.Context()).(storage.ExemplarAppenderV2)
+	require.True(t, ok)
+	initApp2, ok := h.AppenderV2(t.Context()).(storage.ExemplarAppenderV2)
+	require.True(t, ok)
+
+	_, err = initApp.AppendExemplars(0, labels.FromStrings("__name__", "missing"), []exemplar.Exemplar{{Labels: labels.FromStrings("id", "1"), Value: 1, Ts: 10}})
+	require.ErrorIs(t, err, storage.ErrNotFound)
+
+	lset := labels.FromStrings("__name__", "test_metric", "job", "app")
+	ref, err := initApp.Append(0, lset, 0, 100, 42, nil, nil, storage.AOptions{})
+	require.NoError(t, err)
+
+	// Empty exemplars slice should still validate series and return non-zero SeriesRef.
+	retRef, err := initApp.AppendExemplars(ref, lset, nil)
+	require.NoError(t, err)
+	require.Equal(t, ref, retRef)
+
+	// Append exemplar via SeriesRef (and duplicate exemplar in same slice).
+	ex1 := exemplar.Exemplar{Labels: labels.FromStrings("trace_id", "t1"), Value: 1, Ts: 100, HasTs: true}
+	retRef, err = initApp.AppendExemplars(ref, labels.EmptyLabels(), []exemplar.Exemplar{ex1, ex1})
+	require.NoError(t, err)
+	require.Equal(t, ref, retRef)
+	require.NoError(t, initApp.Commit())
+
+	// initApp2 was created before head was initialized, so calling AppendExemplars on it now
+	// exercises lazy initialization of initApp2.app = a.head.appenderV2().
+	ex2 := exemplar.Exemplar{Labels: labels.FromStrings("trace_id", "t2"), Value: 2, Ts: 200, HasTs: true}
+	retRef, err = initApp2.AppendExemplars(ref, lset, []exemplar.Exemplar{ex2})
+	require.NoError(t, err)
+	require.Equal(t, ref, retRef)
+	require.NoError(t, initApp2.Commit())
+
+	// Now head is initialized; test headAppenderV2 with ref == 0, non-canonical labels, and partial error.
+	headApp, ok := h.AppenderV2(t.Context()).(storage.ExemplarAppenderV2)
+	require.True(t, ok)
+	lsetWithEmpty := labels.FromStrings("__name__", "test_metric", "job", "app", "empty", "")
+	tooLongLabel := strings.Repeat("x", exemplar.ExemplarMaxLabelSetLength+1)
+	invalidEx := exemplar.Exemplar{Labels: labels.FromStrings("trace_id", tooLongLabel), Value: 3, Ts: 250, HasTs: true}
+	ex3 := exemplar.Exemplar{Labels: labels.FromStrings("trace_id", "t3"), Value: 3, Ts: 300, HasTs: true}
+	// The ignored duplicate ex2 still counts towards the index of invalidEx.
+	retRef, err = headApp.AppendExemplars(0, lsetWithEmpty, []exemplar.Exemplar{ex2, invalidEx, ex3})
+	var pErr *storage.AppendPartialError
+	require.ErrorAs(t, err, &pErr)
+	require.Len(t, pErr.ExemplarErrors, 1)
+	require.ErrorIs(t, pErr.ExemplarErrors[0], storage.ErrExemplarLabelLength)
+	require.Equal(t, 1, pErr.ExemplarErrors[0].Index)
+	require.Equal(t, ref, retRef)
+
+	// Unknown series must return ErrNotFound even when exemplars is empty.
+	_, err = headApp.AppendExemplars(0, labels.FromStrings("__name__", "unknown"), nil)
+	require.ErrorIs(t, err, storage.ErrNotFound)
+
+	// Disabled exemplar storage (MaxExemplars == 0) must still validate series and return valid SeriesRef.
+	opts.MaxExemplars.Store(0)
+	_, err = headApp.AppendExemplars(0, labels.FromStrings("__name__", "unknown"), []exemplar.Exemplar{ex3})
+	require.ErrorIs(t, err, storage.ErrNotFound)
+	retRef, err = headApp.AppendExemplars(ref, lset, []exemplar.Exemplar{ex3})
+	require.NoError(t, err)
+	require.Equal(t, ref, retRef)
+	opts.MaxExemplars.Store(100)
+	require.NoError(t, headApp.Commit())
+
+	// Verify all 3 valid exemplars (ex1, ex2, ex3) were stored.
+	q, err := h.ExemplarQuerier(t.Context())
+	require.NoError(t, err)
+	res, err := q.Select(0, 400, []*labels.Matcher{labels.MustNewMatcher(labels.MatchEqual, "__name__", "test_metric")})
+	require.NoError(t, err)
+	require.Len(t, res, 1)
+	require.Len(t, res[0].Exemplars, 3)
+
+	// Also verify (*tsdb.DB).AppenderV2 (dbAppenderV2) implements storage.ExemplarAppenderV2.
+	db, err := Open(t.TempDir(), nil, nil, DefaultOptions(), nil)
+	require.NoError(t, err)
+	defer func() { require.NoError(t, db.Close()) }()
+	dbApp, ok := db.AppenderV2(t.Context()).(storage.ExemplarAppenderV2)
+	require.True(t, ok)
+	dbRef, err := dbApp.Append(0, lset, 0, 100, 1, nil, nil, storage.AOptions{})
+	require.NoError(t, err)
+	dbRetRef, err := dbApp.AppendExemplars(dbRef, lset, []exemplar.Exemplar{ex1})
+	require.NoError(t, err)
+	require.Equal(t, dbRef, dbRetRef)
+	require.NoError(t, dbApp.Commit())
 }

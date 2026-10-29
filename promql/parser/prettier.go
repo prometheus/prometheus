@@ -76,14 +76,19 @@ func (e *BinaryExpr) Pretty(level int) string {
 	}
 
 	matching := e.getMatchingStr()
-	return fmt.Sprintf("%s\n%s%s%s%s\n%s", e.LHS.Pretty(level+1), indent(level), e.Op, returnBool, matching, e.RHS.Pretty(level+1))
+	return fmt.Sprintf("%s\n%s%s%s%s\n%s", e.lhs().Pretty(level+1), indent(level), e.Op, returnBool, matching, e.RHS.Pretty(level+1))
 }
 
 func (e *DurationExpr) Pretty(int) string {
 	var s string
 	if e.LHS == nil {
-		// This is a unary duration expression.
-		s = fmt.Sprintf("%s%s", e.Op, e.RHS.Pretty(0))
+		// Unary plus is not printed, matching String(), so a parenthesised
+		// number lifted into a unary-plus DurationExpr round-trips as (5).
+		if e.Op == ADD && e.RHS != nil {
+			s = e.RHS.Pretty(0)
+		} else {
+			s = fmt.Sprintf("%s%s", e.Op, e.RHS.Pretty(0))
+		}
 	} else {
 		s = fmt.Sprintf("%s %s %s", e.LHS.Pretty(0), e.Op, e.RHS.Pretty(0))
 	}

@@ -55,6 +55,7 @@ import (
 	toolkit_web "github.com/prometheus/exporter-toolkit/web"
 	"go.uber.org/atomic"
 	"go.uber.org/automaxprocs/maxprocs"
+	"go.yaml.in/yaml/v2"
 	"k8s.io/client-go/rest"
 	"k8s.io/klog"
 	klogv2 "k8s.io/klog/v2"
@@ -78,6 +79,7 @@ import (
 	"github.com/prometheus/prometheus/tracing"
 	"github.com/prometheus/prometheus/tsdb"
 	"github.com/prometheus/prometheus/tsdb/agent"
+	"github.com/prometheus/prometheus/tsdb/chunkenc"
 	"github.com/prometheus/prometheus/tsdb/fileutil"
 	"github.com/prometheus/prometheus/util/compression"
 	"github.com/prometheus/prometheus/util/documentcli"
@@ -183,38 +185,42 @@ func agentOnlyFlag(app *kingpin.Application, name, help string) *kingpin.FlagCla
 type flagConfig struct {
 	configFile string
 
-	agentStoragePath            string
-	serverStoragePath           string
-	notifier                    notifier.Options
-	forGracePeriod              model.Duration
-	outageTolerance             model.Duration
-	resendDelay                 model.Duration
-	maxConcurrentEvals          int64
-	web                         web.Options
-	scrape                      scrape.Options
-	tsdb                        tsdbOptions
-	agent                       agentOptions
-	lookbackDelta               model.Duration
-	webTimeout                  model.Duration
-	queryTimeout                model.Duration
-	queryConcurrency            int
-	queryMaxSamples             int
-	RemoteFlushDeadline         model.Duration
-	maxNotificationsSubscribers int
+	agentStoragePath             string
+	serverStoragePath            string
+	notifier                     notifier.Options
+	forGracePeriod               model.Duration
+	outageTolerance              model.Duration
+	resendDelay                  model.Duration
+	maxConcurrentEvals           int64
+	web                          web.Options
+	scrape                       scrape.Options
+	tsdb                         tsdbOptions
+	agent                        agentOptions
+	lookbackDelta                model.Duration
+	webTimeout                   model.Duration
+	queryTimeout                 model.Duration
+	queryConcurrency             int
+	queryMaxSamples              int
+	convertClassicHistogramsFrom []string
+	RemoteFlushDeadline          model.Duration
+	maxNotificationsSubscribers  int
 
 	enableAutoReload   bool
 	autoReloadInterval model.Duration
 
-	maxprocsEnable bool
-	memlimitEnable bool
-	memlimitRatio  float64
+	maxprocsEnable          bool
+	memlimitEnable          bool
+	memlimitRatio           float64
+	memlimitRefreshInterval model.Duration
 
 	featureList []string
 	// These options are extracted from featureList
 	// for ease of use.
-	enablePerStepStats       bool
-	enableConcurrentRuleEval bool
-	useStartTimestamps       bool
+	enablePerStepStats              bool
+	enableConcurrentRuleEval        bool
+	useStartTimestamps              bool
+	enableNativeHistogramsAsClassic bool
+	enableQueryCost                 bool
 
 	prometheusURL   string
 	corsRegexString string
@@ -245,6 +251,8 @@ func (c *flagConfig) setFeatureListOptions(logger *slog.Logger) error {
 			case "metadata-wal-records":
 				c.scrape.AppendMetadata = true
 				c.web.AppendMetadata = true
+				c.tsdb.EnableMetadataWALRecords = true
+				c.agent.EnableMetadataWALRecords = true
 				features.Enable(features.TSDB, "metadata_wal_records")
 				logger.Info("Experimental metadata records in WAL enabled")
 			case "promql-per-step-stats":
@@ -256,6 +264,8 @@ func (c *flagConfig) setFeatureListOptions(logger *slog.Logger) error {
 			case "concurrent-rule-eval":
 				c.enableConcurrentRuleEval = true
 				logger.Info("Experimental concurrent rule evaluation enabled.")
+			case "promql-unquoted-utf8-names":
+				logger.Warn("This option for --enable-feature is now permanently enabled and therefore a no-op.", "option", o)
 			case "promql-experimental-functions":
 				c.parserOpts.EnableExperimentalFunctions = true
 				logger.Info("Experimental PromQL functions enabled.")
@@ -269,7 +279,6 @@ func (c *flagConfig) setFeatureListOptions(logger *slog.Logger) error {
 				// NOTE(bwplotka): Once AppendableV1 is removed, there will be only the TSDB and agent flags.
 				c.scrape.EnableStartTimestampZeroIngestion = true
 				c.scrape.ParseST = true
-				c.web.STZeroIngestionEnabled = true
 				c.tsdb.EnableSTAsZeroSample = true
 				c.agent.EnableSTAsZeroSample = true
 
@@ -279,17 +288,27 @@ func (c *flagConfig) setFeatureListOptions(logger *slog.Logger) error {
 				config.DefaultGlobalConfig.ScrapeProtocols = config.DefaultProtoFirstScrapeProtocols
 				logger.Info("Experimental start timestamp zero ingestion enabled. OpenMetrics 1.0 parsing will parse <metric>_created metrics as ST instead of normal sample. Changed default scrape_protocols to prefer PrometheusProto format.", "global.scrape_protocols", fmt.Sprintf("%v", config.DefaultGlobalConfig.ScrapeProtocols))
 			case "xor2-encoding":
-				c.tsdb.EnableXOR2Encoding = true
-				logger.Info("Experimental XOR2 chunk encoding enabled.")
+				c.tsdb.FloatChunkEncoding = chunkenc.EncXOR2
+				logger.Warn("This option for --enable-feature is being phased out. It currently changes the default for the storage.tsdb.chunk_encoding.floats config setting to xor2, but will become a no-op in a future major version. Stop using this option and set storage.tsdb.chunk_encoding.floats in the config instead.", "option", o)
+			case "histograms-st-encoding":
+				c.tsdb.EnableHistogramSTEncoding = true
+				logger.Info("Experimental ST-capable histogram chunk encoding enabled.")
+			case "st-synthesis":
+				// TODO(ridwanmsharif): Move this to scrape configuration once stable.
+				c.scrape.SynthesizeST = true
+				features.Enable(features.Scrape, "st-synthesis")
+				logger.Info("Experimental start timestamp synthesis enabled.")
 			case "st-storage":
 				c.scrape.ParseST = true
 				c.tsdb.EnableSTStorage = true
+				c.tsdb.FloatChunkEncoding = chunkenc.EncXOR2
+				c.tsdb.EnableHistogramSTEncoding = true
 				c.agent.EnableSTStorage = true
 
 				// Change relevant global variables. Hacky, but it's hard to pass a new option or default to unmarshallers. This is to widen the ST support surface.
 				config.DefaultConfig.GlobalConfig.ScrapeProtocols = config.DefaultProtoFirstScrapeProtocols
 				config.DefaultGlobalConfig.ScrapeProtocols = config.DefaultProtoFirstScrapeProtocols
-				logger.Info("Experimental start timestamp storage enabled. OpenMetrics 1.0 parsing will parse <metric>_created metrics as ST instead of normal sample. Changed default scrape_protocols to prefer PrometheusProto format.", "global.scrape_protocols", fmt.Sprintf("%v", config.DefaultGlobalConfig.ScrapeProtocols))
+				logger.Info("Experimental start timestamp storage enabled. XOR2 and ST-capable histogram chunk encodings enabled. OpenMetrics 1.0 parsing will parse <metric>_created metrics as ST instead of normal sample. Changed default scrape_protocols to prefer PrometheusProto format.", "global.scrape_protocols", fmt.Sprintf("%v", config.DefaultGlobalConfig.ScrapeProtocols))
 			case "use-start-timestamps":
 				c.useStartTimestamps = true
 				logger.Info("Experimental usage of start timestamps in PromQL engine is enabled.")
@@ -300,8 +319,7 @@ func (c *flagConfig) setFeatureListOptions(logger *slog.Logger) error {
 				c.promqlEnableDelayedNameRemoval = true
 				logger.Info("Experimental PromQL delayed name removal enabled.")
 			case "promql-extended-range-selectors":
-				c.parserOpts.EnableExtendedRangeSelectors = true
-				logger.Info("Experimental PromQL extended range selectors enabled.")
+				logger.Warn("This option for --enable-feature is now permanently enabled and therefore a no-op.", "option", o)
 			case "promql-binop-fill-modifiers":
 				c.parserOpts.EnableBinopFillModifiers = true
 				logger.Info("Experimental PromQL binary operator fill modifiers enabled.")
@@ -310,7 +328,7 @@ func (c *flagConfig) setFeatureListOptions(logger *slog.Logger) error {
 				logger.Info("Serving previous version of the Prometheus web UI.")
 			case "otlp-deltatocumulative":
 				c.web.ConvertOTLPDelta = true
-				logger.Info("Converting delta OTLP metrics to cumulative")
+				logger.Warn("This option for --enable-feature is deprecated and will be removed in a future major version. Use otlp-native-delta-ingestion instead.", "option", o)
 			case "otlp-native-delta-ingestion":
 				// Experimental OTLP native delta ingestion.
 				// This currently just stores the raw delta value as-is with unknown metric type. Better typing and
@@ -318,10 +336,16 @@ func (c *flagConfig) setFeatureListOptions(logger *slog.Logger) error {
 				// See proposal: https://github.com/prometheus/proposals/pull/48
 				c.web.NativeOTLPDeltaIngestion = true
 				logger.Info("Enabling native ingestion of delta OTLP metrics, storing the raw sample values without conversion. WARNING: Delta support is in an early stage of development. The ingestion and querying process is likely to change over time.")
+			case "openmetrics2":
+				c.scrape.EnableOpenMetrics2 = true
+				logger.Info("Experimental OpenMetrics 2.0 scrape format enabled. To negotiate OpenMetrics 2.0 with targets, add OpenMetricsText2.0.0 and OpenMetricsText2.0.0-rc to scrape_protocols in the configuration. WARNING: OpenMetrics 2.0 is not stable yet, the parser will be made stricter before stabilization and the exposition format may still change.")
 			case "type-and-unit-labels":
 				c.scrape.EnableTypeAndUnitLabels = true
 				c.web.EnableTypeAndUnitLabels = true
 				logger.Info("Experimental type and unit labels enabled")
+			case "zstd-scrape":
+				c.scrape.EnableZstdScrape = true
+				logger.Info("Experimental zstd scrape compression enabled")
 			case "use-uncached-io":
 				if !fileutil.UncachedIOSupported() {
 					return errors.New("experimental Uncached IO is not supported")
@@ -331,6 +355,16 @@ func (c *flagConfig) setFeatureListOptions(logger *slog.Logger) error {
 			case "fast-startup":
 				c.tsdb.EnableFastStartup = true
 				logger.Info("Experimental fast startup is enabled.")
+			case "search-api":
+				c.web.EnableSearch = true
+				logger.Info("Experimental search API enabled.")
+			case "promql-native-histograms-as-classic":
+				c.enableNativeHistogramsAsClassic = true
+				logger.Info("Experimental PromQL native histograms as classic conversion enabled.")
+			case "query-cost":
+				c.enableQueryCost = true
+				c.web.EnableQueryCost = true
+				logger.Info("Experimental query cost guardrails enabled.")
 			default:
 				logger.Warn("Unknown option for --enable-feature", "option", o)
 			}
@@ -384,6 +418,10 @@ func main() {
 		scrape: scrape.Options{
 			FeatureRegistry: features.DefaultRegistry,
 		},
+		tsdb: tsdbOptions{
+			// Default to XOR encoding; xor2-encoding feature flag overrides this to EncXOR2.
+			FloatChunkEncoding: chunkenc.EncXOR,
+		},
 	}
 
 	a := kingpin.New(filepath.Base(os.Args[0]), "The Prometheus monitoring server").UsageWriter(os.Stdout)
@@ -410,6 +448,8 @@ func main() {
 		Default("true").BoolVar(&cfg.memlimitEnable)
 	a.Flag("auto-gomemlimit.ratio", "The ratio of reserved GOMEMLIMIT memory to the detected maximum container or system memory").
 		Default("0.9").FloatVar(&cfg.memlimitRatio)
+	a.Flag("auto-gomemlimit.refresh-interval", "Interval at which to re-detect the container or system memory limit and update GOMEMLIMIT accordingly. Useful when the limit can change at runtime, e.g. with a Vertical Pod Autoscaler. Set to 0 to detect the limit only once at startup. Note that a downward change in the limit can cause a temporary increase in garbage collection activity. Only used when --auto-gomemlimit is set.").
+		Default("0s").SetValue(&cfg.memlimitRefreshInterval)
 
 	webConfig := a.Flag(
 		"web.config.file",
@@ -577,6 +617,9 @@ func main() {
 	serverOnlyFlag(a, "storage.remote.read-max-bytes-in-frame", "Maximum number of bytes in a single frame for streaming remote read response types before marshalling. Note that client might have limit on frame size as well. 1MB as recommended by protobuf by default.").
 		Default("1048576").IntVar(&cfg.web.RemoteReadBytesInFrame)
 
+	serverOnlyFlag(a, "web.search.max-limit", "Hard upper bound on the \"limit\" query parameter accepted by the experimental search API (--enable-feature=search-api). Requests with a higher limit are rejected with HTTP 400. 0 disables the cap.").
+		Default("10000").IntVar(&cfg.web.MaxSearchLimit)
+
 	serverOnlyFlag(a, "rules.alert.for-outage-tolerance", "Max time to tolerate prometheus outage for restoring \"for\" state of alert.").
 		Default("1h").SetValue(&cfg.outageTolerance)
 
@@ -616,15 +659,20 @@ func main() {
 	serverOnlyFlag(a, "query.max-samples", "Maximum number of samples a single query can load into memory. Note that queries will fail if they try to load more samples than this into memory, so this also limits the number of samples a query can return.").
 		Default("50000000").IntVar(&cfg.queryMaxSamples)
 
+	serverOnlyFlag(a, "query.convert-classic-histograms-from", "Native histogram kinds that PromQL converts to classic histograms when classic histogram series are selected. Valid values: nhcb. Requires --enable-feature=promql-native-histograms-as-classic.").
+		Hidden().PlaceHolder("<kind>").EnumsVar(&cfg.convertClassicHistogramsFrom, "nhcb")
+
 	a.Flag("scrape.discovery-reload-interval", "Interval used by scrape manager to throttle target groups updates.").
 		Hidden().Default("5s").SetValue(&cfg.scrape.DiscoveryReloadInterval)
 
-	a.Flag("enable-feature", "Comma separated feature names to enable. Valid options: concurrent-rule-eval, created-timestamp-zero-ingestion, delayed-compaction, exemplar-storage, extra-scrape-metrics, memory-snapshot-on-shutdown, metadata-wal-records, old-ui, otlp-deltatocumulative, otlp-native-delta-ingestion, promql-binop-fill-modifiers, promql-delayed-name-removal, promql-experimental-functions, promql-extended-range-selectors, promql-per-step-stats, st-storage, type-and-unit-labels, use-start-timestamps, use-uncached-io, xor2-encoding. See https://prometheus.io/docs/prometheus/latest/feature_flags/ for more details.").
+	a.Flag("enable-feature", "Comma separated feature names to enable. Valid options: concurrent-rule-eval, created-timestamp-zero-ingestion, delayed-compaction, exemplar-storage, extra-scrape-metrics, histograms-st-encoding, memory-snapshot-on-shutdown, metadata-wal-records, old-ui, openmetrics2, otlp-deltatocumulative, otlp-native-delta-ingestion, promql-binop-fill-modifiers, promql-delayed-name-removal, promql-experimental-functions, promql-native-histograms-as-classic, promql-per-step-stats, query-cost, search-api, st-storage, st-synthesis, type-and-unit-labels, use-start-timestamps, use-uncached-io, xor2-encoding, zstd-scrape. See https://prometheus.io/docs/prometheus/latest/feature_flags/ for more details.").
 		StringsVar(&cfg.featureList)
 
 	a.Flag("agent", "Run Prometheus in 'Agent mode'.").BoolVar(&agentMode)
 
 	promslogflag.AddFlags(a, &cfg.promslogConfig)
+	a.GetFlag(promslogflag.LevelFlagName).
+		Help(promslogflag.LevelFlagHelp + " Deprecated: set runtime.log_level in the configuration file instead.")
 
 	a.Flag("write-documentation", "Generate command line documentation. Internal use.").Hidden().Action(func(*kingpin.ParseContext) error {
 		if err := documentcli.GenerateMarkdown(a.Model(), os.Stdout); err != nil {
@@ -645,6 +693,11 @@ func main() {
 	logger := promslog.New(&cfg.promslogConfig)
 	slog.SetDefault(logger)
 
+	// The CLI log level controls startup logging and supplies the default when
+	// runtime.log_level is absent from the configuration file.
+	config.DefaultRuntimeConfig.LogLevel = config.LogLevel(cfg.promslogConfig.Level.String())
+	config.DefaultConfig.Runtime = config.DefaultRuntimeConfig
+
 	notifs := notifications.NewNotifications(cfg.maxNotificationsSubscribers, prometheus.DefaultRegisterer)
 	cfg.web.NotificationsSub = notifs.Sub
 	cfg.web.NotificationsGetter = notifs.Get
@@ -660,6 +713,19 @@ func main() {
 			cfg.autoReloadInterval, _ = model.ParseDuration("1s")
 		}
 		logger.Info("Automatic configuration file reloading enabled", "interval", cfg.autoReloadInterval)
+	}
+
+	if len(cfg.convertClassicHistogramsFrom) > 0 && !cfg.enableNativeHistogramsAsClassic {
+		fmt.Fprintln(os.Stderr, "--query.convert-classic-histograms-from requires --enable-feature=promql-native-histograms-as-classic")
+		os.Exit(1)
+	}
+	if cfg.enableNativeHistogramsAsClassic && len(cfg.convertClassicHistogramsFrom) == 0 {
+		cfg.convertClassicHistogramsFrom = []string{"nhcb"}
+	}
+
+	if cfg.web.MaxSearchLimit < 0 {
+		fmt.Fprintf(os.Stderr, "--web.search.max-limit must be non-negative; got %d (use 0 to disable the cap)\n", cfg.web.MaxSearchLimit)
+		os.Exit(1)
 	}
 
 	promqlParser := parser.NewParser(cfg.parserOpts)
@@ -680,7 +746,7 @@ func main() {
 	}
 
 	if cfg.memlimitRatio <= 0.0 || cfg.memlimitRatio > 1.0 {
-		fmt.Fprintf(os.Stderr, "--auto-gomemlimit.ratio must be greater than 0 and less than or equal to 1.")
+		fmt.Fprint(os.Stderr, "--auto-gomemlimit.ratio must be greater than 0 and less than or equal to 1.")
 		os.Exit(1)
 	}
 
@@ -689,7 +755,7 @@ func main() {
 		localStoragePath = cfg.agentStoragePath
 	}
 
-	cfg.web.ExternalURL, err = computeExternalURL(cfg.prometheusURL, cfg.web.ListenAddresses[0])
+	cfg.web.ExternalURL, err = computeExternalURL(cfg.prometheusURL, cfg.web.ListenAddresses[0], *webConfig)
 	if err != nil {
 		fmt.Fprintln(os.Stderr, fmt.Errorf("parse external URL %q: %w", cfg.prometheusURL, err))
 		os.Exit(2)
@@ -750,9 +816,21 @@ func main() {
 		}
 		cfg.tsdb.MaxExemplars = cfgFile.StorageConfig.ExemplarsConfig.MaxExemplars
 	}
-	if cfg.tsdb.BlockReloadInterval < model.Duration(1*time.Second) {
-		logger.Warn("The option --storage.tsdb.block-reload-interval is set to a value less than 1s. Setting it to 1s to avoid overload.")
-		cfg.tsdb.BlockReloadInterval = model.Duration(1 * time.Second)
+	minBlockReloadInterval := model.Duration(tsdb.MinBlockReloadInterval)
+	if cfg.tsdb.BlockReloadInterval < minBlockReloadInterval {
+		minBlockReloadIntervalString := minBlockReloadInterval.String()
+		logger.Warn("The option --storage.tsdb.block-reload-interval is set to a value less than " + minBlockReloadIntervalString + ". Setting it to " + minBlockReloadIntervalString + " to avoid overload.")
+		cfg.tsdb.BlockReloadInterval = minBlockReloadInterval
+	}
+	// The configuration file takes precedence over the flag-derived default. An
+	// absent field keeps that default; other values are rejected when the
+	// configuration is unmarshalled. The TSDB reads the field again on every
+	// reload and falls back to the value resolved here whenever it is absent.
+	switch cfgFile.StorageConfig.TSDBConfig.ChunkEncoding.Floats {
+	case config.FloatChunkEncodingXOR:
+		cfg.tsdb.FloatChunkEncoding = chunkenc.EncXOR
+	case config.FloatChunkEncodingXOR2:
+		cfg.tsdb.FloatChunkEncoding = chunkenc.EncXOR2
 	}
 	cfg.tsdb.OutOfOrderTimeWindow = cfgFile.StorageConfig.TSDBConfig.OutOfOrderTimeWindow
 	cfg.tsdb.StaleSeriesCompactionThreshold = cfgFile.StorageConfig.TSDBConfig.StaleSeriesCompactionThreshold
@@ -772,8 +850,9 @@ func main() {
 	}
 
 	if cfg.memlimitEnable {
-		if _, err := memlimit.SetGoMemLimitWithOpts(
+		if _, err := memlimit.Set(
 			memlimit.WithRatio(cfg.memlimitRatio),
+			memlimit.WithRefreshInterval(context.Background(), time.Duration(cfg.memlimitRefreshInterval)),
 			memlimit.WithProvider(
 				memlimit.ApplyFallback(
 					memlimit.FromCgroup,
@@ -789,7 +868,8 @@ func main() {
 	if tsdbDelayCompactFilePath != "" {
 		logger.Info("Compactions will be delayed for blocks not marked as uploaded in the file tracking uploads", "path", tsdbDelayCompactFilePath)
 		cfg.tsdb.BlockCompactionExcludeFunc = exludeBlocksPendingUpload(
-			logger, tsdbDelayCompactFilePath)
+			logger, tsdbDelayCompactFilePath,
+		)
 	}
 
 	// Now that the validity of the config is established, set the config
@@ -862,7 +942,7 @@ func main() {
 	klog.SetOutputBySeverity("INFO", klogv1Writer{})
 	// Avoid duplicate API deprecation warnings (e.g., "v1 Endpoints is deprecated in v1.33+...")
 	// that can pollute the logs.
-	rest.SetDefaultWarningHandlerWithContext(logging.NewDedupDeprecationWarningLogger())
+	rest.SetDefaultWarningHandlerWithContext(newDedupDeprecationWarningLogger())
 
 	modeAppName := "Prometheus Server"
 	mode := "server"
@@ -957,31 +1037,39 @@ func main() {
 	)
 
 	if !agentMode {
+		activeQueryTracker, err := promql.NewActiveQueryTracker(localStoragePath, cfg.queryConcurrency, logger.With("component", "activeQueryTracker"))
+		if err != nil {
+			logger.Error("failed to initialize active query tracker", "err", err)
+			os.Exit(1)
+		}
+
 		opts := promql.EngineOpts{
 			Logger:                   logger.With("component", "query engine"),
 			Reg:                      prometheus.DefaultRegisterer,
 			MaxSamples:               cfg.queryMaxSamples,
 			Timeout:                  time.Duration(cfg.queryTimeout),
-			ActiveQueryTracker:       promql.NewActiveQueryTracker(localStoragePath, cfg.queryConcurrency, logger.With("component", "activeQueryTracker")),
+			ActiveQueryTracker:       activeQueryTracker,
 			LookbackDelta:            time.Duration(cfg.lookbackDelta),
 			NoStepSubqueryIntervalFn: noStepSubqueryInterval.Get,
 			// EnableAtModifier and EnableNegativeOffset have to be
 			// always on for regular PromQL as of Prometheus v2.33.
-			EnableAtModifier:         true,
-			EnableNegativeOffset:     true,
-			EnablePerStepStats:       cfg.enablePerStepStats,
-			EnableDelayedNameRemoval: cfg.promqlEnableDelayedNameRemoval,
-			EnableTypeAndUnitLabels:  cfg.scrape.EnableTypeAndUnitLabels,
-			UseStartTimestamps:       cfg.useStartTimestamps,
-			FeatureRegistry:          features.DefaultRegistry,
-			Parser:                   promqlParser,
+			EnableAtModifier:                true,
+			EnableNegativeOffset:            true,
+			EnablePerStepStats:              cfg.enablePerStepStats,
+			EnableDelayedNameRemoval:        cfg.promqlEnableDelayedNameRemoval,
+			EnableTypeAndUnitLabels:         cfg.scrape.EnableTypeAndUnitLabels,
+			UseStartTimestamps:              cfg.useStartTimestamps,
+			EnableNativeHistogramsAsClassic: slices.Contains(cfg.convertClassicHistogramsFrom, "nhcb"),
+			EnableQueryCost:                 cfg.enableQueryCost,
+			FeatureRegistry:                 features.DefaultRegistry,
+			Parser:                          promqlParser,
 		}
 
 		queryEngine = promql.NewEngine(opts)
 
 		ruleManager = rules.NewManager(&rules.ManagerOptions{
 			NameValidationScheme:   cfgFile.GlobalConfig.MetricNameValidationScheme,
-			Appendable:             fanoutStorage,
+			AppendableV2:           fanoutStorage,
 			Queryable:              localStorage,
 			QueryFunc:              rules.EngineQueryFunc(queryEngine, fanoutStorage),
 			NotifyFunc:             rules.SendAlerts(notifierManager, cfg.web.ExternalURL.String()),
@@ -1017,6 +1105,7 @@ func main() {
 	cfg.web.RuleManager = ruleManager
 	cfg.web.Notifier = notifierManager
 	cfg.web.LookbackDelta = time.Duration(cfg.lookbackDelta)
+	cfg.web.QueryTimeout = time.Duration(cfg.queryTimeout)
 	cfg.web.IsAgent = agentMode
 	cfg.web.AppName = modeAppName
 	cfg.web.Parser = promqlParser
@@ -1052,6 +1141,9 @@ func main() {
 
 	// This is passed to ruleManager.Update().
 	externalURL := cfg.web.ExternalURL.String()
+
+	// Captured for the query_engine reloader, whose parameter shadows cfg.
+	enableQueryCost := cfg.enableQueryCost
 
 	reloaders := []reloader{
 		{
@@ -1090,6 +1182,16 @@ func main() {
 				if agentMode {
 					// No-op in Agent mode.
 					return nil
+				}
+
+				// Apply the reloadable query-cost limits only when the
+				// query-cost feature is enabled.
+				if enableQueryCost {
+					queryEngine.SetQueryLimits(
+						cfg.GlobalConfig.QueryMaxSeries,
+						cfg.GlobalConfig.QueryMaxSamplesRead,
+						time.Duration(cfg.GlobalConfig.QueryMaxDuration),
+					)
 				}
 
 				if cfg.GlobalConfig.QueryLogFile == "" {
@@ -1332,6 +1434,7 @@ func main() {
 				notifs.DeleteNotification(notifications.ConfigurationUnsuccessful)
 				return
 			}
+			checksum = ""
 			notifs.AddNotification(notifications.ConfigurationUnsuccessful)
 		}
 
@@ -1342,7 +1445,7 @@ func main() {
 				for {
 					select {
 					case <-hup:
-						if err := reloadConfig(cfg.configFile, cfg.tsdb.EnableExemplarStorage, logger, noStepSubqueryInterval, callback, reloaders...); err != nil {
+						if err := reloadConfig(cfg.configFile, cfg.tsdb.EnableExemplarStorage, logger, noStepSubqueryInterval, cfg.promslogConfig.Level, callback, reloaders...); err != nil {
 							logger.Error("Error reloading config", "err", err)
 						} else if cfg.enableAutoReload {
 							checksum, err = config.GenerateChecksum(cfg.configFile)
@@ -1351,7 +1454,7 @@ func main() {
 							}
 						}
 					case rc := <-webHandler.Reload():
-						if err := reloadConfig(cfg.configFile, cfg.tsdb.EnableExemplarStorage, logger, noStepSubqueryInterval, callback, reloaders...); err != nil {
+						if err := reloadConfig(cfg.configFile, cfg.tsdb.EnableExemplarStorage, logger, noStepSubqueryInterval, cfg.promslogConfig.Level, callback, reloaders...); err != nil {
 							logger.Error("Error reloading config", "err", err)
 							rc <- err
 						} else {
@@ -1376,7 +1479,7 @@ func main() {
 						}
 						logger.Info("Configuration file change detected, reloading the configuration.")
 
-						if err := reloadConfig(cfg.configFile, cfg.tsdb.EnableExemplarStorage, logger, noStepSubqueryInterval, callback, reloaders...); err != nil {
+						if err := reloadConfig(cfg.configFile, cfg.tsdb.EnableExemplarStorage, logger, noStepSubqueryInterval, cfg.promslogConfig.Level, callback, reloaders...); err != nil {
 							logger.Error("Error reloading config", "err", err)
 						} else {
 							checksum = currentChecksum
@@ -1408,7 +1511,7 @@ func main() {
 					return nil
 				}
 
-				if err := reloadConfig(cfg.configFile, cfg.tsdb.EnableExemplarStorage, logger, noStepSubqueryInterval, func(bool) {}, reloaders...); err != nil {
+				if err := reloadConfig(cfg.configFile, cfg.tsdb.EnableExemplarStorage, logger, noStepSubqueryInterval, cfg.promslogConfig.Level, func(bool) {}, reloaders...); err != nil {
 					return fmt.Errorf("error loading config from %q: %w", cfg.configFile, err)
 				}
 
@@ -1528,6 +1631,7 @@ func main() {
 					"OutOfOrderTimeWindow", cfg.agent.OutOfOrderTimeWindow,
 					"EnableSTAsZeroSample", cfg.agent.EnableSTAsZeroSample,
 					"EnableSTStorage", cfg.tsdb.EnableSTStorage,
+					"EnableMetadataWALRecords", cfg.agent.EnableMetadataWALRecords,
 				)
 
 				localStorage.Set(db, 0)
@@ -1650,7 +1754,7 @@ type reloader struct {
 	reloader func(*config.Config) error
 }
 
-func reloadConfig(filename string, enableExemplarStorage bool, logger *slog.Logger, noStepSubqueryInterval *safePromQLNoStepSubqueryInterval, callback func(bool), rls ...reloader) (err error) {
+func reloadConfig(filename string, enableExemplarStorage bool, logger *slog.Logger, noStepSubqueryInterval *safePromQLNoStepSubqueryInterval, logLevel *promslog.Level, callback func(bool), rls ...reloader) (err error) {
 	start := time.Now()
 	timingsLogger := logger
 	logger.Info("Loading configuration file", "filename", filename)
@@ -1689,6 +1793,9 @@ func reloadConfig(filename string, enableExemplarStorage bool, logger *slog.Logg
 	if failed {
 		return fmt.Errorf("one or more errors occurred while applying the new configuration (--config.file=%q)", filename)
 	}
+	if err := logLevel.Set(string(conf.Runtime.LogLevel)); err != nil {
+		return fmt.Errorf("applying log level: %w", err)
+	}
 
 	updateGoGC(conf, logger)
 	noStepSubqueryInterval.Set(conf.GlobalConfig.EvaluationInterval)
@@ -1724,8 +1831,9 @@ func compileCORSRegexString(s string) (*regexp.Regexp, error) {
 }
 
 // computeExternalURL computes a sanitized external URL from a raw input. It infers unset
-// URL parts from the OS and the given listen address.
-func computeExternalURL(u, listenAddr string) (*url.URL, error) {
+// URL parts from the OS and the given listen address. When u is empty, the scheme of the
+// inferred URL is set to https if webConfigFile configures TLS.
+func computeExternalURL(u, listenAddr, webConfigFile string) (*url.URL, error) {
 	if u == "" {
 		hostname, err := os.Hostname()
 		if err != nil {
@@ -1735,7 +1843,11 @@ func computeExternalURL(u, listenAddr string) (*url.URL, error) {
 		if err != nil {
 			return nil, err
 		}
-		u = fmt.Sprintf("http://%s:%s/", hostname, port)
+		scheme := "http"
+		if webConfigHasTLSServerConfig(webConfigFile) {
+			scheme = "https"
+		}
+		u = fmt.Sprintf("%s://%s:%s/", scheme, hostname, port)
 	}
 
 	if startsOrEndsWithQuote(u) {
@@ -1754,6 +1866,29 @@ func computeExternalURL(u, listenAddr string) (*url.URL, error) {
 	eu.Path = ppref
 
 	return eu, nil
+}
+
+// webConfigHasTLSServerConfig reports whether the web config file at path configures TLS,
+// i.e. contains a tls_server_config section that sets at least one TLS-enabling field, as
+// decided by exporter-toolkit's own TLSConfig.IsEnabled(). An empty path, or a file that
+// cannot be read or parsed as YAML, is treated as not configuring TLS; a definitive error
+// for such cases is reported later by toolkit_web.Validate.
+func webConfigHasTLSServerConfig(path string) bool {
+	if path == "" {
+		return false
+	}
+
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return false
+	}
+
+	var webConfig toolkit_web.Config
+	if err := yaml.Unmarshal(data, &webConfig); err != nil {
+		return false
+	}
+
+	return webConfig.TLSConfig.IsEnabled()
 }
 
 // storagePathFsSize returns the filesystem size for path or its closest existing parent.
@@ -1854,6 +1989,15 @@ func (s *readyStorage) ChunkQuerier(mint, maxt int64) (storage.ChunkQuerier, err
 	return nil, tsdb.ErrNotReady
 }
 
+// CostSamplingQueryable forwards bounded sampling to the ready storage.
+func (s *readyStorage) CostSamplingQueryable() (storage.SampleAndChunkQueryable, bool) {
+	provider, ok := s.get().(storage.CostSamplingQueryable)
+	if !ok {
+		return nil, false
+	}
+	return provider.CostSamplingQueryable()
+}
+
 func (s *readyStorage) ExemplarQuerier(ctx context.Context) (storage.ExemplarQuerier, error) {
 	if x := s.get(); x != nil {
 		switch db := x.(type) {
@@ -1919,9 +2063,16 @@ func (notReadyAppender) Rollback() error { return tsdb.ErrNotReady }
 
 type notReadyAppenderV2 struct{}
 
+var _ storage.ExemplarAppenderV2 = notReadyAppenderV2{}
+
 func (notReadyAppenderV2) Append(storage.SeriesRef, labels.Labels, int64, int64, float64, *histogram.Histogram, *histogram.FloatHistogram, storage.AOptions) (storage.SeriesRef, error) {
 	return 0, tsdb.ErrNotReady
 }
+
+func (notReadyAppenderV2) AppendExemplars(storage.SeriesRef, labels.Labels, []exemplar.Exemplar) (storage.SeriesRef, error) {
+	return 0, tsdb.ErrNotReady
+}
+
 func (notReadyAppenderV2) Commit() error { return tsdb.ErrNotReady }
 
 func (notReadyAppenderV2) Rollback() error { return tsdb.ErrNotReady }
@@ -2073,9 +2224,11 @@ type tsdbOptions struct {
 	BlockReloadInterval            model.Duration
 	EnableSTAsZeroSample           bool
 	EnableSTStorage                bool
-	EnableXOR2Encoding             bool
+	EnableHistogramSTEncoding      bool
 	StaleSeriesCompactionThreshold float64
 	EnableFastStartup              bool
+	FloatChunkEncoding             chunkenc.Encoding
+	EnableMetadataWALRecords       bool
 }
 
 func (opts tsdbOptions) ToTSDBOptions() tsdb.Options {
@@ -2105,9 +2258,11 @@ func (opts tsdbOptions) ToTSDBOptions() tsdb.Options {
 		FeatureRegistry:                features.DefaultRegistry,
 		EnableSTAsZeroSample:           opts.EnableSTAsZeroSample,
 		EnableSTStorage:                opts.EnableSTStorage,
-		EnableXOR2Encoding:             opts.EnableXOR2Encoding,
+		EnableHistogramSTEncoding:      opts.EnableHistogramSTEncoding,
 		StaleSeriesCompactionThreshold: opts.StaleSeriesCompactionThreshold,
 		EnableFastStartup:              opts.EnableFastStartup,
+		FloatChunkEncoding:             opts.FloatChunkEncoding,
+		EnableMetadataWALRecords:       opts.EnableMetadataWALRecords,
 	}
 }
 
@@ -2123,6 +2278,7 @@ type agentOptions struct {
 	OutOfOrderTimeWindow         int64 // TODO(bwplotka): Unused option, fix it or remove.
 	EnableSTAsZeroSample         bool
 	EnableSTStorage              bool
+	EnableMetadataWALRecords     bool
 	CheckpointFromInMemorySeries bool
 	CheckpointBatchSize          int
 }
@@ -2142,6 +2298,7 @@ func (opts agentOptions) ToAgentOptions(outOfOrderTimeWindow int64) agent.Option
 		OutOfOrderTimeWindow:         outOfOrderTimeWindow,
 		EnableSTAsZeroSample:         opts.EnableSTAsZeroSample,
 		EnableSTStorage:              opts.EnableSTStorage,
+		EnableMetadataWALRecords:     opts.EnableMetadataWALRecords,
 		CheckpointFromInMemorySeries: opts.CheckpointFromInMemorySeries,
 		CheckpointBatchSize:          opts.CheckpointBatchSize,
 	}

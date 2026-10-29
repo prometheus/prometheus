@@ -12,11 +12,13 @@ jobs:
     runs-on: ubuntu-latest
     if: github.repository_owner == 'prometheus'
     container:
-      image: quay.io/prometheus/golang-builder
+      image: quay.io/prometheus/golang-builder@sha256:f68fab2282d6ec1d2dd1c5fc79a630ec246bd40cf4ad01f9168a19942f42f1bb
     steps:
-      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
       - run: ./scripts/sync_repo_files.sh
         env:
-          GITHUB_TOKEN: ${{ secrets.PROMBOT_GITHUB_TOKEN }}
+          GITHUB_TOKEN: ${{ secrets.PROMBOT_REPOSYNC_TOKEN }}
+          GITHUB_TOKEN_PROMETHEUS: ${{ secrets.PROMBOT_REPOSYNC_TOKEN_PROMETHEUS }}
+          GITHUB_TOKEN_PROMETHEUS_COMMUNITY: ${{ secrets.PROMBOT_REPOSYNC_TOKEN_PROMETHEUS_COMMUNITY }}
