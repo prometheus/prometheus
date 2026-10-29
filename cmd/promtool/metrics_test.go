@@ -123,7 +123,7 @@ type mockStorage struct {
 	receivedContentType string
 }
 
-func (m *mockStorage) Store(req *http.Request, _ remoteapi.WriteMessageType) (*remoteapi.WriteResponse, error) {
+func (m *mockStorage) Store(req *http.Request, _ remoteapi.WriteMessageType, _ remoteapi.WriteMode) (*remoteapi.WriteResponse, error) {
 	m.called = true
 
 	// Capture content-type header.

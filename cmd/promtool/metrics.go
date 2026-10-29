@@ -116,7 +116,7 @@ func parseAndPushMetrics(writeAPI *remoteapi.API, messageType remoteapi.WriteMes
 	}
 
 	// Use remoteapi.Write which handles marshaling and compression internally.
-	_, err = writeAPI.Write(context.Background(), messageType, metricsData)
+	_, err = writeAPI.Write(context.Background(), messageType, remoteapi.WriteModeNone, metricsData)
 	if err != nil {
 		fmt.Fprintln(os.Stderr, "  FAILED:", err)
 		return false
