@@ -18,12 +18,13 @@ import (
 	"math"
 	"testing"
 
+	"github.com/stretchr/testify/require"
+
 	"github.com/prometheus/prometheus/model/histogram"
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/model/value"
 	"github.com/prometheus/prometheus/tsdb/chunkenc"
 	"github.com/prometheus/prometheus/tsdb/chunks"
-	"github.com/stretchr/testify/require"
 )
 
 type encoderCase struct {
@@ -36,7 +37,7 @@ func encoderCases() []encoderCase {
 	var cases []encoderCase
 	for _, kind := range []string{"integer", "float"} {
 		for _, n := range []int{8, 128} {
-			for _, shape := range []string{"stable", "grow", "stale", "schema", "gauge", "reset", "custom", "negative", "zero"} {
+			for _, shape := range []string{"stable", "grow", "shrink", "gauge-grow", "gauge-shrink", "stale", "schema", "gauge", "reset", "custom", "negative", "zero"} {
 				cases = append(cases, encoderCase{name: fmt.Sprintf("%s/%s/%d", kind, shape, n), kind: kind, shape: shape, buckets: n})
 			}
 		}
@@ -65,8 +66,15 @@ func encoderInput(tb testing.TB, c encoderCase) (Series, []chunks.Meta) {
 			continue
 		}
 		n := c.buckets
-		if c.shape == "grow" && i%73 >= 36 {
-			n += 2
+		switch c.shape {
+		case "grow", "gauge-grow":
+			if (i/36)%2 == 1 {
+				n += 2
+			}
+		case "shrink", "gauge-shrink":
+			if (i/36)%2 == 0 {
+				n += 2
+			}
 		}
 		step := i + 1
 		if c.shape == "reset" {
@@ -74,6 +82,10 @@ func encoderInput(tb testing.TB, c encoderCase) (Series, []chunks.Meta) {
 		}
 		h := &histogram.Histogram{Schema: 0, Count: uint64(step * n), Sum: float64(step * n), PositiveSpans: []histogram.Span{{Offset: 0, Length: uint32(n)}}, PositiveBuckets: make([]int64, n)}
 		h.PositiveBuckets[0] = int64(step)
+		if (c.shape == "grow" || c.shape == "shrink") && n > c.buckets {
+			h.PositiveBuckets[c.buckets] = -int64(step)
+			h.Count = uint64(step * c.buckets)
+		}
 		if c.shape == "negative" {
 			h.NegativeSpans = []histogram.Span{{Offset: 0, Length: uint32(n)}}
 			h.NegativeBuckets = append([]int64(nil), h.PositiveBuckets...)
@@ -87,7 +99,7 @@ func encoderInput(tb testing.TB, c encoderCase) (Series, []chunks.Meta) {
 		if c.shape == "schema" {
 			h.Schema = int32((i / 37) % 3)
 		}
-		if c.shape == "gauge" {
+		if c.shape == "gauge" || c.shape == "gauge-grow" || c.shape == "gauge-shrink" {
 			h.CounterResetHint = histogram.GaugeType
 		}
 		if c.shape == "custom" {
@@ -110,9 +122,15 @@ func encoderInput(tb testing.TB, c encoderCase) (Series, []chunks.Meta) {
 		return NewListSeries(labels.EmptyLabels(), in), nil
 	}
 	var metas []chunks.Meta
-	// Input chunk boundaries differ from the encoder's 120-sample split.
-	for start := 0; start < len(in); start += 73 {
-		end := min(start+73, len(in))
+	inputChunkSize := 73
+	switch c.shape {
+	case "grow", "shrink", "gauge-grow", "gauge-shrink":
+		// Keep layout changes at input boundaries so input recoding cannot
+		// hide them from the encoder under test.
+		inputChunkSize = 36
+	}
+	for start := 0; start < len(in); start += inputChunkSize {
+		end := min(start+inputChunkSize, len(in))
 		ms, err := ExpandChunks(NewSeriesToChunkEncoder(NewListSeries(labels.EmptyLabels(), in[start:end])).Iterator(nil))
 		require.NoError(tb, err)
 		metas = append(metas, ms...)

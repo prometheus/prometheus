@@ -16,10 +16,11 @@ package storage
 import (
 	"testing"
 
+	"github.com/stretchr/testify/require"
+
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/tsdb/chunkenc"
 	"github.com/prometheus/prometheus/tsdb/chunks"
-	"github.com/stretchr/testify/require"
 )
 
 func encoderMergeInput(tb testing.TB, c encoderCase, mode string, mergeFunc VerticalSeriesMergeFunc) ChunkSeries {
@@ -48,12 +49,10 @@ func encoderMergeInput(tb testing.TB, c encoderCase, mode string, mergeFunc Vert
 }
 
 func TestCompactingChunkSeriesMergerHistogramTargets(t *testing.T) {
-	for _, c := range []encoderCase{
-		{name: "integer8", kind: "integer", shape: "stable", buckets: 8},
-		{name: "float8", kind: "float", shape: "stable", buckets: 8},
-		{name: "float128", kind: "float", shape: "stable", buckets: 128},
-		{name: "scalar", kind: "scalar"},
-	} {
+	for _, c := range encoderCases() {
+		if c.list {
+			continue
+		}
 		for _, mode := range []string{"identical", "different-cuts", "disjoint"} {
 			t.Run(c.name+"/"+mode, func(t *testing.T) {
 				nilTargets := func(series ...Series) Series {
@@ -79,6 +78,7 @@ func TestCompactingChunkSeriesMergerHistogramTargets(t *testing.T) {
 }
 
 func BenchmarkCompactingChunkSeriesMerger(b *testing.B) {
+	// Identical and disjoint inputs are controls that bypass re-encoding.
 	for _, c := range []encoderCase{
 		{name: "integer8", kind: "integer", shape: "stable", buckets: 8},
 		{name: "float8", kind: "float", shape: "stable", buckets: 8},
