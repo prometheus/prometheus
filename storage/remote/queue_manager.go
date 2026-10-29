@@ -788,9 +788,7 @@ func isV2TimeSeriesOldFilter(metrics *queueManagerMetrics, baseTime time.Time, s
 // seriesMetricType returns the effective MetricType for a series from type-and-unit labels or cached WAL metadata.
 func (t *QueueManager) seriesMetricType(lbls labels.Labels, meta unique.Handle[metadata.Metadata]) model.MetricType {
 	if t.enableTypeAndUnitLabels {
-		if mType := schema.NewMetadataFromLabels(lbls).Type; mType != model.MetricTypeUnknown {
-			return mType
-		}
+		return schema.NewMetadataFromLabels(lbls).Type
 	}
 	if !metadata.IsZeroHandle(meta) {
 		return meta.Value().Type
