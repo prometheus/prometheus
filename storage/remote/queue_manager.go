@@ -980,7 +980,8 @@ outer:
 		meta := t.seriesMetadata[e.Ref]
 		t.seriesMtx.Unlock()
 		if t.mode != remoteapi.WriteModeNone {
-			// TODO(bwplotka): Coalesce exemplars onto matching TimeSeries in populateV2TimeSeries instead of dropping detached exemplars (being fixed in https://github.com/prometheus/prometheus/pull/20070).
+			// TODO(bwplotka): Dropping detached exemplars after series/NHCB lookup above is a temporary stop-gap until
+			// https://github.com/prometheus/prometheus/pull/20070 coalesces exemplars onto matching TimeSeries in populateV2TimeSeries.
 			t.dataDropped.incr(1)
 			t.metrics.droppedExemplarsTotal.WithLabelValues(reasonDetachedExemplarNotAllowed).Inc()
 			t.logger.Debug("Dropped detached exemplar; remote_write mode requires exemplars to be attached to a series with samples or histograms", "mode", t.mode, "ref", e.Ref, "series", lbls.String())
