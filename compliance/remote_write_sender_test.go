@@ -116,6 +116,8 @@ var _ sender.Sender = internalPrometheus{}
 // TestRemoteWriteSender runs remote write sender compliance tests defined in
 // https://github.com/prometheus/compliance/tree/main/remotewrite/sender against
 // both agent and server modes.
+// TODO(bwplotka): Add sender.StatelessComplianceTests() and sender.StatelessSTComplianceTests()
+// once https://github.com/prometheus/prometheus/pull/20098 is merged.
 func TestRemoteWriteSender(t *testing.T) {
 	bin := buildPrometheus(t)
 

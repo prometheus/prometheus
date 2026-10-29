@@ -64,10 +64,9 @@ func TestMain(m *testing.M) {
 	flag.Parse()
 
 	// Skip receiver mode SHOULD rejections until implemented in Prometheus.
+	// NOTE(bwplotka): Baseline TestRemoteWriteSender (mode=none) passes without skips;
+	// stateless sender suites and their skips will be added once https://github.com/prometheus/prometheus/pull/20098 is merged.
 	skip := "TestRemoteWriteReceiver/internal-prometheus/modes/validation/.*_(classic_histogram_samples|untyped_metadata|without_start_timestamp)"
-	if envSkip := os.Getenv("PROMETHEUS_RW_COMPLIANCE_SKIP_TEST_RE"); envSkip != "" {
-		skip = envSkip + "|" + skip
-	}
 	if existing := flag.Lookup("test.skip").Value.String(); existing != "" {
 		skip = existing + "|" + skip
 	}
