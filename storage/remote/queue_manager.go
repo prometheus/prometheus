@@ -70,7 +70,6 @@ const (
 	reasonNHCBNotSupported           = "nhcb_in_rw1_not_supported"
 	reasonNHCBConversionError        = "nhcb_to_classic_conversion_error"
 	reasonClassicHistogramNotAllowed = "classic_histogram_not_allowed"
-	// TODO(bwplotka): Temporary, fixed in https://github.com/prometheus/prometheus/pull/20070.
 	reasonDetachedExemplarNotAllowed = "detached_exemplar_not_allowed"
 	reasonMissingMetadataType        = "missing_metadata_type"
 	reasonMissingStartTimestamp      = "missing_start_timestamp"
@@ -987,14 +986,6 @@ outer:
 		}
 		meta := t.seriesMetadata[e.Ref]
 		t.seriesMtx.Unlock()
-		if t.mode != remoteapi.WriteModeNone {
-			// TODO(bwplotka): Dropping detached exemplars after series/NHCB lookup above is a temporary stop-gap until
-			// https://github.com/prometheus/prometheus/pull/20070 coalesces exemplars onto matching TimeSeries in populateV2TimeSeries.
-			t.dataDropped.incr(1)
-			t.metrics.droppedExemplarsTotal.WithLabelValues(reasonDetachedExemplarNotAllowed).Inc()
-			t.logger.Debug("Dropped detached exemplar; remote_write mode requires exemplars to be attached to a series with samples or histograms", "mode", t.mode, "ref", e.Ref, "series", lbls)
-			continue
-		}
 		// This will only loop if the queues are being resharded.
 		backoff := t.cfg.MinBackoff
 		for {
@@ -2045,12 +2036,20 @@ func (s *shards) runShard(ctx context.Context, shardID int, queue *queue) {
 			}
 			_ = s.sendSamples(ctx, pendingData[:n], nPendingSamples, nPendingExemplars, nPendingHistograms, pBuf, encBuf, compr)
 		case remoteapi.WriteV2MessageType:
-			nPendingSamples, nPendingExemplars, nPendingHistograms, nUnexpectedMetadata := populateV2TimeSeries(&symbolTable, batch, pendingDataV2, s.qm.sendExemplars, s.qm.sendNativeHistograms, s.qm.enableTypeAndUnitLabels)
-			n := nPendingSamples + nPendingExemplars + nPendingHistograms
+			nSeries, nPendingSamples, nPendingExemplars, nPendingHistograms, nUnexpectedMetadata, nDroppedExemplars := populateV2TimeSeries(&symbolTable, batch, pendingDataV2, s.qm.sendExemplars, s.qm.sendNativeHistograms, s.qm.enableTypeAndUnitLabels, s.qm.mode)
 			if nUnexpectedMetadata > 0 {
 				s.qm.logger.Warn("unexpected metadata sType in populateV2TimeSeries", "count", nUnexpectedMetadata)
 			}
-			_ = s.sendV2Samples(ctx, pendingDataV2[:n], symbolTable.Symbols(), nPendingSamples, nPendingExemplars, nPendingHistograms, &pBufRaw, encBuf, compr)
+			if nDroppedExemplars > 0 {
+				s.qm.dataDropped.incr(int64(nDroppedExemplars))
+				s.qm.metrics.droppedExemplarsTotal.WithLabelValues(reasonDetachedExemplarNotAllowed).Add(float64(nDroppedExemplars))
+				s.qm.metrics.pendingExemplars.Sub(float64(nDroppedExemplars))
+				s.enqueuedExemplars.Sub(int64(nDroppedExemplars))
+				s.qm.logger.Debug("Dropped detached exemplars; remote_write mode requires exemplars to be attached to a series with samples or histograms in the same batch", "mode", s.qm.mode, "count", nDroppedExemplars)
+			}
+			if nSeries > 0 {
+				_ = s.sendV2Samples(ctx, pendingDataV2[:nSeries], symbolTable.Symbols(), nPendingSamples, nPendingExemplars, nPendingHistograms, &pBufRaw, encBuf, compr)
+			}
 			symbolTable.Reset()
 		}
 	}
@@ -2415,71 +2414,125 @@ func (s *shards) sendV2SamplesWithBackoff(ctx context.Context, samples []writev2
 	return accumulatedStats, err
 }
 
-func populateV2TimeSeries(symbolTable *writev2.SymbolsTable, batch []timeSeries, pendingData []writev2.TimeSeries, sendExemplars, sendNativeHistograms, enableTypeAndUnitLabels bool) (int, int, int, int) {
-	var nPendingSamples, nPendingExemplars, nPendingHistograms, nUnexpectedMetadata int
-	for nPending, d := range batch {
-		pendingData[nPending].Samples = pendingData[nPending].Samples[:0]
-		var (
-			mType = model.MetricTypeUnknown
-			unit  string
-			help  string
-		)
-		if !metadata.IsZeroHandle(d.metadata) {
-			meta := d.metadata.Value()
-			mType = meta.Type
-			unit = meta.Unit
-			help = meta.Help
+func initV2TimeSeriesMetadata(ts *writev2.TimeSeries, symbolTable *writev2.SymbolsTable, d timeSeries, enableTypeAndUnitLabels bool) {
+	var (
+		mType = model.MetricTypeUnknown
+		unit  string
+		help  string
+	)
+	if !metadata.IsZeroHandle(d.metadata) {
+		meta := d.metadata.Value()
+		mType = meta.Type
+		unit = meta.Unit
+		help = meta.Help
+	}
+	if enableTypeAndUnitLabels {
+		m := schema.NewMetadataFromLabels(d.seriesLabels)
+		if m.Type != model.MetricTypeUnknown {
+			mType = m.Type
 		}
-		if enableTypeAndUnitLabels {
-			m := schema.NewMetadataFromLabels(d.seriesLabels)
-			if m.Type != model.MetricTypeUnknown {
-				mType = m.Type
-			}
-			if m.Unit != "" {
-				unit = m.Unit
-			}
+		if m.Unit != "" {
+			unit = m.Unit
 		}
-		pendingData[nPending].Metadata.Type = writev2.FromMetadataType(mType)
-		pendingData[nPending].Metadata.UnitRef = symbolTable.Symbolize(unit)
-		pendingData[nPending].Metadata.HelpRef = symbolTable.Symbolize(help)
+	}
+	ts.Metadata.Type = writev2.FromMetadataType(mType)
+	ts.Metadata.UnitRef = symbolTable.Symbolize(unit)
+	ts.Metadata.HelpRef = symbolTable.Symbolize(help)
+}
 
+func populateV2TimeSeries(symbolTable *writev2.SymbolsTable, batch []timeSeries, pendingData []writev2.TimeSeries, sendExemplars, sendNativeHistograms, enableTypeAndUnitLabels bool, mode ...remoteapi.WriteMode) (int, int, int, int, int, int) {
+	var (
+		nSeries, nPendingSamples, nPendingExemplars, nPendingHistograms, nUnexpectedMetadata, nDroppedExemplars int
+		hasExemplars                                                                                            bool
+		rwMode                                                                                                  remoteapi.WriteMode
+	)
+	if len(mode) > 0 {
+		rwMode = mode[0]
+	}
+
+	for _, d := range batch {
+		if d.sType == tExemplar {
+			hasExemplars = true
+			continue
+		}
+		if d.sType == tMetadata {
+			nUnexpectedMetadata++
+			continue
+		}
+
+		pendingData[nSeries].Samples = pendingData[nSeries].Samples[:0]
 		if sendExemplars {
-			pendingData[nPending].Exemplars = pendingData[nPending].Exemplars[:0]
+			pendingData[nSeries].Exemplars = pendingData[nSeries].Exemplars[:0]
 		}
 		if sendNativeHistograms {
-			pendingData[nPending].Histograms = pendingData[nPending].Histograms[:0]
+			pendingData[nSeries].Histograms = pendingData[nSeries].Histograms[:0]
 		}
+		initV2TimeSeriesMetadata(&pendingData[nSeries], symbolTable, d, enableTypeAndUnitLabels)
 
 		// Number of pending samples is limited by the fact that sendSamples (via sendSamplesWithBackoff)
 		// retries endlessly, so once we reach max samples, if we can never send to the endpoint we'll
 		// stop reading from the queue. This makes it safe to reference pendingSamples by index.
-		pendingData[nPending].LabelsRefs = symbolTable.SymbolizeLabels(d.seriesLabels, pendingData[nPending].LabelsRefs)
+		pendingData[nSeries].LabelsRefs = symbolTable.SymbolizeLabels(d.seriesLabels, pendingData[nSeries].LabelsRefs)
 		switch d.sType {
 		case tSample:
-			pendingData[nPending].Samples = append(pendingData[nPending].Samples, writev2.Sample{
+			pendingData[nSeries].Samples = append(pendingData[nSeries].Samples, writev2.Sample{
 				Value:          d.value,
 				Timestamp:      d.timestamp,
 				StartTimestamp: d.startTimestamp,
 			})
 			nPendingSamples++
-		case tExemplar:
-			pendingData[nPending].Exemplars = append(pendingData[nPending].Exemplars, writev2.Exemplar{
-				LabelsRefs: symbolTable.SymbolizeLabels(d.exemplarLabels, nil), // TODO: optimize, reuse slice
-				Value:      d.value,
-				Timestamp:  d.timestamp,
-			})
-			nPendingExemplars++
 		case tHistogram:
-			pendingData[nPending].Histograms = append(pendingData[nPending].Histograms, writev2.FromIntHistogram(d.startTimestamp, d.timestamp, d.histogram))
+			pendingData[nSeries].Histograms = append(pendingData[nSeries].Histograms, writev2.FromIntHistogram(d.startTimestamp, d.timestamp, d.histogram))
 			nPendingHistograms++
 		case tFloatHistogram:
-			pendingData[nPending].Histograms = append(pendingData[nPending].Histograms, writev2.FromFloatHistogram(d.startTimestamp, d.timestamp, d.floatHistogram))
+			pendingData[nSeries].Histograms = append(pendingData[nSeries].Histograms, writev2.FromFloatHistogram(d.startTimestamp, d.timestamp, d.floatHistogram))
 			nPendingHistograms++
-		case tMetadata:
-			nUnexpectedMetadata++
 		}
+		nSeries++
 	}
-	return nPendingSamples, nPendingExemplars, nPendingHistograms, nUnexpectedMetadata
+
+	if !hasExemplars {
+		return nSeries, nPendingSamples, nPendingExemplars, nPendingHistograms, nUnexpectedMetadata, nDroppedExemplars
+	}
+
+	nSeriesWithData := nSeries
+	for _, d := range batch {
+		if d.sType != tExemplar {
+			continue
+		}
+		pendingData[nSeries].LabelsRefs = symbolTable.SymbolizeLabels(d.seriesLabels, pendingData[nSeries].LabelsRefs)
+		ex := writev2.Exemplar{
+			LabelsRefs: symbolTable.SymbolizeLabels(d.exemplarLabels, nil), // TODO: optimize, reuse slice
+			Value:      d.value,
+			Timestamp:  d.timestamp,
+		}
+		attached := false
+		for i := range nSeriesWithData {
+			if slices.Equal(pendingData[i].LabelsRefs, pendingData[nSeries].LabelsRefs) {
+				pendingData[i].Exemplars = append(pendingData[i].Exemplars, ex)
+				nPendingExemplars++
+				attached = true
+				break
+			}
+		}
+		if attached {
+			continue
+		}
+		if rwMode != remoteapi.WriteModeNone {
+			nDroppedExemplars++
+			continue
+		}
+		pendingData[nSeries].Samples = pendingData[nSeries].Samples[:0]
+		if sendNativeHistograms {
+			pendingData[nSeries].Histograms = pendingData[nSeries].Histograms[:0]
+		}
+		pendingData[nSeries].Exemplars = append(pendingData[nSeries].Exemplars[:0], ex)
+		initV2TimeSeriesMetadata(&pendingData[nSeries], symbolTable, d, enableTypeAndUnitLabels)
+		nPendingExemplars++
+		nSeries++
+	}
+
+	return nSeries, nPendingSamples, nPendingExemplars, nPendingHistograms, nUnexpectedMetadata, nDroppedExemplars
 }
 
 func (t *QueueManager) sendWriteRequestWithBackoff(ctx context.Context, attempt func(int) error, onRetry func()) error {
