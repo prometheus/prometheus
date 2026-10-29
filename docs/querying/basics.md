@@ -356,14 +356,13 @@ syntax can be quoted. A quoted metric name goes inside the selector's braces:
 {"http.server.request.duration", "service.name"="api"}
 ```
 
-With [`--enable-feature=promql-unquoted-utf8-names`](../feature_flags.md#unquoted-utf-8-names-in-promql),
-the same selector can be written as:
+The same selector can be written without quotes:
 
 ```promql
 http.server.request.duration{service.name="api"}
 ```
 
-When this feature is enabled, unquoted names follow these rules:
+Unquoted names follow these rules:
 
 | Name | First character | Subsequent characters |
 | --- | --- | --- |
@@ -395,7 +394,7 @@ a different name.
 
 Quoted and unquoted spellings of the same name select the same series. Quoting
 remains supported and is required when targeting older PromQL parsers or servers
-without this feature enabled. The feature does not change storage, ingestion
+without support for these names. These syntax rules do not change storage, ingestion
 validation, text exposition, or metric name translation.
 
 ### Range Vector Selectors
