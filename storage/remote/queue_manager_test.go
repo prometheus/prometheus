@@ -2917,6 +2917,32 @@ func TestPopulateV2TimeSeries_MetadataAndTypeAndUnit(t *testing.T) {
 			expectedUnit:      "bytes",
 			enableTypeAndUnit: true,
 		},
+		{
+			name:      "type-from-label-unit-from-meta",
+			typeLabel: "counter",
+			unitLabel: "",
+			metadata: &metadata.Metadata{
+				Type: model.MetricTypeGauge,
+				Unit: "bytes",
+				Help: "Test metric",
+			},
+			expectedType:      writev2.Metadata_METRIC_TYPE_COUNTER,
+			expectedUnit:      "bytes",
+			enableTypeAndUnit: true,
+		},
+		{
+			name:      "type-from-meta-unit-from-label",
+			typeLabel: "",
+			unitLabel: "requests",
+			metadata: &metadata.Metadata{
+				Type: model.MetricTypeGauge,
+				Unit: "bytes",
+				Help: "Test metric",
+			},
+			expectedType:      writev2.Metadata_METRIC_TYPE_GAUGE,
+			expectedUnit:      "requests",
+			enableTypeAndUnit: true,
+		},
 	}
 
 	for _, tc := range testCases {
