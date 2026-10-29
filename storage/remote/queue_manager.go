@@ -836,6 +836,9 @@ func (t *QueueManager) shouldDropHistogramForMode(ref chunks.HeadSeriesRef, st i
 		return false
 	}
 	mType := t.seriesMetricType(lbls, meta)
+	// TODO(bwplotka): Consider inferring histogram or gaugehistogram type from the metric name or the native histogram's
+	// counter reset hint (https://prometheus.io/docs/specs/native_histograms/#flavors) as recommended by
+	// https://prometheus.io/docs/specs/prw/remote_write_spec_2_0/#stateless-mode.
 	if mType != model.MetricTypeHistogram && mType != model.MetricTypeGaugeHistogram {
 		t.dataDropped.incr(1)
 		t.metrics.droppedHistogramsTotal.WithLabelValues(reasonMissingMetadataType).Inc()
