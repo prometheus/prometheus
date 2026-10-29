@@ -4090,30 +4090,14 @@ url: <string>
 # * `none`: default Remote-Write 2.0 behavior with no additional restrictions.
 # * `stateless`: appends `;mode=stateless` to the Content-Type header, defaults `send_native_histograms` to `true`,
 #   requires `--enable-feature=metadata-wal-records` or `--enable-feature=type-and-unit-labels`, and drops classic
-#   histogram float series, detached exemplars, and series with unspecified metadata type.
+#   histogram float series, series with unspecified metadata type, and all exemplars (until sample-exemplar coalescing
+#   is implemented, as `stateless` mode forbids detached exemplars).
 # * `stateless-st`: appends `;mode=stateless-st` to the Content-Type header, includes all `stateless` rules,
 #   additionally requires `--enable-feature=st-storage`, and drops cumulative metrics missing a start timestamp.
 #
-# Once metadata relabeling (https://github.com/prometheus/proposals/pull/104) is added, untyped series (such as
-# recording rule outputs) can be relabeled to `counter` or `gauge` via `write_relabel_configs` or `metric_relabel_configs`
-# (the `__type__` rules below already work when `--enable-feature=type-and-unit-labels` is enabled):
-#   write_relabel_configs:
-#     - source_labels: [__type__, __help__]
-#       regex: ';(.+)'
-#       target_label: __help__
-#       replacement: '$1 (type inferred from untyped)'
-#     - source_labels: [__type__, __help__]
-#       regex: ';'
-#       target_label: __help__
-#       replacement: '(type inferred from untyped)'
-#     - source_labels: [__name__, __type__]
-#       regex: '.*_total;'
-#       target_label: __type__
-#       replacement: counter
-#     - source_labels: [__type__]
-#       regex: ''
-#       target_label: __type__
-#       replacement: gauge
+# Support for metadata relabeling (https://github.com/prometheus/proposals/pull/104) is coming to allow relabeling
+# untyped series (such as recording rule outputs) to `counter` or `gauge` (relabeling `__type__` already works when
+# `--enable-feature=type-and-unit-labels` is enabled).
 #
 # Read more on https://prometheus.io/docs/specs/prw/remote_write_spec_2_0/#modes
 [ mode: <none | stateless | stateless-st> | default = none ]
@@ -4136,6 +4120,7 @@ write_relabel_configs:
 [ name: <string> ]
 
 # Enables sending of exemplars over remote write. Note that exemplar storage itself must be enabled for exemplars to be scraped in the first place.
+# When `mode` is `stateless` or `stateless-st`, all exemplars are currently dropped until sample-exemplar coalescing is implemented.
 [ send_exemplars: <boolean> | default = false ]
 
 # Enables sending of native histograms, also known as sparse histograms, over remote write.
