@@ -17,6 +17,20 @@ They may be enabled by default in future versions.
 
 Exemplar storage is implemented as a fixed size circular buffer that stores exemplars in memory for all series. Enabling this feature will enable the storage of exemplars scraped by Prometheus. The config file block [storage](configuration/configuration.md#configuration-file)/[exemplars](configuration/configuration.md#exemplars) can be used to control the size of circular buffer by # of exemplars. An exemplar with just a `trace_id=<jaeger-trace-id>` uses roughly 100 bytes of memory via the in-memory exemplar storage. If the exemplar storage is enabled, we will also append the exemplars to WAL for local persistence (for WAL duration).
 
+## Remote-read query sharding
+
+`--enable-feature=remote-read-sharding`
+
+Enables TSDB query sharding for remote-read requests that specify a shard count
+and index in their query hints. Both sampled and streamed chunk responses are
+supported. Each series belongs to one shard according to its stable TSDB label
+hash; external labels added to responses do not affect the assignment.
+
+This feature computes the stable label hash when creating a series, adding
+ingestion CPU cost. It is disabled by default. See the
+[remote-read API](querying/remote_read_api.md#query-sharding) for hint semantics
+and compatibility with older servers.
+
 ## Memory snapshot on shutdown
 
 `--enable-feature=memory-snapshot-on-shutdown`
