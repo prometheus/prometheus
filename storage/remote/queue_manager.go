@@ -2317,28 +2317,29 @@ func populateV2TimeSeries(symbolTable *writev2.SymbolsTable, batch []timeSeries,
 	var nPendingSamples, nPendingExemplars, nPendingHistograms, nUnexpectedMetadata int
 	for nPending, d := range batch {
 		pendingData[nPending].Samples = pendingData[nPending].Samples[:0]
-		switch {
-		case enableTypeAndUnitLabels:
-			m := schema.NewMetadataFromLabels(d.seriesLabels)
-			pendingData[nPending].Metadata.Type = writev2.FromMetadataType(m.Type)
-			pendingData[nPending].Metadata.UnitRef = symbolTable.Symbolize(m.Unit)
-			pendingData[nPending].Metadata.HelpRef = 0 // Type and unit does not give us help.
-			// Use Help from d.metadata if available.
-			if !metadata.IsZeroHandle(d.metadata) {
-				pendingData[nPending].Metadata.HelpRef = symbolTable.Symbolize(d.metadata.Value().Help)
-			}
-		case !metadata.IsZeroHandle(d.metadata):
+		var (
+			mType = model.MetricTypeUnknown
+			unit  string
+			help  string
+		)
+		if !metadata.IsZeroHandle(d.metadata) {
 			meta := d.metadata.Value()
-			pendingData[nPending].Metadata.Type = writev2.FromMetadataType(meta.Type)
-			pendingData[nPending].Metadata.HelpRef = symbolTable.Symbolize(meta.Help)
-			pendingData[nPending].Metadata.UnitRef = symbolTable.Symbolize(meta.Unit)
-		default:
-			// Safeguard against sending garbage in case of not having metadata
-			// for whatever reason.
-			pendingData[nPending].Metadata.Type = writev2.FromMetadataType(model.MetricTypeUnknown)
-			pendingData[nPending].Metadata.UnitRef = 0
-			pendingData[nPending].Metadata.HelpRef = 0
+			mType = meta.Type
+			unit = meta.Unit
+			help = meta.Help
 		}
+		if enableTypeAndUnitLabels {
+			m := schema.NewMetadataFromLabels(d.seriesLabels)
+			if m.Type != model.MetricTypeUnknown {
+				mType = m.Type
+			}
+			if m.Unit != "" {
+				unit = m.Unit
+			}
+		}
+		pendingData[nPending].Metadata.Type = writev2.FromMetadataType(mType)
+		pendingData[nPending].Metadata.UnitRef = symbolTable.Symbolize(unit)
+		pendingData[nPending].Metadata.HelpRef = symbolTable.Symbolize(help)
 
 		if sendExemplars {
 			pendingData[nPending].Exemplars = pendingData[nPending].Exemplars[:0]
