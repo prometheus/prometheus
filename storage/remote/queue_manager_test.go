@@ -2698,7 +2698,7 @@ func TestPopulateV2TimeSeries_UnexpectedMetadata(t *testing.T) {
 		{sType: tMetadata, seriesLabels: labels.FromStrings("__name__", "metric4")},
 	}
 
-	nSamples, nExemplars, nHistograms, nUnexpected := populateV2TimeSeries(
+	_, nSamples, nExemplars, nHistograms, nUnexpected, _ := populateV2TimeSeries(
 		&symbolTable, batch, pendingData, false, false, false,
 	)
 
@@ -2812,7 +2812,7 @@ func TestPopulateV2TimeSeries_TypeAndUnitLabels(t *testing.T) {
 			pendingData := make([]writev2.TimeSeries, 1)
 
 			symbolTable.Reset()
-			nSamples, nExemplars, nHistograms, _ := populateV2TimeSeries(
+			_, nSamples, nExemplars, nHistograms, _, _ := populateV2TimeSeries(
 				&symbolTable,
 				batch,
 				pendingData,
@@ -2975,7 +2975,7 @@ func TestPopulateV2TimeSeries_MetadataAndTypeAndUnit(t *testing.T) {
 			pendingData := make([]writev2.TimeSeries, 1)
 
 			symbolTable.Reset()
-			nSamples, nExemplars, nHistograms, _ := populateV2TimeSeries(
+			_, nSamples, nExemplars, nHistograms, _, _ := populateV2TimeSeries(
 				&symbolTable,
 				batch,
 				pendingData,
@@ -4136,11 +4136,12 @@ func TestQueueManager_RemoteWriteModes(t *testing.T) {
 			sUntypedHist, mUntypedHist := makeSeries(4, "untyped_hist", model.MetricTypeUnknown)
 			sCounterNoST, mCounterNoST := makeSeries(5, "requests_total", model.MetricTypeCounter)
 			sNativeHist, mNativeHist := makeSeries(6, "native_dur", model.MetricTypeHistogram)
+			sDetachedExemplarOnly, mDetachedExemplarOnly := makeSeries(7, "detached_exemplar_total", model.MetricTypeCounter)
 
-			allSeries := []record.RefSeries{sClassicBucket, sClassicGaugeHist, sUntyped, sUntypedHist, sCounterNoST, sNativeHist}
+			allSeries := []record.RefSeries{sClassicBucket, sClassicGaugeHist, sUntyped, sUntypedHist, sCounterNoST, sNativeHist, sDetachedExemplarOnly}
 			m.StoreSeries(allSeries, 0)
 			if !enableTypeAndUnitLabels {
-				m.StoreMetadata([]record.RefMetadata{mClassicBucket, mClassicGaugeHist, mUntyped, mUntypedHist, mCounterNoST, mNativeHist})
+				m.StoreMetadata([]record.RefMetadata{mClassicBucket, mClassicGaugeHist, mUntyped, mUntypedHist, mCounterNoST, mNativeHist, mDetachedExemplarOnly})
 			}
 
 			// Classic histogram float samples and untyped samples must be dropped; counter without ST and float staleness
@@ -4162,10 +4163,11 @@ func TestQueueManager_RemoteWriteModes(t *testing.T) {
 			require.True(t, m.AppendFloatHistograms([]record.RefFloatHistogramSample{
 				{Ref: sUntypedHist.Ref, T: 2000, FH: nativeFloatHist},
 			}))
-			// Detached exemplars are dropped in stateless mode until exemplar coalescing is implemented.
+			// Exemplars with a matching sample or histogram in the batch are coalesced; detached exemplars are dropped.
 			require.True(t, m.AppendExemplars([]record.RefExemplar{
 				{Ref: sCounterNoST.Ref, T: 1000, V: 1, Labels: labels.FromStrings("trace_id", "abc")},
 				{Ref: sNativeHist.Ref, T: 1000, V: 2, Labels: labels.FromStrings("trace_id", "def")},
+				{Ref: sDetachedExemplarOnly.Ref, T: 1000, V: 3, Labels: labels.FromStrings("trace_id", "ghi")},
 			}))
 
 			stop()
@@ -4175,7 +4177,7 @@ func TestQueueManager_RemoteWriteModes(t *testing.T) {
 			require.Equal(t, 0.0, client_testutil.ToFloat64(metrics.droppedSamplesTotal.WithLabelValues(reasonMissingStartTimestamp)))
 			require.Equal(t, 3.0, client_testutil.ToFloat64(metrics.droppedHistogramsTotal.WithLabelValues(reasonMissingMetadataType)))
 			require.Equal(t, 0.0, client_testutil.ToFloat64(metrics.droppedHistogramsTotal.WithLabelValues(reasonMissingStartTimestamp)))
-			require.Equal(t, 2.0, client_testutil.ToFloat64(metrics.droppedExemplarsTotal.WithLabelValues(reasonDetachedExemplarNotAllowed)))
+			require.Equal(t, 1.0, client_testutil.ToFloat64(metrics.droppedExemplarsTotal.WithLabelValues(reasonDetachedExemplarNotAllowed)))
 
 			require.Len(t, c.receivedSamples, 2)
 			require.Contains(t, c.receivedSamples, sCounterNoST.Labels.String())
@@ -4184,7 +4186,9 @@ func TestQueueManager_RemoteWriteModes(t *testing.T) {
 			require.Len(t, c.receivedHistograms, 1)
 			require.Contains(t, c.receivedHistograms, sNativeHist.Labels.String())
 			require.Empty(t, c.receivedFloatHistograms)
-			require.Empty(t, c.receivedExemplars)
+			require.Len(t, c.receivedExemplars, 2)
+			require.Contains(t, c.receivedExemplars, sCounterNoST.Labels.String())
+			require.Contains(t, c.receivedExemplars, sNativeHist.Labels.String())
 		})
 
 		t.Run("mode=stateless-st/source="+metaSource, func(t *testing.T) {
@@ -4264,7 +4268,8 @@ func TestQueueManager_RemoteWriteModes(t *testing.T) {
 				{Ref: sGaugeHistNoST.Ref, ST: 0, T: 2000, FH: nativeFloatHist}, // Keep: gauge histogram without ST
 			}))
 			require.True(t, m.AppendExemplars([]record.RefExemplar{
-				{Ref: sCounterWithST.Ref, T: 1000, V: 1, Labels: labels.FromStrings("trace_id", "abc")}, // Drop: detached exemplar
+				{Ref: sCounterWithST.Ref, T: 1000, V: 1, Labels: labels.FromStrings("trace_id", "abc")}, // Keep: coalesced onto sCounterWithST
+				{Ref: sCounterNoST.Ref, T: 1000, V: 2, Labels: labels.FromStrings("trace_id", "def")},   // Drop: sample for sCounterNoST was dropped, so exemplar is detached
 			}))
 
 			stop()
@@ -4300,7 +4305,8 @@ func TestQueueManager_RemoteWriteModes(t *testing.T) {
 			require.Equal(t, int64(500), c.receivedFloatHistograms[sHistWithST.Labels.String()][0].StartTimestamp)
 			require.True(t, value.IsStaleNaN(c.receivedFloatHistograms[sHistWithST.Labels.String()][1].Sum))
 
-			require.Empty(t, c.receivedExemplars)
+			require.Len(t, c.receivedExemplars, 1)
+			require.Contains(t, c.receivedExemplars, sCounterWithST.Labels.String())
 		})
 	}
 }
