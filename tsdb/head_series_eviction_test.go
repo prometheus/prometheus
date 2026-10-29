@@ -20,6 +20,7 @@ import (
 	"slices"
 	"strconv"
 	"testing"
+	"testing/synctest"
 	"time"
 
 	prom_testutil "github.com/prometheus/client_golang/prometheus/testutil"
@@ -744,42 +745,53 @@ func TestSeriesEviction_QueryStartingAtLastTimestampIsWaitedForByNextEviction(t 
 	}
 	for name, openQuery := range queriers {
 		t.Run(name, func(t *testing.T) {
-			testDB := newSeriesEvictionTestDB(t)
-			db := testDB.db
+			synctest.Test(t, func(t *testing.T) {
+				testDB := newSeriesEvictionTestDB(t)
+				db := testDB.db
 
-			// The first eviction selects the series to evict, then series 0 gets a late sample, and so it is not
-			// evicted. A query for the timestamp of the late sample is opened after the first eviction waited for the
-			// readers, so it has the series 0 in the set being evicted, and the late sample is in the head only.
-			db.compactHeadViewBeforeEvictTestingCallback = func() {
-				app := db.Appender(context.Background())
-				_, err := app.Append(0, evictionTestLabels(0), lateSampleTs, 42)
+				// The first eviction selects the series to evict, then series 0 gets a late sample, and so it is not
+				// evicted. A query for the timestamp of the late sample is opened after the first eviction waited for the
+				// readers, so it has the series 0 in the set being evicted, and the late sample is in the head only.
+				db.compactHeadViewBeforeEvictTestingCallback = func() {
+					app := db.Appender(context.Background())
+					_, err := app.Append(0, evictionTestLabels(0), lateSampleTs, 42)
+					require.NoError(t, err)
+					require.NoError(t, app.Commit())
+				}
+				var reading *readingSeries
+				db.Head().testAfterWaitingForReadersToEvictSeries = func() {
+					reading = openQuery(t, db, lateSampleTs, lateSampleTs)
+				}
+				require.NoError(t, db.CompactSelectedSeries(testDB.evictedRefs))
+				require.NotNil(t, reading)
+				require.Equal(t, uint64(evictionTestSeries-evictionTestEvictedSeries+1), db.Head().NumSeries())
+
+				// The second eviction persists the late sample, and its last timestamp is the one the query starts at.
+				done := make(chan error, 1)
+				go func() { done <- db.CompactSelectedSeries(testDB.evictedRefs[:1]) }()
+				synctest.Wait()
+
+				// The query is still open, so the eviction must be waiting for it.
+				select {
+				case err := <-done:
+					require.FailNow(t, "the eviction must wait for the query that starts at its last timestamp", "eviction returned: %v", err)
+				default:
+				}
+				samples, err := reading.read()
 				require.NoError(t, err)
-				require.NoError(t, app.Commit())
-			}
-			var reading *readingSeries
-			db.Head().testAfterWaitingForReadersToEvictSeries = func() {
-				reading = openQuery(t, db, lateSampleTs, lateSampleTs)
-			}
-			require.NoError(t, db.CompactSelectedSeries(testDB.evictedRefs))
-			require.NotNil(t, reading)
-			require.Equal(t, uint64(evictionTestSeries-evictionTestEvictedSeries+1), db.Head().NumSeries())
+				require.Equal(t, map[string]int{evictionTestLabels(0).String(): 1}, samples)
+				require.NoError(t, reading.close())
 
-			// The second eviction persists the late sample, and its last timestamp is the one the query starts at.
-			done := make(chan error, 1)
-			go func() { done <- db.CompactSelectedSeries(testDB.evictedRefs[:1]) }()
-
-			// The query is still open, so the eviction must keep waiting for it, with the series in the head.
-			select {
-			case err := <-done:
-				require.FailNow(t, "the eviction must wait for the query that starts at its last timestamp", "eviction returned: %v", err)
-			case <-time.After(time.Second):
-			}
-			samples, err := reading.read()
-			require.NoError(t, err)
-			require.Equal(t, map[string]int{evictionTestLabels(0).String(): 1}, samples)
-			require.NoError(t, reading.close())
-
-			require.NoError(t, <-done)
+				// Advance fake time past the reader-wait polling interval.
+				time.Sleep(time.Second)
+				synctest.Wait()
+				select {
+				case err := <-done:
+					require.NoError(t, err)
+				default:
+					t.Fatal("the eviction must complete after the query closes")
+				}
+			})
 		})
 	}
 }
