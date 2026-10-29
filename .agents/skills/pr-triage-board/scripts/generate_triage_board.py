@@ -705,7 +705,7 @@ def render_markdown(repos, now, repo_totals, prs, max_prs, maintainer_filter=Non
     lines = [
         f"> **Auto-updated snapshot**: `{now_str}` · Analyzed `{len(prs)}` non-bot open PRs (up to {max_prs} most recently active per repo).",
         ">",
-        "> **Automated via [`.agents/skills/pr-triage-board`](https://github.com/prometheus/prometheus/tree/bwplotka/setup_pr_triage_bot/.agents/skills/pr-triage-board)** · Refreshed **every hour on weekdays (Mon–Fri, 07:00–18:00 CET)**.",
+        "> **Automated via [`.agents/skills/pr-triage-board`](https://github.com/prometheus/prometheus/tree/main/.agents/skills/pr-triage-board)** · Refreshed **every hour on weekdays (Mon–Fri, 07:00–18:00 CET)**.",
         "",
     ]
 
