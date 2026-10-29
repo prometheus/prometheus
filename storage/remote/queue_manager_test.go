@@ -4235,18 +4235,18 @@ func TestQueueManager_RemoteWriteModes(t *testing.T) {
 			}
 
 			require.True(t, m.Append([]record.RefSample{
-				{Ref: sClassicBucket.Ref, ST: 500, T: 1000, V: 1},        // Drop: classic histogram
-				{Ref: sClassicBucket.Ref, ST: 0, T: 2000, V: stale},      // Drop: classic histogram staleness marker
-				{Ref: sUntyped.Ref, ST: 500, T: 1000, V: 2},              // Drop: missing metadata type
-				{Ref: sCounterNoST.Ref, ST: 0, T: 1000, V: 3},            // Drop: counter missing ST
-				{Ref: sSummarySum.Ref, ST: 0, T: 1000, V: 4},             // Drop: summary _sum missing ST
-				{Ref: sSummaryCount.Ref, ST: 0, T: 1000, V: 5},           // Drop: summary _count missing ST
-				{Ref: sSummarySum.Ref, ST: 500, T: 2000, V: 4.5},         // Keep: summary _sum with ST
-				{Ref: sSummaryCount.Ref, ST: 500, T: 2000, V: 5.5},       // Keep: summary _count with ST
-				{Ref: sCounterWithST.Ref, ST: 500, T: 1000, V: 6},        // Keep: counter with ST
-				{Ref: sCounterWithST.Ref, ST: 0, T: 2000, V: stale},      // Keep: counter staleness marker without ST
-				{Ref: sSummaryQuantileNoST.Ref, ST: 0, T: 1000, V: 0.5},  // Keep: summary quantile without ST
-				{Ref: sGaugeNoST.Ref, ST: 0, T: 1000, V: 42},             // Keep: gauge without ST
+				{Ref: sClassicBucket.Ref, ST: 500, T: 1000, V: 1},       // Drop: classic histogram
+				{Ref: sClassicBucket.Ref, ST: 0, T: 2000, V: stale},     // Drop: classic histogram staleness marker
+				{Ref: sUntyped.Ref, ST: 500, T: 1000, V: 2},             // Drop: missing metadata type
+				{Ref: sCounterNoST.Ref, ST: 0, T: 1000, V: 3},           // Drop: counter missing ST
+				{Ref: sSummarySum.Ref, ST: 0, T: 1000, V: 4},            // Drop: summary _sum missing ST
+				{Ref: sSummaryCount.Ref, ST: 0, T: 1000, V: 5},          // Drop: summary _count missing ST
+				{Ref: sSummarySum.Ref, ST: 500, T: 2000, V: 4.5},        // Keep: summary _sum with ST
+				{Ref: sSummaryCount.Ref, ST: 500, T: 2000, V: 5.5},      // Keep: summary _count with ST
+				{Ref: sCounterWithST.Ref, ST: 500, T: 1000, V: 6},       // Keep: counter with ST
+				{Ref: sCounterWithST.Ref, ST: 0, T: 2000, V: stale},     // Keep: counter staleness marker without ST
+				{Ref: sSummaryQuantileNoST.Ref, ST: 0, T: 1000, V: 0.5}, // Keep: summary quantile without ST
+				{Ref: sGaugeNoST.Ref, ST: 0, T: 1000, V: 42},            // Keep: gauge without ST
 			}))
 			require.True(t, m.AppendHistograms([]record.RefHistogramSample{
 				{Ref: sUntypedHist.Ref, ST: 500, T: 1000, H: nativeHist}, // Drop: missing metadata type
