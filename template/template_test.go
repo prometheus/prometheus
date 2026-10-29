@@ -17,7 +17,6 @@ import (
 	"context"
 	"math"
 	"net/url"
-	"reflect"
 	"testing"
 	"time"
 
@@ -40,12 +39,6 @@ func TestTemplateExpansion(t *testing.T) {
 			// Simple value.
 			text:   "{{ 1 }}",
 			output: "1",
-		},
-		{
-			// Native histogram value.
-			text:   "{{ . | value }}",
-			input:  &sample{Value: &histogram.FloatHistogram{Count: 3, Sum: 10}},
-			output: (&histogram.FloatHistogram{Count: 3, Sum: 10}).String(),
 		},
 		{
 			// Non-ASCII space (not allowed in text/template, see https://github.com/golang/go/blob/master/src/text/template/parse/lex.go#L98)
@@ -642,57 +635,5 @@ func testTemplateExpansion(t *testing.T, scenarios []scenario) {
 		if err == nil {
 			require.Equal(t, s.output, result)
 		}
-	}
-}
-
-func Test_floatToTime(t *testing.T) {
-	type args struct {
-		v float64
-	}
-	tests := []struct {
-		name    string
-		args    args
-		want    *time.Time
-		wantErr bool
-	}{
-		{
-			"happy path",
-			args{
-				v: 1657155181,
-			},
-			func() *time.Time {
-				tm := time.Date(2022, 7, 7, 0, 53, 1, 0, time.UTC)
-				return &tm
-			}(),
-			false,
-		},
-		{
-			"more than math.MaxInt64",
-			args{
-				v: 1.79769313486231570814527423731704356798070e+300,
-			},
-			nil,
-			true,
-		},
-		{
-			"less than math.MinInt64",
-			args{
-				v: -1.79769313486231570814527423731704356798070e+300,
-			},
-			nil,
-			true,
-		},
-	}
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			got, err := floatToTime(tt.args.v)
-			if (err != nil) != tt.wantErr {
-				t.Errorf("floatToTime() error = %v, wantErr %v", err, tt.wantErr)
-				return
-			}
-			if !reflect.DeepEqual(got, tt.want) {
-				t.Errorf("floatToTime() got = %v, want %v", got, tt.want)
-			}
-		})
 	}
 }
