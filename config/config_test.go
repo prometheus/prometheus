@@ -3899,6 +3899,25 @@ remote_write:
 			errString: `mode "stateless" is only supported with protobuf message "io.prometheus.write.v2.Request", got "prometheus.WriteRequest"`,
 		},
 		{
+			name: "stateless-st mode with v1 protobuf_message fails",
+			config: `
+remote_write:
+  - url: http://localhost:9090/api/v1/write
+    protobuf_message: prometheus.WriteRequest
+    mode: stateless-st
+`,
+			errString: `mode "stateless-st" is only supported with protobuf message "io.prometheus.write.v2.Request", got "prometheus.WriteRequest"`,
+		},
+		{
+			name: "stateless-st mode with default (v1) protobuf_message fails",
+			config: `
+remote_write:
+  - url: http://localhost:9090/api/v1/write
+    mode: stateless-st
+`,
+			errString: `mode "stateless-st" is only supported with protobuf message "io.prometheus.write.v2.Request", got "prometheus.WriteRequest"`,
+		},
+		{
 			name: "unknown mode fails",
 			config: `
 remote_write:
