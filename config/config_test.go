@@ -3802,14 +3802,15 @@ remote_write:
 			expectSendNativeHistograms: false,
 		},
 		{
-			name: "none mode with v1 protobuf_message fails",
+			name: "explicit none mode with v1",
 			config: `
 remote_write:
   - url: http://localhost:9090/api/v1/write
     protobuf_message: prometheus.WriteRequest
     mode: none
 `,
-			errString: `mode "none" is only supported with protobuf message "io.prometheus.write.v2.Request", got "prometheus.WriteRequest"`,
+			expectMode:                 remoteapi.WriteModeNone,
+			expectSendNativeHistograms: false,
 		},
 		{
 			name: "stateless mode defaults send_native_histograms to true",
