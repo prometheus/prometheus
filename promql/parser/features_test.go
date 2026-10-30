@@ -47,4 +47,15 @@ func TestRegisterFeaturesCustomFunctions(t *testing.T) {
 	NewParser(Options{}).RegisterFeatures(r)
 	require.NotContains(t, r.Get()[features.PromQLFunctions], "custom_func")
 	require.Contains(t, r.Get()[features.PromQLFunctions], "rate")
+	require.Contains(t, r.Get()[features.PromQLFunctions], "log1p")
+	require.False(t, r.Get()[features.PromQLFunctions]["log1p"])
+}
+
+func TestLog1pExperimental(t *testing.T) {
+	_, err := NewParser(Options{}).ParseExpr("log1p(metric)")
+	require.Error(t, err)
+	require.Contains(t, err.Error(), "function \"log1p\" is not enabled")
+
+	_, err = NewParser(Options{EnableExperimentalFunctions: true}).ParseExpr("log1p(metric)")
+	require.NoError(t, err)
 }

@@ -762,6 +762,23 @@ in `v`. Histogram samples in the input vector are ignored silently. Special case
 * `ln(x < 0) = NaN`
 * `ln(NaN) = NaN`
 
+## `log1p()`
+
+**This function has to be enabled via the [feature
+flag](../feature_flags.md#experimental-promql-functions)
+`--enable-feature=promql-experimental-functions`.**
+
+`log1p(v instant-vector)` calculates the natural logarithm of `1 + v` for
+each float sample. It preserves precision for values close to zero, where
+`ln(1 + v)` can lose precision. Histogram samples are ignored silently.
+Special cases are:
+
+* `log1p(+Inf) = +Inf`
+* `log1p(±0) = ±0`
+* `log1p(-1) = -Inf`
+* `log1p(x < -1) = NaN`
+* `log1p(NaN) = NaN`
+
 ## `log2()`
 
 `log2(v instant-vector)` calculates the binary logarithm for all float samples

@@ -60,6 +60,7 @@ import {
   LabelReplace,
   LastOverTime,
   Ln,
+  Log1p,
   Log10,
   Log2,
   MadOverTime,
@@ -405,6 +406,12 @@ const promqlFunctions: { [key: number]: PromQLFunction } = {
   },
   [Ln]: {
     name: 'ln',
+    argTypes: [ValueType.vector],
+    variadic: 0,
+    returnType: ValueType.vector,
+  },
+  [Log1p]: {
+    name: 'log1p',
     argTypes: [ValueType.vector],
     variadic: 0,
     returnType: ValueType.vector,

@@ -2179,6 +2179,41 @@ const funcDocs: Record<string, React.ReactNode> = {
       </p>
     </>
   ),
+  log1p: (
+    <>
+      <p>
+        <strong>
+          This function has to be enabled via the{" "}
+          <a href="../feature_flags.md#experimental-promql-functions">feature flag</a>
+          <code>--enable-feature=promql-experimental-functions</code>.
+        </strong>
+      </p>
+
+      <p>
+        <code>log1p(v instant-vector)</code> calculates the natural logarithm of <code>1 + v</code> for each float
+        sample. It preserves precision for values close to zero, where
+        <code>ln(1 + v)</code> can lose precision. Histogram samples are ignored silently. Special cases are:
+      </p>
+
+      <ul>
+        <li>
+          <code>log1p(+Inf) = +Inf</code>
+        </li>
+        <li>
+          <code>log1p(±0) = ±0</code>
+        </li>
+        <li>
+          <code>log1p(-1) = -Inf</code>
+        </li>
+        <li>
+          <code>log1p(x &lt; -1) = NaN</code>
+        </li>
+        <li>
+          <code>log1p(NaN) = NaN</code>
+        </li>
+      </ul>
+    </>
+  ),
   log2: (
     <>
       <p>

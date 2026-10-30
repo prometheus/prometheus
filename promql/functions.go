@@ -2155,6 +2155,11 @@ func funcLn(vectorVals []Vector, _ Matrix, _ parser.Expressions, enh *EvalNodeHe
 	return simpleFloatFunc(vectorVals, enh, math.Log), nil
 }
 
+// === log1p(Vector parser.ValueTypeVector) (Vector, Annotations) ===
+func funcLog1p(vectorVals []Vector, _ Matrix, _ parser.Expressions, enh *EvalNodeHelper) (Vector, annotations.Annotations) {
+	return simpleFloatFunc(vectorVals, enh, math.Log1p), nil
+}
+
 // === log2(Vector parser.ValueTypeVector) (Vector, Annotations) ===
 func funcLog2(vectorVals []Vector, _ Matrix, _ parser.Expressions, enh *EvalNodeHelper) (Vector, annotations.Annotations) {
 	return simpleFloatFunc(vectorVals, enh, math.Log2), nil
@@ -3063,6 +3068,7 @@ var FunctionCalls = map[string]FunctionCall{
 	"label_join":                   nil, // evalLabelJoin not called via this map.
 	"min_of":                       funcMinOf,
 	"ln":                           funcLn,
+	"log1p":                        funcLog1p,
 	"log10":                        funcLog10,
 	"log2":                         funcLog2,
 	"last_over_time":               funcLastOverTime,
