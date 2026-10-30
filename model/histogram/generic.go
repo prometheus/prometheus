@@ -580,18 +580,20 @@ func checkHistogramCustomBounds(bounds []float64, spans []Span, numBuckets int) 
 	}
 
 	var spanBuckets int
-	var totalSpanLength int
+	// Use int64 because int is 32 bits on some platforms, where large
+	// offsets would wrap the sum and let out-of-range spans pass.
+	var totalSpanLength int64
 	for n, span := range spans {
 		if span.Offset < 0 {
 			return fmt.Errorf("span number %d with offset %d: %w", n+1, span.Offset, ErrHistogramSpanNegativeOffset)
 		}
 		spanBuckets += int(span.Length)
-		totalSpanLength += int(span.Length) + int(span.Offset)
+		totalSpanLength += int64(span.Length) + int64(span.Offset)
 	}
 	if spanBuckets != numBuckets {
 		return fmt.Errorf("spans need %d buckets, have %d buckets: %w", spanBuckets, numBuckets, ErrHistogramSpansBucketsMismatch)
 	}
-	if (len(bounds) + 1) < totalSpanLength {
+	if int64(len(bounds)+1) < totalSpanLength {
 		return fmt.Errorf("only %d custom bounds defined which is insufficient to cover total span length of %d: %w", len(bounds), totalSpanLength, ErrHistogramCustomBucketsMismatch)
 	}
 
