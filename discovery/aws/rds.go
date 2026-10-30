@@ -539,6 +539,12 @@ func (d *RDSDiscovery) refresh(ctx context.Context) ([]*targetgroup.Group, error
 	errg, ectx := errgroup.WithContext(ctx)
 	errg.SetLimit(d.cfg.RequestConcurrency)
 	for _, cluster := range clusters {
+		if cluster.DBClusterArn == nil {
+			// DBClusterArn is optional in the API response; without it the
+			// cluster's instances cannot be looked up.
+			d.logger.Warn("Skipping DB cluster without an ARN", "identifier", aws.ToString(cluster.DBClusterIdentifier))
+			continue
+		}
 		errg.Go(func() error {
 			instances, err := d.describeDBInstances(ectx, *cluster.DBClusterArn)
 			if err != nil {
