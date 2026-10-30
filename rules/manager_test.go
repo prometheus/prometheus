@@ -39,6 +39,7 @@ import (
 	"go.yaml.in/yaml/v2"
 
 	"github.com/prometheus/prometheus/model/labels"
+	"github.com/prometheus/prometheus/model/metadata"
 	"github.com/prometheus/prometheus/model/rulefmt"
 	"github.com/prometheus/prometheus/model/timestamp"
 	"github.com/prometheus/prometheus/model/value"
@@ -47,8 +48,12 @@ import (
 	"github.com/prometheus/prometheus/promql/promqltest"
 	"github.com/prometheus/prometheus/storage"
 	"github.com/prometheus/prometheus/tsdb"
+	"github.com/prometheus/prometheus/tsdb/agent"
 	"github.com/prometheus/prometheus/tsdb/chunkenc"
+	"github.com/prometheus/prometheus/tsdb/chunks"
+	"github.com/prometheus/prometheus/tsdb/record"
 	"github.com/prometheus/prometheus/tsdb/tsdbutil"
+	"github.com/prometheus/prometheus/tsdb/wlog"
 	"github.com/prometheus/prometheus/util/stats"
 	"github.com/prometheus/prometheus/util/teststorage"
 	prom_testutil "github.com/prometheus/prometheus/util/testutil"
@@ -839,14 +844,14 @@ func TestCopyState(t *testing.T) {
 			NewRecordingRule("rule3", nil, labels.FromStrings("l1", "v3")),
 			NewAlertingRule("alert2", nil, 0, 0, labels.FromStrings("l2", "v1"), labels.EmptyLabels(), labels.EmptyLabels(), "", true, nil),
 		},
-		seriesInPreviousEval: []map[string]labels.Labels{
+		seriesInPreviousEval: []map[string]trackedSeries{
 			{},
 			{},
 			{},
-			{"r3a": labels.FromStrings("l1", "v1")},
-			{"r3b": labels.FromStrings("l1", "v2")},
-			{"r3c": labels.FromStrings("l1", "v3")},
-			{"a2": labels.FromStrings("l2", "v1")},
+			{"r3a": {labels: labels.FromStrings("l1", "v1")}},
+			{"r3b": {labels: labels.FromStrings("l1", "v2")}},
+			{"r3c": {labels: labels.FromStrings("l1", "v3")}},
+			{"a2": {labels: labels.FromStrings("l2", "v1")}},
 		},
 		evaluationTime: time.Second,
 	}
@@ -862,25 +867,25 @@ func TestCopyState(t *testing.T) {
 			NewAlertingRule("alert2", nil, 0, 0, labels.FromStrings("l2", "v1"), labels.EmptyLabels(), labels.EmptyLabels(), "", true, nil),
 			NewRecordingRule("rule4", nil, labels.EmptyLabels()),
 		},
-		seriesInPreviousEval: make([]map[string]labels.Labels, 8),
+		seriesInPreviousEval: make([]map[string]trackedSeries, 8),
 	}
 	newGroup.CopyState(oldGroup)
 
-	want := []map[string]labels.Labels{
+	want := []map[string]trackedSeries{
 		nil,
-		{"r3a": labels.FromStrings("l1", "v1")},
-		{"r3b": labels.FromStrings("l1", "v2")},
+		{"r3a": {labels: labels.FromStrings("l1", "v1")}},
+		{"r3b": {labels: labels.FromStrings("l1", "v2")}},
 		{},
 		{},
 		nil,
-		{"a2": labels.FromStrings("l2", "v1")},
+		{"a2": {labels: labels.FromStrings("l2", "v1")}},
 		nil,
 	}
 	require.Equal(t, want, newGroup.seriesInPreviousEval)
 	require.Equal(t, oldGroup.rules[0], newGroup.rules[3])
 	require.Equal(t, oldGroup.evaluationTime, newGroup.evaluationTime)
 	require.Equal(t, oldGroup.lastEvaluation, newGroup.lastEvaluation)
-	require.Equal(t, []labels.Labels{labels.FromStrings("l1", "v3")}, newGroup.staleSeries)
+	require.Equal(t, []trackedSeries{{labels: labels.FromStrings("l1", "v3")}}, newGroup.staleSeries)
 }
 
 func TestDeletedRuleMarkedStale(t *testing.T) {
@@ -890,13 +895,13 @@ func TestDeletedRuleMarkedStale(t *testing.T) {
 		rules: []Rule{
 			NewRecordingRule("rule1", nil, labels.FromStrings("l1", "v1")),
 		},
-		seriesInPreviousEval: []map[string]labels.Labels{
-			{"r1": labels.FromStrings("l1", "v1")},
+		seriesInPreviousEval: []map[string]trackedSeries{
+			{"r1": {labels: labels.FromStrings("l1", "v1")}},
 		},
 	}
 	newGroup := &Group{
 		rules:                []Rule{},
-		seriesInPreviousEval: []map[string]labels.Labels{},
+		seriesInPreviousEval: []map[string]trackedSeries{},
 		opts: &ManagerOptions{
 			AppendableV2:              st,
 			RuleConcurrencyController: sequentialRuleEvalController{},
@@ -927,8 +932,8 @@ func TestDeletedRuleMarkedStale(t *testing.T) {
 
 func TestUpdate(t *testing.T) {
 	files := []string{"fixtures/rules.yaml"}
-	expected := map[string]labels.Labels{
-		"test": labels.FromStrings("name", "value"),
+	expected := map[string]trackedSeries{
+		"test": {labels: labels.FromStrings("name", "value")},
 	}
 	st := teststorage.New(t)
 
@@ -954,7 +959,7 @@ func TestUpdate(t *testing.T) {
 	require.NotEmpty(t, ruleManager.groups, "expected non-empty rule groups")
 	ogs := map[string]*Group{}
 	for h, g := range ruleManager.groups {
-		g.seriesInPreviousEval = []map[string]labels.Labels{
+		g.seriesInPreviousEval = []map[string]trackedSeries{
 			expected,
 		}
 		ogs[h] = g
@@ -2992,3 +2997,221 @@ func (*closeCountingQuery) Statement() parser.Statement { return nil }
 func (*closeCountingQuery) Stats() *stats.Statistics    { return nil }
 func (*closeCountingQuery) Cancel()                     {}
 func (*closeCountingQuery) String() string              { return "" }
+
+func readWALMetadataByMetricName(t *testing.T, walDir string) map[string]metadata.Metadata {
+	t.Helper()
+	sr, err := wlog.NewSegmentsReader(walDir)
+	require.NoError(t, err)
+	defer func() { require.NoError(t, sr.Close()) }()
+
+	r := wlog.NewReader(sr)
+	dec := record.NewDecoder(labels.NewSymbolTable(), promslog.NewNopLogger())
+	refToName := make(map[chunks.HeadSeriesRef]string)
+	got := make(map[string]metadata.Metadata)
+
+	for r.Next() {
+		rec := r.Record()
+		switch dec.Type(rec) {
+		case record.Series:
+			series, err := dec.Series(rec, nil)
+			require.NoError(t, err)
+			for _, s := range series {
+				refToName[s.Ref] = s.Labels.Get(model.MetricNameLabel)
+			}
+		case record.Metadata:
+			metas, err := dec.Metadata(rec, nil)
+			require.NoError(t, err)
+			for _, m := range metas {
+				name := refToName[m.Ref]
+				got[name] = metadata.Metadata{
+					Type: record.ToMetricType(m.Type),
+					Unit: m.Unit,
+					Help: m.Help,
+				}
+			}
+		}
+	}
+	require.NoError(t, r.Err())
+	return got
+}
+
+func TestGroupEvalAppendsMetadata(t *testing.T) {
+	ruleYAML := `
+groups:
+- name: metadata_rules
+  rules:
+  - record: job:http_requests:rate5m
+    expr: sum by (job) (rate(http_requests_total[5m]))
+    help: Per-job HTTP request rate.
+    unit: requests_per_second
+  - record: cluster:http_requests_total
+    expr: label_replace(http_requests_total, "cluster", "prod", "job", ".*")
+  - record: job:latency_seconds:sum
+    expr: sum by (job) (latency_seconds)
+  - record: job:latency_seconds:rate5m
+    expr: rate(latency_seconds[5m])
+  - alert: HighRequests
+    expr: http_requests_total > 0
+`
+	ruleFile := filepath.Join(t.TempDir(), "rules.yaml")
+	require.NoError(t, os.WriteFile(ruleFile, []byte(ruleYAML), 0o600))
+
+	queryStore := teststorage.New(t)
+	baseTime := time.Unix(0, 0).UTC()
+	evalTime := baseTime.Add(5 * time.Minute)
+
+	seedApp := queryStore.AppenderV2(t.Context())
+	for step := range 6 {
+		tsMs := timestamp.FromTime(baseTime.Add(time.Duration(step) * time.Minute))
+		_, err := seedApp.Append(
+			0,
+			labels.FromStrings(model.MetricNameLabel, "http_requests_total", "job", "api"),
+			0,
+			tsMs,
+			float64(step*10),
+			nil,
+			nil,
+			storage.AOptions{},
+		)
+		require.NoError(t, err)
+		_, err = seedApp.Append(
+			0,
+			labels.FromStrings(model.MetricNameLabel, "latency_seconds", "job", "api"),
+			0,
+			tsMs,
+			0,
+			tsdbutil.GenerateTestHistogram(int64(step+1)),
+			nil,
+			storage.AOptions{},
+		)
+		require.NoError(t, err)
+	}
+	require.NoError(t, seedApp.Commit())
+
+	engine := promqltest.NewTestEngineWithOpts(t, promql.EngineOpts{
+		MaxSamples: 10000,
+		Timeout:    100 * time.Second,
+	})
+
+	wantMetadata := map[string]metadata.Metadata{
+		"job:http_requests:rate5m": {
+			Type: model.MetricTypeGauge,
+			Unit: "requests_per_second",
+			Help: "Per-job HTTP request rate.",
+		},
+		"cluster:http_requests_total": {
+			Type: model.MetricTypeCounter,
+		},
+		"job:latency_seconds:sum": {
+			Type: model.MetricTypeHistogram,
+		},
+		"job:latency_seconds:rate5m": {
+			Type: model.MetricTypeGaugeHistogram,
+		},
+		alertMetricName: {
+			Type: model.MetricTypeGauge,
+		},
+		alertForStateMetricName: {
+			Type: model.MetricTypeGauge,
+		},
+	}
+
+	t.Run("storage=tsdb", func(t *testing.T) {
+		appendStore := teststorage.New(t, func(opt *tsdb.Options) {
+			opt.EnableMetadataWALRecords = true
+		})
+
+		mgr := NewManager(&ManagerOptions{
+			Context:        t.Context(),
+			AppendableV2:   appendStore,
+			Queryable:      queryStore,
+			QueryFunc:      EngineQueryFunc(engine, queryStore),
+			NotifyFunc:     func(context.Context, string, ...*Alert) {},
+			Logger:         promslog.NewNopLogger(),
+			AppendMetadata: true,
+		})
+		mgr.restored = true // Skip initial restore delay so AlertingRule emits ALERTS immediately.
+
+		groups, errs := mgr.LoadGroups(time.Minute, labels.EmptyLabels(), "", nil, false, ruleFile)
+		require.Empty(t, errs)
+		require.Len(t, groups, 1)
+
+		for _, g := range groups {
+			g.Eval(t.Context(), evalTime)
+		}
+
+		// Close TSDB to flush WAL buffers before reading segments.
+		walDir := filepath.Join(appendStore.Dir(), "wal")
+		require.NoError(t, appendStore.DB.Close())
+		got := readWALMetadataByMetricName(t, walDir)
+		require.Equal(t, wantMetadata, got)
+	})
+
+	t.Run("storage=agent_and_staleness", func(t *testing.T) {
+		agentDir := t.TempDir()
+		agentOpts := agent.DefaultOptions()
+		agentOpts.EnableMetadataWALRecords = true
+		agentDB, err := agent.Open(promslog.NewNopLogger(), nil, nil, agentDir, agentOpts)
+		require.NoError(t, err)
+
+		var returnEmpty atomic.Bool
+		baseQF := EngineQueryFunc(engine, queryStore)
+		mgr := NewManager(&ManagerOptions{
+			Context:      t.Context(),
+			AppendableV2: agentDB,
+			Queryable:    queryStore,
+			QueryFunc: func(ctx context.Context, q string, ts time.Time) (promql.Vector, error) {
+				if returnEmpty.Load() {
+					return nil, nil
+				}
+				return baseQF(ctx, q, ts)
+			},
+			NotifyFunc:     func(context.Context, string, ...*Alert) {},
+			Logger:         promslog.NewNopLogger(),
+			AppendMetadata: true,
+		})
+		mgr.restored = true
+
+		groups, errs := mgr.LoadGroups(time.Minute, labels.EmptyLabels(), "", nil, false, ruleFile)
+		require.Empty(t, errs)
+		for _, g := range groups {
+			g.Eval(t.Context(), evalTime)
+			// Trigger staleness markers on the next evaluation and verify no errors or lost metadata.
+			returnEmpty.Store(true)
+			g.Eval(t.Context(), evalTime.Add(time.Minute))
+		}
+
+		require.NoError(t, agentDB.Close())
+		got := readWALMetadataByMetricName(t, filepath.Join(agentDir, "wal"))
+		require.Equal(t, wantMetadata, got)
+	})
+
+	t.Run("reload_detects_metadata_changes", func(t *testing.T) {
+		updatedYAML := `
+groups:
+- name: metadata_rules
+  rules:
+  - record: job:http_requests:rate5m
+    expr: sum by (job) (rate(http_requests_total[5m]))
+    help: Updated help text.
+    unit: requests_per_second
+`
+		updatedFile := filepath.Join(t.TempDir(), "rules.yaml")
+		require.NoError(t, os.WriteFile(updatedFile, []byte(ruleYAML), 0o600))
+
+		mgr := NewManager(&ManagerOptions{
+			Context: t.Context(),
+			Logger:  promslog.NewNopLogger(),
+		})
+		g1, errs := mgr.LoadGroups(time.Minute, labels.EmptyLabels(), "", nil, false, updatedFile)
+		require.Empty(t, errs)
+
+		require.NoError(t, os.WriteFile(updatedFile, []byte(updatedYAML), 0o600))
+		g2, errs := mgr.LoadGroups(time.Minute, labels.EmptyLabels(), "", nil, false, updatedFile)
+		require.Empty(t, errs)
+
+		key := GroupKey(updatedFile, "metadata_rules")
+		require.False(t, g1[key].Equals(g2[key]), "Group.Equals must detect YAML metadata updates")
+	})
+}
+

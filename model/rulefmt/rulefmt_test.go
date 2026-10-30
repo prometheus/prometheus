@@ -453,3 +453,101 @@ groups:
 	require.Len(t, rgs.Groups, 1)
 	require.Contains(t, buf.String(), "Multiple document yaml rules files are not supported")
 }
+
+func TestRecordingRuleMetadataFields(t *testing.T) {
+	t.Run("valid recording rule metadata", func(t *testing.T) {
+		for _, typ := range []model.MetricType{
+			model.MetricTypeCounter,
+			model.MetricTypeGauge,
+			model.MetricTypeHistogram,
+			model.MetricTypeGaugeHistogram,
+			model.MetricTypeSummary,
+			model.MetricTypeInfo,
+			model.MetricTypeStateset,
+			model.MetricTypeUnknown,
+		} {
+			t.Run("type="+string(typ), func(t *testing.T) {
+				content := `
+groups:
+- name: example
+  rules:
+  - record: job:http_requests:rate5m
+    expr: sum by (job) (rate(http_requests_total[5m]))
+    help: Per-job HTTP request rate over 5 minutes.
+    type: ` + string(typ) + `
+    unit: requests_per_second
+`
+				rgs, errs := Parse([]byte(content), false, model.UTF8Validation, testParser, testLogger)
+				require.Empty(t, errs)
+				require.Len(t, rgs.Groups, 1)
+				require.Len(t, rgs.Groups[0].Rules, 1)
+				got := rgs.Groups[0].Rules[0]
+				require.Equal(t, "Per-job HTTP request rate over 5 minutes.", got.Help)
+				require.Equal(t, typ, got.Type)
+				require.Equal(t, "requests_per_second", got.Unit)
+			})
+		}
+	})
+
+	for _, tc := range []struct {
+		name   string
+		yaml   string
+		errMsg string
+	}{
+		{
+			name: "invalid metric type in recording rule",
+			yaml: `
+groups:
+- name: example
+  rules:
+  - record: job:http_requests:rate5m
+    expr: rate(http_requests_total[5m])
+    type: untyped
+`,
+			errMsg: `7:11: group "example", rule 1, "job:http_requests:rate5m": invalid metric type "untyped" in recording rule`,
+		},
+		{
+			name: "help in alerting rule",
+			yaml: `
+groups:
+- name: example
+  rules:
+  - alert: InstanceDown
+    expr: up == 0
+    help: Instance is down
+`,
+			errMsg: `7:11: group "example", rule 1, "InstanceDown": invalid field 'help' in alerting rule`,
+		},
+		{
+			name: "type in alerting rule",
+			yaml: `
+groups:
+- name: example
+  rules:
+  - alert: InstanceDown
+    expr: up == 0
+    type: gauge
+`,
+			errMsg: `7:11: group "example", rule 1, "InstanceDown": invalid field 'type' in alerting rule`,
+		},
+		{
+			name: "unit in alerting rule",
+			yaml: `
+groups:
+- name: example
+  rules:
+  - alert: InstanceDown
+    expr: up == 0
+    unit: seconds
+`,
+			errMsg: `7:11: group "example", rule 1, "InstanceDown": invalid field 'unit' in alerting rule`,
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			_, errs := Parse([]byte(tc.yaml), false, model.UTF8Validation, testParser, testLogger)
+			require.Len(t, errs, 1)
+			require.EqualError(t, errs[0], tc.errMsg)
+		})
+	}
+}
+

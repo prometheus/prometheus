@@ -1095,8 +1095,10 @@ func main() {
 			DefaultRuleQueryOffset: func() time.Duration {
 				return time.Duration(cfgFile.GlobalConfig.RuleQueryOffset)
 			},
-			FeatureRegistry: features.DefaultRegistry,
-			Parser:          promqlParser,
+			FeatureRegistry:         features.DefaultRegistry,
+			Parser:                  promqlParser,
+			AppendMetadata:          cfg.scrape.AppendMetadata,
+			EnableTypeAndUnitLabels: cfg.scrape.EnableTypeAndUnitLabels,
 		})
 	}
 
