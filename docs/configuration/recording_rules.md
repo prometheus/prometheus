@@ -110,6 +110,12 @@ expr: <string>
 # Labels to add or overwrite before storing the result.
 labels:
   [ <labelname>: <labelvalue> ]
+
+# Optional metric metadata for the recorded time series.
+# Overrides automatic runtime metadata deduction when set.
+[ help: <string> ]
+[ type: <string> ] # One of counter, gauge, histogram, gaugehistogram, summary, info, stateset, unknown.
+[ unit: <string> ]
 ```
 
 The syntax for alerting rules is:
