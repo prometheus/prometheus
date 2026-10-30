@@ -28,6 +28,7 @@ import (
 	"go.yaml.in/yaml/v2"
 
 	"github.com/prometheus/prometheus/model/labels"
+	"github.com/prometheus/prometheus/model/metadata"
 	"github.com/prometheus/prometheus/model/rulefmt"
 	"github.com/prometheus/prometheus/model/timestamp"
 	"github.com/prometheus/prometheus/promql"
@@ -35,6 +36,11 @@ import (
 	"github.com/prometheus/prometheus/schema"
 	"github.com/prometheus/prometheus/storage"
 	"github.com/prometheus/prometheus/template"
+)
+
+var (
+	_ Rule             = (*AlertingRule)(nil)
+	_ ruleWithMetadata = (*AlertingRule)(nil)
 )
 
 const (
@@ -235,14 +241,18 @@ func (r *AlertingRule) Annotations() labels.Labels {
 	return r.annotations
 }
 
-func (r *AlertingRule) sample(alert *Alert, ts time.Time) promql.Sample {
+func (r *AlertingRule) sample(alert *Alert, ts time.Time, enableTypeAndUnitLabels bool) promql.Sample {
 	lb := labels.NewBuilder(r.labels)
 
 	alert.Labels.Range(func(l labels.Label) {
 		lb.Set(l.Name, l.Value)
 	})
 
-	lb.Set(labels.MetricName, alertMetricName)
+	if enableTypeAndUnitLabels {
+		schema.Metadata{Name: alertMetricName, Type: model.MetricTypeGauge}.SetToLabels(lb)
+	} else {
+		schema.Metadata{Name: alertMetricName}.SetToLabels(lb)
+	}
 	lb.Set(labels.AlertName, r.name)
 	lb.Set(alertStateLabel, alert.State.String())
 
@@ -257,6 +267,10 @@ func (r *AlertingRule) sample(alert *Alert, ts time.Time) promql.Sample {
 // forStateSample returns a promql.Sample with the rule labels, `ALERTS_FOR_STATE` as the metric name and the rule name as the `alertname` label.
 // Optionally, if an alert is provided it'll copy the labels of the alert into the sample labels.
 func (r *AlertingRule) forStateSample(alert *Alert, ts time.Time, v float64) promql.Sample {
+	return r.forStateSampleWithSchema(alert, ts, v, false)
+}
+
+func (r *AlertingRule) forStateSampleWithSchema(alert *Alert, ts time.Time, v float64, enableTypeAndUnitLabels bool) promql.Sample {
 	lb := labels.NewBuilder(r.labels)
 
 	if alert != nil {
@@ -265,7 +279,11 @@ func (r *AlertingRule) forStateSample(alert *Alert, ts time.Time, v float64) pro
 		})
 	}
 
-	lb.Set(labels.MetricName, alertForStateMetricName)
+	if enableTypeAndUnitLabels {
+		schema.Metadata{Name: alertForStateMetricName, Type: model.MetricTypeGauge}.SetToLabels(lb)
+	} else {
+		schema.Metadata{Name: alertForStateMetricName}.SetToLabels(lb)
+	}
 	lb.Set(labels.AlertName, r.name)
 
 	s := promql.Sample{
@@ -386,10 +404,24 @@ const resolvedRetention = 15 * time.Minute
 // Eval evaluates the rule expression and then creates pending alerts and fires
 // or removes previously pending alerts accordingly.
 func (r *AlertingRule) Eval(ctx context.Context, queryOffset time.Duration, ts time.Time, query QueryFunc, externalURL *url.URL, limit int) (promql.Vector, error) {
+	vec, _, err := r.evalWithMetadata(ctx, queryOffset, ts, query, externalURL, limit, false, false)
+	return vec, err
+}
+
+func (r *AlertingRule) evalWithMetadata(
+	ctx context.Context,
+	queryOffset time.Duration,
+	ts time.Time,
+	query QueryFunc,
+	externalURL *url.URL,
+	limit int,
+	appendMetadata bool,
+	enableTypeAndUnitLabels bool,
+) (promql.Vector, []metadata.Metadata, error) {
 	ctx = NewOriginContext(ctx, NewRuleDetail(r))
 	res, err := query(ctx, r.vector.String(), ts.Add(-queryOffset))
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 
 	// Create pending alerts for any new vector elements in the alert expression
@@ -454,7 +486,7 @@ func (r *AlertingRule) Eval(ctx context.Context, queryOffset time.Duration, ts t
 		resultFPs[h] = struct{}{}
 
 		if _, ok := alerts[h]; ok {
-			return nil, ErrDuplicateAlertLabelSet
+			return nil, nil, ErrDuplicateAlertLabelSet
 		}
 
 		alerts[h] = &Alert{
@@ -541,17 +573,25 @@ func (r *AlertingRule) Eval(ctx context.Context, queryOffset time.Duration, ts t
 		}
 
 		if r.restored.Load() {
-			vec = append(vec, r.sample(a, ts.Add(-queryOffset)))
-			vec = append(vec, r.forStateSample(a, ts.Add(-queryOffset), float64(a.ActiveAt.Unix())))
+			vec = append(vec, r.sample(a, ts.Add(-queryOffset), enableTypeAndUnitLabels))
+			vec = append(vec, r.forStateSampleWithSchema(a, ts.Add(-queryOffset), float64(a.ActiveAt.Unix()), enableTypeAndUnitLabels))
 		}
 	}
 
 	if limit > 0 && numActivePending > limit {
 		r.active = map[uint64]*Alert{}
-		return nil, fmt.Errorf("exceeded limit of %d with %d alerts", limit, numActivePending)
+		return nil, nil, fmt.Errorf("exceeded limit of %d with %d alerts", limit, numActivePending)
 	}
 
-	return vec, nil
+	var metas []metadata.Metadata
+	if appendMetadata && len(vec) > 0 {
+		metas = make([]metadata.Metadata, len(vec))
+		for i := range metas {
+			metas[i] = metadata.Metadata{Type: model.MetricTypeGauge}
+		}
+	}
+
+	return vec, metas, nil
 }
 
 // State returns the maximum state of alert instances for this rule.

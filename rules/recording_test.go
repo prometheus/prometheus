@@ -18,9 +18,12 @@ import (
 	"testing"
 	"time"
 
+	"github.com/prometheus/common/model"
 	"github.com/stretchr/testify/require"
 
+	"github.com/prometheus/prometheus/model/histogram"
 	"github.com/prometheus/prometheus/model/labels"
+	"github.com/prometheus/prometheus/model/metadata"
 	"github.com/prometheus/prometheus/model/timestamp"
 	"github.com/prometheus/prometheus/promql"
 	"github.com/prometheus/prometheus/promql/parser"
@@ -282,3 +285,242 @@ func TestRecordingRule_SetDependencyRules(t *testing.T) {
 	require.True(t, rule.NoDependencyRules())
 	require.Empty(t, rule.DependencyRules())
 }
+
+func TestRecordingRuleMetadataDeduction(t *testing.T) {
+	ts := time.Unix(60, 0).UTC()
+	evalMs := timestamp.FromTime(ts)
+	counterHist := &histogram.FloatHistogram{
+		Schema:           0,
+		Count:            10,
+		Sum:              25,
+		CounterResetHint: histogram.UnknownCounterReset,
+	}
+	gaugeHist := &histogram.FloatHistogram{
+		Schema:           0,
+		Count:            2,
+		Sum:              5,
+		CounterResetHint: histogram.GaugeType,
+	}
+
+	for _, tc := range []struct {
+		name                    string
+		ruleMeta                metadata.Metadata
+		enableTypeAndUnitLabels bool
+		samples                 promql.Vector
+		wantLabels              []labels.Labels
+		wantMetas               []metadata.Metadata
+		wantErr                 error
+	}{
+		{
+			name:                    "float/schema_dropped_defaults_to_gauge",
+			enableTypeAndUnitLabels: true,
+			samples: promql.Vector{
+				{Metric: labels.FromStrings("job", "api"), T: evalMs, F: 1.5},
+			},
+			wantLabels: []labels.Labels{
+				labels.FromStrings(model.MetricNameLabel, "job:req:rate5m", model.MetricTypeLabel, "gauge", "job", "api"),
+			},
+			wantMetas: []metadata.Metadata{
+				{Type: model.MetricTypeGauge},
+			},
+		},
+		{
+			name:                    "float/preserved_schema_with_type_and_unit_labels",
+			enableTypeAndUnitLabels: true,
+			samples: promql.Vector{
+				{
+					Metric: labels.FromStrings(
+						model.MetricNameLabel, "http_requests_total",
+						model.MetricTypeLabel, "counter",
+						model.MetricUnitLabel, "requests",
+						"job", "api",
+					),
+					T: evalMs,
+					F: 42,
+				},
+			},
+			wantLabels: []labels.Labels{
+				labels.FromStrings(
+					model.MetricNameLabel, "job:req:rate5m",
+					model.MetricTypeLabel, "counter",
+					model.MetricUnitLabel, "requests",
+					"job", "api",
+				),
+			},
+			wantMetas: []metadata.Metadata{
+				{Type: model.MetricTypeCounter, Unit: "requests"},
+			},
+		},
+		{
+			name:                    "float/preserved_schema_without_type_and_unit_labels_suffix_fallback",
+			enableTypeAndUnitLabels: false,
+			samples: promql.Vector{
+				{
+					Metric: labels.FromStrings(
+						model.MetricNameLabel, "http_requests_total",
+						model.MetricTypeLabel, "gauge",
+						model.MetricUnitLabel, "ignored_when_flag_disabled",
+						"job", "api",
+					),
+					T: evalMs,
+					F: 42,
+				},
+				{
+					Metric: labels.FromStrings(model.MetricNameLabel, "target_info", "version", "1.0"),
+					T:      evalMs,
+					F:      1,
+				},
+			},
+			wantLabels: []labels.Labels{
+				labels.FromStrings(model.MetricNameLabel, "job:req:rate5m", "job", "api"),
+				labels.FromStrings(model.MetricNameLabel, "job:req:rate5m", "version", "1.0"),
+			},
+			wantMetas: []metadata.Metadata{
+				{Type: model.MetricTypeCounter},
+				{Type: model.MetricTypeInfo},
+			},
+		},
+		{
+			name:                    "histogram/deduces_counter_vs_gauge_from_reset_hint",
+			enableTypeAndUnitLabels: true,
+			samples: promql.Vector{
+				{Metric: labels.FromStrings("kind", "sum"), T: evalMs, H: counterHist},
+				{Metric: labels.FromStrings("kind", "rate"), T: evalMs, H: gaugeHist},
+			},
+			wantLabels: []labels.Labels{
+				labels.FromStrings(model.MetricNameLabel, "job:req:rate5m", model.MetricTypeLabel, "histogram", "kind", "sum"),
+				labels.FromStrings(model.MetricNameLabel, "job:req:rate5m", model.MetricTypeLabel, "gaugehistogram", "kind", "rate"),
+			},
+			wantMetas: []metadata.Metadata{
+				{Type: model.MetricTypeHistogram},
+				{Type: model.MetricTypeGaugeHistogram},
+			},
+		},
+		{
+			name: "yaml_overrides/explicit_help_type_unit",
+			ruleMeta: metadata.Metadata{
+				Type: model.MetricTypeCounter,
+				Unit: "requests_per_second",
+				Help: "Recorded request rate.",
+			},
+			enableTypeAndUnitLabels: true,
+			samples: promql.Vector{
+				{
+					Metric: labels.FromStrings(
+						model.MetricNameLabel, "http_requests_total",
+						model.MetricTypeLabel, "gauge",
+						model.MetricUnitLabel, "bytes",
+						"job", "api",
+					),
+					T: evalMs,
+					F: 5,
+				},
+			},
+			wantLabels: []labels.Labels{
+				labels.FromStrings(
+					model.MetricNameLabel, "job:req:rate5m",
+					model.MetricTypeLabel, "counter",
+					model.MetricUnitLabel, "requests_per_second",
+					"job", "api",
+				),
+			},
+			wantMetas: []metadata.Metadata{
+				{
+					Type: model.MetricTypeCounter,
+					Unit: "requests_per_second",
+					Help: "Recorded request rate.",
+				},
+			},
+		},
+		{
+			name: "mismatch/float_sample_with_histogram_yaml_falls_back_to_gauge",
+			ruleMeta: metadata.Metadata{
+				Type: model.MetricTypeHistogram,
+				Unit: "seconds",
+				Help: "Mismatched float sample.",
+			},
+			enableTypeAndUnitLabels: true,
+			samples: promql.Vector{
+				{Metric: labels.FromStrings("job", "api"), T: evalMs, F: 0.42},
+			},
+			wantLabels: []labels.Labels{
+				labels.FromStrings(
+					model.MetricNameLabel, "job:req:rate5m",
+					model.MetricTypeLabel, "gauge",
+					model.MetricUnitLabel, "seconds",
+					"job", "api",
+				),
+			},
+			wantMetas: []metadata.Metadata{
+				{Type: model.MetricTypeGauge, Unit: "seconds", Help: "Mismatched float sample."},
+			},
+		},
+		{
+			name: "mismatch/histogram_sample_with_gauge_yaml_falls_back_to_reset_hint",
+			ruleMeta: metadata.Metadata{
+				Type: model.MetricTypeGauge,
+				Unit: "seconds",
+			},
+			enableTypeAndUnitLabels: true,
+			samples: promql.Vector{
+				{Metric: labels.FromStrings("job", "api"), T: evalMs, H: gaugeHist},
+			},
+			wantLabels: []labels.Labels{
+				labels.FromStrings(
+					model.MetricNameLabel, "job:req:rate5m",
+					model.MetricTypeLabel, "gaugehistogram",
+					model.MetricUnitLabel, "seconds",
+					"job", "api",
+				),
+			},
+			wantMetas: []metadata.Metadata{
+				{Type: model.MetricTypeGaugeHistogram, Unit: "seconds"},
+			},
+		},
+		{
+			name: "duplicate_detection/or_series_differing_only_by_input_type_caught",
+			ruleMeta: metadata.Metadata{
+				Type: model.MetricTypeGauge,
+				Unit: "seconds",
+			},
+			enableTypeAndUnitLabels: true,
+			samples: promql.Vector{
+				{
+					Metric: labels.FromStrings(model.MetricNameLabel, "m1", model.MetricTypeLabel, "counter", "job", "api"),
+					T:      evalMs,
+					F:      1,
+				},
+				{
+					Metric: labels.FromStrings(model.MetricNameLabel, "m2", model.MetricTypeLabel, "gauge", "job", "api"),
+					T:      evalMs,
+					F:      2,
+				},
+			},
+			wantErr: ErrDuplicateRecordingLabelSet,
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			expr, err := testParser.ParseExpr("vector(1)")
+			require.NoError(t, err)
+			rule := NewRecordingRuleWithMetadata("job:req:rate5m", expr, labels.EmptyLabels(), tc.ruleMeta)
+			qf := func(context.Context, string, time.Time) (promql.Vector, error) {
+				out := make(promql.Vector, len(tc.samples))
+				copy(out, tc.samples)
+				return out, nil
+			}
+
+			gotVec, gotMetas, err := rule.evalWithMetadata(t.Context(), 0, ts, qf, nil, 0, true, tc.enableTypeAndUnitLabels)
+			if tc.wantErr != nil {
+				require.ErrorIs(t, err, tc.wantErr)
+				return
+			}
+			require.NoError(t, err)
+			require.Equal(t, tc.wantMetas, gotMetas)
+			require.Len(t, gotVec, len(tc.wantLabels))
+			for i := range gotVec {
+				require.Equal(t, tc.wantLabels[i], gotVec[i].Metric)
+			}
+		})
+	}
+}
+
