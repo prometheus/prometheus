@@ -18,15 +18,12 @@ import (
 	"context"
 	"fmt"
 	"os"
-	"os/exec"
 	"path/filepath"
-	"runtime"
 	"slices"
 	"testing"
 	"text/template"
 
 	"github.com/prometheus/compliance/remotewrite/sender"
-	"github.com/stretchr/testify/require"
 )
 
 const (
@@ -72,19 +69,6 @@ type internalPrometheus struct {
 
 func (internalPrometheus) Name() string { return "internal-prometheus" }
 
-func buildPrometheus(t *testing.T) string {
-	t.Helper()
-
-	bin := filepath.Join(t.TempDir(), "prometheus")
-	if runtime.GOOS == "windows" {
-		bin += ".exe"
-	}
-	cmd := exec.CommandContext(t.Context(), "go", "build", "-o", bin, "../cmd/prometheus")
-	out, err := cmd.CombinedOutput()
-	require.NoErrorf(t, err, "failed to build prometheus binary: %s", string(out))
-	return bin
-}
-
 // Run runs a <REPO>cmd/prometheus main package as a test sender target, until ctx is done.
 func (p internalPrometheus) Run(ctx context.Context, opts sender.Options) error {
 	var buf bytes.Buffer
@@ -119,6 +103,12 @@ func (p internalPrometheus) Run(ctx context.Context, opts sender.Options) error 
 }
 
 var _ sender.Sender = internalPrometheus{}
+
+// senderSkip lists unimplemented SHOULD/MAY sender compliance checks to skip in TestMain:
+// - Stateless exemplar coalescing (https://github.com/prometheus/prometheus/pull/20070).
+// - Untyped metadata inference (https://github.com/prometheus/proposals/pull/104).
+const senderSkip = "TestRemoteWriteSender/.*/internal-prometheus/exemplars/rw2-stateless.*/(_present|exemplar_additional_labels)" +
+	"|TestRemoteWriteSender/.*/internal-prometheus/metadata/rw2-stateless.*/untyped_metadata_inferred"
 
 // TestRemoteWriteSender runs remote write sender compliance tests defined in
 // https://github.com/prometheus/compliance/tree/main/remotewrite/sender against
