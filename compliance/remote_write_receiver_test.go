@@ -63,10 +63,13 @@ var _ receiver.Receiver = internalPrometheusReceiver{}
 func TestMain(m *testing.M) {
 	flag.Parse()
 
-	// Skip receiver mode SHOULD rejections until implemented in Prometheus.
-	// NOTE(bwplotka): Baseline TestRemoteWriteSender (mode=none) passes without skips;
-	// stateless sender suites and their skips will be added once https://github.com/prometheus/prometheus/pull/20098 is merged.
-	skip := "TestRemoteWriteReceiver/internal-prometheus/modes/validation/.*_(classic_histogram_samples|untyped_metadata|without_start_timestamp)"
+	// Skip unimplemented SHOULD/MAY compliance checks in Prometheus:
+	// - Receiver: mode validation rejections (writeHandler.Store currently ignores WriteMode).
+	// - Sender: stateless exemplar coalescing (https://github.com/prometheus/prometheus/pull/20070)
+	//   and untyped metadata inference (https://github.com/prometheus/proposals/pull/104).
+	skip := "TestRemoteWriteReceiver/internal-prometheus/modes/validation/.*_(classic_histogram_samples|untyped_metadata|without_start_timestamp)" +
+		"|TestRemoteWriteSender/.*/internal-prometheus/exemplars/rw2-stateless.*/(_present|exemplar_additional_labels)" +
+		"|TestRemoteWriteSender/.*/internal-prometheus/metadata/rw2-stateless.*/untyped_metadata_inferred"
 	if existing := flag.Lookup("test.skip").Value.String(); existing != "" {
 		skip = existing + "|" + skip
 	}

@@ -21,6 +21,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"runtime"
+	"slices"
 	"testing"
 	"text/template"
 
@@ -36,6 +37,9 @@ global:
 remote_write:
   - url: "{{.RemoteWriteEndpointURL}}"
     protobuf_message: "{{.RemoteWriteMessage}}"
+{{- if .RemoteWriteMode}}
+    mode: "{{.RemoteWriteMode}}"
+{{- end}}
     send_exemplars: true
     send_native_histograms: true
     queue_config:
@@ -47,6 +51,9 @@ scrape_configs:
   - job_name: "{{.ScrapeTargetJobName}}"
     scrape_interval: 1s
     scrape_native_histograms: true
+{{- if .RemoteWriteMode}}
+    convert_classic_histograms_to_nhcb: true
+{{- end}}
     scrape_protocols:
       - PrometheusProto
       - OpenMetricsText1.0.0
@@ -116,17 +123,20 @@ var _ sender.Sender = internalPrometheus{}
 // TestRemoteWriteSender runs remote write sender compliance tests defined in
 // https://github.com/prometheus/compliance/tree/main/remotewrite/sender against
 // both agent and server modes.
-// TODO(bwplotka): Add sender.StatelessComplianceTests() and sender.StatelessSTComplianceTests()
-// once https://github.com/prometheus/prometheus/pull/20098 is merged.
 func TestRemoteWriteSender(t *testing.T) {
 	bin := buildPrometheus(t)
+	tests := slices.Concat(
+		sender.ComplianceTests(),
+		sender.StatelessComplianceTests(),
+		sender.StatelessSTComplianceTests(),
+	)
 
 	t.Run("mode=server", func(t *testing.T) {
 		t.Parallel()
-		sender.RunTests(t, internalPrometheus{binary: bin}, sender.ComplianceTests())
+		sender.RunTests(t, internalPrometheus{binary: bin}, tests)
 	})
 	t.Run("mode=agent", func(t *testing.T) {
 		t.Parallel()
-		sender.RunTests(t, internalPrometheus{binary: bin, agentMode: true}, sender.ComplianceTests())
+		sender.RunTests(t, internalPrometheus{binary: bin, agentMode: true}, tests)
 	})
 }

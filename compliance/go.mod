@@ -3,7 +3,7 @@ module compliance
 go 1.26.10
 
 require (
-	github.com/prometheus/compliance v0.0.0-20261029125250-48c991b89adb
+	github.com/prometheus/compliance v0.0.0-20261029144141-6ae8d35df52c
 	github.com/stretchr/testify v1.12.1
 )
 
@@ -58,6 +58,7 @@ require (
 	github.com/grafana/regexp v0.0.0-20250905093917-f7b3be9d1853 // indirect
 	github.com/hashicorp/consul/api v1.35.0 // indirect
 	github.com/hashicorp/go-retryablehttp v0.7.8 // indirect
+	github.com/hashicorp/go-uuid v1.0.3 // indirect
 	github.com/hashicorp/nomad/api v0.0.0-20261021233103-cd3e55df2c8e // indirect
 	github.com/hetznercloud/hcloud-go/v2 v2.52.0 // indirect
 	github.com/ionos-cloud/sdk-go/v6 v6.3.11 // indirect
@@ -72,11 +73,12 @@ require (
 	github.com/mwitkow/go-conntrack v0.0.0-20190716064945-2f068394615f // indirect
 	github.com/oklog/run v1.2.0 // indirect
 	github.com/opencontainers/image-spec v1.1.1 // indirect
+	github.com/pandatix/go-abnf v0.5.1 // indirect
 	github.com/pkg/browser v0.0.0-20240102092130-5ac0b6a4141c // indirect
 	github.com/prometheus/client_golang v1.25.0 // indirect
 	github.com/prometheus/client_golang/exp v0.0.0-20261026045710-70c0a469a56a // indirect
 	github.com/prometheus/client_model v0.6.3 // indirect
-	github.com/prometheus/common v0.72.1 // indirect
+	github.com/prometheus/common v0.72.2-0.20261027144952-e257672f3db6 // indirect
 	github.com/prometheus/otlptranslator v1.0.0 // indirect
 	github.com/prometheus/procfs v0.22.0 // indirect
 	github.com/prometheus/prometheus v0.307.4-0.20251119130332-1174b0ce4f1f // indirect
