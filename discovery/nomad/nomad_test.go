@@ -16,9 +16,12 @@ package nomad
 import (
 	"context"
 	"fmt"
+	"net"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
+	"path/filepath"
+	"runtime"
 	"testing"
 
 	"github.com/prometheus/client_golang/prometheus"
@@ -137,6 +140,7 @@ func TestConfiguredService(t *testing.T) {
 		{"invalid even though accepted by parsing", "foo.bar:4646", true},
 		{"valid address URL", "http://172.30.29.23:4646", true},
 		{"invalid URL", "172.30.29.23:4646", false},
+		{"valid unix socket URL", "unix:///path/to/nomad.sock", true},
 	}
 
 	for _, tc := range testCases {
@@ -168,51 +172,94 @@ func TestConfiguredService(t *testing.T) {
 
 func TestNomadSDRefresh(t *testing.T) {
 	t.Parallel()
-	sdmock := &NomadSDTestSuite{}
-	sdmock.SetupTest(t)
-	t.Cleanup(sdmock.TearDownSuite)
 
-	endpoint, err := url.Parse(sdmock.Mock.Endpoint())
-	require.NoError(t, err)
+	testCases := []struct {
+		name   string
+		server func(t *testing.T) string
+	}{
+		{
+			name: "http",
+			server: func(t *testing.T) string {
+				t.Helper()
+				sdmock := &NomadSDTestSuite{}
+				sdmock.SetupTest(t)
+				t.Cleanup(sdmock.TearDownSuite)
 
-	cfg := DefaultSDConfig
-	cfg.Server = endpoint.String()
+				endpoint, err := url.Parse(sdmock.Mock.Endpoint())
+				require.NoError(t, err)
+				return endpoint.String()
+			},
+		},
+		{
+			name: "unix",
+			server: func(t *testing.T) string {
+				t.Helper()
+				if runtime.GOOS == "windows" {
+					t.Skip("Unix domain sockets are not supported on Windows")
+				}
 
-	reg := prometheus.NewRegistry()
-	refreshMetrics := discovery.NewRefreshMetrics(reg)
-	metrics := cfg.NewDiscovererMetrics(reg, refreshMetrics)
-	require.NoError(t, metrics.Register())
-	defer metrics.Unregister()
-	defer refreshMetrics.Unregister()
+				socketPath := filepath.Join(t.TempDir(), "nomad.sock")
+				l, err := net.Listen("unix", socketPath)
+				require.NoError(t, err)
+				t.Cleanup(func() { require.NoError(t, l.Close()) })
 
-	d, err := NewDiscovery(&cfg, discovery.DiscovererOptions{
-		Logger:  promslog.NewNopLogger(),
-		Metrics: metrics,
-		SetName: "nomad",
-	})
-	require.NoError(t, err)
+				mock := NewSDMock(t)
+				mock.Mux = http.NewServeMux()
+				mock.HandleServicesList()
+				mock.HandleServiceHashiCupsGet()
+				go func() {
+					_ = http.Serve(l, mock.Mux)
+				}()
 
-	tgs, err := d.refresh(context.Background())
-	require.NoError(t, err)
-
-	require.Len(t, tgs, 1)
-
-	tg := tgs[0]
-	require.NotNil(t, tg)
-	require.NotNil(t, tg.Targets)
-	require.Len(t, tg.Targets, 1)
-
-	lbls := model.LabelSet{
-		"__address__":                  model.LabelValue("127.0.0.1:30456"),
-		"__meta_nomad_address":         model.LabelValue("127.0.0.1"),
-		"__meta_nomad_dc":              model.LabelValue("dc1"),
-		"__meta_nomad_namespace":       model.LabelValue("default"),
-		"__meta_nomad_node_id":         model.LabelValue("d92fdc3c-9c2b-298a-e8f4-c33f3a449f09"),
-		"__meta_nomad_service":         model.LabelValue("hashicups"),
-		"__meta_nomad_service_address": model.LabelValue("127.0.0.1"),
-		"__meta_nomad_service_id":      model.LabelValue("_nomad-task-6a1d5f0a-7362-3f5d-9baf-5ed438918e50-group-hashicups-hashicups-hashicups_ui"),
-		"__meta_nomad_service_port":    model.LabelValue("30456"),
-		"__meta_nomad_tags":            model.LabelValue(",metrics,"),
+				return "unix://" + socketPath
+			},
+		},
 	}
-	require.Equal(t, lbls, tg.Targets[0])
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+
+			cfg := DefaultSDConfig
+			cfg.Server = tc.server(t)
+
+			reg := prometheus.NewRegistry()
+			refreshMetrics := discovery.NewRefreshMetrics(reg)
+			metrics := cfg.NewDiscovererMetrics(reg, refreshMetrics)
+			require.NoError(t, metrics.Register())
+			defer metrics.Unregister()
+			defer refreshMetrics.Unregister()
+
+			d, err := NewDiscovery(&cfg, discovery.DiscovererOptions{
+				Logger:  promslog.NewNopLogger(),
+				Metrics: metrics,
+				SetName: "nomad",
+			})
+			require.NoError(t, err)
+
+			tgs, err := d.refresh(context.Background())
+			require.NoError(t, err)
+
+			require.Len(t, tgs, 1)
+
+			tg := tgs[0]
+			require.NotNil(t, tg)
+			require.NotNil(t, tg.Targets)
+			require.Len(t, tg.Targets, 1)
+
+			lbls := model.LabelSet{
+				"__address__":                  model.LabelValue("127.0.0.1:30456"),
+				"__meta_nomad_address":         model.LabelValue("127.0.0.1"),
+				"__meta_nomad_dc":              model.LabelValue("dc1"),
+				"__meta_nomad_namespace":       model.LabelValue("default"),
+				"__meta_nomad_node_id":         model.LabelValue("d92fdc3c-9c2b-298a-e8f4-c33f3a449f09"),
+				"__meta_nomad_service":         model.LabelValue("hashicups"),
+				"__meta_nomad_service_address": model.LabelValue("127.0.0.1"),
+				"__meta_nomad_service_id":      model.LabelValue("_nomad-task-6a1d5f0a-7362-3f5d-9baf-5ed438918e50-group-hashicups-hashicups-hashicups_ui"),
+				"__meta_nomad_service_port":    model.LabelValue("30456"),
+				"__meta_nomad_tags":            model.LabelValue(",metrics,"),
+			}
+			require.Equal(t, lbls, tg.Targets[0])
+		})
+	}
 }
