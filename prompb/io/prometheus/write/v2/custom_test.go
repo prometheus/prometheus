@@ -13,7 +13,10 @@
 package writev2
 
 import (
+	"slices"
+	"strings"
 	"testing"
+	"unsafe"
 
 	"github.com/stretchr/testify/require"
 )
@@ -94,4 +97,48 @@ func TestOptimizedMarshal(t *testing.T) {
 			require.Equal(t, tt.m, m)
 		})
 	}
+
+	t.Run("buffer growth", func(t *testing.T) {
+		// Each request either reuses the previous buffer or grows it to exactly the
+		// allocator block for its size.
+		block := func(n int) int { return cap(slices.Grow([]byte(nil), n)) }
+		var buf []byte
+		for _, tc := range []struct {
+			name      string
+			size      int
+			fitsSlack bool
+		}{
+			{"first", 100, false},
+			{"small", 16 << 10, false},
+			{"next size class", 17 << 10, false},
+			{"size class slack", block(17 << 10), true},
+			{"large", 4 << 20, false},
+			{"next page", 4<<20 + 1, false},
+			{"page slack", 4<<20 + 8<<10, true},
+		} {
+			t.Run(tc.name, func(t *testing.T) {
+				// Symbols {"", s} serialize to 3 bytes plus the varint length of s and s.
+				m := &Request{Symbols: []string{"", strings.Repeat("x", tc.size-3)}}
+				m.Symbols[1] = strings.Repeat("x", tc.size-3-(m.Size()-tc.size))
+				require.Equal(t, tc.size, m.Size())
+				require.Equal(t, tc.fitsSlack, cap(buf) >= tc.size)
+
+				got, err := m.OptimizedMarshal(buf)
+				require.NoError(t, err)
+				if tc.fitsSlack {
+					require.Same(t, unsafe.SliceData(buf), unsafe.SliceData(got))
+				} else {
+					require.Equal(t, block(tc.size), cap(got))
+					if tc.size > 32<<10 {
+						// Go allocates objects above 32 KiB in whole 8 KiB pages.
+						require.Less(t, cap(got)-tc.size, 8<<10)
+					}
+				}
+				want, err := m.Marshal()
+				require.NoError(t, err)
+				require.Equal(t, want, got)
+				buf = got
+			})
+		}
+	})
 }
