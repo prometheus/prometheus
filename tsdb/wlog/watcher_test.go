@@ -14,6 +14,8 @@ package wlog
 
 import (
 	"fmt"
+	"io"
+	"math"
 	"math/rand"
 	"os"
 	"path"
@@ -59,15 +61,9 @@ func retry(t *testing.T, interval time.Duration, n int, f func() bool) {
 	t.Log("function returned false")
 }
 
-// Overwrite readTimeout defined in watcher.go.
-func overwriteReadTimeout(t *testing.T, val time.Duration) {
-	initialVal := readTimeout
-	readTimeout = val
-	t.Cleanup(func() { readTimeout = initialVal })
-}
-
 type writeToMock struct {
-	mu sync.Mutex
+	mu        sync.Mutex
+	benchMode bool
 
 	seriesStored            []record.RefSeries
 	metadataStored          []record.RefMetadata
@@ -89,11 +85,33 @@ type writeToMock struct {
 	delay time.Duration
 }
 
+func (wtm *writeToMock) Reset() {
+	wtm.mu.Lock()
+	defer wtm.mu.Unlock()
+
+	wtm.seriesStored = nil
+	wtm.metadataStored = nil
+	wtm.samplesAppended = nil
+	wtm.exemplarsAppended = nil
+	wtm.histogramsAppended = nil
+	wtm.floatHistogramsAppended = nil
+	wtm.seriesStores = 0
+	wtm.metadataStores = 0
+	wtm.sampleAppends = 0
+	wtm.exemplarAppends = 0
+	wtm.histogramAppends = 0
+	wtm.floatHistogramsAppends = 0
+	clear(wtm.seriesSegmentIndexes)
+}
+
 func (wtm *writeToMock) Append(s []record.RefSample) bool {
 	wtm.mu.Lock()
 	defer wtm.mu.Unlock()
 
 	wtm.sampleAppends++
+	if wtm.benchMode {
+		return true
+	}
 	wtm.samplesAppended = append(wtm.samplesAppended, s...)
 	time.Sleep(wtm.delay)
 	return true
@@ -103,8 +121,11 @@ func (wtm *writeToMock) AppendExemplars(e []record.RefExemplar) bool {
 	wtm.mu.Lock()
 	defer wtm.mu.Unlock()
 
-	time.Sleep(wtm.delay)
 	wtm.exemplarAppends++
+	if wtm.benchMode {
+		return true
+	}
+	time.Sleep(wtm.delay)
 	wtm.exemplarsAppended = append(wtm.exemplarsAppended, e...)
 	return true
 }
@@ -113,8 +134,11 @@ func (wtm *writeToMock) AppendHistograms(h []record.RefHistogramSample) bool {
 	wtm.mu.Lock()
 	defer wtm.mu.Unlock()
 
-	time.Sleep(wtm.delay)
 	wtm.histogramAppends++
+	if wtm.benchMode {
+		return true
+	}
+	time.Sleep(wtm.delay)
 	wtm.histogramsAppended = append(wtm.histogramsAppended, h...)
 	return true
 }
@@ -123,8 +147,11 @@ func (wtm *writeToMock) AppendFloatHistograms(fh []record.RefFloatHistogramSampl
 	wtm.mu.Lock()
 	defer wtm.mu.Unlock()
 
-	time.Sleep(wtm.delay)
 	wtm.floatHistogramsAppends++
+	if wtm.benchMode {
+		return true
+	}
+	time.Sleep(wtm.delay)
 	wtm.floatHistogramsAppended = append(wtm.floatHistogramsAppended, fh...)
 	return true
 }
@@ -134,6 +161,9 @@ func (wtm *writeToMock) StoreSeries(series []record.RefSeries, index int) {
 	defer wtm.mu.Unlock()
 
 	wtm.seriesStores++
+	if wtm.benchMode {
+		return
+	}
 	wtm.seriesStored = append(wtm.seriesStored, series...)
 	for _, s := range series {
 		wtm.seriesSegmentIndexes[s.Ref] = index
@@ -146,6 +176,9 @@ func (wtm *writeToMock) StoreMetadata(meta []record.RefMetadata) {
 	defer wtm.mu.Unlock()
 
 	wtm.metadataStores++
+	if wtm.benchMode {
+		return
+	}
 	wtm.metadataStored = append(wtm.metadataStored, meta...)
 	time.Sleep(wtm.delay)
 }
@@ -294,14 +327,14 @@ func TestWatcher_Tail(t *testing.T) {
 					watcher.Notify()
 				}
 
-				// Wait for watcher to lead all.
+				// Wait for watcher to read all.
 				require.Eventually(t, func() bool {
 					wt.mu.Lock()
 					defer wt.mu.Unlock()
 
 					// Exemplars are logged as the last one, so assert on those.
 					return wt.exemplarAppends >= batches
-				}, 2*time.Minute, 1*time.Second)
+				}, 2*time.Minute, 100*time.Millisecond)
 
 				wt.mu.Lock()
 				defer wt.mu.Unlock()
@@ -386,18 +419,29 @@ func TestReadToEndNoCheckpoint(t *testing.T) {
 					}
 				}
 				require.NoError(t, w.Log(recs...))
-				overwriteReadTimeout(t, time.Second)
 				_, _, err = Segments(w.Dir())
 				require.NoError(t, err)
 
 				wt := newWriteToMock(0)
 				watcher := NewWatcher(wMetrics, nil, nil, "", wt, dir, false, false, false, nil)
+				watcher.readTimeout = 100 * time.Millisecond
 				go watcher.Start()
 
 				expected := seriesCount
 				require.Eventually(t, func() bool {
 					return wt.checkNumSeries() == expected
-				}, 20*time.Second, 1*time.Second)
+				}, 20*time.Second, 10*time.Millisecond)
+
+				// Write one more series without calling watcher.Notify() to verify readTimeout fallback.
+				require.NoError(t, w.Log(enc.Series([]record.RefSeries{
+					{
+						Ref:    chunks.HeadSeriesRef(seriesCount),
+						Labels: labels.FromStrings("__name__", fmt.Sprintf("metric_%d", seriesCount)),
+					},
+				}, nil)))
+				require.Eventually(t, func() bool {
+					return wt.checkNumSeries() == expected+1
+				}, 20*time.Second, 10*time.Millisecond)
 				watcher.Stop()
 			})
 		}
@@ -480,7 +524,6 @@ func TestReadToEndWithCheckpoint(t *testing.T) {
 
 				_, _, err = Segments(w.Dir())
 				require.NoError(t, err)
-				overwriteReadTimeout(t, time.Second)
 				wt := newWriteToMock(0)
 				watcher := NewWatcher(wMetrics, nil, nil, "", wt, dir, false, false, false, nil)
 				go watcher.Start()
@@ -489,7 +532,7 @@ func TestReadToEndWithCheckpoint(t *testing.T) {
 
 				require.Eventually(t, func() bool {
 					return wt.checkNumSeries() == expected
-				}, 10*time.Second, 1*time.Second)
+				}, 10*time.Second, 100*time.Millisecond)
 				watcher.Stop()
 			})
 		}
@@ -703,7 +746,6 @@ func TestCheckpointSeriesReset(t *testing.T) {
 			_, _, err = Segments(w.Dir())
 			require.NoError(t, err)
 
-			overwriteReadTimeout(t, time.Second)
 			wt := newWriteToMock(0)
 			watcher := NewWatcher(wMetrics, nil, nil, "", wt, subdir, false, false, false, nil)
 			watcher.MaxSegment = -1
@@ -715,7 +757,7 @@ func TestCheckpointSeriesReset(t *testing.T) {
 			})
 			require.Eventually(t, func() bool {
 				return wt.checkNumSeries() == seriesCount
-			}, 10*time.Second, 1*time.Second)
+			}, 10*time.Second, 100*time.Millisecond)
 
 			// Simulate a second watcher lagging at segment 1 before checkpoint and truncate.
 			restartWt := newWriteToMock(0)
@@ -745,7 +787,7 @@ func TestCheckpointSeriesReset(t *testing.T) {
 			// or modify the Equals to Assert(len(wt.seriesLabels) < seriesCount*10)
 			require.Eventually(t, func() bool {
 				return wt.checkNumSeries() == tc.segments
-			}, 20*time.Second, 1*time.Second)
+			}, 20*time.Second, 100*time.Millisecond)
 
 			// When Run restarts on a checkpoint that garbageCollectSeries never processed,
 			// it must call SeriesReset to drop series from segments older than the checkpoint.
@@ -811,7 +853,7 @@ func TestRun_StartupTime(t *testing.T) {
 				startTime := time.Now()
 
 				err = watcher.Run()
-				require.Less(t, time.Since(startTime), readTimeout)
+				require.Less(t, time.Since(startTime), watcher.readTimeout)
 				require.NoError(t, err)
 			})
 		}
@@ -890,8 +932,8 @@ func TestRun_AvoidNotifyWhenBehind(t *testing.T) {
 					}
 					// If the watcher was to wait for readTicker to read every new segment, it would need readTimeout * segmentsToRead.
 					d := time.Since(startTime)
-					if d > readTimeout {
-						return fmt.Errorf("watcher ran for %s, it shouldn't rely on readTicker=%s to read the new segments", d, readTimeout)
+					if d > watcher.readTimeout {
+						return fmt.Errorf("watcher ran for %s, it shouldn't rely on readTicker=%s to read the new segments", d, watcher.readTimeout)
 					}
 					return nil
 				})
@@ -917,5 +959,236 @@ func TestRun_AvoidNotifyWhenBehind(t *testing.T) {
 				require.NoError(t, w.Close())
 			})
 		}
+	}
+}
+
+type offsetLimitReader struct {
+	r     io.Reader
+	pos   int64
+	limit int64
+}
+
+func (l *offsetLimitReader) Read(p []byte) (int, error) {
+	rem := l.limit - l.pos
+	if rem <= 0 {
+		return 0, io.EOF
+	}
+	if int64(len(p)) > rem {
+		p = p[:rem]
+	}
+	n, err := l.r.Read(p)
+	l.pos += int64(n)
+	return n, err
+}
+
+func logBenchRecords(tb testing.TB, w *WL, enc *record.Encoder, recs testwal.Records) {
+	tb.Helper()
+	if len(recs.Series) > 0 {
+		require.NoError(tb, w.Log(enc.Series(recs.Series, nil)))
+	}
+	if len(recs.Metadata) > 0 {
+		require.NoError(tb, w.Log(enc.Metadata(recs.Metadata, nil)))
+	}
+	if len(recs.Samples) > 0 {
+		require.NoError(tb, w.Log(enc.Samples(recs.Samples, nil)))
+	}
+	if len(recs.Histograms) > 0 {
+		hs, _ := enc.HistogramSamples(recs.Histograms, nil)
+		require.NoError(tb, w.Log(hs))
+	}
+	if len(recs.FloatHistograms) > 0 {
+		fhs, _ := enc.FloatHistogramSamples(recs.FloatHistograms, nil)
+		require.NoError(tb, w.Log(fhs))
+	}
+	if len(recs.Exemplars) > 0 {
+		require.NoError(tb, w.Log(enc.Exemplars(recs.Exemplars, nil)))
+	}
+}
+
+// Recommended CLI invocation:
+/*
+	export bench=main && go test ./tsdb/wlog/... \
+		-run '^$' -bench '^BenchmarkWatcher_ReadSegment' \
+		-benchtime 10x -count 6 -cpu 2 -timeout 999m -benchmem \
+		| tee ${bench}.txt
+*/
+func BenchmarkWatcher_ReadSegment(b *testing.B) {
+	now := time.Now()
+	tsFn := func(_, _ int) int64 {
+		return timestamp.FromTime(now.Add(1 * time.Second))
+	}
+
+	initSamplesRecs := testwal.GenerateRecords(testwal.RecordsCase{
+		Series:           1000,
+		SamplesPerSeries: 1,
+		TsFn:             tsFn,
+	})
+	cases := []struct {
+		name      string
+		appends   int
+		initRecs  testwal.Records
+		laterRecs testwal.Records
+	}{
+		{
+			name:     "data=samples",
+			appends:  500,
+			initRecs: initSamplesRecs,
+			laterRecs: testwal.Records{
+				Samples: initSamplesRecs.Samples,
+			},
+		},
+		{
+			name:    "data=all",
+			appends: 100,
+			initRecs: testwal.GenerateRecords(testwal.RecordsCase{
+				Series:                   100,
+				SamplesPerSeries:         10,
+				HistogramsPerSeries:      1,
+				FloatHistogramsPerSeries: 1,
+				ExemplarsPerSeries:       1,
+				TsFn:                     tsFn,
+			}),
+			laterRecs: testwal.GenerateRecords(testwal.RecordsCase{
+				Series:                   10,
+				SamplesPerSeries:         100,
+				HistogramsPerSeries:      10,
+				FloatHistogramsPerSeries: 10,
+				ExemplarsPerSeries:       10,
+				TsFn:                     tsFn,
+			}),
+		},
+	}
+
+	for _, tc := range cases {
+		b.Run(tc.name, func(b *testing.B) {
+			var (
+				dir  = b.TempDir()
+				wdir = path.Join(dir, "wal")
+				enc  = record.Encoder{EnableSTStorage: true}
+			)
+			require.NoError(b, os.Mkdir(wdir, 0o777))
+
+			w, err := NewSize(nil, nil, wdir, DefaultSegmentSize, compression.Snappy)
+			require.NoError(b, err)
+			b.Cleanup(func() {
+				_ = w.Close()
+			})
+
+			offsets := make([]int64, 0, tc.appends)
+			logBenchRecords(b, w, &enc, tc.initRecs)
+			fi, err := w.segment.Stat()
+			require.NoError(b, err)
+			offsets = append(offsets, fi.Size())
+
+			for range tc.appends - 1 {
+				logBenchRecords(b, w, &enc, tc.laterRecs)
+				fi, err := w.segment.Stat()
+				require.NoError(b, err)
+				offsets = append(offsets, fi.Size())
+			}
+			require.NoError(b, w.Close())
+
+			first, last, err := Segments(w.Dir())
+			require.NoError(b, err)
+			require.Equal(b, 0, last, "expected a single segment, got %v", last+1)
+			segmentPath := SegmentName(w.Dir(), first)
+
+			b.Run("mode=onlySeries", func(b *testing.B) {
+				wt := newWriteToMock(0)
+				wt.benchMode = true
+				watcher := NewWatcher(wMetrics, nil, nil, "test", wt, b.TempDir(), true, true, true, record.NewBuffersPool())
+				watcher.SetMetrics()
+				watcher.SetStartTime(timestamp.Time(math.MinInt64))
+
+				segment, err := OpenReadSegment(segmentPath)
+				require.NoError(b, err)
+				b.Cleanup(func() { _ = segment.Close() })
+
+				decBuf := compression.NewSyncDecodeBuffer()
+				segReader := NewLiveReader(watcher.logger, watcher.readerMetrics, segment)
+				segReader.decBuf = decBuf
+				require.ErrorIs(b, watcher.readSegment(segReader, 0, true), io.EOF)
+
+				b.ReportAllocs()
+				b.ResetTimer()
+				for b.Loop() {
+					b.StopTimer()
+					wt.Reset()
+					_, err = segment.SegmentFile.(*os.File).Seek(0, io.SeekStart)
+					require.NoError(b, err)
+					segReader = NewLiveReader(watcher.logger, watcher.readerMetrics, segment)
+					segReader.decBuf = decBuf
+					b.StartTimer()
+
+					require.ErrorIs(b, watcher.readSegment(segReader, 0, true), io.EOF)
+				}
+			})
+
+			b.Run("mode=tail-one-go", func(b *testing.B) {
+				wt := newWriteToMock(0)
+				wt.benchMode = true
+				watcher := NewWatcher(wMetrics, nil, nil, "test", wt, b.TempDir(), true, true, true, record.NewBuffersPool())
+				watcher.SetMetrics()
+				watcher.SetStartTime(timestamp.Time(math.MinInt64))
+
+				segment, err := OpenReadSegment(segmentPath)
+				require.NoError(b, err)
+				b.Cleanup(func() { _ = segment.Close() })
+
+				decBuf := compression.NewSyncDecodeBuffer()
+				segReader := NewLiveReader(watcher.logger, watcher.readerMetrics, segment)
+				segReader.decBuf = decBuf
+				require.ErrorIs(b, watcher.readSegment(segReader, 0, false), io.EOF)
+
+				b.ReportAllocs()
+				b.ResetTimer()
+				for b.Loop() {
+					b.StopTimer()
+					wt.Reset()
+					_, err = segment.SegmentFile.(*os.File).Seek(0, io.SeekStart)
+					require.NoError(b, err)
+					segReader = NewLiveReader(watcher.logger, watcher.readerMetrics, segment)
+					segReader.decBuf = decBuf
+					b.StartTimer()
+
+					require.ErrorIs(b, watcher.readSegment(segReader, 0, false), io.EOF)
+				}
+			})
+
+			b.Run("mode=tail-per-scrape", func(b *testing.B) {
+				wt := newWriteToMock(0)
+				wt.benchMode = true
+				watcher := NewWatcher(wMetrics, nil, nil, "test", wt, b.TempDir(), true, true, true, record.NewBuffersPool())
+				watcher.SetMetrics()
+				watcher.SetStartTime(timestamp.Time(math.MinInt64))
+
+				segment, err := OpenReadSegment(segmentPath)
+				require.NoError(b, err)
+				b.Cleanup(func() { _ = segment.Close() })
+
+				decBuf := compression.NewSyncDecodeBuffer()
+				segReader := NewLiveReader(watcher.logger, watcher.readerMetrics, segment)
+				segReader.decBuf = decBuf
+				require.ErrorIs(b, watcher.readSegment(segReader, 0, false), io.EOF)
+
+				b.ReportAllocs()
+				b.ResetTimer()
+				for b.Loop() {
+					b.StopTimer()
+					wt.Reset()
+					_, err = segment.SegmentFile.(*os.File).Seek(0, io.SeekStart)
+					require.NoError(b, err)
+					limReader := &offsetLimitReader{r: segment}
+					segReader = NewLiveReader(watcher.logger, watcher.readerMetrics, limReader)
+					segReader.decBuf = decBuf
+					b.StartTimer()
+
+					for _, off := range offsets {
+						limReader.limit = off
+						require.ErrorIs(b, watcher.readSegment(segReader, 0, false), io.EOF)
+					}
+				}
+			})
+		})
 	}
 }
