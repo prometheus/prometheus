@@ -149,8 +149,9 @@ const (
 	elasticacheLabelServerlessCacheEndpoint              = elasticacheLabelServerlessCache + "endpoint_"
 	elasticacheLabelServerlessCacheEndpointAddress       = elasticacheLabelServerlessCacheEndpoint + "address"
 	elasticacheLabelServerlessCacheEndpointPort          = elasticacheLabelServerlessCacheEndpoint + "port"
-	elasticacheLabelServerlessCacheReaderEndpointAddress = elasticacheLabelServerlessCacheEndpoint + "reader_address"
-	elasticacheLabelServerlessCacheReaderEndpointPort    = elasticacheLabelServerlessCacheEndpoint + "reader_port"
+	elasticacheLabelServerlessCacheReaderEndpoint        = elasticacheLabelServerlessCache + "reader_endpoint_"
+	elasticacheLabelServerlessCacheReaderEndpointAddress = elasticacheLabelServerlessCacheReaderEndpoint + "address"
+	elasticacheLabelServerlessCacheReaderEndpointPort    = elasticacheLabelServerlessCacheReaderEndpoint + "port"
 
 	// security group membership (slice - use with index).
 	elasticacheLabelServerlessCacheSecurityGroupID = elasticacheLabelServerlessCache + "security_group_id"
@@ -160,11 +161,11 @@ const (
 
 	// cache usage limits.
 	elasticacheLabelServerlessCacheCacheUsageLimit                        = elasticacheLabelServerlessCache + "cache_usage_limit_"
-	elasticacheLabelServerlessCacheCacheUsageLimitCacheDataStorage        = elasticacheLabelServerlessCacheCacheUsageLimit + "data_storage"
+	elasticacheLabelServerlessCacheCacheUsageLimitCacheDataStorage        = elasticacheLabelServerlessCacheCacheUsageLimit + "data_storage_"
 	elasticacheLabelServerlessCacheCacheUsageLimitCacheDataStorageMaximum = elasticacheLabelServerlessCacheCacheUsageLimitCacheDataStorage + "maximum"
 	elasticacheLabelServerlessCacheCacheUsageLimitCacheDataStorageMinimum = elasticacheLabelServerlessCacheCacheUsageLimitCacheDataStorage + "minimum"
 	elasticacheLabelServerlessCacheCacheUsageLimitCacheDataStorageUnit    = elasticacheLabelServerlessCacheCacheUsageLimitCacheDataStorage + "unit"
-	elasticacheLabelServerlessCacheCacheUsageLimitECPUPerSecond           = elasticacheLabelServerlessCacheCacheUsageLimit + "ecpu_per_second"
+	elasticacheLabelServerlessCacheCacheUsageLimitECPUPerSecond           = elasticacheLabelServerlessCacheCacheUsageLimit + "ecpu_per_second_"
 	elasticacheLabelServerlessCacheCacheUsageLimitECPUPerSecondMaximum    = elasticacheLabelServerlessCacheCacheUsageLimitECPUPerSecond + "maximum"
 	elasticacheLabelServerlessCacheCacheUsageLimitECPUPerSecondMinimum    = elasticacheLabelServerlessCacheCacheUsageLimitECPUPerSecond + "minimum"
 
