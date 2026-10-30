@@ -2114,6 +2114,11 @@ func (h *Head) Delete(ctx context.Context, mint, maxt int64, ms ...*labels.Match
 }
 
 // gc removes data before the minimum timestamp from the head.
+// It is safe to run concurrently with appends. Each series is examined while
+// holding its lock, and a series with an in-flight appender reservation
+// (see memSeries.hasPendingCommit, released in tsdb/head_append.go after each
+// series commit) or any remaining chunks is retained rather than deleted, so
+// concurrent appends cannot lose a series out from under them.
 // It returns
 // * The actual min times of the chunks present in the Head.
 // * The min OOO time seen during the GC.
