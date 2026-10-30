@@ -115,6 +115,7 @@ const senderSkip = "TestRemoteWriteSender/.*/internal-prometheus/exemplars/rw2-s
 // both agent and server modes.
 func TestRemoteWriteSender(t *testing.T) {
 	bin := buildPrometheus(t)
+	// sender.RunTests disambiguates each suite by protocol and mode (/rw2, /rw2-stateless, /rw2-stateless-st).
 	tests := slices.Concat(
 		sender.ComplianceTests(),
 		sender.StatelessComplianceTests(),
