@@ -1661,6 +1661,37 @@ bar 2
 			M: metadata.Metadata{Type: model.MetricTypeGauge},
 		},
 	}, appTest.ResultMetadata()[6:])
+
+	// Third scrape: when metadata changes and produces a different label set (e.g. with enableTypeAndUnitLabels),
+	// the cached series entry must be replaced so seriesAdded is incremented and the old series is marked stale.
+	sl.enableTypeAndUnitLabels = true
+	scrapeText3 := []byte(`# TYPE bar gauge
+# HELP bar Updated help
+bar 3
+# EOF`)
+	app = sl.appender()
+	total, added, seriesAdded, err = app.append(scrapeText3, "application/openmetrics-text", now.Add(2*time.Second))
+	require.NoError(t, err)
+	require.NoError(t, app.Commit())
+	require.Equal(t, 1, total)
+	require.Equal(t, 1, added)
+	require.Equal(t, 1, seriesAdded)
+
+	// Verify the new series with __type__="gauge" was appended and the previous bar series without __type__ was marked stale.
+	var sawNewBar, sawStaleOldBar bool
+	for _, s := range appTest.ResultSamples() {
+		if s.T != timestamp.FromTime(now.Add(2*time.Second)) {
+			continue
+		}
+		if labels.Equal(s.L, labels.FromStrings("__name__", "bar", "__type__", "gauge", "instance", "localhost:9090", "job", "test")) && s.V == 3 {
+			sawNewBar = true
+		}
+		if labels.Equal(s.L, labels.FromStrings("__name__", "bar", "instance", "localhost:9090", "job", "test")) && value.IsStaleNaN(s.V) {
+			sawStaleOldBar = true
+		}
+	}
+	require.True(t, sawNewBar, "expected new bar series with __type__ label to be appended")
+	require.True(t, sawStaleOldBar, "expected old bar series without __type__ label to be marked stale")
 }
 
 func TestScrapeLoopSeriesAdded(t *testing.T) {

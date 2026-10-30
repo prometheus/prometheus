@@ -335,9 +335,12 @@ loop:
 				if seriesCached {
 					if ce.lset.Hash() == lset.Hash() && labels.Equal(ce.lset, lset) {
 						ref = ce.ref
+						sl.cache.setSeriesMeta(ce, origMeta, sampleMeta, origMFName, sampleMFName)
+					} else {
+						sl.cache.deleteSeries(met, ce)
+						ce = nil
+						seriesCached = false
 					}
-					ce.lset = lset
-					sl.cache.setSeriesMeta(ce, origMeta, sampleMeta, origMFName, sampleMFName)
 				}
 			}
 		}
