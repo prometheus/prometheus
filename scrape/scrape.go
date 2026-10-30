@@ -1022,9 +1022,8 @@ type scrapeCache struct {
 	// and its storage reference.
 	series map[string]*cacheEntry
 
-	// Cache of dropped metric strings and their iteration. The iteration must
-	// be a pointer so we can update it.
-	droppedSeries map[string]*uint64
+	// Cache of dropped metric hashes and their iteration.
+	droppedSeries map[uint64]uint64
 
 	// Series that were seen in the current and previous scrape, for staleness detection.
 	seriesCur  map[storage.SeriesRef]*cacheEntry
@@ -1060,7 +1059,7 @@ func (m *metaEntry) size() int {
 func newScrapeCache(metrics *scrapeMetrics) *scrapeCache {
 	return &scrapeCache{
 		series:        map[string]*cacheEntry{},
-		droppedSeries: map[string]*uint64{},
+		droppedSeries: map[uint64]uint64{},
 		seriesCur:     map[storage.SeriesRef]*cacheEntry{},
 		seriesPrev:    map[storage.SeriesRef]*cacheEntry{},
 		metadata:      map[string]*metaEntry{},
@@ -1098,9 +1097,9 @@ func (c *scrapeCache) iterDone(flushCache bool) {
 				}
 			}
 		}
-		for s, iter := range c.droppedSeries {
-			if c.iter != *iter {
-				delete(c.droppedSeries, s)
+		for h, iter := range c.droppedSeries {
+			if c.iter != iter {
+				delete(c.droppedSeries, h)
 			}
 		}
 		c.metaMtx.Lock()
@@ -1167,17 +1166,16 @@ func (c *scrapeCache) deleteSeries(met []byte, ce *cacheEntry) {
 	}
 }
 
-func (c *scrapeCache) addDropped(met []byte) {
-	iter := c.iter
-	c.droppedSeries[string(met)] = &iter
+func (c *scrapeCache) addDropped(hash uint64) {
+	c.droppedSeries[hash] = c.iter
 }
 
-func (c *scrapeCache) getDropped(met []byte) bool {
-	iterp, ok := c.droppedSeries[string(met)]
-	if ok {
-		*iterp = c.iter
+func (c *scrapeCache) getDropped(hash uint64) bool {
+	if _, ok := c.droppedSeries[hash]; ok {
+		c.droppedSeries[hash] = c.iter
+		return true
 	}
-	return ok
+	return false
 }
 
 // updateRef points the cache entry at a new storage reference, e.g. because the
@@ -1953,24 +1951,29 @@ loop:
 			t = *parsedTimestamp
 		}
 
-		if sl.cache.getDropped(met) {
-			continue
-		}
 		ce, seriesCached, seriesAlreadyScraped := sl.cache.get(met)
-		var ref storage.SeriesRef
+		var (
+			ref  storage.SeriesRef
+			hash uint64
+		)
 
 		if seriesCached {
 			ref = ce.ref
 			lset = ce.lset
 		} else {
 			p.Labels(&lset)
+			hash = lset.Hash()
+
+			if sl.cache.getDropped(hash) {
+				continue
+			}
 
 			// Add target labels and apply relabeling before storing the final label set.
 			lset = sl.sampleMutator(lset)
 
 			// The label set may be set to empty to indicate dropping.
 			if lset.IsEmpty() {
-				sl.cache.addDropped(met)
+				sl.cache.addDropped(hash)
 				continue
 			}
 

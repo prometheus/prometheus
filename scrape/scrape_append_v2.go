@@ -229,6 +229,7 @@ loop:
 			seriesCached         bool
 			seriesAlreadyScraped bool
 			ref                  storage.SeriesRef
+			hash                 uint64
 			sampleMeta           metadata.Metadata
 			origMeta             metadata.Metadata
 			origMFName           string
@@ -236,22 +237,24 @@ loop:
 		)
 
 		if !hasMRC {
-			if sl.cache.getDropped(met) {
-				continue
-			}
 			ce, seriesCached, seriesAlreadyScraped = sl.cache.get(met)
 			if seriesCached {
 				ref = ce.ref
 				lset = ce.lset
 			} else {
 				p.Labels(&lset)
+				hash = lset.Hash()
+
+				if sl.cache.getDropped(hash) {
+					continue
+				}
 
 				// Add target labels and apply relabeling before storing the final label set.
 				lset = sl.sampleMutator(lset)
 
 				// The label set may be set to empty to indicate dropping.
 				if lset.IsEmpty() {
-					sl.cache.addDropped(met)
+					sl.cache.addDropped(hash)
 					continue
 				}
 
@@ -271,9 +274,6 @@ loop:
 				}
 			}
 		} else {
-			if sl.cache.getDropped(met) {
-				continue
-			}
 			ce, seriesCached, seriesAlreadyScraped = sl.cache.get(met)
 			if lastMeta != nil {
 				origMeta = lastMeta.Metadata
@@ -299,8 +299,13 @@ loop:
 				}
 			} else {
 				p.Labels(&lset)
+				hash = lset.Hash()
 
-				// Add target labels and apply relabeling before storing the final label set and metadata.
+				if sl.cache.getDropped(hash) {
+					continue
+				}
+
+				// Add target labels and apply relabeling before storing the final label set.
 				lset, sampleMeta, sampleMFName = sl.mutateSample(lset, lastMFName, lastMeta)
 
 				// The label set may be set to empty to indicate dropping.
@@ -308,7 +313,7 @@ loop:
 					if seriesCached {
 						sl.cache.deleteSeries(met, ce)
 					}
-					sl.cache.addDropped(met)
+					sl.cache.addDropped(hash)
 					continue
 				}
 
