@@ -14,6 +14,8 @@
 package storage
 
 import (
+	"fmt"
+	"math"
 	"testing"
 
 	"github.com/stretchr/testify/require"
@@ -120,4 +122,41 @@ func BenchmarkMemoizedSeriesIterator(b *testing.B) {
 		// Scan everything.
 	}
 	require.NoError(b, it.Err())
+}
+
+func TestMemoizedSeriesIteratorInitialHistogramSeek(t *testing.T) {
+	for _, constructor := range []string{"new", "reset"} {
+		t.Run(constructor, func(t *testing.T) {
+			for _, target := range []int64{math.MinInt64, math.MinInt64 + 1, -1} {
+				t.Run(fmt.Sprintf("target_%d", target), func(t *testing.T) {
+					expected := &histogram.FloatHistogram{Schema: 0, ZeroThreshold: 1, Count: 2, Sum: 3, CounterResetHint: histogram.GaugeType, PositiveSpans: []histogram.Span{{Offset: 1, Length: 1}}, PositiveBuckets: []float64{2}}
+					source := NewListSeriesIterator(samples{hSample{t: 1, h: &histogram.Histogram{Schema: 0, ZeroThreshold: 1, Count: 2, Sum: 3, CounterResetHint: histogram.GaugeType, PositiveSpans: []histogram.Span{{Offset: 1, Length: 1}}, PositiveBuckets: []int64{2}}}, fSample{t: 2, f: 10}})
+					var actual *MemoizedSeriesIterator
+					if constructor == "reset" {
+						actual = NewMemoizedIterator(NewListSeriesIterator(samples{fSample{t: -1, f: 5}}), 0)
+						require.Equal(t, chunkenc.ValNone, actual.Next())
+						actual.Reset(source)
+					} else {
+						actual = NewMemoizedIterator(source, 0)
+					}
+					for range 2 {
+						require.Equal(t, chunkenc.ValFloatHistogram, actual.Seek(target))
+						timestamp, h := actual.AtFloatHistogram()
+						require.Equal(t, int64(1), timestamp)
+						require.Equal(t, expected, h)
+						_, _, _, _, ok := actual.PeekPrev()
+						require.False(t, ok)
+					}
+					require.Equal(t, chunkenc.ValFloat, actual.Next())
+					timestamp, value := actual.At()
+					require.Equal(t, int64(2), timestamp)
+					require.Equal(t, float64(10), value)
+					_, timestamp, _, previous, ok := actual.PeekPrev()
+					require.True(t, ok)
+					require.Equal(t, int64(1), timestamp)
+					require.Equal(t, expected, previous)
+				})
+			}
+		})
+	}
 }
