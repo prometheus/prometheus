@@ -15,7 +15,6 @@ package compliance
 
 import (
 	"context"
-	"flag"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -60,20 +59,9 @@ func (p internalPrometheusReceiver) Run(ctx context.Context, opts receiver.Optio
 
 var _ receiver.Receiver = internalPrometheusReceiver{}
 
-func TestMain(m *testing.M) {
-	flag.Parse()
-
-	// Skip receiver mode SHOULD rejections until implemented in Prometheus.
-	// NOTE(bwplotka): Baseline TestRemoteWriteSender (mode=none) passes without skips;
-	// stateless sender suites and their skips will be added once https://github.com/prometheus/prometheus/pull/20098 is merged.
-	skip := "TestRemoteWriteReceiver/internal-prometheus/modes/validation/.*_(classic_histogram_samples|untyped_metadata|without_start_timestamp)"
-	if existing := flag.Lookup("test.skip").Value.String(); existing != "" {
-		skip = existing + "|" + skip
-	}
-	_ = flag.Set("test.skip", skip)
-
-	os.Exit(m.Run())
-}
+// receiverSkip lists unimplemented SHOULD/MAY receiver compliance checks to skip in TestMain
+// (writeHandler.Store currently ignores WriteMode validation).
+const receiverSkip = "TestRemoteWriteReceiver/internal-prometheus/modes/validation/.*_(classic_histogram_samples|untyped_metadata|without_start_timestamp)"
 
 // TestRemoteWriteReceiver runs tests from https://github.com/prometheus/compliance/tree/main/remotewrite/receiver
 // against the Prometheus remote write receiver.

@@ -18,14 +18,12 @@ import (
 	"context"
 	"fmt"
 	"os"
-	"os/exec"
 	"path/filepath"
-	"runtime"
+	"slices"
 	"testing"
 	"text/template"
 
 	"github.com/prometheus/compliance/remotewrite/sender"
-	"github.com/stretchr/testify/require"
 )
 
 const (
@@ -36,6 +34,9 @@ global:
 remote_write:
   - url: "{{.RemoteWriteEndpointURL}}"
     protobuf_message: "{{.RemoteWriteMessage}}"
+{{- if .RemoteWriteMode}}
+    mode: "{{.RemoteWriteMode}}"
+{{- end}}
     send_exemplars: true
     send_native_histograms: true
     queue_config:
@@ -47,6 +48,9 @@ scrape_configs:
   - job_name: "{{.ScrapeTargetJobName}}"
     scrape_interval: 1s
     scrape_native_histograms: true
+{{- if .RemoteWriteMode}}
+    convert_classic_histograms_to_nhcb: true
+{{- end}}
     scrape_protocols:
       - PrometheusProto
       - OpenMetricsText1.0.0
@@ -64,19 +68,6 @@ type internalPrometheus struct {
 }
 
 func (internalPrometheus) Name() string { return "internal-prometheus" }
-
-func buildPrometheus(t *testing.T) string {
-	t.Helper()
-
-	bin := filepath.Join(t.TempDir(), "prometheus")
-	if runtime.GOOS == "windows" {
-		bin += ".exe"
-	}
-	cmd := exec.CommandContext(t.Context(), "go", "build", "-o", bin, "../cmd/prometheus")
-	out, err := cmd.CombinedOutput()
-	require.NoErrorf(t, err, "failed to build prometheus binary: %s", string(out))
-	return bin
-}
 
 // Run runs a <REPO>cmd/prometheus main package as a test sender target, until ctx is done.
 func (p internalPrometheus) Run(ctx context.Context, opts sender.Options) error {
@@ -113,20 +104,30 @@ func (p internalPrometheus) Run(ctx context.Context, opts sender.Options) error 
 
 var _ sender.Sender = internalPrometheus{}
 
+// senderSkip lists unimplemented SHOULD/MAY sender compliance checks to skip in TestMain:
+// - Stateless exemplar coalescing (https://github.com/prometheus/prometheus/pull/20070).
+// - Untyped metadata inference (https://github.com/prometheus/proposals/pull/104).
+const senderSkip = "TestRemoteWriteSender/.*/internal-prometheus/exemplars/rw2-stateless.*/(_present|exemplar_additional_labels)" +
+	"|TestRemoteWriteSender/.*/internal-prometheus/metadata/rw2-stateless.*/untyped_metadata_inferred"
+
 // TestRemoteWriteSender runs remote write sender compliance tests defined in
 // https://github.com/prometheus/compliance/tree/main/remotewrite/sender against
 // both agent and server modes.
-// TODO(bwplotka): Add sender.StatelessComplianceTests() and sender.StatelessSTComplianceTests()
-// once https://github.com/prometheus/prometheus/pull/20098 is merged.
 func TestRemoteWriteSender(t *testing.T) {
 	bin := buildPrometheus(t)
+	// sender.RunTests disambiguates each suite by protocol and mode (/rw2, /rw2-stateless, /rw2-stateless-st).
+	tests := slices.Concat(
+		sender.ComplianceTests(),
+		sender.StatelessComplianceTests(),
+		sender.StatelessSTComplianceTests(),
+	)
 
 	t.Run("mode=server", func(t *testing.T) {
 		t.Parallel()
-		sender.RunTests(t, internalPrometheus{binary: bin}, sender.ComplianceTests())
+		sender.RunTests(t, internalPrometheus{binary: bin}, tests)
 	})
 	t.Run("mode=agent", func(t *testing.T) {
 		t.Parallel()
-		sender.RunTests(t, internalPrometheus{binary: bin, agentMode: true}, sender.ComplianceTests())
+		sender.RunTests(t, internalPrometheus{binary: bin, agentMode: true}, tests)
 	})
 }
