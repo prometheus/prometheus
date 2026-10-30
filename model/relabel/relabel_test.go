@@ -1123,12 +1123,36 @@ replacement: ""
 action: replace
 `,
 		},
+		{
+			// https://github.com/prometheus/prometheus/issues/20238:
+			// a quoted "null" is a regex like any other and must not
+			// overwrite the default regex.
+			name: "Quoted null regex",
+			inputYaml: `source_labels: [plane]
+separator: ;
+regex: "null"
+target_label: plane
+replacement: ""
+action: replace
+`,
+		},
+		{
+			name: "Quoted tilde regex",
+			inputYaml: `source_labels: [plane]
+separator: ;
+regex: "~"
+target_label: plane
+replacement: ""
+action: replace
+`,
+		},
 	}
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
 			unmarshalled := Config{}
 			err := yaml.Unmarshal([]byte(test.inputYaml), &unmarshalled)
 			require.NoError(t, err)
+			require.Equal(t, "^(?s:(.*))$", DefaultRelabelConfig.Regex.Regexp.String())
 
 			marshalled, err := yaml.Marshal(&unmarshalled)
 			require.NoError(t, err)

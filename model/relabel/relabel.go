@@ -234,6 +234,19 @@ func (re Regexp) MarshalYAML() (any, error) {
 	return re.String(), nil
 }
 
+// UnmarshalText implements the encoding.TextUnmarshaler interface. The YAML
+// decoder calls it instead of UnmarshalYAML for quoted "null" and "~". It
+// replaces the method promoted from *regexp.Regexp, which would compile the
+// value unanchored into the regexp shared with DefaultRelabelConfig.
+func (re *Regexp) UnmarshalText(text []byte) error {
+	r, err := NewRegexp(string(text))
+	if err != nil {
+		return err
+	}
+	*re = r
+	return nil
+}
+
 // UnmarshalJSON implements the json.Unmarshaler interface.
 func (re *Regexp) UnmarshalJSON(b []byte) error {
 	var s string
