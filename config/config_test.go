@@ -1866,6 +1866,10 @@ func TestYAMLRoundtrip(t *testing.T) {
 	got, err := Load(string(out), promslog.NewNopLogger())
 	require.NoError(t, err)
 
+	for _, cfg := range append(want.ScrapeConfigs, got.ScrapeConfigs...) {
+		cfg.globalScrapeTimeout = 0
+		cfg.scrapeIntervalConfigured = false
+	}
 	require.Equal(t, want, got)
 }
 
@@ -2297,6 +2301,7 @@ func TestLoadConfig(t *testing.T) {
 		cmpopts.IgnoreUnexported(regexp.Regexp{}),
 		cmpopts.IgnoreUnexported(hetzner.SDConfig{}),
 		cmpopts.IgnoreUnexported(Config{}),
+		cmpopts.IgnoreUnexported(ScrapeConfig{}),
 	})
 }
 
@@ -3470,6 +3475,10 @@ func TestGetScrapeConfigs(t *testing.T) {
 			scfgs, err := c.GetScrapeConfigs()
 			if tc.expectedError != "" {
 				require.ErrorContains(t, err, tc.expectedError)
+			}
+			for _, cfg := range scfgs {
+				cfg.globalScrapeTimeout = 0
+				cfg.scrapeIntervalConfigured = false
 			}
 			require.Equal(t, tc.expectedResult, scfgs)
 		})
