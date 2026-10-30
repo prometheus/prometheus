@@ -254,7 +254,7 @@ common-docker-current-arch:
 
 # DOCKER_ARCHS holds promu architecture names, which are not OCI platform strings.
 $(BUILD_DOCKER_ARCHS): common-docker-%:
-	@set -e; for variant in $(DOCKERFILE_VARIANTS_WITH_NAMES); do \
+	@for variant in $(DOCKERFILE_VARIANTS_WITH_NAMES); do \
 		dockerfile=$${variant#*:}; \
 		variant_name=$${variant%%:*}; \
 		distroless_arch="$*"; \
@@ -295,7 +295,7 @@ $(BUILD_DOCKER_ARCHS): common-docker-%:
 .PHONY: common-docker-publish $(PUBLISH_DOCKER_ARCHS)
 common-docker-publish: $(PUBLISH_DOCKER_ARCHS)
 $(PUBLISH_DOCKER_ARCHS): common-docker-publish-%:
-	@set -e; for variant in $(DOCKERFILE_VARIANTS_WITH_NAMES); do \
+	@for variant in $(DOCKERFILE_VARIANTS_WITH_NAMES); do \
 		dockerfile=$${variant#*:}; \
 		variant_name=$${variant%%:*}; \
 		if [ "$$dockerfile" != "Dockerfile" ] || [ "$$variant_name" != "default" ]; then \
@@ -322,7 +322,7 @@ DOCKER_MAJOR_VERSION_TAG = $(firstword $(subst ., ,$(shell cat VERSION)))
 .PHONY: common-docker-tag-latest $(TAG_DOCKER_ARCHS)
 common-docker-tag-latest: $(TAG_DOCKER_ARCHS)
 $(TAG_DOCKER_ARCHS): common-docker-tag-latest-%:
-	@set -e; for variant in $(DOCKERFILE_VARIANTS_WITH_NAMES); do \
+	@for variant in $(DOCKERFILE_VARIANTS_WITH_NAMES); do \
 		dockerfile=$${variant#*:}; \
 		variant_name=$${variant%%:*}; \
 		if [ "$$dockerfile" != "Dockerfile" ] || [ "$$variant_name" != "default" ]; then \
@@ -339,7 +339,7 @@ $(TAG_DOCKER_ARCHS): common-docker-tag-latest-%:
 
 .PHONY: common-docker-manifest
 common-docker-manifest:
-	@set -e; for variant in $(DOCKERFILE_VARIANTS_WITH_NAMES); do \
+	@for variant in $(DOCKERFILE_VARIANTS_WITH_NAMES); do \
 		dockerfile=$${variant#*:}; \
 		variant_name=$${variant%%:*}; \
 		if [ "$$dockerfile" != "Dockerfile" ] || [ "$$variant_name" != "default" ]; then \
