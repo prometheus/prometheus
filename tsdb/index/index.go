@@ -48,6 +48,8 @@ const (
 	FormatV2 = 2
 	// FormatV3 represents version 3 of index.
 	FormatV3 = 3
+	// FormatV4 represents version 4, with paged postings offsets and 64-bit symbol framing.
+	FormatV4 = 4
 
 	indexFilename = "index"
 
@@ -126,7 +128,8 @@ type PostingsDecoder func(encoding.Decbuf) (int, Postings, error)
 // Writer implements the IndexWriter interface for the standard
 // serialization format.
 type Writer struct {
-	ctx context.Context
+	ctx     context.Context
+	version int
 
 	// For the main index file.
 	f *FileWriter
@@ -206,6 +209,31 @@ func NewTOCFromByteSlice(bs ByteSlice) (*TOC, error) {
 // serializes data in format version 2. It uses the given encoder to encode each
 // postings list.
 func NewWriterWithEncoder(ctx context.Context, fn string, encoder PostingsEncoder) (*Writer, error) {
+	return NewWriterWithOptions(ctx, fn, WriterOptions{PostingsEncoder: encoder})
+}
+
+// WriterOptions configures the index serialization format and postings encoder.
+type WriterOptions struct {
+	// FormatVersion selects V2 or V4. Zero selects V2 for backward compatibility.
+	FormatVersion int
+	// PostingsEncoder defaults to EncodePostingsRaw when nil.
+	PostingsEncoder PostingsEncoder
+}
+
+// NewWriterWithOptions creates an index writer with an explicitly selected format.
+// V4 output requires V4-capable readers; existing constructors keep writing V2.
+func NewWriterWithOptions(ctx context.Context, fn string, opts WriterOptions) (*Writer, error) {
+	version := opts.FormatVersion
+	if version == 0 {
+		version = FormatV2
+	}
+	if version != FormatV2 && version != FormatV4 {
+		return nil, fmt.Errorf("unsupported index write version %d", version)
+	}
+	encoder := opts.PostingsEncoder
+	if encoder == nil {
+		encoder = EncodePostingsRaw
+	}
 	dir := filepath.Dir(fn)
 
 	df, err := fileutil.OpenDir(dir)
@@ -238,11 +266,12 @@ func NewWriterWithEncoder(ctx context.Context, fn string, encoder PostingsEncode
 	}
 
 	iw := &Writer{
-		ctx:   ctx,
-		f:     f,
-		fP:    fP,
-		fPO:   fPO,
-		stage: idxStageNone,
+		ctx:     ctx,
+		version: version,
+		f:       f,
+		fP:      fP,
+		fPO:     fPO,
+		stage:   idxStageNone,
 
 		// Reusable memory.
 		buf1: encoding.Encbuf{B: make([]byte, 0, 1<<22)},
@@ -425,7 +454,7 @@ func (w *Writer) ensureStage(s indexWriterStage) error {
 func (w *Writer) writeMeta() error {
 	w.buf1.Reset()
 	w.buf1.PutBE32(MagicIndex)
-	w.buf1.PutByte(FormatV2)
+	w.buf1.PutByte(byte(w.version))
 
 	return w.write(w.buf1.Get())
 }
@@ -531,6 +560,9 @@ func (w *Writer) startSymbols() error {
 	// We are at w.toc.Symbols.
 	// Leave 4 bytes of space for the length, and another 4 for the number of symbols
 	// which will both be calculated later.
+	if w.version == FormatV4 {
+		return w.write(make([]byte, 12))
+	}
 	return w.write([]byte("alenblen"))
 }
 
@@ -541,6 +573,9 @@ func (w *Writer) AddSymbol(sym string) error {
 	if w.numSymbols != 0 && sym <= w.lastSymbol {
 		return fmt.Errorf("symbol %q out-of-order", sym)
 	}
+	if uint64(w.numSymbols) >= math.MaxUint32 {
+		return errors.New("too many symbols")
+	}
 	w.lastSymbol = sym
 	w.symbolCache[sym] = uint32(w.numSymbols)
 	w.numSymbols++
@@ -550,15 +585,23 @@ func (w *Writer) AddSymbol(sym string) error {
 }
 
 func (w *Writer) finishSymbols() error {
-	symbolTableSize := w.f.pos - w.toc.Symbols - 4
+	lengthSize := uint64(4)
+	if w.version == FormatV4 {
+		lengthSize = 8
+	}
+	symbolTableSize := w.f.pos - w.toc.Symbols - lengthSize
 	// The symbol table's <len> part is 4 bytes. So the total symbol table size must be less than or equal to 2^32-1
-	if symbolTableSize > math.MaxUint32 {
+	if w.version != FormatV4 && symbolTableSize > math.MaxUint32 {
 		return fmt.Errorf("%w: %d", ErrSymbolTableTooLarge, symbolTableSize)
 	}
 
 	// Write out the length and symbol count.
 	w.buf1.Reset()
-	w.buf1.PutBE32int(int(symbolTableSize))
+	if w.version == FormatV4 {
+		w.buf1.PutBE64(symbolTableSize)
+	} else {
+		w.buf1.PutBE32int(int(symbolTableSize))
+	}
 	w.buf1.PutBE32int(w.numSymbols)
 	if err := w.writeAt(w.buf1.Get(), w.toc.Symbols); err != nil {
 		return err
@@ -579,7 +622,7 @@ func (w *Writer) finishSymbols() error {
 		return err
 	}
 	w.symbolFile = sf
-	hash := crc32.Checksum(w.symbolFile.Bytes()[w.toc.Symbols+4:hashPos], castagnoliTable)
+	hash := crc32.Checksum(w.symbolFile.Bytes()[w.toc.Symbols+lengthSize:hashPos], castagnoliTable)
 	w.buf1.Reset()
 	w.buf1.PutBE32(hash)
 	if err := w.writeAt(w.buf1.Get(), hashPos); err != nil {
@@ -587,7 +630,7 @@ func (w *Writer) finishSymbols() error {
 	}
 
 	// Load in the symbol table efficiently for the rest of the index writing.
-	w.symbols, err = NewSymbols(realByteSlice(w.symbolFile.Bytes()), FormatV2, int(w.toc.Symbols))
+	w.symbols, err = NewSymbols(realByteSlice(w.symbolFile.Bytes()), w.version, int(w.toc.Symbols))
 	if err != nil {
 		return fmt.Errorf("read symbols: %w", err)
 	}
@@ -596,6 +639,9 @@ func (w *Writer) finishSymbols() error {
 
 // writePostingsOffsetTable writes the postings offset table.
 func (w *Writer) writePostingsOffsetTable() error {
+	if w.version == FormatV4 {
+		return w.writePagedPostingsOffsetTable()
+	}
 	// Ensure everything is in the temporary file.
 	if err := w.fPO.Flush(); err != nil {
 		return err
@@ -959,6 +1005,7 @@ type Reader struct {
 	postings map[string][]postingOffset
 	// For the v1 format, labelname -> labelvalue -> offset.
 	postingsV1 map[string]map[string]uint64
+	paged      *pagedPostingsTable
 
 	symbols     *Symbols
 	nameSymbols map[uint32]string // Cache of the label name symbol lookups,
@@ -1036,7 +1083,7 @@ func newReader(b ByteSlice, c io.Closer, postingsDecoder PostingsDecoder) (*Read
 	r.version = int(r.b.Range(4, 5)[0])
 
 	switch r.version {
-	case FormatV1, FormatV2, FormatV3:
+	case FormatV1, FormatV2, FormatV3, FormatV4:
 	default:
 		return nil, fmt.Errorf("unknown index file version %d", r.version)
 	}
@@ -1047,12 +1094,34 @@ func newReader(b ByteSlice, c io.Closer, postingsDecoder PostingsDecoder) (*Read
 		return nil, fmt.Errorf("read TOC: %w", err)
 	}
 
+	if r.version == FormatV4 {
+		end := uint64(r.b.Len() - indexTOCLen)
+		if r.toc.Symbols < HeaderLen || r.toc.Symbols > r.toc.Series || r.toc.Series > r.toc.LabelIndices || r.toc.LabelIndices > r.toc.Postings || r.toc.Postings > r.toc.PostingsTable || r.toc.PostingsTable > end {
+			return nil, errors.New("invalid V4 section bounds")
+		}
+		h, err := checkedRange(r.b, r.toc.Symbols, 8)
+		if err != nil {
+			return nil, err
+		}
+		if r.toc.Series-r.toc.Symbols < 12 || binary.BigEndian.Uint64(h) > r.toc.Series-r.toc.Symbols-12 {
+			return nil, errors.New("symbols overlap series")
+		}
+	}
 	r.symbols, err = NewSymbols(r.b, r.version, int(r.toc.Symbols))
 	if err != nil {
 		return nil, fmt.Errorf("read symbols: %w", err)
 	}
 
-	if r.version == FormatV1 {
+	switch r.version {
+	case FormatV4:
+		r.paged, err = readPagedPostingsTable(r.b, r.toc.PostingsTable, uint64(r.b.Len()-indexTOCLen), r.toc.Postings)
+		if err != nil {
+			return nil, fmt.Errorf("read paged postings: %w", err)
+		}
+		for name := range r.paged.groups {
+			r.postings[name] = nil
+		}
+	case FormatV1:
 		// Earlier V1 formats don't have a sorted postings offset table, so
 		// load the whole offset table into memory.
 		r.postingsV1 = map[string]map[string]uint64{}
@@ -1066,7 +1135,7 @@ func newReader(b ByteSlice, c io.Closer, postingsDecoder PostingsDecoder) (*Read
 		}); err != nil {
 			return nil, fmt.Errorf("read postings table: %w", err)
 		}
-	} else {
+	default:
 		var lastName, lastValue []byte
 		lastOff := 0
 		valueCount := 0
@@ -1170,22 +1239,39 @@ func NewSymbols(bs ByteSlice, version, off int) (*Symbols, error) {
 		version: version,
 		off:     off,
 	}
-	d := encoding.NewDecbufAt(bs, off, castagnoliTable)
+	d := symbolDecbuf(bs, version, off)
+	if d.Err() != nil {
+		return nil, d.Err()
+	}
 	var (
 		origLen = d.Len()
 		cnt     = d.Be32int()
 		basePos = off + 4
 	)
+	if version == FormatV4 {
+		basePos += 4
+	}
+	if cnt < 0 || cnt > d.Len() {
+		return nil, encoding.ErrInvalidSize
+	}
 	s.offsets = make([]int, 0, 1+cnt/symbolFactor)
+	var previous string
 	for d.Err() == nil && s.seen < cnt {
 		if s.seen%symbolFactor == 0 {
 			s.offsets = append(s.offsets, basePos+origLen-d.Len())
 		}
-		d.UvarintBytes() // The symbol.
+		value := yoloString(d.UvarintBytes())
+		if version == FormatV4 && s.seen > 0 && value <= previous {
+			return nil, errors.New("unsorted symbols")
+		}
+		previous = value
 		s.seen++
 	}
 	if d.Err() != nil {
 		return nil, d.Err()
+	}
+	if version == FormatV4 && d.Len() != 0 {
+		return nil, errors.New("invalid symbol count")
 	}
 	return s, nil
 }
@@ -1262,7 +1348,7 @@ func (s Symbols) Size() int {
 }
 
 func (s Symbols) Iter() StringIter {
-	d := encoding.NewDecbufAt(s.bs, s.off, castagnoliTable)
+	d := symbolDecbuf(s.bs, s.version, s.off)
 	cnt := d.Be32int()
 	return &symbolsIter{
 		d:   d,
@@ -1300,6 +1386,40 @@ func (s symbolsIter) Err() error { return s.err }
 // so they shouldn't be persisted without previously copying them.
 // If f returns an error it stops decoding and returns the received error.
 func ReadPostingsOffsetTable(bs ByteSlice, off uint64, f func(name, value []byte, postingsOffset uint64, labelOffset int) error) error {
+	version := FormatV2
+	if off >= HeaderLen && bs.Len() >= HeaderLen && binary.BigEndian.Uint32(bs.Range(0, 4)) == MagicIndex {
+		version = int(bs.Range(4, 5)[0])
+	}
+	return ReadPostingsOffsetTableWithVersion(bs, off, version, f)
+}
+
+// ReadPostingsOffsetTableWithVersion reads a table using the specified index version.
+// Use it for extracted tables without an index header. V4 labelOffset identifies
+// the value-offset field relative to the table start, not a V2 encoded entry.
+// Callback name and value bytes borrow bs and must be copied before retaining them.
+func ReadPostingsOffsetTableWithVersion(bs ByteSlice, off uint64, version int, f func(name, value []byte, postingsOffset uint64, labelOffset int) error) error {
+	if version == FormatV4 {
+		table, err := readPagedPostingsTable(bs, off, uint64(bs.Len()), 0)
+		if err != nil {
+			return err
+		}
+		names := make([]string, 0, len(table.groups))
+		for name := range table.groups {
+			names = append(names, name)
+		}
+		slices.Sort(names)
+		for _, name := range names {
+			if err := table.traverse(context.Background(), name, func(value string, offset uint64, pos int) (bool, error) {
+				return true, f([]byte(name), []byte(value), offset, pos)
+			}); err != nil {
+				return err
+			}
+		}
+		return nil
+	}
+	if version != FormatV1 && version != FormatV2 && version != FormatV3 {
+		return fmt.Errorf("unknown index version %d", version)
+	}
 	d := encoding.NewDecbufAt(bs, int(off), castagnoliTable)
 	startLen := d.Len()
 	cnt := d.Be32()
@@ -1364,6 +1484,10 @@ func (r *Reader) SortedLabelValues(ctx context.Context, name string, hints *stor
 func (r *Reader) LabelValues(ctx context.Context, name string, hints *storage.LabelHints, matchers ...*labels.Matcher) ([]string, error) {
 	if len(matchers) > 0 {
 		return nil, fmt.Errorf("matchers parameter is not implemented: %+v", matchers)
+	}
+
+	if r.paged != nil {
+		return r.pagedLabelValues(ctx, name, hints)
 	}
 
 	if r.version == FormatV1 {
@@ -1524,6 +1648,9 @@ func (r *Reader) traversePostingOffsets(ctx context.Context, off int, cb func(st
 }
 
 func (r *Reader) Postings(ctx context.Context, name string, values ...string) (Postings, error) {
+	if r.paged != nil {
+		return r.pagedPostings(ctx, name, values...)
+	}
 	if r.version == FormatV1 {
 		e, ok := r.postingsV1[name]
 		if !ok {
@@ -1615,6 +1742,9 @@ func (r *Reader) PostingsForAllLabelValues(ctx context.Context, name string) Pos
 
 // postingsForLabelMatching implements PostingsForLabelMatching if match is non-nil, and PostingsForAllLabelValues otherwise.
 func (r *Reader) postingsForLabelMatching(ctx context.Context, name string, match func(string) bool) Postings {
+	if r.paged != nil {
+		return r.pagedPostingsMatching(ctx, name, match)
+	}
 	if r.version == FormatV1 {
 		return r.postingsForLabelMatchingV1(ctx, name, match)
 	}
