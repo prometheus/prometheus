@@ -280,24 +280,193 @@ func interpolateHistograms(h1 *histogram.FloatHistogram, t1 int64, h2 *histogram
 	return result, nil
 }
 
+// zeroHistogramLike returns an all-zero histogram with the same schema and
+// custom values as h, for use as a synthetic pre-reset sample.
+func zeroHistogramLike(h *histogram.FloatHistogram) *histogram.FloatHistogram {
+	return &histogram.FloatHistogram{
+		Schema:       h.Schema,
+		CustomValues: h.CustomValues,
+	}
+}
+
 // pickOrInterpolateLeftHistogram returns the histogram at the left boundary of the range.
 // If interpolation is needed (when smoothed is true and the first sample is before the range start),
 // it returns the interpolated histogram at the left boundary; otherwise, it returns a copy of the first sample's histogram.
-func pickOrInterpolateLeftHistogram(hists []HPoint, first int, rangeStart int64, smoothed, isCounter bool, annos *annotations.Annotations, pos posrange.PositionRange) (*histogram.FloatHistogram, error) {
-	if smoothed && hists[first].T < rangeStart {
-		return interpolateHistograms(hists[first].H, hists[first].T, hists[first+1].H, hists[first+1].T, rangeStart, isCounter, annos, pos)
+// 'first' is expected to point to the most recent sample which is before or at 'rangeStart', or if no samples
+// satisfy this condition, the first sample in the slice.
+//
+// The boolean return parameter tells whether to ignore the histogram reset hint of the histogram
+// that is immediately after the range start. This is done for `smoothed` since interpolation already takes
+// the reset into account. It is also necessary if all the data points have T > rangeStart, because then
+// the returned histogram is a copy of the first sample in the slice. If the latter has its counter reset hint
+// set to yes, that would create an unwanted counter reset when compared to returned left boundary histogram.
+func pickOrInterpolateLeftHistogram(
+	hists []HPoint,
+	startTimestamps []int64,
+	first int,
+	rangeStart int64,
+	lookbackStart int64,
+	smoothed, isCounter bool,
+	annos *annotations.Annotations,
+	pos posrange.PositionRange,
+) (*histogram.FloatHistogram, int64, bool, error) {
+	var (
+		firstDP = hists[first]
+		firstST = stOrDefault(startTimestamps, first, 0)
+
+		returnedST = firstST
+	)
+
+	if returnedST > rangeStart {
+		returnedST = 0
 	}
-	return hists[first].H.Copy(), nil
+
+	if firstDP.T == rangeStart {
+		return firstDP.H.Copy(), firstST, false, nil
+	}
+
+	if firstDP.T > rangeStart {
+		// 'first' is meant to be the index of the most recent sample with T <= rangeStart.
+		// If that is not the case, then there are no other samples before it.
+
+		if !isCounter {
+			return firstDP.H.Copy(), firstST, false, nil
+		}
+
+		if !isStartTimestampResetAfter(lookbackStart, firstST, firstDP.T) {
+			// Check if there's an ST reset in the visible lookback.
+			return firstDP.H.Copy(), firstST, true, nil
+		}
+
+		if isStartTimestampResetAfter(rangeStart, firstST, firstDP.T) {
+			// Check if there's an ST reset since the range start.
+			return zeroHistogramLike(firstDP.H), returnedST, true, nil
+		}
+
+		if smoothed {
+			h, err := interpolateHistograms(zeroHistogramLike(firstDP.H), firstST, firstDP.H, firstDP.T, rangeStart, isCounter, annos, pos)
+			return h, returnedST, true, err
+		}
+
+		return zeroHistogramLike(firstDP.H), returnedST, true, nil
+	}
+
+	var (
+		nextDP = hists[first+1]
+		nextST = stOrDefault(startTimestamps, first+1, 0)
+	)
+
+	switch {
+	case !isCounter:
+		// No adjustments.
+	case isStartTimestampResetAfter(rangeStart, nextST, nextDP.T):
+		// If there is an ST reset with 'nextST' > 'rangeStart', we adjust nextDP.
+		nextDP = HPoint{
+			T: nextST,
+			H: zeroHistogramLike(nextDP.H),
+		}
+	case isStartTimestampReset(firstST, firstDP.T, nextST, nextDP.T):
+		// Otherwise if there is an ST reset in '(firstDP.T, rangeStart]', we adjust firstDP.
+		firstDP = HPoint{
+			T: nextST,
+			H: zeroHistogramLike(nextDP.H),
+		}
+		returnedST = nextST
+	}
+
+	if smoothed {
+		h, err := interpolateHistograms(firstDP.H, firstDP.T, nextDP.H, nextDP.T, rangeStart, isCounter, annos, pos)
+		return h, returnedST, true, err
+	}
+
+	return firstDP.H.Copy(), returnedST, false, nil
 }
 
 // pickOrInterpolateRightHistogram returns the histogram at the right boundary of the range.
 // If interpolation is needed (when smoothed is true and the last sample is after the range end),
 // it returns the interpolated histogram at the right boundary; otherwise, it returns a copy of the last sample's histogram.
-func pickOrInterpolateRightHistogram(hists []HPoint, last int, rangeEnd int64, smoothed, isCounter bool, annos *annotations.Annotations, pos posrange.PositionRange) (*histogram.FloatHistogram, error) {
-	if smoothed && last > 0 && hists[last].T > rangeEnd {
-		return interpolateHistograms(hists[last-1].H, hists[last-1].T, hists[last].H, hists[last].T, rangeEnd, isCounter, annos, pos)
+func pickOrInterpolateRightHistogram(
+	hists []HPoint,
+	startTimestamps []int64,
+	last int,
+	rangeEnd int64,
+	lookbackStart int64,
+	smoothed, isCounter bool,
+	annos *annotations.Annotations,
+	pos posrange.PositionRange,
+) (*histogram.FloatHistogram, int64, error) {
+	var (
+		lastDP = hists[last]
+		lastST = stOrDefault(startTimestamps, last, 0)
+
+		returnedST = lastST
+	)
+
+	if returnedST > rangeEnd {
+		returnedST = 0
 	}
-	return hists[last].H.Copy(), nil
+
+	if lastDP.T <= rangeEnd {
+		dp := lastDP.H.Copy()
+		if lastDP.T < rangeEnd && dp.CounterResetHint == histogram.CounterReset {
+			// Prevent the projected histogram from introducing a counter reset.
+			dp.CounterResetHint = histogram.NotCounterReset
+		}
+		return dp, returnedST, nil
+	}
+
+	if last == 0 {
+		if !isCounter {
+			return lastDP.H.Copy(), returnedST, nil
+		}
+
+		if !isStartTimestampResetAfter(lookbackStart, lastST, lastDP.T) {
+			// Check if there's an ST reset in the visible lookback.
+			return lastDP.H.Copy(), returnedST, nil
+		}
+
+		if isStartTimestampResetAfter(rangeEnd, lastST, lastDP.T) {
+			// Check if there's an ST reset since the range end.
+			return zeroHistogramLike(lastDP.H), returnedST, nil
+		}
+
+		if smoothed {
+			h, err := interpolateHistograms(zeroHistogramLike(lastDP.H), lastST, lastDP.H, lastDP.T, rangeEnd, isCounter, annos, pos)
+			return h, returnedST, err
+		}
+
+		return zeroHistogramLike(lastDP.H), returnedST, nil
+	}
+
+	var (
+		prevDP = hists[last-1]
+		prevST = stOrDefault(startTimestamps, last-1, 0)
+	)
+
+	switch {
+	case !isCounter:
+		// No adjustments.
+	case isStartTimestampResetAfter(rangeEnd, lastST, lastDP.T):
+		// If there is an ST reset with 'lastST' > 'rangeEnd', we adjust lastDP.
+		lastDP = HPoint{
+			T: lastST,
+			H: zeroHistogramLike(lastDP.H),
+		}
+		returnedST = prevST
+	case isStartTimestampReset(prevST, prevDP.T, lastST, lastDP.T):
+		// Otherwise if there is an ST reset in '(prevDP.T, rangeEnd]', we adjust prevDP.
+		prevDP = HPoint{
+			T: lastST,
+			H: zeroHistogramLike(lastDP.H),
+		}
+	}
+
+	if smoothed {
+		h, err := interpolateHistograms(prevDP.H, prevDP.T, lastDP.H, lastDP.T, rangeEnd, isCounter, annos, pos)
+		return h, returnedST, err
+	}
+
+	return prevDP.H.Copy(), returnedST, nil
 }
 
 // correctForCounterResets calculates the correction for counter resets.
@@ -407,33 +576,31 @@ func validateHistogramRange(h []HPoint, isCounter bool, annos *annotations.Annot
 // left and right as the boundary values. It mirrors correctForCounterResets
 // for float samples. It returns the accumulated correction (nil if none),
 // any annotations, and false if combining histograms failed.
-func correctForCounterResetsHistogram(h []HPoint, firstSampleIndex, lastSampleIndex int, left, right *histogram.FloatHistogram, rangeStart int64, smoothed bool, metricName string, pos posrange.PositionRange) (*histogram.FloatHistogram, annotations.Annotations, bool) {
-	// firstSampleIndex is represented by left, so the loop starts one beyond.
-	first := firstSampleIndex + 1
-	prev := left
-	if smoothed && h[firstSampleIndex].T < rangeStart && h[firstSampleIndex+1].H.DetectReset(h[firstSampleIndex].H) {
-		// The left interpolation spanned the reset between h[firstSampleIndex]
-		// and h[firstSampleIndex+1]. That reset is already accounted for, so
-		// skip h[firstSampleIndex+1] from the loop and use it as the comparison
-		// anchor for any reset that immediately follows.
-		prev = h[firstSampleIndex+1].H
+func correctForCounterResetsHistogram(
+	h []HPoint,
+	startTimestamps []int64,
+	firstSampleIndex, lastSampleIndex int,
+	left, right *histogram.FloatHistogram,
+	leftST, rightST int64,
+	rangeStart, rangeEnd int64,
+	ignoreHistogramResetFollowingLeft bool,
+	metricName string,
+	pos posrange.PositionRange,
+) (*histogram.FloatHistogram, annotations.Annotations, bool) {
+	var (
+		prev   = left
+		prevT  = rangeStart
+		prevST = leftST
+
+		first = firstSampleIndex
+		last  = lastSampleIndex
+	)
+
+	if h[first].T <= rangeStart {
 		first++
 	}
-	// lastSampleIndex is always excluded: right is either a direct copy of
-	// h[lastSampleIndex] or an interpolation that inherits its CounterResetHint.
-	// Including h[lastSampleIndex] in the loop would make right.DetectReset
-	// self-detect on the same hint. The final right.DetectReset(prev) below
-	// handles the right-boundary reset safely once h[lastSampleIndex] is not prev.
-	last := lastSampleIndex - 1
-
-	// first > last+1 when there is nothing between the two boundary samples to
-	// check. This happens when firstSampleIndex == lastSampleIndex (single-sample
-	// window), or when the smoothed left interpolation already spanned the only
-	// reset interval (lastSampleIndex == firstSampleIndex+1 and first was
-	// incremented above). Both boundaries were interpolated from the same reset
-	// segment, so there is nothing more to correct.
-	if first > last+1 {
-		return nil, nil, true
+	if h[last].T >= rangeEnd {
+		last--
 	}
 
 	var (
@@ -449,15 +616,21 @@ func correctForCounterResetsHistogram(h []HPoint, firstSampleIndex, lastSampleIn
 		return addHistogramWithAnnotations(correction, h, &annos, metricName, pos)
 	}
 
-	for _, p := range h[first : last+1] {
-		if p.H.DetectReset(prev) {
+	ignoreFollowingHistogramReset := ignoreHistogramResetFollowingLeft
+	for i, p := range h[first : last+1] {
+		st := stOrDefault(startTimestamps, first+i, 0)
+		// Check start timestamps first since it's potentially cheaper.
+		if isStartTimestampReset(prevST, prevT, st, p.T) || (!ignoreFollowingHistogramReset && p.H.DetectReset(prev)) {
 			if !addCorrection(prev) {
 				return nil, annos, false
 			}
 		}
 		prev = p.H
+		prevT = p.T
+		prevST = st
+		ignoreFollowingHistogramReset = false
 	}
-	if right.DetectReset(prev) {
+	if isStartTimestampReset(prevST, prevT, rightST, rangeEnd) || (!ignoreFollowingHistogramReset && right.DetectReset(prev)) {
 		if !addCorrection(prev) {
 			return nil, annos, false
 		}
@@ -556,11 +729,17 @@ func extendedHistogramRate(vals Matrix, args parser.Expressions, enh *EvalNodeHe
 		lastSampleIndex = len(h) - 1
 		rangeStart      = enh.Ts - durationMilliseconds(ms.Range+vs.Offset)
 		rangeEnd        = enh.Ts - durationMilliseconds(vs.Offset)
+		lookbackStart   = rangeStart - durationMilliseconds(enh.LookbackDelta)
 		annos           annotations.Annotations
 		metricName      = getMetricName(samples.Metric)
 		pos             = args[0].PositionRange()
 		smoothed        = vs.Smoothed
+		startTimestamps []int64
 	)
+
+	if sts := enh.StartTimestamps; sts != nil {
+		startTimestamps = sts.Histograms
+	}
 
 	firstSampleIndex := max(0, sort.Search(lastSampleIndex, func(i int) bool { return h[i].T > rangeStart })-1)
 	if smoothed {
@@ -570,20 +749,25 @@ func extendedHistogramRate(vals Matrix, args parser.Expressions, enh *EvalNodeHe
 	if h[lastSampleIndex].T <= rangeStart {
 		return enh.Out, annos
 	}
-	if smoothed && h[firstSampleIndex].T > rangeEnd {
-		return enh.Out, annos
+	if firstT := h[firstSampleIndex].T; smoothed && firstT > rangeEnd {
+		firstST := stOrDefault(startTimestamps, firstSampleIndex, 0)
+		if !isCounter || !isStartTimestampResetAfter(lookbackStart, firstST, firstT) || isStartTimestampResetAfter(rangeEnd, firstST, firstT) {
+			// We cannot calculate a rate if there's no ST reset inside the lookback range, or if the reset is after
+			// the range end.
+			return enh.Out, annos
+		}
 	}
 
 	if !validateHistogramRange(h[firstSampleIndex:lastSampleIndex+1], isCounter, &annos, metricName, pos) {
 		return enh.Out, annos
 	}
 
-	left, err := pickOrInterpolateLeftHistogram(h, firstSampleIndex, rangeStart, smoothed, isCounter, &annos, pos)
+	left, leftST, ignoreHistogramResetFollowingLeft, err := pickOrInterpolateLeftHistogram(h, startTimestamps, firstSampleIndex, rangeStart, lookbackStart, smoothed, isCounter, &annos, pos)
 	if err != nil {
 		annosFromInterpolationError(&annos, err, metricName, pos)
 		return enh.Out, annos
 	}
-	right, err := pickOrInterpolateRightHistogram(h, lastSampleIndex, rangeEnd, smoothed, isCounter, &annos, pos)
+	right, rightST, err := pickOrInterpolateRightHistogram(h, startTimestamps, lastSampleIndex, rangeEnd, lookbackStart, smoothed, isCounter, &annos, pos)
 	if err != nil {
 		annosFromInterpolationError(&annos, err, metricName, pos)
 		return enh.Out, annos
@@ -601,7 +785,8 @@ func extendedHistogramRate(vals Matrix, args parser.Expressions, enh *EvalNodeHe
 	}
 
 	if isCounter {
-		correction, newAnnos, ok := correctForCounterResetsHistogram(h, firstSampleIndex, lastSampleIndex, left, right, rangeStart, smoothed, metricName, pos)
+		correction, newAnnos, ok := correctForCounterResetsHistogram(h, startTimestamps, firstSampleIndex, lastSampleIndex,
+			left, right, leftST, rightST, rangeStart, rangeEnd, ignoreHistogramResetFollowingLeft, metricName, pos)
 		annos.Merge(newAnnos)
 		if !ok {
 			return enh.Out, annos
