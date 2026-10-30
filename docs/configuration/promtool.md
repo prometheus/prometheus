@@ -5,7 +5,7 @@ sort_rank: 6
 
 Promtool is a versatile CLI tool for Prometheus that supports validation, debugging, querying, unit testing, tsdb management, pushing data, and experimental PromQL editing.
 
-Prometheus supports basic authentication and TLS. Since promtool needs to connect to Prometheus, we need to provide the authentication details. To specify those authentication details, use the `--http.config.file` for all requests that need to communicate with Prometheus.
+Prometheus supports basic authentication, TLS, and Cloudflare Access. Since promtool needs to connect to Prometheus, we need to provide the authentication details. To specify those authentication details, use the `--http.config.file` for all requests that need to communicate with Prometheus.
 For instance, if you would like to check whether your local Prometheus server is healthy, you would use:
 ```bash
 promtool check healthy --url=http://localhost:9090 --http.config.file=http-config-file.yml
@@ -43,6 +43,8 @@ basic_auth:
 # Optional the `Authorization` header configuration.
 authorization:
   # Sets the authentication type.
+  # Use `cf-access` to authenticate interactively through Cloudflare Access.
+  # The credentials fields must not be set when using `cf-access`.
   [ type: <string> | default: Bearer ]
   # Sets the credentials. It is mutually exclusive with
   # `credentials_file`.
