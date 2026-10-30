@@ -703,6 +703,57 @@ func TestCheckRules(t *testing.T) {
 	})
 }
 
+func TestCheckStdinArg(t *testing.T) {
+	// Run promtool as a subprocess: kingpin turns a bare "-" argument into an
+	// empty string, which is only exercised through the command line.
+	cases := []struct {
+		name     string
+		args     []string
+		stdin    string // File to feed to standard input, if any.
+		wantCode int
+		wantOut  string // Substring expected in the combined output.
+	}{
+		{name: "rules from stdin", args: []string{"rules", "-"}, stdin: "testdata/rules.yml", wantCode: successExitCode, wantOut: "Checking standard input"},
+		{name: "rules bad from stdin", args: []string{"rules", "-"}, stdin: "testdata/rules-bad.yml", wantCode: failureExitCode, wantOut: "FAILED"},
+		{name: "rules empty stdin", args: []string{"rules", "-"}, wantCode: successExitCode, wantOut: "0 rules found"},
+		{name: "rules file and stdin", args: []string{"rules", "testdata/rules.yml", "-"}, stdin: "testdata/rules.yml", wantCode: successExitCode, wantOut: "Checking standard input"},
+		{name: "rules repeated stdin", args: []string{"rules", "-", "-"}, stdin: "testdata/rules.yml", wantCode: failureExitCode, wantOut: "can only be specified once"},
+		{name: "rules missing file", args: []string{"rules", "testdata/nonexistent.yml"}, wantCode: failureExitCode, wantOut: "FAILED: stat testdata/nonexistent.yml:"},
+		{name: "config from stdin", args: []string{"config", "-"}, stdin: "testdata/prometheus-config.good.yml", wantCode: successExitCode, wantOut: "standard input is valid"},
+		{name: "config bad from stdin", args: []string{"config", "-"}, stdin: "testdata/prometheus-config.bad.yml", wantCode: failureExitCode, wantOut: "parsing YAML from standard input"},
+		{name: "config empty stdin", args: []string{"config", "-"}, wantCode: successExitCode, wantOut: "standard input is valid"},
+		{name: "config with rule files from stdin", args: []string{"config", "-"}, stdin: "testdata/config_with_existing_rule_files.yml", wantCode: successExitCode, wantOut: "5 rules found"},
+		{name: "config with missing rule files from stdin", args: []string{"config", "-"}, stdin: "testdata/config_with_rule_files.yml", wantCode: failureExitCode, wantOut: "does not point to an existing file"},
+		{name: "config with missing rule files from stdin syntax only", args: []string{"config", "--syntax-only", "-"}, stdin: "testdata/config_with_rule_files.yml", wantCode: successExitCode, wantOut: "standard input is valid"},
+		{name: "config agent mode with rule files from stdin", args: []string{"config", "--agent", "-"}, stdin: "testdata/config_with_existing_rule_files.yml", wantCode: failureExitCode, wantOut: "rule_files is not allowed in agent mode"},
+		{name: "config file and stdin", args: []string{"config", "testdata/prometheus-config.good.yml", "-"}, stdin: "testdata/prometheus-config.good.yml", wantCode: successExitCode, wantOut: "Checking standard input"},
+		{name: "config repeated stdin", args: []string{"config", "-", "-"}, stdin: "testdata/prometheus-config.good.yml", wantCode: failureExitCode, wantOut: "can only be specified once"},
+		{name: "config missing file", args: []string{"config", "testdata/nonexistent.yml"}, wantCode: failureExitCode, wantOut: "FAILED: open testdata/nonexistent.yml:"},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			args := append([]string{"-test.main", "check"}, tc.args...)
+			tool := exec.Command(promtoolPath, args...)
+			if tc.stdin != "" {
+				f, err := os.Open(tc.stdin)
+				require.NoError(t, err)
+				defer f.Close()
+				tool.Stdin = f
+			}
+			out, err := tool.CombinedOutput()
+			if tc.wantCode == successExitCode {
+				require.NoError(t, err, string(out))
+			} else {
+				var exitErr *exec.ExitError
+				require.ErrorAs(t, err, &exitErr, string(out))
+				require.Equal(t, tc.wantCode, exitErr.ExitCode(), string(out))
+			}
+			require.Contains(t, string(out), tc.wantOut)
+		})
+	}
+}
+
 func TestCheckRulesWithFeatureFlag(t *testing.T) {
 	// As opposed to TestCheckRules calling CheckRules directly we run promtool
 	// so the feature flag parsing can be tested.
