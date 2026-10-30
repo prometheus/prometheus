@@ -51,6 +51,7 @@ import {
   Resets,
   SmoothedExpr,
   StepInvariantExpr,
+  StringLiteral,
   SubqueryExpr,
   Topk,
   TrimLower,
@@ -63,6 +64,7 @@ import {
 import { containsAtLeastOneChild, containsChild } from './path-finder';
 import { getType } from './type';
 import { buildLabelMatchers } from './matcher';
+import { findUnquotedUtf8Name, quotePromQLString } from './utf8';
 import { EditorState } from '@codemirror/state';
 import { syntaxTree } from '@codemirror/language';
 import { getFunction, Matcher, ValueType, VectorMatchCardinality } from '../types';
@@ -94,6 +96,8 @@ export class Parser {
 
   private diagnoseAllErrorNodes() {
     const cursor = this.tree.cursor();
+    // End of the last reported unquoted name, to report each name only once.
+    let unquotedNameEnd = -1;
     while (cursor.next()) {
       // usually there is an error node at the end of the expression when user is typing
       // so it's not really a useful information to say the expression is wrong.
@@ -103,6 +107,23 @@ export class Parser {
         // the generic parse error on the same span.
         const errParent = cursor.node.parent;
         if (errParent?.type.id === OffsetExpr) {
+          continue;
+        }
+        // A name that is not a valid legacy name (e.g. `http.requests`) has to be quoted: it is only partially
+        // parsed, and the error nodes are not enough to explain what is wrong with it.
+        const line = this.state.doc.lineAt(cursor.from);
+        const unquotedName = findUnquotedUtf8Name(line.text, cursor.from - line.from);
+        if (unquotedName && this.tree.resolve(line.from + unquotedName.from, 1).type.id !== StringLiteral) {
+          const to = line.from + unquotedName.to;
+          if (to > unquotedNameEnd) {
+            unquotedNameEnd = to;
+            this.diagnostics.push({
+              severity: 'error',
+              message: `name must be quoted: ${quotePromQLString(line.text.slice(unquotedName.from, unquotedName.to))}`,
+              from: line.from + unquotedName.from,
+              to: to,
+            });
+          }
           continue;
         }
         if (cursor.to !== this.tree.topNode.to) {
