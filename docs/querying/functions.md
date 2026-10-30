@@ -741,7 +741,13 @@ flag](../feature_flags.md#experimental-promql-functions)
 `--enable-feature=promql-experimental-functions`.**
 
 `max_of(a scalar, b scalar)` returns the larger of the two scalar values `a`
-and `b`.
+and `b`. Special cases:
+
+* `max_of(+Inf, x) = +Inf`, even if `x` is `NaN`.
+* `max_of(NaN, x) = NaN` if `x` is not `+Inf`.
+* `max_of(-0, +0) = +0`.
+
+The order of the arguments does not affect these results.
 
 ## `min_of()`
 
@@ -750,7 +756,13 @@ flag](../feature_flags.md#experimental-promql-functions)
 `--enable-feature=promql-experimental-functions`.**
 
 `min_of(a scalar, b scalar)` returns the smaller of the two scalar values `a`
-and `b`.
+and `b`. Special cases:
+
+* `min_of(-Inf, x) = -Inf`, even if `x` is `NaN`.
+* `min_of(NaN, x) = NaN` if `x` is not `-Inf`.
+* `min_of(-0, +0) = -0`.
+
+The order of the arguments does not affect these results.
 
 ## `ln()`
 
