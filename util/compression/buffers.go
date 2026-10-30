@@ -17,6 +17,8 @@ import (
 	"sync"
 
 	"github.com/klauspost/compress/zstd"
+
+	"github.com/prometheus/prometheus/util/zeropool"
 )
 
 type EncodeBuffer interface {
@@ -85,6 +87,19 @@ type DecodeBuffer interface {
 	zstdDecBuf() *zstd.Decoder
 	get() []byte
 	set([]byte)
+}
+
+var decodeBuffers = zeropool.New(NewSyncDecodeBuffer)
+
+// GetDecodeBuffer returns a DecodeBuffer from the global pool.
+// The caller is responsible for returning it to the pool using PutDecodeBuffer.
+func GetDecodeBuffer() DecodeBuffer {
+	return decodeBuffers.Get()
+}
+
+// PutDecodeBuffer returns the DecodeBuffer to the global pool for reuse.
+func PutDecodeBuffer(buf DecodeBuffer) {
+	decodeBuffers.Put(buf)
 }
 
 type syncDBuffer struct {
