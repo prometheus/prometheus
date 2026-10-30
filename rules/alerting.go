@@ -32,6 +32,7 @@ import (
 	"github.com/prometheus/prometheus/model/timestamp"
 	"github.com/prometheus/prometheus/promql"
 	"github.com/prometheus/prometheus/promql/parser"
+	"github.com/prometheus/prometheus/schema"
 	"github.com/prometheus/prometheus/storage"
 	"github.com/prometheus/prometheus/template"
 )
@@ -433,7 +434,10 @@ func (r *AlertingRule) Eval(ctx context.Context, queryOffset time.Duration, ts t
 		}
 
 		lb.Reset(smpl.Metric)
-		lb.Del(labels.MetricName)
+		// Strip __name__, __type__, and __unit__ from the input metric so schema
+		// metadata labels from the evaluated expression do not leak into alert labels,
+		// ALERTS, or ALERTS_FOR_STATE.
+		schema.Metadata{}.SetToLabels(lb)
 		r.labels.Range(func(l labels.Label) {
 			lb.Set(l.Name, expand(l.Value))
 		})
