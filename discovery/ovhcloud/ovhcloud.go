@@ -137,6 +137,16 @@ func parseIPList(ipList []string) ([]netip.Addr, error) {
 	return ipAddresses, nil
 }
 
+func formatTargetAddress(ipv4, ipv6 string) string {
+	if ipv4 != "" {
+		return ipv4
+	}
+	if ipv6 != "" {
+		return "[" + ipv6 + "]"
+	}
+	return ""
+}
+
 func newRefresher(conf *SDConfig, logger *slog.Logger) (refresher, error) {
 	switch conf.Service {
 	case "vps":
