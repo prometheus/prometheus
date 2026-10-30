@@ -185,6 +185,9 @@ type Rule struct {
 	KeepFiringFor model.Duration    `yaml:"keep_firing_for,omitempty"`
 	Labels        map[string]string `yaml:"labels,omitempty"`
 	Annotations   map[string]string `yaml:"annotations,omitempty"`
+	Help          string            `yaml:"help,omitempty"`
+	Type          model.MetricType  `yaml:"type,omitempty"`
+	Unit          string            `yaml:"unit,omitempty"`
 }
 
 // RuleNode adds yaml.v3 layer to support line and column outputs for invalid rules.
@@ -196,6 +199,32 @@ type RuleNode struct {
 	KeepFiringFor model.Duration    `yaml:"keep_firing_for,omitempty"`
 	Labels        map[string]string `yaml:"labels,omitempty"`
 	Annotations   map[string]string `yaml:"annotations,omitempty"`
+	Help          yaml.Node         `yaml:"help,omitempty"`
+	Type          yaml.Node         `yaml:"type,omitempty"`
+	Unit          yaml.Node         `yaml:"unit,omitempty"`
+}
+
+func isValidMetricType(t model.MetricType) bool {
+	switch t {
+	case model.MetricTypeCounter,
+		model.MetricTypeGauge,
+		model.MetricTypeHistogram,
+		model.MetricTypeGaugeHistogram,
+		model.MetricTypeSummary,
+		model.MetricTypeInfo,
+		model.MetricTypeStateset,
+		model.MetricTypeUnknown:
+		return true
+	default:
+		return false
+	}
+}
+
+func errorNode(primary, fallback *yaml.Node) *yaml.Node {
+	if primary.Line != 0 {
+		return primary
+	}
+	return fallback
 }
 
 // Validate the rule and return a list of encountered errors.
@@ -257,6 +286,44 @@ func (r *Rule) Validate(node RuleNode, nameValidationScheme model.ValidationSche
 			nodes = append(nodes, WrappedError{
 				err:  fmt.Errorf("braces present in the recording rule name; should it be in expr?: %s", r.Record),
 				node: &node.Record,
+			})
+		}
+		if r.Type != "" && !isValidMetricType(r.Type) {
+			nodes = append(nodes, WrappedError{
+				err:  fmt.Errorf("invalid metric type %q in recording rule", r.Type),
+				node: errorNode(&node.Type, &node.Record),
+			})
+		}
+		if r.Help != "" && !model.LabelValue(r.Help).IsValid() {
+			nodes = append(nodes, WrappedError{
+				err:  fmt.Errorf("invalid help value: %s", r.Help),
+				node: errorNode(&node.Help, &node.Record),
+			})
+		}
+		if r.Unit != "" && !model.LabelValue(r.Unit).IsValid() {
+			nodes = append(nodes, WrappedError{
+				err:  fmt.Errorf("invalid unit value: %s", r.Unit),
+				node: errorNode(&node.Unit, &node.Record),
+			})
+		}
+	}
+	if r.Alert != "" {
+		if r.Help != "" {
+			nodes = append(nodes, WrappedError{
+				err:  errors.New("invalid field 'help' in alerting rule"),
+				node: errorNode(&node.Help, &node.Alert),
+			})
+		}
+		if r.Type != "" {
+			nodes = append(nodes, WrappedError{
+				err:  errors.New("invalid field 'type' in alerting rule"),
+				node: errorNode(&node.Type, &node.Alert),
+			})
+		}
+		if r.Unit != "" {
+			nodes = append(nodes, WrappedError{
+				err:  errors.New("invalid field 'unit' in alerting rule"),
+				node: errorNode(&node.Unit, &node.Alert),
 			})
 		}
 	}
