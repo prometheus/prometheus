@@ -659,6 +659,19 @@ eval instant at 0m clamp_min(test_clamp, NaN)
 	{src="clamp-b"}	NaN
 	{src="clamp-c"}	NaN
 
+# NaN bounds take precedence over infinite input samples.
+eval instant at 0m clamp_min(vector(Inf), NaN)
+	{} NaN
+
+eval instant at 0m clamp_max(vector(-Inf), NaN)
+	{} NaN
+
+eval instant at 0m clamp(vector(Inf), NaN, Inf)
+	{} NaN
+
+eval instant at 0m clamp(vector(-Inf), -Inf, NaN)
+	{} NaN
+
 eval instant at 0m clamp_max(test_clamp, Inf)
 	{src="clamp-a"}	-50
 	{src="clamp-b"}	0
