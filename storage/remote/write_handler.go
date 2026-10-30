@@ -88,6 +88,9 @@ func isHistogramValidationError(err error) bool {
 }
 
 // Store implements remoteapi.writeStorage interface.
+// WriteMode is currently ignored because the receiver accepts all modes and avoids the overhead of validating
+// sender-side mode constraints.
+// TODO(bwplotka): Consider optimizing ingestion when stateless or stateless-st mode is specified.
 // TODO(bwplotka): Improve remoteapi.Store API. Right now it's confusing if PRWv1 flows should use WriteResponse or not.
 // If it's not filled, it will be "confirmed zero" which caused partial error reporting on client side in the past.
 // Temporary fix was done to only care about WriteResponse stats for PRW2 (see https://github.com/prometheus/client_golang/pull/1927
