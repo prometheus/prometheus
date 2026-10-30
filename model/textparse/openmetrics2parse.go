@@ -1495,15 +1495,13 @@ func (p *openMetrics2Parser) buildClassicHistogramPending(
 		if b.count < 0 {
 			return nil, fmt.Errorf("invalid bucket: value must not be negative, got %v", b.count)
 		}
-		if b.count < prevCount {
+		if b.count < prevCount || (math.IsNaN(prevCount) && !math.IsNaN(b.count)) {
 			return nil, fmt.Errorf("classic histogram bucket values must be cumulative, got %v after %v", b.count, prevCount)
 		}
-		if math.IsInf(b.lef, 1) && b.count != countVal {
+		if math.IsInf(b.lef, 1) && b.count != countVal && !(math.IsNaN(b.count) && math.IsNaN(countVal)) {
 			return nil, fmt.Errorf("classic histogram +Inf bucket value (%v) must equal %s (%v)", b.count, countKey, countVal)
 		}
-		if !math.IsNaN(b.count) {
-			prevCount = b.count
-		}
+		prevCount = b.count
 		if math.IsInf(b.lef, 1) {
 			hasPosInf = true
 		}
@@ -1660,6 +1658,9 @@ func (p *openMetrics2Parser) buildSummaryPending(cf compositeFields) ([]pendingE
 // without constructing labels.Labels. Labels() reconstructs the label set
 // lazily from the appended bytes on a scrape series cache miss.
 func (p *openMetrics2Parser) appendPendingSeriesBytes(suffix, injectKey string, injectVal, val float64) pendingEntry {
+	if math.IsNaN(val) {
+		val = math.Float64frombits(value.NormalNaN)
+	}
 	start := len(p.seriesBuf)
 	p.seriesBuf = append(p.seriesBuf, p.l.b[p.offsets[0]:p.offsets[1]]...)
 	p.seriesBuf = append(p.seriesBuf, suffix...)

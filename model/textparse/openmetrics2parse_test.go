@@ -488,6 +488,45 @@ req_duration {count:3,sum:6.0,bucket:[0.1:1,1.0:2,+Inf:3]}
 	requireEntries(t, exp, got)
 }
 
+func TestOpenMetrics2ParseCompositeClassicHistogramNaNBuckets(t *testing.T) {
+	input := `# TYPE req_duration histogram
+req_duration {count:NaN,sum:NaN,bucket:[0.1:1,1.0:NaN,+Inf:NaN]}
+# EOF
+`
+	exp := []parsedEntry{
+		{m: "req_duration", typ: model.MetricTypeHistogram},
+		{
+			m:    "req_duration_count",
+			v:    math.Float64frombits(value.NormalNaN),
+			lset: labels.FromStrings("__name__", "req_duration_count"),
+		},
+		{
+			m:    "req_duration_sum",
+			v:    math.Float64frombits(value.NormalNaN),
+			lset: labels.FromStrings("__name__", "req_duration_sum"),
+		},
+		{
+			m:    "req_duration_bucket\xffle\xff0.1",
+			v:    1,
+			lset: labels.FromStrings("__name__", "req_duration_bucket", "le", "0.1"),
+		},
+		{
+			m:    "req_duration_bucket\xffle\xff1.0",
+			v:    math.Float64frombits(value.NormalNaN),
+			lset: labels.FromStrings("__name__", "req_duration_bucket", "le", "1.0"),
+		},
+		{
+			m:    "req_duration_bucket\xffle\xff+Inf",
+			v:    math.Float64frombits(value.NormalNaN),
+			lset: labels.FromStrings("__name__", "req_duration_bucket", "le", "+Inf"),
+		},
+	}
+
+	p := NewOpenMetrics2Parser([]byte(input), labels.NewSymbolTable(), ParserOptions{})
+	got := testParse(t, p)
+	requireEntries(t, exp, got)
+}
+
 // TestOpenMetrics2ParseClassicHistogramNegInfBucket verifies that -Inf is
 // accepted as the first classic histogram bucket threshold, as permitted by the
 // OM2 ABNF.
@@ -1142,8 +1181,20 @@ foo_total 1.0 # {id="x"} 1.0
 			err:   "classic histogram bucket values must be cumulative",
 		},
 		{
+			input: "# TYPE foo histogram\nfoo {count:NaN,sum:NaN,bucket:[1.0:NaN,2.0:2,+Inf:NaN]}\n# EOF\n",
+			err:   "classic histogram bucket values must be cumulative, got 2 after NaN",
+		},
+		{
 			input: "# TYPE foo histogram\nfoo {count:3,sum:6.0,bucket:[1.0:1,2.0:2,+Inf:4]}\n# EOF\n",
 			err:   "classic histogram +Inf bucket value (4) must equal count (3)",
+		},
+		{
+			input: "# TYPE foo histogram\nfoo {count:3,sum:NaN,bucket:[1.0:1,+Inf:NaN]}\n# EOF\n",
+			err:   "classic histogram +Inf bucket value (NaN) must equal count (3)",
+		},
+		{
+			input: "# TYPE foo histogram\nfoo {count:NaN,sum:NaN,bucket:[1.0:1,+Inf:3]}\n# EOF\n",
+			err:   "classic histogram +Inf bucket value (3) must equal count (NaN)",
 		},
 		{
 			input: "# TYPE foo gaugehistogram\nfoo {gcount:3,gsum:6.0,bucket:[1.0:-1,+Inf:3]}\n# EOF\n",
