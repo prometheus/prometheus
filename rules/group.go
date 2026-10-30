@@ -37,6 +37,7 @@ import (
 	"github.com/prometheus/prometheus/model/value"
 	"github.com/prometheus/prometheus/promql"
 	"github.com/prometheus/prometheus/promql/parser"
+	"github.com/prometheus/prometheus/schema"
 	"github.com/prometheus/prometheus/storage"
 	"github.com/prometheus/prometheus/tsdb/chunkenc"
 )
@@ -799,7 +800,7 @@ func (g *Group) RestoreForState(ts time.Time) {
 		// While not technically the same number of series we expect, it's as good of an approximation as any.
 		seriesByLabels := make(map[string]storage.Series, alertRule.ActiveAlertsCount())
 		for sset.Next() {
-			seriesByLabels[sset.At().Labels().DropReserved(func(n string) bool { return n == labels.MetricName }).String()] = sset.At()
+			seriesByLabels[sset.At().Labels().DropReserved(schema.IsMetadataLabel).String()] = sset.At()
 		}
 
 		// No results for this alert rule.
