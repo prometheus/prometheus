@@ -2344,9 +2344,7 @@ func (h *Head) getOrCreateWithOptionalID(id chunks.HeadSeriesRef, hash uint64, l
 
 	assignID := id == 0
 	if assignID {
-		// Assigning the ID and adding to the postings under one lock keeps new IDs
-		// in order in the postings, so MemPostings.Add does not have to repair the
-		// order of lists that already hold every concurrently assigned higher ID.
+		// Serialize ID assignment with postings insertion so new IDs are added in order.
 		h.seriesCreationMtx.Lock()
 		// Note this id is wasted in the case where a concurrent operation creates the same series first.
 		id = chunks.HeadSeriesRef(h.lastSeriesID.Inc())
