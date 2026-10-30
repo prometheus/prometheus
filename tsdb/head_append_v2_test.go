@@ -190,6 +190,94 @@ func TestHeadAppenderV2_RaceBetweenSeriesCreationAndGC(t *testing.T) {
 	require.Equal(t, totalSeries, int(head.NumSeries()))
 }
 
+// TestHeadAppenderV2_RaceBetweenSeriesCreationAndQueries checks that queries
+// return every committed series while other appenders create new series.
+func TestHeadAppenderV2_RaceBetweenSeriesCreationAndQueries(t *testing.T) {
+	head, _ := newTestHead(t, 1000, compression.None, false)
+	require.NoError(t, head.Init(0))
+
+	const (
+		appenders          = 32
+		seriesPerAppender  = 1000
+		concurrentQueriers = 4
+	)
+	// Number of series each appender has committed.
+	var committed [appenders]atomic.Int64
+	done := atomic.NewBool(false)
+
+	var appendersWG sync.WaitGroup
+	for a := range appenders {
+		appendersWG.Go(func() {
+			for i := range seriesPerAppender {
+				app := head.AppenderV2(context.Background())
+				lset := labels.FromStrings("cluster", "c1", "job", "j1", "series", strconv.Itoa(a*seriesPerAppender+i))
+				if _, err := app.Append(0, lset, 0, 100, 1, nil, nil, storage.AOptions{}); err != nil {
+					t.Errorf("Failed to append: %v", err)
+					return
+				}
+				if err := app.Commit(); err != nil {
+					t.Errorf("Failed to commit: %v", err)
+					return
+				}
+				committed[a].Store(int64(i + 1))
+			}
+		})
+	}
+
+	var queriersWG sync.WaitGroup
+	for range concurrentQueriers {
+		queriersWG.Go(func() {
+			for !done.Load() {
+				var want [appenders]int64
+				for a := range appenders {
+					want[a] = committed[a].Load()
+				}
+				q, err := NewBlockQuerier(head, math.MinInt64, math.MaxInt64)
+				if err != nil {
+					t.Errorf("Failed to create querier: %v", err)
+					return
+				}
+				// Both matchers select every series, so the query intersects two
+				// postings lists that grow while it runs.
+				ss := q.Select(context.Background(), false, nil,
+					labels.MustNewMatcher(labels.MatchEqual, "cluster", "c1"),
+					labels.MustNewMatcher(labels.MatchEqual, "job", "j1"),
+				)
+				seen := map[int]struct{}{}
+				for ss.Next() {
+					n, err := strconv.Atoi(ss.At().Labels().Get("series"))
+					if err != nil {
+						t.Errorf("Failed to parse series label: %v", err)
+					}
+					seen[n] = struct{}{}
+				}
+				if err := ss.Err(); err != nil {
+					t.Errorf("Failed to select: %v", err)
+				}
+				if err := q.Close(); err != nil {
+					t.Errorf("Failed to close querier: %v", err)
+				}
+				missing := 0
+				for a := range appenders {
+					for i := range int(want[a]) {
+						if _, ok := seen[a*seriesPerAppender+i]; !ok {
+							missing++
+						}
+					}
+				}
+				if missing > 0 {
+					t.Errorf("Query missed %d series committed before the querier was created", missing)
+					return
+				}
+			}
+		})
+	}
+
+	appendersWG.Wait()
+	done.Store(true)
+	queriersWG.Wait()
+}
+
 func TestHeadAppenderV2_CanGCSeriesCreatedWithoutSamples(t *testing.T) {
 	for op, finishTxn := range map[string]func(app storage.AppenderTransaction) error{
 		"after commit":   func(app storage.AppenderTransaction) error { return app.Commit() },
