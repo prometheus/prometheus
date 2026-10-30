@@ -629,7 +629,7 @@ func (a *FloatHistogramAppender) writeXorValue(old *xorValue, v float64) {
 func (a *FloatHistogramAppender) recode(
 	positiveInserts, negativeInserts []Insert,
 	positiveSpans, negativeSpans []histogram.Span,
-) (Chunk, *FloatHistogramAppender) {
+) (Chunk, *FloatHistogramAppender, error) {
 	// TODO(beorn7): This currently just decodes everything and then encodes
 	// it again with the new span layout. This can probably be done in-place
 	// by editing the chunk. But let's first see how expensive it is in the
@@ -670,10 +670,13 @@ func (a *FloatHistogramAppender) recode(
 		}
 		num = happ.appendFloatHistogram(num, tOld, hOld)
 	}
+	if err := it.Err(); err != nil {
+		return nil, happ, err
+	}
 	happ.setNumSamples(num)
 
 	happ.setCounterResetHeader(CounterResetHeader(byts[histogramFlagPos] & CounterResetHeaderMask))
-	return hc, happ
+	return hc, happ, nil
 }
 
 // recodeHistogram converts the current histogram (in-place) to accommodate an expansion of the set of
@@ -778,10 +781,13 @@ func (a *FloatHistogramAppender) AppendFloatHistogram(prev Appender, _, t int64,
 			if appendOnly {
 				return nil, false, a, fmt.Errorf("float histogram layout change with %d positive and %d negative forwards inserts", len(pForwardInserts), len(nForwardInserts))
 			}
-			chk, happ := a.recode(
+			chk, happ, err := a.recode(
 				pForwardInserts, nForwardInserts,
 				h.PositiveSpans, h.NegativeSpans,
 			)
+			if err != nil {
+				return nil, false, happ, err
+			}
 			happ.setNumSamples(happ.appendFloatHistogram(happ.NumSamples(), t, h))
 			return chk, true, happ, nil
 		}
@@ -818,10 +824,13 @@ func (a *FloatHistogramAppender) AppendFloatHistogram(prev Appender, _, t int64,
 		if appendOnly {
 			return nil, false, a, fmt.Errorf("float gauge histogram layout change with %d positive and %d negative forwards inserts", len(pForwardInserts), len(nForwardInserts))
 		}
-		chk, happ := a.recode(
+		chk, happ, err := a.recode(
 			pForwardInserts, nForwardInserts,
 			h.PositiveSpans, h.NegativeSpans,
 		)
+		if err != nil {
+			return nil, false, happ, err
+		}
 		happ.setNumSamples(happ.appendFloatHistogram(happ.NumSamples(), t, h))
 		return chk, true, happ, nil
 	}
