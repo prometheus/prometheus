@@ -1153,12 +1153,12 @@ func (r *Reader) PostingsRanges() (map[labels.Label]Range, error) {
 }
 
 type Symbols struct {
-	bs      ByteSlice
-	version int
-	off     int
-
-	offsets []int
-	seen    int
+	bs          ByteSlice         // Index data.
+	lookupCache map[uint32]string // V1 offset / V2+ ID -> symbol string value.
+	offsets     []int             // Byte offsets for every symbolFactor symbol.
+	seen        int               // Count of symbols read from the table.
+	version     int               // Index format version.
+	off         int               // Start of the symbol table.
 }
 
 const symbolFactor = 32
@@ -1177,11 +1177,17 @@ func NewSymbols(bs ByteSlice, version, off int) (*Symbols, error) {
 		basePos = off + 4
 	)
 	s.offsets = make([]int, 0, 1+cnt/symbolFactor)
+	s.lookupCache = make(map[uint32]string, cnt)
 	for d.Err() == nil && s.seen < cnt {
+		offset := basePos + origLen - d.Len()
 		if s.seen%symbolFactor == 0 {
-			s.offsets = append(s.offsets, basePos+origLen-d.Len())
+			s.offsets = append(s.offsets, offset)
 		}
-		d.UvarintBytes() // The symbol.
+		cacheKey := uint32(s.seen)
+		if version == FormatV1 {
+			cacheKey = uint32(offset)
+		}
+		s.lookupCache[cacheKey] = d.UvarintStr()
 		s.seen++
 	}
 	if d.Err() != nil {
@@ -1191,25 +1197,9 @@ func NewSymbols(bs ByteSlice, version, off int) (*Symbols, error) {
 }
 
 func (s Symbols) Lookup(o uint32) (string, error) {
-	d := encoding.Decbuf{
-		B: s.bs.Range(0, s.bs.Len()),
-	}
-
-	if s.version == FormatV1 {
-		d.Skip(int(o))
-	} else {
-		if int(o) >= s.seen {
-			return "", fmt.Errorf("unknown symbol offset %d", o)
-		}
-		d.Skip(s.offsets[int(o/symbolFactor)])
-		// Walk until we find the one we want.
-		for i := o - (o / symbolFactor * symbolFactor); i > 0; i-- {
-			d.UvarintBytes()
-		}
-	}
-	sym := d.UvarintStr()
-	if d.Err() != nil {
-		return "", d.Err()
+	sym, ok := s.lookupCache[o]
+	if !ok {
+		return "", fmt.Errorf("unknown symbol offset %d", o)
 	}
 	return sym, nil
 }
