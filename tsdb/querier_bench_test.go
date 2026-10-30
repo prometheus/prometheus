@@ -410,6 +410,7 @@ func BenchmarkSearchLabelValues(b *testing.B) {
 						{"limit=100", &storage.SearchHints{Limit: 100}, nil},
 						{"limit=100_filter", &storage.SearchHints{Limit: 100, Filter: prefixFilter{"metric_00"}}, nil},
 						{"limit=100_matcher", &storage.SearchHints{Limit: 100}, []*labels.Matcher{labels.MustNewMatcher(labels.MatchEqual, "job", "api")}},
+						{"limit=100_filter_matcher", &storage.SearchHints{Limit: 100, Filter: prefixFilter{"metric_00"}}, []*labels.Matcher{labels.MustNewMatcher(labels.MatchEqual, "job", "api")}},
 						{"unlimited", &storage.SearchHints{}, nil},
 					} {
 						b.Run(tc.name, func(b *testing.B) {

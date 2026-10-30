@@ -121,6 +121,13 @@ func (q *blockBaseQuerier) SearchLabelValues(ctx context.Context, name string, h
 		labelHints.Limit = hints.Limit
 		labelHints.LimitSmallest = true
 	}
+	if hints.Filter != nil {
+		filter := hints.Filter
+		labelHints.ValueFilter = func(v string) bool {
+			accepted, _ := filter.Accept(v)
+			return accepted
+		}
+	}
 
 	var (
 		values []string
@@ -512,6 +519,22 @@ func labelValuesWithMatchers(ctx context.Context, r IndexReader, name string, hi
 	if !hasMatchersForOtherLabels {
 		allValues, _ = hints.ApplyLimit(allValues)
 		return allValues, nil
+	}
+
+	if hints != nil && hints.ValueFilter != nil {
+		filteredValues := allValues[:0]
+		for i, v := range allValues {
+			if (i+1)%checkContextEveryNIterations == 0 && ctx.Err() != nil {
+				return nil, ctx.Err()
+			}
+			if hints.ValueFilter(v) {
+				filteredValues = append(filteredValues, v)
+			}
+		}
+		allValues = filteredValues
+		if len(allValues) == 0 {
+			return nil, nil
+		}
 	}
 
 	p, err := PostingsForMatchers(ctx, r, matchers...)
