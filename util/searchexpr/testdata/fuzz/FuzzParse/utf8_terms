@@ -1,0 +1,2 @@
+go test fuzz v1
+string("métrique AND (指标 OR \"🔥 \\\"x\\\"\") AND NOT مقياس")
