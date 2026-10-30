@@ -271,7 +271,7 @@ loop:
 				}
 			}
 		} else {
-			if sl.cache.getDropped(met) && (lastMeta == nil || lastMeta.lastIterChange != sl.cache.iter) {
+			if sl.cache.getDropped(met) {
 				continue
 			}
 			ce, seriesCached, seriesAlreadyScraped = sl.cache.get(met)

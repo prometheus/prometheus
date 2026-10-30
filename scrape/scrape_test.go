@@ -1522,9 +1522,11 @@ func TestScrapeLoopMetricRelabelMetadata(t *testing.T) {
 		},
 	}
 
+	var mutatorCalls int
 	sl, _ := newTestScrapeLoop(t, withAppendable(appTest, true), func(sl *scrapeLoop) {
 		sl.mrc = rc
 		sl.sampleMutator = func(l labels.Labels) labels.Labels {
+			mutatorCalls++
 			return mutateSampleLabels(l, target, false, rc)
 		}
 	})
@@ -1557,6 +1559,7 @@ bar 1
 	require.Equal(t, 8, total)
 	require.Equal(t, 7, added)
 	require.Equal(t, 7, seriesAdded)
+	require.Equal(t, 8, mutatorCalls)
 
 	// Dropped metric metadata must not be stored in scrapeCache (#14013).
 	_, ok := sl.cache.GetMetadata("dropped_metric")
@@ -1623,10 +1626,14 @@ bar 1
 		},
 	}, appTest.ResultMetadata())
 
-	// Second scrape: bar now exposes its own "# TYPE bar gauge" header with identical rawMeta
-	// to foo's header on the first scrape. The cached entry for bar must be invalidated because
-	// the source family name changed from "foo" to "bar".
-	scrapeText2 := []byte(`# TYPE foo gauge
+	// Second scrape: dropped_metric_total must hit the droppedSeries cache without re-running
+	// sampleMutator, foo hits the seriesMeta fast path, and bar now exposes its own "# TYPE bar gauge"
+	// header with identical rawMeta to foo's header on the first scrape (invalidating bar's cached entry
+	// because the source family name changed from "foo" to "bar").
+	scrapeText2 := []byte(`# TYPE dropped_metric counter
+# HELP dropped_metric should not be cached
+dropped_metric_total 20
+# TYPE foo gauge
 foo 2
 # TYPE bar gauge
 bar 2
@@ -1635,9 +1642,10 @@ bar 2
 	total, added, seriesAdded, err = app.append(scrapeText2, "application/openmetrics-text", now.Add(time.Second))
 	require.NoError(t, err)
 	require.NoError(t, app.Commit())
-	require.Equal(t, 2, total)
+	require.Equal(t, 3, total)
 	require.Equal(t, 2, added)
 	require.Equal(t, 0, seriesAdded)
+	require.Equal(t, 9, mutatorCalls)
 
 	md, ok = sl.cache.GetMetadata("bar")
 	require.True(t, ok, "expected bar metadata to be present after second scrape")
