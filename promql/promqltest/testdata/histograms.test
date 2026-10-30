@@ -1308,3 +1308,131 @@ eval instant at 0 histogram_fraction(-Inf, 1, series)
 	expect no_info
 	expect warn msg: PromQL warning: vector contains a mix of classic and native histograms for metric name "series" (1:29)
 	# Should return no results.
+
+clear
+
+# Classic and NHCB quantiles must agree for empty leading buckets.
+# In particular, an empty le="-Inf" bucket must not introduce -Inf or NaN.
+load_with_nhcb 1m
+    zero_quantile_bucket{case="one_empty",le="1"} 0
+    zero_quantile_bucket{case="one_empty",le="2"} 10
+    zero_quantile_bucket{case="one_empty",le="+Inf"} 10
+    zero_quantile_bucket{case="two_empty",le="1"} 0
+    zero_quantile_bucket{case="two_empty",le="2"} 0
+    zero_quantile_bucket{case="two_empty",le="3"} 10
+    zero_quantile_bucket{case="two_empty",le="+Inf"} 10
+    zero_quantile_bucket{case="negative",le="-4"} 0
+    zero_quantile_bucket{case="negative",le="-2"} 0
+    zero_quantile_bucket{case="negative",le="-1"} 10
+    zero_quantile_bucket{case="negative",le="+Inf"} 10
+    zero_quantile_bucket{case="negative_infinity",le="-Inf"} 0
+    zero_quantile_bucket{case="negative_infinity",le="-1"} 10
+    zero_quantile_bucket{case="negative_infinity",le="+Inf"} 10
+    zero_quantile_bucket{case="without_negative_infinity",le="-1"} 10
+    zero_quantile_bucket{case="without_negative_infinity",le="+Inf"} 10
+    zero_quantile_bucket{case="negative_infinity_positive",le="-Inf"} 0
+    zero_quantile_bucket{case="negative_infinity_positive",le="2"} 10
+    zero_quantile_bucket{case="negative_infinity_positive",le="+Inf"} 10
+    zero_quantile_bucket{case="infinite_only",le="1"} 0
+    zero_quantile_bucket{case="infinite_only",le="2"} 0
+    zero_quantile_bucket{case="infinite_only",le="+Inf"} 10
+    zero_quantile_bucket{case="first_positive",le="1"} 10
+    zero_quantile_bucket{case="first_positive",le="2"} 10
+    zero_quantile_bucket{case="first_positive",le="+Inf"} 10
+    zero_quantile_bucket{case="first_negative",le="-1"} 10
+    zero_quantile_bucket{case="first_negative",le="2"} 10
+    zero_quantile_bucket{case="first_negative",le="+Inf"} 10
+    zero_quantile_bucket{case="no_observations",le="1"} 0
+    zero_quantile_bucket{case="no_observations",le="2"} 0
+    zero_quantile_bucket{case="no_observations",le="+Inf"} 0
+    zero_quantile_bucket{case="underflowed_rank",le="1"} 0
+    zero_quantile_bucket{case="underflowed_rank",le="2"} 0.25
+    zero_quantile_bucket{case="underflowed_rank",le="+Inf"} 0.5
+
+eval instant at 0m histogram_quantile(0, zero_quantile_bucket)
+    expect no_warn
+    {case="one_empty"} 1
+    {case="two_empty"} 2
+    {case="negative"} -2
+    {case="negative_infinity"} -1
+    {case="without_negative_infinity"} -1
+    {case="negative_infinity_positive"} 0
+    {case="infinite_only"} 2
+    {case="first_positive"} 0
+    {case="first_negative"} -1
+    {case="no_observations"} NaN
+    {case="underflowed_rank"} 1
+
+eval instant at 0m histogram_quantile(0, zero_quantile)
+    expect no_warn
+    {case="one_empty"} 1
+    {case="two_empty"} 2
+    {case="negative"} -2
+    {case="negative_infinity"} -1
+    {case="without_negative_infinity"} -1
+    {case="negative_infinity_positive"} 0
+    {case="infinite_only"} 2
+    {case="first_positive"} 0
+    {case="first_negative"} -1
+    {case="no_observations"} NaN
+    {case="underflowed_rank"} 1
+
+eval instant at 0m histogram_quantiles(zero_quantile_bucket, "q", 0, 0.5)
+    expect no_warn
+    {case="one_empty",q="0.0"} 1
+    {case="one_empty",q="0.5"} 1.5
+    {case="two_empty",q="0.0"} 2
+    {case="two_empty",q="0.5"} 2.5
+    {case="negative",q="0.0"} -2
+    {case="negative",q="0.5"} -1.5
+    {case="negative_infinity",q="0.0"} -1
+    {case="negative_infinity",q="0.5"} -1
+    {case="without_negative_infinity",q="0.0"} -1
+    {case="without_negative_infinity",q="0.5"} -1
+    {case="negative_infinity_positive",q="0.0"} 0
+    {case="negative_infinity_positive",q="0.5"} 1
+    {case="infinite_only",q="0.0"} 2
+    {case="infinite_only",q="0.5"} 2
+    {case="first_positive",q="0.0"} 0
+    {case="first_positive",q="0.5"} 0.5
+    {case="first_negative",q="0.0"} -1
+    {case="first_negative",q="0.5"} -1
+    {case="no_observations",q="0.0"} NaN
+    {case="no_observations",q="0.5"} NaN
+    {case="underflowed_rank",q="0.0"} 1
+    {case="underflowed_rank",q="0.5"} 2
+
+eval instant at 0m histogram_quantiles(zero_quantile, "q", 0, 0.5)
+    expect no_warn
+    {case="one_empty",q="0.0"} 1
+    {case="one_empty",q="0.5"} 1.5
+    {case="two_empty",q="0.0"} 2
+    {case="two_empty",q="0.5"} 2.5
+    {case="negative",q="0.0"} -2
+    {case="negative",q="0.5"} -1.5
+    {case="negative_infinity",q="0.0"} -1
+    {case="negative_infinity",q="0.5"} -1
+    {case="without_negative_infinity",q="0.0"} -1
+    {case="without_negative_infinity",q="0.5"} -1
+    {case="negative_infinity_positive",q="0.0"} 0
+    {case="negative_infinity_positive",q="0.5"} 1
+    {case="infinite_only",q="0.0"} 2
+    {case="infinite_only",q="0.5"} 2
+    {case="first_positive",q="0.0"} 0
+    {case="first_positive",q="0.5"} 0.5
+    {case="first_negative",q="0.0"} -1
+    {case="first_negative",q="0.5"} -1
+    {case="no_observations",q="0.0"} NaN
+    {case="no_observations",q="0.5"} NaN
+    {case="underflowed_rank",q="0.0"} 1
+    {case="underflowed_rank",q="0.5"} 2
+
+# q * 0.5 underflows to zero without q itself being zero.
+eval instant at 0m histogram_quantile(5e-324, zero_quantile_bucket{case="underflowed_rank"})
+    expect no_warn
+    {case="underflowed_rank"} 1
+
+# q * 0.5 underflows to zero without q itself being zero.
+eval instant at 0m histogram_quantile(5e-324, zero_quantile{case="underflowed_rank"})
+    expect no_warn
+    {case="underflowed_rank"} 1

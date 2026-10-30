@@ -139,6 +139,11 @@ func BucketQuantile(q float64, buckets Buckets) (
 	}
 
 	buckets = coalesceBuckets(buckets)
+	// An empty -Inf bucket must not change the quantile of the histogram.
+	// In particular, it cannot serve as the lower bound for interpolation.
+	if math.IsInf(buckets[0].UpperBound, -1) && buckets[0].Count == 0 {
+		buckets = buckets[1:]
+	}
 	forcedMonotonic, fixedPrecision, minBucket, maxBucket, maxDiff = ensureMonotonicAndIgnoreSmallDeltas(buckets, smallDeltaTolerance)
 
 	if len(buckets) < 2 {
@@ -151,13 +156,25 @@ func BucketQuantile(q float64, buckets Buckets) (
 		return quantile, forcedMonotonic, fixedPrecision, minBucket, maxBucket, maxDiff
 	}
 	rank := q * observations
-	b := sort.Search(len(buckets)-1, func(i int) bool { return buckets[i].Count >= rank })
+	b := sort.Search(len(buckets)-1, func(i int) bool {
+		if rank == 0 {
+			return buckets[i].Count > 0
+		}
+		return buckets[i].Count >= rank
+	})
 
 	switch {
 	case b == len(buckets)-1:
 		quantile = buckets[len(buckets)-2].UpperBound
 	case b == 0 && buckets[0].UpperBound <= 0:
 		quantile = buckets[0].UpperBound
+	case rank == 0:
+		// Return the lower bound directly; interpolating from -Inf would yield NaN.
+		if b > 0 {
+			quantile = buckets[b-1].UpperBound
+		} else {
+			quantile = 0
+		}
 	default:
 		var (
 			bucketStart float64
