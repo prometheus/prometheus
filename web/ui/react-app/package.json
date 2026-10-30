@@ -38,7 +38,7 @@
     "react-router-dom": "^7.18.4",
     "reactstrap": "^8.10.1",
     "sanitize-html": "^2.18.1",
-    "sass": "1.105.2",
+    "sass": "1.106.1",
     "tempusdominus-bootstrap-4": "^5.39.2",
     "tempusdominus-core": "^5.19.3"
   },
