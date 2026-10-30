@@ -270,6 +270,7 @@
     "delayed_compaction": false,
     "exemplar_storage": false,
     "histograms_st_encoding": false,
+    "index_v4": false,
     "isolation": true,
     "native_histograms": true,
     "st_storage": false,
