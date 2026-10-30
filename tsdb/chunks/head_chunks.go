@@ -592,27 +592,32 @@ func (cdm *ChunkDiskMapper) IsQueueEmpty() bool {
 // The write lock should be held before calling this.
 // It ensures that the position in the new file matches the given chunk reference, if not then it errors.
 func (cdm *ChunkDiskMapper) cutAndExpectRef(chkRef ChunkDiskMapperRef) (err error) {
-	seq, offset, err := cdm.cut()
+	expSeq, expOffset := chkRef.Unpack()
+	seq, offset, err := cdm.cut(expSeq)
 	if err != nil {
 		return err
 	}
 
-	if expSeq, expOffset := chkRef.Unpack(); seq != expSeq || offset != expOffset {
+	if seq != expSeq || offset != expOffset {
 		return fmt.Errorf("expected newly cut file to have sequence:offset %d:%d, got %d:%d", expSeq, expOffset, seq, offset)
 	}
 
 	return nil
 }
 
-// cut creates a new m-mapped file. The write lock should be held before calling this.
+// cut creates a new m-mapped file with the given sequence. The write lock should be held before calling this.
 // It returns the file sequence and the offset in that file to start writing chunks.
-func (cdm *ChunkDiskMapper) cut() (seq, offset int, returnErr error) {
+func (cdm *ChunkDiskMapper) cut(fileSeq int) (seq, offset int, returnErr error) {
 	// Sync current tail to disk and close.
 	if err := cdm.finalizeCurFile(); err != nil {
 		return 0, 0, err
 	}
 
-	offset, newFile, seq, err := cutSegmentFile(cdm.dir, MagicHeadChunks, headChunksFormatV1, HeadChunkFilePreallocationSize)
+	// Use the sequence carried by the chunk reference instead of deriving it
+	// from the files on disk or the shared position: with the async write queue
+	// the position may already have advanced, and after Truncate deleted every
+	// file the disk no longer records the highest sequence ever used.
+	offset, newFile, seq, err := cutSegmentFileWithSeq(cdm.dir, MagicHeadChunks, headChunksFormatV1, HeadChunkFilePreallocationSize, fileSeq)
 	if err != nil {
 		return 0, 0, err
 	}
@@ -981,30 +986,15 @@ func (cdm *ChunkDiskMapper) Truncate(fileNo uint32) error {
 		// won't do any harm.
 		cdm.CutNewFile()
 	}
-	pendingDeletes, err := cdm.deleteFiles(removedFiles)
+	_, err := cdm.deleteFiles(removedFiles)
 	errs = append(errs, err)
 
-	if len(chkFileIndices) == len(removedFiles) {
-		// All files were deleted. Reset the current sequence.
-		cdm.evtlPosMtx.Lock()
-
-		// We can safely reset the sequence only if the write queue is empty. If it's not empty,
-		// then there may be a job in the queue that will create a new segment file with an ID
-		// generated before the sequence reset.
-		//
-		// The queueIsEmpty() function must be called while holding the cdm.evtlPosMtx to avoid
-		// a race condition with WriteChunk().
-		if cdm.writeQueue == nil || cdm.writeQueue.queueIsEmpty() {
-			if err == nil {
-				cdm.evtlPos.setSeq(0)
-			} else {
-				// In case of error, set it to the last file number on the disk that was not deleted.
-				cdm.evtlPos.setSeq(uint64(pendingDeletes[len(pendingDeletes)-1]))
-			}
-		}
-
-		cdm.evtlPosMtx.Unlock()
-	}
+	// Do not reset cdm.evtlPos.seq when every file was deleted: chunk refs must
+	// stay monotonic. The OOO bookmarks (lastGarbageCollectedMmapRef and
+	// minOOOMmapRef) assume refs only grow, so reusing a sequence that is still
+	// referenced hides the new chunks from queries and then drops them in head
+	// GC. New files are named after the sequence carried by their chunk ref,
+	// which keeps that ordering even when no files are left on disk.
 
 	return errors.Join(errs...)
 }
