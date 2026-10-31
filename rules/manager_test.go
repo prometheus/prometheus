@@ -15,6 +15,7 @@ package rules
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"io/fs"
 	"maps"
@@ -38,6 +39,7 @@ import (
 	"go.uber.org/atomic"
 	"go.yaml.in/yaml/v2"
 
+	"github.com/prometheus/prometheus/model/histogram"
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/model/rulefmt"
 	"github.com/prometheus/prometheus/model/timestamp"
@@ -828,6 +830,25 @@ groups:
 	m.Stop()
 }
 
+func requireRuleSeriesEqual(t *testing.T, want, got []map[string]ruleSeries) {
+	t.Helper()
+	require.Len(t, got, len(want))
+	for i, wantRule := range want {
+		if wantRule == nil {
+			require.Nil(t, got[i])
+			continue
+		}
+		require.NotNil(t, got[i])
+		require.Len(t, got[i], len(wantRule))
+		for metric, wantSeries := range wantRule {
+			gotSeries, ok := got[i][metric]
+			require.True(t, ok)
+			require.Equal(t, wantSeries.ref, gotSeries.ref)
+			prom_testutil.RequireEqual(t, wantSeries.lset, gotSeries.lset)
+		}
+	}
+}
+
 func TestCopyState(t *testing.T) {
 	oldGroup := &Group{
 		rules: []Rule{
@@ -839,14 +860,14 @@ func TestCopyState(t *testing.T) {
 			NewRecordingRule("rule3", nil, labels.FromStrings("l1", "v3")),
 			NewAlertingRule("alert2", nil, 0, 0, labels.FromStrings("l2", "v1"), labels.EmptyLabels(), labels.EmptyLabels(), "", true, nil),
 		},
-		seriesInPreviousEval: []map[string]labels.Labels{
+		seriesInPreviousEval: []map[string]ruleSeries{
 			{},
 			{},
 			{},
-			{"r3a": labels.FromStrings("l1", "v1")},
-			{"r3b": labels.FromStrings("l1", "v2")},
-			{"r3c": labels.FromStrings("l1", "v3")},
-			{"a2": labels.FromStrings("l2", "v1")},
+			{"r3a": {lset: labels.FromStrings("l1", "v1"), ref: 11}},
+			{"r3b": {lset: labels.FromStrings("l1", "v2"), ref: 12}},
+			{"r3c": {lset: labels.FromStrings("l1", "v3"), ref: 13}},
+			{"a2": {lset: labels.FromStrings("l2", "v1"), ref: 14}},
 		},
 		evaluationTime: time.Second,
 	}
@@ -862,25 +883,26 @@ func TestCopyState(t *testing.T) {
 			NewAlertingRule("alert2", nil, 0, 0, labels.FromStrings("l2", "v1"), labels.EmptyLabels(), labels.EmptyLabels(), "", true, nil),
 			NewRecordingRule("rule4", nil, labels.EmptyLabels()),
 		},
-		seriesInPreviousEval: make([]map[string]labels.Labels, 8),
+		seriesInPreviousEval: make([]map[string]ruleSeries, 8),
 	}
 	newGroup.CopyState(oldGroup)
 
-	want := []map[string]labels.Labels{
+	want := []map[string]ruleSeries{
 		nil,
-		{"r3a": labels.FromStrings("l1", "v1")},
-		{"r3b": labels.FromStrings("l1", "v2")},
+		{"r3a": {lset: labels.FromStrings("l1", "v1")}},
+		{"r3b": {lset: labels.FromStrings("l1", "v2")}},
 		{},
 		{},
 		nil,
-		{"a2": labels.FromStrings("l2", "v1")},
+		{"a2": {lset: labels.FromStrings("l2", "v1")}},
 		nil,
 	}
-	require.Equal(t, want, newGroup.seriesInPreviousEval)
+	requireRuleSeriesEqual(t, want, newGroup.seriesInPreviousEval)
+	require.Equal(t, storage.SeriesRef(11), oldGroup.seriesInPreviousEval[3]["r3a"].ref)
 	require.Equal(t, oldGroup.rules[0], newGroup.rules[3])
 	require.Equal(t, oldGroup.evaluationTime, newGroup.evaluationTime)
 	require.Equal(t, oldGroup.lastEvaluation, newGroup.lastEvaluation)
-	require.Equal(t, []labels.Labels{labels.FromStrings("l1", "v3")}, newGroup.staleSeries)
+	prom_testutil.RequireEqual(t, []labels.Labels{labels.FromStrings("l1", "v3")}, newGroup.staleSeries)
 }
 
 func TestDeletedRuleMarkedStale(t *testing.T) {
@@ -890,13 +912,13 @@ func TestDeletedRuleMarkedStale(t *testing.T) {
 		rules: []Rule{
 			NewRecordingRule("rule1", nil, labels.FromStrings("l1", "v1")),
 		},
-		seriesInPreviousEval: []map[string]labels.Labels{
-			{"r1": labels.FromStrings("l1", "v1")},
+		seriesInPreviousEval: []map[string]ruleSeries{
+			{"r1": {lset: labels.FromStrings("l1", "v1")}},
 		},
 	}
 	newGroup := &Group{
 		rules:                []Rule{},
-		seriesInPreviousEval: []map[string]labels.Labels{},
+		seriesInPreviousEval: []map[string]ruleSeries{},
 		opts: &ManagerOptions{
 			AppendableV2:              st,
 			RuleConcurrencyController: sequentialRuleEvalController{},
@@ -927,8 +949,8 @@ func TestDeletedRuleMarkedStale(t *testing.T) {
 
 func TestUpdate(t *testing.T) {
 	files := []string{"fixtures/rules.yaml"}
-	expected := map[string]labels.Labels{
-		"test": labels.FromStrings("name", "value"),
+	expected := map[string]ruleSeries{
+		"test": {lset: labels.FromStrings("name", "value")},
 	}
 	st := teststorage.New(t)
 
@@ -954,18 +976,14 @@ func TestUpdate(t *testing.T) {
 	require.NotEmpty(t, ruleManager.groups, "expected non-empty rule groups")
 	ogs := map[string]*Group{}
 	for h, g := range ruleManager.groups {
-		g.seriesInPreviousEval = []map[string]labels.Labels{
-			expected,
-		}
+		g.seriesInPreviousEval = []map[string]ruleSeries{expected}
 		ogs[h] = g
 	}
 
 	err = ruleManager.Update(10*time.Second, files, labels.EmptyLabels(), "", nil)
 	require.NoError(t, err)
 	for h, g := range ruleManager.groups {
-		for _, actual := range g.seriesInPreviousEval {
-			require.Equal(t, expected, actual)
-		}
+		requireRuleSeriesEqual(t, []map[string]ruleSeries{expected}, g.seriesInPreviousEval)
 		// Groups are the same because of no updates.
 		require.Equal(t, ogs[h], g)
 	}
@@ -1626,6 +1644,153 @@ func TestRuleGroupEvalIterationFunc(t *testing.T) {
 	}
 }
 
+type seriesRefTestCall struct {
+	ref      storage.SeriesRef
+	returned storage.SeriesRef
+	labels   labels.Labels
+	value    float64
+	err      error
+}
+
+type seriesRefTestAppendable struct {
+	storage.AppendableV2
+	calls           []seriesRefTestCall
+	failAfterAppend bool
+}
+
+func (a *seriesRefTestAppendable) AppenderV2(ctx context.Context) storage.AppenderV2 {
+	return &seriesRefTestAppender{AppenderV2: a.AppendableV2.AppenderV2(ctx), owner: a}
+}
+
+type seriesRefTestAppender struct {
+	storage.AppenderV2
+	owner *seriesRefTestAppendable
+}
+
+func (a *seriesRefTestAppender) Append(ref storage.SeriesRef, lset labels.Labels, st, t int64, v float64, h *histogram.Histogram, fh *histogram.FloatHistogram, opts storage.AOptions) (storage.SeriesRef, error) {
+	returned, err := a.AppenderV2.Append(ref, lset, st, t, v, h, fh, opts)
+	if err == nil && a.owner.failAfterAppend {
+		a.owner.failAfterAppend = false
+		err = errors.New("secondary storage failed")
+	}
+	a.owner.calls = append(a.owner.calls, seriesRefTestCall{ref: ref, returned: returned, labels: lset, value: v, err: err})
+	return returned, err
+}
+
+func TestGroupEvalUsesCommittedSeriesReferences(t *testing.T) {
+	seriesID := "a"
+	queryError := false
+	nextRef := storage.SeriesRef(100)
+	store := teststorage.NewAppendable().WithRefFn(func(labels.Labels) storage.SeriesRef {
+		nextRef++
+		return nextRef
+	})
+	store.WithErrs(nil, nil, errors.New("commit failed"))
+	appendable := &seriesRefTestAppendable{AppendableV2: store}
+	query := func(_ context.Context, _ string, at time.Time) (promql.Vector, error) {
+		if queryError {
+			return nil, errors.New("query failed")
+		}
+		return promql.Vector{{Metric: labels.FromStrings("series_id", seriesID), T: at.UnixMilli(), F: 1}}, nil
+	}
+	rule := NewRecordingRule("recorded", &parser.NumberLiteral{Val: 1}, labels.EmptyLabels())
+	group := NewGroup(GroupOptions{
+		Name:     "references",
+		File:     "rules.yml",
+		Interval: 15 * time.Second,
+		Rules:    []Rule{rule},
+		Opts: &ManagerOptions{
+			AppendableV2: appendable,
+			QueryFunc:    query,
+			Logger:       promslog.NewNopLogger(),
+		},
+	})
+
+	eval := func(at time.Time) {
+		DefaultEvalIterationFunc(context.Background(), group, at)
+	}
+	start := time.Unix(1700000000, 0)
+	eval(start)
+	require.ErrorContains(t, rule.LastError(), "commit failed")
+	store.WithErrs(nil, nil, nil)
+	eval(start.Add(15 * time.Second))
+	require.NoError(t, rule.LastError())
+	eval(start.Add(30 * time.Second))
+	require.NoError(t, rule.LastError())
+
+	seriesID = "b"
+	eval(start.Add(45 * time.Second))
+	require.NoError(t, rule.LastError())
+	eval(start.Add(60 * time.Second))
+	require.NoError(t, rule.LastError())
+
+	queryError = true
+	eval(start.Add(75 * time.Second))
+	require.ErrorContains(t, rule.LastError(), "query failed")
+	require.Len(t, appendable.calls, 6)
+	queryError = false
+
+	seriesID = "c"
+	store.WithErrs(nil, nil, errors.New("commit failed after replacement"))
+	eval(start.Add(90 * time.Second))
+	require.ErrorContains(t, rule.LastError(), "commit failed after replacement")
+	store.WithErrs(nil, nil, nil)
+	eval(start.Add(105 * time.Second))
+	require.NoError(t, rule.LastError())
+	eval(start.Add(120 * time.Second))
+	require.NoError(t, rule.LastError())
+
+	appendable.failAfterAppend = true
+	eval(start.Add(135 * time.Second))
+	require.ErrorContains(t, rule.LastError(), "secondary storage failed")
+	eval(start.Add(150 * time.Second))
+	require.NoError(t, rule.LastError())
+
+	require.Len(t, appendable.calls, 14)
+	require.Zero(t, appendable.calls[0].ref)
+	require.NotZero(t, appendable.calls[0].returned)
+	require.Zero(t, appendable.calls[1].ref)
+	require.NotZero(t, appendable.calls[1].returned)
+	require.Equal(t, appendable.calls[1].returned, appendable.calls[2].ref)
+	require.NotEqual(t, appendable.calls[2].ref, appendable.calls[2].returned)
+	require.Zero(t, appendable.calls[3].ref)
+	require.Equal(t, appendable.calls[2].returned, appendable.calls[4].ref)
+	require.Equal(t, appendable.calls[3].returned, appendable.calls[5].ref)
+
+	// Failed commit after a changed result keeps the previous committed state.
+	require.Zero(t, appendable.calls[6].ref)
+	require.Equal(t, appendable.calls[5].returned, appendable.calls[7].ref)
+	require.NotZero(t, appendable.calls[6].returned)
+	require.Zero(t, appendable.calls[8].ref)
+	require.Equal(t, appendable.calls[5].returned, appendable.calls[9].ref)
+	require.Equal(t, appendable.calls[8].returned, appendable.calls[10].ref)
+
+	// A secondary failure can return a new ref; it is not committed to rule state.
+	require.Equal(t, appendable.calls[10].returned, appendable.calls[11].ref)
+	require.NotZero(t, appendable.calls[11].returned)
+	require.NotEqual(t, appendable.calls[11].ref, appendable.calls[11].returned)
+	require.Error(t, appendable.calls[11].err)
+	require.Equal(t, appendable.calls[10].returned, appendable.calls[12].ref)
+	require.Zero(t, appendable.calls[13].ref)
+
+	labelsA := labels.FromStrings("__name__", "recorded", "series_id", "a")
+	labelsB := labels.FromStrings("__name__", "recorded", "series_id", "b")
+	labelsC := labels.FromStrings("__name__", "recorded", "series_id", "c")
+	for _, i := range []int{0, 1, 2, 4} {
+		prom_testutil.RequireEqual(t, labelsA, appendable.calls[i].labels)
+	}
+	for _, i := range []int{3, 5, 7, 9} {
+		prom_testutil.RequireEqual(t, labelsB, appendable.calls[i].labels)
+	}
+	for _, i := range []int{6, 8, 10, 11, 12, 13} {
+		prom_testutil.RequireEqual(t, labelsC, appendable.calls[i].labels)
+	}
+	require.True(t, value.IsStaleNaN(appendable.calls[4].value))
+	require.True(t, value.IsStaleNaN(appendable.calls[7].value))
+	require.True(t, value.IsStaleNaN(appendable.calls[9].value))
+	require.True(t, value.IsStaleNaN(appendable.calls[12].value))
+}
+
 func TestNativeHistogramsInRecordingRules(t *testing.T) {
 	st := teststorage.New(t)
 
@@ -1663,9 +1828,11 @@ func TestNativeHistogramsInRecordingRules(t *testing.T) {
 	})
 
 	group.Eval(context.Background(), ts.Add(10*time.Second))
+	group.Eval(context.Background(), ts.Add(20*time.Second))
 
-	q, err := db.Querier(ts.UnixMilli(), ts.Add(20*time.Second).UnixMilli())
+	q, err := db.Querier(ts.UnixMilli(), ts.Add(30*time.Second).UnixMilli())
 	require.NoError(t, err)
+	defer q.Close()
 	ss := q.Select(context.Background(), false, nil, labels.MustNewMatcher(labels.MatchEqual, "__name__", "sum:histogram_metric"))
 	require.True(t, ss.Next())
 	s := ss.At()
@@ -1684,6 +1851,13 @@ func TestNativeHistogramsInRecordingRules(t *testing.T) {
 	tsp, fh := it.AtFloatHistogram(nil)
 	require.Equal(t, ts.Add(10*time.Second).UnixMilli(), tsp)
 	require.Equal(t, expHist, fh)
+	require.Equal(t, chunkenc.ValFloatHistogram, it.Next())
+	tsp, fh = it.AtFloatHistogram(nil)
+	require.Equal(t, ts.Add(20*time.Second).UnixMilli(), tsp)
+	// The later evaluation carries the same no-reset hint with or without a series reference.
+	secondExpected := expHist.Copy()
+	secondExpected.CounterResetHint = histogram.NotCounterReset
+	require.Equal(t, secondExpected, fh)
 	require.Equal(t, chunkenc.ValNone, it.Next())
 }
 
