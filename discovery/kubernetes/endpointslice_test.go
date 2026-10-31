@@ -1188,6 +1188,129 @@ func TestEndpointSliceDiscoveryEmptyPodStatus(t *testing.T) {
 	}.Run(t)
 }
 
+func TestEndpointSliceDiscoveryUpdatePod(t *testing.T) {
+	t.Parallel()
+	pod := &corev1.Pod{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      "testpod",
+			Namespace: "default",
+			UID:       types.UID("deadbeef"),
+		},
+		Spec: corev1.PodSpec{
+			NodeName: "testnode",
+			Containers: []corev1.Container{
+				{
+					Name:  "c1",
+					Image: "c1:latest",
+					Ports: []corev1.ContainerPort{
+						{
+							Name:          "testport",
+							ContainerPort: 9000,
+							Protocol:      corev1.ProtocolTCP,
+						},
+					},
+				},
+			},
+		},
+		Status: corev1.PodStatus{
+			// Pod is still Running when the EndpointSlice marks it as not ready.
+			Phase: "Running",
+			Conditions: []corev1.PodCondition{
+				{
+					Type:   corev1.PodReady,
+					Status: corev1.ConditionFalse,
+				},
+			},
+			HostIP: "2.3.4.5",
+			PodIP:  "4.3.2.1",
+		},
+	}
+	objs := []runtime.Object{
+		&v1.EndpointSlice{
+			ObjectMeta: metav1.ObjectMeta{
+				Name:      "testendpoints",
+				Namespace: "default",
+				Labels: map[string]string{
+					v1.LabelServiceName: "testendpoints",
+				},
+			},
+			AddressType: v1.AddressTypeIPv4,
+			Ports: []v1.EndpointPort{
+				{
+					Name:     strptr("testport"),
+					Port:     int32ptr(9000),
+					Protocol: protocolptr(corev1.ProtocolTCP),
+				},
+			},
+			Endpoints: []v1.Endpoint{
+				{
+					Addresses: []string{"4.3.2.1"},
+					Conditions: v1.EndpointConditions{
+						Ready:       boolptr(false),
+						Serving:     boolptr(false),
+						Terminating: boolptr(false),
+					},
+					TargetRef: &corev1.ObjectReference{
+						Kind:      "Pod",
+						Name:      "testpod",
+						Namespace: "default",
+					},
+				},
+			},
+		},
+		pod,
+	}
+	n, c := makeDiscovery(RoleEndpointSlice, NamespaceDiscovery{}, objs...)
+
+	k8sDiscoveryTest{
+		discovery: n,
+		afterStart: func() {
+			// The Pod completes without the EndpointSlice being updated.
+			pod.Status.Phase = "Succeeded"
+			c.CoreV1().Pods(pod.Namespace).Update(context.Background(), pod, metav1.UpdateOptions{})
+		},
+		expectedMaxItems: 2,
+		expectedRes: map[string]*targetgroup.Group{
+			"endpointslice/default/testendpoints": {
+				Targets: []model.LabelSet{
+					{
+						"__address__": "4.3.2.1:9000",
+						"__meta_kubernetes_endpointslice_address_target_kind":             "Pod",
+						"__meta_kubernetes_endpointslice_address_target_name":             "testpod",
+						"__meta_kubernetes_endpointslice_endpoint_conditions_ready":       "false",
+						"__meta_kubernetes_endpointslice_endpoint_conditions_serving":     "false",
+						"__meta_kubernetes_endpointslice_endpoint_conditions_terminating": "false",
+						"__meta_kubernetes_endpointslice_port":                            "9000",
+						"__meta_kubernetes_endpointslice_port_name":                       "testport",
+						"__meta_kubernetes_endpointslice_port_protocol":                   "TCP",
+						"__meta_kubernetes_pod_container_image":                           "c1:latest",
+						"__meta_kubernetes_pod_container_init":                            "false",
+						"__meta_kubernetes_pod_container_name":                            "c1",
+						"__meta_kubernetes_pod_container_port_name":                       "testport",
+						"__meta_kubernetes_pod_container_port_number":                     "9000",
+						"__meta_kubernetes_pod_container_port_protocol":                   "TCP",
+						"__meta_kubernetes_pod_host_ip":                                   "2.3.4.5",
+						"__meta_kubernetes_pod_ip":                                        "4.3.2.1",
+						"__meta_kubernetes_pod_name":                                      "testpod",
+						"__meta_kubernetes_pod_node_name":                                 "testnode",
+						"__meta_kubernetes_pod_phase":                                     "Succeeded",
+						"__meta_kubernetes_pod_ready":                                     "false",
+						"__meta_kubernetes_pod_uid":                                       "deadbeef",
+					},
+				},
+				Labels: model.LabelSet{
+					"__meta_kubernetes_endpointslice_address_type":                            "IPv4",
+					"__meta_kubernetes_endpointslice_label_kubernetes_io_service_name":        "testendpoints",
+					"__meta_kubernetes_endpointslice_labelpresent_kubernetes_io_service_name": "true",
+					"__meta_kubernetes_endpointslice_name":                                    "testendpoints",
+					"__meta_kubernetes_namespace":                                             "default",
+				},
+				Source: "endpointslice/default/testendpoints",
+			},
+		},
+	}.Run(t)
+}
+
 // TestEndpointSliceInfIndexersCount makes sure that RoleEndpointSlice discovery
 // sets up indexing for the main Kube informer only when needed.
 // See: https://github.com/prometheus/prometheus/pull/13554#discussion_r1490965817
@@ -1206,8 +1329,8 @@ func TestEndpointSliceInfIndexersCount(t *testing.T) {
 			t.Parallel()
 			var (
 				n *Discovery
-				// service indexer is enabled by default
-				mainInfIndexersCount = 1
+				// Service and pod indexers are enabled by default.
+				mainInfIndexersCount = 2
 			)
 			if tc.withNodeMetadata {
 				mainInfIndexersCount++
