@@ -2880,7 +2880,7 @@ func (ev *evaluator) eval(ctx context.Context, expr parser.Expr) (parser.Value, 
 			if err := contextDone(ctx, "expression evaluation"); err != nil {
 				ev.error(err)
 			}
-			ev.currentSamples -= len(floats) + totalHPointSize(histograms)
+			ev.currentSamples -= len(floats) + it.windowHistogramSamples
 			if floats != nil {
 				floats = floats[:0]
 			}
@@ -2947,12 +2947,10 @@ func (ev *evaluator) eval(ctx context.Context, expr parser.Expr) (parser.Value, 
 				if len(floats)+len(histograms) == 0 {
 					continue
 				}
-				// fullWindowCount reflects the matrix window consumed at this
-				// step. With an @ modifier the same window is reused across all
-				// steps, so floats/histograms persist from step 0; computing
-				// this after the conditional re-fetch handles both cases
-				// uniformly.
-				fullWindowCount := int64(len(floats) + totalHPointSize(histograms))
+				// Full-window accounting uses the weighted histogram sample count
+				// maintained as points enter or leave the iterator's buffer. With an
+				// @ modifier the count persists when the selector is not refetched.
+				fullWindowCount := int64(len(floats) + it.windowHistogramSamples)
 				// For subquery-derived matrices, SamplesRead was already counted
 				// inside evalSubquery via MergeSamplesReadFromSubquery; skip here
 				// to avoid double-counting the storage I/O. On step 0 the full
@@ -3034,7 +3032,7 @@ func (ev *evaluator) eval(ctx context.Context, expr parser.Expr) (parser.Value, 
 		}
 		ev.samplesStats.UpdatePeak(ev.currentSamples)
 
-		ev.currentSamples -= len(floats) + totalHPointSize(histograms)
+		ev.currentSamples -= len(floats) + it.windowHistogramSamples
 		putFPointSlice(floats)
 		putMatrixSelectorHPointSlice(histograms)
 
@@ -3543,7 +3541,7 @@ func (ev *evaluator) matrixSelector(ctx context.Context, node *parser.MatrixSele
 			}
 			ss.Floats = extendFloats(ss.Floats, sts, matrixMint, matrixMaxt, mint, true)
 		}
-		totalSize := int64(len(ss.Floats)) + int64(totalHPointSize(ss.Histograms))
+		totalSize := int64(len(ss.Floats) + it.windowHistogramSamples)
 		ev.samplesStats.IncrementSamplesAtTimestamp(ev.startTimestamp, totalSize)
 		if ev.budget == nil {
 			ev.samplesStats.IncrementSamplesReadAtTimestamp(ev.startTimestamp, totalSize)
@@ -3636,6 +3634,7 @@ func (ev *evaluator) matrixIterSlice(
 		copy(histograms[len(histograms)-drop:], tail)
 		histograms = histograms[:len(histograms)-drop]
 		ev.currentSamples -= droppedSize
+		it.windowHistogramSamples -= droppedSize
 		// Only append points with timestamps after the last timestamp we have.
 		mintHistograms = histograms[len(histograms)-1].T
 
@@ -3645,7 +3644,8 @@ func (ev *evaluator) matrixIterSlice(
 			startTimestamps.Histograms = startTimestamps.Histograms[:len(startTimestamps.Histograms)-drop]
 		}
 	} else {
-		ev.currentSamples -= totalHPointSize(histograms)
+		ev.currentSamples -= it.windowHistogramSamples
+		it.windowHistogramSamples = 0
 		if histograms != nil {
 			histograms = histograms[:0]
 		}
@@ -3693,8 +3693,10 @@ loop:
 					histograms = histograms[:n]
 					continue loop
 				}
-				ev.consumeMatrixSamples(int64(histograms[n].size()), readStep)
-				ev.currentSamples += histograms[n].size()
+				size := histograms[n].size()
+				ev.consumeMatrixSamples(int64(size), readStep)
+				ev.currentSamples += size
+				it.windowHistogramSamples += size
 				if ev.currentSamples > ev.maxSamples {
 					ev.error(ErrTooManySamples(env))
 				}
@@ -3752,8 +3754,10 @@ loop:
 			histograms = histograms[:n]
 			break
 		}
-		ev.consumeMatrixSamples(int64(histograms[n].size()), readStep)
-		ev.currentSamples += histograms[n].size()
+		size := histograms[n].size()
+		ev.consumeMatrixSamples(int64(size), readStep)
+		ev.currentSamples += size
+		it.windowHistogramSamples += size
 		if ev.currentSamples > ev.maxSamples {
 			ev.error(ErrTooManySamples(env))
 		}

@@ -609,6 +609,88 @@ func BenchmarkNativeHistogramsCustomBuckets(b *testing.B) {
 	}
 }
 
+func BenchmarkHistogramWindowRangeQuery(b *testing.B) {
+	ctx := context.Background()
+	stor := teststorage.New(b)
+	stor.DisableCompactions()
+
+	const (
+		seriesCount = 16
+		interval    = 15 * time.Second
+		dataRange   = 8 * time.Hour
+	)
+
+	app := stor.AppenderV2(ctx)
+	refs := make([]storage.SeriesRef, seriesCount)
+	metrics := make([]labels.Labels, seriesCount)
+	for i := range seriesCount {
+		metrics[i] = labels.FromStrings("__name__", "histogram_window_benchmark", "series", strconv.Itoa(i))
+	}
+	buckets := make([]float64, 16)
+	for i := range buckets {
+		buckets[i] = 1
+	}
+	for i := 0; i <= int(dataRange/interval); i++ {
+		ts := int64(time.Duration(i) * interval / time.Millisecond)
+		for s := range seriesCount {
+			h := &histogram.FloatHistogram{
+				CounterResetHint: histogram.GaugeType,
+				Schema:           0,
+				Count:            16,
+				Sum:              float64(i + s + 1),
+				PositiveSpans:    []histogram.Span{{Offset: 0, Length: uint32(len(buckets))}},
+				PositiveBuckets:  buckets,
+			}
+			var err error
+			refs[s], err = app.Append(refs[s], metrics[s], 0, ts, 0, nil, h, storage.AOptions{})
+			if err != nil {
+				b.Fatal(err)
+			}
+		}
+	}
+	if err := app.Commit(); err != nil {
+		b.Fatal(err)
+	}
+	stor.ForceHeadMMap()
+
+	opts := promql.EngineOpts{
+		Logger:           nil,
+		Reg:              nil,
+		MaxSamples:       50000000,
+		Timeout:          100 * time.Second,
+		EnableAtModifier: true,
+		Parser:           parser.NewParser(parser.Options{}),
+	}
+	start := time.Unix(6*60*60, 0)
+	end := start.Add(2 * time.Hour)
+	cases := []struct {
+		name  string
+		query string
+	}{
+		{name: "last_over_time", query: "last_over_time(histogram_window_benchmark[6h])"},
+		{name: "sum_over_time", query: "sum_over_time(histogram_window_benchmark[6h])"},
+	}
+
+	b.ResetTimer()
+	for _, tc := range cases {
+		b.Run(tc.name, func(b *testing.B) {
+			engine := promqltest.NewTestEngineWithOpts(b, opts)
+			for b.Loop() {
+				q, err := engine.NewRangeQuery(ctx, stor, nil, tc.query, start, end, interval)
+				if err != nil {
+					b.Fatal(err)
+				}
+				result := q.Exec(ctx)
+				if result.Err != nil {
+					q.Close()
+					b.Fatal(result.Err)
+				}
+				q.Close()
+			}
+		})
+	}
+}
+
 func BenchmarkInfoFunction(b *testing.B) {
 	// Initialize test storage and generate test series data.
 	testStorage := teststorage.New(b)
