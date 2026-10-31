@@ -1215,6 +1215,14 @@ func (p *parser) getAtModifierVars(e Node) (**int64, *ItemType, *posrange.Pos, b
 	return timestampp, preprocp, endPosp, true
 }
 
+// durationFromSeconds converts a duration literal in seconds to a time.Duration.
+// The result is truncated to whole milliseconds, the resolution at which
+// durations are printed and evaluated, so that the AST holds the same value
+// as its String() form.
+func durationFromSeconds(val float64) time.Duration {
+	return time.Duration(math.Round(val * float64(time.Second))).Truncate(time.Millisecond)
+}
+
 // durationLiteralOutOfRange reports whether val, interpreted as seconds, would
 // overflow a time.Duration (int64 nanoseconds).
 func durationLiteralOutOfRange(val float64) bool {
