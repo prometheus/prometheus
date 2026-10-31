@@ -27,6 +27,7 @@ import (
 	"path/filepath"
 	"slices"
 	"sort"
+	"strconv"
 	"unsafe"
 
 	"github.com/prometheus/prometheus/model/labels"
@@ -1153,12 +1154,14 @@ func (r *Reader) PostingsRanges() (map[labels.Label]Range, error) {
 }
 
 type Symbols struct {
-	bs      ByteSlice
-	version int
-	off     int
+	bs   ByteSlice
+	off  int
+	seen int
 
+	// Offsets contain sparse checkpoints or packed direct positions.
 	offsets []int
-	seen    int
+	v1      bool
+	direct  bool
 }
 
 const symbolFactor = 32
@@ -1166,20 +1169,35 @@ const symbolFactor = 32
 // NewSymbols returns a Symbols object for symbol lookups.
 func NewSymbols(bs ByteSlice, version, off int) (*Symbols, error) {
 	s := &Symbols{
-		bs:      bs,
-		version: version,
-		off:     off,
+		bs:  bs,
+		off: off,
+		v1:  version == FormatV1,
 	}
 	d := encoding.NewDecbufAt(bs, off, castagnoliTable)
-	var (
-		origLen = d.Len()
-		cnt     = d.Be32int()
-		basePos = off + 4
-	)
-	s.offsets = make([]int, 0, 1+cnt/symbolFactor)
+	origLen := d.Len()
+	cnt := d.Be32int()
+	if d.Err() != nil {
+		return nil, d.Err()
+	}
+	// Every symbol needs at least one byte for its encoded length.
+	if cnt < 0 || cnt > d.Len() {
+		return nil, encoding.ErrInvalidSize
+	}
+
+	// Keep larger tables sparse to avoid a per-symbol retained offset.
+	s.direct = !s.v1 && origLen <= math.MaxUint16
+	if s.direct {
+		valuesPerWord := strconv.IntSize / 16
+		s.offsets = make([]int, 0, (cnt+valuesPerWord-1)/valuesPerWord)
+	} else {
+		s.offsets = make([]int, 0, 1+cnt/symbolFactor)
+	}
 	for d.Err() == nil && s.seen < cnt {
-		if s.seen%symbolFactor == 0 {
-			s.offsets = append(s.offsets, basePos+origLen-d.Len())
+		position := origLen - d.Len()
+		if s.direct {
+			s.appendDirectOffset(uint16(position))
+		} else if s.seen%symbolFactor == 0 {
+			s.offsets = append(s.offsets, off+4+position)
 		}
 		d.UvarintBytes() // The symbol.
 		s.seen++
@@ -1195,16 +1213,20 @@ func (s Symbols) Lookup(o uint32) (string, error) {
 		B: s.bs.Range(0, s.bs.Len()),
 	}
 
-	if s.version == FormatV1 {
+	if s.v1 {
 		d.Skip(int(o))
 	} else {
-		if int(o) >= s.seen {
+		if uint64(o) >= uint64(s.seen) {
 			return "", fmt.Errorf("unknown symbol offset %d", o)
 		}
-		d.Skip(s.offsets[int(o/symbolFactor)])
-		// Walk until we find the one we want.
-		for i := o - (o / symbolFactor * symbolFactor); i > 0; i-- {
-			d.UvarintBytes()
+		if s.direct {
+			d.Skip(s.off + 4 + s.directOffset(int(o)))
+		} else {
+			d.Skip(s.offsets[int(o/symbolFactor)])
+			// Walk until we find the one we want.
+			for i := o - (o / symbolFactor * symbolFactor); i > 0; i-- {
+				d.UvarintBytes()
+			}
 		}
 	}
 	sym := d.UvarintStr()
@@ -1215,16 +1237,26 @@ func (s Symbols) Lookup(o uint32) (string, error) {
 }
 
 func (s Symbols) ReverseLookup(sym string) (uint32, error) {
-	if len(s.offsets) == 0 {
+	checkpoints := len(s.offsets)
+	if s.direct {
+		checkpoints = (s.seen + symbolFactor - 1) / symbolFactor
+	}
+	if checkpoints == 0 {
 		return 0, fmt.Errorf("unknown symbol %q - no symbols", sym)
 	}
-	i := sort.Search(len(s.offsets), func(i int) bool {
+	offsetAt := func(i int) int {
+		if s.direct {
+			return s.off + 4 + s.directOffset(i*symbolFactor)
+		}
+		return s.offsets[i]
+	}
+	i := sort.Search(checkpoints, func(i int) bool {
 		// Any decoding errors here will be lost, however
 		// we already read through all of this at startup.
 		d := encoding.Decbuf{
 			B: s.bs.Range(0, s.bs.Len()),
 		}
-		d.Skip(s.offsets[i])
+		d.Skip(offsetAt(i))
 		return yoloString(d.UvarintBytes()) > sym
 	})
 	d := encoding.Decbuf{
@@ -1233,7 +1265,7 @@ func (s Symbols) ReverseLookup(sym string) (uint32, error) {
 	if i > 0 {
 		i--
 	}
-	d.Skip(s.offsets[i])
+	d.Skip(offsetAt(i))
 	res := i * symbolFactor
 	var lastLen int
 	var lastSymbol string
@@ -1251,13 +1283,33 @@ func (s Symbols) ReverseLookup(sym string) (uint32, error) {
 	if lastSymbol != sym {
 		return 0, fmt.Errorf("unknown symbol %q", sym)
 	}
-	if s.version == FormatV1 {
+	if s.v1 {
 		return uint32(s.bs.Len() - lastLen), nil
 	}
 	return uint32(res), nil
 }
 
+func (s *Symbols) appendDirectOffset(position uint16) {
+	valuesPerWord := strconv.IntSize / 16
+	shift := uint((s.seen % valuesPerWord) * 16)
+	if shift == 0 {
+		s.offsets = append(s.offsets, int(position))
+		return
+	}
+	s.offsets[len(s.offsets)-1] |= int(uint(position) << shift)
+}
+
+func (s Symbols) directOffset(i int) int {
+	valuesPerWord := strconv.IntSize / 16
+	shift := uint((i % valuesPerWord) * 16)
+	return int(uint16(uint(s.offsets[i/valuesPerWord]) >> shift))
+}
+
+// Size returns the symbol-offset size used by reader memory accounting, in bytes.
 func (s Symbols) Size() int {
+	if s.direct {
+		return len(s.offsets) * (strconv.IntSize / 8)
+	}
 	return len(s.offsets) * 8
 }
 
