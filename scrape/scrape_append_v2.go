@@ -35,7 +35,7 @@ import (
 	"github.com/prometheus/prometheus/storage"
 )
 
-// appenderWithLimits returns an appender with additional validation.
+// appenderV2WithLimits returns an AppenderV2 with additional validation.
 func appenderV2WithLimits(app storage.AppenderV2, sampleLimit, bucketLimit int, maxSchema int32) storage.AppenderV2 {
 	app = &timeLimitAppenderV2{
 		AppenderV2: app,
