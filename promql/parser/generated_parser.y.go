@@ -1702,7 +1702,7 @@ yydefault:
 		yyDollar = yyS[yypt-1 : yypt+1]
 		{
 			if numLit, ok := yyDollar[1].node.(*NumberLiteral); ok {
-				if numLit.Val <= 0 {
+				if numLit.Val <= 0 || durationFromSeconds(numLit.Val) <= 0 {
 					yylex.(*parser).addParseErrf(numLit.PositionRange(), "duration must be greater than 0")
 					yyVAL.node = &NumberLiteral{Val: 0} // Return 0 on error.
 					break
@@ -1716,7 +1716,7 @@ yydefault:
 		yyDollar = yyS[yypt-3 : yypt+1]
 		{
 			if numLit, ok := yyDollar[3].node.(*NumberLiteral); ok {
-				yylex.(*parser).addOffset(yyDollar[1].node, time.Duration(math.Round(numLit.Val*float64(time.Second))))
+				yylex.(*parser).addOffset(yyDollar[1].node, durationFromSeconds(numLit.Val))
 				yyVAL.node = yyDollar[1].node
 				break
 			}
@@ -1777,7 +1777,7 @@ yydefault:
 
 			var rangeNl time.Duration
 			if numLit, ok := yyDollar[3].node.(*NumberLiteral); ok {
-				rangeNl = time.Duration(math.Round(numLit.Val * float64(time.Second)))
+				rangeNl = durationFromSeconds(numLit.Val)
 			}
 			rangeExpr, _ := yyDollar[3].node.(*DurationExpr)
 			yyVAL.node = &MatrixSelector{
@@ -1793,11 +1793,11 @@ yydefault:
 			var rangeNl time.Duration
 			var stepNl time.Duration
 			if numLit, ok := yyDollar[3].node.(*NumberLiteral); ok {
-				rangeNl = time.Duration(math.Round(numLit.Val * float64(time.Second)))
+				rangeNl = durationFromSeconds(numLit.Val)
 			}
 			rangeExpr, _ := yyDollar[3].node.(*DurationExpr)
 			if numLit, ok := yyDollar[5].node.(*NumberLiteral); ok {
-				stepNl = time.Duration(math.Round(numLit.Val * float64(time.Second)))
+				stepNl = durationFromSeconds(numLit.Val)
 			}
 			stepExpr, _ := yyDollar[5].node.(*DurationExpr)
 			yyVAL.node = &SubqueryExpr{
@@ -1814,7 +1814,7 @@ yydefault:
 		{
 			var rangeNl time.Duration
 			if numLit, ok := yyDollar[3].node.(*NumberLiteral); ok {
-				rangeNl = time.Duration(math.Round(numLit.Val * float64(time.Second)))
+				rangeNl = durationFromSeconds(numLit.Val)
 			}
 			rangeExpr, _ := yyDollar[3].node.(*DurationExpr)
 			yyVAL.node = &SubqueryExpr{
