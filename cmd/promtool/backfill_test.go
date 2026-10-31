@@ -735,7 +735,8 @@ after_eof 1 2
 
 			outputDir := t.TempDir()
 
-			err := backfill(test.MaxSamplesInAppender, []byte(test.ToParse), outputDir, false, false, test.MaxBlockDuration, test.Labels)
+			blockDuration := time.Duration(getCompatibleBlockDuration(test.MaxBlockDuration.Milliseconds())) * time.Millisecond
+			err := backfill(test.MaxSamplesInAppender, []byte(test.ToParse), outputDir, false, false, blockDuration, test.Labels)
 
 			if !test.IsOk {
 				require.Error(t, err, test.Description)

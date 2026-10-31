@@ -21,6 +21,8 @@ import {
   binOpModifierTerms,
   binOpTerms,
   durationTerms,
+  durationExprTerms,
+  durationExprOperatorTerms,
   functionIdentifierTerms,
   matchOpTerms,
   numberTerms,
@@ -33,6 +35,48 @@ import nock from 'nock';
 
 describe('analyzeCompletion test', () => {
   const testCases = [
+    {
+      title: 'dotted Unicode metric completion',
+      expr: '温度.total',
+      pos: 8,
+      expectedContext: [
+        { kind: ContextKind.MetricName, metricName: '温度.total' },
+        { kind: ContextKind.Function },
+        { kind: ContextKind.Aggregation },
+        { kind: ContextKind.Number },
+      ],
+    },
+    {
+      title: 'dotted Unicode label value completion',
+      expr: '温度.total{場所.name="東"}',
+      pos: 19,
+      expectedContext: [
+        {
+          kind: ContextKind.LabelValue,
+          metricName: '温度.total',
+          labelName: '場所.name',
+          matchers: [{ name: '場所.name', type: EqlSingle, value: '東' }],
+        },
+      ],
+    },
+    {
+      title: 'complete bitand operator',
+      expr: 'metric bitand',
+      pos: 13,
+      expectedContext: [{ kind: ContextKind.BinOp }],
+    },
+    {
+      title: 'complete bitor operator',
+      expr: 'metric bitor',
+      pos: 12,
+      expectedContext: [{ kind: ContextKind.BinOp }],
+    },
+    {
+      title: 'complete bitxor operator',
+      expr: 'metric bitxor',
+      pos: 13,
+      expectedContext: [{ kind: ContextKind.BinOp }],
+    },
     {
       title: 'empty expr',
       expr: '',
@@ -75,6 +119,31 @@ describe('analyzeCompletion test', () => {
       ],
     },
     {
+      title: 'autocomplete AggregateOpModifier or BinOp after closing aggregation',
+      expr: 'sum()',
+      pos: 5, // cursor is after the closing bracket
+      expectedContext: [{ kind: ContextKind.AggregateOpModifier }, { kind: ContextKind.BinOp }],
+    },
+    {
+      title: 'metric/function/aggregation autocompletion in incomplete function',
+      expr: 'sum(',
+      pos: 4,
+      expectedContext: [
+        {
+          kind: ContextKind.MetricName,
+          metricName: '',
+        },
+        { kind: ContextKind.Function },
+        { kind: ContextKind.Aggregation },
+      ],
+    },
+    {
+      title: 'autocomplete binOp after closing function',
+      expr: 'rate(foo[5m])',
+      pos: 13, // cursor is after the closing bracket
+      expectedContext: [{ kind: ContextKind.BinOp }],
+    },
+    {
       title: 'metric/function/aggregation autocompletion 2',
       expr: 'sum(rat)',
       pos: 7,
@@ -99,6 +168,18 @@ describe('analyzeCompletion test', () => {
         { kind: ContextKind.Function },
         { kind: ContextKind.Aggregation },
       ],
+    },
+    {
+      title: 'autocomplete AggregateOpModifier or BinOp after closing nested aggregation',
+      expr: 'sum(rate(foo[5m]))',
+      pos: 18, // cursor is after the closing bracket
+      expectedContext: [{ kind: ContextKind.AggregateOpModifier }, { kind: ContextKind.BinOp }],
+    },
+    {
+      title: 'autocomplete binOp after closing aggregation with existing modifier',
+      expr: 'sum by(job)(rate(foo[5m]))',
+      pos: 26, // cursor is after the closing bracket
+      expectedContext: [{ kind: ContextKind.BinOp }],
     },
     {
       title: 'metric/function/aggregation autocompletion 4',
@@ -573,6 +654,54 @@ describe('analyzeCompletion test', () => {
       expectedContext: [],
     },
     {
+      title: 'autocomplete duration expr operator after complete unit in matrixSelector',
+      expr: 'foo[5m+]',
+      pos: 7,
+      expectedContext: [{ kind: ContextKind.DurationExprOperator }],
+    },
+    {
+      title: 'autocomplete duration expr operator after complete multi-char unit in matrixSelector',
+      expr: 'foo[5ms+]',
+      pos: 8,
+      expectedContext: [{ kind: ContextKind.DurationExprOperator }],
+    },
+    {
+      title: 'autocomplete duration expr operator in subquery step',
+      expr: 'go[5d:5m+]',
+      pos: 9,
+      expectedContext: [{ kind: ContextKind.DurationExprOperator }],
+    },
+    {
+      title: 'autocomplete duration expr function when typing identifier in empty duration slot',
+      expr: 'foo[ste]',
+      pos: 7,
+      expectedContext: [{ kind: ContextKind.DurationExpr }],
+    },
+    {
+      title: 'autocomplete duration expr function after complete duration in matrixSelector',
+      expr: 'foo[5mss]',
+      pos: 8,
+      expectedContext: [{ kind: ContextKind.DurationExpr }],
+    },
+    {
+      title: 'autocomplete duration expr function in subquery step',
+      expr: 'go[5d:st]',
+      pos: 8,
+      expectedContext: [{ kind: ContextKind.DurationExpr }],
+    },
+    {
+      title: 'autocomplete duration expr function when typing identifier in offset duration slot',
+      expr: 'foo offset st',
+      pos: 13,
+      expectedContext: [{ kind: ContextKind.DurationExpr }],
+    },
+    {
+      title: 'autocomplete duration expr function inside DurationExpr arithmetic (not metric functions)',
+      expr: 'foo[5m+2ms+m',
+      pos: 12,
+      expectedContext: [{ kind: ContextKind.DurationExpr }],
+    },
+    {
       title: 'autocomplete duration for a subQuery',
       expr: 'go[5d:5]',
       pos: 7,
@@ -718,6 +847,18 @@ describe('computeStartCompletePosition test', () => {
       expectedStart: 9,
     },
     {
+      title: 'start should be equal to the pos after closing function',
+      expr: 'rate(foo[5m])',
+      pos: 13, // cursor is after the closing bracket
+      expectedStart: 13,
+    },
+    {
+      title: 'start should be equal to the pos after closing aggregation',
+      expr: 'sum(rate(foo[5m]))',
+      pos: 18, // cursor is after the closing bracket
+      expectedStart: 18,
+    },
+    {
       title: 'bracket containing a substring',
       expr: '{myL}',
       pos: 4, // cursor is between the bracket
@@ -802,10 +943,10 @@ describe('computeStartCompletePosition test', () => {
       expectedStart: 46,
     },
     {
-      title: 'start should not be equal to the pos for the duration in a matrix selector',
+      title: 'start should be equal to the pos for an empty duration in a matrix selector',
       expr: 'go[]',
       pos: 3,
-      expectedStart: 0,
+      expectedStart: 3,
     },
     {
       title: 'start should be equal to the pos for the duration in a matrix selector',
@@ -994,12 +1135,24 @@ describe('computeEndCompletePosition test', () => {
       pos: 13, // cursor at '!' (error node)
       expectedEnd: 13, // error node returns pos
     },
+    {
+      title: 'end should be equal to the pos after closing function',
+      expr: 'rate(foo[5m])',
+      pos: 13, // cursor is after the closing bracket
+      expectedEnd: 13,
+    },
+    {
+      title: 'end should be equal to the pos after closing aggregation',
+      expr: 'sum(rate(foo[5m]))',
+      pos: 18, // cursor is after the closing bracket
+      expectedEnd: 18,
+    },
   ];
   testCases.forEach((value) => {
     it(value.title, () => {
       const state = createEditorState(value.expr);
       const node = syntaxTree(state).resolve(value.pos, -1);
-      const result = computeEndCompletePosition(node, value.pos);
+      const result = computeEndCompletePosition(state, node, value.pos);
       expect(result).toEqual(value.expectedEnd);
     });
   });
@@ -1018,7 +1171,7 @@ describe('autocomplete promQL test', () => {
         options: ([] as Completion[]).concat(functionIdentifierTerms, aggregateOpTerms, numberTerms, snippets),
         from: 0,
         to: 0,
-        validFor: /^[a-zA-Z0-9_:]+$/,
+        validFor: /^[\p{L}0-9_:.]+$/u,
       },
     },
     {
@@ -1029,7 +1182,7 @@ describe('autocomplete promQL test', () => {
         options: ([] as Completion[]).concat(functionIdentifierTerms, aggregateOpTerms, numberTerms, snippets),
         from: 0,
         to: 3,
-        validFor: /^[a-zA-Z0-9_:]+$/,
+        validFor: /^[\p{L}0-9_:.]+$/u,
       },
     },
     {
@@ -1040,7 +1193,29 @@ describe('autocomplete promQL test', () => {
         options: ([] as Completion[]).concat(functionIdentifierTerms, aggregateOpTerms, snippets),
         from: 4,
         to: 4,
-        validFor: /^[a-zA-Z0-9_:]+$/,
+        validFor: /^[\p{L}0-9_:.]+$/u,
+      },
+    },
+    {
+      title: 'offline autocomplete aggregate operation modifier or binary operator after closing aggregation',
+      expr: 'sum()',
+      pos: 5, // cursor is after the closing bracket
+      expectedResult: {
+        options: ([] as Completion[]).concat(aggregateOpModifierTerms, binOpTerms),
+        from: 5,
+        to: 5,
+        validFor: /^[\p{L}0-9_:.]+$/u,
+      },
+    },
+    {
+      title: 'offline autocomplete binary operator after closing function',
+      expr: 'rate(foo[5m])',
+      pos: 13, // cursor is after the closing bracket
+      expectedResult: {
+        options: binOpTerms,
+        from: 13,
+        to: 13,
+        validFor: /^[\p{L}0-9_:.]+$/u,
       },
     },
     {
@@ -1051,7 +1226,7 @@ describe('autocomplete promQL test', () => {
         options: ([] as Completion[]).concat(functionIdentifierTerms, aggregateOpTerms, snippets),
         from: 4,
         to: 6,
-        validFor: /^[a-zA-Z0-9_:]+$/,
+        validFor: /^[\p{L}0-9_:.]+$/u,
       },
     },
     {
@@ -1062,7 +1237,7 @@ describe('autocomplete promQL test', () => {
         options: ([] as Completion[]).concat(functionIdentifierTerms, aggregateOpTerms, snippets),
         from: 4,
         to: 28, // should extend to end of 'coredns_cache_hits_total'
-        validFor: /^[a-zA-Z0-9_:]+$/,
+        validFor: /^[\p{L}0-9_:.]+$/u,
       },
     },
     {
@@ -1073,7 +1248,7 @@ describe('autocomplete promQL test', () => {
         options: ([] as Completion[]).concat(functionIdentifierTerms, aggregateOpTerms, snippets),
         from: 5,
         to: 29, // should extend to end of 'coredns_cache_hits_total'
-        validFor: /^[a-zA-Z0-9_:]+$/,
+        validFor: /^[\p{L}0-9_:.]+$/u,
       },
     },
     {
@@ -1084,7 +1259,18 @@ describe('autocomplete promQL test', () => {
         options: ([] as Completion[]).concat(functionIdentifierTerms, aggregateOpTerms, snippets),
         from: 9,
         to: 9,
-        validFor: /^[a-zA-Z0-9_:]+$/,
+        validFor: /^[\p{L}0-9_:.]+$/u,
+      },
+    },
+    {
+      title: 'offline autocomplete aggregate operation modifier or binary operator after closing nested aggregation',
+      expr: 'sum(rate(foo[5m]))',
+      pos: 18, // cursor is after the closing bracket
+      expectedResult: {
+        options: ([] as Completion[]).concat(aggregateOpModifierTerms, binOpTerms),
+        from: 18,
+        to: 18,
+        validFor: /^[\p{L}0-9_:.]+$/u,
       },
     },
     {
@@ -1095,7 +1281,7 @@ describe('autocomplete promQL test', () => {
         options: ([] as Completion[]).concat(functionIdentifierTerms, aggregateOpTerms, snippets),
         from: 25,
         to: 33,
-        validFor: /^[a-zA-Z0-9_:]+$/,
+        validFor: /^[\p{L}0-9_:.]+$/u,
       },
     },
     {
@@ -1106,7 +1292,7 @@ describe('autocomplete promQL test', () => {
         options: ([] as Completion[]).concat(functionIdentifierTerms, aggregateOpTerms, binOpModifierTerms, numberTerms, snippets),
         from: 14,
         to: 19,
-        validFor: /^[a-zA-Z0-9_:]+$/,
+        validFor: /^[\p{L}0-9_:.]+$/u,
       },
     },
     {
@@ -1117,7 +1303,7 @@ describe('autocomplete promQL test', () => {
         options: ([] as Completion[]).concat(functionIdentifierTerms, aggregateOpTerms, binOpModifierTerms, numberTerms, snippets),
         from: 40,
         to: 41,
-        validFor: /^[a-zA-Z0-9_:]+$/,
+        validFor: /^[\p{L}0-9_:.]+$/u,
       },
     },
     {
@@ -1128,7 +1314,7 @@ describe('autocomplete promQL test', () => {
         options: [],
         from: 8,
         to: 8,
-        validFor: /^[a-zA-Z0-9_:]+$/,
+        validFor: /^[\p{L}0-9_:.]+$/u,
       },
     },
     {
@@ -1139,7 +1325,7 @@ describe('autocomplete promQL test', () => {
         options: [],
         from: 8,
         to: 11,
-        validFor: /^[a-zA-Z0-9_:]+$/,
+        validFor: /^[\p{L}0-9_:.]+$/u,
       },
     },
     {
@@ -1150,7 +1336,7 @@ describe('autocomplete promQL test', () => {
         options: [],
         from: 18,
         to: 23,
-        validFor: /^[a-zA-Z0-9_:]+$/,
+        validFor: /^[\p{L}0-9_:.]+$/u,
       },
     },
     {
@@ -1161,7 +1347,7 @@ describe('autocomplete promQL test', () => {
         options: [],
         from: 12,
         to: 12,
-        validFor: /^[a-zA-Z0-9_:]+$/,
+        validFor: /^[\p{L}0-9_:.]+$/u,
       },
     },
     {
@@ -1172,7 +1358,7 @@ describe('autocomplete promQL test', () => {
         options: [],
         from: 1,
         to: 1,
-        validFor: /^[a-zA-Z0-9_:]+$/,
+        validFor: /^[\p{L}0-9_:.]+$/u,
       },
     },
     {
@@ -1183,7 +1369,7 @@ describe('autocomplete promQL test', () => {
         options: [],
         from: 12,
         to: 15,
-        validFor: /^[a-zA-Z0-9_:]+$/,
+        validFor: /^[\p{L}0-9_:.]+$/u,
       },
     },
     {
@@ -1194,7 +1380,7 @@ describe('autocomplete promQL test', () => {
         options: [],
         from: 1,
         to: 4,
-        validFor: /^[a-zA-Z0-9_:]+$/,
+        validFor: /^[\p{L}0-9_:.]+$/u,
       },
     },
     {
@@ -1205,7 +1391,7 @@ describe('autocomplete promQL test', () => {
         options: [],
         from: 23,
         to: 23,
-        validFor: /^[a-zA-Z0-9_:]+$/,
+        validFor: /^[\p{L}0-9_:.]+$/u,
       },
     },
     {
@@ -1216,7 +1402,7 @@ describe('autocomplete promQL test', () => {
         options: [],
         from: 12,
         to: 12,
-        validFor: /^[a-zA-Z0-9_:]+$/,
+        validFor: /^[\p{L}0-9_:.]+$/u,
       },
     },
     {
@@ -1227,7 +1413,7 @@ describe('autocomplete promQL test', () => {
         options: ([] as Completion[]).concat(aggregateOpModifierTerms, binOpTerms),
         from: 6,
         to: 7,
-        validFor: /^[a-zA-Z0-9_:]+$/,
+        validFor: /^[\p{L}0-9_:.]+$/u,
       },
     },
     {
@@ -1238,7 +1424,7 @@ describe('autocomplete promQL test', () => {
         options: ([] as Completion[]).concat(aggregateOpModifierTerms, binOpTerms),
         from: 19,
         to: 21,
-        validFor: /^[a-zA-Z0-9_:]+$/,
+        validFor: /^[\p{L}0-9_:.]+$/u,
       },
     },
     {
@@ -1249,7 +1435,7 @@ describe('autocomplete promQL test', () => {
         options: ([] as Completion[]).concat(aggregateOpModifierTerms, binOpTerms, [{ label: 'offset' }]),
         from: 4,
         to: 5,
-        validFor: /^[a-zA-Z0-9_:]+$/,
+        validFor: /^[\p{L}0-9_:.]+$/u,
       },
     },
     {
@@ -1260,7 +1446,7 @@ describe('autocomplete promQL test', () => {
         options: binOpTerms,
         from: 12,
         to: 13,
-        validFor: /^[a-zA-Z0-9_:]+$/,
+        validFor: /^[\p{L}0-9_:.]+$/u,
       },
     },
     {
@@ -1271,7 +1457,7 @@ describe('autocomplete promQL test', () => {
         options: binOpTerms,
         from: 12,
         to: 13,
-        validFor: /^[a-zA-Z0-9_:]+$/,
+        validFor: /^[\p{L}0-9_:.]+$/u,
       },
     },
     {
@@ -1282,7 +1468,7 @@ describe('autocomplete promQL test', () => {
         options: matchOpTerms,
         from: 11,
         to: 12,
-        validFor: /^[a-zA-Z0-9_:]+$/,
+        validFor: /^[\p{L}0-9_:.]+$/u,
       },
     },
     {
@@ -1293,7 +1479,7 @@ describe('autocomplete promQL test', () => {
         options: matchOpTerms,
         from: 21,
         to: 22,
-        validFor: /^[a-zA-Z0-9_:]+$/,
+        validFor: /^[\p{L}0-9_:.]+$/u,
       },
     },
     {
@@ -1326,7 +1512,7 @@ describe('autocomplete promQL test', () => {
         options: ([] as Completion[]).concat(binOpTerms, [{ label: 'offset' }]),
         from: 20,
         to: 23,
-        validFor: /^[a-zA-Z0-9_:]+$/,
+        validFor: /^[\p{L}0-9_:.]+$/u,
       },
     },
     {
@@ -1337,7 +1523,7 @@ describe('autocomplete promQL test', () => {
         options: ([] as Completion[]).concat(binOpTerms, [{ label: 'offset' }]),
         from: 12,
         to: 16,
-        validFor: /^[a-zA-Z0-9_:]+$/,
+        validFor: /^[\p{L}0-9_:.]+$/u,
       },
     },
     {
@@ -1348,7 +1534,7 @@ describe('autocomplete promQL test', () => {
         options: ([] as Completion[]).concat(binOpTerms, [{ label: 'offset' }]),
         from: 34,
         to: 37,
-        validFor: /^[a-zA-Z0-9_:]+$/,
+        validFor: /^[\p{L}0-9_:.]+$/u,
       },
     },
     {
@@ -1359,7 +1545,7 @@ describe('autocomplete promQL test', () => {
         options: ([] as Completion[]).concat(binOpTerms, [{ label: 'offset' }]),
         from: 14,
         to: 16,
-        validFor: /^[a-zA-Z0-9_:]+$/,
+        validFor: /^[\p{L}0-9_:.]+$/u,
       },
     },
     {
@@ -1370,7 +1556,7 @@ describe('autocomplete promQL test', () => {
         options: ([] as Completion[]).concat(binOpTerms, [{ label: 'offset' }]),
         from: 38,
         to: 41,
-        validFor: /^[a-zA-Z0-9_:]+$/,
+        validFor: /^[\p{L}0-9_:.]+$/u,
       },
     },
     {
@@ -1379,9 +1565,9 @@ describe('autocomplete promQL test', () => {
       pos: 3,
       expectedResult: {
         options: [],
-        from: 0,
+        from: 3,
         to: 3,
-        validFor: /^[a-zA-Z0-9_:]+$/,
+        validFor: /^[\p{L}0-9_:.]+$/u,
       },
     },
     {
@@ -1390,9 +1576,9 @@ describe('autocomplete promQL test', () => {
       pos: 12,
       expectedResult: {
         options: [],
-        from: 0,
+        from: 12,
         to: 12,
-        validFor: /^[a-zA-Z0-9_:]+$/,
+        validFor: /^[\p{L}0-9_:.]+$/u,
       },
     },
     {
@@ -1447,7 +1633,7 @@ describe('autocomplete promQL test', () => {
         options: [],
         from: 10,
         to: 11,
-        validFor: /^[a-zA-Z0-9_:]+$/,
+        validFor: /^[\p{L}0-9_:.]+$/u,
       },
     },
     {
@@ -1458,7 +1644,40 @@ describe('autocomplete promQL test', () => {
         options: [],
         from: 10,
         to: 12,
-        validFor: /^[a-zA-Z0-9_:]+$/,
+        validFor: /^[\p{L}0-9_:.]+$/u,
+      },
+    },
+    {
+      title: 'offline autocomplete duration expr operator after complete unit in matrixSelector',
+      expr: 'foo[5m+]',
+      pos: 7,
+      expectedResult: {
+        options: durationExprOperatorTerms,
+        from: 6,
+        to: 7,
+        validFor: undefined,
+      },
+    },
+    {
+      title: 'offline autocomplete duration expr function when typing identifier in empty duration slot',
+      expr: 'foo[ste]',
+      pos: 7,
+      expectedResult: {
+        options: durationExprTerms,
+        from: 4,
+        to: 7,
+        validFor: undefined,
+      },
+    },
+    {
+      title: 'offline autocomplete duration expr function after complete duration in matrixSelector',
+      expr: 'foo[5mss]',
+      pos: 8,
+      expectedResult: {
+        options: durationExprTerms,
+        from: 7,
+        to: 8,
+        validFor: undefined,
       },
     },
     {
@@ -1513,7 +1732,7 @@ describe('autocomplete promQL test', () => {
         options: atModifierTerms,
         from: 4,
         to: 5,
-        validFor: /^[a-zA-Z0-9_:]+$/,
+        validFor: /^[\p{L}0-9_:.]+$/u,
       },
     },
     {
@@ -1525,7 +1744,7 @@ describe('autocomplete promQL test', () => {
         options: ([] as Completion[]).concat(mockedMetricsTerms, functionIdentifierTerms, aggregateOpTerms, numberTerms, snippets),
         from: 0,
         to: 5,
-        validFor: /^[a-zA-Z0-9_:]+$/,
+        validFor: /^[\p{L}0-9_:.]+$/u,
       },
     },
     {
@@ -1554,7 +1773,7 @@ describe('autocomplete promQL test', () => {
         ],
         from: 20,
         to: 20,
-        validFor: /^[a-zA-Z0-9_:]+$/,
+        validFor: /^[\p{L}0-9_:.]+$/u,
       },
     },
     {
@@ -1566,12 +1785,23 @@ describe('autocomplete promQL test', () => {
         options: [
           {
             label: 'demo',
+            apply: 'demo',
+            type: 'text',
+          },
+          {
+            label: '\\x2d',
+            apply: '\\\\x2d',
+            type: 'text',
+          },
+          {
+            label: 'quoted"value',
+            apply: 'quoted\\"value',
             type: 'text',
           },
         ],
         from: 25,
         to: 25,
-        validFor: /^[a-zA-Z0-9_:]+$/,
+        validFor: /^[\p{L}0-9_:.]+$/u,
       },
     },
     {
@@ -1602,7 +1832,7 @@ describe('autocomplete promQL test', () => {
         ),
         from: 0,
         to: 3,
-        validFor: /^[a-zA-Z0-9_:]+$/,
+        validFor: /^[\p{L}0-9_:.]+$/u,
       },
     },
   ];
@@ -1646,5 +1876,32 @@ describe('autocomplete promQL test', () => {
     // when metadata for an OpenMetrics _total counter is stored under its base metric name.
     expect(result).not.toBeNull();
     expect((result as NonNullable<typeof result>).options.length).toBeGreaterThan(0);
+  });
+
+  // Typing the closing parenthesis of a function call/aggregation should not pop open a
+  // completion dropdown of binary operators on its own; it should only show up when the
+  // user explicitly requests completion (e.g. via Ctrl+Space).
+  const noAutoCompleteAfterClosedParenTestCases = [
+    { title: 'no autocompletion right after closing a function call', expr: 'rate(foo[5m])', pos: 13 },
+    { title: 'no autocompletion right after closing an aggregation', expr: 'sum()', pos: 5 },
+    { title: 'no autocompletion right after closing a nested aggregation', expr: 'sum(rate(foo[5m]))', pos: 18 },
+  ];
+  noAutoCompleteAfterClosedParenTestCases.forEach((value) => {
+    it(value.title, async () => {
+      const state = createEditorState(value.expr);
+      const context = new CompletionContext(state, value.pos, false);
+      const completion = newCompleteStrategy();
+      const result = await completion.promQL(context);
+      expect((result as NonNullable<typeof result>).options).toEqual([]);
+    });
+  });
+
+  it('still autocompletes binary operators after a closed function call when explicitly requested', async () => {
+    const state = createEditorState('rate(foo[5m])');
+    const context = new CompletionContext(state, 13, true);
+    const completion = newCompleteStrategy();
+    const result = await completion.promQL(context);
+    expect(result).not.toBeNull();
+    expect((result as NonNullable<typeof result>).options).toEqual(binOpTerms);
   });
 });

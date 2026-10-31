@@ -20,6 +20,8 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"slices"
+	"sort"
 	"strings"
 	"testing"
 
@@ -57,6 +59,7 @@ func BenchmarkParsePromText(b *testing.B) {
 
 	for _, parser := range []string{
 		"promtext",
+		"promtext-exact",
 		"omtext", // Compare how omtext parser deals with Prometheus text format.
 		"expfmt-promtext",
 	} {
@@ -108,6 +111,91 @@ func BenchmarkParseOMText(b *testing.B) {
 
 /*
 	export bench=v1 && go test ./model/textparse/... \
+		 -run '^$' -bench '^BenchmarkParseOM2Text' \
+		 -benchtime 2s -count 6 -cpu 2 -benchmem -timeout 999m \
+	 | tee ${bench}.txt
+*/
+func BenchmarkParseOM2Text(b *testing.B) {
+	data := readTestdataFile(b, "alltypes.om2.txt")
+	benchParse(b, data, "om2text")
+}
+
+// BenchmarkParseOM1VsOM2_AllTypes compares OM1 and OM2 parsing on a realistic
+// scrape-shaped dataset (~30 metric families) where both files expose the same
+// metrics. OM2 is more compact because classic histograms and summaries use a
+// single-line composite form, while OM1 expands them to one line per
+// bucket/quantile plus _sum/_count.
+//
+//	export bench=v1 && go test ./model/textparse/... \
+//		 -run '^$' -bench '^BenchmarkParseOM1VsOM2_AllTypes' \
+//		 -benchtime 2s -count 6 -cpu 2 -benchmem -timeout 999m \
+//	 | tee ${bench}.txt
+func BenchmarkParseOM1VsOM2_AllTypes(b *testing.B) {
+	for _, tc := range []struct {
+		parser string
+		file   string
+	}{
+		{"omtext", "alltypes.bench.om.txt"},
+		{"omtext_with_nhcb", "alltypes.bench.om.txt"},
+		{"om2text", "alltypes.bench.om2.txt"},
+		{"om2text_with_nhcb", "alltypes.bench.om2.txt"},
+	} {
+		b.Run(fmt.Sprintf("parser=%v", tc.parser), func(b *testing.B) {
+			benchParse(b, readTestdataFile(b, tc.file), tc.parser)
+		})
+	}
+}
+
+// BenchmarkParseOM1VsOM2_CT compares OM1 and OM2 on metrics with created
+// timestamps. OM1 carries CT on separate _created series, which forces
+// StartTimestamp() to perform a parser deep-copy peek-ahead. OM2 carries CT
+// inline (st@<ts>) and resolves StartTimestamp() in O(1).
+//
+//	export bench=v1 && go test ./model/textparse/... \
+//		 -run '^$' -bench '^BenchmarkParseOM1VsOM2_CT' \
+//		 -benchtime 2s -count 6 -cpu 2 -benchmem -timeout 999m \
+//	 | tee ${bench}.txt
+func BenchmarkParseOM1VsOM2_CT(b *testing.B) {
+	for _, tc := range []struct {
+		parser string
+		file   string
+	}{
+		{"omtext", "ct.bench.om.txt"},
+		{"om2text", "ct.bench.om2.txt"},
+	} {
+		b.Run(fmt.Sprintf("parser=%v", tc.parser), func(b *testing.B) {
+			benchParse(b, readTestdataFile(b, tc.file), tc.parser)
+		})
+	}
+}
+
+// BenchmarkParseOM1VsOM2_Histograms isolates classic histogram and summary
+// parsing. OM1 emits one series per bucket/quantile plus _sum/_count; OM2 uses
+// a single-line composite that the parser explodes into the same logical
+// series (or converts directly to NHCB when enabled).
+//
+//	export bench=v1 && go test ./model/textparse/... \
+//		 -run '^$' -bench '^BenchmarkParseOM1VsOM2_Histograms' \
+//		 -benchtime 2s -count 6 -cpu 2 -benchmem -timeout 999m \
+//	 | tee ${bench}.txt
+func BenchmarkParseOM1VsOM2_Histograms(b *testing.B) {
+	for _, tc := range []struct {
+		parser string
+		file   string
+	}{
+		{"omtext", "histograms.bench.om.txt"},
+		{"omtext_with_nhcb", "histograms.bench.om.txt"},
+		{"om2text", "histograms.bench.om2.txt"},
+		{"om2text_with_nhcb", "histograms.bench.om2.txt"},
+	} {
+		b.Run(fmt.Sprintf("parser=%v", tc.parser), func(b *testing.B) {
+			benchParse(b, readTestdataFile(b, tc.file), tc.parser)
+		})
+	}
+}
+
+/*
+	export bench=v1 && go test ./model/textparse/... \
 		 -run '^$' -bench '^BenchmarkParsePromProto' \
 		 -benchtime 2s -count 6 -cpu 2 -benchmem -timeout 999m \
 	 | tee ${bench}.txt
@@ -129,8 +217,9 @@ func BenchmarkParseOpenMetricsNHCB(b *testing.B) {
 	data := readTestdataFile(b, "1histogram.om.txt")
 
 	for _, parser := range []string{
-		"omtext",           // Measure OM parser baseline for histograms.
-		"omtext_with_nhcb", // Measure NHCB over OM parser.
+		"omtext",              // Measure OM parser baseline for histograms.
+		"omtext_with_nhcb",    // Measure NHCB over OM parser without ST parsing.
+		"omtext_with_nhcb_st", // Measure NHCB over OM parser with ST parsing enabled.
 	} {
 		b.Run(fmt.Sprintf("parser=%v", parser), func(b *testing.B) {
 			benchParse(b, data, parser)
@@ -143,7 +232,10 @@ func benchParse(b *testing.B, data []byte, parser string) {
 
 	var newParserFn newParser
 	switch parser {
-	case "promtext":
+	case "promtext", "promtext-exact":
+		if parser == "promtext-exact" {
+			data = slices.Clip(data)
+		}
 		newParserFn = func(b []byte, st *labels.SymbolTable) Parser {
 			return NewPromParser(b, st, false)
 		}
@@ -156,10 +248,20 @@ func benchParse(b *testing.B, data []byte, parser string) {
 			return NewOpenMetricsParser(b, st, WithOMParserSTSeriesSkipped())
 		}
 	case "omtext_with_nhcb":
-		newParserFn = func(buf []byte, st *labels.SymbolTable) Parser {
-			p, err := New(buf, "application/openmetrics-text", st, ParserOptions{ConvertClassicHistogramsToNHCB: true})
-			require.NoError(b, err)
-			return p
+		newParserFn = func(b []byte, st *labels.SymbolTable) Parser {
+			return NewNHCBParser(NewOpenMetricsParser(b, st, WithOMParserSTSeriesSkipped()), st, false, false)
+		}
+	case "om2text":
+		newParserFn = func(b []byte, st *labels.SymbolTable) Parser {
+			return NewOpenMetrics2Parser(b, st, ParserOptions{})
+		}
+	case "om2text_with_nhcb":
+		newParserFn = func(b []byte, st *labels.SymbolTable) Parser {
+			return NewOpenMetrics2Parser(b, st, ParserOptions{ConvertClassicHistogramsToNHCB: true})
+		}
+	case "omtext_with_nhcb_st":
+		newParserFn = func(b []byte, st *labels.SymbolTable) Parser {
+			return NewNHCBParser(NewOpenMetricsParser(b, st, WithOMParserSTSeriesSkipped()), st, false, true)
 		}
 	default:
 		b.Fatal("unknown parser", parser)
@@ -217,7 +319,7 @@ func benchExpFmt(b *testing.B, data []byte, expFormatTypeStr string) {
 	expfmtFormatType := expfmt.TypeUnknown
 	switch expFormatTypeStr {
 	case "expfmt-promtext":
-		expfmtFormatType = expfmt.TypeProtoText
+		expfmtFormatType = expfmt.TypeTextPlain
 	case "expfmt-promproto":
 		expfmtFormatType = expfmt.TypeProtoDelim
 	case "expfmt-omtext":
@@ -336,4 +438,81 @@ Inner2:
 			}
 		}
 	})
+}
+
+// TODO(rbizos): Once an OM2 text formatter is available, replace the
+// hand-written *.bench.{om,om2}.txt pairs with files generated from a single source.
+
+// TestOM1OM2BenchPairsEquivalent verifies that each matched pair of benchmark
+// testdata files (OM1 + OM2) parses to the same set of series.
+func TestOM1OM2BenchPairsEquivalent(t *testing.T) {
+	for _, pair := range []struct {
+		name string
+		om1  string
+		om2  string
+	}{
+		{"alltypes", "alltypes.bench.om.txt", "alltypes.bench.om2.txt"},
+		{"ct", "ct.bench.om.txt", "ct.bench.om2.txt"},
+		{"histograms", "histograms.bench.om.txt", "histograms.bench.om2.txt"},
+	} {
+		t.Run(pair.name, func(t *testing.T) {
+			om1Series := collectSeries(t, readTestdataFile(t, pair.om1), "omtext")
+			om2Series := collectSeries(t, readTestdataFile(t, pair.om2), "om2text")
+			require.Equal(t, om1Series, om2Series,
+				"OM1 and OM2 benchmark files must produce the same series multiset")
+
+			om1NHCBSeries := collectSeries(t, readTestdataFile(t, pair.om1), "omtext_with_nhcb")
+			om2NHCBSeries := collectSeries(t, readTestdataFile(t, pair.om2), "om2text_with_nhcb")
+			require.Equal(t, om1NHCBSeries, om2NHCBSeries,
+				"OM1 and OM2 benchmark files with NHCB conversion must produce the same series multiset")
+		})
+	}
+}
+
+// collectSeries parses data and returns a sorted multiset of "labels => value"
+// strings, a bit naive but is good enough to compare if we got the same metrics.
+func collectSeries(t *testing.T, data []byte, parser string) []string {
+	t.Helper()
+	var p Parser
+	st := labels.NewSymbolTable()
+	switch parser {
+	case "omtext":
+		p = NewOpenMetricsParser(data, st, WithOMParserSTSeriesSkipped())
+	case "omtext_with_nhcb":
+		p = NewNHCBParser(NewOpenMetricsParser(data, st, WithOMParserSTSeriesSkipped()), st, false, false)
+	case "om2text":
+		p = NewOpenMetrics2Parser(data, st, ParserOptions{})
+	case "om2text_with_nhcb":
+		p = NewOpenMetrics2Parser(data, st, ParserOptions{ConvertClassicHistogramsToNHCB: true})
+	default:
+		t.Fatalf("unknown parser %q", parser)
+	}
+
+	var (
+		out []string
+		ls  labels.Labels
+	)
+	for {
+		entry, err := p.Next()
+		if errors.Is(err, io.EOF) {
+			break
+		}
+		require.NoError(t, err)
+		switch entry {
+		case EntrySeries:
+			_, _, v := p.Series()
+			p.Labels(&ls)
+			out = append(out, fmt.Sprintf("%s => %g", ls.String(), v))
+		case EntryHistogram:
+			_, _, h, fh := p.Histogram()
+			p.Labels(&ls)
+			if h != nil {
+				out = append(out, fmt.Sprintf("%s => %s", ls.String(), h.String()))
+			} else {
+				out = append(out, fmt.Sprintf("%s => %s", ls.String(), fh.String()))
+			}
+		}
+	}
+	sort.Strings(out)
+	return out
 }

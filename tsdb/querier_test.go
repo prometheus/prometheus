@@ -40,6 +40,7 @@ import (
 	"github.com/prometheus/prometheus/tsdb/tombstones"
 	"github.com/prometheus/prometheus/tsdb/tsdbutil"
 	"github.com/prometheus/prometheus/util/annotations"
+	"github.com/prometheus/prometheus/util/compression"
 	"github.com/prometheus/prometheus/util/testutil"
 )
 
@@ -418,6 +419,41 @@ func TestBlockQuerier(t *testing.T) {
 	}
 }
 
+func TestBlockBaseQuerier_LabelNamesLimit(t *testing.T) {
+	ix := newMockIndex()
+	ls := labels.FromStrings("aaa", "1", "bbb", "2", "ccc", "3")
+	require.NoError(t, ix.AddSeries(1, ls))
+	ls.Range(func(lbl labels.Label) {
+		require.NoError(t, ix.WritePostings(lbl.Name, lbl.Value, index.NewListPostings([]storage.SeriesRef{1})))
+	})
+
+	q := &blockBaseQuerier{index: ix, chunks: mockChunkReader(nil), tombstones: tombstones.NewMemTombstones()}
+
+	t.Run("no limit", func(t *testing.T) {
+		names, _, err := q.LabelNames(context.Background(), nil)
+		require.NoError(t, err)
+		require.Equal(t, []string{"aaa", "bbb", "ccc"}, names)
+	})
+
+	t.Run("limit applied", func(t *testing.T) {
+		names, _, err := q.LabelNames(context.Background(), &storage.LabelHints{Limit: 2})
+		require.NoError(t, err)
+		require.Equal(t, []string{"aaa", "bbb"}, names)
+	})
+
+	t.Run("limit larger than result", func(t *testing.T) {
+		names, _, err := q.LabelNames(context.Background(), &storage.LabelHints{Limit: 10})
+		require.NoError(t, err)
+		require.Equal(t, []string{"aaa", "bbb", "ccc"}, names)
+	})
+
+	t.Run("zero limit means no limit", func(t *testing.T) {
+		names, _, err := q.LabelNames(context.Background(), &storage.LabelHints{Limit: 0})
+		require.NoError(t, err)
+		require.Equal(t, []string{"aaa", "bbb", "ccc"}, names)
+	})
+}
+
 func TestBlockQuerier_AgainstHeadWithOpenChunks(t *testing.T) {
 	for _, c := range []blockQuerierTestCase{
 		{
@@ -504,11 +540,11 @@ func TestBlockQuerier_AgainstHeadWithOpenChunks(t *testing.T) {
 			require.NoError(t, err)
 			defer h.Close()
 
-			app := h.Appender(context.Background())
+			app := h.AppenderV2(context.Background())
 			for _, s := range testData {
 				for _, chk := range s.chunks {
 					for _, sample := range chk {
-						_, err = app.Append(0, labels.FromMap(s.lset), sample.t, sample.f)
+						_, err = app.Append(0, labels.FromMap(s.lset), 0, sample.t, sample.f, nil, nil, storage.AOptions{})
 						require.NoError(t, err)
 					}
 				}
@@ -2293,16 +2329,13 @@ func (mockChunkReader) Close() error {
 }
 
 func TestDeletedIterator(t *testing.T) {
-	chk := chunkenc.NewXORChunk()
-	app, err := chk.Appender()
-	require.NoError(t, err)
 	// Insert random stuff from (0, 1000).
-	act := make([]sample, 1000)
+	act := make([]chunks.Sample, 1000)
 	for i := range 1000 {
-		act[i].t = int64(i)
-		act[i].f = rand.Float64()
-		app.Append(0, act[i].t, act[i].f)
+		act[i] = sample{st: int64(i / 2), t: int64(i), f: rand.Float64()}
 	}
+	meta, err := chunks.ChunkFromSamples(act)
+	require.NoError(t, err)
 
 	cases := []struct {
 		r tombstones.Intervals
@@ -2321,7 +2354,7 @@ func TestDeletedIterator(t *testing.T) {
 
 	for _, c := range cases {
 		i := int64(-1)
-		it := &DeletedIterator{Iter: chk.Iterator(nil), Intervals: c.r[:]}
+		it := &DeletedIterator{Iter: meta.Chunk.Iterator(nil), Intervals: c.r[:]}
 		ranges := c.r[:]
 		for it.Next() == chunkenc.ValFloat {
 			i++
@@ -2335,8 +2368,9 @@ func TestDeletedIterator(t *testing.T) {
 			require.Less(t, i, int64(1000))
 
 			ts, v := it.At()
-			require.Equal(t, act[i].t, ts)
-			require.Equal(t, act[i].f, v)
+			require.Equal(t, act[i].T(), ts)
+			require.Equal(t, act[i].F(), v)
+			require.Equal(t, act[i].ST(), it.AtST())
 		}
 		// There has been an extra call to Next().
 		i++
@@ -2350,6 +2384,55 @@ func TestDeletedIterator(t *testing.T) {
 		require.GreaterOrEqual(t, i, int64(1000))
 		require.NoError(t, it.Err())
 	}
+
+	t.Run("reuse", func(t *testing.T) {
+		for _, tc := range []struct {
+			name  string
+			seek  bool
+			shift int64
+		}{
+			{name: "next/same_range"},
+			{name: "next/next_chunk", shift: 20},
+			{name: "seek/same_range", seek: true},
+			{name: "seek/next_chunk", seek: true, shift: 20},
+		} {
+			t.Run(tc.name, func(t *testing.T) {
+				it := &DeletedIterator{}
+				for iteration := range 2 {
+					start := int64(iteration) * tc.shift
+					chk := chunkenc.NewXORChunk()
+					app, err := chk.Appender()
+					require.NoError(t, err)
+					for ts := start; ts < start+20; ts++ {
+						app.Append(0, ts, float64(ts))
+					}
+
+					// Reuse the wrapper by resetting only its exported fields, as external callers do.
+					it.Intervals = it.Intervals[:0]
+					// Leave samples after the deletion interval so iteration advances past it
+					// before the wrapper is reused.
+					it.Intervals = it.Intervals.Add(tombstones.Interval{Mint: start, Maxt: start + 9})
+					it.Iter = chk.Iterator(nil)
+
+					var valueType chunkenc.ValueType
+					if tc.seek {
+						valueType = it.Seek(start)
+					} else {
+						valueType = it.Next()
+					}
+					for ts := start + 10; ts < start+20; ts++ {
+						require.Equal(t, chunkenc.ValFloat, valueType, "iteration %d", iteration+1)
+						gotTs, gotValue := it.At()
+						require.Equal(t, ts, gotTs, "iteration %d", iteration+1)
+						require.Equal(t, float64(ts), gotValue, "iteration %d", iteration+1)
+						valueType = it.Next()
+					}
+					require.Equal(t, chunkenc.ValNone, valueType, "iteration %d", iteration+1)
+					require.NoError(t, it.Err())
+				}
+			})
+		}
+	})
 }
 
 func TestDeletedIterator_WithSeek(t *testing.T) {
@@ -2902,13 +2985,13 @@ func TestPostingsForMatchers(t *testing.T) {
 		require.NoError(t, h.Close())
 	}()
 
-	app := h.Appender(context.Background())
-	app.Append(0, labels.FromStrings("n", "1"), 0, 0)
-	app.Append(0, labels.FromStrings("n", "1", "i", "a"), 0, 0)
-	app.Append(0, labels.FromStrings("n", "1", "i", "b"), 0, 0)
-	app.Append(0, labels.FromStrings("n", "1", "i", "\n"), 0, 0)
-	app.Append(0, labels.FromStrings("n", "2"), 0, 0)
-	app.Append(0, labels.FromStrings("n", "2.5"), 0, 0)
+	app := h.AppenderV2(context.Background())
+	app.Append(0, labels.FromStrings("n", "1"), 0, 0, 0, nil, nil, storage.AOptions{})
+	app.Append(0, labels.FromStrings("n", "1", "i", "a"), 0, 0, 0, nil, nil, storage.AOptions{})
+	app.Append(0, labels.FromStrings("n", "1", "i", "b"), 0, 0, 0, nil, nil, storage.AOptions{})
+	app.Append(0, labels.FromStrings("n", "1", "i", "\n"), 0, 0, 0, nil, nil, storage.AOptions{})
+	app.Append(0, labels.FromStrings("n", "2"), 0, 0, 0, nil, nil, storage.AOptions{})
+	app.Append(0, labels.FromStrings("n", "2.5"), 0, 0, 0, nil, nil, storage.AOptions{})
 	require.NoError(t, app.Commit())
 
 	cases := []struct {
@@ -3324,8 +3407,8 @@ func appendSeries(t *testing.T, ctx context.Context, wg *sync.WaitGroup, h *Head
 	defer wg.Done()
 
 	for i := 0; ctx.Err() == nil; i++ {
-		app := h.Appender(context.Background())
-		_, err := app.Append(0, labels.FromStrings(labels.MetricName, "metric", "seq", strconv.Itoa(i), "always_0", "0"), 0, 0)
+		app := h.AppenderV2(context.Background())
+		_, err := app.Append(0, labels.FromStrings(labels.MetricName, "metric", "seq", strconv.Itoa(i), "always_0", "0"), 0, 0, 0, nil, nil, storage.AOptions{})
 		require.NoError(t, err)
 		err = app.Commit()
 		require.NoError(t, err)
@@ -3457,7 +3540,7 @@ func BenchmarkQueries(b *testing.B) {
 					qHead, err := NewBlockQuerier(NewRangeHead(head, 1, nSamples), 1, nSamples)
 					require.NoError(b, err)
 					isoState := head.oooIso.TrackReadAfter(0)
-					qOOOHead := NewHeadAndOOOQuerier(1, 1, nSamples, head, isoState, qHead)
+					qOOOHead := NewHeadAndOOOQuerier(1, 1, nSamples, head, isoState, qHead, false)
 
 					queryTypes = append(queryTypes, qt{
 						fmt.Sprintf("_Head_oooPercent:%d", oooPercentage), qOOOHead,
@@ -3695,15 +3778,15 @@ func BenchmarkHeadChunkQuerier(b *testing.B) {
 
 	// 3h of data.
 	numTimeseries := 100
-	app := db.Appender(context.Background())
+	app := db.AppenderV2(context.Background())
 	for i := range 120 * 6 {
 		for j := range numTimeseries {
 			lbls := labels.FromStrings("foo", fmt.Sprintf("bar%d", j))
 			if i%10 == 0 {
 				require.NoError(b, app.Commit())
-				app = db.Appender(context.Background())
+				app = db.AppenderV2(context.Background())
 			}
-			_, err := app.Append(0, lbls, int64(i*15)*time.Second.Milliseconds(), float64(i*100))
+			_, err := app.Append(0, lbls, 0, int64(i*15)*time.Second.Milliseconds(), float64(i*100), nil, nil, storage.AOptions{})
 			require.NoError(b, err)
 		}
 	}
@@ -3737,15 +3820,15 @@ func BenchmarkHeadQuerier(b *testing.B) {
 
 	// 3h of data.
 	numTimeseries := 100
-	app := db.Appender(context.Background())
+	app := db.AppenderV2(context.Background())
 	for i := range 120 * 6 {
 		for j := range numTimeseries {
 			lbls := labels.FromStrings("foo", fmt.Sprintf("bar%d", j))
 			if i%10 == 0 {
 				require.NoError(b, app.Commit())
-				app = db.Appender(context.Background())
+				app = db.AppenderV2(context.Background())
 			}
-			_, err := app.Append(0, lbls, int64(i*15)*time.Second.Milliseconds(), float64(i*100))
+			_, err := app.Append(0, lbls, 0, int64(i*15)*time.Second.Milliseconds(), float64(i*100), nil, nil, storage.AOptions{})
 			require.NoError(b, err)
 		}
 	}
@@ -3796,7 +3879,7 @@ func TestQueryWithDeletedHistograms(t *testing.T) {
 	for name, tc := range testcases {
 		t.Run(name, func(t *testing.T) {
 			db := newTestDB(t)
-			app := db.Appender(context.Background())
+			app := db.AppenderV2(context.Background())
 
 			var (
 				err       error
@@ -3806,7 +3889,7 @@ func TestQueryWithDeletedHistograms(t *testing.T) {
 
 			for i := range 100 {
 				h, fh := tc(i)
-				seriesRef, err = app.AppendHistogram(seriesRef, lbs, int64(i), h, fh)
+				seriesRef, err = app.Append(seriesRef, lbs, 0, int64(i), 0, h, fh, storage.AOptions{})
 				require.NoError(t, err)
 			}
 
@@ -3849,7 +3932,7 @@ func TestQueryWithDeletedHistograms(t *testing.T) {
 func TestQueryWithOneChunkCompletelyDeleted(t *testing.T) {
 	ctx := context.Background()
 	db := newTestDB(t)
-	app := db.Appender(context.Background())
+	app := db.AppenderV2(context.Background())
 
 	var (
 		err       error
@@ -3860,12 +3943,12 @@ func TestQueryWithOneChunkCompletelyDeleted(t *testing.T) {
 	// Create an int histogram chunk with samples between 0 - 20 and 30 - 40.
 	for i := range 20 {
 		h := tsdbutil.GenerateTestHistogram(1)
-		seriesRef, err = app.AppendHistogram(seriesRef, lbs, int64(i), h, nil)
+		seriesRef, err = app.Append(seriesRef, lbs, 0, int64(i), 0, h, nil, storage.AOptions{})
 		require.NoError(t, err)
 	}
 	for i := 30; i < 40; i++ {
 		h := tsdbutil.GenerateTestHistogram(1)
-		seriesRef, err = app.AppendHistogram(seriesRef, lbs, int64(i), h, nil)
+		seriesRef, err = app.Append(seriesRef, lbs, 0, int64(i), 0, h, nil, storage.AOptions{})
 		require.NoError(t, err)
 	}
 
@@ -3873,7 +3956,7 @@ func TestQueryWithOneChunkCompletelyDeleted(t *testing.T) {
 	// type from int histograms so a new chunk is created.
 	for i := 60; i < 100; i++ {
 		fh := tsdbutil.GenerateTestFloatHistogram(1)
-		seriesRef, err = app.AppendHistogram(seriesRef, lbs, int64(i), nil, fh)
+		seriesRef, err = app.Append(seriesRef, lbs, 0, int64(i), 0, nil, fh, storage.AOptions{})
 		require.NoError(t, err)
 	}
 
@@ -3915,6 +3998,138 @@ func TestQueryWithOneChunkCompletelyDeleted(t *testing.T) {
 	}
 	require.NoError(t, css.Err())
 	require.Equal(t, 1, seriesCount)
+}
+
+// TestChunkQuerier_OverlappingInOrderAndOOOChunks verifies the chunks
+// returned by the ChunkQuerier when an in-order chunk overlaps with many
+// out-of-order chunks. All sample timestamps are distinct. The total
+// number of samples is chosen to exceed math.MaxUint16 so that the
+// querier must split the merged iterable into multiple output chunks.
+func TestChunkQuerier_OverlappingInOrderAndOOOChunks(t *testing.T) {
+	t.Parallel()
+	for _, storeST := range []bool{false, true} {
+		t.Run(fmt.Sprintf("store-st=%v", storeST), func(t *testing.T) {
+			for _, tc := range []struct {
+				name    string
+				valType chunkenc.ValueType
+			}{
+				{"float", chunkenc.ValFloat},
+				{"histogram", chunkenc.ValHistogram},
+				{"float histogram", chunkenc.ValFloatHistogram},
+			} {
+				t.Run(tc.name, func(t *testing.T) {
+					testChunkQuerierOverlappingInOrderAndOOOChunks(t, tc.valType, storeST)
+				})
+			}
+		})
+	}
+}
+
+func testChunkQuerierOverlappingInOrderAndOOOChunks(t *testing.T, valType chunkenc.ValueType, storeST bool) {
+	const (
+		oooCapMax = 32
+		// Pick more OOO samples than any chunk encoding can hold so the
+		// querier is forced to cut the merged iterable into multiple chunks.
+		oooSamplesToAppend = int(math.MaxUint16) + 10
+		firstIndex         = 0                      // Position of in-order sample at the start.
+		lastIndex          = oooSamplesToAppend + 1 // Position of in-order sample at the end to overlap all OOO samples.
+	)
+
+	opts := DefaultOptions()
+	opts.OutOfOrderCapMax = oooCapMax
+	opts.OutOfOrderTimeWindow = 24 * time.Hour.Milliseconds()
+	opts.EnableSTStorage = storeST
+	if storeST {
+		opts.FloatChunkEncoding = chunkenc.EncXOR2
+	}
+	db := newTestDB(t, withOpts(opts))
+	db.DisableCompactions()
+
+	lbls := labels.FromStrings("foo", "bar")
+
+	appendSample := func(app storage.AppenderV2, ts int64) error {
+		switch valType {
+		case chunkenc.ValFloat:
+			_, err := app.Append(0, lbls, 0, ts, float64(ts), nil, nil, storage.AOptions{})
+			return err
+		case chunkenc.ValHistogram:
+			_, err := app.Append(0, lbls, 0, ts, 0, tsdbutil.GenerateTestHistogram(ts), nil, storage.AOptions{})
+			return err
+		case chunkenc.ValFloatHistogram:
+			_, err := app.Append(0, lbls, 0, ts, 0, nil, tsdbutil.GenerateTestFloatHistogram(ts), storage.AOptions{})
+			return err
+		default:
+			return fmt.Errorf("unsupported value type: %v", valType)
+		}
+	}
+
+	// Append the two in-order samples at the start and end of the range,
+	// so that the in-order chunk spans the full range that the OOO samples
+	// will land in.
+	app := db.AppenderV2(context.Background())
+	for _, i := range []int{firstIndex, lastIndex} {
+		require.NoError(t, appendSample(app, int64(10000+i*10)))
+	}
+	require.NoError(t, app.Commit())
+
+	// Sanity check: the two in-order samples form a single in-memory head
+	// chunk covering the whole timestamp range, with no m-mapped chunks.
+	ms, _, err := db.head.getOrCreate(lbls.Hash(), lbls, false)
+	require.NoError(t, err)
+	require.NotNil(t, ms.headChunks)
+	require.Equal(t, 1, ms.headChunks.len())
+	require.Nil(t, ms.headChunks.prev)
+	require.Empty(t, ms.mmappedChunks)
+	require.Equal(t, int64(10000+firstIndex*10), ms.headChunks.minTime)
+	require.Equal(t, int64(10000+lastIndex*10), ms.headChunks.maxTime)
+	require.Equal(t, 2, ms.headChunks.chunk.NumSamples())
+
+	// Append the OOO samples in the gap between the two in-order samples.
+	app = db.AppenderV2(context.Background())
+	for i := firstIndex + 1; i < lastIndex; i++ {
+		require.NoError(t, appendSample(app, int64(10000+i*10)))
+	}
+	require.NoError(t, app.Commit())
+
+	// Sanity check: the head holds the expected number of OOO chunks for
+	// the series. Each m-mapped OOO chunk has oooCapMax samples; whatever
+	// remains lives in the in-memory head OOO chunk.
+	require.NotNil(t, ms.ooo)
+	require.Len(t, ms.ooo.oooMmappedChunks, oooSamplesToAppend/oooCapMax)
+	require.Equal(t, oooSamplesToAppend%oooCapMax, ms.ooo.oooHeadChunk.chunk.NumSamples())
+
+	chunkQuerier, err := db.ChunkQuerier(math.MinInt64, math.MaxInt64)
+	require.NoError(t, err)
+
+	matcher := labels.MustNewMatcher(labels.MatchEqual, "foo", "bar")
+	css := chunkQuerier.Select(context.Background(), false, nil, matcher)
+
+	var seriesCount, chunkCount, sampleCount int
+	lastTS := int64(math.MinInt64)
+	for css.Next() {
+		seriesCount++
+		series := css.At()
+		it := series.Iterator(nil)
+		for it.Next() {
+			chunkCount++
+			chk := it.At()
+			cit := chk.Chunk.Iterator(nil)
+			for vt := cit.Next(); vt != chunkenc.ValNone; vt = cit.Next() {
+				require.Equal(t, valType, vt)
+				ts := cit.AtT()
+				require.Greater(t, ts, lastTS, "timestamps must be strictly increasing across the returned chunks")
+				lastTS = ts
+				sampleCount++
+			}
+			require.NoError(t, cit.Err())
+		}
+		require.NoError(t, it.Err())
+	}
+	require.NoError(t, css.Err())
+
+	require.Equal(t, 1, seriesCount)
+	require.Greater(t, chunkCount, 1)
+	require.Equal(t, lastIndex-firstIndex+1, sampleCount)
 }
 
 func TestReader_PostingsForLabelMatchingHonorsContextCancel(t *testing.T) {
@@ -4010,4 +4225,319 @@ func TestMergeQuerierConcurrentSelectMatchers(t *testing.T) {
 	mergedQuerier.Select(context.Background(), false, nil, matchers...)
 
 	require.Equal(t, originalMatchers, matchers)
+}
+
+// prefixFilter accepts values that start with the given prefix and scores them 1.0.
+type prefixFilter struct{ prefix string }
+
+func (f prefixFilter) Accept(v string) (bool, float64) {
+	if strings.HasPrefix(v, f.prefix) {
+		return true, 1.0
+	}
+	return false, 0
+}
+
+func newBlockBaseQuerierForSearch(t *testing.T, labelSets ...labels.Labels) *blockBaseQuerier {
+	t.Helper()
+	ix := newMockIndex()
+	// Group series refs by label for writing postings.
+	postings := make(map[labels.Label][]storage.SeriesRef)
+	for i, ls := range labelSets {
+		ref := storage.SeriesRef(i)
+		require.NoError(t, ix.AddSeries(ref, ls))
+		ls.Range(func(lbl labels.Label) {
+			postings[lbl] = append(postings[lbl], ref)
+		})
+	}
+	for lbl, refs := range postings {
+		require.NoError(t, ix.WritePostings(lbl.Name, lbl.Value, index.NewListPostings(refs)))
+	}
+	return &blockBaseQuerier{index: ix, chunks: nil, tombstones: tombstones.NewMemTombstones()}
+}
+
+func collectSearchResultSet(t *testing.T, rs storage.SearchResultSet) []storage.SearchResult {
+	t.Helper()
+	var got []storage.SearchResult
+	for rs.Next() {
+		got = append(got, rs.At())
+	}
+	require.NoError(t, rs.Err())
+	require.NoError(t, rs.Close())
+	return got
+}
+
+func TestBlockBaseQuerierSearchLabelNames(t *testing.T) {
+	ctx := t.Context()
+	q := newBlockBaseQuerierForSearch(t,
+		labels.FromStrings("env", "prod", "job", "api"),
+		labels.FromStrings("env", "dev", "job", "api"),
+		labels.FromStrings("region", "eu"),
+	)
+
+	t.Run("no filter returns all names", func(t *testing.T) {
+		rs := q.SearchLabelNames(ctx, nil)
+		got := collectSearchResultSet(t, rs)
+		gotValues := make([]string, len(got))
+		for i, r := range got {
+			gotValues[i] = r.Value
+			require.Equal(t, 1.0, r.Score)
+		}
+		slices.Sort(gotValues)
+		require.Equal(t, []string{"env", "job", "region"}, gotValues)
+	})
+
+	t.Run("filter selects matching names", func(t *testing.T) {
+		rs := q.SearchLabelNames(ctx, &storage.SearchHints{Filter: prefixFilter{"e"}})
+		got := collectSearchResultSet(t, rs)
+		require.Len(t, got, 1)
+		require.Equal(t, "env", got[0].Value)
+	})
+
+	t.Run("limit is applied", func(t *testing.T) {
+		rs := q.SearchLabelNames(ctx, &storage.SearchHints{Limit: 1})
+		got := collectSearchResultSet(t, rs)
+		require.Len(t, got, 1)
+	})
+}
+
+func TestBlockBaseQuerierSearchLabelValues(t *testing.T) {
+	ctx := t.Context()
+	q := newBlockBaseQuerierForSearch(t,
+		labels.FromStrings("env", "prod"),
+		labels.FromStrings("env", "dev"),
+		labels.FromStrings("env", "staging"),
+	)
+
+	t.Run("no filter returns all values", func(t *testing.T) {
+		rs := q.SearchLabelValues(ctx, "env", nil)
+		got := collectSearchResultSet(t, rs)
+		gotValues := make([]string, len(got))
+		for i, r := range got {
+			gotValues[i] = r.Value
+			require.Equal(t, 1.0, r.Score)
+		}
+		slices.Sort(gotValues)
+		require.Equal(t, []string{"dev", "prod", "staging"}, gotValues)
+	})
+
+	t.Run("filter selects matching values", func(t *testing.T) {
+		rs := q.SearchLabelValues(ctx, "env", &storage.SearchHints{Filter: prefixFilter{"p"}})
+		got := collectSearchResultSet(t, rs)
+		require.Len(t, got, 1)
+		require.Equal(t, "prod", got[0].Value)
+	})
+
+	t.Run("limit is applied after filtering", func(t *testing.T) {
+		rs := q.SearchLabelValues(ctx, "env", &storage.SearchHints{
+			Filter: prefixFilter{"p"},
+			Limit:  1,
+		})
+		got := collectSearchResultSet(t, rs)
+		require.Equal(t, []storage.SearchResult{{Value: "prod", Score: 1.0}}, got)
+	})
+
+	t.Run("limit is applied", func(t *testing.T) {
+		rs := q.SearchLabelValues(ctx, "env", &storage.SearchHints{Limit: 2})
+		got := collectSearchResultSet(t, rs)
+		require.Len(t, got, 2)
+	})
+
+	t.Run("unknown label name returns empty", func(t *testing.T) {
+		rs := q.SearchLabelValues(ctx, "unknown", nil)
+		got := collectSearchResultSet(t, rs)
+		require.Empty(t, got)
+	})
+
+	t.Run("OrderByValueDesc returns values in reverse alphabetical order", func(t *testing.T) {
+		rs := q.SearchLabelValues(ctx, "env", &storage.SearchHints{
+			OrderBy: storage.OrderByValueDesc,
+		})
+		got := collectSearchResultSet(t, rs)
+		gotValues := make([]string, len(got))
+		for i, r := range got {
+			gotValues[i] = r.Value
+			require.Equal(t, 1.0, r.Score)
+		}
+		require.Equal(t, []string{"staging", "prod", "dev"}, gotValues)
+	})
+}
+
+// forEachSearchBackend appends the given label sets to a head, in the order
+// given, persists an equivalent block, and runs fn against a searcher for each.
+// Head insertion order is preserved in the in-memory label value lists, so the
+// caller controls whether that order differs from ascending value order.
+func forEachSearchBackend(t *testing.T, labelSets []labels.Labels, fn func(t *testing.T, q storage.Searcher)) {
+	t.Helper()
+
+	h, _ := newTestHead(t, 1000, compression.None, false)
+	app := h.AppenderV2(t.Context())
+	for _, ls := range labelSets {
+		_, err := app.Append(0, ls, 0, 2100, 1, nil, nil, storage.AOptions{})
+		require.NoError(t, err)
+	}
+	require.NoError(t, app.Commit())
+
+	block, err := OpenBlock(nil, createBlockFromHead(t, t.TempDir(), h), nil, nil)
+	require.NoError(t, err)
+	t.Cleanup(func() { require.NoError(t, block.Close()) })
+
+	for _, backend := range []struct {
+		name   string
+		reader BlockReader
+	}{
+		{"Head", h},
+		{"Block", block},
+	} {
+		t.Run(backend.name, func(t *testing.T) {
+			q, err := NewBlockQuerier(backend.reader, 1500, 2500)
+			require.NoError(t, err)
+			t.Cleanup(func() { require.NoError(t, q.Close()) })
+			fn(t, q.(storage.Searcher))
+		})
+	}
+}
+
+// requireSearchValues collects rs and asserts that it yields exactly want, in order.
+func requireSearchValues(t *testing.T, rs storage.SearchResultSet, want []string, msgAndArgs ...any) {
+	t.Helper()
+	got := collectSearchResultSet(t, rs)
+	gotValues := make([]string, len(got))
+	for i, r := range got {
+		gotValues[i] = r.Value
+	}
+	require.Equal(t, want, gotValues, msgAndArgs...)
+}
+
+// TestSearchLabelValuesLimitAppliedAfterOrdering checks that a limited ascending
+// search returns the lexically smallest values. The limit must be applied after
+// ordering: the head holds label values unsorted, and labelValuesWithMatchers
+// collects them in postings-intersection order, so truncating first selects an
+// arbitrary subset.
+func TestSearchLabelValuesLimitAppliedAfterOrdering(t *testing.T) {
+	// Appended in descending order, so the head's in-memory value list for
+	// __name__ is the reverse of the expected result.
+	unorderedInsertion := []labels.Labels{
+		labels.FromStrings("__name__", "z_metric", "job", "api"),
+		labels.FromStrings("__name__", "m_metric", "job", "api"),
+		labels.FromStrings("__name__", "a_metric", "job", "api"),
+	}
+	// Blocks store series sorted by label set, so the series carrying the
+	// smallest "pod" value gets the highest series reference.
+	// FindIntersectingPostings yields values in series-reference order, which
+	// here is the reverse of ascending "pod" order.
+	unorderedSeriesRefs := []labels.Labels{
+		labels.FromStrings("__name__", "a_metric", "job", "api", "pod", "z_pod"),
+		labels.FromStrings("__name__", "b_metric", "job", "api", "pod", "m_pod"),
+		labels.FromStrings("__name__", "c_metric", "job", "api", "pod", "a_pod"),
+	}
+	jobAPI := []*labels.Matcher{labels.MustNewMatcher(labels.MatchEqual, "job", "api")}
+
+	t.Run("no matchers", func(t *testing.T) {
+		forEachSearchBackend(t, unorderedInsertion, func(t *testing.T, q storage.Searcher) {
+			want := []string{"a_metric", "m_metric", "z_metric"}
+			for limit := 1; limit <= len(want); limit++ {
+				t.Run(strconv.Itoa(limit), func(t *testing.T) {
+					// A nil filter and an accept-all filter must agree.
+					for _, filter := range []storage.Filter{nil, prefixFilter{""}} {
+						rs := q.SearchLabelValues(t.Context(), "__name__", &storage.SearchHints{
+							OrderBy: storage.OrderByValueAsc,
+							Limit:   limit,
+							Filter:  filter,
+						})
+						requireSearchValues(t, rs, want[:limit], "filter: %T", filter)
+					}
+				})
+			}
+		})
+	})
+
+	t.Run("matcher on another label", func(t *testing.T) {
+		forEachSearchBackend(t, unorderedSeriesRefs, func(t *testing.T, q storage.Searcher) {
+			want := []string{"a_pod", "m_pod", "z_pod"}
+			for limit := 1; limit <= len(want); limit++ {
+				t.Run(strconv.Itoa(limit), func(t *testing.T) {
+					rs := q.SearchLabelValues(t.Context(), "pod", &storage.SearchHints{
+						OrderBy: storage.OrderByValueAsc,
+						Limit:   limit,
+					}, jobAPI...)
+					requireSearchValues(t, rs, want[:limit])
+				})
+			}
+		})
+	})
+
+	t.Run("matcher on the searched label", func(t *testing.T) {
+		forEachSearchBackend(t, unorderedInsertion, func(t *testing.T, q storage.Searcher) {
+			rs := q.SearchLabelValues(t.Context(), "__name__", &storage.SearchHints{
+				OrderBy: storage.OrderByValueAsc,
+				Limit:   2,
+			}, labels.MustNewMatcher(labels.MatchRegexp, "__name__", ".*_metric"))
+			requireSearchValues(t, rs, []string{"a_metric", "m_metric"})
+		})
+	})
+
+	// ApplySearchHints documents that its input must be ascending by value. With
+	// a nil filter the score ordering degenerates to value ascending, so the
+	// index-level sort cannot be skipped.
+	t.Run("OrderByScoreDesc without a filter", func(t *testing.T) {
+		forEachSearchBackend(t, unorderedInsertion, func(t *testing.T, q storage.Searcher) {
+			rs := q.SearchLabelValues(t.Context(), "__name__", &storage.SearchHints{
+				OrderBy: storage.OrderByScoreDesc,
+				Limit:   2,
+			})
+			requireSearchValues(t, rs, []string{"a_metric", "m_metric"})
+		})
+	})
+
+	// OrderByValueDesc walks the ascending input in reverse, so it also needs
+	// ordered input.
+	t.Run("OrderByValueDesc", func(t *testing.T) {
+		forEachSearchBackend(t, unorderedInsertion, func(t *testing.T, q storage.Searcher) {
+			rs := q.SearchLabelValues(t.Context(), "__name__", &storage.SearchHints{
+				OrderBy: storage.OrderByValueDesc,
+				Limit:   2,
+			})
+			requireSearchValues(t, rs, []string{"z_metric", "m_metric"})
+		})
+	})
+}
+
+// TestSearchLabelValuesLimitAcrossMergedQueriers checks the merged case. The
+// merge truncates the k-way merge of its children, which is only correct if
+// every child returned its own smallest N.
+func TestSearchLabelValuesLimitAcrossMergedQueriers(t *testing.T) {
+	ctx := t.Context()
+
+	persisted, _ := newTestHead(t, 1000, compression.None, false)
+	app := persisted.AppenderV2(ctx)
+	for _, name := range []string{"n_metric", "p_metric", "r_metric"} {
+		_, err := app.Append(0, labels.FromStrings("__name__", name, "job", "api"), 0, 2100, 1, nil, nil, storage.AOptions{})
+		require.NoError(t, err)
+	}
+	require.NoError(t, app.Commit())
+	block, err := OpenBlock(nil, createBlockFromHead(t, t.TempDir(), persisted), nil, nil)
+	require.NoError(t, err)
+	t.Cleanup(func() { require.NoError(t, block.Close()) })
+	blockQ, err := NewBlockQuerier(block, 1500, 2500)
+	require.NoError(t, err)
+
+	// Appended in descending order so the head's value list is unordered.
+	head, _ := newTestHead(t, 1000, compression.None, false)
+	app = head.AppenderV2(ctx)
+	for _, name := range []string{"z_metric", "m_metric", "a_metric"} {
+		_, err := app.Append(0, labels.FromStrings("__name__", name, "job", "api"), 0, 2100, 1, nil, nil, storage.AOptions{})
+		require.NoError(t, err)
+	}
+	require.NoError(t, app.Commit())
+	headQ, err := NewBlockQuerier(head, 1500, 2500)
+	require.NoError(t, err)
+
+	q := storage.NewMergeQuerier([]storage.Querier{headQ, blockQ}, nil, storage.ChainedSeriesMerge)
+	t.Cleanup(func() { require.NoError(t, q.Close()) })
+
+	rs := q.(storage.Searcher).SearchLabelValues(ctx, "__name__", &storage.SearchHints{
+		OrderBy: storage.OrderByValueAsc,
+		Limit:   2,
+	})
+	requireSearchValues(t, rs, []string{"a_metric", "m_metric"})
 }

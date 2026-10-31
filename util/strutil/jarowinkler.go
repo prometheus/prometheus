@@ -13,15 +13,64 @@
 
 package strutil
 
-// JaroWinklerMatcher pre-computes the encoding of a fixed search term so that
-// it can be scored against many candidate strings without repeating the ASCII
-// check or rune conversion on the term for every call. The first Score call
-// with a Unicode candidate lazily caches the term's rune slice. It is not
-// safe for concurrent use.
+import "sync"
+
+const (
+	// jaroWinklerPoolThreshold is the largest match buffer, in flags, that is
+	// allocated locally. The compiler keeps variable-sized buffers of up to 32
+	// bytes on the stack, so only longer inputs need the pool.
+	jaroWinklerPoolThreshold = 32
+
+	// jaroWinklerMaxPooledCapacity prevents unusually large inputs from retaining
+	// a correspondingly large buffer in each sync.Pool shard.
+	jaroWinklerMaxPooledCapacity = 64 << 10
+)
+
+type jaroWinklerWorkspace struct {
+	matches []bool
+}
+
+var jaroWinklerWorkspacePool = sync.Pool{
+	New: func() any {
+		return &jaroWinklerWorkspace{}
+	},
+}
+
+// matchSlices returns cleared match buffers of lengths l1 and l2, reusing the
+// workspace's backing array when it is large enough. Reslicing up to the
+// capacity is valid even when the previous length was shorter.
+func (w *jaroWinklerWorkspace) matchSlices(l1, l2 int) (s1Matches, s2Matches []bool) {
+	total := l1 + l2
+	if cap(w.matches) < total {
+		w.matches = make([]bool, total)
+	} else {
+		w.matches = w.matches[:total]
+		clear(w.matches)
+	}
+	return w.matches[:l1], w.matches[l1:]
+}
+
+func getJaroWinklerMatchSlices(l1, l2 int) (s1Matches, s2Matches []bool, workspace *jaroWinklerWorkspace) {
+	workspace = jaroWinklerWorkspacePool.Get().(*jaroWinklerWorkspace)
+	s1Matches, s2Matches = workspace.matchSlices(l1, l2)
+	return s1Matches, s2Matches, workspace
+}
+
+func putJaroWinklerWorkspace(workspace *jaroWinklerWorkspace) {
+	if cap(workspace.matches) > jaroWinklerMaxPooledCapacity {
+		return
+	}
+	jaroWinklerWorkspacePool.Put(workspace)
+}
+
+// JaroWinklerMatcher records the encoding of a fixed search term so that it can
+// be scored against many candidate strings without repeating work on the term.
+// It is safe for concurrent use.
 type JaroWinklerMatcher struct {
-	term      string // original term; used directly on the ASCII path
-	termASCII bool   // whether term is pure ASCII
-	termRunes []rune // pre-converted runes; set when !termASCII or on first Unicode candidate
+	term          string // original term; used directly on the ASCII path
+	termASCII     bool   // whether term is pure ASCII
+	termRunesOnce sync.Once
+	termRunes     []rune // pre-converted runes for the Unicode path
 }
 
 // NewJaroWinklerMatcher returns a matcher for the given term.
@@ -45,9 +94,10 @@ func (m *JaroWinklerMatcher) Score(s string) float64 {
 		return jaroWinklerString(m.term, s)
 	}
 	// Either the term or s is Unicode; use the rune path.
-	if m.termRunes == nil {
-		// term is ASCII but s is Unicode; convert and cache term runes.
-		m.termRunes = []rune(m.term)
+	if m.termASCII {
+		m.termRunesOnce.Do(func() {
+			m.termRunes = []rune(m.term)
+		})
 	}
 	return jaroWinklerRunes(m.termRunes, []rune(s))
 }
@@ -66,8 +116,15 @@ func jaroWinklerString(s1, s2 string) float64 {
 	// Jaro match distance: characters must be within this many positions to match.
 	matchDistance := max(l2/2-1, 0)
 
-	s1Matches := make([]bool, l1)
-	s2Matches := make([]bool, l2)
+	var s1Matches, s2Matches []bool
+	var workspace *jaroWinklerWorkspace
+	if l2 > jaroWinklerPoolThreshold { // l2 is the longer input.
+		s1Matches, s2Matches, workspace = getJaroWinklerMatchSlices(l1, l2)
+		defer putJaroWinklerWorkspace(workspace)
+	} else {
+		s1Matches = make([]bool, l1)
+		s2Matches = make([]bool, l2)
+	}
 
 	var matches float64
 	var transpositions float64
@@ -134,8 +191,15 @@ func jaroWinklerRunes(r1, r2 []rune) float64 {
 	// Jaro match distance: characters must be within this many positions to match.
 	matchDistance := max(l2/2-1, 0)
 
-	r1Matches := make([]bool, l1)
-	r2Matches := make([]bool, l2)
+	var r1Matches, r2Matches []bool
+	var workspace *jaroWinklerWorkspace
+	if l2 > jaroWinklerPoolThreshold { // l2 is the longer input.
+		r1Matches, r2Matches, workspace = getJaroWinklerMatchSlices(l1, l2)
+		defer putJaroWinklerWorkspace(workspace)
+	} else {
+		r1Matches = make([]bool, l1)
+		r2Matches = make([]bool, l2)
+	}
 
 	var matches float64
 	var transpositions float64

@@ -313,13 +313,24 @@ func (c *seriesSetToChunkSet) Err() error {
 
 type seriesToChunkEncoder struct {
 	Series
+	// floatEncoding is the chunk encoding used for float samples. Samples
+	// carrying a start timestamp always use XOR2 regardless of this field,
+	// as plain XOR chunks cannot store start timestamps.
+	floatEncoding chunkenc.Encoding
 }
 
 const seriesToChunkEncoderSplit = 120
 
 // NewSeriesToChunkEncoder encodes samples to chunks with 120 samples limit.
 func NewSeriesToChunkEncoder(series Series) ChunkSeries {
-	return &seriesToChunkEncoder{series}
+	return NewSeriesToChunkEncoderWithFloatEncoding(series, chunkenc.EncXOR)
+}
+
+// NewSeriesToChunkEncoderWithFloatEncoding is like NewSeriesToChunkEncoder, but
+// float samples are encoded with floatEncoding (EncXOR or EncXOR2; anything else
+// behaves like EncXOR). Samples carrying a start timestamp always use XOR2.
+func NewSeriesToChunkEncoderWithFloatEncoding(series Series, floatEncoding chunkenc.Encoding) ChunkSeries {
+	return &seriesToChunkEncoder{Series: series, floatEncoding: floatEncoding}
 }
 
 func (s *seriesToChunkEncoder) Iterator(it chunks.Iterator) chunks.Iterator {
@@ -328,6 +339,8 @@ func (s *seriesToChunkEncoder) Iterator(it chunks.Iterator) chunks.Iterator {
 		app         chunkenc.Appender
 		err         error
 		recoded     bool
+		hBuf        *histogram.Histogram
+		fhBuf       *histogram.FloatHistogram
 	)
 	mint := int64(math.MaxInt64)
 	maxt := int64(math.MinInt64)
@@ -341,14 +354,23 @@ func (s *seriesToChunkEncoder) Iterator(it chunks.Iterator) chunks.Iterator {
 	i := 0
 	seriesIter := s.Series.Iterator(nil)
 	lastType := chunkenc.ValNone
-	lastHadST := false
 	for typ := seriesIter.Next(); typ != chunkenc.ValNone; typ = seriesIter.Next() {
 		st := seriesIter.AtST()
 		hasST := st != 0
-		if typ != lastType || lastHadST != hasST || i >= seriesToChunkEncoderSplit {
-			// Create a new chunk if the sample type changed or too many samples in the current one.
+		desired := typ.ChunkEncoding(hasST || s.floatEncoding == chunkenc.EncXOR2, hasST)
+		cut := typ != lastType || i >= seriesToChunkEncoderSplit
+		if !cut && chk.Encoding() != desired {
+			// XOR and XOR2 are append-compatible, so a change in the desired float
+			// encoding alone does not warrant cutting the chunk. The exception is a
+			// sample carrying a start timestamp, which an open XOR chunk cannot store.
+			// Histogram ST encodings are separate chunk types that are not
+			// append-compatible with their non-ST counterparts, so those still cut.
+			cut = !chunkenc.CompatibleValues(chk.Encoding(), desired) ||
+				(hasST && chk.Encoding() == chunkenc.EncXOR)
+		}
+		if cut {
 			chks = appendChunk(chks, mint, maxt, chk)
-			chk, err = typ.NewChunk(hasST)
+			chk, err = chunkenc.NewEmptyChunk(desired)
 			if err != nil {
 				return errChunksIterator{err: err}
 			}
@@ -361,7 +383,6 @@ func (s *seriesToChunkEncoder) Iterator(it chunks.Iterator) chunks.Iterator {
 			i = 0
 		}
 		lastType = typ
-		lastHadST = hasST
 
 		var (
 			t  int64
@@ -374,7 +395,10 @@ func (s *seriesToChunkEncoder) Iterator(it chunks.Iterator) chunks.Iterator {
 			t, v = seriesIter.At()
 			app.Append(st, t, v)
 		case chunkenc.ValHistogram:
-			t, h = seriesIter.AtHistogram(nil)
+			if hBuf == nil {
+				hBuf = &histogram.Histogram{}
+			}
+			t, h = seriesIter.AtHistogram(hBuf)
 			newChk, recoded, app, err = app.AppendHistogram(nil, st, t, h, false)
 			if err != nil {
 				return errChunksIterator{err: err}
@@ -389,7 +413,10 @@ func (s *seriesToChunkEncoder) Iterator(it chunks.Iterator) chunks.Iterator {
 				chk = newChk
 			}
 		case chunkenc.ValFloatHistogram:
-			t, fh = seriesIter.AtFloatHistogram(nil)
+			if fhBuf == nil {
+				fhBuf = &histogram.FloatHistogram{}
+			}
+			t, fh = seriesIter.AtFloatHistogram(fhBuf)
 			newChk, recoded, app, err = app.AppendFloatHistogram(nil, st, t, fh, false)
 			if err != nil {
 				return errChunksIterator{err: err}

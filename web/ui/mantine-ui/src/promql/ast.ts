@@ -48,6 +48,9 @@ export enum binaryOperatorType {
   or = "or",
   unless = "unless",
   atan2 = "atan2",
+  bitand = "bitand",
+  bitor = "bitor",
+  bitxor = "bitxor",
 }
 
 export const compOperatorTypes: binaryOperatorType[] = [
@@ -120,6 +123,25 @@ export interface VectorMatching {
 
 export type StartOrEnd = "start" | "end" | null;
 
+// Duration expression types used for range, step, and offset sub-expressions.
+// These are not part of the main ASTNode hierarchy since they are not
+// independently queryable PromQL expressions.
+export interface DurationExprNode {
+  type: "durationExpr";
+  op: string; // "step", "range", "min_of", "max_of", "+", "-", "*", "/", "%", "^"
+  lhs: DurationNode | null;
+  rhs: DurationNode | null;
+  wrapped: boolean;
+}
+
+export interface DurationNumberLiteralNode {
+  type: "numberLiteral";
+  val: string;
+  duration: boolean;
+}
+
+export type DurationNode = DurationExprNode | DurationNumberLiteralNode;
+
 // AST Node Types.
 
 export interface Aggregation {
@@ -151,7 +173,9 @@ export interface MatrixSelector {
   name: string;
   matchers: LabelMatcher[];
   range: number;
+  rangeExpr: DurationNode | null;
   offset: number;
+  offsetExpr: DurationNode | null;
   timestamp: number | null;
   startOrEnd: StartOrEnd;
   anchored: boolean;
@@ -162,8 +186,11 @@ export interface Subquery {
   type: nodeType.subquery;
   expr: ASTNode;
   range: number;
+  rangeExpr: DurationNode | null;
   offset: number;
+  offsetExpr: DurationNode | null;
   step: number;
+  stepExpr: DurationNode | null;
   timestamp: number | null;
   startOrEnd: StartOrEnd;
 }
@@ -194,6 +221,7 @@ export interface VectorSelector {
   name: string;
   matchers: LabelMatcher[];
   offset: number;
+  offsetExpr: DurationNode | null;
   timestamp: number | null;
   startOrEnd: StartOrEnd;
   anchored: boolean;

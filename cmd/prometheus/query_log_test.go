@@ -25,7 +25,6 @@ import (
 	"os/exec"
 	"path/filepath"
 	"runtime"
-	"strconv"
 	"sync"
 	"testing"
 	"time"
@@ -91,7 +90,7 @@ func (p *queryLogTest) setQueryLog(t *testing.T, queryLogFile string) {
 		_, err = fmt.Fprintf(p.configFile, "global:\n  query_log_file: %s\n", queryLogFile)
 		require.NoError(t, err)
 	}
-	_, err = p.configFile.Write([]byte(p.configuration()))
+	_, err = p.configFile.WriteString(p.configuration())
 	require.NoError(t, err)
 }
 
@@ -233,7 +232,7 @@ func (p *queryLogTest) String() string {
 	case ruleOrigin:
 		name = "rule queries"
 	}
-	name = name + ", " + p.host + ":" + strconv.Itoa(p.port)
+	name = name + ", " + p.host
 	if p.enabledAtStart {
 		name += ", enabled at start"
 	}
@@ -480,13 +479,14 @@ func TestQueryLog(t *testing.T) {
 						host:           host,
 						enabledAtStart: enabledAtStart,
 						prefix:         prefix,
-						port:           testutil.RandomUnprivilegedPort(t),
 						cwd:            cwd,
 					}
 
 					t.Run(p.String(), func(t *testing.T) {
 						t.Parallel()
-						p.run(t)
+						testCase := *p
+						testCase.port = testutil.RandomUnprivilegedPort(t)
+						testCase.run(t)
 					})
 				}
 			}

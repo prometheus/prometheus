@@ -84,7 +84,9 @@ func translateAST(node parser.Expr) any {
 			"type":       "matrixSelector",
 			"name":       vs.Name,
 			"range":      n.Range.Milliseconds(),
+			"rangeExpr":  translateDurationExpr(n.RangeExpr),
 			"offset":     vs.OriginalOffset.Milliseconds(),
+			"offsetExpr": translateDurationExpr(vs.OriginalOffsetExpr),
 			"matchers":   translateMatchers(vs.LabelMatchers),
 			"timestamp":  vs.Timestamp,
 			"startOrEnd": getStartOrEnd(vs.StartOrEnd),
@@ -96,11 +98,16 @@ func translateAST(node parser.Expr) any {
 			"type":       "subquery",
 			"expr":       translateAST(n.Expr),
 			"range":      n.Range.Milliseconds(),
+			"rangeExpr":  translateDurationExpr(n.RangeExpr),
 			"offset":     n.OriginalOffset.Milliseconds(),
+			"offsetExpr": translateDurationExpr(n.OriginalOffsetExpr),
 			"step":       n.Step.Milliseconds(),
+			"stepExpr":   translateDurationExpr(n.StepExpr),
 			"timestamp":  n.Timestamp,
 			"startOrEnd": getStartOrEnd(n.StartOrEnd),
 		}
+	case *parser.DurationExpr:
+		return translateDurationExpr(n)
 	case *parser.NumberLiteral:
 		return map[string]string{
 			"type": "numberLiteral",
@@ -127,6 +134,7 @@ func translateAST(node parser.Expr) any {
 			"type":       "vectorSelector",
 			"name":       n.Name,
 			"offset":     n.OriginalOffset.Milliseconds(),
+			"offsetExpr": translateDurationExpr(n.OriginalOffsetExpr),
 			"matchers":   translateMatchers(n.LabelMatchers),
 			"timestamp":  n.Timestamp,
 			"startOrEnd": getStartOrEnd(n.StartOrEnd),
@@ -135,6 +143,39 @@ func translateAST(node parser.Expr) any {
 		}
 	}
 	panic("unsupported node type")
+}
+
+func translateDurationExpr(node parser.Expr) any {
+	if node == nil {
+		return nil
+	}
+
+	switch n := node.(type) {
+	case *parser.DurationExpr:
+		if n == nil {
+			return nil
+		}
+
+		return map[string]any{
+			"type":    "durationExpr",
+			"op":      n.Op.String(),
+			"lhs":     translateDurationExpr(n.LHS),
+			"rhs":     translateDurationExpr(n.RHS),
+			"wrapped": n.Wrapped,
+		}
+	case *parser.NumberLiteral:
+		if n == nil {
+			return nil
+		}
+
+		return map[string]any{
+			"type":     "numberLiteral",
+			"val":      strconv.FormatFloat(n.Val, 'f', -1, 64),
+			"duration": n.Duration,
+		}
+	default:
+		return translateAST(n)
+	}
 }
 
 func sanitizeList(l []string) []string {

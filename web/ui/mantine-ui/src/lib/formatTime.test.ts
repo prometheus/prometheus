@@ -1,4 +1,30 @@
-import { humanizeDuration, formatPrometheusDuration } from "./formatTime";
+import {
+  humanizeDuration,
+  formatPrometheusDuration,
+  parsePrometheusDuration,
+} from "./formatTime";
+
+describe("parsePrometheusDuration", () => {
+  test("parses Prometheus duration strings", () => {
+    expect(parsePrometheusDuration("0")).toBe(0);
+    expect(parsePrometheusDuration("5m")).toBe(5 * 60 * 1000);
+    expect(parsePrometheusDuration("1h30m")).toBe(90 * 60 * 1000);
+    expect(parsePrometheusDuration("2d3h4m5s6ms")).toBe(
+      2 * 24 * 60 * 60 * 1000 +
+        3 * 60 * 60 * 1000 +
+        4 * 60 * 1000 +
+        5 * 1000 +
+        6
+    );
+  });
+
+  test("returns null for empty or invalid durations", () => {
+    expect(parsePrometheusDuration("")).toBeNull();
+    expect(parsePrometheusDuration("1.5h")).toBeNull();
+    expect(parsePrometheusDuration("5m1h")).toBeNull();
+    expect(parsePrometheusDuration("10q")).toBeNull();
+  });
+});
 
 describe("formatPrometheusDuration", () => {
   test('returns "0s" for 0 milliseconds', () => {

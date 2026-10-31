@@ -307,6 +307,10 @@ func startFakeHTTPServer(t *testing.T) (*pipeListener, func()) {
 	return listener, srv.Close
 }
 
+// synctestFQDN replaces the FQDN lookup: resolving inside a bubble makes a
+// later lookup from outside abort the process.
+const synctestFQDN = "synctest.example.com"
+
 // setupSynctestManager abstracts the boilerplate of creating a mock network,
 // starting the fake HTTP server, and configuring the scrape manager for synctest.
 func setupSynctestManager(t *testing.T, opts *Options) (*Manager, *teststorage.Appendable, func()) {
@@ -319,6 +323,7 @@ func setupSynctestManager(t *testing.T, opts *Options) (*Manager, *teststorage.A
 		opts = &Options{}
 	}
 	opts.skipJitterOffsetting = true
+	opts.fqdn = synctestFQDN
 
 	// Ensure the scraper creates a new net.Pipe on every dial attempt
 	// and hands the server-side connection to the mock server's listener.

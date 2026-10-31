@@ -1,0 +1,127 @@
+[
+  {
+    "ID": "uk9su5tb9ykfzew3qtmp14uzh",
+    "Version": {
+      "Index": 41
+    },
+    "CreatedAt": "2020-06-19T19:14:29.269637662Z",
+    "UpdatedAt": "2020-06-19T19:14:29.288101671Z",
+    "Spec": {
+      "Name": "mon_grafana",
+      "Labels": {
+        "com.docker.stack.image": "stefanprodan/swarmprom-grafana:5.3.4",
+        "com.docker.stack.namespace": "mon"
+      },
+      "TaskTemplate": {
+        "ContainerSpec": {
+          "Image": "stefanprodan/swarmprom-grafana:5.3.4@sha256:2aca8aa5716e6e0eed3fcdc88fec256a0a1828c491a8cf240486ae7cc473092d",
+          "Labels": {
+            "com.docker.stack.namespace": "mon"
+          },
+          "Privileges": {
+            "CredentialSpec": null,
+            "SELinuxContext": null
+          },
+          "Isolation": "default"
+        },
+        "Resources": {},
+        "Placement": {
+          "Platforms": [
+            {
+              "Architecture": "amd64",
+              "OS": "linux"
+            }
+          ]
+        },
+        "Networks": [
+          {
+            "Target": "npq2closzy836m07eaq1425k3",
+            "Aliases": [
+              "grafana"
+            ]
+          }
+        ],
+        "ForceUpdate": 0,
+        "Runtime": "container"
+      },
+      "Mode": {
+        "Replicated": {
+          "Replicas": 1
+        }
+      },
+      "EndpointSpec": {
+        "Mode": "vip",
+        "Ports": [
+          {
+            "Protocol": "tcp",
+            "TargetPort": 3000,
+            "PublishedPort": 3000,
+            "PublishMode": "ingress"
+          }
+        ]
+      }
+    },
+    "Endpoint": {
+      "Spec": {
+        "Mode": "vip",
+        "Ports": [
+          {
+            "Protocol": "tcp",
+            "TargetPort": 3000,
+            "PublishedPort": 3000,
+            "PublishMode": "ingress"
+          }
+        ]
+      },
+      "Ports": [
+        {
+          "Protocol": "tcp",
+          "TargetPort": 3000,
+          "PublishedPort": 3000,
+          "PublishMode": "ingress"
+        }
+      ],
+      "VirtualIPs": [
+        {
+          "NetworkID": "npq2closzy836m07eaq1425k3",
+          "Addr": "10.0.1.29/24"
+        }
+      ]
+    }
+  },
+  {
+    "ID": "tkv91uso46cck763onl5j4q3v",
+    "Version": {
+      "Index": 42
+    },
+    "CreatedAt": "2020-06-19T19:14:29.269637662Z",
+    "UpdatedAt": "2020-06-19T19:14:29.288101671Z",
+    "Spec": {
+      "Name": "global_plugin",
+      "Labels": {
+        "com.docker.stack.namespace": "plugins"
+      },
+      "TaskTemplate": {
+        "PluginSpec": {
+          "Name": "global_plugin",
+          "Remote": "vieux/sshfs:latest"
+        },
+        "Resources": {},
+        "ForceUpdate": 0,
+        "Runtime": "plugin"
+      },
+      "Mode": {
+        "Global": {}
+      }
+    },
+    "Endpoint": {
+      "Spec": {},
+      "VirtualIPs": [
+        {
+          "NetworkID": "npq2closzy836m07eaq1425k3",
+          "Addr": "10.0.1.30/24"
+        }
+      ]
+    }
+  }
+]

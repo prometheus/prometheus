@@ -75,6 +75,7 @@ type LightsailSDConfig struct {
 	SecretKey       config.Secret  `yaml:"secret_key,omitempty"`
 	Profile         string         `yaml:"profile,omitempty"`
 	RoleARN         string         `yaml:"role_arn,omitempty"`
+	ExternalID      string         `yaml:"external_id,omitempty"`
 	RefreshInterval model.Duration `yaml:"refresh_interval,omitempty"`
 	Port            int            `yaml:"port"`
 
@@ -96,7 +97,13 @@ func (c *LightsailSDConfig) NewDiscoverer(opts discovery.DiscovererOptions) (dis
 	return NewLightsailDiscovery(c, opts)
 }
 
+// SetDirectory joins any relative file paths with dir.
+func (c *LightsailSDConfig) SetDirectory(dir string) {
+	c.HTTPClientConfig.SetDirectory(dir)
+}
+
 // UnmarshalYAML implements the yaml.Unmarshaler interface for the Lightsail Config.
+// Region resolution is deferred to lightsailClient; see loadRegion.
 func (c *LightsailSDConfig) UnmarshalYAML(unmarshal func(any) error) error {
 	*c = DefaultLightsailSDConfig
 	type plain LightsailSDConfig
@@ -105,12 +112,24 @@ func (c *LightsailSDConfig) UnmarshalYAML(unmarshal func(any) error) error {
 		return err
 	}
 
-	c.Region, err = loadRegion(context.Background(), c.Region)
-	if err != nil {
-		return fmt.Errorf("could not determine AWS region: %w", err)
-	}
-
 	return c.HTTPClientConfig.Validate()
+}
+
+// lightsailClientAdapter captures only the Lightsail API calls AWS discovery
+// uses as method-value closures, keeping the concrete *lightsail.Client out of
+// any interface-boxed struct field. See ec2ClientAdapter for the full
+// rationale: this stops the linker from retaining the entire Lightsail API
+// surface (~3.4 MB).
+type lightsailClientAdapter struct {
+	getInstances func(ctx context.Context, params *lightsail.GetInstancesInput, optFns ...func(*lightsail.Options)) (*lightsail.GetInstancesOutput, error)
+}
+
+func newLightsailClientAdapter(c *lightsail.Client) *lightsailClientAdapter {
+	return &lightsailClientAdapter{getInstances: c.GetInstances}
+}
+
+func (a *lightsailClientAdapter) GetInstances(ctx context.Context, params *lightsail.GetInstancesInput, optFns ...func(*lightsail.Options)) (*lightsail.GetInstancesOutput, error) {
+	return a.getInstances(ctx, params, optFns...)
 }
 
 // LightsailDiscovery periodically performs Lightsail-SD requests. It implements
@@ -118,7 +137,12 @@ func (c *LightsailSDConfig) UnmarshalYAML(unmarshal func(any) error) error {
 type LightsailDiscovery struct {
 	*refresh.Discovery
 	cfg       *LightsailSDConfig
-	lightsail *lightsail.Client
+	lightsail *lightsailClientAdapter
+
+	// region is the resolved region used for the AWS client and for the
+	// Source / __meta_lightsail_region labels. Lazily populated by
+	// lightsailClient.
+	region string
 }
 
 // NewLightsailDiscovery returns a new LightsailDiscovery which periodically refreshes its targets.
@@ -148,7 +172,7 @@ func NewLightsailDiscovery(conf *LightsailSDConfig, opts discovery.DiscovererOpt
 	return d, nil
 }
 
-func (d *LightsailDiscovery) lightsailClient(ctx context.Context) (*lightsail.Client, error) {
+func (d *LightsailDiscovery) lightsailClient(ctx context.Context) (*lightsailClientAdapter, error) {
 	if d.lightsail != nil {
 		return d.lightsail, nil
 	}
@@ -159,9 +183,15 @@ func (d *LightsailDiscovery) lightsailClient(ctx context.Context) (*lightsail.Cl
 		return nil, err
 	}
 
-	// Build the AWS config with the provided region.
+	// Resolve the region lazily. See LightsailSDConfig.UnmarshalYAML.
+	d.region, err = loadRegion(ctx, d.cfg.Region)
+	if err != nil {
+		return nil, err
+	}
+
+	// Build the AWS config with the resolved region.
 	configOptions := []func(*awsConfig.LoadOptions) error{
-		awsConfig.WithRegion(d.cfg.Region),
+		awsConfig.WithRegion(d.region),
 		awsConfig.WithHTTPClient(httpClient),
 	}
 
@@ -184,16 +214,20 @@ func (d *LightsailDiscovery) lightsailClient(ctx context.Context) (*lightsail.Cl
 
 	// If the role ARN is set, assume the role to get credentials and set the credentials provider in the config.
 	if d.cfg.RoleARN != "" {
-		assumeProvider := stscreds.NewAssumeRoleProvider(sts.NewFromConfig(cfg), d.cfg.RoleARN)
+		assumeProvider := stscreds.NewAssumeRoleProvider(sts.NewFromConfig(cfg), d.cfg.RoleARN, func(o *stscreds.AssumeRoleOptions) {
+			if d.cfg.ExternalID != "" {
+				o.ExternalID = aws.String(d.cfg.ExternalID)
+			}
+		})
 		cfg.Credentials = aws.NewCredentialsCache(assumeProvider)
 	}
 
-	d.lightsail = lightsail.NewFromConfig(cfg, func(options *lightsail.Options) {
+	d.lightsail = newLightsailClientAdapter(lightsail.NewFromConfig(cfg, func(options *lightsail.Options) {
 		if d.cfg.Endpoint != "" {
 			options.BaseEndpoint = &d.cfg.Endpoint
 		}
 		options.HTTPClient = httpClient
-	})
+	}))
 
 	return d.lightsail, nil
 }
@@ -205,7 +239,7 @@ func (d *LightsailDiscovery) refresh(ctx context.Context) ([]*targetgroup.Group,
 	}
 
 	tg := &targetgroup.Group{
-		Source: d.cfg.Region,
+		Source: d.region,
 	}
 
 	input := &lightsail.GetInstancesInput{}
@@ -224,15 +258,31 @@ func (d *LightsailDiscovery) refresh(ctx context.Context) ([]*targetgroup.Group,
 			continue
 		}
 
+		// Every field below is optional in the Lightsail API. Omit the label
+		// when the field is absent rather than dereferencing a nil pointer,
+		// which would panic and take down the whole Prometheus process.
 		labels := model.LabelSet{
-			lightsailLabelAZ:                  model.LabelValue(*inst.Location.AvailabilityZone),
-			lightsailLabelBlueprintID:         model.LabelValue(*inst.BlueprintId),
-			lightsailLabelBundleID:            model.LabelValue(*inst.BundleId),
-			lightsailLabelInstanceName:        model.LabelValue(*inst.Name),
-			lightsailLabelInstanceState:       model.LabelValue(*inst.State.Name),
-			lightsailLabelInstanceSupportCode: model.LabelValue(*inst.SupportCode),
-			lightsailLabelPrivateIP:           model.LabelValue(*inst.PrivateIpAddress),
-			lightsailLabelRegion:              model.LabelValue(d.cfg.Region),
+			lightsailLabelPrivateIP: model.LabelValue(*inst.PrivateIpAddress),
+			lightsailLabelRegion:    model.LabelValue(d.region),
+		}
+
+		if inst.Location != nil && inst.Location.AvailabilityZone != nil {
+			labels[lightsailLabelAZ] = model.LabelValue(*inst.Location.AvailabilityZone)
+		}
+		if inst.BlueprintId != nil {
+			labels[lightsailLabelBlueprintID] = model.LabelValue(*inst.BlueprintId)
+		}
+		if inst.BundleId != nil {
+			labels[lightsailLabelBundleID] = model.LabelValue(*inst.BundleId)
+		}
+		if inst.Name != nil {
+			labels[lightsailLabelInstanceName] = model.LabelValue(*inst.Name)
+		}
+		if inst.State != nil && inst.State.Name != nil {
+			labels[lightsailLabelInstanceState] = model.LabelValue(*inst.State.Name)
+		}
+		if inst.SupportCode != nil {
+			labels[lightsailLabelInstanceSupportCode] = model.LabelValue(*inst.SupportCode)
 		}
 
 		addr := net.JoinHostPort(*inst.PrivateIpAddress, strconv.Itoa(d.cfg.Port))
@@ -248,7 +298,8 @@ func (d *LightsailDiscovery) refresh(ctx context.Context) ([]*targetgroup.Group,
 			labels[lightsailLabelIPv6Addresses] = model.LabelValue(
 				lightsailLabelSeparator +
 					strings.Join(ipv6addrs, lightsailLabelSeparator) +
-					lightsailLabelSeparator)
+					lightsailLabelSeparator,
+			)
 		}
 
 		for _, t := range inst.Tags {

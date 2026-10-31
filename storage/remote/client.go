@@ -121,6 +121,7 @@ type Client struct {
 	readQueriesDuration prometheus.ObserverVec
 
 	writeProtoMsg    remoteapi.WriteMessageType
+	writeMode        remoteapi.WriteMode
 	writeCompression remoteapi.Compression
 }
 
@@ -135,6 +136,7 @@ type ClientConfig struct {
 	Headers               map[string]string
 	RetryOnRateLimit      bool
 	WriteProtoMsg         remoteapi.WriteMessageType
+	WriteMode             remoteapi.WriteMode
 	ChunkedReadLimit      uint64
 	RoundRobinDNS         bool
 	AcceptedResponseTypes []prompb.ReadRequest_ResponseType
@@ -224,7 +226,8 @@ func NewWriteClient(name string, conf *ClientConfig) (WriteClient, error) {
 		t,
 		otelhttp.WithClientTrace(func(ctx context.Context) *httptrace.ClientTrace {
 			return otelhttptrace.NewClientTrace(ctx, otelhttptrace.WithoutSubSpans())
-		}))
+		}),
+	)
 
 	return &Client{
 		remoteName:       name,
@@ -233,6 +236,7 @@ func NewWriteClient(name string, conf *ClientConfig) (WriteClient, error) {
 		retryOnRateLimit: conf.RetryOnRateLimit,
 		timeout:          time.Duration(conf.Timeout),
 		writeProtoMsg:    writeProtoMsg,
+		writeMode:        conf.WriteMode,
 		writeCompression: remoteapi.SnappyBlockCompression,
 	}, nil
 }
@@ -271,7 +275,7 @@ func (c *Client) Store(ctx context.Context, req []byte, attempt int) (WriteRespo
 	}
 
 	httpReq.Header.Add("Content-Encoding", string(c.writeCompression))
-	httpReq.Header.Set("Content-Type", remoteWriteContentTypeHeaders[c.writeProtoMsg])
+	httpReq.Header.Set("Content-Type", remoteapi.ContentTypeHeader(c.writeProtoMsg, c.writeMode))
 	httpReq.Header.Set("User-Agent", UserAgent)
 	if c.writeProtoMsg == remoteapi.WriteV1MessageType {
 		// Compatibility mode for 1.0.

@@ -160,7 +160,6 @@ func NewDiscovery(conf *DockerSwarmSDConfig, opts discovery.DiscovererOptions) (
 		clientOpts = append(clientOpts,
 			client.WithHTTPClient(&http.Client{
 				Transport: rt,
-				Timeout:   time.Duration(conf.RefreshInterval),
 			}),
 			client.WithScheme(hostURL.Scheme),
 			client.WithHTTPHeaders(map[string]string{
@@ -168,6 +167,11 @@ func NewDiscovery(conf *DockerSwarmSDConfig, opts discovery.DiscovererOptions) (
 			}),
 		)
 	}
+
+	// Set a deadline on whichever HTTP client is in use, so it is safe for the
+	// non-HTTP transports. It must be appended after WithHTTPClient, which
+	// replaces the client it would otherwise set that deadline on.
+	clientOpts = append(clientOpts, client.WithTimeout(time.Duration(conf.RefreshInterval)))
 
 	d.client, err = client.New(clientOpts...)
 	if err != nil {

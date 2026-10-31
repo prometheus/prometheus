@@ -65,8 +65,8 @@ type SDConfig struct {
 	Port                  int            `yaml:"port,omitempty"`
 	Region                string         `yaml:"region,omitempty"`
 	Endpoint              string         `yaml:"endpoint,omitempty"`
-	ServiceAccountKey     string         `yaml:"service_account_key,omitempty"`
-	PrivateKey            string         `yaml:"private_key,omitempty"`
+	ServiceAccountKey     config.Secret  `yaml:"service_account_key,omitempty"`
+	PrivateKey            config.Secret  `yaml:"private_key,omitempty"`
 	ServiceAccountKeyPath string         `yaml:"service_account_key_path,omitempty"`
 	PrivateKeyPath        string         `yaml:"private_key_path,omitempty"`
 	CredentialsFilePath   string         `yaml:"credentials_file_path,omitempty"`

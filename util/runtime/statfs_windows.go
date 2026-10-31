@@ -38,15 +38,21 @@ func FsSize(path string) uint64 {
 		return 0
 	}
 
+	utf16Path, err := syscall.UTF16PtrFromString(path)
+	if err != nil {
+		return 0
+	}
+
 	var avail int64
 	var total int64
 	var free int64
 	// https://learn.microsoft.com/en-us/windows/win32/api/fileapi/nf-fileapi-getdiskfreespaceexa
 	ret, _, _ := getDiskFreeSpaceExW.Call(
-		uintptr(unsafe.Pointer(syscall.StringToUTF16Ptr(path))),
+		uintptr(unsafe.Pointer(utf16Path)),
 		uintptr(unsafe.Pointer(&avail)),
 		uintptr(unsafe.Pointer(&total)),
-		uintptr(unsafe.Pointer(&free)))
+		uintptr(unsafe.Pointer(&free)),
+	)
 
 	if ret == 0 || uint64(free) > uint64(total) {
 		return 0

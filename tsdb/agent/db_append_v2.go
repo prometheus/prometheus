@@ -21,6 +21,7 @@ import (
 	"github.com/prometheus/prometheus/model/exemplar"
 	"github.com/prometheus/prometheus/model/histogram"
 	"github.com/prometheus/prometheus/model/labels"
+	"github.com/prometheus/prometheus/model/metadata"
 	"github.com/prometheus/prometheus/model/value"
 	"github.com/prometheus/prometheus/storage"
 	"github.com/prometheus/prometheus/tsdb/chunks"
@@ -37,7 +38,6 @@ type appenderV2 struct {
 }
 
 // Append appends pending sample to agent's DB.
-// TODO: Wire metadata in the Agent's appender.
 func (a *appenderV2) Append(ref storage.SeriesRef, ls labels.Labels, st, t int64, v float64, h *histogram.Histogram, fh *histogram.FloatHistogram, opts storage.AOptions) (storage.SeriesRef, error) {
 	var (
 		// Avoid shadowing err variables for reliability.
@@ -81,9 +81,9 @@ func (a *appenderV2) Append(ref storage.SeriesRef, ls labels.Labels, st, t int64
 	case fh != nil:
 		isStale = value.IsStaleNaN(fh.Sum)
 		// NOTE: always modify pendingFloatHistograms and floatHistogramSeries together
-		// TODO(krajorama,ywwg,bwplotka): Pass ST when available in WAL.
 		a.pendingFloatHistograms = append(a.pendingFloatHistograms, record.RefFloatHistogramSample{
 			Ref: s.ref,
+			ST:  st,
 			T:   t,
 			FH:  fh,
 		})
@@ -91,9 +91,9 @@ func (a *appenderV2) Append(ref storage.SeriesRef, ls labels.Labels, st, t int64
 	case h != nil:
 		isStale = value.IsStaleNaN(h.Sum)
 		// NOTE: always modify pendingHistograms and histogramSeries together
-		// TODO(krajorama,ywwg,bwplotka): Pass ST when available in WAL.
 		a.pendingHistograms = append(a.pendingHistograms, record.RefHistogramSample{
 			Ref: s.ref,
+			ST:  st,
 			T:   t,
 			H:   h,
 		})
@@ -111,19 +111,51 @@ func (a *appenderV2) Append(ref storage.SeriesRef, ls labels.Labels, st, t int64
 		a.sampleSeries = append(a.sampleSeries, s)
 	}
 	a.metrics.totalAppendedSamples.WithLabelValues(sampleMetricType).Inc()
-	if isStale {
-		// For stale values we never attempt to process metadata/exemplars, claim the success.
-		return storage.SeriesRef(s.ref), nil
-	}
 
-	// Append exemplars if any and if storage was configured for it.
+	// Append exemplars only for non-stale samples.
 	// TODO(bwplotka): Agent does not have equivalent of a.head.opts.EnableExemplarStorage && a.head.opts.MaxExemplars.Load() > 0 ?
-	if len(opts.Exemplars) > 0 {
+	if !isStale && len(opts.Exemplars) > 0 {
 		// Currently only exemplars can return partial errors.
 		partialErr = a.appendExemplars(s, opts.Exemplars)
 	}
+	// Preserve metadata for all samples, including stale samples.
+	if a.opts.EnableMetadataWALRecords && !opts.Metadata.IsEmpty() {
+		s.Lock()
+		metaChanged := metadata.IsZeroHandle(s.meta) || !s.meta.Value().Equals(opts.Metadata)
+		s.Unlock()
+		if metaChanged {
+			a.pendingMetadata = append(a.pendingMetadata, record.RefMetadata{
+				Ref:  s.ref,
+				Type: record.GetMetricType(opts.Metadata.Type),
+				Unit: opts.Metadata.Unit,
+				Help: opts.Metadata.Help,
+			})
+			a.metadataSeries = append(a.metadataSeries, s)
+		}
+	}
 	return storage.SeriesRef(s.ref), partialErr
 }
+
+// AppendExemplars implements storage.ExemplarAppenderV2.
+// The series identified by ref and/or ls MUST already exist (it MUST have been
+// appended to via Append in the same or an earlier transaction).
+func (a *appenderV2) AppendExemplars(ref storage.SeriesRef, ls labels.Labels, exemplars []exemplar.Exemplar) (storage.SeriesRef, error) {
+	// Series references and chunk references are identical for agent mode.
+	s := a.series.GetByID(chunks.HeadSeriesRef(ref))
+	if s == nil {
+		ls = ls.WithoutEmpty()
+		s = a.series.GetByHash(ls.Hash(), ls)
+	}
+	if s == nil {
+		return 0, fmt.Errorf("unknown series ref when trying to add exemplars: %d: %w", ref, storage.ErrNotFound)
+	}
+	if len(exemplars) == 0 {
+		return storage.SeriesRef(s.ref), nil
+	}
+	return storage.SeriesRef(s.ref), a.appendExemplars(s, exemplars)
+}
+
+var _ storage.ExemplarAppenderV2 = &appenderV2{}
 
 func (a *appenderV2) Commit() error {
 	defer a.appenderV2Pool.Put(a)
@@ -136,15 +168,15 @@ func (a *appenderV2) Rollback() error {
 }
 
 func (a *appenderV2) appendExemplars(s *memSeries, exemplar []exemplar.Exemplar) error {
-	var errs []error
-	for _, e := range exemplar {
+	var errs []storage.ExemplarError
+	for i, e := range exemplar {
 		// Ensure no empty labels have gotten through.
 		e.Labels = e.Labels.WithoutEmpty()
 
 		if err := a.validateExemplar(s.ref, e); err != nil {
 			if !errors.Is(err, storage.ErrDuplicateExemplar) {
 				// Except duplicates, return partial errors.
-				errs = append(errs, err)
+				errs = append(errs, storage.ExemplarError{Index: i, Err: err})
 				continue
 			}
 			if !errors.Is(err, storage.ErrOutOfOrderExemplar) {

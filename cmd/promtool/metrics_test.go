@@ -101,6 +101,7 @@ test_metric{label="value2"} 43.0
 				map[string]string{},
 				30*time.Second,
 				tc.protoMsg,
+				"/api/v1/write",
 				map[string]string{"job": "test"},
 				tmpFile,
 			)
@@ -122,7 +123,7 @@ type mockStorage struct {
 	receivedContentType string
 }
 
-func (m *mockStorage) Store(req *http.Request, _ remoteapi.WriteMessageType) (*remoteapi.WriteResponse, error) {
+func (m *mockStorage) Store(req *http.Request, _ remoteapi.WriteMessageType, _ remoteapi.WriteMode) (*remoteapi.WriteResponse, error) {
 	m.called = true
 
 	// Capture content-type header.
@@ -153,6 +154,7 @@ func TestPushMetricsInvalidProtoMsg(t *testing.T) {
 		map[string]string{},
 		30*time.Second,
 		"blablalba", // Invalid protoMsg.
+		"/api/v1/write",
 		map[string]string{"job": "test"},
 		tmpFile,
 	)

@@ -14,6 +14,23 @@
 import { Completion, snippet } from '@codemirror/autocomplete';
 
 export const durationTerms = [{ label: 'y' }, { label: 'w' }, { label: 'd' }, { label: 'h' }, { label: 'm' }, { label: 's' }, { label: 'ms' }];
+export const durationExprTerms: Completion[] = [
+  { label: 'step()', info: 'Resolves to the current query step duration', type: 'keyword' },
+  { label: 'range()', info: 'Resolves to the total query range duration', type: 'keyword' },
+  {
+    label: 'min_of(, )',
+    info: 'Returns the minimum of two durations',
+    type: 'keyword',
+    apply: snippet('min_of(${duration_a}, ${duration_b})'),
+  },
+  {
+    label: 'max_of(, )',
+    info: 'Returns the maximum of two durations',
+    type: 'keyword',
+    apply: snippet('max_of(${duration_a}, ${duration_b})'),
+  },
+];
+export const durationExprOperatorTerms = [{ label: '^' }, { label: '*' }, { label: '/' }, { label: '%' }, { label: '+' }, { label: '-' }];
 export const matchOpTerms = [{ label: '=' }, { label: '!=' }, { label: '=~' }, { label: '!~' }];
 export const binOpTerms = [
   { label: '^' },
@@ -31,6 +48,9 @@ export const binOpTerms = [
   { label: '<=' },
   { label: '!=' },
   { label: 'atan2' },
+  { label: 'bitand' },
+  { label: 'bitor' },
+  { label: 'bitxor' },
   { label: 'and' },
   { label: 'or' },
   { label: 'unless' },
@@ -276,6 +296,12 @@ export const functionIdentifierTerms = [
     type: 'function',
   },
   {
+    label: 'end',
+    detail: 'function',
+    info: 'Return the query end timestamp in seconds',
+    type: 'function',
+  },
+  {
     label: 'hour',
     detail: 'function',
     info: 'Return the hour of the day for provided timestamps',
@@ -297,6 +323,12 @@ export const functionIdentifierTerms = [
     label: 'info',
     detail: 'function',
     info: 'Add data labels from corresponding info metrics',
+    type: 'function',
+  },
+  {
+    label: 'integral',
+    detail: 'function',
+    info: 'Calculate the integral over time of input series using left-point rectangle, right-point rectangle, or trapezoidal approximation',
     type: 'function',
   },
   {
@@ -434,6 +466,12 @@ export const functionIdentifierTerms = [
     boost: -1,
   },
   {
+    label: 'range',
+    detail: 'function',
+    info: 'Return the query range in seconds',
+    type: 'function',
+  },
+  {
     label: 'rate',
     detail: 'function',
     info: 'Calculate per-second increase over a range vector (for counters)',
@@ -503,6 +541,24 @@ export const functionIdentifierTerms = [
     label: 'sqrt',
     detail: 'function',
     info: 'Return the square root for input series',
+    type: 'function',
+  },
+  {
+    label: 'start',
+    detail: 'function',
+    info: 'Return the query start timestamp in seconds',
+    type: 'function',
+  },
+  {
+    label: 'start_timestamp',
+    detail: 'function',
+    info: 'Return the start timestamp for the samples in the input vector',
+    type: 'function',
+  },
+  {
+    label: 'step',
+    detail: 'function',
+    info: 'Return the query step in seconds',
     type: 'function',
   },
   {

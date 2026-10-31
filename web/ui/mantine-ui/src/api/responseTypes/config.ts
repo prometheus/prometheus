@@ -1,5 +1,4 @@
-// Result type for /api/v1/status/config endpoint.
-// See: https://prometheus.io/docs/prometheus/latest/querying/api/#config
+// Result type for API endpoints that return configuration as YAML.
 export default interface ConfigResult {
   yaml: string;
 }

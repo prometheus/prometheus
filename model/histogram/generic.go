@@ -43,6 +43,7 @@ var (
 	ErrHistogramNegativeBucketCount     = Error{error: errors.New("histogram has a bucket whose observation count is negative")}
 	ErrHistogramSpanNegativeOffset      = Error{error: errors.New("histogram has a span whose offset is negative")}
 	ErrHistogramSpansBucketsMismatch    = Error{error: errors.New("histogram spans specify different number of buckets than provided")}
+	ErrHistogramSpanIndexOutOfRange     = Error{error: errors.New("histogram has a span whose bucket index is out of range")}
 	ErrHistogramCustomBucketsMismatch   = Error{error: errors.New("histogram custom bounds are too few")}
 	ErrHistogramCustomBucketsInvalid    = Error{error: errors.New("histogram custom bounds must be in strictly increasing order")}
 	ErrHistogramCustomBucketsInfinite   = Error{error: errors.New("histogram custom bounds must be finite")}
@@ -162,6 +163,33 @@ func (b Bucket[BC]) String() string {
 	return sb.String()
 }
 
+// FractionBelow returns the fraction (between 0 and 1) of this bucket's width
+// that lies at or below the value v, assuming v is strictly inside the bucket's
+// finite bounds (b.Lower < v < b.Upper). It uses linear interpolation when
+// linear is true (as done for custom (NHCB) buckets and the zero bucket) and
+// exponential interpolation otherwise (as done for standard exponential
+// native-histogram buckets, interpolating on a logarithmic scale). Multiply the
+// result by b.Count to get the estimated number of observations at or below v.
+//
+// The caller is responsible for handling values outside the bucket bounds and
+// buckets with an infinite bound; passing those here yields a meaningless
+// result.
+func (b Bucket[BC]) FractionBelow(v float64, linear bool) float64 {
+	if linear {
+		return (v - b.Lower) / (b.Upper - b.Lower)
+	}
+	// On a logarithmic scale the exponential bucket boundaries become linear,
+	// so the fraction is computed the same way as in the linear case but over
+	// the log2 of the bounds. Negative buckets are mirrored.
+	logLower := math.Log2(math.Abs(b.Lower))
+	logUpper := math.Log2(math.Abs(b.Upper))
+	logV := math.Log2(math.Abs(v))
+	if v > 0 {
+		return (logV - logLower) / (logUpper - logLower)
+	}
+	return 1 - ((logV - logUpper) / (logLower - logUpper))
+}
+
 // BucketIterator iterates over the buckets of a Histogram, returning decoded
 // buckets.
 type BucketIterator[BC BucketCount] interface {
@@ -243,7 +271,8 @@ func compactBuckets[IBC InternalBucketCount](
 	} else if compensationBuckets != nil && len(primaryBuckets) != len(compensationBuckets) {
 		panic(fmt.Errorf(
 			"primary buckets layout (%v) mismatch against associated compensation buckets layout (%v)",
-			primaryBuckets, compensationBuckets),
+			primaryBuckets, compensationBuckets,
+		),
 		)
 	}
 	// Fast path: If there are no empty buckets AND no offset in any span is
@@ -449,6 +478,7 @@ func compactBuckets[IBC InternalBucketCount](
 		}
 		// Merge span with previous one and insert empty buckets.
 		offset := int(spans[iSpan].Offset)
+		l := int(spans[iSpan].Length)
 		spans[iSpan-1].Length += uint32(offset) + spans[iSpan].Length
 		spans = append(spans[:iSpan], spans[iSpan+1:]...)
 		newPrimaryBuckets := make([]IBC, len(primaryBuckets)+offset)
@@ -466,7 +496,18 @@ func compactBuckets[IBC InternalBucketCount](
 			compensationBuckets = newCompensationBuckets
 		}
 		iBucket += offset
-		currentBucketAbsolute = primaryBuckets[iBucket]
+		// The buckets of the merged span are now part of the previous span, so
+		// iBucket has to skip them as well to keep pointing at the first bucket
+		// of the span we look at next. The inserted empty buckets have reset the
+		// running absolute count to zero, so the deltas of the merged span add up
+		// to the absolute count of its last bucket.
+		if deltaBuckets {
+			currentBucketAbsolute = 0
+			for _, bucket := range primaryBuckets[iBucket : iBucket+l] {
+				currentBucketAbsolute += bucket
+			}
+		}
+		iBucket += l
 		// Note that with many merges, it would be more efficient to
 		// first record all the chunks of empty buckets to insert and
 		// then do it in one go through all the buckets.
@@ -476,12 +517,23 @@ func compactBuckets[IBC InternalBucketCount](
 }
 
 func checkHistogramSpans(spans []Span, numBuckets int) error {
-	var spanBuckets int
+	var (
+		spanBuckets int
+		// Bucket indexes are int32, so track the index in int64 to
+		// detect offsets that add up past the int32 range and wrap.
+		endIdx int64
+	)
 	for n, span := range spans {
 		if n > 0 && span.Offset < 0 {
 			return fmt.Errorf("span number %d with offset %d: %w", n+1, span.Offset, ErrHistogramSpanNegativeOffset)
+		} else if n == 0 && span.Offset == math.MinInt32 {
+			return fmt.Errorf("span number %d starts at bucket index %d: %w", n+1, span.Offset, ErrHistogramSpanIndexOutOfRange)
 		}
 		spanBuckets += int(span.Length)
+		endIdx += int64(span.Offset) + int64(span.Length)
+		if endIdx-1 > math.MaxInt32 {
+			return fmt.Errorf("span number %d ends at bucket index %d: %w", n+1, endIdx-1, ErrHistogramSpanIndexOutOfRange)
+		}
 	}
 	if spanBuckets != numBuckets {
 		return fmt.Errorf("spans need %d buckets, have %d buckets: %w", spanBuckets, numBuckets, ErrHistogramSpansBucketsMismatch)

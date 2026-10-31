@@ -30,10 +30,11 @@ import (
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/arm"
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/cloud"
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/policy"
+	"github.com/Azure/azure-sdk-for-go/sdk/azcore/runtime"
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/to"
 	"github.com/Azure/azure-sdk-for-go/sdk/azidentity"
-	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/compute/armcompute/v5"
-	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/network/armnetwork/v4"
+	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/compute/armcompute/v8"
+	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/network/armnetwork/v8"
 	cache "github.com/Code-Hex/go-generics-cache"
 	"github.com/Code-Hex/go-generics-cache/policy/lru"
 	"github.com/prometheus/client_golang/prometheus"
@@ -221,14 +222,104 @@ type client interface {
 
 // azureClient represents multiple Azure Resource Manager providers.
 type azureClient struct {
-	nic    *armnetwork.InterfacesClient
-	vm     *armcompute.VirtualMachinesClient
-	vmss   *armcompute.VirtualMachineScaleSetsClient
-	vmssvm *armcompute.VirtualMachineScaleSetVMsClient
+	nic    interfacesClientAdapter
+	vm     virtualMachinesClientAdapter
+	vmss   virtualMachineScaleSetsClientAdapter
+	vmssvm virtualMachineScaleSetVMsClientAdapter
 	logger *slog.Logger
 }
 
 var _ client = &azureClient{}
+
+// The *ClientAdapter types below capture only the operations discovery uses as
+// closures, hiding the concrete SDK clients from reflection so dead-code
+// elimination can drop the unused operations and shrink the binary.
+
+// virtualMachinesClientAdapter adapts *armcompute.VirtualMachinesClient.
+type virtualMachinesClientAdapter struct {
+	newListAllPager func(options *armcompute.VirtualMachinesClientListAllOptions) *runtime.Pager[armcompute.VirtualMachinesClientListAllResponse]
+	newListPager    func(resourceGroupName string, options *armcompute.VirtualMachinesClientListOptions) *runtime.Pager[armcompute.VirtualMachinesClientListResponse]
+}
+
+func newVirtualMachinesClientAdapter(c *armcompute.VirtualMachinesClient) virtualMachinesClientAdapter {
+	return virtualMachinesClientAdapter{
+		newListAllPager: c.NewListAllPager,
+		newListPager:    c.NewListPager,
+	}
+}
+
+// NewListAllPager lists all virtual machines in the subscription.
+func (a virtualMachinesClientAdapter) NewListAllPager(options *armcompute.VirtualMachinesClientListAllOptions) *runtime.Pager[armcompute.VirtualMachinesClientListAllResponse] {
+	return a.newListAllPager(options)
+}
+
+// NewListPager lists the virtual machines in a resource group.
+func (a virtualMachinesClientAdapter) NewListPager(resourceGroupName string, options *armcompute.VirtualMachinesClientListOptions) *runtime.Pager[armcompute.VirtualMachinesClientListResponse] {
+	return a.newListPager(resourceGroupName, options)
+}
+
+// virtualMachineScaleSetsClientAdapter adapts *armcompute.VirtualMachineScaleSetsClient.
+type virtualMachineScaleSetsClientAdapter struct {
+	newListAllPager func(options *armcompute.VirtualMachineScaleSetsClientListAllOptions) *runtime.Pager[armcompute.VirtualMachineScaleSetsClientListAllResponse]
+	newListPager    func(resourceGroupName string, options *armcompute.VirtualMachineScaleSetsClientListOptions) *runtime.Pager[armcompute.VirtualMachineScaleSetsClientListResponse]
+}
+
+func newVirtualMachineScaleSetsClientAdapter(c *armcompute.VirtualMachineScaleSetsClient) virtualMachineScaleSetsClientAdapter {
+	return virtualMachineScaleSetsClientAdapter{
+		newListAllPager: c.NewListAllPager,
+		newListPager:    c.NewListPager,
+	}
+}
+
+// NewListAllPager lists all scale sets in the subscription.
+func (a virtualMachineScaleSetsClientAdapter) NewListAllPager(options *armcompute.VirtualMachineScaleSetsClientListAllOptions) *runtime.Pager[armcompute.VirtualMachineScaleSetsClientListAllResponse] {
+	return a.newListAllPager(options)
+}
+
+// NewListPager lists the scale sets in a resource group.
+func (a virtualMachineScaleSetsClientAdapter) NewListPager(resourceGroupName string, options *armcompute.VirtualMachineScaleSetsClientListOptions) *runtime.Pager[armcompute.VirtualMachineScaleSetsClientListResponse] {
+	return a.newListPager(resourceGroupName, options)
+}
+
+// virtualMachineScaleSetVMsClientAdapter adapts *armcompute.VirtualMachineScaleSetVMsClient.
+type virtualMachineScaleSetVMsClientAdapter struct {
+	newListPager func(resourceGroupName, virtualMachineScaleSetName string, options *armcompute.VirtualMachineScaleSetVMsClientListOptions) *runtime.Pager[armcompute.VirtualMachineScaleSetVMsClientListResponse]
+}
+
+func newVirtualMachineScaleSetVMsClientAdapter(c *armcompute.VirtualMachineScaleSetVMsClient) virtualMachineScaleSetVMsClientAdapter {
+	return virtualMachineScaleSetVMsClientAdapter{
+		newListPager: c.NewListPager,
+	}
+}
+
+// NewListPager lists the virtual machines of a scale set.
+func (a virtualMachineScaleSetVMsClientAdapter) NewListPager(resourceGroupName, virtualMachineScaleSetName string, options *armcompute.VirtualMachineScaleSetVMsClientListOptions) *runtime.Pager[armcompute.VirtualMachineScaleSetVMsClientListResponse] {
+	return a.newListPager(resourceGroupName, virtualMachineScaleSetName, options)
+}
+
+// interfacesClientAdapter adapts *armnetwork.InterfacesClient.
+type interfacesClientAdapter struct {
+	get func(ctx context.Context, resourceGroupName, networkInterfaceName string, options *armnetwork.InterfacesClientGetOptions) (armnetwork.InterfacesClientGetResponse, error)
+
+	getVirtualMachineScaleSetNetworkInterface func(ctx context.Context, resourceGroupName, virtualMachineScaleSetName, virtualMachineIndex, networkInterfaceName string, options *armnetwork.InterfacesClientGetVirtualMachineScaleSetNetworkInterfaceOptions) (armnetwork.InterfacesClientGetVirtualMachineScaleSetNetworkInterfaceResponse, error)
+}
+
+func newInterfacesClientAdapter(c *armnetwork.InterfacesClient) interfacesClientAdapter {
+	return interfacesClientAdapter{
+		get: c.Get,
+		getVirtualMachineScaleSetNetworkInterface: c.GetVirtualMachineScaleSetNetworkInterface,
+	}
+}
+
+// Get retrieves a network interface.
+func (a interfacesClientAdapter) Get(ctx context.Context, resourceGroupName, networkInterfaceName string, options *armnetwork.InterfacesClientGetOptions) (armnetwork.InterfacesClientGetResponse, error) {
+	return a.get(ctx, resourceGroupName, networkInterfaceName, options)
+}
+
+// GetVirtualMachineScaleSetNetworkInterface retrieves a scale set VM network interface.
+func (a interfacesClientAdapter) GetVirtualMachineScaleSetNetworkInterface(ctx context.Context, resourceGroupName, virtualMachineScaleSetName, virtualMachineIndex, networkInterfaceName string, options *armnetwork.InterfacesClientGetVirtualMachineScaleSetNetworkInterfaceOptions) (armnetwork.InterfacesClientGetVirtualMachineScaleSetNetworkInterfaceResponse, error) {
+	return a.getVirtualMachineScaleSetNetworkInterface(ctx, resourceGroupName, virtualMachineScaleSetName, virtualMachineIndex, networkInterfaceName, options)
+}
 
 // createAzureClient is a helper method for creating an Azure compute client to ARM.
 func (d *Discovery) createAzureClient() (client, error) {
@@ -264,25 +355,29 @@ func (d *Discovery) createAzureClient() (client, error) {
 		},
 	}
 
-	c.vm, err = armcompute.NewVirtualMachinesClient(d.cfg.SubscriptionID, credential, options)
+	vmClient, err := armcompute.NewVirtualMachinesClient(d.cfg.SubscriptionID, credential, options)
 	if err != nil {
 		return &azureClient{}, err
 	}
+	c.vm = newVirtualMachinesClientAdapter(vmClient)
 
-	c.nic, err = armnetwork.NewInterfacesClient(d.cfg.SubscriptionID, credential, options)
+	nicClient, err := armnetwork.NewInterfacesClient(d.cfg.SubscriptionID, credential, options)
 	if err != nil {
 		return &azureClient{}, err
 	}
+	c.nic = newInterfacesClientAdapter(nicClient)
 
-	c.vmss, err = armcompute.NewVirtualMachineScaleSetsClient(d.cfg.SubscriptionID, credential, options)
+	vmssClient, err := armcompute.NewVirtualMachineScaleSetsClient(d.cfg.SubscriptionID, credential, options)
 	if err != nil {
 		return &azureClient{}, err
 	}
+	c.vmss = newVirtualMachineScaleSetsClientAdapter(vmssClient)
 
-	c.vmssvm, err = armcompute.NewVirtualMachineScaleSetVMsClient(d.cfg.SubscriptionID, credential, options)
+	vmssvmClient, err := armcompute.NewVirtualMachineScaleSetVMsClient(d.cfg.SubscriptionID, credential, options)
 	if err != nil {
 		return &azureClient{}, err
 	}
+	c.vmssvm = newVirtualMachineScaleSetVMsClientAdapter(vmssvmClient)
 
 	return &c, nil
 }
@@ -452,6 +547,11 @@ func (d *Discovery) vmToLabelSet(ctx context.Context, client client, vm virtualM
 	}
 
 	for k, v := range vm.Tags {
+		// A tag with a JSON null value unmarshals to a nil pointer that is still
+		// present in the map, so it has to be skipped before dereferencing.
+		if v == nil {
+			continue
+		}
 		name := strutil.SanitizeLabelName(k)
 		labels[azureLabelMachineTag+model.LabelName(name)] = model.LabelValue(*v)
 	}
@@ -581,7 +681,7 @@ func (client *azureClient) getScaleSetVMs(ctx context.Context, scaleSet armcompu
 		return nil, fmt.Errorf("could not parse scale set ID: %w", err)
 	}
 
-	pager := client.vmssvm.NewListPager(r.ResourceGroupName, *(scaleSet.Name), nil)
+	pager := client.vmssvm.NewListPager(r.ResourceGroupName, *scaleSet.Name, nil)
 	for pager.More() {
 		nextResult, err := pager.NextPage(ctx)
 		if err != nil {
@@ -619,7 +719,7 @@ func mapFromVM(vm armcompute.VirtualMachine) virtualMachine {
 			}
 		}
 		if vm.Properties.OSProfile != nil && vm.Properties.OSProfile.ComputerName != nil {
-			computerName = *(vm.Properties.OSProfile.ComputerName)
+			computerName = *vm.Properties.OSProfile.ComputerName
 		}
 		if vm.Properties.HardwareProfile != nil {
 			size = string(*vm.Properties.HardwareProfile.VMSize)
@@ -627,11 +727,11 @@ func mapFromVM(vm armcompute.VirtualMachine) virtualMachine {
 	}
 
 	return virtualMachine{
-		ID:                *(vm.ID),
-		Name:              *(vm.Name),
+		ID:                *vm.ID,
+		Name:              *vm.Name,
 		ComputerName:      computerName,
-		Type:              *(vm.Type),
-		Location:          *(vm.Location),
+		Type:              *vm.Type,
+		Location:          *vm.Location,
 		OsType:            osType,
 		ScaleSet:          "",
 		Tags:              tags,
@@ -664,7 +764,7 @@ func mapFromVMScaleSetVM(vm armcompute.VirtualMachineScaleSetVM, scaleSetName st
 			}
 		}
 		if vm.Properties.OSProfile != nil && vm.Properties.OSProfile.ComputerName != nil {
-			computerName = *(vm.Properties.OSProfile.ComputerName)
+			computerName = *vm.Properties.OSProfile.ComputerName
 		}
 		if vm.Properties.HardwareProfile != nil {
 			size = string(*vm.Properties.HardwareProfile.VMSize)
@@ -672,14 +772,14 @@ func mapFromVMScaleSetVM(vm armcompute.VirtualMachineScaleSetVM, scaleSetName st
 	}
 
 	return virtualMachine{
-		ID:                *(vm.ID),
-		Name:              *(vm.Name),
+		ID:                *vm.ID,
+		Name:              *vm.Name,
 		ComputerName:      computerName,
-		Type:              *(vm.Type),
-		Location:          *(vm.Location),
+		Type:              *vm.Type,
+		Location:          *vm.Location,
 		OsType:            osType,
 		ScaleSet:          scaleSetName,
-		InstanceID:        *(vm.InstanceID),
+		InstanceID:        *vm.InstanceID,
 		Tags:              tags,
 		NetworkInterfaces: networkInterfaces,
 		Size:              size,

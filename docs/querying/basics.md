@@ -106,6 +106,11 @@ Example:
     'these are unescaped: \n \\ \t'
     `these are not unescaped: \n ' " \t`
 
+This can be useful for [`regular expressions`](#regular-expressions) in [`label_replace()`](functions.md#label_replace), for example:
+
+    label_replace(up, "host", "$1", "instance", "(.*)\\.example\\.com")
+    label_replace(up, "host", "$1", "instance", `(.*)\.example\.com`)
+
 ### Float literals and time durations
 
 Scalar float values can be written as literal integer or floating-point numbers
@@ -174,6 +179,65 @@ Examples:
     12h34m56s # Equivalent to 45296s and thus 45296.
     54s321ms # Equivalent to 54.321.
 
+### Duration expressions
+
+Arithmetic expressions can be used wherever a time duration is expected, that is
+in [range vector selectors](#range-vector-selectors) and in
+[offset durations](#offset-modifier).
+
+In range vectors:
+
+    rate(http_requests_total[5m * 2])     # 10 minute range
+    rate(http_requests_total[(5+2) * 1m]) # 7 minute range
+
+In offset durations:
+
+    http_requests_total offset (1h / 2)       # 30 minute offset
+    http_requests_total offset ((2 ^ 3) * 1m) # 8 minute offset
+
+When using `offset` with a duration expression, you must wrap the expression in
+parentheses. Without parentheses, only the first duration value is used in the
+offset calculation.
+
+The following operators are supported, following the usual precedence rules:
+
+* `+` – addition
+* `-` – subtraction
+* `*` – multiplication
+* `/` – division
+* `%` – modulo
+* `^` – exponentiation
+
+The following functions can be used inside duration expressions:
+
+* `step()` resolves to the step width of a [range query](api.md#range-queries),
+  and to `0s` for an [instant query](api.md#instant-queries).
+* `range()` resolves to the full range of a range query (end time − start time),
+  and to `0s` for an instant query. This is particularly useful in combination
+  with `@ end()` to look back over the entire query range, e.g.
+  `max_over_time(metric[range()] @ end())`.
+* `min_of(<duration>, <duration>)` returns the smaller of the two durations,
+  which is useful for capping a duration at a maximum value.
+* `max_of(<duration>, <duration>)` returns the larger of the two durations,
+  which is useful for enforcing a minimum value.
+
+For example, `max_of(step(), 5s)` ensures the duration is never shorter than
+`5s`, while `min_of(range(), 1h)` caps the duration at `1h`.
+
+**Note**: Duration expressions are not supported in the [`@` modifier](#modifier).
+
+Examples of equivalent durations:
+
+* `5m * 2` is equivalent to `10m` or `600s`.
+* `10m - 1m` is equivalent to `9m` or `540s`.
+* `(5+2) * 1m` is equivalent to `7m` or `420s`.
+* `1h / 2` is equivalent to `30m` or `1800s`.
+* `4h % 3h` is equivalent to `1h` or `3600s`.
+* `(2 ^ 3) * 1m` is equivalent to `8m` or `480s`.
+* `step() + 1` is equivalent to the query step width increased by `1s`.
+* `max_of(step(), 5s)` is equivalent to the larger of the query step width and `5s`.
+* `min_of(2 * step() + 5s, 5m)` is equivalent to the smaller of twice the query step increased by `5s` and `5m`.
+
 ## Time series selectors
 
 These are the basic building-blocks that instruct PromQL what data to fetch.
@@ -221,6 +285,11 @@ For example, this selects all `http_requests_total` time series for `staging`,
 `testing`, and `development` environments and HTTP methods other than `GET`.
 
     http_requests_total{environment=~"staging|testing|development",method!="GET"}
+
+Label matcher values follow the same quoting and escaping rules as [string literals](#string-literals). This can be useful for [`regular expressions`](#regular-expressions) on the regex-match selectors, for example:
+
+    {le=~"0\\.5"}
+    {le=~`0\.5`}
 
 Label matchers that match empty label values also select all time series that
 do not have the specific label set at all. It is possible to have multiple matchers for the same label name.
@@ -278,6 +347,56 @@ A workaround for this restriction is to use the `__name__` label:
 
     {__name__="on"} # Good!
 
+### Metric and label names
+
+Metric and label names containing characters outside the traditional ASCII name
+syntax can be quoted. A quoted metric name goes inside the selector's braces:
+
+```promql
+{"http.server.request.duration", "service.name"="api"}
+```
+
+The same selector can be written without quotes:
+
+```promql
+http.server.request.duration{service.name="api"}
+```
+
+Unquoted names follow these rules:
+
+| Name | First character | Subsequent characters |
+| --- | --- | --- |
+| Metric | Unicode letter, `_`, or `:` | Unicode letter, ASCII digit `0`–`9`, `_`, `:`, or `.` |
+| Label | Unicode letter or `_` | Unicode letter, ASCII digit `0`–`9`, `_`, or `.` |
+
+Unicode letters are the characters recognized by Go's `unicode.IsLetter`
+(Unicode category L), using the Unicode version bundled with the Go compiler.
+These rules also apply to grouping labels, vector matching, and labels in
+`group_left` and `group_right` modifiers. Existing keyword restrictions still
+apply, and string arguments containing label names remain strings.
+
+Dots are ordinary name characters: `resource.k8s.namespace`, `target.info`, and
+`histogram.count` have no metadata lookup, namespace, or histogram field access
+semantics. Consecutive and trailing dots are allowed, as in `foo..bar` and `foo.`.
+Names beginning with a dot or digit still require quoting; `.5` is a numeric
+literal. Combining marks, non-ASCII digits, emoji, spaces, and other punctuation
+also require quoting.
+
+`Inf` and `NaN` (case insensitive) remain numeric literals, as do durations such
+as `5m`. To select metrics with these names, use quoted selectors such as
+`{"Inf"}`, `{"NaN"}`, or `{"5m"}`. Dotted names such as `Inf.total` and `NaN.total`
+are metric names.
+
+Names retain their exact spelling without Unicode normalization or case folding.
+For example, Latin `a` and Cyrillic `а` are distinct names. Precomposed `ö` can be
+unquoted, while `o` followed by a combining diaeresis requires quotes and denotes
+a different name.
+
+Quoted and unquoted spellings of the same name select the same series. Quoting
+remains supported and is required when targeting older PromQL parsers or servers
+without support for these names. These syntax rules do not change storage, ingestion
+validation, text exposition, or metric name translation.
+
 ### Range Vector Selectors
 
 Range vector literals work like instant vector literals, except that they
@@ -296,6 +415,42 @@ time series that have the metric name `http_requests_total` and a `job` label
 set to `prometheus`:
 
     http_requests_total{job="prometheus"}[5m]
+
+### Extended range selectors
+
+The `anchored` and `smoothed` modifiers can be used with range selectors, and
+`smoothed` can also be used with instant selectors. These modifiers provide more control over how range boundaries are handled in functions like `rate` and `increase`, especially with missing or irregular data.
+
+#### `anchored`
+
+Uses the most recent sample (within the lookback delta) at the beginning of the range, or alternatively the first sample within the range if there is no sample within the lookback delta. The last sample within the range is also used at the end of the range. No extrapolation or interpolation is applied, so this is useful to get the direct difference between sample values.
+
+Anchored range selectors work with: `resets`, `changes`, `rate`, `increase`, and `delta`.
+
+Example query:
+`increase(http_requests_total[5m] anchored)`
+
+**Note**: When using the anchored modifier with the increase function on float samples, the results returned are integers.
+
+#### `smoothed`
+
+In range selectors, linearly interpolates values at the range boundaries, using the sample values before and after the boundaries for an improved estimation that is robust against irregular scrapes and missing samples. However, it requires a sample after the evaluation interval to work properly, see note below.
+
+For instant selectors, values are linearly interpolated at the evaluation timestamp using the samples immediately before and after that point.
+
+Smoothed range selectors work with: `rate`, `increase`, and `delta`.
+
+Example query:
+`rate(http_requests_total[step()] smoothed)`
+
+> **Note for alerting and recording rules:**
+> The `smoothed` modifier requires samples after the evaluation interval, so using it directly in alerting or recording rules will typically *under-estimate* the result, as future samples are not available at evaluation time.
+> To use `smoothed` safely in rules, you **must** apply a `query_offset` to the rule group (see [documentation](https://prometheus.io/docs/prometheus/latest/configuration/recording_rules/#rule_group)) to ensure the calculation window is fully in the past and all needed samples are available.
+> For critical alerting, set the offset to at least one scrape interval; for less critical or more resilient use cases, consider a larger offset (multiple scrape intervals) to tolerate missed scrapes.
+
+For more details, see the [design doc](https://github.com/prometheus/proposals/blob/main/proposals/2025-04-04_extended-range-selectors-semantics.md).
+
+**Note**: Extended Range Selectors are not supported for subqueries.
 
 ### Offset modifier
 

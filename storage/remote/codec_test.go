@@ -122,10 +122,10 @@ var (
 				Samples:   []writev2.Sample{{Value: 1, Timestamp: 10, StartTimestamp: 1}}, // ST needs to be lower than the sample's timestamp.
 				Exemplars: []writev2.Exemplar{{LabelsRefs: []uint32{11, 12}, Value: 1, Timestamp: 10}},
 				Histograms: []writev2.Histogram{
-					writev2.FromIntHistogram(10, &testHistogram),
-					writev2.FromFloatHistogram(20, testHistogram.ToFloat(nil)),
-					writev2.FromIntHistogram(30, &testHistogramCustomBuckets),
-					writev2.FromFloatHistogram(40, testHistogramCustomBuckets.ToFloat(nil)),
+					writev2.FromIntHistogram(1, 10, &testHistogram),
+					writev2.FromFloatHistogram(2, 20, testHistogram.ToFloat(nil)),
+					writev2.FromIntHistogram(11, 30, &testHistogramCustomBuckets),
+					writev2.FromFloatHistogram(21, 40, testHistogramCustomBuckets.ToFloat(nil)),
 				},
 			},
 			{
@@ -139,10 +139,10 @@ var (
 				Samples:   []writev2.Sample{{Value: 2, Timestamp: 20}},
 				Exemplars: []writev2.Exemplar{{LabelsRefs: []uint32{13, 14}, Value: 2, Timestamp: 20}},
 				Histograms: []writev2.Histogram{
-					writev2.FromIntHistogram(50, &testHistogram),
-					writev2.FromFloatHistogram(60, testHistogram.ToFloat(nil)),
-					writev2.FromIntHistogram(70, &testHistogramCustomBuckets),
-					writev2.FromFloatHistogram(80, testHistogramCustomBuckets.ToFloat(nil)),
+					writev2.FromIntHistogram(31, 50, &testHistogram),
+					writev2.FromFloatHistogram(41, 60, testHistogram.ToFloat(nil)),
+					writev2.FromIntHistogram(51, 70, &testHistogramCustomBuckets),
+					writev2.FromFloatHistogram(61, 80, testHistogramCustomBuckets.ToFloat(nil)),
 				},
 			},
 		},
@@ -189,10 +189,10 @@ func TestWriteV2RequestFixture(t *testing.T) {
 				Samples:   []writev2.Sample{{Value: 1, Timestamp: 10, StartTimestamp: 1}},
 				Exemplars: []writev2.Exemplar{{LabelsRefs: exemplar1LabelRefs, Value: 1, Timestamp: 10}},
 				Histograms: []writev2.Histogram{
-					writev2.FromIntHistogram(10, &testHistogram),
-					writev2.FromFloatHistogram(20, testHistogram.ToFloat(nil)),
-					writev2.FromIntHistogram(30, &testHistogramCustomBuckets),
-					writev2.FromFloatHistogram(40, testHistogramCustomBuckets.ToFloat(nil)),
+					writev2.FromIntHistogram(1, 10, &testHistogram),
+					writev2.FromFloatHistogram(2, 20, testHistogram.ToFloat(nil)),
+					writev2.FromIntHistogram(11, 30, &testHistogramCustomBuckets),
+					writev2.FromFloatHistogram(21, 40, testHistogramCustomBuckets.ToFloat(nil)),
 				},
 			},
 			{
@@ -205,10 +205,10 @@ func TestWriteV2RequestFixture(t *testing.T) {
 				Samples:   []writev2.Sample{{Value: 2, Timestamp: 20}},
 				Exemplars: []writev2.Exemplar{{LabelsRefs: exemplar2LabelRefs, Value: 2, Timestamp: 20}},
 				Histograms: []writev2.Histogram{
-					writev2.FromIntHistogram(50, &testHistogram),
-					writev2.FromFloatHistogram(60, testHistogram.ToFloat(nil)),
-					writev2.FromIntHistogram(70, &testHistogramCustomBuckets),
-					writev2.FromFloatHistogram(80, testHistogramCustomBuckets.ToFloat(nil)),
+					writev2.FromIntHistogram(31, 50, &testHistogram),
+					writev2.FromFloatHistogram(41, 60, testHistogram.ToFloat(nil)),
+					writev2.FromIntHistogram(51, 70, &testHistogramCustomBuckets),
+					writev2.FromFloatHistogram(61, 80, testHistogramCustomBuckets.ToFloat(nil)),
 				},
 			},
 		},
@@ -765,6 +765,17 @@ func TestDecodeOTLPWriteRequestGzipSizeLimit(t *testing.T) {
 	require.Error(t, err)
 }
 
+func TestDecodeReadRequestTooLarge(t *testing.T) {
+	// 5-byte snappy stream whose header claims 256 MiB decoded length,
+	// well above decodeReadLimit (32 MiB).
+	bomb := []byte{0x80, 0x80, 0x80, 0x80, 0x01}
+	req, err := http.NewRequest(http.MethodPost, "/", bytes.NewReader(bomb))
+	require.NoError(t, err)
+
+	_, err = DecodeReadRequest(req)
+	require.ErrorContains(t, err, "exceeds limit")
+}
+
 func TestDecodeWriteRequest(t *testing.T) {
 	buf, _, _, err := buildWriteRequest(nil, writeRequestFixture.Timeseries, nil, nil, nil, nil, "snappy")
 	require.NoError(t, err)
@@ -775,7 +786,7 @@ func TestDecodeWriteRequest(t *testing.T) {
 }
 
 func TestDecodeWriteV2Request(t *testing.T) {
-	buf, _, _, err := buildV2WriteRequest(promslog.NewNopLogger(), writeV2RequestFixture.Timeseries, writeV2RequestFixture.Symbols, nil, nil, nil, "snappy")
+	buf, _, _, _, err := buildV2WriteRequest(promslog.NewNopLogger(), writeV2RequestFixture.Timeseries, writeV2RequestFixture.Symbols, nil, nil, nil, "snappy")
 	require.NoError(t, err)
 
 	actual, err := DecodeWriteV2Request(bytes.NewReader(buf))

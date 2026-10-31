@@ -100,6 +100,30 @@ func TestApiStatusCodes(t *testing.T) {
 			expectedString: "context canceled",
 			expectedCode:   statusClientClosedConnection,
 		},
+
+		"promql.ErrTooManySeries": {
+			err:            promql.ErrTooManySeries("some error"),
+			expectedString: `"errorType":"cost_limit"`,
+			expectedCode:   http.StatusUnprocessableEntity,
+		},
+
+		"promql.ErrTooManySamplesRead": {
+			err:            promql.ErrTooManySamplesRead("some error"),
+			expectedString: `"errorType":"cost_limit"`,
+			expectedCode:   http.StatusUnprocessableEntity,
+		},
+
+		"overridden error code for cost limit": {
+			err:            promql.ErrTooManySeries("some error"),
+			expectedString: "too many series",
+			overrideErrorCode: func(errNum errorNum, _ error) (code int, override bool) {
+				if errNum == ErrorCostLimit {
+					return 999, true
+				}
+				return 0, false
+			},
+			expectedCode: 999,
+		},
 	} {
 		for k, q := range map[string]storage.SampleAndChunkQueryable{
 			"error from queryable": errorTestQueryable{err: tc.err},
@@ -135,7 +159,7 @@ func createPrometheusAPI(t *testing.T, q storage.SampleAndChunkQueryable, overri
 	api := NewAPI(
 		engine,
 		q,
-		nil, nil,
+		nil,
 		nil,
 		func(context.Context) ScrapePoolsRetriever { return &DummyScrapePoolsRetriever{} },
 		func(context.Context) TargetRetriever { return &DummyTargetRetriever{} },
@@ -147,6 +171,8 @@ func createPrometheusAPI(t *testing.T, q storage.SampleAndChunkQueryable, overri
 		nil,   // Only needed for admin APIs.
 		"",    // This is for snapshots, which is disabled when admin APIs are disabled. Hence empty.
 		false, // Disable admin APIs.
+		false, // Disable search API.
+		0,     // Default search max-limit.
 		promslog.NewNopLogger(),
 		func(context.Context) RulesRetriever { return &DummyRulesRetriever{} },
 		0, 0, 0, // Remote read samples and concurrency limit.
@@ -164,7 +190,6 @@ func createPrometheusAPI(t *testing.T, q storage.SampleAndChunkQueryable, overri
 		false,
 		false,
 		false,
-		false,
 		5*time.Minute,
 		false,
 		false,
@@ -172,6 +197,8 @@ func createPrometheusAPI(t *testing.T, q storage.SampleAndChunkQueryable, overri
 		nil,
 		OpenAPIOptions{},
 		parser.NewParser(parser.Options{}),
+		false, // Disable query cost.
+		0,     // No --query.timeout ceiling.
 	)
 
 	promRouter := route.New().WithPrefix("/api/v1")

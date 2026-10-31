@@ -19,6 +19,9 @@ package strutil
 
 import "strings"
 
+// Non-exact matches are scaled below 1.0 so rounded scores stay distinguishable from exact matches.
+const subsequenceNonExactScoreScale = 0.999
+
 // SubsequenceMatcher pre-computes the encoding of a fixed search pattern so
 // that it can be scored against many candidate strings without repeating the
 // ASCII check or rune conversion on the pattern for every call. The first
@@ -52,7 +55,7 @@ func NewSubsequenceMatcher(pattern string) *SubsequenceMatcher {
 // text in more than one way.
 //
 // The raw scoring formula is: Σ(interval_size²) − Σ(gap_size / text_length) − trailing_gap / (2 * text_length).
-// The result is normalized by pattern_length² (the maximum possible raw score).
+// The result is normalized by pattern_length² and scaled below 1.0 for non-exact matches.
 func (m *SubsequenceMatcher) Score(text string) float64 {
 	if m.pattern == "" {
 		return 1.0
@@ -184,7 +187,7 @@ func matchSubsequenceString(pattern, text string) float64 {
 	if bestScore < 0 {
 		return 0.0
 	}
-	return bestScore / float64(patternLen*patternLen)
+	return normalizeSubsequenceScore(bestScore, patternLen)
 }
 
 // matchSubsequenceRunes implements the scoring algorithm over pre-converted
@@ -267,6 +270,10 @@ func matchSubsequenceRunes(patternSlice, textSlice []rune) float64 {
 		return 0.0
 	}
 
-	// Normalize by pattern_length² (the maximum possible raw score).
-	return bestScore / float64(patternLen*patternLen)
+	return normalizeSubsequenceScore(bestScore, patternLen)
+}
+
+func normalizeSubsequenceScore(rawScore float64, patternLen int) float64 {
+	score := rawScore / float64(patternLen*patternLen)
+	return score * subsequenceNonExactScoreScale
 }

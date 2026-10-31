@@ -17,10 +17,11 @@ import (
 	"bytes"
 	"context"
 	"fmt"
-	"html/template"
 	"os"
 	"path/filepath"
+	"slices"
 	"testing"
+	"text/template"
 
 	"github.com/prometheus/compliance/remotewrite/sender"
 )
@@ -33,7 +34,11 @@ global:
 remote_write:
   - url: "{{.RemoteWriteEndpointURL}}"
     protobuf_message: "{{.RemoteWriteMessage}}"
+{{- if .RemoteWriteMode}}
+    mode: "{{.RemoteWriteMode}}"
+{{- end}}
     send_exemplars: true
+    send_native_histograms: true
     queue_config:
       retry_on_http_429: true
     metadata_config:
@@ -42,6 +47,10 @@ remote_write:
 scrape_configs:
   - job_name: "{{.ScrapeTargetJobName}}"
     scrape_interval: 1s
+    scrape_native_histograms: true
+{{- if .RemoteWriteMode}}
+    convert_classic_histograms_to_nhcb: true
+{{- end}}
     scrape_protocols:
       - PrometheusProto
       - OpenMetricsText1.0.0
@@ -54,6 +63,7 @@ scrape_configs:
 var scrapeConfigTmpl = template.Must(template.New("config").Parse(scrapeConfigTemplate))
 
 type internalPrometheus struct {
+	binary    string
 	agentMode bool
 }
 
@@ -77,32 +87,47 @@ func (p internalPrometheus) Run(ctx context.Context, opts sender.Options) error 
 	defer os.RemoveAll(dir)
 
 	args := []string{
-		"run", ".",
 		"--web.listen-address=0.0.0.0:0",
 		fmt.Sprintf("--config.file=%s", configFile),
-		// Set important flags for the full remote write compliance:
-		"--enable-feature=st-storage",
 	}
 	if p.agentMode {
+		// Agent mode: st-storage and metadata-wal-records (agent WAL does not use XOR2 chunks).
+		args = append(args, "--enable-feature=st-storage,metadata-wal-records")
 		args = append(args, fmt.Sprintf("--storage.agent.path=%v", dir), "--agent")
 	} else {
+		// Server mode: st-storage enables the ST-capable chunk encodings.
+		args = append(args, "--enable-feature=st-storage,exemplar-storage,metadata-wal-records")
 		args = append(args, fmt.Sprintf("--storage.tsdb.path=%v", dir))
 	}
-	return sender.RunCommand(ctx, "../cmd/prometheus", nil, "go", args...)
+	return sender.RunCommand(ctx, ".", nil, p.binary, args...)
 }
 
 var _ sender.Sender = internalPrometheus{}
+
+// senderSkip lists unimplemented SHOULD/MAY sender compliance checks to skip in TestMain:
+// - Stateless exemplar coalescing (https://github.com/prometheus/prometheus/pull/20070).
+// - Untyped metadata inference (https://github.com/prometheus/proposals/pull/104).
+const senderSkip = "TestRemoteWriteSender/.*/internal-prometheus/exemplars/rw2-stateless.*/(_present|exemplar_additional_labels)" +
+	"|TestRemoteWriteSender/.*/internal-prometheus/metadata/rw2-stateless.*/untyped_metadata_inferred"
 
 // TestRemoteWriteSender runs remote write sender compliance tests defined in
 // https://github.com/prometheus/compliance/tree/main/remotewrite/sender against
 // both agent and server modes.
 func TestRemoteWriteSender(t *testing.T) {
+	bin := buildPrometheus(t)
+	// sender.RunTests disambiguates each suite by protocol and mode (/rw2, /rw2-stateless, /rw2-stateless-st).
+	tests := slices.Concat(
+		sender.ComplianceTests(),
+		sender.StatelessComplianceTests(),
+		sender.StatelessSTComplianceTests(),
+	)
+
 	t.Run("mode=server", func(t *testing.T) {
 		t.Parallel()
-		sender.RunTests(t, internalPrometheus{}, sender.ComplianceTests())
+		sender.RunTests(t, internalPrometheus{binary: bin}, tests)
 	})
 	t.Run("mode=agent", func(t *testing.T) {
 		t.Parallel()
-		sender.RunTests(t, internalPrometheus{agentMode: true}, sender.ComplianceTests())
+		sender.RunTests(t, internalPrometheus{binary: bin, agentMode: true}, tests)
 	})
 }

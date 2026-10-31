@@ -223,9 +223,9 @@ const RenderHistogramBars: FC<RenderHistogramProps> = ({
         const expBucketWidth =
           logWidth === 0 ? defaultExpBucketWidth : logWidth;
 
-        let bucketWidth = "";
-        let bucketLeft = "";
-        let bucketHeight = "";
+        let bucketWidth: string;
+        let bucketLeft: string;
+        let bucketHeight: string;
 
         switch (scale) {
           case "linear": {
@@ -279,6 +279,13 @@ const RenderHistogramBars: FC<RenderHistogramProps> = ({
           }
           default:
             throw new Error("Invalid scale");
+        }
+
+        // A sole zero bucket fills the chart even when its range has zero width.
+        if (buckets.length === 1 && left <= 0 && right >= 0) {
+          bucketLeft = "0%";
+          bucketWidth = "100%";
+          bucketHeight = count === 0 ? "0%" : "100%";
         }
 
         return (

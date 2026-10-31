@@ -362,17 +362,18 @@ func FuzzParseExpr(f *testing.F) {
 	}
 
 	p := parser.NewParser(parser.Options{
-		EnableExperimentalFunctions:  true,
-		ExperimentalDurationExpr:     true,
-		EnableExtendedRangeSelectors: true,
-		EnableBinopFillModifiers:     true,
+		EnableExperimentalFunctions: true,
+		EnableBinopFillModifiers:    true,
 	})
 	f.Fuzz(func(t *testing.T, in string) {
 		if len(in) > maxInputSize {
 			t.Skip()
 		}
 		_, err := p.ParseExpr(in)
-		// We don't care about errors, just that we don't panic.
-		_ = err
+		// The parser recovers from runtime panics and returns ErrUnexpected.
+		// Flag those as test failures since they indicate a real bug.
+		if errors.Is(err, parser.ErrUnexpected) {
+			t.Fatalf("parser panicked on input %q: %v", in, err)
+		}
 	})
 }

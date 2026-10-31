@@ -1522,3 +1522,7 @@ func TestFloatHistogramIteratorReduceSchema(t *testing.T) {
 		})
 	}
 }
+
+func TestFloatHistogramChunkOverFlowPanics(t *testing.T) {
+	testChunkOverFlowPanics(t, EncFloatHistogram, ValFloatHistogram)
+}

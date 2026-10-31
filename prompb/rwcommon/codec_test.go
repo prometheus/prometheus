@@ -130,9 +130,31 @@ func TestToMetadata(t *testing.T) {
 	} {
 		t.Run("", func(t *testing.T) {
 			ts := writev2.TimeSeries{Metadata: tc.input}
-			require.Equal(t, tc.expected, ts.ToMetadata(sym.Symbols()))
+			meta, err := ts.ToMetadata(sym.Symbols())
+			require.NoError(t, err)
+			require.Equal(t, tc.expected, meta)
 		})
 	}
+
+	t.Run("out of bounds unit ref", func(t *testing.T) {
+		ts := writev2.TimeSeries{Metadata: writev2.Metadata{UnitRef: 999}}
+		_, err := ts.ToMetadata(sym.Symbols())
+		require.Error(t, err)
+		require.Contains(t, err.Error(), "metadata unit_ref 999 outside of symbols table")
+	})
+
+	t.Run("out of bounds help ref", func(t *testing.T) {
+		ts := writev2.TimeSeries{Metadata: writev2.Metadata{HelpRef: 999}}
+		_, err := ts.ToMetadata(sym.Symbols())
+		require.Error(t, err)
+		require.Contains(t, err.Error(), "metadata help_ref 999 outside of symbols table")
+	})
+
+	t.Run("empty symbols table", func(t *testing.T) {
+		ts := writev2.TimeSeries{Metadata: writev2.Metadata{}}
+		_, err := ts.ToMetadata([]string{})
+		require.Error(t, err)
+	})
 }
 
 func TestToHistogram_Empty(t *testing.T) {
@@ -211,7 +233,7 @@ func TestFromIntToFloatOrIntHistogram(t *testing.T) {
 		testIntHist := testIntHistogram()
 		testFloatHist := testFloatHistogram()
 
-		h := writev2.FromIntHistogram(123, &testIntHist)
+		h := writev2.FromIntHistogram(0, 123, &testIntHist)
 		require.False(t, h.IsFloatHistogram())
 		require.Equal(t, int64(123), h.Timestamp)
 		require.Equal(t, testIntHist, *h.ToIntHistogram())
@@ -232,7 +254,7 @@ func TestFromFloatToFloatHistogram(t *testing.T) {
 	t.Run("v2", func(t *testing.T) {
 		testFloatHist := testFloatHistogram()
 
-		h := writev2.FromFloatHistogram(123, &testFloatHist)
+		h := writev2.FromFloatHistogram(0, 123, &testFloatHist)
 		require.True(t, h.IsFloatHistogram())
 		require.Equal(t, int64(123), h.Timestamp)
 		require.Nil(t, h.ToIntHistogram())
@@ -282,14 +304,36 @@ func TestFromIntOrFloatHistogram_ResetHint(t *testing.T) {
 			t.Run("v2", func(t *testing.T) {
 				h := testIntHistogram()
 				h.CounterResetHint = tc.input
-				got := writev2.FromIntHistogram(1337, &h)
+				got := writev2.FromIntHistogram(0, 1337, &h)
 				require.Equal(t, tc.expectedV2, got.GetResetHint())
 
 				fh := testFloatHistogram()
 				fh.CounterResetHint = tc.input
-				got2 := writev2.FromFloatHistogram(1337, &fh)
+				got2 := writev2.FromFloatHistogram(0, 1337, &fh)
 				require.Equal(t, tc.expectedV2, got2.GetResetHint())
 			})
+		})
+	}
+}
+
+func TestFromIntOrFloatHistogram_StartTimestamp(t *testing.T) {
+	for _, tc := range []struct {
+		name string
+		st   int64
+	}{
+		{name: "no start timestamp", st: 0},
+		{name: "with start timestamp", st: 100},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			h := testIntHistogram()
+			got := writev2.FromIntHistogram(tc.st, 1337, &h)
+			require.Equal(t, tc.st, got.StartTimestamp)
+			require.Equal(t, int64(1337), got.Timestamp)
+
+			fh := testFloatHistogram()
+			got2 := writev2.FromFloatHistogram(tc.st, 1337, &fh)
+			require.Equal(t, tc.st, got2.StartTimestamp)
+			require.Equal(t, int64(1337), got2.Timestamp)
 		})
 	}
 }

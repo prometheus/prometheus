@@ -16,6 +16,7 @@ package parser
 import (
 	"bytes"
 	"fmt"
+	"math"
 	"sort"
 	"strconv"
 	"strings"
@@ -73,11 +74,17 @@ func (node *AggregateExpr) String() string {
 	b := bytes.NewBuffer(make([]byte, 0, 1024))
 	node.writeAggOpStr(b)
 	b.WriteString("(")
-	if node.Op.IsAggregatorWithParam() {
+	// A failed parse (e.g. missing or too few arguments) can leave Param or Expr nil.
+	// Print only the parts that were parsed.
+	if node.Op.IsAggregatorWithParam() && node.Param != nil {
 		b.WriteString(node.Param.String())
-		b.WriteString(", ")
+		if node.Expr != nil {
+			b.WriteString(", ")
+		}
 	}
-	b.WriteString(node.Expr.String())
+	if node.Expr != nil {
+		b.WriteString(node.Expr.String())
+	}
 	b.WriteString(")")
 
 	return b.String()
@@ -109,12 +116,24 @@ func writeLabels(b *bytes.Buffer, ss []string) {
 		if i > 0 {
 			b.WriteString(", ")
 		}
-		if !model.LegacyValidation.IsValidLabelName(s) {
+		if labelNameRequiresQuoting(s) {
 			b.Write(strconv.AppendQuote(b.AvailableBuffer(), s))
 		} else {
 			b.WriteString(s)
 		}
 	}
+}
+
+func labelNameRequiresQuoting(s string) bool {
+	if s == "" {
+		return true
+	}
+	for i, r := range s {
+		if (i == 0 && !isNameStart(r)) || (i > 0 && !isNameContinue(r)) {
+			return true
+		}
+	}
+	return false
 }
 
 // writeStringsJoin is like strings.Join but appending to a bytes.Buffer.
@@ -138,7 +157,32 @@ func (node *BinaryExpr) returnBool() string {
 
 func (node *BinaryExpr) String() string {
 	matching := node.getMatchingStr()
-	return node.LHS.String() + " " + node.Op.String() + node.returnBool() + matching + " " + node.RHS.String()
+	return node.lhs().String() + " " + node.Op.String() + node.returnBool() + matching + " " + node.RHS.String()
+}
+
+// lhs returns the left operand to print, in parentheses if it is the base of
+// ^ and prints with a leading sign. ^ binds tighter than a unary sign, so a
+// bare +Inf ^ 2 or -x ^ 2 would parse back as the sign applied to the power.
+func (node *BinaryExpr) lhs() Expr {
+	if node.Op == POW && printsWithSign(node.LHS) {
+		return &ParenExpr{Expr: node.LHS}
+	}
+	return node.LHS
+}
+
+// printsWithSign reports whether e's String() may start with + or -. It errs
+// towards true: a NaN or a zero duration with the sign bit set gets harmless
+// parentheses.
+func printsWithSign(e Expr) bool {
+	switch e := e.(type) {
+	case *NumberLiteral:
+		return math.Signbit(e.Val) || math.IsInf(e.Val, 1)
+	case *UnaryExpr:
+		return true
+	case *StepInvariantExpr:
+		return printsWithSign(e.Expr)
+	}
+	return false
 }
 
 func (node *BinaryExpr) ShortString() string {
@@ -174,7 +218,7 @@ func (node *BinaryExpr) getMatchingStr() string {
 		}
 
 		if vm.FillValues.LHS != nil || vm.FillValues.RHS != nil {
-			if vm.FillValues.LHS == vm.FillValues.RHS {
+			if vm.FillValues.LHS != nil && vm.FillValues.RHS != nil && *vm.FillValues.LHS == *vm.FillValues.RHS {
 				matching += fmt.Sprintf(" fill (%v)", *vm.FillValues.LHS)
 			} else {
 				if vm.FillValues.LHS != nil {
@@ -205,14 +249,14 @@ func (node *DurationExpr) writeTo(b *bytes.Buffer) {
 		b.WriteString("step()")
 	case node.Op == RANGE:
 		b.WriteString("range()")
-	case node.Op == MIN:
-		b.WriteString("min(")
+	case node.Op == MIN_OF:
+		b.WriteString("min_of(")
 		b.WriteString(node.LHS.String())
 		b.WriteString(", ")
 		b.WriteString(node.RHS.String())
 		b.WriteByte(')')
-	case node.Op == MAX:
-		b.WriteString("max(")
+	case node.Op == MAX_OF:
+		b.WriteString("max_of(")
 		b.WriteString(node.LHS.String())
 		b.WriteString(", ")
 		b.WriteString(node.RHS.String())
@@ -247,15 +291,25 @@ func (node *DurationExpr) ShortString() string {
 }
 
 func (node *Call) String() string {
-	return node.Func.Name + "(" + node.Args.String() + ")"
+	return node.ShortString() + "(" + node.Args.String() + ")"
 }
 
 func (node *Call) ShortString() string {
+	// A failed parse leaves Func nil for an unknown function name, and the AST does
+	// not keep the name itself, so there is nothing to print for it.
+	if node.Func == nil {
+		return ""
+	}
 	return node.Func.Name
 }
 
 func (node *MatrixSelector) atOffset() (string, string) {
-	vecSelector := node.VectorSelector.(*VectorSelector)
+	vecSelector, ok := node.VectorSelector.(*VectorSelector)
+	if !ok {
+		// A failed parse can leave a non-vector expression here (e.g. `1[5m]`). Such an
+		// operand cannot carry @ or offset modifiers, so there is nothing to print.
+		return "", ""
+	}
 	offset := ""
 	switch {
 	case vecSelector.OriginalOffsetExpr != nil:
@@ -278,9 +332,24 @@ func (node *MatrixSelector) atOffset() (string, string) {
 }
 
 func (node *MatrixSelector) String() string {
+	rangeStr := model.Duration(node.Range).String()
+	if node.RangeExpr != nil {
+		rangeStr = node.RangeExpr.String()
+	}
+	vs, ok := node.VectorSelector.(*VectorSelector)
+	if !ok {
+		// A failed parse can leave a non-vector expression here (e.g. `1[5m]`), and a
+		// hand-built node may have no operand at all. Neither can carry the selector-only
+		// modifiers handled below, so print whatever is there with the range.
+		inner := ""
+		if node.VectorSelector != nil {
+			inner = node.VectorSelector.String()
+		}
+		return fmt.Sprintf("%s[%s]", inner, rangeStr)
+	}
 	at, offset := node.atOffset()
 	// Copy the Vector selector so we can modify it to not print @, offset, and other modifiers twice.
-	vecSelector := *node.VectorSelector.(*VectorSelector)
+	vecSelector := *vs
 	anchored, smoothed := vecSelector.Anchored, vecSelector.Smoothed
 	vecSelector.OriginalOffset = 0
 	vecSelector.OriginalOffsetExpr = nil
@@ -295,10 +364,6 @@ func (node *MatrixSelector) String() string {
 		extendedAttribute = " anchored"
 	case smoothed:
 		extendedAttribute = " smoothed"
-	}
-	rangeStr := model.Duration(node.Range).String()
-	if node.RangeExpr != nil {
-		rangeStr = node.RangeExpr.String()
 	}
 	str := fmt.Sprintf("%s[%s]%s%s%s", vecSelector.String(), rangeStr, extendedAttribute, at, offset)
 
@@ -325,10 +390,10 @@ func (node *SubqueryExpr) ShortString() string {
 // getSubqueryTimeSuffix returns the '[<range>:<step>] @ <timestamp> offset <offset>' suffix of the subquery.
 func (node *SubqueryExpr) getSubqueryTimeSuffix() string {
 	step := ""
-	if node.Step != 0 {
-		step = model.Duration(node.Step).String()
-	} else if node.StepExpr != nil {
+	if node.StepExpr != nil {
 		step = node.StepExpr.String()
+	} else if node.Step != 0 {
+		step = model.Duration(node.Step).String()
 	}
 	offset := ""
 	switch {
@@ -387,11 +452,20 @@ func (node *VectorSelector) String() string {
 		labelStrings = make([]string, 0, len(node.LabelMatchers)-1)
 	}
 	for _, matcher := range node.LabelMatchers {
+		// A partially-built AST from a failed parse, or a hand-constructed selector, may
+		// hold a nil matcher. Skip it so printing never panics.
+		if matcher == nil {
+			continue
+		}
 		// Only include the __name__ label if its equality matching and matches the name, but don't skip if it's an explicit empty name matcher.
 		if matcher.Name == labels.MetricName && matcher.Type == labels.MatchEqual && matcher.Value == node.Name && matcher.Value != "" {
 			continue
 		}
-		labelStrings = append(labelStrings, matcher.String())
+		if !labelNameRequiresQuoting(matcher.Name) {
+			labelStrings = append(labelStrings, matcher.Name+matcher.Type.String()+strconv.Quote(matcher.Value))
+		} else {
+			labelStrings = append(labelStrings, matcher.String())
+		}
 	}
 	b := bytes.NewBuffer(make([]byte, 0, 1024))
 	b.WriteString(node.Name)

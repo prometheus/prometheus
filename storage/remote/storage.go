@@ -66,7 +66,7 @@ type Storage struct {
 var _ storage.Storage = &Storage{}
 
 // NewStorage returns a remote.Storage.
-func NewStorage(l *slog.Logger, reg prometheus.Registerer, stCallback startTimeCallback, walDir string, flushDeadline time.Duration, sm ReadyScrapeManager, enableTypeAndUnitLabels bool) *Storage {
+func NewStorage(l *slog.Logger, reg prometheus.Registerer, stCallback startTimeCallback, walDir string, flushDeadline time.Duration, sm ReadyScrapeManager, enableTypeAndUnitLabels, enableMetadataWALRecords, enableSTStorage bool) *Storage {
 	if l == nil {
 		l = promslog.NewNopLogger()
 	}
@@ -78,7 +78,7 @@ func NewStorage(l *slog.Logger, reg prometheus.Registerer, stCallback startTimeC
 		deduper:                deduper,
 		localStartTimeCallback: stCallback,
 	}
-	s.rws = NewWriteStorage(s.logger, reg, walDir, flushDeadline, sm, enableTypeAndUnitLabels)
+	s.rws = NewWriteStorage(s.logger, reg, walDir, flushDeadline, sm, enableTypeAndUnitLabels, enableMetadataWALRecords, enableSTStorage)
 	return s
 }
 
@@ -170,6 +170,13 @@ func (s *Storage) Querier(mint, maxt int64) (storage.Querier, error) {
 		queriers = append(queriers, q)
 	}
 	return storage.NewMergeQuerier(nil, queriers, storage.ChainedSeriesMerge), nil
+}
+
+// CostSamplingQueryable reports an empty source only when no remote readers are configured.
+func (s *Storage) CostSamplingQueryable() (storage.SampleAndChunkQueryable, bool) {
+	s.mtx.Lock()
+	defer s.mtx.Unlock()
+	return nil, len(s.queryables) == 0
 }
 
 // ChunkQuerier returns a storage.MergeQuerier combining the remote client queriers

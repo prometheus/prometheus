@@ -83,6 +83,9 @@ BinaryExpr {
   expr !mul Div    binModifiers expr |
   expr !mul Mod    binModifiers expr |
   expr !mul Atan2  binModifiers expr |
+  expr !mul BitAnd binModifiers expr |
+  expr !mul BitOr  binModifiers expr |
+  expr !mul BitXor binModifiers expr |
   expr !add Add    binModifiers expr |
   expr !add Sub    binModifiers expr |
   expr !eql Eql    binModifiers expr |
@@ -179,6 +182,7 @@ FunctionIdentifier {
   Idelta |
   Increase |
   Info |
+  Integral |
   Irate |
   LabelReplace |
   LabelJoin |
@@ -211,6 +215,11 @@ FunctionIdentifier {
   SortDesc |
   SortByLabel |
   SortByLabelDesc |
+  StartFn |
+  StartTimestamp |
+  EndFn |
+  Range |
+  Step |
   Sqrt |
   StddevOverTime |
   StdvarOverTime |
@@ -232,16 +241,16 @@ ParenExpr {
 }
 
 OffsetExpr {
-  expr Offset NumberDurationLiteralInDurationContext
+  expr Offset OffsetDurationExpr
 }
 
 MatrixSelector {
   // TODO: Can this not be more specific than "expr"?
-  expr "[" NumberDurationLiteralInDurationContext "]"
+  expr "[" DurationExpr "]"
 }
 
 SubqueryExpr {
-  expr "[" NumberDurationLiteralInDurationContext ":" ("" | NumberDurationLiteralInDurationContext) "]"
+  expr "[" DurationExpr ":" ("" | DurationExpr) "]"
 }
 
 UnaryExpr {
@@ -287,7 +296,7 @@ StepInvariantExpr {
 }
 
 AtModifierPreprocessors {
-  Start | End
+  AtStart | AtEnd
 }
 
 NumberDurationLiteral  {
@@ -295,7 +304,32 @@ NumberDurationLiteral  {
 }
 
 NumberDurationLiteralInDurationContext {
- ("-"|"+")?~signed (number | inf | nan)
+  number | inf | nan
+}
+
+DurationExpr {
+  DurationExpr !pow Pow DurationExpr |
+  DurationExpr !mul Mul DurationExpr |
+  DurationExpr !mul Div DurationExpr |
+  DurationExpr !mul Mod DurationExpr |
+  DurationExpr !add Add DurationExpr |
+  DurationExpr !add Sub DurationExpr |
+  !mul UnaryOp~signed DurationExpr |
+  durationPrimary
+}
+
+OffsetDurationExpr {
+  !mul UnaryOp~signed OffsetDurationExpr |
+  durationPrimary
+}
+
+durationPrimary[@inline] {
+  DurationStep "(" ")" |
+  DurationRange "(" ")" |
+  DurationMinOf "(" DurationExpr "," DurationExpr ")" |
+  DurationMaxOf "(" DurationExpr "," DurationExpr ")" |
+  "(" DurationExpr ")" |
+  NumberDurationLiteralInDurationContext
 }
 
 @skip { whitespace | LineComment }
@@ -325,8 +359,6 @@ NumberDurationLiteralInDurationContext {
     ( ( std.digit+ "y" )? ( std.digit+ "w" )? ( std.digit+ "d" )? ( std.digit+ "h" )? ( std.digit+ "m" )? ( std.digit+ "s" ) ( std.digit+ "ms" )? ) |
     ( ( std.digit+ "y" )? ( std.digit+ "w" )? ( std.digit+ "d" )? ( std.digit+ "h" )? ( std.digit+ "m" )? ( std.digit+ "s" )? ( std.digit+ "ms" ) )
   }
-  Identifier { (std.asciiLetter | "_" | ":") (std.asciiLetter | std.digit | "_" | ":" )*}
-  LabelName { (std.asciiLetter | "_") (std.asciiLetter | std.digit | "_")* }
 
   // Operator
   Sub { "-" }
@@ -351,6 +383,8 @@ NumberDurationLiteralInDurationContext {
   At { "@" }
 }
 
+@external tokens names from "./tokens" { Identifier, LabelName }
+
 // Keywords
 
 @external specialize {Identifier} specializeIdentifier from "./tokens" {
@@ -368,6 +402,9 @@ NumberDurationLiteralInDurationContext {
 
 @external extend {Identifier} extendIdentifier from "./tokens" {
   Atan2,
+  BitAnd,
+  BitOr,
+  BitXor,
   Avg,
   Bottomk,
   Count,
@@ -387,8 +424,10 @@ NumberDurationLiteralInDurationContext {
   And,
   Or,
   Unless,
-  Start,
-  End,
+  StartFn,
+  EndFn,
+  AtStart,
+  AtEnd,
   Smoothed,
   Anchored,
   Fill,
@@ -440,6 +479,7 @@ NumberDurationLiteralInDurationContext {
   Idelta { condFn<"idelta"> }
   Increase { condFn<"increase"> }
   Info { condFn<"info"> }
+  Integral { condFn<"integral"> }
   Irate { condFn<"irate"> }
   LabelReplace { condFn<"label_replace"> }
   LabelJoin { condFn<"label_join"> }
@@ -473,6 +513,9 @@ NumberDurationLiteralInDurationContext {
   SortDesc { condFn<"sort_desc"> }
   SortByLabel { condFn<"sort_by_label"> }
   SortByLabelDesc { condFn<"sort_by_label_desc"> }
+  Range { condFn<"range"> }
+  StartTimestamp { condFn<"start_timestamp"> }
+  Step { condFn<"step"> }
   Sqrt { condFn<"sqrt"> }
   StddevOverTime { condFn<"stddev_over_time"> }
   StdvarOverTime { condFn<"stdvar_over_time"> }
@@ -486,3 +529,7 @@ NumberDurationLiteralInDurationContext {
 
 // Conditional function names (only parsed as function names when used as such).
 condFn<term> { @extend<Identifier, term> }
+DurationStep { condFn<"step"> }
+DurationRange { condFn<"range"> }
+DurationMinOf { condFn<"min_of"> }
+DurationMaxOf { condFn<"max_of"> }

@@ -15,11 +15,16 @@ package storage
 
 import (
 	"context"
+	"errors"
 	"sync"
 
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/util/annotations"
 )
+
+var _ Searcher = (*secondaryQuerier)(nil)
+
+var errSecondarySearchUnsupported = errors.New("search is not supported by a secondary storage backend; results may be incomplete")
 
 // secondaryQuerier is a wrapper that allows a querier to be treated in a best effort manner.
 // This means that an error on any method returned by Querier except Close will be returned as a warning,
@@ -65,6 +70,24 @@ func (s *secondaryQuerier) LabelNames(ctx context.Context, hints *LabelHints, ma
 	return names, w, nil
 }
 
+// SearchLabelNames returns search results, reporting errors and unsupported search as warnings.
+func (s *secondaryQuerier) SearchLabelNames(ctx context.Context, hints *SearchHints, matchers ...*labels.Matcher) SearchResultSet {
+	searcher, ok := searcherFromGenericQuerier(s.genericQuerier)
+	if !ok {
+		return NewSearchResultSetFromSlice(nil, annotations.New().Add(errSecondarySearchUnsupported))
+	}
+	return warningsOnErrorSearchResultSet(searcher.SearchLabelNames(ctx, hints, matchers...))
+}
+
+// SearchLabelValues returns search results, reporting errors and unsupported search as warnings.
+func (s *secondaryQuerier) SearchLabelValues(ctx context.Context, name string, hints *SearchHints, matchers ...*labels.Matcher) SearchResultSet {
+	searcher, ok := searcherFromGenericQuerier(s.genericQuerier)
+	if !ok {
+		return NewSearchResultSetFromSlice(nil, annotations.New().Add(errSecondarySearchUnsupported))
+	}
+	return warningsOnErrorSearchResultSet(searcher.SearchLabelValues(ctx, name, hints, matchers...))
+}
+
 func (s *secondaryQuerier) Select(ctx context.Context, sortSeries bool, hints *SelectHints, matchers ...*labels.Matcher) genericSeriesSet {
 	if s.done {
 		panic("secondaryQuerier: Select invoked after first Next of any returned SeriesSet was done")
@@ -106,4 +129,57 @@ func (s *secondaryQuerier) Select(ctx context.Context, sortSeries bool, hints *S
 			return s.asyncSets[curr], true
 		}
 	}}
+}
+
+type warningsOnErrorSearchSet struct {
+	rs       SearchResultSet
+	warnings annotations.Annotations
+}
+
+// warningsOnErrorSearchResultSet wraps rs so that an iteration error is surfaced as a warning.
+func warningsOnErrorSearchResultSet(rs SearchResultSet) SearchResultSet {
+	return &warningsOnErrorSearchSet{rs: rs}
+}
+
+func (s *warningsOnErrorSearchSet) Next() bool {
+	if s.rs == nil {
+		return false
+	}
+	if s.rs.Next() {
+		return true
+	}
+	if err := s.rs.Err(); err != nil {
+		var ws annotations.Annotations
+		ws.Merge(s.rs.Warnings())
+		s.warnings = ws.Add(err)
+		_ = s.rs.Close()
+		s.rs = nil
+	}
+	return false
+}
+
+func (s *warningsOnErrorSearchSet) At() SearchResult {
+	if s.rs == nil {
+		return SearchResult{}
+	}
+	return s.rs.At()
+}
+
+func (s *warningsOnErrorSearchSet) Warnings() annotations.Annotations {
+	if s.rs != nil {
+		return s.rs.Warnings()
+	}
+	return s.warnings
+}
+
+func (*warningsOnErrorSearchSet) Err() error { return nil }
+
+func (s *warningsOnErrorSearchSet) Close() error {
+	if s.rs == nil {
+		return nil
+	}
+	s.warnings = s.rs.Warnings()
+	err := s.rs.Close()
+	s.rs = nil
+	return err
 }

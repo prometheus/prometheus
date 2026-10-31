@@ -21,6 +21,7 @@ import (
 	"encoding/pem"
 	"testing"
 
+	"github.com/prometheus/common/config"
 	"github.com/prometheus/common/model"
 	"github.com/prometheus/common/promslog"
 	"github.com/stretchr/testify/require"
@@ -38,6 +39,7 @@ func (s *serverSDTestSuite) SetupTest(t *testing.T) {
 }
 
 func TestServerSDRefresh(t *testing.T) {
+	t.Parallel()
 	for _, tc := range []struct {
 		name string
 		cfg  SDConfig
@@ -59,12 +61,12 @@ func TestServerSDRefresh(t *testing.T) {
 				require.NoError(t, err)
 
 				cfg := DefaultSDConfig
-				cfg.PrivateKey = string(pem.EncodeToMemory(&pem.Block{
+				cfg.PrivateKey = config.Secret(pem.EncodeToMemory(&pem.Block{
 					Type:  "RSA PRIVATE KEY",
 					Bytes: x509.MarshalPKCS1PrivateKey(key),
 				}))
 
-				cfg.ServiceAccountKey = `{
+				cfg.ServiceAccountKey = config.Secret(`{
   "Active": true,
   "CreatedAt": "2025-04-05T12:34:56Z",
   "Credentials": {
@@ -79,7 +81,7 @@ func TestServerSDRefresh(t *testing.T) {
   "KeyType": "USER_MANAGED",
   "PublicKey": "...",
   "ValidUntil": "2025-04-05T13:34:56Z"
-}`
+}`)
 
 				return cfg
 			}(),

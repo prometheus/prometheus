@@ -12,7 +12,7 @@
     "gomodUpdateImportPaths"
   ],
   "schedule": [
-    "* * 21 * *"
+    "* * 7,21 * *"
   ],
   "timezone": "UTC",
   "github-actions": {
@@ -28,6 +28,40 @@
   "prConcurrentLimit": 20,
   "prHourlyLimit": 5,
   "packageRules": [
+    {
+      "description": "Keep the legacy app on the TypeScript major supported by react-scripts 5",
+      "matchManagers": [
+        "npm"
+      ],
+      "matchFileNames": [
+        "web/ui/react-app/package.json"
+      ],
+      "matchPackageNames": [
+        "typescript"
+      ],
+      "allowedVersions": "<5"
+    },
+    {
+      "description": "Wait for npm releases to satisfy pnpm's cooldown",
+      "matchDatasources": [
+        "npm"
+      ],
+      "minimumReleaseAge": "3 days",
+      "internalChecksFilter": "strict"
+    },
+    {
+      "description": "Update indirect deps in the remote_storage example so it stays in sync with the root module through its replace directive",
+      "matchManagers": [
+        "gomod"
+      ],
+      "matchFileNames": [
+        "documentation/examples/remote_storage/go.mod"
+      ],
+      "matchDepTypes": [
+        "indirect"
+      ],
+      "enabled": true
+    },
     {
       "description": "Don't update replace directives",
       "matchPackageNames": [
@@ -117,6 +151,16 @@
         "patch"
       ],
       "enabled": true
+    },
+    {
+      "description": "Only open frontend update PRs when approved via the Dependency Dashboard",
+      "matchManagers": [
+        "npm"
+      ],
+      "matchFileNames": [
+        "web/ui/**"
+      ],
+      "dependencyDashboardApproval": true
     }
   ],
   "branchPrefix": "deps-update/",

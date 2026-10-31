@@ -110,6 +110,9 @@ var key = map[string]ItemType{
 	"or":     LOR,
 	"unless": LUNLESS,
 	"atan2":  ATAN2,
+	"bitand": BITAND,
+	"bitor":  BITOR,
+	"bitxor": BITXOR,
 
 	// Aggregators.
 	"sum":          SUM,
@@ -143,10 +146,12 @@ var key = map[string]ItemType{
 	"bool":        BOOL,
 
 	// Preprocessors.
-	"start": START,
-	"end":   END,
-	"step":  STEP,
-	"range": RANGE,
+	"start":  START,
+	"end":    END,
+	"step":   STEP,
+	"range":  RANGE,
+	"max_of": MAX_OF,
+	"min_of": MIN_OF,
 }
 
 var histogramDesc = map[string]ItemType{
@@ -494,20 +499,20 @@ func lexStatements(l *Lexer) stateFn {
 	case r == '`':
 		l.stringOpen = r
 		return lexRawString
-	case isAlpha(r) || r == ':':
+	case isNameStart(r) || r == ':':
 		if !l.bracketOpen {
 			l.backup()
 			return lexKeywordOrIdentifier
 		}
-		switch r {
-		case ':':
+		switch {
+		case r == ':':
 			if l.gotColon {
 				return l.errorf("unexpected colon %q", r)
 			}
 			l.emit(COLON)
 			l.gotColon = true
 			return lexStatements
-		case 's', 'S', 'm', 'M':
+		case isDurationKeywordStartChar(r):
 			if l.scanDurationKeyword() {
 				return lexStatements
 			}
@@ -533,6 +538,7 @@ func lexStatements(l *Lexer) stateFn {
 			return l.errorf("unexpected left bracket %q", r)
 		}
 		l.gotColon = false
+		l.gotDuration = false
 		l.emit(LEFT_BRACKET)
 		if isSpace(l.peek()) {
 			skipSpaces(l)
@@ -701,7 +707,7 @@ func lexInsideBraces(l *Lexer) stateFn {
 		return l.errorf("unexpected end of input inside braces")
 	case isSpace(r):
 		return lexSpace
-	case isAlpha(r):
+	case isNameStart(r):
 		l.backup()
 		return lexIdentifier
 	case r == ',':
@@ -935,6 +941,32 @@ func lexNumber(l *Lexer) stateFn {
 	return lexStatements
 }
 
+// durationKeywordTokens maps lowercase duration keyword names to their token types.
+var durationKeywordTokens = map[string]ItemType{
+	"step":   STEP,
+	"range":  RANGE,
+	"max_of": MAX_OF,
+	"min_of": MIN_OF,
+}
+
+// durationKeywordStartChars is the set of lowercase runes that can start a duration keyword,
+// derived from durationKeywordTokens.
+var durationKeywordStartChars = makeDurationKeywordStartChars()
+
+func makeDurationKeywordStartChars() map[rune]struct{} {
+	m := make(map[rune]struct{}, len(durationKeywordTokens))
+	for kw := range durationKeywordTokens {
+		m[rune(kw[0])] = struct{}{}
+	}
+	return m
+}
+
+// isDurationKeywordStartChar reports whether r can be the first character of a duration keyword.
+func isDurationKeywordStartChar(r rune) bool {
+	_, ok := durationKeywordStartChars[unicode.ToLower(r)]
+	return ok
+}
+
 func (l *Lexer) scanDurationKeyword() bool {
 	for {
 		switch r := l.next(); {
@@ -942,24 +974,12 @@ func (l *Lexer) scanDurationKeyword() bool {
 			// absorb.
 		default:
 			l.backup()
-			word := l.input[l.start:l.pos]
-			kw := strings.ToLower(word)
-			switch kw {
-			case "step":
-				l.emit(STEP)
+			word := strings.ToLower(l.input[l.start:l.pos])
+			if tok, ok := durationKeywordTokens[word]; ok {
+				l.emit(tok)
 				return true
-			case "range":
-				l.emit(RANGE)
-				return true
-			case "min":
-				l.emit(MIN)
-				return true
-			case "max":
-				l.emit(MAX)
-				return true
-			default:
-				return false
 			}
+			return false
 		}
 	}
 }
@@ -1093,8 +1113,8 @@ func (l *Lexer) scanNumber() bool {
 // lexIdentifier scans an alphanumeric identifier. The next character
 // is known to be a letter.
 func lexIdentifier(l *Lexer) stateFn {
-	for isAlphaNumeric(l.next()) {
-		// absorb
+	for isNameContinue(l.next()) {
+		// Absorb.
 	}
 	l.backup()
 	l.emit(IDENTIFIER)
@@ -1108,12 +1128,22 @@ func lexKeywordOrIdentifier(l *Lexer) stateFn {
 Loop:
 	for {
 		switch r := l.next(); {
-		case isAlphaNumeric(r) || r == ':':
+		case isNameContinue(r) || r == ':':
 			// absorb.
 		default:
 			l.backup()
 			word := l.input[l.start:l.pos]
-			switch kw, ok := key[strings.ToLower(word)]; {
+			kw, ok := key[strings.ToLower(word)]
+			if ok {
+				// Unicode letters that lowercase to ASCII must retain their identity as names.
+				for _, r := range word {
+					if r >= utf8.RuneSelf {
+						ok = false
+						break
+					}
+				}
+			}
+			switch {
 			case ok:
 				// For fill/fill_left/fill_right, only treat as keyword if followed by '('
 				// This allows using these as metric names (e.g., "fill + fill").
@@ -1184,6 +1214,14 @@ func isAlpha(r rune) bool {
 	return r == '_' || ('a' <= r && r <= 'z') || ('A' <= r && r <= 'Z')
 }
 
+func isNameStart(r rune) bool {
+	return isAlpha(r) || (r >= utf8.RuneSelf && unicode.IsLetter(r))
+}
+
+func isNameContinue(r rune) bool {
+	return isNameStart(r) || isDigit(r) || r == '.'
+}
+
 // lexDurationExpr scans arithmetic expressions within brackets for duration expressions.
 func lexDurationExpr(l *Lexer) stateFn {
 	switch r := l.next(); {
@@ -1239,8 +1277,9 @@ func lexDurationExpr(l *Lexer) stateFn {
 	case r == ',':
 		l.emit(COMMA)
 		return lexDurationExpr
-	case r == 's' || r == 'S' || r == 'm' || r == 'M' || r == 'r' || r == 'R':
+	case isDurationKeywordStartChar(r):
 		if l.scanDurationKeyword() {
+			l.gotDuration = true
 			return lexDurationExpr
 		}
 		return l.errorf("unexpected character in duration expression: %q", r)

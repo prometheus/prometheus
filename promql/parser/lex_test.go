@@ -431,6 +431,18 @@ var tests = []struct {
 				input:    "atan2",
 				expected: []Item{{ATAN2, 0, "atan2"}},
 			},
+			{
+				input:    "bitand",
+				expected: []Item{{BITAND, 0, "bitand"}},
+			},
+			{
+				input:    "bitor",
+				expected: []Item{{BITOR, 0, "bitor"}},
+			},
+			{
+				input:    "bitxor",
+				expected: []Item{{BITXOR, 0, "bitxor"}},
+			},
 		},
 	},
 	{
@@ -450,11 +462,17 @@ var tests = []struct {
 		name: "selectors",
 		tests: []testCase{
 			{
-				input: `台北`,
-				fail:  true,
+				input:    `台北`,
+				expected: []Item{{IDENTIFIER, 0, `台北`}},
 			}, {
 				input: `{台北='a'}`,
-				fail:  true,
+				expected: []Item{
+					{LEFT_BRACE, 0, `{`},
+					{IDENTIFIER, 1, `台北`},
+					{EQL, 7, `=`},
+					{STRING, 8, `'a'`},
+					{RIGHT_BRACE, 11, `}`},
+				},
 			}, {
 				input: `{0a='a'}`,
 				fail:  true,
@@ -780,6 +798,39 @@ var tests = []struct {
 	{
 		name: "subqueries",
 		tests: []testCase{
+			{
+				input: `rate(foo[5m])[:1s]`,
+				fail:  true,
+			},
+			{
+				input: `rate(foo[step()])[:1s]`,
+				fail:  true,
+			},
+			{
+				input: `foo[range():1s]`,
+				expected: []Item{
+					{IDENTIFIER, 0, `foo`},
+					{LEFT_BRACKET, 3, `[`},
+					{RANGE, 4, `range`},
+					{LEFT_PAREN, 9, `(`},
+					{RIGHT_PAREN, 10, `)`},
+					{COLON, 11, `:`},
+					{DURATION, 12, `1s`},
+					{RIGHT_BRACKET, 14, `]`},
+				},
+			},
+			{
+				input: `foo[step():]`,
+				expected: []Item{
+					{IDENTIFIER, 0, `foo`},
+					{LEFT_BRACKET, 3, `[`},
+					{STEP, 4, `step`},
+					{LEFT_PAREN, 8, `(`},
+					{RIGHT_PAREN, 9, `)`},
+					{COLON, 10, `:`},
+					{RIGHT_BRACKET, 11, `]`},
+				},
+			},
 			{
 				input: `test_name{on!~"bar"}[4m:4s]`,
 				expected: []Item{

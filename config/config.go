@@ -32,6 +32,7 @@ import (
 	remoteapi "github.com/prometheus/client_golang/exp/api/remote"
 	"github.com/prometheus/common/config"
 	"github.com/prometheus/common/model"
+	"github.com/prometheus/common/promslog"
 	"github.com/prometheus/otlptranslator"
 	"github.com/prometheus/sigv4"
 	"go.yaml.in/yaml/v2"
@@ -193,7 +194,8 @@ var (
 
 	DefaultRuntimeConfig = RuntimeConfig{
 		// Go runtime tuning.
-		GoGC: getGoGC(),
+		GoGC:     getGoGC(),
+		LogLevel: LogLevel("info"),
 	}
 
 	// DefaultScrapeConfig is the default scrape configuration. Users of this
@@ -496,6 +498,18 @@ type GlobalConfig struct {
 	RuleQueryOffset model.Duration `yaml:"rule_query_offset,omitempty"`
 	// File to which PromQL queries are logged.
 	QueryLogFile string `yaml:"query_log_file,omitempty"`
+	// QueryMaxSeries is the maximum number of series a query may touch before it
+	// is rejected. It is only enforced when the query-cost feature is enabled.
+	// Zero means no limit.
+	QueryMaxSeries uint64 `yaml:"query_max_series,omitempty"`
+	// QueryMaxSamplesRead is the maximum number of samples a query may read
+	// before it is rejected. It is only enforced when the query-cost feature is
+	// enabled. Zero means no limit.
+	QueryMaxSamplesRead uint64 `yaml:"query_max_samples_read,omitempty"`
+	// QueryMaxDuration is the maximum wall-clock duration a query may take before
+	// it is rejected. It is only enforced when the query-cost feature is enabled.
+	// Zero falls back to the --query.timeout flag.
+	QueryMaxDuration model.Duration `yaml:"query_max_duration,omitempty"`
 	// File to which scrape failures are logged.
 	ScrapeFailureLogFile string `yaml:"scrape_failure_log_file,omitempty"`
 	// The labels to add to any timeseries that this Prometheus instance scrapes.
@@ -576,14 +590,19 @@ var (
 	PrometheusText1_0_0  ScrapeProtocol = "PrometheusText1.0.0"
 	OpenMetricsText0_0_1 ScrapeProtocol = "OpenMetricsText0.0.1"
 	OpenMetricsText1_0_0 ScrapeProtocol = "OpenMetricsText1.0.0"
-	UTF8NamesHeader      string         = model.EscapingKey + "=" + model.AllowUTF8
+	//nolint:revive // Allow for underscores.
+	OpenMetricsText2_0_0_rc ScrapeProtocol = "OpenMetricsText2.0.0-rc"
+	OpenMetricsText2_0_0    ScrapeProtocol = "OpenMetricsText2.0.0"
+	UTF8NamesHeader         string         = model.EscapingKey + "=" + model.AllowUTF8
 
 	ScrapeProtocolsHeaders = map[ScrapeProtocol]string{
-		PrometheusProto:      "application/vnd.google.protobuf;proto=io.prometheus.client.MetricFamily;encoding=delimited",
-		PrometheusText0_0_4:  "text/plain;version=0.0.4",
-		PrometheusText1_0_0:  "text/plain;version=1.0.0",
-		OpenMetricsText0_0_1: "application/openmetrics-text;version=0.0.1",
-		OpenMetricsText1_0_0: "application/openmetrics-text;version=1.0.0",
+		PrometheusProto:         "application/vnd.google.protobuf;proto=io.prometheus.client.MetricFamily;encoding=delimited",
+		PrometheusText0_0_4:     "text/plain;version=0.0.4",
+		PrometheusText1_0_0:     "text/plain;version=1.0.0",
+		OpenMetricsText0_0_1:    "application/openmetrics-text;version=0.0.1",
+		OpenMetricsText1_0_0:    "application/openmetrics-text;version=1.0.0",
+		OpenMetricsText2_0_0_rc: "application/openmetrics-text;version=2.0.0-rc",
+		OpenMetricsText2_0_0:    "application/openmetrics-text;version=2.0.0",
 	}
 
 	// DefaultScrapeProtocols is the set of scrape protocols that will be proposed
@@ -711,6 +730,9 @@ func (c *GlobalConfig) isZero() bool {
 		c.EvaluationInterval == 0 &&
 		c.RuleQueryOffset == 0 &&
 		c.QueryLogFile == "" &&
+		c.QueryMaxSeries == 0 &&
+		c.QueryMaxSamplesRead == 0 &&
+		c.QueryMaxDuration == 0 &&
 		c.ScrapeFailureLogFile == "" &&
 		c.ScrapeProtocols == nil &&
 		c.ScrapeNativeHistograms == nil &&
@@ -730,10 +752,25 @@ func (c *GlobalConfig) isZero() bool {
 
 const DefaultGoGCPercentage = 75
 
+// LogLevel is a YAML representation of a promslog logging level.
+type LogLevel string
+
+// UnmarshalYAML validates and normalizes a log level.
+func (l *LogLevel) UnmarshalYAML(unmarshal func(any) error) error {
+	level := promslog.NewLevel()
+	if err := level.UnmarshalYAML(unmarshal); err != nil {
+		return err
+	}
+	*l = LogLevel(level.String())
+	return nil
+}
+
 // RuntimeConfig configures the values for the process behavior.
 type RuntimeConfig struct {
 	// The Go garbage collection target percentage.
 	GoGC int `yaml:"gogc,omitempty"`
+	// The minimum severity emitted by the process logger.
+	LogLevel LogLevel `yaml:"log_level,omitempty"`
 
 	// Below are guidelines for adding a new field:
 	//
@@ -753,7 +790,7 @@ type RuntimeConfig struct {
 
 // isZero returns true iff the global config is the zero value.
 func (c *RuntimeConfig) isZero() bool {
-	return c.GoGC == 0
+	return c.GoGC == 0 && c.LogLevel == ""
 }
 
 type ScrapeConfigs struct {
@@ -1130,6 +1167,21 @@ func (t *TSDBRetentionConfig) UnmarshalYAML(unmarshal func(any) error) error {
 	return nil
 }
 
+const (
+	// FloatChunkEncodingXOR selects standard XOR encoding for float chunks.
+	FloatChunkEncodingXOR = "xor"
+	// FloatChunkEncodingXOR2 selects XOR2 encoding for float chunks.
+	FloatChunkEncodingXOR2 = "xor2"
+)
+
+// ChunkEncodingConfig configures per-chunk-type encoding overrides.
+type ChunkEncodingConfig struct {
+	// Floats selects the encoding used for float chunks.
+	// Valid values are "xor", "xor2", and "" (empty/absent). When empty, the
+	// encoding follows the --enable-feature=xor2-encoding flag.
+	Floats string `yaml:"floats,omitempty"`
+}
+
 // TSDBConfig configures runtime reloadable configuration options.
 type TSDBConfig struct {
 	// OutOfOrderTimeWindow sets how long back in time an out-of-order sample can be inserted
@@ -1147,6 +1199,9 @@ type TSDBConfig struct {
 	// the in-memory Head block. If the % of stale series crosses this threshold, stale series compaction is run immediately.
 	StaleSeriesCompactionThreshold float64 `yaml:"stale_series_compaction_threshold,omitempty"`
 
+	// ChunkEncoding configures per-chunk-type encoding overrides.
+	ChunkEncoding ChunkEncodingConfig `yaml:"chunk_encoding,omitempty"`
+
 	Retention *TSDBRetentionConfig `yaml:"retention,omitempty"`
 }
 
@@ -1159,6 +1214,13 @@ func (t *TSDBConfig) UnmarshalYAML(unmarshal func(any) error) error {
 	}
 
 	t.OutOfOrderTimeWindow = time.Duration(t.OutOfOrderTimeWindowFlag).Milliseconds()
+
+	switch t.ChunkEncoding.Floats {
+	case "", FloatChunkEncodingXOR, FloatChunkEncodingXOR2:
+		// Valid; no action required.
+	default:
+		return fmt.Errorf("'storage.tsdb.chunk_encoding.floats' must be 'xor' or 'xor2', or the field must be omitted entirely, got %q", t.ChunkEncoding.Floats)
+	}
 
 	if t.Retention == nil {
 		retention := DefaultTSDBRetentionConfig
@@ -1466,6 +1528,11 @@ type RemoteWriteConfig struct {
 	// ProtobufMessage specifies the protobuf message to use against the remote
 	// receiver as specified in https://prometheus.io/docs/specs/remote_write_spec_2_0/
 	ProtobufMessage remoteapi.WriteMessageType `yaml:"protobuf_message,omitempty"`
+	// Mode specifies the optional Remote-Write 2.0 mode (e.g. "stateless", "stateless-st")
+	// as specified in https://prometheus.io/docs/specs/prw/remote_write_spec_2_0/#modes
+	Mode remoteapi.WriteMode `yaml:"mode,omitempty"`
+	// FailedRequestLogging enables debug logging of remote write V2 request on send error.
+	FailedRequestLogging bool `yaml:"failed_request_logging,omitempty"`
 
 	// We cannot do proper Go type embedding below as the parser will then parse
 	// values arbitrarily into the overflow maps of further-down types.
@@ -1475,6 +1542,13 @@ type RemoteWriteConfig struct {
 	SigV4Config      *sigv4.SigV4Config      `yaml:"sigv4,omitempty"`
 	AzureADConfig    *azuread.AzureADConfig  `yaml:"azuread,omitempty"`
 	GoogleIAMConfig  *googleiam.Config       `yaml:"google_iam,omitempty"`
+
+	// EXPERIMENTAL: Converts native histograms with custom buckets (NHCB) to classic histograms
+	// after applying write_relabel_configs. This enables using NHCB locally (for cheaper storage
+	// and histogram atomicity) while sending classic histograms to external systems that do not
+	// support native histograms yet. Useful for migration scenarios and external system support
+	// without sacrificing local storage efficiency.
+	ConvertNHCBToClassic bool `yaml:"convert_nhcb_to_classic,omitempty"`
 }
 
 // SetDirectory joins any relative file paths with dir.
@@ -1504,11 +1578,32 @@ func (c *RemoteWriteConfig) UnmarshalYAML(unmarshal func(any) error) error {
 	if err := c.ProtobufMessage.Validate(); err != nil {
 		return fmt.Errorf("invalid protobuf_message value: %w", err)
 	}
+	c.Mode = c.Mode.Normalize()
+	if err := c.Mode.Validate(c.ProtobufMessage); err != nil {
+		return err
+	}
+	if c.Mode != remoteapi.WriteModeNone {
+		if c.ConvertNHCBToClassic {
+			return fmt.Errorf("convert_nhcb_to_classic cannot be enabled when remote_write mode is %q", c.Mode)
+		}
+		var raw map[string]any
+		if err := unmarshal(&raw); err != nil {
+			return err
+		}
+		if _, set := raw["send_native_histograms"]; set && !c.SendNativeHistograms {
+			return fmt.Errorf("send_native_histograms cannot be false when remote_write mode is %q", c.Mode)
+		}
+		c.SendNativeHistograms = true
+	}
 
 	// The UnmarshalYAML method of HTTPClientConfig is not being called because it's not a pointer.
 	// We cannot make it a pointer as the parser panics for inlined pointer structs.
 	// Thus we just do its validation here.
 	if err := c.HTTPClientConfig.Validate(); err != nil {
+		return err
+	}
+
+	if err := c.QueueConfig.Validate(); err != nil {
 		return err
 	}
 
@@ -1602,6 +1697,29 @@ type QueueConfig struct {
 
 	// Samples older than the limit will be dropped.
 	SampleAgeLimit model.Duration `yaml:"sample_age_limit,omitempty"`
+}
+
+// Validate checks QueueConfig fields for invalid values.
+func (c *QueueConfig) Validate() error {
+	if c.MaxShards <= 0 {
+		return errors.New("remote write queue max_shards must be positive")
+	}
+	if c.MinShards <= 0 {
+		return errors.New("remote write queue min_shards must be positive")
+	}
+	if c.MinShards > c.MaxShards {
+		return errors.New("remote write queue min_shards must not be greater than max_shards")
+	}
+	if c.MaxSamplesPerSend <= 0 {
+		return errors.New("remote write queue max_samples_per_send must be positive")
+	}
+	if c.Capacity <= 0 {
+		return errors.New("remote write queue capacity must be positive")
+	}
+	if c.MaxBackoff < c.MinBackoff {
+		return errors.New("remote write queue max_backoff must not be less than min_backoff")
+	}
+	return nil
 }
 
 // MetadataConfig is the configuration for sending metadata to remote

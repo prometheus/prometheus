@@ -44,9 +44,9 @@ func (m *Request) OptimizedMarshalToSizedBuffer(dAtA []byte) (int, error) {
 		copy(dAtA[i:], m.XXX_unrecognized)
 	}
 	if len(m.Timeseries) > 0 {
-		for iNdEx := len(m.Timeseries) - 1; iNdEx >= 0; iNdEx-- {
+		for _, v := range slices.Backward(m.Timeseries) {
 			{
-				size, err := m.Timeseries[iNdEx].OptimizedMarshalToSizedBuffer(dAtA[:i])
+				size, err := v.OptimizedMarshalToSizedBuffer(dAtA[:i])
 				if err != nil {
 					return 0, err
 				}
@@ -58,10 +58,10 @@ func (m *Request) OptimizedMarshalToSizedBuffer(dAtA []byte) (int, error) {
 		}
 	}
 	if len(m.Symbols) > 0 {
-		for iNdEx := len(m.Symbols) - 1; iNdEx >= 0; iNdEx-- {
-			i -= len(m.Symbols[iNdEx])
-			copy(dAtA[i:], m.Symbols[iNdEx])
-			i = encodeVarintTypes(dAtA, i, uint64(len(m.Symbols[iNdEx])))
+		for _, v := range slices.Backward(m.Symbols) {
+			i -= len(v)
+			copy(dAtA[i:], v)
+			i = encodeVarintTypes(dAtA, i, uint64(len(v)))
 			i--
 			dAtA[i] = 0x22
 		}
@@ -91,9 +91,9 @@ func (m *TimeSeries) OptimizedMarshalToSizedBuffer(dAtA []byte) (int, error) {
 	i--
 	dAtA[i] = 0x2a
 	if len(m.Histograms) > 0 {
-		for iNdEx := len(m.Histograms) - 1; iNdEx >= 0; iNdEx-- {
+		for _, v := range slices.Backward(m.Histograms) {
 			{
-				size, err := m.Histograms[iNdEx].MarshalToSizedBuffer(dAtA[:i])
+				size, err := v.MarshalToSizedBuffer(dAtA[:i])
 				if err != nil {
 					return 0, err
 				}
@@ -105,9 +105,9 @@ func (m *TimeSeries) OptimizedMarshalToSizedBuffer(dAtA []byte) (int, error) {
 		}
 	}
 	if len(m.Exemplars) > 0 {
-		for iNdEx := len(m.Exemplars) - 1; iNdEx >= 0; iNdEx-- {
+		for _, v := range slices.Backward(m.Exemplars) {
 			{
-				size, err := m.Exemplars[iNdEx].MarshalToSizedBuffer(dAtA[:i])
+				size, err := v.MarshalToSizedBuffer(dAtA[:i])
 				if err != nil {
 					return 0, err
 				}
@@ -119,9 +119,9 @@ func (m *TimeSeries) OptimizedMarshalToSizedBuffer(dAtA []byte) (int, error) {
 		}
 	}
 	if len(m.Samples) > 0 {
-		for iNdEx := len(m.Samples) - 1; iNdEx >= 0; iNdEx-- {
+		for _, v := range slices.Backward(m.Samples) {
 			{
-				size, err := m.Samples[iNdEx].MarshalToSizedBuffer(dAtA[:i])
+				size, err := v.MarshalToSizedBuffer(dAtA[:i])
 				if err != nil {
 					return 0, err
 				}

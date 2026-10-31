@@ -69,7 +69,7 @@ func (JSONCodec) Encode(resp *Response) ([]byte, error) {
 //	   ],
 //	},
 func unsafeMarshalSeriesJSON(ptr unsafe.Pointer, stream *jsoniter.Stream) {
-	s := *((*promql.Series)(ptr))
+	s := *(*promql.Series)(ptr)
 	marshalSeriesJSON(s, stream)
 }
 
@@ -130,7 +130,7 @@ func neverEmpty(unsafe.Pointer) bool {
 //	   "histogram": [ 1435781451.781, { < histogram, see jsonutil.MarshalHistogram > } ]
 //	},
 func unsafeMarshalSampleJSON(ptr unsafe.Pointer, stream *jsoniter.Stream) {
-	s := *((*promql.Sample)(ptr))
+	s := *(*promql.Sample)(ptr)
 	marshalSampleJSON(s, stream)
 }
 
@@ -158,7 +158,7 @@ func marshalSampleJSON(s promql.Sample, stream *jsoniter.Stream) {
 
 // unsafeMarshalFPointJSON writes `[ts, "1.234"]`.
 func unsafeMarshalFPointJSON(ptr unsafe.Pointer, stream *jsoniter.Stream) {
-	p := *((*promql.FPoint)(ptr))
+	p := *(*promql.FPoint)(ptr)
 	marshalFPointJSON(p, stream)
 }
 
@@ -172,7 +172,7 @@ func marshalFPointJSON(p promql.FPoint, stream *jsoniter.Stream) {
 
 // unsafeMarshalHPointJSON writes `[ts, { < histogram, see jsonutil.MarshalHistogram > } ]`.
 func unsafeMarshalHPointJSON(ptr unsafe.Pointer, stream *jsoniter.Stream) {
-	p := *((*promql.HPoint)(ptr))
+	p := *(*promql.HPoint)(ptr)
 	marshalHPointJSON(p, stream)
 }
 
@@ -192,7 +192,7 @@ func marshalHPointJSON(p promql.HPoint, stream *jsoniter.Stream) {
 //	   timestamp: <float>
 //	}
 func marshalExemplarJSON(ptr unsafe.Pointer, stream *jsoniter.Stream) {
-	p := *((*exemplar.Exemplar)(ptr))
+	p := *(*exemplar.Exemplar)(ptr)
 	stream.WriteObjectStart()
 
 	// "labels" key.
@@ -239,7 +239,7 @@ func labelsIsEmpty(ptr unsafe.Pointer) bool {
 
 // Marshal a Vector as `[sample,sample,...]` - empty Vector is `[]`.
 func unsafeMarshalVectorJSON(ptr unsafe.Pointer, stream *jsoniter.Stream) {
-	v := *((*promql.Vector)(ptr))
+	v := *(*promql.Vector)(ptr)
 	stream.WriteArrayStart()
 	for i, s := range v {
 		marshalSampleJSON(s, stream)
@@ -252,7 +252,7 @@ func unsafeMarshalVectorJSON(ptr unsafe.Pointer, stream *jsoniter.Stream) {
 
 // Marshal a Matrix as `[series,series,...]` - empty Matrix is `[]`.
 func unsafeMarshalMatrixJSON(ptr unsafe.Pointer, stream *jsoniter.Stream) {
-	m := *((*promql.Matrix)(ptr))
+	m := *(*promql.Matrix)(ptr)
 	stream.WriteArrayStart()
 	for i, s := range m {
 		marshalSeriesJSON(s, stream)

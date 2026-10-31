@@ -78,14 +78,38 @@ type AppendV2Options struct {
 	RejectOutOfOrder bool
 }
 
-// AppendPartialError represents an AppenderV2.Append error that tells
-// callers sample was written but some auxiliary optional data (e.g. exemplars)
-// was not (or partially written)
+// AppendPartialError represents an AppenderV2.Append or
+// ExemplarAppenderV2.AppendExemplars error that tells
+// callers sample was written (for Append) and some, or all, of the given
+// auxiliary optional data (e.g. exemplars) was not written.
 //
 // It's up to the caller to decide if it's an ignorable error or not, plus
 // it allows extra reporting (e.g. for Remote Write 2.0 X-Remote-Write-Written headers).
 type AppendPartialError struct {
-	ExemplarErrors []error
+	// ExemplarErrors reports the exemplars that were not written. Several
+	// entries can share an Index when more than one storage rejects the same
+	// exemplar, e.g. behind a fanout storage.
+	ExemplarErrors []ExemplarError
+}
+
+// ExemplarError reports why an exemplar was not written.
+type ExemplarError struct {
+	// Index is the position of the exemplar in the slice passed to
+	// AppenderV2.Append (AppendV2Options.Exemplars) or
+	// ExemplarAppenderV2.AppendExemplars.
+	Index int
+	// Err is why the exemplar was not written. It must not be nil.
+	Err error
+}
+
+// Error returns the message of Err.
+func (e ExemplarError) Error() string {
+	return e.Err.Error()
+}
+
+// Unwrap returns Err.
+func (e ExemplarError) Unwrap() error {
+	return e.Err
 }
 
 // Error returns combined error string.
@@ -94,11 +118,15 @@ func (e *AppendPartialError) Error() string {
 		return "<nil>"
 	}
 
-	errs := errors.Join(e.ExemplarErrors...)
-	if errs == nil {
+	errs := make([]error, 0, len(e.ExemplarErrors))
+	for _, eErr := range e.ExemplarErrors {
+		errs = append(errs, eErr.Err)
+	}
+	joined := errors.Join(errs...)
+	if joined == nil {
 		return ""
 	}
-	return errs.Error()
+	return joined.Error()
 }
 
 // ToError returns AppendPartialError as error, returning nil
@@ -180,13 +208,48 @@ type AppenderV2 interface {
 	// TODO(bwplotka): We plan to experiment on using generics for complex sampleType, but do it after we unify interface (derisk) and before we add native summaries.
 	//
 	// Implementations MUST attempt to append sample even if metadata, exemplar or (st) start timestamp appends fail.
-	// Implementations MAY return AppendPartialError as an error. Use errors.As to detect.
+	// Implementations MAY return AppendPartialError as an error to report which of the
+	// given opts.Exemplars failed. Use errors.As to detect.
 	// For the successful Append, Implementations MUST return valid SeriesRef that represents ls.
 	//   NOTE(bwplotka): Given OTLP and native histograms and the relaxation of the requirement for
 	//   type and unit suffixes in metric names we start to hit cases of ls being not enough for id
 	//   of the series (metadata matters). Current solution is to enable 'type-and-unit-label' features for those cases, but we may
 	//   start to extend the id with metadata one day.
 	Append(ref SeriesRef, ls labels.Labels, st, t int64, v float64, h *histogram.Histogram, fh *histogram.FloatHistogram, opts AppendV2Options) (SeriesRef, error)
+}
+
+// ExemplarAppenderV2 is an optional extension of AppenderV2 (mirroring the V1
+// ExemplarAppender) that allows appending exemplars in a separate call from the
+// sample Append call.
+//
+// Exemplars appended this way are still part of the AppenderV2 transaction:
+// they are persisted on Commit and discarded on Rollback, exactly like the
+// exemplars passed inline via AppendV2Options.Exemplars.
+//
+// It is intended for callers whose wire protocol decouples exemplars from
+// individual samples (such as the Remote Write 1.0 and 2.0 receivers), while
+// keeping AppenderV2 minimal for downstream implementations that prefer
+// inlined exemplars via AppendV2Options.Exemplars (e.g. OpenTelemetry Collector).
+type ExemplarAppenderV2 interface {
+	AppenderV2
+
+	// AppendExemplars appends one or more exemplars for the given series.
+	//
+	// AppendExemplars MUST be called after the corresponding sample Append for the same series
+	// in the same or an earlier transaction. Implementations MUST NOT create a new series for
+	// exemplars alone; if the series does not exist, AppendExemplars MUST return storage.ErrNotFound.
+	//
+	// The ref (optional) and ls (required) parameters follow the same contract as AppenderV2.Append.
+	//
+	// The exemplars slice MUST be sorted by Exemplar.Ts, and is unsafe for reuse (it only lives
+	// for the duration of the AppendExemplars call; implementations MUST NOT retain references
+	// to it or mutate it in place).
+	// Duplicate exemplar errors MUST be ignored by implementations (not returned).
+	//
+	// Implementations MUST attempt to append every exemplar even if one of them fails.
+	// Implementations MAY return AppendPartialError as an error to report which of the
+	// given exemplars failed. Use errors.As to detect it.
+	AppendExemplars(ref SeriesRef, ls labels.Labels, exemplars []exemplar.Exemplar) (SeriesRef, error)
 }
 
 // AppenderTransaction allows transactional appends.
@@ -200,32 +263,4 @@ type AppenderTransaction interface {
 	// Rollback rolls back all modifications made in the appender so far.
 	// Appender has to be discarded after rollback.
 	Rollback() error
-}
-
-// LimitedAppenderV1 is an Appender that only supports appending float and histogram samples.
-// This is to support migration to AppenderV2.
-// TODO(bwplotka): Remove once migration to AppenderV2 is fully complete.
-type LimitedAppenderV1 interface {
-	AppenderTransaction
-
-	Append(ref SeriesRef, l labels.Labels, t int64, v float64) (SeriesRef, error)
-	AppendHistogram(ref SeriesRef, l labels.Labels, t int64, h *histogram.Histogram, fh *histogram.FloatHistogram) (SeriesRef, error)
-}
-
-// AppenderV2AsLimitedV1 returns appender that exposes AppenderV2 as LimitedAppenderV1
-// TODO(bwplotka): Remove once migration to AppenderV2 is fully complete.
-func AppenderV2AsLimitedV1(app AppenderV2) LimitedAppenderV1 {
-	return &limitedAppenderV1{AppenderV2: app}
-}
-
-type limitedAppenderV1 struct {
-	AppenderV2
-}
-
-func (a *limitedAppenderV1) Append(ref SeriesRef, l labels.Labels, t int64, v float64) (SeriesRef, error) {
-	return a.AppenderV2.Append(ref, l, 0, t, v, nil, nil, AppendV2Options{})
-}
-
-func (a *limitedAppenderV1) AppendHistogram(ref SeriesRef, l labels.Labels, t int64, h *histogram.Histogram, fh *histogram.FloatHistogram) (SeriesRef, error) {
-	return a.AppenderV2.Append(ref, l, 0, t, 0, h, fh, AppendV2Options{})
 }

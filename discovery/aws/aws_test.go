@@ -30,6 +30,7 @@ import (
 )
 
 func TestRoleUnmarshalYAML(t *testing.T) {
+	t.Parallel()
 	tests := []struct {
 		name     string
 		input    string
@@ -84,6 +85,7 @@ func TestRoleUnmarshalYAML(t *testing.T) {
 }
 
 func TestRoleString(t *testing.T) {
+	t.Parallel()
 	tests := []struct {
 		name     string
 		role     Role
@@ -114,16 +116,19 @@ func TestRoleString(t *testing.T) {
 }
 
 func TestSDConfigName(t *testing.T) {
+	t.Parallel()
 	cfg := &SDConfig{}
 	require.Equal(t, "aws", cfg.Name())
 }
 
 func TestDefaultSDConfig(t *testing.T) {
+	t.Parallel()
 	require.Equal(t, Role(""), DefaultSDConfig.Role)
 	require.Equal(t, model.Duration(60*time.Second), DefaultSDConfig.RefreshInterval)
 }
 
 func TestSDConfigUnmarshalYAML(t *testing.T) {
+	t.Parallel()
 	tests := []struct {
 		name         string
 		yaml         string
@@ -173,6 +178,24 @@ port: 9300`,
 				require.Equal(t, 9300, cfg.LightsailSDConfig.Port)
 			},
 		},
+		{
+			name: "RDSWithFlatFields",
+			yaml: `role: rds
+region: us-east-1
+port: 9400
+filters:
+  - name: engine
+    values: [aurora-postgresql]`,
+			validateFunc: func(t *testing.T, cfg *SDConfig) {
+				require.Equal(t, RoleRDS, cfg.Role)
+				require.NotNil(t, cfg.RDSSDConfig)
+				require.Equal(t, "us-east-1", cfg.RDSSDConfig.Region)
+				require.Equal(t, 9400, cfg.RDSSDConfig.Port)
+				require.Len(t, cfg.RDSSDConfig.Filters, 1)
+				require.Equal(t, "engine", cfg.RDSSDConfig.Filters[0].Name)
+				require.Equal(t, []string{"aurora-postgresql"}, cfg.RDSSDConfig.Filters[0].Values)
+			},
+		},
 	}
 
 	for _, tt := range tests {
@@ -189,6 +212,7 @@ port: 9300`,
 // all configs pointed to the same global default, causing port and other
 // settings from one job to overwrite settings in another job.
 func TestMultipleSDConfigsDoNotShareState(t *testing.T) {
+	t.Parallel()
 	tests := []struct {
 		name         string
 		yaml         string
@@ -485,5 +509,226 @@ region = ` + randomRegion + `
 		_, err := loadRegion(context.Background(), "")
 		require.Error(t, err)
 		require.Contains(t, err.Error(), "failed to get region from IMDS")
+	})
+}
+
+// Regression test for issue #6092: parsing an AWS SD config must not call
+// IMDS even when the region is omitted.
+func TestAWSSDConfigUnmarshalYAML_NoRegionResolution(t *testing.T) {
+	// Point IMDS at a black hole and wipe every other region source so any
+	// accidental loadRegion call fails fast instead of waiting on IMDS.
+	t.Setenv("AWS_EC2_METADATA_SERVICE_ENDPOINT", "http://127.0.0.1:1")
+	t.Setenv("AWS_REGION", "")
+	t.Setenv("AWS_DEFAULT_REGION", "")
+	t.Setenv("AWS_CONFIG_FILE", "")
+	t.Setenv("AWS_PROFILE", "")
+
+	yamls := map[string]string{
+		"ec2":         `region: ""`,
+		"ecs":         `region: ""`,
+		"rds":         `region: ""`,
+		"msk":         `region: ""`,
+		"elasticache": `region: ""`,
+		"lightsail":   `region: ""`,
+	}
+
+	for role, body := range yamls {
+		t.Run(role, func(t *testing.T) {
+			yamlStr := "role: " + role + "\n" + body + "\n"
+			cfg := SDConfig{}
+			err := yaml.Unmarshal([]byte(yamlStr), &cfg)
+			require.NoError(t, err, "config parsing must not make network calls")
+			require.Empty(t, cfg.Region, "region must remain empty after parse; resolution is deferred to SD init")
+		})
+	}
+}
+
+// TestRequestConcurrencyUnmarshalYAML checks that request_concurrency is
+// rejected unless it is positive. A zero value makes errgroup.SetLimit block
+// Go() forever on an unbuffered channel, which hangs the refresh regardless of
+// the context deadline, and a negative one silently means "no limit at all".
+func TestRequestConcurrencyUnmarshalYAML(t *testing.T) {
+	t.Parallel()
+
+	// Every AWS SD config that exposes request_concurrency, along with the
+	// default it falls back to when the field is omitted.
+	configs := []struct {
+		name               string
+		defaultConcurrency int
+		parse              func(string) (int, error)
+	}{
+		{
+			name:               "ecs_sd",
+			defaultConcurrency: DefaultECSSDConfig.RequestConcurrency,
+			parse: func(s string) (int, error) {
+				var cfg ECSSDConfig
+				err := yaml.Unmarshal([]byte(s), &cfg)
+				return cfg.RequestConcurrency, err
+			},
+		},
+		{
+			name:               "elasticache_sd",
+			defaultConcurrency: DefaultElasticacheSDConfig.RequestConcurrency,
+			parse: func(s string) (int, error) {
+				var cfg ElasticacheSDConfig
+				err := yaml.Unmarshal([]byte(s), &cfg)
+				return cfg.RequestConcurrency, err
+			},
+		},
+		{
+			name:               "msk_sd",
+			defaultConcurrency: DefaultMSKSDConfig.RequestConcurrency,
+			parse: func(s string) (int, error) {
+				var cfg MSKSDConfig
+				err := yaml.Unmarshal([]byte(s), &cfg)
+				return cfg.RequestConcurrency, err
+			},
+		},
+		{
+			name:               "rds_sd",
+			defaultConcurrency: DefaultRDSSDConfig.RequestConcurrency,
+			parse: func(s string) (int, error) {
+				var cfg RDSSDConfig
+				err := yaml.Unmarshal([]byte(s), &cfg)
+				return cfg.RequestConcurrency, err
+			},
+		},
+	}
+
+	cases := []struct {
+		name        string
+		yaml        string
+		expectedErr string
+		expected    int
+		wantDefault bool
+	}{
+		{
+			name:        "Zero",
+			yaml:        "request_concurrency: 0",
+			expectedErr: "request_concurrency must be positive, got 0",
+		},
+		{
+			name:        "Negative",
+			yaml:        "request_concurrency: -1",
+			expectedErr: "request_concurrency must be positive, got -1",
+		},
+		{
+			name:     "Positive",
+			yaml:     "request_concurrency: 5",
+			expected: 5,
+		},
+		{
+			name:        "Omitted",
+			yaml:        "",
+			wantDefault: true,
+		},
+	}
+
+	for _, cfg := range configs {
+		for _, tt := range cases {
+			t.Run(cfg.name+"/"+tt.name, func(t *testing.T) {
+				t.Parallel()
+				got, err := cfg.parse("region: us-west-2\n" + tt.yaml + "\n")
+
+				if tt.expectedErr != "" {
+					require.EqualError(t, err, cfg.name+": "+tt.expectedErr)
+					return
+				}
+
+				require.NoError(t, err)
+				expected := tt.expected
+				if tt.wantDefault {
+					expected = cfg.defaultConcurrency
+				}
+				require.Equal(t, expected, got)
+			})
+		}
+	}
+}
+
+func TestSDConfigSetDirectory(t *testing.T) {
+	t.Parallel()
+	tmpDir := t.TempDir()
+	tests := []struct {
+		name string
+		yaml string
+		role Role
+	}{
+		{
+			name: "EC2",
+			yaml: `
+role: ec2
+region: us-east-1
+`,
+			role: RoleEC2,
+		},
+		{
+			name: "ECS",
+			yaml: `
+role: ecs
+region: us-west-2
+clusters: [test-cluster]
+`,
+			role: RoleECS,
+		},
+		{
+			name: "Elasticache",
+			yaml: `
+role: elasticache
+region: eu-west-1
+`,
+			role: RoleElasticache,
+		},
+		{
+			name: "Lightsail",
+			yaml: `
+role: lightsail
+region: ap-south-1
+`,
+			role: RoleLightsail,
+		},
+		{
+			name: "MSK",
+			yaml: `
+role: msk
+region: us-east-2
+`,
+			role: RoleMSK,
+		},
+		{
+			name: "RDS",
+			yaml: `
+role: rds
+region: us-west-1
+`,
+			role: RoleRDS,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			var cfg SDConfig
+			err := yaml.Unmarshal([]byte(tt.yaml), &cfg)
+			require.NoError(t, err)
+			require.Equal(t, tt.role, cfg.Role)
+
+			// Call SetDirectory - should not panic
+			require.NotPanics(t, func() {
+				cfg.SetDirectory(tmpDir)
+			})
+		})
+	}
+
+	t.Run("SetDirectoryWithNilConfigs", func(t *testing.T) {
+		// Test that SetDirectory doesn't panic when called on an SDConfig
+		// where the role-specific config might be nil (this was the original bug)
+		cfg := SDConfig{
+			Role: RoleEC2,
+			// EC2SDConfig is nil - this would have caused a panic before the fix
+		}
+		// This should not panic
+		require.NotPanics(t, func() {
+			cfg.SetDirectory(tmpDir)
+		})
 	})
 }

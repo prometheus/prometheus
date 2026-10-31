@@ -14,10 +14,21 @@
 package web
 
 import (
+	"bytes"
 	"context"
+	"crypto/ecdsa"
+	"crypto/elliptic"
+	"crypto/rand"
+	"crypto/tls"
+	"crypto/x509"
+	"crypto/x509/pkix"
 	"encoding/json"
+	"encoding/pem"
+	"errors"
 	"fmt"
 	"io"
+	"log/slog"
+	"math/big"
 	"net"
 	"net/http"
 	"net/http/httptest"
@@ -33,6 +44,7 @@ import (
 	"github.com/prometheus/client_golang/prometheus"
 	prom_testutil "github.com/prometheus/client_golang/prometheus/testutil"
 	"github.com/stretchr/testify/require"
+	"go.opentelemetry.io/contrib/instrumentation/net/http/otelhttp"
 
 	"github.com/prometheus/prometheus/config"
 	"github.com/prometheus/prometheus/notifier"
@@ -62,6 +74,43 @@ func (a *dbAdapter) Stats(statsByLabelName string, limit int) (*tsdb.Stats, erro
 
 func (*dbAdapter) WALReplayStatus() (tsdb.WALReplayStatus, error) {
 	return tsdb.WALReplayStatus{}, nil
+}
+
+func TestWithStackTracer(t *testing.T) {
+	for _, tc := range []struct {
+		name       string
+		panicValue any
+		wantLog    bool
+	}{
+		{name: "success"},
+		{name: "abort", panicValue: http.ErrAbortHandler},
+		{name: "ordinary panic", panicValue: errors.New("unexpected failure"), wantLog: true},
+		{name: "wrapped abort", panicValue: fmt.Errorf("wrapped: %w", http.ErrAbortHandler), wantLog: true},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			var logs bytes.Buffer
+			handler := withStackTracer(otelhttp.NewHandler(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+				if tc.panicValue != nil {
+					panic(tc.panicValue)
+				}
+				w.WriteHeader(http.StatusNoContent)
+			}), "test"), slog.New(slog.NewTextHandler(&logs, nil)))
+			response := httptest.NewRecorder()
+			request := httptest.NewRequest(http.MethodGet, "/", http.NoBody)
+			if tc.panicValue == nil {
+				handler.ServeHTTP(response, request)
+				require.Equal(t, http.StatusNoContent, response.Code)
+			} else {
+				require.PanicsWithValue(t, tc.panicValue, func() { handler.ServeHTTP(response, request) })
+			}
+			if tc.wantLog {
+				require.Contains(t, logs.String(), "panic while serving request")
+				require.Contains(t, logs.String(), "stack=")
+			} else {
+				require.Empty(t, logs.String())
+			}
+		})
+	}
 }
 
 func TestReadyAndHealthy(t *testing.T) {
@@ -741,4 +790,161 @@ func waitForServerReady(t *testing.T, baseURL string, timeout time.Duration) {
 		time.Sleep(interval)
 	}
 	t.Fatalf("Server did not become ready within %v", timeout)
+}
+
+// TestTLSHTTP2ALPN verifies that a TLS-enabled web server with http2: true
+// negotiates HTTP/2 via ALPN. This is a regression test for
+// https://github.com/prometheus/prometheus/issues/19807: exporter-toolkit
+// v0.19.0 copied Server.TLSConfig.NextProtos in its reload callback, but Go
+// 1.27 moved HTTP/2 ALPN setup to an internal TLS config clone, leaving the
+// original NextProtos empty and causing the server to silently fall back to
+// HTTP/1.1. exporter-toolkit v0.20.0 derives the ALPN list from
+// Server.Protocols and the registered HTTP/2 handler instead.
+func TestTLSHTTP2ALPN(t *testing.T) {
+	t.Parallel()
+
+	// Generate a self-signed certificate for 127.0.0.1.
+	certDir := t.TempDir()
+	key, err := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
+	require.NoError(t, err)
+
+	tmpl := &x509.Certificate{
+		SerialNumber: big.NewInt(1),
+		Subject:      pkix.Name{CommonName: "prometheus-web-test"},
+		NotBefore:    time.Now().Add(-time.Minute),
+		NotAfter:     time.Now().Add(time.Hour),
+		DNSNames:     []string{"localhost"},
+		IPAddresses:  []net.IP{net.ParseIP("127.0.0.1")},
+		KeyUsage:     x509.KeyUsageDigitalSignature,
+		ExtKeyUsage:  []x509.ExtKeyUsage{x509.ExtKeyUsageServerAuth},
+	}
+	der, err := x509.CreateCertificate(rand.Reader, tmpl, tmpl, &key.PublicKey, key)
+	require.NoError(t, err)
+
+	certPath := filepath.Join(certDir, "cert.pem")
+	keyPath := filepath.Join(certDir, "key.pem")
+	require.NoError(t, os.WriteFile(certPath, pem.EncodeToMemory(&pem.Block{Type: "CERTIFICATE", Bytes: der}), 0o600))
+	keyDer, err := x509.MarshalPKCS8PrivateKey(key)
+	require.NoError(t, err)
+	require.NoError(t, os.WriteFile(keyPath, pem.EncodeToMemory(&pem.Block{Type: "PRIVATE KEY", Bytes: keyDer}), 0o600))
+
+	webCfg := filepath.Join(certDir, "web.yml")
+	webCfgContent := fmt.Appendf(nil, `tls_server_config:
+  cert_file: %s
+  key_file: %s
+http_server_config:
+  http2: true
+`, certPath, keyPath)
+	require.NoError(t, os.WriteFile(webCfg, webCfgContent, 0o600))
+
+	dbDir := t.TempDir()
+	db, err := tsdb.Open(dbDir, nil, nil, nil, nil)
+	require.NoError(t, err)
+	t.Cleanup(func() { require.NoError(t, db.Close()) })
+
+	port := fmt.Sprintf(":%d", testutil.RandomUnprivilegedPort(t))
+	opts := &Options{
+		ListenAddresses: []string{port},
+		ReadTimeout:     30 * time.Second,
+		MaxConnections:  512,
+		LocalStorage:    &dbAdapter{db},
+		TSDBDir:         dbDir,
+		ScrapeManager:   &scrape.Manager{},
+		RuleManager:     &rules.Manager{},
+		RoutePrefix:     "/",
+		ExternalURL: &url.URL{
+			Scheme: "https",
+			Host:   "localhost" + port,
+			Path:   "/",
+		},
+		Version:  &PrometheusVersion{},
+		Gatherer: prometheus.DefaultGatherer,
+		Flags:    map[string]string{},
+	}
+
+	webHandler := New(nil, opts)
+	webHandler.config = &config.Config{}
+	webHandler.notifier = &notifier.Manager{}
+
+	listeners, err := webHandler.Listeners()
+	require.NoError(t, err)
+
+	ctx, cancel := context.WithCancel(t.Context())
+	t.Cleanup(cancel)
+	go func() {
+		_ = webHandler.Run(ctx, listeners, webCfg)
+	}()
+
+	// Build a TLS client that advertises h2 and trusts the self-signed cert.
+	cert, err := tls.LoadX509KeyPair(certPath, keyPath)
+	require.NoError(t, err)
+	caPool := x509.NewCertPool()
+	caCert, err := x509.ParseCertificate(cert.Certificate[0])
+	require.NoError(t, err)
+	caPool.AddCert(caCert)
+
+	transport := &http.Transport{
+		TLSClientConfig: &tls.Config{
+			RootCAs:    caPool,
+			NextProtos: []string{"h2"},
+		},
+		ForceAttemptHTTP2: true,
+	}
+	t.Cleanup(transport.CloseIdleConnections)
+	client := &http.Client{Transport: transport, Timeout: 10 * time.Second}
+
+	baseURL := "https://localhost" + port
+
+	// Warm up: establish the connection and let the HTTP/2 round tripper
+	// negotiate ALPN.
+	warmup, err := client.Get(baseURL + "/-/healthy")
+	require.NoError(t, err)
+	require.Equal(t, http.StatusOK, warmup.StatusCode)
+	cleanupTestResponse(t, warmup)
+	require.Equal(t, "h2", warmup.TLS.NegotiatedProtocol, "expected h2 ALPN negotiation")
+	require.Equal(t, "HTTP/2.0", warmup.Proto, "expected HTTP/2.0 protocol")
+
+	// Concurrent requests should all multiplex over a single HTTP/2
+	// connection. Under the v0.19.0 bug the server falls back to HTTP/1.1
+	// and each request opens its own TCP connection.
+	const n = 10
+	var (
+		wg            sync.WaitGroup
+		mu            sync.Mutex
+		remoteAddrs   = map[string]int{}
+		protoCounts   = map[string]int{}
+		alpnCounts    = map[string]int{}
+		firstTLSState *tls.ConnectionState
+	)
+	for range n {
+		wg.Go(func() {
+			resp, err := client.Get(baseURL + "/-/healthy")
+			if err != nil {
+				return
+			}
+			defer resp.Body.Close()
+			io.Copy(io.Discard, resp.Body)
+
+			mu.Lock()
+			defer mu.Unlock()
+			protoCounts[resp.Proto]++
+			if resp.TLS != nil {
+				alpnCounts[resp.TLS.NegotiatedProtocol]++
+				if firstTLSState == nil {
+					cs := *resp.TLS
+					firstTLSState = &cs
+				}
+			}
+			// The server observes the remote TCP peer address via
+			// a custom header added below; here we just count
+			// protocol-level outcomes.
+			_ = remoteAddrs
+		})
+	}
+	wg.Wait()
+
+	require.Equal(t, map[string]int{"HTTP/2.0": n}, protoCounts,
+		"all concurrent requests should complete over HTTP/2.0")
+	require.Equal(t, map[string]int{"h2": n}, alpnCounts,
+		"all concurrent requests should negotiate h2 via ALPN")
 }

@@ -14,7 +14,9 @@
 package parser
 
 import (
+	"math"
 	"testing"
+	"time"
 
 	"github.com/stretchr/testify/require"
 
@@ -23,9 +25,7 @@ import (
 
 func TestExprString(t *testing.T) {
 	optsParser := NewParser(Options{
-		ExperimentalDurationExpr:     true,
-		EnableExtendedRangeSelectors: true,
-		EnableBinopFillModifiers:     true,
+		EnableBinopFillModifiers: true,
 	})
 	// A list of valid expressions that are expected to be
 	// returned as out when calling String(). If out is empty the output
@@ -51,11 +51,11 @@ func TestExprString(t *testing.T) {
 		},
 		{
 			in:  `sum by("foo.bar") (task:errors:rate10s{job="s"})`,
-			out: `sum by ("foo.bar") (task:errors:rate10s{job="s"})`,
+			out: `sum by (foo.bar) (task:errors:rate10s{job="s"})`,
 		},
 		{
 			in:  `sum without("foo.bar") (task:errors:rate10s{job="s"})`,
-			out: `sum without ("foo.bar") (task:errors:rate10s{job="s"})`,
+			out: `sum without (foo.bar) (task:errors:rate10s{job="s"})`,
 		},
 		{
 			in: `topk(5, task:errors:rate10s{job="s"})`,
@@ -115,6 +115,49 @@ func TestExprString(t *testing.T) {
 			out: `a - ignoring () group_left () c`,
 		},
 		{
+			in:  `Inf ^ 2`,
+			out: `(+Inf) ^ 2`,
+		},
+		{
+			in:  `-Inf ^ 2`,
+			out: `-(+Inf) ^ 2`,
+		},
+		{
+			in:  `Inf ^ 2 ^ 3`,
+			out: `(+Inf) ^ 2 ^ 3`,
+		},
+		{
+			in:  `(Inf) ^ 2`,
+			out: `(+Inf) ^ 2`,
+		},
+		{
+			in: `(+Inf) ^ 2`,
+		},
+		{
+			in:  `(+inf) ^ 2`,
+			out: `(+Inf) ^ 2`,
+		},
+		{
+			in: `(-Inf) ^ 2`,
+		},
+		{
+			in:  `((Inf)) ^ 2`,
+			out: `((+Inf)) ^ 2`,
+		},
+		{
+			in:  `-(Inf) ^ 2`,
+			out: `-(+Inf) ^ 2`,
+		},
+		{
+			in: `2 ^ -Inf`,
+		},
+		{
+			in: `+Inf * 2`,
+		},
+		{
+			in: `(-2) ^ 2`,
+		},
+		{
 			in:  `a + fill(-23) b`,
 			out: `a + fill (-23) b`,
 		},
@@ -129,6 +172,10 @@ func TestExprString(t *testing.T) {
 		{
 			in:  `a + fill_left(-23) fill_right(42) b`,
 			out: `a + fill_left (-23) fill_right (42) b`,
+		},
+		{
+			in:  `a + fill_left(5) fill_right(5) b`,
+			out: `a + fill (5) b`,
 		},
 		{
 			in:  `a + on(b) group_left fill(-23) c`,
@@ -221,7 +268,8 @@ func TestExprString(t *testing.T) {
 			in: `{__name__="",a="x"}`,
 		},
 		{
-			in: `{"a.b"="c"}`,
+			in:  `{"a.b"="c"}`,
+			out: `{a.b="c"}`,
 		},
 		{
 			in: `{"0"="1"}`,
@@ -266,26 +314,41 @@ func TestExprString(t *testing.T) {
 			in: "foo offset -(step())",
 		},
 		{
-			in:  "foo offset +(5*2)",
-			out: "foo offset (5 * 2)",
+			in:  "foo offset +(5)",
+			out: "foo offset (5)",
 		},
 		{
-			in:  "foo offset +min(10s, 20s)",
-			out: "foo offset min(10s, 20s)",
+			in: "foo offset -(5)",
 		},
 		{
-			in: "foo offset -min(10s, 20s)",
+			in: "foo offset (5)",
 		},
 		{
-			in:  "foo offset -min(10s, +max(step() ^ 2, 2))",
-			out: "foo offset -min(10s, max(step() ^ 2, 2))",
+			in: "foo offset (5m)",
 		},
 		{
-			in:  "foo[200-min(-step()^+step(),1)]",
-			out: "foo[200 - min(-step() ^ step(), 1)]",
+			in: "foo[(5s)]",
 		},
 		{
-			in: "foo[200 - min(step() + 10s, -max(step() ^ 2, 3))]",
+			in: "foo[(5m):(1m)]",
+		},
+		{
+			in:  "foo offset +min_of(10s, 20s)",
+			out: "foo offset min_of(10s, 20s)",
+		},
+		{
+			in: "foo offset -min_of(10s, 20s)",
+		},
+		{
+			in:  "foo offset -min_of(10s, +max_of(step() ^ 2, 2))",
+			out: "foo offset -min_of(10s, max_of(step() ^ 2, 2))",
+		},
+		{
+			in:  "foo[200-min_of(-step()^+step(),1)]",
+			out: "foo[200 - min_of(-step() ^ step(), 1)]",
+		},
+		{
+			in: "foo[200 - min_of(step() + 10s, -max_of(step() ^ 2, 3))]",
 		},
 		{
 			in: "foo[range()]",
@@ -300,22 +363,22 @@ func TestExprString(t *testing.T) {
 			in: "foo offset -range()",
 		},
 		{
-			in: "foo[max(range(), 5s)]",
+			in: "foo[max_of(range(), 5s)]",
 		},
 		{
 			in: `predict_linear(foo[1h], 3000)`,
 		},
 		{
 			in:  `sum by("üüü") (foo)`,
-			out: `sum by ("üüü") (foo)`,
+			out: `sum by (üüü) (foo)`,
 		},
 		{
 			in:  `sum without("äää") (foo)`,
-			out: `sum without ("äää") (foo)`,
+			out: `sum without (äää) (foo)`,
 		},
 		{
 			in:  `count by("ööö", job) (foo)`,
-			out: `count by ("ööö", job) (foo)`,
+			out: `count by (ööö, job) (foo)`,
 		},
 	}
 
@@ -438,6 +501,99 @@ func TestVectorSelector_String(t *testing.T) {
 	}
 }
 
+func TestMatrixSelector_String(t *testing.T) {
+	for _, tc := range []struct {
+		name          string
+		ms            MatrixSelector
+		expected      string
+		expectedShort string
+	}{
+		{
+			name: "vector selector",
+			ms: MatrixSelector{
+				VectorSelector: &VectorSelector{Name: "foobar"},
+				Range:          5 * time.Minute,
+			},
+			expected:      `foobar[5m]`,
+			expectedShort: `[5m]`,
+		},
+		{
+			// A failed parse can leave a non-vector expression as the operand.
+			name: "non-vector operand",
+			ms: MatrixSelector{
+				VectorSelector: &NumberLiteral{Val: 1},
+				Range:          5 * time.Minute,
+			},
+			expected:      `1[5m]`,
+			expectedShort: `[5m]`,
+		},
+		{
+			// A hand-built node may have no operand at all.
+			name:          "no operand",
+			ms:            MatrixSelector{Range: 5 * time.Minute},
+			expected:      `[5m]`,
+			expectedShort: `[5m]`,
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			require.Equal(t, tc.expected, tc.ms.String())
+			require.Equal(t, tc.expectedShort, tc.ms.ShortString())
+		})
+	}
+}
+
+func TestBinaryExpr_String(t *testing.T) {
+	// The parser only puts +Inf on the left of ^ with a sign, but ASTs rewritten
+	// by the engine or built in code can also hold a negative number or a unary
+	// expression there.
+	nested, nestedStr := Expr(&NumberLiteral{Val: 2}), "2"
+	for range 40 {
+		nested = &BinaryExpr{Op: POW, LHS: &ParenExpr{Expr: nested}, RHS: &NumberLiteral{Val: 2}}
+		nestedStr = "(" + nestedStr + ") ^ 2"
+	}
+	for _, tc := range []struct {
+		name     string
+		expr     Expr
+		expected string
+	}{
+		{
+			name:     "positive infinity on the left of ^",
+			expr:     &BinaryExpr{Op: POW, LHS: &NumberLiteral{Val: math.Inf(1)}, RHS: &NumberLiteral{Val: 2}},
+			expected: `(+Inf) ^ 2`,
+		},
+		{
+			name:     "negative number on the left of ^",
+			expr:     &BinaryExpr{Op: POW, LHS: &NumberLiteral{Val: -2}, RHS: &NumberLiteral{Val: 2}},
+			expected: `(-2) ^ 2`,
+		},
+		{
+			name:     "unary expression on the left of ^",
+			expr:     &BinaryExpr{Op: POW, LHS: &UnaryExpr{Op: SUB, Expr: &VectorSelector{Name: "foo"}}, RHS: &NumberLiteral{Val: 2}},
+			expected: `(-foo) ^ 2`,
+		},
+		{
+			name:     "step invariant negative number on the left of ^",
+			expr:     &BinaryExpr{Op: POW, LHS: &StepInvariantExpr{Expr: &NumberLiteral{Val: -2}}, RHS: &NumberLiteral{Val: 2}},
+			expected: `(-2) ^ 2`,
+		},
+		{
+			name:     "negative number on the left of another operator",
+			expr:     &BinaryExpr{Op: MUL, LHS: &NumberLiteral{Val: -2}, RHS: &NumberLiteral{Val: 2}},
+			expected: `-2 * 2`,
+		},
+		{
+			// Printing must stay linear in the depth of the expression.
+			name:     "deeply nested powers",
+			expr:     nested,
+			expected: nestedStr,
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			require.Equal(t, tc.expected, tc.expr.String())
+		})
+	}
+}
+
 func TestBinaryExprUTF8Labels(t *testing.T) {
 	testCases := []struct {
 		name     string
@@ -447,27 +603,27 @@ func TestBinaryExprUTF8Labels(t *testing.T) {
 		{
 			name:     "UTF-8 labels in on clause",
 			input:    `foo / on("äää") bar`,
-			expected: `foo / on ("äää") bar`,
+			expected: `foo / on (äää) bar`,
 		},
 		{
 			name:     "UTF-8 labels in ignoring clause",
 			input:    `foo / ignoring("üüü") bar`,
-			expected: `foo / ignoring ("üüü") bar`,
+			expected: `foo / ignoring (üüü) bar`,
 		},
 		{
 			name:     "UTF-8 labels in group_left clause",
 			input:    `foo / on("äää") group_left("ööö") bar`,
-			expected: `foo / on ("äää") group_left ("ööö") bar`,
+			expected: `foo / on (äää) group_left (ööö) bar`,
 		},
 		{
 			name:     "UTF-8 labels in group_right clause",
 			input:    `foo / on("äää") group_right("ööö") bar`,
-			expected: `foo / on ("äää") group_right ("ööö") bar`,
+			expected: `foo / on (äää) group_right (ööö) bar`,
 		},
 		{
 			name:     "Mixed legacy and UTF-8 labels",
 			input:    `foo / on(legacy, "üüü") bar`,
-			expected: `foo / on (legacy, "üüü") bar`,
+			expected: `foo / on (legacy, üüü) bar`,
 		},
 		{
 			name:     "Legacy labels only (should not quote)",

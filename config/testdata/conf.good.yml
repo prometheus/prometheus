@@ -41,6 +41,7 @@ remote_write:
   - url: http://remote2/push
     protobuf_message: io.prometheus.write.v2.Request
     name: rw_tls
+    convert_nhcb_to_classic: true
     tls_config:
       cert_file: valid_cert_file
       key_file: valid_key_file
@@ -346,6 +347,19 @@ scrape_configs:
       - host: http://127.0.0.1:2375
         role: nodes
 
+  - job_name: service-oci
+    oci_sd_configs:
+      - region: us-ashburn-1
+        tenancy: ocid1.tenancy.oc1..tenancy001
+        user: ocid1.user.oc1..user001
+        fingerprint: aa:bb:cc:dd:ee:ff
+        key_file: valid_key_file
+        key_passphrase: mysecret
+        compartments:
+          - ocid1.compartment.oc1..comp001
+        port: 9100
+        refresh_interval: 1m
+
   - job_name: service-openstack
     openstack_sd_configs:
       - role: instance
@@ -422,6 +436,8 @@ scrape_configs:
   - job_name: stackit-servers
     stackit_sd_configs:
       - project: 11111111-1111-1111-1111-111111111111
+        service_account_key: mysecret_sa_key
+        private_key: mysecret_private_key
         authorization:
           credentials: abcdef
 

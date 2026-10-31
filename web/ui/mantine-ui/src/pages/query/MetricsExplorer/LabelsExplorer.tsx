@@ -92,6 +92,7 @@ const LabelsExplorer: FC<LabelsExplorerProps> = ({
     name: metricName,
     matchers,
     offset: 0,
+    offsetExpr: null,
     timestamp: null,
     startOrEnd: null,
     anchored: false,
@@ -296,12 +297,16 @@ const LabelsExplorer: FC<LabelsExplorerProps> = ({
                               value: mt,
                               label: mt,
                             }))}
-                            onChange={(_value, option) =>
+                            onChange={(_value, option) => {
+                              if (option === null) {
+                                return;
+                              }
+
                               setNewMatcher({
                                 ...newMatcher,
                                 type: option.value as matchType,
-                              })
-                            }
+                              });
+                            }}
                           />
                           <Autocomplete
                             value={newMatcher.value}

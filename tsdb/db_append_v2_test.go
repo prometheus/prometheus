@@ -15,6 +15,7 @@ package tsdb
 
 import (
 	"bufio"
+	"bytes"
 	"context"
 	"fmt"
 	"log/slog"
@@ -37,9 +38,11 @@ import (
 	"go.uber.org/atomic"
 
 	"github.com/prometheus/prometheus/config"
+	"github.com/prometheus/prometheus/model/exemplar"
 	"github.com/prometheus/prometheus/model/histogram"
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/model/metadata"
+	"github.com/prometheus/prometheus/model/value"
 	"github.com/prometheus/prometheus/storage"
 	"github.com/prometheus/prometheus/tsdb/chunkenc"
 	"github.com/prometheus/prometheus/tsdb/chunks"
@@ -53,12 +56,6 @@ import (
 	"github.com/prometheus/prometheus/util/compression"
 	"github.com/prometheus/prometheus/util/testutil"
 )
-
-// TODO(bwplotka): Ensure non-ported tests are not deleted from db_test.go when removing AppenderV1 flow (#17632):
-// * TestQuerier_ShouldNotPanicIfHeadChunkIsTruncatedWhileReadingQueriedChunks
-// * TestChunkQuerier_ShouldNotPanicIfHeadChunkIsTruncatedWhileReadingQueriedChunks
-// * TestEmptyLabelsetCausesError
-// * TestQueryHistogramFromBlocksWithCompaction
 
 // TODO(krajorama): Add histograms test cases.
 func TestDataAvailableOnlyAfterCommit_AppendV2(t *testing.T) {
@@ -87,7 +84,7 @@ func TestDataAvailableOnlyAfterCommit_AppendV2(t *testing.T) {
 	require.Equal(t, map[string][]chunks.Sample{`{foo="bar"}`: {sample{t: 0, f: 0}}}, seriesSet)
 }
 
-// TestNoPanicAfterWALCorruption ensures that querying the db after a WAL corruption doesn't cause a panic.
+// TestNoPanicAfterWALCorruption_AppendV2 ensures that querying the db after a WAL corruption doesn't cause a panic.
 // https://github.com/prometheus/prometheus/issues/7548
 func TestNoPanicAfterWALCorruption_AppendV2(t *testing.T) {
 	db := newTestDB(t, withOpts(&Options{WALSegmentSize: 32 * 1024}))
@@ -205,13 +202,13 @@ func TestDataNotAvailableAfterRollback_AppendV2(t *testing.T) {
 			require.NoError(t, err)
 			walExemplarsCount += len(exemplars)
 
-		case record.HistogramSamples, record.CustomBucketsHistogramSamples:
+		case record.HistogramSamples, record.CustomBucketsHistogramSamples, record.HistogramSamplesV2:
 			var histograms []record.RefHistogramSample
 			histograms, err = dec.HistogramSamples(rec, histograms)
 			require.NoError(t, err)
 			walHistogramCount += len(histograms)
 
-		case record.FloatHistogramSamples, record.CustomBucketsFloatHistogramSamples:
+		case record.FloatHistogramSamples, record.CustomBucketsFloatHistogramSamples, record.FloatHistogramSamplesV2:
 			var floatHistograms []record.RefFloatHistogramSample
 			floatHistograms, err = dec.FloatHistogramSamples(rec, floatHistograms)
 			require.NoError(t, err)
@@ -570,7 +567,7 @@ func TestDB_Snapshot_AppendV2(t *testing.T) {
 	require.Equal(t, 1000.0, sum)
 }
 
-// TestDB_Snapshot_ChunksOutsideOfCompactedRange ensures that a snapshot removes chunks samples
+// TestDB_Snapshot_ChunksOutsideOfCompactedRange_AppendV2 ensures that a snapshot removes chunks samples
 // that are outside the set block time range.
 // See https://github.com/prometheus/prometheus/issues/5105
 func TestDB_Snapshot_ChunksOutsideOfCompactedRange_AppendV2(t *testing.T) {
@@ -705,6 +702,7 @@ func TestDB_SnapshotWithDelete_AppendV2(t *testing.T) {
 }
 
 func TestDB_e2e_AppendV2(t *testing.T) {
+	t.Parallel()
 	const (
 		numDatapoints = 1000
 		numRanges     = 1000
@@ -961,6 +959,7 @@ func TestWALSegmentSizeOptions_AppendV2(t *testing.T) {
 // https://github.com/prometheus/prometheus/issues/9846
 // https://github.com/prometheus/prometheus/issues/9859
 func TestWALReplayRaceOnSamplesLoggedBeforeSeries_AppendV2(t *testing.T) {
+	t.Parallel()
 	const (
 		numRuns                        = 1
 		numSamplesBeforeSeriesCreation = 1000
@@ -972,6 +971,7 @@ func TestWALReplayRaceOnSamplesLoggedBeforeSeries_AppendV2(t *testing.T) {
 		for _, numSamplesAfterSeriesCreation := range []int{1, 1000} {
 			for run := 1; run <= numRuns; run++ {
 				t.Run(fmt.Sprintf("samples after series creation = %d, run = %d, stStorage = %v", numSamplesAfterSeriesCreation, run, enableSTStorage), func(t *testing.T) {
+					t.Parallel()
 					testWALReplayRaceOnSamplesLoggedBeforeSeriesAppendV2(t, numSamplesBeforeSeriesCreation, numSamplesAfterSeriesCreation, enableSTStorage)
 				})
 			}
@@ -1134,7 +1134,7 @@ func TestTombstoneClean_AppendV2(t *testing.T) {
 	}
 }
 
-// TestTombstoneCleanResultEmptyBlock tests that a TombstoneClean that results in empty blocks (no timeseries)
+// TestTombstoneCleanResultEmptyBlock_AppendV2 tests that a TombstoneClean that results in empty blocks (no timeseries)
 // will also delete the resultant block.
 func TestTombstoneCleanResultEmptyBlock_AppendV2(t *testing.T) {
 	t.Parallel()
@@ -1480,7 +1480,7 @@ func TestQuerierWithBoundaryChunks_AppendV2(t *testing.T) {
 	require.Equal(t, []string{"1", "2"}, b)
 }
 
-// TestInitializeHeadTimestamp ensures that the h.minTime is set properly.
+// TestInitializeHeadTimestamp_AppendV2 ensures that the h.minTime is set properly.
 //   - no blocks no WAL: set to the time of the first  appended sample
 //   - no blocks with WAL: set to the smallest sample from the WAL
 //   - with blocks no WAL: set to the last block maxT
@@ -1822,7 +1822,7 @@ func TestCorrectNumTombstones_AppendV2(t *testing.T) {
 	require.Equal(t, uint64(3), db.blocks[0].meta.Stats.NumTombstones)
 }
 
-// TestBlockRanges checks the following use cases:
+// TestBlockRanges_AppendV2 checks the following use cases:
 //   - No samples can be added with timestamps lower than the last block maxt.
 //   - The compactor doesn't create overlapping blocks
 //
@@ -1907,7 +1907,7 @@ func TestBlockRanges_AppendV2(t *testing.T) {
 		"new block overlaps  old:%v,new:%v", blocks[2].Meta(), blocks[3].Meta())
 }
 
-// TestDBReadOnly ensures that opening a DB in readonly mode doesn't modify any files on the disk.
+// TestDBReadOnly_AppendV2 ensures that opening a DB in readonly mode doesn't modify any files on the disk.
 // It also checks that the API calls return equivalent results as a normal db.Open() mode.
 func TestDBReadOnly_AppendV2(t *testing.T) {
 	t.Parallel()
@@ -2285,7 +2285,7 @@ func TestDBQueryDoesntSeeAppendsAfterCreation_AppendV2(t *testing.T) {
 	require.Equal(t, map[string][]sample{`{foo="bar"}`: {{t: 0, f: 0}}}, seriesSet)
 }
 
-// TestCompactHead ensures that the head compaction
+// TestCompactHead_AppendV2 ensures that the head compaction
 // creates a block that is ready for loading and
 // does not cause data loss.
 // This test:
@@ -2348,7 +2348,7 @@ func TestCompactHead_AppendV2(t *testing.T) {
 	require.NoError(t, seriesSet.Err())
 }
 
-// TestCompactHeadWithDeletion tests https://github.com/prometheus/prometheus/issues/11585.
+// TestCompactHeadWithDeletion_AppendV2 tests https://github.com/prometheus/prometheus/issues/11585.
 func TestCompactHeadWithDeletion_AppendV2(t *testing.T) {
 	db := newTestDB(t)
 
@@ -2521,16 +2521,33 @@ func TestQuerierShouldNotFailIfOOOCompactionOccursAfterRetrievingQuerier_AppendV
 
 	// Start OOO head compaction.
 	compactionComplete := atomic.NewBool(false)
+	compactionErr := make(chan error, 1)
 	go func() {
 		defer compactionComplete.Store(true)
 
-		require.NoError(t, db.CompactOOOHead(ctx))
-		require.Equal(t, float64(1), prom_testutil.ToFloat64(db.Head().metrics.chunksRemoved))
+		compactionErr <- db.CompactOOOHead(ctx)
 	}()
 
-	// Give CompactOOOHead time to start work.
-	// If it does not wait for querierCreatedBeforeCompaction to be closed, then the query will return incorrect results or fail.
-	time.Sleep(time.Second)
+	// Wait until CompactOOOHead has written the OOO block, reloaded, and published
+	// lastGarbageCollectedMmapRef before creating the second querier below.
+	// Until that ref is set, the second querier would capture the stale ref (0)
+	// and permanently block the OOO reader-wait loop, which has no timeout, hanging
+	// the test on slow runners.
+	// If compaction exits before publishing the ref, stop waiting so its error can
+	// be reported below instead of being masked by the timeout.
+	require.Eventually(t, func() bool {
+		if compactionComplete.Load() {
+			return true
+		}
+		db.mtx.RLock()
+		defer db.mtx.RUnlock()
+		return db.lastGarbageCollectedMmapRef != 0
+	}, time.Minute, 10*time.Millisecond, "CompactOOOHead did not reach the reader-wait phase")
+	if compactionComplete.Load() {
+		require.NoError(t, <-compactionErr)
+	}
+	// The compaction must still be waiting for querierCreatedBeforeCompaction to be
+	// closed. If it does not wait, then the query will return incorrect results or fail.
 	require.False(t, compactionComplete.Load(), "compaction completed before reading chunks or closing querier created before compaction")
 
 	// Get another querier. This one should only use the compacted blocks from disk and ignore the chunks that will be garbage collected.
@@ -2565,7 +2582,12 @@ func TestQuerierShouldNotFailIfOOOCompactionOccursAfterRetrievingQuerier_AppendV
 
 	require.False(t, compactionComplete.Load(), "compaction completed before closing querier created before compaction")
 	require.NoError(t, querierCreatedBeforeCompaction.Close())
-	require.Eventually(t, compactionComplete.Load, time.Second, 10*time.Millisecond, "compaction should complete after querier created before compaction was closed, and not wait for querier created after compaction")
+	// CompactOOOHead only re-checks for pending readers every 500ms and still has
+	// to garbage collect chunks and truncate the WBL after it notices the close,
+	// so give slow runners plenty of time beyond the poll interval.
+	require.Eventually(t, compactionComplete.Load, time.Minute, 10*time.Millisecond, "compaction should complete after querier created before compaction was closed, and not wait for querier created after compaction")
+	require.NoError(t, <-compactionErr)
+	require.Equal(t, float64(1), prom_testutil.ToFloat64(db.Head().metrics.chunksRemoved))
 
 	// Use the querier created after compaction and confirm it returns the expected results (ie. from the disk block created from OOO head and in-order head) without error.
 	testQuerier(querierCreatedAfterCompaction)
@@ -2616,11 +2638,11 @@ func TestQuerierShouldNotFailIfOOOCompactionOccursAfterSelecting_AppendV2(t *tes
 
 	// Start OOO head compaction.
 	compactionComplete := atomic.NewBool(false)
+	compactionErr := make(chan error, 1)
 	go func() {
 		defer compactionComplete.Store(true)
 
-		require.NoError(t, db.CompactOOOHead(ctx))
-		require.Equal(t, float64(1), prom_testutil.ToFloat64(db.Head().metrics.chunksRemoved))
+		compactionErr <- db.CompactOOOHead(ctx)
 	}()
 
 	// Give CompactOOOHead time to start work.
@@ -2648,7 +2670,12 @@ func TestQuerierShouldNotFailIfOOOCompactionOccursAfterSelecting_AppendV2(t *tes
 
 	require.False(t, compactionComplete.Load(), "compaction completed before closing querier")
 	require.NoError(t, querier.Close())
-	require.Eventually(t, compactionComplete.Load, time.Second, 10*time.Millisecond, "compaction should complete after querier was closed")
+	// CompactOOOHead only re-checks for pending readers every 500ms and still has
+	// to garbage collect chunks and truncate the WBL after it notices the close,
+	// so give slow runners plenty of time beyond the poll interval.
+	require.Eventually(t, compactionComplete.Load, time.Minute, 10*time.Millisecond, "compaction should complete after querier was closed")
+	require.NoError(t, <-compactionErr)
+	require.Equal(t, float64(1), prom_testutil.ToFloat64(db.Head().metrics.chunksRemoved))
 }
 
 func TestQuerierShouldNotFailIfOOOCompactionOccursAfterRetrievingIterators_AppendV2(t *testing.T) {
@@ -2704,11 +2731,11 @@ func TestQuerierShouldNotFailIfOOOCompactionOccursAfterRetrievingIterators_Appen
 
 	// Start OOO head compaction.
 	compactionComplete := atomic.NewBool(false)
+	compactionErr := make(chan error, 1)
 	go func() {
 		defer compactionComplete.Store(true)
 
-		require.NoError(t, db.CompactOOOHead(ctx))
-		require.Equal(t, float64(1), prom_testutil.ToFloat64(db.Head().metrics.chunksRemoved))
+		compactionErr <- db.CompactOOOHead(ctx)
 	}()
 
 	// Give CompactOOOHead time to start work.
@@ -2727,7 +2754,12 @@ func TestQuerierShouldNotFailIfOOOCompactionOccursAfterRetrievingIterators_Appen
 
 	require.False(t, compactionComplete.Load(), "compaction completed before closing querier")
 	require.NoError(t, querier.Close())
-	require.Eventually(t, compactionComplete.Load, time.Second, 10*time.Millisecond, "compaction should complete after querier was closed")
+	// CompactOOOHead only re-checks for pending readers every 500ms and still has
+	// to garbage collect chunks and truncate the WBL after it notices the close,
+	// so give slow runners plenty of time beyond the poll interval.
+	require.Eventually(t, compactionComplete.Load, time.Minute, 10*time.Millisecond, "compaction should complete after querier was closed")
+	require.NoError(t, <-compactionErr)
+	require.Equal(t, float64(1), prom_testutil.ToFloat64(db.Head().metrics.chunksRemoved))
 }
 
 func TestOOOWALWrite_AppendV2(t *testing.T) {
@@ -3337,7 +3369,7 @@ func TestDBPanicOnMmappingHeadChunk_AppendV2(t *testing.T) {
 		require.NoError(t, app.Commit())
 	}
 
-	// Ingest samples upto 2h50m to make the head "about to compact".
+	// Ingest samples up to 2h50m to make the head "about to compact".
 	numSamples := int(170*time.Minute/time.Millisecond) / int(itvl)
 	addSamples(numSamples)
 
@@ -3351,7 +3383,7 @@ func TestDBPanicOnMmappingHeadChunk_AppendV2(t *testing.T) {
 	db = newTestDB(t, withDir(db.Dir()))
 	db.DisableCompactions()
 
-	// Ingest samples upto 20m more to make the head compact.
+	// Ingest samples up to 20m more to make the head compact.
 	numSamples = int(20*time.Minute/time.Millisecond) / int(itvl)
 	addSamples(numSamples)
 
@@ -3366,7 +3398,6 @@ func TestDBPanicOnMmappingHeadChunk_AppendV2(t *testing.T) {
 	require.NoError(t, db.Close())
 }
 
-// TODO(bwplotka): Add cases ensuring stale sample appends will skipp metadata persisting.
 func TestMetadataInWAL_AppenderV2(t *testing.T) {
 	opts := DefaultOptions()
 	opts.EnableMetadataWALRecords = true
@@ -3430,6 +3461,78 @@ func TestMetadataInWAL_AppenderV2(t *testing.T) {
 	require.Len(t, gotMetadataBlocks, 2)
 	require.Equal(t, expectedMetadata[:3], gotMetadataBlocks[0])
 	require.Equal(t, expectedMetadata[3:], gotMetadataBlocks[1])
+
+	t.Run("stale samples", func(t *testing.T) {
+		staleNaN := math.Float64frombits(value.StaleNaN)
+		exemplarsAt := func(ts int64) []exemplar.Exemplar {
+			return []exemplar.Exemplar{{Labels: labels.FromStrings("trace_id", "abc"), Value: 1, Ts: ts, HasTs: true}}
+		}
+		for _, tc := range []struct {
+			name         string
+			samples      []sample
+			appendOpts   []storage.AOptions // One per sample.
+			wantMetadata []metadata.Metadata
+		}{
+			{
+				name:       "stale float",
+				samples:    []sample{{f: staleNaN}},
+				appendOpts: []storage.AOptions{{Metadata: m1, Exemplars: exemplarsAt(0)}},
+			},
+			{
+				name:       "stale histogram",
+				samples:    []sample{{h: &histogram.Histogram{Sum: staleNaN}}},
+				appendOpts: []storage.AOptions{{Metadata: m1, Exemplars: exemplarsAt(0)}},
+			},
+			{
+				name:       "stale float histogram",
+				samples:    []sample{{fh: &histogram.FloatHistogram{Sum: staleNaN}}},
+				appendOpts: []storage.AOptions{{Metadata: m1, Exemplars: exemplarsAt(0)}},
+			},
+			{
+				name:         "stale float after histogram",
+				samples:      []sample{{h: tsdbutil.GenerateTestHistogram(1)}, {f: staleNaN}},
+				appendOpts:   []storage.AOptions{{Metadata: m1}, {Metadata: m2, Exemplars: exemplarsAt(1)}},
+				wantMetadata: []metadata.Metadata{m1},
+			},
+			{
+				name:         "stale float after float histogram",
+				samples:      []sample{{fh: tsdbutil.GenerateTestFloatHistogram(1)}, {f: staleNaN}},
+				appendOpts:   []storage.AOptions{{Metadata: m1}, {Metadata: m2, Exemplars: exemplarsAt(1)}},
+				wantMetadata: []metadata.Metadata{m1},
+			},
+		} {
+			t.Run(tc.name, func(t *testing.T) {
+				opts := DefaultOptions()
+				opts.EnableMetadataWALRecords = true
+				opts.EnableExemplarStorage = true
+				opts.MaxExemplars = 10
+				db := newTestDB(t, withOpts(opts))
+
+				app := db.AppenderV2(ctx)
+				for i, s := range tc.samples {
+					_, err := app.Append(0, s1, 0, int64(i), s.f, s.h, s.fh, tc.appendOpts[i])
+					require.NoError(t, err)
+				}
+				require.NoError(t, app.Commit())
+
+				var wantMetadata, gotMetadata []record.RefMetadata
+				for _, m := range tc.wantMetadata {
+					wantMetadata = append(wantMetadata, record.RefMetadata{Ref: 1, Type: record.GetMetricType(m.Type), Unit: m.Unit, Help: m.Help})
+				}
+				var gotExemplars []record.RefExemplar
+				for _, rec := range readTestWAL(t, path.Join(db.Dir(), "wal")) {
+					switch rec := rec.(type) {
+					case []record.RefMetadata:
+						gotMetadata = append(gotMetadata, rec...)
+					case []record.RefExemplar:
+						gotExemplars = append(gotExemplars, rec...)
+					}
+				}
+				require.Equal(t, wantMetadata, gotMetadata)
+				require.Empty(t, gotExemplars)
+			})
+		}
+	})
 }
 
 func TestMetadataCheckpointingOnlyKeepsLatestEntry_AppendV2(t *testing.T) {
@@ -3579,10 +3682,10 @@ func TestMetadataAssertInMemoryData_AppendV2(t *testing.T) {
 	series2 := db.head.series.getByHash(s2.Hash(), s2)
 	series3 := db.head.series.getByHash(s3.Hash(), s3)
 	series4 := db.head.series.getByHash(s4.Hash(), s4)
-	require.Equal(t, *series1.meta, m1)
-	require.Equal(t, *series2.meta, m2)
-	require.Equal(t, *series3.meta, m3)
-	require.Nil(t, series4.meta)
+	require.Equal(t, series1.meta.Value(), m1)
+	require.Equal(t, series2.meta.Value(), m2)
+	require.Equal(t, series3.meta.Value(), m3)
+	require.True(t, metadata.IsZeroHandle(series4.meta))
 
 	// Add a replicated metadata entry to the first series,
 	// a changed metadata entry to the second series,
@@ -3604,10 +3707,10 @@ func TestMetadataAssertInMemoryData_AppendV2(t *testing.T) {
 	series2 = db.head.series.getByHash(s2.Hash(), s2)
 	series3 = db.head.series.getByHash(s3.Hash(), s3)
 	series4 = db.head.series.getByHash(s4.Hash(), s4)
-	require.Equal(t, *series1.meta, m1)
-	require.Equal(t, *series2.meta, m5)
-	require.Equal(t, *series3.meta, m3)
-	require.Equal(t, *series4.meta, m4)
+	require.Equal(t, series1.meta.Value(), m1)
+	require.Equal(t, series2.meta.Value(), m5)
+	require.Equal(t, series3.meta.Value(), m3)
+	require.Equal(t, series4.meta.Value(), m4)
 
 	require.NoError(t, db.Close())
 
@@ -3622,13 +3725,13 @@ func TestMetadataAssertInMemoryData_AppendV2(t *testing.T) {
 	_, err = reopenDB.head.wal.Size()
 	require.NoError(t, err)
 
-	require.Equal(t, *reopenDB.head.series.getByHash(s1.Hash(), s1).meta, m1)
-	require.Equal(t, *reopenDB.head.series.getByHash(s2.Hash(), s2).meta, m5)
-	require.Equal(t, *reopenDB.head.series.getByHash(s3.Hash(), s3).meta, m3)
-	require.Equal(t, *reopenDB.head.series.getByHash(s4.Hash(), s4).meta, m4)
+	require.Equal(t, reopenDB.head.series.getByHash(s1.Hash(), s1).meta.Value(), m1)
+	require.Equal(t, reopenDB.head.series.getByHash(s2.Hash(), s2).meta.Value(), m5)
+	require.Equal(t, reopenDB.head.series.getByHash(s3.Hash(), s3).meta.Value(), m3)
+	require.Equal(t, reopenDB.head.series.getByHash(s4.Hash(), s4).meta.Value(), m4)
 }
 
-// TestMultipleEncodingsCommitOrder mainly serves to demonstrate when happens when committing a batch of samples for the
+// TestMultipleEncodingsCommitOrder_AppendV2 mainly serves to demonstrate when happens when committing a batch of samples for the
 // same series when there are multiple encodings. With issue #15177 fixed, this now all works as expected.
 func TestMultipleEncodingsCommitOrder_AppendV2(t *testing.T) {
 	opts := DefaultOptions()
@@ -3770,11 +3873,14 @@ func TestMultipleEncodingsCommitOrder_AppendV2(t *testing.T) {
 //
 //	are not included in this compaction.
 func TestOOOCompaction_AppendV2(t *testing.T) {
+	t.Parallel()
 	for name, scenario := range sampleTypeScenarios {
 		t.Run(name, func(t *testing.T) {
+			t.Parallel()
 			testOOOCompactionAppenderV2(t, scenario, false)
 		})
 		t.Run(name+"+extra", func(t *testing.T) {
+			t.Parallel()
 			testOOOCompactionAppenderV2(t, scenario, true)
 		})
 	}
@@ -3796,9 +3902,9 @@ func testOOOCompactionAppenderV2(t *testing.T, scenario sampleTypeScenario, addE
 		app := db.AppenderV2(context.Background())
 		for m := fromMins; m <= toMins; m++ {
 			ts := m * time.Minute.Milliseconds()
-			_, _, err := scenario.appendFunc(storage.AppenderV2AsLimitedV1(app), series1, ts, ts)
+			_, _, err := scenario.appendFunc(app, series1, ts, ts)
 			require.NoError(t, err)
-			_, _, err = scenario.appendFunc(storage.AppenderV2AsLimitedV1(app), series2, ts, 2*ts)
+			_, _, err = scenario.appendFunc(app, series2, ts, 2*ts)
 			require.NoError(t, err)
 		}
 		require.NoError(t, app.Commit())
@@ -3876,7 +3982,7 @@ func testOOOCompactionAppenderV2(t *testing.T, scenario sampleTypeScenario, addE
 	require.Greater(t, f.Size(), int64(100))
 
 	if addExtraSamples {
-		compactOOOHeadTestingCallback = func() {
+		db.compactOOOHeadTestingCallback = func() {
 			addSample(90, 120)  // Back in time, to generate a new OOO chunk.
 			addSample(300, 330) // Now some samples after the previous highest timestamp.
 			addSample(300, 330) // Repeat to generate an OOO chunk at these timestamps.
@@ -3965,7 +4071,7 @@ func testOOOCompactionAppenderV2(t *testing.T, scenario sampleTypeScenario, addE
 	verifyDBSamples() // Final state. Blocks from normal and OOO head are merged.
 }
 
-// TestOOOCompactionWithNormalCompaction tests if OOO compaction is performed
+// TestOOOCompactionWithNormalCompaction_AppendV2 tests if OOO compaction is performed
 // when the normal head's compaction is done.
 func TestOOOCompactionWithNormalCompaction_AppendV2(t *testing.T) {
 	t.Parallel()
@@ -3994,9 +4100,9 @@ func testOOOCompactionWithNormalCompactionAppendV2(t *testing.T, scenario sample
 		app := db.AppenderV2(context.Background())
 		for m := fromMins; m <= toMins; m++ {
 			ts := m * time.Minute.Milliseconds()
-			_, _, err := scenario.appendFunc(storage.AppenderV2AsLimitedV1(app), series1, ts, ts)
+			_, _, err := scenario.appendFunc(app, series1, ts, ts)
 			require.NoError(t, err)
-			_, _, err = scenario.appendFunc(storage.AppenderV2AsLimitedV1(app), series2, ts, 2*ts)
+			_, _, err = scenario.appendFunc(app, series2, ts, 2*ts)
 			require.NoError(t, err)
 		}
 		require.NoError(t, app.Commit())
@@ -4069,7 +4175,7 @@ func testOOOCompactionWithNormalCompactionAppendV2(t *testing.T, scenario sample
 	verifySamples(db.Blocks()[1], 250, 350)
 }
 
-// TestOOOCompactionWithDisabledWriteLog tests the scenario where the TSDB is
+// TestOOOCompactionWithDisabledWriteLog_AppendV2 tests the scenario where the TSDB is
 // configured to not have wal and wbl but its able to compact both the in-order
 // and out-of-order head.
 func TestOOOCompactionWithDisabledWriteLog_AppendV2(t *testing.T) {
@@ -4100,9 +4206,9 @@ func testOOOCompactionWithDisabledWriteLogAppend2(t *testing.T, scenario sampleT
 		app := db.AppenderV2(context.Background())
 		for m := fromMins; m <= toMins; m++ {
 			ts := m * time.Minute.Milliseconds()
-			_, _, err := scenario.appendFunc(storage.AppenderV2AsLimitedV1(app), series1, ts, ts)
+			_, _, err := scenario.appendFunc(app, series1, ts, ts)
 			require.NoError(t, err)
-			_, _, err = scenario.appendFunc(storage.AppenderV2AsLimitedV1(app), series2, ts, 2*ts)
+			_, _, err = scenario.appendFunc(app, series2, ts, 2*ts)
 			require.NoError(t, err)
 		}
 		require.NoError(t, app.Commit())
@@ -4205,9 +4311,9 @@ func testOOOQueryAfterRestartWithSnapshotAndRemovedWBLAppendV2(t *testing.T, sce
 		app := db.AppenderV2(context.Background())
 		for m := fromMins; m <= toMins; m++ {
 			ts := m * time.Minute.Milliseconds()
-			_, _, err := scenario.appendFunc(storage.AppenderV2AsLimitedV1(app), series1, ts, ts)
+			_, _, err := scenario.appendFunc(app, series1, ts, ts)
 			require.NoError(t, err)
-			_, _, err = scenario.appendFunc(storage.AppenderV2AsLimitedV1(app), series2, ts, 2*ts)
+			_, _, err = scenario.appendFunc(app, series2, ts, 2*ts)
 			require.NoError(t, err)
 		}
 		require.NoError(t, app.Commit())
@@ -4289,6 +4395,7 @@ func testOOOQueryAfterRestartWithSnapshotAndRemovedWBLAppendV2(t *testing.T, sce
 }
 
 func TestQuerierOOOQuery_AppendV2(t *testing.T) {
+	t.Parallel()
 	scenarios := map[string]struct {
 		appendFunc func(app storage.AppenderV2, ts int64, counterReset bool) (storage.SeriesRef, error)
 		sampleFunc func(ts int64) chunks.Sample
@@ -4340,6 +4447,7 @@ func TestQuerierOOOQuery_AppendV2(t *testing.T) {
 
 	for name, scenario := range scenarios {
 		t.Run(name, func(t *testing.T) {
+			t.Parallel()
 			testQuerierOOOQueryAppendV2(t, scenario.appendFunc, scenario.sampleFunc)
 		})
 	}
@@ -4583,6 +4691,7 @@ func testQuerierOOOQueryAppendV2(t *testing.T,
 }
 
 func TestChunkQuerierOOOQuery_AppendV2(t *testing.T) {
+	t.Parallel()
 	nBucketHistogram := func(n int64) *histogram.Histogram {
 		h := &histogram.Histogram{
 			Count: uint64(n),
@@ -4664,6 +4773,7 @@ func TestChunkQuerierOOOQuery_AppendV2(t *testing.T) {
 	}
 	for name, scenario := range scenarios {
 		t.Run(name, func(t *testing.T) {
+			t.Parallel()
 			testChunkQuerierOOOQueryAppendV2(t, scenario.appendFunc, scenario.sampleFunc, scenario.checkInUseBucket)
 		})
 	}
@@ -4933,7 +5043,7 @@ func testChunkQuerierOOOQueryAppendV2(t *testing.T,
 	}
 }
 
-// TestOOONativeHistogramsWithCounterResets verifies the counter reset headers for in-order and out-of-order samples
+// TestOOONativeHistogramsWithCounterResets_AppendV2 verifies the counter reset headers for in-order and out-of-order samples
 // upon ingestion. Note that when the counter reset(s) occur in OOO samples, the header is set to UnknownCounterReset
 // rather than CounterReset. This is because with OOO native histogram samples, it cannot be definitely
 // determined if a counter reset occurred because the samples are not consecutive, and another sample
@@ -5069,7 +5179,7 @@ func testOOONativeHistogramsWithCounterResetsAppendV2(t *testing.T, scenario sam
 					if resetCount {
 						j = 0
 					}
-					_, s, err := scenario.appendFunc(storage.AppenderV2AsLimitedV1(app), lbls, minutes(i), j)
+					_, s, err := scenario.appendFunc(app, lbls, minutes(i), j)
 					require.NoError(t, err)
 					if s.Type() == chunkenc.ValHistogram {
 						s.H().CounterResetHint = batch.expCounterResetHints[smplIdx]
@@ -5401,7 +5511,7 @@ func testOOOAppendAndQueryAppendV2(t *testing.T, scenario sampleTypeScenario) {
 		from, to := minutes(fromMins), minutes(toMins)
 		for m := from; m <= to; m += time.Minute.Milliseconds() {
 			val := rand.Intn(1000)
-			_, s, err := scenario.appendFunc(storage.AppenderV2AsLimitedV1(app), lbls, m, int64(val))
+			_, s, err := scenario.appendFunc(app, lbls, m, int64(val))
 			if faceError {
 				require.Error(t, err)
 			} else {
@@ -5528,7 +5638,7 @@ func testOOODisabledAppendV2(t *testing.T, scenario sampleTypeScenario) {
 		key := lbls.String()
 		from, to := minutes(fromMins), minutes(toMins)
 		for m := from; m <= to; m += time.Minute.Milliseconds() {
-			_, _, err := scenario.appendFunc(storage.AppenderV2AsLimitedV1(app), lbls, m, m)
+			_, _, err := scenario.appendFunc(app, lbls, m, m)
 			if faceError {
 				require.Error(t, err)
 				failedSamples++
@@ -5574,6 +5684,7 @@ func testOOODisabledAppendV2(t *testing.T, scenario sampleTypeScenario) {
 }
 
 func TestWBLAndMmapReplay_AppendV2(t *testing.T) {
+	t.Parallel()
 	for name, scenario := range sampleTypeScenarios {
 		t.Run(name, func(t *testing.T) {
 			testWBLAndMmapReplayAppendV2(t, scenario)
@@ -5600,7 +5711,7 @@ func testWBLAndMmapReplayAppendV2(t *testing.T, scenario sampleTypeScenario) {
 		from, to := minutes(fromMins), minutes(toMins)
 		for m := from; m <= to; m += time.Minute.Milliseconds() {
 			val := rand.Intn(1000)
-			_, s, err := scenario.appendFunc(storage.AppenderV2AsLimitedV1(app), lbls, m, int64(val))
+			_, s, err := scenario.appendFunc(app, lbls, m, int64(val))
 			require.NoError(t, err)
 			expSamples[key] = append(expSamples[key], s)
 			totalSamples++
@@ -5653,6 +5764,10 @@ func testWBLAndMmapReplayAppendV2(t *testing.T, scenario sampleTypeScenario) {
 
 	// Making a copy of original state of WBL and Mmap files to use it later.
 	mmapDir := mmappedChunksDir(db.head.opts.ChunkDirRoot)
+	// On Windows, head chunk files are preallocated to 128 MiB (MaxHeadChunkFileSize)
+	// with trailing zeros. Truncate the closed file to the non-Windows preallocation
+	// size (128 KiB) before copying mmapDir repeatedly across subtests.
+	require.NoError(t, os.Truncate(filepath.Join(mmapDir, "000001"), chunks.MinWriteBufferSize*2))
 	wblDir := db.head.wbl.Dir()
 	originalWblDir := filepath.Join(t.TempDir(), "original_wbl")
 	originalMmapDir := filepath.Join(t.TempDir(), "original_mmap")
@@ -5720,7 +5835,7 @@ func testWBLAndMmapReplayAppendV2(t *testing.T, scenario sampleTypeScenario) {
 	})
 
 	t.Run("Restart DB with WBL+Mmap while having no m-map markers in WBL", func(t *testing.T) {
-		resetMmapToOriginal() // We neet to reset because new duplicate chunks can be written above.
+		resetMmapToOriginal() // We need to reset because new duplicate chunks can be written above.
 
 		// Removing m-map markers in WBL by rewriting it.
 		newWbl, err := wlog.New(promslog.NewNopLogger(), nil, filepath.Join(t.TempDir(), "new_wbl"), compression.None)
@@ -5755,6 +5870,7 @@ func testWBLAndMmapReplayAppendV2(t *testing.T, scenario sampleTypeScenario) {
 }
 
 func TestOOOHistogramCompactionWithCounterResets_AppendV2(t *testing.T) {
+	t.Parallel()
 	for _, floatHistogram := range []bool{false, true} {
 		ctx := context.Background()
 
@@ -6110,6 +6226,7 @@ func TestOOOHistogramCompactionWithCounterResets_AppendV2(t *testing.T) {
 }
 
 func TestInterleavedInOrderAndOOOHistogramCompactionWithCounterResets_AppendV2(t *testing.T) {
+	t.Parallel()
 	for _, floatHistogram := range []bool{false, true} {
 		ctx := context.Background()
 
@@ -6226,7 +6343,7 @@ func testOOOCompactionFailureAppendV2(t *testing.T, scenario sampleTypeScenario)
 		app := db.AppenderV2(context.Background())
 		for m := fromMins; m <= toMins; m++ {
 			ts := m * time.Minute.Milliseconds()
-			_, _, err := scenario.appendFunc(storage.AppenderV2AsLimitedV1(app), series1, ts, ts)
+			_, _, err := scenario.appendFunc(app, series1, ts, ts)
 			require.NoError(t, err)
 		}
 		require.NoError(t, app.Commit())
@@ -6385,14 +6502,25 @@ func TestWBLCorruption_AppendV2(t *testing.T) {
 	// We corrupt WBL after the sample at 255. So everything added later
 	// should be deleted after replay.
 
+	// segmentSize returns the on-disk size of the named WBL segment. It opens
+	// the file and stats the handle instead of relying on os.ReadDir's cached
+	// directory metadata, which on Windows can be stale for a segment that was
+	// just closed asynchronously by WL.NextSegment.
+	segmentSize := func(name string) int64 {
+		f, err := os.Open(path.Join(db.head.wbl.Dir(), name))
+		require.NoError(t, err)
+		defer f.Close()
+		fi, err := f.Stat()
+		require.NoError(t, err)
+		return fi.Size()
+	}
+
 	// Checking where we corrupt it.
 	require.NoError(t, db.head.wbl.Sync()) // Syncing to make sure wbl is flushed in windows.
 	files, err := os.ReadDir(db.head.wbl.Dir())
 	require.NoError(t, err)
 	require.Len(t, files, 2)
-	f1, err := files[1].Info()
-	require.NoError(t, err)
-	corruptIndex := f1.Size()
+	corruptIndex := segmentSize(files[1].Name())
 	corruptFilePath := path.Join(db.head.wbl.Dir(), files[1].Name())
 
 	// Corrupt the WBL by adding a malformed record.
@@ -6413,15 +6541,9 @@ func TestWBLCorruption_AppendV2(t *testing.T) {
 	files, err = os.ReadDir(db.head.wbl.Dir())
 	require.NoError(t, err)
 	require.Len(t, files, 3)
-	f1, err = files[1].Info()
-	require.NoError(t, err)
-	require.Greater(t, f1.Size(), corruptIndex)
-	f0, err := files[0].Info()
-	require.NoError(t, err)
-	require.Greater(t, f0.Size(), int64(100))
-	f2, err := files[2].Info()
-	require.NoError(t, err)
-	require.Greater(t, f2.Size(), int64(100))
+	require.Greater(t, segmentSize(files[1].Name()), corruptIndex)
+	require.Greater(t, segmentSize(files[0].Name()), int64(100))
+	require.Greater(t, segmentSize(files[2].Name()), int64(100))
 
 	verifySamples := func(expSamples []chunks.Sample) {
 		sort.Slice(expSamples, func(i, j int) bool {
@@ -6457,12 +6579,8 @@ func TestWBLCorruption_AppendV2(t *testing.T) {
 	files, err = os.ReadDir(db.head.wbl.Dir())
 	require.NoError(t, err)
 	require.Len(t, files, 3)
-	f0, err = files[0].Info()
-	require.NoError(t, err)
-	require.Greater(t, f0.Size(), int64(100))
-	f2, err = files[2].Info()
-	require.NoError(t, err)
-	require.Equal(t, int64(0), f2.Size())
+	require.Greater(t, segmentSize(files[0].Name()), int64(100))
+	require.Equal(t, int64(0), segmentSize(files[2].Name()))
 	require.Equal(t, corruptFilePath, path.Join(db.head.wbl.Dir(), files[1].Name()))
 
 	// Verifying that everything after the corruption point is set to 0.
@@ -6483,8 +6601,10 @@ func TestWBLCorruption_AppendV2(t *testing.T) {
 }
 
 func TestOOOMmapCorruption_AppendV2(t *testing.T) {
+	t.Parallel()
 	for name, scenario := range sampleTypeScenarios {
 		t.Run(name, func(t *testing.T) {
+			t.Parallel()
 			testOOOMmapCorruptionAppendV2(t, scenario)
 		})
 	}
@@ -6503,7 +6623,7 @@ func testOOOMmapCorruptionAppendV2(t *testing.T, scenario sampleTypeScenario) {
 		app := db.AppenderV2(context.Background())
 		for m := fromMins; m <= toMins; m++ {
 			ts := m * time.Minute.Milliseconds()
-			_, s, err := scenario.appendFunc(storage.AppenderV2AsLimitedV1(app), series1, ts, ts)
+			_, s, err := scenario.appendFunc(app, series1, ts, ts)
 			require.NoError(t, err)
 			allSamples = append(allSamples, s)
 			if inMmapAfterCorruption {
@@ -6641,7 +6761,7 @@ func testOutOfOrderRuntimeConfigAppendV2(t *testing.T, scenario sampleTypeScenar
 		app := db.AppenderV2(context.Background())
 		for m := fromMins; m <= toMins; m++ {
 			ts := m * time.Minute.Milliseconds()
-			_, s, err := scenario.appendFunc(storage.AppenderV2AsLimitedV1(app), series1, ts, ts)
+			_, s, err := scenario.appendFunc(app, series1, ts, ts)
 			if success {
 				require.NoError(t, err)
 				allSamples = append(allSamples, s)
@@ -6692,7 +6812,7 @@ func testOutOfOrderRuntimeConfigAppendV2(t *testing.T, scenario sampleTypeScenar
 		// In-order.
 		allSamples = addSamples(t, db, 300, 310, true, allSamples)
 
-		// OOO upto 30m old is success.
+		// OOO up to 30m old is success.
 		allSamples = addSamples(t, db, 281, 290, true, allSamples)
 
 		// OOO of 59m old fails.
@@ -6722,7 +6842,7 @@ func testOutOfOrderRuntimeConfigAppendV2(t *testing.T, scenario sampleTypeScenar
 		// In-order.
 		allSamples = addSamples(t, db, 300, 310, true, allSamples)
 
-		// OOO upto 59m old is success.
+		// OOO up to 59m old is success.
 		allSamples = addSamples(t, db, 251, 260, true, allSamples)
 
 		oldWblPtr := fmt.Sprintf("%p", db.head.wbl)
@@ -6790,7 +6910,7 @@ func testOutOfOrderRuntimeConfigAppendV2(t *testing.T, scenario sampleTypeScenar
 		// In-order.
 		allSamples = addSamples(t, db, 300, 310, true, allSamples)
 
-		// OOO upto 59m old is success.
+		// OOO up to 59m old is success.
 		allSamples = addSamples(t, db, 251, 260, true, allSamples)
 
 		oldWblPtr := fmt.Sprintf("%p", db.head.wbl)
@@ -6853,7 +6973,7 @@ func testNoGapAfterRestartWithOOOAppendV2(t *testing.T, scenario sampleTypeScena
 		app := db.AppenderV2(context.Background())
 		for m := fromMins; m <= toMins; m++ {
 			ts := m * time.Minute.Milliseconds()
-			_, _, err := scenario.appendFunc(storage.AppenderV2AsLimitedV1(app), series1, ts, ts)
+			_, _, err := scenario.appendFunc(app, series1, ts, ts)
 			if success {
 				require.NoError(t, err)
 			} else {
@@ -6967,7 +7087,7 @@ func testWblReplayAfterOOODisableAndRestartAppendV2(t *testing.T, scenario sampl
 		app := db.AppenderV2(context.Background())
 		for m := fromMins; m <= toMins; m++ {
 			ts := m * time.Minute.Milliseconds()
-			_, s, err := scenario.appendFunc(storage.AppenderV2AsLimitedV1(app), series1, ts, ts)
+			_, s, err := scenario.appendFunc(app, series1, ts, ts)
 			require.NoError(t, err)
 			allSamples = append(allSamples, s)
 		}
@@ -7027,7 +7147,7 @@ func testPanicOnApplyConfigAppendV2(t *testing.T, scenario sampleTypeScenario) {
 		app := db.AppenderV2(context.Background())
 		for m := fromMins; m <= toMins; m++ {
 			ts := m * time.Minute.Milliseconds()
-			_, s, err := scenario.appendFunc(storage.AppenderV2AsLimitedV1(app), series1, ts, ts)
+			_, s, err := scenario.appendFunc(app, series1, ts, ts)
 			require.NoError(t, err)
 			allSamples = append(allSamples, s)
 		}
@@ -7394,7 +7514,7 @@ func TestOOONativeHistogramsSettings_AppendV2(t *testing.T) {
 	})
 }
 
-// TestChunkQuerierReadWriteRace looks for any possible race between appending
+// TestChunkQuerierReadWriteRace_AppendV2 looks for any possible race between appending
 // samples and reading chunks because the head chunk that is being appended to
 // can be read in parallel and we should be able to make a copy of the chunk without
 // worrying about the parallel write.
@@ -7437,9 +7557,7 @@ func TestChunkQuerierReadWriteRace_AppendV2(t *testing.T) {
 			it := cs.Iterator(nil)
 			for it.Next() {
 				m := it.At()
-				b := m.Chunk.Bytes()
-				bb := make([]byte, len(b))
-				copy(bb, b) // This copying of chunk bytes detects any race.
+				_ = bytes.Clone(m.Chunk.Bytes()) // This copying of chunk bytes detects any race.
 			}
 		}
 		require.NoError(t, ss.Err())
@@ -7505,18 +7623,65 @@ func TestAbortBlockCompactions_AppendV2(t *testing.T) {
 }
 
 // TestCompactHeadWithSTStorage_AppendV2 ensures that when EnableSTStorage is true,
-// compacted blocks contain chunks with EncXOR2 encoding for float samples.
+// compacted blocks contain ST-capable chunks that preserve start timestamps.
 func TestCompactHeadWithSTStorage_AppendV2(t *testing.T) {
 	t.Parallel()
 
+	type sampleCase struct {
+		name             string
+		lbls             labels.Labels
+		expectedEncoding chunkenc.Encoding
+		// append wraps the Append() calls so they are uniform, and returns the
+		// appended sample so it can be used to initialize the expectation slice.
+		append func(storage.AppenderV2, labels.Labels, int64) (chunks.Sample, error)
+	}
+
+	cases := []sampleCase{
+		{
+			name:             "float",
+			lbls:             labels.FromStrings("a", "b", "type", "float"),
+			expectedEncoding: chunkenc.EncXOR2,
+			append: func(app storage.AppenderV2, lbls labels.Labels, ts int64) (chunks.Sample, error) {
+				st := ts - 50
+				_, err := app.Append(0, lbls, st, ts, float64(ts), nil, nil, storage.AOptions{})
+				return newSample(st, ts, float64(ts), nil, nil), err
+			},
+		},
+		{
+			name:             "histogram",
+			lbls:             labels.FromStrings("a", "b", "type", "histogram"),
+			expectedEncoding: chunkenc.EncHistogramST,
+			append: func(app storage.AppenderV2, lbls labels.Labels, ts int64) (chunks.Sample, error) {
+				st := ts - 60
+				h := tsdbutil.GenerateTestHistogram(ts)
+				h.CounterResetHint = histogram.NotCounterReset
+				_, err := app.Append(0, lbls, st, ts, 0, h, nil, storage.AOptions{})
+				return newSample(st, ts, 0, h, nil), err
+			},
+		},
+		{
+			name:             "float histogram",
+			lbls:             labels.FromStrings("a", "b", "type", "float_histogram"),
+			expectedEncoding: chunkenc.EncFloatHistogramST,
+			append: func(app storage.AppenderV2, lbls labels.Labels, ts int64) (chunks.Sample, error) {
+				st := ts - 70
+				fh := tsdbutil.GenerateTestFloatHistogram(ts)
+				fh.CounterResetHint = histogram.NotCounterReset
+				_, err := app.Append(0, lbls, st, ts, 0, nil, fh, storage.AOptions{})
+				return newSample(st, ts, 0, nil, fh), err
+			},
+		},
+	}
+
 	opts := &Options{
-		RetentionDuration:  int64(time.Hour * 24 * 15 / time.Millisecond),
-		NoLockfile:         true,
-		MinBlockDuration:   int64(time.Hour * 2 / time.Millisecond),
-		MaxBlockDuration:   int64(time.Hour * 2 / time.Millisecond),
-		WALCompression:     compression.Snappy,
-		EnableSTStorage:    true,
-		EnableXOR2Encoding: true,
+		RetentionDuration:         int64(time.Hour * 24 * 15 / time.Millisecond),
+		NoLockfile:                true,
+		MinBlockDuration:          int64(time.Hour * 2 / time.Millisecond),
+		MaxBlockDuration:          int64(time.Hour * 2 / time.Millisecond),
+		WALCompression:            compression.Snappy,
+		EnableSTStorage:           true,
+		FloatChunkEncoding:        chunkenc.EncXOR2,
+		EnableHistogramSTEncoding: true,
 	}
 	db := newTestDB(t, withOpts(opts))
 	ctx := context.Background()
@@ -7524,9 +7689,13 @@ func TestCompactHeadWithSTStorage_AppendV2(t *testing.T) {
 
 	mint := 100
 	maxt := 200
+	expectedSamples := make(map[string][]chunks.Sample, len(cases))
 	for i := mint; i < maxt; i++ {
-		_, err := app.Append(0, labels.FromStrings("a", "b"), 50, int64(i), float64(i), nil, nil, storage.AOptions{})
-		require.NoError(t, err)
+		for _, c := range cases {
+			s, err := c.append(app, c.lbls, int64(i))
+			require.NoError(t, err)
+			expectedSamples[c.name] = append(expectedSamples[c.name], s)
+		}
 	}
 	require.NoError(t, app.Commit())
 
@@ -7542,24 +7711,35 @@ func TestCompactHeadWithSTStorage_AppendV2(t *testing.T) {
 	require.NoError(t, err)
 	defer indexr.Close()
 
-	p, err := indexr.Postings(ctx, "a", "b")
-	require.NoError(t, err)
-
 	chunkCount := 0
-	for p.Next() {
-		var builder labels.ScratchBuilder
-		var chks []chunks.Meta
-		require.NoError(t, indexr.Series(p.At(), &builder, &chks))
-
-		for _, chk := range chks {
-			c, _, err := chunkr.ChunkOrIterable(chk)
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			p, err := indexr.Postings(ctx, "type", c.lbls.Get("type"))
 			require.NoError(t, err)
-			require.Equal(t, chunkenc.EncXOR2, c.Encoding(),
-				"unexpected chunk encoding, got %s", c.Encoding())
-			chunkCount++
-		}
+
+			var actualSamples []chunks.Sample
+			for p.Next() {
+				var builder labels.ScratchBuilder
+				var chks []chunks.Meta
+				require.NoError(t, indexr.Series(p.At(), &builder, &chks))
+
+				for _, chk := range chks {
+					chunk, _, err := chunkr.ChunkOrIterable(chk)
+					require.NoError(t, err)
+					require.Equal(t, c.expectedEncoding, chunk.Encoding(),
+						"unexpected chunk encoding, got %s", chunk.Encoding())
+
+					samples, err := storage.ExpandSamples(chunk.Iterator(nil), newSample)
+					require.NoError(t, err)
+					actualSamples = append(actualSamples, samples...)
+					chunkCount++
+				}
+			}
+			require.NoError(t, p.Err())
+			requireEqualSamples(t, c.name, expectedSamples[c.name], actualSamples, requireEqualSamplesIgnoreCounterResets)
+		})
 	}
-	require.NoError(t, p.Err())
+
 	require.Positive(t, chunkCount, "expected at least one chunk")
 }
 
@@ -7628,11 +7808,10 @@ func TestDBAppenderV2_STStorage_OutOfOrder(t *testing.T) {
 				newSample(10, 100, 0, testHistogram, nil), // Append first sample second (OOO).
 				newSample(20, 200, 0, testHistogram, nil), // Append second sample last (OOO).
 			},
-			// Histograms don't support ST storage yet, should return 0 for ST.
 			expectedSamples: []chunks.Sample{
-				newSample(0, 100, 0, testHistogram, nil),
-				newSample(0, 200, 0, testHistogram, nil),
-				newSample(0, 300, 0, testHistogram, nil),
+				newSample(10, 100, 0, testHistogram, nil),
+				newSample(20, 200, 0, testHistogram, nil),
+				newSample(30, 300, 0, testHistogram, nil),
 			},
 		},
 		{
@@ -7655,7 +7834,8 @@ func TestDBAppenderV2_STStorage_OutOfOrder(t *testing.T) {
 			opts := DefaultOptions()
 			opts.OutOfOrderTimeWindow = 300 * time.Minute.Milliseconds()
 			opts.EnableSTStorage = true
-			opts.EnableXOR2Encoding = true
+			opts.FloatChunkEncoding = chunkenc.EncXOR2
+			opts.EnableHistogramSTEncoding = true
 			db := newTestDB(t, withOpts(opts))
 			db.DisableCompactions()
 

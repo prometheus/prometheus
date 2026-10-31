@@ -1,3 +1,4 @@
+import path from "node:path"
 import { nodeResolve } from "@rollup/plugin-node-resolve"
 
 export default {
@@ -9,7 +10,7 @@ export default {
     format: "es",
     file: "./dist/index.es.js"
   }],
-  external(id) { return !/^[.\/]/.test(id) },
+  external(id) { return !/^[.\/]/.test(id) && !path.isAbsolute(id) },
   plugins: [
     nodeResolve()
   ]

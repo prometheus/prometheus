@@ -1,0 +1,30 @@
+[
+  {
+    "Name": "mynetwork",
+    "Id": "03e01a4a093e66fe982403a640451f31860aa41026d9cdda213e081dd406b1e5",
+    "Created": "2026-05-18T09:00:00.000000000+02:00",
+    "Scope": "local",
+    "Driver": "bridge",
+    "EnableIPv6": true,
+    "IPAM": {
+      "Driver": "default",
+      "Options": null,
+      "Config": [
+        {
+          "Subnet": "fc00::/64",
+          "Gateway": "fc00::1"
+        }
+      ]
+    },
+    "Internal": false,
+    "Attachable": false,
+    "Ingress": false,
+    "ConfigFrom": {
+      "Network": ""
+    },
+    "ConfigOnly": false,
+    "Containers": {},
+    "Options": {},
+    "Labels": {}
+  }
+]

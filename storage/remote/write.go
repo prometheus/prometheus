@@ -21,6 +21,7 @@ import (
 	"sync"
 	"time"
 
+	remoteapi "github.com/prometheus/client_golang/exp/api/remote"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promauto"
 	"github.com/prometheus/common/promslog"
@@ -76,12 +77,30 @@ type WriteStorage struct {
 	recordBuf *record.BuffersPool
 
 	// For timestampTracker.
-	highestTimestamp        *maxTimestamp
-	enableTypeAndUnitLabels bool
+	highestTimestamp         *maxTimestamp
+	enableTypeAndUnitLabels  bool
+	enableMetadataWALRecords bool
+	enableSTStorage          bool
+}
+
+// validateRemoteWriteFeatures validates that the required feature flags are enabled for all remote_write configurations.
+func validateRemoteWriteFeatures(rwConfs []*config.RemoteWriteConfig, enableTypeAndUnitLabels, enableMetadataWALRecords, enableSTStorage bool) error {
+	for _, rwConf := range rwConfs {
+		switch rwConf.Mode {
+		case remoteapi.WriteModeStateless, remoteapi.WriteModeStatelessST:
+			if !enableTypeAndUnitLabels && !enableMetadataWALRecords {
+				return fmt.Errorf("remote_write mode %q requires --enable-feature=metadata-wal-records or --enable-feature=type-and-unit-labels", rwConf.Mode)
+			}
+			if rwConf.Mode == remoteapi.WriteModeStatelessST && !enableSTStorage {
+				return fmt.Errorf("remote_write mode %q requires --enable-feature=st-storage", rwConf.Mode)
+			}
+		}
+	}
+	return nil
 }
 
 // NewWriteStorage creates and runs a WriteStorage.
-func NewWriteStorage(logger *slog.Logger, reg prometheus.Registerer, dir string, flushDeadline time.Duration, sm ReadyScrapeManager, enableTypeAndUnitLabels bool) *WriteStorage {
+func NewWriteStorage(logger *slog.Logger, reg prometheus.Registerer, dir string, flushDeadline time.Duration, sm ReadyScrapeManager, enableTypeAndUnitLabels, enableMetadataWALRecords, enableSTStorage bool) *WriteStorage {
 	if logger == nil {
 		logger = promslog.NewNopLogger()
 	}
@@ -105,8 +124,10 @@ func NewWriteStorage(logger *slog.Logger, reg prometheus.Registerer, dir string,
 				Help:      "Highest timestamp that has come into the remote storage via the Appender interface, in seconds since epoch. Initialized to 0 when no data has been received yet. Deprecated, check prometheus_remote_storage_queue_highest_timestamp_seconds which is more accurate.",
 			}),
 		},
-		recordBuf:               record.NewBuffersPool(),
-		enableTypeAndUnitLabels: enableTypeAndUnitLabels,
+		recordBuf:                record.NewBuffersPool(),
+		enableTypeAndUnitLabels:  enableTypeAndUnitLabels,
+		enableMetadataWALRecords: enableMetadataWALRecords,
+		enableSTStorage:          enableSTStorage,
 	}
 	if reg != nil {
 		reg.MustRegister(rws.highestTimestamp)
@@ -144,13 +165,18 @@ func (rws *WriteStorage) ApplyConfig(conf *config.Config) error {
 	rws.mtx.Lock()
 	defer rws.mtx.Unlock()
 
+	if err := validateRemoteWriteFeatures(conf.RemoteWriteConfigs, rws.enableTypeAndUnitLabels, rws.enableMetadataWALRecords, rws.enableSTStorage); err != nil {
+		return err
+	}
+
 	// Remote write queues only need to change if the remote write config or
 	// external labels change.
 	externalLabelUnchanged := labels.Equal(conf.GlobalConfig.ExternalLabels, rws.externalLabels)
-	rws.externalLabels = conf.GlobalConfig.ExternalLabels
 
+	// Nothing in rws is modified until every config has been built, so an
+	// error leaves the previous state intact.
 	newQueues := make(map[string]*QueueManager)
-	newHashes := []string{}
+	reusedClients := make(map[string]WriteClient)
 	for _, rwConf := range conf.RemoteWriteConfigs {
 		hash, err := toHash(rwConf)
 		if err != nil {
@@ -173,6 +199,7 @@ func (rws *WriteStorage) ApplyConfig(conf *config.Config) error {
 		c, err := NewWriteClient(name, &ClientConfig{
 			URL:              rwConf.URL,
 			WriteProtoMsg:    rwConf.ProtobufMessage,
+			WriteMode:        rwConf.Mode,
 			Timeout:          rwConf.RemoteTimeout,
 			HTTPClientConfig: rwConf.HTTPClientConfig,
 			SigV4Config:      rwConf.SigV4Config,
@@ -188,10 +215,8 @@ func (rws *WriteStorage) ApplyConfig(conf *config.Config) error {
 
 		queue, ok := rws.queues[hash]
 		if externalLabelUnchanged && ok {
-			// Update the client in case any secret configuration has changed.
-			queue.SetClient(c)
 			newQueues[hash] = queue
-			delete(rws.queues, hash)
+			reusedClients[hash] = c
 			continue
 		}
 
@@ -219,20 +244,33 @@ func (rws *WriteStorage) ApplyConfig(conf *config.Config) error {
 			rwConf.SendNativeHistograms,
 			rws.enableTypeAndUnitLabels,
 			rwConf.ProtobufMessage,
+			rwConf.Mode,
 			rws.recordBuf,
+			rwConf.FailedRequestLogging,
+			rwConf.ConvertNHCBToClassic,
 		)
-		// Keep track of which queues are new so we know which to start.
-		newHashes = append(newHashes, hash)
 	}
 
-	// Anything remaining in rws.queues is a queue who's config has
-	// changed or was removed from the overall remote write config.
-	for _, q := range rws.queues {
-		q.Stop()
+	rws.externalLabels = conf.GlobalConfig.ExternalLabels
+
+	for hash, c := range reusedClients {
+		// Update the client in case any secret configuration has changed.
+		newQueues[hash].SetClient(c)
 	}
 
-	for _, hash := range newHashes {
-		newQueues[hash].Start()
+	// Stop queues whose config changed or that were removed from the remote
+	// write config.
+	for hash, q := range rws.queues {
+		if newQueues[hash] != q {
+			q.Stop()
+		}
+	}
+
+	// Only start queues that are new; reused ones are already running.
+	for hash, q := range newQueues {
+		if rws.queues[hash] != q {
+			q.Start()
+		}
 	}
 
 	rws.queues = newQueues
@@ -329,6 +367,7 @@ func (t *timestampTracker) Append(_ storage.SeriesRef, _ labels.Labels, ts int64
 }
 
 func (t *timestampTracker) AppendExemplar(storage.SeriesRef, labels.Labels, exemplar.Exemplar) (storage.SeriesRef, error) {
+	// highestTimestamp excludes exemplars, as not all queues send them.
 	t.exemplars++
 	return 0, nil
 }
@@ -362,8 +401,9 @@ func (t *timestampTracker) AppendHistogramSTZeroSample(_ storage.SeriesRef, _ la
 }
 
 func (*timestampTracker) UpdateMetadata(storage.SeriesRef, labels.Labels, metadata.Metadata) (storage.SeriesRef, error) {
-	// TODO: Add and increment a `metadata` field when we get around to wiring metadata in remote_write.
-	// UpdateMetadata is no-op for remote write (where timestampTracker is being used) for now.
+	// Intentionally a no-op. dataIn measures records that create work for the
+	// sharded queue and is used to estimate queue load and backlog. A metadata
+	// update only changes cached per-series state; it does not enqueue an item.
 	return 0, nil
 }
 
@@ -401,3 +441,12 @@ func (t *timestampTrackerV2) Append(ref storage.SeriesRef, _ labels.Labels, _, t
 	t.exemplars += int64(len(opts.Exemplars))
 	return ref, nil
 }
+
+// AppendExemplars implements storage.ExemplarAppenderV2.
+func (t *timestampTrackerV2) AppendExemplars(ref storage.SeriesRef, _ labels.Labels, exemplars []exemplar.Exemplar) (storage.SeriesRef, error) {
+	// highestTimestamp excludes exemplars, as not all queues send them.
+	t.exemplars += int64(len(exemplars))
+	return ref, nil
+}
+
+var _ storage.ExemplarAppenderV2 = &timestampTrackerV2{}

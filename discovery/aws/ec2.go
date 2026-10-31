@@ -55,6 +55,7 @@ const (
 	ec2LabelInstanceType         = ec2Label + "instance_type"
 	ec2LabelOwnerID              = ec2Label + "owner_id"
 	ec2LabelPlatform             = ec2Label + "platform"
+	ec2LabelDefaultIPv6Address   = ec2Label + "default_ipv6_address"
 	ec2LabelPrimaryIPv6Addresses = ec2Label + "primary_ipv6_addresses"
 	ec2LabelPrimarySubnetID      = ec2Label + "primary_subnet_id"
 	ec2LabelPrivateDNS           = ec2Label + "private_dns_name"
@@ -79,12 +80,6 @@ func init() {
 	discovery.RegisterConfig(&EC2SDConfig{})
 }
 
-// EC2Filter is the configuration for filtering EC2 instances.
-type EC2Filter struct {
-	Name   string   `yaml:"name"`
-	Values []string `yaml:"values"`
-}
-
 // EC2SDConfig is the configuration for EC2 based service discovery.
 type EC2SDConfig struct {
 	Endpoint        string         `yaml:"endpoint"`
@@ -93,9 +88,10 @@ type EC2SDConfig struct {
 	SecretKey       config.Secret  `yaml:"secret_key,omitempty"`
 	Profile         string         `yaml:"profile,omitempty"`
 	RoleARN         string         `yaml:"role_arn,omitempty"`
+	ExternalID      string         `yaml:"external_id,omitempty"`
 	RefreshInterval model.Duration `yaml:"refresh_interval,omitempty"`
 	Port            int            `yaml:"port"`
-	Filters         []*EC2Filter   `yaml:"filters"`
+	Filters         []*Filter      `yaml:"filters"`
 
 	HTTPClientConfig config.HTTPClientConfig `yaml:",inline"`
 }
@@ -121,18 +117,13 @@ func (c *EC2SDConfig) SetDirectory(dir string) {
 }
 
 // UnmarshalYAML implements the yaml.Unmarshaler interface for the EC2 Config.
+// Region resolution is deferred to ec2Client; see loadRegion.
 func (c *EC2SDConfig) UnmarshalYAML(unmarshal func(any) error) error {
 	*c = DefaultEC2SDConfig
 	type plain EC2SDConfig
 	err := unmarshal((*plain)(c))
 	if err != nil {
 		return err
-	}
-
-	// Check if the region is set, if not attempt to load it from the AWS SDK.
-	c.Region, err = loadRegion(context.Background(), c.Region)
-	if err != nil {
-		return fmt.Errorf("could not determine AWS region: %w", err)
 	}
 
 	for _, f := range c.Filters {
@@ -148,6 +139,47 @@ type ec2Client interface {
 	DescribeInstances(ctx context.Context, params *ec2.DescribeInstancesInput, optFns ...func(*ec2.Options)) (*ec2.DescribeInstancesOutput, error)
 }
 
+// ec2ClientAdapter holds the EC2 API calls that AWS discovery actually uses as
+// method-value closures over the concrete *ec2.Client.
+//
+// It exists purely to keep the binary small. The Go linker, once reflection
+// (reflect.Value.Method/Call plus struct-field traversal, both reachable via
+// the YAML/config machinery) is live, conservatively retains every exported
+// method of any concrete type that is reachable through an interface — and a
+// type stored as a field of an interface-boxed struct counts. *ec2.Client has
+// ~470 operation methods; retaining all of them pulls in ~1,500 serializers and
+// roughly 21 MB. By capturing only the needed methods as func values, the
+// concrete *ec2.Client is hidden inside closure contexts (which reflection
+// cannot traverse) and never appears as a field of a boxed type, so dead-code
+// elimination drops the unused operations.
+type ec2ClientAdapter struct {
+	describeAvailabilityZones func(ctx context.Context, params *ec2.DescribeAvailabilityZonesInput, optFns ...func(*ec2.Options)) (*ec2.DescribeAvailabilityZonesOutput, error)
+	describeInstances         func(ctx context.Context, params *ec2.DescribeInstancesInput, optFns ...func(*ec2.Options)) (*ec2.DescribeInstancesOutput, error)
+	describeNetworkInterfaces func(ctx context.Context, params *ec2.DescribeNetworkInterfacesInput, optFns ...func(*ec2.Options)) (*ec2.DescribeNetworkInterfacesOutput, error)
+}
+
+// newEC2ClientAdapter wraps a concrete *ec2.Client, capturing only the API
+// calls AWS discovery needs. See the ec2ClientAdapter doc comment for why.
+func newEC2ClientAdapter(c *ec2.Client) ec2ClientAdapter {
+	return ec2ClientAdapter{
+		describeAvailabilityZones: c.DescribeAvailabilityZones,
+		describeInstances:         c.DescribeInstances,
+		describeNetworkInterfaces: c.DescribeNetworkInterfaces,
+	}
+}
+
+func (a ec2ClientAdapter) DescribeAvailabilityZones(ctx context.Context, params *ec2.DescribeAvailabilityZonesInput, optFns ...func(*ec2.Options)) (*ec2.DescribeAvailabilityZonesOutput, error) {
+	return a.describeAvailabilityZones(ctx, params, optFns...)
+}
+
+func (a ec2ClientAdapter) DescribeInstances(ctx context.Context, params *ec2.DescribeInstancesInput, optFns ...func(*ec2.Options)) (*ec2.DescribeInstancesOutput, error) {
+	return a.describeInstances(ctx, params, optFns...)
+}
+
+func (a ec2ClientAdapter) DescribeNetworkInterfaces(ctx context.Context, params *ec2.DescribeNetworkInterfacesInput, optFns ...func(*ec2.Options)) (*ec2.DescribeNetworkInterfacesOutput, error) {
+	return a.describeNetworkInterfaces(ctx, params, optFns...)
+}
+
 // EC2Discovery periodically performs EC2-SD requests. It implements
 // the Discoverer interface.
 type EC2Discovery struct {
@@ -155,6 +187,10 @@ type EC2Discovery struct {
 	logger *slog.Logger
 	cfg    *EC2SDConfig
 	ec2    ec2Client
+
+	// region is the resolved region used for the AWS client and for the
+	// Source / __meta_ec2_region labels. Lazily populated by ec2Client.
+	region string
 
 	// azToAZID maps this account's availability zones to their underlying AZ
 	// ID, e.g. eu-west-2a -> euw2-az2. Refreshes are performed sequentially, so
@@ -200,9 +236,15 @@ func (d *EC2Discovery) ec2Client(ctx context.Context) (ec2Client, error) {
 		return nil, err
 	}
 
-	// Build the AWS config with the provided region.
+	// Resolve the region lazily. See EC2SDConfig.UnmarshalYAML.
+	d.region, err = loadRegion(ctx, d.cfg.Region)
+	if err != nil {
+		return nil, err
+	}
+
+	// Build the AWS config with the resolved region.
 	configOptions := []func(*awsConfig.LoadOptions) error{
-		awsConfig.WithRegion(d.cfg.Region),
+		awsConfig.WithRegion(d.region),
 		awsConfig.WithHTTPClient(httpClient),
 	}
 
@@ -225,16 +267,20 @@ func (d *EC2Discovery) ec2Client(ctx context.Context) (ec2Client, error) {
 
 	// If the role ARN is set, assume the role to get credentials and set the credentials provider in the config.
 	if d.cfg.RoleARN != "" {
-		assumeProvider := stscreds.NewAssumeRoleProvider(sts.NewFromConfig(cfg), d.cfg.RoleARN)
+		assumeProvider := stscreds.NewAssumeRoleProvider(sts.NewFromConfig(cfg), d.cfg.RoleARN, func(o *stscreds.AssumeRoleOptions) {
+			if d.cfg.ExternalID != "" {
+				o.ExternalID = aws.String(d.cfg.ExternalID)
+			}
+		})
 		cfg.Credentials = aws.NewCredentialsCache(assumeProvider)
 	}
 
-	d.ec2 = ec2.NewFromConfig(cfg, func(options *ec2.Options) {
+	d.ec2 = newEC2ClientAdapter(ec2.NewFromConfig(cfg, func(options *ec2.Options) {
 		if d.cfg.Endpoint != "" {
 			options.BaseEndpoint = &d.cfg.Endpoint
 		}
 		options.HTTPClient = httpClient
-	})
+	}))
 
 	return d.ec2, nil
 }
@@ -265,7 +311,7 @@ func (d *EC2Discovery) refresh(ctx context.Context) ([]*targetgroup.Group, error
 	}
 
 	tg := &targetgroup.Group{
-		Source: d.cfg.Region,
+		Source: d.region,
 	}
 
 	var filters []ec2Types.Filter
@@ -282,7 +328,8 @@ func (d *EC2Discovery) refresh(ctx context.Context) ([]*targetgroup.Group, error
 		if err := d.refreshAZIDs(ctx); err != nil {
 			d.logger.Debug(
 				"Unable to describe availability zones",
-				"err", err)
+				"err", err,
+			)
 		}
 	}
 
@@ -301,25 +348,42 @@ func (d *EC2Discovery) refresh(ctx context.Context) ([]*targetgroup.Group, error
 
 		for _, r := range p.Reservations {
 			for _, inst := range r.Instances {
-				if inst.PrivateIpAddress == nil {
+				defaultIPv6Addr, primaryIPv6Addrs, ipv6Addrs := getInstanceIPv6Addresses(&inst)
+
+				if inst.PrivateIpAddress == nil && defaultIPv6Addr == nil {
 					continue
 				}
 
+				// Every instance field below is optional in the EC2 API. Omit
+				// the label when the field is absent rather than dereferencing
+				// a nil pointer, which would panic and take down the whole
+				// Prometheus process.
 				labels := model.LabelSet{
-					ec2LabelInstanceID: model.LabelValue(*inst.InstanceId),
-					ec2LabelRegion:     model.LabelValue(d.cfg.Region),
+					ec2LabelRegion: model.LabelValue(d.region),
+				}
+
+				if inst.InstanceId != nil {
+					labels[ec2LabelInstanceID] = model.LabelValue(*inst.InstanceId)
 				}
 
 				if r.OwnerId != nil {
 					labels[ec2LabelOwnerID] = model.LabelValue(*r.OwnerId)
 				}
 
-				labels[ec2LabelPrivateIP] = model.LabelValue(*inst.PrivateIpAddress)
+				if defaultIPv6Addr != nil {
+					labels[ec2LabelDefaultIPv6Address] = model.LabelValue(*defaultIPv6Addr)
+				}
+
+				if inst.PrivateIpAddress != nil {
+					labels[ec2LabelPrivateIP] = model.LabelValue(*inst.PrivateIpAddress)
+					labels[model.AddressLabel] = model.LabelValue(net.JoinHostPort(*inst.PrivateIpAddress, strconv.Itoa(d.cfg.Port)))
+				} else {
+					labels[model.AddressLabel] = model.LabelValue(net.JoinHostPort(*defaultIPv6Addr, strconv.Itoa(d.cfg.Port)))
+				}
+
 				if inst.PrivateDnsName != nil {
 					labels[ec2LabelPrivateDNS] = model.LabelValue(*inst.PrivateDnsName)
 				}
-				addr := net.JoinHostPort(*inst.PrivateIpAddress, strconv.Itoa(d.cfg.Port))
-				labels[model.AddressLabel] = model.LabelValue(addr)
 
 				if inst.Platform != "" {
 					labels[ec2LabelPlatform] = model.LabelValue(inst.Platform)
@@ -327,18 +391,49 @@ func (d *EC2Discovery) refresh(ctx context.Context) ([]*targetgroup.Group, error
 
 				if inst.PublicIpAddress != nil {
 					labels[ec2LabelPublicIP] = model.LabelValue(*inst.PublicIpAddress)
-					labels[ec2LabelPublicDNS] = model.LabelValue(*inst.PublicDnsName)
+					if inst.PublicDnsName != nil {
+						labels[ec2LabelPublicDNS] = model.LabelValue(*inst.PublicDnsName)
+					}
 				}
-				labels[ec2LabelAMI] = model.LabelValue(*inst.ImageId)
-				labels[ec2LabelAZ] = model.LabelValue(*inst.Placement.AvailabilityZone)
-				azID, ok := d.azToAZID[*inst.Placement.AvailabilityZone]
-				if !ok && d.azToAZID != nil {
-					d.logger.Debug(
-						"Availability zone ID not found",
-						"az", *inst.Placement.AvailabilityZone)
+
+				if primaryIPv6Addrs != nil {
+					labels[ec2LabelPrimaryIPv6Addresses] = model.LabelValue(
+						ec2LabelSeparator +
+							strings.Join(primaryIPv6Addrs, ec2LabelSeparator) +
+							ec2LabelSeparator,
+					)
 				}
-				labels[ec2LabelAZID] = model.LabelValue(azID)
-				labels[ec2LabelInstanceState] = model.LabelValue(inst.State.Name)
+
+				if ipv6Addrs != nil {
+					labels[ec2LabelIPv6Addresses] = model.LabelValue(
+						ec2LabelSeparator +
+							strings.Join(ipv6Addrs, ec2LabelSeparator) +
+							ec2LabelSeparator,
+					)
+				}
+
+				if inst.ImageId != nil {
+					labels[ec2LabelAMI] = model.LabelValue(*inst.ImageId)
+				}
+
+				// The availability zone ID is looked up by zone name, so both
+				// labels are omitted when the placement is absent.
+				if inst.Placement != nil && inst.Placement.AvailabilityZone != nil {
+					az := *inst.Placement.AvailabilityZone
+					labels[ec2LabelAZ] = model.LabelValue(az)
+					azID, ok := d.azToAZID[az]
+					if !ok && d.azToAZID != nil {
+						d.logger.Debug(
+							"Availability zone ID not found",
+							"az", az,
+						)
+					}
+					labels[ec2LabelAZID] = model.LabelValue(azID)
+				}
+
+				if inst.State != nil {
+					labels[ec2LabelInstanceState] = model.LabelValue(inst.State.Name)
+				}
 				labels[ec2LabelInstanceType] = model.LabelValue(inst.InstanceType)
 
 				if inst.InstanceLifecycle != "" {
@@ -351,11 +446,11 @@ func (d *EC2Discovery) refresh(ctx context.Context) ([]*targetgroup.Group, error
 
 				if inst.VpcId != nil {
 					labels[ec2LabelVPCID] = model.LabelValue(*inst.VpcId)
-					labels[ec2LabelPrimarySubnetID] = model.LabelValue(*inst.SubnetId)
+					if inst.SubnetId != nil {
+						labels[ec2LabelPrimarySubnetID] = model.LabelValue(*inst.SubnetId)
+					}
 
 					var subnets []string
-					var ipv6addrs []string
-					var primaryipv6addrs []string
 					subnetsMap := make(map[string]struct{})
 					for _, eni := range inst.NetworkInterfaces {
 						if eni.SubnetId == nil {
@@ -366,36 +461,12 @@ func (d *EC2Discovery) refresh(ctx context.Context) ([]*targetgroup.Group, error
 							subnetsMap[*eni.SubnetId] = struct{}{}
 							subnets = append(subnets, *eni.SubnetId)
 						}
-
-						for _, ipv6addr := range eni.Ipv6Addresses {
-							ipv6addrs = append(ipv6addrs, *ipv6addr.Ipv6Address)
-							if *ipv6addr.IsPrimaryIpv6 {
-								// we might have to extend the slice with more than one element
-								// that could leave empty strings in the list which is intentional
-								// to keep the position/device index information
-								for int32(len(primaryipv6addrs)) <= *eni.Attachment.DeviceIndex {
-									primaryipv6addrs = append(primaryipv6addrs, "")
-								}
-								primaryipv6addrs[*eni.Attachment.DeviceIndex] = *ipv6addr.Ipv6Address
-							}
-						}
 					}
 					labels[ec2LabelSubnetID] = model.LabelValue(
 						ec2LabelSeparator +
 							strings.Join(subnets, ec2LabelSeparator) +
-							ec2LabelSeparator)
-					if len(ipv6addrs) > 0 {
-						labels[ec2LabelIPv6Addresses] = model.LabelValue(
-							ec2LabelSeparator +
-								strings.Join(ipv6addrs, ec2LabelSeparator) +
-								ec2LabelSeparator)
-					}
-					if len(primaryipv6addrs) > 0 {
-						labels[ec2LabelPrimaryIPv6Addresses] = model.LabelValue(
-							ec2LabelSeparator +
-								strings.Join(primaryipv6addrs, ec2LabelSeparator) +
-								ec2LabelSeparator)
-					}
+							ec2LabelSeparator,
+					)
 				}
 
 				for _, t := range inst.Tags {
@@ -411,4 +482,57 @@ func (d *EC2Discovery) refresh(ctx context.Context) ([]*targetgroup.Group, error
 	}
 
 	return []*targetgroup.Group{tg}, nil
+}
+
+func getInstanceIPv6Addresses(i *ec2Types.Instance) (*string, []string, []string) {
+	var primaryIPv6Addrs []string
+	var ipv6Addrs []string
+
+	if i.VpcId != nil {
+		for _, eni := range i.NetworkInterfaces {
+			if eni.SubnetId == nil {
+				continue
+			}
+
+			for _, ipv6addr := range eni.Ipv6Addresses {
+				// Nothing identifies an address without a value, so skip the
+				// entry rather than dereferencing nil.
+				if ipv6addr.Ipv6Address == nil {
+					continue
+				}
+				ipv6Addrs = append(ipv6Addrs, *ipv6addr.Ipv6Address)
+
+				// IsPrimaryIpv6 is only populated once a primary IPv6 address
+				// has been enabled on the interface, so an absent flag means
+				// the address is not primary.
+				if !aws.ToBool(ipv6addr.IsPrimaryIpv6) {
+					continue
+				}
+
+				// The device index gives the position to record the primary
+				// address at; without a usable one there is no slot for it.
+				if eni.Attachment == nil || eni.Attachment.DeviceIndex == nil || *eni.Attachment.DeviceIndex < 0 {
+					continue
+				}
+
+				// we might have to extend the slice with more than one element
+				// that could leave empty strings in the list which is intentional
+				// to keep the position/device index information
+				for int32(len(primaryIPv6Addrs)) <= *eni.Attachment.DeviceIndex {
+					primaryIPv6Addrs = append(primaryIPv6Addrs, "")
+				}
+				primaryIPv6Addrs[*eni.Attachment.DeviceIndex] = *ipv6addr.Ipv6Address
+			}
+		}
+
+		// Find an IPv6 address we can use by default. Pick the first primary one if
+		// there is any available, if not then pick the first non-primary address.
+		for _, ipv6addr := range append(primaryIPv6Addrs, ipv6Addrs...) {
+			if ipv6addr != "" {
+				return &ipv6addr, primaryIPv6Addrs, ipv6Addrs
+			}
+		}
+	}
+
+	return nil, primaryIPv6Addrs, ipv6Addrs
 }

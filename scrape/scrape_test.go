@@ -17,7 +17,9 @@ import (
 	"bytes"
 	"compress/gzip"
 	"context"
+	"crypto/tls"
 	"encoding/binary"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
@@ -29,6 +31,7 @@ import (
 	"net/http/httptest"
 	"net/url"
 	"os"
+	"path/filepath"
 	"sort"
 	"strconv"
 	"strings"
@@ -40,6 +43,7 @@ import (
 
 	"github.com/gogo/protobuf/proto"
 	"github.com/grafana/regexp"
+	"github.com/klauspost/compress/zstd"
 	"github.com/prometheus/client_golang/prometheus"
 	prom_testutil "github.com/prometheus/client_golang/prometheus/testutil"
 	dto "github.com/prometheus/client_model/go"
@@ -310,6 +314,127 @@ func testScrapeReportMetadata(t *testing.T, appV2 bool) {
 	}, appTest.ResultMetadata())
 }
 
+func TestScrapeCacheSizeMetadata(t *testing.T) {
+	cases := []struct {
+		name  string
+		steps func(t *testing.T, c *scrapeCache)
+	}{
+		{
+			name: "insert type on new family",
+			steps: func(t *testing.T, c *scrapeCache) {
+				c.iter = 1
+				c.setType([]byte("metric_a"), model.MetricTypeCounter)
+				require.Equal(t, 7, c.SizeMetadata())
+			},
+		},
+		{
+			name: "insert help on new family",
+			steps: func(t *testing.T, c *scrapeCache) {
+				c.iter = 1
+				c.setHelp([]byte("metric_b"), []byte("help text"))
+				require.Equal(t, 16, c.SizeMetadata())
+			},
+		},
+		{
+			name: "insert unit on new family",
+			steps: func(t *testing.T, c *scrapeCache) {
+				c.iter = 1
+				c.setUnit([]byte("metric_c"), []byte("bytes"))
+				require.Equal(t, 12, c.SizeMetadata())
+			},
+		},
+		{
+			name: "update type on existing family",
+			steps: func(t *testing.T, c *scrapeCache) {
+				c.iter = 1
+				c.setType([]byte("metric_a"), model.MetricTypeCounter)
+				c.setType([]byte("metric_a"), model.MetricTypeGauge)
+				require.Equal(t, 5, c.SizeMetadata())
+			},
+		},
+		{
+			name: "update help on existing family",
+			steps: func(t *testing.T, c *scrapeCache) {
+				c.iter = 1
+				c.setType([]byte("metric_a"), model.MetricTypeCounter)
+				c.setHelp([]byte("metric_a"), []byte("new help"))
+				require.Equal(t, 15, c.SizeMetadata())
+			},
+		},
+		{
+			name: "repeated set with same value does not grow size",
+			steps: func(t *testing.T, c *scrapeCache) {
+				c.iter = 1
+				c.setType([]byte("metric_a"), model.MetricTypeCounter)
+				c.setType([]byte("metric_a"), model.MetricTypeCounter)
+				require.Equal(t, 7, c.SizeMetadata())
+			},
+		},
+		{
+			name: "multiple families accumulate",
+			steps: func(t *testing.T, c *scrapeCache) {
+				c.iter = 1
+				c.setType([]byte("metric_a"), model.MetricTypeCounter)
+				c.setType([]byte("metric_b"), model.MetricTypeGauge)
+				c.setHelp([]byte("metric_b"), []byte("help"))
+				require.Equal(t, 16, c.SizeMetadata())
+			},
+		},
+		{
+			name: "stale entry removed on flush",
+			steps: func(t *testing.T, c *scrapeCache) {
+				c.iter = 1
+				c.setType([]byte("metric_a"), model.MetricTypeCounter)
+				c.setHelp([]byte("metric_a"), []byte("help"))
+				c.iter = 20
+				c.iterDone(true)
+				require.Equal(t, 0, c.SizeMetadata())
+			},
+		},
+		{
+			name: "non-stale entry survives flush",
+			steps: func(t *testing.T, c *scrapeCache) {
+				c.iter = 1
+				c.setType([]byte("metric_a"), model.MetricTypeCounter)
+				c.iter = 5
+				c.iterDone(true)
+				require.Equal(t, 7, c.SizeMetadata())
+			},
+		},
+		{
+			name: "partial stale removal on flush",
+			steps: func(t *testing.T, c *scrapeCache) {
+				c.iter = 1
+				c.setType([]byte("metric_a"), model.MetricTypeCounter)
+				c.iter = 2
+				c.setType([]byte("metric_b"), model.MetricTypeGauge)
+				c.iter = 12
+				c.iterDone(true)
+				require.Equal(t, 5, c.SizeMetadata())
+			},
+		},
+		{
+			name: "full flush clears all stale entries",
+			steps: func(t *testing.T, c *scrapeCache) {
+				c.iter = 1
+				c.setType([]byte("metric_a"), model.MetricTypeCounter)
+				c.setHelp([]byte("metric_a"), []byte("help"))
+				c.setType([]byte("metric_b"), model.MetricTypeGauge)
+				c.setUnit([]byte("metric_b"), []byte("bytes"))
+				c.iter = 100
+				c.iterDone(true)
+				require.Equal(t, 0, c.SizeMetadata())
+			},
+		},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			c := newScrapeCache(newTestScrapeMetrics(t))
+			tc.steps(t, c)
+		})
+	}
+}
+
 func TestIsSeriesPartOfFamily(t *testing.T) {
 	t.Run("counter", func(t *testing.T) {
 		require.True(t, isSeriesPartOfFamily("http_requests_total", []byte("http_requests_total"), model.MetricTypeCounter)) // Prometheus text style.
@@ -319,6 +444,8 @@ func TestIsSeriesPartOfFamily(t *testing.T) {
 		require.False(t, isSeriesPartOfFamily("http_requests_total", []byte("http_requests"), model.MetricTypeUnknown)) // We don't know.
 		require.False(t, isSeriesPartOfFamily("http_requests2_total", []byte("http_requests_total"), model.MetricTypeCounter))
 		require.False(t, isSeriesPartOfFamily("http_requests_requests_total", []byte("http_requests"), model.MetricTypeCounter))
+
+		require.False(t, isSeriesPartOfFamily("http_requests_total_total", []byte("http_requests_total"), model.MetricTypeCounter))
 	})
 
 	t.Run("gauge", func(t *testing.T) {
@@ -355,6 +482,8 @@ func TestIsSeriesPartOfFamily(t *testing.T) {
 		require.False(t, isSeriesPartOfFamily("go_build_info", []byte("go_build"), model.MetricTypeUnknown)) // We don't know.
 		require.False(t, isSeriesPartOfFamily("go_build2_info", []byte("go_build_info"), model.MetricTypeInfo))
 		require.False(t, isSeriesPartOfFamily("go_build_build_info", []byte("go_build_info"), model.MetricTypeInfo))
+
+		require.False(t, isSeriesPartOfFamily("go_build_info_info", []byte("go_build_info"), model.MetricTypeInfo))
 	})
 }
 
@@ -391,7 +520,7 @@ func testDroppedTargetsList(t *testing.T, appV2 bool) {
 		}
 		sa                     = selectAppendable(app, appV2)
 		sp, _                  = newScrapePool(cfg, sa.V1(), sa.V2(), 0, nil, nil, &Options{}, newTestScrapeMetrics(t))
-		expectedLabelSetString = "{__address__=\"127.0.0.1:9090\", __scrape_interval__=\"0s\", __scrape_timeout__=\"0s\", job=\"dropMe\"}"
+		expectedLabelSetString = "{__address__=\"127.0.0.1:9090\", __always_scrape_classic_histograms__=\"false\", __convert_classic_histograms_to_nhcb__=\"false\", __scrape_interval__=\"0s\", __scrape_native_histograms__=\"false\", __scrape_timeout__=\"0s\", job=\"dropMe\"}"
 		expectedLength         = 2
 	)
 	sp.Sync(tgs)
@@ -1127,7 +1256,7 @@ func testScrapeLoopStop(t *testing.T, appV2 bool) {
 		case i%6 == 0:
 			ts = s.T
 		case s.T != ts:
-			t.Fatalf("Unexpected multiple timestamps within single scrape")
+			t.Fatal("Unexpected multiple timestamps within single scrape")
 		}
 	}
 	// All samples from the last scrape must be stale markers.
@@ -1369,6 +1498,60 @@ func testScrapeLoopSeriesAdded(t *testing.T, appV2 bool) {
 	require.Equal(t, 0, seriesAdded)
 }
 
+func TestScrapeLoopAppendOpenMetrics2(t *testing.T) {
+	foreachAppendable(t, func(t *testing.T, appV2 bool) {
+		testScrapeLoopAppendOpenMetrics2(t, appV2)
+	})
+}
+
+func testScrapeLoopAppendOpenMetrics2(t *testing.T, appV2 bool) {
+	const body = "# TYPE test_metric gauge\ntest_metric 1\n# EOF\n"
+
+	for _, contentType := range []string{
+		"application/openmetrics-text; version=2.0.0",
+		"application/openmetrics-text; version=2.0.0-rc",
+	} {
+		t.Run(contentType, func(t *testing.T) {
+			t.Run("enabled", func(t *testing.T) {
+				sl, _ := newTestScrapeLoop(t, withAppendable(teststorage.NewAppendable(), appV2), func(sl *scrapeLoop) {
+					sl.enableOpenMetrics2 = true
+				})
+
+				app := sl.appender()
+				total, added, seriesAdded, err := app.append([]byte(body), contentType, time.Time{})
+				require.NoError(t, err)
+				require.NoError(t, app.Commit())
+				require.Equal(t, 1, total)
+				require.Equal(t, 1, added)
+				require.Equal(t, 1, seriesAdded)
+			})
+
+			// TODO(r.bizos): drop this subtest when OM2 is GA and the feature flag is gone.
+			t.Run("disabled", func(t *testing.T) {
+				sl, _ := newTestScrapeLoop(t, withAppendable(teststorage.NewAppendable(), appV2))
+
+				app := sl.appender()
+				_, _, _, err := app.append([]byte(body), contentType, time.Time{})
+				require.ErrorContains(t, err, "the openmetrics2 feature flag is not enabled")
+			})
+
+			// TODO(r.bizos): drop this subtest when OM2 is GA and the feature flag is gone.
+			t.Run("disabled falls back", func(t *testing.T) {
+				sl, _ := newTestScrapeLoop(t, withAppendable(teststorage.NewAppendable(), appV2), func(sl *scrapeLoop) {
+					sl.fallbackScrapeProtocol = "text/plain"
+				})
+
+				app := sl.appender()
+				total, added, _, err := app.append([]byte("test_metric 1\n"), contentType, time.Time{})
+				require.NoError(t, err)
+				require.NoError(t, app.Commit())
+				require.Equal(t, 1, total)
+				require.Equal(t, 1, added)
+			})
+		})
+	}
+}
+
 func TestScrapeLoopFailWithInvalidLabelsAfterRelabel(t *testing.T) {
 	foreachAppendable(t, func(t *testing.T, appV2 bool) {
 		testScrapeLoopFailWithInvalidLabelsAfterRelabel(t, appV2)
@@ -1435,8 +1618,14 @@ func testScrapeLoopFailLegacyUnderUTF8(t *testing.T, appV2 bool) {
 
 func readTextParseTestMetrics(t testing.TB) []byte {
 	t.Helper()
+	return readTextParseTestdata(t, "alltypes.237mfs.prom.txt")
+}
 
-	b, err := os.ReadFile("../model/textparse/testdata/alltypes.237mfs.prom.txt")
+// readTextParseTestdata reads a file from model/textparse/testdata.
+func readTextParseTestdata(t testing.TB, file string) []byte {
+	t.Helper()
+
+	b, err := os.ReadFile(filepath.Join("..", "model", "textparse", "testdata", file))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -1445,15 +1634,54 @@ func readTextParseTestMetrics(t testing.TB) []byte {
 	return bytes.ReplaceAll(b, []byte{'\r'}, nil)
 }
 
-func makeTestGauges(n int) []byte {
+func makeTestMetricFamily(n int, name, typ string) []byte {
 	sb := bytes.Buffer{}
-	sb.WriteString("# TYPE metric_a gauge\n")
-	sb.WriteString("# HELP metric_a help text\n")
+	_, _ = fmt.Fprintf(&sb, "# TYPE %s %s\n", name, typ)
+	_, _ = fmt.Fprintf(&sb, "# HELP %s help text\n", name)
 	for i := range n {
-		_, _ = fmt.Fprintf(&sb, "metric_a{foo=\"%d\",bar=\"%d\"} 1\n", i, i*100)
+		_, _ = fmt.Fprintf(&sb, "%s{foo=\"%d\",bar=\"%d\"} 1\n", name, i, i*100)
 	}
 	sb.WriteString("# EOF\n")
 	return sb.Bytes()
+}
+
+func makeTestGauges(n int) []byte {
+	return makeTestMetricFamily(n, "metric_a", "gauge")
+}
+
+func makeTestCounters(n int) []byte {
+	return makeTestMetricFamily(n, "metric_b", "counter")
+}
+
+func makeTestFloatHistograms(n int) []byte {
+	var sb strings.Builder
+	sb.WriteString(`name: "test_float_hist"
+help: "test help"
+type: HISTOGRAM
+`)
+	for i := range n {
+		_, _ = fmt.Fprintf(&sb, `metric: <
+  label: < name: "foo" value: "%d" >
+  label: < name: "bar" value: "%d" >
+  histogram: <
+    schema: 3
+    sample_count_float: 3.0
+    sample_sum: 5.0
+    positive_span: <
+      offset: 0
+      length: 2
+    >
+    positive_count: 1.0
+    positive_count: 2.0
+  >
+>
+`, i, i*100)
+	}
+	buf := &bytes.Buffer{}
+	if err := textToProto(sb.String(), buf); err != nil {
+		panic(err)
+	}
+	return buf.Bytes()
 }
 
 func makeTestHistogramsWithExemplars(n int) []byte {
@@ -1547,6 +1775,112 @@ func TestPromTextToProto(t *testing.T) {
 	require.Equal(t, "go_gc_cycles_automatic_gc_cycles_total", got[0])
 	require.Equal(t, "prometheus_sd_kuma_fetch_duration_seconds", got[128])
 	require.Equal(t, "promhttp_metric_handler_requests_total", got[236])
+}
+
+func promTextToOM2(tb testing.TB, text []byte) []byte {
+	tb.Helper()
+
+	p := expfmt.NewTextParser(model.UTF8Validation)
+	fams, err := p.TextToMetricFamilies(bytes.NewReader(text))
+	if err != nil {
+		tb.Fatal("TextToMetricFamilies:", err)
+	}
+	// Order by name for the deterministic tests.
+	var names []string
+	for n := range fams {
+		names = append(names, n)
+	}
+	sort.Strings(names)
+
+	buf := bytes.Buffer{}
+	for _, n := range names {
+		if _, err := expfmt.MetricFamilyToOpenMetrics20(&buf, fams[n]); err != nil {
+			tb.Fatal(err)
+		}
+	}
+	if _, err := expfmt.FinalizeOpenMetrics(&buf); err != nil {
+		tb.Fatal(err)
+	}
+	return buf.Bytes()
+}
+
+// benchFormatCase is one scrape payload of a benchDataset in a given exposition format.
+type benchFormatCase struct {
+	name        string
+	contentType string
+	parsable    []byte
+}
+
+// benchDataset is a BenchmarkScrapeLoopAppend dataset: the same metrics in one
+// or more exposition formats.
+type benchDataset struct {
+	name          string
+	cases         []benchFormatCase
+	convertToNHCB bool
+}
+
+// allFormatCases exposes promText as Prometheus text and OM 1.0 text, and
+// converts it to protobuf and OM 2.0 text, so every format carries the same samples.
+func allFormatCases(tb testing.TB, promText []byte) []benchFormatCase {
+	tb.Helper()
+	return []benchFormatCase{
+		{name: "PromText", contentType: "text/plain", parsable: promText},
+		{name: "OMText", contentType: "application/openmetrics-text", parsable: promText},
+		{name: "OMText2", contentType: "application/openmetrics-text; version=2.0.0", parsable: promTextToOM2(tb, promText)},
+		{name: "PromProto", contentType: "application/vnd.google.protobuf", parsable: promTextToProto(tb, promText)},
+	}
+}
+
+// prometheusOMFormatCases is a real Prometheus server /metrics page
+// (prometheus.demo.prometheus.io) as OM 1.0 with _created lines for every
+// counter, summary and histogram, and the same metrics as OM 2.0 with the
+// start timestamps inline (st@). Both files were generated with expfmt from the
+// same families, with the created timestamp set to process_start_time_seconds.
+func prometheusOMFormatCases(tb testing.TB) []benchFormatCase {
+	tb.Helper()
+	return []benchFormatCase{
+		{name: "OMText", contentType: "application/openmetrics-text", parsable: readTextParseTestdata(tb, "prometheus.om1.txt")},
+		{name: "OMText2", contentType: "application/openmetrics-text; version=2.0.0", parsable: readTextParseTestdata(tb, "prometheus.om2.txt")},
+	}
+}
+
+func benchDatasets(tb testing.TB) []benchDataset {
+	tb.Helper()
+	return []benchDataset{
+		{name: "1Fam2000Gauges", cases: allFormatCases(tb, makeTestGauges(2000))},                // ~68.1 KB, ~77.9 KB in proto, ~72.1 KB in OM2.
+		{name: "265FamsPrometheus", cases: prometheusOMFormatCases(tb)},                          // ~253.4 KB in OM1 (with _created), ~120.4 KB in OM2.
+		{name: "265FamsPrometheusNHCB", cases: prometheusOMFormatCases(tb), convertToNHCB: true}, // ~253.4 KB in OM1 (with _created), ~120.4 KB in OM2.
+	}
+}
+
+// TestBenchDatasets checks that every format of a benchmark dataset appends the
+// same number of samples, so BenchmarkScrapeLoopAppend compares equal work.
+func TestBenchDatasets(t *testing.T) {
+	for _, data := range benchDatasets(t) {
+		t.Run(data.name, func(t *testing.T) {
+			var want int
+			for i, tc := range data.cases {
+				appTest := teststorage.NewAppendable()
+				sl, _ := newTestScrapeLoop(t, withAppendable(appTest, true), func(sl *scrapeLoop) {
+					sl.enableNativeHistogramScraping = true
+					sl.convertClassicHistToNHCB = data.convertToNHCB
+					sl.alwaysScrapeClassicHist = false
+					sl.enableOpenMetrics2 = true
+				})
+				app := sl.appender()
+				total, added, seriesAdded, err := app.append(tc.parsable, tc.contentType, time.Now())
+				require.NoError(t, err)
+				require.NoError(t, app.Commit())
+				got := len(appTest.ResultSamples())
+				t.Logf("fmt=%s: bytes=%d total=%d added=%d seriesAdded=%d samples=%d", tc.name, len(tc.parsable), total, added, seriesAdded, got)
+				if i == 0 {
+					want = got
+					continue
+				}
+				require.Equal(t, want, got, "sample count mismatch between %s and %s", data.cases[0].name, tc.name)
+			}
+		})
+	}
 }
 
 func seriesPerHistogramFor100HistsWithExemplars(appV2 bool) int {
@@ -1747,31 +2081,754 @@ func TestScrapeLoopAppend_WithStorage(t *testing.T) {
 	}
 }
 
+func TestScrapeLoopAppend_StartTimeSynthesis(t *testing.T) {
+	ts := time.Now()
+
+	requireSample := func(t *testing.T, s teststorage.Sample, name string, val float64, ts, st int64, isNaN bool) {
+		t.Helper()
+		require.Equal(t, name, s.L.Get(model.MetricNameLabel))
+		require.Equal(t, ts, s.T)
+		if isNaN {
+			require.True(t, value.IsStaleNaN(s.V))
+		} else {
+			require.Equal(t, val, s.V)
+		}
+		require.Equal(t, st, s.ST)
+	}
+
+	s := teststorage.New(t)
+
+	appTest := teststorage.NewAppendable().Then(s)
+	sl, _ := newTestScrapeLoop(t, withAppendable(appTest, true), func(sl *scrapeLoop) {
+		sl.synthesizeST = true
+		sl.parseST = true
+	})
+
+	// First Scrape: anchor the start time, append is skipped.
+	scrapeA := []byte(`# TYPE test_metric counter
+test_metric 10
+# TYPE test_gauge gauge
+test_gauge 10
+# EOF
+`)
+	app := sl.appender()
+	_, _, _, err := app.append(scrapeA, "application/openmetrics-text", ts)
+	require.NoError(t, err)
+	require.NoError(t, app.Commit())
+
+	// Gauge should have 1 point, Counter should be skipped.
+	got := appTest.ResultSamples()
+	require.Len(t, got, 1)
+	requireSample(t, got[0], "test_gauge", 10, timestamp.FromTime(ts), 0, false)
+
+	// Second Scrape: Counter should yield 1 point with delta = 5, and ST = ts.
+	ts2 := ts.Add(time.Second)
+	scrapeB := []byte(`# TYPE test_metric counter
+test_metric 15
+# TYPE test_gauge gauge
+test_gauge 12
+# EOF
+`)
+	app = sl.appender()
+	_, _, _, err = app.append(scrapeB, "application/openmetrics-text", ts2)
+	require.NoError(t, err)
+	require.NoError(t, app.Commit())
+
+	got = appTest.ResultSamples()
+
+	require.Len(t, got, 3)
+	requireSample(t, got[0], "test_gauge", 10, timestamp.FromTime(ts), 0, false)
+	requireSample(t, got[1], "test_metric", 5, timestamp.FromTime(ts2), timestamp.FromTime(ts), false)
+	requireSample(t, got[2], "test_gauge", 12, timestamp.FromTime(ts2), 0, false)
+
+	// Third Scrape: Simulate a Reset (value drops from 15 to 4).
+	ts3 := ts2.Add(time.Second)
+	scrapeC := []byte(`# TYPE test_metric counter
+test_metric 4
+# EOF
+`)
+	app = sl.appender()
+	_, _, _, err = app.append(scrapeC, "application/openmetrics-text", ts3)
+	require.NoError(t, err)
+	require.NoError(t, app.Commit())
+
+	got = appTest.ResultSamples()
+
+	require.Len(t, got, 5)
+	requireSample(t, got[3], "test_metric", 4, timestamp.FromTime(ts3), timestamp.FromTime(ts3)-1, false)
+	requireSample(t, got[4], "test_gauge", 0, timestamp.FromTime(ts3), 0, true)
+
+	// Fourth Scrape: Counter provides an explicit ST via _created. Synthesis is skipped. The cache is cleared.
+	tsD := ts3.Add(time.Second)
+	scrapeD := []byte(`# TYPE test_metric counter
+test_metric 20
+test_metric_created 1726839813.016
+# TYPE test_gauge gauge
+test_gauge 15
+# EOF
+`)
+	app = sl.appender()
+	_, _, _, err = app.append(scrapeD, "application/openmetrics-text", tsD)
+	require.NoError(t, err)
+	require.NoError(t, app.Commit())
+
+	got = appTest.ResultSamples()
+
+	require.Len(t, got, 7)
+	requireSample(t, got[5], "test_metric", 20, timestamp.FromTime(tsD), 1726839813016, false)
+	requireSample(t, got[6], "test_gauge", 15, timestamp.FromTime(tsD), 0, false)
+
+	// Fifth Scrape: No explicit ST provided. Since Scrape D reset the cache, this is a fresh start and is skipped.
+	tsE := tsD.Add(time.Second)
+	scrapeE := []byte(`# TYPE test_metric counter
+test_metric 25
+# EOF
+`)
+	app = sl.appender()
+	_, _, _, err = app.append(scrapeE, "application/openmetrics-text", tsE)
+	require.NoError(t, err)
+	require.NoError(t, app.Commit())
+
+	got = appTest.ResultSamples()
+
+	require.Len(t, got, 8)
+	requireSample(t, got[7], "test_gauge", 0, timestamp.FromTime(tsE), 0, true)
+
+	// Sixth Scrape: No explicit ST provided. Second sample after fresh start.
+	tsF := tsE.Add(time.Second)
+	scrapeF := []byte(`# TYPE test_metric counter
+test_metric 32
+# EOF
+`)
+	app = sl.appender()
+	_, _, _, err = app.append(scrapeF, "application/openmetrics-text", tsF)
+	require.NoError(t, err)
+	require.NoError(t, app.Commit())
+
+	got = appTest.ResultSamples()
+
+	require.Len(t, got, 9)
+	requireSample(t, got[8], "test_metric", 7, timestamp.FromTime(tsF), timestamp.FromTime(tsE), false)
+}
+
+func TestScrapeLoopAppend_StartTimeSynthesis_WithSTStorage(t *testing.T) {
+	ts := time.Now()
+
+	s := teststorage.New(t, func(opt *tsdb.Options) {
+		opt.EnableSTStorage = true
+		opt.FloatChunkEncoding = chunkenc.EncXOR2
+		opt.EnableHistogramSTEncoding = true
+	})
+
+	appTest := teststorage.NewAppendable().Then(s)
+	sl, _ := newTestScrapeLoop(t, withAppendable(appTest, true), func(sl *scrapeLoop) {
+		sl.synthesizeST = true
+		sl.parseST = true
+	})
+
+	// First Scrape: anchor the start time, append is skipped.
+	scrapeA := []byte(`# TYPE test_metric counter
+test_metric 10
+# EOF
+`)
+	app := sl.appender()
+	_, _, _, err := app.append(scrapeA, "application/openmetrics-text", ts)
+	require.NoError(t, err)
+	require.NoError(t, app.Commit())
+
+	// Second Scrape: Counter should yield 1 point with delta = 5, and ST = ts.
+	ts2 := ts.Add(time.Second)
+	scrapeB := []byte(`# TYPE test_metric counter
+test_metric 15
+# EOF
+`)
+	app = sl.appender()
+	_, _, _, err = app.append(scrapeB, "application/openmetrics-text", ts2)
+	require.NoError(t, err)
+	require.NoError(t, app.Commit())
+
+	// Verify via querier that ST is actually stored.
+	q, err := tsdb.NewBlockQuerier(s.Head(), math.MinInt64, math.MaxInt64)
+	require.NoError(t, err)
+	defer q.Close()
+
+	ss := q.Select(t.Context(), false, nil, labels.MustNewMatcher(labels.MatchEqual, model.MetricNameLabel, "test_metric"))
+	require.True(t, ss.Next())
+	series := ss.At()
+	require.NoError(t, ss.Err())
+
+	seriesIt := series.Iterator(nil)
+	require.Equal(t, chunkenc.ValFloat, seriesIt.Next())
+
+	// Check sample value and timestamp
+	tVal, vVal := seriesIt.At()
+	require.Equal(t, timestamp.FromTime(ts2), tVal)
+	require.Equal(t, 5.0, vVal)
+
+	// Check Start Timestamp
+	st := seriesIt.AtST()
+	require.Equal(t, timestamp.FromTime(ts), st)
+	require.Equal(t, chunkenc.ValNone, seriesIt.Next())
+}
+
+func TestScrapeLoopAppend_StartTimeSynthesis_OutOfOrder(t *testing.T) {
+	ts := time.Now()
+
+	s := teststorage.New(t)
+	// Simulate OOO error for "test_metric" on the second scrape.
+	var returnOOO bool
+	appTest := teststorage.NewAppendable().WithErrs(
+		func(ls labels.Labels) error {
+			if returnOOO && ls.Get(model.MetricNameLabel) == "test_metric" {
+				return storage.ErrOutOfOrderSample
+			}
+			return nil
+		}, nil, nil,
+	).Then(s)
+
+	sl, _ := newTestScrapeLoop(t, withAppendable(appTest, true), func(sl *scrapeLoop) {
+		sl.synthesizeST = true
+		sl.parseST = true
+	})
+
+	// First Scrape: anchor the start time, append is skipped.
+	scrapeA := []byte(`# TYPE test_metric counter
+test_metric 10
+# EOF
+`)
+
+	app := sl.appender()
+	_, _, _, err := app.append(scrapeA, "application/openmetrics-text", ts)
+	require.NoError(t, err)
+	require.NoError(t, app.Commit())
+
+	// Counter should be skipped (anchored).
+	got := appTest.ResultSamples()
+	require.Empty(t, got)
+
+	// Second Scrape: Counter should be rejected due to OOO.
+	// stCache is now non-nil for this series.
+	ts2 := ts.Add(time.Second)
+	scrapeB := []byte(`# TYPE test_metric counter
+test_metric 15
+# EOF
+`)
+
+	returnOOO = true // Now return OOO error
+	app = sl.appender()
+	total, added, seriesAdded, err := app.append(scrapeB, "application/openmetrics-text", ts2)
+	require.NoError(t, err) // Scrape should not fail
+	require.NoError(t, app.Commit())
+
+	// Counter should NOT be in the result samples because it was dropped.
+	got = appTest.ResultSamples()
+	require.Empty(t, got)
+
+	require.Equal(t, 1, total)
+	require.Equal(t, 1, added)
+	require.Equal(t, 0, seriesAdded)
+
+	// Third Scrape: Counter is missing.
+	// Since it was never successfully appended (anchored on first scrape, failed with OOO on second),
+	// it should NOT have been tracked for staleness. Thus, no StaleNaN should be appended.
+	ts3 := ts2.Add(time.Second)
+	scrapeC := []byte(`# TYPE test_metric counter
+# EOF
+`)
+
+	app = sl.appender()
+	_, _, _, err = app.append(scrapeC, "application/openmetrics-text", ts3)
+	require.NoError(t, err)
+	require.NoError(t, app.Commit())
+
+	// Verify that still no samples are appended (specifically no stale marker).
+	got = appTest.ResultSamples()
+	require.Empty(t, got, "Expected no samples (specifically no stale markers) because the series was never tracked for staleness")
+}
+
+func TestScrapeLoopAppend_StartTimeSynthesis_OOO_StateMutation(t *testing.T) {
+	ts := time.Now()
+
+	s := teststorage.New(t)
+	var returnOOO bool
+	appTest := teststorage.NewAppendable().WithErrs(
+		func(ls labels.Labels) error {
+			if returnOOO && ls.Get(model.MetricNameLabel) == "test_metric" {
+				return storage.ErrOutOfOrderSample
+			}
+			return nil
+		}, nil, nil,
+	).Then(s)
+
+	sl, _ := newTestScrapeLoop(t, withAppendable(appTest, true), func(sl *scrapeLoop) {
+		sl.synthesizeST = true
+		sl.parseST = true
+	})
+
+	// First Scrape: anchor the start time, append is skipped.
+	scrapeA := []byte(`# TYPE test_metric counter
+test_metric 10
+# EOF
+`)
+
+	app := sl.appender()
+	_, _, _, err := app.append(scrapeA, "application/openmetrics-text", ts)
+	require.NoError(t, err)
+	require.NoError(t, app.Commit())
+
+	// Second Scrape: Counter should be rejected due to OOO.
+	// We pass a large value to trigger false reset on next scrape if state leaks.
+	ts2 := ts.Add(time.Second)
+	scrapeB := []byte(`# TYPE test_metric counter
+test_metric 100
+# EOF
+`)
+
+	returnOOO = true // Now return OOO error
+	app = sl.appender()
+	_, _, _, err = app.append(scrapeB, "application/openmetrics-text", ts2)
+	require.NoError(t, err)
+	require.NoError(t, app.Commit())
+
+	// Third Scrape: Counter is valid again.
+	// Since the previous scrape failed with OOO, we cleared the state (ce.st = nil).
+	// This makes this scrape act like a first sample again, so it will be dropped to establish a new reference point.
+	ts3 := ts2.Add(time.Second)
+	scrapeC := []byte(`# TYPE test_metric counter
+test_metric 25
+# EOF
+`)
+
+	returnOOO = false // No error now
+	app = sl.appender()
+	_, _, _, err = app.append(scrapeC, "application/openmetrics-text", ts3)
+	require.NoError(t, err)
+	require.NoError(t, app.Commit())
+
+	got := appTest.ResultSamples()
+	// We expect 0 samples because:
+	// - 1st scrape: anchored (dropped)
+	// - 2nd scrape: OOO (dropped)
+	// - 3rd scrape: fresh start after cleared state (dropped)
+	require.Empty(t, got, "Expected no samples because the state was cleared and the sample was used to re-anchor")
+}
+
+func TestScrapeLoopAppend_StartTimeSynthesis_Summary(t *testing.T) {
+	ts := time.Now()
+
+	requireSample := func(t *testing.T, s teststorage.Sample, name string, val float64, ts, st int64, isNaN bool) {
+		t.Helper()
+		require.Equal(t, name, s.L.Get(model.MetricNameLabel))
+		require.Equal(t, ts, s.T)
+		if isNaN {
+			require.True(t, value.IsStaleNaN(s.V))
+		} else {
+			require.Equal(t, val, s.V)
+		}
+		require.Equal(t, st, s.ST)
+	}
+
+	s := teststorage.New(t)
+
+	appTest := teststorage.NewAppendable().Then(s)
+	sl, _ := newTestScrapeLoop(t, withAppendable(appTest, true), func(sl *scrapeLoop) {
+		sl.synthesizeST = true
+		sl.parseST = true
+	})
+
+	// First Scrape: Anchor start time for _sum and _count. Quantiles are not cumulative, so quantile is appended directly without anchoring.
+	scrapeA := []byte(`# TYPE test_summary summary
+test_summary{quantile="0.5"} 10
+test_summary_sum 100
+test_summary_count 10
+# EOF
+`)
+	app := sl.appender()
+	_, _, _, err := app.append(scrapeA, "application/openmetrics-text", ts)
+	require.NoError(t, err)
+	require.NoError(t, app.Commit())
+
+	// Quantile should be appended (1 point), _sum and _count should be skipped (anchored).
+	got := appTest.ResultSamples()
+	require.Len(t, got, 1)
+	requireSample(t, got[0], "test_summary", 10, timestamp.FromTime(ts), 0, false)
+
+	// Second Scrape: _sum and _count should yield points with delta values and synthesized ST = ts.
+	ts2 := ts.Add(time.Second)
+	scrapeB := []byte(`# TYPE test_summary summary
+test_summary{quantile="0.5"} 12
+test_summary_sum 150
+test_summary_count 15
+# EOF
+`)
+	app = sl.appender()
+	_, _, _, err = app.append(scrapeB, "application/openmetrics-text", ts2)
+	require.NoError(t, err)
+	require.NoError(t, app.Commit())
+
+	got = appTest.ResultSamples()
+	require.Len(t, got, 4)
+	requireSample(t, got[0], "test_summary", 10, timestamp.FromTime(ts), 0, false)
+	requireSample(t, got[1], "test_summary", 12, timestamp.FromTime(ts2), 0, false)
+	requireSample(t, got[2], "test_summary_sum", 50, timestamp.FromTime(ts2), timestamp.FromTime(ts), false)
+	requireSample(t, got[3], "test_summary_count", 5, timestamp.FromTime(ts2), timestamp.FromTime(ts), false)
+}
+
+func requireSampleHist(t *testing.T, s teststorage.Sample, name, expectedHist string, ts, st int64, isNaN bool) {
+	t.Helper()
+	require.Equal(t, name, s.L.Get(model.MetricNameLabel))
+	require.Equal(t, ts, s.T)
+	if isNaN {
+		require.True(t, s.IsStale())
+	} else {
+		switch {
+		case s.H != nil:
+			require.Equal(t, expectedHist, s.H.String())
+		case s.FH != nil:
+			require.Equal(t, expectedHist, s.FH.String())
+		default:
+			t.Fatal("expected sample to have either H or FH")
+		}
+	}
+	require.Equal(t, st, s.ST)
+}
+
+func TestScrapeLoopAppend_StartTimeSynthesis_Histograms(t *testing.T) {
+	t.Run("ClassicToNative", testScrapeLoopAppendStartTimeSynthesisHistogram)
+	t.Run("FloatNative", testScrapeLoopAppendStartTimeSynthesisFloatHistogram)
+	t.Run("InvalidNative", testScrapeLoopAppendStartTimeSynthesisInvalidHistogram)
+}
+
+func testScrapeLoopAppendStartTimeSynthesisHistogram(t *testing.T) {
+	t.Helper()
+	ts := time.Now()
+
+	requireSample := requireSampleHist
+
+	s := teststorage.New(t)
+
+	appTest := teststorage.NewAppendable().Then(s)
+	sl, _ := newTestScrapeLoop(t, withAppendable(appTest, true), func(sl *scrapeLoop) {
+		sl.synthesizeST = true
+		sl.convertClassicHistToNHCB = true
+		sl.enableNativeHistogramScraping = true
+		// Avoid appending the classic bucket components so we just get the NHCB
+		sl.alwaysScrapeClassicHist = false
+	})
+
+	// First Scrape: anchor the start time, append is skipped
+	scrapeA := []byte(`# TYPE test_hist histogram
+# HELP test_hist some help
+test_hist_bucket{le="0.005"} 0
+test_hist_bucket{le="0.01"} 0
+test_hist_bucket{le="0.025"} 0
+test_hist_bucket{le="0.05"} 0
+test_hist_bucket{le="0.1"} 1
+test_hist_bucket{le="0.25"} 1
+test_hist_bucket{le="0.5"} 1
+test_hist_bucket{le="1"} 2
+test_hist_bucket{le="2.5"} 2
+test_hist_bucket{le="5"} 2
+test_hist_bucket{le="10"} 2
+test_hist_bucket{le="+Inf"} 3
+test_hist_sum 5.5
+test_hist_count 3
+# EOF
+`)
+	app := sl.appender()
+	_, _, _, err := app.append(scrapeA, "application/openmetrics-text", ts)
+	require.NoError(t, err)
+	require.NoError(t, app.Commit())
+
+	got := appTest.ResultSamples()
+	require.Empty(t, got) // Should be skipped as it just anchors.
+
+	// Second Scrape: Histogram should yield points with start time.
+	ts2 := ts.Add(time.Second)
+	scrapeB := []byte(`# TYPE test_hist histogram
+# HELP test_hist some help
+test_hist_bucket{le="0.005"} 0
+test_hist_bucket{le="0.01"} 0
+test_hist_bucket{le="0.025"} 0
+test_hist_bucket{le="0.05"} 0
+test_hist_bucket{le="0.1"} 2
+test_hist_bucket{le="0.25"} 2
+test_hist_bucket{le="0.5"} 2
+test_hist_bucket{le="1"} 5
+test_hist_bucket{le="2.5"} 5
+test_hist_bucket{le="5"} 5
+test_hist_bucket{le="10"} 5
+test_hist_bucket{le="+Inf"} 6
+test_hist_sum 10.5
+test_hist_count 6
+# EOF
+`)
+	app = sl.appender()
+	_, _, _, err = app.append(scrapeB, "application/openmetrics-text", ts2)
+	require.NoError(t, err)
+	require.NoError(t, app.Commit())
+
+	got = appTest.ResultSamples()
+
+	// Delta: Count 6-3=3, Sum 10.5-5.5=5.0.
+	require.Len(t, got, 1)
+	requireSample(t, got[0], "test_hist", "{count:3, sum:5, (0.05,0.1]:1, (0.5,1]:2}", timestamp.FromTime(ts2), timestamp.FromTime(ts), false)
+
+	// Third Scrape: Simulate a Reset (count drops from 6 to 2).
+	ts3 := ts2.Add(time.Second)
+	scrapeC := []byte(`# TYPE test_hist histogram
+# HELP test_hist some help
+test_hist_bucket{le="0.005"} 0
+test_hist_bucket{le="0.01"} 0
+test_hist_bucket{le="0.025"} 0
+test_hist_bucket{le="0.05"} 0
+test_hist_bucket{le="0.1"} 1
+test_hist_bucket{le="0.25"} 1
+test_hist_bucket{le="0.5"} 1
+test_hist_bucket{le="1"} 2
+test_hist_bucket{le="2.5"} 2
+test_hist_bucket{le="5"} 2
+test_hist_bucket{le="10"} 2
+test_hist_bucket{le="+Inf"} 2
+test_hist_sum 4.0
+test_hist_count 2
+# EOF
+`)
+	app = sl.appender()
+	_, _, _, err = app.append(scrapeC, "application/openmetrics-text", ts3)
+	require.NoError(t, err)
+	require.NoError(t, app.Commit())
+
+	got = appTest.ResultSamples()
+
+	// V2 has 1 samples previously. 1 new sample is added with ST=ts3-1, Delta: Count 2-0=2, Sum 4.0-0=4.0.
+	require.Len(t, got, 2)
+	requireSample(t, got[0], "test_hist", "{count:3, sum:5, (0.05,0.1]:1, (0.5,1]:2}", timestamp.FromTime(ts2), timestamp.FromTime(ts), false)
+	requireSample(t, got[1], "test_hist", "{count:2, sum:4, (0.05,0.1]:1, (0.5,1]:1}", timestamp.FromTime(ts3), timestamp.FromTime(ts3)-1, false)
+}
+
+func testScrapeLoopAppendStartTimeSynthesisFloatHistogram(t *testing.T) {
+	t.Helper()
+	ts := time.Now()
+
+	requireSample := requireSampleHist
+
+	s := teststorage.New(t)
+
+	appTest := teststorage.NewAppendable().Then(s)
+	sl, _ := newTestScrapeLoop(t, withAppendable(appTest, true), func(sl *scrapeLoop) {
+		sl.synthesizeST = true
+		sl.enableNativeHistogramScraping = true
+		sl.alwaysScrapeClassicHist = false
+		sl.fallbackScrapeProtocol = "application/vnd.google.protobuf;proto=io.prometheus.client.MetricFamily;encoding=delimited"
+	})
+
+	// First Scrape: Initial Data.
+	scrapeA := `name: "test_float_hist"
+help: "test help"
+type: HISTOGRAM
+metric: <
+  histogram: <
+    schema: 3
+    sample_count_float: 3.0
+    sample_sum: 5.0
+    positive_span: <
+      offset: 0
+      length: 2
+    >
+    positive_count: 1.0
+    positive_count: 2.0
+  >
+>
+`
+	bufA := &bytes.Buffer{}
+	require.NoError(t, textToProto(scrapeA, bufA))
+
+	app := sl.appender()
+	_, _, _, err := app.append(bufA.Bytes(), "application/vnd.google.protobuf;proto=io.prometheus.client.MetricFamily;encoding=delimited", ts)
+	require.NoError(t, err)
+	require.NoError(t, app.Commit())
+
+	// Second Scrape: Continuing (no reset).
+	ts2 := ts.Add(time.Second)
+	scrapeB := `name: "test_float_hist"
+help: "test help"
+type: HISTOGRAM
+metric: <
+  histogram: <
+    schema: 3
+    sample_count_float: 6.0
+    sample_sum: 10.5
+    positive_span: <
+      offset: 0
+      length: 2
+    >
+    positive_count: 2.0
+    positive_count: 4.0
+  >
+>
+`
+	bufB := &bytes.Buffer{}
+	require.NoError(t, textToProto(scrapeB, bufB))
+
+	app = sl.appender()
+	_, _, _, err = app.append(bufB.Bytes(), "application/vnd.google.protobuf;proto=io.prometheus.client.MetricFamily;encoding=delimited", ts2)
+	require.NoError(t, err)
+	require.NoError(t, app.Commit())
+
+	got := appTest.ResultSamples()
+
+	// Delta: Count 6.0-3.0=3.0, Sum 10.5-5.0=5.5.
+	require.Len(t, got, 1)
+	requireSample(t, got[0], "test_float_hist", "{count:3, sum:5.5, (0.9170040432046711,1]:1, (1,1.0905077326652577]:2}", timestamp.FromTime(ts2), timestamp.FromTime(ts), false)
+
+	// Third Scrape: Simulate a Reset (count drops from 6 to 2).
+	ts3 := ts2.Add(time.Second)
+	scrapeC := `name: "test_float_hist"
+help: "test help"
+type: HISTOGRAM
+metric: <
+  histogram: <
+    schema: 3
+    sample_count_float: 2.0
+    sample_sum: 4.0
+    positive_span: <
+      offset: 0
+      length: 2
+    >
+    positive_count: 1.0
+    positive_count: 1.0
+  >
+>
+`
+	bufC := &bytes.Buffer{}
+	require.NoError(t, textToProto(scrapeC, bufC))
+
+	app = sl.appender()
+	_, _, _, err = app.append(bufC.Bytes(), "application/vnd.google.protobuf;proto=io.prometheus.client.MetricFamily;encoding=delimited", ts3)
+	require.NoError(t, err)
+	require.NoError(t, app.Commit())
+
+	got = appTest.ResultSamples()
+
+	// V2 has 1 samples previously. 1 new sample is added with ST=ts3-1, Delta: Count 2.0-0=2.0, Sum 4.0-0=4.0.
+	require.Len(t, got, 2)
+	requireSample(t, got[0], "test_float_hist", "{count:3, sum:5.5, (0.9170040432046711,1]:1, (1,1.0905077326652577]:2}", timestamp.FromTime(ts2), timestamp.FromTime(ts), false)
+	requireSample(t, got[1], "test_float_hist", "{count:2, sum:4, (0.9170040432046711,1]:1, (1,1.0905077326652577]:1}", timestamp.FromTime(ts3), timestamp.FromTime(ts3)-1, false)
+}
+
+// testScrapeLoopAppendStartTimeSynthesisInvalidHistogram checks that a native
+// histogram with an invalid bucket layout is rejected on append, and that it does
+// not become the anchor for start timestamp synthesis.
+func testScrapeLoopAppendStartTimeSynthesisInvalidHistogram(t *testing.T) {
+	t.Helper()
+	const contentType = "application/vnd.google.protobuf;proto=io.prometheus.client.MetricFamily;encoding=delimited"
+
+	for _, tc := range []struct {
+		name  string
+		float bool
+	}{
+		{name: "Float", float: true},
+		{name: "Integer", float: false},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			// histogramProto returns a native histogram with the given schema,
+			// positive spans and absolute positive bucket counts.
+			histogramProto := func(schema int32, count, sum int, spans []histogram.Span, buckets ...int) []byte {
+				var text strings.Builder
+				fmt.Fprintf(&text, "name: \"test_hist\"\nhelp: \"test help\"\ntype: HISTOGRAM\nmetric: <\n  histogram: <\n    schema: %d\n    sample_sum: %d\n", schema, sum)
+				if tc.float {
+					fmt.Fprintf(&text, "    sample_count_float: %d\n", count)
+				} else {
+					fmt.Fprintf(&text, "    sample_count: %d\n", count)
+				}
+				for _, s := range spans {
+					fmt.Fprintf(&text, "    positive_span: <\n      offset: %d\n      length: %d\n    >\n", s.Offset, s.Length)
+				}
+				last := 0
+				for _, b := range buckets {
+					if tc.float {
+						fmt.Fprintf(&text, "    positive_count: %d\n", b)
+					} else {
+						fmt.Fprintf(&text, "    positive_delta: %d\n", b-last)
+						last = b
+					}
+				}
+				text.WriteString("  >\n>\n")
+				buf := &bytes.Buffer{}
+				require.NoError(t, textToProto(text.String(), buf))
+				return buf.Bytes()
+			}
+
+			ts := time.Now()
+			// The TSDB underneath is what rejects the invalid histogram.
+			s := teststorage.New(t)
+			appTest := teststorage.NewAppendable().Then(s)
+			sl, _ := newTestScrapeLoop(t, withAppendable(appTest, true), func(sl *scrapeLoop) {
+				sl.synthesizeST = true
+				sl.enableNativeHistogramScraping = true
+				sl.alwaysScrapeClassicHist = false
+				sl.fallbackScrapeProtocol = contentType
+			})
+
+			// First scrape: the second span has a negative offset, so the
+			// histogram is invalid. The append rejects it, and it must not
+			// become the anchor.
+			app := sl.appender()
+			_, _, _, err := app.append(histogramProto(1, 5, 10, []histogram.Span{{Offset: 0, Length: 1}, {Offset: -2, Length: 1}}, 2, 3), contentType, ts)
+			require.ErrorIs(t, err, histogram.ErrHistogramSpanNegativeOffset)
+			require.NoError(t, app.Rollback())
+			require.Empty(t, appTest.ResultSamples())
+
+			// Second scrape: a valid histogram with a lower schema. No sample is
+			// appended, because this scrape anchors the start time, which
+			// shows that the first scrape did not.
+			ts2 := ts.Add(time.Second)
+			app = sl.appender()
+			_, _, _, err = app.append(histogramProto(0, 300, 600, []histogram.Span{{Offset: -1, Length: 3}}, 100, 100, 100), contentType, ts2)
+			require.NoError(t, err)
+			require.NoError(t, app.Commit())
+			require.Empty(t, appTest.ResultSamples())
+
+			// Third scrape: adjusted against the second scrape.
+			ts3 := ts2.Add(time.Second)
+			app = sl.appender()
+			_, _, _, err = app.append(histogramProto(0, 600, 1200, []histogram.Span{{Offset: -1, Length: 3}}, 200, 200, 200), contentType, ts3)
+			require.NoError(t, err)
+			require.NoError(t, app.Commit())
+
+			got := appTest.ResultSamples()
+			require.Len(t, got, 1)
+			requireSampleHist(t, got[0], "test_hist", "{count:300, sum:600, (0.25,0.5]:100, (0.5,1]:100, (1,2]:100}", timestamp.FromTime(ts3), timestamp.FromTime(ts2), false)
+		})
+	}
+}
+
 // BenchmarkScrapeLoopAppend benchmarks scrape appends for typical cases.
 //
-// Benchmark compares append function run across 5 dimensions:
+// Benchmark uses AppenderV2 and compares append function run across 6 dimensions:
 // * `withStorage`: without storage isolates the benchmark to the scrape loop append code. With storage is an
 // integration benchmark with the TSDB head appender code. For acceptance criteria run with storage, without for debugging.
-// * `appV2`: appender V1 or V2.
 // * `appendMetadataToWAL`: metadata-wal-records feature enabled or not (problematic feature we might need to change
 // soon, see https://github.com/prometheus/prometheus/issues/15911.
-// * `data`: different sizes of metrics scraped e.g. one big gauge metric family
-//  with a thousand series and more realistic scenario with common types.
+// * `data`: different metrics scraped e.g. one big gauge metric family with
+//  two thousand series and a real Prometheus server /metrics page; the NHCB
+//  variant converts classic histograms to native histograms with custom buckets.
 // * `fmt`: different scrape formats which will benchmark different parsers e.g.
-//  promtext, omtext and promproto.
+//  promtext, omtext, omtext2 and promproto; see benchDatasets for which
+//  formats each dataset has. All formats of a dataset carry the same samples.
+// * `coldCache`: whether the scrape series cache is warm (steady state) or empty.
+// * `parseST`: whether start timestamps are parsed. OM 1.0 pays for this with a
+//  forward re-lex per counter/summary/histogram family (_created lookup),
+//  OM 2.0 carries st@ inline.
 //
 // NOTE: withStorage=true uses sync.Pool buffers which is heavily non-deterministic and shared across go routines.
 // As a result, it's recommended to run dimensions you want to compare with in e.g. separate go tool invocations.
 // Recommended CLI invocation(s):
 /*
-	# Acceptance: With storage with V1 and V2 in separate process:
-	export bench=appendV1 && go test ./scrape/... \
-		-run '^$' -bench '^BenchmarkScrapeLoopAppend/withStorage=true/appV2=false/$' \
-		-benchtime 2s -count 6 -cpu 2 -timeout 999m \
-		| tee ${bench}.txt
-
-	export bench=appendV2 && go test ./scrape/... \
-		-run '^$' -bench '^BenchmarkScrapeLoopAppend/withStorage=true/appV2=true/$' \
+	# Acceptance: With storage:
+	export bench=append && go test ./scrape/... \
+		-run '^$' -bench '^BenchmarkScrapeLoopAppend/withStorage=true/$' \
 		-benchtime 2s -count 6 -cpu 2 -timeout 999m \
 		| tee ${bench}.txt
 
@@ -1780,36 +2837,61 @@ func TestScrapeLoopAppend_WithStorage(t *testing.T) {
 		-run '^$' -bench '^BenchmarkScrapeLoopAppend/withStorage=false/$' \
 		-benchtime 2s -count 6 -cpu 2 -timeout 999m \
 		| tee ${bench}.txt
+
+	# OM 1.0 vs OM 2.0 parsing in the scrape loop, in separate processes, then:
+	# benchstat -col /fmt omtext.txt omtext2.txt
+	for fmt in OMText OMText2; do
+		export bench=$(echo ${fmt} | tr A-Z a-z) && go test ./scrape/... \
+			-run '^$' -bench "^BenchmarkScrapeLoopAppend/withStorage=false/appendMetadataToWAL=false/data=265FamsPrometheus$/fmt=${fmt}$/coldCache=false/parseST=.+$" \
+			-benchtime 2s -count 6 -cpu 2 -timeout 999m \
+			| tee ${bench}.txt
+	done
 */
 func BenchmarkScrapeLoopAppend(b *testing.B) {
+	datasets := benchDatasets(b)
 	for _, withStorage := range []bool{false, true} {
-		for _, appV2 := range []bool{false, true} {
-			for _, appendMetadataToWAL := range []bool{false, true} {
-				for _, data := range []struct {
-					name         string
-					parsableText []byte
-				}{
-					{name: "1Fam2000Gauges", parsableText: makeTestGauges(2000)},         // ~68.1 KB, ~77.9 KB in proto.
-					{name: "237FamsAllTypes", parsableText: readTextParseTestMetrics(b)}, // ~185.7 KB, ~70.6 KB in proto.
-				} {
-					b.Run(fmt.Sprintf("withStorage=%v/appV2=%v/appendMetadataToWAL=%v/data=%v", withStorage, appV2, appendMetadataToWAL, data.name), func(b *testing.B) {
-						metricsProto := promTextToProto(b, data.parsableText)
-
-						for _, bcase := range []struct {
-							name        string
-							contentType string
-							parsable    []byte
-						}{
-							{name: "PromText", contentType: "text/plain", parsable: data.parsableText},
-							{name: "OMText", contentType: "application/openmetrics-text", parsable: data.parsableText},
-							{name: "PromProto", contentType: "application/vnd.google.protobuf", parsable: metricsProto},
-						} {
-							b.Run(fmt.Sprintf("fmt=%v", bcase.name), func(b *testing.B) {
-								benchScrapeLoopAppend(b, withStorage, appV2, bcase.parsable, bcase.contentType, appendMetadataToWAL, false)
+		for _, appendMetadataToWAL := range []bool{false, true} {
+			for _, data := range datasets {
+				for _, bcase := range data.cases {
+					for _, coldCache := range []bool{false, true} {
+						for _, parseST := range []bool{true, false} {
+							b.Run(fmt.Sprintf(
+								"withStorage=%v/"+
+									"appendMetadataToWAL=%v/"+
+									"data=%v/"+
+									"fmt=%v/"+
+									"coldCache=%v/"+
+									"parseST=%v",
+								withStorage, appendMetadataToWAL, data.name, bcase.name, coldCache, parseST,
+							), func(b *testing.B) {
+								benchScrapeLoopAppend(b, withStorage, true, bcase.parsable, bcase.contentType, appendMetadataToWAL, false, false, data.convertToNHCB, coldCache, parseST)
 							})
 						}
-					})
+					}
 				}
+			}
+		}
+	}
+}
+
+func BenchmarkScrapeLoopAppend_STSynthesis(b *testing.B) {
+	for _, withStorage := range []bool{false, true} {
+		for _, synthesizeST := range []bool{false, true} {
+			for _, data := range []struct {
+				name          string
+				parsableText  []byte
+				contentType   string
+				convertToNHCB bool
+			}{
+				{name: "100Counters", parsableText: makeTestCounters(100), contentType: "application/openmetrics-text"},
+				{name: "100Histograms", parsableText: makeTestHistogramsWithExemplars(100), contentType: "application/openmetrics-text"},
+				{name: "100IntHistograms", parsableText: makeTestHistogramsWithExemplars(100), contentType: "application/openmetrics-text", convertToNHCB: true},
+				{name: "100FloatHistograms", parsableText: makeTestFloatHistograms(100), contentType: "application/vnd.google.protobuf;proto=io.prometheus.client.MetricFamily;encoding=delimited"},
+				{name: "237FamsAllTypes", parsableText: readTextParseTestMetrics(b), contentType: "application/openmetrics-text", convertToNHCB: true}, // ~185.7 KB, ~70.6 KB in proto.
+			} {
+				b.Run(fmt.Sprintf("withStorage=%v/synthesizeST=%v/data=%v", withStorage, synthesizeST, data.name), func(b *testing.B) {
+					benchScrapeLoopAppend(b, withStorage, true, data.parsableText, data.contentType, false, false, synthesizeST, data.convertToNHCB, false, true)
+				})
 			}
 		}
 	}
@@ -1823,6 +2905,10 @@ func benchScrapeLoopAppend(
 	contentType string,
 	appendMetadataToWAL bool,
 	enableExemplarStorage bool,
+	synthesizeST bool,
+	convertToNHCB bool,
+	coldCache bool,
+	parseST bool,
 ) {
 	var a compatAppendable = teststorage.NewAppendable().SkipRecording(true) // Make it noop for benchmark purposes.
 	if withStorage {
@@ -1836,12 +2922,23 @@ func benchScrapeLoopAppend(
 	}
 	sl, _ := newTestScrapeLoop(b, withAppendable(a, appV2), func(sl *scrapeLoop) {
 		sl.appendMetadataToWAL = appendMetadataToWAL
+		sl.synthesizeST = synthesizeST
+		sl.enableNativeHistogramScraping = true
+		sl.convertClassicHistToNHCB = convertToNHCB
+		sl.alwaysScrapeClassicHist = false
+		sl.enableOpenMetrics2 = true
+		// Only AppenderV2 uses parseST; false skips p.StartTimestamp() entirely.
+		sl.parseST = parseST
 	})
 	ts := time.Time{}
 
 	b.ReportAllocs()
 	b.ResetTimer()
 	for b.Loop() {
+		if coldCache {
+			// Model the first scrape of a target, before any series are cached.
+			sl.cache = newScrapeCache(sl.metrics)
+		}
 		app := sl.appender()
 		ts = ts.Add(time.Second)
 		_, _, _, err := app.append(parsable, contentType, ts)
@@ -1871,7 +2968,7 @@ func BenchmarkScrapeLoopAppend_HistogramsWithExemplars(b *testing.B) {
 	for _, appV2 := range []bool{false, true} {
 		b.Run(fmt.Sprintf("appV2=%v", appV2), func(b *testing.B) {
 			parsable := makeTestHistogramsWithExemplars(100) // ~255.8 KB in OM text.
-			benchScrapeLoopAppend(b, true, appV2, parsable, "application/openmetrics-text", false, true)
+			benchScrapeLoopAppend(b, true, appV2, parsable, "application/openmetrics-text", false, true, false, false, false, true)
 		})
 	}
 }
@@ -1914,29 +3011,36 @@ func testScrapeLoopScrapeAndReport(t *testing.T, appV2 bool) {
 */
 func BenchmarkScrapeLoopScrapeAndReport(b *testing.B) {
 	for _, appV2 := range []bool{false, true} {
-		b.Run(fmt.Sprintf("appV2=%v", appV2), func(b *testing.B) {
-			parsableText := readTextParseTestMetrics(b)
+		for _, pooled := range []bool{true, false} {
+			b.Run(fmt.Sprintf("appV2=%v/pooled=%v", appV2, pooled), func(b *testing.B) {
+				parsableText := readTextParseTestMetrics(b)
 
-			s := teststorage.New(b)
+				s := teststorage.New(b)
 
-			sl, scraper := newTestScrapeLoop(b, withAppendable(s, appV2), func(sl *scrapeLoop) {
-				sl.fallbackScrapeProtocol = "application/openmetrics-text"
+				sl, scraper := newTestScrapeLoop(b, withAppendable(s, appV2), func(sl *scrapeLoop) {
+					sl.fallbackScrapeProtocol = "application/openmetrics-text"
+					if !pooled {
+						// Use a small pool to model production bodies above 59 MB.
+						sl.buffers = pool.New(1e3, 1e3, 3, func(sz int) any { return make([]byte, 0, sz) })
+					}
+				})
+				scraper.scrapeFunc = func(_ context.Context, writer io.Writer) error {
+					// Exercise ReadFrom's EOF growth check, as in production.
+					_, err := io.Copy(writer, io.LimitReader(bytes.NewReader(parsableText), int64(len(parsableText))))
+					return err
+				}
+
+				ts := time.Time{}
+
+				b.ReportAllocs()
+				b.ResetTimer()
+				for b.Loop() {
+					ts = ts.Add(time.Second)
+					sl.scrapeAndReport(time.Time{}, ts, nil)
+					require.NoError(b, scraper.lastError)
+				}
 			})
-			scraper.scrapeFunc = func(_ context.Context, writer io.Writer) error {
-				_, err := writer.Write(parsableText)
-				return err
-			}
-
-			ts := time.Time{}
-
-			b.ReportAllocs()
-			b.ResetTimer()
-			for b.Loop() {
-				ts = ts.Add(time.Second)
-				sl.scrapeAndReport(time.Time{}, ts, nil)
-				require.NoError(b, scraper.lastError)
-			}
-		})
+		}
 	}
 }
 
@@ -1989,7 +3093,7 @@ func testSetOptionsHandlingStaleness(t *testing.T, appV2 bool) {
 	select {
 	case <-signal:
 	case <-time.After(10 * time.Second):
-		t.Fatalf("Scrape wasn't stopped.")
+		t.Fatal("Scrape wasn't stopped.")
 	}
 
 	ctx1, cancel := context.WithCancel(t.Context())
@@ -2209,6 +3313,142 @@ func testScrapeLoopRunCreatesStaleMarkersOnSampleLimit(t *testing.T, appV2 bool)
 	for i := 23; i <= 26; i++ {
 		require.True(t, value.IsStaleNaN(got[i].V),
 			"Appended second sample not as expected. Wanted: stale NaN Got: %x", math.Float64bits(got[i].V))
+	}
+}
+
+func TestScrapeLoopSeriesRefChange(t *testing.T) {
+	foreachAppendable(t, func(t *testing.T, appV2 bool) {
+		testScrapeLoopSeriesRefChange(t, appV2)
+	})
+}
+
+// testScrapeLoopSeriesRefChange tests scrapes against a storage that hands out a new
+// storage.SeriesRef for a series it already gave a reference for, e.g. because the
+// series was garbage collected and had to be recreated. The scrape loop has to pick up
+// the new reference, without mistaking the series for one that stopped being exposed.
+func testScrapeLoopSeriesRefChange(t *testing.T, appV2 bool) {
+	const scrapeInterval = 15 * time.Second
+
+	firstScrape := time.Unix(1600000000, 0)
+	metricA := labels.FromStrings(model.MetricNameLabel, "metric_a")
+
+	scrapeTime := func(scrape int) time.Time {
+		return firstScrape.Add(time.Duration(scrape) * scrapeInterval)
+	}
+	sampleAtMs := func(ms int64, v float64) teststorage.Sample {
+		return teststorage.Sample{L: metricA, T: ms, V: v}
+	}
+	sampleAt := func(scrape int, v float64) teststorage.Sample {
+		return sampleAtMs(timestamp.FromTime(scrapeTime(scrape)), v)
+	}
+	staleAt := func(scrape int) teststorage.Sample {
+		return sampleAt(scrape, math.Float64frombits(value.StaleNaN))
+	}
+
+	// A timestamp the target exposes for the second scrape, one second before that
+	// scrape happens, so it is visible whether the scrape loop honoured it.
+	explicitTS := timestamp.FromTime(scrapeTime(1)) - 1000
+	explicitTSBody := fmt.Sprintf("metric_a 2 %d\n", explicitTS)
+
+	// scrape is a single scrape of the target, together with the reference the storage
+	// hands out while it is appended.
+	type scrape struct {
+		body string
+		ref  storage.SeriesRef
+	}
+
+	for _, tc := range []struct {
+		name string
+
+		scrapes []scrape
+
+		expectedSamples []teststorage.Sample
+		expectedRef     storage.SeriesRef // Reference cached once all scrapes are done.
+	}{
+		{
+			name: "reference stays the same",
+			scrapes: []scrape{
+				{body: "metric_a 1\n", ref: 100},
+				{body: "metric_a 2\n", ref: 100},
+			},
+			expectedSamples: []teststorage.Sample{sampleAt(0, 1), sampleAt(1, 2)},
+			expectedRef:     100,
+		},
+		{
+			name: "reference changes while the series is still exposed",
+			scrapes: []scrape{
+				{body: "metric_a 1\n", ref: 100},
+				{body: "metric_a 2\n", ref: 200},
+				{body: "metric_a 3\n", ref: 200},
+			},
+			expectedSamples: []teststorage.Sample{sampleAt(0, 1), sampleAt(1, 2), sampleAt(2, 3)},
+			expectedRef:     200,
+		},
+		{
+			name: "reference changes on every scrape",
+			scrapes: []scrape{
+				{body: "metric_a 1\n", ref: 100},
+				{body: "metric_a 2\n", ref: 200},
+				{body: "metric_a 3\n", ref: 300},
+			},
+			expectedSamples: []teststorage.Sample{sampleAt(0, 1), sampleAt(1, 2), sampleAt(2, 3)},
+			expectedRef:     300,
+		},
+		{
+			name: "series stops being exposed after the reference changed",
+			scrapes: []scrape{
+				{body: "metric_a 1\n", ref: 100},
+				{body: "metric_a 2\n", ref: 200},
+				{body: "", ref: 200},
+			},
+			expectedSamples: []teststorage.Sample{sampleAt(0, 1), sampleAt(1, 2), staleAt(2)},
+			expectedRef:     200,
+		},
+		// A series that starts carrying an explicit timestamp drops out of the staleness
+		// tracking and gets a stale marker, even though the target still exposes it. The
+		// next two cases pin that down, to make sure a changing reference does not make
+		// the scrape loop behave differently than an unchanged one.
+		{
+			name: "explicit timestamp appears, reference stays the same",
+			scrapes: []scrape{
+				{body: "metric_a 1\n", ref: 100},
+				{body: explicitTSBody, ref: 100},
+			},
+			expectedSamples: []teststorage.Sample{sampleAt(0, 1), sampleAtMs(explicitTS, 2), staleAt(1)},
+			expectedRef:     100,
+		},
+		{
+			name: "explicit timestamp appears and the reference changes",
+			scrapes: []scrape{
+				{body: "metric_a 1\n", ref: 100},
+				{body: explicitTSBody, ref: 200},
+			},
+			expectedSamples: []teststorage.Sample{sampleAt(0, 1), sampleAtMs(explicitTS, 2), staleAt(1)},
+			expectedRef:     200,
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			var ref storage.SeriesRef
+			app := teststorage.NewAppendable().WithRefFn(func(labels.Labels) storage.SeriesRef {
+				return ref
+			})
+			sl, _ := newTestScrapeLoop(t, withAppendable(app, appV2))
+
+			for i, s := range tc.scrapes {
+				ref = s.ref
+
+				appender := sl.appender()
+				_, _, _, err := appender.append([]byte(s.body), "text/plain", scrapeTime(i))
+				require.NoError(t, err)
+				require.NoError(t, appender.Commit())
+			}
+
+			teststorage.RequireEqual(t, tc.expectedSamples, app.ResultSamples())
+
+			ce, ok := sl.cache.series["metric_a"]
+			require.True(t, ok)
+			require.Equal(t, tc.expectedRef, ce.ref)
+		})
 	}
 }
 
@@ -2511,10 +3751,9 @@ func testScrapeLoopAppendCacheEntryButErrNotFound(t *testing.T, appV2 bool) {
 	_, err := p.Next()
 	require.NoError(t, err)
 	p.Labels(&lset)
-	hash := lset.Hash()
 
 	// Create a fake entry in the cache
-	sl.cache.addRef(metric, fakeRef, lset, hash)
+	sl.cache.addRef(metric, fakeRef, lset)
 	now := time.Now()
 
 	app := sl.appender()
@@ -3674,7 +4913,8 @@ func testScrapeLoopAppendGracefullyIfAmendOrOutOfOrderOrOutOfBounds(t *testing.T
 			default:
 				return nil
 			}
-		}, nil, nil)
+		}, nil, nil,
+	)
 	sl, _ := newTestScrapeLoop(t, withAppendable(appTest, appV2))
 
 	now := time.Unix(1, 0)
@@ -3694,6 +4934,57 @@ func testScrapeLoopAppendGracefullyIfAmendOrOutOfOrderOrOutOfBounds(t *testing.T
 	require.Equal(t, 4, total)
 	require.Equal(t, 4, added)
 	require.Equal(t, 1, seriesAdded)
+}
+
+func TestScrapeLoopCreatesStaleMarkersOnOOOAppend(t *testing.T) {
+	foreachAppendable(t, func(t *testing.T, appV2 bool) {
+		testScrapeLoopCreatesStaleMarkersOnOOOAppend(t, appV2)
+	})
+}
+
+func testScrapeLoopCreatesStaleMarkersOnOOOAppend(t *testing.T, appV2 bool) {
+	appTest := teststorage.NewAppendable()
+	sl, _ := newTestScrapeLoop(t, withAppendable(appTest, appV2))
+
+	now := time.Unix(1, 0)
+	app := sl.appender()
+	_, _, _, err := app.append([]byte("metric1 1\n"), "text/plain", now)
+	require.NoError(t, err)
+	require.NoError(t, app.Commit())
+
+	metric1Calls := 0
+	// The test storage doesn't track order, so it cannot generate OOO error,
+	// we have to emulate it.
+	appTest.WithErrs(func(ls labels.Labels) error {
+		switch ls.Get(model.MetricNameLabel) {
+		case "metric1":
+			metric1Calls++
+			// Only return error on the first append, the second one will be the
+			// staleness marker.
+			if metric1Calls == 1 {
+				return storage.ErrOutOfOrderSample
+			}
+			return nil
+		default:
+			return nil
+		}
+	}, nil, nil)
+
+	now2 := time.Unix(2, 0)
+	app2 := sl.appender()
+	_, _, _, err = app2.append([]byte("metric1 2\n"), "text/plain", now2)
+	require.NoError(t, err)
+	require.NoError(t, app2.Commit())
+
+	samples := appTest.ResultSamples()
+	foundStale := false
+	for _, s := range samples {
+		if s.L.Get(model.MetricNameLabel) == "metric1" && value.IsStaleNaN(s.V) {
+			foundStale = true
+			break
+		}
+	}
+	require.True(t, foundStale, "Stale NaN marker was expected for metric1 but was not found")
 }
 
 func TestScrapeLoopOutOfBoundsTimeError(t *testing.T) {
@@ -3742,25 +5033,43 @@ func TestAcceptHeader(t *testing.T) {
 			name:            "default scrape protocols with underscore escaping",
 			scrapeProtocols: config.DefaultScrapeProtocols,
 			scheme:          model.UnderscoreEscaping,
-			expectedHeader:  "application/openmetrics-text;version=1.0.0;escaping=underscores;q=0.6,application/openmetrics-text;version=0.0.1;q=0.5,text/plain;version=1.0.0;escaping=underscores;q=0.4,text/plain;version=0.0.4;q=0.3,*/*;q=0.2",
+			expectedHeader:  "application/openmetrics-text;version=1.0.0;escaping=underscores;q=0.8,application/openmetrics-text;version=0.0.1;q=0.7,text/plain;version=1.0.0;escaping=underscores;q=0.6,text/plain;version=0.0.4;q=0.5,*/*;q=0.4",
 		},
 		{
 			name:            "default proto first scrape protocols with underscore escaping",
 			scrapeProtocols: config.DefaultProtoFirstScrapeProtocols,
 			scheme:          model.DotsEscaping,
-			expectedHeader:  "application/vnd.google.protobuf;proto=io.prometheus.client.MetricFamily;encoding=delimited;q=0.6,application/openmetrics-text;version=1.0.0;escaping=dots;q=0.5,application/openmetrics-text;version=0.0.1;q=0.4,text/plain;version=1.0.0;escaping=dots;q=0.3,text/plain;version=0.0.4;q=0.2,*/*;q=0.1",
+			expectedHeader:  "application/vnd.google.protobuf;proto=io.prometheus.client.MetricFamily;encoding=delimited;q=0.8,application/openmetrics-text;version=1.0.0;escaping=dots;q=0.7,application/openmetrics-text;version=0.0.1;q=0.6,text/plain;version=1.0.0;escaping=dots;q=0.5,text/plain;version=0.0.4;q=0.4,*/*;q=0.3",
 		},
 		{
 			name:            "default scrape protocols with no escaping",
 			scrapeProtocols: config.DefaultScrapeProtocols,
 			scheme:          model.NoEscaping,
-			expectedHeader:  "application/openmetrics-text;version=1.0.0;escaping=allow-utf-8;q=0.6,application/openmetrics-text;version=0.0.1;q=0.5,text/plain;version=1.0.0;escaping=allow-utf-8;q=0.4,text/plain;version=0.0.4;q=0.3,*/*;q=0.2",
+			expectedHeader:  "application/openmetrics-text;version=1.0.0;escaping=allow-utf-8;q=0.8,application/openmetrics-text;version=0.0.1;q=0.7,text/plain;version=1.0.0;escaping=allow-utf-8;q=0.6,text/plain;version=0.0.4;q=0.5,*/*;q=0.4",
 		},
 		{
 			name:            "default proto first scrape protocols with no escaping",
 			scrapeProtocols: config.DefaultProtoFirstScrapeProtocols,
 			scheme:          model.NoEscaping,
-			expectedHeader:  "application/vnd.google.protobuf;proto=io.prometheus.client.MetricFamily;encoding=delimited;q=0.6,application/openmetrics-text;version=1.0.0;escaping=allow-utf-8;q=0.5,application/openmetrics-text;version=0.0.1;q=0.4,text/plain;version=1.0.0;escaping=allow-utf-8;q=0.3,text/plain;version=0.0.4;q=0.2,*/*;q=0.1",
+			expectedHeader:  "application/vnd.google.protobuf;proto=io.prometheus.client.MetricFamily;encoding=delimited;q=0.8,application/openmetrics-text;version=1.0.0;escaping=allow-utf-8;q=0.7,application/openmetrics-text;version=0.0.1;q=0.6,text/plain;version=1.0.0;escaping=allow-utf-8;q=0.5,text/plain;version=0.0.4;q=0.4,*/*;q=0.3",
+		},
+		{
+			name:            "openmetrics 2.0.0 and 2.0.0-rc first, with no escaping",
+			scrapeProtocols: []config.ScrapeProtocol{config.OpenMetricsText2_0_0, config.OpenMetricsText2_0_0_rc, config.OpenMetricsText1_0_0},
+			scheme:          model.NoEscaping,
+			expectedHeader:  "application/openmetrics-text;version=2.0.0;escaping=allow-utf-8;q=0.8,application/openmetrics-text;version=2.0.0-rc;escaping=allow-utf-8;q=0.7,application/openmetrics-text;version=1.0.0;escaping=allow-utf-8;q=0.6,*/*;q=0.5",
+		},
+		{
+			name:            "openmetrics 2.0.0 first, with underscore escaping",
+			scrapeProtocols: []config.ScrapeProtocol{config.OpenMetricsText2_0_0, config.OpenMetricsText1_0_0},
+			scheme:          model.UnderscoreEscaping,
+			expectedHeader:  "application/openmetrics-text;version=2.0.0;escaping=underscores;q=0.8,application/openmetrics-text;version=1.0.0;escaping=underscores;q=0.7,*/*;q=0.6",
+		},
+		{
+			name:            "openmetrics 2.0.0 only, with no escaping",
+			scrapeProtocols: []config.ScrapeProtocol{config.OpenMetricsText2_0_0},
+			scheme:          model.NoEscaping,
+			expectedHeader:  "application/openmetrics-text;version=2.0.0;escaping=allow-utf-8;q=0.8,*/*;q=0.7",
 		},
 	}
 
@@ -3943,6 +5252,189 @@ func TestTargetScraperScrapeOK(t *testing.T) {
 	}
 }
 
+func TestTargetScraperScrapeOverUnixSocket(t *testing.T) {
+	// t.TempDir can produce paths exceeding the macOS 104-char socket
+	// path limit, so we create our own temp dir in /tmp.
+	tempDir, err := os.MkdirTemp("", "uds-scrape-test")
+	require.NoError(t, err)
+	t.Cleanup(func() { os.RemoveAll(tempDir) })
+	socketPath := filepath.Join(tempDir, "s")
+
+	// Create a Unix domain socket listener.
+	listener, err := net.Listen("unix", socketPath)
+	require.NoError(t, err)
+	defer listener.Close()
+
+	// Serve HTTP over the Unix socket.
+	server := &http.Server{
+		Handler: http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			require.Equal(t, "localhost", r.Host)
+			w.Header().Set("Content-Type", "text/plain; version=0.0.4")
+			_, _ = w.Write([]byte("metric_a 1\nmetric_b 2\n"))
+		}),
+	}
+	go server.Serve(listener)
+	defer server.Close()
+
+	// Create a client with a DialContext that routes to the unix socket.
+	client, err := newUnixSocketScrapeClient(socketPath, config_util.HTTPClientConfig{}, "test_job")
+	require.NoError(t, err)
+
+	// No __address__ set — falls back to "localhost".
+	ts := &targetScraper{
+		Target: &Target{
+			labels: labels.FromStrings(
+				model.SchemeLabel, "http",
+				model.MetricsPathLabel, "/metrics",
+				UnixSocketLabel, socketPath,
+			),
+			scrapeConfig: &config.ScrapeConfig{},
+		},
+		client:       client,
+		timeout:      1500 * time.Millisecond,
+		acceptHeader: acceptHeader(config.DefaultScrapeProtocols, model.UnderscoreEscaping),
+	}
+
+	var buf bytes.Buffer
+	resp, err := ts.scrape(context.Background())
+	require.NoError(t, err)
+
+	contentType, err := ts.readResponse(context.Background(), resp, &buf)
+	require.NoError(t, err)
+	require.Equal(t, "text/plain; version=0.0.4", contentType)
+	require.Equal(t, "metric_a 1\nmetric_b 2\n", buf.String())
+}
+
+func TestTargetScraperScrapeOverUnixSocketTLS(t *testing.T) {
+	tempDir, err := os.MkdirTemp("", "uds-tls-test")
+	require.NoError(t, err)
+	t.Cleanup(func() { os.RemoveAll(tempDir) })
+	socketPath := filepath.Join(tempDir, "s")
+
+	// Create a Unix domain socket listener and wrap it with TLS using
+	// the pre-generated test certificates (CN=localhost).
+	listener, err := net.Listen("unix", socketPath)
+	require.NoError(t, err)
+	defer listener.Close()
+
+	tlsListener := tls.NewListener(listener, newTLSConfig("server", t))
+
+	// Serve HTTPS over the Unix socket. The pre-generated certificate
+	// has SAN IP Address:127.0.0.1, so the __address__ must match.
+	server := &http.Server{
+		Handler: http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			require.Equal(t, "127.0.0.1", r.Host)
+			w.Header().Set("Content-Type", "text/plain; version=0.0.4")
+			_, _ = w.Write([]byte("metric_a 1\nmetric_b 2\n"))
+		}),
+	}
+	go server.Serve(tlsListener)
+	defer server.Close()
+
+	// Create a client configured to trust the test CA.
+	client, err := newUnixSocketScrapeClient(socketPath, config_util.HTTPClientConfig{
+		TLSConfig: config_util.TLSConfig{
+			CAFile: caCertPath,
+		},
+	}, "test_job")
+	require.NoError(t, err)
+
+	ts := &targetScraper{
+		Target: &Target{
+			labels: labels.FromStrings(
+				model.SchemeLabel, "https",
+				model.AddressLabel, "127.0.0.1",
+				model.MetricsPathLabel, "/metrics",
+				UnixSocketLabel, socketPath,
+			),
+			scrapeConfig: &config.ScrapeConfig{},
+		},
+		client:       client,
+		timeout:      1500 * time.Millisecond,
+		acceptHeader: acceptHeader(config.DefaultScrapeProtocols, model.UnderscoreEscaping),
+	}
+
+	var buf bytes.Buffer
+	resp, err := ts.scrape(context.Background())
+	require.NoError(t, err)
+
+	contentType, err := ts.readResponse(context.Background(), resp, &buf)
+	require.NoError(t, err)
+	require.Equal(t, "text/plain; version=0.0.4", contentType)
+	require.Equal(t, "metric_a 1\nmetric_b 2\n", buf.String())
+}
+
+func TestTargetScraperUnixSocketConnectionsAreNotShared(t *testing.T) {
+	// Two targets sharing the same __address__ but scraped through different
+	// unix sockets must never exchange pooled keep-alive connections,
+	// otherwise one target would receive the other target's metrics.
+	tempDir, err := os.MkdirTemp("", "uds-pool-test")
+	require.NoError(t, err)
+	t.Cleanup(func() { os.RemoveAll(tempDir) })
+
+	payloads := map[string]string{}
+	var targets []*Target
+	for i := range 2 {
+		socketPath := filepath.Join(tempDir, fmt.Sprintf("s%d", i))
+		listener, err := net.Listen("unix", socketPath)
+		require.NoError(t, err)
+		t.Cleanup(func() { listener.Close() })
+
+		payload := fmt.Sprintf("metric_a %d\n", i)
+		payloads[socketPath] = payload
+		server := &http.Server{
+			Handler: http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+				w.Header().Set("Content-Type", "text/plain; version=0.0.4")
+				_, _ = w.Write([]byte(payload))
+			}),
+		}
+		go server.Serve(listener)
+		t.Cleanup(func() { server.Close() })
+
+		targets = append(targets, &Target{
+			labels: labels.FromStrings(
+				model.SchemeLabel, "http",
+				model.AddressLabel, "localhost:9090",
+				model.MetricsPathLabel, "/metrics",
+				model.ScrapeIntervalLabel, "1s",
+				model.ScrapeTimeoutLabel, "1s",
+				UnixSocketLabel, socketPath,
+			),
+			scrapeConfig: &config.ScrapeConfig{},
+		})
+	}
+
+	var scrapers []*targetScraper
+	sp := newTestScrapePool(t, nil, false, func(opts scrapeLoopOptions) loop {
+		scrapers = append(scrapers, opts.scraper.(*targetScraper))
+		return &testLoop{
+			startFunc: func(time.Duration, time.Duration, chan<- error) {},
+			stopFunc:  func() {},
+		}
+	})
+	client, err := newScrapeClient(config_util.HTTPClientConfig{}, "test_job")
+	require.NoError(t, err)
+	sp.client = client
+
+	sp.sync(targets)
+	require.Len(t, scrapers, 2)
+
+	// Scrape each target twice so the second round is served from pooled
+	// keep-alive connections.
+	for range 2 {
+		for _, ts := range scrapers {
+			var buf bytes.Buffer
+			resp, err := ts.scrape(context.Background())
+			require.NoError(t, err)
+			_, err = ts.readResponse(context.Background(), resp, &buf)
+			require.NoError(t, err)
+			require.Equal(t, payloads[ts.labels.Get(UnixSocketLabel)], buf.String())
+		}
+	}
+
+	sp.stop()
+}
+
 func TestTargetScrapeScrapeCancel(t *testing.T) {
 	block := make(chan struct{})
 
@@ -4037,73 +5529,163 @@ func TestTargetScraperBodySizeLimit(t *testing.T) {
 		bodySizeLimit = 15
 		responseBody  = "metric_a 1\nmetric_b 2\n"
 	)
-	var gzipResponse bool
-	server := httptest.NewServer(
-		http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
-			w.Header().Set("Content-Type", `text/plain; version=0.0.4`)
-			if gzipResponse {
-				w.Header().Set("Content-Encoding", "gzip")
-				gw := gzip.NewWriter(w)
-				defer func() { _ = gw.Close() }()
-				_, _ = gw.Write([]byte(responseBody))
+
+	for _, encoding := range []string{"identity", "gzip", "zstd"} {
+		t.Run(encoding, func(t *testing.T) {
+			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+				w.Header().Set("Content-Type", `text/plain; version=0.0.4`)
+				switch encoding {
+				case "gzip":
+					w.Header().Set("Content-Encoding", encoding)
+					gw := gzip.NewWriter(w)
+					defer func() { _ = gw.Close() }()
+					_, _ = gw.Write([]byte(responseBody))
+				case "zstd":
+					w.Header().Set("Content-Encoding", encoding)
+					zw, err := zstd.NewWriter(w)
+					require.NoError(t, err)
+					defer func() { _ = zw.Close() }()
+					_, _ = zw.Write([]byte(responseBody))
+				default:
+					_, _ = w.Write([]byte(responseBody))
+				}
+			}))
+			defer server.Close()
+
+			serverURL, err := url.Parse(server.URL)
+			require.NoError(t, err)
+
+			ts := &targetScraper{
+				Target: &Target{
+					labels: labels.FromStrings(
+						model.SchemeLabel, serverURL.Scheme,
+						model.AddressLabel, serverURL.Host,
+					),
+					scrapeConfig: &config.ScrapeConfig{},
+				},
+				client:        http.DefaultClient,
+				bodySizeLimit: bodySizeLimit,
+				acceptHeader:  acceptHeader(config.DefaultGlobalConfig.ScrapeProtocols, model.UnderscoreEscaping),
+				metrics:       newTestScrapeMetrics(t),
+				enableZstd:    true,
+				logger:        promslog.NewNopLogger(),
+			}
+			var buf bytes.Buffer
+
+			resp, err := ts.scrape(context.Background())
+			require.NoError(t, err)
+			_, err = ts.readResponse(context.Background(), resp, &buf)
+			require.ErrorIs(t, err, errBodySizeLimit)
+			require.Equal(t, bodySizeLimit, buf.Len())
+
+			buf.Reset()
+			ts.bodySizeLimit = 0
+			resp, err = ts.scrape(context.Background())
+			require.NoError(t, err)
+			_, err = ts.readResponse(context.Background(), resp, &buf)
+			require.NoError(t, err)
+			require.Equal(t, responseBody, buf.String())
+		})
+	}
+}
+
+func TestTargetScraperMalformedCompressedResponse(t *testing.T) {
+	for _, encoding := range []string{"gzip", "zstd"} {
+		t.Run(encoding, func(t *testing.T) {
+			resp := &http.Response{
+				StatusCode: http.StatusOK,
+				Header: http.Header{
+					"Content-Encoding": []string{encoding},
+				},
+				Body: io.NopCloser(strings.NewReader("not compressed")),
+			}
+			ts := &targetScraper{
+				bodySizeLimit: math.MaxInt64,
+				metrics:       newTestScrapeMetrics(t),
+				enableZstd:    true,
+				logger:        promslog.NewNopLogger(),
+			}
+
+			_, err := ts.readResponse(context.Background(), resp, io.Discard)
+			require.Error(t, err)
+		})
+	}
+}
+
+func TestTargetScraperZstdWindowLimit(t *testing.T) {
+	encoder, err := zstd.NewWriter(nil, zstd.WithWindowSize(2*zstdMaxWindowSize))
+	require.NoError(t, err)
+	t.Cleanup(func() { encoder.Close() })
+
+	compressed := encoder.EncodeAll(bytes.Repeat([]byte("a"), zstdMaxWindowSize+1), nil)
+	resp := &http.Response{
+		StatusCode: http.StatusOK,
+		Header: http.Header{
+			"Content-Encoding": []string{"zstd"},
+		},
+		Body: io.NopCloser(bytes.NewReader(compressed)),
+	}
+	ts := &targetScraper{
+		bodySizeLimit: math.MaxInt64,
+		metrics:       newTestScrapeMetrics(t),
+		enableZstd:    true,
+		logger:        promslog.NewNopLogger(),
+	}
+
+	_, err = ts.readResponse(context.Background(), resp, io.Discard)
+	require.ErrorContains(t, err, "decompressed size exceeds configured limit")
+}
+
+func TestTargetScraperZstdFeatureFlag(t *testing.T) {
+	const responseBody = "metric_a 1\nmetric_b 2\n"
+
+	encoder, err := zstd.NewWriter(nil)
+	require.NoError(t, err)
+	t.Cleanup(func() { encoder.Close() })
+	compressed := encoder.EncodeAll([]byte(responseBody), nil)
+
+	for _, tc := range []struct {
+		name       string
+		enableZstd bool
+		expectErr  string
+	}{
+		{
+			name:       "enabled decompresses the body",
+			enableZstd: true,
+		},
+		{
+			name:       "disabled rejects the response",
+			enableZstd: false,
+			expectErr:  "zstd-scrape",
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			resp := &http.Response{
+				StatusCode: http.StatusOK,
+				Header: http.Header{
+					"Content-Encoding": []string{"zstd"},
+				},
+				Body: io.NopCloser(bytes.NewReader(compressed)),
+			}
+			ts := &targetScraper{
+				bodySizeLimit: math.MaxInt64,
+				metrics:       newTestScrapeMetrics(t),
+				enableZstd:    tc.enableZstd,
+				logger:        promslog.NewNopLogger(),
+			}
+
+			var buf bytes.Buffer
+			_, err := ts.readResponse(context.Background(), resp, &buf)
+			if tc.expectErr != "" {
+				require.ErrorContains(t, err, tc.expectErr)
+				// The undecoded frame must not reach the parser.
+				require.Empty(t, buf.String())
 				return
 			}
-			_, _ = w.Write([]byte(responseBody))
-		}),
-	)
-	defer server.Close()
-
-	serverURL, err := url.Parse(server.URL)
-	if err != nil {
-		panic(err)
+			require.NoError(t, err)
+			require.Equal(t, responseBody, buf.String())
+		})
 	}
-
-	ts := &targetScraper{
-		Target: &Target{
-			labels: labels.FromStrings(
-				model.SchemeLabel, serverURL.Scheme,
-				model.AddressLabel, serverURL.Host,
-			),
-			scrapeConfig: &config.ScrapeConfig{},
-		},
-		client:        http.DefaultClient,
-		bodySizeLimit: bodySizeLimit,
-		acceptHeader:  acceptHeader(config.DefaultGlobalConfig.ScrapeProtocols, model.UnderscoreEscaping),
-		metrics:       newTestScrapeMetrics(t),
-	}
-	var buf bytes.Buffer
-
-	// Target response uncompressed body, scrape with body size limit.
-	resp, err := ts.scrape(context.Background())
-	require.NoError(t, err)
-	_, err = ts.readResponse(context.Background(), resp, &buf)
-	require.ErrorIs(t, err, errBodySizeLimit)
-	require.Equal(t, bodySizeLimit, buf.Len())
-	// Target response gzip compressed body, scrape with body size limit.
-	gzipResponse = true
-	buf.Reset()
-	resp, err = ts.scrape(context.Background())
-	require.NoError(t, err)
-	_, err = ts.readResponse(context.Background(), resp, &buf)
-	require.ErrorIs(t, err, errBodySizeLimit)
-	require.Equal(t, bodySizeLimit, buf.Len())
-	// Target response uncompressed body, scrape without body size limit.
-	gzipResponse = false
-	buf.Reset()
-	ts.bodySizeLimit = 0
-	resp, err = ts.scrape(context.Background())
-	require.NoError(t, err)
-	_, err = ts.readResponse(context.Background(), resp, &buf)
-	require.NoError(t, err)
-	require.Len(t, responseBody, buf.Len())
-	// Target response gzip compressed body, scrape without body size limit.
-	gzipResponse = true
-	buf.Reset()
-	resp, err = ts.scrape(context.Background())
-	require.NoError(t, err)
-	_, err = ts.readResponse(context.Background(), resp, &buf)
-	require.NoError(t, err)
-	require.Len(t, responseBody, buf.Len())
 }
 
 // testScraper implements the scraper interface and allows setting values
@@ -4707,7 +6289,7 @@ func testScrapeReportLimit(t *testing.T, appV2 bool) {
 
 	select {
 	case <-time.After(5 * time.Second):
-		t.Fatalf("target was not scraped twice")
+		t.Fatal("target was not scraped twice")
 	case <-scrapedTwice:
 		// If the target has been scraped twice, report samples from the first
 		// scrape have been inserted in the database.
@@ -4767,7 +6349,7 @@ func testScrapeUTF8(t *testing.T, appV2 bool) {
 
 	select {
 	case <-time.After(5 * time.Second):
-		t.Fatalf("target was not scraped twice")
+		t.Fatal("target was not scraped twice")
 	case <-scrapedTwice:
 		// If the target has been scraped twice, report samples from the first
 		// scrape have been inserted in the database.
@@ -4928,6 +6510,53 @@ func testTargetScrapeIntervalAndTimeoutRelabel(t *testing.T, appV2 bool) {
 	require.Equal(t, "750ms", sp.ActiveTargets()[0].labels.Get(model.ScrapeTimeoutLabel))
 }
 
+func TestTargetScrapeConvertClassicHistogramsToNHCBRelabel(t *testing.T) {
+	foreachAppendable(t, func(t *testing.T, appV2 bool) {
+		testTargetScrapeConvertClassicHistogramsToNHCBRelabel(t, appV2)
+	})
+}
+
+func testTargetScrapeConvertClassicHistogramsToNHCBRelabel(t *testing.T, appV2 bool) {
+	interval, _ := model.ParseDuration("2s")
+	timeout, _ := model.ParseDuration("500ms")
+	cfg := &config.ScrapeConfig{
+		ScrapeInterval:             interval,
+		ScrapeTimeout:              timeout,
+		MetricNameValidationScheme: model.UTF8Validation,
+		MetricNameEscapingScheme:   model.AllowUTF8,
+		RelabelConfigs: []*relabel.Config{
+			{
+				SourceLabels:         model.LabelNames{convertClassicHistogramsToNHCBLabel},
+				Regex:                relabel.MustNewRegexp("false"),
+				Replacement:          "true",
+				TargetLabel:          convertClassicHistogramsToNHCBLabel,
+				Action:               relabel.Replace,
+				NameValidationScheme: model.UTF8Validation,
+			},
+		},
+	}
+
+	sa := selectAppendable(teststorage.NewAppendable(), appV2)
+	sp, _ := newScrapePool(cfg, sa.V1(), sa.V2(), 0, nil, nil, &Options{}, newTestScrapeMetrics(t))
+	tgts := []*targetgroup.Group{
+		{
+			Targets: []model.LabelSet{{model.AddressLabel: "127.0.0.1:9090"}},
+		},
+	}
+
+	sp.Sync(tgts)
+	defer sp.stop()
+
+	require.Equal(t, "true", sp.ActiveTargets()[0].labels.Get(convertClassicHistogramsToNHCBLabel))
+
+	sp.targetMtx.Lock()
+	require.Len(t, sp.loops, 1)
+	for _, l := range sp.loops {
+		require.True(t, l.(*scrapeLoop).convertClassicHistToNHCB)
+	}
+	sp.targetMtx.Unlock()
+}
+
 // Testing whether we can remove trailing .0 from histogram 'le' and summary 'quantile' labels.
 func TestLeQuantileReLabel(t *testing.T) {
 	foreachAppendable(t, func(t *testing.T, appV2 bool) {
@@ -5021,7 +6650,7 @@ test_summary_count 199
 
 	select {
 	case <-time.After(5 * time.Second):
-		t.Fatalf("target was not scraped")
+		t.Fatal("target was not scraped")
 	case <-scrapedTwice:
 	}
 
@@ -5199,6 +6828,21 @@ metric: <
 `, name, classic, expo)
 	}
 
+	genTestHistOM2 := func(name string, hasClassic, hasExponential bool) string {
+		fields := []string{"count:1", "sum:10"}
+		if hasExponential {
+			fields = append(fields, "schema:3", "zero_threshold:2.938735877055719e-39", "zero_count:0", "positive_spans:[2:1]", "positive_buckets:[1]")
+		}
+		if hasClassic {
+			fields = append(fields, "bucket:[0.005:0,0.01:0,0.025:0,0.05:0,0.1:0,0.25:0,0.5:0,1.0:0,2.5:0,5.0:0,10.0:1,+Inf:1]")
+		}
+		return fmt.Sprintf(`
+# HELP %s This is a histogram with default buckets
+# TYPE %s histogram
+%s{address="0.0.0.0",port="5001"} {%s}
+`, name, name, name, strings.Join(fields, ","))
+	}
+
 	metricsTexts := map[string]struct {
 		text           []string
 		contentType    string
@@ -5328,6 +6972,91 @@ metric: <
 				genTestHistProto("test_histogram_3", false, true),
 			},
 			contentType:    "application/vnd.google.protobuf",
+			hasExponential: true,
+		},
+		"openmetrics2": {
+			text: []string{
+				genTestCounterText("test_metric_1"),
+				genTestCounterText("test_metric_1_count"),
+				genTestCounterText("test_metric_1_sum"),
+				genTestCounterText("test_metric_1_bucket"),
+				genTestHistOM2("test_histogram_1", true, false),
+				genTestCounterText("test_metric_2"),
+				genTestCounterText("test_metric_2_count"),
+				genTestCounterText("test_metric_2_sum"),
+				genTestCounterText("test_metric_2_bucket"),
+				genTestHistOM2("test_histogram_2", true, false),
+				genTestCounterText("test_metric_3"),
+				genTestCounterText("test_metric_3_count"),
+				genTestCounterText("test_metric_3_sum"),
+				genTestCounterText("test_metric_3_bucket"),
+				genTestHistOM2("test_histogram_3", true, false),
+			},
+			contentType: "application/openmetrics-text; version=2.0.0",
+			hasClassic:  true,
+		},
+		"openmetrics2, in different order": {
+			text: []string{
+				genTestHistOM2("test_histogram_1", true, false),
+				genTestCounterText("test_metric_1"),
+				genTestCounterText("test_metric_1_count"),
+				genTestCounterText("test_metric_1_sum"),
+				genTestCounterText("test_metric_1_bucket"),
+				genTestHistOM2("test_histogram_2", true, false),
+				genTestCounterText("test_metric_2"),
+				genTestCounterText("test_metric_2_count"),
+				genTestCounterText("test_metric_2_sum"),
+				genTestCounterText("test_metric_2_bucket"),
+				genTestHistOM2("test_histogram_3", true, false),
+				genTestCounterText("test_metric_3"),
+				genTestCounterText("test_metric_3_count"),
+				genTestCounterText("test_metric_3_sum"),
+				genTestCounterText("test_metric_3_bucket"),
+			},
+			contentType: "application/openmetrics-text; version=2.0.0",
+			hasClassic:  true,
+		},
+		"openmetrics2, with additional native exponential histogram": {
+			text: []string{
+				genTestCounterText("test_metric_1"),
+				genTestCounterText("test_metric_1_count"),
+				genTestCounterText("test_metric_1_sum"),
+				genTestCounterText("test_metric_1_bucket"),
+				genTestHistOM2("test_histogram_1", true, true),
+				genTestCounterText("test_metric_2"),
+				genTestCounterText("test_metric_2_count"),
+				genTestCounterText("test_metric_2_sum"),
+				genTestCounterText("test_metric_2_bucket"),
+				genTestHistOM2("test_histogram_2", true, true),
+				genTestCounterText("test_metric_3"),
+				genTestCounterText("test_metric_3_count"),
+				genTestCounterText("test_metric_3_sum"),
+				genTestCounterText("test_metric_3_bucket"),
+				genTestHistOM2("test_histogram_3", true, true),
+			},
+			contentType:    "application/openmetrics-text; version=2.0.0",
+			hasClassic:     true,
+			hasExponential: true,
+		},
+		"openmetrics2, with only native exponential histogram": {
+			text: []string{
+				genTestCounterText("test_metric_1"),
+				genTestCounterText("test_metric_1_count"),
+				genTestCounterText("test_metric_1_sum"),
+				genTestCounterText("test_metric_1_bucket"),
+				genTestHistOM2("test_histogram_1", false, true),
+				genTestCounterText("test_metric_2"),
+				genTestCounterText("test_metric_2_count"),
+				genTestCounterText("test_metric_2_sum"),
+				genTestCounterText("test_metric_2_bucket"),
+				genTestHistOM2("test_histogram_2", false, true),
+				genTestCounterText("test_metric_3"),
+				genTestCounterText("test_metric_3_count"),
+				genTestCounterText("test_metric_3_sum"),
+				genTestCounterText("test_metric_3_bucket"),
+				genTestHistOM2("test_histogram_3", false, true),
+			},
+			contentType:    "application/openmetrics-text; version=2.0.0",
 			hasExponential: true,
 		},
 	}
@@ -5468,6 +7197,7 @@ metric: <
 					sl.alwaysScrapeClassicHist = tc.alwaysScrapeClassicHistograms
 					sl.convertClassicHistToNHCB = tc.convertClassicHistToNHCB
 					sl.enableNativeHistogramScraping = true
+					sl.enableOpenMetrics2 = true
 				})
 
 				var content []byte
@@ -5484,6 +7214,13 @@ metric: <
 						buf.Write(protoMarshalDelimited(t, pb))
 					}
 					content = buf.Bytes()
+				case "application/openmetrics-text; version=2.0.0":
+					var b strings.Builder
+					for _, text := range metricsText.text {
+						b.WriteString(strings.TrimLeft(text, "\n"))
+					}
+					b.WriteString("# EOF\n")
+					content = []byte(b.String())
 				case "text/plain", "":
 					// The input text fragments already have a newline at the
 					// end, so we just concatenate them without separator.
@@ -5612,7 +7349,7 @@ disk_usage_bytes 456
 
 	select {
 	case <-time.After(5 * time.Second):
-		t.Fatalf("target was not scraped")
+		t.Fatal("target was not scraped")
 	case <-scrapedTwice:
 	}
 
@@ -5674,7 +7411,7 @@ func testScrapeLoopRunCreatesStaleMarkersOnFailedScrapeForTimestampedMetrics(t *
 	select {
 	case <-signal:
 	case <-time.After(5 * time.Second):
-		t.Fatalf("Scrape wasn't stopped.")
+		t.Fatal("Scrape wasn't stopped.")
 	}
 
 	got := appTest.ResultSamples()
@@ -5699,8 +7436,14 @@ func testScrapeLoopCompression(t *testing.T, appV2 bool) {
 
 	for _, tc := range []struct {
 		enableCompression bool
+		enableZstd        bool
 		acceptEncoding    string
 	}{
+		{
+			enableCompression: true,
+			acceptEncoding:    "zstd,gzip",
+			enableZstd:        true,
+		},
 		{
 			enableCompression: true,
 			acceptEncoding:    "gzip",
@@ -5732,7 +7475,7 @@ func testScrapeLoopCompression(t *testing.T, appV2 bool) {
 			}
 
 			sa := selectAppendable(s, appV2)
-			sp, err := newScrapePool(cfg, sa.V1(), sa.V2(), 0, nil, nil, &Options{}, newTestScrapeMetrics(t))
+			sp, err := newScrapePool(cfg, sa.V1(), sa.V2(), 0, nil, nil, &Options{EnableZstdScrape: tc.enableZstd}, newTestScrapeMetrics(t))
 			require.NoError(t, err)
 			defer sp.stop()
 
@@ -5747,7 +7490,7 @@ func testScrapeLoopCompression(t *testing.T, appV2 bool) {
 
 			select {
 			case <-time.After(5 * time.Second):
-				t.Fatalf("target was not scraped")
+				t.Fatal("target was not scraped")
 			case <-scraped:
 			}
 		})
@@ -6674,6 +8417,39 @@ func BenchmarkScrapePoolRestartLoops(b *testing.B) {
 	}
 }
 
+func TestNewScrapeLoopJSONLoggerTarget(t *testing.T) {
+	const (
+		targetAddress = "test.invalid:80"
+		wantTarget    = "http://test.invalid:80/metrics"
+	)
+
+	var output bytes.Buffer
+	format := promslog.NewFormat()
+	require.NoError(t, format.Set("json"))
+
+	sp := newTestScrapePool(t, nil, false, nil)
+	sp.logger = promslog.New(&promslog.Config{
+		Format: format,
+		Writer: &output,
+	})
+	target := newTestTarget(targetAddress, 0, labels.EmptyLabels())
+
+	sl := newScrapeLoop(scrapeLoopOptions{
+		target: target,
+		cache:  newScrapeCache(sp.metrics),
+		sp:     sp,
+	})
+	t.Cleanup(sl.cancel)
+
+	sl.l.Warn("test message")
+
+	var entry struct {
+		Target string `json:"target"`
+	}
+	require.NoError(t, json.Unmarshal(output.Bytes(), &entry))
+	require.Equal(t, wantTarget, entry.Target)
+}
+
 // TestNewScrapeLoopHonorLabelsWiring verifies that newScrapeLoop correctly wires
 // HonorLabels (not HonorTimestamps) to the sampleMutator.
 func TestNewScrapeLoopHonorLabelsWiring(t *testing.T) {
@@ -6906,6 +8682,9 @@ func TestScrapeOffsetDistribution(t *testing.T) {
 					}
 				}),
 			},
+			// setupSynctestManager is unusable here: it also sets skipJitterOffsetting,
+			// which zeroes the offsets asserted below.
+			fqdn: synctestFQDN,
 		}
 		scrapeManager, err := NewManager(opts, promslog.NewNopLogger(), nil, app, nil, prometheus.NewRegistry())
 		scrapeManager.offsetSeed = 1 // Set a fixed offset seed for deterministic testing.

@@ -105,6 +105,14 @@ func GenerateRecords(c RecordsCase) (ret Records) {
 	if c.HistogramFn == nil {
 		c.HistogramFn = newTestHist
 	}
+	stForTS := func(ts int64) int64 {
+		if c.NoST {
+			return 0
+		}
+		// Keep ST simple for now; we don't test the exact semantics.
+		// We can improve later (e.g. STsFN).
+		return ts - 1
+	}
 
 	lb := labels.NewScratchBuilder(1 + len(c.ExtraLabels))
 	for i := range ret.Series {
@@ -121,31 +129,29 @@ func GenerateRecords(c RecordsCase) (ret Records) {
 		}
 		for j := range c.SamplesPerSeries {
 			ts := c.TsFn(ref, j)
-			// Keep ST simple for now; we don't test the exact semantics.
-			// We can improve later (e.g. STsFN).
-			sts := ts - 1
-			if c.NoST {
-				sts = 0
-			}
 
 			ret.Samples[i*c.SamplesPerSeries+j] = record.RefSample{
 				Ref: chunks.HeadSeriesRef(ref),
-				ST:  sts, T: ts,
+				ST:  stForTS(ts), T: ts,
 				V: float64(ref),
 			}
 		}
 		h := c.HistogramFn(ref)
 		for j := range c.HistogramsPerSeries {
+			ts := c.TsFn(ref, j)
 			ret.Histograms[i*c.HistogramsPerSeries+j] = record.RefHistogramSample{
 				Ref: chunks.HeadSeriesRef(ref),
-				T:   c.TsFn(ref, j),
+				ST:  stForTS(ts),
+				T:   ts,
 				H:   h,
 			}
 		}
 		for j := range c.FloatHistogramsPerSeries {
+			ts := c.TsFn(ref, j)
 			ret.FloatHistograms[i*c.FloatHistogramsPerSeries+j] = record.RefFloatHistogramSample{
 				Ref: chunks.HeadSeriesRef(ref),
-				T:   c.TsFn(ref, j),
+				ST:  stForTS(ts),
+				T:   ts,
 				FH:  h.ToFloat(nil),
 			}
 		}
