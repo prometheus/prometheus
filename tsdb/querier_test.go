@@ -15,10 +15,13 @@ package tsdb
 
 import (
 	"context"
+	"encoding/binary"
 	"errors"
 	"fmt"
+	"hash/crc32"
 	"math"
 	"math/rand"
+	"os"
 	"path/filepath"
 	"slices"
 	"sort"
@@ -36,6 +39,7 @@ import (
 	"github.com/prometheus/prometheus/storage"
 	"github.com/prometheus/prometheus/tsdb/chunkenc"
 	"github.com/prometheus/prometheus/tsdb/chunks"
+	tsdbencoding "github.com/prometheus/prometheus/tsdb/encoding"
 	"github.com/prometheus/prometheus/tsdb/index"
 	"github.com/prometheus/prometheus/tsdb/tombstones"
 	"github.com/prometheus/prometheus/tsdb/tsdbutil"
@@ -3770,6 +3774,193 @@ func TestBlockBaseSeriesSet(t *testing.T) {
 		}
 		require.Len(t, tc.expIdxs, i)
 		require.NoError(t, bcs.Err())
+	}
+}
+
+type symbolSeriesFixture struct {
+	data         []byte
+	seriesRef    storage.SeriesRef
+	seriesOffset int
+	nameRef      uint32
+	valueRef     uint32
+}
+
+type symbolSeriesByteSlice struct {
+	data         []byte
+	override     bool
+	seriesOffset int
+	record       []byte
+	prefixLen    int
+}
+
+func (b *symbolSeriesByteSlice) Len() int { return len(b.data) }
+
+func (b *symbolSeriesByteSlice) Range(start, end int) []byte {
+	if !b.override {
+		return b.data[start:end]
+	}
+	if start == b.seriesOffset && end-start == binary.MaxVarintLen32 {
+		out := make([]byte, end-start)
+		copy(out, b.data[start:end])
+		copy(out, b.record)
+		return out
+	}
+	payloadOffset := b.seriesOffset + b.prefixLen
+	if start == payloadOffset && end-start == len(b.record)-b.prefixLen {
+		return b.record[b.prefixLen:]
+	}
+	return b.data[start:end]
+}
+
+func newSymbolSeriesFixture(t *testing.T, version int) symbolSeriesFixture {
+	t.Helper()
+
+	var data []byte
+	if version == index.FormatV1 {
+		var err error
+		data, err = os.ReadFile(filepath.Join("testdata", "index_format_v1", "index"))
+		require.NoError(t, err)
+	} else {
+		indexPath := filepath.Join(t.TempDir(), "index")
+		writer, err := index.NewWriter(context.Background(), indexPath)
+		require.NoError(t, err)
+		require.NoError(t, writer.AddSymbol("foo"))
+		require.NoError(t, writer.AddSeries(0, labels.FromStrings("foo", "foo")))
+		require.NoError(t, writer.Close())
+		data, err = os.ReadFile(indexPath)
+		require.NoError(t, err)
+		if version == index.FormatV3 {
+			// The index reader uses the same layout for V2 and V3.
+			data[4] = byte(index.FormatV3)
+		}
+	}
+
+	byteSlice := symbolSeriesByteSlice{data: data}
+	reader, err := index.NewReader(&byteSlice, index.DecodePostingsRaw)
+	require.NoError(t, err)
+	postingValue := "foo"
+	if version == index.FormatV1 {
+		postingValue = "bar"
+	}
+	postings, err := reader.Postings(context.Background(), "foo", postingValue)
+	require.NoError(t, err)
+	require.True(t, postings.Next())
+	seriesRef := postings.At()
+	require.False(t, postings.Next())
+	require.NoError(t, postings.Err())
+	require.NoError(t, reader.Close())
+
+	toc, err := index.NewTOCFromByteSlice(&byteSlice)
+	require.NoError(t, err)
+	symbols, err := index.NewSymbols(&byteSlice, version, int(toc.Symbols))
+	require.NoError(t, err)
+	nameRef, err := symbols.ReverseLookup("foo")
+	require.NoError(t, err)
+	valueRef, err := symbols.ReverseLookup(postingValue)
+	require.NoError(t, err)
+
+	seriesOffset := int(seriesRef)
+	if version != index.FormatV1 {
+		seriesOffset *= 16
+	}
+	return symbolSeriesFixture{
+		data:         data,
+		seriesRef:    seriesRef,
+		seriesOffset: seriesOffset,
+		nameRef:      nameRef,
+		valueRef:     valueRef,
+	}
+}
+
+func (f symbolSeriesFixture) newReader(t *testing.T, field string, invalidRef uint32) *index.Reader {
+	t.Helper()
+
+	nameRef, valueRef := f.nameRef, f.valueRef
+	if field == "name" {
+		nameRef = invalidRef
+	} else {
+		valueRef = invalidRef
+	}
+	record, prefixLen := encodeSymbolSeriesRecord(nameRef, valueRef)
+	byteSlice := &symbolSeriesByteSlice{
+		data:         f.data,
+		seriesOffset: f.seriesOffset,
+		record:       record,
+		prefixLen:    prefixLen,
+	}
+	reader, err := index.NewReader(byteSlice, index.DecodePostingsRaw)
+	require.NoError(t, err)
+	byteSlice.override = true
+	checksumTable := crc32.MakeTable(crc32.Castagnoli)
+	decoded := tsdbencoding.NewDecbufUvarintAt(byteSlice, f.seriesOffset, checksumTable)
+	require.NoError(t, decoded.Err(), "the substituted series record must have a valid checksum")
+	return reader
+}
+
+func encodeSymbolSeriesRecord(nameRef, valueRef uint32) ([]byte, int) {
+	var payload tsdbencoding.Encbuf
+	payload.PutUvarint(1)
+	payload.PutUvarint32(nameRef)
+	payload.PutUvarint32(valueRef)
+	payload.PutUvarint(0)
+
+	var record tsdbencoding.Encbuf
+	record.PutUvarint(payload.Len())
+	prefixLen := record.Len()
+	record.PutBytes(payload.Get())
+	record.PutBE32(crc32.Checksum(payload.Get(), crc32.MakeTable(crc32.Castagnoli)))
+	return record.Get(), prefixLen
+}
+
+func TestBlockChunkSeriesSetPropagatesMalformedSymbolReferences(t *testing.T) {
+	for _, version := range []int{index.FormatV1, index.FormatV2, index.FormatV3} {
+		fixture := newSymbolSeriesFixture(t, version)
+		invalidRefs := []uint32{0x7fffffff, 0x80000000, 0xffffffff}
+		if version != index.FormatV1 {
+			invalidRefs = append([]uint32{1}, invalidRefs...)
+		}
+		for _, field := range []string{"name", "value"} {
+			for _, invalidRef := range invalidRefs {
+				version, field, invalidRef := version, field, invalidRef
+				t.Run(fmt.Sprintf("format_%d/%s/%d", version, field, invalidRef), func(t *testing.T) {
+					t.Run("reader_series", func(t *testing.T) {
+						reader := fixture.newReader(t, field, invalidRef)
+						defer func() { require.NoError(t, reader.Close()) }()
+						var builder labels.ScratchBuilder
+						var chunkMetas []chunks.Meta
+						var err error
+						require.NotPanics(t, func() {
+							err = reader.Series(fixture.seriesRef, &builder, &chunkMetas)
+						})
+						require.ErrorContains(t, err, "lookup label "+field)
+					})
+					t.Run("compaction_iterator", func(t *testing.T) {
+						reader := fixture.newReader(t, field, invalidRef)
+						defer func() { require.NoError(t, reader.Close()) }()
+						seriesSet := NewBlockChunkSeriesSet(
+							ulid.ULID{}, reader, nil, tombstones.NewMemTombstones(),
+							index.NewListPostings([]storage.SeriesRef{fixture.seriesRef}), 0, 0, false,
+						)
+						var next bool
+						require.NotPanics(t, func() { next = seriesSet.Next() })
+						require.False(t, next)
+						require.ErrorContains(t, seriesSet.Err(), "lookup label "+field)
+					})
+					if field == "name" {
+						t.Run("label_names_for", func(t *testing.T) {
+							reader := fixture.newReader(t, field, invalidRef)
+							defer func() { require.NoError(t, reader.Close()) }()
+							postings := index.NewListPostings([]storage.SeriesRef{fixture.seriesRef})
+							var err error
+							require.NotPanics(t, func() {
+								_, err = reader.LabelNamesFor(context.Background(), postings)
+							})
+							require.ErrorContains(t, err, "lookup symbol in LabelNamesFor")
+						})
+					}
+				})
+			}
+		}
 	}
 }
 
