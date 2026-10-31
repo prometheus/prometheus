@@ -172,7 +172,9 @@ func OpenReadSegment(fn string) (*Segment, error) {
 // WL is a write log that stores records in segment files.
 // It must be read from start to end once before logging new data.
 // If an error occurs during read, the repair procedure must be called
-// before it's safe to do further writes.
+// before it's safe to do further writes. If a page write fails before a record
+// is fully buffered, further appends return that error; close, reopen, and repair
+// the WAL before writing again. Errors after a complete record is buffered remain retryable.
 //
 // Segments are written to in pages of 32KB, with records possibly split
 // across page boundaries.
@@ -189,7 +191,8 @@ type WL struct {
 	page        *page    // Active page.
 	stopc       chan chan struct{}
 	actorc      chan func()
-	closed      bool // To allow calling Close() more than once without blocking.
+	closed      bool  // To allow calling Close() more than once without blocking.
+	failedErr   error // A failure that left a record incomplete; subsequent appends are rejected.
 	compress    compression.Type
 	cEnc        compression.EncodeBuffer
 
@@ -657,6 +660,13 @@ func (w *WL) pagesPerSegment() int {
 func (w *WL) Log(recs ...[]byte) error {
 	w.mtx.Lock()
 	defer w.mtx.Unlock()
+	if len(recs) == 0 {
+		return nil
+	}
+	if w.failedErr != nil {
+		w.metrics.writesFailed.Inc()
+		return w.failedErr
+	}
 	// Callers could just implement their own list record format but adding
 	// a bit of extra logic here frees them from that overhead.
 	for i, r := range recs {
@@ -761,9 +771,11 @@ func (w *WL) log(rec []byte, final bool) error {
 
 		if w.page.full() {
 			if err := w.flushPage(true); err != nil {
-				// TODO When the flushing fails at this point and the record has not been
-				// fully written to the buffer, we end up with a corrupted WAL because some part of the
-				// record have been written to the buffer, while the rest of the record will be discarded.
+				if len(enc) > l {
+					// The remaining record bytes are not buffered. Without them, later
+					// records would make the incomplete record impossible to replay.
+					w.failedErr = err
+				}
 				return err
 			}
 		}

@@ -17,6 +17,7 @@ package wlog
 import (
 	"bytes"
 	"crypto/rand"
+	"errors"
 	"fmt"
 	"io"
 	"os"
@@ -480,6 +481,246 @@ func TestLogPartialWrite(t *testing.T) {
 			require.NoError(t, r.Err())
 		})
 	}
+}
+
+func TestLogInterruptedRecordRejectsLaterLog(t *testing.T) {
+	for _, compress := range compression.Types() {
+		t.Run(compress, func(t *testing.T) {
+			prefix := makeWALTestBytes(pageSize - recordHeaderSize - 32)
+			record := makeWALTestRecord(pageSize * 3)
+			encodedLen := walEncodedRecordLen(t, compress, record)
+			if compress != compression.None {
+				encoded, err := compression.Encode(compress, record, compression.NewSyncEncodeBuffer())
+				require.NoError(t, err)
+				require.Less(t, len(encoded), len(record), "the multi-page record must exercise compression")
+			}
+			require.Equal(t, len(prefix), walEncodedRecordLen(t, compress, prefix), "prefix must leave the page close to full")
+
+			for _, test := range []struct {
+				name           string
+				writeCall      int // Use -1 to select the final fragment flush.
+				bytesBeforeErr int
+				rejectLater    bool
+			}{
+				{name: "first_fragment_zero_byte_write", writeCall: 1, rejectLater: true},
+				{name: "middle_fragment_partial_write", writeCall: 2, bytesBeforeErr: 13, rejectLater: true},
+				{name: "final_fragment_partial_write", writeCall: -1, bytesBeforeErr: 13},
+			} {
+				t.Run(test.name, func(t *testing.T) {
+					const segmentSize = pageSize * 8
+					dir := t.TempDir()
+					w, err := NewSize(nil, nil, dir, segmentSize, compress)
+					require.NoError(t, err)
+					defer func() { _ = w.Close() }()
+
+					require.NoError(t, w.Log(prefix))
+					require.Equal(t, pageSize-32, w.page.alloc)
+					firstFragment := pageSize - w.page.alloc - recordHeaderSize
+					require.Greater(t, encodedLen, firstFragment+pageSize-recordHeaderSize, "encoded record must have a later fragment after the first page")
+					require.LessOrEqual(t, encodedLen, pageSize-w.page.alloc-recordHeaderSize+(w.pagesPerSegment()-1)*(pageSize-recordHeaderSize), "record must fit in the active segment")
+					writeCalls := walRecordFlushWrites(w.page.alloc, encodedLen)
+					require.GreaterOrEqual(t, writeCalls, 3, "record must span multiple page flushes")
+
+					writeCall := test.writeCall
+					if writeCall == -1 {
+						writeCall = writeCalls
+					}
+					if test.rejectLater {
+						require.Greater(t, writeCalls, writeCall, "failure must leave an unbuffered record tail")
+					}
+					faultErr := errors.New("injected page write failure")
+					faulty := &oneShotFaultySegmentFile{
+						SegmentFile:     w.segment.SegmentFile,
+						failOnWrite:     writeCall,
+						failAfterBytes:  test.bytesBeforeErr,
+						writeFailureErr: faultErr,
+					}
+					w.segment.SegmentFile = faulty
+
+					writeErr := w.Log(record)
+					require.ErrorIs(t, writeErr, faultErr)
+					require.Equal(t, writeCall, faulty.writeCalls)
+
+					if test.rejectLater {
+						for i := range 2 {
+							later := []byte(fmt.Sprintf("later-%d", i))
+							if laterErr := w.Log(later); !errors.Is(laterErr, writeErr) {
+								t.Fatalf("later append did not return the retained write error: got %v, want %v", laterErr, writeErr)
+							}
+						}
+						require.NoError(t, w.Log(), "an empty Log must remain a no-op")
+						verifyInterruptedWALRepair(t, w, dir, segmentSize, compress, prefix)
+						return
+					}
+
+					later := []byte("after complete record")
+					if err := w.Log(later); err != nil {
+						t.Fatalf("append after a failure with the complete record buffered: %v", err)
+					}
+					require.NoError(t, w.Close())
+					records, readErr := readWALRecords(t, dir)
+					require.NoError(t, readErr)
+					require.Equal(t, [][]byte{prefix, record, later}, records)
+				})
+			}
+		})
+	}
+}
+
+func TestLogInterruptedRecordAtSegmentBoundary(t *testing.T) {
+	for _, compress := range compression.Types() {
+		t.Run(compress, func(t *testing.T) {
+			const segmentSize = pageSize * 4
+			dir := t.TempDir()
+			w, err := NewSize(nil, nil, dir, segmentSize, compress)
+			require.NoError(t, err)
+			defer func() { _ = w.Close() }()
+
+			prefix := []byte("successful prefix")
+			require.NoError(t, w.Log(prefix))
+			_, err = w.NextSegmentSync()
+			require.NoError(t, err)
+
+			record := makeWALTestRecord(pageSize * 3)
+			encodedLen := walEncodedRecordLen(t, compress, record)
+			require.Greater(t, encodedLen, 2*(pageSize-recordHeaderSize), "encoded record must span pages")
+			writeCalls := walRecordFlushWrites(w.page.alloc, encodedLen)
+			require.Greater(t, writeCalls, 2)
+
+			faultErr := errors.New("injected page write failure")
+			faulty := &oneShotFaultySegmentFile{
+				SegmentFile:     w.segment.SegmentFile,
+				failOnWrite:     2,
+				failAfterBytes:  13,
+				writeFailureErr: faultErr,
+			}
+			w.segment.SegmentFile = faulty
+
+			writeErr := w.Log(record)
+			require.ErrorIs(t, writeErr, faultErr)
+			if laterErr := w.Log([]byte("later")); !errors.Is(laterErr, writeErr) {
+				t.Fatalf("later append after a segment-boundary failure returned %v, want %v", laterErr, writeErr)
+			}
+			verifyInterruptedWALRepair(t, w, dir, segmentSize, compress, prefix)
+		})
+	}
+}
+
+func verifyInterruptedWALRepair(t *testing.T, w *WL, dir string, segmentSize int, compress compression.Type, prefix []byte) {
+	t.Helper()
+	require.NoError(t, w.Close())
+
+	records, readErr := readWALRecords(t, dir)
+	require.Error(t, readErr, "the interrupted record must be detected during replay")
+	require.Equal(t, [][]byte{prefix}, records, "replay must preserve the successful prefix and stop before later records")
+
+	repaired, err := NewSize(nil, nil, dir, segmentSize, compress)
+	require.NoError(t, err)
+	defer func() { _ = repaired.Close() }()
+	require.NoError(t, repaired.Repair(readErr))
+
+	records, readErr = readWALRecords(t, dir)
+	require.NoError(t, readErr)
+	require.Equal(t, [][]byte{prefix}, records)
+
+	afterRepair := []byte("after repair")
+	require.NoError(t, repaired.Log(afterRepair))
+	require.NoError(t, repaired.Close())
+
+	records, readErr = readWALRecords(t, dir)
+	require.NoError(t, readErr)
+	require.Equal(t, [][]byte{prefix, afterRepair}, records)
+}
+
+func readWALRecords(t *testing.T, dir string) ([][]byte, error) {
+	t.Helper()
+	reader, err := NewSegmentsReader(dir)
+	require.NoError(t, err)
+	defer func() { require.NoError(t, reader.Close()) }()
+
+	logReader := NewReader(reader)
+	var records [][]byte
+	for logReader.Next() {
+		records = append(records, append([]byte(nil), logReader.Record()...))
+	}
+	return records, logReader.Err()
+}
+
+func walEncodedRecordLen(t *testing.T, compress compression.Type, record []byte) int {
+	t.Helper()
+	encoded, err := compression.Encode(compress, record, compression.NewSyncEncodeBuffer())
+	require.NoError(t, err)
+	if compress != compression.None && len(record)-len(encoded) <= 0 {
+		return len(record)
+	}
+	return len(encoded)
+}
+
+func walRecordFlushWrites(alloc, recordLen int) int {
+	writeCalls := 0
+	remaining := recordLen
+	for i := 0; i == 0 || remaining > 0; i++ {
+		part := min(remaining, pageSize-alloc-recordHeaderSize)
+		alloc += recordHeaderSize + part
+		remaining -= part
+		if pageSize-alloc < recordHeaderSize {
+			writeCalls++
+			alloc = 0
+		} else if remaining == 0 {
+			writeCalls++
+		}
+	}
+	return writeCalls
+}
+
+func makeWALTestBytes(n int) []byte {
+	data := make([]byte, n)
+	state := uint32(0x9e3779b9)
+	for i := range data {
+		state ^= state << 13
+		state ^= state >> 17
+		state ^= state << 5
+		data[i] = byte(state >> 24)
+	}
+	return data
+}
+
+func makeWALTestRecord(n int) []byte {
+	data := makeWALTestBytes(n)
+	for start := 0; start < n; start += 10 * 1024 {
+		for i := start + 7*1024; i < min(start+10*1024, n); i++ {
+			data[i] = 0
+		}
+	}
+	return data
+}
+
+type oneShotFaultySegmentFile struct {
+	SegmentFile
+
+	failOnWrite     int
+	failAfterBytes  int
+	writeCalls      int
+	writeFailureErr error
+}
+
+func (f *oneShotFaultySegmentFile) Write(p []byte) (int, error) {
+	f.writeCalls++
+	if f.writeCalls != f.failOnWrite {
+		return f.SegmentFile.Write(p)
+	}
+
+	n := min(f.failAfterBytes, len(p))
+	if n > 0 {
+		written, err := f.SegmentFile.Write(p[:n])
+		if err != nil {
+			return written, err
+		}
+		if written != n {
+			return written, io.ErrShortWrite
+		}
+	}
+	return n, f.writeFailureErr
 }
 
 type faultySegmentFile struct {
