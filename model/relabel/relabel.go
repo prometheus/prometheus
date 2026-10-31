@@ -342,6 +342,26 @@ func relabel(cfg *Config, lb *labels.Builder) (keep bool) {
 		mod := binary.BigEndian.Uint64(hash[8:]) % cfg.Modulus
 		lb.Set(cfg.TargetLabel, strconv.FormatUint(mod, 10))
 	case LabelMap:
+		re := cfg.Regex.Regexp
+		if prefix, emptySuffix := labelMapWildcardPrefix(re); prefix != "" {
+			// NewRegexp's anchored prefix-plus-wildcard forms can reject nonmatches before collecting captures.
+			lb.Range(func(l labels.Label) {
+				if !strings.HasPrefix(l.Name, prefix) || (!emptySuffix && len(l.Name) == len(prefix)) {
+					return
+				}
+				if varInRegexTemplate(cfg.Replacement) {
+					indexes := re.FindStringSubmatchIndex(l.Name)
+					if indexes == nil {
+						return
+					}
+					res := re.ExpandString(nil, cfg.Replacement, l.Name, indexes)
+					lb.Set(string(res), l.Value)
+				} else {
+					lb.Set(cfg.Replacement, l.Value)
+				}
+			})
+			break
+		}
 		lb.Range(func(l labels.Label) {
 			if cfg.Regex.MatchString(l.Name) {
 				res := cfg.Regex.ReplaceAllString(l.Name, cfg.Replacement)
@@ -365,6 +385,40 @@ func relabel(cfg *Config, lb *labels.Builder) (keep bool) {
 	}
 
 	return true
+}
+
+func labelMapWildcardPrefix(re *regexp.Regexp) (string, bool) {
+	if re == nil {
+		return "", false
+	}
+	const (
+		wrapperPrefix = "^(?s:"
+		wrapperSuffix = ")$"
+	)
+	pattern := re.String()
+	if len(pattern) < len(wrapperPrefix)+len(wrapperSuffix) || !strings.HasPrefix(pattern, wrapperPrefix) || !strings.HasSuffix(pattern, wrapperSuffix) {
+		return "", false
+	}
+	pattern = pattern[len(wrapperPrefix) : len(pattern)-len(wrapperSuffix)]
+
+	emptySuffix := false
+	switch {
+	case strings.HasSuffix(pattern, "(.*)"):
+		pattern = strings.TrimSuffix(pattern, "(.*)")
+		emptySuffix = true
+	case strings.HasSuffix(pattern, "(.+)"):
+		pattern = strings.TrimSuffix(pattern, "(.+)")
+	default:
+		return "", false
+	}
+	if pattern == "" {
+		return "", false
+	}
+	literalPrefix, _ := re.LiteralPrefix()
+	if literalPrefix != pattern {
+		return "", false
+	}
+	return pattern, emptySuffix
 }
 
 func varInRegexTemplate(template string) bool {

@@ -18,6 +18,7 @@ import (
 	"strconv"
 	"testing"
 
+	"github.com/grafana/regexp"
 	"github.com/prometheus/common/model"
 	"github.com/stretchr/testify/require"
 	"go.yaml.in/yaml/v2"
@@ -318,6 +319,83 @@ func TestRelabel(t *testing.T) {
 				"my_bar":        "aaa",
 				"my_baz":        "bbb",
 			}),
+		},
+		{
+			input: labels.FromStrings("prefix_", "value"),
+			relabel: []*Config{
+				{
+					Regex:       MustNewRegexp(`prefix_(x)?(?P<tail>.*)`),
+					Replacement: `mapped_${1}_${tail}_$$`,
+					Action:      LabelMap,
+				},
+			},
+			output: labels.FromStrings("mapped___$", "value", "prefix_", "value"),
+		},
+		{
+			input: labels.FromStrings("μ_名", "value"),
+			relabel: []*Config{
+				{
+					Regex:       MustNewRegexp(`μ_(?P<name>.*)`),
+					Replacement: `mapped_${name}_$$`,
+					Action:      LabelMap,
+				},
+			},
+			output: labels.FromStrings("mapped_名_$", "value", "μ_名", "value"),
+		},
+		{
+			input: labels.FromStrings("μ_", "empty", "μ_名", "value"),
+			relabel: []*Config{
+				{
+					Regex:       MustNewRegexp(`μ_(.*)`),
+					Replacement: `mapped_${1}_$$`,
+					Action:      LabelMap,
+				},
+			},
+			output: labels.FromStrings("mapped__$", "empty", "mapped_名_$", "value", "μ_", "empty", "μ_名", "value"),
+		},
+		{
+			input: labels.FromStrings("other", "value"),
+			relabel: []*Config{
+				{
+					Regex:       MustNewRegexp(`source_(.*)`),
+					Replacement: `mapped_${1}`,
+					Action:      LabelMap,
+				},
+			},
+			output: labels.FromStrings("other", "value"),
+		},
+		{
+			input: labels.FromStrings("source_", "empty", "source_a", "value"),
+			relabel: []*Config{
+				{
+					Regex:       MustNewRegexp(`source_(.+)`),
+					Replacement: `mapped_${1}`,
+					Action:      LabelMap,
+				},
+			},
+			output: labels.FromStrings("mapped_a", "value", "source_", "empty", "source_a", "value"),
+		},
+		{
+			input: labels.FromStrings("source_a", "first", "source_b", "second"),
+			relabel: []*Config{
+				{
+					Regex:       MustNewRegexp(`source_(.*)`),
+					Replacement: "destination",
+					Action:      LabelMap,
+				},
+			},
+			output: labels.FromStrings("destination", "second", "source_a", "first", "source_b", "second"),
+		},
+		{
+			input: labels.FromStrings("map_a", "value"),
+			relabel: []*Config{
+				{
+					Regex:       MustNewRegexp(`map_(.*)`),
+					Replacement: `map_map_${1}`,
+					Action:      LabelMap,
+				},
+			},
+			output: labels.FromStrings("map_a", "value", "map_map_a", "value"),
 		},
 		{ // valid case
 			input: labels.FromMap(map[string]string{
@@ -758,6 +836,19 @@ func TestRelabel(t *testing.T) {
 			testutil.RequireEqual(t, test.output, lb.Labels())
 		}
 	}
+}
+
+func TestLabelMapWithUnanchoredRegexp(t *testing.T) {
+	input := labels.FromStrings("xfooy", "value")
+	lb := labels.NewBuilder(input)
+	cfg := &Config{
+		Regex:       Regexp{Regexp: regexp.MustCompile("foo")},
+		Replacement: "bar",
+		Action:      LabelMap,
+	}
+
+	require.True(t, ProcessBuilder(lb, cfg))
+	testutil.RequireEqual(t, labels.FromStrings("xbary", "value", "xfooy", "value"), lb.Labels())
 }
 
 func TestRelabelValidate(t *testing.T) {
