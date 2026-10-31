@@ -253,3 +253,100 @@ If a reference is zero, it indicates the respective section does not exist and e
 │ CRC32 <4b>                              │
 └─────────────────────────────────────────┘
 ```
+
+## Version 4
+
+Version 4 retains the existing series encoding, 16-byte series alignment,
+postings-list encoding, and six-offset TOC. V1, V2 and the V2-compatible V3
+reader paths are unchanged. V4 writing is opt-in; existing writer constructors
+continue to emit V2. See [the proposal](index-v4-proposal.md) for motivation and
+rollout requirements.
+
+All fixed-width integers below are unsigned and big-endian. CRCs use CRC32C
+(Castagnoli). File offsets are absolute. Padding may separate top-level
+sections, but pages inside the postings-offset table are contiguous.
+
+### V4 symbol table
+
+```
+payload length <8b>
+symbol count   <4b>
+symbols        <uvarint length + bytes, repeated symbol count times>
+CRC32C         <4b>
+```
+
+The payload length includes the count and encoded symbols, and excludes the
+length and CRC fields. CRC32C covers the payload. Symbol IDs remain 32-bit
+ordinals into the strictly increasing symbol list. The length can exceed 4 GiB;
+the count must fit a uint32.
+
+### V4 postings-offset table
+
+The TOC postings-table offset points to a 28-byte header:
+
+```
+magic              <8b: "PPOT0001">
+directory offset   <8b>
+directory length   <8b>
+header CRC32C      <4b>
+```
+
+The header CRC covers its preceding 24 bytes. The directory length includes
+its own trailing CRC. Between the header and directory are the value pages,
+in label-name and then label-value order. There is no whole-table uint32 length.
+
+Each page contains:
+
+```
+entry count             <4b>
+value bytes length      <4b>
+minimum postings offset <8b>
+delta width             <1b: 1, 2, 4 or 8>
+reserved                <3b: zero>
+value starts            <(entry count + 1) * 4b>
+postings offset deltas  <entry count * delta width>
+contiguous value bytes  <value bytes length>
+page CRC32C             <4b>
+```
+
+The page CRC covers all preceding page bytes. The first value start is zero;
+starts are nondecreasing and the last equals the value byte length. Empty
+values are valid. Values must be strictly increasing. Each postings offset is
+the minimum plus the corresponding delta, without overflow, and must fall in
+the postings section. Page size must fit a uint32. Writers target 64 KiB with
+at most 128 entries; an oversized single value gets a dedicated page.
+
+The directory is:
+
+```
+label-group count <4b>
+for each label group:
+    name          <uvarint length + bytes>
+    common prefix <uvarint length + bytes>
+    page count    <4b>
+    for each page:
+        offset       <8b>
+        size         <4b, including page CRC>
+        entry count  <4b>
+        maximum key  <uvarint length + bytes>
+directory CRC32C  <4b>
+```
+
+Directory CRC32C covers everything preceding it within the directory. Label
+names and page maximum keys are strictly increasing. The maximum key is the
+page's last value with the group's common prefix removed. The prefix is at most
+64 KiB. For a single-page group, prefix and maximum key are empty and lookup
+searches the page directly. Groups contain at least one page; the directory may
+contain zero groups. Total entries must fit a uint32. The internal all-series
+entry uses the empty label name and value, as in V2.
+
+Readers validate directory bounds, ordering and page spans at open. Page CRC,
+value boundaries, ordering, routing fences and postings offsets are validated
+on first access. Returned label-value strings are valid only while the backing
+index remains open. The index remains subject to the 64 GiB total size limit.
+
+`ReadPostingsOffsetTable` recognizes V4 from a full index header. Consumers of
+extracted tables must use `ReadPostingsOffsetTableWithVersion` and provide a
+byte slice preserving the absolute file offsets. For V4, its callback's
+`labelOffset` is the location of the entry's value-start field relative to the
+postings-table start. It is not a V2 variable-length entry offset.

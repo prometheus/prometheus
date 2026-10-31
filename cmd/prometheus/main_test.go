@@ -1575,3 +1575,21 @@ func TestFeatureFlagsDocumented(t *testing.T) {
 	require.True(t, slices.IsSorted(helpFlags))
 	require.ElementsMatch(t, helpFlags, docFlags)
 }
+
+func TestIndexV4Feature(t *testing.T) {
+	for _, enabled := range []bool{false, true} {
+		t.Run(strconv.FormatBool(enabled), func(t *testing.T) {
+			var c flagConfig
+			if enabled {
+				c.featureList = []string{"index-v4"}
+			}
+			require.NoError(t, c.setFeatureListOptions(promslog.NewNopLogger()))
+			opts := c.tsdb.ToTSDBOptions()
+			if enabled {
+				require.Equal(t, 4, opts.IndexFormatVersion)
+			} else {
+				require.Zero(t, opts.IndexFormatVersion)
+			}
+		})
+	}
+}

@@ -2615,3 +2615,35 @@ func TestDelayedCompactionDoesNotBlockUnrelatedOps(t *testing.T) {
 		})
 	}
 }
+
+func TestCompactorIndexV4(t *testing.T) {
+	ctx := context.Background()
+	dir := t.TempDir()
+	sources := []string{createBlock(t, dir, genSeries(20, 3, 0, 10)), createBlock(t, dir, genSeries(20, 3, 10, 20))}
+	for _, version := range []int{index.FormatV4, index.FormatV2} {
+		c, err := NewLeveledCompactorWithOptions(ctx, nil, nil, []int64{100}, nil, LeveledCompactorOptions{IndexFormatVersion: version})
+		require.NoError(t, err)
+		ids, err := c.Compact(dir, sources, nil)
+		require.NoError(t, err)
+		require.Len(t, ids, 1)
+		output := filepath.Join(dir, ids[0].String())
+		r, err := index.NewFileReader(filepath.Join(output, indexFilename), index.DecodePostingsRaw)
+		require.NoError(t, err)
+		require.Equal(t, version, r.Version())
+		name, value := index.AllPostingsKey()
+		p, err := r.Postings(ctx, name, value)
+		require.NoError(t, err)
+		refs, err := index.ExpandPostings(p)
+		require.NoError(t, err)
+		require.Len(t, refs, 20)
+		var builder labels.ScratchBuilder
+		var metas []chunks.Meta
+		for _, ref := range refs {
+			require.NoError(t, r.Series(ref, &builder, &metas))
+			require.NotEmpty(t, metas)
+		}
+		require.NoError(t, r.Close())
+		// The next iteration compacts V4 input back into V2 output.
+		sources = []string{output}
+	}
+}
