@@ -1,12 +1,17 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { Alert, Badge, Group, Table, Text } from "@mantine/core";
-import { IconInfoCircle, IconUpload } from "@tabler/icons-react";
+import {
+  IconAlertTriangle,
+  IconInfoCircle,
+  IconUpload,
+} from "@tabler/icons-react";
 import { useAPIQuery } from "../api/api";
 import {
   SelfMetricsResult,
   ProtoMetricFamily,
   ProtoMetric,
 } from "../api/responseTypes/selfMetrics";
+import { humanizeDuration } from "../lib/formatTime";
 import InfoPageStack from "../components/InfoPageStack";
 import InfoPageCard from "../components/InfoPageCard";
 
@@ -183,13 +188,7 @@ const formatDelay = (seconds: number): string => {
   if (seconds < 0 || !isFinite(seconds)) {
     return "N/A";
   }
-  if (seconds < 60) {
-    return `${seconds.toFixed(0)}s`;
-  }
-  if (seconds < 3600) {
-    return `${(seconds / 60).toFixed(1)}m`;
-  }
-  return `${(seconds / 3600).toFixed(1)}h`;
+  return humanizeDuration(seconds * 1000);
 };
 
 // Compute per-queue error/retry rates from two successive counter snapshots.
@@ -406,7 +405,7 @@ export default function RemoteWriteStatusPage() {
   }, []);
 
   // Poll self_metrics for remote_storage counters + gauges.
-  const { data } = useAPIQuery<SelfMetricsResult>({
+  const { data, error } = useAPIQuery<SelfMetricsResult>({
     path: `/status/self_metrics`,
     params: {
       metric_name_pattern: "prometheus_remote_storage_.*",
@@ -459,10 +458,25 @@ export default function RemoteWriteStatusPage() {
       return;
     }
 
-    // Compute rates from baseline to current.
+    // Compute rates from previous poll to current, then advance baseline.
     setHealthRates(computeHealthRates(baselineRef.current, current));
+    baselineRef.current = current;
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [data]);
+
+  if (error && !families) {
+    return (
+      <InfoPageStack>
+        <Alert
+          color="red"
+          title="Error fetching remote write metrics"
+          icon={<IconAlertTriangle />}
+        >
+          <strong>Error:</strong> {error.message}
+        </Alert>
+      </InfoPageStack>
+    );
+  }
 
   if (!families) {
     return (
@@ -474,9 +488,18 @@ export default function RemoteWriteStatusPage() {
     );
   }
 
-  if (queues.length === 0) {
-    return (
-      <InfoPageStack>
+  return (
+    <InfoPageStack>
+      {error && (
+        <Alert
+          color="yellow"
+          title="Error refreshing remote write metrics"
+          icon={<IconAlertTriangle />}
+        >
+          <strong>Error:</strong> {error.message}
+        </Alert>
+      )}
+      {queues.length === 0 ? (
         <Alert
           icon={<IconInfoCircle />}
           title="No remote write endpoints configured"
@@ -485,19 +508,15 @@ export default function RemoteWriteStatusPage() {
           Configure remote write endpoints in your Prometheus configuration to
           see their status here.
         </Alert>
-      </InfoPageStack>
-    );
-  }
-
-  return (
-    <InfoPageStack>
-      {queues.map((queue) => (
-        <QueueCard
-          key={`${queue.name}-${queue.endpoint}`}
-          queue={queue}
-          healthRate={healthRates.get(queueKey(queue.name, queue.endpoint))}
-        />
-      ))}
+      ) : (
+        queues.map((queue) => (
+          <QueueCard
+            key={`${queue.name}-${queue.endpoint}`}
+            queue={queue}
+            healthRate={healthRates.get(queueKey(queue.name, queue.endpoint))}
+          />
+        ))
+      )}
     </InfoPageStack>
   );
 }
