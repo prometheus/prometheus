@@ -12,7 +12,8 @@ permissions:
 jobs:
   test_go:
     name: Go tests
-    runs-on: ubuntu-latest
+    runs-on:
+      group: default
     container:
       # Whenever the Go version is updated here, .promu.yml
       # should also be updated.
