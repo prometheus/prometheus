@@ -759,20 +759,19 @@ func (d *ECSDiscovery) refresh(ctx context.Context) ([]*targetgroup.Group, error
 
 	// Use goroutines to process clusters in parallel
 	var (
-		clusterWg      sync.WaitGroup
 		clusterMu      sync.Mutex
 		clusterTargets []model.LabelSet
 	)
+	refreshErrg, refreshCtx := errgroup.WithContext(ctx)
 
 	for clusterARN, taskARNs := range taskMap {
 		if len(taskARNs) == 0 {
 			continue
 		}
 
-		clusterWg.Add(1)
-
-		go func(cluster types.Cluster, serviceARNs, taskARNs []string) {
-			defer clusterWg.Done()
+		refreshErrg.Go(func() error {
+			cluster := clusterMap[clusterARN]
+			serviceARNs := serviceMap[clusterARN]
 
 			// Fetch services and tasks in parallel (they're independent)
 			var (
@@ -780,7 +779,7 @@ func (d *ECSDiscovery) refresh(ctx context.Context) ([]*targetgroup.Group, error
 				tasks    []types.Task
 			)
 
-			resourceErrg, resourceCtx := errgroup.WithContext(ctx)
+			resourceErrg, resourceCtx := errgroup.WithContext(refreshCtx)
 			resourceErrg.Go(func() error {
 				var err error
 				services, err = d.describeServices(resourceCtx, *cluster.ClusterArn, serviceARNs)
@@ -799,7 +798,7 @@ func (d *ECSDiscovery) refresh(ctx context.Context) ([]*targetgroup.Group, error
 			})
 
 			if err := resourceErrg.Wait(); err != nil {
-				return
+				return err
 			}
 
 			// Fetch container instances and network interfaces in parallel (both depend on tasks)
@@ -808,7 +807,7 @@ func (d *ECSDiscovery) refresh(ctx context.Context) ([]*targetgroup.Group, error
 				eniToPublicIP      map[string]string
 			)
 
-			instanceErrg, instanceCtx := errgroup.WithContext(ctx)
+			instanceErrg, instanceCtx := errgroup.WithContext(refreshCtx)
 			instanceErrg.Go(func() error {
 				var err error
 				containerInstances, err = d.describeContainerInstances(instanceCtx, *cluster.ClusterArn, tasks)
@@ -827,7 +826,7 @@ func (d *ECSDiscovery) refresh(ctx context.Context) ([]*targetgroup.Group, error
 			})
 
 			if err := instanceErrg.Wait(); err != nil {
-				return
+				return err
 			}
 
 			ec2Instances := make(map[string]ec2InstanceInfo)
@@ -841,10 +840,11 @@ func (d *ECSDiscovery) refresh(ctx context.Context) ([]*targetgroup.Group, error
 				for ec2ID := range ec2InstanceIDSet {
 					ec2InstanceIDs = append(ec2InstanceIDs, ec2ID)
 				}
-				ec2Instances, err = d.describeEC2Instances(ctx, ec2InstanceIDs)
+				var err error
+				ec2Instances, err = d.describeEC2Instances(refreshCtx, ec2InstanceIDs)
 				if err != nil {
 					d.logger.Error("Failed to describe EC2 instances for cluster", "cluster", *cluster.ClusterArn, "error", err)
-					return
+					return err
 				}
 			}
 
@@ -1072,10 +1072,13 @@ func (d *ECSDiscovery) refresh(ctx context.Context) ([]*targetgroup.Group, error
 			clusterMu.Lock()
 			clusterTargets = append(clusterTargets, taskTargets...)
 			clusterMu.Unlock()
-		}(clusterMap[clusterARN], serviceMap[clusterARN], taskARNs)
+			return nil
+		})
 	}
 
-	clusterWg.Wait()
+	if err := refreshErrg.Wait(); err != nil {
+		return nil, err
+	}
 
 	// Set all targets to the target group
 	tg.Targets = clusterTargets
