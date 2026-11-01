@@ -428,6 +428,14 @@ groups:
     expr: up == 0
 ---
 `
+		invalid = `
+groups:
+- name: example
+  rules:
+  - alert: InstanceDown
+    expr: up == 0
+    labels: [
+`
 	)
 
 	var buf bytes.Buffer
@@ -452,4 +460,11 @@ groups:
 	require.NotNil(t, rgs)
 	require.Len(t, rgs.Groups, 1)
 	require.Contains(t, buf.String(), "Multiple document yaml rules files are not supported")
+	buf.Reset()
+
+	// A syntax error in a single document must not be reported as a second document.
+	rgs, errs = Parse([]byte(invalid), false, model.UTF8Validation, testParser, bufLogger)
+	require.NotEmpty(t, errs)
+	require.Nil(t, rgs)
+	require.NotContains(t, buf.String(), "Multiple document yaml rules files are not supported")
 }
