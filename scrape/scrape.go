@@ -1055,7 +1055,7 @@ func internString(b []byte) unique.Handle[string] {
 }
 
 func internStringStr(s string) unique.Handle[string] {
-	if len(s) == 0 {
+	if s == "" {
 		return emptyStringHandle
 	}
 	return unique.Make(s)
