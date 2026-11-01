@@ -1579,7 +1579,8 @@ The following meta labels are available on targets during [relabeling](#relabel_
 * `__meta_consul_address`: the address of the target
 * `__meta_consul_dc`: the datacenter name for the target
 * `__meta_consul_health`: the health status of the service
-* `__meta_consul_partition`: the admin partition name where the service is registered
+* `__meta_consul_namespace`: the namespace where the service is registered (Consul Enterprise only)
+* `__meta_consul_partition`: the admin partition name where the service is registered (Consul Enterprise only)
 * `__meta_consul_metadata_<key>`: each node metadata key value of the target
 * `__meta_consul_node`: the node name defined for the target
 * `__meta_consul_service_address`: the service address of the target
