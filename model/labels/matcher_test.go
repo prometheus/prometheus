@@ -372,3 +372,35 @@ func BenchmarkMatcher_String(b *testing.B) {
 		})
 	}
 }
+
+func TestMatcher_Helpers(t *testing.T) {
+	// MustNewMatcher valid cases..
+	mEqual := MustNewMatcher(MatchEqual, "service", "api")
+	require.Equal(t, MatchEqual, mEqual.Type)
+	require.Equal(t, "service", mEqual.Name)
+	require.Equal(t, "api", mEqual.Value)
+
+	mRegex := MustNewMatcher(MatchRegexp, "env", "prod.*")
+	require.Equal(t, MatchRegexp, mRegex.Type)
+	require.Equal(t, "env", mRegex.Name)
+
+	// MustNewMatcher panic on invalid regex...
+	require.Panics(t, func() {
+		MustNewMatcher(MatchRegexp, "invalid", "[open-bracket")
+	})
+
+	// GetRegexString
+	require.Equal(t, "prod.*", mRegex.GetRegexString())
+	require.Empty(t, mEqual.GetRegexString()) // Non-regex matcher has no regex string
+
+	// SetMatches
+	// Alternating literal regex can be converted to a set..
+	mSet := MustNewMatcher(MatchRegexp, "zone", "us-east-1|us-west-2")
+	require.ElementsMatch(t, []string{"us-east-1", "us-west-2"}, mSet.SetMatches())
+
+	// Wildcard regex cannot be converted to a fixed set -> returns nil
+	require.Nil(t, mRegex.SetMatches())
+
+	// Non-regex matcher returns nil...
+	require.Nil(t, mEqual.SetMatches())
+}
