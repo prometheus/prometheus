@@ -68,9 +68,17 @@ func appenderV2WithLimits(app storage.AppenderV2, sampleLimit, bucketLimit int, 
 }
 
 func (sl *scrapeLoop) updateStaleMarkersV2(app storage.AppenderV2, defTime int64) (err error) {
-	sl.cache.forEachStale(func(ref storage.SeriesRef, lset labels.Labels) bool {
+	sl.cache.forEachStale(func(ref storage.SeriesRef, lset labels.Labels, markerType staleMarkerType) bool {
 		// Series no longer exposed, mark it stale.
-		_, err = app.Append(ref, lset, 0, defTime, math.Float64frombits(value.StaleNaN), nil, nil, storage.AOptions{RejectOutOfOrder: true})
+		var h *histogram.Histogram
+		var fh *histogram.FloatHistogram
+		switch markerType {
+		case staleMarkerHistogram:
+			h = &histogram.Histogram{Sum: math.Float64frombits(value.StaleNaN)}
+		case staleMarkerFloatHistogram:
+			fh = &histogram.FloatHistogram{Sum: math.Float64frombits(value.StaleNaN)}
+		}
+		_, err = app.Append(ref, lset, 0, defTime, math.Float64frombits(value.StaleNaN), h, fh, storage.AOptions{RejectOutOfOrder: true})
 		switch {
 		case errors.Is(err, storage.ErrOutOfOrderSample), errors.Is(err, storage.ErrDuplicateSampleForTimestamp):
 			// Do not count these in logging, as this is expected if a target
@@ -459,7 +467,7 @@ loop:
 		// If a series was new, but we didn't append it due to sample_limit or other errors then we don't need
 		// it in the scrape cache because we don't need to emit StaleNaNs for it when it disappears.
 		if !seriesCached && sampleAdded {
-			ce = sl.cache.addRef(met, ref, lset)
+			ce = sl.cache.addRef(met, ref, lset, staleMarkerTypeForHistogram(h, fh))
 			if hasMRC {
 				sl.cache.setSeriesMeta(ce, origMeta, sampleMeta, origMFName, sampleMFName)
 			}
@@ -467,6 +475,10 @@ loop:
 			if sampleLimitErr == nil && bucketLimitErr == nil {
 				seriesAdded++
 			}
+		}
+
+		if ce != nil && sampleAdded {
+			ce.markerType = staleMarkerTypeForHistogram(h, fh)
 		}
 
 		if ce != nil && sl.synthesizeST {
@@ -551,7 +563,7 @@ func (sl *scrapeLoopAppenderV2) addReportSample(s reportSample, t int64, v float
 	switch {
 	case err == nil:
 		if !ok {
-			sl.cache.addRef(s.name, ref, lset)
+			sl.cache.addRef(s.name, ref, lset, staleMarkerFloat)
 		}
 		return nil
 	case errors.Is(err, storage.ErrOutOfOrderSample), errors.Is(err, storage.ErrDuplicateSampleForTimestamp):
