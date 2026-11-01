@@ -22,11 +22,31 @@ Generic placeholders are defined as follows:
 * `<filename>`: a valid path in the current working directory
 * `<secret>`: a regular string that is a secret, such as a password
 * `<string>`: a regular string
+* `<int>`: a regular integer
+* `<duration>`: a duration as accepted by Go's [time.ParseDuration](https://pkg.go.dev/time#ParseDuration), such as `1s`, `500ms` or `1m30s`; unlike durations in the main configuration file, the units `d`, `w` and `y` are not supported
 
 A valid example file can be found [here](/documentation/examples/web-config.yml).
 
 ```yaml
 tls_server_config:
+  # Certificate for server to use to authenticate to client.
+  # Expected to be passed as a PEM encoded sequence of bytes as a string.
+  #
+  # NOTE: If passing the cert inline, cert_file should not be specified below.
+  [ cert: <string> ]
+
+  # Key for server to use to authenticate to client.
+  # Expected to be passed as a PEM encoded sequence of bytes as a string.
+  #
+  # NOTE: If passing the key inline, key_file should not be specified below.
+  [ key: <secret> ]
+
+  # CA certificate for client certificate authentication to the server.
+  # Expected to be passed as a PEM encoded sequence of bytes as a string.
+  #
+  # NOTE: If passing the client_ca inline, client_ca_file should not be specified below.
+  [ client_ca: <string> ]
+
   # Certificate and key files for server to use to authenticate to client.
   cert_file: <filename>
   key_file: <filename>
@@ -65,10 +85,13 @@ tls_server_config:
   [ cipher_suites:
     [ - <string> ] ]
 
-  # prefer_server_cipher_suites controls whether the server selects the
-  # client's most preferred ciphersuite, or the server's most preferred
-  # ciphersuite. If true then the server's preference, as expressed in
-  # the order of elements in cipher_suites, is used.
+  # Deprecated: this setting is accepted and ignored.
+  #
+  # It used to control whether the server followed its own cipher suite
+  # preference, as expressed in the order of elements in cipher_suites, or the
+  # client's. Go has selected the cipher suite itself since Go 1.17, taking
+  # into account inferred client hardware, server hardware and security, and
+  # the underlying setting has had no effect since then.
   [ prefer_server_cipher_suites: <boolean> | default = true ]
 
   # Elliptic curves that will be used in an ECDHE handshake, in preference
@@ -111,5 +134,18 @@ http_server_config:
 # required. Passwords are hashed with bcrypt.
 basic_auth_users:
   [ <string>: <secret> ... ]
+
+# Rate limiting of requests to the web server, using a token bucket.
+# Requests over the limit are rejected with HTTP 429 Too Many Requests.
+# A single limit applies to all requests from all clients, and is checked
+# before authentication.
+# This can not be changed on the fly.
+[ rate_limit:
+  # Average time between requests: one request is allowed per interval,
+  # with bursts up to burst. Set to 0 to disable the rate limiter.
+  [ interval: <duration> | default = 0 ]
+  # Number of requests permitted in a burst. Must be at least 1 when the
+  # rate limiter is enabled, otherwise all requests are rejected.
+  [ burst: <int> | default = 0 ] ]
 ```
 
