@@ -23,6 +23,7 @@ import (
 	"strings"
 	"sync"
 	"time"
+	"unique"
 
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/common/model"
@@ -33,6 +34,7 @@ import (
 	"go.uber.org/atomic"
 
 	"github.com/prometheus/prometheus/model/labels"
+	"github.com/prometheus/prometheus/model/metadata"
 	"github.com/prometheus/prometheus/model/timestamp"
 	"github.com/prometheus/prometheus/model/value"
 	"github.com/prometheus/prometheus/promql"
@@ -42,6 +44,11 @@ import (
 	"github.com/prometheus/prometheus/tsdb/chunkenc"
 )
 
+type trackedSeries struct {
+	labels   labels.Labels
+	metadata unique.Handle[metadata.Metadata]
+}
+
 // Group is a set of rules that have a logical relation.
 type Group struct {
 	name                  string
@@ -50,8 +57,8 @@ type Group struct {
 	queryOffset           *time.Duration
 	limit                 int
 	rules                 []Rule
-	seriesInPreviousEval  []map[string]labels.Labels // One per Rule.
-	staleSeries           []labels.Labels
+	seriesInPreviousEval  []map[string]trackedSeries // One per Rule.
+	staleSeries           []trackedSeries
 	opts                  *ManagerOptions
 	mtx                   sync.Mutex
 	evaluationTime        time.Duration // Time it took to evaluate the group.
@@ -137,7 +144,7 @@ func NewGroup(o GroupOptions) *Group {
 		rules:                o.Rules,
 		shouldRestore:        o.ShouldRestore,
 		opts:                 opts,
-		seriesInPreviousEval: make([]map[string]labels.Labels, len(o.Rules)),
+		seriesInPreviousEval: make([]map[string]trackedSeries, len(o.Rules)),
 		done:                 make(chan struct{}),
 		managerDone:          o.done,
 		terminated:           make(chan struct{}),
@@ -536,7 +543,29 @@ func (g *Group) Eval(ctx context.Context, ts time.Time) {
 
 		g.metrics.EvalTotal.WithLabelValues(GroupKey(g.File(), g.Name())).Inc()
 
-		vector, err := rule.Eval(ctx, ruleQueryOffset, ts, g.opts.QueryFunc, g.opts.ExternalURL, g.Limit())
+		var (
+			vector        promql.Vector
+			metas         []metadata.Metadata
+			ruleMeta      metadata.Metadata
+			hasPerSampleM bool
+			err           error
+		)
+		if rm, ok := rule.(ruleWithMetadata); ok {
+			hasPerSampleM = true
+			vector, metas, err = rm.evalWithMetadata(
+				ctx,
+				ruleQueryOffset,
+				ts,
+				g.opts.QueryFunc,
+				g.opts.ExternalURL,
+				g.Limit(),
+				g.opts.AppendMetadata,
+				g.opts.EnableTypeAndUnitLabels,
+			)
+		} else {
+			vector, err = rule.Eval(ctx, ruleQueryOffset, ts, g.opts.QueryFunc, g.opts.ExternalURL, g.Limit())
+			ruleMeta = rule.Metadata()
+		}
 		if err != nil {
 			rule.SetHealth(HealthBad)
 			rule.SetLastError(err)
@@ -550,13 +579,8 @@ func (g *Group) Eval(ctx context.Context, ts time.Time) {
 			}
 			return
 		}
-		meta := rule.Metadata()
-		appOpts := g.appOpts
-		if g.opts.AppendMetadata && !meta.IsEmpty() {
-			appOpts.Metadata = meta
-		}
-		if g.opts.EnableTypeAndUnitLabels && len(vector) > 0 {
-			sm := schema.Metadata{Type: meta.Type, Unit: meta.Unit}
+		if !hasPerSampleM && g.opts.EnableTypeAndUnitLabels && len(vector) > 0 {
+			sm := schema.Metadata{Type: ruleMeta.Type, Unit: ruleMeta.Unit}
 			if !sm.IsTypeEmpty() || sm.Unit != "" {
 				lb := labels.NewBuilder(labels.EmptyLabels())
 				for idx := range vector {
@@ -587,7 +611,7 @@ func (g *Group) Eval(ctx context.Context, ts time.Time) {
 		_, appenderSp := otel.Tracer("").Start(ctx, "newAppender")
 		app := g.opts.AppendableV2.AppenderV2(ctx)
 		appenderSp.End()
-		seriesReturned := make(map[string]labels.Labels, len(g.seriesInPreviousEval[i]))
+		seriesReturned := make(map[string]trackedSeries, len(g.seriesInPreviousEval[i]))
 		defer func() {
 			_, commitSp := otel.Tracer("").Start(ctx, "ruleCommit")
 			err := app.Commit()
@@ -613,7 +637,20 @@ func (g *Group) Eval(ctx context.Context, ts time.Time) {
 		_, appendSp := otel.Tracer("").Start(ctx, "ruleAppendResults")
 		defer appendSp.End()
 
-		for _, s := range vector {
+		var ruleMetaHandle unique.Handle[metadata.Metadata]
+		if !hasPerSampleM && g.opts.AppendMetadata && !ruleMeta.IsEmpty() {
+			ruleMetaHandle = unique.Make(ruleMeta)
+		}
+
+		for idx, s := range vector {
+			appOpts := g.appOpts
+			metaHandle := ruleMetaHandle
+			if idx < len(metas) && !metas[idx].IsEmpty() {
+				appOpts.Metadata = metas[idx]
+				metaHandle = unique.Make(metas[idx])
+			} else if !metadata.IsZeroHandle(metaHandle) {
+				appOpts.Metadata = metaHandle.Value()
+			}
 			_, err = app.Append(0, s.Metric, 0, s.T, s.F, nil, s.H, appOpts)
 
 			if err != nil {
@@ -639,7 +676,10 @@ func (g *Group) Eval(ctx context.Context, ts time.Time) {
 				}
 			} else {
 				buf := [1024]byte{}
-				seriesReturned[string(s.Metric.Bytes(buf[:]))] = s.Metric
+				seriesReturned[string(s.Metric.Bytes(buf[:]))] = trackedSeries{
+					labels:   s.Metric,
+					metadata: metaHandle,
+				}
 			}
 		}
 		if numOutOfOrder > 0 {
@@ -652,10 +692,14 @@ func (g *Group) Eval(ctx context.Context, ts time.Time) {
 			logger.Warn("Error on ingesting results from rule evaluation with different value but same timestamp", "num_dropped", numDuplicates)
 		}
 
-		for metric, lset := range g.seriesInPreviousEval[i] {
+		for metric, prev := range g.seriesInPreviousEval[i] {
 			if _, ok := seriesReturned[metric]; !ok {
 				// Series no longer exposed, mark it stale.
-				_, err = app.Append(0, lset, 0, timestamp.FromTime(ts.Add(-ruleQueryOffset)), math.Float64frombits(value.StaleNaN), nil, nil, appOpts)
+				appOpts := g.appOpts
+				if !metadata.IsZeroHandle(prev.metadata) {
+					appOpts.Metadata = prev.metadata.Value()
+				}
+				_, err = app.Append(0, prev.labels, 0, timestamp.FromTime(ts.Add(-ruleQueryOffset)), math.Float64frombits(value.StaleNaN), nil, nil, appOpts)
 				unwrappedErr := errors.Unwrap(err)
 				if unwrappedErr == nil {
 					unwrappedErr = err
@@ -668,7 +712,7 @@ func (g *Group) Eval(ctx context.Context, ts time.Time) {
 					// Do not count these in logging, as this is expected if series
 					// is exposed from a different rule.
 				default:
-					logger.Warn("Adding stale sample failed", "sample", lset.String(), "err", err)
+					logger.Warn("Adding stale sample failed", "sample", prev.labels.String(), "err", err)
 				}
 			}
 		}
@@ -745,7 +789,11 @@ func (g *Group) cleanupStaleSeries(ctx context.Context, ts time.Time) {
 	queryOffset := g.QueryOffset()
 	for _, s := range g.staleSeries {
 		// Rule that produced series no longer configured, mark it stale.
-		_, err := app.Append(0, s, 0, timestamp.FromTime(ts.Add(-queryOffset)), math.Float64frombits(value.StaleNaN), nil, nil, g.appOpts)
+		appOpts := g.appOpts
+		if !metadata.IsZeroHandle(s.metadata) {
+			appOpts.Metadata = s.metadata.Value()
+		}
+		_, err := app.Append(0, s.labels, 0, timestamp.FromTime(ts.Add(-queryOffset)), math.Float64frombits(value.StaleNaN), nil, nil, appOpts)
 		unwrappedErr := errors.Unwrap(err)
 		if unwrappedErr == nil {
 			unwrappedErr = err
@@ -758,7 +806,7 @@ func (g *Group) cleanupStaleSeries(ctx context.Context, ts time.Time) {
 			// Do not count these in logging, as this is expected if series
 			// is exposed from a different rule.
 		default:
-			g.logger.Warn("Adding stale sample for previous configuration failed", "sample", s, "err", err)
+			g.logger.Warn("Adding stale sample for previous configuration failed", "sample", s.labels, "err", err)
 		}
 	}
 	if err := app.Commit(); err != nil {

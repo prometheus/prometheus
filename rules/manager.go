@@ -167,12 +167,12 @@ type ManagerOptions struct {
 	// Parser is the PromQL parser used for parsing rule expressions.
 	Parser parser.Parser
 
-	// AppendMetadata controls whether rule evaluation passes configured recording
-	// rule metric metadata (type, unit, help) to AppendableV2.
+	// AppendMetadata controls whether rule evaluation deduces and passes metric
+	// metadata (type, unit, help) to AppendableV2.
 	AppendMetadata bool
 
-	// EnableTypeAndUnitLabels controls whether recording rule evaluation injects
-	// configured __type__ and __unit__ labels on recorded time series.
+	// EnableTypeAndUnitLabels controls whether rule evaluation injects __type__
+	// and __unit__ labels on recorded and alerting time series.
 	EnableTypeAndUnitLabels bool
 }
 

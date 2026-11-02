@@ -33,6 +33,7 @@ import (
 	"github.com/prometheus/prometheus/model/timestamp"
 	"github.com/prometheus/prometheus/promql"
 	"github.com/prometheus/prometheus/promql/parser"
+	"github.com/prometheus/prometheus/schema"
 	"github.com/prometheus/prometheus/storage"
 	"github.com/prometheus/prometheus/template"
 )
@@ -234,7 +235,7 @@ func (r *AlertingRule) Labels() labels.Labels {
 
 // Metadata returns the metric metadata associated with the alerting rule.
 func (*AlertingRule) Metadata() metadata.Metadata {
-	return metadata.Metadata{}
+	return metadata.Metadata{Type: model.MetricTypeGauge}
 }
 
 // Annotations returns the annotations of the alerting rule.
@@ -249,7 +250,7 @@ func (r *AlertingRule) sample(alert *Alert, ts time.Time) promql.Sample {
 		lb.Set(l.Name, l.Value)
 	})
 
-	lb.Set(labels.MetricName, alertMetricName)
+	schema.Metadata{Name: alertMetricName}.SetToLabels(lb)
 	lb.Set(labels.AlertName, r.name)
 	lb.Set(alertStateLabel, alert.State.String())
 
@@ -272,7 +273,7 @@ func (r *AlertingRule) forStateSample(alert *Alert, ts time.Time, v float64) pro
 		})
 	}
 
-	lb.Set(labels.MetricName, alertForStateMetricName)
+	schema.Metadata{Name: alertForStateMetricName}.SetToLabels(lb)
 	lb.Set(labels.AlertName, r.name)
 
 	s := promql.Sample{

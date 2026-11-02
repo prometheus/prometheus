@@ -844,14 +844,14 @@ func TestCopyState(t *testing.T) {
 			NewRecordingRule("rule3", nil, labels.FromStrings("l1", "v3")),
 			NewAlertingRule("alert2", nil, 0, 0, labels.FromStrings("l2", "v1"), labels.EmptyLabels(), labels.EmptyLabels(), "", true, nil),
 		},
-		seriesInPreviousEval: []map[string]labels.Labels{
+		seriesInPreviousEval: []map[string]trackedSeries{
 			{},
 			{},
 			{},
-			{"r3a": labels.FromStrings("l1", "v1")},
-			{"r3b": labels.FromStrings("l1", "v2")},
-			{"r3c": labels.FromStrings("l1", "v3")},
-			{"a2": labels.FromStrings("l2", "v1")},
+			{"r3a": {labels: labels.FromStrings("l1", "v1")}},
+			{"r3b": {labels: labels.FromStrings("l1", "v2")}},
+			{"r3c": {labels: labels.FromStrings("l1", "v3")}},
+			{"a2": {labels: labels.FromStrings("l2", "v1")}},
 		},
 		evaluationTime: time.Second,
 	}
@@ -867,25 +867,25 @@ func TestCopyState(t *testing.T) {
 			NewAlertingRule("alert2", nil, 0, 0, labels.FromStrings("l2", "v1"), labels.EmptyLabels(), labels.EmptyLabels(), "", true, nil),
 			NewRecordingRule("rule4", nil, labels.EmptyLabels()),
 		},
-		seriesInPreviousEval: make([]map[string]labels.Labels, 8),
+		seriesInPreviousEval: make([]map[string]trackedSeries, 8),
 	}
 	newGroup.CopyState(oldGroup)
 
-	want := []map[string]labels.Labels{
+	want := []map[string]trackedSeries{
 		nil,
-		{"r3a": labels.FromStrings("l1", "v1")},
-		{"r3b": labels.FromStrings("l1", "v2")},
+		{"r3a": {labels: labels.FromStrings("l1", "v1")}},
+		{"r3b": {labels: labels.FromStrings("l1", "v2")}},
 		{},
 		{},
 		nil,
-		{"a2": labels.FromStrings("l2", "v1")},
+		{"a2": {labels: labels.FromStrings("l2", "v1")}},
 		nil,
 	}
 	require.Equal(t, want, newGroup.seriesInPreviousEval)
 	require.Equal(t, oldGroup.rules[0], newGroup.rules[3])
 	require.Equal(t, oldGroup.evaluationTime, newGroup.evaluationTime)
 	require.Equal(t, oldGroup.lastEvaluation, newGroup.lastEvaluation)
-	require.Equal(t, []labels.Labels{labels.FromStrings("l1", "v3")}, newGroup.staleSeries)
+	require.Equal(t, []trackedSeries{{labels: labels.FromStrings("l1", "v3")}}, newGroup.staleSeries)
 }
 
 func TestDeletedRuleMarkedStale(t *testing.T) {
@@ -895,13 +895,13 @@ func TestDeletedRuleMarkedStale(t *testing.T) {
 		rules: []Rule{
 			NewRecordingRule("rule1", nil, labels.FromStrings("l1", "v1")),
 		},
-		seriesInPreviousEval: []map[string]labels.Labels{
-			{"r1": labels.FromStrings("l1", "v1")},
+		seriesInPreviousEval: []map[string]trackedSeries{
+			{"r1": {labels: labels.FromStrings("l1", "v1")}},
 		},
 	}
 	newGroup := &Group{
 		rules:                []Rule{},
-		seriesInPreviousEval: []map[string]labels.Labels{},
+		seriesInPreviousEval: []map[string]trackedSeries{},
 		opts: &ManagerOptions{
 			AppendableV2:              st,
 			RuleConcurrencyController: sequentialRuleEvalController{},
@@ -932,8 +932,8 @@ func TestDeletedRuleMarkedStale(t *testing.T) {
 
 func TestUpdate(t *testing.T) {
 	files := []string{"fixtures/rules.yaml"}
-	expected := map[string]labels.Labels{
-		"test": labels.FromStrings("name", "value"),
+	expected := map[string]trackedSeries{
+		"test": {labels: labels.FromStrings("name", "value")},
 	}
 	st := teststorage.New(t)
 
@@ -959,7 +959,7 @@ func TestUpdate(t *testing.T) {
 	require.NotEmpty(t, ruleManager.groups, "expected non-empty rule groups")
 	ogs := map[string]*Group{}
 	for h, g := range ruleManager.groups {
-		g.seriesInPreviousEval = []map[string]labels.Labels{
+		g.seriesInPreviousEval = []map[string]trackedSeries{
 			expected,
 		}
 		ogs[h] = g
@@ -3039,7 +3039,7 @@ func readWALMetadataByMetricName(t *testing.T, walDir string) map[string]metadat
 	return got
 }
 
-func TestGroupEvalAppendsConfiguredMetadata(t *testing.T) {
+func TestGroupEvalAppendsMetadata(t *testing.T) {
 	ruleYAML := `
 groups:
 - name: metadata_rules
@@ -3048,10 +3048,13 @@ groups:
     expr: sum by (job) (rate(http_requests_total[5m]))
     metadata:
       help: Per-job HTTP request rate.
-      type: gauge
       unit: requests_per_second
-  - record: job:http_requests:unannotated_rate5m
-    expr: sum by (job) (rate(http_requests_total[5m]))
+  - record: cluster:http_requests_total
+    expr: label_replace(http_requests_total, "cluster", "prod", "job", ".*")
+  - record: job:latency_seconds:sum
+    expr: sum by (job) (latency_seconds)
+  - record: job:latency_seconds:rate5m
+    expr: rate(latency_seconds[5m])
   - alert: HighRequests
     expr: http_requests_total > 0
 `
@@ -3076,6 +3079,17 @@ groups:
 			storage.AOptions{},
 		)
 		require.NoError(t, err)
+		_, err = seedApp.Append(
+			0,
+			labels.FromStrings(model.MetricNameLabel, "latency_seconds", "job", "api"),
+			0,
+			tsMs,
+			0,
+			tsdbutil.GenerateTestHistogram(int64(step+1)),
+			nil,
+			storage.AOptions{},
+		)
+		require.NoError(t, err)
 	}
 	require.NoError(t, seedApp.Commit())
 
@@ -3089,6 +3103,21 @@ groups:
 			Type: model.MetricTypeGauge,
 			Unit: "requests_per_second",
 			Help: "Per-job HTTP request rate.",
+		},
+		"cluster:http_requests_total": {
+			Type: model.MetricTypeCounter,
+		},
+		"job:latency_seconds:sum": {
+			Type: model.MetricTypeHistogram,
+		},
+		"job:latency_seconds:rate5m": {
+			Type: model.MetricTypeGaugeHistogram,
+		},
+		alertMetricName: {
+			Type: model.MetricTypeGauge,
+		},
+		alertForStateMetricName: {
+			Type: model.MetricTypeGauge,
 		},
 	}
 
@@ -3106,7 +3135,7 @@ groups:
 			Logger:         promslog.NewNopLogger(),
 			AppendMetadata: true,
 		})
-		mgr.restored = true
+		mgr.restored = true // Skip initial restore delay so AlertingRule emits ALERTS immediately.
 
 		groups, errs := mgr.LoadGroups(time.Minute, labels.EmptyLabels(), "", nil, false, ruleFile)
 		require.Empty(t, errs)
@@ -3152,7 +3181,7 @@ groups:
 		require.Empty(t, errs)
 		for _, g := range groups {
 			g.Eval(t.Context(), evalTime)
-			// Trigger staleness markers on the next evaluation and verify configured metadata is preserved.
+			// Trigger staleness markers on the next evaluation and verify no errors or lost metadata.
 			returnEmpty.Store(true)
 			g.Eval(t.Context(), evalTime.Add(time.Minute))
 		}
@@ -3171,12 +3200,7 @@ groups:
     expr: sum by (job) (rate(http_requests_total[5m]))
     metadata:
       help: Updated help text.
-      type: gauge
       unit: requests_per_second
-  - record: job:http_requests:unannotated_rate5m
-    expr: sum by (job) (rate(http_requests_total[5m]))
-  - alert: HighRequests
-    expr: http_requests_total > 0
 `
 		updatedFile := filepath.Join(t.TempDir(), "rules.yaml")
 		require.NoError(t, os.WriteFile(updatedFile, []byte(ruleYAML), 0o600))

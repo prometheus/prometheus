@@ -19,12 +19,15 @@ import (
 	"fmt"
 	"log/slog"
 	"net/url"
+	"strings"
 	"sync"
 	"time"
 
+	"github.com/prometheus/common/model"
 	"go.uber.org/atomic"
 	"go.yaml.in/yaml/v2"
 
+	"github.com/prometheus/prometheus/model/histogram"
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/model/metadata"
 	"github.com/prometheus/prometheus/model/rulefmt"
@@ -33,7 +36,10 @@ import (
 	"github.com/prometheus/prometheus/schema"
 )
 
-var _ Rule = (*RecordingRule)(nil)
+var (
+	_ Rule             = (*RecordingRule)(nil)
+	_ ruleWithMetadata = (*RecordingRule)(nil)
+)
 
 // ErrDuplicateRecordingLabelSet is returned when a recording rule evaluation produces
 // metrics with identical labelsets after applying rule labels.
@@ -99,44 +105,139 @@ func (rule *RecordingRule) Metadata() metadata.Metadata {
 }
 
 // Eval evaluates the rule and then overrides the metric names and labels accordingly.
-func (rule *RecordingRule) Eval(ctx context.Context, queryOffset time.Duration, ts time.Time, query QueryFunc, _ *url.URL, limit int) (promql.Vector, error) {
+func (rule *RecordingRule) Eval(ctx context.Context, queryOffset time.Duration, ts time.Time, query QueryFunc, externalURL *url.URL, limit int) (promql.Vector, error) {
+	vec, _, err := rule.evalWithMetadata(ctx, queryOffset, ts, query, externalURL, limit, false, false)
+	return vec, err
+}
+
+func (rule *RecordingRule) evalWithMetadata(
+	ctx context.Context,
+	queryOffset time.Duration,
+	ts time.Time,
+	query QueryFunc,
+	_ *url.URL,
+	limit int,
+	appendMetadata bool,
+	enableTypeAndUnitLabels bool,
+) (promql.Vector, []metadata.Metadata, error) {
 	ctx = NewOriginContext(ctx, NewRuleDetail(rule))
 	vector, err := query(ctx, rule.vector.String(), ts.Add(-queryOffset))
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 
-	// Override the metric name, apply rule labels, and strip reserved schema labels.
+	var metas []metadata.Metadata
+	if appendMetadata && len(vector) > 0 {
+		metas = make([]metadata.Metadata, len(vector))
+	}
+
+	// Override the metric name, apply rule labels, and synchronize schema metadata labels.
 	lb := labels.NewBuilder(labels.EmptyLabels())
 
 	for i := range vector {
 		sample := &vector[i]
 
+		var meta metadata.Metadata
+		if appendMetadata || enableTypeAndUnitLabels {
+			meta = rule.deduceSampleMetadata(sample, enableTypeAndUnitLabels)
+		}
+
 		lb.Reset(sample.Metric)
 		rule.labels.Range(func(l labels.Label) {
 			lb.Set(l.Name, l.Value)
 		})
-		// Strip any reserved __type__ and __unit__ labels and set __name__.
-		// Group.Eval injects configured __type__ and __unit__ when type-and-unit-labels is enabled.
-		schema.Metadata{Name: rule.name}.SetToLabels(lb)
+		if !enableTypeAndUnitLabels {
+			schema.Metadata{Name: rule.name}.SetToLabels(lb)
+		} else {
+			// Set __name__, __type__, and __unit__ before duplicate labelset detection
+			// and staleness tracking so schema labels stay authoritative.
+			schema.Metadata{
+				Name: rule.name,
+				Type: meta.Type,
+				Unit: meta.Unit,
+			}.SetToLabels(lb)
+		}
 
 		sample.Metric = lb.Labels()
+		if appendMetadata {
+			metas[i] = meta
+		}
 	}
 
 	// Check that the rule does not produce identical metrics after applying
 	// labels.
 	if vector.ContainsSameLabelset() {
-		return nil, ErrDuplicateRecordingLabelSet
+		return nil, nil, ErrDuplicateRecordingLabelSet
 	}
 
 	numSeries := len(vector)
 	if limit > 0 && numSeries > limit {
-		return nil, fmt.Errorf("exceeded limit of %d with %d series", limit, numSeries)
+		return nil, nil, fmt.Errorf("exceeded limit of %d with %d series", limit, numSeries)
 	}
 
 	rule.SetHealth(HealthGood)
 	rule.SetLastError(err)
-	return vector, nil
+	return vector, metas, nil
+}
+
+// deduceSampleMetadata infers metric metadata (type, unit, help) for an evaluated
+// recording rule sample using YAML overrides, preserved schema labels, and sample value kind.
+func (rule *RecordingRule) deduceSampleMetadata(sample *promql.Sample, enableTypeAndUnitLabels bool) metadata.Metadata {
+	isHist := sample.H != nil
+	var preserved schema.Metadata
+	if origName := sample.Metric.Get(labels.MetricName); origName != "" {
+		if enableTypeAndUnitLabels {
+			preserved = schema.NewMetadataFromLabels(sample.Metric)
+		} else {
+			preserved.Name = origName
+			// NOTE(bwplotka): Until native TSDB metadata lookup lands (prometheus#19563),
+			// fall back to standard Prometheus naming suffixes when __name__ survived
+			// PromQL evaluation unchanged (DropName == false).
+			switch {
+			case strings.HasSuffix(origName, "_total"):
+				preserved.Type = model.MetricTypeCounter
+			case strings.HasSuffix(origName, "_info"):
+				preserved.Type = model.MetricTypeInfo
+			}
+		}
+	}
+
+	var mType model.MetricType
+	switch {
+	case rule.meta.Type != "" && isSampleTypeCompatible(rule.meta.Type, isHist):
+		mType = rule.meta.Type
+	case !preserved.IsTypeEmpty() && isSampleTypeCompatible(preserved.Type, isHist):
+		mType = preserved.Type
+	case isHist:
+		if sample.H.CounterResetHint == histogram.GaugeType {
+			mType = model.MetricTypeGaugeHistogram
+		} else {
+			mType = model.MetricTypeHistogram
+		}
+	default:
+		mType = model.MetricTypeGauge
+	}
+
+	unit := rule.meta.Unit
+	if unit == "" {
+		unit = preserved.Unit
+	}
+
+	return metadata.Metadata{
+		Type: mType,
+		Unit: unit,
+		Help: rule.meta.Help,
+	}
+}
+
+// isSampleTypeCompatible reports whether t is valid for the runtime sample value kind.
+// Native histogram samples require histogram or gaugehistogram metadata, whereas
+// float samples cannot use native histogram metadata types.
+func isSampleTypeCompatible(t model.MetricType, isHistogram bool) bool {
+	if isHistogram {
+		return t == model.MetricTypeHistogram || t == model.MetricTypeGaugeHistogram
+	}
+	return t != model.MetricTypeHistogram && t != model.MetricTypeGaugeHistogram
 }
 
 // LogValue returns the rule's representation for logging.
