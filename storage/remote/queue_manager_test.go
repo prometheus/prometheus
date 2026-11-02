@@ -2670,6 +2670,110 @@ func TestBuildTimeSeries(t *testing.T) {
 	}
 }
 
+func TestBuildV2TimeSeries_CoalescedExemplars(t *testing.T) {
+	baseTime := time.UnixMilli(10_000)
+	ageLimit := 5 * time.Second // Cutoff is 5000ms.
+
+	for _, tc := range []struct {
+		name                      string
+		input                     []writev2.TimeSeries
+		withAgeFilter             bool
+		expectedKept              []writev2.TimeSeries
+		expectedLowest            int64
+		expectedHighest           int64
+		expectedDroppedSamples    int
+		expectedDroppedExemplars  int
+		expectedDroppedHistograms int
+	}{
+		{
+			name: "no filter tracks timestamps across multiple coalesced exemplars",
+			input: []writev2.TimeSeries{
+				{
+					Samples:   []writev2.Sample{{Timestamp: 8000, Value: 1}},
+					Exemplars: []writev2.Exemplar{{Timestamp: 7000, Value: 1}, {Timestamp: 2000, Value: 2}},
+				},
+			},
+			withAgeFilter: false,
+			expectedKept: []writev2.TimeSeries{
+				{
+					Samples:   []writev2.Sample{{Timestamp: 8000, Value: 1}},
+					Exemplars: []writev2.Exemplar{{Timestamp: 7000, Value: 1}, {Timestamp: 2000, Value: 2}},
+				},
+			},
+			expectedLowest:  2000,
+			expectedHighest: 8000,
+		},
+		{
+			name: "old sample drops series and counts all coalesced exemplars",
+			input: []writev2.TimeSeries{
+				{
+					Samples:   []writev2.Sample{{Timestamp: 3000, Value: 1}},
+					Exemplars: []writev2.Exemplar{{Timestamp: 3000, Value: 1}, {Timestamp: 3500, Value: 2}},
+				},
+				{
+					Histograms: []writev2.Histogram{{Timestamp: 9000}},
+					Exemplars:  []writev2.Exemplar{{Timestamp: 8500, Value: 3}},
+				},
+			},
+			withAgeFilter: true,
+			expectedKept: []writev2.TimeSeries{
+				{
+					Histograms: []writev2.Histogram{{Timestamp: 9000}},
+					Exemplars:  []writev2.Exemplar{{Timestamp: 8500, Value: 3}},
+				},
+			},
+			expectedLowest:           8500,
+			expectedHighest:          9000,
+			expectedDroppedSamples:   1,
+			expectedDroppedExemplars: 2,
+		},
+		{
+			name: "fresh sample with mixed-age exemplars drops only old exemplars",
+			input: []writev2.TimeSeries{
+				{
+					Samples:   []writev2.Sample{{Timestamp: 8000, Value: 1}},
+					Exemplars: []writev2.Exemplar{{Timestamp: 2000, Value: 1}, {Timestamp: 7500, Value: 2}},
+				},
+				{
+					Exemplars: []writev2.Exemplar{{Timestamp: 2500, Value: 3}},
+				},
+			},
+			withAgeFilter: true,
+			expectedKept: []writev2.TimeSeries{
+				{
+					Samples:   []writev2.Sample{{Timestamp: 8000, Value: 1}},
+					Exemplars: []writev2.Exemplar{{Timestamp: 7500, Value: 2}},
+				},
+			},
+			expectedLowest:           7500,
+			expectedHighest:          8000,
+			expectedDroppedExemplars: 2,
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			metrics := newQueueManagerMetrics(nil, "", "")
+			var filter func(*writev2.TimeSeries) bool
+			if tc.withAgeFilter {
+				filter = isV2TimeSeriesOldFilter(metrics, baseTime, ageLimit)
+			}
+
+			got, stats := buildV2TimeSeries(tc.input, filter)
+			require.Equal(t, tc.expectedKept, got)
+			require.Equal(t, tc.expectedLowest, stats.lowest)
+			require.Equal(t, tc.expectedHighest, stats.highest)
+			require.Equal(t, tc.expectedDroppedSamples, stats.droppedSamples)
+			require.Equal(t, tc.expectedDroppedExemplars, stats.droppedExemplars)
+			require.Equal(t, tc.expectedDroppedHistograms, stats.droppedHistograms)
+
+			if tc.withAgeFilter {
+				require.Equal(t, float64(tc.expectedDroppedSamples), client_testutil.ToFloat64(metrics.droppedSamplesTotal.WithLabelValues(reasonTooOld)))
+				require.Equal(t, float64(tc.expectedDroppedExemplars), client_testutil.ToFloat64(metrics.droppedExemplarsTotal.WithLabelValues(reasonTooOld)))
+				require.Equal(t, float64(tc.expectedDroppedHistograms), client_testutil.ToFloat64(metrics.droppedHistogramsTotal.WithLabelValues(reasonTooOld)))
+			}
+		})
+	}
+}
+
 func BenchmarkBuildTimeSeries(b *testing.B) {
 	// Send one sample per series, which is the typical remote_write case
 	const numSamples = 10000
