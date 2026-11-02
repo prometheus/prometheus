@@ -33,6 +33,7 @@ import (
 	"time"
 	"unsafe"
 
+	"github.com/cespare/xxhash/v2"
 	"github.com/klauspost/compress/gzip"
 	"github.com/klauspost/compress/zstd"
 	config_util "github.com/prometheus/common/config"
@@ -1166,11 +1167,12 @@ func (c *scrapeCache) deleteSeries(met []byte, ce *cacheEntry) {
 	}
 }
 
-func (c *scrapeCache) addDropped(hash uint64) {
-	c.droppedSeries[hash] = c.iter
+func (c *scrapeCache) addDropped(met []byte) {
+	c.droppedSeries[xxhash.Sum64(met)] = c.iter
 }
 
-func (c *scrapeCache) getDropped(hash uint64) bool {
+func (c *scrapeCache) getDropped(met []byte) bool {
+	hash := xxhash.Sum64(met)
 	if _, ok := c.droppedSeries[hash]; ok {
 		c.droppedSeries[hash] = c.iter
 		return true
@@ -1951,29 +1953,24 @@ loop:
 			t = *parsedTimestamp
 		}
 
+		if sl.cache.getDropped(met) {
+			continue
+		}
 		ce, seriesCached, seriesAlreadyScraped := sl.cache.get(met)
-		var (
-			ref  storage.SeriesRef
-			hash uint64
-		)
+		var ref storage.SeriesRef
 
 		if seriesCached {
 			ref = ce.ref
 			lset = ce.lset
 		} else {
 			p.Labels(&lset)
-			hash = lset.Hash()
-
-			if sl.cache.getDropped(hash) {
-				continue
-			}
 
 			// Add target labels and apply relabeling before storing the final label set.
 			lset = sl.sampleMutator(lset)
 
 			// The label set may be set to empty to indicate dropping.
 			if lset.IsEmpty() {
-				sl.cache.addDropped(hash)
+				sl.cache.addDropped(met)
 				continue
 			}
 
