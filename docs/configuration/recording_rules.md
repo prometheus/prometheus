@@ -112,6 +112,7 @@ labels:
   [ <labelname>: <labelvalue> ]
 
 # Optional metric metadata for the recorded time series.
+# Overrides automatic runtime metadata deduction when set.
 metadata:
   [ help: <string> ]
   [ type: <string> ] # One of counter, gauge, histogram, gaugehistogram, summary, info, stateset, unknown.
