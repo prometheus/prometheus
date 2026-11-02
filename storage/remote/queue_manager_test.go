@@ -46,6 +46,7 @@ import (
 	"golang.org/x/sync/errgroup"
 
 	"github.com/prometheus/prometheus/config"
+	"github.com/prometheus/prometheus/model/exemplar"
 	"github.com/prometheus/prometheus/model/histogram"
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/model/metadata"
@@ -2697,15 +2698,18 @@ func TestBuildV2TimeSeries_CoalescedExemplars(t *testing.T) {
 	ageLimit := 5 * time.Second // Cutoff is 5000ms.
 
 	for _, tc := range []struct {
-		name                      string
-		input                     []writev2.TimeSeries
-		withAgeFilter             bool
-		expectedKept              []writev2.TimeSeries
-		expectedLowest            int64
-		expectedHighest           int64
-		expectedDroppedSamples    int
-		expectedDroppedExemplars  int
-		expectedDroppedHistograms int
+		name                             string
+		input                            []writev2.TimeSeries
+		withAgeFilter                    bool
+		mode                             remoteapi.WriteMode
+		expectedKept                     []writev2.TimeSeries
+		expectedLowest                   int64
+		expectedHighest                  int64
+		expectedDroppedSamples           int
+		expectedDroppedExemplars         int
+		expectedDroppedHistograms        int
+		expectedTooOldExemplars          float64
+		expectedDetachedDroppedExemplars float64
 	}{
 		{
 			name: "no filter tracks timestamps across multiple coalesced exemplars",
@@ -2726,57 +2730,97 @@ func TestBuildV2TimeSeries_CoalescedExemplars(t *testing.T) {
 			expectedHighest: 8000,
 		},
 		{
-			name: "old sample drops series and counts all coalesced exemplars",
+			name: "old sample keeps fresh exemplar in WriteModeNone",
 			input: []writev2.TimeSeries{
 				{
 					Samples:   []writev2.Sample{{Timestamp: 3000, Value: 1}},
-					Exemplars: []writev2.Exemplar{{Timestamp: 3000, Value: 1}, {Timestamp: 3500, Value: 2}},
-				},
-				{
-					Histograms: []writev2.Histogram{{Timestamp: 9000}},
-					Exemplars:  []writev2.Exemplar{{Timestamp: 8500, Value: 3}},
+					Exemplars: []writev2.Exemplar{{Timestamp: 3500, Value: 1}, {Timestamp: 7000, Value: 2}},
 				},
 			},
 			withAgeFilter: true,
+			mode:          remoteapi.WriteModeNone,
+			expectedKept: []writev2.TimeSeries{
+				{
+					Samples:   []writev2.Sample{},
+					Exemplars: []writev2.Exemplar{{Timestamp: 7000, Value: 2}},
+				},
+			},
+			expectedLowest:           7000,
+			expectedHighest:          7000,
+			expectedDroppedSamples:   1,
+			expectedDroppedExemplars: 1,
+			expectedTooOldExemplars:  1,
+		},
+		{
+			name: "old sample and old histogram drop fresh exemplars as detached in WriteModeStateless",
+			input: []writev2.TimeSeries{
+				{
+					Samples:   []writev2.Sample{{Timestamp: 3000, Value: 1}},
+					Exemplars: []writev2.Exemplar{{Timestamp: 3500, Value: 1}, {Timestamp: 7000, Value: 2}},
+				},
+				{
+					Histograms: []writev2.Histogram{{Timestamp: 4000}},
+					Exemplars:  []writev2.Exemplar{{Timestamp: 7500, Value: 3}},
+				},
+				{
+					Histograms: []writev2.Histogram{{Timestamp: 9000}},
+					Exemplars:  []writev2.Exemplar{{Timestamp: 8500, Value: 4}},
+				},
+			},
+			withAgeFilter: true,
+			mode:          remoteapi.WriteModeStateless,
 			expectedKept: []writev2.TimeSeries{
 				{
 					Histograms: []writev2.Histogram{{Timestamp: 9000}},
-					Exemplars:  []writev2.Exemplar{{Timestamp: 8500, Value: 3}},
+					Exemplars:  []writev2.Exemplar{{Timestamp: 8500, Value: 4}},
 				},
 			},
-			expectedLowest:           8500,
-			expectedHighest:          9000,
-			expectedDroppedSamples:   1,
-			expectedDroppedExemplars: 2,
+			expectedLowest:                   8500,
+			expectedHighest:                  9000,
+			expectedDroppedSamples:           1,
+			expectedDroppedExemplars:         3,
+			expectedDroppedHistograms:        1,
+			expectedTooOldExemplars:          1,
+			expectedDetachedDroppedExemplars: 2,
 		},
 		{
-			name: "fresh sample with mixed-age exemplars drops only old exemplars",
+			name: "fresh series with mixed-age and all-old exemplars drops only old exemplars",
 			input: []writev2.TimeSeries{
 				{
 					Samples:   []writev2.Sample{{Timestamp: 8000, Value: 1}},
 					Exemplars: []writev2.Exemplar{{Timestamp: 2000, Value: 1}, {Timestamp: 7500, Value: 2}},
 				},
 				{
+					Samples:   []writev2.Sample{{Timestamp: 8500, Value: 2}},
 					Exemplars: []writev2.Exemplar{{Timestamp: 2500, Value: 3}},
+				},
+				{
+					Exemplars: []writev2.Exemplar{{Timestamp: 2500, Value: 4}},
 				},
 			},
 			withAgeFilter: true,
+			mode:          remoteapi.WriteModeStateless,
 			expectedKept: []writev2.TimeSeries{
 				{
 					Samples:   []writev2.Sample{{Timestamp: 8000, Value: 1}},
 					Exemplars: []writev2.Exemplar{{Timestamp: 7500, Value: 2}},
 				},
+				{
+					Samples:   []writev2.Sample{{Timestamp: 8500, Value: 2}},
+					Exemplars: []writev2.Exemplar{},
+				},
 			},
 			expectedLowest:           7500,
-			expectedHighest:          8000,
-			expectedDroppedExemplars: 2,
+			expectedHighest:          8500,
+			expectedDroppedExemplars: 3,
+			expectedTooOldExemplars:  3,
 		},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			metrics := newQueueManagerMetrics(nil, "", "")
 			var filter func(*writev2.TimeSeries) bool
 			if tc.withAgeFilter {
-				filter = isV2TimeSeriesOldFilter(metrics, baseTime, ageLimit, remoteapi.WriteModeNone)
+				filter = isV2TimeSeriesOldFilter(metrics, baseTime, ageLimit, tc.mode)
 			}
 
 			got, stats := buildV2TimeSeries(tc.input, filter)
@@ -2789,7 +2833,8 @@ func TestBuildV2TimeSeries_CoalescedExemplars(t *testing.T) {
 
 			if tc.withAgeFilter {
 				require.Equal(t, float64(tc.expectedDroppedSamples), client_testutil.ToFloat64(metrics.droppedSamplesTotal.WithLabelValues(reasonTooOld)))
-				require.Equal(t, float64(tc.expectedDroppedExemplars), client_testutil.ToFloat64(metrics.droppedExemplarsTotal.WithLabelValues(reasonTooOld)))
+				require.Equal(t, tc.expectedTooOldExemplars, client_testutil.ToFloat64(metrics.droppedExemplarsTotal.WithLabelValues(reasonTooOld)))
+				require.Equal(t, tc.expectedDetachedDroppedExemplars, client_testutil.ToFloat64(metrics.droppedExemplarsTotal.WithLabelValues(reasonDetachedExemplarNotAllowed)))
 				require.Equal(t, float64(tc.expectedDroppedHistograms), client_testutil.ToFloat64(metrics.droppedHistogramsTotal.WithLabelValues(reasonTooOld)))
 			}
 		})
@@ -3146,57 +3191,80 @@ func TestPopulateV2TimeSeries_ExemplarCoalescing(t *testing.T) {
 		PositiveBuckets: []int64{5},
 	}
 	floatHist := hist.ToFloat(nil)
+	stale := math.Float64frombits(value.StaleNaN)
 	sCounter := labels.FromStrings("__name__", "requests_total", "job", "api")
 	sHist := labels.FromStrings("__name__", "latency_seconds", "job", "api")
 	sFloatHist := labels.FromStrings("__name__", "float_latency_seconds", "job", "api")
+	sStaleOnly := labels.FromStrings("__name__", "stale_only_total", "job", "api")
 	sDetached := labels.FromStrings("__name__", "detached_total", "job", "worker")
 
-	t.Run("exemplar before sample, multiple exemplars, and histogram series", func(t *testing.T) {
+	t.Run("exemplar before sample, staleness skipping, latest sample, and histogram series", func(t *testing.T) {
 		symbolTable := writev2.NewSymbolTable()
 
 		batch := []timeSeries{
-			// Exemplar arriving before its matching sample in the batch.
+			// Unexpected tMetadata before data entries must not shift dataIdx.
+			{sType: tMetadata, seriesLabels: labels.FromStrings("__name__", "unexpected_meta")},
+			// Exemplar arriving before its matching samples in the batch.
 			{sType: tExemplar, seriesLabels: sCounter, exemplarLabels: labels.FromStrings("trace_id", "ex1"), value: 1, timestamp: 100},
+			// Older sample followed by a newer sample for the same series; exemplars must attach to the latest live sample (index 1).
+			{sType: tSample, seriesLabels: sCounter, value: 40, timestamp: 90, startTimestamp: 50},
 			{sType: tSample, seriesLabels: sCounter, value: 42, timestamp: 100, startTimestamp: 50},
 			// Second exemplar for the same sample series.
 			{sType: tExemplar, seriesLabels: sCounter, exemplarLabels: labels.FromStrings("trace_id", "ex2"), value: 2, timestamp: 101},
-			// Int and float histogram series with matching exemplars.
+			// Float staleness marker preceding native histogram for sHist; exemplar must skip stale entry (index 2) and attach to histogram (index 3).
+			{sType: tSample, seriesLabels: sHist, value: stale, timestamp: 199},
 			{sType: tHistogram, seriesLabels: sHist, histogram: hist, timestamp: 200, startTimestamp: 50},
 			{sType: tFloatHistogram, seriesLabels: sFloatHist, floatHistogram: floatHist, timestamp: 300},
+			{sType: tSample, seriesLabels: sStaleOnly, value: stale, timestamp: 350},
 			{sType: tExemplar, seriesLabels: sHist, exemplarLabels: labels.FromStrings("trace_id", "ex_hist"), value: 3, timestamp: 200},
 			{sType: tExemplar, seriesLabels: sFloatHist, exemplarLabels: labels.FromStrings("trace_id", "ex_fhist"), value: 4, timestamp: 300},
+			// Exemplar whose series only has a StaleNaN marker in the batch must be treated as detached and dropped in stateless mode.
+			{sType: tExemplar, seriesLabels: sStaleOnly, exemplarLabels: labels.FromStrings("trace_id", "stale_dropped"), value: 6, timestamp: 350},
 			// Detached exemplar with no matching sample or histogram.
 			{sType: tExemplar, seriesLabels: sDetached, exemplarLabels: labels.FromStrings("trace_id", "dropped_trace"), value: 5, timestamp: 400},
 		}
 
-		// Size pendingData to the exact number of output series (3) to verify attached and dropped exemplars do not index out of bounds.
-		pendingData := make([]writev2.TimeSeries, 3)
+		// Size pendingData to the exact number of output series (6) to verify attached and dropped exemplars do not index out of bounds.
+		pendingData := make([]writev2.TimeSeries, 6)
 		nSeries, nSamples, nExemplars, nHistograms, nUnexpected, nDropped := populateV2TimeSeries(
 			&symbolTable, batch, pendingData, nil, true, true, false, remoteapi.WriteModeStateless,
 		)
 
-		require.Equal(t, 3, nSeries)
-		require.Equal(t, 1, nSamples)
+		require.Equal(t, 6, nSeries)
+		require.Equal(t, 4, nSamples)
 		require.Equal(t, 4, nExemplars)
 		require.Equal(t, 2, nHistograms)
-		require.Equal(t, 0, nUnexpected)
-		require.Equal(t, 1, nDropped)
+		require.Equal(t, 1, nUnexpected)
+		require.Equal(t, 2, nDropped)
 
-		require.Len(t, pendingData[0].Samples, 1)
-		require.Len(t, pendingData[0].Exemplars, 2)
-		require.Equal(t, float64(1), pendingData[0].Exemplars[0].Value)
-		require.Equal(t, float64(2), pendingData[0].Exemplars[1].Value)
+		// Older sCounter sample at index 0 has no exemplars; latest live sCounter sample at index 1 has both coalesced exemplars.
+		require.Empty(t, pendingData[0].Exemplars)
+		require.Len(t, pendingData[1].Samples, 1)
+		require.Len(t, pendingData[1].Exemplars, 2)
+		var b labels.ScratchBuilder
+		gotEx0, err := pendingData[1].Exemplars[0].ToExemplar(&b, symbolTable.Symbols())
+		require.NoError(t, err)
+		require.Equal(t, exemplar.Exemplar{Labels: labels.FromStrings("trace_id", "ex1"), Value: 1, Ts: 100, HasTs: true}, gotEx0)
+		gotEx1, err := pendingData[1].Exemplars[1].ToExemplar(&b, symbolTable.Symbols())
+		require.NoError(t, err)
+		require.Equal(t, exemplar.Exemplar{Labels: labels.FromStrings("trace_id", "ex2"), Value: 2, Ts: 101, HasTs: true}, gotEx1)
 
-		require.Len(t, pendingData[1].Histograms, 1)
-		require.Len(t, pendingData[1].Exemplars, 1)
-		require.Equal(t, float64(3), pendingData[1].Exemplars[0].Value)
+		// Float StaleNaN on sHist at index 2 has no exemplars; live histogram on sHist at index 3 has the coalesced exemplar.
+		require.Empty(t, pendingData[2].Exemplars)
+		require.Len(t, pendingData[3].Histograms, 1)
+		require.Len(t, pendingData[3].Exemplars, 1)
+		require.Equal(t, float64(3), pendingData[3].Exemplars[0].Value)
 
-		require.Len(t, pendingData[2].Histograms, 1)
-		require.Len(t, pendingData[2].Exemplars, 1)
-		require.Equal(t, float64(4), pendingData[2].Exemplars[0].Value)
+		require.Len(t, pendingData[4].Histograms, 1)
+		require.Len(t, pendingData[4].Exemplars, 1)
+		require.Equal(t, float64(4), pendingData[4].Exemplars[0].Value)
+
+		// Stale-only series at index 5 must not carry exemplars.
+		require.Empty(t, pendingData[5].Exemplars)
 
 		// Dropped exemplar labels and series labels must not leak into the symbol table.
 		require.NotContains(t, symbolTable.Symbols(), "dropped_trace")
+		require.NotContains(t, symbolTable.Symbols(), "stale_dropped")
 		require.NotContains(t, symbolTable.Symbols(), "detached_total")
 		require.NotContains(t, symbolTable.Symbols(), "worker")
 
@@ -3204,19 +3272,21 @@ func TestPopulateV2TimeSeries_ExemplarCoalescing(t *testing.T) {
 		symbolTable.Reset()
 		nextBatch := []timeSeries{
 			{sType: tSample, seriesLabels: sCounter, value: 43, timestamp: 500},
+			{sType: tSample, seriesLabels: sHist, value: 44, timestamp: 500},
 		}
 		nSeries, nSamples, nExemplars, nHistograms, _, nDropped = populateV2TimeSeries(
 			&symbolTable, nextBatch, pendingData, nil, true, true, false, remoteapi.WriteModeStateless,
 		)
-		require.Equal(t, 1, nSeries)
-		require.Equal(t, 1, nSamples)
+		require.Equal(t, 2, nSeries)
+		require.Equal(t, 2, nSamples)
 		require.Equal(t, 0, nExemplars)
 		require.Equal(t, 0, nHistograms)
 		require.Equal(t, 0, nDropped)
 		require.Empty(t, pendingData[0].Exemplars)
+		require.Empty(t, pendingData[1].Exemplars)
 	})
 
-	t.Run("detached exemplar kept in WriteModeNone", func(t *testing.T) {
+	t.Run("detached exemplar kept in WriteModeNone resets reused pendingData slices", func(t *testing.T) {
 		symbolTable := writev2.NewSymbolTable()
 
 		meta := unique.Make(metadata.Metadata{Type: model.MetricTypeCounter, Unit: "requests", Help: "Total detached requests"})
@@ -3225,7 +3295,15 @@ func TestPopulateV2TimeSeries_ExemplarCoalescing(t *testing.T) {
 			{sType: tExemplar, seriesLabels: sDetached, exemplarLabels: labels.FromStrings("trace_id", "kept_trace"), value: 5, timestamp: 200, metadata: meta},
 		}
 
-		pendingData := make([]writev2.TimeSeries, 2)
+		// Pre-populate pendingData[1] with stale Samples, Histograms, and Exemplars to verify all three slices are reset.
+		pendingData := []writev2.TimeSeries{
+			{},
+			{
+				Samples:    []writev2.Sample{{Value: 999, Timestamp: 1}},
+				Histograms: []writev2.Histogram{{Timestamp: 2}},
+				Exemplars:  []writev2.Exemplar{{Value: 888, Timestamp: 3}, {Value: 777, Timestamp: 4}},
+			},
+		}
 		nSeries, nSamples, nExemplars, nHistograms, _, nDropped := populateV2TimeSeries(
 			&symbolTable, batch, pendingData, nil, true, true, false, remoteapi.WriteModeNone,
 		)
@@ -3239,6 +3317,13 @@ func TestPopulateV2TimeSeries_ExemplarCoalescing(t *testing.T) {
 		require.Empty(t, pendingData[1].Samples)
 		require.Empty(t, pendingData[1].Histograms)
 		require.Len(t, pendingData[1].Exemplars, 1)
+		var b labels.ScratchBuilder
+		gotLbls, err := pendingData[1].ToLabels(&b, symbolTable.Symbols())
+		require.NoError(t, err)
+		require.Equal(t, sDetached, gotLbls)
+		gotEx, err := pendingData[1].Exemplars[0].ToExemplar(&b, symbolTable.Symbols())
+		require.NoError(t, err)
+		require.Equal(t, exemplar.Exemplar{Labels: labels.FromStrings("trace_id", "kept_trace"), Value: 5, Ts: 200, HasTs: true}, gotEx)
 		require.Equal(t, writev2.Metadata_METRIC_TYPE_COUNTER, pendingData[1].Metadata.Type)
 		require.Contains(t, symbolTable.Symbols(), "kept_trace")
 	})
@@ -4400,8 +4485,9 @@ func TestQueueManager_RemoteWriteModes(t *testing.T) {
 			require.True(t, m.AppendFloatHistograms([]record.RefFloatHistogramSample{
 				{Ref: sUntypedHist.Ref, T: 2000, FH: nativeFloatHist},
 			}))
-			// Exemplars with a matching sample or histogram in the batch are coalesced; detached exemplars are dropped.
+			// Exemplars with a matching live sample or histogram in the batch are coalesced; untyped and detached exemplars are dropped.
 			require.True(t, m.AppendExemplars([]record.RefExemplar{
+				{Ref: sUntyped.Ref, T: 1000, V: 9, Labels: labels.FromStrings("trace_id", "untyped_ex")},
 				{Ref: sCounterNoST.Ref, T: 1000, V: 1, Labels: labels.FromStrings("trace_id", "abc")},
 				{Ref: sNativeHist.Ref, T: 1000, V: 2, Labels: labels.FromStrings("trace_id", "def")},
 				{Ref: sDetachedExemplarOnly.Ref, T: 1000, V: 3, Labels: labels.FromStrings("trace_id", "ghi")},
@@ -4414,6 +4500,7 @@ func TestQueueManager_RemoteWriteModes(t *testing.T) {
 			require.Equal(t, 0.0, client_testutil.ToFloat64(metrics.droppedSamplesTotal.WithLabelValues(reasonMissingStartTimestamp)))
 			require.Equal(t, 3.0, client_testutil.ToFloat64(metrics.droppedHistogramsTotal.WithLabelValues(reasonMissingMetadataType)))
 			require.Equal(t, 0.0, client_testutil.ToFloat64(metrics.droppedHistogramsTotal.WithLabelValues(reasonMissingStartTimestamp)))
+			require.Equal(t, 1.0, client_testutil.ToFloat64(metrics.droppedExemplarsTotal.WithLabelValues(reasonMissingMetadataType)))
 			require.Equal(t, 1.0, client_testutil.ToFloat64(metrics.droppedExemplarsTotal.WithLabelValues(reasonDetachedExemplarNotAllowed)))
 			require.Equal(t, 0.0, client_testutil.ToFloat64(metrics.pendingExemplars))
 
@@ -4424,15 +4511,31 @@ func TestQueueManager_RemoteWriteModes(t *testing.T) {
 			require.Len(t, c.receivedHistograms, 1)
 			require.Contains(t, c.receivedHistograms, sNativeHist.Labels.String())
 			require.Empty(t, c.receivedFloatHistograms)
-			require.Len(t, c.receivedExemplars, 2)
-			require.Contains(t, c.receivedExemplars, sCounterNoST.Labels.String())
-			require.Contains(t, c.receivedExemplars, sNativeHist.Labels.String())
+			require.Equal(t, map[string][]prompb.Exemplar{
+				sCounterNoST.Labels.String(): {{Labels: []prompb.Label{{Name: "trace_id", Value: "abc"}}, Value: 1, Timestamp: 1000}},
+				sNativeHist.Labels.String():  {{Labels: []prompb.Label{{Name: "trace_id", Value: "def"}}, Value: 2, Timestamp: 1000}},
+			}, c.receivedExemplars)
+			var b labels.ScratchBuilder
+			var foundHistWithExemplar bool
 			for _, req := range c.receivedV2Requests {
 				require.NotContains(t, req.Symbols, "ghi")
+				require.NotContains(t, req.Symbols, "untyped_ex")
 				for _, ts := range req.Timeseries {
 					require.NotEmpty(t, len(ts.Samples)+len(ts.Histograms), "exemplars must not be sent as detached TimeSeries")
+					gotLbls, err := ts.ToLabels(&b, req.Symbols)
+					require.NoError(t, err)
+					if labels.Equal(gotLbls, sNativeHist.Labels) {
+						if len(ts.Samples) > 0 {
+							require.Empty(t, ts.Exemplars, "exemplars must not attach to float StaleNaN TimeSeries on histogram series")
+						}
+						if len(ts.Histograms) > 0 {
+							require.Len(t, ts.Exemplars, 1)
+							foundHistWithExemplar = true
+						}
+					}
 				}
 			}
+			require.True(t, foundHistWithExemplar)
 		})
 
 		t.Run("mode=stateless/only_detached_exemplars/source="+metaSource, func(t *testing.T) {
@@ -4552,8 +4655,10 @@ func TestQueueManager_RemoteWriteModes(t *testing.T) {
 				{Ref: sGaugeHistNoST.Ref, ST: 0, T: 2000, FH: nativeFloatHist}, // Keep: gauge histogram without ST
 			}))
 			require.True(t, m.AppendExemplars([]record.RefExemplar{
-				{Ref: sCounterWithST.Ref, T: 1000, V: 1, Labels: labels.FromStrings("trace_id", "abc")}, // Keep: coalesced onto sCounterWithST
-				{Ref: sCounterNoST.Ref, T: 1000, V: 2, Labels: labels.FromStrings("trace_id", "def")},   // Drop: sample for sCounterNoST was dropped, so exemplar is detached
+				{Ref: sCounterWithST.Ref, T: 1000, V: 1, Labels: labels.FromStrings("trace_id", "abc")},    // Keep: coalesced onto live sCounterWithST sample
+				{Ref: sGaugeHistNoST.Ref, T: 2000, V: 1.5, Labels: labels.FromStrings("trace_id", "gh")},   // Keep: coalesced onto sGaugeHistNoST histogram
+				{Ref: sCounterNoST.Ref, T: 1000, V: 2, Labels: labels.FromStrings("trace_id", "def")},      // Drop: sample for sCounterNoST was dropped, so exemplar is detached
+				{Ref: sUntyped.Ref, T: 1000, V: 3, Labels: labels.FromStrings("trace_id", "untyped_stex")}, // Drop: missing metadata type
 			}))
 
 			stop()
@@ -4565,6 +4670,7 @@ func TestQueueManager_RemoteWriteModes(t *testing.T) {
 			require.Equal(t, 2.0, client_testutil.ToFloat64(metrics.droppedHistogramsTotal.WithLabelValues(reasonMissingMetadataType)))
 			require.Equal(t, 2.0, client_testutil.ToFloat64(metrics.droppedHistogramsTotal.WithLabelValues(reasonMissingStartTimestamp)))
 
+			require.Equal(t, 1.0, client_testutil.ToFloat64(metrics.droppedExemplarsTotal.WithLabelValues(reasonMissingMetadataType)))
 			require.Equal(t, 1.0, client_testutil.ToFloat64(metrics.droppedExemplarsTotal.WithLabelValues(reasonDetachedExemplarNotAllowed)))
 			require.Equal(t, 0.0, client_testutil.ToFloat64(metrics.pendingExemplars))
 
@@ -4590,12 +4696,18 @@ func TestQueueManager_RemoteWriteModes(t *testing.T) {
 			require.Equal(t, int64(500), c.receivedFloatHistograms[sHistWithST.Labels.String()][0].StartTimestamp)
 			require.True(t, value.IsStaleNaN(c.receivedFloatHistograms[sHistWithST.Labels.String()][1].Sum))
 
-			require.Len(t, c.receivedExemplars, 1)
-			require.Contains(t, c.receivedExemplars, sCounterWithST.Labels.String())
+			require.Equal(t, map[string][]prompb.Exemplar{
+				sCounterWithST.Labels.String(): {{Labels: []prompb.Label{{Name: "trace_id", Value: "abc"}}, Value: 1, Timestamp: 1000}},
+				sGaugeHistNoST.Labels.String(): {{Labels: []prompb.Label{{Name: "trace_id", Value: "gh"}}, Value: 1.5, Timestamp: 2000}},
+			}, c.receivedExemplars)
 			for _, req := range c.receivedV2Requests {
 				require.NotContains(t, req.Symbols, "def")
+				require.NotContains(t, req.Symbols, "untyped_stex")
 				for _, ts := range req.Timeseries {
 					require.NotEmpty(t, len(ts.Samples)+len(ts.Histograms), "exemplars must not be sent as detached TimeSeries")
+					if len(ts.Samples) > 0 && value.IsStaleNaN(ts.Samples[0].Value) {
+						require.Empty(t, ts.Exemplars, "exemplars must not attach to StaleNaN samples")
+					}
 				}
 			}
 		})
