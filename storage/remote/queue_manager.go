@@ -2440,15 +2440,11 @@ func initV2TimeSeriesMetadata(ts *writev2.TimeSeries, symbolTable *writev2.Symbo
 	ts.Metadata.HelpRef = symbolTable.Symbolize(help)
 }
 
-func populateV2TimeSeries(symbolTable *writev2.SymbolsTable, batch []timeSeries, pendingData []writev2.TimeSeries, sendExemplars, sendNativeHistograms, enableTypeAndUnitLabels bool, mode ...remoteapi.WriteMode) (int, int, int, int, int, int) {
+func populateV2TimeSeries(symbolTable *writev2.SymbolsTable, batch []timeSeries, pendingData []writev2.TimeSeries, sendExemplars, sendNativeHistograms, enableTypeAndUnitLabels bool, mode remoteapi.WriteMode) (int, int, int, int, int, int) {
 	var (
 		nSeries, nPendingSamples, nPendingExemplars, nPendingHistograms, nUnexpectedMetadata, nDroppedExemplars int
 		hasExemplars                                                                                            bool
-		rwMode                                                                                                  remoteapi.WriteMode
 	)
-	if len(mode) > 0 {
-		rwMode = mode[0]
-	}
 
 	for _, d := range batch {
 		if d.sType == tExemplar {
@@ -2518,7 +2514,7 @@ func populateV2TimeSeries(symbolTable *writev2.SymbolsTable, batch []timeSeries,
 		if attached {
 			continue
 		}
-		if rwMode != remoteapi.WriteModeNone {
+		if mode != remoteapi.WriteModeNone {
 			nDroppedExemplars++
 			continue
 		}

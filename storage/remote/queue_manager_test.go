@@ -2301,8 +2301,8 @@ func BenchmarkBuildV2WriteRequest(b *testing.B) {
 
 		totalSize := 0
 		for b.Loop() {
-			populateV2TimeSeries(&symbolTable, batch, seriesBuff, true, true, false)
-			req, _, _, _, err := buildV2WriteRequest(noopLogger, seriesBuff, symbolTable.Symbols(), &pBuf, nil, cEnc, "snappy")
+			nSeries, _, _, _, _, _ := populateV2TimeSeries(&symbolTable, batch, seriesBuff, true, true, false, remoteapi.WriteModeNone)
+			req, _, _, _, err := buildV2WriteRequest(noopLogger, seriesBuff[:nSeries], symbolTable.Symbols(), &pBuf, nil, cEnc, "snappy")
 			if err != nil {
 				b.Fatal(err)
 			}
@@ -2699,7 +2699,7 @@ func TestPopulateV2TimeSeries_UnexpectedMetadata(t *testing.T) {
 	}
 
 	_, nSamples, nExemplars, nHistograms, nUnexpected, _ := populateV2TimeSeries(
-		&symbolTable, batch, pendingData, false, false, false,
+		&symbolTable, batch, pendingData, false, false, false, remoteapi.WriteModeNone,
 	)
 
 	require.Equal(t, 2, nSamples, "Should count 2 samples")
@@ -2819,6 +2819,7 @@ func TestPopulateV2TimeSeries_TypeAndUnitLabels(t *testing.T) {
 				false, // sendExemplars
 				false, // sendNativeHistograms
 				true,  // enableTypeAndUnitLabels
+				remoteapi.WriteModeNone,
 			)
 
 			require.Equal(t, 1, nSamples, "Should have 1 sample")
@@ -2982,6 +2983,7 @@ func TestPopulateV2TimeSeries_MetadataAndTypeAndUnit(t *testing.T) {
 				false,
 				false,
 				tc.enableTypeAndUnit,
+				remoteapi.WriteModeNone,
 			)
 
 			require.Equal(t, 1, nSamples, "Should have 1 sample")
