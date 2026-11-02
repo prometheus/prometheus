@@ -873,6 +873,21 @@ func (t *QueueManager) shouldDropHistogramForMode(ref chunks.HeadSeriesRef, st i
 	return false
 }
 
+// shouldDropExemplarForMode checks whether an exemplar's series violates the configured Remote-Write 2.0 mode before enqueueing.
+func (t *QueueManager) shouldDropExemplarForMode(ref chunks.HeadSeriesRef, lbls labels.Labels, meta unique.Handle[metadata.Metadata]) bool {
+	if t.mode != remoteapi.WriteModeStateless && t.mode != remoteapi.WriteModeStatelessST {
+		return false
+	}
+	mType := t.seriesMetricType(lbls, meta)
+	if writev2.FromMetadataType(mType) == writev2.Metadata_METRIC_TYPE_UNSPECIFIED {
+		t.dataDropped.incr(1)
+		t.metrics.droppedExemplarsTotal.WithLabelValues(reasonMissingMetadataType).Inc()
+		t.logger.Debug("Dropped exemplar with unknown metric type; remote_write mode does not allow untyped series; ensure the target exposes TYPE metadata, set __type__ via write_relabel_configs with --enable-feature=type-and-unit-labels, or drop the series via write_relabel_configs", "mode", t.mode, "ref", ref, "series", lbls, "type", mType)
+		return true
+	}
+	return false
+}
+
 // Append queues a sample to be sent to the remote storage. Blocks until all samples are
 // enqueued on their shards or a shutdown signal is received.
 func (t *QueueManager) Append(samples []record.RefSample) bool {
@@ -999,6 +1014,9 @@ outer:
 		}
 		meta := t.seriesMetadata[e.Ref]
 		t.seriesMtx.Unlock()
+		if t.mode != remoteapi.WriteModeNone && t.shouldDropExemplarForMode(e.Ref, lbls, meta) {
+			continue
+		}
 		// This will only loop if the queues are being resharded.
 		backoff := t.cfg.MinBackoff
 		for {
