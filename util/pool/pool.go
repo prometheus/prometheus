@@ -36,14 +36,20 @@ func New(minSize, maxSize int, factor float64, makeFunc func(int) any) *Pool {
 	if maxSize < 1 {
 		panic("invalid maximum pool size")
 	}
-	if factor < 1 {
+	if factor <= 1 {
 		panic("invalid factor")
 	}
 
 	var sizes []int
 
-	for s := minSize; s <= maxSize; s = int(float64(s) * factor) {
+	for s := minSize; s <= maxSize; {
 		sizes = append(sizes, s)
+		next := int(float64(s) * factor)
+		if next <= s {
+			// A factor barely above 1 can round back to s, which would loop forever.
+			next = s + 1
+		}
+		s = next
 	}
 
 	p := &Pool{

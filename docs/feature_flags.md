@@ -53,24 +53,6 @@ The Prometheus server exposes two counters for observability: `prometheus_engine
 When disabled in either the engine or the query, per-step statistics are not
 computed at all.
 
-## Unquoted UTF-8 names in PromQL
-
-`--enable-feature=promql-unquoted-utf8-names`
-
-Allows Unicode letters and dots after the first character in unquoted metric and
-label names. For example:
-
-```promql
-http.server.request.duration{service.name="api"}
-温度{場所="東京"}
-sum by (service.name) (rate(http.server.requests[5m]))
-requests_total + on (service.name) group_left (équipe) service_info
-```
-
-See [metric and label names](querying/basics.md#metric-and-label-names) for the
-character rules and compatibility details. This flag is also supported by
-promtool when checking or testing rules and parsing or formatting queries.
-
 ## Experimental PromQL functions
 
 `--enable-feature=promql-experimental-functions`
@@ -291,6 +273,7 @@ when wrong types are used on wrong functions, automatic renames, delta types and
 When this feature is enabled and the metadata WAL records exists, in an unlikely situation when type or unit are different across those,
 the Prometheus outputs intends to prefer the `__type__` and `__unit__` labels values. For example on Remote Write 2.0,
 if  the metadata record somehow (e.g. due to bug) says "counter", but `__type__="gauge"` the remote time series will be set to a gauge.
+If either `__type__` or `__unit__` is missing on the series, for example when dropped via relabeling, Remote Write 2.0 falls back to the corresponding value from the metadata record.
 
 ## Use Uncached IO
 
