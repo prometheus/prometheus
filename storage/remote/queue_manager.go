@@ -2044,6 +2044,10 @@ func (s *shards) runShard(ctx context.Context, shardID int, queue *queue) {
 	for i := range pendingDataV2 {
 		pendingDataV2[i].Samples = []writev2.Sample{{}}
 	}
+	var seriesIdx map[uint64]exemplarTarget
+	if s.qm.protoMsg == remoteapi.WriteV2MessageType && s.qm.sendExemplars {
+		seriesIdx = make(map[uint64]exemplarTarget)
+	}
 
 	timer := time.NewTimer(time.Duration(s.qm.cfg.BatchSendDeadline))
 	stop := func() {
@@ -2067,7 +2071,7 @@ func (s *shards) runShard(ctx context.Context, shardID int, queue *queue) {
 			}
 			_ = s.sendSamples(ctx, pendingData[:n], nPendingSamples, nPendingExemplars, nPendingHistograms, pBuf, encBuf, compr)
 		case remoteapi.WriteV2MessageType:
-			nSeries, nPendingSamples, nPendingExemplars, nPendingHistograms, nUnexpectedMetadata, nDroppedExemplars := populateV2TimeSeries(&symbolTable, batch, pendingDataV2, s.qm.sendExemplars, s.qm.sendNativeHistograms, s.qm.enableTypeAndUnitLabels, s.qm.mode)
+			nSeries, nPendingSamples, nPendingExemplars, nPendingHistograms, nUnexpectedMetadata, nDroppedExemplars := populateV2TimeSeries(&symbolTable, batch, pendingDataV2, seriesIdx, s.qm.sendExemplars, s.qm.sendNativeHistograms, s.qm.enableTypeAndUnitLabels, s.qm.mode)
 			if nUnexpectedMetadata > 0 {
 				s.qm.logger.Warn("unexpected metadata sType in populateV2TimeSeries", "count", nUnexpectedMetadata)
 			}
@@ -2485,7 +2489,12 @@ func isStaleTimeSeries(d timeSeries) bool {
 	}
 }
 
-func populateV2TimeSeries(symbolTable *writev2.SymbolsTable, batch []timeSeries, pendingData []writev2.TimeSeries, sendExemplars, sendNativeHistograms, enableTypeAndUnitLabels bool, mode remoteapi.WriteMode) (int, int, int, int, int, int) {
+type exemplarTarget struct {
+	batchIdx int
+	dataIdx  int
+}
+
+func populateV2TimeSeries(symbolTable *writev2.SymbolsTable, batch []timeSeries, pendingData []writev2.TimeSeries, seriesIdx map[uint64]exemplarTarget, sendExemplars, sendNativeHistograms, enableTypeAndUnitLabels bool, mode remoteapi.WriteMode) (int, int, int, int, int, int) {
 	var (
 		nSeries, nPendingSamples, nPendingExemplars, nPendingHistograms, nUnexpectedMetadata, nDroppedExemplars int
 		hasExemplars                                                                                            bool
@@ -2537,25 +2546,49 @@ func populateV2TimeSeries(symbolTable *writev2.SymbolsTable, batch []timeSeries,
 	}
 
 	nSeriesWithData := nSeries
+	if nSeriesWithData > 0 {
+		if seriesIdx == nil {
+			seriesIdx = make(map[uint64]exemplarTarget, nSeriesWithData)
+		} else {
+			clear(seriesIdx)
+		}
+		dataIdx := 0
+		for i := range batch {
+			if batch[i].sType == tExemplar || batch[i].sType == tMetadata {
+				continue
+			}
+			if !isStaleTimeSeries(batch[i]) {
+				seriesIdx[batch[i].seriesLabels.Hash()] = exemplarTarget{batchIdx: i, dataIdx: dataIdx}
+			}
+			dataIdx++
+		}
+	}
+
 	for _, d := range batch {
 		if d.sType != tExemplar {
 			continue
 		}
-		// Match against seriesLabels directly before symbolizing so dropped exemplars do not
+		// Match against seriesLabels via seriesIdx before symbolizing so dropped exemplars do not
 		// pollute symbolTable (or writev2.Request.Symbols) and pendingData[nSeries] is only
-		// indexed when emitting a detached TimeSeries. Skip staleness markers and pick the
-		// latest matching live TimeSeries in the batch.
+		// indexed when emitting a detached TimeSeries.
 		attachedIdx := -1
 		if nSeriesWithData > 0 {
-			dataIdx := 0
-			for i := range batch {
-				if batch[i].sType == tExemplar || batch[i].sType == tMetadata {
-					continue
+			if target, ok := seriesIdx[d.seriesLabels.Hash()]; ok {
+				if labels.Equal(batch[target.batchIdx].seriesLabels, d.seriesLabels) {
+					attachedIdx = target.dataIdx
+				} else {
+					// Hash collision fallback: scan for the latest matching live TimeSeries.
+					dataIdx := 0
+					for i := range batch {
+						if batch[i].sType == tExemplar || batch[i].sType == tMetadata {
+							continue
+						}
+						if !isStaleTimeSeries(batch[i]) && labels.Equal(batch[i].seriesLabels, d.seriesLabels) {
+							attachedIdx = dataIdx
+						}
+						dataIdx++
+					}
 				}
-				if !isStaleTimeSeries(batch[i]) && labels.Equal(batch[i].seriesLabels, d.seriesLabels) {
-					attachedIdx = dataIdx
-				}
-				dataIdx++
 			}
 		}
 		if attachedIdx >= 0 {
