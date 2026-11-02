@@ -518,6 +518,55 @@ func TestSymbols(t *testing.T) {
 		i++
 	}
 	require.NoError(t, iter.Err())
+
+	for _, tc := range []struct {
+		version int
+		count   int
+	}{
+		{FormatV1, 1},
+		{FormatV2, 0},
+		{FormatV2, 1},
+		{FormatV3, 0},
+		{FormatV3, 1},
+	} {
+		t.Run(fmt.Sprintf("format_%d/symbols_%d", tc.version, tc.count), func(t *testing.T) {
+			var buf, content encoding.Encbuf
+			buf.PutUvarintStr("prefix")
+			symbolsStart := buf.Len()
+			content.PutBE32int(tc.count)
+			if tc.count > 0 {
+				content.PutUvarintStr("symbol")
+			}
+			buf.PutBE32int(content.Len())
+			buf.PutBytes(content.Get())
+			buf.PutBE32(crc32.Checksum(content.Get(), castagnoliTable))
+
+			s, err := NewSymbols(realByteSlice(buf.Get()), tc.version, symbolsStart)
+			require.NoError(t, err)
+			if tc.count > 0 {
+				ref := uint32(0)
+				if tc.version == FormatV1 {
+					ref = uint32(symbolsStart + 8)
+				}
+				got, err := s.Lookup(ref)
+				require.NoError(t, err)
+				require.Equal(t, "symbol", got)
+			}
+
+			invalidRefs := []uint32{0x7fffffff, 0x80000000, 0xffffffff}
+			if tc.version == FormatV1 {
+				invalidRefs = append(invalidRefs, uint32(buf.Len()), uint32(buf.Len()+1))
+			} else {
+				invalidRefs = append(invalidRefs, uint32(tc.count))
+			}
+			for _, ref := range invalidRefs {
+				t.Run(fmt.Sprintf("reference_%d", ref), func(t *testing.T) {
+					_, err := s.Lookup(ref)
+					require.Error(t, err)
+				})
+			}
+		})
+	}
 }
 
 func BenchmarkReader_ShardedPostings(b *testing.B) {
