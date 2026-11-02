@@ -309,16 +309,22 @@ $(PUBLISH_DOCKER_ARCHS): common-docker-publish-%:
 		if [ "$(DOCKER_IMAGE_TAG)" = "latest" ]; then \
 			if [ "$$dockerfile" != "Dockerfile" ] || [ "$$variant_name" != "default" ]; then \
 				echo "Pushing $$variant_name variant version tags for linux-$*"; \
-				docker push "$(DOCKER_REPO)/$(DOCKER_IMAGE_NAME)-linux-$*:v$(DOCKER_MAJOR_VERSION_TAG)-$$variant_name"; \
+				for tag in $(DOCKER_VERSION_TAGS); do \
+					docker push "$(DOCKER_REPO)/$(DOCKER_IMAGE_NAME)-linux-$*:$$tag-$$variant_name"; \
+				done; \
 			fi; \
 			if [ "$$dockerfile" = "Dockerfile" ]; then \
 				echo "Pushing default variant version tag for linux-$*"; \
-				docker push "$(DOCKER_REPO)/$(DOCKER_IMAGE_NAME)-linux-$*:v$(DOCKER_MAJOR_VERSION_TAG)"; \
+				for tag in $(DOCKER_VERSION_TAGS); do \
+					docker push "$(DOCKER_REPO)/$(DOCKER_IMAGE_NAME)-linux-$*:$$tag"; \
+				done; \
 			fi; \
 		fi; \
 	done
 
 DOCKER_MAJOR_VERSION_TAG = $(firstword $(subst ., ,$(shell cat VERSION)))
+DOCKER_MINOR_VERSION_TAG = $(word 1,$(subst ., ,$(shell cat VERSION))).$(word 2,$(subst ., ,$(shell cat VERSION)))
+DOCKER_VERSION_TAGS = v$(DOCKER_MAJOR_VERSION_TAG) v$(DOCKER_MINOR_VERSION_TAG)
 .PHONY: common-docker-tag-latest $(TAG_DOCKER_ARCHS)
 common-docker-tag-latest: $(TAG_DOCKER_ARCHS)
 $(TAG_DOCKER_ARCHS): common-docker-tag-latest-%:
@@ -327,13 +333,15 @@ $(TAG_DOCKER_ARCHS): common-docker-tag-latest-%:
 		variant_name=$${variant%%:*}; \
 		if [ "$$dockerfile" != "Dockerfile" ] || [ "$$variant_name" != "default" ]; then \
 			echo "Tagging $$variant_name variant for linux-$* as latest"; \
-			docker tag "$(DOCKER_REPO)/$(DOCKER_IMAGE_NAME)-linux-$*:$(SANITIZED_DOCKER_IMAGE_TAG)-$$variant_name" "$(DOCKER_REPO)/$(DOCKER_IMAGE_NAME)-linux-$*:latest-$$variant_name"; \
-			docker tag "$(DOCKER_REPO)/$(DOCKER_IMAGE_NAME)-linux-$*:$(SANITIZED_DOCKER_IMAGE_TAG)-$$variant_name" "$(DOCKER_REPO)/$(DOCKER_IMAGE_NAME)-linux-$*:v$(DOCKER_MAJOR_VERSION_TAG)-$$variant_name"; \
+			for tag in latest $(DOCKER_VERSION_TAGS); do \
+				docker tag "$(DOCKER_REPO)/$(DOCKER_IMAGE_NAME)-linux-$*:$(SANITIZED_DOCKER_IMAGE_TAG)-$$variant_name" "$(DOCKER_REPO)/$(DOCKER_IMAGE_NAME)-linux-$*:$$tag-$$variant_name"; \
+			done; \
 		fi; \
 		if [ "$$dockerfile" = "Dockerfile" ]; then \
 			echo "Tagging default variant ($$variant_name) for linux-$* as latest"; \
-			docker tag "$(DOCKER_REPO)/$(DOCKER_IMAGE_NAME)-linux-$*:$(SANITIZED_DOCKER_IMAGE_TAG)" "$(DOCKER_REPO)/$(DOCKER_IMAGE_NAME)-linux-$*:latest"; \
-			docker tag "$(DOCKER_REPO)/$(DOCKER_IMAGE_NAME)-linux-$*:$(SANITIZED_DOCKER_IMAGE_TAG)" "$(DOCKER_REPO)/$(DOCKER_IMAGE_NAME)-linux-$*:v$(DOCKER_MAJOR_VERSION_TAG)"; \
+			for tag in latest $(DOCKER_VERSION_TAGS); do \
+				docker tag "$(DOCKER_REPO)/$(DOCKER_IMAGE_NAME)-linux-$*:$(SANITIZED_DOCKER_IMAGE_TAG)" "$(DOCKER_REPO)/$(DOCKER_IMAGE_NAME)-linux-$*:$$tag"; \
+			done; \
 		fi; \
 	done
 
@@ -371,29 +379,33 @@ common-docker-manifest:
 		if [ "$(DOCKER_IMAGE_TAG)" = "latest" ]; then \
 			if [ "$$dockerfile" != "Dockerfile" ] || [ "$$variant_name" != "default" ]; then \
 				echo "Creating manifest for $$variant_name variant version tag"; \
-				refs=""; \
-				for arch in $(DOCKER_ARCHS); do \
-					refs="$$refs $(DOCKER_REPO)/$(DOCKER_IMAGE_NAME)-linux-$$arch:v$(DOCKER_MAJOR_VERSION_TAG)-$$variant_name"; \
+				for tag in $(DOCKER_VERSION_TAGS); do \
+					refs=""; \
+					for arch in $(DOCKER_ARCHS); do \
+						refs="$$refs $(DOCKER_REPO)/$(DOCKER_IMAGE_NAME)-linux-$$arch:$$tag-$$variant_name"; \
+					done; \
+					if [ -z "$$refs" ]; then \
+						echo "Skipping version-tag manifest for $$variant_name variant (no supported architectures)"; \
+						continue; \
+					fi; \
+					DOCKER_CLI_EXPERIMENTAL=enabled docker manifest create -a "$(DOCKER_REPO)/$(DOCKER_IMAGE_NAME):$$tag-$$variant_name" $$refs; \
+					DOCKER_CLI_EXPERIMENTAL=enabled docker manifest push "$(DOCKER_REPO)/$(DOCKER_IMAGE_NAME):$$tag-$$variant_name"; \
 				done; \
-				if [ -z "$$refs" ]; then \
-					echo "Skipping version-tag manifest for $$variant_name variant (no supported architectures)"; \
-					continue; \
-				fi; \
-				DOCKER_CLI_EXPERIMENTAL=enabled docker manifest create -a "$(DOCKER_REPO)/$(DOCKER_IMAGE_NAME):v$(DOCKER_MAJOR_VERSION_TAG)-$$variant_name" $$refs; \
-				DOCKER_CLI_EXPERIMENTAL=enabled docker manifest push "$(DOCKER_REPO)/$(DOCKER_IMAGE_NAME):v$(DOCKER_MAJOR_VERSION_TAG)-$$variant_name"; \
 			fi; \
 			if [ "$$dockerfile" = "Dockerfile" ]; then \
 				echo "Creating default variant version tag manifest"; \
-				refs=""; \
-				for arch in $(DOCKER_ARCHS); do \
-					refs="$$refs $(DOCKER_REPO)/$(DOCKER_IMAGE_NAME)-linux-$$arch:v$(DOCKER_MAJOR_VERSION_TAG)"; \
+				for tag in $(DOCKER_VERSION_TAGS); do \
+					refs=""; \
+					for arch in $(DOCKER_ARCHS); do \
+						refs="$$refs $(DOCKER_REPO)/$(DOCKER_IMAGE_NAME)-linux-$$arch:$$tag"; \
+					done; \
+					if [ -z "$$refs" ]; then \
+						echo "Skipping default variant version-tag manifest (no supported architectures)"; \
+						continue; \
+					fi; \
+					DOCKER_CLI_EXPERIMENTAL=enabled docker manifest create -a "$(DOCKER_REPO)/$(DOCKER_IMAGE_NAME):$$tag" $$refs; \
+					DOCKER_CLI_EXPERIMENTAL=enabled docker manifest push "$(DOCKER_REPO)/$(DOCKER_IMAGE_NAME):$$tag"; \
 				done; \
-				if [ -z "$$refs" ]; then \
-					echo "Skipping default variant version-tag manifest (no supported architectures)"; \
-					continue; \
-				fi; \
-				DOCKER_CLI_EXPERIMENTAL=enabled docker manifest create -a "$(DOCKER_REPO)/$(DOCKER_IMAGE_NAME):v$(DOCKER_MAJOR_VERSION_TAG)" $$refs; \
-				DOCKER_CLI_EXPERIMENTAL=enabled docker manifest push "$(DOCKER_REPO)/$(DOCKER_IMAGE_NAME):v$(DOCKER_MAJOR_VERSION_TAG)"; \
 			fi; \
 		fi; \
 	done
