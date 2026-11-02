@@ -4095,8 +4095,8 @@ url: <string>
 # * `none`: default Remote-Write 2.0 behavior with no additional restrictions.
 # * `stateless`: appends `;mode=stateless` to the Content-Type header, defaults `send_native_histograms` to `true`,
 #   requires `--enable-feature=metadata-wal-records` or `--enable-feature=type-and-unit-labels`, and drops classic
-#   histogram float series, series with unspecified metadata type, and detached exemplars without a matching sample or
-#   histogram in the same batch.
+#   histogram float series, series with unspecified metadata type, and detached exemplars without a matching live sample
+#   or histogram in the same shard batch (see `send_exemplars` for batch-coalescing limitations).
 # * `stateless-st`: appends `;mode=stateless-st` to the Content-Type header, includes all `stateless` rules,
 #   additionally requires `--enable-feature=st-storage`, and drops cumulative metrics missing a start timestamp.
 #
@@ -4125,7 +4125,12 @@ write_relabel_configs:
 [ name: <string> ]
 
 # Enables sending of exemplars over remote write. Note that exemplar storage itself must be enabled for exemplars to be scraped in the first place.
-# When `mode` is `stateless` or `stateless-st`, exemplars are attached to matching series with samples or histograms in the same batch, and detached exemplars are dropped.
+# When `mode` is `stateless` or `stateless-st`, exemplars are best-effort attached to matching series with live samples
+# or histograms in the same shard batch, and detached exemplars are dropped. Because samples/histograms and exemplars
+# are written as separate WAL records, batch splits (`queue_config.max_samples_per_send`, `batch_send_deadline`, or
+# resharding) or age-limit filtering (`sample_age_limit`) can occasionally separate an exemplar from its sample and drop
+# it as detached; classic histograms converted via `convert_classic_histograms_to_nhcb` also drop exemplars without an
+# explicit timestamp at scrape time.
 [ send_exemplars: <boolean> | default = false ]
 
 # Enables sending of native histograms, also known as sparse histograms, over remote write.
