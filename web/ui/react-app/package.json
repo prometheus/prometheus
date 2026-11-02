@@ -1,6 +1,6 @@
 {
   "name": "@prometheus-io/app",
-  "version": "0.316.0-rc.2",
+  "version": "0.316.0-rc.3",
   "private": true,
   "dependencies": {
     "@codemirror/autocomplete": "^6.20.3",
