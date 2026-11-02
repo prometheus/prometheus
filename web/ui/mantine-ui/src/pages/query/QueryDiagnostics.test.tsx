@@ -128,20 +128,18 @@ describe("query diagnostics", () => {
         { metric: { job: "a" }, values: [[100, "2"]] },
       ],
     },
-  ])("derives tree statistics from $resultType results", async (data) => {
-    vi.stubGlobal(
-      "fetch",
-      vi
-        .fn()
-        .mockResolvedValue({
-          ok: true,
-          json: async () => ({ status: "success", data }),
-        }),
-    );
+  ])("handles $resultType statistics and refetches", async (data) => {
+    const response = {
+      ok: true,
+      json: async () => ({ status: "success", data }),
+    };
+    const fetchQuery = vi.fn().mockResolvedValue(response);
+    vi.stubGlobal("fetch", fetchQuery);
     const reportNodeState = vi.fn();
     render(
       <TreeNode
         node={{ type: nodeType.numberLiteral, val: "1" }}
+        endTime={null}
         selectedNode={null}
         setSelectedNode={vi.fn()}
         reverse={false}
@@ -164,6 +162,28 @@ describe("query diagnostics", () => {
         data.resultType === "vector" ? "job: 2" : "job: 1",
       );
     }
+
+    let finishRefresh = () => {};
+    fetchQuery.mockImplementationOnce(
+      () =>
+        new Promise((resolve) => {
+          finishRefresh = () => resolve(response);
+        }),
+    );
+    let refresh = Promise.resolve();
+    act(() => {
+      refresh = client.refetchQueries();
+    });
+    await waitFor(() =>
+      expect(reportNodeState).toHaveBeenLastCalledWith(0, "running"),
+    );
+    await act(async () => {
+      finishRefresh();
+      await refresh;
+    });
+    await waitFor(() =>
+      expect(reportNodeState).toHaveBeenLastCalledWith(0, "success"),
+    );
   });
 
   it("updates connector geometry and clears the opposite border when reversed", async () => {
@@ -186,6 +206,7 @@ describe("query diagnostics", () => {
     const parentEl = document.createElement("div");
     const props = {
       node: { type: nodeType.numberLiteral as const, val: "1" },
+      endTime: null,
       selectedNode: null,
       setSelectedNode: vi.fn(),
       reverse: false,

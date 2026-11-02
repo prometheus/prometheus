@@ -132,6 +132,7 @@ const QueryPanel: FC<PanelProps> = ({ idx, metricNames }) => {
           >
             <TreeView
               panelIdx={idx}
+              endTime={panel.visualizer.endTime}
               selectedNode={selectedNode}
               setSelectedNode={setSelectedNode}
               closeTreeView={() => {
@@ -364,6 +365,7 @@ const QueryPanel: FC<PanelProps> = ({ idx, metricNames }) => {
             >
               <ExplainView
                 node={selectedNode?.node ?? null}
+                endTime={panel.visualizer.endTime}
                 treeShown={panel.showTree}
                 showTree={() => {
                   dispatch(setShowTree({ idx, showTree: true }));
