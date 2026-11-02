@@ -4095,8 +4095,8 @@ url: <string>
 # * `none`: default Remote-Write 2.0 behavior with no additional restrictions.
 # * `stateless`: appends `;mode=stateless` to the Content-Type header, defaults `send_native_histograms` to `true`,
 #   requires `--enable-feature=metadata-wal-records` or `--enable-feature=type-and-unit-labels`, and drops classic
-#   histogram float series, series with unspecified metadata type, and all exemplars (until sample-exemplar coalescing
-#   is implemented, as `stateless` mode forbids detached exemplars).
+#   histogram float series, series with unspecified metadata type, and detached exemplars without a matching sample or
+#   histogram in the same batch.
 # * `stateless-st`: appends `;mode=stateless-st` to the Content-Type header, includes all `stateless` rules,
 #   additionally requires `--enable-feature=st-storage`, and drops cumulative metrics missing a start timestamp.
 #
@@ -4125,7 +4125,7 @@ write_relabel_configs:
 [ name: <string> ]
 
 # Enables sending of exemplars over remote write. Note that exemplar storage itself must be enabled for exemplars to be scraped in the first place.
-# When `mode` is `stateless` or `stateless-st`, all exemplars are currently dropped until sample-exemplar coalescing is implemented.
+# When `mode` is `stateless` or `stateless-st`, exemplars are attached to matching series with samples or histograms in the same batch, and detached exemplars are dropped.
 [ send_exemplars: <boolean> | default = false ]
 
 # Enables sending of native histograms, also known as sparse histograms, over remote write.
