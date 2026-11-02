@@ -50,15 +50,10 @@ func testRemoteWriteConfigForHost(host string) *config.RemoteWriteConfig {
 	}
 }
 
-// TestWriteStorageSavepointDisabled verifies that a disabled run ignores and
-// removes an existing savepoint, does not write a replacement on shutdown,
-// and does not replay old WAL segments after savepoints are re-enabled.
+// TestWriteStorageSavepointDisabled verifies that a disabled run removes an existing
+// savepoint, does not write a replacement on shutdown, and does not replay old WAL
+// segments after savepoints are re-enabled.
 func TestWriteStorageSavepointDisabled(t *testing.T) {
-	const (
-		noStartupSamplesAssertDuration = 500 * time.Millisecond
-		noStartupSamplesAssertTick     = 50 * time.Millisecond
-	)
-
 	series := makeSeries(2, 0)
 	dir := createWALWithSegments(t, []walSegmentData{
 		{series: series, samples: makeSamples(series, 1_000, 0)},
@@ -67,88 +62,84 @@ func TestWriteStorageSavepointDisabled(t *testing.T) {
 	})
 
 	cfg := testRemoteWriteConfigForHost("http://savepoint-disabled.local")
-	queueCfg := config.DefaultQueueConfig
-	queueCfg.MinShards = 1
-	queueCfg.MaxShards = 1
-	queueCfg.MaxSamplesPerSend = 1000
-	queueCfg.BatchSendDeadline = model.Duration(50 * time.Millisecond)
-	cfg.QueueConfig = queueCfg
+	cfg.QueueConfig = fastQueueConfig()
 
 	hash, err := toHash(cfg)
 	require.NoError(t, err)
 
 	// A prior enabled run left a savepoint pointing at an early segment.
-	require.NoError(t, Savepoint{hash: {Segment: 1}}.Write(dir))
+	require.NoError(t, savepoint{hash: {Segment: 1}}.Write(dir))
 
-	// Disabled run: the savepoint is not loaded and the stale file is deleted on startup.
 	disabled := NewWriteStorage(nil, nil, dir, defaultFlushDeadline, nil, false, false, false, false)
-	require.Empty(t, disabled.savepoint, "savepoint must not be loaded when disabled")
 	_, statErr := os.Stat(savepointFilePath(dir))
-	require.ErrorIs(t, statErr, fs.ErrNotExist, "stale savepoint file must be deleted when disabled")
-
-	// Even with a queue configured, nothing is written back on close.
+	require.NoError(t, statErr, "savepoint file must not be deleted before ApplyConfig")
 	require.NoError(t, disabled.ApplyConfig(&config.Config{
 		GlobalConfig:       config.DefaultGlobalConfig,
 		RemoteWriteConfigs: []*config.RemoteWriteConfig{cfg},
 	}))
+	_, statErr = os.Stat(savepointFilePath(dir))
+	require.ErrorIs(t, statErr, fs.ErrNotExist, "stale savepoint file must be deleted when disabled")
+
+	// Even with a queue configured, nothing is written back on close.
 	require.NoError(t, disabled.Close())
-	loaded, err := LoadSavepoint(dir)
+	loaded, err := loadSavepoint(dir)
 	require.NoError(t, err)
 	require.Empty(t, loaded, "no savepoint file must be written when disabled")
 
 	// Re-enabling finds no savepoint (deleted above), so it must not replay the old segments.
 	s := NewWriteStorage(nil, nil, dir, defaultFlushDeadline, nil, false, false, false, true)
-	t.Cleanup(func() { require.NoError(t, s.Close()) })
-
-	client := NewTestWriteClient(remoteapi.WriteV1MessageType)
-	factory := WithWriteClientFactory(func(string, *ClientConfig) (WriteClient, error) {
-		return client, nil
-	})
+	client := withTestWriteClient(s)
 	require.NoError(t, s.ApplyConfig(&config.Config{
 		GlobalConfig:       config.DefaultGlobalConfig,
 		RemoteWriteConfigs: []*config.RemoteWriteConfig{cfg},
-	}, factory))
-	require.Contains(t, s.queues, hash)
-
-	require.Never(t, func() bool {
-		client.mtx.Lock()
-		defer client.mtx.Unlock()
-		return deepLen(client.receivedSamples) > 0
-	}, noStartupSamplesAssertDuration, noStartupSamplesAssertTick)
+	}))
+	requireNoReplay(t, s, hash, dir, client)
 }
 
+// TestWriteStorageSavepointWriteOnClose verifies what Close writes. The stale entry in
+// the initial file only survives if Close doesn't write.
 func TestWriteStorageSavepointWriteOnClose(t *testing.T) {
 	cfg := testRemoteWriteConfigForHost("http://write-on-close.com")
 	hash, err := toHash(cfg)
 	require.NoError(t, err)
+	cfgNew := testRemoteWriteConfigForHost("http://write-on-close-new.com")
+
+	const staleHash = "stale_hash_that_no_longer_exists"
+	initial := savepoint{hash: {Segment: 3}, staleHash: {Segment: 7}}
 
 	tests := []struct {
 		name          string
 		reloads       [][]*config.RemoteWriteConfig
-		wantSavepoint Savepoint
+		wantSavepoint savepoint
 	}{
 		{
-			name:          "configured queue is written",
+			name:          "configured queue is written and stale entries are removed",
 			reloads:       [][]*config.RemoteWriteConfig{{cfg}},
-			wantSavepoint: Savepoint{hash: {Segment: 3}},
+			wantSavepoint: savepoint{hash: {Segment: 3}},
+		},
+		{
+			// cfgNew has no startup entry and no WAL to read, so it stays at -1.
+			name:          "queue that has not started sending is not written",
+			reloads:       [][]*config.RemoteWriteConfig{{cfg, cfgNew}},
+			wantSavepoint: savepoint{hash: {Segment: 3}},
 		},
 		{
 			name:          "removed queues are cleared",
 			reloads:       [][]*config.RemoteWriteConfig{{cfg}, {}},
-			wantSavepoint: Savepoint{},
+			wantSavepoint: savepoint{},
 		},
 		{
 			// Shutdown during startup must not replace the loaded savepoint with an empty one.
 			name:          "no config applied keeps existing savepoint",
 			reloads:       nil,
-			wantSavepoint: Savepoint{hash: {Segment: 3}},
+			wantSavepoint: initial,
 		},
 	}
 
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
 			dir := t.TempDir()
-			require.NoError(t, Savepoint{hash: {Segment: 3}}.Write(dir))
+			require.NoError(t, initial.Write(dir))
 
 			s := NewWriteStorage(nil, nil, dir, defaultFlushDeadline, nil, false, false, false, true)
 			for _, rwConfs := range tc.reloads {
@@ -159,7 +150,7 @@ func TestWriteStorageSavepointWriteOnClose(t *testing.T) {
 			}
 			require.NoError(t, s.Close())
 
-			loaded, err := LoadSavepoint(dir)
+			loaded, err := loadSavepoint(dir)
 			require.NoError(t, err)
 			require.Equal(t, tc.wantSavepoint, loaded)
 		})
@@ -183,15 +174,16 @@ func TestWriteStorageSavepointCloseWhileBehind(t *testing.T) {
 	cfg.QueueConfig = qc
 	hash, err := toHash(cfg)
 	require.NoError(t, err)
-	require.NoError(t, Savepoint{hash: {Segment: 0}}.Write(dir))
+	require.NoError(t, savepoint{hash: {Segment: 0}}.Write(dir))
 
 	// The client never acknowledges, so the watcher blocks on segment 0 with the shard full.
 	client := NewTestBlockedWriteClient()
 	s := NewWriteStorage(nil, nil, dir, 100*time.Millisecond, nil, false, false, false, true)
+	s.newWriteClient = func(string, *ClientConfig) (WriteClient, error) { return client, nil }
 	require.NoError(t, s.ApplyConfig(&config.Config{
 		GlobalConfig:       config.DefaultGlobalConfig,
 		RemoteWriteConfigs: []*config.RemoteWriteConfig{cfg},
-	}, WithWriteClientFactory(func(string, *ClientConfig) (WriteClient, error) { return client, nil })))
+	}))
 
 	s.mtx.Lock()
 	q := s.queues[hash]
@@ -203,9 +195,9 @@ func TestWriteStorageSavepointCloseWhileBehind(t *testing.T) {
 
 	require.NoError(t, s.Close())
 
-	loaded, err := LoadSavepoint(dir)
+	loaded, err := loadSavepoint(dir)
 	require.NoError(t, err)
-	require.Equal(t, Savepoint{hash: {Segment: 0}}, loaded)
+	require.Equal(t, savepoint{hash: {Segment: 0}}, loaded)
 }
 
 // TestWriteStorageSavepointNotWrittenBeforeApplyConfig verifies that a write tick
@@ -217,7 +209,7 @@ func TestWriteStorageSavepointNotWrittenBeforeApplyConfig(t *testing.T) {
 	require.NoError(t, err)
 
 	dir := t.TempDir()
-	want := Savepoint{hash: {Segment: 3}}
+	want := savepoint{hash: {Segment: 3}}
 	require.NoError(t, want.Write(dir))
 
 	s := NewWriteStorage(nil, nil, dir, defaultFlushDeadline, nil, false, false, false, true)
@@ -226,7 +218,7 @@ func TestWriteStorageSavepointNotWrittenBeforeApplyConfig(t *testing.T) {
 	// Same call the write ticker makes.
 	s.writeSavepoint()
 
-	loaded, err := LoadSavepoint(dir)
+	loaded, err := loadSavepoint(dir)
 	require.NoError(t, err)
 	require.Equal(t, want, loaded, "write before ApplyConfig must not touch the savepoint file")
 
@@ -235,7 +227,7 @@ func TestWriteStorageSavepointNotWrittenBeforeApplyConfig(t *testing.T) {
 		RemoteWriteConfigs: []*config.RemoteWriteConfig{cfg, cfg},
 	}), "duplicate remote write configs must fail")
 	s.writeSavepoint()
-	loaded, err = LoadSavepoint(dir)
+	loaded, err = loadSavepoint(dir)
 	require.NoError(t, err)
 	require.Equal(t, want, loaded, "write after a failed ApplyConfig must not touch the savepoint file")
 
@@ -271,37 +263,6 @@ func TestWriteStorageSavepointWriteConcurrentApplyConfig(t *testing.T) {
 	wg.Wait()
 }
 
-func TestWriteStorageSavepointStaleCleanup(t *testing.T) {
-	dir := t.TempDir()
-
-	cfgA := testRemoteWriteConfigForHost("http://host-a.com")
-	hashA, err := toHash(cfgA)
-	require.NoError(t, err)
-
-	staleHash := "stale_hash_that_no_longer_exists"
-
-	// Pre-populate savepoint with two entries: one matching cfgA, one stale.
-	sp := Savepoint{
-		hashA:     {Segment: 3},
-		staleHash: {Segment: 7},
-	}
-	require.NoError(t, sp.Write(dir))
-
-	s := NewWriteStorage(nil, nil, dir, defaultFlushDeadline, nil, false, false, false, true)
-
-	// Apply config with only cfgA.
-	require.NoError(t, s.ApplyConfig(&config.Config{
-		GlobalConfig:       config.DefaultGlobalConfig,
-		RemoteWriteConfigs: []*config.RemoteWriteConfig{cfgA},
-	}))
-	require.NoError(t, s.Close())
-
-	loaded, err := LoadSavepoint(dir)
-	require.NoError(t, err)
-	require.Contains(t, loaded, hashA, "active queue entry should remain")
-	require.NotContains(t, loaded, staleHash, "stale entry should be removed")
-}
-
 func TestWriteStorageSavepointRecreateResumesFromLivePosition(t *testing.T) {
 	// Changing external labels recreates all remote write queues.
 	// Replacements must resume from each outgoing watcher's live segment rather than the
@@ -314,19 +275,16 @@ func TestWriteStorageSavepointRecreateResumesFromLivePosition(t *testing.T) {
 	})
 
 	cfg := testRemoteWriteConfigForHost("http://savepoint-recreate.local")
+	cfg.QueueConfig = fastQueueConfig()
 	hash, err := toHash(cfg)
 	require.NoError(t, err)
 
 	// Seed a savepoint behind the live position; the watcher will advance to segment 2.
-	require.NoError(t, Savepoint{hash: {Segment: 0}}.Write(dir))
-
-	client := NewTestWriteClient(remoteapi.WriteV1MessageType)
-	factory := WithWriteClientFactory(func(string, *ClientConfig) (WriteClient, error) {
-		return client, nil
-	})
+	require.NoError(t, savepoint{hash: {Segment: 0}}.Write(dir))
 
 	s := NewWriteStorage(nil, nil, dir, defaultFlushDeadline, nil, false, false, false, true)
 	t.Cleanup(func() { require.NoError(t, s.Close()) })
+	client := withTestWriteClient(s)
 
 	applyWithLabels := func(extLabels labels.Labels) {
 		gc := config.DefaultGlobalConfig
@@ -334,7 +292,7 @@ func TestWriteStorageSavepointRecreateResumesFromLivePosition(t *testing.T) {
 		require.NoError(t, s.ApplyConfig(&config.Config{
 			GlobalConfig:       gc,
 			RemoteWriteConfigs: []*config.RemoteWriteConfig{cfg},
-		}, factory))
+		}))
 	}
 
 	// Tail reads wait for a notification, so keep notifying until each count is reached.
@@ -385,16 +343,16 @@ func TestWriteStorageSavepointMultipleDestinations(t *testing.T) {
 	hashC, err := toHash(cfgC)
 	require.NoError(t, err)
 
-	// Pre-populate savepoint with different segment positions.
-	sp := Savepoint{
+	s := NewWriteStorage(nil, nil, dir, defaultFlushDeadline, nil, false, false, false, true)
+	t.Cleanup(func() { require.NoError(t, s.Close()) })
+
+	// Written after NewWriteStorage, since the savepoint is only loaded by the first ApplyConfig.
+	sp := savepoint{
 		hashA: {Segment: 2},
 		hashB: {Segment: 4},
 		hashC: {Segment: 6},
 	}
 	require.NoError(t, sp.Write(dir))
-
-	s := NewWriteStorage(nil, nil, dir, defaultFlushDeadline, nil, false, false, false, true)
-	t.Cleanup(func() { require.NoError(t, s.Close()) })
 
 	require.NoError(t, s.ApplyConfig(&config.Config{
 		GlobalConfig:       config.DefaultGlobalConfig,
@@ -418,13 +376,36 @@ func TestWriteStorageSavepointMultipleDestinations(t *testing.T) {
 }
 
 func TestWriteStorageSavepointMetrics(t *testing.T) {
+	const metricsHelp = `
+# HELP prometheus_remote_storage_savepoint_entries Number of queue entries in the most recently written remote write savepoint.
+# TYPE prometheus_remote_storage_savepoint_entries gauge
+prometheus_remote_storage_savepoint_entries %v
+# HELP prometheus_remote_storage_savepoint_writes_failed_total Total number of remote write savepoint write attempts that failed.
+# TYPE prometheus_remote_storage_savepoint_writes_failed_total counter
+prometheus_remote_storage_savepoint_writes_failed_total %v
+# HELP prometheus_remote_storage_savepoint_writes_total Total number of remote write savepoint write attempts.
+# TYPE prometheus_remote_storage_savepoint_writes_total counter
+prometheus_remote_storage_savepoint_writes_total %v
+`
+	const lastWriteMetric = "prometheus_remote_storage_savepoint_last_write_timestamp_seconds"
+	savepointMetrics := []string{
+		"prometheus_remote_storage_savepoint_entries",
+		"prometheus_remote_storage_savepoint_writes_failed_total",
+		"prometheus_remote_storage_savepoint_writes_total",
+	}
+
 	t.Run("success", func(t *testing.T) {
+		cfg := testRemoteWriteConfigForHost("http://metrics-success.com")
+		hash, err := toHash(cfg)
+		require.NoError(t, err)
+
+		// The queue resumes from segment 2, so it has a position to write.
 		dir := t.TempDir()
-		reg := prometheus.NewRegistry()
+		require.NoError(t, savepoint{hash: {Segment: 2}}.Write(dir))
+
+		reg := prometheus.NewPedanticRegistry()
 		s := NewWriteStorage(nil, reg, dir, defaultFlushDeadline, nil, false, false, false, true)
 		t.Cleanup(func() { require.NoError(t, s.Close()) })
-
-		cfg := testRemoteWriteConfigForHost("http://metrics-success.com")
 		require.NoError(t, s.ApplyConfig(&config.Config{
 			GlobalConfig:       config.DefaultGlobalConfig,
 			RemoteWriteConfigs: []*config.RemoteWriteConfig{cfg},
@@ -432,17 +413,23 @@ func TestWriteStorageSavepointMetrics(t *testing.T) {
 
 		s.writeSavepoint()
 
-		require.Equal(t, 1.0, client_testutil.ToFloat64(s.savepointWritesTotal))
-		require.Equal(t, 0.0, client_testutil.ToFloat64(s.savepointWritesFailed))
-		require.Greater(t, client_testutil.ToFloat64(s.savepointLastWriteTime), 0.0)
-		require.Equal(t, 1.0, client_testutil.ToFloat64(s.savepointEntries))
+		require.NoError(t, client_testutil.GatherAndCompare(reg, strings.NewReader(fmt.Sprintf(metricsHelp, 1, 0, 1)), savepointMetrics...))
+		mfs, err := reg.Gather()
+		require.NoError(t, err)
+		var lastWrite float64
+		for _, mf := range mfs {
+			if mf.GetName() == lastWriteMetric {
+				lastWrite = mf.GetMetric()[0].GetGauge().GetValue()
+			}
+		}
+		require.Positive(t, lastWrite)
 	})
 
 	t.Run("failure", func(t *testing.T) {
 		// Make sp.Write fail by pointing at a directory that does not exist.
 		dir := filepath.Join(t.TempDir(), "missing")
 
-		reg := prometheus.NewRegistry()
+		reg := prometheus.NewPedanticRegistry()
 		s := NewWriteStorage(nil, reg, dir, defaultFlushDeadline, nil, false, false, false, true)
 		t.Cleanup(func() { require.NoError(t, s.Close()) })
 
@@ -454,39 +441,21 @@ func TestWriteStorageSavepointMetrics(t *testing.T) {
 
 		s.writeSavepoint()
 
-		require.Equal(t, 1.0, client_testutil.ToFloat64(s.savepointWritesTotal))
-		require.Equal(t, 1.0, client_testutil.ToFloat64(s.savepointWritesFailed))
-		require.Equal(t, 0.0, client_testutil.ToFloat64(s.savepointLastWriteTime),
-			"timestamp must not advance on failure")
-		require.Equal(t, 0.0, client_testutil.ToFloat64(s.savepointEntries),
-			"entries must not change on failure")
+		// The timestamp and entries must not change on failure.
+		require.NoError(t, client_testutil.GatherAndCompare(reg, strings.NewReader(fmt.Sprintf(metricsHelp, 0, 1, 1)), savepointMetrics...))
+		require.NoError(t, client_testutil.GatherAndCompare(reg, strings.NewReader(`
+# HELP prometheus_remote_storage_savepoint_last_write_timestamp_seconds Unix timestamp of the last successful remote write savepoint write.
+# TYPE prometheus_remote_storage_savepoint_last_write_timestamp_seconds gauge
+prometheus_remote_storage_savepoint_last_write_timestamp_seconds 0
+`), lastWriteMetric))
 	})
 
 	t.Run("disabled_not_registered", func(t *testing.T) {
-		dir := t.TempDir()
-		reg := prometheus.NewRegistry()
-		s := NewWriteStorage(nil, reg, dir, defaultFlushDeadline, nil, false, false, false, false)
+		reg := prometheus.NewPedanticRegistry()
+		s := NewWriteStorage(nil, reg, t.TempDir(), defaultFlushDeadline, nil, false, false, false, false)
 		t.Cleanup(func() { require.NoError(t, s.Close()) })
 
-		require.Nil(t, s.savepointWritesTotal)
-		require.Nil(t, s.savepointWritesFailed)
-		require.Nil(t, s.savepointLastWriteTime)
-		require.Nil(t, s.savepointEntries)
-
-		mfs, err := reg.Gather()
-		require.NoError(t, err)
-		names := make([]string, 0, len(mfs))
-		for _, mf := range mfs {
-			names = append(names, mf.GetName())
-		}
-		for _, n := range []string{
-			"prometheus_remote_storage_savepoint_writes_total",
-			"prometheus_remote_storage_savepoint_writes_failed_total",
-			"prometheus_remote_storage_savepoint_last_write_timestamp_seconds",
-			"prometheus_remote_storage_savepoint_entries",
-		} {
-			require.NotContains(t, names, n)
-		}
+		require.NoError(t, client_testutil.GatherAndCompare(reg, strings.NewReader(""), append(savepointMetrics, lastWriteMetric)...))
 	})
 }
 
@@ -576,11 +545,6 @@ func appendToWAL(t *testing.T, dir string, seg walSegmentData) {
 // is owned by watcher tests:
 // TestWatcher_StartSegment and TestWatcher_StartSegment_CheckpointNotReplayed.
 func TestWriteStorageSavepointE2E(t *testing.T) {
-	const (
-		noStartupSamplesAssertDuration = 500 * time.Millisecond
-		noStartupSamplesAssertTick     = 50 * time.Millisecond
-	)
-
 	series := makeSeries(2, 0)
 	seg0Samples := makeSamples(series, 1_000, 0)
 	seg1Samples := makeSamples(series, 2_000, 1)
@@ -596,15 +560,12 @@ func TestWriteStorageSavepointE2E(t *testing.T) {
 		segments           []walSegmentData
 		savepointSegment   *int
 		wantStartupSamples []record.RefSample
-		appendAfterStart   bool
 	}{
 		{
-			// No savepoint: nothing replayed, and the live notify path delivers newly appended samples end-to-end.
-			name:               "empty wal without savepoint then notify sends new samples",
-			segments:           nil,
+			name:               "no savepoint skips historical wal then notify sends new samples",
+			segments:           oldSegments,
 			savepointSegment:   nil,
 			wantStartupSamples: nil,
-			appendAfterStart:   true,
 		},
 		{
 			// Savepoint loaded -> reaches watcher -> replayed samples delivered end-to-end,
@@ -613,7 +574,6 @@ func TestWriteStorageSavepointE2E(t *testing.T) {
 			segments:           oldSegments,
 			savepointSegment:   ptrInt(1),
 			wantStartupSamples: slices.Concat(seg1Samples, seg2Samples),
-			appendAfterStart:   true,
 		},
 	}
 
@@ -623,17 +583,12 @@ func TestWriteStorageSavepointE2E(t *testing.T) {
 			client := NewTestWriteClient(remoteapi.WriteV1MessageType)
 
 			cfg := testRemoteWriteConfigForHost("http://savepoint-e2e.local")
-			queueCfg := config.DefaultQueueConfig
-			queueCfg.MinShards = 1
-			queueCfg.MaxShards = 1
-			queueCfg.MaxSamplesPerSend = 1000
-			queueCfg.BatchSendDeadline = model.Duration(50 * time.Millisecond)
-			cfg.QueueConfig = queueCfg
+			cfg.QueueConfig = fastQueueConfig()
 
 			hash, err := toHash(cfg)
 			require.NoError(t, err)
 			if tc.savepointSegment != nil {
-				require.NoError(t, Savepoint{
+				require.NoError(t, savepoint{
 					hash: {Segment: *tc.savepointSegment},
 				}.Write(dir))
 			}
@@ -646,54 +601,45 @@ func TestWriteStorageSavepointE2E(t *testing.T) {
 				}
 			})
 
-			startSegment := -1
-			if entry, ok := s.savepoint[hash]; ok {
-				startSegment = entry.Segment
-			}
-			if tc.savepointSegment != nil {
-				require.Contains(t, s.savepoint, hash)
-				require.Equal(t, *tc.savepointSegment, startSegment)
+			newSeries := makeSeries(2, 0)
+			newSamples := makeSamples(newSeries, time.Now().Add(time.Minute).UnixMilli(), 42)
+			// Set before ApplyConfig, since expectSamples resets what was received. Without
+			// startup samples, a replayed historical sample then fails the exact match.
+			if len(tc.wantStartupSamples) == 0 {
+				client.expectSamples(newSamples, newSeries)
+			} else {
+				client.expectSamples(tc.wantStartupSamples, series)
 			}
 
-			factory := WithWriteClientFactory(func(name string, clientCfg *ClientConfig) (WriteClient, error) {
+			s.newWriteClient = func(name string, clientCfg *ClientConfig) (WriteClient, error) {
 				require.Equal(t, hash[:6], name)
 				require.Equal(t, cfg.URL.String(), clientCfg.URL.String())
 				return client, nil
-			})
+			}
 			err = s.ApplyConfig(&config.Config{
 				GlobalConfig:       config.DefaultGlobalConfig,
 				RemoteWriteConfigs: []*config.RemoteWriteConfig{cfg},
-			}, factory)
+			})
 			require.NoError(t, err)
 			require.Contains(t, s.queues, hash)
 
 			if len(tc.wantStartupSamples) == 0 {
-				require.Never(t, func() bool {
-					client.mtx.Lock()
-					defer client.mtx.Unlock()
-					return deepLen(client.receivedSamples) > 0
-				}, noStartupSamplesAssertDuration, noStartupSamplesAssertTick)
+				waitForTail(t, s, hash, dir)
 			} else {
-				client.expectSamples(tc.wantStartupSamples, series)
 				waitForExpectedDataWithNotify(t, s, client, 10*time.Second)
-			}
-
-			if tc.appendAfterStart {
-				newSeries := makeSeries(2, 0)
-				newSamples := makeSamples(newSeries, time.Now().Add(time.Minute).UnixMilli(), 42)
 				client.expectSamples(newSamples, newSeries)
-
-				appendToWAL(t, dir, walSegmentData{
-					series:  newSeries,
-					samples: newSamples,
-				})
-				waitForExpectedDataWithNotify(t, s, client, 10*time.Second)
 			}
+
+			appendToWAL(t, dir, walSegmentData{
+				series:  newSeries,
+				samples: newSamples,
+			})
+			waitForExpectedDataWithNotify(t, s, client, 10*time.Second)
 
 			require.NoError(t, s.Close())
 			closed = true
 
-			saved, err := LoadSavepoint(dir)
+			saved, err := loadSavepoint(dir)
 			require.NoError(t, err)
 			require.Contains(t, saved, hash)
 
@@ -757,18 +703,13 @@ func TestWriteStorageSavepointCloseRace(t *testing.T) {
 		"no savepoint write should happen after Close returns")
 
 	// The savepoint file must be well-formed (never left half-written).
-	_, err := LoadSavepoint(dir)
+	_, err := loadSavepoint(dir)
 	require.NoError(t, err)
 }
 
 // TestWriteStorageSavepointCorruptedOnLoad verifies a corrupt savepoint file does
 // not crash startup and does not trigger replay; it falls back to no savepoint.
 func TestWriteStorageSavepointCorruptedOnLoad(t *testing.T) {
-	const (
-		noStartupSamplesAssertDuration = 500 * time.Millisecond
-		noStartupSamplesAssertTick     = 50 * time.Millisecond
-	)
-
 	series := makeSeries(2, 0)
 	dir := createWALWithSegments(t, []walSegmentData{
 		{series: series, samples: makeSamples(series, 1_000, 0)},
@@ -780,29 +721,18 @@ func TestWriteStorageSavepointCorruptedOnLoad(t *testing.T) {
 
 	// Startup with the feature enabled must not panic and must fall back to empty.
 	s := NewWriteStorage(nil, nil, dir, defaultFlushDeadline, nil, false, false, false, true)
-	t.Cleanup(func() { require.NoError(t, s.Close()) })
-	require.Empty(t, s.savepoint, "corrupt savepoint should fall back to empty")
+	client := withTestWriteClient(s)
 
 	cfg := testRemoteWriteConfigForHost("http://savepoint-corrupt.local")
 	hash, err := toHash(cfg)
 	require.NoError(t, err)
-
-	client := NewTestWriteClient(remoteapi.WriteV1MessageType)
-	factory := WithWriteClientFactory(func(string, *ClientConfig) (WriteClient, error) {
-		return client, nil
-	})
 	require.NoError(t, s.ApplyConfig(&config.Config{
 		GlobalConfig:       config.DefaultGlobalConfig,
 		RemoteWriteConfigs: []*config.RemoteWriteConfig{cfg},
-	}, factory))
-	require.Contains(t, s.queues, hash)
+	}))
 
 	// No savepoint => no replay of the historical WAL samples.
-	require.Never(t, func() bool {
-		client.mtx.Lock()
-		defer client.mtx.Unlock()
-		return deepLen(client.receivedSamples) > 0
-	}, noStartupSamplesAssertDuration, noStartupSamplesAssertTick)
+	requireNoReplay(t, s, hash, dir, client)
 }
 
 func waitForExpectedDataWithNotify(t *testing.T, s *WriteStorage, client *TestWriteClient, timeout time.Duration) {
@@ -828,4 +758,48 @@ func waitForExpectedDataWithNotify(t *testing.T, s *WriteStorage, client *TestWr
 	client.waitForExpectedData(t, timeout)
 	close(stop)
 	wg.Wait()
+}
+
+// fastQueueConfig returns a single-shard queue config that sends queued samples within 50ms.
+func fastQueueConfig() config.QueueConfig {
+	qc := config.DefaultQueueConfig
+	qc.MinShards = 1
+	qc.MaxShards = 1
+	qc.MaxSamplesPerSend = 1000
+	qc.BatchSendDeadline = model.Duration(50 * time.Millisecond)
+	return qc
+}
+
+// withTestWriteClient makes every queue s creates send to the returned client.
+func withTestWriteClient(s *WriteStorage) *TestWriteClient {
+	client := NewTestWriteClient(remoteapi.WriteV1MessageType)
+	s.newWriteClient = func(string, *ClientConfig) (WriteClient, error) { return client, nil }
+	return client
+}
+
+// waitForTail waits until the watcher of the queue for hash has reached the last WAL segment,
+// so every earlier segment has been read.
+func waitForTail(t *testing.T, s *WriteStorage, hash, dir string) {
+	t.Helper()
+	_, lastSegment, err := wlog.Segments(filepath.Join(dir, "wal"))
+	require.NoError(t, err)
+	s.mtx.Lock()
+	q := s.queues[hash]
+	s.mtx.Unlock()
+	require.NotNil(t, q)
+	require.Eventually(t, func() bool {
+		s.Notify()
+		return q.watcher.LastProcessedSegment() >= lastSegment
+	}, 10*time.Second, 10*time.Millisecond)
+}
+
+// requireNoReplay waits for the watcher to reach the last WAL segment, then closes s so its
+// shards flush anything already queued, and requires that nothing was sent.
+func requireNoReplay(t *testing.T, s *WriteStorage, hash, dir string, client *TestWriteClient) {
+	t.Helper()
+	waitForTail(t, s, hash, dir)
+	require.NoError(t, s.Close())
+	client.mtx.Lock()
+	defer client.mtx.Unlock()
+	require.Zero(t, deepLen(client.receivedSamples), "historical samples must not be replayed")
 }

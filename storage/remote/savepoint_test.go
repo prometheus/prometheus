@@ -24,30 +24,30 @@ import (
 func TestSavepointWriteLoad(t *testing.T) {
 	tests := []struct {
 		name   string
-		writes []Savepoint
-		want   Savepoint
+		writes []savepoint
+		want   savepoint
 	}{
 		{
 			name: "missing file loads empty",
 		},
 		{
 			name:   "nil savepoint loads empty",
-			writes: []Savepoint{nil},
+			writes: []savepoint{nil},
 		},
 		{
 			name: "round trip",
-			writes: []Savepoint{
+			writes: []savepoint{
 				{"abc123": {Segment: 42}, "def456": {Segment: 7}},
 			},
-			want: Savepoint{"abc123": {Segment: 42}, "def456": {Segment: 7}},
+			want: savepoint{"abc123": {Segment: 42}, "def456": {Segment: 7}},
 		},
 		{
 			name: "overwrite replaces previous",
-			writes: []Savepoint{
+			writes: []savepoint{
 				{"a": {Segment: 1}},
 				{"b": {Segment: 5}},
 			},
-			want: Savepoint{"b": {Segment: 5}},
+			want: savepoint{"b": {Segment: 5}},
 		},
 	}
 
@@ -61,7 +61,7 @@ func TestSavepointWriteLoad(t *testing.T) {
 			_, err := os.Stat(savepointFilePath(dir) + ".tmp")
 			require.True(t, os.IsNotExist(err), "temp file should not remain after successful write")
 
-			loaded, err := LoadSavepoint(dir)
+			loaded, err := loadSavepoint(dir)
 			require.NoError(t, err)
 			require.NotNil(t, loaded)
 			if len(tc.want) == 0 {
@@ -99,6 +99,11 @@ func TestLoadSavepointInvalid(t *testing.T) {
 			data:    `{"version":2,"remoteWrite":{"abc123":{"segment":42}}}`,
 			wantErr: "unexpected savepoint version 2",
 		},
+		{
+			name:    "negative segment",
+			data:    `{"version":1,"remoteWrite":{"abc123":{"segment":-1}}}`,
+			wantErr: "negative segment -1 for queue abc123",
+		},
 	}
 
 	for _, tc := range tests {
@@ -106,7 +111,7 @@ func TestLoadSavepointInvalid(t *testing.T) {
 			dir := t.TempDir()
 			require.NoError(t, os.WriteFile(filepath.Join(dir, savepointFileName), []byte(tc.data), 0o644))
 
-			_, err := LoadSavepoint(dir)
+			_, err := loadSavepoint(dir)
 			require.ErrorContains(t, err, tc.wantErr)
 		})
 	}

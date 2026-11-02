@@ -84,10 +84,11 @@ type WriteStorage struct {
 
 	recordBuf *record.BuffersPool
 
-	// savepoint holds the positions loaded at startup, used by the first successful ApplyConfig.
-	savepoint Savepoint
 	// configApplied is set once the first ApplyConfig succeeds.
 	configApplied bool
+
+	// newWriteClient creates the write client for each queue. Overridden in tests.
+	newWriteClient func(name string, cfg *ClientConfig) (WriteClient, error)
 
 	// For timestampTracker.
 	highestTimestamp *maxTimestamp
@@ -151,6 +152,7 @@ func NewWriteStorage(logger *slog.Logger, reg prometheus.Registerer, dir string,
 		enableMetadataWALRecords: enableMetadataWALRecords,
 		enableSTStorage:          enableSTStorage,
 		enableSavepoint:          enableSavepoint,
+		newWriteClient:           NewWriteClient,
 	}
 
 	if enableSavepoint {
@@ -186,17 +188,6 @@ func NewWriteStorage(logger *slog.Logger, reg prometheus.Registerer, dir string,
 				rws.savepointEntries,
 			)
 		}
-
-		sp, err := LoadSavepoint(dir)
-		if err != nil {
-			logger.Warn("Failed to load remote write savepoint, starting from current position", "err", err)
-			sp = make(Savepoint)
-		}
-		rws.savepoint = sp
-	} else if err := os.Remove(savepointFilePath(dir)); err != nil && !errors.Is(err, fs.ErrNotExist) {
-		// Drop any stale savepoint left over from a previous run with the feature
-		// enabled, so it cannot be acted upon if the feature is re-enabled later.
-		logger.Warn("Failed to remove stale remote write savepoint", "err", err)
 	}
 
 	if reg != nil {
@@ -231,32 +222,49 @@ func (rws *WriteStorage) run() {
 	}
 }
 
-// newSavepoint builds a Savepoint from current queue positions.
+// newSavepoint builds a savepoint from current queue positions.
 // Must be called with rws.mtx held.
-func (rws *WriteStorage) newSavepoint() Savepoint {
-	sp := make(Savepoint, len(rws.queues))
+func (rws *WriteStorage) newSavepoint() savepoint {
+	sp := make(savepoint, len(rws.queues))
 	for hash, q := range rws.queues {
-		sp[hash] = SavepointEntry{
-			Segment: q.watcher.LastProcessedSegment(),
+		// Skip queues that haven't sent from a segment yet.
+		segment := q.watcher.LastProcessedSegment()
+		if segment < 0 {
+			continue
 		}
+		sp[hash] = savepointEntry{Segment: segment}
 	}
 	return sp
 }
 
+// startupSavepoint returns the savepoint left by the previous run, or nil if it can't be loaded.
+func (rws *WriteStorage) startupSavepoint() savepoint {
+	sp, err := loadSavepoint(rws.dir)
+	if err != nil {
+		rws.logger.Warn("Failed to load remote write savepoint, starting from current position", "err", err)
+		return nil
+	}
+	return sp
+}
+
+// removeSavepoint removes the savepoint left by the previous run, so it isn't used if the feature is re-enabled later.
+func (rws *WriteStorage) removeSavepoint() {
+	if err := os.Remove(savepointFilePath(rws.dir)); err != nil && !errors.Is(err, fs.ErrNotExist) {
+		rws.logger.Warn("Failed to remove stale remote write savepoint", "err", err)
+	}
+}
+
 // startSegment returns the segment a new queue for hash starts sending from, or -1 for the tip.
-// prev is the queue being replaced, or nil. Must be called with rws.mtx held.
-func (rws *WriteStorage) startSegment(hash string, prev *QueueManager) int {
+// prev is the queue being replaced, or nil. startup is the savepoint loaded on the first
+// ApplyConfig, nil after that. Must be called with rws.mtx held.
+func (rws *WriteStorage) startSegment(hash string, prev *QueueManager, startup savepoint) int {
 	if !rws.enableSavepoint {
 		return -1
 	}
 	if prev != nil {
 		return prev.watcher.LastProcessedSegment()
 	}
-	// The startup savepoint only applies until the first successful ApplyConfig.
-	if rws.configApplied {
-		return -1
-	}
-	if entry, ok := rws.savepoint[hash]; ok {
+	if entry, ok := startup[hash]; ok {
 		return entry.Segment
 	}
 	return -1
@@ -281,7 +289,7 @@ func (rws *WriteStorage) writeSavepoint() {
 
 // recordWriteResult updates the savepoint metrics after an attempt to Write.
 // Precondition: rws.enableSavepoint is true, so the metric fields are non-nil.
-func (rws *WriteStorage) recordWriteResult(sp Savepoint, success bool) {
+func (rws *WriteStorage) recordWriteResult(sp savepoint, success bool) {
 	rws.savepointWritesTotal.Inc()
 	if !success {
 		rws.savepointWritesFailed.Inc()
@@ -301,23 +309,9 @@ func (rws *WriteStorage) Notify() {
 	}
 }
 
-type applyConfigOpts struct {
-	writeClientFactory func(name string, cfg *ClientConfig) (WriteClient, error)
-}
-
-// ApplyConfigOption modifies WriteStorage.ApplyConfig behavior.
-type ApplyConfigOption func(*applyConfigOpts)
-
-// WithWriteClientFactory sets a factory to provide a custom write client.
-func WithWriteClientFactory(factory func(name string, cfg *ClientConfig) (WriteClient, error)) ApplyConfigOption {
-	return func(opts *applyConfigOpts) {
-		opts.writeClientFactory = factory
-	}
-}
-
 // ApplyConfig updates the state as the new config requires.
 // Only stop & create queues which have changes.
-func (rws *WriteStorage) ApplyConfig(conf *config.Config, options ...ApplyConfigOption) error {
+func (rws *WriteStorage) ApplyConfig(conf *config.Config) error {
 	rws.mtx.Lock()
 	defer rws.mtx.Unlock()
 
@@ -325,11 +319,15 @@ func (rws *WriteStorage) ApplyConfig(conf *config.Config, options ...ApplyConfig
 		return err
 	}
 
-	opts := applyConfigOpts{
-		writeClientFactory: NewWriteClient,
-	}
-	for _, option := range options {
-		option(&opts)
+	// The startup savepoint only applies until the first successful ApplyConfig. It's read or
+	// removed here because the storage directory lock is only held once ApplyConfig runs.
+	var startup savepoint
+	if !rws.configApplied {
+		if rws.enableSavepoint {
+			startup = rws.startupSavepoint()
+		} else {
+			rws.removeSavepoint()
+		}
 	}
 
 	// Remote write queues only need to change if the remote write config or
@@ -359,7 +357,7 @@ func (rws *WriteStorage) ApplyConfig(conf *config.Config, options ...ApplyConfig
 			name = rwConf.Name
 		}
 
-		c, err := opts.writeClientFactory(name, &ClientConfig{
+		c, err := rws.newWriteClient(name, &ClientConfig{
 			URL:              rwConf.URL,
 			WriteProtoMsg:    rwConf.ProtobufMessage,
 			WriteMode:        rwConf.Mode,
@@ -388,7 +386,7 @@ func (rws *WriteStorage) ApplyConfig(conf *config.Config, options ...ApplyConfig
 		// only used for metric labels.
 		endpoint := rwConf.URL.Redacted()
 
-		startSegment := rws.startSegment(hash, queue)
+		startSegment := rws.startSegment(hash, queue, startup)
 
 		newQueues[hash] = NewQueueManager(
 			newQueueManagerMetrics(rws.reg, name, endpoint),

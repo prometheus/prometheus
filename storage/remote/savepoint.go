@@ -29,31 +29,31 @@ const (
 	savepointVersion1 = 1
 )
 
-// SavepointEntry holds the written position for a single remote write queue.
-type SavepointEntry struct {
+// savepointEntry holds the written position for a single remote write queue.
+type savepointEntry struct {
 	Segment int `json:"segment"`
 }
 
-// Savepoint maps queue hash to position. The key is the same hash used in
+// savepoint maps queue hash to position. The key is the same hash used in
 // WriteStorage.queues (MD5 of YAML-marshaled RemoteWriteConfig).
-type Savepoint map[string]SavepointEntry
+type savepoint map[string]savepointEntry
 
-// savepointFile is the on-disk format of a Savepoint.
+// savepointFile is the on-disk format of a savepoint.
 type savepointFile struct {
 	Version     int       `json:"version"`
-	RemoteWrite Savepoint `json:"remoteWrite"`
+	RemoteWrite savepoint `json:"remoteWrite"`
 }
 
 func savepointFilePath(dir string) string {
 	return filepath.Join(dir, savepointFileName)
 }
 
-// LoadSavepoint reads the savepoint file from dir.
-// Returns an empty Savepoint if the file does not exist.
-func LoadSavepoint(dir string) (Savepoint, error) {
+// loadSavepoint reads the savepoint file from dir.
+// Returns an empty savepoint if the file does not exist.
+func loadSavepoint(dir string) (savepoint, error) {
 	data, err := os.ReadFile(savepointFilePath(dir))
 	if errors.Is(err, fs.ErrNotExist) {
-		return make(Savepoint), nil
+		return make(savepoint), nil
 	}
 	if err != nil {
 		return nil, fmt.Errorf("read savepoint: %w", err)
@@ -67,13 +67,18 @@ func LoadSavepoint(dir string) (Savepoint, error) {
 		return nil, fmt.Errorf("unexpected savepoint version %d", f.Version)
 	}
 	if f.RemoteWrite == nil {
-		return make(Savepoint), nil
+		return make(savepoint), nil
+	}
+	for hash, entry := range f.RemoteWrite {
+		if entry.Segment < 0 {
+			return nil, fmt.Errorf("negative segment %d for queue %s", entry.Segment, hash)
+		}
 	}
 	return f.RemoteWrite, nil
 }
 
 // Write writes the savepoint to dir.
-func (s Savepoint) Write(dir string) error {
+func (s savepoint) Write(dir string) error {
 	data, err := json.Marshal(savepointFile{Version: savepointVersion1, RemoteWrite: s})
 	if err != nil {
 		return fmt.Errorf("marshal savepoint: %w", err)

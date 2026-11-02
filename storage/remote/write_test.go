@@ -466,12 +466,19 @@ func TestWriteStorageApplyConfig_ErrorKeepsPreviousState(t *testing.T) {
 }
 
 func TestWriteStorage_CanRegisterMetricsAfterClosing(t *testing.T) {
-	dir := t.TempDir()
-	reg := prometheus.NewPedanticRegistry()
+	for name, enableSavepoint := range map[string]bool{"savepoint disabled": false, "savepoint enabled": true} {
+		t.Run(name, func(t *testing.T) {
+			dir := t.TempDir()
+			reg := prometheus.NewPedanticRegistry()
 
-	s := NewWriteStorage(nil, reg, dir, time.Millisecond, nil, false, false, false, false)
-	require.NoError(t, s.Close(), false)
-	require.NotPanics(t, func() { NewWriteStorage(nil, reg, dir, time.Millisecond, nil, false, false, false, false) })
+			s := NewWriteStorage(nil, reg, dir, time.Millisecond, nil, false, false, false, enableSavepoint)
+			require.NoError(t, s.Close())
+			require.NotPanics(t, func() {
+				s = NewWriteStorage(nil, reg, dir, time.Millisecond, nil, false, false, false, enableSavepoint)
+			})
+			require.NoError(t, s.Close())
+		})
+	}
 }
 
 func TestWriteStorage_AppenderV2_AppendExemplars(t *testing.T) {
