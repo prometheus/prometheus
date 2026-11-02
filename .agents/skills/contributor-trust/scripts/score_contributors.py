@@ -12,8 +12,8 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 """
-Computes contributor trust scores for any GitHub repository using Prometheus
-Governance roles (Maintainer, Member, Contributor, New Contributor) and a
+Computes contributor trust scores for any GitHub repository using repository
+governance roles (Maintainer, Member, Contributor, New Contributor) and a
 rolling monthly contribution average (1.0x merged PRs + 1.5x reviewed PRs).
 """
 import argparse
@@ -58,6 +58,24 @@ ASSOC_RANK = {
     "OWNER": 5,
 }
 
+PROMETHEUS_ORGS = {"prometheus", "prometheus-community", "promcon"}
+RESERVED_GH_PATHS = {
+    "orgs",
+    "organizations",
+    "teams",
+    "issues",
+    "pulls",
+    "pull",
+    "discussions",
+    "actions",
+    "settings",
+    "security",
+    "sponsors",
+    "about",
+    "pricing",
+    "features",
+}
+
 MERGED_PR_WEIGHT = 1.0
 REVIEWED_PR_WEIGHT = 1.5
 CONTRIB_LOG_SCALE = 12.0
@@ -83,6 +101,7 @@ query($owner: String!, $name: String!, $states: [PullRequestState!]!, $after: St
         state
         updatedAt
         mergedAt
+        mergedBy { __typename login }
         author { __typename login }
         authorAssociation
         reviews(last: 30, states: [APPROVED, CHANGES_REQUESTED, COMMENTED]) {
@@ -140,6 +159,31 @@ def is_bot(actor):
     )
 
 
+def _extract_handles_from_line(line):
+    """Extracts GitHub handles from a line, preferring github.com/<handle> links over @tokens."""
+    gh_links = [
+        h
+        for h in re.findall(r"github\.com/([a-zA-Z0-9-]+)(?:[/?#)\]\s]|$)", line)
+        if h.lower() not in RESERVED_GH_PATHS
+    ]
+    if gh_links:
+        seen = []
+        for h in gh_links:
+            if h not in seen:
+                seen.append(h)
+        return seen
+
+    # Strip inline code spans containing whitespace (such as CNCF Slack `@Full Name`)
+    # before matching @handles so display names are not mistaken for GitHub logins.
+    cleaned = re.sub(r"`[^`]*\s[^`]*`", " ", line)
+    handles = re.findall(r"(?:^|[\s/(\[|`])@([a-zA-Z0-9-]+)", cleaned)
+    seen = []
+    for h in handles:
+        if h not in seen:
+            seen.append(h)
+    return seen
+
+
 def parse_maintainers_md(content):
     """Extracts general maintainers, path-specific rules, and all active maintainer handles."""
     general = []
@@ -148,8 +192,8 @@ def parse_maintainers_md(content):
     if not content:
         return general, specific, all_maintainers
 
-    # Default to "general" so simple bullet-list MAINTAINERS.md files (such as
-    # client_golang and common) work without requiring section headers.
+    # Default to "general" so simple bullet or Markdown-table MAINTAINERS.md files
+    # (such as client_golang, common, and thanos-io/thanos) work without specific headers.
     mode = "general"
     prefix_stack = []
 
@@ -170,10 +214,13 @@ def parse_maintainers_md(content):
             low.startswith("v3 release")
             or low.startswith("release coordinators")
             or low.startswith("for the sake of")
-            or low.startswith("## triage")
-            or low.startswith("## alumni")
-            or low.startswith("## emeritus")
-            or low.startswith("# emeritus")
+            or (
+                low.startswith("#")
+                and any(
+                    stop in low
+                    for stop in ("triage", "alumni", "emeritus", "retired", "former")
+                )
+            )
             or low.startswith("emeritus")
         ):
             mode = None
@@ -182,8 +229,11 @@ def parse_maintainers_md(content):
         if mode is None:
             continue
 
-        # Match GitHub @handles preceded by whitespace, '/', '(', or '[' so email domains are ignored.
-        handles = re.findall(r"(?:^|[\s/(\[])@([a-zA-Z0-9-]+)", line)
+        # Skip Markdown table separator rows (e.g. |---|---|).
+        if stripped.startswith("|") and re.match(r"^\|[\s:|-]+\|?$", stripped):
+            continue
+
+        handles = _extract_handles_from_line(line)
         indent = len(line) - len(line.lstrip(" "))
         m_code = re.match(r"^\s*[-*]\s*`([^`]+)`", line)
 
@@ -198,7 +248,7 @@ def parse_maintainers_md(content):
                 for h in handles:
                     if h not in all_maintainers:
                         all_maintainers.append(h)
-        elif handles and stripped.startswith(("*", "-")):
+        elif handles and stripped.startswith(("*", "-", "|")):
             for h in handles:
                 if mode == "general" and h not in general:
                     general.append(h)
@@ -239,6 +289,57 @@ def parse_codeowners(content):
     return default_individuals, rules, all_individuals
 
 
+def parse_owners_yaml(owners_content, aliases_content=""):
+    """Parses Kubernetes/Prow-style OWNERS and OWNERS_ALIASES files for approvers."""
+    if not owners_content:
+        return []
+
+    aliases = {}
+    if aliases_content:
+        current_alias = None
+        in_aliases = False
+        for raw in aliases_content.splitlines():
+            line = raw.split("#", 1)[0].rstrip()
+            stripped = line.strip()
+            if not stripped:
+                continue
+            indent = len(line) - len(line.lstrip(" "))
+            if indent == 0:
+                in_aliases = stripped.startswith("aliases:")
+                current_alias = None
+                continue
+            if not in_aliases:
+                continue
+            if stripped.endswith(":") and not stripped.startswith("-"):
+                current_alias = stripped[:-1].strip()
+                aliases.setdefault(current_alias, [])
+            elif stripped.startswith("-") and current_alias:
+                val = stripped[1:].strip().lstrip("@")
+                if val:
+                    aliases[current_alias].append(val)
+
+    approvers = []
+    in_approvers = False
+    for raw in owners_content.splitlines():
+        line = raw.split("#", 1)[0].rstrip()
+        stripped = line.strip()
+        if not stripped:
+            continue
+        indent = len(line) - len(line.lstrip(" "))
+        if not stripped.startswith("-") and stripped.endswith(":"):
+            key = stripped[:-1].strip().lower()
+            if indent == 0 or key in ("approvers", "reviewers", "labels", "filters"):
+                in_approvers = key == "approvers"
+                continue
+        if in_approvers and stripped.startswith("-"):
+            token = stripped[1:].strip().lstrip("@")
+            expanded = aliases.get(token, [token])
+            for h in expanded:
+                if h and "/" not in h and not is_bot(h) and h not in approvers:
+                    approvers.append(h)
+    return approvers
+
+
 def fetch_repo_maintainer_handles(owner, repo):
     codeowners_txt = (
         fetch_file_from_repo(owner, repo, ".github/CODEOWNERS")
@@ -250,20 +351,34 @@ def fetch_repo_maintainer_handles(owner, repo):
         or fetch_file_from_repo(owner, repo, ".github/MAINTAINERS.md")
         or ""
     )
+    owners_txt = fetch_file_from_repo(owner, repo, "OWNERS") or ""
+    aliases_txt = (
+        fetch_file_from_repo(owner, repo, "OWNERS_ALIASES") if owners_txt else ""
+    ) or ""
+
     _, _, co_all = parse_codeowners(codeowners_txt)
     _, _, maint_all = parse_maintainers_md(maintainers_txt)
-    return {h.lower() for h in (maint_all + co_all)}
+    owners_approvers = parse_owners_yaml(owners_txt, aliases_txt)
+    return {h.lower() for h in (maint_all + co_all + owners_approvers)}
 
 
 def classify_governance_role(
-    login, author_association, maintainer_handles_lower, has_accepted_work=False
+    login,
+    author_association,
+    maintainer_handles_lower,
+    has_accepted_work=False,
+    repo_owner=None,
 ):
-    """Maps a GitHub user to Prometheus Governance roles and base score."""
-    if login and login.lower() in maintainer_handles_lower:
+    """Maps a GitHub user to repository roles and base score."""
+    assoc = (author_association or "NONE").upper()
+    if (
+        (login and login.lower() in maintainer_handles_lower)
+        or assoc == "OWNER"
+        or (login and repo_owner and login.lower() == repo_owner.lower())
+    ):
         return ROLE_MAINTAINER, ROLE_BASE_SCORES[ROLE_MAINTAINER]
 
-    assoc = (author_association or "NONE").upper()
-    if assoc in ("OWNER", "MEMBER", "COLLABORATOR"):
+    if assoc in ("MEMBER", "COLLABORATOR"):
         return ROLE_MEMBER, ROLE_BASE_SCORES[ROLE_MEMBER]
     if assoc == "CONTRIBUTOR" or has_accepted_work:
         return ROLE_CONTRIBUTOR, ROLE_BASE_SCORES[ROLE_CONTRIBUTOR]
@@ -299,7 +414,7 @@ def compute_priority_score(trust_score, waiting_days, aging_per_day=DEFAULT_AGIN
 
 
 def format_author_cell(login, profile):
-    """Formats an Author table cell with Prometheus Governance role and 90d RMA."""
+    """Formats an Author table cell with repository role and 90d RMA."""
     role = profile["role"]
     w_rma = profile["weighted_rma"]
     if w_rma >= 0.1:
@@ -352,10 +467,46 @@ def _fetch_pr_stream(owner, name, states, cutoff_iso):
     return nodes
 
 
+def infer_maintainers_from_merges(pr_nodes, cutoff_iso):
+    """Infers active maintainers from mergedBy when a repository has no maintainer files."""
+    merged_others = set()
+    merge_counts = {}
+    for pr in pr_nodes:
+        if not pr or pr.get("state") != "MERGED":
+            continue
+        merged_at = pr.get("mergedAt") or ""
+        if merged_at < cutoff_iso:
+            continue
+        merger = pr.get("mergedBy")
+        if not merger or is_bot(merger):
+            continue
+        m_low = merger["login"].lower()
+        merge_counts[m_low] = merge_counts.get(m_low, 0) + 1
+        author = pr.get("author")
+        a_low = author["login"].lower() if author and author.get("login") else ""
+        if a_low != m_low and not is_bot(author):
+            merged_others.add(m_low)
+
+    return {
+        m_low
+        for m_low, cnt in merge_counts.items()
+        if m_low in merged_others or cnt >= 2
+    }
+
+
 def aggregate_contributor_profiles(
-    pr_nodes, maintainer_handles_lower, cutoff_iso, window_days=DEFAULT_WINDOW_DAYS
+    pr_nodes,
+    maintainer_handles_lower,
+    cutoff_iso,
+    window_days=DEFAULT_WINDOW_DAYS,
+    repo_owner=None,
+    infer_maintainers_if_empty=True,
 ):
     """Aggregates merged PRs and distinct reviewed PRs per contributor from raw PR nodes."""
+    effective_maintainers = set(maintainer_handles_lower or ())
+    if not effective_maintainers and infer_maintainers_if_empty:
+        effective_maintainers = infer_maintainers_from_merges(pr_nodes, cutoff_iso)
+
     canonical_login = {}
     best_assoc = {}
     merged_prs = {}
@@ -383,6 +534,10 @@ def aggregate_contributor_profiles(
             if pr.get("state") == "MERGED" and merged_at >= cutoff_iso:
                 merged_prs.setdefault(pr_author_low, set()).add(pr["number"])
 
+        merger_obj = pr.get("mergedBy")
+        if merger_obj and not is_bot(merger_obj):
+            record_user(merger_obj["login"], "MEMBER")
+
         for rev in (pr.get("reviews") or {}).get("nodes") or []:
             r_author = rev.get("author")
             if not r_author or is_bot(r_author):
@@ -405,8 +560,9 @@ def aggregate_contributor_profiles(
         role, role_base = classify_governance_role(
             login,
             assoc,
-            maintainer_handles_lower,
+            effective_maintainers,
             has_accepted_work=(m_cnt + r_cnt) > 0,
+            repo_owner=repo_owner,
         )
         metrics = compute_trust_score(role_base, m_cnt, r_cnt, window_days=window_days)
         profiles[low] = {
@@ -445,6 +601,7 @@ def fetch_repo_contributor_profiles(
         maintainer_handles_lower,
         cutoff_iso,
         window_days=window_days,
+        repo_owner=owner,
     )
 
 
@@ -454,17 +611,18 @@ def resolve_author_profile(
     author_association,
     maintainer_handles_lower,
     window_days=DEFAULT_WINDOW_DAYS,
+    repo_owner=None,
 ):
     """Returns a contributor's profile, falling back to role-only scoring if inactive in the window."""
     low = login.lower()
     existing = profiles.get(low)
     if existing:
-        # Upgrade role if the open PR carries a newer association than cached history.
         role, role_base = classify_governance_role(
             login,
             author_association,
             maintainer_handles_lower,
             has_accepted_work=(existing["merged_count"] + existing["reviewed_count"]) > 0,
+            repo_owner=repo_owner,
         )
         if ROLE_RANK[role] > ROLE_RANK[existing["role"]]:
             metrics = compute_trust_score(
@@ -486,6 +644,7 @@ def resolve_author_profile(
         author_association,
         maintainer_handles_lower,
         has_accepted_work=False,
+        repo_owner=repo_owner,
     )
     metrics = compute_trust_score(role_base, 0, 0, window_days=window_days)
     return {
@@ -549,13 +708,19 @@ def render_markdown_report(repos, now, window_days, profiles_list, limit):
     now_str = now.strftime("%Y-%m-%d %H:%M UTC")
     repos_str = ", ".join(f"`{r}`" for r in repos)
     shown = profiles_list[:limit] if limit > 0 else profiles_list
+    all_prom_org = all(r.split("/", 1)[0].lower() in PROMETHEUS_ORGS for r in repos)
+    role_desc = (
+        "[Prometheus Governance](https://github.com/prometheus/governance/blob/main/ROLES.md)"
+        if all_prom_org
+        else "repository roles"
+    )
 
     lines = [
         f"# Contributor trust report ({repos_str})",
         "",
         f"> **Snapshot**: `{now_str}` · **Window**: `{window_days}d` (`{window_days / 30.0:.1f}` months) · **Active/seen contributors**: `{len(profiles_list)}`",
         ">",
-        f"> **Formula**: `role_base + min(40, 12 * log2(1 + weighted_rma))` where `weighted_rma = (1.0 * merged + 1.5 * reviewed) / {window_days / 30.0:.1f}` and roles follow [Prometheus Governance](https://github.com/prometheus/governance/blob/main/ROLES.md) (`Maintainer=50`, `Member=35`, `Contributor=15`, `New Contributor=0`).",
+        f"> **Formula**: `role_base + min(40, 12 * log2(1 + weighted_rma))` where `weighted_rma = (1.0 * merged + 1.5 * reviewed) / {window_days / 30.0:.1f}` and roles follow {role_desc} (`Maintainer=50`, `Member=35`, `Contributor=15`, `New Contributor=0`).",
         "",
     ]
 
@@ -564,7 +729,7 @@ def render_markdown_report(repos, now, window_days, profiles_list, limit):
         return "\n".join(lines)
 
     lines.append(
-        f"| Rank | Contributor | Governance Role | Merged ({window_days}d) | Reviewed ({window_days}d) | Weighted / mo | Bonus | Trust Score |"
+        f"| Rank | Contributor | Role | Merged ({window_days}d) | Reviewed ({window_days}d) | Weighted / mo | Bonus | Trust Score |"
     )
     lines.append("| :---: | :--- | :--- | :---: | :---: | :---: | :---: | :---: |")
     for idx, p in enumerate(shown, start=1):
@@ -586,7 +751,7 @@ def detect_default_repo():
 
 def main():
     parser = argparse.ArgumentParser(
-        description="Compute contributor trust scores using Prometheus Governance roles and rolling monthly contributions."
+        description="Compute contributor trust scores using repository governance roles and rolling monthly contributions."
     )
     parser.add_argument(
         "--repo",
@@ -610,7 +775,7 @@ def main():
     parser.add_argument(
         "--role",
         choices=[ROLE_MAINTAINER, ROLE_MEMBER, ROLE_CONTRIBUTOR, ROLE_NEW_CONTRIBUTOR],
-        help="Filter output to a specific Prometheus Governance role.",
+        help="Filter output to a specific role.",
     )
     parser.add_argument(
         "--limit",
@@ -655,9 +820,10 @@ def main():
     if user_filter:
         for u_low in user_filter:
             if u_low not in profiles:
-                # Check if the requested user is a listed maintainer even with 0 90d activity.
                 maint_any = any(
-                    u_low in fetch_repo_maintainer_handles(*r.split("/", 1)) for r in repos
+                    u_low == r.split("/", 1)[0].lower()
+                    or u_low in fetch_repo_maintainer_handles(*r.split("/", 1))
+                    for r in repos
                 )
                 role = ROLE_MAINTAINER if maint_any else ROLE_NEW_CONTRIBUTOR
                 base = ROLE_BASE_SCORES[role]

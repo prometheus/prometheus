@@ -70,6 +70,24 @@ Maintainers for specific parts of the codebase:
                 [("remote_write", ["bwplotka"]), ("promql", ["juliusv"])],
                 {"bwplotka", "juliusv"},
             ),
+            (
+                "thanos_markdown_table_with_triage_section",
+                """## Maintainers
+
+| Name | Email | Slack | GitHub | Company |
+|---|---|---|---|---|
+| Bartlomiej Plotka | bwplotka@gmail.com | `@bwplotka` | [@bwplotka](https://github.com/bwplotka) | Google |
+| Giedrius Statkevičius | giedriuswork@gmail.com | `@Giedrius Statkevičius` | [@GiedriusS](https://github.com/GiedriusS) | Shopify |
+
+## Triage
+| Name | GitHub |
+|---|---|
+| Triager Person | [@triager1](https://github.com/triager1) |
+""",
+                ["bwplotka", "GiedriusS"],
+                [],
+                {"bwplotka", "GiedriusS"},
+            ),
         ]
 
         for name, content, want_gen, want_spec, want_all in cases:
@@ -78,6 +96,27 @@ Maintainers for specific parts of the codebase:
                 self.assertEqual(gen, want_gen)
                 self.assertEqual(spec, want_spec)
                 self.assertEqual(set(all_m), want_all)
+
+    def test_parse_owners_yaml(self):
+        owners = """
+# Kubernetes/Prow OWNERS file
+approvers:
+  - sig-instrumentation-approvers
+  - dashpole
+  - dependabot[bot]
+reviewers:
+  - reviewer-only
+"""
+        aliases = """
+aliases:
+  sig-instrumentation-approvers:
+    - bwplotka
+    - hanleybrand
+"""
+        self.assertEqual(
+            sc.parse_owners_yaml(owners, aliases),
+            ["bwplotka", "hanleybrand", "dashpole"],
+        )
 
     def test_parse_codeowners(self):
         content = """
@@ -96,25 +135,31 @@ Maintainers for specific parts of the codebase:
         maintainers = {"bwplotka", "matt-gp"}
         cases = [
             # Active maintainer hits the +40 contribution cap -> 90.0.
-            ("bwplotka", "MEMBER", 28, 169, sc.ROLE_MAINTAINER, 90.0),
+            ("bwplotka", "MEMBER", 28, 169, None, sc.ROLE_MAINTAINER, 90.0),
             # Subtree maintainer listed in CODEOWNERS with COLLABORATOR association.
-            ("matt-gp", "COLLABORATOR", 1, 0, sc.ROLE_MAINTAINER, 55.0),
+            ("matt-gp", "COLLABORATOR", 1, 0, None, sc.ROLE_MAINTAINER, 55.0),
             # Active org member with 4 merges + 12 reviews in 90d ((4 + 18)/3 = 7.33/mo).
-            ("dashpole", "MEMBER", 4, 12, sc.ROLE_MEMBER, 71.7),
+            ("dashpole", "MEMBER", 4, 12, None, sc.ROLE_MEMBER, 71.7),
             # Inactive org member gets role base 35.0.
-            ("waltherlee", "MEMBER", 0, 0, sc.ROLE_MEMBER, 35.0),
+            ("waltherlee", "MEMBER", 0, 0, None, sc.ROLE_MEMBER, 35.0),
             # Prolific external contributor (8 merges in 90d = 2.67/mo) surpasses inactive Member.
-            ("fallintoplace", "CONTRIBUTOR", 8, 0, sc.ROLE_CONTRIBUTOR, 37.5),
+            ("fallintoplace", "CONTRIBUTOR", 8, 0, None, sc.ROLE_CONTRIBUTOR, 37.5),
             # Returning contributor with no merges/reviews in the last 90d keeps base 15.0.
-            ("vijaygovindaraja", "CONTRIBUTOR", 0, 0, sc.ROLE_CONTRIBUTOR, 15.0),
+            ("vijaygovindaraja", "CONTRIBUTOR", 0, 0, None, sc.ROLE_CONTRIBUTOR, 15.0),
+            # Personal repository owner maps to Maintainer (50.0) even without MAINTAINERS.md.
+            ("bwplotka", "OWNER", 0, 0, "bwplotka", sc.ROLE_MAINTAINER, 50.0),
             # First-time contributor starts at 0.0.
-            ("newuser", "FIRST_TIME_CONTRIBUTOR", 0, 0, sc.ROLE_NEW_CONTRIBUTOR, 0.0),
+            ("newuser", "FIRST_TIME_CONTRIBUTOR", 0, 0, None, sc.ROLE_NEW_CONTRIBUTOR, 0.0),
         ]
 
-        for login, assoc, merged, reviewed, want_role, want_score in cases:
-            with self.subTest(login=login):
+        for login, assoc, merged, reviewed, repo_owner, want_role, want_score in cases:
+            with self.subTest(login=login, assoc=assoc):
                 role, base = sc.classify_governance_role(
-                    login, assoc, maintainers, has_accepted_work=(merged + reviewed) > 0
+                    login,
+                    assoc,
+                    maintainers if not repo_owner else set(),
+                    has_accepted_work=(merged + reviewed) > 0,
+                    repo_owner=repo_owner,
                 )
                 self.assertEqual(role, want_role)
                 res = sc.compute_trust_score(base, merged, reviewed, window_days=90)
@@ -186,6 +231,37 @@ Maintainers for specific parts of the codebase:
         self.assertEqual(profiles["bob"]["role"], sc.ROLE_MAINTAINER)
         self.assertNotIn("carol", profiles)
         self.assertNotIn("codecov", profiles)
+
+    def test_infer_maintainers_when_repo_has_no_ownership_files(self):
+        cutoff = "2026-08-04T00:00:00Z"
+        pr_nodes = [
+            {
+                "number": 201,
+                "state": "MERGED",
+                "updatedAt": "2026-10-10T00:00:00Z",
+                "mergedAt": "2026-10-10T00:00:00Z",
+                "mergedBy": {"__typename": "User", "login": "bernot-dev"},
+                "author": {"__typename": "User", "login": "ext-contrib"},
+                "authorAssociation": "CONTRIBUTOR",
+                "reviews": {"nodes": []},
+            },
+            {
+                "number": 202,
+                "state": "OPEN",
+                "updatedAt": "2026-10-12T00:00:00Z",
+                "mergedAt": None,
+                "mergedBy": None,
+                "author": {"__typename": "User", "login": "org-member"},
+                "authorAssociation": "MEMBER",
+                "reviews": {"nodes": []},
+            },
+        ]
+        profiles = sc.aggregate_contributor_profiles(
+            pr_nodes, maintainer_handles_lower=set(), cutoff_iso=cutoff, window_days=90
+        )
+        self.assertEqual(profiles["bernot-dev"]["role"], sc.ROLE_MAINTAINER)
+        self.assertEqual(profiles["org-member"]["role"], sc.ROLE_MEMBER)
+        self.assertEqual(profiles["ext-contrib"]["role"], sc.ROLE_CONTRIBUTOR)
 
     def test_priority_aging_prevents_starvation(self):
         # A New Contributor (0.0) waiting 25 days (37.5) bubbles past a fresh Member PR (35.0).

@@ -6,7 +6,7 @@ description: >-
 
 # Contributor trust scorer
 
-This skill scores contributors in any GitHub repository (`owner/repo`) by combining their [Prometheus Governance](https://github.com/prometheus/governance/blob/main/ROLES.md) contributor ladder role with their 90-day rolling monthly average (RMA) of accepted work. It runs with zero LLM tokens using `gh api graphql`, `MAINTAINERS.md`, and `CODEOWNERS`, and works both as a standalone CLI report and as a Python library imported by `.agents/skills/pr-triage-board`.
+This skill scores contributors in any GitHub repository by combining their contributor ladder role with their 90-day rolling monthly average of accepted work. It runs with zero LLM tokens using `gh api graphql` and repository ownership files, and works both as a standalone CLI report and as a Python library imported by `.agents/skills/pr-triage-board`.
 
 ## Trust score formula
 
@@ -18,11 +18,13 @@ contrib_bonus = min(40.0, 12.0 * log2(1.0 + weighted_rma))
 trust_score   = role_base + contrib_bonus
 ```
 
-### Role base ([Prometheus Governance](https://github.com/prometheus/governance/blob/main/ROLES.md))
+### Role base
 
-- **Maintainer (`50`)**: Listed in the repository's `MAINTAINERS.md` or as an individual handle in `CODEOWNERS` / `.github/CODEOWNERS`.
-- **Member (`35`)**: GitHub organization `MEMBER`, `OWNER`, or repository `COLLABORATOR` not listed as a maintainer of this repository.
-- **Contributor (`15`)**: Returning contributor with previously merged commits in the repository (`authorAssociation == "CONTRIBUTOR"`) or accepted merges/reviews in the rolling window.
+Roles follow [Prometheus Governance](https://github.com/prometheus/governance/blob/main/ROLES.md) and map cleanly to non-Prometheus repositories:
+
+- **Maintainer (`50`)**: Listed in `MAINTAINERS.md` (bullet or Markdown table format), listed as an individual handle in `CODEOWNERS` or `.github/CODEOWNERS`, listed under `approvers` in `OWNERS` / `OWNERS_ALIASES`, repository `OWNER`, or inferred from `mergedBy` activity when a repository has no explicit ownership files.
+- **Member (`35`)**: GitHub organization `MEMBER` or repository `COLLABORATOR` not listed as a maintainer of this repository.
+- **Contributor (`15`)**: Returning contributor with previously merged commits in the repository (`authorAssociation == "CONTRIBUTOR"`) or accepted merges or reviews in the rolling window.
 - **New Contributor (`0`)**: First-time contributor (`FIRST_TIME_CONTRIBUTOR`, `FIRST_TIMER`, `NONE`) with no merged or reviewed PRs yet.
 
 ### Why these weights work
