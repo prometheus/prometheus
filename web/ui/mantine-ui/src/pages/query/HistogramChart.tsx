@@ -281,6 +281,13 @@ const RenderHistogramBars: FC<RenderHistogramProps> = ({
             throw new Error("Invalid scale");
         }
 
+        // A sole zero bucket fills the chart even when its range has zero width.
+        if (buckets.length === 1 && left <= 0 && right >= 0) {
+          bucketLeft = "0%";
+          bucketWidth = "100%";
+          bucketHeight = count === 0 ? "0%" : "100%";
+        }
+
         return (
           <Tooltip label={`range: ${bucketRangeString(b)}`} key={bIdx}>
             <div

@@ -966,6 +966,7 @@ func (p *openMetrics2Parser) parseCompositeFields(allowedMask uint16) (composite
 	if t == tCompClose {
 		return cf, nil
 	}
+	lastField := -1
 	for {
 		idx := int(t - tCompCount)
 		if idx < 0 || idx >= numCompFields || allowedMask&(1<<idx) == 0 {
@@ -974,6 +975,10 @@ func (p *openMetrics2Parser) parseCompositeFields(allowedMask uint16) (composite
 		if cf.has(idx) {
 			return cf, p.parseError("duplicate composite field", t)
 		}
+		if idx < lastField {
+			return cf, p.parseError("composite fields must appear in specification order", t)
+		}
+		lastField = idx
 		if t := p.nextToken(); t != tValue {
 			return cf, p.parseError("expected composite value", t)
 		}

@@ -21,6 +21,7 @@ import (
 	"github.com/prometheus/prometheus/model/exemplar"
 	"github.com/prometheus/prometheus/model/histogram"
 	"github.com/prometheus/prometheus/model/labels"
+	"github.com/prometheus/prometheus/model/metadata"
 	"github.com/prometheus/prometheus/model/value"
 	"github.com/prometheus/prometheus/storage"
 	"github.com/prometheus/prometheus/tsdb/chunks"
@@ -37,7 +38,6 @@ type appenderV2 struct {
 }
 
 // Append appends pending sample to agent's DB.
-// TODO: Wire metadata in the Agent's appender.
 func (a *appenderV2) Append(ref storage.SeriesRef, ls labels.Labels, st, t int64, v float64, h *histogram.Histogram, fh *histogram.FloatHistogram, opts storage.AOptions) (storage.SeriesRef, error) {
 	var (
 		// Avoid shadowing err variables for reliability.
@@ -111,16 +111,27 @@ func (a *appenderV2) Append(ref storage.SeriesRef, ls labels.Labels, st, t int64
 		a.sampleSeries = append(a.sampleSeries, s)
 	}
 	a.metrics.totalAppendedSamples.WithLabelValues(sampleMetricType).Inc()
-	if isStale {
-		// For stale values we never attempt to process metadata/exemplars, claim the success.
-		return storage.SeriesRef(s.ref), nil
-	}
 
-	// Append exemplars if any and if storage was configured for it.
+	// Append exemplars only for non-stale samples.
 	// TODO(bwplotka): Agent does not have equivalent of a.head.opts.EnableExemplarStorage && a.head.opts.MaxExemplars.Load() > 0 ?
-	if len(opts.Exemplars) > 0 {
+	if !isStale && len(opts.Exemplars) > 0 {
 		// Currently only exemplars can return partial errors.
 		partialErr = a.appendExemplars(s, opts.Exemplars)
+	}
+	// Preserve metadata for all samples, including stale samples.
+	if a.opts.EnableMetadataWALRecords && !opts.Metadata.IsEmpty() {
+		s.Lock()
+		metaChanged := metadata.IsZeroHandle(s.meta) || !s.meta.Value().Equals(opts.Metadata)
+		s.Unlock()
+		if metaChanged {
+			a.pendingMetadata = append(a.pendingMetadata, record.RefMetadata{
+				Ref:  s.ref,
+				Type: record.GetMetricType(opts.Metadata.Type),
+				Unit: opts.Metadata.Unit,
+				Help: opts.Metadata.Help,
+			})
+			a.metadataSeries = append(a.metadataSeries, s)
+		}
 	}
 	return storage.SeriesRef(s.ref), partialErr
 }

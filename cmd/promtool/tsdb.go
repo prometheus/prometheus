@@ -195,7 +195,7 @@ func (b *writeBenchmark) ingestScrapesShard(lbls []labels.Labels, scrapeCount in
 	total := uint64(0)
 
 	for range scrapeCount {
-		app := b.storage.Appender(context.TODO())
+		app := b.storage.AppenderV2(context.TODO())
 		ts += timeDelta
 
 		for _, s := range scrape {
@@ -206,7 +206,7 @@ func (b *writeBenchmark) ingestScrapesShard(lbls []labels.Labels, scrapeCount in
 				ref = *s.ref
 			}
 
-			ref, err := app.Append(ref, s.labels, ts, float64(s.value))
+			ref, err := app.Append(ref, s.labels, 0, ts, float64(s.value), nil, nil, storage.AOptions{})
 			if err != nil {
 				panic(err)
 			}

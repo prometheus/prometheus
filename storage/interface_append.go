@@ -264,31 +264,3 @@ type AppenderTransaction interface {
 	// Appender has to be discarded after rollback.
 	Rollback() error
 }
-
-// LimitedAppenderV1 is an Appender that only supports appending float and histogram samples.
-// This is to support migration to AppenderV2.
-// TODO(bwplotka): Remove once migration to AppenderV2 is fully complete.
-type LimitedAppenderV1 interface {
-	AppenderTransaction
-
-	Append(ref SeriesRef, l labels.Labels, t int64, v float64) (SeriesRef, error)
-	AppendHistogram(ref SeriesRef, l labels.Labels, t int64, h *histogram.Histogram, fh *histogram.FloatHistogram) (SeriesRef, error)
-}
-
-// AppenderV2AsLimitedV1 returns appender that exposes AppenderV2 as LimitedAppenderV1
-// TODO(bwplotka): Remove once migration to AppenderV2 is fully complete.
-func AppenderV2AsLimitedV1(app AppenderV2) LimitedAppenderV1 {
-	return &limitedAppenderV1{AppenderV2: app}
-}
-
-type limitedAppenderV1 struct {
-	AppenderV2
-}
-
-func (a *limitedAppenderV1) Append(ref SeriesRef, l labels.Labels, t int64, v float64) (SeriesRef, error) {
-	return a.AppenderV2.Append(ref, l, 0, t, v, nil, nil, AppendV2Options{})
-}
-
-func (a *limitedAppenderV1) AppendHistogram(ref SeriesRef, l labels.Labels, t int64, h *histogram.Histogram, fh *histogram.FloatHistogram) (SeriesRef, error) {
-	return a.AppenderV2.Append(ref, l, 0, t, 0, h, fh, AppendV2Options{})
-}

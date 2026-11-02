@@ -48,6 +48,9 @@ export enum binaryOperatorType {
   or = "or",
   unless = "unless",
   atan2 = "atan2",
+  bitand = "bitand",
+  bitor = "bitor",
+  bitxor = "bitxor",
 }
 
 export const compOperatorTypes: binaryOperatorType[] = [

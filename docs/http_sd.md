@@ -41,8 +41,9 @@ Prometheus caches target lists. If an error occurs while fetching an updated
 targets list, Prometheus keeps using the current targets list. The targets list
 is not saved across restart. The `prometheus_sd_refresh_failures_total` counter
 metric tracks the number of refresh failures and the `prometheus_sd_refresh_duration_seconds`
-bucket can be used to track HTTP SD refresh attempts or performance. These metrics are
-removed when the underlying scrape job disappears on Prometheus configuration reload.
+summary can be used to track HTTP SD refresh attempts or performance. These metrics are
+removed on Prometheus configuration reload once no HTTP SD configuration updates them,
+for example when the scrape job is removed.
 
 The whole list of targets must be returned on every scrape. There is no support
 for incremental updates. A Prometheus instance does not send its hostname and it

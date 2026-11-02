@@ -7,6 +7,7 @@
     "openapi_3.1": true,
     "openapi_3.2": true,
     "otlp_write_receiver": false,
+    "query_cost": false,
     "query_stats": true,
     "query_warnings": true,
     "remote_write_receiver": false,
@@ -47,6 +48,7 @@
     "smoothed": true,
     "subqueries": true,
     "type_and_unit_labels": false,
+    "unquoted_utf8_names": true,
     "without": true
   },
   "promql_functions": {
@@ -163,6 +165,9 @@
     "and": true,
     "atan2": true,
     "avg": true,
+    "bitand": true,
+    "bitor": true,
+    "bitxor": true,
     "bottomk": true,
     "count": true,
     "count_values": true,
@@ -212,6 +217,7 @@
     "lightsail": true,
     "linode": true,
     "marathon": true,
+    "mq": true,
     "msk": true,
     "nerve": true,
     "nomad": true,

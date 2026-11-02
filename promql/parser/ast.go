@@ -94,6 +94,7 @@ type AggregateExpr struct {
 	Param    Expr     // Parameter used by some aggregators.
 	Grouping []string // The labels by which to group the Vector.
 	Without  bool     // Whether to drop the given labels rather than keep them.
+
 	PosRange posrange.PositionRange
 }
 

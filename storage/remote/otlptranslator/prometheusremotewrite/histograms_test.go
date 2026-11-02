@@ -362,6 +362,94 @@ func TestConvertBucketsLayout(t *testing.T) {
 			},
 		},
 		{
+			name: "empty bucket before merged buckets",
+			buckets: func() pmetric.ExponentialHistogramDataPointBuckets {
+				b := pmetric.NewExponentialHistogramDataPointBuckets()
+				b.SetOffset(0)
+				b.BucketCounts().FromRaw([]uint64{0, 0, 5, 3})
+				return b
+			},
+			wantLayout: map[int32]expectedBucketLayout{
+				0: {
+					wantSpans: []histogram.Span{
+						{
+							Offset: 1,
+							Length: 4,
+						},
+					},
+					wantDeltas: []int64{0, 0, 5, -2},
+				},
+				1: {
+					wantSpans: []histogram.Span{
+						{
+							Offset: 1,
+							Length: 2,
+						},
+					},
+					// Downscale:
+					// 0+0, 5+3 = 0, 8
+					wantDeltas: []int64{0, 8},
+				},
+				2: {
+					wantSpans: []histogram.Span{
+						{
+							Offset: 1,
+							Length: 1,
+						},
+					},
+					// Downscale:
+					// 0+0+5+3 = 8
+					wantDeltas: []int64{8},
+				},
+			},
+		},
+		{
+			name: "empty bucket between merged buckets",
+			buckets: func() pmetric.ExponentialHistogramDataPointBuckets {
+				b := pmetric.NewExponentialHistogramDataPointBuckets()
+				b.SetOffset(0)
+				b.BucketCounts().FromRaw([]uint64{1, 0, 0, 0, 5, 3})
+				return b
+			},
+			wantLayout: map[int32]expectedBucketLayout{
+				0: {
+					wantSpans: []histogram.Span{
+						{
+							Offset: 1,
+							Length: 1,
+						},
+						{
+							Offset: 3,
+							Length: 2,
+						},
+					},
+					wantDeltas: []int64{1, 4, -2},
+				},
+				1: {
+					wantSpans: []histogram.Span{
+						{
+							Offset: 1,
+							Length: 3,
+						},
+					},
+					// Downscale:
+					// 1+0, 0+0, 5+3 = 1, 0, 8
+					wantDeltas: []int64{1, -1, 8},
+				},
+				2: {
+					wantSpans: []histogram.Span{
+						{
+							Offset: 1,
+							Length: 2,
+						},
+					},
+					// Downscale:
+					// 1+0+0+0, 5+3+0+0 = 1, 8
+					wantDeltas: []int64{1, 7},
+				},
+			},
+		},
+		{
 			name:    "zero buckets",
 			buckets: pmetric.NewExponentialHistogramDataPointBuckets,
 			wantLayout: map[int32]expectedBucketLayout{
@@ -560,6 +648,37 @@ func TestExponentialToNativeHistogram(t *testing.T) {
 					PositiveBuckets: []int64{1, 1}, // 0+1, 1+1 = 1, 2
 					NegativeSpans:   []histogram.Span{{Offset: 2, Length: 2}},
 					NegativeBuckets: []int64{2, -1}, // 1+1, 1+0 = 2, 1
+				}
+			},
+		},
+		{
+			name: "downsample with empty buckets before merged buckets",
+			exponentialHist: func() pmetric.ExponentialHistogramDataPoint {
+				pt := pmetric.NewExponentialHistogramDataPoint()
+				pt.SetTimestamp(pcommon.NewTimestampFromTime(time.UnixMilli(500)))
+				pt.SetCount(17)
+				pt.SetSum(10.1)
+				pt.SetScale(9)
+				pt.SetZeroCount(1)
+
+				pt.Positive().BucketCounts().FromRaw([]uint64{0, 0, 5, 3})
+				pt.Positive().SetOffset(0)
+
+				pt.Negative().BucketCounts().FromRaw([]uint64{1, 0, 0, 0, 5, 3})
+				pt.Negative().SetOffset(0)
+				return pt
+			},
+			wantNativeHist: func() *histogram.Histogram {
+				return &histogram.Histogram{
+					Count:           17,
+					Sum:             10.1,
+					Schema:          8,
+					ZeroThreshold:   defaultZeroThreshold,
+					ZeroCount:       1,
+					PositiveSpans:   []histogram.Span{{Offset: 1, Length: 2}},
+					PositiveBuckets: []int64{0, 8}, // 0+0, 5+3 = 0, 8
+					NegativeSpans:   []histogram.Span{{Offset: 1, Length: 3}},
+					NegativeBuckets: []int64{1, -1, 8}, // 1+0, 0+0, 5+3 = 1, 0, 8
 				}
 			},
 		},

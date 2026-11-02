@@ -126,6 +126,28 @@ samples. Operations involving histogram samples result in the removal of the
 corresponding vector elements from the output vector, flagged by an
 info-level annotation.
 
+### Bitwise binary operators
+
+The following bitwise binary operators exist in Prometheus:
+
+* `bitand` (bitwise AND)
+* `bitor` (bitwise OR)
+* `bitxor` (bitwise exclusive OR)
+
+These act like arithmetic operators, supporting scalar/scalar, vector/scalar,
+and vector/vector operands with the usual vector matching and group
+modifiers. Operands must be nonnegative integers up to `2^53 - 1`; any other
+value (fractional, negative, out-of-range, infinite, or `NaN`) produces
+`NaN`. Operations involving histogram samples remove the corresponding
+vector elements and emit an info-level annotation. The metric name is
+dropped from the result.
+
+For example, check whether the flag with value 64 is set:
+
+```promql
+(node_timex_status bitand 64) != 0
+```
+
 ### Histogram trim operators
 
 The following binary histogram trim operators exist in Prometheus:
@@ -593,7 +615,7 @@ The following list shows the precedence of binary operators in Prometheus, from
 highest to lowest.
 
 1. `^`
-2. `*`, `/`, `%`, `atan2`
+2. `*`, `/`, `%`, `atan2`, `bitand`, `bitor`, `bitxor`
 3. `+`, `-`
 4. `==`, `!=`, `<=`, `<`, `>=`, `>`
 5. `and`, `unless`

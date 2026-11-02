@@ -103,6 +103,7 @@ function override(config) {
 }
 
 override.jest = function overrideJest(config) {
+  config.resolver = path.resolve(__dirname, 'jest-resolver.cjs');
   config.moduleNameMapper = Object.assign(
     {},
     config.moduleNameMapper,

@@ -35,7 +35,7 @@ import (
 )
 
 func TestStorage_CostSamplingQueryable_ConfigReload(t *testing.T) {
-	s := NewStorage(nil, prometheus.NewRegistry(), nil, t.TempDir(), defaultFlushDeadline, nil, false)
+	s := NewStorage(nil, prometheus.NewRegistry(), nil, t.TempDir(), defaultFlushDeadline, nil, false, false, false)
 	t.Cleanup(func() { require.NoError(t, s.Close()) })
 	empty := &config.Config{GlobalConfig: config.DefaultGlobalConfig}
 	configured := &config.Config{GlobalConfig: config.DefaultGlobalConfig}
@@ -122,7 +122,7 @@ func TestNoDuplicateReadConfigs(t *testing.T) {
 
 	for _, tc := range cases {
 		t.Run("", func(t *testing.T) {
-			s := NewStorage(nil, nil, nil, dir, defaultFlushDeadline, nil, false)
+			s := NewStorage(nil, nil, nil, dir, defaultFlushDeadline, nil, false, false, false)
 			conf := &config.Config{
 				GlobalConfig:      config.DefaultGlobalConfig,
 				RemoteReadConfigs: tc.cfgs,
@@ -580,10 +580,11 @@ func TestSampleAndChunkQueryableClient(t *testing.T) {
 
 	t.Run("search warnings", func(t *testing.T) {
 		local := teststorage.New(t)
-		app := local.Appender(t.Context())
-		ref, err := app.Append(0, labels.FromStrings("__name__", "up", "job", "prometheus"), 1000, 1)
+		app := local.AppenderV2(t.Context())
+		lbls := labels.FromStrings("__name__", "up", "job", "prometheus")
+		ref, err := app.Append(0, lbls, 0, 1000, 1, nil, nil, storage.AOptions{})
 		require.NoError(t, err)
-		_, err = app.Append(ref, labels.EmptyLabels(), 1500, 1)
+		_, err = app.Append(ref, lbls, 0, 1500, 1, nil, nil, storage.AOptions{})
 		require.NoError(t, err)
 		require.NoError(t, app.Commit())
 

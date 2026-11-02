@@ -15,9 +15,15 @@ package metadata
 
 import (
 	"strings"
+	"unique"
 
 	"github.com/prometheus/common/model"
 )
+
+// IsZeroHandle returns true if h is the zero handle, i.e. no metadata was set.
+func IsZeroHandle(h unique.Handle[Metadata]) bool {
+	return h == unique.Handle[Metadata]{}
+}
 
 // Metadata stores a series' metadata information.
 type Metadata struct {

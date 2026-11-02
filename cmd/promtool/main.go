@@ -366,6 +366,8 @@ func main() {
 	for _, f := range *featureList {
 		for o := range strings.SplitSeq(f, ",") {
 			switch o {
+			case "promql-unquoted-utf8-names":
+				// This feature is now permanently enabled and therefore a no-op.
 			case "promql-experimental-functions":
 				promtoolParserOpts.EnableExperimentalFunctions = true
 			case "promql-delayed-name-removal":

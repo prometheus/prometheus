@@ -1472,6 +1472,228 @@ test_metric_total 1
 	require.Empty(t, md.Unit)
 }
 
+func TestScrapeLoopMetricRelabelMetadata(t *testing.T) {
+	appTest := teststorage.NewAppendable()
+	target := NewTarget(
+		labels.FromStrings("instance", "localhost:9090", "job", "test"),
+		&config.ScrapeConfig{},
+		nil,
+		nil,
+	)
+	rc := []*relabel.Config{
+		// Drop dropped_metric_total completely; its metadata should not enter scrapeCache.
+		{
+			SourceLabels:         model.LabelNames{"__name__"},
+			Separator:            ";",
+			Regex:                relabel.MustNewRegexp("dropped_metric_total"),
+			Replacement:          "$1",
+			Action:               relabel.Drop,
+			NameValidationScheme: model.UTF8Validation,
+		},
+		// Rename old_http_requests_total -> http_requests_total.
+		{
+			SourceLabels:         model.LabelNames{"__name__"},
+			Separator:            ";",
+			Regex:                relabel.MustNewRegexp("old_(http_requests_total)"),
+			TargetLabel:          "__name__",
+			Replacement:          "$1",
+			Action:               relabel.Replace,
+			NameValidationScheme: model.UTF8Validation,
+		},
+		// Rename old_latency_* -> latency_* for histogram family.
+		{
+			SourceLabels:         model.LabelNames{"__name__"},
+			Separator:            ";",
+			Regex:                relabel.MustNewRegexp("old_(latency.*)"),
+			TargetLabel:          "__name__",
+			Replacement:          "$1",
+			Action:               relabel.Replace,
+			NameValidationScheme: model.UTF8Validation,
+		},
+		// Rename old_summary -> summary_count (no component suffix on pre-relabel name).
+		{
+			SourceLabels:         model.LabelNames{"__name__"},
+			Separator:            ";",
+			Regex:                relabel.MustNewRegexp("old_summary"),
+			TargetLabel:          "__name__",
+			Replacement:          "summary_count",
+			Action:               relabel.Replace,
+			NameValidationScheme: model.UTF8Validation,
+		},
+	}
+
+	var mutatorCalls int
+	sl, _ := newTestScrapeLoop(t, withAppendable(appTest, true), func(sl *scrapeLoop) {
+		sl.mrc = rc
+		sl.sampleMutator = func(l labels.Labels) labels.Labels {
+			mutatorCalls++
+			return mutateSampleLabels(l, target, false, rc)
+		}
+	})
+
+	now := time.Now()
+	scrapeText := []byte(`# TYPE dropped_metric counter
+# HELP dropped_metric should not be cached
+dropped_metric_total 10
+# TYPE old_http_requests counter
+# HELP old_http_requests Total HTTP requests
+# UNIT old_http_requests requests
+old_http_requests_total 42
+# TYPE old_latency histogram
+# HELP old_latency Request latency
+old_latency_bucket{le="+Inf"} 1
+old_latency_sum 0.5
+old_latency_count 1
+# TYPE old_summary summary
+# HELP old_summary Summary renamed to end with _count
+old_summary{quantile="0.5"} 0.25
+# TYPE foo gauge
+foo 1
+bar 1
+# EOF`)
+
+	app := sl.appender()
+	total, added, seriesAdded, err := app.append(scrapeText, "application/openmetrics-text", now)
+	require.NoError(t, err)
+	require.NoError(t, app.Commit())
+	require.Equal(t, 8, total)
+	require.Equal(t, 7, added)
+	require.Equal(t, 7, seriesAdded)
+	require.Equal(t, 8, mutatorCalls)
+
+	// Dropped metric metadata must not be stored in scrapeCache (#14013).
+	_, ok := sl.cache.GetMetadata("dropped_metric")
+	require.False(t, ok, "expected dropped metric metadata to be absent from scrapeCache")
+	_, ok = sl.cache.GetMetadata("dropped_metric_total")
+	require.False(t, ok, "expected dropped metric metadata to be absent from scrapeCache")
+
+	// Pre-rename metric families must not be stored under the old names.
+	_, ok = sl.cache.GetMetadata("old_http_requests")
+	require.False(t, ok, "expected pre-rename metric family to be absent from scrapeCache")
+	_, ok = sl.cache.GetMetadata("old_http_requests_total")
+	require.False(t, ok, "expected pre-rename metric family to be absent from scrapeCache")
+	_, ok = sl.cache.GetMetadata("old_latency")
+	require.False(t, ok, "expected pre-rename histogram family to be absent from scrapeCache")
+
+	// Renamed counter family must have its metadata stored under post-relabel family name.
+	md, ok := sl.cache.GetMetadata("http_requests")
+	require.True(t, ok)
+	require.Equal(t, model.MetricTypeCounter, md.Type)
+	require.Equal(t, "requests", md.Unit)
+	require.Equal(t, "Total HTTP requests", md.Help)
+
+	// Renamed histogram family must have its metadata stored under post-relabel family name ("latency").
+	md, ok = sl.cache.GetMetadata("latency")
+	require.True(t, ok)
+	require.Equal(t, model.MetricTypeHistogram, md.Type)
+	require.Equal(t, "Request latency", md.Help)
+
+	// When pre-relabel series name equals its family name ("old_summary"), no suffix is stripped from the renamed name ("summary_count").
+	md, ok = sl.cache.GetMetadata("summary_count")
+	require.True(t, ok)
+	require.Equal(t, model.MetricTypeSummary, md.Type)
+	require.Equal(t, "Summary renamed to end with _count", md.Help)
+
+	// bar had no metadata on the first scrape and must not inherit foo's metadata.
+	_, ok = sl.cache.GetMetadata("bar")
+	require.False(t, ok, "expected bar metadata to be absent on first scrape")
+
+	// Verify WAL / Appender metadata is attached to renamed series.
+	teststorage.RequireEqual(t, []sample{
+		{
+			L: labels.FromStrings("__name__", "http_requests_total", "instance", "localhost:9090", "job", "test"),
+			M: metadata.Metadata{Type: model.MetricTypeCounter, Unit: "requests", Help: "Total HTTP requests"},
+		},
+		{
+			L: labels.FromStrings("__name__", "latency_bucket", "instance", "localhost:9090", "job", "test", "le", "+Inf"),
+			M: metadata.Metadata{Type: model.MetricTypeHistogram, Help: "Request latency"},
+		},
+		{
+			L: labels.FromStrings("__name__", "latency_sum", "instance", "localhost:9090", "job", "test"),
+			M: metadata.Metadata{Type: model.MetricTypeHistogram, Help: "Request latency"},
+		},
+		{
+			L: labels.FromStrings("__name__", "latency_count", "instance", "localhost:9090", "job", "test"),
+			M: metadata.Metadata{Type: model.MetricTypeHistogram, Help: "Request latency"},
+		},
+		{
+			L: labels.FromStrings("__name__", "summary_count", "instance", "localhost:9090", "job", "test", "quantile", "0.5"),
+			M: metadata.Metadata{Type: model.MetricTypeSummary, Help: "Summary renamed to end with _count"},
+		},
+		{
+			L: labels.FromStrings("__name__", "foo", "instance", "localhost:9090", "job", "test"),
+			M: metadata.Metadata{Type: model.MetricTypeGauge},
+		},
+	}, appTest.ResultMetadata())
+
+	// Second scrape: dropped_metric_total must hit the droppedSeries cache without re-running
+	// sampleMutator, foo hits the seriesMeta fast path, and bar now exposes its own "# TYPE bar gauge"
+	// header with identical rawMeta to foo's header on the first scrape (invalidating bar's cached entry
+	// because the source family name changed from "foo" to "bar").
+	scrapeText2 := []byte(`# TYPE dropped_metric counter
+# HELP dropped_metric should not be cached
+dropped_metric_total 20
+# TYPE foo gauge
+foo 2
+# TYPE bar gauge
+bar 2
+# EOF`)
+	app = sl.appender()
+	total, added, seriesAdded, err = app.append(scrapeText2, "application/openmetrics-text", now.Add(time.Second))
+	require.NoError(t, err)
+	require.NoError(t, app.Commit())
+	require.Equal(t, 3, total)
+	require.Equal(t, 2, added)
+	require.Equal(t, 0, seriesAdded)
+	require.Equal(t, 9, mutatorCalls)
+
+	md, ok = sl.cache.GetMetadata("bar")
+	require.True(t, ok, "expected bar metadata to be present after second scrape")
+	require.Equal(t, model.MetricTypeGauge, md.Type)
+
+	teststorage.RequireEqual(t, []sample{
+		{
+			L: labels.FromStrings("__name__", "foo", "instance", "localhost:9090", "job", "test"),
+			M: metadata.Metadata{Type: model.MetricTypeGauge},
+		},
+		{
+			L: labels.FromStrings("__name__", "bar", "instance", "localhost:9090", "job", "test"),
+			M: metadata.Metadata{Type: model.MetricTypeGauge},
+		},
+	}, appTest.ResultMetadata()[6:])
+
+	// Third scrape: when metadata changes and produces a different label set (e.g. with enableTypeAndUnitLabels),
+	// the cached series entry must be replaced so seriesAdded is incremented and the old series is marked stale.
+	sl.enableTypeAndUnitLabels = true
+	scrapeText3 := []byte(`# TYPE bar gauge
+# HELP bar Updated help
+bar 3
+# EOF`)
+	app = sl.appender()
+	total, added, seriesAdded, err = app.append(scrapeText3, "application/openmetrics-text", now.Add(2*time.Second))
+	require.NoError(t, err)
+	require.NoError(t, app.Commit())
+	require.Equal(t, 1, total)
+	require.Equal(t, 1, added)
+	require.Equal(t, 1, seriesAdded)
+
+	// Verify the new series with __type__="gauge" was appended and the previous bar series without __type__ was marked stale.
+	var sawNewBar, sawStaleOldBar bool
+	for _, s := range appTest.ResultSamples() {
+		if s.T != timestamp.FromTime(now.Add(2*time.Second)) {
+			continue
+		}
+		if labels.Equal(s.L, labels.FromStrings("__name__", "bar", "__type__", "gauge", "instance", "localhost:9090", "job", "test")) && s.V == 3 {
+			sawNewBar = true
+		}
+		if labels.Equal(s.L, labels.FromStrings("__name__", "bar", "instance", "localhost:9090", "job", "test")) && value.IsStaleNaN(s.V) {
+			sawStaleOldBar = true
+		}
+	}
+	require.True(t, sawNewBar, "expected new bar series with __type__ label to be appended")
+	require.True(t, sawStaleOldBar, "expected old bar series without __type__ label to be marked stale")
+}
+
 func TestScrapeLoopSeriesAdded(t *testing.T) {
 	foreachAppendable(t, func(t *testing.T, appV2 bool) {
 		testScrapeLoopSeriesAdded(t, appV2)
@@ -1505,47 +1727,51 @@ func TestScrapeLoopAppendOpenMetrics2(t *testing.T) {
 }
 
 func testScrapeLoopAppendOpenMetrics2(t *testing.T, appV2 bool) {
-	const (
-		contentType = "application/openmetrics-text; version=2.0.0"
-		body        = "# TYPE test_metric gauge\ntest_metric 1\n# EOF\n"
-	)
+	const body = "# TYPE test_metric gauge\ntest_metric 1\n# EOF\n"
 
-	t.Run("enabled", func(t *testing.T) {
-		sl, _ := newTestScrapeLoop(t, withAppendable(teststorage.NewAppendable(), appV2), func(sl *scrapeLoop) {
-			sl.enableOpenMetrics2 = true
+	for _, contentType := range []string{
+		"application/openmetrics-text; version=2.0.0",
+		"application/openmetrics-text; version=2.0.0-rc",
+	} {
+		t.Run(contentType, func(t *testing.T) {
+			t.Run("enabled", func(t *testing.T) {
+				sl, _ := newTestScrapeLoop(t, withAppendable(teststorage.NewAppendable(), appV2), func(sl *scrapeLoop) {
+					sl.enableOpenMetrics2 = true
+				})
+
+				app := sl.appender()
+				total, added, seriesAdded, err := app.append([]byte(body), contentType, time.Time{})
+				require.NoError(t, err)
+				require.NoError(t, app.Commit())
+				require.Equal(t, 1, total)
+				require.Equal(t, 1, added)
+				require.Equal(t, 1, seriesAdded)
+			})
+
+			// TODO(r.bizos): drop this subtest when OM2 is GA and the feature flag is gone.
+			t.Run("disabled", func(t *testing.T) {
+				sl, _ := newTestScrapeLoop(t, withAppendable(teststorage.NewAppendable(), appV2))
+
+				app := sl.appender()
+				_, _, _, err := app.append([]byte(body), contentType, time.Time{})
+				require.ErrorContains(t, err, "the openmetrics2 feature flag is not enabled")
+			})
+
+			// TODO(r.bizos): drop this subtest when OM2 is GA and the feature flag is gone.
+			t.Run("disabled falls back", func(t *testing.T) {
+				sl, _ := newTestScrapeLoop(t, withAppendable(teststorage.NewAppendable(), appV2), func(sl *scrapeLoop) {
+					sl.fallbackScrapeProtocol = "text/plain"
+				})
+
+				app := sl.appender()
+				total, added, _, err := app.append([]byte("test_metric 1\n"), contentType, time.Time{})
+				require.NoError(t, err)
+				require.NoError(t, app.Commit())
+				require.Equal(t, 1, total)
+				require.Equal(t, 1, added)
+			})
 		})
-
-		app := sl.appender()
-		total, added, seriesAdded, err := app.append([]byte(body), contentType, time.Time{})
-		require.NoError(t, err)
-		require.NoError(t, app.Commit())
-		require.Equal(t, 1, total)
-		require.Equal(t, 1, added)
-		require.Equal(t, 1, seriesAdded)
-	})
-
-	// TODO(r.bizos): drop this subtest when OM2 is GA and the feature flag is gone.
-	t.Run("disabled", func(t *testing.T) {
-		sl, _ := newTestScrapeLoop(t, withAppendable(teststorage.NewAppendable(), appV2))
-
-		app := sl.appender()
-		_, _, _, err := app.append([]byte(body), contentType, time.Time{})
-		require.ErrorContains(t, err, "the openmetrics2 feature flag is not enabled")
-	})
-
-	// TODO(r.bizos): drop this subtest when OM2 is GA and the feature flag is gone.
-	t.Run("disabled falls back", func(t *testing.T) {
-		sl, _ := newTestScrapeLoop(t, withAppendable(teststorage.NewAppendable(), appV2), func(sl *scrapeLoop) {
-			sl.fallbackScrapeProtocol = "text/plain"
-		})
-
-		app := sl.appender()
-		total, added, _, err := app.append([]byte("test_metric 1\n"), contentType, time.Time{})
-		require.NoError(t, err)
-		require.NoError(t, app.Commit())
-		require.Equal(t, 1, total)
-		require.Equal(t, 1, added)
-	})
+	}
 }
 
 func TestScrapeLoopFailWithInvalidLabelsAfterRelabel(t *testing.T) {
@@ -2492,6 +2718,7 @@ func requireSampleHist(t *testing.T, s teststorage.Sample, name, expectedHist st
 func TestScrapeLoopAppend_StartTimeSynthesis_Histograms(t *testing.T) {
 	t.Run("ClassicToNative", testScrapeLoopAppendStartTimeSynthesisHistogram)
 	t.Run("FloatNative", testScrapeLoopAppendStartTimeSynthesisFloatHistogram)
+	t.Run("InvalidNative", testScrapeLoopAppendStartTimeSynthesisInvalidHistogram)
 }
 
 func testScrapeLoopAppendStartTimeSynthesisHistogram(t *testing.T) {
@@ -2710,6 +2937,93 @@ metric: <
 	require.Len(t, got, 2)
 	requireSample(t, got[0], "test_float_hist", "{count:3, sum:5.5, (0.9170040432046711,1]:1, (1,1.0905077326652577]:2}", timestamp.FromTime(ts2), timestamp.FromTime(ts), false)
 	requireSample(t, got[1], "test_float_hist", "{count:2, sum:4, (0.9170040432046711,1]:1, (1,1.0905077326652577]:1}", timestamp.FromTime(ts3), timestamp.FromTime(ts3)-1, false)
+}
+
+// testScrapeLoopAppendStartTimeSynthesisInvalidHistogram checks that a native
+// histogram with an invalid bucket layout is rejected on append, and that it does
+// not become the anchor for start timestamp synthesis.
+func testScrapeLoopAppendStartTimeSynthesisInvalidHistogram(t *testing.T) {
+	t.Helper()
+	const contentType = "application/vnd.google.protobuf;proto=io.prometheus.client.MetricFamily;encoding=delimited"
+
+	for _, tc := range []struct {
+		name  string
+		float bool
+	}{
+		{name: "Float", float: true},
+		{name: "Integer", float: false},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			// histogramProto returns a native histogram with the given schema,
+			// positive spans and absolute positive bucket counts.
+			histogramProto := func(schema int32, count, sum int, spans []histogram.Span, buckets ...int) []byte {
+				var text strings.Builder
+				fmt.Fprintf(&text, "name: \"test_hist\"\nhelp: \"test help\"\ntype: HISTOGRAM\nmetric: <\n  histogram: <\n    schema: %d\n    sample_sum: %d\n", schema, sum)
+				if tc.float {
+					fmt.Fprintf(&text, "    sample_count_float: %d\n", count)
+				} else {
+					fmt.Fprintf(&text, "    sample_count: %d\n", count)
+				}
+				for _, s := range spans {
+					fmt.Fprintf(&text, "    positive_span: <\n      offset: %d\n      length: %d\n    >\n", s.Offset, s.Length)
+				}
+				last := 0
+				for _, b := range buckets {
+					if tc.float {
+						fmt.Fprintf(&text, "    positive_count: %d\n", b)
+					} else {
+						fmt.Fprintf(&text, "    positive_delta: %d\n", b-last)
+						last = b
+					}
+				}
+				text.WriteString("  >\n>\n")
+				buf := &bytes.Buffer{}
+				require.NoError(t, textToProto(text.String(), buf))
+				return buf.Bytes()
+			}
+
+			ts := time.Now()
+			// The TSDB underneath is what rejects the invalid histogram.
+			s := teststorage.New(t)
+			appTest := teststorage.NewAppendable().Then(s)
+			sl, _ := newTestScrapeLoop(t, withAppendable(appTest, true), func(sl *scrapeLoop) {
+				sl.synthesizeST = true
+				sl.enableNativeHistogramScraping = true
+				sl.alwaysScrapeClassicHist = false
+				sl.fallbackScrapeProtocol = contentType
+			})
+
+			// First scrape: the second span has a negative offset, so the
+			// histogram is invalid. The append rejects it, and it must not
+			// become the anchor.
+			app := sl.appender()
+			_, _, _, err := app.append(histogramProto(1, 5, 10, []histogram.Span{{Offset: 0, Length: 1}, {Offset: -2, Length: 1}}, 2, 3), contentType, ts)
+			require.ErrorIs(t, err, histogram.ErrHistogramSpanNegativeOffset)
+			require.NoError(t, app.Rollback())
+			require.Empty(t, appTest.ResultSamples())
+
+			// Second scrape: a valid histogram with a lower schema. No sample is
+			// appended, because this scrape anchors the start time, which
+			// shows that the first scrape did not.
+			ts2 := ts.Add(time.Second)
+			app = sl.appender()
+			_, _, _, err = app.append(histogramProto(0, 300, 600, []histogram.Span{{Offset: -1, Length: 3}}, 100, 100, 100), contentType, ts2)
+			require.NoError(t, err)
+			require.NoError(t, app.Commit())
+			require.Empty(t, appTest.ResultSamples())
+
+			// Third scrape: adjusted against the second scrape.
+			ts3 := ts2.Add(time.Second)
+			app = sl.appender()
+			_, _, _, err = app.append(histogramProto(0, 600, 1200, []histogram.Span{{Offset: -1, Length: 3}}, 200, 200, 200), contentType, ts3)
+			require.NoError(t, err)
+			require.NoError(t, app.Commit())
+
+			got := appTest.ResultSamples()
+			require.Len(t, got, 1)
+			requireSampleHist(t, got[0], "test_hist", "{count:300, sum:600, (0.25,0.5]:100, (0.5,1]:100, (1,2]:100}", timestamp.FromTime(ts3), timestamp.FromTime(ts2), false)
+		})
+	}
 }
 
 // BenchmarkScrapeLoopAppend benchmarks scrape appends for typical cases.
@@ -4941,32 +5255,43 @@ func TestAcceptHeader(t *testing.T) {
 			name:            "default scrape protocols with underscore escaping",
 			scrapeProtocols: config.DefaultScrapeProtocols,
 			scheme:          model.UnderscoreEscaping,
-			expectedHeader:  "application/openmetrics-text;version=1.0.0;escaping=underscores;q=0.7,application/openmetrics-text;version=0.0.1;q=0.6,text/plain;version=1.0.0;escaping=underscores;q=0.5,text/plain;version=0.0.4;q=0.4,*/*;q=0.3",
+			expectedHeader:  "application/openmetrics-text;version=1.0.0;escaping=underscores;q=0.8,application/openmetrics-text;version=0.0.1;q=0.7,text/plain;version=1.0.0;escaping=underscores;q=0.6,text/plain;version=0.0.4;q=0.5,*/*;q=0.4",
 		},
 		{
 			name:            "default proto first scrape protocols with underscore escaping",
 			scrapeProtocols: config.DefaultProtoFirstScrapeProtocols,
 			scheme:          model.DotsEscaping,
-			expectedHeader:  "application/vnd.google.protobuf;proto=io.prometheus.client.MetricFamily;encoding=delimited;q=0.7,application/openmetrics-text;version=1.0.0;escaping=dots;q=0.6,application/openmetrics-text;version=0.0.1;q=0.5,text/plain;version=1.0.0;escaping=dots;q=0.4,text/plain;version=0.0.4;q=0.3,*/*;q=0.2",
+			expectedHeader:  "application/vnd.google.protobuf;proto=io.prometheus.client.MetricFamily;encoding=delimited;q=0.8,application/openmetrics-text;version=1.0.0;escaping=dots;q=0.7,application/openmetrics-text;version=0.0.1;q=0.6,text/plain;version=1.0.0;escaping=dots;q=0.5,text/plain;version=0.0.4;q=0.4,*/*;q=0.3",
 		},
 		{
 			name:            "default scrape protocols with no escaping",
 			scrapeProtocols: config.DefaultScrapeProtocols,
 			scheme:          model.NoEscaping,
-			expectedHeader:  "application/openmetrics-text;version=1.0.0;escaping=allow-utf-8;q=0.7,application/openmetrics-text;version=0.0.1;q=0.6,text/plain;version=1.0.0;escaping=allow-utf-8;q=0.5,text/plain;version=0.0.4;q=0.4,*/*;q=0.3",
+			expectedHeader:  "application/openmetrics-text;version=1.0.0;escaping=allow-utf-8;q=0.8,application/openmetrics-text;version=0.0.1;q=0.7,text/plain;version=1.0.0;escaping=allow-utf-8;q=0.6,text/plain;version=0.0.4;q=0.5,*/*;q=0.4",
 		},
 		{
 			name:            "default proto first scrape protocols with no escaping",
 			scrapeProtocols: config.DefaultProtoFirstScrapeProtocols,
 			scheme:          model.NoEscaping,
-			expectedHeader:  "application/vnd.google.protobuf;proto=io.prometheus.client.MetricFamily;encoding=delimited;q=0.7,application/openmetrics-text;version=1.0.0;escaping=allow-utf-8;q=0.6,application/openmetrics-text;version=0.0.1;q=0.5,text/plain;version=1.0.0;escaping=allow-utf-8;q=0.4,text/plain;version=0.0.4;q=0.3,*/*;q=0.2",
+			expectedHeader:  "application/vnd.google.protobuf;proto=io.prometheus.client.MetricFamily;encoding=delimited;q=0.8,application/openmetrics-text;version=1.0.0;escaping=allow-utf-8;q=0.7,application/openmetrics-text;version=0.0.1;q=0.6,text/plain;version=1.0.0;escaping=allow-utf-8;q=0.5,text/plain;version=0.0.4;q=0.4,*/*;q=0.3",
 		},
 		{
-			// OpenMetrics 2.0 is UTF-8 native, so it carries no escaping parameter.
+			name:            "openmetrics 2.0.0 and 2.0.0-rc first, with no escaping",
+			scrapeProtocols: []config.ScrapeProtocol{config.OpenMetricsText2_0_0, config.OpenMetricsText2_0_0_rc, config.OpenMetricsText1_0_0},
+			scheme:          model.NoEscaping,
+			expectedHeader:  "application/openmetrics-text;version=2.0.0;escaping=allow-utf-8;q=0.8,application/openmetrics-text;version=2.0.0-rc;escaping=allow-utf-8;q=0.7,application/openmetrics-text;version=1.0.0;escaping=allow-utf-8;q=0.6,*/*;q=0.5",
+		},
+		{
 			name:            "openmetrics 2.0.0 first, with underscore escaping",
 			scrapeProtocols: []config.ScrapeProtocol{config.OpenMetricsText2_0_0, config.OpenMetricsText1_0_0},
 			scheme:          model.UnderscoreEscaping,
-			expectedHeader:  "application/openmetrics-text;version=2.0.0;q=0.7,application/openmetrics-text;version=1.0.0;escaping=underscores;q=0.6,*/*;q=0.5",
+			expectedHeader:  "application/openmetrics-text;version=2.0.0;escaping=underscores;q=0.8,application/openmetrics-text;version=1.0.0;escaping=underscores;q=0.7,*/*;q=0.6",
+		},
+		{
+			name:            "openmetrics 2.0.0 only, with no escaping",
+			scrapeProtocols: []config.ScrapeProtocol{config.OpenMetricsText2_0_0},
+			scheme:          model.NoEscaping,
+			expectedHeader:  "application/openmetrics-text;version=2.0.0;escaping=allow-utf-8;q=0.8,*/*;q=0.7",
 		},
 	}
 
