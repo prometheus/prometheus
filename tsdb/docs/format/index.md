@@ -273,12 +273,35 @@ payload length <8b>
 symbol count   <4b>
 symbols        <uvarint length + bytes, repeated symbol count times>
 CRC32C         <4b>
+sample-directory payload length <4b>
+sampling interval              <4b, always 32>
+sampled offset deltas          <uvarint, ceil(symbol count / 32) entries>
+directory CRC32C               <4b>
 ```
 
 The payload length includes the count and encoded symbols, and excludes the
 length and CRC fields. CRC32C covers the payload. Symbol IDs remain 32-bit
 ordinals into the strictly increasing symbol list. The length can exceed 4 GiB;
 the count must fit a uint32.
+
+The sample directory immediately follows the symbol payload checksum and ends at
+the TOC series offset. Its length includes the sampling interval and encoded
+offset deltas, excluding its length and CRC fields. The directory CRC32C covers
+the interval and deltas. Offsets are relative to the start of the symbol section;
+the first offset is 12, and subsequent deltas advance to every 32nd symbol.
+An empty symbol table has an empty delta stream and still records the interval.
+
+Writers record these offsets while adding symbols. Readers verify both checksums,
+decode the sampled offsets and validate sampled symbols and the final group,
+instead of decoding every symbol at open. The writer validates the ordering of
+all symbols; readers decode unsampled symbols on demand. Symbol IDs and lookup
+sampling remain unchanged. The full symbol-payload checksum still requires
+reading all symbol bytes when opening a Prometheus index.
+
+This revises the experimental V4 prototype: readers requiring the sample
+directory reject earlier V4 files without it. Earlier V4 prototype readers can
+ignore the appended directory and read newly written files. V1, V2 and V3 are
+unchanged.
 
 ### V4 postings-offset table
 

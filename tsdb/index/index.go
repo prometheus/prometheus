@@ -48,7 +48,7 @@ const (
 	FormatV2 = 2
 	// FormatV3 represents version 3 of index.
 	FormatV3 = 3
-	// FormatV4 represents version 4, with paged postings offsets and 64-bit symbol framing.
+	// FormatV4 represents version 4, with paged postings offsets, 64-bit symbol framing, and persisted symbol samples.
 	FormatV4 = 4
 
 	indexFilename = "index"
@@ -153,6 +153,9 @@ type Writer struct {
 	symbolFile  *fileutil.MmapFile
 	lastSymbol  string
 	symbolCache map[string]uint32 // From symbol to index in table.
+
+	symbolDirectory  encoding.Encbuf
+	lastSymbolOffset uint64
 
 	labelNames map[string]uint64 // Label names, and their usage.
 
@@ -558,9 +561,10 @@ func (w *Writer) AddSeries(ref storage.SeriesRef, lset labels.Labels, chunks ...
 
 func (w *Writer) startSymbols() error {
 	// We are at w.toc.Symbols.
-	// Leave 4 bytes of space for the length, and another 4 for the number of symbols
+	// Leave space for the length, and another 4 bytes for the number of symbols
 	// which will both be calculated later.
 	if w.version == FormatV4 {
+		w.symbolDirectory.PutBE32(symbolFactor)
 		return w.write(make([]byte, 12))
 	}
 	return w.write([]byte("alenblen"))
@@ -576,6 +580,11 @@ func (w *Writer) AddSymbol(sym string) error {
 	if uint64(w.numSymbols) >= math.MaxUint32 {
 		return errors.New("too many symbols")
 	}
+	if w.version == FormatV4 && w.numSymbols%symbolFactor == 0 {
+		offset := w.f.pos - w.toc.Symbols
+		w.symbolDirectory.PutUvarint64(offset - w.lastSymbolOffset)
+		w.lastSymbolOffset = offset
+	}
 	w.lastSymbol = sym
 	w.symbolCache[sym] = uint32(w.numSymbols)
 	w.numSymbols++
@@ -590,7 +599,7 @@ func (w *Writer) finishSymbols() error {
 		lengthSize = 8
 	}
 	symbolTableSize := w.f.pos - w.toc.Symbols - lengthSize
-	// The symbol table's <len> part is 4 bytes. So the total symbol table size must be less than or equal to 2^32-1
+	// Legacy symbol tables have a four-byte length and cannot exceed 2^32-1 bytes.
 	if w.version != FormatV4 && symbolTableSize > math.MaxUint32 {
 		return fmt.Errorf("%w: %d", ErrSymbolTableTooLarge, symbolTableSize)
 	}
@@ -612,6 +621,16 @@ func (w *Writer) finishSymbols() error {
 	// now that the number of symbols is known, so mmap and do it from there.
 	if err := w.write([]byte("hash")); err != nil {
 		return err
+	}
+	if w.version == FormatV4 {
+		w.buf1.Reset()
+		w.buf1.PutBE32int(w.symbolDirectory.Len())
+		w.buf2.Reset()
+		w.buf2.PutBE32(crc32.Checksum(w.symbolDirectory.Get(), castagnoliTable))
+		if err := w.write(w.buf1.Get(), w.symbolDirectory.Get(), w.buf2.Get()); err != nil {
+			return err
+		}
+		w.symbolDirectory = encoding.Encbuf{}
 	}
 	if err := w.f.Flush(); err != nil {
 		return err
@@ -1111,6 +1130,9 @@ func newReader(b ByteSlice, c io.Closer, postingsDecoder PostingsDecoder) (*Read
 	if err != nil {
 		return nil, fmt.Errorf("read symbols: %w", err)
 	}
+	if r.version == FormatV4 && uint64(r.symbols.end) != r.toc.Series {
+		return nil, errors.New("invalid symbol directory bounds")
+	}
 
 	switch r.version {
 	case FormatV4:
@@ -1225,6 +1247,8 @@ type Symbols struct {
 	bs      ByteSlice
 	version int
 	off     int
+	dataEnd int
+	end     int
 
 	offsets []int
 	seen    int
@@ -1234,6 +1258,9 @@ const symbolFactor = 32
 
 // NewSymbols returns a Symbols object for symbol lookups.
 func NewSymbols(bs ByteSlice, version, off int) (*Symbols, error) {
+	if version == FormatV4 {
+		return newSymbolsV4(bs, off)
+	}
 	s := &Symbols{
 		bs:      bs,
 		version: version,
@@ -1248,37 +1275,33 @@ func NewSymbols(bs ByteSlice, version, off int) (*Symbols, error) {
 		cnt     = d.Be32int()
 		basePos = off + 4
 	)
-	if version == FormatV4 {
-		basePos += 4
-	}
 	if cnt < 0 || cnt > d.Len() {
 		return nil, encoding.ErrInvalidSize
 	}
 	s.offsets = make([]int, 0, 1+cnt/symbolFactor)
-	var previous string
 	for d.Err() == nil && s.seen < cnt {
 		if s.seen%symbolFactor == 0 {
 			s.offsets = append(s.offsets, basePos+origLen-d.Len())
 		}
-		value := yoloString(d.UvarintBytes())
-		if version == FormatV4 && s.seen > 0 && value <= previous {
-			return nil, errors.New("unsorted symbols")
-		}
-		previous = value
+		d.UvarintBytes()
 		s.seen++
 	}
 	if d.Err() != nil {
 		return nil, d.Err()
 	}
-	if version == FormatV4 && d.Len() != 0 {
-		return nil, errors.New("invalid symbol count")
-	}
 	return s, nil
+}
+
+func (s Symbols) bytes() []byte {
+	if s.version == FormatV4 {
+		return s.bs.Range(0, s.dataEnd)
+	}
+	return s.bs.Range(0, s.bs.Len())
 }
 
 func (s Symbols) Lookup(o uint32) (string, error) {
 	d := encoding.Decbuf{
-		B: s.bs.Range(0, s.bs.Len()),
+		B: s.bytes(),
 	}
 
 	if s.version == FormatV1 {
@@ -1305,16 +1328,15 @@ func (s Symbols) ReverseLookup(sym string) (uint32, error) {
 		return 0, fmt.Errorf("unknown symbol %q - no symbols", sym)
 	}
 	i := sort.Search(len(s.offsets), func(i int) bool {
-		// Any decoding errors here will be lost, however
-		// we already read through all of this at startup.
+		// Sampled symbols were validated at startup.
 		d := encoding.Decbuf{
-			B: s.bs.Range(0, s.bs.Len()),
+			B: s.bytes(),
 		}
 		d.Skip(s.offsets[i])
 		return yoloString(d.UvarintBytes()) > sym
 	})
 	d := encoding.Decbuf{
-		B: s.bs.Range(0, s.bs.Len()),
+		B: s.bytes(),
 	}
 	if i > 0 {
 		i--
