@@ -3241,13 +3241,13 @@ func TestPopulateV2TimeSeries_ExemplarCoalescing(t *testing.T) {
 		require.Empty(t, pendingData[0].Exemplars)
 		require.Len(t, pendingData[1].Samples, 1)
 		require.Len(t, pendingData[1].Exemplars, 2)
-		var b labels.ScratchBuilder
+		b := labels.NewScratchBuilder(0)
 		gotEx0, err := pendingData[1].Exemplars[0].ToExemplar(&b, symbolTable.Symbols())
 		require.NoError(t, err)
-		require.Equal(t, exemplar.Exemplar{Labels: labels.FromStrings("trace_id", "ex1"), Value: 1, Ts: 100, HasTs: true}, gotEx0)
+		testutil.RequireEqual(t, exemplar.Exemplar{Labels: labels.FromStrings("trace_id", "ex1"), Value: 1, Ts: 100, HasTs: true}, gotEx0)
 		gotEx1, err := pendingData[1].Exemplars[1].ToExemplar(&b, symbolTable.Symbols())
 		require.NoError(t, err)
-		require.Equal(t, exemplar.Exemplar{Labels: labels.FromStrings("trace_id", "ex2"), Value: 2, Ts: 101, HasTs: true}, gotEx1)
+		testutil.RequireEqual(t, exemplar.Exemplar{Labels: labels.FromStrings("trace_id", "ex2"), Value: 2, Ts: 101, HasTs: true}, gotEx1)
 
 		// Float StaleNaN on sHist at index 2 has no exemplars; live histogram on sHist at index 3 has the coalesced exemplar.
 		require.Empty(t, pendingData[2].Exemplars)
@@ -3317,13 +3317,13 @@ func TestPopulateV2TimeSeries_ExemplarCoalescing(t *testing.T) {
 		require.Empty(t, pendingData[1].Samples)
 		require.Empty(t, pendingData[1].Histograms)
 		require.Len(t, pendingData[1].Exemplars, 1)
-		var b labels.ScratchBuilder
+		b := labels.NewScratchBuilder(0)
 		gotLbls, err := pendingData[1].ToLabels(&b, symbolTable.Symbols())
 		require.NoError(t, err)
-		require.Equal(t, sDetached, gotLbls)
+		testutil.RequireEqual(t, sDetached, gotLbls)
 		gotEx, err := pendingData[1].Exemplars[0].ToExemplar(&b, symbolTable.Symbols())
 		require.NoError(t, err)
-		require.Equal(t, exemplar.Exemplar{Labels: labels.FromStrings("trace_id", "kept_trace"), Value: 5, Ts: 200, HasTs: true}, gotEx)
+		testutil.RequireEqual(t, exemplar.Exemplar{Labels: labels.FromStrings("trace_id", "kept_trace"), Value: 5, Ts: 200, HasTs: true}, gotEx)
 		require.Equal(t, writev2.Metadata_METRIC_TYPE_COUNTER, pendingData[1].Metadata.Type)
 		require.Contains(t, symbolTable.Symbols(), "kept_trace")
 	})
@@ -4515,7 +4515,7 @@ func TestQueueManager_RemoteWriteModes(t *testing.T) {
 				sCounterNoST.Labels.String(): {{Labels: []prompb.Label{{Name: "trace_id", Value: "abc"}}, Value: 1, Timestamp: 1000}},
 				sNativeHist.Labels.String():  {{Labels: []prompb.Label{{Name: "trace_id", Value: "def"}}, Value: 2, Timestamp: 1000}},
 			}, c.receivedExemplars)
-			var b labels.ScratchBuilder
+			b := labels.NewScratchBuilder(0)
 			var foundHistWithExemplar bool
 			for _, req := range c.receivedV2Requests {
 				require.NotContains(t, req.Symbols, "ghi")
