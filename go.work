@@ -1,5 +1,7 @@
 go 1.26.10
 
+godebug multipathtcp=0
+
 use (
 	.
 	./compliance

@@ -2,6 +2,8 @@ module github.com/prometheus/prometheus
 
 go 1.26.10
 
+godebug multipathtcp=0
+
 require (
 	github.com/Azure/azure-sdk-for-go/sdk/azcore v1.23.3
 	github.com/Azure/azure-sdk-for-go/sdk/azidentity v1.15.0
