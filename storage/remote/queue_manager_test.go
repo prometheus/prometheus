@@ -2299,11 +2299,15 @@ func BenchmarkBuildV2WriteRequest(b *testing.B) {
 			seriesBuff[i].Samples = []writev2.Sample{{}}
 			seriesBuff[i].Exemplars = []writev2.Exemplar{{}}
 		}
+		seriesIdx := make(map[uint64]exemplarTarget, len(batch))
 		pBuf := []byte{}
 
+		b.ReportAllocs()
+		b.ResetTimer()
 		totalSize := 0
 		for b.Loop() {
-			nSeries, _, _, _, _, _ := populateV2TimeSeries(&symbolTable, batch, seriesBuff, true, true, false, remoteapi.WriteModeNone)
+			symbolTable.Reset()
+			nSeries, _, _, _, _, _ := populateV2TimeSeries(&symbolTable, batch, seriesBuff, seriesIdx, true, true, false, remoteapi.WriteModeNone)
 			req, _, _, _, err := buildV2WriteRequest(noopLogger, seriesBuff[:nSeries], symbolTable.Symbols(), &pBuf, nil, cEnc, "snappy")
 			if err != nil {
 				b.Fatal(err)
@@ -2316,6 +2320,18 @@ func BenchmarkBuildV2WriteRequest(b *testing.B) {
 	twoBatch := createDummyTimeSeries(2)
 	tenBatch := createDummyTimeSeries(10)
 	hundredBatch := createDummyTimeSeries(100)
+	hundredWithExemplars := make([]timeSeries, 0, len(hundredBatch)+len(hundredBatch)/5)
+	hundredWithExemplars = append(hundredWithExemplars, hundredBatch...)
+	exLabels := labels.FromStrings("trace_id", "0123456789abcdef")
+	for i := 0; i < len(hundredBatch); i += 5 {
+		hundredWithExemplars = append(hundredWithExemplars, timeSeries{
+			sType:          tExemplar,
+			seriesLabels:   hundredBatch[i].seriesLabels,
+			exemplarLabels: exLabels,
+			value:          hundredBatch[i].value,
+			timestamp:      1000,
+		})
+	}
 
 	b.Run("2 instances", func(b *testing.B) {
 		bench(b, twoBatch)
@@ -2327,6 +2343,10 @@ func BenchmarkBuildV2WriteRequest(b *testing.B) {
 
 	b.Run("1k instances", func(b *testing.B) {
 		bench(b, hundredBatch)
+	})
+
+	b.Run("1k instances with exemplars", func(b *testing.B) {
+		bench(b, hundredWithExemplars)
 	})
 }
 
@@ -2805,7 +2825,7 @@ func TestPopulateV2TimeSeries_UnexpectedMetadata(t *testing.T) {
 	}
 
 	_, nSamples, nExemplars, nHistograms, nUnexpected, _ := populateV2TimeSeries(
-		&symbolTable, batch, pendingData, false, false, false, remoteapi.WriteModeNone,
+		&symbolTable, batch, pendingData, nil, false, false, false, remoteapi.WriteModeNone,
 	)
 
 	require.Equal(t, 2, nSamples, "Should count 2 samples")
@@ -2922,6 +2942,7 @@ func TestPopulateV2TimeSeries_TypeAndUnitLabels(t *testing.T) {
 				&symbolTable,
 				batch,
 				pendingData,
+				nil,
 				false, // sendExemplars
 				false, // sendNativeHistograms
 				true,  // enableTypeAndUnitLabels
@@ -3086,6 +3107,7 @@ func TestPopulateV2TimeSeries_MetadataAndTypeAndUnit(t *testing.T) {
 				&symbolTable,
 				batch,
 				pendingData,
+				nil,
 				false,
 				false,
 				tc.enableTypeAndUnit,
@@ -3150,7 +3172,7 @@ func TestPopulateV2TimeSeries_ExemplarCoalescing(t *testing.T) {
 		// Size pendingData to the exact number of output series (3) to verify attached and dropped exemplars do not index out of bounds.
 		pendingData := make([]writev2.TimeSeries, 3)
 		nSeries, nSamples, nExemplars, nHistograms, nUnexpected, nDropped := populateV2TimeSeries(
-			&symbolTable, batch, pendingData, true, true, false, remoteapi.WriteModeStateless,
+			&symbolTable, batch, pendingData, nil, true, true, false, remoteapi.WriteModeStateless,
 		)
 
 		require.Equal(t, 3, nSeries)
@@ -3184,7 +3206,7 @@ func TestPopulateV2TimeSeries_ExemplarCoalescing(t *testing.T) {
 			{sType: tSample, seriesLabels: sCounter, value: 43, timestamp: 500},
 		}
 		nSeries, nSamples, nExemplars, nHistograms, _, nDropped = populateV2TimeSeries(
-			&symbolTable, nextBatch, pendingData, true, true, false, remoteapi.WriteModeStateless,
+			&symbolTable, nextBatch, pendingData, nil, true, true, false, remoteapi.WriteModeStateless,
 		)
 		require.Equal(t, 1, nSeries)
 		require.Equal(t, 1, nSamples)
@@ -3205,7 +3227,7 @@ func TestPopulateV2TimeSeries_ExemplarCoalescing(t *testing.T) {
 
 		pendingData := make([]writev2.TimeSeries, 2)
 		nSeries, nSamples, nExemplars, nHistograms, _, nDropped := populateV2TimeSeries(
-			&symbolTable, batch, pendingData, true, true, false, remoteapi.WriteModeNone,
+			&symbolTable, batch, pendingData, nil, true, true, false, remoteapi.WriteModeNone,
 		)
 
 		require.Equal(t, 2, nSeries)
