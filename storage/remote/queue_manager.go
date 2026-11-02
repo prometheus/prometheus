@@ -2472,6 +2472,19 @@ func initV2TimeSeriesMetadata(ts *writev2.TimeSeries, symbolTable *writev2.Symbo
 	ts.Metadata.HelpRef = symbolTable.Symbolize(help)
 }
 
+func isStaleTimeSeries(d timeSeries) bool {
+	switch d.sType {
+	case tSample:
+		return value.IsStaleNaN(d.value)
+	case tHistogram:
+		return d.histogram != nil && value.IsStaleNaN(d.histogram.Sum)
+	case tFloatHistogram:
+		return d.floatHistogram != nil && value.IsStaleNaN(d.floatHistogram.Sum)
+	default:
+		return false
+	}
+}
+
 func populateV2TimeSeries(symbolTable *writev2.SymbolsTable, batch []timeSeries, pendingData []writev2.TimeSeries, sendExemplars, sendNativeHistograms, enableTypeAndUnitLabels bool, mode remoteapi.WriteMode) (int, int, int, int, int, int) {
 	var (
 		nSeries, nPendingSamples, nPendingExemplars, nPendingHistograms, nUnexpectedMetadata, nDroppedExemplars int
@@ -2530,7 +2543,8 @@ func populateV2TimeSeries(symbolTable *writev2.SymbolsTable, batch []timeSeries,
 		}
 		// Match against seriesLabels directly before symbolizing so dropped exemplars do not
 		// pollute symbolTable (or writev2.Request.Symbols) and pendingData[nSeries] is only
-		// indexed when emitting a detached TimeSeries.
+		// indexed when emitting a detached TimeSeries. Skip staleness markers and pick the
+		// latest matching live TimeSeries in the batch.
 		attachedIdx := -1
 		if nSeriesWithData > 0 {
 			dataIdx := 0
@@ -2538,16 +2552,15 @@ func populateV2TimeSeries(symbolTable *writev2.SymbolsTable, batch []timeSeries,
 				if batch[i].sType == tExemplar || batch[i].sType == tMetadata {
 					continue
 				}
-				if labels.Equal(batch[i].seriesLabels, d.seriesLabels) {
+				if !isStaleTimeSeries(batch[i]) && labels.Equal(batch[i].seriesLabels, d.seriesLabels) {
 					attachedIdx = dataIdx
-					break
 				}
 				dataIdx++
 			}
 		}
 		if attachedIdx >= 0 {
 			pendingData[attachedIdx].Exemplars = append(pendingData[attachedIdx].Exemplars, writev2.Exemplar{
-				LabelsRefs: symbolTable.SymbolizeLabels(d.exemplarLabels, nil), // TODO: optimize, reuse slice
+				LabelsRefs: symbolTable.SymbolizeLabels(d.exemplarLabels, nil), // TODO(bwplotka): Reuse Exemplar.LabelsRefs slice across batches.
 				Value:      d.value,
 				Timestamp:  d.timestamp,
 			})
@@ -2564,7 +2577,7 @@ func populateV2TimeSeries(symbolTable *writev2.SymbolsTable, batch []timeSeries,
 		}
 		pendingData[nSeries].LabelsRefs = symbolTable.SymbolizeLabels(d.seriesLabels, pendingData[nSeries].LabelsRefs)
 		pendingData[nSeries].Exemplars = append(pendingData[nSeries].Exemplars[:0], writev2.Exemplar{
-			LabelsRefs: symbolTable.SymbolizeLabels(d.exemplarLabels, nil), // TODO: optimize, reuse slice
+			LabelsRefs: symbolTable.SymbolizeLabels(d.exemplarLabels, nil), // TODO(bwplotka): Reuse Exemplar.LabelsRefs slice across batches.
 			Value:      d.value,
 			Timestamp:  d.timestamp,
 		})
