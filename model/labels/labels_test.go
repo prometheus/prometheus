@@ -41,18 +41,59 @@ var testCaseLabels = []Labels{
 }
 
 func TestLabels_String(t *testing.T) {
-	expected := []string{ // Values must line up with testCaseLabels.
-		"{t1=\"t1\", t2=\"t2\"}",
-		"{}",
-		`{"service.name"="t1", "whatever\\whatever"="t2"}`,
-		`{aaa="111", xx="` + s254 + `"}`,
-		`{aaa="111", xx="` + s255 + `"}`,
-		`{" container"="prometheus", " namespace"="observability-prometheus", __name__="kube_pod_container_status_last_terminated_exitcode", cluster="prod-af-north-0", instance="kube-state-metrics-0:kube-state-metrics:ksm", job="kube-state-metrics/kube-state-metrics", pod="observability-prometheus-0", uid="d3ec90b2-4975-4607-b45d-b9ad64bb417e"}`,
-	}
-	require.Len(t, expected, len(testCaseLabels))
-	for i, c := range expected {
-		str := testCaseLabels[i].String()
-		require.Equal(t, c, str)
+	for _, tc := range []struct {
+		name            string
+		lbls            Labels
+		expectedString  string
+		expectedNoSpace string
+	}{
+		{
+			name:            "two labels",
+			lbls:            FromStrings("t1", "t1", "t2", "t2"),
+			expectedString:  `{t1="t1", t2="t2"}`,
+			expectedNoSpace: `{t1="t1",t2="t2"}`,
+		},
+		{
+			name:            "empty",
+			lbls:            EmptyLabels(),
+			expectedString:  `{}`,
+			expectedNoSpace: `{}`,
+		},
+		{
+			name:            "dots and slashes",
+			lbls:            FromStrings("service.name", "t1", "whatever\\whatever", "t2"),
+			expectedString:  `{"service.name"="t1", "whatever\\whatever"="t2"}`,
+			expectedNoSpace: `{"service.name"="t1","whatever\\whatever"="t2"}`,
+		},
+		{
+			name:            "stringlabels 254 bytes edge case",
+			lbls:            FromStrings("aaa", "111", "xx", s254),
+			expectedString:  `{aaa="111", xx="` + s254 + `"}`,
+			expectedNoSpace: `{aaa="111",xx="` + s254 + `"}`,
+		},
+		{
+			name:            "stringlabels 255 bytes edge case",
+			lbls:            FromStrings("aaa", "111", "xx", s255),
+			expectedString:  `{aaa="111", xx="` + s255 + `"}`,
+			expectedNoSpace: `{aaa="111",xx="` + s255 + `"}`,
+		},
+		{
+			name:            "many labels with leading space names and special chars",
+			lbls:            FromStrings("__name__", "kube_pod_container_status_last_terminated_exitcode", "cluster", "prod-af-north-0", " container", "prometheus", "instance", "kube-state-metrics-0:kube-state-metrics:ksm", "job", "kube-state-metrics/kube-state-metrics", " namespace", "observability-prometheus", "pod", "observability-prometheus-0", "uid", "d3ec90b2-4975-4607-b45d-b9ad64bb417e"),
+			expectedString:  `{" container"="prometheus", " namespace"="observability-prometheus", __name__="kube_pod_container_status_last_terminated_exitcode", cluster="prod-af-north-0", instance="kube-state-metrics-0:kube-state-metrics:ksm", job="kube-state-metrics/kube-state-metrics", pod="observability-prometheus-0", uid="d3ec90b2-4975-4607-b45d-b9ad64bb417e"}`,
+			expectedNoSpace: `{" container"="prometheus"," namespace"="observability-prometheus",__name__="kube_pod_container_status_last_terminated_exitcode",cluster="prod-af-north-0",instance="kube-state-metrics-0:kube-state-metrics:ksm",job="kube-state-metrics/kube-state-metrics",pod="observability-prometheus-0",uid="d3ec90b2-4975-4607-b45d-b9ad64bb417e"}`,
+		},
+		{
+			name:            "spaces inside quoted values are preserved",
+			lbls:            FromStrings("a", "1, 2", "b", "3"),
+			expectedString:  `{a="1, 2", b="3"}`,
+			expectedNoSpace: `{a="1, 2",b="3"}`,
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			require.Equal(t, tc.expectedString, tc.lbls.String())
+			require.Equal(t, tc.expectedNoSpace, tc.lbls.StringNoSpace())
+		})
 	}
 }
 
@@ -60,23 +101,6 @@ func BenchmarkString(b *testing.B) {
 	ls := New(benchmarkLabels...)
 	for b.Loop() {
 		_ = ls.String()
-	}
-}
-
-func TestLabels_StringNoSpace(t *testing.T) {
-	expected := []string{
-		`{t1="t1",t2="t2"}`,
-		`{}`,
-		`{"service.name"="t1","whatever\\whatever"="t2"}`,
-		`{aaa="111",xx="` + s254 + `"}`,
-		`{aaa="111",xx="` + s255 + `"}`,
-		`{" container"="prometheus"," namespace"="observability-prometheus",__name__="kube_pod_container_status_last_terminated_exitcode",cluster="prod-af-north-0",instance="kube-state-metrics-0:kube-state-metrics:ksm",job="kube-state-metrics/kube-state-metrics",pod="observability-prometheus-0",uid="d3ec90b2-4975-4607-b45d-b9ad64bb417e"}`,
-	}
-
-	require.Len(t, expected, len(testCaseLabels))
-	for i, c := range expected {
-		str := testCaseLabels[i].StringNoSpace()
-		require.Equal(t, c, str)
 	}
 }
 
@@ -984,17 +1008,29 @@ func TestLabels_HashForLabels(t *testing.T) {
 	h4, _ := lbls3.HashForLabels(nil, "a", "c")
 	require.NotEqual(t, h1, h4)
 
-	// Requesting non-existent label names should not panic and should be ignored
+	// Interleaving missing names before ("0"), between ("bb"), and after ("z") matches
+	// tests skipping missing names and covers the names[j] < ls[i].Name branch.
+	hInterleaved, _ := lbls1.HashForLabels(nil, "0", "a", "bb", "c", "z")
+	require.Equal(t, h1, hInterleaved)
+
+	// Requesting non-existent label names should not panic, return empty buffer,
+	// and match empty labels hash.
 	h5, b5 := lbls1.HashForLabels(nil, "nonexistent", "z")
 	require.Empty(t, b5)
 
 	h6, _ := lbls2.HashForLabels(nil, "nonexistent", "z")
 	require.Equal(t, h5, h6)
 
-	// Buffer reuse test
-	buf := make([]byte, 0, 64)
-	_, returnedBuf := lbls1.HashForLabels(buf, "a")
-	require.Equal(t, cap(buf), cap(returnedBuf))
+	hEmpty, _ := EmptyLabels().HashForLabels(nil)
+	require.Equal(t, hEmpty, h5)
+
+	// Buffer reuse test: pre-fill buf with stale/dirty bytes to ensure
+	// b = b[:0] truncates without reallocation, hash matches h1, and underlying memory is reused.
+	buf := make([]byte, 10, 64)
+	copy(buf, "stalebytes")
+	hBuf, returnedBuf := lbls1.HashForLabels(buf, "a", "c")
+	require.Equal(t, h1, hBuf)
+	require.Same(t, &buf[0], &returnedBuf[0])
 }
 
 func TestLabels_HashWithoutLabels(t *testing.T) {
@@ -1005,6 +1041,18 @@ func TestLabels_HashWithoutLabels(t *testing.T) {
 	h2, b2 := lbls1.HashWithoutLabels(nil, "b")
 	require.Equal(t, h1, h2)
 	require.Equal(t, b1, b2)
+
+	// HashWithoutLabels excluding "b" leaves "a" and "c", so it must match HashForLabels with "a" and "c".
+	hForAC, _ := lbls1.HashForLabels(nil, "a", "c")
+	require.Equal(t, h1, hForAC)
+
+	// Explicitly including MetricName in names should have no effect since __name__ is excluded by default.
+	hMetricName, _ := lbls1.HashWithoutLabels(nil, MetricName, "b")
+	require.Equal(t, h1, hMetricName)
+
+	// Non-existent excluded names before ("0") and after ("z") retained names.
+	hNonExistent, _ := lbls1.HashWithoutLabels(nil, "0", "b", "z")
+	require.Equal(t, h1, hNonExistent)
 
 	// HashWithoutLabels excludes "b" AND always excludes "__name__".
 	// lbls2 has different __name__ and different "b", but identical "a" and "c".
@@ -1022,6 +1070,14 @@ func TestLabels_HashWithoutLabels(t *testing.T) {
 	require.Empty(t, b5)
 	hEmpty, _ := EmptyLabels().HashWithoutLabels(nil)
 	require.Equal(t, hEmpty, h5)
+
+	// Buffer reuse test: pre-fill buf with stale/dirty bytes to ensure
+	// b = b[:0] truncates without reallocation, hash matches h1, and underlying memory is reused.
+	buf := make([]byte, 10, 64)
+	copy(buf, "stalebytes")
+	hBuf, returnedBuf := lbls1.HashWithoutLabels(buf, "b")
+	require.Equal(t, h1, hBuf)
+	require.Same(t, &buf[0], &returnedBuf[0])
 }
 
 func BenchmarkLabels_Hash(b *testing.B) {
