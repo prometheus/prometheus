@@ -2179,11 +2179,11 @@ For OVHcloud's [public cloud instances](https://www.ovhcloud.com/en/public-cloud
 * `__meta_ovhcloud_vps_display_name`: the display name of the server
 * `__meta_ovhcloud_vps_ipv4`: the IPv4 of the server
 * `__meta_ovhcloud_vps_ipv6`: the IPv6 of the server
-* `__meta_ovhcloud_vps_keymap`: the KVM keyboard layout of the server
 * `__meta_ovhcloud_vps_maximum_additional_ip`: the maximum additional IPs of the server
 * `__meta_ovhcloud_vps_memory_limit`: the memory limit of the server
 * `__meta_ovhcloud_vps_memory`: the memory of the server
-* `__meta_ovhcloud_vps_monitoring_ip_blocks`: the monitoring IP blocks of the server
+* `__meta_ovhcloud_vps_model_name`: the model name of the server
+* `__meta_ovhcloud_vps_model_vcore`: the number of virtual cores of the server model
 * `__meta_ovhcloud_vps_name`: the name of the server
 * `__meta_ovhcloud_vps_netboot_mode`: the netboot mode of the server
 * `__meta_ovhcloud_vps_offer_type`: the offer type of the server
