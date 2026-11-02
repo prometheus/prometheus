@@ -3263,9 +3263,10 @@ scrape targets from various APIs.
 
 The following meta labels are available on targets during [relabeling](#relabel_config):
 
+* `__meta_stackit_project`: The ID of the project the server belongs to.
 * `__meta_stackit_availability_zone`: The availability zone of the server.
-* `__meta_stackit_label_<labelname>`: Each server label, with unsupported characters replaced by underscores.</labelname>
-* `__meta_stackit_labelpresent_<labelname>`: "true" for each label of the server, with unsupported characters replaced by underscores.</labelname>
+* `__meta_stackit_label_<labelname>`: Each server label, with unsupported characters replaced by underscores.
+* `__meta_stackit_labelpresent_<labelname>`: "true" for each label of the server, with unsupported characters replaced by underscores.
 * `__meta_stackit_private_ipv4_<networkname>`: the private ipv4 address of the server within a given network
 * `__meta_stackit_public_ipv4`: the public ipv4 address of the server
 * `__meta_stackit_id`: The ID of the target.
