@@ -25,7 +25,7 @@ Roles follow [Prometheus Governance](https://github.com/prometheus/governance/bl
 - **Maintainer (`50`)**: Listed in `MAINTAINERS.md` (bullet or Markdown table format), listed as an individual handle in `CODEOWNERS` or `.github/CODEOWNERS`, listed under `approvers` in `OWNERS` / `OWNERS_ALIASES`, repository `OWNER`, or inferred from `mergedBy` activity when a repository has no explicit ownership files.
 - **Member (`35`)**: GitHub organization `MEMBER` or repository `COLLABORATOR` not listed as a maintainer of this repository.
 - **Contributor (`15`)**: Returning contributor with previously merged commits in the repository (`authorAssociation == "CONTRIBUTOR"`) or accepted merges or reviews in the rolling window.
-- **New Contributor (`0`)**: First-time contributor (`FIRST_TIME_CONTRIBUTOR`, `FIRST_TIMER`, `NONE`) with no merged or reviewed PRs yet.
+- **New Contributor (`0`)**: First-time contributor (`FIRST_TIME_CONTRIBUTOR`, `FIRST_TIMER`, `NONE`) with no merged or reviewed PRs yet. When ordering PR triage queues in `pr-triage-board`, first-time contributors receive a `30` welcome baseline instead of `0` so new contributors get timely onboarding feedback on par with active contributors.
 
 ### Why these weights work
 

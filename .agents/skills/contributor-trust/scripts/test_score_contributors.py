@@ -264,10 +264,17 @@ aliases:
         self.assertEqual(profiles["ext-contrib"]["role"], sc.ROLE_CONTRIBUTOR)
 
     def test_priority_aging_prevents_starvation(self):
-        # A New Contributor (0.0) waiting 25 days (37.5) bubbles past a fresh Member PR (35.0).
-        new_waiting_25d = sc.compute_priority_score(0.0, waiting_days=25.0)
+        new_profile = {"role": sc.ROLE_NEW_CONTRIBUTOR, "trust_score": 0.0}
+        inactive_contrib = {"role": sc.ROLE_CONTRIBUTOR, "trust_score": 15.0}
+        self.assertEqual(sc.effective_queue_trust_score(new_profile), 30.0)
+        self.assertEqual(sc.effective_queue_trust_score(inactive_contrib), 15.0)
+
+        # A New Contributor (30.0 welcome baseline) waiting 4 days (36.0) bubbles past a fresh Member PR (35.0).
+        new_waiting_4d = sc.compute_priority_score(
+            sc.effective_queue_trust_score(new_profile), waiting_days=4.0
+        )
         fresh_member = sc.compute_priority_score(35.0, waiting_days=0.0)
-        self.assertGreater(new_waiting_25d, fresh_member)
+        self.assertGreater(new_waiting_4d, fresh_member)
 
 
 if __name__ == "__main__":

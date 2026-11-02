@@ -82,6 +82,7 @@ CONTRIB_LOG_SCALE = 12.0
 MAX_CONTRIB_BONUS = 40.0
 DEFAULT_WINDOW_DAYS = 90
 DEFAULT_AGING_PER_DAY = 1.5
+NEW_CONTRIBUTOR_WELCOME_SCORE = 30.0
 
 
 # NOTE(bwplotka): We query repository.pullRequests ordered by UPDATED_AT DESC
@@ -406,6 +407,15 @@ def compute_trust_score(role_base, merged_count, reviewed_count, window_days=DEF
         "contrib_bonus": round(contrib_bonus, 1),
         "trust_score": trust_score,
     }
+
+
+def effective_queue_trust_score(
+    profile, new_contributor_welcome=NEW_CONTRIBUTOR_WELCOME_SCORE
+):
+    """Returns the trust score used for PR queue ordering, giving first-time contributors a welcome baseline."""
+    if profile.get("role") == ROLE_NEW_CONTRIBUTOR:
+        return max(profile["trust_score"], new_contributor_welcome)
+    return profile["trust_score"]
 
 
 def compute_priority_score(trust_score, waiting_days, aging_per_day=DEFAULT_AGING_PER_DAY):

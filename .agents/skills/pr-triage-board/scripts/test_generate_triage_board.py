@@ -36,8 +36,13 @@ class TestGenerateTriageBoard(unittest.TestCase):
                 "url": "https://github.com/prometheus/prometheus/pull/1",
                 "author": "newbie",
                 "author_cell": "@newbie<br>*(New Contributor)*",
-                "trust_score": 0.0,
-                "priority_score": gtb.sc.compute_priority_score(0.0, 1.0),
+                "trust_score": 30.0,
+                "priority_score": gtb.sc.compute_priority_score(
+                    gtb.sc.effective_queue_trust_score(
+                        {"role": "New Contributor", "trust_score": 0.0}
+                    ),
+                    1.0,
+                ),
                 "owners_cell": "`@bwplotka`",
                 "status_bucket": "Waiting on Maintainer",
                 "ci_state": "SUCCESS",
@@ -110,13 +115,13 @@ class TestGenerateTriageBoard(unittest.TestCase):
                 "repo_full": "prometheus/prometheus",
                 "repo": "prometheus",
                 "number": 4,
-                "title": "fix: long-waiting new contributor PR (30d)",
+                "title": "fix: long-waiting new contributor PR (10d)",
                 "url": "https://github.com/prometheus/prometheus/pull/4",
                 "author": "patient",
                 "author_cell": "@patient<br>*(New Contributor)*",
-                "trust_score": 0.0,
-                # 0 + 1.5 * 30 = 45.0, bubbles above fresh New Contributor (#1, 1.5)
-                "priority_score": gtb.sc.compute_priority_score(0.0, 30.0),
+                "trust_score": 30.0,
+                # 30.0 welcome + 1.5 * 10 = 45.0, bubbles above fresh New Contributor (#1, 31.5) and inactive Contributor (#5, 15.0)
+                "priority_score": gtb.sc.compute_priority_score(30.0, 10.0),
                 "owners_cell": "`@codesome`",
                 "status_bucket": "Waiting on Maintainer",
                 "ci_state": "SUCCESS",
@@ -126,9 +131,35 @@ class TestGenerateTriageBoard(unittest.TestCase):
                 "deletions": 10,
                 "loc": 100,
                 "changedFiles": 2,
-                "updatedAt": "2026-10-03T05:00:00Z",
-                "commitDate": "2026-10-03T05:00:00Z",
+                "updatedAt": "2026-10-23T05:00:00Z",
+                "commitDate": "2026-10-23T05:00:00Z",
                 "lastActor": "patient",
+                "lastEventType": "commit",
+                "approved": False,
+                "touchesWorkflow": False,
+            },
+            {
+                "repo_full": "prometheus/prometheus",
+                "repo": "prometheus",
+                "number": 5,
+                "title": "chore: fresh PR from inactive returning contributor",
+                "url": "https://github.com/prometheus/prometheus/pull/5",
+                "author": "returning",
+                "author_cell": "@returning<br>*(Contributor)*",
+                "trust_score": 15.0,
+                "priority_score": gtb.sc.compute_priority_score(15.0, 0.0),
+                "owners_cell": "`@codesome`",
+                "status_bucket": "Waiting on Maintainer",
+                "ci_state": "SUCCESS",
+                "ci_explained": False,
+                "hygiene": [],
+                "additions": 75,
+                "deletions": 5,
+                "loc": 80,
+                "changedFiles": 1,
+                "updatedAt": "2026-11-02T05:00:00Z",
+                "commitDate": "2026-11-02T05:00:00Z",
+                "lastActor": "returning",
                 "lastEventType": "commit",
                 "approved": False,
                 "touchesWorkflow": False,
@@ -138,18 +169,20 @@ class TestGenerateTriageBoard(unittest.TestCase):
         md = gtb.render_markdown(
             ["prometheus/prometheus"],
             now,
-            {"prometheus/prometheus": 4},
+            {"prometheus/prometheus": 5},
             prs,
             100,
         )
-        # Expected order in Waiting on Maintainer: #3 (approved), #2 (Maintainer, 90.0), #4 (aged 30d, 45.0), #1 (1d, 1.5).
+        # Expected order: #3 (approved), #2 (Maintainer, 90.0), #4 (New Contributor aged 10d, 45.0), #1 (New Contributor 1d, 31.5), #5 (inactive Contributor 0d, 15.0).
         pos_3 = md.index("[#3](")
         pos_2 = md.index("[#2](")
         pos_4 = md.index("[#4](")
         pos_1 = md.index("[#1](")
+        pos_5 = md.index("[#5](")
         self.assertLess(pos_3, pos_2)
         self.assertLess(pos_2, pos_4)
         self.assertLess(pos_4, pos_1)
+        self.assertLess(pos_1, pos_5)
 
     def test_non_maintainer_buckets_ignore_stale_commit_age(self):
         now = datetime.datetime(2026, 11, 2, 5, 0, tzinfo=datetime.timezone.utc)
@@ -269,6 +302,12 @@ class TestGenerateTriageBoard(unittest.TestCase):
             )
             self.assertEqual((role, base), ("Maintainer", 50.0))
 
+            self.assertEqual(
+                mod.sc.effective_queue_trust_score(
+                    {"role": "New Contributor", "trust_score": 0.0}
+                ),
+                30.0,
+            )
             score = mod.sc.compute_trust_score(15.0, merged_count=8, reviewed_count=0, window_days=90)
             self.assertAlmostEqual(score["trust_score"], 37.5, places=1)
             self.assertEqual(
@@ -280,8 +319,9 @@ class TestGenerateTriageBoard(unittest.TestCase):
             non_prom_md = mod.render_markdown(
                 ["thanos-io/thanos"], now, {"thanos-io/thanos": 0}, [], 50
             )
-            self.assertIn("Generated via `pr-triage-board`", non_prom_md)
+            self.assertIn("Generated via [`.agents/skills/pr-triage-board`]", non_prom_md)
             self.assertIn("repository roles", non_prom_md)
+            self.assertIn("`30` welcome baseline", non_prom_md)
             self.assertNotIn("07:00–18:00 CET", non_prom_md)
 
             pr_no_dco = {

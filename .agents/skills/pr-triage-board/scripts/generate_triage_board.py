@@ -321,6 +321,11 @@ def _build_standalone_scorer():
             "trust_score": round(role_base + contrib_bonus, 1),
         }
 
+    def effective_queue_trust_score(profile, new_contributor_welcome=30.0):
+        if profile.get("role") == role_new:
+            return max(profile["trust_score"], new_contributor_welcome)
+        return profile["trust_score"]
+
     def compute_priority_score(trust_score, waiting_days, aging_per_day=1.5):
         return round(trust_score + (aging_per_day * max(0.0, waiting_days)), 2)
 
@@ -490,6 +495,7 @@ def _build_standalone_scorer():
         parse_owners_yaml=parse_owners_yaml,
         classify_governance_role=classify_governance_role,
         compute_trust_score=compute_trust_score,
+        effective_queue_trust_score=effective_queue_trust_score,
         compute_priority_score=compute_priority_score,
         format_author_cell=format_author_cell,
         fetch_repo_contributor_profiles=fetch_repo_contributor_profiles,
@@ -1076,8 +1082,9 @@ def analyze_prs(repos, max_prs, maintainer_filter=None):
                 in ("Updated After Review", "Waiting on Maintainer", "Needs /workflow-approve")
                 else 0.0
             )
+            queue_trust_score = sc.effective_queue_trust_score(author_profile)
             priority_score = sc.compute_priority_score(
-                author_profile["trust_score"],
+                queue_trust_score,
                 waiting_days,
             )
             updated_epoch = datetime.datetime.fromisoformat(
@@ -1092,7 +1099,7 @@ def analyze_prs(repos, max_prs, maintainer_filter=None):
                     "url": pr["url"],
                     "author": author,
                     "author_cell": sc.format_author_cell(author, author_profile),
-                    "trust_score": author_profile["trust_score"],
+                    "trust_score": queue_trust_score,
                     "priority_score": priority_score,
                     "waitingSince": waiting_since,
                     "updatedEpoch": updated_epoch,
@@ -1119,7 +1126,9 @@ def analyze_prs(repos, max_prs, maintainer_filter=None):
     return now, repo_totals, all_prs
 
 
-def render_markdown(repos, now, repo_totals, prs, max_prs, maintainer_filter=None):
+def render_markdown(
+    repos, now, repo_totals, prs, max_prs, maintainer_filter=None, automated=False
+):
     multi_repo = len(repos) > 1
     repo_order = {r: i for i, r in enumerate(repos)}
 
@@ -1150,13 +1159,13 @@ def render_markdown(repos, now, repo_totals, prs, max_prs, maintainer_filter=Non
         return t.replace("|", "\\|")
 
     now_str = now.strftime("%Y-%m-%d %H:%M UTC")
-    is_prom_main = repos == ["prometheus/prometheus"]
     all_prom_org = all(r.split("/", 1)[0].lower() in PROMETHEUS_ORGS for r in repos)
 
+    skill_link = "[`.agents/skills/pr-triage-board`](https://github.com/prometheus/prometheus/tree/main/.agents/skills/pr-triage-board)"
     gen_line = (
-        "> **Automated via [`.agents/skills/pr-triage-board`](https://github.com/prometheus/prometheus/tree/main/.agents/skills/pr-triage-board)** · Refreshed **every hour on weekdays (Mon–Fri, 07:00–18:00 CET)**."
-        if is_prom_main
-        else "> **Generated via `pr-triage-board`**."
+        f"> **Automated via {skill_link}** · Refreshed **every hour on weekdays (Mon–Fri, 07:00–18:00 CET)**."
+        if automated
+        else f"> **Generated via {skill_link}**."
     )
     role_desc = (
         "[Prometheus Governance roles](https://github.com/prometheus/governance/blob/main/ROLES.md)"
@@ -1169,7 +1178,7 @@ def render_markdown(repos, now, repo_totals, prs, max_prs, maintainer_filter=Non
         ">",
         gen_line,
         ">",
-        f"> **Queue priority**: Approved PRs first, then `trust_score + 1.5 * waiting_days` using {role_desc} + 90d monthly contribution rate (`1.0x` merged + `1.5x` reviewed PRs/mo).",
+        f"> **Queue priority**: Approved PRs first, then `trust_score + 1.5 * waiting_days` using {role_desc} + 90d monthly contribution rate (`1.0x` merged + `1.5x` reviewed PRs/mo; `New Contributor` starts at a `30` welcome baseline).",
         "",
     ]
 
@@ -1393,7 +1402,15 @@ def main():
     if not prs and not args.maintainer:
         print("Error: 0 PRs fetched from GitHub GraphQL API; aborting to avoid overwriting with empty board.", file=sys.stderr)
         sys.exit(1)
-    md = render_markdown(repos, now, repo_totals, prs, args.limit, args.maintainer)
+    md = render_markdown(
+        repos,
+        now,
+        repo_totals,
+        prs,
+        args.limit,
+        args.maintainer,
+        automated=bool(args.update_issue),
+    )
 
     if args.output:
         out_abs = os.path.abspath(args.output)
