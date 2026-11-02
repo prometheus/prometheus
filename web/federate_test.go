@@ -306,11 +306,9 @@ func normalizeBody(body *bytes.Buffer) string {
 }
 
 func TestFederationWithNativeHistograms(t *testing.T) {
-	storage := teststorage.New(t)
-
 	var expVec promql.Vector
 
-	db := storage.DB
+	db := teststorage.New(t).DB
 	hist := &histogram.Histogram{
 		Count:         12,
 		ZeroCount:     2,
@@ -354,14 +352,14 @@ func TestFederationWithNativeHistograms(t *testing.T) {
 		PositiveBuckets: []int64{3, -1, -1},
 		CustomValues:    []float64{0.1, 0.2, 0.5, 1, 2},
 	}
-	app := db.Appender(context.Background())
+	app := db.AppenderV2(context.Background())
 	for i := range 7 {
 		l := labels.FromStrings("__name__", "test_metric", "foo", strconv.Itoa(i))
 		expL := labels.FromStrings("__name__", "test_metric", "instance", "", "foo", strconv.Itoa(i))
 		var err error
 		switch i {
 		case 0, 3:
-			_, err = app.Append(0, l, 100*60*1000, float64(i*100))
+			_, err = app.Append(0, l, 0, 100*60*1000, float64(i*100), nil, nil, storage.AOptions{})
 			expVec = append(expVec, promql.Sample{
 				T:      100 * 60 * 1000,
 				F:      float64(i * 100),
@@ -372,14 +370,14 @@ func TestFederationWithNativeHistograms(t *testing.T) {
 			hist.ZeroCount++
 			hist.Count++
 			fh := hist.ToFloat(nil)
-			_, err = app.AppendHistogram(0, l, 100*60*1000, nil, fh.Copy())
+			_, err = app.Append(0, l, 0, 100*60*1000, 0, nil, fh.Copy(), storage.AOptions{})
 			expVec = append(expVec, promql.Sample{
 				T:      100 * 60 * 1000,
 				H:      fh,
 				Metric: expL,
 			})
 		case 4:
-			_, err = app.AppendHistogram(0, l, 100*60*1000, histWithoutZeroBucket.Copy(), nil)
+			_, err = app.Append(0, l, 0, 100*60*1000, 0, histWithoutZeroBucket.Copy(), nil, storage.AOptions{})
 			expVec = append(expVec, promql.Sample{
 				T:      100 * 60 * 1000,
 				H:      histWithoutZeroBucket.ToFloat(nil),
@@ -388,14 +386,14 @@ func TestFederationWithNativeHistograms(t *testing.T) {
 		case 5:
 			hist.ZeroCount++
 			hist.Count++
-			_, err = app.AppendHistogram(0, l, 100*60*1000, hist.Copy(), nil)
+			_, err = app.Append(0, l, 0, 100*60*1000, 0, hist.Copy(), nil, storage.AOptions{})
 			expVec = append(expVec, promql.Sample{
 				T:      100 * 60 * 1000,
 				H:      hist.ToFloat(nil),
 				Metric: expL,
 			})
 		case 6:
-			_, err = app.AppendHistogram(0, l, 100*60*1000, nhcb.Copy(), nil)
+			_, err = app.Append(0, l, 0, 100*60*1000, 0, nhcb.Copy(), nil, storage.AOptions{})
 			expL = labels.FromStrings("__name__", "test_metric_count", "instance", "", "foo", strconv.Itoa(i))
 			expVec = append(expVec, promql.Sample{
 				T:      100 * 60 * 1000,

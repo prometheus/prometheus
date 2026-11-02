@@ -580,9 +580,9 @@ func TestHeadIndexReader_PostingsForLabelMatching(t *testing.T) {
 		t.Cleanup(func() {
 			require.NoError(t, h.Close())
 		})
-		app := h.Appender(context.Background())
+		app := h.AppenderV2(context.Background())
 		for _, s := range series {
-			app.Append(0, s, 0, 0)
+			app.Append(0, s, 0, 0, 0, nil, nil, storage.AOptions{})
 		}
 		require.NoError(t, app.Commit())
 
@@ -604,10 +604,10 @@ func newCacheTestHead(t *testing.T) (*Head, *memSeries, chunks.HeadChunkRef) {
 	// Append enough samples to create multiple head chunks. With
 	// ChunkRange=100 and DefaultSamplesPerChunk=120, each chunk holds ~20
 	// samples (range/step = 100/5).
-	app := h.Appender(t.Context())
+	app := h.AppenderV2(t.Context())
 	lbls := labels.FromStrings("__name__", "test")
 	for i := int64(0); i < 500; i += 5 {
-		_, err := app.Append(0, lbls, i, float64(i))
+		_, err := app.Append(0, lbls, 0, i, float64(i), nil, nil, storage.AOptions{})
 		require.NoError(t, err)
 	}
 	require.NoError(t, app.Commit())
@@ -782,15 +782,15 @@ func TestHeadChunkReaderCache(t *testing.T) {
 
 		// The big series gets more than headChunksBufMaxCap head chunks
 		// (ChunkRange=1 cuts a chunk per sample); the small series a few.
-		app := h.Appender(t.Context())
+		app := h.AppenderV2(t.Context())
 		big := labels.FromStrings("__name__", "big")
 		small := labels.FromStrings("__name__", "small")
 		for i := range int64(headChunksBufMaxCap) + 10 {
-			_, err := app.Append(0, big, i, float64(i))
+			_, err := app.Append(0, big, 0, i, float64(i), nil, nil, storage.AOptions{})
 			require.NoError(t, err)
 		}
 		for i := range int64(5) {
-			_, err := app.Append(0, small, i, float64(i))
+			_, err := app.Append(0, small, 0, i, float64(i), nil, nil, storage.AOptions{})
 			require.NoError(t, err)
 		}
 		require.NoError(t, app.Commit())
@@ -847,10 +847,10 @@ func TestHeadChunkReaderCache(t *testing.T) {
 
 		// Append enough samples to create >headChunksBufMaxCap head chunks.
 		// With ChunkRange=1, each sample goes to a new chunk.
-		app := h.Appender(t.Context())
+		app := h.AppenderV2(t.Context())
 		lbls := labels.FromStrings("__name__", "cap_test")
 		for i := range int64(headChunksBufMaxCap) + 10 {
-			_, err := app.Append(0, lbls, i, float64(i))
+			_, err := app.Append(0, lbls, 0, i, float64(i), nil, nil, storage.AOptions{})
 			require.NoError(t, err)
 		}
 		require.NoError(t, app.Commit())
@@ -882,10 +882,10 @@ func TestHeadChunkReaderCache(t *testing.T) {
 		require.NoError(t, err)
 		t.Cleanup(func() { require.NoError(t, h.Close()) })
 
-		app := h.Appender(t.Context())
+		app := h.AppenderV2(t.Context())
 		lbls := labels.FromStrings("__name__", "cap_test_ooo")
 		for i := range int64(headChunksBufMaxCap) + 10 {
-			_, err := app.Append(0, lbls, i, float64(i))
+			_, err := app.Append(0, lbls, 0, i, float64(i), nil, nil, storage.AOptions{})
 			require.NoError(t, err)
 		}
 		require.NoError(t, app.Commit())

@@ -723,10 +723,13 @@ func TestStaleness(t *testing.T) {
 		})
 
 		// A time series that has two samples and then goes stale.
-		app := st.Appender(context.Background())
-		app.Append(0, labels.FromStrings(model.MetricNameLabel, "a"), 0, 1)
-		app.Append(0, labels.FromStrings(model.MetricNameLabel, "a"), 1000, 2)
-		app.Append(0, labels.FromStrings(model.MetricNameLabel, "a"), 2000, math.Float64frombits(value.StaleNaN))
+		app := st.AppenderV2(context.Background())
+		_, err = app.Append(0, labels.FromStrings(model.MetricNameLabel, "a"), 0, 0, 1, nil, nil, storage.AOptions{})
+		require.NoError(t, err)
+		_, err = app.Append(0, labels.FromStrings(model.MetricNameLabel, "a"), 0, 1000, 2, nil, nil, storage.AOptions{})
+		require.NoError(t, err)
+		_, err = app.Append(0, labels.FromStrings(model.MetricNameLabel, "a"), 0, 2000, math.Float64frombits(value.StaleNaN), nil, nil, storage.AOptions{})
+		require.NoError(t, err)
 
 		err = app.Commit()
 		require.NoError(t, err)
@@ -1065,7 +1068,7 @@ func reloadAndValidate(rgs *rulefmt.RuleGroups, t *testing.T, tmpFile *os.File, 
 }
 
 func TestNotify(t *testing.T) {
-	storage := teststorage.New(t)
+	st := teststorage.New(t)
 
 	engineOpts := promql.EngineOpts{
 		Logger:     nil,
@@ -1079,9 +1082,9 @@ func TestNotify(t *testing.T) {
 		lastNotified = alerts
 	}
 	opts := &ManagerOptions{
-		QueryFunc:    EngineQueryFunc(engine, storage),
-		AppendableV2: storage,
-		Queryable:    storage,
+		QueryFunc:    EngineQueryFunc(engine, st),
+		AppendableV2: st,
+		Queryable:    st,
 		Context:      context.Background(),
 		Logger:       promslog.NewNopLogger(),
 		NotifyFunc:   notifyFunc,
@@ -1099,11 +1102,15 @@ func TestNotify(t *testing.T) {
 		Opts:          opts,
 	})
 
-	app := storage.Appender(context.Background())
-	app.Append(0, labels.FromStrings(model.MetricNameLabel, "a"), 1000, 2)
-	app.Append(0, labels.FromStrings(model.MetricNameLabel, "a"), 2000, 3)
-	app.Append(0, labels.FromStrings(model.MetricNameLabel, "a"), 5000, 3)
-	app.Append(0, labels.FromStrings(model.MetricNameLabel, "a"), 6000, 0)
+	app := st.AppenderV2(context.Background())
+	_, err = app.Append(0, labels.FromStrings(model.MetricNameLabel, "a"), 0, 1000, 2, nil, nil, storage.AOptions{})
+	require.NoError(t, err)
+	_, err = app.Append(0, labels.FromStrings(model.MetricNameLabel, "a"), 0, 2000, 3, nil, nil, storage.AOptions{})
+	require.NoError(t, err)
+	_, err = app.Append(0, labels.FromStrings(model.MetricNameLabel, "a"), 0, 5000, 3, nil, nil, storage.AOptions{})
+	require.NoError(t, err)
+	_, err = app.Append(0, labels.FromStrings(model.MetricNameLabel, "a"), 0, 6000, 0, nil, nil, storage.AOptions{})
+	require.NoError(t, err)
 
 	err = app.Commit()
 	require.NoError(t, err)
@@ -1472,9 +1479,11 @@ func TestRuleHealthUpdates(t *testing.T) {
 	})
 
 	// A time series that has two samples.
-	app := st.Appender(context.Background())
-	app.Append(0, labels.FromStrings(model.MetricNameLabel, "a"), 0, 1)
-	app.Append(0, labels.FromStrings(model.MetricNameLabel, "a"), 1000, 2)
+	app := st.AppenderV2(context.Background())
+	_, err = app.Append(0, labels.FromStrings(model.MetricNameLabel, "a"), 0, 0, 1, nil, nil, storage.AOptions{})
+	require.NoError(t, err)
+	_, err = app.Append(0, labels.FromStrings(model.MetricNameLabel, "a"), 0, 1000, 2, nil, nil, storage.AOptions{})
+	require.NoError(t, err)
 	err = app.Commit()
 	require.NoError(t, err)
 
@@ -1618,25 +1627,25 @@ func TestRuleGroupEvalIterationFunc(t *testing.T) {
 }
 
 func TestNativeHistogramsInRecordingRules(t *testing.T) {
-	storage := teststorage.New(t)
+	st := teststorage.New(t)
 
 	// Add some histograms.
-	db := storage.DB
+	db := st.DB
 	hists := tsdbutil.GenerateTestHistograms(5)
 	ts := time.Now()
-	app := db.Appender(context.Background())
+	app := db.AppenderV2(context.Background())
 	for i, h := range hists {
 		l := labels.FromStrings("__name__", "histogram_metric", "idx", strconv.Itoa(i))
-		_, err := app.AppendHistogram(0, l, ts.UnixMilli(), h.Copy(), nil)
+		_, err := app.Append(0, l, 0, ts.UnixMilli(), 0, h.Copy(), nil, storage.AOptions{})
 		require.NoError(t, err)
 	}
 	require.NoError(t, app.Commit())
 
 	ng := testEngine(t)
 	opts := &ManagerOptions{
-		QueryFunc:    EngineQueryFunc(ng, storage),
-		AppendableV2: storage,
-		Queryable:    storage,
+		QueryFunc:    EngineQueryFunc(ng, st),
+		AppendableV2: st,
+		Queryable:    st,
 		Context:      context.Background(),
 		Logger:       promslog.NewNopLogger(),
 	}

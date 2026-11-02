@@ -16,6 +16,7 @@ package histogram
 import (
 	"math"
 	"math/rand"
+	"slices"
 	"strconv"
 	"testing"
 
@@ -3255,12 +3256,148 @@ func TestFloatHistogramCopyToSchema(t *testing.T) {
 				expected := c.expected.Copy()
 				expected.CounterResetHint = hint
 				inCopy := in.Copy()
-				require.Equal(t, expected, in.CopyToSchema(c.targetSchema))
+				res, err := in.CopyToSchema(c.targetSchema)
+				require.NoError(t, err)
+				require.Equal(t, expected, res)
 				// Check that the receiver histogram was not mutated:
 				require.Equal(t, inCopy, in)
 			}
 		})
 	}
+}
+
+// TestFloatHistogramInvalidBucketLayoutInResolutionReduction checks that Add, Sub,
+// and CopyToSchema return an error instead of panicking when the histogram whose
+// resolution they reduce has an invalid bucket layout, as can happen with
+// invalid stored data, and that they leave both histograms unmodified.
+func TestFloatHistogramInvalidBucketLayoutInResolutionReduction(t *testing.T) {
+	lowerSchema := &FloatHistogram{
+		Schema:          0,
+		Count:           5,
+		Sum:             10,
+		PositiveSpans:   []Span{{0, 2}},
+		PositiveBuckets: []float64{2, 3},
+	}
+
+	cases := []struct {
+		name string
+		// invalid has a higher schema than lowerSchema, so every operation below
+		// reduces its resolution.
+		invalid *FloatHistogram
+		expErr  error
+	}{
+		{
+			name: "positive span with a negative offset",
+			invalid: &FloatHistogram{
+				Schema:          1,
+				Count:           5,
+				Sum:             10,
+				PositiveSpans:   []Span{{0, 1}, {-2, 1}},
+				PositiveBuckets: []float64{2, 3},
+			},
+			expErr: ErrHistogramSpanNegativeOffset,
+		},
+		{
+			name: "negative span with a negative offset",
+			invalid: &FloatHistogram{
+				Schema:          1,
+				Count:           5,
+				Sum:             10,
+				NegativeSpans:   []Span{{0, 1}, {-2, 1}},
+				NegativeBuckets: []float64{2, 3},
+			},
+			expErr: ErrHistogramSpanNegativeOffset,
+		},
+		{
+			name: "fewer buckets than the spans need",
+			invalid: &FloatHistogram{
+				Schema:          1,
+				Count:           5,
+				Sum:             10,
+				PositiveSpans:   []Span{{0, 3}},
+				PositiveBuckets: []float64{2, 3},
+			},
+			expErr: ErrHistogramSpansBucketsMismatch,
+		},
+	}
+
+	operations := map[string]func(invalid, valid *FloatHistogram) error{
+		"invalid.Add(valid)": func(invalid, valid *FloatHistogram) error {
+			_, _, _, err := invalid.Add(valid)
+			return err
+		},
+		"valid.Add(invalid)": func(invalid, valid *FloatHistogram) error {
+			_, _, _, err := valid.Add(invalid)
+			return err
+		},
+		"invalid.Sub(valid)": func(invalid, valid *FloatHistogram) error {
+			_, _, _, err := invalid.Sub(valid)
+			return err
+		},
+		"valid.Sub(invalid)": func(invalid, valid *FloatHistogram) error {
+			_, _, _, err := valid.Sub(invalid)
+			return err
+		},
+		"invalid.CopyToSchema(valid.Schema)": func(invalid, valid *FloatHistogram) error {
+			_, err := invalid.CopyToSchema(valid.Schema)
+			return err
+		},
+	}
+
+	for _, c := range cases {
+		for opName, op := range operations {
+			t.Run(c.name+"/"+opName, func(t *testing.T) {
+				invalid := c.invalid.Copy()
+				valid := lowerSchema.Copy()
+
+				require.ErrorIs(t, op(invalid, valid), c.expErr)
+				require.Equal(t, c.invalid, invalid, "the invalid histogram must not be modified")
+				require.Equal(t, lowerSchema, valid, "the valid histogram must not be modified")
+			})
+		}
+	}
+
+	// Add and Sub check the bucket layout before they modify either histogram
+	// and then reduce it with mustReduceResolution, while CopyToSchema returns
+	// the error of reduceResolution directly. If the check and reduceResolution
+	// drift apart, Add and Sub either panic or reject a layout they could
+	// reduce. Try all small layouts, valid or not, to catch that.
+	t.Run("all operations agree on which bucket layouts are invalid", func(t *testing.T) {
+		layouts := [][]Span{nil}
+		for i := 0; i < len(layouts); i++ {
+			if len(layouts[i]) == 3 {
+				continue
+			}
+			for _, offset := range []int32{-2, -1, 0, 1} {
+				for _, length := range []uint32{0, 1, 2} {
+					layouts = append(layouts, append(slices.Clone(layouts[i]), Span{offset, length}))
+				}
+			}
+		}
+
+		for _, spans := range layouts {
+			for numBuckets := 0; numBuckets <= 4; numBuckets++ {
+				buckets := make([]float64, numBuckets)
+				for _, negative := range []bool{false, true} {
+					h := &FloatHistogram{Schema: 1, Count: float64(numBuckets), Sum: 10}
+					if negative {
+						h.NegativeSpans, h.NegativeBuckets = spans, buckets
+					} else {
+						h.PositiveSpans, h.PositiveBuckets = spans, buckets
+					}
+					_, expErr := h.Copy().CopyToSchema(lowerSchema.Schema)
+
+					for opName, op := range operations {
+						var err error
+						require.NotPanics(t, func() { err = op(h.Copy(), lowerSchema.Copy()) },
+							"%s with spans %v and %d buckets (negative: %t)", opName, spans, numBuckets, negative)
+						require.Equal(t, expErr != nil, err != nil,
+							"%s with spans %v and %d buckets (negative: %t): got error %v, CopyToSchema got %v", opName, spans, numBuckets, negative, err, expErr)
+					}
+				}
+			}
+		}
+	})
 }
 
 func TestReverseFloatBucketIterator(t *testing.T) {

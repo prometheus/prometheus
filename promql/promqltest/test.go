@@ -1934,6 +1934,12 @@ type LazyLoaderOpts struct {
 	EnableDelayedNameRemoval bool
 	// StartTime is the start time for the test. If zero, defaults to Unix epoch.
 	StartTime time.Time
+	// Parser is the parser the loaded queries and rules are evaluated with. If
+	// nil, promql.NewEngine's default is used, which enables no optional
+	// syntax. A caller that loads rules with a parser built from feature flags
+	// passes that same parser here, so that a rule it can load is also a rule
+	// it can evaluate.
+	Parser parser.Parser
 }
 
 // NewLazyLoader returns an initialized empty LazyLoader.
@@ -2002,6 +2008,7 @@ func (ll *LazyLoader) clear() error {
 		EnableAtModifier:         ll.opts.EnableAtModifier,
 		EnableNegativeOffset:     ll.opts.EnableNegativeOffset,
 		EnableDelayedNameRemoval: ll.opts.EnableDelayedNameRemoval,
+		Parser:                   ll.opts.Parser,
 	}
 
 	ll.queryEngine = promql.NewEngine(opts)

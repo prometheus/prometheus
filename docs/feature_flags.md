@@ -45,10 +45,10 @@ When enabled, passing `stats=all` in a query request returns per-step
 statistics. The following sample statistics are included:
 
 - **totalQueryableSamples** / **totalQueryableSamplesPerStep**: Total number of samples *loaded* during the query. For range-vector functions (e.g. `rate`, `sum_over_time`) evaluated over multiple steps, each step counts the full window (the same point may be counted in multiple steps).
-- **samplesRead** / **samplesReadPerStep**: Total number of samples *read* (I/O). For range-vector functions in range queries, only *new* points per step are counted (step 0: full window; later steps: points not seen in the previous step). For other query types, this equals totalQueryableSamples.
+- **samplesRead** / **samplesReadPerStep**: Total number of samples *read* by the evaluator (its input, not physical storage I/O). For range-vector functions in range queries, only *new* points per step are counted (step 0: full window; later steps: points not seen in the previous step). See [Query statistics](querying/api.md#query-statistics) for the exact semantics.
 - **peakSamples**: Peak number of samples in memory during evaluation (used for the `query.max-samples` limit).
 
-The Prometheus server exposes two counters for observability: `prometheus_engine_query_samples_total` (samples loaded, full window per step) and `prometheus_engine_query_samples_read_total` (samples read, delta per step for range-vector).
+The Prometheus server exposes two counters for observability: `prometheus_engine_query_samples_total` (logical underlying sample consumption, full window per step) and `prometheus_engine_query_samples_read_total` (samples read, delta per step for range-vector).
 
 When disabled in either the engine or the query, per-step statistics are not
 computed at all.
@@ -149,7 +149,7 @@ Fall back to serving the old (Prometheus 2.x) web UI instead of the new UI. The 
 
 `--enable-feature=metadata-wal-records`
 
-When enabled, Prometheus will store metadata in-memory and keep track of
+When enabled, Prometheus (both in server and agent modes) will store metadata in-memory and keep track of
 metadata changes as WAL records on a per-series basis.
 
 This must be used if you would like to send metadata using the new remote write 2.0.
@@ -194,6 +194,8 @@ It is possible to craft a query that aggregates by `__name__` and puts samples w
 
 `--enable-feature=otlp-deltatocumulative`
 
+> **Note:** This feature flag is deprecated and will be removed in a future major version. Use `--enable-feature=otlp-native-delta-ingestion` for native delta ingestion instead.
+
 When enabled, Prometheus will convert OTLP metrics from delta temporality to their
 cumulative equivalent, instead of dropping them. This cannot be enabled in conjunction with `otlp-native-delta-ingestion`.
 
@@ -216,17 +218,17 @@ state is mutex guarded. Cumulative-only OTLP requests are not affected.
 
 `--enable-feature=otlp-native-delta-ingestion`
 
-When enabled, allows for the native ingestion of delta OTLP metrics, storing the raw sample values without conversion. This cannot be enabled in conjunction with `otlp-deltatocumulative`.
+This is the recommended feature flag for ingesting OTLP metrics with delta temporality. When enabled, Prometheus stores the raw sample values without conversion. This cannot be enabled in conjunction with the deprecated `otlp-deltatocumulative` flag.
 
-Currently, the StartTimeUnixNano field is ignored, and deltas are given the unknown metric metadata type.
+To retain the OTLP `StartTimeUnixNano` field, also enable [`st-storage`](#start-timestamp-st-native-storage). To use the retained start timestamps in PromQL functions such as `rate()` and `increase()`, enable [`use-start-timestamps`](#start-timestamp-st-usage-in-promql-functions). Delta metrics are currently given the unknown metric metadata type.
 
-Delta support is in a very early stage of development and the ingestion and querying process my change over time. For the open proposal see [prometheus/proposals#48](https://github.com/prometheus/proposals/pull/48).
+Native delta support remains experimental, and the ingestion and querying process may change over time. Ongoing work is tracked in [prometheus/prometheus#17649](https://github.com/prometheus/prometheus/issues/17649).
 
 ### Querying
 
-We encourage users to experiment with deltas and existing PromQL functions; we will collect feedback and likely build features to improve the experience around querying deltas.
+When `st-storage` and `use-start-timestamps` are also enabled and incoming delta samples have valid start timestamps, PromQL functions such as `rate()` and `increase()` use those timestamps to account for the interval represented by each delta.
 
-Note that standard PromQL counter functions like `rate()` and `increase()` are designed for cumulative metrics and will produce incorrect results when used with delta metrics. This may change in the future, but for now, to get similar results for delta metrics, you need `sum_over_time()`:
+Without start-timestamp storage and processing, use `sum_over_time()` to query delta metrics:
 
 * `sum_over_time(delta_metric[<range>])`: Calculates the sum of delta values over the specified time range.
 * `sum_over_time(delta_metric[<range>]) / <range>`: Calculates the per-second rate of the delta metric.
@@ -271,6 +273,7 @@ when wrong types are used on wrong functions, automatic renames, delta types and
 When this feature is enabled and the metadata WAL records exists, in an unlikely situation when type or unit are different across those,
 the Prometheus outputs intends to prefer the `__type__` and `__unit__` labels values. For example on Remote Write 2.0,
 if  the metadata record somehow (e.g. due to bug) says "counter", but `__type__="gauge"` the remote time series will be set to a gauge.
+If either `__type__` or `__unit__` is missing on the series, for example when dropped via relabeling, Remote Write 2.0 falls back to the corresponding value from the metadata record.
 
 ## Use Uncached IO
 
@@ -352,8 +355,10 @@ single client can then request the entire index in one response.
 `--enable-feature=openmetrics2`
 
 Enables scraping targets that expose the [OpenMetrics 2.0](https://prometheus.io/docs/specs/om/open_metrics_spec_2_0/)
-text format, advertised with the `application/openmetrics-text; version=2.0.0`
-content type.
+text format, advertised with the `application/openmetrics-text; version=2.0.0` or
+`application/openmetrics-text; version=2.0.0-rc` content type. To negotiate OpenMetrics 2.0
+with scrape targets, add `OpenMetricsText2.0.0` and `OpenMetricsText2.0.0-rc` to
+`scrape_protocols` in the configuration.
 
 OpenMetrics 2.0 support is **experimental**. The parser is not stable
 yet, so expositions that Prometheus accepts today may be rejected by a later release.
@@ -375,3 +380,84 @@ instead.
 When enabled, Prometheus advertises support for Zstandard-compressed scrape responses in addition to gzip. The uncompressed response remains subject to the configured `body_size_limit`.
 
 When the flag is disabled, Prometheus does not advertise `zstd`. A target that answers with `Content-Encoding: zstd` regardless fails the scrape, because Prometheus cannot decode the body.
+
+## Native histograms as classic histograms in PromQL
+
+`--enable-feature=promql-native-histograms-as-classic`
+
+When enabled, PromQL queries for classic histogram series (e.g. `_bucket`, `_count`, `_sum`) will
+automatically convert native histograms into classic histogram series. Currently only Native
+Histograms with Custom Buckets (NHCB) are converted.
+
+For example, if `request_duration_seconds` is stored as an NHCB native histogram:
+
+```promql
+# Querying with a classic histogram suffix triggers the conversion:
+histogram_quantile(0.95, rate(request_duration_seconds_bucket[5m]))
+
+# Querying without a suffix returns the regular NHCB native histogram:
+rate(request_duration_seconds[5m])
+```
+
+This feature only affects PromQL query evaluation (e.g. the query APIs and rule evaluation). The
+conversion is applied on top of all data the query engine reads, including series fetched from
+`remote_read` endpoints. It does not apply to remote write (NHCB series are not converted when being
+forwarded to remote endpoints), the remote read API, federation, or the series API (the
+`/api/v1/series` endpoint will not return the converted classic series). Note that remote write has its
+own `convert_nhcb_to_classic` setting, see the [`remote_write`](configuration/configuration.md#remote_write)
+configuration.
+
+Known limitations:
+
+* The conversion only triggers on exact metric name matchers (e.g. `request_duration_seconds_bucket`), not on
+  regex or negative name matchers.
+* Handling of collisions and transitions between stored classic series and converted NHCB series is not
+  implemented yet, so results may contain duplicates.
+* Native histograms with exponential buckets are not converted yet; support may be added later.
+* There is no control label yet; one will be added to disable and debug the conversion.
+* There is no metric counting the converted series yet; one will be added to help track the progress of
+  a migration from classic histograms to NHCB.
+
+## Query cost
+
+`--enable-feature=query-cost`
+
+Enables query cost estimation and enforcement. When set, Prometheus exposes the
+[`/api/v1/query_cost` and `/api/v1/query_range_cost`](querying/api.md#query-cost)
+endpoints, which provide a pre-execution *estimate* of the resource cost of a
+query (series touched and samples read) without executing it, and the instant
+and range query endpoints accept a `cost=true` boolean parameter that adds an
+estimated-versus-actual cost comparison to the response. Estimation enumerates matching index entries and samples a bounded amount of
+chunk data. Both values can overestimate or underestimate actual cost; the
+estimate is informational only and is never used to reject a query. Queries
+using `info()` return a warning because its runtime-dependent additional reads
+are omitted from the estimate.
+
+This flag also activates enforcement of the reloadable cost limits configured
+under the `global:` section of the
+[configuration file](configuration/configuration.md#configuration-file):
+`query_max_series`, `query_max_samples_read`, and `query_max_duration`. These
+limits are enforced *during* query execution against the query's actual running
+cost: a query is rejected as soon as the number of series it loads or the number
+of samples it reads exceeds the configured limit, and `query_max_duration`
+surfaces as a query timeout. The limits are reloaded together with the rest of
+the configuration and have no effect when the feature flag is not set.
+
+These limits apply to every query the engine evaluates, not only to API
+requests. Recording and alerting rules are subject to them too: a rule whose
+query exceeds a limit fails to evaluate like any other query error, and
+`query_max_duration` replaces `--query.timeout` as the timeout of rule queries.
+
+A client may lower any of these ceilings for a single request with the
+`max_series`, `max_samples_read` and `max_query_duration` query parameters. A
+request asking for a value above the operator-set ceiling is rejected with HTTP
+400 (`bad_data`) rather than silently clamped. For `max_query_duration`, the
+ceiling is `--query.timeout` while `query_max_duration` is unset. A `timeout`
+parameter above the effective duration ceiling is capped at that ceiling.
+
+`query_max_duration` overrides `--query.timeout` only while this feature flag is
+enabled. The command-line flag remains supported and controls the timeout when
+the feature is disabled or `query_max_duration` is unset.
+
+Clients can detect the feature through [`/api/v1/features`](querying/api.md#features),
+where it is reported as `query_cost` in the `api` category.
