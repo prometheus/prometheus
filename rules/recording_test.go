@@ -424,21 +424,44 @@ func TestRecordingRuleConfiguredMetadata(t *testing.T) {
 			rule := NewRecordingRuleWithMetadata("job:req:rate5m", expr, tc.ruleLabels, tc.ruleMeta)
 			require.Equal(t, tc.ruleMeta, rule.Metadata())
 
+			store := teststorage.New(t)
 			qf := func(context.Context, string, time.Time) (promql.Vector, error) {
 				out := make(promql.Vector, len(tc.samples))
 				copy(out, tc.samples)
 				return out, nil
 			}
+			group := NewGroup(GroupOptions{
+				Name:     "test-group",
+				File:     "test.rules",
+				Interval: time.Minute,
+				Rules:    []Rule{rule},
+				Opts: &ManagerOptions{
+					AppendableV2:            store,
+					QueryFunc:               qf,
+					EnableTypeAndUnitLabels: tc.enableTypeAndUnitLabels,
+				},
+			})
 
-			gotVec, err := rule.eval(t.Context(), 0, ts, qf, nil, 0, tc.enableTypeAndUnitLabels)
+			group.Eval(t.Context(), ts)
 			if tc.wantErr != nil {
-				require.ErrorIs(t, err, tc.wantErr)
+				require.ErrorIs(t, rule.LastError(), tc.wantErr)
 				return
 			}
+			require.NoError(t, rule.LastError())
+
+			q, err := store.Querier(0, evalMs)
 			require.NoError(t, err)
-			require.Len(t, gotVec, len(tc.wantLabels))
-			for i := range gotVec {
-				testutil.RequireEqual(t, tc.wantLabels[i], gotVec[i].Metric)
+			defer func() { require.NoError(t, q.Close()) }()
+
+			ss := q.Select(t.Context(), true, nil, labels.MustNewMatcher(labels.MatchEqual, model.MetricNameLabel, "job:req:rate5m"))
+			var gotLabels []labels.Labels
+			for ss.Next() {
+				gotLabels = append(gotLabels, ss.At().Labels())
+			}
+			require.NoError(t, ss.Err())
+			require.Len(t, gotLabels, len(tc.wantLabels))
+			for i := range gotLabels {
+				testutil.RequireEqual(t, tc.wantLabels[i], gotLabels[i])
 			}
 		})
 	}

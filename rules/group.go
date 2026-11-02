@@ -37,6 +37,7 @@ import (
 	"github.com/prometheus/prometheus/model/value"
 	"github.com/prometheus/prometheus/promql"
 	"github.com/prometheus/prometheus/promql/parser"
+	"github.com/prometheus/prometheus/schema"
 	"github.com/prometheus/prometheus/storage"
 	"github.com/prometheus/prometheus/tsdb/chunkenc"
 )
@@ -535,19 +536,7 @@ func (g *Group) Eval(ctx context.Context, ts time.Time) {
 
 		g.metrics.EvalTotal.WithLabelValues(GroupKey(g.File(), g.Name())).Inc()
 
-		var (
-			vector promql.Vector
-			err    error
-		)
-		appOpts := g.appOpts
-		if rr, ok := rule.(*RecordingRule); ok {
-			vector, err = rr.eval(ctx, ruleQueryOffset, ts, g.opts.QueryFunc, g.opts.ExternalURL, g.Limit(), g.opts.EnableTypeAndUnitLabels)
-			if g.opts.AppendMetadata && !rr.Metadata().IsEmpty() {
-				appOpts.Metadata = rr.Metadata()
-			}
-		} else {
-			vector, err = rule.Eval(ctx, ruleQueryOffset, ts, g.opts.QueryFunc, g.opts.ExternalURL, g.Limit())
-		}
+		vector, err := rule.Eval(ctx, ruleQueryOffset, ts, g.opts.QueryFunc, g.opts.ExternalURL, g.Limit())
 		if err != nil {
 			rule.SetHealth(HealthBad)
 			rule.SetLastError(err)
@@ -560,6 +549,23 @@ func (g *Group) Eval(ctx context.Context, ts time.Time) {
 				logger.Warn("Evaluating rule failed", "rule", rule, "err", err)
 			}
 			return
+		}
+		meta := rule.Metadata()
+		appOpts := g.appOpts
+		if g.opts.AppendMetadata && !meta.IsEmpty() {
+			appOpts.Metadata = meta
+		}
+		if g.opts.EnableTypeAndUnitLabels && len(vector) > 0 {
+			sm := schema.Metadata{Type: meta.Type, Unit: meta.Unit}
+			if !sm.IsTypeEmpty() || sm.Unit != "" {
+				lb := labels.NewBuilder(labels.EmptyLabels())
+				for idx := range vector {
+					lb.Reset(vector[idx].Metric)
+					sm.Name = vector[idx].Metric.Get(labels.MetricName)
+					sm.SetToLabels(lb)
+					vector[idx].Metric = lb.Labels()
+				}
+			}
 		}
 		rule.SetHealth(HealthGood)
 		rule.SetLastError(nil)

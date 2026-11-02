@@ -99,50 +99,26 @@ func (rule *RecordingRule) Metadata() metadata.Metadata {
 }
 
 // Eval evaluates the rule and then overrides the metric names and labels accordingly.
-func (rule *RecordingRule) Eval(ctx context.Context, queryOffset time.Duration, ts time.Time, query QueryFunc, externalURL *url.URL, limit int) (promql.Vector, error) {
-	return rule.eval(ctx, queryOffset, ts, query, externalURL, limit, false)
-}
-
-func (rule *RecordingRule) eval(
-	ctx context.Context,
-	queryOffset time.Duration,
-	ts time.Time,
-	query QueryFunc,
-	_ *url.URL,
-	limit int,
-	enableTypeAndUnitLabels bool,
-) (promql.Vector, error) {
+func (rule *RecordingRule) Eval(ctx context.Context, queryOffset time.Duration, ts time.Time, query QueryFunc, _ *url.URL, limit int) (promql.Vector, error) {
 	ctx = NewOriginContext(ctx, NewRuleDetail(rule))
 	vector, err := query(ctx, rule.vector.String(), ts.Add(-queryOffset))
 	if err != nil {
 		return nil, err
 	}
 
-	// Override the metric name, rule labels, and schema metadata labels.
+	// Override the metric name, apply rule labels, and strip reserved schema labels.
 	lb := labels.NewBuilder(labels.EmptyLabels())
 
 	for i := range vector {
 		sample := &vector[i]
 
 		lb.Reset(sample.Metric)
-		if !enableTypeAndUnitLabels {
-			// Strip any reserved __type__ and __unit__ labels and set only __name__.
-			schema.Metadata{Name: rule.name}.SetToLabels(lb)
-			rule.labels.Range(func(l labels.Label) {
-				lb.Set(l.Name, l.Value)
-			})
-		} else {
-			rule.labels.Range(func(l labels.Label) {
-				lb.Set(l.Name, l.Value)
-			})
-			// Set __name__, __type__, and __unit__ before duplicate labelset detection
-			// and staleness tracking so configured schema labels stay authoritative.
-			schema.Metadata{
-				Name: rule.name,
-				Type: rule.meta.Type,
-				Unit: rule.meta.Unit,
-			}.SetToLabels(lb)
-		}
+		rule.labels.Range(func(l labels.Label) {
+			lb.Set(l.Name, l.Value)
+		})
+		// Strip any reserved __type__ and __unit__ labels and set __name__.
+		// Group.Eval injects configured __type__ and __unit__ when type-and-unit-labels is enabled.
+		schema.Metadata{Name: rule.name}.SetToLabels(lb)
 
 		sample.Metric = lb.Labels()
 	}
