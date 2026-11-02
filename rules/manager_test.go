@@ -3042,9 +3042,10 @@ groups:
   rules:
   - record: job:http_requests:rate5m
     expr: sum by (job) (rate(http_requests_total[5m]))
-    help: Per-job HTTP request rate.
-    type: gauge
-    unit: requests_per_second
+    metadata:
+      help: Per-job HTTP request rate.
+      type: gauge
+      unit: requests_per_second
   - record: job:http_requests:unannotated_rate5m
     expr: sum by (job) (rate(http_requests_total[5m]))
   - alert: HighRequests
@@ -3164,9 +3165,10 @@ groups:
   rules:
   - record: job:http_requests:rate5m
     expr: sum by (job) (rate(http_requests_total[5m]))
-    help: Updated help text.
-    type: gauge
-    unit: requests_per_second
+    metadata:
+      help: Updated help text.
+      type: gauge
+      unit: requests_per_second
   - record: job:http_requests:unannotated_rate5m
     expr: sum by (job) (rate(http_requests_total[5m]))
   - alert: HighRequests

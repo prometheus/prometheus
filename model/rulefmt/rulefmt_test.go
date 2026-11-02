@@ -473,18 +473,20 @@ groups:
   rules:
   - record: job:http_requests:rate5m
     expr: sum by (job) (rate(http_requests_total[5m]))
-    help: Per-job HTTP request rate over 5 minutes.
-    type: ` + string(typ) + `
-    unit: requests_per_second
+    metadata:
+      help: Per-job HTTP request rate over 5 minutes.
+      type: ` + string(typ) + `
+      unit: requests_per_second
 `
 				rgs, errs := Parse([]byte(content), false, model.UTF8Validation, testParser, testLogger)
 				require.Empty(t, errs)
 				require.Len(t, rgs.Groups, 1)
 				require.Len(t, rgs.Groups[0].Rules, 1)
 				got := rgs.Groups[0].Rules[0]
-				require.Equal(t, "Per-job HTTP request rate over 5 minutes.", got.Help)
-				require.Equal(t, typ, got.Type)
-				require.Equal(t, "requests_per_second", got.Unit)
+				require.NotNil(t, got.Metadata)
+				require.Equal(t, "Per-job HTTP request rate over 5 minutes.", got.Metadata.Help)
+				require.Equal(t, typ, got.Metadata.Type)
+				require.Equal(t, "requests_per_second", got.Metadata.Unit)
 			})
 		}
 	})
@@ -502,45 +504,35 @@ groups:
   rules:
   - record: job:http_requests:rate5m
     expr: rate(http_requests_total[5m])
-    type: untyped
+    metadata:
+      type: untyped
 `,
-			errMsg: `7:11: group "example", rule 1, "job:http_requests:rate5m": invalid metric type "untyped" in recording rule`,
+			errMsg: `8:13: group "example", rule 1, "job:http_requests:rate5m": invalid metric type "untyped" in recording rule`,
 		},
 		{
-			name: "help in alerting rule",
+			name: "metadata in alerting rule",
 			yaml: `
 groups:
 - name: example
   rules:
   - alert: InstanceDown
     expr: up == 0
-    help: Instance is down
+    metadata:
+      help: Instance is down
 `,
-			errMsg: `7:11: group "example", rule 1, "InstanceDown": invalid field 'help' in alerting rule`,
+			errMsg: `8:7: group "example", rule 1, "InstanceDown": invalid field 'metadata' in alerting rule`,
 		},
 		{
-			name: "type in alerting rule",
+			name: "empty metadata in alerting rule",
 			yaml: `
 groups:
 - name: example
   rules:
   - alert: InstanceDown
     expr: up == 0
-    type: gauge
+    metadata: {}
 `,
-			errMsg: `7:11: group "example", rule 1, "InstanceDown": invalid field 'type' in alerting rule`,
-		},
-		{
-			name: "unit in alerting rule",
-			yaml: `
-groups:
-- name: example
-  rules:
-  - alert: InstanceDown
-    expr: up == 0
-    unit: seconds
-`,
-			errMsg: `7:11: group "example", rule 1, "InstanceDown": invalid field 'unit' in alerting rule`,
+			errMsg: `7:15: group "example", rule 1, "InstanceDown": invalid field 'metadata' in alerting rule`,
 		},
 	} {
 		t.Run(tc.name, func(t *testing.T) {

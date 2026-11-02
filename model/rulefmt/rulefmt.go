@@ -27,6 +27,7 @@ import (
 	"github.com/prometheus/common/model"
 	"go.yaml.in/yaml/v3"
 
+	"github.com/prometheus/prometheus/model/metadata"
 	"github.com/prometheus/prometheus/model/timestamp"
 	"github.com/prometheus/prometheus/promql"
 	"github.com/prometheus/prometheus/promql/parser"
@@ -178,16 +179,21 @@ type RuleGroupNode struct {
 
 // Rule describes an alerting or recording rule.
 type Rule struct {
-	Record        string            `yaml:"record,omitempty"`
-	Alert         string            `yaml:"alert,omitempty"`
-	Expr          string            `yaml:"expr"`
-	For           model.Duration    `yaml:"for,omitempty"`
-	KeepFiringFor model.Duration    `yaml:"keep_firing_for,omitempty"`
-	Labels        map[string]string `yaml:"labels,omitempty"`
-	Annotations   map[string]string `yaml:"annotations,omitempty"`
-	Help          string            `yaml:"help,omitempty"`
-	Type          model.MetricType  `yaml:"type,omitempty"`
-	Unit          string            `yaml:"unit,omitempty"`
+	Record        string             `yaml:"record,omitempty"`
+	Alert         string             `yaml:"alert,omitempty"`
+	Expr          string             `yaml:"expr"`
+	For           model.Duration     `yaml:"for,omitempty"`
+	KeepFiringFor model.Duration     `yaml:"keep_firing_for,omitempty"`
+	Labels        map[string]string  `yaml:"labels,omitempty"`
+	Annotations   map[string]string  `yaml:"annotations,omitempty"`
+	Metadata      *metadata.Metadata `yaml:"metadata,omitempty"`
+}
+
+// RuleMetadataNode adds yaml.v3 layer to support line and column outputs for invalid rule metadata.
+type RuleMetadataNode struct {
+	Help yaml.Node `yaml:"help,omitempty"`
+	Type yaml.Node `yaml:"type,omitempty"`
+	Unit yaml.Node `yaml:"unit,omitempty"`
 }
 
 // RuleNode adds yaml.v3 layer to support line and column outputs for invalid rules.
@@ -199,9 +205,7 @@ type RuleNode struct {
 	KeepFiringFor model.Duration    `yaml:"keep_firing_for,omitempty"`
 	Labels        map[string]string `yaml:"labels,omitempty"`
 	Annotations   map[string]string `yaml:"annotations,omitempty"`
-	Help          yaml.Node         `yaml:"help,omitempty"`
-	Type          yaml.Node         `yaml:"type,omitempty"`
-	Unit          yaml.Node         `yaml:"unit,omitempty"`
+	Metadata      yaml.Node         `yaml:"metadata,omitempty"`
 }
 
 func isValidMetricType(t model.MetricType) bool {
@@ -288,44 +292,34 @@ func (r *Rule) Validate(node RuleNode, nameValidationScheme model.ValidationSche
 				node: &node.Record,
 			})
 		}
-		if r.Type != "" && !isValidMetricType(r.Type) {
-			nodes = append(nodes, WrappedError{
-				err:  fmt.Errorf("invalid metric type %q in recording rule", r.Type),
-				node: errorNode(&node.Type, &node.Record),
-			})
-		}
-		if r.Help != "" && !model.LabelValue(r.Help).IsValid() {
-			nodes = append(nodes, WrappedError{
-				err:  fmt.Errorf("invalid help value: %s", r.Help),
-				node: errorNode(&node.Help, &node.Record),
-			})
-		}
-		if r.Unit != "" && !model.LabelValue(r.Unit).IsValid() {
-			nodes = append(nodes, WrappedError{
-				err:  fmt.Errorf("invalid unit value: %s", r.Unit),
-				node: errorNode(&node.Unit, &node.Record),
-			})
+		if r.Metadata != nil {
+			var metaNode RuleMetadataNode
+			_ = node.Metadata.Decode(&metaNode)
+			if r.Metadata.Type != "" && !isValidMetricType(r.Metadata.Type) {
+				nodes = append(nodes, WrappedError{
+					err:  fmt.Errorf("invalid metric type %q in recording rule", r.Metadata.Type),
+					node: errorNode(&metaNode.Type, &node.Record),
+				})
+			}
+			if r.Metadata.Help != "" && !model.LabelValue(r.Metadata.Help).IsValid() {
+				nodes = append(nodes, WrappedError{
+					err:  fmt.Errorf("invalid help value: %s", r.Metadata.Help),
+					node: errorNode(&metaNode.Help, &node.Record),
+				})
+			}
+			if r.Metadata.Unit != "" && !model.LabelValue(r.Metadata.Unit).IsValid() {
+				nodes = append(nodes, WrappedError{
+					err:  fmt.Errorf("invalid unit value: %s", r.Metadata.Unit),
+					node: errorNode(&metaNode.Unit, &node.Record),
+				})
+			}
 		}
 	}
-	if r.Alert != "" {
-		if r.Help != "" {
-			nodes = append(nodes, WrappedError{
-				err:  errors.New("invalid field 'help' in alerting rule"),
-				node: errorNode(&node.Help, &node.Alert),
-			})
-		}
-		if r.Type != "" {
-			nodes = append(nodes, WrappedError{
-				err:  errors.New("invalid field 'type' in alerting rule"),
-				node: errorNode(&node.Type, &node.Alert),
-			})
-		}
-		if r.Unit != "" {
-			nodes = append(nodes, WrappedError{
-				err:  errors.New("invalid field 'unit' in alerting rule"),
-				node: errorNode(&node.Unit, &node.Alert),
-			})
-		}
+	if r.Alert != "" && r.Metadata != nil {
+		nodes = append(nodes, WrappedError{
+			err:  errors.New("invalid field 'metadata' in alerting rule"),
+			node: errorNode(&node.Metadata, &node.Alert),
+		})
 	}
 
 	for k, v := range r.Labels {

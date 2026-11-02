@@ -172,13 +172,15 @@ func (rule *RecordingRule) LogValue() slog.Value {
 }
 
 func (rule *RecordingRule) String() string {
+	var meta *metadata.Metadata
+	if rule.meta != (metadata.Metadata{}) {
+		meta = &rule.meta
+	}
 	r := rulefmt.Rule{
-		Record: rule.name,
-		Expr:   rule.vector.String(),
-		Labels: rule.labels.Map(),
-		Help:   rule.meta.Help,
-		Type:   rule.meta.Type,
-		Unit:   rule.meta.Unit,
+		Record:   rule.name,
+		Expr:     rule.vector.String(),
+		Labels:   rule.labels.Map(),
+		Metadata: meta,
 	}
 
 	byt, err := yaml.Marshal(r)

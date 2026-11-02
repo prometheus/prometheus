@@ -424,15 +424,15 @@ func (m *Manager) LoadGroups(
 					))
 					continue
 				}
+				var meta metadata.Metadata
+				if r.Metadata != nil {
+					meta = *r.Metadata
+				}
 				rules = append(rules, NewRecordingRuleWithMetadata(
 					r.Record,
 					expr,
 					mLabels,
-					metadata.Metadata{
-						Type: r.Type,
-						Unit: r.Unit,
-						Help: r.Help,
-					},
+					meta,
 				))
 			}
 
