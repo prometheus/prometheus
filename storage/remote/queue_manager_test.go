@@ -952,6 +952,7 @@ type TestWriteClient struct {
 	expectedFloatHistograms map[string][]writev2.Histogram
 	receivedMetadata        map[string][]prompb.MetricMetadata
 	expectedMetadata        map[string][]prompb.MetricMetadata
+	receivedV2Requests      []*writev2.Request
 	writesReceived          int
 	mtx                     sync.Mutex
 	protoMsg                remoteapi.WriteMessageType
@@ -1194,6 +1195,7 @@ func (c *TestWriteClient) Store(_ context.Context, req []byte, _ int) (WriteResp
 		reqProtoV2 = &writev2.Request{}
 		err = proto.Unmarshal(reqBuf, reqProtoV2)
 		if err == nil {
+			c.receivedV2Requests = append(c.receivedV2Requests, reqProtoV2)
 			reqProto, err = v2RequestToWriteRequest(reqProtoV2)
 		}
 	}
@@ -3113,6 +3115,113 @@ func TestPopulateV2TimeSeries_MetadataAndTypeAndUnit(t *testing.T) {
 	}
 }
 
+func TestPopulateV2TimeSeries_ExemplarCoalescing(t *testing.T) {
+	hist := &histogram.Histogram{
+		Schema:          0,
+		Count:           5,
+		Sum:             10,
+		PositiveSpans:   []histogram.Span{{Offset: 0, Length: 1}},
+		PositiveBuckets: []int64{5},
+	}
+	floatHist := hist.ToFloat(nil)
+	sCounter := labels.FromStrings("__name__", "requests_total", "job", "api")
+	sHist := labels.FromStrings("__name__", "latency_seconds", "job", "api")
+	sFloatHist := labels.FromStrings("__name__", "float_latency_seconds", "job", "api")
+	sDetached := labels.FromStrings("__name__", "detached_total", "job", "worker")
+
+	t.Run("exemplar before sample, multiple exemplars, and histogram series", func(t *testing.T) {
+		symbolTable := writev2.NewSymbolTable()
+
+		batch := []timeSeries{
+			// Exemplar arriving before its matching sample in the batch.
+			{sType: tExemplar, seriesLabels: sCounter, exemplarLabels: labels.FromStrings("trace_id", "ex1"), value: 1, timestamp: 100},
+			{sType: tSample, seriesLabels: sCounter, value: 42, timestamp: 100, startTimestamp: 50},
+			// Second exemplar for the same sample series.
+			{sType: tExemplar, seriesLabels: sCounter, exemplarLabels: labels.FromStrings("trace_id", "ex2"), value: 2, timestamp: 101},
+			// Int and float histogram series with matching exemplars.
+			{sType: tHistogram, seriesLabels: sHist, histogram: hist, timestamp: 200, startTimestamp: 50},
+			{sType: tFloatHistogram, seriesLabels: sFloatHist, floatHistogram: floatHist, timestamp: 300},
+			{sType: tExemplar, seriesLabels: sHist, exemplarLabels: labels.FromStrings("trace_id", "ex_hist"), value: 3, timestamp: 200},
+			{sType: tExemplar, seriesLabels: sFloatHist, exemplarLabels: labels.FromStrings("trace_id", "ex_fhist"), value: 4, timestamp: 300},
+			// Detached exemplar with no matching sample or histogram.
+			{sType: tExemplar, seriesLabels: sDetached, exemplarLabels: labels.FromStrings("trace_id", "dropped_trace"), value: 5, timestamp: 400},
+		}
+
+		// Size pendingData to the exact number of output series (3) to verify attached and dropped exemplars do not index out of bounds.
+		pendingData := make([]writev2.TimeSeries, 3)
+		nSeries, nSamples, nExemplars, nHistograms, nUnexpected, nDropped := populateV2TimeSeries(
+			&symbolTable, batch, pendingData, true, true, false, remoteapi.WriteModeStateless,
+		)
+
+		require.Equal(t, 3, nSeries)
+		require.Equal(t, 1, nSamples)
+		require.Equal(t, 4, nExemplars)
+		require.Equal(t, 2, nHistograms)
+		require.Equal(t, 0, nUnexpected)
+		require.Equal(t, 1, nDropped)
+
+		require.Len(t, pendingData[0].Samples, 1)
+		require.Len(t, pendingData[0].Exemplars, 2)
+		require.Equal(t, float64(1), pendingData[0].Exemplars[0].Value)
+		require.Equal(t, float64(2), pendingData[0].Exemplars[1].Value)
+
+		require.Len(t, pendingData[1].Histograms, 1)
+		require.Len(t, pendingData[1].Exemplars, 1)
+		require.Equal(t, float64(3), pendingData[1].Exemplars[0].Value)
+
+		require.Len(t, pendingData[2].Histograms, 1)
+		require.Len(t, pendingData[2].Exemplars, 1)
+		require.Equal(t, float64(4), pendingData[2].Exemplars[0].Value)
+
+		// Dropped exemplar labels and series labels must not leak into the symbol table.
+		require.NotContains(t, symbolTable.Symbols(), "dropped_trace")
+		require.NotContains(t, symbolTable.Symbols(), "detached_total")
+		require.NotContains(t, symbolTable.Symbols(), "worker")
+
+		// Reusing pendingData on a subsequent batch without exemplars must clear previous Exemplars slices.
+		symbolTable.Reset()
+		nextBatch := []timeSeries{
+			{sType: tSample, seriesLabels: sCounter, value: 43, timestamp: 500},
+		}
+		nSeries, nSamples, nExemplars, nHistograms, _, nDropped = populateV2TimeSeries(
+			&symbolTable, nextBatch, pendingData, true, true, false, remoteapi.WriteModeStateless,
+		)
+		require.Equal(t, 1, nSeries)
+		require.Equal(t, 1, nSamples)
+		require.Equal(t, 0, nExemplars)
+		require.Equal(t, 0, nHistograms)
+		require.Equal(t, 0, nDropped)
+		require.Empty(t, pendingData[0].Exemplars)
+	})
+
+	t.Run("detached exemplar kept in WriteModeNone", func(t *testing.T) {
+		symbolTable := writev2.NewSymbolTable()
+
+		meta := unique.Make(metadata.Metadata{Type: model.MetricTypeCounter, Unit: "requests", Help: "Total detached requests"})
+		batch := []timeSeries{
+			{sType: tSample, seriesLabels: sCounter, value: 10, timestamp: 100},
+			{sType: tExemplar, seriesLabels: sDetached, exemplarLabels: labels.FromStrings("trace_id", "kept_trace"), value: 5, timestamp: 200, metadata: meta},
+		}
+
+		pendingData := make([]writev2.TimeSeries, 2)
+		nSeries, nSamples, nExemplars, nHistograms, _, nDropped := populateV2TimeSeries(
+			&symbolTable, batch, pendingData, true, true, false, remoteapi.WriteModeNone,
+		)
+
+		require.Equal(t, 2, nSeries)
+		require.Equal(t, 1, nSamples)
+		require.Equal(t, 1, nExemplars)
+		require.Equal(t, 0, nHistograms)
+		require.Equal(t, 0, nDropped)
+
+		require.Empty(t, pendingData[1].Samples)
+		require.Empty(t, pendingData[1].Histograms)
+		require.Len(t, pendingData[1].Exemplars, 1)
+		require.Equal(t, writev2.Metadata_METRIC_TYPE_COUNTER, pendingData[1].Metadata.Type)
+		require.Contains(t, symbolTable.Symbols(), "kept_trace")
+	})
+}
+
 func TestHighestTimestampOnAppend(t *testing.T) {
 	for _, protoMsg := range []remoteapi.WriteMessageType{remoteapi.WriteV1MessageType, remoteapi.WriteV2MessageType} {
 		t.Run(fmt.Sprint(protoMsg), func(t *testing.T) {
@@ -4284,6 +4393,7 @@ func TestQueueManager_RemoteWriteModes(t *testing.T) {
 			require.Equal(t, 3.0, client_testutil.ToFloat64(metrics.droppedHistogramsTotal.WithLabelValues(reasonMissingMetadataType)))
 			require.Equal(t, 0.0, client_testutil.ToFloat64(metrics.droppedHistogramsTotal.WithLabelValues(reasonMissingStartTimestamp)))
 			require.Equal(t, 1.0, client_testutil.ToFloat64(metrics.droppedExemplarsTotal.WithLabelValues(reasonDetachedExemplarNotAllowed)))
+			require.Equal(t, 0.0, client_testutil.ToFloat64(metrics.pendingExemplars))
 
 			require.Len(t, c.receivedSamples, 2)
 			require.Contains(t, c.receivedSamples, sCounterNoST.Labels.String())
@@ -4295,6 +4405,52 @@ func TestQueueManager_RemoteWriteModes(t *testing.T) {
 			require.Len(t, c.receivedExemplars, 2)
 			require.Contains(t, c.receivedExemplars, sCounterNoST.Labels.String())
 			require.Contains(t, c.receivedExemplars, sNativeHist.Labels.String())
+			for _, req := range c.receivedV2Requests {
+				require.NotContains(t, req.Symbols, "ghi")
+				for _, ts := range req.Timeseries {
+					require.NotEmpty(t, len(ts.Samples)+len(ts.Histograms), "exemplars must not be sent as detached TimeSeries")
+				}
+			}
+		})
+
+		t.Run("mode=stateless/only_detached_exemplars/source="+metaSource, func(t *testing.T) {
+			t.Parallel()
+
+			c := NewTestWriteClient(remoteapi.WriteV2MessageType)
+			cfg := config.DefaultQueueConfig
+			cfg.BatchSendDeadline = model.Duration(time.Minute)
+			cfg.MaxShards = 1
+			mcfg := config.DefaultMetadataConfig
+			mcfg.Send = false
+
+			metrics := newQueueManagerMetrics(nil, "", "")
+			m := NewQueueManager(
+				metrics, nil, nil, nil, t.TempDir(), newEWMARate(ewmaWeight, shardUpdateDuration),
+				cfg, mcfg, labels.EmptyLabels(), nil, c, defaultFlushDeadline, newPool(), newHighestTimestampMetric(),
+				nil, true, true, enableTypeAndUnitLabels, remoteapi.WriteV2MessageType, remoteapi.WriteModeStateless,
+				record.NewBuffersPool(), false, false,
+			)
+			m.numShards = 1
+			m.shards.start(1)
+			stop := sync.OnceFunc(m.shards.stop)
+			t.Cleanup(stop)
+
+			sDetached, mDetached := makeSeries(1, "detached_only_total", model.MetricTypeCounter)
+			m.StoreSeries([]record.RefSeries{sDetached}, 0)
+			if !enableTypeAndUnitLabels {
+				m.StoreMetadata([]record.RefMetadata{mDetached})
+			}
+
+			require.True(t, m.AppendExemplars([]record.RefExemplar{
+				{Ref: sDetached.Ref, T: 1000, V: 1, Labels: labels.FromStrings("trace_id", "detached_1")},
+				{Ref: sDetached.Ref, T: 2000, V: 2, Labels: labels.FromStrings("trace_id", "detached_2")},
+			}))
+
+			stop()
+
+			require.Equal(t, 2.0, client_testutil.ToFloat64(metrics.droppedExemplarsTotal.WithLabelValues(reasonDetachedExemplarNotAllowed)))
+			require.Equal(t, 0.0, client_testutil.ToFloat64(metrics.pendingExemplars))
+			require.Empty(t, c.receivedV2Requests)
 		})
 
 		t.Run("mode=stateless-st/source="+metaSource, func(t *testing.T) {
@@ -4388,6 +4544,7 @@ func TestQueueManager_RemoteWriteModes(t *testing.T) {
 			require.Equal(t, 2.0, client_testutil.ToFloat64(metrics.droppedHistogramsTotal.WithLabelValues(reasonMissingStartTimestamp)))
 
 			require.Equal(t, 1.0, client_testutil.ToFloat64(metrics.droppedExemplarsTotal.WithLabelValues(reasonDetachedExemplarNotAllowed)))
+			require.Equal(t, 0.0, client_testutil.ToFloat64(metrics.pendingExemplars))
 
 			require.Len(t, c.receivedSamples, 6)
 			require.Equal(t, int64(500), c.receivedSamples[sSummarySum.Labels.String()][0].StartTimestamp)
@@ -4413,6 +4570,12 @@ func TestQueueManager_RemoteWriteModes(t *testing.T) {
 
 			require.Len(t, c.receivedExemplars, 1)
 			require.Contains(t, c.receivedExemplars, sCounterWithST.Labels.String())
+			for _, req := range c.receivedV2Requests {
+				require.NotContains(t, req.Symbols, "def")
+				for _, ts := range req.Timeseries {
+					require.NotEmpty(t, len(ts.Samples)+len(ts.Histograms), "exemplars must not be sent as detached TimeSeries")
+				}
+			}
 		})
 	}
 }
