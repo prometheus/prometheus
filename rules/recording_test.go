@@ -438,7 +438,7 @@ func TestRecordingRuleConfiguredMetadata(t *testing.T) {
 			require.NoError(t, err)
 			require.Len(t, gotVec, len(tc.wantLabels))
 			for i := range gotVec {
-				require.Equal(t, tc.wantLabels[i], gotVec[i].Metric)
+				testutil.RequireEqual(t, tc.wantLabels[i], gotVec[i].Metric)
 			}
 		})
 	}
