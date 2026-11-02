@@ -292,9 +292,9 @@ func ProcessBuilder(lb *labels.Builder, cfgs ...*Config) (keep bool) {
 	return true
 }
 
-// usesMetadata returns true if any relabel configuration reads or writes
+// UsesMetadata returns true if any relabel configuration reads or writes
 // metric metadata (__type__, __unit__, or __help__).
-func usesMetadata(cfgs ...*Config) bool {
+func UsesMetadata(cfgs ...*Config) bool {
 	for _, cfg := range cfgs {
 		for _, sl := range cfg.SourceLabels {
 			if isMetadataRelabelName(string(sl)) {
@@ -317,7 +317,7 @@ func isMetadataRelabelName(ln string) bool {
 // on entry, and removes them from lb before returning. Bulk label actions (labeldrop,
 // labelkeep, labelmap) only operate on regular series labels and leave metadata untouched.
 func ProcessBuilderWithMetadata(lb *labels.Builder, meta metadata.Metadata, cfgs ...*Config) (keep bool, _ metadata.Metadata) {
-	if !usesMetadata(cfgs...) {
+	if !UsesMetadata(cfgs...) {
 		return ProcessBuilder(lb, cfgs...), meta
 	}
 

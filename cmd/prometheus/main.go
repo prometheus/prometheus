@@ -988,6 +988,7 @@ func main() {
 		)
 		fanoutStorage = storage.NewFanout(logger, localStorage, remoteStorage)
 	)
+	remoteStorage.EnableMetadataRelabeling(cfg.scrape.EnableMetadataRelabeling)
 
 	var (
 		ctxWeb, cancelWeb = context.WithCancel(context.Background())

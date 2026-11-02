@@ -4304,3 +4304,216 @@ func TestQueueManager_RemoteWriteModes(t *testing.T) {
 		})
 	}
 }
+
+func TestStoreSeriesAndMetadataWriteRelabel(t *testing.T) {
+	for _, enableMetadataRelabeling := range []bool{false, true} {
+		for _, enableTypeAndUnitLabels := range []bool{false, true} {
+			t.Run(fmt.Sprintf("enableMetadataRelabeling=%v/enableTypeAndUnitLabels=%v", enableMetadataRelabeling, enableTypeAndUnitLabels), func(t *testing.T) {
+				c := NewTestWriteClient(remoteapi.WriteV2MessageType)
+				cfg := testDefaultQueueConfig()
+				mcfg := config.DefaultMetadataConfig
+				cfg.MaxShards = 1
+
+				m := newTestQueueManager(t, cfg, mcfg, defaultFlushDeadline, c, remoteapi.WriteV2MessageType)
+				m.enableTypeAndUnitLabels = enableTypeAndUnitLabels
+				m.enableMetadataRelabeling = enableMetadataRelabeling
+				m.relabelConfigs = []*relabel.Config{
+					// Drop metrics with empty type when named untyped_drop.
+					{
+						SourceLabels:         model.LabelNames{"__name__", "__type__"},
+						Separator:            ";",
+						Regex:                relabel.MustNewRegexp("untyped_drop;"),
+						Replacement:          "$1",
+						Action:               relabel.Drop,
+						NameValidationScheme: model.UTF8Validation,
+					},
+					// Drop metrics when type is gauge and named gauge_drop.
+					{
+						SourceLabels:         model.LabelNames{"__name__", "__type__"},
+						Separator:            ";",
+						Regex:                relabel.MustNewRegexp("gauge_drop;gauge"),
+						Replacement:          "$1",
+						Action:               relabel.Drop,
+						NameValidationScheme: model.UTF8Validation,
+					},
+					// Infer counter type for *_total when __type__ is empty.
+					{
+						SourceLabels:         model.LabelNames{"__name__", "__type__"},
+						Separator:            ";",
+						Regex:                relabel.MustNewRegexp(".*_total;"),
+						TargetLabel:          "__type__",
+						Replacement:          "counter",
+						Action:               relabel.Replace,
+						NameValidationScheme: model.UTF8Validation,
+					},
+					// Override unit and clear help for http_requests_total.
+					{
+						SourceLabels:         model.LabelNames{"__name__"},
+						Separator:            ";",
+						Regex:                relabel.MustNewRegexp("http_requests_total"),
+						TargetLabel:          "__unit__",
+						Replacement:          "requests",
+						Action:               relabel.Replace,
+						NameValidationScheme: model.UTF8Validation,
+					},
+					{
+						SourceLabels:         model.LabelNames{"__name__"},
+						Separator:            ";",
+						Regex:                relabel.MustNewRegexp("http_requests_total"),
+						TargetLabel:          "__help__",
+						Replacement:          "",
+						Action:               relabel.Replace,
+						NameValidationScheme: model.UTF8Validation,
+					},
+					// Ensure labeldrop: __.* does not drop metadata.
+					{
+						Regex:                relabel.MustNewRegexp("__(tmp_.*|type__|unit__|help__)"),
+						Replacement:          "$1",
+						Action:               relabel.LabelDrop,
+						NameValidationScheme: model.UTF8Validation,
+					},
+				}
+
+				// Ref 5: StoreMetadata arrives BEFORE StoreSeries.
+				m.StoreMetadata([]record.RefMetadata{
+					{
+						Ref:  chunks.HeadSeriesRef(5),
+						Type: uint8(record.Gauge),
+						Unit: "bytes",
+						Help: "Metadata arrived before StoreSeries",
+					},
+				})
+
+				series := []record.RefSeries{
+					{
+						Ref:    chunks.HeadSeriesRef(1),
+						Labels: labels.FromStrings("__name__", "http_requests_total", "__tmp_tag", "dropme", "job", "api"),
+					},
+					{
+						Ref:    chunks.HeadSeriesRef(2),
+						Labels: labels.FromStrings("__name__", "untyped_drop", "job", "api"),
+					},
+					{
+						Ref:    chunks.HeadSeriesRef(3),
+						Labels: labels.FromStrings("__name__", "untyped_drop", "job", "keep_when_typed"),
+					},
+					{
+						Ref:    chunks.HeadSeriesRef(4),
+						Labels: labels.FromStrings("__name__", "gauge_drop", "job", "drop_when_typed"),
+					},
+					{
+						Ref:    chunks.HeadSeriesRef(5),
+						Labels: labels.FromStrings("__name__", "pre_metadata_metric", "job", "api"),
+					},
+					{
+						Ref:    chunks.HeadSeriesRef(6),
+						Labels: labels.FromStrings("__name__", "label_fallback_metric", "__type__", "counter", "__unit__", "seconds", "job", "api"),
+					},
+				}
+				// Simulate WAL order: StoreSeries is called before StoreMetadata for Refs 1-4 and 6.
+				m.StoreSeries(series, 0)
+				m.StoreMetadata([]record.RefMetadata{
+					{
+						Ref:  chunks.HeadSeriesRef(1),
+						Type: uint8(record.Counter),
+						Unit: "old_unit",
+						Help: "Long help to strip",
+					},
+					{
+						Ref:  chunks.HeadSeriesRef(2),
+						Type: uint8(record.UnknownMT),
+						Help: "Untyped series that should stay dropped",
+					},
+					{
+						Ref:  chunks.HeadSeriesRef(3),
+						Type: uint8(record.Gauge),
+						Unit: "seconds",
+						Help: "Typed series that survives once metadata arrives",
+					},
+					{
+						Ref:  chunks.HeadSeriesRef(4),
+						Type: uint8(record.Gauge),
+						Help: "Kept in StoreSeries when unknown, dropped in StoreMetadata when gauge",
+					},
+					{
+						Ref:  chunks.HeadSeriesRef(6),
+						Type: uint8(record.UnknownMT),
+						Unit: "",
+						Help: "Falls back to __type__ and __unit__ from rawSeriesLabels",
+					},
+				})
+				// Re-running StoreSeries (e.g. on WAL replay) must be idempotent and keep dropped series dropped.
+				m.StoreSeries(series, 0)
+
+				// Ref 2 must be dropped (both when metadata relabeling is enabled and disabled, since __type__ is empty).
+				_, ok := m.seriesLabels[chunks.HeadSeriesRef(2)]
+				require.False(t, ok)
+				_, dropped := m.droppedSeries[chunks.HeadSeriesRef(2)]
+				require.True(t, dropped)
+
+				if !enableMetadataRelabeling {
+					require.Empty(t, m.rawSeriesLabels)
+					require.Equal(t, metadata.Metadata{
+						Type: model.MetricTypeCounter,
+						Unit: "old_unit",
+						Help: "Long help to strip",
+					}, m.seriesMetadata[chunks.HeadSeriesRef(1)].Value())
+					return
+				}
+
+				// Ref 1 must have updated unit, cleared help, and preserved counter type.
+				require.Equal(t, metadata.Metadata{
+					Type: model.MetricTypeCounter,
+					Unit: "requests",
+					Help: "",
+				}, m.seriesMetadata[chunks.HeadSeriesRef(1)].Value())
+				if enableTypeAndUnitLabels {
+					testutil.RequireEqual(t, labels.FromStrings("__name__", "http_requests_total", "__type__", "counter", "__unit__", "requests", "job", "api"), m.seriesLabels[chunks.HeadSeriesRef(1)])
+				} else {
+					testutil.RequireEqual(t, labels.FromStrings("__name__", "http_requests_total", "job", "api"), m.seriesLabels[chunks.HeadSeriesRef(1)])
+				}
+
+				// Ref 3 was initially dropped in StoreSeries (when type was unknown) and un-dropped in StoreMetadata when type=gauge arrived.
+				_, dropped = m.droppedSeries[chunks.HeadSeriesRef(3)]
+				require.False(t, dropped)
+				require.Equal(t, metadata.Metadata{
+					Type: model.MetricTypeGauge,
+					Unit: "seconds",
+					Help: "Typed series that survives once metadata arrives",
+				}, m.seriesMetadata[chunks.HeadSeriesRef(3)].Value())
+
+				// Ref 4 was initially kept in StoreSeries (when type was unknown) and dropped in StoreMetadata when type=gauge arrived.
+				_, ok = m.seriesLabels[chunks.HeadSeriesRef(4)]
+				require.False(t, ok)
+				_, ok = m.seriesMetadata[chunks.HeadSeriesRef(4)]
+				require.False(t, ok)
+				_, dropped = m.droppedSeries[chunks.HeadSeriesRef(4)]
+				require.True(t, dropped)
+
+				// Ref 5 had StoreMetadata before StoreSeries.
+				require.Equal(t, metadata.Metadata{
+					Type: model.MetricTypeGauge,
+					Unit: "bytes",
+					Help: "Metadata arrived before StoreSeries",
+				}, m.seriesMetadata[chunks.HeadSeriesRef(5)].Value())
+				if enableTypeAndUnitLabels {
+					testutil.RequireEqual(t, labels.FromStrings("__name__", "pre_metadata_metric", "__type__", "gauge", "__unit__", "bytes", "job", "api"), m.seriesLabels[chunks.HeadSeriesRef(5)])
+				} else {
+					testutil.RequireEqual(t, labels.FromStrings("__name__", "pre_metadata_metric", "job", "api"), m.seriesLabels[chunks.HeadSeriesRef(5)])
+				}
+
+				// Ref 6 fell back to __type__ and __unit__ from RefSeries.Labels when RefMetadata had UnknownMT and empty Unit.
+				require.Equal(t, metadata.Metadata{
+					Type: model.MetricTypeCounter,
+					Unit: "seconds",
+					Help: "Falls back to __type__ and __unit__ from rawSeriesLabels",
+				}, m.seriesMetadata[chunks.HeadSeriesRef(6)].Value())
+				if enableTypeAndUnitLabels {
+					testutil.RequireEqual(t, labels.FromStrings("__name__", "label_fallback_metric", "__type__", "counter", "__unit__", "seconds", "job", "api"), m.seriesLabels[chunks.HeadSeriesRef(6)])
+				} else {
+					testutil.RequireEqual(t, labels.FromStrings("__name__", "label_fallback_metric", "job", "api"), m.seriesLabels[chunks.HeadSeriesRef(6)])
+				}
+			})
+		}
+	}
+}

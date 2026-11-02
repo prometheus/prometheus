@@ -247,9 +247,9 @@ These may not work well if the `<range>` is not a multiple of the collection int
 
 `--enable-feature=metadata-relabeling`
 
-When enabled, Prometheus exposes metric metadata (`type`, `unit`, and `help`) as reserved virtual labels `__type__`, `__unit__`, and `__help__` during `metric_relabel_configs`, as designed in the [PROM-104 proposal](https://github.com/prometheus/proposals/pull/104).
+When enabled, Prometheus exposes metric metadata (`type`, `unit`, and `help`) as reserved virtual labels `__type__`, `__unit__`, and `__help__` during `metric_relabel_configs` and Remote Write 2.0 `write_relabel_configs`, as designed in the [PROM-104 proposal](https://github.com/prometheus/proposals/pull/104).
 
-This allows relabeling rules to filter series based on their metadata (for example, dropping untyped metrics) and to set, modify, or clear a metric's type, unit, or help text.
+This allows relabeling rules to filter series based on their metadata (for example, dropping untyped metrics) and to set, modify, or clear a metric's type, unit, or help text. To persist relabeled metadata to the WAL for Remote Write 2.0 `write_relabel_configs`, also enable `--enable-feature=metadata-wal-records` (or `--enable-feature=type-and-unit-labels` for type and unit).
 
 ## Type and Unit Labels
 

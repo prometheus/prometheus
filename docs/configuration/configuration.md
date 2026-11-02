@@ -4080,7 +4080,12 @@ alert_relabel_configs:
 
 `write_relabel_configs` is relabeling applied to samples before sending them
 to the remote endpoint. Write relabeling is applied after external labels. This
-could be used to limit which samples are sent.
+could be used to limit which samples are sent. When `--enable-feature=metadata-relabeling`
+is enabled and Remote Write 2.0 (`io.prometheus.write.v2.Request`) is used
+(along with `--enable-feature=metadata-wal-records` or
+`--enable-feature=type-and-unit-labels`), the series' metadata is also exposed
+via `__type__`, `__unit__`, and `__help__` during `write_relabel_configs` in the
+same way as in `<metric_relabel_configs>`.
 
 There is a [small demo](/documentation/examples/remote_storage) of how to use
 this functionality.

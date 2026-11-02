@@ -86,6 +86,11 @@ func (s *Storage) Notify() {
 	s.rws.Notify()
 }
 
+// EnableMetadataRelabeling enables or disables metadata-aware relabeling in write_relabel_configs.
+func (s *Storage) EnableMetadataRelabeling(enable bool) {
+	s.rws.EnableMetadataRelabeling(enable)
+}
+
 // ApplyConfig updates the state as the new config requires.
 func (s *Storage) ApplyConfig(conf *config.Config) error {
 	s.mtx.Lock()

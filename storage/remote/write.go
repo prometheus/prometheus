@@ -81,6 +81,14 @@ type WriteStorage struct {
 	enableTypeAndUnitLabels  bool
 	enableMetadataWALRecords bool
 	enableSTStorage          bool
+	enableMetadataRelabeling bool
+}
+
+// EnableMetadataRelabeling enables or disables metadata-aware relabeling in write_relabel_configs.
+func (rws *WriteStorage) EnableMetadataRelabeling(enable bool) {
+	rws.mtx.Lock()
+	defer rws.mtx.Unlock()
+	rws.enableMetadataRelabeling = enable
 }
 
 // validateRemoteWriteFeatures validates that the required feature flags are enabled for all remote_write configurations.
@@ -224,7 +232,7 @@ func (rws *WriteStorage) ApplyConfig(conf *config.Config) error {
 		// technically accepted but not recommended) since this is
 		// only used for metric labels.
 		endpoint := rwConf.URL.Redacted()
-		newQueues[hash] = NewQueueManager(
+		q := NewQueueManager(
 			newQueueManagerMetrics(rws.reg, name, endpoint),
 			rws.watcherMetrics,
 			rws.liveReaderMetrics,
@@ -249,6 +257,8 @@ func (rws *WriteStorage) ApplyConfig(conf *config.Config) error {
 			rwConf.FailedRequestLogging,
 			rwConf.ConvertNHCBToClassic,
 		)
+		q.enableMetadataRelabeling = rws.enableMetadataRelabeling
+		newQueues[hash] = q
 	}
 
 	rws.externalLabels = conf.GlobalConfig.ExternalLabels
