@@ -535,7 +535,19 @@ func (g *Group) Eval(ctx context.Context, ts time.Time) {
 
 		g.metrics.EvalTotal.WithLabelValues(GroupKey(g.File(), g.Name())).Inc()
 
-		vector, err := rule.Eval(ctx, ruleQueryOffset, ts, g.opts.QueryFunc, g.opts.ExternalURL, g.Limit())
+		var (
+			vector promql.Vector
+			err    error
+		)
+		appOpts := g.appOpts
+		if rr, ok := rule.(*RecordingRule); ok {
+			vector, err = rr.eval(ctx, ruleQueryOffset, ts, g.opts.QueryFunc, g.opts.ExternalURL, g.Limit(), g.opts.EnableTypeAndUnitLabels)
+			if g.opts.AppendMetadata && !rr.Metadata().IsEmpty() {
+				appOpts.Metadata = rr.Metadata()
+			}
+		} else {
+			vector, err = rule.Eval(ctx, ruleQueryOffset, ts, g.opts.QueryFunc, g.opts.ExternalURL, g.Limit())
+		}
 		if err != nil {
 			rule.SetHealth(HealthBad)
 			rule.SetLastError(err)
@@ -596,7 +608,7 @@ func (g *Group) Eval(ctx context.Context, ts time.Time) {
 		defer appendSp.End()
 
 		for _, s := range vector {
-			_, err = app.Append(0, s.Metric, 0, s.T, s.F, nil, s.H, g.appOpts)
+			_, err = app.Append(0, s.Metric, 0, s.T, s.F, nil, s.H, appOpts)
 
 			if err != nil {
 				rule.SetHealth(HealthBad)
@@ -637,7 +649,7 @@ func (g *Group) Eval(ctx context.Context, ts time.Time) {
 		for metric, lset := range g.seriesInPreviousEval[i] {
 			if _, ok := seriesReturned[metric]; !ok {
 				// Series no longer exposed, mark it stale.
-				_, err = app.Append(0, lset, 0, timestamp.FromTime(ts.Add(-ruleQueryOffset)), math.Float64frombits(value.StaleNaN), nil, nil, g.appOpts)
+				_, err = app.Append(0, lset, 0, timestamp.FromTime(ts.Add(-ruleQueryOffset)), math.Float64frombits(value.StaleNaN), nil, nil, appOpts)
 				unwrappedErr := errors.Unwrap(err)
 				if unwrappedErr == nil {
 					unwrappedErr = err

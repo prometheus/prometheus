@@ -18,9 +18,11 @@ import (
 	"testing"
 	"time"
 
+	"github.com/prometheus/common/model"
 	"github.com/stretchr/testify/require"
 
 	"github.com/prometheus/prometheus/model/labels"
+	"github.com/prometheus/prometheus/model/metadata"
 	"github.com/prometheus/prometheus/model/timestamp"
 	"github.com/prometheus/prometheus/promql"
 	"github.com/prometheus/prometheus/promql/parser"
@@ -281,4 +283,163 @@ func TestRecordingRule_SetDependencyRules(t *testing.T) {
 	rule.SetDependencyRules([]Rule{})
 	require.True(t, rule.NoDependencyRules())
 	require.Empty(t, rule.DependencyRules())
+}
+
+func TestRecordingRuleConfiguredMetadata(t *testing.T) {
+	ts := time.Unix(60, 0).UTC()
+	evalMs := timestamp.FromTime(ts)
+
+	for _, tc := range []struct {
+		name                    string
+		ruleLabels              labels.Labels
+		ruleMeta                metadata.Metadata
+		enableTypeAndUnitLabels bool
+		samples                 promql.Vector
+		wantLabels              []labels.Labels
+		wantErr                 error
+	}{
+		{
+			name: "configured_type_and_unit_injected_when_flag_enabled",
+			ruleMeta: metadata.Metadata{
+				Type: model.MetricTypeGauge,
+				Unit: "requests_per_second",
+				Help: "Recorded request rate.",
+			},
+			enableTypeAndUnitLabels: true,
+			samples: promql.Vector{
+				{
+					Metric: labels.FromStrings(
+						model.MetricNameLabel, "http_requests_total",
+						model.MetricTypeLabel, "counter",
+						model.MetricUnitLabel, "requests",
+						"job", "api",
+					),
+					T: evalMs,
+					F: 5,
+				},
+			},
+			wantLabels: []labels.Labels{
+				labels.FromStrings(
+					model.MetricNameLabel, "job:req:rate5m",
+					model.MetricTypeLabel, "gauge",
+					model.MetricUnitLabel, "requests_per_second",
+					"job", "api",
+				),
+			},
+		},
+		{
+			name:                    "unconfigured_metadata_strips_input_schema_labels",
+			enableTypeAndUnitLabels: true,
+			samples: promql.Vector{
+				{
+					Metric: labels.FromStrings(
+						model.MetricNameLabel, "http_requests_total",
+						model.MetricTypeLabel, "counter",
+						model.MetricUnitLabel, "requests",
+						"job", "api",
+					),
+					T: evalMs,
+					F: 42,
+				},
+			},
+			wantLabels: []labels.Labels{
+				labels.FromStrings(
+					model.MetricNameLabel, "job:req:rate5m",
+					"job", "api",
+				),
+			},
+		},
+		{
+			name: "configured_metadata_not_injected_as_labels_when_flag_disabled",
+			ruleMeta: metadata.Metadata{
+				Type: model.MetricTypeGauge,
+				Unit: "requests_per_second",
+				Help: "Recorded request rate.",
+			},
+			enableTypeAndUnitLabels: false,
+			samples: promql.Vector{
+				{
+					Metric: labels.FromStrings(
+						model.MetricNameLabel, "http_requests_total",
+						model.MetricTypeLabel, "counter",
+						model.MetricUnitLabel, "requests",
+						"job", "api",
+					),
+					T: evalMs,
+					F: 5,
+				},
+			},
+			wantLabels: []labels.Labels{
+				labels.FromStrings(
+					model.MetricNameLabel, "job:req:rate5m",
+					"job", "api",
+				),
+			},
+		},
+		{
+			name:       "configured_schema_labels_override_user_rule_labels",
+			ruleLabels: labels.FromStrings(model.MetricTypeLabel, "counter", model.MetricUnitLabel, "bytes"),
+			ruleMeta: metadata.Metadata{
+				Type: model.MetricTypeGauge,
+				Unit: "seconds",
+			},
+			enableTypeAndUnitLabels: true,
+			samples: promql.Vector{
+				{Metric: labels.FromStrings("job", "api"), T: evalMs, F: 1},
+			},
+			wantLabels: []labels.Labels{
+				labels.FromStrings(
+					model.MetricNameLabel, "job:req:rate5m",
+					model.MetricTypeLabel, "gauge",
+					model.MetricUnitLabel, "seconds",
+					"job", "api",
+				),
+			},
+		},
+		{
+			name: "duplicate_detection_catches_series_differing_only_by_input_type",
+			ruleMeta: metadata.Metadata{
+				Type: model.MetricTypeGauge,
+				Unit: "seconds",
+			},
+			enableTypeAndUnitLabels: true,
+			samples: promql.Vector{
+				{
+					Metric: labels.FromStrings(model.MetricNameLabel, "m1", model.MetricTypeLabel, "counter", "job", "api"),
+					T:      evalMs,
+					F:      1,
+				},
+				{
+					Metric: labels.FromStrings(model.MetricNameLabel, "m2", model.MetricTypeLabel, "gauge", "job", "api"),
+					T:      evalMs,
+					F:      2,
+				},
+			},
+			wantErr: ErrDuplicateRecordingLabelSet,
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			expr, err := testParser.ParseExpr("vector(1)")
+			require.NoError(t, err)
+			rule := NewRecordingRuleWithMetadata("job:req:rate5m", expr, tc.ruleLabels, tc.ruleMeta)
+			require.Equal(t, tc.ruleMeta, rule.Metadata())
+
+			qf := func(context.Context, string, time.Time) (promql.Vector, error) {
+				out := make(promql.Vector, len(tc.samples))
+				copy(out, tc.samples)
+				return out, nil
+			}
+
+			gotVec, err := rule.eval(t.Context(), 0, ts, qf, nil, 0, tc.enableTypeAndUnitLabels)
+			if tc.wantErr != nil {
+				require.ErrorIs(t, err, tc.wantErr)
+				return
+			}
+			require.NoError(t, err)
+			require.Len(t, gotVec, len(tc.wantLabels))
+			for i := range gotVec {
+				require.Equal(t, tc.wantLabels[i], gotVec[i].Metric)
+			}
+		})
+	}
 }
