@@ -762,7 +762,7 @@ func isTimeSeriesOldFilter(metrics *queueManagerMetrics, baseTime time.Time, sam
 	}
 }
 
-func isV2TimeSeriesOldFilter(metrics *queueManagerMetrics, baseTime time.Time, sampleAgeLimit time.Duration) func(ts *writev2.TimeSeries) bool {
+func isV2TimeSeriesOldFilter(metrics *queueManagerMetrics, baseTime time.Time, sampleAgeLimit time.Duration, mode remoteapi.WriteMode) func(ts *writev2.TimeSeries) bool {
 	checker := &timeSeriesAgeChecker{
 		metrics:        metrics,
 		baseTime:       baseTime,
@@ -771,30 +771,27 @@ func isV2TimeSeriesOldFilter(metrics *queueManagerMetrics, baseTime time.Time, s
 
 	return func(ts *writev2.TimeSeries) bool {
 		// Samples and histograms have at most one element per TimeSeries; exemplars may be coalesced onto it.
-		switch {
-		case len(ts.Samples) > 0:
-			if checker.checkAndRecordIfOld(ts.Samples[0].Timestamp, "sample") {
-				if checker.metrics != nil && len(ts.Exemplars) > 0 {
-					checker.metrics.droppedExemplarsTotal.WithLabelValues(reasonTooOld).Add(float64(len(ts.Exemplars)))
-				}
-				return true
-			}
-		case len(ts.Histograms) > 0:
-			if checker.checkAndRecordIfOld(ts.Histograms[0].Timestamp, "histogram") {
-				if checker.metrics != nil && len(ts.Exemplars) > 0 {
-					checker.metrics.droppedExemplarsTotal.WithLabelValues(reasonTooOld).Add(float64(len(ts.Exemplars)))
-				}
-				return true
-			}
-		case len(ts.Exemplars) == 0:
-			return false
+		if len(ts.Samples) > 0 && checker.checkAndRecordIfOld(ts.Samples[0].Timestamp, "sample") {
+			ts.Samples = ts.Samples[:0]
 		}
-
+		if len(ts.Histograms) > 0 && checker.checkAndRecordIfOld(ts.Histograms[0].Timestamp, "histogram") {
+			ts.Histograms = ts.Histograms[:0]
+		}
 		if len(ts.Exemplars) > 0 {
 			ts.Exemplars = slices.DeleteFunc(ts.Exemplars, func(e writev2.Exemplar) bool {
 				return checker.checkAndRecordIfOld(e.Timestamp, "exemplar")
 			})
-			return len(ts.Samples) == 0 && len(ts.Histograms) == 0 && len(ts.Exemplars) == 0
+		}
+
+		if len(ts.Samples) == 0 && len(ts.Histograms) == 0 {
+			if len(ts.Exemplars) > 0 && mode != remoteapi.WriteModeNone {
+				if checker.metrics != nil {
+					checker.metrics.droppedExemplarsTotal.WithLabelValues(reasonDetachedExemplarNotAllowed).Add(float64(len(ts.Exemplars)))
+				}
+				ts.Exemplars = ts.Exemplars[:0]
+				return true
+			}
+			return len(ts.Exemplars) == 0
 		}
 		return false
 	}
@@ -2364,7 +2361,7 @@ func (s *shards) sendV2SamplesWithBackoff(ctx context.Context, samples []writev2
 				samples,
 				labels,
 				pBuf,
-				isV2TimeSeriesOldFilter(s.qm.metrics, currentTime, time.Duration(s.qm.cfg.SampleAgeLimit)),
+				isV2TimeSeriesOldFilter(s.qm.metrics, currentTime, time.Duration(s.qm.cfg.SampleAgeLimit), s.qm.mode),
 				buf,
 				compr,
 			)
@@ -2733,13 +2730,18 @@ func buildV2TimeSeries(timeSeries []writev2.TimeSeries, filter func(*writev2.Tim
 	keepIdx := 0
 
 	for i := range timeSeries {
+		prevSamples := len(timeSeries[i].Samples)
 		prevExemplars := len(timeSeries[i].Exemplars)
+		prevHistograms := len(timeSeries[i].Histograms)
 		if filter != nil && filter(&timeSeries[i]) {
-			stats.recordDropped(len(timeSeries[i].Samples), prevExemplars, len(timeSeries[i].Histograms))
+			stats.recordDropped(prevSamples, prevExemplars, prevHistograms)
 			continue
 		}
-		if droppedExemplars := prevExemplars - len(timeSeries[i].Exemplars); droppedExemplars > 0 {
-			stats.recordDropped(0, droppedExemplars, 0)
+		droppedSamples := prevSamples - len(timeSeries[i].Samples)
+		droppedExemplars := prevExemplars - len(timeSeries[i].Exemplars)
+		droppedHistograms := prevHistograms - len(timeSeries[i].Histograms)
+		if droppedSamples > 0 || droppedExemplars > 0 || droppedHistograms > 0 {
+			stats.recordDropped(droppedSamples, droppedExemplars, droppedHistograms)
 		}
 
 		ts := &timeSeries[i]

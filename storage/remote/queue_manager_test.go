@@ -2756,7 +2756,7 @@ func TestBuildV2TimeSeries_CoalescedExemplars(t *testing.T) {
 			metrics := newQueueManagerMetrics(nil, "", "")
 			var filter func(*writev2.TimeSeries) bool
 			if tc.withAgeFilter {
-				filter = isV2TimeSeriesOldFilter(metrics, baseTime, ageLimit)
+				filter = isV2TimeSeriesOldFilter(metrics, baseTime, ageLimit, remoteapi.WriteModeNone)
 			}
 
 			got, stats := buildV2TimeSeries(tc.input, filter)
