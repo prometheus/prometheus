@@ -415,6 +415,7 @@ func (rws *WriteStorage) ApplyConfig(conf *config.Config, options ...ApplyConfig
 			rwConf.FailedRequestLogging,
 			rwConf.ConvertNHCBToClassic,
 			startSegment,
+			rws.enableSavepoint,
 		)
 	}
 

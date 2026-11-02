@@ -545,6 +545,7 @@ func NewQueueManager(
 	failedRequestLogging bool,
 	convertNHCBToClassic bool,
 	startSegment int,
+	enableSavepoint bool,
 ) *QueueManager {
 	if logger == nil {
 		logger = promslog.NewNopLogger()
@@ -601,7 +602,7 @@ func NewQueueManager(
 
 	walMetadata := t.protoMsg != remoteapi.WriteV1MessageType
 
-	t.watcher = wlog.NewWatcher(watcherMetrics, readerMetrics, logger, client.Name(), t, dir, enableExemplarRemoteWrite, enableNativeHistogramRemoteWrite || convertNHCBToClassic, walMetadata, recordBuf, startSegment)
+	t.watcher = wlog.NewWatcher(watcherMetrics, readerMetrics, logger, client.Name(), t, dir, enableExemplarRemoteWrite, enableNativeHistogramRemoteWrite || convertNHCBToClassic, walMetadata, recordBuf, startSegment, enableSavepoint)
 
 	// The current MetadataWatcher implementation is mutually exclusive
 	// with the new approach, which stores metadata as WAL records and

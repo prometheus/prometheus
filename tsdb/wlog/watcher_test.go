@@ -24,6 +24,7 @@ import (
 	"time"
 
 	"github.com/prometheus/client_golang/prometheus"
+	prom_testutil "github.com/prometheus/client_golang/prometheus/testutil"
 	"github.com/prometheus/common/promslog"
 	"github.com/stretchr/testify/require"
 	"golang.org/x/sync/errgroup"
@@ -256,7 +257,7 @@ func TestWatcher_Tail(t *testing.T) {
 
 				// Start watcher to that reads into a mock.
 				wt := newWriteToMock(0)
-				watcher := NewWatcher(wMetrics, nil, nil, "test", wt, dir, true, true, true, nil, -1)
+				watcher := NewWatcher(wMetrics, nil, nil, "test", wt, dir, true, true, true, nil, -1, false)
 				// Update the time because we just created samples around "now" time and watcher
 				// only starts watching after that time.
 				watcher.SetStartTime(now)
@@ -391,7 +392,7 @@ func TestReadToEndNoCheckpoint(t *testing.T) {
 				require.NoError(t, err)
 
 				wt := newWriteToMock(0)
-				watcher := NewWatcher(wMetrics, nil, nil, "", wt, dir, false, false, false, nil, -1)
+				watcher := NewWatcher(wMetrics, nil, nil, "", wt, dir, false, false, false, nil, -1, false)
 				go watcher.Start()
 
 				expected := seriesCount
@@ -482,7 +483,7 @@ func TestReadToEndWithCheckpoint(t *testing.T) {
 				require.NoError(t, err)
 				overwriteReadTimeout(t, time.Second)
 				wt := newWriteToMock(0)
-				watcher := NewWatcher(wMetrics, nil, nil, "", wt, dir, false, false, false, nil, -1)
+				watcher := NewWatcher(wMetrics, nil, nil, "", wt, dir, false, false, false, nil, -1, false)
 				go watcher.Start()
 
 				expected := seriesCount * 2
@@ -555,7 +556,7 @@ func TestReadCheckpoint(t *testing.T) {
 				require.NoError(t, err)
 
 				wt := newWriteToMock(0)
-				watcher := NewWatcher(wMetrics, nil, nil, "", wt, dir, false, false, false, nil, -1)
+				watcher := NewWatcher(wMetrics, nil, nil, "", wt, dir, false, false, false, nil, -1, false)
 				go watcher.Start()
 
 				expectedSeries := seriesCount
@@ -626,7 +627,7 @@ func TestReadCheckpointMultipleSegments(t *testing.T) {
 				}
 
 				wt := newWriteToMock(0)
-				watcher := NewWatcher(wMetrics, nil, nil, "", wt, dir, false, false, false, nil, -1)
+				watcher := NewWatcher(wMetrics, nil, nil, "", wt, dir, false, false, false, nil, -1, false)
 				watcher.MaxSegment = -1
 
 				// Set the Watcher's metrics so they're not nil pointers.
@@ -705,7 +706,7 @@ func TestCheckpointSeriesReset(t *testing.T) {
 
 			overwriteReadTimeout(t, time.Second)
 			wt := newWriteToMock(0)
-			watcher := NewWatcher(wMetrics, nil, nil, "", wt, subdir, false, false, false, nil, -1)
+			watcher := NewWatcher(wMetrics, nil, nil, "", wt, subdir, false, false, false, nil, -1, false)
 			watcher.MaxSegment = -1
 			go watcher.Start()
 
@@ -719,7 +720,7 @@ func TestCheckpointSeriesReset(t *testing.T) {
 
 			// Simulate a second watcher lagging at segment 1 before checkpoint and truncate.
 			restartWt := newWriteToMock(0)
-			restartWatcher := NewWatcher(wMetrics, nil, nil, "", restartWt, subdir, false, false, false, nil, -1)
+			restartWatcher := NewWatcher(wMetrics, nil, nil, "", restartWt, subdir, false, false, false, nil, -1, false)
 			restartWatcher.SetMetrics()
 			restartWatcher.MaxSegment = 1
 			require.NoError(t, restartWatcher.Run())
@@ -804,7 +805,7 @@ func TestRun_StartupTime(t *testing.T) {
 				require.NoError(t, w.Close())
 
 				wt := newWriteToMock(0)
-				watcher := NewWatcher(wMetrics, nil, nil, "", wt, dir, false, false, false, nil, -1)
+				watcher := NewWatcher(wMetrics, nil, nil, "", wt, dir, false, false, false, nil, -1, false)
 				watcher.MaxSegment = segments
 
 				watcher.SetMetrics()
@@ -877,7 +878,7 @@ func TestRun_AvoidNotifyWhenBehind(t *testing.T) {
 
 				// Set up the watcher and run it in the background.
 				wt := newWriteToMock(time.Millisecond)
-				watcher := NewWatcher(wMetrics, nil, nil, "", wt, dir, false, false, false, nil, -1)
+				watcher := NewWatcher(wMetrics, nil, nil, "", wt, dir, false, false, false, nil, -1, false)
 				watcher.SetMetrics()
 				watcher.MaxSegment = segmentsToRead
 
@@ -1040,7 +1041,7 @@ func TestWatcher_StartSegment(t *testing.T) {
 			dir := createWAL(t)
 
 			wt := newWriteToMock(0)
-			watcher := NewWatcher(wMetrics, nil, promslog.NewNopLogger(), "test", wt, dir, true, true, false, nil, tc.startSegment)
+			watcher := NewWatcher(NewWatcherMetrics(nil), nil, promslog.NewNopLogger(), "test", wt, dir, true, true, false, nil, tc.startSegment, true)
 			watcher.MaxSegment = maxSegment
 			watcher.SetMetrics()
 
@@ -1080,6 +1081,9 @@ func TestWatcher_StartSegment(t *testing.T) {
 				}
 			}
 
+			// Every segment read is before the last one, so each float, histogram and float histogram sent counts as pre-tailing.
+			require.Equal(t, float64(3*len(wantTs)), prom_testutil.ToFloat64(watcher.samplesSentPreTailing), "pre-tailing samples sent mismatch")
+
 			// Callers resume from the reported segment, which sample assertions do not cover.
 			require.Equal(t, tc.wantSegment, watcher.LastProcessedSegment(), "reported segment mismatch")
 		})
@@ -1114,7 +1118,7 @@ func TestWatcher_StartSegment_PastLastSegment(t *testing.T) {
 	require.NoError(t, w.Close())
 
 	wt := newWriteToMock(0)
-	watcher := NewWatcher(wMetrics, nil, promslog.NewNopLogger(), "test", wt, dir, false, false, false, nil, 10)
+	watcher := NewWatcher(NewWatcherMetrics(nil), nil, promslog.NewNopLogger(), "test", wt, dir, false, false, false, nil, 10, true)
 	// The last segment is the tail, so run the watcher loop rather than a bounded Run.
 	watcher.Start()
 	t.Cleanup(watcher.Stop)
@@ -1137,10 +1141,12 @@ func TestWatcher_StartSegment_PastLastSegment(t *testing.T) {
 	wt.mu.Unlock()
 	require.Equal(t, wantTs, gotTs)
 	require.Equal(t, numSegments-1, watcher.LastProcessedSegment())
+	// Only the tail was sent, so nothing counts as pre-tailing.
+	require.Zero(t, prom_testutil.ToFloat64(watcher.samplesSentPreTailing))
 }
 
-// TestWatcher_StartSegment_ResumeMonotonic verifies that the reported segment advances monotonically across repeated Run calls,
-// that series-only replay doesn't advance it, and that a retry only replays historical samples when a start segment was given.
+// TestWatcher_StartSegment_ResumeMonotonic verifies that a retried Run resumes from the furthest segment reached,
+// and that the reported segment only moves forward across runs.
 func TestWatcher_StartSegment_ResumeMonotonic(t *testing.T) {
 	const (
 		seriesCount = 5
@@ -1167,48 +1173,88 @@ func TestWatcher_StartSegment_ResumeMonotonic(t *testing.T) {
 	}
 	require.NoError(t, w.Close())
 
-	tests := []struct {
-		name         string
-		startSegment int
-		// Reported segment after each run.
-		wantFirst, wantSecond int
-		// Segments whose samples are delivered across both runs, in order.
-		wantSegments []int
-	}{
-		{
-			// Both runs stop before the last segment, so they only replay series.
-			name:         "no start segment never replays historical samples",
-			startSegment: -1,
-			wantFirst:    -1,
-			wantSecond:   -1,
-			wantSegments: nil,
-		},
-		{
-			// The retry resumes at the high-water segment, so only segment 1 is sent twice.
-			name:         "start segment resumes at high-water on retry",
-			startSegment: 1,
-			wantFirst:    1,
-			wantSecond:   2,
-			wantSegments: []int{1, 1, 2},
-		},
+	wt := newWriteToMock(0)
+	watcher := NewWatcher(wMetrics, nil, promslog.NewNopLogger(), "test", wt, dir, false, false, false, nil, 0, true)
+	watcher.SetMetrics()
+	require.Equal(t, 0, watcher.LastProcessedSegment(), "reported segment should be seeded before Run")
+
+	watcher.MaxSegment = 1
+	watcher.SetStartTime(time.Now())
+	require.NoError(t, watcher.Run())
+	require.Equal(t, 1, watcher.LastProcessedSegment(), "reported segment after first run")
+
+	// The retry resumes at segment 1, so segment 0 isn't sent again and only segment 1 is sent twice.
+	watcher.MaxSegment = 2
+	watcher.SetStartTime(time.Now())
+	require.NoError(t, watcher.Run())
+	require.Equal(t, 2, watcher.LastProcessedSegment(), "reported segment after second run")
+
+	wt.mu.Lock()
+	defer wt.mu.Unlock()
+	var gotTs []int64
+	for _, s := range wt.samplesAppended {
+		gotTs = append(gotTs, s.T)
 	}
+	require.Equal(t, startSegmentTimestamps(seriesCount, 0, 1, 1, 2), gotTs, "delivered sample timestamps mismatch")
+}
 
-	for _, tc := range tests {
+// TestWatcher_RetryWithoutStartSegment verifies that with savepoints enabled and no start segment,
+// a retry after tailing has started sends from the last processed segment.
+func TestWatcher_RetryWithoutStartSegment(t *testing.T) {
+	const seriesCount = 5
+
+	for _, tc := range []struct {
+		name            string
+		enableSavepoint bool
+		wantSegments    []int
+	}{
+		{name: "savepoint enabled", enableSavepoint: true, wantSegments: []int{1, 2}},
+		{name: "savepoint disabled", enableSavepoint: false, wantSegments: nil},
+	} {
 		t.Run(tc.name, func(t *testing.T) {
-			wt := newWriteToMock(0)
-			watcher := NewWatcher(wMetrics, nil, promslog.NewNopLogger(), "test", wt, dir, false, false, false, nil, tc.startSegment)
-			watcher.SetMetrics()
-			require.Equal(t, tc.startSegment, watcher.LastProcessedSegment(), "reported segment should be seeded before Run")
+			segRecs := startSegmentRecords(seriesCount, 4)
 
+			dir := t.TempDir()
+			wdir := path.Join(dir, "wal")
+			require.NoError(t, os.Mkdir(wdir, 0o777))
+			w, err := NewSize(nil, nil, wdir, 32*1024, compression.None)
+			require.NoError(t, err)
+			var enc record.Encoder
+			logSegment := func(i int) {
+				if i == 0 {
+					require.NoError(t, w.Log(enc.Series(segRecs[i].Series, nil)))
+				}
+				require.NoError(t, w.Log(enc.Samples(segRecs[i].Samples, nil)))
+			}
+			logSegment(0)
+			_, err = w.NextSegment()
+			require.NoError(t, err)
+			logSegment(1)
+
+			wt := newWriteToMock(0)
+			watcher := NewWatcher(wMetrics, nil, promslog.NewNopLogger(), "test", wt, dir, false, false, false, nil, -1, tc.enableSavepoint)
+			watcher.SetMetrics()
+
+			// The first run tails segment 1 and filters by start time. Its samples are older than
+			// the start time, so segment 1 is still unsent when the run ends.
 			watcher.MaxSegment = 1
 			watcher.SetStartTime(time.Now())
-			require.NoError(t, watcher.Run())
-			require.Equal(t, tc.wantFirst, watcher.LastProcessedSegment(), "reported segment after first run")
+			runErr := make(chan error, 1)
+			go func() { runErr <- watcher.Run() }()
+			require.Eventually(t, func() bool { return watcher.LastProcessedSegment() == 1 }, 10*time.Second, 10*time.Millisecond)
+
+			// Adding segments past MaxSegment ends the first run, standing in for an error.
+			for i := 2; i < 4; i++ {
+				_, err = w.NextSegment()
+				require.NoError(t, err)
+				logSegment(i)
+			}
+			require.NoError(t, w.Close())
+			require.NoError(t, <-runErr)
 
 			watcher.MaxSegment = 2
 			watcher.SetStartTime(time.Now())
 			require.NoError(t, watcher.Run())
-			require.Equal(t, tc.wantSecond, watcher.LastProcessedSegment(), "reported segment after second run")
 
 			wt.mu.Lock()
 			defer wt.mu.Unlock()
@@ -1217,9 +1263,9 @@ func TestWatcher_StartSegment_ResumeMonotonic(t *testing.T) {
 				gotTs = append(gotTs, s.T)
 			}
 			if tc.wantSegments == nil {
-				require.Empty(t, gotTs, "expected no samples delivered")
+				require.Empty(t, gotTs)
 			} else {
-				require.Equal(t, startSegmentTimestamps(seriesCount, tc.wantSegments...), gotTs, "delivered sample timestamps mismatch")
+				require.Equal(t, startSegmentTimestamps(seriesCount, tc.wantSegments...), gotTs)
 			}
 		})
 	}
@@ -1276,7 +1322,7 @@ func TestWatcher_StartSegment_CheckpointNotReplayed(t *testing.T) {
 	const startSegment = 1
 
 	wt := newWriteToMock(0)
-	watcher := NewWatcher(wMetrics, nil, promslog.NewNopLogger(), "test", wt, dir, false, false, false, nil, startSegment)
+	watcher := NewWatcher(wMetrics, nil, promslog.NewNopLogger(), "test", wt, dir, false, false, false, nil, startSegment, true)
 	watcher.MaxSegment = 2 // Stop after segment 2, before the blocking tail.
 	watcher.SetMetrics()
 

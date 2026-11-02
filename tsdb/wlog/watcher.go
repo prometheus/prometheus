@@ -117,6 +117,8 @@ type Watcher struct {
 
 	// startSegment is the segment samples are sent from, or -1 to only send samples newer than the start time.
 	startSegment int
+	// enableSavepoint makes a retried Run send from the last processed segment.
+	enableSavepoint bool
 
 	// segment is the value reported by LastProcessedSegment.
 	segment atomic.Int64
@@ -210,6 +212,7 @@ func NewWatcher(
 	sendExemplars, sendHistograms, sendMetadata bool,
 	recordBuf *record.BuffersPool,
 	startSegment int,
+	enableSavepoint bool,
 ) *Watcher {
 	if logger == nil {
 		logger = promslog.NewNopLogger()
@@ -233,8 +236,9 @@ func NewWatcher(
 		quit:       make(chan struct{}),
 		done:       make(chan struct{}),
 
-		startSegment: startSegment,
-		MaxSegment:   -1,
+		startSegment:    startSegment,
+		enableSavepoint: enableSavepoint,
+		MaxSegment:      -1,
 	}
 	w.segment.Store(int64(startSegment))
 	return w
@@ -315,10 +319,8 @@ func (w *Watcher) Run() error {
 		return fmt.Errorf("Segments: %w", err)
 	}
 
-	// On retry, resume from the furthest segment reached rather than re-replaying from the original start segment.
-	// The override is never cleared: reverting to time.Now() filtering mid-replay would drop unsent samples.
-	// Without a start segment there is nothing to resume, so leave it disabled.
-	if current := int(w.segment.Load()); w.startSegment >= 0 && current > w.startSegment {
+	// On retry, resume from the last processed segment so unsent samples aren't skipped.
+	if current := int(w.segment.Load()); w.enableSavepoint && current > w.startSegment {
 		w.startSegment = current
 	}
 
@@ -359,6 +361,10 @@ func (w *Watcher) Run() error {
 	currentSegment, err := w.findSegmentForIndex(checkpointIndex)
 	if err != nil {
 		return err
+	}
+
+	if w.startSegment >= 0 && currentSegment > w.startSegment {
+		w.logger.Warn("Start segment was already truncated from the WAL, samples in the truncated segments will not be sent", "queue", w.name, "startSegment", w.startSegment, "currentSegment", currentSegment)
 	}
 
 	w.logger.Debug("Tailing WAL", "lastCheckpoint", lastCheckpoint, "checkpointIndex", checkpointIndex, "currentSegment", currentSegment, "lastSegment", lastSegment)
@@ -604,7 +610,7 @@ func (w *Watcher) readSegment(r *LiveReader, segmentNum int, onlySeries, isCheck
 			samplesToSend := samples[:0]
 			for _, s := range samples {
 				if fromStartSegment || s.T > w.startTimestamp {
-					if !w.sendSamples {
+					if !w.sendSamples && !onlySeries {
 						w.sendSamples = true
 						duration := time.Since(w.startTime)
 						w.logger.Info("Done replaying WAL", "duration", duration)
@@ -613,6 +619,9 @@ func (w *Watcher) readSegment(r *LiveReader, segmentNum int, onlySeries, isCheck
 				}
 			}
 			if len(samplesToSend) > 0 {
+				if onlySeries {
+					w.samplesSentPreTailing.Add(float64(len(samplesToSend)))
+				}
 				w.writer.Append(samplesToSend)
 			}
 
@@ -651,7 +660,7 @@ func (w *Watcher) readSegment(r *LiveReader, segmentNum int, onlySeries, isCheck
 			histogramsToSend := histograms[:0]
 			for _, h := range histograms {
 				if fromStartSegment || h.T > w.startTimestamp {
-					if !w.sendSamples {
+					if !w.sendSamples && !onlySeries {
 						w.sendSamples = true
 						duration := time.Since(w.startTime)
 						w.logger.Info("Done replaying WAL", "duration", duration)
@@ -660,6 +669,9 @@ func (w *Watcher) readSegment(r *LiveReader, segmentNum int, onlySeries, isCheck
 				}
 			}
 			if len(histogramsToSend) > 0 {
+				if onlySeries {
+					w.samplesSentPreTailing.Add(float64(len(histogramsToSend)))
+				}
 				w.writer.AppendHistograms(histogramsToSend)
 			}
 
@@ -681,7 +693,7 @@ func (w *Watcher) readSegment(r *LiveReader, segmentNum int, onlySeries, isCheck
 			floatHistogramsToSend := floatHistograms[:0]
 			for _, fh := range floatHistograms {
 				if fromStartSegment || fh.T > w.startTimestamp {
-					if !w.sendSamples {
+					if !w.sendSamples && !onlySeries {
 						w.sendSamples = true
 						duration := time.Since(w.startTime)
 						w.logger.Info("Done replaying WAL", "duration", duration)
@@ -690,6 +702,9 @@ func (w *Watcher) readSegment(r *LiveReader, segmentNum int, onlySeries, isCheck
 				}
 			}
 			if len(floatHistogramsToSend) > 0 {
+				if onlySeries {
+					w.samplesSentPreTailing.Add(float64(len(floatHistogramsToSend)))
+				}
 				w.writer.AppendFloatHistograms(floatHistogramsToSend)
 			}
 
