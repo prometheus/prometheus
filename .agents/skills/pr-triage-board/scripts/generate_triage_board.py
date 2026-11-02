@@ -17,7 +17,7 @@ Generates a GitHub-flavored Markdown PR Triage Board for any GitHub repository
 MAINTAINERS.md routing, and hygiene checks.
 """
 import argparse
-import base64
+from concurrent.futures import ThreadPoolExecutor
 import datetime
 import fnmatch
 import json
@@ -26,6 +26,15 @@ import re
 import subprocess
 import sys
 import time
+
+_SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
+for _cand in ("contributor-trust", "contributor_trust"):
+    _cand_scripts = os.path.normpath(os.path.join(_SCRIPT_DIR, "..", "..", _cand, "scripts"))
+    if os.path.isdir(_cand_scripts) and _cand_scripts not in sys.path:
+        sys.path.insert(0, _cand_scripts)
+
+import score_contributors as sc  # noqa: E402
+from score_contributors import fetch_file_from_repo, is_bot, run_cmd  # noqa: E402
 
 
 GRAPHQL_QUERY = """
@@ -123,103 +132,6 @@ query($owner: String!, $name: String!, $limit: Int!, $after: String) {
 """
 
 
-def run_cmd(cmd):
-    res = subprocess.run(cmd, capture_output=True, text=True)
-    if res.returncode != 0:
-        return None
-    return res.stdout
-
-
-def fetch_file_from_repo(owner, repo, path):
-    out = run_cmd(["gh", "api", f"repos/{owner}/{repo}/contents/{path}"])
-    if not out:
-        return None
-    try:
-        data = json.loads(out)
-        if "content" in data:
-            return base64.b64decode(data["content"]).decode("utf-8", errors="replace")
-    except Exception:
-        pass
-    return None
-
-
-def parse_maintainers_md(content):
-    """Extracts general maintainers and path-specific maintainers from MAINTAINERS.md."""
-    general = []
-    specific = []
-    if not content:
-        return general, specific
-
-    mode = None
-    current_prefix = None
-    for line in content.splitlines():
-        low = line.strip().lower()
-        if low.startswith("general maintainers") or "core maintainers" in low:
-            mode = "general"
-            continue
-        elif low.startswith("maintainers for specific"):
-            mode = "specific"
-            continue
-        elif (
-            low.startswith("v3 release")
-            or low.startswith("release coordinators")
-            or low.startswith("for the sake of")
-            or low.startswith("## triage")
-            or low.startswith("## alumni")
-            or low.startswith("## emeritus")
-        ):
-            mode = None
-            continue
-
-        # Match GitHub @handles preceded by whitespace, '/', '(', or '[' (not email domains)
-        handles = [h for h in re.findall(r"(?:^|[\s/(\[])@([a-zA-Z0-9-]+)", line)]
-        if mode == "general" and handles:
-            for h in handles:
-                if h not in general:
-                    general.append(h)
-        elif mode == "specific":
-            indent = len(line) - len(line.lstrip(" "))
-            m_code = re.search(r"`([^`]+)`", line)
-            if m_code:
-                token = m_code.group(1).strip("/")
-                if indent <= 2:
-                    current_prefix = token
-                    if handles:
-                        specific.append((token, handles))
-                elif current_prefix:
-                    sub = f"{current_prefix}/{token}"
-                    if handles:
-                        specific.append((sub, handles))
-    return general, specific
-
-
-def parse_codeowners(content):
-    """Parses CODEOWNERS into (pattern, [individual_handles], [team_handles])."""
-    rules = []
-    default_individuals = []
-    if not content:
-        return default_individuals, rules
-
-    for line in content.splitlines():
-        line = line.strip()
-        if not line or line.startswith("#"):
-            continue
-        parts = line.split()
-        if len(parts) < 2:
-            continue
-        pattern = parts[0]
-        raw_owners = [o.lstrip("@") for o in parts[1:] if o.startswith("@")]
-        indiv = [o for o in raw_owners if "/" not in o]
-        teams = [o for o in raw_owners if "/" in o]
-        if pattern == "*":
-            for i in indiv:
-                if i not in default_individuals:
-                    default_individuals.append(i)
-        else:
-            rules.append((pattern.lstrip("/"), indiv, teams))
-    return default_individuals, rules
-
-
 def match_path(file_path, pattern):
     p = pattern.strip("/")
     if file_path == p or file_path.startswith(p + "/"):
@@ -244,8 +156,8 @@ def build_repo_ownership_model(owner, repo):
         or ""
     )
 
-    default_co, co_rules = parse_codeowners(codeowners_txt)
-    gen_maint, spec_maint = parse_maintainers_md(maintainers_txt)
+    default_co, co_rules, co_all = sc.parse_codeowners(codeowners_txt)
+    gen_maint, spec_maint, maint_all = sc.parse_maintainers_md(maintainers_txt)
 
     # Merge path rules (more specific paths first)
     path_rules = []
@@ -258,6 +170,7 @@ def build_repo_ownership_model(owner, repo):
 
     path_rules.sort(key=lambda x: len(x[0]), reverse=True)
     fallback_owners = default_co or gen_maint
+    maintainer_handles_lower = {h.lower() for h in (maint_all + co_all)}
 
     requires_release_notes = "```release-notes" in pr_template_txt
     requires_area_title = "area: short description" in pr_template_txt
@@ -265,6 +178,7 @@ def build_repo_ownership_model(owner, repo):
     return {
         "path_rules": path_rules,
         "fallback_owners": fallback_owners,
+        "maintainer_handles_lower": maintainer_handles_lower,
         "requires_release_notes": requires_release_notes,
         "requires_area_title": requires_area_title,
     }
@@ -387,27 +301,6 @@ CI_ISSUE_RE = re.compile(
 )
 
 
-def is_bot(actor):
-    if not actor:
-        return True
-    if isinstance(actor, dict):
-        if actor.get("__typename") == "Bot":
-            return True
-        login = actor.get("login")
-    else:
-        login = str(actor)
-    if not login:
-        return True
-    low = login.lower()
-    return (
-        "[bot]" in low
-        or "dependabot" in low
-        or "renovate" in low
-        or "copilot" in low
-        or low in ("prombot", "cla-bot", "netlify", "codecov")
-    )
-
-
 def has_author_ci_explanation(author_comments_after_commit):
     for _, body in author_comments_after_commit:
         if CI_TOPIC_RE.search(body) and CI_ISSUE_RE.search(body):
@@ -423,7 +316,18 @@ def analyze_prs(repos, max_prs, maintainer_filter=None):
     for repo_full in repos:
         owner, name = repo_full.split("/", 1)
         model = build_repo_ownership_model(owner, name)
-        total_open, raw_prs = fetch_repo_prs(owner, name, max_prs)
+        with ThreadPoolExecutor(max_workers=2) as pool:
+            f_prs = pool.submit(fetch_repo_prs, owner, name, max_prs)
+            f_profiles = pool.submit(
+                sc.fetch_repo_contributor_profiles,
+                owner,
+                name,
+                now,
+                sc.DEFAULT_WINDOW_DAYS,
+                model["maintainer_handles_lower"],
+            )
+            total_open, raw_prs = f_prs.result()
+            contributor_profiles = f_profiles.result()
         repo_totals[repo_full] = total_open
 
         for pr in raw_prs:
@@ -639,6 +543,45 @@ def analyze_prs(repos, max_prs, maintainer_filter=None):
                 status_bucket = "Waiting on Maintainer"
 
             loc = pr.get("additions", 0) + pr.get("deletions", 0)
+            author_profile = sc.resolve_author_profile(
+                contributor_profiles,
+                author,
+                pr.get("authorAssociation"),
+                model["maintainer_handles_lower"],
+            )
+
+            # Maintainer waiting time starts when the ball entered the maintainer's
+            # court (the author's first commit/reply after the latest non-author event,
+            # or commitDate if untouched), avoiding 100d+ inflation on old commits
+            # that only recently received a comment reply.
+            non_author_ts = [
+                ts for ts, actor, _ in events if actor.lower() != author_low
+            ]
+            waiting_since = commit_date
+            if non_author_ts:
+                last_other_ts = max(non_author_ts)
+                author_after = [
+                    ts
+                    for ts, actor, _ in events
+                    if actor.lower() == author_low and ts >= last_other_ts
+                ]
+                if author_after:
+                    waiting_since = min(author_after)
+
+            waiting_dt = datetime.datetime.fromisoformat(waiting_since.replace("Z", "+00:00"))
+            waiting_days = (
+                max(0.0, (now - waiting_dt).total_seconds() / 86400.0)
+                if status_bucket
+                in ("Updated After Review", "Waiting on Maintainer", "Needs /workflow-approve")
+                else 0.0
+            )
+            priority_score = sc.compute_priority_score(
+                author_profile["trust_score"],
+                waiting_days,
+            )
+            updated_epoch = datetime.datetime.fromisoformat(
+                pr["updatedAt"].replace("Z", "+00:00")
+            ).timestamp()
             all_prs.append(
                 {
                     "repo_full": repo_full,
@@ -647,6 +590,11 @@ def analyze_prs(repos, max_prs, maintainer_filter=None):
                     "title": pr["title"],
                     "url": pr["url"],
                     "author": author,
+                    "author_cell": sc.format_author_cell(author, author_profile),
+                    "trust_score": author_profile["trust_score"],
+                    "priority_score": priority_score,
+                    "waitingSince": waiting_since,
+                    "updatedEpoch": updated_epoch,
                     "owners_cell": format_owners_cell(current_owners, proposed_owners),
                     "status_bucket": status_bucket,
                     "ci_state": ci_state,
@@ -706,6 +654,8 @@ def render_markdown(repos, now, repo_totals, prs, max_prs, maintainer_filter=Non
         f"> **Auto-updated snapshot**: `{now_str}` · Analyzed `{len(prs)}` non-bot open PRs (up to {max_prs} most recently active per repo).",
         ">",
         "> **Automated via [`.agents/skills/pr-triage-board`](https://github.com/prometheus/prometheus/tree/main/.agents/skills/pr-triage-board)** · Refreshed **every hour on weekdays (Mon–Fri, 07:00–18:00 CET)**.",
+        ">",
+        "> **Queue priority**: Approved PRs first, then `trust_score + 1.5 * waiting_days` using [Prometheus Governance roles](https://github.com/prometheus/governance/blob/main/ROLES.md) + 90d monthly contribution rate (`1.0x` merged + `1.5x` reviewed PRs/mo via [`.agents/skills/contributor-trust`](https://github.com/prometheus/prometheus/tree/main/.agents/skills/contributor-trust)).",
         "",
     ]
 
@@ -740,7 +690,20 @@ def render_markdown(repos, now, repo_totals, prs, max_prs, maintainer_filter=Non
     lines.append("")
 
     def sort_key(x):
-        return (repo_order.get(x["repo_full"], 99), 0 if x["approved"] else 1, x["commitDate"])
+        return (
+            repo_order.get(x["repo_full"], 99),
+            0 if x["approved"] else 1,
+            -x.get("priority_score", 0.0),
+            x.get("waitingSince", x["commitDate"]),
+        )
+
+    def non_maintainer_sort_key(x):
+        return (
+            repo_order.get(x["repo_full"], 99),
+            0 if x["approved"] else 1,
+            -x.get("trust_score", 0.0),
+            -x.get("updatedEpoch", 0.0),
+        )
 
     # Quick Wins
     quick_wins = [
@@ -761,8 +724,9 @@ def render_markdown(repos, now, repo_totals, prs, max_prs, maintainer_filter=Non
         lines.append("| :--- | :--- | :--- | :--- | :--- | :--- |")
         for p in quick_wins:
             app = " *(approved)*" if p["approved"] else ""
+            w_iso = p.get("waitingSince", p["commitDate"])
             lines.append(
-                f"| {pr_link(p)}{app} | {clean_title(p['title'])} | @{p['author']} | `+{p['additions']}/-{p['deletions']}` ({p['changedFiles']}f) | {age_str(p['commitDate'])} | {p['owners_cell']} |"
+                f"| {pr_link(p)}{app} | {clean_title(p['title'])} | {p['author_cell']} | `+{p['additions']}/-{p['deletions']}` ({p['changedFiles']}f) | {age_str(w_iso)} | {p['owners_cell']} |"
             )
     else:
         lines.append("_No quick wins currently matching._")
@@ -776,12 +740,13 @@ def render_markdown(repos, now, repo_totals, prs, max_prs, maintainer_filter=Non
     lines.append("*A maintainer already reviewed these. All comments are resolved or responded to, and CI is green (or the author commented why it is not green).*")
     lines.append("")
     if updated:
-        lines.append("| PR | Title | Author | CI | Diff | Hygiene | Pushed | Owners |")
+        lines.append("| PR | Title | Author | CI | Diff | Hygiene | Waiting | Owners |")
         lines.append("| :--- | :--- | :--- | :---: | :--- | :--- | :--- | :--- |")
         for p in updated:
             app = " *(approved)*" if p["approved"] else ""
+            w_iso = p.get("waitingSince", p["commitDate"])
             lines.append(
-                f"| {pr_link(p)}{app} | {clean_title(p['title'])} | @{p['author']} | `{fmt_ci(p['ci_state'], p.get('ci_explained', False))}` | `+{p['additions']}/-{p['deletions']}` | {fmt_hygiene(p['hygiene'])} | {age_str(p['commitDate'])} | {p['owners_cell']} |"
+                f"| {pr_link(p)}{app} | {clean_title(p['title'])} | {p['author_cell']} | `{fmt_ci(p['ci_state'], p.get('ci_explained', False))}` | `+{p['additions']}/-{p['deletions']}` | {fmt_hygiene(p['hygiene'])} | {age_str(w_iso)} | {p['owners_cell']} |"
             )
     else:
         lines.append("_No PRs currently in this bucket._")
@@ -799,8 +764,9 @@ def render_markdown(repos, now, repo_totals, prs, max_prs, maintainer_filter=Non
         lines.append("| :--- | :--- | :--- | :--- | :---: | :--- | :--- | :--- |")
         for p in need_approve:
             safety = "**YES (`Makefile`/`.github`)**" if p["touchesWorkflow"] else "No (Code/Docs)"
+            w_iso = p.get("waitingSince", p["commitDate"])
             lines.append(
-                f"| {pr_link(p)} | {clean_title(p['title'])} | @{p['author']} | `+{p['additions']}/-{p['deletions']}` ({p['changedFiles']}f) | {safety} | {fmt_hygiene(p['hygiene'])} | {age_str(p['commitDate'])} | {p['owners_cell']} |"
+                f"| {pr_link(p)} | {clean_title(p['title'])} | {p['author_cell']} | `+{p['additions']}/-{p['deletions']}` ({p['changedFiles']}f) | {safety} | {fmt_hygiene(p['hygiene'])} | {age_str(w_iso)} | {p['owners_cell']} |"
             )
         lines.append("")
         safe_cmds = [
@@ -822,7 +788,7 @@ def render_markdown(repos, now, repo_totals, prs, max_prs, maintainer_filter=Non
     waiting = [p for p in prs if p["status_bucket"] == "Waiting on Maintainer"]
     waiting.sort(key=sort_key)
 
-    lines.append("## Waiting on Maintainer (Oldest First)")
+    lines.append("## Waiting on Maintainer (By Priority: Trust + Waiting Age)")
     lines.append("*All comments are resolved or responded to, CI is green (or the author commented why it is not green), and there are no merge conflicts.*")
     lines.append("")
     if waiting:
@@ -830,8 +796,9 @@ def render_markdown(repos, now, repo_totals, prs, max_prs, maintainer_filter=Non
         lines.append("| :--- | :--- | :--- | :---: | :--- | :--- | :--- | :--- |")
         for p in waiting:
             app = " *(approved)*" if p["approved"] else ""
+            w_iso = p.get("waitingSince", p["commitDate"])
             lines.append(
-                f"| {pr_link(p)}{app} | {clean_title(p['title'])} | @{p['author']} | `{fmt_ci(p['ci_state'], p.get('ci_explained', False))}` | `+{p['additions']}/-{p['deletions']}` ({p['changedFiles']}f) | {fmt_hygiene(p['hygiene'])} | {age_str(p['commitDate'])} ({p['commitDate'][:10]}) | {p['owners_cell']} |"
+                f"| {pr_link(p)}{app} | {clean_title(p['title'])} | {p['author_cell']} | `{fmt_ci(p['ci_state'], p.get('ci_explained', False))}` | `+{p['additions']}/-{p['deletions']}` ({p['changedFiles']}f) | {fmt_hygiene(p['hygiene'])} | {age_str(w_iso)} ({w_iso[:10]}) | {p['owners_cell']} |"
             )
     else:
         lines.append("_No PRs currently waiting on maintainer._")
@@ -848,7 +815,7 @@ def render_markdown(repos, now, repo_totals, prs, max_prs, maintainer_filter=Non
         ("Needs Rebase (Merge Conflicts)", "Needs Rebase", "Conflicting with base branch."),
     ]:
         b_prs = [p for p in prs if p["status_bucket"] == b_key]
-        b_prs.sort(key=sort_key)
+        b_prs.sort(key=non_maintainer_sort_key)
         lines.append("<details>")
         lines.append(f"<summary><b>{b_title} ({len(b_prs)})</b>: {b_desc}</summary>")
         lines.append("")
@@ -857,7 +824,7 @@ def render_markdown(repos, now, repo_totals, prs, max_prs, maintainer_filter=Non
             lines.append("| :--- | :--- | :--- | :--- | :--- | :--- | :--- |")
             for p in b_prs:
                 lines.append(
-                    f"| {pr_link(p)} | {clean_title(p['title'])} | @{p['author']} | @{p['lastActor']} ({p['lastEventType']}) | {fmt_hygiene(p['hygiene'])} | {age_str(p['updatedAt'])} | {p['owners_cell']} |"
+                    f"| {pr_link(p)} | {clean_title(p['title'])} | {p['author_cell']} | @{p['lastActor']} ({p['lastEventType']}) | {fmt_hygiene(p['hygiene'])} | {age_str(p['updatedAt'])} | {p['owners_cell']} |"
                 )
         else:
             lines.append("_None._")
