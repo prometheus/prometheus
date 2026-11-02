@@ -667,12 +667,11 @@ func (h *Head) chunkFromSeries(s *memSeries, cid chunks.HeadChunkID, isOOO bool,
 		}
 	}
 
-	// With no incomplete appends, a series with no transaction IDs or a latest ID
-	// at or below maxAppendID contains only visible samples. With incomplete
-	// appends, only an empty transaction ring is sufficient: commits can append
-	// a lower ID after a higher one, so the tail alone cannot prove visibility.
-	// The series lock remains held through this check and any open-chunk copy, so
-	// later appends cannot change the returned bytes.
+	// Skip the per-sample isolation scan in iteratorForChunkCopy when every sample in s is already visible:
+	// - s.txs is empty, meaning all append IDs were already pruned below lowWatermark or loaded via WAL replay.
+	// - No appends were in flight at snapshot time and lastAppendID <= maxAppendID, meaning nothing was appended after the snapshot.
+	// NOTE: When incompleteAppends is non-empty, lastAppendID alone is not enough because appendIDs are assigned when
+	// opening an appender while s.txs records commit order, so an incomplete higher ID can sit before a committed lower ID.
 	if copyLastChunk && isoState != nil && !isoState.IsolationDisabled() {
 		if len(isoState.incompleteAppends) == 0 {
 			if lastAppendID, ok := s.txs.lastAppendID(); !ok || lastAppendID <= isoState.maxAppendID {
