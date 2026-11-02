@@ -98,7 +98,11 @@ func (q *blockBaseQuerier) LabelNames(ctx context.Context, hints *storage.LabelH
 
 // SearchLabelNames implements storage.Searcher.
 func (q *blockBaseQuerier) SearchLabelNames(ctx context.Context, hints *storage.SearchHints, matchers ...*labels.Matcher) storage.SearchResultSet {
-	names, err := q.index.LabelNames(ctx, matchers...)
+	return searchLabelNames(ctx, q.index, hints, matchers...)
+}
+
+func searchLabelNames(ctx context.Context, index IndexReader, hints *storage.SearchHints, matchers ...*labels.Matcher) storage.SearchResultSet {
+	names, err := index.LabelNames(ctx, matchers...)
 	if err != nil {
 		return storage.ErrSearchResultSet(err)
 	}
@@ -112,6 +116,10 @@ func (q *blockBaseQuerier) SearchLabelNames(ctx context.Context, hints *storage.
 
 // SearchLabelValues implements storage.Searcher.
 func (q *blockBaseQuerier) SearchLabelValues(ctx context.Context, name string, hints *storage.SearchHints, matchers ...*labels.Matcher) storage.SearchResultSet {
+	return searchLabelValues(ctx, q.index, name, hints, matchers...)
+}
+
+func searchLabelValues(ctx context.Context, index IndexReader, name string, hints *storage.SearchHints, matchers ...*labels.Matcher) storage.SearchResultSet {
 	if hints == nil {
 		hints = &storage.SearchHints{}
 	}
@@ -132,9 +140,9 @@ func (q *blockBaseQuerier) SearchLabelValues(ctx context.Context, name string, h
 	)
 	// ApplySearchHints needs ascending values except for score ordering with a filter.
 	if hints.OrderBy == storage.OrderByScoreDesc && hints.Filter != nil {
-		values, err = q.index.LabelValues(ctx, name, labelHints, matchers...)
+		values, err = index.LabelValues(ctx, name, labelHints, matchers...)
 	} else {
-		values, err = q.index.SortedLabelValues(ctx, name, labelHints, matchers...)
+		values, err = index.SortedLabelValues(ctx, name, labelHints, matchers...)
 	}
 	if err != nil {
 		return storage.ErrSearchResultSet(err)
