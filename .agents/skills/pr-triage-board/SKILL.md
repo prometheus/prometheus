@@ -22,12 +22,13 @@ This skill generates a GitHub-flavored Markdown PR Triage Board for any GitHub r
    - **Waiting on Maintainer**: Waiting on maintainer for initial review or merge.
    - **Waiting on Author / Failing CI / Needs Rebase**: Collapsed inside `<details>` blocks so they do not clutter the actionable queue.
 2. **Author trust and aging priority**:
-   - Uses `.agents/skills/contributor-trust` to classify each author by [Prometheus Governance role](https://github.com/prometheus/governance/blob/main/ROLES.md) (`Maintainer=50`, `Member=35`, `Contributor=15`, `New Contributor=0`) plus a logarithmic bonus (up to `+40`) from their 90-day rolling monthly contribution average (`1.0x` merged PRs + `1.5x` reviewed PRs).
-   - Within each bucket, PRs with maintainer approval (and no active `CHANGES_REQUESTED` review) sort first (`*(approved)*`), followed by descending `priority_score = trust_score + 1.5 * waiting_days` so trusted contributors surface quickly without starving older PRs.
-   - Annotates the `Author` cell with the factual governance role and monthly contribution rate, such as `@handle` `*(Contributor, 2.7/mo)*`.
+   - Works standalone with built-in author trust scoring, and reuses `.agents/skills/contributor-trust` automatically when both skills are installed side by side.
+   - Classifies each author by repository role (`Maintainer=50`, `Member=35`, `Contributor=15`, `New Contributor=0`, aligned with [Prometheus Governance](https://github.com/prometheus/governance/blob/main/ROLES.md)) plus a logarithmic bonus up to `+40` from their 90-day rolling monthly contribution average (`1.0x` merged PRs + `1.5x` reviewed PRs).
+   - Within each maintainer-actionable bucket, PRs with maintainer approval and no active `CHANGES_REQUESTED` review sort first (`*(approved)*`), followed by descending `priority_score = trust_score + 1.5 * waiting_days` so trusted contributors surface quickly without starving older PRs.
+   - Annotates the `Author` cell with the role and monthly contribution rate, such as `@handle` `*(Contributor, 2.7/mo)*`.
 3. **Current vs. proposed owners (`↳ Proposed:`)**:
-   - Automatically fetches `CODEOWNERS`, `.github/CODEOWNERS`, and `MAINTAINERS.md` from the target repository.
-   - Compares currently assigned/reviewing human maintainers against the specific owners for the PR's changed file paths, adding `↳ **Proposed:** @handle` only when no matching owner is currently on the PR.
+   - Fetches `CODEOWNERS`, `.github/CODEOWNERS`, `MAINTAINERS.md` (bullet or Markdown table format), and Kubernetes/Prow `OWNERS` + `OWNERS_ALIASES` from the target repository, falling back to active mergers when no ownership files exist.
+   - Compares currently assigned or reviewing human maintainers against the owners for the PR's changed file paths, adding `↳ **Proposed:** @handle` only when no matching owner is currently on the PR.
    - Wraps `@handles` in backticks so updating a pinned issue description does not spam maintainers with notifications.
 4. **Deterministic hygiene audit**:
    - Checks commit `Signed-off-by:` (DCO), `area: description` title format, `release-notes` code block (if required by the repo's PR template), and merge conflicts.

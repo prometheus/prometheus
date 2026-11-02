@@ -13,8 +13,11 @@
 # limitations under the License.
 """Unit tests for generate_triage_board.py."""
 import datetime
+import importlib.util
 import os
+import shutil
 import sys
+import tempfile
 import unittest
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
@@ -221,6 +224,86 @@ class TestGenerateTriageBoard(unittest.TestCase):
             100,
         )
         self.assertLess(md.index("[#11]("), md.index("[#10]("))
+
+    def test_standalone_without_contributor_trust_skill(self):
+        src_script = os.path.join(
+            os.path.dirname(os.path.abspath(__file__)), "generate_triage_board.py"
+        )
+        with tempfile.TemporaryDirectory() as tmpdir:
+            isolated_dir = os.path.join(tmpdir, "pr-triage-board", "scripts")
+            os.makedirs(isolated_dir, exist_ok=True)
+            isolated_script = os.path.join(isolated_dir, "generate_triage_board.py")
+            shutil.copy2(src_script, isolated_script)
+
+            saved_mod = sys.modules.pop("score_contributors", None)
+            saved_path = list(sys.path)
+            sys.path = [p for p in sys.path if "contributor" not in p]
+            try:
+                spec = importlib.util.spec_from_file_location(
+                    "isolated_triage_board", isolated_script
+                )
+                mod = importlib.util.module_from_spec(spec)
+                spec.loader.exec_module(mod)
+            finally:
+                sys.path = saved_path
+                if saved_mod is not None:
+                    sys.modules["score_contributors"] = saved_mod
+
+            # Verify no colocated contributor-trust module was loaded.
+            self.assertIsNone(mod._sc_mod)
+
+            # Verify built-in standalone scorer matches role, table MAINTAINERS.md, OWNERS, and trust math.
+            gen, _, all_m = mod.sc.parse_maintainers_md(
+                "| Giedrius | `@Giedrius Statkevičius` | [@GiedriusS](https://github.com/GiedriusS) |\n## Triage\n| T | [@t](https://github.com/t) |\n"
+            )
+            self.assertEqual(gen, ["GiedriusS"])
+            self.assertEqual(all_m, ["GiedriusS"])
+
+            approvers = mod.sc.parse_owners_yaml(
+                "approvers:\n  - team-a\n", "aliases:\n  team-a:\n    - dashpole\n"
+            )
+            self.assertEqual(approvers, ["dashpole"])
+
+            role, base = mod.sc.classify_governance_role(
+                "bwplotka", "OWNER", set(), repo_owner="bwplotka"
+            )
+            self.assertEqual((role, base), ("Maintainer", 50.0))
+
+            score = mod.sc.compute_trust_score(15.0, merged_count=8, reviewed_count=0, window_days=90)
+            self.assertAlmostEqual(score["trust_score"], 37.5, places=1)
+            self.assertEqual(
+                mod.sc.compute_priority_score(score["trust_score"], waiting_days=10.0),
+                52.5,
+            )
+
+            now = datetime.datetime(2026, 11, 2, 5, 0, tzinfo=datetime.timezone.utc)
+            non_prom_md = mod.render_markdown(
+                ["thanos-io/thanos"], now, {"thanos-io/thanos": 0}, [], 50
+            )
+            self.assertIn("Generated via `pr-triage-board`", non_prom_md)
+            self.assertIn("repository roles", non_prom_md)
+            self.assertNotIn("07:00–18:00 CET", non_prom_md)
+
+            pr_no_dco = {
+                "title": "feat: add foo",
+                "body": "",
+                "mergeable": "MERGEABLE",
+                "commits": {"nodes": [{"commit": {"message": "feat: add foo"}}]},
+            }
+            self.assertEqual(
+                mod.check_hygiene(
+                    {"requires_dco": False, "requires_area_title": False, "requires_release_notes": False},
+                    pr_no_dco,
+                ),
+                [],
+            )
+            self.assertEqual(
+                mod.check_hygiene(
+                    {"requires_dco": True, "requires_area_title": False, "requires_release_notes": False},
+                    pr_no_dco,
+                ),
+                ["missing-dco"],
+            )
 
 
 if __name__ == "__main__":

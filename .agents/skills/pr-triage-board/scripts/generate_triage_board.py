@@ -17,24 +17,487 @@ Generates a GitHub-flavored Markdown PR Triage Board for any GitHub repository
 MAINTAINERS.md routing, and hygiene checks.
 """
 import argparse
+import base64
 from concurrent.futures import ThreadPoolExecutor
 import datetime
 import fnmatch
 import json
+import math
 import os
 import re
 import subprocess
 import sys
 import time
+import types
 
-_SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
-for _cand in ("contributor-trust", "contributor_trust"):
-    _cand_scripts = os.path.normpath(os.path.join(_SCRIPT_DIR, "..", "..", _cand, "scripts"))
-    if os.path.isdir(_cand_scripts) and _cand_scripts not in sys.path:
-        sys.path.insert(0, _cand_scripts)
+_sc_mod = None
+if os.environ.get("PR_TRIAGE_FORCE_STANDALONE") != "1":
+    _script_dir = os.path.dirname(os.path.abspath(__file__))
+    for _cand in ("contributor-trust", "contributor_trust"):
+        _cand_scripts = os.path.normpath(os.path.join(_script_dir, "..", "..", _cand, "scripts"))
+        if os.path.isdir(_cand_scripts):
+            if _cand_scripts not in sys.path:
+                sys.path.insert(0, _cand_scripts)
+            try:
+                import score_contributors as _sc_mod  # noqa: E402
+                break
+            except ImportError:
+                _sc_mod = None
 
-import score_contributors as sc  # noqa: E402
-from score_contributors import fetch_file_from_repo, is_bot, run_cmd  # noqa: E402
+
+PROMETHEUS_ORGS = {"prometheus", "prometheus-community", "promcon"}
+RESERVED_GH_PATHS = {
+    "orgs",
+    "organizations",
+    "teams",
+    "issues",
+    "pulls",
+    "pull",
+    "discussions",
+    "actions",
+    "settings",
+    "security",
+    "sponsors",
+    "about",
+    "pricing",
+    "features",
+}
+
+
+def run_cmd(cmd):
+    res = subprocess.run(cmd, capture_output=True, text=True)
+    if res.returncode != 0:
+        return None
+    return res.stdout
+
+
+def fetch_file_from_repo(owner, repo, path):
+    out = run_cmd(["gh", "api", f"repos/{owner}/{repo}/contents/{path}"])
+    if not out:
+        return None
+    try:
+        data = json.loads(out)
+        if "content" in data:
+            return base64.b64decode(data["content"]).decode("utf-8", errors="replace")
+    except Exception:
+        pass
+    return None
+
+
+def is_bot(actor):
+    if not actor:
+        return True
+    if isinstance(actor, dict):
+        if actor.get("__typename") == "Bot":
+            return True
+        login = actor.get("login")
+    else:
+        login = str(actor)
+    if not login:
+        return True
+    low = login.lower()
+    return (
+        "[bot]" in low
+        or "dependabot" in low
+        or "renovate" in low
+        or "copilot" in low
+        or low in ("prombot", "cla-bot", "netlify", "codecov")
+    )
+
+
+def _build_standalone_scorer():
+    """Provides built-in contributor trust scoring when contributor-trust is not installed."""
+    role_maintainer = "Maintainer"
+    role_member = "Member"
+    role_contributor = "Contributor"
+    role_new = "New Contributor"
+    role_bases = {
+        role_maintainer: 50.0,
+        role_member: 35.0,
+        role_contributor: 15.0,
+        role_new: 0.0,
+    }
+    role_rank = {role_new: 0, role_contributor: 1, role_member: 2, role_maintainer: 3}
+    assoc_rank = {
+        "NONE": 0,
+        "FIRST_TIMER": 1,
+        "FIRST_TIME_CONTRIBUTOR": 1,
+        "CONTRIBUTOR": 2,
+        "COLLABORATOR": 3,
+        "MEMBER": 4,
+        "OWNER": 5,
+    }
+    default_window_days = 90
+    activity_query = """
+    query($owner: String!, $name: String!, $states: [PullRequestState!]!, $after: String) {
+      repository(owner: $owner, name: $name) {
+        pullRequests(states: $states, first: 100, after: $after, orderBy: {field: UPDATED_AT, direction: DESC}) {
+          pageInfo { hasNextPage endCursor }
+          nodes {
+            number
+            state
+            updatedAt
+            mergedAt
+            mergedBy { __typename login }
+            author { __typename login }
+            authorAssociation
+            reviews(last: 30, states: [APPROVED, CHANGES_REQUESTED, COMMENTED]) {
+              nodes {
+                submittedAt
+                authorAssociation
+                author { __typename login }
+              }
+            }
+          }
+        }
+      }
+    }
+    """
+
+    def extract_handles(line):
+        gh_links = [
+            h
+            for h in re.findall(r"github\.com/([a-zA-Z0-9-]+)(?:[/?#)\]\s]|$)", line)
+            if h.lower() not in RESERVED_GH_PATHS
+        ]
+        if gh_links:
+            return list(dict.fromkeys(gh_links))
+        cleaned = re.sub(r"`[^`]*\s[^`]*`", " ", line)
+        return list(dict.fromkeys(re.findall(r"(?:^|[\s/(\[|`])@([a-zA-Z0-9-]+)", cleaned)))
+
+    def parse_maintainers_md(content):
+        general, specific, all_maintainers = [], [], []
+        if not content:
+            return general, specific, all_maintainers
+        mode = "general"
+        prefix_stack = []
+        for line in content.splitlines():
+            stripped = line.strip()
+            low = stripped.lower()
+            if not stripped:
+                continue
+            if low.startswith("general maintainers") or "core maintainers" in low:
+                mode, prefix_stack = "general", []
+                continue
+            if low.startswith("maintainers for specific") or "named maintainers" in low:
+                mode, prefix_stack = "specific", []
+                continue
+            if (
+                low.startswith("v3 release")
+                or low.startswith("release coordinators")
+                or low.startswith("for the sake of")
+                or (
+                    low.startswith("#")
+                    and any(
+                        s in low for s in ("triage", "alumni", "emeritus", "retired", "former")
+                    )
+                )
+                or low.startswith("emeritus")
+            ):
+                mode, prefix_stack = None, []
+                continue
+            if mode is None:
+                continue
+            if stripped.startswith("|") and re.match(r"^\|[\s:|-]+\|?$", stripped):
+                continue
+            handles = extract_handles(line)
+            indent = len(line) - len(line.lstrip(" "))
+            m_code = re.match(r"^\s*[-*]\s*`([^`]+)`", line)
+            if m_code:
+                token = m_code.group(1).strip("/")
+                while prefix_stack and prefix_stack[-1][0] >= indent:
+                    prefix_stack.pop()
+                prefix_stack.append((indent, token))
+                full_path = "/".join(t for _, t in prefix_stack)
+                if handles:
+                    specific.append((full_path, handles))
+                    for h in handles:
+                        if h not in all_maintainers:
+                            all_maintainers.append(h)
+            elif handles and stripped.startswith(("*", "-", "|")):
+                for h in handles:
+                    if mode == "general" and h not in general:
+                        general.append(h)
+                    if h not in all_maintainers:
+                        all_maintainers.append(h)
+        return general, specific, all_maintainers
+
+    def parse_codeowners(content):
+        rules, default_individuals, all_individuals = [], [], []
+        if not content:
+            return default_individuals, rules, all_individuals
+        for line in content.splitlines():
+            line = line.strip()
+            if not line or line.startswith("#"):
+                continue
+            parts = line.split()
+            if len(parts) < 2:
+                continue
+            pattern = parts[0]
+            raw_owners = [o.lstrip("@") for o in parts[1:] if o.startswith("@")]
+            indiv = [o for o in raw_owners if "/" not in o]
+            teams = [o for o in raw_owners if "/" in o]
+            for i in indiv:
+                if i not in all_individuals:
+                    all_individuals.append(i)
+            if pattern == "*":
+                for i in indiv:
+                    if i not in default_individuals:
+                        default_individuals.append(i)
+            else:
+                rules.append((pattern.lstrip("/"), indiv, teams))
+        return default_individuals, rules, all_individuals
+
+    def parse_owners_yaml(owners_content, aliases_content=""):
+        if not owners_content:
+            return []
+        aliases = {}
+        if aliases_content:
+            current_alias, in_aliases = None, False
+            for raw in aliases_content.splitlines():
+                line = raw.split("#", 1)[0].rstrip()
+                stripped = line.strip()
+                if not stripped:
+                    continue
+                if len(line) == len(line.lstrip(" ")):
+                    in_aliases = stripped.startswith("aliases:")
+                    current_alias = None
+                    continue
+                if not in_aliases:
+                    continue
+                if stripped.endswith(":") and not stripped.startswith("-"):
+                    current_alias = stripped[:-1].strip()
+                    aliases.setdefault(current_alias, [])
+                elif stripped.startswith("-") and current_alias:
+                    val = stripped[1:].strip().lstrip("@")
+                    if val:
+                        aliases[current_alias].append(val)
+        approvers, in_approvers = [], False
+        for raw in owners_content.splitlines():
+            line = raw.split("#", 1)[0].rstrip()
+            stripped = line.strip()
+            if not stripped:
+                continue
+            indent = len(line) - len(line.lstrip(" "))
+            if not stripped.startswith("-") and stripped.endswith(":"):
+                key = stripped[:-1].strip().lower()
+                if indent == 0 or key in ("approvers", "reviewers", "labels", "filters"):
+                    in_approvers = key == "approvers"
+                    continue
+            if in_approvers and stripped.startswith("-"):
+                token = stripped[1:].strip().lstrip("@")
+                for h in aliases.get(token, [token]):
+                    if h and "/" not in h and not is_bot(h) and h not in approvers:
+                        approvers.append(h)
+        return approvers
+
+    def classify_governance_role(
+        login, author_association, maintainer_handles_lower, has_accepted_work=False, repo_owner=None
+    ):
+        assoc = (author_association or "NONE").upper()
+        if (
+            (login and login.lower() in maintainer_handles_lower)
+            or assoc == "OWNER"
+            or (login and repo_owner and login.lower() == repo_owner.lower())
+        ):
+            return role_maintainer, role_bases[role_maintainer]
+        if assoc in ("MEMBER", "COLLABORATOR"):
+            return role_member, role_bases[role_member]
+        if assoc == "CONTRIBUTOR" or has_accepted_work:
+            return role_contributor, role_bases[role_contributor]
+        return role_new, role_bases[role_new]
+
+    def compute_trust_score(role_base, merged_count, reviewed_count, window_days=default_window_days):
+        months = max(1.0 / 30.0, window_days / 30.0)
+        weighted_rma = ((1.0 * merged_count) + (1.5 * reviewed_count)) / months
+        contrib_bonus = min(40.0, 12.0 * math.log2(1.0 + weighted_rma))
+        return {
+            "merged_count": merged_count,
+            "reviewed_count": reviewed_count,
+            "merged_rma": round(merged_count / months, 2),
+            "reviewed_rma": round(reviewed_count / months, 2),
+            "weighted_rma": round(weighted_rma, 2),
+            "contrib_bonus": round(contrib_bonus, 1),
+            "trust_score": round(role_base + contrib_bonus, 1),
+        }
+
+    def compute_priority_score(trust_score, waiting_days, aging_per_day=1.5):
+        return round(trust_score + (aging_per_day * max(0.0, waiting_days)), 2)
+
+    def format_author_cell(login, profile):
+        role = profile["role"]
+        w_rma = profile["weighted_rma"]
+        return f"@{login}<br>*({role}, {w_rma:.1f}/mo)*" if w_rma >= 0.1 else f"@{login}<br>*({role})*"
+
+    def fetch_stream(owner, name, states, cutoff_iso):
+        nodes, cursor = [], None
+        while True:
+            cmd = [
+                "gh",
+                "api",
+                "graphql",
+                "-f",
+                f"query={activity_query}",
+                "-F",
+                f"owner={owner}",
+                "-F",
+                f"name={name}",
+            ]
+            for s in states:
+                cmd.extend(["-F", f"states[]={s}"])
+            if cursor:
+                cmd.extend(["-F", f"after={cursor}"])
+            out = None
+            for attempt in range(3):
+                out = run_cmd(cmd)
+                if out:
+                    break
+                time.sleep(2 * (attempt + 1))
+            if not out:
+                raise RuntimeError(f"Failed to fetch PR activity for {owner}/{name}")
+            repo_data = (json.loads(out).get("data") or {}).get("repository")
+            if not repo_data:
+                raise RuntimeError(f"Empty repository payload for {owner}/{name}")
+            conn = repo_data["pullRequests"]
+            batch = conn["nodes"]
+            if not batch:
+                break
+            nodes.extend(batch)
+            if batch[-1]["updatedAt"] < cutoff_iso or not conn["pageInfo"]["hasNextPage"]:
+                break
+            cursor = conn["pageInfo"]["endCursor"]
+        return nodes
+
+    def infer_maintainers(pr_nodes, cutoff_iso):
+        merged_others, merge_counts = set(), {}
+        for pr in pr_nodes:
+            if not pr or pr.get("state") != "MERGED" or (pr.get("mergedAt") or "") < cutoff_iso:
+                continue
+            merger = pr.get("mergedBy")
+            if not merger or is_bot(merger):
+                continue
+            m_low = merger["login"].lower()
+            merge_counts[m_low] = merge_counts.get(m_low, 0) + 1
+            author = pr.get("author")
+            a_low = author["login"].lower() if author and author.get("login") else ""
+            if a_low != m_low and not is_bot(author):
+                merged_others.add(m_low)
+        return {m for m, cnt in merge_counts.items() if m in merged_others or cnt >= 2}
+
+    def aggregate_profiles(pr_nodes, maintainer_handles_lower, cutoff_iso, window_days=default_window_days, repo_owner=None):
+        effective_maintainers = set(maintainer_handles_lower or ()) or infer_maintainers(pr_nodes, cutoff_iso)
+        canonical_login, best_assoc, merged_prs, reviewed_prs = {}, {}, {}, {}
+
+        def record_user(login, assoc):
+            low = login.lower()
+            canonical_login.setdefault(low, login)
+            prev = best_assoc.get(low, "NONE")
+            if assoc_rank.get((assoc or "NONE").upper(), 0) >= assoc_rank.get(prev, 0):
+                best_assoc[low] = (assoc or "NONE").upper()
+            return low
+
+        seen = set()
+        for pr in pr_nodes:
+            if not pr or pr.get("number") in seen:
+                continue
+            seen.add(pr["number"])
+            author_obj = pr.get("author")
+            pr_author_low = ""
+            if author_obj and not is_bot(author_obj):
+                pr_author_low = record_user(author_obj["login"], pr.get("authorAssociation"))
+                if pr.get("state") == "MERGED" and (pr.get("mergedAt") or "") >= cutoff_iso:
+                    merged_prs.setdefault(pr_author_low, set()).add(pr["number"])
+            merger_obj = pr.get("mergedBy")
+            if merger_obj and not is_bot(merger_obj):
+                record_user(merger_obj["login"], "MEMBER")
+            for rev in (pr.get("reviews") or {}).get("nodes") or []:
+                r_author = rev.get("author")
+                if not r_author or is_bot(r_author) or (rev.get("submittedAt") or "") < cutoff_iso:
+                    continue
+                r_low = record_user(r_author["login"], rev.get("authorAssociation"))
+                if r_low != pr_author_low:
+                    reviewed_prs.setdefault(r_low, set()).add(pr["number"])
+
+        profiles = {}
+        for low, login in canonical_login.items():
+            m_cnt, r_cnt = len(merged_prs.get(low, ())), len(reviewed_prs.get(low, ()))
+            assoc = best_assoc.get(low, "NONE")
+            role, base = classify_governance_role(
+                login, assoc, effective_maintainers, (m_cnt + r_cnt) > 0, repo_owner=repo_owner
+            )
+            profiles[low] = {
+                "login": login,
+                "role": role,
+                "role_base": base,
+                "author_association": assoc,
+                **compute_trust_score(base, m_cnt, r_cnt, window_days=window_days),
+            }
+        return profiles
+
+    def fetch_repo_contributor_profiles(
+        owner, name, now=None, window_days=default_window_days, maintainer_handles_lower=None
+    ):
+        if now is None:
+            now = datetime.datetime.now(datetime.timezone.utc)
+        cutoff_iso = (now - datetime.timedelta(days=window_days)).strftime("%Y-%m-%dT%H:%M:%SZ")
+        with ThreadPoolExecutor(max_workers=2) as pool:
+            f_closed = pool.submit(fetch_stream, owner, name, ["MERGED", "CLOSED"], cutoff_iso)
+            f_open = pool.submit(fetch_stream, owner, name, ["OPEN"], cutoff_iso)
+            pr_nodes = f_closed.result() + f_open.result()
+        return aggregate_profiles(
+            pr_nodes, maintainer_handles_lower, cutoff_iso, window_days=window_days, repo_owner=owner
+        )
+
+    def resolve_author_profile(
+        profiles, login, author_association, maintainer_handles_lower, window_days=default_window_days, repo_owner=None
+    ):
+        low = login.lower()
+        existing = profiles.get(low)
+        if existing:
+            role, base = classify_governance_role(
+                login,
+                author_association,
+                maintainer_handles_lower,
+                (existing["merged_count"] + existing["reviewed_count"]) > 0,
+                repo_owner=repo_owner,
+            )
+            if role_rank[role] > role_rank[existing["role"]]:
+                return {
+                    **existing,
+                    "role": role,
+                    "role_base": base,
+                    **compute_trust_score(
+                        base, existing["merged_count"], existing["reviewed_count"], window_days=window_days
+                    ),
+                }
+            return existing
+        role, base = classify_governance_role(
+            login, author_association, maintainer_handles_lower, False, repo_owner=repo_owner
+        )
+        return {
+            "login": login,
+            "role": role,
+            "role_base": base,
+            "author_association": (author_association or "NONE").upper(),
+            **compute_trust_score(base, 0, 0, window_days=window_days),
+        }
+
+    return types.SimpleNamespace(
+        ROLE_MAINTAINER=role_maintainer,
+        DEFAULT_WINDOW_DAYS=default_window_days,
+        parse_maintainers_md=parse_maintainers_md,
+        parse_codeowners=parse_codeowners,
+        parse_owners_yaml=parse_owners_yaml,
+        classify_governance_role=classify_governance_role,
+        compute_trust_score=compute_trust_score,
+        compute_priority_score=compute_priority_score,
+        format_author_cell=format_author_cell,
+        fetch_repo_contributor_profiles=fetch_repo_contributor_profiles,
+        resolve_author_profile=resolve_author_profile,
+    )
+
+
+sc = _sc_mod if _sc_mod is not None else _build_standalone_scorer()
 
 
 GRAPHQL_QUERY = """
@@ -150,14 +613,29 @@ def build_repo_ownership_model(owner, repo):
         or fetch_file_from_repo(owner, repo, ".github/MAINTAINERS.md")
         or ""
     )
+    owners_txt = fetch_file_from_repo(owner, repo, "OWNERS") or ""
+    aliases_txt = (
+        fetch_file_from_repo(owner, repo, "OWNERS_ALIASES") if owners_txt else ""
+    ) or ""
     pr_template_txt = (
         fetch_file_from_repo(owner, repo, ".github/PULL_REQUEST_TEMPLATE.md")
         or fetch_file_from_repo(owner, repo, "PULL_REQUEST_TEMPLATE.md")
         or ""
     )
+    contributing_txt = (
+        ""
+        if owner.lower() in PROMETHEUS_ORGS
+        else (
+            fetch_file_from_repo(owner, repo, "CONTRIBUTING.md")
+            or fetch_file_from_repo(owner, repo, ".github/CONTRIBUTING.md")
+            or fetch_file_from_repo(owner, repo, "DCO")
+            or ""
+        )
+    )
 
     default_co, co_rules, co_all = sc.parse_codeowners(codeowners_txt)
     gen_maint, spec_maint, maint_all = sc.parse_maintainers_md(maintainers_txt)
+    owners_approvers = sc.parse_owners_yaml(owners_txt, aliases_txt)
 
     # Merge path rules (more specific paths first)
     path_rules = []
@@ -169,9 +647,16 @@ def build_repo_ownership_model(owner, repo):
             path_rules.append((pat, indiv))
 
     path_rules.sort(key=lambda x: len(x[0]), reverse=True)
-    fallback_owners = default_co or gen_maint
-    maintainer_handles_lower = {h.lower() for h in (maint_all + co_all)}
+    fallback_owners = default_co or gen_maint or owners_approvers
+    maintainer_handles_lower = {h.lower() for h in (maint_all + co_all + owners_approvers)}
 
+    policy_txt = (pr_template_txt + "\n" + contributing_txt).lower()
+    requires_dco = owner.lower() in PROMETHEUS_ORGS or bool(
+        re.search(
+            r"(\bdco\b|signed-off-by|developer certificate of origin|git commit -s)",
+            policy_txt,
+        )
+    )
     requires_release_notes = "```release-notes" in pr_template_txt
     requires_area_title = "area: short description" in pr_template_txt
 
@@ -179,6 +664,7 @@ def build_repo_ownership_model(owner, repo):
         "path_rules": path_rules,
         "fallback_owners": fallback_owners,
         "maintainer_handles_lower": maintainer_handles_lower,
+        "requires_dco": requires_dco,
         "requires_release_notes": requires_release_notes,
         "requires_area_title": requires_area_title,
     }
@@ -237,7 +723,7 @@ def check_hygiene(model, pr):
     body = pr.get("body") or ""
     commits = pr.get("commits", {}).get("nodes", [])
     last_msg = commits[-1]["commit"]["message"] if commits else ""
-    if "Signed-off-by:" not in last_msg:
+    if model.get("requires_dco", True) and "Signed-off-by:" not in last_msg:
         issues.append("missing-dco")
     if model["requires_area_title"]:
         if not re.match(r"^[a-zA-Z0-9_/()-]+(\s*\[PERF\])?:\s+.+", title):
@@ -329,6 +815,20 @@ def analyze_prs(repos, max_prs, maintainer_filter=None):
             total_open, raw_prs = f_prs.result()
             contributor_profiles = f_profiles.result()
         repo_totals[repo_full] = total_open
+
+        # When a repository has no explicit MAINTAINERS.md, CODEOWNERS, or OWNERS
+        # file, populate fallback owners from maintainers inferred via merge history.
+        if not model["fallback_owners"]:
+            inferred = [
+                p
+                for p in contributor_profiles.values()
+                if p["role"] == sc.ROLE_MAINTAINER
+            ]
+            inferred.sort(
+                key=lambda p: (-p["trust_score"], -p["weighted_rma"], p["login"].lower())
+            )
+            model["fallback_owners"] = [p["login"] for p in inferred]
+            model["maintainer_handles_lower"].update(p["login"].lower() for p in inferred)
 
         for pr in raw_prs:
             author = pr["author"]["login"] if pr.get("author") else "ghost"
@@ -548,6 +1048,7 @@ def analyze_prs(repos, max_prs, maintainer_filter=None):
                 author,
                 pr.get("authorAssociation"),
                 model["maintainer_handles_lower"],
+                repo_owner=owner,
             )
 
             # Maintainer waiting time starts when the ball entered the maintainer's
@@ -649,13 +1150,26 @@ def render_markdown(repos, now, repo_totals, prs, max_prs, maintainer_filter=Non
         return t.replace("|", "\\|")
 
     now_str = now.strftime("%Y-%m-%d %H:%M UTC")
+    is_prom_main = repos == ["prometheus/prometheus"]
+    all_prom_org = all(r.split("/", 1)[0].lower() in PROMETHEUS_ORGS for r in repos)
+
+    gen_line = (
+        "> **Automated via [`.agents/skills/pr-triage-board`](https://github.com/prometheus/prometheus/tree/main/.agents/skills/pr-triage-board)** · Refreshed **every hour on weekdays (Mon–Fri, 07:00–18:00 CET)**."
+        if is_prom_main
+        else "> **Generated via `pr-triage-board`**."
+    )
+    role_desc = (
+        "[Prometheus Governance roles](https://github.com/prometheus/governance/blob/main/ROLES.md)"
+        if all_prom_org
+        else "repository roles (`Maintainer`, `Member`, `Contributor`, `New Contributor`)"
+    )
 
     lines = [
         f"> **Auto-updated snapshot**: `{now_str}` · Analyzed `{len(prs)}` non-bot open PRs (up to {max_prs} most recently active per repo).",
         ">",
-        "> **Automated via [`.agents/skills/pr-triage-board`](https://github.com/prometheus/prometheus/tree/main/.agents/skills/pr-triage-board)** · Refreshed **every hour on weekdays (Mon–Fri, 07:00–18:00 CET)**.",
+        gen_line,
         ">",
-        "> **Queue priority**: Approved PRs first, then `trust_score + 1.5 * waiting_days` using [Prometheus Governance roles](https://github.com/prometheus/governance/blob/main/ROLES.md) + 90d monthly contribution rate (`1.0x` merged + `1.5x` reviewed PRs/mo via [`.agents/skills/contributor-trust`](https://github.com/prometheus/prometheus/tree/main/.agents/skills/contributor-trust)).",
+        f"> **Queue priority**: Approved PRs first, then `trust_score + 1.5 * waiting_days` using {role_desc} + 90d monthly contribution rate (`1.0x` merged + `1.5x` reviewed PRs/mo).",
         "",
     ]
 
@@ -823,8 +1337,9 @@ def render_markdown(repos, now, repo_totals, prs, max_prs, maintainer_filter=Non
             lines.append("| PR | Title | Author | Last Actor | Hygiene | Updated | Owners |")
             lines.append("| :--- | :--- | :--- | :--- | :--- | :--- | :--- |")
             for p in b_prs:
+                app = " *(approved)*" if p["approved"] else ""
                 lines.append(
-                    f"| {pr_link(p)} | {clean_title(p['title'])} | {p['author_cell']} | @{p['lastActor']} ({p['lastEventType']}) | {fmt_hygiene(p['hygiene'])} | {age_str(p['updatedAt'])} | {p['owners_cell']} |"
+                    f"| {pr_link(p)}{app} | {clean_title(p['title'])} | {p['author_cell']} | @{p['lastActor']} ({p['lastEventType']}) | {fmt_hygiene(p['hygiene'])} | {age_str(p['updatedAt'])} | {p['owners_cell']} |"
                 )
         else:
             lines.append("_None._")
