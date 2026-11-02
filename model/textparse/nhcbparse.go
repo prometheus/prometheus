@@ -81,13 +81,12 @@ type NHCBParser struct {
 	err   error
 
 	// Caches the values and metric for the inserted converted NHCB.
-	bytesNHCB        []byte
-	hNHCB            *histogram.Histogram
-	fhNHCB           *histogram.FloatHistogram
-	lsetNHCB         labels.Labels
-	exemplars        []exemplar.Exemplar
-	stNHCB           int64
-	metricStringNHCB string
+	bytesNHCB []byte
+	hNHCB     *histogram.Histogram
+	fhNHCB    *histogram.FloatHistogram
+	lsetNHCB  labels.Labels
+	exemplars []exemplar.Exemplar
+	stNHCB    int64
 
 	// Collates values from the classic histogram series to build
 	// the converted histogram later.
@@ -104,6 +103,9 @@ type NHCBParser struct {
 	lastHistogramLabelsHash uint64
 	// Reused buffer for hashing labels.
 	hBuffer []byte
+
+	// Reusable scratch buffer for formatting bytesNHCB.
+	fastPathBuf []byte
 }
 
 func NewNHCBParser(p Parser, st *labels.SymbolTable, keepClassicHistograms, parseST bool) Parser {
@@ -113,6 +115,7 @@ func NewNHCBParser(p Parser, st *labels.SymbolTable, keepClassicHistograms, pars
 		parseST:               parseST,
 		builder:               labels.NewScratchBuilderWithSymbolTable(st, 16),
 		tempNHCB:              convertnhcb.NewTempHistogram(),
+		fastPathBuf:           make([]byte, 0, 256),
 	}
 }
 
@@ -329,7 +332,15 @@ func (p *NHCBParser) processClassicHistogramSeries(lset labels.Labels, name stri
 			p.tempST = 0
 		}
 		p.state = stateCollecting
-		p.tempLsetNHCB = convertnhcb.GetHistogramMetricBase(lset, name)
+		p.builder.Reset()
+		lset.Range(func(l labels.Label) {
+			if l.Name == labels.MetricName {
+				p.builder.Add(labels.MetricName, name)
+			} else if l.Name != labels.BucketLabel {
+				p.builder.Add(l.Name, l.Value)
+			}
+		})
+		p.tempLsetNHCB = p.builder.Labels()
 	}
 	p.storeExemplars()
 	updateHist(&p.tempNHCB)
@@ -371,16 +382,10 @@ func (p *NHCBParser) processNHCB() bool {
 		p.hNHCB = h
 		p.fhNHCB = fh
 
-		lblsWithMetricName := p.tempLsetNHCB.DropReserved(func(n string) bool { return n == labels.MetricName })
-		// Ensure we return `metric` instead of `metric{}` for name only
-		// series, for consistency with wrapped parsers.
-		if lblsWithMetricName.IsEmpty() {
-			p.metricStringNHCB = p.tempLsetNHCB.Get(labels.MetricName)
-		} else {
-			p.metricStringNHCB = p.tempLsetNHCB.Get(labels.MetricName) + lblsWithMetricName.StringNoSpace()
-		}
+		p.fastPathBuf = p.fastPathBuf[:0]
+		p.fastPathBuf = formatBytesNHCB(p.fastPathBuf, p.tempLsetNHCB, p.tempLsetNHCB.Get(labels.MetricName))
+		p.bytesNHCB = p.fastPathBuf
 
-		p.bytesNHCB = []byte(p.metricStringNHCB)
 		p.lsetNHCB = p.tempLsetNHCB
 		p.swapExemplars()
 		p.stNHCB = p.tempST
@@ -392,4 +397,32 @@ func (p *NHCBParser) processNHCB() bool {
 	p.tempExemplarCount = 0
 	p.tempST = 0
 	return err == nil
+}
+
+// formatBytesNHCB appends the canonical metric name and non-name labels without spaces to dst.
+func formatBytesNHCB(dst []byte, lset labels.Labels, metricName string) []byte {
+	dst = append(dst, metricName...)
+	first := true
+	lset.Range(func(l labels.Label) {
+		if l.Name == labels.MetricName {
+			return
+		}
+		if first {
+			dst = append(dst, '{')
+			first = false
+		} else {
+			dst = append(dst, ',')
+		}
+		if !model.LegacyValidation.IsValidLabelName(l.Name) {
+			dst = strconv.AppendQuote(dst, l.Name)
+		} else {
+			dst = append(dst, l.Name...)
+		}
+		dst = append(dst, '=')
+		dst = strconv.AppendQuote(dst, l.Value)
+	})
+	if !first {
+		dst = append(dst, '}')
+	}
+	return dst
 }
