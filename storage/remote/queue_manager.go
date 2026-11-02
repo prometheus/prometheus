@@ -2496,22 +2496,30 @@ func populateV2TimeSeries(symbolTable *writev2.SymbolsTable, batch []timeSeries,
 		if d.sType != tExemplar {
 			continue
 		}
-		pendingData[nSeries].LabelsRefs = symbolTable.SymbolizeLabels(d.seriesLabels, pendingData[nSeries].LabelsRefs)
-		ex := writev2.Exemplar{
-			LabelsRefs: symbolTable.SymbolizeLabels(d.exemplarLabels, nil), // TODO: optimize, reuse slice
-			Value:      d.value,
-			Timestamp:  d.timestamp,
-		}
-		attached := false
-		for i := range nSeriesWithData {
-			if slices.Equal(pendingData[i].LabelsRefs, pendingData[nSeries].LabelsRefs) {
-				pendingData[i].Exemplars = append(pendingData[i].Exemplars, ex)
-				nPendingExemplars++
-				attached = true
-				break
+		// Match against seriesLabels directly before symbolizing so dropped exemplars do not
+		// pollute symbolTable (or writev2.Request.Symbols) and pendingData[nSeries] is only
+		// indexed when emitting a detached TimeSeries.
+		attachedIdx := -1
+		if nSeriesWithData > 0 {
+			dataIdx := 0
+			for i := range batch {
+				if batch[i].sType == tExemplar || batch[i].sType == tMetadata {
+					continue
+				}
+				if labels.Equal(batch[i].seriesLabels, d.seriesLabels) {
+					attachedIdx = dataIdx
+					break
+				}
+				dataIdx++
 			}
 		}
-		if attached {
+		if attachedIdx >= 0 {
+			pendingData[attachedIdx].Exemplars = append(pendingData[attachedIdx].Exemplars, writev2.Exemplar{
+				LabelsRefs: symbolTable.SymbolizeLabels(d.exemplarLabels, nil), // TODO: optimize, reuse slice
+				Value:      d.value,
+				Timestamp:  d.timestamp,
+			})
+			nPendingExemplars++
 			continue
 		}
 		if mode != remoteapi.WriteModeNone {
@@ -2522,7 +2530,12 @@ func populateV2TimeSeries(symbolTable *writev2.SymbolsTable, batch []timeSeries,
 		if sendNativeHistograms {
 			pendingData[nSeries].Histograms = pendingData[nSeries].Histograms[:0]
 		}
-		pendingData[nSeries].Exemplars = append(pendingData[nSeries].Exemplars[:0], ex)
+		pendingData[nSeries].LabelsRefs = symbolTable.SymbolizeLabels(d.seriesLabels, pendingData[nSeries].LabelsRefs)
+		pendingData[nSeries].Exemplars = append(pendingData[nSeries].Exemplars[:0], writev2.Exemplar{
+			LabelsRefs: symbolTable.SymbolizeLabels(d.exemplarLabels, nil), // TODO: optimize, reuse slice
+			Value:      d.value,
+			Timestamp:  d.timestamp,
+		})
 		initV2TimeSeriesMetadata(&pendingData[nSeries], symbolTable, d, enableTypeAndUnitLabels)
 		nPendingExemplars++
 		nSeries++
