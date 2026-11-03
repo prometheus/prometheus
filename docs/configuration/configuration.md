@@ -4096,7 +4096,8 @@ url: <string>
 # * `stateless`: appends `;mode=stateless` to the Content-Type header, defaults `send_native_histograms` to `true`,
 #   requires `--enable-feature=metadata-wal-records` or `--enable-feature=type-and-unit-labels`, and drops classic
 #   histogram float series, series with unspecified metadata type, and detached exemplars without a matching live sample
-#   or histogram in the same shard batch (see `send_exemplars` for batch-coalescing limitations).
+#   or histogram in the same shard batch; see `send_exemplars` for current limitations and
+#   https://github.com/prometheus/prometheus/issues/20289.
 # * `stateless-st`: appends `;mode=stateless-st` to the Content-Type header, includes all `stateless` rules,
 #   additionally requires `--enable-feature=st-storage`, and drops cumulative metrics missing a start timestamp.
 #
@@ -4125,12 +4126,13 @@ write_relabel_configs:
 [ name: <string> ]
 
 # Enables sending of exemplars over remote write. Note that exemplar storage itself must be enabled for exemplars to be scraped in the first place.
-# When `mode` is `stateless` or `stateless-st`, exemplars are best-effort attached to matching series with live samples
-# or histograms in the same shard batch, and detached exemplars are dropped. Because samples/histograms and exemplars
-# are written as separate WAL records, batch splits (`queue_config.max_samples_per_send`, `batch_send_deadline`, or
-# resharding) or age-limit filtering (`sample_age_limit`) can occasionally separate an exemplar from its sample and drop
-# it as detached; classic histograms converted via `convert_classic_histograms_to_nhcb` also drop exemplars without an
-# explicit timestamp at scrape time.
+# When `mode` is `stateless` or `stateless-st`, exemplars are attached on a best-effort basis to matching series with
+# live samples or histograms in the same shard batch, and detached exemplars are dropped. Because TSDB and Agent write
+# samples/histograms and exemplars as separate WAL records, batch flushes at `queue_config.max_samples_per_send` or
+# `batch_send_deadline`, shard resharding, WAL replay filtering, or `sample_age_limit` expiration can separate an
+# exemplar from its sample and drop it as detached. Classic histograms converted via `convert_classic_histograms_to_nhcb`
+# also drop exemplars without an explicit timestamp at scrape time. End-to-end WAL correlation is tracked in
+# https://github.com/prometheus/prometheus/issues/20289.
 [ send_exemplars: <boolean> | default = false ]
 
 # Enables sending of native histograms, also known as sparse histograms, over remote write.
