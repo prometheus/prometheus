@@ -79,17 +79,19 @@ const (
 type queueManagerMetrics struct {
 	reg prometheus.Registerer
 
-	samplesTotal           prometheus.Counter
-	exemplarsTotal         prometheus.Counter
-	histogramsTotal        prometheus.Counter
-	metadataTotal          prometheus.Counter
-	failedSamplesTotal     prometheus.Counter
-	failedExemplarsTotal   prometheus.Counter
-	failedHistogramsTotal  prometheus.Counter
+	samplesTotal    prometheus.Counter
+	exemplarsTotal  prometheus.Counter
+	histogramsTotal prometheus.Counter
+	metadataTotal   prometheus.Counter
+
+	failedSamplesTotal     *prometheus.CounterVec
+	failedExemplarsTotal   *prometheus.CounterVec
+	failedHistogramsTotal  *prometheus.CounterVec
+	retriedSamplesTotal    *prometheus.CounterVec
+	retriedExemplarsTotal  *prometheus.CounterVec
+	retriedHistogramsTotal *prometheus.CounterVec
+
 	failedMetadataTotal    prometheus.Counter
-	retriedSamplesTotal    prometheus.Counter
-	retriedExemplarsTotal  prometheus.Counter
-	retriedHistogramsTotal prometheus.Counter
 	retriedMetadataTotal   prometheus.Counter
 	droppedSamplesTotal    *prometheus.CounterVec
 	droppedExemplarsTotal  *prometheus.CounterVec
@@ -169,27 +171,27 @@ func newQueueManagerMetrics(r prometheus.Registerer, rn, e string) *queueManager
 		Help:        "Total number of metadata entries sent to remote storage. Deprecated: This metric only applies to Remote Write 1.0.",
 		ConstLabels: constLabels,
 	})
-	m.failedSamplesTotal = prometheus.NewCounter(prometheus.CounterOpts{
+	m.failedSamplesTotal = prometheus.NewCounterVec(prometheus.CounterOpts{
 		Namespace:   namespace,
 		Subsystem:   subsystem,
 		Name:        "samples_failed_total",
-		Help:        "Total number of samples which failed on send to remote storage, non-recoverable errors.",
+		Help:        "Total number of samples which failed on send to remote storage, labeled by reason.",
 		ConstLabels: constLabels,
-	})
-	m.failedExemplarsTotal = prometheus.NewCounter(prometheus.CounterOpts{
+	}, []string{"reason"})
+	m.failedExemplarsTotal = prometheus.NewCounterVec(prometheus.CounterOpts{
 		Namespace:   namespace,
 		Subsystem:   subsystem,
 		Name:        "exemplars_failed_total",
-		Help:        "Total number of exemplars which failed on send to remote storage, non-recoverable errors.",
+		Help:        "Total number of exemplars which failed on send to remote storage, labeled by reason.",
 		ConstLabels: constLabels,
-	})
-	m.failedHistogramsTotal = prometheus.NewCounter(prometheus.CounterOpts{
+	}, []string{"reason"})
+	m.failedHistogramsTotal = prometheus.NewCounterVec(prometheus.CounterOpts{
 		Namespace:   namespace,
 		Subsystem:   subsystem,
 		Name:        "histograms_failed_total",
-		Help:        "Total number of histograms which failed on send to remote storage, non-recoverable errors.",
+		Help:        "Total number of histograms which failed on send to remote storage, labeled by reason.",
 		ConstLabels: constLabels,
-	})
+	}, []string{"reason"})
 	m.failedMetadataTotal = prometheus.NewCounter(prometheus.CounterOpts{
 		Namespace:   namespace,
 		Subsystem:   subsystem,
@@ -197,27 +199,27 @@ func newQueueManagerMetrics(r prometheus.Registerer, rn, e string) *queueManager
 		Help:        "Total number of metadata entries which failed on send to remote storage, non-recoverable errors. Deprecated: This metric only applies to Remote Write 1.0.",
 		ConstLabels: constLabels,
 	})
-	m.retriedSamplesTotal = prometheus.NewCounter(prometheus.CounterOpts{
+	m.retriedSamplesTotal = prometheus.NewCounterVec(prometheus.CounterOpts{
 		Namespace:   namespace,
 		Subsystem:   subsystem,
 		Name:        "samples_retried_total",
 		Help:        "Total number of samples which failed on send to remote storage but were retried because the send error was recoverable.",
 		ConstLabels: constLabels,
-	})
-	m.retriedExemplarsTotal = prometheus.NewCounter(prometheus.CounterOpts{
+	}, []string{"reason"})
+	m.retriedExemplarsTotal = prometheus.NewCounterVec(prometheus.CounterOpts{
 		Namespace:   namespace,
 		Subsystem:   subsystem,
 		Name:        "exemplars_retried_total",
 		Help:        "Total number of exemplars which failed on send to remote storage but were retried because the send error was recoverable.",
 		ConstLabels: constLabels,
-	})
-	m.retriedHistogramsTotal = prometheus.NewCounter(prometheus.CounterOpts{
+	}, []string{"reason"})
+	m.retriedHistogramsTotal = prometheus.NewCounterVec(prometheus.CounterOpts{
 		Namespace:   namespace,
 		Subsystem:   subsystem,
 		Name:        "histograms_retried_total",
 		Help:        "Total number of histograms which failed on send to remote storage but were retried because the send error was recoverable.",
 		ConstLabels: constLabels,
-	})
+	}, []string{"reason"})
 	m.retriedMetadataTotal = prometheus.NewCounter(prometheus.CounterOpts{
 		Namespace:   namespace,
 		Subsystem:   subsystem,
@@ -688,7 +690,7 @@ func (t *QueueManager) sendMetadataWithBackoff(ctx context.Context, metadata []p
 		return nil
 	}
 
-	retry := func() {
+	retry := func(_ retryReason) {
 		t.metrics.retriedMetadataTotal.Add(float64(len(metadata)))
 	}
 	err = t.sendWriteRequestWithBackoff(ctx, attemptStore, retry)
@@ -2066,9 +2068,9 @@ func (s *shards) runShard(ctx context.Context, shardID int, queue *queue) {
 			s.qm.metrics.pendingSamples.Sub(float64(droppedSamples))
 			s.qm.metrics.pendingExemplars.Sub(float64(droppedExemplars))
 			s.qm.metrics.pendingHistograms.Sub(float64(droppedHistograms))
-			s.qm.metrics.failedSamplesTotal.Add(float64(droppedSamples))
-			s.qm.metrics.failedExemplarsTotal.Add(float64(droppedExemplars))
-			s.qm.metrics.failedHistogramsTotal.Add(float64(droppedHistograms))
+			s.qm.metrics.failedSamplesTotal.WithLabelValues(string(reasonShutdown)).Add(float64(droppedSamples))
+			s.qm.metrics.failedExemplarsTotal.WithLabelValues(string(reasonShutdown)).Add(float64(droppedExemplars))
+			s.qm.metrics.failedHistogramsTotal.WithLabelValues(string(reasonShutdown)).Add(float64(droppedHistograms))
 			s.samplesDroppedOnHardShutdown.Add(uint32(droppedSamples))
 			s.exemplarsDroppedOnHardShutdown.Add(uint32(droppedExemplars))
 			s.histogramsDroppedOnHardShutdown.Add(uint32(droppedHistograms))
@@ -2156,18 +2158,27 @@ func (s *shards) sendV2Samples(ctx context.Context, samples []writev2.TimeSeries
 }
 
 func (s *shards) updateMetrics(_ context.Context, err error, sampleCount, exemplarCount, histogramCount int, rs WriteResponseStats, duration time.Duration) {
+	failureReason := reasonClientError
+	var unrecoverableErr unrecoverableError
+	if errors.As(err, &unrecoverableErr) {
+		failureReason = unrecoverableErr.reason
+	}
+	if err == nil {
+		failureReason = reasonPartialWrite
+	}
+
 	// Partial errors may happen -- account for that.
 	sampleDiff := sampleCount - rs.Samples
 	if sampleDiff > 0 {
-		s.qm.metrics.failedSamplesTotal.Add(float64(sampleDiff))
+		s.qm.metrics.failedSamplesTotal.WithLabelValues(string(failureReason)).Add(float64(sampleDiff))
 	}
 	histogramDiff := histogramCount - rs.Histograms
 	if histogramDiff > 0 {
-		s.qm.metrics.failedHistogramsTotal.Add(float64(histogramDiff))
+		s.qm.metrics.failedHistogramsTotal.WithLabelValues(string(failureReason)).Add(float64(histogramDiff))
 	}
 	exemplarDiff := exemplarCount - rs.Exemplars
 	if exemplarDiff > 0 {
-		s.qm.metrics.failedExemplarsTotal.Add(float64(exemplarDiff))
+		s.qm.metrics.failedExemplarsTotal.WithLabelValues(string(failureReason)).Add(float64(exemplarDiff))
 	}
 	if err != nil {
 		s.qm.logger.Error("non-recoverable error", "failedSampleCount", sampleDiff, "failedHistogramCount", histogramDiff, "failedExemplarCount", exemplarDiff, "err", err)
@@ -2275,8 +2286,8 @@ func (s *shards) sendSamplesWithBackoff(ctx context.Context, samples []prompb.Ti
 		return err
 	}
 
-	onRetry := func() {
-		metricsUpdater.recordRetry(sc)
+	onRetry := func(reason retryReason) {
+		metricsUpdater.recordRetry(sc, reason)
 	}
 
 	err = s.qm.sendWriteRequestWithBackoff(ctx, attemptStore, onRetry)
@@ -2399,8 +2410,8 @@ func (s *shards) sendV2SamplesWithBackoff(ctx context.Context, samples []writev2
 		return err
 	}
 
-	onRetry := func() {
-		metricsUpdater.recordRetry(sc)
+	onRetry := func(reason retryReason) {
+		metricsUpdater.recordRetry(sc, reason)
 	}
 
 	err = s.qm.sendWriteRequestWithBackoff(ctx, attemptStore, onRetry)
@@ -2482,7 +2493,7 @@ func populateV2TimeSeries(symbolTable *writev2.SymbolsTable, batch []timeSeries,
 	return nPendingSamples, nPendingExemplars, nPendingHistograms, nUnexpectedMetadata
 }
 
-func (t *QueueManager) sendWriteRequestWithBackoff(ctx context.Context, attempt func(int) error, onRetry func()) error {
+func (t *QueueManager) sendWriteRequestWithBackoff(ctx context.Context, attempt func(int) error, onRetry func(retryReason)) error {
 	backoff := t.cfg.MinBackoff
 	sleepDuration := model.Duration(0)
 	try := 0
@@ -2505,7 +2516,6 @@ func (t *QueueManager) sendWriteRequestWithBackoff(ctx context.Context, attempt 
 		if !errors.As(err, &backoffErr) {
 			return err
 		}
-
 		sleepDuration = backoff
 		switch {
 		case backoffErr.retryAfter > 0:
@@ -2538,7 +2548,7 @@ func (t *QueueManager) sendWriteRequestWithBackoff(ctx context.Context, attempt 
 		}
 
 		// If we make it this far, we've encountered a recoverable error and will retry.
-		onRetry()
+		onRetry(backoffErr.reason)
 		t.logger.Warn("Failed to send batch, retrying", "err", err)
 
 		backoff = min(sleepDuration*2, t.cfg.MaxBackoff)
@@ -2798,10 +2808,13 @@ func (b *batchMetricsUpdater) recordLatency(begin time.Time) {
 }
 
 // recordRetry records retry metrics for a batch.
-func (b *batchMetricsUpdater) recordRetry(sc sendBatchContext) {
-	b.metrics.retriedSamplesTotal.Add(float64(sc.sampleCount))
-	b.metrics.retriedExemplarsTotal.Add(float64(sc.exemplarCount))
-	b.metrics.retriedHistogramsTotal.Add(float64(sc.histogramCount))
+func (b *batchMetricsUpdater) recordRetry(sc sendBatchContext, reason retryReason) {
+	b.metrics.retriedSamplesTotal.WithLabelValues(string(reason)).
+		Add(float64(sc.sampleCount))
+	b.metrics.retriedExemplarsTotal.WithLabelValues(string(reason)).
+		Add(float64(sc.exemplarCount))
+	b.metrics.retriedHistogramsTotal.WithLabelValues(string(reason)).
+		Add(float64(sc.histogramCount))
 }
 
 // createBatchSpan creates and configures an OpenTelemetry span for batch sending.

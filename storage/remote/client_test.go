@@ -60,7 +60,11 @@ func TestStoreHTTPErrorHandling(t *testing.T) {
 		},
 		{
 			code: 500,
-			err:  RecoverableError{errors.New("server returned HTTP status 500 Internal Server Error: " + longErrMessage[:maxErrMsgLen]), defaultBackoff},
+			err: RecoverableError{
+				error:      errors.New("server returned HTTP status 500 Internal Server Error: " + longErrMessage[:maxErrMsgLen]),
+				reason:     reasonServerError,
+				retryAfter: defaultBackoff,
+			},
 		},
 	}
 
@@ -87,6 +91,11 @@ func TestStoreHTTPErrorHandling(t *testing.T) {
 		_, err = c.Store(context.Background(), []byte{}, 0)
 		if test.err != nil {
 			require.EqualError(t, err, test.err.Error())
+			if test.code == http.StatusNotFound {
+				var unrecoverableErr unrecoverableError
+				require.ErrorAs(t, err, &unrecoverableErr)
+				require.Equal(t, reasonClientError, unrecoverableErr.reason)
+			}
 		} else {
 			require.NoError(t, err)
 		}
@@ -148,6 +157,11 @@ func TestClientRetryAfter(t *testing.T) {
 			require.Equal(t, tc.expectedRecoverable, errors.As(err, &recErr), "Mismatch in expected recoverable error status.")
 			if tc.expectedRecoverable {
 				require.Equal(t, tc.expectedRetryAfter, recErr.retryAfter)
+				if tc.statusCode == http.StatusTooManyRequests {
+					require.Equal(t, reasonRateLimited, recErr.reason)
+				} else {
+					require.Equal(t, reasonServerError, recErr.reason)
+				}
 			}
 		})
 	}
