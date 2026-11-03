@@ -20,6 +20,7 @@ import (
 	"sort"
 	"strings"
 
+	"github.com/grafana/regexp"
 	"github.com/prometheus/common/model"
 
 	"github.com/prometheus/prometheus/model/histogram"
@@ -119,10 +120,17 @@ func (q *NativeHistogramsAsClassicQuerier) Select(ctx context.Context, sortSerie
 		return nhcbSet
 	}
 
-	// Query stored classic series without le matchers so that we can detect if
-	// a stored classic histogram exists at a given timestamp even when the
-	// query's le matcher only selects a subset of buckets (or a bucket label
-	// that differs between stored classic and converted NHCB).
+	// Query stored classic series with the le matchers pushed down, widened so
+	// that the +Inf bucket is always selected. Shadowing converted NHCB samples
+	// only needs to know at which timestamps a stored classic histogram has a
+	// sample, and every classic histogram has a +Inf bucket, so the +Inf series
+	// is enough even when the query's le matcher selects none of the stored
+	// buckets. The original le matchers are still applied to the stored classic
+	// series before they are returned.
+	//
+	// NOTE: Dropping the le matchers instead would fetch all B+1 bucket series
+	// for selective queries such as foo_bucket{le="+Inf"}, also for users that
+	// never store NHCBs.
 	//
 	// NOTE: Both Select calls on q.Querier must happen before any SeriesSet.Next()
 	// call, and advancing nhcbSet/classicSet is deferred to lazySeriesSet.Next(),
@@ -134,6 +142,8 @@ func (q *NativeHistogramsAsClassicQuerier) Select(ctx context.Context, sortSerie
 		for _, m := range matchers {
 			if m.Name != labels.BucketLabel {
 				classicMatchers = append(classicMatchers, m)
+			} else if wm := withInfBucket(m); wm != nil {
+				classicMatchers = append(classicMatchers, wm)
 			}
 		}
 	}
@@ -486,6 +496,33 @@ func extractHistogramSuffix(matchers []*labels.Matcher) (string, string, []*labe
 	}
 
 	return strings.TrimSuffix(nameMatcher.Value, suffix), suffix, baseMatchers
+}
+
+// infLe is the le label value of the bucket every classic histogram has.
+const infLe = "+Inf"
+
+// withInfBucket returns a matcher that behaves like m but additionally matches
+// the +Inf bucket, so that the stored classic +Inf series is always selected
+// alongside the buckets the query asked for. Returns nil if m cannot be widened,
+// such as le!="+Inf", in which case the le filter is only applied client-side.
+func withInfBucket(m *labels.Matcher) *labels.Matcher {
+	if m.Matches(infLe) {
+		return m
+	}
+	var re string
+	switch m.Type {
+	case labels.MatchEqual:
+		re = regexp.QuoteMeta(m.Value) + "|" + regexp.QuoteMeta(infLe)
+	case labels.MatchRegexp:
+		re = "(?:" + m.Value + ")|" + regexp.QuoteMeta(infLe)
+	default:
+		return nil
+	}
+	wm, err := labels.NewMatcher(labels.MatchRegexp, labels.BucketLabel, re)
+	if err != nil {
+		return nil
+	}
+	return wm
 }
 
 func matchesLe(lset labels.Labels, leMatchers []*labels.Matcher) bool {
