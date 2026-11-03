@@ -2159,8 +2159,7 @@ func (s *shards) sendV2Samples(ctx context.Context, samples []writev2.TimeSeries
 
 func (s *shards) updateMetrics(_ context.Context, err error, sampleCount, exemplarCount, histogramCount int, rs WriteResponseStats, duration time.Duration) {
 	failureReason := reasonClientError
-	var unrecoverableErr unrecoverableError
-	if errors.As(err, &unrecoverableErr) {
+	if unrecoverableErr, ok := errors.AsType[unrecoverableError](err); ok {
 		failureReason = unrecoverableErr.reason
 	}
 	if err == nil {
