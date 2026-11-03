@@ -1355,3 +1355,108 @@ test_histogram_sum{a="2"} 2.5
 	}
 	requireEntries(t, exp, got)
 }
+
+func TestNHCBParserBytesAndLabelsFormatting(t *testing.T) {
+	oneInfHist := &histogram.Histogram{
+		Schema:          histogram.CustomBucketsSchema,
+		Count:           1,
+		Sum:             0,
+		PositiveSpans:   []histogram.Span{{Offset: 0, Length: 1}},
+		PositiveBuckets: []int64{1},
+	}
+
+	for _, tc := range []struct {
+		name        string
+		contentType string
+		eof         string
+	}{
+		{
+			name:        "prometheus text",
+			contentType: "text/plain; version=1.0.0; escaping=allow-utf-8",
+		},
+		{
+			name:        "openmetrics text",
+			contentType: "application/openmetrics-text; version=1.0.0; escaping=allow-utf-8",
+			eof:         "# EOF\n",
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			input := `# TYPE escaped histogram
+escaped_bucket{a="x\"y\\z\nw",b="plain",le="+Inf"} 1
+# TYPE labelless histogram
+labelless_bucket{le="+Inf"} 1
+# TYPE "utf8.hist" histogram
+{"utf8.hist_bucket","utf8.label"="val",a="1",le="+Inf"} 1
+# TYPE emptyval histogram
+emptyval_bucket{empty="",a="b",le="+Inf"} 1
+# TYPE onlyempty histogram
+onlyempty_bucket{empty="",le="+Inf"} 1
+# TYPE "" histogram
+{"_bucket",a="b",le="+Inf"} 1
+` + tc.eof
+
+			p, err := New([]byte(input), tc.contentType, labels.NewSymbolTable(), ParserOptions{ConvertClassicHistogramsToNHCB: true})
+			require.NoError(t, err)
+			require.NotNil(t, p)
+
+			got := testParse(t, p)
+			exp := []parsedEntry{
+				{
+					m:   "escaped",
+					typ: model.MetricTypeHistogram,
+				},
+				{
+					m:    `escaped{a="x\"y\\z\nw",b="plain"}`,
+					shs:  oneInfHist,
+					lset: labels.FromStrings("__name__", "escaped", "a", "x\"y\\z\nw", "b", "plain"),
+				},
+				{
+					m:   "labelless",
+					typ: model.MetricTypeHistogram,
+				},
+				{
+					m:    "labelless",
+					shs:  oneInfHist,
+					lset: labels.FromStrings("__name__", "labelless"),
+				},
+				{
+					m:   "utf8.hist",
+					typ: model.MetricTypeHistogram,
+				},
+				{
+					m:    `utf8.hist{a="1","utf8.label"="val"}`,
+					shs:  oneInfHist,
+					lset: labels.FromStrings("__name__", "utf8.hist", "a", "1", "utf8.label", "val"),
+				},
+				{
+					m:   "emptyval",
+					typ: model.MetricTypeHistogram,
+				},
+				{
+					m:    `emptyval{a="b"}`,
+					shs:  oneInfHist,
+					lset: labels.FromStrings("__name__", "emptyval", "a", "b"),
+				},
+				{
+					m:   "onlyempty",
+					typ: model.MetricTypeHistogram,
+				},
+				{
+					m:    "onlyempty",
+					shs:  oneInfHist,
+					lset: labels.FromStrings("__name__", "onlyempty"),
+				},
+				{
+					m:   "",
+					typ: model.MetricTypeHistogram,
+				},
+				{
+					m:    `{a="b"}`,
+					shs:  oneInfHist,
+					lset: labels.FromStrings("a", "b"),
+				},
+			}
+			requireEntries(t, exp, got)
+		})
+	}
+}

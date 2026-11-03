@@ -105,7 +105,7 @@ type NHCBParser struct {
 	hBuffer []byte
 
 	// Reusable scratch buffer for formatting bytesNHCB.
-	fastPathBuf []byte
+	bytesBuf []byte
 }
 
 func NewNHCBParser(p Parser, st *labels.SymbolTable, keepClassicHistograms, parseST bool) Parser {
@@ -115,7 +115,7 @@ func NewNHCBParser(p Parser, st *labels.SymbolTable, keepClassicHistograms, pars
 		parseST:               parseST,
 		builder:               labels.NewScratchBuilderWithSymbolTable(st, 16),
 		tempNHCB:              convertnhcb.NewTempHistogram(),
-		fastPathBuf:           make([]byte, 0, 256),
+		bytesBuf:              make([]byte, 0, 256),
 	}
 }
 
@@ -332,15 +332,7 @@ func (p *NHCBParser) processClassicHistogramSeries(lset labels.Labels, name stri
 			p.tempST = 0
 		}
 		p.state = stateCollecting
-		p.builder.Reset()
-		lset.Range(func(l labels.Label) {
-			if l.Name == labels.MetricName {
-				p.builder.Add(labels.MetricName, name)
-			} else if l.Name != labels.BucketLabel {
-				p.builder.Add(l.Name, l.Value)
-			}
-		})
-		p.tempLsetNHCB = p.builder.Labels()
+		p.tempLsetNHCB = lset
 	}
 	p.storeExemplars()
 	updateHist(&p.tempNHCB)
@@ -382,11 +374,11 @@ func (p *NHCBParser) processNHCB() bool {
 		p.hNHCB = h
 		p.fhNHCB = fh
 
-		p.fastPathBuf = p.fastPathBuf[:0]
-		p.fastPathBuf = formatBytesNHCB(p.fastPathBuf, p.tempLsetNHCB, p.tempLsetNHCB.Get(labels.MetricName))
-		p.bytesNHCB = p.fastPathBuf
+		p.builder.Reset()
+		p.bytesBuf = formatAndBuildNHCB(p.bytesBuf[:0], &p.builder, p.tempLsetNHCB, p.lastHistogramName)
+		p.bytesNHCB = p.bytesBuf
+		p.lsetNHCB = p.builder.Labels()
 
-		p.lsetNHCB = p.tempLsetNHCB
 		p.swapExemplars()
 		p.stNHCB = p.tempST
 		p.state = stateEmitting
@@ -399,14 +391,23 @@ func (p *NHCBParser) processNHCB() bool {
 	return err == nil
 }
 
-// formatBytesNHCB appends the canonical metric name and non-name labels without spaces to dst.
-func formatBytesNHCB(dst []byte, lset labels.Labels, metricName string) []byte {
+// formatAndBuildNHCB populates builder with the base histogram labels (stripping
+// le and empty-valued labels, matching convertnhcb.GetHistogramMetricBase) and
+// appends the canonical metric name and non-name labels without spaces to dst.
+func formatAndBuildNHCB(dst []byte, builder *labels.ScratchBuilder, lset labels.Labels, metricName string) []byte {
 	dst = append(dst, metricName...)
 	first := true
 	lset.Range(func(l labels.Label) {
 		if l.Name == labels.MetricName {
+			if metricName != "" {
+				builder.Add(labels.MetricName, metricName)
+			}
 			return
 		}
+		if l.Name == labels.BucketLabel || l.Value == "" {
+			return
+		}
+		builder.Add(l.Name, l.Value)
 		if first {
 			dst = append(dst, '{')
 			first = false
