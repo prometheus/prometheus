@@ -4412,6 +4412,21 @@ func TestQueueManager_SendHelpInterval(t *testing.T) {
 	require.NoError(t, nativeHist.Validate())
 	nativeFloatHist := nativeHist.ToFloat(nil)
 
+	nhcbHist := &histogram.Histogram{
+		Schema:          histogram.CustomBucketsSchema,
+		CustomValues:    []float64{1},
+		PositiveSpans:   []histogram.Span{{Length: 2}},
+		PositiveBuckets: []int64{2, 1},
+		Count:           5,
+		Sum:             7,
+	}
+	require.NoError(t, nhcbHist.Validate())
+	nhcbFloatHist := nhcbHist.ToFloat(nil)
+	invalidNHCB := &histogram.Histogram{
+		Schema:       histogram.CustomBucketsSchema,
+		CustomValues: []float64{2, 1}, // Unsorted bounds fail ClassicBucketCounts validation.
+	}
+
 	sCounter := record.RefSeries{
 		Ref:    1,
 		Labels: labels.FromStrings("__name__", "http_requests_total"),
@@ -4436,16 +4451,17 @@ func TestQueueManager_SendHelpInterval(t *testing.T) {
 	}
 
 	for _, tc := range []struct {
-		name                    string
-		interval                model.Duration
-		mode                    remoteapi.WriteMode
-		convertNHCB             bool
-		run                     func(t *testing.T, m *QueueManager)
-		expectedMetadata        map[string][]prompb.MetricMetadata
-		expectedSampleHelps     float64
-		expectedSampleTypes     float64
-		expectedHistogramHelps  float64
-		expectedHistogramTypes  float64
+		name                   string
+		interval               model.Duration
+		mode                   remoteapi.WriteMode
+		convertNHCB            bool
+		run                    func(t *testing.T, m *QueueManager)
+		expectedMetadata       map[string][]prompb.MetricMetadata
+		expectedSampleHelps    float64
+		expectedSampleTypes    float64
+		expectedHistogramHelps float64
+		expectedHistogramTypes float64
+		expectedNHCBConvErrors float64
 	}{
 		{
 			name:     "default sends help on every point",
@@ -4558,6 +4574,79 @@ func TestQueueManager_SendHelpInterval(t *testing.T) {
 			expectedHistogramTypes: 4,
 			expectedHistogramHelps: 2,
 		},
+		{
+			name:        "nhcb conversion error does not consume help; conversion and transitions respect interval",
+			interval:    model.Duration(5 * time.Minute),
+			mode:        remoteapi.WriteModeNone,
+			convertNHCB: true,
+			run: func(t *testing.T, m *QueueManager) {
+				m.StoreSeries([]record.RefSeries{sHist}, 0)
+				m.StoreMetadata(initialMeta[1:])
+
+				// 1. Failed NHCB conversions must not mark Help as sent.
+				require.True(t, m.AppendHistograms([]record.RefHistogramSample{
+					{Ref: sHist.Ref, ST: 100, T: 900, H: invalidNHCB},
+				}))
+				require.True(t, m.AppendFloatHistograms([]record.RefFloatHistogramSample{
+					{Ref: sHist.Ref, ST: 100, T: 950, FH: invalidNHCB.ToFloat(nil)},
+				}))
+
+				// 2. First valid integer NHCB at t0 emits Help on all converted classic series.
+				require.True(t, m.AppendHistograms([]record.RefHistogramSample{
+					{Ref: sHist.Ref, ST: 100, T: 1000, H: nhcbHist},
+				}))
+
+				// 3. Float NHCB within the 5m interval omits Help.
+				time.Sleep(time.Minute)
+				require.True(t, m.AppendFloatHistograms([]record.RefFloatHistogramSample{
+					{Ref: sHist.Ref, ST: 100, T: 2000, FH: nhcbFloatHist},
+				}))
+
+				// 4. Transitioning to an exponential histogram within the interval omits Help on retired and replacement series.
+				time.Sleep(time.Minute)
+				require.True(t, m.AppendHistograms([]record.RefHistogramSample{
+					{Ref: sHist.Ref, ST: 100, T: 3000, H: nativeHist},
+				}))
+
+				// 5. After 5m from t0 elapses, NHCB re-sends Help; a subsequent float transition within the new window omits Help.
+				time.Sleep(3 * time.Minute)
+				require.True(t, m.AppendHistograms([]record.RefHistogramSample{
+					{Ref: sHist.Ref, ST: 100, T: 4000, H: nhcbHist},
+				}))
+				time.Sleep(time.Minute)
+				require.True(t, m.Append([]record.RefSample{
+					{Ref: sHist.Ref, ST: 100, T: 5000, V: 42},
+				}))
+			},
+			expectedMetadata: func() map[string][]prompb.MetricMetadata {
+				out := map[string][]prompb.MetricMetadata{
+					sHist.Labels.String(): {
+						{MetricFamilyName: sHist.Labels.String(), Type: prompb.MetricMetadata_HISTOGRAM, Unit: "seconds", Help: ""},
+						{MetricFamilyName: sHist.Labels.String(), Type: prompb.MetricMetadata_HISTOGRAM, Unit: "seconds", Help: ""},
+					},
+				}
+				for _, classicID := range []string{
+					`{__name__="http_request_duration_seconds_bucket", le="1.0"}`,
+					`{__name__="http_request_duration_seconds_bucket", le="+Inf"}`,
+					`{__name__="http_request_duration_seconds_count"}`,
+					`{__name__="http_request_duration_seconds_sum"}`,
+				} {
+					out[classicID] = []prompb.MetricMetadata{
+						{MetricFamilyName: classicID, Type: prompb.MetricMetadata_HISTOGRAM, Unit: "seconds", Help: "HTTP request duration."},
+						{MetricFamilyName: classicID, Type: prompb.MetricMetadata_HISTOGRAM, Unit: "seconds", Help: ""},
+						{MetricFamilyName: classicID, Type: prompb.MetricMetadata_HISTOGRAM, Unit: "seconds", Help: ""},
+						{MetricFamilyName: classicID, Type: prompb.MetricMetadata_HISTOGRAM, Unit: "seconds", Help: "HTTP request duration."},
+						{MetricFamilyName: classicID, Type: prompb.MetricMetadata_HISTOGRAM, Unit: "seconds", Help: ""},
+					}
+				}
+				return out
+			}(),
+			expectedSampleTypes:    21,
+			expectedSampleHelps:    8,
+			expectedHistogramTypes: 1,
+			expectedHistogramHelps: 0,
+			expectedNHCBConvErrors: 2,
+		},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			t.Parallel()
@@ -4592,6 +4681,7 @@ func TestQueueManager_SendHelpInterval(t *testing.T) {
 				require.Equal(t, tc.expectedHistogramTypes, client_testutil.ToFloat64(metrics.histogramsMetadataTotal.WithLabelValues(metadataFieldType)))
 				require.Equal(t, tc.expectedHistogramTypes, client_testutil.ToFloat64(metrics.histogramsMetadataTotal.WithLabelValues(metadataFieldUnit)))
 				require.Equal(t, tc.expectedHistogramHelps, client_testutil.ToFloat64(metrics.histogramsMetadataTotal.WithLabelValues(metadataFieldHelp)))
+				require.Equal(t, tc.expectedNHCBConvErrors, client_testutil.ToFloat64(metrics.droppedHistogramsTotal.WithLabelValues(reasonNHCBConversionError)))
 			})
 		})
 	}
