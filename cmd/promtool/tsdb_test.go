@@ -16,6 +16,7 @@ package main
 import (
 	"bytes"
 	"context"
+	"errors"
 	"io"
 	"math"
 	"os"
@@ -242,6 +243,26 @@ func TestFormatSeriesSetRejectsUnknownSampleType(t *testing.T) {
 	require.EqualError(t, formatSeriesSet(ss), "unknown sample type unknown")
 }
 
+func TestFormatSeriesSetReturnsIteratorError(t *testing.T) {
+	for name, format := range map[string]func(storage.SeriesSet) error{
+		"prom":        formatSeriesSet,
+		"openmetrics": formatSeriesSetOpenMetrics,
+	} {
+		t.Run(name, func(t *testing.T) {
+			ss := &singleSeriesSet{
+				series: &storage.SeriesEntry{
+					Lset: labels.FromStrings(labels.MetricName, "corrupt"),
+					SampleIteratorFn: func(chunkenc.Iterator) chunkenc.Iterator {
+						return &errIterator{err: errors.New("checksum mismatch")}
+					},
+				},
+			}
+
+			require.EqualError(t, format(ss), "checksum mismatch")
+		})
+	}
+}
+
 type singleSeriesSet struct {
 	series storage.Series
 	done   bool
@@ -273,6 +294,14 @@ func (it *unknownValueTypeIterator) Next() chunkenc.ValueType {
 }
 
 func (*unknownValueTypeIterator) Err() error { return nil }
+
+type errIterator struct {
+	chunkenc.Iterator
+	err error
+}
+
+func (*errIterator) Next() chunkenc.ValueType { return chunkenc.ValNone }
+func (it *errIterator) Err() error            { return it.err }
 
 func sortLines(buf string) string {
 	lines := strings.Split(buf, "\n")

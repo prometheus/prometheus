@@ -771,7 +771,7 @@ func formatSeriesSet(ss storage.SeriesSet) error {
 			}
 		}
 		if it.Err() != nil {
-			return ss.Err()
+			return it.Err()
 		}
 	}
 	return nil
@@ -832,7 +832,7 @@ func formatSeriesSetOpenMetrics(ss storage.SeriesSet) error {
 			fmt.Printf("%s%s %g %.3f\n", metricName, CondensedString(lbs), val, float64(ts)/1000)
 		}
 		if it.Err() != nil {
-			return ss.Err()
+			return it.Err()
 		}
 	}
 	fmt.Println("# EOF")
