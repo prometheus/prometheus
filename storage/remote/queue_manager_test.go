@@ -4435,6 +4435,7 @@ func TestQueueManager_SendHelpInterval(t *testing.T) {
 		Ref:    2,
 		Labels: labels.FromStrings("__name__", "http_request_duration_seconds"),
 	}
+	exemplarLabels := labels.FromStrings("trace_id", "abc")
 	initialMeta := []record.RefMetadata{
 		{
 			Ref:  sCounter.Ref,
@@ -4457,6 +4458,7 @@ func TestQueueManager_SendHelpInterval(t *testing.T) {
 		convertNHCB            bool
 		run                    func(t *testing.T, m *QueueManager)
 		expectedMetadata       map[string][]prompb.MetricMetadata
+		expectedExemplars      int
 		expectedSampleHelps    float64
 		expectedSampleTypes    float64
 		expectedHistogramHelps float64
@@ -4475,6 +4477,9 @@ func TestQueueManager_SendHelpInterval(t *testing.T) {
 					{Ref: sCounter.Ref, ST: 100, T: 1000, V: 1},
 					{Ref: sCounter.Ref, ST: 100, T: 2000, V: 2},
 				}))
+				require.True(t, m.AppendExemplars([]record.RefExemplar{
+					{Ref: sCounter.Ref, T: 2000, V: 2, Labels: exemplarLabels},
+				}))
 				require.True(t, m.AppendHistograms([]record.RefHistogramSample{
 					{Ref: sHist.Ref, ST: 100, T: 1000, H: nativeHist},
 					{Ref: sHist.Ref, ST: 100, T: 2000, H: nativeHist},
@@ -4484,12 +4489,14 @@ func TestQueueManager_SendHelpInterval(t *testing.T) {
 				sCounter.Labels.String(): {
 					{MetricFamilyName: sCounter.Labels.String(), Type: prompb.MetricMetadata_COUNTER, Unit: "requests", Help: "Total HTTP requests."},
 					{MetricFamilyName: sCounter.Labels.String(), Type: prompb.MetricMetadata_COUNTER, Unit: "requests", Help: "Total HTTP requests."},
+					{MetricFamilyName: sCounter.Labels.String(), Type: prompb.MetricMetadata_COUNTER, Unit: "requests", Help: "Total HTTP requests."},
 				},
 				sHist.Labels.String(): {
 					{MetricFamilyName: sHist.Labels.String(), Type: prompb.MetricMetadata_HISTOGRAM, Unit: "seconds", Help: "HTTP request duration."},
 					{MetricFamilyName: sHist.Labels.String(), Type: prompb.MetricMetadata_HISTOGRAM, Unit: "seconds", Help: "HTTP request duration."},
 				},
 			},
+			expectedExemplars:      1,
 			expectedSampleTypes:    2,
 			expectedSampleHelps:    2,
 			expectedHistogramTypes: 2,
@@ -4647,6 +4654,55 @@ func TestQueueManager_SendHelpInterval(t *testing.T) {
 			expectedHistogramHelps: 0,
 			expectedNHCBConvErrors: 2,
 		},
+		{
+			name:     "exemplars omit help without consuming interval",
+			interval: model.Duration(5 * time.Minute),
+			mode:     remoteapi.WriteModeNone,
+			run: func(t *testing.T, m *QueueManager) {
+				m.StoreSeries([]record.RefSeries{sCounter}, 0)
+				m.StoreMetadata(initialMeta[:1])
+
+				// 1. An exemplar before any sample omits Help and does not consume the initial Help send.
+				require.True(t, m.AppendExemplars([]record.RefExemplar{
+					{Ref: sCounter.Ref, T: 900, V: 1, Labels: exemplarLabels},
+				}))
+				require.True(t, m.Append([]record.RefSample{
+					{Ref: sCounter.Ref, ST: 100, T: 1000, V: 1},
+				}))
+
+				// 2. Exemplars and samples within the 5m interval both omit Help while preserving Type and Unit.
+				time.Sleep(time.Minute)
+				require.True(t, m.AppendExemplars([]record.RefExemplar{
+					{Ref: sCounter.Ref, T: 2000, V: 2, Labels: exemplarLabels},
+				}))
+				require.True(t, m.Append([]record.RefSample{
+					{Ref: sCounter.Ref, ST: 100, T: 2000, V: 2},
+				}))
+
+				// 3. After the 5m interval elapses, an exemplar still omits Help without consuming the reset interval,
+				// so the next sample re-sends Help.
+				time.Sleep(4 * time.Minute)
+				require.True(t, m.AppendExemplars([]record.RefExemplar{
+					{Ref: sCounter.Ref, T: 3000, V: 3, Labels: exemplarLabels},
+				}))
+				require.True(t, m.Append([]record.RefSample{
+					{Ref: sCounter.Ref, ST: 100, T: 3000, V: 3},
+				}))
+			},
+			expectedMetadata: map[string][]prompb.MetricMetadata{
+				sCounter.Labels.String(): {
+					{MetricFamilyName: sCounter.Labels.String(), Type: prompb.MetricMetadata_COUNTER, Unit: "requests", Help: ""},
+					{MetricFamilyName: sCounter.Labels.String(), Type: prompb.MetricMetadata_COUNTER, Unit: "requests", Help: "Total HTTP requests."},
+					{MetricFamilyName: sCounter.Labels.String(), Type: prompb.MetricMetadata_COUNTER, Unit: "requests", Help: ""},
+					{MetricFamilyName: sCounter.Labels.String(), Type: prompb.MetricMetadata_COUNTER, Unit: "requests", Help: ""},
+					{MetricFamilyName: sCounter.Labels.String(), Type: prompb.MetricMetadata_COUNTER, Unit: "requests", Help: ""},
+					{MetricFamilyName: sCounter.Labels.String(), Type: prompb.MetricMetadata_COUNTER, Unit: "requests", Help: "Total HTTP requests."},
+				},
+			},
+			expectedExemplars:   3,
+			expectedSampleTypes: 3,
+			expectedSampleHelps: 2,
+		},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			t.Parallel()
@@ -4674,6 +4730,8 @@ func TestQueueManager_SendHelpInterval(t *testing.T) {
 				stop()
 
 				require.Equal(t, tc.expectedMetadata, c.receivedMetadata)
+				require.Equal(t, tc.expectedExemplars, deepLen(c.receivedExemplars))
+				require.Equal(t, float64(tc.expectedExemplars), client_testutil.ToFloat64(metrics.exemplarsTotal))
 				require.Equal(t, tc.expectedSampleTypes, client_testutil.ToFloat64(metrics.samplesMetadataTotal.WithLabelValues(metadataFieldType)))
 				require.Equal(t, tc.expectedSampleTypes, client_testutil.ToFloat64(metrics.samplesMetadataTotal.WithLabelValues(metadataFieldUnit)))
 				require.Equal(t, tc.expectedSampleHelps, client_testutil.ToFloat64(metrics.samplesMetadataTotal.WithLabelValues(metadataFieldHelp)))
