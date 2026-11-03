@@ -405,8 +405,8 @@ func TestWALMetadataDelivery(t *testing.T) {
 	qm.StoreSeries(recs.Series, 0)
 	qm.StoreMetadata(recs.Metadata)
 
-	require.Len(t, qm.seriesLabels, n)
-	require.Len(t, qm.seriesMetadata, n)
+	require.Equal(t, n, qm.series.activeLen())
+	require.Equal(t, n, qm.series.metadataLen())
 
 	c.expectSamples(recs.Samples, recs.Series)
 	c.expectMetadataForBatch(recs.Metadata, recs.Series, recs.Samples, nil, nil, nil)
@@ -532,18 +532,18 @@ func TestSeriesReset(t *testing.T) {
 				m.StoreSeries(series, i)
 				m.StoreMetadata(metadata)
 			}
-			require.Len(t, m.seriesLabels, numSegments*numSeries)
+			require.Equal(t, numSegments*numSeries, m.series.activeLen())
 			// V2 stores metadata in seriesMetadata map for inline sending.
 			// V1 sends metadata separately via MetadataWatcher, so seriesMetadata is not populated.
 			if protoMsg == remoteapi.WriteV2MessageType {
-				require.Len(t, m.seriesMetadata, numSegments*numSeries)
+				require.Equal(t, numSegments*numSeries, m.series.metadataLen())
 			}
 
 			m.SeriesReset(2)
-			require.Len(t, m.seriesLabels, numSegments*numSeries/2)
+			require.Equal(t, numSegments*numSeries/2, m.series.activeLen())
 			// Verify metadata is also reset for V2
 			if protoMsg == remoteapi.WriteV2MessageType {
-				require.Len(t, m.seriesMetadata, numSegments*numSeries/2)
+				require.Equal(t, numSegments*numSeries/2, m.series.metadataLen())
 			}
 		})
 	}

@@ -489,18 +489,15 @@ type QueueManager struct {
 	mode        remoteapi.WriteMode
 	compr       compression.Type
 
-	seriesMtx        sync.Mutex // Covers seriesLabels, seriesMetadata, droppedSeries, the NHCB fields and builder.
-	seriesLabels     map[chunks.HeadSeriesRef]labels.Labels
-	seriesMetadata   map[chunks.HeadSeriesRef]unique.Handle[metadata.Metadata]
-	droppedSeries    map[chunks.HeadSeriesRef]struct{}
+	series seriesStore
+
+	nhcbMtx          sync.Mutex // Covers the NHCB fields and nhcbBuilder; never hold a seriesStore stripe lock while acquiring nhcbMtx.
+	activeNHCBSeries atomic.Int64
 	nhcbSeriesBounds map[chunks.HeadSeriesRef]*nhcbLayout // Layout of each converted NHCB series.
 	nhcbLayouts      map[string]*nhcbLayout               // Keyed by the encoded bounds.
 	nhcbLayoutKey    []byte                               // Scratch space for layout keys.
 	nhcbCounts       []float64                            // Scratch space for bucket counts.
-	builder          *labels.Builder
-
-	seriesSegmentMtx     sync.Mutex // Covers seriesSegmentIndexes - if you also lock seriesMtx, take seriesMtx first.
-	seriesSegmentIndexes map[chunks.HeadSeriesRef]int
+	nhcbBuilder      *labels.Builder
 
 	shards      *shards
 	numShards   int
@@ -569,13 +566,9 @@ func NewQueueManager(
 		enableTypeAndUnitLabels: enableTypeAndUnitLabels,
 		failedRequestLogging:    failedRequestLogging,
 
-		seriesLabels:         make(map[chunks.HeadSeriesRef]labels.Labels),
-		seriesMetadata:       make(map[chunks.HeadSeriesRef]unique.Handle[metadata.Metadata]),
-		seriesSegmentIndexes: make(map[chunks.HeadSeriesRef]int),
-		droppedSeries:        make(map[chunks.HeadSeriesRef]struct{}),
-		nhcbSeriesBounds:     make(map[chunks.HeadSeriesRef]*nhcbLayout),
-		nhcbLayouts:          make(map[string]*nhcbLayout),
-		builder:              labels.NewBuilder(labels.EmptyLabels()),
+		nhcbSeriesBounds: make(map[chunks.HeadSeriesRef]*nhcbLayout),
+		nhcbLayouts:      make(map[string]*nhcbLayout),
+		nhcbBuilder:      labels.NewBuilder(labels.EmptyLabels()),
 
 		numShards:   cfg.MinShards,
 		reshardChan: make(chan int),
@@ -861,82 +854,110 @@ func (t *QueueManager) shouldDropHistogramForMode(ref chunks.HeadSeriesRef, st i
 	return false
 }
 
+var lookupEntriesPool = sync.Pool{
+	New: func() any {
+		return new([lookupChunkSize]seriesEntry)
+	},
+}
+
 // Append queues a sample to be sent to the remote storage. Blocks until all samples are
 // enqueued on their shards or a shutdown signal is received.
 func (t *QueueManager) Append(samples []record.RefSample) bool {
-	currentTime := time.Now()
-outer:
-	for _, s := range samples {
-		if isSampleOld(currentTime, time.Duration(t.cfg.SampleAgeLimit), s.T) {
-			t.metrics.droppedSamplesTotal.WithLabelValues(reasonTooOld).Inc()
-			continue
-		}
-		t.seriesMtx.Lock()
-		lbls, ok := t.seriesLabels[s.Ref]
-		if !ok {
-			t.dataDropped.incr(1)
-			if _, ok := t.droppedSeries[s.Ref]; !ok {
-				t.logger.Info("Dropped sample for series that was not explicitly dropped via relabelling", "ref", s.Ref)
-				t.metrics.droppedSamplesTotal.WithLabelValues(reasonUnintentionalDroppedSeries).Inc()
-			} else {
-				t.metrics.droppedSamplesTotal.WithLabelValues(reasonDroppedSeries).Inc()
+	if len(samples) == 0 {
+		return true
+	}
+
+	var (
+		ageLimit  = time.Duration(t.cfg.SampleAgeLimit)
+		checkAge  = ageLimit > 0
+		limitTime time.Time
+	)
+	if checkAge {
+		limitTime = time.Now().Add(-ageLimit)
+	}
+
+	entriesBuf := lookupEntriesPool.Get().(*[lookupChunkSize]seriesEntry)
+	defer lookupEntriesPool.Put(entriesBuf)
+
+	for off := 0; off < len(samples); off += lookupChunkSize {
+		chunk := samples[off:min(off+lookupChunkSize, len(samples))]
+		t.series.lookupSamples(chunk, entriesBuf[:len(chunk)])
+		checkNHCB := t.convertNHCBToClassic && t.activeNHCBSeries.Load() > 0
+
+	outer:
+		for i, s := range chunk {
+			if checkAge && timestamp.Time(s.T).Before(limitTime) {
+				t.metrics.droppedSamplesTotal.WithLabelValues(reasonTooOld).Inc()
+				continue
 			}
-			t.seriesMtx.Unlock()
-			continue
-		}
-		// TODO(cstyan): Handle or at least log an error if no metadata is found.
-		// See https://github.com/prometheus/prometheus/issues/14405
-		meta := t.seriesMetadata[s.Ref]
-		if t.convertNHCBToClassic {
-			if _, ok := t.nhcbSeriesBounds[s.Ref]; ok {
-				// A float sample for a converted NHCB series is either its stale marker or
-				// a change of sample type. Both retire the classic series; a type change
-				// also forwards the float, whose start time stays off the retired series.
-				st := s.ST
-				var replacement *timeSeries
-				if !value.IsStaleNaN(s.V) {
-					st = 0
-					replacement = &timeSeries{seriesLabels: lbls, metadata: meta, startTimestamp: s.ST, timestamp: s.T, value: s.V, sType: tSample}
-				}
-				if !t.convertAndEnqueueNHCB(s.Ref, st, s.T, nil, nil, true, lbls, meta, replacement) {
-					return false
+			entry := entriesBuf[i]
+			if entry.state != seriesStateActive {
+				t.dataDropped.incr(1)
+				if entry.state == seriesStateDropped {
+					t.metrics.droppedSamplesTotal.WithLabelValues(reasonDroppedSeries).Inc()
+				} else {
+					t.logger.Info("Dropped sample for series that was not explicitly dropped via relabelling", "ref", s.Ref)
+					t.metrics.droppedSamplesTotal.WithLabelValues(reasonUnintentionalDroppedSeries).Inc()
 				}
 				continue
 			}
-		}
-		t.seriesMtx.Unlock()
-		if t.mode != remoteapi.WriteModeNone && t.shouldDropFloatSampleForMode(s.Ref, s.ST, value.IsStaleNaN(s.V), lbls, meta) {
-			continue
-		}
-		// Start with a very small backoff. This should not be t.cfg.MinBackoff
-		// as it can happen without errors, and we want to pickup work after
-		// filling a queue/resharding as quickly as possible.
-		// TODO: Consider using the average duration of a request as the backoff.
-		backoff := model.Duration(5 * time.Millisecond)
-		for {
-			select {
-			case <-t.quit:
-				return false
-			default:
+			// TODO(cstyan): Handle or at least log an error if no metadata is found.
+			// See https://github.com/prometheus/prometheus/issues/14405
+			lbls := entry.labels
+			meta := entry.metadata
+			if checkNHCB {
+				t.nhcbMtx.Lock()
+				if _, ok := t.nhcbSeriesBounds[s.Ref]; ok {
+					// A float sample for a converted NHCB series is either its stale marker or
+					// a change of sample type. Both retire the classic series; a type change
+					// also forwards the float, whose start time stays off the retired series.
+					st := s.ST
+					var replacement *timeSeries
+					if !value.IsStaleNaN(s.V) {
+						st = 0
+						replacement = &timeSeries{seriesLabels: lbls, metadata: meta, startTimestamp: s.ST, timestamp: s.T, value: s.V, sType: tSample}
+					}
+					if !t.convertAndEnqueueNHCB(s.Ref, st, s.T, nil, nil, true, lbls, meta, replacement) {
+						return false
+					}
+					checkNHCB = t.activeNHCBSeries.Load() > 0
+					continue
+				}
+				t.nhcbMtx.Unlock()
 			}
-			if t.shards.enqueue(s.Ref, timeSeries{
-				seriesLabels:   lbls,
-				metadata:       meta,
-				startTimestamp: s.ST,
-				timestamp:      s.T,
-				value:          s.V,
-				sType:          tSample,
-			}) {
-				continue outer
+			if t.mode != remoteapi.WriteModeNone && t.shouldDropFloatSampleForMode(s.Ref, s.ST, value.IsStaleNaN(s.V), lbls, meta) {
+				continue
 			}
+			// Start with a very small backoff. This should not be t.cfg.MinBackoff
+			// as it can happen without errors, and we want to pickup work after
+			// filling a queue/resharding as quickly as possible.
+			// TODO: Consider using the average duration of a request as the backoff.
+			backoff := model.Duration(5 * time.Millisecond)
+			for {
+				select {
+				case <-t.quit:
+					return false
+				default:
+				}
+				if t.shards.enqueue(s.Ref, timeSeries{
+					seriesLabels:   lbls,
+					metadata:       meta,
+					startTimestamp: s.ST,
+					timestamp:      s.T,
+					value:          s.V,
+					sType:          tSample,
+				}) {
+					continue outer
+				}
 
-			t.metrics.enqueueRetriesTotal.Inc()
-			time.Sleep(time.Duration(backoff))
-			backoff *= 2
-			// It is reasonable to use t.cfg.MaxBackoff here, as if we have hit
-			// the full backoff we are likely waiting for external resources.
-			if backoff > t.cfg.MaxBackoff {
-				backoff = t.cfg.MaxBackoff
+				t.metrics.enqueueRetriesTotal.Inc()
+				time.Sleep(time.Duration(backoff))
+				backoff *= 2
+				// It is reasonable to use t.cfg.MaxBackoff here, as if we have hit
+				// the full backoff we are likely waiting for external resources.
+				if backoff > t.cfg.MaxBackoff {
+					backoff = t.cfg.MaxBackoff
+				}
 			}
 		}
 	}
@@ -954,21 +975,22 @@ outer:
 			t.metrics.droppedExemplarsTotal.WithLabelValues(reasonTooOld).Inc()
 			continue
 		}
-		t.seriesMtx.Lock()
-		lbls, ok := t.seriesLabels[e.Ref]
-		if !ok {
+		entry := t.series.lookup(e.Ref)
+		if entry.state != seriesStateActive {
 			// Track dropped exemplars in the same EWMA for sharding calc.
 			t.dataDropped.incr(1)
-			if _, ok := t.droppedSeries[e.Ref]; !ok {
+			if entry.state == seriesStateDropped {
+				t.metrics.droppedExemplarsTotal.WithLabelValues(reasonDroppedSeries).Inc()
+			} else {
 				t.logger.Info("Dropped exemplar for series that was not explicitly dropped via relabelling", "ref", e.Ref)
 				t.metrics.droppedExemplarsTotal.WithLabelValues(reasonUnintentionalDroppedSeries).Inc()
-			} else {
-				t.metrics.droppedExemplarsTotal.WithLabelValues(reasonDroppedSeries).Inc()
 			}
-			t.seriesMtx.Unlock()
 			continue
 		}
-		if t.convertNHCBToClassic {
+		lbls := entry.labels
+		meta := entry.metadata
+		if t.convertNHCBToClassic && t.activeNHCBSeries.Load() > 0 {
+			t.nhcbMtx.Lock()
 			if layout, ok := t.nhcbSeriesBounds[e.Ref]; ok {
 				if baseName := lbls.Get(model.MetricNameLabel); baseName != "" {
 					le := layout.le[len(layout.bounds)] // +Inf, for values above every bound.
@@ -978,15 +1000,14 @@ outer:
 							break
 						}
 					}
-					t.builder.Reset(lbls)
-					t.builder.Set(model.MetricNameLabel, baseName+"_bucket")
-					t.builder.Set(model.BucketLabel, le)
-					lbls = t.builder.Labels()
+					t.nhcbBuilder.Reset(lbls)
+					t.nhcbBuilder.Set(model.MetricNameLabel, baseName+"_bucket")
+					t.nhcbBuilder.Set(model.BucketLabel, le)
+					lbls = t.nhcbBuilder.Labels()
 				}
 			}
+			t.nhcbMtx.Unlock()
 		}
-		meta := t.seriesMetadata[e.Ref]
-		t.seriesMtx.Unlock()
 		if t.mode != remoteapi.WriteModeNone {
 			// TODO(bwplotka): Dropping detached exemplars after series/NHCB lookup above is a temporary stop-gap until
 			// https://github.com/prometheus/prometheus/pull/20070 coalesces exemplars onto matching TimeSeries in populateV2TimeSeries.
@@ -1033,7 +1054,7 @@ type nhcbLayout struct {
 	refs   int // Series sharing the layout.
 }
 
-// acquireNHCBLayout requires seriesMtx and returns a new reference to the shared layout for bounds.
+// acquireNHCBLayout requires nhcbMtx and returns a new reference to the shared layout for bounds.
 // Each reference must be released with releaseNHCBLayout.
 func (t *QueueManager) acquireNHCBLayout(bounds []float64) *nhcbLayout {
 	// The key is the bounds' exact bit patterns. Converting it inside the map index avoids an allocation.
@@ -1055,7 +1076,7 @@ func (t *QueueManager) acquireNHCBLayout(bounds []float64) *nhcbLayout {
 	return layout
 }
 
-// releaseNHCBLayout requires seriesMtx and drops a reference, forgetting the layout once unused.
+// releaseNHCBLayout requires nhcbMtx and drops a reference, forgetting the layout once unused.
 func (t *QueueManager) releaseNHCBLayout(layout *nhcbLayout) {
 	layout.refs--
 	if layout.refs == 0 {
@@ -1064,8 +1085,8 @@ func (t *QueueManager) releaseNHCBLayout(layout *nhcbLayout) {
 }
 
 // convertAndEnqueueNHCB converts an NHCB histogram (using the already-relabeled seriesLabels)
-// into classic _bucket, _count, and _sum samples while holding seriesMtx, then enqueues them
-// after releasing the lock. Caller must hold t.seriesMtx on entry; this method unlocks it.
+// into classic _bucket, _count, and _sum samples while holding nhcbMtx, then enqueues them
+// after releasing the lock. Caller must hold t.nhcbMtx on entry; this method unlocks it.
 // A replacement follows the converted stale markers when changing sample type.
 func (t *QueueManager) convertAndEnqueueNHCB(ref chunks.HeadSeriesRef, st, ts int64, nhcb any, customValues []float64, isStale bool, lbls labels.Labels, meta unique.Handle[metadata.Metadata], replacement *timeSeries) bool {
 	prev, wasActive := t.nhcbSeriesBounds[ref]
@@ -1118,17 +1139,17 @@ func (t *QueueManager) convertAndEnqueueNHCB(ref chunks.HeadSeriesRef, st, ts in
 		}
 		bucketName := baseName + "_bucket"
 		for i, c := range t.nhcbCounts {
-			t.builder.Reset(lbls)
-			t.builder.Set(model.MetricNameLabel, bucketName)
-			t.builder.Set(model.BucketLabel, layout.le[i])
-			emit(t.builder.Labels(), c)
+			t.nhcbBuilder.Reset(lbls)
+			t.nhcbBuilder.Set(model.MetricNameLabel, bucketName)
+			t.nhcbBuilder.Set(model.BucketLabel, layout.le[i])
+			emit(t.nhcbBuilder.Labels(), c)
 		}
-		t.builder.Reset(lbls)
-		t.builder.Set(model.MetricNameLabel, baseName+"_count")
-		emit(t.builder.Labels(), count)
-		t.builder.Reset(lbls)
-		t.builder.Set(model.MetricNameLabel, baseName+"_sum")
-		emit(t.builder.Labels(), sum)
+		t.nhcbBuilder.Reset(lbls)
+		t.nhcbBuilder.Set(model.MetricNameLabel, baseName+"_count")
+		emit(t.nhcbBuilder.Labels(), count)
+		t.nhcbBuilder.Reset(lbls)
+		t.nhcbBuilder.Set(model.MetricNameLabel, baseName+"_sum")
+		emit(t.nhcbBuilder.Labels(), sum)
 	}
 	if err == nil && wasActive && !sameBounds {
 		staleVal := math.Float64frombits(value.StaleNaN)
@@ -1136,12 +1157,12 @@ func (t *QueueManager) convertAndEnqueueNHCB(ref chunks.HeadSeriesRef, st, ts in
 			if slices.Contains(customValues, prevBound) {
 				continue
 			}
-			t.builder.Reset(lbls)
-			t.builder.Set(model.MetricNameLabel, baseName+"_bucket")
-			t.builder.Set(model.BucketLabel, prev.le[i])
+			t.nhcbBuilder.Reset(lbls)
+			t.nhcbBuilder.Set(model.MetricNameLabel, baseName+"_bucket")
+			t.nhcbBuilder.Set(model.BucketLabel, prev.le[i])
 			// Retired buckets get no start time; st belongs to the new layout.
 			classicSeries = append(classicSeries, timeSeries{
-				seriesLabels:   t.builder.Labels(),
+				seriesLabels:   t.nhcbBuilder.Labels(),
 				metadata:       meta,
 				startTimestamp: 0,
 				timestamp:      ts,
@@ -1158,11 +1179,14 @@ func (t *QueueManager) convertAndEnqueueNHCB(ref chunks.HeadSeriesRef, st, ts in
 			}
 			if wasActive {
 				t.releaseNHCBLayout(prev)
+				delete(t.nhcbSeriesBounds, ref)
+				t.activeNHCBSeries.Dec()
 			}
-			delete(t.nhcbSeriesBounds, ref)
 		} else if !sameBounds {
 			if wasActive {
 				t.releaseNHCBLayout(prev)
+			} else {
+				t.activeNHCBSeries.Inc()
 			}
 			t.nhcbSeriesBounds[ref] = layout
 		}
@@ -1170,7 +1194,7 @@ func (t *QueueManager) convertAndEnqueueNHCB(ref chunks.HeadSeriesRef, st, ts in
 			classicSeries = append(classicSeries, *replacement)
 		}
 	}
-	t.seriesMtx.Unlock()
+	t.nhcbMtx.Unlock()
 	if err != nil {
 		t.logger.Error("Conversion error", "err", err)
 		t.metrics.droppedHistogramsTotal.WithLabelValues(reasonNHCBConversionError).Inc()
@@ -1214,51 +1238,65 @@ outer:
 	for _, h := range histograms {
 		isNHCB := h.H != nil && h.H.Schema == histogram.CustomBucketsSchema
 		isStale := h.H != nil && value.IsStaleNaN(h.H.Sum)
-		t.seriesMtx.Lock()
-		_, isTrackedNHCB := t.nhcbSeriesBounds[h.Ref]
+		var isTrackedNHCB bool
+		var nhcbLocked bool
+		if t.convertNHCBToClassic && (isNHCB || t.activeNHCBSeries.Load() > 0) {
+			t.nhcbMtx.Lock()
+			nhcbLocked = true
+			_, isTrackedNHCB = t.nhcbSeriesBounds[h.Ref]
+		}
 		convertNHCB := t.convertNHCBToClassic && (isNHCB || (isStale && isTrackedNHCB))
 		transition := t.convertNHCBToClassic && isTrackedNHCB && !isNHCB && !isStale
 		if !t.sendNativeHistograms && !convertNHCB && !transition {
-			t.seriesMtx.Unlock()
+			if nhcbLocked {
+				t.nhcbMtx.Unlock()
+			}
 			continue
 		}
 		if isSampleOld(currentTime, time.Duration(t.cfg.SampleAgeLimit), h.T) {
-			t.seriesMtx.Unlock()
+			if nhcbLocked {
+				t.nhcbMtx.Unlock()
+			}
 			t.metrics.droppedHistogramsTotal.WithLabelValues(reasonTooOld).Inc()
 			continue
 		}
 		if !t.convertNHCBToClassic && t.protoMsg == remoteapi.WriteV1MessageType && isNHCB {
-			t.seriesMtx.Unlock()
+			if nhcbLocked {
+				t.nhcbMtx.Unlock()
+			}
 			// We cannot send native histograms with custom buckets (NHCB) via remote write v1.
 			t.metrics.droppedHistogramsTotal.WithLabelValues(reasonNHCBNotSupported).Inc()
 			t.logger.Warn("Dropped native histogram with custom buckets (NHCB) as remote write v1 does not support it", "ref", h.Ref)
 			continue
 		}
-		lbls, ok := t.seriesLabels[h.Ref]
-		if !ok {
+		if nhcbLocked {
+			t.nhcbMtx.Unlock()
+		}
+		entry := t.series.lookup(h.Ref)
+		if entry.state != seriesStateActive {
 			t.dataDropped.incr(1)
-			if _, ok := t.droppedSeries[h.Ref]; !ok {
+			if entry.state == seriesStateDropped {
+				t.metrics.droppedHistogramsTotal.WithLabelValues(reasonDroppedSeries).Inc()
+			} else {
 				t.logger.Info("Dropped histogram for series that was not explicitly dropped via relabelling", "ref", h.Ref)
 				t.metrics.droppedHistogramsTotal.WithLabelValues(reasonUnintentionalDroppedSeries).Inc()
-			} else {
-				t.metrics.droppedHistogramsTotal.WithLabelValues(reasonDroppedSeries).Inc()
-			}
-			t.seriesMtx.Unlock()
-			continue
-		}
-		meta := t.seriesMetadata[h.Ref]
-		if transition {
-			var replacement *timeSeries
-			if t.sendNativeHistograms {
-				replacement = &timeSeries{seriesLabels: lbls, metadata: meta, startTimestamp: h.ST, timestamp: h.T, histogram: h.H, sType: tHistogram}
-			}
-			if !t.convertAndEnqueueNHCB(h.Ref, 0, h.T, nil, nil, true, lbls, meta, replacement) {
-				return false
 			}
 			continue
 		}
-		// Check if `convert_nhcb_to_classic` flag is enabled to convert NHCB histograms to classic histograms.
-		if convertNHCB {
+		lbls := entry.labels
+		meta := entry.metadata
+		if transition || convertNHCB {
+			t.nhcbMtx.Lock()
+			if transition {
+				var replacement *timeSeries
+				if t.sendNativeHistograms {
+					replacement = &timeSeries{seriesLabels: lbls, metadata: meta, startTimestamp: h.ST, timestamp: h.T, histogram: h.H, sType: tHistogram}
+				}
+				if !t.convertAndEnqueueNHCB(h.Ref, 0, h.T, nil, nil, true, lbls, meta, replacement) {
+					return false
+				}
+				continue
+			}
 			var nhcb any
 			var customValues []float64
 			if isNHCB {
@@ -1270,7 +1308,6 @@ outer:
 			}
 			continue
 		}
-		t.seriesMtx.Unlock()
 		if t.mode != remoteapi.WriteModeNone && t.shouldDropHistogramForMode(h.Ref, h.ST, isStale, lbls, meta) {
 			continue
 		}
@@ -1313,51 +1350,65 @@ outer:
 	for _, h := range floatHistograms {
 		isNHCB := h.FH != nil && h.FH.Schema == histogram.CustomBucketsSchema
 		isStale := h.FH != nil && value.IsStaleNaN(h.FH.Sum)
-		t.seriesMtx.Lock()
-		_, isTrackedNHCB := t.nhcbSeriesBounds[h.Ref]
+		var isTrackedNHCB bool
+		var nhcbLocked bool
+		if t.convertNHCBToClassic && (isNHCB || t.activeNHCBSeries.Load() > 0) {
+			t.nhcbMtx.Lock()
+			nhcbLocked = true
+			_, isTrackedNHCB = t.nhcbSeriesBounds[h.Ref]
+		}
 		convertNHCB := t.convertNHCBToClassic && (isNHCB || (isStale && isTrackedNHCB))
 		transition := t.convertNHCBToClassic && isTrackedNHCB && !isNHCB && !isStale
 		if !t.sendNativeHistograms && !convertNHCB && !transition {
-			t.seriesMtx.Unlock()
+			if nhcbLocked {
+				t.nhcbMtx.Unlock()
+			}
 			continue
 		}
 		if isSampleOld(currentTime, time.Duration(t.cfg.SampleAgeLimit), h.T) {
-			t.seriesMtx.Unlock()
+			if nhcbLocked {
+				t.nhcbMtx.Unlock()
+			}
 			t.metrics.droppedHistogramsTotal.WithLabelValues(reasonTooOld).Inc()
 			continue
 		}
 		if !t.convertNHCBToClassic && t.protoMsg == remoteapi.WriteV1MessageType && isNHCB {
-			t.seriesMtx.Unlock()
+			if nhcbLocked {
+				t.nhcbMtx.Unlock()
+			}
 			// We cannot send native histograms with custom buckets (NHCB) via remote write v1.
 			t.metrics.droppedHistogramsTotal.WithLabelValues(reasonNHCBNotSupported).Inc()
 			t.logger.Warn("Dropped float native histogram with custom buckets (NHCB) as remote write v1 does not support it", "ref", h.Ref)
 			continue
 		}
-		lbls, ok := t.seriesLabels[h.Ref]
-		if !ok {
+		if nhcbLocked {
+			t.nhcbMtx.Unlock()
+		}
+		entry := t.series.lookup(h.Ref)
+		if entry.state != seriesStateActive {
 			t.dataDropped.incr(1)
-			if _, ok := t.droppedSeries[h.Ref]; !ok {
+			if entry.state == seriesStateDropped {
+				t.metrics.droppedHistogramsTotal.WithLabelValues(reasonDroppedSeries).Inc()
+			} else {
 				t.logger.Info("Dropped histogram for series that was not explicitly dropped via relabelling", "ref", h.Ref)
 				t.metrics.droppedHistogramsTotal.WithLabelValues(reasonUnintentionalDroppedSeries).Inc()
-			} else {
-				t.metrics.droppedHistogramsTotal.WithLabelValues(reasonDroppedSeries).Inc()
-			}
-			t.seriesMtx.Unlock()
-			continue
-		}
-		meta := t.seriesMetadata[h.Ref]
-		if transition {
-			var replacement *timeSeries
-			if t.sendNativeHistograms {
-				replacement = &timeSeries{seriesLabels: lbls, metadata: meta, startTimestamp: h.ST, timestamp: h.T, floatHistogram: h.FH, sType: tFloatHistogram}
-			}
-			if !t.convertAndEnqueueNHCB(h.Ref, 0, h.T, nil, nil, true, lbls, meta, replacement) {
-				return false
 			}
 			continue
 		}
-		// Check if `convert_nhcb_to_classic` flag is enabled to convert NHCB Float histograms to classic histograms.
-		if convertNHCB {
+		lbls := entry.labels
+		meta := entry.metadata
+		if transition || convertNHCB {
+			t.nhcbMtx.Lock()
+			if transition {
+				var replacement *timeSeries
+				if t.sendNativeHistograms {
+					replacement = &timeSeries{seriesLabels: lbls, metadata: meta, startTimestamp: h.ST, timestamp: h.T, floatHistogram: h.FH, sType: tFloatHistogram}
+				}
+				if !t.convertAndEnqueueNHCB(h.Ref, 0, h.T, nil, nil, true, lbls, meta, replacement) {
+					return false
+				}
+				continue
+			}
 			var nhcb any
 			var customValues []float64
 			if isNHCB {
@@ -1369,7 +1420,6 @@ outer:
 			}
 			continue
 		}
-		t.seriesMtx.Unlock()
 		if t.mode != remoteapi.WriteModeNone && t.shouldDropHistogramForMode(h.Ref, h.ST, isStale, lbls, meta) {
 			continue
 		}
@@ -1446,24 +1496,7 @@ func (t *QueueManager) Stop() {
 
 // StoreSeries keeps track of which series we know about for lookups when sending samples to remote.
 func (t *QueueManager) StoreSeries(series []record.RefSeries, index int) {
-	t.seriesMtx.Lock()
-	defer t.seriesMtx.Unlock()
-	t.seriesSegmentMtx.Lock()
-	defer t.seriesSegmentMtx.Unlock()
-	for _, s := range series {
-		// Just make sure all the Refs of Series will insert into seriesSegmentIndexes map for tracking.
-		t.seriesSegmentIndexes[s.Ref] = index
-
-		t.builder.Reset(s.Labels)
-		processExternalLabels(t.builder, t.externalLabels)
-		keep := relabel.ProcessBuilder(t.builder, t.relabelConfigs...)
-		if !keep {
-			t.droppedSeries[s.Ref] = struct{}{}
-			continue
-		}
-		lbls := t.builder.Labels()
-		t.seriesLabels[s.Ref] = lbls
-	}
+	t.series.storeSeries(series, index, t.externalLabels, t.relabelConfigs)
 }
 
 // StoreMetadata keeps track of known series' metadata for lookups when sending samples to remote.
@@ -1471,51 +1504,32 @@ func (t *QueueManager) StoreMetadata(meta []record.RefMetadata) {
 	if t.protoMsg == remoteapi.WriteV1MessageType {
 		return
 	}
-
-	t.seriesMtx.Lock()
-	defer t.seriesMtx.Unlock()
-	for _, m := range meta {
-		t.seriesMetadata[m.Ref] = unique.Make(metadata.Metadata{
-			Type: record.ToMetricType(m.Type),
-			Unit: m.Unit,
-			Help: m.Help,
-		})
-	}
+	t.series.storeMetadata(meta)
 }
 
 // UpdateSeriesSegment updates the segment number held against the series,
 // so we can trim older ones in SeriesReset.
 func (t *QueueManager) UpdateSeriesSegment(series []record.RefSeries, index int) {
-	t.seriesSegmentMtx.Lock()
-	defer t.seriesSegmentMtx.Unlock()
-	for _, s := range series {
-		t.seriesSegmentIndexes[s.Ref] = index
-	}
+	t.series.updateSeriesSegment(series, index)
 }
 
 // SeriesReset is used when reading a checkpoint. WAL Watcher should have
 // stored series records with the checkpoints index number, so we can now
-// delete any ref ID's lower than that # from the two maps.
+// delete any ref ID's lower than that # from the series store.
 func (t *QueueManager) SeriesReset(index int) {
-	t.seriesMtx.Lock()
-	defer t.seriesMtx.Unlock()
-	t.seriesSegmentMtx.Lock()
-	defer t.seriesSegmentMtx.Unlock()
-	// Check for series that are in segments older than the checkpoint
-	// that were not also present in the checkpoint.
-	for k, v := range t.seriesSegmentIndexes {
-		if v >= index {
-			continue
-		}
-		delete(t.seriesSegmentIndexes, k)
-		delete(t.seriesLabels, k)
-		delete(t.seriesMetadata, k)
-		delete(t.droppedSeries, k)
+	deleted := t.series.reset(index, t.activeNHCBSeries.Load() > 0)
+	if len(deleted) == 0 {
+		return
+	}
+	t.nhcbMtx.Lock()
+	for _, k := range deleted {
 		if layout, ok := t.nhcbSeriesBounds[k]; ok {
 			t.releaseNHCBLayout(layout)
+			delete(t.nhcbSeriesBounds, k)
+			t.activeNHCBSeries.Dec()
 		}
-		delete(t.nhcbSeriesBounds, k)
 	}
+	t.nhcbMtx.Unlock()
 }
 
 // SetClient updates the client used by a queue. Used when only client specific
