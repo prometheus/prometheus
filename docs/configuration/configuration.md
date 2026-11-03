@@ -4136,9 +4136,10 @@ write_relabel_configs:
 # `--enable-feature=metadata-wal-records` is sent per series when
 # `protobuf_message` is `io.prometheus.write.v2.Request`.
 # When set to 0s, the default, HELP is sent with every sample and histogram.
-# When set to a positive duration, HELP is sent only on the first sample or
-# histogram for a series, whenever its metadata changes, and periodically
-# once per `send_help_interval` for active series.
+# Setting a positive duration requires `--enable-feature=metadata-wal-records`
+# and sends HELP only on the first sample or histogram for a series, whenever
+# its metadata changes, and periodically once per `send_help_interval` for
+# active series.
 # Prometheus marks HELP as sent when a point is enqueued, so if a batch is
 # later dropped on an unrecoverable remote error, `sample_age_limit`, or
 # shutdown, the receiver will not get HELP again until the next interval or
@@ -4289,8 +4290,8 @@ queue_config:
 # Only applies when the `prometheus.WriteRequest` message is used. When
 # `io.prometheus.write.v2.Request` is used, Prometheus sends metadata from
 # `--enable-feature=metadata-wal-records` or `--enable-feature=type-and-unit-labels`
-# inline with each series, and top-level `send_help_interval` controls how often
-# HELP from `metadata-wal-records` is sent.
+# inline with each series. Top-level `send_help_interval` controls how often
+# HELP is sent and requires `--enable-feature=metadata-wal-records` when set.
 #
 # Metadata configuration is subject to change at any point
 # or be removed in future releases.
