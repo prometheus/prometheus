@@ -302,11 +302,13 @@ func TestChunkDiskMapper_Truncate_PreservesFileSequence(t *testing.T) {
 	emptyFile := func() {
 		t.Helper()
 
-		_, _, err := hrw.cut()
-		require.NoError(t, err)
+		// cut() names the file from the sequence passed by the caller, so
+		// advance it first, as getNextChunkRef does in production.
 		hrw.evtlPosMtx.Lock()
 		hrw.evtlPos.toNewFile()
+		_, _, err := hrw.cut(int(hrw.evtlPos.seq))
 		hrw.evtlPosMtx.Unlock()
+		require.NoError(t, err)
 	}
 
 	nonEmptyFile := func() {
