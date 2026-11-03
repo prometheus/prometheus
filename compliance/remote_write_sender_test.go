@@ -105,7 +105,9 @@ func (p internalPrometheus) Run(ctx context.Context, opts sender.Options) error 
 var _ sender.Sender = internalPrometheus{}
 
 // senderSkip lists unimplemented SHOULD/MAY sender compliance checks to skip in TestMain:
-// - Timestamp-less classic histogram bucket exemplars are dropped when converted to NHCB (scrape drops native histogram exemplars without timestamps).
+// - The histogram_bucket_exemplars_present test exposes two classic bucket exemplars where the second omits an explicit
+//   timestamp, and expects at least two exemplars on the converted NHCB series, whereas scrape drops timestamp-less
+//   exemplars on native histograms.
 // - Untyped metadata inference (https://github.com/prometheus/proposals/pull/104).
 const senderSkip = "TestRemoteWriteSender/.*/internal-prometheus/exemplars/rw2-stateless.*/histogram_bucket_exemplars_present" +
 	"|TestRemoteWriteSender/.*/internal-prometheus/metadata/rw2-stateless.*/untyped_metadata_inferred"
