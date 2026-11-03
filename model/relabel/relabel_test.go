@@ -897,6 +897,66 @@ func TestRelabelWithMetadata(t *testing.T) {
 			},
 		},
 		{
+			name: "setting __type__ to unknown deletes __type__ so chained rules read empty string",
+			input: labels.FromMap(map[string]string{
+				"__name__": "http_requests_total",
+			}),
+			inputMeta: metadata.Metadata{
+				Type: model.MetricTypeGauge,
+			},
+			relabel: []*Config{
+				{
+					TargetLabel: "__type__",
+					Replacement: "unknown",
+					Action:      Replace,
+				},
+				{
+					SourceLabels: model.LabelNames{"__name__", "__type__"},
+					Regex:        MustNewRegexp(".*_total;"),
+					TargetLabel:  "__type__",
+					Replacement:  "counter",
+					Action:       Replace,
+				},
+			},
+			output: labels.FromMap(map[string]string{
+				"__name__": "http_requests_total",
+			}),
+			outputMeta: metadata.Metadata{
+				Type: model.MetricTypeCounter,
+			},
+		},
+		{
+			name: "lowercase to unknown on __type__ deletes __type__ for subsequent rules",
+			input: labels.FromMap(map[string]string{
+				"__name__": "http_requests_total",
+				"raw_type": "UNKNOWN",
+			}),
+			inputMeta: metadata.Metadata{
+				Type: model.MetricTypeGauge,
+			},
+			relabel: []*Config{
+				{
+					SourceLabels: model.LabelNames{"raw_type"},
+					TargetLabel:  "__type__",
+					Action:       Lowercase,
+				},
+				{
+					SourceLabels: model.LabelNames{"__name__", "__type__"},
+					Regex:        MustNewRegexp(".*_total;"),
+					TargetLabel:  "__type__",
+					Replacement:  "counter",
+					Action:       Replace,
+				},
+			},
+			output: labels.FromMap(map[string]string{
+				"__name__": "http_requests_total",
+				"raw_type": "UNKNOWN",
+			}),
+			outputMeta: metadata.Metadata{
+				Type: model.MetricTypeCounter,
+			},
+		},
+		{
 			name: "invalid dynamic __type__ resets type to unknown and deletes __type__ from labels",
 			input: labels.FromMap(map[string]string{
 				"__name__": "http_requests_total",

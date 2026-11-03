@@ -312,6 +312,16 @@ func isMetadataRelabelName(ln string) bool {
 	return ln == model.MetricTypeLabel || ln == model.MetricUnitLabel || ln == metricHelpLabel
 }
 
+// setLabel sets name to val on lb, deleting __type__ when set to "unknown" during
+// metadata relabeling so subsequent rules consistently read empty __type__ for unknown types.
+func setLabel(lb *labels.Builder, name, val string, withMetadata bool) {
+	if withMetadata && name == model.MetricTypeLabel && val == string(model.MetricTypeUnknown) {
+		lb.Del(name)
+		return
+	}
+	lb.Set(name, val)
+}
+
 // ProcessBuilderWithMetadata applies relabeling configurations (rules) to the labels in lb
 // and metadata in meta. It assumes lb does not contain __type__, __unit__, or __help__ labels
 // on entry, and removes them from lb before returning. Bulk label actions (labeldrop,
@@ -384,11 +394,7 @@ func relabel(cfg *Config, lb *labels.Builder, withMetadata bool) (keep bool) {
 		// Fast path to add or delete label pair.
 		if val == "" && cfg.Regex == DefaultRelabelConfig.Regex &&
 			!varInRegexTemplate(cfg.TargetLabel) && !varInRegexTemplate(cfg.Replacement) {
-			if cfg.Replacement == "" {
-				lb.Del(cfg.TargetLabel)
-			} else {
-				lb.Set(cfg.TargetLabel, cfg.Replacement)
-			}
+			setLabel(lb, cfg.TargetLabel, cfg.Replacement, withMetadata)
 			break
 		}
 
@@ -402,13 +408,13 @@ func relabel(cfg *Config, lb *labels.Builder, withMetadata bool) (keep bool) {
 			break
 		}
 		res := cfg.Regex.ExpandString([]byte{}, cfg.Replacement, val, indexes)
-		if len(res) == 0 {
+		if len(res) == 0 || (withMetadata && target == model.MetricTypeLabel && string(res) == string(model.MetricTypeUnknown)) {
 			lb.Del(target)
 			break
 		}
 		lb.Set(target, string(res))
 	case Lowercase:
-		lb.Set(cfg.TargetLabel, strings.ToLower(val))
+		setLabel(lb, cfg.TargetLabel, strings.ToLower(val), withMetadata)
 	case Uppercase:
 		lb.Set(cfg.TargetLabel, strings.ToUpper(val))
 	case HashMod:
@@ -423,7 +429,7 @@ func relabel(cfg *Config, lb *labels.Builder, withMetadata bool) (keep bool) {
 			}
 			if cfg.Regex.MatchString(l.Name) {
 				res := cfg.Regex.ReplaceAllString(l.Name, cfg.Replacement)
-				lb.Set(res, l.Value)
+				setLabel(lb, res, l.Value, withMetadata)
 			}
 		})
 	case LabelDrop:
