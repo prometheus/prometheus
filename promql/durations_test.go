@@ -313,3 +313,29 @@ func TestCalculateDuration(t *testing.T) {
 		})
 	}
 }
+
+// Duration expressions must evaluate to exactly the same duration as the
+// plain form: (1s1ms) is 1001ms, not 1000ms. The literal is carried as
+// float64 seconds (1.001 is stored as 1.0009999999999998898...), so the
+// conversion to time.Duration must round rather than truncate.
+func TestDurationExprMillisecondExactness(t *testing.T) {
+	p := parser.NewParser(parser.Options{})
+	for _, tc := range []struct {
+		query string
+		want  time.Duration
+	}{
+		{"m offset (1s1ms)", 1001 * time.Millisecond},
+		{"m offset (1s + 1ms)", 1001 * time.Millisecond},
+		{"m offset (-1s1ms)", -1001 * time.Millisecond},
+		{"m offset (2s500ms)", 2500 * time.Millisecond},
+		{"m offset (1m1s1ms)", 61001 * time.Millisecond},
+	} {
+		expr, err := p.ParseExpr(tc.query)
+		require.NoError(t, err)
+		out, err := PreprocessExpr(expr, time.Unix(0, 0), time.Unix(3600, 0), time.Minute)
+		require.NoError(t, err)
+		vs, ok := out.(*parser.VectorSelector)
+		require.True(t, ok, "expected vector selector for %q", tc.query)
+		require.Equal(t, tc.want, vs.OriginalOffset, "query %q", tc.query)
+	}
+}
