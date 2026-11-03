@@ -1059,26 +1059,26 @@ func open(dir string, l *slog.Logger, r prometheus.Registerer, opts *Options, rn
 			return
 		}
 
-		// If head was never initialized, WAL/WBL goroutines need explicit
-		// cleanup since db.Close() -> head.Close() won't reach them.
-		if db.head == nil {
-			if wal != nil {
-				returnedErr = errors.Join(returnedErr, wal.Close())
-			}
-			if wbl != nil {
-				returnedErr = errors.Join(returnedErr, wbl.Close())
-			}
+		if db.compactCancel != nil {
+			db.compactCancel()
 		}
-
-		// db.Close() short-circuits once db.donec is closed below, so release
-		// the lockfile here to ensure it is always released on error.
+		for _, b := range db.blocks {
+			returnedErr = errors.Join(returnedErr, b.Close())
+		}
+		// Do not use Head.Close here: replay may not have finished, so persisting
+		// a snapshot or clean shutdown state could discard data on the next startup.
+		// The series state writer only starts after a successful Head.Init.
+		if db.head != nil {
+			returnedErr = errors.Join(returnedErr, db.head.chunkDiskMapper.Close())
+		}
+		if wal != nil {
+			returnedErr = errors.Join(returnedErr, wal.Close())
+		}
+		if wbl != nil {
+			returnedErr = errors.Join(returnedErr, wbl.Close())
+		}
 		if db.locker != nil {
 			returnedErr = errors.Join(returnedErr, db.locker.Release())
-		}
-
-		close(db.donec) // DB is never run if it was an error, so close this channel here.
-		if err := db.Close(); err != nil {
-			returnedErr = errors.Join(returnedErr, fmt.Errorf("close DB after failed startup: %w", err))
 		}
 	}()
 
