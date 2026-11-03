@@ -137,10 +137,10 @@ Review the output carefully before adding it manually to `CHANGELOG.md`:
 - `CHANGELOG.md` should only document changes relevant to users of Prometheus, including external API changes, performance improvements, and new features. Do not document changes of internal interfaces, code refactorings and clean-ups, changes to the build process, etc. People interested in these are asked to refer to the git history.
 - Set the date for the changelog entry header, even for an RC.
 
-Then bump the UI module version:
+Then bump the UI module version, as well as the version in `CHANGELOG.md`:
 
 ```bash
-make ui-bump-version
+make bump-versions
 ```
 
 All of the above goes to make a PR, which you should create targeting the `release-x.y` branch, then wait for CI to complete and get an approval.
