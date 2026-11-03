@@ -1524,7 +1524,12 @@ type RemoteWriteConfig struct {
 	Name                 string            `yaml:"name,omitempty"`
 	SendExemplars        bool              `yaml:"send_exemplars,omitempty"`
 	SendNativeHistograms bool              `yaml:"send_native_histograms,omitempty"`
-	RoundRobinDNS        bool              `yaml:"round_robin_dns,omitempty"`
+	// SendHelpInterval controls how frequently HELP metadata is sent per series
+	// in Remote Write 2.0. When 0 (the default), HELP is sent with every sample
+	// and histogram. When positive, HELP is sent on the first sample or histogram
+	// for a series, whenever its metadata changes, and periodically once per interval.
+	SendHelpInterval model.Duration `yaml:"send_help_interval,omitempty"`
+	RoundRobinDNS    bool           `yaml:"round_robin_dns,omitempty"`
 	// ProtobufMessage specifies the protobuf message to use against the remote
 	// receiver as specified in https://prometheus.io/docs/specs/remote_write_spec_2_0/
 	ProtobufMessage remoteapi.WriteMessageType `yaml:"protobuf_message,omitempty"`
@@ -1607,11 +1612,8 @@ func (c *RemoteWriteConfig) UnmarshalYAML(unmarshal func(any) error) error {
 		return err
 	}
 
-	if c.MetadataConfig.SendHelpInterval < 0 {
-		return errors.New("metadata_config.send_help_interval must not be negative")
-	}
-	if c.MetadataConfig.SendHelpInterval > 0 && c.ProtobufMessage == remoteapi.WriteV1MessageType {
-		return fmt.Errorf("metadata_config.send_help_interval is only supported with protobuf message %q, got %q", remoteapi.WriteV2MessageType, c.ProtobufMessage)
+	if c.SendHelpInterval > 0 && c.ProtobufMessage == remoteapi.WriteV1MessageType {
+		return fmt.Errorf("send_help_interval is only supported with protobuf message %q, got %q", remoteapi.WriteV2MessageType, c.ProtobufMessage)
 	}
 
 	return validateAuthConfigs(c)
@@ -1738,11 +1740,6 @@ type MetadataConfig struct {
 	SendInterval model.Duration `yaml:"send_interval"`
 	// Maximum number of samples per send.
 	MaxSamplesPerSend int `yaml:"max_samples_per_send,omitempty"`
-	// SendHelpInterval controls how frequently HELP metadata is sent per series
-	// in Remote Write 2.0. When 0 (the default), HELP is sent with every sample
-	// and histogram. When positive, HELP is sent on the first sample or histogram
-	// for a series, whenever its metadata changes, and periodically once per interval.
-	SendHelpInterval model.Duration `yaml:"send_help_interval,omitempty"`
 }
 
 const (

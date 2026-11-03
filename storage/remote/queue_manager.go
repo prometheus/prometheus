@@ -482,6 +482,7 @@ type QueueManager struct {
 	relabelConfigs          []*relabel.Config
 	sendExemplars           bool
 	sendNativeHistograms    bool
+	sendHelpInterval        time.Duration
 	enableTypeAndUnitLabels bool
 	failedRequestLogging    bool
 	convertNHCBToClassic    bool
@@ -551,6 +552,7 @@ func NewQueueManager(
 	recordBuf *record.BuffersPool,
 	failedRequestLogging bool,
 	convertNHCBToClassic bool,
+	sendHelpInterval time.Duration,
 ) *QueueManager {
 	if logger == nil {
 		logger = promslog.NewNopLogger()
@@ -573,6 +575,7 @@ func NewQueueManager(
 		storeClient:             client,
 		sendExemplars:           enableExemplarRemoteWrite,
 		sendNativeHistograms:    enableNativeHistogramRemoteWrite,
+		sendHelpInterval:        sendHelpInterval,
 		enableTypeAndUnitLabels: enableTypeAndUnitLabels,
 		failedRequestLogging:    failedRequestLogging,
 
@@ -873,13 +876,13 @@ func (t *QueueManager) shouldDropHistogramForMode(ref chunks.HeadSeriesRef, st i
 // synchronizing interval expiry via helpSentGen aligns series from the same family into the same batch.
 // Caller must hold t.seriesMtx.
 func (t *QueueManager) omitHelpForSend(ref chunks.HeadSeriesRef, sm cachedMetadata, now time.Time) bool {
-	if t.mcfg.SendHelpInterval <= 0 {
+	if t.sendHelpInterval <= 0 {
 		return false
 	}
 	if metadata.IsZeroHandle(sm.meta) {
 		return true
 	}
-	if t.helpSentGen == 0 || now.Sub(t.lastHelpSentReset) >= time.Duration(t.mcfg.SendHelpInterval) {
+	if t.helpSentGen == 0 || now.Sub(t.lastHelpSentReset) >= t.sendHelpInterval {
 		t.helpSentGen++
 		t.lastHelpSentReset = now
 	}
@@ -897,10 +900,10 @@ func (t *QueueManager) checkOmitHelpBeforeModeUnlock(ref chunks.HeadSeriesRef, s
 	if t.mode == remoteapi.WriteModeNone {
 		return t.omitHelpForSend(ref, sm, now), false
 	}
-	if t.mcfg.SendHelpInterval <= 0 {
+	if t.sendHelpInterval <= 0 {
 		return false, false
 	}
-	if metadata.IsZeroHandle(sm.meta) || (t.helpSentGen != 0 && now.Sub(t.lastHelpSentReset) < time.Duration(t.mcfg.SendHelpInterval) && sm.helpSentGen == t.helpSentGen) {
+	if metadata.IsZeroHandle(sm.meta) || (t.helpSentGen != 0 && now.Sub(t.lastHelpSentReset) < t.sendHelpInterval && sm.helpSentGen == t.helpSentGen) {
 		return true, false
 	}
 	return false, true
@@ -1064,7 +1067,7 @@ outer:
 				sType:          tExemplar,
 				// Detached exemplars omit Help when send_help_interval > 0 so they do not
 				// emit Help on every exemplar or consume the series' Help interval.
-				omitHelp: t.mcfg.SendHelpInterval > 0,
+				omitHelp: t.sendHelpInterval > 0,
 			}) {
 				continue outer
 			}

@@ -248,6 +248,7 @@ func (rws *WriteStorage) ApplyConfig(conf *config.Config) error {
 			rws.recordBuf,
 			rwConf.FailedRequestLogging,
 			rwConf.ConvertNHCBToClassic,
+			time.Duration(rwConf.SendHelpInterval),
 		)
 	}
 

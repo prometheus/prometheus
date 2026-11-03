@@ -170,6 +170,7 @@ var expectedConf = &Config{
 				EnableHTTP2:     false,
 			},
 			Headers:              map[string]string{"name": "value"},
+			SendHelpInterval:     model.Duration(5 * time.Minute),
 			ConvertNHCBToClassic: true,
 		},
 	},
@@ -3934,8 +3935,7 @@ remote_write:
 remote_write:
   - url: http://localhost:9090/api/v1/write
     protobuf_message: io.prometheus.write.v2.Request
-    metadata_config:
-      send_help_interval: 5m
+    send_help_interval: 5m
 `,
 			expectMode:             remoteapi.WriteModeNone,
 			expectSendHelpInterval: model.Duration(5 * time.Minute),
@@ -3946,10 +3946,18 @@ remote_write:
 remote_write:
   - url: http://localhost:9090/api/v1/write
     protobuf_message: prometheus.WriteRequest
-    metadata_config:
-      send_help_interval: 5m
+    send_help_interval: 5m
 `,
-			errString: `metadata_config.send_help_interval is only supported with protobuf message "io.prometheus.write.v2.Request", got "prometheus.WriteRequest"`,
+			errString: `send_help_interval is only supported with protobuf message "io.prometheus.write.v2.Request", got "prometheus.WriteRequest"`,
+		},
+		{
+			name: "send_help_interval with default (v1) protobuf_message fails",
+			config: `
+remote_write:
+  - url: http://localhost:9090/api/v1/write
+    send_help_interval: 5m
+`,
+			errString: `send_help_interval is only supported with protobuf message "io.prometheus.write.v2.Request", got "prometheus.WriteRequest"`,
 		},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
@@ -3962,7 +3970,7 @@ remote_write:
 			require.Len(t, cfg.RemoteWriteConfigs, 1)
 			require.Equal(t, tc.expectMode, cfg.RemoteWriteConfigs[0].Mode)
 			require.Equal(t, tc.expectSendNativeHistograms, cfg.RemoteWriteConfigs[0].SendNativeHistograms)
-			require.Equal(t, tc.expectSendHelpInterval, cfg.RemoteWriteConfigs[0].MetadataConfig.SendHelpInterval)
+			require.Equal(t, tc.expectSendHelpInterval, cfg.RemoteWriteConfigs[0].SendHelpInterval)
 		})
 	}
 }
