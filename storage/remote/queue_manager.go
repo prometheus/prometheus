@@ -460,7 +460,7 @@ type WriteClient interface {
 	Endpoint() string
 }
 
-type seriesMetadata struct {
+type cachedMetadata struct {
 	meta        unique.Handle[metadata.Metadata]
 	helpSentGen uint64
 }
@@ -496,7 +496,7 @@ type QueueManager struct {
 
 	seriesMtx         sync.Mutex // Covers seriesLabels, seriesMetadata, helpSentGen, lastHelpSentReset, droppedSeries, the NHCB fields and builder.
 	seriesLabels      map[chunks.HeadSeriesRef]labels.Labels
-	seriesMetadata    map[chunks.HeadSeriesRef]seriesMetadata
+	seriesMetadata    map[chunks.HeadSeriesRef]cachedMetadata
 	helpSentGen       uint64
 	lastHelpSentReset time.Time
 	droppedSeries     map[chunks.HeadSeriesRef]struct{}
@@ -505,8 +505,6 @@ type QueueManager struct {
 	nhcbLayoutKey     []byte                               // Scratch space for layout keys.
 	nhcbCounts        []float64                            // Scratch space for bucket counts.
 	builder           *labels.Builder
-
-	now func() time.Time
 
 	seriesSegmentMtx     sync.Mutex // Covers seriesSegmentIndexes - if you also lock seriesMtx, take seriesMtx first.
 	seriesSegmentIndexes map[chunks.HeadSeriesRef]int
@@ -579,7 +577,7 @@ func NewQueueManager(
 		failedRequestLogging:    failedRequestLogging,
 
 		seriesLabels:         make(map[chunks.HeadSeriesRef]labels.Labels),
-		seriesMetadata:       make(map[chunks.HeadSeriesRef]seriesMetadata),
+		seriesMetadata:       make(map[chunks.HeadSeriesRef]cachedMetadata),
 		seriesSegmentIndexes: make(map[chunks.HeadSeriesRef]int),
 		droppedSeries:        make(map[chunks.HeadSeriesRef]struct{}),
 		nhcbSeriesBounds:     make(map[chunks.HeadSeriesRef]*nhcbLayout),
@@ -605,7 +603,6 @@ func NewQueueManager(
 		compr:    compression.Snappy, // Hardcoded for now, but scaffolding exists for likely future use.
 
 		convertNHCBToClassic: convertNHCBToClassic,
-		now:                  time.Now,
 	}
 
 	walMetadata := t.protoMsg != remoteapi.WriteV1MessageType
@@ -871,18 +868,11 @@ func (t *QueueManager) shouldDropHistogramForMode(ref chunks.HeadSeriesRef, st i
 	return false
 }
 
-func (t *QueueManager) currentTime() time.Time {
-	if t.now != nil {
-		return t.now()
-	}
-	return time.Now()
-}
-
 // omitHelpForSend reports whether Help should be omitted for an outgoing sample or histogram.
 // When send_help_interval > 0, Help is sent once after StoreMetadata and once per interval;
 // synchronizing interval expiry via helpSentGen aligns series from the same family into the same batch.
 // Caller must hold t.seriesMtx.
-func (t *QueueManager) omitHelpForSend(ref chunks.HeadSeriesRef, sm seriesMetadata, now time.Time) bool {
+func (t *QueueManager) omitHelpForSend(ref chunks.HeadSeriesRef, sm cachedMetadata, now time.Time) bool {
 	if t.mcfg.SendHelpInterval <= 0 {
 		return false
 	}
@@ -904,7 +894,7 @@ func (t *QueueManager) omitHelpForSend(ref chunks.HeadSeriesRef, sm seriesMetada
 // Append queues a sample to be sent to the remote storage. Blocks until all samples are
 // enqueued on their shards or a shutdown signal is received.
 func (t *QueueManager) Append(samples []record.RefSample) bool {
-	currentTime := t.currentTime()
+	currentTime := time.Now()
 outer:
 	for _, s := range samples {
 		if isSampleOld(currentTime, time.Duration(t.cfg.SampleAgeLimit), s.T) {
@@ -991,7 +981,7 @@ func (t *QueueManager) AppendExemplars(exemplars []record.RefExemplar) bool {
 	if !t.sendExemplars {
 		return true
 	}
-	currentTime := t.currentTime()
+	currentTime := time.Now()
 outer:
 	for _, e := range exemplars {
 		if isSampleOld(currentTime, time.Duration(t.cfg.SampleAgeLimit), e.T) {
@@ -1258,7 +1248,7 @@ func (t *QueueManager) AppendHistograms(histograms []record.RefHistogramSample) 
 	if !t.sendNativeHistograms && !t.convertNHCBToClassic {
 		return true
 	}
-	currentTime := t.currentTime()
+	currentTime := time.Now()
 outer:
 	for _, h := range histograms {
 		isNHCB := h.H != nil && h.H.Schema == histogram.CustomBucketsSchema
@@ -1362,7 +1352,7 @@ func (t *QueueManager) AppendFloatHistograms(floatHistograms []record.RefFloatHi
 	if !t.sendNativeHistograms && !t.convertNHCBToClassic {
 		return true
 	}
-	currentTime := t.currentTime()
+	currentTime := time.Now()
 outer:
 	for _, h := range floatHistograms {
 		isNHCB := h.FH != nil && h.FH.Schema == histogram.CustomBucketsSchema
@@ -1536,7 +1526,7 @@ func (t *QueueManager) StoreMetadata(meta []record.RefMetadata) {
 	for _, m := range meta {
 		// TSDB only logs metadata records on series creation or change; leaving helpSentGen
 		// at 0 ensures Help is emitted on the next send for this series.
-		t.seriesMetadata[m.Ref] = seriesMetadata{
+		t.seriesMetadata[m.Ref] = cachedMetadata{
 			meta: unique.Make(metadata.Metadata{
 				Type: record.ToMetricType(m.Type),
 				Unit: m.Unit,
