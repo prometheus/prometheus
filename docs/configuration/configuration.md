@@ -968,7 +968,9 @@ ECS service discovery supports all ECS networking modes:
 
 The private IP address is used by default, but may be changed to the public IP address with relabeling.
 
-If an AWS API request fails during a refresh, the targets from the last successful refresh are kept.
+If a cluster refresh fails, that cluster's previously discovered targets are kept while other clusters
+continue to update. Clusters successfully found to be empty or removed have their targets cleared.
+If listing clusters fails, all previously discovered targets are kept.
 
 The IAM credentials used must have the following permissions to discover scrape targets:
 

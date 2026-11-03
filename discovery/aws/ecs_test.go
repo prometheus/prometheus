@@ -19,15 +19,20 @@ import (
 	"fmt"
 	"slices"
 	"testing"
+	"testing/synctest"
+	"time"
 
 	"github.com/aws/aws-sdk-go-v2/service/ec2"
 	ec2Types "github.com/aws/aws-sdk-go-v2/service/ec2/types"
 	"github.com/aws/aws-sdk-go-v2/service/ecs"
 	ecsTypes "github.com/aws/aws-sdk-go-v2/service/ecs/types"
+	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/common/model"
 	"github.com/prometheus/common/promslog"
 	"github.com/stretchr/testify/require"
 
+	"github.com/prometheus/prometheus/discovery"
+	"github.com/prometheus/prometheus/discovery/refresh"
 	"github.com/prometheus/prometheus/discovery/targetgroup"
 )
 
@@ -1003,7 +1008,7 @@ func TestECSDiscoveryRefresh(t *testing.T) {
 			},
 			expected: []*targetgroup.Group{
 				{
-					Source: "us-west-2",
+					Source: "arn:aws:ecs:us-west-2:123456789012:cluster/test-cluster",
 					Targets: []model.LabelSet{
 						{
 							model.AddressLabel:                   model.LabelValue("10.0.1.100:80"),
@@ -1058,7 +1063,7 @@ func TestECSDiscoveryRefresh(t *testing.T) {
 			},
 			expected: []*targetgroup.Group{
 				{
-					Source: "us-east-1",
+					Source: "arn:aws:ecs:us-east-1:123456789012:cluster/empty-cluster",
 				},
 			},
 		},
@@ -1099,7 +1104,7 @@ func TestECSDiscoveryRefresh(t *testing.T) {
 			},
 			expected: []*targetgroup.Group{
 				{
-					Source: "us-west-2",
+					Source: "arn:aws:ecs:us-west-2:123456789012:cluster/test-cluster",
 				},
 			},
 		},
@@ -1147,7 +1152,7 @@ func TestECSDiscoveryRefresh(t *testing.T) {
 			},
 			expected: []*targetgroup.Group{
 				{
-					Source: "us-west-2",
+					Source: "arn:aws:ecs:us-west-2:123456789012:cluster/standalone-cluster",
 					Targets: []model.LabelSet{
 						{
 							model.AddressLabel:             model.LabelValue("10.0.4.10:80"),
@@ -1228,7 +1233,7 @@ func TestECSDiscoveryRefresh(t *testing.T) {
 			},
 			expected: []*targetgroup.Group{
 				{
-					Source: "us-west-2",
+					Source: "arn:aws:ecs:us-west-2:123456789012:cluster/test-cluster",
 					Targets: []model.LabelSet{
 						{
 							model.AddressLabel:                   model.LabelValue("10.0.1.50:80"),
@@ -1342,7 +1347,7 @@ func TestECSDiscoveryRefresh(t *testing.T) {
 			},
 			expected: []*targetgroup.Group{
 				{
-					Source: "us-west-2",
+					Source: "arn:aws:ecs:us-west-2:123456789012:cluster/mixed-cluster",
 					Targets: []model.LabelSet{
 						{
 							model.AddressLabel:             model.LabelValue("10.0.2.100:80"),
@@ -1467,7 +1472,7 @@ func TestECSDiscoveryRefresh(t *testing.T) {
 			},
 			expected: []*targetgroup.Group{
 				{
-					Source: "us-west-2",
+					Source: "arn:aws:ecs:us-west-2:123456789012:cluster/ec2-awsvpc-cluster",
 					Targets: []model.LabelSet{
 						{
 							model.AddressLabel:                   model.LabelValue("10.0.3.200:80"),
@@ -1543,7 +1548,7 @@ func TestECSDiscoveryRefresh(t *testing.T) {
 			},
 			expected: []*targetgroup.Group{
 				{
-					Source: "us-west-2",
+					Source: "arn:aws:ecs:us-west-2:123456789012:cluster/nil-cluster",
 					Targets: []model.LabelSet{
 						{
 							model.AddressLabel:       model.LabelValue("10.0.4.10:80"),
@@ -1599,6 +1604,67 @@ func TestECSDiscoveryRefresh(t *testing.T) {
 	}
 }
 
+func ecsRefreshTestData() *ecsDataStore {
+	const (
+		clusterARN           = "arn:aws:ecs:us-west-2:123456789012:cluster/test-cluster"
+		otherClusterARN      = "arn:aws:ecs:us-west-2:123456789012:cluster/other-cluster"
+		containerInstanceARN = "arn:aws:ecs:us-west-2:123456789012:container-instance/test-cluster/instance-1"
+	)
+
+	return &ecsDataStore{
+		region: "us-west-2",
+		clusters: []ecsTypes.Cluster{
+			{ClusterArn: strptr(clusterARN), ClusterName: strptr("test-cluster")},
+			{ClusterArn: strptr(otherClusterARN), ClusterName: strptr("other-cluster")},
+		},
+		services: []ecsTypes.Service{
+			{
+				ClusterArn:  strptr(clusterARN),
+				ServiceArn:  strptr("arn:aws:ecs:us-west-2:123456789012:service/test-cluster/web"),
+				ServiceName: strptr("web"),
+			},
+		},
+		tasks: []ecsTypes.Task{
+			{
+				ClusterArn:           strptr(clusterARN),
+				TaskArn:              strptr("arn:aws:ecs:us-west-2:123456789012:task/test-cluster/task-1"),
+				ContainerInstanceArn: strptr(containerInstanceARN),
+				LaunchType:           ecsTypes.LaunchTypeEc2,
+				HealthStatus:         ecsTypes.HealthStatusHealthy,
+				Group:                strptr("service:web"),
+				Attachments: []ecsTypes.Attachment{
+					{
+						Type: strptr("ElasticNetworkInterface"),
+						Details: []ecsTypes.KeyValuePair{
+							{Name: strptr("privateIPv4Address"), Value: strptr("10.0.1.10")},
+							{Name: strptr("networkInterfaceId"), Value: strptr("eni-1")},
+						},
+					},
+				},
+			},
+			{
+				ClusterArn:           strptr(otherClusterARN),
+				TaskArn:              strptr("arn:aws:ecs:us-west-2:123456789012:task/other-cluster/task-2"),
+				ContainerInstanceArn: strptr("arn:aws:ecs:us-west-2:123456789012:container-instance/other-cluster/instance-2"),
+				LaunchType:           ecsTypes.LaunchTypeEc2,
+				HealthStatus:         ecsTypes.HealthStatusHealthy,
+			},
+		},
+		containerInstances: []ecsTypes.ContainerInstance{
+			{ContainerInstanceArn: strptr(containerInstanceARN), Ec2InstanceId: strptr("i-1")},
+			{
+				ContainerInstanceArn: strptr("arn:aws:ecs:us-west-2:123456789012:container-instance/other-cluster/instance-2"),
+				Ec2InstanceId:        strptr("i-2"),
+			},
+		},
+		ec2Instances: map[string]ec2InstanceInfo{
+			"i-1": {privateIP: "10.0.1.10"},
+			"i-2": {privateIP: "10.0.2.10"},
+		},
+		eniPublicIPs: map[string]string{"eni-1": "52.1.2.3"},
+	}
+}
+
 func TestECSDiscoveryRefreshErrors(t *testing.T) {
 	t.Parallel()
 
@@ -1609,63 +1675,29 @@ func TestECSDiscoveryRefreshErrors(t *testing.T) {
 	)
 
 	for _, clusterCount := range []int{1, 2} {
-		for _, api := range []string{
-			"DescribeServices", "DescribeTasks", "DescribeContainerInstances",
-			"DescribeNetworkInterfaces", "DescribeInstances",
+		for _, tc := range []struct {
+			api             string
+			resourceFailure bool
+		}{
+			{api: "DescribeClusters"},
+			{api: "ListServices"},
+			{api: "ListTasks"},
+			{api: "DescribeServices"},
+			{api: "DescribeTasks"},
+			{api: "DescribeContainerInstances"},
+			{api: "DescribeNetworkInterfaces"},
+			{api: "DescribeInstances"},
+			{api: "DescribeClusters", resourceFailure: true},
+			{api: "DescribeServices", resourceFailure: true},
+			{api: "DescribeTasks", resourceFailure: true},
+			{api: "DescribeContainerInstances", resourceFailure: true},
 		} {
-			t.Run(fmt.Sprintf("%dClusters/%s", clusterCount, api), func(t *testing.T) {
-				data := &ecsDataStore{
-					region: "us-west-2",
-					clusters: []ecsTypes.Cluster{
-						{ClusterArn: strptr(clusterARN), ClusterName: strptr("test-cluster")},
-						{ClusterArn: strptr(otherClusterARN), ClusterName: strptr("other-cluster")},
-					},
-					services: []ecsTypes.Service{
-						{
-							ClusterArn:  strptr(clusterARN),
-							ServiceArn:  strptr("arn:aws:ecs:us-west-2:123456789012:service/test-cluster/web"),
-							ServiceName: strptr("web"),
-						},
-					},
-					tasks: []ecsTypes.Task{
-						{
-							ClusterArn:           strptr(clusterARN),
-							TaskArn:              strptr("arn:aws:ecs:us-west-2:123456789012:task/test-cluster/task-1"),
-							ContainerInstanceArn: strptr(containerInstanceARN),
-							LaunchType:           ecsTypes.LaunchTypeEc2,
-							HealthStatus:         ecsTypes.HealthStatusHealthy,
-							Group:                strptr("service:web"),
-							Attachments: []ecsTypes.Attachment{
-								{
-									Type: strptr("ElasticNetworkInterface"),
-									Details: []ecsTypes.KeyValuePair{
-										{Name: strptr("privateIPv4Address"), Value: strptr("10.0.1.10")},
-										{Name: strptr("networkInterfaceId"), Value: strptr("eni-1")},
-									},
-								},
-							},
-						},
-						{
-							ClusterArn:           strptr(otherClusterARN),
-							TaskArn:              strptr("arn:aws:ecs:us-west-2:123456789012:task/other-cluster/task-2"),
-							ContainerInstanceArn: strptr("arn:aws:ecs:us-west-2:123456789012:container-instance/other-cluster/instance-2"),
-							LaunchType:           ecsTypes.LaunchTypeEc2,
-							HealthStatus:         ecsTypes.HealthStatusHealthy,
-						},
-					},
-					containerInstances: []ecsTypes.ContainerInstance{
-						{ContainerInstanceArn: strptr(containerInstanceARN), Ec2InstanceId: strptr("i-1")},
-						{
-							ContainerInstanceArn: strptr("arn:aws:ecs:us-west-2:123456789012:container-instance/other-cluster/instance-2"),
-							Ec2InstanceId:        strptr("i-2"),
-						},
-					},
-					ec2Instances: map[string]ec2InstanceInfo{
-						"i-1": {privateIP: "10.0.1.10"},
-						"i-2": {privateIP: "10.0.2.10"},
-					},
-					eniPublicIPs: map[string]string{"eni-1": "52.1.2.3"},
-				}
+			name := fmt.Sprintf("%dClusters/%s", clusterCount, tc.api)
+			if tc.resourceFailure {
+				name += "/ResourceFailure"
+			}
+			t.Run(name, func(t *testing.T) {
+				data := ecsRefreshTestData()
 				data.clusters = data.clusters[:clusterCount]
 				data.tasks = data.tasks[:clusterCount]
 				ecsClient := newMockECSClient(data)
@@ -1680,32 +1712,253 @@ func TestECSDiscoveryRefreshErrors(t *testing.T) {
 
 				groups, err := d.refresh(t.Context())
 				require.NoError(t, err)
-				require.Len(t, groups, 1)
-				require.Len(t, groups[0].Targets, clusterCount)
-				expected := groups[0].Targets
+				require.Len(t, groups, clusterCount)
+				expected := groups
 
-				refreshErr := errors.New("temporary " + api + " failure")
-				apiErrors := map[string]error{api: refreshErr}
+				refreshErr := errors.New("temporary " + tc.api + " failure")
+				apiErrors := map[string]error{}
+				if tc.resourceFailure {
+					ecsClient.apiFailures = map[string][]ecsTypes.Failure{
+						tc.api: {{Arn: strptr(clusterARN), Reason: strptr("ACCESS_DENIED"), Detail: strptr(refreshErr.Error())}},
+					}
+				} else {
+					apiErrors[tc.api] = refreshErr
+				}
 				ecsClient.apiErrors = apiErrors
 				ecsClient.errorCluster = clusterARN
 				ec2Client.apiErrors = apiErrors
 				ec2Client.errorInstance = "i-1"
-				groups, err = d.refresh(t.Context())
-				require.ErrorIs(t, err, refreshErr)
-				require.Nil(t, groups, "a failed refresh must not publish partial targets")
+
+				startup := &ECSDiscovery{
+					ecs: ecsClient, ec2: ec2Client, cfg: d.cfg, region: d.region, logger: d.logger,
+				}
+				groups, err = startup.refresh(t.Context())
+				if clusterCount == 1 {
+					require.Error(t, err)
+					require.Nil(t, groups)
+				} else {
+					require.NoError(t, err)
+					require.Len(t, groups, 1)
+					require.Equal(t, otherClusterARN, groups[0].Source)
+				}
+
+				for round := range 3 {
+					info := ec2Client.ec2Instances["i-2"]
+					info.privateIP = fmt.Sprintf("10.0.2.%d", 20+round)
+					ec2Client.ec2Instances["i-2"] = info
+					groups, err = d.refresh(t.Context())
+					if clusterCount == 1 {
+						if tc.resourceFailure {
+							require.ErrorContains(t, err, refreshErr.Error())
+						} else {
+							require.ErrorIs(t, err, refreshErr)
+						}
+						require.Nil(t, groups)
+					} else {
+						require.NoError(t, err, "a failed cluster must not block healthy cluster updates")
+						require.Len(t, groups, 1)
+						require.Equal(t, otherClusterARN, groups[0].Source)
+						require.Len(t, groups[0].Targets, 1)
+						require.Equal(t, model.LabelValue(info.privateIP+":80"), groups[0].Targets[0][model.AddressLabel])
+					}
+				}
+
+				if clusterCount == 2 {
+					ecsClient.ecsData.tasks = ecsClient.ecsData.tasks[:1]
+					groups, err = d.refresh(t.Context())
+					require.NoError(t, err)
+					require.Equal(t, []*targetgroup.Group{{Source: otherClusterARN}}, groups)
+
+					ecsClient.ecsData.clusters = ecsClient.ecsData.clusters[:1]
+					groups, err = d.refresh(t.Context())
+					require.NoError(t, err)
+					require.Equal(t, []*targetgroup.Group{{Source: otherClusterARN}}, groups)
+				}
 
 				clear(apiErrors)
+				clear(ecsClient.apiFailures)
+				ecsClient.ecsData.clusters = data.clusters
+				ecsClient.ecsData.tasks = data.tasks
+				info := ec2Client.ec2Instances["i-2"]
+				info.privateIP = "10.0.2.10"
+				ec2Client.ec2Instances["i-2"] = info
 				groups, err = d.refresh(t.Context())
 				require.NoError(t, err)
-				require.Len(t, groups, 1)
-				require.ElementsMatch(t, expected, groups[0].Targets)
+				require.ElementsMatch(t, expected, groups)
 
 				ecsClient.ecsData.tasks = nil
 				groups, err = d.refresh(t.Context())
 				require.NoError(t, err)
-				require.Equal(t, []*targetgroup.Group{{Source: data.region}}, groups)
+				require.Len(t, groups, clusterCount)
+				for _, group := range groups {
+					require.Empty(t, group.Targets)
+				}
 			})
 		}
+	}
+}
+
+func TestECSDiscoveryRefreshClusterLifecycle(t *testing.T) {
+	t.Parallel()
+	for _, configured := range []bool{false, true} {
+		t.Run(fmt.Sprintf("ConfiguredClusters=%t", configured), func(t *testing.T) {
+			data := ecsRefreshTestData()
+			ecsClient := newMockECSClient(data)
+			d := &ECSDiscovery{
+				ecs:    ecsClient,
+				ec2:    newMockECSEC2Client(data.ec2Instances, data.eniPublicIPs),
+				cfg:    &ECSSDConfig{Region: data.region, Port: 80, RequestConcurrency: 2},
+				region: data.region, logger: promslog.NewNopLogger(),
+			}
+			if configured {
+				for _, cluster := range data.clusters {
+					d.cfg.Clusters = append(d.cfg.Clusters, *cluster.ClusterArn)
+				}
+			}
+			groups, err := d.refresh(t.Context())
+			require.NoError(t, err)
+			require.Len(t, groups, 2)
+
+			if !configured {
+				listErr := errors.New("could not list clusters")
+				ecsClient.apiErrors = map[string]error{"ListClusters": listErr}
+				groups, err = d.refresh(t.Context())
+				require.ErrorIs(t, err, listErr)
+				require.Nil(t, groups)
+				clear(ecsClient.apiErrors)
+			}
+
+			ctx, cancel := context.WithCancel(t.Context())
+			cancel()
+			groups, err = d.refresh(ctx)
+			require.ErrorIs(t, err, context.Canceled)
+			require.Nil(t, groups)
+
+			firstCluster := *data.clusters[0].ClusterArn
+			ecsClient.errorCluster = firstCluster
+			ecsClient.apiErrors = map[string]error{"ListTasks": &ecsTypes.ClusterNotFoundException{Message: strptr("cluster deleted")}}
+			groups, err = d.refresh(t.Context())
+			require.NoError(t, err)
+			require.Contains(t, groups, &targetgroup.Group{Source: firstCluster})
+			clear(ecsClient.apiErrors)
+
+			ecsClient.ecsData.clusters = data.clusters[1:]
+			ecsClient.ecsData.tasks = data.tasks[1:]
+			groups, err = d.refresh(t.Context())
+			require.NoError(t, err)
+			require.Len(t, groups, 2)
+			require.Contains(t, groups, &targetgroup.Group{Source: firstCluster})
+
+			ecsClient.ecsData.clusters = nil
+			ecsClient.ecsData.tasks = nil
+			groups, err = d.refresh(t.Context())
+			require.NoError(t, err)
+			require.Contains(t, groups, &targetgroup.Group{Source: *data.clusters[1].ClusterArn})
+			for _, group := range groups {
+				require.Empty(t, group.Targets)
+			}
+			if !configured {
+				groups, err = d.refresh(t.Context())
+				require.NoError(t, err)
+				require.Empty(t, groups)
+			}
+		})
+	}
+}
+
+func TestECSDiscoveryManagerPreservesFailedClusters(t *testing.T) {
+	t.Parallel()
+	for _, failedOnStartup := range []bool{false, true} {
+		t.Run(fmt.Sprintf("FailureOnStartup=%t", failedOnStartup), func(t *testing.T) {
+			synctest.Test(t, func(t *testing.T) {
+				ctx, cancel := context.WithCancel(t.Context())
+				defer cancel()
+				data := ecsRefreshTestData()
+				ecsClient := newMockECSClient(data)
+				ec2Client := newMockECSEC2Client(data.ec2Instances, data.eniPublicIPs)
+				ecsClient.errorCluster = *data.clusters[0].ClusterArn
+				apiErrors := map[string]error{}
+				ecsClient.apiErrors = apiErrors
+				if failedOnStartup {
+					apiErrors["DescribeServices"] = errors.New("access denied")
+				}
+				reg := prometheus.NewRegistry()
+				rmi := discovery.NewRefreshMetrics(reg)
+				require.NoError(t, rmi.Register())
+				defer rmi.Unregister()
+				d := &ECSDiscovery{
+					ecs: ecsClient, ec2: ec2Client,
+					cfg:    &ECSSDConfig{Region: data.region, Port: 80, RequestConcurrency: 2},
+					region: data.region, logger: promslog.NewNopLogger(),
+				}
+				changes := make(chan func(), 1)
+				changes <- nil
+				d.Discovery = refresh.NewDiscovery(refresh.Options{
+					Mech: "ecs", SetName: "ecs", Interval: time.Second,
+					RefreshF: func(ctx context.Context) ([]*targetgroup.Group, error) {
+						select {
+						case change := <-changes:
+							if change != nil {
+								change()
+							}
+							return d.refresh(ctx)
+						case <-ctx.Done():
+							return nil, ctx.Err()
+						}
+					},
+					MetricsInstantiator: rmi,
+				})
+				manager := discovery.NewManager(ctx, nil, reg, &discovery.SDMetrics{RefreshManager: rmi}, discovery.Updatert(10*time.Millisecond))
+				done := make(chan error, 1)
+				go func() { done <- manager.Run() }()
+				defer func() {
+					cancel()
+					require.ErrorIs(t, <-done, context.Canceled)
+				}()
+				manager.StartCustomProvider(ctx, "ecs", d)
+
+				addresses := func(groups []*targetgroup.Group) []model.LabelValue {
+					var result []model.LabelValue
+					for _, group := range groups {
+						for _, target := range group.Targets {
+							result = append(result, target[model.AddressLabel])
+						}
+					}
+					return result
+				}
+				expected := []model.LabelValue{"10.0.2.10:80"}
+				if !failedOnStartup {
+					expected = append(expected, "10.0.1.10:80")
+				}
+				updates := <-manager.SyncCh()
+				require.ElementsMatch(t, expected, addresses(updates["ecs"]))
+
+				for round := range 3 {
+					ip := fmt.Sprintf("10.0.2.%d", 20+round)
+					changes <- func() {
+						apiErrors["DescribeServices"] = errors.New("access denied")
+						info := ec2Client.ec2Instances["i-2"]
+						info.privateIP = ip
+						ec2Client.ec2Instances["i-2"] = info
+					}
+					expected[0] = model.LabelValue(ip + ":80")
+					updates = <-manager.SyncCh()
+					require.ElementsMatch(t, expected, addresses(updates["ecs"]))
+				}
+
+				changes <- func() { clear(apiErrors) }
+				updates = <-manager.SyncCh()
+				require.ElementsMatch(t, []model.LabelValue{"10.0.1.10:80", "10.0.2.22:80"}, addresses(updates["ecs"]))
+
+				changes <- func() {
+					ecsClient.ecsData.clusters = nil
+					ecsClient.ecsData.tasks = nil
+				}
+				updates = <-manager.SyncCh()
+				require.Contains(t, updates, "ecs")
+				require.Empty(t, updates["ecs"])
+			})
+		})
 	}
 }
 
@@ -1713,6 +1966,7 @@ func TestECSDiscoveryRefreshErrors(t *testing.T) {
 type mockECSClient struct {
 	ecsData      ecsDataStore
 	apiErrors    map[string]error
+	apiFailures  map[string][]ecsTypes.Failure
 	errorCluster string
 }
 
@@ -1723,7 +1977,13 @@ func newMockECSClient(ecsData *ecsDataStore) *mockECSClient {
 	return &client
 }
 
-func (m *mockECSClient) ListClusters(_ context.Context, _ *ecs.ListClustersInput, _ ...func(*ecs.Options)) (*ecs.ListClustersOutput, error) {
+func (m *mockECSClient) ListClusters(ctx context.Context, _ *ecs.ListClustersInput, _ ...func(*ecs.Options)) (*ecs.ListClustersOutput, error) {
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
+	if err := m.apiErrors["ListClusters"]; err != nil {
+		return nil, err
+	}
 	clusterArns := make([]string, 0, len(m.ecsData.clusters))
 	for _, cluster := range m.ecsData.clusters {
 		clusterArns = append(clusterArns, *cluster.ClusterArn)
@@ -1734,23 +1994,46 @@ func (m *mockECSClient) ListClusters(_ context.Context, _ *ecs.ListClustersInput
 	}, nil
 }
 
-func (m *mockECSClient) DescribeClusters(_ context.Context, input *ecs.DescribeClustersInput, _ ...func(*ecs.Options)) (*ecs.DescribeClustersOutput, error) {
+func (m *mockECSClient) DescribeClusters(ctx context.Context, input *ecs.DescribeClustersInput, _ ...func(*ecs.Options)) (*ecs.DescribeClustersOutput, error) {
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
+	if err := m.apiErrors["DescribeClusters"]; err != nil && slices.Contains(input.Clusters, m.errorCluster) {
+		return nil, err
+	}
 	var clusters []ecsTypes.Cluster
+	var failures []ecsTypes.Failure
 	for _, clusterArn := range input.Clusters {
+		if len(m.apiFailures["DescribeClusters"]) > 0 && clusterArn == m.errorCluster {
+			failures = append(failures, m.apiFailures["DescribeClusters"]...)
+			continue
+		}
+		found := false
 		for _, cluster := range m.ecsData.clusters {
 			if *cluster.ClusterArn == clusterArn {
 				clusters = append(clusters, cluster)
+				found = true
 				break
 			}
+		}
+		if !found {
+			failures = append(failures, ecsTypes.Failure{Arn: strptr(clusterArn), Reason: strptr("MISSING")})
 		}
 	}
 
 	return &ecs.DescribeClustersOutput{
 		Clusters: clusters,
+		Failures: failures,
 	}, nil
 }
 
-func (m *mockECSClient) ListServices(_ context.Context, input *ecs.ListServicesInput, _ ...func(*ecs.Options)) (*ecs.ListServicesOutput, error) {
+func (m *mockECSClient) ListServices(ctx context.Context, input *ecs.ListServicesInput, _ ...func(*ecs.Options)) (*ecs.ListServicesOutput, error) {
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
+	if err := m.apiErrors["ListServices"]; err != nil && *input.Cluster == m.errorCluster {
+		return nil, err
+	}
 	var serviceArns []string
 	for _, service := range m.ecsData.services {
 		if *service.ClusterArn == *input.Cluster {
@@ -1763,9 +2046,15 @@ func (m *mockECSClient) ListServices(_ context.Context, input *ecs.ListServicesI
 	}, nil
 }
 
-func (m *mockECSClient) DescribeServices(_ context.Context, input *ecs.DescribeServicesInput, _ ...func(*ecs.Options)) (*ecs.DescribeServicesOutput, error) {
+func (m *mockECSClient) DescribeServices(ctx context.Context, input *ecs.DescribeServicesInput, _ ...func(*ecs.Options)) (*ecs.DescribeServicesOutput, error) {
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
 	if err := m.apiErrors["DescribeServices"]; err != nil && *input.Cluster == m.errorCluster {
 		return nil, err
+	}
+	if failures := m.apiFailures["DescribeServices"]; len(failures) > 0 && *input.Cluster == m.errorCluster {
+		return &ecs.DescribeServicesOutput{Failures: failures}, nil
 	}
 	var services []ecsTypes.Service
 	for _, serviceArn := range input.Services {
@@ -1782,7 +2071,13 @@ func (m *mockECSClient) DescribeServices(_ context.Context, input *ecs.DescribeS
 	}, nil
 }
 
-func (m *mockECSClient) ListTasks(_ context.Context, input *ecs.ListTasksInput, _ ...func(*ecs.Options)) (*ecs.ListTasksOutput, error) {
+func (m *mockECSClient) ListTasks(ctx context.Context, input *ecs.ListTasksInput, _ ...func(*ecs.Options)) (*ecs.ListTasksOutput, error) {
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
+	if err := m.apiErrors["ListTasks"]; err != nil && *input.Cluster == m.errorCluster {
+		return nil, err
+	}
 	var taskArns []string
 	for _, task := range m.ecsData.tasks {
 		if *task.ClusterArn == *input.Cluster {
@@ -1803,9 +2098,15 @@ func (m *mockECSClient) ListTasks(_ context.Context, input *ecs.ListTasksInput, 
 	}, nil
 }
 
-func (m *mockECSClient) DescribeTasks(_ context.Context, input *ecs.DescribeTasksInput, _ ...func(*ecs.Options)) (*ecs.DescribeTasksOutput, error) {
+func (m *mockECSClient) DescribeTasks(ctx context.Context, input *ecs.DescribeTasksInput, _ ...func(*ecs.Options)) (*ecs.DescribeTasksOutput, error) {
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
 	if err := m.apiErrors["DescribeTasks"]; err != nil && *input.Cluster == m.errorCluster {
 		return nil, err
+	}
+	if failures := m.apiFailures["DescribeTasks"]; len(failures) > 0 && *input.Cluster == m.errorCluster {
+		return &ecs.DescribeTasksOutput{Failures: failures}, nil
 	}
 	var tasks []ecsTypes.Task
 	for _, taskArn := range input.Tasks {
@@ -1822,9 +2123,15 @@ func (m *mockECSClient) DescribeTasks(_ context.Context, input *ecs.DescribeTask
 	}, nil
 }
 
-func (m *mockECSClient) DescribeContainerInstances(_ context.Context, input *ecs.DescribeContainerInstancesInput, _ ...func(*ecs.Options)) (*ecs.DescribeContainerInstancesOutput, error) {
+func (m *mockECSClient) DescribeContainerInstances(ctx context.Context, input *ecs.DescribeContainerInstancesInput, _ ...func(*ecs.Options)) (*ecs.DescribeContainerInstancesOutput, error) {
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
 	if err := m.apiErrors["DescribeContainerInstances"]; err != nil && *input.Cluster == m.errorCluster {
 		return nil, err
+	}
+	if failures := m.apiFailures["DescribeContainerInstances"]; len(failures) > 0 && *input.Cluster == m.errorCluster {
+		return &ecs.DescribeContainerInstancesOutput{Failures: failures}, nil
 	}
 	var containerInstances []ecsTypes.ContainerInstance
 	for _, ciArn := range input.ContainerInstances {
@@ -1856,7 +2163,10 @@ func newMockECSEC2Client(ec2Instances map[string]ec2InstanceInfo, eniPublicIPs m
 	}
 }
 
-func (m *mockECSEC2Client) DescribeInstances(_ context.Context, input *ec2.DescribeInstancesInput, _ ...func(*ec2.Options)) (*ec2.DescribeInstancesOutput, error) {
+func (m *mockECSEC2Client) DescribeInstances(ctx context.Context, input *ec2.DescribeInstancesInput, _ ...func(*ec2.Options)) (*ec2.DescribeInstancesOutput, error) {
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
 	if err := m.apiErrors["DescribeInstances"]; err != nil && slices.Contains(input.InstanceIds, m.errorInstance) {
 		return nil, err
 	}
@@ -1898,7 +2208,10 @@ func (m *mockECSEC2Client) DescribeInstances(_ context.Context, input *ec2.Descr
 	}, nil
 }
 
-func (m *mockECSEC2Client) DescribeNetworkInterfaces(_ context.Context, input *ec2.DescribeNetworkInterfacesInput, _ ...func(*ec2.Options)) (*ec2.DescribeNetworkInterfacesOutput, error) {
+func (m *mockECSEC2Client) DescribeNetworkInterfaces(ctx context.Context, input *ec2.DescribeNetworkInterfacesInput, _ ...func(*ec2.Options)) (*ec2.DescribeNetworkInterfacesOutput, error) {
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
 	if err := m.apiErrors["DescribeNetworkInterfaces"]; err != nil {
 		return nil, err
 	}
