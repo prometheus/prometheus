@@ -4485,7 +4485,7 @@ func TestQueueManager_RemoteWriteModes(t *testing.T) {
 			require.True(t, m.AppendFloatHistograms([]record.RefFloatHistogramSample{
 				{Ref: sUntypedHist.Ref, T: 2000, FH: nativeFloatHist},
 			}))
-			// Exemplars with a matching live sample or histogram in the batch are coalesced; untyped and detached exemplars are dropped.
+			// Exemplars with a matching live sample or histogram in the batch are coalesced; exemplars whose series was dropped or absent are dropped as detached.
 			require.True(t, m.AppendExemplars([]record.RefExemplar{
 				{Ref: sUntyped.Ref, T: 1000, V: 9, Labels: labels.FromStrings("trace_id", "untyped_ex")},
 				{Ref: sCounterNoST.Ref, T: 1000, V: 1, Labels: labels.FromStrings("trace_id", "abc")},
@@ -4500,8 +4500,7 @@ func TestQueueManager_RemoteWriteModes(t *testing.T) {
 			require.Equal(t, 0.0, client_testutil.ToFloat64(metrics.droppedSamplesTotal.WithLabelValues(reasonMissingStartTimestamp)))
 			require.Equal(t, 3.0, client_testutil.ToFloat64(metrics.droppedHistogramsTotal.WithLabelValues(reasonMissingMetadataType)))
 			require.Equal(t, 0.0, client_testutil.ToFloat64(metrics.droppedHistogramsTotal.WithLabelValues(reasonMissingStartTimestamp)))
-			require.Equal(t, 1.0, client_testutil.ToFloat64(metrics.droppedExemplarsTotal.WithLabelValues(reasonMissingMetadataType)))
-			require.Equal(t, 1.0, client_testutil.ToFloat64(metrics.droppedExemplarsTotal.WithLabelValues(reasonDetachedExemplarNotAllowed)))
+			require.Equal(t, 2.0, client_testutil.ToFloat64(metrics.droppedExemplarsTotal.WithLabelValues(reasonDetachedExemplarNotAllowed)))
 			require.Equal(t, 0.0, client_testutil.ToFloat64(metrics.pendingExemplars))
 
 			require.Len(t, c.receivedSamples, 2)
@@ -4658,7 +4657,7 @@ func TestQueueManager_RemoteWriteModes(t *testing.T) {
 				{Ref: sCounterWithST.Ref, T: 1000, V: 1, Labels: labels.FromStrings("trace_id", "abc")},    // Keep: coalesced onto live sCounterWithST sample
 				{Ref: sGaugeHistNoST.Ref, T: 2000, V: 1.5, Labels: labels.FromStrings("trace_id", "gh")},   // Keep: coalesced onto sGaugeHistNoST histogram
 				{Ref: sCounterNoST.Ref, T: 1000, V: 2, Labels: labels.FromStrings("trace_id", "def")},      // Drop: sample for sCounterNoST was dropped, so exemplar is detached
-				{Ref: sUntyped.Ref, T: 1000, V: 3, Labels: labels.FromStrings("trace_id", "untyped_stex")}, // Drop: missing metadata type
+				{Ref: sUntyped.Ref, T: 1000, V: 3, Labels: labels.FromStrings("trace_id", "untyped_stex")}, // Drop: sample for sUntyped was dropped, so exemplar is detached
 			}))
 
 			stop()
@@ -4670,8 +4669,7 @@ func TestQueueManager_RemoteWriteModes(t *testing.T) {
 			require.Equal(t, 2.0, client_testutil.ToFloat64(metrics.droppedHistogramsTotal.WithLabelValues(reasonMissingMetadataType)))
 			require.Equal(t, 2.0, client_testutil.ToFloat64(metrics.droppedHistogramsTotal.WithLabelValues(reasonMissingStartTimestamp)))
 
-			require.Equal(t, 1.0, client_testutil.ToFloat64(metrics.droppedExemplarsTotal.WithLabelValues(reasonMissingMetadataType)))
-			require.Equal(t, 1.0, client_testutil.ToFloat64(metrics.droppedExemplarsTotal.WithLabelValues(reasonDetachedExemplarNotAllowed)))
+			require.Equal(t, 2.0, client_testutil.ToFloat64(metrics.droppedExemplarsTotal.WithLabelValues(reasonDetachedExemplarNotAllowed)))
 			require.Equal(t, 0.0, client_testutil.ToFloat64(metrics.pendingExemplars))
 
 			require.Len(t, c.receivedSamples, 6)
