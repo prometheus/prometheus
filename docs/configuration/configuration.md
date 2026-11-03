@@ -4272,8 +4272,9 @@ queue_config:
 # Configures the sending of series metadata to remote storage.
 # `send`, `send_interval`, and `max_samples_per_send` only apply when the
 # `prometheus.WriteRequest` message is used. When `io.prometheus.write.v2.Request`
-# is used, type and unit metadata are always sent with each series, and HELP
-# sending can be controlled via `send_help_interval`.
+# is used, Prometheus sends metadata from `--enable-feature=metadata-wal-records`
+# or `--enable-feature=type-and-unit-labels` inline with each series, and
+# `send_help_interval` controls how often HELP from `metadata-wal-records` is sent.
 #
 # Metadata configuration is subject to change at any point
 # or be removed in future releases.
@@ -4284,12 +4285,20 @@ metadata_config:
   [ send_interval: <duration> | default = 1m ]
   # Maximum number of samples per send (Remote Write 1.0 only).
   [ max_samples_per_send: <int> | default = 2000]
-  # EXPERIMENTAL: Controls how frequently HELP metadata is sent per series when
+  # EXPERIMENTAL: Controls how frequently HELP metadata from
+  # `--enable-feature=metadata-wal-records` is sent per series when
   # `protobuf_message` is `io.prometheus.write.v2.Request`.
-  # When set to 0s (the default), HELP is sent with every sample and histogram.
+  # When set to 0s, the default, HELP is sent with every sample and histogram.
   # When set to a positive duration, HELP is sent only on the first sample or
   # histogram for a series, whenever its metadata changes, and periodically
   # once per `send_help_interval` for active series.
+  # Prometheus marks HELP as sent when a point is enqueued, so if a batch is
+  # later dropped on an unrecoverable remote error, `sample_age_limit`, or
+  # shutdown, the receiver will not get HELP again until the next interval or
+  # metadata change. Allowed with `stateless` and `stateless-st` modes because
+  # HELP is optional in the Remote-Write 2.0 spec, though stateless receivers
+  # that do not cache metadata across requests only see HELP on requests that
+  # include it.
   [ send_help_interval: <duration> | default = 0s ]
 
 # EXPERIMENTAL: Converts native histograms with custom buckets (NHCB)
