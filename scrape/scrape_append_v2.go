@@ -742,7 +742,7 @@ func (sl *scrapeLoop) mutateSample(
 		// has unknown type (since _total suffix stripping only applies to counters). If relabeling
 		// sets the series type (e.g. to counter) such that it now belongs to origMFStr, inherit
 		// any help or unit from origMD that relabeling did not explicitly set.
-		if !hasFamilyMeta && !metadata.IsZeroHandle(origMeta) && isSeriesPartOfFamilyStr(preName, origMFStr, sampleMeta.Type) {
+		if !hasFamilyMeta && !metadata.IsZeroHandle(origMeta) && origMD.Type == model.MetricTypeUnknown && isSeriesPartOfFamilyStr(preName, origMFStr, sampleMeta.Type) {
 			hasFamilyMeta = true
 			if sampleMeta.Help == "" {
 				sampleMeta.Help = origMD.Help
