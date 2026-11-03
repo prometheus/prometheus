@@ -1838,7 +1838,7 @@ old_http_requests_total 42
 # HELP legacy_untyped Help from family without TYPE
 legacy_untyped_total 7
 untyped_drop_me 99
-untyped_unitless_metric 5
+untyped_unitless_metric{__type__="gauge",__unit__="bytes",__help__="spoof"} 5
 # EOF
 `)
 			now := time.Now()
@@ -1868,7 +1868,7 @@ legacy_untyped_total 8
 # TYPE untyped_drop_me gauge
 # HELP untyped_drop_me Now typed as gauge
 untyped_drop_me 100
-untyped_unitless_metric 6
+untyped_unitless_metric{__type__="gauge",__unit__="bytes",__help__="spoof"} 6
 # EOF
 `)
 			app = sl.appender()
@@ -1948,8 +1948,35 @@ untyped_unitless_metric 6
 					M: metadata.Metadata{Type: model.MetricTypeGauge, Help: "Now typed as gauge"},
 				},
 			}, appTest.ResultMetadata())
-			// Verify untyped_unitless_metric was ingested without sticky __type__ or __unit__ labels.
+			// Verify untyped_unitless_metric was ingested without sticky or target-exposed __type__, __unit__, or __help__ labels.
+			_, ok = sl.cache.GetMetadata("untyped_unitless_metric")
+			require.False(t, ok, "expected target-exposed metadata labels not to spoof scrapeCache metadata")
 			testutil.RequireEqual(t, expectedLset3, appTest.ResultSamples()[2].L)
+
+			// Verify target-exposed __type__, __unit__, and __help__ do not leak into TSDB when metric_relabel_configs do not reference metadata.
+			appNoMetaRules := teststorage.NewAppendable()
+			rcNoMeta := []*relabel.Config{
+				{
+					SourceLabels:         model.LabelNames{"__name__"},
+					Separator:            ";",
+					Regex:                relabel.MustNewRegexp("dropped_metric_total"),
+					Replacement:          "$1",
+					Action:               relabel.Drop,
+					NameValidationScheme: model.UTF8Validation,
+				},
+			}
+			slNoMeta, _ := newTestScrapeLoop(t, withAppendable(appNoMetaRules, true), func(sl *scrapeLoop) {
+				sl.enableTypeAndUnitLabels = enableTypeAndUnitLabels
+				sl.mrc = rcNoMeta
+				sl.sampleMutatorWithMetadata = func(l labels.Labels, m metadata.Metadata) (labels.Labels, metadata.Metadata) {
+					return mutateSampleLabelsAndMetadata(l, m, target, false, enableTypeAndUnitLabels, rcNoMeta)
+				}
+			})
+			app = slNoMeta.appender()
+			_, _, _, err = app.append([]byte("untyped_unitless_metric{__type__=\"gauge\",__unit__=\"bytes\",__help__=\"spoof\"} 5\n# EOF\n"), "application/openmetrics-text", now)
+			require.NoError(t, err)
+			require.NoError(t, app.Commit())
+			testutil.RequireEqual(t, expectedLset3, appNoMetaRules.ResultSamples()[0].L)
 		})
 	}
 }
