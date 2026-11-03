@@ -1138,6 +1138,26 @@ action: replace
 	}
 }
 
+func TestConfig_UnmarshalNullRegex(t *testing.T) {
+	original := DefaultRelabelConfig
+	DefaultRelabelConfig.Regex = MustNewRegexp("(.*)")
+	t.Cleanup(func() { DefaultRelabelConfig = original })
+
+	var cfgs []*Config
+	err := yaml.UnmarshalStrict([]byte(`
+- source_labels: [plane]
+  regex: 'null'
+  target_label: plane
+  replacement: ''
+- source_labels: [__address__]
+  target_label: __param_target
+`), &cfgs)
+	require.NoError(t, err)
+	require.Equal(t, "^(?s:(.*))$", DefaultRelabelConfig.Regex.Regexp.String())
+	require.Equal(t, "null", cfgs[0].Regex.String())
+	require.Equal(t, "(.*)", cfgs[1].Regex.String())
+}
+
 func TestRegexp_ShouldMarshalAndUnmarshalZeroValue(t *testing.T) {
 	var zero Regexp
 
