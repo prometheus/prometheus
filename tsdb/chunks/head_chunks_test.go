@@ -414,6 +414,66 @@ func TestChunkDiskMapper_Truncate_WriteQueueRaceCondition(t *testing.T) {
 	wg.Wait()
 }
 
+// TestChunkDiskMapper_Truncate_DeletingAllFilesKeepsRefsMonotonic tests that chunk refs
+// never go backwards, even when truncation deletes every chunk file.
+//
+// That can only happen after a restart, because until then the active file is never
+// deleted. Out-of-order compaction and head GC rely on it: they remember the last chunk
+// ref they covered, and treat chunks at or below it as already compacted. A chunk
+// that reuses an old ref would be mistaken for one that was compacted.
+func TestChunkDiskMapper_Truncate_DeletingAllFilesKeepsRefsMonotonic(t *testing.T) {
+	t.Parallel()
+	dir := t.TempDir()
+	hrw := createChunkDiskMapper(t, dir)
+
+	// The mapper is replaced below, so look it up when writing.
+	writeChunk := func() ChunkDiskMapperRef {
+		t.Helper()
+
+		var err error
+		awaitCb := make(chan struct{})
+		ref := hrw.WriteChunk(1, 0, 10, randomChunk(t), false, func(cbErr error) {
+			err = cbErr
+			close(awaitCb)
+		})
+		<-awaitCb
+		require.NoError(t, err)
+		return ref
+	}
+
+	// Create files 1 to 3, one chunk each.
+	const lastSeqBeforeRestart = 3
+	var lastRef ChunkDiskMapperRef
+	for range lastSeqBeforeRestart {
+		hrw.CutNewFile()
+		lastRef = writeChunk()
+	}
+	seq, _ := lastRef.Unpack()
+	require.Equal(t, lastSeqBeforeRestart, seq)
+
+	// After a restart the files are still there, but none of them is active
+	// until the next chunk is written.
+	require.NoError(t, hrw.Close())
+	hrw = createChunkDiskMapper(t, dir)
+	t.Cleanup(func() {
+		require.NoError(t, hrw.Close())
+	})
+
+	require.NoError(t, hrw.Truncate(lastSeqBeforeRestart+1))
+	files, err := os.ReadDir(hrw.dir.Name())
+	require.NoError(t, err)
+	require.Empty(t, files, "expected all chunk files to be deleted")
+
+	ref := writeChunk()
+	seq, _ = ref.Unpack()
+	require.Greater(t, seq, lastSeqBeforeRestart, "expected the new chunk ref to be above the refs of the deleted files")
+
+	// The chunk must be readable through its ref, so the file it was written
+	// to has to match the sequence in the ref.
+	_, err = hrw.Chunk(ref)
+	require.NoError(t, err)
+}
+
 // TestHeadReadWriter_TruncateAfterFailedIterateChunks tests for
 // https://github.com/prometheus/prometheus/issues/7753
 func TestHeadReadWriter_TruncateAfterFailedIterateChunks(t *testing.T) {
