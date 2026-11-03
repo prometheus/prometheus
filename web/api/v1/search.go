@@ -503,13 +503,15 @@ func writeStreamInternalError(nw *ndjsonWriter, err error) {
 	_ = nw.writeLine(searchErrorResponse{Status: "error", ErrorType: errorInternal.str, Error: err.Error()})
 }
 
+// streamContextDone reports whether ctx is done, ending the stream with a timeout
+// record on deadline expiry and writing nothing for a canceled request.
 func streamContextDone(ctx context.Context, nw *ndjsonWriter) bool {
-	cause := context.Cause(ctx)
-	if cause == nil {
+	err := ctx.Err()
+	if err == nil {
 		return false
 	}
-	if errors.Is(cause, context.DeadlineExceeded) {
-		writeStreamSearchError(nw, context.DeadlineExceeded)
+	if errors.Is(err, context.DeadlineExceeded) {
+		writeStreamSearchError(nw, err)
 	}
 	return true
 }
@@ -560,10 +562,6 @@ func (s *searchResultStreamer[T]) nextBatch() ([]T, error) {
 
 func streamSearchResults[T any](ctx context.Context, api *API, w http.ResponseWriter, rs storage.SearchResultSet, sp searchParams, toResult func(storage.SearchResult) T) {
 	defer func() { _ = rs.Close() }()
-	if errors.Is(context.Cause(ctx), context.DeadlineExceeded) {
-		api.respondPreStreamSearchError(w, context.DeadlineExceeded)
-		return
-	}
 
 	streamer := &searchResultStreamer[T]{
 		rs:        rs,
@@ -573,8 +571,8 @@ func streamSearchResults[T any](ctx context.Context, api *API, w http.ResponseWr
 	}
 
 	firstBatch, firstErr := streamer.nextBatch()
-	if errors.Is(context.Cause(ctx), context.DeadlineExceeded) {
-		api.respondPreStreamSearchError(w, context.DeadlineExceeded)
+	if err := ctx.Err(); errors.Is(err, context.DeadlineExceeded) {
+		api.respondPreStreamSearchError(w, err)
 		return
 	}
 	// A non-nil firstErr with zero results means the underlying iterator
@@ -598,18 +596,11 @@ func streamSearchResults[T any](ctx context.Context, api *API, w http.ResponseWr
 		api.respondError(w, &apiError{errorInternal, err}, nil)
 		return
 	}
-	if errors.Is(context.Cause(ctx), context.DeadlineExceeded) {
-		writeStreamSearchError(nw, context.DeadlineExceeded)
-		return
-	}
 
 	// Always emit a first batch line so warnings are observable before any
 	// trailer or error line, even when there are no results.
 	if writeErr := nw.writeLine(searchBatch[T]{Results: firstBatch, Warnings: firstWarnings}); writeErr != nil {
 		writeStreamInternalError(nw, writeErr)
-		return
-	}
-	if streamContextDone(ctx, nw) {
 		return
 	}
 
@@ -658,9 +649,6 @@ func streamSearchResults[T any](ctx context.Context, api *API, w http.ResponseWr
 	slices.Sort(trailerWarnings)
 	if slices.Equal(trailerWarnings, firstWarnings) {
 		trailerWarnings = nil
-	}
-	if streamContextDone(ctx, nw) {
-		return
 	}
 	_ = nw.writeLine(searchTrailer{Status: "success", HasMore: streamer.hasMore, Warnings: trailerWarnings})
 }

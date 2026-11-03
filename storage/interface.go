@@ -407,7 +407,7 @@ type SearchResult struct {
 //
 // For a given Value and SearchHints.Filter, Score must be deterministic
 // and identical across Searcher implementations.
-// Implementations must stop on context cancellation and expose its cause through Err.
+// Implementations must stop on context cancellation and report the context error through Err.
 // Composites may convert errors from best-effort secondary storage into warnings.
 type Searcher interface {
 	// SearchLabelNames returns an iterator over label names matching the search criteria.

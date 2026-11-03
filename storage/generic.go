@@ -247,14 +247,13 @@ func NewSearchResultSetFromSliceAndError(results []SearchResult, warns annotatio
 // keeping the upfront allocation small for sparse matches against large indices.
 const minLinearAllocCap = 256
 
+// checkContextEveryNIterations is used in some tight loops to check if the context is done.
+const checkContextEveryNIterations = 128
+
 // ApplySearchHints filters, orders, and limits values using a non-nil ctx.
 // Values must be ascending unless hints specifies score ordering with a filter.
-// Nil hints use the zero-value defaults. Cancellation returns the context cause;
-// results are only valid when the returned error is nil.
+// Nil hints use the zero-value defaults. Cancellation returns the context error.
 func ApplySearchHints(ctx context.Context, values []string, hints *SearchHints) ([]SearchResult, error) {
-	if err := context.Cause(ctx); err != nil {
-		return nil, err
-	}
 	if hints == nil {
 		hints = &SearchHints{}
 	}
@@ -273,10 +272,10 @@ func ApplySearchHints(ctx context.Context, values []string, hints *SearchHints) 
 }
 
 func searchHintsContextErr(ctx context.Context, i int) error {
-	if i%128 != 0 {
+	if i%checkContextEveryNIterations != 0 {
 		return nil
 	}
-	return context.Cause(ctx)
+	return ctx.Err()
 }
 
 // reverseFilterEarlyExit walks the input ascending-sorted slice from the tail,
@@ -295,7 +294,7 @@ func reverseFilterEarlyExit(ctx context.Context, values []string, filter Filter,
 		}
 		results = append(results, SearchResult{Value: values[i], Score: score})
 	}
-	return results, context.Cause(ctx)
+	return results, nil
 }
 
 // applySearchHintsNoFilter handles the unfiltered path: scores are uniformly 1.0
@@ -317,7 +316,7 @@ func applySearchHintsNoFilter(ctx context.Context, values []string, hints *Searc
 			}
 			results = append(results, SearchResult{Value: values[i], Score: 1.0})
 		}
-		return results, context.Cause(ctx)
+		return results, nil
 	}
 	// OrderByValueAsc and OrderByScoreDesc both reduce to value-ascending here:
 	// uniform scores tie-break on Value asc under (Score desc, Value asc).
@@ -327,7 +326,7 @@ func applySearchHintsNoFilter(ctx context.Context, values []string, hints *Searc
 		}
 		results = append(results, SearchResult{Value: values[i], Score: 1.0})
 	}
-	return results, context.Cause(ctx)
+	return results, nil
 }
 
 // applySearchHintsLinear handles the filtered path for orderings other than
@@ -359,9 +358,6 @@ func applySearchHintsLinear(ctx context.Context, values []string, hints *SearchH
 	}
 	if hints.Limit > 0 && len(results) > hints.Limit {
 		results = results[:hints.Limit]
-	}
-	if err := context.Cause(ctx); err != nil {
-		return nil, err
 	}
 	return results, nil
 }
@@ -494,15 +490,9 @@ func topKByScore(ctx context.Context, values []string, filter Filter, limit int)
 	// Pop returns worst-first under our heap order; place results from the tail
 	// so the final slice is best-first (Score desc, Value asc).
 	for i := range slices.Backward(out) {
-		if err := searchHintsContextErr(ctx, len(out)-1-i); err != nil {
-			return nil, err
-		}
 		var r SearchResult
 		r, h = h.pop()
 		out[i] = r
-	}
-	if err := context.Cause(ctx); err != nil {
-		return nil, err
 	}
 	return out, nil
 }

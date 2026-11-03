@@ -242,15 +242,17 @@ func TestApplySearchHints(t *testing.T) {
 		require.LessOrEqual(t, len(got), 50)
 	})
 
+	// The contexts below carry custom causes because callers classify the
+	// returned error by the standard context errors, which a cause must not
+	// replace.
 	t.Run("cancellation", func(t *testing.T) {
 		t.Run("already canceled", func(t *testing.T) {
-			cause := errors.New("request canceled")
 			ctx, cancel := context.WithCancelCause(t.Context())
-			cancel(cause)
+			cancel(errors.New("request canceled"))
 
 			for _, hints := range []*SearchHints{nil, {OrderBy: OrderByValueAsc}, {OrderBy: OrderByValueDesc}, {OrderBy: OrderByScoreDesc}} {
 				results, err := ApplySearchHints(ctx, []string{"alpha"}, hints)
-				require.ErrorIs(t, err, cause)
+				require.ErrorIs(t, err, context.Canceled)
 				require.Nil(t, results)
 			}
 		})
@@ -279,13 +281,16 @@ func TestApplySearchHints(t *testing.T) {
 					}
 
 					results, err := ApplySearchHints(ctx, values, hints)
-					require.ErrorIs(t, err, cause)
+					require.ErrorIs(t, err, context.Canceled)
 					require.Nil(t, results)
-					require.LessOrEqual(t, calls, 128)
+					require.LessOrEqual(t, calls, checkContextEveryNIterations)
 				})
 
-				t.Run("on final filter call", func(t *testing.T) {
-					cause := errors.New("filter canceled")
+				// The context is only checked every checkContextEveryNIterations
+				// values, so a cancellation during the last call goes unseen. The
+				// scan has finished by then, and the complete result is returned
+				// rather than discarded.
+				t.Run("on final filter call returns completed results", func(t *testing.T) {
 					ctx, cancel := context.WithCancelCause(t.Context())
 					defer cancel(nil)
 					calls := 0
@@ -295,15 +300,22 @@ func TestApplySearchHints(t *testing.T) {
 						Filter: FilterFunc(func(string) (bool, float64) {
 							calls++
 							if calls == 3 {
-								cancel(cause)
+								cancel(errors.New("filter canceled"))
 							}
 							return true, 1
 						}),
 					}
 
-					_, err := ApplySearchHints(ctx, []string{"alpha", "beta", "gamma"}, hints)
-					require.ErrorIs(t, err, cause)
+					results, err := ApplySearchHints(ctx, []string{"alpha", "beta", "gamma"}, hints)
+					require.NoError(t, err)
 					require.Equal(t, 3, calls)
+					// Uniform scores tie-break on Value asc, so only OrderByValueDesc
+					// reverses the input.
+					expected := []SearchResult{{Value: "alpha", Score: 1}, {Value: "beta", Score: 1}, {Value: "gamma", Score: 1}}
+					if order == OrderByValueDesc {
+						expected = []SearchResult{{Value: "gamma", Score: 1}, {Value: "beta", Score: 1}, {Value: "alpha", Score: 1}}
+					}
+					require.Equal(t, expected, results)
 				})
 			})
 		}

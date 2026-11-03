@@ -26,6 +26,7 @@ import (
 	"strconv"
 	"strings"
 	"testing"
+	"testing/synctest"
 	"time"
 
 	"github.com/prometheus/common/model"
@@ -1444,21 +1445,16 @@ func TestSearchEndpointsCtxCancelled(t *testing.T) {
 	// Use a controlled fake searcher so the test does not depend on the
 	// shape of any storage fixture. With three explicit results and
 	// batch_size=1, firstBatch is non-empty and the streaming loop must
-	// observe the pre-cancelled context on its first iteration and return
-	// before writing a success trailer.
-	q := &sequentialSearchQuerier{
-		calls: []sequentialResp{
-			{results: []storage.SearchResult{
-				{Value: "alpha", Score: 1.0},
-				{Value: "beta", Score: 1.0},
-				{Value: "gamma", Score: 1.0},
-			}},
-		},
-	}
-	queryable := errorTestQueryable{q: q}
+	// observe the pre-cancelled context on its first iteration, returning
+	// before it pulls more results or writes a success trailer.
+	rs := &hookedSearchResultSet{SearchResultSet: storage.NewSearchResultSetFromSlice([]storage.SearchResult{
+		{Value: "alpha", Score: 1.0},
+		{Value: "beta", Score: 1.0},
+		{Value: "gamma", Score: 1.0},
+	}, nil)}
 
 	api := minimalSearchAPI()
-	api.Queryable = queryable
+	api.Queryable = errorTestQueryable{q: fixedSearchQuerier{rs: rs}}
 
 	ctx, cancel := context.WithCancel(t.Context())
 	cancel()
@@ -1475,6 +1471,8 @@ func TestSearchEndpointsCtxCancelled(t *testing.T) {
 	// returning. An empty body would otherwise let a regression slip
 	// through this test silently.
 	require.NotEmpty(t, lines, "expected at least the first batch line to be written before ctx-cancel takes effect")
+	// An abandoned request must not keep iterating storage past the first batch.
+	require.Equal(t, 1, rs.calls, "expected no Next call after the first batch")
 
 	// No line should decode as a success trailer. This is robust to a
 	// truncated body, an empty firstBatch path, or an earlier exit before
@@ -1503,11 +1501,30 @@ func (q fixedSearchQuerier) SearchLabelValues(context.Context, string, *storage.
 	return q.rs
 }
 
-// TestAPI_SearchMetricNames_StreamErrors checks errors before streaming and with partial results.
+// hookedSearchResultSet counts Next calls and runs onNext, if set, before each
+// one, so tests can observe how far streaming pulls or act at a given call.
+type hookedSearchResultSet struct {
+	storage.SearchResultSet
+	calls  int
+	onNext func(call int)
+}
+
+func (s *hookedSearchResultSet) Next() bool {
+	s.calls++
+	if s.onNext != nil {
+		s.onNext(s.calls)
+	}
+	return s.SearchResultSet.Next()
+}
+
+// TestAPI_SearchMetricNames_StreamErrors checks storage errors and request
+// deadlines before streaming and after partial results.
 func TestAPI_SearchMetricNames_StreamErrors(t *testing.T) {
 	for _, tc := range []struct {
-		name              string
-		resultSet         storage.SearchResultSet
+		name      string
+		resultSet storage.SearchResultSet
+		// expireOnNext, when positive, lets the request deadline pass during that Next call.
+		expireOnNext      int
 		expectedNames     []string
 		expectedCode      int
 		expectedErrorType string
@@ -1544,42 +1561,92 @@ func TestAPI_SearchMetricNames_StreamErrors(t *testing.T) {
 			expectedErrorType: errorTimeout.str,
 			expectedError:     context.DeadlineExceeded.Error(),
 		},
+		{
+			// Composites turn secondary errors, deadlines included, into
+			// warnings, so a nil Err does not prove the results are complete.
+			// Unlike a finished ApplySearchHints scan, results pulled after
+			// the deadline are therefore rejected.
+			name: "deadline during first batch",
+			resultSet: storage.NewSearchResultSetFromSlice(
+				[]storage.SearchResult{{Value: "alpha", Score: 1.0}, {Value: "beta", Score: 1.0}},
+				nil,
+			),
+			expireOnNext:      2,
+			expectedCode:      http.StatusServiceUnavailable,
+			expectedErrorType: errorTimeout.str,
+			expectedError:     context.DeadlineExceeded.Error(),
+		},
+		{
+			name: "deadline after first batch",
+			resultSet: storage.NewSearchResultSetFromSlice(
+				[]storage.SearchResult{
+					{Value: "alpha", Score: 1.0},
+					{Value: "beta", Score: 1.0},
+					{Value: "gamma", Score: 1.0},
+					{Value: "delta", Score: 1.0},
+					{Value: "epsilon", Score: 1.0},
+					{Value: "zeta", Score: 1.0},
+				},
+				nil,
+			),
+			expireOnNext:      6,
+			expectedNames:     []string{"alpha", "beta", "gamma", "delta", "epsilon"},
+			expectedCode:      http.StatusOK,
+			expectedErrorType: errorTimeout.str,
+			expectedError:     context.DeadlineExceeded.Error(),
+		},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			api := minimalSearchAPI()
-			api.Queryable = errorTestQueryable{q: fixedSearchQuerier{rs: tc.resultSet}}
+			// The bubble's fake clock lets a Next call sleep past the request
+			// deadline deterministically.
+			synctest.Test(t, func(t *testing.T) {
+				// A custom cause must not hide the deadline from the stream.
+				ctx, cancel := context.WithTimeoutCause(t.Context(), time.Minute, errors.New("search deadline"))
+				defer cancel()
+				rs := tc.resultSet
+				if tc.expireOnNext > 0 {
+					rs = &hookedSearchResultSet{SearchResultSet: rs, onNext: func(call int) {
+						if call == tc.expireOnNext {
+							time.Sleep(2 * time.Minute)
+						}
+					}}
+				}
+				api := minimalSearchAPI()
+				api.Queryable = errorTestQueryable{q: fixedSearchQuerier{rs: rs}}
 
-			// A batch size of five surfaces each tail error while assembling the first batch.
-			rec := doSearchRequest(t, api, "/search/metric_names", url.Values{"batch_size": {"5"}})
-			require.Equal(t, tc.expectedCode, rec.Code)
+				// With a batch size of five, storage errors surface while the first
+				// batch is assembled, and a sixth result is pulled for the second.
+				rec := doSearchRequestCtx(ctx, t, api, "/search/metric_names", url.Values{"batch_size": {"5"}})
+				require.Equal(t, tc.expectedCode, rec.Code)
 
-			if tc.expectedCode != http.StatusOK {
-				require.Equal(t, "application/json", rec.Header().Get("Content-Type"))
-				var response Response
-				require.NoError(t, json.Unmarshal(rec.Body.Bytes(), &response))
-				require.Equal(t, statusError, response.Status)
-				require.Equal(t, tc.expectedErrorType, response.ErrorType)
-				require.Equal(t, tc.expectedError, response.Error)
-				return
-			}
+				if tc.expectedCode != http.StatusOK {
+					require.Equal(t, "application/json", rec.Header().Get("Content-Type"))
+					var response Response
+					require.NoError(t, json.Unmarshal(rec.Body.Bytes(), &response))
+					require.Equal(t, statusError, response.Status)
+					require.Equal(t, tc.expectedErrorType, response.ErrorType)
+					require.Equal(t, tc.expectedError, response.Error)
+					return
+				}
 
-			require.Equal(t, "application/x-ndjson; charset=utf-8", rec.Header().Get("Content-Type"))
-			lines := parseNDJSON(t, rec.Body.String())
-			require.Len(t, lines, 2, "expected a batch line followed by an error line")
+				require.Equal(t, "application/x-ndjson; charset=utf-8", rec.Header().Get("Content-Type"))
+				lines := parseNDJSON(t, rec.Body.String())
+				require.Len(t, lines, 2, "expected a batch line followed by an error line")
 
-			var firstBatch searchBatch[searchMetricNameResult]
-			require.NoError(t, json.Unmarshal(lines[0], &firstBatch))
-			names := make([]string, 0, len(firstBatch.Results))
-			for _, result := range firstBatch.Results {
-				names = append(names, result.Name)
-			}
-			require.Equal(t, tc.expectedNames, names)
+				var firstBatch searchBatch[searchMetricNameResult]
+				require.NoError(t, json.Unmarshal(lines[0], &firstBatch))
+				names := make([]string, 0, len(firstBatch.Results))
+				for _, result := range firstBatch.Results {
+					names = append(names, result.Name)
+				}
+				require.Equal(t, tc.expectedNames, names)
 
-			var terminal searchErrorResponse
-			require.NoError(t, json.Unmarshal(lines[1], &terminal))
-			require.Equal(t, "error", terminal.Status)
-			require.Equal(t, tc.expectedErrorType, terminal.ErrorType)
-			require.Equal(t, tc.expectedError, terminal.Error)
+				var terminal searchErrorResponse
+				require.NoError(t, json.Unmarshal(lines[1], &terminal))
+				require.Equal(t, "error", terminal.Status)
+				require.Equal(t, tc.expectedErrorType, terminal.ErrorType)
+				require.Equal(t, tc.expectedError, terminal.Error)
+			})
 		})
 	}
 }
