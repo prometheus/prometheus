@@ -666,12 +666,10 @@ func mutateSampleLabels(lset labels.Labels, target *Target, honor bool, rc []*re
 
 func mutateSampleLabelsAndMetadata(lset labels.Labels, meta metadata.Metadata, target *Target, honor, enableTypeAndUnitLabels bool, rc []*relabel.Config) (labels.Labels, metadata.Metadata) {
 	lb := labels.NewBuilder(lset)
-	if enableTypeAndUnitLabels {
-		// Strip parser-injected __type__ and __unit__ before relabeling so an untyped/unitless
-		// series does not inherit a preceding family's sticky parser state.
-		lb.Del(model.MetricTypeLabel, model.MetricUnitLabel)
-	}
 	applyTargetLabels(lb, lset, target, honor)
+	// ProcessBuilderWithMetadata strips any parser-injected or target-exposed __type__,
+	// __unit__, and __help__ labels so wire labels cannot spoof metadata or leak into TSDB,
+	// and untyped/unitless series do not inherit a preceding family's sticky parser state.
 	keep, meta := relabel.ProcessBuilderWithMetadata(lb, meta, rc...)
 	if !keep {
 		return labels.EmptyLabels(), metadata.Metadata{}

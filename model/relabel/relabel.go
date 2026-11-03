@@ -322,23 +322,48 @@ func setLabel(lb *labels.Builder, name, val string, withMetadata bool) {
 	lb.Set(name, val)
 }
 
+func delMetadataLabels(lb *labels.Builder) {
+	if lb.Get(model.MetricTypeLabel) != "" {
+		lb.Del(model.MetricTypeLabel)
+	}
+	if lb.Get(model.MetricUnitLabel) != "" {
+		lb.Del(model.MetricUnitLabel)
+	}
+	if lb.Get(metricHelpLabel) != "" {
+		lb.Del(metricHelpLabel)
+	}
+}
+
 // ProcessBuilderWithMetadata applies relabeling configurations (rules) to the labels in lb
-// and metadata in meta. It assumes lb does not contain __type__, __unit__, or __help__ labels
-// on entry, and removes them from lb before returning. Bulk label actions (labeldrop,
-// labelkeep, labelmap) only operate on regular series labels and leave metadata untouched.
+// and metadata in meta. Any pre-existing __type__, __unit__, or __help__ labels in lb on entry
+// are replaced by meta (or stripped when empty in meta), and removed from lb before returning.
+// Bulk label actions (labeldrop, labelkeep, labelmap) only operate on regular series labels
+// and leave metadata untouched.
 func ProcessBuilderWithMetadata(lb *labels.Builder, meta metadata.Metadata, cfgs ...*Config) (keep bool, _ metadata.Metadata) {
 	if !usesMetadata(cfgs...) {
-		return ProcessBuilder(lb, cfgs...), meta
+		delMetadataLabels(lb)
+		keep = ProcessBuilder(lb, cfgs...)
+		if !keep {
+			return false, metadata.Metadata{}
+		}
+		delMetadataLabels(lb)
+		return true, meta
 	}
 
 	if meta.Type != "" && meta.Type != model.MetricTypeUnknown {
 		lb.Set(model.MetricTypeLabel, string(meta.Type))
+	} else if lb.Get(model.MetricTypeLabel) != "" {
+		lb.Del(model.MetricTypeLabel)
 	}
 	if meta.Unit != "" {
 		lb.Set(model.MetricUnitLabel, meta.Unit)
+	} else if lb.Get(model.MetricUnitLabel) != "" {
+		lb.Del(model.MetricUnitLabel)
 	}
 	if meta.Help != "" {
 		lb.Set(metricHelpLabel, meta.Help)
+	} else if lb.Get(metricHelpLabel) != "" {
+		lb.Del(metricHelpLabel)
 	}
 
 	for _, cfg := range cfgs {
@@ -358,7 +383,7 @@ func ProcessBuilderWithMetadata(lb *labels.Builder, meta metadata.Metadata, cfgs
 	meta.Unit = lb.Get(model.MetricUnitLabel)
 	meta.Help = lb.Get(metricHelpLabel)
 
-	lb.Del(model.MetricTypeLabel, model.MetricUnitLabel, metricHelpLabel)
+	delMetadataLabels(lb)
 	return true, meta
 }
 

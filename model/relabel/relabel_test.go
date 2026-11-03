@@ -1209,6 +1209,64 @@ func TestRelabelWithMetadata(t *testing.T) {
 				Help: "Total HTTP requests.",
 			},
 		},
+		{
+			name: "pre-existing __type__, __unit__, and __help__ labels do not spoof empty metadata",
+			input: labels.FromMap(map[string]string{
+				"__name__": "http_requests_total",
+				"__type__": "gauge",
+				"__unit__": "spoof_unit",
+				"__help__": "spoof_help",
+			}),
+			inputMeta: metadata.Metadata{
+				Type: model.MetricTypeUnknown,
+			},
+			relabel: []*Config{
+				{
+					SourceLabels: model.LabelNames{"__name__", "__type__"},
+					Regex:        MustNewRegexp(".*_total;"),
+					TargetLabel:  "__type__",
+					Replacement:  "counter",
+					Action:       Replace,
+				},
+			},
+			output: labels.FromMap(map[string]string{
+				"__name__": "http_requests_total",
+			}),
+			outputMeta: metadata.Metadata{
+				Type: model.MetricTypeCounter,
+			},
+		},
+		{
+			name: "pre-existing __type__, __unit__, and __help__ labels are stripped when rules do not reference metadata",
+			input: labels.FromMap(map[string]string{
+				"__name__": "some_metric",
+				"__type__": "gauge",
+				"__unit__": "spoof_unit",
+				"__help__": "spoof_help",
+				"env":      "prod",
+			}),
+			inputMeta: metadata.Metadata{
+				Type: model.MetricTypeCounter,
+				Unit: "seconds",
+				Help: "Real help",
+			},
+			relabel: []*Config{
+				{
+					SourceLabels: model.LabelNames{"env"},
+					Regex:        MustNewRegexp("prod"),
+					Action:       Keep,
+				},
+			},
+			output: labels.FromMap(map[string]string{
+				"__name__": "some_metric",
+				"env":      "prod",
+			}),
+			outputMeta: metadata.Metadata{
+				Type: model.MetricTypeCounter,
+				Unit: "seconds",
+				Help: "Real help",
+			},
+		},
 	}
 
 	for _, test := range tests {
