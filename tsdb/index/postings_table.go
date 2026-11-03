@@ -23,7 +23,7 @@ import (
 )
 
 const (
-	pagedTableMagic      = "PPOT0001"
+	pagedTableMagic      = "PPOT0002"
 	pagedTableHeaderSize = 28
 )
 
@@ -34,6 +34,7 @@ type (
 	}
 	pageDescriptor struct {
 		offset, size, lastOffset uint64
+		postingsStart            uint64
 		count, lastLen           uint32
 	}
 	postingsTableBuilder struct {
@@ -46,6 +47,7 @@ type (
 		valueBytes             int
 		name, prefix, previous string
 		started                bool
+		previousPosting        uint64
 		pages                  []pageDescriptor
 		groups                 uint32
 		directory              encoding.Encbuf
@@ -53,7 +55,7 @@ type (
 )
 
 func newPostingsTableBuilder(f *FileWriter) (*postingsTableBuilder, error) {
-	b := &postingsTableBuilder{file: f, start: f.pos, pos: f.pos, limit: 128, target: 64 << 10}
+	b := &postingsTableBuilder{file: f, start: f.pos, pos: f.pos, limit: 32, target: 64 << 10}
 	return b, b.write(make([]byte, pagedTableHeaderSize))
 }
 
@@ -66,6 +68,9 @@ func (b *postingsTableBuilder) write(p []byte) error {
 func (b *postingsTableBuilder) add(name, value string, offset uint64) error {
 	if uint64(len(value)) > math.MaxUint32-1024 {
 		return errors.New("value exceeds page limit")
+	}
+	if b.started && (offset <= b.previousPosting || offset-b.previousPosting < 8) {
+		return errors.New("postings offsets must be increasing and non-overlapping")
 	}
 	if b.started && (name < b.name || name == b.name && value <= b.previous) {
 		return errors.New("keys must be strictly sorted")
@@ -95,6 +100,7 @@ func (b *postingsTableBuilder) add(name, value string, offset uint64) error {
 	b.entries = append(b.entries, pagedEntry{value, offset})
 	b.valueBytes += len(value)
 	b.previous = value
+	b.previousPosting = offset
 	return nil
 }
 
@@ -135,7 +141,7 @@ func (b *postingsTableBuilder) flush() error {
 	binary.BigEndian.PutUint32(payload[20+4*n:], uint32(at))
 	binary.BigEndian.PutUint32(payload[len(payload)-4:], crc32.Checksum(payload[:len(payload)-4], castagnoliTable))
 	last := b.entries[n-1].value
-	d := pageDescriptor{b.pos, uint64(len(payload)), b.pos + uint64(header+at-len(last)), uint32(n), uint32(len(last))}
+	d := pageDescriptor{offset: b.pos, size: uint64(len(payload)), lastOffset: b.pos + uint64(header+at-len(last)), postingsStart: base, count: uint32(n), lastLen: uint32(len(last))}
 	if err := b.write(payload); err != nil {
 		return err
 	}
@@ -165,6 +171,7 @@ func (b *postingsTableBuilder) finishGroup() error {
 		b.directory.PutBE64(p.offset)
 		b.directory.PutBE32(uint32(p.size))
 		b.directory.PutBE32(p.count)
+		b.directory.PutBE64(p.postingsStart)
 		if len(b.pages) > 1 {
 			suffix = slices.Grow(suffix[:0], int(p.lastLen)-len(prefix))[:int(p.lastLen)-len(prefix)]
 			if _, err := b.file.f.ReadAt(suffix, int64(p.lastOffset)+int64(len(prefix))); err != nil {
@@ -217,15 +224,16 @@ type postingsGroup struct {
 }
 
 type postingsPage struct {
-	offset               uint64
-	size                 uint32
-	count                int
-	end                  string
-	once                 sync.Once
-	err                  error
-	starts, deltas, data []byte
-	base                 uint64
-	width                int
+	offset                     uint64
+	postingsStart, postingsEnd uint64
+	size                       uint32
+	count                      int
+	end                        string
+	once                       sync.Once
+	err                        error
+	starts, deltas, data       []byte
+	base                       uint64
+	width                      int
 }
 
 func checkedRange(bs ByteSlice, off, size uint64) ([]byte, error) {
@@ -256,17 +264,18 @@ func readPagedPostingsTable(bs ByteSlice, start, end, postingsStart uint64) (*pa
 	}
 	d := encoding.Decbuf{B: root[:len(root)-4]}
 	n := d.Be32()
-	if uint64(n) > uint64(d.Len())/23 {
+	if uint64(n) > uint64(d.Len())/31 {
 		return nil, encoding.ErrInvalidSize
 	}
 	r := &pagedPostingsTable{bs: bs, start: start, postingsStart: postingsStart, groups: make(map[string]*postingsGroup)}
 	previous := ""
 	nextPage := start + pagedTableHeaderSize
 	var total uint64
+	var previousPage *postingsPage
 	for i := range n {
 		name, prefix := d.UvarintStr(), d.UvarintStr()
 		np := d.Be32()
-		if d.Err() != nil || len(prefix) > 64<<10 || np == 0 || uint64(np) > uint64(d.Len())/17 || i > 0 && name <= previous {
+		if d.Err() != nil || len(prefix) > 64<<10 || np == 0 || uint64(np) > uint64(d.Len())/25 || i > 0 && name <= previous {
 			return nil, errors.New("invalid postings group")
 		}
 		previous = name
@@ -274,6 +283,7 @@ func readPagedPostingsTable(bs ByteSlice, start, end, postingsStart uint64) (*pa
 		lastEnd := ""
 		for j := range np {
 			po, ps, count := d.Be64(), d.Be32(), d.Be32()
+			firstPosting := d.Be64()
 			fence := d.UvarintStr()
 			if d.Err() != nil || po != nextPage || po > off || uint64(ps) > off-po || ps < 33 || count == 0 || count > 128 || j > 0 && fence <= lastEnd {
 				return nil, errors.New("invalid postings page descriptor")
@@ -286,7 +296,18 @@ func readPagedPostingsTable(bs ByteSlice, start, end, postingsStart uint64) (*pa
 			if total > math.MaxUint32 {
 				return nil, errors.New("too many postings entries")
 			}
-			g.pages = append(g.pages, &postingsPage{offset: po, size: ps, count: int(count), end: fence})
+			if firstPosting < postingsStart || firstPosting > start || uint64(count)*8 > start-firstPosting {
+				return nil, errors.New("invalid postings page bounds")
+			}
+			if previousPage != nil {
+				if firstPosting <= previousPage.postingsStart || firstPosting-previousPage.postingsStart < uint64(previousPage.count)*8 {
+					return nil, errors.New("invalid postings page bounds")
+				}
+				previousPage.postingsEnd = firstPosting
+			}
+			p := &postingsPage{offset: po, size: ps, count: int(count), end: fence, postingsStart: firstPosting, postingsEnd: start}
+			g.pages = append(g.pages, p)
+			previousPage = p
 			nextPage = po + uint64(ps)
 			lastEnd = fence
 		}
@@ -338,6 +359,7 @@ func (r *pagedPostingsTable) load(g *postingsGroup, page int) (*postingsPage, er
 			}
 			prev = next
 		}
+		var previousDelta uint64
 		for i := range p.count {
 			value := p.value(i)
 			if i > 0 && value <= p.value(i-1) || !strings.HasPrefix(value, g.prefix) {
@@ -345,10 +367,15 @@ func (r *pagedPostingsTable) load(g *postingsGroup, page int) (*postingsPage, er
 				return
 			}
 			delta := p.delta(i)
-			if delta > math.MaxUint64-p.base || p.base+delta < r.postingsStart || p.base+delta >= r.start {
+			if i == 0 && (p.base != p.postingsStart || delta != 0) || i > 0 && (delta <= previousDelta || delta-previousDelta < 8) {
+				p.err = errors.New("postings offsets do not match page bounds")
+				return
+			}
+			if delta > math.MaxUint64-p.base || p.base+delta < p.postingsStart || p.base+delta > p.postingsEnd-8 {
 				p.err = errors.New("postings offset outside postings section")
 				return
 			}
+			previousDelta = delta
 		}
 		if len(g.pages) > 1 && (p.value(p.count - 1)[len(g.prefix):] != p.end || page > 0 && p.value(0)[len(g.prefix):] <= g.pages[page-1].end) {
 			p.err = errors.New("postings page does not match routing")

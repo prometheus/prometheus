@@ -308,7 +308,7 @@ unchanged.
 The TOC postings-table offset points to a 28-byte header:
 
 ```
-magic              <8b: "PPOT0001">
+magic              <8b: "PPOT0002">
 directory offset   <8b>
 directory length   <8b>
 header CRC32C      <4b>
@@ -337,7 +337,8 @@ starts are nondecreasing and the last equals the value byte length. Empty
 values are valid. Values must be strictly increasing. Each postings offset is
 the minimum plus the corresponding delta, without overflow, and must fall in
 the postings section. Page size must fit a uint32. Writers target 64 KiB with
-at most 128 entries; an oversized single value gets a dedicated page.
+at most 32 entries; readers accept up to 128 entries for compatibility with
+earlier experimental writers. An oversized single value gets a dedicated page.
 
 The directory is:
 
@@ -351,6 +352,7 @@ for each label group:
         offset       <8b>
         size         <4b, including page CRC>
         entry count  <4b>
+        first postings offset <8b>
         maximum key  <uvarint length + bytes>
 directory CRC32C  <4b>
 ```
@@ -362,6 +364,19 @@ page's last value with the group's common prefix removed. The prefix is at most
 searches the page directly. Groups contain at least one page; the directory may
 contain zero groups. Total entries must fit a uint32. The internal all-series
 entry uses the empty label name and value, as in V2.
+
+The first postings offset is the absolute start of the first postings list in
+that page, including its length field. Postings offsets are strictly increasing
+in directory and value order. The next page's first postings offset, including
+across label groups, is the exclusive upper bound for the current page's lists.
+For the final page, the postings-offset table start supplies that bound. These
+spans include list framing and any alignment padding. They allow conservative
+postings-byte estimates without loading value pages, and avoid loading a
+neighboring page to find the end of a boundary entry. They do not describe
+matcher selectivity or the bytes of the corresponding series.
+
+This experimental layout uses `PPOT0002`; readers reject the earlier
+`PPOT0001` layout rather than interpreting its descriptors as this format.
 
 Readers validate directory bounds, ordering and page spans at open. Page CRC,
 value boundaries, ordering, routing fences and postings offsets are validated

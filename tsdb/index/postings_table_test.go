@@ -106,7 +106,7 @@ func TestIndexV4(t *testing.T) {
 				got, err := r.SortedLabelValues(ctx, name, nil)
 				require.NoError(t, err)
 				require.Equal(t, want, got)
-				for _, limit := range []int{1, 128, 129, 1000} {
+				for _, limit := range []int{1, 31, 32, 33, 128, 129, 1000} {
 					got, err := r.LabelValues(ctx, name, &storage.LabelHints{Limit: limit})
 					require.NoError(t, err)
 					require.Equal(t, want[:min(limit, len(want))], got)
@@ -235,6 +235,43 @@ func TestIndexV4Corruption(t *testing.T) {
 			}
 		})
 	}
+	// Directory bounds are checked even when a corrupted directory has a valid checksum.
+	rootSize := binary.BigEndian.Uint64(data[toc.PostingsTable+16:])
+	d := encoding.Decbuf{B: data[root : root+rootSize-4]}
+	_ = d.Be32()
+	_ = d.UvarintStr()
+	_ = d.UvarintStr()
+	_ = d.Be32()
+	_ = d.Be64()
+	_ = d.Be32()
+	_ = d.Be32()
+	firstOffsetAt := root + rootSize - 4 - uint64(d.Len())
+	for _, offset := range []uint64{0, toc.PostingsTable, math.MaxUint64} {
+		t.Run(fmt.Sprintf("directory-postings-bound-%d", offset), func(t *testing.T) {
+			bad := slices.Clone(data)
+			binary.BigEndian.PutUint64(bad[firstOffsetAt:], offset)
+			binary.BigEndian.PutUint32(bad[root+rootSize-4:], crc32.Checksum(bad[root:root+rootSize-4], castagnoliTable))
+			_, err := NewReader(realByteSlice(bad), DecodePostingsRaw)
+			require.EqualError(t, err, "read paged postings: invalid postings page bounds")
+		})
+	}
+	t.Run("directory-page-disagreement", func(t *testing.T) {
+		bad := slices.Clone(data)
+		binary.BigEndian.PutUint64(bad[firstOffsetAt:], binary.BigEndian.Uint64(data[firstOffsetAt:])+4)
+		binary.BigEndian.PutUint32(bad[root+rootSize-4:], crc32.Checksum(bad[root:root+rootSize-4], castagnoliTable))
+		r, err := NewReader(realByteSlice(bad), DecodePostingsRaw)
+		require.NoError(t, err)
+		_, err = r.Postings(t.Context(), "", "")
+		require.EqualError(t, err, "postings offsets do not match page bounds")
+		require.NoError(t, r.Close())
+	})
+	t.Run("old-directory-format", func(t *testing.T) {
+		bad := slices.Clone(data)
+		copy(bad[toc.PostingsTable:], "PPOT0001")
+		binary.BigEndian.PutUint32(bad[toc.PostingsTable+24:], crc32.Checksum(bad[toc.PostingsTable:toc.PostingsTable+24], castagnoliTable))
+		_, err := NewReader(realByteSlice(bad), DecodePostingsRaw)
+		require.EqualError(t, err, "read paged postings: invalid paged postings header")
+	})
 	for _, size := range []int{0, 4, HeaderLen, len(data) - 1} {
 		_, err := NewReader(realByteSlice(data[:size]), DecodePostingsRaw)
 		require.Error(t, err)
@@ -463,4 +500,40 @@ func FuzzIndexV4Directory(f *testing.F) {
 			_, _ = reader.LabelValues(context.Background(), name, nil)
 		}
 	})
+}
+
+func TestIndexV4PostingsPageBounds(t *testing.T) {
+	var series []labels.Labels
+	for i := range 300 {
+		series = append(series, labels.FromStrings("cluster", "prod", "pod", fmt.Sprintf("pod-%04d", i)))
+	}
+	path := writeFormatFixture(t, FormatV4, series)
+	r, err := NewFileReader(path, DecodePostingsRaw)
+	require.NoError(t, err)
+	defer r.Close()
+	names := []string{"", "cluster", "pod"}
+	previousEnd := uint64(0)
+	for _, name := range names {
+		for _, p := range r.paged.groups[name].pages {
+			require.Nil(t, p.data)
+			require.Greater(t, p.postingsEnd, p.postingsStart)
+			if previousEnd != 0 {
+				require.Equal(t, previousEnd, p.postingsStart)
+			}
+			previousEnd = p.postingsEnd
+		}
+	}
+	require.Equal(t, r.toc.PostingsTable, previousEnd)
+	ranges, err := r.PostingsRanges()
+	require.NoError(t, err)
+	for _, name := range names {
+		for pi := range r.paged.groups[name].pages {
+			p, err := r.paged.load(r.paged.groups[name], pi)
+			require.NoError(t, err)
+			first := ranges[labels.Label{Name: name, Value: p.value(0)}]
+			last := ranges[labels.Label{Name: name, Value: p.value(p.count - 1)}]
+			require.Equal(t, uint64(first.Start)-4, p.postingsStart)
+			require.Equal(t, uint64(last.End)+4, p.postingsEnd)
+		}
+	}
 }
