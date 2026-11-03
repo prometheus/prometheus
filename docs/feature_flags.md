@@ -407,12 +407,17 @@ forwarded to remote endpoints), the remote read API, federation, or the series A
 own `convert_nhcb_to_classic` setting, see the [`remote_write`](configuration/configuration.md#remote_write)
 configuration.
 
+When both stored classic series and NHCB series exist for the same histogram, stored classic samples
+take precedence at matching timestamps. Disjoint time ranges across a migration cutover or rollback
+merge into a single series when `le` label values match.
+
 Known limitations:
 
 * The conversion only triggers on exact metric name matchers (e.g. `request_duration_seconds_bucket`), not on
   regex or negative name matchers.
-* Handling of collisions and transitions between stored classic series and converted NHCB series is not
-  implemented yet, so results may contain duplicates.
+* Differing `le` label formatting between stored classic series and converted NHCB series, such as `le="1"`
+  versus OpenMetrics `le="1.0"`, is not normalized yet, so transitions between the two formats produce separate
+  bucket series.
 * Native histograms with exponential buckets are not converted yet; support may be added later.
 * There is no control label yet; one will be added to disable and debug the conversion.
 * There is no metric counting the converted series yet; one will be added to help track the progress of
