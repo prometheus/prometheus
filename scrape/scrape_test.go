@@ -3195,6 +3195,65 @@ func BenchmarkScrapeLoopAppend_HistogramsWithExemplars(b *testing.B) {
 	}
 }
 
+func BenchmarkScrapeLoopAppend_DropAllSeries(b *testing.B) {
+	rc := []*relabel.Config{{
+		SourceLabels:         model.LabelNames{"__name__"},
+		Separator:            ";",
+		Regex:                relabel.MustNewRegexp("(.*)"),
+		Replacement:          "$1",
+		Action:               relabel.Drop,
+		NameValidationScheme: model.UTF8Validation,
+	}}
+	target := &Target{}
+	datasets := benchDatasets(b)
+	for _, appV2 := range []bool{false, true} {
+		for _, data := range datasets {
+			for _, bcase := range data.cases {
+				for _, cacheEmpty := range []bool{true, false} {
+					b.Run(fmt.Sprintf(
+						"appV2=%v/"+
+							"data=%v/"+
+							"fmt=%v/"+
+							"cacheEmpty=%v",
+						appV2, data.name, bcase.name, cacheEmpty,
+					), func(b *testing.B) {
+						sl, _ := newTestScrapeLoop(b, withAppendable(teststorage.NewAppendable().SkipRecording(true), appV2), func(sl *scrapeLoop) {
+							sl.enableNativeHistogramScraping = true
+							sl.convertClassicHistToNHCB = data.convertToNHCB
+							sl.alwaysScrapeClassicHist = false
+							sl.enableOpenMetrics2 = true
+							sl.parseST = true
+							sl.mrc = rc
+							sl.sampleMutator = func(l labels.Labels) labels.Labels {
+								return mutateSampleLabels(l, target, true, rc)
+							}
+						})
+						ts := time.Time{}
+
+						b.ReportAllocs()
+						b.ResetTimer()
+						for b.Loop() {
+							if cacheEmpty {
+								sl.cache = newScrapeCache(sl.metrics)
+							}
+							app := sl.appender()
+							ts = ts.Add(time.Second)
+							if _, _, _, err := app.append(bcase.parsable, bcase.contentType, ts); err != nil {
+								b.Fatal(err)
+							}
+							// Reset the appender so it doesn't grow indefinitely, and it mimics what prod scrape will do.
+							// We do rollback, because it's cheaper than Commit.
+							if err := app.Rollback(); err != nil {
+								b.Fatal(err)
+							}
+						}
+					})
+				}
+			}
+		}
+	}
+}
+
 func TestScrapeLoopScrapeAndReport(t *testing.T) {
 	foreachAppendable(t, func(t *testing.T, appV2 bool) {
 		testScrapeLoopScrapeAndReport(t, appV2)
