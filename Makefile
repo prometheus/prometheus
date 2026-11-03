@@ -52,6 +52,11 @@ upgrade-npm-deps:
 	@echo ">> upgrading npm dependencies"
 	./scripts/npm-deps.sh "latest"
 
+.PHONY: bump-versions
+bump-versions: ui-bump-version
+	./scripts/bump_changelog_version.sh
+	git add CHANGELOG.md
+
 .PHONY: ui-bump-version
 ui-bump-version:
 	version=$$(./scripts/get_module_version.sh) && ./scripts/ui_release.sh --bump-version "$${version}"
