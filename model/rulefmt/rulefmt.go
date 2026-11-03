@@ -362,11 +362,14 @@ func Parse(
 	if err != nil && !errors.Is(err, io.EOF) {
 		errs = append(errs, err)
 	}
-	// Check for a second document.
-	var secondDoc any
-	err = decoder.Decode(&secondDoc)
-	if !errors.Is(err, io.EOF) {
-		logger.Warn("Multiple document yaml rules files are not supported, only the first document is processed")
+	// Check for a second document. Only do this if the first document was decoded,
+	// as after a syntax error the decoder returns that error again instead of io.EOF.
+	if err == nil {
+		var secondDoc any
+		err = decoder.Decode(&secondDoc)
+		if !errors.Is(err, io.EOF) {
+			logger.Warn("Multiple document yaml rules files are not supported, only the first document is processed")
+		}
 	}
 
 	err = yaml.Unmarshal(content, &node)
