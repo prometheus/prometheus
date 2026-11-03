@@ -2679,9 +2679,13 @@ func TestBoundedRuleEvalConcurrency(t *testing.T) {
 
 func TestUpdateWhenStopped(t *testing.T) {
 	files := []string{"fixtures/rules.yaml"}
+	// The group is evaluated if its evaluation slot falls between Update and Stop,
+	// so the manager needs a working QueryFunc and AppendableV2.
 	ruleManager := NewManager(&ManagerOptions{
-		Context: context.Background(),
-		Logger:  promslog.NewNopLogger(),
+		Context:      context.Background(),
+		Logger:       promslog.NewNopLogger(),
+		AppendableV2: teststorage.New(t),
+		QueryFunc:    func(context.Context, string, time.Time) (promql.Vector, error) { return nil, nil },
 	})
 	ruleManager.start()
 	err := ruleManager.Update(10*time.Second, files, labels.EmptyLabels(), "", nil)
