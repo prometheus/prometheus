@@ -1600,7 +1600,8 @@ func main() {
 			},
 			func(error) {
 				logger.Info("Stopping storage...")
-				if err := fanoutStorage.Close(); err != nil {
+				// Close remote storage first, so its savepoint is written while the storage directory lock is still held.
+				if err := errors.Join(remoteStorage.Close(), localStorage.Close()); err != nil {
 					logger.Error("Error stopping storage", "err", err)
 				}
 				close(cancel)
@@ -1660,7 +1661,8 @@ func main() {
 			},
 			func(error) {
 				logger.Info("Stopping agent WAL storage...")
-				if err := fanoutStorage.Close(); err != nil {
+				// Close remote storage first, so its savepoint is written while the storage directory lock is still held.
+				if err := errors.Join(remoteStorage.Close(), localStorage.Close()); err != nil {
 					logger.Error("Error stopping storage", "err", err)
 				}
 				close(cancel)
