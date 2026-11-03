@@ -1766,6 +1766,80 @@ bar 3
 	require.True(t, sawStaleOldBar, "expected old bar series without __type__ label to be marked stale")
 }
 
+func TestScrapeLoopMetricRelabelEmptyMetricFamilyName(t *testing.T) {
+	// Defense-in-depth: a zero-value metaEntry must never panic.
+	var zeroMeta metaEntry
+	require.Equal(t, metadata.Metadata{}, zeroMeta.metadata())
+	require.Equal(t, 0, zeroMeta.size())
+
+	target := NewTarget(
+		labels.FromStrings("instance", "localhost:9090", "job", "test"),
+		&config.ScrapeConfig{},
+		nil,
+		nil,
+	)
+	rc := []*relabel.Config{
+		{
+			SourceLabels:         model.LabelNames{"__name__"},
+			Separator:            ";",
+			Regex:                relabel.MustNewRegexp("^_total$"),
+			TargetLabel:          "__name__",
+			Replacement:          "renamed_total",
+			Action:               relabel.Replace,
+			NameValidationScheme: model.UTF8Validation,
+		},
+	}
+
+	t.Run("prometheus text", func(t *testing.T) {
+		appTest := teststorage.NewAppendable()
+		sl, _ := newTestScrapeLoop(t, withAppendable(appTest, true), func(sl *scrapeLoop) {
+			sl.mrc = rc
+			sl.sampleMutator = func(l labels.Labels) labels.Labels {
+				return mutateSampleLabels(l, target, false, rc)
+			}
+		})
+
+		scrapeText := []byte("# TYPE \"\" counter\n# HELP \"\" help\n_total 2\nfoo 1\n")
+		app := sl.appender()
+		total, added, seriesAdded, err := app.append(scrapeText, "text/plain; version=1.0.0; escaping=allow-utf-8", time.Now())
+		require.NoError(t, err)
+		require.NoError(t, app.Commit())
+		require.Equal(t, 2, total)
+		require.Equal(t, 2, added)
+		require.Equal(t, 2, seriesAdded)
+
+		teststorage.RequireEqual(t, []sample{
+			{
+				L: labels.FromStrings("__name__", "renamed_total", "instance", "localhost:9090", "job", "test"),
+				M: metadata.Metadata{Type: model.MetricTypeCounter, Help: "help"},
+			},
+		}, appTest.ResultMetadata())
+		require.Len(t, appTest.ResultSamples(), 2)
+	})
+
+	t.Run("openmetrics text", func(t *testing.T) {
+		appTest := teststorage.NewAppendable()
+		sl, _ := newTestScrapeLoop(t, withAppendable(appTest, true), func(sl *scrapeLoop) {
+			sl.mrc = rc
+			sl.sampleMutator = func(l labels.Labels) labels.Labels {
+				return mutateSampleLabels(l, target, false, rc)
+			}
+		})
+
+		scrapeText := []byte("# UNIT \"\" \n# TYPE \"\" gauge\nfoo 1\n# EOF\n")
+		app := sl.appender()
+		total, added, seriesAdded, err := app.append(scrapeText, "application/openmetrics-text; version=1.0.0; escaping=allow-utf-8", time.Now())
+		require.NoError(t, err)
+		require.NoError(t, app.Commit())
+		require.Equal(t, 1, total)
+		require.Equal(t, 1, added)
+		require.Equal(t, 1, seriesAdded)
+
+		require.Empty(t, appTest.ResultMetadata())
+		require.Len(t, appTest.ResultSamples(), 1)
+	})
+}
+
 func TestScrapeLoopSeriesAdded(t *testing.T) {
 	foreachAppendable(t, func(t *testing.T, appV2 bool) {
 		testScrapeLoopSeriesAdded(t, appV2)

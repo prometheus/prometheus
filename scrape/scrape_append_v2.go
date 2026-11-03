@@ -134,11 +134,16 @@ func (sl *scrapeLoopAppenderV2) append(b []byte, contentType string, ts time.Tim
 		e              exemplar.Exemplar // Escapes to heap so hoisted out of loop.
 		lastMeta       *metaEntry
 		lastMFName     []byte
-		parsedMeta     metaEntry
-		parsedMFName   []byte
-		lastSetMFName  string
-		lastSetMeta    metadata.Metadata
-		hasMRC         = len(sl.mrc) > 0
+		parsedMeta     = metaEntry{
+			mfName: emptyStringHandle,
+			typ:    model.MetricTypeUnknown,
+			help:   emptyStringHandle,
+			unit:   emptyStringHandle,
+		}
+		parsedMFName  []byte
+		lastSetMFName string
+		lastSetMeta   metadata.Metadata
+		hasMRC        = len(sl.mrc) > 0
 	)
 
 	exemplars := make([]exemplar.Exemplar, 0, 1)
@@ -277,7 +282,7 @@ loop:
 			ce, seriesCached, seriesAlreadyScraped = sl.cache.get(met)
 			if lastMeta != nil {
 				origMeta = lastMeta.metadata()
-				origMFName = lastMeta.mfName.Value()
+				origMFName = handleValue(lastMeta.mfName)
 			}
 			var (
 				sm            seriesMetaEntry
@@ -431,7 +436,7 @@ loop:
 						}
 						if lastMeta != nil {
 							// Metric family name has the same source as metadata.
-							appOpts.MetricFamilyName = lastMeta.mfName.Value()
+							appOpts.MetricFamilyName = handleValue(lastMeta.mfName)
 							appOpts.Metadata = lastMeta.metadata()
 						}
 					}
@@ -659,8 +664,11 @@ func metricFamilyName(preName string, preMFName []byte, postName string, postTyp
 	return postName
 }
 
-func (sl *scrapeLoop) setParsedType(mfName []byte, t model.MetricType, parsedMFName *[]byte, parsedMeta *metaEntry) ([]byte, *metaEntry) {
-	if !bytes.Equal(*parsedMFName, mfName) {
+func resetParsedMetaIfNeeded(mfName []byte, parsedMFName *[]byte, parsedMeta *metaEntry) {
+	if *parsedMFName == nil || !bytes.Equal(*parsedMFName, mfName) {
+		if *parsedMFName == nil {
+			*parsedMFName = []byte{}
+		}
 		*parsedMFName = append((*parsedMFName)[:0], mfName...)
 		*parsedMeta = metaEntry{
 			mfName: internString(mfName),
@@ -669,6 +677,10 @@ func (sl *scrapeLoop) setParsedType(mfName []byte, t model.MetricType, parsedMFN
 			unit:   emptyStringHandle,
 		}
 	}
+}
+
+func (sl *scrapeLoop) setParsedType(mfName []byte, t model.MetricType, parsedMFName *[]byte, parsedMeta *metaEntry) ([]byte, *metaEntry) {
+	resetParsedMetaIfNeeded(mfName, parsedMFName, parsedMeta)
 	parsedMeta.typ = t
 	parsedMeta.lastIter = sl.cache.iter
 	parsedMeta.lastIterChange = sl.cache.iter
@@ -676,15 +688,7 @@ func (sl *scrapeLoop) setParsedType(mfName []byte, t model.MetricType, parsedMFN
 }
 
 func (sl *scrapeLoop) setParsedHelp(mfName, help []byte, parsedMFName *[]byte, parsedMeta *metaEntry) ([]byte, *metaEntry) {
-	if !bytes.Equal(*parsedMFName, mfName) {
-		*parsedMFName = append((*parsedMFName)[:0], mfName...)
-		*parsedMeta = metaEntry{
-			mfName: internString(mfName),
-			typ:    model.MetricTypeUnknown,
-			help:   emptyStringHandle,
-			unit:   emptyStringHandle,
-		}
-	}
+	resetParsedMetaIfNeeded(mfName, parsedMFName, parsedMeta)
 	parsedMeta.help = internString(help)
 	parsedMeta.lastIter = sl.cache.iter
 	parsedMeta.lastIterChange = sl.cache.iter
@@ -692,15 +696,7 @@ func (sl *scrapeLoop) setParsedHelp(mfName, help []byte, parsedMFName *[]byte, p
 }
 
 func (sl *scrapeLoop) setParsedUnit(mfName, unit []byte, parsedMFName *[]byte, parsedMeta *metaEntry) ([]byte, *metaEntry) {
-	if !bytes.Equal(*parsedMFName, mfName) {
-		*parsedMFName = append((*parsedMFName)[:0], mfName...)
-		*parsedMeta = metaEntry{
-			mfName: internString(mfName),
-			typ:    model.MetricTypeUnknown,
-			help:   emptyStringHandle,
-			unit:   emptyStringHandle,
-		}
-	}
+	resetParsedMetaIfNeeded(mfName, parsedMFName, parsedMeta)
 	parsedMeta.unit = internString(unit)
 	parsedMeta.lastIter = sl.cache.iter
 	parsedMeta.lastIterChange = sl.cache.iter

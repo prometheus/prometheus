@@ -1061,6 +1061,13 @@ func internStringStr(s string) unique.Handle[string] {
 	return unique.Make(s)
 }
 
+func handleValue(h unique.Handle[string]) string {
+	if h == (unique.Handle[string]{}) {
+		return ""
+	}
+	return h.Value()
+}
+
 // metaEntry holds meta information about a metric.
 // Metric family name, help, and unit strings are interned via the unique
 // package so scrape caches across targets share backing string allocations.
@@ -1077,14 +1084,14 @@ type metaEntry struct {
 func (m *metaEntry) metadata() metadata.Metadata {
 	return metadata.Metadata{
 		Type: m.typ,
-		Unit: m.unit.Value(),
-		Help: m.help.Value(),
+		Unit: handleValue(m.unit),
+		Help: handleValue(m.help),
 	}
 }
 
 func (m *metaEntry) size() int {
 	// The attribute lastIter although part of the struct it is not metadata.
-	return len(m.help.Value()) + len(m.unit.Value()) + len(m.typ)
+	return len(handleValue(m.help)) + len(handleValue(m.unit)) + len(m.typ)
 }
 
 func newScrapeCache(metrics *scrapeMetrics) *scrapeCache {
@@ -1350,10 +1357,10 @@ func (c *scrapeCache) GetMetadata(mfName string) (MetricMetadata, bool) {
 		return MetricMetadata{}, false
 	}
 	return MetricMetadata{
-		MetricFamily: m.mfName.Value(),
+		MetricFamily: handleValue(m.mfName),
 		Type:         m.typ,
-		Help:         m.help.Value(),
-		Unit:         m.unit.Value(),
+		Help:         handleValue(m.help),
+		Unit:         handleValue(m.unit),
 	}, true
 }
 
@@ -1368,8 +1375,8 @@ func (c *scrapeCache) ListMetadata() []MetricMetadata {
 		res = append(res, MetricMetadata{
 			MetricFamily: m,
 			Type:         e.typ,
-			Help:         e.help.Value(),
-			Unit:         e.unit.Value(),
+			Help:         handleValue(e.help),
+			Unit:         handleValue(e.unit),
 		})
 	}
 	return res
