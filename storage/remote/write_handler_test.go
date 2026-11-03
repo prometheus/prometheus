@@ -2333,7 +2333,7 @@ func TestRemoteWriteHandlerLabelLengthLimits_V1Message(t *testing.T) {
 
 			appendable := &mockAppendable{}
 			handler := NewWriteHandler(promslog.NewNopLogger(), nil, appendable, []remoteapi.WriteMessageType{remoteapi.WriteV1MessageType}, false, false,
-				WithWriteHandlerLabelLengthLimits(tc.maxNameLength, tc.maxValueLength))
+				WithWriteHandlerLabelLengthLimits(func() (int, int) { return tc.maxNameLength, tc.maxValueLength }))
 
 			recorder := httptest.NewRecorder()
 			handler.ServeHTTP(recorder, req)
@@ -2414,7 +2414,7 @@ func TestRemoteWriteHandlerLabelLengthLimits_V2Message(t *testing.T) {
 
 			appendable := &mockAppendable{}
 			handler := NewWriteHandler(promslog.NewNopLogger(), nil, appendable, []remoteapi.WriteMessageType{remoteapi.WriteV2MessageType}, false, false,
-				WithWriteHandlerLabelLengthLimits(tc.maxNameLength, tc.maxValueLength))
+				WithWriteHandlerLabelLengthLimits(func() (int, int) { return tc.maxNameLength, tc.maxValueLength }))
 
 			recorder := httptest.NewRecorder()
 			handler.ServeHTTP(recorder, req)

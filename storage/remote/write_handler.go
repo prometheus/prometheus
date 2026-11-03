@@ -49,22 +49,23 @@ type writeHandler struct {
 	enableTypeAndUnitLabels bool
 	appendMetadata          bool
 
-	// Label length limits applied on ingestion. 0 means no limit.
-	maxLabelNameLength  int
-	maxLabelValueLength int
+	// labelLengthLimits returns the (name, value) label length limits applied
+	// on ingestion. May be nil, in which case no limit is enforced.
+	labelLengthLimits func() (maxNameLength, maxValueLength int)
 }
 
 // WriteHandlerOption configures optional behaviour of a write handler.
 type WriteHandlerOption func(*writeHandler)
 
 // WithWriteHandlerLabelLengthLimits makes the handler reject remote write
-// series whose label name or value lengths exceed the given limits. A limit of
-// 0 means no limit. Rejected samples are counted as invalid and, for the 2.x
+// series whose label name or value lengths exceed the limits returned by the
+// given getter. The getter is consulted on every request so that runtime
+// configuration reloads take effect without restarting. A limit of 0 means
+// no limit. Rejected samples are counted as invalid and, for the 2.x
 // protocol, reported as bad request per the spec.
-func WithWriteHandlerLabelLengthLimits(maxLabelNameLength, maxLabelValueLength int) WriteHandlerOption {
+func WithWriteHandlerLabelLengthLimits(limits func() (maxNameLength, maxValueLength int)) WriteHandlerOption {
 	return func(h *writeHandler) {
-		h.maxLabelNameLength = maxLabelNameLength
-		h.maxLabelValueLength = maxLabelValueLength
+		h.labelLengthLimits = limits
 	}
 }
 
@@ -197,13 +198,18 @@ func (h *writeHandler) write(ctx context.Context, req *prompb.WriteRequest) (err
 	exemplars := make([]exemplar.Exemplar, 0, 1)
 	for _, ts := range req.Timeseries {
 		var ls labels.Labels
-		if h.maxLabelNameLength > 0 || h.maxLabelValueLength > 0 {
-			var lErr error
-			ls, lErr = ts.ToLabelsWithLimits(&b, h.maxLabelNameLength, h.maxLabelValueLength)
-			if lErr != nil {
-				h.logger.Warn("Label length limit exceeded, skipping series", "err", lErr)
-				samplesWithInvalidLabels += len(ts.Samples) + len(ts.Histograms)
-				continue
+		if h.labelLengthLimits != nil {
+			maxName, maxValue := h.labelLengthLimits()
+			if maxName > 0 || maxValue > 0 {
+				var lErr error
+				ls, lErr = ts.ToLabelsWithLimits(&b, maxName, maxValue)
+				if lErr != nil {
+					h.logger.Warn("Label length limit exceeded, skipping series", "err", lErr)
+					samplesWithInvalidLabels += len(ts.Samples) + len(ts.Histograms)
+					continue
+				}
+			} else {
+				ls = ts.ToLabels(&b, nil)
 			}
 		} else {
 			ls = ts.ToLabels(&b, nil)
@@ -360,13 +366,24 @@ func (h *writeHandler) appendV2(app *timeLimitExemplarAppenderV2, req *writev2.R
 	)
 	for _, ts := range req.Timeseries {
 		var ls labels.Labels
-		if h.maxLabelNameLength > 0 || h.maxLabelValueLength > 0 {
-			var lErr error
-			ls, lErr = ts.ToLabelsWithLimits(&b, req.Symbols, h.maxLabelNameLength, h.maxLabelValueLength)
-			if lErr != nil {
-				badRequestErrs = append(badRequestErrs, fmt.Errorf("label length limit exceeded for series %v: %w", ts.LabelsRefs, lErr))
-				samplesWithInvalidLabels += len(ts.Samples) + len(ts.Histograms)
-				continue
+		if h.labelLengthLimits != nil {
+			maxName, maxValue := h.labelLengthLimits()
+			if maxName > 0 || maxValue > 0 {
+				var lErr error
+				ls, lErr = ts.ToLabelsWithLimits(&b, req.Symbols, maxName, maxValue)
+				if lErr != nil {
+					badRequestErrs = append(badRequestErrs, fmt.Errorf("label length limit exceeded for series %v: %w", ts.LabelsRefs, lErr))
+					samplesWithInvalidLabels += len(ts.Samples) + len(ts.Histograms)
+					continue
+				}
+			} else {
+				var err error
+				ls, err = ts.ToLabels(&b, req.Symbols)
+				if err != nil {
+					badRequestErrs = append(badRequestErrs, fmt.Errorf("parsing labels for series %v: %w", ts.LabelsRefs, err))
+					samplesWithInvalidLabels += len(ts.Samples) + len(ts.Histograms)
+					continue
+				}
 			}
 		} else {
 			var err error
