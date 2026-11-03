@@ -48,6 +48,7 @@ import (
 	"github.com/prometheus/prometheus/util/annotations"
 	"github.com/prometheus/prometheus/util/logging"
 	"github.com/prometheus/prometheus/util/stats"
+	"github.com/prometheus/prometheus/util/teststorage"
 	"github.com/prometheus/prometheus/util/testutil"
 )
 
@@ -6717,6 +6718,119 @@ load 1m
 			require.False(t, ss.Next())
 			require.NoError(t, ss.Err())
 		})
+	}
+}
+
+func TestEngine_NativeHistogramsAsClassicIntegerPrecision(t *testing.T) {
+	for _, tc := range []struct {
+		name   string
+		counts []int64 // Absolute counts, including empty buckets and +Inf.
+	}{
+		{"empty", []int64{0, 0, 0}},
+		{"small", []int64{0, 10, 0, 1, 0}},
+		{"below_float_precision", []int64{1<<53 - 1, 1, 1, 1, 0}},
+		{"at_float_precision", []int64{1 << 53, 1, 1, 0}},
+		{"above_float_precision", []int64{1<<53 + 1, 1, 1, 0}},
+		{"max_int64_total", []int64{math.MaxInt64 - 2047, 1024, 1023, 0}},
+		{"above_int64_total", []int64{math.MaxInt64 - 2047, 1024, 1024, 0}},
+		{"below_uint64_limit", []int64{math.MaxInt64 - 2047, 0, 1024, 1023, math.MaxInt64, 0}},
+		{"max_uint64_total", []int64{math.MaxInt64 - 2047, 0, 1024, 1024, math.MaxInt64, 0}},
+	} {
+		for _, sparse := range []bool{false, true} {
+			t.Run(fmt.Sprintf("%s/sparse=%v", tc.name, sparse), func(t *testing.T) {
+				h := &histogram.Histogram{
+					Schema:        histogram.CustomBucketsSchema,
+					Sum:           123,
+					PositiveSpans: []histogram.Span{{Length: uint32(len(tc.counts))}},
+				}
+				fh := &histogram.FloatHistogram{
+					Schema:        histogram.CustomBucketsSchema,
+					Sum:           h.Sum,
+					PositiveSpans: []histogram.Span{{Length: uint32(len(tc.counts))}},
+				}
+				var prev int64
+				for i, n := range tc.counts {
+					h.PositiveBuckets = append(h.PositiveBuckets, n-prev)
+					prev = n
+					h.Count += uint64(n)
+					fh.PositiveBuckets = append(fh.PositiveBuckets, float64(n))
+					if i < len(tc.counts)-1 {
+						h.CustomValues = append(h.CustomValues, float64(i+1))
+					}
+				}
+				fh.Count = float64(h.Count)
+				fh.CustomValues = h.CustomValues
+				if sparse {
+					h.Compact(0)
+					fh.Compact(0)
+				}
+				require.NoError(t, h.Validate())
+				require.NoError(t, fh.Validate())
+
+				db := teststorage.New(t)
+				app := db.Appender(t.Context())
+				_, err := app.AppendHistogram(0, labels.FromStrings("__name__", "probe", "kind", "integer"), 0, h, nil)
+				require.NoError(t, err)
+				_, err = app.AppendHistogram(0, labels.FromStrings("__name__", "probe", "kind", "float"), 0, nil, fh)
+				require.NoError(t, err)
+				require.NoError(t, app.Commit())
+				ng := promqltest.NewTestEngineWithOpts(t, promql.EngineOpts{
+					MaxSamples:                      1000,
+					Timeout:                         10 * time.Second,
+					EnableNativeHistogramsAsClassic: true,
+				})
+
+				for _, kind := range []string{"integer", "float"} {
+					buckets := map[string]float64{}
+					var prefix uint64
+					var floatPrefix float64
+					for i, n := range tc.counts {
+						// The integer oracle sums the original absolute counts exactly.
+						// Float histograms retain their existing floating-point sum order.
+						prefix += uint64(n)
+						floatPrefix += float64(n)
+						v := float64(prefix)
+						if kind == "float" {
+							v = floatPrefix
+						}
+						le := "+Inf"
+						if i < len(h.CustomValues) {
+							le = labels.FormatOpenMetricsFloat(h.CustomValues[i])
+						}
+						buckets[labels.FromStrings("__name__", "probe_bucket", "kind", kind, "le", le).String()] = v
+					}
+					infCount := float64(prefix)
+					if kind == "float" {
+						infCount = floatPrefix
+					}
+					for _, query := range []struct {
+						expr string
+						want map[string]float64
+					}{
+						{`probe_bucket{kind=%q}`, buckets},
+						{`probe_bucket{kind=%q,le="+Inf"}`, map[string]float64{
+							labels.FromStrings("__name__", "probe_bucket", "kind", kind, "le", "+Inf").String(): infCount,
+						}},
+						{`probe_count{kind=%q}`, map[string]float64{labels.FromStrings("__name__", "probe_count", "kind", kind).String(): float64(h.Count)}},
+						{`probe_sum{kind=%q}`, map[string]float64{labels.FromStrings("__name__", "probe_sum", "kind", kind).String(): h.Sum}},
+					} {
+						expr := fmt.Sprintf(query.expr, kind)
+						q, err := ng.NewInstantQuery(t.Context(), db, nil, expr, time.Unix(0, 0))
+						require.NoError(t, err)
+						res := q.Exec(t.Context())
+						require.NoError(t, res.Err)
+						vec, err := res.Vector()
+						require.NoError(t, err)
+						got := map[string]float64{}
+						for _, s := range vec {
+							got[s.Metric.String()] = s.F
+						}
+						q.Close()
+						require.Equal(t, query.want, got, "classic series mismatch for %s", expr)
+					}
+				}
+			})
+		}
 	}
 }
 
