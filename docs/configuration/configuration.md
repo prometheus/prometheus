@@ -4132,6 +4132,22 @@ write_relabel_configs:
 # When `mode` is `stateless` or `stateless-st`, this is set to `true` and manually setting it to `false` is an error.
 [ send_native_histograms: <boolean> | default = false ]
 
+# EXPERIMENTAL: Controls how frequently HELP metadata from
+# `--enable-feature=metadata-wal-records` is sent per series when
+# `protobuf_message` is `io.prometheus.write.v2.Request`.
+# When set to 0s, the default, HELP is sent with every sample and histogram.
+# When set to a positive duration, HELP is sent only on the first sample or
+# histogram for a series, whenever its metadata changes, and periodically
+# once per `send_help_interval` for active series.
+# Prometheus marks HELP as sent when a point is enqueued, so if a batch is
+# later dropped on an unrecoverable remote error, `sample_age_limit`, or
+# shutdown, the receiver will not get HELP again until the next interval or
+# metadata change. Allowed with `stateless` and `stateless-st` modes because
+# HELP is optional in the Remote-Write 2.0 spec, though stateless receivers
+# that do not cache metadata across requests only see HELP on requests that
+# include it.
+[ send_help_interval: <duration> | default = 0s ]
+
 # When enabled, remote-write will resolve the URL host name via DNS, choose one of the IP addresses at random, and connect to it.
 # When disabled, remote-write relies on Go's standard behavior, which is to try to connect to each address in turn.
 # The connection timeout applies to the whole operation, i.e. in the latter case it is spread over all attempt.
@@ -4270,36 +4286,21 @@ queue_config:
   [ sample_age_limit: <duration> | default = 0s ]
 
 # Configures the sending of series metadata to remote storage.
-# `send`, `send_interval`, and `max_samples_per_send` only apply when the
-# `prometheus.WriteRequest` message is used. When `io.prometheus.write.v2.Request`
-# is used, Prometheus sends metadata from `--enable-feature=metadata-wal-records`
-# or `--enable-feature=type-and-unit-labels` inline with each series, and
-# `send_help_interval` controls how often HELP from `metadata-wal-records` is sent.
+# Only applies when the `prometheus.WriteRequest` message is used. When
+# `io.prometheus.write.v2.Request` is used, Prometheus sends metadata from
+# `--enable-feature=metadata-wal-records` or `--enable-feature=type-and-unit-labels`
+# inline with each series, and top-level `send_help_interval` controls how often
+# HELP from `metadata-wal-records` is sent.
 #
 # Metadata configuration is subject to change at any point
 # or be removed in future releases.
 metadata_config:
-  # Whether metric metadata is sent to remote storage or not (Remote Write 1.0 only).
+  # Whether metric metadata is sent to remote storage or not.
   [ send: <boolean> | default = true ]
-  # How frequently metric metadata is sent to remote storage (Remote Write 1.0 only).
+  # How frequently metric metadata is sent to remote storage.
   [ send_interval: <duration> | default = 1m ]
-  # Maximum number of samples per send (Remote Write 1.0 only).
+  # Maximum number of samples per send.
   [ max_samples_per_send: <int> | default = 2000]
-  # EXPERIMENTAL: Controls how frequently HELP metadata from
-  # `--enable-feature=metadata-wal-records` is sent per series when
-  # `protobuf_message` is `io.prometheus.write.v2.Request`.
-  # When set to 0s, the default, HELP is sent with every sample and histogram.
-  # When set to a positive duration, HELP is sent only on the first sample or
-  # histogram for a series, whenever its metadata changes, and periodically
-  # once per `send_help_interval` for active series.
-  # Prometheus marks HELP as sent when a point is enqueued, so if a batch is
-  # later dropped on an unrecoverable remote error, `sample_age_limit`, or
-  # shutdown, the receiver will not get HELP again until the next interval or
-  # metadata change. Allowed with `stateless` and `stateless-st` modes because
-  # HELP is optional in the Remote-Write 2.0 spec, though stateless receivers
-  # that do not cache metadata across requests only see HELP on requests that
-  # include it.
-  [ send_help_interval: <duration> | default = 0s ]
 
 # EXPERIMENTAL: Converts native histograms with custom buckets (NHCB)
 # to classic histograms after applying write_relabel_configs. This enables
