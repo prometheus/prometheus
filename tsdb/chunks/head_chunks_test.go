@@ -474,6 +474,51 @@ func TestChunkDiskMapper_Truncate_DeletingAllFilesKeepsRefsMonotonic(t *testing.
 	require.NoError(t, err)
 }
 
+// TestChunkDiskMapper_Cut_DoesNotOverwriteExistingFile tests that cutting a new chunk
+// file fails, rather than overwriting, when a file with that name already exists.
+//
+// New files are named after the sequence in their first chunk's ref, not after the
+// highest file on disk, so nothing else guarantees that the name is free. An existing
+// file may hold chunks that series still refer to, so overwriting it would lose them
+// silently.
+func TestChunkDiskMapper_Cut_DoesNotOverwriteExistingFile(t *testing.T) {
+	t.Parallel()
+	dir := t.TempDir()
+	hrw := createChunkDiskMapper(t, dir)
+	t.Cleanup(func() {
+		// The failed cut below has already closed the previous file, so closing
+		// the mapper reports that.
+		require.ErrorIs(t, hrw.Close(), os.ErrClosed)
+	})
+
+	writeChunk := func() error {
+		t.Helper()
+
+		var err error
+		awaitCb := make(chan struct{})
+		hrw.WriteChunk(1, 0, 10, randomChunk(t), false, func(cbErr error) {
+			err = cbErr
+			close(awaitCb)
+		})
+		<-awaitCb
+		return err
+	}
+
+	require.NoError(t, writeChunk()) // Creates file 1.
+
+	// Occupy the name of the file that the next chunk is cut into.
+	existing := []byte("existing content")
+	existingPath := segmentFile(hrw.dir.Name(), 2)
+	require.NoError(t, os.WriteFile(existingPath, existing, 0o666))
+
+	hrw.CutNewFile()
+	require.ErrorIs(t, writeChunk(), os.ErrExist)
+
+	got, err := os.ReadFile(existingPath)
+	require.NoError(t, err)
+	require.Equal(t, existing, got, "the existing file must be left untouched")
+}
+
 // TestHeadReadWriter_TruncateAfterFailedIterateChunks tests for
 // https://github.com/prometheus/prometheus/issues/7753
 func TestHeadReadWriter_TruncateAfterFailedIterateChunks(t *testing.T) {
