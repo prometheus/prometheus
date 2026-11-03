@@ -161,19 +161,27 @@ var emptyLeMatcher = &labels.Matcher{Type: labels.MatchEqual, Name: labels.Bucke
 
 func selectNHCBAsClassic(ctx context.Context, sortSeries bool, nhcbSet, classicSet SeriesSet, leMatchers []*labels.Matcher, suffix string) SeriesSet {
 	var (
-		firstNHCB Series
-		chkIter   chunkenc.Iterator
-		hScratch  histogram.Histogram
-		fhScratch histogram.FloatHistogram
+		firstPeeked peekedNHCB
+		chkIter     chunkenc.Iterator
+		hScratch    *histogram.Histogram
+		fhScratch   *histogram.FloatHistogram
 	)
 	for nhcbSet.Next() {
-		s := nhcbSet.At()
-		var ok bool
-		if ok, chkIter = isNHCBSeries(s, chkIter, &hScratch, &fhScratch); !ok {
-			continue
+		if hScratch == nil {
+			hScratch = &histogram.Histogram{}
+			fhScratch = &histogram.FloatHistogram{}
 		}
-		firstNHCB = s
-		break
+		var (
+			ok  bool
+			err error
+		)
+		firstPeeked, chkIter, ok, err = peekNHCBSeries(nhcbSet.At(), chkIter, hScratch, fhScratch)
+		if err != nil {
+			return ErrSeriesSet(err)
+		}
+		if ok {
+			break
+		}
 	}
 	if err := nhcbSet.Err(); err != nil {
 		return ErrSeriesSet(err)
@@ -181,7 +189,7 @@ func selectNHCBAsClassic(ctx context.Context, sortSeries bool, nhcbSet, classicS
 
 	// Fast path 1: when no NHCB series exist for the base metric name, stream
 	// directly from the underlying classic SeriesSet.
-	if firstNHCB == nil {
+	if firstPeeked.series == nil {
 		if len(leMatchers) > 0 {
 			classicSet = &leFilterSeriesSet{SeriesSet: classicSet, leMatchers: leMatchers}
 		}
@@ -211,12 +219,13 @@ func selectNHCBAsClassic(ctx context.Context, sortSeries bool, nhcbSet, classicS
 	// one series at a time without buffering all series up front.
 	if firstClassic == nil && (!sortSeries || suffix != histogram.ClassicSuffixBucket) {
 		return &nhcbToClassicSeriesSet{
-			ctx:        ctx,
-			firstNHCB:  firstNHCB,
-			nhcbSet:    nhcbSet,
-			leMatchers: leMatchers,
-			suffix:     suffix,
-			warnings:   warnings,
+			ctx:         ctx,
+			firstPeeked: firstPeeked,
+			nhcbSet:     nhcbSet,
+			leMatchers:  leMatchers,
+			suffix:      suffix,
+			warnings:    warnings,
+			it:          chkIter,
 		}
 	}
 
@@ -225,15 +234,16 @@ func selectNHCBAsClassic(ctx context.Context, sortSeries bool, nhcbSet, classicS
 	var groups []histogramGroup
 	if firstClassic == nil {
 		// sortSeries == true for a _bucket query with no stored classic series:
-		// collect NHCB series so converted buckets can be sorted globally.
-		groups = append(groups, histogramGroup{nhcb: []Series{firstNHCB}})
+		// collect candidate NHCB series so converted buckets can be sorted globally.
+		// Remaining series are inspected lazily on conversion so Series.Iterator is
+		// called at most once per series.
+		groups = append(groups, histogramGroup{nhcb: []nhcbGroupEntry{{series: firstPeeked.series, peeked: &firstPeeked}}})
 		for nhcbSet.Next() {
 			s := nhcbSet.At()
-			var ok bool
-			if ok, chkIter = isNHCBSeries(s, chkIter, &hScratch, &fhScratch); !ok {
+			if s == nil || s.Labels().Has(labels.BucketLabel) {
 				continue
 			}
-			groups = append(groups, histogramGroup{nhcb: []Series{s}})
+			groups = append(groups, histogramGroup{nhcb: []nhcbGroupEntry{{series: s}}})
 		}
 		if err := nhcbSet.Err(); err != nil {
 			return ErrSeriesSet(err)
@@ -249,14 +259,13 @@ func selectNHCBAsClassic(ctx context.Context, sortSeries bool, nhcbSet, classicS
 		if err := classicSet.Err(); err != nil {
 			return ErrSeriesSet(err)
 		}
-		index.addNHCB(firstNHCB)
+		index.addNHCB(nhcbGroupEntry{series: firstPeeked.series, peeked: &firstPeeked})
 		for nhcbSet.Next() {
 			s := nhcbSet.At()
-			var ok bool
-			if ok, chkIter = isNHCBSeries(s, chkIter, &hScratch, &fhScratch); !ok {
+			if s == nil || s.Labels().Has(labels.BucketLabel) {
 				continue
 			}
-			index.addNHCB(s)
+			index.addNHCB(nhcbGroupEntry{series: s})
 		}
 		if err := nhcbSet.Err(); err != nil {
 			return ErrSeriesSet(err)
@@ -271,30 +280,68 @@ func selectNHCBAsClassic(ctx context.Context, sortSeries bool, nhcbSet, classicS
 		suffix:     suffix,
 		sortSeries: sortSeries,
 		warnings:   warnings,
+		it:         chkIter,
 	}
 }
 
-// isNHCBSeries reports whether s is a candidate NHCB series (has no le label
-// and its first sample is a custom-buckets histogram).
-func isNHCBSeries(s Series, it chunkenc.Iterator, h *histogram.Histogram, fh *histogram.FloatHistogram) (bool, chunkenc.Iterator) {
+// peekedNHCB holds a candidate NHCB series whose iterator has already been
+// opened and advanced to its first live NHCB sample, avoiding a second
+// Series.Iterator call when converting the series for storages that only
+// support streaming a Series once.
+type peekedNHCB struct {
+	series Series
+	it     chunkenc.Iterator
+	nhcb   any
+	st     int64
+	t      int64
+}
+
+// peekNHCBSeries opens s.Iterator at most once, skips any leading staleness
+// markers, and reports whether the first live sample is a custom-buckets
+// histogram. When ok is true, the returned peekedNHCB owns the open iterator
+// positioned at that sample and reusableIt is nil; otherwise reusableIt
+// returns the iterator for reuse on subsequent series.
+func peekNHCBSeries(s Series, it chunkenc.Iterator, hScratch *histogram.Histogram, fhScratch *histogram.FloatHistogram) (peeked peekedNHCB, reusableIt chunkenc.Iterator, ok bool, err error) {
 	if s == nil || s.Labels().Has(labels.BucketLabel) {
-		return false, it
+		return peekedNHCB{}, it, false, nil
 	}
 	it = s.Iterator(it)
 	if it == nil {
-		return false, nil
+		return peekedNHCB{}, nil, false, nil
 	}
-	switch it.Next() {
-	case chunkenc.ValHistogram:
-		var hs *histogram.Histogram
-		_, hs = it.AtHistogram(h)
-		return hs != nil && histogram.IsCustomBucketsSchema(hs.Schema), it
-	case chunkenc.ValFloatHistogram:
-		var fhs *histogram.FloatHistogram
-		_, fhs = it.AtFloatHistogram(fh)
-		return fhs != nil && histogram.IsCustomBucketsSchema(fhs.Schema), it
-	default:
-		return false, it
+	for {
+		switch it.Next() {
+		case chunkenc.ValNone:
+			return peekedNHCB{}, it, false, it.Err()
+		case chunkenc.ValHistogram:
+			var h *histogram.Histogram
+			t, h := it.AtHistogram(hScratch)
+			if h == nil || value.IsStaleNaN(h.Sum) {
+				continue
+			}
+			if !histogram.IsCustomBucketsSchema(h.Schema) {
+				return peekedNHCB{}, it, false, nil
+			}
+			return peekedNHCB{series: s, it: it, nhcb: h, st: it.AtST(), t: t}, nil, true, nil
+		case chunkenc.ValFloatHistogram:
+			var fh *histogram.FloatHistogram
+			t, fh := it.AtFloatHistogram(fhScratch)
+			if fh == nil || value.IsStaleNaN(fh.Sum) {
+				continue
+			}
+			if !histogram.IsCustomBucketsSchema(fh.Schema) {
+				return peekedNHCB{}, it, false, nil
+			}
+			return peekedNHCB{series: s, it: it, nhcb: fh, st: it.AtST(), t: t}, nil, true, nil
+		case chunkenc.ValFloat:
+			_, f := it.At()
+			if value.IsStaleNaN(f) {
+				continue
+			}
+			return peekedNHCB{}, it, false, nil
+		default:
+			return peekedNHCB{}, it, false, nil
+		}
 	}
 }
 
@@ -358,12 +405,17 @@ func (w *warningsSeriesSet) Warnings() annotations.Annotations {
 	return out
 }
 
+type nhcbGroupEntry struct {
+	series Series
+	peeked *peekedNHCB
+}
+
 // histogramGroup holds the stored classic series and NHCB series that share the
 // same identifying labels (all labels except __name__, and le for _bucket queries).
 type histogramGroup struct {
 	id      labels.Labels
 	classic []Series
-	nhcb    []Series
+	nhcb    []nhcbGroupEntry
 }
 
 // histogramIndex groups stored classic series and NHCB series by their
@@ -414,9 +466,9 @@ func (idx *histogramIndex) addClassic(s Series) {
 	g.classic = append(g.classic, s)
 }
 
-func (idx *histogramIndex) addNHCB(s Series) {
-	g := idx.groupFor(s.Labels())
-	g.nhcb = append(g.nhcb, s)
+func (idx *histogramIndex) addNHCB(entry nhcbGroupEntry) {
+	g := idx.groupFor(entry.series.Labels())
+	g.nhcb = append(g.nhcb, entry)
 }
 
 // equalGroupID reports whether id equals lset after ignoring __name__ (and le
@@ -547,15 +599,15 @@ func matchesLe(lset labels.Labels, leMatchers []*labels.Matcher) bool {
 // time as Next() advances; when sortSeries is true, all groups are converted
 // on the first Next() call and sorted globally by labels.Compare.
 type nhcbToClassicSeriesSet struct {
-	ctx        context.Context
-	firstNHCB  Series
-	nhcbSet    SeriesSet
-	groups     []histogramGroup
-	groupIdx   int
-	leMatchers []*labels.Matcher
-	suffix     string
-	sortSeries bool
-	warnings   annotations.Annotations
+	ctx         context.Context
+	firstPeeked peekedNHCB
+	nhcbSet     SeriesSet
+	groups      []histogramGroup
+	groupIdx    int
+	leMatchers  []*labels.Matcher
+	suffix      string
+	sortSeries  bool
+	warnings    annotations.Annotations
 
 	initialized bool
 	series      []Series
@@ -622,20 +674,26 @@ func (s *nhcbToClassicSeriesSet) Next() bool {
 				s.err = err
 				return false
 			}
-			var nhcbSeries Series
-			if s.firstNHCB != nil {
-				nhcbSeries = s.firstNHCB
-				s.firstNHCB = nil
+			var peeked peekedNHCB
+			if s.firstPeeked.series != nil {
+				peeked = s.firstPeeked
+				s.firstPeeked = peekedNHCB{}
 			} else {
 				for s.nhcbSet.Next() {
-					cand := s.nhcbSet.At()
-					var ok bool
-					if ok, s.it = isNHCBSeries(cand, s.it, &s.hScratch, &s.fhScratch); ok {
-						nhcbSeries = cand
+					var (
+						ok  bool
+						err error
+					)
+					peeked, s.it, ok, err = peekNHCBSeries(s.nhcbSet.At(), s.it, &s.hScratch, &s.fhScratch)
+					if err != nil {
+						s.err = err
+						return false
+					}
+					if ok {
 						break
 					}
 				}
-				if nhcbSeries == nil {
+				if peeked.series == nil {
 					if err := s.nhcbSet.Err(); err != nil {
 						s.err = err
 					}
@@ -643,7 +701,7 @@ func (s *nhcbToClassicSeriesSet) Next() bool {
 				}
 			}
 
-			converted, err := s.convertNHCBSeries(nhcbSeries, nil, s.series[:0])
+			converted, err := s.convertPeekedNHCB(peeked, nil, s.series[:0])
 			if err != nil {
 				s.err = err
 				return false
@@ -717,7 +775,7 @@ func (s *nhcbToClassicSeriesSet) convertGroup(g *histogramGroup, dst []Series) (
 	if len(g.nhcb) == 0 {
 		out := dst[:0]
 		for _, cs := range g.classic {
-			if matchesLe(cs.Labels(), s.leMatchers) {
+			if cs != nil && matchesLe(cs.Labels(), s.leMatchers) {
 				out = append(out, cs)
 			}
 		}
@@ -727,25 +785,25 @@ func (s *nhcbToClassicSeriesSet) convertGroup(g *histogramGroup, dst []Series) (
 		return out, nil
 	}
 
+	hasMatchingClassic := false
+	for _, cs := range g.classic {
+		if cs != nil && matchesLe(cs.Labels(), s.leMatchers) {
+			hasMatchingClassic = true
+			break
+		}
+	}
+
 	var (
 		groupTS         []int64
 		groupTSLoaded   bool
 		filteredClassic []Series
 	)
-	if len(g.classic) > 0 {
-		for _, cs := range g.classic {
-			if matchesLe(cs.Labels(), s.leMatchers) {
-				filteredClassic = append(filteredClassic, cs)
-			}
-		}
-	}
-
 	loadGroupTS := func() ([]int64, error) {
 		if !groupTSLoaded {
 			groupTSLoaded = true
 			if len(g.classic) > 0 {
 				var err error
-				groupTS, s.classicIt, err = collectClassicTimestamps(g.classic, s.suffix, s.classicIt)
+				groupTS, filteredClassic, s.classicIt, err = collectClassicGroup(g.classic, s.suffix, s.leMatchers, s.classicIt)
 				if err != nil {
 					return nil, err
 				}
@@ -755,15 +813,33 @@ func (s *nhcbToClassicSeriesSet) convertGroup(g *histogramGroup, dst []Series) (
 	}
 
 	var converted []Series
-	for i, nhcbSeries := range g.nhcb {
-		if nhcbSeries == nil {
+	for _, entry := range g.nhcb {
+		if entry.series == nil {
 			continue
 		}
+		var peeked peekedNHCB
+		if entry.peeked != nil {
+			peeked = *entry.peeked
+			entry.peeked = nil
+		} else {
+			var (
+				ok  bool
+				err error
+			)
+			peeked, s.it, ok, err = peekNHCBSeries(entry.series, s.it, &s.hScratch, &s.fhScratch)
+			if err != nil {
+				return nil, err
+			}
+			if !ok {
+				continue
+			}
+		}
+
 		var seriesDst []Series
-		if i == 0 && len(filteredClassic) == 0 {
+		if len(converted) == 0 && !hasMatchingClassic {
 			seriesDst = dst
 		}
-		seriesFromNHCB, err := s.convertNHCBSeries(nhcbSeries, loadGroupTS, seriesDst)
+		seriesFromNHCB, err := s.convertPeekedNHCB(peeked, loadGroupTS, seriesDst)
 		if err != nil {
 			return nil, err
 		}
@@ -777,6 +853,19 @@ func (s *nhcbToClassicSeriesSet) convertGroup(g *histogramGroup, dst []Series) (
 		}
 	}
 
+	if !groupTSLoaded {
+		out := dst[:0]
+		for _, cs := range g.classic {
+			if cs != nil && matchesLe(cs.Labels(), s.leMatchers) {
+				out = append(out, cs)
+			}
+		}
+		if !s.sortSeries {
+			sortConvertedSeries(out)
+		}
+		return out, nil
+	}
+
 	out, err := mergeSeriesByLabels(filteredClassic, converted)
 	if err != nil {
 		return nil, err
@@ -787,70 +876,81 @@ func (s *nhcbToClassicSeriesSet) convertGroup(g *histogramGroup, dst []Series) (
 	return out, nil
 }
 
-// convertNHCBSeries converts a single NHCB series into classic series,
+// convertPeekedNHCB converts a single peeked NHCB series into classic series,
 // shadowing samples at timestamps where the stored classic histogram is active.
-// loadGroupTS is called lazily and at most once on the first non-skipped sample
+// loadGroupTS is called lazily and at most once on the first live NHCB sample
 // to load the group's classic timestamps; a nil loadGroupTS disables classic
-// shadowing (used by the streaming fast path).
-func (s *nhcbToClassicSeriesSet) convertNHCBSeries(nhcbSeries Series, loadGroupTS func() ([]int64, error), dst []Series) ([]Series, error) {
-	nhcbLabels := nhcbSeries.Labels()
-	s.it = nhcbSeries.Iterator(s.it)
+// shadowing on the streaming fast path.
+func (s *nhcbToClassicSeriesSet) convertPeekedNHCB(p peekedNHCB, loadGroupTS func() ([]int64, error), dst []Series) ([]Series, error) {
+	nhcbLabels := p.series.Labels()
+	it := p.it
 	if s.it == nil {
-		return nil, nil
+		s.it = it
 	}
 
 	s.builder.reset()
 	var (
 		groupTS []int64
 		tsIdx   int
+		first   = true
 	)
 
 	for {
-		valType := s.it.Next()
-		if valType == chunkenc.ValNone {
-			break
-		}
-
 		var (
 			nhcb  any
+			st    int64
 			t     int64
 			stale bool
 		)
 
-		switch valType {
-		case chunkenc.ValHistogram:
-			var h *histogram.Histogram
-			t, h = s.it.AtHistogram(&s.hScratch)
-			if h == nil {
+		if first {
+			first = false
+			nhcb = p.nhcb
+			st = p.st
+			t = p.t
+		} else {
+			valType := it.Next()
+			if valType == chunkenc.ValNone {
+				break
+			}
+
+			switch valType {
+			case chunkenc.ValHistogram:
+				var h *histogram.Histogram
+				t, h = it.AtHistogram(&s.hScratch)
+				if h == nil {
+					continue
+				}
+				// Treat both explicit staleness markers and transitions to a
+				// non-NHCB schema (e.g. exponential native histogram on the same
+				// series) as ending any active converted NHCB series at t.
+				if value.IsStaleNaN(h.Sum) || !histogram.IsCustomBucketsSchema(h.Schema) {
+					stale = true
+				} else {
+					nhcb = h
+					st = it.AtST()
+				}
+			case chunkenc.ValFloatHistogram:
+				var fh *histogram.FloatHistogram
+				t, fh = it.AtFloatHistogram(&s.fhScratch)
+				if fh == nil {
+					continue
+				}
+				if value.IsStaleNaN(fh.Sum) || !histogram.IsCustomBucketsSchema(fh.Schema) {
+					stale = true
+				} else {
+					nhcb = fh
+					st = it.AtST()
+				}
+			case chunkenc.ValFloat:
+				// NOTE: Any float sample on the NHCB series (e.g. a float StaleNaN
+				// from scrape staleness or a type change to a float metric under the
+				// base name) ends any active converted series at t.
+				t = it.AtT()
+				stale = true
+			default:
 				continue
 			}
-			// Treat both explicit staleness markers and transitions to a
-			// non-NHCB schema (e.g. exponential native histogram on the same
-			// series) as ending any active converted NHCB series at t.
-			if value.IsStaleNaN(h.Sum) || !histogram.IsCustomBucketsSchema(h.Schema) {
-				stale = true
-			} else {
-				nhcb = h
-			}
-		case chunkenc.ValFloatHistogram:
-			var fh *histogram.FloatHistogram
-			t, fh = s.it.AtFloatHistogram(&s.fhScratch)
-			if fh == nil {
-				continue
-			}
-			if value.IsStaleNaN(fh.Sum) || !histogram.IsCustomBucketsSchema(fh.Schema) {
-				stale = true
-			} else {
-				nhcb = fh
-			}
-		case chunkenc.ValFloat:
-			// NOTE: Any float sample on the NHCB series (e.g. a float StaleNaN
-			// from scrape staleness or a type change to a float metric under the
-			// base name) ends any active converted series at t.
-			t = s.it.AtT()
-			stale = true
-		default:
-			continue
 		}
 
 		if stale && len(s.builder.series) == 0 {
@@ -892,14 +992,14 @@ func (s *nhcbToClassicSeriesSet) convertNHCBSeries(nhcbSeries Series, loadGroupT
 			continue
 		}
 
-		s.builder.beginStep(s.it.AtST(), t)
+		s.builder.beginStep(st, t)
 		if err := histogram.ConvertNHCBToClassic(nhcb, nhcbLabels, s.lsetBuilder, s.suffix, &s.seriesCache, s.emitFn); err != nil {
 			return nil, err
 		}
 		s.builder.endStep(t)
 	}
 
-	if err := s.it.Err(); err != nil {
+	if err := it.Err(); err != nil {
 		return nil, err
 	}
 
@@ -949,28 +1049,54 @@ func mergeSeriesByLabels(preferred, fallback []Series) ([]Series, error) {
 	return out, nil
 }
 
-// collectClassicTimestamps returns the sorted, deduplicated timestamps of all
-// non-stale float samples across the given classic series. For _bucket queries,
-// any stored series without an le label (e.g. a non-histogram gauge/counter
-// ending in _bucket) is ignored so it does not shadow converted NHCB buckets.
-func collectClassicTimestamps(series []Series, suffix string, it chunkenc.Iterator) ([]int64, chunkenc.Iterator, error) {
-	var ts []int64
+type classicKeptEntry struct {
+	raw  Series
+	lset labels.Labels
+	off  int
+	n    int
+}
+
+// collectClassicGroup scans the group's stored classic series once, returning
+// the sorted, deduplicated timestamps of all non-stale float samples alongside
+// reusable Series filtered by leMatchers so Series.Iterator is called at most
+// once per stored classic series. For _bucket queries, any stored series
+// without an le label is passed through untouched without shadowing NHCB buckets.
+func collectClassicGroup(series []Series, suffix string, leMatchers []*labels.Matcher, it chunkenc.Iterator) ([]int64, []Series, chunkenc.Iterator, error) {
+	var (
+		ts            []int64
+		samplesBuf    []fSample
+		kept          []classicKeptEntry
+		bufferedCount int
+	)
 	for _, s := range series {
 		if s == nil {
 			continue
 		}
-		if suffix == histogram.ClassicSuffixBucket && !s.Labels().Has(labels.BucketLabel) {
+		lset := s.Labels()
+		keep := matchesLe(lset, leMatchers)
+		if suffix == histogram.ClassicSuffixBucket && !lset.Has(labels.BucketLabel) {
+			if keep {
+				kept = append(kept, classicKeptEntry{raw: s})
+			}
 			continue
 		}
 		it = s.Iterator(it)
 		if it == nil {
+			if keep {
+				kept = append(kept, classicKeptEntry{lset: lset})
+				bufferedCount++
+			}
 			continue
 		}
+		startOff := len(samplesBuf)
 		firstSeries := len(ts) == 0
 		idx := 0
 		needSort := false
 		for it.Next() == chunkenc.ValFloat {
 			t, f := it.At()
+			if keep {
+				samplesBuf = append(samplesBuf, fSample{st: it.AtST(), t: t, f: f})
+			}
 			if value.IsStaleNaN(f) {
 				continue
 			}
@@ -989,14 +1115,45 @@ func collectClassicTimestamps(series []Series, suffix string, it chunkenc.Iterat
 			needSort = true
 		}
 		if err := it.Err(); err != nil {
-			return nil, it, err
+			return nil, nil, it, err
 		}
 		if needSort {
 			slices.Sort(ts)
 			ts = slices.Compact(ts)
 		}
+		if keep {
+			kept = append(kept, classicKeptEntry{
+				lset: lset,
+				off:  startOff,
+				n:    len(samplesBuf) - startOff,
+			})
+			bufferedCount++
+		}
 	}
-	return ts, it, nil
+
+	if len(kept) == 0 {
+		return ts, nil, it, nil
+	}
+	var seriesSlab []fSampleSeries
+	if bufferedCount > 0 {
+		seriesSlab = make([]fSampleSeries, bufferedCount)
+	}
+	filtered := make([]Series, 0, len(kept))
+	slabIdx := 0
+	for _, e := range kept {
+		if e.raw != nil {
+			filtered = append(filtered, e.raw)
+			continue
+		}
+		var samples []fSample
+		if e.n > 0 {
+			samples = samplesBuf[e.off : e.off+e.n : e.off+e.n]
+		}
+		seriesSlab[slabIdx] = fSampleSeries{lset: e.lset, samples: samples}
+		filtered = append(filtered, &seriesSlab[slabIdx])
+		slabIdx++
+	}
+	return ts, filtered, it, nil
 }
 
 type sampleSource uint8
