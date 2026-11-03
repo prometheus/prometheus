@@ -922,14 +922,13 @@ outer:
 				// A float sample for a converted NHCB series is either its stale marker or
 				// a change of sample type. Both retire the classic series; a type change
 				// also forwards the float, whose start time stays off the retired series.
-				omitHelp := t.omitHelpForSend(s.Ref, sm, currentTime)
 				st := s.ST
 				var replacement *timeSeries
 				if !value.IsStaleNaN(s.V) {
 					st = 0
-					replacement = &timeSeries{seriesLabels: lbls, metadata: sm.meta, startTimestamp: s.ST, timestamp: s.T, value: s.V, sType: tSample, omitHelp: omitHelp}
+					replacement = &timeSeries{seriesLabels: lbls, metadata: sm.meta, startTimestamp: s.ST, timestamp: s.T, value: s.V, sType: tSample}
 				}
-				if !t.convertAndEnqueueNHCB(s.Ref, st, s.T, nil, nil, true, lbls, sm.meta, omitHelp, replacement) {
+				if !t.convertAndEnqueueNHCB(s.Ref, st, s.T, nil, nil, true, lbls, sm, currentTime, replacement) {
 					return false
 				}
 				continue
@@ -1104,7 +1103,7 @@ func (t *QueueManager) releaseNHCBLayout(layout *nhcbLayout) {
 // into classic _bucket, _count, and _sum samples while holding seriesMtx, then enqueues them
 // after releasing the lock. Caller must hold t.seriesMtx on entry; this method unlocks it.
 // A replacement follows the converted stale markers when changing sample type.
-func (t *QueueManager) convertAndEnqueueNHCB(ref chunks.HeadSeriesRef, st, ts int64, nhcb any, customValues []float64, isStale bool, lbls labels.Labels, meta unique.Handle[metadata.Metadata], omitHelp bool, replacement *timeSeries) bool {
+func (t *QueueManager) convertAndEnqueueNHCB(ref chunks.HeadSeriesRef, st, ts int64, nhcb any, customValues []float64, isStale bool, lbls labels.Labels, sm cachedMetadata, now time.Time, replacement *timeSeries) bool {
 	prev, wasActive := t.nhcbSeriesBounds[ref]
 	var prevBounds []float64
 	if wasActive {
@@ -1119,6 +1118,25 @@ func (t *QueueManager) convertAndEnqueueNHCB(ref chunks.HeadSeriesRef, st, ts in
 		}
 	}
 
+	baseName := lbls.Get(model.MetricNameLabel)
+	var (
+		count, sum float64
+		err        error
+	)
+	if baseName == "" {
+		err = errors.New("metric name label '__name__' is missing")
+	} else {
+		t.nhcbCounts, count, sum, err = histogram.ClassicBucketCounts(nhcb, t.nhcbCounts)
+	}
+	if err != nil {
+		t.seriesMtx.Unlock()
+		t.logger.Error("Conversion error", "err", err)
+		t.metrics.droppedHistogramsTotal.WithLabelValues(reasonNHCBConversionError).Inc()
+		t.dataDropped.incr(1)
+		return true
+	}
+
+	omitHelp := t.omitHelpForSend(ref, sm, now)
 	sameBounds := wasActive && slices.Equal(prevBounds, customValues)
 	capacity := len(customValues) + 3
 	if wasActive && !sameBounds {
@@ -1131,7 +1149,7 @@ func (t *QueueManager) convertAndEnqueueNHCB(ref chunks.HeadSeriesRef, st, ts in
 	emit := func(bucketLabels labels.Labels, value float64) {
 		classicSeries = append(classicSeries, timeSeries{
 			seriesLabels:   bucketLabels,
-			metadata:       meta,
+			metadata:       sm.meta,
 			startTimestamp: st,
 			timestamp:      ts,
 			value:          value,
@@ -1139,48 +1157,37 @@ func (t *QueueManager) convertAndEnqueueNHCB(ref chunks.HeadSeriesRef, st, ts in
 			omitHelp:       omitHelp,
 		})
 	}
-	baseName := lbls.Get(model.MetricNameLabel)
-	var (
-		count, sum float64
-		err        error
-	)
-	if baseName == "" {
-		err = errors.New("metric name label '__name__' is missing")
-	} else {
-		t.nhcbCounts, count, sum, err = histogram.ClassicBucketCounts(nhcb, t.nhcbCounts)
-	}
 	layout := prev
-	if err == nil {
-		if !sameBounds {
-			layout = t.acquireNHCBLayout(customValues)
-		}
-		bucketName := baseName + "_bucket"
-		for i, c := range t.nhcbCounts {
-			t.builder.Reset(lbls)
-			t.builder.Set(model.MetricNameLabel, bucketName)
-			t.builder.Set(model.BucketLabel, layout.le[i])
-			emit(t.builder.Labels(), c)
-		}
-		t.builder.Reset(lbls)
-		t.builder.Set(model.MetricNameLabel, baseName+"_count")
-		emit(t.builder.Labels(), count)
-		t.builder.Reset(lbls)
-		t.builder.Set(model.MetricNameLabel, baseName+"_sum")
-		emit(t.builder.Labels(), sum)
+	if !sameBounds {
+		layout = t.acquireNHCBLayout(customValues)
 	}
-	if err == nil && wasActive && !sameBounds {
+	bucketName := baseName + "_bucket"
+	for i, c := range t.nhcbCounts {
+		t.builder.Reset(lbls)
+		t.builder.Set(model.MetricNameLabel, bucketName)
+		t.builder.Set(model.BucketLabel, layout.le[i])
+		emit(t.builder.Labels(), c)
+	}
+	t.builder.Reset(lbls)
+	t.builder.Set(model.MetricNameLabel, baseName+"_count")
+	emit(t.builder.Labels(), count)
+	t.builder.Reset(lbls)
+	t.builder.Set(model.MetricNameLabel, baseName+"_sum")
+	emit(t.builder.Labels(), sum)
+
+	if wasActive && !sameBounds {
 		staleVal := math.Float64frombits(value.StaleNaN)
 		for i, prevBound := range prevBounds {
 			if slices.Contains(customValues, prevBound) {
 				continue
 			}
 			t.builder.Reset(lbls)
-			t.builder.Set(model.MetricNameLabel, baseName+"_bucket")
+			t.builder.Set(model.MetricNameLabel, bucketName)
 			t.builder.Set(model.BucketLabel, prev.le[i])
 			// Retired buckets get no start time; st belongs to the new layout.
 			classicSeries = append(classicSeries, timeSeries{
 				seriesLabels:   t.builder.Labels(),
-				metadata:       meta,
+				metadata:       sm.meta,
 				startTimestamp: 0,
 				timestamp:      ts,
 				value:          staleVal,
@@ -1189,33 +1196,26 @@ func (t *QueueManager) convertAndEnqueueNHCB(ref chunks.HeadSeriesRef, st, ts in
 			})
 		}
 	}
-	if err == nil {
-		if isStale {
-			if !sameBounds {
-				// A stale marker needed the new layout only for its labels.
-				t.releaseNHCBLayout(layout)
-			}
-			if wasActive {
-				t.releaseNHCBLayout(prev)
-			}
-			delete(t.nhcbSeriesBounds, ref)
-		} else if !sameBounds {
-			if wasActive {
-				t.releaseNHCBLayout(prev)
-			}
-			t.nhcbSeriesBounds[ref] = layout
+	if isStale {
+		if !sameBounds {
+			// A stale marker needed the new layout only for its labels.
+			t.releaseNHCBLayout(layout)
 		}
-		if replacement != nil {
-			classicSeries = append(classicSeries, *replacement)
+		if wasActive {
+			t.releaseNHCBLayout(prev)
 		}
+		delete(t.nhcbSeriesBounds, ref)
+	} else if !sameBounds {
+		if wasActive {
+			t.releaseNHCBLayout(prev)
+		}
+		t.nhcbSeriesBounds[ref] = layout
+	}
+	if replacement != nil {
+		replacement.omitHelp = omitHelp
+		classicSeries = append(classicSeries, *replacement)
 	}
 	t.seriesMtx.Unlock()
-	if err != nil {
-		t.logger.Error("Conversion error", "err", err)
-		t.metrics.droppedHistogramsTotal.WithLabelValues(reasonNHCBConversionError).Inc()
-		t.dataDropped.incr(1)
-		return true
-	}
 	if len(classicSeries) > 1 {
 		// WriteStorage counts the incoming sample as a single item in dataIn;
 		// account for the extra classic series produced by NHCB expansion here.
@@ -1287,26 +1287,24 @@ outer:
 		}
 		sm := t.seriesMetadata[h.Ref]
 		if transition {
-			omitHelp := t.omitHelpForSend(h.Ref, sm, currentTime)
 			var replacement *timeSeries
 			if t.sendNativeHistograms {
-				replacement = &timeSeries{seriesLabels: lbls, metadata: sm.meta, startTimestamp: h.ST, timestamp: h.T, histogram: h.H, sType: tHistogram, omitHelp: omitHelp}
+				replacement = &timeSeries{seriesLabels: lbls, metadata: sm.meta, startTimestamp: h.ST, timestamp: h.T, histogram: h.H, sType: tHistogram}
 			}
-			if !t.convertAndEnqueueNHCB(h.Ref, 0, h.T, nil, nil, true, lbls, sm.meta, omitHelp, replacement) {
+			if !t.convertAndEnqueueNHCB(h.Ref, 0, h.T, nil, nil, true, lbls, sm, currentTime, replacement) {
 				return false
 			}
 			continue
 		}
 		// Check if `convert_nhcb_to_classic` flag is enabled to convert NHCB histograms to classic histograms.
 		if convertNHCB {
-			omitHelp := t.omitHelpForSend(h.Ref, sm, currentTime)
 			var nhcb any
 			var customValues []float64
 			if isNHCB {
 				nhcb = h.H
 				customValues = h.H.CustomValues
 			}
-			if !t.convertAndEnqueueNHCB(h.Ref, h.ST, h.T, nhcb, customValues, isStale, lbls, sm.meta, omitHelp, nil) {
+			if !t.convertAndEnqueueNHCB(h.Ref, h.ST, h.T, nhcb, customValues, isStale, lbls, sm, currentTime, nil) {
 				return false
 			}
 			continue
@@ -1391,26 +1389,24 @@ outer:
 		}
 		sm := t.seriesMetadata[h.Ref]
 		if transition {
-			omitHelp := t.omitHelpForSend(h.Ref, sm, currentTime)
 			var replacement *timeSeries
 			if t.sendNativeHistograms {
-				replacement = &timeSeries{seriesLabels: lbls, metadata: sm.meta, startTimestamp: h.ST, timestamp: h.T, floatHistogram: h.FH, sType: tFloatHistogram, omitHelp: omitHelp}
+				replacement = &timeSeries{seriesLabels: lbls, metadata: sm.meta, startTimestamp: h.ST, timestamp: h.T, floatHistogram: h.FH, sType: tFloatHistogram}
 			}
-			if !t.convertAndEnqueueNHCB(h.Ref, 0, h.T, nil, nil, true, lbls, sm.meta, omitHelp, replacement) {
+			if !t.convertAndEnqueueNHCB(h.Ref, 0, h.T, nil, nil, true, lbls, sm, currentTime, replacement) {
 				return false
 			}
 			continue
 		}
 		// Check if `convert_nhcb_to_classic` flag is enabled to convert NHCB Float histograms to classic histograms.
 		if convertNHCB {
-			omitHelp := t.omitHelpForSend(h.Ref, sm, currentTime)
 			var nhcb any
 			var customValues []float64
 			if isNHCB {
 				nhcb = h.FH
 				customValues = h.FH.CustomValues
 			}
-			if !t.convertAndEnqueueNHCB(h.Ref, h.ST, h.T, nhcb, customValues, isStale, lbls, sm.meta, omitHelp, nil) {
+			if !t.convertAndEnqueueNHCB(h.Ref, h.ST, h.T, nhcb, customValues, isStale, lbls, sm, currentTime, nil) {
 				return false
 			}
 			continue
