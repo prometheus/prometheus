@@ -705,7 +705,7 @@ func (sl *scrapeLoop) mutateSample(lset labels.Labels, lastMFName []byte, lastMe
 		// has unknown type (since _total suffix stripping only applies to counters). If relabeling
 		// sets the series type (e.g. to counter) such that it now belongs to lastMFName, inherit
 		// any help or unit from lastMeta that relabeling did not explicitly set.
-		if !hasFamilyMeta && lastMeta != nil && isSeriesPartOfFamily(preName, lastMFName, sampleMeta.Type) {
+		if !hasFamilyMeta && lastMeta != nil && lastMeta.Type == model.MetricTypeUnknown && isSeriesPartOfFamily(preName, lastMFName, sampleMeta.Type) {
 			hasFamilyMeta = true
 			if sampleMeta.Help == "" {
 				sampleMeta.Help = lastMeta.Help

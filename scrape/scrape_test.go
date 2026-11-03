@@ -1977,6 +1977,30 @@ untyped_unitless_metric{__type__="gauge",__unit__="bytes",__help__="spoof"} 6
 			require.NoError(t, err)
 			require.NoError(t, app.Commit())
 			testutil.RequireEqual(t, expectedLset3, appNoMetaRules.ResultSamples()[0].L)
+
+			// Verify an untyped *_total series after a typed family does not overwrite the preceding family's metadata.
+			appTypedFamily := teststorage.NewAppendable()
+			slTypedFamily, _ := newTestScrapeLoop(t, withAppendable(appTypedFamily, true), func(sl *scrapeLoop) {
+				sl.enableTypeAndUnitLabels = enableTypeAndUnitLabels
+				sl.mrc = rc
+				sl.sampleMutatorWithMetadata = func(l labels.Labels, m metadata.Metadata) (labels.Labels, metadata.Metadata) {
+					return mutateSampleLabelsAndMetadata(l, m, target, false, enableTypeAndUnitLabels, rc)
+				}
+			})
+			app = slTypedFamily.appender()
+			_, _, _, err = app.append([]byte("# TYPE foo gauge\n# HELP foo Gauge help\nfoo 1\nfoo_total 2\n# EOF\n"), "application/openmetrics-text", now)
+			require.NoError(t, err)
+			require.NoError(t, app.Commit())
+
+			md, ok = slTypedFamily.cache.GetMetadata("foo")
+			require.True(t, ok)
+			require.Equal(t, model.MetricTypeGauge, md.Type)
+			require.Equal(t, "Gauge help", md.Help)
+
+			md, ok = slTypedFamily.cache.GetMetadata("foo_total")
+			require.True(t, ok)
+			require.Equal(t, model.MetricTypeCounter, md.Type)
+			require.Empty(t, md.Help)
 		})
 	}
 }
