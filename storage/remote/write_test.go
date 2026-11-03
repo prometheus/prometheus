@@ -588,7 +588,7 @@ func TestWriteStorageApplyConfig_ValidateRemoteWriteFeatures(t *testing.T) {
 
 			rwCfg := testRemoteWriteConfig()
 			rwCfg.ProtobufMessage = remoteapi.WriteV2MessageType
-			rwCfg.SendNativeHistograms = true
+			rwCfg.SetSendNativeHistograms(true)
 			rwCfg.Mode = tc.mode
 
 			err := s.ApplyConfig(&config.Config{
