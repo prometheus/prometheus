@@ -891,6 +891,21 @@ func (t *QueueManager) omitHelpForSend(ref chunks.HeadSeriesRef, sm cachedMetada
 	return sm.meta.Value().Help == ""
 }
 
+// checkOmitHelpBeforeModeUnlock determines omitHelp while holding t.seriesMtx before unlocking
+// for stateless mode validation, avoiding a second lock acquisition in steady state.
+func (t *QueueManager) checkOmitHelpBeforeModeUnlock(ref chunks.HeadSeriesRef, sm cachedMetadata, now time.Time) (omitHelp, markHelp bool) {
+	if t.mode == remoteapi.WriteModeNone {
+		return t.omitHelpForSend(ref, sm, now), false
+	}
+	if t.mcfg.SendHelpInterval <= 0 {
+		return false, false
+	}
+	if metadata.IsZeroHandle(sm.meta) || (t.helpSentGen != 0 && now.Sub(t.lastHelpSentReset) < time.Duration(t.mcfg.SendHelpInterval) && sm.helpSentGen == t.helpSentGen) {
+		return true, false
+	}
+	return false, true
+}
+
 // Append queues a sample to be sent to the remote storage. Blocks until all samples are
 // enqueued on their shards or a shutdown signal is received.
 func (t *QueueManager) Append(samples []record.RefSample) bool {
@@ -934,12 +949,16 @@ outer:
 				continue
 			}
 		}
+		omitHelp, markHelp := t.checkOmitHelpBeforeModeUnlock(s.Ref, sm, currentTime)
+		t.seriesMtx.Unlock()
 		if t.mode != remoteapi.WriteModeNone && t.shouldDropFloatSampleForMode(s.Ref, s.ST, value.IsStaleNaN(s.V), lbls, sm.meta) {
-			t.seriesMtx.Unlock()
 			continue
 		}
-		omitHelp := t.omitHelpForSend(s.Ref, sm, currentTime)
-		t.seriesMtx.Unlock()
+		if markHelp {
+			t.seriesMtx.Lock()
+			omitHelp = t.omitHelpForSend(s.Ref, t.seriesMetadata[s.Ref], currentTime)
+			t.seriesMtx.Unlock()
+		}
 		// Start with a very small backoff. This should not be t.cfg.MinBackoff
 		// as it can happen without errors, and we want to pickup work after
 		// filling a queue/resharding as quickly as possible.
@@ -1309,12 +1328,16 @@ outer:
 			}
 			continue
 		}
+		omitHelp, markHelp := t.checkOmitHelpBeforeModeUnlock(h.Ref, sm, currentTime)
+		t.seriesMtx.Unlock()
 		if t.mode != remoteapi.WriteModeNone && t.shouldDropHistogramForMode(h.Ref, h.ST, isStale, lbls, sm.meta) {
-			t.seriesMtx.Unlock()
 			continue
 		}
-		omitHelp := t.omitHelpForSend(h.Ref, sm, currentTime)
-		t.seriesMtx.Unlock()
+		if markHelp {
+			t.seriesMtx.Lock()
+			omitHelp = t.omitHelpForSend(h.Ref, t.seriesMetadata[h.Ref], currentTime)
+			t.seriesMtx.Unlock()
+		}
 
 		backoff := model.Duration(5 * time.Millisecond)
 		for {
@@ -1411,12 +1434,16 @@ outer:
 			}
 			continue
 		}
+		omitHelp, markHelp := t.checkOmitHelpBeforeModeUnlock(h.Ref, sm, currentTime)
+		t.seriesMtx.Unlock()
 		if t.mode != remoteapi.WriteModeNone && t.shouldDropHistogramForMode(h.Ref, h.ST, isStale, lbls, sm.meta) {
-			t.seriesMtx.Unlock()
 			continue
 		}
-		omitHelp := t.omitHelpForSend(h.Ref, sm, currentTime)
-		t.seriesMtx.Unlock()
+		if markHelp {
+			t.seriesMtx.Lock()
+			omitHelp = t.omitHelpForSend(h.Ref, t.seriesMetadata[h.Ref], currentTime)
+			t.seriesMtx.Unlock()
+		}
 
 		backoff := model.Duration(5 * time.Millisecond)
 		for {
