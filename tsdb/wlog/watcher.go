@@ -89,6 +89,10 @@ type WatcherMetrics struct {
 
 // Watcher watches the TSDB WAL for a given WriteTo.
 type Watcher struct {
+	// segment is the value reported by LastProcessedSegment. It's first so it stays
+	// 64-bit aligned on 32-bit platforms.
+	segment atomic.Int64
+
 	name           string
 	writer         WriteTo
 	recordBuf      *record.BuffersPool
@@ -119,9 +123,6 @@ type Watcher struct {
 	startSegment int
 	// enableSavepoint makes a retried Run send from the last processed segment.
 	enableSavepoint bool
-
-	// segment is the value reported by LastProcessedSegment.
-	segment atomic.Int64
 
 	// For testing, stop when we hit this segment.
 	MaxSegment int
