@@ -2370,50 +2370,21 @@ func BenchmarkBuildV2WriteRequestWithHelpInterval(b *testing.B) {
 	}
 	for _, instances := range []int{6, 60, 300} {
 		baseBatch := createDummyTimeSeries(instances)
-		series := make([]record.RefSeries, len(baseBatch))
-		meta := make([]record.RefMetadata, len(baseBatch))
-		for i, ts := range baseBatch {
-			ref := chunks.HeadSeriesRef(i + 1)
-			name := ts.seriesLabels.Get(labels.MetricName)
-			series[i] = record.RefSeries{Ref: ref, Labels: ts.seriesLabels}
-			meta[i] = record.RefMetadata{
-				Ref:  ref,
-				Type: record.GetMetricType(model.MetricTypeGauge),
+		for i := range baseBatch {
+			name := baseBatch[i].seriesLabels.Get(labels.MetricName)
+			baseBatch[i].metadata = unique.Make(metadata.Metadata{
+				Type: model.MetricTypeGauge,
 				Unit: "bytes",
 				Help: helpByMetric[name],
-			}
+			})
 		}
 
 		for _, interval := range []model.Duration{0, model.Duration(5 * time.Minute)} {
 			b.Run(fmt.Sprintf("instances=%d/send_help_interval=%s", instances, interval), func(b *testing.B) {
-				cfg := config.DefaultQueueConfig
-				mcfg := config.DefaultMetadataConfig
-				mcfg.Send = false
-				mcfg.SendHelpInterval = interval
-
-				m := NewQueueManager(
-					newQueueManagerMetrics(nil, "", ""), nil, nil, noopLogger, b.TempDir(),
-					newEWMARate(ewmaWeight, shardUpdateDuration), cfg, mcfg, labels.EmptyLabels(), nil,
-					NewNopWriteClient(), defaultFlushDeadline, newPool(), newHighestTimestampMetric(),
-					nil, true, true, false, remoteapi.WriteV2MessageType, remoteapi.WriteModeNone,
-					record.NewBuffersPool(), false, false,
-				)
-				currTime := time.Unix(1_700_000_000, 0)
-				m.now = func() time.Time { return currTime }
-				m.StoreSeries(series, 0)
-				m.StoreMetadata(meta)
-
 				batch := slices.Clone(baseBatch)
-				// Warm up the first scrape so steady-state interval behavior is measured.
-				m.seriesMtx.Lock()
 				for i := range batch {
-					ref := chunks.HeadSeriesRef(i + 1)
-					sm := m.seriesMetadata[ref]
-					batch[i].metadata = sm.meta
-					batch[i].omitHelp = m.omitHelpForSend(ref, sm, currTime)
+					batch[i].omitHelp = interval > 0
 				}
-				m.seriesMtx.Unlock()
-				currTime = currTime.Add(15 * time.Second)
 
 				symbolTable := writev2.NewSymbolTable()
 				cEnc := compression.NewSyncEncodeBuffer()
@@ -2424,19 +2395,17 @@ func BenchmarkBuildV2WriteRequestWithHelpInterval(b *testing.B) {
 				}
 				pBuf := []byte{}
 
+				// Warm up reusable shard buffers once so b.Loop measures steady-state request building.
+				populateV2TimeSeries(&symbolTable, batch, seriesBuff, true, true, false)
+				if _, _, _, _, err := buildV2WriteRequest(noopLogger, seriesBuff, symbolTable.Symbols(), &pBuf, nil, cEnc, compression.Snappy); err != nil {
+					b.Fatal(err)
+				}
+				symbolTable.Reset()
+
 				var totalCompressed, totalUncompressed int
 				b.ReportAllocs()
 				b.ResetTimer()
 				for b.Loop() {
-					m.seriesMtx.Lock()
-					for i := range batch {
-						ref := chunks.HeadSeriesRef(i + 1)
-						sm := m.seriesMetadata[ref]
-						batch[i].metadata = sm.meta
-						batch[i].omitHelp = m.omitHelpForSend(ref, sm, currTime)
-					}
-					m.seriesMtx.Unlock()
-
 					populateV2TimeSeries(&symbolTable, batch, seriesBuff, true, true, false)
 					req, _, _, _, err := buildV2WriteRequest(noopLogger, seriesBuff, symbolTable.Symbols(), &pBuf, nil, cEnc, compression.Snappy)
 					if err != nil {
@@ -4466,159 +4435,164 @@ func TestQueueManager_SendHelpInterval(t *testing.T) {
 		},
 	}
 
-	t.Run("default sends help on every point", func(t *testing.T) {
-		t.Parallel()
+	for _, tc := range []struct {
+		name                    string
+		interval                model.Duration
+		mode                    remoteapi.WriteMode
+		convertNHCB             bool
+		run                     func(t *testing.T, m *QueueManager)
+		expectedMetadata        map[string][]prompb.MetricMetadata
+		expectedSampleHelps     float64
+		expectedSampleTypes     float64
+		expectedHistogramHelps  float64
+		expectedHistogramTypes  float64
+	}{
+		{
+			name:     "default sends help on every point",
+			interval: 0,
+			mode:     remoteapi.WriteModeNone,
+			run: func(t *testing.T, m *QueueManager) {
+				m.StoreSeries([]record.RefSeries{sCounter, sHist}, 0)
+				m.StoreMetadata(initialMeta)
 
-		c := NewTestWriteClient(remoteapi.WriteV2MessageType)
-		cfg := config.DefaultQueueConfig
-		cfg.BatchSendDeadline = model.Duration(time.Minute)
-		cfg.MaxShards = 1
-		mcfg := config.DefaultMetadataConfig
-		mcfg.Send = false
-
-		metrics := newQueueManagerMetrics(nil, "", "")
-		m := NewQueueManager(
-			metrics, nil, nil, nil, t.TempDir(), newEWMARate(ewmaWeight, shardUpdateDuration),
-			cfg, mcfg, labels.EmptyLabels(), nil, c, defaultFlushDeadline, newPool(), newHighestTimestampMetric(),
-			nil, true, true, false, remoteapi.WriteV2MessageType, remoteapi.WriteModeNone,
-			record.NewBuffersPool(), false, false,
-		)
-		m.numShards = 1
-		m.shards.start(1)
-		stop := sync.OnceFunc(m.shards.stop)
-		t.Cleanup(stop)
-
-		m.StoreSeries([]record.RefSeries{sCounter, sHist}, 0)
-		m.StoreMetadata(initialMeta)
-
-		require.True(t, m.Append([]record.RefSample{
-			{Ref: sCounter.Ref, ST: 100, T: 1000, V: 1},
-			{Ref: sCounter.Ref, ST: 100, T: 2000, V: 2},
-		}))
-		require.True(t, m.AppendHistograms([]record.RefHistogramSample{
-			{Ref: sHist.Ref, ST: 100, T: 1000, H: nativeHist},
-			{Ref: sHist.Ref, ST: 100, T: 2000, H: nativeHist},
-		}))
-
-		stop()
-
-		require.Equal(t, []prompb.MetricMetadata{
-			{MetricFamilyName: sCounter.Labels.String(), Type: prompb.MetricMetadata_COUNTER, Unit: "requests", Help: "Total HTTP requests."},
-			{MetricFamilyName: sCounter.Labels.String(), Type: prompb.MetricMetadata_COUNTER, Unit: "requests", Help: "Total HTTP requests."},
-		}, c.receivedMetadata[sCounter.Labels.String()])
-		require.Equal(t, []prompb.MetricMetadata{
-			{MetricFamilyName: sHist.Labels.String(), Type: prompb.MetricMetadata_HISTOGRAM, Unit: "seconds", Help: "HTTP request duration."},
-			{MetricFamilyName: sHist.Labels.String(), Type: prompb.MetricMetadata_HISTOGRAM, Unit: "seconds", Help: "HTTP request duration."},
-		}, c.receivedMetadata[sHist.Labels.String()])
-
-		require.Equal(t, 2.0, client_testutil.ToFloat64(metrics.samplesMetadataTotal.WithLabelValues(metadataFieldType)))
-		require.Equal(t, 2.0, client_testutil.ToFloat64(metrics.samplesMetadataTotal.WithLabelValues(metadataFieldUnit)))
-		require.Equal(t, 2.0, client_testutil.ToFloat64(metrics.samplesMetadataTotal.WithLabelValues(metadataFieldHelp)))
-		require.Equal(t, 2.0, client_testutil.ToFloat64(metrics.histogramsMetadataTotal.WithLabelValues(metadataFieldType)))
-		require.Equal(t, 2.0, client_testutil.ToFloat64(metrics.histogramsMetadataTotal.WithLabelValues(metadataFieldUnit)))
-		require.Equal(t, 2.0, client_testutil.ToFloat64(metrics.histogramsMetadataTotal.WithLabelValues(metadataFieldHelp)))
-	})
-
-	t.Run("interval sends help on first point, on metadata change, and periodically", func(t *testing.T) {
-		t.Parallel()
-
-		c := NewTestWriteClient(remoteapi.WriteV2MessageType)
-		cfg := config.DefaultQueueConfig
-		cfg.BatchSendDeadline = model.Duration(time.Minute)
-		cfg.MaxShards = 1
-		mcfg := config.DefaultMetadataConfig
-		mcfg.Send = false
-		mcfg.SendHelpInterval = model.Duration(5 * time.Minute)
-
-		metrics := newQueueManagerMetrics(nil, "", "")
-		m := NewQueueManager(
-			metrics, nil, nil, nil, t.TempDir(), newEWMARate(ewmaWeight, shardUpdateDuration),
-			cfg, mcfg, labels.EmptyLabels(), nil, c, defaultFlushDeadline, newPool(), newHighestTimestampMetric(),
-			nil, true, true, false, remoteapi.WriteV2MessageType, remoteapi.WriteModeStatelessST,
-			record.NewBuffersPool(), false, false,
-		)
-		currTime := time.Unix(1_700_000_000, 0)
-		m.now = func() time.Time { return currTime }
-		m.numShards = 1
-		m.shards.start(1)
-		stop := sync.OnceFunc(m.shards.stop)
-		t.Cleanup(stop)
-
-		m.StoreSeries([]record.RefSeries{sCounter, sHist}, 0)
-		m.StoreMetadata(initialMeta)
-
-		// 1. A sample/histogram dropped by mode validation must not consume the initial Help send.
-		require.True(t, m.Append([]record.RefSample{
-			{Ref: sCounter.Ref, ST: 0, T: 900, V: 1},
-		}))
-		require.True(t, m.AppendHistograms([]record.RefHistogramSample{
-			{Ref: sHist.Ref, ST: 0, T: 900, H: nativeHist},
-		}))
-
-		// 2. First valid points at t0 send Help.
-		require.True(t, m.Append([]record.RefSample{
-			{Ref: sCounter.Ref, ST: 100, T: 1000, V: 1},
-		}))
-		require.True(t, m.AppendHistograms([]record.RefHistogramSample{
-			{Ref: sHist.Ref, ST: 100, T: 1000, H: nativeHist},
-		}))
-
-		// 3. Points within the 5m interval omit Help while preserving Type and Unit.
-		currTime = currTime.Add(time.Minute)
-		require.True(t, m.Append([]record.RefSample{
-			{Ref: sCounter.Ref, ST: 100, T: 2000, V: 2},
-		}))
-		require.True(t, m.AppendFloatHistograms([]record.RefFloatHistogramSample{
-			{Ref: sHist.Ref, ST: 100, T: 2000, FH: nativeFloatHist},
-		}))
-
-		// 4. Storing a new metadata record on sCounter triggers an immediate Help send for sCounter only;
-		// sHist (which has no new WAL metadata record) continues omitting Help until the interval expires.
-		currTime = currTime.Add(time.Minute)
-		m.StoreMetadata([]record.RefMetadata{
-			{
-				Ref:  sCounter.Ref,
-				Type: record.GetMetricType(model.MetricTypeCounter),
-				Unit: "requests",
-				Help: "Updated total HTTP requests.",
+				require.True(t, m.Append([]record.RefSample{
+					{Ref: sCounter.Ref, ST: 100, T: 1000, V: 1},
+					{Ref: sCounter.Ref, ST: 100, T: 2000, V: 2},
+				}))
+				require.True(t, m.AppendHistograms([]record.RefHistogramSample{
+					{Ref: sHist.Ref, ST: 100, T: 1000, H: nativeHist},
+					{Ref: sHist.Ref, ST: 100, T: 2000, H: nativeHist},
+				}))
 			},
+			expectedMetadata: map[string][]prompb.MetricMetadata{
+				sCounter.Labels.String(): {
+					{MetricFamilyName: sCounter.Labels.String(), Type: prompb.MetricMetadata_COUNTER, Unit: "requests", Help: "Total HTTP requests."},
+					{MetricFamilyName: sCounter.Labels.String(), Type: prompb.MetricMetadata_COUNTER, Unit: "requests", Help: "Total HTTP requests."},
+				},
+				sHist.Labels.String(): {
+					{MetricFamilyName: sHist.Labels.String(), Type: prompb.MetricMetadata_HISTOGRAM, Unit: "seconds", Help: "HTTP request duration."},
+					{MetricFamilyName: sHist.Labels.String(), Type: prompb.MetricMetadata_HISTOGRAM, Unit: "seconds", Help: "HTTP request duration."},
+				},
+			},
+			expectedSampleTypes:    2,
+			expectedSampleHelps:    2,
+			expectedHistogramTypes: 2,
+			expectedHistogramHelps: 2,
+		},
+		{
+			name:     "interval sends help on first point, on metadata change, and periodically",
+			interval: model.Duration(5 * time.Minute),
+			mode:     remoteapi.WriteModeStatelessST,
+			run: func(t *testing.T, m *QueueManager) {
+				m.StoreSeries([]record.RefSeries{sCounter, sHist}, 0)
+				m.StoreMetadata(initialMeta)
+
+				// 1. A sample/histogram dropped by mode validation must not consume the initial Help send.
+				require.True(t, m.Append([]record.RefSample{
+					{Ref: sCounter.Ref, ST: 0, T: 900, V: 1},
+				}))
+				require.True(t, m.AppendHistograms([]record.RefHistogramSample{
+					{Ref: sHist.Ref, ST: 0, T: 900, H: nativeHist},
+				}))
+
+				// 2. First valid points at t0 send Help.
+				require.True(t, m.Append([]record.RefSample{
+					{Ref: sCounter.Ref, ST: 100, T: 1000, V: 1},
+				}))
+				require.True(t, m.AppendHistograms([]record.RefHistogramSample{
+					{Ref: sHist.Ref, ST: 100, T: 1000, H: nativeHist},
+				}))
+
+				// 3. Points within the 5m interval omit Help while preserving Type and Unit.
+				time.Sleep(time.Minute)
+				require.True(t, m.Append([]record.RefSample{
+					{Ref: sCounter.Ref, ST: 100, T: 2000, V: 2},
+				}))
+				require.True(t, m.AppendFloatHistograms([]record.RefFloatHistogramSample{
+					{Ref: sHist.Ref, ST: 100, T: 2000, FH: nativeFloatHist},
+				}))
+
+				// 4. Storing a new metadata record on sCounter triggers an immediate Help send for sCounter only;
+				// sHist (which has no new WAL metadata record) continues omitting Help until the interval expires.
+				time.Sleep(time.Minute)
+				m.StoreMetadata([]record.RefMetadata{
+					{
+						Ref:  sCounter.Ref,
+						Type: record.GetMetricType(model.MetricTypeCounter),
+						Unit: "requests",
+						Help: "Updated total HTTP requests.",
+					},
+				})
+				require.True(t, m.Append([]record.RefSample{
+					{Ref: sCounter.Ref, ST: 100, T: 3000, V: 3},
+				}))
+				require.True(t, m.AppendHistograms([]record.RefHistogramSample{
+					{Ref: sHist.Ref, ST: 100, T: 3000, H: nativeHist},
+				}))
+
+				// 5. Once send_help_interval (5m from t0) elapses, all series re-send Help on their next point.
+				time.Sleep(3 * time.Minute)
+				require.True(t, m.Append([]record.RefSample{
+					{Ref: sCounter.Ref, ST: 100, T: 4000, V: 4},
+				}))
+				require.True(t, m.AppendFloatHistograms([]record.RefFloatHistogramSample{
+					{Ref: sHist.Ref, ST: 100, T: 4000, FH: nativeFloatHist},
+				}))
+			},
+			expectedMetadata: map[string][]prompb.MetricMetadata{
+				sCounter.Labels.String(): {
+					{MetricFamilyName: sCounter.Labels.String(), Type: prompb.MetricMetadata_COUNTER, Unit: "requests", Help: "Total HTTP requests."},
+					{MetricFamilyName: sCounter.Labels.String(), Type: prompb.MetricMetadata_COUNTER, Unit: "requests", Help: ""},
+					{MetricFamilyName: sCounter.Labels.String(), Type: prompb.MetricMetadata_COUNTER, Unit: "requests", Help: "Updated total HTTP requests."},
+					{MetricFamilyName: sCounter.Labels.String(), Type: prompb.MetricMetadata_COUNTER, Unit: "requests", Help: "Updated total HTTP requests."},
+				},
+				sHist.Labels.String(): {
+					{MetricFamilyName: sHist.Labels.String(), Type: prompb.MetricMetadata_HISTOGRAM, Unit: "seconds", Help: "HTTP request duration."},
+					{MetricFamilyName: sHist.Labels.String(), Type: prompb.MetricMetadata_HISTOGRAM, Unit: "seconds", Help: ""},
+					{MetricFamilyName: sHist.Labels.String(), Type: prompb.MetricMetadata_HISTOGRAM, Unit: "seconds", Help: ""},
+					{MetricFamilyName: sHist.Labels.String(), Type: prompb.MetricMetadata_HISTOGRAM, Unit: "seconds", Help: "HTTP request duration."},
+				},
+			},
+			expectedSampleTypes:    4,
+			expectedSampleHelps:    3,
+			expectedHistogramTypes: 4,
+			expectedHistogramHelps: 2,
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			synctest.Test(t, func(t *testing.T) {
+				c := NewTestWriteClient(remoteapi.WriteV2MessageType)
+				cfg := config.DefaultQueueConfig
+				cfg.BatchSendDeadline = model.Duration(100 * time.Millisecond)
+				cfg.MinShards = 1
+				cfg.MaxShards = 1
+				mcfg := config.DefaultMetadataConfig
+				mcfg.Send = false
+				mcfg.SendHelpInterval = tc.interval
+
+				metrics := newQueueManagerMetrics(nil, "", "")
+				m := NewQueueManager(
+					metrics, nil, nil, nil, t.TempDir(), newEWMARate(ewmaWeight, shardUpdateDuration),
+					cfg, mcfg, labels.EmptyLabels(), nil, c, defaultFlushDeadline, newPool(), newHighestTimestampMetric(),
+					nil, true, true, false, remoteapi.WriteV2MessageType, tc.mode,
+					record.NewBuffersPool(), false, tc.convertNHCB,
+				)
+				m.Start()
+				stop := sync.OnceFunc(m.Stop)
+				t.Cleanup(stop)
+
+				tc.run(t, m)
+				stop()
+
+				require.Equal(t, tc.expectedMetadata, c.receivedMetadata)
+				require.Equal(t, tc.expectedSampleTypes, client_testutil.ToFloat64(metrics.samplesMetadataTotal.WithLabelValues(metadataFieldType)))
+				require.Equal(t, tc.expectedSampleTypes, client_testutil.ToFloat64(metrics.samplesMetadataTotal.WithLabelValues(metadataFieldUnit)))
+				require.Equal(t, tc.expectedSampleHelps, client_testutil.ToFloat64(metrics.samplesMetadataTotal.WithLabelValues(metadataFieldHelp)))
+				require.Equal(t, tc.expectedHistogramTypes, client_testutil.ToFloat64(metrics.histogramsMetadataTotal.WithLabelValues(metadataFieldType)))
+				require.Equal(t, tc.expectedHistogramTypes, client_testutil.ToFloat64(metrics.histogramsMetadataTotal.WithLabelValues(metadataFieldUnit)))
+				require.Equal(t, tc.expectedHistogramHelps, client_testutil.ToFloat64(metrics.histogramsMetadataTotal.WithLabelValues(metadataFieldHelp)))
+			})
 		})
-		require.True(t, m.Append([]record.RefSample{
-			{Ref: sCounter.Ref, ST: 100, T: 3000, V: 3},
-		}))
-		require.True(t, m.AppendHistograms([]record.RefHistogramSample{
-			{Ref: sHist.Ref, ST: 100, T: 3000, H: nativeHist},
-		}))
-
-		// 5. Once send_help_interval (5m from t0) elapses, all series re-send Help on their next point.
-		currTime = currTime.Add(3 * time.Minute)
-		require.True(t, m.Append([]record.RefSample{
-			{Ref: sCounter.Ref, ST: 100, T: 4000, V: 4},
-		}))
-		require.True(t, m.AppendFloatHistograms([]record.RefFloatHistogramSample{
-			{Ref: sHist.Ref, ST: 100, T: 4000, FH: nativeFloatHist},
-		}))
-
-		stop()
-
-		require.Equal(t, []prompb.MetricMetadata{
-			{MetricFamilyName: sCounter.Labels.String(), Type: prompb.MetricMetadata_COUNTER, Unit: "requests", Help: "Total HTTP requests."},
-			{MetricFamilyName: sCounter.Labels.String(), Type: prompb.MetricMetadata_COUNTER, Unit: "requests", Help: ""},
-			{MetricFamilyName: sCounter.Labels.String(), Type: prompb.MetricMetadata_COUNTER, Unit: "requests", Help: "Updated total HTTP requests."},
-			{MetricFamilyName: sCounter.Labels.String(), Type: prompb.MetricMetadata_COUNTER, Unit: "requests", Help: "Updated total HTTP requests."},
-		}, c.receivedMetadata[sCounter.Labels.String()])
-		require.Equal(t, []prompb.MetricMetadata{
-			{MetricFamilyName: sHist.Labels.String(), Type: prompb.MetricMetadata_HISTOGRAM, Unit: "seconds", Help: "HTTP request duration."},
-			{MetricFamilyName: sHist.Labels.String(), Type: prompb.MetricMetadata_HISTOGRAM, Unit: "seconds", Help: ""},
-			{MetricFamilyName: sHist.Labels.String(), Type: prompb.MetricMetadata_HISTOGRAM, Unit: "seconds", Help: ""},
-			{MetricFamilyName: sHist.Labels.String(), Type: prompb.MetricMetadata_HISTOGRAM, Unit: "seconds", Help: "HTTP request duration."},
-		}, c.receivedMetadata[sHist.Labels.String()])
-
-		require.Equal(t, 4.0, client_testutil.ToFloat64(metrics.samplesMetadataTotal.WithLabelValues(metadataFieldType)))
-		require.Equal(t, 4.0, client_testutil.ToFloat64(metrics.samplesMetadataTotal.WithLabelValues(metadataFieldUnit)))
-		require.Equal(t, 3.0, client_testutil.ToFloat64(metrics.samplesMetadataTotal.WithLabelValues(metadataFieldHelp)))
-		require.Equal(t, 4.0, client_testutil.ToFloat64(metrics.histogramsMetadataTotal.WithLabelValues(metadataFieldType)))
-		require.Equal(t, 4.0, client_testutil.ToFloat64(metrics.histogramsMetadataTotal.WithLabelValues(metadataFieldUnit)))
-		require.Equal(t, 2.0, client_testutil.ToFloat64(metrics.histogramsMetadataTotal.WithLabelValues(metadataFieldHelp)))
-	})
+	}
 }
