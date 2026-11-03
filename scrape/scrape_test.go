@@ -2001,6 +2001,110 @@ untyped_unitless_metric{__type__="gauge",__unit__="bytes",__help__="spoof"} 6
 			require.True(t, ok)
 			require.Equal(t, model.MetricTypeCounter, md.Type)
 			require.Empty(t, md.Help)
+
+			// Verify relabel rules can read (e.g. truncate) and clear (__help__/__unit__ = "") metadata
+			// from an untyped pre-relabel family when setting __type__ makes the series match that family,
+			// while leaving suffixed series that do not match the family untyped and metadata-free.
+			appUntypedFamily := teststorage.NewAppendable()
+			rcUntypedFamily := []*relabel.Config{
+				{
+					SourceLabels:         model.LabelNames{"__name__", "__type__"},
+					Separator:            ";",
+					Regex:                relabel.MustNewRegexp(".*_total;"),
+					TargetLabel:          "__type__",
+					Replacement:          "counter",
+					Action:               relabel.Replace,
+					NameValidationScheme: model.UTF8Validation,
+				},
+				{
+					SourceLabels:         model.LabelNames{"__name__", "__help__"},
+					Separator:            ";",
+					Regex:                relabel.MustNewRegexp("trunc_seconds_total;(.{9}).*"),
+					TargetLabel:          "__help__",
+					Replacement:          "$1",
+					Action:               relabel.Replace,
+					NameValidationScheme: model.UTF8Validation,
+				},
+				{
+					SourceLabels:         model.LabelNames{"__name__"},
+					Separator:            ";",
+					Regex:                relabel.MustNewRegexp("cleared_bytes_total"),
+					TargetLabel:          "__help__",
+					Replacement:          "",
+					Action:               relabel.Replace,
+					NameValidationScheme: model.UTF8Validation,
+				},
+				{
+					SourceLabels:         model.LabelNames{"__name__"},
+					Separator:            ";",
+					Regex:                relabel.MustNewRegexp("cleared_bytes_total"),
+					TargetLabel:          "__unit__",
+					Replacement:          "",
+					Action:               relabel.Replace,
+					NameValidationScheme: model.UTF8Validation,
+				},
+				{
+					SourceLabels:         model.LabelNames{"__name__", "__unit__"},
+					Separator:            ";",
+					Regex:                relabel.MustNewRegexp("dropped_seconds_total;seconds"),
+					Replacement:          "$1",
+					Action:               relabel.Drop,
+					NameValidationScheme: model.UTF8Validation,
+				},
+			}
+			slUntypedFamily, _ := newTestScrapeLoop(t, withAppendable(appUntypedFamily, true), func(sl *scrapeLoop) {
+				sl.enableTypeAndUnitLabels = enableTypeAndUnitLabels
+				sl.mrc = rcUntypedFamily
+				sl.sampleMutatorWithMetadata = func(l labels.Labels, m metadata.Metadata) (labels.Labels, metadata.Metadata) {
+					return mutateSampleLabelsAndMetadata(l, m, target, false, enableTypeAndUnitLabels, rcUntypedFamily)
+				}
+			})
+			untypedPayload := []byte(`# HELP trunc_seconds Very long help string
+# UNIT trunc_seconds seconds
+trunc_seconds_total 10
+# HELP cleared_bytes Help to be cleared
+# UNIT cleared_bytes bytes
+cleared_bytes_total 20
+# HELP dropped_seconds Should be dropped by unit
+# UNIT dropped_seconds seconds
+dropped_seconds_total 30
+# HELP unrelated_seconds Unrelated help
+# UNIT unrelated_seconds seconds
+unrelated_seconds 1
+unrelated_seconds_bucket 2
+# EOF
+`)
+			app = slUntypedFamily.appender()
+			_, _, _, err = app.append(untypedPayload, "application/openmetrics-text", now)
+			require.NoError(t, err)
+			require.NoError(t, app.Commit())
+
+			md, ok = slUntypedFamily.cache.GetMetadata("trunc_seconds")
+			require.True(t, ok)
+			require.Equal(t, MetricMetadata{
+				MetricFamily: "trunc_seconds",
+				Type:         model.MetricTypeCounter,
+				Unit:         "seconds",
+				Help:         "Very long",
+			}, md)
+
+			md, ok = slUntypedFamily.cache.GetMetadata("cleared_bytes")
+			require.True(t, ok)
+			require.Equal(t, MetricMetadata{
+				MetricFamily: "cleared_bytes",
+				Type:         model.MetricTypeCounter,
+			}, md)
+			if enableTypeAndUnitLabels {
+				require.Equal(t, "seconds", appUntypedFamily.ResultSamples()[0].L.Get(model.MetricUnitLabel))
+				require.Empty(t, appUntypedFamily.ResultSamples()[1].L.Get(model.MetricUnitLabel))
+				require.Empty(t, appUntypedFamily.ResultSamples()[3].L.Get(model.MetricUnitLabel))
+			}
+
+			_, ok = slUntypedFamily.cache.GetMetadata("dropped_seconds")
+			require.False(t, ok)
+
+			_, ok = slUntypedFamily.cache.GetMetadata("unrelated_seconds_bucket")
+			require.False(t, ok)
 		})
 	}
 }
