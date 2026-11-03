@@ -509,6 +509,7 @@ func TestWriteStorageApplyConfig_ValidateRemoteWriteFeatures(t *testing.T) {
 	for _, tc := range []struct {
 		name                    string
 		mode                    remoteapi.WriteMode
+		sendHelpInterval        model.Duration
 		enableTypeAndUnitLabels bool
 		enableMetadataWAL       bool
 		enableSTStorage         bool
@@ -563,6 +564,26 @@ func TestWriteStorageApplyConfig_ValidateRemoteWriteFeatures(t *testing.T) {
 			enableMetadataWAL:       true,
 			enableSTStorage:         true,
 		},
+		{
+			name:                    "send_help_interval missing metadata-wal-records",
+			sendHelpInterval:        model.Duration(5 * time.Minute),
+			enableTypeAndUnitLabels: false,
+			enableMetadataWAL:       false,
+			expectedErr:             "remote_write send_help_interval requires --enable-feature=metadata-wal-records",
+		},
+		{
+			name:                    "send_help_interval with only type-and-unit-labels",
+			sendHelpInterval:        model.Duration(5 * time.Minute),
+			enableTypeAndUnitLabels: true,
+			enableMetadataWAL:       false,
+			expectedErr:             "remote_write send_help_interval requires --enable-feature=metadata-wal-records",
+		},
+		{
+			name:                    "send_help_interval with metadata-wal-records",
+			sendHelpInterval:        model.Duration(5 * time.Minute),
+			enableTypeAndUnitLabels: false,
+			enableMetadataWAL:       true,
+		},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			dir := t.TempDir()
@@ -590,6 +611,7 @@ func TestWriteStorageApplyConfig_ValidateRemoteWriteFeatures(t *testing.T) {
 			rwCfg.ProtobufMessage = remoteapi.WriteV2MessageType
 			rwCfg.SendNativeHistograms = true
 			rwCfg.Mode = tc.mode
+			rwCfg.SendHelpInterval = tc.sendHelpInterval
 
 			err := s.ApplyConfig(&config.Config{
 				GlobalConfig:       config.DefaultGlobalConfig,
