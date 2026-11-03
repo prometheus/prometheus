@@ -212,6 +212,21 @@ func (s *sendLoop) loop() {
 }
 
 func (s *sendLoop) sendAll(alerts []*Alert) bool {
+	ctx, span := otel.Tracer("").Start(context.Background(), "Alert Send Batch", trace.WithSpanKind(trace.SpanKindClient))
+	span.SetAttributes(
+		attribute.String("alertmanager_url", s.alertmanagerURL),
+		attribute.Int("alert_count", len(alerts)),
+		attribute.String("api_version", string(s.cfg.APIVersion)),
+	)
+	var err error
+	defer func() {
+		if err != nil {
+			span.RecordError(err)
+			span.SetStatus(codes.Error, err.Error())
+		}
+		span.End()
+	}()
+
 	if len(alerts) == 0 {
 		return true
 	}
@@ -219,7 +234,6 @@ func (s *sendLoop) sendAll(alerts []*Alert) bool {
 	begin := time.Now()
 
 	var payload []byte
-	var err error
 	switch s.cfg.APIVersion {
 	case config.AlertmanagerAPIVersionV2:
 		openAPIAlerts := alertsToOpenAPIAlerts(alerts)
@@ -230,6 +244,7 @@ func (s *sendLoop) sendAll(alerts []*Alert) bool {
 		}
 
 	default:
+		err = fmt.Errorf("invalid Alertmanager API version %q, expected one of %v", s.cfg.APIVersion, config.SupportedAlertmanagerAPIVersions)
 		s.logger.Error(
 			fmt.Sprintf("Invalid Alertmanager API version '%v', expected one of '%v'", s.cfg.APIVersion, config.SupportedAlertmanagerAPIVersions),
 			"err", err,
@@ -237,27 +252,15 @@ func (s *sendLoop) sendAll(alerts []*Alert) bool {
 		return false
 	}
 
-	ctx, cancel := context.WithTimeout(context.Background(), time.Duration(s.cfg.Timeout))
+	ctx, cancel := context.WithTimeout(ctx, time.Duration(s.cfg.Timeout))
 	defer cancel()
 
-	{
-		ctx, span := otel.Tracer("").Start(ctx, "Alert Send Batch", trace.WithSpanKind(trace.SpanKindClient))
-		defer span.End()
+	span.SetAttributes(attribute.Int("batch_size_bytes", len(payload)))
 
-		span.SetAttributes(
-			attribute.String("alertmanager_url", s.alertmanagerURL),
-			attribute.Int("alert_count", len(alerts)),
-			attribute.Int("batch_size_bytes", len(payload)),
-			attribute.String("api_version", string(s.cfg.APIVersion)),
-		)
-
-		if err := s.sendOne(ctx, s.client, s.alertmanagerURL, payload); err != nil {
-			span.RecordError(err)
-			span.SetStatus(codes.Error, err.Error())
-			s.logger.Error("Error sending alerts", "count", len(alerts), "err", err)
-			s.metrics.errors.WithLabelValues(s.alertmanagerURL).Add(float64(len(alerts)))
-			return false
-		}
+	if err = s.sendOne(ctx, s.client, s.alertmanagerURL, payload); err != nil {
+		s.logger.Error("Error sending alerts", "count", len(alerts), "err", err)
+		s.metrics.errors.WithLabelValues(s.alertmanagerURL).Add(float64(len(alerts)))
+		return false
 	}
 
 	durationSeconds := time.Since(begin).Seconds()
@@ -283,11 +286,6 @@ func (s *sendLoop) sendOne(ctx context.Context, c *http.Client, url string, b []
 		io.Copy(io.Discard, resp.Body)
 		resp.Body.Close()
 	}()
-
-	// Record HTTP status code in the span.
-	if span := trace.SpanFromContext(ctx); span.IsRecording() {
-		span.SetAttributes(attribute.Int("http.status_code", resp.StatusCode))
-	}
 
 	// Any HTTP status 2xx is OK.
 	if resp.StatusCode/100 != 2 {
