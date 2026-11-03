@@ -720,6 +720,20 @@ func setParsedUnit(mfName, unit []byte, parsedMFName, parsedUnit *[]byte, parsed
 	parsedMeta.Unit = yoloString(*parsedUnit)
 }
 
+// hasTypeSuffixForFamily reports whether mName equals mfStr followed by a type-specific
+// series suffix (_total, _bucket, _sum, _count, _gsum, _gcount, or _info).
+func hasTypeSuffixForFamily(mName, mfStr string) bool {
+	if mfStr == "" || !strings.HasPrefix(mName, mfStr) {
+		return false
+	}
+	switch mName[len(mfStr):] {
+	case "_total", "_bucket", "_sum", "_count", "_gsum", "_gcount", "_info":
+		return true
+	default:
+		return false
+	}
+}
+
 func (sl *scrapeLoop) mutateSample(
 	lset labels.Labels,
 	origMeta unique.Handle[metadata.Metadata],
@@ -737,24 +751,27 @@ func (sl *scrapeLoop) mutateSample(
 	}
 
 	if sl.sampleMutatorWithMetadata != nil {
-		lset, sampleMeta = sl.sampleMutatorWithMetadata(lset, sampleMeta)
 		// A series like foo_total does not match a pre-relabel family named foo when the family
-		// has unknown type (since _total suffix stripping only applies to counters). If relabeling
-		// sets the series type (e.g. to counter) such that it now belongs to origMFStr, inherit
-		// any help or unit from origMD that relabeling did not explicitly set.
-		if !hasFamilyMeta && !metadata.IsZeroHandle(origMeta) && origMD.Type == model.MetricTypeUnknown && isSeriesPartOfFamilyStr(preName, origMFStr, sampleMeta.Type) {
-			hasFamilyMeta = true
-			if sampleMeta.Help == "" {
-				sampleMeta.Help = origMD.Help
-			}
-			if sampleMeta.Unit == "" && origMD.Unit != "" {
-				sampleMeta.Unit = origMD.Unit
-				if sl.enableTypeAndUnitLabels {
-					lb := labels.NewBuilder(lset)
-					lb.Set(model.MetricUnitLabel, sampleMeta.Unit)
-					lset = lb.Labels()
+		// has unknown type (since _total suffix stripping only applies to counters). Run relabeling
+		// with origMD's help and unit first so rules can read, transform, or clear them if
+		// relabeling sets a type that makes the series belong to origMFStr; otherwise fall back to
+		// empty metadata so unrelated series do not inherit origMD.
+		if !hasFamilyMeta && !metadata.IsZeroHandle(origMeta) && origMD.Type == model.MetricTypeUnknown && hasTypeSuffixForFamily(preName, origMFStr) {
+			candLset, candMeta := sl.sampleMutatorWithMetadata(lset, origMD)
+			switch {
+			case !candLset.IsEmpty() && isSeriesPartOfFamilyStr(preName, origMFStr, candMeta.Type):
+				hasFamilyMeta = true
+				lset, sampleMeta = candLset, candMeta
+			case origMD.Help == "" && origMD.Unit == "":
+				lset, sampleMeta = candLset, candMeta
+			default:
+				lset, sampleMeta = sl.sampleMutatorWithMetadata(lset, metadata.Metadata{Type: model.MetricTypeUnknown})
+				if candLset.IsEmpty() && !lset.IsEmpty() && isSeriesPartOfFamilyStr(preName, origMFStr, sampleMeta.Type) {
+					lset, sampleMeta = candLset, candMeta
 				}
 			}
+		} else {
+			lset, sampleMeta = sl.sampleMutatorWithMetadata(lset, sampleMeta)
 		}
 	} else if sl.sampleMutator != nil {
 		lset = sl.sampleMutator(lset)
