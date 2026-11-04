@@ -1885,7 +1885,7 @@ func TestCalculateDesiredShardsDetail(t *testing.T) {
 			forceEMWA(m.dataOut, tc.dataOut*int64(shardUpdateDuration/time.Second))
 			forceEMWA(m.dataDropped, tc.dataDropped*int64(shardUpdateDuration/time.Second))
 			forceEMWA(m.dataOutDuration, int64(tc.dataOutDuration*float64(shardUpdateDuration)))
-			m.highestRecvTimestamp.value = tc.backlog // Not Set() because it can only increase value.
+			m.highestRecvTimestamp.value.Store(tc.backlog) // Not Set() because it can only increase value.
 
 			require.Equal(t, tc.expectedShards, m.calculateDesiredShards())
 		})

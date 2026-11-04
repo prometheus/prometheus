@@ -17,25 +17,29 @@ import (
 	"sync"
 
 	"github.com/prometheus/client_golang/prometheus"
+	"go.uber.org/atomic"
 )
 
 type maxTimestamp struct {
 	mtx   sync.Mutex
-	value float64
+	value atomic.Float64
 	prometheus.Gauge
 }
 
 func (m *maxTimestamp) Set(value float64) {
+	// Fast path: timestamps are truncated to whole seconds, so the vast majority
+	// of calls do not advance the maximum and can return without locking.
+	if value <= m.value.Load() {
+		return
+	}
 	m.mtx.Lock()
-	defer m.mtx.Unlock()
-	if value > m.value {
-		m.value = value
+	if value > m.value.Load() {
+		m.value.Store(value)
 		m.Gauge.Set(value)
 	}
+	m.mtx.Unlock()
 }
 
 func (m *maxTimestamp) Get() float64 {
-	m.mtx.Lock()
-	defer m.mtx.Unlock()
-	return m.value
+	return m.value.Load()
 }

@@ -112,6 +112,12 @@ type queueManagerMetrics struct {
 
 	samplesMetadataTotal    *prometheus.CounterVec
 	histogramsMetadataTotal *prometheus.CounterVec
+	samplesMetadataType     prometheus.Counter
+	samplesMetadataUnit     prometheus.Counter
+	samplesMetadataHelp     prometheus.Counter
+	histogramsMetadataType  prometheus.Counter
+	histogramsMetadataUnit  prometheus.Counter
+	histogramsMetadataHelp  prometheus.Counter
 }
 
 func newQueueManagerMetrics(r prometheus.Registerer, rn, e string) *queueManagerMetrics {
@@ -158,10 +164,12 @@ func newQueueManagerMetrics(r prometheus.Registerer, rn, e string) *queueManager
 		Help:        "Total number of histograms sent to remote storage using Remote Write 2.0 with the specified metadata field set.",
 		ConstLabels: constLabels,
 	}, []string{"field"})
-	for _, field := range []string{metadataFieldType, metadataFieldUnit, metadataFieldHelp} {
-		m.samplesMetadataTotal.WithLabelValues(field)
-		m.histogramsMetadataTotal.WithLabelValues(field)
-	}
+	m.samplesMetadataType = m.samplesMetadataTotal.WithLabelValues(metadataFieldType)
+	m.samplesMetadataUnit = m.samplesMetadataTotal.WithLabelValues(metadataFieldUnit)
+	m.samplesMetadataHelp = m.samplesMetadataTotal.WithLabelValues(metadataFieldHelp)
+	m.histogramsMetadataType = m.histogramsMetadataTotal.WithLabelValues(metadataFieldType)
+	m.histogramsMetadataUnit = m.histogramsMetadataTotal.WithLabelValues(metadataFieldUnit)
+	m.histogramsMetadataHelp = m.histogramsMetadataTotal.WithLabelValues(metadataFieldHelp)
 	m.metadataTotal = prometheus.NewCounter(prometheus.CounterOpts{
 		Namespace:   namespace,
 		Subsystem:   subsystem,
@@ -1866,7 +1874,7 @@ type timeSeries struct {
 	sType seriesType
 }
 
-type seriesType int
+type seriesType uint8
 
 const (
 	tSample seriesType = iota
@@ -1937,10 +1945,10 @@ func (q *queue) Batch() []timeSeries {
 // ReturnForReuse adds the batch buffer back to the internal pool.
 func (q *queue) ReturnForReuse(batch []timeSeries) {
 	q.poolMtx.Lock()
-	defer q.poolMtx.Unlock()
 	if len(q.batchPool) < cap(q.batchPool) {
 		q.batchPool = append(q.batchPool, batch[:0])
 	}
+	q.poolMtx.Unlock()
 }
 
 // FlushAndShutdown stops the queue and flushes any samples. No appends can be
@@ -1985,13 +1993,14 @@ func (q *queue) tryEnqueueingBatch(done <-chan struct{}) bool {
 
 func (q *queue) newBatch(capacity int) []timeSeries {
 	q.poolMtx.Lock()
-	defer q.poolMtx.Unlock()
 	batches := len(q.batchPool)
 	if batches > 0 {
 		batch := q.batchPool[batches-1]
 		q.batchPool = q.batchPool[:batches-1]
+		q.poolMtx.Unlock()
 		return batch
 	}
+	q.poolMtx.Unlock()
 	return make([]timeSeries, 0, capacity)
 }
 
@@ -2003,16 +2012,18 @@ func (s *shards) runShard(ctx context.Context, shardID int, queue *queue) {
 	}()
 
 	shardNum := strconv.Itoa(shardID)
-	symbolTable := writev2.NewSymbolTable()
 
 	// Send batches of at most MaxSamplesPerSend samples to the remote storage.
 	// If we have fewer samples than that, flush them out after a deadline anyways.
 	var (
 		maxCount = s.qm.cfg.MaxSamplesPerSend
 
-		pBuf    = proto.NewBuffer(nil)
-		pBufRaw []byte
-		encBuf  = compression.NewSyncEncodeBuffer()
+		pBuf          *proto.Buffer
+		pBufRaw       []byte
+		encBuf        = compression.NewSyncEncodeBuffer()
+		symbolTable   writev2.SymbolsTable
+		pendingData   []prompb.TimeSeries
+		pendingDataV2 []writev2.TimeSeries
 	)
 	// TODO(@tpaschalis) Should we also raise the max if we have WAL metadata?
 	if s.qm.sendExemplars {
@@ -2021,16 +2032,28 @@ func (s *shards) runShard(ctx context.Context, shardID int, queue *queue) {
 
 	// TODO: Dry all of this, we should make an interface/generic for the timeseries type.
 	batchQueue := queue.Chan()
-	pendingData := make([]prompb.TimeSeries, maxCount)
-	for i := range pendingData {
-		pendingData[i].Samples = []prompb.Sample{{}}
+	switch s.qm.protoMsg {
+	case remoteapi.WriteV1MessageType:
+		pBuf = proto.NewBuffer(nil)
+		pendingData = make([]prompb.TimeSeries, maxCount)
+		samplesBacking := make([]prompb.Sample, maxCount)
+		var exemplarsBacking []prompb.Exemplar
 		if s.qm.sendExemplars {
-			pendingData[i].Exemplars = []prompb.Exemplar{{}}
+			exemplarsBacking = make([]prompb.Exemplar, maxCount)
 		}
-	}
-	pendingDataV2 := make([]writev2.TimeSeries, maxCount)
-	for i := range pendingDataV2 {
-		pendingDataV2[i].Samples = []writev2.Sample{{}}
+		for i := range pendingData {
+			pendingData[i].Samples = samplesBacking[i : i : i+1]
+			if s.qm.sendExemplars {
+				pendingData[i].Exemplars = exemplarsBacking[i : i : i+1]
+			}
+		}
+	case remoteapi.WriteV2MessageType:
+		symbolTable = writev2.NewSymbolTable()
+		pendingDataV2 = make([]writev2.TimeSeries, maxCount)
+		samplesBacking := make([]writev2.Sample, maxCount)
+		for i := range pendingDataV2 {
+			pendingDataV2[i].Samples = samplesBacking[i : i : i+1]
+		}
 	}
 
 	timer := time.NewTimer(time.Duration(s.qm.cfg.BatchSendDeadline))
@@ -2794,12 +2817,12 @@ func (b *batchMetricsUpdater) recordBatchAttempt(sc sendBatchContext) {
 }
 
 func (b *batchMetricsUpdater) recordV2WithMetadataAttempt(counts v2WithMetadataCounts) {
-	b.metrics.samplesMetadataTotal.WithLabelValues(metadataFieldType).Add(float64(counts.samples.typ))
-	b.metrics.samplesMetadataTotal.WithLabelValues(metadataFieldUnit).Add(float64(counts.samples.unit))
-	b.metrics.samplesMetadataTotal.WithLabelValues(metadataFieldHelp).Add(float64(counts.samples.help))
-	b.metrics.histogramsMetadataTotal.WithLabelValues(metadataFieldType).Add(float64(counts.histograms.typ))
-	b.metrics.histogramsMetadataTotal.WithLabelValues(metadataFieldUnit).Add(float64(counts.histograms.unit))
-	b.metrics.histogramsMetadataTotal.WithLabelValues(metadataFieldHelp).Add(float64(counts.histograms.help))
+	b.metrics.samplesMetadataType.Add(float64(counts.samples.typ))
+	b.metrics.samplesMetadataUnit.Add(float64(counts.samples.unit))
+	b.metrics.samplesMetadataHelp.Add(float64(counts.samples.help))
+	b.metrics.histogramsMetadataType.Add(float64(counts.histograms.typ))
+	b.metrics.histogramsMetadataUnit.Add(float64(counts.histograms.unit))
+	b.metrics.histogramsMetadataHelp.Add(float64(counts.histograms.help))
 }
 
 // recordLatency records the observed send duration for a batch attempt.
