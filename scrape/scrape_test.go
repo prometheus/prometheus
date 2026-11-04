@@ -3894,6 +3894,9 @@ func TestScrapeLoopAppendLabelsFromStorage(t *testing.T) {
 								testutil.RequireEqual(t, metricA, ce.lset)
 								name, storageName := ce.lset.Get(model.MetricNameLabel), storageLabels.Get(model.MetricNameLabel)
 								require.Equal(t, tc.shared, unsafe.StringData(name) == unsafe.StringData(storageName))
+								if appV2 && hasMRC {
+									require.Equal(t, tc.shared, unsafe.StringData(sl.cache.seriesMeta[ce].mfName) == unsafe.StringData(storageName))
+								}
 							})
 						}
 					})

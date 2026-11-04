@@ -337,14 +337,18 @@ loop:
 					break loop
 				}
 
-				if sampleMFName != "" && (sampleMFName != lastSetMFName || !sampleMeta.Equals(lastSetMeta)) {
-					sl.cache.setMetadata(sampleMFName, sampleMeta)
-					lastSetMFName = sampleMFName
-					lastSetMeta = sampleMeta
-				}
 				if seriesCached {
 					if ce.lset.Hash() == lset.Hash() && labels.Equal(ce.lset, lset) {
 						ref = ce.ref
+						lset = ce.lset
+						if name := lset.Get(model.MetricNameLabel); strings.HasPrefix(name, sampleMFName) {
+							sampleMFName = name[:len(sampleMFName)]
+						}
+						if sampleMFName != "" && (sampleMFName != lastSetMFName || !sampleMeta.Equals(lastSetMeta)) {
+							sl.cache.setMetadata(sampleMFName, sampleMeta)
+							lastSetMFName = sampleMFName
+							lastSetMeta = sampleMeta
+						}
 						sl.cache.setSeriesMeta(ce, origMeta, sampleMeta, origMFName, sampleMFName)
 					} else {
 						sl.cache.deleteSeries(met, ce)
@@ -355,11 +359,23 @@ loop:
 			}
 		}
 
-		if !seriesCached && getRef != nil {
-			// Parsers and relabeling build new labels on every call, so the next
-			// iteration does not modify the storage's labels held in lset.
-			if r, l := getRef.GetRef(lset, lset.Hash()); r != 0 {
-				ref, lset = r, l
+		if !seriesCached {
+			if getRef != nil {
+				// Parsers and relabeling build new labels on every call, so the next
+				// iteration does not modify the storage's labels held in lset.
+				if r, l := getRef.GetRef(lset, lset.Hash()); r != 0 {
+					ref, lset = r, l
+					if hasMRC {
+						if name := lset.Get(model.MetricNameLabel); strings.HasPrefix(name, sampleMFName) {
+							sampleMFName = name[:len(sampleMFName)]
+						}
+					}
+				}
+			}
+			if hasMRC && sampleMFName != "" && (sampleMFName != lastSetMFName || !sampleMeta.Equals(lastSetMeta)) {
+				sl.cache.setMetadata(sampleMFName, sampleMeta)
+				lastSetMFName = sampleMFName
+				lastSetMeta = sampleMeta
 			}
 		}
 
