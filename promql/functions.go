@@ -2027,11 +2027,12 @@ func funcQuantileOverTime(vectorVals []Vector, matrixVal Matrix, args parser.Exp
 	if len(el.Histograms) > 0 {
 		annos.Add(annotations.NewHistogramIgnoredInMixedRangeInfo(getMetricName(el.Metric), args[0].PositionRange()))
 	}
-	values := make(vectorByValueHeap, 0, len(el.Floats))
+	// Preserve the input sample order when quantile sorts its working slice.
+	enh.quantileValues = enh.quantileValues[:0]
 	for _, f := range el.Floats {
-		values = append(values, Sample{F: f.F})
+		enh.quantileValues = append(enh.quantileValues, Sample{F: f.F})
 	}
-	return append(enh.Out, Sample{F: quantile(q, values)}), annos
+	return append(enh.Out, Sample{F: quantile(q, enh.quantileValues)}), annos
 }
 
 func varianceOverTime(matrixVal Matrix, args parser.Expressions, enh *EvalNodeHelper, varianceToResult func(float64) float64) (Vector, annotations.Annotations) {

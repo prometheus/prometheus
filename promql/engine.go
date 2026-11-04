@@ -1813,6 +1813,8 @@ type EvalNodeHelper struct {
 	// funcHistogramQuantiles for histograms.
 	quantileStrs                  map[float64]string
 	signatureToLabelsWithQuantile map[string]map[float64]labels.Labels
+	// Scratch space for funcQuantileOverTime, reused across series and steps.
+	quantileValues vectorByValueHeap
 
 	lb           *labels.Builder
 	lblBuf       []byte
