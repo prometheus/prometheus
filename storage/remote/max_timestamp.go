@@ -34,8 +34,8 @@ func (m *maxTimestamp) Set(value float64) {
 	}
 	m.mtx.Lock()
 	if value > m.value.Load() {
-		m.value.Store(value)
 		m.Gauge.Set(value)
+		m.value.Store(value)
 	}
 	m.mtx.Unlock()
 }
