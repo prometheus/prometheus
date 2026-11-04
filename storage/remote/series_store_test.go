@@ -123,14 +123,67 @@ func TestSeriesStore_DenseSparseAndLifecycle(t *testing.T) {
 	}
 	store.updateSeriesSegment(promoted, 2)
 
-	deleted := store.reset(2, true)
-	// Deleted should contain the unpromoted boundaryRefs + densePreMetaDrop, but NOT denseMetaOnly (no segment).
-	expectedDeleted := len(boundaryRefs) - len(promoted) + 1
-	require.Len(t, deleted, expectedDeleted)
+	store.reset(2)
+	// Unpromoted boundaryRefs + densePreMetaDrop are evicted; denseMetaOnly (no segment) remains.
+	for i, ref := range boundaryRefs {
+		if i%2 == 0 {
+			require.Equal(t, seriesStateActive, store.lookup(ref).state, "promoted ref=%d should remain active", ref)
+		} else {
+			require.Equal(t, seriesStateUnknown, store.lookup(ref).state, "unpromoted ref=%d should be evicted", ref)
+		}
+	}
+	require.Equal(t, seriesStateUnknown, store.lookup(densePreMetaDrop).state)
 	require.Equal(t, len(promoted), store.activeLen())
 	require.Equal(t, seriesStateMetadataOnly, store.lookup(denseMetaOnly).state)
 
+	// Lower minSegment on a promoted dense page entry (seg=1 < p.minSegment=2) and verify reset(2) evicts it.
+	store.updateSeriesSegment([]record.RefSeries{{Ref: boundaryRefs[0]}}, 1)
+	store.reset(2)
+	require.Equal(t, seriesStateUnknown, store.lookup(boundaryRefs[0]).state)
+	require.Equal(t, len(promoted)-1, store.activeLen())
+
 	// Resetting at segment 3 removes the remaining promoted series.
-	store.reset(3, false)
+	store.reset(3)
 	require.Equal(t, 0, store.activeLen())
+
+	// Exercise sparse-to-dense page migration and interior nil page re-allocation on a fresh stripe.
+	const (
+		stripe1Base                      = chunks.HeadSeriesRef(seriesPageSize) // stIdx = 1, pIdx = 0, slot = 0.
+		pageStride                       = chunks.HeadSeriesRef(seriesPageSize * numSeriesStripes)
+		gapPageIdx                       = maxDensePageGap + 1
+		gapRefSlot0                      = stripe1Base + gapPageIdx*pageStride     // stIdx = 1, pIdx = 65, slot = 0.
+		gapRefSlot1                      = stripe1Base + gapPageIdx*pageStride + 1 // stIdx = 1, pIdx = 65, slot = 1.
+		page1Ref    chunks.HeadSeriesRef = stripe1Base + pageStride                // stIdx = 1, pIdx = 1, slot = 0.
+	)
+	// Stripe 1 currently has len(pages) == 0 (its pIdx=0 entry was cleared by reset(3)),
+	// so gapRefSlot0 (pIdx = 65 > maxDensePageGap) is stored in stripe.sparse.
+	store.storeSeries([]record.RefSeries{
+		{Ref: gapRefSlot0, Labels: labels.FromStrings("__name__", "sparse_first")},
+	}, 5, nil, nil)
+	require.NotNil(t, store.stripes[1].sparse)
+	require.Equal(t, seriesStateActive, store.lookup(gapRefSlot0).state)
+
+	// Allocate pIdx = 1 on stripe 1 (advancing len(pages) to 2, with pages[0] == nil),
+	// then write gapRefSlot1 on pIdx = 65 (now within 2 + maxDensePageGap = 66).
+	// Allocating pages[65] must migrate gapRefSlot0 out of sparse so both slots remain visible.
+	store.storeSeries([]record.RefSeries{
+		{Ref: page1Ref, Labels: labels.FromStrings("__name__", "page_one")},
+		{Ref: gapRefSlot1, Labels: labels.FromStrings("__name__", "dense_second")},
+	}, 5, nil, nil)
+	require.Nil(t, store.stripes[1].sparse, "sparse entry on pIdx=65 must migrate into newly allocated dense page")
+	require.Equal(t, "sparse_first", store.lookup(gapRefSlot0).labels.Get("__name__"))
+	require.Equal(t, "dense_second", store.lookup(gapRefSlot1).labels.Get("__name__"))
+
+	var migDst [2]seriesEntry
+	store.lookupSamples([]record.RefSample{{Ref: gapRefSlot0}, {Ref: gapRefSlot1}}, migDst[:])
+	require.Equal(t, "sparse_first", migDst[0].labels.Get("__name__"))
+	require.Equal(t, "dense_second", migDst[1].labels.Get("__name__"))
+
+	// Re-allocate interior nil page (stripe 1, pIdx = 0 while len(pages) > 0) and verify noTransform keeps empty labels active.
+	require.Nil(t, store.stripes[1].pages[0])
+	store.storeSeries([]record.RefSeries{
+		{Ref: stripe1Base, Labels: labels.EmptyLabels()},
+	}, 5, nil, nil)
+	require.NotNil(t, store.stripes[1].pages[0])
+	require.Equal(t, seriesStateActive, store.lookup(stripe1Base).state)
 }

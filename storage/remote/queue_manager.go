@@ -1172,9 +1172,9 @@ func (t *QueueManager) convertAndEnqueueNHCB(ref chunks.HeadSeriesRef, st, ts in
 		}
 	}
 	if err == nil {
-		if isStale {
+		if isStale || t.series.lookup(ref).state != seriesStateActive {
 			if !sameBounds {
-				// A stale marker needed the new layout only for its labels.
+				// A stale marker (or concurrently reset series) needed the new layout only for its labels.
 				t.releaseNHCBLayout(layout)
 			}
 			if wasActive {
@@ -1239,38 +1239,25 @@ outer:
 		isNHCB := h.H != nil && h.H.Schema == histogram.CustomBucketsSchema
 		isStale := h.H != nil && value.IsStaleNaN(h.H.Sum)
 		var isTrackedNHCB bool
-		var nhcbLocked bool
-		if t.convertNHCBToClassic && (isNHCB || t.activeNHCBSeries.Load() > 0) {
+		if t.convertNHCBToClassic && !isNHCB && t.activeNHCBSeries.Load() > 0 {
 			t.nhcbMtx.Lock()
-			nhcbLocked = true
 			_, isTrackedNHCB = t.nhcbSeriesBounds[h.Ref]
+			t.nhcbMtx.Unlock()
 		}
 		convertNHCB := t.convertNHCBToClassic && (isNHCB || (isStale && isTrackedNHCB))
 		transition := t.convertNHCBToClassic && isTrackedNHCB && !isNHCB && !isStale
 		if !t.sendNativeHistograms && !convertNHCB && !transition {
-			if nhcbLocked {
-				t.nhcbMtx.Unlock()
-			}
 			continue
 		}
 		if isSampleOld(currentTime, time.Duration(t.cfg.SampleAgeLimit), h.T) {
-			if nhcbLocked {
-				t.nhcbMtx.Unlock()
-			}
 			t.metrics.droppedHistogramsTotal.WithLabelValues(reasonTooOld).Inc()
 			continue
 		}
 		if !t.convertNHCBToClassic && t.protoMsg == remoteapi.WriteV1MessageType && isNHCB {
-			if nhcbLocked {
-				t.nhcbMtx.Unlock()
-			}
 			// We cannot send native histograms with custom buckets (NHCB) via remote write v1.
 			t.metrics.droppedHistogramsTotal.WithLabelValues(reasonNHCBNotSupported).Inc()
 			t.logger.Warn("Dropped native histogram with custom buckets (NHCB) as remote write v1 does not support it", "ref", h.Ref)
 			continue
-		}
-		if nhcbLocked {
-			t.nhcbMtx.Unlock()
 		}
 		entry := t.series.lookup(h.Ref)
 		if entry.state != seriesStateActive {
@@ -1287,26 +1274,37 @@ outer:
 		meta := entry.metadata
 		if transition || convertNHCB {
 			t.nhcbMtx.Lock()
-			if transition {
-				var replacement *timeSeries
-				if t.sendNativeHistograms {
-					replacement = &timeSeries{seriesLabels: lbls, metadata: meta, startTimestamp: h.ST, timestamp: h.T, histogram: h.H, sType: tHistogram}
+			if !isNHCB {
+				_, isTrackedNHCB = t.nhcbSeriesBounds[h.Ref]
+				if !isTrackedNHCB {
+					t.nhcbMtx.Unlock()
+					if !t.sendNativeHistograms {
+						continue
+					}
 				}
-				if !t.convertAndEnqueueNHCB(h.Ref, 0, h.T, nil, nil, true, lbls, meta, replacement) {
+			}
+			if isNHCB || isTrackedNHCB {
+				if transition {
+					var replacement *timeSeries
+					if t.sendNativeHistograms {
+						replacement = &timeSeries{seriesLabels: lbls, metadata: meta, startTimestamp: h.ST, timestamp: h.T, histogram: h.H, sType: tHistogram}
+					}
+					if !t.convertAndEnqueueNHCB(h.Ref, 0, h.T, nil, nil, true, lbls, meta, replacement) {
+						return false
+					}
+					continue
+				}
+				var nhcb any
+				var customValues []float64
+				if isNHCB {
+					nhcb = h.H
+					customValues = h.H.CustomValues
+				}
+				if !t.convertAndEnqueueNHCB(h.Ref, h.ST, h.T, nhcb, customValues, isStale, lbls, meta, nil) {
 					return false
 				}
 				continue
 			}
-			var nhcb any
-			var customValues []float64
-			if isNHCB {
-				nhcb = h.H
-				customValues = h.H.CustomValues
-			}
-			if !t.convertAndEnqueueNHCB(h.Ref, h.ST, h.T, nhcb, customValues, isStale, lbls, meta, nil) {
-				return false
-			}
-			continue
 		}
 		if t.mode != remoteapi.WriteModeNone && t.shouldDropHistogramForMode(h.Ref, h.ST, isStale, lbls, meta) {
 			continue
@@ -1351,38 +1349,25 @@ outer:
 		isNHCB := h.FH != nil && h.FH.Schema == histogram.CustomBucketsSchema
 		isStale := h.FH != nil && value.IsStaleNaN(h.FH.Sum)
 		var isTrackedNHCB bool
-		var nhcbLocked bool
-		if t.convertNHCBToClassic && (isNHCB || t.activeNHCBSeries.Load() > 0) {
+		if t.convertNHCBToClassic && !isNHCB && t.activeNHCBSeries.Load() > 0 {
 			t.nhcbMtx.Lock()
-			nhcbLocked = true
 			_, isTrackedNHCB = t.nhcbSeriesBounds[h.Ref]
+			t.nhcbMtx.Unlock()
 		}
 		convertNHCB := t.convertNHCBToClassic && (isNHCB || (isStale && isTrackedNHCB))
 		transition := t.convertNHCBToClassic && isTrackedNHCB && !isNHCB && !isStale
 		if !t.sendNativeHistograms && !convertNHCB && !transition {
-			if nhcbLocked {
-				t.nhcbMtx.Unlock()
-			}
 			continue
 		}
 		if isSampleOld(currentTime, time.Duration(t.cfg.SampleAgeLimit), h.T) {
-			if nhcbLocked {
-				t.nhcbMtx.Unlock()
-			}
 			t.metrics.droppedHistogramsTotal.WithLabelValues(reasonTooOld).Inc()
 			continue
 		}
 		if !t.convertNHCBToClassic && t.protoMsg == remoteapi.WriteV1MessageType && isNHCB {
-			if nhcbLocked {
-				t.nhcbMtx.Unlock()
-			}
 			// We cannot send native histograms with custom buckets (NHCB) via remote write v1.
 			t.metrics.droppedHistogramsTotal.WithLabelValues(reasonNHCBNotSupported).Inc()
 			t.logger.Warn("Dropped float native histogram with custom buckets (NHCB) as remote write v1 does not support it", "ref", h.Ref)
 			continue
-		}
-		if nhcbLocked {
-			t.nhcbMtx.Unlock()
 		}
 		entry := t.series.lookup(h.Ref)
 		if entry.state != seriesStateActive {
@@ -1399,26 +1384,37 @@ outer:
 		meta := entry.metadata
 		if transition || convertNHCB {
 			t.nhcbMtx.Lock()
-			if transition {
-				var replacement *timeSeries
-				if t.sendNativeHistograms {
-					replacement = &timeSeries{seriesLabels: lbls, metadata: meta, startTimestamp: h.ST, timestamp: h.T, floatHistogram: h.FH, sType: tFloatHistogram}
+			if !isNHCB {
+				_, isTrackedNHCB = t.nhcbSeriesBounds[h.Ref]
+				if !isTrackedNHCB {
+					t.nhcbMtx.Unlock()
+					if !t.sendNativeHistograms {
+						continue
+					}
 				}
-				if !t.convertAndEnqueueNHCB(h.Ref, 0, h.T, nil, nil, true, lbls, meta, replacement) {
+			}
+			if isNHCB || isTrackedNHCB {
+				if transition {
+					var replacement *timeSeries
+					if t.sendNativeHistograms {
+						replacement = &timeSeries{seriesLabels: lbls, metadata: meta, startTimestamp: h.ST, timestamp: h.T, floatHistogram: h.FH, sType: tFloatHistogram}
+					}
+					if !t.convertAndEnqueueNHCB(h.Ref, 0, h.T, nil, nil, true, lbls, meta, replacement) {
+						return false
+					}
+					continue
+				}
+				var nhcb any
+				var customValues []float64
+				if isNHCB {
+					nhcb = h.FH
+					customValues = h.FH.CustomValues
+				}
+				if !t.convertAndEnqueueNHCB(h.Ref, h.ST, h.T, nhcb, customValues, isStale, lbls, meta, nil) {
 					return false
 				}
 				continue
 			}
-			var nhcb any
-			var customValues []float64
-			if isNHCB {
-				nhcb = h.FH
-				customValues = h.FH.CustomValues
-			}
-			if !t.convertAndEnqueueNHCB(h.Ref, h.ST, h.T, nhcb, customValues, isStale, lbls, meta, nil) {
-				return false
-			}
-			continue
 		}
 		if t.mode != remoteapi.WriteModeNone && t.shouldDropHistogramForMode(h.Ref, h.ST, isStale, lbls, meta) {
 			continue
@@ -1517,13 +1513,13 @@ func (t *QueueManager) UpdateSeriesSegment(series []record.RefSeries, index int)
 // stored series records with the checkpoints index number, so we can now
 // delete any ref ID's lower than that # from the series store.
 func (t *QueueManager) SeriesReset(index int) {
-	deleted := t.series.reset(index, t.activeNHCBSeries.Load() > 0)
-	if len(deleted) == 0 {
+	t.series.reset(index)
+	if !t.convertNHCBToClassic || t.activeNHCBSeries.Load() == 0 {
 		return
 	}
 	t.nhcbMtx.Lock()
-	for _, k := range deleted {
-		if layout, ok := t.nhcbSeriesBounds[k]; ok {
+	for k, layout := range t.nhcbSeriesBounds {
+		if t.series.lookup(k).state != seriesStateActive {
 			t.releaseNHCBLayout(layout)
 			delete(t.nhcbSeriesBounds, k)
 			t.activeNHCBSeries.Dec()

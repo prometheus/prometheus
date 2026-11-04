@@ -126,13 +126,33 @@ func (st *seriesStripe) lookupLocked(ref chunks.HeadSeriesRef) seriesEntry {
 	return seriesEntry{}
 }
 
+func (st *seriesStripe) allocPageLocked(pIdx uint64) *seriesPage {
+	p := &seriesPage{minSegment: math.MaxInt32}
+	if st.sparse != nil {
+		for ref, e := range st.sparse {
+			if refPage, slot := pageAndSlot(ref); refPage == pIdx {
+				p.slots[slot] = e
+				p.used++
+				if e.hasSegment && e.segment < p.minSegment {
+					p.minSegment = e.segment
+				}
+				delete(st.sparse, ref)
+			}
+		}
+		if len(st.sparse) == 0 {
+			st.sparse = nil
+		}
+	}
+	return p
+}
+
 // getOrAllocPageLocked returns the dense page for pIdx when it is within maxDensePageGap
 // of the current frontier, or nil when the caller should fall back to sparse storage.
 func (st *seriesStripe) getOrAllocPageLocked(pIdx uint64) *seriesPage {
 	if pIdx < uint64(len(st.pages)) {
 		p := st.pages[pIdx]
 		if p == nil {
-			p = &seriesPage{minSegment: math.MaxInt32}
+			p = st.allocPageLocked(pIdx)
 			st.pages[pIdx] = p
 		}
 		return p
@@ -149,7 +169,7 @@ func (st *seriesStripe) getOrAllocPageLocked(pIdx uint64) *seriesPage {
 	} else {
 		st.pages = st.pages[:needed]
 	}
-	p := &seriesPage{minSegment: math.MaxInt32}
+	p := st.allocPageLocked(pIdx)
 	st.pages[pIdx] = p
 	return p
 }
@@ -256,17 +276,8 @@ func (st *seriesStripe) writeEntryLocked(ref chunks.HeadSeriesRef, update func(p
 	pIdx, slot := pageAndSlot(ref)
 	if p := st.getOrAllocPageLocked(pIdx); p != nil {
 		prev := p.slots[slot]
-		if prev.state == seriesStateUnknown && st.sparse != nil {
-			if sp, ok := st.sparse[ref]; ok {
-				prev = sp
-				delete(st.sparse, ref)
-				if len(st.sparse) == 0 {
-					st.sparse = nil
-				}
-			}
-		}
 		next := update(prev)
-		if p.slots[slot].state == seriesStateUnknown && next.state != seriesStateUnknown {
+		if prev.state == seriesStateUnknown && next.state != seriesStateUnknown {
 			p.used++
 		}
 		if next.hasSegment && next.segment < p.minSegment {
@@ -287,6 +298,35 @@ func (s *seriesStore) storeSeries(series []record.RefSeries, index int, external
 		return
 	}
 
+	seg := int32(index)
+	if len(externalLabels) == 0 && len(relabelConfigs) == 0 {
+		curStripe := -1
+		var stripe *seriesStripe
+		for _, rs := range series {
+			stIdx := stripeIndex(rs.Ref)
+			if stIdx != curStripe {
+				if stripe != nil {
+					stripe.mtx.Unlock()
+				}
+				curStripe = stIdx
+				stripe = &s.stripes[stIdx]
+				stripe.mtx.Lock()
+			}
+			lbls := rs.Labels
+			stripe.writeEntryLocked(rs.Ref, func(e seriesEntry) seriesEntry {
+				e.segment = seg
+				e.hasSegment = true
+				e.labels = lbls
+				e.state = seriesStateActive
+				return e
+			})
+		}
+		if stripe != nil {
+			stripe.mtx.Unlock()
+		}
+		return
+	}
+
 	// Process external labels and relabeling outside stripe locks so regex evaluation
 	// never blocks concurrent Append lookups.
 	b := seriesBuilderPool.Get().(*labels.Builder)
@@ -296,16 +336,7 @@ func (s *seriesStore) storeSeries(series []record.RefSeries, index int, external
 		prep = make([]preparedSeries, 0, len(series))
 	}
 
-	noTransform := len(externalLabels) == 0 && len(relabelConfigs) == 0
 	for _, rs := range series {
-		if noTransform {
-			if rs.Labels.IsEmpty() {
-				prep = append(prep, preparedSeries{ref: rs.Ref, keep: false})
-			} else {
-				prep = append(prep, preparedSeries{ref: rs.Ref, labels: rs.Labels, keep: true})
-			}
-			continue
-		}
 		b.Reset(rs.Labels)
 		processExternalLabels(b, externalLabels)
 		if !relabel.ProcessBuilder(b, relabelConfigs...) {
@@ -316,7 +347,6 @@ func (s *seriesStore) storeSeries(series []record.RefSeries, index int, external
 	}
 	seriesBuilderPool.Put(b)
 
-	seg := int32(index)
 	curStripe := -1
 	var stripe *seriesStripe
 	for _, ps := range prep {
@@ -425,9 +455,8 @@ func (s *seriesStore) updateSeriesSegment(series []record.RefSeries, index int) 
 	}
 }
 
-func (s *seriesStore) reset(index int, collectDeleted bool) []chunks.HeadSeriesRef {
+func (s *seriesStore) reset(index int) {
 	seg := int32(index)
-	var deleted []chunks.HeadSeriesRef
 	for stIdx := range numSeriesStripes {
 		stripe := &s.stripes[stIdx]
 		stripe.mtx.Lock()
@@ -435,7 +464,6 @@ func (s *seriesStore) reset(index int, collectDeleted bool) []chunks.HeadSeriesR
 			if p == nil || p.minSegment >= seg {
 				continue
 			}
-			baseRef := ((uint64(pIdx) << seriesStripeBits) | uint64(stIdx)) << seriesPageShift
 			nextMin := int32(math.MaxInt32)
 			for slot := range seriesPageSize {
 				e := p.slots[slot]
@@ -445,9 +473,6 @@ func (s *seriesStore) reset(index int, collectDeleted bool) []chunks.HeadSeriesR
 				if e.hasSegment && e.segment < seg {
 					p.slots[slot] = seriesEntry{}
 					p.used--
-					if collectDeleted {
-						deleted = append(deleted, chunks.HeadSeriesRef(baseRef|uint64(slot)))
-					}
 					continue
 				}
 				if e.hasSegment && e.segment < nextMin {
@@ -468,12 +493,8 @@ func (s *seriesStore) reset(index int, collectDeleted bool) []chunks.HeadSeriesR
 		stripe.pages = stripe.pages[:lastNonNil+1]
 
 		for ref, e := range stripe.sparse {
-			if !e.hasSegment || e.segment >= seg {
-				continue
-			}
-			delete(stripe.sparse, ref)
-			if collectDeleted {
-				deleted = append(deleted, ref)
+			if e.hasSegment && e.segment < seg {
+				delete(stripe.sparse, ref)
 			}
 		}
 		if len(stripe.sparse) == 0 {
@@ -481,7 +502,6 @@ func (s *seriesStore) reset(index int, collectDeleted bool) []chunks.HeadSeriesR
 		}
 		stripe.mtx.Unlock()
 	}
-	return deleted
 }
 
 func (s *seriesStore) activeLen() int {
