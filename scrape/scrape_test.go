@@ -499,17 +499,39 @@ func TestScrapeCacheMetadataInterning(t *testing.T) {
 			c.setType(mfBuf, model.MetricTypeHistogram)
 			c.setHelp(mfBuf, helpBuf)
 			c.setUnit(mfBuf, unitBuf)
+			// Overwrite caller buffers before flushing pending metadata to verify staging does not alias them.
 			for _, b := range [][]byte{mfBuf, helpBuf, unitBuf} {
 				for i := range b {
 					b[i] = 'x'
 				}
 			}
+			c.iterDone(true)
 		}
 
 		populate(c1)
 		// Run GC cycles between populating c1 and c2 to verify c1's handles keep canonical entries alive in unique.
 		runtime.GC()
 		runtime.GC()
+
+		// Verify a cold target starting after GC does not allocate intermediate unique.Make handles
+		// across sequential setHelp/setType/setUnit calls.
+		coldMF := []byte(wantMF)
+		coldHelp := []byte(wantHelp)
+		coldUnit := []byte(wantUnit)
+		metrics := newTestScrapeMetrics(t)
+		var cCold *scrapeCache
+		coldAllocs := testing.AllocsPerRun(1, func() {
+			cCold = newScrapeCache(metrics)
+			cCold.setHelp(coldMF, coldHelp)
+			cCold.setType(coldMF, model.MetricTypeHistogram)
+			cCold.setUnit(coldMF, coldUnit)
+			cCold.iterDone(true)
+		})
+		// Expect only newScrapeCache + metadata map bucket + metaEntry + pendingHelp/pendingUnit scratch buffers (<= 10 allocs),
+		// with zero unique.Make allocations or string clones.
+		require.LessOrEqual(t, coldAllocs, float64(10))
+		mdCold, ok := cCold.GetMetadata(wantMF)
+		require.True(t, ok)
 
 		populate(c2)
 		runtime.GC()
@@ -531,6 +553,9 @@ func TestScrapeCacheMetadataInterning(t *testing.T) {
 		require.Same(t, unsafe.StringData(string(list1[0].Type)), unsafe.StringData(string(list2[0].Type)))
 		require.Same(t, unsafe.StringData(list1[0].Help), unsafe.StringData(list2[0].Help))
 		require.Same(t, unsafe.StringData(list1[0].Unit), unsafe.StringData(list2[0].Unit))
+		require.Same(t, unsafe.StringData(list1[0].MetricFamily), unsafe.StringData(mdCold.MetricFamily))
+		require.Same(t, unsafe.StringData(list1[0].Help), unsafe.StringData(mdCold.Help))
+		require.Same(t, unsafe.StringData(list1[0].Unit), unsafe.StringData(mdCold.Unit))
 
 		// GetMetadata with freshly cloned lookup keys must also return the canonical interned strings.
 		md1, ok := c1.GetMetadata(strings.Clone(wantMF))
@@ -4139,6 +4164,8 @@ func BenchmarkScrapeCacheMetadata(b *testing.B) {
 				warmCache.setUnit(f.name, f.unit)
 			}
 			warmCache.iterDone(true)
+			runtime.GC()
+			runtime.GC()
 
 			b.ReportAllocs()
 			b.ResetTimer()
@@ -4152,7 +4179,7 @@ func BenchmarkScrapeCacheMetadata(b *testing.B) {
 					c.setHelp(f.name, f.help)
 					c.setUnit(f.name, f.unit)
 				}
-				c.iter++
+				c.iterDone(true)
 			}
 			runtime.KeepAlive(warmCache)
 		})

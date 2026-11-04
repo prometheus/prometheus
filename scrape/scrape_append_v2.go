@@ -134,6 +134,8 @@ func (sl *scrapeLoopAppenderV2) append(b []byte, contentType string, ts time.Tim
 		lset             labels.Labels     // Escapes to heap so hoisted out of loop.
 		e                exemplar.Exemplar // Escapes to heap so hoisted out of loop.
 		lastMeta         *metaEntry
+		lastMetaMD       metadata.Metadata
+		lastMetaFlushed  bool
 		lastMFName       []byte
 		parsedMeta       metadata.Metadata
 		parsedMFName     []byte
@@ -189,6 +191,7 @@ loop:
 			// allow to properly update metadata when e.g unit was added, then removed;
 			if !hasMRC {
 				lastMFName, lastMeta = sl.cache.setType(p.Type())
+				lastMetaFlushed = false
 				continue
 			}
 			mfName, typ := p.Type()
@@ -198,6 +201,7 @@ loop:
 		case textparse.EntryHelp:
 			if !hasMRC {
 				lastMFName, lastMeta = sl.cache.setHelp(p.Help())
+				lastMetaFlushed = false
 				continue
 			}
 			mfName, help := p.Help()
@@ -207,6 +211,7 @@ loop:
 		case textparse.EntryUnit:
 			if !hasMRC {
 				lastMFName, lastMeta = sl.cache.setUnit(p.Unit())
+				lastMetaFlushed = false
 				continue
 			}
 			mfName, unit := p.Unit()
@@ -381,7 +386,11 @@ loop:
 				if !hasMRC {
 					var stType model.MetricType
 					if lastMeta != nil {
-						stType = lastMeta.metadata().Type
+						if !lastMetaFlushed {
+							lastMetaMD = sl.cache.metadataOf(lastMeta)
+							lastMetaFlushed = true
+						}
+						stType = lastMetaMD.Type
 					}
 					st, val, h, fh, skipAppend, stCache = sl.checkAndSynthesizeStartTime(st, lset, ce.st, yoloString(lastMFName), stType, val, h, fh, t)
 				} else {
@@ -430,15 +439,18 @@ loop:
 			if sl.appendMetadataToWAL {
 				if !hasMRC {
 					if lastMeta != nil {
-						md := lastMeta.metadata()
+						if !lastMetaFlushed {
+							lastMetaMD = sl.cache.metadataOf(lastMeta)
+							lastMetaFlushed = true
+						}
 						// In majority cases we can trust that the current series/histogram is matching the lastMeta and lastMFName.
 						// However, optional TYPE, etc metadata and broken OM text can break this, detect those cases here.
-						if !isSeriesPartOfFamily(lset.Get(model.MetricNameLabel), lastMFName, md.Type) {
+						if !isSeriesPartOfFamily(lset.Get(model.MetricNameLabel), lastMFName, lastMetaMD.Type) {
 							lastMeta = nil // Don't pass knowingly broken metadata, now, nor on the next line.
 						} else {
 							// Metric family name has the same source as metadata.
 							appOpts.MetricFamilyName = yoloString(lastMFName)
-							appOpts.Metadata = md
+							appOpts.Metadata = lastMetaMD
 						}
 					}
 				} else if sampleMFName != "" {
