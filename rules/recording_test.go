@@ -28,9 +28,26 @@ import (
 	"github.com/prometheus/prometheus/promql"
 	"github.com/prometheus/prometheus/promql/parser"
 	"github.com/prometheus/prometheus/promql/promqltest"
+	"github.com/prometheus/prometheus/storage"
 	"github.com/prometheus/prometheus/util/teststorage"
 	"github.com/prometheus/prometheus/util/testutil"
 )
+
+type recordingAppenderV2 struct {
+	gotLabels []labels.Labels
+	gotMetas  []metadata.Metadata
+}
+
+func (a *recordingAppenderV2) AppenderV2(context.Context) storage.AppenderV2 { return a }
+
+func (a *recordingAppenderV2) Append(_ storage.SeriesRef, ls labels.Labels, _, _ int64, _ float64, _ *histogram.Histogram, _ *histogram.FloatHistogram, opts storage.AOptions) (storage.SeriesRef, error) {
+	a.gotLabels = append(a.gotLabels, ls.Copy())
+	a.gotMetas = append(a.gotMetas, opts.Metadata)
+	return 1, nil
+}
+
+func (*recordingAppenderV2) Commit() error   { return nil }
+func (*recordingAppenderV2) Rollback() error { return nil }
 
 var testParser = parser.NewParser(parser.Options{})
 
@@ -353,6 +370,32 @@ func TestRecordingRuleMetadataDeduction(t *testing.T) {
 			},
 		},
 		{
+			name:                    "float/preserved_schema_with_type_and_unit_labels_suffix_fallback_when_type_missing",
+			enableTypeAndUnitLabels: true,
+			samples: promql.Vector{
+				{
+					Metric: labels.FromStrings(
+						model.MetricNameLabel, "http_requests_total",
+						model.MetricUnitLabel, "requests",
+						"job", "api",
+					),
+					T: evalMs,
+					F: 42,
+				},
+			},
+			wantLabels: []labels.Labels{
+				labels.FromStrings(
+					model.MetricNameLabel, "job:req:rate5m",
+					model.MetricTypeLabel, "counter",
+					model.MetricUnitLabel, "requests",
+					"job", "api",
+				),
+			},
+			wantMetas: []metadata.Metadata{
+				{Type: model.MetricTypeCounter, Unit: "requests"},
+			},
+		},
+		{
 			name:                    "float/preserved_schema_without_type_and_unit_labels_suffix_fallback",
 			enableTypeAndUnitLabels: false,
 			samples: promql.Vector{
@@ -435,6 +478,41 @@ func TestRecordingRuleMetadataDeduction(t *testing.T) {
 			},
 		},
 		{
+			name:       "yaml_overrides/not_injected_as_labels_when_flag_disabled",
+			ruleLabels: labels.FromStrings(model.MetricTypeLabel, "gauge", model.MetricUnitLabel, "bytes"),
+			ruleMeta: metadata.Metadata{
+				Type: model.MetricTypeCounter,
+				Unit: "requests_per_second",
+				Help: "Recorded request rate.",
+			},
+			enableTypeAndUnitLabels: false,
+			samples: promql.Vector{
+				{
+					Metric: labels.FromStrings(
+						model.MetricNameLabel, "http_requests_total",
+						model.MetricTypeLabel, "gauge",
+						model.MetricUnitLabel, "bytes",
+						"job", "api",
+					),
+					T: evalMs,
+					F: 5,
+				},
+			},
+			wantLabels: []labels.Labels{
+				labels.FromStrings(
+					model.MetricNameLabel, "job:req:rate5m",
+					"job", "api",
+				),
+			},
+			wantMetas: []metadata.Metadata{
+				{
+					Type: model.MetricTypeCounter,
+					Unit: "requests_per_second",
+					Help: "Recorded request rate.",
+				},
+			},
+		},
+		{
 			name: "mismatch/float_sample_with_histogram_yaml_falls_back_to_gauge",
 			ruleMeta: metadata.Metadata{
 				Type: model.MetricTypeHistogram,
@@ -455,6 +533,31 @@ func TestRecordingRuleMetadataDeduction(t *testing.T) {
 			},
 			wantMetas: []metadata.Metadata{
 				{Type: model.MetricTypeGauge, Unit: "seconds", Help: "Mismatched float sample."},
+			},
+		},
+		{
+			name:                    "mismatch/invalid_preserved_type_label_falls_back_to_gauge",
+			enableTypeAndUnitLabels: true,
+			samples: promql.Vector{
+				{
+					Metric: labels.FromStrings(
+						model.MetricNameLabel, "custom_metric",
+						model.MetricTypeLabel, "invalid_type",
+						"job", "api",
+					),
+					T: evalMs,
+					F: 1,
+				},
+			},
+			wantLabels: []labels.Labels{
+				labels.FromStrings(
+					model.MetricNameLabel, "job:req:rate5m",
+					model.MetricTypeLabel, "gauge",
+					"job", "api",
+				),
+			},
+			wantMetas: []metadata.Metadata{
+				{Type: model.MetricTypeGauge},
 			},
 		},
 		{
@@ -507,22 +610,35 @@ func TestRecordingRuleMetadataDeduction(t *testing.T) {
 			rule := NewRecordingRuleWithMetadata("job:req:rate5m", expr, tc.ruleLabels, tc.ruleMeta)
 			require.Equal(t, tc.ruleMeta, rule.Metadata())
 
+			app := &recordingAppenderV2{}
 			qf := func(context.Context, string, time.Time) (promql.Vector, error) {
 				out := make(promql.Vector, len(tc.samples))
 				copy(out, tc.samples)
 				return out, nil
 			}
+			group := NewGroup(GroupOptions{
+				Name:     "test-group",
+				File:     "test.rules",
+				Interval: time.Minute,
+				Rules:    []Rule{rule},
+				Opts: &ManagerOptions{
+					AppendableV2:            app,
+					QueryFunc:               qf,
+					AppendMetadata:          true,
+					EnableTypeAndUnitLabels: tc.enableTypeAndUnitLabels,
+				},
+			})
 
-			gotVec, gotMetas, err := rule.evalWithMetadata(t.Context(), 0, ts, qf, nil, 0, true, tc.enableTypeAndUnitLabels)
+			group.Eval(t.Context(), ts)
 			if tc.wantErr != nil {
-				require.ErrorIs(t, err, tc.wantErr)
+				require.ErrorIs(t, rule.LastError(), tc.wantErr)
 				return
 			}
-			require.NoError(t, err)
-			require.Equal(t, tc.wantMetas, gotMetas)
-			require.Len(t, gotVec, len(tc.wantLabels))
-			for i := range gotVec {
-				testutil.RequireEqual(t, tc.wantLabels[i], gotVec[i].Metric)
+			require.NoError(t, rule.LastError())
+			require.Equal(t, tc.wantMetas, app.gotMetas)
+			require.Len(t, app.gotLabels, len(tc.wantLabels))
+			for i := range app.gotLabels {
+				testutil.RequireEqual(t, tc.wantLabels[i], app.gotLabels[i])
 			}
 		})
 	}
