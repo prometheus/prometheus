@@ -137,6 +137,8 @@ func (sl *scrapeLoopAppenderV2) append(b []byte, contentType string, ts time.Tim
 		lastMFName       []byte
 		parsedMeta       metadata.Metadata
 		parsedMFName     []byte
+		parsedHelp       []byte
+		parsedUnit       []byte
 		hasParsedMeta    bool
 		parsedMetaDirty  bool
 		origMetaHandle   unique.Handle[metadata.Metadata]
@@ -199,7 +201,7 @@ loop:
 				continue
 			}
 			mfName, help := p.Help()
-			setParsedHelp(mfName, help, &parsedMFName, &parsedMeta, &hasParsedMeta)
+			setParsedHelp(mfName, help, &parsedMFName, &parsedHelp, &parsedMeta, &hasParsedMeta)
 			parsedMetaDirty = true
 			continue
 		case textparse.EntryUnit:
@@ -208,7 +210,7 @@ loop:
 				continue
 			}
 			mfName, unit := p.Unit()
-			setParsedUnit(mfName, unit, &parsedMFName, &parsedMeta, &hasParsedMeta)
+			setParsedUnit(mfName, unit, &parsedMFName, &parsedUnit, &parsedMeta, &hasParsedMeta)
 			parsedMetaDirty = true
 			continue
 		case textparse.EntryComment:
@@ -672,22 +674,24 @@ func setParsedType(mfName []byte, t model.MetricType, parsedMFName *[]byte, pars
 	parsedMeta.Type = t
 }
 
-func setParsedHelp(mfName, help []byte, parsedMFName *[]byte, parsedMeta *metadata.Metadata, hasParsedMeta *bool) {
+func setParsedHelp(mfName, help []byte, parsedMFName, parsedHelp *[]byte, parsedMeta *metadata.Metadata, hasParsedMeta *bool) {
 	if !*hasParsedMeta || !bytes.Equal(*parsedMFName, mfName) {
 		*parsedMFName = append((*parsedMFName)[:0], mfName...)
 		*parsedMeta = metadata.Metadata{Type: model.MetricTypeUnknown}
 		*hasParsedMeta = true
 	}
-	parsedMeta.Help = internBytes(help).Value()
+	*parsedHelp = append((*parsedHelp)[:0], help...)
+	parsedMeta.Help = yoloString(*parsedHelp)
 }
 
-func setParsedUnit(mfName, unit []byte, parsedMFName *[]byte, parsedMeta *metadata.Metadata, hasParsedMeta *bool) {
+func setParsedUnit(mfName, unit []byte, parsedMFName, parsedUnit *[]byte, parsedMeta *metadata.Metadata, hasParsedMeta *bool) {
 	if !*hasParsedMeta || !bytes.Equal(*parsedMFName, mfName) {
 		*parsedMFName = append((*parsedMFName)[:0], mfName...)
 		*parsedMeta = metadata.Metadata{Type: model.MetricTypeUnknown}
 		*hasParsedMeta = true
 	}
-	parsedMeta.Unit = internBytes(unit).Value()
+	*parsedUnit = append((*parsedUnit)[:0], unit...)
+	parsedMeta.Unit = yoloString(*parsedUnit)
 }
 
 func (sl *scrapeLoop) mutateSample(

@@ -532,11 +532,30 @@ func TestScrapeCacheMetadataInterning(t *testing.T) {
 		mfWarm := []byte(wantMF)
 		helpWarm := []byte(wantHelp)
 		unitWarm := []byte(wantUnit)
+		var (
+			parsedMFName []byte
+			parsedHelp   []byte
+			parsedUnit   []byte
+			parsedMeta   metadata.Metadata
+			hasParsed    bool
+		)
+		setParsedType(mfWarm, model.MetricTypeHistogram, &parsedMFName, &parsedMeta, &hasParsed)
+		setParsedHelp(mfWarm, helpWarm, &parsedMFName, &parsedHelp, &parsedMeta, &hasParsed)
+		setParsedUnit(mfWarm, unitWarm, &parsedMFName, &parsedUnit, &parsedMeta, &hasParsed)
+		runtime.GC()
+		runtime.GC()
+
 		allocs := testing.AllocsPerRun(100, func() {
 			c1.iter++
 			c1.setType(mfWarm, model.MetricTypeHistogram)
 			c1.setHelp(mfWarm, helpWarm)
 			c1.setUnit(mfWarm, unitWarm)
+
+			hasParsed = false
+			setParsedType(mfWarm, model.MetricTypeHistogram, &parsedMFName, &parsedMeta, &hasParsed)
+			setParsedHelp(mfWarm, helpWarm, &parsedMFName, &parsedHelp, &parsedMeta, &hasParsed)
+			setParsedUnit(mfWarm, unitWarm, &parsedMFName, &parsedUnit, &parsedMeta, &hasParsed)
+			c1.setMetadata(internBytes(parsedMFName), unique.Make(parsedMeta))
 		})
 		require.Zero(t, allocs)
 		runtime.KeepAlive(tsdbHandle)
@@ -574,31 +593,33 @@ func TestScrapeCacheMetadataInterning(t *testing.T) {
 			sl1 := newLoop()
 			sl2 := newLoop()
 			now := time.Now()
-			const payload = `# TYPE raw_interned_requests counter
-# HELP raw_interned_requests Total interned requests across targets
-# UNIT raw_interned_requests requests
-raw_interned_requests_total 1
+			const payload = `# HELP "" empty family counter help
 # TYPE "" counter
-# HELP "" empty family counter help
 foo 2
 # TYPE "" histogram
 # HELP "" empty family histogram help
 {"_count"} 3
+# TYPE raw_interned_requests counter
+# HELP raw_interned_requests Total interned requests across targets
+# UNIT raw_interned_requests requests
+raw_interned_requests_total 1
 # EOF`
 
 			for i, sl := range []*scrapeLoop{sl1, sl2} {
-				for scrapeIdx := range 2 {
+				// Run >10 warm scrapes so iterDone(true) verifies lastIter is refreshed on the seriesMeta fast path.
+				for scrapeIdx := range 12 {
 					buf := []byte(payload)
 					app := sl.appender()
-					_, _, _, err := app.append(buf, "application/openmetrics-text", now.Add(time.Duration(i*10+scrapeIdx)*time.Second))
+					_, _, _, err := app.append(buf, "application/openmetrics-text", now.Add(time.Duration(i*100+scrapeIdx)*time.Second))
 					require.NoError(t, err)
 					require.NoError(t, app.Commit())
 					for j := range buf {
 						buf[j] = 'z'
 					}
 				}
+				runtime.GC()
+				runtime.GC()
 			}
-			runtime.GC()
 
 			wantFamily := "raw_interned_requests"
 			if hasMRC {
