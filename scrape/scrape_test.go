@@ -9123,11 +9123,25 @@ func TestScrapeCacheStalenessSliceLifecycle(t *testing.T) {
 			ref:  storage.SeriesRef(i + 1),
 			lset: labels.FromStrings(model.MetricNameLabel, "m", "i", strconv.Itoa(i)),
 		}
+	}
+
+	// Run two spike scrapes so both seriesCur and seriesPrev allocate >= spikeSize backing arrays,
+	// and verify duplicate trackStaleness calls in the same iteration are ignored.
+	for range 2 {
+		for _, ce := range entries {
+			c.trackStaleness(ce)
+		}
+		c.trackStaleness(entries[0])
+		require.Len(t, c.seriesCur, spikeSize)
+		c.iterDone(true)
+	}
+	require.GreaterOrEqual(t, cap(c.seriesPrev), spikeSize)
+
+	// Track only odd indices so even indices are stale and interleaved, exercising in-place
+	// partition swaps (staleEnd != i), early-exit, and retry safety before iterDone.
+	for i := 1; i < spikeSize; i += 2 {
 		c.trackStaleness(entries[i])
 	}
-	c.iterDone(true)
-
-	// Empty scrape swaps the large backing array into seriesCur[:0]; verify clear() nulled every slot.
 	var staleCount int
 	c.forEachStale(func(storage.SeriesRef, labels.Labels) bool {
 		staleCount++
@@ -9135,15 +9149,17 @@ func TestScrapeCacheStalenessSliceLifecycle(t *testing.T) {
 	})
 	require.Equal(t, 5, staleCount)
 
-	// Retrying before iterDone must still see all spikeSize stale entries.
+	// Retrying before iterDone must still see all spikeSize/2 stale entries.
 	staleCount = 0
 	c.forEachStale(func(storage.SeriesRef, labels.Labels) bool {
 		staleCount++
 		return true
 	})
-	require.Equal(t, spikeSize, staleCount)
+	require.Equal(t, spikeSize/2, staleCount)
 
+	// iterDone swaps the cleared spikeSize backing array into seriesCur[:0]; verify clear() nulled every slot.
 	c.iterDone(false)
+	require.GreaterOrEqual(t, cap(c.seriesCur), spikeSize)
 	curBacking := c.seriesCur[:cap(c.seriesCur)]
 	for i, ptr := range curBacking {
 		require.Nil(t, ptr, "expected nil pointer in seriesCur backing array at index %d", i)
