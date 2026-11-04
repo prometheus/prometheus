@@ -3255,7 +3255,7 @@ groups:
 
 		active := alertRule.ActiveAlerts()
 		require.Len(t, active, 1)
-		require.Equal(t, labels.FromStrings(labels.AlertName, "HighRequests", "job", "api"), active[0].Labels)
+		prom_testutil.RequireEqual(t, labels.FromStrings(labels.AlertName, "HighRequests", "job", "api"), active[0].Labels)
 
 		q, err := st.Querier(0, timestamp.FromTime(baseTime.Add(time.Minute)))
 		require.NoError(t, err)
@@ -3294,7 +3294,7 @@ groups:
 		require.True(t, restoredRule.Restored())
 		restoredAlerts := restoredRule.ActiveAlerts()
 		require.Len(t, restoredAlerts, 1)
-		require.Equal(t, labels.FromStrings(labels.AlertName, "HighRequests", "job", "api"), restoredAlerts[0].Labels)
+		prom_testutil.RequireEqual(t, labels.FromStrings(labels.AlertName, "HighRequests", "job", "api"), restoredAlerts[0].Labels)
 		require.Equal(t, baseTime.Add(time.Minute), restoredAlerts[0].ActiveAt)
 	})
 

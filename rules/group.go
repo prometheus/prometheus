@@ -693,27 +693,28 @@ func (g *Group) Eval(ctx context.Context, ts time.Time) {
 		}
 
 		for metric, prev := range g.seriesInPreviousEval[i] {
-			if _, ok := seriesReturned[metric]; !ok {
-				// Series no longer exposed, mark it stale.
-				appOpts := g.appOpts
-				if !metadata.IsZeroHandle(prev.metadata) {
-					appOpts.Metadata = prev.metadata.Value()
-				}
-				_, err = app.Append(0, prev.labels, 0, timestamp.FromTime(ts.Add(-ruleQueryOffset)), math.Float64frombits(value.StaleNaN), nil, nil, appOpts)
-				unwrappedErr := errors.Unwrap(err)
-				if unwrappedErr == nil {
-					unwrappedErr = err
-				}
-				switch {
-				case unwrappedErr == nil:
-				case errors.Is(unwrappedErr, storage.ErrOutOfOrderSample),
-					errors.Is(unwrappedErr, storage.ErrTooOldSample),
-					errors.Is(unwrappedErr, storage.ErrDuplicateSampleForTimestamp):
-					// Do not count these in logging, as this is expected if series
-					// is exposed from a different rule.
-				default:
-					logger.Warn("Adding stale sample failed", "sample", prev.labels.String(), "err", err)
-				}
+			if _, ok := seriesReturned[metric]; ok {
+				continue
+			}
+			// Series no longer exposed, mark it stale.
+			appOpts := g.appOpts
+			if !metadata.IsZeroHandle(prev.metadata) {
+				appOpts.Metadata = prev.metadata.Value()
+			}
+			_, err = app.Append(0, prev.labels, 0, timestamp.FromTime(ts.Add(-ruleQueryOffset)), math.Float64frombits(value.StaleNaN), nil, nil, appOpts)
+			unwrappedErr := errors.Unwrap(err)
+			if unwrappedErr == nil {
+				unwrappedErr = err
+			}
+			switch {
+			case unwrappedErr == nil:
+			case errors.Is(unwrappedErr, storage.ErrOutOfOrderSample),
+				errors.Is(unwrappedErr, storage.ErrTooOldSample),
+				errors.Is(unwrappedErr, storage.ErrDuplicateSampleForTimestamp):
+				// Do not count these in logging, as this is expected if series
+				// is exposed from a different rule.
+			default:
+				logger.Warn("Adding stale sample failed", "sample", prev.labels.String(), "err", err)
 			}
 		}
 	}
