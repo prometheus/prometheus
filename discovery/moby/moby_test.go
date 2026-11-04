@@ -127,7 +127,7 @@ refresh_interval: %s
 				errCh := make(chan error, 1)
 				start := time.Now()
 				go func() {
-					_, err := d.refresh(context.Background())
+					_, err := d.refresh(t.Context())
 					errCh <- err
 				}()
 

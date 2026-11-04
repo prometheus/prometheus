@@ -873,7 +873,7 @@ scrape_configs:
 		}
 		scrapeManager.scrapePools = map[string]*scrapePool{}
 		for _, sc := range cfg.ScrapeConfigs {
-			_, cancel := context.WithCancel(context.Background())
+			_, cancel := context.WithCancel(t.Context())
 			defer cancel()
 
 			sp := newTestScrapePool(t, nil, false, newLoop)
@@ -944,7 +944,7 @@ func TestManagerSTZeroIngestion(t *testing.T) {
 				t.Run(fmt.Sprintf("withST=%v", testWithST), func(t *testing.T) {
 					for _, testSTZeroIngest := range []bool{false, true} {
 						t.Run(fmt.Sprintf("stZeroIngest=%v", testSTZeroIngest), func(t *testing.T) {
-							ctx, cancel := context.WithCancel(context.Background())
+							ctx, cancel := context.WithCancel(t.Context())
 							defer cancel()
 
 							sampleTs := time.Now()
@@ -1140,7 +1140,7 @@ func TestManagerSTZeroIngestionHistogram(t *testing.T) {
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			t.Parallel()
-			ctx, cancel := context.WithCancel(context.Background())
+			ctx, cancel := context.WithCancel(t.Context())
 			defer cancel()
 
 			app := teststorage.NewAppendable()

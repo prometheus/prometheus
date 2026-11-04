@@ -17,7 +17,6 @@
 package prometheusremotewrite
 
 import (
-	"context"
 	"fmt"
 	"testing"
 	"time"
@@ -1045,7 +1044,7 @@ func TestPrometheusConverter_addExponentialHistogramDataPoints(t *testing.T) {
 			require.NoError(t, converter.setScopeContext(tt.scope, settings))
 
 			annots, err := converter.addExponentialHistogramDataPoints(
-				context.Background(),
+				t.Context(),
 				metric.ExponentialHistogram().DataPoints(),
 				settings,
 				pmetric.AggregationTemporalityCumulative,
@@ -1576,7 +1575,7 @@ func TestPrometheusConverter_addCustomBucketsHistogramDataPoints(t *testing.T) {
 			require.NoError(t, converter.setScopeContext(tt.scope, settings))
 
 			annots, err := converter.addCustomBucketsHistogramDataPoints(
-				context.Background(),
+				t.Context(),
 				metric.Histogram().DataPoints(),
 				settings,
 				pmetric.AggregationTemporalityCumulative,

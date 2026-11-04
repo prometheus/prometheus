@@ -57,7 +57,7 @@ func TestMain(m *testing.M) {
 
 func TestEC2DiscoveryRefreshAZIDs(t *testing.T) {
 	t.Parallel()
-	ctx := context.Background()
+	ctx := t.Context()
 
 	// iterate through the test cases
 	for _, tt := range []struct {
@@ -102,7 +102,7 @@ func TestEC2DiscoveryRefreshAZIDs(t *testing.T) {
 
 func TestEC2DiscoveryRefresh(t *testing.T) {
 	t.Parallel()
-	ctx := context.Background()
+	ctx := t.Context()
 
 	// iterate through the test cases
 	for _, tt := range []struct {
@@ -627,7 +627,7 @@ func fullyPopulatedEC2DataStore() *ec2DataStore {
 func TestEC2DiscoveryRefreshFullyPopulated(t *testing.T) {
 	t.Parallel()
 
-	tgs, err := ec2TestDiscovery(fullyPopulatedEC2DataStore()).refresh(context.Background())
+	tgs, err := ec2TestDiscovery(fullyPopulatedEC2DataStore()).refresh(t.Context())
 	require.NoError(t, err)
 	require.Equal(t, []*targetgroup.Group{
 		{
@@ -717,7 +717,7 @@ func TestEC2DiscoveryRefreshInstanceNilOptionalFields(t *testing.T) {
 			data := fullyPopulatedEC2DataStore()
 			tc.mutate(&data.instances[0])
 
-			tgs, err := ec2TestDiscovery(data).refresh(context.Background())
+			tgs, err := ec2TestDiscovery(data).refresh(t.Context())
 			require.NoError(t, err)
 			require.Len(t, tgs, 1)
 			require.Len(t, tgs[0].Targets, 1,
@@ -809,7 +809,7 @@ func TestEC2DiscoveryRefreshIPv6NilOptionalFields(t *testing.T) {
 			data := fullyPopulatedEC2DataStore()
 			tc.mutate(&data.instances[0].NetworkInterfaces[0])
 
-			tgs, err := ec2TestDiscovery(data).refresh(context.Background())
+			tgs, err := ec2TestDiscovery(data).refresh(t.Context())
 			require.NoError(t, err)
 			require.Len(t, tgs, 1)
 			require.Len(t, tgs[0].Targets, 1,

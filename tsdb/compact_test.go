@@ -169,7 +169,7 @@ func TestNoPanicFor0Tombstones(t *testing.T) {
 		},
 	}
 
-	c, err := NewLeveledCompactor(context.Background(), nil, nil, []int64{50}, nil, nil)
+	c, err := NewLeveledCompactor(t.Context(), nil, nil, []int64{50}, nil, nil)
 	require.NoError(t, err)
 
 	c.plan(metas)
@@ -188,7 +188,7 @@ func staleMetaRange(name string, mint, maxt int64) dirMeta {
 // inOrderBlocksMaxTime and advance the WAL-replay cutoff past WAL-only data.
 // See https://github.com/prometheus/prometheus/issues/18379.
 func TestPlanDoesNotMergeStaleAndNonStaleBlocks(t *testing.T) {
-	compactor, err := NewLeveledCompactor(context.Background(), nil, promslog.NewNopLogger(), []int64{
+	compactor, err := NewLeveledCompactor(t.Context(), nil, promslog.NewNopLogger(), []int64{
 		20,
 		60,
 		180,
@@ -251,7 +251,7 @@ func TestLeveledCompactor(t *testing.T) {
 	// Tests for the private plan() method.
 	t.Run("plan", func(t *testing.T) {
 		// This mimics our default ExponentialBlockRanges with min block size equals to 20.
-		compactor, err := NewLeveledCompactor(context.Background(), nil, nil, []int64{
+		compactor, err := NewLeveledCompactor(t.Context(), nil, nil, []int64{
 			20,
 			60,
 			180,
@@ -494,7 +494,7 @@ func TestLeveledCompactor(t *testing.T) {
 			}
 
 			c, err := NewLeveledCompactorWithOptions(
-				context.Background(),
+				t.Context(),
 				nil,
 				promslog.NewNopLogger(),
 				[]int64{20},
@@ -518,7 +518,7 @@ func TestLeveledCompactor(t *testing.T) {
 }
 
 func TestRangeWithFailedCompactionWontGetSelected(t *testing.T) {
-	compactor, err := NewLeveledCompactor(context.Background(), nil, nil, []int64{
+	compactor, err := NewLeveledCompactor(t.Context(), nil, nil, []int64{
 		20,
 		60,
 		240,
@@ -568,7 +568,7 @@ func TestRangeWithFailedCompactionWontGetSelected(t *testing.T) {
 }
 
 func TestCompactionFailWillCleanUpTempDir(t *testing.T) {
-	compactor, err := NewLeveledCompactor(context.Background(), nil, promslog.NewNopLogger(), []int64{
+	compactor, err := NewLeveledCompactor(t.Context(), nil, promslog.NewNopLogger(), []int64{
 		20,
 		60,
 		240,
@@ -1160,7 +1160,7 @@ func TestCompaction_populateBlock(t *testing.T) {
 				blocks = append(blocks, &mockBReader{ir: ir, cr: cr, mint: mint, maxt: maxt})
 			}
 
-			c, err := NewLeveledCompactor(context.Background(), nil, nil, []int64{0}, nil, nil)
+			c, err := NewLeveledCompactor(t.Context(), nil, nil, []int64{0}, nil, nil)
 			require.NoError(t, err)
 
 			meta := &BlockMeta{
@@ -1326,7 +1326,7 @@ func BenchmarkCompaction(b *testing.B) {
 				blockDirs = append(blockDirs, block.Dir())
 			}
 
-			c, err := NewLeveledCompactor(context.Background(), nil, promslog.NewNopLogger(), []int64{0}, nil, nil)
+			c, err := NewLeveledCompactor(b.Context(), nil, promslog.NewNopLogger(), []int64{0}, nil, nil)
 			require.NoError(b, err)
 
 			b.ResetTimer()
@@ -1352,7 +1352,7 @@ func BenchmarkCompactionFromHead(b *testing.B) {
 			h, err := NewHead(nil, nil, nil, nil, opts, nil)
 			require.NoError(b, err)
 			for ln := 0; ln < labelNames; ln++ {
-				app := h.AppenderV2(context.Background())
+				app := h.AppenderV2(b.Context())
 				for lv := range labelValues {
 					app.Append(0, labels.FromStrings(strconv.Itoa(ln), fmt.Sprintf("%d%s%d", lv, postingsBenchSuffix, ln)), 0, 0, 0, nil, nil, storage.AOptions{})
 				}
@@ -1496,7 +1496,7 @@ func BenchmarkCompactionFromOOOHead(b *testing.B) {
 			h, err := NewHead(nil, nil, nil, nil, opts, nil)
 			require.NoError(b, err)
 			for ln := 0; ln < labelNames; ln++ {
-				app := h.AppenderV2(context.Background())
+				app := h.AppenderV2(b.Context())
 				for lv := range labelValues {
 					lbls := labels.FromStrings(strconv.Itoa(ln), fmt.Sprintf("%d%s%d", lv, postingsBenchSuffix, ln))
 					_, err = app.Append(0, lbls, 0, int64(totalSamples), 0, nil, nil, storage.AOptions{})
@@ -1512,7 +1512,7 @@ func BenchmarkCompactionFromOOOHead(b *testing.B) {
 			b.ResetTimer()
 			b.ReportAllocs()
 			for i := 0; b.Loop(); i++ {
-				oooHead, err := NewOOOCompactionHead(context.TODO(), h)
+				oooHead, err := NewOOOCompactionHead(b.Context(), h)
 				require.NoError(b, err)
 				createBlockFromOOOHead(b, filepath.Join(dir, fmt.Sprintf("%d-%d", i, labelNames)), oooHead)
 			}
@@ -1545,7 +1545,7 @@ func setupDBForSelectedSeriesBenchmark(tb testing.TB, totalSeries, samplesPerSer
 
 	const appendBatch = 10_000
 	refs := make([]storage.SeriesRef, 0, totalSeries)
-	app := db.AppenderV2(context.Background())
+	app := db.AppenderV2(tb.Context())
 	for i := range totalSeries {
 		lbls := labels.FromStrings("__name__", "metric", "instance", strconv.Itoa(i))
 		var ref storage.SeriesRef
@@ -1556,7 +1556,7 @@ func setupDBForSelectedSeriesBenchmark(tb testing.TB, totalSeries, samplesPerSer
 		refs = append(refs, ref)
 		if (i+1)%appendBatch == 0 {
 			require.NoError(tb, app.Commit())
-			app = db.AppenderV2(context.Background())
+			app = db.AppenderV2(tb.Context())
 		}
 	}
 	require.NoError(tb, app.Commit())
@@ -1678,7 +1678,7 @@ func TestDisableAutoCompactions(t *testing.T) {
 	// Trigger a compaction to check that it was skipped and
 	// no new blocks were created when compaction is disabled.
 	db.DisableCompactions()
-	app := db.AppenderV2(context.Background())
+	app := db.AppenderV2(t.Context())
 	for i := range int64(3) {
 		_, err := app.Append(0, label, 0, i*blockRange, 0, nil, nil, storage.AOptions{})
 		require.NoError(t, err)
@@ -1803,7 +1803,7 @@ func TestDeleteCompactionBlockAfterFailedReload(t *testing.T) {
 			defaultLabel := labels.FromStrings("foo", "bar")
 
 			// Add some data to the head that is enough to trigger a compaction.
-			app := db.AppenderV2(context.Background())
+			app := db.AppenderV2(t.Context())
 			_, err := app.Append(0, defaultLabel, 0, 1, 0, nil, nil, storage.AOptions{})
 			require.NoError(t, err)
 			_, err = app.Append(0, defaultLabel, 0, 2, 0, nil, nil, storage.AOptions{})
@@ -1832,7 +1832,7 @@ func TestDeleteCompactionBlockAfterFailedReload(t *testing.T) {
 
 	for title, bootStrap := range tests {
 		t.Run(title, func(t *testing.T) {
-			ctx := context.Background()
+			ctx := t.Context()
 
 			db := newTestDB(t, withRngs(1, 100))
 			db.DisableCompactions()
@@ -1873,7 +1873,7 @@ func TestHeadCompactionWithHistograms(t *testing.T) {
 			require.NoError(t, head.Init(0))
 
 			minute := func(m int) int64 { return int64(m) * time.Minute.Milliseconds() }
-			ctx := context.Background()
+			ctx := t.Context()
 			appendHistogram := func(
 				lbls labels.Labels, from, to int, h *histogram.Histogram, exp *[]chunks.Sample,
 			) {
@@ -1961,7 +1961,7 @@ func TestHeadCompactionWithHistograms(t *testing.T) {
 			// Compaction.
 			mint := head.MinTime()
 			maxt := head.MaxTime() + 1 // Block intervals are half-open: [b.MinTime, b.MaxTime).
-			compactor, err := NewLeveledCompactor(context.Background(), nil, nil, []int64{DefaultBlockDuration}, chunkenc.NewPool(), nil)
+			compactor, err := NewLeveledCompactor(t.Context(), nil, nil, []int64{DefaultBlockDuration}, chunkenc.NewPool(), nil)
 			require.NoError(t, err)
 			ids, err := compactor.Write(head.opts.ChunkDirRoot, head, mint, maxt, nil)
 			require.NoError(t, err)
@@ -2068,8 +2068,8 @@ func TestSparseHistogramSpaceSavings(t *testing.T) {
 					}
 				}
 
-				oldApp := oldHead.AppenderV2(context.Background())
-				sparseApp := sparseHead.AppenderV2(context.Background())
+				oldApp := oldHead.AppenderV2(t.Context())
+				sparseApp := sparseHead.AppenderV2(t.Context())
 				numOldSeriesPerHistogram := 0
 
 				var oldULIDs []ulid.ULID
@@ -2095,7 +2095,7 @@ func TestSparseHistogramSpaceSavings(t *testing.T) {
 					// Sparse head compaction.
 					mint := sparseHead.MinTime()
 					maxt := sparseHead.MaxTime() + 1 // Block intervals are half-open: [b.MinTime, b.MaxTime).
-					compactor, err := NewLeveledCompactor(context.Background(), nil, nil, []int64{DefaultBlockDuration}, chunkenc.NewPool(), nil)
+					compactor, err := NewLeveledCompactor(t.Context(), nil, nil, []int64{DefaultBlockDuration}, chunkenc.NewPool(), nil)
 					require.NoError(t, err)
 					sparseULIDs, err = compactor.Write(sparseHead.opts.ChunkDirRoot, sparseHead, mint, maxt, nil)
 					require.NoError(t, err)
@@ -2146,7 +2146,7 @@ func TestSparseHistogramSpaceSavings(t *testing.T) {
 					// Old head compaction.
 					mint := oldHead.MinTime()
 					maxt := oldHead.MaxTime() + 1 // Block intervals are half-open: [b.MinTime, b.MaxTime).
-					compactor, err := NewLeveledCompactor(context.Background(), nil, nil, []int64{DefaultBlockDuration}, chunkenc.NewPool(), nil)
+					compactor, err := NewLeveledCompactor(t.Context(), nil, nil, []int64{DefaultBlockDuration}, chunkenc.NewPool(), nil)
 					require.NoError(t, err)
 					oldULIDs, err = compactor.Write(oldHead.opts.ChunkDirRoot, oldHead, mint, maxt, nil)
 					require.NoError(t, err)
@@ -2412,7 +2412,7 @@ func TestCompactBlockMetasHints(t *testing.T) {
 }
 
 func TestCompactEmptyResultBlockWithTombstone(t *testing.T) {
-	ctx := context.Background()
+	ctx := t.Context()
 	tmpdir := t.TempDir()
 	blockDir := createBlock(t, tmpdir, genSeries(1, 1, 0, 10))
 	block, err := OpenBlock(nil, blockDir, nil, nil)
@@ -2435,7 +2435,7 @@ func TestDelayedCompaction(t *testing.T) {
 	label := labels.FromStrings("foo", "bar")
 
 	appendSamples := func(t *testing.T, db *DB, timestamps ...int64) {
-		app := db.AppenderV2(context.Background())
+		app := db.AppenderV2(t.Context())
 		for _, ts := range timestamps {
 			_, err := app.Append(0, label, 0, ts, 0, nil, nil, storage.AOptions{})
 			require.NoError(t, err)
@@ -2453,7 +2453,7 @@ func TestDelayedCompaction(t *testing.T) {
 
 		compactAndCheck := func() {
 			start := time.Now()
-			db.Compact(context.Background())
+			db.Compact(t.Context())
 			require.False(t, db.head.compactable())
 			require.Less(t, time.Since(start), delay)
 		}
@@ -2596,7 +2596,7 @@ func TestDelayedCompactionDoesNotBlockUnrelatedOps(t *testing.T) {
 
 			if c.whenCompactable {
 				label := labels.FromStrings("foo", "bar")
-				app := db.AppenderV2(context.Background())
+				app := db.AppenderV2(t.Context())
 				_, err := app.Append(0, label, 0, 301, 0, nil, nil, storage.AOptions{})
 				require.NoError(t, err)
 				_, err = app.Append(0, label, 0, 317, 0, nil, nil, storage.AOptions{})
@@ -2610,7 +2610,7 @@ func TestDelayedCompactionDoesNotBlockUnrelatedOps(t *testing.T) {
 			}
 
 			// The blocks were compacted.
-			db.Compact(context.Background())
+			db.Compact(t.Context())
 			require.Len(t, db.Blocks(), 2)
 		})
 	}

@@ -14,7 +14,6 @@
 package hetzner
 
 import (
-	"context"
 	"fmt"
 	"testing"
 
@@ -47,7 +46,7 @@ func TestHCloudSDRefresh(t *testing.T) {
 	d, err := newHcloudDiscovery(&cfg, promslog.NewNopLogger())
 	require.NoError(t, err)
 
-	targetGroups, err := d.refresh(context.Background())
+	targetGroups, err := d.refresh(t.Context())
 	require.NoError(t, err)
 	require.Len(t, targetGroups, 1)
 

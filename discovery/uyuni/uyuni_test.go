@@ -146,7 +146,7 @@ func TestUyuniSDSkipLogin(t *testing.T) {
 	md.token = `a token`
 	md.tokenExpiration = time.Now().Add(time.Minute)
 
-	tgs, err := md.refresh(context.Background())
+	tgs, err := md.refresh(t.Context())
 
 	require.EqualError(t, err, errTesting)
 	require.Empty(t, tgs)

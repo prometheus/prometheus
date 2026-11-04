@@ -38,7 +38,7 @@ type mqDataStore struct {
 
 func TestMQDiscoveryRefresh(t *testing.T) {
 	t.Parallel()
-	ctx := context.Background()
+	ctx := t.Context()
 
 	// baseLabels returns the broker-level labels shared by every target of the
 	// single broker used in these test cases.

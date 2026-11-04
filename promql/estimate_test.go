@@ -57,7 +57,7 @@ load 10s
 `)
 	t.Cleanup(func() { store.Close() })
 
-	ctx := context.Background()
+	ctx := t.Context()
 	ts := time.Unix(50, 0)
 
 	est, _, err := promql.EstimateCost(ctx, store, estimateTestParser, `http_requests_total`, ts, ts, 0, 5*time.Minute, time.Minute, 10*time.Second)
@@ -76,7 +76,7 @@ load 10s
 `)
 	t.Cleanup(func() { store.Close() })
 
-	ctx := context.Background()
+	ctx := t.Context()
 	ts := time.Unix(600, 0)
 	scrape := 10 * time.Second
 
@@ -118,7 +118,7 @@ load 10s
 `)
 	t.Cleanup(func() { store.Close() })
 
-	ctx := context.Background()
+	ctx := t.Context()
 	scrape := 10 * time.Second
 	lookback := 5 * time.Minute
 
@@ -254,7 +254,7 @@ load 10s
 `)
 	t.Cleanup(func() { store.Close() })
 
-	ctx := context.Background()
+	ctx := t.Context()
 	scrape := 10 * time.Second
 	lookback := 5 * time.Minute
 
@@ -305,7 +305,7 @@ load 10s
 `)
 	t.Cleanup(func() { store.Close() })
 
-	ctx := context.Background()
+	ctx := t.Context()
 
 	// A very wide range selector at a 1ms scrape interval over a very long
 	// [start,end] with a tiny step gives a huge sample estimate. The result must
@@ -327,7 +327,7 @@ load 10s
 `)
 	t.Cleanup(func() { store.Close() })
 
-	ctx := context.Background()
+	ctx := t.Context()
 	ts := time.Unix(600, 0)
 
 	for _, q := range []string{
@@ -352,7 +352,7 @@ load 10s
 `)
 	t.Cleanup(func() { store.Close() })
 
-	ctx := context.Background()
+	ctx := t.Context()
 	ts := time.Unix(50, 0)
 
 	est, _, err := promql.EstimateCost(ctx, store, estimateTestParser, `a + b`, ts, ts, 0, 5*time.Minute, time.Minute, 10*time.Second)
@@ -374,7 +374,7 @@ load 10s
 `)
 	t.Cleanup(func() { store.Close() })
 
-	ctx := context.Background()
+	ctx := t.Context()
 	ts := time.Unix(50, 0)
 
 	// A non-positive scrape interval degrades SamplesRead to one per series,
@@ -470,14 +470,14 @@ func TestEstimateCostPartialDensitySample(t *testing.T) {
 			counter := &chunkMetaCountingQueryable{q: s, cq: s}
 			ts := time.Unix(int64(tc.points*10), 0)
 			expr := fmt.Sprintf("metric[%ds]", tc.points*10)
-			est, _, err := promql.EstimateCost(context.Background(), counter, estimateTestParser, expr, ts, ts, 0, 5*time.Minute, time.Minute, time.Millisecond)
+			est, _, err := promql.EstimateCost(t.Context(), counter, estimateTestParser, expr, ts, ts, 0, 5*time.Minute, time.Minute, time.Millisecond)
 			require.NoError(t, err)
 			require.Len(t, counter.metas, 1)
 			require.Equal(t, 50, *counter.metas[0])
-			query, err := newQueryCostEngine(t).NewInstantQuery(context.Background(), s, nil, expr, ts)
+			query, err := newQueryCostEngine(t).NewInstantQuery(t.Context(), s, nil, expr, ts)
 			require.NoError(t, err)
 			defer query.Close()
-			require.NoError(t, query.Exec(context.Background()).Err)
+			require.NoError(t, query.Exec(t.Context()).Err)
 			// A partial series must not depress the average count of completed
 			// series. With none completed, measured gaps supply the interval.
 			require.InDelta(t, query.Stats().Samples.SamplesRead, est.SamplesRead, float64(tc.series))
@@ -500,7 +500,7 @@ load 10s
 `)
 	t.Cleanup(func() { store.Close() })
 
-	ctx := context.Background()
+	ctx := t.Context()
 	ts := time.Unix(600, 0)
 
 	// Pass scrapeInterval=0: without chunk sampling this would collapse to one
@@ -526,7 +526,7 @@ load 10s
 `)
 	t.Cleanup(func() { store.Close() })
 
-	ctx := context.Background()
+	ctx := t.Context()
 	ts := time.Unix(600, 0)
 
 	est, _, err := promql.EstimateCost(ctx, store, estimateTestParser, `metric[10m]`, ts, ts, 0, 5*time.Minute, time.Minute, time.Millisecond)
@@ -557,7 +557,7 @@ load 10s
 `)
 	t.Cleanup(func() { store.Close() })
 
-	ctx := context.Background()
+	ctx := t.Context()
 	ts := time.Unix(600, 0)
 
 	// With lookbackDelta=0 the estimator applies the 5m default. The window stays
@@ -584,7 +584,7 @@ load 10s
 `)
 	t.Cleanup(func() { store.Close() })
 
-	ctx := context.Background()
+	ctx := t.Context()
 	scrape := 10 * time.Second
 	lookback := 5 * time.Minute
 
@@ -672,7 +672,7 @@ load 10s
 `)
 	t.Cleanup(func() { store.Close() })
 
-	ctx := context.Background()
+	ctx := t.Context()
 	scrape := 10 * time.Second
 	lookback := 5 * time.Minute
 
@@ -711,7 +711,7 @@ func TestEstimateCostHistogramFallback(t *testing.T) {
 	store := promqltest.LoadedStorage(t, sb.String())
 	t.Cleanup(func() { store.Close() })
 
-	ctx := context.Background()
+	ctx := t.Context()
 	scrape := 10 * time.Second
 
 	// Density sampling sees the old data in the full selector window. Histogram
@@ -769,7 +769,7 @@ load 10s
 `)
 	t.Cleanup(func() { store.Close() })
 
-	ctx := context.Background()
+	ctx := t.Context()
 	ts := time.Unix(600, 0)
 
 	recorder := &selectRecordingQueryable{q: store}
@@ -891,7 +891,7 @@ func TestEstimateCostChunkSampleBudgetBoundsChunksExamined(t *testing.T) {
 	store := promqltest.LoadedStorage(t, sb.String())
 	t.Cleanup(func() { store.Close() })
 
-	ctx := context.Background()
+	ctx := t.Context()
 	// The selector includes the only sample at t=0 for each series.
 	ts := time.Unix(0, 0)
 
@@ -923,7 +923,7 @@ func TestEstimateCostSamplingUsesSelectorWindow(t *testing.T) {
 	store := promqltest.LoadedStorage(t, sb.String())
 	t.Cleanup(func() { store.Close() })
 
-	ctx := context.Background()
+	ctx := t.Context()
 	// The query ends inside the dense region.
 	ts := time.Unix(1200, 0)
 
@@ -960,7 +960,7 @@ load 10s
 `)
 	t.Cleanup(func() { store.Close() })
 
-	ctx := context.Background()
+	ctx := t.Context()
 	start, end := time.Unix(4000, 0), time.Unix(4000+3600, 0)
 	step := time.Minute
 
@@ -988,7 +988,7 @@ load 10s
 	t.Cleanup(func() { store.Close() })
 
 	durationParser := parser.NewParser(parser.Options{})
-	ctx := context.Background()
+	ctx := t.Context()
 	ts := time.Unix(5000, 0)
 
 	// `[2m*2]` resolves to a 4m range, so both forms must estimate identically.
@@ -1012,7 +1012,7 @@ load 10s
 	for _, query := range []string{`info(metric)`, `info(metric, {data="one"})`, `info(info(metric))`} {
 		t.Run(query, func(t *testing.T) {
 			ts := time.Unix(1000, 0)
-			est, warnings, err := promql.EstimateCost(context.Background(), s, p, query, ts, ts, 0, 5*time.Minute, time.Minute, 10*time.Second)
+			est, warnings, err := promql.EstimateCost(t.Context(), s, p, query, ts, ts, 0, 5*time.Minute, time.Minute, 10*time.Second)
 			require.NoError(t, err)
 			require.Equal(t, int64(1), est.SeriesTouched, "info label selectors must not be counted as standalone reads")
 			require.Len(t, warnings, 1)
@@ -1056,17 +1056,17 @@ load 10s
 				if step > 0 {
 					end = time.Unix(7607, 0)
 				}
-				est, _, err := promql.EstimateCost(context.Background(), s, estimateTestParser, query, start, end, step, 5*time.Minute, time.Minute, 10*time.Second)
+				est, _, err := promql.EstimateCost(t.Context(), s, estimateTestParser, query, start, end, step, 5*time.Minute, time.Minute, 10*time.Second)
 				require.NoError(t, err)
 				var q promql.Query
 				if step == 0 {
-					q, err = engine.NewInstantQuery(context.Background(), s, nil, query, start)
+					q, err = engine.NewInstantQuery(t.Context(), s, nil, query, start)
 				} else {
-					q, err = engine.NewRangeQuery(context.Background(), s, nil, query, start, end, step)
+					q, err = engine.NewRangeQuery(t.Context(), s, nil, query, start, end, step)
 				}
 				require.NoError(t, err)
 				defer q.Close()
-				require.NoError(t, q.Exec(context.Background()).Err)
+				require.NoError(t, q.Exec(t.Context()).Err)
 				require.InDelta(t, q.Stats().Samples.SamplesRead, est.SamplesRead, 4)
 			})
 		}

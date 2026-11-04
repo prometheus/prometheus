@@ -15,7 +15,6 @@ package agent
 
 import (
 	"bytes"
-	"context"
 	"fmt"
 	"io"
 	"log/slog"
@@ -190,7 +189,7 @@ func TestConcurrentAppendSameLabels(t *testing.T) {
 	for range n {
 		go func() {
 			defer wg.Done()
-			app := db.AppenderV2(context.Background())
+			app := db.AppenderV2(t.Context())
 			<-start
 			_, err := app.Append(0, lset, 0, 1000, 1.0, nil, nil, storage.AOptions{})
 			require.NoError(t, err)
@@ -244,7 +243,7 @@ func TestUnsupportedFunctions(t *testing.T) {
 	})
 
 	t.Run("ExemplarQuerier", func(t *testing.T) {
-		_, err := s.ExemplarQuerier(context.TODO())
+		_, err := s.ExemplarQuerier(t.Context())
 		require.Equal(t, err, ErrUnsupported)
 	})
 }
@@ -257,7 +256,7 @@ func TestCommit(t *testing.T) {
 	)
 
 	s := createTestAgentDB(t, nil, DefaultOptions())
-	app := s.Appender(context.TODO())
+	app := s.Appender(t.Context())
 
 	lbls := labelsForTest(t.Name(), numSeries)
 	for _, l := range lbls {
@@ -388,7 +387,7 @@ func TestCommit(t *testing.T) {
 	require.Equal(t, numSeries*numHistograms*2, walFloatHistogramCount, "unexpected number of float histograms")
 
 	// Check that we can get another appender after this - see https://github.com/prometheus/prometheus/issues/17800.
-	_ = s.Appender(context.TODO())
+	_ = s.Appender(t.Context())
 }
 
 func TestRollback(t *testing.T) {
@@ -399,7 +398,7 @@ func TestRollback(t *testing.T) {
 	)
 
 	s := createTestAgentDB(t, nil, DefaultOptions())
-	app := s.Appender(context.TODO())
+	app := s.Appender(t.Context())
 
 	lbls := labelsForTest(t.Name(), numSeries)
 	for _, l := range lbls {
@@ -540,7 +539,7 @@ func TestFullTruncateWAL(t *testing.T) {
 	defer func() {
 		require.NoError(t, s.Close())
 	}()
-	app := s.Appender(context.TODO())
+	app := s.Appender(t.Context())
 
 	lbls := labelsForTest(t.Name(), numSeries)
 	for _, l := range lbls {
@@ -625,7 +624,7 @@ func TestPartialTruncateWAL(t *testing.T) {
 	defer func() {
 		require.NoError(t, s.Close())
 	}()
-	app := s.Appender(context.TODO())
+	app := s.Appender(t.Context())
 
 	// Create first batch of 800 series with 1000 data-points with a fixed lastTs as 500.
 	var lastTs int64 = 500
@@ -780,7 +779,7 @@ func TestWALReplay(t *testing.T) {
 				// Valid records following an unknown type must still be replayed.
 				require.NoError(t, s.wal.Log([]byte{255, 1, 2, 3}))
 			}
-			app := s.Appender(context.TODO())
+			app := s.Appender(t.Context())
 
 			lbls := labelsForTest(t.Name(), numSeries)
 			for _, l := range lbls {
@@ -1041,7 +1040,7 @@ func TestDuplicateSeriesRefsByHash(t *testing.T) {
 			db, err := Open(promslog.NewNopLogger(), nil, rs1, dbDir, opts)
 			require.NoError(t, err)
 
-			app := db.AppenderV2(context.Background())
+			app := db.AppenderV2(t.Context())
 
 			initialMeta := metadata.Metadata{Type: model.MetricTypeGauge, Unit: "bytes", Help: "initial metadata"}
 			updatedMeta := metadata.Metadata{Type: model.MetricTypeCounter, Unit: "seconds", Help: "updated metadata"}
@@ -1220,7 +1219,7 @@ func BenchmarkGetOrCreate(b *testing.B) {
 	b.Run("new", func(b *testing.B) {
 		s := createTestAgentDB(b, nil, DefaultOptions())
 		defer s.Close()
-		app := s.AppenderV2(context.Background()).(*appenderV2)
+		app := s.AppenderV2(b.Context()).(*appenderV2)
 
 		// Fixed-size label set. Before each pass through the set we GC all series
 		// (they are created with lastTs==math.MinInt64, so mint=math.MaxInt64
@@ -1248,7 +1247,7 @@ func BenchmarkGetOrCreate(b *testing.B) {
 	b.Run("existing", func(b *testing.B) {
 		s := createTestAgentDB(b, nil, DefaultOptions())
 		defer s.Close()
-		app := s.AppenderV2(context.Background()).(*appenderV2)
+		app := s.AppenderV2(b.Context()).(*appenderV2)
 
 		lbls := make([]labels.Labels, n)
 		for i, l := range labelsForTest("benchmark_existing", n) {

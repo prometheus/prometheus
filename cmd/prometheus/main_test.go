@@ -391,7 +391,7 @@ func TestSendAlerts(t *testing.T) {
 				require.NotEmpty(t, tc.in, "sender called with 0 alert")
 				require.Equal(t, tc.exp, alerts)
 			})
-			rules.SendAlerts(senderFunc, "http://localhost:9090")(context.TODO(), "up", tc.in...)
+			rules.SendAlerts(senderFunc, "http://localhost:9090")(t.Context(), "up", tc.in...)
 		})
 	}
 }
@@ -691,7 +691,7 @@ func TestTimeMetrics(t *testing.T) {
 		"prometheus_tsdb_head_max_time_seconds",
 	))
 
-	app := db.AppenderV2(context.Background())
+	app := db.AppenderV2(t.Context())
 	_, err = app.Append(0, labels.FromStrings(model.MetricNameLabel, "a"), 0, 1000, 1, nil, nil, storage.AOptions{})
 	require.NoError(t, err)
 	_, err = app.Append(0, labels.FromStrings(model.MetricNameLabel, "a"), 0, 2000, 1, nil, nil, storage.AOptions{})
@@ -877,7 +877,7 @@ func TestModeSpecificFlags(t *testing.T) {
 func TestDocumentation(t *testing.T) {
 	t.Parallel()
 
-	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	ctx, cancel := context.WithTimeout(t.Context(), 5*time.Second)
 	defer cancel()
 
 	cmd := exec.CommandContext(ctx, promPath, "-test.main", "--write-documentation")

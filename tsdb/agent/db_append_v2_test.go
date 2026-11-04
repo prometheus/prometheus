@@ -14,7 +14,6 @@
 package agent
 
 import (
-	"context"
 	"fmt"
 	"math"
 	"path/filepath"
@@ -49,7 +48,7 @@ func TestDB_InvalidSeries_AppendV2(t *testing.T) {
 	s := createTestAgentDB(t, nil, DefaultOptions())
 	defer s.Close()
 
-	app := s.AppenderV2(context.Background())
+	app := s.AppenderV2(t.Context())
 	t.Run("Samples", func(t *testing.T) {
 		_, err := app.Append(0, labels.Labels{}, 0, 0, 0, nil, nil, storage.AOptions{})
 		require.ErrorIs(t, err, tsdb.ErrInvalidSample, "should reject empty labels")
@@ -344,7 +343,7 @@ func TestRollbackAppendV2(t *testing.T) {
 		opts := DefaultOptions()
 		opts.EnableSTStorage = enableSTStorage
 		s := createTestAgentDB(t, nil, opts)
-		app := s.AppenderV2(context.TODO())
+		app := s.AppenderV2(t.Context())
 
 		lbls := labelsForTest(t.Name(), numSeries)
 		for _, l := range lbls {
@@ -467,7 +466,7 @@ func TestFullTruncateWAL_AppendV2(t *testing.T) {
 	defer func() {
 		require.NoError(t, s.Close())
 	}()
-	app := s.AppenderV2(context.TODO())
+	app := s.AppenderV2(t.Context())
 
 	lbls := labelsForTest(t.Name(), numSeries)
 	for _, l := range lbls {
@@ -552,7 +551,7 @@ func TestPartialTruncateWAL_AppendV2(t *testing.T) {
 	defer func() {
 		require.NoError(t, s.Close())
 	}()
-	app := s.AppenderV2(context.TODO())
+	app := s.AppenderV2(t.Context())
 
 	// Create first batch of 800 series with 1000 data-points with a fixed lastTs as 500.
 	var lastTs int64 = 500
@@ -715,7 +714,7 @@ func TestWALReplay_AppendV2(t *testing.T) {
 				// Valid records following an ignored type must still be replayed.
 				require.NoError(t, s.wal.Log(tc.record))
 			}
-			app := s.AppenderV2(context.TODO())
+			app := s.AppenderV2(t.Context())
 
 			lbls := labelsForTest(t.Name(), numSeries)
 			for _, l := range lbls {
@@ -821,7 +820,7 @@ func Test_ExistingWAL_NextRef_AppendV2(t *testing.T) {
 	seriesCount := 10
 
 	// Append <seriesCount> series
-	app := db.AppenderV2(context.Background())
+	app := db.AppenderV2(t.Context())
 	for i := range seriesCount {
 		lset := labels.FromStrings(model.MetricNameLabel, fmt.Sprintf("series_%d", i))
 		_, err := app.Append(0, lset, 0, 0, 100, nil, nil, storage.AOptions{})
@@ -854,7 +853,7 @@ func Test_ExistingWAL_NextRef_AppendV2(t *testing.T) {
 
 func TestStorage_DuplicateExemplarsIgnored_AppendV2(t *testing.T) {
 	s := createTestAgentDB(t, nil, DefaultOptions())
-	app := s.AppenderV2(context.Background())
+	app := s.AppenderV2(t.Context())
 	defer s.Close()
 
 	// Write a few exemplars to our appender and call Commit().
@@ -897,7 +896,7 @@ func TestStorage_AppendExemplars_AppendV2(t *testing.T) {
 	s := createTestAgentDB(t, nil, DefaultOptions())
 	defer s.Close()
 
-	app, ok := s.AppenderV2(context.Background()).(storage.ExemplarAppenderV2)
+	app, ok := s.AppenderV2(t.Context()).(storage.ExemplarAppenderV2)
 	require.True(t, ok)
 
 	// Unknown series should return storage.ErrNotFound.
@@ -959,7 +958,7 @@ func TestDBAllowOOOSamples_AppendV2(t *testing.T) {
 	opts := DefaultOptions()
 	opts.OutOfOrderTimeWindow = math.MaxInt64
 	s := createTestAgentDB(t, reg, opts)
-	app := s.AppenderV2(context.TODO())
+	app := s.AppenderV2(t.Context())
 
 	// Let's add some samples in the [offset, offset+numDatapoints) range.
 	lbls := labelsForTest(t.Name(), numSeries)
@@ -1044,7 +1043,7 @@ func TestDBAllowOOOSamples_AppendV2(t *testing.T) {
 		t.Fatalf("unable to create storage for the agent: %v", err)
 	}
 
-	app = db.AppenderV2(context.Background())
+	app = db.AppenderV2(t.Context())
 
 	// Now the lastTs will have been recorded successfully.
 	// Let's try appending twice as many OOO samples in the [0, numDatapoints) range.
@@ -1138,7 +1137,7 @@ func TestDBOutOfOrderTimeWindow_AppendV2(t *testing.T) {
 			opts := DefaultOptions()
 			opts.OutOfOrderTimeWindow = c.outOfOrderTimeWindow
 			s := createTestAgentDB(t, reg, opts)
-			app := s.AppenderV2(context.TODO())
+			app := s.AppenderV2(t.Context())
 
 			lbls := labelsForTest(t.Name()+"_histogram", 1)
 			lset := labels.New(lbls[0]...)

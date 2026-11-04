@@ -14,7 +14,6 @@
 package tsdb_test
 
 import (
-	"context"
 	"math"
 	"testing"
 	"time"
@@ -42,7 +41,7 @@ func TestOOOSamplesLostAfterRestart(t *testing.T) {
 		return db
 	}
 	add := func(db *tsdb.DB, name string, ts ...time.Duration) {
-		app := db.Appender(context.Background())
+		app := db.Appender(t.Context())
 		for _, x := range ts {
 			_, err := app.Append(0, labels.FromStrings("__name__", name), x.Milliseconds(), 1)
 			require.NoError(t, err)
@@ -54,7 +53,7 @@ func TestOOOSamplesLostAfterRestart(t *testing.T) {
 		for ts := from; ts < to; ts += time.Minute {
 			add(db, "scraped", ts)
 			db.ForceHeadMMap()
-			require.NoError(t, db.Compact(context.Background()))
+			require.NoError(t, db.Compact(t.Context()))
 		}
 	}
 	// 40 late samples, 2.5h old.
@@ -69,7 +68,7 @@ func TestOOOSamplesLostAfterRestart(t *testing.T) {
 		q, err := db.Querier(math.MinInt64, math.MaxInt64)
 		require.NoError(t, err)
 		defer q.Close()
-		ss := q.Select(context.Background(), false, nil, labels.MustNewMatcher(labels.MatchEqual, "__name__", "late"))
+		ss := q.Select(t.Context(), false, nil, labels.MustNewMatcher(labels.MatchEqual, "__name__", "late"))
 		n := 0
 		for ss.Next() {
 			it := ss.At().Iterator(nil)

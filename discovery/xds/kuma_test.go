@@ -263,7 +263,7 @@ tls_config:
 	require.NotNil(t, kd)
 
 	ch := make(chan []*targetgroup.Group, 1)
-	kd.poll(context.Background(), ch)
+	kd.poll(t.Context(), ch)
 
 	groups := <-ch
 	require.Len(t, groups, 1)
@@ -310,7 +310,7 @@ tls_config:
 	require.Equal(t, expectedTargets, targets)
 
 	// Should skip the next update.
-	ctx, cancel := context.WithCancel(context.Background())
+	ctx, cancel := context.WithCancel(t.Context())
 	go func() {
 		time.Sleep(1 * time.Second)
 		cancel()

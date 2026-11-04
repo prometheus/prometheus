@@ -14,7 +14,6 @@
 package hetzner
 
 import (
-	"context"
 	"fmt"
 	"testing"
 
@@ -46,7 +45,7 @@ func TestRobotSDRefresh(t *testing.T) {
 	d, err := newRobotDiscovery(&cfg, promslog.NewNopLogger())
 	require.NoError(t, err)
 
-	targetGroups, err := d.refresh(context.Background())
+	targetGroups, err := d.refresh(t.Context())
 	require.NoError(t, err)
 	require.Len(t, targetGroups, 1)
 
@@ -99,7 +98,7 @@ func TestRobotSDRefreshHandleError(t *testing.T) {
 	d, err := newRobotDiscovery(&cfg, promslog.NewNopLogger())
 	require.NoError(t, err)
 
-	targetGroups, err := d.refresh(context.Background())
+	targetGroups, err := d.refresh(t.Context())
 	require.EqualError(t, err, "non 2xx status '401' response during hetzner service discovery with role robot")
 
 	require.Empty(t, targetGroups)

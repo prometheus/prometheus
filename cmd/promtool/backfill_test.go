@@ -14,7 +14,6 @@
 package main
 
 import (
-	"context"
 	"math"
 	"sort"
 	"testing"
@@ -46,7 +45,7 @@ func sortSamples(samples []backfillSample) {
 }
 
 func queryAllSeries(t testing.TB, q storage.Querier, _, _ int64) []backfillSample {
-	ss := q.Select(context.Background(), false, nil, labels.MustNewMatcher(labels.MatchRegexp, "", ".*"))
+	ss := q.Select(t.Context(), false, nil, labels.MustNewMatcher(labels.MatchRegexp, "", ".*"))
 	samples := []backfillSample{}
 	for ss.Next() {
 		series := ss.At()

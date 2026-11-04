@@ -14,7 +14,6 @@
 package tsdb
 
 import (
-	"context"
 	"fmt"
 	"math/rand/v2"
 	"strconv"
@@ -43,7 +42,7 @@ func BenchmarkQuerier(b *testing.B) {
 		require.NoError(b, h.Close())
 	}()
 
-	app := h.AppenderV2(context.Background())
+	app := h.AppenderV2(b.Context())
 	addSeries := func(l labels.Labels) {
 		app.Append(0, l, 0, 0, 0, nil, nil, storage.AOptions{})
 	}
@@ -59,7 +58,7 @@ func BenchmarkQuerier(b *testing.B) {
 			addSeries(labels.FromStrings("i", strconv.Itoa(i)+postingsBenchSuffix, "n", "2_"+strconv.Itoa(n)+postingsBenchSuffix, "j", "foo"))
 		}
 		require.NoError(b, app.Commit())
-		app = h.AppenderV2(context.Background())
+		app = h.AppenderV2(b.Context())
 	}
 	require.NoError(b, app.Commit())
 
@@ -102,7 +101,7 @@ func BenchmarkQuerier(b *testing.B) {
 }
 
 func benchmarkPostingsForMatchers(b *testing.B, ir IndexReader) {
-	ctx := context.Background()
+	ctx := b.Context()
 
 	a1 := labels.MustNewMatcher(labels.MatchEqual, "a", "1"+postingsBenchSuffix)
 	n1 := labels.MustNewMatcher(labels.MatchEqual, "n", "1"+postingsBenchSuffix)
@@ -206,7 +205,7 @@ func benchmarkLabelValuesWithMatchers(b *testing.B, ir IndexReader) {
 	nX := labels.MustNewMatcher(labels.MatchNotEqual, "n", "X"+postingsBenchSuffix)
 	nPlus := labels.MustNewMatcher(labels.MatchRegexp, "n", ".+")
 
-	ctx := context.Background()
+	ctx := b.Context()
 
 	cases := []struct {
 		name      string
@@ -279,12 +278,12 @@ func createHeadForBenchmarkSelect(b *testing.B, numSeries int, addSeries func(ap
 	})
 	h := db.Head()
 
-	app := h.AppenderV2(context.Background())
+	app := h.AppenderV2(b.Context())
 	for i := range numSeries {
 		addSeries(app, i)
 		if i%1000 == 999 { // Commit every so often, so the appender doesn't get too big.
 			require.NoError(b, app.Commit())
-			app = h.AppenderV2(context.Background())
+			app = h.AppenderV2(b.Context())
 		}
 	}
 	require.NoError(b, app.Commit())
@@ -301,7 +300,7 @@ func benchmarkSelect(b *testing.B, queryable storage.Queryable, numSeries int, s
 
 			b.ResetTimer()
 			for b.Loop() {
-				ss := q.Select(context.Background(), sorted, nil, matcher)
+				ss := q.Select(b.Context(), sorted, nil, matcher)
 				for ss.Next() {
 				}
 				require.NoError(b, ss.Err())

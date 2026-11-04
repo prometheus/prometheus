@@ -14,7 +14,6 @@
 package tsdb
 
 import (
-	"context"
 	"fmt"
 	"math"
 	"slices"
@@ -63,7 +62,7 @@ func newSeriesEvictionTestDB(t *testing.T, exemplarSeries ...int) *seriesEvictio
 	t.Cleanup(func() { require.NoError(t, db.Close()) })
 
 	res := &seriesEvictionTestDB{db: db}
-	app := db.Appender(context.Background())
+	app := db.Appender(t.Context())
 	for i := range evictionTestSeries {
 		evicted := i < evictionTestEvictedSeries
 
@@ -164,7 +163,7 @@ func selectSamples(t *testing.T, q storage.Querier) *readingSeries {
 	t.Helper()
 
 	var selected []storage.Series
-	ss := q.Select(context.Background(), true, nil, evictionTestMatcher)
+	ss := q.Select(t.Context(), true, nil, evictionTestMatcher)
 	for ss.Next() {
 		selected = append(selected, ss.At())
 	}
@@ -190,7 +189,7 @@ func selectChunks(t *testing.T, q storage.ChunkQuerier) *readingSeries {
 	t.Helper()
 
 	var selected []storage.ChunkSeries
-	ss := q.Select(context.Background(), true, nil, evictionTestMatcher)
+	ss := q.Select(t.Context(), true, nil, evictionTestMatcher)
 	for ss.Next() {
 		selected = append(selected, ss.At())
 	}
@@ -330,7 +329,7 @@ func TestSeriesEviction_QueryOpenedAfterWaitingForReaders(t *testing.T) {
 					if tt.wrapChunkIDs {
 						// A sample in the next chunk range gives the series a second chunk. It is a stale marker, to
 						// keep the series evictable by CompactStaleHead.
-						app := db.Appender(context.Background())
+						app := db.Appender(t.Context())
 						_, err := app.Append(testDB.evictedRefs[0], evictionTestLabels(0), 1000, math.Float64frombits(value.StaleNaN))
 						require.NoError(t, err)
 						require.NoError(t, app.Commit())
@@ -346,7 +345,7 @@ func TestSeriesEviction_QueryOpenedAfterWaitingForReaders(t *testing.T) {
 
 					// The late samples are appended after the series are selected, and before they are evicted.
 					db.compactHeadViewBeforeEvictTestingCallback = func() {
-						app := db.Appender(context.Background())
+						app := db.Appender(t.Context())
 						for _, i := range tt.lateSeries {
 							_, err := app.Append(0, evictionTestLabels(i), 400, 42)
 							require.NoError(t, err)
@@ -381,7 +380,7 @@ func TestSeriesEviction_QueryOpenedAfterWaitingForReaders(t *testing.T) {
 					require.Equal(t, uint64(evictionTestSeries), numSeriesInCallback, "the series must be removed after the callback")
 					require.Equal(t, uint64(evictionTestSeries-removed), db.Head().NumSeries())
 					if tt.appendAfterEviction {
-						app := db.Appender(context.Background())
+						app := db.Appender(t.Context())
 						_, err := app.Append(testDB.evictedRefs[0], evictionTestLabels(0), 400, 42)
 						require.NoError(t, err)
 						require.NoError(t, app.Commit())
@@ -753,7 +752,7 @@ func TestSeriesEviction_QueryStartingAtLastTimestampIsWaitedForByNextEviction(t 
 				// evicted. A query for the timestamp of the late sample is opened after the first eviction waited for the
 				// readers, so it has the series 0 in the set being evicted, and the late sample is in the head only.
 				db.compactHeadViewBeforeEvictTestingCallback = func() {
-					app := db.Appender(context.Background())
+					app := db.Appender(t.Context())
 					_, err := app.Append(0, evictionTestLabels(0), lateSampleTs, 42)
 					require.NoError(t, err)
 					require.NoError(t, app.Commit())

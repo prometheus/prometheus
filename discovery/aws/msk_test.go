@@ -41,7 +41,7 @@ type mskDataStore struct {
 
 func TestMSKDiscoveryListClusters(t *testing.T) {
 	t.Parallel()
-	ctx := context.Background()
+	ctx := t.Context()
 
 	for _, tt := range []struct {
 		name     string
@@ -132,7 +132,7 @@ func TestMSKDiscoveryListClusters(t *testing.T) {
 
 func TestMSKDiscoveryDescribeClusters(t *testing.T) {
 	t.Parallel()
-	ctx := context.Background()
+	ctx := t.Context()
 
 	for _, tt := range []struct {
 		name        string
@@ -283,7 +283,7 @@ func TestMSKDiscoveryDescribeClusters(t *testing.T) {
 
 func TestMSKDiscoveryListNodes(t *testing.T) {
 	t.Parallel()
-	ctx := context.Background()
+	ctx := t.Context()
 
 	for _, tt := range []struct {
 		name     string
@@ -450,7 +450,7 @@ func TestMSKDiscoveryListNodes(t *testing.T) {
 
 func TestMSKDiscoveryRefresh(t *testing.T) {
 	t.Parallel()
-	ctx := context.Background()
+	ctx := t.Context()
 
 	tests := []struct {
 		name     string
@@ -1384,7 +1384,7 @@ func fullyPopulatedMSKDataStore() *mskDataStore {
 func TestMSKDiscoveryRefreshFullyPopulated(t *testing.T) {
 	t.Parallel()
 
-	tgs, err := mskTestDiscovery(fullyPopulatedMSKDataStore()).refresh(context.Background())
+	tgs, err := mskTestDiscovery(fullyPopulatedMSKDataStore()).refresh(t.Context())
 	require.NoError(t, err)
 	require.Equal(t, []*targetgroup.Group{
 		{
@@ -1458,7 +1458,7 @@ func TestMSKDiscoveryRefreshClusterNilOptionalFields(t *testing.T) {
 			data := fullyPopulatedMSKDataStore()
 			tc.mutate(&data.clusters[0])
 
-			tgs, err := mskTestDiscovery(data).refresh(context.Background())
+			tgs, err := mskTestDiscovery(data).refresh(t.Context())
 			require.NoError(t, err)
 			require.Len(t, tgs, 1)
 			require.Len(t, tgs[0].Targets, 1,
@@ -1485,7 +1485,7 @@ func TestMSKDiscoveryDescribeClustersNilClusterInfo(t *testing.T) {
 	data := fullyPopulatedMSKDataStore()
 	data.clustersWithoutInfo = []string{fullyPopulatedMSKClusterARN}
 
-	clusters, err := mskTestDiscovery(data).describeClusters(context.Background(), []string{fullyPopulatedMSKClusterARN})
+	clusters, err := mskTestDiscovery(data).describeClusters(t.Context(), []string{fullyPopulatedMSKClusterARN})
 	require.NoError(t, err)
 	require.Empty(t, clusters, "a cluster described without information cannot be turned into targets")
 }

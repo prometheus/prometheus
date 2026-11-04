@@ -42,7 +42,7 @@ type ecsDataStore struct {
 
 func TestECSDiscoveryListClusterARNs(t *testing.T) {
 	t.Parallel()
-	ctx := context.Background()
+	ctx := t.Context()
 
 	// iterate through the test cases
 	for _, tt := range []struct {
@@ -117,7 +117,7 @@ func TestECSDiscoveryListClusterARNs(t *testing.T) {
 
 func TestECSDiscoveryDescribeClusters(t *testing.T) {
 	t.Parallel()
-	ctx := context.Background()
+	ctx := t.Context()
 
 	// iterate through the test cases
 	for _, tt := range []struct {
@@ -216,7 +216,7 @@ func TestECSDiscoveryDescribeClusters(t *testing.T) {
 
 func TestECSDiscoveryListServiceARNs(t *testing.T) {
 	t.Parallel()
-	ctx := context.Background()
+	ctx := t.Context()
 
 	for _, tt := range []struct {
 		name        string
@@ -315,7 +315,7 @@ func TestECSDiscoveryListServiceARNs(t *testing.T) {
 
 func TestECSDiscoveryDescribeServices(t *testing.T) {
 	t.Parallel()
-	ctx := context.Background()
+	ctx := t.Context()
 
 	for _, tt := range []struct {
 		name        string
@@ -408,7 +408,7 @@ func TestECSDiscoveryDescribeServices(t *testing.T) {
 
 func TestECSDiscoveryDescribeContainerInstances(t *testing.T) {
 	t.Parallel()
-	ctx := context.Background()
+	ctx := t.Context()
 
 	for _, tt := range []struct {
 		name       string
@@ -513,7 +513,7 @@ func TestECSDiscoveryDescribeContainerInstances(t *testing.T) {
 
 func TestECSDiscoveryDescribeEC2Instances(t *testing.T) {
 	t.Parallel()
-	ctx := context.Background()
+	ctx := t.Context()
 
 	for _, tt := range []struct {
 		name        string
@@ -627,7 +627,7 @@ func TestECSDiscoveryDescribeEC2Instances(t *testing.T) {
 
 func TestECSDiscoveryDescribeNetworkInterfaces(t *testing.T) {
 	t.Parallel()
-	ctx := context.Background()
+	ctx := t.Context()
 
 	for _, tt := range []struct {
 		name     string
@@ -769,7 +769,7 @@ func TestECSDiscoveryDescribeNetworkInterfaces(t *testing.T) {
 
 func TestECSDiscoveryListTaskARNs(t *testing.T) {
 	t.Parallel()
-	ctx := context.Background()
+	ctx := t.Context()
 
 	// iterate through the test cases
 	for _, tt := range []struct {
@@ -844,7 +844,7 @@ func TestECSDiscoveryListTaskARNs(t *testing.T) {
 
 func TestECSDiscoveryDescribeTasks(t *testing.T) {
 	t.Parallel()
-	ctx := context.Background()
+	ctx := t.Context()
 
 	// iterate through the test cases
 	for _, tt := range []struct {
@@ -934,7 +934,7 @@ func TestECSDiscoveryDescribeTasks(t *testing.T) {
 
 func TestECSDiscoveryRefresh(t *testing.T) {
 	t.Parallel()
-	ctx := context.Background()
+	ctx := t.Context()
 
 	tests := []struct {
 		name     string

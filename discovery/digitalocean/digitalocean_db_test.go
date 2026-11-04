@@ -14,7 +14,6 @@
 package digitalocean
 
 import (
-	"context"
 	"fmt"
 	"net/http"
 	"net/http/httptest"
@@ -45,7 +44,7 @@ func TestDigitalOceanDBRefresh(t *testing.T) {
 	endpoint, _ := url.Parse(mock.Endpoint())
 	d.(*databasesDiscovery).client.BaseURL = endpoint
 
-	tgs, err := d.refresh(context.Background())
+	tgs, err := d.refresh(t.Context())
 	require.NoError(t, err)
 	require.Len(t, tgs, 1)
 
@@ -136,7 +135,7 @@ func TestDigitalOceanDBRefreshPagination(t *testing.T) {
 	endpoint, _ := url.Parse(ts.URL)
 	d.(*databasesDiscovery).client.BaseURL = endpoint
 
-	tgs, err := d.refresh(context.Background())
+	tgs, err := d.refresh(t.Context())
 	require.NoError(t, err)
 	require.Len(t, tgs, 1)
 	require.Len(t, tgs[0].Targets, 2)

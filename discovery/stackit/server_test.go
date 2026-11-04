@@ -14,7 +14,6 @@
 package stackit
 
 import (
-	"context"
 	"crypto/rand"
 	"crypto/rsa"
 	"crypto/x509"
@@ -99,7 +98,7 @@ func TestServerSDRefresh(t *testing.T) {
 			d, err := newServerDiscovery(&tc.cfg, promslog.NewNopLogger())
 			require.NoError(t, err)
 
-			targetGroups, err := d.refresh(context.Background())
+			targetGroups, err := d.refresh(t.Context())
 			require.NoError(t, err)
 			require.Len(t, targetGroups, 1)
 

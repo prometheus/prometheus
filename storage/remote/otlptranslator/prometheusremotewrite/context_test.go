@@ -21,7 +21,7 @@ import (
 
 func TestEveryNTimes(t *testing.T) {
 	const n = 128
-	ctx, cancel := context.WithCancel(context.Background())
+	ctx, cancel := context.WithCancel(t.Context())
 	e := &everyNTimes{
 		n: n,
 	}

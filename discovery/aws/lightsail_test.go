@@ -61,7 +61,7 @@ func fullyPopulatedLightsailInstance() types.Instance {
 func TestLightsailRefreshFullyPopulated(t *testing.T) {
 	t.Parallel()
 
-	tgs, err := lightsailTestDiscovery([]types.Instance{fullyPopulatedLightsailInstance()}).refresh(context.Background())
+	tgs, err := lightsailTestDiscovery([]types.Instance{fullyPopulatedLightsailInstance()}).refresh(t.Context())
 	require.NoError(t, err)
 	require.Len(t, tgs, 1)
 	require.Len(t, tgs[0].Targets, 1)
@@ -138,7 +138,7 @@ func TestLightsailRefreshNilOptionalFields(t *testing.T) {
 			inst := fullyPopulatedLightsailInstance()
 			tc.mutate(&inst)
 
-			tgs, err := lightsailTestDiscovery([]types.Instance{inst}).refresh(context.Background())
+			tgs, err := lightsailTestDiscovery([]types.Instance{inst}).refresh(t.Context())
 			require.NoError(t, err)
 			require.Len(t, tgs, 1)
 			require.Len(t, tgs[0].Targets, 1,
@@ -160,7 +160,7 @@ func TestLightsailRefreshAllOptionalFieldsNil(t *testing.T) {
 
 	tgs, err := lightsailTestDiscovery([]types.Instance{
 		{PrivateIpAddress: strptr("10.0.0.9")},
-	}).refresh(context.Background())
+	}).refresh(t.Context())
 	require.NoError(t, err)
 	require.Len(t, tgs, 1)
 	require.Len(t, tgs[0].Targets, 1)

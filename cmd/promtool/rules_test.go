@@ -75,7 +75,7 @@ func TestBackfillRuleIntegration(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
 			tmpDir := t.TempDir()
-			ctx := context.Background()
+			ctx := t.Context()
 
 			// Execute the test more than once to simulate running the rule importer twice with the same data.
 			// We expect duplicate blocks with the same series are created when run more than once.
@@ -215,7 +215,7 @@ func createMultiRuleTestFiles(path string) error {
 func TestBackfillLabels(t *testing.T) {
 	t.Parallel()
 	tmpDir := t.TempDir()
-	ctx := context.Background()
+	ctx := t.Context()
 
 	start := time.Date(2009, time.November, 10, 6, 34, 0, 0, time.UTC)
 	mockAPISamples := []*model.SampleStream{

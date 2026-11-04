@@ -14,7 +14,6 @@
 package linode
 
 import (
-	"context"
 	"fmt"
 	"net/url"
 	"testing"
@@ -249,7 +248,7 @@ func TestLinodeSDRefresh(t *testing.T) {
 		require.NoError(t, err)
 		d.client.SetBaseURL(endpoint.String())
 
-		tgs, err := d.refresh(context.Background())
+		tgs, err := d.refresh(t.Context())
 		require.NoError(t, err)
 
 		require.Len(t, tgs, 1)

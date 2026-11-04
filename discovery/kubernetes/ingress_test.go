@@ -14,7 +14,6 @@
 package kubernetes
 
 import (
-	"context"
 	"fmt"
 	"maps"
 	"testing"
@@ -152,7 +151,7 @@ func TestIngressDiscoveryAdd(t *testing.T) {
 		discovery: n,
 		afterStart: func() {
 			obj := makeIngress("default", TLSNo)
-			c.NetworkingV1().Ingresses("default").Create(context.Background(), obj, metav1.CreateOptions{})
+			c.NetworkingV1().Ingresses("default").Create(t.Context(), obj, metav1.CreateOptions{})
 		},
 		expectedMaxItems: 1,
 		expectedRes:      expectedTargetGroups("default", TLSNo),
@@ -167,7 +166,7 @@ func TestIngressDiscoveryAddTLS(t *testing.T) {
 		discovery: n,
 		afterStart: func() {
 			obj := makeIngress("default", TLSYes)
-			c.NetworkingV1().Ingresses("default").Create(context.Background(), obj, metav1.CreateOptions{})
+			c.NetworkingV1().Ingresses("default").Create(t.Context(), obj, metav1.CreateOptions{})
 		},
 		expectedMaxItems: 1,
 		expectedRes:      expectedTargetGroups("default", TLSYes),
@@ -182,7 +181,7 @@ func TestIngressDiscoveryAddMixed(t *testing.T) {
 		discovery: n,
 		afterStart: func() {
 			obj := makeIngress("default", TLSMixed)
-			c.NetworkingV1().Ingresses("default").Create(context.Background(), obj, metav1.CreateOptions{})
+			c.NetworkingV1().Ingresses("default").Create(t.Context(), obj, metav1.CreateOptions{})
 		},
 		expectedMaxItems: 1,
 		expectedRes:      expectedTargetGroups("default", TLSMixed),
@@ -200,7 +199,7 @@ func TestIngressDiscoveryNamespaces(t *testing.T) {
 		afterStart: func() {
 			for _, ns := range []string{"ns1", "ns2"} {
 				obj := makeIngress(ns, TLSNo)
-				c.NetworkingV1().Ingresses(obj.Namespace).Create(context.Background(), obj, metav1.CreateOptions{})
+				c.NetworkingV1().Ingresses(obj.Namespace).Create(t.Context(), obj, metav1.CreateOptions{})
 			}
 		},
 		expectedMaxItems: 2,
@@ -218,7 +217,7 @@ func TestIngressDiscoveryOwnNamespace(t *testing.T) {
 		afterStart: func() {
 			for _, ns := range []string{"own-ns", "non-own-ns"} {
 				obj := makeIngress(ns, TLSNo)
-				c.NetworkingV1().Ingresses(obj.Namespace).Create(context.Background(), obj, metav1.CreateOptions{})
+				c.NetworkingV1().Ingresses(obj.Namespace).Create(t.Context(), obj, metav1.CreateOptions{})
 			}
 		},
 		expectedMaxItems: 1,
@@ -300,7 +299,7 @@ func TestIngressDiscoveryWithUpdatedNamespaceMetadata(t *testing.T) {
 			namespace.Labels["region"] = "us-central"
 			namespace.Annotations["contact"] = "sre"
 			namespace.Annotations["monitoring"] = "enabled"
-			c.CoreV1().Namespaces().Update(context.Background(), namespace, metav1.UpdateOptions{})
+			c.CoreV1().Namespaces().Update(t.Context(), namespace, metav1.UpdateOptions{})
 		},
 		expectedRes: map[string]*targetgroup.Group{
 			fmt.Sprintf("ingress/%s/testingress", ns): {

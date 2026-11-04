@@ -14,7 +14,6 @@
 package tsdb
 
 import (
-	"context"
 	"fmt"
 	"strconv"
 	"sync"
@@ -795,7 +794,7 @@ func TestHeadIndexReader_PostingsForLabelMatching(t *testing.T) {
 		t.Cleanup(func() {
 			require.NoError(t, h.Close())
 		})
-		app := h.AppenderV2(context.Background())
+		app := h.AppenderV2(t.Context())
 		for _, s := range series {
 			app.Append(0, s, 0, 0, 0, nil, nil, storage.AOptions{})
 		}

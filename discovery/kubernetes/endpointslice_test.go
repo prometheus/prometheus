@@ -14,7 +14,6 @@
 package kubernetes
 
 import (
-	"context"
 	"fmt"
 	"testing"
 
@@ -132,7 +131,7 @@ func TestEndpointSliceDiscoveryBeforeRun(t *testing.T) {
 		discovery: n,
 		beforeRun: func() {
 			obj := makeEndpointSliceV1("default")
-			c.DiscoveryV1().EndpointSlices(obj.Namespace).Create(context.Background(), obj, metav1.CreateOptions{})
+			c.DiscoveryV1().EndpointSlices(obj.Namespace).Create(t.Context(), obj, metav1.CreateOptions{})
 		},
 		expectedMaxItems: 1,
 		expectedRes: map[string]*targetgroup.Group{
@@ -278,7 +277,7 @@ func TestEndpointSliceDiscoveryAdd(t *testing.T) {
 					},
 				},
 			}
-			c.DiscoveryV1().EndpointSlices(obj.Namespace).Create(context.Background(), obj, metav1.CreateOptions{})
+			c.DiscoveryV1().EndpointSlices(obj.Namespace).Create(t.Context(), obj, metav1.CreateOptions{})
 		},
 		expectedMaxItems: 1,
 		expectedRes: map[string]*targetgroup.Group{
@@ -342,7 +341,7 @@ func TestEndpointSliceDiscoveryDelete(t *testing.T) {
 		discovery: n,
 		afterStart: func() {
 			obj := makeEndpointSliceV1("default")
-			c.DiscoveryV1().EndpointSlices(obj.Namespace).Delete(context.Background(), obj.Name, metav1.DeleteOptions{})
+			c.DiscoveryV1().EndpointSlices(obj.Namespace).Delete(t.Context(), obj.Name, metav1.DeleteOptions{})
 		},
 		expectedMaxItems: 2,
 		expectedRes: map[string]*targetgroup.Group{
@@ -364,7 +363,7 @@ func TestEndpointSliceDiscoveryUpdate(t *testing.T) {
 			obj.ObjectMeta.Labels = nil
 			obj.ObjectMeta.Annotations = nil
 			obj.Endpoints = obj.Endpoints[0:2]
-			c.DiscoveryV1().EndpointSlices(obj.Namespace).Update(context.Background(), obj, metav1.UpdateOptions{})
+			c.DiscoveryV1().EndpointSlices(obj.Namespace).Update(t.Context(), obj, metav1.UpdateOptions{})
 		},
 		expectedMaxItems: 2,
 		expectedRes: map[string]*targetgroup.Group{
@@ -419,7 +418,7 @@ func TestEndpointSliceDiscoveryEmptyEndpoints(t *testing.T) {
 		afterStart: func() {
 			obj := makeEndpointSliceV1("default")
 			obj.Endpoints = []v1.Endpoint{}
-			c.DiscoveryV1().EndpointSlices(obj.Namespace).Update(context.Background(), obj, metav1.UpdateOptions{})
+			c.DiscoveryV1().EndpointSlices(obj.Namespace).Update(t.Context(), obj, metav1.UpdateOptions{})
 		},
 		expectedMaxItems: 2,
 		expectedRes: map[string]*targetgroup.Group{
@@ -455,7 +454,7 @@ func TestEndpointSliceDiscoveryWithService(t *testing.T) {
 					},
 				},
 			}
-			c.CoreV1().Services(obj.Namespace).Create(context.Background(), obj, metav1.CreateOptions{})
+			c.CoreV1().Services(obj.Namespace).Create(t.Context(), obj, metav1.CreateOptions{})
 		},
 		expectedMaxItems: 1,
 		expectedRes: map[string]*targetgroup.Group{
@@ -548,7 +547,7 @@ func TestEndpointSliceDiscoveryWithServiceUpdate(t *testing.T) {
 					},
 				},
 			}
-			c.CoreV1().Services(obj.Namespace).Create(context.Background(), obj, metav1.CreateOptions{})
+			c.CoreV1().Services(obj.Namespace).Create(t.Context(), obj, metav1.CreateOptions{})
 		},
 		afterStart: func() {
 			obj := &corev1.Service{
@@ -561,7 +560,7 @@ func TestEndpointSliceDiscoveryWithServiceUpdate(t *testing.T) {
 					},
 				},
 			}
-			c.CoreV1().Services(obj.Namespace).Update(context.Background(), obj, metav1.UpdateOptions{})
+			c.CoreV1().Services(obj.Namespace).Update(t.Context(), obj, metav1.UpdateOptions{})
 		},
 		expectedMaxItems: 2,
 		expectedRes: map[string]*targetgroup.Group{
@@ -764,7 +763,7 @@ func TestEndpointsSlicesDiscoveryWithUpdatedNodeMetadata(t *testing.T) {
 		expectedMaxItems: 2,
 		afterStart: func() {
 			node1.Labels["az"] = "us-central1"
-			c.CoreV1().Nodes().Update(context.Background(), node1, metav1.UpdateOptions{})
+			c.CoreV1().Nodes().Update(t.Context(), node1, metav1.UpdateOptions{})
 		},
 		expectedRes: map[string]*targetgroup.Group{
 			"endpointslice/default/testendpoints": {
@@ -1524,7 +1523,7 @@ func TestEndpointsSlicesDiscoveryWithUpdatedNamespaceMetadata(t *testing.T) {
 			namespace.Labels["region"] = "us-central"
 			namespace.Annotations["contact"] = "sre"
 			namespace.Annotations["monitoring"] = "enabled"
-			c.CoreV1().Namespaces().Update(context.Background(), namespace, metav1.UpdateOptions{})
+			c.CoreV1().Namespaces().Update(t.Context(), namespace, metav1.UpdateOptions{})
 		},
 		expectedRes: map[string]*targetgroup.Group{
 			fmt.Sprintf("endpointslice/%s/testendpoints", ns): {

@@ -485,7 +485,7 @@ func TestShutdownWithStaleConnection(t *testing.T) {
 
 	closed := make(chan struct{})
 
-	ctx, cancel := context.WithCancel(context.Background())
+	ctx, cancel := context.WithCancel(t.Context())
 	go func() {
 		err := webHandler.Run(ctx, l, "")
 		if err != nil {
@@ -535,7 +535,7 @@ func TestHandleMultipleQuitRequests(t *testing.T) {
 	if err != nil {
 		panic(fmt.Sprintf("Unable to start web listeners: %s", err))
 	}
-	ctx, cancel := context.WithCancel(context.Background())
+	ctx, cancel := context.WithCancel(t.Context())
 	closed := make(chan struct{})
 	go func() {
 		err := webHandler.Run(ctx, l, "")

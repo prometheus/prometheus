@@ -612,7 +612,7 @@ func TestDocumentation(t *testing.T) {
 		t.SkipNow()
 	}
 	t.Parallel()
-	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	ctx, cancel := context.WithTimeout(t.Context(), 5*time.Second)
 	defer cancel()
 
 	cmd := exec.CommandContext(ctx, promtoolPath, "-test.main", "write-documentation")

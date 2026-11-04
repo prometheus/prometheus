@@ -14,7 +14,6 @@
 package scaleway
 
 import (
-	"context"
 	"fmt"
 	"net/http"
 	"net/http/httptest"
@@ -52,7 +51,7 @@ api_url: %s
 	d, err := newRefresher(&cfg)
 	require.NoError(t, err)
 
-	ctx := context.Background()
+	ctx := t.Context()
 	tgs, err := d.refresh(ctx)
 	require.NoError(t, err)
 
@@ -269,7 +268,7 @@ api_url: %s
 	d, err := newRefresher(&cfg)
 	require.NoError(t, err)
 
-	tgs, err := d.refresh(context.Background())
+	tgs, err := d.refresh(t.Context())
 	require.NoError(t, err)
 
 	require.Len(t, tgs, 1)
@@ -297,7 +296,7 @@ api_url: %s
 	d, err := newRefresher(&cfg)
 	require.NoError(t, err)
 
-	ctx := context.Background()
+	ctx := t.Context()
 	tgs, err := d.refresh(ctx)
 	require.NoError(t, err)
 

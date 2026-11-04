@@ -17,7 +17,6 @@
 package prometheusremotewrite
 
 import (
-	"context"
 	"testing"
 	"time"
 
@@ -127,7 +126,7 @@ func TestPrometheusConverter_addGaugeNumberDataPoints(t *testing.T) {
 			require.NoError(t, converter.setScopeContext(tt.scope, settings))
 
 			converter.addGaugeNumberDataPoints(
-				context.Background(),
+				t.Context(),
 				metric.Gauge().DataPoints(),
 				settings,
 				storage.AOptions{
@@ -400,7 +399,7 @@ func TestPrometheusConverter_addSumNumberDataPoints(t *testing.T) {
 			require.NoError(t, converter.setScopeContext(tt.scope, settings))
 
 			converter.addSumNumberDataPoints(
-				context.Background(),
+				t.Context(),
 				metric.Sum().DataPoints(),
 				settings,
 				storage.AOptions{

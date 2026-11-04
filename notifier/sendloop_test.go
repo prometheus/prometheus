@@ -54,7 +54,7 @@ func TestCustomDo(t *testing.T) {
 		},
 	}
 
-	h.sendOne(context.Background(), nil, testURL, []byte(testBody))
+	h.sendOne(t.Context(), nil, testURL, []byte(testBody))
 
 	require.True(t, received)
 }

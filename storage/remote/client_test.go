@@ -14,7 +14,6 @@
 package remote
 
 import (
-	"context"
 	"errors"
 	"fmt"
 	"net/http"
@@ -84,7 +83,7 @@ func TestStoreHTTPErrorHandling(t *testing.T) {
 		c, err := NewWriteClient(hash, conf)
 		require.NoError(t, err)
 
-		_, err = c.Store(context.Background(), []byte{}, 0)
+		_, err = c.Store(t.Context(), []byte{}, 0)
 		if test.err != nil {
 			require.EqualError(t, err, test.err.Error())
 		} else {
@@ -144,7 +143,7 @@ func TestClientRetryAfter(t *testing.T) {
 			c := getClient(getClientConfig(serverURL, tc.retryOnRateLimit))
 
 			var recErr RecoverableError
-			_, err = c.Store(context.Background(), []byte{}, 0)
+			_, err = c.Store(t.Context(), []byte{}, 0)
 			require.Equal(t, tc.expectedRecoverable, errors.As(err, &recErr), "Mismatch in expected recoverable error status.")
 			if tc.expectedRecoverable {
 				require.Equal(t, tc.expectedRetryAfter, recErr.retryAfter)
@@ -214,7 +213,7 @@ func TestClientCustomHeaders(t *testing.T) {
 	c, err := NewWriteClient("c", conf)
 	require.NoError(t, err)
 
-	_, err = c.Store(context.Background(), []byte{}, 0)
+	_, err = c.Store(t.Context(), []byte{}, 0)
 	require.NoError(t, err)
 
 	require.True(t, called, "The remote server wasn't called")
@@ -377,7 +376,7 @@ func TestReadClient(t *testing.T) {
 				query = test.query
 			}
 
-			ss, err := c.Read(context.Background(), query, test.sortSeries)
+			ss, err := c.Read(t.Context(), query, test.sortSeries)
 			if test.expectedErrorContains != "" {
 				require.ErrorContains(t, err, test.expectedErrorContains)
 				if test.unwrap {
@@ -499,7 +498,7 @@ func TestReadMultipleErrorHandling(t *testing.T) {
 		},
 	}
 
-	result, err := m.ReadMultiple(context.Background(), queries, true)
+	result, err := m.ReadMultiple(t.Context(), queries, true)
 	require.Error(t, err)
 	require.Nil(t, result)
 }
@@ -691,7 +690,7 @@ func TestReadMultiple(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			m.reset()
 
-			result, err := m.ReadMultiple(context.Background(), tc.queries, true)
+			result, err := m.ReadMultiple(t.Context(), tc.queries, true)
 			require.NoError(t, err)
 
 			// Verify the queries were stored correctly
@@ -793,7 +792,7 @@ func TestReadMultipleSorting(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			m.reset()
 
-			result, err := m.ReadMultiple(context.Background(), tc.queries, tc.sortSeries)
+			result, err := m.ReadMultiple(t.Context(), tc.queries, tc.sortSeries)
 			require.NoError(t, err)
 
 			// Collect the actual results
@@ -927,7 +926,7 @@ func TestReadMultipleWithChunks(t *testing.T) {
 			require.NoError(t, err)
 
 			// Test ReadMultiple
-			result, err := client.ReadMultiple(context.Background(), tc.queries, false)
+			result, err := client.ReadMultiple(t.Context(), tc.queries, false)
 
 			require.NoError(t, err)
 

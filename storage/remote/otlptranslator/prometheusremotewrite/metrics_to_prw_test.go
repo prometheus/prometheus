@@ -189,7 +189,7 @@ func TestFromMetrics(t *testing.T) {
 				}
 
 				annots, err := converter.FromMetrics(
-					context.Background(),
+					t.Context(),
 					payload.Metrics(),
 					tc.settings,
 				)
@@ -254,7 +254,7 @@ func TestFromMetrics(t *testing.T) {
 			app := appTest.AppenderV2(t.Context())
 			converter := NewPrometheusConverter(app)
 			annots, err := converter.FromMetrics(
-				context.Background(),
+				t.Context(),
 				request.Metrics(),
 				Settings{ConvertHistogramsToNHCB: convertHistogramsToNHCB},
 			)
@@ -317,7 +317,7 @@ func TestFromMetrics(t *testing.T) {
 	t.Run("context cancellation", func(t *testing.T) {
 		settings := Settings{}
 		converter := NewPrometheusConverter(teststorage.NewAppendable().AppenderV2(t.Context()))
-		ctx, cancel := context.WithCancel(context.Background())
+		ctx, cancel := context.WithCancel(t.Context())
 		// Verify that converter.FromMetrics respects cancellation.
 		cancel()
 		payload, _ := createExportRequest(5, 128, 128, 2, 0, settings, pmetric.AggregationTemporalityCumulative)
@@ -331,7 +331,7 @@ func TestFromMetrics(t *testing.T) {
 		settings := Settings{}
 		converter := NewPrometheusConverter(teststorage.NewAppendable().AppenderV2(t.Context()))
 		// Verify that converter.FromMetrics respects timeout.
-		ctx, cancel := context.WithTimeout(context.Background(), 0)
+		ctx, cancel := context.WithTimeout(t.Context(), 0)
 		t.Cleanup(cancel)
 		payload, _ := createExportRequest(5, 128, 128, 2, 0, settings, pmetric.AggregationTemporalityCumulative)
 
@@ -363,7 +363,7 @@ func TestFromMetrics(t *testing.T) {
 		}
 
 		converter := NewPrometheusConverter(teststorage.NewAppendable().AppenderV2(t.Context()))
-		annots, err := converter.FromMetrics(context.Background(), request.Metrics(), Settings{})
+		annots, err := converter.FromMetrics(t.Context(), request.Metrics(), Settings{})
 		require.NoError(t, err)
 		require.NotEmpty(t, annots)
 		ws, infos := annots.AsStrings("", 0, 0)
@@ -397,7 +397,7 @@ func TestFromMetrics(t *testing.T) {
 
 		converter := NewPrometheusConverter(teststorage.NewAppendable().AppenderV2(t.Context()))
 		annots, err := converter.FromMetrics(
-			context.Background(),
+			t.Context(),
 			request.Metrics(),
 			Settings{ConvertHistogramsToNHCB: true},
 		)
@@ -588,7 +588,7 @@ func TestFromMetrics(t *testing.T) {
 		app := appTest.AppenderV2(t.Context())
 		converter := NewPrometheusConverter(app)
 		annots, err := converter.FromMetrics(
-			context.Background(),
+			t.Context(),
 			request.Metrics(),
 			Settings{
 				LookbackDelta: defaultLookbackDelta,
@@ -692,7 +692,7 @@ func TestFromMetrics(t *testing.T) {
 		app := appTest.AppenderV2(t.Context())
 		converter := NewPrometheusConverter(app)
 		annots, err := converter.FromMetrics(
-			context.Background(),
+			t.Context(),
 			request.Metrics(),
 			Settings{
 				LookbackDelta: defaultLookbackDelta,
@@ -775,7 +775,7 @@ func TestFromMetrics(t *testing.T) {
 		app := appTest.AppenderV2(t.Context())
 		converter := NewPrometheusConverter(app)
 		annots, err := converter.FromMetrics(
-			context.Background(),
+			t.Context(),
 			request.Metrics(),
 			Settings{
 				PromoteScopeMetadata: true,
@@ -842,7 +842,7 @@ func TestFromMetrics(t *testing.T) {
 		app := appTest.AppenderV2(t.Context())
 		converter := NewPrometheusConverter(app)
 		annots, err := converter.FromMetrics(
-			context.Background(),
+			t.Context(),
 			request.Metrics(),
 			Settings{
 				PromoteResourceAttributes: NewPromoteResourceAttributes(config.OTLPConfig{
@@ -908,7 +908,7 @@ func TestFromMetrics(t *testing.T) {
 		app := appTest.AppenderV2(t.Context())
 		converter := NewPrometheusConverter(app)
 		annots, err := converter.FromMetrics(
-			context.Background(),
+			t.Context(),
 			request.Metrics(),
 			Settings{
 				PromoteResourceAttributes: NewPromoteResourceAttributes(config.OTLPConfig{
@@ -1162,7 +1162,7 @@ func TestTemporality(t *testing.T) {
 				ConvertHistogramsToNHCB: tc.convertToNHCB,
 			}
 
-			_, err := c.FromMetrics(context.Background(), metrics, settings)
+			_, err := c.FromMetrics(t.Context(), metrics, settings)
 			if tc.expectedError != "" {
 				require.EqualError(t, err, tc.expectedError)
 			} else {
@@ -1572,7 +1572,7 @@ func BenchmarkPrometheusConverter_FromMetrics(b *testing.B) {
 									for b.Loop() {
 										app := &noOpAppender{}
 										converter := NewPrometheusConverter(app)
-										annots, err := converter.FromMetrics(context.Background(), payload.Metrics(), settings)
+										annots, err := converter.FromMetrics(b.Context(), payload.Metrics(), settings)
 										require.NoError(b, err)
 										require.Empty(b, annots)
 
@@ -1617,7 +1617,7 @@ func BenchmarkPrometheusConverter_FromMetrics_ExplicitHistogram(b *testing.B) {
 			for b.Loop() {
 				app := &noOpAppender{}
 				converter := NewPrometheusConverter(app)
-				annots, err := converter.FromMetrics(context.Background(), payload.Metrics(), settings)
+				annots, err := converter.FromMetrics(b.Context(), payload.Metrics(), settings)
 				require.NoError(b, err)
 				require.Empty(b, annots)
 				require.Positive(b, app.samples)
@@ -2021,7 +2021,7 @@ func BenchmarkFromMetrics_LabelCaching_MultipleDatapointsPerResource(b *testing.
 					for b.Loop() {
 						app := &noOpAppender{}
 						converter := NewPrometheusConverter(app)
-						_, err := converter.FromMetrics(context.Background(), payload.Metrics(), settings)
+						_, err := converter.FromMetrics(b.Context(), payload.Metrics(), settings)
 						require.NoError(b, err)
 					}
 				})
@@ -2050,7 +2050,7 @@ func BenchmarkFromMetrics_LabelCaching_RepeatedLabelNames(b *testing.B) {
 				for b.Loop() {
 					app := &noOpAppender{}
 					converter := NewPrometheusConverter(app)
-					_, err := converter.FromMetrics(context.Background(), payload.Metrics(), settings)
+					_, err := converter.FromMetrics(b.Context(), payload.Metrics(), settings)
 					require.NoError(b, err)
 				}
 			})
@@ -2085,7 +2085,7 @@ func BenchmarkFromMetrics_LabelCaching_ScopeMetadata(b *testing.B) {
 				for b.Loop() {
 					app := &noOpAppender{}
 					converter := NewPrometheusConverter(app)
-					_, err := converter.FromMetrics(context.Background(), payload.Metrics(), settings)
+					_, err := converter.FromMetrics(b.Context(), payload.Metrics(), settings)
 					require.NoError(b, err)
 				}
 			})
@@ -2121,7 +2121,7 @@ func BenchmarkFromMetrics_LabelCaching_MultipleResources(b *testing.B) {
 				for b.Loop() {
 					app := &noOpAppender{}
 					converter := NewPrometheusConverter(app)
-					_, err := converter.FromMetrics(context.Background(), payload.Metrics(), settings)
+					_, err := converter.FromMetrics(b.Context(), payload.Metrics(), settings)
 					require.NoError(b, err)
 				}
 			})

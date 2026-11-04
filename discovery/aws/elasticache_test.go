@@ -42,7 +42,7 @@ type elasticacheDataStore struct {
 
 func TestElasticacheDiscoveryDescribeServerlessCaches(t *testing.T) {
 	t.Parallel()
-	ctx := context.Background()
+	ctx := t.Context()
 
 	for _, tt := range []struct {
 		name          string
@@ -132,7 +132,7 @@ func TestElasticacheDiscoveryDescribeServerlessCaches(t *testing.T) {
 
 func TestElasticacheDiscoveryDescribeCacheClusters(t *testing.T) {
 	t.Parallel()
-	ctx := context.Background()
+	ctx := t.Context()
 
 	for _, tt := range []struct {
 		name          string
@@ -729,7 +729,7 @@ func TestElasticacheRefreshFullyPopulated(t *testing.T) {
 				{Key: strptr("Environment"), Value: strptr("prod")},
 			},
 		},
-	}).refresh(context.Background())
+	}).refresh(t.Context())
 	require.NoError(t, err)
 	require.Len(t, tgs, 1)
 
@@ -812,7 +812,7 @@ func TestElasticacheRefreshServerlessCacheNilOptionalFields(t *testing.T) {
 			tgs, err := elasticacheTestDiscovery(&elasticacheDataStore{
 				region:           "us-east-1",
 				serverlessCaches: []types.ServerlessCache{cache},
-			}).refresh(context.Background())
+			}).refresh(t.Context())
 			require.NoError(t, err)
 			require.Len(t, tgs, 1)
 			require.Len(t, tgs[0].Targets, 1,
@@ -862,7 +862,7 @@ func TestElasticacheRefreshCacheClusterNilOptionalFields(t *testing.T) {
 			tgs, err := elasticacheTestDiscovery(&elasticacheDataStore{
 				region:        "us-east-1",
 				cacheClusters: []types.CacheCluster{cluster},
-			}).refresh(context.Background())
+			}).refresh(t.Context())
 			require.NoError(t, err)
 			require.Len(t, tgs, 1)
 			require.Len(t, tgs[0].Targets, 1,
@@ -952,7 +952,7 @@ func BenchmarkElasticacheRefresh(b *testing.B) {
 
 			b.ReportAllocs()
 			for b.Loop() {
-				tgs, err := d.refresh(context.Background())
+				tgs, err := d.refresh(b.Context())
 				if err != nil {
 					b.Fatal(err)
 				}
@@ -989,7 +989,7 @@ func BenchmarkElasticacheRefreshAPILatency(b *testing.B) {
 
 	b.ReportAllocs()
 	for b.Loop() {
-		tgs, err := d.refresh(context.Background())
+		tgs, err := d.refresh(b.Context())
 		if err != nil {
 			b.Fatal(err)
 		}
@@ -1019,7 +1019,7 @@ func TestElasticacheRefreshDescribesEachResourceOnce(t *testing.T) {
 		region: data.region,
 	}
 
-	_, err := d.refresh(context.Background())
+	_, err := d.refresh(t.Context())
 	require.NoError(t, err)
 
 	counts := make(map[string]int, len(client.describeRequests))
@@ -1089,7 +1089,7 @@ func TestElasticacheDescribeCacheClustersReturnsEachClusterOnce(t *testing.T) {
 				},
 			}
 
-			clusters, err := d.describeCacheClusters(context.Background(), tt.clusterIDs)
+			clusters, err := d.describeCacheClusters(t.Context(), tt.clusterIDs)
 			require.NoError(t, err)
 
 			ids := make([]string, 0, len(clusters))

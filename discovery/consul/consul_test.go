@@ -304,7 +304,7 @@ func TestAllServices(t *testing.T) {
 
 	d := newDiscovery(t, config)
 
-	ctx, cancel := context.WithCancel(context.Background())
+	ctx, cancel := context.WithCancel(t.Context())
 	ch := make(chan []*targetgroup.Group)
 	go func() {
 		d.Run(ctx, ch)
@@ -325,7 +325,7 @@ func TestNoTargets(t *testing.T) {
 
 	d := newDiscovery(t, config)
 
-	ctx, cancel := context.WithCancel(context.Background())
+	ctx, cancel := context.WithCancel(t.Context())
 	ch := make(chan []*targetgroup.Group)
 	go func() {
 		d.Run(ctx, ch)
@@ -347,7 +347,7 @@ func TestOneService(t *testing.T) {
 	config.Services = []string{"test"}
 	d := newDiscovery(t, config)
 
-	ctx, cancel := context.WithCancel(context.Background())
+	ctx, cancel := context.WithCancel(t.Context())
 	ch := make(chan []*targetgroup.Group)
 	go d.Run(ctx, ch)
 	checkOneTarget(t, <-ch)
@@ -368,7 +368,7 @@ func TestAllOptions(t *testing.T) {
 
 	d := newDiscovery(t, config)
 
-	ctx, cancel := context.WithCancel(context.Background())
+	ctx, cancel := context.WithCancel(t.Context())
 	ch := make(chan []*targetgroup.Group)
 	go func() {
 		d.Run(ctx, ch)
@@ -421,7 +421,7 @@ func TestFilterOption(t *testing.T) {
 
 	d := newDiscovery(t, cfg)
 
-	ctx, cancel := context.WithCancel(context.Background())
+	ctx, cancel := context.WithCancel(t.Context())
 	ch := make(chan []*targetgroup.Group)
 	go func() {
 		d.Run(ctx, ch)
@@ -481,7 +481,7 @@ func TestHealthFilterOption(t *testing.T) {
 
 	d := newDiscovery(t, cfg)
 
-	ctx, cancel := context.WithCancel(context.Background())
+	ctx, cancel := context.WithCancel(t.Context())
 	ch := make(chan []*targetgroup.Group)
 	go func() {
 		d.Run(ctx, ch)
@@ -541,7 +541,7 @@ func TestBothFiltersOption(t *testing.T) {
 
 	d := newDiscovery(t, cfg)
 
-	ctx, cancel := context.WithCancel(context.Background())
+	ctx, cancel := context.WithCancel(t.Context())
 	ch := make(chan []*targetgroup.Group)
 	go func() {
 		d.Run(ctx, ch)

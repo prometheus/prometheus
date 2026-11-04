@@ -58,7 +58,7 @@ func TestOpenstackSDLoadBalancerRefresh(t *testing.T) {
 	instance, err := mock.openstackAuthSuccess()
 	require.NoError(t, err)
 
-	ctx := context.Background()
+	ctx := t.Context()
 	tgs, err := instance.refresh(ctx)
 
 	require.NoError(t, err)
@@ -132,7 +132,7 @@ func TestOpenstackSDLoadBalancerRefreshWithDoneContext(t *testing.T) {
 	mock.SetupTest(t)
 
 	loadbalancer, _ := mock.openstackAuthSuccess()
-	ctx, cancel := context.WithCancel(context.Background())
+	ctx, cancel := context.WithCancel(t.Context())
 	cancel()
 	_, err := loadbalancer.refresh(ctx)
 	require.ErrorContains(t, err, context.Canceled.Error(), "%q doesn't contain %q", err, context.Canceled)

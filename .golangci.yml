@@ -237,6 +237,11 @@ linters:
         - float-compare
         - go-require
       enable-all: true
+    usetesting:
+      # Off by default. Contexts from t.Context() are canceled when the test
+      # ends, so work started by a test cannot outlive it.
+      context-background: true
+      context-todo: true
 
 output:
   show-stats: false

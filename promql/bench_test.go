@@ -363,7 +363,7 @@ func BenchmarkRangeQuery(b *testing.B) {
 	for _, c := range cases {
 		name := fmt.Sprintf("expr=%s,steps=%d", c.expr, c.steps)
 		b.Run(name, func(b *testing.B) {
-			ctx := context.Background()
+			ctx := b.Context()
 			b.ReportAllocs()
 			for b.Loop() {
 				qry, err := engine.NewRangeQuery(
@@ -431,7 +431,7 @@ func BenchmarkJoinQuery(b *testing.B) {
 	} {
 		name := fmt.Sprintf("expr=%s/steps=%d", c.expr, c.steps)
 		b.Run(name, func(b *testing.B) {
-			ctx := context.Background()
+			ctx := b.Context()
 
 			queryFn := func() {
 				qry, err := engine.NewRangeQuery(
@@ -462,7 +462,7 @@ func BenchmarkJoinQuery(b *testing.B) {
 func BenchmarkNativeHistograms(b *testing.B) {
 	testStorage := teststorage.New(b)
 
-	app := testStorage.AppenderV2(context.TODO())
+	app := testStorage.AppenderV2(b.Context())
 	if err := generateNativeHistogramSeries(app, 3000); err != nil {
 		b.Fatal(err)
 	}
@@ -528,11 +528,11 @@ func BenchmarkNativeHistograms(b *testing.B) {
 		b.Run(tc.name, func(b *testing.B) {
 			ng := promqltest.NewTestEngineWithOpts(b, opts)
 			for b.Loop() {
-				qry, err := ng.NewRangeQuery(context.Background(), testStorage, nil, tc.query, start, end, step)
+				qry, err := ng.NewRangeQuery(b.Context(), testStorage, nil, tc.query, start, end, step)
 				if err != nil {
 					b.Fatal(err)
 				}
-				if result := qry.Exec(context.Background()); result.Err != nil {
+				if result := qry.Exec(b.Context()); result.Err != nil {
 					b.Fatal(result.Err)
 				}
 			}
@@ -543,7 +543,7 @@ func BenchmarkNativeHistograms(b *testing.B) {
 func BenchmarkNativeHistogramsCustomBuckets(b *testing.B) {
 	testStorage := teststorage.New(b)
 
-	app := testStorage.AppenderV2(context.TODO())
+	app := testStorage.AppenderV2(b.Context())
 	if err := generateNativeHistogramCustomBucketsSeries(app, 3000); err != nil {
 		b.Fatal(err)
 	}
@@ -597,11 +597,11 @@ func BenchmarkNativeHistogramsCustomBuckets(b *testing.B) {
 		b.Run(tc.name, func(b *testing.B) {
 			ng := promqltest.NewTestEngineWithOpts(b, opts)
 			for b.Loop() {
-				qry, err := ng.NewRangeQuery(context.Background(), testStorage, nil, tc.query, start, end, step)
+				qry, err := ng.NewRangeQuery(b.Context(), testStorage, nil, tc.query, start, end, step)
 				if err != nil {
 					b.Fatal(err)
 				}
-				if result := qry.Exec(context.Background()); result.Err != nil {
+				if result := qry.Exec(b.Context()); result.Err != nil {
 					b.Fatal(result.Err)
 				}
 			}
@@ -660,10 +660,10 @@ func BenchmarkInfoFunction(b *testing.B) {
 			b.ResetTimer()
 			for b.Loop() {
 				b.StopTimer() // Stop the timer to exclude setup time.
-				qry, err := engine.NewRangeQuery(context.Background(), testStorage, nil, tc.query, start, end, step)
+				qry, err := engine.NewRangeQuery(b.Context(), testStorage, nil, tc.query, start, end, step)
 				require.NoError(b, err)
 				b.StartTimer()
-				result := qry.Exec(context.Background())
+				result := qry.Exec(b.Context())
 				require.NoError(b, result.Err)
 			}
 		})
@@ -677,7 +677,7 @@ func BenchmarkInfoFunction(b *testing.B) {
 func generateInfoFunctionTestSeries(tb testing.TB, stor *teststorage.TestStorage, infoSeriesNum, interval, numIntervals int) {
 	tb.Helper()
 
-	ctx := context.Background()
+	ctx := tb.Context()
 	statusCodes := []string{"200", "400", "500"}
 
 	// Generate target_info metrics with instance and job labels, and k8s_cluster_name label.
@@ -710,7 +710,7 @@ func generateInfoFunctionTestSeries(tb testing.TB, stor *teststorage.TestStorage
 	refs := make([]storage.SeriesRef, len(metrics))
 
 	for i := range numIntervals {
-		a := stor.AppenderV2(context.Background())
+		a := stor.AppenderV2(tb.Context())
 		ts := int64(i * interval)
 		for j, metric := range metrics[:infoSeriesNum] {
 			ref, _ := a.Append(refs[j], metric, 0, ts, 1, nil, nil, storage.AOptions{})

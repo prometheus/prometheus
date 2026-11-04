@@ -426,7 +426,7 @@ func TestNewTokenProvider(t *testing.T) {
 
 func mustGetAccessToken(t *testing.T, tp *tokenProvider) string {
 	t.Helper()
-	accessToken, err := tp.getAccessToken(context.Background())
+	accessToken, err := tp.getAccessToken(t.Context())
 	require.NoError(t, err)
 	return accessToken
 }
@@ -512,7 +512,7 @@ func TestCustomScopeSupport(t *testing.T) {
 			require.NotNil(t, tokenProvider)
 
 			// Verify that the token provider uses the expected scope
-			token, err := tokenProvider.getAccessToken(context.Background())
+			token, err := tokenProvider.getAccessToken(t.Context())
 			require.NoError(t, err)
 			require.Equal(t, testTokenString, token)
 

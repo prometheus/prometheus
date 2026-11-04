@@ -14,7 +14,6 @@
 package tsdb
 
 import (
-	"context"
 	"os"
 	"path/filepath"
 	"testing"
@@ -30,7 +29,7 @@ import (
 
 func TestRepairBadIndexVersion(t *testing.T) {
 	tmpDir := t.TempDir()
-	ctx := context.Background()
+	ctx := t.Context()
 
 	// The broken index used in this test was written by the following script
 	// at a broken revision.

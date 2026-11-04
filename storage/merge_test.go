@@ -191,7 +191,7 @@ func TestMergeQuerierWithChainMerger(t *testing.T) {
 			}
 			qs = append(qs, tc.extraQueriers...)
 
-			mergedQuerier := NewMergeQuerier(p, qs, ChainedSeriesMerge).Select(context.Background(), false, nil)
+			mergedQuerier := NewMergeQuerier(p, qs, ChainedSeriesMerge).Select(t.Context(), false, nil)
 
 			// Get all merged series upfront to make sure there are no incorrectly retained shared
 			// buffers causing bugs.
@@ -367,7 +367,7 @@ func TestMergeChunkQuerierWithNoVerticalChunkSeriesMerger(t *testing.T) {
 			}
 			qs = append(qs, tc.extraQueriers...)
 
-			merged := NewMergeChunkQuerier(p, qs, NewCompactingChunkSeriesMerger(nil)).Select(context.Background(), false, nil)
+			merged := NewMergeChunkQuerier(p, qs, NewCompactingChunkSeriesMerger(nil)).Select(t.Context(), false, nil)
 			for merged.Next() {
 				require.True(t, tc.expected.Next(), "Expected Next() to be true")
 				actualSeries := merged.At()
@@ -1491,7 +1491,7 @@ func BenchmarkMergeLabelValuesWithLimit(b *testing.B) {
 	}
 
 	b.Run("benchmark", func(*testing.B) {
-		ctx := context.Background()
+		ctx := b.Context()
 		hints := &LabelHints{
 			Limit: 1000,
 		}
@@ -1533,7 +1533,7 @@ func TestMergeQuerierWithSecondaries_ErrorHandling(t *testing.T) {
 	var (
 		errStorage  = errors.New("storage error")
 		warnStorage = errors.New("storage warning")
-		ctx         = context.Background()
+		ctx         = t.Context()
 	)
 	for _, tcase := range []struct {
 		name        string
@@ -1697,7 +1697,7 @@ func TestMergeQuerierWithSecondaries_ErrorHandling(t *testing.T) {
 			q := NewMergeQuerier(tcase.primaries, tcase.secondaries, func(s ...Series) Series { return s[0] })
 
 			t.Run("Select", func(t *testing.T) {
-				res := q.Select(context.Background(), false, selectHints)
+				res := q.Select(t.Context(), false, selectHints)
 				var lbls []labels.Labels
 				for res.Next() {
 					lbls = append(lbls, res.At().Labels())
@@ -2429,7 +2429,7 @@ func BenchmarkMergeSearchSets(b *testing.B) {
 	b.Run("no_limit", func(b *testing.B) {
 		for b.Loop() {
 			merged := NewMergeQuerier(queriers, nil, ChainedSeriesMerge)
-			rs := merged.(Searcher).SearchLabelNames(context.Background(), nil)
+			rs := merged.(Searcher).SearchLabelNames(b.Context(), nil)
 			for rs.Next() {
 			}
 			require.NoError(b, rs.Err())
@@ -2442,7 +2442,7 @@ func BenchmarkMergeSearchSets(b *testing.B) {
 		hints := &SearchHints{Limit: 100}
 		for b.Loop() {
 			merged := NewMergeQuerier(queriers, nil, ChainedSeriesMerge)
-			rs := merged.(Searcher).SearchLabelNames(context.Background(), hints)
+			rs := merged.(Searcher).SearchLabelNames(b.Context(), hints)
 			for rs.Next() {
 			}
 			require.NoError(b, rs.Err())

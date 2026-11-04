@@ -14,7 +14,6 @@
 package promql_test
 
 import (
-	"context"
 	"strings"
 	"testing"
 	"time"
@@ -79,7 +78,7 @@ func TestConcurrentRangeQueries(t *testing.T) {
 			defer func() {
 				sem <- struct{}{}
 			}()
-			ctx := context.Background()
+			ctx := t.Context()
 			qry, err := engine.NewRangeQuery(
 				ctx, stor, nil, c.expr,
 				time.Unix(int64((numIntervals-c.steps)*10), 0),

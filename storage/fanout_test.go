@@ -108,7 +108,7 @@ func TestFanout_SelectSorted(t *testing.T) {
 	outputLabel := labels.FromStrings(model.MetricNameLabel, "a")
 
 	inputTotalSize := 0
-	ctx := context.Background()
+	ctx := t.Context()
 
 	priStorage := teststorage.New(t)
 	app1 := priStorage.Appender(ctx)
@@ -341,7 +341,7 @@ func TestFanoutErrors(t *testing.T) {
 			defer querier.Close()
 
 			matcher := labels.MustNewMatcher(labels.MatchEqual, "a", "b")
-			ss := querier.Select(context.Background(), true, nil, matcher)
+			ss := querier.Select(t.Context(), true, nil, matcher)
 
 			// Exhaust.
 			for ss.Next() {
@@ -365,7 +365,7 @@ func TestFanoutErrors(t *testing.T) {
 			defer querier.Close()
 
 			matcher := labels.MustNewMatcher(labels.MatchEqual, "a", "b")
-			ss := querier.Select(context.Background(), true, nil, matcher)
+			ss := querier.Select(t.Context(), true, nil, matcher)
 
 			// Exhaust.
 			for ss.Next() {

@@ -14,7 +14,6 @@
 package promqltest
 
 import (
-	"context"
 	"math"
 	"testing"
 	"time"
@@ -1282,7 +1281,7 @@ func TestLoadSTLine_StorageRoundtrip(t *testing.T) {
 			_, cmd, err := parseLoad(lines, 0, testStartTime)
 			require.NoError(t, err)
 
-			app := store.AppenderV2(context.Background())
+			app := store.AppenderV2(t.Context())
 			require.NoError(t, cmd.append(app))
 			require.NoError(t, app.Commit())
 
@@ -1290,7 +1289,7 @@ func TestLoadSTLine_StorageRoundtrip(t *testing.T) {
 			require.NoError(t, err)
 			defer func() { require.NoError(t, q.Close()) }()
 
-			ss := q.Select(context.Background(), false, nil, labels.MustNewMatcher(labels.MatchEqual, "__name__", "my_counter"))
+			ss := q.Select(t.Context(), false, nil, labels.MustNewMatcher(labels.MatchEqual, "__name__", "my_counter"))
 			require.True(t, ss.Next(), "expected one series")
 
 			var it chunkenc.Iterator
