@@ -3191,6 +3191,111 @@ groups:
 		require.Equal(t, wantMetadata, got)
 	})
 
+	t.Run("type_and_unit_labels_and_alert_restore", func(t *testing.T) {
+		st := teststorage.New(t)
+		app := st.AppenderV2(t.Context())
+		for step := range 3 {
+			tsMs := timestamp.FromTime(baseTime.Add(time.Duration(step) * time.Minute))
+			_, err := app.Append(
+				0,
+				labels.FromStrings(
+					model.MetricNameLabel, "http_requests_total",
+					model.MetricTypeLabel, "counter",
+					model.MetricUnitLabel, "requests",
+					"job", "api",
+				),
+				0,
+				tsMs,
+				float64((step+1)*10),
+				nil,
+				nil,
+				storage.AOptions{},
+			)
+			require.NoError(t, err)
+		}
+		require.NoError(t, app.Commit())
+
+		expr, err := testParser.ParseExpr("http_requests_total > 0")
+		require.NoError(t, err)
+
+		opts := &ManagerOptions{
+			Context:                 t.Context(),
+			AppendableV2:            st,
+			Queryable:               st,
+			QueryFunc:               EngineQueryFunc(engine, st),
+			NotifyFunc:              func(context.Context, string, ...*Alert) {},
+			Logger:                  promslog.NewNopLogger(),
+			EnableTypeAndUnitLabels: true,
+			OutageTolerance:         30 * time.Minute,
+			ForGracePeriod:          10 * time.Minute,
+		}
+
+		alertRule := NewAlertingRule(
+			"HighRequests",
+			expr,
+			15*time.Minute,
+			0,
+			labels.EmptyLabels(),
+			labels.EmptyLabels(),
+			labels.EmptyLabels(),
+			"",
+			true,
+			promslog.NewNopLogger(),
+		)
+		g := NewGroup(GroupOptions{
+			Name:     "alert_schema",
+			Interval: time.Minute,
+			Rules:    []Rule{alertRule},
+			Opts:     opts,
+		})
+		g.Eval(t.Context(), baseTime)
+		g.Eval(t.Context(), baseTime.Add(time.Minute))
+
+		active := alertRule.ActiveAlerts()
+		require.Len(t, active, 1)
+		require.Equal(t, labels.FromStrings(labels.AlertName, "HighRequests", "job", "api"), active[0].Labels)
+
+		q, err := st.Querier(0, timestamp.FromTime(baseTime.Add(time.Minute)))
+		require.NoError(t, err)
+		defer func() { require.NoError(t, q.Close()) }()
+
+		for _, metricName := range []string{alertMetricName, alertForStateMetricName} {
+			ss := q.Select(t.Context(), false, nil, labels.MustNewMatcher(labels.MatchEqual, model.MetricNameLabel, metricName))
+			require.True(t, ss.Next())
+			require.Equal(t, "gauge", ss.At().Labels().Get(model.MetricTypeLabel))
+			require.False(t, ss.Next())
+			require.NoError(t, ss.Err())
+		}
+
+		restoredRule := NewAlertingRule(
+			"HighRequests",
+			expr,
+			15*time.Minute,
+			0,
+			labels.EmptyLabels(),
+			labels.EmptyLabels(),
+			labels.EmptyLabels(),
+			"",
+			false,
+			promslog.NewNopLogger(),
+		)
+		restoredGroup := NewGroup(GroupOptions{
+			Name:          "alert_schema",
+			Interval:      time.Minute,
+			Rules:         []Rule{restoredRule},
+			ShouldRestore: true,
+			Opts:          opts,
+		})
+		restoreTime := baseTime.Add(2 * time.Minute)
+		restoredGroup.Eval(t.Context(), restoreTime)
+		restoredGroup.RestoreForState(restoreTime)
+		require.True(t, restoredRule.Restored())
+		restoredAlerts := restoredRule.ActiveAlerts()
+		require.Len(t, restoredAlerts, 1)
+		require.Equal(t, labels.FromStrings(labels.AlertName, "HighRequests", "job", "api"), restoredAlerts[0].Labels)
+		require.Equal(t, baseTime.Add(time.Minute), restoredAlerts[0].ActiveAt)
+	})
+
 	t.Run("reload_detects_metadata_changes", func(t *testing.T) {
 		updatedYAML := `
 groups:
