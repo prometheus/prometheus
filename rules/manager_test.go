@@ -29,6 +29,7 @@ import (
 	"testing"
 	"testing/synctest"
 	"time"
+	"unique"
 
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/testutil"
@@ -890,13 +891,14 @@ func TestCopyState(t *testing.T) {
 
 func TestDeletedRuleMarkedStale(t *testing.T) {
 	st := teststorage.New(t)
+	staleMeta := metadata.Metadata{Type: model.MetricTypeGauge, Unit: "seconds"}
 
 	oldGroup := &Group{
 		rules: []Rule{
 			NewRecordingRule("rule1", nil, labels.FromStrings("l1", "v1")),
 		},
 		seriesInPreviousEval: []map[string]trackedSeries{
-			{"r1": {labels: labels.FromStrings("l1", "v1")}},
+			{"r1": {labels: labels.FromStrings("l1", "v1"), metadata: unique.Make(staleMeta)}},
 		},
 	}
 	newGroup := &Group{
@@ -3306,6 +3308,14 @@ groups:
     metadata:
       help: Updated help text.
       unit: requests_per_second
+  - record: cluster:http_requests_total
+    expr: label_replace(http_requests_total, "cluster", "prod", "job", ".*")
+  - record: job:latency_seconds:sum
+    expr: sum by (job) (latency_seconds)
+  - record: job:latency_seconds:rate5m
+    expr: rate(latency_seconds[5m])
+  - alert: HighRequests
+    expr: http_requests_total > 0
 `
 		updatedFile := filepath.Join(t.TempDir(), "rules.yaml")
 		require.NoError(t, os.WriteFile(updatedFile, []byte(ruleYAML), 0o600))
