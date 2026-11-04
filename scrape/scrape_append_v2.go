@@ -500,6 +500,10 @@ loop:
 				if err == nil && seriesCached && ref != 0 {
 					sl.cache.updateRef(metHash, &ce, ref)
 				}
+			} else if !seriesCached {
+				// Keep ce.ref zero while only anchoring start time so staleness is not
+				// tracked before this scrape loop appends a sample.
+				ref = 0
 			}
 		}
 		sampleAdded, err = sl.checkAddError(met, exemplars, err, &sampleLimitErr, &bucketLimitErr, &appErrs)
