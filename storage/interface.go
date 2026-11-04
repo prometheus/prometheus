@@ -477,6 +477,9 @@ type Appender interface {
 // GetRef is an extra interface on Appenders. Scraping uses it to keep the
 // labels the storage already holds instead of its own copy, and downstream
 // projects (e.g. Cortex) use it to avoid maintaining a parallel set of references.
+// Under -tags dedupelabels, storages that replace series labels on symbol table
+// rebuilds (such as tsdb.Head) are skipped unless the appender also implements
+// ImmutableGetRefLabels() bool returning true.
 type GetRef interface {
 	// GetRef returns a reference number that can be used to pass to Appender.Append()
 	// or AppenderV2.Append(), and a set of labels that will not cause another copy

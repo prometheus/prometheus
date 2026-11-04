@@ -3811,27 +3811,7 @@ func TestScrapeLoopAppendLabelsFromStorage(t *testing.T) {
 			t.Run(fmt.Sprintf("immutableStorage=%v", immutableStorage), func(t *testing.T) {
 				for _, hasMRC := range []bool{false, true} {
 					t.Run(fmt.Sprintf("hasMRC=%v", hasMRC), func(t *testing.T) {
-						probe := teststorage.New(t)
-						var primaryProbe storage.Storage = probe
-						if immutableStorage {
-							primaryProbe = immutableLabelsTestStorage{Storage: probe}
-						}
-						var probeApp any
-						if appV2 {
-							a := primaryProbe.AppenderV2(t.Context())
-							t.Cleanup(func() { _ = a.Rollback() })
-							probeApp = a
-						} else {
-							a := primaryProbe.Appender(t.Context())
-							t.Cleanup(func() { _ = a.Rollback() })
-							probeApp = a
-						}
-						expectReuse := storageGetRef(probeApp) != nil
-						if immutableStorage {
-							// Storages with immutable series labels (such as tsdb/agent) must always
-							// reuse storage labels, including under -tags dedupelabels.
-							require.True(t, expectReuse)
-						}
+						expectReuse := immutableStorage || labels.ImplementationName != "dedupelabels"
 
 						for _, tc := range []struct {
 							name string
