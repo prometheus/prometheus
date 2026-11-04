@@ -32,6 +32,7 @@ import (
 	"net/url"
 	"os"
 	"path/filepath"
+	"runtime"
 	"sort"
 	"strconv"
 	"strings"
@@ -40,6 +41,7 @@ import (
 	"testing/synctest"
 	"text/template"
 	"time"
+	"unsafe"
 
 	"github.com/gogo/protobuf/proto"
 	"github.com/grafana/regexp"
@@ -8956,4 +8958,308 @@ func TestScrapeOffsetDistribution(t *testing.T) {
 			require.Greater(t, len(uniqueTimes), 2, "Expected targets to be scraped at staggered offsets rather than simultaneously at scrape index %d", i)
 		}
 	})
+}
+
+func TestCacheEntrySize(t *testing.T) {
+	if unsafe.Sizeof(uintptr(0)) != 8 {
+		t.Skip("size assertion applies to 64-bit platforms")
+	}
+	if labels.ImplementationName == "stringlabels" {
+		require.LessOrEqual(t, unsafe.Sizeof(cacheEntry{}), uintptr(48))
+	} else {
+		require.LessOrEqual(t, unsafe.Sizeof(cacheEntry{}), 32+unsafe.Sizeof(labels.Labels{}))
+	}
+}
+
+func TestScrapeLoopStalenessSliceEdgeCases(t *testing.T) {
+	t.Run("label_order_change", func(t *testing.T) {
+		foreachAppendable(t, func(t *testing.T, appV2 bool) {
+			appTest := teststorage.NewAppendable()
+			sl, _ := newTestScrapeLoop(t, withAppendable(appTest, appV2))
+
+			ts := time.Unix(1700000000, 0)
+			scrapeAt := func(step int, body string) {
+				app := sl.appender()
+				_, _, _, err := app.append([]byte(body), "text/plain", ts.Add(time.Duration(step)*time.Minute))
+				require.NoError(t, err)
+				require.NoError(t, app.Commit())
+			}
+
+			// Scrape 0: initial label order.
+			scrapeAt(0, "metric_a{a=\"1\",b=\"2\"} 1\nmetric_b{a=\"1\",b=\"2\"} 10\n")
+			// Scrape 1: one series changes label order (exercises len(stale) == 1 check against seriesCur).
+			scrapeAt(1, "metric_a{b=\"2\",a=\"1\"} 2\nmetric_b{a=\"1\",b=\"2\"} 20\n")
+			// Scrape 2: both series flip label order simultaneously (exercises len(stale) > 1 check against seriesCur).
+			scrapeAt(2, "metric_a{a=\"1\",b=\"2\"} 3\nmetric_b{b=\"2\",a=\"1\"} 30\n")
+			// Scrape 3: empty scrape emits exactly one StaleNaN per series.
+			scrapeAt(3, "")
+
+			metricALabels := labels.FromStrings(model.MetricNameLabel, "metric_a", "a", "1", "b", "2")
+			metricBLabels := labels.FromStrings(model.MetricNameLabel, "metric_b", "a", "1", "b", "2")
+			want := []sample{
+				{L: metricALabels, T: timestamp.FromTime(ts), V: 1},
+				{L: metricBLabels, T: timestamp.FromTime(ts), V: 10},
+				{L: metricALabels, T: timestamp.FromTime(ts.Add(time.Minute)), V: 2},
+				{L: metricBLabels, T: timestamp.FromTime(ts.Add(time.Minute)), V: 20},
+				{L: metricALabels, T: timestamp.FromTime(ts.Add(2 * time.Minute)), V: 3},
+				{L: metricBLabels, T: timestamp.FromTime(ts.Add(2 * time.Minute)), V: 30},
+				{L: metricALabels, T: timestamp.FromTime(ts.Add(3 * time.Minute)), V: math.Float64frombits(value.StaleNaN)},
+				{L: metricBLabels, T: timestamp.FromTime(ts.Add(3 * time.Minute)), V: math.Float64frombits(value.StaleNaN)},
+			}
+			teststorage.RequireEqual(t, want, appTest.ResultSamples())
+		})
+	})
+
+	t.Run("duplicate_relabel_to_same_series", func(t *testing.T) {
+		foreachAppendable(t, func(t *testing.T, appV2 bool) {
+			appTest := teststorage.NewAppendable()
+			mergedLabels := labels.FromStrings(model.MetricNameLabel, "metric_merged")
+			sl, _ := newTestScrapeLoop(t, withAppendable(appTest, appV2), func(sl *scrapeLoop) {
+				sl.sampleMutator = func(l labels.Labels) labels.Labels {
+					switch l.Get(model.MetricNameLabel) {
+					case "metric_x", "metric_y":
+						return mergedLabels
+					default:
+						return l
+					}
+				}
+			})
+
+			ts := time.Unix(1700000000, 0)
+			scrapeAt := func(step int, body string) {
+				app := sl.appender()
+				_, _, _, err := app.append([]byte(body), "text/plain", ts.Add(time.Duration(step)*time.Minute))
+				require.NoError(t, err)
+				require.NoError(t, app.Commit())
+			}
+
+			// Scrape 0: both raw metrics relabel to metric_merged and share one SeriesRef.
+			scrapeAt(0, "metric_x 1\nmetric_y 1\n")
+			// Scrape 1: metric_x disappears while metric_y remains; must NOT emit StaleNaN.
+			scrapeAt(1, "metric_y 2\n")
+			// Scrape 2: both raw metrics are exposed again.
+			scrapeAt(2, "metric_x 3\nmetric_y 3\n")
+			// Scrape 3: both raw metrics disappear; must emit only ONE StaleNaN for metric_merged.
+			scrapeAt(3, "")
+
+			want := []sample{
+				{L: mergedLabels, T: timestamp.FromTime(ts), V: 1},
+				{L: mergedLabels, T: timestamp.FromTime(ts), V: 1},
+				{L: mergedLabels, T: timestamp.FromTime(ts.Add(time.Minute)), V: 2},
+				{L: mergedLabels, T: timestamp.FromTime(ts.Add(2 * time.Minute)), V: 3},
+				{L: mergedLabels, T: timestamp.FromTime(ts.Add(2 * time.Minute)), V: 3},
+				{L: mergedLabels, T: timestamp.FromTime(ts.Add(3 * time.Minute)), V: math.Float64frombits(value.StaleNaN)},
+			}
+			teststorage.RequireEqual(t, want, appTest.ResultSamples())
+		})
+	})
+
+	t.Run("mrc_drop_previously_scraped_series", func(t *testing.T) {
+		appTest := teststorage.NewAppendable()
+		target := NewTarget(
+			labels.FromStrings("instance", "localhost:9090", "job", "test"),
+			&config.ScrapeConfig{},
+			nil,
+			nil,
+		)
+		rc := []*relabel.Config{
+			{
+				SourceLabels:         model.LabelNames{"__type__"},
+				Separator:            ";",
+				Regex:                relabel.MustNewRegexp("gauge"),
+				Replacement:          "$1",
+				Action:               relabel.Drop,
+				NameValidationScheme: model.UTF8Validation,
+			},
+		}
+		sl, _ := newTestScrapeLoop(t, withAppendable(appTest, true), func(sl *scrapeLoop) {
+			sl.enableTypeAndUnitLabels = true
+			sl.mrc = rc
+			sl.sampleMutator = func(l labels.Labels) labels.Labels {
+				return mutateSampleLabels(l, target, false, rc)
+			}
+		})
+
+		ts := time.Unix(1700000000, 0)
+		scrapeAt := func(step int, body string) {
+			app := sl.appender()
+			_, _, _, err := app.append([]byte(body), "text/plain", ts.Add(time.Duration(step)*time.Minute))
+			require.NoError(t, err)
+			require.NoError(t, app.Commit())
+		}
+
+		// Scrape 0: metric_a has counter type and is scraped and cached.
+		scrapeAt(0, "# TYPE metric_a counter\nmetric_a 1\n# TYPE metric_keep counter\nmetric_keep 10\n")
+		// Scrape 1: metric_a changes to gauge and is dropped by MRC (calling deleteSeries); must emit StaleNaN once.
+		scrapeAt(1, "# TYPE metric_a gauge\nmetric_a 2\n# TYPE metric_keep counter\nmetric_keep 20\n")
+		// Scrape 2: metric_a remains dropped; must NOT emit a second StaleNaN.
+		scrapeAt(2, "# TYPE metric_a gauge\nmetric_a 3\n# TYPE metric_keep counter\nmetric_keep 30\n")
+
+		metricALabels := labels.FromStrings(model.MetricNameLabel, "metric_a", "__type__", "counter", "instance", "localhost:9090", "job", "test")
+		metricKeepLabels := labels.FromStrings(model.MetricNameLabel, "metric_keep", "__type__", "counter", "instance", "localhost:9090", "job", "test")
+		counterMeta := metadata.Metadata{Type: model.MetricTypeCounter}
+		want := []sample{
+			{MF: "metric_a", L: metricALabels, M: counterMeta, T: timestamp.FromTime(ts), V: 1},
+			{MF: "metric_keep", L: metricKeepLabels, M: counterMeta, T: timestamp.FromTime(ts), V: 10},
+			{MF: "metric_keep", L: metricKeepLabels, M: counterMeta, T: timestamp.FromTime(ts.Add(time.Minute)), V: 20},
+			{L: metricALabels, T: timestamp.FromTime(ts.Add(time.Minute)), V: math.Float64frombits(value.StaleNaN)},
+			{MF: "metric_keep", L: metricKeepLabels, M: counterMeta, T: timestamp.FromTime(ts.Add(2 * time.Minute)), V: 30},
+		}
+		teststorage.RequireEqual(t, want, appTest.ResultSamples())
+	})
+}
+
+func TestScrapeCacheStalenessSliceLifecycle(t *testing.T) {
+	c := newScrapeCache(newTestScrapeMetrics(t))
+
+	const spikeSize = 2048
+	entries := make([]*cacheEntry, spikeSize)
+	for i := range spikeSize {
+		entries[i] = &cacheEntry{
+			ref:  storage.SeriesRef(i + 1),
+			lset: labels.FromStrings(model.MetricNameLabel, "m", "i", strconv.Itoa(i)),
+		}
+		c.trackStaleness(entries[i])
+	}
+	c.iterDone(true)
+
+	// Empty scrape swaps the large backing array into seriesCur[:0]; verify clear() nulled every slot.
+	var staleCount int
+	c.forEachStale(func(storage.SeriesRef, labels.Labels) bool {
+		staleCount++
+		return staleCount < 5 // Stop early to verify early-exit and retry safety.
+	})
+	require.Equal(t, 5, staleCount)
+
+	// Retrying before iterDone must still see all spikeSize stale entries.
+	staleCount = 0
+	c.forEachStale(func(storage.SeriesRef, labels.Labels) bool {
+		staleCount++
+		return true
+	})
+	require.Equal(t, spikeSize, staleCount)
+
+	c.iterDone(false)
+	curBacking := c.seriesCur[:cap(c.seriesCur)]
+	for i, ptr := range curBacking {
+		require.Nil(t, ptr, "expected nil pointer in seriesCur backing array at index %d", i)
+	}
+
+	// Two small successful scrapes should release the oversized spike backing arrays.
+	for range 2 {
+		c.trackStaleness(entries[0])
+		c.iterDone(true)
+	}
+	require.LessOrEqual(t, cap(c.seriesCur), 1024)
+	require.LessOrEqual(t, cap(c.seriesPrev), 1024)
+}
+
+// BenchmarkScrapeCacheStaleness benchmarks scrapeCache staleness tracking across
+// steady-state scrapes and series churn, reporting retained staleness bytes per series.
+//
+// Recommended CLI invocation:
+/*
+	export bench=staleness && go test ./scrape/... \
+		-run '^$' -bench '^BenchmarkScrapeCacheStaleness' \
+		-benchtime 2s -count 6 -cpu 2 -timeout 999m -benchmem \
+		| tee ${bench}.txt
+*/
+func BenchmarkScrapeCacheStaleness(b *testing.B) {
+	metrics := newTestScrapeMetrics(b)
+	for _, numSeries := range []int{10000, 100000} {
+		entriesA := make([]*cacheEntry, numSeries)
+		entriesB := make([]*cacheEntry, numSeries)
+		for i := range numSeries {
+			entriesA[i] = &cacheEntry{
+				ref:  storage.SeriesRef(i + 1),
+				lset: labels.FromStrings(model.MetricNameLabel, "metric_a", "id", strconv.Itoa(i)),
+			}
+			entriesB[i] = &cacheEntry{
+				ref:  storage.SeriesRef(numSeries + i + 1),
+				lset: labels.FromStrings(model.MetricNameLabel, "metric_b", "id", strconv.Itoa(i)),
+			}
+		}
+
+		b.Run(fmt.Sprintf("series=%d/churn=none", numSeries), func(b *testing.B) {
+			for _, ce := range entriesA {
+				ce.trackedIter = 0
+			}
+			var memBefore, memAfter runtime.MemStats
+			runtime.GC()
+			runtime.ReadMemStats(&memBefore)
+
+			c := newScrapeCache(metrics)
+			for range 2 {
+				for _, ce := range entriesA {
+					c.trackStaleness(ce)
+				}
+				c.forEachStale(func(storage.SeriesRef, labels.Labels) bool { return true })
+				c.iterDone(false)
+			}
+
+			runtime.GC()
+			runtime.ReadMemStats(&memAfter)
+			var retainedPerSeries float64
+			if memAfter.HeapAlloc > memBefore.HeapAlloc {
+				retainedPerSeries = float64(memAfter.HeapAlloc-memBefore.HeapAlloc) / float64(numSeries)
+			}
+
+			b.ReportAllocs()
+			b.ResetTimer()
+			for b.Loop() {
+				for _, ce := range entriesA {
+					c.trackStaleness(ce)
+				}
+				c.forEachStale(func(storage.SeriesRef, labels.Labels) bool { return true })
+				c.iterDone(false)
+			}
+			if retainedPerSeries > 0 {
+				b.ReportMetric(retainedPerSeries, "retained-B/series")
+			}
+		})
+
+		b.Run(fmt.Sprintf("series=%d/churn=1pct", numSeries), func(b *testing.B) {
+			for _, ce := range entriesA {
+				ce.trackedIter = 0
+			}
+			for _, ce := range entriesB {
+				ce.trackedIter = 0
+			}
+			churnCount := numSeries / 100
+			steady := entriesA[churnCount:]
+
+			c := newScrapeCache(metrics)
+			for _, ce := range entriesA {
+				c.trackStaleness(ce)
+			}
+			c.iterDone(false)
+			for _, ce := range entriesB[:churnCount] {
+				c.trackStaleness(ce)
+			}
+			for _, ce := range steady {
+				c.trackStaleness(ce)
+			}
+			c.forEachStale(func(storage.SeriesRef, labels.Labels) bool { return true })
+			c.iterDone(false)
+
+			useA := true
+			b.ReportAllocs()
+			b.ResetTimer()
+			for b.Loop() {
+				churned := entriesB[:churnCount]
+				if useA {
+					churned = entriesA[:churnCount]
+				}
+				useA = !useA
+				for _, ce := range churned {
+					c.trackStaleness(ce)
+				}
+				for _, ce := range steady {
+					c.trackStaleness(ce)
+				}
+				c.forEachStale(func(storage.SeriesRef, labels.Labels) bool { return true })
+				c.iterDone(false)
+			}
+		})
+	}
 }
