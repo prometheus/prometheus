@@ -1568,7 +1568,63 @@ func (sl *scrapeLoop) scrapeAndReport(last, appendTime time.Time, errc chan<- er
 
 	var total, added, seriesAdded, bytesRead int
 	var err, appErr, scrapeErr error
+	var contentType string
+	var b []byte
 
+	forcedErr := sl.getForcedError()
+	if forcedErr != nil {
+		scrapeErr = forcedErr
+	} else {
+		var resp *http.Response
+		var buf *bytes.Buffer
+		scrapeCtx, cancel := context.WithTimeout(trace.ContextWithSpan(sl.parentCtx, span), sl.timeout)
+		resp, scrapeErr = sl.scraper.scrape(scrapeCtx)
+		if scrapeErr == nil {
+			// Avoid copying the body when bytes.Buffer.ReadFrom grows before reading EOF.
+			b = sl.buffers.Get(sl.lastScrapeSize + bytes.MinRead).([]byte)
+			defer sl.buffers.Put(b)
+			buf = bytes.NewBuffer(b)
+			// Trace the response body read and decompression into the buffer.
+			_, readSpan := otel.Tracer("").Start(spanCtx, "scrapeRead")
+			contentType, scrapeErr = sl.scraper.readResponse(scrapeCtx, resp, buf)
+			if scrapeErr != nil {
+				readSpan.RecordError(scrapeErr)
+				readSpan.SetStatus(codes.Error, scrapeErr.Error())
+			}
+			readSpan.End()
+		}
+		cancel()
+
+		if scrapeErr == nil {
+			b = buf.Bytes()
+			// NOTE: There were issues with misbehaving clients in the past
+			// that occasionally returned empty results. We don't want those
+			// to falsely reset our buffer size.
+			if len(b) > 0 {
+				sl.lastScrapeSize = len(b)
+			}
+			bytesRead = len(b)
+		} else {
+			sl.l.Debug("Scrape failed", "err", scrapeErr)
+			sl.scrapeFailureLoggerMtx.RLock()
+			if sl.scrapeFailureLogger != nil {
+				slog.New(sl.scrapeFailureLogger).Error(scrapeErr.Error())
+			}
+			sl.scrapeFailureLoggerMtx.RUnlock()
+			if errc != nil {
+				select {
+				case errc <- scrapeErr:
+				case <-sl.ctx.Done():
+				}
+			}
+			if errors.Is(scrapeErr, errBodySizeLimit) {
+				bytesRead = -1
+			}
+		}
+	}
+
+	// Acquire the storage appender only after the HTTP scrape and body read finish
+	// so slow or blocked targets do not hold open storage appenders during network I/O.
 	_, appenderSpan := otel.Tracer("").Start(spanCtx, "newAppender")
 	app := sl.appender()
 	appenderSpan.End()
@@ -1607,8 +1663,7 @@ func (sl *scrapeLoop) scrapeAndReport(last, appendTime time.Time, errc chan<- er
 		}
 	}()
 
-	if forcedErr := sl.getForcedError(); forcedErr != nil {
-		scrapeErr = forcedErr
+	if forcedErr != nil {
 		// Add stale markers.
 		if _, _, _, err := app.append([]byte{}, "", appendTime); err != nil {
 			_ = app.Rollback()
@@ -1623,55 +1678,6 @@ func (sl *scrapeLoop) scrapeAndReport(last, appendTime time.Time, errc chan<- er
 		}
 
 		return start
-	}
-
-	var contentType string
-	var resp *http.Response
-	var b []byte
-	var buf *bytes.Buffer
-	scrapeCtx, cancel := context.WithTimeout(trace.ContextWithSpan(sl.parentCtx, span), sl.timeout)
-	resp, scrapeErr = sl.scraper.scrape(scrapeCtx)
-	if scrapeErr == nil {
-		// Avoid copying the body when bytes.Buffer.ReadFrom grows before reading EOF.
-		b = sl.buffers.Get(sl.lastScrapeSize + bytes.MinRead).([]byte)
-		defer sl.buffers.Put(b)
-		buf = bytes.NewBuffer(b)
-		// Trace the response body read and decompression into the buffer.
-		_, readSpan := otel.Tracer("").Start(spanCtx, "scrapeRead")
-		contentType, scrapeErr = sl.scraper.readResponse(scrapeCtx, resp, buf)
-		if scrapeErr != nil {
-			readSpan.RecordError(scrapeErr)
-			readSpan.SetStatus(codes.Error, scrapeErr.Error())
-		}
-		readSpan.End()
-	}
-	cancel()
-
-	if scrapeErr == nil {
-		b = buf.Bytes()
-		// NOTE: There were issues with misbehaving clients in the past
-		// that occasionally returned empty results. We don't want those
-		// to falsely reset our buffer size.
-		if len(b) > 0 {
-			sl.lastScrapeSize = len(b)
-		}
-		bytesRead = len(b)
-	} else {
-		sl.l.Debug("Scrape failed", "err", scrapeErr)
-		sl.scrapeFailureLoggerMtx.RLock()
-		if sl.scrapeFailureLogger != nil {
-			slog.New(sl.scrapeFailureLogger).Error(scrapeErr.Error())
-		}
-		sl.scrapeFailureLoggerMtx.RUnlock()
-		if errc != nil {
-			select {
-			case errc <- scrapeErr:
-			case <-sl.ctx.Done():
-			}
-		}
-		if errors.Is(scrapeErr, errBodySizeLimit) {
-			bytesRead = -1
-		}
 	}
 
 	// A failed scrape is the same as an empty scrape,

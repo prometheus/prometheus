@@ -3266,6 +3266,327 @@ func BenchmarkScrapeLoopScrapeAndReport(b *testing.B) {
 	}
 }
 
+func TestScrapeLoopScrapeAndReportLazyAppender(t *testing.T) {
+	foreachAppendable(t, func(t *testing.T, appV2 bool) {
+		newCountingLoop := func(t *testing.T) (*scrapeLoop, *testScraper, *teststorage.Appendable, *atomic.Int64) {
+			t.Helper()
+			appTest := teststorage.NewAppendable()
+			appenderCalls := atomic.NewInt64(0)
+			sl, scraper := newTestScrapeLoop(t, func(sl *scrapeLoop) {
+				sl.fallbackScrapeProtocol = "text/plain"
+				if appV2 {
+					sl.appendableV2 = appendableV2Func(func(ctx context.Context) storage.AppenderV2 {
+						appenderCalls.Inc()
+						return appTest.AppenderV2(ctx)
+					})
+				} else {
+					sl.appendable = appendableFunc(func(ctx context.Context) storage.Appender {
+						appenderCalls.Inc()
+						return appTest.Appender(ctx)
+					})
+				}
+			})
+			return sl, scraper, appTest, appenderCalls
+		}
+
+		t.Run("success", func(t *testing.T) {
+			sl, scraper, appTest, appenderCalls := newCountingLoop(t)
+
+			inScrape := make(chan struct{})
+			unblockScrape := make(chan struct{})
+			inRead := make(chan struct{})
+			unblockRead := make(chan struct{})
+
+			scraper.scrapeReqFunc = func(context.Context) (*http.Response, error) {
+				close(inScrape)
+				<-unblockScrape
+				return &http.Response{StatusCode: http.StatusOK}, nil
+			}
+			scraper.scrapeFunc = func(_ context.Context, w io.Writer) error {
+				close(inRead)
+				<-unblockRead
+				_, err := w.Write([]byte("metric_a 42\n"))
+				return err
+			}
+
+			done := make(chan struct{})
+			ts := time.Unix(1000, 0)
+			go func() {
+				defer close(done)
+				sl.scrapeAndReport(time.Time{}, ts, nil)
+			}()
+
+			<-inScrape
+			require.Zero(t, appenderCalls.Load(), "appender must not be acquired while HTTP scrape is in-flight")
+			close(unblockScrape)
+
+			<-inRead
+			require.Zero(t, appenderCalls.Load(), "appender must not be acquired while HTTP body read is in-flight")
+			close(unblockRead)
+
+			<-done
+			require.Equal(t, int64(1), appenderCalls.Load())
+			require.NoError(t, scraper.lastError)
+			// 1 target sample + 5 report samples.
+			got := appTest.ResultSamples()
+			require.Len(t, got, 6)
+			require.Equal(t, 42.0, got[0].V)
+		})
+
+		t.Run("scrape_error", func(t *testing.T) {
+			sl, scraper, appTest, appenderCalls := newCountingLoop(t)
+			scraper.scrapeFunc = func(_ context.Context, w io.Writer) error {
+				_, err := w.Write([]byte("metric_a 42\n"))
+				return err
+			}
+
+			ts := time.Unix(1000, 0)
+			sl.scrapeAndReport(time.Time{}, ts, nil)
+			require.Equal(t, int64(1), appenderCalls.Load())
+			appenderCalls.Store(0)
+			appTest.ResultReset()
+
+			inScrape := make(chan struct{})
+			unblockScrape := make(chan struct{})
+			scrapeBoom := errors.New("dial timeout")
+			scraper.scrapeReqFunc = func(context.Context) (*http.Response, error) {
+				close(inScrape)
+				<-unblockScrape
+				return nil, scrapeBoom
+			}
+
+			errc := make(chan error, 1)
+			done := make(chan struct{})
+			go func() {
+				defer close(done)
+				sl.scrapeAndReport(ts, ts.Add(15*time.Second), errc)
+			}()
+
+			<-inScrape
+			require.Zero(t, appenderCalls.Load(), "appender must not be acquired while failing HTTP scrape is in-flight")
+			close(unblockScrape)
+
+			<-done
+			require.Equal(t, int64(1), appenderCalls.Load())
+			require.ErrorIs(t, <-errc, scrapeBoom)
+			// 1 stale marker for metric_a + 5 report samples.
+			got := appTest.ResultSamples()
+			require.Len(t, got, 6)
+			require.True(t, value.IsStaleNaN(got[0].V))
+		})
+
+		t.Run("forced_error", func(t *testing.T) {
+			sl, scraper, appTest, appenderCalls := newCountingLoop(t)
+			scraper.scrapeFunc = func(_ context.Context, w io.Writer) error {
+				_, err := w.Write([]byte("metric_a 42\n"))
+				return err
+			}
+
+			ts := time.Unix(1000, 0)
+			sl.scrapeAndReport(time.Time{}, ts, nil)
+			require.Equal(t, int64(1), appenderCalls.Load())
+			appenderCalls.Store(0)
+			appTest.ResultReset()
+
+			forcedErr := errors.New("forced target error")
+			sl.setForcedError(forcedErr)
+			scraper.scrapeReqFunc = func(context.Context) (*http.Response, error) {
+				t.Error("HTTP scrape must not be called when forcedErr is set")
+				return nil, nil
+			}
+
+			errc := make(chan error, 1)
+			sl.scrapeAndReport(ts, ts.Add(15*time.Second), errc)
+			require.Equal(t, int64(1), appenderCalls.Load())
+			require.ErrorIs(t, <-errc, forcedErr)
+			// 1 stale marker for metric_a + 5 report samples.
+			got := appTest.ResultSamples()
+			require.Len(t, got, 6)
+			require.True(t, value.IsStaleNaN(got[0].V))
+		})
+	})
+}
+
+type activeTrackingAppender struct {
+	storage.Appender
+	pool *sync.Pool
+	dec  func()
+}
+
+func (a *activeTrackingAppender) Commit() error {
+	err := a.Appender.Commit()
+	a.dec()
+	a.Appender = nil
+	a.pool.Put(a)
+	return err
+}
+
+func (a *activeTrackingAppender) Rollback() error {
+	err := a.Appender.Rollback()
+	a.dec()
+	a.Appender = nil
+	a.pool.Put(a)
+	return err
+}
+
+type activeTrackingAppenderV2 struct {
+	storage.AppenderV2
+	pool *sync.Pool
+	dec  func()
+}
+
+func (a *activeTrackingAppenderV2) Commit() error {
+	err := a.AppenderV2.Commit()
+	a.dec()
+	a.AppenderV2 = nil
+	a.pool.Put(a)
+	return err
+}
+
+func (a *activeTrackingAppenderV2) Rollback() error {
+	err := a.AppenderV2.Rollback()
+	a.dec()
+	a.AppenderV2 = nil
+	a.pool.Put(a)
+	return err
+}
+
+// Recommended CLI invocation:
+/*
+	export bench=scrapeConcurrentSlow && go test ./scrape/... \
+		-run '^$' -bench '^BenchmarkScrapeLoopScrapeAndReportConcurrentSlow$' \
+		-benchtime 2s -count 6 -cpu 2 -timeout 999m -benchmem \
+		| tee ${bench}.txt
+*/
+func BenchmarkScrapeLoopScrapeAndReportConcurrentSlow(b *testing.B) {
+	const numTargets = 64
+
+	for _, appV2 := range []bool{false, true} {
+		b.Run(fmt.Sprintf("appV2=%v", appV2), func(b *testing.B) {
+			s := teststorage.New(b)
+
+			var (
+				active   atomic.Int64
+				iterPeak atomic.Int64
+				v1Pool   sync.Pool
+				v2Pool   sync.Pool
+			)
+			incActive := func() {
+				cur := active.Inc()
+				for {
+					prev := iterPeak.Load()
+					if cur <= prev || iterPeak.CompareAndSwap(prev, cur) {
+						break
+					}
+				}
+			}
+			decActive := func() {
+				active.Dec()
+			}
+			v1Pool.New = func() any {
+				return &activeTrackingAppender{pool: &v1Pool, dec: decActive}
+			}
+			v2Pool.New = func() any {
+				return &activeTrackingAppenderV2{pool: &v2Pool, dec: decActive}
+			}
+
+			var (
+				readyWg       sync.WaitGroup
+				releaseScrape chan struct{}
+			)
+
+			loops := make([]*scrapeLoop, numTargets)
+			scrapers := make([]*testScraper, numTargets)
+			for i := range numTargets {
+				payload := fmt.Appendf(nil, "metric_a{target=\"%d\"} 1\nmetric_b{target=\"%d\"} 2\n", i, i)
+				targetLabels := &Target{labels: labels.FromStrings("instance", strconv.Itoa(i))}
+				sl, scraper := newTestScrapeLoop(b, func(sl *scrapeLoop) {
+					sl.fallbackScrapeProtocol = "text/plain"
+					sl.sampleMutator = func(l labels.Labels) labels.Labels {
+						return mutateSampleLabels(l, targetLabels, false, nil)
+					}
+					sl.reportSampleMutator = func(l labels.Labels) labels.Labels {
+						return mutateReportSampleLabels(l, targetLabels)
+					}
+					if appV2 {
+						sl.appendableV2 = appendableV2Func(func(ctx context.Context) storage.AppenderV2 {
+							incActive()
+							w := v2Pool.Get().(*activeTrackingAppenderV2)
+							w.AppenderV2 = s.AppenderV2(ctx)
+							return w
+						})
+					} else {
+						sl.appendable = appendableFunc(func(ctx context.Context) storage.Appender {
+							incActive()
+							w := v1Pool.Get().(*activeTrackingAppender)
+							w.Appender = s.Appender(ctx)
+							return w
+						})
+					}
+				})
+				scraper.scrapeReqFunc = func(context.Context) (*http.Response, error) {
+					readyWg.Done()
+					<-releaseScrape
+					return nil, nil
+				}
+				scraper.scrapeFunc = func(_ context.Context, w io.Writer) error {
+					_, err := w.Write(payload)
+					return err
+				}
+				loops[i] = sl
+				scrapers[i] = scraper
+			}
+
+			ts := time.Unix(1_700_000_000, 0)
+			// Warm up caches and pools once before timing.
+			readyWg.Add(numTargets)
+			releaseScrape = make(chan struct{})
+			var warmWg sync.WaitGroup
+			for i := range numTargets {
+				warmWg.Go(func() {
+					loops[i].scrapeAndReport(time.Time{}, ts, nil)
+				})
+			}
+			readyWg.Wait()
+			close(releaseScrape)
+			warmWg.Wait()
+
+			var totalPeak int64
+			var iters int64
+
+			b.ReportAllocs()
+			b.ResetTimer()
+			for b.Loop() {
+				ts = ts.Add(time.Second)
+				iterPeak.Store(0)
+				readyWg.Add(numTargets)
+				releaseScrape = make(chan struct{})
+
+				var wg sync.WaitGroup
+				for i := range numTargets {
+					wg.Go(func() {
+						loops[i].scrapeAndReport(time.Time{}, ts, nil)
+					})
+				}
+				readyWg.Wait()
+				close(releaseScrape)
+				wg.Wait()
+
+				for i := range numTargets {
+					if scrapers[i].lastError != nil {
+						b.Fatalf("unexpected scrape error: %v", scrapers[i].lastError)
+					}
+				}
+				totalPeak += iterPeak.Load()
+				iters++
+			}
+			if iters > 0 {
+				b.ReportMetric(float64(totalPeak)/float64(iters), "peak-appenders/op")
+			}
+		})
+	}
+}
+
 func TestSetOptionsHandlingStaleness(t *testing.T) {
 	foreachAppendable(t, func(t *testing.T, appV2 bool) {
 		testSetOptionsHandlingStaleness(t, appV2)
@@ -5919,8 +6240,9 @@ type testScraper struct {
 	lastDuration time.Duration
 	lastError    error
 
-	scrapeErr  error
-	scrapeFunc func(context.Context, io.Writer) error
+	scrapeErr     error
+	scrapeReqFunc func(context.Context) (*http.Response, error)
+	scrapeFunc    func(context.Context, io.Writer) error
 }
 
 func (ts *testScraper) offset(time.Duration, uint64) time.Duration {
@@ -5933,7 +6255,10 @@ func (ts *testScraper) Report(start time.Time, duration time.Duration, err error
 	ts.lastError = err
 }
 
-func (ts *testScraper) scrape(context.Context) (*http.Response, error) {
+func (ts *testScraper) scrape(ctx context.Context) (*http.Response, error) {
+	if ts.scrapeReqFunc != nil {
+		return ts.scrapeReqFunc(ctx)
+	}
 	return nil, ts.scrapeErr
 }
 
