@@ -431,6 +431,30 @@ func TestScrapeCacheSizeMetadata(t *testing.T) {
 				require.Equal(t, 0, c.SizeMetadata())
 			},
 		},
+		{
+			name: "setMetadata empty type normalization, unchanged fast path, and updates",
+			steps: func(t *testing.T, c *scrapeCache) {
+				mf := unique.Make("metric_relabeled")
+				c.iter = 1
+				c.setMetadata(mf, unique.Make(metadata.Metadata{Help: "help"}))
+				// Empty Type is normalized to MetricTypeUnknown ("unknown", len 7) + "help" (len 4) = 11.
+				require.Equal(t, 11, c.SizeMetadata())
+				md, ok := c.GetMetadata("metric_relabeled")
+				require.True(t, ok)
+				require.Equal(t, model.MetricTypeUnknown, md.Type)
+
+				// Update with explicit type and unit: "counter" (7) + "help" (4) + "seconds" (7) = 18.
+				metaHandle := unique.Make(metadata.Metadata{Type: model.MetricTypeCounter, Help: "help", Unit: "seconds"})
+				c.setMetadata(mf, metaHandle)
+				require.Equal(t, 18, c.SizeMetadata())
+
+				// Unchanged handle fast path at iter=15 must refresh lastIter so iterDone(true) does not evict it.
+				c.iter = 15
+				c.setMetadata(mf, metaHandle)
+				c.iterDone(true)
+				require.Equal(t, 18, c.SizeMetadata())
+			},
+		},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
