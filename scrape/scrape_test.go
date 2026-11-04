@@ -2569,6 +2569,24 @@ test_metric 15
 	// Verify that still no samples are appended (specifically no stale marker).
 	got = appTest.ResultSamples()
 	require.Empty(t, got, "Expected no samples (specifically no stale markers) because the series was never tracked for staleness")
+
+	// When the series already exists in storage (GetRef hit) on a cold cache,
+	// anchoring start time (skipAppend) must still leave ce.ref == 0 and avoid tracking staleness.
+	seedApp := s.AppenderV2(t.Context())
+	_, err = seedApp.Append(0, labels.FromStrings(model.MetricNameLabel, "test_metric"), 0, timestamp.FromTime(ts), 5, nil, nil, storage.AOptions{})
+	require.NoError(t, err)
+	require.NoError(t, seedApp.Commit())
+
+	slWithGetRef, _ := newTestScrapeLoop(t, withAppendable(storage.NewFanout(nil, s), true), func(sl *scrapeLoop) {
+		sl.synthesizeST = true
+		sl.parseST = true
+	})
+	app = slWithGetRef.appender()
+	_, _, _, err = app.append(scrapeA, "application/openmetrics-text", ts.Add(time.Minute))
+	require.NoError(t, err)
+	require.NoError(t, app.Commit())
+	require.Zero(t, slWithGetRef.cache.series["test_metric"].ref)
+	require.Empty(t, slWithGetRef.cache.seriesPrev)
 }
 
 func TestScrapeLoopAppend_StartTimeSynthesis_OOO_StateMutation(t *testing.T) {
