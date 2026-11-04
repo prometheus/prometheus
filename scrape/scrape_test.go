@@ -32,6 +32,8 @@ import (
 	"net/url"
 	"os"
 	"path/filepath"
+	"runtime"
+	runtimemetrics "runtime/metrics"
 	"sort"
 	"strconv"
 	"strings"
@@ -41,6 +43,7 @@ import (
 	"text/template"
 	"time"
 
+	"github.com/cespare/xxhash/v2"
 	"github.com/gogo/protobuf/proto"
 	"github.com/grafana/regexp"
 	"github.com/klauspost/compress/zstd"
@@ -3195,6 +3198,85 @@ func BenchmarkScrapeLoopAppend_HistogramsWithExemplars(b *testing.B) {
 	}
 }
 
+// BenchmarkScrapeCacheSeries benchmarks populating and hitting scrapeCache across scrapes,
+// reporting the steady-state retained heap bytes per cached series.
+//
+// Recommended CLI invocation:
+/*
+	export bench=scrapeCacheSeries && go test ./scrape/... \
+		-run '^$' -bench '^BenchmarkScrapeCacheSeries$' \
+		-benchtime 2s -count 6 -cpu 2 -timeout 999m -benchmem \
+		| tee ${bench}.txt
+*/
+func BenchmarkScrapeCacheSeries(b *testing.B) {
+	const seriesCount = 10000
+
+	var payload bytes.Buffer
+	for i := range seriesCount {
+		fmt.Fprintf(&payload, "http_requests_total{cluster=\"prod-eu-west-1\",instance=\"10.0.0.%d:8080\",job=\"api-server\",method=\"GET\",path=\"/api/v1/items/%d\",status=\"200\"} %d\n", i%256, i, i)
+	}
+	parsable := payload.Bytes()
+
+	a := teststorage.NewAppendable().SkipRecording(true)
+	sl, _ := newTestScrapeLoop(b, withAppendable(a, true), func(sl *scrapeLoop) {
+		sl.parseST = false
+	})
+
+	// Warm up symbolTable so retained heap measures scrapeCache rather than symbolTable growth.
+	ts := time.Unix(1600000000, 0)
+	app := sl.appender()
+	_, _, _, err := app.append(parsable, "text/plain", ts)
+	require.NoError(b, err)
+	require.NoError(b, app.Rollback())
+	app = nil
+	sl.cache = newScrapeCache(sl.metrics)
+
+	liveHeap := func() uint64 {
+		runtime.GC()
+		runtime.GC() // The second cycle also empties sync.Pool victim caches.
+		samples := []runtimemetrics.Sample{{Name: "/gc/heap/live:bytes"}}
+		runtimemetrics.Read(samples)
+		return samples[0].Value.Uint64()
+	}
+
+	before := liveHeap()
+
+	b.ReportAllocs()
+	b.ResetTimer()
+	for b.Loop() {
+		sl.cache = newScrapeCache(sl.metrics)
+
+		// Cold scrape populates series and seriesPrev (via iterDone).
+		ts = ts.Add(time.Second)
+		app = sl.appender()
+		if _, _, _, err := app.append(parsable, "text/plain", ts); err != nil {
+			b.Fatal(err)
+		}
+		if err := app.Rollback(); err != nil {
+			b.Fatal(err)
+		}
+
+		// Warm scrape hits cached series and populates the swapped staleness map to steady-state capacity.
+		ts = ts.Add(time.Second)
+		app = sl.appender()
+		if _, _, _, err := app.append(parsable, "text/plain", ts); err != nil {
+			b.Fatal(err)
+		}
+		if err := app.Rollback(); err != nil {
+			b.Fatal(err)
+		}
+	}
+	b.StopTimer()
+	app = nil
+
+	after := liveHeap()
+	runtime.KeepAlive(sl)
+	runtime.KeepAlive(parsable)
+	if after > before {
+		b.ReportMetric(float64(after-before)/seriesCount, "retained-B/series")
+	}
+}
+
 func TestScrapeLoopScrapeAndReport(t *testing.T) {
 	foreachAppendable(t, func(t *testing.T, appV2 bool) {
 		testScrapeLoopScrapeAndReport(t, appV2)
@@ -3667,7 +3749,7 @@ func testScrapeLoopSeriesRefChange(t *testing.T, appV2 bool) {
 
 			teststorage.RequireEqual(t, tc.expectedSamples, app.ResultSamples())
 
-			ce, ok := sl.cache.series["metric_a"]
+			ce, ok := sl.cache.series[xxhash.Sum64([]byte("metric_a"))]
 			require.True(t, ok)
 			require.Equal(t, tc.expectedRef, ce.ref)
 		})
@@ -3701,14 +3783,14 @@ func testScrapeLoopCache(t *testing.T, appV2 bool) {
 	scraper.scrapeFunc = func(_ context.Context, w io.Writer) error {
 		switch numScrapes {
 		case 1, 2:
-			_, ok := sl.cache.series["metric_a"]
+			_, ok := sl.cache.series[xxhash.Sum64([]byte("metric_a"))]
 			require.True(t, ok, "metric_a missing from cache after scrape %d", numScrapes)
-			_, ok = sl.cache.series["metric_b"]
+			_, ok = sl.cache.series[xxhash.Sum64([]byte("metric_b"))]
 			require.True(t, ok, "metric_b missing from cache after scrape %d", numScrapes)
 		case 3:
-			_, ok := sl.cache.series["metric_a"]
+			_, ok := sl.cache.series[xxhash.Sum64([]byte("metric_a"))]
 			require.True(t, ok, "metric_a missing from cache after scrape %d", numScrapes)
-			_, ok = sl.cache.series["metric_b"]
+			_, ok = sl.cache.series[xxhash.Sum64([]byte("metric_b"))]
 			require.False(t, ok, "metric_b present in cache after scrape %d", numScrapes)
 		}
 
@@ -3974,8 +4056,8 @@ func testScrapeLoopAppendCacheEntryButErrNotFound(t *testing.T, appV2 bool) {
 	require.NoError(t, err)
 	p.Labels(&lset)
 
-	// Create a fake entry in the cache
-	sl.cache.addRef(metric, fakeRef, lset)
+	// Create a fake entry in the cache.
+	sl.cache.addRef(xxhash.Sum64(metric), fakeRef, lset, nil)
 	now := time.Now()
 
 	app := sl.appender()
@@ -6351,8 +6433,9 @@ func testScrapeAddFast(t *testing.T, appV2 bool) {
 
 	// Poison the cache. There is just one entry, and one series in the
 	// storage. Changing the ref will create a 'not found' error.
-	for _, v := range sl.getCache().series {
+	for k, v := range sl.getCache().series {
 		v.ref++
+		sl.getCache().series[k] = v
 	}
 
 	app = sl.appender()

@@ -225,21 +225,19 @@ loop:
 		}
 
 		var (
-			ce                   *cacheEntry
-			seriesCached         bool
-			seriesAlreadyScraped bool
-			ref                  storage.SeriesRef
-			sampleMeta           metadata.Metadata
-			origMeta             metadata.Metadata
-			origMFName           string
-			sampleMFName         string
+			ref          storage.SeriesRef
+			sampleMeta   metadata.Metadata
+			origMeta     metadata.Metadata
+			origMFName   string
+			sampleMFName string
 		)
 
+		metHash, ce, seriesCached, seriesAlreadyScraped := sl.cache.get(met)
+		if !seriesCached && sl.cache.getDropped(met) {
+			continue
+		}
+
 		if !hasMRC {
-			if sl.cache.getDropped(met) {
-				continue
-			}
-			ce, seriesCached, seriesAlreadyScraped = sl.cache.get(met)
 			if seriesCached {
 				ref = ce.ref
 				lset = ce.lset
@@ -271,10 +269,6 @@ loop:
 				}
 			}
 		} else {
-			if sl.cache.getDropped(met) {
-				continue
-			}
-			ce, seriesCached, seriesAlreadyScraped = sl.cache.get(met)
 			if lastMeta != nil {
 				origMeta = lastMeta.Metadata
 				origMFName = yoloString(lastMFName)
@@ -284,7 +278,7 @@ loop:
 				hasCachedMeta bool
 			)
 			if seriesCached && sl.cache.seriesMeta != nil {
-				sm, hasCachedMeta = sl.cache.seriesMeta[ce]
+				sm, hasCachedMeta = sl.cache.seriesMeta[metHash]
 			}
 
 			if seriesCached && hasCachedMeta && sm.origMFName == origMFName && sm.origMeta.Equals(origMeta) {
@@ -306,7 +300,7 @@ loop:
 				// The label set may be set to empty to indicate dropping.
 				if lset.IsEmpty() {
 					if seriesCached {
-						sl.cache.deleteSeries(met, ce)
+						sl.cache.deleteSeries(metHash)
 					}
 					sl.cache.addDropped(met)
 					continue
@@ -335,10 +329,10 @@ loop:
 				if seriesCached {
 					if ce.lset.Hash() == lset.Hash() && labels.Equal(ce.lset, lset) {
 						ref = ce.ref
-						sl.cache.setSeriesMeta(ce, origMeta, sampleMeta, origMFName, sampleMFName)
+						sl.cache.setSeriesMeta(metHash, ce.lset, origMeta, sampleMeta, origMFName, sampleMFName)
 					} else {
-						sl.cache.deleteSeries(met, ce)
-						ce = nil
+						sl.cache.deleteSeries(metHash)
+						ce = cacheEntry{}
 						seriesCached = false
 					}
 				}
@@ -373,9 +367,9 @@ loop:
 					if lastMeta != nil {
 						stType = lastMeta.Type
 					}
-					st, val, h, fh, skipAppend, stCache = sl.checkAndSynthesizeStartTime(st, lset, ce, yoloString(lastMFName), stType, val, h, fh, t)
+					st, val, h, fh, skipAppend, stCache = sl.checkAndSynthesizeStartTime(st, lset, ce.st, yoloString(lastMFName), stType, val, h, fh, t)
 				} else {
-					st, val, h, fh, skipAppend, stCache = sl.checkAndSynthesizeStartTime(st, lset, ce, sampleMFName, sampleMeta.Type, val, h, fh, t)
+					st, val, h, fh, skipAppend, stCache = sl.checkAndSynthesizeStartTime(st, lset, ce.st, sampleMFName, sampleMeta.Type, val, h, fh, t)
 				}
 				appOpts.RejectOutOfOrder = true
 			}
@@ -441,8 +435,8 @@ loop:
 			if !skipAppend {
 				// Append sample to the storage.
 				ref, err = app.Append(ref, lset, st, t, val, h, fh, appOpts)
-				if err == nil && ce != nil && ref != 0 {
-					sl.cache.updateRef(ce, ref)
+				if err == nil && seriesCached && ref != 0 {
+					sl.cache.updateRef(metHash, &ce, ref)
 				}
 			}
 		}
@@ -458,22 +452,28 @@ loop:
 		// But we only do this for series that were appended to TSDB without errors.
 		// If a series was new, but we didn't append it due to sample_limit or other errors then we don't need
 		// it in the scrape cache because we don't need to emit StaleNaNs for it when it disappears.
-		if !seriesCached && sampleAdded {
-			ce = sl.cache.addRef(met, ref, lset)
-			if hasMRC {
-				sl.cache.setSeriesMeta(ce, origMeta, sampleMeta, origMFName, sampleMFName)
-			}
-
-			if sampleLimitErr == nil && bucketLimitErr == nil {
-				seriesAdded++
-			}
-		}
-
-		if ce != nil && sl.synthesizeST {
+		hasCE := seriesCached
+		if !seriesCached {
 			if sampleAdded {
-				ce.st = stCache // Set it, even if it's nil (explicit reset).
-			} else if seriesCached {
+				ce = sl.cache.addRef(metHash, ref, lset, stCache)
+				hasCE = true
+				if hasMRC {
+					sl.cache.setSeriesMeta(metHash, ce.lset, origMeta, sampleMeta, origMFName, sampleMFName)
+				}
+
+				if sampleLimitErr == nil && bucketLimitErr == nil {
+					seriesAdded++
+				}
+			}
+		} else if sl.synthesizeST {
+			if sampleAdded {
+				if ce.st != stCache {
+					ce.st = stCache // Set it, even if it's nil (explicit reset).
+					sl.cache.series[metHash] = ce
+				}
+			} else if ce.st != nil {
 				ce.st = nil // Clear state on failure for existing series.
+				sl.cache.series[metHash] = ce
 			}
 		}
 
@@ -485,8 +485,8 @@ loop:
 		// - Or we explicitly track staleness for timestamps (sl.trackTimestampsStaleness).
 		// - Or we are synthesizing start times (stCache != nil), so we can clear stCache if it goes stale.
 		shouldTrackStaleness := parsedTimestamp == nil || sl.trackTimestampsStaleness || stCache != nil
-		if ce != nil && ce.ref != 0 && shouldTrackStaleness && sampleAdded {
-			sl.cache.trackStaleness(ce.ref, ce)
+		if hasCE && ce.ref != 0 && shouldTrackStaleness && sampleAdded {
+			sl.cache.trackStaleness(ce.ref, ce.lset)
 		}
 
 		// Increment added even if there's an error so we correctly report the
@@ -528,7 +528,7 @@ loop:
 }
 
 func (sl *scrapeLoopAppenderV2) addReportSample(s reportSample, t int64, v float64, b *labels.Builder, rejectOOO bool) (err error) {
-	ce, ok, _ := sl.cache.get(s.name)
+	metHash, ce, ok, _ := sl.cache.get(s.name)
 	var ref storage.SeriesRef
 	var lset labels.Labels
 	if ok {
@@ -551,7 +551,7 @@ func (sl *scrapeLoopAppenderV2) addReportSample(s reportSample, t int64, v float
 	switch {
 	case err == nil:
 		if !ok {
-			sl.cache.addRef(s.name, ref, lset)
+			sl.cache.addRef(metHash, ref, lset, nil)
 		}
 		return nil
 	case errors.Is(err, storage.ErrOutOfOrderSample), errors.Is(err, storage.ErrDuplicateSampleForTimestamp):
@@ -566,7 +566,7 @@ func (sl *scrapeLoopAppenderV2) addReportSample(s reportSample, t int64, v float
 func (*scrapeLoop) checkAndSynthesizeStartTime(
 	st int64,
 	lset labels.Labels,
-	ce *cacheEntry,
+	prevST *stCache,
 	sampleMFName string,
 	sampleType model.MetricType,
 	val float64,
@@ -575,10 +575,10 @@ func (*scrapeLoop) checkAndSynthesizeStartTime(
 	t int64,
 ) (int64, float64, *histogram.Histogram, *histogram.FloatHistogram, bool, *stCache) {
 	var skipAppend bool
-	var c *stCache
+	c := prevST
 
 	// TODO(https://github.com/prometheus/prometheus/issues/1790): Move isSeriesPartOfFamily inside parsers.
-	if ce == nil || ce.st == nil {
+	if c == nil {
 		var mName string
 		switch sampleType {
 		case model.MetricTypeCounter, model.MetricTypeHistogram:
@@ -595,8 +595,6 @@ func (*scrapeLoop) checkAndSynthesizeStartTime(
 			return st, val, h, fh, skipAppend, c
 		}
 		c = &stCache{}
-	} else {
-		c = ce.st
 	}
 
 	switch {
