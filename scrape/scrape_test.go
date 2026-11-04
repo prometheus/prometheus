@@ -1493,6 +1493,15 @@ func TestScrapeLoopMetricRelabelMetadata(t *testing.T) {
 			Action:               relabel.Drop,
 			NameValidationScheme: model.UTF8Validation,
 		},
+		// Drop bar when its type changes to counter (with enableTypeAndUnitLabels enabled).
+		{
+			SourceLabels:         model.LabelNames{"__name__", "__type__"},
+			Separator:            ";",
+			Regex:                relabel.MustNewRegexp("bar;counter"),
+			Replacement:          "$1",
+			Action:               relabel.Drop,
+			NameValidationScheme: model.UTF8Validation,
+		},
 		// Rename old_http_requests_total -> http_requests_total.
 		{
 			SourceLabels:         model.LabelNames{"__name__"},
@@ -1563,6 +1572,8 @@ bar 1
 	require.Equal(t, 7, added)
 	require.Equal(t, 7, seriesAdded)
 	require.Equal(t, 8, mutatorCalls)
+	require.Len(t, sl.cache.series, 7)
+	require.Len(t, sl.cache.seriesMeta, 7)
 
 	// Dropped metric metadata must not be stored in scrapeCache (#14013).
 	_, ok := sl.cache.GetMetadata("dropped_metric")
@@ -1649,6 +1660,8 @@ bar 2
 	require.Equal(t, 2, added)
 	require.Equal(t, 0, seriesAdded)
 	require.Equal(t, 9, mutatorCalls)
+	require.Len(t, sl.cache.series, 2)
+	require.Len(t, sl.cache.seriesMeta, 2)
 
 	md, ok = sl.cache.GetMetadata("bar")
 	require.True(t, ok, "expected bar metadata to be present after second scrape")
@@ -1695,6 +1708,34 @@ bar 3
 	}
 	require.True(t, sawNewBar, "expected new bar series with __type__ label to be appended")
 	require.True(t, sawStaleOldBar, "expected old bar series without __type__ label to be marked stale")
+	require.Len(t, sl.cache.series, 1)
+	require.Len(t, sl.cache.seriesMeta, 1)
+
+	// Fourth scrape: when a previously cached series has its metadata change so that metric_relabel_configs
+	// drops it, deleteSeries must remove it from series and seriesMeta and add it to droppedSeries.
+	scrapeText4 := []byte(`# TYPE bar counter
+bar 4
+`)
+	app = sl.appender()
+	total, added, seriesAdded, err = app.append(scrapeText4, "text/plain", now.Add(3*time.Second))
+	require.NoError(t, err)
+	require.NoError(t, app.Commit())
+	require.Equal(t, 1, total)
+	require.Equal(t, 0, added)
+	require.Equal(t, 0, seriesAdded)
+	require.Equal(t, 11, mutatorCalls)
+	require.Empty(t, sl.cache.series)
+	require.Empty(t, sl.cache.seriesMeta)
+
+	// Fifth scrape: the newly dropped series must hit droppedSeries without invoking sampleMutator.
+	app = sl.appender()
+	total, added, seriesAdded, err = app.append(scrapeText4, "text/plain", now.Add(4*time.Second))
+	require.NoError(t, err)
+	require.NoError(t, app.Commit())
+	require.Equal(t, 1, total)
+	require.Equal(t, 0, added)
+	require.Equal(t, 0, seriesAdded)
+	require.Equal(t, 11, mutatorCalls)
 }
 
 func TestScrapeLoopSeriesAdded(t *testing.T) {
@@ -2434,6 +2475,65 @@ test_metric 32
 
 	require.Len(t, got, 9)
 	requireSample(t, got[8], "test_metric", 7, timestamp.FromTime(tsF), timestamp.FromTime(tsE), false)
+
+	// Seventh & Eighth Scrapes: with metric_relabel_configs enabled, verify ST synthesis uses cached
+	// seriesMeta and resets ce.st when metadata/relabeling changes the series label set.
+	sl.mrc = []*relabel.Config{{
+		SourceLabels:         model.LabelNames{"__name__"},
+		Separator:            ";",
+		Regex:                relabel.MustNewRegexp("(.*)"),
+		TargetLabel:          "__name__",
+		Replacement:          "$1",
+		Action:               relabel.Replace,
+		NameValidationScheme: model.UTF8Validation,
+	}}
+	tsG := tsF.Add(time.Second)
+	scrapeG := []byte(`# TYPE test_metric counter
+test_metric 40
+# EOF
+`)
+	app = sl.appender()
+	_, _, _, err = app.append(scrapeG, "application/openmetrics-text", tsG)
+	require.NoError(t, err)
+	require.NoError(t, app.Commit())
+
+	got = appTest.ResultSamples()
+	require.Len(t, got, 10)
+	requireSample(t, got[9], "test_metric", 15, timestamp.FromTime(tsG), timestamp.FromTime(tsE), false)
+
+	// Enabling enableTypeAndUnitLabels changes the post-relabel label set (__type__="counter"),
+	// which must reset ce.st and re-anchor start time on the new series.
+	sl.enableTypeAndUnitLabels = true
+	tsH := tsG.Add(time.Second)
+	scrapeH := []byte(`# TYPE test_metric counter
+# HELP test_metric counter help
+test_metric 50
+# EOF
+`)
+	app = sl.appender()
+	_, _, _, err = app.append(scrapeH, "application/openmetrics-text", tsH)
+	require.NoError(t, err)
+	require.NoError(t, app.Commit())
+
+	// New series anchors at tsH (append skipped), while old series without __type__ gets a stale marker.
+	got = appTest.ResultSamples()
+	require.Len(t, got, 11)
+	requireSample(t, got[10], "test_metric", 0, timestamp.FromTime(tsH), 0, true)
+
+	tsI := tsH.Add(time.Second)
+	scrapeI := []byte(`# TYPE test_metric counter
+# HELP test_metric counter help
+test_metric 55
+# EOF
+`)
+	app = sl.appender()
+	_, _, _, err = app.append(scrapeI, "application/openmetrics-text", tsI)
+	require.NoError(t, err)
+	require.NoError(t, app.Commit())
+
+	got = appTest.ResultSamples()
+	require.Len(t, got, 12)
+	requireSample(t, got[11], "test_metric", 5, timestamp.FromTime(tsI), timestamp.FromTime(tsH), false)
 }
 
 func TestScrapeLoopAppend_StartTimeSynthesis_WithSTStorage(t *testing.T) {
@@ -3635,6 +3735,7 @@ func testScrapeLoopSeriesRefChange(t *testing.T, appV2 bool) {
 
 	firstScrape := time.Unix(1600000000, 0)
 	metricA := labels.FromStrings(model.MetricNameLabel, "metric_a")
+	metricB := labels.FromStrings(model.MetricNameLabel, "metric_b")
 
 	scrapeTime := func(scrape int) time.Time {
 		return firstScrape.Add(time.Duration(scrape) * scrapeInterval)
@@ -3659,6 +3760,7 @@ func testScrapeLoopSeriesRefChange(t *testing.T, appV2 bool) {
 	type scrape struct {
 		body string
 		ref  storage.SeriesRef
+		refB storage.SeriesRef
 	}
 
 	for _, tc := range []struct {
@@ -3730,16 +3832,36 @@ func testScrapeLoopSeriesRefChange(t *testing.T, appV2 bool) {
 			expectedSamples: []teststorage.Sample{sampleAt(0, 1), sampleAtMs(explicitTS, 2), staleAt(1)},
 			expectedRef:     200,
 		},
+		{
+			name: "old reference reused by another series in the same scrape",
+			scrapes: []scrape{
+				{body: "metric_a 1\n", ref: 100},
+				{body: "metric_b 10\nmetric_a 2\n", ref: 200, refB: 100},
+				{body: "metric_a 3\n", ref: 200},
+			},
+			expectedSamples: []teststorage.Sample{
+				sampleAt(0, 1),
+				{L: metricB, T: timestamp.FromTime(scrapeTime(1)), V: 10},
+				sampleAt(1, 2),
+				sampleAt(2, 3),
+				{L: metricB, T: timestamp.FromTime(scrapeTime(2)), V: math.Float64frombits(value.StaleNaN)},
+			},
+			expectedRef: 200,
+		},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			var ref storage.SeriesRef
-			app := teststorage.NewAppendable().WithRefFn(func(labels.Labels) storage.SeriesRef {
+			var ref, refB storage.SeriesRef
+			app := teststorage.NewAppendable().WithRefFn(func(l labels.Labels) storage.SeriesRef {
+				if l.Get(model.MetricNameLabel) == "metric_b" {
+					return refB
+				}
 				return ref
 			})
 			sl, _ := newTestScrapeLoop(t, withAppendable(app, appV2))
 
 			for i, s := range tc.scrapes {
 				ref = s.ref
+				refB = s.refB
 
 				appender := sl.appender()
 				_, _, _, err := appender.append([]byte(s.body), "text/plain", scrapeTime(i))

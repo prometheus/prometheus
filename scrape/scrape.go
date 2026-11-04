@@ -1019,8 +1019,10 @@ type scrapeCache struct {
 	// How many series and metadata entries there were at the last success.
 	successfulCount int
 
-	// Hash of exposed metric string to an entry with information about the
-	// actual label set and its storage reference.
+	// Hash of exposed metric string (xxhash.Sum64) to an entry with information
+	// about the actual label set and its storage reference. Keyed by hash and
+	// stored by value to avoid retaining a heap-allocated metric string and
+	// *cacheEntry pointer per active series.
 	series map[uint64]cacheEntry
 
 	// Cache of dropped metric strings and their iteration. The iteration must
