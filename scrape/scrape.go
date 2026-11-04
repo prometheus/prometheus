@@ -1051,9 +1051,10 @@ type scrapeCache struct {
 var unknownMetadataHandle = unique.Make(metadata.Metadata{Type: model.MetricTypeUnknown})
 
 // metaEntry holds meta information about a metric.
-// Metadata is stored as an interned handle so identical metric families across targets
-// share a single canonical Metadata value (also shared with TSDB Head and Agent DB).
+// Metric family name and metadata are stored as interned handles so identical metric families
+// across targets share canonical values across GC cycles (also shared with TSDB Head and Agent DB).
 type metaEntry struct {
+	mfName         unique.Handle[string]
 	meta           unique.Handle[metadata.Metadata]
 	lastIter       uint64 // Last scrape iteration the entry was observed at.
 	lastIterChange uint64 // Last scrape iteration the entry was changed at.
@@ -1262,8 +1263,9 @@ func (c *scrapeCache) setType(mfName []byte, t model.MetricType) ([]byte, *metaE
 	)
 	if !ok {
 		cur = metadata.Metadata{Type: model.MetricTypeUnknown}
-		e = &metaEntry{meta: unknownMetadataHandle}
-		c.metadata[internBytes(mfName).Value()] = e
+		mfHandle := internBytes(mfName)
+		e = &metaEntry{mfName: mfHandle, meta: unknownMetadataHandle}
+		c.metadata[mfHandle.Value()] = e
 	} else {
 		cur = e.metadata()
 		oldSize = len(cur.Help) + len(cur.Unit) + len(cur.Type)
@@ -1290,8 +1292,9 @@ func (c *scrapeCache) setHelp(mfName, help []byte) ([]byte, *metaEntry) {
 	)
 	if !ok {
 		cur = metadata.Metadata{Type: model.MetricTypeUnknown}
-		e = &metaEntry{meta: unknownMetadataHandle}
-		c.metadata[internBytes(mfName).Value()] = e
+		mfHandle := internBytes(mfName)
+		e = &metaEntry{mfName: mfHandle, meta: unknownMetadataHandle}
+		c.metadata[mfHandle.Value()] = e
 	} else {
 		cur = e.metadata()
 		oldSize = len(cur.Help) + len(cur.Unit) + len(cur.Type)
@@ -1318,8 +1321,9 @@ func (c *scrapeCache) setUnit(mfName, unit []byte) ([]byte, *metaEntry) {
 	)
 	if !ok {
 		cur = metadata.Metadata{Type: model.MetricTypeUnknown}
-		e = &metaEntry{meta: unknownMetadataHandle}
-		c.metadata[internBytes(mfName).Value()] = e
+		mfHandle := internBytes(mfName)
+		e = &metaEntry{mfName: mfHandle, meta: unknownMetadataHandle}
+		c.metadata[mfHandle.Value()] = e
 	} else {
 		cur = e.metadata()
 		oldSize = len(cur.Help) + len(cur.Unit) + len(cur.Type)
@@ -1352,7 +1356,7 @@ func (c *scrapeCache) setMetadata(mfName unique.Handle[string], m unique.Handle[
 	)
 	if !ok {
 		cur = metadata.Metadata{Type: model.MetricTypeUnknown}
-		e = &metaEntry{meta: unknownMetadataHandle}
+		e = &metaEntry{mfName: mfName, meta: unknownMetadataHandle}
 		c.metadata[mfKey] = e
 	} else {
 		cur = e.metadata()
@@ -1383,8 +1387,7 @@ func (c *scrapeCache) GetMetadata(mfName string) (MetricMetadata, bool) {
 	}
 	md := m.metadata()
 	return MetricMetadata{
-		// mfName is already an interned key in c.metadata, so unique.Make returns the canonical string without allocating.
-		MetricFamily: unique.Make(mfName).Value(),
+		MetricFamily: stringValue(m.mfName),
 		Type:         md.Type,
 		Help:         md.Help,
 		Unit:         md.Unit,

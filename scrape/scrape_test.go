@@ -442,7 +442,7 @@ func TestScrapeCacheSizeMetadata(t *testing.T) {
 
 func TestScrapeCacheMetadataInterning(t *testing.T) {
 	if unsafe.Sizeof(uintptr(0)) == 8 {
-		require.Equal(t, uintptr(24), unsafe.Sizeof(metaEntry{}))
+		require.Equal(t, uintptr(32), unsafe.Sizeof(metaEntry{}))
 		require.Equal(t, uintptr(32), unsafe.Sizeof(seriesMetaEntry{}))
 	}
 
@@ -468,26 +468,27 @@ func TestScrapeCacheMetadataInterning(t *testing.T) {
 		c1 := newScrapeCache(newTestScrapeMetrics(t))
 		c2 := newScrapeCache(newTestScrapeMetrics(t))
 
-		mfBuf1 := []byte(wantMF)
-		helpBuf1 := []byte(wantHelp)
-		unitBuf1 := []byte(wantUnit)
-		c1.setType(mfBuf1, model.MetricTypeHistogram)
-		c1.setHelp(mfBuf1, helpBuf1)
-		c1.setUnit(mfBuf1, unitBuf1)
-
-		mfBuf2 := []byte(wantMF)
-		helpBuf2 := []byte(wantHelp)
-		unitBuf2 := []byte(wantUnit)
-		c2.setType(mfBuf2, model.MetricTypeHistogram)
-		c2.setHelp(mfBuf2, helpBuf2)
-		c2.setUnit(mfBuf2, unitBuf2)
-
-		// Mutate all caller buffers in place and force GC to verify no unsafe backing arrays were retained.
-		for _, b := range [][]byte{mfBuf1, helpBuf1, unitBuf1, mfBuf2, helpBuf2, unitBuf2} {
-			for i := range b {
-				b[i] = 'x'
+		populate := func(c *scrapeCache) {
+			mfBuf := []byte(wantMF)
+			helpBuf := []byte(wantHelp)
+			unitBuf := []byte(wantUnit)
+			c.setType(mfBuf, model.MetricTypeHistogram)
+			c.setHelp(mfBuf, helpBuf)
+			c.setUnit(mfBuf, unitBuf)
+			for _, b := range [][]byte{mfBuf, helpBuf, unitBuf} {
+				for i := range b {
+					b[i] = 'x'
+				}
 			}
 		}
+
+		populate(c1)
+		// Run GC cycles between populating c1 and c2 to verify c1's handles keep canonical entries alive in unique.
+		runtime.GC()
+		runtime.GC()
+
+		populate(c2)
+		runtime.GC()
 		runtime.GC()
 
 		list1 := c1.ListMetadata()
