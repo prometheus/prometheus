@@ -1611,12 +1611,6 @@ func (sl *scrapeLoop) scrapeAndReport(last, appendTime time.Time, errc chan<- er
 				slog.New(sl.scrapeFailureLogger).Error(scrapeErr.Error())
 			}
 			sl.scrapeFailureLoggerMtx.RUnlock()
-			if errc != nil {
-				select {
-				case errc <- scrapeErr:
-				case <-sl.ctx.Done():
-				}
-			}
 			if errors.Is(scrapeErr, errBodySizeLimit) {
 				bytesRead = -1
 			}
@@ -1702,7 +1696,14 @@ func (sl *scrapeLoop) scrapeAndReport(last, appendTime time.Time, errc chan<- er
 		}
 	}
 
-	if scrapeErr == nil {
+	if scrapeErr != nil {
+		if errc != nil {
+			select {
+			case errc <- scrapeErr:
+			case <-sl.ctx.Done():
+			}
+		}
+	} else {
 		scrapeErr = appErr
 	}
 
