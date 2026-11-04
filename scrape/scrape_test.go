@@ -8964,6 +8964,10 @@ func TestCacheEntrySize(t *testing.T) {
 	if unsafe.Sizeof(uintptr(0)) != 8 {
 		t.Skip("size assertion applies to 64-bit platforms")
 	}
+	// Pointer-bearing fields (lset, st) must remain at the start of cacheEntry
+	// so the GC pointer scan footprint stays minimal.
+	require.Zero(t, unsafe.Offsetof(cacheEntry{}.lset))
+	require.Equal(t, unsafe.Sizeof(labels.Labels{}), unsafe.Offsetof(cacheEntry{}.st))
 	if labels.ImplementationName == "stringlabels" {
 		require.LessOrEqual(t, unsafe.Sizeof(cacheEntry{}), uintptr(48))
 	} else {
