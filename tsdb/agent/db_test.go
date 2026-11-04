@@ -1817,16 +1817,19 @@ func TestPooledAppenderCapsOversizedSlicesAndBuffers(t *testing.T) {
 				db := createTestAgentDB(t, nil, opts)
 				t.Cleanup(func() { require.NoError(t, db.Close()) })
 
-				const normalSamples = 500
+				const (
+					normalSamples = 300
+					normalAux     = 100
+				)
 				normalLabels := make([]labels.Labels, normalSamples)
 				for i := range normalSamples {
 					normalLabels[i] = labels.FromStrings("__name__", "normal_metric", "i", strconv.Itoa(i))
 				}
 
-				appendBatch := func(ts int64, lsets []labels.Labels, withAux bool) *appenderBase {
+				appendBatch := func(ts int64, lsets []labels.Labels, auxCount int) *appenderBase {
 					h := tsdbutil.GenerateTestHistogram(1)
 					fh := tsdbutil.GenerateTestFloatHistogram(2)
-					exLbl := labels.FromStrings("trace_id", "abc")
+					exLbl := labels.FromStrings("trace_id", fmt.Sprintf("trace-%d", ts))
 					if appV2 {
 						app := db.AppenderV2(t.Context())
 						base := &app.(*appenderV2).appenderBase
@@ -1834,19 +1837,17 @@ func TestPooledAppenderCapsOversizedSlicesAndBuffers(t *testing.T) {
 							_, err := app.Append(0, l, 0, ts, float64(i), nil, nil, storage.AOptions{})
 							require.NoError(t, err)
 						}
-						if withAux {
-							for i := range maxPooledAuxCap + 10 {
-								hl := labels.FromStrings("__name__", "aux_hist", "i", strconv.Itoa(i))
-								fhl := labels.FromStrings("__name__", "aux_fhist", "i", strconv.Itoa(i))
-								meta := metadata.Metadata{Type: model.MetricTypeHistogram, Help: strconv.Itoa(i)}
-								_, err := app.Append(0, hl, 0, ts, float64(i), h, nil, storage.AOptions{
-									Exemplars: []exemplar.Exemplar{{Labels: exLbl, Value: float64(i), Ts: ts + int64(i), HasTs: true}},
-									Metadata:  meta,
-								})
-								require.NoError(t, err)
-								_, err = app.Append(0, fhl, 0, ts, float64(i), nil, fh, storage.AOptions{})
-								require.NoError(t, err)
-							}
+						for i := range auxCount {
+							hl := labels.FromStrings("__name__", "aux_hist", "i", strconv.Itoa(i))
+							fhl := labels.FromStrings("__name__", "aux_fhist", "i", strconv.Itoa(i))
+							meta := metadata.Metadata{Type: model.MetricTypeHistogram, Help: fmt.Sprintf("%d-%d", ts, i)}
+							_, err := app.Append(0, hl, 0, ts, float64(i), h, nil, storage.AOptions{
+								Exemplars: []exemplar.Exemplar{{Labels: exLbl, Value: float64(i), Ts: ts + int64(i), HasTs: true}},
+								Metadata:  meta,
+							})
+							require.NoError(t, err)
+							_, err = app.Append(0, fhl, 0, ts, float64(i), nil, fh, storage.AOptions{})
+							require.NoError(t, err)
 						}
 						if commit {
 							require.NoError(t, app.Commit())
@@ -1862,19 +1863,17 @@ func TestPooledAppenderCapsOversizedSlicesAndBuffers(t *testing.T) {
 						_, err := app.Append(0, l, ts, float64(i))
 						require.NoError(t, err)
 					}
-					if withAux {
-						for i := range maxPooledAuxCap + 10 {
-							hl := labels.FromStrings("__name__", "aux_hist", "i", strconv.Itoa(i))
-							fhl := labels.FromStrings("__name__", "aux_fhist", "i", strconv.Itoa(i))
-							ref, err := app.AppendHistogram(0, hl, ts, h, nil)
-							require.NoError(t, err)
-							_, err = app.AppendExemplar(ref, hl, exemplar.Exemplar{Labels: exLbl, Value: float64(i), Ts: ts + int64(i), HasTs: true})
-							require.NoError(t, err)
-							_, err = app.UpdateMetadata(ref, hl, metadata.Metadata{Type: model.MetricTypeHistogram, Help: strconv.Itoa(i)})
-							require.NoError(t, err)
-							_, err = app.AppendHistogram(0, fhl, ts, nil, fh)
-							require.NoError(t, err)
-						}
+					for i := range auxCount {
+						hl := labels.FromStrings("__name__", "aux_hist", "i", strconv.Itoa(i))
+						fhl := labels.FromStrings("__name__", "aux_fhist", "i", strconv.Itoa(i))
+						ref, err := app.AppendHistogram(0, hl, ts, h, nil)
+						require.NoError(t, err)
+						_, err = app.AppendExemplar(ref, hl, exemplar.Exemplar{Labels: exLbl, Value: float64(i), Ts: ts + int64(i), HasTs: true})
+						require.NoError(t, err)
+						_, err = app.UpdateMetadata(ref, hl, metadata.Metadata{Type: model.MetricTypeHistogram, Help: fmt.Sprintf("%d-%d", ts, i)})
+						require.NoError(t, err)
+						_, err = app.AppendHistogram(0, fhl, ts, nil, fh)
+						require.NoError(t, err)
 					}
 					if commit {
 						require.NoError(t, app.Commit())
@@ -1884,12 +1883,28 @@ func TestPooledAppenderCapsOversizedSlicesAndBuffers(t *testing.T) {
 					return base
 				}
 
-				// Normal batch keeps its grown capacity within maxPooledSamplesCap.
-				base := appendBatch(1000, normalLabels, false)
+				// Normal batch keeps its grown capacity within maxPooledSamplesCap / maxPooledAuxCap.
+				base := appendBatch(1000, normalLabels, normalAux)
 				require.GreaterOrEqual(t, cap(base.pendingSamples), normalSamples)
 				require.LessOrEqual(t, cap(base.pendingSamples), maxPooledSamplesCap)
 				require.GreaterOrEqual(t, cap(base.sampleSeries), normalSamples)
 				require.LessOrEqual(t, cap(base.sampleSeries), maxPooledSamplesCap)
+				require.GreaterOrEqual(t, cap(base.pendingSeries), normalSamples+2*normalAux)
+				require.LessOrEqual(t, cap(base.pendingSeries), maxPooledAuxCap)
+				require.GreaterOrEqual(t, cap(base.pendingHistograms), normalAux)
+				require.LessOrEqual(t, cap(base.pendingHistograms), maxPooledAuxCap)
+				require.GreaterOrEqual(t, cap(base.pendingFloatHistograms), normalAux)
+				require.LessOrEqual(t, cap(base.pendingFloatHistograms), maxPooledAuxCap)
+				require.GreaterOrEqual(t, cap(base.pendingExamplars), normalAux)
+				require.LessOrEqual(t, cap(base.pendingExamplars), maxPooledAuxCap)
+				require.GreaterOrEqual(t, cap(base.pendingMetadata), normalAux)
+				require.LessOrEqual(t, cap(base.pendingMetadata), maxPooledAuxCap)
+				require.GreaterOrEqual(t, cap(base.histogramSeries), normalAux)
+				require.LessOrEqual(t, cap(base.histogramSeries), maxPooledAuxCap)
+				require.GreaterOrEqual(t, cap(base.floatHistogramSeries), normalAux)
+				require.LessOrEqual(t, cap(base.floatHistogramSeries), maxPooledAuxCap)
+				require.GreaterOrEqual(t, cap(base.metadataSeries), normalAux)
+				require.LessOrEqual(t, cap(base.metadataSeries), maxPooledAuxCap)
 
 				// Oversized batch drops backing arrays above maxPooledSamplesCap / maxPooledAuxCap
 				// and does not return oversized WAL encoding buffers to bufPool.
@@ -1899,7 +1914,7 @@ func TestPooledAppenderCapsOversizedSlicesAndBuffers(t *testing.T) {
 					oversizedLabels[i] = labels.FromStrings("__name__", "oversized_metric_with_long_label_value_for_wal_buf", "instance", fmt.Sprintf("host-%06d.example.internal:9090", i))
 				}
 
-				base = appendBatch(2000, oversizedLabels, true)
+				base = appendBatch(2000, oversizedLabels, maxPooledAuxCap+10)
 				require.Zero(t, cap(base.pendingSamples))
 				require.Zero(t, cap(base.sampleSeries))
 				require.Zero(t, cap(base.pendingSeries))
@@ -1911,14 +1926,25 @@ func TestPooledAppenderCapsOversizedSlicesAndBuffers(t *testing.T) {
 				require.Zero(t, cap(base.floatHistogramSeries))
 				require.Zero(t, cap(base.metadataSeries))
 
+				// Drain any existing buffer and verify putBuf retains buffers up to maxPooledBufCap
+				// while dropping buffers above maxPooledBufCap.
 				db.bufPool.New = nil
-				for {
-					b := db.bufPool.Get()
-					if b == nil {
+				for db.bufPool.Get() != nil {
+				}
+				for range 10 {
+					base.putBuf(make([]byte, 0, maxPooledBufCap+1))
+					require.Nil(t, db.bufPool.Get())
+				}
+				var gotNormalBuf bool
+				for range 100 {
+					base.putBuf(make([]byte, 0, maxPooledBufCap))
+					if b := db.bufPool.Get(); b != nil {
+						require.Equal(t, maxPooledBufCap, cap(b.([]byte)))
+						gotNormalBuf = true
 						break
 					}
-					require.LessOrEqual(t, cap(b.([]byte)), maxPooledBufCap)
 				}
+				require.True(t, gotNormalBuf, "expected normal-sized buffer to be retained in bufPool")
 			})
 		}
 	}
