@@ -19,6 +19,7 @@ import (
 	"time"
 
 	"github.com/prometheus/prometheus/model/labels"
+	"github.com/prometheus/prometheus/model/metadata"
 	"github.com/prometheus/prometheus/promql"
 	"github.com/prometheus/prometheus/promql/parser"
 )
@@ -39,6 +40,8 @@ type Rule interface {
 	Name() string
 	// Labels of the rule.
 	Labels() labels.Labels
+	// Metadata returns the metric metadata associated with the rule.
+	Metadata() metadata.Metadata
 	// Eval evaluates the rule, including any associated recording or alerting actions.
 	Eval(ctx context.Context, queryOffset time.Duration, evaluationTime time.Time, queryFunc QueryFunc, externalURL *url.URL, limit int) (promql.Vector, error)
 	// String returns a human-readable string representation of the rule.

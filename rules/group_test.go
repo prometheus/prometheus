@@ -21,10 +21,12 @@ import (
 	"testing"
 	"time"
 
+	"github.com/prometheus/common/model"
 	"github.com/prometheus/common/promslog"
 	"github.com/stretchr/testify/require"
 
 	"github.com/prometheus/prometheus/model/labels"
+	"github.com/prometheus/prometheus/model/metadata"
 	"github.com/prometheus/prometheus/promql"
 )
 
@@ -41,6 +43,15 @@ func TestGroupEvalJSONLoggerRule(t *testing.T) {
 			name: "recording",
 			rule: NewRecordingRule("recorded_metric", expr, labels.EmptyLabels()),
 			want: "record: recorded_metric\nexpr: up\n",
+		},
+		{
+			name: "recording_with_metadata",
+			rule: NewRecordingRuleWithMetadata("recorded_metric", expr, labels.EmptyLabels(), metadata.Metadata{
+				Type: model.MetricTypeGauge,
+				Unit: "seconds",
+				Help: "Target uptime.",
+			}),
+			want: "record: recorded_metric\nexpr: up\nmetadata:\n  type: gauge\n  unit: seconds\n  help: Target uptime.\n",
 		},
 		{
 			name: "alerting",
