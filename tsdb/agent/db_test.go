@@ -2000,15 +2000,16 @@ func BenchmarkAppenderClearAndCap(b *testing.B) {
 			outlierSize   = 50_000
 			smallSize     = 100
 			numConcurrent = 64
+			totalSeries   = outlierSize + numConcurrent*smallSize
 		)
-		outlierLabels := make([]labels.Labels, outlierSize)
-		outlierRefs := make([]storage.SeriesRef, outlierSize)
+		allLabels := make([]labels.Labels, totalSeries)
+		allRefs := make([]storage.SeriesRef, totalSeries)
 		initApp := db.AppenderV2(b.Context())
-		for i := range outlierSize {
-			outlierLabels[i] = labels.FromStrings("__name__", "outlier_metric", "i", strconv.Itoa(i))
-			ref, err := initApp.Append(0, outlierLabels[i], 0, 1, 1.0, nil, nil, storage.AOptions{})
+		for i := range totalSeries {
+			allLabels[i] = labels.FromStrings("__name__", "bench_pool_metric", "i", strconv.Itoa(i))
+			ref, err := initApp.Append(0, allLabels[i], 0, 1, 1.0, nil, nil, storage.AOptions{})
 			require.NoError(b, err)
-			outlierRefs[i] = ref
+			allRefs[i] = ref
 		}
 		require.NoError(b, initApp.Commit())
 
@@ -2022,28 +2023,26 @@ func BenchmarkAppenderClearAndCap(b *testing.B) {
 		b.ResetTimer()
 		for b.Loop() {
 			ts++
-			// One outlier scrape returns an appender to the pool.
-			outApp := db.AppenderV2(b.Context())
-			for i := range outlierSize {
-				if _, err := outApp.Append(outlierRefs[i], outlierLabels[i], 0, ts, 1.0, nil, nil, storage.AOptions{}); err != nil {
-					b.Fatal(err)
-				}
-			}
-			if err := outApp.Commit(); err != nil {
-				b.Fatal(err)
-			}
-
 			// Acquire numConcurrent appenders concurrently (as happens across active scrape loops)
-			// and measure total slice capacity bytes retained across those pooled appenders.
-			ts++
+			// and rotate the 50k outlier scrape across them so every pooled appender eventually
+			// serves the outlier target.
+			outlierIdx := int(iters) % numConcurrent
 			apps := make([]storage.AppenderV2, numConcurrent)
 			for c := range numConcurrent {
 				a := db.AppenderV2(b.Context())
-				base := c * smallSize
-				for j := range smallSize {
-					idx := base + j
-					if _, err := a.Append(outlierRefs[idx], outlierLabels[idx], 0, ts, 2.0, nil, nil, storage.AOptions{}); err != nil {
-						b.Fatal(err)
+				if c == outlierIdx {
+					for i := range outlierSize {
+						if _, err := a.Append(allRefs[i], allLabels[i], 0, ts, 1.0, nil, nil, storage.AOptions{}); err != nil {
+							b.Fatal(err)
+						}
+					}
+				} else {
+					base := outlierSize + c*smallSize
+					for j := range smallSize {
+						idx := base + j
+						if _, err := a.Append(allRefs[idx], allLabels[idx], 0, ts, 2.0, nil, nil, storage.AOptions{}); err != nil {
+							b.Fatal(err)
+						}
 					}
 				}
 				apps[c] = a
