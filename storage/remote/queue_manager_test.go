@@ -2154,17 +2154,24 @@ func TestQueue_FlushAndShutdownDoesNotDeadlock(t *testing.T) {
 	}
 
 	done := make(chan struct{})
-	go queue.FlushAndShutdown(done)
+	flushed := make(chan struct{})
 	go func() {
-		// Give enough time for FlushAndShutdown to acquire the lock. queue.Batch()
-		// should not block forever even if the lock is acquired.
+		queue.FlushAndShutdown(done)
+		close(flushed)
+	}()
+	go func() {
+		// Give enough time for FlushAndShutdown to block on full batchQueue.
+		// Consuming one batch via queue.Batch() must notify q.drained so
+		// FlushAndShutdown flushes the remaining partial batch and returns.
 		time.Sleep(10 * time.Millisecond)
 		queue.Batch()
-		close(done)
 	}()
 	select {
-	case <-done:
+	case <-flushed:
+		// All 10 batches in batchQueue (9 remaining + 1 flushed partial batch) should be present.
+		require.Len(t, queue.batchQueue, capacity/batchSize)
 	case <-time.After(2 * time.Second):
+		close(done)
 		t.Error("Deadlock in FlushAndShutdown detected")
 		pprof.Lookup("goroutine").WriteTo(os.Stdout, 1)
 		t.FailNow()
@@ -3606,7 +3613,8 @@ func TestAppendToConvertNHCBToClassic(t *testing.T) {
 						m, stop := newTestNHCBQueueManager(t, c, nhcbQueueTestOptions{
 							protoMsg: protoMsg, sendNativeHistograms: target.sendNative, sendExemplars: target.sendNative,
 						})
-						m.StoreSeries([]record.RefSeries{baseSeries}, 0)
+						precedingSeries := record.RefSeries{Ref: 99, Labels: labels.FromStrings("__name__", "other_metric", "job", "api")}
+						m.StoreSeries([]record.RefSeries{baseSeries, precedingSeries}, 0)
 						converted := prior != "ordinary control"
 						if converted {
 							appendHistogram(t, m, newHistogram(), 1000, prior == "after float NHCB")
@@ -3619,11 +3627,29 @@ func TestAppendToConvertNHCBToClassic(t *testing.T) {
 						stale := math.Float64frombits(value.StaleNaN)
 						switch target.kind {
 						case "float":
-							require.True(t, m.Append([]record.RefSample{{Ref: baseSeries.Ref, ST: 1500, T: 2000, V: 17}}))
+							require.True(t, m.Append([]record.RefSample{
+								{Ref: precedingSeries.Ref, ST: 1500, T: 1900, V: 42},
+								{Ref: baseSeries.Ref, ST: 1500, T: 2000, V: 17},
+							}))
 						case "integer":
-							require.True(t, m.AppendHistograms([]record.RefHistogramSample{{Ref: baseSeries.Ref, ST: 1500, T: 2000, H: h}}))
+							batch := []record.RefHistogramSample{{Ref: baseSeries.Ref, ST: 1500, T: 2000, H: h}}
+							if target.sendNative {
+								batch = []record.RefHistogramSample{
+									{Ref: precedingSeries.Ref, ST: 1500, T: 1900, H: h},
+									{Ref: baseSeries.Ref, ST: 1500, T: 2000, H: h},
+								}
+							}
+							require.True(t, m.AppendHistograms(batch))
 						case "histogram":
-							require.True(t, m.AppendFloatHistograms([]record.RefFloatHistogramSample{{Ref: baseSeries.Ref, ST: 1500, T: 2000, FH: h.ToFloat(nil)}}))
+							fh := h.ToFloat(nil)
+							batch := []record.RefFloatHistogramSample{{Ref: baseSeries.Ref, ST: 1500, T: 2000, FH: fh}}
+							if target.sendNative {
+								batch = []record.RefFloatHistogramSample{
+									{Ref: precedingSeries.Ref, ST: 1500, T: 1900, FH: fh},
+									{Ref: baseSeries.Ref, ST: 1500, T: 2000, FH: fh},
+								}
+							}
+							require.True(t, m.AppendFloatHistograms(batch))
 						}
 						extra := int64(0)
 						if converted {

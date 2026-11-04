@@ -25,7 +25,6 @@ import (
 	client_testutil "github.com/prometheus/client_golang/prometheus/testutil"
 	"github.com/prometheus/common/model"
 	"github.com/stretchr/testify/require"
-	"go.uber.org/atomic"
 
 	"github.com/prometheus/prometheus/config"
 	"github.com/prometheus/prometheus/model/labels"
@@ -202,20 +201,19 @@ func TestQueueManager_ConcurrentAppendBackpressureAndSeriesReset(t *testing.T) {
 		t.Run("max_batch="+strconv.Itoa(maxBatch), func(t *testing.T) {
 			t.Parallel()
 
-			var receivedSamples atomic.Int64
+			recClient := NewTestWriteClient(remoteapi.WriteV2MessageType)
 			client := &MockWriteClient{
-				StoreFunc: func(ctx context.Context, _ []byte, _ int) (WriteResponseStats, error) {
+				StoreFunc: func(ctx context.Context, req []byte, attempt int) (WriteResponseStats, error) {
 					// Small delay so shard queues fill and exercise drained wakeups.
 					select {
 					case <-time.After(time.Millisecond):
 					case <-ctx.Done():
 						return WriteResponseStats{}, ctx.Err()
 					}
-					receivedSamples.Add(1)
-					return WriteResponseStats{Samples: maxBatch, Confirmed: true}, nil
+					return recClient.Store(ctx, req, attempt)
 				},
-				NameFunc:     func() string { return "backpressure-test" },
-				EndpointFunc: func() string { return "http://example.com/write" },
+				NameFunc:     recClient.Name,
+				EndpointFunc: recClient.Endpoint,
 			}
 
 			cfg := config.DefaultQueueConfig
@@ -297,7 +295,75 @@ func TestQueueManager_ConcurrentAppendBackpressureAndSeriesReset(t *testing.T) {
 			qm.Stop()
 
 			require.Zero(t, client_testutil.ToFloat64(metrics.droppedSamplesTotal.WithLabelValues(reasonUnintentionalDroppedSeries)))
-			require.Positive(t, receivedSamples.Load())
+			require.Zero(t, client_testutil.ToFloat64(metrics.pendingSamples))
+			require.Equal(t, 5*activeSeries, deepLen(recClient.receivedSamples))
+			for i, s := range initial {
+				got := recClient.receivedSamples[s.Labels.String()]
+				require.Len(t, got, 5, "series %d (%s)", i, s.Labels)
+				for round := range 5 {
+					require.Equal(t, int64(1_000_000+round*1000+i), got[round].Timestamp)
+					require.Equal(t, float64(round), got[round].Value)
+				}
+			}
 		})
 	}
+}
+
+func TestShards_TryEnqueueBatchPartialMultiShard(t *testing.T) {
+	t.Parallel()
+
+	cfg := config.DefaultQueueConfig
+	cfg.MinShards = 2
+	cfg.MaxShards = 2
+	cfg.MaxSamplesPerSend = 2
+	cfg.Capacity = 2 // 1 batch of 2 in batchQueue + 1 partial batch of <2 in q.batch (max 3 buffered before blocking).
+
+	metrics := newQueueManagerMetrics(nil, "", "")
+	qm := NewQueueManager(
+		metrics, nil, nil, nil, t.TempDir(),
+		newEWMARate(ewmaWeight, shardUpdateDuration),
+		cfg, config.DefaultMetadataConfig,
+		labels.EmptyLabels(), nil, NewTestBlockedWriteClient(),
+		defaultFlushDeadline, newPool(), newHighestTimestampMetric(),
+		nil, false, false, false, remoteapi.WriteV2MessageType, remoteapi.WriteModeNone,
+		record.NewBuffersPool(), false, false,
+	)
+	// Populate 2 shard queues without starting background runShard consumers so we can
+	// deterministically inspect partial acceptance and compaction.
+	qm.shards.queues = []*queue{
+		newQueue(cfg.MaxSamplesPerSend, cfg.Capacity),
+		newQueue(cfg.MaxSamplesPerSend, cfg.Capacity),
+	}
+
+	// Pre-fill shard 1 (1 full batch of 2 in batchQueue + 1 item in partial batch = 3 items).
+	// Next item on shard 1 will fill the partial batch to 2 and fail flushFullBatchLocked().
+	for i := range 3 {
+		require.True(t, qm.shards.queues[1].Append(timeSeries{timestamp: int64(100 + i)}))
+	}
+
+	sc := &appendScratch{
+		items: []shardedItem{
+			{ref: 0, ts: timeSeries{timestamp: 1000, value: 1, sType: tSample}}, // Shard 0 (even ref).
+			{ref: 1, ts: timeSeries{timestamp: 5000, value: 2, sType: tSample}}, // Shard 1 (odd ref, blocked).
+			{ref: 2, ts: timeSeries{timestamp: 2000, value: 3, sType: tSample}}, // Shard 0 (even ref).
+			{ref: 3, ts: timeSeries{timestamp: 6000, value: 4, sType: tSample}}, // Shard 1 (odd ref, blocked).
+		},
+	}
+
+	blocked, _ := qm.shards.tryEnqueueBatch(sc, tSample, 6000)
+	require.Same(t, qm.shards.queues[1], blocked)
+	// Only the 2 shard-0 items were accepted; the 2 shard-1 items must remain compacted in sc.items.
+	require.Len(t, sc.items, 2)
+	require.Equal(t, chunks.HeadSeriesRef(1), sc.items[0].ref)
+	require.Equal(t, chunks.HeadSeriesRef(3), sc.items[1].ref)
+	require.Equal(t, 2.0, client_testutil.ToFloat64(metrics.pendingSamples))
+	require.Equal(t, 2.0, metrics.highestTimestamp.Get()) // 2000ms / 1000 = 2s (not 6000ms from unaccepted shard 1).
+
+	// Drain 1 batch from shard 1 and retry: now the remaining 2 shard-1 items are accepted.
+	_ = qm.shards.queues[1].Batch()
+	blocked, _ = qm.shards.tryEnqueueBatch(sc, tSample, 6000)
+	require.Nil(t, blocked)
+	require.Empty(t, sc.items)
+	require.Equal(t, 4.0, client_testutil.ToFloat64(metrics.pendingSamples))
+	require.Equal(t, 6.0, metrics.highestTimestamp.Get()) // 6000ms / 1000 = 6s.
 }

@@ -960,17 +960,21 @@ func (t *QueueManager) Append(samples []record.RefSample) bool {
 
 			if checkNHCB {
 				t.nhcbMtx.Lock()
-				if _, ok := t.nhcbSeriesBounds[s.Ref]; ok {
+				_, isTrackedNHCB := t.nhcbSeriesBounds[s.Ref]
+				if isTrackedNHCB && len(sc.items) > 0 {
+					t.nhcbMtx.Unlock()
 					// Flush any preceding normal samples first so per-series ordering is preserved.
 					flushDrops()
-					if len(sc.items) > 0 {
-						if !t.enqueueBatch(sc, tSample, maxTS, 5*time.Millisecond) {
-							t.nhcbMtx.Unlock()
-							return false
-						}
-						sc.items = sc.items[:0]
-						maxTS = math.MinInt64
+					if !t.enqueueBatch(sc, tSample, maxTS, 5*time.Millisecond) {
+						return false
 					}
+					sc.items = sc.items[:0]
+					maxTS = math.MinInt64
+					t.nhcbMtx.Lock()
+					_, isTrackedNHCB = t.nhcbSeriesBounds[s.Ref]
+				}
+				if isTrackedNHCB {
+					flushDrops()
 					// A float sample for a converted NHCB series is either its stale marker or
 					// a change of sample type. Both retire the classic series; a type change
 					// also forwards the float, whose start time stays off the retired series.
@@ -2219,21 +2223,26 @@ func (q *queue) Append(datum timeSeries) bool {
 }
 
 func (q *queue) flushFullBatchLocked() bool {
-	select {
-	case q.batchQueue <- q.batch:
-		q.batch = q.newBatch(cap(q.batch))
-		return true
-	default:
-		// Clear any stale drain notification before unlocking so a blocked caller
-		// waits for the next batch consumed by runShard.
+	for {
 		select {
-		case <-q.drained:
+		case q.batchQueue <- q.batch:
+			q.batch = q.newBatch(cap(q.batch))
+			return true
 		default:
+			// Clear any stale drain notification before unlocking so a blocked caller
+			// waits for the next batch consumed by runShard. If a drain signal was
+			// present, a slot in batchQueue may have opened after the send check above,
+			// so retry sending once more before giving up.
+			select {
+			case <-q.drained:
+				continue
+			default:
+			}
+			// Remove the last sample we just appended so q.batch stays below capacity
+			// and will trigger a flush when retried.
+			q.batch = q.batch[:len(q.batch)-1]
+			return false
 		}
-		// Remove the last sample we just appended so q.batch stays below capacity
-		// and will trigger a flush when retried.
-		q.batch = q.batch[:len(q.batch)-1]
-		return false
 	}
 }
 
@@ -2336,20 +2345,23 @@ func (q *queue) tryEnqueueingBatch(done <-chan struct{}) bool {
 		return false
 	}
 
-	select {
-	case q.batchQueue <- q.batch:
-		return false
-	case <-done:
-		// The shard has been hard shut down, so no more samples can be sent.
-		// No need to try again as we will drop everything left in the queue.
-		return false
-	default:
+	for {
 		select {
-		case <-q.drained:
+		case q.batchQueue <- q.batch:
+			return false
+		case <-done:
+			// The shard has been hard shut down, so no more samples can be sent.
+			// No need to try again as we will drop everything left in the queue.
+			return false
 		default:
+			select {
+			case <-q.drained:
+				continue
+			default:
+			}
+			// The batchQueue is full, so we need to try again later.
+			return true
 		}
-		// The batchQueue is full, so we need to try again later.
-		return true
 	}
 }
 
