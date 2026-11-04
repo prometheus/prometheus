@@ -70,7 +70,7 @@ func (t *SymbolsTable) Symbols() []string {
 
 // Reset clears symbols table.
 func (t *SymbolsTable) Reset() {
-	// NOTE: Make sure to keep empty symbol.
+	// Keep "" at index 0 in strings; symbolsMap does not store "".
 	t.strings = t.strings[:1]
 	clear(t.symbolsMap)
 }
