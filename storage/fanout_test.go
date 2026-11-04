@@ -16,8 +16,10 @@ package storage_test
 import (
 	"context"
 	"errors"
+	"fmt"
 	"strconv"
 	"testing"
+	"unsafe"
 
 	"github.com/prometheus/common/model"
 	"github.com/stretchr/testify/require"
@@ -705,6 +707,112 @@ func TestFanoutAppenderV2(t *testing.T) {
 			require.Nil(t, tt.secondary.PendingSamples())
 			testutil.RequireEqual(t, tt.expectSecondarySamples, tt.secondary.ResultSamples())
 			require.Nil(t, tt.secondary.RolledbackSamples())
+		})
+	}
+}
+
+type immutableStorage struct {
+	storage.Storage
+}
+
+type immutableAppender struct {
+	storage.Appender
+}
+
+func (a immutableAppender) GetRef(lset labels.Labels, hash uint64) (storage.SeriesRef, labels.Labels) {
+	if gr, ok := a.Appender.(storage.GetRef); ok {
+		return gr.GetRef(lset, hash)
+	}
+	return 0, labels.EmptyLabels()
+}
+
+func (immutableAppender) ImmutableGetRefLabels() bool { return true }
+
+type immutableAppenderV2 struct {
+	storage.AppenderV2
+}
+
+func (a immutableAppenderV2) GetRef(lset labels.Labels, hash uint64) (storage.SeriesRef, labels.Labels) {
+	if gr, ok := a.AppenderV2.(storage.GetRef); ok {
+		return gr.GetRef(lset, hash)
+	}
+	return 0, labels.EmptyLabels()
+}
+
+func (immutableAppenderV2) ImmutableGetRefLabels() bool { return true }
+
+func (s immutableStorage) Appender(ctx context.Context) storage.Appender {
+	return immutableAppender{Appender: s.Storage.Appender(ctx)}
+}
+
+func (s immutableStorage) AppenderV2(ctx context.Context) storage.AppenderV2 {
+	return immutableAppenderV2{AppenderV2: s.Storage.AppenderV2(ctx)}
+}
+
+func TestFanoutAppender_GetRef(t *testing.T) {
+	stored := labels.FromStrings(model.MetricNameLabel, "metric1", "job", "prometheus")
+	lookup := labels.FromStrings(model.MetricNameLabel, "metric1", "job", "prometheus")
+	missing := labels.FromStrings(model.MetricNameLabel, "metric2", "job", "prometheus")
+	require.NotSame(t, unsafe.StringData(stored.Get("job")), unsafe.StringData(lookup.Get("job")))
+
+	db := teststorage.New(t)
+	app := db.AppenderV2(t.Context())
+	ref, err := app.Append(0, stored, 0, 1, 1, nil, nil, storage.AOptions{})
+	require.NoError(t, err)
+	require.NoError(t, app.Commit())
+
+	type immutableChecker interface {
+		ImmutableGetRefLabels() bool
+	}
+
+	for _, appV2 := range []bool{false, true} {
+		t.Run(fmt.Sprintf("appV2=%v", appV2), func(t *testing.T) {
+			for _, tc := range []struct {
+				name          string
+				primary       storage.Storage
+				lset          labels.Labels
+				wantRef       storage.SeriesRef
+				wantImmutable bool
+			}{
+				{name: "series in primary", primary: db, lset: lookup, wantRef: ref, wantImmutable: false},
+				{name: "series in immutable primary", primary: immutableStorage{Storage: db}, lset: lookup, wantRef: ref, wantImmutable: true},
+				{name: "series not in primary", primary: db, lset: missing, wantImmutable: false},
+				{
+					name:    "primary without GetRef",
+					primary: mockStorage{app: teststorage.NewAppendable(), appV2: teststorage.NewAppendable()},
+					lset:    lookup,
+				},
+			} {
+				t.Run(tc.name, func(t *testing.T) {
+					f := storage.NewFanout(nil, tc.primary, mockStorage{app: teststorage.NewAppendable(), appV2: teststorage.NewAppendable()})
+					var fanoutApp any
+					if appV2 {
+						a := f.AppenderV2(t.Context())
+						t.Cleanup(func() { _ = a.Rollback() })
+						fanoutApp = a
+					} else {
+						a := f.Appender(t.Context())
+						t.Cleanup(func() { _ = a.Rollback() })
+						fanoutApp = a
+					}
+
+					gr, ok := fanoutApp.(storage.GetRef)
+					require.True(t, ok)
+					ic, ok := fanoutApp.(immutableChecker)
+					require.True(t, ok)
+					require.Equal(t, tc.wantImmutable, ic.ImmutableGetRefLabels())
+
+					gotRef, gotLset := gr.GetRef(tc.lset, tc.lset.Hash())
+					require.Equal(t, tc.wantRef, gotRef)
+					if tc.wantRef == 0 {
+						require.True(t, gotLset.IsEmpty())
+						return
+					}
+					testutil.RequireEqual(t, stored, gotLset)
+					require.Same(t, unsafe.StringData(stored.Get("job")), unsafe.StringData(gotLset.Get("job")))
+					require.NotSame(t, unsafe.StringData(lookup.Get("job")), unsafe.StringData(gotLset.Get("job")))
+				})
+			}
 		})
 	}
 }

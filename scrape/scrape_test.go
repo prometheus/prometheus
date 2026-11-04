@@ -32,6 +32,8 @@ import (
 	"net/url"
 	"os"
 	"path/filepath"
+	"runtime"
+	"runtime/metrics"
 	"sort"
 	"strconv"
 	"strings"
@@ -40,6 +42,7 @@ import (
 	"testing/synctest"
 	"text/template"
 	"time"
+	"unsafe"
 
 	"github.com/gogo/protobuf/proto"
 	"github.com/grafana/regexp"
@@ -3173,6 +3176,63 @@ func benchScrapeLoopAppend(
 			b.Fatal(err)
 		}
 	}
+	if coldCache && withStorage {
+		// Report the heap that the scrape cache holds after the last scrape, which
+		// B/op does not show. The series are in the storage from the second
+		// iteration on, like after a restart.
+		before := liveHeapAfterGC()
+		sl.cache = newScrapeCache(sl.metrics)
+		b.ReportMetric(float64(int64(before)-int64(liveHeapAfterGC())), "retained-B")
+	}
+}
+
+func liveHeapAfterGC() uint64 {
+	runtime.GC()
+	s := []metrics.Sample{{Name: "/gc/heap/live:bytes"}}
+	metrics.Read(s)
+	return s[0].Value.Uint64()
+}
+
+// BenchmarkScrapeLoopAppend_NewSeriesColdCache benchmarks the first scrape of
+// a target whose series are all new to the storage, with an empty scrape cache.
+//
+// Recommended CLI invocation:
+/*
+	export bench=appendNewSeries && go test ./scrape/... \
+		-run '^$' -bench '^BenchmarkScrapeLoopAppend_NewSeriesColdCache' \
+		-benchtime 200x -count 6 -cpu 2 -timeout 999m -benchmem \
+		| tee ${bench}.txt
+*/
+func BenchmarkScrapeLoopAppend_NewSeriesColdCache(b *testing.B) {
+	for _, bcase := range benchDatasets(b)[0].cases {
+		b.Run("fmt="+bcase.name, func(b *testing.B) {
+			sl, _ := newTestScrapeLoop(b, func(sl *scrapeLoop) {
+				sl.enableOpenMetrics2 = true
+			})
+			ts := time.Time{}
+
+			b.ReportAllocs()
+			b.ResetTimer()
+			for b.Loop() {
+				b.StopTimer()
+				s, err := teststorage.NewWithError()
+				require.NoError(b, err)
+				withAppendable(s, true)(sl)
+				sl.cache = newScrapeCache(sl.metrics)
+				b.StartTimer()
+
+				app := sl.appender()
+				ts = ts.Add(time.Second)
+				_, _, _, err = app.append(bcase.parsable, bcase.contentType, ts)
+				require.NoError(b, err)
+				require.NoError(b, app.Rollback())
+
+				b.StopTimer()
+				require.NoError(b, s.Close())
+				b.StartTimer()
+			}
+		})
+	}
 }
 
 // BenchmarkScrapeLoopAppend_HistogramsWithExemplars benchmarks OM scrapes with histograms full of exemplars.
@@ -3672,6 +3732,175 @@ func testScrapeLoopSeriesRefChange(t *testing.T, appV2 bool) {
 			require.Equal(t, tc.expectedRef, ce.ref)
 		})
 	}
+}
+
+type immutableLabelsTestStorage struct {
+	storage.Storage
+}
+
+type immutableLabelsTestAppender struct {
+	storage.Appender
+}
+
+func (a immutableLabelsTestAppender) GetRef(lset labels.Labels, hash uint64) (storage.SeriesRef, labels.Labels) {
+	if gr, ok := a.Appender.(storage.GetRef); ok {
+		return gr.GetRef(lset, hash)
+	}
+	return 0, labels.EmptyLabels()
+}
+
+func (immutableLabelsTestAppender) ImmutableGetRefLabels() bool { return true }
+
+type immutableLabelsTestAppenderV2 struct {
+	storage.AppenderV2
+}
+
+func (a immutableLabelsTestAppenderV2) GetRef(lset labels.Labels, hash uint64) (storage.SeriesRef, labels.Labels) {
+	if gr, ok := a.AppenderV2.(storage.GetRef); ok {
+		return gr.GetRef(lset, hash)
+	}
+	return 0, labels.EmptyLabels()
+}
+
+func (immutableLabelsTestAppenderV2) ImmutableGetRefLabels() bool { return true }
+
+func (s immutableLabelsTestStorage) Appender(ctx context.Context) storage.Appender {
+	return immutableLabelsTestAppender{Appender: s.Storage.Appender(ctx)}
+}
+
+func (s immutableLabelsTestStorage) AppenderV2(ctx context.Context) storage.AppenderV2 {
+	return immutableLabelsTestAppenderV2{AppenderV2: s.Storage.AppenderV2(ctx)}
+}
+
+// TestScrapeLoopAppendLabelsFromStorage checks which labels the scrape cache
+// keeps for a series that the storage already holds, for example after a restart.
+func TestScrapeLoopAppendLabelsFromStorage(t *testing.T) {
+	metricA := labels.FromStrings(model.MetricNameLabel, "metric_a")
+	mrc := []*relabel.Config{
+		{
+			SourceLabels:         model.LabelNames{model.MetricNameLabel},
+			Separator:            ";",
+			Regex:                relabel.MustNewRegexp("raw_metric_a"),
+			TargetLabel:          model.MetricNameLabel,
+			Replacement:          "metric_a",
+			Action:               relabel.Replace,
+			NameValidationScheme: model.UTF8Validation,
+		},
+	}
+
+	foreachAppendable(t, func(t *testing.T, appV2 bool) {
+		for _, immutableStorage := range []bool{false, true} {
+			t.Run(fmt.Sprintf("immutableStorage=%v", immutableStorage), func(t *testing.T) {
+				for _, hasMRC := range []bool{false, true} {
+					t.Run(fmt.Sprintf("hasMRC=%v", hasMRC), func(t *testing.T) {
+						probe := teststorage.New(t)
+						var primaryProbe storage.Storage = probe
+						if immutableStorage {
+							primaryProbe = immutableLabelsTestStorage{Storage: probe}
+						}
+						var probeApp any
+						if appV2 {
+							a := primaryProbe.AppenderV2(t.Context())
+							t.Cleanup(func() { _ = a.Rollback() })
+							probeApp = a
+						} else {
+							a := primaryProbe.Appender(t.Context())
+							t.Cleanup(func() { _ = a.Rollback() })
+							probeApp = a
+						}
+						expectReuse := storageGetRef(probeApp) != nil
+						if immutableStorage {
+							// Storages with immutable series labels (such as tsdb/agent) must always
+							// reuse storage labels, including under -tags dedupelabels.
+							require.True(t, expectReuse)
+						}
+
+						for _, tc := range []struct {
+							name string
+							// Whether the storage holds metric_a before the scrape.
+							inStorage bool
+							// Whether the appendable passes GetRef through to the primary storage.
+							withGetRef bool
+							// Whether metric_b is cached by an earlier scrape.
+							warmCache bool
+							// Whether an earlier scrape failed. Its report series are cached.
+							failedScrape bool
+							// Whether the cache entry of metric_a shares the storage's labels.
+							shared bool
+						}{
+							{name: "series in storage, empty cache", inStorage: true, withGetRef: true, shared: expectReuse},
+							// The storage keeps the labels it got from the scrape.
+							{name: "series not in storage, empty cache", withGetRef: true, shared: true},
+							{name: "series in storage, appendable without GetRef", inStorage: true},
+							{name: "series in storage, warm cache", inStorage: true, withGetRef: true, warmCache: true},
+							{name: "series in storage, failed earlier scrape", inStorage: true, withGetRef: true, failedScrape: true, shared: expectReuse},
+						} {
+							t.Run(tc.name, func(t *testing.T) {
+								tsdbStorage := teststorage.New(t)
+								var primary storage.Storage = tsdbStorage
+								if immutableStorage {
+									primary = immutableLabelsTestStorage{Storage: tsdbStorage}
+								}
+								// Like Prometheus, append through a fanout with the local storage as primary.
+								var app compatAppendable = storage.NewFanout(nil, primary)
+								if !tc.withGetRef {
+									app = teststorage.NewAppendable().Then(tsdbStorage)
+								}
+								target := &Target{}
+								sl, scraper := newTestScrapeLoop(t, withAppendable(app, appV2), func(sl *scrapeLoop) {
+									if hasMRC {
+										sl.mrc = mrc
+										sl.sampleMutator = func(l labels.Labels) labels.Labels {
+											return mutateSampleLabels(l, target, false, mrc)
+										}
+									}
+								})
+
+								ts := time.Now()
+								if tc.failedScrape {
+									scraper.scrapeFunc = func(context.Context, io.Writer) error { return errors.New("scrape failed") }
+									sl.scrapeAndReport(time.Time{}, ts, nil)
+									require.NotEmpty(t, sl.cache.series)
+								}
+								if tc.warmCache {
+									scrapeApp := sl.appender()
+									_, _, _, err := scrapeApp.append([]byte("metric_b 1\n"), "text/plain", ts)
+									require.NoError(t, err)
+									require.NoError(t, scrapeApp.Commit())
+								}
+								if tc.inStorage {
+									storageApp := tsdbStorage.AppenderV2(t.Context())
+									_, err := storageApp.Append(0, metricA, 0, timestamp.FromTime(ts), 1, nil, nil, storage.AOptions{})
+									require.NoError(t, err)
+									require.NoError(t, storageApp.Commit())
+								}
+
+								exposedMetricA := "metric_a"
+								if hasMRC {
+									exposedMetricA = "raw_metric_a"
+								}
+								payload := fmt.Sprintf("# TYPE %s gauge\n# HELP %s help\n%s 2\nmetric_b 2\n", exposedMetricA, exposedMetricA, exposedMetricA)
+								scrapeApp := sl.appender()
+								_, _, _, err := scrapeApp.append([]byte(payload), "text/plain", ts.Add(time.Minute))
+								require.NoError(t, err)
+								require.NoError(t, scrapeApp.Commit())
+
+								ce, ok := sl.cache.series[exposedMetricA]
+								require.True(t, ok)
+								checkApp := tsdbStorage.AppenderV2(t.Context())
+								t.Cleanup(func() { _ = checkApp.Rollback() })
+								ref, storageLabels := checkApp.(storage.GetRef).GetRef(metricA, metricA.Hash())
+								require.Equal(t, ref, ce.ref)
+								testutil.RequireEqual(t, metricA, ce.lset)
+								name, storageName := ce.lset.Get(model.MetricNameLabel), storageLabels.Get(model.MetricNameLabel)
+								require.Equal(t, tc.shared, unsafe.StringData(name) == unsafe.StringData(storageName))
+							})
+						}
+					})
+				}
+			})
+		}
+	})
 }
 
 func TestScrapeLoopCache(t *testing.T) {

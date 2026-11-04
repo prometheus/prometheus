@@ -1893,6 +1893,16 @@ func (sl *scrapeLoopAppender) append(b []byte, contentType string, ts time.Time)
 	// Take an appender with limits.
 	app := appenderWithLimits(sl.Appender, sl.sampleLimit, sl.bucketLimit, sl.maxSchema)
 
+	// Until a scrape of the target succeeds, for example after a restart, the
+	// storage may already hold the target's series while the cache does not.
+	// Take their labels from the storage, so that the cache does not keep a
+	// second copy. After that, a miss is usually a series new to the storage,
+	// and GetRef would only add a hash and a lookup.
+	var getRef storage.GetRef
+	if sl.cache.successfulCount == 0 {
+		getRef = storageGetRef(sl.Appender)
+	}
+
 	defer func() {
 		if err != nil {
 			return
@@ -1987,6 +1997,14 @@ loop:
 			if err = verifyLabelLimits(lset, sl.labelLimits); err != nil {
 				sl.metrics.targetScrapePoolExceededLabelLimits.Inc()
 				break loop
+			}
+
+			if getRef != nil {
+				// Parsers and relabeling build new labels on every call, so the next
+				// iteration does not modify the storage's labels held in lset.
+				if r, l := getRef.GetRef(lset, lset.Hash()); r != 0 {
+					ref, lset = r, l
+				}
 			}
 		}
 
