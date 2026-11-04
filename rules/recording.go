@@ -185,10 +185,11 @@ func (rule *RecordingRule) evalWithMetadata(
 func (rule *RecordingRule) deduceSampleMetadata(sample *promql.Sample, enableTypeAndUnitLabels bool) metadata.Metadata {
 	isHist := sample.H != nil
 	var preserved schema.Metadata
-	if origName := sample.Metric.Get(labels.MetricName); origName != "" {
-		if enableTypeAndUnitLabels {
-			preserved = schema.NewMetadataFromLabels(sample.Metric)
-		} else {
+	if enableTypeAndUnitLabels {
+		preserved = schema.NewMetadataFromLabels(sample.Metric)
+	}
+	if preserved.IsTypeEmpty() {
+		if origName := sample.Metric.Get(labels.MetricName); origName != "" {
 			preserved.Name = origName
 			// NOTE(bwplotka): Until native TSDB metadata lookup lands (prometheus#19563),
 			// fall back to standard Prometheus naming suffixes when __name__ survived
@@ -204,7 +205,7 @@ func (rule *RecordingRule) deduceSampleMetadata(sample *promql.Sample, enableTyp
 
 	var mType model.MetricType
 	switch {
-	case rule.meta.Type != "" && isSampleTypeCompatible(rule.meta.Type, isHist):
+	case rule.meta.Type != "" && rule.meta.Type != model.MetricTypeUnknown && isSampleTypeCompatible(rule.meta.Type, isHist):
 		mType = rule.meta.Type
 	case !preserved.IsTypeEmpty() && isSampleTypeCompatible(preserved.Type, isHist):
 		mType = preserved.Type
@@ -232,12 +233,22 @@ func (rule *RecordingRule) deduceSampleMetadata(sample *promql.Sample, enableTyp
 
 // isSampleTypeCompatible reports whether t is valid for the runtime sample value kind.
 // Native histogram samples require histogram or gaugehistogram metadata, whereas
-// float samples cannot use native histogram metadata types.
+// float samples require a valid non-histogram metadata type.
 func isSampleTypeCompatible(t model.MetricType, isHistogram bool) bool {
 	if isHistogram {
 		return t == model.MetricTypeHistogram || t == model.MetricTypeGaugeHistogram
 	}
-	return t != model.MetricTypeHistogram && t != model.MetricTypeGaugeHistogram
+	switch t {
+	case model.MetricTypeCounter,
+		model.MetricTypeGauge,
+		model.MetricTypeSummary,
+		model.MetricTypeInfo,
+		model.MetricTypeStateset,
+		model.MetricTypeUnknown:
+		return true
+	default:
+		return false
+	}
 }
 
 // LogValue returns the rule's representation for logging.
