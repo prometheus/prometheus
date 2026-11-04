@@ -37,6 +37,9 @@ func NewSymbolTable() SymbolsTable {
 // Symbolize adds (if not added before) a string to the symbols table,
 // while returning its reference number.
 func (t *SymbolsTable) Symbolize(str string) uint32 {
+	if str == "" {
+		return 0
+	}
 	if ref, ok := t.symbolsMap[str]; ok {
 		return ref
 	}
@@ -68,12 +71,8 @@ func (t *SymbolsTable) Symbols() []string {
 func (t *SymbolsTable) Reset() {
 	// NOTE: Make sure to keep empty symbol.
 	t.strings = t.strings[:1]
-	for k := range t.symbolsMap {
-		if k == "" {
-			continue
-		}
-		delete(t.symbolsMap, k)
-	}
+	clear(t.symbolsMap)
+	t.symbolsMap[""] = 0
 }
 
 // desymbolizeLabels decodes label references, with given symbols to labels.
