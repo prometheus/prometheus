@@ -22,6 +22,7 @@ import (
 	"math"
 	"path/filepath"
 	"strconv"
+	"strings"
 	"sync"
 	"testing"
 	"time"
@@ -1560,10 +1561,16 @@ func TestAppender_GetRef(t *testing.T) {
 
 	db, err := Open(promslog.NewNopLogger(), nil, rs, dir, opts)
 	require.NoError(t, err)
+	var dbClosed bool
+	t.Cleanup(func() {
+		if !dbClosed {
+			require.NoError(t, db.Close())
+		}
+	})
 
 	ctx := t.Context()
 	stored := labels.FromStrings(model.MetricNameLabel, "test_metric", "job", "prometheus")
-	lookup := labels.FromStrings(model.MetricNameLabel, "test_metric", "job", "prometheus")
+	lookup := labels.FromStrings(model.MetricNameLabel, "test_metric", "job", strings.Clone("prometheus"))
 	require.NotSame(t, unsafe.StringData(stored.Get("job")), unsafe.StringData(lookup.Get("job")))
 
 	// Series miss returns (0, EmptyLabels).
@@ -1600,6 +1607,7 @@ func TestAppender_GetRef(t *testing.T) {
 
 	// Close and reopen DB to replay the WAL; GetRef must return the replayed series and its canonical labels.
 	require.NoError(t, db.Close())
+	dbClosed = true
 
 	db2, err := Open(promslog.NewNopLogger(), nil, rs, dir, opts)
 	require.NoError(t, err)

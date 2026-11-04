@@ -18,6 +18,7 @@ import (
 	"errors"
 	"fmt"
 	"strconv"
+	"strings"
 	"testing"
 	"unsafe"
 
@@ -751,7 +752,7 @@ func (s immutableStorage) AppenderV2(ctx context.Context) storage.AppenderV2 {
 
 func TestFanoutAppender_GetRef(t *testing.T) {
 	stored := labels.FromStrings(model.MetricNameLabel, "metric1", "job", "prometheus")
-	lookup := labels.FromStrings(model.MetricNameLabel, "metric1", "job", "prometheus")
+	lookup := labels.FromStrings(model.MetricNameLabel, "metric1", "job", strings.Clone("prometheus"))
 	missing := labels.FromStrings(model.MetricNameLabel, "metric2", "job", "prometheus")
 	require.NotSame(t, unsafe.StringData(stored.Get("job")), unsafe.StringData(lookup.Get("job")))
 
