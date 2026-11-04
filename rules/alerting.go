@@ -442,10 +442,10 @@ func (r *AlertingRule) Eval(ctx context.Context, queryOffset time.Duration, ts t
 		}
 
 		lb.Reset(smpl.Metric)
-		lb.Del(labels.MetricName)
 		r.labels.Range(func(l labels.Label) {
 			lb.Set(l.Name, expand(l.Value))
 		})
+		schema.Metadata{}.SetToLabels(lb)
 		lb.Set(labels.AlertName, r.Name())
 
 		sb.Reset()
