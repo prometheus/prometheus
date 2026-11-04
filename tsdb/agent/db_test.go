@@ -1723,6 +1723,9 @@ func populateAppenderForWeakRefTest(t *testing.T, db *DB, appV2, commit bool) (*
 	} else {
 		require.NoError(t, tx.Rollback())
 	}
+	if !appV2 {
+		require.Nil(t, tx.(*appender).hints)
+	}
 	return base, refs
 }
 
@@ -1760,30 +1763,39 @@ func TestPooledAppenderClearsReferences(t *testing.T) {
 				require.Nil(t, refs.exemplarLbl.Value(), "pooled appender retained exemplar label string")
 				require.Nil(t, refs.metadataHelp.Value(), "pooled appender retained metadata help string")
 
+				require.NotZero(t, cap(base.pendingSeries))
 				for i, v := range base.pendingSeries[:cap(base.pendingSeries)] {
 					require.Zero(t, v, "non-zero pendingSeries[%d]", i)
 				}
+				require.NotZero(t, cap(base.pendingHistograms))
 				for i, v := range base.pendingHistograms[:cap(base.pendingHistograms)] {
 					require.Zero(t, v, "non-zero pendingHistograms[%d]", i)
 				}
+				require.NotZero(t, cap(base.pendingFloatHistograms))
 				for i, v := range base.pendingFloatHistograms[:cap(base.pendingFloatHistograms)] {
 					require.Zero(t, v, "non-zero pendingFloatHistograms[%d]", i)
 				}
+				require.NotZero(t, cap(base.pendingExamplars))
 				for i, v := range base.pendingExamplars[:cap(base.pendingExamplars)] {
 					require.Zero(t, v, "non-zero pendingExamplars[%d]", i)
 				}
+				require.NotZero(t, cap(base.pendingMetadata))
 				for i, v := range base.pendingMetadata[:cap(base.pendingMetadata)] {
 					require.Zero(t, v, "non-zero pendingMetadata[%d]", i)
 				}
+				require.NotZero(t, cap(base.sampleSeries))
 				for i, v := range base.sampleSeries[:cap(base.sampleSeries)] {
 					require.Nil(t, v, "non-nil sampleSeries[%d]", i)
 				}
+				require.NotZero(t, cap(base.histogramSeries))
 				for i, v := range base.histogramSeries[:cap(base.histogramSeries)] {
 					require.Nil(t, v, "non-nil histogramSeries[%d]", i)
 				}
+				require.NotZero(t, cap(base.floatHistogramSeries))
 				for i, v := range base.floatHistogramSeries[:cap(base.floatHistogramSeries)] {
 					require.Nil(t, v, "non-nil floatHistogramSeries[%d]", i)
 				}
+				require.NotZero(t, cap(base.metadataSeries))
 				for i, v := range base.metadataSeries[:cap(base.metadataSeries)] {
 					require.Nil(t, v, "non-nil metadataSeries[%d]", i)
 				}
