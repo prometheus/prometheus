@@ -20,6 +20,7 @@ import (
 )
 
 // SymbolsTable implements table for easy symbol use.
+// The empty string "" always maps to 0.
 type SymbolsTable struct {
 	strings    []string
 	symbolsMap map[string]uint32
@@ -28,8 +29,7 @@ type SymbolsTable struct {
 // NewSymbolTable returns a symbol table.
 func NewSymbolTable() SymbolsTable {
 	return SymbolsTable{
-		// Empty string is required as a first element in strings,
-		// and fast-pathed in Symbolize so it does not need to be in symbolsMap.
+		// Note we don't store "" in the map; it is fast-pathed in Symbolize.
 		symbolsMap: make(map[string]uint32),
 		strings:    []string{""},
 	}
