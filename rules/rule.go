@@ -40,7 +40,8 @@ type Rule interface {
 	Name() string
 	// Labels of the rule.
 	Labels() labels.Labels
-	// Metadata returns the metric metadata associated with the rule.
+	// Metadata returns the static metric metadata associated with the rule.
+	// Rules implementing ruleWithMetadata deduce per-sample metadata during evaluation instead.
 	Metadata() metadata.Metadata
 	// Eval evaluates the rule, including any associated recording or alerting actions.
 	Eval(ctx context.Context, queryOffset time.Duration, evaluationTime time.Time, queryFunc QueryFunc, externalURL *url.URL, limit int) (promql.Vector, error)
