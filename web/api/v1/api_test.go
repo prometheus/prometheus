@@ -4438,9 +4438,12 @@ func TestRespondError(t *testing.T) {
 
 func TestMetadataDefaultTimeRange(t *testing.T) {
 	now := time.Unix(10000, 0).UTC()
-	var gotMint, gotMaxt int64
+	var (
+		gotMint, gotMaxt int64
+		querierCalled    bool
+	)
 	queryable := searchTestQueryable{Queryable: storage.QueryableFunc(func(mint, maxt int64) (storage.Querier, error) {
-		gotMint, gotMaxt = mint, maxt
+		gotMint, gotMaxt, querierCalled = mint, maxt, true
 		return storage.NoopQuerier(), nil
 	})}
 
@@ -4507,6 +4510,7 @@ func TestMetadataDefaultTimeRange(t *testing.T) {
 			}},
 		} {
 			t.Run(tc.name+"/"+endpoint.name, func(t *testing.T) {
+				gotMint, gotMaxt, querierCalled = 0, 0, false
 				api := &API{
 					Queryable:                queryable,
 					parser:                   testParser,
@@ -4522,6 +4526,7 @@ func TestMetadataDefaultTimeRange(t *testing.T) {
 					res.finalizer()
 				}
 				require.Nil(t, res.err)
+				require.True(t, querierCalled)
 				require.Equal(t, timestamp.FromTime(tc.wantStart), gotMint)
 				require.Equal(t, timestamp.FromTime(tc.wantEnd), gotMaxt)
 				if tc.wantWarning == "" {

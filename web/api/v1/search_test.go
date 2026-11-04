@@ -1828,6 +1828,34 @@ func TestSearchParamsDefaultTimeRange(t *testing.T) {
 			}
 		})
 	}
+
+	for _, endpoint := range []struct {
+		path   string
+		params url.Values
+	}{
+		{"/search/metric_names", url.Values{}},
+		{"/search/label_names", url.Values{}},
+		{"/search/label_values", url.Values{"label": {"job"}}},
+	} {
+		t.Run("over HTTP"+endpoint.path, func(t *testing.T) {
+			api := newSearchTestAPI(t)
+			api.metadataDefaultTimeRange = 2 * time.Hour
+			rec := doSearchRequest(t, api, endpoint.path, endpoint.params)
+			require.Equal(t, http.StatusOK, rec.Code)
+
+			lines := parseNDJSON(t, rec.Body.String())
+			require.GreaterOrEqual(t, len(lines), 2, "expected at least a batch and a trailer line")
+			var batch searchBatch[map[string]any]
+			require.NoError(t, json.Unmarshal(lines[0], &batch))
+			require.NotEmpty(t, batch.Results)
+			require.Equal(t, []string{"start or end not given, applied a default: start=1970-01-01T00:00:00Z, end=1970-01-01T02:00:00Z"}, batch.Warnings)
+
+			var trailer searchTrailer
+			require.NoError(t, json.Unmarshal(lines[len(lines)-1], &trailer))
+			require.Equal(t, "success", trailer.Status)
+			require.Empty(t, trailer.Warnings)
+		})
+	}
 }
 
 func TestSearchResultStreamerBatchCapacity(t *testing.T) {

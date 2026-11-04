@@ -485,6 +485,10 @@ The `--web.metadata.default-time-range` flag sets `<range>`. The default is `1h`
 When Prometheus applies the default time range, the response contains a warning
 with the time range that it used.
 
+The Prometheus web UI does not send `start` or `end` when it loads the metric
+names list and the metrics explorer. With this feature enabled, these views show
+only the names and series from the last `<range>`.
+
 Without this feature, the search API endpoints keep their fixed default of the
 last hour and do not return a warning.
 
