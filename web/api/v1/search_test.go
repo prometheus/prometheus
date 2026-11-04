@@ -1549,41 +1549,52 @@ func TestSearchStreamFirstBatchError(t *testing.T) {
 // that the trailer's order-independent dedup correctly omits them when the
 // warning set is unchanged at iteration end.
 func TestStreamSearchResultsWarningsSorted(t *testing.T) {
-	var warns annotations.Annotations
-	// Add in non-alphabetical order to stress the map-iteration behaviour.
-	warns.Add(errors.New("c-warn"))
-	warns.Add(errors.New("a-warn"))
-	warns.Add(errors.New("b-warn"))
+	for _, tc := range []struct {
+		name         string
+		rangeWarning error
+		want         []string
+	}{
+		{name: "storage warnings only", want: []string{"a-warn", "b-warn", "c-warn"}},
+		{name: "with range warning", rangeWarning: errors.New("b-range-warn"), want: []string{"a-warn", "b-range-warn", "b-warn", "c-warn"}},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			var warns annotations.Annotations
+			// Add in non-alphabetical order to stress the map-iteration behaviour.
+			warns.Add(errors.New("c-warn"))
+			warns.Add(errors.New("a-warn"))
+			warns.Add(errors.New("b-warn"))
 
-	results := []storage.SearchResult{
-		{Value: "alpha", Score: 1.0},
-		{Value: "beta", Score: 0.9},
+			results := []storage.SearchResult{
+				{Value: "alpha", Score: 1.0},
+				{Value: "beta", Score: 0.9},
+			}
+			rs := storage.NewSearchResultSetFromSlice(results, warns)
+
+			api := newSearchTestAPI(t)
+			rec := httptest.NewRecorder()
+			// httptest.NewRecorder implements http.Flusher; streamSearchResults
+			// requires that.
+			sp := searchParams{limit: 100, batchSize: 100, rangeWarning: tc.rangeWarning}
+
+			streamSearchResults(t.Context(), api, rec, rs, sp, func(sr storage.SearchResult) string {
+				return sr.Value
+			})
+
+			lines := parseNDJSON(t, rec.Body.String())
+			require.GreaterOrEqual(t, len(lines), 2, "expected at least a batch and a trailer line")
+
+			var batch searchBatch[string]
+			require.NoError(t, json.Unmarshal(lines[0], &batch))
+			require.Equal(t, tc.want, batch.Warnings,
+				"first batch must carry warnings in sorted order so the on-wire format is deterministic")
+
+			var trailer searchTrailer
+			require.NoError(t, json.Unmarshal(lines[len(lines)-1], &trailer))
+			require.Equal(t, "success", trailer.Status)
+			require.Empty(t, trailer.Warnings,
+				"trailer must not re-emit warnings already carried by the first batch")
+		})
 	}
-	rs := storage.NewSearchResultSetFromSlice(results, warns)
-
-	api := newSearchTestAPI(t)
-	rec := httptest.NewRecorder()
-	// httptest.NewRecorder implements http.Flusher; streamSearchResults
-	// requires that.
-	sp := searchParams{limit: 100, batchSize: 100}
-
-	streamSearchResults(t.Context(), api, rec, rs, sp, func(sr storage.SearchResult) string {
-		return sr.Value
-	})
-
-	lines := parseNDJSON(t, rec.Body.String())
-	require.GreaterOrEqual(t, len(lines), 2, "expected at least a batch and a trailer line")
-
-	var batch searchBatch[string]
-	require.NoError(t, json.Unmarshal(lines[0], &batch))
-	require.Equal(t, []string{"a-warn", "b-warn", "c-warn"}, batch.Warnings,
-		"first batch must carry warnings in sorted order so the on-wire format is deterministic")
-
-	var trailer searchTrailer
-	require.NoError(t, json.Unmarshal(lines[len(lines)-1], &trailer))
-	require.Equal(t, "success", trailer.Status)
-	require.Empty(t, trailer.Warnings,
-		"trailer must not re-emit warnings already carried by the first batch")
 }
 
 // warningsOnExhaustResultSet is a SearchResultSet that returns base warnings
@@ -1749,6 +1760,72 @@ func TestSearchBatchSize(t *testing.T) {
 			sp, err := api.parseSearchParams(req)
 			require.Nil(t, err)
 			require.Equal(t, tc.want, sp.batchSize)
+		})
+	}
+}
+
+func TestSearchParamsDefaultTimeRange(t *testing.T) {
+	// newSearchTestAPI fixes now at t=7200s.
+	now := time.Unix(7200, 0)
+	for _, tc := range []struct {
+		name        string
+		defaultTR   time.Duration
+		params      url.Values
+		wantStart   time.Time
+		wantEnd     time.Time
+		wantWarning string
+	}{
+		{
+			name:      "disabled, no start or end keeps the 1h search default",
+			params:    url.Values{},
+			wantStart: now.Add(-time.Hour),
+			wantEnd:   now,
+		},
+		{
+			name:        "enabled, no start or end",
+			defaultTR:   2 * time.Hour,
+			params:      url.Values{},
+			wantStart:   time.Unix(0, 0),
+			wantEnd:     now,
+			wantWarning: "start or end not given, applied a default: start=1970-01-01T00:00:00Z, end=1970-01-01T02:00:00Z",
+		},
+		{
+			name:        "enabled, end only",
+			defaultTR:   2 * time.Hour,
+			params:      url.Values{"end": {"9000"}},
+			wantStart:   time.Unix(1800, 0),
+			wantEnd:     time.Unix(9000, 0),
+			wantWarning: "start or end not given, applied a default: start=1970-01-01T00:30:00Z, end=1970-01-01T02:30:00Z",
+		},
+		{
+			name:        "enabled, start only",
+			defaultTR:   2 * time.Hour,
+			params:      url.Values{"start": {"3600"}},
+			wantStart:   time.Unix(3600, 0),
+			wantEnd:     now,
+			wantWarning: "start or end not given, applied a default: start=1970-01-01T01:00:00Z, end=1970-01-01T02:00:00Z",
+		},
+		{
+			name:      "enabled, start and end",
+			defaultTR: 2 * time.Hour,
+			params:    url.Values{"start": {"100"}, "end": {"200"}},
+			wantStart: time.Unix(100, 0),
+			wantEnd:   time.Unix(200, 0),
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			api := newSearchTestAPI(t)
+			api.metadataDefaultTimeRange = tc.defaultTR
+			req := httptest.NewRequest(http.MethodGet, "/search/metric_names?"+tc.params.Encode(), http.NoBody)
+			sp, apiErr := api.parseSearchParams(req)
+			require.Nil(t, apiErr)
+			require.True(t, tc.wantStart.Equal(sp.start), "start: want %s, got %s", tc.wantStart, sp.start)
+			require.True(t, tc.wantEnd.Equal(sp.end), "end: want %s, got %s", tc.wantEnd, sp.end)
+			if tc.wantWarning == "" {
+				require.NoError(t, sp.rangeWarning)
+			} else {
+				require.EqualError(t, sp.rangeWarning, tc.wantWarning)
+			}
 		})
 	}
 }

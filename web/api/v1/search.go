@@ -101,6 +101,7 @@ type searchParams struct {
 	sortDir       string // "asc" (default) or "dsc".
 	includeScore  bool   // Include relevance score in each result record.
 	start, end    time.Time
+	rangeWarning  error
 	limit         int // Default 100.
 	batchSize     int // Default 100.
 }
@@ -199,6 +200,7 @@ func (api *API) parseSearchParams(r *http.Request) (searchParams, *apiError) {
 		return sp, &apiError{errorBadData, err}
 	}
 	sp.end = end
+	sp.start, sp.end, sp.rangeWarning = api.applyMetadataDefaultTimeRange(r, sp.start, sp.end)
 	// end == start is permitted: it represents a zero-duration "snapshot at
 	// this instant" search. Only strictly inverted ranges are rejected, so
 	// a client that accidentally sets end < start gets an immediate error
@@ -577,9 +579,22 @@ func streamSearchResults[T any](ctx context.Context, api *API, w http.ResponseWr
 		return
 	}
 
+	// The range warning goes in the first batch only, not in the trailer. A
+	// stream can end with an error line or an abrupt EOF and no trailer, but
+	// the client still has results from the defaulted range. The trailer
+	// carries only storage warnings that appear during iteration, and the
+	// range is known before iteration starts. The range warning is not part
+	// of firstWarnings, because the trailer dedup below compares against the
+	// storage warnings only.
+	batchWarnings := firstWarnings
+	if sp.rangeWarning != nil {
+		batchWarnings = append([]string{sp.rangeWarning.Error()}, firstWarnings...)
+		slices.Sort(batchWarnings)
+	}
+
 	// Always emit a first batch line so warnings are observable before any
 	// trailer or error line, even when there are no results.
-	if writeErr := nw.writeLine(searchBatch[T]{Results: firstBatch, Warnings: firstWarnings}); writeErr != nil {
+	if writeErr := nw.writeLine(searchBatch[T]{Results: firstBatch, Warnings: batchWarnings}); writeErr != nil {
 		writeStreamInternalError(nw, writeErr)
 		return
 	}
