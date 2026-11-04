@@ -14,6 +14,7 @@
 package v1
 
 import (
+	"bytes"
 	"context"
 	"crypto/sha256"
 	"encoding/hex"
@@ -22,6 +23,7 @@ import (
 	"fmt"
 	"io"
 	"maps"
+	"mime/multipart"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
@@ -6090,4 +6092,36 @@ func TestQueryCostEstimationQueueTimeout(t *testing.T) {
 			}
 		})
 	}
+}
+
+func TestCleanupMultipartRemovesSpilledTempFile(t *testing.T) {
+	// Spilled multipart file parts are written under os.TempDir(); isolate it.
+	tmpDir := t.TempDir()
+	t.Setenv("TMPDIR", tmpDir)
+
+	var body bytes.Buffer
+	mw := multipart.NewWriter(&body)
+	require.NoError(t, mw.WriteField("query", "vector(1)"))
+	fw, err := mw.CreateFormFile("f", "f.bin")
+	require.NoError(t, err)
+	_, err = fw.Write([]byte("unused file part"))
+	require.NoError(t, err)
+	require.NoError(t, mw.Close())
+
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/query", &body)
+	req.Header.Set("Content-Type", mw.FormDataContentType())
+
+	// A maxMemory of 0 forces the file part to spill to a temp file on disk,
+	// reproducing the >32 MiB default-threshold case without a large body.
+	require.NoError(t, req.ParseMultipartForm(0))
+
+	entries, err := os.ReadDir(tmpDir)
+	require.NoError(t, err)
+	require.NotEmpty(t, entries, "expected a spilled multipart temp file")
+
+	cleanupMultipart(req)
+
+	entries, err = os.ReadDir(tmpDir)
+	require.NoError(t, err)
+	require.Empty(t, entries, "multipart temp file was left on disk")
 }

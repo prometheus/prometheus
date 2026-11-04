@@ -439,11 +439,20 @@ func setUnavailStatusOnTSDBNotReady(r apiFuncResult) apiFuncResult {
 	return r
 }
 
+// cleanupMultipart removes temp files left by multipart form parsing, which
+// net/http cleans up only for the server's original request, not this copy.
+func cleanupMultipart(r *http.Request) {
+	if r.MultipartForm != nil {
+		_ = r.MultipartForm.RemoveAll()
+	}
+}
+
 // Register the API's endpoints in the given router.
 func (api *API) Register(r *route.Router) {
 	wrap := func(f apiFunc) http.HandlerFunc {
 		hf := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			httputil.SetCORS(w, api.CORSOrigin, r)
+			defer cleanupMultipart(r)
 			result := setUnavailStatusOnTSDBNotReady(f(r))
 			if result.finalizer != nil {
 				defer result.finalizer()
