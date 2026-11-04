@@ -322,18 +322,6 @@ func setLabel(lb *labels.Builder, name, val string, withMetadata bool) {
 	lb.Set(name, val)
 }
 
-func delMetadataLabels(lb *labels.Builder) {
-	if lb.Get(model.MetricTypeLabel) != "" {
-		lb.Del(model.MetricTypeLabel)
-	}
-	if lb.Get(model.MetricUnitLabel) != "" {
-		lb.Del(model.MetricUnitLabel)
-	}
-	if lb.Get(metricHelpLabel) != "" {
-		lb.Del(metricHelpLabel)
-	}
-}
-
 // ProcessBuilderWithMetadata applies relabeling configurations (rules) to the labels in lb
 // and metadata in meta. Any pre-existing __type__, __unit__, or __help__ labels in lb on entry
 // are replaced by meta (or stripped when empty in meta), and removed from lb before returning.
@@ -341,30 +329,13 @@ func delMetadataLabels(lb *labels.Builder) {
 // and leave metadata untouched.
 func ProcessBuilderWithMetadata(lb *labels.Builder, meta metadata.Metadata, cfgs ...*Config) (keep bool, _ metadata.Metadata) {
 	if !usesMetadata(cfgs...) {
-		delMetadataLabels(lb)
-		keep = ProcessBuilder(lb, cfgs...)
-		if !keep {
-			return false, metadata.Metadata{}
-		}
-		delMetadataLabels(lb)
-		return true, meta
+		lb.Del(model.MetricTypeLabel, model.MetricUnitLabel, metricHelpLabel)
+		return ProcessBuilder(lb, cfgs...), meta
 	}
 
-	if meta.Type != "" && meta.Type != model.MetricTypeUnknown {
-		lb.Set(model.MetricTypeLabel, string(meta.Type))
-	} else if lb.Get(model.MetricTypeLabel) != "" {
-		lb.Del(model.MetricTypeLabel)
-	}
-	if meta.Unit != "" {
-		lb.Set(model.MetricUnitLabel, meta.Unit)
-	} else if lb.Get(model.MetricUnitLabel) != "" {
-		lb.Del(model.MetricUnitLabel)
-	}
-	if meta.Help != "" {
-		lb.Set(metricHelpLabel, meta.Help)
-	} else if lb.Get(metricHelpLabel) != "" {
-		lb.Del(metricHelpLabel)
-	}
+	setLabel(lb, model.MetricTypeLabel, string(meta.Type), true)
+	lb.Set(model.MetricUnitLabel, meta.Unit)
+	lb.Set(metricHelpLabel, meta.Help)
 
 	for _, cfg := range cfgs {
 		if !relabel(cfg, lb, true) {
@@ -382,7 +353,7 @@ func ProcessBuilderWithMetadata(lb *labels.Builder, meta metadata.Metadata, cfgs
 	meta.Unit = lb.Get(model.MetricUnitLabel)
 	meta.Help = lb.Get(metricHelpLabel)
 
-	delMetadataLabels(lb)
+	lb.Del(model.MetricTypeLabel, model.MetricUnitLabel, metricHelpLabel)
 	return true, meta
 }
 
@@ -432,11 +403,7 @@ func relabel(cfg *Config, lb *labels.Builder, withMetadata bool) (keep bool) {
 			break
 		}
 		res := cfg.Regex.ExpandString([]byte{}, cfg.Replacement, val, indexes)
-		if len(res) == 0 || (withMetadata && target == model.MetricTypeLabel && string(res) == string(model.MetricTypeUnknown)) {
-			lb.Del(target)
-			break
-		}
-		lb.Set(target, string(res))
+		setLabel(lb, target, string(res), withMetadata)
 	case Lowercase:
 		setLabel(lb, cfg.TargetLabel, strings.ToLower(val), withMetadata)
 	case Uppercase:
