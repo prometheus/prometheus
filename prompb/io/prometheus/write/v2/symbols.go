@@ -29,7 +29,7 @@ type SymbolsTable struct {
 func NewSymbolTable() SymbolsTable {
 	return SymbolsTable{
 		// Empty string is required as a first element.
-		symbolsMap: map[string]uint32{"": 0},
+		symbolsMap: make(map[string]uint32),
 		strings:    []string{""},
 	}
 }
@@ -72,7 +72,6 @@ func (t *SymbolsTable) Reset() {
 	// NOTE: Make sure to keep empty symbol.
 	t.strings = t.strings[:1]
 	clear(t.symbolsMap)
-	t.symbolsMap[""] = 0
 }
 
 // desymbolizeLabels decodes label references, with given symbols to labels.
