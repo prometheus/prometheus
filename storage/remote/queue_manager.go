@@ -2207,21 +2207,6 @@ func newQueue(batchSize, capacity int) *queue {
 	}
 }
 
-// Append the timeSeries to the buffered batch. Returns false if it
-// cannot be added and must be retried.
-func (q *queue) Append(datum timeSeries) bool {
-	q.batchMtx.Lock()
-	q.batch = append(q.batch, datum)
-	if len(q.batch) == cap(q.batch) {
-		if !q.flushFullBatchLocked() {
-			q.batchMtx.Unlock()
-			return false
-		}
-	}
-	q.batchMtx.Unlock()
-	return true
-}
-
 func (q *queue) flushFullBatchLocked() bool {
 	for {
 		select {

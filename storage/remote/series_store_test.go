@@ -337,9 +337,11 @@ func TestShards_TryEnqueueBatchPartialMultiShard(t *testing.T) {
 
 	// Pre-fill shard 1 (1 full batch of 2 in batchQueue + 1 item in partial batch = 3 items).
 	// Next item on shard 1 will fill the partial batch to 2 and fail flushFullBatchLocked().
-	for i := range 3 {
-		require.True(t, qm.shards.queues[1].Append(timeSeries{timestamp: int64(100 + i)}))
-	}
+	require.Equal(t, 3, qm.shards.queues[1].appendShardedItems([]shardedItem{
+		{ts: timeSeries{timestamp: 100}},
+		{ts: timeSeries{timestamp: 101}},
+		{ts: timeSeries{timestamp: 102}},
+	}))
 
 	sc := &appendScratch{
 		items: []shardedItem{

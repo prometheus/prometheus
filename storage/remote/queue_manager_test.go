@@ -2149,9 +2149,7 @@ func TestQueue_FlushAndShutdownDoesNotDeadlock(t *testing.T) {
 	capacity := 100
 	batchSize := 10
 	queue := newQueue(batchSize, capacity)
-	for i := 0; i < capacity+batchSize; i++ {
-		queue.Append(timeSeries{})
-	}
+	require.Equal(t, capacity+batchSize-1, queue.appendShardedItems(make([]shardedItem, capacity+batchSize)))
 
 	done := make(chan struct{})
 	flushed := make(chan struct{})
