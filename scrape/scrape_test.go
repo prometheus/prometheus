@@ -527,20 +527,20 @@ func TestScrapeCacheMetadataInterning(t *testing.T) {
 		}, list1[0])
 
 		// Both caches must share identical backing string pointers for MetricFamily, Type, Help, and Unit.
-		require.Equal(t, unsafe.StringData(list1[0].MetricFamily), unsafe.StringData(list2[0].MetricFamily))
-		require.Equal(t, unsafe.StringData(string(list1[0].Type)), unsafe.StringData(string(list2[0].Type)))
-		require.Equal(t, unsafe.StringData(list1[0].Help), unsafe.StringData(list2[0].Help))
-		require.Equal(t, unsafe.StringData(list1[0].Unit), unsafe.StringData(list2[0].Unit))
+		require.Same(t, unsafe.StringData(list1[0].MetricFamily), unsafe.StringData(list2[0].MetricFamily))
+		require.Same(t, unsafe.StringData(string(list1[0].Type)), unsafe.StringData(string(list2[0].Type)))
+		require.Same(t, unsafe.StringData(list1[0].Help), unsafe.StringData(list2[0].Help))
+		require.Same(t, unsafe.StringData(list1[0].Unit), unsafe.StringData(list2[0].Unit))
 
 		// GetMetadata with freshly cloned lookup keys must also return the canonical interned strings.
 		md1, ok := c1.GetMetadata(strings.Clone(wantMF))
 		require.True(t, ok)
 		md2, ok := c2.GetMetadata(strings.Clone(wantMF))
 		require.True(t, ok)
-		require.Equal(t, unsafe.StringData(list1[0].MetricFamily), unsafe.StringData(md1.MetricFamily))
-		require.Equal(t, unsafe.StringData(md1.MetricFamily), unsafe.StringData(md2.MetricFamily))
-		require.Equal(t, unsafe.StringData(md1.Help), unsafe.StringData(md2.Help))
-		require.Equal(t, unsafe.StringData(md1.Unit), unsafe.StringData(md2.Unit))
+		require.Same(t, unsafe.StringData(list1[0].MetricFamily), unsafe.StringData(md1.MetricFamily))
+		require.Same(t, unsafe.StringData(md1.MetricFamily), unsafe.StringData(md2.MetricFamily))
+		require.Same(t, unsafe.StringData(md1.Help), unsafe.StringData(md2.Help))
+		require.Same(t, unsafe.StringData(md1.Unit), unsafe.StringData(md2.Unit))
 
 		// TSDB Head and Agent DB intern metadata.Metadata via unique.Make; verify identical string pointers.
 		tsdbHandle := unique.Make(metadata.Metadata{
@@ -549,8 +549,8 @@ func TestScrapeCacheMetadataInterning(t *testing.T) {
 			Help: strings.Clone(wantHelp),
 		})
 		tsdbMeta := tsdbHandle.Value()
-		require.Equal(t, unsafe.StringData(tsdbMeta.Help), unsafe.StringData(md1.Help))
-		require.Equal(t, unsafe.StringData(tsdbMeta.Unit), unsafe.StringData(md1.Unit))
+		require.Same(t, unsafe.StringData(tsdbMeta.Help), unsafe.StringData(md1.Help))
+		require.Same(t, unsafe.StringData(tsdbMeta.Unit), unsafe.StringData(md1.Unit))
 
 		// Warm-scrape updates with unchanged values must not allocate.
 		mfWarm := []byte(wantMF)
@@ -660,9 +660,9 @@ raw_interned_requests_total 1
 				Unit:         "requests",
 			}, md1)
 			require.Equal(t, md1, md2)
-			require.Equal(t, unsafe.StringData(md1.MetricFamily), unsafe.StringData(md2.MetricFamily))
-			require.Equal(t, unsafe.StringData(md1.Help), unsafe.StringData(md2.Help))
-			require.Equal(t, unsafe.StringData(md1.Unit), unsafe.StringData(md2.Unit))
+			require.Same(t, unsafe.StringData(md1.MetricFamily), unsafe.StringData(md2.MetricFamily))
+			require.Same(t, unsafe.StringData(md1.Help), unsafe.StringData(md2.Help))
+			require.Same(t, unsafe.StringData(md1.Unit), unsafe.StringData(md2.Unit))
 		})
 	}
 }
