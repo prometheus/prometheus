@@ -9245,40 +9245,59 @@ func BenchmarkScrapeCacheStaleness(b *testing.B) {
 			for _, ce := range entriesB {
 				ce.trackedIter = 0
 			}
-			churnCount := numSeries / 100
-			steady := entriesA[churnCount:]
+			// Interleave the 1% churning series across the scrape order so stale entries
+			// are scattered across seriesPrev (exercising in-place partition swaps) and
+			// replacement series are appended out of SeriesRef order in seriesCur.
+			scrapeSetA := make([]*cacheEntry, numSeries)
+			scrapeSetB := make([]*cacheEntry, numSeries)
+			for i := range numSeries {
+				scrapeSetA[i] = entriesA[i]
+				if i%100 == 0 {
+					scrapeSetB[i] = entriesB[i]
+				} else {
+					scrapeSetB[i] = entriesA[i]
+				}
+			}
+
+			var memBefore, memAfter runtime.MemStats
+			runtime.GC()
+			runtime.ReadMemStats(&memBefore)
 
 			c := newScrapeCache(metrics)
-			for _, ce := range entriesA {
+			for _, ce := range scrapeSetA {
 				c.trackStaleness(ce)
 			}
 			c.iterDone(false)
-			for _, ce := range entriesB[:churnCount] {
-				c.trackStaleness(ce)
-			}
-			for _, ce := range steady {
+			for _, ce := range scrapeSetB {
 				c.trackStaleness(ce)
 			}
 			c.forEachStale(func(storage.SeriesRef, labels.Labels) bool { return true })
 			c.iterDone(false)
 
+			runtime.GC()
+			runtime.ReadMemStats(&memAfter)
+			var retainedPerSeries float64
+			if memAfter.HeapAlloc > memBefore.HeapAlloc {
+				retainedPerSeries = float64(memAfter.HeapAlloc-memBefore.HeapAlloc) / float64(numSeries)
+			}
+
 			useA := true
 			b.ReportAllocs()
 			b.ResetTimer()
 			for b.Loop() {
-				churned := entriesB[:churnCount]
+				scrapeSet := scrapeSetB
 				if useA {
-					churned = entriesA[:churnCount]
+					scrapeSet = scrapeSetA
 				}
 				useA = !useA
-				for _, ce := range churned {
-					c.trackStaleness(ce)
-				}
-				for _, ce := range steady {
+				for _, ce := range scrapeSet {
 					c.trackStaleness(ce)
 				}
 				c.forEachStale(func(storage.SeriesRef, labels.Labels) bool { return true })
 				c.iterDone(false)
+			}
+			if retainedPerSeries > 0 {
+				b.ReportMetric(retainedPerSeries, "retained-B/series")
 			}
 		})
 	}
