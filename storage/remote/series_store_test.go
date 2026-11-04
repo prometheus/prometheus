@@ -223,16 +223,7 @@ func TestQueueManager_ConcurrentAppendBackpressureAndSeriesReset(t *testing.T) {
 			cfg.Capacity = maxBatch * 2
 			cfg.BatchSendDeadline = model.Duration(10 * time.Millisecond)
 
-			metrics := newQueueManagerMetrics(nil, "", "")
-			qm := NewQueueManager(
-				metrics, nil, nil, nil, t.TempDir(),
-				newEWMARate(ewmaWeight, shardUpdateDuration),
-				cfg, config.DefaultMetadataConfig,
-				labels.EmptyLabels(), nil, client,
-				5*time.Second, newPool(), newHighestTimestampMetric(),
-				nil, false, false, false, remoteapi.WriteV2MessageType, remoteapi.WriteModeNone,
-				record.NewBuffersPool(), false, false,
-			)
+			qm := newTestQueueManager(t, cfg, config.DefaultMetadataConfig, 5*time.Second, client, remoteapi.WriteV2MessageType)
 
 			const activeSeries = 200
 			var initial []record.RefSeries
@@ -294,8 +285,9 @@ func TestQueueManager_ConcurrentAppendBackpressureAndSeriesReset(t *testing.T) {
 			wg.Wait()
 			qm.Stop()
 
-			require.Zero(t, client_testutil.ToFloat64(metrics.droppedSamplesTotal.WithLabelValues(reasonUnintentionalDroppedSeries)))
-			require.Zero(t, client_testutil.ToFloat64(metrics.pendingSamples))
+			require.Zero(t, client_testutil.ToFloat64(qm.metrics.droppedSamplesTotal.WithLabelValues(reasonUnintentionalDroppedSeries)))
+			require.Zero(t, client_testutil.ToFloat64(qm.metrics.failedSamplesTotal))
+			require.Zero(t, client_testutil.ToFloat64(qm.metrics.pendingSamples))
 			require.Equal(t, 5*activeSeries, deepLen(recClient.receivedSamples))
 			for i, s := range initial {
 				got := recClient.receivedSamples[s.Labels.String()]
@@ -318,16 +310,7 @@ func TestShards_TryEnqueueBatchPartialMultiShard(t *testing.T) {
 	cfg.MaxSamplesPerSend = 2
 	cfg.Capacity = 2 // 1 batch of 2 in batchQueue + 1 partial batch of <2 in q.batch (max 3 buffered before blocking).
 
-	metrics := newQueueManagerMetrics(nil, "", "")
-	qm := NewQueueManager(
-		metrics, nil, nil, nil, t.TempDir(),
-		newEWMARate(ewmaWeight, shardUpdateDuration),
-		cfg, config.DefaultMetadataConfig,
-		labels.EmptyLabels(), nil, NewTestBlockedWriteClient(),
-		defaultFlushDeadline, newPool(), newHighestTimestampMetric(),
-		nil, false, false, false, remoteapi.WriteV2MessageType, remoteapi.WriteModeNone,
-		record.NewBuffersPool(), false, false,
-	)
+	qm := newTestQueueManager(t, cfg, config.DefaultMetadataConfig, defaultFlushDeadline, NewTestBlockedWriteClient(), remoteapi.WriteV2MessageType)
 	// Populate 2 shard queues without starting background runShard consumers so we can
 	// deterministically inspect partial acceptance and compaction.
 	qm.shards.queues = []*queue{
@@ -358,14 +341,14 @@ func TestShards_TryEnqueueBatchPartialMultiShard(t *testing.T) {
 	require.Len(t, sc.items, 2)
 	require.Equal(t, chunks.HeadSeriesRef(1), sc.items[0].ref)
 	require.Equal(t, chunks.HeadSeriesRef(3), sc.items[1].ref)
-	require.Equal(t, 2.0, client_testutil.ToFloat64(metrics.pendingSamples))
-	require.Equal(t, 2.0, metrics.highestTimestamp.Get()) // 2000ms / 1000 = 2s (not 6000ms from unaccepted shard 1).
+	require.Equal(t, 2.0, client_testutil.ToFloat64(qm.metrics.pendingSamples))
+	require.Equal(t, 2.0, qm.metrics.highestTimestamp.Get()) // 2000ms / 1000 = 2s (not 6000ms from unaccepted shard 1).
 
 	// Drain 1 batch from shard 1 and retry: now the remaining 2 shard-1 items are accepted.
 	_ = qm.shards.queues[1].Batch()
 	blocked, _ = qm.shards.tryEnqueueBatch(sc, tSample, 6000)
 	require.Nil(t, blocked)
 	require.Empty(t, sc.items)
-	require.Equal(t, 4.0, client_testutil.ToFloat64(metrics.pendingSamples))
-	require.Equal(t, 6.0, metrics.highestTimestamp.Get()) // 6000ms / 1000 = 6s.
+	require.Equal(t, 4.0, client_testutil.ToFloat64(qm.metrics.pendingSamples))
+	require.Equal(t, 6.0, qm.metrics.highestTimestamp.Get()) // 6000ms / 1000 = 6s.
 }
