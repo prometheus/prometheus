@@ -28,7 +28,8 @@ type SymbolsTable struct {
 // NewSymbolTable returns a symbol table.
 func NewSymbolTable() SymbolsTable {
 	return SymbolsTable{
-		// Empty string is required as a first element.
+		// Empty string is required as a first element in strings,
+		// and fast-pathed in Symbolize so it does not need to be in symbolsMap.
 		symbolsMap: make(map[string]uint32),
 		strings:    []string{""},
 	}
