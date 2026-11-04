@@ -42,6 +42,8 @@ import (
 	"testing/synctest"
 	"text/template"
 	"time"
+	"unique"
+	"unsafe"
 
 	"github.com/cespare/xxhash/v2"
 	"github.com/gogo/protobuf/proto"
@@ -434,6 +436,187 @@ func TestScrapeCacheSizeMetadata(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			c := newScrapeCache(newTestScrapeMetrics(t))
 			tc.steps(t, c)
+		})
+	}
+}
+
+func TestScrapeCacheMetadataInterning(t *testing.T) {
+	if unsafe.Sizeof(uintptr(0)) == 8 {
+		require.Equal(t, uintptr(24), unsafe.Sizeof(metaEntry{}))
+		require.Equal(t, uintptr(32), unsafe.Sizeof(seriesMetaEntry{}))
+	}
+
+	t.Run("zero values do not panic", func(t *testing.T) {
+		var zeroMeta metaEntry
+		require.Equal(t, metadata.Metadata{}, zeroMeta.metadata())
+		require.Equal(t, 0, zeroMeta.size())
+
+		var zeroSeriesMeta seriesMetaEntry
+		require.Equal(t, metadata.Metadata{}, metadataValue(zeroSeriesMeta.origMeta))
+		require.Equal(t, metadata.Metadata{}, metadataValue(zeroSeriesMeta.meta))
+		require.Empty(t, stringValue(zeroSeriesMeta.origMFName))
+		require.Empty(t, stringValue(zeroSeriesMeta.mfName))
+	})
+
+	t.Run("cross-target scrapeCache interning and buffer mutation safety", func(t *testing.T) {
+		const (
+			wantMF   = "intern_test_http_request_duration_seconds"
+			wantHelp = "A histogram of the HTTP request durations in seconds."
+			wantUnit = "seconds"
+		)
+
+		c1 := newScrapeCache(newTestScrapeMetrics(t))
+		c2 := newScrapeCache(newTestScrapeMetrics(t))
+
+		mfBuf1 := []byte(wantMF)
+		helpBuf1 := []byte(wantHelp)
+		unitBuf1 := []byte(wantUnit)
+		c1.setType(mfBuf1, model.MetricTypeHistogram)
+		c1.setHelp(mfBuf1, helpBuf1)
+		c1.setUnit(mfBuf1, unitBuf1)
+
+		mfBuf2 := []byte(wantMF)
+		helpBuf2 := []byte(wantHelp)
+		unitBuf2 := []byte(wantUnit)
+		c2.setType(mfBuf2, model.MetricTypeHistogram)
+		c2.setHelp(mfBuf2, helpBuf2)
+		c2.setUnit(mfBuf2, unitBuf2)
+
+		// Mutate all caller buffers in place and force GC to verify no unsafe backing arrays were retained.
+		for _, b := range [][]byte{mfBuf1, helpBuf1, unitBuf1, mfBuf2, helpBuf2, unitBuf2} {
+			for i := range b {
+				b[i] = 'x'
+			}
+		}
+		runtime.GC()
+
+		list1 := c1.ListMetadata()
+		list2 := c2.ListMetadata()
+		require.Len(t, list1, 1)
+		require.Equal(t, list1, list2)
+		require.Equal(t, MetricMetadata{
+			MetricFamily: wantMF,
+			Type:         model.MetricTypeHistogram,
+			Help:         wantHelp,
+			Unit:         wantUnit,
+		}, list1[0])
+
+		// Both caches must share identical backing string pointers for MetricFamily, Type, Help, and Unit.
+		require.Equal(t, unsafe.StringData(list1[0].MetricFamily), unsafe.StringData(list2[0].MetricFamily))
+		require.Equal(t, unsafe.StringData(string(list1[0].Type)), unsafe.StringData(string(list2[0].Type)))
+		require.Equal(t, unsafe.StringData(list1[0].Help), unsafe.StringData(list2[0].Help))
+		require.Equal(t, unsafe.StringData(list1[0].Unit), unsafe.StringData(list2[0].Unit))
+
+		// GetMetadata with freshly cloned lookup keys must also return the canonical interned strings.
+		md1, ok := c1.GetMetadata(strings.Clone(wantMF))
+		require.True(t, ok)
+		md2, ok := c2.GetMetadata(strings.Clone(wantMF))
+		require.True(t, ok)
+		require.Equal(t, unsafe.StringData(list1[0].MetricFamily), unsafe.StringData(md1.MetricFamily))
+		require.Equal(t, unsafe.StringData(md1.MetricFamily), unsafe.StringData(md2.MetricFamily))
+		require.Equal(t, unsafe.StringData(md1.Help), unsafe.StringData(md2.Help))
+		require.Equal(t, unsafe.StringData(md1.Unit), unsafe.StringData(md2.Unit))
+
+		// TSDB Head and Agent DB intern metadata.Metadata via unique.Make; verify identical string pointers.
+		tsdbHandle := unique.Make(metadata.Metadata{
+			Type: model.MetricTypeHistogram,
+			Unit: strings.Clone(wantUnit),
+			Help: strings.Clone(wantHelp),
+		})
+		tsdbMeta := tsdbHandle.Value()
+		require.Equal(t, unsafe.StringData(tsdbMeta.Help), unsafe.StringData(md1.Help))
+		require.Equal(t, unsafe.StringData(tsdbMeta.Unit), unsafe.StringData(md1.Unit))
+
+		// Warm-scrape updates with unchanged values must not allocate.
+		mfWarm := []byte(wantMF)
+		helpWarm := []byte(wantHelp)
+		unitWarm := []byte(wantUnit)
+		allocs := testing.AllocsPerRun(100, func() {
+			c1.iter++
+			c1.setType(mfWarm, model.MetricTypeHistogram)
+			c1.setHelp(mfWarm, helpWarm)
+			c1.setUnit(mfWarm, unitWarm)
+		})
+		require.Zero(t, allocs)
+		runtime.KeepAlive(tsdbHandle)
+	})
+
+	for _, hasMRC := range []bool{false, true} {
+		t.Run(fmt.Sprintf("hasMRC=%v", hasMRC), func(t *testing.T) {
+			var rc []*relabel.Config
+			if hasMRC {
+				rc = []*relabel.Config{
+					{
+						SourceLabels:         model.LabelNames{"__name__"},
+						Separator:            ";",
+						Regex:                relabel.MustNewRegexp("raw_(.*)"),
+						TargetLabel:          "__name__",
+						Replacement:          "$1",
+						Action:               relabel.Replace,
+						NameValidationScheme: model.UTF8Validation,
+					},
+				}
+			}
+
+			newLoop := func() *scrapeLoop {
+				appTest := teststorage.NewAppendable()
+				target := newTestTarget("localhost:9090", 10*time.Millisecond, labels.FromStrings("job", "test", "instance", "localhost:9090"))
+				sl, _ := newTestScrapeLoop(t, withAppendable(appTest, true), func(sl *scrapeLoop) {
+					sl.mrc = rc
+					sl.sampleMutator = func(l labels.Labels) labels.Labels {
+						return mutateSampleLabels(l, target, false, rc)
+					}
+				})
+				return sl
+			}
+
+			sl1 := newLoop()
+			sl2 := newLoop()
+			now := time.Now()
+			const payload = `# TYPE raw_interned_requests counter
+# HELP raw_interned_requests Total interned requests across targets
+# UNIT raw_interned_requests requests
+raw_interned_requests_total 1
+# TYPE "" counter
+# HELP "" empty family counter help
+foo 2
+# TYPE "" histogram
+# HELP "" empty family histogram help
+{"_count"} 3
+# EOF`
+
+			for i, sl := range []*scrapeLoop{sl1, sl2} {
+				for scrapeIdx := range 2 {
+					buf := []byte(payload)
+					app := sl.appender()
+					_, _, _, err := app.append(buf, "application/openmetrics-text", now.Add(time.Duration(i*10+scrapeIdx)*time.Second))
+					require.NoError(t, err)
+					require.NoError(t, app.Commit())
+					for j := range buf {
+						buf[j] = 'z'
+					}
+				}
+			}
+			runtime.GC()
+
+			wantFamily := "raw_interned_requests"
+			if hasMRC {
+				wantFamily = "interned_requests"
+			}
+			md1, ok := sl1.cache.GetMetadata(strings.Clone(wantFamily))
+			require.True(t, ok)
+			md2, ok := sl2.cache.GetMetadata(strings.Clone(wantFamily))
+			require.True(t, ok)
+			require.Equal(t, MetricMetadata{
+				MetricFamily: wantFamily,
+				Type:         model.MetricTypeCounter,
+				Help:         "Total interned requests across targets",
+				Unit:         "requests",
+			}, md1)
+			require.Equal(t, md1, md2)
+			require.Equal(t, unsafe.StringData(md1.MetricFamily), unsafe.StringData(md2.MetricFamily))
+			require.Equal(t, unsafe.StringData(md1.Help), unsafe.StringData(md2.Help))
+			require.Equal(t, unsafe.StringData(md1.Unit), unsafe.StringData(md2.Unit))
 		})
 	}
 }
@@ -3866,6 +4049,64 @@ func BenchmarkScrapeLoopScrapeAndReportConcurrentSlow(b *testing.B) {
 			}
 			if iters > 0 {
 				b.ReportMetric(float64(totalPeak)/float64(iters), "peak-appenders/op")
+			}
+		})
+	}
+}
+
+// Recommended CLI invocation:
+/*
+	export bench=metadata && go test ./scrape/... \
+		-run '^$' -bench '^BenchmarkScrapeCacheMetadata$' \
+		-benchtime 2s -count 6 -cpu 2 -timeout 999m -benchmem \
+		| tee ${bench}.txt
+*/
+func BenchmarkScrapeCacheMetadata(b *testing.B) {
+	const numFamilies = 250
+	type family struct {
+		name, help, unit []byte
+		typ              model.MetricType
+	}
+	families := make([]family, numFamilies)
+	types := []model.MetricType{
+		model.MetricTypeCounter,
+		model.MetricTypeGauge,
+		model.MetricTypeHistogram,
+		model.MetricTypeSummary,
+	}
+	for i := range numFamilies {
+		families[i] = family{
+			name: fmt.Appendf(nil, "process_service_subsystem_metric_family_%03d_seconds", i),
+			help: fmt.Appendf(nil, "Detailed human-readable description for metric family %03d across scrape targets.", i),
+			unit: []byte("seconds"),
+			typ:  types[i%len(types)],
+		}
+	}
+
+	for _, coldCache := range []bool{false, true} {
+		b.Run(fmt.Sprintf("coldCache=%v", coldCache), func(b *testing.B) {
+			metrics := newTestScrapeMetrics(b)
+			warmCache := newScrapeCache(metrics)
+			for _, f := range families {
+				warmCache.setType(f.name, f.typ)
+				warmCache.setHelp(f.name, f.help)
+				warmCache.setUnit(f.name, f.unit)
+			}
+			warmCache.iterDone(true)
+
+			b.ReportAllocs()
+			b.ResetTimer()
+			for b.Loop() {
+				c := warmCache
+				if coldCache {
+					c = newScrapeCache(metrics)
+				}
+				for _, f := range families {
+					c.setType(f.name, f.typ)
+					c.setHelp(f.name, f.help)
+					c.setUnit(f.name, f.unit)
+				}
+				c.iter++
 			}
 		})
 	}

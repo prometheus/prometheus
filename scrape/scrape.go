@@ -31,6 +31,7 @@ import (
 	"strings"
 	"sync"
 	"time"
+	"unique"
 	"unsafe"
 
 	"github.com/cespare/xxhash/v2"
@@ -932,9 +933,10 @@ type cacheEntry struct {
 // When metric_relabel_configs is configured, the fast path checks origMeta and origMFName
 // before parsing labels or running relabeling so unchanged series can reuse
 // meta and mfName directly.
+// All fields are interned handles so entries stay compact and share canonical strings across targets.
 type seriesMetaEntry struct {
-	origMeta, meta     metadata.Metadata
-	origMFName, mfName string
+	origMeta, meta     unique.Handle[metadata.Metadata]
+	origMFName, mfName unique.Handle[string]
 }
 
 type scrapeLoop struct {
@@ -1046,17 +1048,46 @@ type scrapeCache struct {
 	metrics *scrapeMetrics
 }
 
-// metaEntry holds meta information about a metric.
-type metaEntry struct {
-	metadata.Metadata
+var unknownMetadataHandle = unique.Make(metadata.Metadata{Type: model.MetricTypeUnknown})
 
+// metaEntry holds meta information about a metric.
+// Metadata is stored as an interned handle so identical metric families across targets
+// share a single canonical Metadata value (also shared with TSDB Head and Agent DB).
+type metaEntry struct {
+	meta           unique.Handle[metadata.Metadata]
 	lastIter       uint64 // Last scrape iteration the entry was observed at.
 	lastIterChange uint64 // Last scrape iteration the entry was changed at.
 }
 
+func metadataValue(h unique.Handle[metadata.Metadata]) metadata.Metadata {
+	if metadata.IsZeroHandle(h) {
+		return metadata.Metadata{}
+	}
+	return h.Value()
+}
+
+func stringValue(h unique.Handle[string]) string {
+	if h == (unique.Handle[string]{}) {
+		return ""
+	}
+	return h.Value()
+}
+
+// internBytes returns a canonical string handle for b without allocating when b was already interned.
+// NOTE: Passing yoloString(b) to unique.Make is safe because unique.Make only hashes/compares the
+// lookup string and clones newly inserted strings onto the heap before retaining them.
+func internBytes(b []byte) unique.Handle[string] {
+	return unique.Make(yoloString(b))
+}
+
+func (m *metaEntry) metadata() metadata.Metadata {
+	return metadataValue(m.meta)
+}
+
 func (m *metaEntry) size() int {
 	// The attribute lastIter although part of the struct it is not metadata.
-	return len(m.Help) + len(m.Unit) + len(m.Type)
+	md := m.metadata()
+	return len(md.Help) + len(md.Unit) + len(md.Type)
 }
 
 func newScrapeCache(metrics *scrapeMetrics) *scrapeCache {
@@ -1143,20 +1174,9 @@ func (c *scrapeCache) addRef(metHash uint64, ref storage.SeriesRef, lset labels.
 	return ce
 }
 
-func (c *scrapeCache) setSeriesMeta(metHash uint64, lset labels.Labels, origMeta, meta metadata.Metadata, origMFName, mfName string) {
+func (c *scrapeCache) setSeriesMeta(metHash uint64, origMeta, meta unique.Handle[metadata.Metadata], origMFName, mfName unique.Handle[string]) {
 	if c.seriesMeta == nil {
 		c.seriesMeta = make(map[uint64]seriesMetaEntry)
-	}
-	// origMFName comes from yoloString(lastMFName) backed by a reusable buffer, so we must
-	// not retain its backing array. Reuse existing immutable strings when possible to avoid
-	// allocating on the heap.
-	switch {
-	case origMFName == mfName:
-		origMFName = mfName
-	case strings.HasPrefix(lset.Get(model.MetricNameLabel), origMFName):
-		origMFName = lset.Get(model.MetricNameLabel)[:len(origMFName)]
-	default:
-		origMFName = strings.Clone(origMFName)
 	}
 	c.seriesMeta[metHash] = seriesMetaEntry{
 		origMeta:   origMeta,
@@ -1236,19 +1256,26 @@ func (c *scrapeCache) setType(mfName []byte, t model.MetricType) ([]byte, *metaE
 	defer c.metaMtx.Unlock()
 
 	e, ok := c.metadata[string(mfName)]
-	var oldSize int
+	var (
+		cur     metadata.Metadata
+		oldSize int
+	)
 	if !ok {
-		e = &metaEntry{Metadata: metadata.Metadata{Type: model.MetricTypeUnknown}}
-		c.metadata[string(mfName)] = e
+		cur = metadata.Metadata{Type: model.MetricTypeUnknown}
+		e = &metaEntry{meta: unknownMetadataHandle}
+		c.metadata[internBytes(mfName).Value()] = e
 	} else {
-		oldSize = e.size()
+		cur = e.metadata()
+		oldSize = len(cur.Help) + len(cur.Unit) + len(cur.Type)
 	}
-	if e.Type != t {
-		e.Type = t
+	// Avoid calling unique.Make on warm scrapes when metadata is unchanged.
+	if cur.Type != t {
+		cur.Type = t
+		e.meta = unique.Make(cur)
 		e.lastIterChange = c.iter
 	}
 	e.lastIter = c.iter
-	c.metadataSize += e.size() - oldSize
+	c.metadataSize += len(cur.Help) + len(cur.Unit) + len(cur.Type) - oldSize
 	return mfName, e
 }
 
@@ -1257,19 +1284,26 @@ func (c *scrapeCache) setHelp(mfName, help []byte) ([]byte, *metaEntry) {
 	defer c.metaMtx.Unlock()
 
 	e, ok := c.metadata[string(mfName)]
-	var oldSize int
+	var (
+		cur     metadata.Metadata
+		oldSize int
+	)
 	if !ok {
-		e = &metaEntry{Metadata: metadata.Metadata{Type: model.MetricTypeUnknown}}
-		c.metadata[string(mfName)] = e
+		cur = metadata.Metadata{Type: model.MetricTypeUnknown}
+		e = &metaEntry{meta: unknownMetadataHandle}
+		c.metadata[internBytes(mfName).Value()] = e
 	} else {
-		oldSize = e.size()
+		cur = e.metadata()
+		oldSize = len(cur.Help) + len(cur.Unit) + len(cur.Type)
 	}
-	if e.Help != string(help) {
-		e.Help = string(help)
+	// Avoid calling unique.Make on warm scrapes when metadata is unchanged.
+	if cur.Help != string(help) {
+		cur.Help = yoloString(help)
+		e.meta = unique.Make(cur)
 		e.lastIterChange = c.iter
 	}
 	e.lastIter = c.iter
-	c.metadataSize += e.size() - oldSize
+	c.metadataSize += len(cur.Help) + len(cur.Unit) + len(cur.Type) - oldSize
 	return mfName, e
 }
 
@@ -1278,40 +1312,64 @@ func (c *scrapeCache) setUnit(mfName, unit []byte) ([]byte, *metaEntry) {
 	defer c.metaMtx.Unlock()
 
 	e, ok := c.metadata[string(mfName)]
-	var oldSize int
+	var (
+		cur     metadata.Metadata
+		oldSize int
+	)
 	if !ok {
-		e = &metaEntry{Metadata: metadata.Metadata{Type: model.MetricTypeUnknown}}
-		c.metadata[string(mfName)] = e
+		cur = metadata.Metadata{Type: model.MetricTypeUnknown}
+		e = &metaEntry{meta: unknownMetadataHandle}
+		c.metadata[internBytes(mfName).Value()] = e
 	} else {
-		oldSize = e.size()
+		cur = e.metadata()
+		oldSize = len(cur.Help) + len(cur.Unit) + len(cur.Type)
 	}
-	if e.Unit != string(unit) {
-		e.Unit = string(unit)
+	// Avoid calling unique.Make on warm scrapes when metadata is unchanged.
+	if cur.Unit != string(unit) {
+		cur.Unit = yoloString(unit)
+		e.meta = unique.Make(cur)
 		e.lastIterChange = c.iter
 	}
 	e.lastIter = c.iter
-	c.metadataSize += e.size() - oldSize
+	c.metadataSize += len(cur.Help) + len(cur.Unit) + len(cur.Type) - oldSize
 	return mfName, e
 }
 
-func (c *scrapeCache) setMetadata(mfName string, m metadata.Metadata) {
+func (c *scrapeCache) setMetadata(mfName unique.Handle[string], m unique.Handle[metadata.Metadata]) {
 	c.metaMtx.Lock()
 	defer c.metaMtx.Unlock()
 
-	e, ok := c.metadata[mfName]
-	var oldSize int
-	if !ok {
-		e = &metaEntry{Metadata: metadata.Metadata{Type: model.MetricTypeUnknown}}
-		c.metadata[mfName] = e
-	} else {
-		oldSize = e.size()
+	mfKey := stringValue(mfName)
+	e, ok := c.metadata[mfKey]
+	if ok && e.meta == m {
+		e.lastIter = c.iter
+		return
 	}
-	if !e.Equals(m) {
-		e.Metadata = m
+
+	var (
+		cur     metadata.Metadata
+		oldSize int
+	)
+	if !ok {
+		cur = metadata.Metadata{Type: model.MetricTypeUnknown}
+		e = &metaEntry{meta: unknownMetadataHandle}
+		c.metadata[mfKey] = e
+	} else {
+		cur = e.metadata()
+		oldSize = len(cur.Help) + len(cur.Unit) + len(cur.Type)
+	}
+	next := metadataValue(m)
+	if !cur.Equals(next) {
+		if next.Type == "" {
+			next.Type = model.MetricTypeUnknown
+			m = unique.Make(next)
+		}
+		e.meta = m
 		e.lastIterChange = c.iter
+		cur = next
 	}
 	e.lastIter = c.iter
-	c.metadataSize += e.size() - oldSize
+	c.metadataSize += len(cur.Help) + len(cur.Unit) + len(cur.Type) - oldSize
 }
 
 // GetMetadata returns metadata given the metric family name.
@@ -1323,11 +1381,13 @@ func (c *scrapeCache) GetMetadata(mfName string) (MetricMetadata, bool) {
 	if !ok {
 		return MetricMetadata{}, false
 	}
+	md := m.metadata()
 	return MetricMetadata{
-		MetricFamily: mfName,
-		Type:         m.Type,
-		Help:         m.Help,
-		Unit:         m.Unit,
+		// mfName is already an interned key in c.metadata, so unique.Make returns the canonical string without allocating.
+		MetricFamily: unique.Make(mfName).Value(),
+		Type:         md.Type,
+		Help:         md.Help,
+		Unit:         md.Unit,
 	}, true
 }
 
@@ -1339,11 +1399,12 @@ func (c *scrapeCache) ListMetadata() []MetricMetadata {
 	res := make([]MetricMetadata, 0, len(c.metadata))
 
 	for m, e := range c.metadata {
+		md := e.metadata()
 		res = append(res, MetricMetadata{
 			MetricFamily: m,
-			Type:         e.Type,
-			Help:         e.Help,
-			Unit:         e.Unit,
+			Type:         md.Type,
+			Help:         md.Help,
+			Unit:         md.Unit,
 		})
 	}
 	return res
@@ -2123,10 +2184,11 @@ loop:
 				// In majority cases we can trust that the current series/histogram is matching the lastMeta and lastMFName.
 				// However, optional TYPE etc metadata and broken OM text can break this, detect those cases here.
 				// TODO(https://github.com/prometheus/prometheus/issues/17900): Move this to text and OM parser.
-				if isSeriesPartOfFamily(lset.Get(model.MetricNameLabel), lastMFName, lastMeta.Type) {
-					if _, merr := app.UpdateMetadata(ref, lset, lastMeta.Metadata); merr != nil {
+				md := lastMeta.metadata()
+				if isSeriesPartOfFamily(lset.Get(model.MetricNameLabel), lastMFName, md.Type) {
+					if _, merr := app.UpdateMetadata(ref, lset, md); merr != nil {
 						// No need to fail the scrape on errors appending metadata.
-						sl.l.Debug("Error when appending metadata in scrape loop", "ref", fmt.Sprintf("%d", ref), "metadata", fmt.Sprintf("%+v", lastMeta.Metadata), "err", merr)
+						sl.l.Debug("Error when appending metadata in scrape loop", "ref", fmt.Sprintf("%d", ref), "metadata", fmt.Sprintf("%+v", md), "err", merr)
 					}
 				}
 			}
