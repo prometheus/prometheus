@@ -5477,7 +5477,7 @@ func TestTargetScraperScrapeOK(t *testing.T) {
 func TestTargetScraperScrapeOverUnixSocket(t *testing.T) {
 	// t.TempDir can produce paths exceeding the macOS 104-char socket
 	// path limit, so we create our own temp dir in /tmp.
-	tempDir, err := os.MkdirTemp("", "uds-scrape-test")
+	tempDir, err := os.MkdirTemp("", "uds-scrape-test") //nolint:usetesting // t.TempDir paths can exceed the Unix socket path length limit.
 	require.NoError(t, err)
 	t.Cleanup(func() { os.RemoveAll(tempDir) })
 	socketPath := filepath.Join(tempDir, "s")
@@ -5528,7 +5528,7 @@ func TestTargetScraperScrapeOverUnixSocket(t *testing.T) {
 }
 
 func TestTargetScraperScrapeOverUnixSocketTLS(t *testing.T) {
-	tempDir, err := os.MkdirTemp("", "uds-tls-test")
+	tempDir, err := os.MkdirTemp("", "uds-tls-test") //nolint:usetesting // t.TempDir paths can exceed the Unix socket path length limit.
 	require.NoError(t, err)
 	t.Cleanup(func() { os.RemoveAll(tempDir) })
 	socketPath := filepath.Join(tempDir, "s")
@@ -5590,7 +5590,7 @@ func TestTargetScraperUnixSocketConnectionsAreNotShared(t *testing.T) {
 	// Two targets sharing the same __address__ but scraped through different
 	// unix sockets must never exchange pooled keep-alive connections,
 	// otherwise one target would receive the other target's metrics.
-	tempDir, err := os.MkdirTemp("", "uds-pool-test")
+	tempDir, err := os.MkdirTemp("", "uds-pool-test") //nolint:usetesting // t.TempDir paths can exceed the Unix socket path length limit.
 	require.NoError(t, err)
 	t.Cleanup(func() { os.RemoveAll(tempDir) })
 

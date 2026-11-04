@@ -38,12 +38,9 @@ func getLogLines(t *testing.T, name string) []string {
 }
 
 func TestJSONFileLogger_basic(t *testing.T) {
-	f, err := os.CreateTemp("", "logging")
+	f, err := os.CreateTemp(t.TempDir(), "logging")
 	require.NoError(t, err)
-	defer func() {
-		require.NoError(t, f.Close())
-		require.NoError(t, os.Remove(f.Name()))
-	}()
+	defer func() { require.NoError(t, f.Close()) }()
 
 	logHandler, err := NewJSONFileLogger(f.Name())
 	require.NoError(t, err)
@@ -67,12 +64,9 @@ func TestJSONFileLogger_basic(t *testing.T) {
 }
 
 func TestJSONFileLogger_parallel(t *testing.T) {
-	f, err := os.CreateTemp("", "logging")
+	f, err := os.CreateTemp(t.TempDir(), "logging")
 	require.NoError(t, err)
-	defer func() {
-		require.NoError(t, f.Close())
-		require.NoError(t, os.Remove(f.Name()))
-	}()
+	defer func() { require.NoError(t, f.Close()) }()
 
 	logHandler, err := NewJSONFileLogger(f.Name())
 	require.NoError(t, err)

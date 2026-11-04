@@ -979,9 +979,8 @@ func TestUpdate(t *testing.T) {
 	rgs, errs := rulefmt.ParseFile("fixtures/rules.yaml", false, model.UTF8Validation, testParser, promslog.NewNopLogger())
 	require.Empty(t, errs, "file parsing failures")
 
-	tmpFile, err := os.CreateTemp("", "rules.test.*.yaml")
+	tmpFile, err := os.CreateTemp(t.TempDir(), "rules.test.*.yaml")
 	require.NoError(t, err)
-	defer os.Remove(tmpFile.Name())
 	defer tmpFile.Close()
 
 	err = ruleManager.Update(10*time.Second, []string{tmpFile.Name()}, labels.EmptyLabels(), "", nil)

@@ -27,6 +27,7 @@ import (
 	"path/filepath"
 	"runtime"
 	"strconv"
+	"sync"
 	"testing"
 	"time"
 
@@ -200,11 +201,14 @@ func TestReader_Live(t *testing.T) {
 
 	for i := range testReaderCases {
 		t.Run(strconv.Itoa(i), func(t *testing.T) {
-			writeFd, err := os.CreateTemp("", "TestReader_Live")
+			writeFd, err := os.CreateTemp(t.TempDir(), "TestReader_Live")
 			require.NoError(t, err)
-			defer os.Remove(writeFd.Name())
 
-			go func(i int) {
+			// Both descriptors must be closed before the temporary directory is
+			// removed, which otherwise fails on Windows.
+			var wg sync.WaitGroup
+			defer wg.Wait()
+			wg.Go(func() {
 				for _, rec := range testReaderCases[i].t {
 					rec := encodedRecord(rec.t, rec.b)
 					_, err := writeFd.Write(rec)
@@ -212,11 +216,12 @@ func TestReader_Live(t *testing.T) {
 					runtime.Gosched()
 				}
 				writeFd.Close()
-			}(i)
+			})
 
 			// Read from a second FD on the same file.
 			readFd, err := os.Open(writeFd.Name())
 			require.NoError(t, err)
+			defer readFd.Close()
 			reader := NewLiveReader(logger, NewLiveReaderMetrics(nil), readFd)
 			for _, exp := range testReaderCases[i].exp {
 				for !reader.Next() {

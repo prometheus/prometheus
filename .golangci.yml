@@ -47,6 +47,7 @@ linters:
     - unconvert
     - unused
     - usestdlibvars
+    - usetesting
     - whitespace
 
   exclusions:
