@@ -224,6 +224,10 @@ The following functions can be used inside duration expressions:
 For example, `max_of(step(), 5s)` ensures the duration is never shorter than
 `5s`, while `min_of(range(), 1h)` caps the duration at `1h`.
 
+Like the scalar functions, `min_of` and `max_of` ignore a `NaN` argument if the
+other argument is not `NaN`. If both arguments are `NaN`, the result is `NaN`.
+A duration expression whose final result is `NaN` or infinite is rejected.
+
 **Note**: Duration expressions are not supported in the [`@` modifier](#modifier).
 
 Examples of equivalent durations:
