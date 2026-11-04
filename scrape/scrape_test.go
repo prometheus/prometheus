@@ -3486,6 +3486,8 @@ func TestScrapeLoopScrapeAndReportLazyAppender(t *testing.T) {
 	})
 }
 
+var _ storage.Appender = &activeTrackingAppender{}
+
 type activeTrackingAppender struct {
 	storage.Appender
 	pool *sync.Pool
@@ -3507,6 +3509,8 @@ func (a *activeTrackingAppender) Rollback() error {
 	a.pool.Put(a)
 	return err
 }
+
+var _ storage.AppenderV2 = &activeTrackingAppenderV2{}
 
 type activeTrackingAppenderV2 struct {
 	storage.AppenderV2
@@ -3648,8 +3652,14 @@ func BenchmarkScrapeLoopScrapeAndReportConcurrentSlow(b *testing.B) {
 					})
 				}
 				readyWg.Wait()
+				if got := active.Load(); got != 0 {
+					b.Fatalf("expected 0 active appenders while scrapes are blocked, got %d", got)
+				}
 				close(releaseScrape)
 				wg.Wait()
+				if got := active.Load(); got != 0 {
+					b.Fatalf("leaked %d active appenders", got)
+				}
 
 				for i := range numTargets {
 					if scrapers[i].lastError != nil {
