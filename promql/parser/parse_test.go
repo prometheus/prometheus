@@ -6006,6 +6006,14 @@ var testSeries = []struct {
 		expectedMetric: labels.EmptyLabels(),
 		expectedValues: newSeq(math.Inf(1), math.Inf(1), math.Inf(1), math.Inf(-1), math.Inf(-1)),
 	}, {
+		input:          `nanx2 1`,
+		expectedMetric: labels.FromStrings(labels.MetricName, "nanx2"),
+		expectedValues: newSeq(1),
+	}, {
+		input:          `stalex3{a="b"} 1`,
+		expectedMetric: labels.FromStrings(labels.MetricName, "stalex3", "a", "b"),
+		expectedValues: newSeq(1),
+	}, {
 		input:          `my_metric{a="b"} 1 3 _ 5 _x4`,
 		expectedMetric: labels.FromStrings(labels.MetricName, "my_metric", "a", "b"),
 		expectedValues: newSeq(1, 3, none, 5, none, none, none, none),
