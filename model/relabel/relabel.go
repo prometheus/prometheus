@@ -367,8 +367,7 @@ func ProcessBuilderWithMetadata(lb *labels.Builder, meta metadata.Metadata, cfgs
 	}
 
 	for _, cfg := range cfgs {
-		keep = relabel(cfg, lb, true)
-		if !keep {
+		if !relabel(cfg, lb, true) {
 			return false, metadata.Metadata{}
 		}
 	}
