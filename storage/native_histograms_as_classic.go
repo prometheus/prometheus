@@ -441,11 +441,13 @@ type histogramGroup struct {
 // histogramIndex groups stored classic series and NHCB series by their
 // histogram identity in insertion order.
 type histogramIndex struct {
-	stripLe bool
-	groups  []histogramGroup
-	byHash  map[uint64][]int
-	scratch []byte
-	builder labels.ScratchBuilder
+	stripLe  bool
+	groups   []histogramGroup
+	byHash   map[uint64][]int
+	scratch  []byte
+	expected []labels.Label
+	actual   []labels.Label
+	builder  labels.ScratchBuilder
 }
 
 func (idx *histogramIndex) groupFor(lset labels.Labels) *histogramGroup {
@@ -464,7 +466,7 @@ func (idx *histogramIndex) groupFor(lset labels.Labels) *histogramGroup {
 	}
 	idx.scratch = b
 	for _, i := range idx.byHash[h] {
-		if equalGroupID(idx.groups[i].id, lset, idx.stripLe) {
+		if idx.equalGroupID(idx.groups[i].id, lset) {
 			return &idx.groups[i]
 		}
 	}
@@ -492,29 +494,19 @@ func (idx *histogramIndex) addNHCB(entry nhcbGroupEntry) {
 }
 
 // equalGroupID reports whether id equals lset after ignoring __name__ (and le
-// when stripLe is true) on lset.
-func equalGroupID(id, lset labels.Labels, stripLe bool) bool {
-	var (
-		expected []labels.Label
-		actual   []labels.Label
-	)
+// when stripLe is true) on lset, reusing scratch label slices across lookups.
+func (idx *histogramIndex) equalGroupID(id, lset labels.Labels) bool {
+	idx.expected = idx.expected[:0]
+	idx.actual = idx.actual[:0]
 	id.Range(func(l labels.Label) {
-		expected = append(expected, l)
+		idx.expected = append(idx.expected, l)
 	})
 	lset.Range(func(l labels.Label) {
-		if l.Name != model.MetricNameLabel && (!stripLe || l.Name != labels.BucketLabel) {
-			actual = append(actual, l)
+		if l.Name != model.MetricNameLabel && (!idx.stripLe || l.Name != labels.BucketLabel) {
+			idx.actual = append(idx.actual, l)
 		}
 	})
-	if len(expected) != len(actual) {
-		return false
-	}
-	for i := range expected {
-		if expected[i] != actual[i] {
-			return false
-		}
-	}
-	return true
+	return slices.Equal(idx.expected, idx.actual)
 }
 
 // histogramSuffix returns the classic histogram suffix (_bucket, _count, _sum)
