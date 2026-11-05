@@ -73,7 +73,7 @@ func (r *Reader) nextNew() (err error) {
 			return fmt.Errorf("read first header byte: %w", err)
 		}
 		r.total++
-		r.curRecTyp = recTypeFromHeader(hdr[0])
+		recTyp := recTypeFromHeader(hdr[0])
 
 		compr := compression.None
 		if hdr[0]&snappyMask == snappyMask {
@@ -83,7 +83,7 @@ func (r *Reader) nextNew() (err error) {
 		}
 
 		// Gobble up zero bytes.
-		if r.curRecTyp == recPageTerm {
+		if recTyp == recPageTerm {
 			// recPageTerm is a single byte that indicates the rest of the page is padded.
 			// If it's the first byte in a page, buf is too small and
 			// needs to be resized to fit pageSize-1 bytes.
@@ -109,6 +109,9 @@ func (r *Reader) nextNew() (err error) {
 			}
 			continue
 		}
+		// Padding does not complete a fragmented record. Keep its type so EOF
+		// still reports a torn record after any trailing page terminators.
+		r.curRecTyp = recTyp
 		n, err := io.ReadFull(r.rdr, hdr[1:])
 		if err != nil {
 			return fmt.Errorf("read remaining header: %w", err)
