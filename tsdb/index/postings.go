@@ -942,7 +942,7 @@ func (*bigEndianPostings) Err() error {
 // if intersection is non empty, then i is added to the indexes returned.
 // Returned indexes are not sorted.
 func FindIntersectingPostings(p Postings, candidates []Postings) ([]int, error) {
-	return findIntersectingPostings(p, candidates, 0)
+	return FindIntersectingPostingsWithLimit(p, candidates, 0)
 }
 
 // FindIntersectingPostingsWithLimit is like FindIntersectingPostings, but stops
@@ -950,10 +950,6 @@ func FindIntersectingPostings(p Postings, candidates []Postings) ([]int, error) 
 // prefix as FindIntersectingPostings. A non-positive limit is unlimited.
 // Returned indexes are not sorted.
 func FindIntersectingPostingsWithLimit(p Postings, candidates []Postings, limit int) ([]int, error) {
-	return findIntersectingPostings(p, candidates, limit)
-}
-
-func findIntersectingPostings(p Postings, candidates []Postings, limit int) ([]int, error) {
 	var indexes []int
 	h := make(postingsWithIndexHeap, 0, len(candidates))
 	for idx, it := range candidates {
