@@ -319,15 +319,37 @@ func TestConvertNHCBToClassicHistogram(t *testing.T) {
 // TestConvertNHCBToClassicHistogram_CacheMatchesNoCache verifies that a reused
 // ClassicSeriesCache emits the exact same labels and values as the uncached
 // path across repeated calls for the same series, across different suffixes,
-// and when reused across series that share __name__ but differ in other labels.
+// when reused across series that share __name__ but differ in other labels,
+// and when bucket bounds change (both same-length and different-length).
 func TestConvertNHCBToClassicHistogram_CacheMatchesNoCache(t *testing.T) {
-	h := &Histogram{
-		CustomValues:    []float64{1, 2, 3},
-		PositiveBuckets: []int64{10, 20, 30},
-		PositiveSpans:   []Span{{Offset: 0, Length: 3}},
-		Count:           100,
-		Sum:             100.0,
-		Schema:          CustomBucketsSchema,
+	histograms := []*Histogram{
+		{
+			CustomValues:    []float64{1, 2, 3},
+			PositiveBuckets: []int64{10, 20, 30},
+			PositiveSpans:   []Span{{Offset: 0, Length: 3}},
+			Count:           100,
+			Sum:             100.0,
+			Schema:          CustomBucketsSchema,
+		},
+		// Same number of custom bounds with a changed value to exercise
+		// boundsMatch element comparison on cache reuse.
+		{
+			CustomValues:    []float64{1, 2, 4},
+			PositiveBuckets: []int64{10, 20, 30},
+			PositiveSpans:   []Span{{Offset: 0, Length: 3}},
+			Count:           100,
+			Sum:             100.0,
+			Schema:          CustomBucketsSchema,
+		},
+		// Different number of custom bounds.
+		{
+			CustomValues:    []float64{1, 2, 4, 8},
+			PositiveBuckets: []int64{10, 20, 30, 5},
+			PositiveSpans:   []Span{{Offset: 0, Length: 4}},
+			Count:           165,
+			Sum:             120.0,
+			Schema:          CustomBucketsSchema,
+		},
 	}
 	lsets := []labels.Labels{
 		labels.FromStrings("__name__", "test_metric", "job", "job_a"),
@@ -340,20 +362,22 @@ func TestConvertNHCBToClassicHistogram_CacheMatchesNoCache(t *testing.T) {
 
 	for _, suffix := range suffixes {
 		cache := &ClassicSeriesCache{}
-		for i, lset := range lsets {
-			var without, with []sample
-			require.NoError(t, ConvertNHCBToClassic(h, lset, labelBuilder, suffix, nil, func(lbls labels.Labels, val float64) error {
-				without = append(without, sample{lset: lbls, val: val})
-				return nil
-			}))
-			require.NoError(t, ConvertNHCBToClassic(h, lset, labelBuilder, suffix, cache, func(lbls labels.Labels, val float64) error {
-				with = append(with, sample{lset: lbls, val: val})
-				return nil
-			}))
-			require.Len(t, with, len(without))
-			for j := range without {
-				require.True(t, labels.Equal(without[j].lset, with[j].lset), "suffix %q step %d: labels mismatch at index %d: expected %v, got %v", suffix, i, j, without[j].lset, with[j].lset)
-				require.Equal(t, without[j].val, with[j].val, "suffix %q step %d: value mismatch at index %d", suffix, i, j)
+		for hIdx, h := range histograms {
+			for i, lset := range lsets {
+				var without, with []sample
+				require.NoError(t, ConvertNHCBToClassic(h, lset, labelBuilder, suffix, nil, func(lbls labels.Labels, val float64) error {
+					without = append(without, sample{lset: lbls, val: val})
+					return nil
+				}))
+				require.NoError(t, ConvertNHCBToClassic(h, lset, labelBuilder, suffix, cache, func(lbls labels.Labels, val float64) error {
+					with = append(with, sample{lset: lbls, val: val})
+					return nil
+				}))
+				require.Len(t, with, len(without))
+				for j := range without {
+					require.True(t, labels.Equal(without[j].lset, with[j].lset), "suffix %q hist %d step %d: labels mismatch at index %d: expected %v, got %v", suffix, hIdx, i, j, without[j].lset, with[j].lset)
+					require.Equal(t, without[j].val, with[j].val, "suffix %q hist %d step %d: value mismatch at index %d", suffix, hIdx, i, j)
+				}
 			}
 		}
 	}
@@ -521,6 +545,17 @@ func TestConvertExponentialToClassic(t *testing.T) {
 		NegativeSpans:   []Span{{Offset: 0, Length: 1}},
 		NegativeBuckets: []float64{7},
 	}
+	// Zero bucket with ZeroThreshold == 0: observations at exactly 0 are
+	// included at le="0.0" and above.
+	zeroThresholdZero := &FloatHistogram{
+		Schema:          0,
+		Count:           15,
+		Sum:             10,
+		ZeroThreshold:   0,
+		ZeroCount:       5,
+		PositiveSpans:   []Span{{Offset: 0, Length: 1}},
+		PositiveBuckets: []float64{10},
+	}
 	// Float histograms may carry a Count below the bucket sum (e.g. after
 	// float rounding in recording rules); +Inf must stay monotonic.
 	countBelowBuckets := &FloatHistogram{
@@ -585,6 +620,15 @@ func TestConvertExponentialToClassic(t *testing.T) {
 			suffix: ClassicSuffixBucket,
 			expected: []sample{
 				bucket("0.05", 2.5), bucket("0.1", 5), bucket("0.3", 5), bucket("1.0", 15), bucket("+Inf", 15),
+			},
+		},
+		{
+			name:   "zero bucket with ZeroThreshold == 0 is included at le >= 0",
+			h:      zeroThresholdZero,
+			bounds: []float64{-0.5, 0, 1},
+			suffix: ClassicSuffixBucket,
+			expected: []sample{
+				bucket("-0.5", 0), bucket("0.0", 5), bucket("1.0", 15), bucket("+Inf", 15),
 			},
 		},
 		{
@@ -716,6 +760,26 @@ func TestAppendExponentialBounds(t *testing.T) {
 			expected:  []float64{0.8408964152537144, 1, 1, 1.189207115002721},
 		},
 		{
+			name: "higher schema negative buckets are reduced to max schema",
+			h: &FloatHistogram{
+				Schema:          3,
+				NegativeSpans:   []Span{{Offset: 0, Length: 2}},
+				NegativeBuckets: []float64{15, 15},
+			},
+			maxSchema: 2,
+			expected:  []float64{-1, -0.8408964152537144, -1.189207115002721, -1},
+		},
+		{
+			name: "zero-count negative bucket is skipped",
+			h: &FloatHistogram{
+				Schema:          0,
+				NegativeSpans:   []Span{{Offset: 0, Length: 2}},
+				NegativeBuckets: []float64{0, 7},
+			},
+			maxSchema: 2,
+			expected:  []float64{-2, -1},
+		},
+		{
 			name: "zero and negative buckets",
 			h: &FloatHistogram{
 				Schema:          0,
@@ -726,6 +790,52 @@ func TestAppendExponentialBounds(t *testing.T) {
 			},
 			maxSchema: 2,
 			expected:  []float64{-2, -1, -0.1, 0},
+		},
+		{
+			name: "zero and positive buckets",
+			h: &FloatHistogram{
+				Schema:          0,
+				ZeroThreshold:   0.1,
+				ZeroCount:       1,
+				PositiveSpans:   []Span{{Offset: 0, Length: 1}},
+				PositiveBuckets: []float64{10},
+			},
+			maxSchema: 2,
+			expected:  []float64{0.5, 1, 0, 0.1},
+		},
+		{
+			name: "zero bucket only",
+			h: &FloatHistogram{
+				Schema:        0,
+				ZeroThreshold: 0.1,
+				ZeroCount:     1,
+			},
+			maxSchema: 2,
+			expected:  []float64{-0.1, 0.1},
+		},
+		{
+			name: "zero bucket with ZeroThreshold == 0",
+			h: &FloatHistogram{
+				Schema:        0,
+				ZeroThreshold: 0,
+				ZeroCount:     1,
+			},
+			maxSchema: 2,
+			expected:  []float64{0},
+		},
+		{
+			name: "zero, negative, and positive buckets",
+			h: &FloatHistogram{
+				Schema:          0,
+				ZeroThreshold:   0.1,
+				ZeroCount:       1,
+				NegativeSpans:   []Span{{Offset: 1, Length: 1}},
+				NegativeBuckets: []float64{7},
+				PositiveSpans:   []Span{{Offset: 0, Length: 1}},
+				PositiveBuckets: []float64{10},
+			},
+			maxSchema: 2,
+			expected:  []float64{0.5, 1, -2, -1, -0.1, 0.1},
 		},
 		{
 			name:      "empty histogram",
