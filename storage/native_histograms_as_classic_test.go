@@ -1433,26 +1433,111 @@ func TestNativeHistogramsAsClassicQuerier_WarningPropagation(t *testing.T) {
 		labels.FromStrings("__name__", "http_requests"),
 		[]chunks.Sample{hSample{t: 1, h: nhcb}},
 	)
+	classicSeries := []Series{
+		NewListSeries(labels.FromStrings("__name__", "http_requests_bucket", "le", "1.0"), []chunks.Sample{fSample{t: 1, f: 2}}),
+		NewListSeries(labels.FromStrings("__name__", "http_requests_bucket", "le", "5.0"), []chunks.Sample{fSample{t: 1, f: 5}}),
+		NewListSeries(labels.FromStrings("__name__", "http_requests_bucket", "le", "+Inf"), []chunks.Sample{fSample{t: 1, f: 8}}),
+	}
 
-	t.Run("classic and nhcb set warnings both propagate", func(t *testing.T) {
+	t.Run("classic and nhcb set warnings propagate across all selectNHCBAsClassic paths", func(t *testing.T) {
 		classicWarn := annotations.New().Add(errors.New("classic warning"))
 		nhcbWarn := annotations.New().Add(errors.New("nhcb warning"))
-		q := NewNativeHistogramsAsClassicQuerier(&nhcbMockQuerier{
-			classicSeries:   []Series{},
-			nhcbSeries:      []Series{nhcbSeries},
-			classicWarnings: classicWarn,
-			nhcbWarnings:    nhcbWarn,
-		})
-
-		ss := q.Select(context.Background(), false, nil,
-			labels.MustNewMatcher(labels.MatchEqual, model.MetricNameLabel, "http_requests_bucket"))
-		for ss.Next() {
-		}
-		require.NoError(t, ss.Err())
 		var expected annotations.Annotations
 		expected.Merge(classicWarn)
 		expected.Merge(nhcbWarn)
-		require.Equal(t, expected, ss.Warnings())
+
+		paths := []struct {
+			name          string
+			sortSeries    bool
+			matchers      []*labels.Matcher
+			classicSeries []Series
+			nhcbSeries    []Series
+			expectedNames []string
+		}{
+			{
+				name:          "pure classic without le matcher",
+				matchers:      []*labels.Matcher{labels.MustNewMatcher(labels.MatchEqual, model.MetricNameLabel, "http_requests_bucket")},
+				classicSeries: classicSeries,
+				expectedNames: []string{
+					`{__name__="http_requests_bucket", le="1.0"}`,
+					`{__name__="http_requests_bucket", le="5.0"}`,
+					`{__name__="http_requests_bucket", le="+Inf"}`,
+				},
+			},
+			{
+				name: "pure classic with le equality matcher strips widened +Inf via leFilterSeriesSet",
+				matchers: []*labels.Matcher{
+					labels.MustNewMatcher(labels.MatchEqual, model.MetricNameLabel, "http_requests_bucket"),
+					labels.MustNewMatcher(labels.MatchEqual, labels.BucketLabel, "5.0"),
+				},
+				classicSeries: classicSeries,
+				expectedNames: []string{`{__name__="http_requests_bucket", le="5.0"}`},
+			},
+			{
+				name: "pure classic with le!=+Inf filters +Inf client-side via leFilterSeriesSet",
+				matchers: []*labels.Matcher{
+					labels.MustNewMatcher(labels.MatchEqual, model.MetricNameLabel, "http_requests_bucket"),
+					labels.MustNewMatcher(labels.MatchNotEqual, labels.BucketLabel, "+Inf"),
+				},
+				classicSeries: classicSeries,
+				expectedNames: []string{
+					`{__name__="http_requests_bucket", le="1.0"}`,
+					`{__name__="http_requests_bucket", le="5.0"}`,
+				},
+			},
+			{
+				name:       "pure NHCB streaming path",
+				sortSeries: false,
+				matchers:   []*labels.Matcher{labels.MustNewMatcher(labels.MatchEqual, model.MetricNameLabel, "http_requests_bucket")},
+				nhcbSeries: []Series{nhcbSeries},
+				expectedNames: []string{
+					`{__name__="http_requests_bucket", le="1.0"}`,
+					`{__name__="http_requests_bucket", le="+Inf"}`,
+				},
+			},
+			{
+				name:       "pure NHCB sorted path",
+				sortSeries: true,
+				matchers:   []*labels.Matcher{labels.MustNewMatcher(labels.MatchEqual, model.MetricNameLabel, "http_requests_bucket")},
+				nhcbSeries: []Series{nhcbSeries},
+				expectedNames: []string{
+					`{__name__="http_requests_bucket", le="+Inf"}`,
+					`{__name__="http_requests_bucket", le="1.0"}`,
+				},
+			},
+			{
+				name:          "hybrid classic and NHCB collision path",
+				sortSeries:    false,
+				matchers:      []*labels.Matcher{labels.MustNewMatcher(labels.MatchEqual, model.MetricNameLabel, "http_requests_bucket")},
+				classicSeries: classicSeries,
+				nhcbSeries:    []Series{nhcbSeries},
+				expectedNames: []string{
+					`{__name__="http_requests_bucket", le="+Inf"}`,
+					`{__name__="http_requests_bucket", le="1.0"}`,
+					`{__name__="http_requests_bucket", le="5.0"}`,
+				},
+			},
+		}
+
+		for _, tc := range paths {
+			t.Run(tc.name, func(t *testing.T) {
+				q := NewNativeHistogramsAsClassicQuerier(&nhcbMockQuerier{
+					classicSeries:   tc.classicSeries,
+					nhcbSeries:      tc.nhcbSeries,
+					classicWarnings: classicWarn,
+					nhcbWarnings:    nhcbWarn,
+				})
+
+				ss := q.Select(t.Context(), tc.sortSeries, nil, tc.matchers...)
+				var got []string
+				for ss.Next() {
+					got = append(got, ss.At().Labels().String())
+				}
+				require.NoError(t, ss.Err())
+				require.Equal(t, tc.expectedNames, got)
+				require.Equal(t, expected, ss.Warnings())
+			})
+		}
 	})
 
 	t.Run("non-histogram passthrough preserves warnings", func(t *testing.T) {
