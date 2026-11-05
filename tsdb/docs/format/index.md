@@ -253,3 +253,138 @@ If a reference is zero, it indicates the respective section does not exist and e
 │ CRC32 <4b>                              │
 └─────────────────────────────────────────┘
 ```
+
+## Version 4
+
+Version 4 retains the existing series encoding, 16-byte series alignment,
+postings-list encoding, and six-offset TOC. V1, V2 and the V2-compatible V3
+reader paths are unchanged. V4 writing is opt-in; existing writer constructors
+continue to emit V2. See [the proposal](index-v4-proposal.md) for motivation and
+rollout requirements.
+
+All fixed-width integers below are unsigned and big-endian. CRCs use CRC32C
+(Castagnoli). File offsets are absolute. Padding may separate top-level
+sections, but pages inside the postings-offset table are contiguous.
+
+### V4 symbol table
+
+```
+payload length <8b>
+symbol count   <4b>
+symbols        <uvarint length + bytes, repeated symbol count times>
+CRC32C         <4b>
+sample-directory payload length <4b>
+sampling interval              <4b, always 32>
+sampled offset deltas          <uvarint, ceil(symbol count / 32) entries>
+directory CRC32C               <4b>
+```
+
+The payload length includes the count and encoded symbols, and excludes the
+length and CRC fields. CRC32C covers the payload. Symbol IDs remain 32-bit
+ordinals into the strictly increasing symbol list. The length can exceed 4 GiB;
+the count must fit a uint32.
+
+The sample directory immediately follows the symbol payload checksum and ends at
+the TOC series offset. Its length includes the sampling interval and encoded
+offset deltas, excluding its length and CRC fields. The directory CRC32C covers
+the interval and deltas. Offsets are relative to the start of the symbol section;
+the first offset is 12, and subsequent deltas advance to every 32nd symbol.
+An empty symbol table has an empty delta stream and still records the interval.
+
+Writers record these offsets while adding symbols. Readers verify both checksums,
+decode the sampled offsets and validate sampled symbols and the final group,
+instead of decoding every symbol at open. The writer validates the ordering of
+all symbols; readers decode unsampled symbols on demand. Symbol IDs and lookup
+sampling remain unchanged. The full symbol-payload checksum still requires
+reading all symbol bytes when opening a Prometheus index.
+
+This revises the experimental V4 prototype: readers requiring the sample
+directory reject earlier V4 files without it. Earlier V4 prototype readers can
+ignore the appended directory and read newly written files. V1, V2 and V3 are
+unchanged.
+
+### V4 postings-offset table
+
+The TOC postings-table offset points to a 28-byte header:
+
+```
+magic              <8b: "PPOT0002">
+directory offset   <8b>
+directory length   <8b>
+header CRC32C      <4b>
+```
+
+The header CRC covers its preceding 24 bytes. The directory length includes
+its own trailing CRC. Between the header and directory are the value pages,
+in label-name and then label-value order. There is no whole-table uint32 length.
+
+Each page contains:
+
+```
+entry count             <4b>
+value bytes length      <4b>
+minimum postings offset <8b>
+delta width             <1b: 1, 2, 4 or 8>
+reserved                <3b: zero>
+value starts            <(entry count + 1) * 4b>
+postings offset deltas  <entry count * delta width>
+contiguous value bytes  <value bytes length>
+page CRC32C             <4b>
+```
+
+The page CRC covers all preceding page bytes. The first value start is zero;
+starts are nondecreasing and the last equals the value byte length. Empty
+values are valid. Values must be strictly increasing. Each postings offset is
+the minimum plus the corresponding delta, without overflow, and must fall in
+the postings section. Page size must fit a uint32. Writers target 64 KiB with
+at most 32 entries; readers accept up to 128 entries for compatibility with
+earlier experimental writers. An oversized single value gets a dedicated page.
+
+The directory is:
+
+```
+label-group count <4b>
+for each label group:
+    name          <uvarint length + bytes>
+    common prefix <uvarint length + bytes>
+    page count    <4b>
+    for each page:
+        offset       <8b>
+        size         <4b, including page CRC>
+        entry count  <4b>
+        first postings offset <8b>
+        maximum key  <uvarint length + bytes>
+directory CRC32C  <4b>
+```
+
+Directory CRC32C covers everything preceding it within the directory. Label
+names and page maximum keys are strictly increasing. The maximum key is the
+page's last value with the group's common prefix removed. The prefix is at most
+64 KiB. For a single-page group, prefix and maximum key are empty and lookup
+searches the page directly. Groups contain at least one page; the directory may
+contain zero groups. Total entries must fit a uint32. The internal all-series
+entry uses the empty label name and value, as in V2.
+
+The first postings offset is the absolute start of the first postings list in
+that page, including its length field. Postings offsets are strictly increasing
+in directory and value order. The next page's first postings offset, including
+across label groups, is the exclusive upper bound for the current page's lists.
+For the final page, the postings-offset table start supplies that bound. These
+spans include list framing and any alignment padding. They allow conservative
+postings-byte estimates without loading value pages, and avoid loading a
+neighboring page to find the end of a boundary entry. They do not describe
+matcher selectivity or the bytes of the corresponding series.
+
+This experimental layout uses `PPOT0002`; readers reject the earlier
+`PPOT0001` layout rather than interpreting its descriptors as this format.
+
+Readers validate directory bounds, ordering and page spans at open. Page CRC,
+value boundaries, ordering, routing fences and postings offsets are validated
+on first access. Returned label-value strings are valid only while the backing
+index remains open. The index remains subject to the 64 GiB total size limit.
+
+`ReadPostingsOffsetTable` recognizes V4 from a full index header. Consumers of
+extracted tables must use `ReadPostingsOffsetTableWithVersion` and provide a
+byte slice preserving the absolute file offsets. For V4, its callback's
+`labelOffset` is the location of the entry's value-start field relative to the
+postings-table start. It is not a V2 variable-length entry offset.

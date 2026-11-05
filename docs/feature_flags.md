@@ -461,3 +461,18 @@ the feature is disabled or `query_max_duration` is unset.
 
 Clients can detect the feature through [`/api/v1/features`](querying/api.md#features),
 where it is reported as `query_cost` in the `api` category.
+
+## V4 index writing
+
+`--enable-feature=index-v4`
+
+Write newly compacted blocks with experimental index format V4. V4 uses paged
+postings-offset tables and 64-bit symbol-table lengths, allowing either table
+to exceed 4 GiB. The total-index size and symbol-ID limits remain unchanged.
+Readers support V4 regardless of this writing flag. Without the flag, new
+blocks continue to use V2.
+
+Every reader of the resulting blocks must support V4 before enabling this flag.
+Older Prometheus releases reject V4 blocks. Disabling the flag does not convert
+existing blocks; oversized tables cannot be rewritten as V2 without splitting
+the data. See the [V4 format description](https://github.com/prometheus/prometheus/blob/main/tsdb/docs/format/index.md#version-4).
