@@ -149,6 +149,9 @@ func (q *NativeHistogramsAsClassicQuerier) Select(ctx context.Context, sortSerie
 	}
 	classicSet := q.Querier.Select(ctx, sortSeries, hints, classicMatchers...)
 	if classicSet.Err() != nil {
+		if w := nhcbSet.Warnings(); len(w) > 0 {
+			return &warningsSeriesSet{SeriesSet: classicSet, warnings: w}
+		}
 		return classicSet
 	}
 
@@ -177,14 +180,14 @@ func selectNHCBAsClassic(ctx context.Context, sortSeries bool, nhcbSet, classicS
 		)
 		firstPeeked, chkIter, ok, err = peekNHCBSeries(nhcbSet.At(), chkIter, hScratch, fhScratch)
 		if err != nil {
-			return ErrSeriesSet(err)
+			return errSeriesSetWithWarnings(err, classicSet, nhcbSet)
 		}
 		if ok {
 			break
 		}
 	}
 	if err := nhcbSet.Err(); err != nil {
-		return ErrSeriesSet(err)
+		return errSeriesSetWithWarnings(err, classicSet, nhcbSet)
 	}
 
 	// Fast path 1: when no NHCB series exist for the base metric name, stream
@@ -207,17 +210,16 @@ func selectNHCBAsClassic(ctx context.Context, sortSeries bool, nhcbSet, classicS
 		}
 	}
 	if err := classicSet.Err(); err != nil {
-		return ErrSeriesSet(err)
+		return errSeriesSetWithWarnings(err, classicSet, nhcbSet)
 	}
-
-	var warnings annotations.Annotations
-	warnings.Merge(classicSet.Warnings())
 
 	// Fast path 2: when no stored classic series exist and either sortSeries is
 	// false or suffix is _count/_sum (which has no le label and therefore
 	// preserves nhcbSet's sort order), stream NHCB series directly from nhcbSet
 	// one series at a time without buffering all series up front.
 	if firstClassic == nil && (!sortSeries || suffix != histogram.ClassicSuffixBucket) {
+		var warnings annotations.Annotations
+		warnings.Merge(classicSet.Warnings())
 		return &nhcbToClassicSeriesSet{
 			ctx:         ctx,
 			firstPeeked: firstPeeked,
@@ -228,8 +230,6 @@ func selectNHCBAsClassic(ctx context.Context, sortSeries bool, nhcbSet, classicS
 			it:          chkIter,
 		}
 	}
-
-	warnings.Merge(nhcbSet.Warnings())
 
 	var groups []histogramGroup
 	if firstClassic == nil {
@@ -246,7 +246,7 @@ func selectNHCBAsClassic(ctx context.Context, sortSeries bool, nhcbSet, classicS
 			groups = append(groups, histogramGroup{nhcb: []nhcbGroupEntry{{series: s}}})
 		}
 		if err := nhcbSet.Err(); err != nil {
-			return ErrSeriesSet(err)
+			return errSeriesSetWithWarnings(err, classicSet, nhcbSet)
 		}
 	} else {
 		index := histogramIndex{stripLe: suffix == histogram.ClassicSuffixBucket}
@@ -257,7 +257,7 @@ func selectNHCBAsClassic(ctx context.Context, sortSeries bool, nhcbSet, classicS
 			}
 		}
 		if err := classicSet.Err(); err != nil {
-			return ErrSeriesSet(err)
+			return errSeriesSetWithWarnings(err, classicSet, nhcbSet)
 		}
 		index.addNHCB(nhcbGroupEntry{series: firstPeeked.series, peeked: &firstPeeked})
 		for nhcbSet.Next() {
@@ -268,10 +268,16 @@ func selectNHCBAsClassic(ctx context.Context, sortSeries bool, nhcbSet, classicS
 			index.addNHCB(nhcbGroupEntry{series: s})
 		}
 		if err := nhcbSet.Err(); err != nil {
-			return ErrSeriesSet(err)
+			return errSeriesSetWithWarnings(err, classicSet, nhcbSet)
 		}
 		groups = index.groups
 	}
+
+	// Merge warnings after draining both SeriesSets so warnings populated lazily
+	// during iteration are preserved.
+	var warnings annotations.Annotations
+	warnings.Merge(classicSet.Warnings())
+	warnings.Merge(nhcbSet.Warnings())
 
 	return &nhcbToClassicSeriesSet{
 		ctx:        ctx,
@@ -403,6 +409,19 @@ func (w *warningsSeriesSet) Warnings() annotations.Annotations {
 	out.Merge(w.SeriesSet.Warnings())
 	out.Merge(w.warnings)
 	return out
+}
+
+func errSeriesSetWithWarnings(err error, sets ...SeriesSet) SeriesSet {
+	var w annotations.Annotations
+	for _, s := range sets {
+		if s != nil {
+			w.Merge(s.Warnings())
+		}
+	}
+	if len(w) == 0 {
+		return ErrSeriesSet(err)
+	}
+	return &warningsSeriesSet{SeriesSet: ErrSeriesSet(err), warnings: w}
 }
 
 type nhcbGroupEntry struct {

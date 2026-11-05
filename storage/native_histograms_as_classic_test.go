@@ -1119,11 +1119,16 @@ type deferredErrSeriesSet struct {
 	series    []Series
 	idx       int
 	err       error
+	warnings  annotations.Annotations
 	exhausted bool
 }
 
 func newDeferredErrSeriesSet(err error, series ...Series) SeriesSet {
 	return &deferredErrSeriesSet{idx: -1, series: series, err: err}
+}
+
+func newLazyWarnSeriesSet(warnings annotations.Annotations, err error, series ...Series) SeriesSet {
+	return &deferredErrSeriesSet{idx: -1, series: series, warnings: warnings, err: err}
 }
 
 func (s *deferredErrSeriesSet) Next() bool {
@@ -1144,7 +1149,12 @@ func (s *deferredErrSeriesSet) Err() error {
 	return nil
 }
 
-func (*deferredErrSeriesSet) Warnings() annotations.Annotations { return nil }
+func (s *deferredErrSeriesSet) Warnings() annotations.Annotations {
+	if s.exhausted {
+		return s.warnings
+	}
+	return nil
+}
 
 // nhcbSetQuerier routes suffix queries (_bucket/_count/_sum) to classicSet and
 // all other queries to nhcbSet. This lets tests inject arbitrary SeriesSet
@@ -1281,6 +1291,41 @@ func TestNativeHistogramsAsClassicQuerier_WarningPropagation(t *testing.T) {
 		}
 		require.NoError(t, ss.Err())
 		require.Equal(t, warn, ss.Warnings())
+	})
+
+	t.Run("lazy warnings emitted after first Next and on iteration errors propagate", func(t *testing.T) {
+		classicWarn := annotations.New().Add(errors.New("lazy classic warning"))
+		nhcbWarn := annotations.New().Add(errors.New("lazy nhcb warning"))
+		classicA := NewListSeries(labels.FromStrings("__name__", "http_requests_bucket", "job", "a", "le", "+Inf"), []chunks.Sample{fSample{t: 1, f: 5}})
+		classicB := NewListSeries(labels.FromStrings("__name__", "http_requests_bucket", "job", "b", "le", "+Inf"), []chunks.Sample{fSample{t: 1, f: 10}})
+		nhcbA := NewListSeries(labels.FromStrings("__name__", "http_requests", "job", "a"), []chunks.Sample{hSample{t: 2, h: nhcb}})
+		nhcbB := NewListSeries(labels.FromStrings("__name__", "http_requests", "job", "b"), []chunks.Sample{hSample{t: 2, h: nhcb}})
+
+		q := NewNativeHistogramsAsClassicQuerier(&nhcbSetQuerier{
+			classicSet: newLazyWarnSeriesSet(classicWarn, nil, classicA, classicB),
+			nhcbSet:    newLazyWarnSeriesSet(nhcbWarn, nil, nhcbA, nhcbB),
+		})
+		ss := q.Select(t.Context(), false, nil,
+			labels.MustNewMatcher(labels.MatchEqual, model.MetricNameLabel, "http_requests_bucket"))
+		for ss.Next() {
+		}
+		require.NoError(t, ss.Err())
+		var expected annotations.Annotations
+		expected.Merge(classicWarn)
+		expected.Merge(nhcbWarn)
+		require.Equal(t, expected, ss.Warnings())
+
+		iterErr := errors.New("deferred iteration error")
+		qErr := NewNativeHistogramsAsClassicQuerier(&nhcbSetQuerier{
+			classicSet: newLazyWarnSeriesSet(classicWarn, nil, classicA),
+			nhcbSet:    newLazyWarnSeriesSet(nhcbWarn, iterErr, nhcbA),
+		})
+		ssErr := qErr.Select(t.Context(), false, nil,
+			labels.MustNewMatcher(labels.MatchEqual, model.MetricNameLabel, "http_requests_bucket"))
+		for ssErr.Next() {
+		}
+		require.ErrorIs(t, ssErr.Err(), iterErr)
+		require.Equal(t, expected, ssErr.Warnings())
 	})
 }
 
