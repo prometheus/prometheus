@@ -199,6 +199,7 @@ func createPrometheusAPI(t *testing.T, q storage.SampleAndChunkQueryable, overri
 		parser.NewParser(parser.Options{}),
 		false, // Disable query cost.
 		0,     // No --query.timeout ceiling.
+		0,     // No metadata default time range.
 	)
 
 	promRouter := route.New().WithPrefix("/api/v1")

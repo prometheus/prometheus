@@ -461,3 +461,36 @@ the feature is disabled or `query_max_duration` is unset.
 
 Clients can detect the feature through [`/api/v1/features`](querying/api.md#features),
 where it is reported as `query_cost` in the `api` category.
+
+## Metadata default time range
+
+`--enable-feature=metadata-default-time-range`
+
+By default, the [`/api/v1/series`](querying/api.md#finding-series-by-label-matchers),
+[`/api/v1/labels`](querying/api.md#getting-label-names) and
+[`/api/v1/label/<label_name>/values`](querying/api.md#querying-label-values)
+endpoints query all data when a request omits `start` or `end`. This can cause
+high load. With this feature enabled, these endpoints and the
+[search API](querying/api.md#searching-metric-names-label-names-and-label-values)
+endpoints apply a default time range instead:
+
+| Request                 | Time range used          |
+|-------------------------|--------------------------|
+| No `start` and no `end` | `now - <range>` to `now` |
+| `end` only              | `end - <range>` to `end` |
+| `start` only            | `start` to `now`         |
+| `start` and `end`       | unchanged                |
+
+The `--web.metadata.default-time-range` flag sets `<range>`. The default is `1h`.
+When Prometheus applies the default time range, the response contains a warning
+with the time range that it used.
+
+The Prometheus web UI does not send `start` or `end` when it loads the metric
+names list and the metrics explorer. With this feature enabled, these views show
+only the names and series from the last `<range>`.
+
+Without this feature, the search API endpoints keep their fixed default of the
+last hour and do not return a warning.
+
+Clients can detect the feature through [`/api/v1/features`](querying/api.md#features),
+where it is reported as `metadata_default_time_range` in the `api` category.
