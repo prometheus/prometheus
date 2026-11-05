@@ -393,6 +393,8 @@ func (e *sampledReadResponseEncoder) endMessage(bodyStart int) {
 	e.data = e.data[:len(e.data)-(binary.MaxVarintLen64-lengthSize)]
 }
 
+// protoMarshaler is implemented by generated protobuf messages. Marshaling must
+// finish before returning and must not retain the destination buffer.
 type protoMarshaler interface {
 	Size() int
 	MarshalToSizedBuffer([]byte) (int, error)
