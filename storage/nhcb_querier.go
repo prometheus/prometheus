@@ -375,7 +375,7 @@ func selectNHCBAsClassic(ctx context.Context, sortSeries bool, nhcbSet, classicS
 
 	if exponentialOK && anyExponential {
 		var err error
-		if bounds, err = unifiedExponentialBounds(ctx, groups, chkIter); err != nil {
+		if bounds, err = unifiedExponentialBounds(ctx, groups, chkIter, &hScratch, &fhScratch); err != nil {
 			return ErrSeriesSet(err)
 		}
 	}
@@ -635,7 +635,7 @@ func (s *storedAsFilterSeriesSet) Next() bool {
 // exponential samples of the native series in groups: the union of their
 // populated bucket bounds, so that every series and sample emits the same le
 // set.
-func unifiedExponentialBounds(ctx context.Context, groups []histogramGroup, it chunkenc.Iterator) ([]float64, error) {
+func unifiedExponentialBounds(ctx context.Context, groups []histogramGroup, it chunkenc.Iterator, hScratch *histogram.Histogram, fhScratch *histogram.FloatHistogram) ([]float64, error) {
 	var (
 		bounds []float64
 		err    error
@@ -645,7 +645,7 @@ func unifiedExponentialBounds(ctx context.Context, groups []histogramGroup, it c
 			if err := ctx.Err(); err != nil {
 				return nil, err
 			}
-			if bounds, it, err = appendSeriesExponentialBounds(bounds, s, it); err != nil {
+			if bounds, it, err = appendSeriesExponentialBounds(bounds, s, it, hScratch, fhScratch); err != nil {
 				return nil, err
 			}
 		}
@@ -810,24 +810,31 @@ func finalizeBounds(bounds []float64) []float64 {
 // appendSeriesExponentialBounds appends the populated bucket bounds (capped at
 // exponentialAsClassicMaxSchema) of all non-stale exponential samples of s to
 // dst. NHCB samples are skipped as they carry their own bounds.
-func appendSeriesExponentialBounds(dst []float64, s Series, it chunkenc.Iterator) ([]float64, chunkenc.Iterator, error) {
+func appendSeriesExponentialBounds(dst []float64, s Series, it chunkenc.Iterator, hScratch *histogram.Histogram, fhScratch *histogram.FloatHistogram) ([]float64, chunkenc.Iterator, error) {
 	it = s.Iterator(it)
 	if it == nil {
 		return dst, nil, nil
 	}
-	var fh *histogram.FloatHistogram
 	for {
+		var fh *histogram.FloatHistogram
 		switch it.Next() {
 		case chunkenc.ValNone:
 			return dst, it, it.Err()
-		case chunkenc.ValHistogram, chunkenc.ValFloatHistogram:
-			// AtFloatHistogram also decodes integer histogram chunks.
-			_, fh = it.AtFloatHistogram(fh)
+		case chunkenc.ValHistogram:
+			_, h := it.AtHistogram(hScratch)
+			if h == nil || value.IsStaleNaN(h.Sum) || !histogram.IsExponentialSchema(h.Schema) {
+				continue
+			}
+			fh = h.ToFloat(fhScratch)
+		case chunkenc.ValFloatHistogram:
+			_, fh = it.AtFloatHistogram(fhScratch)
 			if fh == nil || value.IsStaleNaN(fh.Sum) || !histogram.IsExponentialSchema(fh.Schema) {
 				continue
 			}
-			dst = histogram.AppendExponentialBounds(dst, fh, exponentialAsClassicMaxSchema)
+		default:
+			continue
 		}
+		dst = histogram.AppendExponentialBounds(dst, fh, exponentialAsClassicMaxSchema)
 	}
 }
 
@@ -1145,8 +1152,8 @@ type nhcbToClassicSeriesSet struct {
 	it           chunkenc.Iterator
 	classicIt    chunkenc.Iterator
 	boundsIt     chunkenc.Iterator
-	h            *histogram.Histogram
-	fh           *histogram.FloatHistogram
+	h            histogram.Histogram
+	fh           histogram.FloatHistogram
 	seriesBounds []float64
 }
 
@@ -1209,7 +1216,7 @@ func (s *nhcbToClassicSeriesSet) Next() bool {
 			} else {
 				for s.nhcbSet.Next() {
 					cand := s.nhcbSet.At()
-					if kind, s.it = classifyNativeSeries(cand, s.it, s.h, s.fh, s.convertNHCB, s.convertNHE); kind != nativeSeriesNone {
+					if kind, s.it = classifyNativeSeries(cand, s.it, &s.h, &s.fh, s.convertNHCB, s.convertNHE); kind != nativeSeriesNone {
 						nhcbSeries = cand
 						break
 					}
@@ -1281,7 +1288,7 @@ func (s *nhcbToClassicSeriesSet) collectRemaining(first Series) error {
 	for s.nhcbSet.Next() {
 		cand := s.nhcbSet.At()
 		var kind nativeSeriesKind
-		if kind, s.it = classifyNativeSeries(cand, s.it, s.h, s.fh, s.convertNHCB, s.convertNHE); kind != nativeSeriesNone {
+		if kind, s.it = classifyNativeSeries(cand, s.it, &s.h, &s.fh, s.convertNHCB, s.convertNHE); kind != nativeSeriesNone {
 			s.groups = append(s.groups, histogramGroup{nhcb: []Series{cand}})
 		}
 	}
@@ -1293,7 +1300,7 @@ func (s *nhcbToClassicSeriesSet) collectRemaining(first Series) error {
 	s.groupIdx = 0
 
 	var err error
-	s.bounds, err = unifiedExponentialBounds(s.ctx, s.groups, s.it)
+	s.bounds, err = unifiedExponentialBounds(s.ctx, s.groups, s.it, &s.h, &s.fh)
 	return err
 }
 
@@ -1459,35 +1466,36 @@ func (s *nhcbToClassicSeriesSet) convertNHCBSeries(nhcbSeries Series, loadGroupT
 
 		switch valType {
 		case chunkenc.ValHistogram:
-			t, s.h = s.it.AtHistogram(s.h)
-			if s.h == nil {
+			var h *histogram.Histogram
+			t, h = s.it.AtHistogram(&s.h)
+			if h == nil {
 				continue
 			}
 			switch {
-			case value.IsStaleNaN(s.h.Sum):
+			case value.IsStaleNaN(h.Sum):
 				stale = true
-			case s.convertNHCB && histogram.IsCustomBucketsSchema(s.h.Schema):
-				nhcb = s.h
-			case s.convertNHE && histogram.IsExponentialSchema(s.h.Schema):
+			case s.convertNHCB && histogram.IsCustomBucketsSchema(h.Schema):
+				nhcb = h
+			case s.convertNHE && histogram.IsExponentialSchema(h.Schema):
 				// The classic CDF is evaluated on absolute bucket counts, so
 				// integer (delta encoded) histograms go through ToFloat.
-				s.fh = s.h.ToFloat(s.fh)
-				exp = s.fh
+				exp = h.ToFloat(&s.fh)
 			default:
 				stale = true
 			}
 		case chunkenc.ValFloatHistogram:
-			t, s.fh = s.it.AtFloatHistogram(s.fh)
-			if s.fh == nil {
+			var fh *histogram.FloatHistogram
+			t, fh = s.it.AtFloatHistogram(&s.fh)
+			if fh == nil {
 				continue
 			}
 			switch {
-			case value.IsStaleNaN(s.fh.Sum):
+			case value.IsStaleNaN(fh.Sum):
 				stale = true
-			case s.convertNHCB && histogram.IsCustomBucketsSchema(s.fh.Schema):
-				nhcb = s.fh
-			case s.convertNHE && histogram.IsExponentialSchema(s.fh.Schema):
-				exp = s.fh
+			case s.convertNHCB && histogram.IsCustomBucketsSchema(fh.Schema):
+				nhcb = fh
+			case s.convertNHE && histogram.IsExponentialSchema(fh.Schema):
+				exp = fh
 			default:
 				stale = true
 			}
@@ -1549,8 +1557,12 @@ func (s *nhcbToClassicSeriesSet) convertNHCBSeries(nhcbSeries Series, loadGroupT
 				// Discover bounds from this series alone, which keeps the le
 				// set stable across its samples (what rate() needs) but
 				// cannot guarantee the same le set across series.
-				var err error
-				s.seriesBounds, s.boundsIt, err = appendSeriesExponentialBounds(s.seriesBounds[:0], nhcbSeries, s.boundsIt)
+				var (
+					boundsH  histogram.Histogram
+					boundsFH histogram.FloatHistogram
+					err      error
+				)
+				s.seriesBounds, s.boundsIt, err = appendSeriesExponentialBounds(s.seriesBounds[:0], nhcbSeries, s.boundsIt, &boundsH, &boundsFH)
 				if err != nil {
 					return nil, err
 				}
