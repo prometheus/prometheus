@@ -1128,8 +1128,19 @@ func lexKeywordOrIdentifier(l *Lexer) stateFn {
 Loop:
 	for {
 		switch r := l.next(); {
-		case isNameContinue(r) || r == ':':
+		case isNameStart(r) || isDigit(r) || r == ':':
 			// absorb.
+		case r == '.':
+			// Before unquoted names allowed dots, a dot ended a keyword, so a keyword could
+			// be followed by a number such as .5, as in foo > bool.5. Keep lexing it that way.
+			if isDigit(l.peek()) {
+				if kw, ok := keywordBeforeNumber(l.input[l.start : l.pos-1]); ok {
+					l.backup()
+					l.emit(kw)
+					break Loop
+				}
+			}
+			// Otherwise the dot is part of the name.
 		default:
 			l.backup()
 			word := l.input[l.start:l.pos]
@@ -1169,6 +1180,22 @@ Loop:
 		return lexValueSequence
 	}
 	return lexStatements
+}
+
+// keywordBeforeNumber returns the keyword that word spells if that keyword can
+// be directly followed by a number: bool, offset, or a binary operator such as atan2.
+func keywordBeforeNumber(word string) (ItemType, bool) {
+	kw, ok := key[strings.ToLower(word)]
+	if !ok || (kw != BOOL && kw != OFFSET && !kw.IsOperator()) {
+		return 0, false
+	}
+	// Unicode letters that lowercase to ASCII must retain their identity as names.
+	for _, r := range word {
+		if r >= utf8.RuneSelf {
+			return 0, false
+		}
+	}
+	return kw, true
 }
 
 // peekFollowedByLeftParen checks if the next non-whitespace character is '('.

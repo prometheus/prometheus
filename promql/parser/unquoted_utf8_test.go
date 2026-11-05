@@ -32,6 +32,9 @@ func TestUnquotedUTF8Names(t *testing.T) {
 		"rate.total", "Inf.total", "NaN.total", "on.total", "sum.total",
 		"resource.k8s.namespace", "target.info", "histogram.count",
 		"İnf", "а", "ö",
+		// Only bool, offset and keyword operators end before a dot and a digit, and
+		// only when they are the whole leading word.
+		"bool.total", "sum.5", "foo.bool.5",
 	} {
 		t.Run(name, func(t *testing.T) {
 			expr, err := p.ParseExpr(name)
@@ -94,6 +97,27 @@ func TestUnquotedUTF8Names(t *testing.T) {
 		})
 	}
 
+	// Before dots were name characters, a dot ended a keyword, so a keyword that can
+	// precede a number could be written directly before one such as .5.
+	for _, tc := range []struct{ input, sameAs string }{
+		// As a name, bool.5 would silently compare with a series instead of 0.5.
+		{"foo > bool.5", "foo > bool .5"},
+		// Offset is a keyword but not an operator.
+		{"foo offset.5", "foo offset .5"},
+		// Binary operators that are keywords take numbers too.
+		{"foo atan2.5", "foo atan2 .5"},
+		// Keywords are case insensitive.
+		{"foo > BOOL.5", "foo > bool .5"},
+	} {
+		t.Run(tc.input, func(t *testing.T) {
+			expr, err := p.ParseExpr(tc.input)
+			require.NoError(t, err)
+			expected, err := p.ParseExpr(tc.sameAs)
+			require.NoError(t, err)
+			require.Equal(t, expected.String(), expr.String())
+		})
+	}
+
 	for _, name := range []string{".5", "5", "5foo", ".foo", "Inf", "inf", "NaN", "nan", "5m"} {
 		_, err := p.ParseMetricSelector(name)
 		require.Error(t, err)
@@ -126,6 +150,8 @@ func TestUnquotedUTF8NamesPrinting(t *testing.T) {
 		// quotes them because selectors don't accept them unquoted.
 		{`sum by (a:b) (foo)`, `sum by ("a:b") (foo)`},
 		{`foo + on (a:b) bar`, `foo + on ("a:b") bar`},
+		// Unquoted, bool.5 would lex as bool followed by .5.
+		{`sum by ("bool.5") (foo)`, `sum by ("bool.5") (foo)`},
 	} {
 		t.Run(tc.input, func(t *testing.T) {
 			expr, err := p.ParseExpr(tc.input)

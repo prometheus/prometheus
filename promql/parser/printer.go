@@ -132,6 +132,12 @@ func labelNameRequiresQuoting(s string) bool {
 		if (i == 0 && !isNameStart(r)) || (i > 0 && !isNameContinue(r)) {
 			return true
 		}
+		// The lexer ends keywords such as bool at a dot followed by a digit, so bool.5 needs quotes.
+		if r == '.' && i+1 < len(s) && isDigit(rune(s[i+1])) {
+			if _, ok := keywordBeforeNumber(s[:i]); ok {
+				return true
+			}
+		}
 	}
 	return false
 }

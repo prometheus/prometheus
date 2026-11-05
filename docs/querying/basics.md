@@ -385,8 +385,10 @@ Dots are ordinary name characters: `resource.k8s.namespace`, `target.info`, and
 `histogram.count` have no metadata lookup, namespace, or histogram field access
 semantics. Consecutive and trailing dots are allowed, as in `foo..bar` and `foo.`.
 Names beginning with a dot or digit still require quoting; `.5` is a numeric
-literal. Combining marks, non-ASCII digits, emoji, spaces, and other punctuation
-also require quoting.
+literal. For the same reason, `bool`, `offset`, and keyword operators such as
+`atan2` end before a dot followed by a digit, so `foo > bool.5` compares with
+`0.5`, and names such as `bool.5` require quoting. Combining marks, non-ASCII
+digits, emoji, spaces, and other punctuation also require quoting.
 
 `Inf` and `NaN` (case insensitive) remain numeric literals, as do durations such
 as `5m`. To select metrics with these names, use quoted selectors such as
