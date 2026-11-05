@@ -2480,6 +2480,35 @@ type exemplarTarget struct {
 	dataIdx  int
 }
 
+// findExemplarTargetIndex returns the pendingData index of the latest non-stale
+// sample or histogram TimeSeries in batch matching seriesLabels, or -1 if none exists.
+func findExemplarTargetIndex(batch []timeSeries, seriesIdx map[uint64]exemplarTarget, seriesLabels labels.Labels) int {
+	if len(seriesIdx) == 0 {
+		return -1
+	}
+	target, ok := seriesIdx[seriesLabels.Hash()]
+	if !ok {
+		return -1
+	}
+	if labels.Equal(batch[target.batchIdx].seriesLabels, seriesLabels) {
+		return target.dataIdx
+	}
+
+	// Hash collision fallback: scan for the latest matching live TimeSeries.
+	attachedIdx := -1
+	dataIdx := 0
+	for i := range batch {
+		if batch[i].sType == tExemplar || batch[i].sType == tMetadata {
+			continue
+		}
+		if !isStaleTimeSeries(batch[i]) && labels.Equal(batch[i].seriesLabels, seriesLabels) {
+			attachedIdx = dataIdx
+		}
+		dataIdx++
+	}
+	return attachedIdx
+}
+
 func populateV2TimeSeries(symbolTable *writev2.SymbolsTable, batch []timeSeries, pendingData []writev2.TimeSeries, seriesIdx map[uint64]exemplarTarget, sendExemplars, sendNativeHistograms, enableTypeAndUnitLabels bool, mode remoteapi.WriteMode) (int, int, int, int, int, int) {
 	var (
 		nSeries, nPendingSamples, nPendingExemplars, nPendingHistograms, nUnexpectedMetadata, nDroppedExemplars int
@@ -2531,12 +2560,10 @@ func populateV2TimeSeries(symbolTable *writev2.SymbolsTable, batch []timeSeries,
 		return nSeries, nPendingSamples, nPendingExemplars, nPendingHistograms, nUnexpectedMetadata, nDroppedExemplars
 	}
 
-	nSeriesWithData := nSeries
-	if nSeriesWithData > 0 {
+	clear(seriesIdx)
+	if nSeries > 0 {
 		if seriesIdx == nil {
-			seriesIdx = make(map[uint64]exemplarTarget, nSeriesWithData)
-		} else {
-			clear(seriesIdx)
+			seriesIdx = make(map[uint64]exemplarTarget, nSeries)
 		}
 		dataIdx := 0
 		for i := range batch {
@@ -2557,27 +2584,7 @@ func populateV2TimeSeries(symbolTable *writev2.SymbolsTable, batch []timeSeries,
 		// Match against seriesLabels via seriesIdx before symbolizing so dropped exemplars do not
 		// pollute symbolTable (or writev2.Request.Symbols) and pendingData[nSeries] is only
 		// indexed when emitting a detached TimeSeries.
-		attachedIdx := -1
-		if nSeriesWithData > 0 {
-			if target, ok := seriesIdx[d.seriesLabels.Hash()]; ok {
-				if labels.Equal(batch[target.batchIdx].seriesLabels, d.seriesLabels) {
-					attachedIdx = target.dataIdx
-				} else {
-					// Hash collision fallback: scan for the latest matching live TimeSeries.
-					dataIdx := 0
-					for i := range batch {
-						if batch[i].sType == tExemplar || batch[i].sType == tMetadata {
-							continue
-						}
-						if !isStaleTimeSeries(batch[i]) && labels.Equal(batch[i].seriesLabels, d.seriesLabels) {
-							attachedIdx = dataIdx
-						}
-						dataIdx++
-					}
-				}
-			}
-		}
-		if attachedIdx >= 0 {
+		if attachedIdx := findExemplarTargetIndex(batch, seriesIdx, d.seriesLabels); attachedIdx >= 0 {
 			pendingData[attachedIdx].Exemplars = append(pendingData[attachedIdx].Exemplars, writev2.Exemplar{
 				LabelsRefs: symbolTable.SymbolizeLabels(d.exemplarLabels, nil), // TODO(bwplotka): Reuse Exemplar.LabelsRefs slice across batches.
 				Value:      d.value,
