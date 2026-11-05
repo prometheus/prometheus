@@ -1062,16 +1062,17 @@ func mergeSeriesByLabels(preferred, fallback []Series) ([]Series, error) {
 		_, nonFloat := p.(nonFloatClassicSeries)
 		merged := p
 		for i, f := range fallback {
-			if !usedFallback[i] && labels.Equal(pLabels, f.Labels()) {
-				usedFallback[i] = true
-				if nonFloat {
-					continue
-				}
-				var err error
-				merged, err = mergeSamples(merged, f)
-				if err != nil {
-					return nil, err
-				}
+			if usedFallback[i] || !labels.Equal(pLabels, f.Labels()) {
+				continue
+			}
+			usedFallback[i] = true
+			if nonFloat {
+				continue
+			}
+			var err error
+			merged, err = mergeSamples(merged, f)
+			if err != nil {
+				return nil, err
 			}
 		}
 		out = append(out, merged)
