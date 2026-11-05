@@ -408,6 +408,42 @@ var fractionCrossCheckCases = []struct {
 		},
 	},
 	{
+		// Bucket bounds: [0,0.25] (0.5,0.5946] (0.5946,0.7071] (0.7071,0.8409] (0.8409,1].
+		name: "only positive buckets with zero bucket",
+		h: &histogram.FloatHistogram{
+			Schema:          2,
+			Count:           23,
+			Sum:             12,
+			ZeroThreshold:   0.25,
+			ZeroCount:       7,
+			PositiveSpans:   []histogram.Span{{Offset: -3, Length: 4}},
+			PositiveBuckets: []float64{1, 6, 0, 9},
+		},
+		thresholds: []float64{
+			math.Inf(-1), -1, -0.25, -0.1,
+			0, 0.1, 0.25, 0.4, 0.5, 0.6, 1, 2,
+			math.Inf(1),
+		},
+	},
+	{
+		// Bucket bounds: (-8,-5.6569] (-5.6569,-4] (-2,-1.4142] (-1.4142,-1] (-1,-0.7071] [-0.25,0].
+		name: "only negative buckets with zero bucket",
+		h: &histogram.FloatHistogram{
+			Schema:          1,
+			Count:           36,
+			Sum:             -88,
+			ZeroThreshold:   0.25,
+			ZeroCount:       7,
+			NegativeSpans:   []histogram.Span{{Offset: 0, Length: 3}, {Offset: 2, Length: 2}},
+			NegativeBuckets: []float64{4, 9, 3, 8, 5},
+		},
+		thresholds: []float64{
+			math.Inf(-1), -20, -8, -4, -1, -0.5,
+			-0.25, -0.1, 0, 0.1, 0.25, 0.5,
+			math.Inf(1),
+		},
+	},
+	{
 		name: "zero bucket only",
 		h: &histogram.FloatHistogram{
 			Schema:        0,
