@@ -319,9 +319,16 @@ func TestLabelValuesWithMatchers(t *testing.T) {
 		}
 	}
 	sort.Strings(uniqueWithout30s)
+	var allUniqueValues []string
+	for i := range 100 {
+		allUniqueValues = append(allUniqueValues, fmt.Sprintf("value%d", i))
+	}
+	sort.Strings(allUniqueValues)
+	smallestUniqueValues := allUniqueValues[:15]
 	testCases := []struct {
 		name           string
 		labelName      string
+		hints          *storage.LabelHints
 		matchers       []*labels.Matcher
 		expectedValues []string
 	}{
@@ -335,6 +342,24 @@ func TestLabelValuesWithMatchers(t *testing.T) {
 			labelName:      "unique",
 			matchers:       []*labels.Matcher{labels.MustNewMatcher(labels.MatchEqual, "tens", "value1")},
 			expectedValues: []string{"value10", "value11", "value12", "value13", "value14", "value15", "value16", "value17", "value18", "value19"},
+		}, {
+			name:           "limited values count only confirmed matches",
+			labelName:      "tens",
+			hints:          &storage.LabelHints{Limit: 2},
+			matchers:       []*labels.Matcher{labels.MustNewMatcher(labels.MatchRegexp, "unique", "value25|value45|value65")},
+			expectedValues: []string{"value2", "value4"},
+		}, {
+			name:           "zero limit remains unlimited",
+			labelName:      "tens",
+			hints:          &storage.LabelHints{},
+			matchers:       []*labels.Matcher{labels.MustNewMatcher(labels.MatchRegexp, "unique", "value25|value45|value65")},
+			expectedValues: []string{"value2", "value4", "value6"},
+		}, {
+			name:           "smallest limit remains exhaustive",
+			labelName:      "unique",
+			hints:          &storage.LabelHints{Limit: 15, LimitSmallest: true},
+			matchers:       []*labels.Matcher{labels.MustNewMatcher(labels.MatchNotEqual, "tens", "")},
+			expectedValues: smallestUniqueValues,
 		}, {
 			name:           "get tens by pattern matching on unique id",
 			labelName:      "tens",
@@ -358,11 +383,11 @@ func TestLabelValuesWithMatchers(t *testing.T) {
 
 	for _, tt := range testCases {
 		t.Run(tt.name, func(t *testing.T) {
-			actualValues, err := indexReader.SortedLabelValues(ctx, tt.labelName, nil, tt.matchers...)
+			actualValues, err := indexReader.SortedLabelValues(ctx, tt.labelName, tt.hints, tt.matchers...)
 			require.NoError(t, err)
 			require.Equal(t, tt.expectedValues, actualValues)
 
-			actualValues, err = indexReader.LabelValues(ctx, tt.labelName, nil, tt.matchers...)
+			actualValues, err = indexReader.LabelValues(ctx, tt.labelName, tt.hints, tt.matchers...)
 			sort.Strings(actualValues)
 			require.NoError(t, err)
 			require.Equal(t, tt.expectedValues, actualValues)

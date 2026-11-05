@@ -941,7 +941,20 @@ func (*bigEndianPostings) Err() error {
 // FindIntersectingPostings checks the intersection of p and candidates[i] for each i in candidates,
 // if intersection is non empty, then i is added to the indexes returned.
 // Returned indexes are not sorted.
-func FindIntersectingPostings(p Postings, candidates []Postings) (indexes []int, err error) {
+func FindIntersectingPostings(p Postings, candidates []Postings) ([]int, error) {
+	return findIntersectingPostings(p, candidates, 0)
+}
+
+// FindIntersectingPostingsWithLimit is like FindIntersectingPostings, but stops
+// after finding limit candidate postings that intersect p. It returns the same
+// prefix as FindIntersectingPostings. A non-positive limit is unlimited.
+// Returned indexes are not sorted.
+func FindIntersectingPostingsWithLimit(p Postings, candidates []Postings, limit int) ([]int, error) {
+	return findIntersectingPostings(p, candidates, limit)
+}
+
+func findIntersectingPostings(p Postings, candidates []Postings, limit int) ([]int, error) {
+	var indexes []int
 	h := make(postingsWithIndexHeap, 0, len(candidates))
 	for idx, it := range candidates {
 		switch {
@@ -958,15 +971,29 @@ func FindIntersectingPostings(p Postings, candidates []Postings) (indexes []int,
 
 	for !h.empty() {
 		if !p.Seek(h.at()) {
-			return indexes, p.Err()
+			break
 		}
 		if p.At() == h.at() {
+			if limit > 0 && len(indexes)+1 == limit {
+				indexes = append(indexes, h[0].index)
+				break
+			}
 			indexes = append(indexes, h.popIndex())
 		} else if err := h.seekHead(p.At()); err != nil {
 			return nil, err
 		}
 	}
 
+	// Merge and Without can retain errors even while yielding references.
+	// Check once at the end: Err on a Merge scans all its child iterators.
+	if err := p.Err(); err != nil {
+		return indexes, err
+	}
+	for i, it := range candidates {
+		if err := it.Err(); err != nil {
+			return nil, fmt.Errorf("postings %d: %w", i, err)
+		}
+	}
 	return indexes, nil
 }
 
@@ -1014,10 +1041,10 @@ func (h *postingsWithIndexHeap) seekHead(val storage.SeriesRef) error {
 		heap.Fix(h, 0)
 		return nil
 	}
-
 	if err := pi.p.Err(); err != nil {
 		return fmt.Errorf("seek postings %d: %w", pi.index, err)
 	}
+
 	h.popIndex()
 	return nil
 }

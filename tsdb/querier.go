@@ -526,21 +526,21 @@ func labelValuesWithMatchers(ctx context.Context, r IndexReader, name string, hi
 			return nil, fmt.Errorf("fetching postings for %s=%q: %w", name, value, err)
 		}
 	}
-	indexes, err := index.FindIntersectingPostings(p, valuesPostings)
+	// FindIntersectingPostings returns indexes in series-reference order, not
+	// label-value order. Smallest-value reads must see all of them first.
+	var indexes []int
+	if hints.AllowsEarlyStop() {
+		indexes, err = index.FindIntersectingPostingsWithLimit(p, valuesPostings, hints.Limit)
+	} else {
+		indexes, err = index.FindIntersectingPostings(p, valuesPostings)
+	}
 	if err != nil {
 		return nil, fmt.Errorf("intersecting postings: %w", err)
 	}
 
-	// FindIntersectingPostings returns the indexes ordered by series reference,
-	// not by value, so stopping at the limit returns an arbitrary subset. A
-	// caller asking for the smallest values has to see all of them first.
-	earlyLimit := hints.AllowsEarlyStop()
 	values := make([]string, 0, len(indexes))
 	for _, idx := range indexes {
 		values = append(values, allValues[idx])
-		if earlyLimit && len(values) >= hints.Limit {
-			break
-		}
 	}
 
 	// A no-op unless a limit needs the smallest of what we collected.
