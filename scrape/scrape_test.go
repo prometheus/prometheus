@@ -4129,7 +4129,7 @@ func BenchmarkScrapeLoopScrapeAndReportConcurrentSlow(b *testing.B) {
 /*
 	export bench=metadata && go test ./scrape/... \
 		-run '^$' -bench '^BenchmarkScrapeCacheMetadata$' \
-		-benchtime 2s -count 6 -cpu 2 -timeout 999m -benchmem \
+		-benchtime 1s -count 6 -cpu 1,2,4 -timeout 999m -benchmem \
 		| tee ${bench}.txt
 */
 func BenchmarkScrapeCacheMetadata(b *testing.B) {
@@ -4154,16 +4154,20 @@ func BenchmarkScrapeCacheMetadata(b *testing.B) {
 		}
 	}
 
+	populateCache := func(c *scrapeCache) {
+		for _, f := range families {
+			c.setType(f.name, f.typ)
+			c.setHelp(f.name, f.help)
+			c.setUnit(f.name, f.unit)
+		}
+		c.iterDone(true)
+	}
+
 	for _, coldCache := range []bool{false, true} {
 		b.Run(fmt.Sprintf("coldCache=%v", coldCache), func(b *testing.B) {
 			metrics := newTestScrapeMetrics(b)
 			warmCache := newScrapeCache(metrics)
-			for _, f := range families {
-				warmCache.setType(f.name, f.typ)
-				warmCache.setHelp(f.name, f.help)
-				warmCache.setUnit(f.name, f.unit)
-			}
-			warmCache.iterDone(true)
+			populateCache(warmCache)
 			runtime.GC()
 			runtime.GC()
 
@@ -4174,15 +4178,43 @@ func BenchmarkScrapeCacheMetadata(b *testing.B) {
 				if coldCache {
 					c = newScrapeCache(metrics)
 				}
-				for _, f := range families {
-					c.setType(f.name, f.typ)
-					c.setHelp(f.name, f.help)
-					c.setUnit(f.name, f.unit)
-				}
-				c.iterDone(true)
+				populateCache(c)
 			}
 			runtime.KeepAlive(warmCache)
 		})
+
+		for _, gcPressure := range []bool{false, true} {
+			b.Run(fmt.Sprintf("parallel/coldCache=%v/gc=%v", coldCache, gcPressure), func(b *testing.B) {
+				metrics := newTestScrapeMetrics(b)
+				anchorCache := newScrapeCache(metrics)
+				populateCache(anchorCache)
+				runtime.GC()
+				runtime.GC()
+
+				b.ReportAllocs()
+				b.ResetTimer()
+				b.RunParallel(func(pb *testing.PB) {
+					warmCache := newScrapeCache(metrics)
+					if !coldCache {
+						populateCache(warmCache)
+					}
+					var sink []byte
+					for pb.Next() {
+						if gcPressure {
+							sink = make([]byte, 256*1024)
+						}
+						c := warmCache
+						if coldCache {
+							c = newScrapeCache(metrics)
+						}
+						populateCache(c)
+					}
+					runtime.KeepAlive(warmCache)
+					runtime.KeepAlive(sink)
+				})
+				runtime.KeepAlive(anchorCache)
+			})
+		}
 	}
 }
 

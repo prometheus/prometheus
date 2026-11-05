@@ -1047,10 +1047,11 @@ type scrapeCache struct {
 	// pendingEntry stages consecutive setType, setHelp, and setUnit updates for the current metric
 	// family so unique.Make is called once with the complete metadata.Metadata rather than creating
 	// intermediate handles that become garbage on the next GC cycle.
-	pendingEntry *metaEntry
-	pendingMeta  metadata.Metadata
-	pendingHelp  []byte
-	pendingUnit  []byte
+	pendingEntry   *metaEntry
+	pendingMeta    metadata.Metadata
+	pendingOldSize int
+	pendingHelp    []byte
+	pendingUnit    []byte
 
 	metrics *scrapeMetrics
 }
@@ -1270,28 +1271,28 @@ func (c *scrapeCache) flushPending() {
 		return
 	}
 	c.pendingEntry.meta = unique.Make(c.pendingMeta)
+	c.metadataSize += len(c.pendingMeta.Help) + len(c.pendingMeta.Unit) + len(c.pendingMeta.Type) - c.pendingOldSize
 	c.pendingEntry = nil
 }
 
-// currentMeta returns the metaEntry, current Metadata value, and current byte size for mfName.
-// If a different entry was staged in pendingEntry, it is flushed first.
+// stageMeta prepares e, or a newly created metaEntry for mfName, as c.pendingEntry.
 // Caller must hold c.metaMtx.
-func (c *scrapeCache) currentMeta(mfName []byte) (*metaEntry, metadata.Metadata, int) {
-	e, ok := c.metadata[string(mfName)]
+func (c *scrapeCache) stageMeta(mfName []byte, e *metaEntry, ok bool) *metaEntry {
+	c.flushPending()
 	if !ok {
-		c.flushPending()
 		mfHandle := internBytes(mfName)
 		e = &metaEntry{mfName: mfHandle, meta: unknownMetadataHandle}
 		c.metadata[mfHandle.Value()] = e
-		return e, metadata.Metadata{Type: model.MetricTypeUnknown}, 0
+		c.pendingEntry = e
+		c.pendingMeta = metadata.Metadata{Type: model.MetricTypeUnknown}
+		c.pendingOldSize = 0
+		return e
 	}
-	if e == c.pendingEntry {
-		cur := c.pendingMeta
-		return e, cur, len(cur.Help) + len(cur.Unit) + len(cur.Type)
-	}
-	c.flushPending()
 	cur := e.metadata()
-	return e, cur, len(cur.Help) + len(cur.Unit) + len(cur.Type)
+	c.pendingEntry = e
+	c.pendingMeta = cur
+	c.pendingOldSize = len(cur.Help) + len(cur.Unit) + len(cur.Type)
+	return e
 }
 
 func (c *scrapeCache) metadataOf(e *metaEntry) metadata.Metadata {
@@ -1306,16 +1307,28 @@ func (c *scrapeCache) setType(mfName []byte, t model.MetricType) ([]byte, *metaE
 	c.metaMtx.Lock()
 	defer c.metaMtx.Unlock()
 
-	e, cur, oldSize := c.currentMeta(mfName)
-	// Avoid staging or calling unique.Make on warm scrapes when metadata is unchanged.
-	if cur.Type != t {
-		cur.Type = t
-		c.pendingEntry = e
-		c.pendingMeta = cur
+	if e := c.pendingEntry; e != nil && e.mfName.Value() == string(mfName) {
+		if c.pendingMeta.Type != t {
+			c.pendingMeta.Type = t
+			e.lastIterChange = c.iter
+		}
+		e.lastIter = c.iter
+		return mfName, e
+	}
+
+	e, ok := c.metadata[string(mfName)]
+	// Fast path on warm scrapes when metadata is unchanged: skip staging and unique.Make.
+	if ok && e.meta.Value().Type == t {
+		e.lastIter = c.iter
+		return mfName, e
+	}
+
+	e = c.stageMeta(mfName, e, ok)
+	if c.pendingMeta.Type != t {
+		c.pendingMeta.Type = t
 		e.lastIterChange = c.iter
 	}
 	e.lastIter = c.iter
-	c.metadataSize += len(cur.Help) + len(cur.Unit) + len(cur.Type) - oldSize
 	return mfName, e
 }
 
@@ -1323,17 +1336,30 @@ func (c *scrapeCache) setHelp(mfName, help []byte) ([]byte, *metaEntry) {
 	c.metaMtx.Lock()
 	defer c.metaMtx.Unlock()
 
-	e, cur, oldSize := c.currentMeta(mfName)
-	// Avoid staging or calling unique.Make on warm scrapes when metadata is unchanged.
-	if cur.Help != string(help) {
+	if e := c.pendingEntry; e != nil && e.mfName.Value() == string(mfName) {
+		if c.pendingMeta.Help != string(help) {
+			c.pendingHelp = append(c.pendingHelp[:0], help...)
+			c.pendingMeta.Help = yoloString(c.pendingHelp)
+			e.lastIterChange = c.iter
+		}
+		e.lastIter = c.iter
+		return mfName, e
+	}
+
+	e, ok := c.metadata[string(mfName)]
+	// Fast path on warm scrapes when metadata is unchanged: skip staging and unique.Make.
+	if ok && e.meta.Value().Help == string(help) {
+		e.lastIter = c.iter
+		return mfName, e
+	}
+
+	e = c.stageMeta(mfName, e, ok)
+	if c.pendingMeta.Help != string(help) {
 		c.pendingHelp = append(c.pendingHelp[:0], help...)
-		cur.Help = yoloString(c.pendingHelp)
-		c.pendingEntry = e
-		c.pendingMeta = cur
+		c.pendingMeta.Help = yoloString(c.pendingHelp)
 		e.lastIterChange = c.iter
 	}
 	e.lastIter = c.iter
-	c.metadataSize += len(cur.Help) + len(cur.Unit) + len(cur.Type) - oldSize
 	return mfName, e
 }
 
@@ -1341,17 +1367,30 @@ func (c *scrapeCache) setUnit(mfName, unit []byte) ([]byte, *metaEntry) {
 	c.metaMtx.Lock()
 	defer c.metaMtx.Unlock()
 
-	e, cur, oldSize := c.currentMeta(mfName)
-	// Avoid staging or calling unique.Make on warm scrapes when metadata is unchanged.
-	if cur.Unit != string(unit) {
+	if e := c.pendingEntry; e != nil && e.mfName.Value() == string(mfName) {
+		if c.pendingMeta.Unit != string(unit) {
+			c.pendingUnit = append(c.pendingUnit[:0], unit...)
+			c.pendingMeta.Unit = yoloString(c.pendingUnit)
+			e.lastIterChange = c.iter
+		}
+		e.lastIter = c.iter
+		return mfName, e
+	}
+
+	e, ok := c.metadata[string(mfName)]
+	// Fast path on warm scrapes when metadata is unchanged: skip staging and unique.Make.
+	if ok && e.meta.Value().Unit == string(unit) {
+		e.lastIter = c.iter
+		return mfName, e
+	}
+
+	e = c.stageMeta(mfName, e, ok)
+	if c.pendingMeta.Unit != string(unit) {
 		c.pendingUnit = append(c.pendingUnit[:0], unit...)
-		cur.Unit = yoloString(c.pendingUnit)
-		c.pendingEntry = e
-		c.pendingMeta = cur
+		c.pendingMeta.Unit = yoloString(c.pendingUnit)
 		e.lastIterChange = c.iter
 	}
 	e.lastIter = c.iter
-	c.metadataSize += len(cur.Help) + len(cur.Unit) + len(cur.Type) - oldSize
 	return mfName, e
 }
 
@@ -1439,6 +1478,7 @@ func (c *scrapeCache) ListMetadata() []MetricMetadata {
 func (c *scrapeCache) SizeMetadata() int {
 	c.metaMtx.Lock()
 	defer c.metaMtx.Unlock()
+	c.flushPending()
 	return c.metadataSize
 }
 
