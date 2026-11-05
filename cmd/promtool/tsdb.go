@@ -598,13 +598,13 @@ func analyzeBlock(ctx context.Context, path, blockID string, limit int, runExten
 	printInfo(postingInfos)
 
 	if runExtended {
-		return analyzeCompaction(ctx, block, ir, selectors)
+		return analyzeCompaction(ctx, block, ir, selectors, limit)
 	}
 
 	return nil
 }
 
-func analyzeCompaction(ctx context.Context, block tsdb.BlockReader, indexr tsdb.IndexReader, matchers []*labels.Matcher) (err error) {
+func analyzeCompaction(ctx context.Context, block tsdb.BlockReader, indexr tsdb.IndexReader, matchers []*labels.Matcher, limit int) (err error) {
 	var postingsr index.Postings
 	if len(matchers) > 0 {
 		postingsr, err = tsdb.PostingsForMatchers(ctx, indexr, matchers...)
@@ -708,7 +708,7 @@ func analyzeCompaction(ctx context.Context, block tsdb.BlockReader, indexr tsdb.
 
 	displayHistogram("buckets per histogram chunk", histogramChunkBucketsCount, totalChunks)
 
-	displayDiskUsageInBytesPerMetric(diskUsageInBytesPerMetric, diskUsageInBytesTotal)
+	displayDiskUsageInBytesPerMetric(diskUsageInBytesPerMetric, diskUsageInBytesTotal, limit)
 
 	return nil
 }
@@ -928,7 +928,7 @@ func generateBucket(minVal, maxVal int) (start, end, step int) {
 	return start, end, step
 }
 
-func displayDiskUsageInBytesPerMetric(usagePerMetric map[string]uint64, totalUsage uint64) {
+func displayDiskUsageInBytesPerMetric(usagePerMetric map[string]uint64, totalUsage uint64, limit int) {
 	type metricDiskUsage struct {
 		metricName string
 		diskUsage  uint64
@@ -952,14 +952,8 @@ func displayDiskUsageInBytesPerMetric(usagePerMetric map[string]uint64, totalUsa
 		}
 	})
 
-	shouldDisplayTopMetrics := numberOfMetrics > 20
-	topMetricsToShow := min(20, numberOfMetrics)
-
-	if shouldDisplayTopMetrics {
-		fmt.Printf("Top %d metric names by disk usage:\n", topMetricsToShow)
-	} else {
-		fmt.Printf("All %d metric names by disk usage:\n", numberOfMetrics)
-	}
+	topMetricsToShow := min(max(0, limit), numberOfMetrics)
+	fmt.Printf("Top %d metric names by disk usage:\n", topMetricsToShow)
 
 	var sum uint64
 	for i := range sorted[:topMetricsToShow] {
@@ -976,8 +970,6 @@ func displayDiskUsageInBytesPerMetric(usagePerMetric map[string]uint64, totalUsa
 		topPercent = float64(sum) / float64(totalUsage) * 100
 	}
 
-	if shouldDisplayTopMetrics {
-		fmt.Printf("  total (top %8d): %12d bytes (%.2f%%)\n", topMetricsToShow, sum, topPercent)
-	}
+	fmt.Printf("  total (top %8d): %12d bytes (%.2f%%)\n", topMetricsToShow, sum, topPercent)
 	fmt.Printf("  total (all %8d): %12d bytes\n", numberOfMetrics, totalUsage)
 }
