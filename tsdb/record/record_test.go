@@ -327,6 +327,62 @@ func TestRecord_EncodeDecode(t *testing.T) {
 			require.Empty(t, decoded)
 		})
 
+		for _, floatHistogram := range []bool{false, true} {
+			t.Run(fmt.Sprintf("histogram vector bounds float=%v,stStorage=%v", floatHistogram, enableSTStorage), func(t *testing.T) {
+				cases := []struct {
+					name      string
+					histogram *histogram.Histogram
+					boundary  bool
+				}{
+					{name: "empty vectors", histogram: &histogram.Histogram{Schema: 1}},
+					{
+						name: "ordinary vectors",
+						histogram: &histogram.Histogram{
+							Count:           6,
+							ZeroCount:       1,
+							Schema:          1,
+							PositiveSpans:   []histogram.Span{{Offset: 0, Length: 2}},
+							PositiveBuckets: []int64{2, 3},
+							NegativeSpans:   []histogram.Span{{Offset: 1, Length: 1}},
+							NegativeBuckets: []int64{1},
+						},
+					},
+					{
+						name: "custom bound at minimum-byte boundary",
+						histogram: &histogram.Histogram{
+							Schema:       histogram.CustomBucketsSchema,
+							CustomValues: []float64{1.5},
+						},
+						boundary: true,
+					},
+				}
+				for _, tc := range cases {
+					t.Run(tc.name, func(t *testing.T) {
+						rec := histogramRecordForTest(enableSTStorage, tc.histogram)
+						if floatHistogram {
+							rec = floatHistogramRecordForTest(enableSTStorage, tc.histogram)
+						}
+						if tc.boundary {
+							offset := histogramVectorLengthOffset(t, rec, 4)
+							bounds := encoding.Decbuf{B: rec[offset:]}
+							require.Equal(t, uint64(len(tc.histogram.CustomValues)), bounds.Uvarint64())
+							require.Equal(t, 8, bounds.Len(), "custom bound must fill the remaining minimum encoded size")
+						}
+						decoder := NewDecoder(labels.NewSymbolTable(), promslog.NewNopLogger())
+						if floatHistogram {
+							got, err := decoder.FloatHistogramSamples(rec, nil)
+							require.NoError(t, err)
+							require.Equal(t, []RefFloatHistogramSample{{Ref: 56, T: 1234, FH: tc.histogram.ToFloat(nil)}}, got)
+						} else {
+							got, err := decoder.HistogramSamples(rec, nil)
+							require.NoError(t, err)
+							require.Equal(t, []RefHistogramSample{{Ref: 56, T: 1234, H: tc.histogram}}, got)
+						}
+					})
+				}
+			})
+		}
+
 		t.Run(fmt.Sprintf("float-histogram empty slice stStorage=%v", enableSTStorage), func(t *testing.T) {
 			enc := Encoder{EnableSTStorage: enableSTStorage}
 			floatBuf, customBucketsFloat := enc.FloatHistogramSamples(nil, nil)
@@ -938,6 +994,95 @@ func TestRecord_DecodeTooHighResolutionFloatHistogramSchema(t *testing.T) {
 	}
 }
 
+func histogramRecordForTest(enableSTStorage bool, h *histogram.Histogram) []byte {
+	enc := Encoder{EnableSTStorage: enableSTStorage}
+	histograms := []RefHistogramSample{{Ref: 56, T: 1234, H: h}}
+	rec, customBuckets := enc.HistogramSamples(histograms, nil)
+	if !enableSTStorage && len(customBuckets) > 0 {
+		return enc.CustomBucketsHistogramSamples(customBuckets, nil)
+	}
+	return rec
+}
+
+func floatHistogramRecordForTest(enableSTStorage bool, h *histogram.Histogram) []byte {
+	enc := Encoder{EnableSTStorage: enableSTStorage}
+	histograms := []RefFloatHistogramSample{{Ref: 56, T: 1234, FH: h.ToFloat(nil)}}
+	rec, customBuckets := enc.FloatHistogramSamples(histograms, nil)
+	if !enableSTStorage && len(customBuckets) > 0 {
+		return enc.CustomBucketsFloatHistogramSamples(customBuckets, nil)
+	}
+	return rec
+}
+
+func histogramVectorLengthOffset(t *testing.T, rec []byte, vector int) int {
+	t.Helper()
+	dec := encoding.Decbuf{B: rec}
+	typ := Type(dec.Byte())
+	floatHistogram := typ == FloatHistogramSamples || typ == CustomBucketsFloatHistogramSamples || typ == FloatHistogramSamplesV2
+	switch typ {
+	case HistogramSamples, CustomBucketsHistogramSamples, FloatHistogramSamples, CustomBucketsFloatHistogramSamples:
+		dec.Be64()
+		dec.Be64()
+		dec.Varint64()
+		dec.Varint64()
+	case HistogramSamplesV2, FloatHistogramSamplesV2:
+		dec.Varint64()
+		dec.Varint64()
+		dec.Varint64()
+	default:
+		t.Fatalf("unexpected histogram record type %d", rec[0])
+	}
+	dec.Byte()
+	schema := int32(dec.Varint64())
+	dec.Be64()
+	if floatHistogram {
+		dec.Be64()
+		dec.Be64()
+	} else {
+		dec.Uvarint64()
+		dec.Uvarint64()
+	}
+	dec.Be64()
+	for i := range vector {
+		count := dec.Uvarint64()
+		for range count {
+			switch i {
+			case 0, 1:
+				dec.Varint64()
+				dec.Uvarint32()
+			case 2, 3:
+				if floatHistogram {
+					dec.Be64()
+				} else {
+					dec.Varint64()
+				}
+			}
+		}
+	}
+	if vector == 4 && !histogram.IsCustomBucketsSchema(schema) {
+		t.Fatalf("custom values are not encoded for schema %d", schema)
+	}
+	require.NoError(t, dec.Err())
+	return len(rec) - dec.Len()
+}
+
+func uvarintBytesForTest(value uint64) []byte {
+	var enc encoding.Encbuf
+	enc.PutUvarint64(value)
+	return enc.Get()
+}
+
+func replaceHistogramVectorLength(rec []byte, offset int, encodedLength []byte) []byte {
+	if rec[offset] != 0 {
+		panic("expected an empty histogram vector length")
+	}
+	out := make([]byte, 0, len(rec)-1+len(encodedLength))
+	out = append(out, rec[:offset]...)
+	out = append(out, encodedLength...)
+	out = append(out, rec[offset+1:]...)
+	return out
+}
+
 // TestRecord_Corrupted ensures that corrupted records return the correct error.
 // Bugfix check for pull/521 and pull/523.
 func TestRecord_Corrupted(t *testing.T) {
@@ -1045,6 +1190,117 @@ func TestRecord_Corrupted(t *testing.T) {
 			require.ErrorIs(t, err, encoding.ErrInvalidSize)
 			_, err = dec.HistogramSamples(corruptedCustomBucketsHists, nil)
 			require.ErrorIs(t, err, encoding.ErrInvalidSize)
+
+			for _, floatHistogram := range []bool{false, true} {
+				t.Run(fmt.Sprintf("Test corrupted histogram vector lengths float=%v", floatHistogram), func(t *testing.T) {
+					vectors := []struct {
+						name        string
+						index       int
+						minByteSize int
+						customOnly  bool
+					}{
+						{name: "positive spans", index: 0, minByteSize: 2},
+						{name: "negative spans", index: 1, minByteSize: 2},
+						{name: "positive buckets", index: 2, minByteSize: 1},
+						{name: "negative buckets", index: 3, minByteSize: 1},
+						{name: "custom bounds", index: 4, minByteSize: 8, customOnly: true},
+					}
+					schemas := []struct {
+						name   string
+						schema int32
+						custom bool
+					}{
+						{name: "exponential", schema: 1},
+						{name: "custom", schema: histogram.CustomBucketsSchema, custom: true},
+					}
+
+					for _, schema := range schemas {
+						for _, vector := range vectors {
+							if vector.customOnly && !schema.custom {
+								continue
+							}
+							if floatHistogram && (vector.index == 2 || vector.index == 3) {
+								vector.minByteSize = 8
+							}
+							rec := histogramRecordForTest(enableSTStorage, &histogram.Histogram{Schema: schema.schema})
+							if floatHistogram {
+								rec = floatHistogramRecordForTest(enableSTStorage, &histogram.Histogram{Schema: schema.schema})
+							}
+							offset := histogramVectorLengthOffset(t, rec, vector.index)
+							remainingBytes := len(rec) - offset - 1 // The original empty length is one byte.
+							tooMany := uint64(remainingBytes/vector.minByteSize + 1)
+							maxInt := uint64(^uint(0) >> 1)
+							truncatedValue := make([]byte, vector.minByteSize-1)
+							switch vector.index {
+							case 0, 1:
+								truncatedValue = []byte{0x80, 0x80}
+							case 2, 3:
+								if !floatHistogram {
+									truncatedValue = []byte{0x80}
+								}
+							}
+
+							cases := []struct {
+								name          string
+								encodedLength []byte
+								payload       []byte
+								truncate      bool
+							}{
+								{name: "native int max", encodedLength: uvarintBytesForTest(maxInt)},
+								{name: "native int overflow", encodedLength: uvarintBytesForTest(maxInt + 1)},
+								{name: "reported allocation panic", encodedLength: uvarintBytesForTest(uint64(1) << 62)},
+								{name: "uint64 max", encodedLength: uvarintBytesForTest(^uint64(0))},
+								{name: "count exceeds remaining minimum", encodedLength: uvarintBytesForTest(tooMany)},
+								{name: "truncated count", encodedLength: []byte{0x80}, truncate: true},
+								{name: "truncated value", encodedLength: uvarintBytesForTest(1), payload: truncatedValue, truncate: true},
+							}
+
+							for _, tc := range cases {
+								t.Run(fmt.Sprintf("%s/%s/%s", schema.name, vector.name, tc.name), func(t *testing.T) {
+									bad := replaceHistogramVectorLength(rec, offset, tc.encodedLength)
+									if tc.truncate {
+										end := offset + len(tc.encodedLength)
+										bad = append(append([]byte{}, bad[:end]...), tc.payload...)
+									}
+									decoder := NewDecoder(labels.NewSymbolTable(), promslog.NewNopLogger())
+									var err error
+									require.NotPanics(t, func() {
+										if floatHistogram {
+											_, err = decoder.FloatHistogramSamples(bad, nil)
+										} else {
+											_, err = decoder.HistogramSamples(bad, nil)
+										}
+									})
+									require.ErrorIs(t, err, encoding.ErrInvalidSize)
+								})
+							}
+						}
+					}
+
+					t.Run("reserved schema keeps decode error", func(t *testing.T) {
+						h := &histogram.Histogram{
+							Schema:        9,
+							PositiveSpans: []histogram.Span{{Offset: 0, Length: 1}},
+						}
+						rec := histogramRecordForTest(enableSTStorage, h)
+						if floatHistogram {
+							rec = floatHistogramRecordForTest(enableSTStorage, h)
+						}
+						offset := histogramVectorLengthOffset(t, rec, 1)
+						length := uvarintBytesForTest(1)
+						bad := replaceHistogramVectorLength(rec, offset, length)
+						bad = append(append([]byte{}, bad[:offset+len(length)]...), 0)
+						decoder := NewDecoder(labels.NewSymbolTable(), promslog.NewNopLogger())
+						var err error
+						if floatHistogram {
+							_, err = decoder.FloatHistogramSamples(bad, nil)
+						} else {
+							_, err = decoder.HistogramSamples(bad, nil)
+						}
+						require.ErrorIs(t, err, encoding.ErrInvalidSize)
+					})
+				})
+			}
 		})
 	}
 }
