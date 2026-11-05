@@ -154,6 +154,20 @@ metadata changes as WAL records on a per-series basis, including any `help`, `ty
 
 This must be used if you would like to send metadata using the new remote write 2.0.
 
+## Remote Write Savepoint
+
+`--enable-feature=remote-write-savepoint`
+
+When enabled, Prometheus periodically writes the WAL segment position of each remote write queue to disk. On restart, remote write resumes reading from the last written segment rather than starting from `time.Now()`, reducing loss of samples that were written to the WAL but not yet sent to the remote destination. When a config reload recreates a queue without changing its remote write config, for example because external labels changed, the new queue resumes from the old queue's current segment.
+
+Since replay starts at a segment boundary, some already-delivered samples may be re-sent. The remote write destination must handle duplicate or out-of-order samples gracefully.
+
+Current limitations:
+
+- Positions are keyed by the full remote write config. Changing any of its fields, including `queue_config`, drops that queue's saved position. The old queue still flushes what it had queued, but the new queue starts from `time.Now()` and skips the rest of its backlog.
+- Savepoints don't hold back WAL truncation. Samples in segments truncated before they were read are not sent.
+- After a long outage, replay can send samples older than the remote destination accepts. Setting `queue_config.sample_age_limit` is recommended to skip them.
+
 ## Delay compaction start time
 
 `--enable-feature=delayed-compaction`
