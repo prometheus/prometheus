@@ -27,6 +27,7 @@ import (
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/model/value"
 	"github.com/prometheus/prometheus/tsdb/chunkenc"
+	"github.com/prometheus/prometheus/tsdb/chunks"
 	"github.com/prometheus/prometheus/util/annotations"
 )
 
@@ -1047,10 +1048,14 @@ func mergeSeriesByLabels(preferred, fallback []Series) ([]Series, error) {
 	usedFallback := make([]bool, len(fallback))
 	for _, p := range preferred {
 		pLabels := p.Labels()
+		_, nonFloat := p.(nonFloatClassicSeries)
 		merged := p
 		for i, f := range fallback {
 			if !usedFallback[i] && labels.Equal(pLabels, f.Labels()) {
 				usedFallback[i] = true
+				if nonFloat {
+					continue
+				}
 				var err error
 				merged, err = mergeSamples(merged, f)
 				if err != nil {
@@ -1066,6 +1071,14 @@ func mergeSeriesByLabels(preferred, fallback []Series) ([]Series, error) {
 		}
 	}
 	return out, nil
+}
+
+// nonFloatClassicSeries wraps a stored series whose name carries a classic
+// suffix (_bucket, _count, _sum) but whose samples are native histograms rather
+// than floats, so mergeSeriesByLabels keeps the stored series untouched instead
+// of overwriting it with float samples converted from a base-name NHCB.
+type nonFloatClassicSeries struct {
+	Series
 }
 
 type classicKeptEntry struct {
@@ -1111,27 +1124,41 @@ func collectClassicGroup(series []Series, suffix string, leMatchers []*labels.Ma
 		firstSeries := len(ts) == 0
 		idx := 0
 		needSort := false
-		for it.Next() == chunkenc.ValFloat {
-			t, f := it.At()
-			if keep {
-				samplesBuf = append(samplesBuf, fSample{st: it.AtST(), t: t, f: f})
-			}
-			if value.IsStaleNaN(f) {
-				continue
-			}
-			if firstSeries {
+		var histSamples []chunks.Sample
+		for vt := it.Next(); vt != chunkenc.ValNone; vt = it.Next() {
+			switch vt {
+			case chunkenc.ValFloat:
+				t, f := it.At()
+				if keep {
+					samplesBuf = append(samplesBuf, fSample{st: it.AtST(), t: t, f: f})
+				}
+				if value.IsStaleNaN(f) {
+					continue
+				}
+				if firstSeries {
+					ts = append(ts, t)
+					continue
+				}
+				for idx < len(ts) && ts[idx] < t {
+					idx++
+				}
+				if idx < len(ts) && ts[idx] == t {
+					idx++
+					continue
+				}
 				ts = append(ts, t)
-				continue
+				needSort = true
+			case chunkenc.ValHistogram:
+				if keep && len(samplesBuf) == startOff {
+					t, h := it.AtHistogram(nil)
+					histSamples = append(histSamples, hSample{st: it.AtST(), t: t, h: h})
+				}
+			case chunkenc.ValFloatHistogram:
+				if keep && len(samplesBuf) == startOff {
+					t, fh := it.AtFloatHistogram(nil)
+					histSamples = append(histSamples, fhSample{st: it.AtST(), t: t, fh: fh})
+				}
 			}
-			for idx < len(ts) && ts[idx] < t {
-				idx++
-			}
-			if idx < len(ts) && ts[idx] == t {
-				idx++
-				continue
-			}
-			ts = append(ts, t)
-			needSort = true
 		}
 		if err := it.Err(); err != nil {
 			return nil, nil, it, err
@@ -1141,10 +1168,15 @@ func collectClassicGroup(series []Series, suffix string, leMatchers []*labels.Ma
 			ts = slices.Compact(ts)
 		}
 		if keep {
+			nFloats := len(samplesBuf) - startOff
+			if nFloats == 0 && len(histSamples) > 0 {
+				kept = append(kept, classicKeptEntry{raw: nonFloatClassicSeries{Series: NewListSeries(lset, histSamples)}})
+				continue
+			}
 			kept = append(kept, classicKeptEntry{
 				lset: lset,
 				off:  startOff,
-				n:    len(samplesBuf) - startOff,
+				n:    nFloats,
 			})
 			bufferedCount++
 		}
@@ -1249,11 +1281,15 @@ func mergeSamples(a, b Series) (Series, error) {
 		bSample, hasB = nextFloat(itB)
 	}
 
-	if err := itA.Err(); err != nil {
-		return nil, err
+	if itA != nil {
+		if err := itA.Err(); err != nil {
+			return nil, err
+		}
 	}
-	if err := itB.Err(); err != nil {
-		return nil, err
+	if itB != nil {
+		if err := itB.Err(); err != nil {
+			return nil, err
+		}
 	}
 
 	return &fSampleSeries{lset: a.Labels(), samples: samples}, nil

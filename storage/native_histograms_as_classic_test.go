@@ -706,6 +706,26 @@ func TestNativeHistogramsAsClassicQuerier_Select(t *testing.T) {
 					},
 					expectedCount: 0,
 				},
+				{
+					name:          "mixed-type classic series scans past non-float sample and shadows NHCB",
+					queryMatchers: []*labels.Matcher{labels.MustNewMatcher(labels.MatchEqual, model.MetricNameLabel, "http_requests_count")},
+					classicSeries: []Series{
+						NewListSeries(labels.FromStrings("__name__", "http_requests_count", "job", "api"), []chunks.Sample{
+							hSample{t: 1, h: expNH},
+							fSample{t: 2, f: 25},
+						}),
+					},
+					nhcbSeries: []Series{
+						NewListSeries(labels.FromStrings("__name__", "http_requests", "job", "api"), []chunks.Sample{
+							hSample{t: 2, h: makeNHCB([]float64{1.0}, []int64{50, 50})},
+							hSample{t: 3, h: makeNHCB([]float64{1.0}, []int64{60, 60})},
+						}),
+					},
+					expectedCount: 1,
+					expectedSamples: []seriesSamples{
+						{labels: `{__name__="http_requests_count", job="api"}`, samples: []fSample{{t: 2, f: 25}, {t: 3, f: 120}}},
+					},
+				},
 			},
 		},
 		{
@@ -1626,4 +1646,26 @@ func TestNativeHistogramsAsClassicQuerier_SinglePassInputIterators(t *testing.T)
 			testutil.RequireEqualWithOptions(t, tc.expected, got, []cmp.Option{cmp.AllowUnexported(seriesSamples{}, fSample{}), cmpopts.EquateNaNs()})
 		})
 	}
+
+	t.Run("native histogram named _count coexisting with base NHCB keeps histogram samples", func(t *testing.T) {
+		q := NewNativeHistogramsAsClassicQuerier(&nhcbMockQuerier{
+			classicSeries: wrapSingleUse(t,
+				NewListSeries(labels.FromStrings("__name__", "batch_item_count", "job", "api"), []chunks.Sample{hSample{st: 1, t: 2, h: expNH}}),
+			),
+			nhcbSeries: wrapSingleUse(t,
+				NewListSeries(labels.FromStrings("__name__", "batch_item", "job", "api"), []chunks.Sample{hSample{t: 2, h: makeNHCB([]float64{1.0}, []int64{5, 5})}}),
+			),
+		})
+		ss := q.Select(t.Context(), false, nil, labels.MustNewMatcher(labels.MatchEqual, model.MetricNameLabel, "batch_item_count"))
+		require.True(t, ss.Next())
+		it := ss.At().Iterator(nil)
+		require.Equal(t, chunkenc.ValHistogram, it.Next())
+		ts, h := it.AtHistogram(nil)
+		require.Equal(t, int64(2), ts)
+		require.Equal(t, int64(1), it.AtST())
+		require.Equal(t, expNH.Count, h.Count)
+		require.Equal(t, chunkenc.ValNone, it.Next())
+		require.False(t, ss.Next())
+		require.NoError(t, ss.Err())
+	})
 }
