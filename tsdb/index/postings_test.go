@@ -1434,6 +1434,7 @@ func slowRegexpString() string {
 }
 
 func BenchmarkMemPostings_PostingsForLabelMatching(b *testing.B) {
+	none := regexp.MustCompile("^missing.*$")
 	fast := regexp.MustCompile("^(100|200)$")
 	slowRegexp := "^" + slowRegexpString() + "$"
 	b.Logf("Slow regexp length = %d", len(slowRegexp))
@@ -1448,6 +1449,12 @@ func BenchmarkMemPostings_PostingsForLabelMatching(b *testing.B) {
 					mp.Add(storage.SeriesRef(i*seriesPerLabel+j), labels.FromStrings("__name__", strconv.Itoa(j), "label", strconv.Itoa(i)))
 				}
 			}
+
+			b.Run("matcher=none", func(b *testing.B) {
+				for b.Loop() {
+					mp.PostingsForLabelMatching(context.Background(), "label", none.MatchString).Next()
+				}
+			})
 
 			fp, err := ExpandPostings(mp.PostingsForLabelMatching(context.Background(), "label", fast.MatchString))
 			require.NoError(b, err)
@@ -1497,11 +1504,21 @@ func TestMemPostings_PostingsForLabelMatching(t *testing.T) {
 		return iv%2 == 0
 	}
 
-	p := mp.PostingsForLabelMatching(context.Background(), "foo", isEven)
-	require.NoError(t, p.Err())
-	refs, err := ExpandPostings(p)
-	require.NoError(t, err)
-	require.Equal(t, []storage.SeriesRef{2, 4}, refs)
+	for _, tc := range []struct {
+		name     string
+		match    func(string) bool
+		expected []storage.SeriesRef
+	}{
+		{name: "even", match: isEven, expected: []storage.SeriesRef{2, 4}},
+		{name: "none", match: func(string) bool { return false }},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			p := mp.PostingsForLabelMatching(context.Background(), "foo", tc.match)
+			refs, err := ExpandPostings(p)
+			require.NoError(t, err)
+			require.Equal(t, tc.expected, refs)
+		})
+	}
 }
 
 func TestMemPostings_PostingsForAllLabelValues(t *testing.T) {
