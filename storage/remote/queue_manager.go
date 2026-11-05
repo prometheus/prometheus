@@ -783,17 +783,21 @@ func isV2TimeSeriesOldFilter(metrics *queueManagerMetrics, baseTime time.Time, s
 			})
 		}
 
-		if len(ts.Samples) == 0 && len(ts.Histograms) == 0 {
-			if len(ts.Exemplars) > 0 && mode != remoteapi.WriteModeNone {
-				if checker.metrics != nil {
-					checker.metrics.droppedExemplarsTotal.WithLabelValues(reasonDetachedExemplarNotAllowed).Add(float64(len(ts.Exemplars)))
-				}
-				ts.Exemplars = ts.Exemplars[:0]
-				return true
-			}
-			return len(ts.Exemplars) == 0
+		if len(ts.Samples) > 0 || len(ts.Histograms) > 0 {
+			return false
 		}
-		return false
+		if len(ts.Exemplars) == 0 {
+			return true
+		}
+		if mode == remoteapi.WriteModeNone {
+			return false
+		}
+
+		if metrics != nil {
+			metrics.droppedExemplarsTotal.WithLabelValues(reasonDetachedExemplarNotAllowed).Add(float64(len(ts.Exemplars)))
+		}
+		ts.Exemplars = ts.Exemplars[:0]
+		return true
 	}
 }
 
