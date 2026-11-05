@@ -1939,10 +1939,12 @@ func (api *API) targetMetadata(r *http.Request) apiFuncResult {
 	builder := labels.NewBuilder(labels.EmptyLabels())
 	metric := r.FormValue("metric")
 	res := []metricMetadata{}
+	var matchedTargets int
+targetLoop:
 	for _, tt := range api.targetRetriever(r.Context()).TargetsActive() {
 		for _, t := range tt {
-			if limit >= 0 && len(res) >= limit {
-				break
+			if limit >= 0 && matchedTargets >= limit {
+				break targetLoop
 			}
 			targetLabels := t.Labels(builder)
 			// Filter targets that don't satisfy the label matchers.
@@ -1951,6 +1953,7 @@ func (api *API) targetMetadata(r *http.Request) apiFuncResult {
 			}
 			// If no metric is specified, get the full list for the target.
 			if metric == "" {
+				matchedTargets++
 				for _, md := range t.ListMetadata() {
 					res = append(res, metricMetadata{
 						Target:       targetLabels,
@@ -1964,6 +1967,7 @@ func (api *API) targetMetadata(r *http.Request) apiFuncResult {
 			}
 			// Get metadata for the specified metric.
 			if md, ok := t.GetMetadata(metric); ok {
+				matchedTargets++
 				res = append(res, metricMetadata{
 					Target: targetLabels,
 					Type:   md.Type,
