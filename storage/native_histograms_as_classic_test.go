@@ -1261,6 +1261,38 @@ func TestNativeHistogramsAsClassicQuerier_ErrorPropagation(t *testing.T) {
 			require.ErrorIs(t, ss.Err(), testError)
 		})
 	}
+
+	t.Run("context cancellation aborts series scanning", func(t *testing.T) {
+		ctx, cancel := context.WithCancel(t.Context())
+		cancel()
+
+		q := NewNativeHistogramsAsClassicQuerier(&nhcbMockQuerier{
+			nhcbSeries: []Series{
+				NewListSeries(labels.FromStrings("__name__", "rpc_duration_seconds", "quantile", "0.5"), []chunks.Sample{fSample{t: 1, f: 0.1}}),
+				NewListSeries(labels.FromStrings("__name__", "rpc_duration_seconds", "quantile", "0.99"), []chunks.Sample{fSample{t: 1, f: 0.5}}),
+			},
+		})
+		ss := q.Select(ctx, false, nil,
+			labels.MustNewMatcher(labels.MatchEqual, model.MetricNameLabel, "rpc_duration_seconds_count"))
+		require.False(t, ss.Next())
+		require.ErrorIs(t, ss.Err(), context.Canceled)
+
+		// Also verify cancellation while streaming subsequent non-NHCB series after firstPeeked.
+		ctx2, cancel2 := context.WithCancel(t.Context())
+		q2 := NewNativeHistogramsAsClassicQuerier(&nhcbMockQuerier{
+			nhcbSeries: []Series{
+				NewListSeries(labels.FromStrings("__name__", "http_requests", "job", "a"), []chunks.Sample{hSample{t: 1, h: nhcb}}),
+				NewListSeries(labels.FromStrings("__name__", "http_requests", "job", "skip"), []chunks.Sample{fSample{t: 1, f: 1}}),
+				NewListSeries(labels.FromStrings("__name__", "http_requests", "job", "b"), []chunks.Sample{hSample{t: 1, h: nhcb}}),
+			},
+		})
+		ss2 := q2.Select(ctx2, false, nil,
+			labels.MustNewMatcher(labels.MatchEqual, model.MetricNameLabel, "http_requests_count"))
+		require.True(t, ss2.Next())
+		cancel2()
+		require.False(t, ss2.Next())
+		require.ErrorIs(t, ss2.Err(), context.Canceled)
+	})
 }
 
 func TestNativeHistogramsAsClassicQuerier_WarningPropagation(t *testing.T) {

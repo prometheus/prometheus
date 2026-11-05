@@ -171,6 +171,9 @@ func selectNHCBAsClassic(ctx context.Context, sortSeries bool, nhcbSet, classicS
 		fhScratch   *histogram.FloatHistogram
 	)
 	for nhcbSet.Next() {
+		if err := ctx.Err(); err != nil {
+			return errSeriesSetWithWarnings(err, classicSet, nhcbSet)
+		}
 		if hScratch == nil {
 			hScratch = &histogram.Histogram{}
 			fhScratch = &histogram.FloatHistogram{}
@@ -205,6 +208,9 @@ func selectNHCBAsClassic(ctx context.Context, sortSeries bool, nhcbSet, classicS
 
 	var firstClassic Series
 	for classicSet.Next() {
+		if err := ctx.Err(); err != nil {
+			return errSeriesSetWithWarnings(err, classicSet, nhcbSet)
+		}
 		if s := classicSet.At(); s != nil {
 			firstClassic = s
 			break
@@ -240,6 +246,9 @@ func selectNHCBAsClassic(ctx context.Context, sortSeries bool, nhcbSet, classicS
 		// called at most once per series.
 		groups = append(groups, histogramGroup{nhcb: []nhcbGroupEntry{{series: firstPeeked.series, peeked: &firstPeeked}}})
 		for nhcbSet.Next() {
+			if err := ctx.Err(); err != nil {
+				return errSeriesSetWithWarnings(err, classicSet, nhcbSet)
+			}
 			s := nhcbSet.At()
 			if s == nil || s.Labels().Has(labels.BucketLabel) {
 				continue
@@ -253,6 +262,9 @@ func selectNHCBAsClassic(ctx context.Context, sortSeries bool, nhcbSet, classicS
 		index := histogramIndex{stripLe: suffix == histogram.ClassicSuffixBucket}
 		index.addClassic(firstClassic)
 		for classicSet.Next() {
+			if err := ctx.Err(); err != nil {
+				return errSeriesSetWithWarnings(err, classicSet, nhcbSet)
+			}
 			if s := classicSet.At(); s != nil {
 				index.addClassic(s)
 			}
@@ -262,6 +274,9 @@ func selectNHCBAsClassic(ctx context.Context, sortSeries bool, nhcbSet, classicS
 		}
 		index.addNHCB(nhcbGroupEntry{series: firstPeeked.series, peeked: &firstPeeked})
 		for nhcbSet.Next() {
+			if err := ctx.Err(); err != nil {
+				return errSeriesSetWithWarnings(err, classicSet, nhcbSet)
+			}
 			s := nhcbSet.At()
 			if s == nil || s.Labels().Has(labels.BucketLabel) {
 				continue
@@ -692,6 +707,10 @@ func (s *nhcbToClassicSeriesSet) Next() bool {
 				s.firstPeeked = peekedNHCB{}
 			} else {
 				for s.nhcbSet.Next() {
+					if err := s.ctx.Err(); err != nil {
+						s.err = err
+						return false
+					}
 					var (
 						ok  bool
 						err error
