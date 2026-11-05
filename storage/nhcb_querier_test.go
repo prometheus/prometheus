@@ -997,9 +997,24 @@ func TestNHCBAsClassicQuerier_Collisions(t *testing.T) {
 				{labels: `{__name__="http_requests_bucket", le="4.0", pod="c"}`, samples: []fSample{{t: 1, f: 8}}},
 			}, got)
 
-			// The same holds on the grouped path (sortSeries=true).
+			// The same holds on the grouped path (sortSeries=true), sorted by full label set.
 			got = readAll(t, q.Select(context.Background(), true, nil, bucketQuery))
-			require.Len(t, got, 14)
+			assertSeriesSamplesEqual(t, []seriesSamples{
+				{labels: `{__name__="http_requests_bucket", le="+Inf", pod="a"}`, samples: []fSample{{t: 1, f: 10}}},
+				{labels: `{__name__="http_requests_bucket", le="+Inf", pod="b"}`, samples: []fSample{{t: 1, f: 30}}},
+				{labels: `{__name__="http_requests_bucket", le="+Inf", pod="c"}`, samples: []fSample{{t: 1, f: 8}}},
+				{labels: `{__name__="http_requests_bucket", le="` + le084 + `", pod="b"}`, samples: []fSample{{t: 1, f: 0}}},
+				{labels: `{__name__="http_requests_bucket", le="` + le084 + `", pod="c"}`, samples: []fSample{{t: 1, f: 0}}},
+				{labels: `{__name__="http_requests_bucket", le="1.0", pod="a"}`, samples: []fSample{{t: 1, f: 5}}},
+				{labels: `{__name__="http_requests_bucket", le="1.0", pod="b"}`, samples: []fSample{{t: 1, f: 15}}},
+				{labels: `{__name__="http_requests_bucket", le="1.0", pod="c"}`, samples: []fSample{{t: 1, f: 0}}},
+				{labels: `{__name__="http_requests_bucket", le="` + le119 + `", pod="b"}`, samples: []fSample{{t: 1, f: 30}}},
+				{labels: `{__name__="http_requests_bucket", le="` + le119 + `", pod="c"}`, samples: []fSample{{t: 1, f: 0}}},
+				{labels: `{__name__="http_requests_bucket", le="2.0", pod="b"}`, samples: []fSample{{t: 1, f: 30}}},
+				{labels: `{__name__="http_requests_bucket", le="2.0", pod="c"}`, samples: []fSample{{t: 1, f: 0}}},
+				{labels: `{__name__="http_requests_bucket", le="4.0", pod="b"}`, samples: []fSample{{t: 1, f: 30}}},
+				{labels: `{__name__="http_requests_bucket", le="4.0", pod="c"}`, samples: []fSample{{t: 1, f: 8}}},
+			}, got)
 		})
 
 		t.Run("bounds are unified across series and samples", func(t *testing.T) {
@@ -1107,6 +1122,43 @@ func TestNHCBAsClassicQuerier_Collisions(t *testing.T) {
 			assertSeriesSamplesEqual(t, []seriesSamples{
 				{labels: `{__name__="http_requests_bucket", le="+Inf"}`, samples: []fSample{{t: 1, f: 30}}},
 				{labels: `{__name__="http_requests_bucket", le="` + le084 + `"}`, samples: []fSample{{t: 1, f: 0}}},
+				{labels: `{__name__="http_requests_bucket", le="` + le119 + `"}`, samples: []fSample{{t: 1, f: 30}}},
+			}, got)
+
+			// A non-pinning regex falls back to the unified populated bounds and
+			// filters the emitted le labels.
+			got = readAll(t, q.Select(context.Background(), false, nil, bucketQuery,
+				labels.MustNewMatcher(labels.MatchRegexp, labels.BucketLabel, `1\..*`)))
+			assertSeriesSamplesEqual(t, []seriesSamples{
+				{labels: `{__name__="http_requests_bucket", le="1.0"}`, samples: []fSample{{t: 1, f: 15}}},
+				{labels: `{__name__="http_requests_bucket", le="` + le119 + `"}`, samples: []fSample{{t: 1, f: 30}}},
+			}, got)
+
+			// Multiple pinning le matchers union their pinned bounds and then
+			// filter to the intersection of all matchers.
+			got = readAll(t, q.Select(context.Background(), false, nil, bucketQuery,
+				labels.MustNewMatcher(labels.MatchRegexp, labels.BucketLabel, `1|2`),
+				labels.MustNewMatcher(labels.MatchEqual, labels.BucketLabel, "1")))
+			assertSeriesSamplesEqual(t, []seriesSamples{
+				{labels: `{__name__="http_requests_bucket", le="1.0"}`, samples: []fSample{{t: 1, f: 15}}},
+			}, got)
+
+			// MatchNotEqual compares numeric values (so le!="1" excludes le="1.0")
+			// and falls back to string comparison when the matcher value is not a float.
+			got = readAll(t, q.Select(context.Background(), false, nil, bucketQuery,
+				labels.MustNewMatcher(labels.MatchNotEqual, labels.BucketLabel, "1")))
+			assertSeriesSamplesEqual(t, []seriesSamples{
+				{labels: `{__name__="http_requests_bucket", le="+Inf"}`, samples: []fSample{{t: 1, f: 30}}},
+				{labels: `{__name__="http_requests_bucket", le="` + le084 + `"}`, samples: []fSample{{t: 1, f: 0}}},
+				{labels: `{__name__="http_requests_bucket", le="` + le119 + `"}`, samples: []fSample{{t: 1, f: 30}}},
+			}, got)
+
+			got = readAll(t, q.Select(context.Background(), false, nil, bucketQuery,
+				labels.MustNewMatcher(labels.MatchNotEqual, labels.BucketLabel, "")))
+			assertSeriesSamplesEqual(t, []seriesSamples{
+				{labels: `{__name__="http_requests_bucket", le="+Inf"}`, samples: []fSample{{t: 1, f: 30}}},
+				{labels: `{__name__="http_requests_bucket", le="` + le084 + `"}`, samples: []fSample{{t: 1, f: 0}}},
+				{labels: `{__name__="http_requests_bucket", le="1.0"}`, samples: []fSample{{t: 1, f: 15}}},
 				{labels: `{__name__="http_requests_bucket", le="` + le119 + `"}`, samples: []fSample{{t: 1, f: 30}}},
 			}, got)
 		})
