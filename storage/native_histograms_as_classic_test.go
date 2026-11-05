@@ -1002,8 +1002,28 @@ func TestNativeHistogramsAsClassicQuerier_SortedSelect(t *testing.T) {
 	})
 }
 
+func readSeriesSamples(t *testing.T, ss SeriesSet) []seriesSamples {
+	t.Helper()
+	var out []seriesSamples
+	var it chunkenc.Iterator
+	for ss.Next() {
+		s := ss.At()
+		it = s.Iterator(it)
+		var samples []fSample
+		for it.Next() == chunkenc.ValFloat {
+			ts, v := it.At()
+			samples = append(samples, fSample{st: it.AtST(), t: ts, f: v})
+		}
+		require.NoError(t, it.Err())
+		out = append(out, seriesSamples{labels: s.Labels().String(), samples: samples})
+	}
+	require.NoError(t, ss.Err())
+	return out
+}
+
 func TestNativeHistogramsAsClassicQuerier_FloatHistogram(t *testing.T) {
-	fhNHCB := &histogram.FloatHistogram{
+	staleF := math.Float64frombits(value.StaleNaN)
+	fh1 := &histogram.FloatHistogram{
 		Schema:          histogram.CustomBucketsSchema,
 		Count:           15,
 		Sum:             150.0,
@@ -1011,22 +1031,127 @@ func TestNativeHistogramsAsClassicQuerier_FloatHistogram(t *testing.T) {
 		PositiveSpans:   []histogram.Span{{Offset: 0, Length: 3}},
 		PositiveBuckets: []float64{3, 5, 7},
 	}
+	fh2 := &histogram.FloatHistogram{
+		Schema:          histogram.CustomBucketsSchema,
+		Count:           30,
+		Sum:             300.0,
+		CustomValues:    []float64{1.0, 5.0},
+		PositiveSpans:   []histogram.Span{{Offset: 0, Length: 3}},
+		PositiveBuckets: []float64{6, 10, 14},
+	}
+	fhStale := &histogram.FloatHistogram{
+		Schema: histogram.CustomBucketsSchema,
+		Sum:    staleF,
+	}
+	fhExp := &histogram.FloatHistogram{
+		Schema:          3,
+		Count:           40,
+		Sum:             400.0,
+		PositiveSpans:   []histogram.Span{{Offset: 0, Length: 2}},
+		PositiveBuckets: []float64{20, 20},
+	}
 
-	mock := &nhcbMockQuerier{
-		classicSeries: []Series{},
-		nhcbSeries: []Series{
-			NewListSeries(labels.FromStrings("__name__", "latency"), []chunks.Sample{fhSample{t: 1, fh: fhNHCB}}),
+	tests := []struct {
+		name          string
+		metricName    string
+		classicSeries []Series
+		nhcbSeries    []Series
+		expected      []seriesSamples
+	}{
+		{
+			name:       "multi-sample FloatHistogram buckets preserve start timestamps",
+			metricName: "latency_bucket",
+			nhcbSeries: []Series{
+				NewListSeries(labels.FromStrings("__name__", "latency"), []chunks.Sample{
+					fhSample{st: 10, t: 20, fh: fh1},
+					fhSample{st: 10, t: 30, fh: fh2},
+				}),
+			},
+			expected: []seriesSamples{
+				{labels: `{__name__="latency_bucket", le="1.0"}`, samples: []fSample{{st: 10, t: 20, f: 3}, {st: 10, t: 30, f: 6}}},
+				{labels: `{__name__="latency_bucket", le="5.0"}`, samples: []fSample{{st: 10, t: 20, f: 8}, {st: 10, t: 30, f: 16}}},
+				{labels: `{__name__="latency_bucket", le="+Inf"}`, samples: []fSample{{st: 10, t: 20, f: 15}, {st: 10, t: 30, f: 30}}},
+			},
+		},
+		{
+			name:       "multi-sample FloatHistogram count and sum",
+			metricName: "latency_sum",
+			nhcbSeries: []Series{
+				NewListSeries(labels.FromStrings("__name__", "latency"), []chunks.Sample{
+					fhSample{st: 10, t: 20, fh: fh1},
+					fhSample{st: 10, t: 30, fh: fh2},
+				}),
+			},
+			expected: []seriesSamples{
+				{labels: `{__name__="latency_sum"}`, samples: []fSample{{st: 10, t: 20, f: 150}, {st: 10, t: 30, f: 300}}},
+			},
+		},
+		{
+			name:       "leading stale, mid-series stale, and exponential FloatHistogram transition",
+			metricName: "latency_count",
+			nhcbSeries: []Series{
+				NewListSeries(labels.FromStrings("__name__", "latency"), []chunks.Sample{
+					fhSample{t: 1, fh: fhStale},
+					fhSample{t: 2, fh: fh1},
+					fhSample{t: 3, fh: fhStale},
+					fhSample{t: 4, fh: fh2},
+					fhSample{t: 5, fh: fhExp},
+				}),
+			},
+			expected: []seriesSamples{
+				{labels: `{__name__="latency_count"}`, samples: []fSample{
+					{t: 2, f: 15},
+					{t: 3, f: staleF},
+					{t: 4, f: 30},
+					{t: 5, f: staleF},
+				}},
+			},
+		},
+		{
+			name:       "exponential FloatHistogram base series is skipped",
+			metricName: "latency_bucket",
+			nhcbSeries: []Series{
+				NewListSeries(labels.FromStrings("__name__", "latency"), []chunks.Sample{fhSample{t: 1, fh: fhExp}}),
+			},
+		},
+		{
+			name:       "classic collision shadows FloatHistogram at classic timestamp and merges cutover",
+			metricName: "latency_bucket",
+			classicSeries: []Series{
+				NewListSeries(labels.FromStrings("__name__", "latency_bucket", "le", "1.0"), []chunks.Sample{fSample{t: 1, f: 1}}),
+				NewListSeries(labels.FromStrings("__name__", "latency_bucket", "le", "5.0"), []chunks.Sample{fSample{t: 1, f: 4}}),
+				NewListSeries(labels.FromStrings("__name__", "latency_bucket", "le", "+Inf"), []chunks.Sample{fSample{t: 1, f: 9}}),
+			},
+			nhcbSeries: []Series{
+				NewListSeries(labels.FromStrings("__name__", "latency"), []chunks.Sample{
+					fhSample{t: 1, fh: fh1},
+					fhSample{t: 2, fh: fh2},
+				}),
+			},
+			expected: []seriesSamples{
+				{labels: `{__name__="latency_bucket", le="+Inf"}`, samples: []fSample{{t: 1, f: 9}, {t: 2, f: 30}}},
+				{labels: `{__name__="latency_bucket", le="1.0"}`, samples: []fSample{{t: 1, f: 1}, {t: 2, f: 6}}},
+				{labels: `{__name__="latency_bucket", le="5.0"}`, samples: []fSample{{t: 1, f: 4}, {t: 2, f: 16}}},
+			},
 		},
 	}
-	q := NewNativeHistogramsAsClassicQuerier(mock)
 
-	ss := q.Select(context.Background(), false, nil, labels.MustNewMatcher(labels.MatchEqual, model.MetricNameLabel, "latency_bucket"))
-	var count int
-	for ss.Next() {
-		count++
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			q := NewNativeHistogramsAsClassicQuerier(&nhcbMockQuerier{
+				classicSeries: tc.classicSeries,
+				nhcbSeries:    tc.nhcbSeries,
+			})
+			ss := q.Select(t.Context(), false, nil, labels.MustNewMatcher(labels.MatchEqual, model.MetricNameLabel, tc.metricName))
+			got := readSeriesSamples(t, ss)
+			testutil.RequireEqualWithOptions(t, tc.expected, got, []cmp.Option{
+				cmp.AllowUnexported(seriesSamples{}, fSample{}),
+				cmp.Comparer(func(a, b float64) bool {
+					return math.Float64bits(a) == math.Float64bits(b) || (!math.IsNaN(a) && a == b)
+				}),
+			})
+		})
 	}
-	require.NoError(t, ss.Err())
-	require.Equal(t, 3, count)
 }
 
 // makeNHCB builds a custom buckets histogram from per-bucket counts, the last
