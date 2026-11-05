@@ -5,7 +5,8 @@
 name: Approve pending workflows
 
 on:
-  issue_comment:
+  # The pinned action requires triage access or higher and only calls GitHub APIs.
+  issue_comment: # zizmor: ignore[dangerous-triggers]
     types: [created]
 
 permissions: read-all

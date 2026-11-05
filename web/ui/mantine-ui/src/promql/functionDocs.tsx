@@ -1749,8 +1749,14 @@ const funcDocs: Record<string, React.ReactNode> = {
         <code>
           {"{"} ... {"}"}
         </code>
-        ) and may only contain label matchers. The label matchers are used to constrain which info series to consider
-        and which data labels to add to <code>v</code>.
+        ), may only contain label matchers, and must contain at least one. To add all data labels, omit the argument
+        instead of writing{" "}
+        <code>
+          {"{"}
+          {"}"}
+        </code>
+        . The label matchers are used to constrain which info series to consider and which data labels to add to{" "}
+        <code>v</code>.
       </p>
 
       <p>
@@ -2303,7 +2309,12 @@ const funcDocs: Record<string, React.ReactNode> = {
 
       <p>
         <code>max_of(a scalar, b scalar)</code> returns the larger of the two scalar values <code>a</code>
-        and <code>b</code>.
+        and <code>b</code>. <code>NaN</code> is only returned if both <code>a</code> and <code>b</code> are{" "}
+        <code>NaN</code>, like for the{" "}
+        <a href="operators.md#min-and-max">
+          <code>max</code> aggregation operator
+        </a>
+        .
       </p>
     </>
   ),
@@ -2428,7 +2439,12 @@ const funcDocs: Record<string, React.ReactNode> = {
 
       <p>
         <code>min_of(a scalar, b scalar)</code> returns the smaller of the two scalar values <code>a</code>
-        and <code>b</code>.
+        and <code>b</code>. <code>NaN</code> is only returned if both <code>a</code> and <code>b</code> are{" "}
+        <code>NaN</code>, like for the{" "}
+        <a href="operators.md#min-and-max">
+          <code>min</code> aggregation operator
+        </a>
+        .
       </p>
     </>
   ),

@@ -48,7 +48,7 @@
     "smoothed": true,
     "subqueries": true,
     "type_and_unit_labels": false,
-    "unquoted_utf8_names": false,
+    "unquoted_utf8_names": true,
     "without": true
   },
   "promql_functions": {
@@ -165,6 +165,9 @@
     "and": true,
     "atan2": true,
     "avg": true,
+    "bitand": true,
+    "bitor": true,
+    "bitxor": true,
     "bottomk": true,
     "count": true,
     "count_values": true,
@@ -184,7 +187,9 @@
   "rules": {
     "concurrent_rule_eval": false,
     "keep_firing_for": true,
-    "query_offset": true
+    "query_offset": true,
+    "recording_rule_metadata": true,
+    "type_and_unit_labels": false
   },
   "scrape": {
     "extra_scrape_metrics": true,
@@ -214,6 +219,7 @@
     "lightsail": true,
     "linode": true,
     "marathon": true,
+    "mq": true,
     "msk": true,
     "nerve": true,
     "nomad": true,

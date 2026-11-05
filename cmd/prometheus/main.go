@@ -185,24 +185,25 @@ func agentOnlyFlag(app *kingpin.Application, name, help string) *kingpin.FlagCla
 type flagConfig struct {
 	configFile string
 
-	agentStoragePath            string
-	serverStoragePath           string
-	notifier                    notifier.Options
-	forGracePeriod              model.Duration
-	outageTolerance             model.Duration
-	resendDelay                 model.Duration
-	maxConcurrentEvals          int64
-	web                         web.Options
-	scrape                      scrape.Options
-	tsdb                        tsdbOptions
-	agent                       agentOptions
-	lookbackDelta               model.Duration
-	webTimeout                  model.Duration
-	queryTimeout                model.Duration
-	queryConcurrency            int
-	queryMaxSamples             int
-	RemoteFlushDeadline         model.Duration
-	maxNotificationsSubscribers int
+	agentStoragePath             string
+	serverStoragePath            string
+	notifier                     notifier.Options
+	forGracePeriod               model.Duration
+	outageTolerance              model.Duration
+	resendDelay                  model.Duration
+	maxConcurrentEvals           int64
+	web                          web.Options
+	scrape                       scrape.Options
+	tsdb                         tsdbOptions
+	agent                        agentOptions
+	lookbackDelta                model.Duration
+	webTimeout                   model.Duration
+	queryTimeout                 model.Duration
+	queryConcurrency             int
+	queryMaxSamples              int
+	convertClassicHistogramsFrom []string
+	RemoteFlushDeadline          model.Duration
+	maxNotificationsSubscribers  int
 
 	enableAutoReload   bool
 	autoReloadInterval model.Duration
@@ -215,10 +216,11 @@ type flagConfig struct {
 	featureList []string
 	// These options are extracted from featureList
 	// for ease of use.
-	enablePerStepStats       bool
-	enableConcurrentRuleEval bool
-	useStartTimestamps       bool
-	enableQueryCost          bool
+	enablePerStepStats              bool
+	enableConcurrentRuleEval        bool
+	useStartTimestamps              bool
+	enableNativeHistogramsAsClassic bool
+	enableQueryCost                 bool
 
 	prometheusURL   string
 	corsRegexString string
@@ -263,8 +265,7 @@ func (c *flagConfig) setFeatureListOptions(logger *slog.Logger) error {
 				c.enableConcurrentRuleEval = true
 				logger.Info("Experimental concurrent rule evaluation enabled.")
 			case "promql-unquoted-utf8-names":
-				c.parserOpts.EnableUnquotedUTF8Names = true
-				logger.Info("Experimental unquoted UTF-8 names enabled.")
+				logger.Warn("This option for --enable-feature is now permanently enabled and therefore a no-op.", "option", o)
 			case "promql-experimental-functions":
 				c.parserOpts.EnableExperimentalFunctions = true
 				logger.Info("Experimental PromQL functions enabled.")
@@ -327,7 +328,7 @@ func (c *flagConfig) setFeatureListOptions(logger *slog.Logger) error {
 				logger.Info("Serving previous version of the Prometheus web UI.")
 			case "otlp-deltatocumulative":
 				c.web.ConvertOTLPDelta = true
-				logger.Info("Converting delta OTLP metrics to cumulative")
+				logger.Warn("This option for --enable-feature is deprecated and will be removed in a future major version. Use otlp-native-delta-ingestion instead.", "option", o)
 			case "otlp-native-delta-ingestion":
 				// Experimental OTLP native delta ingestion.
 				// This currently just stores the raw delta value as-is with unknown metric type. Better typing and
@@ -337,7 +338,7 @@ func (c *flagConfig) setFeatureListOptions(logger *slog.Logger) error {
 				logger.Info("Enabling native ingestion of delta OTLP metrics, storing the raw sample values without conversion. WARNING: Delta support is in an early stage of development. The ingestion and querying process is likely to change over time.")
 			case "openmetrics2":
 				c.scrape.EnableOpenMetrics2 = true
-				logger.Info("Experimental OpenMetrics 2.0 scrape format enabled. WARNING: OpenMetrics 2.0 is not stable yet, the parser will be made stricter before stabilization and the exposition format may still change.")
+				logger.Info("Experimental OpenMetrics 2.0 scrape format enabled. To negotiate OpenMetrics 2.0 with targets, add OpenMetricsText2.0.0 and OpenMetricsText2.0.0-rc to scrape_protocols in the configuration. WARNING: OpenMetrics 2.0 is not stable yet, the parser will be made stricter before stabilization and the exposition format may still change.")
 			case "type-and-unit-labels":
 				c.scrape.EnableTypeAndUnitLabels = true
 				c.web.EnableTypeAndUnitLabels = true
@@ -357,6 +358,9 @@ func (c *flagConfig) setFeatureListOptions(logger *slog.Logger) error {
 			case "search-api":
 				c.web.EnableSearch = true
 				logger.Info("Experimental search API enabled.")
+			case "promql-native-histograms-as-classic":
+				c.enableNativeHistogramsAsClassic = true
+				logger.Info("Experimental PromQL native histograms as classic conversion enabled.")
 			case "query-cost":
 				c.enableQueryCost = true
 				c.web.EnableQueryCost = true
@@ -655,10 +659,13 @@ func main() {
 	serverOnlyFlag(a, "query.max-samples", "Maximum number of samples a single query can load into memory. Note that queries will fail if they try to load more samples than this into memory, so this also limits the number of samples a query can return.").
 		Default("50000000").IntVar(&cfg.queryMaxSamples)
 
+	serverOnlyFlag(a, "query.convert-classic-histograms-from", "Native histogram kinds that PromQL converts to classic histograms when classic histogram series are selected. Valid values: nhcb. Requires --enable-feature=promql-native-histograms-as-classic.").
+		Hidden().PlaceHolder("<kind>").EnumsVar(&cfg.convertClassicHistogramsFrom, "nhcb")
+
 	a.Flag("scrape.discovery-reload-interval", "Interval used by scrape manager to throttle target groups updates.").
 		Hidden().Default("5s").SetValue(&cfg.scrape.DiscoveryReloadInterval)
 
-	a.Flag("enable-feature", "Comma separated feature names to enable. Valid options: concurrent-rule-eval, created-timestamp-zero-ingestion, delayed-compaction, exemplar-storage, extra-scrape-metrics, histograms-st-encoding, memory-snapshot-on-shutdown, metadata-wal-records, old-ui, openmetrics2, otlp-deltatocumulative, otlp-native-delta-ingestion, promql-binop-fill-modifiers, promql-delayed-name-removal, promql-experimental-functions, promql-per-step-stats, promql-unquoted-utf8-names, query-cost, search-api, st-storage, st-synthesis, type-and-unit-labels, use-start-timestamps, use-uncached-io, xor2-encoding, zstd-scrape. See https://prometheus.io/docs/prometheus/latest/feature_flags/ for more details.").
+	a.Flag("enable-feature", "Comma separated feature names to enable. Valid options: concurrent-rule-eval, created-timestamp-zero-ingestion, delayed-compaction, exemplar-storage, extra-scrape-metrics, histograms-st-encoding, memory-snapshot-on-shutdown, metadata-wal-records, old-ui, openmetrics2, otlp-deltatocumulative, otlp-native-delta-ingestion, promql-binop-fill-modifiers, promql-delayed-name-removal, promql-experimental-functions, promql-native-histograms-as-classic, promql-per-step-stats, query-cost, search-api, st-storage, st-synthesis, type-and-unit-labels, use-start-timestamps, use-uncached-io, xor2-encoding, zstd-scrape. See https://prometheus.io/docs/prometheus/latest/feature_flags/ for more details.").
 		StringsVar(&cfg.featureList)
 
 	a.Flag("agent", "Run Prometheus in 'Agent mode'.").BoolVar(&agentMode)
@@ -706,6 +713,14 @@ func main() {
 			cfg.autoReloadInterval, _ = model.ParseDuration("1s")
 		}
 		logger.Info("Automatic configuration file reloading enabled", "interval", cfg.autoReloadInterval)
+	}
+
+	if len(cfg.convertClassicHistogramsFrom) > 0 && !cfg.enableNativeHistogramsAsClassic {
+		fmt.Fprintln(os.Stderr, "--query.convert-classic-histograms-from requires --enable-feature=promql-native-histograms-as-classic")
+		os.Exit(1)
+	}
+	if cfg.enableNativeHistogramsAsClassic && len(cfg.convertClassicHistogramsFrom) == 0 {
+		cfg.convertClassicHistogramsFrom = []string{"nhcb"}
 	}
 
 	if cfg.web.MaxSearchLimit < 0 {
@@ -957,7 +972,17 @@ func main() {
 	var (
 		localStorage  = &readyStorage{stats: tsdb.NewDBStats()}
 		scraper       = &readyScrapeManager{}
-		remoteStorage = remote.NewStorage(logger.With("component", "remote"), prometheus.DefaultRegisterer, localStorage.StartTime, localStoragePath, time.Duration(cfg.RemoteFlushDeadline), scraper, cfg.scrape.EnableTypeAndUnitLabels)
+		remoteStorage = remote.NewStorage(
+			logger.With("component", "remote"),
+			prometheus.DefaultRegisterer,
+			localStorage.StartTime,
+			localStoragePath,
+			time.Duration(cfg.RemoteFlushDeadline),
+			scraper,
+			cfg.scrape.EnableTypeAndUnitLabels,
+			cfg.tsdb.EnableMetadataWALRecords || cfg.agent.EnableMetadataWALRecords,
+			cfg.tsdb.EnableSTStorage || cfg.agent.EnableSTStorage,
+		)
 		fanoutStorage = storage.NewFanout(logger, localStorage, remoteStorage)
 	)
 
@@ -1038,15 +1063,16 @@ func main() {
 			NoStepSubqueryIntervalFn: noStepSubqueryInterval.Get,
 			// EnableAtModifier and EnableNegativeOffset have to be
 			// always on for regular PromQL as of Prometheus v2.33.
-			EnableAtModifier:         true,
-			EnableNegativeOffset:     true,
-			EnablePerStepStats:       cfg.enablePerStepStats,
-			EnableDelayedNameRemoval: cfg.promqlEnableDelayedNameRemoval,
-			EnableTypeAndUnitLabels:  cfg.scrape.EnableTypeAndUnitLabels,
-			UseStartTimestamps:       cfg.useStartTimestamps,
-			EnableQueryCost:          cfg.enableQueryCost,
-			FeatureRegistry:          features.DefaultRegistry,
-			Parser:                   promqlParser,
+			EnableAtModifier:                true,
+			EnableNegativeOffset:            true,
+			EnablePerStepStats:              cfg.enablePerStepStats,
+			EnableDelayedNameRemoval:        cfg.promqlEnableDelayedNameRemoval,
+			EnableTypeAndUnitLabels:         cfg.scrape.EnableTypeAndUnitLabels,
+			UseStartTimestamps:              cfg.useStartTimestamps,
+			EnableNativeHistogramsAsClassic: slices.Contains(cfg.convertClassicHistogramsFrom, "nhcb"),
+			EnableQueryCost:                 cfg.enableQueryCost,
+			FeatureRegistry:                 features.DefaultRegistry,
+			Parser:                          promqlParser,
 		}
 
 		queryEngine = promql.NewEngine(opts)
@@ -1069,8 +1095,10 @@ func main() {
 			DefaultRuleQueryOffset: func() time.Duration {
 				return time.Duration(cfgFile.GlobalConfig.RuleQueryOffset)
 			},
-			FeatureRegistry: features.DefaultRegistry,
-			Parser:          promqlParser,
+			FeatureRegistry:         features.DefaultRegistry,
+			Parser:                  promqlParser,
+			AppendMetadata:          cfg.scrape.AppendMetadata,
+			EnableTypeAndUnitLabels: cfg.scrape.EnableTypeAndUnitLabels,
 		})
 	}
 

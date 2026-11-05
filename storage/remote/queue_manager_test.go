@@ -151,7 +151,7 @@ func TestBasicContentNegotiation(t *testing.T) {
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			dir := t.TempDir()
-			s := NewStorage(nil, nil, nil, dir, defaultFlushDeadline, nil, false)
+			s := NewStorage(nil, nil, nil, dir, defaultFlushDeadline, nil, false, false, false)
 			defer s.Close()
 
 			recs := testwal.GenerateRecords(recCase{
@@ -199,8 +199,15 @@ func TestBasicContentNegotiation(t *testing.T) {
 			}
 
 			// samplesTotal means attempts.
-			require.Equal(t, float64(len(tc.injectErrs)), client_testutil.ToFloat64(qm.metrics.samplesTotal))
-			require.Equal(t, float64(len(tc.injectErrs)-1), client_testutil.ToFloat64(qm.metrics.retriedSamplesTotal))
+			attempts := len(tc.injectErrs)
+			require.Equal(t, float64(attempts), client_testutil.ToFloat64(qm.metrics.samplesTotal))
+			require.Equal(t, float64(attempts-1), client_testutil.ToFloat64(qm.metrics.retriedSamplesTotal))
+			if tc.senderProtoMsg == remoteapi.WriteV2MessageType {
+				for _, metadata := range []string{metadataFieldType, metadataFieldUnit, metadataFieldHelp} {
+					require.Equal(t, float64(attempts), client_testutil.ToFloat64(qm.metrics.samplesMetadataTotal.WithLabelValues(metadata)), metadata)
+					require.Equal(t, 0.0, client_testutil.ToFloat64(qm.metrics.histogramsMetadataTotal.WithLabelValues(metadata)), metadata)
+				}
+			}
 		})
 	}
 }
@@ -236,7 +243,7 @@ func TestSampleDelivery(t *testing.T) {
 		} {
 			t.Run(fmt.Sprintf("proto=%s/case=%s", protoMsg, rc.Name), func(t *testing.T) {
 				dir := t.TempDir()
-				s := NewStorage(nil, nil, nil, dir, defaultFlushDeadline, nil, false)
+				s := NewStorage(nil, nil, nil, dir, defaultFlushDeadline, nil, false, false, false)
 				defer s.Close()
 
 				rc.NoST = protoMsg == remoteapi.WriteV1MessageType // RW1 does not support ST.
@@ -299,6 +306,12 @@ func TestSampleDelivery(t *testing.T) {
 				require.Equal(t, float64(len(samples)), client_testutil.ToFloat64(qm.metrics.samplesTotal))
 				require.Equal(t, float64(len(exemplars)), client_testutil.ToFloat64(qm.metrics.exemplarsTotal))
 				require.Equal(t, float64(len(histograms)+len(floatHistograms)), client_testutil.ToFloat64(qm.metrics.histogramsTotal))
+				if protoMsg == remoteapi.WriteV2MessageType {
+					for _, metadata := range []string{metadataFieldType, metadataFieldUnit, metadataFieldHelp} {
+						require.Equal(t, float64(len(samples)), client_testutil.ToFloat64(qm.metrics.samplesMetadataTotal.WithLabelValues(metadata)), metadata)
+						require.Equal(t, float64(len(histograms)+len(floatHistograms)), client_testutil.ToFloat64(qm.metrics.histogramsMetadataTotal.WithLabelValues(metadata)), metadata)
+					}
+				}
 				var durationMetric dto.Metric
 				require.NoError(t, qm.metrics.sentBatchDuration.Write(&durationMetric))
 				require.GreaterOrEqual(t, *durationMetric.Histogram.SampleSum, (10 * time.Millisecond).Seconds())
@@ -317,7 +330,7 @@ func newTestClientAndQueueManager(t testing.TB, flushDeadline time.Duration, pro
 func newTestQueueManager(t testing.TB, cfg config.QueueConfig, mcfg config.MetadataConfig, deadline time.Duration, c WriteClient, protoMsg remoteapi.WriteMessageType) *QueueManager {
 	dir := t.TempDir()
 	metrics := newQueueManagerMetrics(nil, "", "")
-	m := NewQueueManager(metrics, nil, nil, nil, dir, newEWMARate(ewmaWeight, shardUpdateDuration), cfg, mcfg, labels.EmptyLabels(), nil, c, deadline, newPool(), newHighestTimestampMetric(), nil, false, false, false, protoMsg, record.NewBuffersPool(), false, false)
+	m := NewQueueManager(metrics, nil, nil, nil, dir, newEWMARate(ewmaWeight, shardUpdateDuration), cfg, mcfg, labels.EmptyLabels(), nil, c, deadline, newPool(), newHighestTimestampMetric(), nil, false, false, false, protoMsg, remoteapi.WriteModeNone, record.NewBuffersPool(), false, false)
 
 	return m
 }
@@ -360,7 +373,7 @@ func TestMetadataDelivery(t *testing.T) {
 
 func TestWALMetadataDelivery(t *testing.T) {
 	dir := t.TempDir()
-	s := NewStorage(nil, nil, nil, dir, defaultFlushDeadline, nil, false)
+	s := NewStorage(nil, nil, nil, dir, defaultFlushDeadline, nil, false, false, false)
 	defer s.Close()
 
 	cfg := config.DefaultQueueConfig
@@ -864,7 +877,7 @@ func TestDisableReshardOnRetry(t *testing.T) {
 		}
 	)
 
-	m := NewQueueManager(metrics, nil, nil, nil, "", newEWMARate(ewmaWeight, shardUpdateDuration), cfg, mcfg, labels.EmptyLabels(), nil, client, 0, newPool(), newHighestTimestampMetric(), nil, false, false, false, remoteapi.WriteV1MessageType, nil, false, false)
+	m := NewQueueManager(metrics, nil, nil, nil, "", newEWMARate(ewmaWeight, shardUpdateDuration), cfg, mcfg, labels.EmptyLabels(), nil, client, 0, newPool(), newHighestTimestampMetric(), nil, false, false, false, remoteapi.WriteV1MessageType, remoteapi.WriteModeNone, nil, false, false)
 	m.StoreSeries(recs.Series, 0)
 
 	// Attempt to samples while the manager is running. We immediately stop the
@@ -1553,7 +1566,7 @@ func BenchmarkStoreSeries(b *testing.B) {
 				mcfg := config.DefaultMetadataConfig
 				metrics := newQueueManagerMetrics(nil, "", "")
 
-				m := NewQueueManager(metrics, nil, nil, nil, dir, newEWMARate(ewmaWeight, shardUpdateDuration), cfg, mcfg, labels.EmptyLabels(), nil, c, defaultFlushDeadline, newPool(), newHighestTimestampMetric(), nil, false, false, false, remoteapi.WriteV1MessageType, record.NewBuffersPool(), false, false)
+				m := NewQueueManager(metrics, nil, nil, nil, dir, newEWMARate(ewmaWeight, shardUpdateDuration), cfg, mcfg, labels.EmptyLabels(), nil, c, defaultFlushDeadline, newPool(), newHighestTimestampMetric(), nil, false, false, false, remoteapi.WriteV1MessageType, remoteapi.WriteModeNone, record.NewBuffersPool(), false, false)
 				m.externalLabels = tc.externalLabels
 				m.relabelConfigs = tc.relabelConfigs
 
@@ -1917,7 +1930,7 @@ func TestCalculateDesiredShardsDetail(t *testing.T) {
 							}
 						},
 					}
-					rws := NewWriteStorage(nil, nil, t.TempDir(), defaultFlushDeadline, nil, false)
+					rws := NewWriteStorage(nil, nil, t.TempDir(), defaultFlushDeadline, nil, false, false, false)
 					defer func() { require.NoError(t, rws.Close()) }()
 					m, stop := newTestNHCBQueueManager(t, client, nhcbQueueTestOptions{
 						protoMsg:             remoteapi.WriteV1MessageType,
@@ -2000,11 +2013,15 @@ func forceEMWA(r *ewmaRate, rate int64) {
 
 func TestQueueManagerMetrics(t *testing.T) {
 	// These legacy metadata metrics are deprecated and not registered for Remote Write 2.0.
-	metadataMetricNames := []string{
+	rw1MetadataMetricNames := []string{
 		"prometheus_remote_storage_metadata_total",
 		"prometheus_remote_storage_metadata_failed_total",
 		"prometheus_remote_storage_metadata_retried_total",
 		"prometheus_remote_storage_metadata_bytes_total",
+	}
+	rw2MetadataMetricNames := []string{
+		"prometheus_remote_storage_samples_metadata_total",
+		"prometheus_remote_storage_histograms_metadata_total",
 	}
 
 	for _, tc := range []struct {
@@ -2031,9 +2048,13 @@ func TestQueueManagerMetrics(t *testing.T) {
 			for _, metricFamily := range metricFamilies {
 				registeredMetrics[metricFamily.GetName()] = struct{}{}
 			}
-			for _, metricName := range metadataMetricNames {
+			for _, metricName := range rw1MetadataMetricNames {
 				_, ok := registeredMetrics[metricName]
 				require.Equal(t, tc.expectMetadataMetric, ok, metricName)
+			}
+			for _, metricName := range rw2MetadataMetricNames {
+				_, ok := registeredMetrics[metricName]
+				require.Equal(t, !tc.expectMetadataMetric, ok, metricName)
 			}
 
 			// Make sure all metrics were unregistered. A failure here means you need
@@ -2041,6 +2062,85 @@ func TestQueueManagerMetrics(t *testing.T) {
 			metrics.unregister(tc.protoMsg)
 			err = client_testutil.GatherAndCompare(reg, strings.NewReader(""))
 			require.NoError(t, err)
+		})
+	}
+}
+
+func TestV2DataWithMetadataMetrics(t *testing.T) {
+	for _, tc := range []struct {
+		name               string
+		timeSeries         []writev2.TimeSeries
+		expectedSamples    metadataFieldCounts
+		expectedHistograms metadataFieldCounts
+	}{
+		{
+			name: "without metadata",
+			timeSeries: []writev2.TimeSeries{{
+				Samples:    make([]writev2.Sample, 2),
+				Histograms: make([]writev2.Histogram, 1),
+			}},
+		},
+		{
+			name: "with type",
+			timeSeries: []writev2.TimeSeries{{
+				Samples:  make([]writev2.Sample, 1),
+				Metadata: writev2.Metadata{Type: writev2.Metadata_METRIC_TYPE_COUNTER},
+			}},
+			expectedSamples: metadataFieldCounts{typ: 1},
+		},
+		{
+			name: "with unit",
+			timeSeries: []writev2.TimeSeries{{
+				Histograms: make([]writev2.Histogram, 1),
+				Metadata:   writev2.Metadata{UnitRef: 1},
+			}},
+			expectedHistograms: metadataFieldCounts{unit: 1},
+		},
+		{
+			name: "with help",
+			timeSeries: []writev2.TimeSeries{{
+				Samples:  make([]writev2.Sample, 1),
+				Metadata: writev2.Metadata{HelpRef: 1},
+			}},
+			expectedSamples: metadataFieldCounts{help: 1},
+		},
+		{
+			name: "with all metadata",
+			timeSeries: []writev2.TimeSeries{{
+				Samples:    make([]writev2.Sample, 2),
+				Histograms: make([]writev2.Histogram, 1),
+				Metadata: writev2.Metadata{
+					Type:    writev2.Metadata_METRIC_TYPE_COUNTER,
+					UnitRef: 1,
+					HelpRef: 2,
+				},
+			}},
+			expectedSamples:    metadataFieldCounts{typ: 2, unit: 2, help: 2},
+			expectedHistograms: metadataFieldCounts{typ: 1, unit: 1, help: 1},
+		},
+		{
+			name: "exemplars are ignored",
+			timeSeries: []writev2.TimeSeries{{
+				Exemplars: make([]writev2.Exemplar, 1),
+				Metadata: writev2.Metadata{
+					Type:    writev2.Metadata_METRIC_TYPE_COUNTER,
+					UnitRef: 1,
+					HelpRef: 2,
+				},
+			}},
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			metrics := newQueueManagerMetrics(nil, "", "")
+			updater := batchMetricsUpdater{metrics: metrics}
+			updater.recordV2WithMetadataAttempt(countV2DataWithMetadata(tc.timeSeries))
+
+			require.Equal(t, float64(tc.expectedSamples.typ), client_testutil.ToFloat64(metrics.samplesMetadataTotal.WithLabelValues(metadataFieldType)))
+			require.Equal(t, float64(tc.expectedSamples.unit), client_testutil.ToFloat64(metrics.samplesMetadataTotal.WithLabelValues(metadataFieldUnit)))
+			require.Equal(t, float64(tc.expectedSamples.help), client_testutil.ToFloat64(metrics.samplesMetadataTotal.WithLabelValues(metadataFieldHelp)))
+			require.Equal(t, float64(tc.expectedHistograms.typ), client_testutil.ToFloat64(metrics.histogramsMetadataTotal.WithLabelValues(metadataFieldType)))
+			require.Equal(t, float64(tc.expectedHistograms.unit), client_testutil.ToFloat64(metrics.histogramsMetadataTotal.WithLabelValues(metadataFieldUnit)))
+			require.Equal(t, float64(tc.expectedHistograms.help), client_testutil.ToFloat64(metrics.histogramsMetadataTotal.WithLabelValues(metadataFieldHelp)))
 		})
 	}
 }
@@ -2804,6 +2904,45 @@ func TestPopulateV2TimeSeries_MetadataAndTypeAndUnit(t *testing.T) {
 			expectedUnit:      "requests",
 			enableTypeAndUnit: true,
 		},
+		{
+			name:      "type-and-unit-fallback-to-meta-when-labels-missing",
+			typeLabel: "",
+			unitLabel: "",
+			metadata: &metadata.Metadata{
+				Type: model.MetricTypeGauge,
+				Unit: "bytes",
+				Help: "Test metric",
+			},
+			expectedType:      writev2.Metadata_METRIC_TYPE_GAUGE,
+			expectedUnit:      "bytes",
+			enableTypeAndUnit: true,
+		},
+		{
+			name:      "type-from-label-unit-from-meta",
+			typeLabel: "counter",
+			unitLabel: "",
+			metadata: &metadata.Metadata{
+				Type: model.MetricTypeGauge,
+				Unit: "bytes",
+				Help: "Test metric",
+			},
+			expectedType:      writev2.Metadata_METRIC_TYPE_COUNTER,
+			expectedUnit:      "bytes",
+			enableTypeAndUnit: true,
+		},
+		{
+			name:      "type-from-meta-unit-from-label",
+			typeLabel: "",
+			unitLabel: "requests",
+			metadata: &metadata.Metadata{
+				Type: model.MetricTypeGauge,
+				Unit: "bytes",
+				Help: "Test metric",
+			},
+			expectedType:      writev2.Metadata_METRIC_TYPE_GAUGE,
+			expectedUnit:      "requests",
+			enableTypeAndUnit: true,
+		},
 	}
 
 	for _, tc := range testCases {
@@ -3148,7 +3287,7 @@ func newTestNHCBQueueManager(t testing.TB, c WriteClient, opts nhcbQueueTestOpti
 	}
 	m := NewQueueManager(newQueueManagerMetrics(nil, "", ""), nil, nil, nil, t.TempDir(), opts.samplesIn,
 		cfg, mcfg, labels.EmptyLabels(), nil, c, defaultFlushDeadline, newPool(), opts.highestRecvTimestamp,
-		nil, opts.sendExemplars, opts.sendNativeHistograms, false, opts.protoMsg, record.NewBuffersPool(), false, true)
+		nil, opts.sendExemplars, opts.sendNativeHistograms, false, opts.protoMsg, remoteapi.WriteModeNone, record.NewBuffersPool(), false, true)
 	// Start the production senders without the WAL watcher or automatic resharding loop.
 	m.numShards = opts.numShards
 	m.shards.start(opts.numShards)
@@ -3935,6 +4074,233 @@ func BenchmarkStoreMetadata(b *testing.B) {
 			for b.Loop() {
 				qm.StoreMetadata(meta)
 			}
+		})
+	}
+}
+
+func TestQueueManager_RemoteWriteModes(t *testing.T) {
+	t.Parallel()
+
+	nativeHist := &histogram.Histogram{
+		Schema:          0,
+		Count:           5,
+		Sum:             10,
+		PositiveSpans:   []histogram.Span{{Offset: 0, Length: 1}},
+		PositiveBuckets: []int64{5},
+	}
+	require.NoError(t, nativeHist.Validate())
+	nativeFloatHist := nativeHist.ToFloat(nil)
+	stale := math.Float64frombits(value.StaleNaN)
+	staleHist := &histogram.Histogram{Sum: stale}
+	staleFloatHist := &histogram.FloatHistogram{Sum: stale}
+
+	for _, metaSource := range []string{"metadata-wal-records", "type-and-unit-labels"} {
+		enableTypeAndUnitLabels := metaSource == "type-and-unit-labels"
+
+		makeSeries := func(ref chunks.HeadSeriesRef, name string, mType model.MetricType, extra ...string) (record.RefSeries, record.RefMetadata) {
+			lbls := []string{"__name__", name}
+			if enableTypeAndUnitLabels && mType != "" {
+				lbls = append(lbls, "__type__", string(mType))
+			}
+			lbls = append(lbls, extra...)
+			s := record.RefSeries{Ref: ref, Labels: labels.FromStrings(lbls...)}
+			m := record.RefMetadata{Ref: ref, Type: record.GetMetricType(mType)}
+			return s, m
+		}
+
+		t.Run("mode=stateless/source="+metaSource, func(t *testing.T) {
+			t.Parallel()
+
+			c := NewTestWriteClient(remoteapi.WriteV2MessageType)
+			cfg := config.DefaultQueueConfig
+			cfg.BatchSendDeadline = model.Duration(time.Minute)
+			cfg.MaxShards = 1
+			mcfg := config.DefaultMetadataConfig
+			mcfg.Send = false
+
+			metrics := newQueueManagerMetrics(nil, "", "")
+			m := NewQueueManager(
+				metrics, nil, nil, nil, t.TempDir(), newEWMARate(ewmaWeight, shardUpdateDuration),
+				cfg, mcfg, labels.EmptyLabels(), nil, c, defaultFlushDeadline, newPool(), newHighestTimestampMetric(),
+				nil, true, true, enableTypeAndUnitLabels, remoteapi.WriteV2MessageType, remoteapi.WriteModeStateless,
+				record.NewBuffersPool(), false, false,
+			)
+			m.numShards = 1
+			m.shards.start(1)
+			stop := sync.OnceFunc(m.shards.stop)
+			t.Cleanup(stop)
+
+			sClassicBucket, mClassicBucket := makeSeries(1, "http_dur_bucket", model.MetricTypeHistogram, "le", "+Inf")
+			sClassicGaugeHist, mClassicGaugeHist := makeSeries(2, "http_gh_count", model.MetricTypeGaugeHistogram)
+			sUntyped, mUntyped := makeSeries(3, "untyped_metric", model.MetricTypeUnknown)
+			sUntypedHist, mUntypedHist := makeSeries(4, "untyped_hist", model.MetricTypeUnknown)
+			sCounterNoST, mCounterNoST := makeSeries(5, "requests_total", model.MetricTypeCounter)
+			sNativeHist, mNativeHist := makeSeries(6, "native_dur", model.MetricTypeHistogram)
+
+			allSeries := []record.RefSeries{sClassicBucket, sClassicGaugeHist, sUntyped, sUntypedHist, sCounterNoST, sNativeHist}
+			m.StoreSeries(allSeries, 0)
+			if !enableTypeAndUnitLabels {
+				m.StoreMetadata([]record.RefMetadata{mClassicBucket, mClassicGaugeHist, mUntyped, mUntypedHist, mCounterNoST, mNativeHist})
+			}
+
+			// Classic histogram float samples and untyped samples must be dropped; counter without ST and float staleness
+			// markers on native histogram series (written by separate scrape transactions) are allowed in stateless mode.
+			require.True(t, m.Append([]record.RefSample{
+				{Ref: sClassicBucket.Ref, T: 1000, V: 1},
+				{Ref: sClassicGaugeHist.Ref, T: 1000, V: 2},
+				{Ref: sUntyped.Ref, T: 1000, V: 3},
+				{Ref: sCounterNoST.Ref, T: 1000, V: 4},
+				{Ref: sNativeHist.Ref, T: 2000, V: stale},
+			}))
+			// Native histograms with known histogram type (even without ST) are allowed in stateless mode;
+			// histograms with unknown or non-histogram metadata type are dropped.
+			require.True(t, m.AppendHistograms([]record.RefHistogramSample{
+				{Ref: sUntypedHist.Ref, T: 1000, H: nativeHist},
+				{Ref: sCounterNoST.Ref, T: 1000, H: nativeHist},
+				{Ref: sNativeHist.Ref, T: 1000, H: nativeHist},
+			}))
+			require.True(t, m.AppendFloatHistograms([]record.RefFloatHistogramSample{
+				{Ref: sUntypedHist.Ref, T: 2000, FH: nativeFloatHist},
+			}))
+			// Detached exemplars are dropped in stateless mode until exemplar coalescing is implemented.
+			require.True(t, m.AppendExemplars([]record.RefExemplar{
+				{Ref: sCounterNoST.Ref, T: 1000, V: 1, Labels: labels.FromStrings("trace_id", "abc")},
+				{Ref: sNativeHist.Ref, T: 1000, V: 2, Labels: labels.FromStrings("trace_id", "def")},
+			}))
+
+			stop()
+
+			require.Equal(t, 2.0, client_testutil.ToFloat64(metrics.droppedSamplesTotal.WithLabelValues(reasonClassicHistogramNotAllowed)))
+			require.Equal(t, 1.0, client_testutil.ToFloat64(metrics.droppedSamplesTotal.WithLabelValues(reasonMissingMetadataType)))
+			require.Equal(t, 0.0, client_testutil.ToFloat64(metrics.droppedSamplesTotal.WithLabelValues(reasonMissingStartTimestamp)))
+			require.Equal(t, 3.0, client_testutil.ToFloat64(metrics.droppedHistogramsTotal.WithLabelValues(reasonMissingMetadataType)))
+			require.Equal(t, 0.0, client_testutil.ToFloat64(metrics.droppedHistogramsTotal.WithLabelValues(reasonMissingStartTimestamp)))
+			require.Equal(t, 2.0, client_testutil.ToFloat64(metrics.droppedExemplarsTotal.WithLabelValues(reasonDetachedExemplarNotAllowed)))
+
+			require.Len(t, c.receivedSamples, 2)
+			require.Contains(t, c.receivedSamples, sCounterNoST.Labels.String())
+			require.Contains(t, c.receivedSamples, sNativeHist.Labels.String())
+			require.True(t, value.IsStaleNaN(c.receivedSamples[sNativeHist.Labels.String()][0].Value))
+			require.Len(t, c.receivedHistograms, 1)
+			require.Contains(t, c.receivedHistograms, sNativeHist.Labels.String())
+			require.Empty(t, c.receivedFloatHistograms)
+			require.Empty(t, c.receivedExemplars)
+		})
+
+		t.Run("mode=stateless-st/source="+metaSource, func(t *testing.T) {
+			t.Parallel()
+
+			c := NewTestWriteClient(remoteapi.WriteV2MessageType)
+			cfg := config.DefaultQueueConfig
+			cfg.BatchSendDeadline = model.Duration(time.Minute)
+			cfg.MaxShards = 1
+			mcfg := config.DefaultMetadataConfig
+			mcfg.Send = false
+
+			metrics := newQueueManagerMetrics(nil, "", "")
+			m := NewQueueManager(
+				metrics, nil, nil, nil, t.TempDir(), newEWMARate(ewmaWeight, shardUpdateDuration),
+				cfg, mcfg, labels.EmptyLabels(), nil, c, defaultFlushDeadline, newPool(), newHighestTimestampMetric(),
+				nil, true, true, enableTypeAndUnitLabels, remoteapi.WriteV2MessageType, remoteapi.WriteModeStatelessST,
+				record.NewBuffersPool(), false, false,
+			)
+			m.numShards = 1
+			m.shards.start(1)
+			stop := sync.OnceFunc(m.shards.stop)
+			t.Cleanup(stop)
+
+			sClassicBucket, mClassicBucket := makeSeries(1, "http_dur_bucket", model.MetricTypeHistogram, "le", "+Inf")
+			sUntyped, mUntyped := makeSeries(2, "untyped_metric", model.MetricTypeUnknown)
+			sUntypedHist, mUntypedHist := makeSeries(3, "untyped_hist", model.MetricTypeUnknown)
+			sCounterNoST, mCounterNoST := makeSeries(4, "requests_total", model.MetricTypeCounter)
+			sCounterWithST, mCounterWithST := makeSeries(5, "requests_st_total", model.MetricTypeCounter)
+			sSummarySum, mSummarySum := makeSeries(6, "rpc_duration_sum", model.MetricTypeSummary)
+			sSummaryCount, mSummaryCount := makeSeries(7, "rpc_duration_count", model.MetricTypeSummary)
+			sSummaryQuantileNoST, mSummaryQuantileNoST := makeSeries(8, "rpc_duration", model.MetricTypeSummary, "quantile", "0.9")
+			sGaugeNoST, mGaugeNoST := makeSeries(9, "memory_bytes", model.MetricTypeGauge)
+			sHistNoST, mHistNoST := makeSeries(10, "native_dur_no_st", model.MetricTypeHistogram)
+			sHistWithST, mHistWithST := makeSeries(11, "native_dur_st", model.MetricTypeHistogram)
+			sGaugeHistNoST, mGaugeHistNoST := makeSeries(12, "native_gauge_hist", model.MetricTypeGaugeHistogram)
+
+			allSeries := []record.RefSeries{
+				sClassicBucket, sUntyped, sUntypedHist, sCounterNoST, sCounterWithST,
+				sSummarySum, sSummaryCount, sSummaryQuantileNoST, sGaugeNoST,
+				sHistNoST, sHistWithST, sGaugeHistNoST,
+			}
+			m.StoreSeries(allSeries, 0)
+			if !enableTypeAndUnitLabels {
+				m.StoreMetadata([]record.RefMetadata{
+					mClassicBucket, mUntyped, mUntypedHist, mCounterNoST, mCounterWithST,
+					mSummarySum, mSummaryCount, mSummaryQuantileNoST, mGaugeNoST,
+					mHistNoST, mHistWithST, mGaugeHistNoST,
+				})
+			}
+
+			require.True(t, m.Append([]record.RefSample{
+				{Ref: sClassicBucket.Ref, ST: 500, T: 1000, V: 1},       // Drop: classic histogram
+				{Ref: sUntyped.Ref, ST: 500, T: 1000, V: 2},             // Drop: missing metadata type
+				{Ref: sCounterNoST.Ref, ST: 0, T: 1000, V: 3},           // Drop: counter missing ST
+				{Ref: sSummarySum.Ref, ST: 0, T: 1000, V: 4},            // Drop: summary _sum missing ST
+				{Ref: sSummaryCount.Ref, ST: 0, T: 1000, V: 5},          // Drop: summary _count missing ST
+				{Ref: sSummarySum.Ref, ST: 500, T: 2000, V: 4.5},        // Keep: summary _sum with ST
+				{Ref: sSummaryCount.Ref, ST: 500, T: 2000, V: 5.5},      // Keep: summary _count with ST
+				{Ref: sCounterWithST.Ref, ST: 500, T: 1000, V: 6},       // Keep: counter with ST
+				{Ref: sCounterWithST.Ref, ST: 0, T: 2000, V: stale},     // Keep: counter staleness marker without ST
+				{Ref: sSummaryQuantileNoST.Ref, ST: 0, T: 1000, V: 0.5}, // Keep: summary quantile without ST
+				{Ref: sGaugeNoST.Ref, ST: 0, T: 1000, V: 42},            // Keep: gauge without ST
+				{Ref: sHistWithST.Ref, ST: 0, T: 4000, V: stale},        // Keep: float staleness marker on histogram series
+			}))
+			require.True(t, m.AppendHistograms([]record.RefHistogramSample{
+				{Ref: sUntypedHist.Ref, ST: 500, T: 1000, H: nativeHist}, // Drop: missing metadata type
+				{Ref: sHistNoST.Ref, ST: 0, T: 1000, H: nativeHist},      // Drop: histogram missing ST
+				{Ref: sHistWithST.Ref, ST: 500, T: 1000, H: nativeHist},  // Keep: histogram with ST
+				{Ref: sHistWithST.Ref, ST: 0, T: 2000, H: staleHist},     // Keep: histogram staleness marker without ST
+			}))
+			require.True(t, m.AppendFloatHistograms([]record.RefFloatHistogramSample{
+				{Ref: sUntypedHist.Ref, ST: 500, T: 2000, FH: nativeFloatHist}, // Drop: missing metadata type
+				{Ref: sHistNoST.Ref, ST: 0, T: 2000, FH: nativeFloatHist},      // Drop: histogram missing ST
+				{Ref: sHistWithST.Ref, ST: 500, T: 2500, FH: nativeFloatHist},  // Keep: float histogram with ST
+				{Ref: sHistWithST.Ref, ST: 0, T: 3000, FH: staleFloatHist},     // Keep: float histogram staleness marker without ST
+				{Ref: sGaugeHistNoST.Ref, ST: 0, T: 2000, FH: nativeFloatHist}, // Keep: gauge histogram without ST
+			}))
+			require.True(t, m.AppendExemplars([]record.RefExemplar{
+				{Ref: sCounterWithST.Ref, T: 1000, V: 1, Labels: labels.FromStrings("trace_id", "abc")}, // Drop: detached exemplar
+			}))
+
+			stop()
+
+			require.Equal(t, 1.0, client_testutil.ToFloat64(metrics.droppedSamplesTotal.WithLabelValues(reasonClassicHistogramNotAllowed)))
+			require.Equal(t, 1.0, client_testutil.ToFloat64(metrics.droppedSamplesTotal.WithLabelValues(reasonMissingMetadataType)))
+			require.Equal(t, 3.0, client_testutil.ToFloat64(metrics.droppedSamplesTotal.WithLabelValues(reasonMissingStartTimestamp)))
+
+			require.Equal(t, 2.0, client_testutil.ToFloat64(metrics.droppedHistogramsTotal.WithLabelValues(reasonMissingMetadataType)))
+			require.Equal(t, 2.0, client_testutil.ToFloat64(metrics.droppedHistogramsTotal.WithLabelValues(reasonMissingStartTimestamp)))
+
+			require.Equal(t, 1.0, client_testutil.ToFloat64(metrics.droppedExemplarsTotal.WithLabelValues(reasonDetachedExemplarNotAllowed)))
+
+			require.Len(t, c.receivedSamples, 6)
+			require.Equal(t, int64(500), c.receivedSamples[sSummarySum.Labels.String()][0].StartTimestamp)
+			require.Equal(t, int64(500), c.receivedSamples[sSummaryCount.Labels.String()][0].StartTimestamp)
+			require.Len(t, c.receivedSamples[sCounterWithST.Labels.String()], 2)
+			require.Equal(t, int64(500), c.receivedSamples[sCounterWithST.Labels.String()][0].StartTimestamp)
+			require.True(t, value.IsStaleNaN(c.receivedSamples[sCounterWithST.Labels.String()][1].Value))
+			require.Contains(t, c.receivedSamples, sSummaryQuantileNoST.Labels.String())
+			require.Contains(t, c.receivedSamples, sGaugeNoST.Labels.String())
+			require.Len(t, c.receivedSamples[sHistWithST.Labels.String()], 1)
+			require.True(t, value.IsStaleNaN(c.receivedSamples[sHistWithST.Labels.String()][0].Value))
+
+			require.Len(t, c.receivedHistograms, 1)
+			require.Len(t, c.receivedHistograms[sHistWithST.Labels.String()], 2)
+			require.Equal(t, int64(500), c.receivedHistograms[sHistWithST.Labels.String()][0].StartTimestamp)
+			require.True(t, value.IsStaleNaN(c.receivedHistograms[sHistWithST.Labels.String()][1].Sum))
+
+			require.Len(t, c.receivedFloatHistograms, 2)
+			require.Contains(t, c.receivedFloatHistograms, sGaugeHistNoST.Labels.String())
+			require.Len(t, c.receivedFloatHistograms[sHistWithST.Labels.String()], 2)
+			require.Equal(t, int64(500), c.receivedFloatHistograms[sHistWithST.Labels.String()][0].StartTimestamp)
+			require.True(t, value.IsStaleNaN(c.receivedFloatHistograms[sHistWithST.Labels.String()][1].Sum))
+
+			require.Empty(t, c.receivedExemplars)
 		})
 	}
 }

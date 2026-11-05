@@ -21,6 +21,7 @@ import (
 	"io"
 	"log"
 	"log/slog"
+	"math"
 	"net/http"
 	"net/http/httptest"
 	"strconv"
@@ -45,7 +46,9 @@ import (
 	"github.com/prometheus/prometheus/prompb"
 	"github.com/prometheus/prometheus/promql/promqltest"
 	"github.com/prometheus/prometheus/storage"
+	"github.com/prometheus/prometheus/tsdb"
 	"github.com/prometheus/prometheus/tsdb/chunkenc"
+	"github.com/prometheus/prometheus/tsdb/chunks"
 	"github.com/prometheus/prometheus/tsdb/tsdbutil"
 	"github.com/prometheus/prometheus/util/teststorage"
 )
@@ -958,6 +961,481 @@ func addNativeHistogramsToTestSuite(t *testing.T, s *teststorage.TestStorage, n 
 	}
 
 	require.NoError(t, app.Commit())
+}
+
+type remoteReadSnapshotSample struct {
+	timestamp      int64
+	startTimestamp int64
+	value          float64
+	histogram      *histogram.Histogram
+	floatHistogram *histogram.FloatHistogram
+}
+
+type remoteReadSnapshotQueryable struct {
+	storage.SampleAndChunkQueryable
+	afterOpen             func() error
+	afterFirstChunkCopied func() error
+}
+
+func (q *remoteReadSnapshotQueryable) Querier(mint, maxt int64) (storage.Querier, error) {
+	querier, err := q.SampleAndChunkQueryable.Querier(mint, maxt)
+	if err != nil {
+		return nil, err
+	}
+	if q.afterOpen != nil {
+		if err := q.afterOpen(); err != nil {
+			_ = querier.Close()
+			return nil, err
+		}
+	}
+	return querier, nil
+}
+
+func (q *remoteReadSnapshotQueryable) ChunkQuerier(mint, maxt int64) (storage.ChunkQuerier, error) {
+	querier, err := q.SampleAndChunkQueryable.ChunkQuerier(mint, maxt)
+	if err != nil {
+		return nil, err
+	}
+	if q.afterOpen != nil {
+		if err := q.afterOpen(); err != nil {
+			_ = querier.Close()
+			return nil, err
+		}
+	}
+	if q.afterFirstChunkCopied != nil {
+		return &remoteReadSnapshotChunkQuerier{
+			ChunkQuerier:          querier,
+			afterFirstChunkCopied: q.afterFirstChunkCopied,
+		}, nil
+	}
+	return querier, nil
+}
+
+type remoteReadSnapshotChunkQuerier struct {
+	storage.ChunkQuerier
+	afterFirstChunkCopied func() error
+}
+
+func (q *remoteReadSnapshotChunkQuerier) Select(ctx context.Context, sortSeries bool, hints *storage.SelectHints, matchers ...*labels.Matcher) storage.ChunkSeriesSet {
+	series := q.ChunkQuerier.Select(ctx, sortSeries, hints, matchers...)
+	var once sync.Once
+	var afterErr error
+	afterFirstChunkCopied := func() error {
+		once.Do(func() { afterErr = q.afterFirstChunkCopied() })
+		return afterErr
+	}
+	return &remoteReadSnapshotChunkSeriesSet{ChunkSeriesSet: series, afterFirstChunkCopied: afterFirstChunkCopied}
+}
+
+type remoteReadSnapshotChunkSeriesSet struct {
+	storage.ChunkSeriesSet
+	afterFirstChunkCopied func() error
+}
+
+func (s *remoteReadSnapshotChunkSeriesSet) At() storage.ChunkSeries {
+	return &remoteReadSnapshotChunkSeries{ChunkSeries: s.ChunkSeriesSet.At(), afterFirstChunkCopied: s.afterFirstChunkCopied}
+}
+
+type remoteReadSnapshotChunkSeries struct {
+	storage.ChunkSeries
+	afterFirstChunkCopied func() error
+}
+
+func (s *remoteReadSnapshotChunkSeries) Iterator(it chunks.Iterator) chunks.Iterator {
+	return &remoteReadSnapshotChunkIterator{Iterator: s.ChunkSeries.Iterator(it), afterFirstChunkCopied: s.afterFirstChunkCopied}
+}
+
+type remoteReadSnapshotChunkIterator struct {
+	chunks.Iterator
+	afterFirstChunkCopied func() error
+	afterErr              error
+}
+
+func (i *remoteReadSnapshotChunkIterator) Next() bool {
+	if !i.Iterator.Next() {
+		return false
+	}
+	if i.afterFirstChunkCopied != nil {
+		after := i.afterFirstChunkCopied
+		i.afterFirstChunkCopied = nil
+		i.afterErr = after()
+		if i.afterErr != nil {
+			return false
+		}
+	}
+	return true
+}
+
+func (i *remoteReadSnapshotChunkIterator) Err() error {
+	if i.afterErr != nil {
+		return i.afterErr
+	}
+	return i.Iterator.Err()
+}
+
+func appendRemoteReadSnapshotSamples(app storage.AppenderV2, seriesLabels labels.Labels, samples []remoteReadSnapshotSample) error {
+	for _, sample := range samples {
+		if _, err := app.Append(0, seriesLabels, sample.startTimestamp, sample.timestamp, sample.value, sample.histogram, sample.floatHistogram, storage.AOptions{}); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func TestRemoteReadStreamIsolation(t *testing.T) {
+	type testCase struct {
+		name               string
+		sampleType         string
+		initialTimestamp   int64
+		initialCount       int
+		laterStart         int64
+		laterCount         int
+		queryEnd           int64
+		incompleteAppender bool
+		mmap               bool
+		samplesPerChunk    int
+		isolationDisabled  bool
+		storeST            bool
+	}
+
+	cases := []testCase{
+		{name: "open float chunk", sampleType: "float", initialTimestamp: 0, laterStart: 2, laterCount: 1, queryEnd: math.MaxInt64},
+		{name: "finite-range open float chunk", sampleType: "float", initialTimestamp: 0, laterStart: 2, laterCount: 1, queryEnd: 1000},
+		{name: "closed float chunk", sampleType: "float", initialTimestamp: 0, laterStart: 2, laterCount: 120, queryEnd: 1000, samplesPerChunk: 60},
+		{name: "rotated float chunks without range limit", sampleType: "float", initialTimestamp: 0, laterStart: 2, laterCount: 120, queryEnd: math.MaxInt64, samplesPerChunk: 60},
+		{name: "mmapped float chunk", sampleType: "float", initialTimestamp: 0, laterStart: 2, laterCount: 120, queryEnd: 1000, mmap: true, samplesPerChunk: 60},
+		{name: "incomplete appender", sampleType: "float", initialTimestamp: 0, laterStart: 2, laterCount: 1, queryEnd: math.MaxInt64, incompleteAppender: true},
+		{name: "full pre-snapshot chunk with incomplete appender", sampleType: "float", initialTimestamp: 0, initialCount: 2, laterStart: 2, laterCount: 1, queryEnd: math.MaxInt64, incompleteAppender: true, samplesPerChunk: 2},
+		{name: "float with start timestamps", sampleType: "float", initialTimestamp: 10, laterStart: 20, laterCount: 1, queryEnd: math.MaxInt64, storeST: true},
+		{name: "integer histogram", sampleType: "histogram", initialTimestamp: 10, laterStart: 20, laterCount: 1, queryEnd: math.MaxInt64},
+		{name: "float histogram", sampleType: "float histogram", initialTimestamp: 10, laterStart: 20, laterCount: 1, queryEnd: math.MaxInt64},
+		{name: "integer histogram with start timestamps", sampleType: "histogram", initialTimestamp: 10, laterStart: 20, laterCount: 1, queryEnd: math.MaxInt64, storeST: true},
+		{name: "float histogram with start timestamps", sampleType: "float histogram", initialTimestamp: 10, laterStart: 20, laterCount: 1, queryEnd: math.MaxInt64, storeST: true},
+		{name: "isolation disabled", sampleType: "float", initialTimestamp: 0, laterStart: 2, laterCount: 1, queryEnd: math.MaxInt64, isolationDisabled: true},
+	}
+
+	type decodedSamples struct {
+		floats      []prompb.Sample
+		histograms  []prompb.Histogram
+		startTimes  []int64
+		chunkBounds [][2]int64
+		chunkTypes  []chunkenc.Encoding
+		frameCount  int
+	}
+
+	makeSample := func(tc testCase, ts int64) remoteReadSnapshotSample {
+		sample := remoteReadSnapshotSample{timestamp: ts, value: float64(ts + 1)}
+		if tc.storeST {
+			sample.startTimestamp = ts - 9
+		}
+		switch tc.sampleType {
+		case "float":
+		case "histogram":
+			sample.histogram = tsdbutil.GenerateTestHistogram(ts)
+		case "float histogram":
+			sample.floatHistogram = tsdbutil.GenerateTestFloatHistogram(ts)
+		default:
+			t.Fatalf("unknown sample type %q", tc.sampleType)
+		}
+		return sample
+	}
+
+	decodeSamples := func(t *testing.T, recorder *httptest.ResponseRecorder, streamed bool) decodedSamples {
+		t.Helper()
+		result := recorder.Result()
+		defer result.Body.Close()
+
+		var decoded decodedSamples
+		if !streamed {
+			compressed, err := io.ReadAll(result.Body)
+			require.NoError(t, err)
+			data, err := snappy.Decode(nil, compressed)
+			require.NoError(t, err)
+			var response prompb.ReadResponse
+			require.NoError(t, proto.Unmarshal(data, &response))
+			require.Len(t, response.Results, 1)
+			for _, series := range response.Results[0].Timeseries {
+				decoded.floats = append(decoded.floats, series.Samples...)
+				decoded.histograms = append(decoded.histograms, series.Histograms...)
+			}
+			return decoded
+		}
+
+		stream := NewChunkedReader(result.Body, config.DefaultChunkedReadLimit, nil)
+		for {
+			response := &prompb.ChunkedReadResponse{}
+			err := stream.NextProto(response)
+			if errors.Is(err, io.EOF) {
+				break
+			}
+			require.NoError(t, err)
+			decoded.frameCount++
+			for _, series := range response.ChunkedSeries {
+				for _, chunk := range series.Chunks {
+					decoded.chunkBounds = append(decoded.chunkBounds, [2]int64{chunk.MinTimeMs, chunk.MaxTimeMs})
+					encoding := chunkenc.Encoding(chunk.Type)
+					decoded.chunkTypes = append(decoded.chunkTypes, encoding)
+					decodedChunk, err := chunkenc.FromData(encoding, chunk.Data)
+					require.NoError(t, err)
+					iterator := decodedChunk.Iterator(nil)
+					for valueType := iterator.Next(); valueType != chunkenc.ValNone; valueType = iterator.Next() {
+						decoded.startTimes = append(decoded.startTimes, iterator.AtST())
+						switch valueType {
+						case chunkenc.ValFloat:
+							timestamp, value := iterator.At()
+							decoded.floats = append(decoded.floats, prompb.Sample{Timestamp: timestamp, Value: value})
+						case chunkenc.ValHistogram:
+							timestamp, value := iterator.AtHistogram(nil)
+							decoded.histograms = append(decoded.histograms, prompb.FromIntHistogram(timestamp, value))
+						case chunkenc.ValFloatHistogram:
+							timestamp, value := iterator.AtFloatHistogram(nil)
+							decoded.histograms = append(decoded.histograms, prompb.FromFloatHistogram(timestamp, value))
+						default:
+							t.Fatalf("unexpected streamed sample type %v", valueType)
+						}
+					}
+					require.NoError(t, iterator.Err())
+				}
+			}
+		}
+		return decoded
+	}
+
+	histogramSampleTimestamps := func(histograms []prompb.Histogram) []int64 {
+		timestamps := make([]int64, len(histograms))
+		for i, histogram := range histograms {
+			timestamps[i] = histogram.Timestamp
+		}
+		return timestamps
+	}
+
+	seriesLabels := labels.FromStrings("__name__", "snapshot_metric")
+	matcher, err := labels.NewMatcher(labels.MatchEqual, "__name__", "snapshot_metric")
+	require.NoError(t, err)
+
+	for _, tc := range cases {
+		if tc.initialCount == 0 {
+			tc.initialCount = 2
+		}
+		if !t.Run(tc.name, func(t *testing.T) {
+			initialSamples := make([]remoteReadSnapshotSample, tc.initialCount)
+			for i := range initialSamples {
+				initialSamples[i] = makeSample(tc, tc.initialTimestamp+int64(i))
+			}
+			run := func(streamed bool) decodedSamples {
+				options := []teststorage.Option{func(opts *tsdb.Options) {
+					opts.IsolationDisabled = tc.isolationDisabled
+					if tc.samplesPerChunk > 0 {
+						opts.SamplesPerChunk = tc.samplesPerChunk
+					}
+					if tc.storeST {
+						opts.EnableSTStorage = true
+						opts.EnableHistogramSTEncoding = true
+						opts.FloatChunkEncoding = chunkenc.EncXOR2
+					}
+				}}
+				store := teststorage.New(t, options...)
+
+				app := store.AppenderV2(t.Context())
+				require.NoError(t, appendRemoteReadSnapshotSamples(app, seriesLabels, initialSamples))
+				require.NoError(t, app.Commit())
+
+				later := make([]remoteReadSnapshotSample, tc.laterCount)
+				for i := range later {
+					later[i] = makeSample(tc, tc.laterStart+int64(i))
+				}
+
+				var pending storage.AppenderV2
+				pendingCommitted := false
+				if tc.incompleteAppender {
+					pending = store.AppenderV2(t.Context())
+					require.NoError(t, appendRemoteReadSnapshotSamples(pending, seriesLabels, later))
+					t.Cleanup(func() {
+						if !pendingCommitted {
+							_ = pending.Rollback()
+						}
+					})
+				}
+
+				afterOpen := func() error {
+					if pending != nil {
+						err := pending.Commit()
+						pendingCommitted = err == nil
+						return err
+					}
+					if len(later) > 0 {
+						app := store.AppenderV2(t.Context())
+						if err := appendRemoteReadSnapshotSamples(app, seriesLabels, later); err != nil {
+							_ = app.Rollback()
+							return err
+						}
+						if err := app.Commit(); err != nil {
+							return err
+						}
+					}
+					if tc.mmap {
+						store.ForceHeadMMap()
+					}
+					return nil
+				}
+
+				queryable := &remoteReadSnapshotQueryable{SampleAndChunkQueryable: store, afterOpen: afterOpen}
+				api := NewReadHandler(nil, nil, queryable, func() config.Config { return config.Config{} }, 1e6, 1, 1<<20)
+				query, err := ToQuery(0, tc.queryEnd, []*labels.Matcher{matcher}, nil)
+				require.NoError(t, err)
+				requestBody := &prompb.ReadRequest{Queries: []*prompb.Query{query}}
+				if streamed {
+					requestBody.AcceptedResponseTypes = []prompb.ReadRequest_ResponseType{prompb.ReadRequest_STREAMED_XOR_CHUNKS}
+				}
+				data, err := proto.Marshal(requestBody)
+				require.NoError(t, err)
+				request := httptest.NewRequest(http.MethodPost, "/api/v1/read", bytes.NewReader(snappy.Encode(nil, data)))
+				recorder := httptest.NewRecorder()
+				api.ServeHTTP(recorder, request)
+				require.Equal(t, http.StatusOK, recorder.Code)
+				return decodeSamples(t, recorder, streamed)
+			}
+
+			var wantFloats []prompb.Sample
+			wantHistogramTimestamps := make([]int64, 0, len(initialSamples)+tc.laterCount)
+			appendWantSample := func(sample remoteReadSnapshotSample) {
+				switch {
+				case sample.histogram != nil, sample.floatHistogram != nil:
+					wantHistogramTimestamps = append(wantHistogramTimestamps, sample.timestamp)
+				default:
+					wantFloats = append(wantFloats, prompb.Sample{Timestamp: sample.timestamp, Value: sample.value})
+				}
+			}
+			for _, initial := range initialSamples {
+				appendWantSample(initial)
+			}
+			if tc.isolationDisabled {
+				for i := range tc.laterCount {
+					later := makeSample(tc, tc.laterStart+int64(i))
+					if later.timestamp <= tc.queryEnd {
+						appendWantSample(later)
+					}
+				}
+			}
+
+			sampled := run(false)
+			streamed := run(true)
+			require.Equal(t, wantFloats, sampled.floats, "sample response does not match the reader snapshot")
+			require.Equal(t, wantHistogramTimestamps, histogramSampleTimestamps(sampled.histograms), "sample response does not match the reader snapshot")
+			require.Equal(t, sampled.floats, streamed.floats, "streamed response does not match the reader snapshot")
+			require.Equal(t, sampled.histograms, streamed.histograms, "streamed response does not match the reader snapshot")
+			require.Len(t, streamed.chunkBounds, 1)
+			wantMaxTime := initialSamples[len(initialSamples)-1].timestamp
+			wantStartTimes := make([]int64, 0, len(initialSamples)+tc.laterCount)
+			for _, initial := range initialSamples {
+				wantStartTimes = append(wantStartTimes, initial.startTimestamp)
+			}
+			if tc.isolationDisabled {
+				for i := range tc.laterCount {
+					later := makeSample(tc, tc.laterStart+int64(i))
+					if later.timestamp > tc.queryEnd {
+						continue
+					}
+					if later.timestamp > wantMaxTime {
+						wantMaxTime = later.timestamp
+					}
+					wantStartTimes = append(wantStartTimes, later.startTimestamp)
+				}
+			}
+			require.Equal(t, [2]int64{initialSamples[0].timestamp, wantMaxTime}, streamed.chunkBounds[0])
+			require.Len(t, streamed.chunkTypes, 1)
+			require.Equal(t, 1, streamed.frameCount)
+			if tc.storeST {
+				require.Equal(t, wantStartTimes, streamed.startTimes)
+			}
+		}) {
+			return
+		}
+	}
+}
+
+func TestRemoteReadStreamChunkCopyStability(t *testing.T) {
+	store := teststorage.New(t)
+	seriesLabels := labels.FromStrings("__name__", "snapshot_metric")
+	initial := []remoteReadSnapshotSample{{timestamp: 0, value: 1}, {timestamp: 1, value: 2}}
+	later := remoteReadSnapshotSample{timestamp: 2, value: 3}
+
+	app := store.AppenderV2(t.Context())
+	require.NoError(t, appendRemoteReadSnapshotSamples(app, seriesLabels, initial))
+	require.NoError(t, app.Commit())
+
+	var pending storage.AppenderV2
+	pendingCommitted := false
+	t.Cleanup(func() {
+		if pending != nil && !pendingCommitted {
+			_ = pending.Rollback()
+		}
+	})
+
+	queryable := &remoteReadSnapshotQueryable{
+		SampleAndChunkQueryable: store,
+		afterOpen: func() error {
+			pending = store.AppenderV2(t.Context())
+			return nil
+		},
+		afterFirstChunkCopied: func() error {
+			// Append after the chunk iterator has returned its copy, before the handler reads its bytes.
+			if err := appendRemoteReadSnapshotSamples(pending, seriesLabels, []remoteReadSnapshotSample{later}); err != nil {
+				_ = pending.Rollback()
+				return err
+			}
+			if err := pending.Commit(); err != nil {
+				return err
+			}
+			pendingCommitted = true
+			return nil
+		},
+	}
+	api := NewReadHandler(nil, nil, queryable, func() config.Config { return config.Config{} }, 1e6, 1, 1<<20)
+	matcher, err := labels.NewMatcher(labels.MatchEqual, "__name__", "snapshot_metric")
+	require.NoError(t, err)
+	query, err := ToQuery(0, math.MaxInt64, []*labels.Matcher{matcher}, nil)
+	require.NoError(t, err)
+	data, err := proto.Marshal(&prompb.ReadRequest{
+		Queries:               []*prompb.Query{query},
+		AcceptedResponseTypes: []prompb.ReadRequest_ResponseType{prompb.ReadRequest_STREAMED_XOR_CHUNKS},
+	})
+	require.NoError(t, err)
+	request := httptest.NewRequest(http.MethodPost, "/api/v1/read", bytes.NewReader(snappy.Encode(nil, data)))
+	recorder := httptest.NewRecorder()
+	api.ServeHTTP(recorder, request)
+	require.Equal(t, http.StatusOK, recorder.Code)
+	require.True(t, pendingCommitted, "the later append must follow the chunk copy")
+
+	result := recorder.Result()
+	defer result.Body.Close()
+	stream := NewChunkedReader(result.Body, config.DefaultChunkedReadLimit, nil)
+	var got []prompb.Sample
+	var bounds [][2]int64
+	for {
+		response := &prompb.ChunkedReadResponse{}
+		err := stream.NextProto(response)
+		if errors.Is(err, io.EOF) {
+			break
+		}
+		require.NoError(t, err)
+		for _, series := range response.ChunkedSeries {
+			for _, chunk := range series.Chunks {
+				bounds = append(bounds, [2]int64{chunk.MinTimeMs, chunk.MaxTimeMs})
+				decoded, err := chunkenc.FromData(chunkenc.Encoding(chunk.Type), chunk.Data)
+				require.NoError(t, err)
+				iterator := decoded.Iterator(nil)
+				for valueType := iterator.Next(); valueType != chunkenc.ValNone; valueType = iterator.Next() {
+					require.Equal(t, chunkenc.ValFloat, valueType)
+					timestamp, value := iterator.At()
+					got = append(got, prompb.Sample{Timestamp: timestamp, Value: value})
+				}
+				require.NoError(t, iterator.Err())
+			}
+		}
+	}
+	require.Equal(t, []prompb.Sample{{Timestamp: 0, Value: 1}, {Timestamp: 1, Value: 2}}, got)
+	require.Equal(t, [][2]int64{{0, 1}}, bounds)
 }
 
 func TestRemoteReadGateWaitDurationObserved(t *testing.T) {

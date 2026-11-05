@@ -106,6 +106,11 @@ Example:
     'these are unescaped: \n \\ \t'
     `these are not unescaped: \n ' " \t`
 
+This can be useful for [`regular expressions`](#regular-expressions) in [`label_replace()`](functions.md#label_replace), for example:
+
+    label_replace(up, "host", "$1", "instance", "(.*)\\.example\\.com")
+    label_replace(up, "host", "$1", "instance", `(.*)\.example\.com`)
+
 ### Float literals and time durations
 
 Scalar float values can be written as literal integer or floating-point numbers
@@ -219,6 +224,10 @@ The following functions can be used inside duration expressions:
 For example, `max_of(step(), 5s)` ensures the duration is never shorter than
 `5s`, while `min_of(range(), 1h)` caps the duration at `1h`.
 
+Like the scalar functions, `min_of` and `max_of` ignore a `NaN` argument if the
+other argument is not `NaN`. If both arguments are `NaN`, the result is `NaN`.
+A duration expression whose final result is `NaN` or infinite is rejected.
+
 **Note**: Duration expressions are not supported in the [`@` modifier](#modifier).
 
 Examples of equivalent durations:
@@ -280,6 +289,11 @@ For example, this selects all `http_requests_total` time series for `staging`,
 `testing`, and `development` environments and HTTP methods other than `GET`.
 
     http_requests_total{environment=~"staging|testing|development",method!="GET"}
+
+Label matcher values follow the same quoting and escaping rules as [string literals](#string-literals). This can be useful for [`regular expressions`](#regular-expressions) on the regex-match selectors, for example:
+
+    {le=~"0\\.5"}
+    {le=~`0\.5`}
 
 Label matchers that match empty label values also select all time series that
 do not have the specific label set at all. It is possible to have multiple matchers for the same label name.
@@ -346,14 +360,13 @@ syntax can be quoted. A quoted metric name goes inside the selector's braces:
 {"http.server.request.duration", "service.name"="api"}
 ```
 
-With [`--enable-feature=promql-unquoted-utf8-names`](../feature_flags.md#unquoted-utf-8-names-in-promql),
-the same selector can be written as:
+The same selector can be written without quotes:
 
 ```promql
 http.server.request.duration{service.name="api"}
 ```
 
-When this feature is enabled, unquoted names follow these rules:
+Unquoted names follow these rules:
 
 | Name | First character | Subsequent characters |
 | --- | --- | --- |
@@ -363,8 +376,10 @@ When this feature is enabled, unquoted names follow these rules:
 Unicode letters are the characters recognized by Go's `unicode.IsLetter`
 (Unicode category L), using the Unicode version bundled with the Go compiler.
 These rules also apply to grouping labels, vector matching, and labels in
-`group_left` and `group_right` modifiers. Existing keyword restrictions still
-apply, and string arguments containing label names remain strings.
+`group_left` and `group_right` modifiers, except that these may also contain `:`
+where metric names may, as in `sum by (a:b) (foo)`, for compatibility with
+earlier versions. Existing keyword restrictions still apply, and string
+arguments containing label names remain strings.
 
 Dots are ordinary name characters: `resource.k8s.namespace`, `target.info`, and
 `histogram.count` have no metadata lookup, namespace, or histogram field access
@@ -385,7 +400,7 @@ a different name.
 
 Quoted and unquoted spellings of the same name select the same series. Quoting
 remains supported and is required when targeting older PromQL parsers or servers
-without this feature enabled. The feature does not change storage, ingestion
+without support for these names. These syntax rules do not change storage, ingestion
 validation, text exposition, or metric name translation.
 
 ### Range Vector Selectors

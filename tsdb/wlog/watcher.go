@@ -320,6 +320,14 @@ func (w *Watcher) Run() error {
 		if err = w.readCheckpoint(lastCheckpoint, (*Watcher).readSegment); err != nil {
 			return fmt.Errorf("readCheckpoint: %w", err)
 		}
+		// If Run is retried by loop() after a WAL read error (e.g. when a lagging
+		// watcher's next segment was deleted by WAL truncation), it can land on a
+		// newer checkpoint that garbageCollectSeries never processed. Since
+		// w.lastCheckpoint is updated below, garbageCollectSeries would then skip
+		// this checkpoint, so reset series older than checkpointIndex here.
+		if lastCheckpoint != w.lastCheckpoint {
+			w.writer.SeriesReset(checkpointIndex)
+		}
 	}
 	w.lastCheckpoint = lastCheckpoint
 

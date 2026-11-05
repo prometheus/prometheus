@@ -466,6 +466,10 @@ eval instant at 100m predict_linear(http_requests_inf[100m], 6000)
 eval instant at 50m predict_linear(http_requests_total[50m], 3600) - (http_requests_total + deriv(http_requests_total[50m]) * 3600)
 	{group="canary", instance="1", job="app-server"} 0
 
+# Scalar arguments to range-vector functions must be refreshed for every step.
+eval range from 10m to 20m step 5m predict_linear(http_requests_total[10m], time())
+	{group="canary", instance="1", job="app-server"} 320 480 640
+
 clear
 
 # Tests for label_replace.
@@ -929,6 +933,11 @@ load 10s
 	http_requests_mix{job="api-server", instance="0", group="canary"}		0+30x1000 300+80x1000 {{schema:0 count:1 sum:2}}x1000
 	http_requests_mix{job="api-server", instance="1", group="canary"}		0+40x2000 {{schema:0 count:1 sum:2}}x1000
 	http_requests_histogram{job="api-server", instance="1", group="canary"}	{{schema:0 count:1 sum:2}}x1000
+	scalar_args	0 10 5 20 10
+
+# Scalar arguments to range-vector functions must be refreshed for every step.
+eval range from 20s to 40s step 10s double_exponential_smoothing(scalar_args[31s], 0.1 + time() / 1000, 0.2 + time() / 10000)
+	{} 18.200000000000003 26.659110499999997 -0.000768000000000324
 
 eval instant at 8000s double_exponential_smoothing(http_requests[1m], 0.01, 0.1)
 	expect no_info
@@ -1711,6 +1720,10 @@ eval instant at 1m quantile_over_time(0.5, data_histogram{test="mix samples"}[2m
 	expect no_warn
 	{test="mix samples"} 1
 
+# Scalar arguments to range-vector functions must be refreshed for every step.
+eval range from 10s to 30s step 10s quantile_over_time(time() / 100, data{test="three samples"}[20s])
+	{test="three samples"} 0.1 1.2 2
+
 # Exact-ranked infinities in quantile_over_time must not become NaN.
 clear
 
@@ -1754,6 +1767,52 @@ eval instant at 1ms time()
 
 eval instant at 50m time()
   3000
+
+# Negative fractional timestamps belong to the preceding second.
+eval instant at 0m year(vector(-0.5))
+  {} 1969
+
+eval instant at 0m month(vector(-0.5))
+  {} 12
+
+eval instant at 0m day_of_month(vector(-0.5))
+  {} 31
+
+eval instant at 0m day_of_week(vector(-0.5))
+  {} 3
+
+eval instant at 0m day_of_year(vector(-0.5))
+  {} 365
+
+eval instant at 0m days_in_month(vector(-0.5))
+  {} 31
+
+eval instant at 0m hour(vector(-0.5))
+  {} 23
+
+eval instant at 0m minute(vector(-60.5))
+  {} 58
+
+# Even values just below zero must use the preceding second.
+eval instant at 0m minute(vector(-0.001))
+  {} 59
+
+eval instant at 0m hour(vector(-3600.001))
+  {} 22
+
+# The implicit query timestamp must also handle negative milliseconds.
+eval instant at 0m last_over_time(year()[1ms:1ms] @ -0.001)
+  {} 1969
+
+eval instant at 0m last_over_time(hour()[1ms:1ms] @ -0.001)
+  {} 23
+
+eval instant at 0m last_over_time(minute()[1ms:1ms] @ -60.001)
+  {} 58
+
+# Positive fractional timestamps remain in the current second.
+eval instant at 0m year(vector(0.5))
+  {} 1970
 
 eval instant at 0m year(vector(1136239445))
   {} 2006
@@ -2510,8 +2569,7 @@ eval range from 1s to 9s step 2s metric_for_at @ end()
 
 # Tests for min_of() and max_of() scalar functions.
 
-# min_of(a, b) returns math.Min(a, b).
-# max_of(a, b) returns math.Max(a, b).
+# min_of(a, b) and max_of(a, b) follow the min and max aggregators.
 
 # Basic literal comparisons.
 eval instant at 0s min_of(3, 5)
@@ -2547,18 +2605,43 @@ eval instant at 0s min_of(0, 1)
 eval instant at 0s max_of(0, 1)
   1
 
-# NaN propagation: any NaN input yields NaN.
+# NaN is only returned if both arguments are NaN.
 eval instant at 0s min_of(NaN, 3)
-  NaN
+  3
 
 eval instant at 0s min_of(3, NaN)
-  NaN
+  3
 
 eval instant at 0s max_of(NaN, 3)
-  NaN
+  3
 
 eval instant at 0s max_of(3, NaN)
+  3
+
+eval instant at 0s min_of(NaN, NaN)
   NaN
+
+eval instant at 0s max_of(NaN, NaN)
+  NaN
+
+# Infinities.
+eval instant at 0s min_of(NaN, -Inf)
+  -Inf
+
+eval instant at 0s min_of(+Inf, NaN)
+  +Inf
+
+eval instant at 0s max_of(-Inf, NaN)
+  -Inf
+
+eval instant at 0s max_of(NaN, +Inf)
+  +Inf
+
+eval instant at 0s min_of(-Inf, +Inf)
+  -Inf
+
+eval instant at 0s max_of(-Inf, +Inf)
+  +Inf
 
 clear
 

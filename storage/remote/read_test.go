@@ -35,7 +35,7 @@ import (
 )
 
 func TestStorage_CostSamplingQueryable_ConfigReload(t *testing.T) {
-	s := NewStorage(nil, prometheus.NewRegistry(), nil, t.TempDir(), defaultFlushDeadline, nil, false)
+	s := NewStorage(nil, prometheus.NewRegistry(), nil, t.TempDir(), defaultFlushDeadline, nil, false, false, false)
 	t.Cleanup(func() { require.NoError(t, s.Close()) })
 	empty := &config.Config{GlobalConfig: config.DefaultGlobalConfig}
 	configured := &config.Config{GlobalConfig: config.DefaultGlobalConfig}
@@ -122,7 +122,7 @@ func TestNoDuplicateReadConfigs(t *testing.T) {
 
 	for _, tc := range cases {
 		t.Run("", func(t *testing.T) {
-			s := NewStorage(nil, nil, nil, dir, defaultFlushDeadline, nil, false)
+			s := NewStorage(nil, nil, nil, dir, defaultFlushDeadline, nil, false, false, false)
 			conf := &config.Config{
 				GlobalConfig:      config.DefaultGlobalConfig,
 				RemoteReadConfigs: tc.cfgs,

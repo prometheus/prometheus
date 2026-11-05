@@ -14,6 +14,7 @@
 package parser
 
 import (
+	"math"
 	"testing"
 	"time"
 
@@ -50,11 +51,11 @@ func TestExprString(t *testing.T) {
 		},
 		{
 			in:  `sum by("foo.bar") (task:errors:rate10s{job="s"})`,
-			out: `sum by ("foo.bar") (task:errors:rate10s{job="s"})`,
+			out: `sum by (foo.bar) (task:errors:rate10s{job="s"})`,
 		},
 		{
 			in:  `sum without("foo.bar") (task:errors:rate10s{job="s"})`,
-			out: `sum without ("foo.bar") (task:errors:rate10s{job="s"})`,
+			out: `sum without (foo.bar) (task:errors:rate10s{job="s"})`,
 		},
 		{
 			in: `topk(5, task:errors:rate10s{job="s"})`,
@@ -112,6 +113,49 @@ func TestExprString(t *testing.T) {
 		{
 			in:  `a - ignoring() group_left c`,
 			out: `a - ignoring () group_left () c`,
+		},
+		{
+			in:  `Inf ^ 2`,
+			out: `(+Inf) ^ 2`,
+		},
+		{
+			in:  `-Inf ^ 2`,
+			out: `-(+Inf) ^ 2`,
+		},
+		{
+			in:  `Inf ^ 2 ^ 3`,
+			out: `(+Inf) ^ 2 ^ 3`,
+		},
+		{
+			in:  `(Inf) ^ 2`,
+			out: `(+Inf) ^ 2`,
+		},
+		{
+			in: `(+Inf) ^ 2`,
+		},
+		{
+			in:  `(+inf) ^ 2`,
+			out: `(+Inf) ^ 2`,
+		},
+		{
+			in: `(-Inf) ^ 2`,
+		},
+		{
+			in:  `((Inf)) ^ 2`,
+			out: `((+Inf)) ^ 2`,
+		},
+		{
+			in:  `-(Inf) ^ 2`,
+			out: `-(+Inf) ^ 2`,
+		},
+		{
+			in: `2 ^ -Inf`,
+		},
+		{
+			in: `+Inf * 2`,
+		},
+		{
+			in: `(-2) ^ 2`,
 		},
 		{
 			in:  `a + fill(-23) b`,
@@ -224,7 +268,8 @@ func TestExprString(t *testing.T) {
 			in: `{__name__="",a="x"}`,
 		},
 		{
-			in: `{"a.b"="c"}`,
+			in:  `{"a.b"="c"}`,
+			out: `{a.b="c"}`,
 		},
 		{
 			in: `{"0"="1"}`,
@@ -325,15 +370,15 @@ func TestExprString(t *testing.T) {
 		},
 		{
 			in:  `sum by("üüü") (foo)`,
-			out: `sum by ("üüü") (foo)`,
+			out: `sum by (üüü) (foo)`,
 		},
 		{
 			in:  `sum without("äää") (foo)`,
-			out: `sum without ("äää") (foo)`,
+			out: `sum without (äää) (foo)`,
 		},
 		{
 			in:  `count by("ööö", job) (foo)`,
-			out: `count by ("ööö", job) (foo)`,
+			out: `count by (ööö, job) (foo)`,
 		},
 	}
 
@@ -497,6 +542,58 @@ func TestMatrixSelector_String(t *testing.T) {
 	}
 }
 
+func TestBinaryExpr_String(t *testing.T) {
+	// The parser only puts +Inf on the left of ^ with a sign, but ASTs rewritten
+	// by the engine or built in code can also hold a negative number or a unary
+	// expression there.
+	nested, nestedStr := Expr(&NumberLiteral{Val: 2}), "2"
+	for range 40 {
+		nested = &BinaryExpr{Op: POW, LHS: &ParenExpr{Expr: nested}, RHS: &NumberLiteral{Val: 2}}
+		nestedStr = "(" + nestedStr + ") ^ 2"
+	}
+	for _, tc := range []struct {
+		name     string
+		expr     Expr
+		expected string
+	}{
+		{
+			name:     "positive infinity on the left of ^",
+			expr:     &BinaryExpr{Op: POW, LHS: &NumberLiteral{Val: math.Inf(1)}, RHS: &NumberLiteral{Val: 2}},
+			expected: `(+Inf) ^ 2`,
+		},
+		{
+			name:     "negative number on the left of ^",
+			expr:     &BinaryExpr{Op: POW, LHS: &NumberLiteral{Val: -2}, RHS: &NumberLiteral{Val: 2}},
+			expected: `(-2) ^ 2`,
+		},
+		{
+			name:     "unary expression on the left of ^",
+			expr:     &BinaryExpr{Op: POW, LHS: &UnaryExpr{Op: SUB, Expr: &VectorSelector{Name: "foo"}}, RHS: &NumberLiteral{Val: 2}},
+			expected: `(-foo) ^ 2`,
+		},
+		{
+			name:     "step invariant negative number on the left of ^",
+			expr:     &BinaryExpr{Op: POW, LHS: &StepInvariantExpr{Expr: &NumberLiteral{Val: -2}}, RHS: &NumberLiteral{Val: 2}},
+			expected: `(-2) ^ 2`,
+		},
+		{
+			name:     "negative number on the left of another operator",
+			expr:     &BinaryExpr{Op: MUL, LHS: &NumberLiteral{Val: -2}, RHS: &NumberLiteral{Val: 2}},
+			expected: `-2 * 2`,
+		},
+		{
+			// Printing must stay linear in the depth of the expression.
+			name:     "deeply nested powers",
+			expr:     nested,
+			expected: nestedStr,
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			require.Equal(t, tc.expected, tc.expr.String())
+		})
+	}
+}
+
 func TestBinaryExprUTF8Labels(t *testing.T) {
 	testCases := []struct {
 		name     string
@@ -506,27 +603,27 @@ func TestBinaryExprUTF8Labels(t *testing.T) {
 		{
 			name:     "UTF-8 labels in on clause",
 			input:    `foo / on("äää") bar`,
-			expected: `foo / on ("äää") bar`,
+			expected: `foo / on (äää) bar`,
 		},
 		{
 			name:     "UTF-8 labels in ignoring clause",
 			input:    `foo / ignoring("üüü") bar`,
-			expected: `foo / ignoring ("üüü") bar`,
+			expected: `foo / ignoring (üüü) bar`,
 		},
 		{
 			name:     "UTF-8 labels in group_left clause",
 			input:    `foo / on("äää") group_left("ööö") bar`,
-			expected: `foo / on ("äää") group_left ("ööö") bar`,
+			expected: `foo / on (äää) group_left (ööö) bar`,
 		},
 		{
 			name:     "UTF-8 labels in group_right clause",
 			input:    `foo / on("äää") group_right("ööö") bar`,
-			expected: `foo / on ("äää") group_right ("ööö") bar`,
+			expected: `foo / on (äää) group_right (ööö) bar`,
 		},
 		{
 			name:     "Mixed legacy and UTF-8 labels",
 			input:    `foo / on(legacy, "üüü") bar`,
-			expected: `foo / on (legacy, "üüü") bar`,
+			expected: `foo / on (legacy, üüü) bar`,
 		},
 		{
 			name:     "Legacy labels only (should not quote)",

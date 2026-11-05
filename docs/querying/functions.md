@@ -545,7 +545,8 @@ series in `v`, all info series with matching _identifying_ labels (more on
 this later), and adds the union of their _data_ (i.e., non-identifying) labels
 to the time series. The second argument `data-label-selector` is optional.
 It is not a real instant vector, but uses a subset of its syntax.
-It must start and end with curly braces (`{ ... }`) and may only contain label matchers.
+It must start and end with curly braces (`{ ... }`), may only contain label matchers,
+and must contain at least one. To add all data labels, omit the argument instead of writing `{}`.
 The label matchers are used to constrain which info series to consider
 and which data labels to add to `v`.
 
@@ -740,7 +741,8 @@ flag](../feature_flags.md#experimental-promql-functions)
 `--enable-feature=promql-experimental-functions`.**
 
 `max_of(a scalar, b scalar)` returns the larger of the two scalar values `a`
-and `b`.
+and `b`. `NaN` is only returned if both `a` and `b` are `NaN`, like for
+the [`max` aggregation operator](operators.md#min-and-max).
 
 ## `min_of()`
 
@@ -749,7 +751,8 @@ flag](../feature_flags.md#experimental-promql-functions)
 `--enable-feature=promql-experimental-functions`.**
 
 `min_of(a scalar, b scalar)` returns the smaller of the two scalar values `a`
-and `b`.
+and `b`. `NaN` is only returned if both `a` and `b` are `NaN`, like for
+the [`min` aggregation operator](operators.md#min-and-max).
 
 ## `ln()`
 

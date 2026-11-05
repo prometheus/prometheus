@@ -27,9 +27,9 @@ func IsZeroHandle(h unique.Handle[Metadata]) bool {
 
 // Metadata stores a series' metadata information.
 type Metadata struct {
-	Type model.MetricType `json:"type"`
-	Unit string           `json:"unit"`
-	Help string           `json:"help"`
+	Type model.MetricType `json:"type" yaml:"type,omitempty"`
+	Unit string           `json:"unit" yaml:"unit,omitempty"`
+	Help string           `json:"help" yaml:"help,omitempty"`
 }
 
 // IsEmpty returns true if metadata structure is empty, including unknown type case.

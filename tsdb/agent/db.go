@@ -347,6 +347,7 @@ func Open(l *slog.Logger, reg prometheus.Registerer, rs *remote.Storage, dir str
 				pendingFloatHistograms: make([]record.RefFloatHistogramSample, 0, 100),
 				pendingExamplars:       make([]record.RefExemplar, 0, 10),
 				pendingMetadata:        make([]record.RefMetadata, 0, 100),
+				sampleSeries:           make([]*memSeries, 0, 100),
 				metadataSeries:         make([]*memSeries, 0, 100),
 			},
 		}
@@ -361,6 +362,7 @@ func Open(l *slog.Logger, reg prometheus.Registerer, rs *remote.Storage, dir str
 				pendingFloatHistograms: make([]record.RefFloatHistogramSample, 0, 100),
 				pendingExamplars:       make([]record.RefExemplar, 0, 10),
 				pendingMetadata:        make([]record.RefMetadata, 0, 100),
+				sampleSeries:           make([]*memSeries, 0, 100),
 				metadataSeries:         make([]*memSeries, 0, 100),
 			},
 		}
@@ -570,6 +572,8 @@ func (db *DB) loadWAL(r *wlog.Reader, duplicateRefToValidRef map[chunks.HeadSeri
 				// TODO: If decide to decode exemplars, we should make sure to prepopulate
 				// stripeSeries.exemplars in the next block by using setLatestExemplar.
 				continue
+			case record.MinValidTime:
+				// Noop.
 			default:
 				// Unknown records are ignored, enabling users to roll back.
 				// If this behaviour changes, update both server and agent replay.
@@ -837,11 +841,7 @@ func (db *DB) truncate(mint int64) error {
 	if db.opts.CheckpointFromInMemorySeries {
 		err = Checkpoint(db.logger, db.wal, last, db.opts.CheckpointBatchSize, db.series.allSeries(), deletedSeriesIter(db.deleted, last))
 	} else {
-		// writeMinValidTime is false: the agent has no use for ReadMinValidTime, and unlike
-		// Head's own replay, the agent's replay treats any unrecognized record type as
-		// corruption. Writing that record here would risk data loss on a downgrade to an
-		// older agent that doesn't know about it.
-		_, err = wlog.Checkpoint(db.logger, db.wal, first, last, db.keepSeriesInWALCheckpointFn(last), mint, db.opts.EnableSTStorage, false)
+		_, err = wlog.Checkpoint(db.logger, db.wal, first, last, db.keepSeriesInWALCheckpointFn(last), mint, db.opts.EnableSTStorage)
 	}
 
 	if err != nil {
@@ -927,11 +927,12 @@ func (db *DB) Appender(context.Context) storage.Appender {
 
 // Close implements the Storage interface.
 func (db *DB) Close() error {
-	db.mtx.Lock()
-	defer db.mtx.Unlock()
-
+	// Stop the truncate loop before taking db.mtx, since truncate needs it.
 	close(db.stopc)
 	<-db.donec
+
+	db.mtx.Lock()
+	defer db.mtx.Unlock()
 
 	db.metrics.Unregister()
 
@@ -969,6 +970,17 @@ type appender struct {
 	appenderBase
 
 	hints *storage.AppendOptions
+}
+
+var _ storage.GetRef = &appender{}
+
+// GetRef implements storage.GetRef.
+func (a *appenderBase) GetRef(lset labels.Labels, hash uint64) (storage.SeriesRef, labels.Labels) {
+	s := a.series.GetByHash(hash, lset)
+	if s == nil {
+		return 0, labels.EmptyLabels()
+	}
+	return storage.SeriesRef(s.ref), s.lset
 }
 
 func (a *appender) SetOptions(opts *storage.AppendOptions) {
@@ -1292,21 +1304,29 @@ func (a *appender) AppendSTZeroSample(ref storage.SeriesRef, l labels.Labels, t,
 
 // Commit submits the collected samples and purges the batch.
 func (a *appender) Commit() error {
-	defer a.appenderPool.Put(a)
+	defer func() {
+		a.hints = nil
+		a.appenderPool.Put(a)
+	}()
 	return a.commit()
 }
 
 func (a *appender) Rollback() error {
-	defer a.appenderPool.Put(a)
+	defer func() {
+		a.hints = nil
+		a.appenderPool.Put(a)
+	}()
 	return a.rollback()
 }
 
 func (a *appenderBase) commit() error {
+	// Clear on failure too, since the appender goes back to the pool. Like Head, a
+	// failed write drops the batch, including series that were never logged.
+	defer a.clearData()
+
 	if err := a.log(); err != nil {
 		return err
 	}
-
-	a.clearData()
 
 	if a.writeNotified != nil {
 		a.writeNotified.Notify()
@@ -1426,32 +1446,40 @@ func (a *appenderBase) log() error {
 	return nil
 }
 
-// clearData clears all pending data.
+// clearData clears all pending data before the appender is returned to its sync.Pool.
+// NOTE: Go's clear built-in only zeroes up to len(s); elements in s[len(s):cap(s)]
+// are already zero because pending slices are only ever grown via append and
+// cleared here before reslicing to [:0].
 func (a *appenderBase) clearData() {
+	clear(a.pendingSeries)
 	a.pendingSeries = a.pendingSeries[:0]
+	// RefSample has only scalar fields, so skip zeroing its elements.
 	a.pendingSamples = a.pendingSamples[:0]
+	clear(a.pendingHistograms)
 	a.pendingHistograms = a.pendingHistograms[:0]
+	clear(a.pendingFloatHistograms)
 	a.pendingFloatHistograms = a.pendingFloatHistograms[:0]
+	clear(a.pendingExamplars)
 	a.pendingExamplars = a.pendingExamplars[:0]
 	clear(a.pendingMetadata)
 	a.pendingMetadata = a.pendingMetadata[:0]
+	clear(a.sampleSeries)
 	a.sampleSeries = a.sampleSeries[:0]
+	clear(a.histogramSeries)
 	a.histogramSeries = a.histogramSeries[:0]
+	clear(a.floatHistogramSeries)
 	a.floatHistogramSeries = a.floatHistogramSeries[:0]
 	clear(a.metadataSeries)
 	a.metadataSeries = a.metadataSeries[:0]
 }
 
 func (a *appenderBase) rollback() error {
+	defer a.clearData()
+
 	// Series are created in-memory regardless of rollback. This means we must
 	// log them to the WAL, otherwise subsequent commits may reference a series
 	// which was never written to the WAL.
-	if err := a.logSeries(); err != nil {
-		return err
-	}
-
-	a.clearData()
-	return nil
+	return a.logSeries()
 }
 
 // logSeries logs only pending series records to the WAL.

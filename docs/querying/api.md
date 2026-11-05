@@ -113,7 +113,7 @@ URL query parameters:
 
 Optional HTTP request headers:
 
-- `X-Prometheus-Use-Start-Timestamps: <bool>`: Override the engine-level start timestamp processing setting (`--promql.use-start-timestamps`) for this query. When set to `true`, functions such as `rate()` will use start timestamps from ingested data. When set to `false`, start timestamp processing is disabled for this query. Optional. If omitted, the engine-level default is used.
+- `X-Prometheus-Use-Start-Timestamps: <bool>`: Override the engine-level start timestamp processing setting (`--enable-feature=use-start-timestamps`) for this query. When set to `true`, functions such as `rate()` will use start timestamps from ingested data. When set to `false`, start timestamp processing is disabled for this query. Optional. If omitted, the engine-level default is used.
 
 The current server time is used if the `time` parameter is omitted.
 
@@ -198,7 +198,7 @@ URL query parameters:
 
 Optional HTTP request headers:
 
-- `X-Prometheus-Use-Start-Timestamps: <bool>`: Override the engine-level start timestamp processing setting (`--promql.use-start-timestamps`) for this query. When set to `true`, functions such as `rate()` will use start timestamps from ingested data. When set to `false`, start timestamp processing is disabled for this query. Optional. If omitted, the engine-level default is used.
+- `X-Prometheus-Use-Start-Timestamps: <bool>`: Override the engine-level start timestamp processing setting (`--enable-feature=use-start-timestamps`) for this query. When set to `true`, functions such as `rate()` will use start timestamps from ingested data. When set to `false`, start timestamp processing is disabled for this query. Optional. If omitted, the engine-level default is used.
 
 You can URL-encode these parameters directly in the request body by using the `POST` method and
 `Content-Type: application/x-www-form-urlencoded` header. This is useful when specifying a large
@@ -2128,12 +2128,13 @@ endpoint is `/api/v1/otlp/v1/metrics`.
 
 ### OTLP Delta
 
-Prometheus can convert incoming metrics from delta temporality to their cumulative equivalent.
-This is done using [deltatocumulative](https://github.com/open-telemetry/opentelemetry-collector-contrib/tree/main/processor/deltatocumulativeprocessor) from the OpenTelemetry Collector.
+Prometheus can natively ingest incoming OTLP metrics with delta temporality, storing their raw sample values without conversion.
 
-To enable, pass `--enable-feature=otlp-deltatocumulative`.
+To enable native delta ingestion, pass `--enable-feature=otlp-native-delta-ingestion`. To retain OTLP start timestamps and use them in PromQL rate calculations, also enable `st-storage` and `use-start-timestamps`. See [OTLP Native Delta Support](../feature_flags.md#otlp-native-delta-support) for details.
 
-*New in v3.2*
+*New in v3.4; start-timestamp-aware querying was added in v3.12.*
+
+The previous `--enable-feature=otlp-deltatocumulative` flag, which converts delta metrics to cumulative metrics using the OpenTelemetry Collector's [deltatocumulative processor](https://github.com/open-telemetry/opentelemetry-collector-contrib/tree/main/processor/deltatocumulativeprocessor), is deprecated and will be removed in a future major version.
 
 ## Notifications
 
