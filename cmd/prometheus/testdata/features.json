@@ -7,6 +7,7 @@
     "openapi_3.1": true,
     "openapi_3.2": true,
     "otlp_write_receiver": false,
+    "query_cost": false,
     "query_stats": true,
     "query_warnings": true,
     "remote_write_receiver": false,
@@ -27,7 +28,7 @@
     "stringlabels": true
   },
   "promql": {
-    "anchored": false,
+    "anchored": true,
     "at_modifier": true,
     "bool": true,
     "by": true,
@@ -44,9 +45,10 @@
     "on": true,
     "per_query_lookback_delta": true,
     "per_step_stats": false,
-    "smoothed": false,
+    "smoothed": true,
     "subqueries": true,
     "type_and_unit_labels": false,
+    "unquoted_utf8_names": true,
     "without": true
   },
   "promql_functions": {
@@ -92,6 +94,7 @@
     "idelta": true,
     "increase": true,
     "info": false,
+    "integral": false,
     "irate": true,
     "label_join": true,
     "label_replace": true,
@@ -162,6 +165,9 @@
     "and": true,
     "atan2": true,
     "avg": true,
+    "bitand": true,
+    "bitor": true,
+    "bitxor": true,
     "bottomk": true,
     "count": true,
     "count_values": true,
@@ -181,7 +187,9 @@
   "rules": {
     "concurrent_rule_eval": false,
     "keep_firing_for": true,
-    "query_offset": true
+    "query_offset": true,
+    "recording_rule_metadata": true,
+    "type_and_unit_labels": false
   },
   "scrape": {
     "extra_scrape_metrics": true,
@@ -211,6 +219,7 @@
     "lightsail": true,
     "linode": true,
     "marathon": true,
+    "mq": true,
     "msk": true,
     "nerve": true,
     "nomad": true,

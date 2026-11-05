@@ -18,6 +18,7 @@ package prometheusremotewrite
 
 import (
 	"context"
+	"math"
 	"slices"
 	"strings"
 	"testing"
@@ -885,6 +886,7 @@ func TestPrometheusConverter_AddHistogramDataPoints(t *testing.T) {
 		scope        scope
 		promoteScope bool
 		want         func() []sample
+		wantWarnings map[WarningCategory]int
 	}{
 		{
 			name: "histogram with start time and without scope promotion",
@@ -1003,6 +1005,274 @@ func TestPrometheusConverter_AddHistogramDataPoints(t *testing.T) {
 				}
 			},
 		},
+		{
+			name: "histogram with exemplars out of timestamp order",
+			metric: func() pmetric.Metric {
+				metric := pmetric.NewMetric()
+				metric.SetName("test_hist")
+				metric.SetEmptyHistogram().SetAggregationTemporality(pmetric.AggregationTemporalityCumulative)
+
+				pt := metric.Histogram().DataPoints().AppendEmpty()
+				pt.SetTimestamp(ts)
+				pt.SetCount(4)
+				pt.ExplicitBounds().FromRaw([]float64{5})
+				pt.BucketCounts().FromRaw([]uint64{2, 2})
+				// Each bucket gets a newer exemplar followed by an older one.
+				older := ts - pcommon.Timestamp(time.Second)
+				for _, e := range []struct {
+					value float64
+					ts    pcommon.Timestamp
+				}{{1, ts}, {2, older}, {7, ts}, {8, older}} {
+					ex := pt.Exemplars().AppendEmpty()
+					ex.SetDoubleValue(e.value)
+					ex.SetTimestamp(e.ts)
+				}
+
+				return metric
+			},
+			want: func() []sample {
+				newer := convertTimeStamp(ts)
+				older := convertTimeStamp(ts - pcommon.Timestamp(time.Second))
+				return []sample{
+					{
+						MF: "test_hist",
+						L: labels.FromStrings(
+							model.MetricNameLabel, "test_hist"+countStr,
+						),
+						T: newer,
+						V: 4,
+					},
+					{
+						MF: "test_hist",
+						L: labels.FromStrings(
+							model.MetricNameLabel, "test_hist_bucket",
+							model.BucketLabel, "5",
+						),
+						T: newer,
+						V: 2,
+						ES: []exemplar.Exemplar{
+							{Value: 2, Ts: older, HasTs: true},
+							{Value: 1, Ts: newer, HasTs: true},
+						},
+					},
+					{
+						MF: "test_hist",
+						L: labels.FromStrings(
+							model.MetricNameLabel, "test_hist_bucket",
+							model.BucketLabel, "+Inf",
+						),
+						T: newer,
+						V: 4,
+						ES: []exemplar.Exemplar{
+							{Value: 8, Ts: older, HasTs: true},
+							{Value: 7, Ts: newer, HasTs: true},
+						},
+					},
+				}
+			},
+		},
+		{
+			// An explicit +Inf bound leaves the implicit last bucket spanning
+			// (+Inf, +infinity), so its count can only be 0. This is the shape a
+			// producer emits, and the duplicate le="+Inf" appears in it.
+			name:         "histogram with an explicit +Inf bound and an empty trailing bucket",
+			wantWarnings: map[WarningCategory]int{WarningCategoryHistogramPlusInfBound: 1},
+			metric: func() pmetric.Metric {
+				metric := pmetric.NewMetric()
+				metric.SetName("test_hist")
+				metric.SetEmptyHistogram().SetAggregationTemporality(pmetric.AggregationTemporalityCumulative)
+
+				pt := metric.Histogram().DataPoints().AppendEmpty()
+				pt.SetTimestamp(ts)
+				pt.SetCount(35)
+				pt.SetSum(35)
+				pt.BucketCounts().FromRaw([]uint64{5, 10, 20, 0})
+				pt.ExplicitBounds().FromRaw([]float64{1, 2, math.Inf(1)})
+
+				return metric
+			},
+			want: func() []sample {
+				return []sample{
+					{
+						MF: "test_hist",
+						L: labels.FromStrings(
+							model.MetricNameLabel, "test_hist"+sumStr,
+						),
+						T: convertTimeStamp(ts),
+						V: 35,
+					},
+					{
+						MF: "test_hist",
+						L: labels.FromStrings(
+							model.MetricNameLabel, "test_hist"+countStr,
+						),
+						T: convertTimeStamp(ts),
+						V: 35,
+					},
+					{
+						MF: "test_hist",
+						L: labels.FromStrings(
+							model.MetricNameLabel, "test_hist"+bucketStr,
+							model.BucketLabel, "1",
+						),
+						T: convertTimeStamp(ts),
+						V: 5,
+					},
+					{
+						MF: "test_hist",
+						L: labels.FromStrings(
+							model.MetricNameLabel, "test_hist"+bucketStr,
+							model.BucketLabel, "2",
+						),
+						T: convertTimeStamp(ts),
+						V: 15,
+					},
+					{
+						MF: "test_hist",
+						L: labels.FromStrings(
+							model.MetricNameLabel, "test_hist"+bucketStr,
+							model.BucketLabel, "+Inf",
+						),
+						T: convertTimeStamp(ts),
+						V: 35,
+					},
+				}
+			},
+		},
+		{
+			// Invalid input: a trailing count of 7 could not have been observed.
+			// The two le="+Inf" values then differ.
+			name:         "histogram with an explicit +Inf bound and a non-empty trailing bucket",
+			wantWarnings: map[WarningCategory]int{WarningCategoryHistogramPlusInfBound: 1},
+			metric: func() pmetric.Metric {
+				metric := pmetric.NewMetric()
+				metric.SetName("test_hist")
+				metric.SetEmptyHistogram().SetAggregationTemporality(pmetric.AggregationTemporalityCumulative)
+
+				pt := metric.Histogram().DataPoints().AppendEmpty()
+				pt.SetTimestamp(ts)
+				pt.SetCount(42)
+				pt.SetSum(42)
+				pt.BucketCounts().FromRaw([]uint64{5, 10, 20, 7})
+				pt.ExplicitBounds().FromRaw([]float64{1, 2, math.Inf(1)})
+
+				return metric
+			},
+			want: func() []sample {
+				return []sample{
+					{
+						MF: "test_hist",
+						L: labels.FromStrings(
+							model.MetricNameLabel, "test_hist"+sumStr,
+						),
+						T: convertTimeStamp(ts),
+						V: 42,
+					},
+					{
+						MF: "test_hist",
+						L: labels.FromStrings(
+							model.MetricNameLabel, "test_hist"+countStr,
+						),
+						T: convertTimeStamp(ts),
+						V: 42,
+					},
+					{
+						MF: "test_hist",
+						L: labels.FromStrings(
+							model.MetricNameLabel, "test_hist"+bucketStr,
+							model.BucketLabel, "1",
+						),
+						T: convertTimeStamp(ts),
+						V: 5,
+					},
+					{
+						MF: "test_hist",
+						L: labels.FromStrings(
+							model.MetricNameLabel, "test_hist"+bucketStr,
+							model.BucketLabel, "2",
+						),
+						T: convertTimeStamp(ts),
+						V: 15,
+					},
+					{
+						MF: "test_hist",
+						L: labels.FromStrings(
+							model.MetricNameLabel, "test_hist"+bucketStr,
+							model.BucketLabel, "+Inf",
+						),
+						T: convertTimeStamp(ts),
+						V: 42,
+					},
+				}
+			},
+		},
+		{
+			// Invalid the other way: the trailing bucket is empty, but count is
+			// not the sum of the bucket counts, which also makes them differ.
+			name: "histogram with an explicit +Inf bound and a count above its bucket sum",
+			metric: func() pmetric.Metric {
+				metric := pmetric.NewMetric()
+				metric.SetName("test_hist")
+				metric.SetEmptyHistogram().SetAggregationTemporality(pmetric.AggregationTemporalityCumulative)
+
+				pt := metric.Histogram().DataPoints().AppendEmpty()
+				pt.SetTimestamp(ts)
+				pt.SetCount(99)
+				pt.SetSum(99)
+				pt.BucketCounts().FromRaw([]uint64{5, 10, 20, 0})
+				pt.ExplicitBounds().FromRaw([]float64{1, 2, math.Inf(1)})
+
+				return metric
+			},
+			wantWarnings: map[WarningCategory]int{WarningCategoryHistogramPlusInfBound: 1},
+			want: func() []sample {
+				return []sample{
+					{
+						MF: "test_hist",
+						L: labels.FromStrings(
+							model.MetricNameLabel, "test_hist"+sumStr,
+						),
+						T: convertTimeStamp(ts),
+						V: 99,
+					},
+					{
+						MF: "test_hist",
+						L: labels.FromStrings(
+							model.MetricNameLabel, "test_hist"+countStr,
+						),
+						T: convertTimeStamp(ts),
+						V: 99,
+					},
+					{
+						MF: "test_hist",
+						L: labels.FromStrings(
+							model.MetricNameLabel, "test_hist"+bucketStr,
+							model.BucketLabel, "1",
+						),
+						T: convertTimeStamp(ts),
+						V: 5,
+					},
+					{
+						MF: "test_hist",
+						L: labels.FromStrings(
+							model.MetricNameLabel, "test_hist"+bucketStr,
+							model.BucketLabel, "2",
+						),
+						T: convertTimeStamp(ts),
+						V: 15,
+					},
+					{
+						MF: "test_hist",
+						L: labels.FromStrings(
+							model.MetricNameLabel, "test_hist"+bucketStr,
+							model.BucketLabel, "+Inf",
+						),
+						T: convertTimeStamp(ts),
+						V: 99,
+					},
+				}
+			},
+		},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -1029,6 +1299,7 @@ func TestPrometheusConverter_AddHistogramDataPoints(t *testing.T) {
 			))
 			require.NoError(t, app.Commit())
 			teststorage.RequireEqual(t, tt.want(), appTest.ResultSamples())
+			require.Equal(t, tt.wantWarnings, CountWarningsByCategory(converter.plusInfAnnots))
 		})
 	}
 }
@@ -1180,6 +1451,83 @@ func TestGetPromExemplars(t *testing.T) {
 		exemplar.SetTimestamp(pcommon.Timestamp(time.Now().UnixNano()))
 		_, err := c.getPromExemplars(ctx, es)
 		require.Error(t, err)
+	})
+
+	t.Run("Exemplars with filtered attributes colliding with trace context", func(t *testing.T) {
+		traceID := pcommon.TraceID{0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07, 0x08, 0x09, 0x0a, 0x0b, 0x0c, 0x0d, 0x0e, 0x0f, 0x10}
+		spanID := pcommon.SpanID{0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07, 0x08}
+		const (
+			traceIDHex = "0102030405060708090a0b0c0d0e0f10"
+			spanIDHex  = "0102030405060708"
+		)
+		for _, tc := range []struct {
+			name           string
+			traceID        pcommon.TraceID
+			spanID         pcommon.SpanID
+			attrs          map[string]any
+			expectedLabels labels.Labels
+		}{
+			{
+				name:    "trace and span ID override filtered attributes",
+				traceID: traceID,
+				spanID:  spanID,
+				attrs:   map[string]any{"trace_id": "attr-trace", "span_id": "attr-span", "foo": "bar"},
+				expectedLabels: labels.FromStrings(
+					"trace_id", traceIDHex,
+					"span_id", spanIDHex,
+					"foo", "bar",
+				),
+			},
+			{
+				name:    "only trace ID overrides filtered attribute",
+				traceID: traceID,
+				attrs:   map[string]any{"trace_id": "attr-trace", "span_id": "attr-span"},
+				expectedLabels: labels.FromStrings(
+					"trace_id", traceIDHex,
+					"span_id", "attr-span",
+				),
+			},
+			{
+				name:   "only span ID overrides filtered attribute",
+				spanID: spanID,
+				attrs:  map[string]any{"trace_id": "attr-trace", "span_id": "attr-span"},
+				expectedLabels: labels.FromStrings(
+					"trace_id", "attr-trace",
+					"span_id", spanIDHex,
+				),
+			},
+			{
+				name:           "filtered attributes are kept without trace context",
+				attrs:          map[string]any{"trace_id": "attr-trace", "span_id": "attr-span"},
+				expectedLabels: labels.FromStrings("trace_id", "attr-trace", "span_id", "attr-span"),
+			},
+			{
+				name:    "overridden filtered attributes do not count towards rune limit",
+				traceID: traceID,
+				spanID:  spanID,
+				attrs:   map[string]any{"trace_id": strings.Repeat("a", maxExemplarRunes), "foo": "bar"},
+				expectedLabels: labels.FromStrings(
+					"trace_id", traceIDHex,
+					"span_id", spanIDHex,
+					"foo", "bar",
+				),
+			},
+		} {
+			t.Run(tc.name, func(t *testing.T) {
+				es := pmetric.NewExemplarSlice()
+				ex := es.AppendEmpty()
+				ex.SetTimestamp(pcommon.Timestamp(time.Now().UnixNano()))
+				ex.SetDoubleValue(1)
+				ex.SetTraceID(tc.traceID)
+				ex.SetSpanID(tc.spanID)
+				require.NoError(t, ex.FilteredAttributes().FromRaw(tc.attrs))
+
+				exemplars, err := c.getPromExemplars(ctx, es)
+				require.NoError(t, err)
+				require.Len(t, exemplars, 1)
+				testutil.RequireEqual(t, tc.expectedLabels, exemplars[0].Labels)
+			})
+		}
 	})
 }
 

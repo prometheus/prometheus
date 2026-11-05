@@ -19,7 +19,6 @@ import (
 	"io"
 	"log/slog"
 	"path/filepath"
-	"strings"
 	"testing"
 
 	"github.com/prometheus/common/model"
@@ -45,63 +44,6 @@ func TestParseFileSuccess(t *testing.T) {
 	require.Empty(t, errs, "unexpected errors parsing file")
 	_, errs = ParseFile("testdata/legacy_validation_annotation.good.yaml", false, model.LegacyValidation, testParser, testLogger)
 	require.Empty(t, errs, "unexpected errors parsing file")
-}
-
-func TestRecordingRuleMetadata(t *testing.T) {
-	ruleFile := []byte(`groups:
-- name: example
-  rules:
-  - record: job:http_requests_total:sum
-    expr: sum by (job) (http_requests_total)
-    description: Total HTTP requests by job.
-    type: counter
-`)
-
-	groups, errs := Parse(ruleFile, false, model.UTF8Validation, testParser, testLogger)
-	require.Empty(t, errs)
-	require.Len(t, groups.Groups, 1)
-	require.Len(t, groups.Groups[0].Rules, 1)
-	require.Equal(t, "Total HTTP requests by job.", groups.Groups[0].Rules[0].Description)
-	require.Equal(t, model.MetricTypeCounter, groups.Groups[0].Rules[0].Type)
-}
-
-func TestRecordingRuleMetadataValidation(t *testing.T) {
-	tests := []struct {
-		name    string
-		rule    string
-		errText string
-	}{
-		{
-			name: "invalid metric type",
-			rule: `record: test_metric
-expr: vector(1)
-type: invalid`,
-			errText: "invalid recording rule metric type: invalid",
-		},
-		{
-			name: "description on alerting rule",
-			rule: `alert: TestAlert
-expr: vector(1)
-description: not supported`,
-			errText: "invalid field 'description' in alerting rule",
-		},
-		{
-			name: "metric type on alerting rule",
-			rule: `alert: TestAlert
-expr: vector(1)
-type: gauge`,
-			errText: "invalid field 'type' in alerting rule",
-		},
-	}
-
-	for _, test := range tests {
-		t.Run(test.name, func(t *testing.T) {
-			ruleFile := []byte("groups:\n- name: example\n  rules:\n  - " + strings.ReplaceAll(test.rule, "\n", "\n    ") + "\n")
-			_, errs := Parse(ruleFile, false, model.UTF8Validation, testParser, testLogger)
-			require.NotEmpty(t, errs)
-			require.ErrorContains(t, errs[0], test.errText)
-		})
-	}
 }
 
 func TestParseFileSuccessWithAliases(t *testing.T) {
@@ -486,6 +428,14 @@ groups:
     expr: up == 0
 ---
 `
+		invalid = `
+groups:
+- name: example
+  rules:
+  - alert: InstanceDown
+    expr: up == 0
+    labels: [
+`
 	)
 
 	var buf bytes.Buffer
@@ -510,4 +460,100 @@ groups:
 	require.NotNil(t, rgs)
 	require.Len(t, rgs.Groups, 1)
 	require.Contains(t, buf.String(), "Multiple document yaml rules files are not supported")
+	buf.Reset()
+
+	// A syntax error in a single document must not be reported as a second document.
+	rgs, errs = Parse([]byte(invalid), false, model.UTF8Validation, testParser, bufLogger)
+	require.NotEmpty(t, errs)
+	require.Nil(t, rgs)
+	require.NotContains(t, buf.String(), "Multiple document yaml rules files are not supported")
+}
+
+func TestRecordingRuleMetadataFields(t *testing.T) {
+	t.Run("valid recording rule metadata", func(t *testing.T) {
+		for _, typ := range []model.MetricType{
+			model.MetricTypeCounter,
+			model.MetricTypeGauge,
+			model.MetricTypeHistogram,
+			model.MetricTypeGaugeHistogram,
+			model.MetricTypeSummary,
+			model.MetricTypeInfo,
+			model.MetricTypeStateset,
+			model.MetricTypeUnknown,
+		} {
+			t.Run("type="+string(typ), func(t *testing.T) {
+				content := `
+groups:
+- name: example
+  rules:
+  - record: job:http_requests:rate5m
+    expr: sum by (job) (rate(http_requests_total[5m]))
+    metadata:
+      help: Per-job HTTP request rate over 5 minutes.
+      type: ` + string(typ) + `
+      unit: requests_per_second
+`
+				rgs, errs := Parse([]byte(content), false, model.UTF8Validation, testParser, testLogger)
+				require.Empty(t, errs)
+				require.Len(t, rgs.Groups, 1)
+				require.Len(t, rgs.Groups[0].Rules, 1)
+				got := rgs.Groups[0].Rules[0]
+				require.NotNil(t, got.Metadata)
+				require.Equal(t, "Per-job HTTP request rate over 5 minutes.", got.Metadata.Help)
+				require.Equal(t, typ, got.Metadata.Type)
+				require.Equal(t, "requests_per_second", got.Metadata.Unit)
+			})
+		}
+	})
+
+	for _, tc := range []struct {
+		name   string
+		yaml   string
+		errMsg string
+	}{
+		{
+			name: "invalid metric type in recording rule",
+			yaml: `
+groups:
+- name: example
+  rules:
+  - record: job:http_requests:rate5m
+    expr: rate(http_requests_total[5m])
+    metadata:
+      type: untyped
+`,
+			errMsg: `8:13: group "example", rule 1, "job:http_requests:rate5m": invalid metric type "untyped" in recording rule`,
+		},
+		{
+			name: "metadata in alerting rule",
+			yaml: `
+groups:
+- name: example
+  rules:
+  - alert: InstanceDown
+    expr: up == 0
+    metadata:
+      help: Instance is down
+`,
+			errMsg: `8:7: group "example", rule 1, "InstanceDown": invalid field 'metadata' in alerting rule`,
+		},
+		{
+			name: "empty metadata in alerting rule",
+			yaml: `
+groups:
+- name: example
+  rules:
+  - alert: InstanceDown
+    expr: up == 0
+    metadata: {}
+`,
+			errMsg: `7:15: group "example", rule 1, "InstanceDown": invalid field 'metadata' in alerting rule`,
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			_, errs := Parse([]byte(tc.yaml), false, model.UTF8Validation, testParser, testLogger)
+			require.Len(t, errs, 1)
+			require.EqualError(t, errs[0], tc.errMsg)
+		})
+	}
 }

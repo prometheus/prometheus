@@ -28,6 +28,7 @@ import (
 	"go.yaml.in/yaml/v2"
 
 	"github.com/prometheus/prometheus/model/labels"
+	"github.com/prometheus/prometheus/model/metadata"
 	"github.com/prometheus/prometheus/model/rulefmt"
 	"github.com/prometheus/prometheus/model/timestamp"
 	"github.com/prometheus/prometheus/promql"
@@ -45,6 +46,8 @@ const (
 	// AlertStateLabel is the label name indicating the state of an alert.
 	alertStateLabel = "alertstate"
 )
+
+var _ Rule = (*AlertingRule)(nil)
 
 // ErrDuplicateAlertLabelSet is returned when an alerting rule evaluation produces
 // metrics with identical labelsets after applying alert labels.
@@ -227,6 +230,11 @@ func (r *AlertingRule) KeepFiringFor() time.Duration {
 // Labels returns the labels of the alerting rule.
 func (r *AlertingRule) Labels() labels.Labels {
 	return r.labels
+}
+
+// Metadata returns the metric metadata associated with the alerting rule.
+func (*AlertingRule) Metadata() metadata.Metadata {
+	return metadata.Metadata{}
 }
 
 // Annotations returns the annotations of the alerting rule.
@@ -630,6 +638,14 @@ func (r *AlertingRule) sendAlerts(ctx context.Context, ts time.Time, resendDelay
 		}
 	})
 	notifyFunc(ctx, r.vector.String(), alerts...)
+}
+
+// LogValue returns the rule's representation for logging.
+func (r *AlertingRule) LogValue() slog.Value {
+	if r == nil {
+		return slog.AnyValue(nil)
+	}
+	return slog.StringValue(r.String())
 }
 
 func (r *AlertingRule) String() string {

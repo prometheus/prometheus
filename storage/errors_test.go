@@ -30,12 +30,16 @@ func TestAppendPartialErrorToError(t *testing.T) {
 	require.NoError(t, emptyErr.ToError())
 
 	// Also test explicitly empty slice.
-	emptySliceErr := &AppendPartialError{ExemplarErrors: []error{}}
+	emptySliceErr := &AppendPartialError{ExemplarErrors: []ExemplarError{}}
 	require.NoError(t, emptySliceErr.ToError())
 
 	// Non-empty ExemplarErrors returns the error.
-	nonEmptyErr := &AppendPartialError{ExemplarErrors: []error{ErrOutOfOrderExemplar}}
+	nonEmptyErr := &AppendPartialError{ExemplarErrors: []ExemplarError{{Index: 1, Err: ErrOutOfOrderExemplar}}}
 	require.ErrorIs(t, nonEmptyErr.ToError(), nonEmptyErr)
+
+	// Exemplar errors match their cause, and only causes are part of the message.
+	require.ErrorIs(t, nonEmptyErr.ExemplarErrors[0], ErrOutOfOrderExemplar)
+	require.EqualError(t, nonEmptyErr, ErrOutOfOrderExemplar.Error())
 }
 
 func TestErrDuplicateSampleForTimestamp(t *testing.T) {

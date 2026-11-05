@@ -69,6 +69,21 @@ const (
 	tTimestamp
 	tValue
 	tStartTimestamp
+	tCompOpen
+	tCompClose
+	tCompCount
+	tCompGCount
+	tCompSum
+	tCompGSum
+	tCompSchema
+	tCompZeroThreshold
+	tCompZeroCount
+	tCompNegSpans
+	tCompNegBuckets
+	tCompPosSpans
+	tCompPosBuckets
+	tCompBucket
+	tCompQuantile
 )
 
 func (t token) String() string {
@@ -117,6 +132,36 @@ func (t token) String() string {
 		return "VALUE"
 	case tStartTimestamp:
 		return "STARTTIMESTAMP"
+	case tCompOpen:
+		return "COMPOPEN"
+	case tCompClose:
+		return "COMPCLOSE"
+	case tCompCount:
+		return "COMPCOUNT"
+	case tCompGCount:
+		return "COMPGCOUNT"
+	case tCompSum:
+		return "COMPSUM"
+	case tCompGSum:
+		return "COMPGSUM"
+	case tCompSchema:
+		return "COMPSCHEMA"
+	case tCompZeroThreshold:
+		return "COMPZEROTHRESHOLD"
+	case tCompZeroCount:
+		return "COMPZEROCOUNT"
+	case tCompNegSpans:
+		return "COMPNEGSPANS"
+	case tCompNegBuckets:
+		return "COMPNEGBUCKETS"
+	case tCompPosSpans:
+		return "COMPPOSPANS"
+	case tCompPosBuckets:
+		return "COMPPOSBUCKETS"
+	case tCompBucket:
+		return "COMPBUCKET"
+	case tCompQuantile:
+		return "COMPQUANTILE"
 	}
 	return fmt.Sprintf("<invalid: %d>", t)
 }
@@ -175,10 +220,17 @@ type PromParser struct {
 // NewPromParser returns a new parser of the byte slice.
 func NewPromParser(b []byte, st *labels.SymbolTable, enableTypeAndUnitLabels bool) Parser {
 	return &PromParser{
-		l:                       &promlexer{b: append(b, '\n')},
+		l:                       &promlexer{b: ensureEndsWithNewline(b)},
 		builder:                 labels.NewScratchBuilderWithSymbolTable(st, 16),
 		enableTypeAndUnitLabels: enableTypeAndUnitLabels,
 	}
+}
+
+func ensureEndsWithNewline(b []byte) []byte {
+	if len(b) > 0 && b[len(b)-1] == '\n' {
+		return b
+	}
+	return append(b, '\n')
 }
 
 // Series returns the bytes of the series, the timestamp if set, and the value

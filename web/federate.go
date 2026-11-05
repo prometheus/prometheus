@@ -132,9 +132,11 @@ Loop:
 			case chunkenc.ValFloat:
 				f = sample.F()
 			case chunkenc.ValHistogram:
+				// ToFloat(nil) returns an independent copy of the buffered histogram.
 				fh = sample.H().ToFloat(nil)
 			case chunkenc.ValFloatHistogram:
-				fh = sample.FH()
+				// The buffer is reset and reused for every series, so retain a copy.
+				fh = sample.FH().Copy()
 			default:
 				continue Loop
 			}

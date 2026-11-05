@@ -44,11 +44,11 @@ func (noopQuerier) Close() error {
 }
 
 func (noopQuerier) SearchLabelNames(_ context.Context, _ *SearchHints, _ ...*labels.Matcher) SearchResultSet {
-	return nil
+	return EmptySearchResultSet()
 }
 
 func (noopQuerier) SearchLabelValues(_ context.Context, _ string, _ *SearchHints, _ ...*labels.Matcher) SearchResultSet {
-	return nil
+	return EmptySearchResultSet()
 }
 
 var _ Searcher = noopQuerier{}

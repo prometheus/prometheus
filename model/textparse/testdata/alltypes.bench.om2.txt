@@ -35,9 +35,9 @@ network_received_bytes_total 9.83e+10 1710000000.0
 # TYPE network_sent_bytes_total counter
 # UNIT network_sent_bytes_total bytes
 network_sent_bytes_total 1.27e+11 1710000000.0
-# HELP jobs_completed_total Total number of jobs completed.
-# TYPE jobs_completed_total counter
-jobs_completed_total 18234.0 1710000000.0
+# HELP jobs_completed Total number of jobs completed.
+# TYPE jobs_completed counter
+jobs_completed 18234.0 1710000000.0
 # HELP jobs_failed_total Total number of jobs failed.
 # TYPE jobs_failed_total counter
 jobs_failed_total 142.0 1710000000.0

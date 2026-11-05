@@ -136,6 +136,45 @@ eval instant at 50m histogram_fraction(0, 3.5, testhistogram2_bucket)
 	expect no_warn
 	{} 0.5833333333333334
 
+# A populated le="0" bucket belongs to the (-Inf, 0] side, as it does for the
+# classic histogram this was converted from.
+load_with_nhcb 5m
+	testhistogram4_bucket{le="0"}	 0+4x10
+	testhistogram4_bucket{le="1"}	 0+7x10
+	testhistogram4_bucket{le="2"}	 0+9x10
+	testhistogram4_bucket{le="+Inf"} 0+10x10
+
+eval instant at 50m histogram_fraction(-Inf, 0, testhistogram4)
+	expect no_warn
+	{} 0.4
+
+eval instant at 50m histogram_fraction(-Inf, 0, testhistogram4_bucket)
+	expect no_warn
+	{} 0.4
+
+eval instant at 50m histogram_fraction(0, Inf, testhistogram4)
+	expect no_warn
+	{} 0.6
+
+eval instant at 50m histogram_fraction(0, Inf, testhistogram4_bucket)
+	expect no_warn
+	{} 0.6
+
+# A custom bucket that spans zero is an ordinary bucket, not an exponential
+# zero bucket, so its bounds must not be rewritten to 0.
+load_with_nhcb 5m
+	testhistogram5_bucket{le="-5"}	 0+1x10
+	testhistogram5_bucket{le="1"}	 0+3x10
+	testhistogram5_bucket{le="+Inf"} 0+4x10
+
+eval instant at 50m histogram_fraction(-Inf, 0, testhistogram5)
+	expect no_warn
+	{} 0.6666666666666666
+
+eval instant at 50m histogram_fraction(-Inf, 0, testhistogram5_bucket)
+	expect no_warn
+	{} 0.6666666666666666
+
 
 eval instant at 50m histogram_fraction(0, 0.2, testhistogram3)
 	expect no_warn
@@ -1211,6 +1250,41 @@ eval instant at 0 histogram_fraction(-Inf, 1, series)
 	expect no_info
 	expect warn msg: PromQL warning: bucket label "le" is missing or has a malformed value of "Hello World" for metric name "series" (1:29)
 	# Should return no results.
+
+clear
+
+# A histogram with only an invalid NaN boundary must not produce output.
+load 1m
+  invalid_only{le="NaN"} 1
+
+eval instant at 0 histogram_quantile(0.5, invalid_only)
+	expect no_info
+	expect warn msg: PromQL warning: bucket label "le" is missing or has a malformed value of "NaN" for metric name "invalid_only" (1:25)
+	# Should return no results.
+
+clear
+
+# Test histogram functions ignore NaN bucket boundaries and warn.
+load 1m
+  series{le="0.5"} 1
+  series{le="+Inf"} 3
+  series{le="NaN"} 2
+
+eval instant at 0 histogram_quantile(0.5, series)
+	expect no_info
+	expect warn msg: PromQL warning: bucket label "le" is missing or has a malformed value of "NaN" for metric name "series" (1:25)
+	{} 0.5
+
+eval instant at 0 histogram_quantiles(series, "q", 0.25, 0.5)
+	expect no_info
+	expect warn msg: PromQL warning: bucket label "le" is missing or has a malformed value of "NaN" for metric name "series" (1:21)
+	{q="0.25"} 0.375
+	{q="0.5"} 0.5
+
+eval instant at 0 histogram_fraction(-Inf, 1, series)
+	expect no_info
+	expect warn msg: PromQL warning: bucket label "le" is missing or has a malformed value of "NaN" for metric name "series" (1:29)
+	{} 0.3333333333333333
 
 clear
 

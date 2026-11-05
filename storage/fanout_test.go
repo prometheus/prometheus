@@ -32,6 +32,77 @@ import (
 	"github.com/prometheus/prometheus/util/testutil"
 )
 
+type costSamplingTestStorage struct {
+	storage.Storage
+	source    storage.SampleAndChunkQueryable
+	supported bool
+	queries   int
+}
+
+func (s *costSamplingTestStorage) CostSamplingQueryable() (storage.SampleAndChunkQueryable, bool) {
+	return s.source, s.supported
+}
+
+func (s *costSamplingTestStorage) Querier(int64, int64) (storage.Querier, error) {
+	s.queries++
+	return nil, errors.New("unexpected secondary sampling")
+}
+
+func (s *costSamplingTestStorage) ChunkQuerier(int64, int64) (storage.ChunkQuerier, error) {
+	s.queries++
+	return nil, errors.New("unexpected secondary sampling")
+}
+
+// Hide the optional sampling capability of the embedded concrete storage.
+type costSamplingUnknownStorage struct{ storage.Storage }
+
+func TestFanout_CostSamplingQueryable(t *testing.T) {
+	primary := teststorage.New(t)
+	native, supported := primary.CostSamplingQueryable()
+	require.True(t, supported)
+	empty := &costSamplingTestStorage{Storage: primary, supported: true}
+	unsafe := &costSamplingTestStorage{Storage: primary}
+	extraNative := &costSamplingTestStorage{Storage: primary, source: native, supported: true}
+	unknown := costSamplingUnknownStorage{Storage: primary}
+	for _, tc := range []struct {
+		name      string
+		primary   storage.Storage
+		secondary []storage.Storage
+		supported bool
+		empty     bool
+	}{
+		{name: "native primary", primary: primary, supported: true},
+		{name: "empty secondary", primary: primary, secondary: []storage.Storage{empty}, supported: true},
+		{name: "unsafe secondary", primary: primary, secondary: []storage.Storage{unsafe}},
+		{name: "unknown secondary", primary: primary, secondary: []storage.Storage{unknown}},
+		{name: "multiple native sources", primary: primary, secondary: []storage.Storage{extraNative}},
+		{name: "unknown primary", primary: unknown},
+		{name: "all empty", primary: empty, secondary: []storage.Storage{empty}, supported: true, empty: true},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			fanout := storage.NewFanout(nil, tc.primary, tc.secondary...)
+			source, supported := fanout.(storage.CostSamplingQueryable).CostSamplingQueryable()
+			require.Equal(t, tc.supported, supported)
+			if !supported || tc.empty {
+				require.Nil(t, source)
+			} else {
+				require.Equal(t, native, source)
+			}
+		})
+	}
+	t.Run("selected source survives secondary reload", func(t *testing.T) {
+		source, supported := storage.NewFanout(nil, primary, empty).(storage.CostSamplingQueryable).CostSamplingQueryable()
+		require.True(t, supported)
+		empty.supported = false
+		q, err := source.ChunkQuerier(0, 100)
+		require.NoError(t, err)
+		require.NoError(t, q.Close())
+		require.Zero(t, empty.queries, "the selected source must not re-enter the live fanout")
+		_, supported = storage.NewFanout(nil, primary, empty).(storage.CostSamplingQueryable).CostSamplingQueryable()
+		require.False(t, supported)
+	})
+}
+
 func TestFanout_SelectSorted(t *testing.T) {
 	inputLabel := labels.FromStrings(model.MetricNameLabel, "a")
 	outputLabel := labels.FromStrings(model.MetricNameLabel, "a")
@@ -314,9 +385,78 @@ func TestFanoutErrors(t *testing.T) {
 	}
 }
 
+func TestFanout_Querier_SearcherCapability(t *testing.T) {
+	primary := teststorage.New(t)
+	app := primary.Appender(t.Context())
+	_, err := app.Append(0, labels.FromStrings("__name__", "up", "job", "prometheus"), 0, 1)
+	require.NoError(t, err)
+	require.NoError(t, app.Commit())
+
+	for _, tc := range []struct {
+		name      string
+		secondary storage.Storage
+		warning   bool
+	}{
+		{
+			name:      "active unsupported secondary",
+			secondary: errStorage{},
+			warning:   true,
+		},
+		{
+			name:      "noop secondary",
+			secondary: fixedQuerierStorage{q: storage.NoopQuerier()},
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			fanoutStorage := storage.NewFanout(nil, primary, tc.secondary)
+			querier, err := fanoutStorage.Querier(0, 1)
+			require.NoError(t, err)
+			defer querier.Close()
+
+			searcher, ok := querier.(storage.Searcher)
+			require.True(t, ok)
+			for _, method := range []struct {
+				name     string
+				search   func() storage.SearchResultSet
+				expected []string
+			}{
+				{"names", func() storage.SearchResultSet { return searcher.SearchLabelNames(t.Context(), nil) }, []string{"__name__", "job"}},
+				{"values", func() storage.SearchResultSet { return searcher.SearchLabelValues(t.Context(), "job", nil) }, []string{"prometheus"}},
+			} {
+				t.Run(method.name, func(t *testing.T) {
+					rs := method.search()
+					defer func() { require.NoError(t, rs.Close()) }()
+					var values []string
+					for rs.Next() {
+						values = append(values, rs.At().Value)
+					}
+					require.NoError(t, rs.Err())
+					require.Equal(t, method.expected, values)
+					if tc.warning {
+						warnings := rs.Warnings().AsErrors()
+						require.Len(t, warnings, 1)
+						require.EqualError(t, warnings[0], "search is not supported by a secondary storage backend; results may be incomplete")
+					} else {
+						require.Empty(t, rs.Warnings())
+					}
+				})
+			}
+		})
+	}
+}
+
 var errSelect = errors.New("select error")
 
 type errStorage struct{}
+
+type fixedQuerierStorage struct {
+	storage.Storage
+	q storage.Querier
+}
+
+func (s fixedQuerierStorage) Querier(_, _ int64) (storage.Querier, error) {
+	return s.q, nil
+}
 
 type errQuerier struct{}
 
@@ -529,6 +669,10 @@ func TestFanoutAppenderV2(t *testing.T) {
 				// This is because in V2 flow we must append sample even when first append partially failed with exemplars.
 				// Filtering out exemplars is neither feasible, nor important.
 				require.Len(t, pErr.ExemplarErrors, 2)
+				// Both errors refer to the same, only exemplar.
+				for _, eErr := range pErr.ExemplarErrors {
+					require.Equal(t, 0, eErr.Index)
+				}
 			default:
 				require.NoError(t, err)
 			}
@@ -563,6 +707,125 @@ func TestFanoutAppenderV2(t *testing.T) {
 			require.Nil(t, tt.secondary.RolledbackSamples())
 		})
 	}
+}
+
+func TestFanoutAppenderV2_AppendExemplars(t *testing.T) {
+	h := tsdbutil.GenerateTestHistogram(0)
+	fh := tsdbutil.GenerateTestFloatHistogram(0)
+	ex := exemplar.Exemplar{Value: 1}
+
+	expected := []sample{
+		{L: labels.FromStrings(model.MetricNameLabel, "metric1"), ST: -1, V: 1, ES: []exemplar.Exemplar{ex}},
+		{L: labels.FromStrings(model.MetricNameLabel, "metric2"), ST: -2, T: 1, H: h},
+		{L: labels.FromStrings(model.MetricNameLabel, "metric3"), ST: -3, T: 2, FH: fh},
+	}
+
+	for _, tt := range fanoutAppenderTestCases(expected) {
+		t.Run(tt.name, func(t *testing.T) {
+			f := storage.NewFanout(nil, mockStorage{appV2: tt.primary}, mockStorage{appV2: tt.secondary})
+
+			app := f.AppenderV2(t.Context())
+			exApp, ok := app.(storage.ExemplarAppenderV2)
+			require.True(t, ok)
+
+			ref, err := exApp.Append(0, labels.FromStrings(model.MetricNameLabel, "metric1"), -1, 0, 1, nil, nil, storage.AOptions{})
+			if tt.expectAppendErr {
+				require.Error(t, err)
+			} else {
+				require.NoError(t, err)
+			}
+
+			_, err = exApp.AppendExemplars(ref, labels.FromStrings(model.MetricNameLabel, "metric1"), []exemplar.Exemplar{ex})
+			switch {
+			case tt.expectAppendErr:
+				require.Error(t, err)
+			case tt.expectExemplarError:
+				var pErr *storage.AppendPartialError
+				require.ErrorAs(t, err, &pErr)
+				// One for primary, one for secondary, both for the only exemplar.
+				require.Len(t, pErr.ExemplarErrors, 2)
+				for _, eErr := range pErr.ExemplarErrors {
+					require.Equal(t, 0, eErr.Index)
+				}
+			default:
+				require.NoError(t, err)
+			}
+
+			_, err = exApp.Append(0, labels.FromStrings(model.MetricNameLabel, "metric2"), -2, 1, 0, h, nil, storage.AOptions{})
+			if tt.expectAppendErr {
+				require.Error(t, err)
+			} else {
+				require.NoError(t, err)
+			}
+
+			_, err = exApp.Append(0, labels.FromStrings(model.MetricNameLabel, "metric3"), -3, 2, 0, nil, fh, storage.AOptions{})
+			if tt.expectAppendErr {
+				require.Error(t, err)
+			} else {
+				require.NoError(t, err)
+			}
+
+			err = exApp.Commit()
+			if tt.expectCommitError {
+				require.Error(t, err)
+			} else {
+				require.NoError(t, err)
+			}
+
+			require.Nil(t, tt.primary.PendingSamples())
+			testutil.RequireEqual(t, tt.expectPrimarySamples, tt.primary.ResultSamples())
+			require.Nil(t, tt.primary.RolledbackSamples())
+
+			require.Nil(t, tt.secondary.PendingSamples())
+			testutil.RequireEqual(t, tt.expectSecondarySamples, tt.secondary.ResultSamples())
+			require.Nil(t, tt.secondary.RolledbackSamples())
+		})
+	}
+
+	t.Run("secondary without ExemplarAppenderV2 is skipped", func(t *testing.T) {
+		primary := teststorage.NewAppendable()
+		secondary := teststorage.NewAppendable()
+		f := storage.NewFanout(nil, mockStorage{appV2: primary}, mockStorage{appV2: &appendableV2WithoutExemplars{AppendableV2: secondary}})
+
+		exApp := f.AppenderV2(t.Context()).(storage.ExemplarAppenderV2)
+		lbls := labels.FromStrings(model.MetricNameLabel, "metric1")
+		ref, err := exApp.Append(0, lbls, -1, 0, 1, nil, nil, storage.AOptions{})
+		require.NoError(t, err)
+
+		_, err = exApp.AppendExemplars(ref, lbls, []exemplar.Exemplar{ex})
+		require.NoError(t, err)
+		require.NoError(t, exApp.Commit())
+
+		testutil.RequireEqual(t, []sample{{L: lbls, ST: -1, V: 1, ES: []exemplar.Exemplar{ex}}}, primary.ResultSamples())
+		testutil.RequireEqual(t, []sample{{L: lbls, ST: -1, V: 1}}, secondary.ResultSamples())
+	})
+
+	t.Run("primary without ExemplarAppenderV2 returns error", func(t *testing.T) {
+		primary := teststorage.NewAppendable()
+		secondary := teststorage.NewAppendable()
+		f := storage.NewFanout(nil, mockStorage{appV2: &appendableV2WithoutExemplars{AppendableV2: primary}}, mockStorage{appV2: secondary})
+
+		exApp := f.AppenderV2(t.Context()).(storage.ExemplarAppenderV2)
+		lbls := labels.FromStrings(model.MetricNameLabel, "metric1")
+		ref, err := exApp.Append(0, lbls, -1, 0, 1, nil, nil, storage.AOptions{})
+		require.NoError(t, err)
+
+		_, err = exApp.AppendExemplars(ref, lbls, []exemplar.Exemplar{ex})
+		require.ErrorContains(t, err, "does not implement ExemplarAppenderV2")
+		require.NoError(t, exApp.Rollback())
+	})
+}
+
+type appendableV2WithoutExemplars struct {
+	storage.AppendableV2
+}
+
+type appenderV2WithoutExemplars struct {
+	storage.AppenderV2
+}
+
+func (a *appendableV2WithoutExemplars) AppenderV2(ctx context.Context) storage.AppenderV2 {
+	return &appenderV2WithoutExemplars{AppenderV2: a.AppendableV2.AppenderV2(ctx)}
 }
 
 // Recommended CLI invocation:

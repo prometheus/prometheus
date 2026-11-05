@@ -242,7 +242,10 @@ func TestFromMetrics(t *testing.T) {
 
 			h.SetCount(15)
 			h.SetSum(155)
-			h.BucketCounts().FromRaw([]uint64{3, 11, 0})
+			// The last bucket is the (1.123, +Inf] overflow bucket. It has to be
+			// counted for count to equal the sum of bucket_counts, which OTLP
+			// requires and which sum=155 is only possible with.
+			h.BucketCounts().FromRaw([]uint64{3, 11, 1})
 			h.ExplicitBounds().FromRaw([]float64{0.124, 1.123})
 
 			generateAttributes(h.Attributes(), "series", 1)
@@ -294,10 +297,17 @@ func TestFromMetrics(t *testing.T) {
 						T: ts.AsTime().UnixMilli(), H: &histogram.Histogram{
 							Schema: -53, Count: 15, Sum: 155,
 							PositiveSpans:   []histogram.Span{{Offset: 0, Length: 3}},
-							PositiveBuckets: []int64{3, 8, -11},
+							PositiveBuckets: []int64{3, 8, -10},
 							CustomValues:    []float64{0.124, 1.123},
 						},
 					},
+				}
+			}
+			// Every expected native histogram here must be one the appender would
+			// accept; otherwise the expectation is unreachable.
+			for _, es := range expectedSamples {
+				if es.H != nil {
+					require.NoError(t, es.H.Validate(), "expected histogram for %s does not validate", es.L)
 				}
 			}
 			teststorage.RequireEqual(t, expectedSamples, appTest.ResultSamples())
@@ -1159,6 +1169,13 @@ func TestTemporality(t *testing.T) {
 				require.NoError(t, err)
 			}
 			require.NoError(t, app.Commit())
+			// Every expected native histogram here must be one the appender would
+			// accept; otherwise the expectation is unreachable.
+			for _, es := range tc.expectedSamples {
+				if es.H != nil {
+					require.NoError(t, es.H.Validate(), "expected histogram for %s does not validate", es.L)
+				}
+			}
 			teststorage.RequireEqual(t, tc.expectedSamples, appTest.ResultSamples())
 		})
 	}
@@ -1211,6 +1228,7 @@ func createOtelExponentialHistogram(name string, temporality pmetric.Aggregation
 	dp := hist.DataPoints().AppendEmpty()
 	dp.SetCount(1)
 	dp.SetSum(5)
+	dp.Positive().BucketCounts().FromRaw([]uint64{1})
 	dp.SetTimestamp(pcommon.NewTimestampFromTime(ts))
 	dp.Attributes().PutStr("test_label", "test_value")
 	return m
@@ -1230,6 +1248,8 @@ func createPromNativeHistogramSeries(name string, hint histogram.CounterResetHin
 			Schema:           0,
 			ZeroThreshold:    1e-128,
 			ZeroCount:        0,
+			PositiveSpans:    []histogram.Span{{Offset: 1, Length: 1}},
+			PositiveBuckets:  []int64{1},
 			CounterResetHint: hint,
 		},
 	}
@@ -1574,6 +1594,65 @@ func BenchmarkPrometheusConverter_FromMetrics(b *testing.B) {
 			}
 		})
 	}
+}
+
+// BenchmarkPrometheusConverter_FromMetrics_ExplicitHistogram measures explicit
+// histogram conversion as the number of data points and finite bounds changes.
+func BenchmarkPrometheusConverter_FromMetrics_ExplicitHistogram(b *testing.B) {
+	for _, tc := range []struct {
+		dataPoints   int
+		finiteBounds int
+	}{
+		{dataPoints: 1, finiteBounds: 1},
+		{dataPoints: 1, finiteBounds: 64},
+		{dataPoints: 64, finiteBounds: 1},
+		{dataPoints: 64, finiteBounds: 64},
+	} {
+		b.Run(fmt.Sprintf("points=%d/bounds=%d", tc.dataPoints, tc.finiteBounds), func(b *testing.B) {
+			settings := Settings{}
+			payload := createExplicitHistogramExportRequest(tc.dataPoints, tc.finiteBounds)
+			b.ReportAllocs()
+			b.ResetTimer()
+
+			for b.Loop() {
+				app := &noOpAppender{}
+				converter := NewPrometheusConverter(app)
+				annots, err := converter.FromMetrics(context.Background(), payload.Metrics(), settings)
+				require.NoError(b, err)
+				require.Empty(b, annots)
+				require.Positive(b, app.samples)
+				require.Positive(b, app.metadata)
+			}
+		})
+	}
+}
+
+func createExplicitHistogramExportRequest(dataPoints, finiteBounds int) pmetricotlp.ExportRequest {
+	request := pmetricotlp.NewExportRequest()
+	metrics := request.Metrics().ResourceMetrics().AppendEmpty().ScopeMetrics().AppendEmpty().Metrics()
+	metric := metrics.AppendEmpty()
+	metric.SetName("explicit_histogram")
+	histogram := metric.SetEmptyHistogram()
+	histogram.SetAggregationTemporality(pmetric.AggregationTemporalityCumulative)
+
+	bounds := make([]float64, finiteBounds)
+	bucketCounts := make([]uint64, finiteBounds+1)
+	for i := range bounds {
+		bounds[i] = float64(i + 1)
+		bucketCounts[i] = 1
+	}
+	bucketCounts[finiteBounds] = 1
+
+	for i := range dataPoints {
+		point := histogram.DataPoints().AppendEmpty()
+		point.SetTimestamp(pcommon.NewTimestampFromTime(time.Unix(int64(i), 0)))
+		point.SetCount(uint64(finiteBounds + 1))
+		point.SetSum(float64(finiteBounds + 1))
+		point.ExplicitBounds().FromRaw(bounds)
+		point.BucketCounts().FromRaw(bucketCounts)
+		point.Attributes().PutStr("test_label", "test_value")
+	}
+	return request
 }
 
 type noOpAppender struct {

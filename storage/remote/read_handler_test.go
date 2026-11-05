@@ -15,18 +15,30 @@ package remote
 
 import (
 	"bytes"
+	"context"
 	"errors"
 	"fmt"
 	"io"
+	"log"
+	"log/slog"
+	"math"
 	"net/http"
 	"net/http/httptest"
 	"strconv"
+	"strings"
+	"sync"
 	"testing"
+	"testing/synctest"
 	"time"
 
 	"github.com/gogo/protobuf/proto"
 	"github.com/golang/snappy"
+	"github.com/prometheus/client_golang/prometheus"
+	prom_testutil "github.com/prometheus/client_golang/prometheus/testutil"
+	dto "github.com/prometheus/client_model/go"
 	"github.com/stretchr/testify/require"
+	"go.opentelemetry.io/contrib/instrumentation/net/http/otelhttp"
+	"go.uber.org/atomic"
 
 	"github.com/prometheus/prometheus/config"
 	"github.com/prometheus/prometheus/model/histogram"
@@ -34,6 +46,9 @@ import (
 	"github.com/prometheus/prometheus/prompb"
 	"github.com/prometheus/prometheus/promql/promqltest"
 	"github.com/prometheus/prometheus/storage"
+	"github.com/prometheus/prometheus/tsdb"
+	"github.com/prometheus/prometheus/tsdb/chunkenc"
+	"github.com/prometheus/prometheus/tsdb/chunks"
 	"github.com/prometheus/prometheus/tsdb/tsdbutil"
 	"github.com/prometheus/prometheus/util/teststorage"
 )
@@ -211,14 +226,14 @@ func BenchmarkSampledReadEndpointWithoutExternalLabels(b *testing.B) {
 		for _, labelCount := range []int{3, 12, 24} {
 			b.Run(fmt.Sprintf("series_%d_labels_%d", seriesCount, labelCount), func(b *testing.B) {
 				store := teststorage.New(b)
-				app := store.Appender(b.Context())
+				app := store.AppenderV2(b.Context())
 				for i := range seriesCount {
 					labelStrings := make([]string, 0, 2*labelCount)
 					labelStrings = append(labelStrings, "__name__", "test_metric", "series", strconv.Itoa(i))
 					for j := 2; j < labelCount; j++ {
 						labelStrings = append(labelStrings, fmt.Sprintf("label_%d", j), "value")
 					}
-					_, err := app.Append(0, labels.FromStrings(labelStrings...), 0, 1)
+					_, err := app.Append(0, labels.FromStrings(labelStrings...), 0, 0, 1, nil, nil, storage.AOptions{})
 					require.NoError(b, err)
 				}
 				require.NoError(b, app.Commit())
@@ -330,255 +345,1279 @@ func BenchmarkStreamReadEndpoint(b *testing.B) {
 }
 
 func TestStreamReadEndpoint(t *testing.T) {
-	// First with 120 float samples. We expect 1 frame with 1 chunk.
-	// Second with 121 float samples, We expect 1 frame with 2 chunks.
-	// Third with 241 float samples. We expect 1 frame with 2 chunks, and 1 frame with 1 chunk for the same series due to bytes limit.
-	// Fourth with 25 histogram samples. We expect 1 frame with 1 chunk.
-	store := promqltest.LoadedStorage(t, `
+	t.Run("successful response", func(t *testing.T) {
+		// First with 120 float samples. We expect 1 frame with 1 chunk.
+		// Second with 121 float samples, We expect 1 frame with 2 chunks.
+		// Third with 241 float samples. We expect 1 frame with 2 chunks, and 1 frame with 1 chunk for the same series due to bytes limit.
+		// Fourth with 25 histogram samples. We expect 1 frame with 1 chunk.
+		store := promqltest.LoadedStorage(t, `
 		load 1m
 			test_metric1{foo="bar1",baz="qux"} 0+100x119
 			test_metric1{foo="bar2",baz="qux"} 0+100x120
 			test_metric1{foo="bar3",baz="qux"} 0+100x240
 	`)
-	defer store.Close()
+		defer store.Close()
 
-	addNativeHistogramsToTestSuite(t, store, 25)
+		addNativeHistogramsToTestSuite(t, store, 25)
 
-	api := NewReadHandler(nil, nil, store, func() config.Config {
-		return config.Config{
-			GlobalConfig: config.GlobalConfig{
-				// We expect external labels to be added, with the source labels honored.
-				ExternalLabels: labels.FromStrings("baz", "a", "b", "c", "d", "e"),
-			},
-		}
-	},
-		1e6, 1,
-		// Labelset has 57 bytes. Full chunk in test data has roughly 240 bytes. This allows us to have at max 2 chunks in this test.
-		57+480,
-	)
+		api := NewReadHandler(nil, nil, store, func() config.Config {
+			return config.Config{
+				GlobalConfig: config.GlobalConfig{
+					// We expect external labels to be added, with the source labels honored.
+					ExternalLabels: labels.FromStrings("baz", "a", "b", "c", "d", "e"),
+				},
+			}
+		},
+			1e6, 1,
+			// Labelset has 57 bytes. Full chunk in test data has roughly 240 bytes. This allows us to have at max 2 chunks in this test.
+			57+480,
+		)
 
-	// Encode the request.
-	matcher1, err := labels.NewMatcher(labels.MatchEqual, "__name__", "test_metric1")
-	require.NoError(t, err)
-
-	matcher2, err := labels.NewMatcher(labels.MatchEqual, "d", "e")
-	require.NoError(t, err)
-
-	matcher3, err := labels.NewMatcher(labels.MatchEqual, "foo", "bar1")
-	require.NoError(t, err)
-
-	matcher4, err := labels.NewMatcher(labels.MatchEqual, "__name__", "test_histogram_metric1")
-	require.NoError(t, err)
-
-	query1, err := ToQuery(0, 14400001, []*labels.Matcher{matcher1, matcher2}, &storage.SelectHints{
-		Step:  1,
-		Func:  "avg",
-		Start: 0,
-		End:   14400001,
-	})
-	require.NoError(t, err)
-
-	query2, err := ToQuery(0, 14400001, []*labels.Matcher{matcher1, matcher3}, &storage.SelectHints{
-		Step:  1,
-		Func:  "avg",
-		Start: 0,
-		End:   14400001,
-	})
-	require.NoError(t, err)
-
-	query3, err := ToQuery(0, 14400001, []*labels.Matcher{matcher4}, &storage.SelectHints{
-		Step:  1,
-		Func:  "avg",
-		Start: 0,
-		End:   14400001,
-	})
-	require.NoError(t, err)
-
-	req := &prompb.ReadRequest{
-		Queries:               []*prompb.Query{query1, query2, query3},
-		AcceptedResponseTypes: []prompb.ReadRequest_ResponseType{prompb.ReadRequest_STREAMED_XOR_CHUNKS},
-	}
-	data, err := proto.Marshal(req)
-	require.NoError(t, err)
-
-	compressed := snappy.Encode(nil, data)
-	request, err := http.NewRequest(http.MethodPost, "", bytes.NewBuffer(compressed))
-	require.NoError(t, err)
-
-	recorder := httptest.NewRecorder()
-	api.ServeHTTP(recorder, request)
-
-	require.Equal(t, 2, recorder.Code/100)
-
-	require.Equal(t, "application/x-streamed-protobuf; proto=prometheus.ChunkedReadResponse", recorder.Result().Header.Get("Content-Type"))
-	require.Empty(t, recorder.Result().Header.Get("Content-Encoding"))
-
-	var results []*prompb.ChunkedReadResponse
-	stream := NewChunkedReader(recorder.Result().Body, config.DefaultChunkedReadLimit, nil)
-	for {
-		res := &prompb.ChunkedReadResponse{}
-		err := stream.NextProto(res)
-		if errors.Is(err, io.EOF) {
-			break
-		}
+		// Encode the request.
+		matcher1, err := labels.NewMatcher(labels.MatchEqual, "__name__", "test_metric1")
 		require.NoError(t, err)
-		results = append(results, res)
-	}
 
-	require.Len(t, results, 6, "Expected 6 results.")
+		matcher2, err := labels.NewMatcher(labels.MatchEqual, "d", "e")
+		require.NoError(t, err)
 
-	require.Equal(t, []*prompb.ChunkedReadResponse{
-		{
-			ChunkedSeries: []*prompb.ChunkedSeries{
-				{
-					Labels: []prompb.Label{
-						{Name: "__name__", Value: "test_metric1"},
-						{Name: "b", Value: "c"},
-						{Name: "baz", Value: "qux"},
-						{Name: "d", Value: "e"},
-						{Name: "foo", Value: "bar1"},
-					},
-					Chunks: []prompb.Chunk{
-						{
-							Type:      prompb.Chunk_XOR,
-							MaxTimeMs: 7140000,
-							Data:      []byte("\000x\000\000\000\000\000\000\000\000\000\340\324\003\302|\005\224\000\301\254}\351z2\320O\355\264n[\007\316\224\243md\371\320\375\032Pm\nS\235\016Q\255\006P\275\250\277\312\201Z\003(3\240R\207\332\005(\017\240\322\201\332=(\023\2402\203Z\007(w\2402\201Z\017(\023\265\227\364P\033@\245\007\364\nP\033C\245\002t\036P+@e\036\364\016Pk@e\002t:P;A\245\001\364\nS\373@\245\006t\006P+C\345\002\364\006Pk@\345\036t\nP\033A\245\003\364:P\033@\245\006t\016ZJ\377\\\205\313\210\327\270\017\345+F[\310\347E)\355\024\241\366\342}(v\215(N\203)\326\207(\336\203(V\332W\362\202t4\240m\005(\377AJ\006\320\322\202t\374\240\255\003(oA\312:\3202"),
+		matcher3, err := labels.NewMatcher(labels.MatchEqual, "foo", "bar1")
+		require.NoError(t, err)
+
+		matcher4, err := labels.NewMatcher(labels.MatchEqual, "__name__", "test_histogram_metric1")
+		require.NoError(t, err)
+
+		query1, err := ToQuery(0, 14400001, []*labels.Matcher{matcher1, matcher2}, &storage.SelectHints{
+			Step:  1,
+			Func:  "avg",
+			Start: 0,
+			End:   14400001,
+		})
+		require.NoError(t, err)
+
+		query2, err := ToQuery(0, 14400001, []*labels.Matcher{matcher1, matcher3}, &storage.SelectHints{
+			Step:  1,
+			Func:  "avg",
+			Start: 0,
+			End:   14400001,
+		})
+		require.NoError(t, err)
+
+		query3, err := ToQuery(0, 14400001, []*labels.Matcher{matcher4}, &storage.SelectHints{
+			Step:  1,
+			Func:  "avg",
+			Start: 0,
+			End:   14400001,
+		})
+		require.NoError(t, err)
+
+		req := &prompb.ReadRequest{
+			Queries:               []*prompb.Query{query1, query2, query3},
+			AcceptedResponseTypes: []prompb.ReadRequest_ResponseType{prompb.ReadRequest_STREAMED_XOR_CHUNKS},
+		}
+		data, err := proto.Marshal(req)
+		require.NoError(t, err)
+
+		compressed := snappy.Encode(nil, data)
+		request, err := http.NewRequest(http.MethodPost, "", bytes.NewBuffer(compressed))
+		require.NoError(t, err)
+
+		recorder := httptest.NewRecorder()
+		api.ServeHTTP(recorder, request)
+
+		require.Equal(t, 2, recorder.Code/100)
+
+		require.Equal(t, "application/x-streamed-protobuf; proto=prometheus.ChunkedReadResponse", recorder.Result().Header.Get("Content-Type"))
+		require.Empty(t, recorder.Result().Header.Get("Content-Encoding"))
+
+		var results []*prompb.ChunkedReadResponse
+		stream := NewChunkedReader(recorder.Result().Body, config.DefaultChunkedReadLimit, nil)
+		for {
+			res := &prompb.ChunkedReadResponse{}
+			err := stream.NextProto(res)
+			if errors.Is(err, io.EOF) {
+				break
+			}
+			require.NoError(t, err)
+			results = append(results, res)
+		}
+
+		require.Len(t, results, 6, "Expected 6 results.")
+
+		require.Equal(t, []*prompb.ChunkedReadResponse{
+			{
+				ChunkedSeries: []*prompb.ChunkedSeries{
+					{
+						Labels: []prompb.Label{
+							{Name: "__name__", Value: "test_metric1"},
+							{Name: "b", Value: "c"},
+							{Name: "baz", Value: "qux"},
+							{Name: "d", Value: "e"},
+							{Name: "foo", Value: "bar1"},
+						},
+						Chunks: []prompb.Chunk{
+							{
+								Type:      prompb.Chunk_XOR,
+								MaxTimeMs: 7140000,
+								Data:      []byte("\000x\000\000\000\000\000\000\000\000\000\340\324\003\302|\005\224\000\301\254}\351z2\320O\355\264n[\007\316\224\243md\371\320\375\032Pm\nS\235\016Q\255\006P\275\250\277\312\201Z\003(3\240R\207\332\005(\017\240\322\201\332=(\023\2402\203Z\007(w\2402\201Z\017(\023\265\227\364P\033@\245\007\364\nP\033C\245\002t\036P+@e\036\364\016Pk@e\002t:P;A\245\001\364\nS\373@\245\006t\006P+C\345\002\364\006Pk@\345\036t\nP\033A\245\003\364:P\033@\245\006t\016ZJ\377\\\205\313\210\327\270\017\345+F[\310\347E)\355\024\241\366\342}(v\215(N\203)\326\207(\336\203(V\332W\362\202t4\240m\005(\377AJ\006\320\322\202t\374\240\255\003(oA\312:\3202"),
+							},
 						},
 					},
 				},
 			},
-		},
-		{
-			ChunkedSeries: []*prompb.ChunkedSeries{
-				{
-					Labels: []prompb.Label{
-						{Name: "__name__", Value: "test_metric1"},
-						{Name: "b", Value: "c"},
-						{Name: "baz", Value: "qux"},
-						{Name: "d", Value: "e"},
-						{Name: "foo", Value: "bar2"},
-					},
-					Chunks: []prompb.Chunk{
-						{
-							Type:      prompb.Chunk_XOR,
-							MaxTimeMs: 7140000,
-							Data:      []byte("\000x\000\000\000\000\000\000\000\000\000\340\324\003\302|\005\224\000\301\254}\351z2\320O\355\264n[\007\316\224\243md\371\320\375\032Pm\nS\235\016Q\255\006P\275\250\277\312\201Z\003(3\240R\207\332\005(\017\240\322\201\332=(\023\2402\203Z\007(w\2402\201Z\017(\023\265\227\364P\033@\245\007\364\nP\033C\245\002t\036P+@e\036\364\016Pk@e\002t:P;A\245\001\364\nS\373@\245\006t\006P+C\345\002\364\006Pk@\345\036t\nP\033A\245\003\364:P\033@\245\006t\016ZJ\377\\\205\313\210\327\270\017\345+F[\310\347E)\355\024\241\366\342}(v\215(N\203)\326\207(\336\203(V\332W\362\202t4\240m\005(\377AJ\006\320\322\202t\374\240\255\003(oA\312:\3202"),
+			{
+				ChunkedSeries: []*prompb.ChunkedSeries{
+					{
+						Labels: []prompb.Label{
+							{Name: "__name__", Value: "test_metric1"},
+							{Name: "b", Value: "c"},
+							{Name: "baz", Value: "qux"},
+							{Name: "d", Value: "e"},
+							{Name: "foo", Value: "bar2"},
 						},
-						{
-							Type:      prompb.Chunk_XOR,
-							MinTimeMs: 7200000,
-							MaxTimeMs: 7200000,
-							Data:      []byte("\000\001\200\364\356\006@\307p\000\000\000\000\000"),
-						},
-					},
-				},
-			},
-		},
-		{
-			ChunkedSeries: []*prompb.ChunkedSeries{
-				{
-					Labels: []prompb.Label{
-						{Name: "__name__", Value: "test_metric1"},
-						{Name: "b", Value: "c"},
-						{Name: "baz", Value: "qux"},
-						{Name: "d", Value: "e"},
-						{Name: "foo", Value: "bar3"},
-					},
-					Chunks: []prompb.Chunk{
-						{
-							Type:      prompb.Chunk_XOR,
-							MaxTimeMs: 7140000,
-							Data:      []byte("\000x\000\000\000\000\000\000\000\000\000\340\324\003\302|\005\224\000\301\254}\351z2\320O\355\264n[\007\316\224\243md\371\320\375\032Pm\nS\235\016Q\255\006P\275\250\277\312\201Z\003(3\240R\207\332\005(\017\240\322\201\332=(\023\2402\203Z\007(w\2402\201Z\017(\023\265\227\364P\033@\245\007\364\nP\033C\245\002t\036P+@e\036\364\016Pk@e\002t:P;A\245\001\364\nS\373@\245\006t\006P+C\345\002\364\006Pk@\345\036t\nP\033A\245\003\364:P\033@\245\006t\016ZJ\377\\\205\313\210\327\270\017\345+F[\310\347E)\355\024\241\366\342}(v\215(N\203)\326\207(\336\203(V\332W\362\202t4\240m\005(\377AJ\006\320\322\202t\374\240\255\003(oA\312:\3202"),
-						},
-						{
-							Type:      prompb.Chunk_XOR,
-							MinTimeMs: 7200000,
-							MaxTimeMs: 14340000,
-							Data:      []byte("\000x\200\364\356\006@\307p\000\000\000\000\000\340\324\003\340>\224\355\260\277\322\200\372\005(=\240R\207:\003(\025\240\362\201z\003(\365\240r\203:\005(\r\241\322\201\372\r(\r\240R\237:\007(5\2402\201z\037(\025\2402\203:\005(\375\240R\200\372\r(\035\241\322\201:\003(5\240r\326g\364\271\213\227!\253q\037\312N\340GJ\033E)\375\024\241\266\362}(N\217(V\203)\336\207(\326\203(N\334W\322\203\2644\240}\005(\373AJ\031\3202\202\264\374\240\275\003(kA\3129\320R\201\2644\240\375\264\277\322\200\332\005(3\240r\207Z\003(\027\240\362\201Z\003(\363\240R\203\332\005(\017\241\322\201\332\r(\023\2402\237Z\007(7\2402\201Z\037(\023\240\322\200\332\005(\377\240R\200\332\r "),
+						Chunks: []prompb.Chunk{
+							{
+								Type:      prompb.Chunk_XOR,
+								MaxTimeMs: 7140000,
+								Data:      []byte("\000x\000\000\000\000\000\000\000\000\000\340\324\003\302|\005\224\000\301\254}\351z2\320O\355\264n[\007\316\224\243md\371\320\375\032Pm\nS\235\016Q\255\006P\275\250\277\312\201Z\003(3\240R\207\332\005(\017\240\322\201\332=(\023\2402\203Z\007(w\2402\201Z\017(\023\265\227\364P\033@\245\007\364\nP\033C\245\002t\036P+@e\036\364\016Pk@e\002t:P;A\245\001\364\nS\373@\245\006t\006P+C\345\002\364\006Pk@\345\036t\nP\033A\245\003\364:P\033@\245\006t\016ZJ\377\\\205\313\210\327\270\017\345+F[\310\347E)\355\024\241\366\342}(v\215(N\203)\326\207(\336\203(V\332W\362\202t4\240m\005(\377AJ\006\320\322\202t\374\240\255\003(oA\312:\3202"),
+							},
+							{
+								Type:      prompb.Chunk_XOR,
+								MinTimeMs: 7200000,
+								MaxTimeMs: 7200000,
+								Data:      []byte("\000\001\200\364\356\006@\307p\000\000\000\000\000"),
+							},
 						},
 					},
 				},
 			},
-		},
-		{
-			ChunkedSeries: []*prompb.ChunkedSeries{
-				{
-					Labels: []prompb.Label{
-						{Name: "__name__", Value: "test_metric1"},
-						{Name: "b", Value: "c"},
-						{Name: "baz", Value: "qux"},
-						{Name: "d", Value: "e"},
-						{Name: "foo", Value: "bar3"},
-					},
-					Chunks: []prompb.Chunk{
-						{
-							Type:      prompb.Chunk_XOR,
-							MinTimeMs: 14400000,
-							MaxTimeMs: 14400000,
-							Data:      []byte("\000\001\200\350\335\r@\327p\000\000\000\000\000"),
+			{
+				ChunkedSeries: []*prompb.ChunkedSeries{
+					{
+						Labels: []prompb.Label{
+							{Name: "__name__", Value: "test_metric1"},
+							{Name: "b", Value: "c"},
+							{Name: "baz", Value: "qux"},
+							{Name: "d", Value: "e"},
+							{Name: "foo", Value: "bar3"},
+						},
+						Chunks: []prompb.Chunk{
+							{
+								Type:      prompb.Chunk_XOR,
+								MaxTimeMs: 7140000,
+								Data:      []byte("\000x\000\000\000\000\000\000\000\000\000\340\324\003\302|\005\224\000\301\254}\351z2\320O\355\264n[\007\316\224\243md\371\320\375\032Pm\nS\235\016Q\255\006P\275\250\277\312\201Z\003(3\240R\207\332\005(\017\240\322\201\332=(\023\2402\203Z\007(w\2402\201Z\017(\023\265\227\364P\033@\245\007\364\nP\033C\245\002t\036P+@e\036\364\016Pk@e\002t:P;A\245\001\364\nS\373@\245\006t\006P+C\345\002\364\006Pk@\345\036t\nP\033A\245\003\364:P\033@\245\006t\016ZJ\377\\\205\313\210\327\270\017\345+F[\310\347E)\355\024\241\366\342}(v\215(N\203)\326\207(\336\203(V\332W\362\202t4\240m\005(\377AJ\006\320\322\202t\374\240\255\003(oA\312:\3202"),
+							},
+							{
+								Type:      prompb.Chunk_XOR,
+								MinTimeMs: 7200000,
+								MaxTimeMs: 14340000,
+								Data:      []byte("\000x\200\364\356\006@\307p\000\000\000\000\000\340\324\003\340>\224\355\260\277\322\200\372\005(=\240R\207:\003(\025\240\362\201z\003(\365\240r\203:\005(\r\241\322\201\372\r(\r\240R\237:\007(5\2402\201z\037(\025\2402\203:\005(\375\240R\200\372\r(\035\241\322\201:\003(5\240r\326g\364\271\213\227!\253q\037\312N\340GJ\033E)\375\024\241\266\362}(N\217(V\203)\336\207(\326\203(N\334W\322\203\2644\240}\005(\373AJ\031\3202\202\264\374\240\275\003(kA\3129\320R\201\2644\240\375\264\277\322\200\332\005(3\240r\207Z\003(\027\240\362\201Z\003(\363\240R\203\332\005(\017\241\322\201\332\r(\023\2402\237Z\007(7\2402\201Z\037(\023\240\322\200\332\005(\377\240R\200\332\r "),
+							},
 						},
 					},
 				},
 			},
-		},
-		{
-			ChunkedSeries: []*prompb.ChunkedSeries{
-				{
-					Labels: []prompb.Label{
-						{Name: "__name__", Value: "test_metric1"},
-						{Name: "b", Value: "c"},
-						{Name: "baz", Value: "qux"},
-						{Name: "d", Value: "e"},
-						{Name: "foo", Value: "bar1"},
-					},
-					Chunks: []prompb.Chunk{
-						{
-							Type:      prompb.Chunk_XOR,
-							MaxTimeMs: 7140000,
-							Data:      []byte("\000x\000\000\000\000\000\000\000\000\000\340\324\003\302|\005\224\000\301\254}\351z2\320O\355\264n[\007\316\224\243md\371\320\375\032Pm\nS\235\016Q\255\006P\275\250\277\312\201Z\003(3\240R\207\332\005(\017\240\322\201\332=(\023\2402\203Z\007(w\2402\201Z\017(\023\265\227\364P\033@\245\007\364\nP\033C\245\002t\036P+@e\036\364\016Pk@e\002t:P;A\245\001\364\nS\373@\245\006t\006P+C\345\002\364\006Pk@\345\036t\nP\033A\245\003\364:P\033@\245\006t\016ZJ\377\\\205\313\210\327\270\017\345+F[\310\347E)\355\024\241\366\342}(v\215(N\203)\326\207(\336\203(V\332W\362\202t4\240m\005(\377AJ\006\320\322\202t\374\240\255\003(oA\312:\3202"),
+			{
+				ChunkedSeries: []*prompb.ChunkedSeries{
+					{
+						Labels: []prompb.Label{
+							{Name: "__name__", Value: "test_metric1"},
+							{Name: "b", Value: "c"},
+							{Name: "baz", Value: "qux"},
+							{Name: "d", Value: "e"},
+							{Name: "foo", Value: "bar3"},
+						},
+						Chunks: []prompb.Chunk{
+							{
+								Type:      prompb.Chunk_XOR,
+								MinTimeMs: 14400000,
+								MaxTimeMs: 14400000,
+								Data:      []byte("\000\001\200\350\335\r@\327p\000\000\000\000\000"),
+							},
 						},
 					},
 				},
 			},
-			QueryIndex: 1,
-		},
-		{
-			ChunkedSeries: []*prompb.ChunkedSeries{
-				{
-					Labels: []prompb.Label{
-						{Name: "__name__", Value: "test_histogram_metric1"},
-						{Name: "b", Value: "c"},
-						{Name: "baz", Value: "qux"},
-						{Name: "d", Value: "e"},
-					},
-					Chunks: []prompb.Chunk{
-						{
-							Type:      prompb.Chunk_FLOAT_HISTOGRAM,
-							MaxTimeMs: 1440000,
-							Data:      []byte("\x00\x19\x00\xff?PbM\xd2\xf1\xa9\xfc\x8c\xa4\x94e$\xa2@(\x00\x00\x00\x00\x00\x00@\x00\x00\x00\x00\x00\x00\x00@2ffffff?\xf0\x00\x00\x00\x00\x00\x00@\x00\x00\x00\x00\x00\x00\x00?\xf0\x00\x00\x00\x00\x00\x00?\xf0\x00\x00\x00\x00\x00\x00?\xf0\x00\x00\x00\x00\x00\x00@\x00\x00\x00\x00\x00\x00\x00?\xf0\x00\x00\x00\x00\x00\x00?\xf0\x00\x00\x00\x00\x00\x00\xf8\xea`\xd6/v\x03\xd2\x1f\xc2_\xff\xd8\x0f\t\x7f\xff\t\x7f\xff\t\x7f\xff`<%\xff\xfc%\xff\xf4\xbda{4\x9f\xff\xff\xff\xff\xff\xfd\x80\xf5\x85\xec\a\xb0\x1e\xc0z\xc2\xf6\x03\xd8\r\xa4\x8f\xbd\xa0\xf5\xeb\x9f\xff\xff\xff\xff\xff\xfda{A\xeb\v\xd6\x17\xac/h=az\xc2о\xc0\xb8\xac\xcc\xcc\xcc\xcc\xcc\xdbA\xec\v\xda\x0fh=\xa0\xf6\x05\xed\a\xb4\x1a\t\x99\x9333333;\x02\xe7`^\xc0\xbd\x81s\xb0/`Z8\xd4'\xea\x1f\xbc\xea\x13\xe6gP\x9f2\xdc$\xee\a\xbb)\xff\xff\xff\xff\xff\xffP\x9f\xb8\x1e\xa1?P\x9f\xa8O\xdc\x0fP\x9f\xa8Om\x17\xfbB\xf6\xe7\xb5UUUUUw\x03\xda\x17\xb8\x1e\xe0{\x81\xed\v\xdc\x0fp4\x99\x9d\x99\x99\x99\x99\x99\x9eй\xda\x17\xb4/h\\\xed\v\xda\x16\xd87{\x03\xfb2\xe4\xcc\xcc\xcc\xcc\xcc\xe7`~fv\a\xe6Q1ݕ\xaa\xaa\xaa\xaa\xaa\xab\xb0?\x1d\x81\xfd\x81\xfd\x81\xf8\xec\x0f\xec\x0f\xa5\xe7\xb7<\xff\xff\xff\xff\xff\xff\x19\xc61\x9cb\xd4O\xc6:\xf5\xef\xff\xff\xff\xff\xff\xfc\xe39\xce3\x9a\x05\xeb\x13\xe0\xac\xcc\xcc\xcc\xcc\xcc\xc7X\x9f\x18\xc7X\x9f\x18\xa0\xce\xf0pə\x99\x99\x99\x99\xb5\x89\xfb\xc1\xeb\x13\xf5\x89\xfa\xc4\xfd\xe0\xf5\x89\xfa\xc4\xf4\x0f\xdc\x17\a\xaa\xaa\xaa\xaa\xaa\xabx=\xc1{\xc1\xef\a\xbc\x1e\xe0\xbd\xe0\xf7\x83C\x99\x8e\x7f\xff\xff\xff\xff\xff\xb8.w\x05\xee\v\xdc\x17;\x82\xf7\x05\xa0^\xd0\xfc\x16\xaa\xaa\xaa\xaa\xaa\xa9\xda\x1f\x99\x9d\xa1\xf9\x94\x19\x8c-\x99\x99\x99\x99\x99\x9d\xa1\xf8\xed\x0f\xed\x0f\xed\x0f\xc7h\x7fh}\x1d\xe7<\x99\x99\x99\x99\x99\x9a3\x8cc8\xc5\x02c\x05\xaa\xaa\xaa\xaa\xaa\xaaq\x9c\xe7\x19\xcd\x06\xf6\t\xf0\xcf\xff\xff\xff\xff\xff\xe3\xb0O\x8cc\xb0O\x8cP&\x18=UUUUU[\x04\xf8v\t\xfb\x04\xfd\x82|;\x04\xfd\x82z\x1f\xc7\x1c\x99\x99\x99\x99\x99\x9a\x18\xe1\x86\x18\xe1\x84"),
+			{
+				ChunkedSeries: []*prompb.ChunkedSeries{
+					{
+						Labels: []prompb.Label{
+							{Name: "__name__", Value: "test_metric1"},
+							{Name: "b", Value: "c"},
+							{Name: "baz", Value: "qux"},
+							{Name: "d", Value: "e"},
+							{Name: "foo", Value: "bar1"},
+						},
+						Chunks: []prompb.Chunk{
+							{
+								Type:      prompb.Chunk_XOR,
+								MaxTimeMs: 7140000,
+								Data:      []byte("\000x\000\000\000\000\000\000\000\000\000\340\324\003\302|\005\224\000\301\254}\351z2\320O\355\264n[\007\316\224\243md\371\320\375\032Pm\nS\235\016Q\255\006P\275\250\277\312\201Z\003(3\240R\207\332\005(\017\240\322\201\332=(\023\2402\203Z\007(w\2402\201Z\017(\023\265\227\364P\033@\245\007\364\nP\033C\245\002t\036P+@e\036\364\016Pk@e\002t:P;A\245\001\364\nS\373@\245\006t\006P+C\345\002\364\006Pk@\345\036t\nP\033A\245\003\364:P\033@\245\006t\016ZJ\377\\\205\313\210\327\270\017\345+F[\310\347E)\355\024\241\366\342}(v\215(N\203)\326\207(\336\203(V\332W\362\202t4\240m\005(\377AJ\006\320\322\202t\374\240\255\003(oA\312:\3202"),
+							},
 						},
 					},
 				},
+				QueryIndex: 1,
 			},
-			QueryIndex: 2,
-		},
-	}, results)
+			{
+				ChunkedSeries: []*prompb.ChunkedSeries{
+					{
+						Labels: []prompb.Label{
+							{Name: "__name__", Value: "test_histogram_metric1"},
+							{Name: "b", Value: "c"},
+							{Name: "baz", Value: "qux"},
+							{Name: "d", Value: "e"},
+						},
+						Chunks: []prompb.Chunk{
+							{
+								Type:      prompb.Chunk_FLOAT_HISTOGRAM,
+								MaxTimeMs: 1440000,
+								Data:      []byte("\x00\x19\x00\xff?PbM\xd2\xf1\xa9\xfc\x8c\xa4\x94e$\xa2@(\x00\x00\x00\x00\x00\x00@\x00\x00\x00\x00\x00\x00\x00@2ffffff?\xf0\x00\x00\x00\x00\x00\x00@\x00\x00\x00\x00\x00\x00\x00?\xf0\x00\x00\x00\x00\x00\x00?\xf0\x00\x00\x00\x00\x00\x00?\xf0\x00\x00\x00\x00\x00\x00@\x00\x00\x00\x00\x00\x00\x00?\xf0\x00\x00\x00\x00\x00\x00?\xf0\x00\x00\x00\x00\x00\x00\xf8\xea`\xd6/v\x03\xd2\x1f\xc2_\xff\xd8\x0f\t\x7f\xff\t\x7f\xff\t\x7f\xff`<%\xff\xfc%\xff\xf4\xbda{4\x9f\xff\xff\xff\xff\xff\xfd\x80\xf5\x85\xec\a\xb0\x1e\xc0z\xc2\xf6\x03\xd8\r\xa4\x8f\xbd\xa0\xf5\xeb\x9f\xff\xff\xff\xff\xff\xfda{A\xeb\v\xd6\x17\xac/h=az\xc2о\xc0\xb8\xac\xcc\xcc\xcc\xcc\xcc\xdbA\xec\v\xda\x0fh=\xa0\xf6\x05\xed\a\xb4\x1a\t\x99\x9333333;\x02\xe7`^\xc0\xbd\x81s\xb0/`Z8\xd4'\xea\x1f\xbc\xea\x13\xe6gP\x9f2\xdc$\xee\a\xbb)\xff\xff\xff\xff\xff\xffP\x9f\xb8\x1e\xa1?P\x9f\xa8O\xdc\x0fP\x9f\xa8Om\x17\xfbB\xf6\xe7\xb5UUUUUw\x03\xda\x17\xb8\x1e\xe0{\x81\xed\v\xdc\x0fp4\x99\x9d\x99\x99\x99\x99\x99\x9eй\xda\x17\xb4/h\\\xed\v\xda\x16\xd87{\x03\xfb2\xe4\xcc\xcc\xcc\xcc\xcc\xe7`~fv\a\xe6Q1ݕ\xaa\xaa\xaa\xaa\xaa\xab\xb0?\x1d\x81\xfd\x81\xfd\x81\xf8\xec\x0f\xec\x0f\xa5\xe7\xb7<\xff\xff\xff\xff\xff\xff\x19\xc61\x9cb\xd4O\xc6:\xf5\xef\xff\xff\xff\xff\xff\xfc\xe39\xce3\x9a\x05\xeb\x13\xe0\xac\xcc\xcc\xcc\xcc\xcc\xc7X\x9f\x18\xc7X\x9f\x18\xa0\xce\xf0pə\x99\x99\x99\x99\xb5\x89\xfb\xc1\xeb\x13\xf5\x89\xfa\xc4\xfd\xe0\xf5\x89\xfa\xc4\xf4\x0f\xdc\x17\a\xaa\xaa\xaa\xaa\xaa\xabx=\xc1{\xc1\xef\a\xbc\x1e\xe0\xbd\xe0\xf7\x83C\x99\x8e\x7f\xff\xff\xff\xff\xff\xb8.w\x05\xee\v\xdc\x17;\x82\xf7\x05\xa0^\xd0\xfc\x16\xaa\xaa\xaa\xaa\xaa\xa9\xda\x1f\x99\x9d\xa1\xf9\x94\x19\x8c-\x99\x99\x99\x99\x99\x9d\xa1\xf8\xed\x0f\xed\x0f\xed\x0f\xc7h\x7fh}\x1d\xe7<\x99\x99\x99\x99\x99\x9a3\x8cc8\xc5\x02c\x05\xaa\xaa\xaa\xaa\xaa\xaaq\x9c\xe7\x19\xcd\x06\xf6\t\xf0\xcf\xff\xff\xff\xff\xff\xe3\xb0O\x8cc\xb0O\x8cP&\x18=UUUUU[\x04\xf8v\t\xfb\x04\xfd\x82|;\x04\xfd\x82z\x1f\xc7\x1c\x99\x99\x99\x99\x99\x9a\x18\xe1\x86\x18\xe1\x84"),
+							},
+						},
+					},
+				},
+				QueryIndex: 2,
+			},
+		}, results)
+	})
+
+	t.Run("storage errors", func(t *testing.T) {
+		store := promqltest.LoadedStorage(t, "load 1m\n test_metric{series=\"a\"} 1\n test_metric{series=\"b\"} 2\n")
+		t.Cleanup(func() { require.NoError(t, store.Close()) })
+		storageErr := errors.New("injected storage error")
+
+		for _, protocol := range []int{1, 2} {
+			for _, instrumented := range []bool{false, true} {
+				for _, tc := range []struct {
+					name       string
+					failQuery  int64
+					failAfter  int
+					err        error
+					flush      bool
+					empty      bool
+					wantStatus int
+					wantSeries int
+				}{
+					{name: "success", wantStatus: http.StatusOK, wantSeries: 2},
+					{name: "empty", empty: true, wantStatus: http.StatusOK},
+					{name: "error before response", failQuery: 1, err: storageErr, wantStatus: http.StatusInternalServerError},
+					{name: "HTTP error before response", failQuery: 1, err: HTTPError{msg: "injected HTTP error", status: http.StatusBadRequest}, wantStatus: http.StatusBadRequest},
+					{name: "buffered error", failQuery: 1, failAfter: 1, err: storageErr, wantStatus: http.StatusOK, wantSeries: 1},
+					{name: "flushed error", failQuery: 1, failAfter: 1, err: storageErr, flush: true, wantStatus: http.StatusOK, wantSeries: 1},
+					{name: "later query error", failQuery: 2, err: HTTPError{msg: "injected HTTP error", status: http.StatusBadRequest}, flush: true, wantStatus: http.StatusOK, wantSeries: 2},
+				} {
+					t.Run(fmt.Sprintf("HTTP%d/otel=%t/%s", protocol, instrumented, tc.name), func(t *testing.T) {
+						ctx, cancel := context.WithTimeout(t.Context(), 10*time.Second)
+						defer cancel()
+						allowError := make(chan struct{})
+						releaseError := sync.OnceFunc(func() { close(allowError) })
+						queryable := &failingChunkQueryable{
+							SampleAndChunkQueryable: store,
+							failQuery:               tc.failQuery,
+							failAfter:               tc.failAfter,
+							err:                     tc.err,
+						}
+						if tc.flush {
+							queryable.beforeError = func(ctx context.Context) {
+								select {
+								case <-allowError:
+								case <-ctx.Done():
+								}
+							}
+						}
+
+						var handlerLog, serverLog bytes.Buffer
+						registry := prometheus.NewRegistry()
+						handler := NewReadHandler(slog.New(slog.NewTextHandler(&handlerLog, nil)), registry, queryable, func() config.Config { return config.Config{} }, 1e6, 1, 1<<20)
+						if instrumented {
+							handler = otelhttp.NewHandler(handler, "remote_read")
+						}
+						// A real server exposes duplicate headers and incomplete HTTP responses.
+						done := make(chan int, 2)
+						server := httptest.NewUnstartedServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+							defer func() { done <- r.ProtoMajor }()
+							if tc.flush {
+								w = flushingReadResponseWriter{ResponseWriter: w}
+							}
+							handler.ServeHTTP(w, r)
+						}))
+						server.Config.ErrorLog = log.New(&serverLog, "", 0)
+						server.EnableHTTP2 = protocol == 2
+						server.StartTLS()
+						t.Cleanup(func() {
+							releaseError()
+							cancel()
+							server.Close()
+						})
+						client := server.Client()
+
+						metric := "test_metric"
+						if tc.empty {
+							metric = "missing_metric"
+						}
+						query := &prompb.Query{
+							StartTimestampMs: 0, EndTimestampMs: 1,
+							Matchers: []*prompb.LabelMatcher{{Type: prompb.LabelMatcher_EQ, Name: "__name__", Value: metric}},
+						}
+						queries := []*prompb.Query{query}
+						if tc.failQuery == 2 {
+							queries = append(queries, query)
+						}
+						data, err := proto.Marshal(&prompb.ReadRequest{
+							Queries:               queries,
+							AcceptedResponseTypes: []prompb.ReadRequest_ResponseType{prompb.ReadRequest_STREAMED_XOR_CHUNKS},
+						})
+						require.NoError(t, err)
+						newRequest := func() *http.Request {
+							request, err := http.NewRequestWithContext(ctx, http.MethodPost, server.URL+"/api/v1/read", bytes.NewReader(snappy.Encode(nil, data)))
+							require.NoError(t, err)
+							request.Header.Set("Content-Type", "application/x-protobuf")
+							request.Header.Set("Content-Encoding", "snappy")
+							return request
+						}
+						checkCleanup := func() {
+							t.Helper()
+							select {
+							case gotProtocol := <-done:
+								require.Equal(t, protocol, gotProtocol)
+							case <-ctx.Done():
+								t.Fatal("handler did not finish:", ctx.Err())
+							}
+							require.Equal(t, queryable.opened.Load(), queryable.closed.Load())
+							require.NoError(t, prom_testutil.GatherAndCompare(registry, strings.NewReader(
+								"# HELP prometheus_remote_read_handler_queries The current number of remote read queries that are either in execution or queued on the handler.\n"+
+									"# TYPE prometheus_remote_read_handler_queries gauge\n"+
+									"prometheus_remote_read_handler_queries 0\n",
+							), "prometheus_remote_read_handler_queries"))
+						}
+
+						response, err := client.Do(newRequest())
+						aborted := tc.err != nil && tc.wantStatus == http.StatusOK
+						if err != nil {
+							// A buffered abort may close the connection before even the headers arrive.
+							require.True(t, aborted && !tc.flush, "unexpected request failure: %v", err)
+							require.NotErrorIs(t, err, context.DeadlineExceeded)
+							require.NotErrorIs(t, err, context.Canceled)
+						} else {
+							defer response.Body.Close()
+							require.Equal(t, tc.wantStatus, response.StatusCode)
+							require.Equal(t, protocol, response.ProtoMajor)
+							if tc.wantStatus != http.StatusOK {
+								body, err := io.ReadAll(response.Body)
+								require.NoError(t, err)
+								require.Equal(t, "text/plain; charset=utf-8", response.Header.Get("Content-Type"))
+								require.Equal(t, tc.err.Error()+"\n", string(body))
+							} else {
+								require.Equal(t, "application/x-streamed-protobuf; proto=prometheus.ChunkedReadResponse", response.Header.Get("Content-Type"))
+								body := &recordingReadBody{ReadCloser: response.Body}
+								series := NewChunkedSeriesSet(NewChunkedReader(body, config.DefaultChunkedReadLimit, nil), body, 0, 1, func(error) {})
+								count := 0
+								for series.Next() {
+									require.Less(t, count, tc.wantSeries)
+									require.Equal(t, labels.FromStrings("__name__", "test_metric", "series", string(rune('a'+count))), series.At().Labels())
+									iter := series.At().Iterator(nil)
+									require.Equal(t, chunkenc.ValFloat, iter.Next())
+									ts, value := iter.At()
+									require.Equal(t, int64(0), ts)
+									require.Equal(t, float64(count+1), value)
+									require.Equal(t, chunkenc.ValNone, iter.Next())
+									require.NoError(t, iter.Err())
+									count++
+									if tc.flush && count == tc.wantSeries {
+										// Let storage fail only once the client has consumed the preceding frames.
+										releaseError()
+									}
+								}
+								if aborted {
+									require.Error(t, series.Err())
+									// A decoding error also occurs with the old plaintext suffix.
+									// Require the HTTP body itself to be interrupted.
+									require.Error(t, body.err)
+									require.NotErrorIs(t, body.err, io.EOF)
+									require.NotErrorIs(t, body.err, context.DeadlineExceeded)
+									require.NotErrorIs(t, body.err, context.Canceled)
+									require.NotContains(t, body.bytes.String(), tc.err.Error())
+								} else {
+									require.NoError(t, series.Err())
+									require.ErrorIs(t, body.err, io.EOF)
+								}
+								if !aborted || tc.flush {
+									require.Equal(t, tc.wantSeries, count)
+								}
+							}
+							require.NoError(t, response.Body.Close())
+						}
+						require.NoError(t, ctx.Err())
+						checkCleanup()
+
+						// With a concurrency limit of one, another successful request proves the gate was released.
+						response, err = client.Do(newRequest())
+						require.NoError(t, err)
+						defer response.Body.Close()
+						require.Equal(t, http.StatusOK, response.StatusCode)
+						_, err = io.Copy(io.Discard, response.Body)
+						require.NoError(t, err)
+						require.NoError(t, response.Body.Close())
+						checkCleanup()
+						server.Close()
+						require.Empty(t, serverLog.String())
+						if aborted {
+							require.Equal(t, 1, strings.Count(handlerLog.String(), "level=ERROR"))
+							require.Contains(t, handlerLog.String(), tc.err.Error())
+						} else {
+							require.Empty(t, handlerLog.String())
+						}
+					})
+				}
+			}
+		}
+	})
+
+	t.Run("write errors", func(t *testing.T) {
+		store := promqltest.LoadedStorage(t, "load 1m\n test_metric 1\n")
+		t.Cleanup(func() { require.NoError(t, store.Close()) })
+		data, err := proto.Marshal(&prompb.ReadRequest{
+			Queries: []*prompb.Query{{
+				StartTimestampMs: 0, EndTimestampMs: 1,
+				Matchers: []*prompb.LabelMatcher{{Type: prompb.LabelMatcher_EQ, Name: "__name__", Value: "test_metric"}},
+			}},
+			AcceptedResponseTypes: []prompb.ReadRequest_ResponseType{prompb.ReadRequest_STREAMED_XOR_CHUNKS},
+		})
+		require.NoError(t, err)
+		for _, tc := range []struct {
+			name      string
+			failWrite int
+			partial   bool
+		}{
+			{name: "zero bytes", failWrite: 1},
+			{name: "partial payload", failWrite: 3, partial: true},
+		} {
+			t.Run(tc.name, func(t *testing.T) {
+				handler := NewReadHandler(nil, nil, store, func() config.Config { return config.Config{} }, 1e6, 1, 1<<20)
+				writer := &failingReadResponseWriter{
+					header: make(http.Header), failWrite: tc.failWrite, partial: tc.partial,
+				}
+				request := httptest.NewRequest(http.MethodPost, "/api/v1/read", bytes.NewReader(snappy.Encode(nil, data)))
+				require.PanicsWithValue(t, http.ErrAbortHandler, func() { handler.ServeHTTP(writer, request) })
+				require.Equal(t, http.StatusOK, writer.status)
+				require.Equal(t, 1, writer.headers)
+				require.Equal(t, tc.failWrite, writer.writes)
+				require.Zero(t, writer.flushes)
+			})
+		}
+	})
 }
 
-func addNativeHistogramsToTestSuite(t *testing.T, storage *teststorage.TestStorage, n int) {
+type failingChunkQueryable struct {
+	storage.SampleAndChunkQueryable
+	failQuery   int64
+	failAfter   int
+	err         error
+	beforeError func(context.Context)
+	opened      atomic.Int64
+	closed      atomic.Int64
+}
+
+func (q *failingChunkQueryable) ChunkQuerier(mint, maxt int64) (storage.ChunkQuerier, error) {
+	querier, err := q.SampleAndChunkQueryable.ChunkQuerier(mint, maxt)
+	if err != nil {
+		return nil, err
+	}
+	return &failingChunkQuerier{ChunkQuerier: querier, owner: q, fail: q.opened.Add(1) == q.failQuery}, nil
+}
+
+type failingChunkQuerier struct {
+	storage.ChunkQuerier
+	owner *failingChunkQueryable
+	fail  bool
+}
+
+func (q *failingChunkQuerier) Select(ctx context.Context, sortSeries bool, hints *storage.SelectHints, matchers ...*labels.Matcher) storage.ChunkSeriesSet {
+	set := q.ChunkQuerier.Select(ctx, sortSeries, hints, matchers...)
+	if !q.fail {
+		return set
+	}
+	return &failingChunkSeriesSet{
+		ChunkSeriesSet: set, ctx: ctx, remaining: q.owner.failAfter,
+		err: q.owner.err, beforeError: q.owner.beforeError,
+	}
+}
+
+func (q *failingChunkQuerier) Close() error {
+	err := q.ChunkQuerier.Close()
+	q.owner.closed.Add(1)
+	return err
+}
+
+type failingChunkSeriesSet struct {
+	storage.ChunkSeriesSet
+	ctx         context.Context
+	remaining   int
+	err         error
+	beforeError func(context.Context)
+}
+
+func (s *failingChunkSeriesSet) Next() bool {
+	if s.remaining == 0 {
+		if s.beforeError != nil {
+			s.beforeError(s.ctx)
+		}
+		return false
+	}
+	if !s.ChunkSeriesSet.Next() {
+		return false
+	}
+	s.remaining--
+	return true
+}
+
+func (s *failingChunkSeriesSet) Err() error {
+	if s.remaining == 0 {
+		return s.err
+	}
+	return s.ChunkSeriesSet.Err()
+}
+
+type flushingReadResponseWriter struct {
+	http.ResponseWriter
+}
+
+func (w flushingReadResponseWriter) Write(p []byte) (int, error) {
+	n, err := w.ResponseWriter.Write(p)
+	w.Flush()
+	return n, err
+}
+
+func (w flushingReadResponseWriter) Flush() {
+	w.ResponseWriter.(http.Flusher).Flush()
+}
+
+type recordingReadBody struct {
+	io.ReadCloser
+	bytes bytes.Buffer
+	err   error
+}
+
+func (r *recordingReadBody) Read(p []byte) (int, error) {
+	n, err := r.ReadCloser.Read(p)
+	r.bytes.Write(p[:n])
+	if err != nil {
+		r.err = err
+	}
+	return n, err
+}
+
+type failingReadResponseWriter struct {
+	header    http.Header
+	status    int
+	headers   int
+	writes    int
+	flushes   int
+	failWrite int
+	partial   bool
+}
+
+func (w *failingReadResponseWriter) Header() http.Header { return w.header }
+
+func (w *failingReadResponseWriter) WriteHeader(status int) {
+	w.headers++
+	if w.status == 0 {
+		w.status = status
+	}
+}
+
+func (w *failingReadResponseWriter) Write(p []byte) (int, error) {
+	if w.status == 0 {
+		w.WriteHeader(http.StatusOK)
+	}
+	w.writes++
+	if w.writes == w.failWrite {
+		n := 0
+		if w.partial {
+			n = len(p) / 2
+		}
+		return n, errors.New("injected write error")
+	}
+	return len(p), nil
+}
+
+func (w *failingReadResponseWriter) Flush() {
+	w.flushes++
+}
+
+func addNativeHistogramsToTestSuite(t *testing.T, s *teststorage.TestStorage, n int) {
 	lbls := labels.FromStrings("__name__", "test_histogram_metric1", "baz", "qux")
 
-	app := storage.Appender(t.Context())
+	app := s.AppenderV2(t.Context())
 	for i, fh := range tsdbutil.GenerateTestFloatHistograms(n) {
-		_, err := app.AppendHistogram(0, lbls, int64(i)*int64(60*time.Second/time.Millisecond), nil, fh)
+		_, err := app.Append(0, lbls, 0, int64(i)*int64(60*time.Second/time.Millisecond), 0, nil, fh, storage.AOptions{})
 		require.NoError(t, err)
 	}
 
 	lbls = labels.FromStrings("__name__", "test_nhcb_metric1", "baz", "qux")
 	for i, fh := range tsdbutil.GenerateTestCustomBucketsFloatHistograms(n) {
-		_, err := app.AppendHistogram(0, lbls, int64(i)*int64(60*time.Second/time.Millisecond), nil, fh)
+		_, err := app.Append(0, lbls, 0, int64(i)*int64(60*time.Second/time.Millisecond), 0, nil, fh, storage.AOptions{})
 		require.NoError(t, err)
 	}
 
 	require.NoError(t, app.Commit())
+}
+
+type remoteReadSnapshotSample struct {
+	timestamp      int64
+	startTimestamp int64
+	value          float64
+	histogram      *histogram.Histogram
+	floatHistogram *histogram.FloatHistogram
+}
+
+type remoteReadSnapshotQueryable struct {
+	storage.SampleAndChunkQueryable
+	afterOpen             func() error
+	afterFirstChunkCopied func() error
+}
+
+func (q *remoteReadSnapshotQueryable) Querier(mint, maxt int64) (storage.Querier, error) {
+	querier, err := q.SampleAndChunkQueryable.Querier(mint, maxt)
+	if err != nil {
+		return nil, err
+	}
+	if q.afterOpen != nil {
+		if err := q.afterOpen(); err != nil {
+			_ = querier.Close()
+			return nil, err
+		}
+	}
+	return querier, nil
+}
+
+func (q *remoteReadSnapshotQueryable) ChunkQuerier(mint, maxt int64) (storage.ChunkQuerier, error) {
+	querier, err := q.SampleAndChunkQueryable.ChunkQuerier(mint, maxt)
+	if err != nil {
+		return nil, err
+	}
+	if q.afterOpen != nil {
+		if err := q.afterOpen(); err != nil {
+			_ = querier.Close()
+			return nil, err
+		}
+	}
+	if q.afterFirstChunkCopied != nil {
+		return &remoteReadSnapshotChunkQuerier{
+			ChunkQuerier:          querier,
+			afterFirstChunkCopied: q.afterFirstChunkCopied,
+		}, nil
+	}
+	return querier, nil
+}
+
+type remoteReadSnapshotChunkQuerier struct {
+	storage.ChunkQuerier
+	afterFirstChunkCopied func() error
+}
+
+func (q *remoteReadSnapshotChunkQuerier) Select(ctx context.Context, sortSeries bool, hints *storage.SelectHints, matchers ...*labels.Matcher) storage.ChunkSeriesSet {
+	series := q.ChunkQuerier.Select(ctx, sortSeries, hints, matchers...)
+	var once sync.Once
+	var afterErr error
+	afterFirstChunkCopied := func() error {
+		once.Do(func() { afterErr = q.afterFirstChunkCopied() })
+		return afterErr
+	}
+	return &remoteReadSnapshotChunkSeriesSet{ChunkSeriesSet: series, afterFirstChunkCopied: afterFirstChunkCopied}
+}
+
+type remoteReadSnapshotChunkSeriesSet struct {
+	storage.ChunkSeriesSet
+	afterFirstChunkCopied func() error
+}
+
+func (s *remoteReadSnapshotChunkSeriesSet) At() storage.ChunkSeries {
+	return &remoteReadSnapshotChunkSeries{ChunkSeries: s.ChunkSeriesSet.At(), afterFirstChunkCopied: s.afterFirstChunkCopied}
+}
+
+type remoteReadSnapshotChunkSeries struct {
+	storage.ChunkSeries
+	afterFirstChunkCopied func() error
+}
+
+func (s *remoteReadSnapshotChunkSeries) Iterator(it chunks.Iterator) chunks.Iterator {
+	return &remoteReadSnapshotChunkIterator{Iterator: s.ChunkSeries.Iterator(it), afterFirstChunkCopied: s.afterFirstChunkCopied}
+}
+
+type remoteReadSnapshotChunkIterator struct {
+	chunks.Iterator
+	afterFirstChunkCopied func() error
+	afterErr              error
+}
+
+func (i *remoteReadSnapshotChunkIterator) Next() bool {
+	if !i.Iterator.Next() {
+		return false
+	}
+	if i.afterFirstChunkCopied != nil {
+		after := i.afterFirstChunkCopied
+		i.afterFirstChunkCopied = nil
+		i.afterErr = after()
+		if i.afterErr != nil {
+			return false
+		}
+	}
+	return true
+}
+
+func (i *remoteReadSnapshotChunkIterator) Err() error {
+	if i.afterErr != nil {
+		return i.afterErr
+	}
+	return i.Iterator.Err()
+}
+
+func appendRemoteReadSnapshotSamples(app storage.AppenderV2, seriesLabels labels.Labels, samples []remoteReadSnapshotSample) error {
+	for _, sample := range samples {
+		if _, err := app.Append(0, seriesLabels, sample.startTimestamp, sample.timestamp, sample.value, sample.histogram, sample.floatHistogram, storage.AOptions{}); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func TestRemoteReadStreamIsolation(t *testing.T) {
+	type testCase struct {
+		name               string
+		sampleType         string
+		initialTimestamp   int64
+		initialCount       int
+		laterStart         int64
+		laterCount         int
+		queryEnd           int64
+		incompleteAppender bool
+		mmap               bool
+		samplesPerChunk    int
+		isolationDisabled  bool
+		storeST            bool
+	}
+
+	cases := []testCase{
+		{name: "open float chunk", sampleType: "float", initialTimestamp: 0, laterStart: 2, laterCount: 1, queryEnd: math.MaxInt64},
+		{name: "finite-range open float chunk", sampleType: "float", initialTimestamp: 0, laterStart: 2, laterCount: 1, queryEnd: 1000},
+		{name: "closed float chunk", sampleType: "float", initialTimestamp: 0, laterStart: 2, laterCount: 120, queryEnd: 1000, samplesPerChunk: 60},
+		{name: "rotated float chunks without range limit", sampleType: "float", initialTimestamp: 0, laterStart: 2, laterCount: 120, queryEnd: math.MaxInt64, samplesPerChunk: 60},
+		{name: "mmapped float chunk", sampleType: "float", initialTimestamp: 0, laterStart: 2, laterCount: 120, queryEnd: 1000, mmap: true, samplesPerChunk: 60},
+		{name: "incomplete appender", sampleType: "float", initialTimestamp: 0, laterStart: 2, laterCount: 1, queryEnd: math.MaxInt64, incompleteAppender: true},
+		{name: "full pre-snapshot chunk with incomplete appender", sampleType: "float", initialTimestamp: 0, initialCount: 2, laterStart: 2, laterCount: 1, queryEnd: math.MaxInt64, incompleteAppender: true, samplesPerChunk: 2},
+		{name: "float with start timestamps", sampleType: "float", initialTimestamp: 10, laterStart: 20, laterCount: 1, queryEnd: math.MaxInt64, storeST: true},
+		{name: "integer histogram", sampleType: "histogram", initialTimestamp: 10, laterStart: 20, laterCount: 1, queryEnd: math.MaxInt64},
+		{name: "float histogram", sampleType: "float histogram", initialTimestamp: 10, laterStart: 20, laterCount: 1, queryEnd: math.MaxInt64},
+		{name: "integer histogram with start timestamps", sampleType: "histogram", initialTimestamp: 10, laterStart: 20, laterCount: 1, queryEnd: math.MaxInt64, storeST: true},
+		{name: "float histogram with start timestamps", sampleType: "float histogram", initialTimestamp: 10, laterStart: 20, laterCount: 1, queryEnd: math.MaxInt64, storeST: true},
+		{name: "isolation disabled", sampleType: "float", initialTimestamp: 0, laterStart: 2, laterCount: 1, queryEnd: math.MaxInt64, isolationDisabled: true},
+	}
+
+	type decodedSamples struct {
+		floats      []prompb.Sample
+		histograms  []prompb.Histogram
+		startTimes  []int64
+		chunkBounds [][2]int64
+		chunkTypes  []chunkenc.Encoding
+		frameCount  int
+	}
+
+	makeSample := func(tc testCase, ts int64) remoteReadSnapshotSample {
+		sample := remoteReadSnapshotSample{timestamp: ts, value: float64(ts + 1)}
+		if tc.storeST {
+			sample.startTimestamp = ts - 9
+		}
+		switch tc.sampleType {
+		case "float":
+		case "histogram":
+			sample.histogram = tsdbutil.GenerateTestHistogram(ts)
+		case "float histogram":
+			sample.floatHistogram = tsdbutil.GenerateTestFloatHistogram(ts)
+		default:
+			t.Fatalf("unknown sample type %q", tc.sampleType)
+		}
+		return sample
+	}
+
+	decodeSamples := func(t *testing.T, recorder *httptest.ResponseRecorder, streamed bool) decodedSamples {
+		t.Helper()
+		result := recorder.Result()
+		defer result.Body.Close()
+
+		var decoded decodedSamples
+		if !streamed {
+			compressed, err := io.ReadAll(result.Body)
+			require.NoError(t, err)
+			data, err := snappy.Decode(nil, compressed)
+			require.NoError(t, err)
+			var response prompb.ReadResponse
+			require.NoError(t, proto.Unmarshal(data, &response))
+			require.Len(t, response.Results, 1)
+			for _, series := range response.Results[0].Timeseries {
+				decoded.floats = append(decoded.floats, series.Samples...)
+				decoded.histograms = append(decoded.histograms, series.Histograms...)
+			}
+			return decoded
+		}
+
+		stream := NewChunkedReader(result.Body, config.DefaultChunkedReadLimit, nil)
+		for {
+			response := &prompb.ChunkedReadResponse{}
+			err := stream.NextProto(response)
+			if errors.Is(err, io.EOF) {
+				break
+			}
+			require.NoError(t, err)
+			decoded.frameCount++
+			for _, series := range response.ChunkedSeries {
+				for _, chunk := range series.Chunks {
+					decoded.chunkBounds = append(decoded.chunkBounds, [2]int64{chunk.MinTimeMs, chunk.MaxTimeMs})
+					encoding := chunkenc.Encoding(chunk.Type)
+					decoded.chunkTypes = append(decoded.chunkTypes, encoding)
+					decodedChunk, err := chunkenc.FromData(encoding, chunk.Data)
+					require.NoError(t, err)
+					iterator := decodedChunk.Iterator(nil)
+					for valueType := iterator.Next(); valueType != chunkenc.ValNone; valueType = iterator.Next() {
+						decoded.startTimes = append(decoded.startTimes, iterator.AtST())
+						switch valueType {
+						case chunkenc.ValFloat:
+							timestamp, value := iterator.At()
+							decoded.floats = append(decoded.floats, prompb.Sample{Timestamp: timestamp, Value: value})
+						case chunkenc.ValHistogram:
+							timestamp, value := iterator.AtHistogram(nil)
+							decoded.histograms = append(decoded.histograms, prompb.FromIntHistogram(timestamp, value))
+						case chunkenc.ValFloatHistogram:
+							timestamp, value := iterator.AtFloatHistogram(nil)
+							decoded.histograms = append(decoded.histograms, prompb.FromFloatHistogram(timestamp, value))
+						default:
+							t.Fatalf("unexpected streamed sample type %v", valueType)
+						}
+					}
+					require.NoError(t, iterator.Err())
+				}
+			}
+		}
+		return decoded
+	}
+
+	histogramSampleTimestamps := func(histograms []prompb.Histogram) []int64 {
+		timestamps := make([]int64, len(histograms))
+		for i, histogram := range histograms {
+			timestamps[i] = histogram.Timestamp
+		}
+		return timestamps
+	}
+
+	seriesLabels := labels.FromStrings("__name__", "snapshot_metric")
+	matcher, err := labels.NewMatcher(labels.MatchEqual, "__name__", "snapshot_metric")
+	require.NoError(t, err)
+
+	for _, tc := range cases {
+		if tc.initialCount == 0 {
+			tc.initialCount = 2
+		}
+		if !t.Run(tc.name, func(t *testing.T) {
+			initialSamples := make([]remoteReadSnapshotSample, tc.initialCount)
+			for i := range initialSamples {
+				initialSamples[i] = makeSample(tc, tc.initialTimestamp+int64(i))
+			}
+			run := func(streamed bool) decodedSamples {
+				options := []teststorage.Option{func(opts *tsdb.Options) {
+					opts.IsolationDisabled = tc.isolationDisabled
+					if tc.samplesPerChunk > 0 {
+						opts.SamplesPerChunk = tc.samplesPerChunk
+					}
+					if tc.storeST {
+						opts.EnableSTStorage = true
+						opts.EnableHistogramSTEncoding = true
+						opts.FloatChunkEncoding = chunkenc.EncXOR2
+					}
+				}}
+				store := teststorage.New(t, options...)
+
+				app := store.AppenderV2(t.Context())
+				require.NoError(t, appendRemoteReadSnapshotSamples(app, seriesLabels, initialSamples))
+				require.NoError(t, app.Commit())
+
+				later := make([]remoteReadSnapshotSample, tc.laterCount)
+				for i := range later {
+					later[i] = makeSample(tc, tc.laterStart+int64(i))
+				}
+
+				var pending storage.AppenderV2
+				pendingCommitted := false
+				if tc.incompleteAppender {
+					pending = store.AppenderV2(t.Context())
+					require.NoError(t, appendRemoteReadSnapshotSamples(pending, seriesLabels, later))
+					t.Cleanup(func() {
+						if !pendingCommitted {
+							_ = pending.Rollback()
+						}
+					})
+				}
+
+				afterOpen := func() error {
+					if pending != nil {
+						err := pending.Commit()
+						pendingCommitted = err == nil
+						return err
+					}
+					if len(later) > 0 {
+						app := store.AppenderV2(t.Context())
+						if err := appendRemoteReadSnapshotSamples(app, seriesLabels, later); err != nil {
+							_ = app.Rollback()
+							return err
+						}
+						if err := app.Commit(); err != nil {
+							return err
+						}
+					}
+					if tc.mmap {
+						store.ForceHeadMMap()
+					}
+					return nil
+				}
+
+				queryable := &remoteReadSnapshotQueryable{SampleAndChunkQueryable: store, afterOpen: afterOpen}
+				api := NewReadHandler(nil, nil, queryable, func() config.Config { return config.Config{} }, 1e6, 1, 1<<20)
+				query, err := ToQuery(0, tc.queryEnd, []*labels.Matcher{matcher}, nil)
+				require.NoError(t, err)
+				requestBody := &prompb.ReadRequest{Queries: []*prompb.Query{query}}
+				if streamed {
+					requestBody.AcceptedResponseTypes = []prompb.ReadRequest_ResponseType{prompb.ReadRequest_STREAMED_XOR_CHUNKS}
+				}
+				data, err := proto.Marshal(requestBody)
+				require.NoError(t, err)
+				request := httptest.NewRequest(http.MethodPost, "/api/v1/read", bytes.NewReader(snappy.Encode(nil, data)))
+				recorder := httptest.NewRecorder()
+				api.ServeHTTP(recorder, request)
+				require.Equal(t, http.StatusOK, recorder.Code)
+				return decodeSamples(t, recorder, streamed)
+			}
+
+			var wantFloats []prompb.Sample
+			wantHistogramTimestamps := make([]int64, 0, len(initialSamples)+tc.laterCount)
+			appendWantSample := func(sample remoteReadSnapshotSample) {
+				switch {
+				case sample.histogram != nil, sample.floatHistogram != nil:
+					wantHistogramTimestamps = append(wantHistogramTimestamps, sample.timestamp)
+				default:
+					wantFloats = append(wantFloats, prompb.Sample{Timestamp: sample.timestamp, Value: sample.value})
+				}
+			}
+			for _, initial := range initialSamples {
+				appendWantSample(initial)
+			}
+			if tc.isolationDisabled {
+				for i := range tc.laterCount {
+					later := makeSample(tc, tc.laterStart+int64(i))
+					if later.timestamp <= tc.queryEnd {
+						appendWantSample(later)
+					}
+				}
+			}
+
+			sampled := run(false)
+			streamed := run(true)
+			require.Equal(t, wantFloats, sampled.floats, "sample response does not match the reader snapshot")
+			require.Equal(t, wantHistogramTimestamps, histogramSampleTimestamps(sampled.histograms), "sample response does not match the reader snapshot")
+			require.Equal(t, sampled.floats, streamed.floats, "streamed response does not match the reader snapshot")
+			require.Equal(t, sampled.histograms, streamed.histograms, "streamed response does not match the reader snapshot")
+			require.Len(t, streamed.chunkBounds, 1)
+			wantMaxTime := initialSamples[len(initialSamples)-1].timestamp
+			wantStartTimes := make([]int64, 0, len(initialSamples)+tc.laterCount)
+			for _, initial := range initialSamples {
+				wantStartTimes = append(wantStartTimes, initial.startTimestamp)
+			}
+			if tc.isolationDisabled {
+				for i := range tc.laterCount {
+					later := makeSample(tc, tc.laterStart+int64(i))
+					if later.timestamp > tc.queryEnd {
+						continue
+					}
+					if later.timestamp > wantMaxTime {
+						wantMaxTime = later.timestamp
+					}
+					wantStartTimes = append(wantStartTimes, later.startTimestamp)
+				}
+			}
+			require.Equal(t, [2]int64{initialSamples[0].timestamp, wantMaxTime}, streamed.chunkBounds[0])
+			require.Len(t, streamed.chunkTypes, 1)
+			require.Equal(t, 1, streamed.frameCount)
+			if tc.storeST {
+				require.Equal(t, wantStartTimes, streamed.startTimes)
+			}
+		}) {
+			return
+		}
+	}
+}
+
+func TestRemoteReadStreamChunkCopyStability(t *testing.T) {
+	store := teststorage.New(t)
+	seriesLabels := labels.FromStrings("__name__", "snapshot_metric")
+	initial := []remoteReadSnapshotSample{{timestamp: 0, value: 1}, {timestamp: 1, value: 2}}
+	later := remoteReadSnapshotSample{timestamp: 2, value: 3}
+
+	app := store.AppenderV2(t.Context())
+	require.NoError(t, appendRemoteReadSnapshotSamples(app, seriesLabels, initial))
+	require.NoError(t, app.Commit())
+
+	var pending storage.AppenderV2
+	pendingCommitted := false
+	t.Cleanup(func() {
+		if pending != nil && !pendingCommitted {
+			_ = pending.Rollback()
+		}
+	})
+
+	queryable := &remoteReadSnapshotQueryable{
+		SampleAndChunkQueryable: store,
+		afterOpen: func() error {
+			pending = store.AppenderV2(t.Context())
+			return nil
+		},
+		afterFirstChunkCopied: func() error {
+			// Append after the chunk iterator has returned its copy, before the handler reads its bytes.
+			if err := appendRemoteReadSnapshotSamples(pending, seriesLabels, []remoteReadSnapshotSample{later}); err != nil {
+				_ = pending.Rollback()
+				return err
+			}
+			if err := pending.Commit(); err != nil {
+				return err
+			}
+			pendingCommitted = true
+			return nil
+		},
+	}
+	api := NewReadHandler(nil, nil, queryable, func() config.Config { return config.Config{} }, 1e6, 1, 1<<20)
+	matcher, err := labels.NewMatcher(labels.MatchEqual, "__name__", "snapshot_metric")
+	require.NoError(t, err)
+	query, err := ToQuery(0, math.MaxInt64, []*labels.Matcher{matcher}, nil)
+	require.NoError(t, err)
+	data, err := proto.Marshal(&prompb.ReadRequest{
+		Queries:               []*prompb.Query{query},
+		AcceptedResponseTypes: []prompb.ReadRequest_ResponseType{prompb.ReadRequest_STREAMED_XOR_CHUNKS},
+	})
+	require.NoError(t, err)
+	request := httptest.NewRequest(http.MethodPost, "/api/v1/read", bytes.NewReader(snappy.Encode(nil, data)))
+	recorder := httptest.NewRecorder()
+	api.ServeHTTP(recorder, request)
+	require.Equal(t, http.StatusOK, recorder.Code)
+	require.True(t, pendingCommitted, "the later append must follow the chunk copy")
+
+	result := recorder.Result()
+	defer result.Body.Close()
+	stream := NewChunkedReader(result.Body, config.DefaultChunkedReadLimit, nil)
+	var got []prompb.Sample
+	var bounds [][2]int64
+	for {
+		response := &prompb.ChunkedReadResponse{}
+		err := stream.NextProto(response)
+		if errors.Is(err, io.EOF) {
+			break
+		}
+		require.NoError(t, err)
+		for _, series := range response.ChunkedSeries {
+			for _, chunk := range series.Chunks {
+				bounds = append(bounds, [2]int64{chunk.MinTimeMs, chunk.MaxTimeMs})
+				decoded, err := chunkenc.FromData(chunkenc.Encoding(chunk.Type), chunk.Data)
+				require.NoError(t, err)
+				iterator := decoded.Iterator(nil)
+				for valueType := iterator.Next(); valueType != chunkenc.ValNone; valueType = iterator.Next() {
+					require.Equal(t, chunkenc.ValFloat, valueType)
+					timestamp, value := iterator.At()
+					got = append(got, prompb.Sample{Timestamp: timestamp, Value: value})
+				}
+				require.NoError(t, iterator.Err())
+			}
+		}
+	}
+	require.Equal(t, []prompb.Sample{{Timestamp: 0, Value: 1}, {Timestamp: 1, Value: 2}}, got)
+	require.Equal(t, [][2]int64{{0, 1}}, bounds)
+}
+
+func TestRemoteReadGateWaitDurationObserved(t *testing.T) {
+	const (
+		waitDuration  = 200 * time.Millisecond
+		queryDuration = 100 * time.Millisecond
+	)
+
+	newHandlerAndRequest := func(t *testing.T, concurrencyLimit int, beforeQuery func()) (*readHandler, *prometheus.Registry, *http.Request) {
+		t.Helper()
+		queryable := gateWaitQueryable{Queryable: storage.QueryableFunc(func(int64, int64) (storage.Querier, error) {
+			beforeQuery()
+			return &storage.MockQuerier{
+				SelectMockFunction: func(bool, *storage.SelectHints, ...*labels.Matcher) storage.SeriesSet {
+					return storage.EmptySeriesSet()
+				},
+			}, nil
+		})}
+
+		reg := prometheus.NewRegistry()
+		h, ok := NewReadHandler(nil, reg, queryable, func() config.Config {
+			return config.Config{}
+		}, 1e6, concurrencyLimit, 0).(*readHandler)
+		require.True(t, ok)
+
+		matcher, err := labels.NewMatcher(labels.MatchEqual, "__name__", "test_metric1")
+		require.NoError(t, err)
+		query, err := ToQuery(0, 1, []*labels.Matcher{matcher}, &storage.SelectHints{Step: 0, Func: "avg"})
+		require.NoError(t, err)
+		data, err := proto.Marshal(&prompb.ReadRequest{Queries: []*prompb.Query{query}})
+		require.NoError(t, err)
+		request, err := http.NewRequestWithContext(t.Context(), http.MethodPost, "", bytes.NewBuffer(snappy.Encode(nil, data)))
+		require.NoError(t, err)
+		return h, reg, request
+	}
+
+	isClosed := func(ch <-chan struct{}) bool {
+		select {
+		case <-ch:
+			return true
+		default:
+			return false
+		}
+	}
+
+	for _, tc := range []struct {
+		name             string
+		concurrencyLimit int
+		contended        bool
+		canceled         bool
+		wantStatus       int
+	}{
+		{name: "successful acquisition", concurrencyLimit: 1, wantStatus: http.StatusOK},
+		{name: "canceled acquisition", concurrencyLimit: 0, canceled: true, wantStatus: http.StatusInternalServerError},
+		{name: "contended acquisition", concurrencyLimit: 1, contended: true, wantStatus: http.StatusOK},
+		{name: "contended canceled acquisition", concurrencyLimit: 1, contended: true, canceled: true, wantStatus: http.StatusInternalServerError},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			synctest.Test(t, func(t *testing.T) {
+				queryStarted := make(chan struct{})
+				queryContinue := make(chan struct{})
+				releaseQuery := sync.OnceFunc(func() { close(queryContinue) })
+				h, reg, request := newHandlerAndRequest(t, tc.concurrencyLimit, func() {
+					close(queryStarted)
+					<-queryContinue
+				})
+				ctx, cancel := context.WithCancel(t.Context())
+				request = request.WithContext(ctx)
+				recorder := httptest.NewRecorder()
+				done := make(chan struct{})
+
+				releaseGate := func() {}
+				if tc.contended {
+					require.NoError(t, h.remoteReadGate.Start(t.Context()))
+					releaseGate = sync.OnceFunc(h.remoteReadGate.Done)
+				}
+				if !tc.contended || tc.canceled {
+					releaseQuery()
+				}
+				if tc.canceled && !tc.contended {
+					// With zero capacity, only the canceled context is ready in Gate.Start.
+					cancel()
+				}
+				t.Cleanup(func() {
+					cancel()
+					releaseQuery()
+					releaseGate()
+					synctest.Wait()
+					if !isClosed(done) {
+						t.Error("remote read handler did not finish during cleanup")
+					}
+				})
+				go func() {
+					defer close(done)
+					h.ServeHTTP(recorder, request)
+				}()
+
+				synctest.Wait()
+				var wantWait time.Duration
+				if tc.contended {
+					require.False(t, isClosed(done), "request should be waiting on the gate")
+					require.False(t, isClosed(queryStarted), "storage should not be queried before acquisition")
+					hist := gatherHistogram(t, reg, "prometheus_remote_read_handler_gate_wait_duration_seconds")
+					require.Zero(t, hist.GetSampleCount())
+					require.Zero(t, hist.GetSampleSum())
+
+					wantWait = waitDuration
+					time.Sleep(waitDuration)
+					if tc.canceled {
+						// Keep the slot occupied until cancellation has completed.
+						cancel()
+					} else {
+						releaseGate()
+					}
+					synctest.Wait()
+
+					if !tc.canceled {
+						require.True(t, isClosed(queryStarted), "request should have entered query processing")
+						require.False(t, isClosed(done), "query processing should still be blocked")
+						hist = gatherHistogram(t, reg, "prometheus_remote_read_handler_gate_wait_duration_seconds")
+						require.Equal(t, uint64(1), hist.GetSampleCount())
+						require.Equal(t, wantWait.Seconds(), hist.GetSampleSum())
+
+						// Query processing must not add to the already-observed gate wait.
+						time.Sleep(queryDuration)
+						releaseQuery()
+						synctest.Wait()
+					}
+				}
+
+				require.True(t, isClosed(done), "remote read handler should have finished")
+				require.Equal(t, tc.wantStatus, recorder.Code)
+				require.Equal(t, !tc.canceled, isClosed(queryStarted), "canceled acquisition must not query storage")
+				hist := gatherHistogram(t, reg, "prometheus_remote_read_handler_gate_wait_duration_seconds")
+				require.Equal(t, uint64(1), hist.GetSampleCount())
+				require.Equal(t, wantWait.Seconds(), hist.GetSampleSum())
+				require.Zero(t, gatherGauge(t, reg, "prometheus_remote_read_handler_queries"))
+
+				if tc.concurrencyLimit > 0 {
+					releaseGate()
+					gateCtx, gateCancel := context.WithTimeout(t.Context(), 2*time.Second)
+					defer gateCancel()
+					require.NoError(t, h.remoteReadGate.Start(gateCtx))
+					h.remoteReadGate.Done()
+				}
+			})
+		})
+	}
+}
+
+type gateWaitQueryable struct {
+	storage.Queryable
+}
+
+func (gateWaitQueryable) ChunkQuerier(int64, int64) (storage.ChunkQuerier, error) {
+	return nil, errors.New("unexpected chunk query in gate wait test")
+}
+
+func gatherHistogram(t *testing.T, reg *prometheus.Registry, name string) *dto.Histogram {
+	t.Helper()
+	metric := gatherMetric(t, reg, name)
+	require.NotNil(t, metric.GetHistogram())
+	return metric.GetHistogram()
+}
+
+func gatherGauge(t *testing.T, reg *prometheus.Registry, name string) float64 {
+	t.Helper()
+	metric := gatherMetric(t, reg, name)
+	require.NotNil(t, metric.GetGauge())
+	return metric.GetGauge().GetValue()
+}
+
+func gatherMetric(t *testing.T, reg *prometheus.Registry, name string) *dto.Metric {
+	t.Helper()
+	mfs, err := reg.Gather()
+	require.NoError(t, err)
+	for _, mf := range mfs {
+		if mf.GetName() == name {
+			require.Len(t, mf.GetMetric(), 1)
+			return mf.GetMetric()[0]
+		}
+	}
+	t.Fatalf("metric %q not found", name)
+	return nil
 }

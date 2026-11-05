@@ -257,6 +257,9 @@ func (c *PrometheusConverter) addHistogramDataPoints(
 	settings Settings,
 	appOpts storage.AOptions,
 ) error {
+	countMetricName := appOpts.MetricFamilyName + countStr
+	bucketMetricName := appOpts.MetricFamilyName + bucketStr
+	var sumMetricName string
 	for x := 0; x < dataPoints.Len(); x++ {
 		if err := c.everyN.checkContext(ctx); err != nil {
 			return err
@@ -276,12 +279,15 @@ func (c *PrometheusConverter) addHistogramDataPoints(
 		// If the sum is unset, it indicates the _sum metric point should be
 		// omitted
 		if pt.HasSum() {
+			if sumMetricName == "" {
+				sumMetricName = appOpts.MetricFamilyName + sumStr
+			}
 			// Treat sum as a sample in an individual TimeSeries.
 			val := pt.Sum()
 			if pt.Flags().NoRecordedValue() {
 				val = math.Float64frombits(value.StaleNaN)
 			}
-			sumLabels := c.addLabels(appOpts.MetricFamilyName+sumStr, baseLabels)
+			sumLabels := c.addLabels(sumMetricName, baseLabels)
 			if _, err := c.appender.Append(0, sumLabels, startTimestamp, timestamp, val, nil, nil, appOpts); err != nil {
 				return err
 			}
@@ -292,7 +298,7 @@ func (c *PrometheusConverter) addHistogramDataPoints(
 		if pt.Flags().NoRecordedValue() {
 			val = math.Float64frombits(value.StaleNaN)
 		}
-		countLabels := c.addLabels(appOpts.MetricFamilyName+countStr, baseLabels)
+		countLabels := c.addLabels(countMetricName, baseLabels)
 		if _, err := c.appender.Append(0, countLabels, startTimestamp, timestamp, val, nil, nil, appOpts); err != nil {
 			return err
 		}
@@ -314,6 +320,14 @@ func (c *PrometheusConverter) addHistogramDataPoints(
 			bound := pt.ExplicitBounds().At(i)
 			cumulativeCount += pt.BucketCounts().At(i)
 
+			// The le="+Inf" series is synthesized from count below; emitting
+			// this bound would write it a second time at the same timestamp.
+			if math.IsInf(bound, 1) {
+				c.plusInfAnnots.Add(newCategorizedWarningf(WarningCategoryHistogramPlusInfBound,
+					"histogram data point has an explicit +Inf bound, le=\"+Inf\" is taken from count"))
+				continue
+			}
+
 			// Find exemplars that belong to this bucket. Both exemplars and
 			// buckets are sorted in ascending order.
 			appOpts.Exemplars = appOpts.Exemplars[:0]
@@ -325,24 +339,27 @@ func (c *PrometheusConverter) addHistogramDataPoints(
 				}
 				appOpts.Exemplars = append(appOpts.Exemplars, ex)
 			}
+			// Appenders require exemplars sorted by timestamp.
+			slices.SortFunc(appOpts.Exemplars, exemplar.Compare)
 			val := float64(cumulativeCount)
 			if pt.Flags().NoRecordedValue() {
 				val = math.Float64frombits(value.StaleNaN)
 			}
 			boundStr := strconv.FormatFloat(bound, 'f', -1, 64)
-			bucketLabels := c.addLabels(appOpts.MetricFamilyName+bucketStr, baseLabels, leStr, boundStr)
+			bucketLabels := c.addLabels(bucketMetricName, baseLabels, leStr, boundStr)
 			if _, err := c.appender.Append(0, bucketLabels, startTimestamp, timestamp, val, nil, nil, appOpts); err != nil {
 				return err
 			}
 		}
 
 		appOpts.Exemplars = exemplars[nextExemplarIdx:]
+		slices.SortFunc(appOpts.Exemplars, exemplar.Compare)
 		// Add le=+Inf bucket.
 		val = float64(pt.Count())
 		if pt.Flags().NoRecordedValue() {
 			val = math.Float64frombits(value.StaleNaN)
 		}
-		infLabels := c.addLabels(appOpts.MetricFamilyName+bucketStr, baseLabels, leStr, pInfStr)
+		infLabels := c.addLabels(bucketMetricName, baseLabels, leStr, pInfStr)
 		if _, err := c.appender.Append(0, infLabels, startTimestamp, timestamp, val, nil, nil, appOpts); err != nil {
 			return err
 		}
@@ -379,12 +396,15 @@ func (c *PrometheusConverter) getPromExemplars(ctx context.Context, exemplars pm
 			return nil, fmt.Errorf("unsupported exemplar value type: %v", ex.ValueType())
 		}
 
+		var hasTraceID, hasSpanID bool
 		if traceID := ex.TraceID(); !traceID.IsEmpty() {
+			hasTraceID = true
 			val := hex.EncodeToString(traceID[:])
 			exemplarRunes += utf8.RuneCountInString(traceIDKey) + utf8.RuneCountInString(val)
 			c.scratchBuilder.Add(traceIDKey, val)
 		}
 		if spanID := ex.SpanID(); !spanID.IsEmpty() {
+			hasSpanID = true
 			val := hex.EncodeToString(spanID[:])
 			exemplarRunes += utf8.RuneCountInString(spanIDKey) + utf8.RuneCountInString(val)
 			c.scratchBuilder.Add(spanIDKey, val)
@@ -392,6 +412,9 @@ func (c *PrometheusConverter) getPromExemplars(ctx context.Context, exemplars pm
 
 		attrs := ex.FilteredAttributes()
 		attrs.Range(func(key string, value pcommon.Value) bool {
+			if isOverriddenByTraceContext(key, hasTraceID, hasSpanID) {
+				return true
+			}
 			exemplarRunes += utf8.RuneCountInString(key) + utf8.RuneCountInString(value.AsString())
 			return true
 		})
@@ -400,6 +423,9 @@ func (c *PrometheusConverter) getPromExemplars(ctx context.Context, exemplars pm
 		// labels to exceed the max number of runes.
 		if exemplarRunes <= maxExemplarRunes {
 			attrs.Range(func(key string, value pcommon.Value) bool {
+				if isOverriddenByTraceContext(key, hasTraceID, hasSpanID) {
+					return true
+				}
 				c.scratchBuilder.Add(key, value.AsString())
 				return true
 			})
@@ -410,6 +436,14 @@ func (c *PrometheusConverter) getPromExemplars(ctx context.Context, exemplars pm
 	}
 
 	return outputExemplars, nil
+}
+
+// isOverriddenByTraceContext reports whether the exemplar filtered attribute
+// with the given key collides with a trace_id or span_id label that was set
+// from the exemplar's trace context. Such attributes are dropped, as the trace
+// context takes precedence.
+func isOverriddenByTraceContext(key string, hasTraceID, hasSpanID bool) bool {
+	return (hasTraceID && key == traceIDKey) || (hasSpanID && key == spanIDKey)
 }
 
 // findMinAndMaxTimestamps returns the minimum of minTimestamp and the earliest timestamp in metric and

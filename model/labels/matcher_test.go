@@ -225,6 +225,89 @@ func TestIsRegexOptimized(t *testing.T) {
 	}
 }
 
+func TestMatcher_Helpers(t *testing.T) {
+	for _, tc := range []struct {
+		name             string
+		mType            MatchType
+		labelName        string
+		labelValue       string
+		expectedRegexStr string
+		expectedSet      []string
+	}{
+		{
+			name:             "MatchEqual",
+			mType:            MatchEqual,
+			labelName:        "service",
+			labelValue:       "api",
+			expectedRegexStr: "",
+			expectedSet:      nil,
+		},
+		{
+			name:             "MatchNotEqual",
+			mType:            MatchNotEqual,
+			labelName:        "service",
+			labelValue:       "api",
+			expectedRegexStr: "",
+			expectedSet:      nil,
+		},
+		{
+			name:             "MatchRegexp with literal alternating set",
+			mType:            MatchRegexp,
+			labelName:        "zone",
+			labelValue:       "us-east-1|us-west-2",
+			expectedRegexStr: "us-east-1|us-west-2",
+			expectedSet:      []string{"us-east-1", "us-west-2"},
+		},
+		{
+			name:             "MatchRegexp with wildcard",
+			mType:            MatchRegexp,
+			labelName:        "env",
+			labelValue:       "prod.*",
+			expectedRegexStr: "prod.*",
+			expectedSet:      nil,
+		},
+		{
+			name:             "MatchNotRegexp with literal alternating set (for inversePostingsForMatcher)",
+			mType:            MatchNotRegexp,
+			labelName:        "zone",
+			labelValue:       "us-east-1|us-west-2",
+			expectedRegexStr: "us-east-1|us-west-2",
+			expectedSet:      []string{"us-east-1", "us-west-2"},
+		},
+		{
+			name:             "MatchNotRegexp with wildcard",
+			mType:            MatchNotRegexp,
+			labelName:        "env",
+			labelValue:       "prod.*",
+			expectedRegexStr: "prod.*",
+			expectedSet:      nil,
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			m := MustNewMatcher(tc.mType, tc.labelName, tc.labelValue)
+			require.Equal(t, tc.mType, m.Type)
+			require.Equal(t, tc.labelName, m.Name)
+			require.Equal(t, tc.labelValue, m.Value)
+			require.Equal(t, tc.expectedRegexStr, m.GetRegexString())
+			if tc.expectedSet == nil {
+				require.Nil(t, m.SetMatches())
+			} else {
+				require.ElementsMatch(t, tc.expectedSet, m.SetMatches())
+			}
+		})
+	}
+
+	// MustNewMatcher must panic on invalid regex for both MatchRegexp and MatchNotRegexp.
+	t.Run("panic on invalid regex", func(t *testing.T) {
+		require.Panics(t, func() {
+			MustNewMatcher(MatchRegexp, "invalid", "[open-bracket")
+		})
+		require.Panics(t, func() {
+			MustNewMatcher(MatchNotRegexp, "invalid", "[open-bracket")
+		})
+	})
+}
+
 func BenchmarkMatchType_String(b *testing.B) {
 	for i := 0; i <= b.N; i++ {
 		_ = MatchType(i % int(MatchNotRegexp+1)).String()

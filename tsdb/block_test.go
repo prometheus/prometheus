@@ -16,6 +16,7 @@ package tsdb
 import (
 	"context"
 	"encoding/binary"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"hash/crc32"
@@ -39,6 +40,7 @@ import (
 	"github.com/prometheus/prometheus/tsdb/fileutil"
 	"github.com/prometheus/prometheus/tsdb/index"
 	"github.com/prometheus/prometheus/tsdb/wlog"
+	"github.com/prometheus/prometheus/util/testutil"
 )
 
 // TestBlockMetaCompaction_SetSelectedSeries verifies the round-trip behaviour of the
@@ -100,6 +102,34 @@ func TestSetCompactionFailed(t *testing.T) {
 	require.NoError(t, b.Close())
 }
 
+func TestBlockLogValue(t *testing.T) {
+	blockDir := createBlock(t, t.TempDir(), genSeries(1, 1, 0, 10))
+	block, err := OpenBlock(nil, blockDir, nil, nil)
+	require.NoError(t, err)
+	t.Cleanup(func() { require.NoError(t, block.Close()) })
+
+	for _, tc := range []struct {
+		name  string
+		block *Block
+		want  any
+	}{
+		{name: "block", block: block, want: filepath.Base(blockDir)},
+		{name: "nil"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			data, err := json.Marshal(map[string]*Block{"block": tc.block})
+			require.NoError(t, err)
+			if tc.want == nil {
+				require.JSONEq(t, "{\"block\":null}", string(data))
+			} else {
+				require.JSONEq(t, "{\"block\":{}}", string(data))
+			}
+
+			testutil.RequireLogValue(t, "block", tc.block, tc.want)
+		})
+	}
+}
+
 func TestCreateBlock(t *testing.T) {
 	tmpdir := t.TempDir()
 	b, err := OpenBlock(nil, createBlock(t, tmpdir, genSeries(1, 1, 0, 10)), nil, nil)
@@ -120,6 +150,7 @@ func BenchmarkOpenBlock(b *testing.B) {
 }
 
 func TestCorruptedChunk(t *testing.T) {
+	t.Parallel()
 	for _, tc := range []struct {
 		name     string
 		corrFunc func(f *os.File) // Func that applies the corruption.
@@ -451,6 +482,66 @@ func TestReadIndexFormatV1(t *testing.T) {
 	}, query(t, q, labels.MustNewMatcher(labels.MatchNotRegexp, "foo", "^.?$")))
 }
 
+// TestSearchLabelValuesIndexFormatV1 covers the limit selection on a FormatV1
+// index, whose label values are held in a map and so are read in an arbitrary
+// order. The current writer only emits FormatV2, so this fixture is the only
+// way to reach that branch of index.Reader.LabelValues.
+func TestSearchLabelValuesIndexFormatV1(t *testing.T) {
+	ctx := context.Background()
+
+	block, err := OpenBlock(nil, filepath.Join("testdata", "index_format_v1"), nil, nil)
+	require.NoError(t, err)
+	t.Cleanup(func() { require.NoError(t, block.Close()) })
+	require.Equal(t, index.FormatV1, block.meta.Version, "fixture must exercise the FormatV1 branch")
+
+	// The fixture holds "bar" values "0" to "99", so the lexically smallest are
+	// not the numerically smallest and an arbitrary subset is easy to spot.
+	wantSmallest := []string{"0", "1", "10", "11", "12"}
+
+	t.Run("index reader keeps the smallest values", func(t *testing.T) {
+		ir, err := block.Index()
+		require.NoError(t, err)
+		t.Cleanup(func() { require.NoError(t, ir.Close()) })
+
+		all, err := ir.LabelValues(ctx, "bar", nil)
+		require.NoError(t, err)
+		require.Len(t, all, 100)
+		require.False(t, slices.IsSorted(all), "precondition: the map read is unordered")
+
+		got, err := ir.LabelValues(ctx, "bar", &storage.LabelHints{Limit: 5, LimitSmallest: true})
+		require.NoError(t, err)
+		require.Equal(t, wantSmallest, got)
+	})
+
+	t.Run("legacy limit still takes any subset", func(t *testing.T) {
+		ir, err := block.Index()
+		require.NoError(t, err)
+		t.Cleanup(func() { require.NoError(t, ir.Close()) })
+
+		// Without LimitSmallest the read may stop early, so only the count is
+		// guaranteed. Asserting the values would pin Go's map order.
+		got, err := ir.LabelValues(ctx, "bar", &storage.LabelHints{Limit: 5})
+		require.NoError(t, err)
+		require.Len(t, got, 5)
+	})
+
+	t.Run("search returns the smallest values", func(t *testing.T) {
+		q, err := NewBlockQuerier(block, 0, 1000)
+		require.NoError(t, err)
+		t.Cleanup(func() { require.NoError(t, q.Close()) })
+
+		rs := q.(storage.Searcher).SearchLabelValues(ctx, "bar", &storage.SearchHints{Limit: 5})
+		t.Cleanup(func() { require.NoError(t, rs.Close()) })
+
+		var got []string
+		for rs.Next() {
+			got = append(got, rs.At().Value)
+		}
+		require.NoError(t, rs.Err())
+		require.Equal(t, wantSmallest, got)
+	})
+}
+
 func BenchmarkLabelValuesWithMatchers(b *testing.B) {
 	tmpdir := b.TempDir()
 	ctx := context.Background()
@@ -689,7 +780,7 @@ func createHead(tb testing.TB, w *wlog.WL, series []storage.Series, chunkDir str
 
 	var it chunkenc.Iterator
 	ctx := context.Background()
-	app := head.Appender(ctx)
+	app := head.AppenderV2(ctx)
 	for _, s := range series {
 		ref := storage.SeriesRef(0)
 		it = s.Iterator(it)
@@ -701,19 +792,19 @@ func createHead(tb testing.TB, w *wlog.WL, series []storage.Series, chunkDir str
 				// The behaviour of appender is undefined if samples of different types
 				// are appended to the same series in a single Commit().
 				require.NoError(tb, app.Commit())
-				app = head.Appender(ctx)
+				app = head.AppenderV2(ctx)
 			}
 
 			switch typ {
 			case chunkenc.ValFloat:
 				t, v := it.At()
-				ref, err = app.Append(ref, lset, t, v)
+				ref, err = app.Append(ref, lset, 0, t, v, nil, nil, storage.AOptions{})
 			case chunkenc.ValHistogram:
 				t, h := it.AtHistogram(nil)
-				ref, err = app.AppendHistogram(ref, lset, t, h, nil)
+				ref, err = app.Append(ref, lset, 0, t, 0, h, nil, storage.AOptions{})
 			case chunkenc.ValFloatHistogram:
 				t, fh := it.AtFloatHistogram(nil)
-				ref, err = app.AppendHistogram(ref, lset, t, nil, fh)
+				ref, err = app.Append(ref, lset, 0, t, 0, nil, fh, storage.AOptions{})
 			default:
 				err = fmt.Errorf("unknown sample type %s", typ.String())
 			}
@@ -738,7 +829,7 @@ func createHeadWithOOOSamples(tb testing.TB, w *wlog.WL, series []storage.Series
 
 	var it chunkenc.Iterator
 	totalSamples := 0
-	app := head.Appender(context.Background())
+	app := head.AppenderV2(context.Background())
 	for _, s := range series {
 		ref := storage.SeriesRef(0)
 		it = s.Iterator(it)
@@ -753,7 +844,7 @@ func createHeadWithOOOSamples(tb testing.TB, w *wlog.WL, series []storage.Series
 				os = append(os, sample{t: t, f: v})
 				continue
 			}
-			ref, err = app.Append(ref, lset, t, v)
+			ref, err = app.Append(ref, lset, 0, t, v, nil, nil, storage.AOptions{})
 			require.NoError(tb, err)
 		}
 		require.NoError(tb, it.Err())
@@ -767,11 +858,11 @@ func createHeadWithOOOSamples(tb testing.TB, w *wlog.WL, series []storage.Series
 	oooSamplesAppended := 0
 	require.Equal(tb, float64(0), prom_testutil.ToFloat64(head.metrics.outOfOrderSamplesAppended))
 
-	app = head.Appender(context.Background())
+	app = head.AppenderV2(context.Background())
 	for i, lset := range oooSampleLabels {
 		ref := storage.SeriesRef(0)
 		for _, sample := range oooSamples[i] {
-			ref, err = app.Append(ref, lset, sample.T(), sample.F())
+			ref, err = app.Append(ref, lset, 0, sample.T(), sample.F(), nil, nil, storage.AOptions{})
 			require.NoError(tb, err)
 			oooSamplesAppended++
 		}

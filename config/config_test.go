@@ -169,7 +169,8 @@ var expectedConf = &Config{
 				FollowRedirects: true,
 				EnableHTTP2:     false,
 			},
-			Headers: map[string]string{"name": "value"},
+			Headers:              map[string]string{"name": "value"},
+			ConvertNHCBToClassic: true,
 		},
 	},
 
@@ -1868,6 +1869,104 @@ func TestYAMLRoundtrip(t *testing.T) {
 	require.Equal(t, want, got)
 }
 
+func TestQueryCostLimits(t *testing.T) {
+	t.Run("defaults are unlimited", func(t *testing.T) {
+		c, err := Load("", promslog.NewNopLogger())
+		require.NoError(t, err)
+		require.Zero(t, c.GlobalConfig.QueryMaxSeries)
+		require.Zero(t, c.GlobalConfig.QueryMaxSamplesRead)
+		require.Zero(t, c.GlobalConfig.QueryMaxDuration)
+
+		require.Zero(t, DefaultGlobalConfig.QueryMaxSeries)
+		require.Zero(t, DefaultGlobalConfig.QueryMaxSamplesRead)
+		require.Zero(t, DefaultGlobalConfig.QueryMaxDuration)
+	})
+
+	t.Run("explicit zero is unlimited", func(t *testing.T) {
+		c, err := Load("global:\n  query_max_series: 0\n  query_max_samples_read: 0\n  query_max_duration: 0s\n", promslog.NewNopLogger())
+		require.NoError(t, err)
+		require.Zero(t, c.GlobalConfig.QueryMaxSeries)
+		require.Zero(t, c.GlobalConfig.QueryMaxSamplesRead)
+		require.Zero(t, c.GlobalConfig.QueryMaxDuration)
+	})
+
+	t.Run("parses from file", func(t *testing.T) {
+		c, err := LoadFile("testdata/query_cost_limits.good.yml", false, promslog.NewNopLogger())
+		require.NoError(t, err)
+		require.Equal(t, uint64(1000000), c.GlobalConfig.QueryMaxSeries)
+		require.Equal(t, uint64(50000000), c.GlobalConfig.QueryMaxSamplesRead)
+		require.Equal(t, model.Duration(45*time.Second), c.GlobalConfig.QueryMaxDuration)
+	})
+
+	t.Run("round-trips through YAML", func(t *testing.T) {
+		want, err := LoadFile("testdata/query_cost_limits.good.yml", false, promslog.NewNopLogger())
+		require.NoError(t, err)
+
+		out, err := yaml.Marshal(want)
+		require.NoError(t, err)
+		require.Contains(t, string(out), "query_max_series: 1000000")
+		require.Contains(t, string(out), "query_max_samples_read: 50000000")
+		require.Contains(t, string(out), "query_max_duration: 45s")
+
+		got, err := Load(string(out), promslog.NewNopLogger())
+		require.NoError(t, err)
+		require.Equal(t, want, got)
+	})
+
+	t.Run("rejects bad values", func(t *testing.T) {
+		for _, tc := range []struct {
+			in     string
+			errMsg string
+		}{
+			{
+				in:     "global:\n  query_max_series: -1\n",
+				errMsg: "cannot unmarshal !!int `-1` into uint64",
+			},
+			{
+				in:     "global:\n  query_max_samples_read: -1\n",
+				errMsg: "cannot unmarshal !!int `-1` into uint64",
+			},
+			{
+				in:     "global:\n  query_max_duration: -1s\n",
+				errMsg: `not a valid duration string: "-1s"`,
+			},
+			{
+				in:     "global:\n  query_max_series: many\n",
+				errMsg: "cannot unmarshal !!str `many` into uint64",
+			},
+			{
+				in:     "global:\n  query_max_duration: 45\n",
+				errMsg: `not a valid duration string: "45"`,
+			},
+			{
+				in:     "global:\n  query_max_duration: forever\n",
+				errMsg: `not a valid duration string: "forever"`,
+			},
+		} {
+			t.Run(tc.in, func(t *testing.T) {
+				_, err := Load(tc.in, promslog.NewNopLogger())
+				require.ErrorContains(t, err, tc.errMsg)
+			})
+		}
+	})
+
+	t.Run("limits change on reload", func(t *testing.T) {
+		// The limits are reloadable: cmd/prometheus applies them to the
+		// running engine from the query_engine reloader, so a reloaded
+		// config must yield the new values without a restart.
+		before, err := LoadFile("testdata/query_cost_limits.good.yml", false, promslog.NewNopLogger())
+		require.NoError(t, err)
+
+		after, err := Load("global:\n  query_max_series: 7\n  query_max_samples_read: 8\n  query_max_duration: 9s\n", promslog.NewNopLogger())
+		require.NoError(t, err)
+
+		require.NotEqual(t, before.GlobalConfig.QueryMaxSeries, after.GlobalConfig.QueryMaxSeries)
+		require.Equal(t, uint64(7), after.GlobalConfig.QueryMaxSeries)
+		require.Equal(t, uint64(8), after.GlobalConfig.QueryMaxSamplesRead)
+		require.Equal(t, model.Duration(9*time.Second), after.GlobalConfig.QueryMaxDuration)
+	})
+}
+
 func TestRemoteWriteRetryOnRateLimit(t *testing.T) {
 	want, err := LoadFile("testdata/remote_write_retry_on_rate_limit.good.yml", false, promslog.NewNopLogger())
 	require.NoError(t, err)
@@ -2751,7 +2850,7 @@ var expectedErrors = []struct {
 	},
 	{
 		filename: "scrape_config_files_scrape_protocols.bad.yml",
-		errMsg:   `parsing YAML file testdata/scrape_config_files_scrape_protocols.bad.yml: scrape_protocols: unknown scrape protocol prometheusproto, supported: [OpenMetricsText0.0.1 OpenMetricsText1.0.0 OpenMetricsText2.0.0 PrometheusProto PrometheusText0.0.4 PrometheusText1.0.0] for scrape config with job name "node"`,
+		errMsg:   `parsing YAML file testdata/scrape_config_files_scrape_protocols.bad.yml: scrape_protocols: unknown scrape protocol prometheusproto, supported: [OpenMetricsText0.0.1 OpenMetricsText1.0.0 OpenMetricsText2.0.0 OpenMetricsText2.0.0-rc PrometheusProto PrometheusText0.0.4 PrometheusText1.0.0] for scrape config with job name "node"`,
 	},
 	{
 		filename: "scrape_config_files_scrape_protocols2.bad.yml",
@@ -2759,7 +2858,7 @@ var expectedErrors = []struct {
 	},
 	{
 		filename: "scrape_config_files_fallback_scrape_protocol1.bad.yml",
-		errMsg:   `parsing YAML file testdata/scrape_config_files_fallback_scrape_protocol1.bad.yml: invalid fallback_scrape_protocol for scrape config with job name "node": unknown scrape protocol prometheusproto, supported: [OpenMetricsText0.0.1 OpenMetricsText1.0.0 OpenMetricsText2.0.0 PrometheusProto PrometheusText0.0.4 PrometheusText1.0.0]`,
+		errMsg:   `parsing YAML file testdata/scrape_config_files_fallback_scrape_protocol1.bad.yml: invalid fallback_scrape_protocol for scrape config with job name "node": unknown scrape protocol prometheusproto, supported: [OpenMetricsText0.0.1 OpenMetricsText1.0.0 OpenMetricsText2.0.0 OpenMetricsText2.0.0-rc PrometheusProto PrometheusText0.0.4 PrometheusText1.0.0]`,
 	},
 	{
 		filename: "scrape_config_files_fallback_scrape_protocol2.bad.yml",
@@ -2804,6 +2903,18 @@ var expectedErrors = []struct {
 	{
 		filename: "metric_name_validation_scheme.bad.yml",
 		errMsg:   "unrecognized ValidationScheme: \"invalid_scheme\"",
+	},
+	{
+		filename: "query_max_series.bad.yml",
+		errMsg:   "cannot unmarshal !!int `-1` into uint64",
+	},
+	{
+		filename: "query_max_samples_read.bad.yml",
+		errMsg:   "cannot unmarshal !!str `many` into uint64",
+	},
+	{
+		filename: "query_max_duration.bad.yml",
+		errMsg:   `not a valid duration string: "-1s"`,
 	},
 }
 
@@ -3627,6 +3738,11 @@ func TestScrapeProtocolHeader(t *testing.T) {
 			expectedValue: "application/openmetrics-text",
 		},
 		{
+			name:          "openmetrics 2.0.0-rc",
+			proto:         OpenMetricsText2_0_0_rc,
+			expectedValue: "application/openmetrics-text",
+		},
+		{
 			name:          "openmetrics 2.0.0",
 			proto:         OpenMetricsText2_0_0,
 			expectedValue: "application/openmetrics-text",
@@ -3654,4 +3770,174 @@ func TestGetScrapeConfigs_Loaded(t *testing.T) {
 		_, err = c.GetScrapeConfigs()
 		require.NoError(t, err)
 	})
+}
+
+func TestRemoteWriteConfig_Mode(t *testing.T) {
+	for _, tc := range []struct {
+		name                       string
+		config                     string
+		expectMode                 remoteapi.WriteMode
+		expectSendNativeHistograms bool
+		errString                  string
+	}{
+		{
+			name: "default mode (none)",
+			config: `
+remote_write:
+  - url: http://localhost:9090/api/v1/write
+    protobuf_message: io.prometheus.write.v2.Request
+`,
+			expectMode:                 remoteapi.WriteModeNone,
+			expectSendNativeHistograms: false,
+		},
+		{
+			name: "explicit none mode with v2",
+			config: `
+remote_write:
+  - url: http://localhost:9090/api/v1/write
+    protobuf_message: io.prometheus.write.v2.Request
+    mode: none
+`,
+			expectMode:                 remoteapi.WriteModeNone,
+			expectSendNativeHistograms: false,
+		},
+		{
+			name: "explicit none mode with v1",
+			config: `
+remote_write:
+  - url: http://localhost:9090/api/v1/write
+    protobuf_message: prometheus.WriteRequest
+    mode: none
+`,
+			expectMode:                 remoteapi.WriteModeNone,
+			expectSendNativeHistograms: false,
+		},
+		{
+			name: "stateless mode defaults send_native_histograms to true",
+			config: `
+remote_write:
+  - url: http://localhost:9090/api/v1/write
+    protobuf_message: io.prometheus.write.v2.Request
+    mode: stateless
+`,
+			expectMode:                 remoteapi.WriteModeStateless,
+			expectSendNativeHistograms: true,
+		},
+		{
+			name: "stateless-st mode defaults send_native_histograms to true",
+			config: `
+remote_write:
+  - url: http://localhost:9090/api/v1/write
+    protobuf_message: io.prometheus.write.v2.Request
+    mode: stateless-st
+`,
+			expectMode:                 remoteapi.WriteModeStatelessST,
+			expectSendNativeHistograms: true,
+		},
+		{
+			name: "stateless mode with explicit send_native_histograms=true",
+			config: `
+remote_write:
+  - url: http://localhost:9090/api/v1/write
+    protobuf_message: io.prometheus.write.v2.Request
+    mode: stateless
+    send_native_histograms: true
+`,
+			expectMode:                 remoteapi.WriteModeStateless,
+			expectSendNativeHistograms: true,
+		},
+		{
+			name: "stateless mode with explicit send_native_histograms=false fails",
+			config: `
+remote_write:
+  - url: http://localhost:9090/api/v1/write
+    protobuf_message: io.prometheus.write.v2.Request
+    mode: stateless
+    send_native_histograms: false
+`,
+			errString: `send_native_histograms cannot be false when remote_write mode is "stateless"`,
+		},
+		{
+			name: "stateless-st mode with explicit send_native_histograms=false fails",
+			config: `
+remote_write:
+  - url: http://localhost:9090/api/v1/write
+    protobuf_message: io.prometheus.write.v2.Request
+    mode: stateless-st
+    send_native_histograms: false
+`,
+			errString: `send_native_histograms cannot be false when remote_write mode is "stateless-st"`,
+		},
+		{
+			name: "stateless mode with convert_nhcb_to_classic=true fails",
+			config: `
+remote_write:
+  - url: http://localhost:9090/api/v1/write
+    protobuf_message: io.prometheus.write.v2.Request
+    mode: stateless
+    convert_nhcb_to_classic: true
+`,
+			errString: `convert_nhcb_to_classic cannot be enabled when remote_write mode is "stateless"`,
+		},
+		{
+			name: "stateless mode with v1 protobuf_message fails",
+			config: `
+remote_write:
+  - url: http://localhost:9090/api/v1/write
+    protobuf_message: prometheus.WriteRequest
+    mode: stateless
+`,
+			errString: `mode "stateless" is only supported with protobuf message "io.prometheus.write.v2.Request", got "prometheus.WriteRequest"`,
+		},
+		{
+			name: "stateless mode with default (v1) protobuf_message fails",
+			config: `
+remote_write:
+  - url: http://localhost:9090/api/v1/write
+    mode: stateless
+`,
+			errString: `mode "stateless" is only supported with protobuf message "io.prometheus.write.v2.Request", got "prometheus.WriteRequest"`,
+		},
+		{
+			name: "stateless-st mode with v1 protobuf_message fails",
+			config: `
+remote_write:
+  - url: http://localhost:9090/api/v1/write
+    protobuf_message: prometheus.WriteRequest
+    mode: stateless-st
+`,
+			errString: `mode "stateless-st" is only supported with protobuf message "io.prometheus.write.v2.Request", got "prometheus.WriteRequest"`,
+		},
+		{
+			name: "stateless-st mode with default (v1) protobuf_message fails",
+			config: `
+remote_write:
+  - url: http://localhost:9090/api/v1/write
+    mode: stateless-st
+`,
+			errString: `mode "stateless-st" is only supported with protobuf message "io.prometheus.write.v2.Request", got "prometheus.WriteRequest"`,
+		},
+		{
+			name: "unknown mode fails",
+			config: `
+remote_write:
+  - url: http://localhost:9090/api/v1/write
+    protobuf_message: io.prometheus.write.v2.Request
+    mode: invalid
+`,
+			errString: `unknown remote write mode "invalid", supported: none, stateless, stateless-st`,
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			cfg, err := Load(tc.config, promslog.NewNopLogger())
+			if tc.errString != "" {
+				require.ErrorContains(t, err, tc.errString)
+				return
+			}
+			require.NoError(t, err)
+			require.Len(t, cfg.RemoteWriteConfigs, 1)
+			require.Equal(t, tc.expectMode, cfg.RemoteWriteConfigs[0].Mode)
+			require.Equal(t, tc.expectSendNativeHistograms, cfg.RemoteWriteConfigs[0].SendNativeHistograms)
+		})
+	}
 }

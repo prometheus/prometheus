@@ -22,6 +22,7 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/prometheus/prometheus/model/labels"
+	"github.com/prometheus/prometheus/storage"
 	"github.com/prometheus/prometheus/tsdb/wlog"
 )
 
@@ -36,7 +37,7 @@ func BenchmarkLabelValues_SlowPath(b *testing.B) {
 	require.NoError(b, err)
 	defer h.Close()
 
-	app := h.Appender(context.Background())
+	app := h.AppenderV2(context.Background())
 	// 1. Create a large number of series for a "candidate" label (e.g. "job").
 	// We want these to NOT match the target matcher, but be candidates for a different label.
 	// We use "job=api" and "instance=..."
@@ -52,13 +53,13 @@ func BenchmarkLabelValues_SlowPath(b *testing.B) {
 	// Create 100k series with the same label value ("common") but without the matcher label.
 	// This results in a single large posting list for that value, simulating a dense candidate.
 	for i := range 100000 {
-		_, err := app.Append(0, labels.FromStrings("val1", "common", "extra", strconv.Itoa(i)), time.Now().UnixMilli(), 1)
+		_, err := app.Append(0, labels.FromStrings("val1", "common", "extra", strconv.Itoa(i)), 0, time.Now().UnixMilli(), 1, nil, nil, storage.AOptions{})
 		require.NoError(b, err)
 	}
 
 	// Create 1 series that matches the label "b=1", with a series ID greater than all previous ones.
 	// This forces the intersection to skip over all 100k previous candidates.
-	_, err = app.Append(0, labels.FromStrings("val1", "common", "b", "1"), time.Now().UnixMilli(), 1)
+	_, err = app.Append(0, labels.FromStrings("val1", "common", "b", "1"), 0, time.Now().UnixMilli(), 1, nil, nil, storage.AOptions{})
 	require.NoError(b, err)
 
 	require.NoError(b, app.Commit())

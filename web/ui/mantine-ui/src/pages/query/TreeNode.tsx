@@ -4,6 +4,7 @@ import {
   useEffect,
   useLayoutEffect,
   useMemo,
+  useRef,
   useState,
 } from "react";
 import ASTNode, { nodeType } from "../../promql/ast";
@@ -12,7 +13,6 @@ import { formatNode } from "../../promql/format";
 import {
   Box,
   Code,
-  CSSProperties,
   Group,
   List,
   Loader,
@@ -83,25 +83,8 @@ const TreeNode: FC<{
   const [nodeEl, setNodeEl] = useState<HTMLDivElement | null>(null);
   const nodeRef = useCallback((node: HTMLDivElement) => setNodeEl(node), []);
 
-  const [connectorStyle, setConnectorStyle] = useState<CSSProperties>({
-    borderColor:
-      "light-dark(var(--mantine-color-gray-4), var(--mantine-color-dark-3))",
-    borderLeftStyle: "solid",
-    borderLeftWidth: 2,
-    width: nodeIndent - 7,
-    left: -nodeIndent + 7,
-  });
+  const connectorRef = useRef<HTMLDivElement>(null);
   const [responseTime, setResponseTime] = useState<number>(0);
-  const [resultStats, setResultStats] = useState<{
-    numSeries: number;
-    labelExamples: Record<string, { value: string; count: number }[]>;
-    sortedLabelCards: [string, number][];
-  }>({
-    numSeries: 0,
-    labelExamples: {},
-    sortedLabelCards: [],
-  });
-
   // Select the node when it is mounted and it is the root of the tree.
   useEffect(() => {
     if (parentEl === undefined) {
@@ -119,11 +102,11 @@ const TreeNode: FC<{
   const children = getNodeChildren(node);
 
   const [childStates, setChildStates] = useState<NodeState[]>(
-    children.map(() => "waiting")
+    children.map(() => "waiting"),
   );
   const mergedChildState = useMemo(
     () => mergeChildStates(childStates),
-    [childStates]
+    [childStates],
   );
 
   // Optimize range vector selector fetches to give us the info we're looking for
@@ -179,7 +162,7 @@ const TreeNode: FC<{
         return newStates;
       });
     },
-    [setChildStates]
+    [setChildStates],
   );
 
   // Update the size and position of tree connector lines based on the node's and its parent's position.
@@ -196,37 +179,40 @@ const TreeNode: FC<{
 
     const parentRect = parentEl.getBoundingClientRect();
     const nodeRect = nodeEl.getBoundingClientRect();
-    if (reverse) {
-      setConnectorStyle((prevStyle) => ({
-        ...prevStyle,
-        top: "calc(50% - 1px)",
-        bottom: nodeRect.bottom - parentRect.top,
-        borderTopLeftRadius: 3,
-        borderTopStyle: "solid",
-        borderBottomLeftRadius: undefined,
-      }));
-    } else {
-      setConnectorStyle((prevStyle) => ({
-        ...prevStyle,
-        top: parentRect.bottom - nodeRect.top,
-        bottom: "calc(50% - 1px)",
-        borderBottomLeftRadius: 3,
-        borderBottomStyle: "solid",
-        borderTopLeftRadius: undefined,
-      }));
-    }
-  }, [parentEl, nodeEl, reverse, nodeRef, setConnectorStyle]);
+    const connector = connectorRef.current;
+    if (connector === null) return;
+    Object.assign(
+      connector.style,
+      reverse
+        ? {
+            top: "calc(50% - 1px)",
+            bottom: `${nodeRect.bottom - parentRect.top}px`,
+            borderTopLeftRadius: "3px",
+            borderTopStyle: "solid",
+            borderBottomLeftRadius: "",
+            borderBottomStyle: "",
+          }
+        : {
+            top: `${parentRect.bottom - nodeRect.top}px`,
+            bottom: "calc(50% - 1px)",
+            borderBottomLeftRadius: "3px",
+            borderBottomStyle: "solid",
+            borderTopLeftRadius: "",
+            borderTopStyle: "",
+          },
+    );
+  }, [parentEl, nodeEl, reverse]);
 
-  // Update the node info state based on the query result.
   useEffect(() => {
-    if (!data) {
-      return;
-    }
+    if (data && reportNodeState) reportNodeState(childIdx, "success");
+  }, [data, reportNodeState, childIdx]);
 
-    if (reportNodeState) {
-      reportNodeState(childIdx, "success");
-    }
-
+  const resultStats = useMemo<{
+    numSeries: number;
+    labelExamples: Record<string, { value: string; count: number }[]>;
+    sortedLabelCards: [string, number][];
+  }>(() => {
+    if (!data) return { numSeries: 0, labelExamples: {}, sortedLabelCards: [] };
     let resultSeries = 0;
     const labelValuesByName: Record<string, Record<string, number>> = {};
     const { resultType, result } = data.data;
@@ -261,14 +247,14 @@ const TreeNode: FC<{
         .map(([lv, cnt]) => ({ value: lv, count: cnt }));
     });
 
-    setResultStats({
+    return {
       numSeries: resultSeries,
       sortedLabelCards: Object.entries(labelCardinalities).sort(
-        (a, b) => b[1] - a[1]
+        (a, b) => b[1] - a[1],
       ),
       labelExamples,
-    });
-  }, [data, reportNodeState, childIdx]);
+    };
+  }, [data]);
 
   const innerNode = (
     <Group
@@ -281,7 +267,19 @@ const TreeNode: FC<{
     >
       {parentEl !== undefined && (
         // Connector line between this node and its parent.
-        <Box pos="absolute" display="inline-block" style={connectorStyle} />
+        <Box
+          pos="absolute"
+          display="inline-block"
+          ref={connectorRef}
+          style={{
+            borderColor:
+              "light-dark(var(--mantine-color-gray-4), var(--mantine-color-dark-3))",
+            borderLeftStyle: "solid",
+            borderLeftWidth: 2,
+            width: nodeIndent - 7,
+            left: -nodeIndent + 7,
+          }}
+        />
       )}
       {/* The node (visible box) itself. */}
       <Box
@@ -360,7 +358,7 @@ const TreeNode: FC<{
                               ({count}
                               x)
                             </List.Item>
-                          )
+                          ),
                         )}
                         {cnt > maxLabelValues && <li>...</li>}
                       </List>

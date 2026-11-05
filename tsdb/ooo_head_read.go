@@ -33,6 +33,9 @@ import (
 
 var _ IndexReader = &HeadAndOOOIndexReader{}
 
+// HeadAndOOOIndexReader reads the head index, returning both the in-order and
+// the out-of-order chunks of each series.
+// It is not safe for concurrent use from multiple goroutines.
 type HeadAndOOOIndexReader struct {
 	*headIndexReader            // A reference to the headIndexReader so we can reuse as many interface implementation as possible.
 	inoMint                     int64
@@ -210,6 +213,9 @@ func lessByMinTimeAndMinRef(a, b chunks.Meta) int {
 	}
 }
 
+// HeadAndOOOChunkReader reads both the in-order and the out-of-order chunks of
+// the head.
+// It is not safe for concurrent use from multiple goroutines.
 type HeadAndOOOChunkReader struct {
 	head          *Head
 	mint, maxt    int64
@@ -242,6 +248,15 @@ func (cr *HeadAndOOOChunkReader) ChunkOrIterableWithCopy(meta chunks.Meta) (chun
 }
 
 func (cr *HeadAndOOOChunkReader) chunkOrIterable(meta chunks.Meta, copyLastChunk bool) (chunkenc.Chunk, chunkenc.Iterable, int64, error) {
+	c, iterable, maxt, err := cr.chunk(meta, copyLastChunk)
+	// Check after chunk releases the series lock, since skipEvictedSeries looks up the series again.
+	if errors.Is(err, storage.ErrNotFound) && cr.cr != nil && cr.cr.skipEvictedSeries(meta) {
+		return nil, noSamples{}, 0, nil
+	}
+	return c, iterable, maxt, err
+}
+
+func (cr *HeadAndOOOChunkReader) chunk(meta chunks.Meta, copyLastChunk bool) (chunkenc.Chunk, chunkenc.Iterable, int64, error) {
 	sid, cid, isOOO := unpackHeadChunkRef(meta.Ref)
 	s := cr.head.series.getByID(sid)
 	// This means that the series has been garbage collected.
@@ -563,6 +578,9 @@ func (*OOOCompactionHeadIndexReader) Close() error {
 }
 
 // HeadAndOOOQuerier queries both the head and the out-of-order head.
+// The querier is not safe for concurrent use from multiple goroutines, and
+// neither are the series sets and series obtained from it: different series
+// must not be iterated concurrently either.
 type HeadAndOOOQuerier struct {
 	mint, maxt int64
 	head       *Head
@@ -573,12 +591,23 @@ type HeadAndOOOQuerier struct {
 
 var _ storage.Searcher = &HeadAndOOOQuerier{}
 
-func NewHeadAndOOOQuerier(inoMint, mint, maxt int64, head *Head, oooIsoState *oooIsolationState, querier storage.Querier) storage.Querier {
+// NewHeadAndOOOQuerier returns a Querier that queries both the head and the
+// out-of-order head.
+//
+// If skipEvictedSeries is true, chunks removed by the series eviction in progress
+// when the Querier is created are skipped instead of failing the query.
+// See headChunkReader.evicting.
+func NewHeadAndOOOQuerier(inoMint, mint, maxt int64, head *Head, oooIsoState *oooIsolationState, querier storage.Querier, skipEvictedSeries bool) storage.Querier {
 	cr := &headChunkReader{
 		head:     head,
 		mint:     mint,
 		maxt:     maxt,
 		isoState: head.iso.State(inoMint, maxt),
+	}
+	// Load the series being evicted after the isolation state was created, so that a querier that is not waited for
+	// by truncateSeries sees them.
+	if skipEvictedSeries {
+		cr.evicting = head.evictingSeries.Load()
 	}
 	return &HeadAndOOOQuerier{
 		mint:    mint,
@@ -639,6 +668,9 @@ func (q *HeadAndOOOQuerier) Select(ctx context.Context, sortSeries bool, hints *
 }
 
 // HeadAndOOOChunkQuerier queries both the head and the out-of-order head.
+// The querier is not safe for concurrent use from multiple goroutines, and
+// neither are the series sets and series obtained from it: different series
+// must not be iterated concurrently either.
 type HeadAndOOOChunkQuerier struct {
 	mint, maxt int64
 	head       *Head
@@ -647,12 +679,23 @@ type HeadAndOOOChunkQuerier struct {
 	querier    storage.ChunkQuerier
 }
 
-func NewHeadAndOOOChunkQuerier(inoMint, mint, maxt int64, head *Head, oooIsoState *oooIsolationState, querier storage.ChunkQuerier) storage.ChunkQuerier {
+// NewHeadAndOOOChunkQuerier returns a ChunkQuerier that queries both the head
+// and the out-of-order head.
+//
+// If skipEvictedSeries is true, chunks removed by the series eviction in progress
+// when the ChunkQuerier is created are skipped instead of failing the query.
+// See headChunkReader.evicting.
+func NewHeadAndOOOChunkQuerier(inoMint, mint, maxt int64, head *Head, oooIsoState *oooIsolationState, querier storage.ChunkQuerier, skipEvictedSeries bool) storage.ChunkQuerier {
 	cr := &headChunkReader{
 		head:     head,
 		mint:     mint,
 		maxt:     maxt,
 		isoState: head.iso.State(inoMint, maxt),
+	}
+	// Load the series being evicted after the isolation state was created, so that a querier that is not waited for
+	// by truncateSeries sees them.
+	if skipEvictedSeries {
+		cr.evicting = head.evictingSeries.Load()
 	}
 	return &HeadAndOOOChunkQuerier{
 		mint:    mint,

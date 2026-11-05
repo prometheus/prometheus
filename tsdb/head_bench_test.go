@@ -33,19 +33,6 @@ import (
 
 type benchAppendFunc func(b *testing.B, h *Head, ts int64, series []storage.Series, samplesPerAppend int64) storage.AppenderTransaction
 
-func appendV1Float(b *testing.B, h *Head, ts int64, series []storage.Series, samplesPerAppend int64) storage.AppenderTransaction {
-	var err error
-	app := h.Appender(b.Context())
-	for _, s := range series {
-		var ref storage.SeriesRef
-		for sampleIndex := range samplesPerAppend {
-			ref, err = app.Append(ref, s.Labels(), ts+sampleIndex, float64(ts+sampleIndex))
-			require.NoError(b, err)
-		}
-	}
-	return app
-}
-
 func appendV2Float(b *testing.B, h *Head, ts int64, series []storage.Series, samplesPerAppend int64) storage.AppenderTransaction {
 	var err error
 	app := h.AppenderV2(b.Context())
@@ -53,64 +40,6 @@ func appendV2Float(b *testing.B, h *Head, ts int64, series []storage.Series, sam
 		var ref storage.SeriesRef
 		for sampleIndex := range samplesPerAppend {
 			ref, err = app.Append(ref, s.Labels(), 0, ts+sampleIndex, float64(ts+sampleIndex), nil, nil, storage.AOptions{})
-			require.NoError(b, err)
-		}
-	}
-	return app
-}
-
-func appendV1FloatOrHistogramWithExemplars(b *testing.B, h *Head, ts int64, series []storage.Series, samplesPerAppend int64) storage.AppenderTransaction {
-	var err error
-	app := h.Appender(b.Context())
-	for i, s := range series {
-		var ref storage.SeriesRef
-		for sampleIndex := range samplesPerAppend {
-			// if i is even, append a sample, else append a histogram.
-			if i%2 == 0 {
-				ref, err = app.Append(ref, s.Labels(), ts+sampleIndex, float64(ts+sampleIndex))
-				require.NoError(b, err)
-				// Every sample also has an exemplar attached.
-				_, err = app.AppendExemplar(ref, s.Labels(), exemplar.Exemplar{
-					Labels: labels.FromStrings("trace_id", strconv.Itoa(rand.Int())),
-					Value:  rand.Float64(),
-					Ts:     ts + sampleIndex,
-				})
-				require.NoError(b, err)
-				continue
-			}
-
-			h := &histogram.Histogram{
-				Count:         7 + uint64(ts*5),
-				ZeroCount:     2 + uint64(ts),
-				ZeroThreshold: 0.001,
-				Sum:           18.4 * rand.Float64(),
-				Schema:        1,
-				PositiveSpans: []histogram.Span{
-					{Offset: 0, Length: 2},
-					{Offset: 1, Length: 2},
-				},
-				PositiveBuckets: []int64{ts + 1, 1, -1, 0},
-			}
-			ref, err = app.AppendHistogram(ref, s.Labels(), ts, h, nil)
-			require.NoError(b, err)
-			// Every histogram sample also has 3 exemplars attached.
-			_, err = app.AppendExemplar(ref, s.Labels(), exemplar.Exemplar{
-				Labels: labels.FromStrings("trace_id", strconv.Itoa(rand.Int())),
-				Value:  rand.Float64(),
-				Ts:     ts + sampleIndex,
-			})
-			require.NoError(b, err)
-			_, err = app.AppendExemplar(ref, s.Labels(), exemplar.Exemplar{
-				Labels: labels.FromStrings("trace_id", strconv.Itoa(rand.Int())),
-				Value:  rand.Float64(),
-				Ts:     ts + sampleIndex,
-			})
-			require.NoError(b, err)
-			_, err = app.AppendExemplar(ref, s.Labels(), exemplar.Exemplar{
-				Labels: labels.FromStrings("trace_id", strconv.Itoa(rand.Int())),
-				Value:  rand.Float64(),
-				Ts:     ts + sampleIndex,
-			})
 			require.NoError(b, err)
 		}
 	}
@@ -187,16 +116,8 @@ type appendCase struct {
 func appendCases() []appendCase {
 	return []appendCase{
 		{
-			name:       "appender=v1/case=floats",
-			appendFunc: appendV1Float,
-		},
-		{
 			name:       "appender=v2/case=floats",
 			appendFunc: appendV2Float,
-		},
-		{
-			name:       "appender=v1/case=floatsHistogramsExemplars",
-			appendFunc: appendV1FloatOrHistogramWithExemplars,
 		},
 		{
 			name:       "appender=v2/case=floatsHistogramsExemplars",
@@ -268,23 +189,30 @@ func BenchmarkHeadStripeSeriesCreate(b *testing.B) {
 }
 
 func BenchmarkHeadStripeSeriesCreateParallel(b *testing.B) {
-	chunkDir := b.TempDir()
-	// Put a series, select it. GC it and then access it.
-	opts := DefaultHeadOptions()
-	opts.ChunkRange = 1000
-	opts.ChunkDirRoot = chunkDir
-	h, err := NewHead(nil, nil, nil, nil, opts, nil)
-	require.NoError(b, err)
-	defer h.Close()
+	for _, parallelism := range []int{1, 10, 100, 1000} {
+		b.Run(fmt.Sprintf("goroutines-per-cpu=%d", parallelism), func(b *testing.B) {
+			chunkDir := b.TempDir()
+			opts := DefaultHeadOptions()
+			opts.ChunkRange = 1000
+			opts.ChunkDirRoot = chunkDir
+			h, err := NewHead(nil, nil, nil, nil, opts, nil)
+			require.NoError(b, err)
+			defer h.Close()
+			// Init orders the postings, as on a running head.
+			require.NoError(b, h.Init(0))
 
-	var count atomic.Int64
+			var count atomic.Int64
 
-	b.RunParallel(func(pb *testing.PB) {
-		for pb.Next() {
-			i := count.Inc()
-			h.getOrCreate(uint64(i), labels.FromStrings("a", strconv.Itoa(int(i))), false)
-		}
-	})
+			b.ResetTimer()
+			b.SetParallelism(parallelism)
+			b.RunParallel(func(pb *testing.PB) {
+				for pb.Next() {
+					i := count.Inc()
+					h.getOrCreate(uint64(i), labels.FromStrings("a", strconv.Itoa(int(i)), "job", "bench"), false)
+				}
+			})
+		})
+	}
 }
 
 func BenchmarkHeadStripeSeriesCreate_PreCreationFailure(b *testing.B) {
@@ -327,12 +255,12 @@ func BenchmarkMmapHeadChunks(b *testing.B) {
 				ts := int64(0)
 				const batchSize = 1000
 				for batchStart := 0; batchStart < seriesCount; batchStart += batchSize {
-					app := db.Appender(b.Context())
+					app := db.AppenderV2(b.Context())
 					batchEnd := min(batchStart+batchSize, seriesCount)
 					for i := batchStart; i < batchEnd; i++ {
 						lbls := labels.FromStrings("__name__", "bench", "i", strconv.Itoa(i))
 						lblsPerSeries[i] = lbls
-						ref, err := app.Append(0, lbls, ts, float64(i))
+						ref, err := app.Append(0, lbls, 0, ts, float64(i), nil, nil, storage.AOptions{})
 						require.NoError(b, err)
 						refs[i] = ref
 					}
@@ -350,19 +278,19 @@ func BenchmarkMmapHeadChunks(b *testing.B) {
 				// suffice: one near the current ts, one past nextAt.
 				makeReady := func() {
 					ts++ // small increment for first sample
-					app := db.Appender(b.Context())
+					app := db.AppenderV2(b.Context())
 					for _, idx := range readyIndices {
 						var err error
-						refs[idx], err = app.Append(refs[idx], lblsPerSeries[idx], ts, float64(ts))
+						refs[idx], err = app.Append(refs[idx], lblsPerSeries[idx], 0, ts, float64(ts), nil, nil, storage.AOptions{})
 						require.NoError(b, err)
 					}
 					require.NoError(b, app.Commit())
 
 					ts += chunkRange // jump past nextAt to force chunk cut
-					app = db.Appender(b.Context())
+					app = db.AppenderV2(b.Context())
 					for _, idx := range readyIndices {
 						var err error
-						refs[idx], err = app.Append(refs[idx], lblsPerSeries[idx], ts, float64(ts))
+						refs[idx], err = app.Append(refs[idx], lblsPerSeries[idx], 0, ts, float64(ts), nil, nil, storage.AOptions{})
 						require.NoError(b, err)
 					}
 					require.NoError(b, app.Commit())

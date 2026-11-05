@@ -86,16 +86,23 @@ type Parser interface {
 	Next() (Entry, error)
 }
 
-// openMetrics2Version is the value of the Content-Type version parameter that
-// selects the OpenMetrics 2.0 parser.
-const openMetrics2Version = "2.0.0"
+// openMetrics2Version and openMetrics2RCVersion are the values of the
+// Content-Type version parameter that select the OpenMetrics 2.0 parser.
+const (
+	openMetrics2Version   = "2.0.0"
+	openMetrics2RCVersion = "2.0.0-rc"
+)
+
+func isOpenMetrics2Version(version string) bool {
+	return version == openMetrics2Version || version == openMetrics2RCVersion
+}
 
 // extractMediaType returns the mediaType of a required parser. It tries first to
 // extract a valid and supported mediaType from contentType. If that fails,
 // the provided fallbackType (possibly an empty string) is returned, together with
 // an error. fallbackType is used as-is without further validation.
-// A contentType OpenMetrics 2.0.0 without the appropriate feature flag set fails
-// to fallback.
+// A contentType OpenMetrics 2.0.0 or 2.0.0-rc without the appropriate feature flag
+// set fails to fallback.
 // TODO(r.bizos): remove this constraint when OM2 is GA in Prometheus.
 func extractMediaType(contentType, fallbackType string, enableOpenMetrics2 bool) (mediaType, version string, err error) {
 	if contentType == "" {
@@ -119,7 +126,7 @@ func extractMediaType(contentType, fallbackType string, enableOpenMetrics2 bool)
 
 	// OpenMetrics 2.0 is experimental, so it is only usable when explicitly
 	// enabled.
-	if mediaType == "application/openmetrics-text" && version == openMetrics2Version && !enableOpenMetrics2 {
+	if mediaType == "application/openmetrics-text" && isOpenMetrics2Version(version) && !enableOpenMetrics2 {
 		if fallbackType == "" {
 			return "", "", fmt.Errorf("received OpenMetrics 2.0 Content-Type %q, but the openmetrics2 feature flag is not enabled and no fallback_scrape_protocol specified for target", contentType)
 		}
@@ -159,10 +166,10 @@ type ParserOptions struct {
 	// to native histogram custom buckets (NHCB) format.
 	ConvertClassicHistogramsToNHCB bool
 
-	// KeepClassicOnClassicAndNativeHistograms causes parser to output classic histogram
-	// that is also present as a native histogram. Supported by the protobuf
-	// parser and by the OpenMetrics 2.0 parser (where both representations
-	// can appear in a single composite value).
+	// KeepClassicOnClassicAndNativeHistograms (always_scrape_classic_histograms in scrape
+	// config) causes the parser to also output classic histogram series when a histogram
+	// is present as both a native and classic histogram (in Protobuf or OpenMetrics 2.0),
+	// or when converting a classic histogram to NHCB via ConvertClassicHistogramsToNHCB.
 	KeepClassicOnClassicAndNativeHistograms bool
 
 	// OpenMetricsSkipSTSeries determines whether to skip `_created` timestamp series
@@ -198,14 +205,13 @@ func New(b []byte, contentType string, st *labels.SymbolTable, opts ParserOption
 	var baseParser Parser
 	switch mediaType {
 	case "application/openmetrics-text":
-		if version == openMetrics2Version {
-			baseParser = NewOpenMetrics2Parser(b, st, opts)
-		} else {
-			baseParser = NewOpenMetricsParser(b, st, func(o *openMetricsParserOptions) {
-				o.skipSTSeries = opts.OpenMetricsSkipSTSeries
-				o.enableTypeAndUnitLabels = opts.EnableTypeAndUnitLabels
-			})
+		if isOpenMetrics2Version(version) {
+			return NewOpenMetrics2Parser(b, st, opts), err
 		}
+		baseParser = NewOpenMetricsParser(b, st, func(o *openMetricsParserOptions) {
+			o.skipSTSeries = opts.OpenMetricsSkipSTSeries
+			o.enableTypeAndUnitLabels = opts.EnableTypeAndUnitLabels
+		})
 	case "application/vnd.google.protobuf":
 		return NewProtobufParser(
 			b,

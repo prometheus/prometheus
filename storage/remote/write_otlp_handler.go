@@ -124,10 +124,7 @@ type rwExporter struct {
 
 func (rw *rwExporter) ConsumeMetrics(ctx context.Context, md pmetric.Metrics) error {
 	otlpCfg := rw.config().OTLPConfig
-	app := &remoteWriteAppenderV2{
-		AppenderV2: rw.appendable.AppenderV2(ctx),
-		maxTime:    timestamp.FromTime(time.Now().Add(maxAheadTime)),
-	}
+	app := rw.appendable.AppenderV2(ctx)
 	converter := rw.converterPool.Get().(*otlptranslator.PrometheusConverter)
 	converter.Reset(app)
 	annots, err := converter.FromMetrics(ctx, md, otlptranslator.Settings{
@@ -263,7 +260,10 @@ func newOTLPInstrumentedAppendable(reg prometheus.Registerer, app storage.Append
 
 func (a *otlpInstrumentedAppendable) AppenderV2(ctx context.Context) storage.AppenderV2 {
 	return &otlpInstrumentedAppender{
-		AppenderV2: a.AppendableV2.AppenderV2(ctx),
+		AppenderV2: &timeLimitAppenderV2{
+			AppenderV2: a.AppendableV2.AppenderV2(ctx),
+			maxTime:    timestamp.FromTime(time.Now().Add(maxAheadTime)),
+		},
 
 		samplesAppendedWithoutMetadata: a.samplesAppendedWithoutMetadata,
 		outOfOrderExemplars:            a.outOfOrderExemplars,
@@ -286,7 +286,11 @@ func (app *otlpInstrumentedAppender) Append(ref storage.SeriesRef, ls labels.Lab
 			// Not a partial error, return err.
 			return 0, err
 		}
-		app.outOfOrderExemplars.Add(float64(len(partialErr.ExemplarErrors)))
+		for _, eErr := range partialErr.ExemplarErrors {
+			if errors.Is(eErr, storage.ErrOutOfOrderExemplar) {
+				app.outOfOrderExemplars.Inc()
+			}
+		}
 		// Hide the partial error as otlp converter does not handle it.
 	}
 	if opts.Metadata.IsEmpty() {

@@ -28,6 +28,7 @@ var (
 	errNegativeBucketCount = errors.New("bucket count must be non-negative")
 	errNaNBucket           = errors.New("bucket boundary must not be NaN")
 	errNegativeCount       = errors.New("count must be non-negative")
+	errMissingCount        = errors.New("count must be provided when no buckets are present")
 	errCountMismatch       = errors.New("count mismatch")
 	errCountNotCumulative  = errors.New("count is not cumulative")
 )
@@ -144,7 +145,10 @@ func (h TempHistogram) Convert() (*histogram.Histogram, *histogram.FloatHistogra
 		return nil, nil, h.err
 	}
 
-	if !h.hasCount && len(h.buckets) > 0 {
+	if !h.hasCount {
+		if len(h.buckets) == 0 {
+			return nil, nil, errMissingCount
+		}
 		// No count, so set count to the highest known bucket's count.
 		h.count = h.buckets[len(h.buckets)-1].count
 		h.hasCount = true
@@ -201,7 +205,11 @@ func (h TempHistogram) convertToIntegerHistogram(count uint64) (*histogram.Histo
 		return nil, nil, h.err
 	}
 
-	return rh.Compact(2), nil, nil
+	rh = rh.Compact(2)
+	if err := rh.Validate(); err != nil {
+		return nil, nil, fmt.Errorf("invalid histogram: %w", err)
+	}
+	return rh, nil, nil
 }
 
 func (h TempHistogram) convertToFloatHistogram() (*histogram.Histogram, *histogram.FloatHistogram, error) {
@@ -231,7 +239,11 @@ func (h TempHistogram) convertToFloatHistogram() (*histogram.Histogram, *histogr
 		return nil, nil, h.err
 	}
 
-	return nil, rh.Compact(0), nil
+	rh = rh.Compact(0)
+	if err := rh.Validate(); err != nil {
+		return nil, nil, fmt.Errorf("invalid float histogram: %w", err)
+	}
+	return nil, rh, nil
 }
 
 func GetHistogramMetricBase(m labels.Labels, name string) labels.Labels {

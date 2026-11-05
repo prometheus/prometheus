@@ -15,10 +15,17 @@ package metadata
 
 import (
 	"testing"
+	"unique"
 
 	"github.com/prometheus/common/model"
 	"github.com/stretchr/testify/require"
 )
+
+func TestIsZeroHandle(t *testing.T) {
+	var h unique.Handle[Metadata]
+	require.True(t, IsZeroHandle(h))
+	require.False(t, IsZeroHandle(unique.Make(Metadata{Type: model.MetricTypeCounter})))
+}
 
 func TestMetadata_IsEmpty(t *testing.T) {
 	for _, tt := range []struct {

@@ -64,7 +64,8 @@ if [[ "${patch}" == "0" ]]; then
 		--org prometheus --repo prometheus \
 		--required-author="" --dependencies=false \
 		--go-template="go-template:inline:${TMPL}" \
-		--output=/dev/stdout
+		--output=/dev/stdout |
+		sed -E 's/\(#([0-9]+), @[A-Za-z0-9_-]+\)$/#\1/'
 else
 	# Patch release: cover commits since the previous patch tag.
 	prev_patch=$(( patch - 1 ))
@@ -79,5 +80,6 @@ else
 		--required-author="" --dependencies=false \
 		--go-template="go-template:inline:${TMPL}" \
 		--skip-first-commit \
-		--output=/dev/stdout
+		--output=/dev/stdout |
+		sed -E 's/\(#([0-9]+), @[A-Za-z0-9_-]+\)$/#\1/'
 fi

@@ -20,6 +20,9 @@ import {
   AggregateModifier,
   And,
   BinaryExpr,
+  BitAnd,
+  BitOr,
+  BitXor,
   BoolModifier,
   Div,
   Eql,
@@ -174,7 +177,7 @@ function arrayToCompletionResult(data: Completion[], from: number, to: number, i
     from: from,
     to: to,
     options: options,
-    validFor: span ? /^[a-zA-Z0-9_:]+$/ : undefined,
+    validFor: span ? new RegExp('^[\\p{L}0-9_:.]+$', 'u') : undefined,
   } as CompletionResult;
 }
 
@@ -255,6 +258,16 @@ function hasCompleteDurationUnit(state: EditorState, node: SyntaxNode): boolean 
   return durationWithUnitRegexp.test(nodeContent);
 }
 
+// External name tokens may leave a bare error node after a complete duration.
+// Preserve function completion for an unfinished name such as the final s in foo[5mss].
+function isDurationFunctionFragment(state: EditorState, node: SyntaxNode): boolean {
+  return (
+    node.type.id === 0 &&
+    [MatrixSelector, SubqueryExpr, OffsetExpr, DurationExpr].includes(node.parent?.type.id ?? -1) &&
+    /^[a-zA-Z_]+$/.test(state.sliceDoc(node.from, node.to))
+  );
+}
+
 // computeStartCompleteLabelPositionInLabelMatcherOrInGroupingLabel calculates the start position only when the node is a LabelMatchers or a GroupingLabels
 function computeStartCompleteLabelPositionInLabelMatcherOrInGroupingLabel(node: SyntaxNode, pos: number): number {
   // Here we can have two different situations:
@@ -279,6 +292,8 @@ export function computeStartCompletePosition(state: EditorState, node: SyntaxNod
   let start = node.from;
   if (isAfterClosedFunctionCallBody(state, node, pos)) {
     start = pos;
+  } else if (isDurationFunctionFragment(state, node)) {
+    start = node.from;
   } else if (node.type.id === LabelMatchers || node.type.id === GroupingLabels) {
     start = computeStartCompleteLabelPositionInLabelMatcherOrInGroupingLabel(node, pos);
   } else if (
@@ -324,11 +339,17 @@ function isAggregatorWithParam(functionCallBody: SyntaxNode): boolean {
 
 // analyzeCompletion is going to determinate what should be autocompleted.
 // The value of the autocompletion is then calculate by the function buildCompletion.
+// `explicit` should reflect whether the completion was explicitly requested by the user (e.g. via Ctrl+Space)
+// rather than triggered automatically while typing; some contexts are only relevant in the former case.
 // Note: this method is exported for testing purpose only. Do not use it directly.
-export function analyzeCompletion(state: EditorState, node: SyntaxNode, pos: number): Context[] {
+export function analyzeCompletion(state: EditorState, node: SyntaxNode, pos: number, explicit = true): Context[] {
   const result: Context[] = [];
   switch (node.type.id) {
     case 0: {
+      if (isDurationFunctionFragment(state, node)) {
+        result.push({ kind: ContextKind.DurationExpr });
+        break;
+      }
       // 0 is the id of the error node
       if (
         node.parent?.type.id === OffsetExpr ||
@@ -614,6 +635,11 @@ export function analyzeCompletion(state: EditorState, node: SyntaxNode, pos: num
       break;
     case FunctionCallBody:
       if (isAfterClosedFunctionCallBody(state, node, pos)) {
+        if (!explicit) {
+          // Only offer binary operators/modifiers here when explicitly requested, otherwise the
+          // dropdown would pop open as soon as the closing parenthesis is typed.
+          break;
+        }
         if (node.parent?.type.id === AggregateExpr && !containsAtLeastOneChild(node.parent, AggregateModifier)) {
           result.push({ kind: ContextKind.AggregateOpModifier });
         }
@@ -676,6 +702,9 @@ export function analyzeCompletion(state: EditorState, node: SyntaxNode, pos: num
     case And:
     case Unless:
     case Or:
+    case BitAnd:
+    case BitOr:
+    case BitXor:
     case BinaryExpr:
       result.push({ kind: ContextKind.BinOp });
       break;
@@ -708,7 +737,7 @@ export class HybridComplete implements CompleteStrategy {
     // It's useful when you are trying to understand why it doesn't autocomplete.
     // console.log(syntaxTree(state).topNode.toString());
     // console.log(`current node: ${tree.type.name}`);
-    const contexts = analyzeCompletion(state, tree, pos);
+    const contexts = analyzeCompletion(state, tree, pos, context.explicit);
     let asyncResult: Promise<Completion[]> = Promise.resolve([]);
     let completeSnippet = false;
     let span = true;

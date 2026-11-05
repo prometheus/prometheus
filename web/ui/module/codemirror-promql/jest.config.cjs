@@ -9,6 +9,9 @@ module.exports = {
     globals: {
         'ts-jest': {
             useESM: true,
+            tsconfig: {
+                types: ['node', 'jest'],
+            },
         },
     },
     moduleNameMapper: {

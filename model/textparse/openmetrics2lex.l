@@ -36,7 +36,7 @@ M     [a-zA-Z_:]
 C     [^\n]
 S     [ ]
 
-%x sComment sMeta1 sMeta2 sLabels sLValue sValue sTimestamp sExemplar sEValue sETimestamp
+%x sComment sMeta1 sMeta2 sLabels sLValue sValue sTimestamp sExemplar sEValue sETimestamp sComposite sCompValue
 
 %yyc c
 %yyn c = l.next()
@@ -63,7 +63,25 @@ S     [ ]
 <sLabels>=                            l.state = sLValue; return tEqual
 <sLabels>,                            return tComma
 <sLValue>\"(\\.|[^\\"\n])*\"          l.state = sLabels; return tLValue
-<sValue>{S}[^ \n]+                    l.state = sTimestamp; return tValue
+<sValue>{S}\{                         l.state = sComposite; return tCompOpen
+<sValue>{S}[^{ \n][^ \n]*             l.state = sTimestamp; return tValue
+<sComposite>"count:"                  l.state = sCompValue; return tCompCount
+<sComposite>"gcount:"                 l.state = sCompValue; return tCompGCount
+<sComposite>"sum:"                    l.state = sCompValue; return tCompSum
+<sComposite>"gsum:"                   l.state = sCompValue; return tCompGSum
+<sComposite>"schema:"                 l.state = sCompValue; return tCompSchema
+<sComposite>"zero_threshold:"         l.state = sCompValue; return tCompZeroThreshold
+<sComposite>"zero_count:"             l.state = sCompValue; return tCompZeroCount
+<sComposite>"positive_spans:"         l.state = sCompValue; return tCompPosSpans
+<sComposite>"positive_buckets:"       l.state = sCompValue; return tCompPosBuckets
+<sComposite>"negative_spans:"         l.state = sCompValue; return tCompNegSpans
+<sComposite>"negative_buckets:"       l.state = sCompValue; return tCompNegBuckets
+<sComposite>"bucket:"                 l.state = sCompValue; return tCompBucket
+<sComposite>"quantile:"               l.state = sCompValue; return tCompQuantile
+<sComposite>,                         return tComma
+<sComposite>\}                        l.state = sTimestamp; return tCompClose
+<sCompValue>\[[^\] \n\r]*\]           l.state = sComposite; return tValue
+<sCompValue>[^,}\[\] \n\r]+           l.state = sComposite; return tValue
 <sTimestamp>{S}st@[^ \n]+             l.state = sTimestamp; return tStartTimestamp
 <sTimestamp>{S}[^ \n]+                return tTimestamp
 <sTimestamp>\n                        l.state = sInit; return tLinebreak

@@ -21,6 +21,7 @@ import (
 	"math"
 	"runtime"
 	"time"
+	"unique"
 
 	"github.com/prometheus/prometheus/model/exemplar"
 	"github.com/prometheus/prometheus/model/histogram"
@@ -560,6 +561,16 @@ func (a *headAppender) AppendSTZeroSample(ref storage.SeriesRef, lset labels.Lab
 	return storage.SeriesRef(s.ref), nil
 }
 
+// zeroOrST returns st if start timestamps are stored, and 0 otherwise. Without
+// EnableSTStorage the WAL doesn't record start timestamps, so passing them on to
+// chunks would make chunks differ before and after a WAL replay.
+func (a *headAppenderBase) zeroOrST(st int64) int64 {
+	if !a.storeST {
+		return 0
+	}
+	return st
+}
+
 func (a *headAppenderBase) getOrCreate(lset labels.Labels) (s *memSeries, created bool, err error) {
 	// Ensure no empty labels have gotten through.
 	lset = lset.WithoutEmpty()
@@ -850,6 +861,8 @@ func (a *headAppender) AppendExemplar(ref storage.SeriesRef, lset labels.Labels,
 	}
 
 	b := a.getCurrentBatch(stNone, chunks.HeadSeriesRef(ref))
+	// Protect the series from ordinary compaction before the exemplar is committed.
+	s.updateExemplarTimestamp(e.Ts)
 	b.exemplars = append(b.exemplars, exemplarWithSeriesRef{ref, e})
 
 	return storage.SeriesRef(s.ref), nil
@@ -1084,7 +1097,7 @@ func (a *headAppender) UpdateMetadata(ref storage.SeriesRef, lset labels.Labels,
 	}
 
 	s.Lock()
-	hasNewMetadata := s.meta == nil || *s.meta != meta
+	hasNewMetadata := metadata.IsZeroHandle(s.meta) || s.meta.Value() != meta
 	s.Unlock()
 
 	if hasNewMetadata {
@@ -1738,7 +1751,7 @@ func commitMetadata(b *appendBatch) {
 	for i, m := range b.metadata {
 		series = b.metadataSeries[i]
 		series.Lock()
-		series.meta = &metadata.Metadata{Type: record.ToMetricType(m.Type), Unit: m.Unit, Help: m.Help}
+		series.meta = unique.Make(metadata.Metadata{Type: record.ToMetricType(m.Type), Unit: m.Unit, Help: m.Help})
 		series.Unlock()
 	}
 }

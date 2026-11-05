@@ -195,7 +195,7 @@ func (b *writeBenchmark) ingestScrapesShard(lbls []labels.Labels, scrapeCount in
 	total := uint64(0)
 
 	for range scrapeCount {
-		app := b.storage.Appender(context.TODO())
+		app := b.storage.AppenderV2(context.TODO())
 		ts += timeDelta
 
 		for _, s := range scrape {
@@ -206,7 +206,7 @@ func (b *writeBenchmark) ingestScrapesShard(lbls []labels.Labels, scrapeCount in
 				ref = *s.ref
 			}
 
-			ref, err := app.Append(ref, s.labels, ts, float64(s.value))
+			ref, err := app.Append(ref, s.labels, 0, ts, float64(s.value), nil, nil, storage.AOptions{})
 			if err != nil {
 				panic(err)
 			}
@@ -771,7 +771,7 @@ func formatSeriesSet(ss storage.SeriesSet) error {
 			}
 		}
 		if it.Err() != nil {
-			return ss.Err()
+			return it.Err()
 		}
 	}
 	return nil
@@ -832,7 +832,7 @@ func formatSeriesSetOpenMetrics(ss storage.SeriesSet) error {
 			fmt.Printf("%s%s %g %.3f\n", metricName, CondensedString(lbs), val, float64(ts)/1000)
 		}
 		if it.Err() != nil {
-			return ss.Err()
+			return it.Err()
 		}
 	}
 	fmt.Println("# EOF")
@@ -847,7 +847,7 @@ func checkErr(err error) int {
 	return 0
 }
 
-func backfillOpenMetrics(path, outputDir string, humanReadable, quiet bool, maxBlockDuration time.Duration, customLabels map[string]string) int {
+func backfillOpenMetrics(path, outputDir string, humanReadable, quiet bool, blockDuration time.Duration, customLabels map[string]string) int {
 	var buf []byte
 	info, err := os.Stat(path)
 	if err != nil {
@@ -872,7 +872,7 @@ func backfillOpenMetrics(path, outputDir string, humanReadable, quiet bool, maxB
 		return checkErr(fmt.Errorf("create output dir: %w", err))
 	}
 
-	return checkErr(backfill(5000, buf, outputDir, humanReadable, quiet, maxBlockDuration, customLabels))
+	return checkErr(backfill(5000, buf, outputDir, humanReadable, quiet, blockDuration, customLabels))
 }
 
 func displayHistogram(dataType string, datas []int, total int) {

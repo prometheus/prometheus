@@ -28,6 +28,7 @@ import (
 	"sync"
 	stdatomic "sync/atomic" //nolint:depguard
 	"time"
+	"unique"
 
 	"github.com/oklog/ulid/v2"
 	"github.com/prometheus/client_golang/prometheus"
@@ -123,8 +124,17 @@ type Head struct {
 	walExpiriesMtx sync.Mutex
 	walExpiries    map[chunks.HeadSeriesRef]int64 // Series no longer in the head, and what time they must be kept until.
 
+	wblPinnedSeriesRefsMtx sync.Mutex
+	// Series references that the WBL uses. WAL replay maps each one onto a
+	// series that the head holds under a different reference. The mapping
+	// exists only in memory. The records must stay in the WAL until
+	// out-of-order compaction writes the WBL into a block.
+	wblPinnedSeriesRefs map[chunks.HeadSeriesRef]struct{}
+
 	// TODO(codesome): Extend MemPostings to return only OOOPostings, Set OOOStatus, ... Like an additional map of ooo postings.
 	postings *index.MemPostings // Postings lists for terms.
+	// seriesCreationMtx serialises series ID assignment with the postings insert.
+	seriesCreationMtx sync.Mutex
 
 	tombstones *tombstones.MemTombstones
 
@@ -156,9 +166,20 @@ type Head struct {
 
 	memTruncationInProcess atomic.Bool
 	memTruncationCallBack  func() // For testing purposes.
+	// TODO: find a better solution than this test hook in production code.
 	// testAfterSeriesLookup is invoked after getByID in appenders, before the
 	// series is locked. Tests use it to race GC against a resolved pointer.
 	testAfterSeriesLookup func(*memSeries)
+	// TODO: find a better solution than this test hook in production code.
+	// testAfterWaitingForReadersToEvictSeries is invoked by truncateSeries after it has waited for
+	// the open readers, and before it removes the series. Tests use it to open a reader at the point
+	// where a reader would otherwise not be waited for.
+	testAfterWaitingForReadersToEvictSeries func()
+
+	// evictingSeries is the set of series that truncateSeries is removing, or nil if it is not running.
+	// The readers of queries opened while it is set skip the chunks of those series that are removed
+	// before they read them. See headChunkReader.evicting.
+	evictingSeries atomic.Pointer[evictedSeries]
 }
 
 type ExemplarStorage interface {
@@ -395,6 +416,7 @@ func (h *Head) resetInMemoryState() error {
 	h.postings = index.NewUnorderedMemPostings()
 	h.tombstones = tombstones.NewMemTombstones()
 	h.walExpiries = map[chunks.HeadSeriesRef]int64{}
+	h.wblPinnedSeriesRefs = map[chunks.HeadSeriesRef]struct{}{}
 	h.chunkRange.Store(h.opts.ChunkRange)
 	h.minTime.Store(math.MaxInt64)
 	h.maxTime.Store(math.MinInt64)
@@ -426,6 +448,7 @@ type headMetrics struct {
 	seriesCreated             prometheus.Counter
 	seriesRemoved             prometheus.Counter
 	seriesNotFound            prometheus.Counter
+	chunkReadsOfRemovedSeries prometheus.Counter
 	pendingCommitUnderflow    prometheus.Counter
 	chunks                    prometheus.Gauge
 	chunksCreated             prometheus.Counter
@@ -503,6 +526,10 @@ func newHeadMetrics(h *Head, r prometheus.Registerer) *headMetrics {
 		seriesNotFound: prometheus.NewCounter(prometheus.CounterOpts{
 			Name: "prometheus_tsdb_head_series_not_found_total",
 			Help: "Total number of requests for series that were not found.",
+		}),
+		chunkReadsOfRemovedSeries: prometheus.NewCounter(prometheus.CounterOpts{
+			Name: "prometheus_tsdb_head_chunk_reads_of_removed_series_total",
+			Help: "Total number of chunks that queries tried to read from the head after their series or chunks were evicted. The chunks are skipped because their samples are available from blocks.",
 		}),
 		pendingCommitUnderflow: prometheus.NewCounter(prometheus.CounterOpts{
 			Name: "prometheus_tsdb_head_series_pending_commit_underflow_total",
@@ -632,6 +659,7 @@ func newHeadMetrics(h *Head, r prometheus.Registerer) *headMetrics {
 			m.seriesCreated,
 			m.seriesRemoved,
 			m.seriesNotFound,
+			m.chunkReadsOfRemovedSeries,
 			m.pendingCommitUnderflow,
 			m.gcDuration,
 			m.walTruncateDuration,
@@ -897,7 +925,7 @@ func (h *Head) Init(minValidTime int64) error {
 
 		// A corrupted checkpoint is a hard error for now and requires user
 		// intervention. There's likely little data that can be recovered anyway.
-		if err := h.loadWAL(wlog.NewReader(sr), syms, multiRef, mmappedChunks, oooMmappedChunks); err != nil {
+		if err := h.loadWAL(wlog.NewReader(sr), syms, multiRef, mmappedChunks, oooMmappedChunks, lastMmapRef); err != nil {
 			return fmt.Errorf("backfill checkpoint: %w", err)
 		}
 		h.updateWALReplayStatusRead(startFrom)
@@ -931,7 +959,7 @@ func (h *Head) Init(minValidTime int64) error {
 		if err != nil {
 			return fmt.Errorf("segment reader (offset=%d): %w", offset, err)
 		}
-		err = h.loadWAL(wlog.NewReader(sr), syms, multiRef, mmappedChunks, oooMmappedChunks)
+		err = h.loadWAL(wlog.NewReader(sr), syms, multiRef, mmappedChunks, oooMmappedChunks, lastMmapRef)
 		if err := sr.Close(); err != nil {
 			h.logger.Warn("Error while closing the wal segments reader", "err", err)
 		}
@@ -1333,36 +1361,31 @@ func isStaleSeries(s *memSeries) bool {
 	}
 }
 
-// truncateStaleSeries removes the provided series as long as they are still stale and
-// carry no out-of-order data.
-// appendIDWatermark is the lastAppendID captured before the upstream block write. Series that
-// have received samples with greater appendIDs are skipped, because those samples may not be
-// present in the generated block.
-func (h *Head) truncateStaleSeries(seriesRefs []storage.SeriesRef, maxt int64, appendIDWatermark uint64) error {
+// truncateStaleSeries removes the provided series as long as they're still stale and carry no
+// out-of-order data -- both checked live, not from a stale snapshot. hasMutatedSinceSnapshot
+// protects a series that changed after it was selected, including a fresh stale marker that
+// isStaleSeries alone wouldn't flag.
+func (h *Head) truncateStaleSeries(seriesRefs []storage.SeriesRef, maxt int64, fingerprints map[storage.SeriesRef]seriesFingerprint) error {
 	_, err := h.truncateSeries(seriesRefs, maxt, func(s *memSeries) bool {
-		return isSeriesWithoutOOO(s) && isStaleSeries(s) && !hasAppendIDAbove(s, appendIDWatermark)
+		return isSeriesWithoutOOO(s) && isStaleSeries(s) && !hasMutatedSinceSnapshot(s, fingerprints)
 	})
 	return err
 }
 
-// truncateSelectedSeries removes the series identified by the provided refs from the head.
-// Series that received fresh samples or acquired OOO data after the caller collected the ref
-// list are skipped. The latter must be flushed by CompactOOOHead before they can be evicted.
-// appendIDWatermark is the lastAppendID captured before the upstream block write. Series that
-// have received samples with greater appendIDs are skipped, because those samples may not be
-// present in the generated block.
-func (h *Head) truncateSelectedSeries(seriesRefs []storage.SeriesRef, maxt int64, appendIDWatermark uint64) error {
+// truncateSelectedSeries removes the series identified by the provided refs from the head. OOO
+// data must first be flushed by CompactOOOHead before a series can be evicted; isSeriesWithoutOOO
+// checks that live, not from a stale snapshot. hasMutatedSinceSnapshot protects a series that
+// changed after its ref was collected.
+func (h *Head) truncateSelectedSeries(seriesRefs []storage.SeriesRef, maxt int64, fingerprints map[storage.SeriesRef]seriesFingerprint) error {
 	_, err := h.truncateSeries(seriesRefs, maxt, func(s *memSeries) bool {
-		return isSeriesWithoutOOO(s) && !hasAppendIDAbove(s, appendIDWatermark)
+		return isSeriesWithoutOOO(s) && !hasMutatedSinceSnapshot(s, fingerprints)
 	})
 	return err
 }
 
-// hasAppendIDAbove reports whether s contains any in-memory sample with an appendID
-// greater than watermark.
-// When isolation is disabled (s.txs == nil), it always returns false;  in that mode,
-// CompactSelectedSeries and CompactStaleHead rely on their existing requirement that
-// no concurrent writes target the affected series.
+// hasAppendIDAbove reports whether s contains any in-memory sample with an appendID greater
+// than watermark. When isolation is disabled (s.txs == nil), it always returns false: in that
+// mode there is no per-sample append-ID tracking to consult.
 // Must be called with s.Lock held.
 func hasAppendIDAbove(s *memSeries, watermark uint64) bool {
 	if s.txs == nil {
@@ -1378,6 +1401,120 @@ func hasAppendIDAbove(s *memSeries, watermark uint64) bool {
 	return false
 }
 
+// seriesFingerprint is an isolation-independent snapshot of a series' in-order head chunk
+// shape. Comparing two snapshots detects an in-order append in between, whether still in
+// flight or already committed.
+//
+// currentChunkID identifies which chunk is the active (most recently created) one, not how
+// many head chunks currently exist: a plain head-chunk count can return to a prior value after
+// a chunk cut is followed by mmap moving the older chunk out of headChunks, even though the
+// series was mutated in between. currentChunkID can't collide the same way, because mmap only
+// moves a chunk from headChunks into mmappedChunks -- it never creates, destroys, or reorders
+// one -- so the identity of "the newest chunk this series has" is unaffected by it. Only a
+// genuinely new chunk (pushHeadChunk) advances currentChunkID.
+//
+// lastChunkSamples still catches the complementary case: a sample landing in that same active
+// chunk without cutting a new one, which currentChunkID alone can't see.
+//
+// No field tracks OOO transitions: isSeriesWithoutOOO is re-evaluated live at eviction-check
+// time, so a series that turns OOO after being selected is already caught there, for free.
+// Likewise, no field tracks staleness: isStaleSeries is re-evaluated live too.
+//
+// watermarkViolatedAtSnapshot records whether, at snapshot time, this series already held a
+// sample from a transaction that hadn't closed yet -- meaning that sample wasn't guaranteed to
+// be in the block about to be written. Chunk shape alone can't see this, since the chunk looks
+// the same either way. It has to be captured now, not re-checked later: an unrelated commit
+// touching this series afterward can erase that exact evidence during its own routine cleanup,
+// even though the sample it proved missing is still missing.
+type seriesFingerprint struct {
+	currentChunkID              chunks.HeadChunkID
+	lastChunkSamples            int
+	watermarkViolatedAtSnapshot bool
+}
+
+// currentChunkID returns the HeadChunkID of s's active (most recently created) chunk -- the
+// last one, whether it's still in headChunks or has already been mmapped -- or the zero value
+// if s has no chunks at all. Must be called with s.Lock held.
+func currentChunkID(s *memSeries) chunks.HeadChunkID {
+	total := len(s.mmappedChunks) + int(s.headChunkCount.Load())
+	if total == 0 {
+		return 0
+	}
+	return s.headChunkID(total - 1)
+}
+
+// snapshotFingerprint captures s's current fingerprint against appendIDWatermark. Must be
+// called with s.Lock held.
+func snapshotFingerprint(s *memSeries, appendIDWatermark uint64) seriesFingerprint {
+	fp := seriesFingerprint{
+		currentChunkID:              currentChunkID(s),
+		watermarkViolatedAtSnapshot: hasAppendIDAbove(s, appendIDWatermark),
+	}
+	if s.headChunks != nil {
+		fp.lastChunkSamples = s.headChunks.chunk.NumSamples()
+	}
+	return fp
+}
+
+// fingerprintChanged reports whether s's current fingerprint no longer matches fp. Must be
+// called with s.Lock held.
+func fingerprintChanged(s *memSeries, fp seriesFingerprint) bool {
+	if currentChunkID(s) != fp.currentChunkID {
+		return true
+	}
+	var lastChunkSamples int
+	if s.headChunks != nil {
+		lastChunkSamples = s.headChunks.chunk.NumSamples()
+	}
+	return lastChunkSamples != fp.lastChunkSamples
+}
+
+// hasMutatedSinceSnapshot reports whether s has been appended to since fingerprints were
+// captured.
+//
+// fp.watermarkViolatedAtSnapshot is checked first: it's a durable fact recorded the moment the
+// snapshot was taken, immune to s.txs being pruned by an unrelated commit's append-ID cleanup
+// afterward -- see seriesFingerprint. It only catches a transaction that was already open at
+// snapshot time, though, so any append arriving after the snapshot still needs a live check:
+// fingerprintChanged. That's also what any such append would show up as -- a real append always
+// changes the chunk in the same step it would add to s.txs, so there's nothing hasAppendIDAbove
+// could still catch here that fingerprintChanged wouldn't, and unlike s.txs, chunk shape isn't
+// something a later, unrelated commit can prune away.
+//
+// A missing fingerprint entry is treated as mutated -- retain rather than risk evicting --
+// though every ref CompactSelectedSeries or CompactStaleHead passes through should have one.
+// Must be called with s.Lock held.
+func hasMutatedSinceSnapshot(s *memSeries, fingerprints map[storage.SeriesRef]seriesFingerprint) bool {
+	fp, ok := fingerprints[storage.SeriesRef(s.ref)]
+	if !ok {
+		return true
+	}
+	if fp.watermarkViolatedAtSnapshot {
+		return true
+	}
+	return fingerprintChanged(s, fp)
+}
+
+// snapshotFingerprints captures a seriesFingerprint per ref against appendIDWatermark, before
+// the caller (CompactSelectedSeries or CompactStaleHead) writes any blocks. Each snapshot is
+// taken under the series lock, but concurrent commits can run between snapshots. Cleanup cannot
+// remove an open transaction's append ID; transactions that close before their series is
+// snapshotted are visible to the subsequent block readers. See seriesFingerprint.
+// Refs that no longer resolve to a live series are omitted.
+func (h *Head) snapshotFingerprints(seriesRefs []storage.SeriesRef, appendIDWatermark uint64) map[storage.SeriesRef]seriesFingerprint {
+	fingerprints := make(map[storage.SeriesRef]seriesFingerprint, len(seriesRefs))
+	for _, ref := range seriesRefs {
+		s := h.series.getByID(chunks.HeadSeriesRef(ref))
+		if s == nil {
+			continue
+		}
+		s.Lock()
+		fingerprints[ref] = snapshotFingerprint(s, appendIDWatermark)
+		s.Unlock()
+	}
+	return fingerprints
+}
+
 // truncateSeries removes the provided series from the head, taking the chunk-snapshot lock,
 // waiting for in-flight readers in the affected time range to finish, and recording WAL
 // tombstones so the deleted series are ignored on replay. shouldEvict is the per-series
@@ -1385,7 +1522,12 @@ func hasAppendIDAbove(s *memSeries, watermark uint64) bool {
 // the caller collected the ref list are skipped before the predicate is consulted.
 // maxt is inclusive: it matches the highest sample timestamp that the caller has just persisted
 // to a block, so a head whose MinTime equals maxt still has data eligible for eviction.
+// seriesRefs must be sorted in ascending order.
 // It returns the number of series that were actually evicted.
+//
+// The caller must have written the samples of the series to a block, and added the block to the DB, before
+// calling it. The readers of queries that find a series removed skip its chunks, because they read the block.
+// See headChunkReader.evicting.
 func (h *Head) truncateSeries(seriesRefs []storage.SeriesRef, maxt int64, shouldEvict func(*memSeries) bool) (int, error) {
 	h.chunkSnapshotMtx.Lock()
 	defer h.chunkSnapshotMtx.Unlock()
@@ -1394,7 +1536,20 @@ func (h *Head) truncateSeries(seriesRefs []storage.SeriesRef, maxt int64, should
 		return 0, nil
 	}
 
-	h.WaitForPendingReadersInTimeRange(h.MinTime(), maxt)
+	// Publish the series before waiting for the readers, so that the readers that are opened after the wait,
+	// and are not waited for, know that the series may be removed while they read them.
+	h.evictingSeries.Store(&evictedSeries{refs: seriesRefs})
+	defer h.evictingSeries.Store(nil)
+
+	// Also wait for the readers opened at maxt. Such a reader could otherwise skip a series removed by this eviction
+	// and miss its newest samples, which are available only in the block written by this eviction.
+	waitMaxt := min(maxt, math.MaxInt64-1) + 1
+	h.WaitForPendingReadersInTimeRange(h.MinTime(), waitMaxt)
+
+	if h.testAfterWaitingForReadersToEvictSeries != nil {
+		h.testAfterWaitingForReadersToEvictSeries()
+		h.testAfterWaitingForReadersToEvictSeries = nil
+	}
 
 	deleted := h.gcSeries(seriesRefs, maxt, shouldEvict)
 
@@ -1516,12 +1671,53 @@ func (h *Head) updateWALExpiry(id chunks.HeadSeriesRef, keepUntil int64) {
 	h.walExpiries[id] = max(keepUntil, h.walExpiries[id])
 }
 
+// pinWBLSeriesRefs marks series references that the WBL uses. WAL replay maps
+// each one onto a series that the head holds under a different reference. These
+// series records must stay in the WAL until out-of-order compaction writes the
+// WBL into a block. Nothing writes the mapping to disk.
+func (h *Head) pinWBLSeriesRefs(refs map[chunks.HeadSeriesRef]struct{}) {
+	h.wblPinnedSeriesRefsMtx.Lock()
+	defer h.wblPinnedSeriesRefsMtx.Unlock()
+
+	for ref := range refs {
+		h.wblPinnedSeriesRefs[ref] = struct{}{}
+	}
+}
+
+// isWBLPinnedSeriesRef reports whether the WBL uses id through a mapping that
+// WAL replay made.
+func (h *Head) isWBLPinnedSeriesRef(id chunks.HeadSeriesRef) bool {
+	h.wblPinnedSeriesRefsMtx.Lock()
+	defer h.wblPinnedSeriesRefsMtx.Unlock()
+
+	_, ok := h.wblPinnedSeriesRefs[id]
+	return ok
+}
+
+// releaseWBLPinnedSeriesRefs forgets every pinned reference. Call it only after
+// truncation removes the WBL segments that use them.
+func (h *Head) releaseWBLPinnedSeriesRefs() {
+	h.wblPinnedSeriesRefsMtx.Lock()
+	defer h.wblPinnedSeriesRefsMtx.Unlock()
+
+	h.wblPinnedSeriesRefs = map[chunks.HeadSeriesRef]struct{}{}
+}
+
 // keepSeriesInWALCheckpointFn returns a function that is used to determine whether a series record should be kept in the checkpoint.
 // mint is the time before which data in the WAL is being truncated.
 func (h *Head) keepSeriesInWALCheckpointFn(mint int64) func(id chunks.HeadSeriesRef) bool {
 	return func(id chunks.HeadSeriesRef) bool {
 		// Keep the record if the series exists in the head.
 		if h.series.getByID(id) != nil {
+			return true
+		}
+
+		// Keep the record if the WBL uses this reference. The record resolves
+		// the reference, so the out-of-order samples are lost if the WAL drops
+		// it. The mint parameter cannot express this lifetime. An out-of-order
+		// sample has a timestamp below the in-order data that the checkpoint
+		// truncates.
+		if h.isWBLPinnedSeriesRef(id) {
 			return true
 		}
 
@@ -1567,7 +1763,7 @@ func (h *Head) truncateWAL(mint int64) error {
 	h.metrics.checkpointCreationTotal.Inc()
 	if _, err = wlog.Checkpoint(h.logger, h.wal, first, last, h.keepSeriesInWALCheckpointFn(mint), mint, h.opts.EnableSTStorage.Load()); err != nil {
 		h.metrics.checkpointCreationFail.Inc()
-		if _, ok := errors.AsType[*chunks.CorruptionErr](err); ok {
+		if _, ok := errors.AsType[*wlog.CorruptionErr](err); ok {
 			h.metrics.walCorruptionsTotal.Inc()
 		}
 		return fmt.Errorf("create checkpoint: %w", err)
@@ -1627,7 +1823,14 @@ func (h *Head) truncateOOO(lastWBLFile int, newMinOOOMmapRef chunks.ChunkDiskMap
 		return nil
 	}
 
-	return h.wbl.Truncate(lastWBLFile)
+	if err := h.wbl.Truncate(lastWBLFile); err != nil {
+		return err
+	}
+
+	// The truncated segments held every WBL record from before the last replay.
+	// No reference that the replay made is still necessary.
+	h.releaseWBLPinnedSeriesRefs()
+	return nil
 }
 
 // truncateSeriesAndChunkDiskMapper is a helper function for truncateMemory and truncateOOO.
@@ -1685,13 +1888,43 @@ func (h *Head) Stats(statsByLabelName string, limit int) *Stats {
 	}
 }
 
+// evictedSeries is the set of series that truncateSeries is removing from the head.
+type evictedSeries struct {
+	// refs are the refs of the series, sorted in ascending order.
+	refs []storage.SeriesRef
+	// truncatedChunks maps series refs to evictedChunkRange for series retained for exemplars.
+	truncatedChunks sync.Map
+}
+
+// evictedChunkRange identifies in-order chunks reclaimed while their series is retained.
+type evictedChunkRange struct {
+	first chunks.HeadChunkID
+	count int
+}
+
+// contains returns whether the series is one that is being removed. It is safe to call on a nil *evictedSeries.
+func (e *evictedSeries) contains(ref chunks.HeadSeriesRef) bool {
+	if e == nil {
+		return false
+	}
+	_, ok := slices.BinarySearch(e.refs, storage.SeriesRef(ref))
+	return ok
+}
+
 // RangeHead allows querying Head via an IndexReader, ChunkReader and tombstones.Reader
 // but only within a restricted range.  Used for queries and compactions.
+// Its readers, and queriers over it, are not safe for concurrent use from
+// multiple goroutines.
 type RangeHead struct {
 	head       *Head
 	mint, maxt int64
 
 	isolationOff bool
+
+	// skipEvictedSeries makes the chunk reader skip the chunks of the series that CompactSelectedSeries or
+	// CompactStaleHead remove from the head after the reader selected them. It must be set only for the readers
+	// used by queries. See headChunkReader.evicting.
+	skipEvictedSeries bool
 }
 
 // NewRangeHead returns a *RangeHead.
@@ -1720,7 +1953,16 @@ func (h *RangeHead) Chunks() (ChunkReader, error) {
 	if !h.isolationOff {
 		isoState = h.head.iso.State(h.mint, h.maxt)
 	}
-	return h.head.chunksRange(h.mint, h.maxt, isoState)
+	cr, err := h.head.chunksRange(h.mint, h.maxt, isoState)
+	if err != nil {
+		return nil, err
+	}
+	// Load the series being evicted after the isolation state was created, so that a reader that is not waited
+	// for by truncateSeries sees them.
+	if h.skipEvictedSeries {
+		cr.evicting = h.head.evictingSeries.Load()
+	}
+	return cr, nil
 }
 
 func (h *RangeHead) Tombstones() (tombstones.Reader, error) {
@@ -2093,10 +2335,6 @@ func (h *Head) getOrCreateWithOptionalID(id chunks.HeadSeriesRef, hash uint64, l
 	if preCreationErr := h.series.seriesLifecycleCallback.PreCreation(lset); preCreationErr != nil {
 		return nil, false, preCreationErr
 	}
-	if id == 0 {
-		// Note this id is wasted in the case where a concurrent operation creates the same series first.
-		id = chunks.HeadSeriesRef(h.lastSeriesID.Inc())
-	}
 
 	shardHash := uint64(0)
 	if h.opts.EnableSharding {
@@ -2104,8 +2342,22 @@ func (h *Head) getOrCreateWithOptionalID(id chunks.HeadSeriesRef, hash uint64, l
 	}
 	optimisticallyCreatedSeries := newMemSeries(lset, id, shardHash, h.opts.IsolationDisabled, pendingCommit)
 
+	assignID := id == 0
+	if assignID {
+		// Assigning the ID and adding to the postings under one lock keeps new IDs
+		// in order in the postings, so MemPostings.Add does not have to repair the
+		// order of lists that already hold every concurrently assigned higher ID.
+		h.seriesCreationMtx.Lock()
+		// Note this id is wasted in the case where a concurrent operation creates the same series first.
+		id = chunks.HeadSeriesRef(h.lastSeriesID.Inc())
+		optimisticallyCreatedSeries.ref = id
+	}
+
 	s, created := h.series.setUnlessAlreadySet(hash, lset, optimisticallyCreatedSeries)
 	if !created {
+		if assignID {
+			h.seriesCreationMtx.Unlock()
+		}
 		return s, false, nil
 	}
 
@@ -2113,6 +2365,9 @@ func (h *Head) getOrCreateWithOptionalID(id chunks.HeadSeriesRef, hash uint64, l
 	h.numSeries.Inc()
 
 	h.postings.Add(storage.SeriesRef(id), lset)
+	if assignID {
+		h.seriesCreationMtx.Unlock()
+	}
 
 	// Adding the series in the postings marks the creation of series
 	// as any further calls to this and the read methods would return that series.
@@ -2144,28 +2399,53 @@ func (h *Head) onChunkCreated(series *memSeries, prevHeadChunkCount uint32) {
 // since holding the lock during an append could delay the next scrape or cause query timeouts.
 func (h *Head) mmapHeadChunks() {
 	var count int
+	// candidates is reused across stripes: mmapHeadChunks only ever runs on
+	// one goroutine at a time, so it's safe to grow it once and keep reusing
+	// the backing array instead of allocating a new slice per stripe.
+	var candidates []*memSeries
 	for i := range h.series.size {
-		count += h.mmapHeadChunksInStripe(i)
+		count += h.mmapHeadChunksInStripe(i, &candidates)
 	}
 	h.metrics.mmapChunksTotal.Add(float64(count))
 }
 
 // mmapHeadChunksInStripe m-maps chunks for the series in a single stripe that
-// need it. It uses deferred unlocking so that locks are released even if
-// mmapChunks panics (e.g. via handleChunkWriteError), preventing deadlocks
-// during cleanup.
-func (h *Head) mmapHeadChunksInStripe(i int) (count int) {
-	if h.series.mmapReady[i].Load() == 0 {
+// need it.
+func (h *Head) mmapHeadChunksInStripe(i int, candidates *[]*memSeries) (count int) {
+	ready := int(h.series.mmapReady[i].Load())
+	if ready == 0 {
 		return 0 // No series in this stripe need mmapping.
 	}
 
-	h.series.locks[i].RLock()
-	defer h.series.locks[i].RUnlock()
+	buf := (*candidates)[:0]
+	if cap(buf) < ready {
+		buf = make([]*memSeries, 0, ready)
+	}
 
-	for _, series := range h.series.series[i] {
-		if series.headChunkCount.Load() < 2 { // < 2 means 0 or 1 head chunks, nothing to mmap.
-			continue
+	for {
+		var overflow bool
+		h.series.locks[i].RLock()
+		for _, series := range h.series.series[i] {
+			if series.headChunkCount.Load() < 2 { // < 2 means 0 or 1 head chunks, nothing to mmap.
+				continue
+			}
+			if len(buf) == cap(buf) {
+				// More series became mmap-ready after ready was read. Avoid growing the buffer while holding the RLock.
+				ready = len(h.series.series[i])
+				overflow = true
+				break
+			}
+			buf = append(buf, series)
 		}
+		h.series.locks[i].RUnlock()
+		if !overflow {
+			break
+		}
+		buf = make([]*memSeries, 0, ready)
+	}
+	*candidates = buf
+
+	for _, series := range buf {
 		n := h.mmapSeriesChunks(series)
 		if n > 0 {
 			count += n
@@ -2178,6 +2458,9 @@ func (h *Head) mmapHeadChunksInStripe(i int) (count int) {
 func (h *Head) mmapSeriesChunks(s *memSeries) int {
 	s.Lock()
 	defer s.Unlock()
+	if s.isGCed() {
+		return 0
+	}
 	return s.mmapChunks(h.chunkDiskMapper)
 }
 
@@ -2337,8 +2620,9 @@ func (s *stripeSeries) gc(mint int64, minOOOMmapRef chunks.ChunkDiskMapperRef) (
 			s.decMmapReady(series.ref)
 		}
 
-		if len(series.mmappedChunks) > 0 {
-			seq, _ := series.mmappedChunks[0].ref.Unpack()
+		// Replay merges in-order chunks by timestamp, which need not match disk file order.
+		for _, ch := range series.mmappedChunks {
+			seq, _ := ch.ref.Unpack()
 			if seq < minMmapFile {
 				minMmapFile = seq
 			}
@@ -2365,6 +2649,14 @@ func (s *stripeSeries) gc(mint int64, minOOOMmapRef chunks.ChunkDiskMapperRef) (
 			if seriesMint < actualMint {
 				actualMint = seriesMint
 			}
+			return
+		}
+		// Exemplars are not persisted in blocks. Keep their series reference resolvable
+		// until WAL truncation and replay can discard them by timestamp. An empty
+		// series retained for exemplars must not affect the minimum sample time.
+		if series.hasExemplar && series.lastExemplarTs >= mint {
+			// Clear the appender so it does not retain the removed sample chunk.
+			series.app = nil
 			return
 		}
 		// The series is gone entirely. We need to keep the series lock
@@ -2404,17 +2696,48 @@ func (s *stripeSeries) gc(mint int64, minOOOMmapRef chunks.ChunkDiskMapperRef) (
 	return deleted, affected, rmChunks, staleSeriesDeleted, histogramSeriesDeleted, histogramBucketsDeleted, actualMint, minOOOTime, minMmapFile
 }
 
-// gcSeries removes the provided series from the head index and updates head metrics,
-// postings, tombstones and WAL expiries accordingly. shouldEvict is the per-series predicate
-// applied after the safety check for series that received fresh samples since the caller
-// collected the ref list.
+// gcSeries removes eligible series from the head index and updates head metrics,
+// postings, tombstones and WAL expiries accordingly. Series with pending commits
+// or samples after maxt are skipped. The caller's shouldEvict predicate runs under
+// the series lock and must reject series with unpersisted samples or out-of-order data.
+// Series whose exemplars still need replay retain their identity, but their persisted
+// sample chunks are released if shouldEvict returns true.
 //
 // The returned references are the series that got deleted.
 func (h *Head) gcSeries(seriesRefs []storage.SeriesRef, maxt int64, shouldEvict func(*memSeries) bool) map[storage.SeriesRef]struct{} {
-	// Drop old chunks and remember series IDs and hashes if they can be
-	// deleted entirely.
-	deleted, affected, chunksRemoved, staleSeriesDeleted, histogramSeriesDeleted, histogramBucketsDeleted := h.series.gcSeries(seriesRefs, maxt, shouldEvict)
+	minValidTime := h.minValidTime.Load()
+	evicting := h.evictingSeries.Load()
+	var protectedChunksRemoved int
+	deleted, affected, chunksRemoved, staleSeriesDeleted, histogramSeriesDeleted, histogramBucketsDeleted := h.series.gcSeries(seriesRefs, maxt, func(s *memSeries) bool {
+		// Keep unpersisted samples before considering chunk removal or series eviction.
+		if !shouldEvict(s) {
+			return false
+		}
+		// Delete the series if it has no exemplar at or after the WAL replay cutoff.
+		if !s.hasExemplar || s.lastExemplarTs < minValidTime {
+			return true
+		}
+
+		// Free the persisted sample chunks, but keep the series identity for exemplar replay.
+		// Memory mapping keeps the newest chunk in memory, so it needs at least two head chunks.
+		wasMmapReady := s.headChunkCount.Load() >= 2
+		firstChunkID := s.firstChunkID
+		removed := s.truncateChunksBefore(math.MaxInt64, 0)
+		protectedChunksRemoved += removed
+		if evicting != nil && removed > 0 {
+			evicting.truncatedChunks.Store(s.ref, evictedChunkRange{first: firstChunkID, count: removed})
+		}
+		// Clear the appender because it references the removed head chunk.
+		s.app = nil
+		// The series no longer has enough chunks to be ready for memory mapping.
+		if wasMmapReady && s.headChunkCount.Load() < 2 {
+			h.series.decMmapReady(s.ref)
+		}
+		// Prevent deletion of the series identity while its exemplar can still be replayed.
+		return false
+	})
 	seriesRemoved := len(deleted)
+	chunksRemoved += protectedChunksRemoved
 
 	h.metrics.seriesRemoved.Add(float64(seriesRemoved))
 	h.metrics.chunksRemoved.Add(float64(chunksRemoved))
@@ -2587,6 +2910,7 @@ func (s *stripeSeries) gcSeries(seriesRefs []storage.SeriesRef, maxt int64, shou
 		}
 
 		deleted[storage.SeriesRef(series.ref)] = struct{}{}
+		// Keep head chunks intact for readers that still reference the series.
 		series.setGCed()
 		stale, isHist, buckets := series.sampleState()
 		if stale {
@@ -2749,8 +3073,7 @@ func (s sample) Copy() chunks.Sample {
 // are goroutine safe and it is the caller's responsibility to lock it.
 type memSeries struct {
 	// Members up to the Mutex are not changed after construction, so can be accessed without a lock.
-	ref  chunks.HeadSeriesRef
-	meta *metadata.Metadata
+	ref chunks.HeadSeriesRef
 
 	// Series labels hash to use for sharding purposes. The value is always 0 when sharding has not
 	// been explicitly enabled in TSDB.
@@ -2760,6 +3083,13 @@ type memSeries struct {
 	sync.Mutex
 
 	lset labels.Labels // Locking required with -tags dedupelabels, not otherwise.
+	meta unique.Handle[metadata.Metadata]
+
+	// Latest accepted exemplar timestamp, including exemplars awaiting commit.
+	// A rolled-back exemplar may conservatively delay eviction until this time.
+	lastExemplarTs int64
+	// Whether an exemplar timestamp has been recorded, including zero or negative timestamps.
+	hasExemplar bool
 
 	// Immutable chunks on disk that have not yet gone into a block, in order of ascending time stamps.
 	// When compaction runs, chunks get moved into a block and all pointers are shifted like so:
@@ -2900,6 +3230,16 @@ func newMemSeries(lset labels.Labels, id chunks.HeadSeriesRef, shardHash uint64,
 		s.txs = newTxRing(0)
 	}
 	return s
+}
+
+// updateExemplarTimestamp records the latest exemplar time while holding the series lock.
+func (s *memSeries) updateExemplarTimestamp(ts int64) {
+	s.Lock()
+	if !s.hasExemplar || ts > s.lastExemplarTs {
+		s.lastExemplarTs = ts
+	}
+	s.hasExemplar = true
+	s.Unlock()
 }
 
 func (s *memSeries) minTime() int64 {

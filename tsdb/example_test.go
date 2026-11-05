@@ -21,6 +21,7 @@ import (
 	"time"
 
 	"github.com/prometheus/prometheus/model/labels"
+	"github.com/prometheus/prometheus/storage"
 	"github.com/prometheus/prometheus/tsdb/chunkenc"
 )
 
@@ -35,18 +36,18 @@ func Example() {
 	noErr(err)
 
 	// Open an appender for writing.
-	app := db.Appender(context.Background())
+	app := db.AppenderV2(context.Background())
 
 	series := labels.FromStrings("foo", "bar")
 
 	// Ref is 0 for the first append since we don't know the reference for the series.
-	ref, err := app.Append(0, series, time.Now().Unix(), 123)
+	ref, err := app.Append(0, series, 0, time.Now().Unix(), 123, nil, nil, storage.AOptions{})
 	noErr(err)
 
 	// Another append for a second later.
 	// Re-using the ref from above since it's the same series, makes append faster.
 	time.Sleep(time.Second)
-	_, err = app.Append(ref, series, time.Now().Unix(), 124)
+	_, err = app.Append(ref, series, 0, time.Now().Unix(), 124, nil, nil, storage.AOptions{})
 	noErr(err)
 
 	// Commit to storage.
@@ -55,7 +56,7 @@ func Example() {
 
 	// In case you want to do more appends after app.Commit(),
 	// you need a new appender.
-	app = db.Appender(context.Background())
+	app = db.AppenderV2(context.Background())
 	// ... adding more samples.
 
 	// Open a querier for reading.

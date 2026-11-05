@@ -17,6 +17,7 @@ import (
 	"fmt"
 	"math"
 	"math/bits"
+	"math/rand/v2"
 	"testing"
 
 	"github.com/stretchr/testify/require"
@@ -74,23 +75,158 @@ func xor2DeltaWindow(delta uint64) (leading, trailing, sigbits uint8) {
 }
 
 func BenchmarkXor2Write(b *testing.B) {
-	samples := make([]struct {
-		t int64
-		v float64
-	}, 120)
-	for i := range samples {
-		samples[i].t = int64(i) * 1000
-		samples[i].v = float64(i) + float64(i)/10 + float64(i)/100 + float64(i)/1000
+	for _, tc := range xor2WindowSamples() {
+		b.Run(tc.name, func(b *testing.B) {
+			b.ReportAllocs()
+			for b.Loop() {
+				c := NewXOR2Chunk()
+				app, err := c.Appender()
+				if err != nil {
+					b.Fatal(err)
+				}
+				for _, s := range tc.samples {
+					app.Append(s.st, s.t, s.v)
+				}
+				b.ReportMetric(float64(len(c.Bytes())), "B/chunk")
+			}
+		})
+	}
+}
+
+type xor2SampleCase struct {
+	sampleCase
+	wantBytes int
+}
+
+func xor2WindowSamples() []xor2SampleCase {
+	r := rand.New(rand.NewPCG(10, 20))
+	patterns := []struct {
+		name  string
+		value func(int) float64
+		// Expected sizes indexed by timestamp jitter, then start timestamp presence.
+		wantBytes [2][2]int
+	}{
+		{"constant", func(int) float64 { return 1e9 }, [2][2]int{{34, 217}, {252, 435}}},
+		{"counter", func(i int) float64 { return 1e9 + float64(i) }, [2][2]int{{214, 397}, {419, 602}}},
+		{"alternating-bool", func(i int) float64 { return float64(i % 2) }, [2][2]int{{214, 397}, {419, 602}}},
+		// Alternate shifted XOR windows at and beyond the expansion limits.
+		{"shifted-window-5", func(i int) float64 {
+			deltas := [...]uint64{0, 0xff << 27, 0xff<<27 ^ 0xff<<32, 0xff << 32}
+			return math.Float64frombits(math.Float64bits(1) ^ deltas[i%4])
+		}, [2][2]int{{260, 443}, {464, 647}}},
+		{"shifted-window-6", func(i int) float64 {
+			deltas := [...]uint64{0, 0xff << 27, 0xff<<27 ^ 0xff<<33, 0xff << 33}
+			return math.Float64frombits(math.Float64bits(1) ^ deltas[i%4])
+		}, [2][2]int{{347, 530}, {479, 662}}},
+		{"shifted-window-7", func(i int) float64 {
+			deltas := [...]uint64{0, 0xff << 27, 0xff<<27 ^ 0xff<<34, 0xff << 34}
+			return math.Float64frombits(math.Float64bits(1) ^ deltas[i%4])
+		}, [2][2]int{{347, 530}, {565, 748}}},
+		{"full-width-union", func(i int) float64 {
+			deltas := [...]uint64{0, 1<<63 | 1<<5, 1<<63 | 1<<58 | 1<<5 | 1, 1<<58 | 1}
+			return math.Float64frombits(math.Float64bits(1) ^ deltas[i%4])
+		}, [2][2]int{{1018, 1201}, {1223, 1406}}},
+		{"sign-excursion", func(i int) float64 {
+			v := 1e9 + float64(i)
+			if i == 2 {
+				return -v
+			}
+			return v
+		}, [2][2]int{{225, 408}, {429, 612}}},
+		{"zero-excursion", func(i int) float64 {
+			if i == 2 {
+				return 0
+			}
+			return 1000 + float64(i)*0.125
+		}, [2][2]int{{175, 358}, {380, 563}}},
+		{"random-integer", func(int) float64 { return float64(r.IntN(1001)) }, [2][2]int{{260, 443}, {464, 647}}},
+		{"random-float", func(int) float64 { return r.Float64() * 1000 }, [2][2]int{{900, 1083}, {1104, 1287}}},
+		{"fractional", func(i int) float64 {
+			return float64(i) + float64(i)/10 + float64(i)/100 + float64(i)/1000
+		}, [2][2]int{{883, 1066}, {1088, 1271}}},
+		{"special-floats", func(i int) float64 {
+			switch i % 31 {
+			case 0:
+				return math.Float64frombits(value.StaleNaN)
+			case 1:
+				return math.Float64frombits(0x7ff8000000000012)
+			case 2:
+				return math.Inf(1)
+			case 3:
+				return math.Inf(-1)
+			case 4:
+				return math.Copysign(0, -1)
+			case 5:
+				return 0
+			default:
+				return 1e9 + float64(i)
+			}
+		}, [2][2]int{{301, 484}, {508, 691}}},
 	}
 
-	b.ReportAllocs()
-
-	for b.Loop() {
-		c := NewXOR2Chunk()
-		app, _ := c.Appender()
-		for _, s := range samples {
-			app.Append(0, s.t, s.v)
+	var cases []xor2SampleCase
+	for _, pattern := range patterns {
+		values := make([]float64, 120)
+		for i := range values {
+			values[i] = pattern.value(i)
 		}
+		for jitterIndex, jitter := range []bool{false, true} {
+			for stIndex, withST := range []bool{false, true} {
+				timestamps := rand.New(rand.NewPCG(1, 2))
+				samples := make([]triple, len(values))
+				for i, v := range values {
+					t := int64(1700000000000) + int64(i)*15000
+					if jitter {
+						t += int64(timestamps.IntN(11) - 5)
+					}
+					var st int64
+					if withST {
+						st = int64(1699999990000) + int64(i/60)*900000
+					}
+					samples[i] = triple{st: st, t: t, v: v}
+				}
+				cases = append(cases, xor2SampleCase{
+					sampleCase: sampleCase{
+						name:    fmt.Sprintf("%s/jitter=%t/st=%t", pattern.name, jitter, withST),
+						samples: samples,
+					},
+					wantBytes: pattern.wantBytes[jitterIndex][stIndex],
+				})
+			}
+		}
+	}
+	return cases
+}
+
+func TestXOR2WindowSelection(t *testing.T) {
+	for _, tc := range xor2WindowSamples() {
+		t.Run(tc.name, func(t *testing.T) {
+			c := NewXOR2Chunk()
+			app, err := c.Appender()
+			require.NoError(t, err)
+			for i, s := range tc.samples {
+				if i == 5 {
+					// Resume appending after narrowing the window.
+					c.Reset(append([]byte(nil), c.Bytes()...))
+					app, err = c.Appender()
+					require.NoError(t, err)
+				}
+				app.Append(s.st, s.t, s.v)
+			}
+			require.Len(t, c.Bytes(), tc.wantBytes)
+			decoded, err := FromData(EncXOR2, c.Bytes())
+			require.NoError(t, err)
+			it := decoded.Iterator(nil)
+			for _, s := range tc.samples {
+				require.Equal(t, ValFloat, it.Next())
+				ts, v := it.At()
+				require.Equal(t, s.t, ts)
+				require.Equal(t, s.st, it.AtST())
+				require.Equal(t, math.Float64bits(s.v), math.Float64bits(v))
+			}
+			require.Equal(t, ValNone, it.Next())
+			require.NoError(t, it.Err())
+		})
 	}
 }
 

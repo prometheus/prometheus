@@ -33,8 +33,8 @@ import (
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/runtime"
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/to"
 	"github.com/Azure/azure-sdk-for-go/sdk/azidentity"
-	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/compute/armcompute/v5"
-	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/network/armnetwork/v4"
+	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/compute/armcompute/v8"
+	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/network/armnetwork/v8"
 	cache "github.com/Code-Hex/go-generics-cache"
 	"github.com/Code-Hex/go-generics-cache/policy/lru"
 	"github.com/prometheus/client_golang/prometheus"
@@ -547,6 +547,11 @@ func (d *Discovery) vmToLabelSet(ctx context.Context, client client, vm virtualM
 	}
 
 	for k, v := range vm.Tags {
+		// A tag with a JSON null value unmarshals to a nil pointer that is still
+		// present in the map, so it has to be skipped before dereferencing.
+		if v == nil {
+			continue
+		}
 		name := strutil.SanitizeLabelName(k)
 		labels[azureLabelMachineTag+model.LabelName(name)] = model.LabelValue(*v)
 	}

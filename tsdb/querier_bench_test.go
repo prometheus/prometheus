@@ -16,6 +16,7 @@ package tsdb
 import (
 	"context"
 	"fmt"
+	"math/rand/v2"
 	"strconv"
 	"testing"
 
@@ -24,6 +25,7 @@ import (
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/storage"
 	"github.com/prometheus/prometheus/tsdb/index"
+	"github.com/prometheus/prometheus/util/compression"
 )
 
 // Make entries ~50B in size, to emulate real-world high cardinality.
@@ -41,9 +43,9 @@ func BenchmarkQuerier(b *testing.B) {
 		require.NoError(b, h.Close())
 	}()
 
-	app := h.Appender(context.Background())
+	app := h.AppenderV2(context.Background())
 	addSeries := func(l labels.Labels) {
-		app.Append(0, l, 0, 0)
+		app.Append(0, l, 0, 0, 0, nil, nil, storage.AOptions{})
 	}
 
 	for n := range 10 {
@@ -57,7 +59,7 @@ func BenchmarkQuerier(b *testing.B) {
 			addSeries(labels.FromStrings("i", strconv.Itoa(i)+postingsBenchSuffix, "n", "2_"+strconv.Itoa(n)+postingsBenchSuffix, "j", "foo"))
 		}
 		require.NoError(b, app.Commit())
-		app = h.Appender(context.Background())
+		app = h.AppenderV2(context.Background())
 	}
 	require.NoError(b, app.Commit())
 
@@ -265,7 +267,7 @@ func BenchmarkMergedStringIter(b *testing.B) {
 	b.ReportAllocs()
 }
 
-func createHeadForBenchmarkSelect(b *testing.B, numSeries int, addSeries func(app storage.Appender, i int)) (*Head, *DB) {
+func createHeadForBenchmarkSelect(b *testing.B, numSeries int, addSeries func(app storage.AppenderV2, i int)) (*Head, *DB) {
 	dir := b.TempDir()
 	opts := DefaultOptions()
 	opts.OutOfOrderCapMax = 255
@@ -277,12 +279,12 @@ func createHeadForBenchmarkSelect(b *testing.B, numSeries int, addSeries func(ap
 	})
 	h := db.Head()
 
-	app := h.Appender(context.Background())
+	app := h.AppenderV2(context.Background())
 	for i := range numSeries {
 		addSeries(app, i)
 		if i%1000 == 999 { // Commit every so often, so the appender doesn't get too big.
 			require.NoError(b, app.Commit())
-			app = h.Appender(context.Background())
+			app = h.AppenderV2(context.Background())
 		}
 	}
 	require.NoError(b, app.Commit())
@@ -311,8 +313,8 @@ func benchmarkSelect(b *testing.B, queryable storage.Queryable, numSeries int, s
 
 func BenchmarkQuerierSelect(b *testing.B) {
 	numSeries := 1000000
-	h, db := createHeadForBenchmarkSelect(b, numSeries, func(app storage.Appender, i int) {
-		_, err := app.Append(0, labels.FromStrings("foo", "bar", "i", fmt.Sprintf("%d%s", i, postingsBenchSuffix)), int64(i), 0)
+	h, db := createHeadForBenchmarkSelect(b, numSeries, func(app storage.AppenderV2, i int) {
+		_, err := app.Append(0, labels.FromStrings("foo", "bar", "i", fmt.Sprintf("%d%s", i, postingsBenchSuffix)), 0, int64(i), 0, nil, nil, storage.AOptions{})
 		if err != nil {
 			b.Fatal(err)
 		}
@@ -348,13 +350,13 @@ func (pb *queryableBlock) Querier(mint, maxt int64) (storage.Querier, error) {
 
 func BenchmarkQuerierSelectWithOutOfOrder(b *testing.B) {
 	numSeries := 1000000
-	_, db := createHeadForBenchmarkSelect(b, numSeries, func(app storage.Appender, i int) {
+	_, db := createHeadForBenchmarkSelect(b, numSeries, func(app storage.AppenderV2, i int) {
 		l := labels.FromStrings("foo", "bar", "i", fmt.Sprintf("%d%s", i, postingsBenchSuffix))
-		ref, err := app.Append(0, l, int64(i+1), 0)
+		ref, err := app.Append(0, l, 0, int64(i+1), 0, nil, nil, storage.AOptions{})
 		if err != nil {
 			b.Fatal(err)
 		}
-		_, err = app.Append(ref, l, int64(i), 1) // Out of order sample
+		_, err = app.Append(ref, l, 0, int64(i), 1, nil, nil, storage.AOptions{}) // Out of order sample
 		if err != nil {
 			b.Fatal(err)
 		}
@@ -363,4 +365,70 @@ func BenchmarkQuerierSelectWithOutOfOrder(b *testing.B) {
 	b.Run("Head", func(b *testing.B) {
 		benchmarkSelect(b, db, numSeries, false)
 	})
+}
+
+// BenchmarkSearchLabelValues measures a full result consumption over a warm
+// index. The values are appended in a permuted order, so the head's in-memory
+// value list is not ascending and a limit cannot be applied while reading.
+func BenchmarkSearchLabelValues(b *testing.B) {
+	for _, cardinality := range []int{1000, 100000} {
+		b.Run(fmt.Sprintf("values=%d", cardinality), func(b *testing.B) {
+			head, _ := newTestHead(b, 2000, compression.None, false)
+			ctx := b.Context()
+			app := head.AppenderV2(ctx)
+			for _, i := range rand.New(rand.NewPCG(1, 2)).Perm(cardinality) {
+				_, err := app.Append(0, labels.FromStrings(
+					"__name__", fmt.Sprintf("metric_%06d%s", i, postingsBenchSuffix),
+					"job", "api",
+				), 0, 100, 1, nil, nil, storage.AOptions{})
+				require.NoError(b, err)
+			}
+			require.NoError(b, app.Commit())
+
+			block, err := OpenBlock(nil, createBlockFromHead(b, b.TempDir(), head), nil, nil)
+			require.NoError(b, err)
+			b.Cleanup(func() { require.NoError(b, block.Close()) })
+
+			for _, backend := range []struct {
+				name   string
+				reader BlockReader
+			}{
+				{"Head", head},
+				{"Block", block},
+			} {
+				b.Run(backend.name, func(b *testing.B) {
+					q, err := NewBlockQuerier(backend.reader, 0, 200)
+					require.NoError(b, err)
+					b.Cleanup(func() { require.NoError(b, q.Close()) })
+					searcher := q.(storage.Searcher)
+
+					for _, tc := range []struct {
+						name     string
+						hints    *storage.SearchHints
+						matchers []*labels.Matcher
+					}{
+						{"limit=100", &storage.SearchHints{Limit: 100}, nil},
+						{"limit=100_filter", &storage.SearchHints{Limit: 100, Filter: prefixFilter{"metric_00"}}, nil},
+						{"limit=100_matcher", &storage.SearchHints{Limit: 100}, []*labels.Matcher{labels.MustNewMatcher(labels.MatchEqual, "job", "api")}},
+						{"unlimited", &storage.SearchHints{}, nil},
+					} {
+						b.Run(tc.name, func(b *testing.B) {
+							b.ReportAllocs()
+							for b.Loop() {
+								rs := searcher.SearchLabelValues(ctx, "__name__", tc.hints, tc.matchers...)
+								count := 0
+								for rs.Next() {
+									_ = rs.At()
+									count++
+								}
+								require.NoError(b, rs.Err())
+								require.NoError(b, rs.Close())
+								require.Positive(b, count)
+							}
+						})
+					}
+				})
+			}
+		})
+	}
 }

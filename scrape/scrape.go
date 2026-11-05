@@ -797,7 +797,7 @@ func acceptHeader(sps []config.ScrapeProtocol, scheme model.EscapingScheme) stri
 	for _, sp := range sps {
 		val := config.ScrapeProtocolsHeaders[sp]
 		// Escaping header is only valid for newer versions of the text formats.
-		if sp == config.PrometheusText1_0_0 || sp == config.OpenMetricsText1_0_0 {
+		if sp == config.PrometheusText1_0_0 || sp == config.OpenMetricsText1_0_0 || sp == config.OpenMetricsText2_0_0 || sp == config.OpenMetricsText2_0_0_rc {
 			val += ";" + model.EscapingKey + "=" + scheme.String()
 		}
 		val += fmt.Sprintf(";q=0.%d", weight)
@@ -920,11 +920,20 @@ type loop interface {
 type cacheEntry struct {
 	ref      storage.SeriesRef
 	lastIter uint64
-	hash     uint64
 	lset     labels.Labels
 
 	// st is an optional state for ST synthesis.
 	st *stCache
+}
+
+// seriesMetaEntry caches a series' post-relabel metadata and metric family name (meta, mfName)
+// alongside the pre-relabel parser state (origMeta, origMFName) that produced them.
+// When metric_relabel_configs is configured, the fast path checks origMeta and origMFName
+// before parsing labels or running relabeling so unchanged series can reuse
+// meta and mfName directly.
+type seriesMetaEntry struct {
+	origMeta, meta     metadata.Metadata
+	origMFName, mfName string
 }
 
 type scrapeLoop struct {
@@ -954,28 +963,28 @@ type scrapeLoop struct {
 	appendableV2 storage.AppendableV2
 	buffers      *pool.Pool
 
-	synthesizeST bool
-	offsetSeed   uint64
-	symbolTable  *labels.SymbolTable
-	metrics      *scrapeMetrics
+	offsetSeed  uint64
+	symbolTable *labels.SymbolTable
+	metrics     *scrapeMetrics
 
 	// Options from config.ScrapeConfig.
 	sampleLimit                   int
 	bucketLimit                   int
-	maxSchema                     int32
 	labelLimits                   *labelLimits
+	fallbackScrapeProtocol        string
+	mrc                           []*relabel.Config
+	validationScheme              model.ValidationScheme
+	maxSchema                     int32
 	honorLabels                   bool
 	honorTimestamps               bool
 	trackTimestampsStaleness      bool
 	enableNativeHistogramScraping bool
 	alwaysScrapeClassicHist       bool
 	convertClassicHistToNHCB      bool
-	fallbackScrapeProtocol        string
 	enableCompression             bool
-	mrc                           []*relabel.Config
-	validationScheme              model.ValidationScheme
 
 	// Options from scrape.Options.
+	synthesizeST            bool
 	enableSTZeroIngestion   bool
 	parseST                 bool // Used by AppenderV2 only.
 	enableTypeAndUnitLabels bool
@@ -1020,6 +1029,9 @@ type scrapeCache struct {
 	// Series that were seen in the current and previous scrape, for staleness detection.
 	seriesCur  map[storage.SeriesRef]*cacheEntry
 	seriesPrev map[storage.SeriesRef]*cacheEntry
+
+	// Per-series post-relabel metadata cache, lazily allocated only when metric_relabel_configs is non-empty.
+	seriesMeta map[*cacheEntry]seriesMetaEntry
 
 	// TODO(bwplotka): Consider moving metadata caching to head. See
 	// https://github.com/prometheus/prometheus/issues/17619.
@@ -1081,6 +1093,9 @@ func (c *scrapeCache) iterDone(flushCache bool) {
 		for s, e := range c.series {
 			if c.iter != e.lastIter {
 				delete(c.series, s)
+				if c.seriesMeta != nil {
+					delete(c.seriesMeta, e)
+				}
 			}
 		}
 		for s, iter := range c.droppedSeries {
@@ -1116,10 +1131,40 @@ func (c *scrapeCache) get(met []byte) (*cacheEntry, bool, bool) {
 	return e, true, alreadyScraped
 }
 
-func (c *scrapeCache) addRef(met []byte, ref storage.SeriesRef, lset labels.Labels, hash uint64) (ce *cacheEntry) {
-	ce = &cacheEntry{ref: ref, lastIter: c.iter, lset: lset, hash: hash}
+func (c *scrapeCache) addRef(met []byte, ref storage.SeriesRef, lset labels.Labels) (ce *cacheEntry) {
+	ce = &cacheEntry{ref: ref, lastIter: c.iter, lset: lset}
 	c.series[string(met)] = ce
 	return ce
+}
+
+func (c *scrapeCache) setSeriesMeta(ce *cacheEntry, origMeta, meta metadata.Metadata, origMFName, mfName string) {
+	if c.seriesMeta == nil {
+		c.seriesMeta = make(map[*cacheEntry]seriesMetaEntry)
+	}
+	// origMFName comes from yoloString(lastMFName) backed by a reusable buffer, so we must
+	// not retain its backing array. Reuse existing immutable strings when possible to avoid
+	// allocating on the heap.
+	switch {
+	case origMFName == mfName:
+		origMFName = mfName
+	case strings.HasPrefix(ce.lset.Get(model.MetricNameLabel), origMFName):
+		origMFName = ce.lset.Get(model.MetricNameLabel)[:len(origMFName)]
+	default:
+		origMFName = strings.Clone(origMFName)
+	}
+	c.seriesMeta[ce] = seriesMetaEntry{
+		origMeta:   origMeta,
+		meta:       meta,
+		origMFName: origMFName,
+		mfName:     mfName,
+	}
+}
+
+func (c *scrapeCache) deleteSeries(met []byte, ce *cacheEntry) {
+	delete(c.series, string(met))
+	if c.seriesMeta != nil {
+		delete(c.seriesMeta, ce)
+	}
 }
 
 func (c *scrapeCache) addDropped(met []byte) {
@@ -1242,6 +1287,26 @@ func (c *scrapeCache) setUnit(mfName, unit []byte) ([]byte, *metaEntry) {
 	return mfName, e
 }
 
+func (c *scrapeCache) setMetadata(mfName string, m metadata.Metadata) {
+	c.metaMtx.Lock()
+	defer c.metaMtx.Unlock()
+
+	e, ok := c.metadata[mfName]
+	var oldSize int
+	if !ok {
+		e = &metaEntry{Metadata: metadata.Metadata{Type: model.MetricTypeUnknown}}
+		c.metadata[mfName] = e
+	} else {
+		oldSize = e.size()
+	}
+	if !e.Equals(m) {
+		e.Metadata = m
+		e.lastIterChange = c.iter
+	}
+	e.lastIter = c.iter
+	c.metadataSize += e.size() - oldSize
+}
+
 // GetMetadata returns metadata given the metric family name.
 func (c *scrapeCache) GetMetadata(mfName string) (MetricMetadata, bool) {
 	c.metaMtx.Lock()
@@ -1327,7 +1392,7 @@ func newScrapeLoop(opts scrapeLoopOptions) *scrapeLoop {
 		stopped:     make(chan struct{}),
 		parentCtx:   opts.sp.ctx,
 		appenderCtx: appenderCtx,
-		l:           opts.sp.logger.With("target", opts.target.String()),
+		l:           opts.sp.logger.With("target", opts.target),
 		cache:       opts.cache,
 
 		interval: opts.interval,
@@ -1567,7 +1632,8 @@ func (sl *scrapeLoop) scrapeAndReport(last, appendTime time.Time, errc chan<- er
 	scrapeCtx, cancel := context.WithTimeout(trace.ContextWithSpan(sl.parentCtx, span), sl.timeout)
 	resp, scrapeErr = sl.scraper.scrape(scrapeCtx)
 	if scrapeErr == nil {
-		b = sl.buffers.Get(sl.lastScrapeSize).([]byte)
+		// Avoid copying the body when bytes.Buffer.ReadFrom grows before reading EOF.
+		b = sl.buffers.Get(sl.lastScrapeSize + bytes.MinRead).([]byte)
 		defer sl.buffers.Put(b)
 		buf = bytes.NewBuffer(b)
 		// Trace the response body read and decompression into the buffer.
@@ -1891,21 +1957,15 @@ loop:
 			continue
 		}
 		ce, seriesCached, seriesAlreadyScraped := sl.cache.get(met)
-		var (
-			ref  storage.SeriesRef
-			hash uint64
-		)
+		var ref storage.SeriesRef
 
 		if seriesCached {
 			ref = ce.ref
 			lset = ce.lset
-			hash = ce.hash
 		} else {
 			p.Labels(&lset)
-			hash = lset.Hash()
 
-			// Hash label set as it is seen local to the target. Then add target labels
-			// and relabeling and store the final label set.
+			// Add target labels and apply relabeling before storing the final label set.
 			lset = sl.sampleMutator(lset)
 
 			// The label set may be set to empty to indicate dropping.
@@ -1986,7 +2046,7 @@ loop:
 		// If a series was new but we didn't append it due to sample_limit or other errors then we don't need
 		// it in the scrape cache because we don't need to emit StaleNaNs for it when it disappears.
 		if !seriesCached && sampleAdded {
-			ce = sl.cache.addRef(met, ref, lset, hash)
+			ce = sl.cache.addRef(met, ref, lset)
 			if ce != nil && ce.ref != 0 && (parsedTimestamp == nil || sl.trackTimestampsStaleness) {
 				// Bypass staleness logic if there is an explicit timestamp.
 				// But make sure we only do this if we have a cache entry (ce) for our series.
@@ -2093,7 +2153,10 @@ loop:
 
 // TODO(https://github.com/prometheus/prometheus/issues/17900): Move this to text and OM parser.
 func isSeriesPartOfFamily(mName string, mfName []byte, typ model.MetricType) bool {
-	mfNameStr := yoloString(mfName)
+	return isSeriesPartOfFamilyStr(mName, yoloString(mfName), typ)
+}
+
+func isSeriesPartOfFamilyStr(mName, mfNameStr string, typ model.MetricType) bool {
 	if !strings.HasPrefix(mName, mfNameStr) { // Fast path.
 		return false
 	}
@@ -2396,7 +2459,7 @@ func (sl *scrapeLoopAppender) addReportSample(s reportSample, t int64, v float64
 	switch {
 	case err == nil:
 		if !ok {
-			sl.cache.addRef(s.name, ref, lset, lset.Hash())
+			sl.cache.addRef(s.name, ref, lset)
 			// We only need to add metadata once a scrape target appears.
 			if sl.appendMetadataToWAL {
 				if _, merr := sl.UpdateMetadata(ref, lset, s.Metadata); merr != nil {

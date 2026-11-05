@@ -19,10 +19,12 @@ package prometheusremotewrite
 import (
 	"context"
 	"math"
+	"slices"
 
 	"github.com/prometheus/common/model"
 	"go.opentelemetry.io/collector/pdata/pmetric"
 
+	"github.com/prometheus/prometheus/model/exemplar"
 	"github.com/prometheus/prometheus/model/value"
 	"github.com/prometheus/prometheus/storage"
 )
@@ -111,6 +113,8 @@ func (c *PrometheusConverter) addSumNumberDataPoints(
 		if err != nil {
 			return err
 		}
+		// Appenders require exemplars sorted by timestamp.
+		slices.SortFunc(exemplars, exemplar.Compare)
 
 		appOpts.Exemplars = exemplars
 		if _, err = c.appender.Append(0, lbls, st, ts, val, nil, nil, appOpts); err != nil {

@@ -17,6 +17,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"log/slog"
 	"net/url"
 	"sync"
 	"time"
@@ -29,7 +30,10 @@ import (
 	"github.com/prometheus/prometheus/model/rulefmt"
 	"github.com/prometheus/prometheus/promql"
 	"github.com/prometheus/prometheus/promql/parser"
+	"github.com/prometheus/prometheus/schema"
 )
+
+var _ Rule = (*RecordingRule)(nil)
 
 // ErrDuplicateRecordingLabelSet is returned when a recording rule evaluation produces
 // metrics with identical labelsets after applying rule labels.
@@ -37,10 +41,10 @@ var ErrDuplicateRecordingLabelSet = errors.New("vector contains metrics with the
 
 // A RecordingRule records its vector expression into new timeseries.
 type RecordingRule struct {
-	name     string
-	vector   parser.Expr
-	labels   labels.Labels
-	metadata metadata.Metadata
+	name   string
+	vector parser.Expr
+	labels labels.Labels
+	meta   metadata.Metadata
 	// The health of the recording rule.
 	health *atomic.String
 	// Timestamp of last evaluation of the recording rule.
@@ -60,13 +64,13 @@ func NewRecordingRule(name string, vector parser.Expr, lset labels.Labels) *Reco
 	return NewRecordingRuleWithMetadata(name, vector, lset, metadata.Metadata{})
 }
 
-// NewRecordingRuleWithMetadata returns a new recording rule with metric metadata.
-func NewRecordingRuleWithMetadata(name string, vector parser.Expr, lset labels.Labels, m metadata.Metadata) *RecordingRule {
+// NewRecordingRuleWithMetadata returns a new recording rule with configured metric metadata.
+func NewRecordingRuleWithMetadata(name string, vector parser.Expr, lset labels.Labels, meta metadata.Metadata) *RecordingRule {
 	return &RecordingRule{
 		name:                name,
 		vector:              vector,
 		labels:              lset,
-		metadata:            m,
+		meta:                meta,
 		health:              atomic.NewString(string(HealthUnknown)),
 		evaluationTimestamp: atomic.NewTime(time.Time{}),
 		evaluationDuration:  atomic.NewDuration(0),
@@ -89,9 +93,9 @@ func (rule *RecordingRule) Labels() labels.Labels {
 	return rule.labels
 }
 
-// Metadata returns the metric metadata configured for the recording rule.
+// Metadata returns the configured metric metadata for the recording rule.
 func (rule *RecordingRule) Metadata() metadata.Metadata {
-	return rule.metadata
+	return rule.meta
 }
 
 // Eval evaluates the rule and then overrides the metric names and labels accordingly.
@@ -102,18 +106,19 @@ func (rule *RecordingRule) Eval(ctx context.Context, queryOffset time.Duration, 
 		return nil, err
 	}
 
-	// Override the metric name and labels.
+	// Override the metric name, apply rule labels, and strip reserved schema labels.
 	lb := labels.NewBuilder(labels.EmptyLabels())
 
 	for i := range vector {
 		sample := &vector[i]
 
 		lb.Reset(sample.Metric)
-		lb.Set(labels.MetricName, rule.name)
-
 		rule.labels.Range(func(l labels.Label) {
 			lb.Set(l.Name, l.Value)
 		})
+		// Strip any reserved __type__ and __unit__ labels and set __name__.
+		// Group.Eval injects configured __type__ and __unit__ when type-and-unit-labels is enabled.
+		schema.Metadata{Name: rule.name}.SetToLabels(lb)
 
 		sample.Metric = lb.Labels()
 	}
@@ -134,13 +139,24 @@ func (rule *RecordingRule) Eval(ctx context.Context, queryOffset time.Duration, 
 	return vector, nil
 }
 
+// LogValue returns the rule's representation for logging.
+func (rule *RecordingRule) LogValue() slog.Value {
+	if rule == nil {
+		return slog.AnyValue(nil)
+	}
+	return slog.StringValue(rule.String())
+}
+
 func (rule *RecordingRule) String() string {
+	var meta *metadata.Metadata
+	if rule.meta != (metadata.Metadata{}) {
+		meta = &rule.meta
+	}
 	r := rulefmt.Rule{
-		Record:      rule.name,
-		Expr:        rule.vector.String(),
-		Description: rule.metadata.Help,
-		Type:        rule.metadata.Type,
-		Labels:      rule.labels.Map(),
+		Record:   rule.name,
+		Expr:     rule.vector.String(),
+		Labels:   rule.labels.Map(),
+		Metadata: meta,
 	}
 
 	byt, err := yaml.Marshal(r)

@@ -23,14 +23,16 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/prometheus/prometheus/model/labels"
+	"github.com/prometheus/prometheus/model/metadata"
 	"github.com/prometheus/prometheus/promql"
 	"github.com/prometheus/prometheus/promql/parser"
 )
 
 type unknownRule struct{}
 
-func (unknownRule) Name() string          { return "" }
-func (unknownRule) Labels() labels.Labels { return labels.EmptyLabels() }
+func (unknownRule) Name() string                { return "" }
+func (unknownRule) Labels() labels.Labels       { return labels.EmptyLabels() }
+func (unknownRule) Metadata() metadata.Metadata { return metadata.Metadata{} }
 func (unknownRule) Eval(context.Context, time.Duration, time.Time, QueryFunc, *url.URL, int) (promql.Vector, error) {
 	return nil, nil
 }

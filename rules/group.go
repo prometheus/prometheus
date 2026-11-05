@@ -37,6 +37,7 @@ import (
 	"github.com/prometheus/prometheus/model/value"
 	"github.com/prometheus/prometheus/promql"
 	"github.com/prometheus/prometheus/promql/parser"
+	"github.com/prometheus/prometheus/schema"
 	"github.com/prometheus/prometheus/storage"
 	"github.com/prometheus/prometheus/tsdb/chunkenc"
 )
@@ -73,7 +74,7 @@ type Group struct {
 	// defaults to DefaultEvalIterationFunc.
 	evalIterationFunc GroupEvalIterationFunc
 
-	appOpts *storage.AppendOptions
+	appOpts storage.AOptions
 }
 
 // GroupEvalIterationFunc is used to implement and extend rule group
@@ -143,7 +144,7 @@ func NewGroup(o GroupOptions) *Group {
 		logger:               opts.Logger.With("file", o.File, "group", o.Name),
 		metrics:              metrics,
 		evalIterationFunc:    evalIterationFunc,
-		appOpts:              &storage.AppendOptions{DiscardOutOfOrder: true},
+		appOpts:              storage.AOptions{RejectOutOfOrder: true},
 	}
 }
 
@@ -549,6 +550,23 @@ func (g *Group) Eval(ctx context.Context, ts time.Time) {
 			}
 			return
 		}
+		meta := rule.Metadata()
+		appOpts := g.appOpts
+		if g.opts.AppendMetadata && !meta.IsEmpty() {
+			appOpts.Metadata = meta
+		}
+		if g.opts.EnableTypeAndUnitLabels && len(vector) > 0 {
+			sm := schema.Metadata{Type: meta.Type, Unit: meta.Unit}
+			if !sm.IsTypeEmpty() || sm.Unit != "" {
+				lb := labels.NewBuilder(labels.EmptyLabels())
+				for idx := range vector {
+					lb.Reset(vector[idx].Metric)
+					sm.Name = vector[idx].Metric.Get(labels.MetricName)
+					sm.SetToLabels(lb)
+					vector[idx].Metric = lb.Labels()
+				}
+			}
+		}
 		rule.SetHealth(HealthGood)
 		rule.SetLastError(nil)
 		samplesTotal.Add(float64(len(vector)))
@@ -567,7 +585,7 @@ func (g *Group) Eval(ctx context.Context, ts time.Time) {
 		// be the majority of trace duration. Trace it using dedicated span
 		// so it's clear from the trace where did all the duration go.
 		_, appenderSp := otel.Tracer("").Start(ctx, "newAppender")
-		app := g.opts.Appendable.Appender(ctx)
+		app := g.opts.AppendableV2.AppenderV2(ctx)
 		appenderSp.End()
 		seriesReturned := make(map[string]labels.Labels, len(g.seriesInPreviousEval[i]))
 		defer func() {
@@ -596,12 +614,7 @@ func (g *Group) Eval(ctx context.Context, ts time.Time) {
 		defer appendSp.End()
 
 		for _, s := range vector {
-			if s.H != nil {
-				_, err = app.AppendHistogram(0, s.Metric, s.T, nil, s.H)
-			} else {
-				app.SetOptions(g.appOpts)
-				_, err = app.Append(0, s.Metric, s.T, s.F)
-			}
+			_, err = app.Append(0, s.Metric, 0, s.T, s.F, nil, s.H, appOpts)
 
 			if err != nil {
 				rule.SetHealth(HealthBad)
@@ -642,7 +655,7 @@ func (g *Group) Eval(ctx context.Context, ts time.Time) {
 		for metric, lset := range g.seriesInPreviousEval[i] {
 			if _, ok := seriesReturned[metric]; !ok {
 				// Series no longer exposed, mark it stale.
-				_, err = app.Append(0, lset, timestamp.FromTime(ts.Add(-ruleQueryOffset)), math.Float64frombits(value.StaleNaN))
+				_, err = app.Append(0, lset, 0, timestamp.FromTime(ts.Add(-ruleQueryOffset)), math.Float64frombits(value.StaleNaN), nil, nil, appOpts)
 				unwrappedErr := errors.Unwrap(err)
 				if unwrappedErr == nil {
 					unwrappedErr = err
@@ -728,12 +741,11 @@ func (g *Group) cleanupStaleSeries(ctx context.Context, ts time.Time) {
 	if len(g.staleSeries) == 0 {
 		return
 	}
-	app := g.opts.Appendable.Appender(ctx)
-	app.SetOptions(g.appOpts)
+	app := g.opts.AppendableV2.AppenderV2(ctx)
 	queryOffset := g.QueryOffset()
 	for _, s := range g.staleSeries {
 		// Rule that produced series no longer configured, mark it stale.
-		_, err := app.Append(0, s, timestamp.FromTime(ts.Add(-queryOffset)), math.Float64frombits(value.StaleNaN))
+		_, err := app.Append(0, s, 0, timestamp.FromTime(ts.Add(-queryOffset)), math.Float64frombits(value.StaleNaN), nil, nil, g.appOpts)
 		unwrappedErr := errors.Unwrap(err)
 		if unwrappedErr == nil {
 			unwrappedErr = err
@@ -787,13 +799,6 @@ func (g *Group) RestoreForState(ts time.Time) {
 		}
 
 		alertHoldDuration := alertRule.HoldDuration()
-		if alertHoldDuration < g.opts.ForGracePeriod {
-			// If alertHoldDuration is already less than grace period, we would not
-			// like to make it wait for `g.opts.ForGracePeriod` time before firing.
-			// Hence we skip restoration, which will make it wait for alertHoldDuration.
-			alertRule.SetRestored(true)
-			continue
-		}
 
 		sset, err := alertRule.QueryForStateSeries(g.opts.Context, q)
 		if err != nil {
@@ -852,10 +857,12 @@ func (g *Group) RestoreForState(ts time.Time) {
 
 			switch {
 			case timeRemainingPending <= 0:
-				// It means that alert was firing when prometheus went down.
-				// In the next Eval, the state of this alert will be set back to
-				// firing again if it's still firing in that Eval.
-				// Nothing to be done in this case.
+				// The alert was firing before the outage. Retain ActiveAt so the
+				// next Eval can transition it to firing with its evaluation timestamp.
+			case alertHoldDuration < g.opts.ForGracePeriod:
+				// Pending alerts with a hold duration shorter than the grace period
+				// should restart their hold duration rather than wait for the grace period.
+				return
 			case timeRemainingPending < g.opts.ForGracePeriod:
 				// (new) restoredActiveAt = (ts + m.opts.ForGracePeriod) - alertHoldDuration
 				//                            /* new firing time */      /* moving back by hold duration */

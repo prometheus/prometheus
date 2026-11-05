@@ -545,7 +545,8 @@ series in `v`, all info series with matching _identifying_ labels (more on
 this later), and adds the union of their _data_ (i.e., non-identifying) labels
 to the time series. The second argument `data-label-selector` is optional.
 It is not a real instant vector, but uses a subset of its syntax.
-It must start and end with curly braces (`{ ... }`) and may only contain label matchers.
+It must start and end with curly braces (`{ ... }`), may only contain label matchers,
+and must contain at least one. To add all data labels, omit the argument instead of writing `{}`.
 The label matchers are used to constrain which info series to consider
 and which data labels to add to `v`.
 
@@ -645,6 +646,28 @@ At the current stage, this is an experiment to find out how useful the approach
 turns out to be in practice. A final version of the `info` function will indeed
 consider all matching info series and with their appropriate identifying labels.
 
+## `integral()`
+
+**This function has to be enabled via the [feature
+flag](../feature_flags.md#experimental-promql-functions)
+`--enable-feature=promql-experimental-functions`.**
+
+`integral(v range-vector, strategy=2 scalar)` calculates the integral of the
+time series over time in seconds. The optional `strategy` controls which
+quadrature rule is used for each interval: `0` for the left-point rectangle
+rule, `1` for the right-point rectangle rule, and `2` for the trapezoidal rule
+using the average of the adjacent samples. The default is `2`.
+
+`integral` should only be used with gauges, most likely representing a rate in
+units per second.
+
+For example, to calculate the total nodes cost accumulated the last 7 days,
+given its hourly cost:
+
+```
+integral(hourly_cost{job="nodes"}[7d]) / 3600
+```
+
 ## `irate()`
 
 `irate(v range-vector)` calculates the per-second instant rate of increase of
@@ -718,7 +741,8 @@ flag](../feature_flags.md#experimental-promql-functions)
 `--enable-feature=promql-experimental-functions`.**
 
 `max_of(a scalar, b scalar)` returns the larger of the two scalar values `a`
-and `b`.
+and `b`. `NaN` is only returned if both `a` and `b` are `NaN`, like for
+the [`max` aggregation operator](operators.md#min-and-max).
 
 ## `min_of()`
 
@@ -727,7 +751,8 @@ flag](../feature_flags.md#experimental-promql-functions)
 `--enable-feature=promql-experimental-functions`.**
 
 `min_of(a scalar, b scalar)` returns the smaller of the two scalar values `a`
-and `b`.
+and `b`. `NaN` is only returned if both `a` and `b` are `NaN`, like for
+the [`min` aggregation operator](operators.md#min-and-max).
 
 ## `ln()`
 

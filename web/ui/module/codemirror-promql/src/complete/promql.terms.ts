@@ -48,6 +48,9 @@ export const binOpTerms = [
   { label: '<=' },
   { label: '!=' },
   { label: 'atan2' },
+  { label: 'bitand' },
+  { label: 'bitor' },
+  { label: 'bitxor' },
   { label: 'and' },
   { label: 'or' },
   { label: 'unless' },
@@ -320,6 +323,12 @@ export const functionIdentifierTerms = [
     label: 'info',
     detail: 'function',
     info: 'Add data labels from corresponding info metrics',
+    type: 'function',
+  },
+  {
+    label: 'integral',
+    detail: 'function',
+    info: 'Calculate the integral over time of input series using left-point rectangle, right-point rectangle, or trapezoidal approximation',
     type: 'function',
   },
   {

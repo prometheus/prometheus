@@ -107,16 +107,15 @@ record: <string>
 # time series with the metric name as given by 'record'.
 expr: <string>
 
-# An optional description exposed as the metric's HELP metadata.
-[ description: <string> ]
-
-# An optional metric type exposed as TYPE metadata. Valid values are counter,
-# gauge, histogram, gaugehistogram, summary, info, stateset, and unknown.
-[ type: <string> ]
-
 # Labels to add or overwrite before storing the result.
 labels:
   [ <labelname>: <labelvalue> ]
+
+# Optional metric metadata for the recorded time series.
+metadata:
+  [ help: <string> ]
+  [ type: <string> ] # One of counter, gauge, histogram, gaugehistogram, summary, info, stateset, unknown.
+  [ unit: <string> ]
 ```
 
 The syntax for alerting rules is:
