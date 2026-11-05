@@ -30,6 +30,7 @@ import {
   EqlSingle,
   FunctionCallBody,
   GroupingLabels,
+  GroupingLabelName,
   Gte,
   Gtr,
   LabelMatchers,
@@ -542,6 +543,7 @@ export function analyzeCompletion(state: EditorState, node: SyntaxNode, pos: num
       result.push({ kind: ContextKind.LabelName, metricName: getMetricNameInVectorSelector(node, state) });
       break;
     }
+    case GroupingLabelName:
     case LabelName:
       if (node.parent?.type.id === GroupingLabels) {
         // In this case we are in the given situation:
