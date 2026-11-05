@@ -15,6 +15,9 @@ package tsdb
 
 import (
 	"context"
+	"fmt"
+	"math/rand/v2"
+	"slices"
 	"strconv"
 	"testing"
 	"time"
@@ -85,3 +88,78 @@ func BenchmarkLabelValues_SlowPath(b *testing.B) {
 
 // Ensure wlog/wal needed for NewHead.
 var _ = wlog.WL{}
+
+// BenchmarkLabelValues_LimitedMatcher measures repeated reads through a reused querier.
+func BenchmarkLabelValues_LimitedMatcher(b *testing.B) {
+	const cardinality = 20000
+	ctx := context.Background()
+	db := newTestDB(b)
+	order := rand.New(rand.NewPCG(1, 2)).Perm(cardinality)
+	app := db.AppenderV2(ctx)
+	// Every pod has an early non-matching series and a later series. One in ten
+	// later series matches, exercising successful candidate seeks and heap fixes.
+	for _, later := range []bool{false, true} {
+		for _, i := range order {
+			zone := "other"
+			if later {
+				zone = "unselected"
+				if i%10 == 0 {
+					zone = "selected"
+				}
+			}
+			if _, err := app.Append(0, labels.FromStrings("__name__", "up", "pod", fmt.Sprintf("pod_%06d", i), "zone", zone), 0, 1000, 1, nil, nil, storage.AOptions{}); err != nil {
+				b.Fatal(err)
+			}
+		}
+	}
+	require.NoError(b, app.Commit())
+
+	for _, reader := range []string{"Head", "Block"} {
+		b.Run(reader, func(b *testing.B) {
+			var br BlockReader = db.Head()
+			refOrder := order
+			if reader == "Block" {
+				dir := createBlockFromHead(b, b.TempDir(), db.Head())
+				block, err := OpenBlock(nil, dir, nil, nil)
+				require.NoError(b, err)
+				defer func() { require.NoError(b, block.Close()) }()
+				br = block
+				refOrder = slices.Sorted(slices.Values(order))
+			}
+			q, err := NewBlockQuerier(br, 0, 2000)
+			require.NoError(b, err)
+			defer func() { require.NoError(b, q.Close()) }()
+
+			for _, selective := range []bool{false, true} {
+				b.Run(fmt.Sprintf("selective=%t", selective), func(b *testing.B) {
+					matcher := labels.MustNewMatcher(labels.MatchEqual, "__name__", "up")
+					if selective {
+						matcher = labels.MustNewMatcher(labels.MatchEqual, "zone", "selected")
+					}
+					hints := &storage.LabelHints{Limit: 11}
+					var want []string
+					for _, i := range refOrder {
+						if selective && i%10 != 0 {
+							continue
+						}
+						want = append(want, fmt.Sprintf("pod_%06d", i))
+						if len(want) == hints.Limit {
+							break
+						}
+					}
+					slices.Sort(want)
+					got, _, err := q.LabelValues(ctx, "pod", hints, matcher)
+					require.NoError(b, err)
+					require.Equal(b, want, got)
+					b.ReportAllocs()
+					b.ResetTimer()
+					for b.Loop() {
+						if _, _, err := q.LabelValues(ctx, "pod", hints, matcher); err != nil {
+							b.Fatal(err)
+						}
+					}
+				})
+			}
+		})
+	}
+}
