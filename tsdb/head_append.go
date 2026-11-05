@@ -561,10 +561,10 @@ func (a *headAppender) AppendSTZeroSample(ref storage.SeriesRef, lset labels.Lab
 	return storage.SeriesRef(s.ref), nil
 }
 
-// storedST returns st if start timestamps are stored, and 0 otherwise. Without
+// zeroOrST returns st if start timestamps are stored, and 0 otherwise. Without
 // EnableSTStorage the WAL doesn't record start timestamps, so passing them on to
 // chunks would make chunks differ before and after a WAL replay.
-func (a *headAppenderBase) storedST(st int64) int64 {
+func (a *headAppenderBase) zeroOrST(st int64) int64 {
 	if !a.storeST {
 		return 0
 	}
