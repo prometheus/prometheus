@@ -233,7 +233,7 @@ loop:
 		)
 
 		metHash, ce, seriesCached, seriesAlreadyScraped := sl.cache.get(met)
-		if !seriesCached && sl.cache.getDropped(met) {
+		if !seriesCached && sl.cache.getDropped(metHash) {
 			continue
 		}
 
@@ -249,7 +249,7 @@ loop:
 
 				// The label set may be set to empty to indicate dropping.
 				if lset.IsEmpty() {
-					sl.cache.addDropped(met)
+					sl.cache.addDropped(metHash)
 					continue
 				}
 
@@ -302,7 +302,7 @@ loop:
 					if seriesCached {
 						sl.cache.deleteSeries(metHash)
 					}
-					sl.cache.addDropped(met)
+					sl.cache.addDropped(metHash)
 					continue
 				}
 

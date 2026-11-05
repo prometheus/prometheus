@@ -1025,9 +1025,8 @@ type scrapeCache struct {
 	// *cacheEntry pointer per active series.
 	series map[uint64]cacheEntry
 
-	// Cache of dropped metric strings and their iteration. The iteration must
-	// be a pointer so we can update it.
-	droppedSeries map[string]*uint64
+	// Cache of dropped metric string hashes (xxhash.Sum64) and their last seen iteration.
+	droppedSeries map[uint64]uint64
 
 	// Series that were seen in the current and previous scrape, for staleness detection.
 	seriesCur  map[storage.SeriesRef]labels.Labels
@@ -1063,7 +1062,7 @@ func (m *metaEntry) size() int {
 func newScrapeCache(metrics *scrapeMetrics) *scrapeCache {
 	return &scrapeCache{
 		series:        map[uint64]cacheEntry{},
-		droppedSeries: map[string]*uint64{},
+		droppedSeries: map[uint64]uint64{},
 		seriesCur:     map[storage.SeriesRef]labels.Labels{},
 		seriesPrev:    map[storage.SeriesRef]labels.Labels{},
 		metadata:      map[string]*metaEntry{},
@@ -1101,9 +1100,9 @@ func (c *scrapeCache) iterDone(flushCache bool) {
 				}
 			}
 		}
-		for s, iter := range c.droppedSeries {
-			if c.iter != *iter {
-				delete(c.droppedSeries, s)
+		for h, iter := range c.droppedSeries {
+			if c.iter != iter {
+				delete(c.droppedSeries, h)
 			}
 		}
 		c.metaMtx.Lock()
@@ -1174,15 +1173,14 @@ func (c *scrapeCache) deleteSeries(metHash uint64) {
 	}
 }
 
-func (c *scrapeCache) addDropped(met []byte) {
-	iter := c.iter
-	c.droppedSeries[string(met)] = &iter
+func (c *scrapeCache) addDropped(metHash uint64) {
+	c.droppedSeries[metHash] = c.iter
 }
 
-func (c *scrapeCache) getDropped(met []byte) bool {
-	iterp, ok := c.droppedSeries[string(met)]
-	if ok {
-		*iterp = c.iter
+func (c *scrapeCache) getDropped(metHash uint64) bool {
+	lastIter, ok := c.droppedSeries[metHash]
+	if ok && lastIter != c.iter {
+		c.droppedSeries[metHash] = c.iter
 	}
 	return ok
 }
@@ -1963,7 +1961,7 @@ loop:
 		}
 
 		metHash, ce, seriesCached, seriesAlreadyScraped := sl.cache.get(met)
-		if !seriesCached && sl.cache.getDropped(met) {
+		if !seriesCached && sl.cache.getDropped(metHash) {
 			continue
 		}
 		var ref storage.SeriesRef
@@ -1979,7 +1977,7 @@ loop:
 
 			// The label set may be set to empty to indicate dropping.
 			if lset.IsEmpty() {
-				sl.cache.addDropped(met)
+				sl.cache.addDropped(metHash)
 				continue
 			}
 

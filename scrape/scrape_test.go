@@ -1574,6 +1574,7 @@ bar 1
 	require.Equal(t, 8, mutatorCalls)
 	require.Len(t, sl.cache.series, 7)
 	require.Len(t, sl.cache.seriesMeta, 7)
+	require.Len(t, sl.cache.droppedSeries, 1)
 
 	// Dropped metric metadata must not be stored in scrapeCache (#14013).
 	_, ok := sl.cache.GetMetadata("dropped_metric")
@@ -1662,6 +1663,7 @@ bar 2
 	require.Equal(t, 9, mutatorCalls)
 	require.Len(t, sl.cache.series, 2)
 	require.Len(t, sl.cache.seriesMeta, 2)
+	require.Len(t, sl.cache.droppedSeries, 1)
 
 	md, ok = sl.cache.GetMetadata("bar")
 	require.True(t, ok, "expected bar metadata to be present after second scrape")
@@ -1710,6 +1712,7 @@ bar 3
 	require.True(t, sawStaleOldBar, "expected old bar series without __type__ label to be marked stale")
 	require.Len(t, sl.cache.series, 1)
 	require.Len(t, sl.cache.seriesMeta, 1)
+	require.Empty(t, sl.cache.droppedSeries)
 
 	// Fourth scrape: when a previously cached series has its metadata change so that metric_relabel_configs
 	// drops it, deleteSeries must remove it from series and seriesMeta and add it to droppedSeries.
@@ -1726,6 +1729,7 @@ bar 4
 	require.Equal(t, 11, mutatorCalls)
 	require.Empty(t, sl.cache.series)
 	require.Empty(t, sl.cache.seriesMeta)
+	require.Len(t, sl.cache.droppedSeries, 1)
 
 	// Fifth scrape: the newly dropped series must hit droppedSeries without invoking sampleMutator.
 	app = sl.appender()
@@ -1736,6 +1740,7 @@ bar 4
 	require.Equal(t, 0, added)
 	require.Equal(t, 0, seriesAdded)
 	require.Equal(t, 11, mutatorCalls)
+	require.Len(t, sl.cache.droppedSeries, 1)
 }
 
 func TestScrapeLoopSeriesAdded(t *testing.T) {
