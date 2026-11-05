@@ -221,6 +221,123 @@ func TestSampledReadEndpoint(t *testing.T) {
 	})
 }
 
+// BenchmarkSampledReadEndpointManySamples measures complete sampled remote reads
+// with multiple float or native histogram samples per series.
+func BenchmarkSampledReadEndpointManySamples(b *testing.B) {
+	const (
+		seriesCount      = 100
+		samplesPerSeries = 240
+		stepMs           = int64(15000)
+	)
+
+	for _, kind := range []string{"float", "histogram", "floathistogram"} {
+		for _, withExternalLabels := range []bool{false, true} {
+			b.Run(fmt.Sprintf("%s/external_labels_%t", kind, withExternalLabels), func(b *testing.B) {
+
+				store := teststorage.New(b)
+				app := store.AppenderV2(b.Context())
+				for i := range seriesCount {
+					seriesLabels := labels.FromStrings(
+						"__name__", "sampled_read_histogram",
+						"instance", strconv.Itoa(i),
+						"job", "benchmark",
+					)
+					var ref storage.SeriesRef
+					for j := range samplesPerSeries {
+						var h *histogram.Histogram
+						var fh *histogram.FloatHistogram
+						switch kind {
+						case "histogram":
+							h = tsdbutil.GenerateTestHistogram(int64(j))
+							if j > 0 {
+								h.CounterResetHint = histogram.NotCounterReset
+							}
+						case "floathistogram":
+							fh = tsdbutil.GenerateTestFloatHistogram(int64(j))
+							if j > 0 {
+								fh.CounterResetHint = histogram.NotCounterReset
+							}
+						}
+						var err error
+						ref, err = app.Append(ref, seriesLabels, 0, int64(j)*stepMs, float64(j), h, fh, storage.AOptions{})
+						if err != nil {
+							b.Fatal(err)
+						}
+					}
+				}
+				if err := app.Commit(); err != nil {
+					b.Fatal(err)
+				}
+
+				cfg := config.Config{}
+				if withExternalLabels {
+					cfg.GlobalConfig.ExternalLabels = labels.FromStrings("Cluster", "west", "job", "external", "zone", "a")
+				}
+				handler := NewReadHandler(nil, nil, store, func() config.Config { return cfg }, 1_000_000, 1, 0)
+				matcher, err := labels.NewMatcher(labels.MatchEqual, "__name__", "sampled_read_histogram")
+				if err != nil {
+					b.Fatal(err)
+				}
+				query, err := ToQuery(0, int64(samplesPerSeries-1)*stepMs, []*labels.Matcher{matcher}, nil)
+				if err != nil {
+					b.Fatal(err)
+				}
+				requestBytes, err := proto.Marshal(&prompb.ReadRequest{
+					Queries:               []*prompb.Query{query},
+					AcceptedResponseTypes: []prompb.ReadRequest_ResponseType{prompb.ReadRequest_SAMPLES},
+				})
+				if err != nil {
+					b.Fatal(err)
+				}
+				compressed := snappy.Encode(nil, requestBytes)
+				request := httptest.NewRequest(http.MethodPost, "/api/v1/read", http.NoBody)
+				serve := func() *httptest.ResponseRecorder {
+					request.Body = io.NopCloser(bytes.NewReader(compressed))
+					recorder := httptest.NewRecorder()
+					handler.ServeHTTP(recorder, request)
+					return recorder
+				}
+
+				recorder := serve()
+				if recorder.Code != http.StatusOK {
+					b.Fatalf("status %d: %s", recorder.Code, recorder.Body.String())
+				}
+				decoded, err := snappy.Decode(nil, recorder.Body.Bytes())
+				if err != nil {
+					b.Fatal(err)
+				}
+				var response prompb.ReadResponse
+				if err := proto.Unmarshal(decoded, &response); err != nil {
+					b.Fatal(err)
+				}
+				if len(response.Results) != 1 || len(response.Results[0].Timeseries) != seriesCount {
+					b.Fatal("unexpected response series count")
+				}
+				for _, series := range response.Results[0].Timeseries {
+					if kind == "float" {
+						require.Len(b, series.Samples, samplesPerSeries)
+						require.Empty(b, series.Histograms)
+						require.Equal(b, int64(samplesPerSeries-1)*stepMs, series.Samples[samplesPerSeries-1].Timestamp)
+					} else {
+						require.Len(b, series.Histograms, samplesPerSeries)
+						require.Empty(b, series.Samples)
+						require.Equal(b, kind == "floathistogram", series.Histograms[0].IsFloatHistogram())
+						require.Equal(b, int64(samplesPerSeries-1)*stepMs, series.Histograms[samplesPerSeries-1].Timestamp)
+					}
+				}
+
+				b.ReportAllocs()
+				for b.Loop() {
+					recorder := serve()
+					if recorder.Code != http.StatusOK {
+						b.Fatalf("status %d: %s", recorder.Code, recorder.Body.String())
+					}
+				}
+			})
+		}
+	}
+}
+
 func BenchmarkSampledReadEndpointWithoutExternalLabels(b *testing.B) {
 	for _, seriesCount := range []int{1, 10, 100} {
 		for _, labelCount := range []int{3, 12, 24} {
