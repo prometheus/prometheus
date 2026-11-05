@@ -3304,12 +3304,13 @@ func BenchmarkScrapeLoopAppend_HistogramsWithExemplars(b *testing.B) {
 }
 
 // BenchmarkScrapeCacheSeries benchmarks populating and hitting scrapeCache across scrapes,
-// reporting the steady-state retained heap bytes per cached series.
+// reporting the steady-state retained heap bytes per cached series for both warm (coldCache=false)
+// and cold+warm (coldCache=true) scrapes.
 //
 // Recommended CLI invocation:
 /*
 	export bench=scrapeCacheSeries && go test ./scrape/... \
-		-run '^$' -bench '^BenchmarkScrapeCacheSeries$' \
+		-run '^$' -bench '^BenchmarkScrapeCacheSeries' \
 		-benchtime 2s -count 6 -cpu 2 -timeout 999m -benchmem \
 		| tee ${bench}.txt
 */
@@ -3322,20 +3323,6 @@ func BenchmarkScrapeCacheSeries(b *testing.B) {
 	}
 	parsable := payload.Bytes()
 
-	a := teststorage.NewAppendable().SkipRecording(true)
-	sl, _ := newTestScrapeLoop(b, withAppendable(a, true), func(sl *scrapeLoop) {
-		sl.parseST = false
-	})
-
-	// Warm up symbolTable so retained heap measures scrapeCache rather than symbolTable growth.
-	ts := time.Unix(1600000000, 0)
-	app := sl.appender()
-	_, _, _, err := app.append(parsable, "text/plain", ts)
-	require.NoError(b, err)
-	require.NoError(b, app.Rollback())
-	app = nil
-	sl.cache = newScrapeCache(sl.metrics)
-
 	liveHeap := func() uint64 {
 		runtime.GC()
 		runtime.GC() // The second cycle also empties sync.Pool victim caches.
@@ -3344,41 +3331,62 @@ func BenchmarkScrapeCacheSeries(b *testing.B) {
 		return samples[0].Value.Uint64()
 	}
 
-	before := liveHeap()
+	for _, coldCache := range []bool{false, true} {
+		b.Run(fmt.Sprintf("coldCache=%v", coldCache), func(b *testing.B) {
+			a := teststorage.NewAppendable().SkipRecording(true)
+			sl, _ := newTestScrapeLoop(b, withAppendable(a, true), func(sl *scrapeLoop) {
+				sl.parseST = false
+			})
 
-	b.ReportAllocs()
-	b.ResetTimer()
-	for b.Loop() {
-		sl.cache = newScrapeCache(sl.metrics)
+			scrapeOnce := func(ts time.Time) {
+				app := sl.appender()
+				if _, _, _, err := app.append(parsable, "text/plain", ts); err != nil {
+					b.Fatal(err)
+				}
+				if err := app.Rollback(); err != nil {
+					b.Fatal(err)
+				}
+			}
 
-		// Cold scrape populates series and seriesPrev (via iterDone).
-		ts = ts.Add(time.Second)
-		app = sl.appender()
-		if _, _, _, err := app.append(parsable, "text/plain", ts); err != nil {
-			b.Fatal(err)
-		}
-		if err := app.Rollback(); err != nil {
-			b.Fatal(err)
-		}
+			// Warm up symbolTable so retained heap measures scrapeCache rather than symbolTable growth.
+			ts := time.Unix(1600000000, 0)
+			scrapeOnce(ts)
+			sl.cache = newScrapeCache(sl.metrics)
 
-		// Warm scrape hits cached series and populates the swapped staleness map to steady-state capacity.
-		ts = ts.Add(time.Second)
-		app = sl.appender()
-		if _, _, _, err := app.append(parsable, "text/plain", ts); err != nil {
-			b.Fatal(err)
-		}
-		if err := app.Rollback(); err != nil {
-			b.Fatal(err)
-		}
-	}
-	b.StopTimer()
-	app = nil
+			before := liveHeap()
 
-	after := liveHeap()
-	runtime.KeepAlive(sl)
-	runtime.KeepAlive(parsable)
-	if after > before {
-		b.ReportMetric(float64(after-before)/seriesCount, "retained-B/series")
+			if !coldCache {
+				// Populate series, seriesPrev, and seriesCur to steady-state capacity before timing warm scrapes.
+				ts = ts.Add(time.Second)
+				scrapeOnce(ts)
+				ts = ts.Add(time.Second)
+				scrapeOnce(ts)
+			}
+
+			b.ReportAllocs()
+			b.ResetTimer()
+			for b.Loop() {
+				if coldCache {
+					sl.cache = newScrapeCache(sl.metrics)
+
+					// Cold scrape populates series and seriesPrev (via iterDone).
+					ts = ts.Add(time.Second)
+					scrapeOnce(ts)
+				}
+
+				// Warm scrape hits cached series and populates the swapped staleness map to steady-state capacity.
+				ts = ts.Add(time.Second)
+				scrapeOnce(ts)
+			}
+			b.StopTimer()
+
+			after := liveHeap()
+			runtime.KeepAlive(sl)
+			runtime.KeepAlive(parsable)
+			if after > before {
+				b.ReportMetric(float64(after-before)/seriesCount, "retained-B/series")
+			}
+		})
 	}
 }
 
