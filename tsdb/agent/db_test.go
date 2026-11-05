@@ -1806,13 +1806,46 @@ func TestPooledAppenderClearsReferences(t *testing.T) {
 
 // Recommended CLI invocation:
 /*
-	export bench=agentClearAndCap && go test ./tsdb/agent/... \
-		-run '^$' -bench '^BenchmarkAppenderClearAndCap$' \
-		-benchtime 2s -count 6 -cpu 2 -timeout 999m -benchmem \
+	export bench=agentClearData && go test ./tsdb/agent/... \
+		-run '^$' -bench '^BenchmarkAppenderClearData$' \
+		-benchtime 1s -count 6 -cpu 2 -timeout 999m -benchmem \
 		| tee ${bench}.txt
 */
-func BenchmarkAppenderClearAndCap(b *testing.B) {
-	b.Run("steady_state_500_samples", func(b *testing.B) {
+func BenchmarkAppenderClearData(b *testing.B) {
+	b.Run("fresh_appender_100_samples", func(b *testing.B) {
+		db := createTestAgentDB(b, nil, DefaultOptions())
+		b.Cleanup(func() { require.NoError(b, db.Close()) })
+
+		const batchSize = 100
+		lsets := make([]labels.Labels, batchSize)
+		refs := make([]storage.SeriesRef, batchSize)
+		initApp := db.AppenderV2(b.Context())
+		for i := range batchSize {
+			lsets[i] = labels.FromStrings("__name__", "bench_metric", "i", strconv.Itoa(i))
+			ref, err := initApp.Append(0, lsets[i], 0, 1, 1.0, nil, nil, storage.AOptions{})
+			require.NoError(b, err)
+			refs[i] = ref
+		}
+		require.NoError(b, initApp.Commit())
+
+		var ts int64 = 2
+		b.ReportAllocs()
+		b.ResetTimer()
+		for b.Loop() {
+			ts++
+			app := db.appenderV2Pool.New().(storage.AppenderV2)
+			for i := range batchSize {
+				if _, err := app.Append(refs[i], lsets[i], 0, ts, float64(ts), nil, nil, storage.AOptions{}); err != nil {
+					b.Fatal(err)
+				}
+			}
+			if err := app.Commit(); err != nil {
+				b.Fatal(err)
+			}
+		}
+	})
+
+	b.Run("warm_appender_500_samples", func(b *testing.B) {
 		db := createTestAgentDB(b, nil, DefaultOptions())
 		b.Cleanup(func() { require.NoError(b, db.Close()) })
 
