@@ -343,6 +343,17 @@ func (f *fanoutAppenderV2) Append(ref SeriesRef, l labels.Labels, st, t int64, v
 	return ref, partialErr.ToError()
 }
 
+var _ GetRef = &fanoutAppenderV2{}
+
+// GetRef implements GetRef. It returns the reference and labels that the
+// primary holds for the series, if the primary implements GetRef.
+func (f *fanoutAppenderV2) GetRef(lset labels.Labels, hash uint64) (SeriesRef, labels.Labels) {
+	if gr, ok := f.primary.(GetRef); ok {
+		return gr.GetRef(lset, hash)
+	}
+	return 0, labels.EmptyLabels()
+}
+
 var _ ExemplarAppenderV2 = &fanoutAppenderV2{}
 
 // AppendExemplars implements ExemplarAppenderV2.

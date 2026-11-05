@@ -709,6 +709,40 @@ func TestFanoutAppenderV2(t *testing.T) {
 	}
 }
 
+func TestFanoutAppenderV2_GetRef(t *testing.T) {
+	lset := labels.FromStrings(model.MetricNameLabel, "metric1")
+	db := teststorage.New(t)
+	app := db.AppenderV2(t.Context())
+	ref, err := app.Append(0, lset, 0, 1, 1, nil, nil, storage.AOptions{})
+	require.NoError(t, err)
+	require.NoError(t, app.Commit())
+
+	for _, tc := range []struct {
+		name    string
+		primary storage.Storage
+		lset    labels.Labels
+		wantRef storage.SeriesRef
+	}{
+		{name: "series in primary", primary: db, lset: lset, wantRef: ref},
+		{name: "series not in primary", primary: db, lset: labels.FromStrings(model.MetricNameLabel, "metric2")},
+		{name: "primary without GetRef", primary: mockStorage{appV2: teststorage.NewAppendable()}, lset: lset},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			f := storage.NewFanout(nil, tc.primary, mockStorage{appV2: teststorage.NewAppendable()})
+			gr, ok := f.AppenderV2(t.Context()).(storage.GetRef)
+			require.True(t, ok)
+
+			gotRef, gotLset := gr.GetRef(tc.lset, tc.lset.Hash())
+			require.Equal(t, tc.wantRef, gotRef)
+			if tc.wantRef == 0 {
+				require.True(t, gotLset.IsEmpty())
+				return
+			}
+			testutil.RequireEqual(t, tc.lset, gotLset)
+		})
+	}
+}
+
 func TestFanoutAppenderV2_AppendExemplars(t *testing.T) {
 	h := tsdbutil.GenerateTestHistogram(0)
 	fh := tsdbutil.GenerateTestFloatHistogram(0)
