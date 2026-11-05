@@ -479,19 +479,6 @@ func (q *sampledReadTestQueryable) Querier(int64, int64) (storage.Querier, error
 	}, nil
 }
 
-type sampledReadTestSeries struct {
-	seriesLabels labels.Labels
-	iterator     chunkenc.Iterator
-}
-
-func (s *sampledReadTestSeries) Labels() labels.Labels {
-	return s.seriesLabels
-}
-
-func (s *sampledReadTestSeries) Iterator(chunkenc.Iterator) chunkenc.Iterator {
-	return s.iterator
-}
-
 type sampledReadTestSeriesSet struct {
 	series   storage.Series
 	warnings annotations.Annotations
@@ -505,12 +492,10 @@ func newSampledReadTestSeriesSet(values []chunkenc.ValueType, iteratorError, set
 		warnings[warning.Error()] = warning
 	}
 	return &sampledReadTestSeriesSet{
-		series: &sampledReadTestSeries{
-			seriesLabels: labels.FromStrings("__name__", "test_metric", "series", "test"),
-			iterator: &sampledReadTestIterator{
-				values: values,
-				err:    iteratorError,
-				index:  -1,
+		series: &storage.SeriesEntry{
+			Lset: labels.FromStrings("__name__", "test_metric", "series", "test"),
+			SampleIteratorFn: func(chunkenc.Iterator) chunkenc.Iterator {
+				return &sampledReadTestIterator{values: values, err: iteratorError, index: -1}
 			},
 		},
 		warnings: warnings,
