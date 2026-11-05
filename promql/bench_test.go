@@ -32,6 +32,7 @@ import (
 	"github.com/prometheus/prometheus/promql/parser"
 	"github.com/prometheus/prometheus/promql/promqltest"
 	"github.com/prometheus/prometheus/storage"
+	"github.com/prometheus/prometheus/tsdb"
 	"github.com/prometheus/prometheus/tsdb/tsdbutil"
 	"github.com/prometheus/prometheus/util/teststorage"
 )
@@ -377,6 +378,59 @@ func BenchmarkRangeQuery(b *testing.B) {
 				res := qry.Exec(ctx)
 				if res.Err != nil {
 					b.Fatal(res.Err)
+				}
+				qry.Close()
+			}
+		})
+	}
+}
+
+// BenchmarkSparseHeadRangeQuery exercises selector seeks across head chunks.
+func BenchmarkSparseHeadRangeQuery(b *testing.B) {
+	const (
+		duration       = 2 * time.Hour
+		sampleInterval = time.Second
+		seriesCount    = 32
+	)
+	ctx := b.Context()
+	stor := teststorage.New(b, func(o *tsdb.Options) {
+		o.MinBlockDuration = duration.Milliseconds()
+		o.MaxBlockDuration = duration.Milliseconds()
+		o.IsolationDisabled = false
+	})
+	stor.DisableCompactions()
+	metrics := make([]labels.Labels, seriesCount)
+	refs := make([]storage.SeriesRef, seriesCount)
+	for i := range metrics {
+		metrics[i] = labels.FromStrings("__name__", "sparse_seek", "instance", strconv.Itoa(i))
+	}
+	for t := time.Duration(0); t < duration; t += sampleInterval {
+		app := stor.AppenderV2(ctx)
+		for i := range metrics {
+			var err error
+			refs[i], err = app.Append(refs[i], metrics[i], 0, t.Milliseconds(), float64(t.Milliseconds())+float64(i), nil, nil, storage.AOptions{})
+			require.NoError(b, err)
+		}
+		require.NoError(b, app.Commit())
+	}
+	engine := promqltest.NewTestEngineWithOpts(b, promql.EngineOpts{
+		MaxSamples:    10000000,
+		Timeout:       time.Minute,
+		LookbackDelta: 5 * time.Minute,
+		Parser:        parser.NewParser(parser.Options{}),
+	})
+	for _, step := range []time.Duration{30 * time.Second, 15 * time.Minute} {
+		b.Run(step.String(), func(b *testing.B) {
+			b.ReportAllocs()
+			for b.Loop() {
+				qry, err := engine.NewRangeQuery(ctx, stor, nil, "sparse_seek", time.UnixMilli(0), time.UnixMilli((duration - sampleInterval).Milliseconds()), step)
+				require.NoError(b, err)
+				res := qry.Exec(ctx)
+				require.NoError(b, res.Err)
+				matrix := res.Value.(promql.Matrix)
+				require.Len(b, matrix, seriesCount)
+				for _, series := range matrix {
+					require.Len(b, series.Floats, int((duration-sampleInterval)/step)+1)
 				}
 				qry.Close()
 			}
