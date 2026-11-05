@@ -339,10 +339,11 @@ func AppendExponentialBounds(dst []float64, h *FloatHistogram, maxSchema int32) 
 		dst = append(dst, -getBoundExponential(idx, schema), -getBoundExponential(idx-1, schema))
 	}
 	if h.ZeroCount > 0 {
-		dst = append(dst, h.ZeroThreshold)
-		if len(h.NegativeBuckets) > 0 {
-			dst = append(dst, -h.ZeroThreshold)
+		zb, _ := h.InterpolationBounds(h.ZeroBucket())
+		if zb.Lower != zb.Upper {
+			dst = append(dst, zb.Lower)
 		}
+		dst = append(dst, zb.Upper)
 	}
 	return dst
 }

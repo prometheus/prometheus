@@ -725,7 +725,7 @@ func TestAppendExponentialBounds(t *testing.T) {
 				NegativeBuckets: []float64{7},
 			},
 			maxSchema: 2,
-			expected:  []float64{-2, -1, 0.1, -0.1},
+			expected:  []float64{-2, -1, -0.1, 0},
 		},
 		{
 			name:      "empty histogram",
