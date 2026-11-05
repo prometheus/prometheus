@@ -17,6 +17,7 @@ import (
 	"bytes"
 	"errors"
 	"math"
+	"strconv"
 	"testing"
 	"time"
 
@@ -24,9 +25,14 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/prometheus/prometheus/model/histogram"
+	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/model/timestamp"
+	"github.com/prometheus/prometheus/model/value"
 	"github.com/prometheus/prometheus/promql/parser"
 	"github.com/prometheus/prometheus/promql/parser/posrange"
+	"github.com/prometheus/prometheus/storage"
+	"github.com/prometheus/prometheus/tsdb/chunkenc"
+	"github.com/prometheus/prometheus/tsdb/chunks"
 	"github.com/prometheus/prometheus/util/annotations"
 	"github.com/prometheus/prometheus/util/stats"
 )
@@ -302,4 +308,234 @@ func TestCostFallbackSampleWindow(t *testing.T) {
 			require.Equal(t, tc.end, end)
 		})
 	}
+}
+
+type matrixFloatWindowTestSample struct {
+	timestamp      int64
+	startTimestamp int64
+	value          float64
+	stale          bool
+}
+
+func (s matrixFloatWindowTestSample) T() int64  { return s.timestamp }
+func (s matrixFloatWindowTestSample) ST() int64 { return s.startTimestamp }
+func (s matrixFloatWindowTestSample) F() float64 {
+	if s.stale {
+		return math.Float64frombits(value.StaleNaN)
+	}
+	return s.value
+}
+func (matrixFloatWindowTestSample) H() *histogram.Histogram       { return nil }
+func (matrixFloatWindowTestSample) FH() *histogram.FloatHistogram { return nil }
+func (matrixFloatWindowTestSample) Type() chunkenc.ValueType      { return chunkenc.ValFloat }
+func (s matrixFloatWindowTestSample) Copy() chunks.Sample         { return s }
+
+func matrixFloatWindowTestSamples(end int64, gap bool) []chunks.Sample {
+	var samples []chunks.Sample
+	for ts := int64(0); ts <= end; ts++ {
+		if gap && ts >= 9 && ts < 14 {
+			continue
+		}
+		samples = append(samples, matrixFloatWindowTestSample{
+			timestamp:      ts,
+			startTimestamp: 1000 + 10*ts,
+			value:          float64(ts),
+			stale:          ts == 5,
+		})
+	}
+	return samples
+}
+
+func TestMatrixIterSliceFloatWindow(t *testing.T) {
+	for _, tc := range []struct {
+		name string
+		gap  bool
+		end  int64
+	}{
+		{name: "overlap compaction", end: 24},
+		{name: "gap resets the window", gap: true, end: 24},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			ctx := t.Context()
+			budget := &queryBudget{maxSamplesRead: 23}
+			ev := &evaluator{maxSamples: 4, budget: budget, samplesStats: stats.NewQuerySamples(true)}
+			ev.samplesStats.InitStepTracking(0, 20, 1)
+			it := ev.newMatrixIterator(ctx, 4)
+			samples := matrixFloatWindowTestSamples(tc.end, tc.gap)
+			series := storage.NewListSeries(labels.EmptyLabels(), samples)
+			it.Reset(series.Iterator(nil))
+
+			window := matrixFloatWindow{
+				floats:          make([]FPoint, 0, 8),
+				startTimestamps: make([]int64, 0, 8),
+			}
+			startTimestamps := &StartTimestamps{Floats: window.startTimestamps}
+			var floats []FPoint
+			compactions := 0
+			for step := int64(0); step <= 20; step++ {
+				beforeHead, beforeLen := window.head, len(window.floats)
+				floats, _, startTimestamps = ev.matrixIterSlice(ctx, it, step, step+4, floats, nil, startTimestamps, int(step), &window)
+				points := window.points()
+				wantPoints := make([]FPoint, 0, 4)
+				wantStartTimestamps := make([]int64, 0, 4)
+				for _, sample := range samples {
+					if sample.T() > step && sample.T() <= step+4 && !value.IsStaleNaN(sample.F()) {
+						wantPoints = append(wantPoints, FPoint{T: sample.T(), F: sample.F()})
+						wantStartTimestamps = append(wantStartTimestamps, sample.ST())
+					}
+				}
+				require.Equal(t, wantPoints, points)
+				require.Equal(t, wantPoints, floats)
+				require.Equal(t, wantStartTimestamps, startTimestamps.Floats)
+				require.Equal(t, len(points), ev.currentSamples)
+				if tc.gap && len(points) == 0 {
+					require.Zero(t, window.head)
+					require.Empty(t, window.floats)
+					require.Empty(t, startTimestamps.Floats)
+				}
+				if !tc.gap && beforeHead > 0 && len(window.floats) < beforeLen {
+					compactions++
+				}
+				if len(points) > 0 {
+					it.ReduceDelta(1)
+				}
+			}
+			if !tc.gap {
+				require.Positive(t, compactions)
+				require.Equal(t, 8, cap(window.floats))
+				require.Equal(t, 8, cap(window.startTimestamps))
+				require.Equal(t, int64(23), budget.samplesRead)
+				require.Equal(t, int64(23), ev.samplesStats.SamplesRead)
+				wantReadsPerStep := make([]int64, 21)
+				wantReadsPerStep[0] = 4
+				for step := 2; step < len(wantReadsPerStep); step++ {
+					wantReadsPerStep[step] = 1
+				}
+				require.Equal(t, wantReadsPerStep, ev.samplesStats.SamplesReadPerStep)
+			}
+			require.Equal(t, 4, ev.samplesStats.PeakSamples)
+		})
+	}
+}
+
+func TestMatrixIterSliceFloatWindowCompactsBeforeAppend(t *testing.T) {
+	for _, tc := range []struct {
+		name     string
+		floatCap int
+		startCap int
+		maxt     int64
+	}{
+		{name: "without start timestamps", floatCap: 8, maxt: 10},
+		{name: "float tail fills first", floatCap: 8, startCap: 16, maxt: 10},
+		{name: "start timestamp tail fills first", floatCap: 16, startCap: 8, maxt: 10},
+		{name: "buffered float tail fills first", floatCap: 8, startCap: 16, maxt: 11},
+		{name: "buffered start timestamp tail fills first", floatCap: 16, startCap: 8, maxt: 11},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			ctx := t.Context()
+			ev := &evaluator{maxSamples: 100, samplesStats: stats.NewQuerySamples(true)}
+			ev.samplesStats.InitStepTracking(0, 0, 1)
+			it := ev.newMatrixIterator(ctx, 10)
+			samples := matrixFloatWindowTestSamples(10, false)
+			series := storage.NewListSeries(labels.EmptyLabels(), samples)
+			it.Reset(series.Iterator(nil))
+
+			window := matrixFloatWindow{floats: make([]FPoint, 0, tc.floatCap)}
+			var startTimestamps *StartTimestamps
+			if tc.startCap > 0 {
+				window.startTimestamps = make([]int64, 0, tc.startCap)
+				startTimestamps = &StartTimestamps{Floats: window.startTimestamps}
+			}
+			var floats []FPoint
+			floats, _, startTimestamps = ev.matrixIterSlice(ctx, it, 0, 6, floats, nil, startTimestamps, 0, &window)
+			it.ReduceDelta(4)
+			floats, _, startTimestamps = ev.matrixIterSlice(ctx, it, 1, tc.maxt, floats, nil, startTimestamps, 0, &window)
+
+			wantFloats := []FPoint{
+				{T: 2, F: 2},
+				{T: 3, F: 3},
+				{T: 4, F: 4},
+				{T: 6, F: 6},
+				{T: 7, F: 7},
+				{T: 8, F: 8},
+				{T: 9, F: 9},
+				{T: 10, F: 10},
+			}
+			wantStarts := []int64{1020, 1030, 1040, 1060, 1070, 1080, 1090, 1100}
+			require.Equal(t, wantFloats, floats)
+			require.Equal(t, wantFloats, window.points())
+			if startTimestamps != nil {
+				require.Equal(t, wantStarts, startTimestamps.Floats)
+				require.Equal(t, wantStarts, window.startTimestamps)
+			}
+			require.Zero(t, window.head)
+			require.Equal(t, tc.floatCap, cap(window.floats), "compact before growing the tail view")
+			if startTimestamps != nil {
+				require.Equal(t, tc.startCap, cap(window.startTimestamps))
+			}
+		})
+	}
+}
+
+func TestMatrixFloatWindowStartTimestamps(t *testing.T) {
+	var series []storage.Series
+	for i := range 3 {
+		var samples []chunks.Sample
+		for ts := int64(0); ts <= 700; ts++ {
+			// Let one series empty its window and later activate it again.
+			if i == 1 && ts >= 250 && ts < 450 {
+				continue
+			}
+			samples = append(samples, matrixFloatWindowTestSample{
+				timestamp:      ts * 1000,
+				startTimestamp: (ts / 70 * 70) * 1000,
+				// Increasing values make resets visible only through STs.
+				value: float64(1000*(i+1)) + float64(ts),
+			})
+		}
+		series = append(series, storage.NewListSeries(labels.FromStrings("__name__", "window_total", "series", strconv.Itoa(i)), samples))
+	}
+	eval := func(start, end int64, useST bool) Matrix {
+		expr, err := testParser.ParseExpr("rate(window_total[160s])")
+		require.NoError(t, err)
+		expr.(*parser.Call).Args[0].(*parser.MatrixSelector).VectorSelector.(*parser.VectorSelector).Series = series
+		ev := &evaluator{
+			startTimestamp: start, endTimestamp: end, interval: 3000,
+			maxSamples: 100000, samplesStats: stats.NewQuerySamples(false),
+			useStartTimestamps: useST,
+		}
+		result, warnings := ev.eval(t.Context(), expr)
+		require.Empty(t, warnings)
+		matrix := result.(Matrix)
+		t.Cleanup(func() {
+			for _, s := range matrix {
+				putFPointSlice(s.Floats)
+			}
+		})
+		return matrix
+	}
+	got := eval(160000, 700000, true)
+	require.Len(t, got, len(series))
+	for ts := int64(160000); ts <= 700000; ts += 3000 {
+		// A single-step evaluation cannot activate the sliding window. Compare
+		// every value, including after gaps and across the series reset.
+		want := eval(ts, ts, true)
+		for _, s := range got {
+			var expected []FPoint
+			for _, w := range want {
+				if labels.Equal(s.Metric, w.Metric) {
+					expected = w.Floats
+				}
+			}
+			var actual []FPoint
+			for _, p := range s.Floats {
+				if p.T == ts {
+					actual = append(actual, p)
+				}
+			}
+			require.Equal(t, expected, actual, "series %s at %d", s.Metric, ts)
+		}
+	}
+	// Ensure that ignoring STs would not silently satisfy this comparison.
+	require.NotEqual(t, eval(160000, 700000, false), got)
 }
