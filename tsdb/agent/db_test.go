@@ -25,6 +25,7 @@ import (
 	"sync"
 	"testing"
 	"time"
+	"unsafe"
 
 	"github.com/prometheus/client_golang/prometheus"
 	dto "github.com/prometheus/client_model/go"
@@ -1547,4 +1548,74 @@ func TestWALReplayMetadata(t *testing.T) {
 	mem2 = db3.series.GetByID(chunks.HeadSeriesRef(ref2))
 	require.NotNil(t, mem2)
 	require.Equal(t, m2, mem2.Metadata().Value())
+}
+
+func TestAppender_GetRef(t *testing.T) {
+	dir := t.TempDir()
+	opts := DefaultOptions()
+	rs := remote.NewStorage(promslog.NewNopLogger(), nil, startTime, dir, 30*time.Second, nil, false, opts.EnableMetadataWALRecords, opts.EnableSTStorage)
+	t.Cleanup(func() {
+		require.NoError(t, rs.Close())
+	})
+
+	db, err := Open(promslog.NewNopLogger(), nil, rs, dir, opts)
+	require.NoError(t, err)
+
+	ctx := t.Context()
+	stored := labels.FromStrings(model.MetricNameLabel, "test_metric", "job", "prometheus")
+	lookup := labels.FromStrings(model.MetricNameLabel, "test_metric", "job", "prometheus")
+	require.NotSame(t, unsafe.StringData(stored.Get("job")), unsafe.StringData(lookup.Get("job")))
+
+	// Series miss returns (0, EmptyLabels).
+	app := db.Appender(ctx)
+	gr, ok := app.(storage.GetRef)
+	require.True(t, ok)
+	gotRef, gotLset := gr.GetRef(lookup, lookup.Hash())
+	require.Zero(t, gotRef)
+	require.True(t, gotLset.IsEmpty())
+
+	// Append series and verify GetRef returns the canonical ref and label backing memory.
+	wantRef, err := app.Append(0, stored, 1000, 1.0)
+	require.NoError(t, err)
+	require.NoError(t, app.Commit())
+
+	app = db.Appender(ctx)
+	gr = app.(storage.GetRef)
+	gotRef, gotLset = gr.GetRef(lookup, lookup.Hash())
+	require.Equal(t, wantRef, gotRef)
+	testutil.RequireEqual(t, stored, gotLset)
+	require.Same(t, unsafe.StringData(stored.Get("job")), unsafe.StringData(gotLset.Get("job")))
+	require.NotSame(t, unsafe.StringData(lookup.Get("job")), unsafe.StringData(gotLset.Get("job")))
+	require.NoError(t, app.Rollback())
+
+	// Close and reopen DB to replay the WAL; GetRef must return the replayed series and its canonical labels.
+	require.NoError(t, db.Close())
+
+	db2, err := Open(promslog.NewNopLogger(), nil, rs, dir, opts)
+	require.NoError(t, err)
+	t.Cleanup(func() {
+		require.NoError(t, db2.Close())
+	})
+
+	replayed := db2.series.GetByID(chunks.HeadSeriesRef(wantRef))
+	require.NotNil(t, replayed)
+
+	app2 := db2.Appender(ctx)
+	gr2 := app2.(storage.GetRef)
+	gotRef, gotLset = gr2.GetRef(lookup, lookup.Hash())
+	require.Equal(t, wantRef, gotRef)
+	testutil.RequireEqual(t, stored, gotLset)
+	require.Same(t, unsafe.StringData(replayed.Labels().Get("job")), unsafe.StringData(gotLset.Get("job")))
+	require.NotSame(t, unsafe.StringData(lookup.Get("job")), unsafe.StringData(gotLset.Get("job")))
+	require.NoError(t, app2.Rollback())
+
+	// GC the inactive series and verify GetRef returns (0, EmptyLabels).
+	db2.gc(1001)
+
+	app2 = db2.Appender(ctx)
+	gr2 = app2.(storage.GetRef)
+	gotRef, gotLset = gr2.GetRef(lookup, lookup.Hash())
+	require.Zero(t, gotRef)
+	require.True(t, gotLset.IsEmpty())
+	require.NoError(t, app2.Rollback())
 }

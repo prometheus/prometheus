@@ -970,6 +970,17 @@ type appender struct {
 	hints *storage.AppendOptions
 }
 
+var _ storage.GetRef = &appender{}
+
+// GetRef implements storage.GetRef.
+func (a *appenderBase) GetRef(lset labels.Labels, hash uint64) (storage.SeriesRef, labels.Labels) {
+	s := a.series.GetByHash(hash, lset)
+	if s == nil {
+		return 0, labels.EmptyLabels()
+	}
+	return storage.SeriesRef(s.ref), s.lset
+}
+
 func (a *appender) SetOptions(opts *storage.AppendOptions) {
 	a.hints = opts
 }

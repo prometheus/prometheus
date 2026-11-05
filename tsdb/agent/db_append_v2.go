@@ -155,7 +155,10 @@ func (a *appenderV2) AppendExemplars(ref storage.SeriesRef, ls labels.Labels, ex
 	return storage.SeriesRef(s.ref), a.appendExemplars(s, exemplars)
 }
 
-var _ storage.ExemplarAppenderV2 = &appenderV2{}
+var (
+	_ storage.ExemplarAppenderV2 = &appenderV2{}
+	_ storage.GetRef             = &appenderV2{}
+)
 
 func (a *appenderV2) Commit() error {
 	defer a.appenderV2Pool.Put(a)
