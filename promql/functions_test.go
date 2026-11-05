@@ -17,6 +17,7 @@ import (
 	"context"
 	"math"
 	"strconv"
+	"strings"
 	"testing"
 	"time"
 
@@ -317,4 +318,39 @@ func TestMADOverTimeUsesExactSubnormalMedian(t *testing.T) {
 	require.NoError(t, err)
 	require.Len(t, vector, 1)
 	require.Equal(t, math.Float64bits(math.Float64frombits(1)), math.Float64bits(vector[0].F))
+}
+
+func TestLabelFunctions_ExceedsMaxLabelLength(t *testing.T) {
+	stor := teststorage.New(t)
+	app := stor.AppenderV2(t.Context())
+	metric := labels.FromStrings("__name__", "test_metric", "foo", "bar")
+	_, err := app.Append(0, metric, 0, 1000, 1, nil, nil, storage.AppendV2Options{})
+	require.NoError(t, err)
+	require.NoError(t, app.Commit())
+
+	engine := promqltest.NewTestEngine(t, false, 0, promqltest.DefaultMaxSamplesPerQuery)
+
+	t.Run("label_replace dst exceeds limit", func(t *testing.T) {
+		tooLongDst := strings.Repeat("a", labels.MaxLabelLength+1)
+		q := `label_replace(test_metric, "` + tooLongDst + `", "x", "foo", ".*")`
+		query, err := engine.NewInstantQuery(t.Context(), stor, nil, q, timestamp.Time(1000))
+		require.NoError(t, err)
+		defer query.Close()
+
+		res := query.Exec(t.Context())
+		require.Error(t, res.Err)
+		require.Contains(t, res.Err.Error(), "destination label name in label_replace() exceeds limit")
+	})
+
+	t.Run("label_join dst exceeds limit", func(t *testing.T) {
+		tooLongDst := strings.Repeat("a", labels.MaxLabelLength+1)
+		q := `label_join(test_metric, "` + tooLongDst + `", "-", "foo")`
+		query, err := engine.NewInstantQuery(t.Context(), stor, nil, q, timestamp.Time(1000))
+		require.NoError(t, err)
+		defer query.Close()
+
+		res := query.Exec(t.Context())
+		require.Error(t, res.Err)
+		require.Contains(t, res.Err.Error(), "destination label name in label_join() exceeds limit")
+	})
 }
