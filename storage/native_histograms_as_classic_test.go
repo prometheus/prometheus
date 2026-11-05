@@ -1612,76 +1612,116 @@ func TestNativeHistogramsAsClassicQuerier_ClassicSelectLeMatchers(t *testing.T) 
 		}),
 	}
 
+	sInf := seriesSamples{labels: `{__name__="http_requests_bucket", le="+Inf"}`, samples: []fSample{{t: 1, f: 10}, {t: 2, f: 16}}}
+	s1 := seriesSamples{labels: `{__name__="http_requests_bucket", le="1.0"}`, samples: []fSample{{t: 1, f: 5}, {t: 2, f: 2}}}
+	// Stored classic series at t=1 have no le="10.0" bucket, so +Inf at t=1
+	// shadows the NHCB sample at t=1 and le="10.0" only appears at t=2.
+	s10 := seriesSamples{labels: `{__name__="http_requests_bucket", le="10.0"}`, samples: []fSample{{t: 2, f: 10}}}
+	s5 := seriesSamples{labels: `{__name__="http_requests_bucket", le="5.0"}`, samples: []fSample{{t: 1, f: 8}, {t: 2, f: 5}}}
+
 	tests := []struct {
 		name             string
-		leMatchers       []*labels.Matcher
+		extraMatchers    []*labels.Matcher
+		classicOverride  []Series
+		nhcbOverride     []Series
 		expectedMatchers []string
-		expectedSeries   []string
+		expectedSeries   []seriesSamples
 	}{
 		{
 			name:             "no le matcher",
 			expectedMatchers: []string{`__name__="http_requests_bucket"`},
-			expectedSeries: []string{
-				`{__name__="http_requests_bucket", le="+Inf"}`,
-				`{__name__="http_requests_bucket", le="1.0"}`,
-				`{__name__="http_requests_bucket", le="10.0"}`,
-				`{__name__="http_requests_bucket", le="5.0"}`,
-			},
+			expectedSeries:   []seriesSamples{sInf, s1, s10, s5},
 		},
 		{
 			name:             "le equality is widened to include +Inf",
-			leMatchers:       []*labels.Matcher{labels.MustNewMatcher(labels.MatchEqual, labels.BucketLabel, "5.0")},
+			extraMatchers:    []*labels.Matcher{labels.MustNewMatcher(labels.MatchEqual, labels.BucketLabel, "5.0")},
 			expectedMatchers: []string{`__name__="http_requests_bucket"`, `le=~"5\\.0|\\+Inf"`},
-			expectedSeries:   []string{`{__name__="http_requests_bucket", le="5.0"}`},
+			expectedSeries:   []seriesSamples{s5},
+		},
+		{
+			name:             "le equality on NHCB-only bucket still shadows NHCB at classic timestamp via widened +Inf",
+			extraMatchers:    []*labels.Matcher{labels.MustNewMatcher(labels.MatchEqual, labels.BucketLabel, "10.0")},
+			expectedMatchers: []string{`__name__="http_requests_bucket"`, `le=~"10\\.0|\\+Inf"`},
+			expectedSeries:   []seriesSamples{s10},
 		},
 		{
 			name:             "le +Inf is pushed down as is",
-			leMatchers:       []*labels.Matcher{labels.MustNewMatcher(labels.MatchEqual, labels.BucketLabel, "+Inf")},
+			extraMatchers:    []*labels.Matcher{labels.MustNewMatcher(labels.MatchEqual, labels.BucketLabel, "+Inf")},
 			expectedMatchers: []string{`__name__="http_requests_bucket"`, `le="+Inf"`},
-			expectedSeries:   []string{`{__name__="http_requests_bucket", le="+Inf"}`},
+			expectedSeries:   []seriesSamples{sInf},
 		},
 		{
 			name:             "le regex is widened to include +Inf",
-			leMatchers:       []*labels.Matcher{labels.MustNewMatcher(labels.MatchRegexp, labels.BucketLabel, "1.0|10.0")},
+			extraMatchers:    []*labels.Matcher{labels.MustNewMatcher(labels.MatchRegexp, labels.BucketLabel, "1.0|10.0")},
 			expectedMatchers: []string{`__name__="http_requests_bucket"`, `le=~"(?:1.0|10.0)|\\+Inf"`},
-			expectedSeries: []string{
-				`{__name__="http_requests_bucket", le="1.0"}`,
-				`{__name__="http_requests_bucket", le="10.0"}`,
-			},
+			expectedSeries:   []seriesSamples{s1, s10},
 		},
 		{
 			name:             "le not equal already matches +Inf",
-			leMatchers:       []*labels.Matcher{labels.MustNewMatcher(labels.MatchNotEqual, labels.BucketLabel, "1.0")},
+			extraMatchers:    []*labels.Matcher{labels.MustNewMatcher(labels.MatchNotEqual, labels.BucketLabel, "1.0")},
 			expectedMatchers: []string{`__name__="http_requests_bucket"`, `le!="1.0"`},
-			expectedSeries: []string{
-				`{__name__="http_requests_bucket", le="+Inf"}`,
-				`{__name__="http_requests_bucket", le="10.0"}`,
-				`{__name__="http_requests_bucket", le="5.0"}`,
-			},
+			expectedSeries:   []seriesSamples{sInf, s10, s5},
 		},
 		{
 			name:             "le not equal +Inf cannot be widened and is applied client-side",
-			leMatchers:       []*labels.Matcher{labels.MustNewMatcher(labels.MatchNotEqual, labels.BucketLabel, "+Inf")},
+			extraMatchers:    []*labels.Matcher{labels.MustNewMatcher(labels.MatchNotEqual, labels.BucketLabel, "+Inf")},
 			expectedMatchers: []string{`__name__="http_requests_bucket"`},
-			expectedSeries: []string{
-				`{__name__="http_requests_bucket", le="1.0"}`,
-				`{__name__="http_requests_bucket", le="10.0"}`,
-				`{__name__="http_requests_bucket", le="5.0"}`,
+			expectedSeries:   []seriesSamples{s1, s10, s5},
+		},
+		{
+			name:             "le negative regex matching +Inf is pushed down as is",
+			extraMatchers:    []*labels.Matcher{labels.MustNewMatcher(labels.MatchNotRegexp, labels.BucketLabel, `1\.0`)},
+			expectedMatchers: []string{`__name__="http_requests_bucket"`, `le!~"1\\.0"`},
+			expectedSeries:   []seriesSamples{sInf, s10, s5},
+		},
+		{
+			name:             "le negative regex rejecting +Inf is stripped from pushdown and applied client-side",
+			extraMatchers:    []*labels.Matcher{labels.MustNewMatcher(labels.MatchNotRegexp, labels.BucketLabel, `\+Inf|1\.0`)},
+			expectedMatchers: []string{`__name__="http_requests_bucket"`},
+			expectedSeries:   []seriesSamples{s10, s5},
+		},
+		{
+			name: "non-le matcher is preserved alongside widened le matcher",
+			extraMatchers: []*labels.Matcher{
+				labels.MustNewMatcher(labels.MatchEqual, "job", "api"),
+				labels.MustNewMatcher(labels.MatchEqual, labels.BucketLabel, "10.0"),
+			},
+			classicOverride: []Series{
+				NewListSeries(labels.FromStrings("__name__", "http_requests_bucket", "job", "api", "le", "1.0"), []chunks.Sample{fSample{t: 1, f: 5}}),
+				NewListSeries(labels.FromStrings("__name__", "http_requests_bucket", "job", "api", "le", "+Inf"), []chunks.Sample{fSample{t: 1, f: 10}}),
+				NewListSeries(labels.FromStrings("__name__", "http_requests_bucket", "job", "web", "le", "+Inf"), []chunks.Sample{fSample{t: 1, f: 99}}),
+			},
+			nhcbOverride: []Series{
+				NewListSeries(labels.FromStrings("__name__", "http_requests", "job", "api"), []chunks.Sample{
+					hSample{t: 1, h: nhcb},
+					hSample{t: 2, h: nhcb},
+				}),
+				NewListSeries(labels.FromStrings("__name__", "http_requests", "job", "web"), []chunks.Sample{
+					hSample{t: 2, h: nhcb},
+				}),
+			},
+			expectedMatchers: []string{`__name__="http_requests_bucket"`, `job="api"`, `le=~"10\\.0|\\+Inf"`},
+			expectedSeries: []seriesSamples{
+				{labels: `{__name__="http_requests_bucket", job="api", le="10.0"}`, samples: []fSample{{t: 2, f: 10}}},
 			},
 		},
 	}
 
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
-			mock := &nhcbMockQuerier{classicSeries: classicSeries, nhcbSeries: nhcbSeries}
-			q := NewNativeHistogramsAsClassicQuerier(mock)
-			matchers := append([]*labels.Matcher{labels.MustNewMatcher(labels.MatchEqual, model.MetricNameLabel, "http_requests_bucket")}, tc.leMatchers...)
-			ss := q.Select(context.Background(), false, nil, matchers...)
-			var got []string
-			for ss.Next() {
-				got = append(got, ss.At().Labels().String())
+			cs := classicSeries
+			if tc.classicOverride != nil {
+				cs = tc.classicOverride
 			}
-			require.NoError(t, ss.Err())
+			ns := nhcbSeries
+			if tc.nhcbOverride != nil {
+				ns = tc.nhcbOverride
+			}
+			mock := &nhcbMockQuerier{classicSeries: cs, nhcbSeries: ns}
+			q := NewNativeHistogramsAsClassicQuerier(mock)
+			matchers := append([]*labels.Matcher{labels.MustNewMatcher(labels.MatchEqual, model.MetricNameLabel, "http_requests_bucket")}, tc.extraMatchers...)
+			ss := q.Select(t.Context(), false, nil, matchers...)
+			got := readSeriesSamples(t, ss)
 
 			var gotMatchers []string
 			for _, m := range mock.lastClassicMatchers {
@@ -1691,7 +1731,7 @@ func TestNativeHistogramsAsClassicQuerier_ClassicSelectLeMatchers(t *testing.T) 
 			// Stored classic samples at t=1 shadow the NHCB at t=1 regardless of
 			// which buckets the query selects; the converted buckets at t=2 are
 			// merged into the stored classic series or added for le="10.0".
-			require.Equal(t, tc.expectedSeries, got)
+			testutil.RequireEqualWithOptions(t, tc.expectedSeries, got, []cmp.Option{cmp.AllowUnexported(seriesSamples{}, fSample{})})
 		})
 	}
 }
