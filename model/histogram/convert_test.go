@@ -356,7 +356,8 @@ func TestConvertNHCBToClassicHistogram(t *testing.T) {
 // TestConvertNHCBToClassicHistogram_CacheMatchesNoCache verifies that a reused
 // ClassicSeriesCache emits the exact same labels and values as the uncached
 // path across repeated calls for the same series, across different suffixes,
-// and when reused across series that share __name__ but differ in other labels.
+// when reused across series that share __name__ but differ in other labels,
+// and after changing the bucket filter.
 func TestConvertNHCBToClassicHistogram_CacheMatchesNoCache(t *testing.T) {
 	h := &Histogram{
 		CustomValues:    []float64{1, 2, 3},
@@ -371,26 +372,38 @@ func TestConvertNHCBToClassicHistogram_CacheMatchesNoCache(t *testing.T) {
 		labels.FromStrings("__name__", "test_metric", "job", "job_a"), // cache hit
 		labels.FromStrings("__name__", "test_metric", "job", "job_b"), // same __name__, different label
 		labels.FromStrings("__name__", "other_metric", "job", "job_b"),
+		labels.FromStrings("__name__", "test_metric", "job", "job_a"),
 	}
 	suffixes := []string{"", ClassicSuffixBucket, ClassicSuffixCount, ClassicSuffixSum}
 	labelBuilder := labels.NewBuilder(labels.EmptyLabels())
 
 	for _, suffix := range suffixes {
 		cache := &ClassicSeriesCache{}
-		for i, lset := range lsets {
-			var without, with []sample
-			require.NoError(t, ConvertNHCBToClassic(h, lset, labelBuilder, suffix, nil, func(lbls labels.Labels, val float64) error {
-				without = append(without, sample{lset: lbls, val: val})
-				return nil
-			}))
-			require.NoError(t, ConvertNHCBToClassic(h, lset, labelBuilder, suffix, cache, func(lbls labels.Labels, val float64) error {
-				with = append(with, sample{lset: lbls, val: val})
-				return nil
-			}))
-			require.Len(t, with, len(without))
-			for j := range without {
-				require.True(t, labels.Equal(without[j].lset, with[j].lset), "suffix %q step %d: labels mismatch at index %d: expected %v, got %v", suffix, i, j, without[j].lset, with[j].lset)
-				require.Equal(t, without[j].val, with[j].val, "suffix %q step %d: value mismatch at index %d", suffix, i, j)
+		for _, filter := range []func(string) bool{
+			nil,
+			func(le string) bool { return le == "2.0" },
+			func(string) bool { return false },
+			func(le string) bool { return le == "+Inf" },
+			nil,
+		} {
+			cache.SetBucketFilter(filter)
+			for i, lset := range lsets {
+				var without, with []sample
+				require.NoError(t, ConvertNHCBToClassic(h, lset, labelBuilder, suffix, nil, func(lbls labels.Labels, val float64) error {
+					if filter == nil || !lbls.Has(labels.BucketLabel) || filter(lbls.Get(labels.BucketLabel)) {
+						without = append(without, sample{lset: lbls, val: val})
+					}
+					return nil
+				}))
+				require.NoError(t, ConvertNHCBToClassic(h, lset, labelBuilder, suffix, cache, func(lbls labels.Labels, val float64) error {
+					with = append(with, sample{lset: lbls, val: val})
+					return nil
+				}))
+				require.Len(t, with, len(without))
+				for j := range without {
+					require.True(t, labels.Equal(without[j].lset, with[j].lset), "suffix %q step %d: labels mismatch at index %d: expected %v, got %v", suffix, i, j, without[j].lset, with[j].lset)
+					require.Equal(t, without[j].val, with[j].val, "suffix %q step %d: value mismatch at index %d", suffix, i, j)
+				}
 			}
 		}
 	}
