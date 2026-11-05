@@ -77,16 +77,40 @@ function isNameStart(ch) {
   return ch >= 0 && nameStart.test(String.fromCodePoint(ch));
 }
 
+function isDigit(ch) {
+  return ch >= 48 && ch <= 57;
+}
+
+// Keywords that can be directly followed by a number, matching the Go lexer.
+const keywordsBeforeNumber = new Set(["bool", "offset", "and", "or", "unless", "atan2", "bitand", "bitor", "bitxor"]);
+const longestKeywordBeforeNumber = Math.max(...[...keywordsBeforeNumber].map((kw) => kw.length));
+
 export const names = new ExternalTokenizer(
   (input, stack) => {
     const label = stack.canShift(LabelName);
     let ch = readCodePoint(input);
     if (!isNameStart(ch) && (label || ch !== 58)) return;
+    // The ASCII text read so far, or null once the name can't be one of keywordsBeforeNumber.
+    let word = "";
     // Dots and ASCII digits can follow; only metric names allow colons.
     do {
+      if (word !== null) {
+        word = ch < 0x80 && word.length < longestKeywordBeforeNumber ? word + String.fromCharCode(ch) : null;
+      }
       input.advance(ch > 0xffff ? 2 : 1);
       ch = readCodePoint(input);
-    } while (isNameStart(ch) || (ch >= 48 && ch <= 57) || ch === 46 || (!label && ch === 58));
+      // Before unquoted names allowed dots, a dot ended a keyword, so a keyword could be
+      // followed by a number such as .5, as in foo > bool.5. Keep lexing it that way.
+      if (
+        ch === 46 &&
+        !label &&
+        word !== null &&
+        isDigit(input.peek(1)) &&
+        keywordsBeforeNumber.has(word.toLowerCase())
+      ) {
+        break;
+      }
+    } while (isNameStart(ch) || isDigit(ch) || ch === 46 || (!label && ch === 58));
     input.acceptToken(label ? LabelName : Identifier);
   },
   { contextual: true }

@@ -56,9 +56,27 @@ describe('unquoted UTF-8 names', () => {
             expect(() => strictParser.parse(query)).toThrow();
         });
     }
-    for (const name of ['İnf', 'topK', 'İGNORING', 'on.total', 'sum.total', '𐐀']) {
+    // Only bool, offset and keyword operators end before a dot and a digit, and only
+    // when they are the whole leading word.
+    for (const name of ['İnf', 'topK', 'İGNORING', 'on.total', 'sum.total', 'bool.total', 'sum.5', 'foo.bool.5','𐐀']) {
         it(`preserves ${name} as a metric name`, () => {
             expect(strictParser.parse(name).toString()).toBe('PromQL(VectorSelector(Identifier))');
+        });
+    }
+    // Before dots were name characters, a dot ended a keyword, so a keyword that can
+    // precede a number could be written directly before one such as .5.
+    for (const [query, sameAs] of [
+        // As a name, bool.5 would silently compare with a series instead of 0.5.
+        ['foo > bool.5', 'foo > bool .5'],
+        // Offset is a keyword but not an operator.
+        ['foo offset.5', 'foo offset .5'],
+        // Binary operators that are keywords take numbers too.
+        ['foo atan2.5', 'foo atan2 .5'],
+        // Keywords are case insensitive.
+        ['foo > BOOL.5', 'foo > bool .5'],
+    ]) {
+        it(`parses ${query} like ${sameAs}`, () => {
+            expect(strictParser.parse(query).toString()).toBe(strictParser.parse(sameAs).toString());
         });
     }
 });
