@@ -20,6 +20,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"log/slog"
 	"math"
 	"net/http"
 	"net/http/httptest"
@@ -1546,6 +1547,28 @@ remote_write:
 		return true
 		// 3*shardUpdateDuration to allow for the resharding logic to run.
 	}, 30*time.Second, time.Second)
+}
+
+func TestDelayedCompactionAlwaysEnabled(t *testing.T) {
+	for _, feature := range []string{"", "delayed-compaction"} {
+		t.Run(feature, func(t *testing.T) {
+			cfg := flagConfig{tsdb: tsdbOptions{CompactionDelayMaxPercent: 10}}
+			if feature != "" {
+				cfg.featureList = []string{feature}
+			}
+			var logs bytes.Buffer
+			require.NoError(t, cfg.setFeatureListOptions(slog.New(slog.NewTextHandler(&logs, nil))))
+			opts := cfg.tsdb.ToTSDBOptions()
+			require.True(t, opts.EnableDelayedCompaction)
+			require.Equal(t, 10, opts.CompactionDelayMaxPercent)
+			if feature != "" {
+				require.Contains(t, logs.String(), "no-op")
+				require.Contains(t, logs.String(), "option=delayed-compaction")
+			} else {
+				require.Empty(t, logs.String())
+			}
+		})
+	}
 }
 
 // TestFeatureFlagsDocumented ensures the --enable-feature help text in main.go
