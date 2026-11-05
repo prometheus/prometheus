@@ -83,13 +83,6 @@ func TestUnquotedUTF8Names(t *testing.T) {
 		})
 	}
 
-	for _, input := range []string{"sum by (a:b) (foo)", "foo + on (a:b) bar"} {
-		t.Run(input, func(t *testing.T) {
-			_, err := p.ParseExpr(input)
-			require.ErrorContains(t, err, `invalid label name for grouping: "a:b"`)
-		})
-	}
-
 	for _, input := range []string{".5", "5.", "1.5", "1e3", "0x10", "Inf", "inf", "NaN", "nan", "5m"} {
 		t.Run(input, func(t *testing.T) {
 			expr, err := p.ParseExpr(input)
@@ -129,8 +122,10 @@ func TestUnquotedUTF8NamesPrinting(t *testing.T) {
 		{`sum by ("service.name", "équipe") (foo)`, `sum by (service.name, équipe) (foo)`},
 		{`foo + on ("service.name") group_left ("équipe") bar`, `foo + on (service.name) group_left (équipe) bar`},
 		{`foo{".name"="x", "ö"="y", "😀"="z"}`, `foo{".name"="x","ö"="y","😀"="z"}`},
-		{`sum by ("a:b") (foo)`, `sum by ("a:b") (foo)`},
-		{`foo + on ("a:b") bar`, `foo + on ("a:b") bar`},
+		// Grouping labels accept unquoted colons for compatibility, but the printer
+		// quotes them because selectors don't accept them unquoted.
+		{`sum by (a:b) (foo)`, `sum by ("a:b") (foo)`},
+		{`foo + on (a:b) bar`, `foo + on ("a:b") bar`},
 	} {
 		t.Run(tc.input, func(t *testing.T) {
 			expr, err := p.ParseExpr(tc.input)

@@ -376,8 +376,10 @@ Unquoted names follow these rules:
 Unicode letters are the characters recognized by Go's `unicode.IsLetter`
 (Unicode category L), using the Unicode version bundled with the Go compiler.
 These rules also apply to grouping labels, vector matching, and labels in
-`group_left` and `group_right` modifiers. Existing keyword restrictions still
-apply, and string arguments containing label names remain strings.
+`group_left` and `group_right` modifiers, except that these may also contain `:`
+where metric names may, as in `sum by (a:b) (foo)`, for compatibility with
+earlier versions. Existing keyword restrictions still apply, and string
+arguments containing label names remain strings.
 
 Dots are ordinary name characters: `resource.k8s.namespace`, `target.info`, and
 `histogram.count` have no metadata lookup, namespace, or histogram field access
