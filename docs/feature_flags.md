@@ -243,6 +243,136 @@ These may not work well if the `<range>` is not a multiple of the collection int
 
 * If there are multiple samples being ingested at the same timestamp, only one of the points is kept - the samples are **not** summed together (this is how Prometheus works in general - duplicate timestamp samples are rejected). Any aggregation will have to be done before sending samples to Prometheus.
 
+## OTLP Entities
+
+`--enable-feature=otlp-entities`
+
+When enabled, the OTLP receiver synthesizes the `instance` label of an OTel
+Resource with [entity](https://opentelemetry.io/docs/specs/otel/entities/data-model/)
+references from the Resource's identifying attributes, instead of deriving `job`
+and `instance` from its service attributes. Resources without entity references
+are translated as before.
+
+> NOTE: This is an experimental feature.
+
+For a Resource with entity references, `instance` is a UUIDv5 of its set of
+entity types and its identifying attributes: those listed in an entity's
+`id_keys`, plus the attributes no entity references, which the [Resource data model](https://opentelemetry.io/docs/specs/otel/resource/data-model/)
+considers identifying. An attribute listed in any entity's `id_keys` is
+identifying, even if another entity lists it in `description_keys`. Attributes
+listed only in `description_keys` are not. How attributes are grouped into
+entities and entity schema URLs don't affect `instance`. Ordinary series and
+`target_info` get the same `instance`.
+
+### Identity example
+
+For example, take a Resource with the attributes `service.name="checkout"`,
+`service.namespace="shop"`, `service.instance.id="id-1"`, `host.id="h-1"`,
+`host.name="node-1"` and `telemetry.sdk.version="1.2.3"`, and the entity
+references `{type: "service", id_keys: ["service.name", "service.namespace", "service.instance.id"]}`
+and `{type: "host", id_keys: ["host.id"], description_keys: ["host.name"]}`.
+Its entity types are `host` and `service`, and its identifying attributes are all
+but `host.name`. Its `instance` is `af75bdb7-d4ad-5522-a93c-61e00148c979`.
+
+The version 1 encoding of its entity types and identifying attributes, with the
+encoded bytes on the left and their decoded meaning on the right, is:
+
+```
+02                                               2 entity types
+  04 686f7374                                    "host"
+  07 73657276696365                              "service"
+05                                               5 identifying attributes
+  07 686f73742e6964                              "host.id"
+    01 03 682d31                                 string "h-1"
+  13 736572766963652e696e7374616e63652e6964      "service.instance.id"
+    01 04 69642d31                               string "id-1"
+  0c 736572766963652e6e616d65                    "service.name"
+    01 08 636865636b6f7574                       string "checkout"
+  11 736572766963652e6e616d657370616365          "service.namespace"
+    01 04 73686f70                               string "shop"
+  15 74656c656d657472792e73646b2e76657273696f6e  "telemetry.sdk.version"
+    01 05 312e322e33                             string "1.2.3"
+```
+
+### Identity behavior
+
+`job` and `instance` still identify Resources with entity references, but `job`
+is empty, since it belongs to the mapping from service attributes, which is not
+mixed with the entity one. Since neither label encodes a Resource attribute,
+`target_info` keeps `service.namespace`, `service.name` and
+`service.instance.id`, which it drops by default, and
+`keep_identifying_resource_attributes` has no effect.
+
+Consequences:
+
+* A Resource's series are replaced by series with a new `instance` and an empty
+  `job` when you enable the feature while its producer sends entity references,
+  or when its producer starts sending them while the feature is enabled.
+  Disabling the feature, or the producer no longer sending entity references,
+  switches back to labels derived from service attributes. Any change to an
+  identifying attribute or to the set of entity types also gives a new
+  `instance`. That includes attributes no entity references, such as
+  `telemetry.sdk.version` without a matching entity. A description change doesn't
+  change `instance`.
+* As without the feature, Resources that get the same `instance` but differ in
+  other attributes produce more than one `target_info` series for it. With the
+  feature, that happens when only their descriptions differ.
+* With `otlp-deltatocumulative`, delta conversion tells streams apart by all
+  Resource attributes, descriptions included:
+  * A description change, such as `host.name` going from `node-1` to `node-2`,
+    keeps `instance` but starts a new stream, so the cumulative value starts
+    over, as after a counter reset. Without the feature, that happens when any
+    attribute but the service ones changes.
+  * Two Resources with equal attributes, where only one lists `host.name` in
+    `description_keys`, get different `instance`s but share one stream: their
+    points are merged, and points that are not newer than the latest one are
+    dropped.
+
+To prepare for the feature, set `keep_identifying_resource_attributes: true` in
+the `otlp` configuration, so that `target_info` carries the service attributes,
+and select services by them rather than by `job` and `instance`, for example:
+
+```
+http_requests_total
+  * on (job, instance) group_left (service_name)
+  target_info{service_name="checkout"}
+```
+
+Such queries keep working when you enable the feature. Promoting the service
+attributes with `promote_resource_attributes` works too.
+
+If an entity reference has an empty type or no `id_keys`, or one of its `id_keys`
+is not a Resource attribute, the Resource's identity is undefined, and its
+metrics are dropped. The rest of the request is ingested and the request
+succeeds, so the sender isn't told. A key in `description_keys` that is not a
+Resource attribute is ignored. Both cases are logged as warnings and counted by
+`prometheus_api_otlp_translation_warnings_total{category="invalid_entity_refs"}`.
+
+### Identity encoding
+
+The synthesized `instance` and its encoding are experimental and may change. The
+UUIDv5 namespace is `590a306a-6a3b-5d60-ba93-38bef3715a7b`, the UUIDv5 of the URL
+`https://prometheus.io/otlp/entities/resource-identity/v1`. The UUIDv5 name is
+this encoding (version 1) of the entity types and identifying attributes:
+
+* Counts and lengths are unsigned LEB128 varints, as in protobuf. Sorting is
+  bytewise. A string is its length followed by its bytes.
+* The entity types come first: the number of distinct types, followed by each
+  type, sorted.
+* The identifying attributes follow, encoded as an attribute map: the number of
+  distinct keys, followed by each key and value, sorted by key. Of duplicate
+  keys, the first one counts.
+* A value is a type tag followed by a payload. The tag is the field number of the
+  OTLP `AnyValue` type: string 1, bool 2, int 3, double 4, array 5, kvlist 6,
+  bytes 7, or 0 for an empty value. The payload is the string for strings and
+  bytes; `0x00` or `0x01` for bools; 8 bytes, big-endian, for ints (two's
+  complement) and doubles (IEEE 754, with -0 encoded as 0 and every NaN as
+  `0x7ff8000000000001`); the number of elements followed by the elements, in
+  order and including duplicates, for arrays; an attribute map for kvlists; and
+  nothing for empty values.
+
+See the [identity example](#identity-example) for a worked example.
+
 ## Type and Unit Labels
 
 `--enable-feature=type-and-unit-labels`

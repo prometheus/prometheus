@@ -314,6 +314,7 @@ type Options struct {
 	EnableOTLPWriteReceiver    bool
 	ConvertOTLPDelta           bool
 	NativeOTLPDeltaIngestion   bool
+	EnableOTLPEntities         bool
 	IsAgent                    bool
 	EnableTypeAndUnitLabels    bool
 	AppendMetadata             bool
@@ -429,6 +430,7 @@ func New(logger *slog.Logger, o *Options) *Handler {
 		o.EnableOTLPWriteReceiver,
 		o.ConvertOTLPDelta,
 		o.NativeOTLPDeltaIngestion,
+		o.EnableOTLPEntities,
 		o.LookbackDelta,
 		o.EnableTypeAndUnitLabels,
 		o.AppendMetadata,
@@ -457,6 +459,7 @@ func New(logger *slog.Logger, o *Options) *Handler {
 		}
 		r.Set(features.OTLPReceiver, "delta_conversion", o.ConvertOTLPDelta)
 		r.Set(features.OTLPReceiver, "native_delta_ingestion", o.NativeOTLPDeltaIngestion)
+		r.Set(features.OTLPReceiver, "entities", o.EnableOTLPEntities)
 		r.Enable(features.API, "label_values_match") // match[] parameter for label values endpoint.
 		r.Enable(features.API, "query_warnings")     // warnings in query responses.
 		r.Enable(features.API, "query_stats")        // stats parameter for query endpoints.

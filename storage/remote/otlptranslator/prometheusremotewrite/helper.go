@@ -138,18 +138,19 @@ func (c *PrometheusConverter) createAttributes(
 			}
 		})
 	}
-	// Merge cached job/instance labels.
-	if c.resourceLabels.jobLabel != "" {
-		c.builder.Set(model.JobLabel, c.resourceLabels.jobLabel)
-	}
-	if c.resourceLabels.instanceLabel != "" {
-		c.builder.Set(model.InstanceLabel, c.resourceLabels.instanceLabel)
-	}
 	// Merge cached external labels.
 	for key, value := range c.resourceLabels.externalLabels {
 		if c.builder.Get(key) == "" {
 			c.builder.Set(key, value)
 		}
+	}
+	// Merge cached job/instance labels, which take precedence. A synthesized
+	// instance comes with an empty job, which Set deletes.
+	if c.resourceLabels.jobLabel != "" || c.resourceLabels.instanceSynthesized {
+		c.builder.Set(model.JobLabel, c.resourceLabels.jobLabel)
+	}
+	if c.resourceLabels.instanceLabel != "" {
+		c.builder.Set(model.InstanceLabel, c.resourceLabels.instanceLabel)
 	}
 
 	if c.scopeLabels != nil {
@@ -574,6 +575,10 @@ func (c *PrometheusConverter) addResourceTargetInfo(resource pcommon.Resource, s
 		string(semconv.ServiceNamespaceKey),
 		string(semconv.ServiceNameKey),
 		string(semconv.ServiceInstanceIDKey),
+	}
+	if c.resourceLabels.instanceSynthesized {
+		// Neither job nor instance encodes a service attribute, so keep them.
+		identifyingAttrs = nil
 	}
 	nonIdentifyingAttrsCount := attributes.Len()
 	for _, a := range identifyingAttrs {

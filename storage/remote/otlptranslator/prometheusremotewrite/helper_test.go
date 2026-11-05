@@ -509,7 +509,7 @@ func TestPrometheusConverter_createAttributes(t *testing.T) {
 				testAttrs = tc.attrs
 			}
 			// Initialize resource and scope context as FromMetrics would.
-			require.NoError(t, c.setResourceContext(testResource, settings))
+			requireResourceContext(t, c, testResource, settings)
 			require.NoError(t, c.setScopeContext(tc.scope, settings))
 
 			lbls, err := c.createAttributes(testAttrs, settings, tc.ignoreAttrs, false, metadata.Metadata{}, model.MetricNameLabel, "test_metric")
@@ -535,7 +535,7 @@ func TestPrometheusConverter_createAttributes(t *testing.T) {
 		c := NewPrometheusConverter(teststorage.NewAppendable().AppenderV2(t.Context()))
 		settings := Settings{}
 
-		require.NoError(t, c.setResourceContext(resource, settings))
+		requireResourceContext(t, c, resource, settings)
 		require.NoError(t, c.setScopeContext(scope{}, settings))
 
 		// Call createAttributes with reservedLabelNames to filter __name__.
@@ -580,7 +580,7 @@ func TestPrometheusConverter_createAttributes(t *testing.T) {
 		c := NewPrometheusConverter(teststorage.NewAppendable().AppenderV2(t.Context()))
 		settings := Settings{EnableTypeAndUnitLabels: true}
 
-		require.NoError(t, c.setResourceContext(resource, settings))
+		requireResourceContext(t, c, resource, settings)
 		require.NoError(t, c.setScopeContext(scope{}, settings))
 
 		// Call createAttributes with Metadata containing correct Type and Unit.
@@ -850,7 +850,7 @@ func TestPrometheusConverter_AddSummaryDataPoints(t *testing.T) {
 			resource := pcommon.NewResource()
 
 			// Initialize resource and scope context as FromMetrics would.
-			require.NoError(t, converter.setResourceContext(resource, settings))
+			requireResourceContext(t, converter, resource, settings)
 			require.NoError(t, converter.setScopeContext(tt.scope, settings))
 
 			require.NoError(t, converter.addSummaryDataPoints(
@@ -1286,7 +1286,7 @@ func TestPrometheusConverter_AddHistogramDataPoints(t *testing.T) {
 			resource := pcommon.NewResource()
 
 			// Initialize resource and scope context as FromMetrics would.
-			require.NoError(t, converter.setResourceContext(resource, settings))
+			requireResourceContext(t, converter, resource, settings)
 			require.NoError(t, converter.setScopeContext(tt.scope, settings))
 
 			require.NoError(t, converter.addHistogramDataPoints(
@@ -1343,7 +1343,7 @@ func TestAddHistogramDataPoints_ExemplarLeakAcrossDataPoints(t *testing.T) {
 	settings := Settings{}
 	resource := pcommon.NewResource()
 
-	require.NoError(t, converter.setResourceContext(resource, settings))
+	requireResourceContext(t, converter, resource, settings)
 	require.NoError(t, converter.setScopeContext(scope{}, settings))
 	require.NoError(t, converter.addHistogramDataPoints(
 		context.Background(),
