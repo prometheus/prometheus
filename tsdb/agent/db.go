@@ -347,6 +347,7 @@ func Open(l *slog.Logger, reg prometheus.Registerer, rs *remote.Storage, dir str
 				pendingFloatHistograms: make([]record.RefFloatHistogramSample, 0, 100),
 				pendingExamplars:       make([]record.RefExemplar, 0, 10),
 				pendingMetadata:        make([]record.RefMetadata, 0, 100),
+				sampleSeries:           make([]*memSeries, 0, 100),
 				metadataSeries:         make([]*memSeries, 0, 100),
 			},
 		}
@@ -361,6 +362,7 @@ func Open(l *slog.Logger, reg prometheus.Registerer, rs *remote.Storage, dir str
 				pendingFloatHistograms: make([]record.RefFloatHistogramSample, 0, 100),
 				pendingExamplars:       make([]record.RefExemplar, 0, 10),
 				pendingMetadata:        make([]record.RefMetadata, 0, 100),
+				sampleSeries:           make([]*memSeries, 0, 100),
 				metadataSeries:         make([]*memSeries, 0, 100),
 			},
 		}
@@ -1302,12 +1304,18 @@ func (a *appender) AppendSTZeroSample(ref storage.SeriesRef, l labels.Labels, t,
 
 // Commit submits the collected samples and purges the batch.
 func (a *appender) Commit() error {
-	defer a.appenderPool.Put(a)
+	defer func() {
+		a.hints = nil
+		a.appenderPool.Put(a)
+	}()
 	return a.commit()
 }
 
 func (a *appender) Rollback() error {
-	defer a.appenderPool.Put(a)
+	defer func() {
+		a.hints = nil
+		a.appenderPool.Put(a)
+	}()
 	return a.rollback()
 }
 
@@ -1438,17 +1446,28 @@ func (a *appenderBase) log() error {
 	return nil
 }
 
-// clearData clears all pending data.
+// clearData clears all pending data before the appender is returned to its sync.Pool.
+// NOTE: Go's clear built-in only zeroes up to len(s); elements in s[len(s):cap(s)]
+// are already zero because pending slices are only ever grown via append and
+// cleared here before reslicing to [:0].
 func (a *appenderBase) clearData() {
+	clear(a.pendingSeries)
 	a.pendingSeries = a.pendingSeries[:0]
+	// RefSample has only scalar fields, so skip zeroing its elements.
 	a.pendingSamples = a.pendingSamples[:0]
+	clear(a.pendingHistograms)
 	a.pendingHistograms = a.pendingHistograms[:0]
+	clear(a.pendingFloatHistograms)
 	a.pendingFloatHistograms = a.pendingFloatHistograms[:0]
+	clear(a.pendingExamplars)
 	a.pendingExamplars = a.pendingExamplars[:0]
 	clear(a.pendingMetadata)
 	a.pendingMetadata = a.pendingMetadata[:0]
+	clear(a.sampleSeries)
 	a.sampleSeries = a.sampleSeries[:0]
+	clear(a.histogramSeries)
 	a.histogramSeries = a.histogramSeries[:0]
+	clear(a.floatHistogramSeries)
 	a.floatHistogramSeries = a.floatHistogramSeries[:0]
 	clear(a.metadataSeries)
 	a.metadataSeries = a.metadataSeries[:0]

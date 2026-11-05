@@ -21,11 +21,13 @@ import (
 	"log/slog"
 	"math"
 	"path/filepath"
+	"runtime"
 	"strconv"
 	"sync"
 	"testing"
 	"time"
 	"unsafe"
+	"weak"
 
 	"github.com/prometheus/client_golang/prometheus"
 	dto "github.com/prometheus/client_model/go"
@@ -1618,4 +1620,262 @@ func TestAppender_GetRef(t *testing.T) {
 	require.Zero(t, gotRef)
 	require.True(t, gotLset.IsEmpty())
 	require.NoError(t, app2.Rollback())
+}
+
+type pooledAppenderWeakRefs struct {
+	msFloat      weak.Pointer[memSeries]
+	msHist       weak.Pointer[memSeries]
+	msFloatHist  weak.Pointer[memSeries]
+	hist         weak.Pointer[histogram.Histogram]
+	floatHist    weak.Pointer[histogram.FloatHistogram]
+	seriesLabel  weak.Pointer[byte]
+	exemplarLbl  weak.Pointer[byte]
+	metadataHelp weak.Pointer[byte]
+}
+
+func newIsolatedLabels(name, key string) labels.Labels {
+	sb := labels.NewScratchBuilder(2)
+	sb.SetSymbolTable(labels.NewSymbolTable())
+	sb.Add("__name__", name)
+	sb.Add(key, string(bytes.Repeat([]byte{'x'}, 64)))
+	sb.Sort()
+	return sb.Labels()
+}
+
+//go:noinline
+func populateAppenderForWeakRefTest(t *testing.T, db *DB, appV2, commit bool) (*appenderBase, pooledAppenderWeakRefs) {
+	t.Helper()
+
+	lFloat := newIsolatedLabels("test_float", "k")
+	lHist := newIsolatedLabels("test_hist", "k")
+	lFloatHist := newIsolatedLabels("test_float_hist", "k")
+	lExemplar := newIsolatedLabels("trace", "trace_id")
+	metaHelp := string(bytes.Repeat([]byte{'h'}, 64))
+	metaUnit := string(bytes.Repeat([]byte{'u'}, 32))
+	meta := metadata.Metadata{
+		Type: model.MetricTypeGauge,
+		Unit: metaUnit,
+		Help: metaHelp,
+	}
+
+	h := tsdbutil.GenerateTestHistogram(1)
+	fh := tsdbutil.GenerateTestFloatHistogram(2)
+	ex := exemplar.Exemplar{Labels: lExemplar, Value: 1, Ts: 1000, HasTs: true}
+
+	var (
+		base                     *appenderBase
+		tx                       storage.AppenderTransaction
+		refFloat, refHist, refFH storage.SeriesRef
+		err                      error
+	)
+	if appV2 {
+		app := db.AppenderV2(t.Context())
+		base = &app.(*appenderV2).appenderBase
+		tx = app
+
+		refFloat, err = app.Append(0, lFloat, 0, 1000, 1.5, nil, nil, storage.AOptions{
+			Exemplars: []exemplar.Exemplar{ex},
+			Metadata:  meta,
+		})
+		require.NoError(t, err)
+		refHist, err = app.Append(0, lHist, 0, 1000, 0, h, nil, storage.AOptions{})
+		require.NoError(t, err)
+		refFH, err = app.Append(0, lFloatHist, 0, 1000, 0, nil, fh, storage.AOptions{})
+		require.NoError(t, err)
+	} else {
+		app := db.Appender(t.Context())
+		app.SetOptions(&storage.AppendOptions{DiscardOutOfOrder: true})
+		base = &app.(*appender).appenderBase
+		tx = app
+
+		refFloat, err = app.Append(0, lFloat, 1000, 1.5)
+		require.NoError(t, err)
+		_, err = app.AppendExemplar(refFloat, lFloat, ex)
+		require.NoError(t, err)
+		_, err = app.UpdateMetadata(refFloat, lFloat, meta)
+		require.NoError(t, err)
+		refHist, err = app.AppendHistogram(0, lHist, 1000, h, nil)
+		require.NoError(t, err)
+		refFH, err = app.AppendHistogram(0, lFloatHist, 1000, nil, fh)
+		require.NoError(t, err)
+	}
+
+	msFloat := db.series.GetByID(chunks.HeadSeriesRef(refFloat))
+	msHist := db.series.GetByID(chunks.HeadSeriesRef(refHist))
+	msFloatHist := db.series.GetByID(chunks.HeadSeriesRef(refFH))
+	require.NotNil(t, msFloat)
+	require.NotNil(t, msHist)
+	require.NotNil(t, msFloatHist)
+
+	refs := pooledAppenderWeakRefs{
+		msFloat:      weak.Make(msFloat),
+		msHist:       weak.Make(msHist),
+		msFloatHist:  weak.Make(msFloatHist),
+		hist:         weak.Make(h),
+		floatHist:    weak.Make(fh),
+		seriesLabel:  weak.Make(unsafe.StringData(lFloat.Get("k"))),
+		exemplarLbl:  weak.Make(unsafe.StringData(lExemplar.Get("trace_id"))),
+		metadataHelp: weak.Make(unsafe.StringData(metaHelp)),
+	}
+
+	if commit {
+		require.NoError(t, tx.Commit())
+	} else {
+		require.NoError(t, tx.Rollback())
+	}
+	if !appV2 {
+		require.Nil(t, tx.(*appender).hints)
+	}
+	return base, refs
+}
+
+func TestPooledAppenderClearsReferences(t *testing.T) {
+	for _, appV2 := range []bool{false, true} {
+		for _, commit := range []bool{true, false} {
+			finish := "rollback"
+			if commit {
+				finish = "commit"
+			}
+			t.Run(fmt.Sprintf("appV2=%v/finish=%s", appV2, finish), func(t *testing.T) {
+				opts := DefaultOptions()
+				opts.EnableMetadataWALRecords = true
+				db := createTestAgentDB(t, nil, opts)
+				t.Cleanup(func() { require.NoError(t, db.Close()) })
+
+				base, refs := populateAppenderForWeakRefTest(t, db, appV2, commit)
+				// Keep base alive across GC cycles to model a warm appender sitting in sync.Pool.
+				defer runtime.KeepAlive(base)
+
+				// Evict all series and exemplars from the active stripe map so only a bug in
+				// clearData could keep them or their labels/metadata reachable.
+				_ = db.series.GC(math.MaxInt64, false)
+
+				for range 4 {
+					runtime.GC()
+				}
+
+				require.Nil(t, refs.hist.Value(), "pooled appender retained *histogram.Histogram")
+				require.Nil(t, refs.floatHist.Value(), "pooled appender retained *histogram.FloatHistogram")
+				require.Nil(t, refs.msFloat.Value(), "pooled appender retained float *memSeries")
+				require.Nil(t, refs.msHist.Value(), "pooled appender retained histogram *memSeries")
+				require.Nil(t, refs.msFloatHist.Value(), "pooled appender retained float histogram *memSeries")
+				require.Nil(t, refs.seriesLabel.Value(), "pooled appender retained series label string")
+				require.Nil(t, refs.exemplarLbl.Value(), "pooled appender retained exemplar label string")
+				require.Nil(t, refs.metadataHelp.Value(), "pooled appender retained metadata help string")
+
+				require.NotZero(t, cap(base.pendingSeries))
+				for i, v := range base.pendingSeries[:cap(base.pendingSeries)] {
+					require.Zero(t, v, "non-zero pendingSeries[%d]", i)
+				}
+				require.NotZero(t, cap(base.pendingHistograms))
+				for i, v := range base.pendingHistograms[:cap(base.pendingHistograms)] {
+					require.Zero(t, v, "non-zero pendingHistograms[%d]", i)
+				}
+				require.NotZero(t, cap(base.pendingFloatHistograms))
+				for i, v := range base.pendingFloatHistograms[:cap(base.pendingFloatHistograms)] {
+					require.Zero(t, v, "non-zero pendingFloatHistograms[%d]", i)
+				}
+				require.NotZero(t, cap(base.pendingExamplars))
+				for i, v := range base.pendingExamplars[:cap(base.pendingExamplars)] {
+					require.Zero(t, v, "non-zero pendingExamplars[%d]", i)
+				}
+				require.NotZero(t, cap(base.pendingMetadata))
+				for i, v := range base.pendingMetadata[:cap(base.pendingMetadata)] {
+					require.Zero(t, v, "non-zero pendingMetadata[%d]", i)
+				}
+				require.NotZero(t, cap(base.sampleSeries))
+				for i, v := range base.sampleSeries[:cap(base.sampleSeries)] {
+					require.Nil(t, v, "non-nil sampleSeries[%d]", i)
+				}
+				require.NotZero(t, cap(base.histogramSeries))
+				for i, v := range base.histogramSeries[:cap(base.histogramSeries)] {
+					require.Nil(t, v, "non-nil histogramSeries[%d]", i)
+				}
+				require.NotZero(t, cap(base.floatHistogramSeries))
+				for i, v := range base.floatHistogramSeries[:cap(base.floatHistogramSeries)] {
+					require.Nil(t, v, "non-nil floatHistogramSeries[%d]", i)
+				}
+				require.NotZero(t, cap(base.metadataSeries))
+				for i, v := range base.metadataSeries[:cap(base.metadataSeries)] {
+					require.Nil(t, v, "non-nil metadataSeries[%d]", i)
+				}
+			})
+		}
+	}
+}
+
+// Recommended CLI invocation:
+/*
+	export bench=agentClearData && go test ./tsdb/agent/... \
+		-run '^$' -bench '^BenchmarkAppenderClearData$' \
+		-benchtime 1s -count 6 -cpu 2 -timeout 999m -benchmem \
+		| tee ${bench}.txt
+*/
+func BenchmarkAppenderClearData(b *testing.B) {
+	b.Run("fresh_appender_100_samples", func(b *testing.B) {
+		db := createTestAgentDB(b, nil, DefaultOptions())
+		b.Cleanup(func() { require.NoError(b, db.Close()) })
+
+		const batchSize = 100
+		lsets := make([]labels.Labels, batchSize)
+		refs := make([]storage.SeriesRef, batchSize)
+		initApp := db.AppenderV2(b.Context())
+		for i := range batchSize {
+			lsets[i] = labels.FromStrings("__name__", "bench_metric", "i", strconv.Itoa(i))
+			ref, err := initApp.Append(0, lsets[i], 0, 1, 1.0, nil, nil, storage.AOptions{})
+			require.NoError(b, err)
+			refs[i] = ref
+		}
+		require.NoError(b, initApp.Commit())
+
+		var ts int64 = 2
+		b.ReportAllocs()
+		b.ResetTimer()
+		for b.Loop() {
+			ts++
+			app := db.appenderV2Pool.New().(storage.AppenderV2)
+			for i := range batchSize {
+				if _, err := app.Append(refs[i], lsets[i], 0, ts, float64(ts), nil, nil, storage.AOptions{}); err != nil {
+					b.Fatal(err)
+				}
+			}
+			if err := app.Commit(); err != nil {
+				b.Fatal(err)
+			}
+		}
+	})
+
+	b.Run("warm_appender_500_samples", func(b *testing.B) {
+		db := createTestAgentDB(b, nil, DefaultOptions())
+		b.Cleanup(func() { require.NoError(b, db.Close()) })
+
+		const batchSize = 500
+		lsets := make([]labels.Labels, batchSize)
+		refs := make([]storage.SeriesRef, batchSize)
+		app := db.AppenderV2(b.Context())
+		for i := range batchSize {
+			lsets[i] = labels.FromStrings("__name__", "bench_metric", "i", strconv.Itoa(i))
+			ref, err := app.Append(0, lsets[i], 0, 1, 1.0, nil, nil, storage.AOptions{})
+			require.NoError(b, err)
+			refs[i] = ref
+		}
+		require.NoError(b, app.Commit())
+
+		var ts int64 = 2
+		b.ReportAllocs()
+		b.ResetTimer()
+		for b.Loop() {
+			ts++
+			app := db.AppenderV2(b.Context())
+			for i := range batchSize {
+				_, err := app.Append(refs[i], lsets[i], 0, ts, float64(ts), nil, nil, storage.AOptions{})
+				if err != nil {
+					b.Fatal(err)
+				}
+			}
+			if err := app.Commit(); err != nil {
+				b.Fatal(err)
+			}
+		}
+	})
 }
