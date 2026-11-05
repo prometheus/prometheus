@@ -370,9 +370,8 @@ func TestPromtoolAnalyze(t *testing.T) {
 		fmt.Fprintf(&sb, "test_%d{index=\"0\"} 1 2 3 4 5\n", i)
 	}
 	storage := promqltest.LoadedStorage(t, "load 1m\n"+sb.String())
-	t.Cleanup(func() { storage.Close() })
 
-	storage.CompactHead(tsdb.NewRangeHead(storage.Head(), 0, 10))
+	require.NoError(t, storage.CompactHead(tsdb.NewRangeHead(storage.Head(), 0, 10)))
 
 	cmd := exec.Command(promtoolPath, "-test.main", "tsdb", "analyze", "--extended", storage.Dir())
 	var stdout bytes.Buffer
