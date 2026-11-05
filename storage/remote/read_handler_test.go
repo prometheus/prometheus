@@ -233,7 +233,6 @@ func BenchmarkSampledReadEndpointManySamples(b *testing.B) {
 	for _, kind := range []string{"float", "histogram", "floathistogram"} {
 		for _, withExternalLabels := range []bool{false, true} {
 			b.Run(fmt.Sprintf("%s/external_labels_%t", kind, withExternalLabels), func(b *testing.B) {
-
 				store := teststorage.New(b)
 				app := store.AppenderV2(b.Context())
 				for i := range seriesCount {
