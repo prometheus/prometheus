@@ -2023,13 +2023,21 @@ func TestPopulateWithDelSeriesIterator_SeekOverlappingMetas(t *testing.T) {
 
 	reader.iterables[metas[2].Ref] = &mockIterable{}
 	metas[2].MaxTime = 100
-	for _, intervals := range []tombstones.Intervals{nil, {{Mint: 1, Maxt: 1}}} {
-		it.reset(ulid.ULID{}, reader, metas, intervals)
-		require.Equal(t, chunkenc.ValFloat, it.Seek(7))
-		require.Equal(t, int64(7), it.AtT())
-		require.NoError(t, it.Err())
-	}
+	it.reset(ulid.ULID{}, reader, metas, nil)
+	require.Equal(t, chunkenc.ValFloat, it.Seek(7))
+	require.Equal(t, int64(7), it.AtT())
+	require.NoError(t, it.Err())
 
+	// The retained chunk can also become empty through deletion at the target.
+	reader.iterables[metas[2].Ref] = &mockIterable{s: []chunks.Sample{sample{t: 7, f: 7}}}
+	reader.iterables[metas[4].Ref] = &mockIterable{s: []chunks.Sample{sample{t: 8, f: 8}}}
+	metas[4].MaxTime = 8
+	it.reset(ulid.ULID{}, reader, metas, tombstones.Intervals{{Mint: 7, Maxt: 7}})
+	require.Equal(t, chunkenc.ValFloat, it.Seek(7))
+	require.Equal(t, int64(8), it.AtT())
+	require.NoError(t, it.Err())
+
+	reader.iterables[metas[2].Ref] = &mockIterable{}
 	delete(reader.iterables, metas[4].Ref)
 	it.reset(ulid.ULID{}, reader, metas, nil)
 	require.Equal(t, chunkenc.ValNone, it.Seek(7))
