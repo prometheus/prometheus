@@ -354,7 +354,7 @@ func TestRefresh_SingleInstance(t *testing.T) {
 	vnic := makeVnic("ocid1.vnic.oc1..v001", "10.0.0.5", "203.0.113.10")
 	d := singleInstanceDiscovery(inst, vnic)
 
-	tgs, err := d.refresh(context.Background())
+	tgs, err := d.refresh(t.Context())
 	require.NoError(t, err)
 	require.Len(t, tgs, 1)
 	require.Equal(t, "OCI", tgs[0].Source)
@@ -383,7 +383,7 @@ func TestRefresh_PrimaryVnicIPv6SortedAndHostname(t *testing.T) {
 	}
 	d := singleInstanceDiscovery(inst, vnic)
 
-	tgs, err := d.refresh(context.Background())
+	tgs, err := d.refresh(t.Context())
 	require.NoError(t, err)
 	require.Len(t, tgs, 1)
 	require.Len(t, tgs[0].Targets, 1)
@@ -405,7 +405,7 @@ func TestRefresh_IPv6OnlyInstanceNotSkipped(t *testing.T) {
 	}
 	d := singleInstanceDiscovery(inst, vnic)
 
-	tgs, err := d.refresh(context.Background())
+	tgs, err := d.refresh(t.Context())
 	require.NoError(t, err)
 	require.Len(t, tgs, 1)
 	require.Len(t, tgs[0].Targets, 1)
@@ -429,7 +429,7 @@ func TestResolveVnics_DoesNotMutateSDKSlice(t *testing.T) {
 	}
 	d := singleInstanceDiscovery(inst, vnic)
 
-	_, err := d.refresh(context.Background())
+	_, err := d.refresh(t.Context())
 	require.NoError(t, err)
 	require.Equal(t, []string{"2001:db8::2", "2001:db8::1"}, orig)
 }
@@ -476,7 +476,7 @@ func TestRefresh_ResolvesPrimaryVnicAndStops(t *testing.T) {
 		return nil, errors.New("unexpected VNIC ID")
 	}
 
-	tgs, err := d.refresh(context.Background())
+	tgs, err := d.refresh(t.Context())
 	require.NoError(t, err)
 	require.Len(t, tgs, 1)
 	require.Len(t, tgs[0].Targets, 1)
@@ -526,7 +526,7 @@ func TestRefresh_MultipleCompartments(t *testing.T) {
 		return vnic, nil
 	}
 
-	tgs, err := d.refresh(context.Background())
+	tgs, err := d.refresh(t.Context())
 	require.NoError(t, err)
 	// All compartments are merged into a single group; the empty comp3
 	// contributes no targets.
@@ -567,7 +567,7 @@ func TestRefresh_DisappearingCompartmentCleared(t *testing.T) {
 	d.getVnic = func(_ context.Context, _ string) (*core.Vnic, error) { return vnic, nil }
 
 	// First refresh: both compartments yield a target in the single group.
-	tgs, err := d.refresh(context.Background())
+	tgs, err := d.refresh(t.Context())
 	require.NoError(t, err)
 	require.Len(t, tgs, 1)
 	require.Equal(t, "OCI", tgs[0].Source)
@@ -576,7 +576,7 @@ func TestRefresh_DisappearingCompartmentCleared(t *testing.T) {
 	// comp2 disappears: only comp1's target remains, comp2's is gone.
 	compartments = []string{comp1}
 
-	tgs, err = d.refresh(context.Background())
+	tgs, err = d.refresh(t.Context())
 	require.NoError(t, err)
 	require.Len(t, tgs, 1)
 	require.Equal(t, "OCI", tgs[0].Source)
@@ -587,7 +587,7 @@ func TestRefresh_DisappearingCompartmentCleared(t *testing.T) {
 	// clears the remaining targets.
 	compartments = nil
 
-	tgs, err = d.refresh(context.Background())
+	tgs, err = d.refresh(t.Context())
 	require.NoError(t, err)
 	require.Len(t, tgs, 1)
 	require.Equal(t, "OCI", tgs[0].Source)
@@ -602,7 +602,7 @@ func TestRefresh_CompartmentListError_Propagates(t *testing.T) {
 		return nil, sentinel
 	}
 
-	_, err := d.refresh(context.Background())
+	_, err := d.refresh(t.Context())
 	require.ErrorIs(t, err, sentinel)
 }
 
@@ -617,7 +617,7 @@ func TestRefresh_ListInstancesError_PropagatesError(t *testing.T) {
 		return nil, sentinel
 	}
 
-	tgs, err := d.refresh(context.Background())
+	tgs, err := d.refresh(t.Context())
 	require.ErrorIs(t, err, sentinel)
 	require.Nil(t, tgs, "no target groups must be returned when listInstances fails")
 }
@@ -626,7 +626,7 @@ func TestRefresh_EmptyCompartment(t *testing.T) {
 	t.Parallel()
 	d := baseDiscovery()
 
-	tgs, err := d.refresh(context.Background())
+	tgs, err := d.refresh(t.Context())
 	require.NoError(t, err)
 	require.Len(t, tgs, 1)
 	require.Empty(t, tgs[0].Targets)
@@ -646,7 +646,7 @@ func TestRefresh_VnicAttachmentError_InstanceSkipped(t *testing.T) {
 	}
 
 	// Instance is skipped, compartment group is still returned (empty targets).
-	tgs, err := d.refresh(context.Background())
+	tgs, err := d.refresh(t.Context())
 	require.NoError(t, err)
 	require.Len(t, tgs, 1)
 	require.Empty(t, tgs[0].Targets)
@@ -669,7 +669,7 @@ func TestRefresh_GetVnicError_InstanceSkipped(t *testing.T) {
 		return nil, sentinel
 	}
 
-	tgs, err := d.refresh(context.Background())
+	tgs, err := d.refresh(t.Context())
 	require.NoError(t, err)
 	require.Len(t, tgs, 1)
 	require.Empty(t, tgs[0].Targets)
@@ -696,7 +696,7 @@ func TestRefresh_NoPrimaryVnic_InstanceDropped(t *testing.T) {
 	}
 	d.getVnic = func(_ context.Context, _ string) (*core.Vnic, error) { return nonPrimary, nil }
 
-	tgs, err := d.refresh(context.Background())
+	tgs, err := d.refresh(t.Context())
 	require.NoError(t, err)
 	require.Len(t, tgs, 1)
 	require.Empty(t, tgs[0].Targets, "instance with no usable IP must be dropped")
@@ -720,7 +720,7 @@ func TestRefresh_InstanceWithNilIDDropped(t *testing.T) {
 		return nil, nil
 	}
 
-	tgs, err := d.refresh(context.Background())
+	tgs, err := d.refresh(t.Context())
 	require.NoError(t, err)
 	require.Len(t, tgs, 1)
 	require.Empty(t, tgs[0].Targets)
@@ -729,7 +729,7 @@ func TestRefresh_InstanceWithNilIDDropped(t *testing.T) {
 
 func TestRefresh_ContextCanceled(t *testing.T) {
 	t.Parallel()
-	ctx, cancel := context.WithCancel(context.Background())
+	ctx, cancel := context.WithCancel(t.Context())
 	cancel()
 
 	d := baseDiscovery()
@@ -810,7 +810,7 @@ func TestListAllCompartments_BFSIncludesRoot(t *testing.T) {
 		},
 	}
 
-	got, err := listAllCompartments(context.Background(), tree.paginate, "root", promslog.NewNopLogger())
+	got, err := listAllCompartments(t.Context(), tree.paginate, "root", promslog.NewNopLogger())
 	require.NoError(t, err)
 	require.ElementsMatch(t, []string{"root", "c1", "c2", "c1a"}, got)
 }
@@ -824,7 +824,7 @@ func TestListAllCompartments_PagedResults(t *testing.T) {
 		pageSize: 2,
 	}
 
-	got, err := listAllCompartments(context.Background(), tree.paginate, "root", promslog.NewNopLogger())
+	got, err := listAllCompartments(t.Context(), tree.paginate, "root", promslog.NewNopLogger())
 	require.NoError(t, err)
 	require.ElementsMatch(t, []string{"root", "c1", "c2", "c3", "c4", "c5"}, got)
 	require.Equal(t, 3, tree.calls["root"], "5 children with page size 2 must take 3 calls")
@@ -838,7 +838,7 @@ func TestListAllCompartments_InactiveCompartmentSkipped(t *testing.T) {
 		},
 	}
 
-	got, err := listAllCompartments(context.Background(), tree.paginate, "root", promslog.NewNopLogger())
+	got, err := listAllCompartments(t.Context(), tree.paginate, "root", promslog.NewNopLogger())
 	require.NoError(t, err)
 	require.ElementsMatch(t, []string{"root", "c1", "c3"}, got)
 }
@@ -853,7 +853,7 @@ func TestListAllCompartments_CycleVisitedOnce(t *testing.T) {
 		},
 	}
 
-	got, err := listAllCompartments(context.Background(), tree.paginate, "root", promslog.NewNopLogger())
+	got, err := listAllCompartments(t.Context(), tree.paginate, "root", promslog.NewNopLogger())
 	require.NoError(t, err)
 	require.ElementsMatch(t, []string{"root", "c1"}, got)
 	require.Equal(t, 1, tree.calls["root"], "root must be listed only once even when referenced as a child")
@@ -870,7 +870,7 @@ func TestListAllCompartments_PermissionErrorSkipsSubtree(t *testing.T) {
 		permissionDenied: map[string]bool{"c2": true},
 	}
 
-	got, err := listAllCompartments(context.Background(), tree.paginate, "root", promslog.NewNopLogger())
+	got, err := listAllCompartments(t.Context(), tree.paginate, "root", promslog.NewNopLogger())
 	require.NoError(t, err)
 	require.ElementsMatch(t, []string{"root", "c1", "c2", "c1a"}, got)
 }
@@ -885,7 +885,7 @@ func TestListAllCompartments_CanceledContextAborts(t *testing.T) {
 		},
 	}
 
-	ctx, cancel := context.WithCancel(context.Background())
+	ctx, cancel := context.WithCancel(t.Context())
 	cancel()
 
 	_, err := listAllCompartments(ctx, tree.paginate, "root", promslog.NewNopLogger())

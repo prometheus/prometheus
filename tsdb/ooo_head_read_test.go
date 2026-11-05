@@ -391,9 +391,9 @@ func testOOOHeadChunkReader_LabelValues(t *testing.T, scenario sampleTypeScenari
 	chunkRange := int64(2000)
 	head, _ := newTestHead(t, chunkRange, compression.None, true)
 
-	ctx := context.Background()
+	ctx := t.Context()
 
-	app := head.AppenderV2(context.Background())
+	app := head.AppenderV2(t.Context())
 
 	// Add in-order samples
 	_, _, err := scenario.appendFunc(app, labels.FromStrings("foo", "bar1"), 100, int64(1))
@@ -841,13 +841,13 @@ func testOOOHeadChunkReader_Chunk(t *testing.T, scenario sampleTypeScenario) {
 		t.Run(fmt.Sprintf("name=%s", tc.name), func(t *testing.T) {
 			db := newTestDB(t, withOpts(opts))
 
-			app := db.AppenderV2(context.Background())
+			app := db.AppenderV2(t.Context())
 			s1Ref, _, err := scenario.appendFunc(app, s1, tc.firstInOrderSampleAt, tc.firstInOrderSampleAt/1*time.Minute.Milliseconds())
 			require.NoError(t, err)
 			require.NoError(t, app.Commit())
 
 			// OOO few samples for s1.
-			app = db.AppenderV2(context.Background())
+			app = db.AppenderV2(t.Context())
 			for _, s := range tc.inputSamples {
 				_, _, err := scenario.appendFunc(app, s1, s.Ts, s.V)
 				require.NoError(t, err)
@@ -1010,13 +1010,13 @@ func testOOOHeadChunkReader_Chunk_ConsistentQueryResponseDespiteOfHeadExpanding(
 		t.Run(fmt.Sprintf("name=%s", tc.name), func(t *testing.T) {
 			db := newTestDB(t, withOpts(opts))
 
-			app := db.AppenderV2(context.Background())
+			app := db.AppenderV2(t.Context())
 			s1Ref, _, err := scenario.appendFunc(app, s1, tc.firstInOrderSampleAt, tc.firstInOrderSampleAt/1*time.Minute.Milliseconds())
 			require.NoError(t, err)
 			require.NoError(t, app.Commit())
 
 			// OOO few samples for s1.
-			app = db.AppenderV2(context.Background())
+			app = db.AppenderV2(t.Context())
 			for _, s := range tc.initialSamples {
 				_, _, err := scenario.appendFunc(app, s1, s.Ts, s.V)
 				require.NoError(t, err)
@@ -1034,7 +1034,7 @@ func testOOOHeadChunkReader_Chunk_ConsistentQueryResponseDespiteOfHeadExpanding(
 
 			// Now we keep receiving ooo samples
 			// OOO few samples for s1.
-			app = db.AppenderV2(context.Background())
+			app = db.AppenderV2(t.Context())
 			for _, s := range tc.samplesAfterSeriesCall {
 				_, _, err = scenario.appendFunc(app, s1, s.Ts, s.V)
 				require.NoError(t, err)
@@ -1175,7 +1175,7 @@ func (mockSearchQuerierNoSearch) LabelNames(context.Context, *storage.LabelHints
 func (mockSearchQuerierNoSearch) Close() error { return nil }
 
 func TestHeadAndOOOQuerierSearch(t *testing.T) {
-	ctx := context.Background()
+	ctx := t.Context()
 
 	t.Run("nil inner querier returns empty", func(t *testing.T) {
 		q := &HeadAndOOOQuerier{}
@@ -1289,7 +1289,7 @@ func testOOOQueryAcrossChunkIDWrap(t *testing.T, scenario sampleTypeScenario) {
 	s1 := labels.FromStrings("l", "v1")
 	minutes := func(m int64) int64 { return m * time.Minute.Milliseconds() }
 
-	app := db.AppenderV2(context.Background())
+	app := db.AppenderV2(t.Context())
 
 	// In-order sample to establish the series.
 	ref, _, err := scenario.appendFunc(app, s1, minutes(120), 120)
@@ -1314,7 +1314,7 @@ func testOOOQueryAcrossChunkIDWrap(t *testing.T, scenario sampleTypeScenario) {
 	ms.Unlock()
 
 	// Second batch of 10 OOO samples whose chunk IDs cross the boundary.
-	app = db.AppenderV2(context.Background())
+	app = db.AppenderV2(t.Context())
 	for i := int64(11); i <= 20; i++ {
 		_, _, err = scenario.appendFunc(app, s1, minutes(i), i)
 		require.NoError(t, err)

@@ -387,7 +387,7 @@ func BenchmarkMerge(t *testing.B) {
 	its := make([]*listPostings, len(refs))
 	for _, nSeries := range []int{1, 10, 10000, 100000} {
 		t.Run(strconv.Itoa(nSeries), func(bench *testing.B) {
-			ctx := context.Background()
+			ctx := t.Context()
 			for bench.Loop() {
 				// Reset the ListPostings to their original values each time round the loop.
 				for j := range refs[:nSeries] {
@@ -407,7 +407,7 @@ func TestMultiMerge(t *testing.T) {
 	i2 := newListPostings(2, 4, 5, 6, 7, 8, 999, 1001)
 	i3 := newListPostings(1, 2, 5, 6, 7, 8, 1001, 1200)
 
-	res, err := ExpandPostings(Merge(context.Background(), i1, i2, i3))
+	res, err := ExpandPostings(Merge(t.Context(), i1, i2, i3))
 	require.NoError(t, err)
 	require.Equal(t, []storage.SeriesRef{1, 2, 3, 4, 5, 6, 7, 8, 999, 1000, 1001, 1200}, res)
 }
@@ -493,7 +493,7 @@ func TestMergedPostings(t *testing.T) {
 		t.Run("", func(t *testing.T) {
 			require.NotNil(t, c.res, "merge result expectancy cannot be nil")
 
-			ctx := context.Background()
+			ctx := t.Context()
 
 			expected, err := ExpandPostings(c.res)
 			require.NoError(t, err)
@@ -557,7 +557,7 @@ func TestMergedPostingsSeek(t *testing.T) {
 	}
 
 	for _, c := range cases {
-		ctx := context.Background()
+		ctx := t.Context()
 
 		a := newListPostings(c.a...)
 		b := newListPostings(c.b...)
@@ -832,7 +832,7 @@ func TestIntersectWithMerge(t *testing.T) {
 	a := newListPostings(21, 22, 23, 24, 25, 30)
 
 	b := Merge(
-		context.Background(),
+		t.Context(),
 		newListPostings(10, 20, 30),
 		newListPostings(15, 26, 30),
 	)
@@ -985,7 +985,7 @@ func TestMemPostings_Delete(t *testing.T) {
 	p.Add(2, labels.FromStrings("lbl1", "b"))
 	p.Add(3, labels.FromStrings("lbl2", "a"))
 
-	before := p.Postings(context.Background(), allPostingsKey.Name, allPostingsKey.Value)
+	before := p.Postings(t.Context(), allPostingsKey.Name, allPostingsKey.Value)
 	deletedRefs := map[storage.SeriesRef]struct{}{
 		2: {},
 	}
@@ -993,7 +993,7 @@ func TestMemPostings_Delete(t *testing.T) {
 		{Name: "lbl1", Value: "b"}: {},
 	}
 	p.Delete(deletedRefs, affectedLabels)
-	after := p.Postings(context.Background(), allPostingsKey.Name, allPostingsKey.Value)
+	after := p.Postings(t.Context(), allPostingsKey.Name, allPostingsKey.Value)
 
 	// Make sure postings gotten before the delete have the old data when
 	// iterated over.
@@ -1007,7 +1007,7 @@ func TestMemPostings_Delete(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, []storage.SeriesRef{1, 3}, expanded)
 
-	deleted := p.Postings(context.Background(), "lbl1", "b")
+	deleted := p.Postings(t.Context(), "lbl1", "b")
 	expanded, err = ExpandPostings(deleted)
 	require.NoError(t, err)
 	require.Empty(t, expanded, "expected empty postings, got %v", expanded)
@@ -1079,7 +1079,7 @@ func BenchmarkMemPostings_Delete(b *testing.B) {
 									return
 								default:
 									// Get a random value of this label.
-									p.Postings(context.Background(), lbl, itoa(rand.Intn(10000))).Next()
+									p.Postings(b.Context(), lbl, itoa(rand.Intn(10000))).Next()
 								}
 							}
 						}(i)
@@ -1449,28 +1449,28 @@ func BenchmarkMemPostings_PostingsForLabelMatching(b *testing.B) {
 				}
 			}
 
-			fp, err := ExpandPostings(mp.PostingsForLabelMatching(context.Background(), "label", fast.MatchString))
+			fp, err := ExpandPostings(mp.PostingsForLabelMatching(b.Context(), "label", fast.MatchString))
 			require.NoError(b, err)
 			b.Logf("Fast matcher matches %d series", len(fp))
 			b.Run("matcher=fast", func(b *testing.B) {
 				for b.Loop() {
-					mp.PostingsForLabelMatching(context.Background(), "label", fast.MatchString).Next()
+					mp.PostingsForLabelMatching(b.Context(), "label", fast.MatchString).Next()
 				}
 			})
 
-			sp, err := ExpandPostings(mp.PostingsForLabelMatching(context.Background(), "label", slow.MatchString))
+			sp, err := ExpandPostings(mp.PostingsForLabelMatching(b.Context(), "label", slow.MatchString))
 			require.NoError(b, err)
 			b.Logf("Slow matcher matches %d series", len(sp))
 			b.Run("matcher=slow", func(b *testing.B) {
 				for b.Loop() {
-					mp.PostingsForLabelMatching(context.Background(), "label", slow.MatchString).Next()
+					mp.PostingsForLabelMatching(b.Context(), "label", slow.MatchString).Next()
 				}
 			})
 
 			b.Run("matcher=all", func(b *testing.B) {
 				for b.Loop() {
 					// Match everything.
-					p := mp.PostingsForLabelMatching(context.Background(), "label", func(_ string) bool { return true })
+					p := mp.PostingsForLabelMatching(b.Context(), "label", func(_ string) bool { return true })
 					var sum storage.SeriesRef
 					// Iterate through all results to exercise merge function.
 					for p.Next() {
@@ -1497,7 +1497,7 @@ func TestMemPostings_PostingsForLabelMatching(t *testing.T) {
 		return iv%2 == 0
 	}
 
-	p := mp.PostingsForLabelMatching(context.Background(), "foo", isEven)
+	p := mp.PostingsForLabelMatching(t.Context(), "foo", isEven)
 	require.NoError(t, p.Err())
 	refs, err := ExpandPostings(p)
 	require.NoError(t, err)
@@ -1511,7 +1511,7 @@ func TestMemPostings_PostingsForAllLabelValues(t *testing.T) {
 	mp.Add(3, labels.FromStrings("foo", "3"))
 	mp.Add(4, labels.FromStrings("foo", "4"))
 
-	p := mp.PostingsForAllLabelValues(context.Background(), "foo")
+	p := mp.PostingsForAllLabelValues(t.Context(), "foo")
 	require.NoError(t, p.Err())
 	refs, err := ExpandPostings(p)
 	require.NoError(t, err)
@@ -1536,7 +1536,7 @@ func TestMemPostings_PostingsForLabelMatchingHonorsContextCancel(t *testing.T) {
 }
 
 func TestMemPostings_LabelValuesLimitSmallest(t *testing.T) {
-	ctx := context.Background()
+	ctx := t.Context()
 
 	// Added in descending order
 	p := NewMemPostings()

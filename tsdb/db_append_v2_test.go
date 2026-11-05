@@ -61,7 +61,7 @@ import (
 func TestDataAvailableOnlyAfterCommit_AppendV2(t *testing.T) {
 	db := newTestDB(t)
 
-	ctx := context.Background()
+	ctx := t.Context()
 	app := db.AppenderV2(ctx)
 
 	_, err := app.Append(0, labels.FromStrings("foo", "bar"), 0, 0, 0, nil, nil, storage.AOptions{})
@@ -93,7 +93,7 @@ func TestNoPanicAfterWALCorruption_AppendV2(t *testing.T) {
 	// This is to ensure that all samples can be read from the mmapped chunks when the WAL is corrupted.
 	var expSamples []chunks.Sample
 	var maxt int64
-	ctx := context.Background()
+	ctx := t.Context()
 	{
 		// Appending 121 samples because on the 121st a new chunk will be created.
 		for range 121 {
@@ -140,7 +140,7 @@ func TestNoPanicAfterWALCorruption_AppendV2(t *testing.T) {
 func TestDataNotAvailableAfterRollback_AppendV2(t *testing.T) {
 	db := newTestDB(t)
 
-	app := db.AppenderV2(context.Background())
+	app := db.AppenderV2(t.Context())
 	_, err := app.Append(0, labels.FromStrings("type", "float"), 0, 0, 0, nil, nil, storage.AOptions{})
 	require.NoError(t, err)
 
@@ -229,7 +229,7 @@ func TestDataNotAvailableAfterRollback_AppendV2(t *testing.T) {
 func TestDBAppenderV2_AddRef(t *testing.T) {
 	db := newTestDB(t)
 
-	ctx := context.Background()
+	ctx := t.Context()
 	app1 := db.AppenderV2(ctx)
 
 	ref1, err := app1.Append(0, labels.FromStrings("a", "b"), 0, 123, 0, nil, nil, storage.AOptions{})
@@ -284,7 +284,7 @@ func TestDBAppenderV2_AddRef(t *testing.T) {
 func TestDBAppenderV2_EmptyLabelsIgnored(t *testing.T) {
 	db := newTestDB(t)
 
-	ctx := context.Background()
+	ctx := t.Context()
 	app1 := db.AppenderV2(ctx)
 
 	ref1, err := app1.Append(0, labels.FromStrings("a", "b"), 0, 123, 0, nil, nil, storage.AOptions{})
@@ -304,7 +304,7 @@ func TestDBAppenderV2_EmptyLabelsIgnored(t *testing.T) {
 func TestDBAppenderV2_EmptyLabelsetCausesError(t *testing.T) {
 	db := newTestDB(t)
 
-	ctx := context.Background()
+	ctx := t.Context()
 	app := db.AppenderV2(ctx)
 	_, err := app.Append(0, labels.Labels{}, 0, 0, 0, nil, nil, storage.AOptions{})
 	require.Error(t, err)
@@ -344,7 +344,7 @@ func TestDeleteSimple_AppendV2(t *testing.T) {
 		t.Run("", func(t *testing.T) {
 			db := newTestDB(t)
 
-			ctx := context.Background()
+			ctx := t.Context()
 			app := db.AppenderV2(ctx)
 
 			smpls := make([]float64, numSamples)
@@ -402,7 +402,7 @@ func TestDeleteSimple_AppendV2(t *testing.T) {
 func TestAmendHistogramDatapointCausesError_AppendV2(t *testing.T) {
 	db := newTestDB(t)
 
-	ctx := context.Background()
+	ctx := t.Context()
 	app := db.AppenderV2(ctx)
 	_, err := app.Append(0, labels.FromStrings("a", "b"), 0, 0, 0, nil, nil, storage.AOptions{})
 	require.NoError(t, err)
@@ -460,7 +460,7 @@ func TestAmendHistogramDatapointCausesError_AppendV2(t *testing.T) {
 func TestDuplicateNaNDatapointNoAmendError_AppendV2(t *testing.T) {
 	db := newTestDB(t)
 
-	ctx := context.Background()
+	ctx := t.Context()
 	app := db.AppenderV2(ctx)
 	_, err := app.Append(0, labels.FromStrings("a", "b"), 0, 0, math.NaN(), nil, nil, storage.AOptions{})
 	require.NoError(t, err)
@@ -474,7 +474,7 @@ func TestDuplicateNaNDatapointNoAmendError_AppendV2(t *testing.T) {
 func TestNonDuplicateNaNDatapointsCausesAmendError_AppendV2(t *testing.T) {
 	db := newTestDB(t)
 
-	ctx := context.Background()
+	ctx := t.Context()
 	app := db.AppenderV2(ctx)
 	_, err := app.Append(0, labels.FromStrings("a", "b"), 0, 0, math.Float64frombits(0x7ff0000000000001), nil, nil, storage.AOptions{})
 	require.NoError(t, err)
@@ -489,7 +489,7 @@ func TestSkippingInvalidValuesInSameTxn_AppendV2(t *testing.T) {
 	db := newTestDB(t)
 
 	// Append AmendedValue.
-	ctx := context.Background()
+	ctx := t.Context()
 	app := db.AppenderV2(ctx)
 	_, err := app.Append(0, labels.FromStrings("a", "b"), 0, 0, 1, nil, nil, storage.AOptions{})
 	require.NoError(t, err)
@@ -529,7 +529,7 @@ func TestDB_Snapshot_AppendV2(t *testing.T) {
 	db := newTestDB(t)
 
 	// append data
-	ctx := context.Background()
+	ctx := t.Context()
 	app := db.AppenderV2(ctx)
 	mint := int64(1414141414000)
 	for i := range 1000 {
@@ -551,7 +551,7 @@ func TestDB_Snapshot_AppendV2(t *testing.T) {
 	defer func() { require.NoError(t, querier.Close()) }()
 
 	// sum values
-	seriesSet := querier.Select(context.Background(), false, nil, labels.MustNewMatcher(labels.MatchEqual, "foo", "bar"))
+	seriesSet := querier.Select(t.Context(), false, nil, labels.MustNewMatcher(labels.MatchEqual, "foo", "bar"))
 	var series chunkenc.Iterator
 	sum := 0.0
 	for seriesSet.Next() {
@@ -573,7 +573,7 @@ func TestDB_Snapshot_AppendV2(t *testing.T) {
 func TestDB_Snapshot_ChunksOutsideOfCompactedRange_AppendV2(t *testing.T) {
 	db := newTestDB(t)
 
-	ctx := context.Background()
+	ctx := t.Context()
 	app := db.AppenderV2(ctx)
 	mint := int64(1414141414000)
 	for i := range 1000 {
@@ -621,7 +621,7 @@ func TestDB_SnapshotWithDelete_AppendV2(t *testing.T) {
 
 	db := newTestDB(t)
 
-	ctx := context.Background()
+	ctx := t.Context()
 	app := db.AppenderV2(ctx)
 
 	smpls := make([]float64, numSamples)
@@ -759,7 +759,7 @@ func TestDB_e2e_AppendV2(t *testing.T) {
 
 	db := newTestDB(t)
 
-	ctx := context.Background()
+	ctx := t.Context()
 	app := db.AppenderV2(ctx)
 
 	for _, l := range lbls {
@@ -863,7 +863,7 @@ func TestWALFlushedOnDBClose_AppendV2(t *testing.T) {
 
 	lbls := labels.FromStrings("labelname", "labelvalue")
 
-	ctx := context.Background()
+	ctx := t.Context()
 	app := db.AppenderV2(ctx)
 	_, err := app.Append(0, lbls, 0, 0, 1, nil, nil, storage.AOptions{})
 	require.NoError(t, err)
@@ -940,7 +940,7 @@ func TestWALSegmentSizeOptions_AppendV2(t *testing.T) {
 			db := newTestDB(t, withOpts(opts))
 
 			for i := range int64(155) {
-				app := db.AppenderV2(context.Background())
+				app := db.AppenderV2(t.Context())
 				ref, err := app.Append(0, labels.FromStrings("wal"+strconv.Itoa(int(i)), "size"), 0, i, rand.Float64(), nil, nil, storage.AOptions{})
 				require.NoError(t, err)
 				for j := int64(1); j <= 78; j++ {
@@ -1002,7 +1002,7 @@ func testWALReplayRaceOnSamplesLoggedBeforeSeriesAppendV2(t *testing.T, numSampl
 		require.NoError(t, err)
 
 		// Add samples via appender so that they're logged after the series in the WAL.
-		app := db.AppenderV2(context.Background())
+		app := db.AppenderV2(t.Context())
 		lbls := labels.FromStrings("series_id", strconv.Itoa(seriesRef))
 
 		for ts := numSamplesBeforeSeriesCreation; ts < numSamplesBeforeSeriesCreation+numSamplesAfterSeriesCreation; ts++ {
@@ -1021,7 +1021,7 @@ func testWALReplayRaceOnSamplesLoggedBeforeSeriesAppendV2(t *testing.T, numSampl
 	q, err := db.ChunkQuerier(math.MinInt64, math.MaxInt64)
 	require.NoError(t, err)
 
-	set := q.Select(context.Background(), false, nil, labels.MustNewMatcher(labels.MatchRegexp, "series_id", ".+"))
+	set := q.Select(t.Context(), false, nil, labels.MustNewMatcher(labels.MatchRegexp, "series_id", ".+"))
 	actualSeries := 0
 	var chunksIt chunks.Iterator
 
@@ -1049,7 +1049,7 @@ func TestTombstoneClean_AppendV2(t *testing.T) {
 
 	db := newTestDB(t)
 
-	ctx := context.Background()
+	ctx := t.Context()
 	app := db.AppenderV2(ctx)
 
 	smpls := make([]float64, numSamples)
@@ -1142,7 +1142,7 @@ func TestTombstoneCleanResultEmptyBlock_AppendV2(t *testing.T) {
 
 	db := newTestDB(t)
 
-	ctx := context.Background()
+	ctx := t.Context()
 	app := db.AppenderV2(ctx)
 
 	smpls := make([]float64, numSamples)
@@ -1201,7 +1201,7 @@ func TestSizeRetention_AppendV2(t *testing.T) {
 			}
 
 			// Add some data to the WAL.
-			headApp := db.Head().AppenderV2(context.Background())
+			headApp := db.Head().AppenderV2(t.Context())
 			var aSeries labels.Labels
 			var it chunkenc.Iterator
 			for _, m := range headBlocks {
@@ -1267,7 +1267,7 @@ func TestSizeRetention_AppendV2(t *testing.T) {
 			require.Equal(t, expSize, actSize, "registered size doesn't match actual disk size")
 
 			// Add some out of order samples to check the size of WBL.
-			headApp = db.Head().AppenderV2(context.Background())
+			headApp = db.Head().AppenderV2(t.Context())
 			for ts := int64(750); ts < 800; ts++ {
 				_, err := headApp.Append(0, aSeries, 0, ts, float64(ts), nil, nil, storage.AOptions{})
 				require.NoError(t, err)
@@ -1325,7 +1325,7 @@ func TestNotMatcherSelectsLabelsUnsetSeries_AppendV2(t *testing.T) {
 		labels.FromStrings("labelname", "labelvalue"),
 	}
 
-	ctx := context.Background()
+	ctx := t.Context()
 	app := db.AppenderV2(ctx)
 	for _, lbls := range labelpairs {
 		_, err := app.Append(0, lbls, 0, 0, 1, nil, nil, storage.AOptions{})
@@ -1393,7 +1393,7 @@ func TestChunkAtBlockBoundary_AppendV2(t *testing.T) {
 	t.Parallel()
 	db := newTestDB(t)
 
-	ctx := context.Background()
+	ctx := t.Context()
 	app := db.AppenderV2(ctx)
 
 	blockRange := db.compactor.(*LeveledCompactor).ranges[0]
@@ -1447,7 +1447,7 @@ func TestQuerierWithBoundaryChunks_AppendV2(t *testing.T) {
 	t.Parallel()
 	db := newTestDB(t)
 
-	ctx := context.Background()
+	ctx := t.Context()
 	app := db.AppenderV2(ctx)
 
 	blockRange := db.compactor.(*LeveledCompactor).ranges[0]
@@ -1496,7 +1496,7 @@ func TestInitializeHeadTimestamp_AppendV2(t *testing.T) {
 		require.False(t, db.head.initialized())
 
 		// First added sample initializes the writable range.
-		ctx := context.Background()
+		ctx := t.Context()
 		app := db.AppenderV2(ctx)
 		_, err := app.Append(0, labels.FromStrings("a", "b"), 0, 1000, 1, nil, nil, storage.AOptions{})
 		require.NoError(t, err)
@@ -1584,7 +1584,7 @@ func TestInitializeHeadTimestamp_AppendV2(t *testing.T) {
 func TestNoEmptyBlocks_AppendV2(t *testing.T) {
 	t.Parallel()
 	db := newTestDB(t, withRngs(100))
-	ctx := context.Background()
+	ctx := t.Context()
 
 	db.DisableCompactions()
 
@@ -1684,7 +1684,7 @@ func TestNoEmptyBlocks_AppendV2(t *testing.T) {
 }
 
 func TestDB_LabelNames_AppendV2(t *testing.T) {
-	ctx := context.Background()
+	ctx := t.Context()
 	tests := []struct {
 		// Add 'sampleLabels1' -> Test Head -> Compact -> Test Disk ->
 		// -> Add 'sampleLabels2' -> Test Head+Disk
@@ -1741,7 +1741,7 @@ func TestDB_LabelNames_AppendV2(t *testing.T) {
 	}
 	for _, tst := range tests {
 		t.Run("", func(t *testing.T) {
-			ctx := context.Background()
+			ctx := t.Context()
 			db := newTestDB(t)
 
 			appendSamples(db, 0, 4, tst.sampleLabels1)
@@ -1794,7 +1794,7 @@ func TestCorrectNumTombstones_AppendV2(t *testing.T) {
 	defaultLabel := labels.FromStrings(name, value)
 	defaultMatcher := labels.MustNewMatcher(labels.MatchEqual, name, value)
 
-	ctx := context.Background()
+	ctx := t.Context()
 	app := db.AppenderV2(ctx)
 	for i := range int64(3) {
 		for j := range int64(15) {
@@ -1836,7 +1836,7 @@ func TestCorrectNumTombstones_AppendV2(t *testing.T) {
 func TestBlockRanges_AppendV2(t *testing.T) {
 	t.Parallel()
 	logger := promslog.New(&promslog.Config{})
-	ctx := context.Background()
+	ctx := t.Context()
 
 	dir := t.TempDir()
 
@@ -1950,7 +1950,7 @@ func TestDBReadOnly_AppendV2(t *testing.T) {
 
 		dbSizeBeforeAppend, err := fileutil.DirSize(dbWritable.Dir())
 		require.NoError(t, err)
-		app := dbWritable.AppenderV2(context.Background())
+		app := dbWritable.AppenderV2(t.Context())
 		_, err = app.Append(0, labels.FromStrings("foo", "bar"), 0, dbWritable.Head().MaxTime()+1, 0, nil, nil, storage.AOptions{})
 		require.NoError(t, err)
 		require.NoError(t, app.Commit())
@@ -2031,7 +2031,7 @@ func TestDBReadOnly_FlushWAL_AppendV2(t *testing.T) {
 		logger = promslog.New(&promslog.Config{})
 		err    error
 		maxt   int
-		ctx    = context.Background()
+		ctx    = t.Context()
 	)
 
 	// Bootstrap the db.
@@ -2123,7 +2123,7 @@ func TestDBReadOnly_Querier_NoAlteration_AppendV2(t *testing.T) {
 
 		// Append until the first mmapped head chunk.
 		for i := range 121 {
-			app := db.AppenderV2(context.Background())
+			app := db.AppenderV2(t.Context())
 			_, err := app.Append(0, labels.FromStrings("foo", "bar"), 0, int64(i), 0, nil, nil, storage.AOptions{})
 			require.NoError(t, err)
 			require.NoError(t, app.Commit())
@@ -2166,7 +2166,7 @@ func TestDBCannotSeePartialCommits_AppendV2(t *testing.T) {
 
 	stop := make(chan struct{})
 	firstInsert := make(chan struct{})
-	ctx := context.Background()
+	ctx := t.Context()
 
 	// Insert data in batches.
 	go func() {
@@ -2233,7 +2233,7 @@ func TestDBQueryDoesntSeeAppendsAfterCreation_AppendV2(t *testing.T) {
 	require.NoError(t, err)
 	defer querierBeforeAdd.Close()
 
-	ctx := context.Background()
+	ctx := t.Context()
 	app := db.AppenderV2(ctx)
 	_, err = app.Append(0, labels.FromStrings("foo", "bar"), 0, 0, 0, nil, nil, storage.AOptions{})
 	require.NoError(t, err)
@@ -2305,7 +2305,7 @@ func TestCompactHead_AppendV2(t *testing.T) {
 		WALCompression:    compression.Snappy,
 	}
 	db := newTestDB(t, withOpts(opts))
-	ctx := context.Background()
+	ctx := t.Context()
 	app := db.AppenderV2(ctx)
 	var expSamples []sample
 	maxt := 100
@@ -2352,7 +2352,7 @@ func TestCompactHead_AppendV2(t *testing.T) {
 func TestCompactHeadWithDeletion_AppendV2(t *testing.T) {
 	db := newTestDB(t)
 
-	ctx := context.Background()
+	ctx := t.Context()
 
 	app := db.AppenderV2(ctx)
 	_, err := app.Append(0, labels.FromStrings("a", "b"), 0, 10, rand.Float64(), nil, nil, storage.AOptions{})
@@ -2377,7 +2377,7 @@ func TestOneCheckpointPerCompactCall_AppendV2(t *testing.T) {
 		MaxBlockDuration:  blockRange,
 	}
 
-	ctx := context.Background()
+	ctx := t.Context()
 
 	db := newTestDB(t, withOpts(opts))
 	db.DisableCompactions()
@@ -2386,7 +2386,7 @@ func TestOneCheckpointPerCompactCall_AppendV2(t *testing.T) {
 
 	lbls := labels.FromStrings("foo_d", "choco_bar")
 	// Append samples spanning 59 block ranges.
-	app := db.AppenderV2(context.Background())
+	app := db.AppenderV2(t.Context())
 	for i := range int64(60) {
 		_, err := app.Append(0, lbls, 0, blockRange*i, rand.Float64(), nil, nil, storage.AOptions{})
 		require.NoError(t, err)
@@ -2446,7 +2446,7 @@ func TestOneCheckpointPerCompactCall_AppendV2(t *testing.T) {
 	require.Equal(t, 0, int(db.head.NumSeries()))
 
 	// Adding sample way into the future.
-	app = db.AppenderV2(context.Background())
+	app = db.AppenderV2(t.Context())
 	_, err = app.Append(0, lbls, 0, blockRange*120, rand.Float64(), nil, nil, storage.AOptions{})
 	require.NoError(t, err)
 	require.NoError(t, app.Commit())
@@ -2490,7 +2490,7 @@ func TestQuerierShouldNotFailIfOOOCompactionOccursAfterRetrievingQuerier_AppendV
 	db.DisableCompactions()
 
 	metric := labels.FromStrings(labels.MetricName, "test_metric")
-	ctx := context.Background()
+	ctx := t.Context()
 	interval := int64(15 * time.Second / time.Millisecond)
 	ts := int64(0)
 	samplesWritten := 0
@@ -2603,7 +2603,7 @@ func TestQuerierShouldNotFailIfOOOCompactionOccursAfterSelecting_AppendV2(t *tes
 	db.DisableCompactions()
 
 	metric := labels.FromStrings(labels.MetricName, "test_metric")
-	ctx := context.Background()
+	ctx := t.Context()
 	interval := int64(15 * time.Second / time.Millisecond)
 	ts := int64(0)
 	samplesWritten := 0
@@ -2687,7 +2687,7 @@ func TestQuerierShouldNotFailIfOOOCompactionOccursAfterRetrievingIterators_Appen
 	db.DisableCompactions()
 
 	metric := labels.FromStrings(labels.MetricName, "test_metric")
-	ctx := context.Background()
+	ctx := t.Context()
 	interval := int64(15 * time.Second / time.Millisecond)
 	ts := int64(0)
 	samplesWritten := 0
@@ -3254,23 +3254,23 @@ func testOOOWALWriteAppendV2(t *testing.T,
 	s1, s2 := labels.FromStrings("l", "v1"), labels.FromStrings("l", "v2")
 
 	// Ingest sample at 1h.
-	app := db.AppenderV2(context.Background())
+	app := db.AppenderV2(t.Context())
 	appendSample(app, s1, 60)
 	appendSample(app, s2, 60)
 	require.NoError(t, app.Commit())
 
 	// OOO for s1.
-	app = db.AppenderV2(context.Background())
+	app = db.AppenderV2(t.Context())
 	appendSample(app, s1, 40)
 	require.NoError(t, app.Commit())
 
 	// OOO for s2.
-	app = db.AppenderV2(context.Background())
+	app = db.AppenderV2(t.Context())
 	appendSample(app, s2, 42)
 	require.NoError(t, app.Commit())
 
 	// OOO for both s1 and s2 in the same commit.
-	app = db.AppenderV2(context.Background())
+	app = db.AppenderV2(t.Context())
 	appendSample(app, s2, 45)
 	appendSample(app, s1, 35)
 	appendSample(app, s1, 36) // m-maps.
@@ -3278,13 +3278,13 @@ func testOOOWALWriteAppendV2(t *testing.T,
 	require.NoError(t, app.Commit())
 
 	// OOO for s1 but not for s2 in the same commit.
-	app = db.AppenderV2(context.Background())
+	app = db.AppenderV2(t.Context())
 	appendSample(app, s1, 50) // m-maps.
 	appendSample(app, s2, 65)
 	require.NoError(t, app.Commit())
 
 	// Single commit has 2 times m-mapping and more samples after m-map.
-	app = db.AppenderV2(context.Background())
+	app = db.AppenderV2(t.Context())
 	appendSample(app, s2, 50) // m-maps.
 	appendSample(app, s2, 51)
 	appendSample(app, s2, 52) // m-maps.
@@ -3344,7 +3344,7 @@ func testOOOWALWriteAppendV2(t *testing.T,
 // Tests https://github.com/prometheus/prometheus/issues/10291#issuecomment-1044373110.
 func TestDBPanicOnMmappingHeadChunk_AppendV2(t *testing.T) {
 	var err error
-	ctx := context.Background()
+	ctx := t.Context()
 
 	db := newTestDB(t)
 	db.DisableCompactions()
@@ -3354,7 +3354,7 @@ func TestDBPanicOnMmappingHeadChunk_AppendV2(t *testing.T) {
 
 	lastTs := int64(0)
 	addSamples := func(numSamples int) {
-		app := db.AppenderV2(context.Background())
+		app := db.AppenderV2(t.Context())
 		var ref storage.SeriesRef
 		lbls := labels.FromStrings("__name__", "testing", "foo", "bar")
 		for i := range numSamples {
@@ -3363,7 +3363,7 @@ func TestDBPanicOnMmappingHeadChunk_AppendV2(t *testing.T) {
 			lastTs += itvl
 			if i%10 == 0 {
 				require.NoError(t, app.Commit())
-				app = db.AppenderV2(context.Background())
+				app = db.AppenderV2(t.Context())
 			}
 		}
 		require.NoError(t, app.Commit())
@@ -3402,7 +3402,7 @@ func TestMetadataInWAL_AppenderV2(t *testing.T) {
 	opts := DefaultOptions()
 	opts.EnableMetadataWALRecords = true
 	db := newTestDB(t, withOpts(opts))
-	ctx := context.Background()
+	ctx := t.Context()
 
 	// Add some series so we can attach metadata to them.
 	s1 := labels.FromStrings("a", "b")
@@ -3538,7 +3538,7 @@ func TestMetadataInWAL_AppenderV2(t *testing.T) {
 func TestMetadataCheckpointingOnlyKeepsLatestEntry_AppendV2(t *testing.T) {
 	for _, enableSTStorage := range []bool{false, true} {
 		t.Run("enableSTStorage="+strconv.FormatBool(enableSTStorage), func(t *testing.T) {
-			ctx := context.Background()
+			ctx := t.Context()
 			numSamples := 10000
 			hb, w := newTestHead(t, int64(numSamples)*10, compression.None, false)
 			hb.opts.EnableMetadataWALRecords = true
@@ -3652,7 +3652,7 @@ func TestMetadataAssertInMemoryData_AppendV2(t *testing.T) {
 	opts := DefaultOptions()
 	opts.EnableMetadataWALRecords = true
 	db := newTestDB(t, withOpts(opts))
-	ctx := context.Background()
+	ctx := t.Context()
 
 	// Add some series so we can append metadata to them.
 	s1 := labels.FromStrings("a", "b")
@@ -3795,7 +3795,7 @@ func TestMultipleEncodingsCommitOrder_AppendV2(t *testing.T) {
 	var expSamples []chunks.Sample
 
 	// Append samples with different encoding types and then commit them at once.
-	app := db.AppenderV2(context.Background())
+	app := db.AppenderV2(t.Context())
 
 	for i := 100; i < 105; i++ {
 		s := addSample(app, int64(i), chunkenc.ValFloat)
@@ -3829,7 +3829,7 @@ func TestMultipleEncodingsCommitOrder_AppendV2(t *testing.T) {
 	verifySamples(100, 150, expSamples, 5)
 
 	// Append and commit some in-order histograms by themselves.
-	app = db.AppenderV2(context.Background())
+	app = db.AppenderV2(t.Context())
 	for i := 150; i < 160; i++ {
 		s := addSample(app, int64(i), chunkenc.ValHistogram)
 		expSamples = append(expSamples, s)
@@ -3841,7 +3841,7 @@ func TestMultipleEncodingsCommitOrder_AppendV2(t *testing.T) {
 
 	// Append and commit samples for all encoding types. This time all samples will be treated as OOO because samples
 	// with newer timestamps have already been committed.
-	app = db.AppenderV2(context.Background())
+	app = db.AppenderV2(t.Context())
 	for i := 50; i < 55; i++ {
 		s := addSample(app, int64(i), chunkenc.ValFloat)
 		expSamples = append(expSamples, s)
@@ -3887,7 +3887,7 @@ func TestOOOCompaction_AppendV2(t *testing.T) {
 }
 
 func testOOOCompactionAppenderV2(t *testing.T, scenario sampleTypeScenario, addExtraSamples bool) {
-	ctx := context.Background()
+	ctx := t.Context()
 
 	opts := DefaultOptions()
 	opts.OutOfOrderCapMax = 30
@@ -3899,7 +3899,7 @@ func testOOOCompactionAppenderV2(t *testing.T, scenario sampleTypeScenario, addE
 	series2 := labels.FromStrings("foo", "bar2")
 
 	addSample := func(fromMins, toMins int64) {
-		app := db.AppenderV2(context.Background())
+		app := db.AppenderV2(t.Context())
 		for m := fromMins; m <= toMins; m++ {
 			ts := m * time.Minute.Milliseconds()
 			_, _, err := scenario.appendFunc(app, series1, ts, ts)
@@ -4084,7 +4084,7 @@ func TestOOOCompactionWithNormalCompaction_AppendV2(t *testing.T) {
 
 func testOOOCompactionWithNormalCompactionAppendV2(t *testing.T, scenario sampleTypeScenario) {
 	t.Parallel()
-	ctx := context.Background()
+	ctx := t.Context()
 
 	opts := DefaultOptions()
 	opts.OutOfOrderCapMax = 30
@@ -4097,7 +4097,7 @@ func testOOOCompactionWithNormalCompactionAppendV2(t *testing.T, scenario sample
 	series2 := labels.FromStrings("foo", "bar2")
 
 	addSamples := func(fromMins, toMins int64) {
-		app := db.AppenderV2(context.Background())
+		app := db.AppenderV2(t.Context())
 		for m := fromMins; m <= toMins; m++ {
 			ts := m * time.Minute.Milliseconds()
 			_, _, err := scenario.appendFunc(app, series1, ts, ts)
@@ -4189,7 +4189,7 @@ func TestOOOCompactionWithDisabledWriteLog_AppendV2(t *testing.T) {
 
 func testOOOCompactionWithDisabledWriteLogAppend2(t *testing.T, scenario sampleTypeScenario) {
 	t.Parallel()
-	ctx := context.Background()
+	ctx := t.Context()
 
 	opts := DefaultOptions()
 	opts.OutOfOrderCapMax = 30
@@ -4203,7 +4203,7 @@ func testOOOCompactionWithDisabledWriteLogAppend2(t *testing.T, scenario sampleT
 	series2 := labels.FromStrings("foo", "bar2")
 
 	addSamples := func(fromMins, toMins int64) {
-		app := db.AppenderV2(context.Background())
+		app := db.AppenderV2(t.Context())
 		for m := fromMins; m <= toMins; m++ {
 			ts := m * time.Minute.Milliseconds()
 			_, _, err := scenario.appendFunc(app, series1, ts, ts)
@@ -4294,7 +4294,7 @@ func TestOOOQueryAfterRestartWithSnapshotAndRemovedWBL_AppendV2(t *testing.T) {
 }
 
 func testOOOQueryAfterRestartWithSnapshotAndRemovedWBLAppendV2(t *testing.T, scenario sampleTypeScenario) {
-	ctx := context.Background()
+	ctx := t.Context()
 
 	opts := DefaultOptions()
 	opts.OutOfOrderCapMax = 10
@@ -4308,7 +4308,7 @@ func testOOOQueryAfterRestartWithSnapshotAndRemovedWBLAppendV2(t *testing.T, sce
 	series2 := labels.FromStrings("foo", "bar2")
 
 	addSamples := func(fromMins, toMins int64) {
-		app := db.AppenderV2(context.Background())
+		app := db.AppenderV2(t.Context())
 		for m := fromMins; m <= toMins; m++ {
 			ts := m * time.Minute.Milliseconds()
 			_, _, err := scenario.appendFunc(app, series1, ts, ts)
@@ -4467,7 +4467,7 @@ func testQuerierOOOQueryAppendV2(t *testing.T,
 
 	minutes := func(m int64) int64 { return m * time.Minute.Milliseconds() }
 	addSample := func(db *DB, fromMins, toMins, queryMinT, queryMaxT int64, expSamples []chunks.Sample, filter filterFunc, counterReset bool) ([]chunks.Sample, int) {
-		app := db.AppenderV2(context.Background())
+		app := db.AppenderV2(t.Context())
 		totalAppended := 0
 		for m := fromMins; m <= toMins; m += time.Minute.Milliseconds() {
 			if !filter(m / time.Minute.Milliseconds()) {
@@ -4795,7 +4795,7 @@ func testChunkQuerierOOOQueryAppendV2(t *testing.T,
 
 	minutes := func(m int64) int64 { return m * time.Minute.Milliseconds() }
 	addSample := func(db *DB, fromMins, toMins, queryMinT, queryMaxT int64, expSamples []chunks.Sample, filter filterFunc, counterReset bool) ([]chunks.Sample, int) {
-		app := db.AppenderV2(context.Background())
+		app := db.AppenderV2(t.Context())
 		totalAppended := 0
 		for m := fromMins; m <= toMins; m += time.Minute.Milliseconds() {
 			if !filter(m / time.Minute.Milliseconds()) {
@@ -5167,7 +5167,7 @@ func testOOONativeHistogramsWithCounterResetsAppendV2(t *testing.T, scenario sam
 			db := newTestDB(t, withOpts(opts))
 			db.DisableCompactions()
 
-			app := db.AppenderV2(context.Background())
+			app := db.AppenderV2(t.Context())
 
 			expSamples := make(map[string][]chunks.Sample)
 
@@ -5401,7 +5401,7 @@ func testOOOInterleavedImplicitCounterResetsV2(t *testing.T, name string, scenar
 			db := newTestDB(t, withOpts(opts))
 			db.DisableCompactions()
 
-			app := db.AppenderV2(context.Background())
+			app := db.AppenderV2(t.Context())
 			for _, s := range tc.samples {
 				require.NoError(t, appendFunc(app, s.ts, s.v))
 			}
@@ -5506,7 +5506,7 @@ func testOOOAppendAndQueryAppendV2(t *testing.T, scenario sampleTypeScenario) {
 	appendedSamples := make(map[string][]chunks.Sample)
 	totalSamples := 0
 	addSample := func(lbls labels.Labels, fromMins, toMins int64, faceError bool) {
-		app := db.AppenderV2(context.Background())
+		app := db.AppenderV2(t.Context())
 		key := lbls.String()
 		from, to := minutes(fromMins), minutes(toMins)
 		for m := from; m <= to; m += time.Minute.Milliseconds() {
@@ -5634,7 +5634,7 @@ func testOOODisabledAppendV2(t *testing.T, scenario sampleTypeScenario) {
 	failedSamples := 0
 
 	addSample := func(db *DB, lbls labels.Labels, fromMins, toMins int64, faceError bool) {
-		app := db.AppenderV2(context.Background())
+		app := db.AppenderV2(t.Context())
 		key := lbls.String()
 		from, to := minutes(fromMins), minutes(toMins)
 		for m := from; m <= to; m += time.Minute.Milliseconds() {
@@ -5706,7 +5706,7 @@ func testWBLAndMmapReplayAppendV2(t *testing.T, scenario sampleTypeScenario) {
 	expSamples := make(map[string][]chunks.Sample)
 	totalSamples := 0
 	addSample := func(lbls labels.Labels, fromMins, toMins int64) {
-		app := db.AppenderV2(context.Background())
+		app := db.AppenderV2(t.Context())
 		key := lbls.String()
 		from, to := minutes(fromMins), minutes(toMins)
 		for m := from; m <= to; m += time.Minute.Milliseconds() {
@@ -5872,7 +5872,7 @@ func testWBLAndMmapReplayAppendV2(t *testing.T, scenario sampleTypeScenario) {
 func TestOOOHistogramCompactionWithCounterResets_AppendV2(t *testing.T) {
 	t.Parallel()
 	for _, floatHistogram := range []bool{false, true} {
-		ctx := context.Background()
+		ctx := t.Context()
 
 		opts := DefaultOptions()
 		opts.OutOfOrderCapMax = 30
@@ -5887,7 +5887,7 @@ func TestOOOHistogramCompactionWithCounterResets_AppendV2(t *testing.T) {
 		var series1ExpSamplesPreCompact, series2ExpSamplesPreCompact, series1ExpSamplesPostCompact, series2ExpSamplesPostCompact []chunks.Sample
 
 		addSample := func(ts int64, l labels.Labels, val int, hint histogram.CounterResetHint) sample {
-			app := db.AppenderV2(context.Background())
+			app := db.AppenderV2(t.Context())
 			tsMs := ts * time.Minute.Milliseconds()
 			if floatHistogram {
 				h := tsdbutil.GenerateTestFloatHistogram(int64(val))
@@ -6228,7 +6228,7 @@ func TestOOOHistogramCompactionWithCounterResets_AppendV2(t *testing.T) {
 func TestInterleavedInOrderAndOOOHistogramCompactionWithCounterResets_AppendV2(t *testing.T) {
 	t.Parallel()
 	for _, floatHistogram := range []bool{false, true} {
-		ctx := context.Background()
+		ctx := t.Context()
 
 		opts := DefaultOptions()
 		opts.OutOfOrderCapMax = 30
@@ -6240,7 +6240,7 @@ func TestInterleavedInOrderAndOOOHistogramCompactionWithCounterResets_AppendV2(t
 		series1 := labels.FromStrings("foo", "bar1")
 
 		addSample := func(ts int64, l labels.Labels, val int) sample {
-			app := db.AppenderV2(context.Background())
+			app := db.AppenderV2(t.Context())
 			tsMs := ts
 			if floatHistogram {
 				h := tsdbutil.GenerateTestFloatHistogram(int64(val))
@@ -6326,7 +6326,7 @@ func TestOOOCompactionFailure_AppendV2(t *testing.T) {
 }
 
 func testOOOCompactionFailureAppendV2(t *testing.T, scenario sampleTypeScenario) {
-	ctx := context.Background()
+	ctx := t.Context()
 
 	opts := DefaultOptions()
 	opts.OutOfOrderCapMax = 30
@@ -6340,7 +6340,7 @@ func testOOOCompactionFailureAppendV2(t *testing.T, scenario sampleTypeScenario)
 	series1 := labels.FromStrings("foo", "bar1")
 
 	addSample := func(fromMins, toMins int64) {
-		app := db.AppenderV2(context.Background())
+		app := db.AppenderV2(t.Context())
 		for m := fromMins; m <= toMins; m++ {
 			ts := m * time.Minute.Milliseconds()
 			_, _, err := scenario.appendFunc(app, series1, ts, ts)
@@ -6470,7 +6470,7 @@ func TestWBLCorruption_AppendV2(t *testing.T) {
 	series1 := labels.FromStrings("foo", "bar1")
 	var allSamples, expAfterRestart []chunks.Sample
 	addSamples := func(fromMins, toMins int64, afterRestart bool) {
-		app := db.AppenderV2(context.Background())
+		app := db.AppenderV2(t.Context())
 		for m := fromMins; m <= toMins; m++ {
 			ts := m * time.Minute.Milliseconds()
 			_, err := app.Append(0, series1, 0, ts, float64(ts), nil, nil, storage.AOptions{})
@@ -6620,7 +6620,7 @@ func testOOOMmapCorruptionAppendV2(t *testing.T, scenario sampleTypeScenario) {
 	series1 := labels.FromStrings("foo", "bar1")
 	var allSamples, expInMmapChunks []chunks.Sample
 	addSamples := func(fromMins, toMins int64, inMmapAfterCorruption bool) {
-		app := db.AppenderV2(context.Background())
+		app := db.AppenderV2(t.Context())
 		for m := fromMins; m <= toMins; m++ {
 			ts := m * time.Minute.Milliseconds()
 			_, s, err := scenario.appendFunc(app, series1, ts, ts)
@@ -6736,7 +6736,7 @@ func TestOutOfOrderRuntimeConfig_AppendV2(t *testing.T) {
 }
 
 func testOutOfOrderRuntimeConfigAppendV2(t *testing.T, scenario sampleTypeScenario) {
-	ctx := context.Background()
+	ctx := t.Context()
 
 	getDB := func(oooTimeWindow int64) *DB {
 		opts := DefaultOptions()
@@ -6758,7 +6758,7 @@ func testOutOfOrderRuntimeConfigAppendV2(t *testing.T, scenario sampleTypeScenar
 
 	series1 := labels.FromStrings("foo", "bar1")
 	addSamples := func(t *testing.T, db *DB, fromMins, toMins int64, success bool, allSamples []chunks.Sample) []chunks.Sample {
-		app := db.AppenderV2(context.Background())
+		app := db.AppenderV2(t.Context())
 		for m := fromMins; m <= toMins; m++ {
 			ts := m * time.Minute.Milliseconds()
 			_, s, err := scenario.appendFunc(app, series1, ts, ts)
@@ -6970,7 +6970,7 @@ func TestNoGapAfterRestartWithOOO_AppendV2(t *testing.T) {
 func testNoGapAfterRestartWithOOOAppendV2(t *testing.T, scenario sampleTypeScenario) {
 	series1 := labels.FromStrings("foo", "bar1")
 	addSamples := func(t *testing.T, db *DB, fromMins, toMins int64, success bool) {
-		app := db.AppenderV2(context.Background())
+		app := db.AppenderV2(t.Context())
 		for m := fromMins; m <= toMins; m++ {
 			ts := m * time.Minute.Milliseconds()
 			_, _, err := scenario.appendFunc(app, series1, ts, ts)
@@ -7024,7 +7024,7 @@ func testNoGapAfterRestartWithOOOAppendV2(t *testing.T, scenario sampleTypeScena
 
 	for i, c := range cases {
 		t.Run(fmt.Sprintf("case=%d", i), func(t *testing.T) {
-			ctx := context.Background()
+			ctx := t.Context()
 
 			opts := DefaultOptions()
 			opts.OutOfOrderTimeWindow = 30 * time.Minute.Milliseconds()
@@ -7084,7 +7084,7 @@ func testWblReplayAfterOOODisableAndRestartAppendV2(t *testing.T, scenario sampl
 	series1 := labels.FromStrings("foo", "bar1")
 	var allSamples []chunks.Sample
 	addSamples := func(fromMins, toMins int64) {
-		app := db.AppenderV2(context.Background())
+		app := db.AppenderV2(t.Context())
 		for m := fromMins; m <= toMins; m++ {
 			ts := m * time.Minute.Milliseconds()
 			_, s, err := scenario.appendFunc(app, series1, ts, ts)
@@ -7144,7 +7144,7 @@ func testPanicOnApplyConfigAppendV2(t *testing.T, scenario sampleTypeScenario) {
 	series1 := labels.FromStrings("foo", "bar1")
 	var allSamples []chunks.Sample
 	addSamples := func(fromMins, toMins int64) {
-		app := db.AppenderV2(context.Background())
+		app := db.AppenderV2(t.Context())
 		for m := fromMins; m <= toMins; m++ {
 			ts := m * time.Minute.Milliseconds()
 			_, s, err := scenario.appendFunc(app, series1, ts, ts)
@@ -7193,7 +7193,7 @@ func testHistogramAppendAndQueryHelperAppendV2(t *testing.T, floatHistogram bool
 		require.NoError(t, db.Close())
 	})
 
-	ctx := context.Background()
+	ctx := t.Context()
 	appendHistogram := func(t *testing.T,
 		lbls labels.Labels, tsMinute int, h *histogram.Histogram,
 		exp *[]chunks.Sample, expCRH histogram.CounterResetHint,
@@ -7471,7 +7471,7 @@ func TestOOONativeHistogramsSettings_AppendV2(t *testing.T) {
 		opts.OutOfOrderTimeWindow = 0
 		db := newTestDB(t, withOpts(opts), withRngs(100))
 
-		app := db.AppenderV2(context.Background())
+		app := db.AppenderV2(t.Context())
 		_, err := app.Append(0, l, 0, 100, 0, h, nil, storage.AOptions{})
 		require.NoError(t, err)
 
@@ -7493,7 +7493,7 @@ func TestOOONativeHistogramsSettings_AppendV2(t *testing.T) {
 		db := newTestDB(t, withOpts(opts), withRngs(100))
 
 		// Add in-order samples
-		app := db.AppenderV2(context.Background())
+		app := db.AppenderV2(t.Context())
 		_, err := app.Append(0, l, 0, 200, 0, h, nil, storage.AOptions{})
 		require.NoError(t, err)
 
@@ -7528,7 +7528,7 @@ func TestChunkQuerierReadWriteRace_AppendV2(t *testing.T) {
 		<-time.After(5 * time.Millisecond) // Initial pause while readers start.
 		ts := 0
 		for range 500 {
-			app := db.AppenderV2(context.Background())
+			app := db.AppenderV2(t.Context())
 			for range 10 {
 				ts++
 				_, err := app.Append(0, lbls, 0, int64(ts), float64(ts*100), nil, nil, storage.AOptions{})
@@ -7551,7 +7551,7 @@ func TestChunkQuerierReadWriteRace_AppendV2(t *testing.T) {
 		defer func(q storage.ChunkQuerier) {
 			require.NoError(t, q.Close())
 		}(querier)
-		ss := querier.Select(context.Background(), false, nil, labels.MustNewMatcher(labels.MatchEqual, "foo", "bar"))
+		ss := querier.Select(t.Context(), false, nil, labels.MustNewMatcher(labels.MatchEqual, "foo", "bar"))
 		for ss.Next() {
 			cs := ss.At()
 			it := cs.Iterator(nil)
@@ -7616,7 +7616,7 @@ func TestAbortBlockCompactions_AppendV2(t *testing.T) {
 		},
 	}
 
-	err := db.Compact(context.Background())
+	err := db.Compact(t.Context())
 	require.NoError(t, err)
 	require.True(t, db.head.compactable(), "head should be compactable")
 	require.Equal(t, 4, compactions, "expected 4 compactions to be completed")
@@ -7684,7 +7684,7 @@ func TestCompactHeadWithSTStorage_AppendV2(t *testing.T) {
 		EnableHistogramSTEncoding: true,
 	}
 	db := newTestDB(t, withOpts(opts))
-	ctx := context.Background()
+	ctx := t.Context()
 	app := db.AppenderV2(ctx)
 
 	mint := 100
@@ -7842,7 +7842,7 @@ func TestDBAppenderV2_STStorage_OutOfOrder(t *testing.T) {
 			lbls := labels.FromStrings("foo", "bar")
 
 			for _, s := range tc.appendSamples {
-				app := db.AppenderV2(context.Background())
+				app := db.AppenderV2(t.Context())
 				_, err := app.Append(0, lbls, s.ST(), s.T(), s.F(), s.H(), s.FH(), storage.AOptions{})
 				require.NoError(t, err, "Appending OOO sample with ST should succeed")
 				require.NoError(t, app.Commit(), "Committing OOO sample with ST should succeed")
@@ -7852,7 +7852,7 @@ func TestDBAppenderV2_STStorage_OutOfOrder(t *testing.T) {
 			require.NoError(t, err)
 			defer querier.Close()
 
-			ss := querier.Select(context.Background(), false, nil, labels.MustNewMatcher(labels.MatchEqual, "foo", "bar"))
+			ss := querier.Select(t.Context(), false, nil, labels.MustNewMatcher(labels.MatchEqual, "foo", "bar"))
 			require.True(t, ss.Next(), "Should have series")
 			series := ss.At()
 			require.NoError(t, ss.Err())

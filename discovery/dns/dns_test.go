@@ -14,7 +14,6 @@
 package dns
 
 import (
-	"context"
 	"errors"
 	"log/slog"
 	"net"
@@ -267,7 +266,7 @@ func TestDNS(t *testing.T) {
 			require.NoError(t, err)
 			sd.lookupFn = tc.lookup
 
-			tgs, err := sd.refresh(context.Background())
+			tgs, err := sd.refresh(t.Context())
 			require.NoError(t, err)
 			require.Equal(t, tc.expected, tgs)
 

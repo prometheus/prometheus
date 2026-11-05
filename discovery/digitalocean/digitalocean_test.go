@@ -14,7 +14,6 @@
 package digitalocean
 
 import (
-	"context"
 	"fmt"
 	"net/url"
 	"testing"
@@ -63,7 +62,7 @@ func TestDigitalOceanSDRefresh(t *testing.T) {
 	require.NoError(t, err)
 	d.(*dropletsDiscovery).client.BaseURL = endpoint
 
-	ctx := context.Background()
+	ctx := t.Context()
 	tgs, err := d.refresh(ctx)
 	require.NoError(t, err)
 

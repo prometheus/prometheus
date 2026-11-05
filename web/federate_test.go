@@ -15,7 +15,6 @@ package web
 
 import (
 	"bytes"
-	"context"
 	"errors"
 	"fmt"
 	"io"
@@ -352,7 +351,7 @@ func TestFederationWithNativeHistograms(t *testing.T) {
 		PositiveBuckets: []int64{3, -1, -1},
 		CustomValues:    []float64{0.1, 0.2, 0.5, 1, 2},
 	}
-	app := db.AppenderV2(context.Background())
+	app := db.AppenderV2(t.Context())
 	for i := range 7 {
 		l := labels.FromStrings("__name__", "test_metric", "foo", strconv.Itoa(i))
 		expL := labels.FromStrings("__name__", "test_metric", "instance", "", "foo", strconv.Itoa(i))

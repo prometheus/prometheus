@@ -14,7 +14,6 @@
 package eureka
 
 import (
-	"context"
 	"io"
 	"net/http"
 	"net/http/httptest"
@@ -181,7 +180,7 @@ func TestFetchApps(t *testing.T) {
 	ts := httptest.NewServer(http.HandlerFunc(respHandler))
 	defer ts.Close()
 
-	apps, err := fetchApps(context.TODO(), ts.URL, &http.Client{})
+	apps, err := fetchApps(t.Context(), ts.URL, &http.Client{})
 	require.NoError(t, err)
 
 	require.Len(t, apps.Applications, 2)
@@ -208,6 +207,6 @@ func Test500ErrorHttpResponse(t *testing.T) {
 	ts := httptest.NewServer(http.HandlerFunc(respHandler))
 	defer ts.Close()
 
-	_, err := fetchApps(context.TODO(), ts.URL, &http.Client{})
+	_, err := fetchApps(t.Context(), ts.URL, &http.Client{})
 	require.Error(t, err, "5xx HTTP response")
 }

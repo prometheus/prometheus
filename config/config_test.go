@@ -3034,14 +3034,14 @@ func TestRuntimeLogLevelConfig(t *testing.T) {
 }
 
 func TestExpandExternalLabels(t *testing.T) {
-	// Cleanup ant TEST env variable that could exist on the system.
-	os.Setenv("TEST", "")
+	// Clear any TEST variable from the environment; t.Setenv restores it afterwards.
+	t.Setenv("TEST", "")
 
 	c, err := LoadFile("testdata/external_labels.good.yml", false, promslog.NewNopLogger())
 	require.NoError(t, err)
 	testutil.RequireEqual(t, labels.FromStrings("bar", "foo", "baz", "foobar", "foo", "", "qux", "foo${TEST}", "xyz", "foo$bar"), c.GlobalConfig.ExternalLabels)
 
-	os.Setenv("TEST", "TestValue")
+	t.Setenv("TEST", "TestValue")
 	c, err = LoadFile("testdata/external_labels.good.yml", false, promslog.NewNopLogger())
 	require.NoError(t, err)
 	testutil.RequireEqual(t, labels.FromStrings("bar", "foo", "baz", "fooTestValuebar", "foo", "TestValue", "qux", "foo${TEST}", "xyz", "foo$bar"), c.GlobalConfig.ExternalLabels)

@@ -150,7 +150,7 @@ func TestMarathonSDRemoveApp(t *testing.T) {
 	md.appsClient = func(context.Context, *http.Client, string) (*appList, error) {
 		return marathonTestAppList(marathonValidLabel, 1), nil
 	}
-	tgs, err := md.refresh(context.Background())
+	tgs, err := md.refresh(t.Context())
 	require.NoError(t, err, "Got error on first update.")
 	require.Len(t, tgs, 1, "Expected 1 targetgroup.")
 	tg1 := tgs[0]
@@ -158,7 +158,7 @@ func TestMarathonSDRemoveApp(t *testing.T) {
 	md.appsClient = func(context.Context, *http.Client, string) (*appList, error) {
 		return marathonTestAppList(marathonValidLabel, 0), nil
 	}
-	tgs, err = md.refresh(context.Background())
+	tgs, err = md.refresh(t.Context())
 	require.NoError(t, err, "Got error on second update.")
 	require.Len(t, tgs, 1, "Expected 1 targetgroup.")
 

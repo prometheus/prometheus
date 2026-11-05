@@ -14,7 +14,6 @@
 package http
 
 import (
-	"context"
 	"fmt"
 	"net/http"
 	"net/http/httptest"
@@ -58,7 +57,7 @@ func TestHTTPValidRefresh(t *testing.T) {
 	})
 	require.NoError(t, err)
 
-	ctx := context.Background()
+	ctx := t.Context()
 	tgs, err := d.Refresh(ctx)
 	require.NoError(t, err)
 
@@ -109,7 +108,7 @@ func TestHTTPInvalidCode(t *testing.T) {
 	})
 	require.NoError(t, err)
 
-	ctx := context.Background()
+	ctx := t.Context()
 	_, err = d.Refresh(ctx)
 	require.EqualError(t, err, "server returned HTTP status 400 Bad Request")
 	require.Equal(t, 1.0, getFailureCount(d.metrics.failuresCount))
@@ -144,7 +143,7 @@ func TestHTTPInvalidFormat(t *testing.T) {
 	})
 	require.NoError(t, err)
 
-	ctx := context.Background()
+	ctx := t.Context()
 	_, err = d.Refresh(ctx)
 	require.EqualError(t, err, `unsupported content type "text/plain; charset=utf-8"`)
 	require.Equal(t, 1.0, getFailureCount(d.metrics.failuresCount))
@@ -470,7 +469,7 @@ func TestSourceDisappeared(t *testing.T) {
 	})
 	require.NoError(t, err)
 	for _, test := range cases {
-		ctx := context.Background()
+		ctx := t.Context()
 		for i, res := range test.responses {
 			stubResponse = res
 			tgs, err := d.Refresh(ctx)

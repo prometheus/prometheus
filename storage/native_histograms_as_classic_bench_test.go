@@ -14,7 +14,6 @@
 package storage
 
 import (
-	"context"
 	"fmt"
 	"strconv"
 	"testing"
@@ -88,7 +87,7 @@ func benchmarkNativeHistogramsAsClassicSelect(b *testing.B, suffix string) {
 	b.ResetTimer()
 	b.ReportAllocs()
 	for i := 0; i < b.N; i++ {
-		ss := q.Select(context.Background(), false, nil, matcher)
+		ss := q.Select(b.Context(), false, nil, matcher)
 		count := 0
 		for ss.Next() {
 			count++

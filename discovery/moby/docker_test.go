@@ -14,7 +14,6 @@
 package moby
 
 import (
-	"context"
 	"fmt"
 	"sort"
 	"testing"
@@ -56,7 +55,7 @@ host: %s
 	})
 	require.NoError(t, err)
 
-	ctx := context.Background()
+	ctx := t.Context()
 	tgs, err := d.refresh(ctx)
 	require.NoError(t, err)
 
@@ -255,7 +254,7 @@ host: %s
 	})
 	require.NoError(t, err)
 
-	ctx := context.Background()
+	ctx := t.Context()
 	tgs, err := d.refresh(ctx)
 	require.NoError(t, err)
 
@@ -552,7 +551,7 @@ host: %s
 	})
 	require.NoError(t, err)
 
-	ctx := context.Background()
+	ctx := t.Context()
 	tgs, err := d.refresh(ctx)
 	require.NoError(t, err)
 

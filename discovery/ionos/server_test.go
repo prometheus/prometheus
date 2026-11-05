@@ -14,7 +14,6 @@
 package ionos
 
 import (
-	"context"
 	"fmt"
 	"io"
 	"net/http"
@@ -46,7 +45,7 @@ func TestIONOSServerRefresh(t *testing.T) {
 	d, err := newServerDiscovery(&cfg, nil)
 	require.NoError(t, err)
 
-	ctx := context.Background()
+	ctx := t.Context()
 	tgs, err := d.refresh(ctx)
 	require.NoError(t, err)
 
@@ -268,7 +267,7 @@ func TestIONOSServerRefreshNilContainers(t *testing.T) {
 		},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			tgs, err := ionosTestDiscovery(t, tc.body).refresh(context.Background())
+			tgs, err := ionosTestDiscovery(t, tc.body).refresh(t.Context())
 			require.NoError(t, err)
 			require.Len(t, tgs, 1)
 			require.Equal(t, tc.expected, tgs[0].Targets)

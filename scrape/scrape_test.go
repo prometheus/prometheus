@@ -941,7 +941,7 @@ func TestScrapePoolAppenderWithLimits(t *testing.T) {
 	sl, _ := newTestScrapeLoop(t, func(sl *scrapeLoop) {
 		sl.appendable = appendable
 	})
-	wrapped := appenderWithLimits(sl.appendable.Appender(context.Background()), 0, 0, histogram.ExponentialSchemaMax)
+	wrapped := appenderWithLimits(sl.appendable.Appender(t.Context()), 0, 0, histogram.ExponentialSchemaMax)
 
 	tl, ok := wrapped.(*timeLimitAppender)
 	require.True(t, ok, "Expected timeLimitAppender but got %T", wrapped)
@@ -953,7 +953,7 @@ func TestScrapePoolAppenderWithLimits(t *testing.T) {
 		sl.appendable = appendable
 		sl.sampleLimit = sampleLimit
 	})
-	wrapped = appenderWithLimits(sl.appendable.Appender(context.Background()), sampleLimit, 0, histogram.ExponentialSchemaMax)
+	wrapped = appenderWithLimits(sl.appendable.Appender(t.Context()), sampleLimit, 0, histogram.ExponentialSchemaMax)
 
 	la, ok := wrapped.(*limitAppender)
 	require.True(t, ok, "Expected limitAppender but got %T", wrapped)
@@ -963,7 +963,7 @@ func TestScrapePoolAppenderWithLimits(t *testing.T) {
 
 	require.Equal(t, baseAppender, tl.Appender, "Expected base appender but got %T", tl.Appender)
 
-	wrapped = appenderWithLimits(sl.appendable.Appender(context.Background()), sampleLimit, 100, histogram.ExponentialSchemaMax)
+	wrapped = appenderWithLimits(sl.appendable.Appender(t.Context()), sampleLimit, 100, histogram.ExponentialSchemaMax)
 
 	bl, ok := wrapped.(*bucketLimitAppender)
 	require.True(t, ok, "Expected bucketLimitAppender but got %T", wrapped)
@@ -976,7 +976,7 @@ func TestScrapePoolAppenderWithLimits(t *testing.T) {
 
 	require.Equal(t, baseAppender, tl.Appender, "Expected base appender but got %T", tl.Appender)
 
-	wrapped = appenderWithLimits(sl.appendable.Appender(context.Background()), sampleLimit, 100, 0)
+	wrapped = appenderWithLimits(sl.appendable.Appender(t.Context()), sampleLimit, 100, 0)
 
 	ml, ok := wrapped.(*maxSchemaAppender)
 	require.True(t, ok, "Expected maxSchemaAppender but got %T", wrapped)
@@ -1005,7 +1005,7 @@ func TestScrapePoolAppenderWithLimits_AppendV2(t *testing.T) {
 	sl, _ := newTestScrapeLoop(t, func(sl *scrapeLoop) {
 		sl.appendableV2 = appendable
 	})
-	wrapped := appenderV2WithLimits(sl.appendableV2.AppenderV2(context.Background()), 0, 0, histogram.ExponentialSchemaMax)
+	wrapped := appenderV2WithLimits(sl.appendableV2.AppenderV2(t.Context()), 0, 0, histogram.ExponentialSchemaMax)
 
 	tl, ok := wrapped.(*timeLimitAppenderV2)
 	require.True(t, ok, "Expected timeLimitAppenderV2 but got %T", wrapped)
@@ -1017,7 +1017,7 @@ func TestScrapePoolAppenderWithLimits_AppendV2(t *testing.T) {
 		sl.appendableV2 = appendable
 		sl.sampleLimit = sampleLimit
 	})
-	wrapped = appenderV2WithLimits(sl.appendableV2.AppenderV2(context.Background()), sampleLimit, 0, histogram.ExponentialSchemaMax)
+	wrapped = appenderV2WithLimits(sl.appendableV2.AppenderV2(t.Context()), sampleLimit, 0, histogram.ExponentialSchemaMax)
 
 	la, ok := wrapped.(*limitAppenderV2)
 	require.True(t, ok, "Expected limitAppenderV2 but got %T", wrapped)
@@ -1027,7 +1027,7 @@ func TestScrapePoolAppenderWithLimits_AppendV2(t *testing.T) {
 
 	require.Equal(t, baseAppender, tl.AppenderV2, "Expected base AppenderV2 but got %T", tl.AppenderV2)
 
-	wrapped = appenderV2WithLimits(sl.appendableV2.AppenderV2(context.Background()), sampleLimit, 100, histogram.ExponentialSchemaMax)
+	wrapped = appenderV2WithLimits(sl.appendableV2.AppenderV2(t.Context()), sampleLimit, 100, histogram.ExponentialSchemaMax)
 
 	bl, ok := wrapped.(*bucketLimitAppenderV2)
 	require.True(t, ok, "Expected bucketLimitAppenderV2 but got %T", wrapped)
@@ -1040,7 +1040,7 @@ func TestScrapePoolAppenderWithLimits_AppendV2(t *testing.T) {
 
 	require.Equal(t, baseAppender, tl.AppenderV2, "Expected base AppenderV2 but got %T", tl.AppenderV2)
 
-	wrapped = appenderV2WithLimits(sl.appendableV2.AppenderV2(context.Background()), sampleLimit, 100, 0)
+	wrapped = appenderV2WithLimits(sl.appendableV2.AppenderV2(t.Context()), sampleLimit, 100, 0)
 
 	ml, ok := wrapped.(*maxSchemaAppenderV2)
 	require.True(t, ok, "Expected maxSchemaAppenderV2 but got %T", wrapped)
@@ -5348,7 +5348,7 @@ func TestRequestTraceparentHeader(t *testing.T) {
 		client: client,
 	}
 
-	resp, err := ts.scrape(context.Background())
+	resp, err := ts.scrape(t.Context())
 	require.NoError(t, err)
 	require.NotNil(t, resp)
 	t.Cleanup(func() { _ = resp.Body.Close() })
@@ -5423,9 +5423,9 @@ func TestTargetScraperScrapeOK(t *testing.T) {
 		}
 		var buf bytes.Buffer
 
-		resp, err := ts.scrape(context.Background())
+		resp, err := ts.scrape(t.Context())
 		require.NoError(t, err)
-		contentType, err := ts.readResponse(context.Background(), resp, &buf)
+		contentType, err := ts.readResponse(t.Context(), resp, &buf)
 		require.NoError(t, err)
 		if allowUTF8 {
 			require.Equal(t, "text/plain; version=1.0.0; escaping=allow-utf-8", contentType)
@@ -5477,7 +5477,7 @@ func TestTargetScraperScrapeOK(t *testing.T) {
 func TestTargetScraperScrapeOverUnixSocket(t *testing.T) {
 	// t.TempDir can produce paths exceeding the macOS 104-char socket
 	// path limit, so we create our own temp dir in /tmp.
-	tempDir, err := os.MkdirTemp("", "uds-scrape-test")
+	tempDir, err := os.MkdirTemp("", "uds-scrape-test") //nolint:usetesting // t.TempDir paths can exceed the Unix socket path length limit.
 	require.NoError(t, err)
 	t.Cleanup(func() { os.RemoveAll(tempDir) })
 	socketPath := filepath.Join(tempDir, "s")
@@ -5518,17 +5518,17 @@ func TestTargetScraperScrapeOverUnixSocket(t *testing.T) {
 	}
 
 	var buf bytes.Buffer
-	resp, err := ts.scrape(context.Background())
+	resp, err := ts.scrape(t.Context())
 	require.NoError(t, err)
 
-	contentType, err := ts.readResponse(context.Background(), resp, &buf)
+	contentType, err := ts.readResponse(t.Context(), resp, &buf)
 	require.NoError(t, err)
 	require.Equal(t, "text/plain; version=0.0.4", contentType)
 	require.Equal(t, "metric_a 1\nmetric_b 2\n", buf.String())
 }
 
 func TestTargetScraperScrapeOverUnixSocketTLS(t *testing.T) {
-	tempDir, err := os.MkdirTemp("", "uds-tls-test")
+	tempDir, err := os.MkdirTemp("", "uds-tls-test") //nolint:usetesting // t.TempDir paths can exceed the Unix socket path length limit.
 	require.NoError(t, err)
 	t.Cleanup(func() { os.RemoveAll(tempDir) })
 	socketPath := filepath.Join(tempDir, "s")
@@ -5577,10 +5577,10 @@ func TestTargetScraperScrapeOverUnixSocketTLS(t *testing.T) {
 	}
 
 	var buf bytes.Buffer
-	resp, err := ts.scrape(context.Background())
+	resp, err := ts.scrape(t.Context())
 	require.NoError(t, err)
 
-	contentType, err := ts.readResponse(context.Background(), resp, &buf)
+	contentType, err := ts.readResponse(t.Context(), resp, &buf)
 	require.NoError(t, err)
 	require.Equal(t, "text/plain; version=0.0.4", contentType)
 	require.Equal(t, "metric_a 1\nmetric_b 2\n", buf.String())
@@ -5590,7 +5590,7 @@ func TestTargetScraperUnixSocketConnectionsAreNotShared(t *testing.T) {
 	// Two targets sharing the same __address__ but scraped through different
 	// unix sockets must never exchange pooled keep-alive connections,
 	// otherwise one target would receive the other target's metrics.
-	tempDir, err := os.MkdirTemp("", "uds-pool-test")
+	tempDir, err := os.MkdirTemp("", "uds-pool-test") //nolint:usetesting // t.TempDir paths can exceed the Unix socket path length limit.
 	require.NoError(t, err)
 	t.Cleanup(func() { os.RemoveAll(tempDir) })
 
@@ -5646,9 +5646,9 @@ func TestTargetScraperUnixSocketConnectionsAreNotShared(t *testing.T) {
 	for range 2 {
 		for _, ts := range scrapers {
 			var buf bytes.Buffer
-			resp, err := ts.scrape(context.Background())
+			resp, err := ts.scrape(t.Context())
 			require.NoError(t, err)
-			_, err = ts.readResponse(context.Background(), resp, &buf)
+			_, err = ts.readResponse(t.Context(), resp, &buf)
 			require.NoError(t, err)
 			require.Equal(t, payloads[ts.labels.Get(UnixSocketLabel)], buf.String())
 		}
@@ -5683,7 +5683,7 @@ func TestTargetScrapeScrapeCancel(t *testing.T) {
 		client:       http.DefaultClient,
 		acceptHeader: acceptHeader(config.DefaultGlobalConfig.ScrapeProtocols, model.UnderscoreEscaping),
 	}
-	ctx, cancel := context.WithCancel(context.Background())
+	ctx, cancel := context.WithCancel(t.Context())
 
 	errc := make(chan error, 1)
 
@@ -5740,9 +5740,9 @@ func TestTargetScrapeScrapeNotFound(t *testing.T) {
 		acceptHeader: acceptHeader(config.DefaultGlobalConfig.ScrapeProtocols, model.UnderscoreEscaping),
 	}
 
-	resp, err := ts.scrape(context.Background())
+	resp, err := ts.scrape(t.Context())
 	require.NoError(t, err)
-	_, err = ts.readResponse(context.Background(), resp, io.Discard)
+	_, err = ts.readResponse(t.Context(), resp, io.Discard)
 	require.ErrorContains(t, err, "404", "Expected \"404 NotFound\" error but got: %s", err)
 }
 
@@ -5794,17 +5794,17 @@ func TestTargetScraperBodySizeLimit(t *testing.T) {
 			}
 			var buf bytes.Buffer
 
-			resp, err := ts.scrape(context.Background())
+			resp, err := ts.scrape(t.Context())
 			require.NoError(t, err)
-			_, err = ts.readResponse(context.Background(), resp, &buf)
+			_, err = ts.readResponse(t.Context(), resp, &buf)
 			require.ErrorIs(t, err, errBodySizeLimit)
 			require.Equal(t, bodySizeLimit, buf.Len())
 
 			buf.Reset()
 			ts.bodySizeLimit = 0
-			resp, err = ts.scrape(context.Background())
+			resp, err = ts.scrape(t.Context())
 			require.NoError(t, err)
-			_, err = ts.readResponse(context.Background(), resp, &buf)
+			_, err = ts.readResponse(t.Context(), resp, &buf)
 			require.NoError(t, err)
 			require.Equal(t, responseBody, buf.String())
 		})
@@ -5828,7 +5828,7 @@ func TestTargetScraperMalformedCompressedResponse(t *testing.T) {
 				logger:        promslog.NewNopLogger(),
 			}
 
-			_, err := ts.readResponse(context.Background(), resp, io.Discard)
+			_, err := ts.readResponse(t.Context(), resp, io.Discard)
 			require.Error(t, err)
 		})
 	}
@@ -5854,7 +5854,7 @@ func TestTargetScraperZstdWindowLimit(t *testing.T) {
 		logger:        promslog.NewNopLogger(),
 	}
 
-	_, err = ts.readResponse(context.Background(), resp, io.Discard)
+	_, err = ts.readResponse(t.Context(), resp, io.Discard)
 	require.ErrorContains(t, err, "decompressed size exceeds configured limit")
 }
 
@@ -5897,7 +5897,7 @@ func TestTargetScraperZstdFeatureFlag(t *testing.T) {
 			}
 
 			var buf bytes.Buffer
-			_, err := ts.readResponse(context.Background(), resp, &buf)
+			_, err := ts.readResponse(t.Context(), resp, &buf)
 			if tc.expectErr != "" {
 				require.ErrorContains(t, err, tc.expectErr)
 				// The undecoded frame must not reach the parser.
@@ -7859,7 +7859,7 @@ func BenchmarkTargetScraperGzip(b *testing.B) {
 			}
 			b.ResetTimer()
 			for b.Loop() {
-				_, err = ts.scrape(context.Background())
+				_, err = ts.scrape(b.Context())
 				require.NoError(b, err)
 			}
 		})
@@ -8016,7 +8016,7 @@ scrape_configs:
 	require.Eventually(t, func() bool {
 		q, err := s.Querier(0, math.MaxInt64)
 		require.NoError(t, err)
-		seriesS := q.Select(context.Background(), false, nil, labels.MustNewMatcher(labels.MatchEqual, "__name__", "testing_example_native_histogram"))
+		seriesS := q.Select(t.Context(), false, nil, labels.MustNewMatcher(labels.MatchEqual, "__name__", "testing_example_native_histogram"))
 		countSeries := 0
 		for seriesS.Next() {
 			countSeries++
@@ -8027,7 +8027,7 @@ scrape_configs:
 	// Check that native histogram schema is as expected.
 	q, err := s.Querier(0, math.MaxInt64)
 	require.NoError(t, err)
-	seriesS := q.Select(context.Background(), false, nil, labels.MustNewMatcher(labels.MatchEqual, "__name__", "testing_example_native_histogram"))
+	seriesS := q.Select(t.Context(), false, nil, labels.MustNewMatcher(labels.MatchEqual, "__name__", "testing_example_native_histogram"))
 	var histogramSamples []*histogram.Histogram
 	for seriesS.Next() {
 		series := seriesS.At()

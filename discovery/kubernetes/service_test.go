@@ -14,7 +14,6 @@
 package kubernetes
 
 import (
-	"context"
 	"fmt"
 	"testing"
 
@@ -149,13 +148,13 @@ func TestServiceDiscoveryAdd(t *testing.T) {
 		discovery: n,
 		afterStart: func() {
 			obj := makeService("default")
-			c.CoreV1().Services(obj.Namespace).Create(context.Background(), obj, metav1.CreateOptions{})
+			c.CoreV1().Services(obj.Namespace).Create(t.Context(), obj, metav1.CreateOptions{})
 			obj = makeExternalService()
-			c.CoreV1().Services(obj.Namespace).Create(context.Background(), obj, metav1.CreateOptions{})
+			c.CoreV1().Services(obj.Namespace).Create(t.Context(), obj, metav1.CreateOptions{})
 			obj = makeLoadBalancerService()
-			c.CoreV1().Services(obj.Namespace).Create(context.Background(), obj, metav1.CreateOptions{})
+			c.CoreV1().Services(obj.Namespace).Create(t.Context(), obj, metav1.CreateOptions{})
 			obj = makeLoadBalancerServiceFromIngress()
-			c.CoreV1().Services(obj.Namespace).Create(context.Background(), obj, metav1.CreateOptions{})
+			c.CoreV1().Services(obj.Namespace).Create(t.Context(), obj, metav1.CreateOptions{})
 		},
 		expectedMaxItems: 4,
 		expectedRes: map[string]*targetgroup.Group{
@@ -241,7 +240,7 @@ func TestServiceDiscoveryDelete(t *testing.T) {
 		discovery: n,
 		afterStart: func() {
 			obj := makeService("default")
-			c.CoreV1().Services(obj.Namespace).Delete(context.Background(), obj.Name, metav1.DeleteOptions{})
+			c.CoreV1().Services(obj.Namespace).Delete(t.Context(), obj.Name, metav1.DeleteOptions{})
 		},
 		expectedMaxItems: 2,
 		expectedRes: map[string]*targetgroup.Group{
@@ -260,7 +259,7 @@ func TestServiceDiscoveryUpdate(t *testing.T) {
 		discovery: n,
 		afterStart: func() {
 			obj := makeMultiPortService()
-			c.CoreV1().Services(obj.Namespace).Update(context.Background(), obj, metav1.UpdateOptions{})
+			c.CoreV1().Services(obj.Namespace).Update(t.Context(), obj, metav1.UpdateOptions{})
 		},
 		expectedMaxItems: 2,
 		expectedRes: map[string]*targetgroup.Group{
@@ -306,7 +305,7 @@ func TestServiceDiscoveryNamespaces(t *testing.T) {
 		afterStart: func() {
 			for _, ns := range []string{"ns1", "ns2"} {
 				obj := makeService(ns)
-				c.CoreV1().Services(obj.Namespace).Create(context.Background(), obj, metav1.CreateOptions{})
+				c.CoreV1().Services(obj.Namespace).Create(t.Context(), obj, metav1.CreateOptions{})
 			}
 		},
 		expectedMaxItems: 2,
@@ -358,7 +357,7 @@ func TestServiceDiscoveryOwnNamespace(t *testing.T) {
 		afterStart: func() {
 			for _, ns := range []string{"own-ns", "non-own-ns"} {
 				obj := makeService(ns)
-				c.CoreV1().Services(obj.Namespace).Create(context.Background(), obj, metav1.CreateOptions{})
+				c.CoreV1().Services(obj.Namespace).Create(t.Context(), obj, metav1.CreateOptions{})
 			}
 		},
 		expectedMaxItems: 1,
@@ -393,7 +392,7 @@ func TestServiceDiscoveryAllNamespaces(t *testing.T) {
 		afterStart: func() {
 			for _, ns := range []string{"own-ns", "non-own-ns"} {
 				obj := makeService(ns)
-				c.CoreV1().Services(obj.Namespace).Create(context.Background(), obj, metav1.CreateOptions{})
+				c.CoreV1().Services(obj.Namespace).Create(t.Context(), obj, metav1.CreateOptions{})
 			}
 		},
 		expectedMaxItems: 2,
@@ -495,7 +494,7 @@ func TestServiceDiscoveryWithUpdatedNamespaceMetadata(t *testing.T) {
 			namespace.Labels["region"] = "us-west"
 			namespace.Annotations["owner"] = "sre"
 			namespace.Annotations["cost-center"] = "engineering"
-			c.CoreV1().Namespaces().Update(context.Background(), namespace, metav1.UpdateOptions{})
+			c.CoreV1().Namespaces().Update(t.Context(), namespace, metav1.UpdateOptions{})
 		},
 		expectedRes: map[string]*targetgroup.Group{
 			fmt.Sprintf("svc/%s/testservice", ns): {

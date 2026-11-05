@@ -174,7 +174,7 @@ func TestAlertingRule(t *testing.T) {
 
 		evalTime := baseTime.Add(test.time)
 
-		res, err := rule.Eval(context.TODO(), 0, evalTime, EngineQueryFunc(ng, storage), nil, 0)
+		res, err := rule.Eval(t.Context(), 0, evalTime, EngineQueryFunc(ng, storage), nil, 0)
 		require.NoError(t, err)
 
 		var filteredRes promql.Vector // After removing 'ALERTS_FOR_STATE' samples.
@@ -322,7 +322,7 @@ func TestForStateAddSamples(t *testing.T) {
 					forState = float64(value.StaleNaN)
 				}
 
-				res, err := rule.Eval(context.TODO(), queryOffset, evalTime, EngineQueryFunc(ng, storage), nil, 0)
+				res, err := rule.Eval(t.Context(), queryOffset, evalTime, EngineQueryFunc(ng, storage), nil, 0)
 				require.NoError(t, err)
 
 				var filteredRes promql.Vector // After removing 'ALERTS' samples.
@@ -450,7 +450,7 @@ func TestForStateRestoreHoldDuration(t *testing.T) {
 				QueryFunc:       EngineQueryFunc(testEngine(t), st),
 				AppendableV2:    st,
 				Queryable:       st,
-				Context:         context.Background(),
+				Context:         t.Context(),
 				Logger:          promslog.NewNopLogger(),
 				NotifyFunc:      func(context.Context, string, ...*Alert) {},
 				OutageTolerance: 30 * time.Minute,
@@ -469,7 +469,7 @@ func TestForStateRestoreHoldDuration(t *testing.T) {
 				Opts:     opts,
 			})
 			for _, evaluation := range test.initialEvaluations {
-				group.Eval(context.Background(), baseTime.Add(evaluation))
+				group.Eval(t.Context(), baseTime.Add(evaluation))
 			}
 			require.Equal(t, test.priorState, rule.State())
 			if test.priorState == StateFiring && test.holdDuration > 0 {
@@ -490,8 +490,8 @@ func TestForStateRestoreHoldDuration(t *testing.T) {
 			})
 			restoreTime := baseTime.Add(test.restoreDuration)
 			// Group.run evaluates twice before restoring state after a restart.
-			restoredGroup.Eval(context.Background(), restoreTime.Add(-time.Minute))
-			restoredGroup.Eval(context.Background(), restoreTime)
+			restoredGroup.Eval(t.Context(), restoreTime.Add(-time.Minute))
+			restoredGroup.Eval(t.Context(), restoreTime)
 			restoredGroup.RestoreForState(restoreTime)
 			require.True(t, restoredRule.Restored())
 			require.Len(t, restoredRule.ActiveAlerts(), 1)
@@ -499,7 +499,7 @@ func TestForStateRestoreHoldDuration(t *testing.T) {
 
 			// Eval sets FiredAt when the restored ActiveAt satisfies the hold duration.
 			nextEvaluation := restoreTime.Add(time.Minute)
-			restoredGroup.Eval(context.Background(), nextEvaluation)
+			restoredGroup.Eval(t.Context(), nextEvaluation)
 			require.Equal(t, test.nextState, restoredRule.State())
 			if test.nextState == StateFiring {
 				expectedFiredAt := nextEvaluation
@@ -511,9 +511,9 @@ func TestForStateRestoreHoldDuration(t *testing.T) {
 				require.Zero(t, restoredRule.ActiveAlerts()[0].FiredAt)
 				// Pending alerts must still wait for the entire remaining hold duration.
 				firingTime := baseTime.Add(test.activeAt + test.holdDuration)
-				restoredGroup.Eval(context.Background(), firingTime.Add(-time.Second))
+				restoredGroup.Eval(t.Context(), firingTime.Add(-time.Second))
 				require.Equal(t, StatePending, restoredRule.State())
-				restoredGroup.Eval(context.Background(), firingTime)
+				restoredGroup.Eval(t.Context(), firingTime)
 				require.Equal(t, StateFiring, restoredRule.State())
 				require.Equal(t, firingTime, restoredRule.ActiveAlerts()[0].FiredAt)
 			}
@@ -538,7 +538,7 @@ func TestForStateRestore(t *testing.T) {
 				QueryFunc:       EngineQueryFunc(ng, storage),
 				AppendableV2:    storage,
 				Queryable:       storage,
-				Context:         context.Background(),
+				Context:         t.Context(),
 				Logger:          promslog.NewNopLogger(),
 				NotifyFunc:      func(context.Context, string, ...*Alert) {},
 				OutageTolerance: 30 * time.Minute,
@@ -571,7 +571,7 @@ func TestForStateRestore(t *testing.T) {
 			baseTime := time.Unix(0, 0)
 			for _, duration := range initialRuns {
 				evalTime := baseTime.Add(duration)
-				group.Eval(context.TODO(), evalTime)
+				group.Eval(t.Context(), evalTime)
 			}
 
 			// Prometheus goes down here. We create new rules and groups.
@@ -613,7 +613,7 @@ func TestForStateRestore(t *testing.T) {
 					before: func() {
 						for _, duration := range []time.Duration{10 * time.Minute, 15 * time.Minute, 20 * time.Minute} {
 							evalTime := baseTime.Add(duration)
-							group.Eval(context.TODO(), evalTime)
+							group.Eval(t.Context(), evalTime)
 						}
 					},
 					num: 2,
@@ -648,7 +648,7 @@ func TestForStateRestore(t *testing.T) {
 
 					restoreTime := baseTime.Add(tt.restoreDuration).Add(queryOffset)
 					// First eval before restoration.
-					newGroup.Eval(context.TODO(), restoreTime)
+					newGroup.Eval(t.Context(), restoreTime)
 					// Restore happens here.
 					newGroup.RestoreForState(restoreTime)
 
@@ -711,7 +711,7 @@ func TestStaleness(t *testing.T) {
 			QueryFunc:    EngineQueryFunc(engine, st),
 			AppendableV2: st,
 			Queryable:    st,
-			Context:      context.Background(),
+			Context:      t.Context(),
 			Logger:       promslog.NewNopLogger(),
 		}
 
@@ -728,7 +728,7 @@ func TestStaleness(t *testing.T) {
 		})
 
 		// A time series that has two samples and then goes stale.
-		app := st.AppenderV2(context.Background())
+		app := st.AppenderV2(t.Context())
 		_, err = app.Append(0, labels.FromStrings(model.MetricNameLabel, "a"), 0, 0, 1, nil, nil, storage.AOptions{})
 		require.NoError(t, err)
 		_, err = app.Append(0, labels.FromStrings(model.MetricNameLabel, "a"), 0, 1000, 2, nil, nil, storage.AOptions{})
@@ -739,7 +739,7 @@ func TestStaleness(t *testing.T) {
 		err = app.Commit()
 		require.NoError(t, err)
 
-		ctx := context.Background()
+		ctx := t.Context()
 
 		// Execute 3 times, 1 second apart.
 		group.Eval(ctx, time.Unix(0, 0).Add(queryOffset))
@@ -910,7 +910,7 @@ func TestDeletedRuleMarkedStale(t *testing.T) {
 	}
 	newGroup.CopyState(oldGroup)
 
-	newGroup.Eval(context.Background(), time.Unix(0, 0))
+	newGroup.Eval(t.Context(), time.Unix(0, 0))
 
 	querier, err := st.Querier(0, 2000)
 	require.NoError(t, err)
@@ -919,7 +919,7 @@ func TestDeletedRuleMarkedStale(t *testing.T) {
 	matcher, err := labels.NewMatcher(labels.MatchEqual, "l1", "v1")
 	require.NoError(t, err)
 
-	set := querier.Select(context.Background(), false, nil, matcher)
+	set := querier.Select(t.Context(), false, nil, matcher)
 	samples, err := readSeriesSet(set)
 	require.NoError(t, err)
 
@@ -948,7 +948,7 @@ func TestUpdate(t *testing.T) {
 		AppendableV2: st,
 		Queryable:    st,
 		QueryFunc:    EngineQueryFunc(engine, st),
-		Context:      context.Background(),
+		Context:      t.Context(),
 		Logger:       promslog.NewNopLogger(),
 	})
 	ruleManager.start()
@@ -979,9 +979,8 @@ func TestUpdate(t *testing.T) {
 	rgs, errs := rulefmt.ParseFile("fixtures/rules.yaml", false, model.UTF8Validation, testParser, promslog.NewNopLogger())
 	require.Empty(t, errs, "file parsing failures")
 
-	tmpFile, err := os.CreateTemp("", "rules.test.*.yaml")
+	tmpFile, err := os.CreateTemp(t.TempDir(), "rules.test.*.yaml")
 	require.NoError(t, err)
-	defer os.Remove(tmpFile.Name())
 	defer tmpFile.Close()
 
 	err = ruleManager.Update(10*time.Second, []string{tmpFile.Name()}, labels.EmptyLabels(), "", nil)
@@ -1090,7 +1089,7 @@ func TestNotify(t *testing.T) {
 		QueryFunc:    EngineQueryFunc(engine, st),
 		AppendableV2: st,
 		Queryable:    st,
-		Context:      context.Background(),
+		Context:      t.Context(),
 		Logger:       promslog.NewNopLogger(),
 		NotifyFunc:   notifyFunc,
 		ResendDelay:  2 * time.Second,
@@ -1107,7 +1106,7 @@ func TestNotify(t *testing.T) {
 		Opts:          opts,
 	})
 
-	app := st.AppenderV2(context.Background())
+	app := st.AppenderV2(t.Context())
 	_, err = app.Append(0, labels.FromStrings(model.MetricNameLabel, "a"), 0, 1000, 2, nil, nil, storage.AOptions{})
 	require.NoError(t, err)
 	_, err = app.Append(0, labels.FromStrings(model.MetricNameLabel, "a"), 0, 2000, 3, nil, nil, storage.AOptions{})
@@ -1120,7 +1119,7 @@ func TestNotify(t *testing.T) {
 	err = app.Commit()
 	require.NoError(t, err)
 
-	ctx := context.Background()
+	ctx := t.Context()
 
 	// Alert sent right away
 	group.Eval(ctx, time.Unix(1, 0))
@@ -1166,7 +1165,7 @@ func TestMetricsUpdate(t *testing.T) {
 		AppendableV2: storage,
 		Queryable:    storage,
 		QueryFunc:    EngineQueryFunc(engine, storage),
-		Context:      context.Background(),
+		Context:      t.Context(),
 		Logger:       promslog.NewNopLogger(),
 		Registerer:   registry,
 	})
@@ -1238,7 +1237,7 @@ func TestGroupStalenessOnRemoval(t *testing.T) {
 		AppendableV2: storage,
 		Queryable:    storage,
 		QueryFunc:    EngineQueryFunc(engine, storage),
-		Context:      context.Background(),
+		Context:      t.Context(),
 		Logger:       promslog.NewNopLogger(),
 	})
 	var stopped bool
@@ -1316,7 +1315,7 @@ func TestMetricsStalenessOnManagerShutdown(t *testing.T) {
 		AppendableV2: storage,
 		Queryable:    storage,
 		QueryFunc:    EngineQueryFunc(engine, storage),
-		Context:      context.Background(),
+		Context:      t.Context(),
 		Logger:       promslog.NewNopLogger(),
 	})
 	var stopped bool
@@ -1349,7 +1348,7 @@ func countStaleNaN(t *testing.T, st storage.Storage) int {
 	matcher, err := labels.NewMatcher(labels.MatchEqual, model.MetricNameLabel, "test_2")
 	require.NoError(t, err)
 
-	set := querier.Select(context.Background(), false, nil, matcher)
+	set := querier.Select(t.Context(), false, nil, matcher)
 	samples, err := readSeriesSet(set)
 	require.NoError(t, err)
 
@@ -1386,7 +1385,7 @@ func TestRuleMovedBetweenGroups(t *testing.T) {
 		AppendableV2: storage,
 		Queryable:    storage,
 		QueryFunc:    EngineQueryFunc(engine, storage),
-		Context:      context.Background(),
+		Context:      t.Context(),
 		Logger:       promslog.NewNopLogger(),
 	})
 	var stopped bool
@@ -1468,7 +1467,7 @@ func TestRuleHealthUpdates(t *testing.T) {
 		QueryFunc:    EngineQueryFunc(engine, st),
 		AppendableV2: st,
 		Queryable:    st,
-		Context:      context.Background(),
+		Context:      t.Context(),
 		Logger:       promslog.NewNopLogger(),
 	}
 
@@ -1484,7 +1483,7 @@ func TestRuleHealthUpdates(t *testing.T) {
 	})
 
 	// A time series that has two samples.
-	app := st.AppenderV2(context.Background())
+	app := st.AppenderV2(t.Context())
 	_, err = app.Append(0, labels.FromStrings(model.MetricNameLabel, "a"), 0, 0, 1, nil, nil, storage.AOptions{})
 	require.NoError(t, err)
 	_, err = app.Append(0, labels.FromStrings(model.MetricNameLabel, "a"), 0, 1000, 2, nil, nil, storage.AOptions{})
@@ -1492,7 +1491,7 @@ func TestRuleHealthUpdates(t *testing.T) {
 	err = app.Commit()
 	require.NoError(t, err)
 
-	ctx := context.Background()
+	ctx := t.Context()
 
 	rules := group.Rules()[0]
 	require.NoError(t, rules.LastError())
@@ -1568,7 +1567,7 @@ func TestRuleGroupEvalIterationFunc(t *testing.T) {
 			QueryFunc:       EngineQueryFunc(ng, storage),
 			AppendableV2:    storage,
 			Queryable:       storage,
-			Context:         context.Background(),
+			Context:         t.Context(),
 			Logger:          promslog.NewNopLogger(),
 			NotifyFunc:      func(context.Context, string, ...*Alert) {},
 			OutageTolerance: 30 * time.Minute,
@@ -1638,7 +1637,7 @@ func TestNativeHistogramsInRecordingRules(t *testing.T) {
 	db := st.DB
 	hists := tsdbutil.GenerateTestHistograms(5)
 	ts := time.Now()
-	app := db.AppenderV2(context.Background())
+	app := db.AppenderV2(t.Context())
 	for i, h := range hists {
 		l := labels.FromStrings("__name__", "histogram_metric", "idx", strconv.Itoa(i))
 		_, err := app.Append(0, l, 0, ts.UnixMilli(), 0, h.Copy(), nil, storage.AOptions{})
@@ -1651,7 +1650,7 @@ func TestNativeHistogramsInRecordingRules(t *testing.T) {
 		QueryFunc:    EngineQueryFunc(ng, st),
 		AppendableV2: st,
 		Queryable:    st,
-		Context:      context.Background(),
+		Context:      t.Context(),
 		Logger:       promslog.NewNopLogger(),
 	}
 
@@ -1667,11 +1666,11 @@ func TestNativeHistogramsInRecordingRules(t *testing.T) {
 		Opts:          opts,
 	})
 
-	group.Eval(context.Background(), ts.Add(10*time.Second))
+	group.Eval(t.Context(), ts.Add(10*time.Second))
 
 	q, err := db.Querier(ts.UnixMilli(), ts.Add(20*time.Second).UnixMilli())
 	require.NoError(t, err)
-	ss := q.Select(context.Background(), false, nil, labels.MustNewMatcher(labels.MatchEqual, "__name__", "sum:histogram_metric"))
+	ss := q.Select(t.Context(), false, nil, labels.MustNewMatcher(labels.MatchEqual, "__name__", "sum:histogram_metric"))
 	require.True(t, ss.Next())
 	s := ss.At()
 	require.False(t, ss.Next())
@@ -1714,7 +1713,7 @@ func TestManager_LoadGroups_ShouldCheckWhetherEachRuleHasDependentsAndDependenci
 	storage := teststorage.New(t)
 
 	ruleManager := NewManager(&ManagerOptions{
-		Context:      context.Background(),
+		Context:      t.Context(),
 		Logger:       promslog.NewNopLogger(),
 		AppendableV2: storage,
 		QueryFunc:    func(context.Context, string, time.Time) (promql.Vector, error) { return nil, nil },
@@ -1768,7 +1767,7 @@ func TestManager_LoadGroups_ShouldCheckWhetherEachRuleHasDependentsAndDependenci
 }
 
 func TestDependencyMap(t *testing.T) {
-	ctx := context.Background()
+	ctx := t.Context()
 	opts := &ManagerOptions{
 		Context: ctx,
 		Logger:  promslog.NewNopLogger(),
@@ -1826,7 +1825,7 @@ func TestDependencyMap(t *testing.T) {
 }
 
 func TestNoDependency(t *testing.T) {
-	ctx := context.Background()
+	ctx := t.Context()
 	opts := &ManagerOptions{
 		Context: ctx,
 		Logger:  promslog.NewNopLogger(),
@@ -1849,7 +1848,7 @@ func TestNoDependency(t *testing.T) {
 }
 
 func TestDependenciesEdgeCases(t *testing.T) {
-	ctx := context.Background()
+	ctx := t.Context()
 	opts := &ManagerOptions{
 		Context: ctx,
 		Logger:  promslog.NewNopLogger(),
@@ -2077,7 +2076,7 @@ func TestDependenciesEdgeCases(t *testing.T) {
 }
 
 func TestNoMetricSelector(t *testing.T) {
-	ctx := context.Background()
+	ctx := t.Context()
 	opts := &ManagerOptions{
 		Context: ctx,
 		Logger:  promslog.NewNopLogger(),
@@ -2106,7 +2105,7 @@ func TestNoMetricSelector(t *testing.T) {
 }
 
 func TestDependentRulesWithNonMetricExpression(t *testing.T) {
-	ctx := context.Background()
+	ctx := t.Context()
 	opts := &ManagerOptions{
 		Context: ctx,
 		Logger:  promslog.NewNopLogger(),
@@ -2146,7 +2145,7 @@ func TestDependencyMapUpdatesOnGroupUpdate(t *testing.T) {
 		AppendableV2: storage,
 		Queryable:    storage,
 		QueryFunc:    EngineQueryFunc(engine, storage),
-		Context:      context.Background(),
+		Context:      t.Context(),
 		Logger:       promslog.NewNopLogger(),
 	})
 
@@ -2665,7 +2664,7 @@ func TestBoundedRuleEvalConcurrency(t *testing.T) {
 	require.Empty(t, errs)
 	require.Len(t, groups, groupCount)
 
-	ctx, cancel := context.WithCancel(context.Background())
+	ctx, cancel := context.WithCancel(t.Context())
 	t.Cleanup(cancel)
 
 	// Evaluate groups concurrently (like they normally do).
@@ -2687,7 +2686,7 @@ func TestUpdateWhenStopped(t *testing.T) {
 	// The group is evaluated if its evaluation slot falls between Update and Stop,
 	// so the manager needs a working QueryFunc and AppendableV2.
 	ruleManager := NewManager(&ManagerOptions{
-		Context:      context.Background(),
+		Context:      t.Context(),
 		Logger:       promslog.NewNopLogger(),
 		AppendableV2: teststorage.New(t),
 		QueryFunc:    func(context.Context, string, time.Time) (promql.Vector, error) { return nil, nil },
@@ -2925,7 +2924,7 @@ func TestRuleDependencyController_AnalyseRules(t *testing.T) {
 			storage := teststorage.New(t)
 
 			ruleManager := NewManager(&ManagerOptions{
-				Context:      context.Background(),
+				Context:      t.Context(),
 				Logger:       promslog.NewNopLogger(),
 				AppendableV2: storage,
 				QueryFunc:    func(context.Context, string, time.Time) (promql.Vector, error) { return nil, nil },
@@ -2953,7 +2952,7 @@ func BenchmarkRuleDependencyController_AnalyseRules(b *testing.B) {
 	storage := teststorage.New(b)
 
 	ruleManager := NewManager(&ManagerOptions{
-		Context:      context.Background(),
+		Context:      b.Context(),
 		Logger:       promslog.NewNopLogger(),
 		AppendableV2: storage,
 		QueryFunc:    func(context.Context, string, time.Time) (promql.Vector, error) { return nil, nil },
@@ -2976,7 +2975,7 @@ func TestEngineQueryFunc_ClosesQuery(t *testing.T) {
 	eng := &closeCountingEngine{}
 	qf := EngineQueryFunc(eng, nil)
 
-	_, err := qf(context.Background(), "vector(0)", time.Unix(0, 0))
+	_, err := qf(t.Context(), "vector(0)", time.Unix(0, 0))
 	require.NoError(t, err)
 	require.Equal(t, 1, eng.q.closeCalls, "Close must be called exactly once")
 }

@@ -63,7 +63,7 @@ func TestRefreshTimesOutOnUnresponsiveDaemon(t *testing.T) {
 				}
 				// The socket path must stay under the 104 byte cap on unix
 				// addresses, so it is not derived from this test's name.
-				dir, err := os.MkdirTemp("", "moby")
+				dir, err := os.MkdirTemp("", "moby") //nolint:usetesting // t.TempDir paths can exceed the Unix socket path length limit.
 				require.NoError(t, err)
 				t.Cleanup(func() { require.NoError(t, os.RemoveAll(dir)) })
 
@@ -127,7 +127,7 @@ refresh_interval: %s
 				errCh := make(chan error, 1)
 				start := time.Now()
 				go func() {
-					_, err := d.refresh(context.Background())
+					_, err := d.refresh(t.Context())
 					errCh <- err
 				}()
 

@@ -625,7 +625,7 @@ func testTemplateExpansion(t *testing.T, scenarios []scenario) {
 		}
 		var result string
 		var err error
-		expander := NewTemplateExpander(context.Background(), s.text, "test", s.input, model.Time(1353755652000), queryFunc, extURL, s.options)
+		expander := NewTemplateExpander(t.Context(), s.text, "test", s.input, model.Time(1353755652000), queryFunc, extURL, s.options)
 		if s.html {
 			result, err = expander.ExpandHTML(nil)
 		} else {

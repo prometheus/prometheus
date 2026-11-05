@@ -152,7 +152,7 @@ func TestDialContextWithRandomConnections(t *testing.T) {
 			dc := tc.setup()
 			require.NotNil(t, dc)
 			for range numberOfRuns {
-				_, err := dc.dialContextFn()(context.Background(), testNetwork, tc.addr)
+				_, err := dc.dialContextFn()(t.Context(), testNetwork, tc.addr)
 				require.NoError(t, err)
 			}
 			tc.check()

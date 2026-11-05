@@ -14,7 +14,6 @@
 package tsdb
 
 import (
-	"context"
 	"math"
 	"path/filepath"
 	"testing"
@@ -28,7 +27,7 @@ import (
 )
 
 func TestBlockWriter_AppenderV2(t *testing.T) {
-	ctx := context.Background()
+	ctx := t.Context()
 	outputDir := t.TempDir()
 	w, err := NewBlockWriter(promslog.NewNopLogger(), outputDir, DefaultBlockDuration)
 	require.NoError(t, err)

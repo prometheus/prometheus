@@ -142,7 +142,7 @@ func TestIndexRW_Create_Open(t *testing.T) {
 	fn := filepath.Join(dir, indexFilename)
 
 	// An empty index must still result in a readable file.
-	iw, err := NewWriter(context.Background(), fn)
+	iw, err := NewWriter(t.Context(), fn)
 	require.NoError(t, err)
 	require.NoError(t, iw.Close())
 
@@ -162,7 +162,7 @@ func TestIndexRW_Create_Open(t *testing.T) {
 }
 
 func TestIndexRW_Postings(t *testing.T) {
-	ctx := context.Background()
+	ctx := t.Context()
 	var input indexWriterSeriesSlice
 	for i := 1; i < 5; i++ {
 		input = append(input, &indexWriterSeries{
@@ -256,7 +256,7 @@ func TestIndexRW_Postings(t *testing.T) {
 }
 
 func TestPostingsMany(t *testing.T) {
-	ctx := context.Background()
+	ctx := t.Context()
 	// Create a label in the index which has 999 values.
 	var input indexWriterSeriesSlice
 	for i := 1; i < 1000; i++ {
@@ -321,7 +321,7 @@ func TestPostingsMany(t *testing.T) {
 }
 
 func TestPersistence_index_e2e(t *testing.T) {
-	ctx := context.Background()
+	ctx := t.Context()
 	lbls, err := labels.ReadLabels(filepath.Join("..", "testdata", "20kseries.json"), 20000)
 	require.NoError(t, err)
 	// Sort labels as the index writer expects series in sorted order.
@@ -430,7 +430,7 @@ func TestPersistence_index_e2e(t *testing.T) {
 }
 
 func TestWriter_ShouldReturnErrorOnSeriesWithDuplicatedLabelNames(t *testing.T) {
-	w, err := NewWriter(context.Background(), filepath.Join(t.TempDir(), "index"))
+	w, err := NewWriter(t.Context(), filepath.Join(t.TempDir(), "index"))
 	require.NoError(t, err)
 
 	require.NoError(t, w.AddSymbol("__name__"))
@@ -526,7 +526,7 @@ func BenchmarkReader_ShardedPostings(b *testing.B) {
 		numShards = 16
 	)
 
-	ctx := context.Background()
+	ctx := b.Context()
 	var input indexWriterSeriesSlice
 	for i := 1; i <= numSeries; i++ {
 		input = append(input, &indexWriterSeries{
@@ -552,7 +552,7 @@ func TestDecoder_Postings_WrongInput(t *testing.T) {
 func TestChunksRefOrdering(t *testing.T) {
 	dir := t.TempDir()
 
-	idx, err := NewWriter(context.Background(), filepath.Join(dir, "index"))
+	idx, err := NewWriter(t.Context(), filepath.Join(dir, "index"))
 	require.NoError(t, err)
 
 	require.NoError(t, idx.AddSymbol("1"))
@@ -572,7 +572,7 @@ func TestChunksRefOrdering(t *testing.T) {
 func TestChunksTimeOrdering(t *testing.T) {
 	dir := t.TempDir()
 
-	idx, err := NewWriter(context.Background(), filepath.Join(dir, "index"))
+	idx, err := NewWriter(t.Context(), filepath.Join(dir, "index"))
 	require.NoError(t, err)
 
 	require.NoError(t, idx.AddSymbol("1"))
@@ -608,9 +608,9 @@ func TestReader_PostingsForLabelMatching(t *testing.T) {
 			},
 		})
 	}
-	ir, _, _ := createFileReader(context.Background(), t, input)
+	ir, _, _ := createFileReader(t.Context(), t, input)
 
-	p := ir.PostingsForLabelMatching(context.Background(), "__name__", func(v string) bool {
+	p := ir.PostingsForLabelMatching(t.Context(), "__name__", func(v string) bool {
 		iv, err := strconv.Atoi(v)
 		if err != nil {
 			panic(err)
@@ -634,9 +634,9 @@ func TestReader_PostingsForAllLabelValues(t *testing.T) {
 			},
 		})
 	}
-	ir, _, _ := createFileReader(context.Background(), t, input)
+	ir, _, _ := createFileReader(t.Context(), t, input)
 
-	p := ir.PostingsForAllLabelValues(context.Background(), "__name__")
+	p := ir.PostingsForAllLabelValues(t.Context(), "__name__")
 	require.NoError(t, p.Err())
 	refs, err := ExpandPostings(p)
 	require.NoError(t, err)
@@ -654,7 +654,7 @@ func TestReader_PostingsForLabelMatchingHonorsContextCancel(t *testing.T) {
 			},
 		})
 	}
-	ir, _, _ := createFileReader(context.Background(), t, input)
+	ir, _, _ := createFileReader(t.Context(), t, input)
 
 	failAfter := uint64(seriesCount / 2) // Fail after processing half of the series.
 	ctx := &testutil.MockContextErrAfter{FailAfter: failAfter}
@@ -676,10 +676,10 @@ func TestReader_LabelNamesForHonorsContextCancel(t *testing.T) {
 			},
 		})
 	}
-	ir, _, _ := createFileReader(context.Background(), t, input)
+	ir, _, _ := createFileReader(t.Context(), t, input)
 
 	name, value := AllPostingsKey()
-	p, err := ir.Postings(context.Background(), name, value)
+	p, err := ir.Postings(t.Context(), name, value)
 	require.NoError(t, err)
 	// We check context cancellation every 128 iterations so 3 will fail after
 	// iterating 3 * 128 series.

@@ -14,7 +14,6 @@
 package puppetdb
 
 import (
-	"context"
 	"encoding/json"
 	"fmt"
 	"net/http"
@@ -107,7 +106,7 @@ func TestPuppetDBRefresh(t *testing.T) {
 	})
 	require.NoError(t, err)
 
-	ctx := context.Background()
+	ctx := t.Context()
 	tgs, err := d.refresh(ctx)
 	require.NoError(t, err)
 
@@ -160,7 +159,7 @@ func TestPuppetDBRefreshWithParameters(t *testing.T) {
 	})
 	require.NoError(t, err)
 
-	ctx := context.Background()
+	ctx := t.Context()
 	tgs, err := d.refresh(ctx)
 	require.NoError(t, err)
 
@@ -224,7 +223,7 @@ func TestPuppetDBInvalidCode(t *testing.T) {
 	})
 	require.NoError(t, err)
 
-	ctx := context.Background()
+	ctx := t.Context()
 	_, err = d.refresh(ctx)
 	require.EqualError(t, err, "server returned HTTP status 400 Bad Request")
 
@@ -257,7 +256,7 @@ func TestPuppetDBInvalidFormat(t *testing.T) {
 	})
 	require.NoError(t, err)
 
-	ctx := context.Background()
+	ctx := t.Context()
 	_, err = d.refresh(ctx)
 	require.EqualError(t, err, "unsupported content type text/plain; charset=utf-8")
 

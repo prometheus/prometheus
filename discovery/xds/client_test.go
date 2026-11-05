@@ -14,7 +14,6 @@
 package xds
 
 import (
-	"context"
 	"errors"
 	"net/url"
 	"testing"
@@ -121,7 +120,7 @@ func TestHTTPResourceClientFetchEmptyResponse(t *testing.T) {
 	})
 	defer cleanup()
 
-	res, err := client.Fetch(context.Background())
+	res, err := client.Fetch(t.Context())
 	require.Nil(t, res)
 	require.NoError(t, err)
 }
@@ -143,7 +142,7 @@ func TestHTTPResourceClientFetchFullResponse(t *testing.T) {
 	})
 	defer cleanup()
 
-	res, err := client.Fetch(context.Background())
+	res, err := client.Fetch(t.Context())
 	require.NoError(t, err)
 	require.NotNil(t, res)
 
@@ -152,7 +151,7 @@ func TestHTTPResourceClientFetchFullResponse(t *testing.T) {
 	require.Equal(t, "abc", client.latestNonce, "Nonce not cached")
 	require.Equal(t, "1", client.latestVersion, "Version not cached")
 
-	res, err = client.Fetch(context.Background())
+	res, err = client.Fetch(t.Context())
 	require.Nil(t, res, "Update not expected")
 	require.NoError(t, err)
 }
@@ -165,7 +164,7 @@ func TestHTTPResourceClientServerError(t *testing.T) {
 	})
 	defer cleanup()
 
-	res, err := client.Fetch(context.Background())
+	res, err := client.Fetch(t.Context())
 	require.Nil(t, res)
 	require.Error(t, err)
 }

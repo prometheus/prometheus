@@ -675,7 +675,7 @@ func TestTargetUpdatesOrder(t *testing.T) {
 	for i, tc := range testCases {
 		t.Run(tc.title, func(t *testing.T) {
 			t.Parallel()
-			ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+			ctx, cancel := context.WithTimeout(t.Context(), 5*time.Second)
 			defer cancel()
 
 			reg := prometheus.NewRegistry()
@@ -1438,7 +1438,7 @@ func TestCoordinationWithReceiver(t *testing.T) {
 	for _, tc := range testCases {
 		t.Run(tc.title, func(t *testing.T) {
 			t.Parallel()
-			ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+			ctx, cancel := context.WithTimeout(t.Context(), 5*time.Second)
 			defer cancel()
 
 			reg := prometheus.NewRegistry()
@@ -1633,7 +1633,7 @@ func TestUnregisterMetrics(t *testing.T) {
 	reg := prometheus.NewRegistry()
 	// Check that all metrics can be unregistered, allowing a second manager to be created.
 	for range 2 {
-		ctx, cancel := context.WithCancel(context.Background())
+		ctx, cancel := context.WithCancel(t.Context())
 
 		sdMetrics := NewTestMetrics(t, reg)
 
@@ -1888,7 +1888,7 @@ func TestConfigReloadAndShutdownRace(t *testing.T) {
 	reg := prometheus.NewRegistry()
 	sdMetrics := NewTestMetrics(t, reg)
 
-	mgrCtx, mgrCancel := context.WithCancel(context.Background())
+	mgrCtx, mgrCancel := context.WithCancel(t.Context())
 	discoveryManager := NewManager(mgrCtx, promslog.NewNopLogger(), reg, sdMetrics)
 	require.NotNil(t, discoveryManager)
 	discoveryManager.updatert = 100 * time.Millisecond
@@ -1902,7 +1902,7 @@ func TestConfigReloadAndShutdownRace(t *testing.T) {
 	var wgBg sync.WaitGroup
 	updateChan := discoveryManager.SyncCh()
 	wgBg.Add(1)
-	ctx, cancel := context.WithCancel(context.Background())
+	ctx, cancel := context.WithCancel(t.Context())
 	go func() {
 		defer wgBg.Done()
 		select {

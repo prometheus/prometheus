@@ -14,7 +14,6 @@
 package nomad
 
 import (
-	"context"
 	"fmt"
 	"net/http"
 	"net/http/httptest"
@@ -192,7 +191,7 @@ func TestNomadSDRefresh(t *testing.T) {
 	})
 	require.NoError(t, err)
 
-	tgs, err := d.refresh(context.Background())
+	tgs, err := d.refresh(t.Context())
 	require.NoError(t, err)
 
 	require.Len(t, tgs, 1)

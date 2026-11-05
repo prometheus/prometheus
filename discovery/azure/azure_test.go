@@ -183,7 +183,7 @@ func TestVMToLabelSet(t *testing.T) {
 
 	client := createMockAzureClient(t, nil, nil, nil, network, nil)
 
-	labelSet, err := d.vmToLabelSet(context.Background(), client, actualVM)
+	labelSet, err := d.vmToLabelSet(t.Context(), client, actualVM)
 	require.NoError(t, err)
 	require.Len(t, labelSet, 11)
 }
@@ -257,7 +257,7 @@ func TestVMToLabelSetWithNilTagValue(t *testing.T) {
 
 	client := createMockAzureClient(t, nil, nil, nil, network, nil)
 
-	labelSet, err := d.vmToLabelSet(context.Background(), client, mapFromVM(testVM))
+	labelSet, err := d.vmToLabelSet(t.Context(), client, mapFromVM(testVM))
 	require.NoError(t, err)
 	// The tag with a value is kept, the one with a nil value is skipped.
 	require.Equal(t, model.LabelValue("prod"), labelSet[azureLabelMachineTag+"env"])
@@ -764,7 +764,7 @@ func TestAzureRefresh(t *testing.T) {
 			})
 			require.NoError(t, err)
 
-			tg, err := sd.refreshAzureClient(context.Background(), azureClient)
+			tg, err := sd.refreshAzureClient(t.Context(), azureClient)
 			require.NoError(t, err)
 
 			sortTargetsByID(tg[0].Targets)

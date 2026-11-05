@@ -383,7 +383,7 @@ func TestRDSDiscoveryRefresh(t *testing.T) {
 				},
 			}
 
-			tgs, err := d.refresh(context.Background())
+			tgs, err := d.refresh(t.Context())
 			require.NoError(t, err)
 			require.Len(t, tgs, 1)
 			tg := tgs[0]
@@ -428,7 +428,7 @@ func TestDescribeAllDBClusters(t *testing.T) {
 		},
 	}
 
-	clusters, err := d.describeAllDBClusters(context.Background())
+	clusters, err := d.describeAllDBClusters(t.Context())
 	require.NoError(t, err)
 	require.Len(t, clusters, 2)
 	require.Contains(t, clusters, "arn:aws:rds:us-east-1:123456789012:cluster:cluster-1")
@@ -572,7 +572,7 @@ func BenchmarkRDSRefresh(b *testing.B) {
 
 			b.ReportAllocs()
 			for b.Loop() {
-				tgs, err := d.refresh(context.Background())
+				tgs, err := d.refresh(b.Context())
 				if err != nil {
 					b.Fatal(err)
 				}
@@ -611,7 +611,7 @@ func BenchmarkRDSRefreshAPILatency(b *testing.B) {
 
 	b.ReportAllocs()
 	for b.Loop() {
-		tgs, err := d.refresh(context.Background())
+		tgs, err := d.refresh(b.Context())
 		if err != nil {
 			b.Fatal(err)
 		}
@@ -671,7 +671,7 @@ func TestRDSDiscoveryDescribesInstancesConcurrently(t *testing.T) {
 		},
 	}
 
-	tgs, err := d.refresh(context.Background())
+	tgs, err := d.refresh(t.Context())
 	require.NoError(t, err)
 	require.Len(t, tgs, 1)
 	require.Len(t, tgs[0].Targets, clusterCount)

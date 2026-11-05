@@ -114,7 +114,7 @@ type k8sDiscoveryTest struct {
 func (d k8sDiscoveryTest) Run(t *testing.T) {
 	t.Helper()
 	ch := make(chan []*targetgroup.Group)
-	ctx, cancel := context.WithTimeout(context.Background(), time.Minute)
+	ctx, cancel := context.WithTimeout(t.Context(), time.Minute)
 	defer cancel()
 
 	if d.beforeRun != nil {
@@ -291,7 +291,7 @@ func TestRetryOnError(t *testing.T) {
 			}
 			return errors.New("dummy")
 		}
-		retryOnError(context.TODO(), 0, f)
+		retryOnError(t.Context(), 0, f)
 		require.Equal(t, successAt, called)
 	}
 }

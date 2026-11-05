@@ -14,7 +14,6 @@
 package kubernetes
 
 import (
-	"context"
 	"fmt"
 	"maps"
 	"testing"
@@ -249,7 +248,7 @@ func TestPodDiscoveryBeforeRun(t *testing.T) {
 		discovery: n,
 		beforeRun: func() {
 			obj := makeMultiPortPods()
-			c.CoreV1().Pods(obj.Namespace).Create(context.Background(), obj, metav1.CreateOptions{})
+			c.CoreV1().Pods(obj.Namespace).Create(t.Context(), obj, metav1.CreateOptions{})
 		},
 		expectedMaxItems: 1,
 		expectedRes: map[string]*targetgroup.Group{
@@ -326,7 +325,7 @@ func TestPodDiscoveryInitContainer(t *testing.T) {
 		discovery: n,
 		beforeRun: func() {
 			obj := makeInitContainerPods()
-			c.CoreV1().Pods(obj.Namespace).Create(context.Background(), obj, metav1.CreateOptions{})
+			c.CoreV1().Pods(obj.Namespace).Create(t.Context(), obj, metav1.CreateOptions{})
 		},
 		expectedMaxItems: 1,
 		expectedRes:      expected,
@@ -341,7 +340,7 @@ func TestPodDiscoveryAdd(t *testing.T) {
 		discovery: n,
 		afterStart: func() {
 			obj := makePods("default")
-			c.CoreV1().Pods(obj.Namespace).Create(context.Background(), obj, metav1.CreateOptions{})
+			c.CoreV1().Pods(obj.Namespace).Create(t.Context(), obj, metav1.CreateOptions{})
 		},
 		expectedMaxItems: 1,
 		expectedRes:      expectedPodTargetGroups("default"),
@@ -357,7 +356,7 @@ func TestPodDiscoveryDelete(t *testing.T) {
 		discovery: n,
 		afterStart: func() {
 			obj := makePods("default")
-			c.CoreV1().Pods(obj.Namespace).Delete(context.Background(), obj.Name, metav1.DeleteOptions{})
+			c.CoreV1().Pods(obj.Namespace).Delete(t.Context(), obj.Name, metav1.DeleteOptions{})
 		},
 		expectedMaxItems: 2,
 		expectedRes: map[string]*targetgroup.Group{
@@ -403,7 +402,7 @@ func TestPodDiscoveryUpdate(t *testing.T) {
 		discovery: n,
 		afterStart: func() {
 			obj := makePods("default")
-			c.CoreV1().Pods(obj.Namespace).Update(context.Background(), obj, metav1.UpdateOptions{})
+			c.CoreV1().Pods(obj.Namespace).Update(t.Context(), obj, metav1.UpdateOptions{})
 		},
 		expectedMaxItems: 2,
 		expectedRes:      expectedPodTargetGroups("default"),
@@ -421,10 +420,10 @@ func TestPodDiscoveryUpdateEmptyPodIP(t *testing.T) {
 	k8sDiscoveryTest{
 		discovery: n,
 		beforeRun: func() {
-			c.CoreV1().Pods(initialPod.Namespace).Create(context.Background(), initialPod, metav1.CreateOptions{})
+			c.CoreV1().Pods(initialPod.Namespace).Create(t.Context(), initialPod, metav1.CreateOptions{})
 		},
 		afterStart: func() {
-			c.CoreV1().Pods(updatedPod.Namespace).Update(context.Background(), updatedPod, metav1.UpdateOptions{})
+			c.CoreV1().Pods(updatedPod.Namespace).Update(t.Context(), updatedPod, metav1.UpdateOptions{})
 		},
 		expectedMaxItems: 2,
 		expectedRes: map[string]*targetgroup.Group{
@@ -447,7 +446,7 @@ func TestPodDiscoveryNamespaces(t *testing.T) {
 			for _, ns := range []string{"ns1", "ns2"} {
 				pod := makePods("default")
 				pod.Namespace = ns
-				c.CoreV1().Pods(pod.Namespace).Create(context.Background(), pod, metav1.CreateOptions{})
+				c.CoreV1().Pods(pod.Namespace).Create(t.Context(), pod, metav1.CreateOptions{})
 			}
 		},
 		expectedMaxItems: 2,
@@ -466,7 +465,7 @@ func TestPodDiscoveryOwnNamespace(t *testing.T) {
 			for _, ns := range []string{"own-ns", "non-own-ns"} {
 				pod := makePods("default")
 				pod.Namespace = ns
-				c.CoreV1().Pods(pod.Namespace).Create(context.Background(), pod, metav1.CreateOptions{})
+				c.CoreV1().Pods(pod.Namespace).Create(t.Context(), pod, metav1.CreateOptions{})
 			}
 		},
 		expectedMaxItems: 1,
@@ -484,10 +483,10 @@ func TestPodDiscoveryWithNodeMetadata(t *testing.T) {
 		discovery: n,
 		afterStart: func() {
 			nodes := makeNode("testnode", "", "", nodeLbls, nil, nil)
-			c.CoreV1().Nodes().Create(context.Background(), nodes, metav1.CreateOptions{})
+			c.CoreV1().Nodes().Create(t.Context(), nodes, metav1.CreateOptions{})
 
 			pods := makePods("default")
-			c.CoreV1().Pods(pods.Namespace).Create(context.Background(), pods, metav1.CreateOptions{})
+			c.CoreV1().Pods(pods.Namespace).Create(t.Context(), pods, metav1.CreateOptions{})
 		},
 		expectedMaxItems: 2,
 		expectedRes:      expectedPodTargetGroupsWithNodeMeta("default", "testnode", nodeLbls),
@@ -505,14 +504,14 @@ func TestPodDiscoveryWithNodeMetadataUpdateNode(t *testing.T) {
 		beforeRun: func() {
 			oldNodeLbls := map[string]string{"l1": "v1"}
 			nodes := makeNode("testnode", "", "", oldNodeLbls, nil, nil)
-			c.CoreV1().Nodes().Create(context.Background(), nodes, metav1.CreateOptions{})
+			c.CoreV1().Nodes().Create(t.Context(), nodes, metav1.CreateOptions{})
 		},
 		afterStart: func() {
 			pods := makePods("default")
-			c.CoreV1().Pods(pods.Namespace).Create(context.Background(), pods, metav1.CreateOptions{})
+			c.CoreV1().Pods(pods.Namespace).Create(t.Context(), pods, metav1.CreateOptions{})
 
 			nodes := makeNode("testnode", "", "", nodeLbls, nil, nil)
-			c.CoreV1().Nodes().Update(context.Background(), nodes, metav1.UpdateOptions{})
+			c.CoreV1().Nodes().Update(t.Context(), nodes, metav1.UpdateOptions{})
 		},
 		expectedMaxItems: 2,
 		expectedRes:      expectedPodTargetGroupsWithNodeMeta("default", "testnode", nodeLbls),
@@ -585,7 +584,7 @@ func TestPodDiscoveryWithUpdatedNamespaceMetadata(t *testing.T) {
 			namespace.Labels["zone"] = "us-east"
 			namespace.Annotations["maintainer"] = "sre"
 			namespace.Annotations["deployment"] = "canary"
-			c.CoreV1().Namespaces().Update(context.Background(), namespace, metav1.UpdateOptions{})
+			c.CoreV1().Namespaces().Update(t.Context(), namespace, metav1.UpdateOptions{})
 		},
 		expectedMaxItems: 2,
 		expectedRes: map[string]*targetgroup.Group{
@@ -661,8 +660,8 @@ func TestPodDiscoveryWithNodeSelector(t *testing.T) {
 	k8sDiscoveryTest{
 		discovery: n,
 		beforeRun: func() {
-			c.CoreV1().Pods("default").Create(context.Background(), podOnWorker, metav1.CreateOptions{})
-			c.CoreV1().Pods("default").Create(context.Background(), podOnFilteredNode, metav1.CreateOptions{})
+			c.CoreV1().Pods("default").Create(t.Context(), podOnWorker, metav1.CreateOptions{})
+			c.CoreV1().Pods("default").Create(t.Context(), podOnFilteredNode, metav1.CreateOptions{})
 		},
 		expectedMaxItems: 2,
 		expectedRes: map[string]*targetgroup.Group{
@@ -1023,7 +1022,7 @@ func TestPodDiscoveryWithDeploymentUpdate(t *testing.T) {
 			// Update deployment with new labels
 			deployment.Labels["version"] = "v2"
 			deployment.Labels["env"] = "prod"
-			c.AppsV1().Deployments(deployment.Namespace).Update(context.Background(), deployment, metav1.UpdateOptions{})
+			c.AppsV1().Deployments(deployment.Namespace).Update(t.Context(), deployment, metav1.UpdateOptions{})
 		},
 		expectedMaxItems: 2,
 		expectedRes: map[string]*targetgroup.Group{
@@ -1077,7 +1076,7 @@ func TestPodDiscoveryWithJobUpdate(t *testing.T) {
 			// Update job with new labels
 			job.Labels["batch"] = "v2"
 			job.Labels["priority"] = "high"
-			c.BatchV1().Jobs(job.Namespace).Update(context.Background(), job, metav1.UpdateOptions{})
+			c.BatchV1().Jobs(job.Namespace).Update(t.Context(), job, metav1.UpdateOptions{})
 		},
 		expectedMaxItems: 2,
 		expectedRes: map[string]*targetgroup.Group{
@@ -1132,7 +1131,7 @@ func TestPodDiscoveryWithCronJobUpdate(t *testing.T) {
 			// Update cronjob with new labels
 			cronJob.Labels["schedule"] = "daily"
 			cronJob.Labels["retention"] = "7d"
-			c.BatchV1().CronJobs(cronJob.Namespace).Update(context.Background(), cronJob, metav1.UpdateOptions{})
+			c.BatchV1().CronJobs(cronJob.Namespace).Update(t.Context(), cronJob, metav1.UpdateOptions{})
 		},
 		expectedMaxItems: 2,
 		expectedRes: map[string]*targetgroup.Group{

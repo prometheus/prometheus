@@ -644,7 +644,7 @@ func TestNativeHistogramsAsClassicQuerier_Select(t *testing.T) {
 					}
 					q := NewNativeHistogramsAsClassicQuerier(mock)
 
-					ss := q.Select(context.Background(), false, nil, tc.queryMatchers...)
+					ss := q.Select(t.Context(), false, nil, tc.queryMatchers...)
 					var collected []Series
 					for ss.Next() {
 						s := ss.At()
@@ -715,7 +715,7 @@ func TestNativeHistogramsAsClassicQuerier_ConsistentOrder(t *testing.T) {
 
 	// Run the same query multiple times and verify order is consistent.
 	for range 5 {
-		ss := q.Select(context.Background(), false, nil, labels.MustNewMatcher(labels.MatchEqual, model.MetricNameLabel, "http_requests_bucket"))
+		ss := q.Select(t.Context(), false, nil, labels.MustNewMatcher(labels.MatchEqual, model.MetricNameLabel, "http_requests_bucket"))
 		var seriesLabels []string
 		for ss.Next() {
 			seriesLabels = append(seriesLabels, ss.At().Labels().String())
@@ -749,7 +749,7 @@ func TestNativeHistogramsAsClassicQuerier_SortedSelect(t *testing.T) {
 		},
 	})
 
-	ss := q.Select(context.Background(), true, nil, labels.MustNewMatcher(labels.MatchEqual, model.MetricNameLabel, "http_requests_bucket"))
+	ss := q.Select(t.Context(), true, nil, labels.MustNewMatcher(labels.MatchEqual, model.MetricNameLabel, "http_requests_bucket"))
 	var seriesLabels []string
 	for ss.Next() {
 		seriesLabels = append(seriesLabels, ss.At().Labels().String())
@@ -787,7 +787,7 @@ func TestNativeHistogramsAsClassicQuerier_FloatHistogram(t *testing.T) {
 	}
 	q := NewNativeHistogramsAsClassicQuerier(mock)
 
-	ss := q.Select(context.Background(), false, nil, labels.MustNewMatcher(labels.MatchEqual, model.MetricNameLabel, "latency_bucket"))
+	ss := q.Select(t.Context(), false, nil, labels.MustNewMatcher(labels.MatchEqual, model.MetricNameLabel, "latency_bucket"))
 	var count int
 	for ss.Next() {
 		count++
@@ -1006,7 +1006,7 @@ func TestNativeHistogramsAsClassicQuerier_ErrorPropagation(t *testing.T) {
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
 			q := NewNativeHistogramsAsClassicQuerier(tc.querier)
-			ss := q.Select(context.Background(), false, nil,
+			ss := q.Select(t.Context(), false, nil,
 				labels.MustNewMatcher(labels.MatchEqual, model.MetricNameLabel, "http_requests_bucket"))
 			for ss.Next() {
 			}
@@ -1037,7 +1037,7 @@ func TestNativeHistogramsAsClassicQuerier_WarningPropagation(t *testing.T) {
 			nhcbWarnings:  warn,
 		})
 
-		ss := q.Select(context.Background(), false, nil,
+		ss := q.Select(t.Context(), false, nil,
 			labels.MustNewMatcher(labels.MatchEqual, model.MetricNameLabel, "http_requests_bucket"))
 		for ss.Next() {
 		}
@@ -1052,7 +1052,7 @@ func TestNativeHistogramsAsClassicQuerier_WarningPropagation(t *testing.T) {
 			nhcbSet: &mockSeriesSet{idx: -1, series: series, warnings: warn},
 		})
 
-		ss := q.Select(context.Background(), false, nil,
+		ss := q.Select(t.Context(), false, nil,
 			labels.MustNewMatcher(labels.MatchEqual, model.MetricNameLabel, "my_gauge"))
 		for ss.Next() {
 		}

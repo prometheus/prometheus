@@ -506,7 +506,7 @@ func TestEndpoints(t *testing.T) {
 		algr.CreateRuleGroups()
 
 		g := algr.RuleGroups()
-		g[0].Eval(context.Background(), time.Now())
+		g[0].Eval(t.Context(), time.Now())
 
 		testTargetRetriever := setupTestTargetRetriever(t)
 
@@ -571,7 +571,7 @@ func TestEndpoints(t *testing.T) {
 		algr.CreateRuleGroups()
 
 		g := algr.RuleGroups()
-		g[0].Eval(context.Background(), time.Now())
+		g[0].Eval(t.Context(), time.Now())
 
 		testTargetRetriever := setupTestTargetRetriever(t)
 
@@ -728,7 +728,7 @@ func TestGetSeries(t *testing.T) {
 		},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			ctx := context.Background()
+			ctx := t.Context()
 			req, err := request(http.MethodGet, tc.matchers...)
 			require.NoError(t, err)
 			res := tc.api.series(req.WithContext(ctx))
@@ -842,7 +842,7 @@ func TestQueryExemplars(t *testing.T) {
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			es := s
-			ctx := context.Background()
+			ctx := t.Context()
 
 			appendExemplars(t, es, tc.exemplars)
 
@@ -952,7 +952,7 @@ func TestLabelNames(t *testing.T) {
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			for _, method := range []string{http.MethodGet, http.MethodPost} {
-				ctx := context.Background()
+				ctx := t.Context()
 				req, err := request(method, tc.limit, tc.matchers...)
 				require.NoError(t, err)
 				res := tc.api.labelNames(req.WithContext(ctx))
@@ -1122,7 +1122,7 @@ func TestStats(t *testing.T) {
 			}
 
 			for _, method := range []string{http.MethodGet, http.MethodPost} {
-				ctx := context.Background()
+				ctx := t.Context()
 				req, err := request(method, tc.param)
 				require.NoError(t, err)
 				res := api.query(req.WithContext(ctx))
@@ -3947,7 +3947,7 @@ func testEndpoints(t *testing.T, api *API, tr *testTargetRetriever, testLabelAPI
 			for _, method := range methods(test.endpoint) {
 				t.Run(method, func(t *testing.T) {
 					// Build a context with the correct request params.
-					ctx := context.Background()
+					ctx := t.Context()
 					for p, v := range test.params {
 						ctx = route.WithParam(ctx, p, v) //nolint:fatcontext // This is intentional to provide the route params.
 					}
@@ -5122,7 +5122,7 @@ func TestQueryTimeout(t *testing.T) {
 				"query":   []string{"2"},
 				"timeout": []string{"1s"},
 			}
-			ctx := context.Background()
+			ctx := t.Context()
 			req, err := http.NewRequest(tc.method, fmt.Sprintf("http://example.com?%s", query.Encode()), http.NoBody)
 			require.NoError(t, err)
 			req.RemoteAddr = "127.0.0.1:20201"

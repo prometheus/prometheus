@@ -14,7 +14,6 @@
 package aws
 
 import (
-	"context"
 	"errors"
 	"math/rand/v2"
 	"net/http"
@@ -367,7 +366,7 @@ func TestLoadRegion(t *testing.T) {
 		t.Setenv("AWS_CONFIG_FILE", "") // Ensure no config file is used
 		t.Setenv("AWS_PROFILE", "")     // Ensure no profile file is used
 
-		region, err := loadRegion(context.Background(), "")
+		region, err := loadRegion(t.Context(), "")
 		require.NoError(t, err)
 		require.Equal(t, randomRegion, region)
 	})
@@ -396,7 +395,7 @@ region = ` + randomRegion + `
 		t.Setenv("AWS_PROFILE", "") // Ensure no profile file is used
 		t.Setenv("AWS_DEFAULT_REGION", "")
 
-		region, err := loadRegion(context.Background(), "")
+		region, err := loadRegion(t.Context(), "")
 		require.NoError(t, err)
 		require.Equal(t, randomRegion, region)
 	})
@@ -428,7 +427,7 @@ region = ` + randomRegion + `
 		t.Setenv("AWS_REGION", "")
 		t.Setenv("AWS_DEFAULT_REGION", "")
 
-		region, err := loadRegion(context.Background(), "")
+		region, err := loadRegion(t.Context(), "")
 		require.NoError(t, err)
 		require.Equal(t, randomRegion, region)
 	})
@@ -441,7 +440,7 @@ region = ` + randomRegion + `
 		t.Setenv("AWS_ACCESS_KEY_ID", "dummy")
 		t.Setenv("AWS_SECRET_ACCESS_KEY", "dummy")
 
-		region, err := loadRegion(context.Background(), specifiedRegion)
+		region, err := loadRegion(t.Context(), specifiedRegion)
 		require.NoError(t, err)
 		require.Equal(t, specifiedRegion, region)
 	})
@@ -475,7 +474,7 @@ region = ` + randomRegion + `
 		// Point IMDS to our mock server
 		t.Setenv("AWS_EC2_METADATA_SERVICE_ENDPOINT", mockIMDS.URL)
 
-		region, err := loadRegion(context.Background(), "")
+		region, err := loadRegion(t.Context(), "")
 		require.NoError(t, err)
 		require.Equal(t, randomRegion, region)
 	})
@@ -506,7 +505,7 @@ region = ` + randomRegion + `
 		// Point IMDS to our mock server
 		t.Setenv("AWS_EC2_METADATA_SERVICE_ENDPOINT", mockIMDS.URL)
 
-		_, err := loadRegion(context.Background(), "")
+		_, err := loadRegion(t.Context(), "")
 		require.Error(t, err)
 		require.Contains(t, err.Error(), "failed to get region from IMDS")
 	})

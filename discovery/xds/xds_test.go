@@ -144,7 +144,7 @@ func TestPollingRefreshSkipUpdate(t *testing.T) {
 		metrics: xdsMetrics,
 	}
 
-	ctx, cancel := context.WithCancel(context.Background())
+	ctx, cancel := context.WithCancel(t.Context())
 	go func() {
 		time.Sleep(1 * time.Second)
 		cancel()
@@ -202,7 +202,7 @@ func TestPollingRefreshAttachesGroupMetadata(t *testing.T) {
 		metrics: xdsMetrics,
 	}
 	ch := make(chan []*targetgroup.Group, 1)
-	pd.poll(context.Background(), ch)
+	pd.poll(t.Context(), ch)
 	groups := <-ch
 	require.NotNil(t, groups)
 
@@ -282,7 +282,7 @@ func TestPollingDisappearingTargets(t *testing.T) {
 	}
 
 	ch := make(chan []*targetgroup.Group, 1)
-	pd.poll(context.Background(), ch)
+	pd.poll(t.Context(), ch)
 	groups := <-ch
 	require.NotNil(t, groups)
 
@@ -291,7 +291,7 @@ func TestPollingDisappearingTargets(t *testing.T) {
 	require.Equal(t, source, groups[0].Source)
 	require.Len(t, groups[0].Targets, 2)
 
-	pd.poll(context.Background(), ch)
+	pd.poll(t.Context(), ch)
 	groups = <-ch
 	require.NotNil(t, groups)
 

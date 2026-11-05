@@ -14,7 +14,6 @@
 package promql_test
 
 import (
-	"context"
 	"fmt"
 	"strings"
 	"testing"
@@ -65,7 +64,7 @@ func BenchmarkEstimateCost(b *testing.B) {
 			b.ReportAllocs()
 			b.ResetTimer()
 			for b.Loop() {
-				_, _, err := promql.EstimateCost(context.Background(), s, estimateTestParser, tc.query, start, end, time.Minute, 5*time.Minute, time.Minute, 10*time.Second)
+				_, _, err := promql.EstimateCost(b.Context(), s, estimateTestParser, tc.query, start, end, time.Minute, 5*time.Minute, time.Minute, 10*time.Second)
 				require.NoError(b, err)
 			}
 		})

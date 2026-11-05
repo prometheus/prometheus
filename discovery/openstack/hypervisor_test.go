@@ -52,7 +52,7 @@ func TestOpenstackSDHypervisorRefresh(t *testing.T) {
 	mock.SetupTest(t)
 
 	hypervisor, _ := mock.openstackAuthSuccess()
-	ctx := context.Background()
+	ctx := t.Context()
 	tgs, err := hypervisor.refresh(ctx)
 	require.Len(t, tgs, 1)
 	tg := tgs[0]
@@ -92,7 +92,7 @@ func TestOpenstackSDHypervisorRefreshWithDoneContext(t *testing.T) {
 	mock.SetupTest(t)
 
 	hypervisor, _ := mock.openstackAuthSuccess()
-	ctx, cancel := context.WithCancel(context.Background())
+	ctx, cancel := context.WithCancel(t.Context())
 	cancel()
 	_, err := hypervisor.refresh(ctx)
 	require.ErrorContains(t, err, context.Canceled.Error(), "%q doesn't contain %q", err, context.Canceled)

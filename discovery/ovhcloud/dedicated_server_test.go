@@ -14,7 +14,6 @@
 package ovhcloud
 
 import (
-	"context"
 	"fmt"
 	"net/http"
 	"net/http/httptest"
@@ -43,7 +42,7 @@ consumer_key: %s`, mock.URL, ovhcloudApplicationKeyTest, ovhcloudApplicationSecr
 	require.NoError(t, yaml.UnmarshalStrict([]byte(cfgString), &cfg))
 	d, err := newRefresher(&cfg, promslog.NewNopLogger())
 	require.NoError(t, err)
-	ctx := context.Background()
+	ctx := t.Context()
 	targetGroups, err := d.refresh(ctx)
 	require.NoError(t, err)
 

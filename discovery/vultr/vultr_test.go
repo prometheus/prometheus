@@ -14,7 +14,6 @@
 package vultr
 
 import (
-	"context"
 	"fmt"
 	"net/url"
 	"testing"
@@ -68,7 +67,7 @@ func TestVultrSDRefresh(t *testing.T) {
 	require.NoError(t, err)
 	d.client.BaseURL = endpoint
 
-	ctx := context.Background()
+	ctx := t.Context()
 	tgs, err := d.refresh(ctx)
 	require.NoError(t, err)
 

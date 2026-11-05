@@ -15,7 +15,6 @@ package main
 
 import (
 	"bytes"
-	"context"
 	"errors"
 	"io"
 	"math"
@@ -71,7 +70,7 @@ func getDumpedSamples(t *testing.T, databasePath, sandboxDirRoot string, mint, m
 	os.Stdout = w
 
 	err := dumpTSDBData(
-		context.Background(),
+		t.Context(),
 		databasePath,
 		sandboxDirRoot,
 		mint,
@@ -197,7 +196,7 @@ func TestTSDBDumpNativeHistogram(t *testing.T) {
 			mixed_hist{job="test"} 1 {{sum:2 count:2}} 3
 	`)
 
-	app := testStorage.AppenderV2(context.Background())
+	app := testStorage.AppenderV2(t.Context())
 	for i := range 3 {
 		_, err := app.Append(
 			0,

@@ -188,7 +188,7 @@ func TestBasicContentNegotiation(t *testing.T) {
 				require.Equal(t, 0.0, client_testutil.ToFloat64(qm.metrics.failedSamplesTotal))
 			} else {
 				// Wait for failure to be recorded in metrics.
-				ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+				ctx, cancel := context.WithTimeout(t.Context(), 5*time.Second)
 				defer cancel()
 				require.NoError(t, runutil.Retry(500*time.Millisecond, ctx.Done(), func() error {
 					if client_testutil.ToFloat64(qm.metrics.failedSamplesTotal) != 1.0 {
@@ -358,7 +358,7 @@ func TestMetadataDelivery(t *testing.T) {
 		})
 	}
 
-	m.AppendWatcherMetadata(context.Background(), metadata)
+	m.AppendWatcherMetadata(t.Context(), metadata)
 
 	require.Equal(t, float64(numMetadata), client_testutil.ToFloat64(m.metrics.metadataTotal))
 	require.Equal(t, 0.0, client_testutil.ToFloat64(m.metrics.failedMetadataTotal))
@@ -675,7 +675,7 @@ func TestSetClientRace(t *testing.T) {
 				for range 50 {
 					m.Append(recs.Samples)
 					if protoMsg == remoteapi.WriteV1MessageType {
-						m.AppendWatcherMetadata(context.Background(), []scrape.MetricMetadata{{
+						m.AppendWatcherMetadata(t.Context(), []scrape.MetricMetadata{{
 							MetricFamily: "test_metric",
 							Type:         model.MetricTypeCounter,
 							Help:         "help",
@@ -851,7 +851,7 @@ func TestShouldReshard(t *testing.T) {
 // recoverable error is returned from remote_write.
 func TestDisableReshardOnRetry(t *testing.T) {
 	t.Parallel()
-	onStoredContext, onStoreCalled := context.WithCancel(context.Background())
+	onStoredContext, onStoreCalled := context.WithCancel(t.Context())
 	defer onStoreCalled()
 
 	var (
@@ -1101,7 +1101,7 @@ func deepLen[M any](ms ...map[string][]M) int {
 func (c *TestWriteClient) waitForExpectedData(tb testing.TB, timeout time.Duration) {
 	tb.Helper()
 
-	ctx, cancel := context.WithTimeout(context.Background(), timeout)
+	ctx, cancel := context.WithTimeout(tb.Context(), timeout)
 	defer cancel()
 	if err := runutil.Retry(500*time.Millisecond, ctx.Done(), func() error {
 		c.mtx.Lock()

@@ -14,7 +14,6 @@
 package tsdb
 
 import (
-	"context"
 	"strconv"
 	"testing"
 	"time"
@@ -37,7 +36,7 @@ func BenchmarkLabelValues_SlowPath(b *testing.B) {
 	require.NoError(b, err)
 	defer h.Close()
 
-	app := h.AppenderV2(context.Background())
+	app := h.AppenderV2(b.Context())
 	// 1. Create a large number of series for a "candidate" label (e.g. "job").
 	// We want these to NOT match the target matcher, but be candidates for a different label.
 	// We use "job=api" and "instance=..."
@@ -64,7 +63,7 @@ func BenchmarkLabelValues_SlowPath(b *testing.B) {
 
 	require.NoError(b, app.Commit())
 
-	ctx := context.Background()
+	ctx := b.Context()
 	matcher := labels.MustNewMatcher(labels.MatchEqual, "b", "1")
 
 	// Use the correct method to access label values.

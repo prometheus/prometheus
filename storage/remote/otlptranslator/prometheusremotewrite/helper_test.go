@@ -17,7 +17,6 @@
 package prometheusremotewrite
 
 import (
-	"context"
 	"math"
 	"slices"
 	"strings"
@@ -854,7 +853,7 @@ func TestPrometheusConverter_AddSummaryDataPoints(t *testing.T) {
 			require.NoError(t, converter.setScopeContext(tt.scope, settings))
 
 			require.NoError(t, converter.addSummaryDataPoints(
-				context.Background(),
+				t.Context(),
 				metric.Summary().DataPoints(),
 				settings,
 				storage.AOptions{
@@ -1290,7 +1289,7 @@ func TestPrometheusConverter_AddHistogramDataPoints(t *testing.T) {
 			require.NoError(t, converter.setScopeContext(tt.scope, settings))
 
 			require.NoError(t, converter.addHistogramDataPoints(
-				context.Background(),
+				t.Context(),
 				metric.Histogram().DataPoints(),
 				settings,
 				storage.AOptions{
@@ -1346,7 +1345,7 @@ func TestAddHistogramDataPoints_ExemplarLeakAcrossDataPoints(t *testing.T) {
 	require.NoError(t, converter.setResourceContext(resource, settings))
 	require.NoError(t, converter.setScopeContext(scope{}, settings))
 	require.NoError(t, converter.addHistogramDataPoints(
-		context.Background(),
+		t.Context(),
 		metric.Histogram().DataPoints(),
 		settings,
 		storage.AOptions{
@@ -1420,7 +1419,7 @@ func TestAddHistogramDataPoints_ExemplarLeakAcrossDataPoints(t *testing.T) {
 }
 
 func TestGetPromExemplars(t *testing.T) {
-	ctx := context.Background()
+	ctx := t.Context()
 	c := NewPrometheusConverter(teststorage.NewAppendable().AppenderV2(t.Context()))
 
 	t.Run("Exemplars with int value", func(t *testing.T) {

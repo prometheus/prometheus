@@ -14,7 +14,6 @@
 package tsdb
 
 import (
-	"context"
 	"fmt"
 	"math"
 	"reflect"
@@ -1032,7 +1031,7 @@ func TestResize(t *testing.T) {
 
 			require.Equal(t, tc.expectedMigrated, resized)
 
-			q, err := es.Querier(context.TODO())
+			q, err := es.Querier(t.Context())
 			require.NoError(t, err)
 
 			matchers := []*labels.Matcher{labels.MustNewMatcher(labels.MatchEqual, "service", "")}

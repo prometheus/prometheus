@@ -61,7 +61,7 @@ func TestNewRuleDetailPanics(t *testing.T) {
 
 func TestFromOriginContext(t *testing.T) {
 	t.Run("should return zero value if RuleDetail is missing in the context", func(t *testing.T) {
-		detail := FromOriginContext(context.Background())
+		detail := FromOriginContext(t.Context())
 		require.Zero(t, detail)
 
 		// The zero value for NoDependentRules must be the most conservative option.

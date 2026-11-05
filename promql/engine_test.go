@@ -74,7 +74,7 @@ func TestQueryConcurrency(t *testing.T) {
 	}
 	engine := promqltest.NewTestEngineWithOpts(t, opts)
 
-	ctx, cancelCtx := context.WithCancel(context.Background())
+	ctx, cancelCtx := context.WithCancel(t.Context())
 	t.Cleanup(cancelCtx)
 
 	block := make(chan struct{})
@@ -635,7 +635,7 @@ func TestSelectHintsSetCorrectly(t *testing.T) {
 				query promql.Query
 				err   error
 			)
-			ctx := context.Background()
+			ctx := t.Context()
 
 			if tc.end == 0 {
 				query, err = engine.NewInstantQuery(ctx, hintsRecorder, nil, tc.query, timestamp.Time(tc.start))
@@ -644,7 +644,7 @@ func TestSelectHintsSetCorrectly(t *testing.T) {
 			}
 			require.NoError(t, err)
 
-			res := query.Exec(context.Background())
+			res := query.Exec(t.Context())
 			require.NoError(t, res.Err)
 
 			require.Equal(t, tc.expected, hintsRecorder.hints)
@@ -786,7 +786,7 @@ func TestEngineShutdown(t *testing.T) {
 		Timeout:    10 * time.Second,
 	}
 	engine := promqltest.NewTestEngineWithOpts(t, opts)
-	ctx, cancelCtx := context.WithCancel(context.Background())
+	ctx, cancelCtx := context.WithCancel(t.Context())
 
 	block := make(chan struct{})
 	processing := make(chan struct{})
@@ -922,13 +922,13 @@ load 10s
 			var qry promql.Query
 			engine := newTestEngine(t)
 			if c.Interval == 0 {
-				qry, err = engine.NewInstantQuery(context.Background(), storage, nil, c.Query, c.Start)
+				qry, err = engine.NewInstantQuery(t.Context(), storage, nil, c.Query, c.Start)
 			} else {
-				qry, err = engine.NewRangeQuery(context.Background(), storage, nil, c.Query, c.Start, c.End, c.Interval)
+				qry, err = engine.NewRangeQuery(t.Context(), storage, nil, c.Query, c.Start, c.End, c.Interval)
 			}
 			require.NoError(t, err)
 
-			res := qry.Exec(context.Background())
+			res := qry.Exec(t.Context())
 			if c.ShouldError {
 				require.Error(t, res.Err, "expected error for the query %q", c.Query)
 				return
@@ -2149,13 +2149,13 @@ load 10s
 		var err error
 		var qry promql.Query
 		if c.Interval == 0 {
-			qry, err = engine.NewInstantQuery(context.Background(), storage, opts, c.Query, c.Start)
+			qry, err = engine.NewInstantQuery(t.Context(), storage, opts, c.Query, c.Start)
 		} else {
-			qry, err = engine.NewRangeQuery(context.Background(), storage, opts, c.Query, c.Start, c.End, c.Interval)
+			qry, err = engine.NewRangeQuery(t.Context(), storage, opts, c.Query, c.Start, c.End, c.Interval)
 		}
 		require.NoError(t, err)
 
-		res := qry.Exec(context.Background())
+		res := qry.Exec(t.Context())
 		require.Equal(t, expErr, res.Err)
 
 		return qry.Stats()
@@ -2364,13 +2364,13 @@ load 10s
 				var err error
 				var qry promql.Query
 				if c.Interval == 0 {
-					qry, err = engine.NewInstantQuery(context.Background(), storage, nil, c.Query, c.Start)
+					qry, err = engine.NewInstantQuery(t.Context(), storage, nil, c.Query, c.Start)
 				} else {
-					qry, err = engine.NewRangeQuery(context.Background(), storage, nil, c.Query, c.Start, c.End, c.Interval)
+					qry, err = engine.NewRangeQuery(t.Context(), storage, nil, c.Query, c.Start, c.End, c.Interval)
 				}
 				require.NoError(t, err)
 
-				res := qry.Exec(context.Background())
+				res := qry.Exec(t.Context())
 				stats := qry.Stats()
 				require.Equal(t, expError, res.Err)
 				require.NotNil(t, stats)
@@ -2418,28 +2418,28 @@ load 10s
 
 	// Operator ceiling of 3 series allows the query.
 	engine.SetQueryLimits(3, 0, 0)
-	qry, err := engine.NewInstantQuery(context.Background(), storage, nil, "bigmetric", ts)
+	qry, err := engine.NewInstantQuery(t.Context(), storage, nil, "bigmetric", ts)
 	require.NoError(t, err)
-	require.NoError(t, qry.Exec(context.Background()).Err)
+	require.NoError(t, qry.Exec(t.Context()).Err)
 
 	// Operator ceiling of 2 series rejects the query.
 	engine.SetQueryLimits(2, 0, 0)
-	qry, err = engine.NewInstantQuery(context.Background(), storage, nil, "bigmetric", ts)
+	qry, err = engine.NewInstantQuery(t.Context(), storage, nil, "bigmetric", ts)
 	require.NoError(t, err)
-	require.Equal(t, promql.ErrTooManySeries(env), qry.Exec(context.Background()).Err)
+	require.Equal(t, promql.ErrTooManySeries(env), qry.Exec(t.Context()).Err)
 
 	// A per-query override may lower the ceiling and reject the query.
 	engine.SetQueryLimits(10, 0, 0)
 	opts := promql.NewPrometheusQueryOptsWithLimits(false, 0, 2, 0, 0, nil)
-	qry, err = engine.NewInstantQuery(context.Background(), storage, opts, "bigmetric", ts)
+	qry, err = engine.NewInstantQuery(t.Context(), storage, opts, "bigmetric", ts)
 	require.NoError(t, err)
-	require.Equal(t, promql.ErrTooManySeries(env), qry.Exec(context.Background()).Err)
+	require.Equal(t, promql.ErrTooManySeries(env), qry.Exec(t.Context()).Err)
 
 	// A per-query override may not raise the ceiling above the operator limit:
 	// the query is rejected at construction time rather than clamped.
 	engine.SetQueryLimits(2, 0, 0)
 	opts = promql.NewPrometheusQueryOptsWithLimits(false, 0, 100, 0, 0, nil)
-	_, err = engine.NewInstantQuery(context.Background(), storage, opts, "bigmetric", ts)
+	_, err = engine.NewInstantQuery(t.Context(), storage, opts, "bigmetric", ts)
 	var limitErr promql.ErrLimitAboveCeiling
 	require.ErrorAs(t, err, &limitErr)
 	require.Equal(t, "max_series", limitErr.Limit)
@@ -2459,15 +2459,15 @@ load 10s
 
 	// A generous ceiling allows the query.
 	engine.SetQueryLimits(0, 1e6, 0)
-	qry, err := engine.NewInstantQuery(context.Background(), storage, nil, query, ts)
+	qry, err := engine.NewInstantQuery(t.Context(), storage, nil, query, ts)
 	require.NoError(t, err)
-	require.NoError(t, qry.Exec(context.Background()).Err)
+	require.NoError(t, qry.Exec(t.Context()).Err)
 
 	// A tiny ceiling rejects the query.
 	engine.SetQueryLimits(0, 1, 0)
-	qry, err = engine.NewInstantQuery(context.Background(), storage, nil, query, ts)
+	qry, err = engine.NewInstantQuery(t.Context(), storage, nil, query, ts)
 	require.NoError(t, err)
-	require.Equal(t, promql.ErrTooManySamplesRead(env), qry.Exec(context.Background()).Err)
+	require.Equal(t, promql.ErrTooManySamplesRead(env), qry.Exec(t.Context()).Err)
 }
 
 func TestQueryCostDisabledFeature(t *testing.T) {
@@ -2482,9 +2482,9 @@ load 10s
 	engine := promqltest.NewTestEngine(t, false, 0, 1e6)
 	engine.SetQueryLimits(1, 1, 0)
 	opts := promql.NewPrometheusQueryOptsWithLimits(false, 0, 1, 1, 0, nil)
-	qry, err := engine.NewInstantQuery(context.Background(), storage, opts, "bigmetric", time.Unix(0, 0))
+	qry, err := engine.NewInstantQuery(t.Context(), storage, opts, "bigmetric", time.Unix(0, 0))
 	require.NoError(t, err)
-	require.NoError(t, qry.Exec(context.Background()).Err)
+	require.NoError(t, qry.Exec(t.Context()).Err)
 }
 
 func TestQueryCostSamplesAccounting(t *testing.T) {
@@ -2508,9 +2508,9 @@ load 10s
 		{name: "feature enabled", engine: newQueryCostEngine(t)},
 	} {
 		t.Run(c.name, func(t *testing.T) {
-			qry, err := c.engine.NewInstantQuery(context.Background(), storage, nil, "bigmetric", ts)
+			qry, err := c.engine.NewInstantQuery(t.Context(), storage, nil, "bigmetric", ts)
 			require.NoError(t, err)
-			require.NoError(t, qry.Exec(context.Background()).Err)
+			require.NoError(t, qry.Exec(t.Context()).Err)
 			st := qry.Stats()
 			require.Equal(t, int64(2), st.Samples.TotalSeries, "series touched must be accounted")
 			require.Equal(t, int64(2), st.Samples.SamplesRead, "samples read must be accounted")
@@ -2611,7 +2611,7 @@ load 10s
 				if requested := value(c.requested); requested > 0 {
 					opts = limit.opts(requested)
 				}
-				qry, err := engine.NewInstantQuery(context.Background(), storage, opts, limit.query, ts)
+				qry, err := engine.NewInstantQuery(t.Context(), storage, opts, limit.query, ts)
 				if c.wantConstructErr {
 					var limitErr promql.ErrLimitAboveCeiling
 					require.ErrorAs(t, err, &limitErr)
@@ -2622,10 +2622,10 @@ load 10s
 				}
 				require.NoError(t, err)
 				if c.wantRejected {
-					require.Equal(t, limit.wantRejected, qry.Exec(context.Background()).Err)
+					require.Equal(t, limit.wantRejected, qry.Exec(t.Context()).Err)
 					return
 				}
-				require.NoError(t, qry.Exec(context.Background()).Err)
+				require.NoError(t, qry.Exec(t.Context()).Err)
 			})
 		}
 	}
@@ -2888,17 +2888,17 @@ func TestQueryCostMaxDuration(t *testing.T) {
 	// An operator-set duration limit of 5ms, well below the engine timeout,
 	// rejects the slow query.
 	engine.SetQueryLimits(0, 0, 5*time.Millisecond)
-	qry, err := engine.NewInstantQuery(context.Background(), queryable, nil, "metric", time.Unix(0, 0))
+	qry, err := engine.NewInstantQuery(t.Context(), queryable, nil, "metric", time.Unix(0, 0))
 	require.NoError(t, err)
 	var timeoutErr promql.ErrQueryTimeout
-	require.ErrorAs(t, qry.Exec(context.Background()).Err, &timeoutErr)
+	require.ErrorAs(t, qry.Exec(t.Context()).Err, &timeoutErr)
 
 	// A per-query override may also impose a short duration limit.
 	engine.SetQueryLimits(0, 0, 0)
 	opts := promql.NewPrometheusQueryOptsWithLimits(false, 0, 0, 0, 5*time.Millisecond, nil)
-	qry, err = engine.NewInstantQuery(context.Background(), queryable, opts, "metric", time.Unix(0, 0))
+	qry, err = engine.NewInstantQuery(t.Context(), queryable, opts, "metric", time.Unix(0, 0))
 	require.NoError(t, err)
-	require.ErrorAs(t, qry.Exec(context.Background()).Err, &timeoutErr)
+	require.ErrorAs(t, qry.Exec(t.Context()).Err, &timeoutErr)
 }
 
 // TestQueryCostMaxDurationResolution covers how a per-query max_query_duration
@@ -3004,7 +3004,7 @@ func TestQueryCostMaxDurationResolution(t *testing.T) {
 			if c.requested > 0 {
 				opts = promql.NewPrometheusQueryOptsWithLimits(false, 0, 0, 0, c.requested, nil)
 			}
-			qry, err := engine.NewInstantQuery(context.Background(), queryable, opts, "metric", time.Unix(0, 0))
+			qry, err := engine.NewInstantQuery(t.Context(), queryable, opts, "metric", time.Unix(0, 0))
 			if c.wantConstructErr {
 				var limitErr promql.ErrLimitAboveCeiling
 				require.ErrorAs(t, err, &limitErr)
@@ -3015,7 +3015,7 @@ func TestQueryCostMaxDurationResolution(t *testing.T) {
 			}
 			require.NoError(t, err)
 
-			execErr := qry.Exec(context.Background()).Err
+			execErr := qry.Exec(t.Context()).Err
 			if c.wantTimeout {
 				var timeoutErr promql.ErrQueryTimeout
 				require.ErrorAs(t, execErr, &timeoutErr)
@@ -3385,17 +3385,17 @@ load 10s
 	} {
 		t.Run(query, func(t *testing.T) {
 			engine.SetQueryLimits(6, 0, 0)
-			qry, err := engine.NewInstantQuery(context.Background(), storage, nil, query, ts)
+			qry, err := engine.NewInstantQuery(t.Context(), storage, nil, query, ts)
 			require.NoError(t, err)
-			require.NoError(t, qry.Exec(context.Background()).Err)
+			require.NoError(t, qry.Exec(t.Context()).Err)
 			require.Equal(t, int64(6), qry.Stats().Samples.TotalSeries)
 			samples := qry.Stats().Samples.SamplesRead
 			qry.Close()
 
 			engine.SetQueryLimits(4, 0, 0)
-			qry, err = engine.NewInstantQuery(context.Background(), storage, nil, query, ts)
+			qry, err = engine.NewInstantQuery(t.Context(), storage, nil, query, ts)
 			require.NoError(t, err)
-			require.Equal(t, promql.ErrTooManySeries(env), qry.Exec(context.Background()).Err)
+			require.Equal(t, promql.ErrTooManySeries(env), qry.Exec(t.Context()).Err)
 			require.Equal(t, int64(5), qry.Stats().Samples.TotalSeries)
 			qry.Close()
 
@@ -3403,12 +3403,12 @@ load 10s
 			// expression returns no matching output series.
 			for _, limit := range []int64{samples, samples - 1} {
 				engine.SetQueryLimits(0, uint64(limit), 0)
-				qry, err = engine.NewInstantQuery(context.Background(), storage, nil, query, ts)
+				qry, err = engine.NewInstantQuery(t.Context(), storage, nil, query, ts)
 				require.NoError(t, err)
 				if limit == samples {
-					require.NoError(t, qry.Exec(context.Background()).Err)
+					require.NoError(t, qry.Exec(t.Context()).Err)
 				} else {
-					require.Equal(t, promql.ErrTooManySamplesRead(env), qry.Exec(context.Background()).Err)
+					require.Equal(t, promql.ErrTooManySamplesRead(env), qry.Exec(t.Context()).Err)
 				}
 				qry.Close()
 			}
@@ -3438,16 +3438,16 @@ load 10s
 
 	// A generous ceiling allows the base series plus all selected info series.
 	engine.SetQueryLimits(10, 0, 0)
-	qry, err := engine.NewInstantQuery(context.Background(), storage, nil, query, ts)
+	qry, err := engine.NewInstantQuery(t.Context(), storage, nil, query, ts)
 	require.NoError(t, err)
-	require.NoError(t, qry.Exec(context.Background()).Err)
+	require.NoError(t, qry.Exec(t.Context()).Err)
 
 	// A ceiling of 4 is above the 3 base series alone but below the cumulative
 	// total once the 3 info series are accounted for, so the query is rejected.
 	engine.SetQueryLimits(4, 0, 0)
-	qry, err = engine.NewInstantQuery(context.Background(), storage, nil, query, ts)
+	qry, err = engine.NewInstantQuery(t.Context(), storage, nil, query, ts)
 	require.NoError(t, err)
-	require.Equal(t, promql.ErrTooManySeries(env), qry.Exec(context.Background()).Err)
+	require.Equal(t, promql.ErrTooManySeries(env), qry.Exec(t.Context()).Err)
 }
 
 // countingSeriesSet is a storage.SeriesSet that yields up to total distinct
@@ -3501,9 +3501,9 @@ func TestQueryCostMaxSeriesEarlyTermination(t *testing.T) {
 	engine := newQueryCostEngine(t)
 	engine.SetQueryLimits(maxSeries, 0, 0)
 
-	qry, err := engine.NewInstantQuery(context.Background(), queryable, nil, "bigmetric", time.Unix(0, 0))
+	qry, err := engine.NewInstantQuery(t.Context(), queryable, nil, "bigmetric", time.Unix(0, 0))
 	require.NoError(t, err)
-	require.Equal(t, promql.ErrTooManySeries(env), qry.Exec(context.Background()).Err)
+	require.Equal(t, promql.ErrTooManySeries(env), qry.Exec(t.Context()).Err)
 
 	// Next is called once per produced series plus the call that trips the
 	// limit; the limit trips on the (maxSeries+1)th series. Crucially it is far
@@ -3651,9 +3651,9 @@ func TestExtendedRangeSelectors(t *testing.T) {
 	for _, tc := range tc {
 		t.Run(tc.query, func(t *testing.T) {
 			engine = promqltest.NewTestEngine(t, false, 0, 100)
-			qry, err := engine.NewInstantQuery(context.Background(), storage, nil, tc.query, tc.t)
+			qry, err := engine.NewInstantQuery(t.Context(), storage, nil, tc.query, tc.t)
 			require.NoError(t, err)
-			res := qry.Exec(context.Background())
+			res := qry.Exec(t.Context())
 			require.NoError(t, res.Err)
 			require.Equal(t, tc.expected, res.Value)
 		})
@@ -3662,7 +3662,7 @@ func TestExtendedRangeSelectors(t *testing.T) {
 
 // TestParserConfigIsolation ensures the engine's parser configuration is respected.
 func TestParserConfigIsolation(t *testing.T) {
-	ctx := context.Background()
+	ctx := t.Context()
 	storage := promqltest.LoadedStorage(t, `
 		load 10s
 			metric 1+1x10
@@ -3717,7 +3717,7 @@ load 1ms
 
 	// Add some samples with negative timestamp.
 	db := store.DB
-	app := db.AppenderV2(context.Background())
+	app := db.AppenderV2(t.Context())
 	ref, err := app.Append(0, lblsneg, 0, -1000000, 1000, nil, nil, storage.AOptions{})
 	require.NoError(t, err)
 	for ts := int64(-1000000 + 1000); ts <= 0; ts += 1000 {
@@ -3937,13 +3937,13 @@ load 1ms
 			var err error
 			var qry promql.Query
 			if c.end == 0 {
-				qry, err = engine.NewInstantQuery(context.Background(), store, nil, c.query, start)
+				qry, err = engine.NewInstantQuery(t.Context(), store, nil, c.query, start)
 			} else {
-				qry, err = engine.NewRangeQuery(context.Background(), store, nil, c.query, start, end, interval)
+				qry, err = engine.NewRangeQuery(t.Context(), store, nil, c.query, start, end, interval)
 			}
 			require.NoError(t, err)
 
-			res := qry.Exec(context.Background())
+			res := qry.Exec(t.Context())
 			require.NoError(t, res.Err)
 			if expMat, ok := c.result.(promql.Matrix); ok {
 				sort.Sort(expMat)
@@ -4315,10 +4315,10 @@ func TestSubquerySelector(t *testing.T) {
 
 			for _, c := range tst.cases {
 				t.Run(c.Query, func(t *testing.T) {
-					qry, err := engine.NewInstantQuery(context.Background(), storage, nil, c.Query, c.Start)
+					qry, err := engine.NewInstantQuery(t.Context(), storage, nil, c.Query, c.Start)
 					require.NoError(t, err)
 
-					res := qry.Exec(context.Background())
+					res := qry.Exec(t.Context())
 					require.Equal(t, c.Result.Err, res.Err)
 					mat := res.Value.(promql.Matrix)
 					sort.Sort(mat)
@@ -4352,7 +4352,7 @@ func TestQueryLogger_basic(t *testing.T) {
 	engine := promqltest.NewTestEngineWithOpts(t, opts)
 
 	queryExec := func() {
-		ctx, cancelCtx := context.WithCancel(context.Background())
+		ctx, cancelCtx := context.WithCancel(t.Context())
 		defer cancelCtx()
 		query := engine.NewTestQuery(func(ctx context.Context) error {
 			return contextDone(ctx, "test statement execution")
@@ -4424,7 +4424,7 @@ func TestQueryLogger_fields(t *testing.T) {
 
 	engine.SetQueryLogger(f1)
 
-	ctx, cancelCtx := context.WithCancel(context.Background())
+	ctx, cancelCtx := context.WithCancel(t.Context())
 	ctx = promql.NewOriginContext(ctx, map[string]any{"foo": "bar"})
 	defer cancelCtx()
 	query := engine.NewTestQuery(func(ctx context.Context) error {
@@ -4457,7 +4457,7 @@ func TestQueryLogger_error(t *testing.T) {
 
 	engine.SetQueryLogger(f1)
 
-	ctx, cancelCtx := context.WithCancel(context.Background())
+	ctx, cancelCtx := context.WithCancel(t.Context())
 	ctx = promql.NewOriginContext(ctx, map[string]any{"foo": "bar"})
 	defer cancelCtx()
 	testErr := errors.New("failure")
@@ -5537,8 +5537,8 @@ func TestEngineOptsValidation(t *testing.T) {
 
 	for _, c := range cases {
 		eng := promqltest.NewTestEngineWithOpts(t, c.opts)
-		_, err1 := eng.NewInstantQuery(context.Background(), nil, nil, c.query, time.Unix(10, 0))
-		_, err2 := eng.NewRangeQuery(context.Background(), nil, nil, c.query, time.Unix(0, 0), time.Unix(10, 0), time.Second)
+		_, err1 := eng.NewInstantQuery(t.Context(), nil, nil, c.query, time.Unix(10, 0))
+		_, err2 := eng.NewRangeQuery(t.Context(), nil, nil, c.query, time.Unix(0, 0), time.Unix(10, 0), time.Second)
 		if c.fail {
 			require.Equal(t, c.expError, err1)
 			require.Equal(t, c.expError, err2)
@@ -5638,10 +5638,10 @@ metric 0 1 2
 			storage := promqltest.LoadedStorage(t, load)
 
 			opts := promql.NewPrometheusQueryOpts(false, c.queryLookback, nil)
-			qry, err := engine.NewInstantQuery(context.Background(), storage, opts, query, c.ts)
+			qry, err := engine.NewInstantQuery(t.Context(), storage, opts, query, c.ts)
 			require.NoError(t, err)
 
-			res := qry.Exec(context.Background())
+			res := qry.Exec(t.Context())
 			require.NoError(t, res.Err)
 			vec, ok := res.Value.(promql.Vector)
 			require.True(t, ok)
@@ -5673,7 +5673,7 @@ histogram {{sum:4 count:4 buckets:[2 2]}} {{sum:6 count:6 buckets:[3 3]}} {{sum:
 	engine := promqltest.NewTestEngine(t, false, 0, promqltest.DefaultMaxSamplesPerQuery)
 
 	verify := func(t *testing.T, qry promql.Query, expected []histogram.FloatHistogram) {
-		res := qry.Exec(context.Background())
+		res := qry.Exec(t.Context())
 		require.NoError(t, res.Err)
 
 		m, ok := res.Value.(promql.Matrix)
@@ -5690,7 +5690,7 @@ histogram {{sum:4 count:4 buckets:[2 2]}} {{sum:6 count:6 buckets:[3 3]}} {{sum:
 		}
 	}
 
-	qry, err := engine.NewRangeQuery(context.Background(), storage, nil, "increase(histogram[90s])", time.Unix(0, 0), time.Unix(0, 0).Add(60*time.Second), time.Minute)
+	qry, err := engine.NewRangeQuery(t.Context(), storage, nil, "increase(histogram[90s])", time.Unix(0, 0), time.Unix(0, 0).Add(60*time.Second), time.Minute)
 	require.NoError(t, err)
 	verify(t, qry, []histogram.FloatHistogram{
 		{
@@ -5701,7 +5701,7 @@ histogram {{sum:4 count:4 buckets:[2 2]}} {{sum:6 count:6 buckets:[3 3]}} {{sum:
 		},
 	})
 
-	qry, err = engine.NewInstantQuery(context.Background(), storage, nil, "histogram[61s]", time.Unix(0, 0).Add(2*time.Minute))
+	qry, err = engine.NewInstantQuery(t.Context(), storage, nil, "histogram[61s]", time.Unix(0, 0).Add(2*time.Minute))
 	require.NoError(t, err)
 	verify(t, qry, []histogram.FloatHistogram{
 		{
@@ -5940,11 +5940,11 @@ func TestRateAnnotations(t *testing.T) {
 				EnableDelayedNameRemoval: true,
 				EnableTypeAndUnitLabels:  testCase.typeAndUnitLabelsEnabled,
 			})
-			query, err := engine.NewInstantQuery(context.Background(), store, nil, testCase.expr, timestamp.Time(0).Add(1*time.Minute))
+			query, err := engine.NewInstantQuery(t.Context(), store, nil, testCase.expr, timestamp.Time(0).Add(1*time.Minute))
 			require.NoError(t, err)
 			t.Cleanup(query.Close)
 
-			res := query.Exec(context.Background())
+			res := query.Exec(t.Context())
 			require.NoError(t, res.Err)
 
 			warnings, infos := res.Warnings.AsStrings(testCase.expr, 0, 0)
@@ -6020,11 +6020,11 @@ func TestHistogramRateWithFloatStaleness(t *testing.T) {
 
 	engine := promqltest.NewTestEngine(t, false, 0, promqltest.DefaultMaxSamplesPerQuery)
 
-	q, err := engine.NewInstantQuery(context.Background(), &queriable, nil, "rate(foo[40s])", timestamp.Time(45))
+	q, err := engine.NewInstantQuery(t.Context(), &queriable, nil, "rate(foo[40s])", timestamp.Time(45))
 	require.NoError(t, err)
 	defer q.Close()
 
-	res := q.Exec(context.Background())
+	res := q.Exec(t.Context())
 	require.NoError(t, res.Err)
 
 	vec, err := res.Vector()
@@ -6123,11 +6123,11 @@ func TestInvalidHistogramBucketLayoutFailsQuery(t *testing.T) {
 		"delta(schema_increase[30s] offset 30s smoothed)",
 	} {
 		t.Run(expr, func(t *testing.T) {
-			q, err := engine.NewInstantQuery(context.Background(), &queryable, nil, expr, timestamp.Time(60000))
+			q, err := engine.NewInstantQuery(t.Context(), &queryable, nil, expr, timestamp.Time(60000))
 			require.NoError(t, err)
 			defer q.Close()
 
-			res := q.Exec(context.Background())
+			res := q.Exec(t.Context())
 			require.ErrorIs(t, res.Err, histogram.ErrHistogramSpanNegativeOffset)
 		})
 	}
@@ -6373,7 +6373,7 @@ func TestInconsistentHistogramCount(t *testing.T) {
 		_ = head.Close()
 	})
 
-	app := head.AppenderV2(context.Background())
+	app := head.AppenderV2(t.Context())
 
 	l := labels.FromStrings("__name__", "series_1")
 
@@ -6423,9 +6423,9 @@ func TestInconsistentHistogramCount(t *testing.T) {
 		v           promql.Vector
 	)
 
-	query, err = engine.NewInstantQuery(context.Background(), queryable, nil, "(rate(series_1[1m]))", time.UnixMilli(maxt))
+	query, err = engine.NewInstantQuery(t.Context(), queryable, nil, "(rate(series_1[1m]))", time.UnixMilli(maxt))
 	require.NoError(t, err)
-	queryResult = query.Exec(context.Background())
+	queryResult = query.Exec(t.Context())
 	require.NoError(t, queryResult.Err)
 	require.NotNil(t, queryResult)
 	v, err = queryResult.Vector()
@@ -6436,9 +6436,9 @@ func TestInconsistentHistogramCount(t *testing.T) {
 	query.Close()
 	countFromHistogram := v[0].H.Count
 
-	query, err = engine.NewInstantQuery(context.Background(), queryable, nil, "histogram_count((rate(series_1[1m])))", time.UnixMilli(maxt))
+	query, err = engine.NewInstantQuery(t.Context(), queryable, nil, "histogram_count((rate(series_1[1m])))", time.UnixMilli(maxt))
 	require.NoError(t, err)
-	queryResult = query.Exec(context.Background())
+	queryResult = query.Exec(t.Context())
 	require.NoError(t, queryResult.Err)
 	require.NotNil(t, queryResult)
 	v, err = queryResult.Vector()
@@ -6463,7 +6463,7 @@ func TestSubQueryHistogramsCopy(t *testing.T) {
 
 	subQuery := `min_over_time({__name__="http_request_duration_seconds"}[1h:1m])`
 	testQuery := `rate({__name__="http_request_duration_seconds"}[3m])`
-	ctx := context.Background()
+	ctx := t.Context()
 
 	for range 100 {
 		queryable := promqltest.LoadedStorage(t, load)
@@ -6580,7 +6580,7 @@ func TestHistogram_CounterResetHint(t *testing.T) {
 			want:  histogram.GaugeType,
 		},
 	}
-	ctx := context.Background()
+	ctx := t.Context()
 	queryable := promqltest.LoadedStorage(t, load)
 	defer queryable.Close()
 	engine := promqltest.NewTestEngine(t, false, 0, promqltest.DefaultMaxSamplesPerQuery)
@@ -6656,11 +6656,11 @@ func TestQueryStartTimestampsOverride(t *testing.T) {
 				MaxSamples:         promqltest.DefaultMaxSamplesPerQuery,
 			})
 			opts := promql.NewPrometheusQueryOpts(false, 0, tc.queryST)
-			q, err := engine.NewInstantQuery(context.Background(), storage, opts, "increase(metric[20s])", time.Unix(10, 0))
+			q, err := engine.NewInstantQuery(t.Context(), storage, opts, "increase(metric[20s])", time.Unix(10, 0))
 			require.NoError(t, err)
 			defer q.Close()
 
-			res := q.Exec(context.Background())
+			res := q.Exec(t.Context())
 			require.NoError(t, res.Err)
 			require.NotNil(t, res.Value)
 			require.Equal(t, tc.expected, res.Value.String())
@@ -6772,9 +6772,9 @@ func TestTypeAndUnitMetadataLabelsInFunctionsAndMatching(t *testing.T) {
 					expected: `{env="prod", instance="0", job="api"} => 10 @[0]`,
 				},
 			} {
-				q, err := engine.NewInstantQuery(context.Background(), storage, nil, tc.expr, time.Unix(0, 0))
+				q, err := engine.NewInstantQuery(t.Context(), storage, nil, tc.expr, time.Unix(0, 0))
 				require.NoError(t, err)
-				res := q.Exec(context.Background())
+				res := q.Exec(t.Context())
 				q.Close()
 				require.NoError(t, res.Err)
 				require.Equal(t, tc.expected, res.Value.String(), "query: %s", tc.expr)
@@ -6819,10 +6819,10 @@ load 10s
 			t.Run(fmt.Sprintf("%s/perStep=%t", tc.query, perStep), func(t *testing.T) {
 				engine.SetQueryLimits(0, uint64(tc.reads), 0)
 				opts := promql.NewPrometheusQueryOpts(perStep, 0, nil)
-				q, err := engine.NewRangeQuery(context.Background(), s, opts, tc.query, time.Unix(100, 0), time.Unix(200, 0), 30*time.Second)
+				q, err := engine.NewRangeQuery(t.Context(), s, opts, tc.query, time.Unix(100, 0), time.Unix(200, 0), 30*time.Second)
 				require.NoError(t, err)
 				defer q.Close()
-				require.NoError(t, q.Exec(context.Background()).Err)
+				require.NoError(t, q.Exec(t.Context()).Err)
 				st := q.Stats().Samples
 				series := int64(2)
 				if tc.query == "metric + metric @ 100" {
@@ -6848,10 +6848,10 @@ load 10s
 				}
 
 				engine.SetQueryLimits(0, uint64(tc.reads-1), 0)
-				limited, err := engine.NewRangeQuery(context.Background(), s, opts, tc.query, time.Unix(100, 0), time.Unix(200, 0), 30*time.Second)
+				limited, err := engine.NewRangeQuery(t.Context(), s, opts, tc.query, time.Unix(100, 0), time.Unix(200, 0), 30*time.Second)
 				require.NoError(t, err)
 				defer limited.Close()
-				require.Equal(t, promql.ErrTooManySamplesRead(env), limited.Exec(context.Background()).Err)
+				require.Equal(t, promql.ErrTooManySamplesRead(env), limited.Exec(t.Context()).Err)
 			})
 		}
 	}

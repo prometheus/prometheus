@@ -14,7 +14,6 @@
 package kubernetes
 
 import (
-	"context"
 	"fmt"
 	"testing"
 
@@ -71,7 +70,7 @@ func TestNodeDiscoveryBeforeStart(t *testing.T) {
 				map[string]string{"test-annotation": "testannotationvalue"},
 				nil,
 			)
-			c.CoreV1().Nodes().Create(context.Background(), obj, metav1.CreateOptions{})
+			c.CoreV1().Nodes().Create(t.Context(), obj, metav1.CreateOptions{})
 		},
 		expectedMaxItems: 1,
 		expectedRes: map[string]*targetgroup.Group{
@@ -105,7 +104,7 @@ func TestNodeDiscoveryAdd(t *testing.T) {
 		discovery: n,
 		afterStart: func() {
 			obj := makeEnumeratedNode(1)
-			c.CoreV1().Nodes().Create(context.Background(), obj, metav1.CreateOptions{})
+			c.CoreV1().Nodes().Create(t.Context(), obj, metav1.CreateOptions{})
 		},
 		expectedMaxItems: 1,
 		expectedRes: map[string]*targetgroup.Group{
@@ -135,7 +134,7 @@ func TestNodeDiscoveryDelete(t *testing.T) {
 	k8sDiscoveryTest{
 		discovery: n,
 		afterStart: func() {
-			c.CoreV1().Nodes().Delete(context.Background(), obj.Name, metav1.DeleteOptions{})
+			c.CoreV1().Nodes().Delete(t.Context(), obj.Name, metav1.DeleteOptions{})
 		},
 		expectedMaxItems: 2,
 		expectedRes: map[string]*targetgroup.Group{
@@ -154,7 +153,7 @@ func TestNodeDiscoveryUpdate(t *testing.T) {
 		discovery: n,
 		afterStart: func() {
 			obj1 := makeEnumeratedNode(0)
-			c.CoreV1().Nodes().Create(context.Background(), obj1, metav1.CreateOptions{})
+			c.CoreV1().Nodes().Create(t.Context(), obj1, metav1.CreateOptions{})
 			obj2 := makeNode(
 				"test0",
 				"1.2.3.4",
@@ -163,7 +162,7 @@ func TestNodeDiscoveryUpdate(t *testing.T) {
 				map[string]string{},
 				nil,
 			)
-			c.CoreV1().Nodes().Update(context.Background(), obj2, metav1.UpdateOptions{})
+			c.CoreV1().Nodes().Update(t.Context(), obj2, metav1.UpdateOptions{})
 		},
 		expectedMaxItems: 2,
 		expectedRes: map[string]*targetgroup.Group{
@@ -285,7 +284,7 @@ func TestNodeDiscoveryConditions(t *testing.T) {
 						map[string]string{},
 						tt.conditions,
 					)
-					c.CoreV1().Nodes().Create(context.Background(), obj, metav1.CreateOptions{})
+					c.CoreV1().Nodes().Create(t.Context(), obj, metav1.CreateOptions{})
 				},
 				expectedMaxItems: 1,
 				expectedRes: map[string]*targetgroup.Group{

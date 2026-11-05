@@ -14,7 +14,6 @@
 package tsdb
 
 import (
-	"context"
 	"encoding/binary"
 	"encoding/json"
 	"errors"
@@ -259,7 +258,7 @@ func TestCorruptedChunk(t *testing.T) {
 			querier, err := NewBlockQuerier(b, 0, 1)
 			require.NoError(t, err)
 			defer func() { require.NoError(t, querier.Close()) }()
-			set := querier.Select(context.Background(), false, nil, labels.MustNewMatcher(labels.MatchEqual, "a", "b"))
+			set := querier.Select(t.Context(), false, nil, labels.MustNewMatcher(labels.MatchEqual, "a", "b"))
 
 			// Check chunk errors during iter time.
 			require.True(t, set.Next())
@@ -288,7 +287,7 @@ func sequenceFiles(dir string) ([]string, error) {
 
 func TestLabelValuesWithMatchers(t *testing.T) {
 	tmpdir := t.TempDir()
-	ctx := context.Background()
+	ctx := t.Context()
 
 	var seriesEntries []storage.Series
 	for i := range 100 {
@@ -372,7 +371,7 @@ func TestLabelValuesWithMatchers(t *testing.T) {
 
 func TestBlockQuerierReturnsSortedLabelValues(t *testing.T) {
 	tmpdir := t.TempDir()
-	ctx := context.Background()
+	ctx := t.Context()
 
 	var seriesEntries []storage.Series
 	for i := 100; i > 0; i-- {
@@ -424,14 +423,14 @@ func TestBlockSize(t *testing.T) {
 
 	// Delete some series and check the sizes again.
 	{
-		require.NoError(t, blockInit.Delete(context.Background(), 1, 10, labels.MustNewMatcher(labels.MatchRegexp, "", ".*")))
+		require.NoError(t, blockInit.Delete(t.Context(), 1, 10, labels.MustNewMatcher(labels.MatchRegexp, "", ".*")))
 		expAfterDelete := blockInit.Size()
 		require.Greater(t, expAfterDelete, expSizeInit, "after a delete the block size should be bigger as the tombstone file should grow %v > %v", expAfterDelete, expSizeInit)
 		actAfterDelete, err := fileutil.DirSize(blockDirInit)
 		require.NoError(t, err)
 		require.Equal(t, expAfterDelete, actAfterDelete, "after a delete reported block size doesn't match actual disk size")
 
-		c, err := NewLeveledCompactor(context.Background(), nil, promslog.NewNopLogger(), []int64{0}, nil, nil)
+		c, err := NewLeveledCompactor(t.Context(), nil, promslog.NewNopLogger(), []int64{0}, nil, nil)
 		require.NoError(t, err)
 		blockDirsAfterCompact, err := c.Compact(tmpdir, []string{blockInit.Dir()}, nil)
 		require.NoError(t, err)
@@ -487,7 +486,7 @@ func TestReadIndexFormatV1(t *testing.T) {
 // order. The current writer only emits FormatV2, so this fixture is the only
 // way to reach that branch of index.Reader.LabelValues.
 func TestSearchLabelValuesIndexFormatV1(t *testing.T) {
-	ctx := context.Background()
+	ctx := t.Context()
 
 	block, err := OpenBlock(nil, filepath.Join("testdata", "index_format_v1"), nil, nil)
 	require.NoError(t, err)
@@ -544,7 +543,7 @@ func TestSearchLabelValuesIndexFormatV1(t *testing.T) {
 
 func BenchmarkLabelValuesWithMatchers(b *testing.B) {
 	tmpdir := b.TempDir()
-	ctx := context.Background()
+	ctx := b.Context()
 
 	var seriesEntries []storage.Series
 	metricCount := 1000000
@@ -585,7 +584,7 @@ func BenchmarkLabelValuesWithMatchers(b *testing.B) {
 
 func TestLabelNamesWithMatchers(t *testing.T) {
 	tmpdir := t.TempDir()
-	ctx := context.Background()
+	ctx := t.Context()
 
 	var seriesEntries []storage.Series
 	for i := range 100 {
@@ -682,7 +681,7 @@ func TestBlockIndexReader_PostingsForLabelMatching(t *testing.T) {
 func testPostingsForLabelMatching(t *testing.T, offset storage.SeriesRef, setUp func(*testing.T, []labels.Labels) IndexReader) {
 	t.Helper()
 
-	ctx := context.Background()
+	ctx := t.Context()
 	series := []labels.Labels{
 		labels.FromStrings("n", "1"),
 		labels.FromStrings("n", "1", "i", "a"),
@@ -745,7 +744,7 @@ func createBlock(tb testing.TB, dir string, series []storage.Series) string {
 }
 
 func createBlockFromHead(tb testing.TB, dir string, head *Head) string {
-	compactor, err := NewLeveledCompactor(context.Background(), nil, promslog.NewNopLogger(), []int64{1000000}, nil, nil)
+	compactor, err := NewLeveledCompactor(tb.Context(), nil, promslog.NewNopLogger(), []int64{1000000}, nil, nil)
 	require.NoError(tb, err)
 
 	require.NoError(tb, os.MkdirAll(dir, 0o777))
@@ -759,7 +758,7 @@ func createBlockFromHead(tb testing.TB, dir string, head *Head) string {
 }
 
 func createBlockFromOOOHead(tb testing.TB, dir string, head *OOOCompactionHead) string {
-	compactor, err := NewLeveledCompactor(context.Background(), nil, promslog.NewNopLogger(), []int64{1000000}, nil, nil)
+	compactor, err := NewLeveledCompactor(tb.Context(), nil, promslog.NewNopLogger(), []int64{1000000}, nil, nil)
 	require.NoError(tb, err)
 
 	require.NoError(tb, os.MkdirAll(dir, 0o777))
@@ -779,7 +778,7 @@ func createHead(tb testing.TB, w *wlog.WL, series []storage.Series, chunkDir str
 	require.NoError(tb, err)
 
 	var it chunkenc.Iterator
-	ctx := context.Background()
+	ctx := tb.Context()
 	app := head.AppenderV2(ctx)
 	for _, s := range series {
 		ref := storage.SeriesRef(0)
@@ -829,7 +828,7 @@ func createHeadWithOOOSamples(tb testing.TB, w *wlog.WL, series []storage.Series
 
 	var it chunkenc.Iterator
 	totalSamples := 0
-	app := head.AppenderV2(context.Background())
+	app := head.AppenderV2(tb.Context())
 	for _, s := range series {
 		ref := storage.SeriesRef(0)
 		it = s.Iterator(it)
@@ -858,7 +857,7 @@ func createHeadWithOOOSamples(tb testing.TB, w *wlog.WL, series []storage.Series
 	oooSamplesAppended := 0
 	require.Equal(tb, float64(0), prom_testutil.ToFloat64(head.metrics.outOfOrderSamplesAppended))
 
-	app = head.AppenderV2(context.Background())
+	app = head.AppenderV2(tb.Context())
 	for i, lset := range oooSampleLabels {
 		ref := storage.SeriesRef(0)
 		for _, sample := range oooSamples[i] {

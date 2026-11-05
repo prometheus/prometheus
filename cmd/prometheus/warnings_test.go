@@ -37,14 +37,14 @@ func TestDedupeDeprecationWarningLogger(t *testing.T) {
 
 	deprecationMessage := "v1 Endpoints is deprecated in v1.33+; use [discovery.k8s.io/v1](http://discovery.k8s.io/v1) EndpointSlice"
 	for range 10 {
-		wl.HandleWarningHeaderWithContext(context.Background(), 299, "", deprecationMessage)
+		wl.HandleWarningHeaderWithContext(t.Context(), 299, "", deprecationMessage)
 	}
 	require.Len(t, wl.logger.(*fakeWarningLogger).logs, 1)
 	require.Len(t, wl.logged, 1)
 	require.Equal(t, wl.logger.(*fakeWarningLogger).logs[0], deprecationMessage)
 
 	for i := range 10 {
-		wl.HandleWarningHeaderWithContext(context.Background(), 299, "", fmt.Sprintf("some other warning %d", i+1))
+		wl.HandleWarningHeaderWithContext(t.Context(), 299, "", fmt.Sprintf("some other warning %d", i+1))
 	}
 	require.Len(t, wl.logger.(*fakeWarningLogger).logs, 11)
 	require.Len(t, wl.logged, 1)

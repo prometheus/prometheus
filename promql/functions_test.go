@@ -14,7 +14,6 @@
 package promql_test
 
 import (
-	"context"
 	"math"
 	"strconv"
 	"testing"
@@ -49,7 +48,7 @@ func TestDeriv(t *testing.T) {
 	}
 	engine := promqltest.NewTestEngineWithOpts(t, opts)
 
-	a := stor.AppenderV2(context.Background())
+	a := stor.AppenderV2(t.Context())
 
 	var start, interval, i int64
 	metric := labels.FromStrings("__name__", "foo")
@@ -65,7 +64,7 @@ func TestDeriv(t *testing.T) {
 
 	require.NoError(t, a.Commit())
 
-	ctx := context.Background()
+	ctx := t.Context()
 	query, err := engine.NewInstantQuery(ctx, stor, nil, "deriv(foo[30m])", timestamp.Time(1493712846939))
 	require.NoError(t, err)
 
@@ -78,7 +77,7 @@ func TestDeriv(t *testing.T) {
 }
 
 func TestTsOfLastOverTimeBeforeEpoch(t *testing.T) {
-	ctx := context.Background()
+	ctx := t.Context()
 	stor := teststorage.New(t)
 	app := stor.AppenderV2(ctx)
 

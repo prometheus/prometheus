@@ -190,7 +190,7 @@ func TestTritonSDRefreshNoServer(t *testing.T) {
 	t.Parallel()
 	td, m, _ := newTritonDiscovery(conf)
 
-	_, err := td.refresh(context.Background())
+	_, err := td.refresh(t.Context())
 	require.ErrorContains(t, err, "an error occurred when requesting targets from the discovery endpoint")
 	m.Unregister()
 }
@@ -199,7 +199,7 @@ func TestTritonSDRefreshCancelled(t *testing.T) {
 	t.Parallel()
 	td, m, _ := newTritonDiscovery(conf)
 
-	ctx, cancel := context.WithCancel(context.Background())
+	ctx, cancel := context.WithCancel(t.Context())
 	cancel()
 	_, err := td.refresh(ctx)
 	require.ErrorContains(t, err, context.Canceled.Error())
@@ -265,7 +265,7 @@ func testTritonSDRefresh(t *testing.T, c SDConfig, dstr string) []model.LabelSet
 
 	td.sdConfig.Port = port
 
-	tgs, err := td.refresh(context.Background())
+	tgs, err := td.refresh(t.Context())
 	require.NoError(t, err)
 	require.Len(t, tgs, 1)
 	tg := tgs[0]

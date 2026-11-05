@@ -16,7 +16,6 @@ package tsdb
 import (
 	"bufio"
 	"bytes"
-	"context"
 	"encoding/binary"
 	"encoding/json"
 	"errors"
@@ -156,7 +155,7 @@ func queryWithoutReplacingNaNs(t testing.TB, q storage.Querier, matchers ...*lab
 
 // queryHelper runs a matcher query against the querier and fully expands its data.
 func queryHelper(t testing.TB, q storage.Querier, withNaNReplacement bool, matchers ...*labels.Matcher) map[string][]chunks.Sample {
-	ss := q.Select(context.Background(), false, nil, matchers...)
+	ss := q.Select(t.Context(), false, nil, matchers...)
 	defer func() {
 		require.NoError(t, q.Close())
 	}()
@@ -210,7 +209,7 @@ func queryAndExpandChunks(t testing.TB, q storage.ChunkQuerier, matchers ...*lab
 
 // queryChunks runs a matcher query against the querier and expands its data.
 func queryChunks(t testing.TB, q storage.ChunkQuerier, matchers ...*labels.Matcher) map[string][]chunks.Meta {
-	ss := q.Select(context.Background(), false, nil, matchers...)
+	ss := q.Select(t.Context(), false, nil, matchers...)
 	defer func() {
 		require.NoError(t, q.Close())
 	}()
@@ -728,7 +727,7 @@ func TestVerticalCompactionFloatChunkEncoding(t *testing.T) {
 		db := newTestDB(t, withDir(dir))
 		db.DisableCompactions()
 
-		require.NoError(t, db.Compact(context.Background()))
+		require.NoError(t, db.Compact(t.Context()))
 		blocks := db.Blocks()
 		require.Len(t, blocks, 1)
 		requireBlockFloatChunkEncoding(t, blocks[0], chunkenc.EncXOR)
@@ -743,7 +742,7 @@ func TestVerticalCompactionFloatChunkEncoding(t *testing.T) {
 		db := newTestDB(t, withDir(dir), withOpts(opts))
 		db.DisableCompactions()
 
-		require.NoError(t, db.Compact(context.Background()))
+		require.NoError(t, db.Compact(t.Context()))
 		blocks := db.Blocks()
 		require.Len(t, blocks, 1)
 		requireBlockFloatChunkEncoding(t, blocks[0], chunkenc.EncXOR2)
@@ -759,7 +758,7 @@ func TestVerticalCompactionFloatChunkEncoding(t *testing.T) {
 
 		// Flip the startup XOR default to XOR2 before the first compaction.
 		require.NoError(t, db.ApplyConfig(xorCfg(config.FloatChunkEncodingXOR2)))
-		require.NoError(t, db.Compact(context.Background()))
+		require.NoError(t, db.Compact(t.Context()))
 		blocks := db.Blocks()
 		require.Len(t, blocks, 1)
 		requireBlockFloatChunkEncoding(t, blocks[0], chunkenc.EncXOR2)
@@ -769,7 +768,7 @@ func TestVerticalCompactionFloatChunkEncoding(t *testing.T) {
 		createOverlappingBlocks(t, db.Dir(), 100)
 		require.NoError(t, db.reloadBlocks())
 		require.NoError(t, db.ApplyConfig(xorCfg(config.FloatChunkEncodingXOR)))
-		require.NoError(t, db.Compact(context.Background()))
+		require.NoError(t, db.Compact(t.Context()))
 		blocks = db.Blocks()
 		require.Len(t, blocks, 2)
 		requireBlockFloatChunkEncoding(t, blocks[0], chunkenc.EncXOR2)
@@ -1397,7 +1396,7 @@ func TestExemplarAfterLastSampleSurvivesCompaction(t *testing.T) {
 				opts.EnableMemorySnapshotOnShutdown = enableSnapshot
 				db := newTestDB(t, withOpts(opts))
 				db.DisableCompactions()
-				ctx := context.Background()
+				ctx := t.Context()
 
 				seriesLabels := labels.FromStrings("name", "exemplar_only")
 				app := db.AppenderV2(ctx)
@@ -1528,7 +1527,7 @@ func TestExemplarBeforeLastSampleSurvivesSeriesCompaction(t *testing.T) {
 				opts.MaxExemplars = 10
 				db := newTestDB(t, withOpts(opts))
 				db.DisableCompactions()
-				ctx := context.Background()
+				ctx := t.Context()
 
 				seriesLabels := labels.FromStrings("name", "exemplar_series")
 				app := db.AppenderV2(ctx)
@@ -1602,7 +1601,7 @@ func TestSeriesCompactionReclaimsChunksWithExemplars(t *testing.T) {
 					opts.OutOfOrderTimeWindow = blockRange
 					db := newTestDB(t, withOpts(opts))
 					db.DisableCompactions()
-					ctx := context.Background()
+					ctx := t.Context()
 					seriesLabels := labels.FromStrings("name", "exemplar_series")
 					app := db.AppenderV2(ctx)
 					// A float followed by histograms creates an older chunk while
@@ -1829,7 +1828,7 @@ func testQuerierShouldNotPanicIfHeadChunkIsTruncatedWhileReadingQueriedChunks(t 
 	}
 
 	// Push 1 sample every 15s for 2x the block duration period.
-	ctx := context.Background()
+	ctx := t.Context()
 	interval := int64(15 * time.Second / time.Millisecond)
 	ts := int64(0)
 
@@ -1962,7 +1961,7 @@ func testChunkQuerierShouldNotPanicIfHeadChunkIsTruncatedWhileReadingQueriedChun
 	}
 
 	// Push 1 sample every 15s for 2x the block duration period.
-	ctx := context.Background()
+	ctx := t.Context()
 	interval := int64(15 * time.Second / time.Millisecond)
 	ts := int64(0)
 
@@ -2090,7 +2089,7 @@ func TestOOOSampleLossOnWALCheckpointBeforeOOOCompaction(t *testing.T) {
 			}
 
 			appendSample := func(db *DB, ts int64) chunks.HeadSeriesRef {
-				app := db.AppenderV2(context.Background())
+				app := db.AppenderV2(t.Context())
 				ref, _, err := scenario.appendFunc(app, series, ts, ts)
 				require.NoError(t, err)
 				require.NoError(t, app.Commit())
@@ -2101,7 +2100,7 @@ func TestOOOSampleLossOnWALCheckpointBeforeOOOCompaction(t *testing.T) {
 			// compaction below has enough segments to checkpoint. Checkpointing only
 			// considers the lower two thirds of the existing segments.
 			fillWALSegments := func(db *DB) {
-				app := db.AppenderV2(context.Background())
+				app := db.AppenderV2(t.Context())
 				padding := string(bytes.Repeat([]byte("x"), 8192))
 				for i := range 32 {
 					_, err := app.Append(0, labels.FromStrings("foo", "pad", "id", strconv.Itoa(i), "padding", padding), 0, inOrderTime, float64(i), nil, nil, storage.AOptions{})
@@ -2170,7 +2169,7 @@ func TestOOOSampleLossOnWALCheckpointBeforeOOOCompaction(t *testing.T) {
 
 			// Out-of-order compaction persists the WBL into a block and truncates it,
 			// after which the reference the WBL used is no longer needed.
-			require.NoError(t, db.CompactOOOHead(context.Background()))
+			require.NoError(t, db.CompactOOOHead(t.Context()))
 			require.False(t, db.head.isWBLPinnedSeriesRef(recreatedRef), "the reference must be released once the WBL is truncated")
 			require.NoError(t, db.Close())
 
@@ -2563,7 +2562,7 @@ func TestBlockQuerierAndBlockChunkQuerier(t *testing.T) {
 	require.NoError(t, err)
 	defer querier.Close()
 	matcher := labels.MustNewMatcher(labels.MatchEqual, labels.MetricName, "test_metric")
-	seriesSet := querier.Select(context.Background(), false, nil, matcher)
+	seriesSet := querier.Select(t.Context(), false, nil, matcher)
 	count := 0
 	var lbls labels.Labels
 	for seriesSet.Next() {
@@ -2578,7 +2577,7 @@ func TestBlockQuerierAndBlockChunkQuerier(t *testing.T) {
 	chunkQuerier, err := db.ChunkQuerier(0, 500)
 	require.NoError(t, err)
 	defer chunkQuerier.Close()
-	css := chunkQuerier.Select(context.Background(), false, nil, matcher)
+	css := chunkQuerier.Select(t.Context(), false, nil, matcher)
 	count = 0
 	// Reset lbls variable.
 	lbls = labels.EmptyLabels()
@@ -2819,7 +2818,7 @@ func TestFrequentCommitsDoNotStarveMaintenance(t *testing.T) {
 				lset := labels.FromStrings("series", "frequent-commit")
 
 				// Make the head compactable before the loop.
-				app := db.AppenderV2(context.Background())
+				app := db.AppenderV2(t.Context())
 				_, err := app.Append(0, lset, 0, 0, 0, nil, nil, storage.AOptions{})
 				require.NoError(t, err)
 				_, err = app.Append(0, lset, 0, 19, 0, nil, nil, storage.AOptions{})
@@ -2828,7 +2827,7 @@ func TestFrequentCommitsDoNotStarveMaintenance(t *testing.T) {
 				synctest.Wait()
 
 				for ts := int64(20); ts < 120; ts++ {
-					app := db.AppenderV2(context.Background())
+					app := db.AppenderV2(t.Context())
 					_, err := app.Append(0, lset, 0, ts, 0, nil, nil, storage.AOptions{})
 					require.NoError(t, err)
 					compactionsBefore := prom_testutil.ToFloat64(db.metrics.compactionsTriggered)
@@ -2890,7 +2889,7 @@ func TestStaleSeriesCompaction(t *testing.T) {
 	)
 
 	addNormalSamples := func(ts int64, floatSeries, histSeries, floatHistSeries []labels.Labels) {
-		app := db.AppenderV2(context.Background())
+		app := db.AppenderV2(t.Context())
 		for i := range len(floatSeries) {
 			_, err := app.Append(0, floatSeries[i], 0, ts, v, nil, nil, storage.AOptions{})
 			require.NoError(t, err)
@@ -2902,7 +2901,7 @@ func TestStaleSeriesCompaction(t *testing.T) {
 		require.NoError(t, app.Commit())
 	}
 	addStaleSamples := func(ts int64, floatSeries, histSeries, floatHistSeries []labels.Labels) {
-		app := db.AppenderV2(context.Background())
+		app := db.AppenderV2(t.Context())
 		for i := range len(floatSeries) {
 			_, err := app.Append(0, floatSeries[i], 0, ts, staleV, nil, nil, storage.AOptions{})
 			require.NoError(t, err)
@@ -3094,7 +3093,7 @@ func TestLifecycleCallbackInvariantAfterWALReplayWithFullTombstones(t *testing.T
 		allSeries = append(allSeries, labels.FromStrings("name", fmt.Sprintf("series%d", i)))
 	}
 
-	app := db.AppenderV2(context.Background())
+	app := db.AppenderV2(t.Context())
 	for _, lset := range allSeries {
 		_, err := app.Append(0, lset, 0, 100, 1, nil, nil, storage.AOptions{})
 		require.NoError(t, err)
@@ -3102,7 +3101,7 @@ func TestLifecycleCallbackInvariantAfterWALReplayWithFullTombstones(t *testing.T
 	require.NoError(t, app.Commit())
 
 	staleV := math.Float64frombits(value.StaleNaN)
-	app = db.AppenderV2(context.Background())
+	app = db.AppenderV2(t.Context())
 	for i, lset := range allSeries {
 		v := float64(i)
 		if i < deleted {
@@ -3155,14 +3154,14 @@ func TestStaleSeriesResurrectionOverlapNotMerged(t *testing.T) {
 	// keep is an ordinary in-order series; its sample at t=700 lives only in the
 	// head/WAL and is never covered by an in-order block, so if the WAL-replay
 	// cutoff (inOrderBlocksMaxTime) advances past 700 the reload drops it.
-	app := db.AppenderV2(context.Background())
+	app := db.AppenderV2(t.Context())
 	_, err := app.Append(0, resur, 0, 100, 1.0, nil, nil, storage.AOptions{})
 	require.NoError(t, err)
 	_, err = app.Append(0, keep, 0, 100, 7.0, nil, nil, storage.AOptions{})
 	require.NoError(t, err)
 	require.NoError(t, app.Commit())
 
-	app = db.AppenderV2(context.Background())
+	app = db.AppenderV2(t.Context())
 	_, err = app.Append(0, resur, 0, 200, staleV, nil, nil, storage.AOptions{}) // marks resur as stale.
 	require.NoError(t, err)
 	_, err = app.Append(0, keep, 0, 700, 42.0, nil, nil, storage.AOptions{}) // WAL-only in-order sample, no block covers it.
@@ -3188,7 +3187,7 @@ func TestStaleSeriesResurrectionOverlapNotMerged(t *testing.T) {
 	// Resurrect resur in the head with a backfilled sample at t=300, which lands
 	// inside the [0,1000) range already owned by the stale block. t=300 is within
 	// the head's appendable window (head MaxTime is 700, so the cutoff is 200).
-	app = db.AppenderV2(context.Background())
+	app = db.AppenderV2(t.Context())
 	_, err = app.Append(0, resur, 0, 300, 9.0, nil, nil, storage.AOptions{})
 	require.NoError(t, err)
 	require.NoError(t, app.Commit())
@@ -3431,14 +3430,14 @@ func TestStaleSeriesCompactionExcludesOutOfOrderSeries(t *testing.T) {
 
 	// In-order samples for both X and Y, then a stale NaN for both, marking them
 	// stale. lastValue is the stale NaN for both at this point.
-	app := db.AppenderV2(context.Background())
+	app := db.AppenderV2(t.Context())
 	_, err := app.Append(0, seriesX, 0, 100, v, nil, nil, storage.AOptions{})
 	require.NoError(t, err)
 	_, err = app.Append(0, seriesY, 0, 100, v, nil, nil, storage.AOptions{})
 	require.NoError(t, err)
 	require.NoError(t, app.Commit())
 
-	app = db.AppenderV2(context.Background())
+	app = db.AppenderV2(t.Context())
 	_, err = app.Append(0, seriesX, 0, 200, staleV, nil, nil, storage.AOptions{})
 	require.NoError(t, err)
 	_, err = app.Append(0, seriesY, 0, 200, staleV, nil, nil, storage.AOptions{})
@@ -3452,7 +3451,7 @@ func TestStaleSeriesCompactionExcludesOutOfOrderSeries(t *testing.T) {
 	// Give series Y an out-of-order sample (timestamp before its latest in-order
 	// sample), which sets s.ooo != nil. The out-of-order append takes the OOO path
 	// and does not touch lastValue, so Y remains stale.
-	app = db.AppenderV2(context.Background())
+	app = db.AppenderV2(t.Context())
 	_, err = app.Append(0, seriesY, 0, 50, v, nil, nil, storage.AOptions{})
 	require.NoError(t, err)
 	require.NoError(t, app.Commit())
@@ -3530,7 +3529,7 @@ func TestCompactStaleHead_LateStaleAppendSurvives(t *testing.T) {
 	filler := labels.FromStrings("name", "filler")
 	sel := labels.FromStrings("name", "stale-selected")
 
-	app := db.AppenderV2(context.Background())
+	app := db.AppenderV2(t.Context())
 	_, err := app.Append(0, filler, 0, 100, 0.1, nil, nil, storage.AOptions{})
 	require.NoError(t, err)
 	_, err = app.Append(0, filler, 0, 700, 0.7, nil, nil, storage.AOptions{})
@@ -3548,7 +3547,7 @@ func TestCompactStaleHead_LateStaleAppendSurvives(t *testing.T) {
 	const lateT = int64(400)
 	var hookErr error
 	db.compactHeadViewBeforeEvictTestingCallback = func() {
-		hookApp := db.AppenderV2(context.Background())
+		hookApp := db.AppenderV2(t.Context())
 		if _, err := hookApp.Append(selRef, sel, 0, lateT, staleV, nil, nil, storage.AOptions{}); err != nil {
 			hookErr = err
 			return
@@ -3583,7 +3582,7 @@ func TestCompactStaleHead_EvictedSeriesRecordKeptInCheckpoint(t *testing.T) {
 	staleV := math.Float64frombits(value.StaleNaN)
 
 	sel := labels.FromStrings("name", "selected")
-	app := db.AppenderV2(context.Background())
+	app := db.AppenderV2(t.Context())
 	selRef, err := app.Append(0, sel, 0, 100, 1.0, nil, nil, storage.AOptions{})
 	require.NoError(t, err)
 	_, err = app.Append(selRef, sel, 0, 200, staleV, nil, nil, storage.AOptions{}) // marks sel as stale
@@ -3660,7 +3659,7 @@ func TestCompactStaleHead_ChunkBoundarySampleNotLost(t *testing.T) {
 	staleV := math.Float64frombits(value.StaleNaN)
 
 	sel := labels.FromStrings("name", "selected")
-	app := db.AppenderV2(context.Background())
+	app := db.AppenderV2(t.Context())
 	selRef, err := app.Append(0, sel, 0, 500, 1.0, nil, nil, storage.AOptions{})
 	require.NoError(t, err)
 	_, err = app.Append(selRef, sel, 0, chunkRange, staleV, nil, nil, storage.AOptions{}) // T == chunkRange, marks sel stale
@@ -3705,7 +3704,7 @@ func TestCompactSelectedSeries_SingleTimestampHeadIsEvicted(t *testing.T) {
 	t.Cleanup(func() { require.NoError(t, db.Close()) })
 
 	sel := labels.FromStrings("name", "single")
-	app := db.AppenderV2(context.Background())
+	app := db.AppenderV2(t.Context())
 	ref, err := app.Append(0, sel, 0, chunkRange, 1.0, nil, nil, storage.AOptions{})
 	require.NoError(t, err)
 	require.NoError(t, app.Commit())
@@ -3741,7 +3740,7 @@ func TestCompactSelectedSeries(t *testing.T) {
 	selected2 := labels.FromStrings("name", "selected2")
 	kept := labels.FromStrings("name", "kept")
 
-	app := db.AppenderV2(context.Background())
+	app := db.AppenderV2(t.Context())
 	s1, err := app.Append(0, selected1, 0, 100, 1.0, nil, nil, storage.AOptions{})
 	require.NoError(t, err)
 	s2, err := app.Append(0, selected2, 0, 200, 2.0, nil, nil, storage.AOptions{})
@@ -3794,7 +3793,7 @@ func TestCompactSelectedSeries_UnsortedDuplicateRefs(t *testing.T) {
 	s2Labels := labels.FromStrings("name", "selected2")
 	s3Labels := labels.FromStrings("name", "selected3")
 
-	app := db.AppenderV2(context.Background())
+	app := db.AppenderV2(t.Context())
 	s1, err := app.Append(0, s1Labels, 0, 100, 1.0, nil, nil, storage.AOptions{})
 	require.NoError(t, err)
 	s2, err := app.Append(0, s2Labels, 0, 200, 2.0, nil, nil, storage.AOptions{})
@@ -3840,7 +3839,7 @@ func TestCompactSelectedSeries_MultipleChunkRanges(t *testing.T) {
 	t.Cleanup(func() { require.NoError(t, db.Close()) })
 
 	sel := labels.FromStrings("name", "spanning")
-	app := db.AppenderV2(context.Background())
+	app := db.AppenderV2(t.Context())
 	var (
 		ref storage.SeriesRef
 		err error
@@ -3880,7 +3879,7 @@ func TestCompactSelectedSeries_DecrementsNumStaleSeriesWhenStaleSeriesCompacted(
 	nonStale2 := labels.FromStrings("name", "non-stale-2")
 
 	// Stale series: a normal sample followed by a stale-NaN.
-	app := db.AppenderV2(context.Background())
+	app := db.AppenderV2(t.Context())
 	staleRef, err := app.Append(0, stale, 0, 100, 1.0, nil, nil, storage.AOptions{})
 	require.NoError(t, err)
 	staleRef, err = app.Append(staleRef, stale, 0, 200, staleV, nil, nil, storage.AOptions{})
@@ -3928,7 +3927,7 @@ func TestCompactSelectedSeries_SkipsSeriesWithOOOData(t *testing.T) {
 	withoutOOO := labels.FromStrings("name", "without-ooo")
 
 	// Both series receive in-order samples at two timestamps.
-	app := db.AppenderV2(context.Background())
+	app := db.AppenderV2(t.Context())
 	withOOORef, err := app.Append(0, withOOO, 0, 100, 1.0, nil, nil, storage.AOptions{})
 	require.NoError(t, err)
 	withoutOOORef, err := app.Append(0, withoutOOO, 0, 100, 2.0, nil, nil, storage.AOptions{})
@@ -3941,7 +3940,7 @@ func TestCompactSelectedSeries_SkipsSeriesWithOOOData(t *testing.T) {
 
 	// Push a single OOO sample (timestamp earlier than 100, within the OOO window) for one of
 	// the series, so its s.ooo field becomes non-nil.
-	app = db.AppenderV2(context.Background())
+	app = db.AppenderV2(t.Context())
 	_, err = app.Append(withOOORef, withOOO, 0, 50, 1.5, nil, nil, storage.AOptions{})
 	require.NoError(t, err)
 	require.NoError(t, app.Commit())
@@ -3976,7 +3975,7 @@ func TestCompactSelectedSeries_HintPropagation(t *testing.T) {
 
 	// Produce a selected-series block.
 	sel := labels.FromStrings("name", "selected")
-	app := db.AppenderV2(context.Background())
+	app := db.AppenderV2(t.Context())
 	ref, err := app.Append(0, sel, 0, 100, 1.0, nil, nil, storage.AOptions{})
 	require.NoError(t, err)
 	require.NoError(t, app.Commit())
@@ -4013,7 +4012,7 @@ func TestInOrderBlocksMaxTime_ExcludesSelectedSeriesBlocks(t *testing.T) {
 	t.Cleanup(func() { require.NoError(t, db.Close()) })
 
 	sel := labels.FromStrings("name", "selected")
-	app := db.AppenderV2(context.Background())
+	app := db.AppenderV2(t.Context())
 	ref, err := app.Append(0, sel, 0, 100, 1.0, nil, nil, storage.AOptions{})
 	require.NoError(t, err)
 	require.NoError(t, app.Commit())
@@ -4152,7 +4151,7 @@ func TestCompactSelectedSeries_LateAppendDuringCompactionSurvivesRestart(t *test
 	filler := labels.FromStrings("name", "filler")
 	sel := labels.FromStrings("name", "selected")
 
-	app := db.AppenderV2(context.Background())
+	app := db.AppenderV2(t.Context())
 	_, err := app.Append(0, filler, 0, 100, 0.1, nil, nil, storage.AOptions{})
 	require.NoError(t, err)
 	_, err = app.Append(0, filler, 0, 700, 0.7, nil, nil, storage.AOptions{})
@@ -4178,7 +4177,7 @@ func TestCompactSelectedSeries_LateAppendDuringCompactionSurvivesRestart(t *test
 	// the generated block.
 	var hookErr error
 	db.compactHeadViewBeforeEvictTestingCallback = func() {
-		hookApp := db.AppenderV2(context.Background())
+		hookApp := db.AppenderV2(t.Context())
 		if _, err := hookApp.Append(selRef, sel, 0, lateT, lateV, nil, nil, storage.AOptions{}); err != nil {
 			hookErr = err
 			return
@@ -4248,7 +4247,7 @@ func TestCompactSelectedSeries_RestartDoesNotReplayOrphanedSampleAsUnknownSeries
 	db.DisableCompactions()
 
 	sel := labels.FromStrings("name", "selected")
-	app := db.AppenderV2(context.Background())
+	app := db.AppenderV2(t.Context())
 	selRef, err := app.Append(0, sel, 0, 100, 1.0, nil, nil, storage.AOptions{})
 	require.NoError(t, err)
 	require.NoError(t, app.Commit())
@@ -4262,7 +4261,7 @@ func TestCompactSelectedSeries_RestartDoesNotReplayOrphanedSampleAsUnknownSeries
 		require.NoError(t, err)
 	}
 
-	app = db.AppenderV2(context.Background())
+	app = db.AppenderV2(t.Context())
 	_, err = app.Append(selRef, sel, 0, 1200, 2.0, nil, nil, storage.AOptions{})
 	require.NoError(t, err)
 	require.NoError(t, app.Commit())
@@ -4369,7 +4368,7 @@ func TestCompactSelectedSeries_OOOAppendDuringCompactionSurvives(t *testing.T) {
 	filler := labels.FromStrings("name", "filler")
 	sel := labels.FromStrings("name", "selected")
 
-	app := db.AppenderV2(context.Background())
+	app := db.AppenderV2(t.Context())
 	_, err := app.Append(0, filler, 0, 100, 0.1, nil, nil, storage.AOptions{})
 	require.NoError(t, err)
 	_, err = app.Append(0, filler, 0, 700, 0.7, nil, nil, storage.AOptions{})
@@ -4387,7 +4386,7 @@ func TestCompactSelectedSeries_OOOAppendDuringCompactionSurvives(t *testing.T) {
 	const oooT, oooV = int64(150), 15.0
 	var hookErr error
 	db.compactHeadViewBeforeEvictTestingCallback = func() {
-		hookApp := db.AppenderV2(context.Background())
+		hookApp := db.AppenderV2(t.Context())
 		if _, err := hookApp.Append(selRef, sel, 0, oooT, oooV, nil, nil, storage.AOptions{}); err != nil {
 			hookErr = err
 			return
@@ -4434,7 +4433,7 @@ func TestCompactSelectedSeries_OpenAppenderCommittingDuringCompaction(t *testing
 	filler := labels.FromStrings("name", "filler")
 	sel := labels.FromStrings("name", "selected")
 
-	baseline := db.AppenderV2(context.Background())
+	baseline := db.AppenderV2(t.Context())
 	_, err := baseline.Append(0, filler, 0, 100, 0.1, nil, nil, storage.AOptions{})
 	require.NoError(t, err)
 	_, err = baseline.Append(0, filler, 0, 700, 0.7, nil, nil, storage.AOptions{})
@@ -4456,7 +4455,7 @@ func TestCompactSelectedSeries_OpenAppenderCommittingDuringCompaction(t *testing
 	// TestCompactSelectedSeries_LateAppendDuringCompactionSurvivesRestart, where the appender
 	// is opened inside the hook. Append() only reserves a pending commit here; the chunk
 	// mutation that the fingerprint notices happens later, at Commit() time inside the hook.
-	late := db.AppenderV2(context.Background())
+	late := db.AppenderV2(t.Context())
 	_, err = late.Append(selRef, sel, 0, lateT, lateV, nil, nil, storage.AOptions{})
 	require.NoError(t, err)
 
@@ -4685,7 +4684,7 @@ func TestSelectedBlockNotMergedWithNonSelectedBlock(t *testing.T) {
 	// t=700; it lives only in the head/WAL. If inOrderBlocksMaxTime advances
 	// past 700, reload() truncates the head and this sample is lost.
 	walSeries := labels.FromStrings("name", "wal_only")
-	app := db.AppenderV2(context.Background())
+	app := db.AppenderV2(t.Context())
 	_, err := app.Append(0, walSeries, 0, 700, 42.0, nil, nil, storage.AOptions{})
 	require.NoError(t, err)
 	require.NoError(t, app.Commit())
@@ -4764,7 +4763,7 @@ func TestStaleBlockNotMergedWithNonStaleBlock(t *testing.T) {
 	// t=700; it lives only in the head/WAL. If inOrderBlocksMaxTime advances past
 	// 700, reload() truncates the head and this sample is lost.
 	walSeries := labels.FromStrings("name", "wal_only")
-	app := db.AppenderV2(context.Background())
+	app := db.AppenderV2(t.Context())
 	_, err := app.Append(0, walSeries, 0, 700, 42.0, nil, nil, storage.AOptions{})
 	require.NoError(t, err)
 	require.NoError(t, app.Commit())
@@ -4839,7 +4838,7 @@ func TestOutOfOrderBlockMergePreservesHint(t *testing.T) {
 	// t=700; it lives only in the head/WAL. If inOrderBlocksMaxTime advances past
 	// 700, reload() truncates the head and this sample is lost.
 	walSeries := labels.FromStrings("name", "wal_only")
-	app := db.AppenderV2(context.Background())
+	app := db.AppenderV2(t.Context())
 	_, err := app.Append(0, walSeries, 0, 700, 42.0, nil, nil, storage.AOptions{})
 	require.NoError(t, err)
 	require.NoError(t, app.Commit())
@@ -4925,7 +4924,7 @@ func TestCompactSelectedSeries_ChunkBoundarySampleNotLost(t *testing.T) {
 	db.DisableCompactions()
 
 	sel := labels.FromStrings("name", "selected")
-	app := db.AppenderV2(context.Background())
+	app := db.AppenderV2(t.Context())
 	selRef, err := app.Append(0, sel, 0, 500, 1.0, nil, nil, storage.AOptions{})
 	require.NoError(t, err)
 	_, err = app.Append(selRef, sel, 0, chunkRange, 2.0, nil, nil, storage.AOptions{}) // T == chunkRange, on the boundary
@@ -4981,7 +4980,7 @@ func TestCompactSelectedSeries_SparseSelectedAcrossWideHead(t *testing.T) {
 	// compactHeadViewLocked will iterate over 11 chunk-range slices (mint=0,
 	// 1000, ..., 10000), but only the first one contains any selected-series
 	// data. compactor.Write must no-op for the other ten.
-	app := db.AppenderV2(context.Background())
+	app := db.AppenderV2(t.Context())
 	selRef, err := app.Append(0, sel, 0, 100, 1.0, nil, nil, storage.AOptions{})
 	require.NoError(t, err)
 	_, err = app.Append(selRef, sel, 0, 200, 2.0, nil, nil, storage.AOptions{})
@@ -5044,7 +5043,7 @@ func TestCompactSelectedSeries_EvictedSeriesRecordKeptInCheckpoint(t *testing.T)
 	db.DisableCompactions()
 
 	sel := labels.FromStrings("name", "selected")
-	app := db.AppenderV2(context.Background())
+	app := db.AppenderV2(t.Context())
 	selRef, err := app.Append(0, sel, 0, 100, 1.0, nil, nil, storage.AOptions{})
 	require.NoError(t, err)
 	_, err = app.Append(selRef, sel, 0, 200, 2.0, nil, nil, storage.AOptions{})
@@ -5148,7 +5147,7 @@ func testOOOCompactionAcrossChunkIDWrap(t *testing.T, scenario sampleTypeScenari
 	l := labels.FromStrings("l", "v1")
 	minutes := func(m int64) int64 { return m * time.Minute.Milliseconds() }
 
-	app := db.AppenderV2(context.Background())
+	app := db.AppenderV2(t.Context())
 
 	// In-order sample.
 	ref, _, err := scenario.appendFunc(app, l, minutes(200), 200)
@@ -5173,7 +5172,7 @@ func testOOOCompactionAcrossChunkIDWrap(t *testing.T, scenario sampleTypeScenari
 	ms.Unlock()
 
 	// More OOO data whose chunk IDs cross the boundary.
-	app = db.AppenderV2(context.Background())
+	app = db.AppenderV2(t.Context())
 	for i := int64(16); i <= 30; i++ {
 		_, _, err = scenario.appendFunc(app, l, minutes(i), i)
 		require.NoError(t, err)
@@ -5182,7 +5181,7 @@ func testOOOCompactionAcrossChunkIDWrap(t *testing.T, scenario sampleTypeScenari
 	require.NoError(t, app.Commit())
 
 	// Compact.
-	require.NoError(t, db.Compact(context.Background()))
+	require.NoError(t, db.Compact(t.Context()))
 
 	// Query and verify all data is present.
 	querier, err := db.Querier(0, minutes(300))
@@ -5220,7 +5219,7 @@ func testInOrderCompactionAcrossChunkIDWrap(t *testing.T, scenario sampleTypeSce
 	// space to emulate a long-lived series that has already truncated ~8M
 	// chunks. Every chunk appended afterwards is created with an ID at or past
 	// the boundary, so their stored HeadChunkRef IDs must wrap.
-	app := db.AppenderV2(context.Background())
+	app := db.AppenderV2(t.Context())
 	ref, _, err := scenario.appendFunc(app, l, 0, 0)
 	require.NoError(t, err)
 	require.NoError(t, app.Commit())
@@ -5240,7 +5239,7 @@ func testInOrderCompactionAcrossChunkIDWrap(t *testing.T, scenario sampleTypeSce
 	newestBeforeAppends := newestChunkID()
 
 	expSamples := []chunks.Sample{scenario.sampleFunc(0, 0)}
-	app = db.AppenderV2(context.Background())
+	app = db.AppenderV2(t.Context())
 	for ts := int64(10); ts < maxT; ts += 10 {
 		_, _, err = scenario.appendFunc(app, l, ts, ts)
 		require.NoError(t, err)
@@ -5260,7 +5259,7 @@ func testInOrderCompactionAcrossChunkIDWrap(t *testing.T, scenario sampleTypeSce
 
 	// Head compaction reads every chunk through the same wrapped IDs, then drops
 	// the compacted ones via truncateChunksBefore, wrapping firstChunkID too.
-	require.NoError(t, db.Compact(context.Background()))
+	require.NoError(t, db.Compact(t.Context()))
 
 	ms.Lock()
 	firstChunkIDAfter := ms.firstChunkID
@@ -5295,7 +5294,7 @@ func TestCompactionSurvivesChunkRollAndMmap(t *testing.T) {
 			if stale {
 				v = math.Float64frombits(value.StaleNaN)
 			}
-			app := db.AppenderV2(context.Background())
+			app := db.AppenderV2(t.Context())
 			_, err := app.Append(0, labels.FromStrings("name", "filler"), 0, 1400, 1, nil, nil, storage.AOptions{})
 			require.NoError(t, err)
 			ref, err := app.Append(0, sel, 0, 900, v, nil, nil, storage.AOptions{})
@@ -5304,7 +5303,7 @@ func TestCompactionSurvivesChunkRollAndMmap(t *testing.T) {
 			refs := []storage.SeriesRef{ref}
 			before := db.head.snapshotFingerprints(refs, math.MaxUint64)
 			db.compactHeadViewBeforeEvictTestingCallback = func() {
-				app := db.AppenderV2(context.Background())
+				app := db.AppenderV2(t.Context())
 				_, err := app.Append(ref, sel, 0, 1000, v, nil, nil, storage.AOptions{})
 				require.NoError(t, err)
 				require.NoError(t, app.Commit())
@@ -5346,13 +5345,13 @@ func TestCompactSelectedSeries_SurvivesMutationFromStillOpenTransaction(t *testi
 	db.DisableCompactions()
 	sel := labels.FromStrings("name", "selected")
 	filler := labels.FromStrings("name", "filler")
-	app := db.AppenderV2(context.Background())
+	app := db.AppenderV2(t.Context())
 	ref, err := app.Append(0, sel, 0, 100, 1, nil, nil, storage.AOptions{})
 	require.NoError(t, err)
 	fillerRef, err := app.Append(0, filler, 0, 700, 1, nil, nil, storage.AOptions{})
 	require.NoError(t, err)
 	require.NoError(t, app.Commit())
-	app = db.AppenderV2(context.Background())
+	app = db.AppenderV2(t.Context())
 	_, err = app.Append(ref, sel, 0, 400, 2, nil, nil, storage.AOptions{})
 	require.NoError(t, err)
 	_, err = app.Append(fillerRef, filler, 0, 700, 1, nil, nil, storage.AOptions{})
@@ -5406,13 +5405,13 @@ func TestCompactSelectedSeries_SurvivesEvidenceErasedByUnrelatedCleanup(t *testi
 	db.DisableCompactions()
 	sel := labels.FromStrings("name", "selected")
 	filler := labels.FromStrings("name", "filler")
-	app := db.AppenderV2(context.Background())
+	app := db.AppenderV2(t.Context())
 	ref, err := app.Append(0, sel, 0, 100, 1, nil, nil, storage.AOptions{})
 	require.NoError(t, err)
 	fillerRef, err := app.Append(0, filler, 0, 700, 1, nil, nil, storage.AOptions{})
 	require.NoError(t, err)
 	require.NoError(t, app.Commit())
-	app = db.AppenderV2(context.Background())
+	app = db.AppenderV2(t.Context())
 	_, err = app.Append(ref, sel, 0, 400, 2, nil, nil, storage.AOptions{})
 	require.NoError(t, err)
 	_, err = app.Append(fillerRef, filler, 0, 700, 1, nil, nil, storage.AOptions{})
@@ -5437,7 +5436,7 @@ func TestCompactSelectedSeries_SurvivesEvidenceErasedByUnrelatedCleanup(t *testi
 		unlock()
 		require.NoError(t, <-done)
 		// A duplicate sample changes no chunks but runs append-ID cleanup.
-		cleanup := db.AppenderV2(context.Background())
+		cleanup := db.AppenderV2(t.Context())
 		_, err := cleanup.Append(ref, sel, 0, 400, 2, nil, nil, storage.AOptions{})
 		require.NoError(t, err)
 		require.NoError(t, cleanup.Commit())
