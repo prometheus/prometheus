@@ -3004,6 +3004,24 @@ func TestHeadLabelNamesWithMatchers(t *testing.T) {
 	}
 }
 
+// TestHead_RecoveredPostingsPanicReleasesSeriesCreation verifies that a postings
+// ordering panic does not leave series creation locked. HTTP receivers such as
+// remote write and OTLP run appends in net/http handlers, which recover panics,
+// so a leaked lock would block all later series creation in a running process.
+func TestHead_RecoveredPostingsPanicReleasesSeriesCreation(t *testing.T) {
+	h, _ := newTestHead(t, 1000, compression.None, false)
+	require.NoError(t, h.Init(0))
+
+	// Index an ID above any the head will assign, so creating the next series
+	// violates the postings order. Head cannot reach this state by itself.
+	h.postings.Add(storage.SeriesRef(1_000_000), labels.FromStrings("a", "stray"))
+	lset := labels.FromStrings("a", "1")
+	require.Panics(t, func() { h.getOrCreate(lset.Hash(), lset, false) })
+
+	require.True(t, h.seriesCreationMtx.TryLock(), "a recovered panic left series creation locked")
+	h.seriesCreationMtx.Unlock()
+}
+
 func TestHeadShardedPostings(t *testing.T) {
 	headOpts := newTestHeadDefaultOptions(1000, false)
 	headOpts.EnableSharding = true
