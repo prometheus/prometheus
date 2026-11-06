@@ -133,6 +133,7 @@ func (q *NativeHistogramsAsClassicQuerier) Select(ctx context.Context, sortSerie
 		seriesSet: []SeriesSet{
 			classicSet,
 			&nhcbToClassicSeriesSet{
+				ctx:         ctx,
 				nhcbSet:     nhcbSet,
 				leMatchers:  leMatchers,
 				suffix:      suffix,
@@ -386,6 +387,7 @@ func (b *classicSeriesBuilder) buildSeries(dst []Series, leMatchers []*labels.Ma
 // nhcbToClassicSeriesSet streams NHCB series and converts each one to classic
 // histogram series on demand.
 type nhcbToClassicSeriesSet struct {
+	ctx        context.Context
 	nhcbSet    SeriesSet
 	leMatchers []*labels.Matcher
 	suffix     string
@@ -405,6 +407,10 @@ type nhcbToClassicSeriesSet struct {
 
 func (s *nhcbToClassicSeriesSet) Next() bool {
 	if s.err != nil {
+		return false
+	}
+	if err := s.ctx.Err(); err != nil {
+		s.err = err
 		return false
 	}
 	if s.idx < len(s.series) {
@@ -447,6 +453,10 @@ func (s *nhcbToClassicSeriesSet) convertSeries(dst []Series, nhcbSeries Series) 
 	}
 
 	for {
+		if err := s.ctx.Err(); err != nil {
+			s.err = err
+			return nil
+		}
 		valType := it.Next()
 		if valType == chunkenc.ValNone {
 			break
@@ -488,6 +498,10 @@ func (s *nhcbToClassicSeriesSet) convertSeries(dst []Series, nhcbSeries Series) 
 		return nil
 	}
 
+	if err := s.ctx.Err(); err != nil {
+		s.err = err
+		return nil
+	}
 	return s.builder.buildSeries(dst, s.leMatchers)
 }
 

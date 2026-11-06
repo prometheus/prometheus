@@ -6720,6 +6720,57 @@ load 1m
 	}
 }
 
+func TestEngine_NativeHistogramsAsClassicCancellation(t *testing.T) {
+	const load = `
+load 1s
+	%s {{schema:-53 sum:5 count:4 custom_values:[1 2] buckets:[1 2 1]}}x1000
+`
+	primary := promqltest.LoadedStorage(t, fmt.Sprintf(load, "local_seconds"))
+	t.Cleanup(func() { require.NoError(t, primary.Close()) })
+	secondary := promqltest.LoadedStorage(t, fmt.Sprintf(load, "remote_seconds"))
+	t.Cleanup(func() { require.NoError(t, secondary.Close()) })
+	fanout := storage.NewFanout(promslog.NewNopLogger(), primary, secondary)
+
+	for _, name := range []string{"local_seconds", "remote_seconds"} {
+		for _, le := range []string{"", `{le="99"}`} {
+			for _, timeout := range []bool{false, true} {
+				t.Run(fmt.Sprintf("%s%s/timeout=%v", name, le, timeout), func(t *testing.T) {
+					synctest.Test(t, func(t *testing.T) {
+						ctx, cancel := context.WithCancel(t.Context())
+						defer cancel()
+						counted := &sampleReadQueryable{Queryable: fanout}
+						counted.onRead = func() {
+							if counted.reads == 3 {
+								if timeout {
+									time.Sleep(2 * time.Second)
+								} else {
+									cancel()
+								}
+							}
+						}
+						engine := promqltest.NewTestEngineWithOpts(t, promql.EngineOpts{
+							MaxSamples:                      10000,
+							Timeout:                         time.Second,
+							EnableNativeHistogramsAsClassic: true,
+						})
+						q, err := engine.NewInstantQuery(ctx, counted, nil, name+"_bucket"+le+"[20m]", time.Unix(1000, 0))
+						require.NoError(t, err)
+						defer q.Close()
+						res := q.Exec(ctx)
+						require.Nil(t, res.Value)
+						if timeout {
+							require.ErrorIs(t, res.Err, context.DeadlineExceeded)
+						} else {
+							require.ErrorIs(t, res.Err, context.Canceled)
+						}
+						require.Equal(t, 3, counted.reads, "cancelled query must stop converting the history")
+					})
+				})
+			}
+		}
+	}
+}
+
 func TestTypeAndUnitMetadataLabelsInFunctionsAndMatching(t *testing.T) {
 	load := `load 1m
   hist_metric{__type__="histogram", __unit__="seconds", job="api"} {{schema:1 sum:10 count:5 buckets:[1 2 2]}}
