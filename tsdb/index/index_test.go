@@ -23,6 +23,7 @@ import (
 	"slices"
 	"sort"
 	"strconv"
+	"strings"
 	"testing"
 
 	"github.com/stretchr/testify/require"
@@ -474,50 +475,194 @@ func TestNewFileReaderErrorNoOpenFiles(t *testing.T) {
 }
 
 func TestSymbols(t *testing.T) {
+	for _, dense := range []bool{false, true} {
+		t.Run(fmt.Sprintf("dense=%t", dense), func(t *testing.T) {
+			for _, version := range []int{FormatV1, FormatV2, FormatV3} {
+				t.Run(fmt.Sprintf("format=%d", version), func(t *testing.T) {
+					buf := encoding.Encbuf{}
+
+					// Add prefix to the buffer to simulate symbols as part of larger buffer.
+					buf.PutUvarintStr("something")
+
+					symbolsStart := buf.Len()
+					buf.PutBE32int(204) // Length of symbols table.
+					buf.PutBE32int(100) // Number of symbols.
+					symbolOffsets := make([]uint32, 100)
+					for i := range 100 {
+						// i represents index in unicode characters table.
+						if version == FormatV1 {
+							symbolOffsets[i] = uint32(buf.Len())
+						} else {
+							symbolOffsets[i] = uint32(i)
+						}
+						buf.PutUvarintStr(string(rune(i))) // Symbol.
+					}
+					checksum := crc32.Checksum(buf.Get()[symbolsStart+4:], castagnoliTable)
+					buf.PutBE32(checksum) // Check sum at the end.
+
+					s, err := newSymbols(realByteSlice(buf.Get()), version, symbolsStart, dense)
+					require.NoError(t, err)
+					if dense && version != FormatV1 {
+						require.Equal(t, 32+100*4, s.Size())
+					} else {
+						require.Equal(t, 32, s.Size())
+					}
+
+					for i := 99; i >= 0; i-- {
+						got, err := s.Lookup(symbolOffsets[i])
+						require.NoError(t, err)
+						require.Equal(t, string(rune(i)), got)
+					}
+					if version == FormatV1 {
+						_, err = s.Lookup(uint32(buf.Len()))
+						require.Error(t, err)
+					} else {
+						_, err = s.Lookup(100)
+						require.Error(t, err)
+						_, err = s.Lookup(^uint32(0))
+						require.Error(t, err)
+					}
+
+					for i := 99; i >= 0; i-- {
+						r, err := s.ReverseLookup(string(rune(i)))
+						require.NoError(t, err)
+						require.Equal(t, symbolOffsets[i], r)
+					}
+					_, err = s.ReverseLookup(string(rune(100)))
+					require.Error(t, err)
+
+					iter := s.Iter()
+					i := 0
+					for iter.Next() {
+						require.Equal(t, string(rune(i)), iter.At())
+						i++
+					}
+					require.NoError(t, iter.Err())
+
+					t.Run("offset above signed 16-bit range", func(t *testing.T) {
+						// The fourth symbol's byte position is above the signed 16-bit range.
+						symbols := []string{
+							"a",
+							strings.Repeat("b", 20_000),
+							strings.Repeat("c", 20_000),
+							strings.Repeat("d", 5_000),
+							"e",
+						}
+						var symbolData encoding.Encbuf
+						symbolData.PutBE32int(len(symbols))
+						symbolOffsets := make([]uint32, len(symbols))
+						for i, symbol := range symbols {
+							if version == FormatV1 {
+								symbolOffsets[i] = uint32(4 + symbolData.Len())
+							} else {
+								symbolOffsets[i] = uint32(i)
+							}
+							symbolData.PutUvarintStr(symbol)
+						}
+						var symbolFile encoding.Encbuf
+						symbolFile.PutBE32int(symbolData.Len())
+						symbolFile.PutBytes(symbolData.Get())
+						symbolFile.PutBE32(crc32.Checksum(symbolData.Get(), castagnoliTable))
+
+						gotSymbols, err := newSymbols(realByteSlice(symbolFile.Get()), version, 0, dense)
+						require.NoError(t, err)
+						if dense && version != FormatV1 {
+							require.Equal(t, 8+len(symbols)*4, gotSymbols.Size())
+						} else {
+							require.Equal(t, 8, gotSymbols.Size())
+						}
+						for i, symbol := range symbols {
+							got, err := gotSymbols.Lookup(symbolOffsets[i])
+							require.NoError(t, err)
+							require.Equal(t, symbol, got)
+							offset, err := gotSymbols.ReverseLookup(symbol)
+							require.NoError(t, err)
+							require.Equal(t, symbolOffsets[i], offset)
+						}
+					})
+				})
+			}
+		})
+	}
+}
+
+func TestSymbolsLargeTable(t *testing.T) {
+	const count = 1000
 	buf := encoding.Encbuf{}
-
-	// Add prefix to the buffer to simulate symbols as part of larger buffer.
-	buf.PutUvarintStr("something")
-
+	buf.PutUvarintStr("prefix")
 	symbolsStart := buf.Len()
-	buf.PutBE32int(204) // Length of symbols table.
-	buf.PutBE32int(100) // Number of symbols.
-	for i := range 100 {
-		// i represents index in unicode characters table.
-		buf.PutUvarintStr(string(rune(i))) // Symbol.
+
+	content := encoding.Encbuf{}
+	content.PutBE32int(count)
+	for i := range count {
+		content.PutUvarintStr(fmt.Sprintf("%05d-%0100d", i, i))
 	}
-	checksum := crc32.Checksum(buf.Get()[symbolsStart+4:], castagnoliTable)
-	buf.PutBE32(checksum) // Check sum at the end.
+	buf.PutBE32int(content.Len())
+	buf.PutBytes(content.Get())
+	buf.PutBE32(crc32.Checksum(content.Get(), castagnoliTable))
 
-	s, err := NewSymbols(realByteSlice(buf.Get()), FormatV2, symbolsStart)
-	require.NoError(t, err)
-
-	// We store only 4 offsets to symbols.
-	require.Equal(t, 32, s.Size())
-
-	for i := 99; i >= 0; i-- {
-		s, err := s.Lookup(uint32(i))
+	for _, dense := range []bool{false, true} {
+		s, err := newSymbols(realByteSlice(buf.Get()), FormatV3, symbolsStart, dense)
 		require.NoError(t, err)
-		require.Equal(t, string(rune(i)), s)
+		wantSize := (count + symbolFactor - 1) / symbolFactor * 8
+		if dense {
+			wantSize += count * 4
+		}
+		require.Equal(t, wantSize, s.Size())
+		if dense {
+			again, err := s.withDenseOffsets()
+			require.NoError(t, err)
+			require.Same(t, &s.denseOffsets[0], &again.denseOffsets[0])
+		}
+		for _, i := range []int{0, 31, 32, count - 1} {
+			want := fmt.Sprintf("%05d-%0100d", i, i)
+			got, err := s.Lookup(uint32(i))
+			require.NoError(t, err)
+			require.Equal(t, want, got)
+			o, err := s.ReverseLookup(want)
+			require.NoError(t, err)
+			require.Equal(t, uint32(i), o)
+		}
 	}
-	_, err = s.Lookup(100)
-	require.Error(t, err)
+}
 
-	for i := 99; i >= 0; i-- {
-		r, err := s.ReverseLookup(string(rune(i)))
-		require.NoError(t, err)
-		require.Equal(t, uint32(i), r)
-	}
-	_, err = s.ReverseLookup(string(rune(100)))
-	require.Error(t, err)
+func TestSymbolsInvalidTable(t *testing.T) {
+	t.Run("negative symbol count", func(t *testing.T) {
+		var content encoding.Encbuf
+		content.PutBE32int(-1)
+		var buf encoding.Encbuf
+		buf.PutBE32int(content.Len())
+		buf.PutBytes(content.Get())
+		buf.PutBE32(crc32.Checksum(content.Get(), castagnoliTable))
 
-	iter := s.Iter()
-	i := 0
-	for iter.Next() {
-		require.Equal(t, string(rune(i)), iter.At())
-		i++
-	}
-	require.NoError(t, iter.Err())
+		_, err := NewSymbols(realByteSlice(buf.Get()), FormatV2, 0)
+		require.ErrorIs(t, err, encoding.ErrInvalidSize)
+	})
+
+	t.Run("symbol count exceeds remaining bytes", func(t *testing.T) {
+		var content encoding.Encbuf
+		content.PutBE32int(100)
+		var buf encoding.Encbuf
+		buf.PutBE32int(content.Len())
+		buf.PutBytes(content.Get())
+		buf.PutBE32(crc32.Checksum(content.Get(), castagnoliTable))
+
+		_, err := NewSymbols(realByteSlice(buf.Get()), FormatV2, 0)
+		require.ErrorIs(t, err, encoding.ErrInvalidSize)
+	})
+
+	t.Run("truncated symbol record", func(t *testing.T) {
+		var content encoding.Encbuf
+		content.PutBE32int(1)
+		content.PutByte(1) // Length of the symbol, without the symbol bytes.
+		var buf encoding.Encbuf
+		buf.PutBE32int(content.Len())
+		buf.PutBytes(content.Get())
+		buf.PutBE32(crc32.Checksum(content.Get(), castagnoliTable))
+
+		_, err := NewSymbols(realByteSlice(buf.Get()), FormatV3, 0)
+		require.ErrorIs(t, err, encoding.ErrInvalidSize)
+	})
 }
 
 func BenchmarkReader_ShardedPostings(b *testing.B) {
@@ -727,4 +872,157 @@ func createFileReader(ctx context.Context, tb testing.TB, input indexWriterSerie
 		require.NoError(tb, ir.Close())
 	})
 	return ir, fn, symbols
+}
+
+func TestReaderWithDenseSymbolOffsets(t *testing.T) {
+	ctx := context.Background()
+	t.Run("V2", func(t *testing.T) {
+		input := make(indexWriterSeriesSlice, symbolFactor+1)
+		for i := range input {
+			input[i] = &indexWriterSeries{labels: labels.FromStrings("a", "1", "b", fmt.Sprintf("%04d", i))}
+		}
+		ir, _, _ := createFileReader(ctx, t, input)
+		size := ir.SymbolTableSize()
+		dense, err := ir.WithDenseSymbolOffsets()
+		require.NoError(t, err)
+		require.Equal(t, size, ir.SymbolTableSize())
+		require.Greater(t, dense.SymbolTableSize(), size)
+		for _, reader := range []*Reader{dense, ir} {
+			p, err := reader.Postings(ctx, "a", "1")
+			require.NoError(t, err)
+			var builder labels.ScratchBuilder
+			i := 0
+			for p.Next() {
+				require.NoError(t, reader.Series(p.At(), &builder, nil))
+				testutil.RequireEqual(t, input[i].labels, builder.Labels())
+				i++
+			}
+			require.NoError(t, p.Err())
+			require.Len(t, input, i)
+			// Closing the borrowed reader must leave the original usable.
+			if reader == dense {
+				require.NoError(t, dense.Close())
+			}
+		}
+	})
+	t.Run("V1", func(t *testing.T) {
+		ir, err := NewFileReader("../testdata/index_format_v1/index", DecodePostingsRaw)
+		require.NoError(t, err)
+		defer func() { require.NoError(t, ir.Close()) }()
+		dense, err := ir.WithDenseSymbolOffsets()
+		require.NoError(t, err)
+		require.Equal(t, ir.SymbolTableSize(), dense.SymbolTableSize())
+		name, value := AllPostingsKey()
+		p, err := ir.Postings(ctx, name, value)
+		require.NoError(t, err)
+		var original, borrowed labels.ScratchBuilder
+		seen := 0
+		var last storage.SeriesRef
+		for p.Next() {
+			last = p.At()
+			require.NoError(t, ir.Series(p.At(), &original, nil))
+			require.NoError(t, dense.Series(p.At(), &borrowed, nil))
+			testutil.RequireEqual(t, original.Labels(), borrowed.Labels())
+			seen++
+		}
+		require.NoError(t, p.Err())
+		require.Positive(t, seen)
+		require.NoError(t, dense.Close())
+		require.NoError(t, ir.Series(last, &original, nil))
+	})
+}
+
+func TestSymbolsBoundaryCounts(t *testing.T) {
+	for _, count := range []int{0, symbolFactor} {
+		t.Run(strconv.Itoa(count), func(t *testing.T) {
+			var content, buf encoding.Encbuf
+			content.PutBE32int(count)
+			for i := range count {
+				content.PutUvarintStr(fmt.Sprintf("%04d", i))
+			}
+			buf.PutBE32int(content.Len())
+			buf.PutBytes(content.Get())
+			buf.PutBE32(crc32.Checksum(content.Get(), castagnoliTable))
+			for _, version := range []int{FormatV2, FormatV3} {
+				for _, dense := range []bool{false, true} {
+					s, err := newSymbols(realByteSlice(buf.Get()), version, 0, dense)
+					require.NoError(t, err)
+					wantSize := (count + symbolFactor - 1) / symbolFactor * 8
+					if dense {
+						wantSize += count * 4
+					}
+					require.Equal(t, wantSize, s.Size())
+					for i := range count {
+						got, err := s.Lookup(uint32(i))
+						require.NoError(t, err)
+						require.Equal(t, fmt.Sprintf("%04d", i), got)
+						o, err := s.ReverseLookup(fmt.Sprintf("%04d", i))
+						require.NoError(t, err)
+						require.Equal(t, uint32(i), o)
+					}
+					_, err = s.ReverseLookup("missing")
+					require.Error(t, err)
+					_, err = s.Lookup(uint32(count))
+					require.Error(t, err)
+				}
+			}
+		})
+	}
+}
+
+func BenchmarkSymbols(b *testing.B) {
+	for _, length := range []int{8, 128} {
+		b.Run(fmt.Sprintf("symbolLength=%d", length), func(b *testing.B) {
+			const count = 1000
+			var content, buf encoding.Encbuf
+			content.PutBE32int(count)
+			for i := range count {
+				content.PutUvarintStr(fmt.Sprintf("%04d", i) + strings.Repeat("x", length-4))
+			}
+			buf.PutBE32int(content.Len())
+			buf.PutBytes(content.Get())
+			buf.PutBE32(crc32.Checksum(content.Get(), castagnoliTable))
+			bs := realByteSlice(buf.Get())
+			b.Run("NewSymbols", func(b *testing.B) {
+				b.ReportAllocs()
+				for b.Loop() {
+					if _, err := NewSymbols(bs, FormatV2, 0); err != nil {
+						b.Fatal(err)
+					}
+				}
+			})
+			sparse, err := NewSymbols(bs, FormatV2, 0)
+			require.NoError(b, err)
+			b.Run("DenseOffsets", func(b *testing.B) {
+				b.ReportAllocs()
+				for b.Loop() {
+					if _, err := sparse.withDenseOffsets(); err != nil {
+						b.Fatal(err)
+					}
+				}
+			})
+			for _, dense := range []bool{false, true} {
+				b.Run(fmt.Sprintf("dense=%t/Lookup", dense), func(b *testing.B) {
+					s, err := newSymbols(bs, FormatV2, 0, dense)
+					require.NoError(b, err)
+					b.ReportAllocs()
+					i := uint32(0)
+					for b.Loop() {
+						if _, err := s.Lookup(i % count); err != nil {
+							b.Fatal(err)
+						}
+						i++
+					}
+				})
+			}
+		})
+	}
+}
+
+func newSymbols(bs ByteSlice, version, off int, dense bool) (*Symbols, error) {
+	s, err := NewSymbols(bs, version, off)
+	if err != nil || !dense {
+		return s, err
+	}
+	return s.withDenseOffsets()
 }

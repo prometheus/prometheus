@@ -1154,11 +1154,14 @@ func (r *Reader) PostingsRanges() (map[labels.Label]Range, error) {
 
 type Symbols struct {
 	bs      ByteSlice
-	version int
 	off     int
-
-	offsets []int
 	seen    int
+	version int
+
+	// Offsets store byte positions in bs for every symbolFactor-th symbol.
+	offsets []int
+	// Dense offsets are relative to off+4 and are only built for compaction.
+	denseOffsets []uint32
 }
 
 const symbolFactor = 32
@@ -1167,19 +1170,25 @@ const symbolFactor = 32
 func NewSymbols(bs ByteSlice, version, off int) (*Symbols, error) {
 	s := &Symbols{
 		bs:      bs,
-		version: version,
 		off:     off,
+		version: version,
 	}
 	d := encoding.NewDecbufAt(bs, off, castagnoliTable)
-	var (
-		origLen = d.Len()
-		cnt     = d.Be32int()
-		basePos = off + 4
-	)
+	origLen := d.Len()
+	cnt := d.Be32int()
+	if d.Err() != nil {
+		return nil, d.Err()
+	}
+	// Every symbol needs at least one byte for its encoded length.
+	if cnt < 0 || cnt > d.Len() {
+		return nil, encoding.ErrInvalidSize
+	}
+
 	s.offsets = make([]int, 0, 1+cnt/symbolFactor)
 	for d.Err() == nil && s.seen < cnt {
+		position := origLen - d.Len()
 		if s.seen%symbolFactor == 0 {
-			s.offsets = append(s.offsets, basePos+origLen-d.Len())
+			s.offsets = append(s.offsets, off+4+position)
 		}
 		d.UvarintBytes() // The symbol.
 		s.seen++
@@ -1190,6 +1199,32 @@ func NewSymbols(bs ByteSlice, version, off int) (*Symbols, error) {
 	return s, nil
 }
 
+// With dense offsets, the sparse offsets remain shared and immutable for reverse lookup.
+func (s Symbols) withDenseOffsets() (*Symbols, error) {
+	if s.version == FormatV1 || s.denseOffsets != nil {
+		return &s, nil
+	}
+	// NewSymbols already validated the immutable symbol table and its checksum.
+	d := encoding.NewDecbufAt(s.bs, s.off, nil)
+	if d.Err() != nil {
+		return nil, d.Err()
+	}
+	origLen := d.Len()
+	d.Skip(4) // Skip the symbol count, already validated by NewSymbols.
+	if d.Err() != nil {
+		return nil, d.Err()
+	}
+	s.denseOffsets = make([]uint32, s.seen)
+	for i := range s.denseOffsets {
+		s.denseOffsets[i] = uint32(origLen - d.Len())
+		d.UvarintBytes()
+	}
+	if d.Err() != nil {
+		return nil, d.Err()
+	}
+	return &s, nil
+}
+
 func (s Symbols) Lookup(o uint32) (string, error) {
 	d := encoding.Decbuf{
 		B: s.bs.Range(0, s.bs.Len()),
@@ -1198,13 +1233,17 @@ func (s Symbols) Lookup(o uint32) (string, error) {
 	if s.version == FormatV1 {
 		d.Skip(int(o))
 	} else {
-		if int(o) >= s.seen {
+		if uint64(o) >= uint64(s.seen) {
 			return "", fmt.Errorf("unknown symbol offset %d", o)
 		}
-		d.Skip(s.offsets[int(o/symbolFactor)])
-		// Walk until we find the one we want.
-		for i := o - (o / symbolFactor * symbolFactor); i > 0; i-- {
-			d.UvarintBytes()
+		if s.denseOffsets != nil {
+			d.Skip(s.off + 4 + int(s.denseOffsets[int(o)]))
+		} else {
+			d.Skip(s.offsets[int(o/symbolFactor)])
+			// Walk until we find the one we want.
+			for i := o - (o / symbolFactor * symbolFactor); i > 0; i-- {
+				d.UvarintBytes()
+			}
 		}
 	}
 	sym := d.UvarintStr()
@@ -1257,8 +1296,9 @@ func (s Symbols) ReverseLookup(sym string) (uint32, error) {
 	return uint32(res), nil
 }
 
+// Size returns the symbol-offset size used by reader memory accounting, in bytes.
 func (s Symbols) Size() int {
-	return len(s.offsets) * 8
+	return len(s.offsets)*8 + len(s.denseOffsets)*4
 }
 
 func (s Symbols) Iter() StringIter {
@@ -1334,6 +1374,26 @@ func (r *Reader) lookupSymbol(_ context.Context, o uint32) (string, error) {
 		return s, nil
 	}
 	return r.symbols.Lookup(o)
+}
+
+// WithDenseSymbolOffsets returns a reader with a dense symbol-offset table for
+// compaction. Its construction and memory cost are paid by the caller, not by
+// ordinary readers. The returned reader borrows the original reader's byte slice:
+// the original reader must remain open until the returned reader is no longer
+// used. Closing the returned reader does not close the original reader.
+func (r *Reader) WithDenseSymbolOffsets() (*Reader, error) {
+	reader := *r
+	reader.c = io.NopCloser(nil)
+	if r.version == FormatV1 {
+		return &reader, nil
+	}
+	symbols, err := r.symbols.withDenseOffsets()
+	if err != nil {
+		return nil, err
+	}
+	reader.symbols = symbols
+	reader.dec = &Decoder{LookupSymbol: reader.lookupSymbol, DecodePostings: r.dec.DecodePostings}
+	return &reader, nil
 }
 
 // Symbols returns an iterator over the symbols that exist within the index.
