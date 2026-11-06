@@ -20,6 +20,7 @@ import (
 )
 
 // SymbolsTable implements table for easy symbol use.
+// The empty string "" always maps to 0.
 type SymbolsTable struct {
 	strings    []string
 	symbolsMap map[string]uint32
@@ -28,8 +29,8 @@ type SymbolsTable struct {
 // NewSymbolTable returns a symbol table.
 func NewSymbolTable() SymbolsTable {
 	return SymbolsTable{
-		// Empty string is required as a first element.
-		symbolsMap: map[string]uint32{"": 0},
+		// Note we don't store "" in the map; it is fast-pathed in Symbolize.
+		symbolsMap: make(map[string]uint32),
 		strings:    []string{""},
 	}
 }
@@ -37,6 +38,9 @@ func NewSymbolTable() SymbolsTable {
 // Symbolize adds (if not added before) a string to the symbols table,
 // while returning its reference number.
 func (t *SymbolsTable) Symbolize(str string) uint32 {
+	if str == "" {
+		return 0
+	}
 	if ref, ok := t.symbolsMap[str]; ok {
 		return ref
 	}
@@ -66,14 +70,9 @@ func (t *SymbolsTable) Symbols() []string {
 
 // Reset clears symbols table.
 func (t *SymbolsTable) Reset() {
-	// NOTE: Make sure to keep empty symbol.
+	// Keep "" at index 0 in strings; symbolsMap does not store "".
 	t.strings = t.strings[:1]
-	for k := range t.symbolsMap {
-		if k == "" {
-			continue
-		}
-		delete(t.symbolsMap, k)
-	}
+	clear(t.symbolsMap)
 }
 
 // desymbolizeLabels decodes label references, with given symbols to labels.
