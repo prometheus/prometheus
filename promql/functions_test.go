@@ -25,6 +25,7 @@ import (
 
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/model/timestamp"
+	"github.com/prometheus/prometheus/model/value"
 	"github.com/prometheus/prometheus/promql"
 	"github.com/prometheus/prometheus/promql/parser"
 	"github.com/prometheus/prometheus/promql/promqltest"
@@ -317,4 +318,175 @@ func TestMADOverTimeUsesExactSubnormalMedian(t *testing.T) {
 	require.NoError(t, err)
 	require.Len(t, vector, 1)
 	require.Equal(t, math.Float64bits(math.Float64frombits(1)), math.Float64bits(vector[0].F))
+}
+
+func TestRangeBinaryEvalMatchesInstantQueries(t *testing.T) {
+	stor := teststorage.New(t)
+	app := stor.AppenderV2(t.Context())
+
+	// Populate LHS and RHS series where the active RHS series for job="api" switches mid-range
+	// (stale NaN on primary before standby starts, then back to primary) to exercise
+	// binopPairCache invalidation, enh.resultMetric cache hits, fill_left/fill_right,
+	// filtered comparisons, and set operations.
+	lhs1 := labels.FromStrings("__name__", "req_total", "job", "api", "path", "/a")
+	lhs2 := labels.FromStrings("__name__", "req_total", "job", "api", "path", "/b")
+	lhsWeb := labels.FromStrings("__name__", "req_total", "job", "web", "path", "/a")
+	altLHS := labels.FromStrings("__name__", "alt_total", "job", "api", "path", "/a")
+	dupLHS1 := labels.FromStrings("__name__", "dup_lhs", "job", "api", "path", "/a", "role", "old1")
+	dupLHS2 := labels.FromStrings("__name__", "dup_lhs", "job", "api", "path", "/a", "role", "old2")
+	rhsEarly := labels.FromStrings("__name__", "role_info", "job", "api", "role", "primary")
+	rhsLate := labels.FromStrings("__name__", "role_info", "job", "api", "role", "standby")
+	rhsBatch := labels.FromStrings("__name__", "role_info", "job", "batch")
+	rhsByNameReq := labels.FromStrings("__name__", "req_total", "job", "rhs", "role", "primary")
+	rhsByNameAlt := labels.FromStrings("__name__", "alt_total", "job", "rhs", "role", "primary")
+	rhsByNameDup := labels.FromStrings("__name__", "dup_lhs", "job", "rhs", "role", "primary")
+
+	for step := range 12 {
+		ts := int64((step + 1) * 10_000)
+		_, err := app.Append(0, lhs1, 0, ts, float64(step+1), nil, nil, storage.AOptions{})
+		require.NoError(t, err)
+		_, err = app.Append(0, lhs2, 0, ts, float64((step+1)*2), nil, nil, storage.AOptions{})
+		require.NoError(t, err)
+		_, err = app.Append(0, altLHS, 0, ts, 100, nil, nil, storage.AOptions{})
+		require.NoError(t, err)
+		_, err = app.Append(0, dupLHS1, 0, ts, 10, nil, nil, storage.AOptions{})
+		require.NoError(t, err)
+		_, err = app.Append(0, dupLHS2, 0, ts, 20, nil, nil, storage.AOptions{})
+		require.NoError(t, err)
+		_, err = app.Append(0, rhsBatch, 0, ts, 3, nil, nil, storage.AOptions{})
+		require.NoError(t, err)
+		_, err = app.Append(0, rhsByNameReq, 0, ts, 50, nil, nil, storage.AOptions{})
+		require.NoError(t, err)
+		_, err = app.Append(0, rhsByNameAlt, 0, ts, 5, nil, nil, storage.AOptions{})
+		require.NoError(t, err)
+		_, err = app.Append(0, rhsByNameDup, 0, ts, 5, nil, nil, storage.AOptions{})
+		require.NoError(t, err)
+
+		if step >= 2 && step < 9 {
+			_, err = app.Append(0, lhsWeb, 0, ts, float64(step+10), nil, nil, storage.AOptions{})
+			require.NoError(t, err)
+		} else if step == 9 {
+			_, err = app.Append(0, lhsWeb, 0, ts, math.Float64frombits(value.StaleNaN), nil, nil, storage.AOptions{})
+			require.NoError(t, err)
+		}
+
+		switch {
+		case step < 5 || step >= 10:
+			_, err = app.Append(0, rhsEarly, 0, ts, 1, nil, nil, storage.AOptions{})
+			require.NoError(t, err)
+		case step == 5:
+			_, err = app.Append(0, rhsEarly, 0, ts, math.Float64frombits(value.StaleNaN), nil, nil, storage.AOptions{})
+			require.NoError(t, err)
+		}
+		switch {
+		case step >= 6 && step < 9:
+			_, err = app.Append(0, rhsLate, 0, ts, 2, nil, nil, storage.AOptions{})
+			require.NoError(t, err)
+		case step == 9:
+			_, err = app.Append(0, rhsLate, 0, ts, math.Float64frombits(value.StaleNaN), nil, nil, storage.AOptions{})
+			require.NoError(t, err)
+		}
+	}
+	require.NoError(t, app.Commit())
+
+	engine := promqltest.NewTestEngine(t, false, 0, promqltest.DefaultMaxSamplesPerQuery)
+	queries := []string{
+		`req_total * on(job) group_left(role) role_info`,
+		`role_info * on(job) group_right(role) req_total`,
+		`req_total + on(job) group_left(role) fill_left(0) fill_right(0) role_info`,
+		`req_total > on(job) group_left(role) role_info`,
+		`req_total > bool on(job) group_left(role) role_info`,
+		`req_total * ignoring(path, role) group_left(role) role_info`,
+		`(req_total > 4) + on(job, path) req_total`,
+		`req_total and on(job) role_info`,
+		`req_total or on(job, path) role_info`,
+		`(req_total > 1000) or on(job, path) role_info`,
+		`req_total unless on(job) role_info`,
+	}
+
+	start := time.Unix(10, 0)
+	end := time.Unix(120, 0)
+	step := 10 * time.Second
+
+	for _, expr := range queries {
+		t.Run("expr="+expr, func(t *testing.T) {
+			rq, err := engine.NewRangeQuery(t.Context(), stor, nil, expr, start, end, step)
+			require.NoError(t, err)
+			t.Cleanup(rq.Close)
+
+			rRes := rq.Exec(t.Context())
+			require.NoError(t, rRes.Err)
+			mat, err := rRes.Matrix()
+			require.NoError(t, err)
+
+			seenSeries := make(map[string]struct{}, len(mat))
+			gotAtTS := make(map[int64]map[string]float64)
+			for _, s := range mat {
+				require.NotEmpty(t, s.Floats)
+				lbl := s.Metric.String()
+				require.NotContains(t, seenSeries, lbl)
+				seenSeries[lbl] = struct{}{}
+				for _, pt := range s.Floats {
+					if gotAtTS[pt.T] == nil {
+						gotAtTS[pt.T] = make(map[string]float64)
+					}
+					require.NotContains(t, gotAtTS[pt.T], lbl)
+					gotAtTS[pt.T][lbl] = pt.F
+				}
+			}
+
+			for ts := start; !ts.After(end); ts = ts.Add(step) {
+				iq, err := engine.NewInstantQuery(t.Context(), stor, nil, expr, ts)
+				require.NoError(t, err)
+				iRes := iq.Exec(t.Context())
+				iq.Close()
+				require.NoError(t, iRes.Err)
+				vec, err := iRes.Vector()
+				require.NoError(t, err)
+
+				var want map[string]float64
+				if len(vec) > 0 {
+					want = make(map[string]float64, len(vec))
+					for _, smp := range vec {
+						want[smp.Metric.String()] = smp.F
+					}
+				}
+				tsMS := timestamp.FromTime(ts)
+				require.Equal(t, want, gotAtTS[tsMS], "ts=%d", tsMS)
+			}
+		})
+	}
+
+	errorQueries := []struct {
+		expr    string
+		wantErr string
+	}{
+		{
+			expr:    `dup_lhs * on(job) group_left(role) role_info`,
+			wantErr: "multiple matches for labels: grouping labels must ensure unique matches",
+		},
+		{
+			expr:    `{__name__=~"req_total|dup_lhs", job="api", path="/a"} + on(__name__) group_left(role) {__name__=~"req_total|dup_lhs", job="rhs"}`,
+			wantErr: "multiple matches for labels: grouping labels must ensure unique matches",
+		},
+		{
+			expr:    `{__name__=~"req_total|alt_total", job="api", path="/a"} + 0`,
+			wantErr: "vector cannot contain metrics with the same labelset",
+		},
+		{
+			expr:    `{__name__=~"req_total|alt_total", job="api", path="/a"} + on(__name__) group_left(role) {__name__=~"req_total|alt_total", job="rhs"}`,
+			wantErr: "vector cannot contain metrics with the same labelset",
+		},
+	}
+
+	for _, tc := range errorQueries {
+		t.Run("err="+tc.expr, func(t *testing.T) {
+			rq, err := engine.NewRangeQuery(t.Context(), stor, nil, tc.expr, start, end, step)
+			require.NoError(t, err)
+			t.Cleanup(rq.Close)
+
+			rRes := rq.Exec(t.Context())
+			require.ErrorContains(t, rRes.Err, tc.wantErr)
+		})
+	}
 }
