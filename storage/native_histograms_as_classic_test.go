@@ -108,6 +108,7 @@ func TestExtractHistogramSuffix(t *testing.T) {
 }
 
 func TestNativeHistogramsAsClassicQuerier_Select(t *testing.T) {
+	staleF := math.Float64frombits(value.StaleNaN)
 	nhcb := &histogram.Histogram{
 		Schema:          histogram.CustomBucketsSchema,
 		Count:           16,
@@ -115,6 +116,13 @@ func TestNativeHistogramsAsClassicQuerier_Select(t *testing.T) {
 		CustomValues:    []float64{1.0, 5.0, 10.0},
 		PositiveSpans:   []histogram.Span{{Offset: 0, Length: 4}},
 		PositiveBuckets: []int64{2, 1, 2, 1},
+	}
+	expNH := &histogram.Histogram{
+		Schema:          3,
+		Count:           30,
+		Sum:             120,
+		PositiveSpans:   []histogram.Span{{Offset: 0, Length: 2}},
+		PositiveBuckets: []int64{15, 0},
 	}
 
 	type testCase struct {
@@ -210,13 +218,25 @@ func TestNativeHistogramsAsClassicQuerier_Select(t *testing.T) {
 					expectedSuffix: "_sum",
 				},
 				{
-					name:          "both classic and NHCB - return both",
+					name:          "both classic and NHCB for same series and timestamp - stored classic wins",
 					queryMatchers: []*labels.Matcher{labels.MustNewMatcher(labels.MatchEqual, model.MetricNameLabel, "http_requests_bucket")},
 					classicSeries: []Series{
 						NewListSeries(labels.FromStrings("__name__", "http_requests_bucket", "le", "1"), []chunks.Sample{fSample{t: 1, f: 5}}),
 					},
 					nhcbSeries: []Series{
 						NewListSeries(labels.FromStrings("__name__", "http_requests"), []chunks.Sample{hSample{t: 1, h: nhcb}}),
+					},
+					expectedCount:  1,
+					expectedSuffix: "_bucket",
+				},
+				{
+					name:          "both classic and NHCB for different series - return both",
+					queryMatchers: []*labels.Matcher{labels.MustNewMatcher(labels.MatchEqual, model.MetricNameLabel, "http_requests_bucket")},
+					classicSeries: []Series{
+						NewListSeries(labels.FromStrings("__name__", "http_requests_bucket", "job", "classic", "le", "1"), []chunks.Sample{fSample{t: 1, f: 5}}),
+					},
+					nhcbSeries: []Series{
+						NewListSeries(labels.FromStrings("__name__", "http_requests", "job", "nhcb"), []chunks.Sample{hSample{t: 1, h: nhcb}}),
 					},
 					expectedCount:  5,
 					expectedSuffix: "_bucket",
@@ -373,6 +393,20 @@ func TestNativeHistogramsAsClassicQuerier_Select(t *testing.T) {
 					expectedSuffix: "_count",
 				},
 				{
+					name: "stored classic count series with le label does not shadow NHCB count series without le label",
+					queryMatchers: []*labels.Matcher{
+						labels.MustNewMatcher(labels.MatchEqual, model.MetricNameLabel, "http_requests_count"),
+					},
+					classicSeries: []Series{
+						NewListSeries(labels.FromStrings("__name__", "http_requests_count", "le", "1.0"), []chunks.Sample{fSample{t: 1, f: 5}}),
+					},
+					nhcbSeries: []Series{
+						NewListSeries(labels.FromStrings("__name__", "http_requests"), []chunks.Sample{hSample{t: 1, h: nhcb}}),
+					},
+					expectedCount:  2,
+					expectedSuffix: "_count",
+				},
+				{
 					name:          "non-histogram _bucket series without le label is returned alongside converted NHCB",
 					queryMatchers: []*labels.Matcher{labels.MustNewMatcher(labels.MatchEqual, model.MetricNameLabel, "notahist_bucket")},
 					classicSeries: []Series{
@@ -384,8 +418,8 @@ func TestNativeHistogramsAsClassicQuerier_Select(t *testing.T) {
 					expectedCount: 3,
 					expectedSamples: []seriesSamples{
 						{labels: `{__name__="notahist_bucket", job="api"}`, samples: []fSample{{t: 1, f: 42}}},
-						{labels: `{__name__="notahist_bucket", job="api", le="1.0"}`, samples: []fSample{{t: 1, f: 5}}},
 						{labels: `{__name__="notahist_bucket", job="api", le="+Inf"}`, samples: []fSample{{t: 1, f: 10}}},
+						{labels: `{__name__="notahist_bucket", job="api", le="1.0"}`, samples: []fSample{{t: 1, f: 5}}},
 					},
 				},
 				{
@@ -395,6 +429,33 @@ func TestNativeHistogramsAsClassicQuerier_Select(t *testing.T) {
 						NewListSeries(labels.FromStrings("__name__", "http_requests", "le", "custom"), []chunks.Sample{hSample{t: 1, h: nhcb}}),
 					},
 					expectedCount: 0,
+				},
+				{
+					name: "summary _count query ignores float quantile series on base name and passes through classic _count",
+					queryMatchers: []*labels.Matcher{
+						labels.MustNewMatcher(labels.MatchEqual, model.MetricNameLabel, "rpc_duration_seconds_count"),
+					},
+					classicSeries: []Series{
+						NewListSeries(labels.FromStrings("__name__", "rpc_duration_seconds_count", "job", "api"), []chunks.Sample{
+							fSample{t: 1, f: 42},
+							fSample{t: 2, f: 84},
+						}),
+					},
+					nhcbSeries: []Series{
+						NewListSeries(labels.FromStrings("__name__", "rpc_duration_seconds", "job", "api", "quantile", "0.5"), []chunks.Sample{
+							fSample{t: 1, f: 0.12},
+							fSample{t: 2, f: 0.15},
+						}),
+						NewListSeries(labels.FromStrings("__name__", "rpc_duration_seconds", "job", "api", "quantile", "0.99"), []chunks.Sample{
+							fSample{t: 1, f: 0.45},
+							fSample{t: 2, f: 0.50},
+						}),
+					},
+					expectedCount:  1,
+					expectedSuffix: "_count",
+					expectedSamples: []seriesSamples{
+						{labels: `{__name__="rpc_duration_seconds_count", job="api"}`, samples: []fSample{{t: 1, f: 42}, {t: 2, f: 84}}},
+					},
 				},
 				{
 					name: "multiple samples per series with mid-series bucket layout change and builder reuse across series",
@@ -418,10 +479,10 @@ func TestNativeHistogramsAsClassicQuerier_Select(t *testing.T) {
 					expectedSuffix: "_bucket",
 					expectedSamples: []seriesSamples{
 						{labels: `{__name__="http_requests_bucket", job="api", le="1.0"}`, samples: []fSample{{t: 1, f: 1}, {t: 2, f: 2}, {t: 3, f: 3}, {t: 4, f: 4}}},
-						{labels: `{__name__="http_requests_bucket", job="api", le="2.0"}`, samples: []fSample{{t: 1, f: 3}, {t: 2, f: 6}, {t: 4, f: 9}}},
-						{labels: `{__name__="http_requests_bucket", job="api", le="3.0"}`, samples: []fSample{{t: 1, f: 6}, {t: 2, f: 12}, {t: 4, f: 15}}},
+						{labels: `{__name__="http_requests_bucket", job="api", le="2.0"}`, samples: []fSample{{t: 1, f: 3}, {t: 2, f: 6}, {t: 3, f: staleF}, {t: 4, f: 9}}},
+						{labels: `{__name__="http_requests_bucket", job="api", le="3.0"}`, samples: []fSample{{t: 1, f: 6}, {t: 2, f: 12}, {t: 3, f: staleF}, {t: 4, f: 15}}},
 						{labels: `{__name__="http_requests_bucket", job="api", le="+Inf"}`, samples: []fSample{{t: 1, f: 10}, {t: 2, f: 20}, {t: 3, f: 15}, {t: 4, f: 22}}},
-						{labels: `{__name__="http_requests_bucket", job="api", le="5.0"}`, samples: []fSample{{t: 3, f: 10}}},
+						{labels: `{__name__="http_requests_bucket", job="api", le="5.0"}`, samples: []fSample{{t: 3, f: 10}, {t: 4, f: staleF}}},
 						{labels: `{__name__="http_requests_bucket", job="web", le="1.0"}`, samples: []fSample{{t: 1, f: 5}, {t: 2, f: 6}}},
 						{labels: `{__name__="http_requests_bucket", job="web", le="5.0"}`, samples: []fSample{{t: 1, f: 15}, {t: 2, f: 18}}},
 						{labels: `{__name__="http_requests_bucket", job="web", le="+Inf"}`, samples: []fSample{{t: 1, f: 30}, {t: 2, f: 36}}},
@@ -446,57 +507,64 @@ func TestNativeHistogramsAsClassicQuerier_Select(t *testing.T) {
 			},
 		},
 		{
-			// Stored classic and NHCB series of the same histogram are not merged yet.
-			// Each case asserts the current output so a fix has to update it.
-			name: "collisions not yet handled",
+			name: "collisions",
 			cases: []testCase{
 				{
-					// Should: return only the stored classic series.
-					// Currently: returns the classic series and the converted one, with identical labels.
-					// TODO: let stored classic shadow converted NHCB samples at the same timestamp.
-					name:          "identical labelset and timestamp returns duplicate series",
-					queryMatchers: []*labels.Matcher{labels.MustNewMatcher(labels.MatchEqual, model.MetricNameLabel, "http_requests_count")},
-					classicSeries: []Series{
-						NewListSeries(labels.FromStrings("__name__", "http_requests_count", "job", "api"), []chunks.Sample{fSample{t: 1, f: 10}}),
-					},
-					nhcbSeries: []Series{
-						NewListSeries(labels.FromStrings("__name__", "http_requests", "job", "api"), []chunks.Sample{hSample{t: 1, h: makeNHCB([]float64{1.0}, []int64{50, 49})}}),
-					},
-					expectedCount: 2,
-					expectedSamples: []seriesSamples{
-						{labels: `{__name__="http_requests_count", job="api"}`, samples: []fSample{{t: 1, f: 10}}},
-						{labels: `{__name__="http_requests_count", job="api"}`, samples: []fSample{{t: 1, f: 99}}},
-					},
-				},
-				{
-					// Should: return one series with samples t=1..4.
-					// Currently: returns two series with identical labels, classic t=1..2 and converted t=3..4.
-					// TODO: merge classic and converted samples across the migration cutover.
-					name:          "disjoint timestamps across migration cutover returns two series",
+					name:          "identical labelset and timestamp returns stored classic series",
 					queryMatchers: []*labels.Matcher{labels.MustNewMatcher(labels.MatchEqual, model.MetricNameLabel, "http_requests_count")},
 					classicSeries: []Series{
 						NewListSeries(labels.FromStrings("__name__", "http_requests_count", "job", "api"), []chunks.Sample{fSample{t: 1, f: 10}, fSample{t: 2, f: 20}}),
 					},
 					nhcbSeries: []Series{
 						NewListSeries(labels.FromStrings("__name__", "http_requests", "job", "api"), []chunks.Sample{
-							hSample{t: 3, h: makeNHCB([]float64{1.0}, []int64{15, 15})},
-							hSample{t: 4, h: makeNHCB([]float64{1.0}, []int64{20, 20})},
+							hSample{t: 1, h: makeNHCB([]float64{1.0}, []int64{50, 49})},
+							hSample{t: 2, h: makeNHCB([]float64{1.0}, []int64{100, 99})},
 						}),
 					},
-					expectedCount: 2,
+					expectedCount: 1,
 					expectedSamples: []seriesSamples{
 						{labels: `{__name__="http_requests_count", job="api"}`, samples: []fSample{{t: 1, f: 10}, {t: 2, f: 20}}},
-						{labels: `{__name__="http_requests_count", job="api"}`, samples: []fSample{{t: 3, f: 30}, {t: 4, f: 40}}},
 					},
 				},
 				{
-					// Should: return one series 10, 20, 30, keeping the live sample at t=2.
-					// Currently: returns two series with identical labels, the classic one ending in a StaleNaN at t=2.
-					// TODO: prefer a live sample over a StaleNaN at the same timestamp across the cutover.
-					name:          "staleness marker and live sample at cutover timestamp returns two series",
+					name:          "disjoint timestamps across forward migration cutover merge into single series with start timestamps",
 					queryMatchers: []*labels.Matcher{labels.MustNewMatcher(labels.MatchEqual, model.MetricNameLabel, "http_requests_count")},
 					classicSeries: []Series{
-						NewListSeries(labels.FromStrings("__name__", "http_requests_count", "job", "api"), []chunks.Sample{fSample{t: 1, f: 10}, fSample{t: 2, f: math.Float64frombits(value.StaleNaN)}}),
+						NewListSeries(labels.FromStrings("__name__", "http_requests_count", "job", "api"), []chunks.Sample{fSample{st: 1, t: 1, f: 10}, fSample{st: 1, t: 2, f: 20}}),
+					},
+					nhcbSeries: []Series{
+						NewListSeries(labels.FromStrings("__name__", "http_requests", "job", "api"), []chunks.Sample{
+							hSample{st: 1, t: 3, h: makeNHCB([]float64{1.0}, []int64{15, 15})},
+							hSample{st: 1, t: 4, h: makeNHCB([]float64{1.0}, []int64{20, 20})},
+						}),
+					},
+					expectedCount: 1,
+					expectedSamples: []seriesSamples{
+						{labels: `{__name__="http_requests_count", job="api"}`, samples: []fSample{{st: 1, t: 1, f: 10}, {st: 1, t: 2, f: 20}, {st: 1, t: 3, f: 30}, {st: 1, t: 4, f: 40}}},
+					},
+				},
+				{
+					name:          "disjoint timestamps across rollback to classic merge into single series",
+					queryMatchers: []*labels.Matcher{labels.MustNewMatcher(labels.MatchEqual, model.MetricNameLabel, "http_requests_count")},
+					classicSeries: []Series{
+						NewListSeries(labels.FromStrings("__name__", "http_requests_count", "job", "api"), []chunks.Sample{fSample{t: 3, f: 30}, fSample{t: 4, f: 40}}),
+					},
+					nhcbSeries: []Series{
+						NewListSeries(labels.FromStrings("__name__", "http_requests", "job", "api"), []chunks.Sample{
+							hSample{t: 1, h: makeNHCB([]float64{1.0}, []int64{5, 5})},
+							hSample{t: 2, h: makeNHCB([]float64{1.0}, []int64{10, 10})},
+						}),
+					},
+					expectedCount: 1,
+					expectedSamples: []seriesSamples{
+						{labels: `{__name__="http_requests_count", job="api"}`, samples: []fSample{{t: 1, f: 10}, {t: 2, f: 20}, {t: 3, f: 30}, {t: 4, f: 40}}},
+					},
+				},
+				{
+					name:          "staleness marker and live sample at cutover timestamp keeps live sample",
+					queryMatchers: []*labels.Matcher{labels.MustNewMatcher(labels.MatchEqual, model.MetricNameLabel, "http_requests_count")},
+					classicSeries: []Series{
+						NewListSeries(labels.FromStrings("__name__", "http_requests_count", "job", "api"), []chunks.Sample{fSample{t: 1, f: 10}, fSample{t: 2, f: staleF}}),
 					},
 					nhcbSeries: []Series{
 						NewListSeries(labels.FromStrings("__name__", "http_requests", "job", "api"), []chunks.Sample{
@@ -504,20 +572,16 @@ func TestNativeHistogramsAsClassicQuerier_Select(t *testing.T) {
 							hSample{t: 3, h: makeNHCB([]float64{1.0}, []int64{15, 15})},
 						}),
 					},
-					expectedCount: 2,
+					expectedCount: 1,
 					expectedSamples: []seriesSamples{
-						{labels: `{__name__="http_requests_count", job="api"}`, samples: []fSample{{t: 1, f: 10}, {t: 2, f: math.Float64frombits(value.StaleNaN)}}},
-						{labels: `{__name__="http_requests_count", job="api"}`, samples: []fSample{{t: 2, f: 20}, {t: 3, f: 30}}},
+						{labels: `{__name__="http_requests_count", job="api"}`, samples: []fSample{{t: 1, f: 10}, {t: 2, f: 20}, {t: 3, f: 30}}},
 					},
 				},
 				{
-					// Should: return one series 10, 20, 40, dropping the delayed classic StaleNaN at t=3.
-					// Currently: returns two series with identical labels, the classic one ending in a StaleNaN at t=3.
-					// TODO: drop staleness markers of the old representation once the new one is active.
-					name:          "delayed classic staleness marker after cutover returns two series",
+					name:          "delayed classic staleness marker after cutover is dropped",
 					queryMatchers: []*labels.Matcher{labels.MustNewMatcher(labels.MatchEqual, model.MetricNameLabel, "http_requests_count")},
 					classicSeries: []Series{
-						NewListSeries(labels.FromStrings("__name__", "http_requests_count", "job", "api"), []chunks.Sample{fSample{t: 1, f: 10}, fSample{t: 3, f: math.Float64frombits(value.StaleNaN)}}),
+						NewListSeries(labels.FromStrings("__name__", "http_requests_count", "job", "api"), []chunks.Sample{fSample{t: 1, f: 10}, fSample{t: 3, f: staleF}}),
 					},
 					nhcbSeries: []Series{
 						NewListSeries(labels.FromStrings("__name__", "http_requests", "job", "api"), []chunks.Sample{
@@ -525,17 +589,13 @@ func TestNativeHistogramsAsClassicQuerier_Select(t *testing.T) {
 							hSample{t: 4, h: makeNHCB([]float64{1.0}, []int64{20, 20})},
 						}),
 					},
-					expectedCount: 2,
+					expectedCount: 1,
 					expectedSamples: []seriesSamples{
-						{labels: `{__name__="http_requests_count", job="api"}`, samples: []fSample{{t: 1, f: 10}, {t: 3, f: math.Float64frombits(value.StaleNaN)}}},
-						{labels: `{__name__="http_requests_count", job="api"}`, samples: []fSample{{t: 2, f: 20}, {t: 4, f: 40}}},
+						{labels: `{__name__="http_requests_count", job="api"}`, samples: []fSample{{t: 1, f: 10}, {t: 2, f: 20}, {t: 4, f: 40}}},
 					},
 				},
 				{
-					// Should: return the classic le="1" and le="+Inf" at t=1, and converted buckets only at t=2.
-					// Currently: returns both bucket layouts at t=1, including le="+Inf" twice.
-					// TODO: let stored classic shadow every bucket of the NHCB at the same timestamp.
-					name:          "different le formatting at same timestamp returns both bucket layouts",
+					name:          "different le formatting at same timestamp shadows NHCB group",
 					queryMatchers: []*labels.Matcher{labels.MustNewMatcher(labels.MatchEqual, model.MetricNameLabel, "http_requests_bucket")},
 					classicSeries: []Series{
 						NewListSeries(labels.FromStrings("__name__", "http_requests_bucket", "le", "1"), []chunks.Sample{fSample{t: 1, f: 5}}),
@@ -547,21 +607,20 @@ func TestNativeHistogramsAsClassicQuerier_Select(t *testing.T) {
 							hSample{t: 2, h: makeNHCB([]float64{1.0, 5.0}, []int64{10, 6, 4})},
 						}),
 					},
-					expectedCount: 5,
+					expectedCount: 4,
 					expectedSamples: []seriesSamples{
-						{labels: `{__name__="http_requests_bucket", le="1"}`, samples: []fSample{{t: 1, f: 5}}},
-						{labels: `{__name__="http_requests_bucket", le="+Inf"}`, samples: []fSample{{t: 1, f: 10}}},
-						{labels: `{__name__="http_requests_bucket", le="1.0"}`, samples: []fSample{{t: 1, f: 5}, {t: 2, f: 10}}},
-						{labels: `{__name__="http_requests_bucket", le="5.0"}`, samples: []fSample{{t: 1, f: 8}, {t: 2, f: 16}}},
 						{labels: `{__name__="http_requests_bucket", le="+Inf"}`, samples: []fSample{{t: 1, f: 10}, {t: 2, f: 20}}},
+						{labels: `{__name__="http_requests_bucket", le="1"}`, samples: []fSample{{t: 1, f: 5}}},
+						{labels: `{__name__="http_requests_bucket", le="1.0"}`, samples: []fSample{{t: 2, f: 10}}},
+						{labels: `{__name__="http_requests_bucket", le="5.0"}`, samples: []fSample{{t: 2, f: 16}}},
 					},
 				},
 				{
-					// Should: return le="5.0" only at t=2, since stored classic is active at t=1.
-					// Currently: returns le="5.0" at t=1 and t=2.
-					// TODO: shadow the whole NHCB group even when the le matcher selects no classic bucket.
-					name:          "le matcher on a bucket missing from stored classic returns converted sample at shadowed timestamp",
-					queryMatchers: []*labels.Matcher{labels.MustNewMatcher(labels.MatchEqual, model.MetricNameLabel, "http_requests_bucket"), labels.MustNewMatcher(labels.MatchEqual, labels.BucketLabel, "5.0")},
+					name: "le matcher on a bucket missing from stored classic still shadows NHCB at classic timestamp",
+					queryMatchers: []*labels.Matcher{
+						labels.MustNewMatcher(labels.MatchEqual, model.MetricNameLabel, "http_requests_bucket"),
+						labels.MustNewMatcher(labels.MatchEqual, labels.BucketLabel, "5.0"),
+					},
 					classicSeries: []Series{
 						NewListSeries(labels.FromStrings("__name__", "http_requests_bucket", "le", "1.0"), []chunks.Sample{fSample{t: 1, f: 5}}),
 						NewListSeries(labels.FromStrings("__name__", "http_requests_bucket", "le", "+Inf"), []chunks.Sample{fSample{t: 1, f: 10}}),
@@ -574,14 +633,11 @@ func TestNativeHistogramsAsClassicQuerier_Select(t *testing.T) {
 					},
 					expectedCount: 1,
 					expectedSamples: []seriesSamples{
-						{labels: `{__name__="http_requests_bucket", le="5.0"}`, samples: []fSample{{t: 1, f: 8}, {t: 2, f: 16}}},
+						{labels: `{__name__="http_requests_bucket", le="5.0"}`, samples: []fSample{{t: 2, f: 16}}},
 					},
 				},
 				{
-					// Should: return one series per le, with le="5.0" ending in a StaleNaN at t=2.
-					// Currently: returns le="1.0" and le="+Inf" twice, and le="5.0" never goes stale.
-					// TODO: merge across the cutover and mark buckets dropped by classic as stale.
-					name:          "NHCB to classic cutover returns both layouts without staleness",
+					name:          "NHCB to classic cutover merges matching buckets and marks dropped buckets stale",
 					queryMatchers: []*labels.Matcher{labels.MustNewMatcher(labels.MatchEqual, model.MetricNameLabel, "http_requests_bucket")},
 					classicSeries: []Series{
 						NewListSeries(labels.FromStrings("__name__", "http_requests_bucket", "le", "1.0"), []chunks.Sample{fSample{t: 2, f: 12}}),
@@ -592,40 +648,138 @@ func TestNativeHistogramsAsClassicQuerier_Select(t *testing.T) {
 							hSample{t: 1, h: makeNHCB([]float64{1.0, 5.0}, []int64{5, 3, 2})},
 						}),
 					},
-					expectedCount: 5,
+					expectedCount: 3,
 					expectedSamples: []seriesSamples{
-						{labels: `{__name__="http_requests_bucket", le="1.0"}`, samples: []fSample{{t: 2, f: 12}}},
-						{labels: `{__name__="http_requests_bucket", le="+Inf"}`, samples: []fSample{{t: 2, f: 20}}},
-						{labels: `{__name__="http_requests_bucket", le="1.0"}`, samples: []fSample{{t: 1, f: 5}}},
-						{labels: `{__name__="http_requests_bucket", le="5.0"}`, samples: []fSample{{t: 1, f: 8}}},
+						{labels: `{__name__="http_requests_bucket", le="+Inf"}`, samples: []fSample{{t: 1, f: 10}, {t: 2, f: 20}}},
+						{labels: `{__name__="http_requests_bucket", le="1.0"}`, samples: []fSample{{t: 1, f: 5}, {t: 2, f: 12}}},
+						{labels: `{__name__="http_requests_bucket", le="5.0"}`, samples: []fSample{{t: 1, f: 8}, {t: 2, f: staleF}}},
+					},
+				},
+				{
+					name:          "exponential native histogram coexisting with classic returns classic untouched",
+					queryMatchers: []*labels.Matcher{labels.MustNewMatcher(labels.MatchEqual, model.MetricNameLabel, "http_requests_bucket")},
+					classicSeries: []Series{
+						NewListSeries(labels.FromStrings("__name__", "http_requests_bucket", "le", "+Inf"), []chunks.Sample{fSample{t: 1, f: 10}}),
+						NewListSeries(labels.FromStrings("__name__", "http_requests_bucket", "le", "1.0"), []chunks.Sample{fSample{t: 1, f: 5}}),
+					},
+					nhcbSeries: []Series{
+						NewListSeries(labels.FromStrings("__name__", "http_requests"), []chunks.Sample{
+							hSample{t: 1, h: expNH},
+							hSample{t: 2, h: expNH},
+						}),
+					},
+					expectedCount: 2,
+					expectedSamples: []seriesSamples{
 						{labels: `{__name__="http_requests_bucket", le="+Inf"}`, samples: []fSample{{t: 1, f: 10}}},
+						{labels: `{__name__="http_requests_bucket", le="1.0"}`, samples: []fSample{{t: 1, f: 5}}},
+					},
+				},
+				{
+					name:          "pure exponential native histogram is ignored",
+					queryMatchers: []*labels.Matcher{labels.MustNewMatcher(labels.MatchEqual, model.MetricNameLabel, "http_requests_bucket")},
+					nhcbSeries: []Series{
+						NewListSeries(labels.FromStrings("__name__", "http_requests"), []chunks.Sample{hSample{t: 1, h: expNH}}),
+					},
+					expectedCount: 0,
+				},
+				{
+					name:          "float counter on base metric name with stored classic returns classic untouched",
+					queryMatchers: []*labels.Matcher{labels.MustNewMatcher(labels.MatchEqual, model.MetricNameLabel, "hist_bucket")},
+					classicSeries: []Series{
+						NewListSeries(labels.FromStrings("__name__", "hist_bucket", "job", "api", "le", "+Inf"), []chunks.Sample{fSample{t: 1, f: 10}}),
+						NewListSeries(labels.FromStrings("__name__", "hist_bucket", "job", "api", "le", "1.0"), []chunks.Sample{fSample{t: 1, f: 5}}),
+					},
+					nhcbSeries: []Series{
+						NewListSeries(labels.FromStrings("__name__", "hist", "job", "api"), []chunks.Sample{fSample{t: 1, f: 99}}),
+					},
+					expectedCount: 2,
+					expectedSamples: []seriesSamples{
+						{labels: `{__name__="hist_bucket", job="api", le="+Inf"}`, samples: []fSample{{t: 1, f: 10}}},
+						{labels: `{__name__="hist_bucket", job="api", le="1.0"}`, samples: []fSample{{t: 1, f: 5}}},
+					},
+				},
+				{
+					name:          "pure float counter on base metric name is ignored when querying _bucket",
+					queryMatchers: []*labels.Matcher{labels.MustNewMatcher(labels.MatchEqual, model.MetricNameLabel, "hist_bucket")},
+					nhcbSeries: []Series{
+						NewListSeries(labels.FromStrings("__name__", "hist", "job", "api"), []chunks.Sample{fSample{t: 1, f: 99}}),
+					},
+					expectedCount: 0,
+				},
+				{
+					name:          "mixed-type classic series scans past non-float sample and shadows NHCB",
+					queryMatchers: []*labels.Matcher{labels.MustNewMatcher(labels.MatchEqual, model.MetricNameLabel, "http_requests_count")},
+					classicSeries: []Series{
+						NewListSeries(labels.FromStrings("__name__", "http_requests_count", "job", "api"), []chunks.Sample{
+							hSample{t: 1, h: expNH},
+							fSample{t: 2, f: 25},
+						}),
+					},
+					nhcbSeries: []Series{
+						NewListSeries(labels.FromStrings("__name__", "http_requests", "job", "api"), []chunks.Sample{
+							hSample{t: 2, h: makeNHCB([]float64{1.0}, []int64{50, 50})},
+							hSample{t: 3, h: makeNHCB([]float64{1.0}, []int64{60, 60})},
+						}),
+					},
+					expectedCount: 1,
+					expectedSamples: []seriesSamples{
+						{labels: `{__name__="http_requests_count", job="api"}`, samples: []fSample{{t: 2, f: 25}, {t: 3, f: 120}}},
 					},
 				},
 			},
 		},
 		{
-			// NHCB staleness markers and removed buckets are not converted to StaleNaN yet.
-			// Each case asserts the current output so a fix has to update it.
-			name: "staleness not yet handled",
+			name: "staleness",
 			cases: []testCase{
 				{
-					// Should: end le="5.0" with a StaleNaN at t=2 and every series with a StaleNaN at t=3.
-					// Currently: drops the staleness marker and the removed bucket, nothing goes stale.
-					// TODO: emit StaleNaN on converted series for NHCB staleness markers and removed buckets.
-					name:          "NHCB staleness marker and removed bucket are dropped",
+					name:          "NHCB staleness markers and removed bucket emit StaleNaN",
 					queryMatchers: []*labels.Matcher{labels.MustNewMatcher(labels.MatchEqual, model.MetricNameLabel, "http_requests_bucket")},
 					nhcbSeries: []Series{
 						NewListSeries(labels.FromStrings("__name__", "http_requests"), []chunks.Sample{
 							hSample{t: 1, h: makeNHCB([]float64{1.0, 5.0}, []int64{5, 3, 2})},
 							hSample{t: 2, h: makeNHCB([]float64{1.0}, []int64{8, 7})},
-							hSample{t: 3, h: &histogram.Histogram{Sum: math.Float64frombits(value.StaleNaN)}},
+							hSample{t: 3, h: &histogram.Histogram{Sum: staleF}},
+							hSample{t: 4, h: makeNHCB([]float64{1.0}, []int64{10, 8})},
+							fSample{t: 5, f: staleF},
 						}),
 					},
 					expectedCount: 3,
 					expectedSamples: []seriesSamples{
-						{labels: `{__name__="http_requests_bucket", le="1.0"}`, samples: []fSample{{t: 1, f: 5}, {t: 2, f: 8}}},
-						{labels: `{__name__="http_requests_bucket", le="5.0"}`, samples: []fSample{{t: 1, f: 8}}},
-						{labels: `{__name__="http_requests_bucket", le="+Inf"}`, samples: []fSample{{t: 1, f: 10}, {t: 2, f: 15}}},
+						{labels: `{__name__="http_requests_bucket", le="1.0"}`, samples: []fSample{{t: 1, f: 5}, {t: 2, f: 8}, {t: 3, f: staleF}, {t: 4, f: 10}, {t: 5, f: staleF}}},
+						{labels: `{__name__="http_requests_bucket", le="5.0"}`, samples: []fSample{{t: 1, f: 8}, {t: 2, f: staleF}}},
+						{labels: `{__name__="http_requests_bucket", le="+Inf"}`, samples: []fSample{{t: 1, f: 10}, {t: 2, f: 15}, {t: 3, f: staleF}, {t: 4, f: 18}, {t: 5, f: staleF}}},
+					},
+				},
+				{
+					name:          "NHCB to exponential native histogram transition emits StaleNaN and resumes",
+					queryMatchers: []*labels.Matcher{labels.MustNewMatcher(labels.MatchEqual, model.MetricNameLabel, "http_requests_bucket")},
+					nhcbSeries: []Series{
+						NewListSeries(labels.FromStrings("__name__", "http_requests"), []chunks.Sample{
+							hSample{t: 1, h: makeNHCB([]float64{1.0}, []int64{5, 5})},
+							hSample{t: 2, h: expNH},
+							hSample{t: 3, h: makeNHCB([]float64{1.0}, []int64{8, 7})},
+						}),
+					},
+					expectedCount: 2,
+					expectedSamples: []seriesSamples{
+						{labels: `{__name__="http_requests_bucket", le="1.0"}`, samples: []fSample{{t: 1, f: 5}, {t: 2, f: staleF}, {t: 3, f: 8}}},
+						{labels: `{__name__="http_requests_bucket", le="+Inf"}`, samples: []fSample{{t: 1, f: 10}, {t: 2, f: staleF}, {t: 3, f: 15}}},
+					},
+				},
+				{
+					name:          "NHCB to float counter transition emits StaleNaN and resumes",
+					queryMatchers: []*labels.Matcher{labels.MustNewMatcher(labels.MatchEqual, model.MetricNameLabel, "hist_bucket")},
+					nhcbSeries: []Series{
+						NewListSeries(labels.FromStrings("__name__", "hist", "job", "api"), []chunks.Sample{
+							hSample{t: 1, h: makeNHCB([]float64{1.0}, []int64{5, 5})},
+							fSample{t: 2, f: 99},
+							hSample{t: 3, h: makeNHCB([]float64{1.0}, []int64{8, 7})},
+						}),
+					},
+					expectedCount: 2,
+					expectedSamples: []seriesSamples{
+						{labels: `{__name__="hist_bucket", job="api", le="1.0"}`, samples: []fSample{{t: 1, f: 5}, {t: 2, f: staleF}, {t: 3, f: 8}}},
+						{labels: `{__name__="hist_bucket", job="api", le="+Inf"}`, samples: []fSample{{t: 1, f: 10}, {t: 2, f: staleF}, {t: 3, f: 15}}},
 					},
 				},
 			},
@@ -682,8 +836,10 @@ func TestNativeHistogramsAsClassicQuerier_Select(t *testing.T) {
 								require.Equal(t, mid.t, ts)
 								require.Equal(t, math.Float64bits(mid.f), math.Float64bits(v))
 								require.Equal(t, chunkenc.ValNone, it.Seek(samples[len(samples)-1].t+100))
-								require.Panics(t, func() { it.AtHistogram(nil) })
-								require.Panics(t, func() { it.AtFloatHistogram(nil) })
+								if _, isFSampleSeries := s.(*fSampleSeries); isFSampleSeries {
+									require.Panics(t, func() { it.AtHistogram(nil) })
+									require.Panics(t, func() { it.AtFloatHistogram(nil) })
+								}
 							}
 						}
 						testutil.RequireEqualWithOptions(t, tc.expectedSamples, gotSamples, []cmp.Option{cmp.AllowUnexported(seriesSamples{}, fSample{}), cmpopts.EquateNaNs()})
@@ -713,7 +869,7 @@ func TestNativeHistogramsAsClassicQuerier_ConsistentOrder(t *testing.T) {
 	}
 	q := NewNativeHistogramsAsClassicQuerier(mock)
 
-	// Run the same query multiple times and verify order is consistent.
+	// Run the same query multiple times and verify per-group labels.Compare order is consistent.
 	for range 5 {
 		ss := q.Select(context.Background(), false, nil, labels.MustNewMatcher(labels.MatchEqual, model.MetricNameLabel, "http_requests_bucket"))
 		var seriesLabels []string
@@ -722,10 +878,6 @@ func TestNativeHistogramsAsClassicQuerier_ConsistentOrder(t *testing.T) {
 		}
 		require.NoError(t, ss.Err())
 
-		// 2 NHCB series × 4 buckets each (le=1.0, 5.0, 10.0, +Inf) = 8 series.
-		require.Len(t, seriesLabels, 8)
-
-		// Expect buckets for "api" job first (in le order), then "web" job (in le order).
 		expectedOrder := []string{
 			`{__name__="http_requests_bucket", job="api", le="1.0"}`,
 			`{__name__="http_requests_bucket", job="api", le="5.0"}`,
@@ -741,36 +893,137 @@ func TestNativeHistogramsAsClassicQuerier_ConsistentOrder(t *testing.T) {
 }
 
 func TestNativeHistogramsAsClassicQuerier_SortedSelect(t *testing.T) {
-	// z_job sorts after le, so sorted order interleaves the buckets of both NHCB series.
-	q := NewNativeHistogramsAsClassicQuerier(&nhcbMockQuerier{
-		nhcbSeries: []Series{
-			NewListSeries(labels.FromStrings("__name__", "http_requests", "z_job", "api"), []chunks.Sample{hSample{t: 1, h: makeNHCB([]float64{1.0, 5.0}, []int64{2, 3, 5})}}),
-			NewListSeries(labels.FromStrings("__name__", "http_requests", "z_job", "web"), []chunks.Sample{hSample{t: 1, h: makeNHCB([]float64{1.0, 5.0}, []int64{2, 3, 5})}}),
-		},
+	readAll := func(t *testing.T, ss SeriesSet) []seriesSamples {
+		t.Helper()
+		var out []seriesSamples
+		var it chunkenc.Iterator
+		for ss.Next() {
+			s := ss.At()
+			it = s.Iterator(it)
+			var samples []fSample
+			for it.Next() == chunkenc.ValFloat {
+				ts, v := it.At()
+				samples = append(samples, fSample{st: it.AtST(), t: ts, f: v})
+			}
+			require.NoError(t, it.Err())
+			out = append(out, seriesSamples{labels: s.Labels().String(), samples: samples})
+		}
+		require.NoError(t, ss.Err())
+		return out
+	}
+
+	t.Run("pure NHCB sorted globally by labels.Compare", func(t *testing.T) {
+		// z_job sorts after le, so sorted order interleaves the buckets of both NHCB series.
+		q := NewNativeHistogramsAsClassicQuerier(&nhcbMockQuerier{
+			nhcbSeries: []Series{
+				NewListSeries(labels.FromStrings("__name__", "http_requests", "z_job", "api"), []chunks.Sample{hSample{t: 1, h: makeNHCB([]float64{1.0, 5.0}, []int64{2, 3, 5})}}),
+				NewListSeries(labels.FromStrings("__name__", "http_requests", "z_job", "web"), []chunks.Sample{hSample{t: 1, h: makeNHCB([]float64{1.0, 5.0}, []int64{2, 3, 5})}}),
+			},
+		})
+
+		ss := q.Select(context.Background(), true, nil, labels.MustNewMatcher(labels.MatchEqual, model.MetricNameLabel, "http_requests_bucket"))
+		var seriesLabels []string
+		for ss.Next() {
+			seriesLabels = append(seriesLabels, ss.At().Labels().String())
+		}
+		require.NoError(t, ss.Err())
+
+		require.Equal(t, []string{
+			`{__name__="http_requests_bucket", le="+Inf", z_job="api"}`,
+			`{__name__="http_requests_bucket", le="+Inf", z_job="web"}`,
+			`{__name__="http_requests_bucket", le="1.0", z_job="api"}`,
+			`{__name__="http_requests_bucket", le="1.0", z_job="web"}`,
+			`{__name__="http_requests_bucket", le="5.0", z_job="api"}`,
+			`{__name__="http_requests_bucket", le="5.0", z_job="web"}`,
+		}, seriesLabels)
 	})
 
-	ss := q.Select(context.Background(), true, nil, labels.MustNewMatcher(labels.MatchEqual, model.MetricNameLabel, "http_requests_bucket"))
-	var seriesLabels []string
+	t.Run("NewMergeQuerier with sortSeries=true deduplicates converted and remote series", func(t *testing.T) {
+		primary := NewNativeHistogramsAsClassicQuerier(&nhcbMockQuerier{
+			nhcbSeries: []Series{
+				NewListSeries(labels.FromStrings("__name__", "http_requests"), []chunks.Sample{
+					hSample{t: 1, h: makeNHCB([]float64{1.0, 5.0}, []int64{5, 3, 2})},
+				}),
+			},
+		})
+		secondary := &nhcbMockQuerier{
+			classicSeries: []Series{
+				NewListSeries(labels.FromStrings("__name__", "http_requests_bucket", "le", "+Inf"), []chunks.Sample{fSample{t: 2, f: 20}}),
+				NewListSeries(labels.FromStrings("__name__", "http_requests_bucket", "le", "1.0"), []chunks.Sample{fSample{t: 2, f: 10}}),
+				NewListSeries(labels.FromStrings("__name__", "http_requests_bucket", "le", "5.0"), []chunks.Sample{fSample{t: 2, f: 16}}),
+			},
+		}
+		merged := NewMergeQuerier([]Querier{primary}, []Querier{secondary}, ChainedSeriesMerge)
+		got := readAll(t, merged.Select(context.Background(), true, nil,
+			labels.MustNewMatcher(labels.MatchEqual, model.MetricNameLabel, "http_requests_bucket")))
+		testutil.RequireEqualWithOptions(t, []seriesSamples{
+			{labels: `{__name__="http_requests_bucket", le="+Inf"}`, samples: []fSample{{t: 1, f: 10}, {t: 2, f: 20}}},
+			{labels: `{__name__="http_requests_bucket", le="1.0"}`, samples: []fSample{{t: 1, f: 5}, {t: 2, f: 10}}},
+			{labels: `{__name__="http_requests_bucket", le="5.0"}`, samples: []fSample{{t: 1, f: 8}, {t: 2, f: 16}}},
+		}, got, []cmp.Option{cmp.AllowUnexported(seriesSamples{}, fSample{})})
+	})
+
+	t.Run("multi-group hybrid collision respects sortSeries=false and sortSeries=true", func(t *testing.T) {
+		newQuerier := func() Querier {
+			return NewNativeHistogramsAsClassicQuerier(&nhcbMockQuerier{
+				classicSeries: []Series{
+					NewListSeries(labels.FromStrings("__name__", "http_requests_bucket", "le", "1.0", "z", "a"), []chunks.Sample{fSample{t: 1, f: 3}}),
+					NewListSeries(labels.FromStrings("__name__", "http_requests_bucket", "le", "+Inf", "z", "a"), []chunks.Sample{fSample{t: 1, f: 10}}),
+				},
+				nhcbSeries: []Series{
+					NewListSeries(labels.FromStrings("__name__", "http_requests", "z", "a"), []chunks.Sample{
+						hSample{t: 1, h: makeNHCB([]float64{1.0}, []int64{5, 5})},
+						hSample{t: 2, h: makeNHCB([]float64{1.0}, []int64{8, 7})},
+					}),
+					NewListSeries(labels.FromStrings("__name__", "http_requests", "z", "b"), []chunks.Sample{
+						hSample{t: 1, h: makeNHCB([]float64{1.0}, []int64{2, 4})},
+					}),
+				},
+			})
+		}
+
+		gotUnsorted := readAll(t, newQuerier().Select(context.Background(), false, nil,
+			labels.MustNewMatcher(labels.MatchEqual, model.MetricNameLabel, "http_requests_bucket")))
+		testutil.RequireEqualWithOptions(t, []seriesSamples{
+			{labels: `{__name__="http_requests_bucket", le="+Inf", z="a"}`, samples: []fSample{{t: 1, f: 10}, {t: 2, f: 15}}},
+			{labels: `{__name__="http_requests_bucket", le="1.0", z="a"}`, samples: []fSample{{t: 1, f: 3}, {t: 2, f: 8}}},
+			{labels: `{__name__="http_requests_bucket", le="+Inf", z="b"}`, samples: []fSample{{t: 1, f: 6}}},
+			{labels: `{__name__="http_requests_bucket", le="1.0", z="b"}`, samples: []fSample{{t: 1, f: 2}}},
+		}, gotUnsorted, []cmp.Option{cmp.AllowUnexported(seriesSamples{}, fSample{})})
+
+		gotSorted := readAll(t, newQuerier().Select(context.Background(), true, nil,
+			labels.MustNewMatcher(labels.MatchEqual, model.MetricNameLabel, "http_requests_bucket")))
+		testutil.RequireEqualWithOptions(t, []seriesSamples{
+			{labels: `{__name__="http_requests_bucket", le="+Inf", z="a"}`, samples: []fSample{{t: 1, f: 10}, {t: 2, f: 15}}},
+			{labels: `{__name__="http_requests_bucket", le="+Inf", z="b"}`, samples: []fSample{{t: 1, f: 6}}},
+			{labels: `{__name__="http_requests_bucket", le="1.0", z="a"}`, samples: []fSample{{t: 1, f: 3}, {t: 2, f: 8}}},
+			{labels: `{__name__="http_requests_bucket", le="1.0", z="b"}`, samples: []fSample{{t: 1, f: 2}}},
+		}, gotSorted, []cmp.Option{cmp.AllowUnexported(seriesSamples{}, fSample{})})
+	})
+}
+
+func readSeriesSamples(t *testing.T, ss SeriesSet) []seriesSamples {
+	t.Helper()
+	var out []seriesSamples
+	var it chunkenc.Iterator
 	for ss.Next() {
-		seriesLabels = append(seriesLabels, ss.At().Labels().String())
+		s := ss.At()
+		it = s.Iterator(it)
+		var samples []fSample
+		for it.Next() == chunkenc.ValFloat {
+			ts, v := it.At()
+			samples = append(samples, fSample{st: it.AtST(), t: ts, f: v})
+		}
+		require.NoError(t, it.Err())
+		out = append(out, seriesSamples{labels: s.Labels().String(), samples: samples})
 	}
 	require.NoError(t, ss.Err())
-
-	// Should: return series in labels.Compare order, as NewMergeQuerier and remote read require.
-	// Currently: returns the buckets of each NHCB series together, in bucket boundary order.
-	// TODO: sort converted bucket series across NHCB series when sortSeries is true.
-	require.Equal(t, []string{
-		`{__name__="http_requests_bucket", le="1.0", z_job="api"}`,
-		`{__name__="http_requests_bucket", le="5.0", z_job="api"}`,
-		`{__name__="http_requests_bucket", le="+Inf", z_job="api"}`,
-		`{__name__="http_requests_bucket", le="1.0", z_job="web"}`,
-		`{__name__="http_requests_bucket", le="5.0", z_job="web"}`,
-		`{__name__="http_requests_bucket", le="+Inf", z_job="web"}`,
-	}, seriesLabels)
+	return out
 }
 
 func TestNativeHistogramsAsClassicQuerier_FloatHistogram(t *testing.T) {
-	fhNHCB := &histogram.FloatHistogram{
+	staleF := math.Float64frombits(value.StaleNaN)
+	fh1 := &histogram.FloatHistogram{
 		Schema:          histogram.CustomBucketsSchema,
 		Count:           15,
 		Sum:             150.0,
@@ -778,22 +1031,127 @@ func TestNativeHistogramsAsClassicQuerier_FloatHistogram(t *testing.T) {
 		PositiveSpans:   []histogram.Span{{Offset: 0, Length: 3}},
 		PositiveBuckets: []float64{3, 5, 7},
 	}
+	fh2 := &histogram.FloatHistogram{
+		Schema:          histogram.CustomBucketsSchema,
+		Count:           30,
+		Sum:             300.0,
+		CustomValues:    []float64{1.0, 5.0},
+		PositiveSpans:   []histogram.Span{{Offset: 0, Length: 3}},
+		PositiveBuckets: []float64{6, 10, 14},
+	}
+	fhStale := &histogram.FloatHistogram{
+		Schema: histogram.CustomBucketsSchema,
+		Sum:    staleF,
+	}
+	fhExp := &histogram.FloatHistogram{
+		Schema:          3,
+		Count:           40,
+		Sum:             400.0,
+		PositiveSpans:   []histogram.Span{{Offset: 0, Length: 2}},
+		PositiveBuckets: []float64{20, 20},
+	}
 
-	mock := &nhcbMockQuerier{
-		classicSeries: []Series{},
-		nhcbSeries: []Series{
-			NewListSeries(labels.FromStrings("__name__", "latency"), []chunks.Sample{fhSample{t: 1, fh: fhNHCB}}),
+	tests := []struct {
+		name          string
+		metricName    string
+		classicSeries []Series
+		nhcbSeries    []Series
+		expected      []seriesSamples
+	}{
+		{
+			name:       "multi-sample FloatHistogram buckets preserve start timestamps",
+			metricName: "latency_bucket",
+			nhcbSeries: []Series{
+				NewListSeries(labels.FromStrings("__name__", "latency"), []chunks.Sample{
+					fhSample{st: 10, t: 20, fh: fh1},
+					fhSample{st: 10, t: 30, fh: fh2},
+				}),
+			},
+			expected: []seriesSamples{
+				{labels: `{__name__="latency_bucket", le="1.0"}`, samples: []fSample{{st: 10, t: 20, f: 3}, {st: 10, t: 30, f: 6}}},
+				{labels: `{__name__="latency_bucket", le="5.0"}`, samples: []fSample{{st: 10, t: 20, f: 8}, {st: 10, t: 30, f: 16}}},
+				{labels: `{__name__="latency_bucket", le="+Inf"}`, samples: []fSample{{st: 10, t: 20, f: 15}, {st: 10, t: 30, f: 30}}},
+			},
+		},
+		{
+			name:       "multi-sample FloatHistogram count and sum",
+			metricName: "latency_sum",
+			nhcbSeries: []Series{
+				NewListSeries(labels.FromStrings("__name__", "latency"), []chunks.Sample{
+					fhSample{st: 10, t: 20, fh: fh1},
+					fhSample{st: 10, t: 30, fh: fh2},
+				}),
+			},
+			expected: []seriesSamples{
+				{labels: `{__name__="latency_sum"}`, samples: []fSample{{st: 10, t: 20, f: 150}, {st: 10, t: 30, f: 300}}},
+			},
+		},
+		{
+			name:       "leading stale, mid-series stale, and exponential FloatHistogram transition",
+			metricName: "latency_count",
+			nhcbSeries: []Series{
+				NewListSeries(labels.FromStrings("__name__", "latency"), []chunks.Sample{
+					fhSample{t: 1, fh: fhStale},
+					fhSample{t: 2, fh: fh1},
+					fhSample{t: 3, fh: fhStale},
+					fhSample{t: 4, fh: fh2},
+					fhSample{t: 5, fh: fhExp},
+				}),
+			},
+			expected: []seriesSamples{
+				{labels: `{__name__="latency_count"}`, samples: []fSample{
+					{t: 2, f: 15},
+					{t: 3, f: staleF},
+					{t: 4, f: 30},
+					{t: 5, f: staleF},
+				}},
+			},
+		},
+		{
+			name:       "exponential FloatHistogram base series is skipped",
+			metricName: "latency_bucket",
+			nhcbSeries: []Series{
+				NewListSeries(labels.FromStrings("__name__", "latency"), []chunks.Sample{fhSample{t: 1, fh: fhExp}}),
+			},
+		},
+		{
+			name:       "classic collision shadows FloatHistogram at classic timestamp and merges cutover",
+			metricName: "latency_bucket",
+			classicSeries: []Series{
+				NewListSeries(labels.FromStrings("__name__", "latency_bucket", "le", "1.0"), []chunks.Sample{fSample{t: 1, f: 1}}),
+				NewListSeries(labels.FromStrings("__name__", "latency_bucket", "le", "5.0"), []chunks.Sample{fSample{t: 1, f: 4}}),
+				NewListSeries(labels.FromStrings("__name__", "latency_bucket", "le", "+Inf"), []chunks.Sample{fSample{t: 1, f: 9}}),
+			},
+			nhcbSeries: []Series{
+				NewListSeries(labels.FromStrings("__name__", "latency"), []chunks.Sample{
+					fhSample{t: 1, fh: fh1},
+					fhSample{t: 2, fh: fh2},
+				}),
+			},
+			expected: []seriesSamples{
+				{labels: `{__name__="latency_bucket", le="+Inf"}`, samples: []fSample{{t: 1, f: 9}, {t: 2, f: 30}}},
+				{labels: `{__name__="latency_bucket", le="1.0"}`, samples: []fSample{{t: 1, f: 1}, {t: 2, f: 6}}},
+				{labels: `{__name__="latency_bucket", le="5.0"}`, samples: []fSample{{t: 1, f: 4}, {t: 2, f: 16}}},
+			},
 		},
 	}
-	q := NewNativeHistogramsAsClassicQuerier(mock)
 
-	ss := q.Select(context.Background(), false, nil, labels.MustNewMatcher(labels.MatchEqual, model.MetricNameLabel, "latency_bucket"))
-	var count int
-	for ss.Next() {
-		count++
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			q := NewNativeHistogramsAsClassicQuerier(&nhcbMockQuerier{
+				classicSeries: tc.classicSeries,
+				nhcbSeries:    tc.nhcbSeries,
+			})
+			ss := q.Select(t.Context(), false, nil, labels.MustNewMatcher(labels.MatchEqual, model.MetricNameLabel, tc.metricName))
+			got := readSeriesSamples(t, ss)
+			testutil.RequireEqualWithOptions(t, tc.expected, got, []cmp.Option{
+				cmp.AllowUnexported(seriesSamples{}, fSample{}),
+				cmp.Comparer(func(a, b float64) bool {
+					return math.Float64bits(a) == math.Float64bits(b) || (!math.IsNaN(a) && a == b)
+				}),
+			})
+		})
 	}
-	require.NoError(t, ss.Err())
-	require.Equal(t, 3, count)
 }
 
 // makeNHCB builds a custom buckets histogram from per-bucket counts, the last
@@ -829,9 +1187,13 @@ type nhcbMockQuerier struct {
 	passthroughSeries []Series // For non-histogram queries
 
 	// For error/warning injection in tests.
-	classicErr   error
-	nhcbErr      error
-	nhcbWarnings annotations.Annotations
+	classicErr      error
+	nhcbErr         error
+	classicWarnings annotations.Annotations
+	nhcbWarnings    annotations.Annotations
+
+	// Matchers of the last classic (suffixed name) Select call.
+	lastClassicMatchers []*labels.Matcher
 }
 
 func (m *nhcbMockQuerier) Select(_ context.Context, _ bool, _ *SelectHints, matchers ...*labels.Matcher) SeriesSet {
@@ -843,6 +1205,7 @@ func (m *nhcbMockQuerier) Select(_ context.Context, _ bool, _ *SelectHints, matc
 		if strings.HasSuffix(matcher.Value, "_bucket") ||
 			strings.HasSuffix(matcher.Value, "_count") ||
 			strings.HasSuffix(matcher.Value, "_sum") {
+			m.lastClassicMatchers = matchers
 			if m.classicErr != nil {
 				return ErrSeriesSet(m.classicErr)
 			}
@@ -852,7 +1215,7 @@ func (m *nhcbMockQuerier) Select(_ context.Context, _ bool, _ *SelectHints, matc
 					matched = append(matched, s)
 				}
 			}
-			return NewMockSeriesSet(matched...)
+			return &mockSeriesSet{idx: -1, series: matched, warnings: m.classicWarnings}
 		}
 		// If passthroughSeries is set, use it for non-histogram metric queries
 		if len(m.passthroughSeries) > 0 {
@@ -901,11 +1264,16 @@ type deferredErrSeriesSet struct {
 	series    []Series
 	idx       int
 	err       error
+	warnings  annotations.Annotations
 	exhausted bool
 }
 
 func newDeferredErrSeriesSet(err error, series ...Series) SeriesSet {
 	return &deferredErrSeriesSet{idx: -1, series: series, err: err}
+}
+
+func newLazyWarnSeriesSet(warnings annotations.Annotations, err error, series ...Series) SeriesSet {
+	return &deferredErrSeriesSet{idx: -1, series: series, warnings: warnings, err: err}
 }
 
 func (s *deferredErrSeriesSet) Next() bool {
@@ -926,7 +1294,12 @@ func (s *deferredErrSeriesSet) Err() error {
 	return nil
 }
 
-func (*deferredErrSeriesSet) Warnings() annotations.Annotations { return nil }
+func (s *deferredErrSeriesSet) Warnings() annotations.Annotations {
+	if s.exhausted {
+		return s.warnings
+	}
+	return nil
+}
 
 // nhcbSetQuerier routes suffix queries (_bucket/_count/_sum) to classicSet and
 // all other queries to nhcbSet. This lets tests inject arbitrary SeriesSet
@@ -1013,6 +1386,38 @@ func TestNativeHistogramsAsClassicQuerier_ErrorPropagation(t *testing.T) {
 			require.ErrorIs(t, ss.Err(), testError)
 		})
 	}
+
+	t.Run("context cancellation aborts series scanning", func(t *testing.T) {
+		ctx, cancel := context.WithCancel(t.Context())
+		cancel()
+
+		q := NewNativeHistogramsAsClassicQuerier(&nhcbMockQuerier{
+			nhcbSeries: []Series{
+				NewListSeries(labels.FromStrings("__name__", "rpc_duration_seconds", "quantile", "0.5"), []chunks.Sample{fSample{t: 1, f: 0.1}}),
+				NewListSeries(labels.FromStrings("__name__", "rpc_duration_seconds", "quantile", "0.99"), []chunks.Sample{fSample{t: 1, f: 0.5}}),
+			},
+		})
+		ss := q.Select(ctx, false, nil,
+			labels.MustNewMatcher(labels.MatchEqual, model.MetricNameLabel, "rpc_duration_seconds_count"))
+		require.False(t, ss.Next())
+		require.ErrorIs(t, ss.Err(), context.Canceled)
+
+		// Also verify cancellation while streaming subsequent non-NHCB series after firstPeeked.
+		ctx2, cancel2 := context.WithCancel(t.Context())
+		q2 := NewNativeHistogramsAsClassicQuerier(&nhcbMockQuerier{
+			nhcbSeries: []Series{
+				NewListSeries(labels.FromStrings("__name__", "http_requests", "job", "a"), []chunks.Sample{hSample{t: 1, h: nhcb}}),
+				NewListSeries(labels.FromStrings("__name__", "http_requests", "job", "skip"), []chunks.Sample{fSample{t: 1, f: 1}}),
+				NewListSeries(labels.FromStrings("__name__", "http_requests", "job", "b"), []chunks.Sample{hSample{t: 1, h: nhcb}}),
+			},
+		})
+		ss2 := q2.Select(ctx2, false, nil,
+			labels.MustNewMatcher(labels.MatchEqual, model.MetricNameLabel, "http_requests_count"))
+		require.True(t, ss2.Next())
+		cancel2()
+		require.False(t, ss2.Next())
+		require.ErrorIs(t, ss2.Err(), context.Canceled)
+	})
 }
 
 func TestNativeHistogramsAsClassicQuerier_WarningPropagation(t *testing.T) {
@@ -1028,21 +1433,111 @@ func TestNativeHistogramsAsClassicQuerier_WarningPropagation(t *testing.T) {
 		labels.FromStrings("__name__", "http_requests"),
 		[]chunks.Sample{hSample{t: 1, h: nhcb}},
 	)
+	classicSeries := []Series{
+		NewListSeries(labels.FromStrings("__name__", "http_requests_bucket", "le", "1.0"), []chunks.Sample{fSample{t: 1, f: 2}}),
+		NewListSeries(labels.FromStrings("__name__", "http_requests_bucket", "le", "5.0"), []chunks.Sample{fSample{t: 1, f: 5}}),
+		NewListSeries(labels.FromStrings("__name__", "http_requests_bucket", "le", "+Inf"), []chunks.Sample{fSample{t: 1, f: 8}}),
+	}
 
-	t.Run("nhcb set warnings propagate", func(t *testing.T) {
-		warn := annotations.New().Add(errors.New("nhcb warning"))
-		q := NewNativeHistogramsAsClassicQuerier(&nhcbMockQuerier{
-			classicSeries: []Series{},
-			nhcbSeries:    []Series{nhcbSeries},
-			nhcbWarnings:  warn,
-		})
+	t.Run("classic and nhcb set warnings propagate across all selectNHCBAsClassic paths", func(t *testing.T) {
+		classicWarn := annotations.New().Add(errors.New("classic warning"))
+		nhcbWarn := annotations.New().Add(errors.New("nhcb warning"))
+		var expected annotations.Annotations
+		expected.Merge(classicWarn)
+		expected.Merge(nhcbWarn)
 
-		ss := q.Select(context.Background(), false, nil,
-			labels.MustNewMatcher(labels.MatchEqual, model.MetricNameLabel, "http_requests_bucket"))
-		for ss.Next() {
+		paths := []struct {
+			name          string
+			sortSeries    bool
+			matchers      []*labels.Matcher
+			classicSeries []Series
+			nhcbSeries    []Series
+			expectedNames []string
+		}{
+			{
+				name:          "pure classic without le matcher",
+				matchers:      []*labels.Matcher{labels.MustNewMatcher(labels.MatchEqual, model.MetricNameLabel, "http_requests_bucket")},
+				classicSeries: classicSeries,
+				expectedNames: []string{
+					`{__name__="http_requests_bucket", le="1.0"}`,
+					`{__name__="http_requests_bucket", le="5.0"}`,
+					`{__name__="http_requests_bucket", le="+Inf"}`,
+				},
+			},
+			{
+				name: "pure classic with le equality matcher strips widened +Inf via leFilterSeriesSet",
+				matchers: []*labels.Matcher{
+					labels.MustNewMatcher(labels.MatchEqual, model.MetricNameLabel, "http_requests_bucket"),
+					labels.MustNewMatcher(labels.MatchEqual, labels.BucketLabel, "5.0"),
+				},
+				classicSeries: classicSeries,
+				expectedNames: []string{`{__name__="http_requests_bucket", le="5.0"}`},
+			},
+			{
+				name: "pure classic with le!=+Inf filters +Inf client-side via leFilterSeriesSet",
+				matchers: []*labels.Matcher{
+					labels.MustNewMatcher(labels.MatchEqual, model.MetricNameLabel, "http_requests_bucket"),
+					labels.MustNewMatcher(labels.MatchNotEqual, labels.BucketLabel, "+Inf"),
+				},
+				classicSeries: classicSeries,
+				expectedNames: []string{
+					`{__name__="http_requests_bucket", le="1.0"}`,
+					`{__name__="http_requests_bucket", le="5.0"}`,
+				},
+			},
+			{
+				name:       "pure NHCB streaming path",
+				sortSeries: false,
+				matchers:   []*labels.Matcher{labels.MustNewMatcher(labels.MatchEqual, model.MetricNameLabel, "http_requests_bucket")},
+				nhcbSeries: []Series{nhcbSeries},
+				expectedNames: []string{
+					`{__name__="http_requests_bucket", le="1.0"}`,
+					`{__name__="http_requests_bucket", le="+Inf"}`,
+				},
+			},
+			{
+				name:       "pure NHCB sorted path",
+				sortSeries: true,
+				matchers:   []*labels.Matcher{labels.MustNewMatcher(labels.MatchEqual, model.MetricNameLabel, "http_requests_bucket")},
+				nhcbSeries: []Series{nhcbSeries},
+				expectedNames: []string{
+					`{__name__="http_requests_bucket", le="+Inf"}`,
+					`{__name__="http_requests_bucket", le="1.0"}`,
+				},
+			},
+			{
+				name:          "hybrid classic and NHCB collision path",
+				sortSeries:    false,
+				matchers:      []*labels.Matcher{labels.MustNewMatcher(labels.MatchEqual, model.MetricNameLabel, "http_requests_bucket")},
+				classicSeries: classicSeries,
+				nhcbSeries:    []Series{nhcbSeries},
+				expectedNames: []string{
+					`{__name__="http_requests_bucket", le="+Inf"}`,
+					`{__name__="http_requests_bucket", le="1.0"}`,
+					`{__name__="http_requests_bucket", le="5.0"}`,
+				},
+			},
 		}
-		require.NoError(t, ss.Err())
-		require.Equal(t, warn, ss.Warnings())
+
+		for _, tc := range paths {
+			t.Run(tc.name, func(t *testing.T) {
+				q := NewNativeHistogramsAsClassicQuerier(&nhcbMockQuerier{
+					classicSeries:   tc.classicSeries,
+					nhcbSeries:      tc.nhcbSeries,
+					classicWarnings: classicWarn,
+					nhcbWarnings:    nhcbWarn,
+				})
+
+				ss := q.Select(t.Context(), tc.sortSeries, nil, tc.matchers...)
+				var got []string
+				for ss.Next() {
+					got = append(got, ss.At().Labels().String())
+				}
+				require.NoError(t, ss.Err())
+				require.Equal(t, tc.expectedNames, got)
+				require.Equal(t, expected, ss.Warnings())
+			})
+		}
 	})
 
 	t.Run("non-histogram passthrough preserves warnings", func(t *testing.T) {
@@ -1058,5 +1553,401 @@ func TestNativeHistogramsAsClassicQuerier_WarningPropagation(t *testing.T) {
 		}
 		require.NoError(t, ss.Err())
 		require.Equal(t, warn, ss.Warnings())
+	})
+
+	t.Run("lazy warnings emitted after first Next and on iteration errors propagate", func(t *testing.T) {
+		classicWarn := annotations.New().Add(errors.New("lazy classic warning"))
+		nhcbWarn := annotations.New().Add(errors.New("lazy nhcb warning"))
+		classicA := NewListSeries(labels.FromStrings("__name__", "http_requests_bucket", "job", "a", "le", "+Inf"), []chunks.Sample{fSample{t: 1, f: 5}})
+		classicB := NewListSeries(labels.FromStrings("__name__", "http_requests_bucket", "job", "b", "le", "+Inf"), []chunks.Sample{fSample{t: 1, f: 10}})
+		nhcbA := NewListSeries(labels.FromStrings("__name__", "http_requests", "job", "a"), []chunks.Sample{hSample{t: 2, h: nhcb}})
+		nhcbB := NewListSeries(labels.FromStrings("__name__", "http_requests", "job", "b"), []chunks.Sample{hSample{t: 2, h: nhcb}})
+
+		q := NewNativeHistogramsAsClassicQuerier(&nhcbSetQuerier{
+			classicSet: newLazyWarnSeriesSet(classicWarn, nil, classicA, classicB),
+			nhcbSet:    newLazyWarnSeriesSet(nhcbWarn, nil, nhcbA, nhcbB),
+		})
+		ss := q.Select(t.Context(), false, nil,
+			labels.MustNewMatcher(labels.MatchEqual, model.MetricNameLabel, "http_requests_bucket"))
+		for ss.Next() {
+		}
+		require.NoError(t, ss.Err())
+		var expected annotations.Annotations
+		expected.Merge(classicWarn)
+		expected.Merge(nhcbWarn)
+		require.Equal(t, expected, ss.Warnings())
+
+		iterErr := errors.New("deferred iteration error")
+		qErr := NewNativeHistogramsAsClassicQuerier(&nhcbSetQuerier{
+			classicSet: newLazyWarnSeriesSet(classicWarn, nil, classicA),
+			nhcbSet:    newLazyWarnSeriesSet(nhcbWarn, iterErr, nhcbA),
+		})
+		ssErr := qErr.Select(t.Context(), false, nil,
+			labels.MustNewMatcher(labels.MatchEqual, model.MetricNameLabel, "http_requests_bucket"))
+		for ssErr.Next() {
+		}
+		require.ErrorIs(t, ssErr.Err(), iterErr)
+		require.Equal(t, expected, ssErr.Warnings())
+	})
+}
+
+func TestNativeHistogramsAsClassicQuerier_ClassicSelectLeMatchers(t *testing.T) {
+	nhcb := &histogram.Histogram{
+		Schema:          histogram.CustomBucketsSchema,
+		Count:           16,
+		Sum:             100.0,
+		CustomValues:    []float64{1.0, 5.0, 10.0},
+		PositiveSpans:   []histogram.Span{{Offset: 0, Length: 4}},
+		PositiveBuckets: []int64{2, 1, 2, 1},
+	}
+	classicSeries := []Series{
+		NewListSeries(labels.FromStrings("__name__", "http_requests_bucket", "le", "1.0"), []chunks.Sample{fSample{t: 1, f: 5}}),
+		NewListSeries(labels.FromStrings("__name__", "http_requests_bucket", "le", "5.0"), []chunks.Sample{fSample{t: 1, f: 8}}),
+		NewListSeries(labels.FromStrings("__name__", "http_requests_bucket", "le", "+Inf"), []chunks.Sample{fSample{t: 1, f: 10}}),
+	}
+	nhcbSeries := []Series{
+		NewListSeries(labels.FromStrings("__name__", "http_requests"), []chunks.Sample{
+			hSample{t: 1, h: nhcb},
+			hSample{t: 2, h: nhcb},
+		}),
+	}
+
+	sInf := seriesSamples{labels: `{__name__="http_requests_bucket", le="+Inf"}`, samples: []fSample{{t: 1, f: 10}, {t: 2, f: 16}}}
+	s1 := seriesSamples{labels: `{__name__="http_requests_bucket", le="1.0"}`, samples: []fSample{{t: 1, f: 5}, {t: 2, f: 2}}}
+	// Stored classic series at t=1 have no le="10.0" bucket, so +Inf at t=1
+	// shadows the NHCB sample at t=1 and le="10.0" only appears at t=2.
+	s10 := seriesSamples{labels: `{__name__="http_requests_bucket", le="10.0"}`, samples: []fSample{{t: 2, f: 10}}}
+	s5 := seriesSamples{labels: `{__name__="http_requests_bucket", le="5.0"}`, samples: []fSample{{t: 1, f: 8}, {t: 2, f: 5}}}
+
+	tests := []struct {
+		name             string
+		extraMatchers    []*labels.Matcher
+		classicOverride  []Series
+		nhcbOverride     []Series
+		expectedMatchers []string
+		expectedSeries   []seriesSamples
+	}{
+		{
+			name:             "no le matcher",
+			expectedMatchers: []string{`__name__="http_requests_bucket"`},
+			expectedSeries:   []seriesSamples{sInf, s1, s10, s5},
+		},
+		{
+			name:             "le equality is widened to include +Inf",
+			extraMatchers:    []*labels.Matcher{labels.MustNewMatcher(labels.MatchEqual, labels.BucketLabel, "5.0")},
+			expectedMatchers: []string{`__name__="http_requests_bucket"`, `le=~"5\\.0|\\+Inf"`},
+			expectedSeries:   []seriesSamples{s5},
+		},
+		{
+			name:             "le equality on NHCB-only bucket still shadows NHCB at classic timestamp via widened +Inf",
+			extraMatchers:    []*labels.Matcher{labels.MustNewMatcher(labels.MatchEqual, labels.BucketLabel, "10.0")},
+			expectedMatchers: []string{`__name__="http_requests_bucket"`, `le=~"10\\.0|\\+Inf"`},
+			expectedSeries:   []seriesSamples{s10},
+		},
+		{
+			name:             "le +Inf is pushed down as is",
+			extraMatchers:    []*labels.Matcher{labels.MustNewMatcher(labels.MatchEqual, labels.BucketLabel, "+Inf")},
+			expectedMatchers: []string{`__name__="http_requests_bucket"`, `le="+Inf"`},
+			expectedSeries:   []seriesSamples{sInf},
+		},
+		{
+			name:             "le regex is widened to include +Inf",
+			extraMatchers:    []*labels.Matcher{labels.MustNewMatcher(labels.MatchRegexp, labels.BucketLabel, "1.0|10.0")},
+			expectedMatchers: []string{`__name__="http_requests_bucket"`, `le=~"(?:1.0|10.0)|\\+Inf"`},
+			expectedSeries:   []seriesSamples{s1, s10},
+		},
+		{
+			name:             "le not equal already matches +Inf",
+			extraMatchers:    []*labels.Matcher{labels.MustNewMatcher(labels.MatchNotEqual, labels.BucketLabel, "1.0")},
+			expectedMatchers: []string{`__name__="http_requests_bucket"`, `le!="1.0"`},
+			expectedSeries:   []seriesSamples{sInf, s10, s5},
+		},
+		{
+			name:             "le not equal +Inf cannot be widened and is applied client-side",
+			extraMatchers:    []*labels.Matcher{labels.MustNewMatcher(labels.MatchNotEqual, labels.BucketLabel, "+Inf")},
+			expectedMatchers: []string{`__name__="http_requests_bucket"`},
+			expectedSeries:   []seriesSamples{s1, s10, s5},
+		},
+		{
+			name:             "le negative regex matching +Inf is pushed down as is",
+			extraMatchers:    []*labels.Matcher{labels.MustNewMatcher(labels.MatchNotRegexp, labels.BucketLabel, `1\.0`)},
+			expectedMatchers: []string{`__name__="http_requests_bucket"`, `le!~"1\\.0"`},
+			expectedSeries:   []seriesSamples{sInf, s10, s5},
+		},
+		{
+			name:             "le negative regex rejecting +Inf is stripped from pushdown and applied client-side",
+			extraMatchers:    []*labels.Matcher{labels.MustNewMatcher(labels.MatchNotRegexp, labels.BucketLabel, `\+Inf|1\.0`)},
+			expectedMatchers: []string{`__name__="http_requests_bucket"`},
+			expectedSeries:   []seriesSamples{s10, s5},
+		},
+		{
+			name: "non-le matcher is preserved alongside widened le matcher",
+			extraMatchers: []*labels.Matcher{
+				labels.MustNewMatcher(labels.MatchEqual, "job", "api"),
+				labels.MustNewMatcher(labels.MatchEqual, labels.BucketLabel, "10.0"),
+			},
+			classicOverride: []Series{
+				NewListSeries(labels.FromStrings("__name__", "http_requests_bucket", "job", "api", "le", "1.0"), []chunks.Sample{fSample{t: 1, f: 5}}),
+				NewListSeries(labels.FromStrings("__name__", "http_requests_bucket", "job", "api", "le", "+Inf"), []chunks.Sample{fSample{t: 1, f: 10}}),
+				NewListSeries(labels.FromStrings("__name__", "http_requests_bucket", "job", "web", "le", "+Inf"), []chunks.Sample{fSample{t: 1, f: 99}}),
+			},
+			nhcbOverride: []Series{
+				NewListSeries(labels.FromStrings("__name__", "http_requests", "job", "api"), []chunks.Sample{
+					hSample{t: 1, h: nhcb},
+					hSample{t: 2, h: nhcb},
+				}),
+				NewListSeries(labels.FromStrings("__name__", "http_requests", "job", "web"), []chunks.Sample{
+					hSample{t: 2, h: nhcb},
+				}),
+			},
+			expectedMatchers: []string{`__name__="http_requests_bucket"`, `job="api"`, `le=~"10\\.0|\\+Inf"`},
+			expectedSeries: []seriesSamples{
+				{labels: `{__name__="http_requests_bucket", job="api", le="10.0"}`, samples: []fSample{{t: 2, f: 10}}},
+			},
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			cs := classicSeries
+			if tc.classicOverride != nil {
+				cs = tc.classicOverride
+			}
+			ns := nhcbSeries
+			if tc.nhcbOverride != nil {
+				ns = tc.nhcbOverride
+			}
+			mock := &nhcbMockQuerier{classicSeries: cs, nhcbSeries: ns}
+			q := NewNativeHistogramsAsClassicQuerier(mock)
+			matchers := append([]*labels.Matcher{labels.MustNewMatcher(labels.MatchEqual, model.MetricNameLabel, "http_requests_bucket")}, tc.extraMatchers...)
+			ss := q.Select(t.Context(), false, nil, matchers...)
+			got := readSeriesSamples(t, ss)
+
+			var gotMatchers []string
+			for _, m := range mock.lastClassicMatchers {
+				gotMatchers = append(gotMatchers, m.String())
+			}
+			require.Equal(t, tc.expectedMatchers, gotMatchers)
+			// Stored classic samples at t=1 shadow the NHCB at t=1 regardless of
+			// which buckets the query selects; the converted buckets at t=2 are
+			// merged into the stored classic series or added for le="10.0".
+			testutil.RequireEqualWithOptions(t, tc.expectedSeries, got, []cmp.Option{cmp.AllowUnexported(seriesSamples{}, fSample{})})
+		})
+	}
+}
+
+type singleUseSeries struct {
+	Series
+	t    testing.TB
+	used bool
+}
+
+func wrapSingleUse(t testing.TB, series ...Series) []Series {
+	out := make([]Series, len(series))
+	for i, s := range series {
+		out[i] = &singleUseSeries{Series: s, t: t}
+	}
+	return out
+}
+
+func (s *singleUseSeries) Iterator(it chunkenc.Iterator) chunkenc.Iterator {
+	if s.used {
+		s.t.Fatalf("Series.Iterator called more than once on %s", s.Labels())
+	}
+	s.used = true
+	return s.Series.Iterator(it)
+}
+
+func TestNativeHistogramsAsClassicQuerier_SinglePassInputIterators(t *testing.T) {
+	staleF := math.Float64frombits(value.StaleNaN)
+	expNH := &histogram.Histogram{
+		Schema:          3,
+		Count:           30,
+		Sum:             120,
+		PositiveSpans:   []histogram.Span{{Offset: 0, Length: 2}},
+		PositiveBuckets: []int64{15, 0},
+	}
+
+	readOnce := func(t *testing.T, ss SeriesSet) []seriesSamples {
+		t.Helper()
+		var out []seriesSamples
+		var it chunkenc.Iterator
+		for ss.Next() {
+			s := ss.At()
+			it = s.Iterator(it)
+			var samples []fSample
+			for it.Next() == chunkenc.ValFloat {
+				ts, v := it.At()
+				samples = append(samples, fSample{st: it.AtST(), t: ts, f: v})
+			}
+			require.NoError(t, it.Err())
+			out = append(out, seriesSamples{labels: s.Labels().String(), samples: samples})
+		}
+		require.NoError(t, ss.Err())
+		return out
+	}
+
+	tests := []struct {
+		name          string
+		sortSeries    bool
+		matchers      []*labels.Matcher
+		classicSeries func(testing.TB) []Series
+		nhcbSeries    func(testing.TB) []Series
+		expected      []seriesSamples
+	}{
+		{
+			name:     "pure classic with non-NHCB base series",
+			matchers: []*labels.Matcher{labels.MustNewMatcher(labels.MatchEqual, model.MetricNameLabel, "http_requests_bucket")},
+			classicSeries: func(t testing.TB) []Series {
+				return wrapSingleUse(t,
+					NewListSeries(labels.FromStrings("__name__", "http_requests_bucket", "le", "1.0"), []chunks.Sample{fSample{t: 1, f: 5}}),
+					NewListSeries(labels.FromStrings("__name__", "http_requests_bucket", "le", "+Inf"), []chunks.Sample{fSample{t: 1, f: 10}}),
+				)
+			},
+			nhcbSeries: func(t testing.TB) []Series {
+				return wrapSingleUse(t,
+					NewListSeries(labels.FromStrings("__name__", "http_requests", "job", "float"), []chunks.Sample{fSample{t: 1, f: 42}}),
+					NewListSeries(labels.FromStrings("__name__", "http_requests", "job", "exp"), []chunks.Sample{hSample{t: 1, h: expNH}}),
+				)
+			},
+			expected: []seriesSamples{
+				{labels: `{__name__="http_requests_bucket", le="1.0"}`, samples: []fSample{{t: 1, f: 5}}},
+				{labels: `{__name__="http_requests_bucket", le="+Inf"}`, samples: []fSample{{t: 1, f: 10}}},
+			},
+		},
+		{
+			name:     "pure NHCB streaming with leading staleness marker and non-NHCB series",
+			matchers: []*labels.Matcher{labels.MustNewMatcher(labels.MatchEqual, model.MetricNameLabel, "http_requests_bucket")},
+			nhcbSeries: func(t testing.TB) []Series {
+				return wrapSingleUse(t,
+					NewListSeries(labels.FromStrings("__name__", "http_requests", "job", "skip"), []chunks.Sample{fSample{t: 1, f: 99}}),
+					NewListSeries(labels.FromStrings("__name__", "http_requests", "job", "a"), []chunks.Sample{
+						hSample{t: 1, h: &histogram.Histogram{Sum: staleF}},
+						hSample{st: 10, t: 2, h: makeNHCB([]float64{1.0}, []int64{3, 2})},
+					}),
+					NewListSeries(labels.FromStrings("__name__", "http_requests", "job", "b"), []chunks.Sample{
+						hSample{t: 2, h: makeNHCB([]float64{1.0}, []int64{4, 6})},
+					}),
+				)
+			},
+			expected: []seriesSamples{
+				{labels: `{__name__="http_requests_bucket", job="a", le="1.0"}`, samples: []fSample{{st: 10, t: 2, f: 3}}},
+				{labels: `{__name__="http_requests_bucket", job="a", le="+Inf"}`, samples: []fSample{{st: 10, t: 2, f: 5}}},
+				{labels: `{__name__="http_requests_bucket", job="b", le="1.0"}`, samples: []fSample{{t: 2, f: 4}}},
+				{labels: `{__name__="http_requests_bucket", job="b", le="+Inf"}`, samples: []fSample{{t: 2, f: 10}}},
+			},
+		},
+		{
+			name:       "pure NHCB sortSeries=true",
+			sortSeries: true,
+			matchers:   []*labels.Matcher{labels.MustNewMatcher(labels.MatchEqual, model.MetricNameLabel, "http_requests_bucket")},
+			nhcbSeries: func(t testing.TB) []Series {
+				return wrapSingleUse(t,
+					NewListSeries(labels.FromStrings("__name__", "http_requests", "z_job", "a"), []chunks.Sample{hSample{t: 1, h: makeNHCB([]float64{1.0}, []int64{2, 3})}}),
+					NewListSeries(labels.FromStrings("__name__", "http_requests", "z_job", "b"), []chunks.Sample{hSample{t: 1, h: makeNHCB([]float64{1.0}, []int64{4, 1})}}),
+				)
+			},
+			expected: []seriesSamples{
+				{labels: `{__name__="http_requests_bucket", le="+Inf", z_job="a"}`, samples: []fSample{{t: 1, f: 5}}},
+				{labels: `{__name__="http_requests_bucket", le="+Inf", z_job="b"}`, samples: []fSample{{t: 1, f: 5}}},
+				{labels: `{__name__="http_requests_bucket", le="1.0", z_job="a"}`, samples: []fSample{{t: 1, f: 2}}},
+				{labels: `{__name__="http_requests_bucket", le="1.0", z_job="b"}`, samples: []fSample{{t: 1, f: 4}}},
+			},
+		},
+		{
+			name:     "hybrid collision with unmerged classic le, non-histogram _bucket, and multi-group ordering",
+			matchers: []*labels.Matcher{labels.MustNewMatcher(labels.MatchEqual, model.MetricNameLabel, "http_requests_bucket")},
+			classicSeries: func(t testing.TB) []Series {
+				// Group "b" is indexed first from classicSet, while firstPeeked in nhcbSet belongs to group "a".
+				return wrapSingleUse(t,
+					NewListSeries(labels.FromStrings("__name__", "http_requests_bucket", "job", "b"), []chunks.Sample{fSample{t: 1, f: 77}}),
+					NewListSeries(labels.FromStrings("__name__", "http_requests_bucket", "job", "b", "le", "1"), []chunks.Sample{fSample{st: 1, t: 1, f: 5}}),
+					NewListSeries(labels.FromStrings("__name__", "http_requests_bucket", "job", "b", "le", "+Inf"), []chunks.Sample{fSample{st: 1, t: 1, f: 10}}),
+				)
+			},
+			nhcbSeries: func(t testing.TB) []Series {
+				return wrapSingleUse(t,
+					NewListSeries(labels.FromStrings("__name__", "http_requests", "job", "a"), []chunks.Sample{
+						hSample{t: 1, h: makeNHCB([]float64{1.0}, []int64{3, 4})},
+					}),
+					NewListSeries(labels.FromStrings("__name__", "http_requests", "job", "b"), []chunks.Sample{
+						hSample{st: 1, t: 1, h: makeNHCB([]float64{1.0}, []int64{50, 50})},
+						hSample{st: 1, t: 2, h: makeNHCB([]float64{1.0}, []int64{8, 12})},
+					}),
+				)
+			},
+			expected: []seriesSamples{
+				{labels: `{__name__="http_requests_bucket", job="b"}`, samples: []fSample{{t: 1, f: 77}}},
+				{labels: `{__name__="http_requests_bucket", job="b", le="+Inf"}`, samples: []fSample{{st: 1, t: 1, f: 10}, {st: 1, t: 2, f: 20}}},
+				{labels: `{__name__="http_requests_bucket", job="b", le="1"}`, samples: []fSample{{st: 1, t: 1, f: 5}}},
+				{labels: `{__name__="http_requests_bucket", job="b", le="1.0"}`, samples: []fSample{{st: 1, t: 2, f: 8}}},
+				{labels: `{__name__="http_requests_bucket", job="a", le="+Inf"}`, samples: []fSample{{t: 1, f: 7}}},
+				{labels: `{__name__="http_requests_bucket", job="a", le="1.0"}`, samples: []fSample{{t: 1, f: 3}}},
+			},
+		},
+		{
+			name: "selective le matcher on hybrid collision",
+			matchers: []*labels.Matcher{
+				labels.MustNewMatcher(labels.MatchEqual, model.MetricNameLabel, "http_requests_bucket"),
+				labels.MustNewMatcher(labels.MatchEqual, labels.BucketLabel, "5.0"),
+			},
+			classicSeries: func(t testing.TB) []Series {
+				return wrapSingleUse(t,
+					NewListSeries(labels.FromStrings("__name__", "http_requests_bucket", "le", "1.0"), []chunks.Sample{fSample{t: 1, f: 5}}),
+					NewListSeries(labels.FromStrings("__name__", "http_requests_bucket", "le", "+Inf"), []chunks.Sample{fSample{t: 1, f: 10}}),
+				)
+			},
+			nhcbSeries: func(t testing.TB) []Series {
+				return wrapSingleUse(t,
+					NewListSeries(labels.FromStrings("__name__", "http_requests"), []chunks.Sample{
+						hSample{t: 1, h: makeNHCB([]float64{1.0, 5.0}, []int64{5, 3, 2})},
+						hSample{t: 2, h: makeNHCB([]float64{1.0, 5.0}, []int64{10, 6, 4})},
+					}),
+				)
+			},
+			expected: []seriesSamples{
+				{labels: `{__name__="http_requests_bucket", le="5.0"}`, samples: []fSample{{t: 2, f: 16}}},
+			},
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			var classicSeries, nhcbSeries []Series
+			if tc.classicSeries != nil {
+				classicSeries = tc.classicSeries(t)
+			}
+			if tc.nhcbSeries != nil {
+				nhcbSeries = tc.nhcbSeries(t)
+			}
+			q := NewNativeHistogramsAsClassicQuerier(&nhcbMockQuerier{
+				classicSeries: classicSeries,
+				nhcbSeries:    nhcbSeries,
+			})
+			got := readOnce(t, q.Select(context.Background(), tc.sortSeries, nil, tc.matchers...))
+			testutil.RequireEqualWithOptions(t, tc.expected, got, []cmp.Option{cmp.AllowUnexported(seriesSamples{}, fSample{}), cmpopts.EquateNaNs()})
+		})
+	}
+
+	t.Run("native histogram named _count coexisting with base NHCB keeps histogram samples", func(t *testing.T) {
+		q := NewNativeHistogramsAsClassicQuerier(&nhcbMockQuerier{
+			classicSeries: wrapSingleUse(t,
+				NewListSeries(labels.FromStrings("__name__", "batch_item_count", "job", "api"), []chunks.Sample{hSample{st: 1, t: 2, h: expNH}}),
+			),
+			nhcbSeries: wrapSingleUse(t,
+				NewListSeries(labels.FromStrings("__name__", "batch_item", "job", "api"), []chunks.Sample{hSample{t: 2, h: makeNHCB([]float64{1.0}, []int64{5, 5})}}),
+			),
+		})
+		ss := q.Select(t.Context(), false, nil, labels.MustNewMatcher(labels.MatchEqual, model.MetricNameLabel, "batch_item_count"))
+		require.True(t, ss.Next())
+		it := ss.At().Iterator(nil)
+		require.Equal(t, chunkenc.ValHistogram, it.Next())
+		ts, h := it.AtHistogram(nil)
+		require.Equal(t, int64(2), ts)
+		require.Equal(t, int64(1), it.AtST())
+		require.Equal(t, expNH.Count, h.Count)
+		require.Equal(t, chunkenc.ValNone, it.Next())
+		require.False(t, ss.Next())
+		require.NoError(t, ss.Err())
 	})
 }
