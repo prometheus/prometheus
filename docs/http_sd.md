@@ -37,6 +37,13 @@ The SD endpoint must answer with an HTTP 200 response, with the HTTP Header
 If no targets should be transmitted, HTTP 200 must also be emitted, with
 an empty list `[]`. Target lists are unordered.
 
+It is possible to opt in to support for ETag based caching by specifying
+`use_etag` in the service discovery configuration. In this case, Prometheus will
+cache the value of the `ETag` header returned by the SD endpoint and send it on
+subsequent requests in the `If-None-Match` header. If the server recognizes the
+value, it can choose to return HTTP 304 Not Modified to tell prometheus to keep
+using the previously discovered targets.
+
 Prometheus caches target lists. If an error occurs while fetching an updated
 targets list, Prometheus keeps using the current targets list. The targets list
 is not saved across restart. The `prometheus_sd_refresh_failures_total` counter
