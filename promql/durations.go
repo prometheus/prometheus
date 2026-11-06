@@ -104,7 +104,15 @@ func (v *durationVisitor) calculateDuration(expr parser.Expr, allowedNegative bo
 	if duration > 1<<63/1e9 || duration < -(1<<63)/1e9 {
 		return 0, fmt.Errorf("%d:%d: duration is out of range", expr.PositionRange().Start, expr.PositionRange().End)
 	}
-	return time.Duration(duration*1000) * time.Millisecond, nil
+	// Rounding to whole milliseconds can push a value that passed the bound
+	// above up to math.MaxInt64/1e6+1 milliseconds, whose conversion to
+	// nanoseconds would overflow time.Duration, so check the rounded value
+	// against the largest whole number of milliseconds that fits.
+	milliseconds := math.Round(duration * 1000)
+	if milliseconds > float64(math.MaxInt64/int64(time.Millisecond)) || milliseconds < -float64(math.MaxInt64/int64(time.Millisecond)) {
+		return 0, fmt.Errorf("%d:%d: duration is out of range", expr.PositionRange().Start, expr.PositionRange().End)
+	}
+	return time.Duration(milliseconds) * time.Millisecond, nil
 }
 
 // evaluateDurationExpr recursively evaluates a duration expression to a float64 value.
