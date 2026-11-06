@@ -125,6 +125,9 @@ nansum{quantile="0.99"} NaN`
 
 	input += "\n# HELP metric foo\x00bar"
 	input += "\nnull_byte_metric{a=\"abc\x00\"} 1"
+	input += "\n# TYPE esc_ex counter"
+	input += "\nesc_ex_total 3 # {trace_id=\"a\\nb\\\"c\\\\d\"} 1.5 1699999999.0"
+	input += "\nesc_ex_created 1699999900.0"
 	input += "\n# EOF\n"
 
 	for _, typeAndUnitEnabled := range []bool{false, true} {
@@ -682,6 +685,21 @@ nansum{quantile="0.99"} NaN`
 					m:    "null_byte_metric{a=\"abc\x00\"}",
 					v:    1,
 					lset: todoDetectFamilySwitch(typeAndUnitEnabled, labels.FromStrings("__name__", "null_byte_metric", "a", "abc\x00"), model.MetricTypeSummary),
+				}, {
+					m:   "esc_ex",
+					typ: model.MetricTypeCounter,
+				}, {
+					m: "esc_ex_total",
+					v: 3,
+					lset: typeAndUnitLabels(
+						typeAndUnitEnabled,
+						labels.FromStrings("__name__", "esc_ex_total", "__type__", string(model.MetricTypeCounter)),
+						labels.FromStrings("__name__", "esc_ex_total"),
+					),
+					es: []exemplar.Exemplar{
+						{Labels: labels.FromStrings("trace_id", "a\nb\"c\\d"), Value: 1.5, HasTs: true, Ts: 1699999999000},
+					},
+					st: 1699999900000,
 				},
 			}
 			opts := []OpenMetricsOption{WithOMParserSTSeriesSkipped()}
