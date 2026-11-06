@@ -2163,17 +2163,34 @@ func (api *API) metricMetadata(r *http.Request) apiFuncResult {
 		}
 	}
 
-	// Put the elements from the pseudo-set into a slice for marshaling.
+	// Put the elements from the pseudo-set into a slice for marshaling. Sort
+	// both the names and the metadata so that a limit selects a deterministic
+	// subset and each metric's metadata has a stable order.
 	res := map[string][]metadata.Metadata{}
-	for name, set := range metrics {
+	names := make([]string, 0, len(metrics))
+	for name := range metrics {
+		names = append(names, name)
+	}
+	sort.Strings(names)
+	for _, name := range names {
 		if limit >= 0 && len(res) >= limit {
 			break
 		}
 
-		s := []metadata.Metadata{}
-		for metadata := range set {
-			s = append(s, metadata)
+		set := metrics[name]
+		s := make([]metadata.Metadata, 0, len(set))
+		for m := range set {
+			s = append(s, m)
 		}
+		sort.Slice(s, func(i, j int) bool {
+			if s[i].Type != s[j].Type {
+				return s[i].Type < s[j].Type
+			}
+			if s[i].Unit != s[j].Unit {
+				return s[i].Unit < s[j].Unit
+			}
+			return s[i].Help < s[j].Help
+		})
 		res[name] = s
 	}
 
