@@ -1795,6 +1795,12 @@ type EvalSeriesHelper struct {
 	// metric{job="a", instance="1", other="y"} -> sigOrdinal 0
 	// metric{job="a", instance="2", other="x"} -> sigOrdinal 1
 	sigOrdinal int
+	// 1-based identifier of this series within rangeEval, or 0 when unset.
+	seriesID int
+}
+
+type outMetricSlotState struct {
+	metric labels.Labels
 }
 
 // EvalNodeHelper stores extra information and caches for evaluating a single node across steps.
@@ -1803,6 +1809,8 @@ type EvalNodeHelper struct {
 	Ts int64
 	// Vector that can be used for output.
 	Out Vector
+	// Optional dense output series slot for each sample in Out when len(OutSlots) == len(Out).
+	OutSlots []int
 	// Lookback delta for this query.
 	LookbackDelta time.Duration
 
@@ -1818,12 +1826,15 @@ type EvalNodeHelper struct {
 	lblBuf       []byte
 	lblResultBuf []byte
 
-	// For binary vector matching.
+	// For binary vector matching and rangeEval output series indexing.
 	rightSigs          []Sample
 	sigsPresent        []bool
 	matchedSigs        []map[uint64]struct{}
 	matchedSigsPresent []bool
-	resultMetric       map[string]labels.Labels
+	resultMetric       map[string]int
+	selfSlotCache      []int
+	outMetrics         []outMetricSlotState
+	outMetricByHash    map[uint64]int
 	numSigs            int
 
 	// For info series matching.
@@ -1835,6 +1846,37 @@ type EvalNodeHelper struct {
 	// StartTimestamps optionally provides sample start timestamps aligned with matrix samples.
 	StartTimestamps *StartTimestamps
 }
+
+func (enh *EvalNodeHelper) internOutMetric(metric labels.Labels) (labels.Labels, int) {
+	if enh.outMetricByHash == nil {
+		enh.outMetricByHash = make(map[uint64]int, max(cap(enh.Out), 16))
+	}
+	h := metric.Hash()
+	if slot, ok := enh.outMetricByHash[h]; ok {
+		return enh.outMetrics[slot].metric, slot
+	}
+	slot := len(enh.outMetrics)
+	enh.outMetrics = append(enh.outMetrics, outMetricSlotState{metric: metric})
+	enh.outMetricByHash[h] = slot
+	return metric, slot
+}
+
+func (enh *EvalNodeHelper) slotForInputSeries(seriesID int, metric labels.Labels) int {
+	if seriesID > 0 {
+		if seriesID >= len(enh.selfSlotCache) {
+			enh.selfSlotCache = slices.Grow(enh.selfSlotCache, seriesID-len(enh.selfSlotCache)+1)[:seriesID+1]
+		}
+		if s := enh.selfSlotCache[seriesID]; s > 0 {
+			return s - 1
+		}
+		_, slot := enh.internOutMetric(metric)
+		enh.selfSlotCache[seriesID] = slot + 1
+		return slot
+	}
+	_, slot := enh.internOutMetric(metric)
+	return slot
+}
+
 
 func (enh *EvalNodeHelper) resetSigsPresent() []bool {
 	if len(enh.sigsPresent) == 0 {
@@ -2020,7 +2062,7 @@ func (ev *evaluator) rangeEval(ctx context.Context, matching *parser.VectorMatch
 		Series
 		ts int64
 	}
-	seriess := make(map[uint64]seriesAndTimestamp, biggestLen) // Output series by series hash.
+	outSeries := make([]seriesAndTimestamp, 0, biggestLen)
 	tempNumSamples := ev.currentSamples
 
 	var (
@@ -2052,21 +2094,30 @@ func (ev *evaluator) rangeEval(ctx context.Context, matching *parser.VectorMatch
 		bufHelpers = make([][]EvalSeriesHelper, len(exprs))
 
 		signatureToOrdinal := make(map[string]int)
+		nextSeriesID := 1
+		totalInputSeries := 0
+		for i := range exprs {
+			totalInputSeries += len(matrixes[i])
+		}
+		enh.selfSlotCache = make([]int, totalInputSeries+1)
+		enh.OutSlots = make([]int, 0, biggestLen)
 
 		for i := range exprs {
 			seriesHelpers[i] = make([]EvalSeriesHelper, len(matrixes[i]))
 			bufHelpers[i] = make([]EvalSeriesHelper, len(matrixes[i]))
 
-			for si, series := range matrixes[i] {
-				strSig := sigf(series.Metric)
+			for si := range matrixes[i] {
+				sID := nextSeriesID
+				nextSeriesID++
+				strSig := sigf(matrixes[i][si].Metric)
 
 				if sigOrd, ok := signatureToOrdinal[strSig]; ok {
-					seriesHelpers[i][si] = EvalSeriesHelper{sigOrdinal: sigOrd}
+					seriesHelpers[i][si] = EvalSeriesHelper{sigOrdinal: sigOrd, seriesID: sID}
 					continue
 				}
 
 				signatureToOrdinal[strSig] = enh.numSigs
-				seriesHelpers[i][si] = EvalSeriesHelper{sigOrdinal: enh.numSigs}
+				seriesHelpers[i][si] = EvalSeriesHelper{sigOrdinal: enh.numSigs, seriesID: sID}
 				enh.numSigs++
 			}
 		}
@@ -2094,6 +2145,7 @@ func (ev *evaluator) rangeEval(ctx context.Context, matching *parser.VectorMatch
 
 		// Make the function call.
 		enh.Ts = ts
+		enh.OutSlots = enh.OutSlots[:0]
 		result, ws := funcCall(vectors, nil, bufHelpers, enh)
 		enh.Out = result[:0] // Reuse result vector.
 		warnings.Merge(ws)
@@ -2128,19 +2180,29 @@ func (ev *evaluator) rangeEval(ctx context.Context, matching *parser.VectorMatch
 		}
 
 		// Add samples in output vector to output series.
-		for _, sample := range result {
-			h := sample.Metric.Hash()
-			ss, ok := seriess[h]
-			if ok {
+		useSlots := len(enh.OutSlots) == len(result)
+		for i := range result {
+			sample := &result[i]
+			var slot int
+			if useSlots {
+				slot = enh.OutSlots[i]
+			} else {
+				_, slot = enh.internOutMetric(sample.Metric)
+			}
+			if slot >= len(outSeries) {
+				outSeries = slices.Grow(outSeries, slot-len(outSeries)+1)[:slot+1]
+			}
+			ss := &outSeries[slot]
+			if len(ss.Floats) > 0 || len(ss.Histograms) > 0 {
 				if ss.ts == ts { // If we've seen this output series before at this timestamp, it's a duplicate.
 					ev.errorf("vector cannot contain metrics with the same labelset")
 				}
 				ss.ts = ts
 			} else {
-				ss = seriesAndTimestamp{Series{Metric: sample.Metric, DropName: sample.DropName}, ts}
+				ss.Series = Series{Metric: sample.Metric, DropName: sample.DropName}
+				ss.ts = ts
 			}
 			addToSeries(&ss.Series, enh.Ts, sample.F, sample.H, numSteps)
-			seriess[h] = ss
 		}
 	}
 
@@ -2152,9 +2214,11 @@ func (ev *evaluator) rangeEval(ctx context.Context, matching *parser.VectorMatch
 		}
 	}
 	// Assemble the output matrix. By the time we get here we know we don't have too many samples.
-	mat := make(Matrix, 0, len(seriess))
-	for _, ss := range seriess {
-		mat = append(mat, ss.Series)
+	mat := make(Matrix, 0, len(outSeries))
+	for i := range outSeries {
+		if len(outSeries[i].Floats) > 0 || len(outSeries[i].Histograms) > 0 {
+			mat = append(mat, outSeries[i].Series)
+		}
 	}
 	ev.currentSamples = originalNumSamples + mat.TotalSamples()
 	ev.samplesStats.UpdatePeak(ev.currentSamples)
@@ -3794,6 +3858,9 @@ func (*evaluator) VectorAnd(lhs, rhs Vector, matching *parser.VectorMatching, lh
 	if len(lhs) == 0 || len(rhs) == 0 {
 		return nil // Short-circuit: AND with nothing is nothing.
 	}
+	if len(enh.Out) == 0 {
+		enh.OutSlots = enh.OutSlots[:0]
+	}
 
 	// Ordinals of signatures present on the right-hand side.
 	rightSigOrdinalsPresent := enh.resetSigsPresent()
@@ -3805,20 +3872,34 @@ func (*evaluator) VectorAnd(lhs, rhs Vector, matching *parser.VectorMatching, lh
 		// If there's a matching entry in the right-hand side Vector, add the sample.
 		if rightSigOrdinalsPresent[lhsh[i].sigOrdinal] {
 			enh.Out = append(enh.Out, ls)
+			enh.OutSlots = append(enh.OutSlots, enh.slotForInputSeries(lhsh[i].seriesID, ls.Metric))
 		}
 	}
 	return enh.Out
 }
 
 func (*evaluator) VectorOr(lhs, rhs Vector, matching *parser.VectorMatching, lhsh, rhsh []EvalSeriesHelper, enh *EvalNodeHelper) Vector {
+	if len(enh.Out) == 0 {
+		enh.OutSlots = enh.OutSlots[:0]
+	}
 	switch {
 	case matching.Card != parser.CardManyToMany:
 		panic("set operations must only use many-to-many matching")
 	case len(lhs) == 0: // Short-circuit.
 		enh.Out = append(enh.Out, rhs...)
+		if len(rhsh) == len(rhs) {
+			for j := range rhs {
+				enh.OutSlots = append(enh.OutSlots, enh.slotForInputSeries(rhsh[j].seriesID, rhs[j].Metric))
+			}
+		}
 		return enh.Out
 	case len(rhs) == 0:
 		enh.Out = append(enh.Out, lhs...)
+		if len(lhsh) == len(lhs) {
+			for i := range lhs {
+				enh.OutSlots = append(enh.OutSlots, enh.slotForInputSeries(lhsh[i].seriesID, lhs[i].Metric))
+			}
+		}
 		return enh.Out
 	}
 
@@ -3827,11 +3908,13 @@ func (*evaluator) VectorOr(lhs, rhs Vector, matching *parser.VectorMatching, lhs
 	for i, ls := range lhs {
 		leftSigOrdinalsPresent[lhsh[i].sigOrdinal] = true
 		enh.Out = append(enh.Out, ls)
+		enh.OutSlots = append(enh.OutSlots, enh.slotForInputSeries(lhsh[i].seriesID, ls.Metric))
 	}
 	// Add all right-hand side elements which have not been added from the left-hand side.
 	for j, rs := range rhs {
 		if !leftSigOrdinalsPresent[rhsh[j].sigOrdinal] {
 			enh.Out = append(enh.Out, rs)
+			enh.OutSlots = append(enh.OutSlots, enh.slotForInputSeries(rhsh[j].seriesID, rs.Metric))
 		}
 	}
 	return enh.Out
@@ -3841,10 +3924,18 @@ func (*evaluator) VectorUnless(lhs, rhs Vector, matching *parser.VectorMatching,
 	if matching.Card != parser.CardManyToMany {
 		panic("set operations must only use many-to-many matching")
 	}
+	if len(enh.Out) == 0 {
+		enh.OutSlots = enh.OutSlots[:0]
+	}
 	// Short-circuit: empty rhs means we will return everything in lhs;
 	// empty lhs means we will return empty - don't need to build a map.
 	if len(lhs) == 0 || len(rhs) == 0 {
 		enh.Out = append(enh.Out, lhs...)
+		if len(lhsh) == len(lhs) {
+			for i := range lhs {
+				enh.OutSlots = append(enh.OutSlots, enh.slotForInputSeries(lhsh[i].seriesID, lhs[i].Metric))
+			}
+		}
 		return enh.Out
 	}
 
@@ -3857,6 +3948,7 @@ func (*evaluator) VectorUnless(lhs, rhs Vector, matching *parser.VectorMatching,
 	for i, ls := range lhs {
 		if !rightSigOrdinalsPresent[lhsh[i].sigOrdinal] {
 			enh.Out = append(enh.Out, ls)
+			enh.OutSlots = append(enh.OutSlots, enh.slotForInputSeries(lhsh[i].seriesID, ls.Metric))
 		}
 	}
 	return enh.Out
@@ -4045,8 +4137,13 @@ func matchLabels(metric labels.Labels, on bool, names ...string) labels.Labels {
 // resultMetric returns the metric for the given sample(s) based on the Vector
 // binary operation and the matching options.
 func resultMetric(lhs, rhs labels.Labels, op parser.ItemType, matching *parser.VectorMatching, dropMetricName bool, enh *EvalNodeHelper) labels.Labels {
+	metric, _ := resultMetricWithSlot(lhs, rhs, op, matching, dropMetricName, enh)
+	return metric
+}
+
+func resultMetricWithSlot(lhs, rhs labels.Labels, op parser.ItemType, matching *parser.VectorMatching, dropMetricName bool, enh *EvalNodeHelper) (labels.Labels, int) {
 	if enh.resultMetric == nil {
-		enh.resultMetric = make(map[string]labels.Labels, len(enh.Out))
+		enh.resultMetric = make(map[string]int, len(enh.Out))
 	}
 
 	buf := bytes.NewBuffer(enh.lblResultBuf[:0])
@@ -4056,8 +4153,8 @@ func resultMetric(lhs, rhs labels.Labels, op parser.ItemType, matching *parser.V
 	buf.Write(enh.lblBuf)
 	enh.lblResultBuf = buf.Bytes()
 
-	if ret, ok := enh.resultMetric[string(enh.lblResultBuf)]; ok {
-		return ret
+	if slot, ok := enh.resultMetric[string(enh.lblResultBuf)]; ok {
+		return enh.outMetrics[slot].metric, slot
 	}
 	str := string(enh.lblResultBuf)
 
@@ -4083,9 +4180,9 @@ func resultMetric(lhs, rhs labels.Labels, op parser.ItemType, matching *parser.V
 		}
 	}
 
-	ret := enh.lb.Labels()
-	enh.resultMetric[str] = ret
-	return ret
+	ret, slot := enh.internOutMetric(enh.lb.Labels())
+	enh.resultMetric[str] = slot
+	return ret, slot
 }
 
 // VectorscalarBinop evaluates a binary operation between a Vector and a Scalar.
@@ -5605,18 +5702,19 @@ func (s histogramStatsSeries) Iterator(it chunkenc.Iterator) chunkenc.Iterator {
 // The gathered Vector and bufHelper are returned.
 func (ev *evaluator) gatherVector(ts int64, input Matrix, output Vector, bufHelpers, seriesHelpers []EvalSeriesHelper) (Vector, []EvalSeriesHelper) {
 	output = output[:0]
-	for i, series := range input {
+	for i := range input {
+		series := &input[i]
 		switch {
 		case len(series.Floats) > 0 && series.Floats[0].T == ts:
-			s := series.Floats[0]
-			output = append(output, Sample{Metric: series.Metric, F: s.F, T: ts, DropName: series.DropName})
+			f := series.Floats[0].F
+			output = append(output, Sample{Metric: series.Metric, F: f, T: ts, DropName: series.DropName})
 			// Move input vectors forward so we don't have to re-scan the same
 			// past points at the next step.
-			input[i].Floats = series.Floats[1:]
+			series.Floats = series.Floats[1:]
 		case len(series.Histograms) > 0 && series.Histograms[0].T == ts:
-			s := series.Histograms[0]
-			output = append(output, Sample{Metric: series.Metric, H: s.H, T: ts, DropName: series.DropName})
-			input[i].Histograms = series.Histograms[1:]
+			h := series.Histograms[0].H
+			output = append(output, Sample{Metric: series.Metric, H: h, T: ts, DropName: series.DropName})
+			series.Histograms = series.Histograms[1:]
 		default:
 			continue
 		}
