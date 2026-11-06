@@ -150,9 +150,21 @@ Fall back to serving the old (Prometheus 2.x) web UI instead of the new UI. The 
 `--enable-feature=metadata-wal-records`
 
 When enabled, Prometheus (both in server and agent modes) will store metadata in-memory and keep track of
-metadata changes as WAL records on a per-series basis. Rule evaluation also deduces and appends metric metadata (`type`, `unit`, `help`) for recording and alerting rule series, using any `metadata` fields configured on recording rules.
+metadata changes as WAL records on a per-series basis. Rule evaluation also appends metric metadata (`type`, `unit`, `help`) configured on recording rules, static `gauge` metadata for alerting rule series, and automatically deduced recording rule metadata when [`auto-recording-metadata`](#automatic-recording-rule-metadata) is enabled.
 
 This must be used if you would like to send metadata using the new remote write 2.0.
+
+## Automatic recording rule metadata
+
+`--enable-feature=auto-recording-metadata`
+
+When enabled together with [`metadata-wal-records`](#metadata-wal-records) or [`type-and-unit-labels`](#type-and-unit-labels), [recording rule](configuration/recording_rules.md#rule) evaluation automatically deduces per-sample metric metadata (`type`, `unit`, `help`) as designed in the [PROM-103 proposal](https://github.com/prometheus/proposals/pull/103):
+
+* Explicit `help`, `type`, and `unit` fields configured under `metadata:` on the recording rule take precedence when compatible with the evaluated sample encoding.
+* When the input metric's `__name__` survives PromQL evaluation (for example on selector filtering or `label_replace()`), preserved `__type__` and `__unit__` labels or standard `_total` (`counter`) and `_info` (`info`) naming suffixes are used.
+* Otherwise, native histogram samples use `CounterResetHint` (`gaugehistogram` vs `histogram`), and float samples default to `gauge`.
+
+When disabled, recording rules only emit the static `help`, `type`, and `unit` fields explicitly configured under `metadata:`.
 
 ## Delay compaction start time
 
@@ -259,7 +271,7 @@ When enabled, Prometheus will start injecting additional, reserved `__type__`
 and `__unit__` labels as designed in the [PROM-39 proposal](https://github.com/prometheus/proposals/pull/39).
 
 Those labels are sourced from the metadata structures of the existing scrape and ingestion formats
-like OpenMetrics Text, Prometheus Text, Prometheus Proto, Remote Write 2 and OTLP, as well as deduced or configured metadata on recording and alerting rules. All the user provided labels with
+like OpenMetrics Text, Prometheus Text, Prometheus Proto, Remote Write 2 and OTLP, as well as configured or deduced (when [`auto-recording-metadata`](#automatic-recording-rule-metadata) is enabled) metadata on recording rules and `gauge` type on alerting rules. All the user provided labels with
 `__type__` and `__unit__` will be overridden. Note that when `--enable-feature=metadata-relabeling` is enabled,
 `__type__`, `__unit__`, and `__help__` are available in `metric_relabel_configs`
 for reading and modifying metric metadata regardless of whether `--enable-feature=type-and-unit-labels` is enabled;

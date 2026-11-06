@@ -3132,13 +3132,14 @@ groups:
 		})
 
 		mgr := NewManager(&ManagerOptions{
-			Context:        t.Context(),
-			AppendableV2:   appendStore,
-			Queryable:      queryStore,
-			QueryFunc:      EngineQueryFunc(engine, queryStore),
-			NotifyFunc:     func(context.Context, string, ...*Alert) {},
-			Logger:         promslog.NewNopLogger(),
-			AppendMetadata: true,
+			Context:               t.Context(),
+			AppendableV2:          appendStore,
+			Queryable:             queryStore,
+			QueryFunc:             EngineQueryFunc(engine, queryStore),
+			NotifyFunc:            func(context.Context, string, ...*Alert) {},
+			Logger:                promslog.NewNopLogger(),
+			AppendMetadata:        true,
+			AutoRecordingMetadata: true,
 		})
 		mgr.restored = true // Skip initial restore delay so AlertingRule emits ALERTS immediately.
 
@@ -3155,6 +3156,47 @@ groups:
 		require.NoError(t, appendStore.DB.Close())
 		got := readWALMetadataByMetricName(t, walDir)
 		require.Equal(t, wantMetadata, got)
+	})
+
+	t.Run("storage=tsdb_without_auto_recording_metadata", func(t *testing.T) {
+		appendStore := teststorage.New(t, func(opt *tsdb.Options) {
+			opt.EnableMetadataWALRecords = true
+		})
+
+		mgr := NewManager(&ManagerOptions{
+			Context:               t.Context(),
+			AppendableV2:          appendStore,
+			Queryable:             queryStore,
+			QueryFunc:             EngineQueryFunc(engine, queryStore),
+			NotifyFunc:            func(context.Context, string, ...*Alert) {},
+			Logger:                promslog.NewNopLogger(),
+			AppendMetadata:        true,
+			AutoRecordingMetadata: false,
+		})
+		mgr.restored = true
+
+		groups, errs := mgr.LoadGroups(time.Minute, labels.EmptyLabels(), "", nil, false, ruleFile)
+		require.Empty(t, errs)
+		for _, g := range groups {
+			g.Eval(t.Context(), evalTime)
+		}
+
+		walDir := filepath.Join(appendStore.Dir(), "wal")
+		require.NoError(t, appendStore.DB.Close())
+		got := readWALMetadataByMetricName(t, walDir)
+		require.Equal(t, map[string]metadata.Metadata{
+			"job:http_requests:rate5m": {
+				Type: model.MetricTypeUnknown,
+				Unit: "requests_per_second",
+				Help: "Per-job HTTP request rate.",
+			},
+			alertMetricName: {
+				Type: model.MetricTypeGauge,
+			},
+			alertForStateMetricName: {
+				Type: model.MetricTypeGauge,
+			},
+		}, got)
 	})
 
 	t.Run("storage=agent_and_staleness", func(t *testing.T) {
@@ -3176,9 +3218,10 @@ groups:
 				}
 				return baseQF(ctx, q, ts)
 			},
-			NotifyFunc:     func(context.Context, string, ...*Alert) {},
-			Logger:         promslog.NewNopLogger(),
-			AppendMetadata: true,
+			NotifyFunc:            func(context.Context, string, ...*Alert) {},
+			Logger:                promslog.NewNopLogger(),
+			AppendMetadata:        true,
+			AutoRecordingMetadata: true,
 		})
 		mgr.restored = true
 
