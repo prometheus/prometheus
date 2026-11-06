@@ -36,10 +36,11 @@ import (
 const checkContextEveryNIterations = 100
 
 type blockBaseQuerier struct {
-	blockID    ulid.ULID
-	index      IndexReader
-	chunks     ChunkReader
-	tombstones tombstones.Reader
+	blockID               ulid.ULID
+	index                 IndexReader
+	chunks                ChunkReader
+	tombstones            tombstones.Reader
+	expandedPostingsCache *expandedPostingsCache
 
 	closed bool
 
@@ -49,6 +50,10 @@ type blockBaseQuerier struct {
 var _ storage.Searcher = &blockBaseQuerier{}
 
 func newBlockBaseQuerier(b BlockReader, mint, maxt int64) (*blockBaseQuerier, error) {
+	return newBlockBaseQuerierWithCache(b, mint, maxt, nil)
+}
+
+func newBlockBaseQuerierWithCache(b BlockReader, mint, maxt int64, cache *expandedPostingsCache) (*blockBaseQuerier, error) {
 	indexr, err := b.Index()
 	if err != nil {
 		return nil, fmt.Errorf("open index reader: %w", err)
@@ -69,12 +74,13 @@ func newBlockBaseQuerier(b BlockReader, mint, maxt int64) (*blockBaseQuerier, er
 		tombsr = tombstones.NewMemTombstones()
 	}
 	return &blockBaseQuerier{
-		blockID:    b.Meta().ULID,
-		mint:       mint,
-		maxt:       maxt,
-		index:      indexr,
-		chunks:     chunkr,
-		tombstones: tombsr,
+		blockID:               b.Meta().ULID,
+		mint:                  mint,
+		maxt:                  maxt,
+		index:                 indexr,
+		chunks:                chunkr,
+		tombstones:            tombsr,
+		expandedPostingsCache: cache,
 	}, nil
 }
 
@@ -154,6 +160,13 @@ func (q *blockBaseQuerier) Close() error {
 	return errors.Join(errs...)
 }
 
+func (q *blockBaseQuerier) postingsForMatchers(ctx context.Context, ix IndexReader, ms ...*labels.Matcher) (index.Postings, error) {
+	if q.expandedPostingsCache == nil {
+		return PostingsForMatchers(ctx, ix, ms...)
+	}
+	return q.expandedPostingsCache.postingsForMatchers(ctx, q.blockID, ix, ms...)
+}
+
 type blockQuerier struct {
 	*blockBaseQuerier
 }
@@ -163,7 +176,11 @@ type blockQuerier struct {
 // use from multiple goroutines, and neither are the series sets and series
 // obtained from it: different series must not be iterated concurrently either.
 func NewBlockQuerier(b BlockReader, mint, maxt int64) (storage.Querier, error) {
-	q, err := newBlockBaseQuerier(b, mint, maxt)
+	return newBlockQuerierWithCache(b, mint, maxt, nil)
+}
+
+func newBlockQuerierWithCache(b BlockReader, mint, maxt int64, cache *expandedPostingsCache) (storage.Querier, error) {
+	q, err := newBlockBaseQuerierWithCache(b, mint, maxt, cache)
 	if err != nil {
 		return nil, err
 	}
@@ -171,7 +188,7 @@ func NewBlockQuerier(b BlockReader, mint, maxt int64) (storage.Querier, error) {
 }
 
 func (q *blockQuerier) Select(ctx context.Context, sortSeries bool, hints *storage.SelectHints, ms ...*labels.Matcher) storage.SeriesSet {
-	return selectSeriesSet(ctx, sortSeries, hints, ms, q.index, q.chunks, q.tombstones, q.mint, q.maxt)
+	return selectSeriesSet(ctx, sortSeries, hints, ms, q.index, q.chunks, q.tombstones, q.mint, q.maxt, q.postingsForMatchers)
 }
 
 // chunkCacheEnabler is an optional interface implemented by chunk readers that
@@ -190,6 +207,7 @@ func enableChunkCache(cr ChunkReader) {
 
 func selectSeriesSet(ctx context.Context, sortSeries bool, hints *storage.SelectHints, ms []*labels.Matcher,
 	index IndexReader, chunks ChunkReader, tombstones tombstones.Reader, mint, maxt int64,
+	postingsForMatchers func(context.Context, IndexReader, ...*labels.Matcher) (index.Postings, error),
 ) storage.SeriesSet {
 	disableTrimming := false
 	sharded := hints != nil && hints.ShardCount > 0
@@ -198,7 +216,10 @@ func selectSeriesSet(ctx context.Context, sortSeries bool, hints *storage.Select
 		enableChunkCache(chunks)
 	}
 
-	p, err := PostingsForMatchers(ctx, index, ms...)
+	if postingsForMatchers == nil {
+		postingsForMatchers = PostingsForMatchers
+	}
+	p, err := postingsForMatchers(ctx, index, ms...)
 	if err != nil {
 		return storage.ErrSeriesSet(err)
 	}
@@ -232,7 +253,11 @@ type blockChunkQuerier struct {
 // use from multiple goroutines, and neither are the series sets and series
 // obtained from it: different series must not be iterated concurrently either.
 func NewBlockChunkQuerier(b BlockReader, mint, maxt int64) (storage.ChunkQuerier, error) {
-	q, err := newBlockBaseQuerier(b, mint, maxt)
+	return newBlockChunkQuerierWithCache(b, mint, maxt, nil)
+}
+
+func newBlockChunkQuerierWithCache(b BlockReader, mint, maxt int64, cache *expandedPostingsCache) (storage.ChunkQuerier, error) {
+	q, err := newBlockBaseQuerierWithCache(b, mint, maxt, cache)
 	if err != nil {
 		return nil, err
 	}
@@ -240,11 +265,12 @@ func NewBlockChunkQuerier(b BlockReader, mint, maxt int64) (storage.ChunkQuerier
 }
 
 func (q *blockChunkQuerier) Select(ctx context.Context, sortSeries bool, hints *storage.SelectHints, ms ...*labels.Matcher) storage.ChunkSeriesSet {
-	return selectChunkSeriesSet(ctx, sortSeries, hints, ms, q.blockID, q.index, q.chunks, q.tombstones, q.mint, q.maxt)
+	return selectChunkSeriesSet(ctx, sortSeries, hints, ms, q.blockID, q.index, q.chunks, q.tombstones, q.mint, q.maxt, q.postingsForMatchers)
 }
 
 func selectChunkSeriesSet(ctx context.Context, sortSeries bool, hints *storage.SelectHints, ms []*labels.Matcher,
 	blockID ulid.ULID, index IndexReader, chunks ChunkReader, tombstones tombstones.Reader, mint, maxt int64,
+	postingsForMatchers func(context.Context, IndexReader, ...*labels.Matcher) (index.Postings, error),
 ) storage.ChunkSeriesSet {
 	disableTrimming := false
 	sharded := hints != nil && hints.ShardCount > 0
@@ -258,7 +284,10 @@ func selectChunkSeriesSet(ctx context.Context, sortSeries bool, hints *storage.S
 		maxt = hints.End
 		disableTrimming = hints.DisableTrimming
 	}
-	p, err := PostingsForMatchers(ctx, index, ms...)
+	if postingsForMatchers == nil {
+		postingsForMatchers = PostingsForMatchers
+	}
+	p, err := postingsForMatchers(ctx, index, ms...)
 	if err != nil {
 		return storage.ErrChunkSeriesSet(err)
 	}
