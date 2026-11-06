@@ -14,9 +14,14 @@
 package rules
 
 import (
+	"bytes"
 	"context"
 	"errors"
+	"fmt"
+	"log/slog"
+	"net/url"
 	"runtime"
+	"strings"
 	"testing"
 	"time"
 
@@ -561,6 +566,294 @@ instance: {{ $v.Labels.instance }}, value: {{ printf "%.0f" $v.Value }};
 		context.TODO(), 0, evalTime, slowQueryFunc, nil, 0,
 	)
 	require.NoError(t, err)
+}
+
+type alertTemplateEvalContextKey struct{}
+
+func TestAlertingRuleTemplatesUseCurrentEvaluationBindings(t *testing.T) {
+	expr, err := testParser.ParseExpr("vector(1)")
+	require.NoError(t, err)
+
+	const labelTemplate = `{{ $labels.instance }}|{{ printf "%.0f" $value }}|{{ $externalLabels.cluster }}|{{ $externalURL }}|{{ $labels.missing }}|{{ title "alert owner" }}`
+	const annotationTemplate = `{{ $labels.instance }}|{{ printf "%.0f" $value }}|{{ printf "%.0f" (now) }}|{{ with "render" | query }}{{ (index . 0).Labels.source }}:{{ printf "%.0f" (index . 0).Value }}{{ end }}|{{ $externalLabels.cluster }}|{{ $externalURL }}|{{ externalURL }}|{{ pathPrefix }}|{{ title "prometheus alert" }}|{{ $labels.missing }}`
+	rule := NewAlertingRule(
+		"TemplateBindings",
+		expr,
+		0,
+		0,
+		labels.FromStrings("owner", labelTemplate),
+		labels.FromStrings("detail", annotationTemplate),
+		labels.FromStrings("cluster", "configured-cluster"),
+		"http://configured.example",
+		true,
+		promslog.NewNopLogger(),
+	)
+
+	var expressionQueryTimes, templateQueryTimes []time.Time
+	query := func(ctx context.Context, q string, ts time.Time) (promql.Vector, error) {
+		evalID, ok := ctx.Value(alertTemplateEvalContextKey{}).(string)
+		if !ok {
+			return nil, errors.New("missing evaluation context")
+		}
+		switch q {
+		case expr.String():
+			expressionQueryTimes = append(expressionQueryTimes, ts)
+			return promql.Vector{
+				{Metric: labels.FromStrings("instance", "node-a"), T: timestamp.FromTime(ts), F: 1},
+				{Metric: labels.FromStrings("instance", "node-b"), T: timestamp.FromTime(ts), F: 2},
+			}, nil
+		case "render":
+			templateQueryTimes = append(templateQueryTimes, ts)
+			return promql.Vector{{Metric: labels.FromStrings("source", evalID), T: timestamp.FromTime(ts), F: float64(ts.UnixMilli())}}, nil
+		default:
+			return nil, fmt.Errorf("unexpected query %q", q)
+		}
+	}
+
+	evaluations := []struct {
+		id          string
+		timestamp   time.Time
+		queryOffset time.Duration
+		externalURL string
+	}{
+		{id: "first", timestamp: time.Unix(10, 0).UTC(), queryOffset: 5 * time.Second, externalURL: "http://runtime-one.example/one"},
+		{id: "second", timestamp: time.Unix(20, 0).UTC(), queryOffset: 3 * time.Second, externalURL: "https://runtime-two.example/two"},
+	}
+	for _, evaluation := range evaluations {
+		runtimeURL, err := url.Parse(evaluation.externalURL)
+		require.NoError(t, err)
+		ctx := context.WithValue(context.Background(), alertTemplateEvalContextKey{}, evaluation.id)
+		firstExpressionQuery := len(expressionQueryTimes)
+		firstTemplateQuery := len(templateQueryTimes)
+		result, err := rule.Eval(ctx, evaluation.queryOffset, evaluation.timestamp, query, runtimeURL, 0)
+		require.NoError(t, err)
+		require.True(t, evaluation.timestamp.Add(-evaluation.queryOffset).Equal(expressionQueryTimes[firstExpressionQuery]))
+		require.Len(t, expressionQueryTimes, firstExpressionQuery+1)
+		require.Len(t, templateQueryTimes, firstTemplateQuery+2)
+		for _, queryTime := range templateQueryTimes[firstTemplateQuery:] {
+			require.True(t, evaluation.timestamp.Equal(queryTime))
+		}
+
+		resultByInstance := make(map[string]promql.Sample)
+		for _, sample := range result {
+			if sample.Metric.Get(labels.MetricName) == alertMetricName {
+				resultByInstance[sample.Metric.Get("instance")] = sample
+			}
+		}
+		require.Len(t, resultByInstance, 2)
+
+		activeByInstance := make(map[string]*Alert)
+		for _, alert := range rule.ActiveAlerts() {
+			activeByInstance[alert.Labels.Get("instance")] = alert
+		}
+		var notified []*Alert
+		rule.sendAlerts(ctx, evaluation.timestamp, 0, 0, func(_ context.Context, _ string, alerts ...*Alert) {
+			notified = alerts
+		})
+		notifiedByInstance := make(map[string]*Alert, len(notified))
+		for _, alert := range notified {
+			notifiedByInstance[alert.Labels.Get("instance")] = alert
+		}
+		require.Len(t, notifiedByInstance, 2)
+
+		for i, suffix := range []string{"a", "b"} {
+			instance := "node-" + suffix
+			value := float64(i + 1)
+			queryValue := float64(evaluation.timestamp.UnixMilli())
+			wantOwner := fmt.Sprintf("%s|%.0f|configured-cluster|http://configured.example||Alert Owner", instance, value)
+			require.Equal(t, wantOwner, resultByInstance[instance].Metric.Get("owner"))
+
+			wantDetail := fmt.Sprintf("%s|%.0f|%.0f|%s:%.0f|configured-cluster|http://configured.example|%s|%s|Prometheus Alert|",
+				instance, value, float64(evaluation.timestamp.Unix()), evaluation.id, queryValue, runtimeURL.String(), runtimeURL.Path)
+			for _, alert := range []*Alert{activeByInstance[instance], notifiedByInstance[instance]} {
+				require.NotNil(t, alert)
+				require.Equal(t, wantOwner, alert.Labels.Get("owner"))
+				require.Equal(t, wantDetail, alert.Annotations.Get("detail"))
+			}
+		}
+	}
+}
+
+func TestAlertingRuleTemplatesUseCurrentConfiguration(t *testing.T) {
+	expr, err := testParser.ParseExpr("vector(1)")
+	require.NoError(t, err)
+	query := func(_ context.Context, q string, ts time.Time) (promql.Vector, error) {
+		if q != expr.String() {
+			return nil, fmt.Errorf("unexpected query %q", q)
+		}
+		return promql.Vector{{Metric: labels.FromStrings("instance", "node-a"), T: timestamp.FromTime(ts), F: 1}}, nil
+	}
+	makeRule := func(prefix string) *AlertingRule {
+		return NewAlertingRule(
+			"ReloadedTemplate",
+			expr,
+			0,
+			0,
+			labels.FromStrings("owner", prefix+"{{ $labels.instance }}"),
+			labels.EmptyLabels(),
+			labels.EmptyLabels(),
+			"",
+			true,
+			promslog.NewNopLogger(),
+		)
+	}
+
+	for _, test := range []struct {
+		prefix string
+		want   string
+	}{
+		{prefix: "old-", want: "old-node-a"},
+		{prefix: "new-", want: "new-node-a"},
+	} {
+		rule := makeRule(test.prefix)
+		result, err := rule.Eval(context.Background(), 0, time.Unix(1, 0), query, nil, 0)
+		require.NoError(t, err)
+		found := false
+		for _, sample := range result {
+			if sample.Metric.Get(labels.MetricName) == alertMetricName {
+				found = true
+				require.Equal(t, test.want, sample.Metric.Get("owner"))
+			}
+		}
+		require.True(t, found, "missing %s alert sample", alertMetricName)
+	}
+}
+
+func TestAlertingRuleTemplatesKeepConcurrentEvaluationBindings(t *testing.T) {
+	expr, err := testParser.ParseExpr("vector(1)")
+	require.NoError(t, err)
+	rule := NewAlertingRule(
+		"ConcurrentTemplateBindings",
+		expr,
+		0,
+		0,
+		labels.FromStrings("owner", `{{ $labels.instance }}|{{ with "render" | query }}{{ (index . 0).Labels.source }}:{{ printf "%.0f" (index . 0).Value }}{{ end }}|{{ externalURL }}|{{ pathPrefix }}`),
+		labels.EmptyLabels(),
+		labels.EmptyLabels(),
+		"",
+		true,
+		promslog.NewNopLogger(),
+	)
+
+	arrived := make(chan struct{}, 2)
+	release := make(chan struct{})
+	query := func(ctx context.Context, q string, ts time.Time) (promql.Vector, error) {
+		evalID, ok := ctx.Value(alertTemplateEvalContextKey{}).(string)
+		if !ok {
+			return nil, errors.New("missing evaluation context")
+		}
+		if q == expr.String() {
+			return promql.Vector{{Metric: labels.FromStrings("instance", evalID), T: timestamp.FromTime(ts), F: 1}}, nil
+		}
+		if q == "render" {
+			arrived <- struct{}{}
+			<-release
+			return promql.Vector{{Metric: labels.FromStrings("source", evalID), T: timestamp.FromTime(ts), F: float64(ts.UnixMilli())}}, nil
+		}
+		return nil, fmt.Errorf("unexpected query %q", q)
+	}
+
+	type evaluationResult struct {
+		id     string
+		ts     time.Time
+		url    *url.URL
+		vector promql.Vector
+		err    error
+	}
+	results := make(chan evaluationResult, 2)
+	for _, evaluation := range []struct {
+		id          string
+		timestamp   time.Time
+		externalURL string
+	}{
+		{id: "left", timestamp: time.Unix(30, 0).UTC(), externalURL: "http://left.example/left"},
+		{id: "right", timestamp: time.Unix(40, 0).UTC(), externalURL: "https://right.example/right"},
+	} {
+		runtimeURL, err := url.Parse(evaluation.externalURL)
+		require.NoError(t, err)
+		go func(id string, ts time.Time, externalURL *url.URL) {
+			ctx := context.WithValue(context.Background(), alertTemplateEvalContextKey{}, id)
+			vector, err := rule.Eval(ctx, 0, ts, query, externalURL, 0)
+			results <- evaluationResult{id: id, ts: ts, url: externalURL, vector: vector, err: err}
+		}(evaluation.id, evaluation.timestamp, runtimeURL)
+	}
+
+	for range 2 {
+		select {
+		case <-arrived:
+		case <-time.After(5 * time.Second):
+			close(release)
+			t.Fatal("both evaluations did not reach template query concurrently")
+		}
+	}
+	close(release)
+
+	for range 2 {
+		result := <-results
+		require.NoError(t, result.err)
+		var alertSample *promql.Sample
+		for j := range result.vector {
+			if result.vector[j].Metric.Get(labels.MetricName) == alertMetricName {
+				alertSample = &result.vector[j]
+				break
+			}
+		}
+		require.NotNil(t, alertSample)
+		want := fmt.Sprintf("%s|%s:%.0f|%s|%s", result.id, result.id, float64(result.ts.UnixMilli()), result.url.String(), result.url.Path)
+		require.Equal(t, want, alertSample.Metric.Get("owner"))
+	}
+}
+
+func TestAlertingRuleTemplateFailuresKeepPlaceholdersAndLogs(t *testing.T) {
+	// A group-level label can bypass rule-template parsing and reach AlertingRule.Eval.
+	expr, err := testParser.ParseExpr("vector(1)")
+	require.NoError(t, err)
+	var logs bytes.Buffer
+	logger := slog.New(slog.NewTextHandler(&logs, nil))
+	rule := NewAlertingRule(
+		"BrokenTemplate",
+		expr,
+		0,
+		0,
+		labels.FromStrings("broken", "{{"),
+		labels.FromStrings("query_failure", `{{ "empty" | query | first }}`),
+		labels.EmptyLabels(),
+		"",
+		true,
+		logger,
+	)
+	require.Empty(t, logs.String())
+
+	query := func(_ context.Context, q string, ts time.Time) (promql.Vector, error) {
+		switch q {
+		case expr.String():
+			return promql.Vector{
+				{Metric: labels.FromStrings("instance", "one"), T: timestamp.FromTime(ts), F: 1},
+				{Metric: labels.FromStrings("instance", "two"), T: timestamp.FromTime(ts), F: 2},
+			}, nil
+		case "empty":
+			return promql.Vector{}, nil
+		default:
+			return nil, fmt.Errorf("unexpected query %q", q)
+		}
+	}
+	result, err := rule.Eval(context.Background(), 0, time.Unix(50, 0), query, nil, 0)
+	require.NoError(t, err)
+
+	alerts := 0
+	for _, sample := range result {
+		if sample.Metric.Get(labels.MetricName) != alertMetricName {
+			continue
+		}
+		alerts++
+		require.Contains(t, sample.Metric.Get("broken"), "<error expanding template: error parsing template __alert_BrokenTemplate:")
+	}
+	require.Equal(t, 2, alerts)
+	for _, alert := range rule.ActiveAlerts() {
+		require.Contains(t, alert.Annotations.Get("query_failure"), "<error expanding template: error executing template __alert_BrokenTemplate:")
+	}
+	require.Len(t, rule.ActiveAlerts(), 2)
+	require.Equal(t, 4, strings.Count(logs.String(), "Expanding alert template failed"))
 }
 
 func BenchmarkAlertingRuleAtomicField(b *testing.B) {
