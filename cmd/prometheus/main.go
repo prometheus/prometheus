@@ -269,6 +269,7 @@ func (c *flagConfig) setFeatureListOptions(logger *slog.Logger) error {
 				logger.Info("Unquoted UTF-8 name printing enabled.")
 			case "promql-experimental-functions":
 				c.parserOpts.EnableExperimentalFunctions = true
+				c.web.EnableExperimentalFunctions = true
 				logger.Info("Experimental PromQL functions enabled.")
 			case "promql-duration-expr":
 				logger.Warn("This option for --enable-feature is now permanently enabled and therefore a no-op.", "option", o)
