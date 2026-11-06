@@ -4088,11 +4088,11 @@ func (ev *evaluator) VectorBinop(op parser.ItemType, lhs, rhs Vector, matching *
 				metric = entry.metric
 				outSlot = entry.outSlot
 			} else {
-				metric, outSlot = resultMetricWithSlot(ls.Metric, rs.Metric, op, matching, dropMetricName, enh)
+				metric, outSlot = resultMetric(ls.Metric, rs.Metric, op, matching, dropMetricName, enh)
 				*entry = binopPairCacheEntry{rhsID: rID, outSlot: outSlot, metric: metric}
 			}
 		} else {
-			metric, outSlot = resultMetricWithSlot(ls.Metric, rs.Metric, op, matching, dropMetricName, enh)
+			metric, outSlot = resultMetric(ls.Metric, rs.Metric, op, matching, dropMetricName, enh)
 		}
 
 		if matching.Card == parser.CardOneToOne {
@@ -4201,14 +4201,9 @@ func matchLabels(metric labels.Labels, on bool, names ...string) labels.Labels {
 	return metric.MatchLabels(on, names...)
 }
 
-// resultMetric returns the metric for the given sample(s) based on the Vector
-// binary operation and the matching options.
-func resultMetric(lhs, rhs labels.Labels, op parser.ItemType, matching *parser.VectorMatching, dropMetricName bool, enh *EvalNodeHelper) labels.Labels {
-	metric, _ := resultMetricWithSlot(lhs, rhs, op, matching, dropMetricName, enh)
-	return metric
-}
-
-func resultMetricWithSlot(lhs, rhs labels.Labels, op parser.ItemType, matching *parser.VectorMatching, dropMetricName bool, enh *EvalNodeHelper) (labels.Labels, int) {
+// resultMetric returns the metric and dense output slot for the given sample(s)
+// based on the Vector binary operation and the matching options.
+func resultMetric(lhs, rhs labels.Labels, op parser.ItemType, matching *parser.VectorMatching, dropMetricName bool, enh *EvalNodeHelper) (labels.Labels, int) {
 	if enh.resultMetric == nil {
 		enh.resultMetric = make(map[string]int, len(enh.Out))
 	}
