@@ -917,10 +917,29 @@ type loop interface {
 	disableEndOfRunStalenessMarkers()
 }
 
+type staleMarkerType uint8
+
+const (
+	staleMarkerFloat staleMarkerType = iota
+	staleMarkerHistogram
+	staleMarkerFloatHistogram
+)
+
+func staleMarkerTypeForHistogram(h *histogram.Histogram, fh *histogram.FloatHistogram) staleMarkerType {
+	if h != nil {
+		return staleMarkerHistogram
+	}
+	if fh != nil {
+		return staleMarkerFloatHistogram
+	}
+	return staleMarkerFloat
+}
+
 type cacheEntry struct {
-	ref      storage.SeriesRef
-	lastIter uint64
-	lset     labels.Labels
+	ref        storage.SeriesRef
+	lastIter   uint64
+	lset       labels.Labels
+	markerType staleMarkerType
 
 	// st is an optional state for ST synthesis.
 	st *stCache
@@ -1131,8 +1150,8 @@ func (c *scrapeCache) get(met []byte) (*cacheEntry, bool, bool) {
 	return e, true, alreadyScraped
 }
 
-func (c *scrapeCache) addRef(met []byte, ref storage.SeriesRef, lset labels.Labels) (ce *cacheEntry) {
-	ce = &cacheEntry{ref: ref, lastIter: c.iter, lset: lset}
+func (c *scrapeCache) addRef(met []byte, ref storage.SeriesRef, lset labels.Labels, markerType staleMarkerType) (ce *cacheEntry) {
+	ce = &cacheEntry{ref: ref, lastIter: c.iter, lset: lset, markerType: markerType}
 	c.series[string(met)] = ce
 	return ce
 }
@@ -1210,10 +1229,10 @@ func (c *scrapeCache) trackStaleness(ref storage.SeriesRef, ce *cacheEntry) {
 	c.seriesCur[ref] = ce
 }
 
-func (c *scrapeCache) forEachStale(f func(storage.SeriesRef, labels.Labels) bool) {
+func (c *scrapeCache) forEachStale(f func(storage.SeriesRef, labels.Labels, staleMarkerType) bool) {
 	for ref, ce := range c.seriesPrev {
 		if _, ok := c.seriesCur[ref]; !ok {
-			if !f(ce.ref, ce.lset) {
+			if !f(ce.ref, ce.lset, ce.markerType) {
 				break
 			}
 		}
@@ -1818,10 +1837,17 @@ type appendErrors struct {
 
 // Update the stale markers.
 func (sl *scrapeLoop) updateStaleMarkers(app storage.Appender, defTime int64) (err error) {
-	sl.cache.forEachStale(func(ref storage.SeriesRef, lset labels.Labels) bool {
+	sl.cache.forEachStale(func(ref storage.SeriesRef, lset labels.Labels, markerType staleMarkerType) bool {
 		// Series no longer exposed, mark it stale.
 		app.SetOptions(&aOptionRejectEarlyOOO)
-		_, err = app.Append(ref, lset, defTime, math.Float64frombits(value.StaleNaN))
+		switch markerType {
+		case staleMarkerHistogram:
+			_, err = app.AppendHistogram(ref, lset, defTime, &histogram.Histogram{Sum: math.Float64frombits(value.StaleNaN)}, nil)
+		case staleMarkerFloatHistogram:
+			_, err = app.AppendHistogram(ref, lset, defTime, nil, &histogram.FloatHistogram{Sum: math.Float64frombits(value.StaleNaN)})
+		default:
+			_, err = app.Append(ref, lset, defTime, math.Float64frombits(value.StaleNaN))
+		}
 		app.SetOptions(nil)
 		switch {
 		case errors.Is(err, storage.ErrOutOfOrderSample), errors.Is(err, storage.ErrDuplicateSampleForTimestamp):
@@ -2028,6 +2054,9 @@ loop:
 			if ce != nil && ref != 0 {
 				sl.cache.updateRef(ce, ref)
 			}
+			if ce != nil {
+				ce.markerType = staleMarkerTypeForHistogram(h, fh)
+			}
 			if (parsedTimestamp == nil || sl.trackTimestampsStaleness) && ce != nil && ce.ref != 0 {
 				sl.cache.trackStaleness(ce.ref, ce)
 			}
@@ -2046,7 +2075,7 @@ loop:
 		// If a series was new but we didn't append it due to sample_limit or other errors then we don't need
 		// it in the scrape cache because we don't need to emit StaleNaNs for it when it disappears.
 		if !seriesCached && sampleAdded {
-			ce = sl.cache.addRef(met, ref, lset)
+			ce = sl.cache.addRef(met, ref, lset, staleMarkerTypeForHistogram(h, fh))
 			if ce != nil && ce.ref != 0 && (parsedTimestamp == nil || sl.trackTimestampsStaleness) {
 				// Bypass staleness logic if there is an explicit timestamp.
 				// But make sure we only do this if we have a cache entry (ce) for our series.
@@ -2459,7 +2488,7 @@ func (sl *scrapeLoopAppender) addReportSample(s reportSample, t int64, v float64
 	switch {
 	case err == nil:
 		if !ok {
-			sl.cache.addRef(s.name, ref, lset)
+			sl.cache.addRef(s.name, ref, lset, staleMarkerFloat)
 			// We only need to add metadata once a scrape target appears.
 			if sl.appendMetadataToWAL {
 				if _, merr := sl.UpdateMetadata(ref, lset, s.Metadata); merr != nil {

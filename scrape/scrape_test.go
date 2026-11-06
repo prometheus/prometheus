@@ -3975,7 +3975,7 @@ func testScrapeLoopAppendCacheEntryButErrNotFound(t *testing.T, appV2 bool) {
 	p.Labels(&lset)
 
 	// Create a fake entry in the cache
-	sl.cache.addRef(metric, fakeRef, lset)
+	sl.cache.addRef(metric, fakeRef, lset, staleMarkerFloat)
 	now := time.Now()
 
 	app := sl.appender()
@@ -4271,6 +4271,80 @@ func testScrapeLoopAppendEmptyWithNoContentType(t *testing.T, appV2 bool) {
 	_, _, _, err := app.append([]byte(""), "", now)
 	require.NoError(t, err)
 	require.NoError(t, app.Commit())
+}
+
+func TestScrapeLoopAppendStalenessPreservesHistogramType(t *testing.T) {
+	foreachAppendable(t, func(t *testing.T, appV2 bool) {
+		for _, tc := range []struct {
+			name       string
+			markerType staleMarkerType
+			h          *histogram.Histogram
+			fh         *histogram.FloatHistogram
+		}{
+			{
+				name:       "histogram",
+				markerType: staleMarkerHistogram,
+				h: &histogram.Histogram{
+					Schema:          0,
+					Count:           1,
+					Sum:             1,
+					PositiveSpans:   []histogram.Span{{Offset: 0, Length: 1}},
+					PositiveBuckets: []int64{1},
+				},
+			},
+			{
+				name:       "float histogram",
+				markerType: staleMarkerFloatHistogram,
+				fh: (&histogram.Histogram{
+					Schema:          0,
+					Count:           1,
+					Sum:             1,
+					PositiveSpans:   []histogram.Span{{Offset: 0, Length: 1}},
+					PositiveBuckets: []int64{1},
+				}).ToFloat(nil),
+			},
+		} {
+			t.Run(tc.name, func(t *testing.T) {
+				appTest := teststorage.NewAppendable()
+				sl, _ := newTestScrapeLoop(t, withAppendable(appTest, appV2))
+				lset := labels.FromStrings(model.MetricNameLabel, "native_hist")
+
+				var ref storage.SeriesRef
+				var err error
+				if appV2 {
+					app := appTest.AppenderV2(t.Context())
+					ref, err = app.Append(0, lset, 0, 100, 0, tc.h, tc.fh, storage.AOptions{})
+					require.NoError(t, err)
+					require.NoError(t, app.Commit())
+				} else {
+					app := appTest.Appender(t.Context())
+					ref, err = app.AppendHistogram(0, lset, 100, tc.h, tc.fh)
+					require.NoError(t, err)
+					require.NoError(t, app.Commit())
+				}
+
+				ce := sl.cache.addRef([]byte("native_hist"), ref, lset, tc.markerType)
+				sl.cache.trackStaleness(ref, ce)
+				sl.cache.iterDone(false)
+
+				app := sl.appender()
+				_, _, _, err = app.append([]byte(""), "", time.UnixMilli(200))
+				require.NoError(t, err)
+				require.NoError(t, app.Commit())
+
+				got := appTest.ResultSamples()
+				require.Len(t, got, 2)
+				require.True(t, got[1].IsStale())
+				if tc.markerType == staleMarkerHistogram {
+					require.NotNil(t, got[1].H)
+					require.Nil(t, got[1].FH)
+				} else {
+					require.Nil(t, got[1].H)
+					require.NotNil(t, got[1].FH)
+				}
+			})
+		}
+	})
 }
 
 func TestScrapeLoopAppendStaleness(t *testing.T) {
