@@ -57,6 +57,7 @@ const mergeChildStates = (states: NodeState[]): NodeState => {
 
 const TreeNode: FC<{
   node: ASTNode;
+  endTime: number | null;
   selectedNode: { id: string; node: ASTNode } | null;
   setSelectedNode: (Node: { id: string; node: ASTNode } | null) => void;
   parentEl?: HTMLDivElement | null;
@@ -66,6 +67,7 @@ const TreeNode: FC<{
   childIdx: number;
 }> = ({
   node,
+  endTime,
   selectedNode,
   setSelectedNode,
   parentEl,
@@ -126,33 +128,33 @@ const TreeNode: FC<{
     };
   }
 
+  const query = serializeNode(queryNode);
   const { data, error, isFetching } = useAPIQuery<InstantQueryResult>({
-    key: [useId()],
+    key: [useId(), query, endTime],
     path: "/query",
     params: {
-      query: serializeNode(queryNode),
+      query,
+      ...(endTime === null ? {} : { time: String(endTime / 1000) }),
     },
     recordResponseTime: setResponseTime,
     enabled: mergedChildState === "success",
   });
 
+  // Report completion even when a refetch returns unchanged data.
   useEffect(() => {
-    if (mergedChildState === "error" && reportNodeState) {
-      reportNodeState(childIdx, "error");
+    if (reportNodeState === undefined) {
+      return;
     }
-  }, [mergedChildState, reportNodeState, childIdx]);
-
-  useEffect(() => {
-    if (error && reportNodeState) {
+    if (mergedChildState !== "success") {
+      reportNodeState(childIdx, mergedChildState);
+    } else if (error) {
       reportNodeState(childIdx, "error");
-    }
-  }, [error, reportNodeState, childIdx]);
-
-  useEffect(() => {
-    if (isFetching && reportNodeState) {
+    } else if (isFetching) {
       reportNodeState(childIdx, "running");
+    } else if (data) {
+      reportNodeState(childIdx, "success");
     }
-  }, [isFetching, reportNodeState, childIdx]);
+  }, [mergedChildState, error, isFetching, data, reportNodeState, childIdx]);
 
   const childReportNodeState = useCallback(
     (childIdx: number, state: NodeState) => {
@@ -202,10 +204,6 @@ const TreeNode: FC<{
           },
     );
   }, [parentEl, nodeEl, reverse]);
-
-  useEffect(() => {
-    if (data && reportNodeState) reportNodeState(childIdx, "success");
-  }, [data, reportNodeState, childIdx]);
 
   const resultStats = useMemo<{
     numSeries: number;
@@ -402,6 +400,7 @@ const TreeNode: FC<{
         <Box ml={nodeIndent}>
           <TreeNode
             node={children[0]}
+            endTime={endTime}
             selectedNode={selectedNode}
             setSelectedNode={setSelectedNode}
             parentEl={nodeEl}
@@ -414,6 +413,7 @@ const TreeNode: FC<{
         <Box ml={nodeIndent}>
           <TreeNode
             node={children[1]}
+            endTime={endTime}
             selectedNode={selectedNode}
             setSelectedNode={setSelectedNode}
             parentEl={nodeEl}
@@ -433,6 +433,7 @@ const TreeNode: FC<{
         <Box ml={nodeIndent} key={idx}>
           <TreeNode
             node={child}
+            endTime={endTime}
             selectedNode={selectedNode}
             setSelectedNode={setSelectedNode}
             parentEl={nodeEl}
