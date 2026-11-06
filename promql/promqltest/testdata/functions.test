@@ -2764,3 +2764,21 @@ eval instant at 10m delta(counter[10m])
 # 4 * (300s / 240s) = 5.
 eval range from 5m to 10m step 1m delta(gauge[5m])
   {} 5 5 5 5 5 5
+
+# Quantile scratch must be overwritten across series and steps, including
+# sparse windows and a scalar quantile that changes between steps.
+clear
+load 1m
+  quantile_scratch{series="a"} 1 4 2 8 3 9
+  quantile_scratch{series="b"} 10 40 _ 80 30 90
+  quantile_scratch{series="c"} 5 _ _ 7 _ 11
+
+eval range from 2m to 5m step 1m quantile_over_time(0.5, quantile_scratch[3m])
+  {series="a"} 2 4 3 8
+  {series="b"} 25 60 55 80
+  {series="c"} 5 7 7 9
+
+eval range from 2m to 5m step 1m quantile_over_time((time() % 120) / 60, quantile_scratch[3m])
+  {series="a"} 1 8 2 9
+  {series="b"} 10 80 30 90
+  {series="c"} 5 7 7 11
