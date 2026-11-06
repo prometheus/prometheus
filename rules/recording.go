@@ -206,9 +206,9 @@ func (rule *RecordingRule) deduceSampleMetadata(sample *promql.Sample, enableTyp
 
 	var mType model.MetricType
 	switch {
-	case rule.meta.Type != "" && rule.meta.Type != model.MetricTypeUnknown && isSampleTypeCompatible(rule.meta.Type, isHist):
+	case isSampleTypeCompatible(rule.meta.Type, isHist):
 		mType = rule.meta.Type
-	case !preserved.IsTypeEmpty() && isSampleTypeCompatible(preserved.Type, isHist):
+	case isSampleTypeCompatible(preserved.Type, isHist):
 		mType = preserved.Type
 	case isHist:
 		if sample.H.CounterResetHint == histogram.GaugeType {
@@ -244,8 +244,7 @@ func isSampleTypeCompatible(t model.MetricType, isHistogram bool) bool {
 		model.MetricTypeGauge,
 		model.MetricTypeSummary,
 		model.MetricTypeInfo,
-		model.MetricTypeStateset,
-		model.MetricTypeUnknown:
+		model.MetricTypeStateset:
 		return true
 	default:
 		return false
