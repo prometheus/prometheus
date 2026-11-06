@@ -185,12 +185,13 @@ func (rule *RecordingRule) evalWithMetadata(
 func (rule *RecordingRule) deduceSampleMetadata(sample *promql.Sample, enableTypeAndUnitLabels bool) metadata.Metadata {
 	isHist := sample.H != nil
 	var preserved schema.Metadata
-	if enableTypeAndUnitLabels {
-		preserved = schema.NewMetadataFromLabels(sample.Metric)
-	}
-	if preserved.IsTypeEmpty() {
-		if origName := sample.Metric.Get(labels.MetricName); origName != "" {
+	if origName := sample.Metric.Get(labels.MetricName); origName != "" {
+		if enableTypeAndUnitLabels {
+			preserved = schema.NewMetadataFromLabels(sample.Metric)
+		} else {
 			preserved.Name = origName
+		}
+		if preserved.IsTypeEmpty() {
 			// NOTE(bwplotka): Until native TSDB metadata lookup lands (prometheus#19563),
 			// fall back to standard Prometheus naming suffixes when __name__ survived
 			// PromQL evaluation unchanged (DropName == false).
