@@ -864,3 +864,126 @@ http_requests_total{code="200"} 2 1624528800.000
 		})
 	}
 }
+
+func TestPromQLLabelsSet(t *testing.T) {
+	p := parser.NewParser(parser.Options{})
+
+	tests := []struct {
+		name      string
+		query     string
+		matchType string
+		label     string
+		value     string
+		expected  string
+	}{
+		{
+			name:      "rename metric name with equality",
+			query:     `http_requests_total{job="api"}`,
+			matchType: "=",
+			label:     "__name__",
+			value:     "new_requests",
+			expected:  "new_requests{job=\"api\"}\n",
+		},
+		{
+			name:      "set regex on metric name",
+			query:     `http_requests_total{job="api"}`,
+			matchType: "=~",
+			label:     "__name__",
+			value:     "http_.*",
+			expected:  "{__name__=~\"http_.*\",job=\"api\"}\n",
+		},
+		{
+			name:      "set metric name on selector with no initial metric name",
+			query:     `{job="api"}`,
+			matchType: "=",
+			label:     "__name__",
+			value:     "new_requests",
+			expected:  "new_requests{job=\"api\"}\n",
+		},
+		{
+			name:      "set normal label",
+			query:     `http_requests_total{job="api"}`,
+			matchType: "=",
+			label:     "env",
+			value:     "prod",
+			expected:  "http_requests_total{env=\"prod\",job=\"api\"}\n",
+		},
+		{
+			name:      "update existing normal label",
+			query:     `http_requests_total{env="stage",job="api"}`,
+			matchType: "=",
+			label:     "env",
+			value:     "prod",
+			expected:  "http_requests_total{env=\"prod\",job=\"api\"}\n",
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			var buf bytes.Buffer
+			err := labelsSetPromQL(&buf, tc.query, tc.matchType, tc.label, tc.value, p)
+			require.NoError(t, err)
+			require.Equal(t, tc.expected, buf.String())
+		})
+	}
+}
+
+func TestPromQLLabelsDelete(t *testing.T) {
+	p := parser.NewParser(parser.Options{})
+
+	tests := []struct {
+		name     string
+		query    string
+		label    string
+		expected string
+	}{
+		{
+			name:     "delete metric name with existing labels",
+			query:    `http_requests_total{job="api"}`,
+			label:    "__name__",
+			expected: "{job=\"api\"}\n",
+		},
+		{
+			name:     "delete metric name without labels",
+			query:    `http_requests_total`,
+			label:    "__name__",
+			expected: "\n",
+		},
+		{
+			name:     "delete single label",
+			query:    `http_requests_total{env="prod",job="api"}`,
+			label:    "env",
+			expected: "http_requests_total{job=\"api\"}\n",
+		},
+		{
+			name:     "delete consecutive matching labels without skipping",
+			query:    `http_requests_total{env="prod",env="stage"}`,
+			label:    "env",
+			expected: "http_requests_total\n",
+		},
+		{
+			name:     "delete multiple consecutive labels with other labels present",
+			query:    `http_requests_total{env="prod",env="stage",job="api"}`,
+			label:    "env",
+			expected: "http_requests_total{job=\"api\"}\n",
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			var buf bytes.Buffer
+			err := labelsDeletePromQL(&buf, tc.query, tc.label, p)
+			require.NoError(t, err)
+			require.Equal(t, tc.expected, buf.String())
+		})
+	}
+}
+
+func TestFormatPromQL(t *testing.T) {
+	p := parser.NewParser(parser.Options{})
+
+	var buf bytes.Buffer
+	err := formatPromQL(&buf, `http_requests_total{job="api"}`, p)
+	require.NoError(t, err)
+	require.Equal(t, "http_requests_total{job=\"api\"}\n", buf.String())
+}
