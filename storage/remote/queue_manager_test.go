@@ -2525,6 +2525,146 @@ func TestSendSamplesWithBackoffWithSampleAgeLimit(t *testing.T) {
 	}
 }
 
+func TestSendSamplesWithBackoffAgeFilteredPayloadMetrics(t *testing.T) {
+	for _, protoMsg := range []remoteapi.WriteMessageType{remoteapi.WriteV1MessageType, remoteapi.WriteV2MessageType} {
+		for _, tc := range []struct {
+			name  string
+			limit time.Duration
+			ages  []time.Duration
+			kept  [][]int
+		}{
+			{name: "disabled", ages: []time.Duration{2 * time.Second, 100 * time.Millisecond}, kept: [][]int{{0, 1}}},
+			{name: "no expiry", limit: time.Second, ages: []time.Duration{900 * time.Millisecond, 100 * time.Millisecond}, kept: [][]int{{0, 1}}},
+			{name: "partial expiry", limit: time.Second, ages: []time.Duration{2 * time.Second, 100 * time.Millisecond}, kept: [][]int{{1}}},
+			{name: "all expired", limit: time.Second, ages: []time.Duration{2 * time.Second, 3 * time.Second}, kept: [][]int{{}}},
+			{name: "multiple retries", limit: time.Second, ages: []time.Duration{2 * time.Second, 900 * time.Millisecond, 100 * time.Millisecond}, kept: [][]int{{1, 2}, {2}, {}}},
+		} {
+			t.Run(fmt.Sprintf("%s/%s", protoMsg, tc.name), func(t *testing.T) {
+				synctest.Test(t, func(t *testing.T) {
+					var batch []timeSeries
+					for i, age := range tc.ages {
+						for _, kind := range []seriesType{tSample, tExemplar, tHistogram, tFloatHistogram} {
+							batch = append(batch, timeSeries{
+								sType:          kind,
+								seriesLabels:   labels.FromStrings("__name__", fmt.Sprintf("metric_%d_%d", i, kind)),
+								timestamp:      time.Now().Add(-age).UnixMilli(),
+								value:          float64(i + 1),
+								histogram:      &histogram.Histogram{Count: uint64(i + 1)},
+								floatHistogram: &histogram.FloatHistogram{Count: float64(i + 1)},
+								metadata:       unique.Make(metadata.Metadata{Type: model.MetricTypeCounter, Unit: "seconds", Help: "help"}),
+							})
+						}
+					}
+					pending := make([]prompb.TimeSeries, len(batch))
+					nSamples, nExemplars, nHistograms := populateTimeSeries(batch, pending, true, true)
+					// Keep an independent copy of the wire data before filtering mutates the batch buffer.
+					original := proto.Clone(&prompb.WriteRequest{Timeseries: pending}).(*prompb.WriteRequest).Timeseries
+					if protoMsg == remoteapi.WriteV2MessageType {
+						// V2 population emits detached exemplars after samples and histograms.
+						slices.SortStableFunc(original, func(a, b prompb.TimeSeries) int {
+							return len(a.Exemplars) - len(b.Exemplars)
+						})
+					}
+					var (
+						m                                                                   *QueueManager
+						attempts, sentSamples, sentExemplars, sentHistograms, receivedBytes int
+					)
+					client := &MockWriteClient{
+						StoreFunc: func(_ context.Context, req []byte, try int) (WriteResponseStats, error) {
+							data, err := compression.Decode(compression.Snappy, req, nil)
+							require.NoError(t, err)
+							var decoded prompb.WriteRequest
+							if protoMsg == remoteapi.WriteV1MessageType {
+								require.NoError(t, proto.Unmarshal(data, &decoded))
+							} else {
+								var v2Req writev2.Request
+								require.NoError(t, proto.Unmarshal(data, &v2Req))
+								v1Req, err := v2RequestToWriteRequest(&v2Req)
+								require.NoError(t, err)
+								decoded = *v1Req
+							}
+							require.Equal(t, attempts, try)
+							require.Less(t, try, len(tc.kept))
+							var want []prompb.TimeSeries
+							for _, series := range original {
+								for _, group := range tc.kept[try] {
+									if strings.HasPrefix(series.Labels[0].Value, fmt.Sprintf("metric_%d_", group)) {
+										want = append(want, series)
+									}
+								}
+							}
+							require.Len(t, decoded.Timeseries, len(want))
+							for i := range want {
+								require.True(t, proto.Equal(&want[i], &decoded.Timeseries[i]), "series %d: got %v, want %v", i, decoded.Timeseries[i], want[i])
+							}
+							n := len(tc.kept[try])
+							sentSamples += n
+							sentExemplars += n
+							sentHistograms += 2 * n
+							require.Equal(t, float64(sentSamples), client_testutil.ToFloat64(m.metrics.samplesTotal))
+							require.Equal(t, float64(sentExemplars), client_testutil.ToFloat64(m.metrics.exemplarsTotal))
+							require.Equal(t, float64(sentHistograms), client_testutil.ToFloat64(m.metrics.histogramsTotal))
+							if protoMsg == remoteapi.WriteV2MessageType {
+								for _, field := range []string{metadataFieldType, metadataFieldUnit, metadataFieldHelp} {
+									require.Equal(t, float64(sentSamples), client_testutil.ToFloat64(m.metrics.samplesMetadataTotal.WithLabelValues(field)))
+									require.Equal(t, float64(sentHistograms), client_testutil.ToFloat64(m.metrics.histogramsMetadataTotal.WithLabelValues(field)))
+								}
+							}
+							receivedBytes = len(req)
+							attempts++
+							if attempts < len(tc.kept) {
+								delay := 200 * time.Millisecond
+								if try > 0 {
+									delay = 900 * time.Millisecond
+								}
+								return WriteResponseStats{}, RecoverableError{errors.New("retry"), model.Duration(delay)}
+							}
+							return WriteResponseStats{Samples: n, Exemplars: n, Histograms: 2 * n, Confirmed: true}, nil
+						},
+						NameFunc:     func() string { return "test" },
+						EndpointFunc: func() string { return "http://test" },
+					}
+					cfg := config.DefaultQueueConfig
+					cfg.SampleAgeLimit = model.Duration(tc.limit)
+					m = newTestQueueManager(t, cfg, config.DefaultMetadataConfig, defaultFlushDeadline, client, protoMsg)
+					m.metrics.pendingSamples.Set(float64(nSamples))
+					m.metrics.pendingExemplars.Set(float64(nExemplars))
+					m.metrics.pendingHistograms.Set(float64(nHistograms))
+					m.shards.enqueuedSamples.Store(int64(nSamples))
+					m.shards.enqueuedExemplars.Store(int64(nExemplars))
+					m.shards.enqueuedHistograms.Store(int64(nHistograms))
+					if protoMsg == remoteapi.WriteV1MessageType {
+						require.NoError(t, m.shards.sendSamples(t.Context(), pending, nSamples, nExemplars, nHistograms, proto.NewBuffer(nil), compression.NewSyncEncodeBuffer(), compression.Snappy))
+					} else {
+						v2Pending := make([]writev2.TimeSeries, len(batch))
+						symbols := writev2.NewSymbolTable()
+						nSeries, _, _, _, _, _ := populateV2TimeSeries(&symbols, batch, v2Pending, nil, true, true, false, remoteapi.WriteModeNone)
+						pBuf := []byte{}
+						require.NoError(t, m.shards.sendV2Samples(t.Context(), v2Pending[:nSeries], symbols.Symbols(), nSamples, nExemplars, nHistograms, &pBuf, compression.NewSyncEncodeBuffer(), compression.Snappy))
+					}
+					require.Equal(t, len(tc.kept), attempts)
+					require.Equal(t, float64(receivedBytes), client_testutil.ToFloat64(m.metrics.sentBytesTotal))
+					lastKept := tc.kept[len(tc.kept)-1]
+					var highest int64
+					for _, i := range lastKept {
+						highest = max(highest, batch[i*4].timestamp)
+					}
+					require.Equal(t, float64(highest/1000), m.metrics.highestSentTimestamp.Get())
+					require.Equal(t, float64(nSamples-len(lastKept)), client_testutil.ToFloat64(m.metrics.failedSamplesTotal))
+					require.Equal(t, float64(nExemplars-len(lastKept)), client_testutil.ToFloat64(m.metrics.failedExemplarsTotal))
+					require.Equal(t, float64(nHistograms-2*len(lastKept)), client_testutil.ToFloat64(m.metrics.failedHistogramsTotal))
+					require.Zero(t, client_testutil.ToFloat64(m.metrics.pendingSamples))
+					require.Zero(t, client_testutil.ToFloat64(m.metrics.pendingExemplars))
+					require.Zero(t, client_testutil.ToFloat64(m.metrics.pendingHistograms))
+					require.Zero(t, m.shards.enqueuedSamples.Load())
+					require.Zero(t, m.shards.enqueuedExemplars.Load())
+					require.Zero(t, m.shards.enqueuedHistograms.Load())
+				})
+			})
+		}
+	}
+}
+
 func filterTsLimit(limit int64, ts prompb.TimeSeries) bool {
 	return limit > ts.Samples[0].Timestamp
 }
@@ -2900,6 +3040,15 @@ func TestBuildV2TimeSeries_CoalescedExemplars(t *testing.T) {
 
 			got, stats := buildV2TimeSeries(tc.input, filter)
 			require.Equal(t, tc.expectedKept, got)
+			var samples, exemplars, histograms int
+			for _, ts := range tc.expectedKept {
+				samples += len(ts.Samples)
+				exemplars += len(ts.Exemplars)
+				histograms += len(ts.Histograms)
+			}
+			require.Equal(t, samples, stats.samples)
+			require.Equal(t, exemplars, stats.exemplars)
+			require.Equal(t, histograms, stats.histograms)
 			require.Equal(t, tc.expectedLowest, stats.lowest)
 			require.Equal(t, tc.expectedHighest, stats.highest)
 			require.Equal(t, tc.expectedDroppedSamples, stats.droppedSamples)
