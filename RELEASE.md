@@ -136,7 +136,7 @@ Review the output carefully before adding it manually to `CHANGELOG.md`:
 - Ensure entries are in the correct order: `[SECURITY]`, `[CHANGE]`, `[FEATURE]`, `[ENHANCEMENT]`, `[PERF]`, `[BUGFIX]`.
 - Remove entries already present in a previous release's Changelog. Duplicates can appear for fixes merged to the previous release branch.
 - `CHANGELOG.md` should only document changes relevant to users of Prometheus, including external API changes, performance improvements, and new features. Do not document changes of internal interfaces, code refactorings and clean-ups, changes to the build process, etc. People interested in these are asked to refer to the git history.
-- The date of the changelog entry header is set by `make bump-versions` below, even for an RC. Pass `RELEASE_DATE=YYYY-MM-DD` if the release date is not the day you run it.
+- The date of the changelog entry header is set to today by `make bump-versions` below, even for an RC. If the release date is a different day, edit the heading by hand afterwards.
 
 Then bump the UI module version, as well as the version in `CHANGELOG.md`:
 
@@ -147,26 +147,15 @@ make bump-versions
 This rewrites the newest release heading to the version in `VERSION` with today's
 date, then bumps and stages the UI module versions. It fails if the generated
 release notes have not been added to `CHANGELOG.md` yet, rather than relabelling
-the heading of a previous release, and it refuses a version that is already
-tagged. If the release date is not today, pass it:
-
-```bash
-make bump-versions RELEASE_DATE=2026-11-05
-```
+the heading of a previous release.
 
 If you only need the UI versions bumped, for example after the release is
 tagged, run `make ui-bump-version` directly.
 
 The "Check release notes" workflow runs the same script with `--check` on pull
-requests to `main` and the release branches, which fails unless the version and
-the date in the newest `CHANGELOG.md` heading agree with `VERSION`. Running
+requests to the release branches, which fails unless the newest
+`CHANGELOG.md` heading names the version in `VERSION` and has a date. Running
 `make bump-versions` above is what makes that check pass.
-
-Because that check is in a workflow that the repository already required for
-release-branches pull requests, a PR that bumps `VERSION` now also has to
-update `CHANGELOG.md` in the same PR — usually by running `make bump-versions`
-there. After this is merged, confirm in the repository's branch-protection
-settings that the check stays expected on the release branches.
 
 All of the above goes to make a PR, which you should create targeting the `release-x.y` branch, then wait for CI to complete and get an approval.
 Once the PR is ready, merge it into the release branch and pull it down to your work area. Then you are ready for the next step:

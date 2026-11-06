@@ -54,15 +54,14 @@ upgrade-npm-deps:
 
 .PHONY: bump-versions
 bump-versions:
-	./scripts/bump_changelog_version.sh $(if $(RELEASE_DATE),--date '$(RELEASE_DATE)')
+	./scripts/bump_changelog_version.sh
 	$(MAKE) ui-bump-version
 	git add CHANGELOG.md
 
 .PHONY: test-scripts
 test-scripts:
 	@echo ">> testing release scripts"
-	@tests=$$(ls scripts/*_test.sh 2>/dev/null) || { echo ">> no scripts/*_test.sh to run"; exit 1; }; \
-	for t in $${tests}; do echo ">> $${t}"; "$${t}" || exit 1; done
+	./scripts/bump_changelog_version_test.sh
 
 .PHONY: ui-bump-version
 ui-bump-version:
