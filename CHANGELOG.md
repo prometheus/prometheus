@@ -2,14 +2,10 @@
 
 ## main / unreleased
 
-- [BUGFIX] Web: Upgrade `exporter-toolkit` to v0.20.0, fixing HTTP/2 ALPN negotiation loss under Go 1.27+ when TLS is enabled with `http2: true`. The server no longer silently falls back to HTTP/1.1, preventing excess TCP connections under concurrent load. #19807
-- [ENHANCEMENT] promtool: Add `--allow-incompatible-block-duration` so users can specify any max-block-duration instead of being restricted to the default Prometheus block durations.
-- [ENHANCEMENT] Remote write / Alertmanager: Upgrade `github.com/prometheus/sigv4` to v0.5.0, adding `session_name` and `tags` fields to the `sigv4` configuration block for STS AssumeRole sessions. The existing but previously undocumented `service_name` field is also documented.
-
 ## 3.16.0 / 2026-11-04
 - [CHANGE] API: The experimental search endpoints now clamp `batch_size` to 1000. #19731
 - [CHANGE] Configuration: Default --web.external-url to https when --web.config.file enables TLS. #19241
-- [CHANGE] PromQL: Subquery samples are now included in the query TotalSamples and TotalSamplesPerStep statistics, and SamplesRead now counts reads from subqueries with an @ modifier in range queries. #19165
+- [CHANGE] PromQL: Subqueries now contribute their underlying sample consumption to the query TotalSamples and TotalSamplesPerStep statistics, and SamplesRead now counts reads from subqueries with an @ modifier in range queries. #19165
 - [CHANGE] Remote write: Stop exposing the deprecated `prometheus_remote_storage_metadata_total`, `prometheus_remote_storage_metadata_failed_total`, `prometheus_remote_storage_metadata_retried_total`, and `prometheus_remote_storage_metadata_bytes_total` metrics for Remote Write 2.0 queues. #20080
 - [CHANGE] Remote write receiver: Count Remote Write 2.x samples and histograms ingested without metadata in `prometheus_api_remote_write_without_metadata_appended_samples_total` even when `metadata-wal-records` is disabled. #19812
 - [CHANGE] TSDB: Reject exemplars whose label names are not unique, instead of storing them and serving a duplicate JSON key from `/api/v1/query_exemplars`. #19896
@@ -70,7 +66,7 @@
 - [BUGFIX] PromQL: Preserve original operand sides for experimental fill modifiers with group_right matching. #19939
 - [BUGFIX] PromQL: Preserve subquery step expressions when printing queries after preprocessing. #19743
 - [BUGFIX] PromQL: Range vector functions no longer raise a spurious "vector cannot contain metrics with the same labelset" error when series have different metric names but the same remaining labels, as long as their timestamps do not overlap within the evaluated range window #18631
-- [BUGFIX] PromQL: do not count subquery materialized samples in total samples statistics #19873
+- [BUGFIX] PromQL: Do not count the materialized results of a subquery again in the query total sample statistics. #19873
 - [BUGFIX] Remote write: Prevent future-dated exemplars from scaling shards down to the minimum. #19866
 - [BUGFIX] Agent: Prevent future sent timestamps from advancing WAL truncation beyond the minimum retention window. #19866
 - [BUGFIX] Rules: Restore firing alerts with for durations shorter than --rules.alert.for-grace-period after a restart. #19882

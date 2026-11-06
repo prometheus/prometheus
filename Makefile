@@ -53,9 +53,15 @@ upgrade-npm-deps:
 	./scripts/npm-deps.sh "latest"
 
 .PHONY: bump-versions
-bump-versions: ui-bump-version
+bump-versions:
 	./scripts/bump_changelog_version.sh
+	$(MAKE) ui-bump-version
 	git add CHANGELOG.md
+
+.PHONY: test-scripts
+test-scripts:
+	@echo ">> testing release scripts"
+	./scripts/bump_changelog_version_test.sh
 
 .PHONY: ui-bump-version
 ui-bump-version:
@@ -181,7 +187,8 @@ install-goyacc:
 ifeq ($(GO_ONLY),1)
 test: common-test check-go-mod-version
 else
-test: check-generated-parser common-test check-node-version ui-test ui-lint check-go-mod-version
+test: check-generated-parser common-test check-node-version ui-test ui-lint \
+    check-go-mod-version test-scripts
 endif
 
 .PHONY: tarball
