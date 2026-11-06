@@ -20,6 +20,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"os"
+	"strconv"
 	"testing"
 
 	ionoscloud "github.com/ionos-cloud/sdk-go/v6"
@@ -274,6 +275,50 @@ func TestIONOSServerRefreshNilContainers(t *testing.T) {
 			require.Equal(t, tc.expected, tgs[0].Targets)
 		})
 	}
+}
+
+// TestIONOSServerRefreshPagination covers a datacenter whose server count
+// exceeds one page: refresh() must follow the _links.next indicator and
+// collect servers from every page instead of silently truncating results.
+func TestIONOSServerRefreshPagination(t *testing.T) {
+	t.Parallel()
+
+	var gotOffsets []string
+	mock := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		gotOffsets = append(gotOffsets, r.URL.Query().Get("offset"))
+		w.Header().Set("Content-Type", "application/json")
+		if r.URL.Query().Get("offset") == "0" {
+			_, _ = io.WriteString(w, `{
+				"id": "`+ionosTestDatacenterID+`/servers",
+				"type": "collection",
+				"items": [{"id": "srv-page1", "type": "server", "properties": {"name": "page1"},
+					"entities": {"nics": {"items": [{"id": "nic-1", "type": "nic", "properties": {"ips": ["10.0.0.1"]}}]}}}],
+				"_links": {"next": "ignored, only presence is checked"}
+			}`)
+			return
+		}
+		_, _ = io.WriteString(w, `{
+			"id": "`+ionosTestDatacenterID+`/servers",
+			"type": "collection",
+			"items": [{"id": "srv-page2", "type": "server", "properties": {"name": "page2"},
+				"entities": {"nics": {"items": [{"id": "nic-2", "type": "nic", "properties": {"ips": ["10.0.0.2"]}}]}}}]
+		}`)
+	}))
+	t.Cleanup(mock.Close)
+
+	cfg := DefaultSDConfig
+	cfg.DatacenterID = ionosTestDatacenterID
+	cfg.HTTPClientConfig.BearerToken = ionosTestBearerToken
+	cfg.ionosEndpoint = mock.URL
+
+	d, err := newServerDiscovery(&cfg, nil)
+	require.NoError(t, err)
+
+	tgs, err := d.refresh(context.Background())
+	require.NoError(t, err)
+	require.Len(t, tgs, 1)
+	require.Len(t, tgs[0].Targets, 2, "expected servers from both pages")
+	require.Equal(t, []string{"0", strconv.Itoa(serverPageLimit)}, gotOffsets)
 }
 
 func mockIONOSServers(w http.ResponseWriter, r *http.Request) {
