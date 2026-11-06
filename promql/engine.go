@@ -1872,20 +1872,19 @@ func (enh *EvalNodeHelper) internOutMetric(metric labels.Labels) (labels.Labels,
 	return metric, slot
 }
 
-func (enh *EvalNodeHelper) slotForInputSeries(seriesID int, metric labels.Labels) int {
-	if seriesID > 0 {
-		if seriesID >= len(enh.selfSlotCache) {
-			enh.selfSlotCache = slices.Grow(enh.selfSlotCache, seriesID-len(enh.selfSlotCache)+1)[:seriesID+1]
-		}
-		if s := enh.selfSlotCache[seriesID]; s > 0 {
-			return s - 1
-		}
-		_, slot := enh.internOutMetric(metric)
-		enh.selfSlotCache[seriesID] = slot + 1
-		return slot
+func (enh *EvalNodeHelper) appendInputSeriesSlot(seriesID int, metric labels.Labels) {
+	if seriesID <= 0 {
+		return
 	}
-	_, slot := enh.internOutMetric(metric)
-	return slot
+	if seriesID >= len(enh.selfSlotCache) {
+		enh.selfSlotCache = slices.Grow(enh.selfSlotCache, seriesID-len(enh.selfSlotCache)+1)[:seriesID+1]
+	}
+	slot := enh.selfSlotCache[seriesID] - 1
+	if slot < 0 {
+		_, slot = enh.internOutMetric(metric)
+		enh.selfSlotCache[seriesID] = slot + 1
+	}
+	enh.outSlots = append(enh.outSlots, slot)
 }
 
 func (enh *EvalNodeHelper) resetRightSeriesIDs() []int {
@@ -2081,7 +2080,11 @@ func (ev *evaluator) rangeEval(ctx context.Context, matching *parser.VectorMatch
 		Series
 		ts int64
 	}
-	outSeries := make([]seriesAndTimestamp, 0, biggestLen)
+	isRange := ev.startTimestamp != ev.endTimestamp
+	var outSeries []seriesAndTimestamp
+	if isRange {
+		outSeries = make([]seriesAndTimestamp, 0, biggestLen)
+	}
 	tempNumSamples := ev.currentSamples
 
 	var (
@@ -2114,21 +2117,26 @@ func (ev *evaluator) rangeEval(ctx context.Context, matching *parser.VectorMatch
 
 		signatureToOrdinal := make(map[string]int)
 		nextSeriesID := 1
-		totalInputSeries := 0
-		for i := range exprs {
-			totalInputSeries += len(matrixes[i])
+		if isRange {
+			totalInputSeries := 0
+			for i := range exprs {
+				totalInputSeries += len(matrixes[i])
+			}
+			enh.binopPairCache = make([]binopPairCacheEntry, totalInputSeries+1)
+			enh.selfSlotCache = make([]int, totalInputSeries+1)
+			enh.outSlots = make([]int, 0, biggestLen)
 		}
-		enh.binopPairCache = make([]binopPairCacheEntry, totalInputSeries+1)
-		enh.selfSlotCache = make([]int, totalInputSeries+1)
-		enh.outSlots = make([]int, 0, biggestLen)
 
 		for i := range exprs {
 			seriesHelpers[i] = make([]EvalSeriesHelper, len(matrixes[i]))
 			bufHelpers[i] = make([]EvalSeriesHelper, len(matrixes[i]))
 
 			for si := range matrixes[i] {
-				sID := nextSeriesID
-				nextSeriesID++
+				var sID int
+				if isRange {
+					sID = nextSeriesID
+					nextSeriesID++
+				}
 				strSig := sigf(matrixes[i][si].Metric)
 
 				if sigOrd, ok := signatureToOrdinal[strSig]; ok {
@@ -3892,7 +3900,7 @@ func (*evaluator) VectorAnd(lhs, rhs Vector, matching *parser.VectorMatching, lh
 		// If there's a matching entry in the right-hand side Vector, add the sample.
 		if rightSigOrdinalsPresent[lhsh[i].sigOrdinal] {
 			enh.Out = append(enh.Out, ls)
-			enh.outSlots = append(enh.outSlots, enh.slotForInputSeries(lhsh[i].seriesID, ls.Metric))
+			enh.appendInputSeriesSlot(lhsh[i].seriesID, ls.Metric)
 		}
 	}
 	return enh.Out
@@ -3909,7 +3917,7 @@ func (*evaluator) VectorOr(lhs, rhs Vector, matching *parser.VectorMatching, lhs
 		enh.Out = append(enh.Out, rhs...)
 		if len(rhsh) == len(rhs) {
 			for j := range rhs {
-				enh.outSlots = append(enh.outSlots, enh.slotForInputSeries(rhsh[j].seriesID, rhs[j].Metric))
+				enh.appendInputSeriesSlot(rhsh[j].seriesID, rhs[j].Metric)
 			}
 		}
 		return enh.Out
@@ -3917,7 +3925,7 @@ func (*evaluator) VectorOr(lhs, rhs Vector, matching *parser.VectorMatching, lhs
 		enh.Out = append(enh.Out, lhs...)
 		if len(lhsh) == len(lhs) {
 			for i := range lhs {
-				enh.outSlots = append(enh.outSlots, enh.slotForInputSeries(lhsh[i].seriesID, lhs[i].Metric))
+				enh.appendInputSeriesSlot(lhsh[i].seriesID, lhs[i].Metric)
 			}
 		}
 		return enh.Out
@@ -3928,13 +3936,13 @@ func (*evaluator) VectorOr(lhs, rhs Vector, matching *parser.VectorMatching, lhs
 	for i, ls := range lhs {
 		leftSigOrdinalsPresent[lhsh[i].sigOrdinal] = true
 		enh.Out = append(enh.Out, ls)
-		enh.outSlots = append(enh.outSlots, enh.slotForInputSeries(lhsh[i].seriesID, ls.Metric))
+		enh.appendInputSeriesSlot(lhsh[i].seriesID, ls.Metric)
 	}
 	// Add all right-hand side elements which have not been added from the left-hand side.
 	for j, rs := range rhs {
 		if !leftSigOrdinalsPresent[rhsh[j].sigOrdinal] {
 			enh.Out = append(enh.Out, rs)
-			enh.outSlots = append(enh.outSlots, enh.slotForInputSeries(rhsh[j].seriesID, rs.Metric))
+			enh.appendInputSeriesSlot(rhsh[j].seriesID, rs.Metric)
 		}
 	}
 	return enh.Out
@@ -3953,7 +3961,7 @@ func (*evaluator) VectorUnless(lhs, rhs Vector, matching *parser.VectorMatching,
 		enh.Out = append(enh.Out, lhs...)
 		if len(lhsh) == len(lhs) {
 			for i := range lhs {
-				enh.outSlots = append(enh.outSlots, enh.slotForInputSeries(lhsh[i].seriesID, lhs[i].Metric))
+				enh.appendInputSeriesSlot(lhsh[i].seriesID, lhs[i].Metric)
 			}
 		}
 		return enh.Out
@@ -3968,7 +3976,7 @@ func (*evaluator) VectorUnless(lhs, rhs Vector, matching *parser.VectorMatching,
 	for i, ls := range lhs {
 		if !rightSigOrdinalsPresent[lhsh[i].sigOrdinal] {
 			enh.Out = append(enh.Out, ls)
-			enh.outSlots = append(enh.outSlots, enh.slotForInputSeries(lhsh[i].seriesID, ls.Metric))
+			enh.appendInputSeriesSlot(lhsh[i].seriesID, ls.Metric)
 		}
 	}
 	return enh.Out
