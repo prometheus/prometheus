@@ -81,9 +81,9 @@ type NativeHistogramsAsClassicQuerier struct {
 }
 
 // NewNativeHistogramsAsClassicQuerier returns a new querier that wraps the given querier
-// and converts NHCB to classic histogram format for queries.
-func NewNativeHistogramsAsClassicQuerier(q Querier) Querier {
-	return &NativeHistogramsAsClassicQuerier{Querier: q}
+// and converts NHCB to classic histogram format for queries, updating the given metrics.
+func NewNativeHistogramsAsClassicQuerier(q Querier, metrics *NativeHistogramsAsClassicMetrics) Querier {
+	return &NativeHistogramsAsClassicQuerier{Querier: q, metrics: metrics}
 }
 
 // NativeHistogramsAsClassicQueryable wraps a Queryable and applies NHCB-to-classic
@@ -101,7 +101,7 @@ type NativeHistogramsAsClassicQueryable struct {
 }
 
 // NewNativeHistogramsAsClassicQueryable returns a new queryable that wraps the given
-// queryable and applies NHCB-to-classic conversion to queriers, updating metrics if not nil.
+// queryable and applies NHCB-to-classic conversion to queriers, updating the given metrics.
 func NewNativeHistogramsAsClassicQueryable(q Queryable, metrics *NativeHistogramsAsClassicMetrics) Queryable {
 	return &NativeHistogramsAsClassicQueryable{Queryable: q, metrics: metrics}
 }
@@ -125,12 +125,9 @@ func (q *NativeHistogramsAsClassicQuerier) Select(ctx context.Context, sortSerie
 
 	metricNameMatcher := &labels.Matcher{Type: labels.MatchEqual, Name: model.MetricNameLabel, Value: baseName}
 
-	classicSet := q.Querier.Select(ctx, sortSeries, hints, matchers...)
+	classicSet := &countingSeriesSet{SeriesSet: q.Querier.Select(ctx, sortSeries, hints, matchers...), counter: q.metrics.fromClassic}
 	if classicSet.Err() != nil {
 		return classicSet
-	}
-	if q.metrics != nil {
-		classicSet = &countingSeriesSet{SeriesSet: classicSet, counter: q.metrics.fromClassic}
 	}
 
 	// Filter in place: extractHistogramSuffix allocates baseMatchers with
@@ -157,14 +154,14 @@ func (q *NativeHistogramsAsClassicQuerier) Select(ctx context.Context, sortSerie
 		return nhcbSet
 	}
 
-	var convertedSet SeriesSet = &nhcbToClassicSeriesSet{
-		nhcbSet:     nhcbSet,
-		leMatchers:  leMatchers,
-		suffix:      suffix,
-		lsetBuilder: labels.NewBuilder(labels.EmptyLabels()),
-	}
-	if q.metrics != nil {
-		convertedSet = &countingSeriesSet{SeriesSet: convertedSet, counter: q.metrics.fromNHCB}
+	convertedSet := &countingSeriesSet{
+		SeriesSet: &nhcbToClassicSeriesSet{
+			nhcbSet:     nhcbSet,
+			leMatchers:  leMatchers,
+			suffix:      suffix,
+			lsetBuilder: labels.NewBuilder(labels.EmptyLabels()),
+		},
+		counter: q.metrics.fromNHCB,
 	}
 
 	return &multipleSeriesSet{seriesSet: []SeriesSet{classicSet, convertedSet}}
