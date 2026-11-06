@@ -4132,6 +4132,23 @@ write_relabel_configs:
 # When `mode` is `stateless` or `stateless-st`, this is set to `true` and manually setting it to `false` is an error.
 [ send_native_histograms: <boolean> | default = false ]
 
+# EXPERIMENTAL: Controls how frequently HELP metadata from
+# `--enable-feature=metadata-wal-records` is sent per series when
+# `protobuf_message` is `io.prometheus.write.v2.Request`.
+# When set to 0s, the default, HELP is sent with every sample and histogram.
+# Setting a positive duration requires `--enable-feature=metadata-wal-records`
+# and sends HELP only on the first sample or histogram for a series, whenever
+# its metadata changes, and periodically once per `send_help_interval` for
+# active series.
+# Prometheus marks HELP as sent when a point is enqueued, so if a batch is
+# later dropped on an unrecoverable remote error, `sample_age_limit`, or
+# shutdown, the receiver will not get HELP again until the next interval or
+# metadata change. Allowed with `stateless` and `stateless-st` modes because
+# HELP is optional in the Remote-Write 2.0 spec, though stateless receivers
+# that do not cache metadata across requests only see HELP on requests that
+# include it.
+[ send_help_interval: <duration> | default = 0s ]
+
 # When enabled, remote-write will resolve the URL host name via DNS, choose one of the IP addresses at random, and connect to it.
 # When disabled, remote-write relies on Go's standard behavior, which is to try to connect to each address in turn.
 # The connection timeout applies to the whole operation, i.e. in the latter case it is spread over all attempt.
@@ -4269,9 +4286,12 @@ queue_config:
   # which means that all samples are sent.
   [ sample_age_limit: <duration> | default = 0s ]
 
-# Configures the sending of series metadata to remote storage
-# if the `prometheus.WriteRequest` message was chosen. When
-# `io.prometheus.write.v2.Request` is used, metadata is always sent.
+# Configures the sending of series metadata to remote storage.
+# Only applies when the `prometheus.WriteRequest` message is used. When
+# `io.prometheus.write.v2.Request` is used, Prometheus sends metadata from
+# `--enable-feature=metadata-wal-records` or `--enable-feature=type-and-unit-labels`
+# inline with each series. Top-level `send_help_interval` controls how often
+# HELP is sent and requires `--enable-feature=metadata-wal-records` when set.
 #
 # Metadata configuration is subject to change at any point
 # or be removed in future releases.

@@ -330,7 +330,7 @@ func newTestClientAndQueueManager(t testing.TB, flushDeadline time.Duration, pro
 func newTestQueueManager(t testing.TB, cfg config.QueueConfig, mcfg config.MetadataConfig, deadline time.Duration, c WriteClient, protoMsg remoteapi.WriteMessageType) *QueueManager {
 	dir := t.TempDir()
 	metrics := newQueueManagerMetrics(nil, "", "")
-	m := NewQueueManager(metrics, nil, nil, nil, dir, newEWMARate(ewmaWeight, shardUpdateDuration), cfg, mcfg, labels.EmptyLabels(), nil, c, deadline, newPool(), newHighestTimestampMetric(), nil, false, false, false, protoMsg, remoteapi.WriteModeNone, record.NewBuffersPool(), false, false)
+	m := NewQueueManager(metrics, nil, nil, nil, dir, newEWMARate(ewmaWeight, shardUpdateDuration), cfg, mcfg, labels.EmptyLabels(), nil, c, deadline, newPool(), newHighestTimestampMetric(), nil, false, false, false, protoMsg, remoteapi.WriteModeNone, record.NewBuffersPool(), false, false, 0)
 
 	return m
 }
@@ -877,7 +877,7 @@ func TestDisableReshardOnRetry(t *testing.T) {
 		}
 	)
 
-	m := NewQueueManager(metrics, nil, nil, nil, "", newEWMARate(ewmaWeight, shardUpdateDuration), cfg, mcfg, labels.EmptyLabels(), nil, client, 0, newPool(), newHighestTimestampMetric(), nil, false, false, false, remoteapi.WriteV1MessageType, remoteapi.WriteModeNone, nil, false, false)
+	m := NewQueueManager(metrics, nil, nil, nil, "", newEWMARate(ewmaWeight, shardUpdateDuration), cfg, mcfg, labels.EmptyLabels(), nil, client, 0, newPool(), newHighestTimestampMetric(), nil, false, false, false, remoteapi.WriteV1MessageType, remoteapi.WriteModeNone, nil, false, false, 0)
 	m.StoreSeries(recs.Series, 0)
 
 	// Attempt to samples while the manager is running. We immediately stop the
@@ -1566,7 +1566,7 @@ func BenchmarkStoreSeries(b *testing.B) {
 				mcfg := config.DefaultMetadataConfig
 				metrics := newQueueManagerMetrics(nil, "", "")
 
-				m := NewQueueManager(metrics, nil, nil, nil, dir, newEWMARate(ewmaWeight, shardUpdateDuration), cfg, mcfg, labels.EmptyLabels(), nil, c, defaultFlushDeadline, newPool(), newHighestTimestampMetric(), nil, false, false, false, remoteapi.WriteV1MessageType, remoteapi.WriteModeNone, record.NewBuffersPool(), false, false)
+				m := NewQueueManager(metrics, nil, nil, nil, dir, newEWMARate(ewmaWeight, shardUpdateDuration), cfg, mcfg, labels.EmptyLabels(), nil, c, defaultFlushDeadline, newPool(), newHighestTimestampMetric(), nil, false, false, false, remoteapi.WriteV1MessageType, remoteapi.WriteModeNone, record.NewBuffersPool(), false, false, 0)
 				m.externalLabels = tc.externalLabels
 				m.relabelConfigs = tc.relabelConfigs
 
@@ -2326,6 +2326,100 @@ func BenchmarkBuildV2WriteRequest(b *testing.B) {
 	b.Run("1k instances", func(b *testing.B) {
 		bench(b, hundredBatch)
 	})
+}
+
+// Recommended CLI invocation(s):
+/*
+	export bench=buildV2WriteRequestWithHelpInterval && go test ./storage/remote/... \
+		-run '^$' -bench '^BenchmarkBuildV2WriteRequestWithHelpInterval$' \
+		-benchtime 1s -count 6 -cpu 2 -timeout 999m -benchmem \
+		| tee ${bench}.txt && benchstat -col /send_help_interval ${bench}.txt
+*/
+func BenchmarkBuildV2WriteRequestWithHelpInterval(b *testing.B) {
+	noopLogger := promslog.NewNopLogger()
+	helpByMetric := map[string]string{
+		"go_gc_duration_seconds":           "A summary of the wall-time pause (stop-the-world) duration in garbage collection cycles across the Go runtime scheduler.",
+		"go_gc_duration_seconds_sum":       "A summary of the wall-time pause (stop-the-world) duration in garbage collection cycles across the Go runtime scheduler.",
+		"go_gc_duration_seconds_count":     "A summary of the wall-time pause (stop-the-world) duration in garbage collection cycles across the Go runtime scheduler.",
+		"go_memstats_alloc_bytes_total":    "Total number of bytes allocated in the heap, even if subsequently freed by the garbage collector during program execution.",
+		"go_memstats_frees_total":          "Total count of heap object deallocations performed by the mark-sweep collector since process startup.",
+		"go_memstats_lookups_total":        "Total number of pointer dereferences and runtime lookup operations tracked by the memory profiler.",
+		"go_memstats_mallocs_total":        "Total number of heap object allocations requested by application goroutines since the process started.",
+		"go_goroutines":                    "Number of goroutines that currently exist in the Go runtime, including runnable, waiting, and syscall-bound states.",
+		"go_info":                          "Information about the Go environment, compiler toolchain version, and target architecture used to build the binary.",
+		"go_memstats_alloc_bytes":          "Number of bytes allocated in the heap and currently in use by live reachable objects.",
+		"go_memstats_buck_hash_sys_bytes":  "Number of bytes of memory used by the profiling bucket hash table for stack trace indexing.",
+		"go_memstats_gc_sys_bytes":         "Number of bytes of memory used for garbage collection metadata, work buffers, and mark bitmaps.",
+		"go_memstats_heap_alloc_bytes":     "Number of heap bytes allocated and currently in use, matching the live object footprint after the latest sweep.",
+		"go_memstats_heap_idle_bytes":      "Number of heap bytes in unused spans waiting to be reused by future allocations or returned to the operating system.",
+		"go_memstats_heap_inuse_bytes":     "Number of heap bytes in active spans that contain at least one allocated object.",
+		"go_memstats_heap_objects":         "Total number of allocated objects currently residing in the Go runtime heap.",
+		"go_memstats_heap_released_bytes":  "Number of physical heap bytes returned to the underlying operating system via madvise or VirtualFree.",
+		"go_memstats_heap_sys_bytes":       "Number of virtual address space bytes obtained from the operating system for the heap arena.",
+		"go_memstats_last_gc_time_seconds": "Number of seconds since 1970-01-01 UTC of the conclusion of the most recent garbage collection cycle.",
+		"go_memstats_mcache_inuse_bytes":   "Number of bytes in use by per-processor mcache structures for small object allocation without locks.",
+		"go_memstats_mcache_sys_bytes":     "Number of bytes obtained from the system for per-processor mcache structures.",
+		"go_memstats_mspan_inuse_bytes":    "Number of bytes in use by mspan descriptors tracking page runs in the page allocator.",
+		"go_memstats_mspan_sys_bytes":      "Number of bytes obtained from the operating system for mspan descriptor structures.",
+		"go_memstats_next_gc_bytes":        "Target heap size in bytes for the next garbage collection cycle as computed by the GC pacer.",
+		"go_memstats_other_sys_bytes":      "Number of bytes used for miscellaneous off-heap runtime allocations such as channel locks and finalizer queues.",
+		"go_memstats_stack_inuse_bytes":    "Number of bytes currently used by goroutine execution stacks managed by the stack allocator.",
+		"go_memstats_stack_sys_bytes":      "Number of bytes obtained from the operating system for goroutine stack segments.",
+		"go_memstats_sys_bytes":            "Total number of bytes of virtual memory obtained from the operating system across all runtime subsystems.",
+		"go_threads":                       "Number of operating system threads created by the Go runtime to execute goroutines and blocking cgo or syscall work.",
+	}
+	for _, instances := range []int{6, 60, 300} {
+		baseBatch := createDummyTimeSeries(instances)
+		for i := range baseBatch {
+			name := baseBatch[i].seriesLabels.Get(labels.MetricName)
+			baseBatch[i].metadata = unique.Make(metadata.Metadata{
+				Type: model.MetricTypeGauge,
+				Unit: "bytes",
+				Help: helpByMetric[name],
+			})
+		}
+
+		for _, interval := range []model.Duration{0, model.Duration(5 * time.Minute)} {
+			b.Run(fmt.Sprintf("instances=%d/send_help_interval=%s", instances, interval), func(b *testing.B) {
+				batch := slices.Clone(baseBatch)
+				for i := range batch {
+					batch[i].omitHelp = interval > 0
+				}
+
+				symbolTable := writev2.NewSymbolTable()
+				cEnc := compression.NewSyncEncodeBuffer()
+				seriesBuff := make([]writev2.TimeSeries, len(batch))
+				for i := range seriesBuff {
+					seriesBuff[i].Samples = []writev2.Sample{{}}
+					seriesBuff[i].Exemplars = []writev2.Exemplar{{}}
+				}
+				pBuf := []byte{}
+
+				// Warm up reusable shard buffers once so b.Loop measures steady-state request building.
+				populateV2TimeSeries(&symbolTable, batch, seriesBuff, true, true, false)
+				if _, _, _, _, err := buildV2WriteRequest(noopLogger, seriesBuff, symbolTable.Symbols(), &pBuf, nil, cEnc, compression.Snappy); err != nil {
+					b.Fatal(err)
+				}
+				symbolTable.Reset()
+
+				var totalCompressed, totalUncompressed int
+				b.ReportAllocs()
+				b.ResetTimer()
+				for b.Loop() {
+					populateV2TimeSeries(&symbolTable, batch, seriesBuff, true, true, false)
+					req, _, _, _, err := buildV2WriteRequest(noopLogger, seriesBuff, symbolTable.Symbols(), &pBuf, nil, cEnc, compression.Snappy)
+					if err != nil {
+						b.Fatal(err)
+					}
+					symbolTable.Reset()
+					totalCompressed += len(req)
+					totalUncompressed += len(pBuf)
+				}
+				b.ReportMetric(float64(totalCompressed)/float64(b.N), "snappy-B/op")
+				b.ReportMetric(float64(totalUncompressed)/float64(b.N), "uncompressed-B/op")
+			})
+		}
+	}
 }
 
 func TestDropOldTimeSeries(t *testing.T) {
@@ -3287,7 +3381,7 @@ func newTestNHCBQueueManager(t testing.TB, c WriteClient, opts nhcbQueueTestOpti
 	}
 	m := NewQueueManager(newQueueManagerMetrics(nil, "", ""), nil, nil, nil, t.TempDir(), opts.samplesIn,
 		cfg, mcfg, labels.EmptyLabels(), nil, c, defaultFlushDeadline, newPool(), opts.highestRecvTimestamp,
-		nil, opts.sendExemplars, opts.sendNativeHistograms, false, opts.protoMsg, remoteapi.WriteModeNone, record.NewBuffersPool(), false, true)
+		nil, opts.sendExemplars, opts.sendNativeHistograms, false, opts.protoMsg, remoteapi.WriteModeNone, record.NewBuffersPool(), false, true, 0)
 	// Start the production senders without the WAL watcher or automatic resharding loop.
 	m.numShards = opts.numShards
 	m.shards.start(opts.numShards)
@@ -4123,7 +4217,7 @@ func TestQueueManager_RemoteWriteModes(t *testing.T) {
 				metrics, nil, nil, nil, t.TempDir(), newEWMARate(ewmaWeight, shardUpdateDuration),
 				cfg, mcfg, labels.EmptyLabels(), nil, c, defaultFlushDeadline, newPool(), newHighestTimestampMetric(),
 				nil, true, true, enableTypeAndUnitLabels, remoteapi.WriteV2MessageType, remoteapi.WriteModeStateless,
-				record.NewBuffersPool(), false, false,
+				record.NewBuffersPool(), false, false, 0,
 			)
 			m.numShards = 1
 			m.shards.start(1)
@@ -4202,7 +4296,7 @@ func TestQueueManager_RemoteWriteModes(t *testing.T) {
 				metrics, nil, nil, nil, t.TempDir(), newEWMARate(ewmaWeight, shardUpdateDuration),
 				cfg, mcfg, labels.EmptyLabels(), nil, c, defaultFlushDeadline, newPool(), newHighestTimestampMetric(),
 				nil, true, true, enableTypeAndUnitLabels, remoteapi.WriteV2MessageType, remoteapi.WriteModeStatelessST,
-				record.NewBuffersPool(), false, false,
+				record.NewBuffersPool(), false, false, 0,
 			)
 			m.numShards = 1
 			m.shards.start(1)
@@ -4301,6 +4395,351 @@ func TestQueueManager_RemoteWriteModes(t *testing.T) {
 			require.True(t, value.IsStaleNaN(c.receivedFloatHistograms[sHistWithST.Labels.String()][1].Sum))
 
 			require.Empty(t, c.receivedExemplars)
+		})
+	}
+}
+
+func TestQueueManager_SendHelpInterval(t *testing.T) {
+	t.Parallel()
+
+	nativeHist := &histogram.Histogram{
+		Schema:          0,
+		Count:           5,
+		Sum:             10,
+		PositiveSpans:   []histogram.Span{{Offset: 0, Length: 1}},
+		PositiveBuckets: []int64{5},
+	}
+	require.NoError(t, nativeHist.Validate())
+	nativeFloatHist := nativeHist.ToFloat(nil)
+
+	nhcbHist := &histogram.Histogram{
+		Schema:          histogram.CustomBucketsSchema,
+		CustomValues:    []float64{1},
+		PositiveSpans:   []histogram.Span{{Length: 2}},
+		PositiveBuckets: []int64{2, 1},
+		Count:           5,
+		Sum:             7,
+	}
+	require.NoError(t, nhcbHist.Validate())
+	nhcbFloatHist := nhcbHist.ToFloat(nil)
+	invalidNHCB := &histogram.Histogram{
+		Schema:       histogram.CustomBucketsSchema,
+		CustomValues: []float64{2, 1}, // Unsorted bounds fail ClassicBucketCounts validation.
+	}
+
+	sCounter := record.RefSeries{
+		Ref:    1,
+		Labels: labels.FromStrings("__name__", "http_requests_total"),
+	}
+	sHist := record.RefSeries{
+		Ref:    2,
+		Labels: labels.FromStrings("__name__", "http_request_duration_seconds"),
+	}
+	exemplarLabels := labels.FromStrings("trace_id", "abc")
+	initialMeta := []record.RefMetadata{
+		{
+			Ref:  sCounter.Ref,
+			Type: record.GetMetricType(model.MetricTypeCounter),
+			Unit: "requests",
+			Help: "Total HTTP requests.",
+		},
+		{
+			Ref:  sHist.Ref,
+			Type: record.GetMetricType(model.MetricTypeHistogram),
+			Unit: "seconds",
+			Help: "HTTP request duration.",
+		},
+	}
+
+	for _, tc := range []struct {
+		name                   string
+		interval               model.Duration
+		mode                   remoteapi.WriteMode
+		convertNHCB            bool
+		run                    func(t *testing.T, m *QueueManager)
+		expectedMetadata       map[string][]prompb.MetricMetadata
+		expectedExemplars      int
+		expectedSampleHelps    float64
+		expectedSampleTypes    float64
+		expectedHistogramHelps float64
+		expectedHistogramTypes float64
+		expectedNHCBConvErrors float64
+	}{
+		{
+			name:     "default sends help on every point",
+			interval: 0,
+			mode:     remoteapi.WriteModeNone,
+			run: func(t *testing.T, m *QueueManager) {
+				m.StoreSeries([]record.RefSeries{sCounter, sHist}, 0)
+				m.StoreMetadata(initialMeta)
+
+				require.True(t, m.Append([]record.RefSample{
+					{Ref: sCounter.Ref, ST: 100, T: 1000, V: 1},
+					{Ref: sCounter.Ref, ST: 100, T: 2000, V: 2},
+				}))
+				require.True(t, m.AppendExemplars([]record.RefExemplar{
+					{Ref: sCounter.Ref, T: 2000, V: 2, Labels: exemplarLabels},
+				}))
+				require.True(t, m.AppendHistograms([]record.RefHistogramSample{
+					{Ref: sHist.Ref, ST: 100, T: 1000, H: nativeHist},
+					{Ref: sHist.Ref, ST: 100, T: 2000, H: nativeHist},
+				}))
+			},
+			expectedMetadata: map[string][]prompb.MetricMetadata{
+				sCounter.Labels.String(): {
+					{MetricFamilyName: sCounter.Labels.String(), Type: prompb.MetricMetadata_COUNTER, Unit: "requests", Help: "Total HTTP requests."},
+					{MetricFamilyName: sCounter.Labels.String(), Type: prompb.MetricMetadata_COUNTER, Unit: "requests", Help: "Total HTTP requests."},
+					{MetricFamilyName: sCounter.Labels.String(), Type: prompb.MetricMetadata_COUNTER, Unit: "requests", Help: "Total HTTP requests."},
+				},
+				sHist.Labels.String(): {
+					{MetricFamilyName: sHist.Labels.String(), Type: prompb.MetricMetadata_HISTOGRAM, Unit: "seconds", Help: "HTTP request duration."},
+					{MetricFamilyName: sHist.Labels.String(), Type: prompb.MetricMetadata_HISTOGRAM, Unit: "seconds", Help: "HTTP request duration."},
+				},
+			},
+			expectedExemplars:      1,
+			expectedSampleTypes:    2,
+			expectedSampleHelps:    2,
+			expectedHistogramTypes: 2,
+			expectedHistogramHelps: 2,
+		},
+		{
+			name:     "interval sends help on first point, on metadata change, and periodically",
+			interval: model.Duration(5 * time.Minute),
+			mode:     remoteapi.WriteModeStatelessST,
+			run: func(t *testing.T, m *QueueManager) {
+				m.StoreSeries([]record.RefSeries{sCounter, sHist}, 0)
+				m.StoreMetadata(initialMeta)
+
+				// 1. A sample/histogram dropped by mode validation must not consume the initial Help send.
+				require.True(t, m.Append([]record.RefSample{
+					{Ref: sCounter.Ref, ST: 0, T: 900, V: 1},
+				}))
+				require.True(t, m.AppendHistograms([]record.RefHistogramSample{
+					{Ref: sHist.Ref, ST: 0, T: 900, H: nativeHist},
+				}))
+
+				// 2. First valid points at t0 send Help.
+				require.True(t, m.Append([]record.RefSample{
+					{Ref: sCounter.Ref, ST: 100, T: 1000, V: 1},
+				}))
+				require.True(t, m.AppendHistograms([]record.RefHistogramSample{
+					{Ref: sHist.Ref, ST: 100, T: 1000, H: nativeHist},
+				}))
+
+				// 3. Points within the 5m interval omit Help while preserving Type and Unit.
+				time.Sleep(time.Minute)
+				require.True(t, m.Append([]record.RefSample{
+					{Ref: sCounter.Ref, ST: 100, T: 2000, V: 2},
+				}))
+				require.True(t, m.AppendFloatHistograms([]record.RefFloatHistogramSample{
+					{Ref: sHist.Ref, ST: 100, T: 2000, FH: nativeFloatHist},
+				}))
+
+				// 4. Storing a new metadata record on sCounter triggers an immediate Help send for sCounter only;
+				// sHist (which has no new WAL metadata record) continues omitting Help until the interval expires.
+				time.Sleep(time.Minute)
+				m.StoreMetadata([]record.RefMetadata{
+					{
+						Ref:  sCounter.Ref,
+						Type: record.GetMetricType(model.MetricTypeCounter),
+						Unit: "requests",
+						Help: "Updated total HTTP requests.",
+					},
+				})
+				require.True(t, m.Append([]record.RefSample{
+					{Ref: sCounter.Ref, ST: 100, T: 3000, V: 3},
+				}))
+				require.True(t, m.AppendHistograms([]record.RefHistogramSample{
+					{Ref: sHist.Ref, ST: 100, T: 3000, H: nativeHist},
+				}))
+
+				// 5. Once send_help_interval (5m from t0) elapses, all series re-send Help on their next point.
+				time.Sleep(3 * time.Minute)
+				require.True(t, m.Append([]record.RefSample{
+					{Ref: sCounter.Ref, ST: 100, T: 4000, V: 4},
+				}))
+				require.True(t, m.AppendFloatHistograms([]record.RefFloatHistogramSample{
+					{Ref: sHist.Ref, ST: 100, T: 4000, FH: nativeFloatHist},
+				}))
+			},
+			expectedMetadata: map[string][]prompb.MetricMetadata{
+				sCounter.Labels.String(): {
+					{MetricFamilyName: sCounter.Labels.String(), Type: prompb.MetricMetadata_COUNTER, Unit: "requests", Help: "Total HTTP requests."},
+					{MetricFamilyName: sCounter.Labels.String(), Type: prompb.MetricMetadata_COUNTER, Unit: "requests", Help: ""},
+					{MetricFamilyName: sCounter.Labels.String(), Type: prompb.MetricMetadata_COUNTER, Unit: "requests", Help: "Updated total HTTP requests."},
+					{MetricFamilyName: sCounter.Labels.String(), Type: prompb.MetricMetadata_COUNTER, Unit: "requests", Help: "Updated total HTTP requests."},
+				},
+				sHist.Labels.String(): {
+					{MetricFamilyName: sHist.Labels.String(), Type: prompb.MetricMetadata_HISTOGRAM, Unit: "seconds", Help: "HTTP request duration."},
+					{MetricFamilyName: sHist.Labels.String(), Type: prompb.MetricMetadata_HISTOGRAM, Unit: "seconds", Help: ""},
+					{MetricFamilyName: sHist.Labels.String(), Type: prompb.MetricMetadata_HISTOGRAM, Unit: "seconds", Help: ""},
+					{MetricFamilyName: sHist.Labels.String(), Type: prompb.MetricMetadata_HISTOGRAM, Unit: "seconds", Help: "HTTP request duration."},
+				},
+			},
+			expectedSampleTypes:    4,
+			expectedSampleHelps:    3,
+			expectedHistogramTypes: 4,
+			expectedHistogramHelps: 2,
+		},
+		{
+			name:        "nhcb conversion error does not consume help; conversion and transitions respect interval",
+			interval:    model.Duration(5 * time.Minute),
+			mode:        remoteapi.WriteModeNone,
+			convertNHCB: true,
+			run: func(t *testing.T, m *QueueManager) {
+				m.StoreSeries([]record.RefSeries{sHist}, 0)
+				m.StoreMetadata(initialMeta[1:])
+
+				// 1. Failed NHCB conversions must not mark Help as sent.
+				require.True(t, m.AppendHistograms([]record.RefHistogramSample{
+					{Ref: sHist.Ref, ST: 100, T: 900, H: invalidNHCB},
+				}))
+				require.True(t, m.AppendFloatHistograms([]record.RefFloatHistogramSample{
+					{Ref: sHist.Ref, ST: 100, T: 950, FH: invalidNHCB.ToFloat(nil)},
+				}))
+
+				// 2. First valid integer NHCB at t0 emits Help on all converted classic series.
+				require.True(t, m.AppendHistograms([]record.RefHistogramSample{
+					{Ref: sHist.Ref, ST: 100, T: 1000, H: nhcbHist},
+				}))
+
+				// 3. Float NHCB within the 5m interval omits Help.
+				time.Sleep(time.Minute)
+				require.True(t, m.AppendFloatHistograms([]record.RefFloatHistogramSample{
+					{Ref: sHist.Ref, ST: 100, T: 2000, FH: nhcbFloatHist},
+				}))
+
+				// 4. Transitioning to an exponential histogram within the interval omits Help on retired and replacement series.
+				time.Sleep(time.Minute)
+				require.True(t, m.AppendHistograms([]record.RefHistogramSample{
+					{Ref: sHist.Ref, ST: 100, T: 3000, H: nativeHist},
+				}))
+
+				// 5. After 5m from t0 elapses, NHCB re-sends Help; a subsequent float transition within the new window omits Help.
+				time.Sleep(3 * time.Minute)
+				require.True(t, m.AppendHistograms([]record.RefHistogramSample{
+					{Ref: sHist.Ref, ST: 100, T: 4000, H: nhcbHist},
+				}))
+				time.Sleep(time.Minute)
+				require.True(t, m.Append([]record.RefSample{
+					{Ref: sHist.Ref, ST: 100, T: 5000, V: 42},
+				}))
+			},
+			expectedMetadata: func() map[string][]prompb.MetricMetadata {
+				out := map[string][]prompb.MetricMetadata{
+					sHist.Labels.String(): {
+						{MetricFamilyName: sHist.Labels.String(), Type: prompb.MetricMetadata_HISTOGRAM, Unit: "seconds", Help: ""},
+						{MetricFamilyName: sHist.Labels.String(), Type: prompb.MetricMetadata_HISTOGRAM, Unit: "seconds", Help: ""},
+					},
+				}
+				for _, classicID := range []string{
+					`{__name__="http_request_duration_seconds_bucket", le="1.0"}`,
+					`{__name__="http_request_duration_seconds_bucket", le="+Inf"}`,
+					`{__name__="http_request_duration_seconds_count"}`,
+					`{__name__="http_request_duration_seconds_sum"}`,
+				} {
+					out[classicID] = []prompb.MetricMetadata{
+						{MetricFamilyName: classicID, Type: prompb.MetricMetadata_HISTOGRAM, Unit: "seconds", Help: "HTTP request duration."},
+						{MetricFamilyName: classicID, Type: prompb.MetricMetadata_HISTOGRAM, Unit: "seconds", Help: ""},
+						{MetricFamilyName: classicID, Type: prompb.MetricMetadata_HISTOGRAM, Unit: "seconds", Help: ""},
+						{MetricFamilyName: classicID, Type: prompb.MetricMetadata_HISTOGRAM, Unit: "seconds", Help: "HTTP request duration."},
+						{MetricFamilyName: classicID, Type: prompb.MetricMetadata_HISTOGRAM, Unit: "seconds", Help: ""},
+					}
+				}
+				return out
+			}(),
+			expectedSampleTypes:    21,
+			expectedSampleHelps:    8,
+			expectedHistogramTypes: 1,
+			expectedHistogramHelps: 0,
+			expectedNHCBConvErrors: 2,
+		},
+		{
+			name:     "exemplars omit help without consuming interval",
+			interval: model.Duration(5 * time.Minute),
+			mode:     remoteapi.WriteModeNone,
+			run: func(t *testing.T, m *QueueManager) {
+				m.StoreSeries([]record.RefSeries{sCounter}, 0)
+				m.StoreMetadata(initialMeta[:1])
+
+				// 1. An exemplar before any sample omits Help and does not consume the initial Help send.
+				require.True(t, m.AppendExemplars([]record.RefExemplar{
+					{Ref: sCounter.Ref, T: 900, V: 1, Labels: exemplarLabels},
+				}))
+				require.True(t, m.Append([]record.RefSample{
+					{Ref: sCounter.Ref, ST: 100, T: 1000, V: 1},
+				}))
+
+				// 2. Exemplars and samples within the 5m interval both omit Help while preserving Type and Unit.
+				time.Sleep(time.Minute)
+				require.True(t, m.AppendExemplars([]record.RefExemplar{
+					{Ref: sCounter.Ref, T: 2000, V: 2, Labels: exemplarLabels},
+				}))
+				require.True(t, m.Append([]record.RefSample{
+					{Ref: sCounter.Ref, ST: 100, T: 2000, V: 2},
+				}))
+
+				// 3. After the 5m interval elapses, an exemplar still omits Help without consuming the reset interval,
+				// so the next sample re-sends Help.
+				time.Sleep(4 * time.Minute)
+				require.True(t, m.AppendExemplars([]record.RefExemplar{
+					{Ref: sCounter.Ref, T: 3000, V: 3, Labels: exemplarLabels},
+				}))
+				require.True(t, m.Append([]record.RefSample{
+					{Ref: sCounter.Ref, ST: 100, T: 3000, V: 3},
+				}))
+			},
+			expectedMetadata: map[string][]prompb.MetricMetadata{
+				sCounter.Labels.String(): {
+					{MetricFamilyName: sCounter.Labels.String(), Type: prompb.MetricMetadata_COUNTER, Unit: "requests", Help: ""},
+					{MetricFamilyName: sCounter.Labels.String(), Type: prompb.MetricMetadata_COUNTER, Unit: "requests", Help: "Total HTTP requests."},
+					{MetricFamilyName: sCounter.Labels.String(), Type: prompb.MetricMetadata_COUNTER, Unit: "requests", Help: ""},
+					{MetricFamilyName: sCounter.Labels.String(), Type: prompb.MetricMetadata_COUNTER, Unit: "requests", Help: ""},
+					{MetricFamilyName: sCounter.Labels.String(), Type: prompb.MetricMetadata_COUNTER, Unit: "requests", Help: ""},
+					{MetricFamilyName: sCounter.Labels.String(), Type: prompb.MetricMetadata_COUNTER, Unit: "requests", Help: "Total HTTP requests."},
+				},
+			},
+			expectedExemplars:   3,
+			expectedSampleTypes: 3,
+			expectedSampleHelps: 2,
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			synctest.Test(t, func(t *testing.T) {
+				c := NewTestWriteClient(remoteapi.WriteV2MessageType)
+				cfg := config.DefaultQueueConfig
+				cfg.BatchSendDeadline = model.Duration(100 * time.Millisecond)
+				cfg.MinShards = 1
+				cfg.MaxShards = 1
+				mcfg := config.DefaultMetadataConfig
+				mcfg.Send = false
+
+				metrics := newQueueManagerMetrics(nil, "", "")
+				m := NewQueueManager(
+					metrics, nil, nil, nil, t.TempDir(), newEWMARate(ewmaWeight, shardUpdateDuration),
+					cfg, mcfg, labels.EmptyLabels(), nil, c, defaultFlushDeadline, newPool(), newHighestTimestampMetric(),
+					nil, true, true, false, remoteapi.WriteV2MessageType, tc.mode,
+					record.NewBuffersPool(), false, tc.convertNHCB, time.Duration(tc.interval),
+				)
+				m.Start()
+				stop := sync.OnceFunc(m.Stop)
+				t.Cleanup(stop)
+
+				tc.run(t, m)
+				stop()
+
+				require.Equal(t, tc.expectedMetadata, c.receivedMetadata)
+				require.Equal(t, tc.expectedExemplars, deepLen(c.receivedExemplars))
+				require.Equal(t, float64(tc.expectedExemplars), client_testutil.ToFloat64(metrics.exemplarsTotal))
+				require.Equal(t, tc.expectedSampleTypes, client_testutil.ToFloat64(metrics.samplesMetadataTotal.WithLabelValues(metadataFieldType)))
+				require.Equal(t, tc.expectedSampleTypes, client_testutil.ToFloat64(metrics.samplesMetadataTotal.WithLabelValues(metadataFieldUnit)))
+				require.Equal(t, tc.expectedSampleHelps, client_testutil.ToFloat64(metrics.samplesMetadataTotal.WithLabelValues(metadataFieldHelp)))
+				require.Equal(t, tc.expectedHistogramTypes, client_testutil.ToFloat64(metrics.histogramsMetadataTotal.WithLabelValues(metadataFieldType)))
+				require.Equal(t, tc.expectedHistogramTypes, client_testutil.ToFloat64(metrics.histogramsMetadataTotal.WithLabelValues(metadataFieldUnit)))
+				require.Equal(t, tc.expectedHistogramHelps, client_testutil.ToFloat64(metrics.histogramsMetadataTotal.WithLabelValues(metadataFieldHelp)))
+				require.Equal(t, tc.expectedNHCBConvErrors, client_testutil.ToFloat64(metrics.droppedHistogramsTotal.WithLabelValues(reasonNHCBConversionError)))
+			})
 		})
 	}
 }
