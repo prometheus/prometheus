@@ -122,7 +122,7 @@ type rwExporter struct {
 	converterPool           sync.Pool
 }
 
-func (rw *rwExporter) ConsumeMetrics(ctx context.Context, md pmetric.Metrics) error {
+func (rw *rwExporter) ConsumeMetrics(ctx context.Context, md pmetric.Metrics) (err error) {
 	otlpCfg := rw.config().OTLPConfig
 	app := rw.appendable.AppenderV2(ctx)
 	converter := rw.converterPool.Get().(*otlptranslator.PrometheusConverter)
