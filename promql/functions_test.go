@@ -318,3 +318,114 @@ func TestMADOverTimeUsesExactSubnormalMedian(t *testing.T) {
 	require.Len(t, vector, 1)
 	require.Equal(t, math.Float64bits(math.Float64frombits(1)), math.Float64bits(vector[0].F))
 }
+
+func TestRangeSlidingWindowMatchesInstantQueries(t *testing.T) {
+	stor := teststorage.New(t, func(opts *tsdb.Options) {
+		opts.FloatChunkEncoding = chunkenc.EncXOR2
+		opts.EnableSTStorage = true
+	})
+	app := stor.AppenderV2(t.Context())
+
+	counter := labels.FromStrings("__name__", "sliding_counter_total")
+	gauge := labels.FromStrings("__name__", "sliding_gauge")
+
+	// Populate 120 samples with counter resets, start-timestamp resets/overlaps, NaNs, and a mid-series gap
+	// so the window compacts, resets, and slides across all boundary cases.
+	var val float64
+	st := int64(1000)
+	for i := range 120 {
+		if i >= 70 && i < 82 {
+			// Leave a gap larger than the 10s range window to exercise non-overlapping window resets.
+			continue
+		}
+		ts := int64((i + 1) * 1000)
+		switch {
+		case i%17 == 5:
+			// Value reset.
+			val = 2
+			st = ts - 500
+		case i == 31:
+			// Start-timestamp reset without value drop.
+			val += 5
+			st = ts - 200
+		case i == 44:
+			// Start-timestamp overlap warning case: ST earlier than previous sample timestamp after a higher ST.
+			val += 3
+			st = ts - 5000
+		default:
+			val += float64((i % 5) + 1)
+		}
+		_, err := app.Append(0, counter, st, ts, val, nil, nil, storage.AOptions{})
+		require.NoError(t, err)
+
+		gVal := float64(i % 4)
+		if i == 22 || i == 23 {
+			gVal = math.NaN()
+		}
+		_, err = app.Append(0, gauge, 0, ts, gVal, nil, nil, storage.AOptions{})
+		require.NoError(t, err)
+	}
+	require.NoError(t, app.Commit())
+
+	engine := promqltest.NewTestEngineWithOpts(t, promql.EngineOpts{
+		MaxSamples:               promqltest.DefaultMaxSamplesPerQuery,
+		Timeout:                  10 * time.Second,
+		EnableDelayedNameRemoval: false,
+	})
+
+	queries := []string{
+		"rate(sliding_counter_total[25s])",
+		"increase(sliding_counter_total[10s])",
+		"resets(sliding_counter_total[25s])",
+		"changes(sliding_gauge[25s])",
+		"absent_over_time(sliding_gauge[10s])",
+	}
+	start := time.Unix(1, 0)
+	end := time.Unix(125, 0)
+	step := time.Second
+
+	enableST := true
+	qOpts := promql.NewPrometheusQueryOpts(false, 0, &enableST)
+	for _, expr := range queries {
+		t.Run("expr="+expr, func(t *testing.T) {
+			rq, err := engine.NewRangeQuery(t.Context(), stor, qOpts, expr, start, end, step)
+			require.NoError(t, err)
+			t.Cleanup(rq.Close)
+
+			rRes := rq.Exec(t.Context())
+			require.NoError(t, rRes.Err)
+			mat, err := rRes.Matrix()
+			require.NoError(t, err)
+
+			gotByTS := make(map[int64]float64)
+			if len(mat) == 1 {
+				for _, pt := range mat[0].Floats {
+					gotByTS[pt.T] = pt.F
+				}
+			}
+
+			for ts := start; !ts.After(end); ts = ts.Add(step) {
+				iq, err := engine.NewInstantQuery(t.Context(), stor, qOpts, expr, ts)
+				require.NoError(t, err)
+				iRes := iq.Exec(t.Context())
+				iq.Close()
+				require.NoError(t, iRes.Err)
+				vec, err := iRes.Vector()
+				require.NoError(t, err)
+
+				tsMS := timestamp.FromTime(ts)
+				got, hasGot := gotByTS[tsMS]
+				if len(vec) == 0 {
+					require.False(t, hasGot, "unexpected sample at ts=%d", tsMS)
+					continue
+				}
+				require.True(t, hasGot, "missing sample at ts=%d", tsMS)
+				if math.IsNaN(vec[0].F) {
+					require.True(t, math.IsNaN(got), "ts=%d", tsMS)
+				} else {
+					require.InDelta(t, vec[0].F, got, 1e-12, "ts=%d", tsMS)
+				}
+			}
+		})
+	}
+}

@@ -1835,6 +1835,47 @@ type EvalNodeHelper struct {
 	// StartTimestamps optionally provides sample start timestamps aligned with matrix samples.
 	StartTimestamps *StartTimestamps
 
+	// Sliding window state for range-vector functions over float samples.
+	floatWin          *floatWindow
+	winSeriesID       uint64
+	winNextPairSeq    int
+	winEventSeqs      []int
+	winEventOff       int
+	winLastOverlapSeq int
+}
+
+// prepareFloatWinScan synchronizes cached pair-scan state with the current floatWindow
+// and drops event indices that slid out of the left side of the window.
+func (enh *EvalNodeHelper) prepareFloatWinScan(w *floatWindow) {
+	if w.seriesID != enh.winSeriesID || enh.winNextPairSeq < w.startSeq || enh.winNextPairSeq > w.endSeq {
+		enh.winSeriesID = w.seriesID
+		enh.winNextPairSeq = w.startSeq
+		enh.winEventSeqs = enh.winEventSeqs[:0]
+		enh.winEventOff = 0
+		enh.winLastOverlapSeq = -1
+		return
+	}
+	for enh.winEventOff < len(enh.winEventSeqs) && enh.winEventSeqs[enh.winEventOff] < w.startSeq {
+		enh.winEventOff++
+	}
+}
+
+// appendWinEvent records the logical sequence index of a pair event in the active window.
+func (enh *EvalNodeHelper) appendWinEvent(seq int) {
+	if len(enh.winEventSeqs) == cap(enh.winEventSeqs) && enh.winEventOff > 0 {
+		n := len(enh.winEventSeqs) - enh.winEventOff
+		if enh.winEventOff >= n/4 {
+			copy(enh.winEventSeqs, enh.winEventSeqs[enh.winEventOff:])
+			enh.winEventSeqs = enh.winEventSeqs[:n]
+			enh.winEventOff = 0
+		} else {
+			newSeqs := make([]int, n, max(2*(n+1), 16))
+			copy(newSeqs, enh.winEventSeqs[enh.winEventOff:])
+			enh.winEventSeqs = newSeqs
+			enh.winEventOff = 0
+		}
+	}
+	enh.winEventSeqs = append(enh.winEventSeqs, seq)
 }
 
 func (enh *EvalNodeHelper) resetSigsPresent() []bool {
@@ -2849,7 +2890,7 @@ func (ev *evaluator) eval(ctx context.Context, expr parser.Expr) (parser.Value, 
 		var histograms []HPoint
 		var prevSS *Series
 		inMatrix := make(Matrix, 1)
-		enh := &EvalNodeHelper{Out: make(Vector, 0, 1), LookbackDelta: ev.lookbackDelta, enableDelayedNameRemoval: ev.enableDelayedNameRemoval}
+		enh := &EvalNodeHelper{Out: make(Vector, 0, 1), LookbackDelta: ev.lookbackDelta, enableDelayedNameRemoval: ev.enableDelayedNameRemoval, floatWin: &floatsWin}
 		// Process all the calls for one time series at a time.
 		// For anchored and smoothed selectors, we need to iterate over a
 		// larger range than the query range to account for the lookback delta.
