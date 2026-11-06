@@ -233,11 +233,11 @@ loop:
 		)
 
 		metHash, ce, seriesCached, seriesAlreadyScraped := sl.cache.get(met)
-		if !seriesCached && sl.cache.getDropped(metHash) {
-			continue
-		}
 
 		if !hasMRC {
+			if !seriesCached && sl.cache.getDropped(metHash) {
+				continue
+			}
 			if seriesCached {
 				ref = ce.ref
 				lset = ce.lset
@@ -273,6 +273,9 @@ loop:
 				origMeta = lastMeta.Metadata
 				origMFName = yoloString(lastMFName)
 			}
+			if !seriesCached && sl.cache.getDroppedWithMeta(metHash, origMFName, origMeta) {
+				continue
+			}
 			var (
 				sm            seriesMetaEntry
 				hasCachedMeta bool
@@ -302,7 +305,7 @@ loop:
 					if seriesCached {
 						sl.cache.deleteSeries(metHash)
 					}
-					sl.cache.addDropped(metHash)
+					sl.cache.addDroppedWithMeta(metHash, origMFName, origMeta)
 					continue
 				}
 
@@ -686,6 +689,21 @@ func (sl *scrapeLoop) setParsedUnit(mfName, unit []byte, parsedMFName *[]byte, p
 	return *parsedMFName, parsedMeta
 }
 
+// hasTypeSuffixForFamily reports whether mName equals mfName followed by a type-specific
+// series suffix (_total, _bucket, _sum, _count, _gsum, _gcount, or _info).
+func hasTypeSuffixForFamily(mName string, mfName []byte) bool {
+	mfStr := yoloString(mfName)
+	if mfStr == "" || !strings.HasPrefix(mName, mfStr) {
+		return false
+	}
+	switch mName[len(mfStr):] {
+	case "_total", "_bucket", "_sum", "_count", "_gsum", "_gcount", "_info":
+		return true
+	default:
+		return false
+	}
+}
+
 func (sl *scrapeLoop) mutateSample(lset labels.Labels, lastMFName []byte, lastMeta *metaEntry) (labels.Labels, metadata.Metadata, string) {
 	preName := lset.Get(model.MetricNameLabel)
 	hasFamilyMeta := lastMeta != nil && isSeriesPartOfFamily(preName, lastMFName, lastMeta.Type)
@@ -696,11 +714,40 @@ func (sl *scrapeLoop) mutateSample(lset labels.Labels, lastMFName []byte, lastMe
 		sampleMeta = metadata.Metadata{Type: model.MetricTypeUnknown}
 	}
 
-	lset = sl.sampleMutator(lset)
-	if lset.IsEmpty() || !hasFamilyMeta {
+	if sl.sampleMutatorWithMetadata != nil {
+		// A series like foo_total does not match a pre-relabel family named foo when the family
+		// has unknown type (since _total suffix stripping only applies to counters). Run relabeling
+		// with lastMeta's help and unit first so rules can read, transform, or clear them if
+		// relabeling sets a type that makes the series belong to lastMFName; otherwise fall back to
+		// empty metadata so unrelated series do not inherit lastMeta.
+		if !hasFamilyMeta && lastMeta != nil && lastMeta.Type == model.MetricTypeUnknown && hasTypeSuffixForFamily(preName, lastMFName) {
+			candLset, candMeta := sl.sampleMutatorWithMetadata(lset, lastMeta.Metadata)
+			switch {
+			case !candLset.IsEmpty() && isSeriesPartOfFamily(preName, lastMFName, candMeta.Type):
+				hasFamilyMeta = true
+				lset, sampleMeta = candLset, candMeta
+			case lastMeta.Help == "" && lastMeta.Unit == "":
+				lset, sampleMeta = candLset, candMeta
+			default:
+				lset, sampleMeta = sl.sampleMutatorWithMetadata(lset, metadata.Metadata{Type: model.MetricTypeUnknown})
+				if candLset.IsEmpty() && !lset.IsEmpty() && isSeriesPartOfFamily(preName, lastMFName, sampleMeta.Type) {
+					lset, sampleMeta = candLset, candMeta
+				}
+			}
+		} else {
+			lset, sampleMeta = sl.sampleMutatorWithMetadata(lset, sampleMeta)
+		}
+	} else if sl.sampleMutator != nil {
+		lset = sl.sampleMutator(lset)
+	}
+	if lset.IsEmpty() || (!hasFamilyMeta && sampleMeta.IsEmpty()) {
 		return lset, metadata.Metadata{}, ""
 	}
 
-	postMFName := metricFamilyName(preName, lastMFName, lset.Get(model.MetricNameLabel), sampleMeta.Type)
+	var preMF []byte
+	if hasFamilyMeta {
+		preMF = lastMFName
+	}
+	postMFName := metricFamilyName(preName, preMF, lset.Get(model.MetricNameLabel), sampleMeta.Type)
 	return lset, sampleMeta, postMFName
 }
