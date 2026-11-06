@@ -1140,6 +1140,45 @@ func TestChunkedSeriesSet(t *testing.T) {
 		require.False(t, res)
 		require.ErrorContains(t, ss.Err(), "proto: illegal wireType 7")
 	})
+
+	t.Run("chunked reader error within a series split over frames", func(t *testing.T) {
+		buf := &bytes.Buffer{}
+		w := NewChunkedWriter(buf, &mockFlusher{})
+		r := NewChunkedReader(buf, config.DefaultChunkedReadLimit, nil)
+
+		chks := buildTestChunks(t)
+		l := []prompb.Label{{Name: "foo", Value: "bar"}}
+		for i, c := range chks[:2] {
+			b, err := proto.Marshal(&prompb.ChunkedReadResponse{
+				ChunkedSeries: []*prompb.ChunkedSeries{{Labels: l, Chunks: []prompb.Chunk{c}}},
+			})
+			require.NoError(t, err)
+			if i == 1 {
+				b[0] = 0xFF // Corruption!
+			}
+			_, err = w.Write(b)
+			require.NoError(t, err)
+		}
+
+		ss := NewChunkedSeriesSet(r, io.NopCloser(buf), 0, 14000, func(error) {})
+
+		// The part of the series read before the error is returned, and the
+		// error is reported once Next returns false.
+		require.True(t, ss.Next())
+		require.NoError(t, ss.Err())
+		require.Equal(t, labels.FromStrings("foo", "bar"), ss.At().Labels())
+		it := ss.At().Iterator(nil)
+		samples := 0
+		for it.Next() != chunkenc.ValNone {
+			samples++
+		}
+		require.NoError(t, it.Err())
+		require.Equal(t, numSamplesPerTestChunk, samples)
+
+		require.False(t, ss.Next())
+		require.ErrorContains(t, ss.Err(), "proto: illegal wireType 7")
+		require.False(t, ss.Next())
+	})
 }
 
 // mockFlusher implements http.Flusher.
