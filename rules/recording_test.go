@@ -483,6 +483,55 @@ func TestRecordingRuleMetadataDeduction(t *testing.T) {
 			},
 		},
 		{
+			name:                    "histogram/preserved_schema_with_type_and_unit_labels",
+			enableTypeAndUnitLabels: true,
+			samples: promql.Vector{
+				{
+					Metric: labels.FromStrings(
+						model.MetricNameLabel, "request_duration_seconds",
+						model.MetricTypeLabel, "gaugehistogram",
+						model.MetricUnitLabel, "seconds",
+						"job", "api",
+					),
+					T: evalMs,
+					H: counterHist,
+				},
+			},
+			wantLabels: []labels.Labels{
+				labels.FromStrings(
+					model.MetricNameLabel, "job:req:rate5m",
+					model.MetricTypeLabel, "gaugehistogram",
+					model.MetricUnitLabel, "seconds",
+					"job", "api",
+				),
+			},
+			wantMetas: []metadata.Metadata{
+				{Type: model.MetricTypeGaugeHistogram, Unit: "seconds"},
+			},
+		},
+		{
+			name: "histogram/yaml_override_compatible_type",
+			ruleMeta: metadata.Metadata{
+				Type: model.MetricTypeGaugeHistogram,
+				Unit: "seconds",
+			},
+			enableTypeAndUnitLabels: true,
+			samples: promql.Vector{
+				{Metric: labels.FromStrings("job", "api"), T: evalMs, H: counterHist},
+			},
+			wantLabels: []labels.Labels{
+				labels.FromStrings(
+					model.MetricNameLabel, "job:req:rate5m",
+					model.MetricTypeLabel, "gaugehistogram",
+					model.MetricUnitLabel, "seconds",
+					"job", "api",
+				),
+			},
+			wantMetas: []metadata.Metadata{
+				{Type: model.MetricTypeGaugeHistogram, Unit: "seconds"},
+			},
+		},
+		{
 			name:       "yaml_overrides/explicit_help_type_unit_and_user_rule_labels",
 			ruleLabels: labels.FromStrings(model.MetricTypeLabel, "gauge", model.MetricUnitLabel, "bytes"),
 			ruleMeta: metadata.Metadata{
