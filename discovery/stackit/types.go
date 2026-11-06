@@ -13,12 +13,13 @@
 
 package stackit
 
-// ServerListResponse Response object for server list request.
+// ServerListResponse is the response object for server list request.
 // https://docs.api.eu01.stackit.cloud/documentation/iaas/version/v1#tag/Servers/operation/v1ListServersInProject
 type ServerListResponse struct {
 	Items *[]Server `json:"items"`
 }
 
+// Server represents a STACKIT IaaS server.
 type Server struct {
 	AvailabilityZone string          `json:"availabilityZone"`
 	ID               string          `json:"id"`
@@ -30,9 +31,22 @@ type Server struct {
 	Status           string          `json:"status"`
 }
 
-// ServerNetwork Describes the object that matches servers to its networks.
+// ServerNetwork describes the object that matches servers to its networks.
 type ServerNetwork struct {
 	NetworkName string  `json:"networkName"`
 	IPv4        *string `json:"ipv4,omitempty"`
 	PublicIP    *string `json:"publicIp,omitempty"`
+}
+
+// PostgresListResponse represents the response for STACKIT Postgres instances list request.
+type PostgresListResponse struct {
+	Items *[]Postgres `json:"items"`
+	Count int         `json:"count"`
+}
+
+// Postgres represents a STACKIT Postgres instance.
+type Postgres struct {
+	ID     string `json:"id"`
+	Name   string `json:"name"`
+	Status string `json:"status"`
 }
