@@ -53,8 +53,9 @@ upgrade-npm-deps:
 	./scripts/npm-deps.sh "latest"
 
 .PHONY: bump-versions
-bump-versions: ui-bump-version
-	./scripts/bump_changelog_version.sh
+bump-versions:
+	./scripts/bump_changelog_version.sh $(if $(RELEASE_DATE),--date '$(RELEASE_DATE)')
+	$(MAKE) ui-bump-version
 	git add CHANGELOG.md
 
 .PHONY: ui-bump-version

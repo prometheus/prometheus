@@ -136,13 +136,26 @@ Review the output carefully before adding it manually to `CHANGELOG.md`:
 - Ensure entries are in the correct order: `[SECURITY]`, `[CHANGE]`, `[FEATURE]`, `[ENHANCEMENT]`, `[PERF]`, `[BUGFIX]`.
 - Remove entries already present in a previous release's Changelog. Duplicates can appear for fixes merged to the previous release branch.
 - `CHANGELOG.md` should only document changes relevant to users of Prometheus, including external API changes, performance improvements, and new features. Do not document changes of internal interfaces, code refactorings and clean-ups, changes to the build process, etc. People interested in these are asked to refer to the git history.
-- Set the date for the changelog entry header, even for an RC.
+- The date of the changelog entry header is set by `make bump-versions` below, even for an RC. Pass `RELEASE_DATE=YYYY-MM-DD` if the release date is not the day you run it.
 
 Then bump the UI module version, as well as the version in `CHANGELOG.md`:
 
 ```bash
 make bump-versions
 ```
+
+This rewrites the newest release heading to the version in `VERSION` with today's
+date, then bumps and stages the UI module versions. It fails if the generated
+release notes have not been added to `CHANGELOG.md` yet, rather than relabelling
+the heading of a previous release, and it refuses a version that is already
+tagged. If the release date is not today, pass it:
+
+```bash
+make bump-versions RELEASE_DATE=2026-11-05
+```
+
+If you only need the UI versions bumped, for example after the release is
+tagged, run `make ui-bump-version` directly.
 
 All of the above goes to make a PR, which you should create targeting the `release-x.y` branch, then wait for CI to complete and get an approval.
 Once the PR is ready, merge it into the release branch and pull it down to your work area. Then you are ready for the next step:
