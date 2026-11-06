@@ -467,20 +467,31 @@ func (p *MemPostings) PostingsForLabelMatching(ctx context.Context, name string,
 	readOnlyLabelValues := p.lvs[name]
 	p.mtx.RUnlock()
 
-	vals := make([]string, 0, len(readOnlyLabelValues))
+	firstMatch := len(readOnlyLabelValues)
 	for i, v := range readOnlyLabelValues {
 		if i%checkContextEveryNIterations == 0 && ctx.Err() != nil {
 			return ErrPostings(ctx.Err())
 		}
-
 		if match(v) {
-			vals = append(vals, v)
+			firstMatch = i
+			break
 		}
 	}
 
 	// If none matched (or this label had no values), no need to grab the lock again.
-	if len(vals) == 0 {
+	if firstMatch == len(readOnlyLabelValues) {
 		return EmptyPostings()
+	}
+
+	vals := make([]string, 1, len(readOnlyLabelValues)-firstMatch)
+	vals[0] = readOnlyLabelValues[firstMatch]
+	for i, v := range readOnlyLabelValues[firstMatch+1:] {
+		if (i+firstMatch+1)%checkContextEveryNIterations == 0 && ctx.Err() != nil {
+			return ErrPostings(ctx.Err())
+		}
+		if match(v) {
+			vals = append(vals, v)
+		}
 	}
 
 	// Now `vals` only contains the values that matched, get their postings.
