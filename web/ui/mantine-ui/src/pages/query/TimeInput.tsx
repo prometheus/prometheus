@@ -1,9 +1,7 @@
 import { Group, ActionIcon, CloseButton } from "@mantine/core";
-import { DateTimePicker } from "@mantine/dates";
 import { IconChevronLeft, IconChevronRight } from "@tabler/icons-react";
 import { FC } from "react";
-import { useSettings } from "../../state/settingsSlice";
-import dayjs from "dayjs";
+import TimestampInput from "../../components/TimestampInput";
 
 interface TimeInputProps {
   time: number | null; // Timestamp in milliseconds.
@@ -21,29 +19,14 @@ const TimeInput: FC<TimeInputProps> = ({
   onChangeTime,
 }) => {
   const baseTime = () => (time !== null ? time : Date.now().valueOf());
-  const { useLocalTime } = useSettings();
-
-  const dateString = useLocalTime
-    ? dayjs(time).format()
-    : dayjs(time).subtract(dayjs().utcOffset(), "minutes").format();
 
   return (
     <Group gap={5}>
-      <DateTimePicker
+      <TimestampInput
         title="End time"
         w={230}
-        valueFormat="YYYY-MM-DD HH:mm:ss"
-        withSeconds
-        value={time !== null ? dateString : undefined}
-        onChange={(value) =>
-          onChangeTime(
-            value
-              ? useLocalTime
-                ? new Date(value).getTime()
-                : dayjs.utc(value).valueOf()
-              : null
-          )
-        }
+        value={time}
+        onChange={onChangeTime}
         aria-label={description}
         placeholder={description}
         onClick={() => {
@@ -68,6 +51,7 @@ const TimeInput: FC<TimeInputProps> = ({
           <>
             {time && (
               <CloseButton
+                aria-label="Clear time"
                 variant="transparent"
                 color="gray"
                 onMouseDown={(event) => event.preventDefault()}

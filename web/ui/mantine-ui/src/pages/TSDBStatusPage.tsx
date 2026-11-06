@@ -8,10 +8,7 @@ import {
   Text,
   Textarea,
 } from "@mantine/core";
-import { DateTimePicker } from "@mantine/dates";
 import { IconAlertTriangle, IconCheck, IconTrash } from "@tabler/icons-react";
-import dayjs from "dayjs";
-import utc from "dayjs/plugin/utc";
 import { useSuspenseAPIQuery, API_PATH } from "../api/api";
 import { FeaturesResult } from "../api/responseTypes/features";
 import { TSDBStatusResult } from "../api/responseTypes/tsdbStatus";
@@ -19,8 +16,7 @@ import { formatTimestamp } from "../lib/formatTime";
 import { useSettings } from "../state/settingsSlice";
 import InfoPageStack from "../components/InfoPageStack";
 import InfoPageCard from "../components/InfoPageCard";
-
-dayjs.extend(utc);
+import TimestampInput from "../components/TimestampInput";
 
 export default function TSDBStatusPage() {
   const {
@@ -270,60 +266,24 @@ export default function TSDBStatusPage() {
           />
 
           <Group grow>
-            <DateTimePicker
+            <TimestampInput
               label="Start time"
               description="Optional"
               placeholder="Select start time"
-              valueFormat="YYYY-MM-DD HH:mm:ss"
               disabled={!adminApiEnabled}
               title={!adminApiEnabled ? "Requires --web.enable-admin-api flag" : ""}
-              withSeconds
-              value={
-                startTime !== null
-                  ? useLocalTime
-                    ? dayjs(startTime).format()
-                    : dayjs(startTime)
-                        .subtract(dayjs().utcOffset(), "minutes")
-                        .format()
-                  : undefined
-              }
-              onChange={(value) =>
-                setStartTime(
-                  value
-                    ? useLocalTime
-                      ? new Date(value).getTime()
-                      : dayjs.utc(value).valueOf()
-                    : null
-                )
-              }
+              value={startTime}
+              onChange={setStartTime}
               clearable
             />
-            <DateTimePicker
+            <TimestampInput
               label="End time"
               description="Optional"
               placeholder="Select end time"
-              valueFormat="YYYY-MM-DD HH:mm:ss"
               disabled={!adminApiEnabled}
               title={!adminApiEnabled ? "Requires --web.enable-admin-api flag" : ""}
-              withSeconds
-              value={
-                endTime !== null
-                  ? useLocalTime
-                    ? dayjs(endTime).format()
-                    : dayjs(endTime)
-                        .subtract(dayjs().utcOffset(), "minutes")
-                        .format()
-                  : undefined
-              }
-              onChange={(value) =>
-                setEndTime(
-                  value
-                    ? useLocalTime
-                      ? new Date(value).getTime()
-                      : dayjs.utc(value).valueOf()
-                    : null
-                )
-              }
+              value={endTime}
+              onChange={setEndTime}
               clearable
             />
           </Group>
