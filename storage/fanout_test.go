@@ -709,6 +709,62 @@ func TestFanoutAppenderV2(t *testing.T) {
 	}
 }
 
+func TestFanoutAppenderV2_CommitStats(t *testing.T) {
+	primaryStats := storage.CommitStats{DiscardedSamples: storage.DiscardedSampleStats{
+		SameTimestampSameValue: []storage.DiscardedSeriesSamples{{Labels: labels.FromStrings("source", "primary"), Count: 2}},
+	}}
+	secondaryStats := storage.CommitStats{DiscardedSamples: storage.DiscardedSampleStats{
+		SameTimestampDifferentValue: []storage.DiscardedSeriesSamples{{Labels: labels.FromStrings("source", "secondary"), Count: 3}},
+	}}
+
+	for _, tc := range []struct {
+		name             string
+		primaryReports   bool
+		secondaryReports bool
+		want             storage.CommitStats
+	}{
+		{name: "primary reports", primaryReports: true, want: primaryStats},
+		{name: "secondary does not contribute", primaryReports: true, secondaryReports: true, want: primaryStats},
+		{name: "primary does not report", secondaryReports: true},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			var primary storage.AppendableV2 = teststorage.NewAppendable()
+			if tc.primaryReports {
+				primary = commitStatsAppendableV2{AppendableV2: primary, stats: primaryStats}
+			}
+			var secondary storage.AppendableV2 = teststorage.NewAppendable()
+			if tc.secondaryReports {
+				secondary = commitStatsAppendableV2{AppendableV2: secondary, stats: secondaryStats}
+			}
+
+			f := storage.NewFanout(nil, mockStorage{appV2: primary}, mockStorage{appV2: secondary})
+			app := f.AppenderV2(t.Context())
+			require.NoError(t, app.Commit())
+			reporter, ok := app.(storage.CommitStatsReporter)
+			require.True(t, ok)
+			require.Equal(t, tc.want, reporter.CommitStats())
+		})
+	}
+}
+
+type commitStatsAppendableV2 struct {
+	storage.AppendableV2
+	stats storage.CommitStats
+}
+
+func (a commitStatsAppendableV2) AppenderV2(ctx context.Context) storage.AppenderV2 {
+	return commitStatsAppenderV2{AppenderV2: a.AppendableV2.AppenderV2(ctx), stats: a.stats}
+}
+
+type commitStatsAppenderV2 struct {
+	storage.AppenderV2
+	stats storage.CommitStats
+}
+
+func (a commitStatsAppenderV2) CommitStats() storage.CommitStats {
+	return a.stats
+}
+
 func TestFanoutAppenderV2_AppendExemplars(t *testing.T) {
 	h := tsdbutil.GenerateTestHistogram(0)
 	fh := tsdbutil.GenerateTestFloatHistogram(0)
