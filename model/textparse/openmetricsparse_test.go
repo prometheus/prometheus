@@ -1283,3 +1283,75 @@ func resetValAndLset(e []parsedEntry) {
 		e[i].lset = labels.EmptyLabels()
 	}
 }
+
+func TestOpenMetricsParse_NegativeSTCache(t *testing.T) {
+	input := `# HELP no_st_counter Counter family without any _created lines
+# TYPE no_st_counter counter
+no_st_counter_total{a="1"} 1
+no_st_counter_total{a="2"} 2
+no_st_counter_total{a="3"} 3
+# HELP mixed_hist Histogram family where only the middle series has _created
+# TYPE mixed_hist histogram
+mixed_hist_bucket{a="1",le="0.5"} 1
+mixed_hist_bucket{a="1",le="+Inf"} 2
+mixed_hist_sum{a="1"} 1.5
+mixed_hist_count{a="1"} 2
+mixed_hist_bucket{a="2",le="0.5"} 3
+mixed_hist_bucket{a="2",le="+Inf"} 4
+mixed_hist_sum{a="2"} 3.5
+mixed_hist_count{a="2"} 4
+mixed_hist_created{a="2"} 1520872609.125
+mixed_hist_bucket{a="3",le="0.5"} 5
+mixed_hist_bucket{a="3",le="+Inf"} 6
+mixed_hist_sum{a="3"} 5.5
+mixed_hist_count{a="3"} 6
+# HELP mixed_summary Summary family where first series has _created and second does not
+# TYPE mixed_summary summary
+mixed_summary{a="1",quantile="0.5"} 1
+mixed_summary{a="1",quantile="0.9"} 2
+mixed_summary_sum{a="1"} 3
+mixed_summary_count{a="1"} 2
+mixed_summary_created{a="1"} 1520872608.124
+mixed_summary{a="2",quantile="0.5"} 4
+mixed_summary{a="2",quantile="0.9"} 5
+mixed_summary_sum{a="2"} 9
+mixed_summary_count{a="2"} 2
+# EOF
+`
+	expected := []parsedEntry{
+		{m: "no_st_counter", help: "Counter family without any _created lines"},
+		{m: "no_st_counter", typ: model.MetricTypeCounter},
+		{m: `no_st_counter_total{a="1"}`, st: 0},
+		{m: `no_st_counter_total{a="2"}`, st: 0},
+		{m: `no_st_counter_total{a="3"}`, st: 0},
+		{m: "mixed_hist", help: "Histogram family where only the middle series has _created"},
+		{m: "mixed_hist", typ: model.MetricTypeHistogram},
+		{m: `mixed_hist_bucket{a="1",le="0.5"}`, st: 0},
+		{m: `mixed_hist_bucket{a="1",le="+Inf"}`, st: 0},
+		{m: `mixed_hist_sum{a="1"}`, st: 0},
+		{m: `mixed_hist_count{a="1"}`, st: 0},
+		{m: `mixed_hist_bucket{a="2",le="0.5"}`, st: 1520872609125},
+		{m: `mixed_hist_bucket{a="2",le="+Inf"}`, st: 1520872609125},
+		{m: `mixed_hist_sum{a="2"}`, st: 1520872609125},
+		{m: `mixed_hist_count{a="2"}`, st: 1520872609125},
+		{m: `mixed_hist_bucket{a="3",le="0.5"}`, st: 0},
+		{m: `mixed_hist_bucket{a="3",le="+Inf"}`, st: 0},
+		{m: `mixed_hist_sum{a="3"}`, st: 0},
+		{m: `mixed_hist_count{a="3"}`, st: 0},
+		{m: "mixed_summary", help: "Summary family where first series has _created and second does not"},
+		{m: "mixed_summary", typ: model.MetricTypeSummary},
+		{m: `mixed_summary{a="1",quantile="0.5"}`, st: 1520872608124},
+		{m: `mixed_summary{a="1",quantile="0.9"}`, st: 1520872608124},
+		{m: `mixed_summary_sum{a="1"}`, st: 1520872608124},
+		{m: `mixed_summary_count{a="1"}`, st: 1520872608124},
+		{m: `mixed_summary{a="2",quantile="0.5"}`, st: 0},
+		{m: `mixed_summary{a="2",quantile="0.9"}`, st: 0},
+		{m: `mixed_summary_sum{a="2"}`, st: 0},
+		{m: `mixed_summary_count{a="2"}`, st: 0},
+	}
+
+	p := NewOpenMetricsParser([]byte(input), labels.NewSymbolTable(), WithOMParserSTSeriesSkipped())
+	got := testParse(t, p)
+	resetValAndLset(got)
+	requireEntries(t, expected, got)
+}
