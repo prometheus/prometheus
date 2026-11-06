@@ -488,7 +488,7 @@ func (a *headAppender) Append(ref storage.SeriesRef, lset labels.Labels, t int64
 	defer s.Unlock()
 	// TODO(codesome): If we definitely know at this point that the sample is ooo, then optimise
 	// to skip that sample from the WAL and write only in the WBL.
-	isOOO, delta, err := s.appendable(t, v, a.headMaxt, a.minValidTime, a.oooTimeWindow)
+	isOOO, delta, err := s.appendable(t, v, a.headMaxt, a.minValidTime, a.oooTimeWindow, a.head)
 	if err == nil {
 		if isOOO && a.hints != nil && a.hints.DiscardOutOfOrder {
 			a.head.metrics.outOfOrderSamples.WithLabelValues(sampleMetricTypeFloat).Inc()
@@ -543,7 +543,7 @@ func (a *headAppender) AppendSTZeroSample(ref storage.SeriesRef, lset labels.Lab
 	if err != nil {
 		return 0, err
 	}
-	isOOO, _, err := s.appendable(st, 0, a.headMaxt, a.minValidTime, a.oooTimeWindow)
+	isOOO, _, err := s.appendable(st, 0, a.headMaxt, a.minValidTime, a.oooTimeWindow, a.head)
 	if err != nil {
 		s.Unlock()
 		return 0, err
@@ -698,14 +698,52 @@ func (a *headAppenderBase) getCurrentBatch(st sampleType, s chunks.HeadSeriesRef
 	}
 }
 
+// lastInOrderSample returns the series' most recent in-order sample for
+// duplicate detection. With a head chunk the cached last-value fields are
+// authoritative. Without one, the newest sample lives in the last mmapped
+// chunk and the cached fields may not reflect it (e.g. after WAL repair), so
+// the sample is read back from the chunk on demand; this only happens for
+// equal-timestamp appends to mmap-only series, not during recovery. ok is
+// false if the chunk cannot be read, in which case no duplicate detection is
+// possible. The caller must have ruled out series without any samples.
+func (s *memSeries) lastInOrderSample(head *Head) (v float64, h *histogram.Histogram, fh *histogram.FloatHistogram, ok bool) {
+	if s.headChunks != nil {
+		return s.lastValue, s.lastHistogramValue, s.lastFloatHistogramValue, true
+	}
+	mmc := s.mmappedChunks[len(s.mmappedChunks)-1]
+	chunk, err := head.chunkDiskMapper.Chunk(mmc.ref)
+	if err == nil {
+		it := chunk.Iterator(nil)
+		switch it.Seek(mmc.maxTime) {
+		case chunkenc.ValFloat:
+			_, v = it.At()
+			return v, nil, nil, true
+		case chunkenc.ValHistogram:
+			_, h = it.AtHistogram(nil)
+			return 0, h, nil, true
+		case chunkenc.ValFloatHistogram:
+			_, fh = it.AtFloatHistogram(nil)
+			return 0, nil, fh, true
+		}
+		if err = it.Err(); err == nil {
+			err = fmt.Errorf("no sample at max time %d", mmc.maxTime)
+		}
+	}
+	// Surface unreadable mmapped chunks: appends fall back to the out-of-order
+	// checks, which would otherwise hide the corruption.
+	head.logger.Warn("Failed to read last mmapped sample for duplicate detection, falling back to out-of-order checks",
+		"seriesRef", s.ref, "chunkRef", mmc.ref, "err", err)
+	return 0, nil, nil, false
+}
+
 // appendable checks whether the given sample is valid for appending to the series.
 // If the sample is valid and in-order, it returns false with no error.
 // If the sample belongs to the out-of-order chunk, it returns true with no error.
 // If the sample cannot be handled, it returns an error.
-func (s *memSeries) appendable(t int64, v float64, headMaxt, minValidTime, oooTimeWindow int64) (isOOO bool, oooDelta int64, err error) {
+func (s *memSeries) appendable(t int64, v float64, headMaxt, minValidTime, oooTimeWindow int64, head *Head) (isOOO bool, oooDelta int64, err error) {
 	// Check if we can append in the in-order chunk.
 	if t >= minValidTime {
-		if s.headChunks == nil {
+		if s.headChunks == nil && len(s.mmappedChunks) == 0 {
 			// The series has no sample and was freshly created.
 			return false, 0, nil
 		}
@@ -714,18 +752,23 @@ func (s *memSeries) appendable(t int64, v float64, headMaxt, minValidTime, oooTi
 			return false, 0, nil
 		}
 		if t == msMaxt {
-			// We are allowing exact duplicates as we can encounter them in valid cases
-			// like federation and erroring out at that time would be extremely noisy.
-			// This only checks against the latest in-order sample.
-			// The OOO headchunk has its own method to detect these duplicates.
-			if s.lastHistogramValue != nil || s.lastFloatHistogramValue != nil {
-				return false, 0, storage.NewDuplicateHistogramToFloatErr(t, v)
+			lastValue, lastHistogramValue, lastFloatHistogramValue, ok := s.lastInOrderSample(head)
+			if ok {
+				// We are allowing exact duplicates as we can encounter them in valid cases
+				// like federation and erroring out at that time would be extremely noisy.
+				// This only checks against the latest in-order sample.
+				// The OOO headchunk has its own method to detect these duplicates.
+				if lastHistogramValue != nil || lastFloatHistogramValue != nil {
+					return false, 0, storage.NewDuplicateHistogramToFloatErr(t, v)
+				}
+				if math.Float64bits(lastValue) != math.Float64bits(v) {
+					return false, 0, storage.NewDuplicateFloatErr(t, lastValue, v)
+				}
+				// Sample is identical (ts + value) with most current (highest ts) sample in sampleBuf.
+				return false, 0, nil
 			}
-			if math.Float64bits(s.lastValue) != math.Float64bits(v) {
-				return false, 0, storage.NewDuplicateFloatErr(t, s.lastValue, v)
-			}
-			// Sample is identical (ts + value) with most current (highest ts) sample in sampleBuf.
-			return false, 0, nil
+			// The last sample could not be read back, so duplicates cannot be
+			// detected. Fall through to the out-of-order checks.
 		}
 	}
 
@@ -747,10 +790,10 @@ func (s *memSeries) appendable(t int64, v float64, headMaxt, minValidTime, oooTi
 // appendableHistogram checks whether the given histogram sample is valid for appending to the series. (if we return false and no error)
 // The sample belongs to the out of order chunk if we return true and no error.
 // An error signifies the sample cannot be handled.
-func (s *memSeries) appendableHistogram(t int64, h *histogram.Histogram, headMaxt, minValidTime, oooTimeWindow int64) (isOOO bool, oooDelta int64, err error) {
+func (s *memSeries) appendableHistogram(t int64, h *histogram.Histogram, headMaxt, minValidTime, oooTimeWindow int64, head *Head) (isOOO bool, oooDelta int64, err error) {
 	// Check if we can append in the in-order chunk.
 	if t >= minValidTime {
-		if s.headChunks == nil {
+		if s.headChunks == nil && len(s.mmappedChunks) == 0 {
 			// The series has no sample and was freshly created.
 			return false, 0, nil
 		}
@@ -759,15 +802,20 @@ func (s *memSeries) appendableHistogram(t int64, h *histogram.Histogram, headMax
 			return false, 0, nil
 		}
 		if t == msMaxt {
-			// We are allowing exact duplicates as we can encounter them in valid cases
-			// like federation and erroring out at that time would be extremely noisy.
-			// This only checks against the latest in-order sample.
-			// The OOO headchunk has its own method to detect these duplicates.
-			if !h.Equals(s.lastHistogramValue) {
-				return false, 0, storage.ErrDuplicateSampleForTimestamp
+			_, lastHistogramValue, _, ok := s.lastInOrderSample(head)
+			if ok {
+				// We are allowing exact duplicates as we can encounter them in valid cases
+				// like federation and erroring out at that time would be extremely noisy.
+				// This only checks against the latest in-order sample.
+				// The OOO headchunk has its own method to detect these duplicates.
+				if !h.Equals(lastHistogramValue) {
+					return false, 0, storage.ErrDuplicateSampleForTimestamp
+				}
+				// Sample is identical (ts + value) with most current (highest ts) sample in sampleBuf.
+				return false, 0, nil
 			}
-			// Sample is identical (ts + value) with most current (highest ts) sample in sampleBuf.
-			return false, 0, nil
+			// The last sample could not be read back, so duplicates cannot be
+			// detected. Fall through to the out-of-order checks.
 		}
 	}
 
@@ -789,10 +837,10 @@ func (s *memSeries) appendableHistogram(t int64, h *histogram.Histogram, headMax
 // appendableFloatHistogram checks whether the given float histogram sample is valid for appending to the series. (if we return false and no error)
 // The sample belongs to the out of order chunk if we return true and no error.
 // An error signifies the sample cannot be handled.
-func (s *memSeries) appendableFloatHistogram(t int64, fh *histogram.FloatHistogram, headMaxt, minValidTime, oooTimeWindow int64) (isOOO bool, oooDelta int64, err error) {
+func (s *memSeries) appendableFloatHistogram(t int64, fh *histogram.FloatHistogram, headMaxt, minValidTime, oooTimeWindow int64, head *Head) (isOOO bool, oooDelta int64, err error) {
 	// Check if we can append in the in-order chunk.
 	if t >= minValidTime {
-		if s.headChunks == nil {
+		if s.headChunks == nil && len(s.mmappedChunks) == 0 {
 			// The series has no sample and was freshly created.
 			return false, 0, nil
 		}
@@ -801,15 +849,20 @@ func (s *memSeries) appendableFloatHistogram(t int64, fh *histogram.FloatHistogr
 			return false, 0, nil
 		}
 		if t == msMaxt {
-			// We are allowing exact duplicates as we can encounter them in valid cases
-			// like federation and erroring out at that time would be extremely noisy.
-			// This only checks against the latest in-order sample.
-			// The OOO headchunk has its own method to detect these duplicates.
-			if !fh.Equals(s.lastFloatHistogramValue) {
-				return false, 0, storage.ErrDuplicateSampleForTimestamp
+			_, _, lastFloatHistogramValue, ok := s.lastInOrderSample(head)
+			if ok {
+				// We are allowing exact duplicates as we can encounter them in valid cases
+				// like federation and erroring out at that time would be extremely noisy.
+				// This only checks against the latest in-order sample.
+				// The OOO headchunk has its own method to detect these duplicates.
+				if !fh.Equals(lastFloatHistogramValue) {
+					return false, 0, storage.ErrDuplicateSampleForTimestamp
+				}
+				// Sample is identical (ts + value) with most current (highest ts) sample in sampleBuf.
+				return false, 0, nil
 			}
-			// Sample is identical (ts + value) with most current (highest ts) sample in sampleBuf.
-			return false, 0, nil
+			// The last sample could not be read back, so duplicates cannot be
+			// detected. Fall through to the out-of-order checks.
 		}
 	}
 
@@ -905,7 +958,7 @@ func (a *headAppender) AppendHistogram(ref storage.SeriesRef, lset labels.Labels
 		}
 		// TODO(codesome): If we definitely know at this point that the sample is ooo, then optimise
 		// to skip that sample from the WAL and write only in the WBL.
-		_, delta, err := s.appendableHistogram(t, h, a.headMaxt, a.minValidTime, a.oooTimeWindow)
+		_, delta, err := s.appendableHistogram(t, h, a.headMaxt, a.minValidTime, a.oooTimeWindow, a.head)
 		if err == nil {
 			s.markPendingCommit()
 		}
@@ -940,7 +993,7 @@ func (a *headAppender) AppendHistogram(ref storage.SeriesRef, lset labels.Labels
 		}
 		// TODO(codesome): If we definitely know at this point that the sample is ooo, then optimise
 		// to skip that sample from the WAL and write only in the WBL.
-		_, delta, err := s.appendableFloatHistogram(t, fh, a.headMaxt, a.minValidTime, a.oooTimeWindow)
+		_, delta, err := s.appendableFloatHistogram(t, fh, a.headMaxt, a.minValidTime, a.oooTimeWindow, a.head)
 		if err == nil {
 			s.markPendingCommit()
 		}
@@ -1003,7 +1056,7 @@ func (a *headAppender) AppendHistogramSTZeroSample(ref storage.SeriesRef, lset l
 		}
 		// For STZeroSamples OOO is not allowed.
 		// We set it to true to make this implementation as close as possible to the float implementation.
-		isOOO, _, err := s.appendableHistogram(st, zeroHistogram, a.headMaxt, a.minValidTime, a.oooTimeWindow)
+		isOOO, _, err := s.appendableHistogram(st, zeroHistogram, a.headMaxt, a.minValidTime, a.oooTimeWindow, a.head)
 		if err != nil {
 			s.Unlock()
 			if errors.Is(err, storage.ErrOutOfOrderSample) {
@@ -1047,7 +1100,7 @@ func (a *headAppender) AppendHistogramSTZeroSample(ref storage.SeriesRef, lset l
 			return 0, lockErr
 		}
 		// We set it to true to make this implementation as close as possible to the float implementation.
-		isOOO, _, err := s.appendableFloatHistogram(st, zeroFloatHistogram, a.headMaxt, a.minValidTime, a.oooTimeWindow) // OOO is not allowed for STZeroSamples.
+		isOOO, _, err := s.appendableFloatHistogram(st, zeroFloatHistogram, a.headMaxt, a.minValidTime, a.oooTimeWindow, a.head) // OOO is not allowed for STZeroSamples.
 		if err != nil {
 			s.Unlock()
 			if errors.Is(err, storage.ErrOutOfOrderSample) {
@@ -1453,7 +1506,7 @@ func (a *headAppenderBase) commitFloats(b *appendBatch, acc *appenderCommitConte
 				continue
 			}
 		}
-		oooSample, _, err := series.appendable(s.T, s.V, a.headMaxt, a.minValidTime, a.oooTimeWindow)
+		oooSample, _, err := series.appendable(s.T, s.V, a.headMaxt, a.minValidTime, a.oooTimeWindow, a.head)
 		if err != nil {
 			handleAppendableError(err, &acc.floatsAppended, &acc.floatOOORejected, &acc.floatOOBRejected, &acc.floatTooOldRejected)
 		}
@@ -1556,7 +1609,7 @@ func (a *headAppenderBase) commitHistograms(b *appendBatch, acc *appenderCommitC
 		// marker. The worst case is that we need to cut a new chunk
 		// just for the staleness marker.
 
-		oooSample, _, err := series.appendableHistogram(s.T, s.H, a.headMaxt, a.minValidTime, a.oooTimeWindow)
+		oooSample, _, err := series.appendableHistogram(s.T, s.H, a.headMaxt, a.minValidTime, a.oooTimeWindow, a.head)
 		if err != nil {
 			handleAppendableError(err, &acc.histogramsAppended, &acc.histoOOORejected, &acc.histoOOBRejected, &acc.histoTooOldRejected)
 		}
@@ -1658,7 +1711,7 @@ func (a *headAppenderBase) commitFloatHistograms(b *appendBatch, acc *appenderCo
 		// marker. The worst case is that we need to cut a new chunk
 		// just for the staleness marker.
 
-		oooSample, _, err := series.appendableFloatHistogram(s.T, s.FH, a.headMaxt, a.minValidTime, a.oooTimeWindow)
+		oooSample, _, err := series.appendableFloatHistogram(s.T, s.FH, a.headMaxt, a.minValidTime, a.oooTimeWindow, a.head)
 		if err != nil {
 			handleAppendableError(err, &acc.histogramsAppended, &acc.histoOOORejected, &acc.histoOOBRejected, &acc.histoTooOldRejected)
 		}
@@ -2053,7 +2106,9 @@ func (s *memSeries) appendPreprocessor(t int64, e chunkenc.Encoding, o chunkOpts
 
 	if c == nil {
 		if len(s.mmappedChunks) > 0 && s.mmappedChunks[len(s.mmappedChunks)-1].maxTime >= t {
-			// Out of order sample. Sample timestamp is already in the mmapped chunks, so ignore it.
+			// The timestamp is already covered by the mmapped chunks. Only WAL replay of an
+			// already mmapped sample or an exact duplicate of the last mmapped sample gets
+			// here, because appendable rejects or routes everything else, so ignore it.
 			return c, false, false
 		}
 		// There is no head chunk in this series yet, create the first chunk for the sample.
@@ -2119,7 +2174,9 @@ func (s *memSeries) histogramsAppendPreprocessor(t int64, e chunkenc.Encoding, o
 
 	if c == nil {
 		if len(s.mmappedChunks) > 0 && s.mmappedChunks[len(s.mmappedChunks)-1].maxTime >= t {
-			// Out of order sample. Sample timestamp is already in the mmapped chunks, so ignore it.
+			// The timestamp is already covered by the mmapped chunks. Only WAL replay of an
+			// already mmapped sample or an exact duplicate of the last mmapped sample gets
+			// here, because appendable rejects or routes everything else, so ignore it.
 			return c, false, false
 		}
 		// There is no head chunk in this series yet, create the first chunk for the sample.
