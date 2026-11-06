@@ -1817,8 +1817,8 @@ type EvalNodeHelper struct {
 	Ts int64
 	// Vector that can be used for output.
 	Out Vector
-	// Optional dense output series slot for each sample in Out when len(OutSlots) == len(Out).
-	OutSlots []int
+	// Optional dense output series slot for each sample in Out when len(outSlots) == len(Out).
+	outSlots []int
 	// Lookback delta for this query.
 	LookbackDelta time.Duration
 
@@ -2129,7 +2129,7 @@ func (ev *evaluator) rangeEval(ctx context.Context, matching *parser.VectorMatch
 		}
 		enh.binopPairCache = make([]binopPairCacheEntry, totalInputSeries+1)
 		enh.selfSlotCache = make([]int, totalInputSeries+1)
-		enh.OutSlots = make([]int, 0, biggestLen)
+		enh.outSlots = make([]int, 0, biggestLen)
 
 		for i := range exprs {
 			seriesHelpers[i] = make([]EvalSeriesHelper, len(matrixes[i]))
@@ -2174,7 +2174,7 @@ func (ev *evaluator) rangeEval(ctx context.Context, matching *parser.VectorMatch
 
 		// Make the function call.
 		enh.Ts = ts
-		enh.OutSlots = enh.OutSlots[:0]
+		enh.outSlots = enh.outSlots[:0]
 		result, ws := funcCall(vectors, nil, bufHelpers, enh)
 		enh.Out = result[:0] // Reuse result vector.
 		warnings.Merge(ws)
@@ -2209,12 +2209,12 @@ func (ev *evaluator) rangeEval(ctx context.Context, matching *parser.VectorMatch
 		}
 
 		// Add samples in output vector to output series.
-		useSlots := len(enh.OutSlots) == len(result)
+		useSlots := len(enh.outSlots) == len(result)
 		for i := range result {
 			sample := &result[i]
 			var slot int
 			if useSlots {
-				slot = enh.OutSlots[i]
+				slot = enh.outSlots[i]
 			} else {
 				_, slot = enh.internOutMetric(sample.Metric)
 			}
@@ -3888,7 +3888,7 @@ func (*evaluator) VectorAnd(lhs, rhs Vector, matching *parser.VectorMatching, lh
 		return nil // Short-circuit: AND with nothing is nothing.
 	}
 	if len(enh.Out) == 0 {
-		enh.OutSlots = enh.OutSlots[:0]
+		enh.outSlots = enh.outSlots[:0]
 	}
 
 	// Ordinals of signatures present on the right-hand side.
@@ -3901,7 +3901,7 @@ func (*evaluator) VectorAnd(lhs, rhs Vector, matching *parser.VectorMatching, lh
 		// If there's a matching entry in the right-hand side Vector, add the sample.
 		if rightSigOrdinalsPresent[lhsh[i].sigOrdinal] {
 			enh.Out = append(enh.Out, ls)
-			enh.OutSlots = append(enh.OutSlots, enh.slotForInputSeries(lhsh[i].seriesID, ls.Metric))
+			enh.outSlots = append(enh.outSlots, enh.slotForInputSeries(lhsh[i].seriesID, ls.Metric))
 		}
 	}
 	return enh.Out
@@ -3909,7 +3909,7 @@ func (*evaluator) VectorAnd(lhs, rhs Vector, matching *parser.VectorMatching, lh
 
 func (*evaluator) VectorOr(lhs, rhs Vector, matching *parser.VectorMatching, lhsh, rhsh []EvalSeriesHelper, enh *EvalNodeHelper) Vector {
 	if len(enh.Out) == 0 {
-		enh.OutSlots = enh.OutSlots[:0]
+		enh.outSlots = enh.outSlots[:0]
 	}
 	switch {
 	case matching.Card != parser.CardManyToMany:
@@ -3918,7 +3918,7 @@ func (*evaluator) VectorOr(lhs, rhs Vector, matching *parser.VectorMatching, lhs
 		enh.Out = append(enh.Out, rhs...)
 		if len(rhsh) == len(rhs) {
 			for j := range rhs {
-				enh.OutSlots = append(enh.OutSlots, enh.slotForInputSeries(rhsh[j].seriesID, rhs[j].Metric))
+				enh.outSlots = append(enh.outSlots, enh.slotForInputSeries(rhsh[j].seriesID, rhs[j].Metric))
 			}
 		}
 		return enh.Out
@@ -3926,7 +3926,7 @@ func (*evaluator) VectorOr(lhs, rhs Vector, matching *parser.VectorMatching, lhs
 		enh.Out = append(enh.Out, lhs...)
 		if len(lhsh) == len(lhs) {
 			for i := range lhs {
-				enh.OutSlots = append(enh.OutSlots, enh.slotForInputSeries(lhsh[i].seriesID, lhs[i].Metric))
+				enh.outSlots = append(enh.outSlots, enh.slotForInputSeries(lhsh[i].seriesID, lhs[i].Metric))
 			}
 		}
 		return enh.Out
@@ -3937,13 +3937,13 @@ func (*evaluator) VectorOr(lhs, rhs Vector, matching *parser.VectorMatching, lhs
 	for i, ls := range lhs {
 		leftSigOrdinalsPresent[lhsh[i].sigOrdinal] = true
 		enh.Out = append(enh.Out, ls)
-		enh.OutSlots = append(enh.OutSlots, enh.slotForInputSeries(lhsh[i].seriesID, ls.Metric))
+		enh.outSlots = append(enh.outSlots, enh.slotForInputSeries(lhsh[i].seriesID, ls.Metric))
 	}
 	// Add all right-hand side elements which have not been added from the left-hand side.
 	for j, rs := range rhs {
 		if !leftSigOrdinalsPresent[rhsh[j].sigOrdinal] {
 			enh.Out = append(enh.Out, rs)
-			enh.OutSlots = append(enh.OutSlots, enh.slotForInputSeries(rhsh[j].seriesID, rs.Metric))
+			enh.outSlots = append(enh.outSlots, enh.slotForInputSeries(rhsh[j].seriesID, rs.Metric))
 		}
 	}
 	return enh.Out
@@ -3954,7 +3954,7 @@ func (*evaluator) VectorUnless(lhs, rhs Vector, matching *parser.VectorMatching,
 		panic("set operations must only use many-to-many matching")
 	}
 	if len(enh.Out) == 0 {
-		enh.OutSlots = enh.OutSlots[:0]
+		enh.outSlots = enh.outSlots[:0]
 	}
 	// Short-circuit: empty rhs means we will return everything in lhs;
 	// empty lhs means we will return empty - don't need to build a map.
@@ -3962,7 +3962,7 @@ func (*evaluator) VectorUnless(lhs, rhs Vector, matching *parser.VectorMatching,
 		enh.Out = append(enh.Out, lhs...)
 		if len(lhsh) == len(lhs) {
 			for i := range lhs {
-				enh.OutSlots = append(enh.OutSlots, enh.slotForInputSeries(lhsh[i].seriesID, lhs[i].Metric))
+				enh.outSlots = append(enh.outSlots, enh.slotForInputSeries(lhsh[i].seriesID, lhs[i].Metric))
 			}
 		}
 		return enh.Out
@@ -3977,7 +3977,7 @@ func (*evaluator) VectorUnless(lhs, rhs Vector, matching *parser.VectorMatching,
 	for i, ls := range lhs {
 		if !rightSigOrdinalsPresent[lhsh[i].sigOrdinal] {
 			enh.Out = append(enh.Out, ls)
-			enh.OutSlots = append(enh.OutSlots, enh.slotForInputSeries(lhsh[i].seriesID, ls.Metric))
+			enh.outSlots = append(enh.outSlots, enh.slotForInputSeries(lhsh[i].seriesID, ls.Metric))
 		}
 	}
 	return enh.Out
@@ -3993,7 +3993,7 @@ func (ev *evaluator) VectorBinop(op parser.ItemType, lhs, rhs Vector, matching *
 		return nil, nil // Short-circuit: nothing is going to match.
 	}
 	if len(enh.Out) == 0 {
-		enh.OutSlots = enh.OutSlots[:0]
+		enh.outSlots = enh.outSlots[:0]
 	}
 	enh.stepID++
 	stepID := enh.stepID
@@ -4140,7 +4140,7 @@ func (ev *evaluator) VectorBinop(op parser.ItemType, lhs, rhs Vector, matching *
 			H:        histogramValue,
 			DropName: returnBool,
 		})
-		enh.OutSlots = append(enh.OutSlots, outSlot)
+		enh.outSlots = append(enh.outSlots, outSlot)
 	}
 
 	// For all lhs samples, find a respective rhs sample and perform
