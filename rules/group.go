@@ -550,7 +550,7 @@ func (g *Group) Eval(ctx context.Context, ts time.Time) {
 			hasPerSampleM bool
 			err           error
 		)
-		if rm, ok := rule.(ruleWithMetadata); ok {
+		if rm, ok := rule.(ruleWithMetadata); ok && g.opts.AutoRecordingMetadata {
 			hasPerSampleM = true
 			vector, metas, err = rm.evalWithMetadata(
 				ctx,
