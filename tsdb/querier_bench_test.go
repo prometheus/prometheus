@@ -119,10 +119,22 @@ func benchmarkPostingsForMatchers(b *testing.B, ir IndexReader) {
 	iPlus := labels.MustNewMatcher(labels.MatchRegexp, "i", ".+")
 	i1Plus := labels.MustNewMatcher(labels.MatchRegexp, "i", "1.+")
 	iEmptyRe := labels.MustNewMatcher(labels.MatchRegexp, "i", "")
+	iNotEmptyRe := labels.MustNewMatcher(labels.MatchNotRegexp, "i", "")
 	iNotEmpty := labels.MustNewMatcher(labels.MatchNotEqual, "i", "")
 	iNot2 := labels.MustNewMatcher(labels.MatchNotEqual, "i", "2"+postingsBenchSuffix)
 	iNot2Star := labels.MustNewMatcher(labels.MatchNotRegexp, "i", "2.*")
 	iNotStar2Star := labels.MustNewMatcher(labels.MatchNotRegexp, "i", ".*2.*")
+	iNot1Star := labels.MustNewMatcher(labels.MatchNotRegexp, "i", "1.*")
+	iNot3Star := labels.MustNewMatcher(labels.MatchNotRegexp, "i", "3.*")
+	iNot4Star := labels.MustNewMatcher(labels.MatchNotRegexp, "i", "4.*")
+	iNot1Plus := labels.MustNewMatcher(labels.MatchNotRegexp, "i", "1.+")
+	// Many "not equal" regexp matchers that all reduce to a set match (literal
+	// value), so none of them scan label values. This case regressed in
+	// PR #15680, the first attempt at #14619.
+	manyNotLiteralRegexp := make([]*labels.Matcher, 0, 55)
+	for k := 1; k <= 55; k++ {
+		manyNotLiteralRegexp = append(manyNotLiteralRegexp, labels.MustNewMatcher(labels.MatchNotRegexp, "i", strconv.Itoa(k)))
+	}
 	jFooBar := labels.MustNewMatcher(labels.MatchRegexp, "j", "foo|bar")
 	jXXXYYY := labels.MustNewMatcher(labels.MatchRegexp, "j", "XXX|YYY")
 	jXplus := labels.MustNewMatcher(labels.MatchRegexp, "j", "X.+")
@@ -159,6 +171,14 @@ func benchmarkPostingsForMatchers(b *testing.B, ir IndexReader) {
 		{`i=~".+",j=~"X.+"`, []*labels.Matcher{iPlus, jXplus}},
 		{`i=~""`, []*labels.Matcher{iEmptyRe}},
 		{`i!=""`, []*labels.Matcher{iNotEmpty}},
+		{`i!="",n="X"`, []*labels.Matcher{iNotEmpty, nX}},
+		{`i!~"",n="X"`, []*labels.Matcher{iNotEmptyRe, nX}},
+		{`i=~".+",n="X"`, []*labels.Matcher{iPlus, nX}},
+		{`i!="",n="1"`, []*labels.Matcher{iNotEmpty, n1}},
+		{`i=~".+",n="1"`, []*labels.Matcher{iPlus, n1}},
+		{`j=~"X.+",i!=""`, []*labels.Matcher{jXplus, iNotEmpty}},
+		{`j=~"X.+",i=~".+"`, []*labels.Matcher{jXplus, iPlus}},
+		{`i!="",j=~"X.+"`, []*labels.Matcher{iNotEmpty, jXplus}},
 		{`n="1",i=~".*",j="foo"`, []*labels.Matcher{n1, iStar, jFoo}},
 		{`n="X",i=~".*",j="foo"`, []*labels.Matcher{nX, iStar, jFoo}},
 		{`n="1",i=~".*",i!="2",j="foo"`, []*labels.Matcher{n1, iStar, iNot2, jFoo}},
@@ -175,19 +195,37 @@ func benchmarkPostingsForMatchers(b *testing.B, ir IndexReader) {
 		{`n="1",i=~".+",i!~"2.*",j="foo"`, []*labels.Matcher{n1, iPlus, iNot2Star, jFoo}},
 		{`n="1",i=~".+",i!~".*2.*",j="foo"`, []*labels.Matcher{n1, iPlus, iNotStar2Star, jFoo}},
 		{`n="X",i=~".+",i!~".*2.*",j="foo"`, []*labels.Matcher{nX, iPlus, iNotStar2Star, jFoo}},
+		// Multiple regexp matchers on the same label name, each of which scans
+		// all values of "i". See issue #14619.
+		{`i!~"1.*",i!~"2.*",i!~"3.*",i!~"4.*"`, []*labels.Matcher{iNot1Star, iNot2Star, iNot3Star, iNot4Star}},
+		{`n="1",i!~"1.*",i!~"2.*",i!~"3.*",i!~"4.*"`, []*labels.Matcher{n1, iNot1Star, iNot2Star, iNot3Star, iNot4Star}},
+		{`n="1",i=~".+",i!~"1.*",i!~"3.*",j="foo"`, []*labels.Matcher{n1, iPlus, iNot1Star, iNot3Star, jFoo}},
+		{`i=~"1.+",i=~".*1.*"`, []*labels.Matcher{i1Plus, iStar1Star}},
+		// Direct lookups after regexps on the same label, as for a metric-name matcher.
+		{`i=~"1.+",i=~".*1.*",n="X"`, []*labels.Matcher{i1Plus, iStar1Star, nX}},
+		{`i=~"1.+",i=~".*1.*",n="1"`, []*labels.Matcher{i1Plus, iStar1Star, n1}},
+		{`i=~"1.+",i=~".*1.*",j=~"XXX|YYY"`, []*labels.Matcher{i1Plus, iStar1Star, jXXXYYY}},
+		// Cases reproduced from the closed PR #15680 to guard against the
+		// allocation/CPU regression it introduced.
+		{`i!~"1",...,i!~"55"`, manyNotLiteralRegexp},
+		{`i!~"1.+",i!~".*2.*",i!="2"`, []*labels.Matcher{iNot1Plus, iNotStar2Star, iNot2}},
 	}
 
 	for _, c := range cases {
 		b.Run(c.name, func(b *testing.B) {
+			matchers := make([]*labels.Matcher, len(c.matchers))
 			b.ReportAllocs()
 			b.ResetTimer()
 			for b.Loop() {
-				p, err := PostingsForMatchers(ctx, ir, c.matchers...)
+				// Restore the selector order because PostingsForMatchers sorts in place.
+				copy(matchers, c.matchers)
+				p, err := PostingsForMatchers(ctx, ir, matchers...)
 				require.NoError(b, err)
 				// Iterate over the postings
 				for p.Next() {
 					// Do nothing
 				}
+				require.NoError(b, p.Err())
 			}
 		})
 	}
