@@ -32,10 +32,27 @@ import (
 // See https://github.com/open-telemetry/opentelemetry-collector-contrib/tree/main/processor/metricstarttimeprocessor.
 // TODO(ridwanmsharif): Make this a struct usable by a go interface (see https://github.com/prometheus/prometheus/pull/18279#discussion_r3032221849).
 type stCache struct {
-	f  *floatSynthesis
-	h  *histogramSynthesis
-	st int64
+	f      *floatSynthesis
+	h      *histogramSynthesis
+	st     int64
+	family string // Prefix of the immutable cached series name, not parser memory.
+	kind   synthesisKind
 }
+
+// synthesisKind distinguishes metric semantics and representations that cannot
+// safely reuse an anchor. Integer anchors can be promoted to float histograms,
+// but float anchors must not be truncated back to integers.
+type synthesisKind uint8
+
+const (
+	synthesisCounter synthesisKind = iota
+	synthesisSummary
+	synthesisClassicHistogram
+	synthesisIntHistogram
+	synthesisFloatHistogram
+	synthesisCustomIntHistogram
+	synthesisCustomFloatHistogram
+)
 
 type floatSynthesis struct {
 	prev     float64
