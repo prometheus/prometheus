@@ -2369,13 +2369,6 @@ func testEndpoints(t *testing.T, api *API, tr *testTargetRetriever, testLabelAPI
 			responseAsJSON: `{"go_threads": [{"type":"gauge","unit":"",
 "help":"Number of OS threads created"},{"type":"gauge","unit":"",
 "help":"Number of OS threads that were created."}]}`,
-			sorter: func(m any) {
-				v := m.(map[string][]metadata.Metadata)["go_threads"]
-
-				sort.Slice(v, func(i, j int) bool {
-					return v[i].Help < v[j].Help
-				})
-			},
 		},
 		// With a limit for the number of metrics returned.
 		{
@@ -2483,8 +2476,13 @@ func testEndpoints(t *testing.T, api *API, tr *testTargetRetriever, testLabelAPI
 					},
 				},
 			},
-			responseLen:           1,
-			responseMetadataTotal: 1,
+			// A limit must select a deterministic metric family, not whichever
+			// one a random map iteration happens to visit first.
+			response: map[string][]metadata.Metadata{
+				"go_gc_duration_seconds": {
+					{Type: model.MetricTypeSummary, Help: "A summary of the GC invocation durations."},
+				},
+			},
 		},
 
 		// With a limit for the number of metadata per metric and per metric, while having multiple targets.
@@ -2577,13 +2575,6 @@ func testEndpoints(t *testing.T, api *API, tr *testTargetRetriever, testLabelAPI
 				},
 			},
 			responseAsJSON: `{"go_threads": [{"type":"gauge","unit":"","help":"Number of OS threads created"},{"type":"gauge","unit":"","help":"Number of OS threads that were created."}]}`,
-			sorter: func(m any) {
-				v := m.(map[string][]metadata.Metadata)["go_threads"]
-
-				sort.Slice(v, func(i, j int) bool {
-					return v[i].Help < v[j].Help
-				})
-			},
 		},
 		// With a specific metric that is not present.
 		{
