@@ -128,19 +128,27 @@ func ClassicBucketCounts(nhcb any, buf []float64) (buckets []float64, count, sum
 
 		customValues = h.CustomValues
 		positiveBuckets = slices.Grow(buf[:0], len(customValues)+1)[:len(customValues)+1]
-		clear(positiveBuckets)
 
-		// Histograms are in delta format so we first bring them to absolute format.
+		// Decode deltas and accumulate classic prefixes as integers before rounding.
+		// Individual bucket counts fit in int64, but their sum can require uint64.
 		acc := int64(0)
+		cumulativeCount := uint64(0)
 		for _, s := range h.PositiveSpans {
-			// Skipped buckets are empty, so leave them at zero.
-			idx += int(s.Offset)
+			// Empty buckets retain the preceding cumulative count.
+			for i := 0; i < int(s.Offset); i++ {
+				positiveBuckets[idx] = float64(cumulativeCount)
+				idx++
+			}
 			for i := 0; i < int(s.Length); i++ {
 				acc += h.PositiveBuckets[currIdx]
-				positiveBuckets[idx] = float64(acc)
+				cumulativeCount += uint64(acc)
+				positiveBuckets[idx] = float64(cumulativeCount)
 				idx++
 				currIdx++
 			}
+		}
+		for ; idx < len(positiveBuckets); idx++ {
+			positiveBuckets[idx] = float64(cumulativeCount)
 		}
 		count = float64(h.Count)
 		sum = h.Sum
@@ -169,23 +177,22 @@ func ClassicBucketCounts(nhcb any, buf []float64) (buckets []float64, count, sum
 				currIdx++
 			}
 		}
+		currCount := float64(0)
+		for i := range positiveBuckets {
+			currCount += positiveBuckets[i]
+			positiveBuckets[i] = currCount
+		}
 		count = h.Count
 		sum = h.Sum
 	default:
 		return nil, 0, 0, fmt.Errorf("unsupported histogram type: %T", h)
 	}
 
-	// Classic buckets are cumulative, and every value of a stale marker is stale.
-	isStale := value.IsStaleNaN(sum)
-	currCount := float64(0)
-	for i := range positiveBuckets {
-		currCount += positiveBuckets[i]
-		positiveBuckets[i] = currCount
-		if isStale {
+	// Every value of a stale marker is stale.
+	if value.IsStaleNaN(sum) {
+		for i := range positiveBuckets {
 			positiveBuckets[i] = sum
 		}
-	}
-	if isStale {
 		count = sum
 	}
 	return positiveBuckets, count, sum, nil
