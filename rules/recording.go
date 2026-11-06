@@ -181,7 +181,14 @@ func (rule *RecordingRule) evalWithMetadata(
 }
 
 // deduceSampleMetadata infers metric metadata (type, unit, help) for an evaluated
-// recording rule sample using YAML overrides, preserved schema labels, and sample value kind.
+// recording rule sample:
+//  1. Preserved schema: when __name__ survived PromQL evaluation (DropName == false),
+//     read preserved __type__ and __unit__ labels (if type-and-unit-labels is enabled)
+//     and fall back to _total (counter) or _info (info) naming suffixes when type is empty.
+//  2. Type: prefer compatible YAML rule.meta.Type, then compatible preserved.Type;
+//     otherwise deduce histogram or gaugehistogram from native histogram CounterResetHint,
+//     or default float samples to gauge.
+//  3. Unit and Help: prefer YAML rule.meta.Unit over preserved.Unit, and use YAML rule.meta.Help.
 func (rule *RecordingRule) deduceSampleMetadata(sample *promql.Sample, enableTypeAndUnitLabels bool) metadata.Metadata {
 	isHist := sample.H != nil
 	var preserved schema.Metadata
