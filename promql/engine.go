@@ -1860,7 +1860,9 @@ type EvalNodeHelper struct {
 
 func (enh *EvalNodeHelper) internOutMetric(metric labels.Labels) (labels.Labels, int) {
 	if enh.outMetricByHash == nil {
-		enh.outMetricByHash = make(map[uint64]int, max(cap(enh.Out), 16))
+		initCap := max(cap(enh.Out), 16)
+		enh.outMetricByHash = make(map[uint64]int, initCap)
+		enh.outMetrics = make([]outMetricSlotState, 0, initCap)
 	}
 	h := metric.Hash()
 	if slot, ok := enh.outMetricByHash[h]; ok {
@@ -2081,7 +2083,10 @@ func (ev *evaluator) rangeEval(ctx context.Context, matching *parser.VectorMatch
 		ts int64
 	}
 	isRange := ev.startTimestamp != ev.endTimestamp
-	var outSeries []seriesAndTimestamp
+	var (
+		outSeries    []seriesAndTimestamp
+		activeSeries int
+	)
 	if isRange {
 		outSeries = make([]seriesAndTimestamp, 0, biggestLen)
 	}
@@ -2229,6 +2234,7 @@ func (ev *evaluator) rangeEval(ctx context.Context, matching *parser.VectorMatch
 			} else {
 				ss.Series = Series{Metric: sample.Metric, DropName: sample.DropName}
 				ss.ts = ts
+				activeSeries++
 			}
 			addToSeries(&ss.Series, enh.Ts, sample.F, sample.H, numSteps)
 		}
@@ -2242,7 +2248,7 @@ func (ev *evaluator) rangeEval(ctx context.Context, matching *parser.VectorMatch
 		}
 	}
 	// Assemble the output matrix. By the time we get here we know we don't have too many samples.
-	mat := make(Matrix, 0, len(outSeries))
+	mat := make(Matrix, 0, activeSeries)
 	for i := range outSeries {
 		if len(outSeries[i].Floats) > 0 || len(outSeries[i].Histograms) > 0 {
 			mat = append(mat, outSeries[i].Series)
