@@ -1178,10 +1178,12 @@ func TestRelabelWithMetadata(t *testing.T) {
 			},
 		},
 		{
-			name: "labeldrop __(type|unit|help)__ does not drop metadata during metadata relabeling",
+			name: "labeldrop, labelkeep, and labelmap do not drop or mutate metadata during metadata relabeling",
 			input: labels.FromMap(map[string]string{
-				"__name__": "http_requests_total",
-				"job":      "api",
+				"__name__":     "http_requests_total",
+				"__tmp_custom": "temp",
+				"meta_help":    "mapped help",
+				"job":          "api",
 			}),
 			inputMeta: metadata.Metadata{
 				Type: model.MetricTypeCounter,
@@ -1195,18 +1197,63 @@ func TestRelabelWithMetadata(t *testing.T) {
 					Action:       Keep,
 				},
 				{
+					Regex:       MustNewRegexp("__(.*)"),
+					Replacement: "copied_$1",
+					Action:      LabelMap,
+				},
+				{
+					Regex:       MustNewRegexp("meta_(.*)"),
+					Replacement: "__${1}__",
+					Action:      LabelMap,
+				},
+				{
 					Regex:  MustNewRegexp("__(type|unit|help)__"),
 					Action: LabelDrop,
 				},
+				{
+					Regex:  MustNewRegexp("__name__|job|copied_tmp_custom"),
+					Action: LabelKeep,
+				},
 			},
 			output: labels.FromMap(map[string]string{
-				"__name__": "http_requests_total",
-				"job":      "api",
+				"__name__":          "http_requests_total",
+				"copied_tmp_custom": "temp",
+				"job":               "api",
 			}),
 			outputMeta: metadata.Metadata{
 				Type: model.MetricTypeCounter,
 				Unit: "requests",
 				Help: "Total HTTP requests.",
+			},
+		},
+		{
+			name: "labelmap to __(type|unit|help)__ without metadata rules does not leak metadata labels",
+			input: labels.FromMap(map[string]string{
+				"__name__":  "http_requests_total",
+				"meta_help": "mapped help",
+				"meta_type": "counter",
+				"meta_unit": "requests",
+				"job":       "api",
+			}),
+			inputMeta: metadata.Metadata{
+				Type: model.MetricTypeGauge,
+			},
+			relabel: []*Config{
+				{
+					Regex:       MustNewRegexp("meta_(.*)"),
+					Replacement: "__${1}__",
+					Action:      LabelMap,
+				},
+			},
+			output: labels.FromMap(map[string]string{
+				"__name__":  "http_requests_total",
+				"meta_help": "mapped help",
+				"meta_type": "counter",
+				"meta_unit": "requests",
+				"job":       "api",
+			}),
+			outputMeta: metadata.Metadata{
+				Type: model.MetricTypeGauge,
 			},
 		},
 		{
