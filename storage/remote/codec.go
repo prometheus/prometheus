@@ -782,9 +782,9 @@ func (it *chunkedSeriesIterator) Seek(t int64) chunkenc.ValueType {
 	})
 	if it.idx > startIdx {
 		it.resetIterator()
-	} else {
-		ts := it.cur.AtT()
-		if ts >= t {
+	} else if it.valType != chunkenc.ValNone {
+		// AtT is only defined after a sample has been found.
+		if it.cur.AtT() >= t {
 			return it.valType
 		}
 	}
@@ -825,6 +825,7 @@ func (it *chunkedSeriesIterator) reset(chunks []prompb.Chunk, mint, maxt int64) 
 	it.mint = mint
 	it.maxt = maxt
 	it.idx = 0
+	it.valType = chunkenc.ValNone
 	if len(chunks) > 0 {
 		it.resetIterator()
 	}
