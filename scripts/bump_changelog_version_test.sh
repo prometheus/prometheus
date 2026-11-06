@@ -69,6 +69,20 @@ no_unreleased_changelog='# Changelog
 ## 3.14.0 / 2026-08-17
 - [CHANGE] API: Deprecate the stats query parameter. #19124'
 
+no_date_changelog='# Changelog
+
+## main / unreleased
+
+## 3.16.0
+- [CHANGE] Something changed. #1'
+
+placeholder_date_changelog='# Changelog
+
+## main / unreleased
+
+## 3.16.0 / YYYY-MM-DD
+- [CHANGE] Something changed. #1'
+
 stale_changelog='# Changelog
 
 ## main / unreleased
@@ -263,6 +277,52 @@ check "refuses an empty date" "" fail \
 
 check "refuses an unknown argument" "" fail \
   "@unchanged" "${final_changelog}" '3.16.0\n' "unknown argument" --bogus
+
+# --check validates the invariant a release branch drifts from, and never writes.
+check "--check accepts a matching final version" "" ok \
+  "@unchanged" "${final_changelog}" '3.16.0\n' "" --check
+
+check "--check accepts a matching rc version" "" ok \
+  "@unchanged" "${rc_changelog}" '3.16.0-rc.4\n' "" --check
+
+check "--check normalises VERSION like the bump does" "" ok \
+  "@unchanged" "${final_changelog}" ' v3.16.0 \r\n' "" --check
+
+# The recorded drift: 92e4be026 bumped VERSION to 3.16.0-rc.3 while the newest
+# heading still said 3.16.0-rc.2.
+check "--check flags a VERSION ahead of the heading" "" fail \
+  "@unchanged" "${recorded_changelog}" '3.16.0-rc.3\n' "newest release heading" --check
+
+# The bump and the check have to agree on what a valid heading is, except for the
+# promotion of an rc heading, which only the bump accepts.
+check "--check rejects the release notes placeholder date" "" fail \
+  "@unchanged" "${placeholder_date_changelog}" '3.16.0\n' "not a YYYY-MM-DD date" --check
+
+check "--check rejects a heading without a date" "" fail \
+  "@unchanged" "${no_date_changelog}" '3.16.0\n' "has no date" --check
+
+check "the bump also rejects a heading without a date" "" fail \
+  "@unchanged" "${no_date_changelog}" '3.16.0\n' "expected"
+
+check "--check rejects the rc heading the bump would promote" "" fail \
+  "@unchanged" "${rc_changelog}" '3.16.0\n' "run make bump-versions" --check
+
+check "--check flags a changelog without a release heading" "" fail \
+  "@unchanged" "${unreleased_only_changelog}" '3.16.0\n' "no release heading" --check
+
+check "--check rejects a malformed VERSION instead of comparing it" "" fail \
+  "@unchanged" "${final_changelog}" 'main\n' "does not name a release version" --check
+
+check "--check rejects a second malformation case" "" fail \
+  "@unchanged" "${final_changelog}" '3.16.0 / 2026-11-01\n' "does not name a release version" --check
+
+# The malformed-VERSION guard refuses "main" in both modes; the message must
+# explain VERSION rather than naming a heading that is obviously not the issue.
+check "the bump reports a malformed VERSION with a focused message" "" fail \
+  "@unchanged" "${final_changelog}" 'main\n' "does not name a release version"
+
+check "--check rejects --date" "" fail \
+  "@unchanged" "${final_changelog}" '3.16.0\n' "cannot be combined with --check" --check --date 2026-11-05
 
 check "prints usage for --help" "" ok \
   "@unchanged" "${final_changelog}" '3.16.0\n' "usage:" --help

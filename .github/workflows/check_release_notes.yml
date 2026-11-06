@@ -26,3 +26,5 @@ jobs:
           PR_DESCRIPTION: ${{ github.event.pull_request.body }}
         run: |
           echo "$PR_DESCRIPTION" | ./scripts/check_release_notes.sh
+      - name: Check that the CHANGELOG heading matches VERSION
+        run: ./scripts/bump_changelog_version.sh --check

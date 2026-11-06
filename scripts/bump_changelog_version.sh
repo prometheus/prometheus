@@ -6,6 +6,12 @@
 # version that is already tagged. Must be run from the repository root.
 #
 # Usage: ./scripts/bump_changelog_version.sh [--date YYYY-MM-DD]
+#        ./scripts/bump_changelog_version.sh --check
+#
+# With --check the script writes nothing and only verifies that the newest
+# release heading in CHANGELOG.md matches the version in VERSION, which is the
+# invariant that a release branch drifts from when VERSION is bumped without
+# bumping the heading. It exits non-zero on a mismatch, so CI can enforce it.
 #
 # Only a heading that belongs to the version in the VERSION file is rewritten:
 # either "## <version> / ..." or a pre-release heading of the same version, so
@@ -38,9 +44,32 @@ valid_date() {
   ((day >= 1 && day <= max_days))
 }
 
+# newest_release_heading prints the version and the date of the first release
+# heading in the given changelog, tab separated, without the "## " prefix. The
+# date is empty when the heading has none.
+newest_release_heading() {
+  awk '/^## / && !/^## main \/ unreleased/ {
+    line = $0
+    sub(/\r$/, "", line)
+    sub(/^## /, "", line)
+    date = ""
+    if (match(line, / \/ /)) {
+      date = substr(line, RSTART + 3)
+      line = substr(line, 1, RSTART - 1)
+    }
+    printf "%s\t%s\n", line, date
+    exit
+  }' "$1"
+}
+
 release_date=""
+check_only=false
 while [[ $# -gt 0 ]]; do
   case "$1" in
+    --check)
+      check_only=true
+      shift
+      ;;
     --date)
       if [[ $# -lt 2 || -z "${2:-}" ]]; then
         echo "ERROR: --date requires a value" >&2
@@ -50,7 +79,7 @@ while [[ $# -gt 0 ]]; do
       shift 2
       ;;
     -h | --help)
-      echo "usage: $0 [--date YYYY-MM-DD]"
+      echo "usage: $0 [--date YYYY-MM-DD] | [--check]"
       exit 0
       ;;
     *)
@@ -77,6 +106,42 @@ version="${version#v}"
 if [[ -z "${version}" ]]; then
   echo "ERROR: VERSION is empty" >&2
   exit 1
+fi
+
+# A generated heading has to be a drop-in for the date command's output of the
+# day this script is run, which depends on VERSION holding a real version.
+if [[ ! "${version}" =~ ^[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z.-]+)?$ ]]; then
+  echo "ERROR: VERSION does not name a release version ('${version}'); expected something like 3.16.0 or 3.16.0-rc.0" >&2
+  exit 1
+fi
+
+if [[ "${check_only}" == true ]]; then
+  if [[ -n "${release_date}" ]]; then
+    echo "ERROR: --date cannot be combined with --check" >&2
+    exit 1
+  fi
+
+  heading="$(newest_release_heading CHANGELOG.md)"
+  if [[ -z "${heading}" ]]; then
+    echo "ERROR: no release heading found in CHANGELOG.md" >&2
+    exit 1
+  fi
+
+  heading_version="${heading%%$'\t'*}"
+  heading_date="${heading#*$'\t'}"
+  if [[ "${heading_version}" != "${version}" ]]; then
+    echo "ERROR: VERSION is ${version} but the newest release heading in CHANGELOG.md is ${heading_version}; run make bump-versions to promote the heading, or revert the VERSION change" >&2
+    exit 1
+  fi
+  if [[ -z "${heading_date}" ]]; then
+    echo "ERROR: the newest CHANGELOG.md heading for ${version} has no date; expected \"## ${version} / YYYY-MM-DD\"" >&2
+    exit 1
+  fi
+  if ! valid_date "${heading_date}"; then
+    echo "ERROR: the newest CHANGELOG.md heading for ${version} has date '${heading_date}', which is not a YYYY-MM-DD date; run make bump-versions to set it" >&2
+    exit 1
+  fi
+  exit 0
 fi
 
 if [[ -z "${release_date}" ]]; then

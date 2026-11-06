@@ -157,6 +157,17 @@ make bump-versions RELEASE_DATE=2026-11-05
 If you only need the UI versions bumped, for example after the release is
 tagged, run `make ui-bump-version` directly.
 
+The "Check release notes" workflow runs the same script with `--check` on pull
+requests to `main` and the release branches, which fails unless the version and
+the date in the newest `CHANGELOG.md` heading agree with `VERSION`. Running
+`make bump-versions` above is what makes that check pass.
+
+Because that check is in a workflow that the repository already required for
+release-branches pull requests, a PR that bumps `VERSION` now also has to
+update `CHANGELOG.md` in the same PR — usually by running `make bump-versions`
+there. After this is merged, confirm in the repository's branch-protection
+settings that the check stays expected on the release branches.
+
 All of the above goes to make a PR, which you should create targeting the `release-x.y` branch, then wait for CI to complete and get an approval.
 Once the PR is ready, merge it into the release branch and pull it down to your work area. Then you are ready for the next step:
 
