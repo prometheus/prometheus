@@ -1834,6 +1834,7 @@ type EvalNodeHelper struct {
 
 	// StartTimestamps optionally provides sample start timestamps aligned with matrix samples.
 	StartTimestamps *StartTimestamps
+
 }
 
 func (enh *EvalNodeHelper) resetSigsPresent() []bool {
@@ -2320,7 +2321,7 @@ func (ev *evaluator) smoothSeries(ctx context.Context, series []storage.Series, 
 		chkIter = s.Iterator(chkIter)
 		it.Reset(chkIter)
 
-		var floats []FPoint
+		floatsWin := floatWindow{seriesID: 1}
 		var hists []HPoint
 		metricName := s.Labels().Get(labels.MetricName)
 
@@ -2330,7 +2331,8 @@ func (ev *evaluator) smoothSeries(ctx context.Context, series []storage.Series, 
 			matrixStart := dataTS - lb
 			matrixEnd := dataTS + lb
 
-			floats, hists, _ = ev.matrixIterSlice(ctx, it, matrixStart, matrixEnd, floats, hists, nil, int((evalTS-ev.startTimestamp)/ev.interval))
+			var floats []FPoint
+			floats, hists, _ = ev.matrixIterSlice(ctx, it, matrixStart, matrixEnd, &floatsWin, hists, nil, int((evalTS-ev.startTimestamp)/ev.interval))
 			if len(floats) == 0 && len(hists) == 0 {
 				continue
 			}
@@ -2847,6 +2849,7 @@ func (ev *evaluator) eval(ctx context.Context, expr parser.Expr) (parser.Value, 
 		}
 
 		// Reuse objects across steps to save memory allocations.
+		floatsWin := floatWindow{seriesID: 1}
 		var floats []FPoint
 		var histograms []HPoint
 		var prevSS *Series
@@ -2886,15 +2889,14 @@ func (ev *evaluator) eval(ctx context.Context, expr parser.Expr) (parser.Value, 
 				ev.error(err)
 			}
 			ev.currentSamples -= len(floats) + totalHPointSize(histograms)
-			if floats != nil {
-				floats = floats[:0]
-			}
 			if histograms != nil {
 				histograms = histograms[:0]
 			}
 			if startTimestamps != nil {
 				startTimestamps.Reset()
 			}
+			floatsWin.reset(startTimestamps)
+			floats = floatsWin.activeSlice()
 			chkIter = s.Iterator(chkIter)
 			it.Reset(chkIter)
 
@@ -2950,7 +2952,7 @@ func (ev *evaluator) eval(ctx context.Context, expr parser.Expr) (parser.Value, 
 					if matrixFromSubquery {
 						readStep = -1
 					}
-					floats, histograms, startTimestamps = ev.matrixIterSlice(ctx, it, mint, maxt, floats, histograms, startTimestamps, readStep)
+					floats, histograms, startTimestamps = ev.matrixIterSlice(ctx, it, mint, maxt, &floatsWin, histograms, startTimestamps, readStep)
 				}
 				if len(floats)+len(histograms) == 0 {
 					continue
@@ -3043,7 +3045,7 @@ func (ev *evaluator) eval(ctx context.Context, expr parser.Expr) (parser.Value, 
 		ev.samplesStats.UpdatePeak(ev.currentSamples)
 
 		ev.currentSamples -= len(floats) + totalHPointSize(histograms)
-		putFPointSlice(floats)
+		putFPointSlice(floatsWin.buf)
 		putMatrixSelectorHPointSlice(histograms)
 
 		// The absent_over_time function returns 0 or 1 series. So far, the matrix
@@ -3512,6 +3514,86 @@ func getFPointSlice(sz int) []FPoint {
 	return make([]FPoint, 0, sz)
 }
 
+// floatWindow maintains a sliding window of float points (and optional aligned
+// float start timestamps) over a pooled backing slice so advancing the left
+// boundary avoids shifting the slice on every evaluation step.
+type floatWindow struct {
+	buf      []FPoint
+	stBuf    []int64
+	off      int
+	startSeq int
+	endSeq   int
+	seriesID uint64
+}
+
+func (w *floatWindow) activeSlice() []FPoint {
+	if w.buf == nil {
+		return nil
+	}
+	return w.buf[w.off:]
+}
+
+func (w *floatWindow) drop(n int, startTimestamps *StartTimestamps) {
+	w.off += n
+	w.startSeq += n
+	if startTimestamps != nil {
+		startTimestamps.Floats = w.stBuf[w.off:]
+	}
+}
+
+func (w *floatWindow) reset(startTimestamps *StartTimestamps) {
+	if w.buf != nil {
+		w.buf = w.buf[:0]
+	}
+	if w.stBuf != nil {
+		w.stBuf = w.stBuf[:0]
+	}
+	w.off = 0
+	w.startSeq = 0
+	w.endSeq = 0
+	w.seriesID++
+	if startTimestamps != nil {
+		startTimestamps.Floats = w.stBuf
+	}
+}
+
+func (w *floatWindow) append(pt FPoint, st int64, startTimestamps *StartTimestamps) {
+	if w.buf == nil {
+		w.buf = getFPointSlice(16)
+	}
+	if len(w.buf) == cap(w.buf) && w.off > 0 {
+		n := len(w.buf) - w.off
+		if w.off >= n/4 {
+			copy(w.buf, w.buf[w.off:])
+			w.buf = w.buf[:n]
+			if startTimestamps != nil {
+				copy(w.stBuf, w.stBuf[w.off:])
+				w.stBuf = w.stBuf[:n]
+			}
+			w.off = 0
+		} else {
+			// Grow to 2*(n+1) so subsequent step slides have O(n) tail slack.
+			newCap := max(2*(n+1), 16)
+			newBuf := make([]FPoint, n, newCap)
+			copy(newBuf, w.buf[w.off:])
+			putFPointSlice(w.buf)
+			w.buf = newBuf
+			if startTimestamps != nil {
+				newST := make([]int64, n, newCap)
+				copy(newST, w.stBuf[w.off:])
+				w.stBuf = newST
+			}
+			w.off = 0
+		}
+	}
+	w.buf = append(w.buf, pt)
+	w.endSeq++
+	if startTimestamps != nil {
+		w.stBuf = append(w.stBuf, st)
+		startTimestamps.Floats = w.stBuf[w.off:]
+	}
+}
+
 // putFPointSlice will return a FPoint slice of size max(maxPointsSliceSize, sz).
 // This function is called with an estimated size which often can be over-estimated.
 func putFPointSlice(p []FPoint) {
@@ -3604,7 +3686,8 @@ func (ev *evaluator) matrixSelector(ctx context.Context, node *parser.MatrixSele
 		if ev.useStartTimestamps && retrieveStartTimestamps {
 			startTimestamps = &StartTimestamps{}
 		}
-		ss.Floats, ss.Histograms, startTimestamps = ev.matrixIterSlice(ctx, it, mint, maxt, nil, nil, startTimestamps, 0)
+		floatsWin := floatWindow{seriesID: 1}
+		ss.Floats, ss.Histograms, startTimestamps = ev.matrixIterSlice(ctx, it, mint, maxt, &floatsWin, nil, startTimestamps, 0)
 		switch {
 		case vs.Anchored:
 			if ss.Histograms != nil {
@@ -3661,10 +3744,11 @@ func (ev *evaluator) matrixSelector(ctx context.Context, node *parser.MatrixSele
 // already charged its storage reads during evaluation.
 func (ev *evaluator) matrixIterSlice(
 	ctx context.Context, it *matrixIterator, mint, maxt int64,
-	floats []FPoint, histograms []HPoint, startTimestamps *StartTimestamps, readStep int,
+	floatsWin *floatWindow, histograms []HPoint, startTimestamps *StartTimestamps, readStep int,
 ) ([]FPoint, []HPoint, *StartTimestamps) {
 	it.beginFrame(ctx, readStep)
 	mintFloats, mintHistograms := mint, mint
+	floats := floatsWin.activeSlice()
 
 	// First floats...
 	if len(floats) > 0 && floats[len(floats)-1].T > mint {
@@ -3677,26 +3761,13 @@ func (ev *evaluator) matrixIterSlice(
 		for drop = 0; floats[drop].T <= mint; drop++ {
 		}
 		ev.currentSamples -= drop
-		copy(floats, floats[drop:])
-		floats = floats[:len(floats)-drop]
+		floatsWin.drop(drop, startTimestamps)
+		floats = floatsWin.activeSlice()
 		// Only append points with timestamps after the last timestamp we have.
 		mintFloats = floats[len(floats)-1].T
-
-		if startTimestamps != nil {
-			// Truncate startTimestamps at the same drop point.
-			copy(startTimestamps.Floats, startTimestamps.Floats[drop:])
-			startTimestamps.Floats = startTimestamps.Floats[:len(startTimestamps.Floats)-drop]
-		}
 	} else {
 		ev.currentSamples -= len(floats)
-		if floats != nil {
-			floats = floats[:0]
-		}
-
-		if startTimestamps != nil {
-			// Clear the startTimestamps since we are clearing floats now.
-			startTimestamps.Floats = startTimestamps.Floats[:0]
-		}
+		floatsWin.reset(startTimestamps)
 	}
 
 	// ...then the same for histograms. TODO(beorn7): Use generics?
@@ -3740,7 +3811,7 @@ func (ev *evaluator) matrixIterSlice(
 
 	if mint == maxt {
 		// Empty range: return the empty slices.
-		return floats, histograms, startTimestamps
+		return floatsWin.activeSlice(), histograms, startTimestamps
 	}
 
 	soughtValueType := it.seek(mintFloats, mintHistograms, maxt)
@@ -3797,14 +3868,11 @@ loop:
 				if ev.currentSamples > ev.maxSamples {
 					ev.error(ErrTooManySamples(env))
 				}
-				if floats == nil {
-					floats = getFPointSlice(16)
-				}
-				floats = append(floats, FPoint{T: t, F: f})
-
+				var st int64
 				if startTimestamps != nil {
-					startTimestamps.Floats = append(startTimestamps.Floats, buf.AtST())
+					st = buf.AtST()
 				}
+				floatsWin.append(FPoint{T: t, F: f}, st, startTimestamps)
 			}
 		}
 	}
@@ -3851,19 +3919,16 @@ loop:
 			if ev.currentSamples > ev.maxSamples {
 				ev.error(ErrTooManySamples(env))
 			}
-			if floats == nil {
-				floats = getFPointSlice(16)
-			}
-			floats = append(floats, FPoint{T: t, F: f})
-
+			var st int64
 			if startTimestamps != nil {
-				startTimestamps.Floats = append(startTimestamps.Floats, it.AtST())
+				st = it.AtST()
 			}
+			floatsWin.append(FPoint{T: t, F: f}, st, startTimestamps)
 		}
 	}
 	it.checkContext()
 	ev.samplesStats.UpdatePeak(ev.currentSamples)
-	return floats, histograms, startTimestamps
+	return floatsWin.activeSlice(), histograms, startTimestamps
 }
 
 func (*evaluator) VectorAnd(lhs, rhs Vector, matching *parser.VectorMatching, lhsh, rhsh []EvalSeriesHelper, enh *EvalNodeHelper) Vector {
