@@ -1975,6 +1975,35 @@ func (enh *EvalNodeHelper) getOrCreateLblsWithQuantile(lbls labels.Labels, quant
 	return cachedLblsWithQuantile
 }
 
+// outputSeriesKey identifies a series that a range evaluation assembles from
+// the samples it produces at each step.
+type outputSeriesKey struct {
+	hash     uint64
+	dropName bool
+}
+
+// seriesKey returns the key under which samples with the given labels
+// are collected into one output series. With delayed name removal, the metric
+// name is still present on samples that are going to lose it at the end of the
+// query, so a sample that keeps its name and one that drops it can have the same
+// labels at this point (e.g. both sides of "metric > 100 or metric * 2"). They
+// belong to different series and must not be merged, otherwise the output series
+// takes the DropName of whichever sample came first and attaches the wrong
+// labels to the samples of the other one. Once there is nothing left to drop,
+// DropName no longer makes a difference.
+func (ev *evaluator) seriesKey(lbls labels.Labels, dropName bool) outputSeriesKey {
+	return outputSeriesKey{
+		hash:     lbls.Hash(),
+		dropName: ev.enableDelayedNameRemoval && dropName && hasMetadataLabel(lbls),
+	}
+}
+
+// hasMetadataLabel reports whether lbls has a label that is removed when the
+// metric name is dropped.
+func hasMetadataLabel(lbls labels.Labels) bool {
+	return lbls.Has(model.MetricNameLabel) || lbls.Has(model.MetricTypeLabel) || lbls.Has(model.MetricUnitLabel)
+}
+
 // rangeEval evaluates the given expressions, and then for each step calls
 // the given funcCall with the values computed for each expression at that
 // step. The return value is the combination into time series of all the
@@ -2020,7 +2049,7 @@ func (ev *evaluator) rangeEval(ctx context.Context, matching *parser.VectorMatch
 		Series
 		ts int64
 	}
-	seriess := make(map[uint64]seriesAndTimestamp, biggestLen) // Output series by series hash.
+	seriess := make(map[outputSeriesKey]seriesAndTimestamp, biggestLen) // Output series by labels and DropName.
 	tempNumSamples := ev.currentSamples
 
 	var (
@@ -2129,8 +2158,8 @@ func (ev *evaluator) rangeEval(ctx context.Context, matching *parser.VectorMatch
 
 		// Add samples in output vector to output series.
 		for _, sample := range result {
-			h := sample.Metric.Hash()
-			ss, ok := seriess[h]
+			key := ev.seriesKey(sample.Metric, sample.DropName)
+			ss, ok := seriess[key]
 			if ok {
 				if ss.ts == ts { // If we've seen this output series before at this timestamp, it's a duplicate.
 					ev.errorf("vector cannot contain metrics with the same labelset")
@@ -2140,7 +2169,7 @@ func (ev *evaluator) rangeEval(ctx context.Context, matching *parser.VectorMatch
 				ss = seriesAndTimestamp{Series{Metric: sample.Metric, DropName: sample.DropName}, ts}
 			}
 			addToSeries(&ss.Series, enh.Ts, sample.F, sample.H, numSteps)
-			seriess[h] = ss
+			seriess[key] = ss
 		}
 	}
 
@@ -2201,7 +2230,7 @@ func (ev *evaluator) rangeEvalAgg(ctx context.Context, aggExpr *parser.Aggregate
 	}
 	groups := make([]groupedAggregation, groupCount)
 
-	var seriess map[uint64]Series
+	var seriess map[outputSeriesKey]Series
 
 	switch aggExpr.Op {
 	case parser.TOPK, parser.BOTTOMK, parser.LIMITK:
@@ -2218,7 +2247,7 @@ func (ev *evaluator) rangeEvalAgg(ctx context.Context, aggExpr *parser.Aggregate
 		if fParam := params.Max(); fParam >= maxInt64 {
 			ev.errorf("Scalar value %v overflows int64", fParam)
 		}
-		seriess = make(map[uint64]Series, len(inputMatrix))
+		seriess = make(map[outputSeriesKey]Series, len(inputMatrix))
 
 	case parser.LIMIT_RATIO:
 		// Return early if all r values are zero.
@@ -2234,7 +2263,7 @@ func (ev *evaluator) rangeEvalAgg(ctx context.Context, aggExpr *parser.Aggregate
 		if params.Min() < -1.0 {
 			annos.Add(annotations.NewInvalidRatioWarning(params.Min(), -1.0, aggExpr.Param.PositionRange()))
 		}
-		seriess = make(map[uint64]Series, len(inputMatrix))
+		seriess = make(map[outputSeriesKey]Series, len(inputMatrix))
 
 	case parser.QUANTILE:
 		if params.HasAnyNaN() {
@@ -4695,7 +4724,7 @@ func (ev *evaluator) aggregation(e *parser.AggregateExpr, q float64, inputMatrix
 // seriesToResult maps inputMatrix indexes to groups indexes.
 // For an instant query, returns a Matrix in descending order for topk or ascending for bottomk, or without any order for limitk / limit_ratio.
 // For a range query, aggregates output in the seriess map.
-func (ev *evaluator) aggregationK(e *parser.AggregateExpr, fParam float64, inputMatrix Matrix, seriesToResult []int, groups []groupedAggregation, enh *EvalNodeHelper, seriess map[uint64]Series) (Matrix, annotations.Annotations) {
+func (ev *evaluator) aggregationK(e *parser.AggregateExpr, fParam float64, inputMatrix Matrix, seriesToResult []int, groups []groupedAggregation, enh *EvalNodeHelper, seriess map[outputSeriesKey]Series) (Matrix, annotations.Annotations) {
 	op := e.Op
 	var s Sample
 	var annos annotations.Annotations
@@ -4873,13 +4902,13 @@ seriesLoop:
 			}
 		} else {
 			// Otherwise the results are added into seriess elements.
-			hash := lbls.Hash()
-			ss, ok := seriess[hash]
+			key := ev.seriesKey(lbls, dropName)
+			ss, ok := seriess[key]
 			if !ok {
 				ss = Series{Metric: lbls, DropName: dropName}
 			}
 			addToSeries(&ss, enh.Ts, f, h, numSteps)
-			seriess[hash] = ss
+			seriess[key] = ss
 		}
 	}
 	for _, aggr := range groups {
@@ -5004,16 +5033,17 @@ func (ev *evaluator) mergeSeriesWithSameLabelset(mat Matrix) Matrix {
 	}
 
 	// Slow path: there are duplicates, so we need to merge series with non-overlapping timestamps.
-	// Group series by their labelset hash.
-	seriesByHash := make(map[uint64][]int)
+	// Group series by their labelset hash, keeping series that are still going to
+	// drop their name apart from those that keep it.
+	seriesByKey := make(map[outputSeriesKey][]int)
 	for i := range mat {
-		hash := mat[i].Metric.Hash()
-		seriesByHash[hash] = append(seriesByHash[hash], i)
+		key := ev.seriesKey(mat[i].Metric, mat[i].DropName)
+		seriesByKey[key] = append(seriesByKey[key], i)
 	}
 
 	// Merge series with the same labelset.
-	merged := make(Matrix, 0, len(seriesByHash))
-	for _, indices := range seriesByHash {
+	merged := make(Matrix, 0, len(seriesByKey))
+	for _, indices := range seriesByKey {
 		if len(indices) == 1 {
 			// No collision, add as-is.
 			merged = append(merged, mat[indices[0]])
