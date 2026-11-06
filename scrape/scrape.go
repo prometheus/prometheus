@@ -33,6 +33,7 @@ import (
 	"time"
 	"unsafe"
 
+	"github.com/cespare/xxhash/v2"
 	"github.com/klauspost/compress/gzip"
 	"github.com/klauspost/compress/zstd"
 	config_util "github.com/prometheus/common/config"
@@ -1022,9 +1023,8 @@ type scrapeCache struct {
 	// and its storage reference.
 	series map[string]*cacheEntry
 
-	// Cache of dropped metric strings and their iteration. The iteration must
-	// be a pointer so we can update it.
-	droppedSeries map[string]*uint64
+	// Cache of dropped metric hashes and their iteration.
+	droppedSeries map[uint64]uint64
 
 	// Series that were seen in the current and previous scrape, for staleness detection.
 	seriesCur  map[storage.SeriesRef]*cacheEntry
@@ -1060,7 +1060,7 @@ func (m *metaEntry) size() int {
 func newScrapeCache(metrics *scrapeMetrics) *scrapeCache {
 	return &scrapeCache{
 		series:        map[string]*cacheEntry{},
-		droppedSeries: map[string]*uint64{},
+		droppedSeries: map[uint64]uint64{},
 		seriesCur:     map[storage.SeriesRef]*cacheEntry{},
 		seriesPrev:    map[storage.SeriesRef]*cacheEntry{},
 		metadata:      map[string]*metaEntry{},
@@ -1098,9 +1098,9 @@ func (c *scrapeCache) iterDone(flushCache bool) {
 				}
 			}
 		}
-		for s, iter := range c.droppedSeries {
-			if c.iter != *iter {
-				delete(c.droppedSeries, s)
+		for h, iter := range c.droppedSeries {
+			if c.iter != iter {
+				delete(c.droppedSeries, h)
 			}
 		}
 		c.metaMtx.Lock()
@@ -1168,16 +1168,16 @@ func (c *scrapeCache) deleteSeries(met []byte, ce *cacheEntry) {
 }
 
 func (c *scrapeCache) addDropped(met []byte) {
-	iter := c.iter
-	c.droppedSeries[string(met)] = &iter
+	c.droppedSeries[xxhash.Sum64(met)] = c.iter
 }
 
 func (c *scrapeCache) getDropped(met []byte) bool {
-	iterp, ok := c.droppedSeries[string(met)]
-	if ok {
-		*iterp = c.iter
+	hash := xxhash.Sum64(met)
+	if _, ok := c.droppedSeries[hash]; ok {
+		c.droppedSeries[hash] = c.iter
+		return true
 	}
-	return ok
+	return false
 }
 
 // updateRef points the cache entry at a new storage reference, e.g. because the

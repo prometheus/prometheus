@@ -300,7 +300,7 @@ loop:
 			} else {
 				p.Labels(&lset)
 
-				// Add target labels and apply relabeling before storing the final label set and metadata.
+				// Add target labels and apply relabeling before storing the final label set.
 				lset, sampleMeta, sampleMFName = sl.mutateSample(lset, lastMFName, lastMeta)
 
 				// The label set may be set to empty to indicate dropping.
