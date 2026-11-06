@@ -8,4 +8,10 @@ my_gauge{abc="baz",bar="foo"} 8 60.000
 my_gauge{abc="baz",bar="foo"} 0 120.000
 my_gauge{abc="baz",bar="foo"} 4 180.000
 my_gauge{abc="baz",bar="foo"} 7 240.000
+my_mixed{foo="bar"} 1 0.000
+my_mixed{foo="bar"} 3 120.000
+my_stale{foo="bar"} 1 0.000
+my_stale{foo="bar"} 2 60.000
+my_stale{foo="bar"} 4 180.000
+my_stale{foo="bar"} 5 240.000
 # EOF
