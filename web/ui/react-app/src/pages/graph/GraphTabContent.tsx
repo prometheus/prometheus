@@ -8,6 +8,8 @@ import { GraphDisplayMode } from './Panel';
 interface GraphTabContentProps {
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   data: any;
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  startTimestamps?: any;
   exemplars: ExemplarData;
   displayMode: GraphDisplayMode;
   useLocalTime: boolean;
@@ -19,6 +21,7 @@ interface GraphTabContentProps {
 
 export const GraphTabContent: FC<GraphTabContentProps> = ({
   data,
+  startTimestamps,
   exemplars,
   displayMode,
   useLocalTime,
@@ -41,6 +44,7 @@ export const GraphTabContent: FC<GraphTabContentProps> = ({
   return (
     <Graph
       data={data}
+      startTimestamps={startTimestamps}
       exemplars={exemplars}
       displayMode={displayMode}
       useLocalTime={useLocalTime}
