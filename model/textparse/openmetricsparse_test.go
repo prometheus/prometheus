@@ -14,6 +14,7 @@
 package textparse
 
 import (
+	"errors"
 	"fmt"
 	"io"
 	"math"
@@ -1282,4 +1283,71 @@ func resetValAndLset(e []parsedEntry) {
 		e[i].v = 0
 		e[i].lset = labels.EmptyLabels()
 	}
+}
+
+func TestOpenMetricsParse_StartTimestampReuseAndAllocs(t *testing.T) {
+	input := `# TYPE reqs counter
+reqs_total{env="production-long-label-value-to-grow-buffer",method="POST"} 10
+reqs_created{env="production-long-label-value-to-grow-buffer",method="POST"} 1700000001.5
+reqs_total{env="a",method="G"} 20
+reqs_total{env="b",method="H"} 30
+reqs_created{env="b",method="H"} 1700000002.5
+# TYPE other gauge
+other 1
+# EOF
+`
+	p := NewOpenMetricsParser([]byte(input), labels.NewSymbolTable(), WithOMParserSTSeriesSkipped())
+	got := testParse(t, p)
+	resetValAndLset(got)
+	requireEntries(t, []parsedEntry{
+		{m: "reqs", typ: model.MetricTypeCounter},
+		{m: `reqs_total{env="production-long-label-value-to-grow-buffer",method="POST"}`, st: 1700000001500},
+		{m: `reqs_total{env="a",method="G"}`, st: 0},
+		{m: `reqs_total{env="b",method="H"}`, st: 1700000002500},
+		{m: "other", typ: model.MetricTypeGauge},
+		{m: "other", st: 0},
+	}, got)
+
+	// Verify steady-state StartTimestamp lookahead performs zero heap allocations
+	// both when a matching _created line is found and when none exists.
+	allocInput := []byte(`# TYPE c counter
+c_total{k="v1"} 1
+c_total{k="v2"} 2
+c_created{k="v2"} 1700000003.0
+# EOF
+`)
+	ap := NewOpenMetricsParser(allocInput, labels.NewSymbolTable(), WithOMParserSTSeriesSkipped()).(*OpenMetricsParser)
+	allocs := testing.AllocsPerRun(1000, func() {
+		*ap.l = openMetricsLexer{b: allocInput}
+		ap.stHashSet = 0
+		ap.mtype = ""
+
+		et, err := ap.Next()
+		if err != nil || et != EntryType {
+			t.Fatalf("unexpected entry %v, err %v", et, err)
+		}
+
+		// Series 1: no _created line; performs a full lookahead.
+		et, err = ap.Next()
+		if err != nil || et != EntrySeries {
+			t.Fatalf("unexpected entry %v, err %v", et, err)
+		}
+		if st := ap.StartTimestamp(); st != 0 {
+			t.Fatalf("expected st 0, got %d", st)
+		}
+
+		// Series 2: matching _created line; performs lookahead and hashes both series.
+		et, err = ap.Next()
+		if err != nil || et != EntrySeries {
+			t.Fatalf("unexpected entry %v, err %v", et, err)
+		}
+		if st := ap.StartTimestamp(); st != 1700000003000 {
+			t.Fatalf("expected st 1700000003000, got %d", st)
+		}
+
+		if _, err = ap.Next(); !errors.Is(err, io.EOF) {
+			t.Fatalf("expected EOF, got %v", err)
+		}
+	})
+	require.Zero(t, allocs)
 }
