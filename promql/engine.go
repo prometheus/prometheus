@@ -4054,8 +4054,20 @@ func (ev *evaluator) VectorBinop(op parser.ItemType, lhs, rhs Vector, matching *
 	)
 
 	dropMetricName := !ev.enableDelayedNameRemoval && returnBool
+	const (
+		fillRHSCacheID = -1
+		fillLHSCacheID = -2
+	)
+	resolveFillMetric := func(ls, rs *Sample, rhsID int) {
+		switch rhsID {
+		case fillRHSCacheID:
+			rs.Metric = matchLabels(ls.Metric, matching.On, matching.MatchingLabels...)
+		case fillLHSCacheID:
+			ls.Metric = matchLabels(rs.Metric, matching.On, matching.MatchingLabels...)
+		}
+	}
 
-	doBinOp := func(ls, rs Sample, lID, rID, sigOrd int) {
+	doBinOp := func(ls, rs Sample, cacheID, rhsID, sigOrd int) {
 		// Account for potentially swapped sidedness.
 		fl, fr := ls.F, rs.F
 		hl, hr := ls.H, rs.H
@@ -4084,19 +4096,21 @@ func (ev *evaluator) VectorBinop(op parser.ItemType, lhs, rhs Vector, matching *
 			metric  labels.Labels
 			outSlot int
 		)
-		if lID > 0 && rID != 0 {
-			if lID >= len(enh.binopPairCache) {
-				enh.binopPairCache = slices.Grow(enh.binopPairCache, lID-len(enh.binopPairCache)+1)[:lID+1]
+		if cacheID > 0 && rhsID != 0 {
+			if cacheID >= len(enh.binopPairCache) {
+				enh.binopPairCache = slices.Grow(enh.binopPairCache, cacheID-len(enh.binopPairCache)+1)[:cacheID+1]
 			}
-			entry := &enh.binopPairCache[lID]
-			if entry.rhsID == rID {
+			entry := &enh.binopPairCache[cacheID]
+			if entry.rhsID == rhsID {
 				metric = entry.metric
 				outSlot = entry.outSlot
 			} else {
+				resolveFillMetric(&ls, &rs, rhsID)
 				metric, outSlot = resultMetric(ls.Metric, rs.Metric, op, matching, dropMetricName, enh)
-				*entry = binopPairCacheEntry{rhsID: rID, outSlot: outSlot, metric: metric}
+				*entry = binopPairCacheEntry{rhsID: rhsID, outSlot: outSlot, metric: metric}
 			}
 		} else {
+			resolveFillMetric(&ls, &rs, rhsID)
 			metric, outSlot = resultMetric(ls.Metric, rs.Metric, op, matching, dropMetricName, enh)
 		}
 
@@ -4168,11 +4182,8 @@ func (ev *evaluator) VectorBinop(op parser.ItemType, lhs, rhs Vector, matching *
 			if fill == nil {
 				continue
 			}
-			rs = Sample{
-				Metric: matchLabels(ls.Metric, matching.On, matching.MatchingLabels...),
-				F:      *fill,
-			}
-			rID = -1
+			rs = Sample{F: *fill}
+			rID = fillRHSCacheID
 		}
 
 		doBinOp(ls, rs, lID, rID, sigOrd)
@@ -4187,12 +4198,9 @@ func (ev *evaluator) VectorBinop(op parser.ItemType, lhs, rhs Vector, matching *
 			if matchedSigsPresent[sigOrd] {
 				continue // Already matched.
 			}
-			ls := Sample{
-				Metric: matchLabels(rs.Metric, matching.On, matching.MatchingLabels...),
-				F:      *fill,
-			}
+			ls := Sample{F: *fill}
 
-			doBinOp(ls, rs, 0, rhsh[i].seriesID, sigOrd)
+			doBinOp(ls, rs, rhsh[i].seriesID, fillLHSCacheID, sigOrd)
 		}
 	}
 
