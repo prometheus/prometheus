@@ -2355,6 +2355,7 @@ func (ev *evaluator) smoothSeries(ctx context.Context, series []storage.Series, 
 	var chkIter chunkenc.Iterator
 	mat := make(Matrix, 0, len(series))
 	var annos annotations.Annotations
+	var floatsWin floatWindow
 
 	for _, s := range series {
 		ss := Series{Metric: s.Labels()}
@@ -2362,7 +2363,7 @@ func (ev *evaluator) smoothSeries(ctx context.Context, series []storage.Series, 
 		chkIter = s.Iterator(chkIter)
 		it.Reset(chkIter)
 
-		floatsWin := floatWindow{seriesID: 1}
+		floatsWin.reset(nil)
 		var hists []HPoint
 		metricName := s.Labels().Get(labels.MetricName)
 
@@ -2454,6 +2455,7 @@ func (ev *evaluator) smoothSeries(ctx context.Context, series []storage.Series, 
 			mat = append(mat, ss)
 		}
 	}
+	putFPointSlice(floatsWin.buf)
 
 	return mat, annos
 }
