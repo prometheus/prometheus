@@ -1097,6 +1097,12 @@ func (api *API) queryRangeCost(r *http.Request) apiFuncResult {
 		return invalidParamError(errors.New("zero or negative query resolution step widths are not accepted. Try a positive integer"), "step")
 	}
 
+	// Prometheus timestamps have millisecond precision, so reject
+	// anything below 1ms.
+	if step < time.Millisecond {
+		return invalidParamError(errors.New("query resolution step widths must be at least 1ms"), "step")
+	}
+
 	// For safety, limit the number of returned points per timeseries.
 	// This is sufficient for 60s resolution for a week or 1h resolution for a year.
 	if end.Sub(start)/step > 11000 {
@@ -1222,6 +1228,12 @@ func (api *API) queryRange(r *http.Request) (result apiFuncResult) {
 
 	if step <= 0 {
 		return invalidParamError(errors.New("zero or negative query resolution step widths are not accepted. Try a positive integer"), "step")
+	}
+
+	// Prometheus timestamps have millisecond precision, so reject
+	// anything below 1ms.
+	if step < time.Millisecond {
+		return invalidParamError(errors.New("query resolution step widths must be at least 1ms"), "step")
 	}
 
 	// For safety, limit the number of returned points per timeseries.
