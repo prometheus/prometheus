@@ -722,6 +722,7 @@ func TestRecordingRuleMetadataDeduction(t *testing.T) {
 						QueryFunc:               qf,
 						AppendMetadata:          appendMetadata,
 						EnableTypeAndUnitLabels: tc.enableTypeAndUnitLabels,
+						AutoRecordingMetadata:   true,
 					},
 				})
 

@@ -41,7 +41,7 @@ type Rule interface {
 	// Labels of the rule.
 	Labels() labels.Labels
 	// Metadata returns the static metric metadata associated with the rule.
-	// RecordingRule deduces per-sample metadata during Group.Eval instead.
+	// RecordingRule deduces per-sample metadata during Group.Eval when AutoRecordingMetadata is enabled.
 	Metadata() metadata.Metadata
 	// Eval evaluates the rule, including any associated recording or alerting actions.
 	Eval(ctx context.Context, queryOffset time.Duration, evaluationTime time.Time, queryFunc QueryFunc, externalURL *url.URL, limit int) (promql.Vector, error)
