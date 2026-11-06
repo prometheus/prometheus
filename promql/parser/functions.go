@@ -291,6 +291,12 @@ var Functions = map[string]*Function{
 		ArgTypes:   []ValueType{ValueTypeVector},
 		ReturnType: ValueTypeVector,
 	},
+	"log1p": {
+		Name:         "log1p",
+		ArgTypes:     []ValueType{ValueTypeVector},
+		ReturnType:   ValueTypeVector,
+		Experimental: true,
+	},
 	"log10": {
 		Name:       "log10",
 		ArgTypes:   []ValueType{ValueTypeVector},
