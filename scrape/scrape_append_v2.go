@@ -352,10 +352,10 @@ loop:
 				break loop
 			}
 
-			if sl.parseST {
-				// p.StartTimestamp() tend to be expensive (e.g. OM1). Do it only if we care.
-				st = p.StartTimestamp()
-			}
+			// StartTimestamp() is O(1) for formats with inline or structured start timestamps
+			// (e.g. Prometheus Protobuf and OpenMetrics 2.0), while OpenMetrics 1.0 gates
+			// _created lookahead and series skipping via OpenMetricsSkipSTSeries (sl.parseST).
+			st = p.StartTimestamp()
 
 			// Prepare append call.
 			appOpts := storage.AOptions{}

@@ -288,8 +288,9 @@ func (p *OpenMetricsParser) Exemplar(e *exemplar.Exemplar) bool {
 // StartTimestamp returns the start timestamp for a current Metric, or 0 if it does not exist.
 // NOTE(Maniktherana): Might use additional CPU/mem resources due to deep copy of parser required for peeking given 1.0 OM specification on _created series.
 func (p *OpenMetricsParser) StartTimestamp() int64 {
-	if !typeRequiresST(p.mtype) {
-		// Not a ST supported metric type, fast path.
+	if !p.skipSTSeries || !typeRequiresST(p.mtype) {
+		// Start timestamp parsing is disabled (exposing _created lines as series instead),
+		// or not a ST supported metric type; fast path.
 		p.stHashSet = 0 // Use stHashSet as a single way of telling "empty cache"
 		return 0
 	}

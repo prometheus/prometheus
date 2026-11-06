@@ -122,11 +122,11 @@ type Options struct {
 	// removal.
 	EnableStartTimestampZeroIngestion bool
 
-	// ParseST controls if ST should be parsed and appended from the scrape formats.
-	// This should be by default true, but it's opt-in for OpenMetrics (OM) 1.0 reasons and might be moved
-	// to OM  1.0 only flow.
+	// ParseST controls if OpenMetrics 1.0 <metric>_created series should be parsed and appended
+	// as start timestamps instead of normal samples. Structured and inline formats (such as
+	// Prometheus Protobuf and OpenMetrics 2.0) always parse start timestamps on AppenderV2.
 	//
-	// Specifically for OpenMetrics 1.0 flow, it can have some additional effects that might not be desired for non-ST users:
+	// Specifically for OpenMetrics 1.0 flow, enabling this can have additional effects that might not be desired for non-ST users:
 	//
 	// * OpenMetrics 1.0 <metric>_created series will be parsed as ST instead of normal sample. Could be breaking
 	// if downstream user depends on _created metric. TODO(bwplotka): Add "preserveOMLines" hidden option?
@@ -134,7 +134,6 @@ type Options struct {
 	// * Can yield wrong ST values in rare edge cases (unknown metadata and metric name collisions).
 	//
 	// This only applies to AppenderV2 flow (Prometheus default).
-	// TODO: Move this option to OM1 parser and use only on OM1 flow.
 	ParseST bool
 
 	// SynthesizeST enables the synthesis of start timestamp for cumulative metrics.

@@ -1283,3 +1283,33 @@ func resetValAndLset(e []parsedEntry) {
 		e[i].lset = labels.EmptyLabels()
 	}
 }
+
+func TestOpenMetricsParse_WithoutSTSeriesSkipped(t *testing.T) {
+	input := `# TYPE foo counter
+foo_total 17.0
+foo_created 1520872607.123
+foo_total{a="b"} 19.0
+foo_created{a="b"} 1520872608.123
+# TYPE bar histogram
+bar_bucket{le="+Inf"} 5
+bar_count 5
+bar_sum 12.5
+bar_created 1520872609.125
+# EOF
+`
+	p := NewOpenMetricsParser([]byte(input), labels.NewSymbolTable())
+	got := testParse(t, p)
+	resetValAndLset(got)
+	requireEntries(t, []parsedEntry{
+		{m: "foo", typ: model.MetricTypeCounter},
+		{m: "foo_total", st: 0},
+		{m: "foo_created", st: 0},
+		{m: `foo_total{a="b"}`, st: 0},
+		{m: `foo_created{a="b"}`, st: 0},
+		{m: "bar", typ: model.MetricTypeHistogram},
+		{m: `bar_bucket{le="+Inf"}`, st: 0},
+		{m: "bar_count", st: 0},
+		{m: "bar_sum", st: 0},
+		{m: "bar_created", st: 0},
+	}, got)
+}

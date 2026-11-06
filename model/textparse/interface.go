@@ -173,7 +173,7 @@ type ParserOptions struct {
 	KeepClassicOnClassicAndNativeHistograms bool
 
 	// OpenMetricsSkipSTSeries determines whether to skip `_created` timestamp series
-	// during (OpenMetrics parsing only).
+	// during OpenMetrics 1.0 parsing and expose them via StartTimestamp() instead.
 	OpenMetricsSkipSTSeries bool
 
 	// EnableOpenMetrics2 enables the OpenMetrics 2.0 parser. When
