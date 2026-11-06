@@ -213,7 +213,16 @@ func findSetMatchesInternal(re *syntax.Regexp, base string) (matches []string, c
 				matches = append(matches, base+string(c))
 			}
 		}
-		return matches, isCaseSensitive(re)
+		// Unlike a literal, a character class has already had case folding
+		// expanded into its rune set by the parser, which leaves FoldCase behind
+		// as residue: [aA]|B and a|A|B both collapse to the class [ABa], but only
+		// the first still carries the flag. Reading it as "match this set case
+		// insensitively" folds the set a second time, so [aA]|B matched "b".
+		// The set may still be reported as case insensitive when it is closed
+		// under case folding, since folding it again cannot add a member; that is
+		// what lets a class compose with a case insensitive sibling, as the digits
+		// of (?i:(foo1|foo2|bar)) do.
+		return matches, isCaseSensitive(re) || !classIsCaseFoldClosed(re.Rune)
 	default:
 		return nil, false
 	}
@@ -329,6 +338,32 @@ func isCaseInsensitive(reg *syntax.Regexp) bool {
 
 // isCaseSensitive tells if a regexp is case sensitive.
 // The flag should be check at each level of the syntax tree.
+// classIsCaseFoldClosed reports whether every rune in the class is present
+// together with its whole simple-case-folding orbit, so that matching the class
+// case insensitively admits nothing the class does not already contain. The
+// caller has already capped the class at maxSetMatches runes, so this is bounded.
+func classIsCaseFoldClosed(runes []rune) bool {
+	for i := 0; i+1 < len(runes); i += 2 {
+		for r := runes[i]; r <= runes[i+1]; r++ {
+			for f := unicode.SimpleFold(r); f != r; f = unicode.SimpleFold(f) {
+				if !classContainsRune(runes, f) {
+					return false
+				}
+			}
+		}
+	}
+	return true
+}
+
+func classContainsRune(runes []rune, r rune) bool {
+	for i := 0; i+1 < len(runes); i += 2 {
+		if r >= runes[i] && r <= runes[i+1] {
+			return true
+		}
+	}
+	return false
+}
+
 func isCaseSensitive(reg *syntax.Regexp) bool {
 	return !isCaseInsensitive(reg)
 }
