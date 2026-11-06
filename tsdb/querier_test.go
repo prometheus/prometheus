@@ -15,8 +15,10 @@ package tsdb
 
 import (
 	"context"
+	"encoding/binary"
 	"errors"
 	"fmt"
+	"io"
 	"math"
 	"math/rand"
 	"path/filepath"
@@ -1922,6 +1924,185 @@ func TestPopulateWithDelSeriesIterator_DoubleSeek(t *testing.T) {
 			require.Equal(t, int64(1), chkMetas[1].MinTime)
 			require.Equal(t, int64(4), chkMetas[2].MinTime)
 		})
+	}
+}
+
+func TestPopulateWithDelSeriesIterator_SeekSkipsChunks(t *testing.T) {
+	for _, valueType := range []chunkenc.ValueType{chunkenc.ValFloat, chunkenc.ValHistogram, chunkenc.ValFloatHistogram} {
+		for _, withST := range []bool{false, true} {
+			for _, target := range []int64{math.MinInt64, 3, 4, 6, 7, 9} {
+				t.Run(fmt.Sprintf("%s/st=%t/target=%d", valueType, withST, target), func(t *testing.T) {
+					var data [][]chunks.Sample
+					for first := int64(0); first < 8; first += 2 {
+						var samples []chunks.Sample
+						for ts := first; ts < first+2; ts++ {
+							s := sample{t: ts, f: float64(ts)}
+							if withST {
+								s.st = 1
+							}
+							switch valueType {
+							case chunkenc.ValHistogram:
+								s.f, s.h = 0, tsdbutil.GenerateTestHistogram(ts)
+							case chunkenc.ValFloatHistogram:
+								s.f, s.fh = 0, tsdbutil.GenerateTestFloatHistogram(ts)
+							}
+							samples = append(samples, s)
+						}
+						data = append(data, samples)
+					}
+					intervals := tombstones.Intervals{{Mint: 0, Maxt: 0}, {Mint: 6, Maxt: 6}}
+					controlReader, _ := createFakeReaderAndNotPopulatedChunks(data...)
+					control := &populateWithDelSeriesIterator{}
+					reader, metas := createFakeReaderAndNotPopulatedChunks(data...)
+					// Any attempt to populate an excluded chunk must fail.
+					for i, meta := range metas {
+						if i > 0 && meta.MaxTime < target {
+							delete(reader.chks, meta.Ref)
+						}
+					}
+					it := &populateWithDelSeriesIterator{}
+					for range 2 { // Reuse the iterator and its deletion wrapper.
+						control.reset(ulid.ULID{}, controlReader, metas, intervals)
+						it.reset(ulid.ULID{}, reader, metas, intervals)
+						wantType := control.Next()
+						for wantType != chunkenc.ValNone && control.AtT() < target {
+							wantType = control.Next()
+						}
+						vt := it.Seek(target)
+						for ; wantType != chunkenc.ValNone; wantType = control.Next() {
+							require.Equal(t, wantType, vt)
+							require.Equal(t, control.AtST(), it.AtST())
+							require.Equal(t, control.AtT(), it.AtT())
+							switch vt {
+							case chunkenc.ValFloat:
+								_, want := control.At()
+								_, got := it.At()
+								require.Equal(t, want, got)
+							case chunkenc.ValHistogram:
+								_, want := control.AtHistogram(nil)
+								_, got := it.AtHistogram(nil)
+								require.Equal(t, want, got)
+							case chunkenc.ValFloatHistogram:
+								_, want := control.AtFloatHistogram(nil)
+								_, got := it.AtFloatHistogram(nil)
+								require.Equal(t, want, got)
+							}
+							require.Equal(t, vt, it.Seek(control.AtT()))
+							vt = it.Next()
+						}
+						require.Equal(t, chunkenc.ValNone, vt)
+						require.NoError(t, control.Err())
+						require.NoError(t, it.Err())
+					}
+				})
+			}
+		}
+	}
+}
+
+func TestPopulateWithDelSeriesIterator_SeekOverlappingMetas(t *testing.T) {
+	reader, metas := createFakeReaderAndIterables(
+		[]chunks.Sample{sample{t: 0, f: 0}},
+		[]chunks.Sample{sample{t: 1, f: 1}},
+		nil,
+		[]chunks.Sample{sample{t: 3, f: 3}},
+		[]chunks.Sample{sample{t: 4, f: 4}, sample{t: 7, f: 7}},
+	)
+	metas[1].MaxTime = 100 // An enclosing bound, not ordered by MaxTime.
+	metas[2].MinTime, metas[2].MaxTime = 2, 2
+	delete(reader.iterables, metas[2].Ref)
+	delete(reader.iterables, metas[3].Ref)
+	it := &populateWithDelSeriesIterator{}
+	it.reset(ulid.ULID{}, reader, metas, nil)
+	require.Equal(t, chunkenc.ValFloat, it.Seek(7))
+	ts, v := it.At()
+	require.Equal(t, int64(7), ts)
+	require.Equal(t, float64(7), v)
+	require.Equal(t, chunkenc.ValNone, it.Next())
+	require.NoError(t, it.Err())
+
+	reader.iterables[metas[2].Ref] = &mockIterable{}
+	metas[2].MaxTime = 100
+	it.reset(ulid.ULID{}, reader, metas, nil)
+	require.Equal(t, chunkenc.ValFloat, it.Seek(7))
+	require.Equal(t, int64(7), it.AtT())
+	require.NoError(t, it.Err())
+
+	// The retained chunk can also become empty through deletion at the target.
+	reader.iterables[metas[2].Ref] = &mockIterable{s: []chunks.Sample{sample{t: 7, f: 7}}}
+	reader.iterables[metas[4].Ref] = &mockIterable{s: []chunks.Sample{sample{t: 8, f: 8}}}
+	metas[4].MaxTime = 8
+	it.reset(ulid.ULID{}, reader, metas, tombstones.Intervals{{Mint: 7, Maxt: 7}})
+	require.Equal(t, chunkenc.ValFloat, it.Seek(7))
+	require.Equal(t, int64(8), it.AtT())
+	require.NoError(t, it.Err())
+
+	reader.iterables[metas[2].Ref] = &mockIterable{}
+	delete(reader.iterables, metas[4].Ref)
+	it.reset(ulid.ULID{}, reader, metas, nil)
+	require.Equal(t, chunkenc.ValNone, it.Seek(7))
+	require.ErrorContains(t, it.Err(), "cannot populate chunk")
+}
+
+func TestPopulateWithDelSeriesIterator_SeekDecodeError(t *testing.T) {
+	for _, validSamples := range []int{0, 1} {
+		for _, prime := range []bool{false, true} {
+			for _, iterable := range []bool{false, true} {
+				for _, intervals := range []tombstones.Intervals{nil, {{Mint: -1, Maxt: -1}}} {
+					t.Run(fmt.Sprintf("valid=%d/prime=%t/iterable=%t/deleted=%t", validSamples, prime, iterable, intervals != nil), func(t *testing.T) {
+						reader, metas := createFakeReaderAndNotPopulatedChunks(
+							[]chunks.Sample{sample{t: -1, f: 1}, sample{t: 0, f: 2}},
+							[]chunks.Sample{sample{t: 100, f: 3}},
+						)
+						// The header promises one more sample than the payload contains.
+						bad := chunkenc.NewXORChunk()
+						if validSamples > 0 {
+							app, err := bad.Appender()
+							require.NoError(t, err)
+							app.Append(0, 0, 2)
+						}
+						binary.BigEndian.PutUint16(bad.Bytes()[:2], uint16(validSamples+1))
+						reader.chks[metas[0].Ref] = bad
+						if iterable {
+							delete(reader.chks, metas[0].Ref)
+							reader.iterables[metas[0].Ref] = storage.ChainedSeriesMerge(
+								&storage.SeriesEntry{SampleIteratorFn: bad.Iterator},
+								storage.NewListSeries(labels.EmptyLabels(), []chunks.Sample{sample{t: 50, f: 5}}),
+							)
+							metas[0].MaxTime = 50
+						}
+						it := &populateWithDelSeriesIterator{}
+						it.reset(ulid.ULID{}, reader, metas, intervals)
+						if prime {
+							vt := it.Next()
+							if validSamples > 0 {
+								require.Equal(t, chunkenc.ValFloat, vt)
+							} else {
+								require.Equal(t, chunkenc.ValNone, vt)
+							}
+						}
+						require.Equal(t, chunkenc.ValNone, it.Seek(100))
+						require.ErrorIs(t, it.Err(), io.EOF)
+						require.Equal(t, chunkenc.ValNone, it.Next())
+						require.Equal(t, chunkenc.ValNone, it.Seek(100))
+						require.ErrorIs(t, it.Err(), io.EOF)
+						it.reset(ulid.ULID{}, reader, metas[1:], intervals)
+						require.Equal(t, chunkenc.ValFloat, it.Seek(100))
+						require.NoError(t, it.Err())
+						if !prime {
+							it.reset(ulid.ULID{}, reader, metas, intervals)
+							for range validSamples {
+								require.Equal(t, chunkenc.ValFloat, it.Next())
+							}
+							require.Equal(t, chunkenc.ValNone, it.Next())
+							require.ErrorIs(t, it.Err(), io.EOF)
+							require.Equal(t, chunkenc.ValNone, it.Next())
+							require.ErrorIs(t, it.Err(), io.EOF)
+						}
+					})
+				}
+			}
+		}
 	}
 }
 
