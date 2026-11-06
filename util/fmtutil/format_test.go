@@ -281,3 +281,31 @@ func TestMakeTimeseries_HistogramInfBucket(t *testing.T) {
 func p[T any](v T) *T {
 	return &v
 }
+
+func TestMetricFamiliesToWriteRequestMetadataTypes(t *testing.T) {
+	t.Parallel()
+
+	for _, tc := range []struct {
+		metricType dto.MetricType
+		want       prompb.MetricMetadata_MetricType
+	}{
+		{metricType: dto.MetricType_COUNTER, want: prompb.MetricMetadata_COUNTER},
+		{metricType: dto.MetricType_GAUGE, want: prompb.MetricMetadata_GAUGE},
+		{metricType: dto.MetricType_SUMMARY, want: prompb.MetricMetadata_SUMMARY},
+		{metricType: dto.MetricType_HISTOGRAM, want: prompb.MetricMetadata_HISTOGRAM},
+		{metricType: dto.MetricType_GAUGE_HISTOGRAM, want: prompb.MetricMetadata_GAUGEHISTOGRAM},
+		{metricType: dto.MetricType_UNTYPED, want: prompb.MetricMetadata_UNKNOWN},
+	} {
+		t.Run(tc.metricType.String(), func(t *testing.T) {
+			t.Parallel()
+
+			mf := map[string]*dto.MetricFamily{
+				"test": {Name: p("test"), Type: p(tc.metricType)},
+			}
+			wr, err := MetricFamiliesToWriteRequest(mf, nil)
+			require.NoError(t, err)
+			require.Len(t, wr.Metadata, 1)
+			require.Equal(t, tc.want, wr.Metadata[0].Type)
+		})
+	}
+}
