@@ -26,6 +26,7 @@ import (
 	"net/url"
 	"os"
 	"path/filepath"
+	"slices"
 	"sort"
 	"strconv"
 	"strings"
@@ -485,15 +486,15 @@ func main() {
 
 	case promQLFormatCmd.FullCommand():
 		checkExperimental(*experimental)
-		os.Exit(checkErr(formatPromQL(*promQLFormatQuery, promtoolParser)))
+		os.Exit(checkErr(formatPromQL(os.Stdout, *promQLFormatQuery, promtoolParser)))
 
 	case promQLLabelsSetCmd.FullCommand():
 		checkExperimental(*experimental)
-		os.Exit(checkErr(labelsSetPromQL(*promQLLabelsSetQuery, *promQLLabelsSetType, *promQLLabelsSetName, *promQLLabelsSetValue, promtoolParser)))
+		os.Exit(checkErr(labelsSetPromQL(os.Stdout, *promQLLabelsSetQuery, *promQLLabelsSetType, *promQLLabelsSetName, *promQLLabelsSetValue, promtoolParser)))
 
 	case promQLLabelsDeleteCmd.FullCommand():
 		checkExperimental(*experimental)
-		os.Exit(checkErr(labelsDeletePromQL(*promQLLabelsDeleteQuery, *promQLLabelsDeleteName, promtoolParser)))
+		os.Exit(checkErr(labelsDeletePromQL(os.Stdout, *promQLLabelsDeleteQuery, *promQLLabelsDeleteName, promtoolParser)))
 	}
 }
 
@@ -1373,17 +1374,17 @@ func checkTargetGroupsForScrapeConfig(targetGroups []*targetgroup.Group, scfg *c
 	return nil
 }
 
-func formatPromQL(query string, p parser.Parser) error {
+func formatPromQL(w io.Writer, query string, p parser.Parser) error {
 	expr, err := p.ParseExpr(query)
 	if err != nil {
 		return err
 	}
 
-	fmt.Println(expr.Pretty(0))
+	fmt.Fprintln(w, expr.Pretty(0))
 	return nil
 }
 
-func labelsSetPromQL(query, labelMatchType, name, value string, p parser.Parser) error {
+func labelsSetPromQL(w io.Writer, query, labelMatchType, name, value string, p parser.Parser) error {
 	expr, err := p.ParseExpr(query)
 	if err != nil {
 		return err
@@ -1405,6 +1406,13 @@ func labelsSetPromQL(query, labelMatchType, name, value string, p parser.Parser)
 
 	parser.Inspect(expr, func(node parser.Node, _ []parser.Node) error {
 		if n, ok := node.(*parser.VectorSelector); ok {
+			if name == labels.MetricName {
+				if matchType == labels.MatchEqual {
+					n.Name = value
+				} else {
+					n.Name = ""
+				}
+			}
 			var found bool
 			for i, l := range n.LabelMatchers {
 				if l.Name == name {
@@ -1424,11 +1432,11 @@ func labelsSetPromQL(query, labelMatchType, name, value string, p parser.Parser)
 		return nil
 	})
 
-	fmt.Println(expr.Pretty(0))
+	fmt.Fprintln(w, expr.Pretty(0))
 	return nil
 }
 
-func labelsDeletePromQL(query, name string, p parser.Parser) error {
+func labelsDeletePromQL(w io.Writer, query, name string, p parser.Parser) error {
 	expr, err := p.ParseExpr(query)
 	if err != nil {
 		return err
@@ -1436,15 +1444,16 @@ func labelsDeletePromQL(query, name string, p parser.Parser) error {
 
 	parser.Inspect(expr, func(node parser.Node, _ []parser.Node) error {
 		if n, ok := node.(*parser.VectorSelector); ok {
-			for i, l := range n.LabelMatchers {
-				if l.Name == name {
-					n.LabelMatchers = append(n.LabelMatchers[:i], n.LabelMatchers[i+1:]...)
-				}
+			if name == labels.MetricName {
+				n.Name = ""
 			}
+			n.LabelMatchers = slices.DeleteFunc(n.LabelMatchers, func(m *labels.Matcher) bool {
+				return m.Name == name
+			})
 		}
 		return nil
 	})
 
-	fmt.Println(expr.Pretty(0))
+	fmt.Fprintln(w, expr.Pretty(0))
 	return nil
 }
