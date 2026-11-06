@@ -3268,6 +3268,7 @@ groups:
 			ss := q.Select(t.Context(), false, nil, labels.MustNewMatcher(labels.MatchEqual, model.MetricNameLabel, metricName))
 			require.True(t, ss.Next())
 			require.Equal(t, "gauge", ss.At().Labels().Get(model.MetricTypeLabel))
+			require.Empty(t, ss.At().Labels().Get(model.MetricUnitLabel))
 			require.False(t, ss.Next())
 			require.NoError(t, ss.Err())
 		}
