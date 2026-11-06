@@ -348,6 +348,16 @@ type LabelHints struct {
 	// LimitSmallest requires Limit and will select the lexically smallest N
 	// values of the full set.
 	LimitSmallest bool
+
+	// ValueFilter, if set, reports whether a label value can be part of the
+	// result. It is an optimization hint: a reader may call it to skip values
+	// before it does per-value postings work, or it may ignore it. The caller
+	// must still filter the values that the reader returns.
+	//
+	// Leave Limit at zero when ValueFilter is set. A reader that ignores
+	// ValueFilter applies Limit to the unfiltered values, so the caller can
+	// receive fewer matching values than exist.
+	ValueFilter func(value string) bool
 }
 
 // AllowsEarlyStop reports whether a read may stop as soon as it holds Limit
