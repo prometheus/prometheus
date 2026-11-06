@@ -34,20 +34,41 @@ import (
 )
 
 type recordingAppenderV2 struct {
+	next      storage.AppendableV2
+	inner     storage.AppenderV2
 	gotLabels []labels.Labels
 	gotMetas  []metadata.Metadata
 }
 
-func (a *recordingAppenderV2) AppenderV2(context.Context) storage.AppenderV2 { return a }
+func (a *recordingAppenderV2) AppenderV2(ctx context.Context) storage.AppenderV2 {
+	if a.next != nil {
+		a.inner = a.next.AppenderV2(ctx)
+	}
+	return a
+}
 
-func (a *recordingAppenderV2) Append(_ storage.SeriesRef, ls labels.Labels, _, _ int64, _ float64, _ *histogram.Histogram, _ *histogram.FloatHistogram, opts storage.AOptions) (storage.SeriesRef, error) {
+func (a *recordingAppenderV2) Append(ref storage.SeriesRef, ls labels.Labels, st, t int64, v float64, h *histogram.Histogram, fh *histogram.FloatHistogram, opts storage.AOptions) (storage.SeriesRef, error) {
 	a.gotLabels = append(a.gotLabels, ls.Copy())
 	a.gotMetas = append(a.gotMetas, opts.Metadata)
+	if a.inner != nil {
+		return a.inner.Append(ref, ls, st, t, v, h, fh, opts)
+	}
 	return 1, nil
 }
 
-func (*recordingAppenderV2) Commit() error   { return nil }
-func (*recordingAppenderV2) Rollback() error { return nil }
+func (a *recordingAppenderV2) Commit() error {
+	if a.inner != nil {
+		return a.inner.Commit()
+	}
+	return nil
+}
+
+func (a *recordingAppenderV2) Rollback() error {
+	if a.inner != nil {
+		return a.inner.Rollback()
+	}
+	return nil
+}
 
 var testParser = parser.NewParser(parser.Options{})
 

@@ -891,6 +891,7 @@ func TestCopyState(t *testing.T) {
 
 func TestDeletedRuleMarkedStale(t *testing.T) {
 	st := teststorage.New(t)
+	app := &recordingAppenderV2{next: st}
 	staleMeta := metadata.Metadata{Type: model.MetricTypeGauge, Unit: "seconds"}
 
 	oldGroup := &Group{
@@ -905,14 +906,16 @@ func TestDeletedRuleMarkedStale(t *testing.T) {
 		rules:                []Rule{},
 		seriesInPreviousEval: []map[string]trackedSeries{},
 		opts: &ManagerOptions{
-			AppendableV2:              st,
+			AppendableV2:              app,
 			RuleConcurrencyController: sequentialRuleEvalController{},
 		},
 		metrics: NewGroupMetrics(nil),
 	}
 	newGroup.CopyState(oldGroup)
+	require.Equal(t, []trackedSeries{{labels: labels.FromStrings("l1", "v1"), metadata: unique.Make(staleMeta)}}, newGroup.staleSeries)
 
 	newGroup.Eval(context.Background(), time.Unix(0, 0))
+	require.Equal(t, []metadata.Metadata{staleMeta}, app.gotMetas)
 
 	querier, err := st.Querier(0, 2000)
 	require.NoError(t, err)
