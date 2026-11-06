@@ -696,40 +696,58 @@ func TestRecordingRuleMetadataDeduction(t *testing.T) {
 		},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			expr, err := testParser.ParseExpr("vector(1)")
-			require.NoError(t, err)
-			rule := NewRecordingRuleWithMetadata("job:req:rate5m", expr, tc.ruleLabels, tc.ruleMeta)
-			require.Equal(t, tc.ruleMeta, rule.Metadata())
+			for _, appendMetadata := range []bool{false, true} {
+				expr, err := testParser.ParseExpr("vector(1)")
+				require.NoError(t, err)
+				rule := NewRecordingRuleWithMetadata("job:req:rate5m", expr, tc.ruleLabels, tc.ruleMeta)
+				require.Equal(t, tc.ruleMeta, rule.Metadata())
 
-			app := &recordingAppenderV2{}
-			qf := func(context.Context, string, time.Time) (promql.Vector, error) {
-				out := make(promql.Vector, len(tc.samples))
-				copy(out, tc.samples)
-				return out, nil
-			}
-			group := NewGroup(GroupOptions{
-				Name:     "test-group",
-				File:     "test.rules",
-				Interval: time.Minute,
-				Rules:    []Rule{rule},
-				Opts: &ManagerOptions{
-					AppendableV2:            app,
-					QueryFunc:               qf,
-					AppendMetadata:          true,
-					EnableTypeAndUnitLabels: tc.enableTypeAndUnitLabels,
-				},
-			})
+				app := &recordingAppenderV2{}
+				returnEmpty := false
+				qf := func(context.Context, string, time.Time) (promql.Vector, error) {
+					if returnEmpty {
+						return nil, nil
+					}
+					out := make(promql.Vector, len(tc.samples))
+					copy(out, tc.samples)
+					return out, nil
+				}
+				group := NewGroup(GroupOptions{
+					Name:     "test-group",
+					File:     "test.rules",
+					Interval: time.Minute,
+					Rules:    []Rule{rule},
+					Opts: &ManagerOptions{
+						AppendableV2:            app,
+						QueryFunc:               qf,
+						AppendMetadata:          appendMetadata,
+						EnableTypeAndUnitLabels: tc.enableTypeAndUnitLabels,
+					},
+				})
 
-			group.Eval(t.Context(), ts)
-			if tc.wantErr != nil {
-				require.ErrorIs(t, rule.LastError(), tc.wantErr)
-				return
-			}
-			require.NoError(t, rule.LastError())
-			require.Equal(t, tc.wantMetas, app.gotMetas)
-			require.Len(t, app.gotLabels, len(tc.wantLabels))
-			for i := range app.gotLabels {
-				testutil.RequireEqual(t, tc.wantLabels[i], app.gotLabels[i])
+				group.Eval(t.Context(), ts)
+				if tc.wantErr != nil {
+					require.ErrorIs(t, rule.LastError(), tc.wantErr)
+					continue
+				}
+				require.NoError(t, rule.LastError())
+				wantMetas := make([]metadata.Metadata, len(tc.wantLabels))
+				if appendMetadata {
+					wantMetas = tc.wantMetas
+				}
+				require.Equal(t, wantMetas, app.gotMetas)
+				require.Len(t, app.gotLabels, len(tc.wantLabels))
+				for i := range app.gotLabels {
+					testutil.RequireEqual(t, tc.wantLabels[i], app.gotLabels[i])
+				}
+
+				// Verify staleness appends on the next evaluation preserve deduced metadata.
+				app.gotLabels = nil
+				app.gotMetas = nil
+				returnEmpty = true
+				group.Eval(t.Context(), ts.Add(time.Minute))
+				require.NoError(t, rule.LastError())
+				require.ElementsMatch(t, wantMetas, app.gotMetas)
 			}
 		})
 	}
