@@ -1667,38 +1667,87 @@ func TestStreamSearchResultsWarningsTrailerDiff(t *testing.T) {
 }
 
 // TestSearchParamsRejectsExcessSearchTerms ensures that a request padded
-// with more than maxSearchTermsPerRequest search[] params is rejected
-// before any filter chain is built — preventing the quadratic per-value
-// cost of an unbounded term count.
+// with more than maxSearchTermsPerRequest search[] params, or whose terms
+// add up to more than maxSearchTermsTotalLength bytes, is rejected before any
+// filter chain is built — preventing the per-value cost of unbounded terms.
 func TestSearchParamsRejectsExcessSearchTerms(t *testing.T) {
 	api := newSearchTestAPI(t)
 
-	tooMany := make([]string, maxSearchTermsPerRequest+1)
-	for i := range tooMany {
-		tooMany[i] = "t"
+	// repeatTerm returns n search terms of length bytes each.
+	repeatTerm := func(n, length int) []string {
+		terms := make([]string, n)
+		for i := range terms {
+			terms[i] = strings.Repeat("t", length)
+		}
+		return terms
 	}
+	perTermAtCap := maxSearchTermsTotalLength / maxSearchTermsPerRequest
 
-	rec := doSearchRequest(t, api, "/search/metric_names", url.Values{
-		"search[]": tooMany,
-	})
-	require.Equal(t, http.StatusBadRequest, rec.Code)
+	for _, tc := range []struct {
+		name    string
+		params  url.Values
+		wantErr string
+	}{
+		{
+			name:    "too many terms",
+			params:  url.Values{"search[]": repeatTerm(maxSearchTermsPerRequest+1, 1)},
+			wantErr: "too many search[] terms",
+		},
+		{
+			name:   "terms at cap",
+			params: url.Values{"search[]": repeatTerm(maxSearchTermsPerRequest, 1)},
+		},
+		{
+			name: "single term over total length",
+			params: url.Values{
+				"search[]":       {"t", strings.Repeat("t", maxSearchTermsTotalLength)},
+				"fuzz_alg":       {"jarowinkler"},
+				"fuzz_threshold": {"50"},
+			},
+			wantErr: "search[] terms too long",
+		},
+		{
+			name: "single term at total length",
+			params: url.Values{
+				"search[]":       {strings.Repeat("t", maxSearchTermsTotalLength)},
+				"fuzz_alg":       {"jarowinkler"},
+				"fuzz_threshold": {"50"},
+			},
+		},
+		{
+			// Each term is under the total cap on its own; only the sum exceeds it.
+			name: "many terms over total length",
+			params: url.Values{
+				"search[]":       repeatTerm(maxSearchTermsPerRequest, perTermAtCap+1),
+				"fuzz_alg":       {"jarowinkler"},
+				"fuzz_threshold": {"50"},
+			},
+			wantErr: "search[] terms too long",
+		},
+		{
+			name: "many terms at total length",
+			params: url.Values{
+				"search[]":       repeatTerm(maxSearchTermsPerRequest, perTermAtCap),
+				"fuzz_alg":       {"jarowinkler"},
+				"fuzz_threshold": {"50"},
+			},
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			rec := doSearchRequest(t, api, "/search/metric_names", tc.params)
+			if tc.wantErr == "" {
+				require.Equal(t, http.StatusOK, rec.Code)
+				return
+			}
+			require.Equal(t, http.StatusBadRequest, rec.Code)
 
-	var response Response
-	require.NoError(t, json.Unmarshal(rec.Body.Bytes(), &response))
-	require.Equal(t, statusError, response.Status)
-	require.Equal(t, errorBadData.str, response.ErrorType)
-	require.Contains(t, response.Error, "too many search[] terms")
-
-	// At the cap the request must still succeed.
-	atCap := make([]string, maxSearchTermsPerRequest)
-	for i := range atCap {
-		atCap[i] = "t"
+			var response Response
+			require.NoError(t, json.Unmarshal(rec.Body.Bytes(), &response))
+			require.Equal(t, statusError, response.Status)
+			require.Equal(t, errorBadData.str, response.ErrorType)
+			require.Contains(t, response.Error, tc.wantErr)
+		})
 	}
-	rec = doSearchRequest(t, api, "/search/metric_names", url.Values{
-		"search[]": atCap,
-	})
-	require.Equal(t, http.StatusOK, rec.Code,
-		"a request with exactly maxSearchTermsPerRequest terms must be accepted")
 }
 
 func TestSearchBatchSize(t *testing.T) {
