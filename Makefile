@@ -28,10 +28,14 @@ include Makefile.common
 
 ifeq (arm, $(GOHOSTARCH))
 	PROTOC_ARCH ?= aarch_64
+	PROTOC_SHA256 ?= c60bd7942267fdf4108eea40c0a9781ea56c9261538b03b2bd96b3b898958033
 else
 	PROTOC_ARCH ?= x86_64
+	PROTOC_SHA256 ?= b9ff821d2a4f9e9943dc2a13e6a76d99c7472dac46ddd3718a3a4c3b877c044a
 endif
 
+# The PROTOC_SHA256 values above match this version. When bumping it, update
+# them too; overriding the version without PROTOC_SHA256 fails verification.
 PROTOC_VERSION ?= 3.15.8
 PROTOC_URL     ?= https://github.com/protocolbuffers/protobuf/releases/download/v$(PROTOC_VERSION)/protoc-$(PROTOC_VERSION)-linux-$(PROTOC_ARCH).zip
 
@@ -130,8 +134,9 @@ assets-tarball: assets
 .PHONY: protoc
 protoc:
 	@echo ">> Installing protoc"
+	$(if $(PROTOC_SHA256),,$(error No SHA256 for protoc $(PROTOC_VERSION); set PROTOC_SHA256 in Makefile))
 	$(eval PROTOC_TMP := $(shell mktemp))
-	curl -s -o $(PROTOC_TMP) -L $(PROTOC_URL) 
+	curl -sSfL -o $(PROTOC_TMP) $(PROTOC_URL) && echo "$(PROTOC_SHA256)  $(PROTOC_TMP)" | $(SHA256SUM) -c - || { rm -f $(PROTOC_TMP); exit 1; }
 	unzip -u $(PROTOC_TMP) bin/protoc -d $(FIRST_GOPATH)
 	chmod +x $(FIRST_GOPATH)/bin/protoc
 	rm -v $(PROTOC_TMP)
