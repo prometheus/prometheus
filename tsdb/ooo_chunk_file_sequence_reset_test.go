@@ -66,6 +66,7 @@ func TestOOOSamplesAfterChunkFileSequenceReset(t *testing.T) {
 			openDB := func() *tsdb.DB {
 				db, err := tsdb.Open(dir, nil, nil, opts, nil)
 				require.NoError(t, err)
+				t.Cleanup(func() { require.NoError(t, db.Close()) })
 				db.DisableCompactions()
 				return db
 			}
@@ -108,12 +109,12 @@ func TestOOOSamplesAfterChunkFileSequenceReset(t *testing.T) {
 			appendMinutes(db, 90)  // Out-of-order.
 			require.NoError(t, db.CompactOOOHead(t.Context()))
 			require.Len(t, chunkFiles(), 1)
+			// Close is safe to repeat when the registered cleanup runs.
 			require.NoError(t, db.Close())
 
 			// Second run: a restart forgets what was compacted, but keeps the chunk
 			// files, and has no active chunk file until the next chunk is written.
 			db = openDB()
-			t.Cleanup(func() { require.NoError(t, db.Close()) })
 
 			// The reloaded OOO chunk is compacted again, and head truncation then
 			// finds nothing it needs to keep, so it deletes every chunk file.
