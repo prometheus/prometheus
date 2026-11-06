@@ -79,3 +79,28 @@ func TestSDCheckResult(t *testing.T) {
 
 	testutil.RequireEqual(t, expectedSDCheckResult, getSDCheckResult(targetGroups, scrapeConfig))
 }
+
+func TestSDCheckResultsInSourceOrder(t *testing.T) {
+	t.Parallel()
+
+	scrapeConfig := &config.ScrapeConfig{
+		ScrapeInterval: model.Duration(1 * time.Minute),
+		ScrapeTimeout:  model.Duration(10 * time.Second),
+	}
+
+	groups := map[string][]*targetgroup.Group{
+		"z-source": {{Source: "z-source", Targets: []model.LabelSet{{"__address__": "z:9090"}}}},
+		"a-source": {{Source: "a-source", Targets: []model.LabelSet{{"__address__": "a:9090"}}}},
+		"m-source": {{Source: "m-source", Targets: []model.LabelSet{{"__address__": "m:9090"}}}},
+	}
+
+	want := []string{"a:9090", "m:9090", "z:9090"}
+	for range 20 {
+		results := sdCheckResultsInSourceOrder(groups, scrapeConfig)
+		got := make([]string, 0, len(results))
+		for _, r := range results {
+			got = append(got, r.Labels.Get("__address__"))
+		}
+		require.Equal(t, want, got)
+	}
+}
