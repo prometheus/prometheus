@@ -2302,7 +2302,7 @@ func BenchmarkBuildV2WriteRequest(b *testing.B) {
 		totalSize := 0
 		for b.Loop() {
 			populateV2TimeSeries(&symbolTable, batch, seriesBuff, true, true, false)
-			req, _, _, err := buildV2WriteRequest(noopLogger, seriesBuff, symbolTable.Symbols(), &pBuf, nil, cEnc, "snappy")
+			req, _, _, _, err := buildV2WriteRequest(noopLogger, seriesBuff, symbolTable.Symbols(), &pBuf, nil, cEnc, "snappy")
 			if err != nil {
 				b.Fatal(err)
 			}

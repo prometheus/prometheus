@@ -2310,7 +2310,7 @@ func (s *shards) sendSamplesWithBackoff(ctx context.Context, samples []prompb.Ti
 // sendV2SamplesWithBackoff to the remote storage with backoff for recoverable errors.
 func (s *shards) sendV2SamplesWithBackoff(ctx context.Context, samples []writev2.TimeSeries, labels []string, sampleCount, exemplarCount, histogramCount int, pBuf *[]byte, buf compression.EncodeBuffer, compr compression.Type) (WriteResponseStats, error) {
 	// Build the WriteRequest with no metadata.
-	req, v2Req, stats, err := buildV2WriteRequest(s.qm.logger, samples, labels, pBuf, nil, buf, compr)
+	req, v2Req, stats, withMetadataCounts, err := buildV2WriteRequest(s.qm.logger, samples, labels, pBuf, nil, buf, compr)
 	s.qm.buildRequestLimitTimestamp.Store(stats.lowest)
 	if err != nil {
 		// Failing to build the write request is non-recoverable, since it will
@@ -2330,7 +2330,6 @@ func (s *shards) sendV2SamplesWithBackoff(ctx context.Context, samples []writev2
 	metricsUpdater := batchMetricsUpdater{
 		metrics: s.qm.metrics,
 	}
-	withMetadataCounts := countV2DataWithMetadata(samples)
 
 	// Since we retry writes via attemptStore and sendWriteRequestWithBackoff we need
 	// to track the total amount of accepted data across the various attempts.
@@ -2350,7 +2349,7 @@ func (s *shards) sendV2SamplesWithBackoff(ctx context.Context, samples []writev2
 		lowest := s.qm.buildRequestLimitTimestamp.Load()
 		if isSampleOld(currentTime, time.Duration(s.qm.cfg.SampleAgeLimit), lowest) {
 			// This will filter out old samples during retries.
-			req2, v2Req2, stats, err := buildV2WriteRequest(
+			req2, v2Req2, stats, metadataCounts, err := buildV2WriteRequest(
 				s.qm.logger,
 				samples,
 				labels,
@@ -2371,7 +2370,7 @@ func (s *shards) sendV2SamplesWithBackoff(ctx context.Context, samples []writev2
 			sc.exemplarCount = stats.exemplars
 			sc.histogramCount = stats.histograms
 			sc.reqSize = len(req)
-			withMetadataCounts = countV2DataWithMetadata(samples)
+			withMetadataCounts = metadataCounts
 		}
 
 		cl := s.qm.client()
@@ -2642,7 +2641,7 @@ func buildWriteRequest(logger *slog.Logger, timeSeries []prompb.TimeSeries, meta
 	return compressed, req, stats, nil
 }
 
-func buildV2WriteRequest(logger *slog.Logger, samples []writev2.TimeSeries, labels []string, pBuf *[]byte, filter func(writev2.TimeSeries) bool, buf compression.EncodeBuffer, compr compression.Type) (compressed []byte, req *writev2.Request, stats *timeSeriesStats, _ error) {
+func buildV2WriteRequest(logger *slog.Logger, samples []writev2.TimeSeries, labels []string, pBuf *[]byte, filter func(writev2.TimeSeries) bool, buf compression.EncodeBuffer, compr compression.Type) (compressed []byte, req *writev2.Request, stats *timeSeriesStats, _ v2WithMetadataCounts, _ error) {
 	timeSeries, stats := buildV2TimeSeries(samples, filter)
 
 	if stats.droppedSamples > 0 || stats.droppedExemplars > 0 || stats.droppedHistograms > 0 {
@@ -2660,15 +2659,15 @@ func buildV2WriteRequest(logger *slog.Logger, samples []writev2.TimeSeries, labe
 
 	data, err := req.OptimizedMarshal(*pBuf)
 	if err != nil {
-		return nil, req, stats, err
+		return nil, req, stats, v2WithMetadataCounts{}, err
 	}
 	*pBuf = data
 
 	compressed, err = compression.Encode(compr, *pBuf, buf)
 	if err != nil {
-		return nil, req, stats, err
+		return nil, req, stats, v2WithMetadataCounts{}, err
 	}
-	return compressed, req, stats, nil
+	return compressed, req, stats, countV2DataWithMetadata(timeSeries), nil
 }
 
 func buildV2TimeSeries(timeSeries []writev2.TimeSeries, filter func(writev2.TimeSeries) bool) ([]writev2.TimeSeries, *timeSeriesStats) {
