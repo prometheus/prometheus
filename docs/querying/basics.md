@@ -366,6 +366,11 @@ The same selector can be written without quotes:
 http.server.request.duration{service.name="api"}
 ```
 
+The printer quotes names outside the traditional ASCII syntax by default for
+compatibility with earlier Prometheus 3.x releases. Enable
+`--enable-feature=promql-unquoted-utf8-names` to print these names without quotes.
+This flag does not affect which input is accepted.
+
 Unquoted names follow these rules:
 
 | Name | First character | Subsequent characters |

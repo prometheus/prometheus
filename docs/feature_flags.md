@@ -461,3 +461,12 @@ the feature is disabled or `query_max_duration` is unset.
 
 Clients can detect the feature through [`/api/v1/features`](querying/api.md#features),
 where it is reported as `query_cost` in the `api` category.
+
+## Unquoted UTF-8 name printing
+
+`--enable-feature=promql-unquoted-utf8-names`
+
+Print Unicode letters and dots in metric and label names without quotes where
+allowed by PromQL. By default, the printer quotes names outside the traditional
+ASCII syntax for compatibility with earlier Prometheus 3.x releases. Unquoted
+input is accepted regardless of this flag.
