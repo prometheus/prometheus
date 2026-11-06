@@ -25,6 +25,7 @@ import (
 
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/model/timestamp"
+	"github.com/prometheus/prometheus/model/value"
 	"github.com/prometheus/prometheus/promql"
 	"github.com/prometheus/prometheus/promql/parser"
 	"github.com/prometheus/prometheus/promql/promqltest"
@@ -341,7 +342,7 @@ func TestRangeBinaryEvalMatchesInstantQueries(t *testing.T) {
 			_, err = app.Append(0, rhsEarly, 0, ts, 1, nil, nil, storage.AOptions{})
 			require.NoError(t, err)
 		} else if step == 5 {
-			_, err = app.Append(0, rhsEarly, 0, ts, math.Float64frombits(0x7ff0000000000002), nil, nil, storage.AOptions{})
+			_, err = app.Append(0, rhsEarly, 0, ts, math.Float64frombits(value.StaleNaN), nil, nil, storage.AOptions{})
 			require.NoError(t, err)
 		}
 		if step >= 6 {
