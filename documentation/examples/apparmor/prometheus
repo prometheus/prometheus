@@ -1,0 +1,28 @@
+#include <tunables/global>
+
+# This example assumes the distribution layout below. Adjust the paths for
+# locally built binaries, non-standard configuration, and container mounts.
+profile prometheus /usr/bin/prometheus {
+    # Shared libraries, DNS, and system CA certificates.
+    # These abstractions must be included inside the profile.
+    #include <abstractions/base>
+    #include <abstractions/nameservice>
+    #include <abstractions/ssl_certs>
+
+    # The abstractions above provide access to shared libraries and basic
+    # runtime files. Prometheus does not need Linux capabilities to run as an
+    # unprivileged user.
+
+    # Prometheus configuration, rule files, and console templates.
+    /etc/prometheus/** r,
+
+    # The TSDB requires file creation, locking, and memory-mapped files.
+    /var/lib/prometheus/ rw,
+    /var/lib/prometheus/** mrwkl,
+
+    # Prometheus serves its HTTP API and connects to scrape targets and
+    # remote-write endpoints. AppArmor cannot restrict individual ports here;
+    # restrict listening and egress ports with the host firewall if required.
+    network inet stream,
+    network inet6 stream,
+}
