@@ -2102,10 +2102,13 @@ func funcPresentOverTime(_ []Vector, matrixVals Matrix, _ parser.Expressions, en
 	}), nil
 }
 
-// simpleFloatUnaryFuncs maps single-argument float functions that drop histograms
-// and transform each float sample value independently without emitting annotations,
-// allowing range queries to evaluate them directly on the input Matrix in place.
-var simpleFloatUnaryFuncs = map[string]func(float64) float64{
+// inPlaceFloatUnaryFuncs maps single-argument instant-vector functions whose
+// output depends only on each float sample's value (f(float64) float64),
+// independent of timestamps, other series, or evaluation step time, and that
+// drop histograms, strip the metric name, and emit no annotations. Range and
+// instant queries in ev.eval evaluate them in place on the child Matrix without
+// stepping through rangeEval.
+var inPlaceFloatUnaryFuncs = map[string]func(float64) float64{
 	"abs":   math.Abs,
 	"ceil":  math.Ceil,
 	"floor": math.Floor,
@@ -2126,22 +2129,28 @@ var simpleFloatUnaryFuncs = map[string]func(float64) float64{
 	"asinh": math.Asinh,
 	"acosh": math.Acosh,
 	"atanh": math.Atanh,
-	"rad": func(v float64) float64 {
-		return v * (math.Pi / 180)
-	},
-	"deg": func(v float64) float64 {
-		return v * (180 / math.Pi)
-	},
-	"sgn": func(v float64) float64 {
-		switch {
-		case v < 0:
-			return -1
-		case v > 0:
-			return 1
-		default:
-			return v
-		}
-	},
+	"rad":   rad,
+	"deg":   deg,
+	"sgn":   sgn,
+}
+
+func rad(v float64) float64 {
+	return v * (math.Pi / 180)
+}
+
+func deg(v float64) float64 {
+	return v * (180 / math.Pi)
+}
+
+func sgn(v float64) float64 {
+	switch {
+	case v < 0:
+		return -1
+	case v > 0:
+		return 1
+	default:
+		return v
+	}
 }
 
 func simpleFloatFunc(vectorVals []Vector, enh *EvalNodeHelper, f func(float64) float64) Vector {
@@ -2282,16 +2291,12 @@ func funcAtanh(vectorVals []Vector, _ Matrix, _ parser.Expressions, enh *EvalNod
 
 // === rad(Vector parser.ValueTypeVector) (Vector, Annotations) ===
 func funcRad(vectorVals []Vector, _ Matrix, _ parser.Expressions, enh *EvalNodeHelper) (Vector, annotations.Annotations) {
-	return simpleFloatFunc(vectorVals, enh, func(v float64) float64 {
-		return v * (math.Pi / 180)
-	}), nil
+	return simpleFloatFunc(vectorVals, enh, rad), nil
 }
 
 // === deg(Vector parser.ValueTypeVector) (Vector, Annotations) ===
 func funcDeg(vectorVals []Vector, _ Matrix, _ parser.Expressions, enh *EvalNodeHelper) (Vector, annotations.Annotations) {
-	return simpleFloatFunc(vectorVals, enh, func(v float64) float64 {
-		return v * (180 / math.Pi)
-	}), nil
+	return simpleFloatFunc(vectorVals, enh, deg), nil
 }
 
 // === pi() Scalar ===
@@ -2301,16 +2306,7 @@ func funcPi([]Vector, Matrix, parser.Expressions, *EvalNodeHelper) (Vector, anno
 
 // === sgn(Vector parser.ValueTypeVector) (Vector, Annotations) ===
 func funcSgn(vectorVals []Vector, _ Matrix, _ parser.Expressions, enh *EvalNodeHelper) (Vector, annotations.Annotations) {
-	return simpleFloatFunc(vectorVals, enh, func(v float64) float64 {
-		switch {
-		case v < 0:
-			return -1
-		case v > 0:
-			return 1
-		default:
-			return v
-		}
-	}), nil
+	return simpleFloatFunc(vectorVals, enh, sgn), nil
 }
 
 // === timestamp(Vector parser.ValueTypeVector) (Vector, Annotations) ===
