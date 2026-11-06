@@ -433,7 +433,7 @@ type headAppenderBase struct {
 	useHistogramST                  bool // Whether ST-capable histogram chunk encoding is used in this append.
 
 	// commitStats is populated at the end of Commit, readable via CommitStats.
-	commitStats CommitStats
+	commitStats storage.CommitStats
 }
 
 type headAppender struct {
@@ -1253,8 +1253,8 @@ type appenderCommitContext struct {
 	// Whether to aggregate same-timestamp drops per series for CommitStats.
 	collectCommitStats bool
 	// Same-timestamp drops aggregated per series, allocated lazily on the first drop.
-	droppedConflict     []DiscardedSeriesSamples
-	droppedExactDup     []DiscardedSeriesSamples
+	droppedConflict     []storage.DiscardedSeriesSamples
+	droppedExactDup     []storage.DiscardedSeriesSamples
 	droppedConflictIdx  map[chunks.HeadSeriesRef]int
 	droppedExactDupIdx  map[chunks.HeadSeriesRef]int
 	inOrderMint         int64
@@ -1895,8 +1895,8 @@ func (a *headAppenderBase) Commit() (err error) {
 	h.updateMinMaxTime(acc.inOrderMint, acc.inOrderMaxt)
 	h.updateMinOOOMaxOOOTime(acc.oooMinT, acc.oooMaxT)
 
-	a.commitStats = CommitStats{
-		DiscardedSamples: DiscardedSampleStats{
+	a.commitStats = storage.CommitStats{
+		DiscardedSamples: storage.DiscardedSampleStats{
 			SameTimestampDifferentValue: acc.droppedConflict,
 			SameTimestampSameValue:      acc.droppedExactDup,
 		},

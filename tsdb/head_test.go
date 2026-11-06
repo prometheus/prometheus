@@ -6730,7 +6730,7 @@ func TestHeadAppender_DuplicateSamplesDroppedMetric(t *testing.T) {
 	}
 	type reportingAppender interface {
 		storage.AppenderV2
-		CommitStatsReporter
+		storage.CommitStatsReporter
 	}
 	newAppender := func(t *testing.T, src storage.AppendableV2) reportingAppender {
 		app, ok := src.AppenderV2(t.Context()).(reportingAppender)
@@ -6739,7 +6739,7 @@ func TestHeadAppender_DuplicateSamplesDroppedMetric(t *testing.T) {
 	}
 	lbls := labels.FromStrings("foo", "bar")
 
-	requireStats := func(t *testing.T, app CommitStatsReporter, wantSameValue, wantDifferentValue int) {
+	requireStats := func(t *testing.T, app storage.CommitStatsReporter, wantSameValue, wantDifferentValue int) {
 		t.Helper()
 		stats := app.CommitStats().DiscardedSamples
 		require.Equal(t, wantSameValue, stats.TotalSameValue(), "same-value dropped samples")
@@ -6831,6 +6831,21 @@ func TestHeadAppender_DuplicateSamplesDroppedMetric(t *testing.T) {
 		})
 	}
 
+	t.Run("type clashes count as different values", func(t *testing.T) {
+		head := newStatsHead(t, false)
+
+		app := newAppender(t, head)
+		_, err := app.Append(0, lbls, 0, 100, 1, nil, nil, storage.AOptions{})
+		require.NoError(t, err)
+		_, err = app.Append(0, lbls, 0, 100, 0, tsdbutil.GenerateTestHistogram(2), nil, storage.AOptions{})
+		require.NoError(t, err)
+		require.NoError(t, app.Commit())
+
+		stats := app.CommitStats().DiscardedSamples
+		require.Equal(t, []storage.DiscardedSeriesSamples{{Labels: lbls, Count: 1}}, stats.SameTimestampDifferentValue)
+		require.Empty(t, stats.SameTimestampSameValue)
+	})
+
 	t.Run("stats aggregate per series with counts", func(t *testing.T) {
 		head := newStatsHead(t, false)
 		lblsA := labels.FromStrings("foo", "bar")
@@ -6855,8 +6870,8 @@ func TestHeadAppender_DuplicateSamplesDroppedMetric(t *testing.T) {
 		require.NoError(t, app.Commit())
 
 		stats := app.CommitStats().DiscardedSamples
-		require.Equal(t, []DiscardedSeriesSamples{{Labels: lblsA, Count: 3}}, stats.SameTimestampSameValue)
-		require.Equal(t, []DiscardedSeriesSamples{{Labels: lblsB, Count: 2}}, stats.SameTimestampDifferentValue)
+		require.Equal(t, []storage.DiscardedSeriesSamples{{Labels: lblsA, Count: 3}}, stats.SameTimestampSameValue)
+		require.Equal(t, []storage.DiscardedSeriesSamples{{Labels: lblsB, Count: 2}}, stats.SameTimestampDifferentValue)
 	})
 
 	t.Run("rollback reports no stats", func(t *testing.T) {

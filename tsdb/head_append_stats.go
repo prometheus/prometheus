@@ -15,92 +15,35 @@ package tsdb
 
 import (
 	"github.com/prometheus/prometheus/model/histogram"
-	"github.com/prometheus/prometheus/model/labels"
+	"github.com/prometheus/prometheus/storage"
 	"github.com/prometheus/prometheus/tsdb/chunks"
 )
 
-// CommitStats reports what the most recent Commit did beyond its error return.
-type CommitStats struct {
-	// DiscardedSamples reports samples silently dropped because the series already
-	// had a sample at that timestamp.
-	DiscardedSamples DiscardedSampleStats
-}
-
-// DiscardedSampleStats reports samples that Commit silently dropped because the
-// series already had a sample at that timestamp. No Append error is returned for
-// these drops, so this is the only signal that they were not stored.
-type DiscardedSampleStats struct {
-	// SameTimestampDifferentValue aggregates drops whose value differed from the stored sample.
-	SameTimestampDifferentValue []DiscardedSeriesSamples
-	// SameTimestampSameValue aggregates drops that exactly duplicated the stored sample.
-	SameTimestampSameValue []DiscardedSeriesSamples
-}
-
-// TotalDifferentValue returns the number of dropped samples across all series in
-// the SameTimestampDifferentValue category.
-func (s DiscardedSampleStats) TotalDifferentValue() int {
-	return totalDiscarded(s.SameTimestampDifferentValue)
-}
-
-// TotalSameValue returns the number of dropped samples across all series in the
-// SameTimestampSameValue category.
-func (s DiscardedSampleStats) TotalSameValue() int {
-	return totalDiscarded(s.SameTimestampSameValue)
-}
-
-func totalDiscarded(dropped []DiscardedSeriesSamples) (n int) {
-	for _, d := range dropped {
-		n += d.Count
-	}
-	return n
-}
-
-// DiscardedSeriesSamples aggregates the dropped samples of one series.
-type DiscardedSeriesSamples struct {
-	// Labels references the head's own series labels; read them synchronously after Commit.
-	Labels labels.Labels
-	Count  int
-}
-
-// CommitStatsReporter is implemented by appenders that report what their most
-// recent successful Commit did. Wrappers must forward the method.
-//
-// CommitStats may be read synchronously after a successful Commit, as an exception
-// to AppenderTransaction's restriction on using a committed appender. It returns
-// zero stats before Commit and after Rollback; stats are undefined after a failed
-// Commit. Callers must copy the series labels before retaining them.
-//
-// Stats are only collected when HeadOptions.EnableCommitStats is set, otherwise
-// CommitStats always returns zero stats.
-type CommitStatsReporter interface {
-	CommitStats() CommitStats
-}
-
 var (
-	_ CommitStatsReporter = &initAppenderV2{}
-	_ CommitStatsReporter = &headAppenderV2{}
-	_ CommitStatsReporter = dbAppenderV2{}
+	_ storage.CommitStatsReporter = &initAppenderV2{}
+	_ storage.CommitStatsReporter = &headAppenderV2{}
+	_ storage.CommitStatsReporter = dbAppenderV2{}
 )
 
 // CommitStats returns what the most recent Commit did.
-func (a *headAppenderBase) CommitStats() CommitStats {
+func (a *headAppenderBase) CommitStats() storage.CommitStats {
 	return a.commitStats
 }
 
 // CommitStats returns the zero value if nothing was ever appended.
-func (a *initAppenderV2) CommitStats() CommitStats {
+func (a *initAppenderV2) CommitStats() storage.CommitStats {
 	if a.app == nil {
-		return CommitStats{}
+		return storage.CommitStats{}
 	}
 	return a.app.CommitStats()
 }
 
 // CommitStats returns the wrapped appender's stats, or zero stats if it does not report them.
-func (a dbAppenderV2) CommitStats() CommitStats {
-	if s, ok := a.AppenderV2.(CommitStatsReporter); ok {
+func (a dbAppenderV2) CommitStats() storage.CommitStats {
+	if s, ok := a.AppenderV2.(storage.CommitStatsReporter); ok {
 		return s.CommitStats()
 	}
-	return CommitStats{}
+	return storage.CommitStats{}
 }
 
 // recordDroppedConflict records a commit-time drop whose value differed from the
@@ -143,7 +86,7 @@ func (acc *appenderCommitContext) recordOOODuplicate(s *memSeries, t int64, v fl
 
 // recordDroppedSample reads s.lset directly rather than calling s.labels(): callers
 // hold s's lock and labels() locks again under the dedupelabels build tag.
-func recordDroppedSample(dropped []DiscardedSeriesSamples, idx map[chunks.HeadSeriesRef]int, s *memSeries) ([]DiscardedSeriesSamples, map[chunks.HeadSeriesRef]int) {
+func recordDroppedSample(dropped []storage.DiscardedSeriesSamples, idx map[chunks.HeadSeriesRef]int, s *memSeries) ([]storage.DiscardedSeriesSamples, map[chunks.HeadSeriesRef]int) {
 	if idx == nil {
 		idx = map[chunks.HeadSeriesRef]int{}
 	}
@@ -152,5 +95,5 @@ func recordDroppedSample(dropped []DiscardedSeriesSamples, idx map[chunks.HeadSe
 		return dropped, idx
 	}
 	idx[s.ref] = len(dropped)
-	return append(dropped, DiscardedSeriesSamples{Labels: s.lset, Count: 1}), idx
+	return append(dropped, storage.DiscardedSeriesSamples{Labels: s.lset, Count: 1}), idx
 }
