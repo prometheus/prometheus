@@ -16,6 +16,7 @@ package scrape
 import (
 	"bufio"
 	"bytes"
+	"cmp"
 	"context"
 	"errors"
 	"fmt"
@@ -918,12 +919,16 @@ type loop interface {
 }
 
 type cacheEntry struct {
-	ref      storage.SeriesRef
-	lastIter uint64
-	lset     labels.Labels
-
+	// Pointer-bearing fields come first to minimize GC pointer scan bytes;
+	// scalar fields follow and fit within the existing 48-byte size class on 64-bit stringlabels builds.
+	lset labels.Labels
 	// st is an optional state for ST synthesis.
 	st *stCache
+
+	ref      storage.SeriesRef
+	lastIter uint64
+	// trackedIter records c.iter+1 when this entry is added to seriesCur for staleness tracking.
+	trackedIter uint64
 }
 
 // seriesMetaEntry caches a series' post-relabel metadata and metric family name (meta, mfName)
@@ -1027,8 +1032,8 @@ type scrapeCache struct {
 	droppedSeries map[string]*uint64
 
 	// Series that were seen in the current and previous scrape, for staleness detection.
-	seriesCur  map[storage.SeriesRef]*cacheEntry
-	seriesPrev map[storage.SeriesRef]*cacheEntry
+	seriesCur  []*cacheEntry
+	seriesPrev []*cacheEntry
 
 	// Per-series post-relabel metadata cache, lazily allocated only when metric_relabel_configs is non-empty.
 	seriesMeta map[*cacheEntry]seriesMetaEntry
@@ -1061,8 +1066,6 @@ func newScrapeCache(metrics *scrapeMetrics) *scrapeCache {
 	return &scrapeCache{
 		series:        map[string]*cacheEntry{},
 		droppedSeries: map[string]*uint64{},
-		seriesCur:     map[storage.SeriesRef]*cacheEntry{},
-		seriesPrev:    map[storage.SeriesRef]*cacheEntry{},
 		metadata:      map[string]*metaEntry{},
 		metrics:       metrics,
 	}
@@ -1114,9 +1117,13 @@ func (c *scrapeCache) iterDone(flushCache bool) {
 		c.metaMtx.Unlock()
 	}
 
-	// Swap current and previous series then clear the new current, to save allocations.
-	c.seriesPrev, c.seriesCur = c.seriesCur, c.seriesPrev
-	clear(c.seriesCur)
+	// Zero previous pointers before resetting length so shrinking or empty scrapes
+	// never retain stale *cacheEntry references in seriesCur[:cap].
+	clear(c.seriesPrev)
+	c.seriesPrev, c.seriesCur = c.seriesCur, c.seriesPrev[:0]
+	if flushCache && cap(c.seriesCur) > 1024 && len(c.seriesPrev) < cap(c.seriesCur)/4 {
+		c.seriesCur = nil
+	}
 
 	c.iter++
 }
@@ -1181,41 +1188,87 @@ func (c *scrapeCache) getDropped(met []byte) bool {
 }
 
 // updateRef points the cache entry at a new storage reference, e.g. because the
-// storage garbage collected the series and had to recreate it. Staleness is tracked
-// per reference, so the tracking has to follow the entry to the new reference,
-// otherwise the series looks like it stopped being exposed and gets a stale marker.
-func (c *scrapeCache) updateRef(ce *cacheEntry, ref storage.SeriesRef) {
-	if ce.ref == ref {
-		return
-	}
-	if ce.ref != 0 {
-		moveStaleness(c.seriesPrev, ce, ref)
-		moveStaleness(c.seriesCur, ce, ref)
-	}
+// storage garbage collected the series and had to recreate it. Because seriesPrev and
+// seriesCur store *cacheEntry pointers directly, updating ce.ref automatically updates
+// the reference observed by staleness tracking without colliding with other entries.
+func (*scrapeCache) updateRef(ce *cacheEntry, ref storage.SeriesRef) {
 	ce.ref = ref
 }
 
-// moveStaleness re-keys the staleness tracking of ce from ce.ref to ref. Whether the
-// series is considered stale is left as it is, only the reference it is tracked under
-// changes. Tracking that belongs to another cache entry is left alone.
-func moveStaleness(tracked map[storage.SeriesRef]*cacheEntry, ce *cacheEntry, ref storage.SeriesRef) {
-	if tracked[ce.ref] != ce {
+func (c *scrapeCache) trackStaleness(ce *cacheEntry) {
+	// Stamp with c.iter+1 so a zero-initialized cacheEntry never collides with c.iter == 0.
+	mark := c.iter + 1
+	if ce.trackedIter == mark {
 		return
 	}
-	delete(tracked, ce.ref)
-	tracked[ref] = ce
+	ce.trackedIter = mark
+	c.seriesCur = append(c.seriesCur, ce)
 }
 
-func (c *scrapeCache) trackStaleness(ref storage.SeriesRef, ce *cacheEntry) {
-	c.seriesCur[ref] = ce
+func cmpCacheEntryByRef(a, b *cacheEntry) int {
+	return cmp.Compare(a.ref, b.ref)
+}
+
+func cmpCacheEntryRef(ce *cacheEntry, ref storage.SeriesRef) int {
+	return cmp.Compare(ce.ref, ref)
 }
 
 func (c *scrapeCache) forEachStale(f func(storage.SeriesRef, labels.Labels) bool) {
-	for ref, ce := range c.seriesPrev {
-		if _, ok := c.seriesCur[ref]; !ok {
-			if !f(ce.ref, ce.lset) {
-				break
+	mark := c.iter + 1
+	firstStale := -1
+	for i, ce := range c.seriesPrev {
+		if ce.trackedIter != mark {
+			firstStale = i
+			break
+		}
+	}
+	if firstStale < 0 {
+		return
+	}
+
+	// Partition untracked entries into c.seriesPrev[firstStale:staleEnd] via swaps
+	// so c.seriesPrev keeps all pointers intact for clear() and any retry on error.
+	staleEnd := firstStale + 1
+	for i := firstStale + 1; i < len(c.seriesPrev); i++ {
+		if c.seriesPrev[i].trackedIter != mark {
+			if staleEnd != i {
+				c.seriesPrev[staleEnd], c.seriesPrev[i] = c.seriesPrev[i], c.seriesPrev[staleEnd]
 			}
+			staleEnd++
+		}
+	}
+	stale := c.seriesPrev[firstStale:staleEnd]
+
+	// Another cacheEntry (e.g. from changed label ordering or multiple raw metrics
+	// relabeling to the same series) may still have kept ce.ref alive in seriesCur,
+	// or multiple disappearing cacheEntries may share the same ce.ref.
+	if len(stale) == 1 {
+		ce := stale[0]
+		for _, cur := range c.seriesCur {
+			if cur.ref == ce.ref {
+				return
+			}
+		}
+		f(ce.ref, ce.lset)
+		return
+	}
+
+	slices.SortFunc(stale, cmpCacheEntryByRef)
+	if len(c.seriesCur) > 0 {
+		slices.SortFunc(c.seriesCur, cmpCacheEntryByRef)
+	}
+
+	for i, ce := range stale {
+		if i > 0 && ce.ref == stale[i-1].ref {
+			continue
+		}
+		if len(c.seriesCur) > 0 {
+			if _, ok := slices.BinarySearchFunc(c.seriesCur, ce.ref, cmpCacheEntryRef); ok {
+				continue
+			}
+		}
+		if !f(ce.ref, ce.lset) {
+			return
 		}
 	}
 }
@@ -2029,7 +2082,7 @@ loop:
 				sl.cache.updateRef(ce, ref)
 			}
 			if (parsedTimestamp == nil || sl.trackTimestampsStaleness) && ce != nil && ce.ref != 0 {
-				sl.cache.trackStaleness(ce.ref, ce)
+				sl.cache.trackStaleness(ce)
 			}
 		}
 
@@ -2050,7 +2103,7 @@ loop:
 			if ce != nil && ce.ref != 0 && (parsedTimestamp == nil || sl.trackTimestampsStaleness) {
 				// Bypass staleness logic if there is an explicit timestamp.
 				// But make sure we only do this if we have a cache entry (ce) for our series.
-				sl.cache.trackStaleness(ref, ce)
+				sl.cache.trackStaleness(ce)
 			}
 			if sampleLimitErr == nil && bucketLimitErr == nil {
 				seriesAdded++

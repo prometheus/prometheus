@@ -486,7 +486,7 @@ loop:
 		// - Or we are synthesizing start times (stCache != nil), so we can clear stCache if it goes stale.
 		shouldTrackStaleness := parsedTimestamp == nil || sl.trackTimestampsStaleness || stCache != nil
 		if ce != nil && ce.ref != 0 && shouldTrackStaleness && sampleAdded {
-			sl.cache.trackStaleness(ce.ref, ce)
+			sl.cache.trackStaleness(ce)
 		}
 
 		// Increment added even if there's an error so we correctly report the
