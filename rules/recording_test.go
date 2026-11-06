@@ -343,6 +343,27 @@ func TestRecordingRuleMetadataDeduction(t *testing.T) {
 			},
 		},
 		{
+			name:                    "float/schema_dropped_ignores_type_and_unit_labels",
+			enableTypeAndUnitLabels: true,
+			samples: promql.Vector{
+				{
+					Metric: labels.FromStrings(
+						model.MetricTypeLabel, "counter",
+						model.MetricUnitLabel, "requests",
+						"job", "api",
+					),
+					T: evalMs,
+					F: 1.5,
+				},
+			},
+			wantLabels: []labels.Labels{
+				labels.FromStrings(model.MetricNameLabel, "job:req:rate5m", model.MetricTypeLabel, "gauge", "job", "api"),
+			},
+			wantMetas: []metadata.Metadata{
+				{Type: model.MetricTypeGauge},
+			},
+		},
+		{
 			name:                    "float/preserved_schema_with_type_and_unit_labels",
 			enableTypeAndUnitLabels: true,
 			samples: promql.Vector{
