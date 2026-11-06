@@ -42,7 +42,7 @@ type HistogramChunk struct {
 // NewHistogramChunk returns a new chunk with histogram encoding of the given
 // size.
 func NewHistogramChunk() *HistogramChunk {
-	b := make([]byte, histogramHeaderSize, chunkAllocationSize)
+	b := make([]byte, histogramHeaderSize, chunkInitialCapacity)
 	return &HistogramChunk{b: bstream{stream: b, count: 0}}
 }
 
