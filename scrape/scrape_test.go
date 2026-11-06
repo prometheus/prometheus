@@ -3257,7 +3257,7 @@ func benchScrapeLoopAppend(
 		sl.convertClassicHistToNHCB = convertToNHCB
 		sl.alwaysScrapeClassicHist = false
 		sl.enableOpenMetrics2 = true
-		// Only AppenderV2 uses parseST; false skips p.StartTimestamp() entirely.
+		// Only AppenderV2 uses parseST; false skips OpenMetrics 1.0 _created ST parsing.
 		sl.parseST = parseST
 	})
 	ts := time.Time{}
@@ -9588,4 +9588,135 @@ func TestScrapeOffsetDistribution(t *testing.T) {
 			require.Greater(t, len(uniqueTimes), 2, "Expected targets to be scraped at staggered offsets rather than simultaneously at scrape index %d", i)
 		}
 	})
+}
+
+func TestScrapeLoopAppend_ParseSTScopedToOM1(t *testing.T) {
+	ts := time.Unix(1700000010, 0).UTC()
+	stTime := time.UnixMilli(1700000001500).UTC()
+	stMs := timestamp.FromTime(stTime)
+
+	protoPayload := prepareTestEncodedCounter(t, config.PrometheusProto, "foo_total", 17, ts, stTime)
+	om1Payload := []byte(`# TYPE foo counter
+foo_total 17 1700000010
+foo_created 1700000001.5
+# EOF
+`)
+	om2Payload := []byte(`# TYPE foo_total counter
+foo_total 17 1700000010 st@1700000001.5
+# EOF
+`)
+
+	for _, tc := range []struct {
+		name        string
+		contentType string
+		payload     []byte
+		parseST     bool
+		wantSamples []sample
+	}{
+		{
+			name:        "PromProto/parseST=false_still_populates_ST",
+			contentType: "application/vnd.google.protobuf; proto=io.prometheus.client.MetricFamily; encoding=delimited",
+			payload:     protoPayload,
+			parseST:     false,
+			wantSamples: []sample{{
+				MF: "foo_total",
+				M:  metadata.Metadata{Type: model.MetricTypeCounter},
+				L:  labels.FromStrings(model.MetricNameLabel, "foo_total"),
+				T:  timestamp.FromTime(ts),
+				ST: stMs,
+				V:  17,
+			}},
+		},
+		{
+			name:        "PromProto/parseST=true_populates_ST",
+			contentType: "application/vnd.google.protobuf; proto=io.prometheus.client.MetricFamily; encoding=delimited",
+			payload:     protoPayload,
+			parseST:     true,
+			wantSamples: []sample{{
+				MF: "foo_total",
+				M:  metadata.Metadata{Type: model.MetricTypeCounter},
+				L:  labels.FromStrings(model.MetricNameLabel, "foo_total"),
+				T:  timestamp.FromTime(ts),
+				ST: stMs,
+				V:  17,
+			}},
+		},
+		{
+			name:        "OM2/parseST=false_still_populates_ST",
+			contentType: "application/openmetrics-text; version=2.0.0",
+			payload:     om2Payload,
+			parseST:     false,
+			wantSamples: []sample{{
+				MF: "foo_total",
+				M:  metadata.Metadata{Type: model.MetricTypeCounter},
+				L:  labels.FromStrings(model.MetricNameLabel, "foo_total"),
+				T:  timestamp.FromTime(ts),
+				ST: stMs,
+				V:  17,
+			}},
+		},
+		{
+			name:        "OM2/parseST=true_populates_ST",
+			contentType: "application/openmetrics-text; version=2.0.0",
+			payload:     om2Payload,
+			parseST:     true,
+			wantSamples: []sample{{
+				MF: "foo_total",
+				M:  metadata.Metadata{Type: model.MetricTypeCounter},
+				L:  labels.FromStrings(model.MetricNameLabel, "foo_total"),
+				T:  timestamp.FromTime(ts),
+				ST: stMs,
+				V:  17,
+			}},
+		},
+		{
+			name:        "OM1/parseST=false_skips_ST_and_keeps_created_series",
+			contentType: "application/openmetrics-text",
+			payload:     om1Payload,
+			parseST:     false,
+			wantSamples: []sample{
+				{
+					MF: "foo",
+					M:  metadata.Metadata{Type: model.MetricTypeCounter},
+					L:  labels.FromStrings(model.MetricNameLabel, "foo_total"),
+					T:  timestamp.FromTime(ts),
+					ST: 0,
+					V:  17,
+				},
+				{
+					L:  labels.FromStrings(model.MetricNameLabel, "foo_created"),
+					T:  timestamp.FromTime(ts),
+					ST: 0,
+					V:  1700000001.5,
+				},
+			},
+		},
+		{
+			name:        "OM1/parseST=true_populates_ST_and_skips_created_series",
+			contentType: "application/openmetrics-text",
+			payload:     om1Payload,
+			parseST:     true,
+			wantSamples: []sample{{
+				MF: "foo",
+				M:  metadata.Metadata{Type: model.MetricTypeCounter},
+				L:  labels.FromStrings(model.MetricNameLabel, "foo_total"),
+				T:  timestamp.FromTime(ts),
+				ST: stMs,
+				V:  17,
+			}},
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			appTest := teststorage.NewAppendable()
+			sl, _ := newTestScrapeLoop(t, withAppendable(appTest, true), func(sl *scrapeLoop) {
+				sl.parseST = tc.parseST
+				sl.enableOpenMetrics2 = true
+			})
+			app := sl.appender()
+			_, _, _, err := app.append(tc.payload, tc.contentType, ts)
+			require.NoError(t, err)
+			require.NoError(t, app.Commit())
+			testutil.RequireEqual(t, tc.wantSamples, appTest.ResultSamples())
+		})
+	}
 }
