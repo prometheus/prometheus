@@ -32,6 +32,8 @@ import (
 	"testing"
 	"time"
 
+	"github.com/prometheus/cfaccess"
+	promconfig "github.com/prometheus/common/config"
 	"github.com/prometheus/common/model"
 	"github.com/prometheus/common/promslog"
 	"github.com/stretchr/testify/require"
@@ -50,6 +52,48 @@ func init() {
 }
 
 var promtoolPath = os.Args[0]
+
+func TestNewPromtoolRoundTripper(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name    string
+		config  promconfig.HTTPClientConfig
+		wantErr string
+	}{
+		{
+			name: "default configuration",
+		},
+		{
+			name: "Cloudflare Access",
+			config: promconfig.HTTPClientConfig{
+				Authorization: &promconfig.Authorization{Type: cfaccess.AuthorizationType},
+			},
+		},
+		{
+			name: "Cloudflare Access with credentials",
+			config: promconfig.HTTPClientConfig{
+				Authorization: &promconfig.Authorization{Type: cfaccess.AuthorizationType, Credentials: "token"},
+			},
+			wantErr: `authorization credentials, credentials_file & credentials_ref must not be configured when authorization type is "cf-access"`,
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+
+			roundTripper, err := newPromtoolRoundTripper(tc.config)
+			if tc.wantErr != "" {
+				require.EqualError(t, err, tc.wantErr)
+				require.Nil(t, roundTripper)
+				return
+			}
+			require.NoError(t, err)
+			require.NotNil(t, roundTripper)
+		})
+	}
+}
 
 func TestMain(m *testing.M) {
 	for i, arg := range os.Args {
