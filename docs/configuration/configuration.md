@@ -4130,6 +4130,9 @@ write_relabel_configs:
 
 # Enables sending of native histograms, also known as sparse histograms, over remote write.
 # When `mode` is `stateless` or `stateless-st`, this is set to `true` and manually setting it to `false` is an error.
+# For the `io.prometheus.write.v2.Request` message this defaults to true; set it to false
+# explicitly to opt out. The option is deprecated for remote write v2 and will be removed
+# in a future release.
 [ send_native_histograms: <boolean> | default = false ]
 
 # When enabled, remote-write will resolve the URL host name via DNS, choose one of the IP addresses at random, and connect to it.
