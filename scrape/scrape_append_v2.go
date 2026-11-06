@@ -146,6 +146,16 @@ func (sl *scrapeLoopAppenderV2) append(b []byte, contentType string, ts time.Tim
 	// Take an appender with limits.
 	app := appenderV2WithLimits(sl.AppenderV2, sl.sampleLimit, sl.bucketLimit, sl.maxSchema)
 
+	// Until a scrape of the target succeeds, for example after a restart, the
+	// storage may already hold the target's series while the cache does not.
+	// Take their labels from the storage, so that the cache does not keep a
+	// second copy. After that, a miss is usually a series new to the storage,
+	// and GetRef would only add a hash and a lookup.
+	var getRef storage.GetRef
+	if sl.cache.successfulCount == 0 {
+		getRef = storageGetRef(sl.AppenderV2)
+	}
+
 	defer func() {
 		if err != nil {
 			return
@@ -327,14 +337,18 @@ loop:
 					break loop
 				}
 
-				if sampleMFName != "" && (sampleMFName != lastSetMFName || !sampleMeta.Equals(lastSetMeta)) {
-					sl.cache.setMetadata(sampleMFName, sampleMeta)
-					lastSetMFName = sampleMFName
-					lastSetMeta = sampleMeta
-				}
 				if seriesCached {
 					if ce.lset.Hash() == lset.Hash() && labels.Equal(ce.lset, lset) {
 						ref = ce.ref
+						lset = ce.lset
+						if name := lset.Get(model.MetricNameLabel); strings.HasPrefix(name, sampleMFName) {
+							sampleMFName = name[:len(sampleMFName)]
+						}
+						if sampleMFName != "" && (sampleMFName != lastSetMFName || !sampleMeta.Equals(lastSetMeta)) {
+							sl.cache.setMetadata(sampleMFName, sampleMeta)
+							lastSetMFName = sampleMFName
+							lastSetMeta = sampleMeta
+						}
 						sl.cache.setSeriesMeta(ce, origMeta, sampleMeta, origMFName, sampleMFName)
 					} else {
 						sl.cache.deleteSeries(met, ce)
@@ -342,6 +356,26 @@ loop:
 						seriesCached = false
 					}
 				}
+			}
+		}
+
+		if !seriesCached {
+			if getRef != nil {
+				// Parsers and relabeling build new labels on every call, so the next
+				// iteration does not modify the storage's labels held in lset.
+				if r, l := getRef.GetRef(lset, lset.Hash()); r != 0 {
+					ref, lset = r, l
+					if hasMRC {
+						if name := lset.Get(model.MetricNameLabel); strings.HasPrefix(name, sampleMFName) {
+							sampleMFName = name[:len(sampleMFName)]
+						}
+					}
+				}
+			}
+			if hasMRC && sampleMFName != "" && (sampleMFName != lastSetMFName || !sampleMeta.Equals(lastSetMeta)) {
+				sl.cache.setMetadata(sampleMFName, sampleMeta)
+				lastSetMFName = sampleMFName
+				lastSetMeta = sampleMeta
 			}
 		}
 
@@ -444,6 +478,10 @@ loop:
 				if err == nil && ce != nil && ref != 0 {
 					sl.cache.updateRef(ce, ref)
 				}
+			} else if !seriesCached {
+				// Keep ce.ref zero while only anchoring start time so staleness is not
+				// tracked before this scrape loop appends a sample.
+				ref = 0
 			}
 		}
 		sampleAdded, err = sl.checkAddError(met, exemplars, err, &sampleLimitErr, &bucketLimitErr, &appErrs)
