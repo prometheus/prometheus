@@ -323,7 +323,7 @@ func TestRangeUnaryAndTimestampFastPaths(t *testing.T) {
 	stor := promqltest.NewBuiltinTestStorage(t)
 	app := stor.AppenderV2(t.Context())
 
-	floatSeries := labels.FromStrings("__name__", "unary_float", "k", "1")
+	floatSeries := labels.FromStrings("__name__", "unary_float", "__type__", "gauge", "__unit__", "seconds", "k", "1")
 	histSeries := labels.FromStrings("__name__", "unary_hist", "k", "2")
 	mixedSeries := labels.FromStrings("__name__", "unary_mixed", "k", "3")
 	dupASeries := labels.FromStrings("__name__", "dup_a", "k", "dup")
@@ -363,7 +363,6 @@ func TestRangeUnaryAndTimestampFastPaths(t *testing.T) {
 	require.NoError(t, err)
 	require.NoError(t, app.Commit())
 
-	engine := promqltest.NewTestEngine(t, false, 15*time.Second, promqltest.DefaultMaxSamplesPerQuery)
 	enableST := true
 	qOpts := promql.NewPrometheusQueryOpts(false, 15*time.Second, &enableST)
 
@@ -450,78 +449,94 @@ func TestRangeUnaryAndTimestampFastPaths(t *testing.T) {
 		},
 	}
 
-	for _, tc := range testCases {
-		t.Run("expr="+tc.expr, func(t *testing.T) {
-			rq, err := engine.NewRangeQuery(t.Context(), stor, qOpts, tc.expr, start, end, step)
-			require.NoError(t, err)
-			t.Cleanup(rq.Close)
+	for _, delayedNameRemoval := range []bool{false, true} {
+		t.Run("delayedNameRemoval="+strconv.FormatBool(delayedNameRemoval), func(t *testing.T) {
+			engine := promqltest.NewTestEngineWithOpts(t, promql.EngineOpts{
+				MaxSamples:               promqltest.DefaultMaxSamplesPerQuery,
+				Timeout:                  100 * time.Second,
+				NoStepSubqueryIntervalFn: func(int64) int64 { return 60_000 },
+				EnableAtModifier:         true,
+				EnableNegativeOffset:     true,
+				LookbackDelta:            15 * time.Second,
+				EnableDelayedNameRemoval: delayedNameRemoval,
+				UseStartTimestamps:       true,
+				Parser:                   parser.NewParser(promqltest.TestParserOpts),
+			})
 
-			rRes := rq.Exec(t.Context())
-			require.NoError(t, rRes.Err)
-			mat, err := rRes.Matrix()
-			require.NoError(t, err)
-			require.NotEmpty(t, mat)
+			for _, tc := range testCases {
+				t.Run("expr="+tc.expr, func(t *testing.T) {
+					rq, err := engine.NewRangeQuery(t.Context(), stor, qOpts, tc.expr, start, end, step)
+					require.NoError(t, err)
+					t.Cleanup(rq.Close)
 
-			gotAtTS := make(map[int64]map[string]float64)
-			for _, s := range mat {
-				require.Empty(t, s.Histograms)
-				lbl := s.Metric.String()
-				for _, pt := range s.Floats {
-					if gotAtTS[pt.T] == nil {
-						gotAtTS[pt.T] = make(map[string]float64)
+					rRes := rq.Exec(t.Context())
+					require.NoError(t, rRes.Err)
+					mat, err := rRes.Matrix()
+					require.NoError(t, err)
+					require.NotEmpty(t, mat)
+
+					gotAtTS := make(map[int64]map[string]float64)
+					for _, s := range mat {
+						require.Empty(t, s.Histograms)
+						lbl := s.Metric.String()
+						for _, pt := range s.Floats {
+							if gotAtTS[pt.T] == nil {
+								gotAtTS[pt.T] = make(map[string]float64)
+							}
+							gotAtTS[pt.T][lbl] = pt.F
+						}
 					}
-					gotAtTS[pt.T][lbl] = pt.F
-				}
+
+					for ts := start; !ts.After(end); ts = ts.Add(step) {
+						tsMS := timestamp.FromTime(ts)
+						want := tc.want(tsMS)
+						require.Equal(t, want, gotAtTS[tsMS], "ts=%d", tsMS)
+
+						iq, err := engine.NewInstantQuery(t.Context(), stor, qOpts, tc.expr, ts)
+						require.NoError(t, err)
+						iRes := iq.Exec(t.Context())
+						iq.Close()
+						require.NoError(t, iRes.Err)
+						vec, err := iRes.Vector()
+						require.NoError(t, err)
+
+						var instGot map[string]float64
+						if len(vec) > 0 {
+							instGot = make(map[string]float64, len(vec))
+							for _, smp := range vec {
+								require.Nil(t, smp.H)
+								instGot[smp.Metric.String()] = smp.F
+							}
+						}
+						require.Equal(t, want, instGot, "instant ts=%d", tsMS)
+					}
+				})
 			}
 
-			for ts := start; !ts.After(end); ts = ts.Add(step) {
-				tsMS := timestamp.FromTime(ts)
-				want := tc.want(tsMS)
-				require.Equal(t, want, gotAtTS[tsMS], "ts=%d", tsMS)
-
-				iq, err := engine.NewInstantQuery(t.Context(), stor, qOpts, tc.expr, ts)
+			t.Run("start_timestamp disabled in range query", func(t *testing.T) {
+				disableST := false
+				disabledOpts := promql.NewPrometheusQueryOpts(false, 0, &disableST)
+				rq, err := engine.NewRangeQuery(t.Context(), stor, disabledOpts, `start_timestamp({k=~"1|2|3"})`, start, end, step)
 				require.NoError(t, err)
-				iRes := iq.Exec(t.Context())
-				iq.Close()
-				require.NoError(t, iRes.Err)
-				vec, err := iRes.Vector()
-				require.NoError(t, err)
+				t.Cleanup(rq.Close)
 
-				var instGot map[string]float64
-				if len(vec) > 0 {
-					instGot = make(map[string]float64, len(vec))
-					for _, smp := range vec {
-						require.Nil(t, smp.H)
-						instGot[smp.Metric.String()] = smp.F
-					}
-				}
-				require.Equal(t, want, instGot, "instant ts=%d", tsMS)
+				rRes := rq.Exec(t.Context())
+				require.NoError(t, rRes.Err)
+				mat, err := rRes.Matrix()
+				require.NoError(t, err)
+				require.Empty(t, mat)
+			})
+
+			for _, expr := range []string{`abs({k="dup_err"})`, `timestamp({k="dup_err"})`} {
+				t.Run("duplicate labelset error/"+expr, func(t *testing.T) {
+					rq, err := engine.NewRangeQuery(t.Context(), stor, qOpts, expr, start, end, step)
+					require.NoError(t, err)
+					t.Cleanup(rq.Close)
+
+					rRes := rq.Exec(t.Context())
+					require.ErrorContains(t, rRes.Err, "vector cannot contain metrics with the same labelset")
+				})
 			}
-		})
-	}
-
-	t.Run("start_timestamp disabled in range query", func(t *testing.T) {
-		disableST := false
-		disabledOpts := promql.NewPrometheusQueryOpts(false, 0, &disableST)
-		rq, err := engine.NewRangeQuery(t.Context(), stor, disabledOpts, `start_timestamp({k=~"1|2|3"})`, start, end, step)
-		require.NoError(t, err)
-		t.Cleanup(rq.Close)
-
-		rRes := rq.Exec(t.Context())
-		require.NoError(t, rRes.Err)
-		mat, err := rRes.Matrix()
-		require.NoError(t, err)
-		require.Empty(t, mat)
-	})
-
-	for _, expr := range []string{`abs({k="dup_err"})`, `timestamp({k="dup_err"})`} {
-		t.Run("duplicate labelset error/"+expr, func(t *testing.T) {
-			rq, err := engine.NewRangeQuery(t.Context(), stor, qOpts, expr, start, end, step)
-			require.NoError(t, err)
-			t.Cleanup(rq.Close)
-
-			rRes := rq.Exec(t.Context())
-			require.ErrorContains(t, rRes.Err, "vector cannot contain metrics with the same labelset")
 		})
 	}
 }
