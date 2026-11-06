@@ -447,6 +447,20 @@ func TestRangeUnaryAndTimestampFastPaths(t *testing.T) {
 				return map[string]float64{`{k="dup"}`: sampleTS}
 			},
 		},
+		{
+			expr: `start_timestamp({k="dup"})`,
+			want: func(tsMS int64) map[string]float64 {
+				if tsMS >= 35_000 && tsMS < 50_000 {
+					return nil
+				}
+				idx := expectedSampleIdx(tsMS)
+				if tsMS == 30_000 {
+					idx = 1
+				}
+				sampleST := float64((idx + 1) * 9)
+				return map[string]float64{`{k="dup"}`: sampleST}
+			},
+		},
 	}
 
 	for _, delayedNameRemoval := range []bool{false, true} {
@@ -527,7 +541,7 @@ func TestRangeUnaryAndTimestampFastPaths(t *testing.T) {
 				require.Empty(t, mat)
 			})
 
-			for _, expr := range []string{`abs({k="dup_err"})`, `timestamp({k="dup_err"})`} {
+			for _, expr := range []string{`abs({k="dup_err"})`, `timestamp({k="dup_err"})`, `start_timestamp({k="dup_err"})`} {
 				t.Run("duplicate labelset error/"+expr, func(t *testing.T) {
 					rq, err := engine.NewRangeQuery(t.Context(), stor, qOpts, expr, start, end, step)
 					require.NoError(t, err)
