@@ -320,42 +320,139 @@ func TestMADOverTimeUsesExactSubnormalMedian(t *testing.T) {
 }
 
 func TestRangeUnaryAndTimestampFastPaths(t *testing.T) {
-	stor := teststorage.New(t, func(opts *tsdb.Options) {
-		opts.FloatChunkEncoding = chunkenc.EncXOR2
-		opts.EnableSTStorage = true
-	})
+	stor := promqltest.NewBuiltinTestStorage(t)
 	app := stor.AppenderV2(t.Context())
 
 	floatSeries := labels.FromStrings("__name__", "unary_float", "k", "1")
 	histSeries := labels.FromStrings("__name__", "unary_hist", "k", "2")
+	mixedSeries := labels.FromStrings("__name__", "unary_mixed", "k", "3")
+	dupASeries := labels.FromStrings("__name__", "dup_a", "k", "dup")
+	dupBSeries := labels.FromStrings("__name__", "dup_b", "k", "dup")
+	dupErrASeries := labels.FromStrings("__name__", "dup_err_a", "k", "dup_err")
+	dupErrBSeries := labels.FromStrings("__name__", "dup_err_b", "k", "dup_err")
+
 	for step := range 6 {
 		ts := int64((step + 1) * 10_000)
-		st := int64(5_000)
-		_, err := app.Append(0, floatSeries, st, ts, -float64(step+1), nil, nil, storage.AOptions{})
+		st := ts - int64((step+1)*1_000)
+		val := -float64(step + 1)
+		h := tsdbutil.GenerateTestFloatHistogram(int64(step))
+
+		_, err := app.Append(0, floatSeries, st, ts, val, nil, nil, storage.AOptions{})
 		require.NoError(t, err)
-		_, err = app.Append(0, histSeries, st, ts, 0, nil, tsdbutil.GenerateTestFloatHistogram(int64(step)), storage.AOptions{})
+		_, err = app.Append(0, histSeries, st, ts, 0, nil, h, storage.AOptions{})
 		require.NoError(t, err)
+
+		if step < 3 {
+			_, err = app.Append(0, mixedSeries, st, ts, val, nil, nil, storage.AOptions{})
+			require.NoError(t, err)
+		} else {
+			_, err = app.Append(0, mixedSeries, st, ts, 0, nil, h, storage.AOptions{})
+			require.NoError(t, err)
+		}
+		if step < 2 {
+			_, err = app.Append(0, dupASeries, st, ts, val, nil, nil, storage.AOptions{})
+			require.NoError(t, err)
+		} else if step >= 4 {
+			_, err = app.Append(0, dupBSeries, st, ts, val, nil, nil, storage.AOptions{})
+			require.NoError(t, err)
+		}
 	}
+	_, err := app.Append(0, dupErrASeries, 5_000, 10_000, -1, nil, nil, storage.AOptions{})
+	require.NoError(t, err)
+	_, err = app.Append(0, dupErrBSeries, 5_000, 10_000, -2, nil, nil, storage.AOptions{})
+	require.NoError(t, err)
 	require.NoError(t, app.Commit())
 
-	engine := promqltest.NewTestEngine(t, false, 0, promqltest.DefaultMaxSamplesPerQuery)
+	engine := promqltest.NewTestEngine(t, false, 15*time.Second, promqltest.DefaultMaxSamplesPerQuery)
 	enableST := true
-	qOpts := promql.NewPrometheusQueryOpts(false, 0, &enableST)
+	qOpts := promql.NewPrometheusQueryOpts(false, 15*time.Second, &enableST)
 
-	queries := []string{
-		`abs({k=~"1|2"})`,
-		`sgn({k=~"1|2"})`,
-		`timestamp({k=~"1|2"})`,
-		`timestamp(unary_float @ 30)`,
-		`start_timestamp(unary_float)`,
-	}
 	start := time.Unix(10, 0)
 	end := time.Unix(60, 0)
-	step := 10 * time.Second
+	// Query every 5s across 10s sample intervals so odd steps exercise PeekPrev lookback.
+	step := 5 * time.Second
 
-	for _, expr := range queries {
-		t.Run("expr="+expr, func(t *testing.T) {
-			rq, err := engine.NewRangeQuery(t.Context(), stor, qOpts, expr, start, end, step)
+	expectedSampleIdx := func(tsMS int64) int {
+		return int(tsMS/10_000) - 1
+	}
+
+	testCases := []struct {
+		expr string
+		want func(tsMS int64) map[string]float64
+	}{
+		{
+			expr: `abs({k=~"1|2|3"})`,
+			want: func(tsMS int64) map[string]float64 {
+				idx := expectedSampleIdx(tsMS)
+				v := float64(idx + 1)
+				if idx < 3 {
+					return map[string]float64{`{k="1"}`: v, `{k="3"}`: v}
+				}
+				return map[string]float64{`{k="1"}`: v}
+			},
+		},
+		{
+			expr: `sgn({k=~"1|2|3"})`,
+			want: func(tsMS int64) map[string]float64 {
+				if expectedSampleIdx(tsMS) < 3 {
+					return map[string]float64{`{k="1"}`: -1, `{k="3"}`: -1}
+				}
+				return map[string]float64{`{k="1"}`: -1}
+			},
+		},
+		{
+			expr: `timestamp({k=~"1|2|3"})`,
+			want: func(tsMS int64) map[string]float64 {
+				sampleTS := float64((expectedSampleIdx(tsMS) + 1) * 10)
+				return map[string]float64{`{k="1"}`: sampleTS, `{k="2"}`: sampleTS, `{k="3"}`: sampleTS}
+			},
+		},
+		{
+			expr: `timestamp(unary_float @ 30)`,
+			want: func(int64) map[string]float64 {
+				return map[string]float64{`{k="1"}`: 30}
+			},
+		},
+		{
+			expr: `start_timestamp({k=~"1|2|3"})`,
+			want: func(tsMS int64) map[string]float64 {
+				idx := expectedSampleIdx(tsMS)
+				sampleST := float64((idx + 1) * 9)
+				return map[string]float64{`{k="1"}`: sampleST, `{k="2"}`: sampleST, `{k="3"}`: sampleST}
+			},
+		},
+		{
+			expr: `abs({k="dup"})`,
+			want: func(tsMS int64) map[string]float64 {
+				if tsMS >= 35_000 && tsMS < 50_000 {
+					return nil
+				}
+				idx := expectedSampleIdx(tsMS)
+				if tsMS == 30_000 {
+					idx = 1
+				}
+				return map[string]float64{`{k="dup"}`: float64(idx + 1)}
+			},
+		},
+		{
+			expr: `timestamp({k="dup"})`,
+			want: func(tsMS int64) map[string]float64 {
+				if tsMS >= 35_000 && tsMS < 50_000 {
+					return nil
+				}
+				idx := expectedSampleIdx(tsMS)
+				if tsMS == 30_000 {
+					idx = 1
+				}
+				sampleTS := float64((idx + 1) * 10)
+				return map[string]float64{`{k="dup"}`: sampleTS}
+			},
+		},
+	}
+
+	for _, tc := range testCases {
+		t.Run("expr="+tc.expr, func(t *testing.T) {
+			rq, err := engine.NewRangeQuery(t.Context(), stor, qOpts, tc.expr, start, end, step)
 			require.NoError(t, err)
 			t.Cleanup(rq.Close)
 
@@ -363,9 +460,11 @@ func TestRangeUnaryAndTimestampFastPaths(t *testing.T) {
 			require.NoError(t, rRes.Err)
 			mat, err := rRes.Matrix()
 			require.NoError(t, err)
+			require.NotEmpty(t, mat)
 
 			gotAtTS := make(map[int64]map[string]float64)
 			for _, s := range mat {
+				require.Empty(t, s.Histograms)
 				lbl := s.Metric.String()
 				for _, pt := range s.Floats {
 					if gotAtTS[pt.T] == nil {
@@ -376,7 +475,11 @@ func TestRangeUnaryAndTimestampFastPaths(t *testing.T) {
 			}
 
 			for ts := start; !ts.After(end); ts = ts.Add(step) {
-				iq, err := engine.NewInstantQuery(t.Context(), stor, qOpts, expr, ts)
+				tsMS := timestamp.FromTime(ts)
+				want := tc.want(tsMS)
+				require.Equal(t, want, gotAtTS[tsMS], "ts=%d", tsMS)
+
+				iq, err := engine.NewInstantQuery(t.Context(), stor, qOpts, tc.expr, ts)
 				require.NoError(t, err)
 				iRes := iq.Exec(t.Context())
 				iq.Close()
@@ -384,16 +487,41 @@ func TestRangeUnaryAndTimestampFastPaths(t *testing.T) {
 				vec, err := iRes.Vector()
 				require.NoError(t, err)
 
-				var want map[string]float64
+				var instGot map[string]float64
 				if len(vec) > 0 {
-					want = make(map[string]float64, len(vec))
+					instGot = make(map[string]float64, len(vec))
 					for _, smp := range vec {
-						want[smp.Metric.String()] = smp.F
+						require.Nil(t, smp.H)
+						instGot[smp.Metric.String()] = smp.F
 					}
 				}
-				tsMS := timestamp.FromTime(ts)
-				require.Equal(t, want, gotAtTS[tsMS], "ts=%d", tsMS)
+				require.Equal(t, want, instGot, "instant ts=%d", tsMS)
 			}
+		})
+	}
+
+	t.Run("start_timestamp disabled in range query", func(t *testing.T) {
+		disableST := false
+		disabledOpts := promql.NewPrometheusQueryOpts(false, 0, &disableST)
+		rq, err := engine.NewRangeQuery(t.Context(), stor, disabledOpts, `start_timestamp({k=~"1|2|3"})`, start, end, step)
+		require.NoError(t, err)
+		t.Cleanup(rq.Close)
+
+		rRes := rq.Exec(t.Context())
+		require.NoError(t, rRes.Err)
+		mat, err := rRes.Matrix()
+		require.NoError(t, err)
+		require.Empty(t, mat)
+	})
+
+	for _, expr := range []string{`abs({k="dup_err"})`, `timestamp({k="dup_err"})`} {
+		t.Run("duplicate labelset error/"+expr, func(t *testing.T) {
+			rq, err := engine.NewRangeQuery(t.Context(), stor, qOpts, expr, start, end, step)
+			require.NoError(t, err)
+			t.Cleanup(rq.Close)
+
+			rRes := rq.Exec(t.Context())
+			require.ErrorContains(t, rRes.Err, "vector cannot contain metrics with the same labelset")
 		})
 	}
 }
