@@ -550,6 +550,9 @@ func (p *OpenMetricsParser) Next() (Entry, error) {
 			}
 			return EntrySeries, nil
 		case tMName:
+			if p.l.i-p.start > labels.MaxLabelLength {
+				return EntryInvalid, fmt.Errorf("metric name exceeds limit of %d bytes", labels.MaxLabelLength)
+			}
 			p.offsets = append(p.offsets, p.start, p.l.i)
 			p.series = p.l.b[p.start:p.l.i]
 
@@ -657,6 +660,9 @@ func (p *OpenMetricsParser) parseLVals(offsets []int, isExemplar bool) ([]int, e
 			if offsets[0] != -1 || offsets[1] != -1 {
 				return nil, fmt.Errorf("metric name already set while parsing: %q", p.l.b[p.start:p.l.i])
 			}
+			if (curTI-1)-(curTStart+1) > labels.MaxLabelLength {
+				return nil, fmt.Errorf("metric name exceeds limit of %d bytes", labels.MaxLabelLength)
+			}
 			offsets[0] = curTStart + 1
 			offsets[1] = curTI - 1
 			if t == tBraceClose {
@@ -670,6 +676,9 @@ func (p *OpenMetricsParser) parseLVals(offsets []int, isExemplar bool) ([]int, e
 			curTStart++
 			curTI--
 		}
+		if curTI-curTStart > labels.MaxLabelLength {
+			return nil, fmt.Errorf("label name exceeds limit of %d bytes", labels.MaxLabelLength)
+		}
 		offsets = append(offsets, curTStart, curTI)
 
 		if t != tEqual {
@@ -680,6 +689,9 @@ func (p *OpenMetricsParser) parseLVals(offsets []int, isExemplar bool) ([]int, e
 		}
 		if !utf8.Valid(p.l.buf()) {
 			return nil, fmt.Errorf("invalid UTF-8 label value: %q", p.l.buf())
+		}
+		if (p.l.i-1)-(p.l.start+1) > labels.MaxLabelLength {
+			return nil, fmt.Errorf("label value exceeds limit of %d bytes", labels.MaxLabelLength)
 		}
 
 		// The openMetricsLexer ensures the value string is quoted. Strip first

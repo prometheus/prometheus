@@ -16,6 +16,7 @@
 package labels
 
 import (
+	"fmt"
 	"slices"
 	"strings"
 	"unsafe"
@@ -543,7 +544,7 @@ func marshalLabelToSizedBuffer(m *Label, data []byte) int {
 func sizeWhenEncoded(x uint64) (n int) {
 	if x < 255 {
 		return 1
-	} else if x <= 1<<24 {
+	} else if x <= MaxLabelLength {
 		return 4
 	}
 	panic("String too long to encode as label.")
@@ -626,6 +627,23 @@ func (b *ScratchBuilder) Add(name, value string) {
 // Sort the labels added so far by name.
 func (b *ScratchBuilder) Sort() {
 	slices.SortFunc(b.add, func(a, b Label) int { return strings.Compare(a.Name, b.Name) })
+}
+
+// ValidateLength checks if any label name or value in the builder exceeds maxLen.
+// If maxLen is <= 0, MaxLabelLength is used.
+func (b *ScratchBuilder) ValidateLength(maxLen int) error {
+	if maxLen <= 0 {
+		maxLen = MaxLabelLength
+	}
+	for _, l := range b.add {
+		if len(l.Name) > maxLen {
+			return fmt.Errorf("label name %q exceeds limit of %d bytes", l.Name, maxLen)
+		}
+		if len(l.Value) > maxLen {
+			return fmt.Errorf("label value exceeds limit of %d bytes", maxLen)
+		}
+	}
+	return nil
 }
 
 // Assign is for when you already have a Labels which you want this ScratchBuilder to return.
