@@ -14,6 +14,7 @@
 package prompb
 
 import (
+	"fmt"
 	"strings"
 
 	"github.com/prometheus/common/model"
@@ -33,6 +34,47 @@ func (m TimeSeries) ToLabels(b *labels.ScratchBuilder, _ []string) labels.Labels
 // ToLabels return model labels.Labels from timeseries' remote labels.
 func (m ChunkedSeries) ToLabels(b *labels.ScratchBuilder, _ []string) labels.Labels {
 	return labelProtosToLabels(b, m.GetLabels())
+}
+
+// ToLabelsWithLimits return model labels.Labels from timeseries' remote labels,
+// rejecting the series when a label name length exceeds nameLimit or a label
+// value length exceeds valueLimit. A limit of 0 means no limit. Checking before
+// the labels are materialized keeps oversized values away from label storage
+// allocations.
+func (m TimeSeries) ToLabelsWithLimits(b *labels.ScratchBuilder, nameLimit, valueLimit int) (labels.Labels, error) {
+	for _, l := range m.GetLabels() {
+		if err := CheckLabelLength(l.Name, l.Value, nameLimit, valueLimit); err != nil {
+			return labels.EmptyLabels(), err
+		}
+	}
+	return labelProtosToLabels(b, m.GetLabels()), nil
+}
+
+// CheckLabelLengthError is returned when a label name or value exceeds the
+// configured length limits.
+type CheckLabelLengthError struct {
+	Name, Value           string
+	NameLen, ValueLen     int
+	NameLimit, ValueLimit int
+}
+
+func (e CheckLabelLengthError) Error() string {
+	if e.NameLen > e.NameLimit && e.NameLimit > 0 {
+		return fmt.Sprintf("label name length %d exceeds limit %d (label name: %.50s)", e.NameLen, e.NameLimit, e.Name)
+	}
+	return fmt.Sprintf("label value length %d exceeds limit %d for label %q (value: %.50q)", e.ValueLen, e.ValueLimit, e.Name, e.Value)
+}
+
+// CheckLabelLength validates label name and value lengths against the given
+// limits. A limit of 0 disables the check for that dimension.
+func CheckLabelLength(name, value string, nameLimit, valueLimit int) error {
+	if nameLimit > 0 && len(name) > nameLimit {
+		return CheckLabelLengthError{Name: name, Value: value, NameLen: len(name), ValueLen: len(value), NameLimit: nameLimit, ValueLimit: valueLimit}
+	}
+	if valueLimit > 0 && len(value) > valueLimit {
+		return CheckLabelLengthError{Name: name, Value: value, NameLen: len(name), ValueLen: len(value), NameLimit: nameLimit, ValueLimit: valueLimit}
+	}
+	return nil
 }
 
 func labelProtosToLabels(b *labels.ScratchBuilder, labelPairs []Label) labels.Labels {
