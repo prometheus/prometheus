@@ -231,6 +231,10 @@ type FakeSeries struct {
 	samples []promql.FPoint
 }
 
+func (f *FakeSeries) OriginalLabelsHash() uint64 {
+	return f.Labels().Hash()
+}
+
 func (f *FakeSeries) Labels() labels.Labels {
 	return f.labels
 }
@@ -292,6 +296,10 @@ func (*FakeSeriesIterator) Err() error {
 type FakeHistogramSeries struct {
 	labels     labels.Labels
 	histograms []promql.HPoint
+}
+
+func (f *FakeHistogramSeries) OriginalLabelsHash() uint64 {
+	return f.Labels().Hash()
 }
 
 func (f *FakeHistogramSeries) Labels() labels.Labels {
