@@ -58,6 +58,12 @@ bump-versions:
 	$(MAKE) ui-bump-version
 	git add CHANGELOG.md
 
+.PHONY: test-scripts
+test-scripts:
+	@echo ">> testing release scripts"
+	@tests=$$(ls scripts/*_test.sh 2>/dev/null) || { echo ">> no scripts/*_test.sh to run"; exit 1; }; \
+	for t in $${tests}; do echo ">> $${t}"; "$${t}" || exit 1; done
+
 .PHONY: ui-bump-version
 ui-bump-version:
 	version=$$(./scripts/get_module_version.sh) && ./scripts/ui_release.sh --bump-version "$${version}"
@@ -182,7 +188,8 @@ install-goyacc:
 ifeq ($(GO_ONLY),1)
 test: common-test check-go-mod-version
 else
-test: check-generated-parser common-test check-node-version ui-test ui-lint check-go-mod-version
+test: check-generated-parser common-test check-node-version ui-test ui-lint \
+    check-go-mod-version test-scripts
 endif
 
 .PHONY: tarball
