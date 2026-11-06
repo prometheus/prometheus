@@ -1799,8 +1799,16 @@ type EvalSeriesHelper struct {
 	seriesID int
 }
 
+type binopPairCacheEntry struct {
+	rhsID   int
+	outSlot int
+	metric  labels.Labels
+}
+
 type outMetricSlotState struct {
-	metric labels.Labels
+	metric   labels.Labels
+	seenStep int
+	seenSig  int
 }
 
 // EvalNodeHelper stores extra information and caches for evaluating a single node across steps.
@@ -1828,14 +1836,18 @@ type EvalNodeHelper struct {
 
 	// For binary vector matching and rangeEval output series indexing.
 	rightSigs          []Sample
+	rightSeriesIDs     []int
 	sigsPresent        []bool
 	matchedSigs        []map[uint64]struct{}
+	matchedSigsStep    int
 	matchedSigsPresent []bool
 	resultMetric       map[string]int
+	binopPairCache     []binopPairCacheEntry
 	selfSlotCache      []int
 	outMetrics         []outMetricSlotState
 	outMetricByHash    map[uint64]int
 	numSigs            int
+	stepID             int
 
 	// For info series matching.
 	rightStrSigs map[string]Sample
@@ -1877,6 +1889,22 @@ func (enh *EvalNodeHelper) slotForInputSeries(seriesID int, metric labels.Labels
 	return slot
 }
 
+func (enh *EvalNodeHelper) resetRightSeriesIDs() []int {
+	if enh.rightSeriesIDs == nil {
+		enh.rightSeriesIDs = make([]int, enh.numSigs)
+	} else {
+		clear(enh.rightSeriesIDs)
+	}
+	return enh.rightSeriesIDs
+}
+
+func (enh *EvalNodeHelper) ensureMatchedSigs(stepID int) []map[uint64]struct{} {
+	if enh.matchedSigsStep != stepID {
+		enh.matchedSigsStep = stepID
+		return enh.resetMatchedSigs()
+	}
+	return enh.matchedSigs
+}
 
 func (enh *EvalNodeHelper) resetSigsPresent() []bool {
 	if len(enh.sigsPresent) == 0 {
@@ -2099,6 +2127,7 @@ func (ev *evaluator) rangeEval(ctx context.Context, matching *parser.VectorMatch
 		for i := range exprs {
 			totalInputSeries += len(matrixes[i])
 		}
+		enh.binopPairCache = make([]binopPairCacheEntry, totalInputSeries+1)
 		enh.selfSlotCache = make([]int, totalInputSeries+1)
 		enh.OutSlots = make([]int, 0, biggestLen)
 
@@ -3963,6 +3992,11 @@ func (ev *evaluator) VectorBinop(op parser.ItemType, lhs, rhs Vector, matching *
 		((len(lhs) == 0 || len(rhs) == 0) && matching.FillValues.RHS == nil && matching.FillValues.LHS == nil) {
 		return nil, nil // Short-circuit: nothing is going to match.
 	}
+	if len(enh.Out) == 0 {
+		enh.OutSlots = enh.OutSlots[:0]
+	}
+	enh.stepID++
+	stepID := enh.stepID
 
 	// The control flow below handles one-to-one or many-to-one matching.
 	// For one-to-many, swap sidedness and account for the swap when calculating
@@ -3976,6 +4010,7 @@ func (ev *evaluator) VectorBinop(op parser.ItemType, lhs, rhs Vector, matching *
 
 	// All samples from the rhs by their join signature ordinal.
 	rightSigs := enh.resetRightSigs()
+	rightSeriesIDs := enh.resetRightSeriesIDs()
 	rightSigsPresent := enh.resetSigsPresent()
 
 	// Add all rhs samples to a map so we can easily find matches later.
@@ -4000,26 +4035,22 @@ func (ev *evaluator) VectorBinop(op parser.ItemType, lhs, rhs Vector, matching *
 				";many-to-many matching not allowed: matching labels must be unique on one side", matchedLabels.String(), oneSide, dupl1, dupl2)
 		}
 		rightSigs[sigOrd] = rs
+		rightSeriesIDs[sigOrd] = rhsh[i].seriesID
 		rightSigsPresent[sigOrd] = true
 	}
 
+	// Tracks the match-signature for one-to-one duplicate detection and fillLHS checks.
+	matchedSigsPresent := enh.resetMatchedSigsPresent()
+
 	var (
-		// Tracks the match-signature for one-to-one operations.
-		matchedSigsPresent []bool
-
-		// Tracks the match-signature for many-to-one operations, the value is a set of signatures
-		// to detect duplicated result elements.
+		// Lazily initialized only if two different join signatures emit the same output metric in one step.
 		matchedSigs []map[uint64]struct{}
+		lastErr     error
 	)
-	if matching.Card == parser.CardOneToOne {
-		matchedSigsPresent = enh.resetMatchedSigsPresent()
-	} else {
-		matchedSigs = enh.resetMatchedSigs()
-	}
 
-	var lastErr error
+	dropMetricName := !ev.enableDelayedNameRemoval && returnBool
 
-	doBinOp := func(ls, rs Sample, sigOrd int) {
+	doBinOp := func(ls, rs Sample, lID, rID, sigOrd int) {
 		// Account for potentially swapped sidedness.
 		fl, fr := ls.F, rs.F
 		hl, hr := ls.H, rs.H
@@ -4044,8 +4075,25 @@ func (ev *evaluator) VectorBinop(op parser.ItemType, lhs, rhs Vector, matching *
 			}
 		}
 
-		dropMetricName := !ev.enableDelayedNameRemoval && returnBool
-		metric := resultMetric(ls.Metric, rs.Metric, op, matching, dropMetricName, enh)
+		var (
+			metric  labels.Labels
+			outSlot int
+		)
+		if lID > 0 && rID != 0 {
+			if lID >= len(enh.binopPairCache) {
+				enh.binopPairCache = slices.Grow(enh.binopPairCache, lID-len(enh.binopPairCache)+1)[:lID+1]
+			}
+			entry := &enh.binopPairCache[lID]
+			if entry.rhsID == rID {
+				metric = entry.metric
+				outSlot = entry.outSlot
+			} else {
+				metric, outSlot = resultMetricWithSlot(ls.Metric, rs.Metric, op, matching, dropMetricName, enh)
+				*entry = binopPairCacheEntry{rhsID: rID, outSlot: outSlot, metric: metric}
+			}
+		} else {
+			metric, outSlot = resultMetricWithSlot(ls.Metric, rs.Metric, op, matching, dropMetricName, enh)
+		}
 
 		if matching.Card == parser.CardOneToOne {
 			if matchedSigsPresent[sigOrd] {
@@ -4056,17 +4104,30 @@ func (ev *evaluator) VectorBinop(op parser.ItemType, lhs, rhs Vector, matching *
 			// In many-to-one matching the grouping labels have to ensure a unique metric
 			// for the result Vector. Check whether those labels have already been added for
 			// the same matching labels.
-			insertSig := metric.Hash()
-
-			if matchedSigs[sigOrd] == nil {
-				matchedSigs[sigOrd] = map[uint64]struct{}{}
-			}
-			insertedSigs := matchedSigs[sigOrd]
-
-			if _, duplicate := insertedSigs[insertSig]; duplicate {
+			matchedSigsPresent[sigOrd] = true
+			st := &enh.outMetrics[outSlot]
+			switch {
+			case st.seenStep != stepID:
+				st.seenStep = stepID
+				st.seenSig = sigOrd
+			case st.seenSig == sigOrd:
 				ev.errorf("multiple matches for labels: grouping labels must ensure unique matches")
+			default:
+				if matchedSigs == nil {
+					matchedSigs = enh.ensureMatchedSigs(stepID)
+				}
+				if matchedSigs[st.seenSig] == nil {
+					matchedSigs[st.seenSig] = map[uint64]struct{}{}
+				}
+				matchedSigs[st.seenSig][uint64(outSlot)] = struct{}{}
+				if matchedSigs[sigOrd] == nil {
+					matchedSigs[sigOrd] = map[uint64]struct{}{}
+				}
+				if _, duplicate := matchedSigs[sigOrd][uint64(outSlot)]; duplicate {
+					ev.errorf("multiple matches for labels: grouping labels must ensure unique matches")
+				}
+				matchedSigs[sigOrd][uint64(outSlot)] = struct{}{}
 			}
-			insertedSigs[insertSig] = struct{}{}
 		}
 
 		if !keep && !returnBool {
@@ -4079,17 +4140,23 @@ func (ev *evaluator) VectorBinop(op parser.ItemType, lhs, rhs Vector, matching *
 			H:        histogramValue,
 			DropName: returnBool,
 		})
+		enh.OutSlots = append(enh.OutSlots, outSlot)
 	}
 
 	// For all lhs samples, find a respective rhs sample and perform
 	// the binary operation.
 	for i, ls := range lhs {
 		sigOrd := lhsh[i].sigOrdinal
+		lID := lhsh[i].seriesID
 
-		var rs Sample
+		var (
+			rs  Sample
+			rID int
+		)
 		if rightSigsPresent[sigOrd] {
 			// Found a match in the rhs.
 			rs = rightSigs[sigOrd]
+			rID = rightSeriesIDs[sigOrd]
 		} else {
 			// Have to fall back to the fill value.
 			fill := fillRHS
@@ -4100,9 +4167,10 @@ func (ev *evaluator) VectorBinop(op parser.ItemType, lhs, rhs Vector, matching *
 				Metric: matchLabels(ls.Metric, matching.On, matching.MatchingLabels...),
 				F:      *fill,
 			}
+			rID = -1
 		}
 
-		doBinOp(ls, rs, sigOrd)
+		doBinOp(ls, rs, lID, rID, sigOrd)
 	}
 
 	// For any rhs samples which have not been matched, check if we need to
@@ -4111,8 +4179,7 @@ func (ev *evaluator) VectorBinop(op parser.ItemType, lhs, rhs Vector, matching *
 		for i, rs := range rhs {
 			sigOrd := rhsh[i].sigOrdinal
 
-			if (matching.Card == parser.CardOneToOne && matchedSigsPresent[sigOrd]) ||
-				(matching.Card != parser.CardOneToOne && len(matchedSigs[sigOrd]) > 0) {
+			if matchedSigsPresent[sigOrd] {
 				continue // Already matched.
 			}
 			ls := Sample{
@@ -4120,7 +4187,7 @@ func (ev *evaluator) VectorBinop(op parser.ItemType, lhs, rhs Vector, matching *
 				F:      *fill,
 			}
 
-			doBinOp(ls, rs, sigOrd)
+			doBinOp(ls, rs, 0, rhsh[i].seriesID, sigOrd)
 		}
 	}
 

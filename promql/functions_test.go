@@ -318,3 +318,94 @@ func TestMADOverTimeUsesExactSubnormalMedian(t *testing.T) {
 	require.Len(t, vector, 1)
 	require.Equal(t, math.Float64bits(math.Float64frombits(1)), math.Float64bits(vector[0].F))
 }
+
+func TestRangeBinaryEvalMatchesInstantQueries(t *testing.T) {
+	stor := teststorage.New(t)
+	app := stor.AppenderV2(t.Context())
+
+	// Populate LHS and RHS series where the active RHS series for job="api" switches mid-range
+	// (stale NaN on instance="1" before instance="2" starts) to exercise binopPairCache invalidation,
+	// plus filtered comparisons and set operations.
+	lhs1 := labels.FromStrings("__name__", "req_total", "job", "api", "path", "/a")
+	lhs2 := labels.FromStrings("__name__", "req_total", "job", "api", "path", "/b")
+	rhsEarly := labels.FromStrings("__name__", "role_info", "job", "api", "role", "primary")
+	rhsLate := labels.FromStrings("__name__", "role_info", "job", "api", "role", "standby")
+
+	for step := range 12 {
+		ts := int64((step + 1) * 10_000)
+		_, err := app.Append(0, lhs1, 0, ts, float64(step+1), nil, nil, storage.AOptions{})
+		require.NoError(t, err)
+		_, err = app.Append(0, lhs2, 0, ts, float64((step+1)*2), nil, nil, storage.AOptions{})
+		require.NoError(t, err)
+		if step < 5 {
+			_, err = app.Append(0, rhsEarly, 0, ts, 1, nil, nil, storage.AOptions{})
+			require.NoError(t, err)
+		} else if step == 5 {
+			_, err = app.Append(0, rhsEarly, 0, ts, math.Float64frombits(0x7ff0000000000002), nil, nil, storage.AOptions{})
+			require.NoError(t, err)
+		}
+		if step >= 6 {
+			_, err = app.Append(0, rhsLate, 0, ts, 2, nil, nil, storage.AOptions{})
+			require.NoError(t, err)
+		}
+	}
+	require.NoError(t, app.Commit())
+
+	engine := promqltest.NewTestEngine(t, false, 0, promqltest.DefaultMaxSamplesPerQuery)
+	queries := []string{
+		`req_total * on(job) group_left(role) role_info`,
+		`role_info * on(job) group_right(role) req_total`,
+		`(req_total > 4) + on(job, path) req_total`,
+		`req_total and on(job) role_info`,
+		`req_total or on(job, path) role_info`,
+		`req_total unless on(job) role_info`,
+	}
+
+	start := time.Unix(10, 0)
+	end := time.Unix(120, 0)
+	step := 10 * time.Second
+
+	for _, expr := range queries {
+		t.Run("expr="+expr, func(t *testing.T) {
+			rq, err := engine.NewRangeQuery(t.Context(), stor, nil, expr, start, end, step)
+			require.NoError(t, err)
+			t.Cleanup(rq.Close)
+
+			rRes := rq.Exec(t.Context())
+			require.NoError(t, rRes.Err)
+			mat, err := rRes.Matrix()
+			require.NoError(t, err)
+
+			gotAtTS := make(map[int64]map[string]float64)
+			for _, s := range mat {
+				lbl := s.Metric.String()
+				for _, pt := range s.Floats {
+					if gotAtTS[pt.T] == nil {
+						gotAtTS[pt.T] = make(map[string]float64)
+					}
+					gotAtTS[pt.T][lbl] = pt.F
+				}
+			}
+
+			for ts := start; !ts.After(end); ts = ts.Add(step) {
+				iq, err := engine.NewInstantQuery(t.Context(), stor, nil, expr, ts)
+				require.NoError(t, err)
+				iRes := iq.Exec(t.Context())
+				iq.Close()
+				require.NoError(t, iRes.Err)
+				vec, err := iRes.Vector()
+				require.NoError(t, err)
+
+				var want map[string]float64
+				if len(vec) > 0 {
+					want = make(map[string]float64, len(vec))
+					for _, smp := range vec {
+						want[smp.Metric.String()] = smp.F
+					}
+				}
+				tsMS := timestamp.FromTime(ts)
+				require.Equal(t, want, gotAtTS[tsMS], "ts=%d", tsMS)
+			}
+		})
+	}
+}
