@@ -36,14 +36,15 @@ const (
 )
 
 var MetricMetadataTypeValue = map[string]int32{
-	"UNKNOWN":        0,
-	"COUNTER":        1,
-	"GAUGE":          2,
-	"HISTOGRAM":      3,
-	"GAUGEHISTOGRAM": 4,
-	"SUMMARY":        5,
-	"INFO":           6,
-	"STATESET":       7,
+	"UNKNOWN":         0,
+	"COUNTER":         1,
+	"GAUGE":           2,
+	"HISTOGRAM":       3,
+	"GAUGEHISTOGRAM":  4,
+	"GAUGE_HISTOGRAM": 4,
+	"SUMMARY":         5,
+	"INFO":            6,
+	"STATESET":        7,
 }
 
 // MetricTextToWriteRequest consumes an io.Reader and return the data in write request format.
