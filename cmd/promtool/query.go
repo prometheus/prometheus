@@ -146,8 +146,8 @@ func QueryRange(url *url.URL, roundTripper http.RoundTripper, headers map[string
 }
 
 // QuerySeries queries for a series against a Prometheus server.
-func QuerySeries(url *url.URL, roundTripper http.RoundTripper, matchers []string, start, end string, p printer) int {
-	api, err := newAPI(url, roundTripper, nil)
+func QuerySeries(url *url.URL, roundTripper http.RoundTripper, headers map[string]string, matchers []string, start, end string, p printer) int {
+	api, err := newAPI(url, roundTripper, headers)
 	if err != nil {
 		fmt.Fprintln(os.Stderr, "error creating API client:", err)
 		return failureExitCode
@@ -173,8 +173,8 @@ func QuerySeries(url *url.URL, roundTripper http.RoundTripper, matchers []string
 }
 
 // QueryLabels queries for label values against a Prometheus server.
-func QueryLabels(url *url.URL, roundTripper http.RoundTripper, matchers []string, name, start, end string, p printer) int {
-	api, err := newAPI(url, roundTripper, nil)
+func QueryLabels(url *url.URL, roundTripper http.RoundTripper, headers map[string]string, matchers []string, name, start, end string, p printer) int {
+	api, err := newAPI(url, roundTripper, headers)
 	if err != nil {
 		fmt.Fprintln(os.Stderr, "error creating API client:", err)
 		return failureExitCode
