@@ -1476,6 +1476,50 @@ load 10s
 			},
 		},
 		{
+			// inPlaceFloatUnaryFuncs evaluates in place on the child Matrix without a second Matrix allocation.
+			Query:        "abs(metricWith1SampleEvery10Seconds)",
+			Start:        time.Unix(201, 0),
+			End:          time.Unix(220, 0),
+			Interval:     5 * time.Second,
+			PeakSamples:  4,
+			TotalSamples: 4,
+			TotalSamplesPerStep: stats.TotalSamplesPerStep{
+				201000: 1,
+				206000: 1,
+				211000: 1,
+				216000: 1,
+			},
+			SamplesRead: 4,
+			SamplesReadPerStep: stats.TotalSamplesPerStep{
+				201000: 1,
+				206000: 1,
+				211000: 1,
+				216000: 1,
+			},
+		},
+		{
+			// Dropping histogram samples in inPlaceFloatUnaryFuncs reclaims currentSamples before evaluating RHS.
+			Query:        "abs(metricWith1HistogramEvery10Seconds) or metricWith1SampleEvery10Seconds",
+			Start:        time.Unix(201, 0),
+			End:          time.Unix(220, 0),
+			Interval:     5 * time.Second,
+			PeakSamples:  52,
+			TotalSamples: 56,
+			TotalSamplesPerStep: stats.TotalSamplesPerStep{
+				201000: 14,
+				206000: 14,
+				211000: 14,
+				216000: 14,
+			},
+			SamplesRead: 56,
+			SamplesReadPerStep: stats.TotalSamplesPerStep{
+				201000: 14,
+				206000: 14,
+				211000: 14,
+				216000: 14,
+			},
+		},
+		{
 			Query:        `max_over_time(metricWith3SampleEvery10Seconds{a="1"}[10s])`,
 			Start:        time.Unix(991, 0),
 			End:          time.Unix(1021, 0),
