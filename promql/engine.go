@@ -1839,7 +1839,6 @@ type EvalNodeHelper struct {
 	rightSeriesIDs     []int
 	sigsPresent        []bool
 	matchedSigs        []map[uint64]struct{}
-	matchedSigsStep    int
 	matchedSigsPresent []bool
 	resultMetric       map[string]int
 	binopPairCache     []binopPairCacheEntry
@@ -1896,14 +1895,6 @@ func (enh *EvalNodeHelper) resetRightSeriesIDs() []int {
 		clear(enh.rightSeriesIDs)
 	}
 	return enh.rightSeriesIDs
-}
-
-func (enh *EvalNodeHelper) ensureMatchedSigs(stepID int) []map[uint64]struct{} {
-	if enh.matchedSigsStep != stepID {
-		enh.matchedSigsStep = stepID
-		return enh.resetMatchedSigs()
-	}
-	return enh.matchedSigs
 }
 
 func (enh *EvalNodeHelper) resetSigsPresent() []bool {
@@ -4114,7 +4105,7 @@ func (ev *evaluator) VectorBinop(op parser.ItemType, lhs, rhs Vector, matching *
 				ev.errorf("multiple matches for labels: grouping labels must ensure unique matches")
 			default:
 				if matchedSigs == nil {
-					matchedSigs = enh.ensureMatchedSigs(stepID)
+					matchedSigs = enh.resetMatchedSigs()
 				}
 				if matchedSigs[st.seenSig] == nil {
 					matchedSigs[st.seenSig] = map[uint64]struct{}{}
