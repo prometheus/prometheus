@@ -318,6 +318,13 @@ type DB struct {
 	compactor      Compactor
 	blocksToDelete BlocksToDeleteFunc
 
+	// allRanges are the compaction ranges before they were limited by the
+	// maximum block duration. SetMaxBlockDuration limits them again.
+	allRanges []int64
+	// rangesMtx guards ranges, the compaction ranges currently in use.
+	rangesMtx sync.Mutex
+	ranges    []int64
+
 	// mtx must be held when modifying the general block layout or lastGarbageCollectedMmapRef.
 	mtx    sync.RWMutex
 	blocks []*Block
@@ -1013,12 +1020,9 @@ func open(dir string, l *slog.Logger, r prometheus.Registerer, opts *Options, rn
 		stats = NewDBStats()
 	}
 
-	for i, v := range rngs {
-		if v > opts.MaxBlockDuration {
-			rngs = rngs[:i]
-			break
-		}
-	}
+	// Keep the untrimmed ranges, so that SetMaxBlockDuration can grow them again.
+	allRngs := rngs
+	rngs = trimBlockRanges(rngs, opts.MaxBlockDuration)
 
 	// Fixup bad format written by Prometheus 2.1.
 	if err := repairBadIndexVersion(l, dir); err != nil {
@@ -1042,6 +1046,8 @@ func open(dir string, l *slog.Logger, r prometheus.Registerer, opts *Options, rn
 	var wal, wbl *wlog.WL
 
 	db := &DB{
+		allRanges:      allRngs,
+		ranges:         rngs,
 		dir:            dir,
 		logger:         l,
 		opts:           opts,
@@ -2963,4 +2969,49 @@ func closeAll(cs []io.Closer) error {
 		errs = append(errs, c.Close())
 	}
 	return errors.Join(errs...)
+}
+
+// compactionRangesSetter is implemented by compactors whose compaction ranges can
+// be changed while the DB is running. Compactors from a custom NewCompactorFunc
+// are not required to implement it.
+type compactionRangesSetter interface {
+	SetRanges(ranges []int64) error
+}
+
+// trimBlockRanges returns the leading part of the ascending rngs that is not
+// longer than maxDuration, but always at least the first range.
+func trimBlockRanges(rngs []int64, maxDuration int64) []int64 {
+	for i, v := range rngs {
+		if v > maxDuration {
+			if i == 0 {
+				return rngs[:1]
+			}
+			return rngs[:i]
+		}
+	}
+	return rngs
+}
+
+// SetMaxBlockDuration changes the maximum duration of the blocks produced by
+// compaction without reopening the DB. The compaction ranges are the ones the
+// DB was opened with, limited to those not longer than d, but always at least
+// the shortest one. It has no effect if the compactor does not support changing
+// its ranges. Already existing blocks are not touched.
+func (db *DB) SetMaxBlockDuration(d int64) {
+	setter, ok := db.compactor.(compactionRangesSetter)
+	if !ok {
+		return
+	}
+	ranges := trimBlockRanges(db.allRanges, d)
+	db.rangesMtx.Lock()
+	defer db.rangesMtx.Unlock()
+	if slices.Equal(ranges, db.ranges) {
+		return
+	}
+	if err := setter.SetRanges(ranges); err != nil {
+		db.logger.Error("Failed to set compaction ranges", "err", err)
+		return
+	}
+	db.ranges = ranges
+	db.logger.Info("Updated compaction ranges", "max_block_duration", time.Duration(ranges[len(ranges)-1])*time.Millisecond)
 }

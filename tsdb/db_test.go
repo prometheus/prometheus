@@ -583,6 +583,65 @@ func TestApplyConfigRetentionDurationMetricUnit(t *testing.T) {
 	require.Equal(t, wantSeconds, gotSeconds)
 }
 
+// TestSetMaxBlockDuration verifies that compaction follows a new maximum block
+// duration without reopening the DB.
+func TestSetMaxBlockDuration(t *testing.T) {
+	hour := int64(time.Hour / time.Millisecond)
+	opts := DefaultOptions()
+	opts.MinBlockDuration = 2 * hour
+	opts.MaxBlockDuration = 486 * hour
+	db := newTestDB(t, withOpts(opts))
+
+	// Three consecutive 162h blocks fill the 486h range, and a newer block
+	// follows, as Plan never selects the most recent block.
+	blocksDir := t.TempDir()
+	var want []string
+	for i := range int64(4) {
+		dir := createBlock(t, blocksDir, genSeriesFromSampleGenerator(1, 1, i*162*hour, (i+1)*162*hour, 162*hour-1, func(ts int64) chunks.Sample {
+			return sample{t: ts, f: float64(ts)}
+		}))
+		if i < 3 {
+			want = append(want, dir)
+		}
+	}
+	plan := func() []string {
+		t.Helper()
+		got, err := db.compactor.Plan(blocksDir)
+		require.NoError(t, err)
+		return got
+	}
+	require.ElementsMatch(t, want, plan())
+
+	// Shrinking below 486h drops the top range, so the 162h blocks stay as they are.
+	db.SetMaxBlockDuration(456 * hour)
+	require.Empty(t, plan())
+
+	// Growing again brings the range back.
+	db.SetMaxBlockDuration(486 * hour)
+	require.ElementsMatch(t, want, plan())
+
+	// A maximum below the minimum block duration keeps the minimum.
+	db.SetMaxBlockDuration(hour)
+	require.Equal(t, []int64{2 * hour}, db.compactor.(*LeveledCompactor).getRanges())
+	require.Empty(t, plan())
+
+	// Changing the ranges while Plan runs is safe (run with -race).
+	var wg sync.WaitGroup
+	wg.Go(func() {
+		for range 100 {
+			plan()
+		}
+	})
+	for i := range 100 {
+		db.SetMaxBlockDuration(int64(i%2+1) * 486 * hour)
+	}
+	wg.Wait()
+
+	// A compactor that does not support changing its ranges is left alone.
+	db.compactor = &mockCompactorFn{}
+	require.NotPanics(t, func() { db.SetMaxBlockDuration(456 * hour) })
+}
+
 // TestDBApplyConfigChunkEncoding verifies that ApplyConfig correctly
 // handles the chunk_encoding setting.
 func TestDBApplyConfigChunkEncoding(t *testing.T) {
