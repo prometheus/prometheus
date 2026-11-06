@@ -2972,6 +2972,84 @@ func BenchmarkSetMatcher(b *testing.B) {
 	}
 }
 
+type mockIndexWithRecordedPostingsError struct {
+	mockIndex
+	matcherPostings   index.Postings
+	candidatePostings map[string]index.Postings
+}
+
+func (m mockIndexWithRecordedPostingsError) Postings(ctx context.Context, name string, values ...string) (index.Postings, error) {
+	if name == "job" {
+		return m.matcherPostings, nil
+	}
+	if name == "pod" && len(values) == 1 {
+		if p, ok := m.candidatePostings[values[0]]; ok {
+			return p, nil
+		}
+	}
+	return m.mockIndex.Postings(ctx, name, values...)
+}
+
+func TestLabelValuesWithMatchersPropagatesRecordedPostingsErrors(t *testing.T) {
+	ctx := context.Background()
+	for _, tc := range []struct {
+		name      string
+		matcher   func() index.Postings
+		candidate func() index.Postings
+	}{
+		{
+			name: "merged matcher",
+			matcher: func() index.Postings {
+				return index.Merge(ctx, index.ErrPostings(context.Canceled), index.NewListPostings([]storage.SeriesRef{1, 3}))
+			},
+		},
+		{
+			name: "without matcher",
+			matcher: func() index.Postings {
+				return index.Without(index.NewListPostings([]storage.SeriesRef{1, 3}), index.ErrPostings(context.Canceled))
+			},
+		},
+		{
+			name:    "candidate",
+			matcher: func() index.Postings { return index.NewListPostings([]storage.SeriesRef{1, 3}) },
+			candidate: func() index.Postings {
+				return index.Merge(ctx, index.ErrPostings(context.Canceled), index.NewListPostings([]storage.SeriesRef{2}))
+			},
+		},
+		{
+			name: "matcher before candidate exhaustion",
+			matcher: func() index.Postings {
+				return index.Merge(ctx, index.ErrPostings(context.Canceled), index.NewListPostings([]storage.SeriesRef{10, 20}))
+			},
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			for _, hc := range []struct {
+				name  string
+				hints *storage.LabelHints
+			}{
+				{"nil", nil},
+				{"zero", &storage.LabelHints{}},
+				{"limited", &storage.LabelHints{Limit: 1}},
+				{"smallest", &storage.LabelHints{Limit: 1, LimitSmallest: true}},
+			} {
+				t.Run(hc.name, func(t *testing.T) {
+					ix := newMockIndex()
+					require.NoError(t, ix.WritePostings("pod", "a", index.NewListPostings([]storage.SeriesRef{1})))
+					require.NoError(t, ix.WritePostings("pod", "b", index.NewListPostings([]storage.SeriesRef{3})))
+					reader := mockIndexWithRecordedPostingsError{mockIndex: ix, matcherPostings: tc.matcher()}
+					if tc.candidate != nil {
+						reader.candidatePostings = map[string]index.Postings{"a": tc.candidate()}
+					}
+					got, err := labelValuesWithMatchers(ctx, reader, "pod", hc.hints, labels.MustNewMatcher(labels.MatchEqual, "job", "api"))
+					require.ErrorIs(t, err, context.Canceled)
+					require.Nil(t, got)
+				})
+			}
+		})
+	}
+}
+
 func TestPostingsForMatchers(t *testing.T) {
 	ctx := context.Background()
 
