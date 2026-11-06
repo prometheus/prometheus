@@ -2790,6 +2790,40 @@ func (ev *evaluator) eval(ctx context.Context, expr parser.Expr) (parser.Value, 
 		}
 
 		if !matrixArg {
+			if fn, ok := simpleFloatUnaryFuncs[e.Func.Name]; ok && len(e.Args) == 1 {
+				val, ws := ev.eval(ctx, e.Args[0])
+				warnings.Merge(ws)
+				mat := val.(Matrix)
+				outIdx := 0
+				for i := range mat {
+					if len(mat[i].Histograms) > 0 {
+						ev.currentSamples -= totalHPointSize(mat[i].Histograms)
+						putHPointSlice(mat[i].Histograms)
+						mat[i].Histograms = nil
+					}
+					if len(mat[i].Floats) == 0 {
+						putFPointSlice(mat[i].Floats)
+						continue
+					}
+					if !ev.enableDelayedNameRemoval {
+						mat[i].Metric = mat[i].Metric.DropReserved(schema.IsMetadataLabel)
+					}
+					mat[i].DropName = true
+					floats := mat[i].Floats
+					for j := range floats {
+						floats[j].F = fn(floats[j].F)
+					}
+					mat[outIdx] = mat[i]
+					outIdx++
+				}
+				mat = mat[:outIdx]
+				if !ev.enableDelayedNameRemoval {
+					mat = ev.mergeSeriesWithSameLabelset(mat)
+				}
+				ev.samplesStats.UpdatePeak(ev.currentSamples)
+				return mat, warnings
+			}
+
 			// Does not have a matrix argument.
 			return ev.rangeEval(ctx, nil, func(v []Vector, _ Matrix, _ [][]EvalSeriesHelper, enh *EvalNodeHelper) (Vector, annotations.Annotations) {
 				vec, annos := call(v, nil, e.Args, enh)

@@ -2102,6 +2102,48 @@ func funcPresentOverTime(_ []Vector, matrixVals Matrix, _ parser.Expressions, en
 	}), nil
 }
 
+// simpleFloatUnaryFuncs maps single-argument float functions that drop histograms
+// and transform each float sample value independently without emitting annotations,
+// allowing range queries to evaluate them directly on the input Matrix in place.
+var simpleFloatUnaryFuncs = map[string]func(float64) float64{
+	"abs":   math.Abs,
+	"ceil":  math.Ceil,
+	"floor": math.Floor,
+	"exp":   math.Exp,
+	"sqrt":  math.Sqrt,
+	"ln":    math.Log,
+	"log2":  math.Log2,
+	"log10": math.Log10,
+	"sin":   math.Sin,
+	"cos":   math.Cos,
+	"tan":   math.Tan,
+	"asin":  math.Asin,
+	"acos":  math.Acos,
+	"atan":  math.Atan,
+	"sinh":  math.Sinh,
+	"cosh":  math.Cosh,
+	"tanh":  math.Tanh,
+	"asinh": math.Asinh,
+	"acosh": math.Acosh,
+	"atanh": math.Atanh,
+	"rad": func(v float64) float64 {
+		return v * (math.Pi / 180)
+	},
+	"deg": func(v float64) float64 {
+		return v * (180 / math.Pi)
+	},
+	"sgn": func(v float64) float64 {
+		switch {
+		case v < 0:
+			return -1
+		case v > 0:
+			return 1
+		default:
+			return v
+		}
+	},
+}
+
 func simpleFloatFunc(vectorVals []Vector, enh *EvalNodeHelper, f func(float64) float64) Vector {
 	for _, el := range vectorVals[0] {
 		if el.H == nil { // Process only float samples.
