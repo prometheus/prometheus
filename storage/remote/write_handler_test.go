@@ -146,7 +146,7 @@ func TestRemoteWriteHandlerHeadersHandling_V1Message(t *testing.T) {
 }
 
 func TestRemoteWriteHandlerHeadersHandling_V2Message(t *testing.T) {
-	payload, _, _, _, err := buildV2WriteRequest(promslog.NewNopLogger(), writeV2RequestFixture.Timeseries, writeV2RequestFixture.Symbols, nil, nil, nil, "snappy")
+	payload, _, _, err := buildV2WriteRequest(promslog.NewNopLogger(), writeV2RequestFixture.Timeseries, writeV2RequestFixture.Symbols, nil, nil, nil, "snappy")
 	require.NoError(t, err)
 
 	const expectedV2Accept = "application/x-protobuf;proto=io.prometheus.write.v2.Request, application/x-protobuf;proto=io.prometheus.write.v2.Request;mode=none, application/x-protobuf;proto=io.prometheus.write.v2.Request;mode=stateless, application/x-protobuf;proto=io.prometheus.write.v2.Request;mode=stateless-st"
@@ -816,7 +816,7 @@ func TestRemoteWriteHandler_V2Message(t *testing.T) {
 			if tc.symbols != nil {
 				symbols = tc.symbols
 			}
-			payload, _, _, _, err := buildV2WriteRequest(promslog.NewNopLogger(), tc.input, symbols, nil, nil, nil, "snappy")
+			payload, _, _, err := buildV2WriteRequest(promslog.NewNopLogger(), tc.input, symbols, nil, nil, nil, "snappy")
 			require.NoError(t, err)
 
 			req, err := http.NewRequest(http.MethodPost, "", bytes.NewReader(payload))
@@ -1006,7 +1006,7 @@ func TestRemoteWriteHandler_V2Message_NoDuplicateTypeAndUnitLabels(t *testing.T)
 				},
 			}
 
-			payload, _, _, _, err := buildV2WriteRequest(promslog.NewNopLogger(), ts, symbolTable.Symbols(), nil, nil, nil, "snappy")
+			payload, _, _, err := buildV2WriteRequest(promslog.NewNopLogger(), ts, symbolTable.Symbols(), nil, nil, nil, "snappy")
 			require.NoError(t, err)
 
 			req, err := http.NewRequest(http.MethodPost, "", bytes.NewReader(payload))
@@ -1187,7 +1187,7 @@ func BenchmarkRemoteWriteHandler(b *testing.B) {
 		{
 			name: "V2 Write",
 			payloadFunc: func() ([]byte, error) {
-				buf, _, _, _, err := buildV2WriteRequest(promslog.NewNopLogger(), []writev2.TimeSeries{{
+				buf, _, _, err := buildV2WriteRequest(promslog.NewNopLogger(), []writev2.TimeSeries{{
 					LabelsRefs: []uint32{0, 1, 2, 3},
 					Histograms: []writev2.Histogram{writev2.FromIntHistogram(0, 0, &testHistogram)},
 				}}, labelStrings,
@@ -1307,7 +1307,7 @@ func TestHistogramValidationErrorHandling(t *testing.T) {
 						LabelsRefs: st.SymbolizeLabels(labels.FromStrings("__name__", "test"), nil),
 						Histograms: []writev2.Histogram{writev2.FromIntHistogram(0, 1, &tc.hist)},
 					}}
-					buf, _, _, _, err = buildV2WriteRequest(promslog.NewNopLogger(), ts, st.Symbols(), nil, nil, nil, "snappy")
+					buf, _, _, err = buildV2WriteRequest(promslog.NewNopLogger(), ts, st.Symbols(), nil, nil, nil, "snappy")
 				}
 				require.NoError(t, err)
 
@@ -1325,7 +1325,7 @@ func TestHistogramValidationErrorHandling(t *testing.T) {
 }
 
 func TestCommitErr_V2Message(t *testing.T) {
-	payload, _, _, _, err := buildV2WriteRequest(promslog.NewNopLogger(), writeV2RequestFixture.Timeseries, writeV2RequestFixture.Symbols, nil, nil, nil, "snappy")
+	payload, _, _, err := buildV2WriteRequest(promslog.NewNopLogger(), writeV2RequestFixture.Timeseries, writeV2RequestFixture.Symbols, nil, nil, nil, "snappy")
 	require.NoError(t, err)
 
 	req, err := http.NewRequest(http.MethodPost, "", bytes.NewReader(payload))
@@ -1810,7 +1810,7 @@ func TestHistogramsReduction(t *testing.T) {
 					},
 				}, nil, nil, nil, nil, "snappy")
 			} else {
-				payload, _, _, _, err = buildV2WriteRequest(promslog.NewNopLogger(), []writev2.TimeSeries{
+				payload, _, _, err = buildV2WriteRequest(promslog.NewNopLogger(), []writev2.TimeSeries{
 					{
 						LabelsRefs: []uint32{0, 1},
 						Histograms: []writev2.Histogram{writev2.FromIntHistogram(0, 1, highSchemaHistogram)},
@@ -1851,7 +1851,7 @@ func TestHistogramsReduction(t *testing.T) {
 func TestRemoteWriteHandler_ResponseStats(t *testing.T) {
 	payloadV1, _, _, err := buildWriteRequest(nil, writeRequestFixture.Timeseries, nil, nil, nil, nil, "snappy")
 	require.NoError(t, err)
-	payloadV2, _, _, _, err := buildV2WriteRequest(nil, writeV2RequestFixture.Timeseries, writeV2RequestFixture.Symbols, nil, nil, nil, "snappy")
+	payloadV2, _, _, err := buildV2WriteRequest(nil, writeV2RequestFixture.Timeseries, writeV2RequestFixture.Symbols, nil, nil, nil, "snappy")
 	require.NoError(t, err)
 
 	for _, tt := range []struct {
@@ -1938,7 +1938,7 @@ func (m mockAppendableV2Only) AppenderV2(context.Context) storage.AppenderV2 {
 func TestRemoteWriteHandler_RequiresExemplarAppenderV2(t *testing.T) {
 	payloadV1, _, _, err := buildWriteRequest(nil, writeRequestFixture.Timeseries, nil, nil, nil, nil, "snappy")
 	require.NoError(t, err)
-	payloadV2, _, _, _, err := buildV2WriteRequest(promslog.NewNopLogger(), writeV2RequestFixture.Timeseries, writeV2RequestFixture.Symbols, nil, nil, nil, "snappy")
+	payloadV2, _, _, err := buildV2WriteRequest(promslog.NewNopLogger(), writeV2RequestFixture.Timeseries, writeV2RequestFixture.Symbols, nil, nil, nil, "snappy")
 	require.NoError(t, err)
 
 	for _, tc := range []struct {
@@ -2016,7 +2016,7 @@ func TestRemoteWriteHandler_HistogramWithExemplars(t *testing.T) {
 					},
 				}, nil, nil, nil, nil, "snappy")
 			} else {
-				payload, _, _, _, err = buildV2WriteRequest(promslog.NewNopLogger(), []writev2.TimeSeries{
+				payload, _, _, err = buildV2WriteRequest(promslog.NewNopLogger(), []writev2.TimeSeries{
 					{
 						LabelsRefs: []uint32{0, 1},
 						Histograms: []writev2.Histogram{writev2.FromIntHistogram(0, 1000, highSchemaHistogram)},
@@ -2060,7 +2060,7 @@ func TestRemoteWriteHandler_V2ExemplarOrderingAndRejectedSeries(t *testing.T) {
 			false,
 			false,
 		)
-		payload, _, _, _, err := buildV2WriteRequest(promslog.NewNopLogger(), []writev2.TimeSeries{
+		payload, _, _, err := buildV2WriteRequest(promslog.NewNopLogger(), []writev2.TimeSeries{
 			{
 				LabelsRefs: []uint32{0, 1},
 				Samples:    []writev2.Sample{{Timestamp: 2000, Value: 1}},
@@ -2101,7 +2101,7 @@ func TestRemoteWriteHandler_V2ExemplarOrderingAndRejectedSeries(t *testing.T) {
 			false,
 			false,
 		)
-		payload, _, _, _, err := buildV2WriteRequest(promslog.NewNopLogger(), []writev2.TimeSeries{
+		payload, _, _, err := buildV2WriteRequest(promslog.NewNopLogger(), []writev2.TimeSeries{
 			{
 				LabelsRefs: []uint32{0, 1},
 				Samples:    []writev2.Sample{{Timestamp: 2000, Value: 1}},
@@ -2135,7 +2135,7 @@ func TestRemoteWriteHandler_V2ExemplarOrderingAndRejectedSeries(t *testing.T) {
 			false,
 			false,
 		)
-		payload, _, _, _, err := buildV2WriteRequest(promslog.NewNopLogger(), []writev2.TimeSeries{
+		payload, _, _, err := buildV2WriteRequest(promslog.NewNopLogger(), []writev2.TimeSeries{
 			{
 				LabelsRefs: []uint32{0, 1},
 				Samples:    []writev2.Sample{{Timestamp: math.MaxInt64, Value: 1}},
@@ -2173,7 +2173,7 @@ func TestRemoteWriteHandler_V2ExemplarOrderingAndRejectedSeries(t *testing.T) {
 			false,
 			false,
 		)
-		payload, _, _, _, err := buildV2WriteRequest(promslog.NewNopLogger(), []writev2.TimeSeries{
+		payload, _, _, err := buildV2WriteRequest(promslog.NewNopLogger(), []writev2.TimeSeries{
 			{
 				LabelsRefs: []uint32{0, 1},
 				Samples:    []writev2.Sample{{Timestamp: 1000, Value: 1}},
