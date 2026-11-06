@@ -40,7 +40,8 @@ type Rule interface {
 	Name() string
 	// Labels of the rule.
 	Labels() labels.Labels
-	// Metadata returns the metric metadata associated with the rule.
+	// Metadata returns the static metric metadata associated with the rule.
+	// RecordingRule deduces per-sample metadata during Group.Eval when AutoRecordingMetadata is enabled.
 	Metadata() metadata.Metadata
 	// Eval evaluates the rule, including any associated recording or alerting actions.
 	Eval(ctx context.Context, queryOffset time.Duration, evaluationTime time.Time, queryFunc QueryFunc, externalURL *url.URL, limit int) (promql.Vector, error)
@@ -86,4 +87,19 @@ type Rule interface {
 
 	// DependencyRules returns the rules on which this rule depends.
 	DependencyRules() []Rule
+}
+
+// ruleWithMetadata is implemented by rules that deduce per-sample metric
+// metadata and synchronize __type__ and __unit__ labels during evaluation.
+type ruleWithMetadata interface {
+	evalWithMetadata(
+		ctx context.Context,
+		queryOffset time.Duration,
+		evaluationTime time.Time,
+		queryFunc QueryFunc,
+		externalURL *url.URL,
+		limit int,
+		appendMetadata bool,
+		enableTypeAndUnitLabels bool,
+	) (promql.Vector, []metadata.Metadata, error)
 }

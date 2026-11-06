@@ -167,13 +167,17 @@ type ManagerOptions struct {
 	// Parser is the PromQL parser used for parsing rule expressions.
 	Parser parser.Parser
 
-	// AppendMetadata controls whether rule evaluation passes configured recording
-	// rule metric metadata (type, unit, help) to AppendableV2.
+	// AppendMetadata controls whether rule evaluation passes metric metadata
+	// (type, unit, help) to AppendableV2.
 	AppendMetadata bool
 
-	// EnableTypeAndUnitLabels controls whether recording rule evaluation injects
-	// configured __type__ and __unit__ labels on recorded time series.
+	// EnableTypeAndUnitLabels controls whether rule evaluation injects __type__
+	// and __unit__ labels on recorded and alerting time series.
 	EnableTypeAndUnitLabels bool
+
+	// AutoRecordingMetadata controls whether recording rule evaluation automatically
+	// deduces per-sample metric metadata (type, unit, help) at runtime.
+	AutoRecordingMetadata bool
 }
 
 // NewManager returns an implementation of Manager, ready to be started
@@ -222,6 +226,7 @@ func NewManager(o *ManagerOptions) *Manager {
 
 	// Register rule manager features if a registry is provided.
 	if o.FeatureRegistry != nil {
+		o.FeatureRegistry.Set(features.Rules, "auto_recording_metadata", o.AutoRecordingMetadata)
 		o.FeatureRegistry.Set(features.Rules, "concurrent_rule_eval", o.ConcurrentEvalsEnabled)
 		o.FeatureRegistry.Set(features.Rules, "type_and_unit_labels", o.EnableTypeAndUnitLabels)
 		o.FeatureRegistry.Enable(features.Rules, "query_offset")
