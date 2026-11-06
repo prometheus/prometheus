@@ -407,6 +407,12 @@ forwarded to remote endpoints), the remote read API, federation, or the series A
 own `convert_nhcb_to_classic` setting, see the [`remote_write`](configuration/configuration.md#remote_write)
 configuration.
 
+To help track the progress of a migration from classic histograms to NHCB, the
+`prometheus_engine_query_classic_histogram_series_total` counter counts the classic histogram series returned by
+selectors, by `from`: `classic` for stored classic series, and `nhcb` for series converted from NHCB. Stored
+series are recognized by their metric name suffix only, so series like a summary's `_count` and `_sum` are
+also counted as `classic`.
+
 Known limitations:
 
 * The conversion only triggers on exact metric name matchers (e.g. `request_duration_seconds_bucket`), not on
@@ -415,8 +421,6 @@ Known limitations:
   implemented yet, so results may contain duplicates.
 * Native histograms with exponential buckets are not converted yet; support may be added later.
 * There is no control label yet; one will be added to disable and debug the conversion.
-* There is no metric counting the converted series yet; one will be added to help track the progress of
-  a migration from classic histograms to NHCB.
 
 ## Query cost
 
