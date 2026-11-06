@@ -71,8 +71,10 @@ func (w *ChunkedWriter) Write(b []byte) (int, error) {
 
 	var buf [binary.MaxVarintLen64]byte
 	v := binary.PutUvarint(buf[:], uint64(len(b)))
-	if _, err := w.writer.Write(buf[:v]); err != nil {
+	if n, err := w.writer.Write(buf[:v]); err != nil {
 		return 0, err
+	} else if n != v {
+		return 0, io.ErrShortWrite
 	}
 
 	w.crc32.Reset()
@@ -80,11 +82,19 @@ func (w *ChunkedWriter) Write(b []byte) (int, error) {
 		return 0, err
 	}
 
-	if err := binary.Write(w.writer, binary.BigEndian, w.crc32.Sum32()); err != nil {
+	var checksum [4]byte
+	binary.BigEndian.PutUint32(checksum[:], w.crc32.Sum32())
+	if n, err := w.writer.Write(checksum[:]); err != nil {
 		return 0, err
+	} else if n != len(checksum) {
+		return 0, io.ErrShortWrite
 	}
 
-	return w.writer.Write(b)
+	n, err := w.writer.Write(b)
+	if err == nil && n != len(b) {
+		return n, io.ErrShortWrite
+	}
+	return n, err
 }
 
 // ChunkedReader is a buffered reader that expects uvarint delimiter and checksum before each message.
