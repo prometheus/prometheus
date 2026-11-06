@@ -14,6 +14,7 @@
 package promql
 
 import (
+	"fmt"
 	"math"
 	"testing"
 
@@ -22,6 +23,7 @@ import (
 	"github.com/prometheus/prometheus/model/histogram"
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/model/value"
+	"github.com/prometheus/prometheus/storage"
 	"github.com/prometheus/prometheus/tsdb/chunkenc"
 	"github.com/prometheus/prometheus/tsdb/tsdbutil"
 )
@@ -238,3 +240,106 @@ func (*histogramIterator) AtT() int64 { return 0 }
 func (*histogramIterator) AtST() int64 { return 0 }
 
 func (*histogramIterator) Err() error { return nil }
+
+func TestHistogramStatsChainSeek(t *testing.T) {
+	for _, enc := range []chunkenc.Encoding{chunkenc.EncHistogram, chunkenc.EncFloatHistogram} {
+		for _, reuse := range []bool{false, true} {
+			for _, initialSeek := range []bool{false, true} {
+				for _, terminalSeek := range []bool{false, true} {
+					t.Run(fmt.Sprintf("%s/reuse%t/initialSeek%t/terminalSeek%t", enc, reuse, initialSeek, terminalSeek), func(t *testing.T) {
+						var pieces []storage.Series
+						for i, ts := range []int64{10, 20} {
+							c, err := chunkenc.NewEmptyChunk(enc)
+							require.NoError(t, err)
+							app, err := c.Appender()
+							require.NoError(t, err)
+							// Each chunk begins with an unknown reset hint. The second
+							// histogram has lower bucket population/count, requiring detection.
+							population := uint64(2 - i)
+							if enc == chunkenc.EncHistogram {
+								_, _, _, err = app.AppendHistogram(nil, 0, ts, &histogram.Histogram{Schema: 0, ZeroCount: 1, ZeroThreshold: 1, Count: population + 1, Sum: 1.5 * float64(population+1), PositiveSpans: []histogram.Span{{Offset: 1, Length: 1}}, PositiveBuckets: []int64{int64(population)}}, false)
+							} else {
+								_, _, _, err = app.AppendFloatHistogram(nil, 0, ts, &histogram.FloatHistogram{Schema: 0, ZeroCount: 1, ZeroThreshold: 1, Count: float64(population + 1), Sum: 1.5 * float64(population+1), PositiveSpans: []histogram.Span{{Offset: 1, Length: 1}}, PositiveBuckets: []float64{float64(population)}}, false)
+							}
+							require.NoError(t, err)
+							decoded, err := chunkenc.FromData(enc, append([]byte(nil), c.Bytes()...))
+							require.NoError(t, err)
+							pieces = append(pieces, &storage.SeriesEntry{Lset: labels.FromStrings("series", "a"), SampleIteratorFn: func(chunkenc.Iterator) chunkenc.Iterator { return decoded.Iterator(nil) }})
+						}
+						merged := storage.ChainedSeriesMerge(pieces...)
+						control := merged.Iterator(nil)
+						require.NotEqual(t, chunkenc.ValNone, control.Seek(10))
+						ts, h := control.AtFloatHistogram(nil)
+						require.Equal(t, int64(10), ts)
+						require.Equal(t, float64(3), h.Count)
+						require.NotEqual(t, chunkenc.ValNone, control.Next())
+						require.Equal(t, chunkenc.ValNone, control.Next())
+						require.Equal(t, chunkenc.ValNone, control.Seek(30))
+						require.NoError(t, control.Err())
+
+						var previous chunkenc.Iterator
+						if reuse {
+							previous = NewHistogramStatsIterator(pieces[0].Iterator(nil))
+							previous.Next()
+							previous.AtFloatHistogram(nil)
+						}
+						wrapped := newHistogramStatsSeries(merged).Iterator(previous)
+						operation := "initial positioning"
+						defer func() {
+							if r := recover(); r != nil {
+								t.Fatalf("%s: %v", operation, r)
+							}
+						}()
+						if initialSeek {
+							require.Equal(t, chunkenc.ValFloatHistogram, wrapped.Seek(10))
+						} else {
+							require.Equal(t, chunkenc.ValFloatHistogram, wrapped.Next())
+						}
+						for i, ts := range []int64{10, 20} {
+							if i > 0 {
+								require.Equal(t, chunkenc.ValFloatHistogram, wrapped.Next())
+							}
+							hint := histogram.UnknownCounterReset
+							if i > 0 {
+								hint = histogram.CounterReset
+							}
+							want := &histogram.FloatHistogram{Schema: 0, Count: float64(3 - i), Sum: 1.5 * float64(3-i), CounterResetHint: hint}
+							for range 2 {
+								at, stats := wrapped.AtFloatHistogram(nil)
+								require.Equal(t, ts, at)
+								require.Equal(t, want, stats)
+							}
+							// Retaining Seek must preserve the cached reset decision.
+							require.Equal(t, chunkenc.ValFloatHistogram, wrapped.Seek(ts))
+							at, stats := wrapped.AtFloatHistogram(&histogram.FloatHistogram{})
+							require.Equal(t, ts, at)
+							require.Equal(t, want, stats)
+						}
+						operation = "terminal advancement"
+						if terminalSeek {
+							require.Equal(t, chunkenc.ValNone, wrapped.Seek(30))
+						} else {
+							require.Equal(t, chunkenc.ValNone, wrapped.Next())
+						}
+						operation = "Seek after exhaustion"
+						for _, target := range []int64{30, 40} {
+							require.Equal(t, chunkenc.ValNone, wrapped.Seek(target))
+						}
+						require.NoError(t, wrapped.Err())
+						// Reset an exhausted wrapper, then advance with Seek. A jump
+						// discards reset-detection history rather than treating the
+						// two observations as consecutive.
+						operation = "reset and advancing Seek"
+						wrapped = newHistogramStatsSeries(merged).Iterator(wrapped)
+						for i, target := range []int64{10, 20} {
+							require.Equal(t, chunkenc.ValFloatHistogram, wrapped.Seek(target))
+							at, stats := wrapped.AtFloatHistogram(nil)
+							require.Equal(t, target, at)
+							require.Equal(t, &histogram.FloatHistogram{Schema: 0, Count: float64(3 - i), Sum: 1.5 * float64(3-i), CounterResetHint: histogram.UnknownCounterReset}, stats)
+						}
+					})
+				}
+			}
+		}
+	}
+}
