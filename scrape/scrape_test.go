@@ -2075,10 +2075,12 @@ func TestScrapeLoopMetadataRelabeling(t *testing.T) {
 				},
 			}
 
+			var mutatorCalls int
 			sl, _ := newTestScrapeLoop(t, withAppendable(appTest, true), func(sl *scrapeLoop) {
 				sl.enableTypeAndUnitLabels = enableTypeAndUnitLabels
 				sl.mrc = rc
 				sl.sampleMutatorWithMetadata = func(l labels.Labels, m metadata.Metadata) (labels.Labels, metadata.Metadata) {
+					mutatorCalls++
 					return mutateSampleLabelsAndMetadata(l, m, target, false, enableTypeAndUnitLabels, rc)
 				}
 			})
@@ -2103,6 +2105,9 @@ untyped_unitless_metric{__type__="gauge",__unit__="bytes",__help__="spoof"} 5
 			require.Equal(t, 5, total)
 			require.Equal(t, 3, added)
 			require.Equal(t, 3, seriesAdded)
+			require.Equal(t, 5, mutatorCalls)
+			require.Len(t, sl.cache.droppedSeries, 2)
+			require.Len(t, sl.cache.droppedSeriesMeta, 2)
 
 			// Scrape 2: identical payload to exercise the seriesMeta and droppedSeries cache fast paths.
 			app = sl.appender()
@@ -2112,6 +2117,7 @@ untyped_unitless_metric{__type__="gauge",__unit__="bytes",__help__="spoof"} 5
 			require.Equal(t, 5, total)
 			require.Equal(t, 3, added)
 			require.Equal(t, 0, seriesAdded)
+			require.Equal(t, 5, mutatorCalls)
 
 			// Scrape 3: untyped_drop_me now exposes # TYPE gauge, so droppedSeries must invalidate and ingest it.
 			scrape3 := []byte(`# TYPE old_http_requests counter
@@ -2132,6 +2138,9 @@ untyped_unitless_metric{__type__="gauge",__unit__="bytes",__help__="spoof"} 6
 			require.Equal(t, 4, total)
 			require.Equal(t, 4, added)
 			require.Equal(t, 1, seriesAdded)
+			require.Equal(t, 7, mutatorCalls)
+			require.Empty(t, sl.cache.droppedSeries)
+			require.Empty(t, sl.cache.droppedSeriesMeta)
 
 			// Dropped metric metadata must not be stored in scrapeCache (#14013).
 			_, ok := sl.cache.GetMetadata("dropped_metric_total")
