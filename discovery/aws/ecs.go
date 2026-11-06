@@ -231,8 +231,11 @@ type ECSDiscovery struct {
 	ec2    ecsEC2Client
 
 	// region is the resolved region used for the AWS client and for the
-	// Source / __meta_ecs_region labels. Lazily populated by initEcsClient.
+	// __meta_ecs_region labels. Lazily populated by initEcsClient.
 	region string
+
+	// Track sources to clear after a successful cluster listing.
+	lastClusters map[string]struct{}
 }
 
 // NewECSDiscovery returns a new ECSDiscovery which periodically refreshes its targets.
@@ -453,6 +456,9 @@ func (d *ECSDiscovery) describeServices(ctx context.Context, clusterARN string, 
 				d.logger.Error("Failed to describe services", "cluster", clusterARN, "batch", batch, "error", err)
 				return fmt.Errorf("could not describe services for cluster %q: batch %v: %w", clusterARN, batch, err)
 			}
+			if err := ecsFailuresError(resp.Failures); err != nil {
+				return fmt.Errorf("could not describe services for cluster %q: %w", clusterARN, err)
+			}
 
 			for _, service := range resp.Services {
 				if service.ServiceArn != nil {
@@ -530,6 +536,9 @@ func (d *ECSDiscovery) describeTasks(ctx context.Context, clusterARN string, tas
 				d.logger.Error("Failed to describe tasks", "cluster", clusterARN, "batch", batch, "error", err)
 				return fmt.Errorf("could not describe tasks in cluster %q: batch %v: %w", clusterARN, batch, err)
 			}
+			if err := ecsFailuresError(resp.Failures); err != nil {
+				return fmt.Errorf("could not describe tasks in cluster %q: %w", clusterARN, err)
+			}
 
 			mu.Lock()
 			tasks = append(tasks, resp.Tasks...)
@@ -567,6 +576,9 @@ func (d *ECSDiscovery) describeContainerInstances(ctx context.Context, clusterAR
 				ContainerInstances: batch,
 			})
 			if err != nil {
+				return fmt.Errorf("could not describe container instances: %w", err)
+			}
+			if err := ecsFailuresError(resp.Failures); err != nil {
 				return fmt.Errorf("could not describe container instances: %w", err)
 			}
 
@@ -701,384 +713,417 @@ func (d *ECSDiscovery) describeNetworkInterfaces(ctx context.Context, tasks []ty
 	return eniToPublicIP, nil
 }
 
+// Resource failures in successful ECS API responses still invalidate a cluster refresh.
+func ecsFailuresError(failures []types.Failure) error {
+	var errs []error
+	for _, failure := range failures {
+		errs = append(errs, fmt.Errorf("ECS resource %q: %s (%s)", aws.ToString(failure.Arn), aws.ToString(failure.Reason), aws.ToString(failure.Detail)))
+	}
+	return errors.Join(errs...)
+}
+
 func (d *ECSDiscovery) refresh(ctx context.Context) ([]*targetgroup.Group, error) {
-	err := d.initEcsClient(ctx)
-	if err != nil {
+	if err := d.initEcsClient(ctx); err != nil {
 		return nil, err
 	}
 
-	var clusters []string
-	if len(d.cfg.Clusters) == 0 {
+	clusters := d.cfg.Clusters
+	if len(clusters) == 0 {
+		var err error
 		clusters, err = d.listClusterARNs(ctx)
 		if err != nil {
 			return nil, err
 		}
-	} else {
-		clusters = d.cfg.Clusters
 	}
 
-	if len(clusters) == 0 {
-		return []*targetgroup.Group{
-			{
-				Source: d.region,
-			},
-		}, nil
+	// Keep batched requests on the healthy path; retry unresolved clusters independently.
+	clusterMap, err := d.describeClusters(ctx, clusters)
+	if err != nil {
+		d.logger.Error("Failed to describe clusters in batches", "error", err)
 	}
 
-	tg := &targetgroup.Group{
-		Source: d.region,
+	currentClusters := make(map[string]struct{}, len(clusters))
+	for _, clusterARN := range clusters {
+		currentClusters[clusterARN] = struct{}{}
+	}
+	var groups []*targetgroup.Group
+	for clusterARN := range d.lastClusters {
+		if _, ok := currentClusters[clusterARN]; !ok {
+			groups = append(groups, &targetgroup.Group{Source: clusterARN})
+		}
 	}
 
-	// Fetch cluster details, service ARNs, and task ARNs in parallel
 	var (
-		clusterMap map[string]types.Cluster
-		serviceMap map[string][]string
-		taskMap    map[string][]string
+		mu      sync.Mutex
+		workers errgroup.Group
 	)
-
-	clusterErrg, clusterCtx := errgroup.WithContext(ctx)
-	clusterErrg.Go(func() error {
-		var err error
-		clusterMap, err = d.describeClusters(clusterCtx, clusters)
-		return err
-	})
-	clusterErrg.Go(func() error {
-		var err error
-		serviceMap, err = d.listServiceARNs(clusterCtx, clusters)
-		return err
-	})
-	clusterErrg.Go(func() error {
-		var err error
-		taskMap, err = d.listTaskARNs(clusterCtx, clusters)
-		return err
-	})
-
-	if err := clusterErrg.Wait(); err != nil {
+	workers.SetLimit(d.cfg.RequestConcurrency)
+	for clusterARN := range currentClusters {
+		workers.Go(func() error {
+			group, err := d.refreshCluster(ctx, clusterARN, clusterMap[clusterARN])
+			if _, ok := errors.AsType[*types.ClusterNotFoundException](err); ok {
+				group, err = &targetgroup.Group{Source: clusterARN}, nil
+			}
+			if err != nil {
+				d.logger.Error("Failed to refresh ECS cluster", "cluster", clusterARN, "error", err)
+				return err
+			}
+			mu.Lock()
+			groups = append(groups, group)
+			mu.Unlock()
+			return nil
+		})
+	}
+	err = workers.Wait()
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
+	if len(groups) == 0 && err != nil {
 		return nil, err
 	}
 
-	// Use goroutines to process clusters in parallel
-	var (
-		clusterWg      sync.WaitGroup
-		clusterMu      sync.Mutex
-		clusterTargets []model.LabelSet
-	)
+	d.lastClusters = currentClusters
+	return groups, nil
+}
 
-	for clusterARN, taskARNs := range taskMap {
-		if len(taskARNs) == 0 {
-			continue
+// Refresh one cluster without cancelling other clusters.
+func (d *ECSDiscovery) refreshCluster(ctx context.Context, clusterARN string, cluster types.Cluster) (*targetgroup.Group, error) {
+	tg := &targetgroup.Group{Source: clusterARN}
+	if cluster.ClusterArn == nil {
+		resp, err := d.ecs.DescribeClusters(ctx, &ecs.DescribeClustersInput{
+			Clusters: []string{clusterARN},
+			Include:  []types.ClusterField{types.ClusterFieldTags},
+		})
+		if err != nil {
+			return nil, fmt.Errorf("could not describe cluster %q: %w", clusterARN, err)
 		}
-
-		clusterWg.Add(1)
-
-		go func(cluster types.Cluster, serviceARNs, taskARNs []string) {
-			defer clusterWg.Done()
-
-			// Fetch services and tasks in parallel (they're independent)
-			var (
-				services map[string]types.Service
-				tasks    []types.Task
-			)
-
-			resourceErrg, resourceCtx := errgroup.WithContext(ctx)
-			resourceErrg.Go(func() error {
-				var err error
-				services, err = d.describeServices(resourceCtx, *cluster.ClusterArn, serviceARNs)
-				if err != nil {
-					d.logger.Error("Failed to describe services for cluster", "cluster", *cluster.ClusterArn, "error", err)
-				}
-				return err
-			})
-			resourceErrg.Go(func() error {
-				var err error
-				tasks, err = d.describeTasks(resourceCtx, *cluster.ClusterArn, taskARNs)
-				if err != nil {
-					d.logger.Error("Failed to describe tasks for cluster", "cluster", *cluster.ClusterArn, "error", err)
-				}
-				return err
-			})
-
-			if err := resourceErrg.Wait(); err != nil {
-				return
-			}
-
-			// Fetch container instances and network interfaces in parallel (both depend on tasks)
-			var (
-				containerInstances map[string]string
-				eniToPublicIP      map[string]string
-			)
-
-			instanceErrg, instanceCtx := errgroup.WithContext(ctx)
-			instanceErrg.Go(func() error {
-				var err error
-				containerInstances, err = d.describeContainerInstances(instanceCtx, *cluster.ClusterArn, tasks)
-				if err != nil {
-					d.logger.Error("Failed to describe container instances for cluster", "cluster", *cluster.ClusterArn, "error", err)
-				}
-				return err
-			})
-			instanceErrg.Go(func() error {
-				var err error
-				eniToPublicIP, err = d.describeNetworkInterfaces(instanceCtx, tasks)
-				if err != nil {
-					d.logger.Error("Failed to describe network interfaces for cluster", "cluster", *cluster.ClusterArn, "error", err)
-				}
-				return err
-			})
-
-			if err := instanceErrg.Wait(); err != nil {
-				return
-			}
-
-			ec2Instances := make(map[string]ec2InstanceInfo)
-			if len(containerInstances) > 0 {
-				// Deduplicate EC2 instance IDs (multiple tasks can share the same instance)
-				ec2InstanceIDSet := make(map[string]struct{})
-				for _, ec2ID := range containerInstances {
-					ec2InstanceIDSet[ec2ID] = struct{}{}
-				}
-				ec2InstanceIDs := make([]string, 0, len(ec2InstanceIDSet))
-				for ec2ID := range ec2InstanceIDSet {
-					ec2InstanceIDs = append(ec2InstanceIDs, ec2ID)
-				}
-				ec2Instances, err = d.describeEC2Instances(ctx, ec2InstanceIDs)
-				if err != nil {
-					d.logger.Error("Failed to describe EC2 instances for cluster", "cluster", *cluster.ClusterArn, "error", err)
-					return
-				}
-			}
-
-			var (
-				taskWg      sync.WaitGroup
-				taskMu      sync.Mutex
-				taskTargets []model.LabelSet
-			)
-
-			for _, task := range tasks {
-				taskWg.Add(1)
-
-				go func(cluster types.Cluster, services map[string]types.Service, task types.Task, containerInstances map[string]string, ec2Instances map[string]ec2InstanceInfo, eniToPublicIP map[string]string) {
-					defer taskWg.Done()
-
-					var (
-						ipAddress, subnetID, publicIP                                             string
-						networkMode                                                               string
-						ec2InstanceID, ec2InstanceType, ec2InstancePrivateIP, ec2InstancePublicIP string
-					)
-
-					// Try to get IP from ENI attachment (awsvpc mode)
-					var eniAttachment *types.Attachment
-					for _, attachment := range task.Attachments {
-						if attachment.Type != nil && *attachment.Type == "ElasticNetworkInterface" {
-							eniAttachment = &attachment
-							break
-						}
-					}
-
-					if eniAttachment != nil {
-						// awsvpc networking mode - get IP from ENI
-						networkMode = "awsvpc"
-						var eniID string
-						for _, detail := range eniAttachment.Details {
-							// Name and Value are both optional in the ECS API.
-							// Skip the entry rather than dereferencing nil.
-							if detail.Name == nil || detail.Value == nil {
-								continue
-							}
-							switch *detail.Name {
-							case "privateIPv4Address":
-								ipAddress = *detail.Value
-							case "subnetId":
-								subnetID = *detail.Value
-							case "networkInterfaceId":
-								eniID = *detail.Value
-							}
-						}
-						// Get public IP from ENI if available
-						if eniID != "" {
-							if pub, ok := eniToPublicIP[eniID]; ok {
-								publicIP = pub
-							}
-						}
-					} else if task.ContainerInstanceArn != nil {
-						// bridge/host networking mode - need to get EC2 instance IP and subnet
-						networkMode = "bridge"
-						var ok bool
-						ec2InstanceID, ok = containerInstances[*task.ContainerInstanceArn]
-						if ok {
-							info, ok := ec2Instances[ec2InstanceID]
-							if ok {
-								ipAddress = info.privateIP
-								publicIP = info.publicIP
-								subnetID = info.subnetID
-								ec2InstanceType = info.instanceType
-								ec2InstancePrivateIP = info.privateIP
-								ec2InstancePublicIP = info.publicIP
-							} else {
-								d.logger.Debug("EC2 instance info not found", "instance", ec2InstanceID, "task", aws.ToString(task.TaskArn))
-							}
-						} else {
-							d.logger.Debug("Container instance not found in map", "arn", *task.ContainerInstanceArn, "task", aws.ToString(task.TaskArn))
-						}
-					}
-
-					// Get EC2 instance metadata for awsvpc tasks running on EC2
-					// We want the instance type and the host IPs for advanced use cases
-					if networkMode == "awsvpc" && task.ContainerInstanceArn != nil {
-						var ok bool
-						ec2InstanceID, ok = containerInstances[*task.ContainerInstanceArn]
-						if ok {
-							info, ok := ec2Instances[ec2InstanceID]
-							if ok {
-								ec2InstanceType = info.instanceType
-								ec2InstancePrivateIP = info.privateIP
-								ec2InstancePublicIP = info.publicIP
-							}
-						}
-					}
-
-					if ipAddress == "" {
-						return
-					}
-
-					// Only IPAddress, Region, LaunchType, HealthStatus and
-					// NetworkMode are always available here: the first is
-					// checked above and the rest are not pointers. Every other
-					// field is optional in the ECS API, so emit its label only
-					// when present rather than dereferencing nil.
-					labels := model.LabelSet{
-						ecsLabelIPAddress:    model.LabelValue(ipAddress),
-						ecsLabelRegion:       model.LabelValue(d.region),
-						ecsLabelLaunchType:   model.LabelValue(task.LaunchType),
-						ecsLabelHealthStatus: model.LabelValue(task.HealthStatus),
-						ecsLabelNetworkMode:  model.LabelValue(networkMode),
-					}
-
-					if cluster.ClusterArn != nil {
-						labels[ecsLabelClusterARN] = model.LabelValue(*cluster.ClusterArn)
-					}
-					if cluster.ClusterName != nil {
-						labels[ecsLabelCluster] = model.LabelValue(*cluster.ClusterName)
-					}
-					if task.Group != nil {
-						labels[ecsLabelTaskGroup] = model.LabelValue(*task.Group)
-					}
-					if task.TaskArn != nil {
-						labels[ecsLabelTaskARN] = model.LabelValue(*task.TaskArn)
-					}
-					if task.TaskDefinitionArn != nil {
-						labels[ecsLabelTaskDefinition] = model.LabelValue(*task.TaskDefinitionArn)
-					}
-					if task.AvailabilityZone != nil {
-						labels[ecsLabelAvailabilityZone] = model.LabelValue(*task.AvailabilityZone)
-					}
-					if task.DesiredStatus != nil {
-						labels[ecsLabelDesiredStatus] = model.LabelValue(*task.DesiredStatus)
-					}
-					if task.LastStatus != nil {
-						labels[ecsLabelLastStatus] = model.LabelValue(*task.LastStatus)
-					}
-
-					// Add subnet ID when available (awsvpc mode from ENI, bridge/host from EC2 instance)
-					if subnetID != "" {
-						labels[ecsLabelSubnetID] = model.LabelValue(subnetID)
-					}
-
-					// Add container instance and EC2 instance info for EC2 launch type
-					if task.ContainerInstanceArn != nil {
-						labels[ecsLabelContainerInstanceARN] = model.LabelValue(*task.ContainerInstanceArn)
-					}
-					if ec2InstanceID != "" {
-						labels[ecsLabelEC2InstanceID] = model.LabelValue(ec2InstanceID)
-					}
-					if ec2InstanceType != "" {
-						labels[ecsLabelEC2InstanceType] = model.LabelValue(ec2InstanceType)
-					}
-					if ec2InstancePrivateIP != "" {
-						labels[ecsLabelEC2InstancePrivateIP] = model.LabelValue(ec2InstancePrivateIP)
-					}
-					if ec2InstancePublicIP != "" {
-						labels[ecsLabelEC2InstancePublicIP] = model.LabelValue(ec2InstancePublicIP)
-					}
-					if publicIP != "" {
-						labels[ecsLabelPublicIP] = model.LabelValue(publicIP)
-					}
-
-					if task.PlatformFamily != nil {
-						labels[ecsLabelPlatformFamily] = model.LabelValue(*task.PlatformFamily)
-					}
-					if task.PlatformVersion != nil {
-						labels[ecsLabelPlatformVersion] = model.LabelValue(*task.PlatformVersion)
-					}
-
-					labels[model.AddressLabel] = model.LabelValue(net.JoinHostPort(ipAddress, strconv.Itoa(d.cfg.Port)))
-
-					// Add cluster tags
-					for _, clusterTag := range cluster.Tags {
-						if clusterTag.Key != nil && clusterTag.Value != nil {
-							labels[model.LabelName(ecsLabelTagCluster+strutil.SanitizeLabelName(*clusterTag.Key))] = model.LabelValue(*clusterTag.Value)
-						}
-					}
-
-					// If this task belongs to a service, add service information and tags.
-					if serviceName, isServiceTask := strings.CutPrefix(aws.ToString(task.Group), "service:"); isServiceTask {
-						service, ok := services[serviceName]
-						if !ok {
-							d.logger.Debug("Service not found for task", "task", aws.ToString(task.TaskArn), "service", serviceName)
-						}
-						if service.ServiceName != nil {
-							labels[ecsLabelService] = model.LabelValue(*service.ServiceName)
-						}
-						if service.ServiceArn != nil {
-							labels[ecsLabelServiceARN] = model.LabelValue(*service.ServiceArn)
-						}
-						if service.Status != nil {
-							labels[ecsLabelServiceStatus] = model.LabelValue(*service.Status)
-						}
-
-						// Add service tags
-						for _, serviceTag := range service.Tags {
-							if serviceTag.Key != nil && serviceTag.Value != nil {
-								labels[model.LabelName(ecsLabelTagService+strutil.SanitizeLabelName(*serviceTag.Key))] = model.LabelValue(*serviceTag.Value)
-							}
-						}
-					}
-
-					// Add task tags
-					for _, taskTag := range task.Tags {
-						if taskTag.Key != nil && taskTag.Value != nil {
-							labels[model.LabelName(ecsLabelTagTask+strutil.SanitizeLabelName(*taskTag.Key))] = model.LabelValue(*taskTag.Value)
-						}
-					}
-
-					// Add EC2 instance tags (if running on EC2)
-					if ec2InstanceID != "" {
-						if info, ok := ec2Instances[ec2InstanceID]; ok {
-							for tagKey, tagValue := range info.tags {
-								labels[model.LabelName(ecsLabelTagEC2+strutil.SanitizeLabelName(tagKey))] = model.LabelValue(tagValue)
-							}
-						}
-					}
-
-					taskMu.Lock()
-					taskTargets = append(taskTargets, labels)
-					taskMu.Unlock()
-				}(cluster, services, task, containerInstances, ec2Instances, eniToPublicIP)
-			}
-
-			taskWg.Wait()
-
-			// Add this cluster's task targets to the overall collection
-			clusterMu.Lock()
-			clusterTargets = append(clusterTargets, taskTargets...)
-			clusterMu.Unlock()
-		}(clusterMap[clusterARN], serviceMap[clusterARN], taskARNs)
+		if len(resp.Failures) == 1 && aws.ToString(resp.Failures[0].Reason) == "MISSING" &&
+			(aws.ToString(resp.Failures[0].Arn) == clusterARN || resp.Failures[0].Arn == nil) {
+			return tg, nil
+		}
+		if err := ecsFailuresError(resp.Failures); err != nil {
+			return nil, fmt.Errorf("could not describe cluster %q: %w", clusterARN, err)
+		}
+		if len(resp.Clusters) != 1 || aws.ToString(resp.Clusters[0].ClusterArn) != clusterARN {
+			return nil, fmt.Errorf("missing description for cluster %q", clusterARN)
+		}
+		cluster = resp.Clusters[0]
 	}
 
-	clusterWg.Wait()
+	var serviceMap, taskMap map[string][]string
+	listErrg, listCtx := errgroup.WithContext(ctx)
+	listErrg.Go(func() error {
+		var err error
+		serviceMap, err = d.listServiceARNs(listCtx, []string{clusterARN})
+		return err
+	})
+	listErrg.Go(func() error {
+		var err error
+		taskMap, err = d.listTaskARNs(listCtx, []string{clusterARN})
+		return err
+	})
+	if err := listErrg.Wait(); err != nil {
+		return nil, err
+	}
+	serviceARNs, taskARNs := serviceMap[clusterARN], taskMap[clusterARN]
+	if len(taskARNs) == 0 {
+		return tg, nil
+	}
 
-	// Set all targets to the target group
-	tg.Targets = clusterTargets
+	// Fetch services and tasks in parallel (they're independent)
+	var (
+		services map[string]types.Service
+		tasks    []types.Task
+	)
 
-	return []*targetgroup.Group{tg}, nil
+	resourceErrg, resourceCtx := errgroup.WithContext(ctx)
+	resourceErrg.Go(func() error {
+		var err error
+		services, err = d.describeServices(resourceCtx, clusterARN, serviceARNs)
+		if err != nil {
+			d.logger.Error("Failed to describe services for cluster", "cluster", clusterARN, "error", err)
+		}
+		return err
+	})
+	resourceErrg.Go(func() error {
+		var err error
+		tasks, err = d.describeTasks(resourceCtx, clusterARN, taskARNs)
+		if err != nil {
+			d.logger.Error("Failed to describe tasks for cluster", "cluster", clusterARN, "error", err)
+		}
+		return err
+	})
+
+	if err := resourceErrg.Wait(); err != nil {
+		return nil, err
+	}
+
+	// Fetch container instances and network interfaces in parallel (both depend on tasks)
+	var (
+		containerInstances map[string]string
+		eniToPublicIP      map[string]string
+	)
+
+	instanceErrg, instanceCtx := errgroup.WithContext(ctx)
+	instanceErrg.Go(func() error {
+		var err error
+		containerInstances, err = d.describeContainerInstances(instanceCtx, clusterARN, tasks)
+		if err != nil {
+			d.logger.Error("Failed to describe container instances for cluster", "cluster", clusterARN, "error", err)
+		}
+		return err
+	})
+	instanceErrg.Go(func() error {
+		var err error
+		eniToPublicIP, err = d.describeNetworkInterfaces(instanceCtx, tasks)
+		if err != nil {
+			d.logger.Error("Failed to describe network interfaces for cluster", "cluster", clusterARN, "error", err)
+		}
+		return err
+	})
+
+	if err := instanceErrg.Wait(); err != nil {
+		return nil, err
+	}
+
+	ec2Instances := make(map[string]ec2InstanceInfo)
+	if len(containerInstances) > 0 {
+		// Deduplicate EC2 instance IDs (multiple tasks can share the same instance)
+		ec2InstanceIDSet := make(map[string]struct{})
+		for _, ec2ID := range containerInstances {
+			ec2InstanceIDSet[ec2ID] = struct{}{}
+		}
+		ec2InstanceIDs := make([]string, 0, len(ec2InstanceIDSet))
+		for ec2ID := range ec2InstanceIDSet {
+			ec2InstanceIDs = append(ec2InstanceIDs, ec2ID)
+		}
+		var err error
+		ec2Instances, err = d.describeEC2Instances(ctx, ec2InstanceIDs)
+		if err != nil {
+			d.logger.Error("Failed to describe EC2 instances for cluster", "cluster", clusterARN, "error", err)
+			return nil, err
+		}
+	}
+
+	var (
+		taskWg      sync.WaitGroup
+		taskMu      sync.Mutex
+		taskTargets []model.LabelSet
+	)
+
+	for _, task := range tasks {
+		taskWg.Add(1)
+
+		go func(cluster types.Cluster, services map[string]types.Service, task types.Task, containerInstances map[string]string, ec2Instances map[string]ec2InstanceInfo, eniToPublicIP map[string]string) {
+			defer taskWg.Done()
+
+			var (
+				ipAddress, subnetID, publicIP                                             string
+				networkMode                                                               string
+				ec2InstanceID, ec2InstanceType, ec2InstancePrivateIP, ec2InstancePublicIP string
+			)
+
+			// Try to get IP from ENI attachment (awsvpc mode)
+			var eniAttachment *types.Attachment
+			for _, attachment := range task.Attachments {
+				if attachment.Type != nil && *attachment.Type == "ElasticNetworkInterface" {
+					eniAttachment = &attachment
+					break
+				}
+			}
+
+			if eniAttachment != nil {
+				// awsvpc networking mode - get IP from ENI
+				networkMode = "awsvpc"
+				var eniID string
+				for _, detail := range eniAttachment.Details {
+					// Name and Value are both optional in the ECS API.
+					// Skip the entry rather than dereferencing nil.
+					if detail.Name == nil || detail.Value == nil {
+						continue
+					}
+					switch *detail.Name {
+					case "privateIPv4Address":
+						ipAddress = *detail.Value
+					case "subnetId":
+						subnetID = *detail.Value
+					case "networkInterfaceId":
+						eniID = *detail.Value
+					}
+				}
+				// Get public IP from ENI if available
+				if eniID != "" {
+					if pub, ok := eniToPublicIP[eniID]; ok {
+						publicIP = pub
+					}
+				}
+			} else if task.ContainerInstanceArn != nil {
+				// bridge/host networking mode - need to get EC2 instance IP and subnet
+				networkMode = "bridge"
+				var ok bool
+				ec2InstanceID, ok = containerInstances[*task.ContainerInstanceArn]
+				if ok {
+					info, ok := ec2Instances[ec2InstanceID]
+					if ok {
+						ipAddress = info.privateIP
+						publicIP = info.publicIP
+						subnetID = info.subnetID
+						ec2InstanceType = info.instanceType
+						ec2InstancePrivateIP = info.privateIP
+						ec2InstancePublicIP = info.publicIP
+					} else {
+						d.logger.Debug("EC2 instance info not found", "instance", ec2InstanceID, "task", aws.ToString(task.TaskArn))
+					}
+				} else {
+					d.logger.Debug("Container instance not found in map", "arn", *task.ContainerInstanceArn, "task", aws.ToString(task.TaskArn))
+				}
+			}
+
+			// Get EC2 instance metadata for awsvpc tasks running on EC2
+			// We want the instance type and the host IPs for advanced use cases
+			if networkMode == "awsvpc" && task.ContainerInstanceArn != nil {
+				var ok bool
+				ec2InstanceID, ok = containerInstances[*task.ContainerInstanceArn]
+				if ok {
+					info, ok := ec2Instances[ec2InstanceID]
+					if ok {
+						ec2InstanceType = info.instanceType
+						ec2InstancePrivateIP = info.privateIP
+						ec2InstancePublicIP = info.publicIP
+					}
+				}
+			}
+
+			if ipAddress == "" {
+				return
+			}
+
+			// Only IPAddress, Region, LaunchType, HealthStatus and
+			// NetworkMode are always available here: the first is
+			// checked above and the rest are not pointers. Every other
+			// field is optional in the ECS API, so emit its label only
+			// when present rather than dereferencing nil.
+			labels := model.LabelSet{
+				ecsLabelIPAddress:    model.LabelValue(ipAddress),
+				ecsLabelRegion:       model.LabelValue(d.region),
+				ecsLabelLaunchType:   model.LabelValue(task.LaunchType),
+				ecsLabelHealthStatus: model.LabelValue(task.HealthStatus),
+				ecsLabelNetworkMode:  model.LabelValue(networkMode),
+			}
+
+			if cluster.ClusterArn != nil {
+				labels[ecsLabelClusterARN] = model.LabelValue(clusterARN)
+			}
+			if cluster.ClusterName != nil {
+				labels[ecsLabelCluster] = model.LabelValue(*cluster.ClusterName)
+			}
+			if task.Group != nil {
+				labels[ecsLabelTaskGroup] = model.LabelValue(*task.Group)
+			}
+			if task.TaskArn != nil {
+				labels[ecsLabelTaskARN] = model.LabelValue(*task.TaskArn)
+			}
+			if task.TaskDefinitionArn != nil {
+				labels[ecsLabelTaskDefinition] = model.LabelValue(*task.TaskDefinitionArn)
+			}
+			if task.AvailabilityZone != nil {
+				labels[ecsLabelAvailabilityZone] = model.LabelValue(*task.AvailabilityZone)
+			}
+			if task.DesiredStatus != nil {
+				labels[ecsLabelDesiredStatus] = model.LabelValue(*task.DesiredStatus)
+			}
+			if task.LastStatus != nil {
+				labels[ecsLabelLastStatus] = model.LabelValue(*task.LastStatus)
+			}
+
+			// Add subnet ID when available (awsvpc mode from ENI, bridge/host from EC2 instance)
+			if subnetID != "" {
+				labels[ecsLabelSubnetID] = model.LabelValue(subnetID)
+			}
+
+			// Add container instance and EC2 instance info for EC2 launch type
+			if task.ContainerInstanceArn != nil {
+				labels[ecsLabelContainerInstanceARN] = model.LabelValue(*task.ContainerInstanceArn)
+			}
+			if ec2InstanceID != "" {
+				labels[ecsLabelEC2InstanceID] = model.LabelValue(ec2InstanceID)
+			}
+			if ec2InstanceType != "" {
+				labels[ecsLabelEC2InstanceType] = model.LabelValue(ec2InstanceType)
+			}
+			if ec2InstancePrivateIP != "" {
+				labels[ecsLabelEC2InstancePrivateIP] = model.LabelValue(ec2InstancePrivateIP)
+			}
+			if ec2InstancePublicIP != "" {
+				labels[ecsLabelEC2InstancePublicIP] = model.LabelValue(ec2InstancePublicIP)
+			}
+			if publicIP != "" {
+				labels[ecsLabelPublicIP] = model.LabelValue(publicIP)
+			}
+
+			if task.PlatformFamily != nil {
+				labels[ecsLabelPlatformFamily] = model.LabelValue(*task.PlatformFamily)
+			}
+			if task.PlatformVersion != nil {
+				labels[ecsLabelPlatformVersion] = model.LabelValue(*task.PlatformVersion)
+			}
+
+			labels[model.AddressLabel] = model.LabelValue(net.JoinHostPort(ipAddress, strconv.Itoa(d.cfg.Port)))
+
+			// Add cluster tags
+			for _, clusterTag := range cluster.Tags {
+				if clusterTag.Key != nil && clusterTag.Value != nil {
+					labels[model.LabelName(ecsLabelTagCluster+strutil.SanitizeLabelName(*clusterTag.Key))] = model.LabelValue(*clusterTag.Value)
+				}
+			}
+
+			// If this task belongs to a service, add service information and tags.
+			if serviceName, isServiceTask := strings.CutPrefix(aws.ToString(task.Group), "service:"); isServiceTask {
+				service, ok := services[serviceName]
+				if !ok {
+					d.logger.Debug("Service not found for task", "task", aws.ToString(task.TaskArn), "service", serviceName)
+				}
+				if service.ServiceName != nil {
+					labels[ecsLabelService] = model.LabelValue(*service.ServiceName)
+				}
+				if service.ServiceArn != nil {
+					labels[ecsLabelServiceARN] = model.LabelValue(*service.ServiceArn)
+				}
+				if service.Status != nil {
+					labels[ecsLabelServiceStatus] = model.LabelValue(*service.Status)
+				}
+
+				// Add service tags
+				for _, serviceTag := range service.Tags {
+					if serviceTag.Key != nil && serviceTag.Value != nil {
+						labels[model.LabelName(ecsLabelTagService+strutil.SanitizeLabelName(*serviceTag.Key))] = model.LabelValue(*serviceTag.Value)
+					}
+				}
+			}
+
+			// Add task tags
+			for _, taskTag := range task.Tags {
+				if taskTag.Key != nil && taskTag.Value != nil {
+					labels[model.LabelName(ecsLabelTagTask+strutil.SanitizeLabelName(*taskTag.Key))] = model.LabelValue(*taskTag.Value)
+				}
+			}
+
+			// Add EC2 instance tags (if running on EC2)
+			if ec2InstanceID != "" {
+				if info, ok := ec2Instances[ec2InstanceID]; ok {
+					for tagKey, tagValue := range info.tags {
+						labels[model.LabelName(ecsLabelTagEC2+strutil.SanitizeLabelName(tagKey))] = model.LabelValue(tagValue)
+					}
+				}
+			}
+
+			taskMu.Lock()
+			taskTargets = append(taskTargets, labels)
+			taskMu.Unlock()
+		}(cluster, services, task, containerInstances, ec2Instances, eniToPublicIP)
+	}
+
+	taskWg.Wait()
+	tg.Targets = taskTargets
+	return tg, nil
 }
