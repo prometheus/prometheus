@@ -405,6 +405,7 @@ func (w *Watcher) watch(segmentNum int, onlySeries bool) error {
 	defer segment.Close()
 
 	reader := NewLiveReader(w.logger, w.readerMetrics, segment)
+	defer reader.Close()
 
 	size := int64(math.MaxInt64)
 	if onlySeries {
