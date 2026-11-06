@@ -2790,7 +2790,7 @@ func (ev *evaluator) eval(ctx context.Context, expr parser.Expr) (parser.Value, 
 		}
 
 		if !matrixArg {
-			if fn, ok := simpleFloatUnaryFuncs[e.Func.Name]; ok && len(e.Args) == 1 {
+			if fn, ok := inPlaceFloatUnaryFuncs[e.Func.Name]; ok && len(e.Args) == 1 {
 				val, ws := ev.eval(ctx, e.Args[0])
 				warnings.Merge(ws)
 				mat := val.(Matrix)
