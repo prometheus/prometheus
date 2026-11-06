@@ -330,7 +330,11 @@ func setLabel(lb *labels.Builder, name, val string, withMetadata bool) {
 func ProcessBuilderWithMetadata(lb *labels.Builder, meta metadata.Metadata, cfgs ...*Config) (keep bool, _ metadata.Metadata) {
 	if !usesMetadata(cfgs...) {
 		lb.Del(model.MetricTypeLabel, model.MetricUnitLabel, metricHelpLabel)
-		return ProcessBuilder(lb, cfgs...), meta
+		if !ProcessBuilder(lb, cfgs...) {
+			return false, metadata.Metadata{}
+		}
+		lb.Del(model.MetricTypeLabel, model.MetricUnitLabel, metricHelpLabel)
+		return true, meta
 	}
 
 	setLabel(lb, model.MetricTypeLabel, string(meta.Type), true)
@@ -420,7 +424,10 @@ func relabel(cfg *Config, lb *labels.Builder, withMetadata bool) (keep bool) {
 			}
 			if cfg.Regex.MatchString(l.Name) {
 				res := cfg.Regex.ReplaceAllString(l.Name, cfg.Replacement)
-				setLabel(lb, res, l.Value, withMetadata)
+				if withMetadata && isMetadataRelabelName(res) {
+					return
+				}
+				lb.Set(res, l.Value)
 			}
 		})
 	case LabelDrop:
