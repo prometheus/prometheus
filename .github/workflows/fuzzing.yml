@@ -10,7 +10,7 @@ jobs:
     runs-on: ubuntu-latest
     strategy:
       matrix:
-        fuzz_test: [[FuzzParseMetricText, FuzzParseOpenMetric], [FuzzParseMetricSelector, FuzzParseExpr], [FuzzXORChunk, FuzzXOR2Chunk], [FuzzParseProtobuf]]
+        fuzz_test: [[FuzzParseMetricText, FuzzParseOpenMetric], [FuzzParseMetricSelector, FuzzParseExpr], [FuzzXORChunk, FuzzXOR2Chunk], [FuzzParseProtobuf], [FuzzAPIQueryGET, FuzzAPIQueryPOST]]
     steps:
       - name: Checkout repository
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
