@@ -16,6 +16,7 @@ package remote
 import (
 	"bytes"
 	"compress/gzip"
+	"encoding/binary"
 	"errors"
 	"fmt"
 	"io"
@@ -148,6 +149,27 @@ var (
 		},
 	}
 )
+
+func TestSampledReadResponseMessageLength(t *testing.T) {
+	for _, size := range []int{0, 1, 127, 128, 16_383, 16_384, 1 << 20} {
+		t.Run(fmt.Sprintf("size=%d", size), func(t *testing.T) {
+			encoder := &sampledReadResponseEncoder{}
+			bodyStart := encoder.beginMessage(readResponseResultTag)
+			want := make([]byte, size)
+			for i := range want {
+				want[i] = byte(i*31 + 1)
+			}
+			encoder.data = append(encoder.data, want...)
+			encoder.endMessage(bodyStart)
+
+			gotLength, lengthSize := binary.Uvarint(encoder.data[1:])
+			require.Positive(t, lengthSize)
+			require.Equal(t, uint64(size), gotLength)
+			require.Len(t, encoder.data, 1+lengthSize+size)
+			require.Equal(t, want, encoder.data[1+lengthSize:])
+		})
+	}
+}
 
 func TestHistogramFixtureValid(t *testing.T) {
 	for _, ts := range writeRequestFixture.Timeseries {
