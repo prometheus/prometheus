@@ -2783,42 +2783,27 @@ func funcResets(_ []Vector, matrixVal Matrix, args parser.Expressions, enh *Eval
 		floatSTs = sts.Floats
 		histogramSTs = sts.Histograms
 	}
-	if len(histograms) == 0 && !isAnchoredSelector(args) {
-		if w := enh.floatWin; w != nil {
-			enh.prepareFloatWinScan(w)
-			for seq := enh.winNextPairSeq; seq+1 < w.endSeq; seq++ {
-				i := seq - w.startSeq
-				prevPoint, curPoint := floats[i], floats[i+1]
-				var pST, cST int64
-				if i < len(floatSTs) {
-					pST = floatSTs[i]
-				}
-				if i+1 < len(floatSTs) {
-					cST = floatSTs[i+1]
-				}
-				if curPoint.F < prevPoint.F || isStartTimestampReset(pST, prevPoint.T, cST, curPoint.T) {
-					enh.appendWinEvent(seq)
-				}
-			}
-			if w.endSeq > w.startSeq {
-				enh.winNextPairSeq = max(enh.winNextPairSeq, w.endSeq-1)
-			}
-			return append(enh.Out, Sample{F: float64(len(enh.winEventSeqs) - enh.winEventOff)}), nil
-		}
-		for i := 1; i < len(floats); i++ {
-			prevPoint, curPoint := floats[i-1], floats[i]
+	if len(histograms) == 0 && !isAnchoredSelector(args) && enh.floatWin != nil {
+		w := enh.floatWin
+		enh.prepareFloatWinScan(w)
+		for seq := enh.winNextPairSeq; seq+1 < w.endSeq; seq++ {
+			i := seq - w.startSeq
+			prevPoint, curPoint := floats[i], floats[i+1]
 			var pST, cST int64
-			if i-1 < len(floatSTs) {
-				pST = floatSTs[i-1]
-			}
 			if i < len(floatSTs) {
-				cST = floatSTs[i]
+				pST = floatSTs[i]
+			}
+			if i+1 < len(floatSTs) {
+				cST = floatSTs[i+1]
 			}
 			if curPoint.F < prevPoint.F || isStartTimestampReset(pST, prevPoint.T, cST, curPoint.T) {
-				resets++
+				enh.appendWinEvent(seq)
 			}
 		}
-		return append(enh.Out, Sample{F: float64(resets)}), nil
+		if w.endSeq > w.startSeq {
+			enh.winNextPairSeq = max(enh.winNextPairSeq, w.endSeq-1)
+		}
+		return append(enh.Out, Sample{F: float64(len(enh.winEventSeqs) - enh.winEventOff)}), nil
 	}
 	firstFloat, firstHistogram, found := pickFirstSampleIndices(floats, histograms, args, enh)
 	if !found {
@@ -2882,28 +2867,20 @@ func funcChanges(_ []Vector, matrixVal Matrix, args parser.Expressions, enh *Eva
 	if len(floats) == 0 && len(histograms) == 0 {
 		return enh.Out, nil
 	}
-	if len(histograms) == 0 && !isAnchoredSelector(args) {
-		if w := enh.floatWin; w != nil {
-			enh.prepareFloatWinScan(w)
-			for seq := enh.winNextPairSeq; seq+1 < w.endSeq; seq++ {
-				i := seq - w.startSeq
-				prevF, curF := floats[i].F, floats[i+1].F
-				if curF != prevF && !(math.IsNaN(curF) && math.IsNaN(prevF)) {
-					enh.appendWinEvent(seq)
-				}
-			}
-			if w.endSeq > w.startSeq {
-				enh.winNextPairSeq = max(enh.winNextPairSeq, w.endSeq-1)
-			}
-			return append(enh.Out, Sample{F: float64(len(enh.winEventSeqs) - enh.winEventOff)}), nil
-		}
-		for i := 1; i < len(floats); i++ {
-			prevF, curF := floats[i-1].F, floats[i].F
+	if len(histograms) == 0 && !isAnchoredSelector(args) && enh.floatWin != nil {
+		w := enh.floatWin
+		enh.prepareFloatWinScan(w)
+		for seq := enh.winNextPairSeq; seq+1 < w.endSeq; seq++ {
+			i := seq - w.startSeq
+			prevF, curF := floats[i].F, floats[i+1].F
 			if curF != prevF && !(math.IsNaN(curF) && math.IsNaN(prevF)) {
-				changes++
+				enh.appendWinEvent(seq)
 			}
 		}
-		return append(enh.Out, Sample{F: float64(changes)}), nil
+		if w.endSeq > w.startSeq {
+			enh.winNextPairSeq = max(enh.winNextPairSeq, w.endSeq-1)
+		}
+		return append(enh.Out, Sample{F: float64(len(enh.winEventSeqs) - enh.winEventOff)}), nil
 	}
 
 	var prevSample, curSample Sample
