@@ -73,6 +73,15 @@ To keep your pull request in the top review queues instead of the collapsed `Wai
 * Sign off commits with `git commit -s` for DCO, format the title as `area: short description`, and include a `release-notes` block in the description.
 * Keep changes small when you can. Pull requests waiting on a maintainer with 60 or fewer changed lines, green CI, and clean hygiene land at the very top under `Quick Wins`, followed by `Updated After Review` and `Waiting on Maintainer`.
 
+### AI bot pull requests
+
+Every change merged into `prometheus/prometheus` requires at least two pairs of human eyes, typically the author and a reviewing maintainer, to catch issues and share codebase knowledge across reviewers. This also applies when an AI coding bot or agent opens a pull request:
+
+* Prefer opening AI-assisted pull requests from your own GitHub account, or explicitly state in the pull request description that you triggered and own the bot's pull request.
+* When a maintainer triggers, guides, or claims ownership of an AI bot pull request, they count as the author. Even if that maintainer reviews the bot's commits on GitHub, a second maintainer must still review and approve the pull request before merging.
+* If an AI bot opens a pull request without a human claiming ownership, merging requires approvals from two maintainers, or one maintainer claiming ownership and a second maintainer approving it.
+* Deterministic automation such as `prombot` or Dependabot is exempt from this rule and only requires a single maintainer approval.
+
 ## Dependency management
 
 The Prometheus project uses [Go modules](https://golang.org/cmd/go/#hdr-Modules__module_versions__and_more) to manage dependencies on external packages.
