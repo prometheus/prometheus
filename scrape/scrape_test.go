@@ -8904,11 +8904,11 @@ func TestTypeUnitReLabel(t *testing.T) {
 				}
 
 				metricsText := `
+test_metric_2_total 234
+
 # HELP test_metric_1_total This is a counter
 # TYPE test_metric_1_total counter
 test_metric_1_total 123
-
-test_metric_2_total 234
 
 # HELP disk_usage_bytes This is a gauge
 # TYPE disk_usage_bytes gauge
