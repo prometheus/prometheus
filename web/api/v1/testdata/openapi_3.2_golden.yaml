@@ -1672,13 +1672,14 @@ paths:
                             - '{job="prometheus"}'
                 - name: search[]
                   in: query
-                  description: One or more search terms matched against metric names (OR logic).
+                  description: Up to 32 search terms matched against metric names (OR logic).
                   required: false
                   explode: false
                   schema:
                     type: array
                     items:
                         type: string
+                    maxItems: 32
                   examples:
                     example:
                         value:
@@ -1717,7 +1718,7 @@ paths:
                         value: true
                 - name: sort_by
                   in: query
-                  description: Sort mode. Supported values are alpha and score.
+                  description: Sort mode. Supported values are alpha and score. If omitted, results are ordered by value ascending.
                   required: false
                   explode: false
                   schema:
@@ -1728,7 +1729,7 @@ paths:
                     example: alpha
                 - name: sort_dir
                   in: query
-                  description: Sort direction. Only valid with sort_by=alpha. Supported values are asc and dsc.
+                  description: Sort direction. Only valid with explicit sort_by=alpha. Supported values are asc and dsc.
                   required: false
                   explode: false
                   schema:
@@ -1797,7 +1798,7 @@ paths:
                         value: 1767361020
                 - name: limit
                   in: query
-                  description: Maximum number of metric names to return.
+                  description: Positive maximum number of metric names to return, subject to the operator-configured search limit.
                   required: false
                   explode: false
                   schema:
@@ -1918,13 +1919,14 @@ paths:
                             - '{__name__="up"}'
                 - name: search[]
                   in: query
-                  description: One or more search terms matched against label names (OR logic).
+                  description: Up to 32 search terms matched against label names (OR logic).
                   required: false
                   explode: false
                   schema:
                     type: array
                     items:
                         type: string
+                    maxItems: 32
                   examples:
                     example:
                         value:
@@ -1963,7 +1965,7 @@ paths:
                         value: true
                 - name: sort_by
                   in: query
-                  description: Sort mode. Supported values are alpha and score.
+                  description: Sort mode. Supported values are alpha and score. If omitted, results are ordered by value ascending.
                   required: false
                   explode: false
                   schema:
@@ -1974,7 +1976,7 @@ paths:
                     example: alpha
                 - name: sort_dir
                   in: query
-                  description: Sort direction. Only valid with sort_by=alpha. Supported values are asc and dsc.
+                  description: Sort direction. Only valid with explicit sort_by=alpha. Supported values are asc and dsc.
                   required: false
                   explode: false
                   schema:
@@ -2033,7 +2035,7 @@ paths:
                         value: 1767361020
                 - name: limit
                   in: query
-                  description: Maximum number of label names to return.
+                  description: Positive maximum number of label names to return, subject to the operator-configured search limit.
                   required: false
                   explode: false
                   schema:
@@ -2165,13 +2167,14 @@ paths:
                             - up
                 - name: search[]
                   in: query
-                  description: One or more search terms matched against label values (OR logic).
+                  description: Up to 32 search terms matched against label values (OR logic).
                   required: false
                   explode: false
                   schema:
                     type: array
                     items:
                         type: string
+                    maxItems: 32
                   examples:
                     example:
                         value:
@@ -2210,7 +2213,7 @@ paths:
                         value: true
                 - name: sort_by
                   in: query
-                  description: Sort mode. Supported values are alpha and score.
+                  description: Sort mode. Supported values are alpha and score. If omitted, results are ordered by value ascending.
                   required: false
                   explode: false
                   schema:
@@ -2221,7 +2224,7 @@ paths:
                     example: alpha
                 - name: sort_dir
                   in: query
-                  description: Sort direction. Only valid with sort_by=alpha. Supported values are asc and dsc.
+                  description: Sort direction. Only valid with explicit sort_by=alpha. Supported values are asc and dsc.
                   required: false
                   explode: false
                   schema:
@@ -2280,7 +2283,7 @@ paths:
                         value: 1767361020
                 - name: limit
                   in: query
-                  description: Maximum number of label values to return.
+                  description: Positive maximum number of label values to return, subject to the operator-configured search limit.
                   required: false
                   explode: false
                   schema:
@@ -4939,7 +4942,8 @@ components:
                     type: array
                     items:
                         type: string
-                    description: 'Form field: One or more search terms matched against metric names (OR logic).'
+                    maxItems: 32
+                    description: 'Form field: Up to 32 search terms matched against metric names (OR logic).'
                     example:
                         - http_req
                 fuzz_threshold:
@@ -4962,14 +4966,14 @@ components:
                     enum:
                         - alpha
                         - score
-                    description: 'Form field: Sort mode. Supported values are alpha and score. If unset, results are returned in natural order.'
+                    description: 'Form field: Sort mode. Supported values are alpha and score. If omitted, results are ordered by value ascending.'
                     example: alpha
                 sort_dir:
                     type: string
                     enum:
                         - asc
                         - dsc
-                    description: 'Form field: Sort direction. Only valid with sort_by=alpha. Supported values are asc and dsc.'
+                    description: 'Form field: Sort direction. Only valid with explicit sort_by=alpha. Supported values are asc and dsc.'
                     example: asc
                 include_score:
                     type: boolean
@@ -4986,7 +4990,7 @@ components:
                     type: integer
                     minimum: 1
                     format: int64
-                    description: 'Form field: The maximum number of results to return.'
+                    description: 'Form field: The positive maximum number of results to return, subject to the operator-configured search limit.'
                     default: 100
                     example: 20
                 batch_size:
@@ -5015,7 +5019,8 @@ components:
                     type: array
                     items:
                         type: string
-                    description: 'Form field: One or more search terms matched against label names (OR logic).'
+                    maxItems: 32
+                    description: 'Form field: Up to 32 search terms matched against label names (OR logic).'
                     example:
                         - inst
                 fuzz_threshold:
@@ -5038,14 +5043,14 @@ components:
                     enum:
                         - alpha
                         - score
-                    description: 'Form field: Sort mode. Supported values are alpha and score. If unset, results are returned in natural order.'
+                    description: 'Form field: Sort mode. Supported values are alpha and score. If omitted, results are ordered by value ascending.'
                     example: alpha
                 sort_dir:
                     type: string
                     enum:
                         - asc
                         - dsc
-                    description: 'Form field: Sort direction. Only valid with sort_by=alpha. Supported values are asc and dsc.'
+                    description: 'Form field: Sort direction. Only valid with explicit sort_by=alpha. Supported values are asc and dsc.'
                     example: asc
                 include_score:
                     type: boolean
@@ -5062,7 +5067,7 @@ components:
                     type: integer
                     minimum: 1
                     format: int64
-                    description: 'Form field: The maximum number of results to return.'
+                    description: 'Form field: The positive maximum number of results to return, subject to the operator-configured search limit.'
                     default: 100
                     example: 20
                 batch_size:
@@ -5092,7 +5097,8 @@ components:
                     type: array
                     items:
                         type: string
-                    description: 'Form field: One or more search terms matched against label values (OR logic).'
+                    maxItems: 32
+                    description: 'Form field: Up to 32 search terms matched against label values (OR logic).'
                     example:
                         - "909"
                 fuzz_threshold:
@@ -5115,14 +5121,14 @@ components:
                     enum:
                         - alpha
                         - score
-                    description: 'Form field: Sort mode. Supported values are alpha and score. If unset, results are returned in natural order.'
+                    description: 'Form field: Sort mode. Supported values are alpha and score. If omitted, results are ordered by value ascending.'
                     example: alpha
                 sort_dir:
                     type: string
                     enum:
                         - asc
                         - dsc
-                    description: 'Form field: Sort direction. Only valid with sort_by=alpha. Supported values are asc and dsc.'
+                    description: 'Form field: Sort direction. Only valid with explicit sort_by=alpha. Supported values are asc and dsc.'
                     example: asc
                 include_score:
                     type: boolean
@@ -5139,7 +5145,7 @@ components:
                     type: integer
                     minimum: 1
                     format: int64
-                    description: 'Form field: The maximum number of results to return.'
+                    description: 'Form field: The positive maximum number of results to return, subject to the operator-configured search limit.'
                     default: 100
                     example: 20
                 batch_size:
