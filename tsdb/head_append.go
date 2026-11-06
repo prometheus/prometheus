@@ -2106,7 +2106,9 @@ func (s *memSeries) appendPreprocessor(t int64, e chunkenc.Encoding, o chunkOpts
 
 	if c == nil {
 		if len(s.mmappedChunks) > 0 && s.mmappedChunks[len(s.mmappedChunks)-1].maxTime >= t {
-			// Out of order sample. Sample timestamp is already in the mmapped chunks, so ignore it.
+			// The timestamp is already covered by the mmapped chunks. Only WAL replay of an
+			// already mmapped sample or an exact duplicate of the last mmapped sample gets
+			// here, because appendable rejects or routes everything else, so ignore it.
 			return c, false, false
 		}
 		// There is no head chunk in this series yet, create the first chunk for the sample.
@@ -2172,7 +2174,9 @@ func (s *memSeries) histogramsAppendPreprocessor(t int64, e chunkenc.Encoding, o
 
 	if c == nil {
 		if len(s.mmappedChunks) > 0 && s.mmappedChunks[len(s.mmappedChunks)-1].maxTime >= t {
-			// Out of order sample. Sample timestamp is already in the mmapped chunks, so ignore it.
+			// The timestamp is already covered by the mmapped chunks. Only WAL replay of an
+			// already mmapped sample or an exact duplicate of the last mmapped sample gets
+			// here, because appendable rejects or routes everything else, so ignore it.
 			return c, false, false
 		}
 		// There is no head chunk in this series yet, create the first chunk for the sample.

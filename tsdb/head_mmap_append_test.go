@@ -30,14 +30,17 @@ import (
 	"github.com/prometheus/prometheus/util/compression"
 )
 
-// reopenHeadMmapOnly persists the series' only head chunk and reopens the head
-// with a fresh WAL, leaving the series with mmapped chunks but no head chunk,
-// as after recovery without a newer WAL tail.
+// reopenHeadMmapOnly persists the series' only head chunk and reopens the head.
+// WAL replay skips samples already covered by mmapped chunks, leaving the series
+// with mmapped chunks but no head chunk, as after recovery without a newer WAL tail.
 func reopenHeadMmapOnly(t *testing.T, opts *HeadOptions, h *Head, ref chunks.HeadSeriesRef) (*Head, *memSeries) {
 	t.Helper()
 	ms := h.series.getByID(ref)
 	c := ms.headChunks
-	h.chunkDiskMapper.WriteChunk(ms.ref, c.minTime, c.maxTime, c.chunk, false, func(err error) { require.NoError(t, err) })
+	// The callback may run on the chunk write queue goroutine, so check its error here.
+	writeErr := make(chan error, 1)
+	h.chunkDiskMapper.WriteChunk(ms.ref, c.minTime, c.maxTime, c.chunk, false, func(err error) { writeErr <- err })
+	require.NoError(t, <-writeErr)
 	require.NoError(t, h.Close())
 	wal, err := wlog.NewSize(nil, nil, filepath.Join(opts.ChunkDirRoot, "wal"), 32768, compression.None)
 	require.NoError(t, err)
@@ -301,7 +304,9 @@ func TestMemSeries_appendable(t *testing.T) {
 		// Persist the newest head chunk too and drop the in-memory copy, leaving the
 		// series mmap-only with two chunks, as after recovery without a newer WAL tail.
 		c := ms.headChunks
-		r := h.chunkDiskMapper.WriteChunk(ms.ref, c.minTime, c.maxTime, c.chunk, false, func(err error) { require.NoError(t, err) })
+		writeErr := make(chan error, 1)
+		r := h.chunkDiskMapper.WriteChunk(ms.ref, c.minTime, c.maxTime, c.chunk, false, func(err error) { writeErr <- err })
+		require.NoError(t, <-writeErr)
 		ms.mmappedChunks = append(ms.mmappedChunks, &mmappedChunk{
 			ref:        r,
 			minTime:    c.minTime,
