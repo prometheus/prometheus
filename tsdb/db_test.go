@@ -41,6 +41,7 @@ import (
 	"github.com/gogo/protobuf/proto"
 	"github.com/golang/snappy"
 	"github.com/oklog/ulid/v2"
+	"github.com/prometheus/client_golang/prometheus"
 	prom_testutil "github.com/prometheus/client_golang/prometheus/testutil"
 	"github.com/prometheus/common/model"
 	"github.com/prometheus/common/promslog"
@@ -1753,33 +1754,97 @@ func TestNoPanicOnTSDBOpenError(t *testing.T) {
 }
 
 func TestNoGoroutineLeakOnTSDBOpenError(t *testing.T) {
-	dir := t.TempDir()
+	t.Run("before head construction", func(t *testing.T) {
+		dir := t.TempDir()
 
-	// Create a WAL directory with a valid segment so that wlog.NewSize() succeeds
-	// and starts its run() goroutine.
-	walDir := filepath.Join(dir, "wal")
-	require.NoError(t, os.MkdirAll(walDir, 0o777))
-	w, err := wlog.NewSize(nil, nil, walDir, 32768, compression.None)
-	require.NoError(t, err)
-	require.NoError(t, w.Close())
+		// Create a WAL directory with a valid segment so that wlog.NewSize() succeeds
+		// and starts its run() goroutine.
+		walDir := filepath.Join(dir, "wal")
+		require.NoError(t, os.MkdirAll(walDir, 0o777))
+		w, err := wlog.NewSize(nil, nil, walDir, 32768, compression.None)
+		require.NoError(t, err)
+		require.NoError(t, w.Close())
 
-	// Create a corrupt chunks_head file with an invalid magic number.
-	// This will cause NewChunkDiskMapper.openMMapFiles() to fail,
-	// which in turn causes NewHead() to fail.
-	chunksDir := filepath.Join(dir, "chunks_head")
-	require.NoError(t, os.MkdirAll(chunksDir, 0o777))
-	require.NoError(t, os.WriteFile(filepath.Join(chunksDir, "000001"), []byte{0xDE, 0xAD, 0xBE, 0xEF, 0x01, 0x00, 0x00, 0x00}, 0o666))
+		// Create a corrupt chunks_head file with an invalid magic number.
+		// This will cause NewChunkDiskMapper.openMMapFiles() to fail,
+		// which in turn causes NewHead() to fail.
+		chunksDir := filepath.Join(dir, "chunks_head")
+		require.NoError(t, os.MkdirAll(chunksDir, 0o777))
+		require.NoError(t, os.WriteFile(filepath.Join(chunksDir, "000001"), []byte{0xDE, 0xAD, 0xBE, 0xEF, 0x01, 0x00, 0x00, 0x00}, 0o666))
 
-	opts := DefaultOptions()
-	opts.HeadChunksWriteQueueSize = 1000
+		opts := DefaultOptions()
+		opts.HeadChunksWriteQueueSize = 1000
 
-	_, err = Open(dir, nil, nil, opts, nil)
-	require.Error(t, err)
+		_, err = Open(dir, nil, nil, opts, nil)
+		require.Error(t, err)
 
-	// Verify that no goroutines were leaked. Without proper cleanup,
-	// wlog.(*WL).run and chunks.(*chunkWriteQueue).start.func1 goroutines
-	// would remain running after the failed Open().
-	goleak.VerifyNone(t)
+		// Verify that no goroutines were leaked. Without proper cleanup,
+		// wlog.(*WL).run and chunks.(*chunkWriteQueue).start.func1 goroutines
+		// would remain running after the failed Open().
+		goleak.VerifyNone(t)
+	})
+
+	t.Run("block checksum after head construction", func(t *testing.T) {
+		dir := t.TempDir()
+		blockDir := createBlock(t, dir, genSeries(1, 2, 0, 10))
+		filename := filepath.Join(blockDir, tombstones.TombstonesFilename)
+		original, err := os.ReadFile(filename)
+		require.NoError(t, err)
+		opts := DefaultOptions()
+		opts.OutOfOrderTimeWindow = 1000
+		opts.HeadChunksWriteQueueSize = 1000
+		opts.EnableMemorySnapshotOnShutdown = true
+		opts.EnableFastStartup = true
+		db, err := Open(dir, nil, nil, opts, nil)
+		require.NoError(t, err)
+		app := db.AppenderV2(context.Background())
+		_, err = app.Append(0, labels.FromStrings("name", "wal_only"), 0, 20, 42, nil, nil, storage.AOptions{})
+		require.NoError(t, err)
+		require.NoError(t, app.Commit())
+		require.NoError(t, db.Close())
+
+		snapshot, _, _, err := LastChunkSnapshot(dir)
+		require.NoError(t, err)
+		stateFile := filepath.Join(dir, "wal", seriesStateFilename)
+		state, err := os.ReadFile(stateFile)
+		require.NoError(t, err)
+
+		corrupt := bytes.Clone(original)
+		corrupt[len(corrupt)-1] ^= 0xff
+		require.NoError(t, os.WriteFile(filename, corrupt, 0o666))
+		reg := prometheus.NewRegistry()
+		db, err = Open(dir, nil, reg, opts, nil)
+		require.ErrorContains(t, err, "checksum did not match")
+		require.Nil(t, db)
+
+		// WAL metrics are unregistered only after Close has stopped the writer.
+		n, err := prom_testutil.GatherAndCount(reg,
+			"prometheus_tsdb_wal_fsync_duration_seconds",
+			"prometheus_tsdb_out_of_order_wbl_fsync_duration_seconds")
+		require.NoError(t, err)
+		require.Zero(t, n, "WAL and WBL must be closed before Open returns")
+		goleak.VerifyNone(t)
+
+		// Failed startup must not snapshot an unreplayed head or mark it clean.
+		afterSnapshot, _, _, err := LastChunkSnapshot(dir)
+		require.NoError(t, err)
+		require.Equal(t, snapshot, afterSnapshot)
+		afterState, err := os.ReadFile(stateFile)
+		require.NoError(t, err)
+		require.Equal(t, state, afterState)
+
+		require.NoError(t, os.WriteFile(filename, original, 0o666))
+		db, err = Open(dir, nil, nil, opts, nil)
+		require.NoError(t, err)
+		t.Cleanup(func() { require.NoError(t, db.Close()) })
+		q, err := db.Querier(0, 30)
+		require.NoError(t, err)
+		require.Equal(t, map[string][]chunks.Sample{
+			`{name="wal_only"}`: {sample{t: 20, f: 42}},
+		}, query(t, q, labels.MustNewMatcher(labels.MatchEqual, "name", "wal_only")))
+		require.NoError(t, db.Close())
+		require.NoError(t, db.Close())
+	})
 }
 
 func TestLockfile(t *testing.T) {
