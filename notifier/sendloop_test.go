@@ -19,12 +19,17 @@ import (
 	"io"
 	"log/slog"
 	"net/http"
+	"net/http/httptest"
 	"strconv"
 	"testing"
 
 	"github.com/prometheus/client_golang/prometheus"
 	prom_testutil "github.com/prometheus/client_golang/prometheus/testutil"
 	"github.com/stretchr/testify/require"
+	"go.opentelemetry.io/contrib/instrumentation/net/http/otelhttp"
+	"go.opentelemetry.io/otel"
+	"go.opentelemetry.io/otel/propagation"
+	sdktrace "go.opentelemetry.io/otel/sdk/trace"
 
 	"github.com/prometheus/prometheus/config"
 	"github.com/prometheus/prometheus/model/labels"
@@ -36,6 +41,7 @@ func TestCustomDo(t *testing.T) {
 
 	var received bool
 	h := sendLoop{
+		cfg: &config.DefaultAlertmanagerConfig,
 		opts: &Options{
 			Do: func(_ context.Context, _ *http.Client, req *http.Request) (*http.Response, error) {
 				received = true
@@ -48,7 +54,8 @@ func TestCustomDo(t *testing.T) {
 				require.Equal(t, testURL, req.URL.String())
 
 				return &http.Response{
-					Body: io.NopCloser(bytes.NewBuffer(nil)),
+					StatusCode: http.StatusOK,
+					Body:       io.NopCloser(bytes.NewBuffer(nil)),
 				}, nil
 			},
 		},
@@ -184,4 +191,31 @@ func TestMetrics(t *testing.T) {
 	// Verify metrics are re-initialized correctly
 	require.Equal(t, 0.0, prom_testutil.ToFloat64(metrics.dropped.WithLabelValues(alertmanagerURL)))
 	require.Equal(t, 0.0, prom_testutil.ToFloat64(metrics.sent.WithLabelValues(alertmanagerURL)))
+}
+
+func TestSendAllTracingEnabled(t *testing.T) {
+	originalTracerProvider := otel.GetTracerProvider()
+	originalPropagator := otel.GetTextMapPropagator()
+	tracerProvider := sdktrace.NewTracerProvider(sdktrace.WithSampler(sdktrace.AlwaysSample()))
+	otel.SetTracerProvider(tracerProvider)
+	otel.SetTextMapPropagator(propagation.TraceContext{})
+	t.Cleanup(func() {
+		otel.SetTracerProvider(originalTracerProvider)
+		otel.SetTextMapPropagator(originalPropagator)
+	})
+
+	traceparent := make(chan string, 1)
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		traceparent <- r.Header.Get("traceparent")
+		w.WriteHeader(http.StatusOK)
+	}))
+	t.Cleanup(server.Close)
+
+	client := &http.Client{Transport: otelhttp.NewTransport(http.DefaultTransport)}
+	sl := newSendLoop(server.URL, client, &config.DefaultAlertmanagerConfig, &Options{Do: do},
+		slog.New(slog.DiscardHandler), newAlertMetrics(prometheus.NewRegistry(), nil))
+	alert := &Alert{Labels: labels.FromStrings("alertname", "test")}
+
+	require.True(t, sl.sendAll([]*Alert{alert}))
+	require.NotEmpty(t, <-traceparent)
 }
