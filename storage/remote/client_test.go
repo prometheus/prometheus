@@ -27,14 +27,13 @@ import (
 	"testing"
 	"time"
 
-	"go.uber.org/atomic"
-
 	"github.com/gogo/protobuf/proto"
 	"github.com/golang/snappy"
 	remoteapi "github.com/prometheus/client_golang/exp/api/remote"
 	config_util "github.com/prometheus/common/config"
 	"github.com/prometheus/common/model"
 	"github.com/stretchr/testify/require"
+	"go.uber.org/atomic"
 
 	"github.com/prometheus/prometheus/config"
 	"github.com/prometheus/prometheus/model/labels"
