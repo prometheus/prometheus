@@ -15,6 +15,7 @@ package relabel
 
 import (
 	"encoding/json"
+	"fmt"
 	"strconv"
 	"testing"
 
@@ -889,6 +890,14 @@ func TestTargetLabelLegacyValidity(t *testing.T) {
 }
 
 func BenchmarkRelabel(b *testing.B) {
+	matching := []string{"__name__", "labelmap_benchmark"}
+	nonmatching := []string{"__name__", "labelmap_benchmark"}
+	for i := range 64 {
+		matching = append(matching, fmt.Sprintf("source_label%04d", i), "value")
+		nonmatching = append(nonmatching, fmt.Sprintf("otherx_label%04d", i), "value")
+	}
+	matchedLabels := labels.FromStrings(matching...)
+	unmatchedLabels := labels.FromStrings(nonmatching...)
 	tests := []struct {
 		name   string
 		lbls   labels.Labels
@@ -1060,10 +1069,36 @@ func BenchmarkRelabel(b *testing.B) {
 				"job", "foo",
 			),
 		},
+		{
+			name: "labelmap/all",
+			config: `
+        - regex: source_(.*)
+          replacement: mapped_${1}
+          action: labelmap`,
+			lbls: matchedLabels,
+		},
+		{
+			name: "labelmap/none",
+			config: `
+        - regex: source_(.*)
+          replacement: mapped_${1}
+          action: labelmap`,
+			lbls: unmatchedLabels,
+		},
+		{
+			name: "labelmap/default",
+			config: `
+        - regex: source_(.*)
+          action: labelmap`,
+			lbls: matchedLabels,
+		},
 	}
 	for i := range tests {
 		err := yaml.UnmarshalStrict([]byte(tests[i].config), &tests[i].cfgs)
 		require.NoError(b, err)
+		for _, cfg := range tests[i].cfgs {
+			require.NoError(b, cfg.Validate(model.UTF8Validation))
+		}
 	}
 	for _, tt := range tests {
 		lb := labels.NewBuilder(labels.EmptyLabels())
