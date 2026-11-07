@@ -20,6 +20,7 @@ import (
 	"fmt"
 	"io"
 	"math"
+	"net"
 	"net/http"
 	"net/http/httptrace"
 	"strconv"
@@ -127,18 +128,23 @@ type Client struct {
 
 // ClientConfig configures a client.
 type ClientConfig struct {
-	URL                   *config_util.URL
-	Timeout               model.Duration
-	HTTPClientConfig      config_util.HTTPClientConfig
-	SigV4Config           *sigv4.SigV4Config
-	AzureADConfig         *azuread.AzureADConfig
-	GoogleIAMConfig       *googleiam.Config
-	Headers               map[string]string
-	RetryOnRateLimit      bool
-	WriteProtoMsg         remoteapi.WriteMessageType
-	WriteMode             remoteapi.WriteMode
-	ChunkedReadLimit      uint64
-	RoundRobinDNS         bool
+	URL              *config_util.URL
+	Timeout          model.Duration
+	HTTPClientConfig config_util.HTTPClientConfig
+	SigV4Config      *sigv4.SigV4Config
+	AzureADConfig    *azuread.AzureADConfig
+	GoogleIAMConfig  *googleiam.Config
+	Headers          map[string]string
+	RetryOnRateLimit bool
+	WriteProtoMsg    remoteapi.WriteMessageType
+	WriteMode        remoteapi.WriteMode
+	ChunkedReadLimit uint64
+	RoundRobinDNS    bool
+	// UnixSocketPath, when set, sends batches over the unix-domain socket at
+	// this path instead of opening a TCP connection. The endpoint URL is
+	// still used for the request path and Host header; the socket listener
+	// must serve plaintext HTTP.
+	UnixSocketPath        string
 	AcceptedResponseTypes []prompb.ReadRequest_ResponseType
 }
 
@@ -186,6 +192,18 @@ func NewWriteClient(name string, conf *ClientConfig) (WriteClient, error) {
 	var httpOpts []config_util.HTTPClientOption
 	if conf.RoundRobinDNS {
 		httpOpts = []config_util.HTTPClientOption{config_util.WithDialContextFunc(newDialContextWithRoundRobinDNS().dialContextFn())}
+	}
+	// Send over a unix-domain socket instead of TCP when configured. Only
+	// the dialer changes: the request URL (host header and path) is left
+	// untouched, so the socket listener must serve plaintext HTTP.
+	if conf.UnixSocketPath != "" {
+		socketPath := conf.UnixSocketPath
+		dialer := &net.Dialer{Timeout: 30 * time.Second, KeepAlive: 30 * time.Second}
+		httpOpts = append(httpOpts, config_util.WithDialContextFunc(
+			func(ctx context.Context, _, _ string) (net.Conn, error) {
+				return dialer.DialContext(ctx, "unix", socketPath)
+			},
+		))
 	}
 	httpClient, err := config_util.NewClientFromConfig(conf.HTTPClientConfig, "remote_storage_write_client", httpOpts...)
 	if err != nil {
