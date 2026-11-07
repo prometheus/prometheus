@@ -489,13 +489,18 @@ func (g *Group) CopyState(from *Group) {
 
 	// Handle deleted and unmatched duplicate rules.
 	g.staleSeries = from.staleSeries
-	for fi, fromRule := range from.rules {
-		nameAndLabels := nameAndLabels(fromRule)
-		l := ruleMap[nameAndLabels]
-		if len(l) != 0 {
-			for _, series := range from.seriesInPreviousEval[fi] {
-				g.staleSeries = append(g.staleSeries, series)
-			}
+	unmatched := make(map[int]struct{})
+	for _, indexes := range ruleMap {
+		for _, fi := range indexes {
+			unmatched[fi] = struct{}{}
+		}
+	}
+	for fi := range from.rules {
+		if _, ok := unmatched[fi]; !ok {
+			continue
+		}
+		for _, series := range from.seriesInPreviousEval[fi] {
+			g.staleSeries = append(g.staleSeries, series)
 		}
 	}
 }
