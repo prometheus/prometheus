@@ -843,6 +843,7 @@ func TestCopyState(t *testing.T) {
 			NewRecordingRule("rule3", nil, labels.FromStrings("l1", "v2")),
 			NewRecordingRule("rule3", nil, labels.FromStrings("l1", "v3")),
 			NewAlertingRule("alert2", nil, 0, 0, labels.FromStrings("l2", "v1"), labels.EmptyLabels(), labels.EmptyLabels(), "", true, nil),
+			NewRecordingRule("rule3", nil, labels.FromStrings("l1", "v2")),
 		},
 		seriesInPreviousEval: []map[string]labels.Labels{
 			{},
@@ -852,6 +853,7 @@ func TestCopyState(t *testing.T) {
 			{"r3b": labels.FromStrings("l1", "v2")},
 			{"r3c": labels.FromStrings("l1", "v3")},
 			{"a2": labels.FromStrings("l2", "v1")},
+			{"r3d": labels.FromStrings("l1", "v4")},
 		},
 		evaluationTime: time.Second,
 	}
@@ -885,30 +887,7 @@ func TestCopyState(t *testing.T) {
 	require.Equal(t, oldGroup.rules[0], newGroup.rules[3])
 	require.Equal(t, oldGroup.evaluationTime, newGroup.evaluationTime)
 	require.Equal(t, oldGroup.lastEvaluation, newGroup.lastEvaluation)
-	require.Equal(t, []labels.Labels{labels.FromStrings("l1", "v3")}, newGroup.staleSeries)
-}
-
-func TestCopyStateDuplicateRules(t *testing.T) {
-	oldGroup := &Group{
-		rules: []Rule{
-			NewRecordingRule("rule1", nil, labels.EmptyLabels()),
-			NewRecordingRule("rule1", nil, labels.EmptyLabels()),
-		},
-		seriesInPreviousEval: []map[string]labels.Labels{
-			{"r1a": labels.FromStrings("l1", "v1")},
-			{"r1b": labels.FromStrings("l1", "v2")},
-		},
-	}
-	newGroup := &Group{
-		rules: []Rule{
-			NewRecordingRule("rule1", nil, labels.EmptyLabels()),
-		},
-		seriesInPreviousEval: make([]map[string]labels.Labels, 1),
-	}
-	newGroup.CopyState(oldGroup)
-
-	require.Equal(t, []map[string]labels.Labels{{"r1a": labels.FromStrings("l1", "v1")}}, newGroup.seriesInPreviousEval)
-	require.Equal(t, []labels.Labels{labels.FromStrings("l1", "v2")}, newGroup.staleSeries)
+	require.Equal(t, []labels.Labels{labels.FromStrings("l1", "v3"), labels.FromStrings("l1", "v4")}, newGroup.staleSeries)
 }
 
 func TestDeletedRuleMarkedStale(t *testing.T) {
