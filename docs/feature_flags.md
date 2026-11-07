@@ -150,7 +150,7 @@ Fall back to serving the old (Prometheus 2.x) web UI instead of the new UI. The 
 `--enable-feature=metadata-wal-records`
 
 When enabled, Prometheus (both in server and agent modes) will store metadata in-memory and keep track of
-metadata changes as WAL records on a per-series basis.
+metadata changes as WAL records on a per-series basis, including any `help`, `type`, and `unit` metadata configured on recording rules.
 
 This must be used if you would like to send metadata using the new remote write 2.0.
 
@@ -251,7 +251,7 @@ When enabled, Prometheus will start injecting additional, reserved `__type__`
 and `__unit__` labels as designed in the [PROM-39 proposal](https://github.com/prometheus/proposals/pull/39).
 
 Those labels are sourced from the metadata structures of the existing scrape and ingestion formats
-like OpenMetrics Text, Prometheus Text, Prometheus Proto, Remote Write 2 and OTLP. All the user provided labels with
+like OpenMetrics Text, Prometheus Text, Prometheus Proto, Remote Write 2 and OTLP, as well as `type` and `unit` metadata configured on recording rules. All the user provided labels with
 `__type__` and `__unit__` will be overridden.
 
 PromQL layer will handle those labels the same way `__name__` is handled, e.g. dropped
@@ -483,3 +483,12 @@ the feature is disabled or `query_max_duration` is unset.
 
 Clients can detect the feature through [`/api/v1/features`](querying/api.md#features),
 where it is reported as `query_cost` in the `api` category.
+
+## Unquoted UTF-8 name printing
+
+`--enable-feature=promql-unquoted-utf8-names`
+
+Print Unicode letters and dots in metric and label names without quotes where
+allowed by PromQL. By default, the printer quotes names outside the traditional
+ASCII syntax for compatibility with earlier Prometheus 3.x releases. Unquoted
+input is accepted regardless of this flag.

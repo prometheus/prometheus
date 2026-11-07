@@ -19,6 +19,7 @@ import (
 	"strconv"
 	"sync"
 	"testing"
+	"time"
 
 	"github.com/stretchr/testify/require"
 
@@ -430,6 +431,220 @@ func TestMemSeries_chunk(t *testing.T) {
 		require.ErrorIs(t, err, storage.ErrNotFound)
 		require.Nil(t, c)
 	})
+}
+
+func TestHeadChunkFromSeriesIsolationFastPath(t *testing.T) {
+	newIsolationState := func(maxAppendID, lowWatermark uint64, incomplete ...uint64) *isolationState {
+		state := &isolationState{
+			maxAppendID:       maxAppendID,
+			lowWatermark:      lowWatermark,
+			incompleteAppends: make(map[uint64]struct{}, len(incomplete)),
+			isolation:         &isolation{},
+		}
+		for _, appendID := range incomplete {
+			state.incompleteAppends[appendID] = struct{}{}
+		}
+		return state
+	}
+
+	for _, tc := range []struct {
+		name          string
+		appendIDs     []uint64
+		state         *isolationState
+		copyLastChunk bool
+		wantIsolation bool
+	}{
+		{name: "empty transaction ring", state: newIsolationState(2, 2, 2), copyLastChunk: true},
+		{name: "no incomplete appends", appendIDs: []uint64{1, 1}, state: newIsolationState(1, 1), copyLastChunk: true},
+		{name: "copy not requested", state: newIsolationState(2, 2, 2), copyLastChunk: false, wantIsolation: true},
+		{name: "last append ID above max", appendIDs: []uint64{1, 2}, state: newIsolationState(1, 1), copyLastChunk: true, wantIsolation: true},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			chunk := chunkenc.NewXORChunk()
+			appender, err := chunk.Appender()
+			require.NoError(t, err)
+			appender.Append(0, 0, 1)
+			appender.Append(0, 1, 2)
+
+			series := &memSeries{
+				headChunks: &memChunk{chunk: chunk, minTime: 0, maxTime: 1},
+				txs:        newTxRing(len(tc.appendIDs)),
+			}
+			series.headChunkCount.Store(1)
+			for _, appendID := range tc.appendIDs {
+				series.txs.add(appendID)
+			}
+
+			head := &Head{opts: &HeadOptions{ChunkPool: chunkenc.NewPool()}}
+			series.Lock()
+			got, _, err := head.chunkFromSeries(series, 0, false, 0, 1, tc.state, tc.copyLastChunk, nil)
+			series.Unlock()
+			require.NoError(t, err)
+			chunkWithIsolation, ok := got.(*safeHeadChunk)
+			require.True(t, ok)
+			if tc.wantIsolation {
+				require.Same(t, tc.state, chunkWithIsolation.isoState)
+			} else {
+				require.Nil(t, chunkWithIsolation.isoState)
+			}
+		})
+	}
+}
+
+// Per-series sample order can differ from append-ID order when commits interleave.
+func TestHeadChunkFromSeriesRetainsIsolationForInterleavedCommits(t *testing.T) {
+	opts := newTestHeadDefaultOptions(DefaultBlockDuration, false)
+	opts.IsolationDisabled = false
+	head, _ := newTestHeadWithOptions(t, compression.None, opts)
+	targetLabels := labels.FromStrings("__name__", "target_metric")
+	blockerLabels := labels.FromStrings("__name__", "blocker_metric")
+
+	initial := head.AppenderV2(t.Context())
+	targetRef, err := initial.Append(0, targetLabels, 0, 0, 1, nil, nil, storage.AOptions{})
+	require.NoError(t, err)
+	blockerRef, err := initial.Append(0, blockerLabels, 0, 0, 1, nil, nil, storage.AOptions{})
+	require.NoError(t, err)
+	require.NoError(t, initial.Commit())
+
+	targetSeries := head.series.getByID(chunks.HeadSeriesRef(targetRef))
+	blockerSeries := head.series.getByID(chunks.HeadSeriesRef(blockerRef))
+	require.NotNil(t, targetSeries)
+	require.NotNil(t, blockerSeries)
+
+	laterAppender := head.AppenderV2(t.Context())
+	laterCommitted := false
+	t.Cleanup(func() {
+		if !laterCommitted {
+			_ = laterAppender.Rollback()
+		}
+	})
+	_, err = laterAppender.Append(targetRef, targetLabels, 0, 2, 3, nil, nil, storage.AOptions{})
+	require.NoError(t, err)
+	laterID := head.iso.lastAppendID()
+
+	incompleteAppender := head.AppenderV2(t.Context())
+	incompleteCommitStarted := false
+	t.Cleanup(func() {
+		if !incompleteCommitStarted {
+			_ = incompleteAppender.Rollback()
+		}
+	})
+	_, err = incompleteAppender.Append(targetRef, targetLabels, 0, 1, 2, nil, nil, storage.AOptions{})
+	require.NoError(t, err)
+	_, err = incompleteAppender.Append(blockerRef, blockerLabels, 0, 1, 2, nil, nil, storage.AOptions{})
+	require.NoError(t, err)
+	incompleteID := head.iso.lastAppendID()
+	require.Greater(t, incompleteID, laterID)
+
+	blockerSeries.Lock()
+	var unlockBlocker sync.Once
+	unlock := func() { unlockBlocker.Do(blockerSeries.Unlock) }
+	commitDone := make(chan error, 1)
+	incompleteCommitStarted = true
+	go func() { commitDone <- incompleteAppender.Commit() }()
+	commitDoneReceived := false
+	defer func() {
+		unlock()
+		if !commitDoneReceived {
+			select {
+			case err := <-commitDone:
+				if err != nil {
+					t.Errorf("finish incomplete appender commit: %v", err)
+				}
+			case <-time.After(5 * time.Second):
+				t.Error("incomplete appender did not finish after releasing the blocker series")
+			}
+		}
+	}()
+
+	require.Eventually(t, func() bool {
+		targetSeries.Lock()
+		defer targetSeries.Unlock()
+		lastAppendID, ok := targetSeries.txs.lastAppendID()
+		return ok && lastAppendID == incompleteID
+	}, 5*time.Second, time.Millisecond)
+	require.NoError(t, laterAppender.Commit())
+	laterCommitted = true
+
+	targetSeries.Lock()
+	appendIDs := make([]uint64, 0, targetSeries.txs.txIDCount)
+	txIDs := targetSeries.txs.iterator()
+	for range targetSeries.txs.txIDCount {
+		appendIDs = append(appendIDs, txIDs.At())
+		txIDs.Next()
+	}
+	lastAppendID, _ := targetSeries.txs.lastAppendID()
+	targetSeries.Unlock()
+	require.Equal(t, []uint64{incompleteID, laterID}, appendIDs)
+	require.Equal(t, laterID, lastAppendID)
+
+	state := head.iso.State(0, 2)
+	defer state.Close()
+	require.Equal(t, incompleteID, state.maxAppendID)
+	require.Equal(t, incompleteID, state.lowWatermark)
+	require.Contains(t, state.incompleteAppends, incompleteID)
+
+	targetSeries.Lock()
+	chunk, _, err := head.chunkFromSeries(targetSeries, targetSeries.firstChunkID, false, 0, 2, state, true, nil)
+	targetSeries.Unlock()
+	require.NoError(t, err)
+	safeChunk, ok := chunk.(*safeHeadChunk)
+	require.True(t, ok)
+	require.Same(t, state, safeChunk.isoState)
+
+	collectTimestamps := func(iterator chunkenc.Iterator) []int64 {
+		var timestamps []int64
+		for valueType := iterator.Next(); valueType != chunkenc.ValNone; valueType = iterator.Next() {
+			require.Equal(t, chunkenc.ValFloat, valueType)
+			timestamp, _ := iterator.At()
+			timestamps = append(timestamps, timestamp)
+		}
+		require.NoError(t, iterator.Err())
+		return timestamps
+	}
+	sampled := collectTimestamps(safeChunk.Iterator(nil))
+	iterator, filtersSamples := safeChunk.iteratorForChunkCopy(nil)
+	require.True(t, filtersSamples)
+	require.NotNil(t, iterator)
+	require.Equal(t, []int64{0}, sampled)
+	require.Equal(t, sampled, collectTimestamps(iterator))
+
+	unlock()
+	commitErr := <-commitDone
+	commitDoneReceived = true
+	require.NoError(t, commitErr)
+}
+
+func TestSafeHeadChunkIteratorForChunkCopySkipsVisibleChunk(t *testing.T) {
+	chunk := chunkenc.NewXORChunk()
+	appender, err := chunk.Appender()
+	require.NoError(t, err)
+	appender.Append(0, 0, 1)
+	appender.Append(0, 1, 2)
+
+	series := &memSeries{
+		headChunks: &memChunk{chunk: chunk, minTime: 0, maxTime: 1},
+		txs:        newTxRing(2),
+	}
+	series.headChunkCount.Store(1)
+	series.txs.add(1)
+	series.txs.add(1)
+
+	safeChunk := &safeHeadChunk{
+		Chunk: chunk,
+		s:     series,
+		cid:   0,
+		isoState: &isolationState{
+			maxAppendID:       2,
+			lowWatermark:      2,
+			incompleteAppends: map[uint64]struct{}{2: {}},
+			isolation:         &isolation{},
+		},
+	}
+
+	it, filtersSamples := safeChunk.iteratorForChunkCopy(nil)
+	require.Nil(t, it)
+	require.False(t, filtersSamples)
 }
 
 // TestMemSeries_chunk_FastPath verifies that the O(1) indexed lookup via a

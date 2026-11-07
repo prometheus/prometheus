@@ -22,6 +22,16 @@ const noFill = { fill: { lhs: null, rhs: null } };
 describe('buildVectorMatching test', () => {
   const testCases: { binaryExpr: string; expectedVectorMatching: VectorMatching }[] = [
     {
+      binaryExpr: 'foo + on (a:b) group_left (:label) bar',
+      expectedVectorMatching: {
+        card: VectorMatchCardinality.CardManyToOne,
+        matchingLabels: ['a:b'],
+        on: true,
+        include: [':label'],
+        ...noFill,
+      },
+    },
+    {
       binaryExpr: 'foo * bar',
       expectedVectorMatching: { card: VectorMatchCardinality.CardOneToOne, matchingLabels: [], on: false, include: [], ...noFill },
     },

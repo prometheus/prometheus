@@ -29,6 +29,19 @@ describe('unquoted UTF-8 names', () => {
         'requests_total + ignoring (service.name) group_right (équipe) service_info',
         'foo{a..="b"}',
         '_:温度.total',
+        ':node_memory_MemAvailable_bytes',
+        ':温度{場所="東京"}',
+        ':foo[5m]',
+        'foo + :bar',
+        'sum by (a:b, :label, label:, :) (foo)',
+        'sum without (a:b) (foo)',
+        'foo + on (a:b) bar',
+        'foo + ignoring (a:b) bar',
+        'foo + on (job) group_left (a:b) bar',
+        'foo + on (job) group_right (a:b) bar',
+        'sum by (場所:名前) (温度)',
+        'foo[5m:]',
+        'foo[5m:step()]',
         'foo.',
         'foo..bar',
         'Inf.total + Inf',
@@ -49,14 +62,14 @@ describe('unquoted UTF-8 names', () => {
         '.foo', '5foo', 'foo{.label="x"}', 'foo{5label="x"}', 'foo{a:b="x"}',
         'foo😀', 'foo١', 'foo²', 'o\u0308', 'foo·bar', 'foo\u200dbar', 'foo\ufffd',
         'foo\ud800', 'foo\udc00', 'sum by (o\u0308) (foo)', 'foo{é😀="x"}',
-        'sum by (a:b) (foo)', 'foo + on (a:b) bar', 'topK(1, foo)',
+        'foo{:label="x"}', 'foo{label:="x"}', 'foo{:="x"}', 'topK(1, foo)',
     ];
     for (const query of invalid) {
         it(`rejects ${query}`, () => {
             expect(() => strictParser.parse(query)).toThrow();
         });
     }
-    for (const name of ['İnf', 'topK', 'İGNORING', 'on.total', 'sum.total', '𐐀']) {
+    for (const name of ['İnf', 'topK', 'İGNORING', 'on.total', 'sum.total', '𐐀', ':', ':foo', ':温度']) {
         it(`preserves ${name} as a metric name`, () => {
             expect(strictParser.parse(name).toString()).toBe('PromQL(VectorSelector(Identifier))');
         });

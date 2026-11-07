@@ -713,6 +713,21 @@ func (h *Head) chunkFromSeries(s *memSeries, cid chunks.HeadChunkID, isOOO bool,
 		}
 	}
 
+	// Skip the per-sample isolation scan in iteratorForChunkCopy when every sample in s is already visible:
+	// - s.txs is empty, meaning all append IDs were already pruned below lowWatermark or loaded via WAL replay.
+	// - No appends were in flight at snapshot time and lastAppendID <= maxAppendID, meaning nothing was appended after the snapshot.
+	// NOTE: When incompleteAppends is non-empty, lastAppendID alone is not enough because appendIDs are assigned when
+	// opening an appender while s.txs records commit order, so an incomplete higher ID can sit before a committed lower ID.
+	if copyLastChunk && isoState != nil && !isoState.IsolationDisabled() {
+		if len(isoState.incompleteAppends) == 0 {
+			if lastAppendID, ok := s.txs.lastAppendID(); !ok || lastAppendID <= isoState.maxAppendID {
+				isoState = nil
+			}
+		} else if _, ok := s.txs.lastAppendID(); !ok {
+			isoState = nil
+		}
+	}
+
 	return &safeHeadChunk{
 		Chunk:    chk,
 		s:        s,
@@ -816,15 +831,30 @@ type safeHeadChunk struct {
 }
 
 func (c *safeHeadChunk) Iterator(reuseIter chunkenc.Iterator) chunkenc.Iterator {
-	c.s.Lock()
-	it := c.s.iterator(c.cid, c.Chunk, c.isoState, reuseIter)
-	c.s.Unlock()
+	it, _ := c.iterator(reuseIter, false)
 	return it
 }
 
-// iterator returns a chunk iterator for the requested chunk ID, or a NopIterator if it is out of range.
+// The isolation-filtered iterator for a copied chunk also reports whether it hides samples.
+// The chunk bytes are stable at this point: open chunks were copied, and closed or mmapped chunks cannot be appended to.
+func (c *safeHeadChunk) iteratorForChunkCopy(reuseIter chunkenc.Iterator) (chunkenc.Iterator, bool) {
+	if c.isoState == nil || c.isoState.IsolationDisabled() {
+		return nil, false
+	}
+	return c.iterator(reuseIter, true)
+}
+
+func (c *safeHeadChunk) iterator(reuseIter chunkenc.Iterator, onlyIfFiltered bool) (chunkenc.Iterator, bool) {
+	c.s.Lock()
+	it, filtersSamples := c.s.iterator(c.cid, c.Chunk, c.isoState, reuseIter, onlyIfFiltered)
+	c.s.Unlock()
+	return it, filtersSamples
+}
+
+// The iterator for the requested chunk ID reports whether it filters any samples.
+// If onlyIfFiltered is true, it returns nil instead when no samples are hidden.
 // It is unsafe to call this concurrently with s.append(...) without holding the series lock.
-func (s *memSeries) iterator(id chunks.HeadChunkID, c chunkenc.Chunk, isoState *isolationState, it chunkenc.Iterator) chunkenc.Iterator {
+func (s *memSeries) iterator(id chunks.HeadChunkID, c chunkenc.Chunk, isoState *isolationState, it chunkenc.Iterator, onlyIfFiltered bool) (chunkenc.Iterator, bool) {
 	ix := int(wrapChunkID(id - s.firstChunkID))
 
 	numSamples := c.NumSamples()
@@ -879,13 +909,16 @@ func (s *memSeries) iterator(id chunks.HeadChunkID, c chunkenc.Chunk, isoState *
 		}
 	}
 
+	if onlyIfFiltered && stopAfter == numSamples {
+		return nil, false
+	}
 	if stopAfter == 0 {
-		return chunkenc.NewNopIterator()
+		return chunkenc.NewNopIterator(), numSamples > 0
 	}
 	if stopAfter == numSamples {
-		return c.Iterator(it)
+		return c.Iterator(it), false
 	}
-	return makeStopIterator(c, it, stopAfter)
+	return makeStopIterator(c, it, stopAfter), stopAfter < numSamples
 }
 
 // stopIterator wraps an Iterator, but only returns the first

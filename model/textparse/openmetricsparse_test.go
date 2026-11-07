@@ -710,6 +710,7 @@ func TestOpenMetricsParse_UTF8(t *testing.T) {
 {"Heizölrückstoßabdämpfung 10€ metric with \"interesting\" {character\nchoices}","strange©™\n'quoted' \"name\""="6"} 10.0
 quotedexemplar_count 1 # {"id.thing"="histogram-count-test"} 4
 quotedexemplar2_count 1 # {"id.thing"="histogram-count-test",other="hello"} 4
+escapedexemplar_count 1 # {"id\"thing"="a\nb\"c\\d"} 4
 `
 
 	input += "# EOF\n"
@@ -772,6 +773,13 @@ choices}`, "strange©™\n'quoted' \"name\"", "6"),
 			lset: labels.FromStrings("__name__", "quotedexemplar2_count"),
 			es: []exemplar.Exemplar{
 				{Labels: labels.FromStrings("id.thing", "histogram-count-test", "other", "hello"), Value: 4},
+			},
+		}, {
+			m:    `escapedexemplar_count`,
+			v:    1,
+			lset: labels.FromStrings("__name__", "escapedexemplar_count"),
+			es: []exemplar.Exemplar{
+				{Labels: labels.FromStrings("id\"thing", "a\nb\"c\\d"), Value: 4},
 			},
 		},
 	}

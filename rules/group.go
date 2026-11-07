@@ -37,6 +37,7 @@ import (
 	"github.com/prometheus/prometheus/model/value"
 	"github.com/prometheus/prometheus/promql"
 	"github.com/prometheus/prometheus/promql/parser"
+	"github.com/prometheus/prometheus/schema"
 	"github.com/prometheus/prometheus/storage"
 	"github.com/prometheus/prometheus/tsdb/chunkenc"
 )
@@ -549,6 +550,23 @@ func (g *Group) Eval(ctx context.Context, ts time.Time) {
 			}
 			return
 		}
+		meta := rule.Metadata()
+		appOpts := g.appOpts
+		if g.opts.AppendMetadata && !meta.IsEmpty() {
+			appOpts.Metadata = meta
+		}
+		if g.opts.EnableTypeAndUnitLabels && len(vector) > 0 {
+			sm := schema.Metadata{Type: meta.Type, Unit: meta.Unit}
+			if !sm.IsTypeEmpty() || sm.Unit != "" {
+				lb := labels.NewBuilder(labels.EmptyLabels())
+				for idx := range vector {
+					lb.Reset(vector[idx].Metric)
+					sm.Name = vector[idx].Metric.Get(labels.MetricName)
+					sm.SetToLabels(lb)
+					vector[idx].Metric = lb.Labels()
+				}
+			}
+		}
 		rule.SetHealth(HealthGood)
 		rule.SetLastError(nil)
 		samplesTotal.Add(float64(len(vector)))
@@ -596,7 +614,7 @@ func (g *Group) Eval(ctx context.Context, ts time.Time) {
 		defer appendSp.End()
 
 		for _, s := range vector {
-			_, err = app.Append(0, s.Metric, 0, s.T, s.F, nil, s.H, g.appOpts)
+			_, err = app.Append(0, s.Metric, 0, s.T, s.F, nil, s.H, appOpts)
 
 			if err != nil {
 				rule.SetHealth(HealthBad)
@@ -637,7 +655,7 @@ func (g *Group) Eval(ctx context.Context, ts time.Time) {
 		for metric, lset := range g.seriesInPreviousEval[i] {
 			if _, ok := seriesReturned[metric]; !ok {
 				// Series no longer exposed, mark it stale.
-				_, err = app.Append(0, lset, 0, timestamp.FromTime(ts.Add(-ruleQueryOffset)), math.Float64frombits(value.StaleNaN), nil, nil, g.appOpts)
+				_, err = app.Append(0, lset, 0, timestamp.FromTime(ts.Add(-ruleQueryOffset)), math.Float64frombits(value.StaleNaN), nil, nil, appOpts)
 				unwrappedErr := errors.Unwrap(err)
 				if unwrappedErr == nil {
 					unwrappedErr = err

@@ -2145,12 +2145,22 @@ func funcSqrt(vectorVals []Vector, _ Matrix, _ parser.Expressions, enh *EvalNode
 
 // === max_of(a, b parser.ValueTypeScalar) Scalar ===
 func funcMaxOf(vectorVals []Vector, _ Matrix, _ parser.Expressions, enh *EvalNodeHelper) (Vector, annotations.Annotations) {
-	return append(enh.Out, Sample{F: math.Max(vectorVals[0][0].F, vectorVals[1][0].F)}), nil
+	a, b := vectorVals[0][0].F, vectorVals[1][0].F
+	// Match the max aggregator: NaN is only returned if both values are NaN.
+	if a < b || math.IsNaN(a) {
+		a = b
+	}
+	return append(enh.Out, Sample{F: a}), nil
 }
 
 // === min_of(a, b parser.ValueTypeScalar) Scalar ===
 func funcMinOf(vectorVals []Vector, _ Matrix, _ parser.Expressions, enh *EvalNodeHelper) (Vector, annotations.Annotations) {
-	return append(enh.Out, Sample{F: math.Min(vectorVals[0][0].F, vectorVals[1][0].F)}), nil
+	a, b := vectorVals[0][0].F, vectorVals[1][0].F
+	// Match the min aggregator: NaN is only returned if both values are NaN.
+	if a > b || math.IsNaN(a) {
+		a = b
+	}
+	return append(enh.Out, Sample{F: a}), nil
 }
 
 // === ln(Vector parser.ValueTypeVector) (Vector, Annotations) ===
