@@ -1525,6 +1525,11 @@ type RemoteWriteConfig struct {
 	SendExemplars        bool              `yaml:"send_exemplars,omitempty"`
 	SendNativeHistograms bool              `yaml:"send_native_histograms,omitempty"`
 	RoundRobinDNS        bool              `yaml:"round_robin_dns,omitempty"`
+	// UnixSocketPath, when set, sends batches over the unix-domain socket at
+	// this path instead of opening a TCP connection. The endpoint URL is
+	// still used for the request path and Host header; the socket listener
+	// must serve plaintext HTTP.
+	UnixSocketPath string `yaml:"unix_socket_path,omitempty"`
 	// ProtobufMessage specifies the protobuf message to use against the remote
 	// receiver as specified in https://prometheus.io/docs/specs/remote_write_spec_2_0/
 	ProtobufMessage remoteapi.WriteMessageType `yaml:"protobuf_message,omitempty"`

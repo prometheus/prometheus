@@ -17,10 +17,14 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"io"
+	"net"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
+	"path/filepath"
 	"strings"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -93,6 +97,43 @@ func TestStoreHTTPErrorHandling(t *testing.T) {
 
 		server.Close()
 	}
+}
+
+func TestWriteClientUnixSocket(t *testing.T) {
+	sockPath := filepath.Join(t.TempDir(), "remote-write.sock")
+
+	var received atomic.Int64
+	srv := &http.Server{Handler: http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		body, err := io.ReadAll(r.Body)
+		if err == nil && len(body) > 0 && r.URL.Path == "/api/v1/write" {
+			received.Add(1)
+		}
+		w.WriteHeader(http.StatusNoContent)
+	})}
+	lis, err := net.Listen("unix", sockPath)
+	require.NoError(t, err)
+	defer lis.Close()
+	go func() { _ = srv.Serve(lis) }()
+	defer srv.Close()
+
+	// The request URL keeps a TCP host:port for path and Host header; only
+	// the transport dials the socket.
+	serverURL, err := url.Parse("http://127.0.0.1:9090/api/v1/write")
+	require.NoError(t, err)
+	conf := &ClientConfig{
+		URL:            &config_util.URL{URL: serverURL},
+		UnixSocketPath: sockPath,
+		Timeout:        model.Duration(2 * time.Second),
+	}
+
+	hash, err := toHash(conf)
+	require.NoError(t, err)
+	c, err := NewWriteClient(hash, conf)
+	require.NoError(t, err)
+
+	_, err = c.Store(context.Background(), []byte("test-payload"), 0)
+	require.NoError(t, err)
+	require.Equal(t, int64(1), received.Load(), "expected the batch over the unix socket")
 }
 
 func TestClientRetryAfter(t *testing.T) {
