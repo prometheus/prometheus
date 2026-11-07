@@ -458,6 +458,7 @@ func (g *Group) CopyState(from *Group) {
 	g.lastEvaluation = from.lastEvaluation
 
 	ruleMap := make(map[string][]int, len(from.rules))
+	matched := make([]bool, len(from.rules))
 
 	for fi, fromRule := range from.rules {
 		nameAndLabels := nameAndLabels(fromRule)
@@ -472,6 +473,7 @@ func (g *Group) CopyState(from *Group) {
 			continue
 		}
 		fi := indexes[0]
+		matched[fi] = true
 		g.seriesInPreviousEval[i] = from.seriesInPreviousEval[fi]
 		ruleMap[nameAndLabels] = indexes[1:]
 
@@ -489,10 +491,8 @@ func (g *Group) CopyState(from *Group) {
 
 	// Handle deleted and unmatched duplicate rules.
 	g.staleSeries = from.staleSeries
-	for fi, fromRule := range from.rules {
-		nameAndLabels := nameAndLabels(fromRule)
-		l := ruleMap[nameAndLabels]
-		if len(l) != 0 {
+	for fi := range from.rules {
+		if !matched[fi] {
 			for _, series := range from.seriesInPreviousEval[fi] {
 				g.staleSeries = append(g.staleSeries, series)
 			}

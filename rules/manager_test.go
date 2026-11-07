@@ -888,6 +888,31 @@ func TestCopyState(t *testing.T) {
 	require.Equal(t, []labels.Labels{labels.FromStrings("l1", "v3")}, newGroup.staleSeries)
 }
 
+func TestCopyState_DuplicateRules(t *testing.T) {
+	oldGroup := &Group{
+		rules: []Rule{
+			NewRecordingRule("rule1", nil, labels.EmptyLabels()),
+			NewRecordingRule("rule1", nil, labels.EmptyLabels()),
+		},
+		seriesInPreviousEval: []map[string]labels.Labels{
+			{"r1_first": labels.FromStrings("series", "first")},
+			{"r1_second": labels.FromStrings("series", "second")},
+		},
+	}
+	newGroup := &Group{
+		rules: []Rule{
+			NewRecordingRule("rule1", nil, labels.EmptyLabels()),
+		},
+		seriesInPreviousEval: make([]map[string]labels.Labels, 1),
+	}
+	newGroup.CopyState(oldGroup)
+
+	// First rule was matched and retained in newGroup.
+	require.Equal(t, map[string]labels.Labels{"r1_first": labels.FromStrings("series", "first")}, newGroup.seriesInPreviousEval[0])
+	// Only the second (deleted) rule's series should be marked stale.
+	require.Equal(t, []labels.Labels{labels.FromStrings("series", "second")}, newGroup.staleSeries)
+}
+
 func TestDeletedRuleMarkedStale(t *testing.T) {
 	st := teststorage.New(t)
 
