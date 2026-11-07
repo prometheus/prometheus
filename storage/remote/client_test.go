@@ -24,9 +24,10 @@ import (
 	"net/url"
 	"path/filepath"
 	"strings"
-	"sync/atomic"
 	"testing"
 	"time"
+
+	"go.uber.org/atomic"
 
 	"github.com/gogo/protobuf/proto"
 	"github.com/golang/snappy"
