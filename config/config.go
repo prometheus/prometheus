@@ -1525,6 +1525,7 @@ type RemoteWriteConfig struct {
 	SendExemplars        bool              `yaml:"send_exemplars,omitempty"`
 	SendNativeHistograms bool              `yaml:"send_native_histograms,omitempty"`
 	RoundRobinDNS        bool              `yaml:"round_robin_dns,omitempty"`
+	UnixSocketPath       string            `yaml:"unix_socket_path,omitempty"`
 	// ProtobufMessage specifies the protobuf message to use against the remote
 	// receiver as specified in https://prometheus.io/docs/specs/remote_write_spec_2_0/
 	ProtobufMessage remoteapi.WriteMessageType `yaml:"protobuf_message,omitempty"`
