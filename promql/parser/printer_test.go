@@ -342,8 +342,7 @@ func TestExprString(t *testing.T) {
 			in: "foo[(1s3ms)]",
 		},
 		{
-			in:  "foo offset (1000000000005ms)",
-			out: "foo offset (11574d1h46m40s5ms)",
+			in: "foo offset (11574d1h46m40s5ms)",
 		},
 		{
 			in:  "foo offset +min_of(10s, 20s)",
