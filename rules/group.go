@@ -492,10 +492,11 @@ func (g *Group) CopyState(from *Group) {
 	for fi, fromRule := range from.rules {
 		nameAndLabels := nameAndLabels(fromRule)
 		l := ruleMap[nameAndLabels]
-		if len(l) != 0 {
+		if len(l) != 0 && l[0] == fi {
 			for _, series := range from.seriesInPreviousEval[fi] {
 				g.staleSeries = append(g.staleSeries, series)
 			}
+			ruleMap[nameAndLabels] = l[1:]
 		}
 	}
 }
