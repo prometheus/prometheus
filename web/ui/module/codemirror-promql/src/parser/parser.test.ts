@@ -20,6 +20,11 @@ import { ValueType } from '../types';
 describe('promql operations', () => {
   const testCases = [
     {
+      expr: 'log1p(metric)',
+      expectedValueType: ValueType.vector,
+      expectedDiag: [] as Diagnostic[],
+    },
+    {
       expr: ':node_memory_MemAvailable_bytes',
       expectedValueType: ValueType.vector,
       expectedDiag: [] as Diagnostic[],

@@ -77,6 +77,7 @@ export const functionDescriptions: Record<string, string> = {
   label_replace: 'set or replace label values',
   last_over_time: 'get the last sample value from a time range',
   ln: 'calculate natural logarithm of input series',
+  log1p: 'calculate the natural logarithm of one plus each input value',
   log10: 'calulcate base-10 logarithm of input series',
   log2: 'calculate base-2 logarithm of input series',
   max_over_time: 'return the maximum value over time for input series',
