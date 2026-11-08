@@ -2424,7 +2424,7 @@ configuration file](/documentation/examples/prometheus-hetzner.yml).
 
 The following meta labels are available on all targets during [relabeling](#relabel_config):
 
-* `__meta_hetzner_role`: the role of the server
+* `__meta_hetzner_role`: the role of the server (`hcloud` or `robot`)
 * `__meta_hetzner_server_id`: the ID of the server
 * `__meta_hetzner_server_name`: the name of the server
 * `__meta_hetzner_server_status`: the status of the server
