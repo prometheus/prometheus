@@ -42,13 +42,16 @@ import (
 //
 // For range vectors it will be a Matrix with one series, instant vectors a
 // Vector, scalars a Vector with one series whose value is the scalar
-// value,and nil for strings.
+// value, and nil for strings.
+//
+// Scalar vectors passed to range-vector functions may be reused between series
+// and steps. Function implementations must not retain or modify them.
 //
 // args are the original arguments to the function, where you can access
 // matrixSelectors, vectorSelectors, and StringLiterals.
 //
 // enh.Out is a pre-allocated empty vector that you may use to accumulate
-// output before returning it. The vectors in vals should not be returned.a
+// output before returning it. The vectors in vals should not be returned.
 //
 // Range vector functions need only return a vector with the right value,
 // the metric and timestamp are not needed.
@@ -332,11 +335,15 @@ func correctForCounterResets(
 
 // annosFromInterpolationError classifies an error returned by
 // interpolateHistograms (via pickOrInterpolate*Histogram) into the appropriate
-// annotation. If the error is not recognised, annos is left unchanged.
+// annotation. It panics if the error is not recognised.
 func annosFromInterpolationError(annos *annotations.Annotations, err error, metricName string, pos posrange.PositionRange) {
 	if errors.Is(err, histogram.ErrHistogramsIncompatibleSchema) {
 		annos.Add(annotations.NewMixedExponentialCustomHistogramsWarning(metricName, pos))
+		return
 	}
+	// Any other error means a histogram has an invalid bucket layout.
+	// Fail the query rather than silently drop the result.
+	panic(err)
 }
 
 // addHistogramWithAnnotations adds other into base in place, translating
@@ -347,8 +354,11 @@ func addHistogramWithAnnotations(base, other *histogram.FloatHistogram, annos *a
 	if err != nil {
 		if errors.Is(err, histogram.ErrHistogramsIncompatibleSchema) {
 			annos.Add(annotations.NewMixedExponentialCustomHistogramsWarning(metricName, pos))
+			return false
 		}
-		return false
+		// Any other error means a histogram has an invalid bucket layout.
+		// Fail the query rather than silently drop the result.
+		panic(err)
 	}
 	if nhcbBoundsReconciled {
 		annos.Add(annotations.NewMismatchedCustomBucketsHistogramsInfo(pos, annotations.HistogramAdd))
@@ -364,8 +374,11 @@ func subHistogramWithAnnotations(base, other *histogram.FloatHistogram, annos *a
 	if err != nil {
 		if errors.Is(err, histogram.ErrHistogramsIncompatibleSchema) {
 			annos.Add(annotations.NewMixedExponentialCustomHistogramsWarning(metricName, pos))
+			return false
 		}
-		return false
+		// Any other error means a histogram has an invalid bucket layout.
+		// Fail the query rather than silently drop the result.
+		panic(err)
 	}
 	if nhcbBoundsReconciled {
 		annos.Add(annotations.NewMismatchedCustomBucketsHistogramsInfo(pos, annotations.HistogramSub))
@@ -872,7 +885,12 @@ func histogramRate(
 		}
 	}
 
-	h := last.CopyToSchema(minSchema)
+	h, err := last.CopyToSchema(minSchema)
+	if err != nil {
+		// The histogram has an invalid bucket layout. Fail the query, as
+		// the result would otherwise be wrong.
+		panic(err)
+	}
 	// This subtraction may deliberately include conflicting counter resets.
 	// Counter resets are treated explicitly in this function, so the
 	// information about conflicting counter resets is ignored here.
@@ -881,6 +899,9 @@ func histogramRate(
 		if errors.Is(err, histogram.ErrHistogramsIncompatibleSchema) {
 			return nil, annotations.New().Add(annotations.NewMixedExponentialCustomHistogramsWarning(getMetricName(labels), pos))
 		}
+		// Any other error means a histogram has an invalid bucket layout.
+		// Fail the query rather than silently drop the result.
+		panic(err)
 	}
 	if nhcbBoundsReconciled {
 		annos.Add(annotations.NewMismatchedCustomBucketsHistogramsInfo(pos, annotations.HistogramSub))
@@ -907,6 +928,9 @@ func histogramRate(
 					if errors.Is(err, histogram.ErrHistogramsIncompatibleSchema) {
 						return nil, annotations.New().Add(annotations.NewMixedExponentialCustomHistogramsWarning(getMetricName(labels), pos))
 					}
+					// Any other error means a histogram has an invalid bucket layout.
+					// Fail the query rather than silently drop the result.
+					panic(err)
 				}
 				if nhcbBoundsReconciled {
 					annos.Add(annotations.NewMismatchedCustomBucketsHistogramsInfo(pos, annotations.HistogramAdd))
@@ -1107,6 +1131,12 @@ func instantValue(vals Matrix, args parser.Expressions, enh *EvalNodeHelper, isR
 			_, _, nhcbBoundsReconciled, err := resultSample.H.Sub(ss[0].H)
 			if errors.Is(err, histogram.ErrHistogramsIncompatibleSchema) {
 				return out, annos.Add(annotations.NewMixedExponentialCustomHistogramsWarning(getMetricName(samples.Metric), args.PositionRange()))
+			}
+			if err != nil {
+				// Any other error means a histogram has an invalid bucket
+				// layout. Fail the query, as the result would otherwise be the
+				// unsubtracted later sample.
+				panic(err)
 			}
 			if nhcbBoundsReconciled {
 				annos.Add(annotations.NewMismatchedCustomBucketsHistogramsInfo(args.PositionRange(), annotations.HistogramSub))
@@ -1509,6 +1539,9 @@ func funcAvgOverTime(_ []Vector, matrixVal Matrix, args parser.Expressions, enh 
 			if errors.Is(err, histogram.ErrHistogramsIncompatibleSchema) {
 				return enh.Out, annotations.New().Add(annotations.NewMixedExponentialCustomHistogramsWarning(getMetricName(firstSeries.Metric), args[0].PositionRange()))
 			}
+			// Fail the query on any other error rather than return a wrong
+			// result.
+			panic(err)
 		}
 		return vec, annos
 	}
@@ -1811,6 +1844,9 @@ func funcSumOverTime(_ []Vector, matrixVal Matrix, args parser.Expressions, enh 
 			if errors.Is(err, histogram.ErrHistogramsIncompatibleSchema) {
 				return enh.Out, annotations.New().Add(annotations.NewMixedExponentialCustomHistogramsWarning(getMetricName(firstSeries.Metric), args[0].PositionRange()))
 			}
+			// Fail the query on any other error rather than return a wrong
+			// result.
+			panic(err)
 		}
 		return vec, annos
 	}
@@ -2109,12 +2145,22 @@ func funcSqrt(vectorVals []Vector, _ Matrix, _ parser.Expressions, enh *EvalNode
 
 // === max_of(a, b parser.ValueTypeScalar) Scalar ===
 func funcMaxOf(vectorVals []Vector, _ Matrix, _ parser.Expressions, enh *EvalNodeHelper) (Vector, annotations.Annotations) {
-	return append(enh.Out, Sample{F: math.Max(vectorVals[0][0].F, vectorVals[1][0].F)}), nil
+	a, b := vectorVals[0][0].F, vectorVals[1][0].F
+	// Match the max aggregator: NaN is only returned if both values are NaN.
+	if a < b || math.IsNaN(a) {
+		a = b
+	}
+	return append(enh.Out, Sample{F: a}), nil
 }
 
 // === min_of(a, b parser.ValueTypeScalar) Scalar ===
 func funcMinOf(vectorVals []Vector, _ Matrix, _ parser.Expressions, enh *EvalNodeHelper) (Vector, annotations.Annotations) {
-	return append(enh.Out, Sample{F: math.Min(vectorVals[0][0].F, vectorVals[1][0].F)}), nil
+	a, b := vectorVals[0][0].F, vectorVals[1][0].F
+	// Match the min aggregator: NaN is only returned if both values are NaN.
+	if a > b || math.IsNaN(a) {
+		a = b
+	}
+	return append(enh.Out, Sample{F: a}), nil
 }
 
 // === ln(Vector parser.ValueTypeVector) (Vector, Annotations) ===
@@ -2901,7 +2947,7 @@ func dateWrapper(vectorVals []Vector, enh *EvalNodeHelper, f func(time.Time) flo
 		return append(enh.Out,
 			Sample{
 				Metric: labels.Labels{},
-				F:      f(time.Unix(enh.Ts/1000, 0).UTC()),
+				F:      f(time.UnixMilli(enh.Ts).UTC()),
 			})
 	}
 
@@ -2910,7 +2956,7 @@ func dateWrapper(vectorVals []Vector, enh *EvalNodeHelper, f func(time.Time) flo
 			// Ignore histogram sample.
 			continue
 		}
-		t := time.Unix(int64(el.F), 0).UTC()
+		t := time.Unix(int64(math.Floor(el.F)), 0).UTC()
 		if !enh.enableDelayedNameRemoval {
 			el.Metric = el.Metric.DropReserved(schema.IsMetadataLabel)
 		}

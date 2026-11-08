@@ -112,7 +112,7 @@ Maintainers take performance seriously. For any PERF PR:
 
 - Performance improvements require a benchmark that demonstrates the improvement.
 - Run benchmarks before and after the change using `go test -count=6 -benchmem -bench <directory changed in PR>`
-- Provide benchmark numbers in the PR body using `benchstat` output.
+- Always output benchmark results in raw `benchstat` format in the PR body (and review comments), and always include a link to the exact commit(s) (`before` and `after`) that the benchmark refers to. Rerun benchmarks and update the commit link whenever addressing review comments that touch benchmarked code or benchmarks.
 - If a subset of benchmark results show a regression, address this or explain why the case is not important.
 - Reuse allocations in hot paths where possible (slices, buffers). 
 - When reusing buffers passed to interfaces, document that callers must copy

@@ -6,6 +6,8 @@ import {
   filteredSampleValue,
   fnv1a,
   resultMetric,
+  scalarBinOp,
+  vectorElemBinop,
 } from "./binOp";
 import {
   VectorMatching,
@@ -3328,11 +3330,53 @@ const testCases: TestCase[] = [
 ];
 
 describe("binOp", () => {
+  describe("bitwise operators", () => {
+    it.each([
+      [binaryOperatorType.bitand, 5, 3, 1],
+      [binaryOperatorType.bitor, 5, 3, 7],
+      [binaryOperatorType.bitxor, 5, 3, 6],
+      [binaryOperatorType.bitand, 4294967297, 4294967296, 4294967296],
+      [
+        binaryOperatorType.bitor,
+        4503599627370496,
+        4503599627370495,
+        Number.MAX_SAFE_INTEGER,
+      ],
+      [
+        binaryOperatorType.bitxor,
+        Number.MAX_SAFE_INTEGER,
+        4503599627370496,
+        4503599627370495,
+      ],
+    ] as const)("%s(%s, %s) = %s", (op, lhs, rhs, expected) => {
+      expect(scalarBinOp(op, lhs, rhs)).toBe(expected);
+      expect(vectorElemBinop(op, lhs, rhs)).toEqual({
+        value: expected,
+        keep: true,
+      });
+    });
+
+    it.each([
+      binaryOperatorType.bitand,
+      binaryOperatorType.bitor,
+      binaryOperatorType.bitxor,
+    ])("%s returns NaN for invalid operands", (op) => {
+      for (const invalid of [-1, 1.5, NaN, Infinity, -Infinity, 2 ** 53]) {
+        expect(scalarBinOp(op, invalid, 1)).toBeNaN();
+        expect(scalarBinOp(op, 1, invalid)).toBeNaN();
+      }
+    });
+  });
+
   describe("resultMetric", () => {
-    it("should drop metric name for operations that change meaning", () => {
+    it.each([
+      binaryOperatorType.add,
+      binaryOperatorType.bitand,
+      binaryOperatorType.bitor,
+      binaryOperatorType.bitxor,
+    ])("should drop metric name for %s", (op) => {
       const lhs: Metric = { __name__: "metric_a", label1: "value1" };
       const rhs: Metric = { __name__: "metric_b", label2: "value2" };
-      const op = binaryOperatorType.add;
       const matching = {
         card: vectorMatchCardinality.oneToMany,
         on: true,

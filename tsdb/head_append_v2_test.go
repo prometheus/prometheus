@@ -55,15 +55,6 @@ import (
 	"github.com/prometheus/prometheus/util/testutil"
 )
 
-// TODO(bwplotka): Ensure non-ported tests are not deleted from head_test.go when removing AppenderV1 flow (#17632),
-// for example:
-// * TestChunkNotFoundHeadGCRace
-// * TestHeadSeriesChunkRace
-// * TestHeadLabelValuesWithMatchers
-// * TestHeadLabelNamesWithMatchers
-// * TestHeadShardedPostings
-// * TestHead_HighConcurrencyReadAndWrite
-
 func TestHeadAppenderV2_WALMultiRef(t *testing.T) {
 	head, w := newTestHead(t, 1000, compression.None, false)
 
@@ -164,6 +155,7 @@ func TestHeadAppenderV2_AppendersMetrics(t *testing.T) {
 }
 
 func TestHeadAppenderV2_RaceBetweenSeriesCreationAndGC(t *testing.T) {
+	t.Parallel()
 	head, _ := newTestHead(t, 1000, compression.None, false)
 	require.NoError(t, head.Init(0))
 
@@ -191,8 +183,7 @@ func TestHeadAppenderV2_RaceBetweenSeriesCreationAndGC(t *testing.T) {
 		}
 	}()
 
-	// Don't check the atomic.Bool on all iterations in order to perform more gc iterations and make the race condition more likely.
-	for i := 1; i%128 != 0 || !done.Load(); i++ {
+	for !done.Load() {
 		head.gc()
 	}
 
@@ -242,6 +233,7 @@ func TestHeadAppenderV2_CanGCSeriesCreatedWithoutSamples(t *testing.T) {
 }
 
 func TestHeadAppenderV2_DeleteSimple(t *testing.T) {
+	t.Parallel()
 	buildSmpls := func(s []int64) []sample {
 		ss := make([]sample, 0, len(s))
 		for _, t := range s {
@@ -468,8 +460,8 @@ func TestHeadAppenderV2_DeleteSamplesAndSeriesStillInWALAfterCheckpoint(t *testi
 }
 
 func TestHeadAppenderV2_Delete_e2e(t *testing.T) {
+	t.Parallel()
 	numDatapoints := 1000
-	numRanges := 1000
 	timeInterval := int64(2)
 	// Create 8 series with 1000 data-points of different ranges, delete and run queries.
 	lbls := [][]labels.Label{
@@ -578,51 +570,49 @@ func TestHeadAppenderV2_Delete_e2e(t *testing.T) {
 			}
 		}
 		sort.Sort(matched)
-		for range numRanges {
-			q, err := NewBlockQuerier(hb, 0, 100000)
-			require.NoError(t, err)
-			ss := q.Select(context.Background(), true, nil, del.ms...)
-			// Build the mockSeriesSet.
-			matchedSeries := make([]storage.Series, 0, len(matched))
-			for _, m := range matched {
-				smpls := seriesMap[m.String()]
-				smpls = deletedSamples(smpls, del.drange)
-				// Only append those series for which samples exist as mockSeriesSet
-				// doesn't skip series with no samples.
-				// TODO: But sometimes SeriesSet returns an empty chunkenc.Iterator
-				if len(smpls) > 0 {
-					matchedSeries = append(matchedSeries, storage.NewListSeries(m, smpls))
-				}
+		q, err := NewBlockQuerier(hb, 0, 100000)
+		require.NoError(t, err)
+		ss := q.Select(context.Background(), true, nil, del.ms...)
+		// Build the mockSeriesSet.
+		matchedSeries := make([]storage.Series, 0, len(matched))
+		for _, m := range matched {
+			smpls := seriesMap[m.String()]
+			smpls = deletedSamples(smpls, del.drange)
+			// Only append those series for which samples exist as mockSeriesSet
+			// doesn't skip series with no samples.
+			// TODO: But sometimes SeriesSet returns an empty chunkenc.Iterator
+			if len(smpls) > 0 {
+				matchedSeries = append(matchedSeries, storage.NewListSeries(m, smpls))
 			}
-			expSs := newMockSeriesSet(matchedSeries)
-			// Compare both SeriesSets.
-			for {
-				eok, rok := expSs.Next(), ss.Next()
-				// Skip a series if iterator is empty.
-				if rok {
-					for ss.At().Iterator(nil).Next() == chunkenc.ValNone {
-						rok = ss.Next()
-						if !rok {
-							break
-						}
+		}
+		expSs := newMockSeriesSet(matchedSeries)
+		// Compare both SeriesSets.
+		for {
+			eok, rok := expSs.Next(), ss.Next()
+			// Skip a series if iterator is empty.
+			if rok {
+				for ss.At().Iterator(nil).Next() == chunkenc.ValNone {
+					rok = ss.Next()
+					if !rok {
+						break
 					}
 				}
-				require.Equal(t, eok, rok)
-				if !eok {
-					break
-				}
-				sexp := expSs.At()
-				sres := ss.At()
-				require.Equal(t, sexp.Labels(), sres.Labels())
-				smplExp, errExp := storage.ExpandSamples(sexp.Iterator(nil), newSample)
-				smplRes, errRes := storage.ExpandSamples(sres.Iterator(nil), newSample)
-				require.Equal(t, errExp, errRes)
-				requireEqualSamples(t, sexp.Labels().String(), smplExp, smplRes)
 			}
-			require.NoError(t, ss.Err())
-			require.Empty(t, ss.Warnings())
-			require.NoError(t, q.Close())
+			require.Equal(t, eok, rok)
+			if !eok {
+				break
+			}
+			sexp := expSs.At()
+			sres := ss.At()
+			require.Equal(t, sexp.Labels(), sres.Labels())
+			smplExp, errExp := storage.ExpandSamples(sexp.Iterator(nil), newSample)
+			smplRes, errRes := storage.ExpandSamples(sres.Iterator(nil), newSample)
+			require.Equal(t, errExp, errRes)
+			requireEqualSamples(t, sexp.Labels().String(), smplExp, smplRes)
 		}
+		require.NoError(t, ss.Err())
+		require.Empty(t, ss.Warnings())
+		require.NoError(t, q.Close())
 	}
 }
 
@@ -792,6 +782,7 @@ func TestHeadAppenderV2_MemSeriesIsolation(t *testing.T) {
 	if defaultIsolationDisabled {
 		t.Skip("skipping test since tsdb isolation is disabled")
 	}
+	t.Parallel()
 
 	// Put a series, select it. GC it and then access it.
 	lastValue := func(h *Head, maxAppendID uint64) int {
@@ -1088,7 +1079,7 @@ func testHeadAppenderV2OutOfOrderSamplesMetric(t *testing.T, scenario sampleType
 
 	appendSample := func(app storage.AppenderV2, ts int64) (storage.SeriesRef, error) {
 		// TODO(bwplotka): Migrate to V2 natively.
-		ref, _, err := scenario.appendFunc(storage.AppenderV2AsLimitedV1(app), labels.FromStrings("a", "b"), ts, 99)
+		ref, _, err := scenario.appendFunc(app, labels.FromStrings("a", "b"), ts, 99)
 		return ref, err
 	}
 
@@ -1932,8 +1923,10 @@ func TestHistogramInWALAndMmapChunk_AppenderV2(t *testing.T) {
 }
 
 func TestChunkSnapshot_AppenderV2(t *testing.T) {
+	t.Parallel()
 	for _, enableSTStorage := range []bool{false, true} {
 		t.Run("enableSTStorage="+strconv.FormatBool(enableSTStorage), func(t *testing.T) {
+			t.Parallel()
 			head, _ := newTestHead(t, 120*4, compression.None, false)
 			defer func() {
 				head.opts.EnableMemorySnapshotOnShutdown = false
@@ -3032,7 +3025,7 @@ func testWBLReplayAppenderV2(t *testing.T, scenario sampleTypeScenario, enableST
 	l := labels.FromStrings("foo", "bar")
 	appendSample := func(mins int64, _ float64, isOOO bool) {
 		app := h.AppenderV2(context.Background())
-		_, s, err := scenario.appendFunc(storage.AppenderV2AsLimitedV1(app), l, mins*time.Minute.Milliseconds(), mins)
+		_, s, err := scenario.appendFunc(app, l, mins*time.Minute.Milliseconds(), mins)
 		require.NoError(t, err)
 		require.NoError(t, app.Commit())
 
@@ -3124,7 +3117,7 @@ func testOOOMmapReplayAppenderV2(t *testing.T, scenario sampleTypeScenario) {
 	l := labels.FromStrings("foo", "bar")
 	appendSample := func(mins int64) {
 		app := h.AppenderV2(context.Background())
-		_, _, err := scenario.appendFunc(storage.AppenderV2AsLimitedV1(app), l, mins*time.Minute.Milliseconds(), mins)
+		_, _, err := scenario.appendFunc(app, l, mins*time.Minute.Milliseconds(), mins)
 		require.NoError(t, err)
 		require.NoError(t, app.Commit())
 	}
@@ -3388,7 +3381,7 @@ func TestHeadAppenderV2_Append_OOOWithNoSeries(t *testing.T) {
 	}
 }
 
-func testHeadAppenderV2AppendOOOWithNoSeries(t *testing.T, appendFunc func(appender storage.LimitedAppenderV1, lbls labels.Labels, ts, value int64) (storage.SeriesRef, sample, error)) {
+func testHeadAppenderV2AppendOOOWithNoSeries(t *testing.T, appendFunc func(appender storage.AppenderV2, lbls labels.Labels, ts, value int64) (storage.SeriesRef, sample, error)) {
 	dir := t.TempDir()
 	wal, err := wlog.NewSize(nil, nil, filepath.Join(dir, "wal"), 32768, compression.Snappy)
 	require.NoError(t, err)
@@ -3409,7 +3402,7 @@ func testHeadAppenderV2AppendOOOWithNoSeries(t *testing.T, appendFunc func(appen
 
 	appendSample := func(lbls labels.Labels, ts int64) {
 		app := h.AppenderV2(context.Background())
-		_, _, err := appendFunc(storage.AppenderV2AsLimitedV1(app), lbls, ts*time.Minute.Milliseconds(), ts)
+		_, _, err := appendFunc(app, lbls, ts*time.Minute.Milliseconds(), ts)
 		require.NoError(t, err)
 		require.NoError(t, app.Commit())
 	}
@@ -3457,7 +3450,7 @@ func testHeadAppenderV2AppendOOOWithNoSeries(t *testing.T, appendFunc func(appen
 	// Now 179m is too old.
 	s4 := newLabels(4)
 	app := h.AppenderV2(context.Background())
-	_, _, err = appendFunc(storage.AppenderV2AsLimitedV1(app), s4, 179*time.Minute.Milliseconds(), 179)
+	_, _, err = appendFunc(app, s4, 179*time.Minute.Milliseconds(), 179)
 	require.Equal(t, storage.ErrTooOldSample, err)
 	require.NoError(t, app.Rollback())
 	verifyOOOSamples(s3, 1)
@@ -3499,7 +3492,7 @@ func testHeadMinOOOTimeUpdateAppenderV2(t *testing.T, scenario sampleTypeScenari
 
 	appendSample := func(ts int64) {
 		app := h.AppenderV2(context.Background())
-		_, _, err = scenario.appendFunc(storage.AppenderV2AsLimitedV1(app), labels.FromStrings("a", "b"), ts*time.Minute.Milliseconds(), ts)
+		_, _, err = scenario.appendFunc(app, labels.FromStrings("a", "b"), ts*time.Minute.Milliseconds(), ts)
 		require.NoError(t, err)
 		require.NoError(t, app.Commit())
 	}
@@ -4594,6 +4587,47 @@ func TestHeadAppenderV2_Append_EnableSTAsZeroSample(t *testing.T) {
 	}
 }
 
+// TestHeadAppenderV2_STZeroSample_StartTimestamp verifies that, with ST storage, the zero sample
+// written for a start timestamp carries that start timestamp, like the samples that follow it.
+func TestHeadAppenderV2_STZeroSample_StartTimestamp(t *testing.T) {
+	for _, tc := range []struct {
+		name string
+		v    float64
+		h    *histogram.Histogram
+		fh   *histogram.FloatHistogram
+	}{
+		{name: "float", v: 10},
+		{name: "histogram", h: tsdbutil.GenerateTestHistogram(1)},
+		{name: "float histogram", fh: tsdbutil.GenerateTestFloatHistogram(1)},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			opts := newTestHeadDefaultOptions(DefaultBlockDuration, false)
+			opts.EnableSTAsZeroSample = true
+			opts.EnableSTStorage.Store(true)
+			opts.FloatChunkEncoding.Store(uint32(chunkenc.EncXOR2))
+			opts.EnableHistogramSTEncoding.Store(true)
+			h, _ := newTestHeadWithOptions(t, compression.None, opts)
+
+			lbls := labels.FromStrings("foo", "bar")
+			for _, ts := range []int64{100, 200} {
+				app := h.AppenderV2(context.Background())
+				_, err := app.Append(0, lbls, 1, ts, tc.v, tc.h, tc.fh, storage.AOptions{})
+				require.NoError(t, err)
+				require.NoError(t, app.Commit())
+			}
+
+			q, err := NewBlockQuerier(h, math.MinInt64, math.MaxInt64)
+			require.NoError(t, err)
+			got := query(t, q, labels.MustNewMatcher(labels.MatchEqual, "foo", "bar"))[`{foo="bar"}`]
+			require.Len(t, got, 3) // The zero sample, then both samples.
+			for i, ts := range []int64{1, 100, 200} {
+				require.Equal(t, ts, got[i].T())
+				require.Equal(t, int64(1), got[i].ST())
+			}
+		})
+	}
+}
+
 func TestHeadAppenderV2_BestEffortSTZeroSample_OOO(t *testing.T) {
 	testHistogram := tsdbutil.GenerateTestHistogram(1)
 	testHistogram.CounterResetHint = histogram.NotCounterReset
@@ -4642,10 +4676,47 @@ func TestHeadAppenderV2_BestEffortSTZeroSample_OOO(t *testing.T) {
 			require.Len(t, result[`{foo="bar"}`], 2)
 		})
 	}
+
+	t.Run("rejected ST injected zero does not retain series", func(t *testing.T) {
+		for _, tc := range []struct {
+			name string
+			v    float64
+			h    *histogram.Histogram
+			fh   *histogram.FloatHistogram
+		}{
+			{name: "float", v: 10},
+			{name: "histogram", h: testHistogram},
+			{name: "float_histogram", fh: testFloatHistogram},
+		} {
+			t.Run(tc.name, func(t *testing.T) {
+				opts := newTestHeadDefaultOptions(DefaultBlockDuration, true)
+				opts.EnableSTAsZeroSample = true
+				h, _ := newTestHeadWithOptions(t, compression.None, opts)
+
+				lset := labels.FromStrings("a", "1")
+				baseline := h.AppenderV2(t.Context())
+				ref, err := baseline.Append(0, lset, 0, 200, tc.v, tc.h, tc.fh, storage.AOptions{})
+				require.NoError(t, err)
+				require.NoError(t, baseline.Commit())
+
+				app := h.AppenderV2(t.Context())
+				// Both st=100 (always fastRejectOOO=true) and ts=150 (RejectOutOfOrder=true)
+				// are OOO relative to headMaxt=200 and rejected without retaining the series.
+				_, err = app.Append(ref, lset, 100, 150, tc.v, tc.h, tc.fh, storage.AOptions{RejectOutOfOrder: true})
+				require.ErrorIs(t, err, storage.ErrOutOfOrderSample)
+				require.NoError(t, app.Rollback())
+
+				require.NoError(t, h.Truncate(201))
+				require.Zero(t, h.NumSeries(), "the rejected sample must not protect the collectable series")
+				require.Zero(t, prom_testutil.ToFloat64(h.metrics.pendingCommitUnderflow))
+			})
+		}
+	})
 }
 
 // Regression test for data race https://github.com/prometheus/prometheus/issues/15139.
 func TestHeadAppenderV2_Append_HistogramAndCommitConcurrency(t *testing.T) {
+	t.Parallel()
 	h := tsdbutil.GenerateTestHistogram(1)
 	fh := tsdbutil.GenerateTestFloatHistogram(1)
 
@@ -4661,6 +4732,7 @@ func TestHeadAppenderV2_Append_HistogramAndCommitConcurrency(t *testing.T) {
 	}
 	for name, tc := range testCases {
 		t.Run(name, func(t *testing.T) {
+			t.Parallel()
 			testHeadAppenderV2AppendHistogramAndCommitConcurrency(t, tc)
 		})
 	}

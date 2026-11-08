@@ -44,16 +44,16 @@ type testValue struct {
 
 type sampleTypeScenario struct {
 	sampleType string
-	appendFunc func(appender storage.LimitedAppenderV1, lbls labels.Labels, ts, value int64) (storage.SeriesRef, sample, error)
+	appendFunc func(appender storage.AppenderV2, lbls labels.Labels, ts, value int64) (storage.SeriesRef, sample, error)
 	sampleFunc func(ts, value int64) sample
 }
 
 var sampleTypeScenarios = map[string]sampleTypeScenario{
 	float: {
 		sampleType: sampleMetricTypeFloat,
-		appendFunc: func(appender storage.LimitedAppenderV1, lbls labels.Labels, ts, value int64) (storage.SeriesRef, sample, error) {
+		appendFunc: func(appender storage.AppenderV2, lbls labels.Labels, ts, value int64) (storage.SeriesRef, sample, error) {
 			s := sample{t: ts, f: float64(value)}
-			ref, err := appender.Append(0, lbls, ts, s.f)
+			ref, err := appender.Append(0, lbls, 0, ts, s.f, nil, nil, storage.AOptions{})
 			return ref, s, err
 		},
 		sampleFunc: func(ts, value int64) sample {
@@ -62,9 +62,9 @@ var sampleTypeScenarios = map[string]sampleTypeScenario{
 	},
 	intHistogram: {
 		sampleType: sampleMetricTypeHistogram,
-		appendFunc: func(appender storage.LimitedAppenderV1, lbls labels.Labels, ts, value int64) (storage.SeriesRef, sample, error) {
+		appendFunc: func(appender storage.AppenderV2, lbls labels.Labels, ts, value int64) (storage.SeriesRef, sample, error) {
 			s := sample{t: ts, h: tsdbutil.GenerateTestHistogram(value)}
-			ref, err := appender.AppendHistogram(0, lbls, ts, s.h, nil)
+			ref, err := appender.Append(0, lbls, 0, ts, 0, s.h, nil, storage.AOptions{})
 			return ref, s, err
 		},
 		sampleFunc: func(ts, value int64) sample {
@@ -73,9 +73,9 @@ var sampleTypeScenarios = map[string]sampleTypeScenario{
 	},
 	floatHistogram: {
 		sampleType: sampleMetricTypeHistogram,
-		appendFunc: func(appender storage.LimitedAppenderV1, lbls labels.Labels, ts, value int64) (storage.SeriesRef, sample, error) {
+		appendFunc: func(appender storage.AppenderV2, lbls labels.Labels, ts, value int64) (storage.SeriesRef, sample, error) {
 			s := sample{t: ts, fh: tsdbutil.GenerateTestFloatHistogram(value)}
-			ref, err := appender.AppendHistogram(0, lbls, ts, nil, s.fh)
+			ref, err := appender.Append(0, lbls, 0, ts, 0, nil, s.fh, storage.AOptions{})
 			return ref, s, err
 		},
 		sampleFunc: func(ts, value int64) sample {
@@ -84,9 +84,9 @@ var sampleTypeScenarios = map[string]sampleTypeScenario{
 	},
 	customBucketsIntHistogram: {
 		sampleType: sampleMetricTypeHistogram,
-		appendFunc: func(appender storage.LimitedAppenderV1, lbls labels.Labels, ts, value int64) (storage.SeriesRef, sample, error) {
+		appendFunc: func(appender storage.AppenderV2, lbls labels.Labels, ts, value int64) (storage.SeriesRef, sample, error) {
 			s := sample{t: ts, h: tsdbutil.GenerateTestCustomBucketsHistogram(value)}
-			ref, err := appender.AppendHistogram(0, lbls, ts, s.h, nil)
+			ref, err := appender.Append(0, lbls, 0, ts, 0, s.h, nil, storage.AOptions{})
 			return ref, s, err
 		},
 		sampleFunc: func(ts, value int64) sample {
@@ -95,9 +95,9 @@ var sampleTypeScenarios = map[string]sampleTypeScenario{
 	},
 	customBucketsFloatHistogram: {
 		sampleType: sampleMetricTypeHistogram,
-		appendFunc: func(appender storage.LimitedAppenderV1, lbls labels.Labels, ts, value int64) (storage.SeriesRef, sample, error) {
+		appendFunc: func(appender storage.AppenderV2, lbls labels.Labels, ts, value int64) (storage.SeriesRef, sample, error) {
 			s := sample{t: ts, fh: tsdbutil.GenerateTestCustomBucketsFloatHistogram(value)}
-			ref, err := appender.AppendHistogram(0, lbls, ts, nil, s.fh)
+			ref, err := appender.Append(0, lbls, 0, ts, 0, nil, s.fh, storage.AOptions{})
 			return ref, s, err
 		},
 		sampleFunc: func(ts, value int64) sample {
@@ -106,9 +106,9 @@ var sampleTypeScenarios = map[string]sampleTypeScenario{
 	},
 	gaugeIntHistogram: {
 		sampleType: sampleMetricTypeHistogram,
-		appendFunc: func(appender storage.LimitedAppenderV1, lbls labels.Labels, ts, value int64) (storage.SeriesRef, sample, error) {
+		appendFunc: func(appender storage.AppenderV2, lbls labels.Labels, ts, value int64) (storage.SeriesRef, sample, error) {
 			s := sample{t: ts, h: tsdbutil.GenerateTestGaugeHistogram(value)}
-			ref, err := appender.AppendHistogram(0, lbls, ts, s.h, nil)
+			ref, err := appender.Append(0, lbls, 0, ts, 0, s.h, nil, storage.AOptions{})
 			return ref, s, err
 		},
 		sampleFunc: func(ts, value int64) sample {
@@ -117,9 +117,9 @@ var sampleTypeScenarios = map[string]sampleTypeScenario{
 	},
 	gaugeFloatHistogram: {
 		sampleType: sampleMetricTypeHistogram,
-		appendFunc: func(appender storage.LimitedAppenderV1, lbls labels.Labels, ts, value int64) (storage.SeriesRef, sample, error) {
+		appendFunc: func(appender storage.AppenderV2, lbls labels.Labels, ts, value int64) (storage.SeriesRef, sample, error) {
 			s := sample{t: ts, fh: tsdbutil.GenerateTestGaugeFloatHistogram(value)}
-			ref, err := appender.AppendHistogram(0, lbls, ts, nil, s.fh)
+			ref, err := appender.Append(0, lbls, 0, ts, 0, nil, s.fh, storage.AOptions{})
 			return ref, s, err
 		},
 		sampleFunc: func(ts, value int64) sample {

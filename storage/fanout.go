@@ -343,7 +343,11 @@ func (f *fanoutAppenderV2) Append(ref SeriesRef, l labels.Labels, st, t int64, v
 	return ref, partialErr.ToError()
 }
 
-var _ GetRef = &fanoutAppenderV2{}
+var (
+	_ GetRef              = &fanoutAppenderV2{}
+	_ ExemplarAppenderV2  = &fanoutAppenderV2{}
+	_ CommitStatsReporter = &fanoutAppenderV2{}
+)
 
 // GetRef implements GetRef. It returns the reference and labels that the
 // primary holds for the series, if the primary implements GetRef.
@@ -354,7 +358,13 @@ func (f *fanoutAppenderV2) GetRef(lset labels.Labels, hash uint64) (SeriesRef, l
 	return 0, labels.EmptyLabels()
 }
 
-var _ ExemplarAppenderV2 = &fanoutAppenderV2{}
+// CommitStats returns the primary appender's commit stats, or zero stats if it does not report them.
+func (f *fanoutAppenderV2) CommitStats() CommitStats {
+	if s, ok := f.primary.(CommitStatsReporter); ok {
+		return s.CommitStats()
+	}
+	return CommitStats{}
+}
 
 // AppendExemplars implements ExemplarAppenderV2.
 // It dispatches the exemplars to the primary that is required to and all

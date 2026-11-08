@@ -246,6 +246,16 @@ func TestAddingNewIntervals(t *testing.T) {
 			new:   Interval{11, math.MaxInt64},
 			exp:   Intervals{{9, math.MaxInt64}},
 		},
+		{
+			exist: Intervals{{1, 2}, {5, 6}},
+			new:   Interval{5, math.MaxInt64},
+			exp:   Intervals{{1, 2}, {5, math.MaxInt64}},
+		},
+		{
+			exist: Intervals{{1, 2}, {5, 6}, {10, 11}},
+			new:   Interval{4, math.MaxInt64},
+			exp:   Intervals{{1, 2}, {4, math.MaxInt64}},
+		},
 	}
 
 	for _, c := range cases {

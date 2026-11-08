@@ -517,3 +517,25 @@ func TestRemoveFile(t *testing.T) {
 		},
 	)
 }
+
+func TestFileUpdateBurst(t *testing.T) {
+	t.Parallel()
+
+	runner := newTestRunner(t)
+	sdFile := runner.copyFile("fixtures/valid.yml")
+
+	runner.run("*.yml")
+	defer runner.stop()
+
+	runner.requireUpdate(time.Time{}, validTg(sdFile))
+
+	// Generate more events than fsnotify's 50-event buffer in the watched
+	// directory while discovery is refreshing and re-adding directory watches.
+	ref := runner.lastReceive()
+	noiseFile := filepath.Join(runner.dir, "noise.txt")
+	for range 100 {
+		require.NoError(t, os.WriteFile(noiseFile, []byte("x"), 0o600))
+	}
+	runner.copyFileTo("fixtures/valid2.yml", "valid.yml")
+	runner.requireUpdate(ref, valid2Tg(sdFile))
+}

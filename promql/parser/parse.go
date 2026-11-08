@@ -43,6 +43,10 @@ var parserPool = sync.Pool{
 
 // Options holds the configuration for the PromQL parser.
 type Options struct {
+	// EnableUnquotedUTF8Names allows the printer to emit unquoted Unicode letters and dots in names.
+	// Parsing accepts these names regardless of this option.
+	EnableUnquotedUTF8Names bool
+
 	EnableExperimentalFunctions bool
 	EnableBinopFillModifiers    bool
 	// Functions is the set of functions the parser accepts, keyed by name.
@@ -446,6 +450,7 @@ func (p *parser) InjectItem(typ ItemType) {
 
 func (p *parser) newBinaryExpression(lhs Node, op Item, modifiers, rhs Node) *BinaryExpr {
 	ret := modifiers.(*BinaryExpr)
+	ret.unquotedUTF8Names = p.options.EnableUnquotedUTF8Names
 
 	ret.LHS = lhs.(Expr)
 	ret.RHS = rhs.(Expr)
@@ -459,7 +464,8 @@ func (p *parser) newBinaryExpression(lhs Node, op Item, modifiers, rhs Node) *Bi
 	return ret
 }
 
-func (*parser) assembleVectorSelector(vs *VectorSelector) {
+func (p *parser) assembleVectorSelector(vs *VectorSelector) {
+	vs.unquotedUTF8Names = p.options.EnableUnquotedUTF8Names
 	// If the metric name was set outside the braces, add a matcher for it.
 	// If the metric name was inside the braces we don't need to do anything.
 	if vs.Name != "" {
@@ -473,6 +479,7 @@ func (*parser) assembleVectorSelector(vs *VectorSelector) {
 
 func (p *parser) newAggregateExpr(op Item, modifier, args Node, overread bool) (ret *AggregateExpr) {
 	ret = modifier.(*AggregateExpr)
+	ret.unquotedUTF8Names = p.options.EnableUnquotedUTF8Names
 	arguments := args.(Expressions)
 
 	ret.PosRange = posrange.PositionRange{
@@ -867,7 +874,13 @@ func (p *parser) checkAST(node Node) (typ ValueType) {
 			if vs, ok := n.Args[1].(*VectorSelector); ok && vs.Name != "" {
 				p.addParseErrf(n.Args[1].PositionRange(), "expected label selectors only, got vector selector instead")
 			} else if ok {
-				// Set Vector Selector flag to bypass empty matcher check
+				// Omitting the data label selector adds all data labels, so require at
+				// least one matcher rather than accepting the equivalent {}.
+				if len(vs.LabelMatchers) == 0 {
+					p.addParseErrf(vs.PositionRange(), "data label selector must contain at least one label matcher")
+				}
+				// Unlike in a regular vector selector, the matchers may all match the
+				// empty string, e.g. {data=~".*"}.
 				vs.BypassEmptyMatcherCheck = true
 			} else {
 				p.addParseErrf(n.Args[1].PositionRange(), "expected label selectors only")

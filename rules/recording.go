@@ -26,10 +26,14 @@ import (
 	"go.yaml.in/yaml/v2"
 
 	"github.com/prometheus/prometheus/model/labels"
+	"github.com/prometheus/prometheus/model/metadata"
 	"github.com/prometheus/prometheus/model/rulefmt"
 	"github.com/prometheus/prometheus/promql"
 	"github.com/prometheus/prometheus/promql/parser"
+	"github.com/prometheus/prometheus/schema"
 )
+
+var _ Rule = (*RecordingRule)(nil)
 
 // ErrDuplicateRecordingLabelSet is returned when a recording rule evaluation produces
 // metrics with identical labelsets after applying rule labels.
@@ -40,6 +44,7 @@ type RecordingRule struct {
 	name   string
 	vector parser.Expr
 	labels labels.Labels
+	meta   metadata.Metadata
 	// The health of the recording rule.
 	health *atomic.String
 	// Timestamp of last evaluation of the recording rule.
@@ -56,10 +61,16 @@ type RecordingRule struct {
 
 // NewRecordingRule returns a new recording rule.
 func NewRecordingRule(name string, vector parser.Expr, lset labels.Labels) *RecordingRule {
+	return NewRecordingRuleWithMetadata(name, vector, lset, metadata.Metadata{})
+}
+
+// NewRecordingRuleWithMetadata returns a new recording rule with configured metric metadata.
+func NewRecordingRuleWithMetadata(name string, vector parser.Expr, lset labels.Labels, meta metadata.Metadata) *RecordingRule {
 	return &RecordingRule{
 		name:                name,
 		vector:              vector,
 		labels:              lset,
+		meta:                meta,
 		health:              atomic.NewString(string(HealthUnknown)),
 		evaluationTimestamp: atomic.NewTime(time.Time{}),
 		evaluationDuration:  atomic.NewDuration(0),
@@ -82,6 +93,11 @@ func (rule *RecordingRule) Labels() labels.Labels {
 	return rule.labels
 }
 
+// Metadata returns the configured metric metadata for the recording rule.
+func (rule *RecordingRule) Metadata() metadata.Metadata {
+	return rule.meta
+}
+
 // Eval evaluates the rule and then overrides the metric names and labels accordingly.
 func (rule *RecordingRule) Eval(ctx context.Context, queryOffset time.Duration, ts time.Time, query QueryFunc, _ *url.URL, limit int) (promql.Vector, error) {
 	ctx = NewOriginContext(ctx, NewRuleDetail(rule))
@@ -90,18 +106,19 @@ func (rule *RecordingRule) Eval(ctx context.Context, queryOffset time.Duration, 
 		return nil, err
 	}
 
-	// Override the metric name and labels.
+	// Override the metric name, apply rule labels, and strip reserved schema labels.
 	lb := labels.NewBuilder(labels.EmptyLabels())
 
 	for i := range vector {
 		sample := &vector[i]
 
 		lb.Reset(sample.Metric)
-		lb.Set(labels.MetricName, rule.name)
-
 		rule.labels.Range(func(l labels.Label) {
 			lb.Set(l.Name, l.Value)
 		})
+		// Strip any reserved __type__ and __unit__ labels and set __name__.
+		// Group.Eval injects configured __type__ and __unit__ when type-and-unit-labels is enabled.
+		schema.Metadata{Name: rule.name}.SetToLabels(lb)
 
 		sample.Metric = lb.Labels()
 	}
@@ -131,10 +148,15 @@ func (rule *RecordingRule) LogValue() slog.Value {
 }
 
 func (rule *RecordingRule) String() string {
+	var meta *metadata.Metadata
+	if rule.meta != (metadata.Metadata{}) {
+		meta = &rule.meta
+	}
 	r := rulefmt.Rule{
-		Record: rule.name,
-		Expr:   rule.vector.String(),
-		Labels: rule.labels.Map(),
+		Record:   rule.name,
+		Expr:     rule.vector.String(),
+		Labels:   rule.labels.Map(),
+		Metadata: meta,
 	}
 
 	byt, err := yaml.Marshal(r)

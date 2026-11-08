@@ -149,16 +149,56 @@ func TestRemoteWriteHandlerHeadersHandling_V2Message(t *testing.T) {
 	payload, _, _, _, err := buildV2WriteRequest(promslog.NewNopLogger(), writeV2RequestFixture.Timeseries, writeV2RequestFixture.Symbols, nil, nil, nil, "snappy")
 	require.NoError(t, err)
 
+	const expectedV2Accept = "application/x-protobuf;proto=io.prometheus.write.v2.Request, application/x-protobuf;proto=io.prometheus.write.v2.Request;mode=none, application/x-protobuf;proto=io.prometheus.write.v2.Request;mode=stateless, application/x-protobuf;proto=io.prometheus.write.v2.Request;mode=stateless-st"
+
 	for _, tc := range []struct {
-		name          string
-		reqHeaders    map[string]string
-		expectedCode  int
-		expectedError string
+		name                   string
+		reqHeaders             map[string]string
+		expectedCode           int
+		expectedError          string
+		expectedAccept         string
+		expectedAcceptEncoding string
 	}{
 		{
 			name: "correct PRW 2.0 headers",
 			reqHeaders: map[string]string{
 				"Content-Type":           remoteWriteContentTypeHeaders[remoteapi.WriteV2MessageType],
+				"Content-Encoding":       compression.Snappy,
+				RemoteWriteVersionHeader: RemoteWriteVersion20HeaderValue,
+			},
+			expectedCode: http.StatusNoContent,
+		},
+		{
+			name: "correct PRW 2.0 headers with none mode",
+			reqHeaders: map[string]string{
+				"Content-Type":           remoteWriteContentTypeHeaders[remoteapi.WriteV2MessageType] + ";mode=none",
+				"Content-Encoding":       compression.Snappy,
+				RemoteWriteVersionHeader: RemoteWriteVersion20HeaderValue,
+			},
+			expectedCode: http.StatusNoContent,
+		},
+		{
+			name: "correct PRW 2.0 headers with stateless mode",
+			reqHeaders: map[string]string{
+				"Content-Type":           remoteapi.ContentTypeHeader(remoteapi.WriteV2MessageType, remoteapi.WriteModeStateless),
+				"Content-Encoding":       compression.Snappy,
+				RemoteWriteVersionHeader: RemoteWriteVersion20HeaderValue,
+			},
+			expectedCode: http.StatusNoContent,
+		},
+		{
+			name: "correct PRW 2.0 headers with stateless-st mode",
+			reqHeaders: map[string]string{
+				"Content-Type":           remoteapi.ContentTypeHeader(remoteapi.WriteV2MessageType, remoteapi.WriteModeStatelessST),
+				"Content-Encoding":       compression.Snappy,
+				RemoteWriteVersionHeader: RemoteWriteVersion20HeaderValue,
+			},
+			expectedCode: http.StatusNoContent,
+		},
+		{
+			name: "correct PRW 2.0 headers with RFC 9110 whitespace and case-insensitive params",
+			reqHeaders: map[string]string{
+				"Content-Type":           "application/x-protobuf; PROTO=\"io.prometheus.write.v2.Request\"; MODE=stateless",
 				"Content-Encoding":       compression.Snappy,
 				RemoteWriteVersionHeader: RemoteWriteVersion20HeaderValue,
 			},
@@ -173,10 +213,11 @@ func TestRemoteWriteHandlerHeadersHandling_V2Message(t *testing.T) {
 			expectedCode: http.StatusNoContent, // We don't check for now.
 		},
 		{
-			name:          "no headers",
-			reqHeaders:    map[string]string{},
-			expectedCode:  http.StatusUnsupportedMediaType,
-			expectedError: "prometheus.WriteRequest protobuf message is not accepted by this server; only accepts io.prometheus.write.v2.Request",
+			name:           "no headers",
+			reqHeaders:     map[string]string{},
+			expectedCode:   http.StatusUnsupportedMediaType,
+			expectedError:  "prometheus.WriteRequest protobuf message is not accepted by this server; only accepts io.prometheus.write.v2.Request",
+			expectedAccept: expectedV2Accept,
 		},
 		{
 			name: "missing content-type",
@@ -188,8 +229,9 @@ func TestRemoteWriteHandlerHeadersHandling_V2Message(t *testing.T) {
 			// (default) it would be empty message parsed and ok response.
 			// This is perhaps better, than 415 for previously working 1.0 flow with
 			// no content-type.
-			expectedCode:  http.StatusUnsupportedMediaType,
-			expectedError: "prometheus.WriteRequest protobuf message is not accepted by this server; only accepts io.prometheus.write.v2.Request",
+			expectedCode:   http.StatusUnsupportedMediaType,
+			expectedError:  "prometheus.WriteRequest protobuf message is not accepted by this server; only accepts io.prometheus.write.v2.Request",
+			expectedAccept: expectedV2Accept,
 		},
 		{
 			name: "missing content-encoding",
@@ -206,8 +248,9 @@ func TestRemoteWriteHandlerHeadersHandling_V2Message(t *testing.T) {
 				"Content-Encoding":       compression.Snappy,
 				RemoteWriteVersionHeader: RemoteWriteVersion20HeaderValue,
 			},
-			expectedCode:  http.StatusUnsupportedMediaType,
-			expectedError: "expected application/x-protobuf as the first (media) part, got yolo content-type",
+			expectedCode:   http.StatusUnsupportedMediaType,
+			expectedError:  "expected application/x-protobuf as the first (media) part, got yolo content-type",
+			expectedAccept: expectedV2Accept,
 		},
 		{
 			name: "wrong content-type2",
@@ -216,8 +259,20 @@ func TestRemoteWriteHandlerHeadersHandling_V2Message(t *testing.T) {
 				"Content-Encoding":       compression.Snappy,
 				RemoteWriteVersionHeader: RemoteWriteVersion20HeaderValue,
 			},
-			expectedCode:  http.StatusUnsupportedMediaType,
-			expectedError: "got application/x-protobuf;proto=yolo content type; unknown type for remote write protobuf message yolo, supported: prometheus.WriteRequest, io.prometheus.write.v2.Request",
+			expectedCode:   http.StatusUnsupportedMediaType,
+			expectedError:  "got application/x-protobuf;proto=yolo content type; unknown type for remote write protobuf message yolo, supported: prometheus.WriteRequest, io.prometheus.write.v2.Request",
+			expectedAccept: expectedV2Accept,
+		},
+		{
+			name: "unknown mode",
+			reqHeaders: map[string]string{
+				"Content-Type":           remoteWriteContentTypeHeaders[remoteapi.WriteV2MessageType] + ";mode=unknown",
+				"Content-Encoding":       compression.Snappy,
+				RemoteWriteVersionHeader: RemoteWriteVersion20HeaderValue,
+			},
+			expectedCode:   http.StatusUnsupportedMediaType,
+			expectedError:  "got application/x-protobuf;proto=io.prometheus.write.v2.Request;mode=unknown content type; unknown remote write mode \"unknown\", supported: none, stateless, stateless-st",
+			expectedAccept: expectedV2Accept,
 		},
 		{
 			name: "not supported content-encoding",
@@ -226,8 +281,9 @@ func TestRemoteWriteHandlerHeadersHandling_V2Message(t *testing.T) {
 				"Content-Encoding":       "zstd",
 				RemoteWriteVersionHeader: RemoteWriteVersion20HeaderValue,
 			},
-			expectedCode:  http.StatusUnsupportedMediaType,
-			expectedError: "zstd encoding (compression) is not accepted by this server; only snappy is acceptable",
+			expectedCode:           http.StatusUnsupportedMediaType,
+			expectedError:          "zstd encoding (compression) is not accepted by this server; only snappy is acceptable",
+			expectedAcceptEncoding: compression.Snappy,
 		},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
@@ -254,6 +310,8 @@ func TestRemoteWriteHandlerHeadersHandling_V2Message(t *testing.T) {
 
 			// Invalid request case - no samples should be written.
 			require.Equal(t, tc.expectedError, strings.TrimSpace(string(out)))
+			require.Equal(t, tc.expectedAccept, resp.Header.Get("Accept"))
+			require.Equal(t, tc.expectedAcceptEncoding, resp.Header.Get("Accept-Encoding"))
 			require.Empty(t, appendable.samples)
 			require.Empty(t, appendable.histograms)
 			require.Empty(t, appendable.exemplars)
@@ -1408,7 +1466,9 @@ func requireEqual(t *testing.T, expected, actual any, msgAndArgs ...any) {
 		msgAndArgs...)
 }
 
-func (m *mockAppendable) Appender(context.Context) storage.Appender {
+// AppenderV2 returns a storage.AppenderV2 (which also implements
+// storage.ExemplarAppenderV2) that records into mockAppendable slices.
+func (m *mockAppendable) AppenderV2(context.Context) storage.AppenderV2 {
 	if m.latestSample == nil {
 		m.latestSample = map[uint64]int64{}
 	}
@@ -1421,18 +1481,6 @@ func (m *mockAppendable) Appender(context.Context) storage.Appender {
 	if m.latestExemplar == nil {
 		m.latestExemplar = map[uint64]int64{}
 	}
-	return m
-}
-
-func (*mockAppendable) SetOptions(*storage.AppendOptions) {
-	panic("unimplemented")
-}
-
-// AppenderV2 returns a storage.AppenderV2 (which also implements
-// storage.ExemplarAppenderV2) that records into the same slices
-// as the V1 appender.
-func (m *mockAppendable) AppenderV2(ctx context.Context) storage.AppenderV2 {
-	m.Appender(ctx) // Ensure the latest* maps are initialized.
 	return (*mockAppenderV2)(m)
 }
 

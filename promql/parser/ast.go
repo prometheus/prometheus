@@ -89,16 +89,21 @@ type Expressions []Expr
 
 // AggregateExpr represents an aggregation operation on a Vector.
 type AggregateExpr struct {
+	unquotedUTF8Names bool // Whether the printer can emit unquoted Unicode letters and dots in names.
+
 	Op       ItemType // The used aggregation operation.
 	Expr     Expr     // The Vector expression over which is aggregated.
 	Param    Expr     // Parameter used by some aggregators.
 	Grouping []string // The labels by which to group the Vector.
 	Without  bool     // Whether to drop the given labels rather than keep them.
+
 	PosRange posrange.PositionRange
 }
 
 // BinaryExpr represents a binary expression between two child expressions.
 type BinaryExpr struct {
+	unquotedUTF8Names bool // Whether the printer can emit unquoted Unicode letters and dots in names.
+
 	Op       ItemType // The operation of the expression.
 	LHS, RHS Expr     // The operands on the respective sides of the operator.
 
@@ -204,6 +209,8 @@ func (e *StepInvariantExpr) PositionRange() posrange.PositionRange {
 
 // VectorSelector represents a Vector selection.
 type VectorSelector struct {
+	unquotedUTF8Names bool // Whether the printer can emit unquoted Unicode letters and dots in names.
+
 	Name string
 	// OriginalOffset is the actual offset calculated from OriginalOffsetExpr.
 	OriginalOffset time.Duration

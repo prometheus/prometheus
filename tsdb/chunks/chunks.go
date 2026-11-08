@@ -432,10 +432,18 @@ func (w *Writer) cut() error {
 // It does not fsync the file content, so a crash may leave the file with missing or invalid content.
 // Callers must account for this.
 func cutSegmentFile(dirFile *os.File, magicNumber uint32, chunksFormat byte, allocSize int64) (headerSize int, newFile *os.File, seq int, returnErr error) {
-	p, seq, err := nextSequenceFile(dirFile.Name())
+	_, seq, err := nextSequenceFile(dirFile.Name())
 	if err != nil {
 		return 0, nil, 0, fmt.Errorf("next sequence file: %w", err)
 	}
+	return cutSegmentFileWithSeq(dirFile, magicNumber, chunksFormat, allocSize, seq)
+}
+
+// cutSegmentFileWithSeq is like cutSegmentFile but uses the given sequence
+// instead of deriving it from the files currently on disk. It lets the head
+// chunk disk mapper keep numbering monotonic across truncation.
+func cutSegmentFileWithSeq(dirFile *os.File, magicNumber uint32, chunksFormat byte, allocSize int64, seq int) (headerSize int, newFile *os.File, seqOut int, returnErr error) {
+	p := segmentFile(dirFile.Name(), seq)
 	f, err := os.OpenFile(p, os.O_WRONLY|os.O_CREATE, 0o666)
 	if err != nil {
 		return 0, nil, 0, fmt.Errorf("open segment file: %w", err)
@@ -774,4 +782,15 @@ func closeAll(cs []io.Closer) error {
 		errs = append(errs, c.Close())
 	}
 	return errors.Join(errs...)
+}
+
+// EncodedSizeInBytes calculates the total size in bytes of a given chunk,
+// when encoded by the chunks.Writer.
+// It requires a bytes buffer of at least MaxChunkLengthFieldSize size to avoid allocations.
+func EncodedSizeInBytes(chunk chunkenc.Chunk, buf []byte) int64 {
+	size := int64(len(chunk.Bytes()))                   // The chunk data itself.
+	size += int64(binary.PutUvarint(buf, uint64(size))) // The data length is a variable length field.
+	size += ChunkEncodingSize                           // The chunk encoding.
+	size += crc32.Size                                  // The 4 bytes of crc32.
+	return size
 }

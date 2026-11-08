@@ -55,6 +55,7 @@ import (
 	toolkit_web "github.com/prometheus/exporter-toolkit/web"
 	"go.uber.org/atomic"
 	"go.uber.org/automaxprocs/maxprocs"
+	"go.yaml.in/yaml/v2"
 	"k8s.io/client-go/rest"
 	"k8s.io/klog"
 	klogv2 "k8s.io/klog/v2"
@@ -184,24 +185,25 @@ func agentOnlyFlag(app *kingpin.Application, name, help string) *kingpin.FlagCla
 type flagConfig struct {
 	configFile string
 
-	agentStoragePath            string
-	serverStoragePath           string
-	notifier                    notifier.Options
-	forGracePeriod              model.Duration
-	outageTolerance             model.Duration
-	resendDelay                 model.Duration
-	maxConcurrentEvals          int64
-	web                         web.Options
-	scrape                      scrape.Options
-	tsdb                        tsdbOptions
-	agent                       agentOptions
-	lookbackDelta               model.Duration
-	webTimeout                  model.Duration
-	queryTimeout                model.Duration
-	queryConcurrency            int
-	queryMaxSamples             int
-	RemoteFlushDeadline         model.Duration
-	maxNotificationsSubscribers int
+	agentStoragePath             string
+	serverStoragePath            string
+	notifier                     notifier.Options
+	forGracePeriod               model.Duration
+	outageTolerance              model.Duration
+	resendDelay                  model.Duration
+	maxConcurrentEvals           int64
+	web                          web.Options
+	scrape                       scrape.Options
+	tsdb                         tsdbOptions
+	agent                        agentOptions
+	lookbackDelta                model.Duration
+	webTimeout                   model.Duration
+	queryTimeout                 model.Duration
+	queryConcurrency             int
+	queryMaxSamples              int
+	convertClassicHistogramsFrom []string
+	RemoteFlushDeadline          model.Duration
+	maxNotificationsSubscribers  int
 
 	enableAutoReload   bool
 	autoReloadInterval model.Duration
@@ -214,9 +216,11 @@ type flagConfig struct {
 	featureList []string
 	// These options are extracted from featureList
 	// for ease of use.
-	enablePerStepStats       bool
-	enableConcurrentRuleEval bool
-	useStartTimestamps       bool
+	enablePerStepStats              bool
+	enableConcurrentRuleEval        bool
+	useStartTimestamps              bool
+	enableNativeHistogramsAsClassic bool
+	enableQueryCost                 bool
 
 	prometheusURL   string
 	corsRegexString string
@@ -248,6 +252,7 @@ func (c *flagConfig) setFeatureListOptions(logger *slog.Logger) error {
 				c.scrape.AppendMetadata = true
 				c.web.AppendMetadata = true
 				c.tsdb.EnableMetadataWALRecords = true
+				c.agent.EnableMetadataWALRecords = true
 				features.Enable(features.TSDB, "metadata_wal_records")
 				logger.Info("Experimental metadata records in WAL enabled")
 			case "promql-per-step-stats":
@@ -259,6 +264,9 @@ func (c *flagConfig) setFeatureListOptions(logger *slog.Logger) error {
 			case "concurrent-rule-eval":
 				c.enableConcurrentRuleEval = true
 				logger.Info("Experimental concurrent rule evaluation enabled.")
+			case "promql-unquoted-utf8-names":
+				c.parserOpts.EnableUnquotedUTF8Names = true
+				logger.Info("Unquoted UTF-8 name printing enabled.")
 			case "promql-experimental-functions":
 				c.parserOpts.EnableExperimentalFunctions = true
 				logger.Info("Experimental PromQL functions enabled.")
@@ -321,7 +329,7 @@ func (c *flagConfig) setFeatureListOptions(logger *slog.Logger) error {
 				logger.Info("Serving previous version of the Prometheus web UI.")
 			case "otlp-deltatocumulative":
 				c.web.ConvertOTLPDelta = true
-				logger.Info("Converting delta OTLP metrics to cumulative")
+				logger.Warn("This option for --enable-feature is deprecated and will be removed in a future major version. Use otlp-native-delta-ingestion instead.", "option", o)
 			case "otlp-native-delta-ingestion":
 				// Experimental OTLP native delta ingestion.
 				// This currently just stores the raw delta value as-is with unknown metric type. Better typing and
@@ -331,7 +339,7 @@ func (c *flagConfig) setFeatureListOptions(logger *slog.Logger) error {
 				logger.Info("Enabling native ingestion of delta OTLP metrics, storing the raw sample values without conversion. WARNING: Delta support is in an early stage of development. The ingestion and querying process is likely to change over time.")
 			case "openmetrics2":
 				c.scrape.EnableOpenMetrics2 = true
-				logger.Info("Experimental OpenMetrics 2.0 scrape format enabled. WARNING: OpenMetrics 2.0 is not stable yet, the parser will be made stricter before stabilization and the exposition format may still change.")
+				logger.Info("Experimental OpenMetrics 2.0 scrape format enabled. To negotiate OpenMetrics 2.0 with targets, add OpenMetricsText2.0.0 and OpenMetricsText2.0.0-rc to scrape_protocols in the configuration. WARNING: OpenMetrics 2.0 is not stable yet, the parser will be made stricter before stabilization and the exposition format may still change.")
 			case "type-and-unit-labels":
 				c.scrape.EnableTypeAndUnitLabels = true
 				c.web.EnableTypeAndUnitLabels = true
@@ -351,6 +359,13 @@ func (c *flagConfig) setFeatureListOptions(logger *slog.Logger) error {
 			case "search-api":
 				c.web.EnableSearch = true
 				logger.Info("Experimental search API enabled.")
+			case "promql-native-histograms-as-classic":
+				c.enableNativeHistogramsAsClassic = true
+				logger.Info("Experimental PromQL native histograms as classic conversion enabled.")
+			case "query-cost":
+				c.enableQueryCost = true
+				c.web.EnableQueryCost = true
+				logger.Info("Experimental query cost guardrails enabled.")
 			default:
 				logger.Warn("Unknown option for --enable-feature", "option", o)
 			}
@@ -645,10 +660,13 @@ func main() {
 	serverOnlyFlag(a, "query.max-samples", "Maximum number of samples a single query can load into memory. Note that queries will fail if they try to load more samples than this into memory, so this also limits the number of samples a query can return.").
 		Default("50000000").IntVar(&cfg.queryMaxSamples)
 
+	serverOnlyFlag(a, "query.convert-classic-histograms-from", "Native histogram kinds that PromQL converts to classic histograms when classic histogram series are selected. Valid values: nhcb. Requires --enable-feature=promql-native-histograms-as-classic.").
+		Hidden().PlaceHolder("<kind>").EnumsVar(&cfg.convertClassicHistogramsFrom, "nhcb")
+
 	a.Flag("scrape.discovery-reload-interval", "Interval used by scrape manager to throttle target groups updates.").
 		Hidden().Default("5s").SetValue(&cfg.scrape.DiscoveryReloadInterval)
 
-	a.Flag("enable-feature", "Comma separated feature names to enable. Valid options: concurrent-rule-eval, created-timestamp-zero-ingestion, delayed-compaction, exemplar-storage, extra-scrape-metrics, histograms-st-encoding, memory-snapshot-on-shutdown, metadata-wal-records, old-ui, openmetrics2, otlp-deltatocumulative, otlp-native-delta-ingestion, promql-binop-fill-modifiers, promql-delayed-name-removal, promql-experimental-functions, promql-per-step-stats, search-api, st-storage, st-synthesis, type-and-unit-labels, use-start-timestamps, use-uncached-io, xor2-encoding, zstd-scrape. See https://prometheus.io/docs/prometheus/latest/feature_flags/ for more details.").
+	a.Flag("enable-feature", "Comma separated feature names to enable. Valid options: concurrent-rule-eval, created-timestamp-zero-ingestion, delayed-compaction, exemplar-storage, extra-scrape-metrics, histograms-st-encoding, memory-snapshot-on-shutdown, metadata-wal-records, old-ui, openmetrics2, otlp-deltatocumulative, otlp-native-delta-ingestion, promql-binop-fill-modifiers, promql-delayed-name-removal, promql-experimental-functions, promql-native-histograms-as-classic, promql-per-step-stats, promql-unquoted-utf8-names, query-cost, search-api, st-storage, st-synthesis, type-and-unit-labels, use-start-timestamps, use-uncached-io, xor2-encoding, zstd-scrape. See https://prometheus.io/docs/prometheus/latest/feature_flags/ for more details.").
 		StringsVar(&cfg.featureList)
 
 	a.Flag("agent", "Run Prometheus in 'Agent mode'.").BoolVar(&agentMode)
@@ -698,6 +716,14 @@ func main() {
 		logger.Info("Automatic configuration file reloading enabled", "interval", cfg.autoReloadInterval)
 	}
 
+	if len(cfg.convertClassicHistogramsFrom) > 0 && !cfg.enableNativeHistogramsAsClassic {
+		fmt.Fprintln(os.Stderr, "--query.convert-classic-histograms-from requires --enable-feature=promql-native-histograms-as-classic")
+		os.Exit(1)
+	}
+	if cfg.enableNativeHistogramsAsClassic && len(cfg.convertClassicHistogramsFrom) == 0 {
+		cfg.convertClassicHistogramsFrom = []string{"nhcb"}
+	}
+
 	if cfg.web.MaxSearchLimit < 0 {
 		fmt.Fprintf(os.Stderr, "--web.search.max-limit must be non-negative; got %d (use 0 to disable the cap)\n", cfg.web.MaxSearchLimit)
 		os.Exit(1)
@@ -730,7 +756,7 @@ func main() {
 		localStoragePath = cfg.agentStoragePath
 	}
 
-	cfg.web.ExternalURL, err = computeExternalURL(cfg.prometheusURL, cfg.web.ListenAddresses[0])
+	cfg.web.ExternalURL, err = computeExternalURL(cfg.prometheusURL, cfg.web.ListenAddresses[0], *webConfig)
 	if err != nil {
 		fmt.Fprintln(os.Stderr, fmt.Errorf("parse external URL %q: %w", cfg.prometheusURL, err))
 		os.Exit(2)
@@ -825,9 +851,9 @@ func main() {
 	}
 
 	if cfg.memlimitEnable {
-		if _, err := memlimit.SetGoMemLimitWithOpts(
+		if _, err := memlimit.Set(
 			memlimit.WithRatio(cfg.memlimitRatio),
-			memlimit.WithRefreshInterval(time.Duration(cfg.memlimitRefreshInterval)),
+			memlimit.WithRefreshInterval(context.Background(), time.Duration(cfg.memlimitRefreshInterval)),
 			memlimit.WithProvider(
 				memlimit.ApplyFallback(
 					memlimit.FromCgroup,
@@ -947,7 +973,17 @@ func main() {
 	var (
 		localStorage  = &readyStorage{stats: tsdb.NewDBStats()}
 		scraper       = &readyScrapeManager{}
-		remoteStorage = remote.NewStorage(logger.With("component", "remote"), prometheus.DefaultRegisterer, localStorage.StartTime, localStoragePath, time.Duration(cfg.RemoteFlushDeadline), scraper, cfg.scrape.EnableTypeAndUnitLabels)
+		remoteStorage = remote.NewStorage(
+			logger.With("component", "remote"),
+			prometheus.DefaultRegisterer,
+			localStorage.StartTime,
+			localStoragePath,
+			time.Duration(cfg.RemoteFlushDeadline),
+			scraper,
+			cfg.scrape.EnableTypeAndUnitLabels,
+			cfg.tsdb.EnableMetadataWALRecords || cfg.agent.EnableMetadataWALRecords,
+			cfg.tsdb.EnableSTStorage || cfg.agent.EnableSTStorage,
+		)
 		fanoutStorage = storage.NewFanout(logger, localStorage, remoteStorage)
 	)
 
@@ -1028,14 +1064,16 @@ func main() {
 			NoStepSubqueryIntervalFn: noStepSubqueryInterval.Get,
 			// EnableAtModifier and EnableNegativeOffset have to be
 			// always on for regular PromQL as of Prometheus v2.33.
-			EnableAtModifier:         true,
-			EnableNegativeOffset:     true,
-			EnablePerStepStats:       cfg.enablePerStepStats,
-			EnableDelayedNameRemoval: cfg.promqlEnableDelayedNameRemoval,
-			EnableTypeAndUnitLabels:  cfg.scrape.EnableTypeAndUnitLabels,
-			UseStartTimestamps:       cfg.useStartTimestamps,
-			FeatureRegistry:          features.DefaultRegistry,
-			Parser:                   promqlParser,
+			EnableAtModifier:                true,
+			EnableNegativeOffset:            true,
+			EnablePerStepStats:              cfg.enablePerStepStats,
+			EnableDelayedNameRemoval:        cfg.promqlEnableDelayedNameRemoval,
+			EnableTypeAndUnitLabels:         cfg.scrape.EnableTypeAndUnitLabels,
+			UseStartTimestamps:              cfg.useStartTimestamps,
+			EnableNativeHistogramsAsClassic: slices.Contains(cfg.convertClassicHistogramsFrom, "nhcb"),
+			EnableQueryCost:                 cfg.enableQueryCost,
+			FeatureRegistry:                 features.DefaultRegistry,
+			Parser:                          promqlParser,
 		}
 
 		queryEngine = promql.NewEngine(opts)
@@ -1058,8 +1096,10 @@ func main() {
 			DefaultRuleQueryOffset: func() time.Duration {
 				return time.Duration(cfgFile.GlobalConfig.RuleQueryOffset)
 			},
-			FeatureRegistry: features.DefaultRegistry,
-			Parser:          promqlParser,
+			FeatureRegistry:         features.DefaultRegistry,
+			Parser:                  promqlParser,
+			AppendMetadata:          cfg.scrape.AppendMetadata,
+			EnableTypeAndUnitLabels: cfg.scrape.EnableTypeAndUnitLabels,
 		})
 	}
 
@@ -1078,6 +1118,7 @@ func main() {
 	cfg.web.RuleManager = ruleManager
 	cfg.web.Notifier = notifierManager
 	cfg.web.LookbackDelta = time.Duration(cfg.lookbackDelta)
+	cfg.web.QueryTimeout = time.Duration(cfg.queryTimeout)
 	cfg.web.IsAgent = agentMode
 	cfg.web.AppName = modeAppName
 	cfg.web.Parser = promqlParser
@@ -1113,6 +1154,9 @@ func main() {
 
 	// This is passed to ruleManager.Update().
 	externalURL := cfg.web.ExternalURL.String()
+
+	// Captured for the query_engine reloader, whose parameter shadows cfg.
+	enableQueryCost := cfg.enableQueryCost
 
 	reloaders := []reloader{
 		{
@@ -1151,6 +1195,16 @@ func main() {
 				if agentMode {
 					// No-op in Agent mode.
 					return nil
+				}
+
+				// Apply the reloadable query-cost limits only when the
+				// query-cost feature is enabled.
+				if enableQueryCost {
+					queryEngine.SetQueryLimits(
+						cfg.GlobalConfig.QueryMaxSeries,
+						cfg.GlobalConfig.QueryMaxSamplesRead,
+						time.Duration(cfg.GlobalConfig.QueryMaxDuration),
+					)
 				}
 
 				if cfg.GlobalConfig.QueryLogFile == "" {
@@ -1590,6 +1644,7 @@ func main() {
 					"OutOfOrderTimeWindow", cfg.agent.OutOfOrderTimeWindow,
 					"EnableSTAsZeroSample", cfg.agent.EnableSTAsZeroSample,
 					"EnableSTStorage", cfg.tsdb.EnableSTStorage,
+					"EnableMetadataWALRecords", cfg.agent.EnableMetadataWALRecords,
 				)
 
 				localStorage.Set(db, 0)
@@ -1789,8 +1844,9 @@ func compileCORSRegexString(s string) (*regexp.Regexp, error) {
 }
 
 // computeExternalURL computes a sanitized external URL from a raw input. It infers unset
-// URL parts from the OS and the given listen address.
-func computeExternalURL(u, listenAddr string) (*url.URL, error) {
+// URL parts from the OS and the given listen address. When u is empty, the scheme of the
+// inferred URL is set to https if webConfigFile configures TLS.
+func computeExternalURL(u, listenAddr, webConfigFile string) (*url.URL, error) {
 	if u == "" {
 		hostname, err := os.Hostname()
 		if err != nil {
@@ -1800,7 +1856,11 @@ func computeExternalURL(u, listenAddr string) (*url.URL, error) {
 		if err != nil {
 			return nil, err
 		}
-		u = fmt.Sprintf("http://%s:%s/", hostname, port)
+		scheme := "http"
+		if webConfigHasTLSServerConfig(webConfigFile) {
+			scheme = "https"
+		}
+		u = fmt.Sprintf("%s://%s:%s/", scheme, hostname, port)
 	}
 
 	if startsOrEndsWithQuote(u) {
@@ -1819,6 +1879,29 @@ func computeExternalURL(u, listenAddr string) (*url.URL, error) {
 	eu.Path = ppref
 
 	return eu, nil
+}
+
+// webConfigHasTLSServerConfig reports whether the web config file at path configures TLS,
+// i.e. contains a tls_server_config section that sets at least one TLS-enabling field, as
+// decided by exporter-toolkit's own TLSConfig.IsEnabled(). An empty path, or a file that
+// cannot be read or parsed as YAML, is treated as not configuring TLS; a definitive error
+// for such cases is reported later by toolkit_web.Validate.
+func webConfigHasTLSServerConfig(path string) bool {
+	if path == "" {
+		return false
+	}
+
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return false
+	}
+
+	var webConfig toolkit_web.Config
+	if err := yaml.Unmarshal(data, &webConfig); err != nil {
+		return false
+	}
+
+	return webConfig.TLSConfig.IsEnabled()
 }
 
 // storagePathFsSize returns the filesystem size for path or its closest existing parent.
@@ -2208,6 +2291,7 @@ type agentOptions struct {
 	OutOfOrderTimeWindow         int64 // TODO(bwplotka): Unused option, fix it or remove.
 	EnableSTAsZeroSample         bool
 	EnableSTStorage              bool
+	EnableMetadataWALRecords     bool
 	CheckpointFromInMemorySeries bool
 	CheckpointBatchSize          int
 }
@@ -2227,6 +2311,7 @@ func (opts agentOptions) ToAgentOptions(outOfOrderTimeWindow int64) agent.Option
 		OutOfOrderTimeWindow:         outOfOrderTimeWindow,
 		EnableSTAsZeroSample:         opts.EnableSTAsZeroSample,
 		EnableSTStorage:              opts.EnableSTStorage,
+		EnableMetadataWALRecords:     opts.EnableMetadataWALRecords,
 		CheckpointFromInMemorySeries: opts.CheckpointFromInMemorySeries,
 		CheckpointBatchSize:          opts.CheckpointBatchSize,
 	}

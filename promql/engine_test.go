@@ -30,6 +30,7 @@ import (
 	"time"
 
 	"github.com/prometheus/client_golang/prometheus"
+	"github.com/prometheus/common/promslog"
 	"github.com/stretchr/testify/require"
 
 	"github.com/prometheus/prometheus/model/histogram"
@@ -43,6 +44,7 @@ import (
 	"github.com/prometheus/prometheus/storage"
 	"github.com/prometheus/prometheus/tsdb"
 	"github.com/prometheus/prometheus/tsdb/chunkenc"
+	"github.com/prometheus/prometheus/tsdb/chunks"
 	"github.com/prometheus/prometheus/util/annotations"
 	"github.com/prometheus/prometheus/util/logging"
 	"github.com/prometheus/prometheus/util/stats"
@@ -3694,7 +3696,7 @@ func TestParserConfigIsolation(t *testing.T) {
 
 func TestAtModifier(t *testing.T) {
 	engine := newTestEngine(t)
-	storage := promqltest.LoadedStorage(t, `
+	store := promqltest.LoadedStorage(t, `
 load 10s
   metric{job="1"} 0+1x1000
   metric{job="2"} 0+2x1000
@@ -3714,17 +3716,17 @@ load 1ms
 	lblsneg := labels.FromStrings("__name__", "metric_neg")
 
 	// Add some samples with negative timestamp.
-	db := storage.DB
-	app := db.Appender(context.Background())
-	ref, err := app.Append(0, lblsneg, -1000000, 1000)
+	db := store.DB
+	app := db.AppenderV2(context.Background())
+	ref, err := app.Append(0, lblsneg, 0, -1000000, 1000, nil, nil, storage.AOptions{})
 	require.NoError(t, err)
 	for ts := int64(-1000000 + 1000); ts <= 0; ts += 1000 {
-		_, err := app.Append(ref, labels.EmptyLabels(), ts, -float64(ts/1000)+1)
+		_, err := app.Append(ref, lblsneg, 0, ts, -float64(ts/1000)+1, nil, nil, storage.AOptions{})
 		require.NoError(t, err)
 	}
 
 	// To test the fix for https://github.com/prometheus/prometheus/issues/8433.
-	_, err = app.Append(0, labels.FromStrings("__name__", "metric_timestamp"), 3600*1000, 1000)
+	_, err = app.Append(0, labels.FromStrings("__name__", "metric_timestamp"), 0, 3600*1000, 1000, nil, nil, storage.AOptions{})
 	require.NoError(t, err)
 
 	require.NoError(t, app.Commit())
@@ -3935,9 +3937,9 @@ load 1ms
 			var err error
 			var qry promql.Query
 			if c.end == 0 {
-				qry, err = engine.NewInstantQuery(context.Background(), storage, nil, c.query, start)
+				qry, err = engine.NewInstantQuery(context.Background(), store, nil, c.query, start)
 			} else {
-				qry, err = engine.NewRangeQuery(context.Background(), storage, nil, c.query, start, end, interval)
+				qry, err = engine.NewRangeQuery(context.Background(), store, nil, c.query, start, end, interval)
 			}
 			require.NoError(t, err)
 
@@ -5273,8 +5275,9 @@ func TestPreprocessExpr(t *testing.T) {
 						Func: parser.MustGetFunction("timestamp"),
 						Args: parser.Expressions{
 							&parser.VectorSelector{
-								Name:      "metric",
-								Timestamp: makeInt64Pointer(10000),
+								Name:                 "metric",
+								Timestamp:            makeInt64Pointer(10000),
+								SkipHistogramBuckets: true,
 								LabelMatchers: []*labels.Matcher{
 									parser.MustLabelMatcher(labels.MatchEqual, "__name__", "metric"),
 								},
@@ -5298,8 +5301,9 @@ func TestPreprocessExpr(t *testing.T) {
 								Func: parser.MustGetFunction("abs"),
 								Args: parser.Expressions{
 									&parser.VectorSelector{
-										Name:      "metric",
-										Timestamp: makeInt64Pointer(10000),
+										Name:                 "metric",
+										Timestamp:            makeInt64Pointer(10000),
+										SkipHistogramBuckets: true,
 										LabelMatchers: []*labels.Matcher{
 											parser.MustLabelMatcher(labels.MatchEqual, "__name__", "metric"),
 										},
@@ -5408,6 +5412,69 @@ func TestPreprocessExpr(t *testing.T) {
 			})
 		}
 	})
+}
+
+func TestDetectHistogramStatsDecoding(t *testing.T) {
+	cases := []struct {
+		expr string
+		// expectSkip is whether the vector selector in the expression is
+		// expected to have SkipHistogramBuckets set after preprocessing.
+		expectSkip bool
+	}{
+		{expr: `metric`, expectSkip: false},
+		{expr: `histogram_count(metric)`, expectSkip: true},
+		{expr: `histogram_sum(metric)`, expectSkip: true},
+		{expr: `histogram_avg(metric)`, expectSkip: true},
+		{expr: `histogram_count(rate(metric[1m]))`, expectSkip: true},
+		{expr: `histogram_count(sum(rate(metric[1m])))`, expectSkip: true},
+		{expr: `histogram_quantile(0.9, metric)`, expectSkip: false},
+		{expr: `histogram_fraction(0, 0.5, metric)`, expectSkip: false},
+		// timestamp(), start_timestamp() and absent() do not look at
+		// sample values at all.
+		{expr: `timestamp(metric)`, expectSkip: true},
+		{expr: `start_timestamp(metric)`, expectSkip: true},
+		{expr: `absent(metric)`, expectSkip: true},
+		// histogram_stddev and histogram_stdvar estimate the variance from
+		// the buckets, so buckets must not be skipped, even if a function
+		// further up the path would allow skipping them.
+		{expr: `histogram_stddev(metric)`, expectSkip: false},
+		{expr: `histogram_stdvar(metric)`, expectSkip: false},
+		{expr: `timestamp(histogram_stddev(metric))`, expectSkip: false},
+		{expr: `timestamp(histogram_stdvar(metric))`, expectSkip: false},
+		// Buckets are needed for counter reset detection inside subqueries.
+		{expr: `histogram_count(last_over_time(metric[5m:1m]))`, expectSkip: false},
+		// Comparing histograms for (in)equality needs the buckets.
+		{expr: `histogram_count(metric == other)`, expectSkip: false},
+		{expr: `timestamp(metric != other)`, expectSkip: false},
+		{expr: `absent(metric == other)`, expectSkip: false},
+		// Other binary operators do not prevent skipping buckets.
+		{expr: `histogram_count(metric + other)`, expectSkip: true},
+		// Detecting changes and counting distinct values needs the buckets.
+		{expr: `timestamp(changes(metric[5m]))`, expectSkip: false},
+		{expr: `timestamp(count_values("value", metric))`, expectSkip: false},
+	}
+
+	// start_timestamp is an experimental function.
+	p := parser.NewParser(parser.Options{EnableExperimentalFunctions: true})
+	for _, tc := range cases {
+		t.Run(tc.expr, func(t *testing.T) {
+			expr, err := p.ParseExpr(tc.expr)
+			require.NoError(t, err)
+			expr, err = promql.PreprocessExpr(expr, time.Unix(1000, 0), time.Unix(9999, 0), 0)
+			require.NoError(t, err)
+			var selectors []*parser.VectorSelector
+			parser.Inspect(expr, func(node parser.Node, _ []parser.Node) error {
+				if vs, ok := node.(*parser.VectorSelector); ok {
+					selectors = append(selectors, vs)
+				}
+				return nil
+			})
+			require.NotEmpty(t, selectors)
+			for _, vs := range selectors {
+				require.Equal(t, tc.expectSkip, vs.SkipHistogramBuckets, "error on input '%s'", tc.expr)
+			}
+		})
+	}
 }
 
 func TestEngineOptsValidation(t *testing.T) {
@@ -5972,6 +6039,114 @@ func TestHistogramRateWithFloatStaleness(t *testing.T) {
 	require.Equal(t, 0.0, vec[0].H.Sum)
 }
 
+// TestInvalidHistogramBucketLayoutFailsQuery checks that a query fails with an
+// error when it has to reduce the resolution of a stored histogram with an
+// invalid bucket layout, rather than silently dropping or miscomputing the
+// result. The histograms are served by a mock querier, because the TSDB rejects
+// invalid histograms when they are appended.
+func TestInvalidHistogramBucketLayoutFailsQuery(t *testing.T) {
+	// The second span has a negative offset. Its schema is higher than valid's,
+	// so combining the two reduces its resolution.
+	invalid := &histogram.FloatHistogram{
+		CounterResetHint: histogram.GaugeType,
+		Schema:           1,
+		Count:            5,
+		Sum:              10,
+		PositiveSpans:    []histogram.Span{{Offset: 0, Length: 1}, {Offset: -2, Length: 1}},
+		PositiveBuckets:  []float64{2, 3},
+	}
+	valid := &histogram.FloatHistogram{
+		CounterResetHint: histogram.GaugeType,
+		Schema:           0,
+		Count:            5,
+		Sum:              10,
+		PositiveSpans:    []histogram.Span{{Offset: 0, Length: 2}},
+		PositiveBuckets:  []float64{2, 3},
+	}
+
+	// Counter versions of the same histograms. rate reduces the last sample to
+	// the lowest schema in the range before it handles counter resets, but it
+	// discards the first sample if there is a reset between the first two, so
+	// the invalid sample comes after two valid ones.
+	invalidCounter := invalid.Copy()
+	invalidCounter.CounterResetHint = histogram.UnknownCounterReset
+	validCounter := valid.Copy()
+	validCounter.CounterResetHint = histogram.UnknownCounterReset
+
+	series := map[string][]chunks.Sample{
+		"invalid_higher_schema": {fhSample{t: 60000, fh: invalid}},
+		"valid_lower_schema":    {fhSample{t: 60000, fh: valid}},
+		// The schema increases, so functions over both samples reduce the invalid one.
+		"schema_increase":         {fhSample{t: 0, fh: valid}, fhSample{t: 60000, fh: invalid}},
+		"counter_schema_increase": {fhSample{t: 0, fh: validCounter}, fhSample{t: 30000, fh: validCounter}, fhSample{t: 60000, fh: invalidCounter}},
+		// The schema decreases, so the invalid histogram that is reduced is the
+		// one that is subtracted, not the one that is subtracted from.
+		"schema_decrease": {fhSample{t: 30000, fh: invalid}, fhSample{t: 60000, fh: valid}},
+	}
+	querier := storage.MockQuerier{
+		SelectMockFunction: func(_ bool, _ *storage.SelectHints, matchers ...*labels.Matcher) storage.SeriesSet {
+		nextSeries:
+			for name, samples := range series {
+				lset := labels.FromStrings("__name__", name)
+				for _, m := range matchers {
+					if !m.Matches(lset.Get(m.Name)) {
+						continue nextSeries
+					}
+				}
+				return &singleSeriesSet{series: storage.NewListSeries(lset, samples)}
+			}
+			return storage.EmptySeriesSet()
+		},
+	}
+	queryable := storage.MockQueryable{MockQuerier: &querier}
+	engine := promqltest.NewTestEngine(t, false, 0, promqltest.DefaultMaxSamplesPerQuery)
+
+	for _, expr := range []string{
+		"invalid_higher_schema + valid_lower_schema",
+		"valid_lower_schema + invalid_higher_schema",
+		"invalid_higher_schema - valid_lower_schema",
+		"valid_lower_schema - invalid_higher_schema",
+		"rate(counter_schema_increase[2m])",
+		"increase(counter_schema_increase[2m])",
+		"delta(schema_increase[2m])",
+		"idelta(schema_increase[2m])",
+		"delta(schema_decrease[2m])",
+		"idelta(schema_decrease[2m])",
+		// irate is not included, because it detects a counter reset with this
+		// data and returns the later sample without a subtraction.
+		"rate(counter_schema_increase[2m] anchored)",
+		"increase(counter_schema_increase[2m] anchored)",
+		"delta(schema_increase[30s] anchored)",
+		// Smoothed selectors interpolate between the two samples at 30s.
+		"schema_increase offset 30s smoothed",
+		"delta(schema_increase[30s] smoothed)",
+		"delta(schema_increase[30s] offset 30s smoothed)",
+	} {
+		t.Run(expr, func(t *testing.T) {
+			q, err := engine.NewInstantQuery(context.Background(), &queryable, nil, expr, timestamp.Time(60000))
+			require.NoError(t, err)
+			defer q.Close()
+
+			res := q.Exec(context.Background())
+			require.ErrorIs(t, res.Err, histogram.ErrHistogramSpanNegativeOffset)
+		})
+	}
+}
+
+// fhSample is a float histogram sample for storage.NewListSeries.
+type fhSample struct {
+	t  int64
+	fh *histogram.FloatHistogram
+}
+
+func (s fhSample) T() int64                      { return s.t }
+func (fhSample) ST() int64                       { return 0 }
+func (fhSample) F() float64                      { return 0 }
+func (fhSample) H() *histogram.Histogram         { return nil }
+func (s fhSample) FH() *histogram.FloatHistogram { return s.fh }
+func (fhSample) Type() chunkenc.ValueType        { return chunkenc.ValFloatHistogram }
+func (s fhSample) Copy() chunks.Sample           { return fhSample{t: s.t, fh: s.fh.Copy()} }
+
 type singleSeriesSet struct {
 	series   storage.Series
 	consumed bool
@@ -6198,7 +6373,7 @@ func TestInconsistentHistogramCount(t *testing.T) {
 		_ = head.Close()
 	})
 
-	app := head.Appender(context.Background())
+	app := head.AppenderV2(context.Background())
 
 	l := labels.FromStrings("__name__", "series_1")
 
@@ -6227,7 +6402,7 @@ func TestInconsistentHistogramCount(t *testing.T) {
 
 	for i, h := range inHs {
 		maxt = mint + dT*int64(i)
-		_, err = app.AppendHistogram(0, l, maxt, h, nil)
+		_, err = app.Append(0, l, 0, maxt, 0, h, nil, storage.AOptions{})
 		require.NoError(t, err)
 	}
 
@@ -6493,6 +6668,58 @@ func TestQueryStartTimestampsOverride(t *testing.T) {
 	}
 }
 
+func TestEngine_NativeHistogramsAsClassic(t *testing.T) {
+	const load = `
+load 1m
+	%s {{schema:-53 sum:5 count:4 custom_values:[1 2] buckets:[1 2 1]}}
+`
+	// Secondary storage stands in for a remote-read endpoint behind the fanout,
+	// which is how cmd/prometheus wires local and remote storage.
+	primary := promqltest.LoadedStorage(t, fmt.Sprintf(load, "local_seconds"))
+	secondary := promqltest.LoadedStorage(t, fmt.Sprintf(load, "remote_seconds"))
+	fanout := storage.NewFanout(promslog.NewNopLogger(), primary, secondary)
+
+	for _, enabled := range []bool{false, true} {
+		t.Run(fmt.Sprintf("enabled=%v", enabled), func(t *testing.T) {
+			opts := promql.EngineOpts{
+				MaxSamples:                      1000,
+				Timeout:                         10 * time.Second,
+				EnableNativeHistogramsAsClassic: enabled,
+			}
+			ng := promqltest.NewTestEngineWithOpts(t, opts)
+
+			q, err := ng.NewInstantQuery(t.Context(), fanout, nil, `local_seconds_count or on(__name__) remote_seconds_count`, time.Unix(0, 0))
+			require.NoError(t, err)
+			t.Cleanup(q.Close)
+			res := q.Exec(t.Context())
+			require.NoError(t, res.Err)
+			vec, err := res.Vector()
+			require.NoError(t, err)
+
+			got := map[string]float64{}
+			for _, s := range vec {
+				got[s.Metric.Get(labels.MetricName)] = s.F
+			}
+			if !enabled {
+				require.Empty(t, got)
+				return
+			}
+			// Both local and remote-read NHCBs are converted, since the conversion
+			// wraps the engine's queryable rather than a single fanout leg.
+			require.Equal(t, map[string]float64{"local_seconds_count": 4, "remote_seconds_count": 4}, got)
+
+			// Other consumers of the same storage (e.g. the remote read API) still
+			// see raw data only.
+			sq, err := fanout.Querier(math.MinInt64, math.MaxInt64)
+			require.NoError(t, err)
+			t.Cleanup(func() { require.NoError(t, sq.Close()) })
+			ss := sq.Select(t.Context(), false, nil, labels.MustNewMatcher(labels.MatchEqual, labels.MetricName, "local_seconds_count"))
+			require.False(t, ss.Next())
+			require.NoError(t, ss.Err())
+		})
+	}
+}
+
 func TestTypeAndUnitMetadataLabelsInFunctionsAndMatching(t *testing.T) {
 	load := `load 1m
   hist_metric{__type__="histogram", __unit__="seconds", job="api"} {{schema:1 sum:10 count:5 buckets:[1 2 2]}}
@@ -6627,5 +6854,63 @@ load 10s
 				require.Equal(t, promql.ErrTooManySamplesRead(env), limited.Exec(context.Background()).Err)
 			})
 		}
+	}
+}
+
+func TestUnquotedUTF8NamesEvaluation(t *testing.T) {
+	store := promqltest.LoadedStorage(t, `
+load 1m
+    {"http.server.requests", "service.name"="api", "resource.k8s.namespace"="system"} 0 60 120
+    {"http.server.requests", "service.name"="web", "resource.k8s.namespace"="system"} 0 120 240
+    service_info{"service.name"="api", "équipe"="infra"} 2 2 2
+    service_info{"service.name"="web", "équipe"="frontend"} 3 3 3
+    {"温度", "場所"="東京"} 10 20 30
+    {"histogram.count"} 1 2 3
+    {"target.info"} 4 5 6
+    {"foo..bar."} 7 8 9
+    a 1 1 1
+    {"а"} 2 2 2
+    {"ö"} 3 3 3
+    {"ö"} 4 4 4
+`)
+	defer store.Close()
+	engine := promqltest.NewTestEngineWithOpts(t, promql.EngineOpts{
+		MaxSamples: 10000,
+		Timeout:    time.Minute,
+		Parser:     parser.NewParser(parser.Options{}),
+	})
+	for _, tc := range []struct{ unquoted, quoted string }{
+		{`http.server.requests{resource.k8s.namespace="system",service.name="api"}`, `{"http.server.requests","resource.k8s.namespace"="system","service.name"="api"}`},
+		{`温度{場所="東京"}`, `{"温度","場所"="東京"}`},
+		{`sum by (service.name) (http.server.requests)`, `sum by ("service.name") ({"http.server.requests"})`},
+		{`sum without (service.name) (http.server.requests)`, `sum without ("service.name") ({"http.server.requests"})`},
+		{`http.server.requests + on (service.name) group_left (équipe) service_info`, `{"http.server.requests"} + on ("service.name") group_left ("équipe") service_info`},
+		{`service_info + on (service.name) group_right (équipe) http.server.requests`, `service_info + on ("service.name") group_right ("équipe") {"http.server.requests"}`},
+		{`rate(http.server.requests[2m])`, `rate({"http.server.requests"}[2m])`},
+		{`histogram.count`, `{"histogram.count"}`},
+		{`target.info`, `{"target.info"}`},
+		{`foo..bar.`, `{"foo..bar."}`},
+		{`a or on (__name__) а`, `{"a"} or on (__name__) {"а"}`},
+		{`ö or on (__name__) {"ö"}`, `{"ö"} or on (__name__) {"ö"}`},
+	} {
+		t.Run(tc.unquoted, func(t *testing.T) {
+			unquoted, err := engine.NewInstantQuery(t.Context(), store, nil, tc.unquoted, time.Unix(120, 0))
+			require.NoError(t, err)
+			defer unquoted.Close()
+			quoted, err := engine.NewInstantQuery(t.Context(), store, nil, tc.quoted, time.Unix(120, 0))
+			require.NoError(t, err)
+			defer quoted.Close()
+			actual := unquoted.Exec(t.Context())
+			expected := quoted.Exec(t.Context())
+			require.NoError(t, actual.Err)
+			require.NoError(t, expected.Err)
+			require.NotEmpty(t, actual.Value)
+			require.Equal(t, expected.Value, actual.Value)
+			if tc.unquoted == "a or on (__name__) а" || tc.unquoted == `ö or on (__name__) {"ö"}` {
+				vector := actual.Value.(promql.Vector)
+				require.Len(t, vector, 2)
+				require.NotEqual(t, vector[0].F, vector[1].F)
+			}
+		})
 	}
 }

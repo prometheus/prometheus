@@ -19,6 +19,7 @@ import (
 	"log/slog"
 	"maps"
 	"reflect"
+	"slices"
 	"sync"
 	"time"
 
@@ -41,6 +42,8 @@ type Provider struct {
 	name   string
 	d      Discoverer
 	config any
+	// SetName is the name of the config that labels the discoverer's refresh metrics.
+	setName string
 
 	cancel context.CancelFunc
 	// done should be called after cleaning up resources associated with cancelled provider.
@@ -244,6 +247,8 @@ func (m *Manager) ApplyConfig(cfg map[string]Configs) error {
 	var (
 		wg           sync.WaitGroup
 		newProviders []*Provider
+		cancelled    []*Provider
+		renamed      = map[*Provider]string{}
 	)
 	for _, prov := range m.providers {
 		// Cancel obsolete providers if it has no new subs and it has a cancel function.
@@ -258,18 +263,14 @@ func (m *Manager) ApplyConfig(cfg map[string]Configs) error {
 
 			prov.cancel()
 			prov.mu.RUnlock()
+			cancelled = append(cancelled, prov)
 
-			// Clear up refresh metrics associated with this cancelled provider (sub means scrape job name).
 			m.targetsMtx.Lock()
 			for s := range prov.subs {
 				// Also clean up discovered targets metric. targetsMtx lock needed for safe access to m.targets.
 				delete(m.targets, poolKey{s, prov.name})
 				m.metrics.DiscoveredTargets.DeleteLabelValues(s)
 				m.metrics.LastUpdated.DeleteLabelValues(s)
-
-				if cfg, ok := prov.config.(Config); ok {
-					m.sdMetrics.RefreshManager.DeleteLabelValues(cfg.Name(), s)
-				}
 			}
 			m.targetsMtx.Unlock()
 			continue
@@ -289,12 +290,6 @@ func (m *Manager) ApplyConfig(cfg map[string]Configs) error {
 				delete(m.targets, poolKey{s, prov.name})
 				m.metrics.DiscoveredTargets.DeleteLabelValues(s)
 				m.metrics.LastUpdated.DeleteLabelValues(s)
-
-				// Also clean up refresh metrics for subs that are being removed from a provider that is still running.
-				cfg, ok := prov.config.(Config)
-				if ok {
-					m.sdMetrics.RefreshManager.DeleteLabelValues(cfg.Name(), s)
-				}
 			}
 		}
 		// Set metrics and targets for new subs.
@@ -308,6 +303,15 @@ func (m *Manager) ApplyConfig(cfg map[string]Configs) error {
 			}
 		}
 		m.targetsMtx.Unlock()
+
+		// Label refresh metrics with a config still using the provider, e.g. after a job rename.
+		if _, ok := prov.newSubs[prov.setName]; !ok && len(prov.newSubs) > 0 {
+			if d, ok := prov.d.(setNameUpdater); ok {
+				renamed[prov] = prov.setName
+				prov.setName = slices.Min(slices.Collect(maps.Keys(prov.newSubs)))
+				d.UpdateSetName(prov.setName)
+			}
+		}
 
 		prov.subs = prov.newSubs
 		prov.newSubs = map[string]struct{}{}
@@ -329,9 +333,45 @@ func (m *Manager) ApplyConfig(cfg map[string]Configs) error {
 		}
 	}
 	m.providers = newProviders
+
+	// Clear up refresh metrics associated with cancelled and renamed providers.
+	for _, prov := range cancelled {
+		m.deleteRefreshMetrics(prov, prov.setName)
+	}
+	for prov, setName := range renamed {
+		m.deleteRefreshMetrics(prov, setName)
+	}
 	wg.Wait()
 
 	return nil
+}
+
+// DeleteRefreshMetrics deletes refresh metrics a provider no longer updates for a config, unless a running provider
+// for the same mechanism and config still updates them.
+func (m *Manager) deleteRefreshMetrics(prov *Provider, setName string) {
+	cfg, ok := prov.config.(Config)
+	if !ok {
+		return
+	}
+	for _, p := range m.providers {
+		if c, ok := p.config.(Config); ok && refreshMechanism(c) == refreshMechanism(cfg) && p.setName == setName {
+			return
+		}
+	}
+	m.sdMetrics.RefreshManager.DeleteLabelValues(refreshMechanism(cfg), setName)
+}
+
+// setNameUpdater is implemented by discoverers that can label their refresh metrics with a new config name.
+type setNameUpdater interface {
+	UpdateSetName(setName string)
+}
+
+// refreshMechanism returns the mechanism label of a config's refresh metrics, which defaults to its name.
+func refreshMechanism(cfg Config) string {
+	if c, ok := cfg.(interface{ RefreshMechanism() string }); ok {
+		return c.RefreshMechanism()
+	}
+	return cfg.Name()
 }
 
 // StartCustomProvider is used for sdtool. Only use this if you know what you're doing.
@@ -555,6 +595,7 @@ func (m *Manager) registerProviders(cfgs Configs, setName string) int {
 			newSubs: map[string]struct{}{
 				setName: {},
 			},
+			setName: setName,
 		})
 		m.lastProvider++
 		added = true

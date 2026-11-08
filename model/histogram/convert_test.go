@@ -14,12 +14,15 @@
 package histogram
 
 import (
+	"math"
+	"slices"
 	"testing"
 
 	"github.com/prometheus/common/model"
 	"github.com/stretchr/testify/require"
 
 	"github.com/prometheus/prometheus/model/labels"
+	"github.com/prometheus/prometheus/model/value"
 )
 
 type sample struct {
@@ -292,13 +295,32 @@ func TestConvertNHCBToClassicHistogram(t *testing.T) {
 				{lset: labels.FromStrings("__name__", "test_metric_sum"), val: 123},
 			},
 		},
+		{
+			name: "stale histogram",
+			nhcb: &Histogram{
+				CustomValues:    []float64{1, 2},
+				PositiveBuckets: []int64{2, 1, 1},
+				PositiveSpans:   []Span{{Offset: 0, Length: 3}},
+				Count:           9,
+				Sum:             math.Float64frombits(value.StaleNaN),
+				Schema:          CustomBucketsSchema,
+			},
+			labels: labels.FromStrings("__name__", "test_metric"),
+			expected: []sample{
+				{lset: labels.FromStrings("__name__", "test_metric_bucket", "le", "1.0"), val: math.Float64frombits(value.StaleNaN)},
+				{lset: labels.FromStrings("__name__", "test_metric_bucket", "le", "2.0"), val: math.Float64frombits(value.StaleNaN)},
+				{lset: labels.FromStrings("__name__", "test_metric_bucket", "le", "+Inf"), val: math.Float64frombits(value.StaleNaN)},
+				{lset: labels.FromStrings("__name__", "test_metric_count"), val: math.Float64frombits(value.StaleNaN)},
+				{lset: labels.FromStrings("__name__", "test_metric_sum"), val: math.Float64frombits(value.StaleNaN)},
+			},
+		},
 	}
 
 	labelBuilder := labels.NewBuilder(labels.EmptyLabels())
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			var emittedSamples []sample
-			err := ConvertNHCBToClassic(tt.nhcb, tt.labels, labelBuilder, func(lbls labels.Labels, val float64) error {
+			err := ConvertNHCBToClassic(tt.nhcb, tt.labels, labelBuilder, "", nil, func(lbls labels.Labels, val float64) error {
 				emittedSamples = append(emittedSamples, sample{lset: lbls, val: val})
 				return nil
 			})
@@ -307,11 +329,119 @@ func TestConvertNHCBToClassicHistogram(t *testing.T) {
 				require.Len(t, emittedSamples, len(tt.expected))
 				for i, expSample := range tt.expected {
 					require.True(t, labels.Equal(expSample.lset, emittedSamples[i].lset), "labels mismatch at index %d: expected %v, got %v", i, expSample.lset, emittedSamples[i].lset)
-					require.Equal(t, expSample.val, emittedSamples[i].val, "value mismatch at index %d", i)
+					if value.IsStaleNaN(expSample.val) {
+						require.True(t, value.IsStaleNaN(emittedSamples[i].val), "expected stale NaN at index %d", i)
+					} else {
+						require.Equal(t, expSample.val, emittedSamples[i].val, "value mismatch at index %d", i)
+					}
+				}
+
+				// A reused buffer must not leak earlier values into skipped buckets.
+				buckets, count, sum, err := ClassicBucketCounts(tt.nhcb, slices.Repeat([]float64{42}, 16))
+				require.NoError(t, err)
+				counts := append(buckets, count, sum)
+				require.Len(t, counts, len(emittedSamples))
+				for i, s := range emittedSamples {
+					if value.IsStaleNaN(s.val) {
+						require.True(t, value.IsStaleNaN(counts[i]), "expected stale NaN count at index %d", i)
+					} else {
+						require.Equal(t, s.val, counts[i], "count mismatch at index %d", i)
+					}
 				}
 			}
 		})
 	}
+}
+
+// TestConvertNHCBToClassicHistogram_CacheMatchesNoCache verifies that a reused
+// ClassicSeriesCache emits the exact same labels and values as the uncached
+// path across repeated calls for the same series, across different suffixes,
+// and when reused across series that share __name__ but differ in other labels.
+func TestConvertNHCBToClassicHistogram_CacheMatchesNoCache(t *testing.T) {
+	h := &Histogram{
+		CustomValues:    []float64{1, 2, 3},
+		PositiveBuckets: []int64{10, 20, 30},
+		PositiveSpans:   []Span{{Offset: 0, Length: 3}},
+		Count:           100,
+		Sum:             100.0,
+		Schema:          CustomBucketsSchema,
+	}
+	lsets := []labels.Labels{
+		labels.FromStrings("__name__", "test_metric", "job", "job_a"),
+		labels.FromStrings("__name__", "test_metric", "job", "job_a"), // cache hit
+		labels.FromStrings("__name__", "test_metric", "job", "job_b"), // same __name__, different label
+		labels.FromStrings("__name__", "other_metric", "job", "job_b"),
+	}
+	suffixes := []string{"", ClassicSuffixBucket, ClassicSuffixCount, ClassicSuffixSum}
+	labelBuilder := labels.NewBuilder(labels.EmptyLabels())
+
+	for _, suffix := range suffixes {
+		cache := &ClassicSeriesCache{}
+		for i, lset := range lsets {
+			var without, with []sample
+			require.NoError(t, ConvertNHCBToClassic(h, lset, labelBuilder, suffix, nil, func(lbls labels.Labels, val float64) error {
+				without = append(without, sample{lset: lbls, val: val})
+				return nil
+			}))
+			require.NoError(t, ConvertNHCBToClassic(h, lset, labelBuilder, suffix, cache, func(lbls labels.Labels, val float64) error {
+				with = append(with, sample{lset: lbls, val: val})
+				return nil
+			}))
+			require.Len(t, with, len(without))
+			for j := range without {
+				require.True(t, labels.Equal(without[j].lset, with[j].lset), "suffix %q step %d: labels mismatch at index %d: expected %v, got %v", suffix, i, j, without[j].lset, with[j].lset)
+				require.Equal(t, without[j].val, with[j].val, "suffix %q step %d: value mismatch at index %d", suffix, i, j)
+			}
+		}
+	}
+}
+
+// BenchmarkConvertNHCBToClassic simulates the real hot path: the same NHCB
+// series converted once per scrape/timestamp over a query range. with_cache
+// reuses one ClassicSeriesCache across iterations, as storage/native_histograms_as_classic.go
+// does per raw NHCB series; no_cache rebuilds names, le strings and label
+// sets from scratch every call, as the code did before caching.
+func BenchmarkConvertNHCBToClassic(b *testing.B) {
+	const numBuckets = 30
+	customValues := make([]float64, numBuckets)
+	positiveBuckets := make([]int64, numBuckets)
+	wantCount := int64(0)
+	for i := range customValues {
+		customValues[i] = float64(i+1) * 0.5
+		positiveBuckets[i] = 1 // delta per bucket; absolute count in bucket i is i+1.
+		wantCount += int64(i + 1)
+	}
+	h := &Histogram{
+		CustomValues:    customValues,
+		PositiveBuckets: positiveBuckets,
+		PositiveSpans:   []Span{{Offset: 0, Length: uint32(numBuckets)}},
+		Count:           uint64(wantCount),
+		Sum:             123.45,
+		Schema:          CustomBucketsSchema,
+	}
+	lset := labels.FromStrings("__name__", "bench_request_duration_seconds", "job", "bench", "instance", "localhost:9090")
+	noop := func(labels.Labels, float64) error { return nil }
+
+	b.Run("no_cache", func(b *testing.B) {
+		lsetBuilder := labels.NewBuilder(labels.EmptyLabels())
+		b.ReportAllocs()
+		for i := 0; i < b.N; i++ {
+			if err := ConvertNHCBToClassic(h, lset, lsetBuilder, "", nil, noop); err != nil {
+				b.Fatal(err)
+			}
+		}
+	})
+
+	b.Run("with_cache", func(b *testing.B) {
+		lsetBuilder := labels.NewBuilder(labels.EmptyLabels())
+		cache := &ClassicSeriesCache{}
+		b.ReportAllocs()
+		for i := 0; i < b.N; i++ {
+			if err := ConvertNHCBToClassic(h, lset, lsetBuilder, "", cache, noop); err != nil {
+				b.Fatal(err)
+			}
+		}
+	})
 }
 
 // TestConvertNHCBToClassicIntFloatAgreement checks that an integer NHCB and its
@@ -335,7 +465,7 @@ func TestConvertNHCBToClassicIntFloatAgreement(t *testing.T) {
 	convert := func(nhcb any) []sample {
 		var got []sample
 		lb := labels.NewBuilder(labels.EmptyLabels())
-		require.NoError(t, ConvertNHCBToClassic(nhcb, labels.FromStrings("__name__", "test_metric"), lb,
+		require.NoError(t, ConvertNHCBToClassic(nhcb, labels.FromStrings("__name__", "test_metric"), lb, "", nil,
 			func(l labels.Labels, v float64) error {
 				got = append(got, sample{lset: l, val: v})
 				return nil

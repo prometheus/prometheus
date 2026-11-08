@@ -39,6 +39,7 @@ import (
 	"go.yaml.in/yaml/v2"
 
 	"github.com/prometheus/prometheus/model/labels"
+	"github.com/prometheus/prometheus/model/metadata"
 	"github.com/prometheus/prometheus/model/rulefmt"
 	"github.com/prometheus/prometheus/model/timestamp"
 	"github.com/prometheus/prometheus/model/value"
@@ -47,8 +48,12 @@ import (
 	"github.com/prometheus/prometheus/promql/promqltest"
 	"github.com/prometheus/prometheus/storage"
 	"github.com/prometheus/prometheus/tsdb"
+	"github.com/prometheus/prometheus/tsdb/agent"
 	"github.com/prometheus/prometheus/tsdb/chunkenc"
+	"github.com/prometheus/prometheus/tsdb/chunks"
+	"github.com/prometheus/prometheus/tsdb/record"
 	"github.com/prometheus/prometheus/tsdb/tsdbutil"
+	"github.com/prometheus/prometheus/tsdb/wlog"
 	"github.com/prometheus/prometheus/util/stats"
 	"github.com/prometheus/prometheus/util/teststorage"
 	prom_testutil "github.com/prometheus/prometheus/util/testutil"
@@ -723,10 +728,13 @@ func TestStaleness(t *testing.T) {
 		})
 
 		// A time series that has two samples and then goes stale.
-		app := st.Appender(context.Background())
-		app.Append(0, labels.FromStrings(model.MetricNameLabel, "a"), 0, 1)
-		app.Append(0, labels.FromStrings(model.MetricNameLabel, "a"), 1000, 2)
-		app.Append(0, labels.FromStrings(model.MetricNameLabel, "a"), 2000, math.Float64frombits(value.StaleNaN))
+		app := st.AppenderV2(context.Background())
+		_, err = app.Append(0, labels.FromStrings(model.MetricNameLabel, "a"), 0, 0, 1, nil, nil, storage.AOptions{})
+		require.NoError(t, err)
+		_, err = app.Append(0, labels.FromStrings(model.MetricNameLabel, "a"), 0, 1000, 2, nil, nil, storage.AOptions{})
+		require.NoError(t, err)
+		_, err = app.Append(0, labels.FromStrings(model.MetricNameLabel, "a"), 0, 2000, math.Float64frombits(value.StaleNaN), nil, nil, storage.AOptions{})
+		require.NoError(t, err)
 
 		err = app.Commit()
 		require.NoError(t, err)
@@ -1065,7 +1073,7 @@ func reloadAndValidate(rgs *rulefmt.RuleGroups, t *testing.T, tmpFile *os.File, 
 }
 
 func TestNotify(t *testing.T) {
-	storage := teststorage.New(t)
+	st := teststorage.New(t)
 
 	engineOpts := promql.EngineOpts{
 		Logger:     nil,
@@ -1079,9 +1087,9 @@ func TestNotify(t *testing.T) {
 		lastNotified = alerts
 	}
 	opts := &ManagerOptions{
-		QueryFunc:    EngineQueryFunc(engine, storage),
-		AppendableV2: storage,
-		Queryable:    storage,
+		QueryFunc:    EngineQueryFunc(engine, st),
+		AppendableV2: st,
+		Queryable:    st,
 		Context:      context.Background(),
 		Logger:       promslog.NewNopLogger(),
 		NotifyFunc:   notifyFunc,
@@ -1099,11 +1107,15 @@ func TestNotify(t *testing.T) {
 		Opts:          opts,
 	})
 
-	app := storage.Appender(context.Background())
-	app.Append(0, labels.FromStrings(model.MetricNameLabel, "a"), 1000, 2)
-	app.Append(0, labels.FromStrings(model.MetricNameLabel, "a"), 2000, 3)
-	app.Append(0, labels.FromStrings(model.MetricNameLabel, "a"), 5000, 3)
-	app.Append(0, labels.FromStrings(model.MetricNameLabel, "a"), 6000, 0)
+	app := st.AppenderV2(context.Background())
+	_, err = app.Append(0, labels.FromStrings(model.MetricNameLabel, "a"), 0, 1000, 2, nil, nil, storage.AOptions{})
+	require.NoError(t, err)
+	_, err = app.Append(0, labels.FromStrings(model.MetricNameLabel, "a"), 0, 2000, 3, nil, nil, storage.AOptions{})
+	require.NoError(t, err)
+	_, err = app.Append(0, labels.FromStrings(model.MetricNameLabel, "a"), 0, 5000, 3, nil, nil, storage.AOptions{})
+	require.NoError(t, err)
+	_, err = app.Append(0, labels.FromStrings(model.MetricNameLabel, "a"), 0, 6000, 0, nil, nil, storage.AOptions{})
+	require.NoError(t, err)
 
 	err = app.Commit()
 	require.NoError(t, err)
@@ -1472,9 +1484,11 @@ func TestRuleHealthUpdates(t *testing.T) {
 	})
 
 	// A time series that has two samples.
-	app := st.Appender(context.Background())
-	app.Append(0, labels.FromStrings(model.MetricNameLabel, "a"), 0, 1)
-	app.Append(0, labels.FromStrings(model.MetricNameLabel, "a"), 1000, 2)
+	app := st.AppenderV2(context.Background())
+	_, err = app.Append(0, labels.FromStrings(model.MetricNameLabel, "a"), 0, 0, 1, nil, nil, storage.AOptions{})
+	require.NoError(t, err)
+	_, err = app.Append(0, labels.FromStrings(model.MetricNameLabel, "a"), 0, 1000, 2, nil, nil, storage.AOptions{})
+	require.NoError(t, err)
 	err = app.Commit()
 	require.NoError(t, err)
 
@@ -1618,25 +1632,25 @@ func TestRuleGroupEvalIterationFunc(t *testing.T) {
 }
 
 func TestNativeHistogramsInRecordingRules(t *testing.T) {
-	storage := teststorage.New(t)
+	st := teststorage.New(t)
 
 	// Add some histograms.
-	db := storage.DB
+	db := st.DB
 	hists := tsdbutil.GenerateTestHistograms(5)
 	ts := time.Now()
-	app := db.Appender(context.Background())
+	app := db.AppenderV2(context.Background())
 	for i, h := range hists {
 		l := labels.FromStrings("__name__", "histogram_metric", "idx", strconv.Itoa(i))
-		_, err := app.AppendHistogram(0, l, ts.UnixMilli(), h.Copy(), nil)
+		_, err := app.Append(0, l, 0, ts.UnixMilli(), 0, h.Copy(), nil, storage.AOptions{})
 		require.NoError(t, err)
 	}
 	require.NoError(t, app.Commit())
 
 	ng := testEngine(t)
 	opts := &ManagerOptions{
-		QueryFunc:    EngineQueryFunc(ng, storage),
-		AppendableV2: storage,
-		Queryable:    storage,
+		QueryFunc:    EngineQueryFunc(ng, st),
+		AppendableV2: st,
+		Queryable:    st,
 		Context:      context.Background(),
 		Logger:       promslog.NewNopLogger(),
 	}
@@ -2670,9 +2684,13 @@ func TestBoundedRuleEvalConcurrency(t *testing.T) {
 
 func TestUpdateWhenStopped(t *testing.T) {
 	files := []string{"fixtures/rules.yaml"}
+	// The group is evaluated if its evaluation slot falls between Update and Stop,
+	// so the manager needs a working QueryFunc and AppendableV2.
 	ruleManager := NewManager(&ManagerOptions{
-		Context: context.Background(),
-		Logger:  promslog.NewNopLogger(),
+		Context:      context.Background(),
+		Logger:       promslog.NewNopLogger(),
+		AppendableV2: teststorage.New(t),
+		QueryFunc:    func(context.Context, string, time.Time) (promql.Vector, error) { return nil, nil },
 	})
 	ruleManager.start()
 	err := ruleManager.Update(10*time.Second, files, labels.EmptyLabels(), "", nil)
@@ -2983,3 +3001,198 @@ func (*closeCountingQuery) Statement() parser.Statement { return nil }
 func (*closeCountingQuery) Stats() *stats.Statistics    { return nil }
 func (*closeCountingQuery) Cancel()                     {}
 func (*closeCountingQuery) String() string              { return "" }
+
+func readWALMetadataByMetricName(t *testing.T, walDir string) map[string]metadata.Metadata {
+	t.Helper()
+	sr, err := wlog.NewSegmentsReader(walDir)
+	require.NoError(t, err)
+	defer func() { require.NoError(t, sr.Close()) }()
+
+	r := wlog.NewReader(sr)
+	dec := record.NewDecoder(labels.NewSymbolTable(), promslog.NewNopLogger())
+	refToName := make(map[chunks.HeadSeriesRef]string)
+	got := make(map[string]metadata.Metadata)
+
+	for r.Next() {
+		rec := r.Record()
+		switch dec.Type(rec) {
+		case record.Series:
+			series, err := dec.Series(rec, nil)
+			require.NoError(t, err)
+			for _, s := range series {
+				refToName[s.Ref] = s.Labels.Get(model.MetricNameLabel)
+			}
+		case record.Metadata:
+			metas, err := dec.Metadata(rec, nil)
+			require.NoError(t, err)
+			for _, m := range metas {
+				name := refToName[m.Ref]
+				got[name] = metadata.Metadata{
+					Type: record.ToMetricType(m.Type),
+					Unit: m.Unit,
+					Help: m.Help,
+				}
+			}
+		}
+	}
+	require.NoError(t, r.Err())
+	return got
+}
+
+func TestGroupEvalAppendsConfiguredMetadata(t *testing.T) {
+	ruleYAML := `
+groups:
+- name: metadata_rules
+  rules:
+  - record: job:http_requests:rate5m
+    expr: sum by (job) (rate(http_requests_total[5m]))
+    metadata:
+      help: Per-job HTTP request rate.
+      type: gauge
+      unit: requests_per_second
+  - record: job:http_requests:unannotated_rate5m
+    expr: sum by (job) (rate(http_requests_total[5m]))
+  - alert: HighRequests
+    expr: http_requests_total > 0
+`
+	ruleFile := filepath.Join(t.TempDir(), "rules.yaml")
+	require.NoError(t, os.WriteFile(ruleFile, []byte(ruleYAML), 0o600))
+
+	queryStore := teststorage.New(t)
+	baseTime := time.Unix(0, 0).UTC()
+	evalTime := baseTime.Add(5 * time.Minute)
+
+	seedApp := queryStore.AppenderV2(t.Context())
+	for step := range 6 {
+		tsMs := timestamp.FromTime(baseTime.Add(time.Duration(step) * time.Minute))
+		_, err := seedApp.Append(
+			0,
+			labels.FromStrings(model.MetricNameLabel, "http_requests_total", "job", "api"),
+			0,
+			tsMs,
+			float64(step*10),
+			nil,
+			nil,
+			storage.AOptions{},
+		)
+		require.NoError(t, err)
+	}
+	require.NoError(t, seedApp.Commit())
+
+	engine := promqltest.NewTestEngineWithOpts(t, promql.EngineOpts{
+		MaxSamples: 10000,
+		Timeout:    100 * time.Second,
+	})
+
+	wantMetadata := map[string]metadata.Metadata{
+		"job:http_requests:rate5m": {
+			Type: model.MetricTypeGauge,
+			Unit: "requests_per_second",
+			Help: "Per-job HTTP request rate.",
+		},
+	}
+
+	t.Run("storage=tsdb", func(t *testing.T) {
+		appendStore := teststorage.New(t, func(opt *tsdb.Options) {
+			opt.EnableMetadataWALRecords = true
+		})
+
+		mgr := NewManager(&ManagerOptions{
+			Context:        t.Context(),
+			AppendableV2:   appendStore,
+			Queryable:      queryStore,
+			QueryFunc:      EngineQueryFunc(engine, queryStore),
+			NotifyFunc:     func(context.Context, string, ...*Alert) {},
+			Logger:         promslog.NewNopLogger(),
+			AppendMetadata: true,
+		})
+		mgr.restored = true
+
+		groups, errs := mgr.LoadGroups(time.Minute, labels.EmptyLabels(), "", nil, false, ruleFile)
+		require.Empty(t, errs)
+		require.Len(t, groups, 1)
+
+		for _, g := range groups {
+			g.Eval(t.Context(), evalTime)
+		}
+
+		// Close TSDB to flush WAL buffers before reading segments.
+		walDir := filepath.Join(appendStore.Dir(), "wal")
+		require.NoError(t, appendStore.DB.Close())
+		got := readWALMetadataByMetricName(t, walDir)
+		require.Equal(t, wantMetadata, got)
+	})
+
+	t.Run("storage=agent_and_staleness", func(t *testing.T) {
+		agentDir := t.TempDir()
+		agentOpts := agent.DefaultOptions()
+		agentOpts.EnableMetadataWALRecords = true
+		agentDB, err := agent.Open(promslog.NewNopLogger(), nil, nil, agentDir, agentOpts)
+		require.NoError(t, err)
+
+		var returnEmpty atomic.Bool
+		baseQF := EngineQueryFunc(engine, queryStore)
+		mgr := NewManager(&ManagerOptions{
+			Context:      t.Context(),
+			AppendableV2: agentDB,
+			Queryable:    queryStore,
+			QueryFunc: func(ctx context.Context, q string, ts time.Time) (promql.Vector, error) {
+				if returnEmpty.Load() {
+					return nil, nil
+				}
+				return baseQF(ctx, q, ts)
+			},
+			NotifyFunc:     func(context.Context, string, ...*Alert) {},
+			Logger:         promslog.NewNopLogger(),
+			AppendMetadata: true,
+		})
+		mgr.restored = true
+
+		groups, errs := mgr.LoadGroups(time.Minute, labels.EmptyLabels(), "", nil, false, ruleFile)
+		require.Empty(t, errs)
+		for _, g := range groups {
+			g.Eval(t.Context(), evalTime)
+			// Trigger staleness markers on the next evaluation and verify configured metadata is preserved.
+			returnEmpty.Store(true)
+			g.Eval(t.Context(), evalTime.Add(time.Minute))
+		}
+
+		require.NoError(t, agentDB.Close())
+		got := readWALMetadataByMetricName(t, filepath.Join(agentDir, "wal"))
+		require.Equal(t, wantMetadata, got)
+	})
+
+	t.Run("reload_detects_metadata_changes", func(t *testing.T) {
+		updatedYAML := `
+groups:
+- name: metadata_rules
+  rules:
+  - record: job:http_requests:rate5m
+    expr: sum by (job) (rate(http_requests_total[5m]))
+    metadata:
+      help: Updated help text.
+      type: gauge
+      unit: requests_per_second
+  - record: job:http_requests:unannotated_rate5m
+    expr: sum by (job) (rate(http_requests_total[5m]))
+  - alert: HighRequests
+    expr: http_requests_total > 0
+`
+		updatedFile := filepath.Join(t.TempDir(), "rules.yaml")
+		require.NoError(t, os.WriteFile(updatedFile, []byte(ruleYAML), 0o600))
+
+		mgr := NewManager(&ManagerOptions{
+			Context: t.Context(),
+			Logger:  promslog.NewNopLogger(),
+		})
+		g1, errs := mgr.LoadGroups(time.Minute, labels.EmptyLabels(), "", nil, false, updatedFile)
+		require.Empty(t, errs)
+
+		require.NoError(t, os.WriteFile(updatedFile, []byte(updatedYAML), 0o600))
+		g2, errs := mgr.LoadGroups(time.Minute, labels.EmptyLabels(), "", nil, false, updatedFile)
+		require.Empty(t, errs)
+
+		key := GroupKey(updatedFile, "metadata_rules")
+		require.False(t, g1[key].Equals(g2[key]), "Group.Equals must detect YAML metadata updates")
+	})
+}
