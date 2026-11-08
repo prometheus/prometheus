@@ -2170,13 +2170,31 @@ const funcDocs: Record<string, React.ReactNode> = {
       </ul>
     </>
   ),
+  log10: (
+    <>
+      <p>
+        <code>log10(v instant-vector)</code> calculates the decimal logarithm for all float samples in <code>v</code>.
+        Histogram samples in the input vector are ignored silently. The special cases are equivalent to those in{" "}
+        <code>ln</code>.
+      </p>
+    </>
+  ),
   log1p: (
     <>
       <p>
-        <code>log1p(v instant-vector)</code> calculates the natural logarithm of one plus each float sample in{" "}
-        <code>v</code>, with better precision for values close to zero. Histogram samples are ignored silently.
+        <strong>
+          This function has to be enabled via the{" "}
+          <a href="../feature_flags.md#experimental-promql-functions">feature flag</a>
+          <code>--enable-feature=promql-experimental-functions</code>.
+        </strong>
       </p>
-      <p>This function requires the experimental PromQL functions feature flag.</p>
+
+      <p>
+        <code>log1p(v instant-vector)</code> calculates the natural logarithm of <code>1 + v</code> for each float
+        sample. It preserves precision for values close to zero, where
+        <code>ln(1 + v)</code> can lose precision. Histogram samples are ignored silently. Special cases are:
+      </p>
+
       <ul>
         <li>
           <code>log1p(+Inf) = +Inf</code>
@@ -2194,15 +2212,6 @@ const funcDocs: Record<string, React.ReactNode> = {
           <code>log1p(NaN) = NaN</code>
         </li>
       </ul>
-    </>
-  ),
-  log10: (
-    <>
-      <p>
-        <code>log10(v instant-vector)</code> calculates the decimal logarithm for all float samples in <code>v</code>.
-        Histogram samples in the input vector are ignored silently. The special cases are equivalent to those in{" "}
-        <code>ln</code>.
-      </p>
     </>
   ),
   log2: (
