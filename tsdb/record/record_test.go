@@ -868,6 +868,150 @@ func TestRecord_DecodeInvalidFloatHistogramSchema(t *testing.T) {
 	}
 }
 
+// TestRecord_DecodeHistogramCorruptLengthsDoNotPanic verifies that decoding a
+// histogram whose span or bucket count overflows an int is handled gracefully.
+// The counts are read as Uvarints, so a corrupt record can produce a negative
+// length; replaying or checkpointing a WAL must not panic on it.
+func TestRecord_DecodeHistogramCorruptLengthsDoNotPanic(t *testing.T) {
+	// A Uvarint above MaxInt64 decodes into a negative int.
+	const overflow = uint64(1) << 63
+
+	// zeroFixedFields writes the fields preceding the length fields. They are
+	// all zero — schema 0 is a valid exponential schema, so no custom values
+	// follow — which lets a correct decode be compared against the zero value
+	// of the histogram type.
+	zeroFixedFields := func(e *encoding.Encbuf, float bool) {
+		e.PutByte(byte(histogram.UnknownCounterReset))
+		e.PutVarint64(0) // Schema: exponential, so no custom values follow.
+		if float {
+			e.PutBEFloat64(0) // ZeroThreshold
+			e.PutBEFloat64(0) // ZeroCount
+			e.PutBEFloat64(0) // Count
+			e.PutBEFloat64(0) // Sum
+			return
+		}
+		e.PutBE64(0)      // ZeroThreshold
+		e.PutUvarint64(0) // ZeroCount
+		e.PutUvarint64(0) // Count
+		e.PutBEFloat64(0) // Sum
+	}
+
+	// corruptPayload returns a complete histogram payload whose field-th length
+	// is an overflowing count and whose other lengths are zero.
+	corruptPayload := func(field int, float bool) []byte {
+		var e encoding.Encbuf
+		zeroFixedFields(&e, float)
+		for i := range 4 {
+			if i == field {
+				e.PutUvarint64(overflow)
+				continue
+			}
+			e.PutUvarint64(0)
+		}
+		return e.Get()
+	}
+
+	// truncatedPayload returns a histogram payload that ends right after an
+	// overflowing count, so nothing follows the malformed length.
+	truncatedPayload := func(float bool) []byte {
+		var e encoding.Encbuf
+		zeroFixedFields(&e, float)
+		e.PutUvarint64(overflow)
+		return e.Get()
+	}
+
+	// withFraming wraps a histogram payload in a samples record of type typ.
+	withFraming := func(typ Type, payload []byte) []byte {
+		var e encoding.Encbuf
+		e.PutByte(byte(typ))
+		if typ == HistogramSamplesV2 || typ == FloatHistogramSamplesV2 {
+			e.PutVarint64(1) // firstRef
+			e.PutVarint64(2) // firstT
+			e.PutVarint64(3) // firstST
+		} else {
+			e.PutBE64(1)      // baseRef
+			e.PutBE64int64(2) // baseTime
+			e.PutVarint64(0)  // ref delta
+			e.PutVarint64(0)  // time delta
+		}
+		e.PutBytes(payload)
+		return e.Get()
+	}
+
+	for field, name := range []string{"positive spans", "negative spans", "positive buckets", "negative buckets"} {
+		t.Run("DecodeHistogram/"+name, func(t *testing.T) {
+			h := &histogram.Histogram{}
+			dec := encoding.Decbuf{B: corruptPayload(field, false)}
+			require.NotPanics(t, func() {
+				DecodeHistogram(&dec, h)
+			})
+			require.Equal(t, histogram.Histogram{}, *h, "an overflowing count must not decode into buckets")
+		})
+		t.Run("DecodeFloatHistogram/"+name, func(t *testing.T) {
+			fh := &histogram.FloatHistogram{}
+			dec := encoding.Decbuf{B: corruptPayload(field, true)}
+			require.NotPanics(t, func() {
+				DecodeFloatHistogram(&dec, fh)
+			})
+			require.Equal(t, histogram.FloatHistogram{}, *fh, "an overflowing count must not decode into buckets")
+		})
+	}
+
+	for _, tc := range []struct {
+		name   string
+		typ    Type
+		float  bool
+		decode func(dec *Decoder, rec []byte) (int, error)
+	}{
+		{"HistogramSamples", HistogramSamples, false, func(dec *Decoder, rec []byte) (int, error) {
+			out, err := dec.HistogramSamples(rec, nil)
+			return len(out), err
+		}},
+		{"HistogramSamplesV2", HistogramSamplesV2, false, func(dec *Decoder, rec []byte) (int, error) {
+			out, err := dec.HistogramSamples(rec, nil)
+			return len(out), err
+		}},
+		{"FloatHistogramSamples", FloatHistogramSamples, true, func(dec *Decoder, rec []byte) (int, error) {
+			out, err := dec.FloatHistogramSamples(rec, nil)
+			return len(out), err
+		}},
+		{"FloatHistogramSamplesV2", FloatHistogramSamplesV2, true, func(dec *Decoder, rec []byte) (int, error) {
+			out, err := dec.FloatHistogramSamples(rec, nil)
+			return len(out), err
+		}},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			dec := NewDecoder(labels.NewSymbolTable(), promslog.NewNopLogger())
+			rec := withFraming(tc.typ, truncatedPayload(tc.float))
+			var n int
+			var err error
+			require.NotPanics(t, func() {
+				n, err = tc.decode(&dec, rec)
+			})
+			require.True(t, err != nil || n == 0, "truncated record must not decode into samples")
+		})
+	}
+
+	// Control: the framing used above is otherwise well-formed.
+	t.Run("valid record still decodes", func(t *testing.T) {
+		valid := &histogram.Histogram{
+			Count:           2,
+			Sum:             3,
+			Schema:          1,
+			PositiveSpans:   []histogram.Span{{Offset: 0, Length: 1}},
+			PositiveBuckets: []int64{2},
+		}
+		var buf encoding.Encbuf
+		EncodeHistogram(&buf, valid)
+
+		dec := NewDecoder(labels.NewSymbolTable(), promslog.NewNopLogger())
+		out, err := dec.HistogramSamples(withFraming(HistogramSamplesV2, buf.Get()), nil)
+		require.NoError(t, err)
+		require.Len(t, out, 1)
+		require.Equal(t, valid, out[0].H)
+	})
+}
+
 func TestRecord_DecodeV2UnknownFirstHistogramSchema(t *testing.T) {
 	enc := Encoder{EnableSTStorage: true}
 
