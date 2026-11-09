@@ -37,6 +37,7 @@ import (
 	"github.com/prometheus/prometheus/storage"
 	"github.com/prometheus/prometheus/util/annotations"
 	"github.com/prometheus/prometheus/util/teststorage"
+	"github.com/prometheus/prometheus/util/testutil"
 )
 
 func TestPrometheusConverter_Reset(t *testing.T) {
@@ -955,29 +956,58 @@ func TestFromMetrics(t *testing.T) {
 	t.Run("target_info when resource only has identifying attributes", func(t *testing.T) {
 		for _, tc := range []struct {
 			name                              string
+			resourceAttrs                     map[string]string
 			keepIdentifyingResourceAttributes bool
-			expectTargetInfo                  bool
+			expectedTargetInfo                labels.Labels
 		}{
 			{
-				name:                              "emitted when KeepIdentifyingResourceAttributes is true",
+				name: "emitted when KeepIdentifyingResourceAttributes is true",
+				resourceAttrs: map[string]string{
+					"service.name":        "test-service",
+					"service.namespace":   "test-namespace",
+					"service.instance.id": "instance-1",
+				},
 				keepIdentifyingResourceAttributes: true,
-				expectTargetInfo:                  true,
+				expectedTargetInfo: labels.FromStrings(
+					"__name__", "target_info",
+					"instance", "instance-1",
+					"job", "test-namespace/test-service",
+					"service_instance_id", "instance-1",
+					"service_name", "test-service",
+					"service_namespace", "test-namespace",
+				),
 			},
 			{
-				name:                              "not emitted when KeepIdentifyingResourceAttributes is false",
+				name: "emitted with only service.name when KeepIdentifyingResourceAttributes is true",
+				resourceAttrs: map[string]string{
+					"service.name": "test-service",
+				},
+				keepIdentifyingResourceAttributes: true,
+				expectedTargetInfo: labels.FromStrings(
+					"__name__", "target_info",
+					"job", "test-service",
+					"service_name", "test-service",
+				),
+			},
+			{
+				name: "not emitted when KeepIdentifyingResourceAttributes is false",
+				resourceAttrs: map[string]string{
+					"service.name":        "test-service",
+					"service.namespace":   "test-namespace",
+					"service.instance.id": "instance-1",
+				},
 				keepIdentifyingResourceAttributes: false,
-				expectTargetInfo:                  false,
+				expectedTargetInfo:                labels.EmptyLabels(),
 			},
 		} {
 			t.Run(tc.name, func(t *testing.T) {
 				request := pmetricotlp.NewExportRequest()
 				rm := request.Metrics().ResourceMetrics().AppendEmpty()
 
-				rm.Resource().Attributes().PutStr("service.name", "test-service")
-				rm.Resource().Attributes().PutStr("service.namespace", "test-namespace")
-				rm.Resource().Attributes().PutStr("service.instance.id", "instance-1")
+				for k, v := range tc.resourceAttrs {
+					rm.Resource().Attributes().PutStr(k, v)
+				}
 
-				// Add a metric.
 				ts := pcommon.NewTimestampFromTime(time.Now())
 				scopeMetrics := rm.ScopeMetrics().AppendEmpty()
 				m := scopeMetrics.Metrics().AppendEmpty()
@@ -1010,18 +1040,12 @@ func TestFromMetrics(t *testing.T) {
 					}
 				}
 
-				if tc.expectTargetInfo {
-					require.NotEmpty(t, targetInfoSamples, "expected target_info samples")
-					for _, s := range targetInfoSamples {
-						require.Equal(t, "test-service", s.L.Get("service_name"), "target_info should have service_name")
-						require.Equal(t, "test-namespace", s.L.Get("service_namespace"), "target_info should have service_namespace")
-						require.Equal(t, "instance-1", s.L.Get("service_instance_id"), "target_info should have service_instance_id")
-						require.Equal(t, "test-namespace/test-service", s.L.Get("job"), "target_info should have job")
-						require.Equal(t, "instance-1", s.L.Get("instance"), "target_info should have instance")
-					}
-				} else {
-					require.Empty(t, targetInfoSamples, "expected no target_info samples when KeepIdentifyingResourceAttributes is false and resource only has identifying attributes")
+				if tc.expectedTargetInfo.IsEmpty() {
+					require.Empty(t, targetInfoSamples)
+					return
 				}
+				require.Len(t, targetInfoSamples, 1)
+				testutil.RequireEqual(t, tc.expectedTargetInfo, targetInfoSamples[0].L)
 			})
 		}
 	})

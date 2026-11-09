@@ -570,6 +570,9 @@ func (c *PrometheusConverter) addResourceTargetInfo(resource pcommon.Resource, s
 	}
 
 	attributes := resource.Attributes()
+	if attributes.Len() == 0 {
+		return nil
+	}
 	identifyingAttrs := []string{
 		string(semconv.ServiceNamespaceKey),
 		string(semconv.ServiceNameKey),
@@ -584,9 +587,6 @@ func (c *PrometheusConverter) addResourceTargetInfo(resource pcommon.Resource, s
 	}
 	if !settings.KeepIdentifyingResourceAttributes && nonIdentifyingAttrsCount == 0 {
 		// If we only have job + instance, then target_info isn't useful, so don't add it.
-		return nil
-	}
-	if attributes.Len() == 0 {
 		return nil
 	}
 
