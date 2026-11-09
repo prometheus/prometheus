@@ -789,13 +789,26 @@ func TestRecordingRuleMetadataDeduction(t *testing.T) {
 					testutil.RequireEqual(t, tc.wantLabels[i], app.gotLabels[i])
 				}
 
-				// Verify staleness appends on the next evaluation preserve deduced metadata.
+				// Verify staleness appends on the next evaluation preserve deduced labels and metadata per series.
 				app.gotLabels = nil
 				app.gotMetas = nil
 				returnEmpty = true
 				group.Eval(t.Context(), ts.Add(time.Minute))
 				require.NoError(t, rule.LastError())
-				require.ElementsMatch(t, wantMetas, app.gotMetas)
+				type labelMeta struct {
+					labels string
+					meta   metadata.Metadata
+				}
+				wantStale := make([]labelMeta, len(tc.wantLabels))
+				for i := range tc.wantLabels {
+					wantStale[i] = labelMeta{labels: tc.wantLabels[i].String(), meta: wantMetas[i]}
+				}
+				require.Len(t, app.gotLabels, len(tc.wantLabels))
+				gotStale := make([]labelMeta, len(app.gotLabels))
+				for i := range app.gotLabels {
+					gotStale[i] = labelMeta{labels: app.gotLabels[i].String(), meta: app.gotMetas[i]}
+				}
+				require.ElementsMatch(t, wantStale, gotStale)
 			}
 		})
 	}
