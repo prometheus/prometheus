@@ -770,7 +770,7 @@ func isV2TimeSeriesOldFilter(metrics *queueManagerMetrics, baseTime time.Time, s
 	}
 
 	return func(ts *writev2.TimeSeries) bool {
-		// Samples and histograms have at most one element per TimeSeries; exemplars may be coalesced onto it.
+		// Samples and histograms have at most one element per TimeSeries due to how populateV2TimeSeries builds the request; exemplars may be coalesced onto it.
 		if len(ts.Samples) > 0 && checker.checkAndRecordIfOld(ts.Samples[0].Timestamp, "sample") {
 			ts.Samples = ts.Samples[:0]
 		}
