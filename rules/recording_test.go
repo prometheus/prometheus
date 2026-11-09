@@ -390,13 +390,23 @@ func TestRecordingRuleMetadataDeduction(t *testing.T) {
 			samples: promql.Vector{
 				{
 					Metric: labels.FromStrings(
-						model.MetricNameLabel, "http_requests_total",
+						model.MetricNameLabel, "http_requests",
 						model.MetricTypeLabel, "counter",
 						model.MetricUnitLabel, "requests",
 						"job", "api",
 					),
 					T: evalMs,
 					F: 42,
+				},
+				{
+					Metric: labels.FromStrings(
+						model.MetricNameLabel, "legacy_gauge_total",
+						model.MetricTypeLabel, "gauge",
+						model.MetricUnitLabel, "bytes",
+						"job", "db",
+					),
+					T: evalMs,
+					F: 7,
 				},
 			},
 			wantLabels: []labels.Labels{
@@ -406,9 +416,16 @@ func TestRecordingRuleMetadataDeduction(t *testing.T) {
 					model.MetricUnitLabel, "requests",
 					"job", "api",
 				),
+				labels.FromStrings(
+					model.MetricNameLabel, "job:req:rate5m",
+					model.MetricTypeLabel, "gauge",
+					model.MetricUnitLabel, "bytes",
+					"job", "db",
+				),
 			},
 			wantMetas: []metadata.Metadata{
 				{Type: model.MetricTypeCounter, Unit: "requests"},
+				{Type: model.MetricTypeGauge, Unit: "bytes"},
 			},
 		},
 		{
