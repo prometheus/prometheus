@@ -236,18 +236,22 @@ func StreamChunkedReadResponses(
 	var (
 		chks       []prompb.Chunk
 		seriesLbls []prompb.Label
-		lbls       []prompb.Label
 		iter       chunks.Iterator
+
+		// lbls is reused across series, so every frame referencing it
+		// must be marshalled before the next iteration.
+		lbls []prompb.Label
 	)
 
 	for ss.Next() {
 		series := ss.At()
 		iter = series.Iterator(iter)
-		seriesLbls = prompb.FromLabels(series.Labels(), seriesLbls)
-
-		// lbls is reused across series, so every frame referencing it
-		// must be marshalled before the next iteration.
-		lbls = mergedLabelsInto(lbls, seriesLbls, sortedExternalLabels)
+		if len(sortedExternalLabels) > 0 {
+			seriesLbls = prompb.FromLabels(series.Labels(), seriesLbls)
+			lbls = mergedLabelsInto(lbls, seriesLbls, sortedExternalLabels)
+		} else {
+			lbls = prompb.FromLabels(series.Labels(), lbls)
+		}
 
 		maxDataLength := maxBytesInFrame
 		for _, lbl := range lbls {
@@ -317,7 +321,7 @@ func MergeLabels(primary, secondary []prompb.Label) []prompb.Label {
 // mergedLabelsInto is like MergeLabels but appends the result to dst[:0],
 // reusing its array. dst must not alias primary or secondary.
 func mergedLabelsInto(dst, primary, secondary []prompb.Label) []prompb.Label {
-	result := dst[:0]
+	result := slices.Grow(dst[:0], len(primary)+len(secondary))
 	i, j := 0, 0
 	for i < len(primary) && j < len(secondary) {
 		switch {
