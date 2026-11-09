@@ -241,7 +241,10 @@ func (rule *RecordingRule) deduceSampleMetadata(sample *promql.Sample, enableTyp
 
 // isSampleTypeCompatible reports whether t is valid for the runtime sample value kind.
 // Native histogram samples require histogram or gaugehistogram metadata, whereas
-// float samples require a valid non-histogram metadata type.
+// float samples require a valid non-histogram metadata type (classic histogram float
+// series such as _bucket, _sum, and _count are recorded as individual float series
+// rather than a multi-series classic histogram family, and float samples with histogram
+// metadata are rejected by Remote Write 2.0 stateless mode).
 func isSampleTypeCompatible(t model.MetricType, isHistogram bool) bool {
 	if isHistogram {
 		return t == model.MetricTypeHistogram || t == model.MetricTypeGaugeHistogram
