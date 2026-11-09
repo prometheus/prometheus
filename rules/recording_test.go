@@ -644,6 +644,36 @@ func TestRecordingRuleMetadataDeduction(t *testing.T) {
 			},
 		},
 		{
+			name: "mismatch/incompatible_yaml_type_falls_back_to_preserved_type",
+			ruleMeta: metadata.Metadata{
+				Type: model.MetricTypeHistogram,
+			},
+			enableTypeAndUnitLabels: true,
+			samples: promql.Vector{
+				{
+					Metric: labels.FromStrings(
+						model.MetricNameLabel, "http_requests",
+						model.MetricTypeLabel, "counter",
+						model.MetricUnitLabel, "requests",
+						"job", "api",
+					),
+					T: evalMs,
+					F: 10,
+				},
+			},
+			wantLabels: []labels.Labels{
+				labels.FromStrings(
+					model.MetricNameLabel, "job:req:rate5m",
+					model.MetricTypeLabel, "counter",
+					model.MetricUnitLabel, "requests",
+					"job", "api",
+				),
+			},
+			wantMetas: []metadata.Metadata{
+				{Type: model.MetricTypeCounter, Unit: "requests"},
+			},
+		},
+		{
 			name:                    "mismatch/invalid_preserved_type_label_falls_back_to_gauge",
 			enableTypeAndUnitLabels: true,
 			samples: promql.Vector{
