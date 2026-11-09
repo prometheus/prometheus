@@ -345,7 +345,9 @@ func relabel(cfg *Config, lb *labels.Builder) (keep bool) {
 		lb.Range(func(l labels.Label) {
 			if cfg.Regex.MatchString(l.Name) {
 				res := cfg.Regex.ReplaceAllString(l.Name, cfg.Replacement)
-				lb.Set(res, l.Value)
+				if cfg.NameValidationScheme.IsValidLabelName(res) {
+					lb.Set(res, l.Value)
+				}
 			}
 		})
 	case LabelDrop:
