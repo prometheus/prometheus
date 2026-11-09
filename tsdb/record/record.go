@@ -20,6 +20,7 @@ import (
 	"fmt"
 	"log/slog"
 	"math"
+	"slices"
 	"unsafe"
 
 	"github.com/prometheus/common/model"
@@ -225,15 +226,53 @@ const maxMetadataInternEntries = 8192
 // Decoder decodes series, sample, metadata and tombstone records.
 // Decoder is not safe for concurrent use.
 type Decoder struct {
-	builder     labels.ScratchBuilder
-	logger      *slog.Logger
-	metaStrings map[string]string
+	// ReuseHistograms makes HistogramSamples and FloatHistogramSamples decode
+	// into histogram objects owned by the Decoder and reused across calls. A
+	// returned H or FH is then valid only until the next call of the same
+	// method; use Copy to retain it longer. When false, every call returns
+	// new histogram objects owned by the caller.
+	ReuseHistograms bool
+
+	builder         labels.ScratchBuilder
+	logger          *slog.Logger
+	metaStrings     map[string]string
+	histograms      spares[histogram.Histogram]
+	floatHistograms spares[histogram.FloatHistogram]
 }
 
 func NewDecoder(_ *labels.SymbolTable, logger *slog.Logger) Decoder { // FIXME remove t (or use scratch builder with symbols)
 	b := labels.NewScratchBuilder(0)
 	b.SetUnsafeAdd(true)
 	return Decoder{builder: b, logger: logger}
+}
+
+// spares holds objects reused across decode calls. get returns the same
+// object for the same index, so distinct indexes never alias.
+type spares[T any] []*T
+
+func (s *spares[T]) get(i int) *T {
+	for len(*s) <= i {
+		*s = append(*s, new(T))
+	}
+	return (*s)[i]
+}
+
+// histogramAt returns the object to decode the i-th histogram of the current
+// call into.
+func (d *Decoder) histogramAt(i int) *histogram.Histogram {
+	if !d.ReuseHistograms {
+		return &histogram.Histogram{}
+	}
+	return d.histograms.get(i)
+}
+
+// floatHistogramAt returns the object to decode the i-th float histogram of
+// the current call into.
+func (d *Decoder) floatHistogramAt(i int) *histogram.FloatHistogram {
+	if !d.ReuseHistograms {
+		return &histogram.FloatHistogram{}
+	}
+	return d.floatHistograms.get(i)
 }
 
 // Type returns the type of the record.
@@ -590,6 +629,7 @@ func (d *Decoder) histogramSamplesV1(dec *encoding.Decbuf, histograms []RefHisto
 	if dec.Len() == 0 {
 		return histograms, nil
 	}
+	start := len(histograms)
 	var (
 		baseRef  = dec.Be64()
 		baseTime = dec.Be64int64()
@@ -601,7 +641,7 @@ func (d *Decoder) histogramSamplesV1(dec *encoding.Decbuf, histograms []RefHisto
 		rh := RefHistogramSample{
 			Ref: chunks.HeadSeriesRef(baseRef + uint64(dref)),
 			T:   baseTime + dtime,
-			H:   &histogram.Histogram{},
+			H:   d.histogramAt(len(histograms) - start),
 		}
 
 		DecodeHistogram(dec, rh.H)
@@ -636,6 +676,7 @@ func (d *Decoder) histogramSamplesV2(dec *encoding.Decbuf, histograms []RefHisto
 	if dec.Len() == 0 {
 		return histograms, nil
 	}
+	start := len(histograms)
 	firstRef := chunks.HeadSeriesRef(dec.Varint64())
 	firstT := dec.Varint64()
 	firstST := dec.Varint64()
@@ -660,7 +701,7 @@ func (d *Decoder) histogramSamplesV2(dec *encoding.Decbuf, histograms []RefHisto
 			Ref: chunks.HeadSeriesRef(ref),
 			ST:  st,
 			T:   t,
-			H:   &histogram.Histogram{},
+			H:   d.histogramAt(len(histograms) - start),
 		}
 		prevRef, prevST = rh.Ref, rh.ST
 		DecodeHistogram(dec, rh.H)
@@ -689,7 +730,8 @@ func (d *Decoder) histogramSamplesV2(dec *encoding.Decbuf, histograms []RefHisto
 	return histograms, nil
 }
 
-// DecodeHistogram decodes a Histogram from buf.
+// DecodeHistogram decodes a Histogram from buf into h, overwriting every field.
+// It reuses the backing arrays of h's spans and buckets, never of CustomValues.
 func DecodeHistogram(buf *encoding.Decbuf, h *histogram.Histogram) {
 	h.CounterResetHint = histogram.CounterResetHint(buf.Byte())
 
@@ -701,48 +743,52 @@ func DecodeHistogram(buf *encoding.Decbuf, h *histogram.Histogram) {
 	h.Sum = math.Float64frombits(buf.Be64())
 
 	l := buf.Uvarint()
-	if l > 0 {
-		h.PositiveSpans = make([]histogram.Span, l)
-	}
+	h.PositiveSpans = reuseSlice(h.PositiveSpans, l)
 	for i := range h.PositiveSpans {
 		h.PositiveSpans[i].Offset = int32(buf.Varint64())
 		h.PositiveSpans[i].Length = buf.Uvarint32()
 	}
 
 	l = buf.Uvarint()
-	if l > 0 {
-		h.NegativeSpans = make([]histogram.Span, l)
-	}
+	h.NegativeSpans = reuseSlice(h.NegativeSpans, l)
 	for i := range h.NegativeSpans {
 		h.NegativeSpans[i].Offset = int32(buf.Varint64())
 		h.NegativeSpans[i].Length = buf.Uvarint32()
 	}
 
 	l = buf.Uvarint()
-	if l > 0 {
-		h.PositiveBuckets = make([]int64, l)
-	}
+	h.PositiveBuckets = reuseSlice(h.PositiveBuckets, l)
 	for i := range h.PositiveBuckets {
 		h.PositiveBuckets[i] = buf.Varint64()
 	}
 
 	l = buf.Uvarint()
-	if l > 0 {
-		h.NegativeBuckets = make([]int64, l)
-	}
+	h.NegativeBuckets = reuseSlice(h.NegativeBuckets, l)
 	for i := range h.NegativeBuckets {
 		h.NegativeBuckets[i] = buf.Varint64()
 	}
 
+	h.CustomValues = nil
 	if histogram.IsCustomBucketsSchema(h.Schema) {
 		l = buf.Uvarint()
 		if l > 0 {
+			// Never reused: copies share CustomValues, assuming they never change.
 			h.CustomValues = make([]float64, l)
 		}
 		for i := range h.CustomValues {
 			h.CustomValues[i] = buf.Be64Float64()
 		}
 	}
+}
+
+// reuseSlice returns s resized to n elements, reusing its backing array when
+// large enough. It returns nil for n <= 0, as decoding into a new object does,
+// so a count overflowed by a corrupt record leaves the decoder to report it.
+func reuseSlice[T any](s []T, n int) []T {
+	if n <= 0 {
+		return nil
+	}
+	return slices.Grow(s[:0], n)[:n]
 }
 
 // FloatHistogramSamples appends float histogram samples in rec to the given
@@ -764,6 +810,7 @@ func (d *Decoder) floatHistogramSamplesV1(dec *encoding.Decbuf, histograms []Ref
 	if dec.Len() == 0 {
 		return histograms, nil
 	}
+	start := len(histograms)
 	var (
 		baseRef  = dec.Be64()
 		baseTime = dec.Be64int64()
@@ -775,7 +822,7 @@ func (d *Decoder) floatHistogramSamplesV1(dec *encoding.Decbuf, histograms []Ref
 		rh := RefFloatHistogramSample{
 			Ref: chunks.HeadSeriesRef(baseRef + uint64(dref)),
 			T:   baseTime + dtime,
-			FH:  &histogram.FloatHistogram{},
+			FH:  d.floatHistogramAt(len(histograms) - start),
 		}
 
 		DecodeFloatHistogram(dec, rh.FH)
@@ -810,6 +857,7 @@ func (d *Decoder) floatHistogramSamplesV2(dec *encoding.Decbuf, histograms []Ref
 	if dec.Len() == 0 {
 		return histograms, nil
 	}
+	start := len(histograms)
 	firstRef := chunks.HeadSeriesRef(dec.Varint64())
 	firstT := dec.Varint64()
 	firstST := dec.Varint64()
@@ -832,7 +880,7 @@ func (d *Decoder) floatHistogramSamplesV2(dec *encoding.Decbuf, histograms []Ref
 			Ref: chunks.HeadSeriesRef(ref),
 			ST:  st,
 			T:   t,
-			FH:  &histogram.FloatHistogram{},
+			FH:  d.floatHistogramAt(len(histograms) - start),
 		}
 		prevRef, prevST = rfh.Ref, rfh.ST
 		DecodeFloatHistogram(dec, rfh.FH)
@@ -862,7 +910,9 @@ func (d *Decoder) floatHistogramSamplesV2(dec *encoding.Decbuf, histograms []Ref
 	return histograms, nil
 }
 
-// DecodeFloatHistogram decodes a FloatHistogram from buf.
+// DecodeFloatHistogram decodes a FloatHistogram from buf into fh, overwriting
+// every field. It reuses the backing arrays of fh's spans and buckets, never of
+// CustomValues.
 func DecodeFloatHistogram(buf *encoding.Decbuf, fh *histogram.FloatHistogram) {
 	fh.CounterResetHint = histogram.CounterResetHint(buf.Byte())
 
@@ -874,42 +924,36 @@ func DecodeFloatHistogram(buf *encoding.Decbuf, fh *histogram.FloatHistogram) {
 	fh.Sum = buf.Be64Float64()
 
 	l := buf.Uvarint()
-	if l > 0 {
-		fh.PositiveSpans = make([]histogram.Span, l)
-	}
+	fh.PositiveSpans = reuseSlice(fh.PositiveSpans, l)
 	for i := range fh.PositiveSpans {
 		fh.PositiveSpans[i].Offset = int32(buf.Varint64())
 		fh.PositiveSpans[i].Length = buf.Uvarint32()
 	}
 
 	l = buf.Uvarint()
-	if l > 0 {
-		fh.NegativeSpans = make([]histogram.Span, l)
-	}
+	fh.NegativeSpans = reuseSlice(fh.NegativeSpans, l)
 	for i := range fh.NegativeSpans {
 		fh.NegativeSpans[i].Offset = int32(buf.Varint64())
 		fh.NegativeSpans[i].Length = buf.Uvarint32()
 	}
 
 	l = buf.Uvarint()
-	if l > 0 {
-		fh.PositiveBuckets = make([]float64, l)
-	}
+	fh.PositiveBuckets = reuseSlice(fh.PositiveBuckets, l)
 	for i := range fh.PositiveBuckets {
 		fh.PositiveBuckets[i] = buf.Be64Float64()
 	}
 
 	l = buf.Uvarint()
-	if l > 0 {
-		fh.NegativeBuckets = make([]float64, l)
-	}
+	fh.NegativeBuckets = reuseSlice(fh.NegativeBuckets, l)
 	for i := range fh.NegativeBuckets {
 		fh.NegativeBuckets[i] = buf.Be64Float64()
 	}
 
+	fh.CustomValues = nil
 	if histogram.IsCustomBucketsSchema(fh.Schema) {
 		l = buf.Uvarint()
 		if l > 0 {
+			// Never reused: copies share CustomValues, assuming they never change.
 			fh.CustomValues = make([]float64, l)
 		}
 		for i := range fh.CustomValues {

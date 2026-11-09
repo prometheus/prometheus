@@ -32,6 +32,7 @@ import (
 	"github.com/prometheus/prometheus/tsdb/chunks"
 	"github.com/prometheus/prometheus/tsdb/encoding"
 	"github.com/prometheus/prometheus/tsdb/tombstones"
+	"github.com/prometheus/prometheus/tsdb/tsdbutil"
 	"github.com/prometheus/prometheus/util/testutil"
 )
 
@@ -678,6 +679,119 @@ func TestRecord_V2HistogramRoundTrip(t *testing.T) {
 	gotFloat, err := dec.FloatHistogramSamples(floatBuf, nil)
 	require.NoError(t, err)
 	require.Equal(t, floatSamples, gotFloat)
+}
+
+// TestRecord_DecodeHistogramSamplesAcrossCalls verifies that every decode call
+// returns exactly what was encoded, and that histograms returned by earlier
+// calls stay valid as Decoder.ReuseHistograms guarantees, whatever the caller
+// leaves in the slice it passes back.
+func TestRecord_DecodeHistogramSamplesAcrossCalls(t *testing.T) {
+	gen := func(custom bool, from, to int) []RefHistogramSample {
+		var out []RefHistogramSample
+		for i := from; i < to; i++ {
+			h := tsdbutil.GenerateTestHistogram(int64(i))
+			if custom {
+				h = tsdbutil.GenerateTestCustomBucketsHistogram(int64(i))
+				// Distinct bounds, so a decode writing into earlier bounds is detected.
+				for j := range h.CustomValues {
+					h.CustomValues[j] += float64(i)
+				}
+			}
+			out = append(out, RefHistogramSample{Ref: chunks.HeadSeriesRef(i), T: int64(i), H: h})
+		}
+		return out
+	}
+	// Consecutive records differ in schema, bounds or length, so a reused
+	// object must be overwritten completely.
+	intRecords := [][]RefHistogramSample{gen(false, 0, 3), gen(true, 3, 6), gen(true, 6, 8), gen(false, 8, 12)}
+	floatRecords := make([][]RefFloatHistogramSample, len(intRecords))
+	for i, rec := range intRecords {
+		for _, s := range rec {
+			floatRecords[i] = append(floatRecords[i], RefFloatHistogramSample{Ref: s.Ref, T: s.T, FH: s.H.ToFloat(nil)})
+		}
+	}
+
+	for _, enableSTStorage := range []bool{false, true} {
+		for _, reuse := range []bool{false, true} {
+			t.Run(fmt.Sprintf("stStorage=%v,reuse=%v", enableSTStorage, reuse), func(t *testing.T) {
+				enc := Encoder{EnableSTStorage: enableSTStorage}
+
+				t.Run("int histograms", func(t *testing.T) {
+					dec := NewDecoder(labels.NewSymbolTable(), promslog.NewNopLogger())
+					dec.ReuseHistograms = reuse
+					var got, retained, want []RefHistogramSample
+					var prev []*histogram.Histogram
+					for _, rec := range intRecords {
+						b, leftover := enc.HistogramSamples(rec, nil)
+						if rec[0].H.UsesCustomBuckets() {
+							b = enc.CustomBucketsHistogramSamples(rec, nil)
+						} else {
+							require.Empty(t, leftover)
+						}
+						var err error
+						got, err = dec.HistogramSamples(b, got[:0])
+						require.NoError(t, err)
+						require.Equal(t, rec, got)
+
+						for i := range min(len(prev), len(got)) {
+							if reuse {
+								require.Same(t, prev[i], got[i].H, "histogram objects must be reused")
+							}
+						}
+						prev = prev[:0]
+						for _, s := range got {
+							prev = append(prev, s.H)
+							if reuse {
+								s.H = s.H.Copy()
+							}
+							retained = append(retained, s)
+						}
+						want = append(want, rec...)
+						// Filter in place, leaving duplicate pointers past len(got).
+						got = append(got[:0], got[1:]...)
+					}
+					require.Equal(t, want, retained, "a decode call modified histograms returned by an earlier one")
+				})
+
+				t.Run("float histograms", func(t *testing.T) {
+					dec := NewDecoder(labels.NewSymbolTable(), promslog.NewNopLogger())
+					dec.ReuseHistograms = reuse
+					var got, retained, want []RefFloatHistogramSample
+					var prev []*histogram.FloatHistogram
+					for _, rec := range floatRecords {
+						b, leftover := enc.FloatHistogramSamples(rec, nil)
+						if rec[0].FH.UsesCustomBuckets() {
+							b = enc.CustomBucketsFloatHistogramSamples(rec, nil)
+						} else {
+							require.Empty(t, leftover)
+						}
+						var err error
+						got, err = dec.FloatHistogramSamples(b, got[:0])
+						require.NoError(t, err)
+						require.Equal(t, rec, got)
+
+						for i := range min(len(prev), len(got)) {
+							if reuse {
+								require.Same(t, prev[i], got[i].FH, "histogram objects must be reused")
+							}
+						}
+						prev = prev[:0]
+						for _, s := range got {
+							prev = append(prev, s.FH)
+							if reuse {
+								s.FH = s.FH.Copy()
+							}
+							retained = append(retained, s)
+						}
+						want = append(want, rec...)
+						// Filter in place, leaving duplicate pointers past len(got).
+						got = append(got[:0], got[1:]...)
+					}
+					require.Equal(t, want, retained, "a decode call modified histograms returned by an earlier one")
+				})
+			})
+		}
+	}
 }
 
 func TestRecord_DecodeInvalidHistogramSchema(t *testing.T) {
