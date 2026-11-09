@@ -443,6 +443,9 @@ func (r *AlertingRule) Eval(ctx context.Context, queryOffset time.Duration, ts t
 		r.labels.Range(func(l labels.Label) {
 			lb.Set(l.Name, expand(l.Value))
 		})
+		// Strip reserved metric schema labels (__name__, __type__, __unit__) so they do not
+		// leak into Alert.Labels (sent to Alertmanager and /api/v1/alerts) or mask duplicate
+		// alert label sets.
 		schema.Metadata{}.SetToLabels(lb)
 		lb.Set(labels.AlertName, r.Name())
 
