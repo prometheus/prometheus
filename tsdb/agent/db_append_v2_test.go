@@ -18,10 +18,12 @@ import (
 	"fmt"
 	"math"
 	"path/filepath"
+	"slices"
 	"sort"
 	"strconv"
 	"testing"
 	"time"
+	"unsafe"
 
 	"github.com/google/go-cmp/cmp"
 	"github.com/prometheus/client_golang/prometheus"
@@ -1169,7 +1171,8 @@ func TestDBOutOfOrderTimeWindow_AppendV2(t *testing.T) {
 	}
 }
 
-// TestDB_EnableSTZeroInjection_AppendV2 replaces TestDBStartTimestampSamplesIngestion.
+// TestDB_EnableSTZeroInjection_AppendV2 verifies zero-sample injection and WAL payloads
+// with and without start timestamp storage.
 func TestDB_EnableSTZeroInjection_AppendV2(t *testing.T) {
 	t.Parallel()
 
@@ -1179,6 +1182,7 @@ func TestDB_EnableSTZeroInjection_AppendV2(t *testing.T) {
 		v     float64
 		lbls  labels.Labels
 		h     *histogram.Histogram
+		fh    *histogram.FloatHistogram
 	}
 
 	testHistograms := tsdbutil.GenerateTestHistograms(2)
@@ -1189,6 +1193,15 @@ func TestDB_EnableSTZeroInjection_AppendV2(t *testing.T) {
 		Schema:        testHistograms[0].Schema,
 		ZeroThreshold: testHistograms[0].ZeroThreshold,
 		CustomValues:  testHistograms[0].CustomValues,
+	}
+	testFloatHistograms := tsdbutil.GenerateTestFloatHistograms(2)
+	zeroFloatHistogram := &histogram.FloatHistogram{
+		// The STZeroSample represents a counter reset by definition.
+		CounterResetHint: histogram.CounterReset,
+		// Replicate other fields to avoid needless chunk creation.
+		Schema:        testFloatHistograms[0].Schema,
+		ZeroThreshold: testFloatHistograms[0].ZeroThreshold,
+		CustomValues:  testFloatHistograms[0].CustomValues,
 	}
 
 	lbls := labelsForTest(t.Name(), 1)
@@ -1207,9 +1220,9 @@ func TestDB_EnableSTZeroInjection_AppendV2(t *testing.T) {
 				{t: 101, st: 1, v: 10, lbls: defLbls},
 			},
 			expectedSamples: []walSample{
-				{t: 1, f: 0, lbls: defLbls, ref: 1},
-				{t: 100, f: 10, lbls: defLbls, ref: 1},
-				{t: 101, f: 10, lbls: defLbls, ref: 1},
+				{t: 1, st: 1, f: 0, lbls: defLbls, ref: 1},
+				{t: 100, st: 1, f: 10, lbls: defLbls, ref: 1},
+				{t: 101, st: 1, f: 10, lbls: defLbls, ref: 1},
 			},
 		},
 		{
@@ -1229,10 +1242,10 @@ func TestDB_EnableSTZeroInjection_AppendV2(t *testing.T) {
 				},
 			},
 			expectedSamples: []walSample{
-				{t: 30, f: 0, lbls: defLbls, ref: 1},
-				{t: 100, f: 20, lbls: defLbls, ref: 1},
-				{t: 230, h: zeroHistogram, lbls: defLbls, ref: 1},
-				{t: 300, h: testHistograms[0], lbls: defLbls, ref: 1},
+				{t: 30, st: 30, f: 0, lbls: defLbls, ref: 1},
+				{t: 100, st: 30, f: 20, lbls: defLbls, ref: 1},
+				{t: 230, st: 230, h: zeroHistogram, lbls: defLbls, ref: 1},
+				{t: 300, st: 230, h: testHistograms[0], lbls: defLbls, ref: 1},
 			},
 			expectedSeriesCount: 1,
 		},
@@ -1240,14 +1253,14 @@ func TestDB_EnableSTZeroInjection_AppendV2(t *testing.T) {
 			name: "ST+float && ST+histogram samples with error; should be ignored",
 			inputSamples: []appendableSample{
 				{
-					// invalid ST
+					// ST equal to the sample timestamp suppresses zero-sample insertion.
 					t:    100,
 					st:   100,
 					v:    10,
 					lbls: defLbls,
 				},
 				{
-					// invalid ST histogram
+					// ST equal to the sample timestamp suppresses zero-histogram insertion.
 					t:    300,
 					st:   300,
 					h:    testHistograms[0],
@@ -1255,8 +1268,9 @@ func TestDB_EnableSTZeroInjection_AppendV2(t *testing.T) {
 				},
 			},
 			expectedSamples: []walSample{
-				{t: 100, f: 10, lbls: defLbls, ref: 1},
-				{t: 300, h: testHistograms[0], lbls: defLbls, ref: 1},
+				// Ordinary samples retain their ST even when zero-sample insertion is skipped.
+				{t: 100, st: 100, f: 10, lbls: defLbls, ref: 1},
+				{t: 300, st: 300, h: testHistograms[0], lbls: defLbls, ref: 1},
 			},
 			expectedSeriesCount: 0,
 		},
@@ -1267,9 +1281,21 @@ func TestDB_EnableSTZeroInjection_AppendV2(t *testing.T) {
 				{t: 101, h: testHistograms[1], st: 1, lbls: defLbls},
 			},
 			expectedSamples: []walSample{
-				{t: 1, h: zeroHistogram, lbls: defLbls, ref: 1},
-				{t: 100, h: testHistograms[0], lbls: defLbls, ref: 1},
-				{t: 101, h: testHistograms[1], lbls: defLbls, ref: 1},
+				{t: 1, st: 1, h: zeroHistogram, lbls: defLbls, ref: 1},
+				{t: 100, st: 1, h: testHistograms[0], lbls: defLbls, ref: 1},
+				{t: 101, st: 1, h: testHistograms[1], lbls: defLbls, ref: 1},
+			},
+		},
+		{
+			name: "In order ct+normal sample/floatHistogram",
+			inputSamples: []appendableSample{
+				{t: 100, fh: testFloatHistograms[0], st: 1, lbls: defLbls},
+				{t: 101, fh: testFloatHistograms[1], st: 1, lbls: defLbls},
+			},
+			expectedSamples: []walSample{
+				{t: 1, st: 1, fh: zeroFloatHistogram, lbls: defLbls, ref: 1},
+				{t: 100, st: 1, fh: testFloatHistograms[0], lbls: defLbls, ref: 1},
+				{t: 101, st: 1, fh: testFloatHistograms[1], lbls: defLbls, ref: 1},
 			},
 		},
 		{
@@ -1281,47 +1307,59 @@ func TestDB_EnableSTZeroInjection_AppendV2(t *testing.T) {
 				{t: 50_000, st: 40_000, v: 10, lbls: defLbls},
 			},
 			expectedSamples: []walSample{
-				{t: 40_000, f: 0, lbls: defLbls, ref: 1},
-				{t: 60_000, f: 10, lbls: defLbls, ref: 1},
-				{t: 120_000, f: 10, lbls: defLbls, ref: 1},
-				{t: 180_000, f: 10, lbls: defLbls, ref: 1},
-				{t: 50_000, f: 10, lbls: defLbls, ref: 1}, // OOO sample.
+				{t: 40_000, st: 40_000, f: 0, lbls: defLbls, ref: 1},
+				{t: 60_000, st: 40_000, f: 10, lbls: defLbls, ref: 1},
+				{t: 120_000, st: 40_000, f: 10, lbls: defLbls, ref: 1},
+				{t: 180_000, st: 40_000, f: 10, lbls: defLbls, ref: 1},
+				{t: 50_000, st: 40_000, f: 10, lbls: defLbls, ref: 1}, // OOO sample.
 			},
 		},
 	}
 
-	for _, tc := range testCases {
-		t.Run(tc.name, func(t *testing.T) {
-			t.Parallel()
+	for _, enableSTStorage := range []bool{false, true} {
+		t.Run("enableSTStorage="+strconv.FormatBool(enableSTStorage), func(t *testing.T) {
+			for _, tc := range testCases {
+				t.Run(tc.name, func(t *testing.T) {
+					t.Parallel()
 
-			reg := prometheus.NewRegistry()
-			opts := DefaultOptions()
-			opts.OutOfOrderTimeWindow = 360_000
-			opts.EnableSTAsZeroSample = true
-			s := createTestAgentDB(t, reg, opts)
+					reg := prometheus.NewRegistry()
+					opts := DefaultOptions()
+					opts.OutOfOrderTimeWindow = 360_000
+					opts.EnableSTAsZeroSample = true
+					opts.EnableSTStorage = enableSTStorage
+					s := createTestAgentDB(t, reg, opts)
 
-			for _, sample := range tc.inputSamples {
-				// Simulate one sample per series logic we have in all our ingestion paths in Prometheus.
-				app := s.AppenderV2(t.Context())
-				_, err := app.Append(0, sample.lbls, sample.st, sample.t, sample.v, sample.h, nil, storage.AOptions{})
-				require.NoError(t, err)
-				require.NoError(t, app.Commit())
+					for _, sample := range tc.inputSamples {
+						// Simulate one sample per series logic we have in all our ingestion paths in Prometheus.
+						app := s.AppenderV2(t.Context())
+						_, err := app.Append(0, sample.lbls, sample.st, sample.t, sample.v, sample.h, sample.fh, storage.AOptions{})
+						require.NoError(t, err)
+						require.NoError(t, app.Commit())
+					}
+
+					// Close the DB to ensure all data is flushed to the WAL.
+					require.NoError(t, s.Close())
+
+					// Check that we don't have any OOO samples in the WAL by checking metrics.
+					families, err := reg.Gather()
+					require.NoError(t, err, "failed to gather metrics")
+					for _, f := range families {
+						if f.GetName() == "prometheus_agent_out_of_order_samples_total" {
+							t.Fatalf("unexpected metric %s", f.GetName())
+						}
+					}
+
+					// Legacy WAL records omit ST. Clone the expectations to keep parallel subtests independent.
+					expectedSamples := slices.Clone(tc.expectedSamples)
+					if !enableSTStorage {
+						for i := range expectedSamples {
+							expectedSamples[i].st = 0
+						}
+					}
+					got := readWALSamples(t, s.wal.Dir())
+					testutil.RequireEqualWithOptions(t, expectedSamples, got, cmp.Options{cmp.AllowUnexported(walSample{})})
+				})
 			}
-
-			// Close the DB to ensure all data is flushed to the WAL
-			require.NoError(t, s.Close())
-
-			// Check that we don't have any OOO samples in the WAL by checking metrics
-			families, err := reg.Gather()
-			require.NoError(t, err, "failed to gather metrics")
-			for _, f := range families {
-				if f.GetName() == "prometheus_agent_out_of_order_samples_total" {
-					t.Fatalf("unexpected metric %s", f.GetName())
-				}
-			}
-
-			got := readWALSamples(t, s.wal.Dir())
-			testutil.RequireEqualWithOptions(t, tc.expectedSamples, got, cmp.Options{cmp.AllowUnexported(walSample{})})
 		})
 	}
 }
@@ -1666,4 +1704,74 @@ func TestMetadataCheckpointing_AppenderV2(t *testing.T) {
 			}
 		})
 	}
+}
+
+func TestAppenderV2_GetRef(t *testing.T) {
+	dir := t.TempDir()
+	opts := DefaultOptions()
+	rs := remote.NewStorage(promslog.NewNopLogger(), nil, startTime, dir, 30*time.Second, nil, false, opts.EnableMetadataWALRecords, opts.EnableSTStorage)
+	t.Cleanup(func() {
+		require.NoError(t, rs.Close())
+	})
+
+	db, err := Open(promslog.NewNopLogger(), nil, rs, dir, opts)
+	require.NoError(t, err)
+
+	ctx := t.Context()
+	stored := labels.FromStrings(model.MetricNameLabel, "test_metric", "job", "prometheus")
+	lookup := labels.FromStrings(model.MetricNameLabel, "test_metric", "job", "prometheus")
+	require.NotSame(t, unsafe.StringData(stored.Get("job")), unsafe.StringData(lookup.Get("job")))
+
+	// Series miss returns (0, EmptyLabels).
+	app := db.AppenderV2(ctx)
+	gr, ok := app.(storage.GetRef)
+	require.True(t, ok)
+	gotRef, gotLset := gr.GetRef(lookup, lookup.Hash())
+	require.Zero(t, gotRef)
+	require.True(t, gotLset.IsEmpty())
+
+	// Append series and verify GetRef returns the canonical ref and label backing memory.
+	wantRef, err := app.Append(0, stored, 0, 1000, 1.0, nil, nil, storage.AOptions{})
+	require.NoError(t, err)
+	require.NoError(t, app.Commit())
+
+	app = db.AppenderV2(ctx)
+	gr = app.(storage.GetRef)
+	gotRef, gotLset = gr.GetRef(lookup, lookup.Hash())
+	require.Equal(t, wantRef, gotRef)
+	testutil.RequireEqual(t, stored, gotLset)
+	require.Same(t, unsafe.StringData(stored.Get("job")), unsafe.StringData(gotLset.Get("job")))
+	require.NotSame(t, unsafe.StringData(lookup.Get("job")), unsafe.StringData(gotLset.Get("job")))
+	require.NoError(t, app.Rollback())
+
+	// Close and reopen DB to replay the WAL; GetRef must return the replayed series and its canonical labels.
+	require.NoError(t, db.Close())
+
+	db2, err := Open(promslog.NewNopLogger(), nil, rs, dir, opts)
+	require.NoError(t, err)
+	t.Cleanup(func() {
+		require.NoError(t, db2.Close())
+	})
+
+	replayed := db2.series.GetByID(chunks.HeadSeriesRef(wantRef))
+	require.NotNil(t, replayed)
+
+	app2 := db2.AppenderV2(ctx)
+	gr2 := app2.(storage.GetRef)
+	gotRef, gotLset = gr2.GetRef(lookup, lookup.Hash())
+	require.Equal(t, wantRef, gotRef)
+	testutil.RequireEqual(t, stored, gotLset)
+	require.Same(t, unsafe.StringData(replayed.Labels().Get("job")), unsafe.StringData(gotLset.Get("job")))
+	require.NotSame(t, unsafe.StringData(lookup.Get("job")), unsafe.StringData(gotLset.Get("job")))
+	require.NoError(t, app2.Rollback())
+
+	// GC the inactive series and verify GetRef returns (0, EmptyLabels).
+	db2.gc(1001)
+
+	app2 = db2.AppenderV2(ctx)
+	gr2 = app2.(storage.GetRef)
+	gotRef, gotLset = gr2.GetRef(lookup, lookup.Hash())
+	require.Zero(t, gotRef)
+	require.True(t, gotLset.IsEmpty())
+	require.NoError(t, app2.Rollback())
 }

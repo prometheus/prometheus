@@ -133,7 +133,7 @@ binModifiers {
 }
 
 GroupingLabels {
-  "(" ((LabelName | QuotedLabelName) ("," (LabelName | QuotedLabelName))* ","?)? ")"
+  "(" ((GroupingLabelName | QuotedLabelName) ("," (GroupingLabelName | QuotedLabelName))* ","?)? ")"
 }
 
 FunctionCall {
@@ -334,6 +334,13 @@ durationPrimary[@inline] {
 
 @skip { whitespace | LineComment }
 
+// Names take precedence over punctuation so metric names can start with a colon.
+@external tokens names from "./tokens" {
+  Identifier,
+  LabelName,
+  GroupingLabelName[@name=LabelName]
+}
+
 @tokens {
   whitespace { std.whitespace+ }
   LineComment { "#" ![\n]* }
@@ -382,8 +389,6 @@ durationPrimary[@inline] {
   // Special Modifier
   At { "@" }
 }
-
-@external tokens names from "./tokens" { Identifier, LabelName }
 
 // Keywords
 

@@ -343,7 +343,18 @@ func (f *fanoutAppenderV2) Append(ref SeriesRef, l labels.Labels, st, t int64, v
 	return ref, partialErr.ToError()
 }
 
-var _ ExemplarAppenderV2 = &fanoutAppenderV2{}
+var (
+	_ ExemplarAppenderV2  = &fanoutAppenderV2{}
+	_ CommitStatsReporter = &fanoutAppenderV2{}
+)
+
+// CommitStats returns the primary appender's commit stats, or zero stats if it does not report them.
+func (f *fanoutAppenderV2) CommitStats() CommitStats {
+	if s, ok := f.primary.(CommitStatsReporter); ok {
+		return s.CommitStats()
+	}
+	return CommitStats{}
+}
 
 // AppendExemplars implements ExemplarAppenderV2.
 // It dispatches the exemplars to the primary that is required to and all

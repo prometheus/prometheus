@@ -16,6 +16,7 @@ import { ExternalTokenizer } from "@lezer/lr";
 import {
   Identifier,
   LabelName,
+  GroupingLabelName,
   And,
   Avg,
   Atan2,
@@ -79,15 +80,16 @@ function isNameStart(ch) {
 
 export const names = new ExternalTokenizer(
   (input, stack) => {
-    const label = stack.canShift(LabelName);
+    const selectorLabel = stack.canShift(LabelName);
+    const groupingLabel = stack.canShift(GroupingLabelName);
     let ch = readCodePoint(input);
-    if (!isNameStart(ch) && (label || ch !== 58)) return;
-    // Dots and ASCII digits can follow; only metric names allow colons.
+    if (!isNameStart(ch) && (selectorLabel || ch !== 58)) return;
+    // Grouping labels allow colons for compatibility, unlike selector labels.
     do {
       input.advance(ch > 0xffff ? 2 : 1);
       ch = readCodePoint(input);
-    } while (isNameStart(ch) || (ch >= 48 && ch <= 57) || ch === 46 || (!label && ch === 58));
-    input.acceptToken(label ? LabelName : Identifier);
+    } while (isNameStart(ch) || (ch >= 48 && ch <= 57) || ch === 46 || (!selectorLabel && ch === 58));
+    input.acceptToken(selectorLabel ? LabelName : groupingLabel ? GroupingLabelName : Identifier);
   },
   { contextual: true }
 );

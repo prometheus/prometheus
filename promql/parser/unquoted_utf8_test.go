@@ -15,6 +15,7 @@ package parser
 
 import (
 	"fmt"
+	"strconv"
 	"testing"
 
 	"github.com/stretchr/testify/require"
@@ -37,7 +38,7 @@ func TestUnquotedUTF8Names(t *testing.T) {
 			expr, err := p.ParseExpr(name)
 			require.NoError(t, err)
 			require.Equal(t, name, expr.(*VectorSelector).Name)
-			require.Equal(t, name, expr.String())
+			require.Equal(t, fmt.Sprintf("{__name__=%q}", name), expr.String())
 			actual, err := p.ParseMetricSelector(name)
 			require.NoError(t, err)
 			expected, err := p.ParseMetricSelector(fmt.Sprintf("{%q}", name))
@@ -83,13 +84,6 @@ func TestUnquotedUTF8Names(t *testing.T) {
 		})
 	}
 
-	for _, input := range []string{"sum by (a:b) (foo)", "foo + on (a:b) bar"} {
-		t.Run(input, func(t *testing.T) {
-			_, err := p.ParseExpr(input)
-			require.ErrorContains(t, err, `invalid label name for grouping: "a:b"`)
-		})
-	}
-
 	for _, input := range []string{".5", "5.", "1.5", "1e3", "0x10", "Inf", "inf", "NaN", "nan", "5m"} {
 		t.Run(input, func(t *testing.T) {
 			expr, err := p.ParseExpr(input)
@@ -123,22 +117,36 @@ func TestUnquotedUTF8Names(t *testing.T) {
 }
 
 func TestUnquotedUTF8NamesPrinting(t *testing.T) {
-	p := NewParser(Options{})
-	for _, tc := range []struct{ input, expected string }{
-		{`foo{"service.name"="api"}`, `foo{service.name="api"}`},
-		{`sum by ("service.name", "équipe") (foo)`, `sum by (service.name, équipe) (foo)`},
-		{`foo + on ("service.name") group_left ("équipe") bar`, `foo + on (service.name) group_left (équipe) bar`},
-		{`foo{".name"="x", "ö"="y", "😀"="z"}`, `foo{".name"="x","ö"="y","😀"="z"}`},
-		{`sum by ("a:b") (foo)`, `sum by ("a:b") (foo)`},
-		{`foo + on ("a:b") bar`, `foo + on ("a:b") bar`},
-	} {
-		t.Run(tc.input, func(t *testing.T) {
-			expr, err := p.ParseExpr(tc.input)
-			require.NoError(t, err)
-			require.Equal(t, tc.expected, expr.String())
-			roundTrip, err := p.ParseExpr(expr.String())
-			require.NoError(t, err)
-			require.Equal(t, tc.expected, roundTrip.String())
+	for _, enabled := range []bool{false, true} {
+		t.Run(strconv.FormatBool(enabled), func(t *testing.T) {
+			p := NewParser(Options{EnableUnquotedUTF8Names: enabled})
+			for _, tc := range []struct{ input, conservative, unquoted string }{
+				{`温度{場所="東京"}`, `{"場所"="東京",__name__="温度"}`, `温度{場所="東京"}`},
+				{`http.requests[5m] offset 1m`, `{__name__="http.requests"}[5m] offset 1m`, `http.requests[5m] offset 1m`},
+				{`http.requests[5m:1m] @ 1`, `{__name__="http.requests"}[5m:1m] @ 1.000`, `http.requests[5m:1m] @ 1.000`},
+				{`foo{"service.name"="api"}`, `foo{"service.name"="api"}`, `foo{service.name="api"}`},
+				{`sum by (service.name, équipe) (foo)`, `sum by ("service.name", "équipe") (foo)`, `sum by (service.name, équipe) (foo)`},
+				{`sum without (service.name) (foo)`, `sum without ("service.name") (foo)`, `sum without (service.name) (foo)`},
+				{`foo + on (service.name) group_left (équipe) bar`, `foo + on ("service.name") group_left ("équipe") bar`, `foo + on (service.name) group_left (équipe) bar`},
+				{`foo + ignoring (service.name) group_right (équipe) bar`, `foo + ignoring ("service.name") group_right ("équipe") bar`, `foo + ignoring (service.name) group_right (équipe) bar`},
+				{`foo{".name"="x", "ö"="y", "😀"="z"}`, `foo{".name"="x","ö"="y","😀"="z"}`, `foo{".name"="x","ö"="y","😀"="z"}`},
+				{`sum by (a:b) (foo)`, `sum by ("a:b") (foo)`, `sum by ("a:b") (foo)`},
+				{`foo + on (a:b) bar`, `foo + on ("a:b") bar`, `foo + on ("a:b") bar`},
+				{`foo:bar{job="api"}`, `foo:bar{job="api"}`, `foo:bar{job="api"}`},
+			} {
+				t.Run(tc.input, func(t *testing.T) {
+					expected := tc.conservative
+					if enabled {
+						expected = tc.unquoted
+					}
+					expr, err := p.ParseExpr(tc.input)
+					require.NoError(t, err)
+					require.Equal(t, expected, expr.String())
+					roundTrip, err := p.ParseExpr(expr.String())
+					require.NoError(t, err)
+					require.Equal(t, expected, roundTrip.String())
+				})
+			}
 		})
 	}
 }

@@ -468,3 +468,92 @@ groups:
 	require.Nil(t, rgs)
 	require.NotContains(t, buf.String(), "Multiple document yaml rules files are not supported")
 }
+
+func TestRecordingRuleMetadataFields(t *testing.T) {
+	t.Run("valid recording rule metadata", func(t *testing.T) {
+		for _, typ := range []model.MetricType{
+			model.MetricTypeCounter,
+			model.MetricTypeGauge,
+			model.MetricTypeHistogram,
+			model.MetricTypeGaugeHistogram,
+			model.MetricTypeSummary,
+			model.MetricTypeInfo,
+			model.MetricTypeStateset,
+			model.MetricTypeUnknown,
+		} {
+			t.Run("type="+string(typ), func(t *testing.T) {
+				content := `
+groups:
+- name: example
+  rules:
+  - record: job:http_requests:rate5m
+    expr: sum by (job) (rate(http_requests_total[5m]))
+    metadata:
+      help: Per-job HTTP request rate over 5 minutes.
+      type: ` + string(typ) + `
+      unit: requests_per_second
+`
+				rgs, errs := Parse([]byte(content), false, model.UTF8Validation, testParser, testLogger)
+				require.Empty(t, errs)
+				require.Len(t, rgs.Groups, 1)
+				require.Len(t, rgs.Groups[0].Rules, 1)
+				got := rgs.Groups[0].Rules[0]
+				require.NotNil(t, got.Metadata)
+				require.Equal(t, "Per-job HTTP request rate over 5 minutes.", got.Metadata.Help)
+				require.Equal(t, typ, got.Metadata.Type)
+				require.Equal(t, "requests_per_second", got.Metadata.Unit)
+			})
+		}
+	})
+
+	for _, tc := range []struct {
+		name   string
+		yaml   string
+		errMsg string
+	}{
+		{
+			name: "invalid metric type in recording rule",
+			yaml: `
+groups:
+- name: example
+  rules:
+  - record: job:http_requests:rate5m
+    expr: rate(http_requests_total[5m])
+    metadata:
+      type: untyped
+`,
+			errMsg: `8:13: group "example", rule 1, "job:http_requests:rate5m": invalid metric type "untyped" in recording rule`,
+		},
+		{
+			name: "metadata in alerting rule",
+			yaml: `
+groups:
+- name: example
+  rules:
+  - alert: InstanceDown
+    expr: up == 0
+    metadata:
+      help: Instance is down
+`,
+			errMsg: `8:7: group "example", rule 1, "InstanceDown": invalid field 'metadata' in alerting rule`,
+		},
+		{
+			name: "empty metadata in alerting rule",
+			yaml: `
+groups:
+- name: example
+  rules:
+  - alert: InstanceDown
+    expr: up == 0
+    metadata: {}
+`,
+			errMsg: `7:15: group "example", rule 1, "InstanceDown": invalid field 'metadata' in alerting rule`,
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			_, errs := Parse([]byte(tc.yaml), false, model.UTF8Validation, testParser, testLogger)
+			require.Len(t, errs, 1)
+			require.EqualError(t, errs[0], tc.errMsg)
+		})
+	}
+}

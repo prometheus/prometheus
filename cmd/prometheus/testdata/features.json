@@ -187,7 +187,9 @@
   "rules": {
     "concurrent_rule_eval": false,
     "keep_firing_for": true,
-    "query_offset": true
+    "query_offset": true,
+    "recording_rule_metadata": true,
+    "type_and_unit_labels": false
   },
   "scrape": {
     "extra_scrape_metrics": true,
