@@ -203,10 +203,10 @@ func selectSeriesSet(ctx context.Context, sortSeries bool, hints *storage.Select
 		return storage.ErrSeriesSet(err)
 	}
 	if sharded {
-		p = index.ShardedPostings(p, hints.ShardIndex, hints.ShardCount)
+		p = index.ShardedPostings(ctx, p, hints.ShardIndex, hints.ShardCount)
 	}
 	if sortSeries {
-		p = index.SortedPostings(p)
+		p = index.SortedPostings(ctx, p)
 	}
 
 	if hints != nil {
@@ -263,10 +263,10 @@ func selectChunkSeriesSet(ctx context.Context, sortSeries bool, hints *storage.S
 		return storage.ErrChunkSeriesSet(err)
 	}
 	if sharded {
-		p = index.ShardedPostings(p, hints.ShardIndex, hints.ShardCount)
+		p = index.ShardedPostings(ctx, p, hints.ShardIndex, hints.ShardCount)
 	}
 	if sortSeries {
-		p = index.SortedPostings(p)
+		p = index.SortedPostings(ctx, p)
 	}
 	return NewBlockChunkSeriesSet(blockID, index, chunks, tombstones, p, mint, maxt, disableTrimming)
 }

@@ -1113,7 +1113,7 @@ func TestCompaction_populateBlock(t *testing.T) {
 				if err != nil {
 					return index.EmptyPostings()
 				}
-				return reader.SortedPostings(p)
+				return reader.SortedPostings(ctx, p)
 			},
 		},
 		{
@@ -1139,7 +1139,7 @@ func TestCompaction_populateBlock(t *testing.T) {
 				if err != nil {
 					return index.EmptyPostings()
 				}
-				return reader.SortedPostings(p)
+				return reader.SortedPostings(ctx, p)
 			},
 			expSeriesSamples: []seriesSamples{
 				{
