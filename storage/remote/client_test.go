@@ -15,9 +15,16 @@ package remote
 
 import (
 	"context"
+	"crypto/rand"
+	"crypto/rsa"
+	"crypto/tls"
+	"crypto/x509"
+	"crypto/x509/pkix"
+	"encoding/pem"
 	"errors"
 	"fmt"
 	"io"
+	"math/big"
 	"net"
 	"net/http"
 	"net/http/httptest"
@@ -134,6 +141,62 @@ func TestWriteClientUnixSocket(t *testing.T) {
 	_, err = c.Store(context.Background(), []byte("test-payload"), 0)
 	require.NoError(t, err)
 	require.Equal(t, int64(1), received.Load(), "expected the batch over the unix socket")
+}
+
+func TestWriteClientUnixSocketTLS(t *testing.T) {
+	sockPath := filepath.Join(t.TempDir(), "remote-write-tls.sock")
+
+	key, err := rsa.GenerateKey(rand.Reader, 2048)
+	require.NoError(t, err)
+	tmpl := x509.Certificate{
+		SerialNumber: big.NewInt(1),
+		Subject:      pkix.Name{CommonName: "localhost"},
+		DNSNames:     []string{"localhost"},
+		NotBefore:    time.Now().Add(-time.Hour),
+		NotAfter:     time.Now().Add(time.Hour),
+		KeyUsage:     x509.KeyUsageDigitalSignature | x509.KeyUsageKeyEncipherment,
+		ExtKeyUsage:  []x509.ExtKeyUsage{x509.ExtKeyUsageServerAuth},
+	}
+	der, err := x509.CreateCertificate(rand.Reader, &tmpl, &tmpl, &key.PublicKey, key)
+	require.NoError(t, err)
+	certPEM := pem.EncodeToMemory(&pem.Block{Type: "CERTIFICATE", Bytes: der})
+	keyPEM := pem.EncodeToMemory(&pem.Block{Type: "RSA PRIVATE KEY", Bytes: x509.MarshalPKCS1PrivateKey(key)})
+	cert, err := tls.X509KeyPair(certPEM, keyPEM)
+	require.NoError(t, err)
+
+	var received atomic.Int64
+	srv := &http.Server{Handler: http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		body, err := io.ReadAll(r.Body)
+		if err == nil && len(body) > 0 && r.URL.Path == "/api/v1/write" {
+			received.Add(1)
+		}
+		w.WriteHeader(http.StatusNoContent)
+	})}
+	lis, err := net.Listen("unix", sockPath)
+	require.NoError(t, err)
+	defer lis.Close()
+	go func() { _ = srv.Serve(tls.NewListener(lis, &tls.Config{Certificates: []tls.Certificate{cert}})) }()
+	defer srv.Close()
+
+	serverURL, err := url.Parse("https://127.0.0.1:9090/api/v1/write")
+	require.NoError(t, err)
+	conf := &ClientConfig{
+		URL:            &config_util.URL{URL: serverURL},
+		UnixSocketPath: sockPath,
+		Timeout:        model.Duration(5 * time.Second),
+		HTTPClientConfig: config_util.HTTPClientConfig{
+			TLSConfig: config_util.TLSConfig{InsecureSkipVerify: true},
+		},
+	}
+
+	hash, err := toHash(conf)
+	require.NoError(t, err)
+	c, err := NewWriteClient(hash, conf)
+	require.NoError(t, err)
+
+	_, err = c.Store(context.Background(), []byte("test-payload"), 0)
+	require.NoError(t, err)
+	require.Equal(t, int64(1), received.Load(), "expected the batch over the TLS unix socket")
 }
 
 func TestClientRetryAfter(t *testing.T) {
