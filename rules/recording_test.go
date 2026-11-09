@@ -341,14 +341,15 @@ func TestRecordingRuleMetadataDeduction(t *testing.T) {
 	}
 
 	for _, tc := range []struct {
-		name                    string
-		ruleLabels              labels.Labels
-		ruleMeta                metadata.Metadata
-		enableTypeAndUnitLabels bool
-		samples                 promql.Vector
-		wantLabels              []labels.Labels
-		wantMetas               []metadata.Metadata
-		wantErr                 error
+		name                         string
+		ruleLabels                   labels.Labels
+		ruleMeta                     metadata.Metadata
+		enableTypeAndUnitLabels      bool
+		disableAutoRecordingMetadata bool
+		samples                      promql.Vector
+		wantLabels                   []labels.Labels
+		wantMetas                    []metadata.Metadata
+		wantErr                      error
 	}{
 		{
 			name:                    "float/schema_dropped_defaults_to_gauge",
@@ -741,6 +742,70 @@ func TestRecordingRuleMetadataDeduction(t *testing.T) {
 			},
 			wantErr: ErrDuplicateRecordingLabelSet,
 		},
+		{
+			name:       "auto_recording_disabled/configured_metadata_injected",
+			ruleLabels: labels.FromStrings(model.MetricTypeLabel, "counter", model.MetricUnitLabel, "bytes"),
+			ruleMeta: metadata.Metadata{
+				Type: model.MetricTypeGauge,
+				Unit: "requests_per_second",
+				Help: "Static configured metadata.",
+			},
+			enableTypeAndUnitLabels:      true,
+			disableAutoRecordingMetadata: true,
+			samples: promql.Vector{
+				{
+					Metric: labels.FromStrings(
+						model.MetricNameLabel, "http_requests_total",
+						model.MetricTypeLabel, "counter",
+						model.MetricUnitLabel, "requests",
+						"job", "api",
+					),
+					T: evalMs,
+					F: 5,
+				},
+			},
+			wantLabels: []labels.Labels{
+				labels.FromStrings(
+					model.MetricNameLabel, "job:req:rate5m",
+					model.MetricTypeLabel, "gauge",
+					model.MetricUnitLabel, "requests_per_second",
+					"job", "api",
+				),
+			},
+			wantMetas: []metadata.Metadata{
+				{
+					Type: model.MetricTypeGauge,
+					Unit: "requests_per_second",
+					Help: "Static configured metadata.",
+				},
+			},
+		},
+		{
+			name:                         "auto_recording_disabled/unannotated_strips_schema_labels_without_deduction",
+			enableTypeAndUnitLabels:      true,
+			disableAutoRecordingMetadata: true,
+			samples: promql.Vector{
+				{
+					Metric: labels.FromStrings(
+						model.MetricNameLabel, "http_requests_total",
+						model.MetricTypeLabel, "counter",
+						model.MetricUnitLabel, "requests",
+						"job", "api",
+					),
+					T: evalMs,
+					F: 5,
+				},
+			},
+			wantLabels: []labels.Labels{
+				labels.FromStrings(
+					model.MetricNameLabel, "job:req:rate5m",
+					"job", "api",
+				),
+			},
+			wantMetas: []metadata.Metadata{
+				{},
+			},
+		},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			for _, appendMetadata := range []bool{false, true} {
@@ -769,7 +834,7 @@ func TestRecordingRuleMetadataDeduction(t *testing.T) {
 						QueryFunc:               qf,
 						AppendMetadata:          appendMetadata,
 						EnableTypeAndUnitLabels: tc.enableTypeAndUnitLabels,
-						AutoRecordingMetadata:   true,
+						AutoRecordingMetadata:   !tc.disableAutoRecordingMetadata,
 					},
 				})
 
