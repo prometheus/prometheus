@@ -4520,7 +4520,7 @@ func TestQueueManager_RemoteWriteModes(t *testing.T) {
 				require.NotContains(t, req.Symbols, "ghi")
 				require.NotContains(t, req.Symbols, "untyped_ex")
 				for _, ts := range req.Timeseries {
-					require.NotEmpty(t, len(ts.Samples)+len(ts.Histograms), "exemplars must not be sent as detached TimeSeries")
+					require.NotZero(t, len(ts.Samples)+len(ts.Histograms), "exemplars must not be sent as detached TimeSeries")
 					gotLbls, err := ts.ToLabels(&b, req.Symbols)
 					require.NoError(t, err)
 					if labels.Equal(gotLbls, sNativeHist.Labels) {
@@ -4702,7 +4702,7 @@ func TestQueueManager_RemoteWriteModes(t *testing.T) {
 				require.NotContains(t, req.Symbols, "def")
 				require.NotContains(t, req.Symbols, "untyped_stex")
 				for _, ts := range req.Timeseries {
-					require.NotEmpty(t, len(ts.Samples)+len(ts.Histograms), "exemplars must not be sent as detached TimeSeries")
+					require.NotZero(t, len(ts.Samples)+len(ts.Histograms), "exemplars must not be sent as detached TimeSeries")
 					if len(ts.Samples) > 0 && value.IsStaleNaN(ts.Samples[0].Value) {
 						require.Empty(t, ts.Exemplars, "exemplars must not attach to StaleNaN samples")
 					}
