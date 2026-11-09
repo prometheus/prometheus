@@ -121,6 +121,21 @@ func TestCalculateDuration(t *testing.T) {
 			expected: 10 * time.Second,
 		},
 		{
+			name: "addition of whole-millisecond values rounds rather than truncates",
+			expr: &parser.DurationExpr{
+				LHS: &parser.NumberLiteral{Val: 1},
+				RHS: &parser.NumberLiteral{Val: 0.001},
+				Op:  parser.ADD,
+			},
+			expected: time.Second + time.Millisecond,
+		},
+		{
+			name:            "negative whole-millisecond value rounds rather than truncates",
+			expr:            &parser.NumberLiteral{Val: -1.001},
+			expected:        -time.Second - time.Millisecond,
+			allowedNegative: true,
+		},
+		{
 			name: "subtraction with negative",
 			expr: &parser.DurationExpr{
 				LHS: &parser.NumberLiteral{Val: 5},
@@ -288,6 +303,11 @@ func TestCalculateDuration(t *testing.T) {
 		{
 			name:         "duration exceeds time.Duration range",
 			expr:         &parser.NumberLiteral{Val: 1e10},
+			errorMessage: "duration is out of range",
+		},
+		{
+			name:         "duration that rounds up past the time.Duration range",
+			expr:         &parser.NumberLiteral{Val: 9223372036.8546},
 			errorMessage: "duration is out of range",
 		},
 		{
