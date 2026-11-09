@@ -3053,7 +3053,10 @@ groups:
     expr: sum by (job) (rate(http_requests_total[5m]))
     metadata:
       help: Per-job HTTP request rate.
+      type: gauge
       unit: requests_per_second
+  - record: job:http_requests:unannotated_rate5m
+    expr: sum by (job) (rate(http_requests_total[5m]))
   - record: cluster:http_requests_total
     expr: label_replace(http_requests_total, "cluster", "prod", "job", ".*")
   - record: job:latency_seconds:sum
@@ -3109,6 +3112,9 @@ groups:
 			Unit: "requests_per_second",
 			Help: "Per-job HTTP request rate.",
 		},
+		"job:http_requests:unannotated_rate5m": {
+			Type: model.MetricTypeGauge,
+		},
 		"cluster:http_requests_total": {
 			Type: model.MetricTypeCounter,
 		},
@@ -3149,6 +3155,9 @@ groups:
 
 		for _, g := range groups {
 			g.Eval(t.Context(), evalTime)
+			for _, r := range g.Rules() {
+				require.NoError(t, r.LastError())
+			}
 		}
 
 		// Close TSDB to flush WAL buffers before reading segments.
@@ -3179,6 +3188,9 @@ groups:
 		require.Empty(t, errs)
 		for _, g := range groups {
 			g.Eval(t.Context(), evalTime)
+			for _, r := range g.Rules() {
+				require.NoError(t, r.LastError())
+			}
 		}
 
 		walDir := filepath.Join(appendStore.Dir(), "wal")
@@ -3186,7 +3198,7 @@ groups:
 		got := readWALMetadataByMetricName(t, walDir)
 		require.Equal(t, map[string]metadata.Metadata{
 			"job:http_requests:rate5m": {
-				Type: model.MetricTypeUnknown,
+				Type: model.MetricTypeGauge,
 				Unit: "requests_per_second",
 				Help: "Per-job HTTP request rate.",
 			},
@@ -3205,12 +3217,13 @@ groups:
 		agentOpts.EnableMetadataWALRecords = true
 		agentDB, err := agent.Open(promslog.NewNopLogger(), nil, nil, agentDir, agentOpts)
 		require.NoError(t, err)
+		recApp := &recordingAppenderV2{next: agentDB}
 
 		var returnEmpty atomic.Bool
 		baseQF := EngineQueryFunc(engine, queryStore)
 		mgr := NewManager(&ManagerOptions{
 			Context:      t.Context(),
-			AppendableV2: agentDB,
+			AppendableV2: recApp,
 			Queryable:    queryStore,
 			QueryFunc: func(ctx context.Context, q string, ts time.Time) (promql.Vector, error) {
 				if returnEmpty.Load() {
@@ -3229,10 +3242,24 @@ groups:
 		require.Empty(t, errs)
 		for _, g := range groups {
 			g.Eval(t.Context(), evalTime)
-			// Trigger staleness markers on the next evaluation and verify no errors or lost metadata.
+			for _, r := range g.Rules() {
+				require.NoError(t, r.LastError())
+			}
+			// Trigger staleness markers on the next evaluation and verify every stale append preserves metadata.
+			recApp.gotLabels = nil
+			recApp.gotMetas = nil
 			returnEmpty.Store(true)
 			g.Eval(t.Context(), evalTime.Add(time.Minute))
+			for _, r := range g.Rules() {
+				require.NoError(t, r.LastError())
+			}
 		}
+
+		gotStaleMeta := make(map[string]metadata.Metadata, len(recApp.gotLabels))
+		for i, ls := range recApp.gotLabels {
+			gotStaleMeta[ls.Get(model.MetricNameLabel)] = recApp.gotMetas[i]
+		}
+		require.Equal(t, wantMetadata, gotStaleMeta)
 
 		require.NoError(t, agentDB.Close())
 		got := readWALMetadataByMetricName(t, filepath.Join(agentDir, "wal"))
