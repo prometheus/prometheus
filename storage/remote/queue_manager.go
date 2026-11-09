@@ -2482,6 +2482,10 @@ type exemplarTarget struct {
 
 // findExemplarTargetIndex returns the pendingData index of the latest non-stale
 // sample or histogram TimeSeries in batch matching seriesLabels, or -1 if none exists.
+// It matches on post-relabel seriesLabels rather than WAL HeadSeriesRef because
+// convert_nhcb_to_classic expands one ref into multiple _bucket/_count/_sum series,
+// write_relabel_configs can map distinct refs to identical label sets, and buffered
+// timeSeries items do not carry HeadSeriesRef.
 func findExemplarTargetIndex(batch []timeSeries, seriesIdx map[uint64]exemplarTarget, seriesLabels labels.Labels) int {
 	if len(seriesIdx) == 0 {
 		return -1
