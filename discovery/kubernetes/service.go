@@ -195,8 +195,11 @@ const (
 	servicePortProtocolLabel = metaLabelPrefix + "service_port_protocol"
 	serviceClusterIPLabel    = metaLabelPrefix + "service_cluster_ip"
 	serviceLoadBalancerIP    = metaLabelPrefix + "service_loadbalancer_ip"
+	serviceLoadBalancerIPs   = metaLabelPrefix + "service_loadbalancer_ips"
 	serviceExternalNameLabel = metaLabelPrefix + "service_external_name"
 	serviceType              = metaLabelPrefix + "service_type"
+
+	serviceLabelSeparator = ","
 )
 
 func serviceLabels(svc *apiv1.Service) model.LabelSet {
@@ -235,7 +238,8 @@ func (s *Service) buildService(svc *apiv1.Service) *targetgroup.Group {
 		}
 
 		if svc.Spec.Type == apiv1.ServiceTypeLoadBalancer {
-			labelSet[serviceLoadBalancerIP] = lv(loadBalancerIPs(svc))
+			labelSet[serviceLoadBalancerIP] = lv(svc.Spec.LoadBalancerIP)
+			labelSet[serviceLoadBalancerIPs] = lv(loadBalancerIngressIPs(svc))
 		}
 
 		tg.Targets = append(tg.Targets, labelSet)
@@ -244,18 +248,12 @@ func (s *Service) buildService(svc *apiv1.Service) *targetgroup.Group {
 	return tg
 }
 
-// loadBalancerIPs returns the LoadBalancer addresses from status.ingress,
-// falling back to the deprecated spec.loadBalancerIP. Multiple ingress IPs
-// are joined with commas so relabeling can extract them.
-func loadBalancerIPs(svc *apiv1.Service) string {
+func loadBalancerIngressIPs(svc *apiv1.Service) string {
 	var ips []string
 	for _, ing := range svc.Status.LoadBalancer.Ingress {
 		if ing.IP != "" {
 			ips = append(ips, ing.IP)
 		}
 	}
-	if len(ips) > 0 {
-		return strings.Join(ips, ",")
-	}
-	return svc.Spec.LoadBalancerIP
+	return strings.Join(ips, serviceLabelSeparator)
 }
