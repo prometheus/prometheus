@@ -17,6 +17,7 @@ import (
 	"context"
 	"fmt"
 	"math"
+	"path/filepath"
 	"slices"
 	"strconv"
 	"testing"
@@ -32,6 +33,8 @@ import (
 	"github.com/prometheus/prometheus/storage"
 	"github.com/prometheus/prometheus/tsdb/chunkenc"
 	"github.com/prometheus/prometheus/tsdb/chunks"
+	"github.com/prometheus/prometheus/tsdb/record"
+	"github.com/prometheus/prometheus/tsdb/tombstones"
 )
 
 const (
@@ -602,6 +605,109 @@ func TestSeriesEviction_SeriesAreOnlyPublishedWhileTheyAreEvicted(t *testing.T) 
 	}
 }
 
+type seriesEvictionPostDeletionCallback struct {
+	noopSeriesLifecycleCallback
+	postDeletion func(map[chunks.HeadSeriesRef]labels.Labels)
+}
+
+func (c seriesEvictionPostDeletionCallback) PostDeletion(deleted map[chunks.HeadSeriesRef]labels.Labels) {
+	c.postDeletion(deleted)
+}
+
+// TestSeriesEviction_RecreationIsDeclaredAfterTombstone verifies that a series with the labels of an evicted series,
+// which is created before the tombstone of the latter is written, waits for the tombstone. Its declaration then
+// follows the tombstone in the WAL, so replay starts it from scratch instead of attaching it to the evicted series.
+func TestSeriesEviction_RecreationIsDeclaredAfterTombstone(t *testing.T) {
+	for name, evict := range evictionTestEvictions() {
+		t.Run(name, func(t *testing.T) {
+			testDB := newSeriesEvictionTestDB(t)
+			db := testDB.db
+			oldRef := testDB.evictedRefs[0]
+			lset := evictionTestLabels(0)
+			q, err := db.Querier(math.MinInt64, math.MaxInt64)
+			require.NoError(t, err)
+			expected := query(t, q, evictionTestMatcher)
+			expected[lset.String()] = append(expected[lset.String()], sample{t: 400, f: 42}, sample{t: 500, f: 43})
+
+			var newRef storage.SeriesRef
+			recreated := make(chan error, 1)
+			db.head.series.seriesLifecycleCallback = seriesEvictionPostDeletionCallback{
+				postDeletion: func(deleted map[chunks.HeadSeriesRef]labels.Labels) {
+					if _, ok := deleted[chunks.HeadSeriesRef(oldRef)]; !ok {
+						return
+					}
+					// The old series is unlinked, but its tombstone is not written. A series with its labels waits
+					// for the tombstone, so it can't be created from the goroutine that writes it.
+					go func() {
+						app := db.Appender(t.Context())
+						var err error
+						newRef, err = app.Append(oldRef, lset, 400, 42)
+						if err == nil {
+							err = app.Commit()
+						}
+						recreated <- err
+					}()
+				},
+			}
+
+			require.NoError(t, evict(db, testDB.evictedRefs))
+			require.NoError(t, <-recreated)
+			require.NotEqual(t, oldRef, newRef)
+
+			app := db.Appender(t.Context())
+			laterRef, err := app.Append(newRef, lset, 500, 43)
+			require.NoError(t, err)
+			require.Equal(t, newRef, laterRef)
+			require.NoError(t, app.Commit())
+
+			q, err = db.Querier(math.MinInt64, math.MaxInt64)
+			require.NoError(t, err)
+			require.Equal(t, expected, query(t, q, evictionTestMatcher))
+			require.NoError(t, db.Close())
+
+			stonePosition, seriesPosition := -1, -1
+			for i, entry := range readTestWAL(t, filepath.Join(db.Dir(), "wal")) {
+				switch records := entry.(type) {
+				case []tombstones.Stone:
+					for _, stone := range records {
+						if stone.Ref == oldRef {
+							stonePosition = i
+						}
+					}
+				case []record.RefSeries:
+					for _, series := range records {
+						if series.Ref == chunks.HeadSeriesRef(newRef) {
+							seriesPosition = i
+						}
+					}
+				}
+			}
+			require.NotEqual(t, -1, stonePosition)
+			require.NotEqual(t, -1, seriesPosition)
+			require.Greater(t, seriesPosition, stonePosition, "the declaration of the new series must follow the tombstone of the old one")
+
+			reopened, err := Open(db.Dir(), nil, nil, db.opts, nil)
+			require.NoError(t, err)
+			reopened.DisableCompactions()
+			t.Cleanup(func() { require.NoError(t, reopened.Close()) })
+			q, err = reopened.Querier(math.MinInt64, math.MaxInt64)
+			require.NoError(t, err)
+			require.Equal(t, expected, query(t, q, evictionTestMatcher))
+			require.Zero(t, prom_testutil.ToFloat64(reopened.head.metrics.walReplayUnknownRefsTotal.WithLabelValues("samples")))
+
+			// The head alone, without the blocks, has only the new series, with the samples written after the eviction.
+			// The old one is not restored from its samples in the WAL, because its tombstone removes it.
+			require.Nil(t, reopened.head.series.getByID(chunks.HeadSeriesRef(oldRef)))
+			newSeries := reopened.head.series.getByID(chunks.HeadSeriesRef(newRef))
+			require.NotNil(t, newSeries)
+			require.Equal(t, lset, newSeries.labels())
+			headQuerier, err := NewBlockQuerier(reopened.Head(), math.MinInt64, math.MaxInt64)
+			require.NoError(t, err)
+			require.Equal(t, []chunks.Sample{sample{t: 400, f: 42}, sample{t: 500, f: 43}}, query(t, headQuerier, evictionTestMatcher)[lset.String()])
+		})
+	}
+}
+
 func TestEvictedSeries_Contains(t *testing.T) {
 	refs := []storage.SeriesRef{3, 5, 6, 100, 1 << 40}
 
@@ -794,4 +900,76 @@ func TestSeriesEviction_QueryStartingAtLastTimestampIsWaitedForByNextEviction(t 
 			})
 		})
 	}
+}
+
+// TestSeriesEviction_SamplesAndEvictionWhileWaitingForReaders verifies what happens while an eviction waits for the
+// open readers, which can take minutes. The series are still in the head and no hash is pending, so a late sample for
+// a series to evict, and a new series, are appended without waiting. A second eviction requested meanwhile waits for
+// the first one, and then evicts the series that the first one skipped because of their late sample.
+func TestSeriesEviction_SamplesAndEvictionWhileWaitingForReaders(t *testing.T) {
+	const (
+		lateSampleTs = 400
+		timeout      = 30 * time.Second
+	)
+
+	testDB := newSeriesEvictionTestDB(t)
+	db := testDB.db
+	head := db.Head()
+	newSeries := evictionTestLabels(evictionTestSeries)
+
+	// The query overlaps with the range that the eviction waits for.
+	reading := openSampleQuerier(t, db, 0, lateSampleTs)
+
+	first := make(chan error, 1)
+	go func() { first <- db.CompactSelectedSeries(testDB.evictedRefs) }()
+	require.Eventually(t, func() bool { return head.evictingSeries.Load() != nil }, timeout, 10*time.Millisecond,
+		"the first eviction must be waiting for the query")
+	require.False(t, head.pendingTombstones.active.Load(), "nothing is unlinked while waiting for the readers")
+
+	// If these appends waited for the eviction, the test would time out.
+	app := db.Appender(context.Background())
+	_, err := app.Append(0, evictionTestLabels(0), lateSampleTs, 42)
+	require.NoError(t, err)
+	_, err = app.Append(0, newSeries, lateSampleTs, 43)
+	require.NoError(t, err)
+	require.NoError(t, app.Commit())
+	require.Equal(t, uint64(evictionTestSeries+1), head.NumSeries())
+
+	// The first eviction holds the compaction lock, which the second one needs.
+	require.False(t, db.cmtx.TryLock(), "the first eviction must hold the compaction lock")
+	// The first eviction already passed this hook, so it runs when the second eviction starts, which is after the
+	// first one finished.
+	var seriesBeforeSecondEviction uint64
+	var lateSeriesBeforeSecondEviction *memSeries
+	db.compactHeadViewBeforeEvictTestingCallback = func() {
+		seriesBeforeSecondEviction = head.NumSeries()
+		lateSeriesBeforeSecondEviction = head.series.getByHash(evictionTestLabels(0).Hash(), evictionTestLabels(0))
+	}
+	second := make(chan error, 1)
+	go func() { second <- db.CompactSelectedSeries(testDB.evictedRefs) }()
+	require.Equal(t, uint64(evictionTestSeries+1), head.NumSeries(), "nothing may be evicted while the query is open")
+
+	require.NoError(t, reading.close())
+	for name, done := range map[string]chan error{"first": first, "second": second} {
+		select {
+		case err := <-done:
+			require.NoError(t, err, name)
+		case <-time.After(timeout):
+			require.FailNow(t, "the eviction must complete after the query closes", name)
+		}
+	}
+
+	// The first eviction skipped the series with the late sample, and evicted the others, so the second one is
+	// the one that evicts it.
+	require.Equal(t, uint64(evictionTestSeries-evictionTestEvictedSeries+2), seriesBeforeSecondEviction)
+	require.NotNil(t, lateSeriesBeforeSecondEviction)
+	require.Nil(t, head.series.getByHash(evictionTestLabels(0).Hash(), evictionTestLabels(0)))
+
+	require.False(t, head.pendingTombstones.active.Load())
+	// Only the series that were not selected remain, and the new one.
+	require.Equal(t, uint64(evictionTestSeries-evictionTestEvictedSeries+1), head.NumSeries())
+
+	expected := evictionTestExpectedSamples(0)
+	expected[newSeries.String()] = 1
+	require.Equal(t, expected, openSampleQuerier(t, db, 0, math.MaxInt64).mustRead(t))
 }
