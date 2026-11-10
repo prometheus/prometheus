@@ -418,6 +418,31 @@ func relabel(cfg *Config, lb *labels.Builder, withMetadata bool) (keep bool) {
 		mod := binary.BigEndian.Uint64(hash[8:]) % cfg.Modulus
 		lb.Set(cfg.TargetLabel, strconv.FormatUint(mod, 10))
 	case LabelMap:
+		if !withMetadata {
+			re := cfg.Regex.Regexp
+			if prefix, emptySuffix := labelMapWildcardPrefix(re); prefix != "" {
+				// Fast path for common anchored <literal>(.*) and <literal>(.+) rules such as __meta_kubernetes_pod_label_(.+).
+				// Since the pattern is just a literal prefix and trailing wildcard, strings.HasPrefix skips non-matching labels without running regexp.
+				suffixOnly := cfg.Replacement == "$1" || cfg.Replacement == "${1}"
+				expand := varInRegexTemplate(cfg.Replacement)
+				var buf [64]byte
+				lb.Range(func(l labels.Label) {
+					if !strings.HasPrefix(l.Name, prefix) || (!emptySuffix && len(l.Name) == len(prefix)) {
+						return
+					}
+					name := cfg.Replacement
+					switch {
+					case suffixOnly:
+						name = l.Name[len(prefix):]
+					case expand:
+						indexes := [4]int{0, len(l.Name), len(prefix), len(l.Name)}
+						name = string(re.ExpandString(buf[:0], cfg.Replacement, l.Name, indexes[:]))
+					}
+					lb.Set(name, l.Value)
+				})
+				break
+			}
+		}
 		lb.Range(func(l labels.Label) {
 			if withMetadata && isMetadataRelabelName(l.Name) {
 				return
@@ -453,6 +478,40 @@ func relabel(cfg *Config, lb *labels.Builder, withMetadata bool) (keep bool) {
 	}
 
 	return true
+}
+
+func labelMapWildcardPrefix(re *regexp.Regexp) (string, bool) {
+	if re == nil {
+		return "", false
+	}
+	const (
+		wrapperPrefix = "^(?s:"
+		wrapperSuffix = ")$"
+	)
+	pattern := re.String()
+	if len(pattern) < len(wrapperPrefix)+len(wrapperSuffix) || !strings.HasPrefix(pattern, wrapperPrefix) || !strings.HasSuffix(pattern, wrapperSuffix) {
+		return "", false
+	}
+	pattern = pattern[len(wrapperPrefix) : len(pattern)-len(wrapperSuffix)]
+
+	emptySuffix := false
+	switch {
+	case strings.HasSuffix(pattern, "(.*)"):
+		pattern = strings.TrimSuffix(pattern, "(.*)")
+		emptySuffix = true
+	case strings.HasSuffix(pattern, "(.+)"):
+		pattern = strings.TrimSuffix(pattern, "(.+)")
+	default:
+		return "", false
+	}
+	if pattern == "" {
+		return "", false
+	}
+	literalPrefix, _ := re.LiteralPrefix()
+	if literalPrefix != pattern {
+		return "", false
+	}
+	return pattern, emptySuffix
 }
 
 func varInRegexTemplate(template string) bool {
