@@ -3768,6 +3768,31 @@ func TestStripeSeries_getOrSet(t *testing.T) {
 }
 
 func TestStripeSeries_gc(t *testing.T) {
+	t.Run("targeted GC retains labels and index hashes", func(t *testing.T) {
+		s, ms1, ms2 := stripeSeriesWithCollidingSeries(t)
+		hash := ms1.lset.Hash()
+		var callbackLabels map[chunks.HeadSeriesRef]labels.Labels
+		s.seriesLifecycleCallback = seriesEvictionPostDeletionCallback{
+			postDeletion: func(deleted map[chunks.HeadSeriesRef]labels.Labels) { callbackLabels = deleted },
+		}
+
+		deleted, metadata, _, _, _, _, _ := s.gcSeries(
+			[]storage.SeriesRef{storage.SeriesRef(ms1.ref), storage.SeriesRef(ms2.ref)},
+			math.MaxInt64, func(*memSeries) bool { return true },
+		)
+		require.Len(t, deleted, 2)
+		require.Equal(t, map[chunks.HeadSeriesRef]deletedSeries{
+			ms1.ref: {lset: ms1.lset, hash: hash},
+			ms2.ref: {lset: ms2.lset, hash: hash},
+		}, metadata)
+		require.Equal(t, map[chunks.HeadSeriesRef]labels.Labels{
+			ms1.ref: ms1.lset,
+			ms2.ref: ms2.lset,
+		}, callbackLabels)
+		require.Nil(t, s.getByHash(hash, ms1.lset))
+		require.Nil(t, s.getByHash(hash, ms2.lset))
+	})
+
 	t.Run("retains the oldest referenced file regardless of timestamp order", func(t *testing.T) {
 		lset := labels.FromStrings("a", "1")
 		series := newMemSeries(lset, 1, 0, defaultIsolationDisabled, false)
@@ -6124,8 +6149,10 @@ func TestHead_mmapHeadChunks(t *testing.T) {
 		require.NotNil(t, chk)
 
 		// Retire the series directly to test the saved chunk independently of reader waiting.
-		deleted := h.gcSeries([]storage.SeriesRef{ref}, 100, func(*memSeries) bool { return true })
+		deleted, deletedLabels := h.gcSeries([]storage.SeriesRef{ref}, 100, func(*memSeries) bool { return true })
 		require.Contains(t, deleted, ref)
+		lset := labels.FromStrings("__name__", "series")
+		require.Equal(t, deletedSeries{lset: lset, hash: lset.Hash()}, deletedLabels[chunks.HeadSeriesRef(ref)])
 		require.Zero(t, h.NumSeries())
 		require.Nil(t, h.series.getByID(chunks.HeadSeriesRef(ref)))
 
@@ -6167,8 +6194,9 @@ func TestHead_mmapHeadChunks(t *testing.T) {
 		stripe := h.series.refStripe(series.ref)
 		require.Equal(t, int32(1), h.series.mmapReady[stripe].Load())
 
-		deleted := h.gcSeries([]storage.SeriesRef{ref}, math.MaxInt64, func(*memSeries) bool { return true })
+		deleted, deletedLabels := h.gcSeries([]storage.SeriesRef{ref}, math.MaxInt64, func(*memSeries) bool { return true })
 		require.Contains(t, deleted, ref)
+		require.Equal(t, deletedSeries{lset: lbls, hash: lbls.Hash()}, deletedLabels[chunks.HeadSeriesRef(ref)])
 		require.Nil(t, h.series.getByID(chunks.HeadSeriesRef(ref)))
 		require.True(t, series.isGCed())
 		require.Same(t, headChunksBefore, series.headChunks)

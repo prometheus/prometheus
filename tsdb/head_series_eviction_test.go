@@ -17,6 +17,7 @@ import (
 	"context"
 	"fmt"
 	"math"
+	"path/filepath"
 	"slices"
 	"strconv"
 	"testing"
@@ -32,6 +33,9 @@ import (
 	"github.com/prometheus/prometheus/storage"
 	"github.com/prometheus/prometheus/tsdb/chunkenc"
 	"github.com/prometheus/prometheus/tsdb/chunks"
+	"github.com/prometheus/prometheus/tsdb/record"
+	"github.com/prometheus/prometheus/tsdb/tombstones"
+	"github.com/prometheus/prometheus/util/compression"
 )
 
 const (
@@ -598,6 +602,178 @@ func TestSeriesEviction_SeriesAreOnlyPublishedWhileTheyAreEvicted(t *testing.T) 
 			require.True(t, slices.IsSorted(published.refs))
 			// A reader opened after the eviction loads nothing from here, so it doesn't skip anything.
 			require.Nil(t, head.evictingSeries.Load())
+		})
+	}
+}
+
+type seriesEvictionPostDeletionCallback struct {
+	noopSeriesLifecycleCallback
+	postDeletion func(map[chunks.HeadSeriesRef]labels.Labels)
+}
+
+func (c seriesEvictionPostDeletionCallback) PostDeletion(deleted map[chunks.HeadSeriesRef]labels.Labels) {
+	c.postDeletion(deleted)
+}
+
+// TestSeriesEviction_RecreationSurvivesWALReplay verifies both sides of the collision
+// check: a series committed during GC must suppress the old ref's tombstone, while
+// one created after the check must log its declaration after that tombstone.
+func TestSeriesEviction_RecreationSurvivesWALReplay(t *testing.T) {
+	for name, evict := range evictionTestEvictions() {
+		t.Run(name, func(t *testing.T) {
+			for _, afterSelection := range []bool{false, true} {
+				t.Run(fmt.Sprintf("after tombstone selection=%t", afterSelection), func(t *testing.T) {
+					testDB := newSeriesEvictionTestDB(t)
+					db := testDB.db
+					oldRef := testDB.evictedRefs[0]
+					lset := evictionTestLabels(0)
+					q, err := db.Querier(math.MinInt64, math.MaxInt64)
+					require.NoError(t, err)
+					expected := query(t, q, evictionTestMatcher)
+					expected[lset.String()] = append(expected[lset.String()], sample{t: 400, f: 42}, sample{t: 500, f: 43})
+
+					var newRef storage.SeriesRef
+					commitDone := make(chan error, 1)
+					recreate := func() {
+						app := db.Appender(t.Context())
+						var err error
+						newRef, err = app.Append(oldRef, lset, 400, 42)
+						require.NoError(t, err)
+						require.NotEqual(t, oldRef, newRef)
+						if afterSelection {
+							// Append must finish even inside the tombstone write's
+							// critical section. Only the WAL declaration is serialized.
+							go func() { commitDone <- app.Commit() }()
+						} else {
+							commitDone <- app.Commit()
+						}
+					}
+					if afterSelection {
+						db.head.testBeforeWALTombstonesLogged = recreate
+					} else {
+						db.head.series.seriesLifecycleCallback = seriesEvictionPostDeletionCallback{
+							postDeletion: func(deleted map[chunks.HeadSeriesRef]labels.Labels) {
+								if _, ok := deleted[chunks.HeadSeriesRef(oldRef)]; ok {
+									// The old ref has been unlinked, but gcSeries has
+									// not returned or selected its tombstones yet.
+									recreate()
+								}
+							},
+						}
+					}
+
+					require.NoError(t, evict(db, testDB.evictedRefs))
+					require.NoError(t, <-commitDone)
+
+					app := db.Appender(t.Context())
+					laterRef, err := app.Append(newRef, lset, 500, 43)
+					require.NoError(t, err)
+					require.Equal(t, newRef, laterRef)
+					require.NoError(t, app.Commit())
+
+					q, err = db.Querier(math.MinInt64, math.MaxInt64)
+					require.NoError(t, err)
+					require.Equal(t, expected, query(t, q, evictionTestMatcher))
+					require.NoError(t, db.Close())
+
+					stonePosition, seriesPosition := -1, -1
+					for i, entry := range readTestWAL(t, filepath.Join(db.Dir(), "wal")) {
+						switch records := entry.(type) {
+						case []tombstones.Stone:
+							for _, stone := range records {
+								if stone.Ref == oldRef {
+									stonePosition = i
+								}
+							}
+						case []record.RefSeries:
+							for _, series := range records {
+								if series.Ref == chunks.HeadSeriesRef(newRef) {
+									seriesPosition = i
+								}
+							}
+						}
+					}
+					require.NotEqual(t, -1, seriesPosition)
+					if afterSelection {
+						require.NotEqual(t, -1, stonePosition)
+						require.Greater(t, seriesPosition, stonePosition, "the replacement's declaration must follow the tombstone")
+					} else {
+						require.Equal(t, -1, stonePosition, "the old ref's tombstone must be skipped")
+					}
+
+					reopened, err := Open(db.Dir(), nil, nil, db.opts, nil)
+					require.NoError(t, err)
+					reopened.DisableCompactions()
+					t.Cleanup(func() { require.NoError(t, reopened.Close()) })
+					q, err = reopened.Querier(math.MinInt64, math.MaxInt64)
+					require.NoError(t, err)
+					require.Equal(t, expected, query(t, q, evictionTestMatcher))
+					require.Zero(t, prom_testutil.ToFloat64(reopened.head.metrics.walReplayUnknownRefsTotal.WithLabelValues("samples")))
+				})
+			}
+		})
+	}
+}
+
+// TestHead_logSeriesTombstones verifies that only the tombstones of series whose labels
+// were not recreated by another ref are encoded, and that no record is written at all
+// if every tombstone is skipped.
+func TestHead_logSeriesTombstones(t *testing.T) {
+	h, _ := newTestHead(t, 1000, compression.None, false)
+	recreatedLabels := labels.FromStrings("a", "recreated")
+	live, _, err := h.getOrCreate(recreatedLabels.Hash(), recreatedLabels, false)
+	require.NoError(t, err)
+	evictedLabels := labels.FromStrings("a", "evicted")
+	const (
+		oldRef     = chunks.HeadSeriesRef(1000)
+		evictedRef = chunks.HeadSeriesRef(2000)
+	)
+	require.NotEqual(t, oldRef, live.ref)
+	deleted := func(lset labels.Labels) deletedSeries { return deletedSeries{lset: lset, hash: lset.Hash()} }
+
+	for name, tc := range map[string]struct {
+		deleted  map[chunks.HeadSeriesRef]deletedSeries
+		expected []storage.SeriesRef
+	}{
+		"nothing deleted": {},
+		"labels recreated by another ref": {
+			deleted: map[chunks.HeadSeriesRef]deletedSeries{oldRef: deleted(recreatedLabels)},
+		},
+		"labels not recreated": {
+			deleted:  map[chunks.HeadSeriesRef]deletedSeries{evictedRef: deleted(evictedLabels)},
+			expected: []storage.SeriesRef{storage.SeriesRef(evictedRef)},
+		},
+		"ref that still owns its labels": {
+			deleted:  map[chunks.HeadSeriesRef]deletedSeries{live.ref: deleted(recreatedLabels)},
+			expected: []storage.SeriesRef{storage.SeriesRef(live.ref)},
+		},
+		"only some labels recreated": {
+			deleted: map[chunks.HeadSeriesRef]deletedSeries{
+				oldRef:     deleted(recreatedLabels),
+				evictedRef: deleted(evictedLabels),
+			},
+			expected: []storage.SeriesRef{storage.SeriesRef(evictedRef)},
+		},
+	} {
+		t.Run(name, func(t *testing.T) {
+			var rec []byte
+			require.NoError(t, h.logSeriesTombstones(tc.deleted, func(encode func() []byte) error {
+				rec = encode()
+				return nil
+			}))
+			if len(tc.expected) == 0 {
+				require.Nil(t, rec, "no record must be written if every tombstone is skipped")
+				return
+			}
+			var dec record.Decoder
+			stones, err := dec.Tombstones(rec, nil)
+			require.NoError(t, err)
+			refs := make([]storage.SeriesRef, 0, len(stones))
+			for _, stone := range stones {
+				require.Equal(t, tombstones.Intervals{{Mint: math.MinInt64, Maxt: math.MaxInt64}}, stone.Intervals)
+				refs = append(refs, stone.Ref)
+			}
+			require.ElementsMatch(t, tc.expected, refs)
 		})
 	}
 }
