@@ -1314,6 +1314,39 @@ func TestRelabelWithMetadata(t *testing.T) {
 				Help: "Real help",
 			},
 		},
+		{
+			name:      "labelmap cannot create and copy __type__",
+			input:     labels.FromStrings("__name__", "foo", "source", "spoof"),
+			inputMeta: metadata.Metadata{Type: model.MetricTypeGauge, Unit: "seconds", Help: "Real help."},
+			relabel: []*Config{
+				{Action: LabelMap, Regex: MustNewRegexp("source"), Replacement: "__type__"},
+				{Action: LabelMap, Regex: MustNewRegexp("__type__"), Replacement: "copied"},
+			},
+			output:     labels.FromStrings("__name__", "foo", "source", "spoof"),
+			outputMeta: metadata.Metadata{Type: model.MetricTypeGauge, Unit: "seconds", Help: "Real help."},
+		},
+		{
+			name:      "labelmap cannot create and copy __unit__",
+			input:     labels.FromStrings("__name__", "foo", "source", "spoof"),
+			inputMeta: metadata.Metadata{Type: model.MetricTypeGauge, Unit: "seconds", Help: "Real help."},
+			relabel: []*Config{
+				{Action: LabelMap, Regex: MustNewRegexp("source"), Replacement: "__unit__"},
+				{Action: LabelMap, Regex: MustNewRegexp("__unit__"), Replacement: "copied"},
+			},
+			output:     labels.FromStrings("__name__", "foo", "source", "spoof"),
+			outputMeta: metadata.Metadata{Type: model.MetricTypeGauge, Unit: "seconds", Help: "Real help."},
+		},
+		{
+			name:      "labelmap cannot create and copy __help__",
+			input:     labels.FromStrings("__name__", "foo", "source", "spoof"),
+			inputMeta: metadata.Metadata{Type: model.MetricTypeGauge, Unit: "seconds", Help: "Real help."},
+			relabel: []*Config{
+				{Action: LabelMap, Regex: MustNewRegexp("source"), Replacement: "__help__"},
+				{Action: LabelMap, Regex: MustNewRegexp("__help__"), Replacement: "copied"},
+			},
+			output:     labels.FromStrings("__name__", "foo", "source", "spoof"),
+			outputMeta: metadata.Metadata{Type: model.MetricTypeGauge, Unit: "seconds", Help: "Real help."},
+		},
 	}
 
 	for _, test := range tests {
