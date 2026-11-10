@@ -409,6 +409,17 @@ func TestRecordingRuleMetadataDeduction(t *testing.T) {
 					T: evalMs,
 					F: 7,
 				},
+				{
+					Metric: labels.FromStrings(
+						model.MetricNameLabel, "http_request_duration_seconds_bucket",
+						model.MetricTypeLabel, "histogram",
+						model.MetricUnitLabel, "seconds",
+						"job", "api",
+						"le", "+Inf",
+					),
+					T: evalMs,
+					F: 12,
+				},
 			},
 			wantLabels: []labels.Labels{
 				labels.FromStrings(
@@ -423,10 +434,18 @@ func TestRecordingRuleMetadataDeduction(t *testing.T) {
 					model.MetricUnitLabel, "bytes",
 					"job", "db",
 				),
+				labels.FromStrings(
+					model.MetricNameLabel, "job:req:rate5m",
+					model.MetricTypeLabel, "histogram",
+					model.MetricUnitLabel, "seconds",
+					"job", "api",
+					"le", "+Inf",
+				),
 			},
 			wantMetas: []metadata.Metadata{
 				{Type: model.MetricTypeCounter, Unit: "requests"},
 				{Type: model.MetricTypeGauge, Unit: "bytes"},
+				{Type: model.MetricTypeHistogram, Unit: "seconds"},
 			},
 		},
 		{
@@ -474,14 +493,21 @@ func TestRecordingRuleMetadataDeduction(t *testing.T) {
 					T:      evalMs,
 					F:      1,
 				},
+				{
+					Metric: labels.FromStrings(model.MetricNameLabel, "http_request_duration_seconds_bucket", "le", "0.5"),
+					T:      evalMs,
+					F:      3,
+				},
 			},
 			wantLabels: []labels.Labels{
 				labels.FromStrings(model.MetricNameLabel, "job:req:rate5m", "job", "api"),
 				labels.FromStrings(model.MetricNameLabel, "job:req:rate5m", "version", "1.0"),
+				labels.FromStrings(model.MetricNameLabel, "job:req:rate5m", "le", "0.5"),
 			},
 			wantMetas: []metadata.Metadata{
 				{Type: model.MetricTypeCounter},
 				{Type: model.MetricTypeInfo},
+				{Type: model.MetricTypeHistogram},
 			},
 		},
 		{
@@ -622,56 +648,57 @@ func TestRecordingRuleMetadataDeduction(t *testing.T) {
 			},
 		},
 		{
-			name: "mismatch/float_sample_with_histogram_yaml_falls_back_to_gauge",
+			name: "yaml_overrides/float_sample_with_histogram_yaml_uses_classic_histogram",
 			ruleMeta: metadata.Metadata{
 				Type: model.MetricTypeHistogram,
 				Unit: "seconds",
-				Help: "Mismatched float sample.",
+				Help: "Classic histogram bucket.",
 			},
 			enableTypeAndUnitLabels: true,
 			samples: promql.Vector{
-				{Metric: labels.FromStrings("job", "api"), T: evalMs, F: 0.42},
+				{Metric: labels.FromStrings("job", "api", "le", "+Inf"), T: evalMs, F: 42},
 			},
 			wantLabels: []labels.Labels{
 				labels.FromStrings(
 					model.MetricNameLabel, "job:req:rate5m",
-					model.MetricTypeLabel, "gauge",
+					model.MetricTypeLabel, "histogram",
 					model.MetricUnitLabel, "seconds",
 					"job", "api",
+					"le", "+Inf",
 				),
 			},
 			wantMetas: []metadata.Metadata{
-				{Type: model.MetricTypeGauge, Unit: "seconds", Help: "Mismatched float sample."},
+				{Type: model.MetricTypeHistogram, Unit: "seconds", Help: "Classic histogram bucket."},
 			},
 		},
 		{
 			name: "mismatch/incompatible_yaml_type_falls_back_to_preserved_type",
 			ruleMeta: metadata.Metadata{
-				Type: model.MetricTypeHistogram,
+				Type: model.MetricTypeGauge,
 			},
 			enableTypeAndUnitLabels: true,
 			samples: promql.Vector{
 				{
 					Metric: labels.FromStrings(
-						model.MetricNameLabel, "http_requests",
-						model.MetricTypeLabel, "counter",
-						model.MetricUnitLabel, "requests",
+						model.MetricNameLabel, "request_duration_seconds",
+						model.MetricTypeLabel, "gaugehistogram",
+						model.MetricUnitLabel, "seconds",
 						"job", "api",
 					),
 					T: evalMs,
-					F: 10,
+					H: counterHist,
 				},
 			},
 			wantLabels: []labels.Labels{
 				labels.FromStrings(
 					model.MetricNameLabel, "job:req:rate5m",
-					model.MetricTypeLabel, "counter",
-					model.MetricUnitLabel, "requests",
+					model.MetricTypeLabel, "gaugehistogram",
+					model.MetricUnitLabel, "seconds",
 					"job", "api",
 				),
 			},
 			wantMetas: []metadata.Metadata{
-				{Type: model.MetricTypeCounter, Unit: "requests"},
+				{Type: model.MetricTypeGaugeHistogram, Unit: "seconds"},
 			},
 		},
 		{
