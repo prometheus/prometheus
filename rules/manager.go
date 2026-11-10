@@ -172,7 +172,7 @@ type ManagerOptions struct {
 	AppendMetadata bool
 
 	// EnableTypeAndUnitLabels controls whether rule evaluation injects __type__
-	// and __unit__ labels on recorded and alerting time series.
+	// and __unit__ labels on recorded time series.
 	EnableTypeAndUnitLabels bool
 
 	// AutoRecordingMetadata controls whether recording rule evaluation automatically
