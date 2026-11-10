@@ -713,6 +713,68 @@ func TestRecordingRuleMetadataDeduction(t *testing.T) {
 			},
 		},
 		{
+			name:                    "mismatch/histogram_sample_with_preserved_float_type_falls_back_to_reset_hint",
+			enableTypeAndUnitLabels: true,
+			samples: promql.Vector{
+				{
+					Metric: labels.FromStrings(
+						model.MetricNameLabel, "my_hist_total",
+						model.MetricTypeLabel, "counter",
+						model.MetricUnitLabel, "seconds",
+						"job", "api",
+					),
+					T: evalMs,
+					H: gaugeHist,
+				},
+			},
+			wantLabels: []labels.Labels{
+				labels.FromStrings(
+					model.MetricNameLabel, "job:req:rate5m",
+					model.MetricTypeLabel, "gaugehistogram",
+					model.MetricUnitLabel, "seconds",
+					"job", "api",
+				),
+			},
+			wantMetas: []metadata.Metadata{
+				{Type: model.MetricTypeGaugeHistogram, Unit: "seconds"},
+			},
+		},
+		{
+			name: "yaml_overrides/unknown_type_treated_as_unset",
+			ruleMeta: metadata.Metadata{
+				Type: model.MetricTypeUnknown,
+				Help: "Help with unknown type.",
+			},
+			enableTypeAndUnitLabels: true,
+			samples: promql.Vector{
+				{
+					Metric: labels.FromStrings(
+						model.MetricNameLabel, "http_requests_total",
+						model.MetricTypeLabel, "counter",
+						model.MetricUnitLabel, "requests",
+						"job", "api",
+					),
+					T: evalMs,
+					F: 10,
+				},
+			},
+			wantLabels: []labels.Labels{
+				labels.FromStrings(
+					model.MetricNameLabel, "job:req:rate5m",
+					model.MetricTypeLabel, "counter",
+					model.MetricUnitLabel, "requests",
+					"job", "api",
+				),
+			},
+			wantMetas: []metadata.Metadata{
+				{
+					Type: model.MetricTypeCounter,
+					Unit: "requests",
+					Help: "Help with unknown type.",
+				},
+			},
+		},
+		{
 			name: "duplicate_detection/or_series_differing_only_by_input_type_caught",
 			ruleMeta: metadata.Metadata{
 				Type: model.MetricTypeGauge,
