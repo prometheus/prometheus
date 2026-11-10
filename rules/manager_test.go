@@ -55,6 +55,7 @@ import (
 	"github.com/prometheus/prometheus/tsdb/record"
 	"github.com/prometheus/prometheus/tsdb/tsdbutil"
 	"github.com/prometheus/prometheus/tsdb/wlog"
+	"github.com/prometheus/prometheus/util/features"
 	"github.com/prometheus/prometheus/util/stats"
 	"github.com/prometheus/prometheus/util/teststorage"
 	prom_testutil "github.com/prometheus/prometheus/util/testutil"
@@ -3134,6 +3135,7 @@ groups:
 		appendStore := teststorage.New(t, func(opt *tsdb.Options) {
 			opt.EnableMetadataWALRecords = true
 		})
+		featReg := features.NewRegistry()
 
 		mgr := NewManager(&ManagerOptions{
 			Context:               t.Context(),
@@ -3142,9 +3144,11 @@ groups:
 			QueryFunc:             EngineQueryFunc(engine, queryStore),
 			NotifyFunc:            func(context.Context, string, ...*Alert) {},
 			Logger:                promslog.NewNopLogger(),
+			FeatureRegistry:       featReg,
 			AppendMetadata:        true,
 			AutoRecordingMetadata: true,
 		})
+		require.True(t, featReg.Get()[features.Rules]["auto_recording_metadata"])
 		mgr.restored = true // Skip initial restore delay so AlertingRule emits ALERTS immediately.
 
 		groups, errs := mgr.LoadGroups(time.Minute, labels.EmptyLabels(), "", nil, false, ruleFile)
@@ -3169,6 +3173,7 @@ groups:
 		appendStore := teststorage.New(t, func(opt *tsdb.Options) {
 			opt.EnableMetadataWALRecords = true
 		})
+		featReg := features.NewRegistry()
 
 		mgr := NewManager(&ManagerOptions{
 			Context:               t.Context(),
@@ -3177,9 +3182,11 @@ groups:
 			QueryFunc:             EngineQueryFunc(engine, queryStore),
 			NotifyFunc:            func(context.Context, string, ...*Alert) {},
 			Logger:                promslog.NewNopLogger(),
+			FeatureRegistry:       featReg,
 			AppendMetadata:        true,
 			AutoRecordingMetadata: false,
 		})
+		require.False(t, featReg.Get()[features.Rules]["auto_recording_metadata"])
 		mgr.restored = true
 
 		groups, errs := mgr.LoadGroups(time.Minute, labels.EmptyLabels(), "", nil, false, ruleFile)
@@ -3199,6 +3206,177 @@ groups:
 				Type: model.MetricTypeGauge,
 				Unit: "requests_per_second",
 				Help: "Per-job HTTP request rate.",
+			},
+		}, got)
+	})
+
+	t.Run("storage=tsdb_with_type_and_unit_labels", func(t *testing.T) {
+		schemaQueryStore := teststorage.New(t)
+		app := schemaQueryStore.AppenderV2(t.Context())
+		for step := range 6 {
+			tsMs := timestamp.FromTime(baseTime.Add(time.Duration(step) * time.Minute))
+			_, err := app.Append(
+				0,
+				labels.FromStrings(
+					model.MetricNameLabel, "http_requests_total",
+					model.MetricTypeLabel, "counter",
+					model.MetricUnitLabel, "requests",
+					"job", "api",
+				),
+				0,
+				tsMs,
+				float64(step*10),
+				nil,
+				nil,
+				storage.AOptions{},
+			)
+			require.NoError(t, err)
+			_, err = app.Append(
+				0,
+				labels.FromStrings(
+					model.MetricNameLabel, "http_request_duration_seconds_bucket",
+					model.MetricTypeLabel, "histogram",
+					model.MetricUnitLabel, "seconds",
+					"job", "api",
+					"le", "+Inf",
+				),
+				0,
+				tsMs,
+				float64(step*5),
+				nil,
+				nil,
+				storage.AOptions{},
+			)
+			require.NoError(t, err)
+			_, err = app.Append(
+				0,
+				labels.FromStrings(
+					model.MetricNameLabel, "latency_seconds",
+					model.MetricTypeLabel, "histogram",
+					model.MetricUnitLabel, "seconds",
+					"job", "api",
+				),
+				0,
+				tsMs,
+				0,
+				tsdbutil.GenerateTestHistogram(int64(step+1)),
+				nil,
+				storage.AOptions{},
+			)
+			require.NoError(t, err)
+		}
+		require.NoError(t, app.Commit())
+
+		schemaRuleYAML := ruleYAML + `  - record: prod:http_request_duration_seconds_bucket
+    expr: http_request_duration_seconds_bucket{job="api"}
+`
+		schemaRuleFile := filepath.Join(t.TempDir(), "schema_rules.yaml")
+		require.NoError(t, os.WriteFile(schemaRuleFile, []byte(schemaRuleYAML), 0o600))
+
+		schemaEngine := promqltest.NewTestEngineWithOpts(t, promql.EngineOpts{
+			MaxSamples:              10000,
+			Timeout:                 100 * time.Second,
+			EnableTypeAndUnitLabels: true,
+		})
+		appendStore := teststorage.New(t, func(opt *tsdb.Options) {
+			opt.EnableMetadataWALRecords = true
+		})
+
+		mgr := NewManager(&ManagerOptions{
+			Context:                 t.Context(),
+			AppendableV2:            appendStore,
+			Queryable:               schemaQueryStore,
+			QueryFunc:               EngineQueryFunc(schemaEngine, schemaQueryStore),
+			NotifyFunc:              func(context.Context, string, ...*Alert) {},
+			Logger:                  promslog.NewNopLogger(),
+			AppendMetadata:          true,
+			EnableTypeAndUnitLabels: true,
+			AutoRecordingMetadata:   true,
+		})
+		mgr.restored = true
+
+		groups, errs := mgr.LoadGroups(time.Minute, labels.EmptyLabels(), "", nil, false, schemaRuleFile)
+		require.Empty(t, errs)
+		for _, g := range groups {
+			g.Eval(t.Context(), evalTime)
+			for _, r := range g.Rules() {
+				require.NoError(t, r.LastError())
+			}
+		}
+
+		q, err := appendStore.Querier(0, timestamp.FromTime(evalTime))
+		require.NoError(t, err)
+		wantLabelsByMetric := map[string]labels.Labels{
+			"job:http_requests:rate5m": labels.FromStrings(
+				model.MetricNameLabel, "job:http_requests:rate5m",
+				model.MetricTypeLabel, "gauge",
+				model.MetricUnitLabel, "requests_per_second",
+				"job", "api",
+			),
+			"job:http_requests:unannotated_rate5m": labels.FromStrings(
+				model.MetricNameLabel, "job:http_requests:unannotated_rate5m",
+				model.MetricTypeLabel, "gauge",
+				"job", "api",
+			),
+			"cluster:http_requests_total": labels.FromStrings(
+				model.MetricNameLabel, "cluster:http_requests_total",
+				model.MetricTypeLabel, "counter",
+				model.MetricUnitLabel, "requests",
+				"cluster", "prod",
+				"job", "api",
+			),
+			"prod:http_request_duration_seconds_bucket": labels.FromStrings(
+				model.MetricNameLabel, "prod:http_request_duration_seconds_bucket",
+				model.MetricTypeLabel, "histogram",
+				model.MetricUnitLabel, "seconds",
+				"job", "api",
+				"le", "+Inf",
+			),
+			"job:latency_seconds:sum": labels.FromStrings(
+				model.MetricNameLabel, "job:latency_seconds:sum",
+				model.MetricTypeLabel, "histogram",
+				"job", "api",
+			),
+			"job:latency_seconds:rate5m": labels.FromStrings(
+				model.MetricNameLabel, "job:latency_seconds:rate5m",
+				model.MetricTypeLabel, "gaugehistogram",
+				"job", "api",
+			),
+		}
+		for metricName, wantLbls := range wantLabelsByMetric {
+			ss := q.Select(t.Context(), false, nil, labels.MustNewMatcher(labels.MatchEqual, model.MetricNameLabel, metricName))
+			require.True(t, ss.Next(), "expected series for %s", metricName)
+			prom_testutil.RequireEqual(t, wantLbls, ss.At().Labels())
+			require.False(t, ss.Next())
+			require.NoError(t, ss.Err())
+		}
+		require.NoError(t, q.Close())
+
+		walDir := filepath.Join(appendStore.Dir(), "wal")
+		require.NoError(t, appendStore.DB.Close())
+		got := readWALMetadataByMetricName(t, walDir)
+		require.Equal(t, map[string]metadata.Metadata{
+			"job:http_requests:rate5m": {
+				Type: model.MetricTypeGauge,
+				Unit: "requests_per_second",
+				Help: "Per-job HTTP request rate.",
+			},
+			"job:http_requests:unannotated_rate5m": {
+				Type: model.MetricTypeGauge,
+			},
+			"cluster:http_requests_total": {
+				Type: model.MetricTypeCounter,
+				Unit: "requests",
+			},
+			"prod:http_request_duration_seconds_bucket": {
+				Type: model.MetricTypeHistogram,
+				Unit: "seconds",
+			},
+			"job:latency_seconds:sum": {
+				Type: model.MetricTypeHistogram,
+			},
+			"job:latency_seconds:rate5m": {
+				Type: model.MetricTypeGaugeHistogram,
 			},
 		}, got)
 	})
