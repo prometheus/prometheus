@@ -3854,12 +3854,12 @@ func stripeSeriesWithCollidingSeries(t *testing.T) (*stripeSeries, *memSeries, *
 	hash := lbls1.Hash()
 	s := newStripeSeries(1, noopSeriesLifecycleCallback{})
 
-	got, created := s.setUnlessAlreadySet(hash, lbls1, ms1)
+	got, created, _ := s.setUnlessAlreadySet(hash, lbls1, ms1, nil)
 	require.True(t, created)
 	require.Same(t, ms1, got)
 
 	// Add a conflicting series
-	got, created = s.setUnlessAlreadySet(hash, lbls2, ms2)
+	got, created, _ = s.setUnlessAlreadySet(hash, lbls2, ms2, nil)
 	require.True(t, created)
 	require.Same(t, ms2, got)
 
@@ -3888,7 +3888,7 @@ func TestStripeSeries_gc(t *testing.T) {
 			{ref: chunks.ChunkDiskMapperRef(2 << 32), minTime: 200, maxTime: 250},
 		}
 		s := newStripeSeries(1, noopSeriesLifecycleCallback{})
-		_, created := s.setUnlessAlreadySet(lset.Hash(), lset, series)
+		_, created, _ := s.setUnlessAlreadySet(lset.Hash(), lset, series, nil)
 		require.True(t, created)
 
 		for _, tc := range []struct {
@@ -3931,7 +3931,7 @@ func TestStripeSeries_gc(t *testing.T) {
 			lset := labels.FromStrings("a", "1")
 			series := &memSeries{lset: lset, ref: 1}
 			s := newStripeSeries(1, noopSeriesLifecycleCallback{})
-			_, created := s.setUnlessAlreadySet(lset.Hash(), lset, series)
+			_, created, _ := s.setUnlessAlreadySet(lset.Hash(), lset, series, nil)
 			require.True(t, created)
 
 			s.gc(mint, 0)
@@ -3946,7 +3946,7 @@ func TestStripeSeries_gc(t *testing.T) {
 			lset := labels.FromStrings("a", "1")
 			series := &memSeries{lset: lset, ref: 1}
 			s := newStripeSeries(1, noopSeriesLifecycleCallback{})
-			_, created := s.setUnlessAlreadySet(lset.Hash(), lset, series)
+			_, created, _ := s.setUnlessAlreadySet(lset.Hash(), lset, series, nil)
 			require.True(t, created)
 
 			series.updateExemplarTimestamp(ts)
@@ -3971,7 +3971,7 @@ func TestStripeSeries_gc(t *testing.T) {
 		series.Unlock()
 
 		s := newStripeSeries(1, noopSeriesLifecycleCallback{})
-		got, created := s.setUnlessAlreadySet(lset.Hash(), lset, series)
+		got, created, _ := s.setUnlessAlreadySet(lset.Hash(), lset, series, nil)
 		require.True(t, created)
 		require.Same(t, series, got)
 

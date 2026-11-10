@@ -220,19 +220,20 @@ func (p *pendingTombstones) add(hash uint64) {
 	p.mtx.Unlock()
 }
 
-// wait blocks until the tombstone of every series with this hash is written to the WAL.
-func (p *pendingTombstones) wait(hash uint64) {
-	if !p.active.Load() {
-		return
+// pending returns a channel that is closed when the tombstones are written, if a series with this hash was evicted
+// and its tombstone is not written yet, or nil. It must be called with the lock of the stripe of the hash, which
+// add holds too, so that a series is not created after the eviction unlinked its predecessor, and before the
+// tombstone of the latter is written. It is safe to call on a nil pendingTombstones.
+func (p *pendingTombstones) pending(hash uint64) <-chan struct{} {
+	if p == nil || !p.active.Load() {
+		return nil
 	}
 	p.mtx.Lock()
+	defer p.mtx.Unlock()
 	if _, ok := p.hashes[hash]; !ok {
-		p.mtx.Unlock()
-		return
+		return nil
 	}
-	released := p.released
-	p.mtx.Unlock()
-	<-released
+	return p.released
 }
 
 // releaseAll is called when the tombstones are written, or if writing them failed.
@@ -2407,10 +2408,6 @@ func (h *Head) getOrCreate(hash uint64, lset labels.Labels, pendingCommit bool) 
 		return s, false, nil
 	}
 
-	// A series that is missing may have just been evicted. Its tombstone must reach the WAL before the declaration
-	// of the series that replaces it, which is logged when the series is committed.
-	h.pendingTombstones.wait(hash)
-
 	return h.getOrCreateWithOptionalID(0, hash, lset, pendingCommit)
 }
 
@@ -2427,37 +2424,49 @@ func (h *Head) getOrCreateWithOptionalID(id chunks.HeadSeriesRef, hash uint64, l
 	optimisticallyCreatedSeries := newMemSeries(lset, id, shardHash, h.opts.IsolationDisabled, pendingCommit)
 
 	assignID := id == 0
-	if assignID {
-		// Assigning the ID and adding to the postings under one lock keeps new IDs
-		// in order in the postings, so MemPostings.Add does not have to repair the
-		// order of lists that already hold every concurrently assigned higher ID.
-		h.seriesCreationMtx.Lock()
-		// Note this id is wasted in the case where a concurrent operation creates the same series first.
-		id = chunks.HeadSeriesRef(h.lastSeriesID.Inc())
-		optimisticallyCreatedSeries.ref = id
-	}
+	for {
+		if assignID {
+			// Assigning the ID and adding to the postings under one lock keeps new IDs
+			// in order in the postings, so MemPostings.Add does not have to repair the
+			// order of lists that already hold every concurrently assigned higher ID.
+			h.seriesCreationMtx.Lock()
+			// Note this id is wasted in the case where a concurrent operation creates the same series first.
+			id = chunks.HeadSeriesRef(h.lastSeriesID.Inc())
+			optimisticallyCreatedSeries.ref = id
+		}
 
-	s, created := h.series.setUnlessAlreadySet(hash, lset, optimisticallyCreatedSeries)
-	if !created {
+		s, created, pending := h.series.setUnlessAlreadySet(hash, lset, optimisticallyCreatedSeries, &h.pendingTombstones)
+		if pending != nil {
+			// A series with these labels was evicted, and its tombstone is not in the WAL yet. The declaration of this
+			// series must follow it in the WAL, which is written when the series is committed. Waiting without the
+			// series creation lock does not block the creation of other series.
+			if assignID {
+				h.seriesCreationMtx.Unlock()
+			}
+			<-pending
+			continue
+		}
+		if !created {
+			if assignID {
+				h.seriesCreationMtx.Unlock()
+			}
+			return s, false, nil
+		}
+
+		h.metrics.seriesCreated.Inc()
+		h.numSeries.Inc()
+
+		h.postings.Add(storage.SeriesRef(id), lset)
 		if assignID {
 			h.seriesCreationMtx.Unlock()
 		}
-		return s, false, nil
+
+		// Adding the series in the postings marks the creation of series
+		// as any further calls to this and the read methods would return that series.
+		h.series.postCreation(lset)
+
+		return s, true, nil
 	}
-
-	h.metrics.seriesCreated.Inc()
-	h.numSeries.Inc()
-
-	h.postings.Add(storage.SeriesRef(id), lset)
-	if assignID {
-		h.seriesCreationMtx.Unlock()
-	}
-
-	// Adding the series in the postings marks the creation of series
-	// as any further calls to this and the read methods would return that series.
-	h.series.postCreation(lset)
-
-	return s, true, nil
 }
 
 // onChunkCreated bumps the head chunk metrics for any newly created chunk, in-order or OOO.
@@ -3097,12 +3106,19 @@ func (s *stripeSeries) unlinkHash(hash uint64, ref chunks.HeadSeriesRef) {
 	s.hashes[i].del(hash, ref)
 }
 
-func (s *stripeSeries) setUnlessAlreadySet(hash uint64, lset labels.Labels, series *memSeries) (*memSeries, bool) {
+// setUnlessAlreadySet adds the series unless one with the same labels is already set, which is returned instead.
+// If the labels hash is in pending, nothing is added and the returned channel is non-nil: the caller must wait for it
+// to be closed, and retry. The check is done with the lock of the stripe, so that it is atomic with the insertion.
+func (s *stripeSeries) setUnlessAlreadySet(hash uint64, lset labels.Labels, series *memSeries, pending *pendingTombstones) (*memSeries, bool, <-chan struct{}) {
 	i := hash & uint64(s.size-1)
 	s.locks[i].Lock()
 	if prev := s.hashes[i].get(hash, lset); prev != nil {
 		s.locks[i].Unlock()
-		return prev, false
+		return prev, false, nil
+	}
+	if wait := pending.pending(hash); wait != nil {
+		s.locks[i].Unlock()
+		return nil, false, wait
 	}
 	s.hashes[i].set(hash, series)
 	s.locks[i].Unlock()
@@ -3113,7 +3129,7 @@ func (s *stripeSeries) setUnlessAlreadySet(hash uint64, lset labels.Labels, seri
 	s.series[stripe][series.ref] = series
 	s.locks[stripe].Unlock()
 
-	return series, true
+	return series, true, nil
 }
 
 func (s *stripeSeries) postCreation(lset labels.Labels) {
