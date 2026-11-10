@@ -668,6 +668,25 @@ func (w *WL) Log(recs ...[]byte) error {
 	return nil
 }
 
+// LogWithCallback calls encode under the log's write lock and writes the returned
+// record before allowing another writer to proceed. The callback must not call
+// methods on this log or wait for another writer. The returned bytes must remain
+// unchanged until LogWithCallback returns. If encode returns nil, no record is
+// written.
+func (w *WL) LogWithCallback(encode func() []byte) error {
+	w.mtx.Lock()
+	defer w.mtx.Unlock()
+	rec := encode()
+	if rec == nil {
+		return nil
+	}
+	if err := w.log(rec, true); err != nil {
+		w.metrics.writesFailed.Inc()
+		return err
+	}
+	return nil
+}
+
 // log writes rec to the log and forces a flush of the current page if:
 // - the final record of a batch
 // - the record is bigger than the page size

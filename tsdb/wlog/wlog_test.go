@@ -414,6 +414,54 @@ func TestCompression(t *testing.T) {
 	}
 }
 
+func TestLogWithCallback(t *testing.T) {
+	for _, compress := range []compression.Type{compression.None, compression.Snappy, compression.Zstd} {
+		t.Run(compress, func(t *testing.T) {
+			w, err := NewSize(nil, nil, t.TempDir(), pageSize, compress)
+			require.NoError(t, err)
+			defer func() { require.NoError(t, w.Close()) }()
+
+			encoding := make(chan struct{})
+			resume := make(chan struct{})
+			firstDone := make(chan error, 1)
+			go func() {
+				firstDone <- w.LogWithCallback(func() []byte {
+					close(encoding)
+					<-resume
+					return []byte("first")
+				})
+			}()
+			<-encoding
+			secondDone := make(chan error, 1)
+			go func() { secondDone <- w.Log([]byte("second")) }()
+			close(resume)
+			require.NoError(t, <-firstDone)
+			require.NoError(t, <-secondDone)
+
+			called := false
+			require.NoError(t, w.LogWithCallback(func() []byte {
+				called = true
+				return nil
+			}))
+			require.True(t, called, "a skipped record must still run its callback")
+			require.NoError(t, w.LogWithCallback(func() []byte { return []byte{} }))
+
+			sr, err := NewSegmentsReader(w.Dir())
+			require.NoError(t, err)
+			defer func() { require.NoError(t, sr.Close()) }()
+			r := NewReader(sr)
+			require.True(t, r.Next())
+			require.Equal(t, []byte("first"), r.Record())
+			require.True(t, r.Next())
+			require.Equal(t, []byte("second"), r.Record())
+			require.True(t, r.Next(), "a non-nil empty slice is still a record")
+			require.Empty(t, r.Record())
+			require.False(t, r.Next())
+			require.NoError(t, r.Err())
+		})
+	}
+}
+
 func TestLogPartialWrite(t *testing.T) {
 	const segmentSize = pageSize * 2
 	record := []byte{1, 2, 3, 4, 5}
