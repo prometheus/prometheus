@@ -33,7 +33,6 @@ import (
 	"github.com/prometheus/prometheus/model/timestamp"
 	"github.com/prometheus/prometheus/promql"
 	"github.com/prometheus/prometheus/promql/parser"
-	"github.com/prometheus/prometheus/schema"
 	"github.com/prometheus/prometheus/storage"
 	"github.com/prometheus/prometheus/template"
 )
@@ -250,7 +249,7 @@ func (r *AlertingRule) sample(alert *Alert, ts time.Time) promql.Sample {
 		lb.Set(l.Name, l.Value)
 	})
 
-	schema.Metadata{Name: alertMetricName}.SetToLabels(lb)
+	lb.Set(labels.MetricName, alertMetricName)
 	lb.Set(labels.AlertName, r.name)
 	lb.Set(alertStateLabel, alert.State.String())
 
@@ -273,7 +272,7 @@ func (r *AlertingRule) forStateSample(alert *Alert, ts time.Time, v float64) pro
 		})
 	}
 
-	schema.Metadata{Name: alertForStateMetricName}.SetToLabels(lb)
+	lb.Set(labels.MetricName, alertForStateMetricName)
 	lb.Set(labels.AlertName, r.name)
 
 	s := promql.Sample{
@@ -440,13 +439,10 @@ func (r *AlertingRule) Eval(ctx context.Context, queryOffset time.Duration, ts t
 		}
 
 		lb.Reset(smpl.Metric)
+		lb.Del(labels.MetricName)
 		r.labels.Range(func(l labels.Label) {
 			lb.Set(l.Name, expand(l.Value))
 		})
-		// Strip reserved metric schema labels (__name__, __type__, __unit__) so they do not
-		// leak into Alert.Labels (sent to Alertmanager and /api/v1/alerts) or mask duplicate
-		// alert label sets.
-		schema.Metadata{}.SetToLabels(lb)
 		lb.Set(labels.AlertName, r.Name())
 
 		sb.Reset()
