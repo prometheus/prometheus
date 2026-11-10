@@ -95,6 +95,7 @@ func NewManager(
 	if r := o.FeatureRegistry; r != nil {
 		// "Extra scrape metrics" is always enabled because it moved from feature flag to config file.
 		r.Enable(features.Scrape, "extra_scrape_metrics")
+		r.Set(features.Scrape, "metadata_relabeling", o.EnableMetadataRelabeling)
 		r.Set(features.Scrape, "start_timestamp_zero_ingestion", o.EnableStartTimestampZeroIngestion)
 		r.Set(features.Scrape, "type_and_unit_labels", o.EnableTypeAndUnitLabels)
 		r.Set(features.Scrape, "openmetrics2", o.EnableOpenMetrics2)
@@ -142,6 +143,9 @@ type Options struct {
 
 	// EnableTypeAndUnitLabels represents type-and-unit-labels feature flag.
 	EnableTypeAndUnitLabels bool
+
+	// EnableMetadataRelabeling represents metadata-relabeling feature flag.
+	EnableMetadataRelabeling bool
 
 	// EnableOpenMetrics2 represents the openmetrics2 feature flag. It enables
 	// the experimental OpenMetrics 2.0 parser.
