@@ -34,7 +34,6 @@ import (
 // os.Remove fails with ERROR_SHARING_VIOLATION, so repairLastChunkFile must
 // retry until the blocking handle is released.
 func TestRepairLastChunkFile_RetriesSharingViolation(t *testing.T) {
-	t.Parallel()
 
 	dir := t.TempDir()
 	path := filepath.Join(dir, "000001")
