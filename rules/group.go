@@ -637,7 +637,11 @@ func (g *Group) Eval(ctx context.Context, ts time.Time) {
 		_, appendSp := otel.Tracer("").Start(ctx, "ruleAppendResults")
 		defer appendSp.End()
 
-		var ruleMetaHandle unique.Handle[metadata.Metadata]
+		var (
+			ruleMetaHandle unique.Handle[metadata.Metadata]
+			lastMeta       metadata.Metadata
+			lastMetaHandle unique.Handle[metadata.Metadata]
+		)
 		if !hasPerSampleM && g.opts.AppendMetadata && !ruleMeta.IsEmpty() {
 			ruleMetaHandle = unique.Make(ruleMeta)
 		}
@@ -647,7 +651,13 @@ func (g *Group) Eval(ctx context.Context, ts time.Time) {
 			metaHandle := ruleMetaHandle
 			if idx < len(metas) && !metas[idx].IsEmpty() {
 				appOpts.Metadata = metas[idx]
-				metaHandle = unique.Make(metas[idx])
+				// Reuse the previous handle when consecutive samples share deduced metadata
+				// to avoid hitting the global unique map on every sample.
+				if metadata.IsZeroHandle(lastMetaHandle) || metas[idx] != lastMeta {
+					lastMeta = metas[idx]
+					lastMetaHandle = unique.Make(lastMeta)
+				}
+				metaHandle = lastMetaHandle
 			} else if !metadata.IsZeroHandle(metaHandle) {
 				appOpts.Metadata = metaHandle.Value()
 			}
