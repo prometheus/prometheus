@@ -15,6 +15,7 @@ package azure
 
 import (
 	"context"
+	"errors"
 	"log/slog"
 	"net/http"
 	"slices"
@@ -33,6 +34,7 @@ import (
 	cache "github.com/Code-Hex/go-generics-cache"
 	"github.com/Code-Hex/go-generics-cache/policy/lru"
 	"github.com/prometheus/client_golang/prometheus"
+	promtestutil "github.com/prometheus/client_golang/prometheus/testutil"
 	"github.com/prometheus/common/model"
 	"github.com/prometheus/common/promslog"
 	"github.com/stretchr/testify/require"
@@ -185,7 +187,7 @@ func TestVMToLabelSet(t *testing.T) {
 
 	labelSet, err := d.vmToLabelSet(context.Background(), client, actualVM)
 	require.NoError(t, err)
-	require.Len(t, labelSet, 11)
+	require.Len(t, labelSet, 12)
 }
 
 func TestVMToLabelSetWithNilTagValue(t *testing.T) {
@@ -395,6 +397,13 @@ func TestMapFromVMScaleSetVMWithEmptyTags(t *testing.T) {
 		HardwareProfile: &armcompute.HardwareProfile{
 			VMSize: &vmSize,
 		},
+		InstanceView: &armcompute.VirtualMachineScaleSetVMInstanceView{
+			Statuses: []*armcompute.InstanceViewStatus{
+				{
+					Code: to.Ptr("PowerState/running"),
+				},
+			},
+		},
 	}
 
 	testVM := armcompute.VirtualMachineScaleSetVM{
@@ -420,6 +429,7 @@ func TestMapFromVMScaleSetVMWithEmptyTags(t *testing.T) {
 		ScaleSet:          scaleSet,
 		InstanceID:        instanceID,
 		Size:              size,
+		PowerState:        "running",
 	}
 
 	actualVM := mapFromVMScaleSetVM(testVM, scaleSet)
@@ -448,6 +458,13 @@ func TestMapFromVMScaleSetVMWithEmptyOSType(t *testing.T) {
 		HardwareProfile: &armcompute.HardwareProfile{
 			VMSize: &vmSize,
 		},
+		InstanceView: &armcompute.VirtualMachineScaleSetVMInstanceView{
+			Statuses: []*armcompute.InstanceViewStatus{
+				{
+					Code: to.Ptr("PowerState/running"),
+				},
+			},
+		},
 	}
 
 	testVM := armcompute.VirtualMachineScaleSetVM{
@@ -472,6 +489,7 @@ func TestMapFromVMScaleSetVMWithEmptyOSType(t *testing.T) {
 		ScaleSet:          scaleSet,
 		InstanceID:        instanceID,
 		Size:              size,
+		PowerState:        "running",
 	}
 
 	actualVM := mapFromVMScaleSetVM(testVM, scaleSet)
@@ -508,6 +526,13 @@ func TestMapFromVMScaleSetVMWithTags(t *testing.T) {
 		HardwareProfile: &armcompute.HardwareProfile{
 			VMSize: &vmSize,
 		},
+		InstanceView: &armcompute.VirtualMachineScaleSetVMInstanceView{
+			Statuses: []*armcompute.InstanceViewStatus{
+				{
+					Code: to.Ptr("PowerState/running"),
+				},
+			},
+		},
 	}
 
 	testVM := armcompute.VirtualMachineScaleSetVM{
@@ -533,11 +558,237 @@ func TestMapFromVMScaleSetVMWithTags(t *testing.T) {
 		ScaleSet:          scaleSet,
 		InstanceID:        instanceID,
 		Size:              size,
+		PowerState:        "running",
 	}
 
 	actualVM := mapFromVMScaleSetVM(testVM, scaleSet)
 
 	require.Equal(t, expectedVM, actualVM)
+}
+
+func TestPowerStateFromStatuses(t *testing.T) {
+	for _, tc := range []struct {
+		name     string
+		statuses []*armcompute.InstanceViewStatus
+		expected string
+	}{
+		{
+			name: "running",
+			statuses: []*armcompute.InstanceViewStatus{
+				{Code: to.Ptr("ProvisioningState/succeeded")},
+				{Code: to.Ptr("PowerState/running")},
+			},
+			expected: "running",
+		},
+		{
+			name:     "stopped",
+			statuses: []*armcompute.InstanceViewStatus{{Code: to.Ptr("PowerState/stopped")}},
+			expected: "stopped",
+		},
+		{
+			name:     "deallocated",
+			statuses: []*armcompute.InstanceViewStatus{{Code: to.Ptr("PowerState/deallocated")}},
+			expected: "deallocated",
+		},
+		{
+			name:     "starting",
+			statuses: []*armcompute.InstanceViewStatus{{Code: to.Ptr("PowerState/starting")}},
+			expected: "starting",
+		},
+		{
+			name:     "stopping",
+			statuses: []*armcompute.InstanceViewStatus{{Code: to.Ptr("PowerState/stopping")}},
+			expected: "stopping",
+		},
+		{
+			name:     "deallocating",
+			statuses: []*armcompute.InstanceViewStatus{{Code: to.Ptr("PowerState/deallocating")}},
+			expected: "deallocating",
+		},
+		{
+			name:     "no power state",
+			statuses: []*armcompute.InstanceViewStatus{{Code: to.Ptr("ProvisioningState/succeeded")}, nil, {}},
+			expected: "",
+		},
+		{
+			name:     "no statuses",
+			expected: "",
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			require.Equal(t, tc.expected, powerStateFromStatuses(tc.statuses))
+		})
+	}
+}
+
+func TestGetVMPowerStates(t *testing.T) {
+	vm1ID := "/subscriptions/00000000-0000-0000-0000-00000000000/resourceGroups/RG1/providers/Microsoft.Compute/virtualMachines/vm1"
+	vm2ID := "/subscriptions/00000000-0000-0000-0000-00000000000/resourceGroups/RG1/providers/Microsoft.Compute/virtualMachines/vm2"
+	vm1 := defaultVMWithIDAndName(&vm1ID, to.Ptr("vm1"))
+	vm2 := defaultVMWithIDAndName(&vm2ID, to.Ptr("vm2"))
+	vm2.Properties.InstanceView.Statuses = []*armcompute.InstanceViewStatus{{Code: to.Ptr("PowerState/deallocated")}}
+	vmResp := []armcompute.VirtualMachinesClientListAllResponse{
+		{VirtualMachineListResult: armcompute.VirtualMachineListResult{Value: []*armcompute.VirtualMachine{vm1}}},
+		{VirtualMachineListResult: armcompute.VirtualMachineListResult{Value: []*armcompute.VirtualMachine{vm2}}},
+	}
+
+	mockVMServer := defaultMockVMServer(vmResp)
+	vmClient, err := armcompute.NewVirtualMachinesClient("fake-subscription-id", &azfake.TokenCredential{}, &arm.ClientOptions{
+		ClientOptions: azcore.ClientOptions{
+			Transport: fake.NewVirtualMachinesServerTransport(&mockVMServer),
+		},
+	})
+	require.NoError(t, err)
+	client := &azureClient{vm: newVirtualMachinesClientAdapter(vmClient)}
+
+	powerStates, err := client.getVMPowerStates(context.Background())
+	require.NoError(t, err)
+	require.Equal(t, map[string]string{
+		strings.ToLower(vm1ID): "running",
+		strings.ToLower(vm2ID): "deallocated",
+	}, powerStates)
+}
+
+// powerStatesClient is a client whose power states are set by the test.
+type powerStatesClient struct {
+	client
+	powerStates map[string]string
+	err         error
+}
+
+func (c *powerStatesClient) getVMPowerStates(context.Context) (map[string]string, error) {
+	return c.powerStates, c.err
+}
+
+func TestVMPowerStatesLastKnown(t *testing.T) {
+	reg := prometheus.NewRegistry()
+	metrics := DefaultSDConfig.NewDiscovererMetrics(reg, discovery.NewRefreshMetrics(reg))
+	d, err := NewDiscovery(&DefaultSDConfig, discovery.DiscovererOptions{Metrics: metrics, SetName: "azure"})
+	require.NoError(t, err)
+	client := &powerStatesClient{}
+	ctx := context.Background()
+
+	// Nothing is known before the first successful listing.
+	client.err = errors.New("throttled")
+	require.Nil(t, d.vmPowerStates(ctx, client))
+
+	client.powerStates, client.err = map[string]string{"vm1": "running"}, nil
+	require.Equal(t, map[string]string{"vm1": "running"}, d.vmPowerStates(ctx, client))
+
+	// A failed listing returns the last known power states.
+	client.powerStates, client.err = nil, errors.New("throttled")
+	require.Equal(t, map[string]string{"vm1": "running"}, d.vmPowerStates(ctx, client))
+
+	client.powerStates, client.err = map[string]string{"vm1": "deallocated"}, nil
+	require.Equal(t, map[string]string{"vm1": "deallocated"}, d.vmPowerStates(ctx, client))
+
+	require.Equal(t, 2.0, promtestutil.ToFloat64(d.metrics.failuresCount))
+}
+
+func TestAzureRefreshPowerStatesUnavailable(t *testing.T) {
+	vmResp := []armcompute.VirtualMachinesClientListAllResponse{
+		{VirtualMachineListResult: armcompute.VirtualMachineListResult{Value: []*armcompute.VirtualMachine{defaultVMWithIDAndName(nil, nil)}}},
+	}
+	interfacesResp := armnetwork.Interface{
+		ID: to.Ptr(defaultMockNetworkID),
+		Properties: &armnetwork.InterfacePropertiesFormat{
+			Primary: to.Ptr(true),
+			IPConfigurations: []*armnetwork.InterfaceIPConfiguration{
+				{Properties: &armnetwork.InterfaceIPConfigurationPropertiesFormat{PrivateIPAddress: to.Ptr("10.0.0.1")}},
+			},
+		},
+	}
+	client := &powerStatesClient{
+		client: createMockAzureClient(t, vmResp, []armcompute.VirtualMachineScaleSetsClientListAllResponse{{}}, nil, interfacesResp, nil),
+		err:    errors.New("forbidden"),
+	}
+	reg := prometheus.NewRegistry()
+	metrics := DefaultSDConfig.NewDiscovererMetrics(reg, discovery.NewRefreshMetrics(reg))
+	d, err := NewDiscovery(&DefaultSDConfig, discovery.DiscovererOptions{Metrics: metrics, SetName: "azure"})
+	require.NoError(t, err)
+
+	// Discovery still succeeds, without power states.
+	tgs, err := d.refreshAzureClient(context.Background(), client)
+	require.NoError(t, err)
+	require.Len(t, tgs, 1)
+	require.Len(t, tgs[0].Targets, 1)
+	require.Equal(t, model.LabelValue(""), tgs[0].Targets[0][azureLabelMachineState])
+}
+
+func TestGetScaleSetVMsPowerState(t *testing.T) {
+	scaleSetID := "/subscriptions/00000000-0000-0000-0000-00000000000/resourceGroups/rg1/providers/Microsoft.Compute/virtualMachineScaleSets/vmScaleSet1"
+	vmssvmResp := []armcompute.VirtualMachineScaleSetVMsClientListResponse{
+		{
+			VirtualMachineScaleSetVMListResult: armcompute.VirtualMachineScaleSetVMListResult{
+				Value: []*armcompute.VirtualMachineScaleSetVM{
+					defaultVMSSVMWithIDAndName(to.Ptr(scaleSetID+"/virtualMachines/0"), to.Ptr("vmScaleSet1_0")),
+				},
+			},
+		},
+	}
+
+	for _, tc := range []struct {
+		name             string
+		orchestration    *armcompute.OrchestrationMode
+		expectedState    string
+		expectExpandUsed bool
+	}{
+		{
+			name:             "orchestration mode not set",
+			expectedState:    "running",
+			expectExpandUsed: true,
+		},
+		{
+			name:             "uniform",
+			orchestration:    to.Ptr(armcompute.OrchestrationModeUniform),
+			expectedState:    "running",
+			expectExpandUsed: true,
+		},
+		{
+			name:          "flexible",
+			orchestration: to.Ptr(armcompute.OrchestrationModeFlexible),
+			expectedState: "",
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			expandUsed := false
+			mockServer := defaultMockVMSSVMServer(vmssvmResp)
+			listPager := mockServer.NewListPager
+			mockServer.NewListPager = func(resourceGroupName, scaleSetName string, options *armcompute.VirtualMachineScaleSetVMsClientListOptions) (resp azfake.PagerResponder[armcompute.VirtualMachineScaleSetVMsClientListResponse]) {
+				expandUsed = options != nil && options.Expand != nil
+				// Azure rejects $expand=instanceView on flexible scale sets.
+				if expandUsed && tc.orchestration != nil && *tc.orchestration == armcompute.OrchestrationModeFlexible {
+					resp.AddError(&azcore.ResponseError{StatusCode: http.StatusBadRequest, ErrorCode: "BadRequest"})
+					return resp
+				}
+				return listPager(resourceGroupName, scaleSetName, options)
+			}
+			vmssvmClient, err := armcompute.NewVirtualMachineScaleSetVMsClient("fake-subscription-id", &azfake.TokenCredential{}, &arm.ClientOptions{
+				ClientOptions: azcore.ClientOptions{
+					Transport: fake.NewVirtualMachineScaleSetVMsServerTransport(&mockServer),
+				},
+			})
+			require.NoError(t, err)
+			client := &azureClient{
+				vmssvm: newVirtualMachineScaleSetVMsClientAdapter(vmssvmClient),
+				logger: promslog.NewNopLogger(),
+			}
+
+			scaleSet := armcompute.VirtualMachineScaleSet{
+				ID:   &scaleSetID,
+				Name: to.Ptr("vmScaleSet1"),
+			}
+			if tc.orchestration != nil {
+				scaleSet.Properties = &armcompute.VirtualMachineScaleSetProperties{OrchestrationMode: tc.orchestration}
+			}
+
+			vms, err := client.getScaleSetVMs(context.Background(), scaleSet)
+			require.NoError(t, err)
+			require.Equal(t, tc.expectExpandUsed, expandUsed)
+			require.Len(t, vms, 1)
+			require.Equal(t, tc.expectedState, vms[0].PowerState)
+		})
+	}
 }
 
 func TestNewAzureResourceFromID(t *testing.T) {
@@ -665,6 +916,7 @@ func TestAzureRefresh(t *testing.T) {
 							"__meta_azure_machine_private_ip":     "10.0.0.1",
 							"__meta_azure_machine_resource_group": "{resourceGroup}",
 							"__meta_azure_machine_size":           "size",
+							"__meta_azure_machine_state":          "running",
 							"__meta_azure_machine_tag_prometheus": "",
 							"__meta_azure_subscription_id":        "",
 							"__meta_azure_tenant_id":              "",
@@ -679,6 +931,7 @@ func TestAzureRefresh(t *testing.T) {
 							"__meta_azure_machine_private_ip":     "10.0.0.1",
 							"__meta_azure_machine_resource_group": "{resourceGroup}",
 							"__meta_azure_machine_size":           "size",
+							"__meta_azure_machine_state":          "running",
 							"__meta_azure_machine_tag_prometheus": "",
 							"__meta_azure_subscription_id":        "",
 							"__meta_azure_tenant_id":              "",
@@ -693,6 +946,7 @@ func TestAzureRefresh(t *testing.T) {
 							"__meta_azure_machine_private_ip":     "10.0.0.1",
 							"__meta_azure_machine_resource_group": "{resourceGroup}",
 							"__meta_azure_machine_size":           "size",
+							"__meta_azure_machine_state":          "running",
 							"__meta_azure_machine_tag_prometheus": "",
 							"__meta_azure_subscription_id":        "",
 							"__meta_azure_tenant_id":              "",
@@ -707,6 +961,7 @@ func TestAzureRefresh(t *testing.T) {
 							"__meta_azure_machine_private_ip":     "10.0.0.1",
 							"__meta_azure_machine_resource_group": "{resourceGroup}",
 							"__meta_azure_machine_size":           "size",
+							"__meta_azure_machine_state":          "running",
 							"__meta_azure_machine_tag_prometheus": "",
 							"__meta_azure_subscription_id":        "",
 							"__meta_azure_tenant_id":              "",
@@ -722,6 +977,7 @@ func TestAzureRefresh(t *testing.T) {
 							"__meta_azure_machine_resource_group": "{resourceGroup}",
 							"__meta_azure_machine_scale_set":      "vmScaleSet1",
 							"__meta_azure_machine_size":           "size",
+							"__meta_azure_machine_state":          "running",
 							"__meta_azure_machine_tag_prometheus": "",
 							"__meta_azure_subscription_id":        "",
 							"__meta_azure_tenant_id":              "",
@@ -737,6 +993,7 @@ func TestAzureRefresh(t *testing.T) {
 							"__meta_azure_machine_resource_group": "{resourceGroup}",
 							"__meta_azure_machine_scale_set":      "vmScaleSet1",
 							"__meta_azure_machine_size":           "size",
+							"__meta_azure_machine_state":          "running",
 							"__meta_azure_machine_tag_prometheus": "",
 							"__meta_azure_subscription_id":        "",
 							"__meta_azure_tenant_id":              "",
@@ -775,6 +1032,13 @@ func TestAzureRefresh(t *testing.T) {
 
 type mockAzureClient struct {
 	azureClient
+	// statusClient serves getVMPowerStates. The fake server tracks pagers by URL path,
+	// so concurrent list requests to the same path need their own fake server.
+	statusClient azureClient
+}
+
+func (c *mockAzureClient) getVMPowerStates(ctx context.Context) (map[string]string, error) {
+	return c.statusClient.getVMPowerStates(ctx)
 }
 
 func createMockAzureClient(t *testing.T, vmResp []armcompute.VirtualMachinesClientListAllResponse, vmssResp []armcompute.VirtualMachineScaleSetsClientListAllResponse, vmssvmResp []armcompute.VirtualMachineScaleSetVMsClientListResponse, interfaceResp armnetwork.Interface, logger *slog.Logger) client {
@@ -787,6 +1051,14 @@ func createMockAzureClient(t *testing.T, vmResp []armcompute.VirtualMachinesClie
 	vmClient, err := armcompute.NewVirtualMachinesClient("fake-subscription-id", &azfake.TokenCredential{}, &arm.ClientOptions{
 		ClientOptions: azcore.ClientOptions{
 			Transport: fake.NewVirtualMachinesServerTransport(&mockVMServer),
+		},
+	})
+	require.NoError(t, err)
+
+	mockStatusVMServer := defaultMockVMServer(vmResp)
+	statusVMClient, err := armcompute.NewVirtualMachinesClient("fake-subscription-id", &azfake.TokenCredential{}, &arm.ClientOptions{
+		ClientOptions: azcore.ClientOptions{
+			Transport: fake.NewVirtualMachinesServerTransport(&mockStatusVMServer),
 		},
 	})
 	require.NoError(t, err)
@@ -820,6 +1092,10 @@ func createMockAzureClient(t *testing.T, vmResp []armcompute.VirtualMachinesClie
 			nic:    newInterfacesClientAdapter(interfacesClient),
 			logger: logger,
 		},
+		statusClient: azureClient{
+			vm:     newVirtualMachinesClientAdapter(statusVMClient),
+			logger: logger,
+		},
 	}
 }
 
@@ -836,11 +1112,53 @@ func defaultMockInterfaceServer(interfaceResp armnetwork.Interface) fakenetwork.
 	}
 }
 
+// defaultMockVMServer mimics the Azure API: the instance view of the given VMs is only
+// returned with statusOnly, and $expand=instanceView is rejected without a scale set filter.
 func defaultMockVMServer(vmResp []armcompute.VirtualMachinesClientListAllResponse) fake.VirtualMachinesServer {
+	listVMs := func(statusOnly bool) []armcompute.VirtualMachineListResult {
+		var pages []armcompute.VirtualMachineListResult
+		for _, page := range vmResp {
+			var vms []*armcompute.VirtualMachine
+			for _, vm := range page.Value {
+				if statusOnly {
+					vms = append(vms, &armcompute.VirtualMachine{
+						ID:         vm.ID,
+						Name:       vm.Name,
+						Properties: &armcompute.VirtualMachineProperties{InstanceView: vm.Properties.InstanceView},
+					})
+					continue
+				}
+				vmCopy := *vm
+				propertiesCopy := *vm.Properties
+				propertiesCopy.InstanceView = nil
+				vmCopy.Properties = &propertiesCopy
+				vms = append(vms, &vmCopy)
+			}
+			pages = append(pages, armcompute.VirtualMachineListResult{Value: vms})
+		}
+		return pages
+	}
+	expandErr := &azcore.ResponseError{StatusCode: http.StatusBadRequest, ErrorCode: "BadRequest"}
+
 	return fake.VirtualMachinesServer{
-		NewListAllPager: func(*armcompute.VirtualMachinesClientListAllOptions) (resp azfake.PagerResponder[armcompute.VirtualMachinesClientListAllResponse]) {
-			for _, page := range vmResp {
-				resp.AddPage(http.StatusOK, page, nil)
+		NewListAllPager: func(options *armcompute.VirtualMachinesClientListAllOptions) (resp azfake.PagerResponder[armcompute.VirtualMachinesClientListAllResponse]) {
+			if options != nil && options.Expand != nil && options.Filter == nil {
+				resp.AddError(expandErr)
+				return resp
+			}
+			statusOnly := options != nil && options.StatusOnly != nil && *options.StatusOnly == "true"
+			for _, page := range listVMs(statusOnly) {
+				resp.AddPage(http.StatusOK, armcompute.VirtualMachinesClientListAllResponse{VirtualMachineListResult: page}, nil)
+			}
+			return resp
+		},
+		NewListPager: func(_ string, options *armcompute.VirtualMachinesClientListOptions) (resp azfake.PagerResponder[armcompute.VirtualMachinesClientListResponse]) {
+			if options != nil && options.Expand != nil && options.Filter == nil {
+				resp.AddError(expandErr)
+				return resp
+			}
+			for _, page := range listVMs(false) {
+				resp.AddPage(http.StatusOK, armcompute.VirtualMachinesClientListResponse{VirtualMachineListResult: page}, nil)
 			}
 			return resp
 		},
@@ -860,8 +1178,20 @@ func defaultMockVMSSServer(vmssResp []armcompute.VirtualMachineScaleSetsClientLi
 
 func defaultMockVMSSVMServer(vmssvmResp []armcompute.VirtualMachineScaleSetVMsClientListResponse) fake.VirtualMachineScaleSetVMsServer {
 	return fake.VirtualMachineScaleSetVMsServer{
-		NewListPager: func(_, _ string, _ *armcompute.VirtualMachineScaleSetVMsClientListOptions) (resp azfake.PagerResponder[armcompute.VirtualMachineScaleSetVMsClientListResponse]) {
+		NewListPager: func(_, _ string, options *armcompute.VirtualMachineScaleSetVMsClientListOptions) (resp azfake.PagerResponder[armcompute.VirtualMachineScaleSetVMsClientListResponse]) {
+			expandInstanceView := options != nil && options.Expand != nil && *options.Expand == "instanceView"
 			for _, page := range vmssvmResp {
+				if !expandInstanceView {
+					var vms []*armcompute.VirtualMachineScaleSetVM
+					for _, vm := range page.Value {
+						vmCopy := *vm
+						propertiesCopy := *vm.Properties
+						propertiesCopy.InstanceView = nil
+						vmCopy.Properties = &propertiesCopy
+						vms = append(vms, &vmCopy)
+					}
+					page.Value = vms
+				}
 				resp.AddPage(http.StatusOK, page, nil)
 			}
 			return resp
@@ -906,6 +1236,13 @@ func defaultVMWithIDAndName(id, name *string) *armcompute.VirtualMachine {
 			HardwareProfile: &armcompute.HardwareProfile{
 				VMSize: &vmSize,
 			},
+			InstanceView: &armcompute.VirtualMachineInstanceView{
+				Statuses: []*armcompute.InstanceViewStatus{
+					{
+						Code: to.Ptr("PowerState/running"),
+					},
+				},
+			},
 		},
 		Tags: map[string]*string{
 			"prometheus": new(string),
@@ -948,6 +1285,13 @@ func defaultVMSSVMWithIDAndName(id, name *string) *armcompute.VirtualMachineScal
 			},
 			HardwareProfile: &armcompute.HardwareProfile{
 				VMSize: &vmSize,
+			},
+			InstanceView: &armcompute.VirtualMachineScaleSetVMInstanceView{
+				Statuses: []*armcompute.InstanceViewStatus{
+					{
+						Code: to.Ptr("PowerState/running"),
+					},
+				},
 			},
 		},
 		Tags: map[string]*string{
