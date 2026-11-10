@@ -302,7 +302,7 @@ func benchmarkSelect(b *testing.B, queryable storage.Queryable, numSeries int, s
 
 			b.ResetTimer()
 			for b.Loop() {
-				var ctx context.Context = context.Background()
+				ctx := context.Background()
 				if failAfter > 0 {
 					ctx = &testutil.MockContextErrAfter{FailAfter: failAfter}
 				}
