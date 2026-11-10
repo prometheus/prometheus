@@ -160,9 +160,9 @@ This must be used if you would like to send metadata using the new remote write 
 
 When enabled together with [`metadata-wal-records`](#metadata-wal-records) or [`type-and-unit-labels`](#type-and-unit-labels), [recording rule](configuration/recording_rules.md#rule) evaluation automatically deduces per-sample metric metadata (`type`, `unit`, `help`) as designed in the [PROM-103 proposal](https://github.com/prometheus/proposals/pull/103):
 
-* Explicit `help`, `type`, and `unit` fields configured under `metadata:` on the recording rule take precedence when compatible with the evaluated sample encoding (`histogram` and `gaugehistogram` apply only to structured native histogram samples, whereas float samples accept `counter`, `gauge`, `summary`, `info`, or `stateset` and treat `unknown` as unset).
-* When the input metric's `__name__` survives PromQL evaluation (for example on selector filtering or `label_replace()`), compatible preserved `__type__` and `__unit__` labels or standard `_total` (`counter`) and `_info` (`info`) naming suffixes are used.
-* Otherwise, native histogram samples use `CounterResetHint` (`gaugehistogram` vs `histogram`), and float samples (including classic histogram `_bucket`, `_sum`, and `_count` series) default to `gauge`.
+* Explicit `help`, `type`, and `unit` fields configured under `metadata:` on the recording rule take precedence when compatible with the evaluated sample encoding (`unknown` is treated as unset, and native histogram samples require `histogram` or `gaugehistogram`, whereas float samples accept any valid metric type including classic `histogram` and `summary`).
+* When the input metric's `__name__` survives PromQL evaluation (for example on selector filtering or `label_replace()`), compatible preserved `__type__` and `__unit__` labels or standard `_total` (`counter`), `_bucket` (`histogram`), and `_info` (`info`) naming suffixes are used.
+* Otherwise, native histogram samples use `CounterResetHint` (`gaugehistogram` vs `histogram`), and float samples default to `gauge`.
 
 When disabled, recording rules only emit the static `help`, `type`, and `unit` fields explicitly configured under `metadata:`.
 

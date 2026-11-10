@@ -184,13 +184,14 @@ func (rule *RecordingRule) evalWithMetadata(
 // recording rule sample:
 //  1. Preserved schema: when __name__ survived PromQL evaluation (DropName == false),
 //     read preserved __type__ and __unit__ labels (if type-and-unit-labels is enabled)
-//     and fall back to _total (counter) or _info (info) naming suffixes when type is empty.
+//     and fall back to _total (counter), _bucket (histogram), or _info (info) naming
+//     suffixes on float samples when type is empty.
 //  2. Type: prefer compatible YAML rule.meta.Type, then compatible preserved.Type;
 //     otherwise deduce histogram or gaugehistogram from native histogram CounterResetHint,
 //     or default float samples to gauge.
 //  3. Unit and Help: prefer YAML rule.meta.Unit over preserved.Unit, and use YAML rule.meta.Help.
 func (rule *RecordingRule) deduceSampleMetadata(sample *promql.Sample, enableTypeAndUnitLabels bool) metadata.Metadata {
-	isHist := sample.H != nil
+	isNativeHist := sample.H != nil
 	var preserved schema.Metadata
 	if origName := sample.Metric.Get(labels.MetricName); origName != "" {
 		if enableTypeAndUnitLabels {
@@ -198,13 +199,16 @@ func (rule *RecordingRule) deduceSampleMetadata(sample *promql.Sample, enableTyp
 		} else {
 			preserved.Name = origName
 		}
-		if preserved.IsTypeEmpty() {
+		if !isNativeHist && preserved.IsTypeEmpty() {
 			// NOTE(bwplotka): Until native TSDB metadata lookup lands (prometheus#19563),
-			// fall back to standard Prometheus naming suffixes when __name__ survived
-			// PromQL evaluation unchanged (DropName == false).
+			// fall back to unambiguous Prometheus naming suffixes when __name__ survived
+			// PromQL evaluation unchanged (DropName == false). _sum and _count are omitted
+			// because they are shared by classic histograms and summaries.
 			switch {
 			case strings.HasSuffix(origName, "_total"):
 				preserved.Type = model.MetricTypeCounter
+			case strings.HasSuffix(origName, "_bucket"):
+				preserved.Type = model.MetricTypeHistogram
 			case strings.HasSuffix(origName, "_info"):
 				preserved.Type = model.MetricTypeInfo
 			}
@@ -213,11 +217,11 @@ func (rule *RecordingRule) deduceSampleMetadata(sample *promql.Sample, enableTyp
 
 	var mType model.MetricType
 	switch {
-	case isSampleTypeCompatible(rule.meta.Type, isHist):
+	case isSampleTypeCompatible(rule.meta.Type, isNativeHist):
 		mType = rule.meta.Type
-	case isSampleTypeCompatible(preserved.Type, isHist):
+	case isSampleTypeCompatible(preserved.Type, isNativeHist):
 		mType = preserved.Type
-	case isHist:
+	case isNativeHist:
 		if sample.H.CounterResetHint == histogram.GaugeType {
 			mType = model.MetricTypeGaugeHistogram
 		} else {
@@ -239,26 +243,16 @@ func (rule *RecordingRule) deduceSampleMetadata(sample *promql.Sample, enableTyp
 	}
 }
 
-// isSampleTypeCompatible reports whether t is valid for the runtime sample value kind.
-// Native histogram samples require histogram or gaugehistogram metadata, whereas
-// float samples require a valid non-histogram metadata type (classic histogram float
-// series such as _bucket, _sum, and _count are recorded as individual float series
-// rather than a multi-series classic histogram family, and float samples with histogram
-// metadata are rejected by Remote Write 2.0 stateless mode).
-func isSampleTypeCompatible(t model.MetricType, isHistogram bool) bool {
-	if isHistogram {
+// isSampleTypeCompatible reports whether t is a known non-unknown metric type
+// compatible with the runtime sample encoding. Native histogram samples require
+// histogram or gaugehistogram metadata, whereas float samples accept any valid
+// Prometheus metric type (including histogram, gaugehistogram, and summary for
+// classic multi-series representations).
+func isSampleTypeCompatible(t model.MetricType, isNativeHistogram bool) bool {
+	if isNativeHistogram {
 		return t == model.MetricTypeHistogram || t == model.MetricTypeGaugeHistogram
 	}
-	switch t {
-	case model.MetricTypeCounter,
-		model.MetricTypeGauge,
-		model.MetricTypeSummary,
-		model.MetricTypeInfo,
-		model.MetricTypeStateset:
-		return true
-	default:
-		return false
-	}
+	return schema.IsValidMetricType(t)
 }
 
 // LogValue returns the rule's representation for logging.
