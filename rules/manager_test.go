@@ -3124,12 +3124,6 @@ groups:
 		"job:latency_seconds:rate5m": {
 			Type: model.MetricTypeGaugeHistogram,
 		},
-		alertMetricName: {
-			Type: model.MetricTypeGauge,
-		},
-		alertForStateMetricName: {
-			Type: model.MetricTypeGauge,
-		},
 	}
 
 	t.Run("storage=tsdb", func(t *testing.T) {
@@ -3202,12 +3196,6 @@ groups:
 				Unit: "requests_per_second",
 				Help: "Per-job HTTP request rate.",
 			},
-			alertMetricName: {
-				Type: model.MetricTypeGauge,
-			},
-			alertForStateMetricName: {
-				Type: model.MetricTypeGauge,
-			},
 		}, got)
 	})
 
@@ -3257,7 +3245,9 @@ groups:
 
 		gotStaleMeta := make(map[string]metadata.Metadata, len(recApp.gotLabels))
 		for i, ls := range recApp.gotLabels {
-			gotStaleMeta[ls.Get(model.MetricNameLabel)] = recApp.gotMetas[i]
+			if !recApp.gotMetas[i].IsEmpty() {
+				gotStaleMeta[ls.Get(model.MetricNameLabel)] = recApp.gotMetas[i]
+			}
 		}
 		require.Equal(t, wantMetadata, gotStaleMeta)
 
@@ -3337,7 +3327,7 @@ groups:
 		for _, metricName := range []string{alertMetricName, alertForStateMetricName} {
 			ss := q.Select(t.Context(), false, nil, labels.MustNewMatcher(labels.MatchEqual, model.MetricNameLabel, metricName))
 			require.True(t, ss.Next())
-			require.Equal(t, "gauge", ss.At().Labels().Get(model.MetricTypeLabel))
+			require.Empty(t, ss.At().Labels().Get(model.MetricTypeLabel))
 			require.Empty(t, ss.At().Labels().Get(model.MetricUnitLabel))
 			require.False(t, ss.Next())
 			require.NoError(t, ss.Err())

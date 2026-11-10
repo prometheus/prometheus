@@ -235,7 +235,7 @@ func (r *AlertingRule) Labels() labels.Labels {
 
 // Metadata returns the metric metadata associated with the alerting rule.
 func (*AlertingRule) Metadata() metadata.Metadata {
-	return metadata.Metadata{Type: model.MetricTypeGauge}
+	return metadata.Metadata{}
 }
 
 // Annotations returns the annotations of the alerting rule.
