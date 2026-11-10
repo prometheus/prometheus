@@ -147,8 +147,10 @@ func (sl *scrapeLoopAppenderV2) append(b []byte, contentType string, ts time.Tim
 		origMFNameHandle unique.Handle[string]
 		lastSetMFName    unique.Handle[string]
 		lastSetMeta      unique.Handle[metadata.Metadata]
-		hasMRC           = len(sl.mrc) > 0
 	)
+
+	// Metadata relabeling also sanitizes reserved labels when there are no rules.
+	needsSeriesMetadata := len(sl.mrc) > 0 || sl.sampleMutatorWithMetadata != nil
 
 	exemplars := make([]exemplar.Exemplar, 0, 1)
 
@@ -189,7 +191,7 @@ loop:
 		case textparse.EntryType:
 			// TODO(bwplotka): Build meta entry directly instead of locking and updating the map. This will
 			// allow to properly update metadata when e.g unit was added, then removed;
-			if !hasMRC {
+			if !needsSeriesMetadata {
 				lastMFName, lastMeta = sl.cache.setType(p.Type())
 				lastMetaFlushed = false
 				continue
@@ -199,7 +201,7 @@ loop:
 			parsedMetaDirty = true
 			continue
 		case textparse.EntryHelp:
-			if !hasMRC {
+			if !needsSeriesMetadata {
 				lastMFName, lastMeta = sl.cache.setHelp(p.Help())
 				lastMetaFlushed = false
 				continue
@@ -209,7 +211,7 @@ loop:
 			parsedMetaDirty = true
 			continue
 		case textparse.EntryUnit:
-			if !hasMRC {
+			if !needsSeriesMetadata {
 				lastMFName, lastMeta = sl.cache.setUnit(p.Unit())
 				lastMetaFlushed = false
 				continue
@@ -249,7 +251,7 @@ loop:
 
 		metHash, ce, seriesCached, seriesAlreadyScraped := sl.cache.get(met)
 
-		if !hasMRC {
+		if !needsSeriesMetadata {
 			if !seriesCached && sl.cache.getDropped(metHash) {
 				continue
 			}
@@ -397,7 +399,7 @@ loop:
 
 			// TODO(ridwanmsharif): Consider injecting a 0 value with the st == t here, instead of skipping an append.
 			if sl.synthesizeST && st == 0 {
-				if !hasMRC {
+				if !needsSeriesMetadata {
 					var stType model.MetricType
 					if lastMeta != nil {
 						if !lastMetaFlushed {
@@ -451,7 +453,7 @@ loop:
 			// TODO(https://github.com/prometheus/prometheus/issues/17900): Optimize this, notably move this check to parsers that require this (ensuring parser
 			// interface always yields correct metadata), deliver OpenMetrics 2.0 that removes suffixes.
 			if sl.appendMetadataToWAL {
-				if !hasMRC {
+				if !needsSeriesMetadata {
 					if lastMeta != nil {
 						if !lastMetaFlushed {
 							lastMetaMD = sl.cache.metadataOf(lastMeta)
@@ -499,7 +501,7 @@ loop:
 			if sampleAdded {
 				ce = sl.cache.addRef(metHash, ref, lset, stCache)
 				hasCE = true
-				if hasMRC {
+				if needsSeriesMetadata {
 					sl.cache.setSeriesMeta(metHash, origMetaHandle, sampleMetaHandle, origMFNameHandle, sampleMFNameHandle)
 				}
 
