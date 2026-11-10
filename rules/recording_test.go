@@ -15,6 +15,7 @@ package rules
 
 import (
 	"context"
+	"math"
 	"testing"
 	"time"
 
@@ -25,50 +26,13 @@ import (
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/model/metadata"
 	"github.com/prometheus/prometheus/model/timestamp"
+	"github.com/prometheus/prometheus/model/value"
 	"github.com/prometheus/prometheus/promql"
 	"github.com/prometheus/prometheus/promql/parser"
 	"github.com/prometheus/prometheus/promql/promqltest"
-	"github.com/prometheus/prometheus/storage"
 	"github.com/prometheus/prometheus/util/teststorage"
 	"github.com/prometheus/prometheus/util/testutil"
 )
-
-type recordingAppenderV2 struct {
-	next      storage.AppendableV2
-	inner     storage.AppenderV2
-	gotLabels []labels.Labels
-	gotMetas  []metadata.Metadata
-}
-
-func (a *recordingAppenderV2) AppenderV2(ctx context.Context) storage.AppenderV2 {
-	if a.next != nil {
-		a.inner = a.next.AppenderV2(ctx)
-	}
-	return a
-}
-
-func (a *recordingAppenderV2) Append(ref storage.SeriesRef, ls labels.Labels, st, t int64, v float64, h *histogram.Histogram, fh *histogram.FloatHistogram, opts storage.AOptions) (storage.SeriesRef, error) {
-	a.gotLabels = append(a.gotLabels, ls.Copy())
-	a.gotMetas = append(a.gotMetas, opts.Metadata)
-	if a.inner != nil {
-		return a.inner.Append(ref, ls, st, t, v, h, fh, opts)
-	}
-	return 1, nil
-}
-
-func (a *recordingAppenderV2) Commit() error {
-	if a.inner != nil {
-		return a.inner.Commit()
-	}
-	return nil
-}
-
-func (a *recordingAppenderV2) Rollback() error {
-	if a.inner != nil {
-		return a.inner.Rollback()
-	}
-	return nil
-}
 
 var testParser = parser.NewParser(parser.Options{})
 
@@ -841,7 +805,7 @@ func TestRecordingRuleMetadataDeduction(t *testing.T) {
 				rule := NewRecordingRuleWithMetadata("job:req:rate5m", expr, tc.ruleLabels, tc.ruleMeta)
 				require.Equal(t, tc.ruleMeta, rule.Metadata())
 
-				app := &recordingAppenderV2{}
+				app := teststorage.NewAppendable()
 				returnEmpty := false
 				qf := func(context.Context, string, time.Time) (promql.Vector, error) {
 					if returnEmpty {
@@ -868,6 +832,7 @@ func TestRecordingRuleMetadataDeduction(t *testing.T) {
 				group.Eval(t.Context(), ts)
 				if tc.wantErr != nil {
 					require.ErrorIs(t, rule.LastError(), tc.wantErr)
+					require.Empty(t, app.ResultSamples())
 					continue
 				}
 				require.NoError(t, rule.LastError())
@@ -875,32 +840,34 @@ func TestRecordingRuleMetadataDeduction(t *testing.T) {
 				if appendMetadata {
 					wantMetas = tc.wantMetas
 				}
-				require.Equal(t, wantMetas, app.gotMetas)
-				require.Len(t, app.gotLabels, len(tc.wantLabels))
-				for i := range app.gotLabels {
-					testutil.RequireEqual(t, tc.wantLabels[i], app.gotLabels[i])
+				wantSamples := make([]teststorage.Sample, len(tc.wantLabels))
+				for i := range tc.wantLabels {
+					wantSamples[i] = teststorage.Sample{
+						L:  tc.wantLabels[i],
+						M:  wantMetas[i],
+						T:  tc.samples[i].T,
+						V:  tc.samples[i].F,
+						FH: tc.samples[i].H,
+					}
 				}
+				teststorage.RequireEqual(t, wantSamples, app.ResultSamples())
 
 				// Verify staleness appends on the next evaluation preserve deduced labels and metadata per series.
-				app.gotLabels = nil
-				app.gotMetas = nil
+				app.ResultReset()
 				returnEmpty = true
-				group.Eval(t.Context(), ts.Add(time.Minute))
+				staleTs := ts.Add(time.Minute)
+				group.Eval(t.Context(), staleTs)
 				require.NoError(t, rule.LastError())
-				type labelMeta struct {
-					labels string
-					meta   metadata.Metadata
-				}
-				wantStale := make([]labelMeta, len(tc.wantLabels))
+				wantStale := make([]teststorage.Sample, len(tc.wantLabels))
 				for i := range tc.wantLabels {
-					wantStale[i] = labelMeta{labels: tc.wantLabels[i].String(), meta: wantMetas[i]}
+					wantStale[i] = teststorage.Sample{
+						L: tc.wantLabels[i],
+						M: wantMetas[i],
+						T: timestamp.FromTime(staleTs),
+						V: math.Float64frombits(value.StaleNaN),
+					}
 				}
-				require.Len(t, app.gotLabels, len(tc.wantLabels))
-				gotStale := make([]labelMeta, len(app.gotLabels))
-				for i := range app.gotLabels {
-					gotStale[i] = labelMeta{labels: app.gotLabels[i].String(), meta: app.gotMetas[i]}
-				}
-				require.ElementsMatch(t, wantStale, gotStale)
+				teststorage.RequireEqual(t, wantStale, app.ResultSamples())
 			}
 		})
 	}
