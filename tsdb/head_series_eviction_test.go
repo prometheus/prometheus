@@ -35,6 +35,7 @@ import (
 	"github.com/prometheus/prometheus/tsdb/chunks"
 	"github.com/prometheus/prometheus/tsdb/record"
 	"github.com/prometheus/prometheus/tsdb/tombstones"
+	"github.com/prometheus/prometheus/util/compression"
 )
 
 const (
@@ -972,4 +973,32 @@ func TestSeriesEviction_SamplesAndEvictionWhileWaitingForReaders(t *testing.T) {
 	expected := evictionTestExpectedSamples(0)
 	expected[newSeries.String()] = 1
 	require.Equal(t, expected, openSampleQuerier(t, db, 0, math.MaxInt64).mustRead(t))
+}
+
+// BenchmarkTruncateSeries measures the time that truncateSeries takes to evict all the series of a head with a WAL.
+func BenchmarkTruncateSeries(b *testing.B) {
+	for _, n := range []int{10_000, 100_000, 500_000} {
+		b.Run(fmt.Sprintf("series=%d", n), func(b *testing.B) {
+			for b.Loop() {
+				b.StopTimer()
+				h, _ := newTestHead(b, 10000, compression.None, false)
+				app := h.Appender(context.Background())
+				refs := make([]storage.SeriesRef, 0, n)
+				for i := range n {
+					ref, err := app.Append(0, labels.FromStrings("__name__", "series", "id", fmt.Sprintf("%07d", i)), 10, 1)
+					require.NoError(b, err)
+					refs = append(refs, ref)
+				}
+				require.NoError(b, app.Commit())
+				b.StartTimer()
+
+				evicted, err := h.truncateSeries(refs, 10, func(*memSeries) bool { return true })
+				b.StopTimer()
+				require.NoError(b, err)
+				require.Equal(b, n, evicted)
+				require.NoError(b, h.Close())
+				b.StartTimer()
+			}
+		})
+	}
 }
