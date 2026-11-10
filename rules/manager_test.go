@@ -891,7 +891,7 @@ func TestCopyState(t *testing.T) {
 
 func TestDeletedRuleMarkedStale(t *testing.T) {
 	st := teststorage.New(t)
-	app := &recordingAppenderV2{next: st}
+	app := teststorage.NewAppendable().Then(st)
 	staleMeta := metadata.Metadata{Type: model.MetricTypeGauge, Unit: "seconds"}
 
 	oldGroup := &Group{
@@ -915,7 +915,11 @@ func TestDeletedRuleMarkedStale(t *testing.T) {
 	require.Equal(t, []trackedSeries{{labels: labels.FromStrings("l1", "v1"), metadata: unique.Make(staleMeta)}}, newGroup.staleSeries)
 
 	newGroup.Eval(context.Background(), time.Unix(0, 0))
-	require.Equal(t, []metadata.Metadata{staleMeta}, app.gotMetas)
+	teststorage.RequireEqual(t, []teststorage.Sample{{
+		L: labels.FromStrings("l1", "v1"),
+		M: staleMeta,
+		V: math.Float64frombits(value.StaleNaN),
+	}}, app.ResultSamples())
 
 	querier, err := st.Querier(0, 2000)
 	require.NoError(t, err)
@@ -3205,7 +3209,7 @@ groups:
 		agentOpts.EnableMetadataWALRecords = true
 		agentDB, err := agent.Open(promslog.NewNopLogger(), nil, nil, agentDir, agentOpts)
 		require.NoError(t, err)
-		recApp := &recordingAppenderV2{next: agentDB}
+		recApp := teststorage.NewAppendable().Then(agentDB)
 
 		var returnEmpty atomic.Bool
 		baseQF := EngineQueryFunc(engine, queryStore)
@@ -3234,8 +3238,7 @@ groups:
 				require.NoError(t, r.LastError())
 			}
 			// Trigger staleness markers on the next evaluation and verify every stale append preserves metadata.
-			recApp.gotLabels = nil
-			recApp.gotMetas = nil
+			recApp.ResultReset()
 			returnEmpty.Store(true)
 			g.Eval(t.Context(), evalTime.Add(time.Minute))
 			for _, r := range g.Rules() {
@@ -3243,10 +3246,13 @@ groups:
 			}
 		}
 
-		gotStaleMeta := make(map[string]metadata.Metadata, len(recApp.gotLabels))
-		for i, ls := range recApp.gotLabels {
-			if !recApp.gotMetas[i].IsEmpty() {
-				gotStaleMeta[ls.Get(model.MetricNameLabel)] = recApp.gotMetas[i]
+		staleSamples := recApp.ResultSamples()
+		require.NotEmpty(t, staleSamples)
+		gotStaleMeta := make(map[string]metadata.Metadata, len(staleSamples))
+		for _, s := range staleSamples {
+			require.True(t, s.IsStale())
+			if !s.M.IsEmpty() {
+				gotStaleMeta[s.L.Get(model.MetricNameLabel)] = s.M
 			}
 		}
 		require.Equal(t, wantMetadata, gotStaleMeta)
