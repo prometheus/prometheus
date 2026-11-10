@@ -247,10 +247,10 @@ loop:
 			sampleMFNameHandle unique.Handle[string]
 		)
 
-		metHash, ce, seriesCached, seriesAlreadyScraped := sl.cache.get(met)
+		metKey, ce, seriesCached, seriesAlreadyScraped := sl.cache.get(met)
 
 		if !hasMRC {
-			if !seriesCached && sl.cache.getDropped(metHash) {
+			if !seriesCached && sl.cache.getDropped(metKey) {
 				continue
 			}
 			if seriesCached {
@@ -264,7 +264,7 @@ loop:
 
 				// The label set may be set to empty to indicate dropping.
 				if lset.IsEmpty() {
-					sl.cache.addDropped(metHash)
+					sl.cache.addDropped(metKey)
 					continue
 				}
 
@@ -289,11 +289,11 @@ loop:
 				hasCachedMeta bool
 			)
 			if seriesCached {
-				if sl.cache.seriesMeta != nil {
-					sm, hasCachedMeta = sl.cache.seriesMeta[metHash]
+				if sl.cache.seriesMeta.count != 0 {
+					sm, hasCachedMeta = sl.cache.seriesMeta.get(metKey)
 				}
-			} else if sl.cache.droppedSeriesMeta != nil {
-				sm, hasCachedMeta = sl.cache.droppedSeriesMeta[metHash]
+			} else if sl.cache.droppedSeriesMeta.count != 0 {
+				sm, hasCachedMeta = sl.cache.droppedSeriesMeta.get(metKey)
 			}
 			// Intern the current family's parsed metadata and name once for all series in the family.
 			// On warm scrapes where the series already has cached handles matching parsedMeta and parsedMFName,
@@ -308,7 +308,7 @@ loop:
 				}
 				parsedMetaDirty = false
 			}
-			if !seriesCached && sl.cache.getDroppedWithMeta(metHash, origMFNameHandle, origMetaHandle) {
+			if !seriesCached && sl.cache.getDroppedWithMeta(metKey, origMFNameHandle, origMetaHandle) {
 				continue
 			}
 
@@ -335,9 +335,9 @@ loop:
 				// The label set may be set to empty to indicate dropping.
 				if lset.IsEmpty() {
 					if seriesCached {
-						sl.cache.deleteSeries(metHash)
+						sl.cache.deleteSeries(metKey)
 					}
-					sl.cache.addDroppedWithMeta(metHash, origMFNameHandle, origMetaHandle)
+					sl.cache.addDroppedWithMeta(metKey, origMFNameHandle, origMetaHandle)
 					continue
 				}
 
@@ -364,9 +364,9 @@ loop:
 				if seriesCached {
 					if ce.lset.Hash() == lset.Hash() && labels.Equal(ce.lset, lset) {
 						ref = ce.ref
-						sl.cache.setSeriesMeta(metHash, origMetaHandle, sampleMetaHandle, origMFNameHandle, sampleMFNameHandle)
+						sl.cache.setSeriesMeta(metKey, origMetaHandle, sampleMetaHandle, origMFNameHandle, sampleMFNameHandle)
 					} else {
-						sl.cache.deleteSeries(metHash)
+						sl.cache.deleteSeries(metKey)
 						ce = cacheEntry{}
 						seriesCached = false
 					}
@@ -478,7 +478,7 @@ loop:
 				// Append sample to the storage.
 				ref, err = app.Append(ref, lset, st, t, val, h, fh, appOpts)
 				if err == nil && seriesCached && ref != 0 {
-					sl.cache.updateRef(metHash, &ce, ref)
+					sl.cache.updateRef(metKey, &ce, ref)
 				}
 			}
 		}
@@ -497,10 +497,10 @@ loop:
 		hasCE := seriesCached
 		if !seriesCached {
 			if sampleAdded {
-				ce = sl.cache.addRef(metHash, ref, lset, stCache)
+				ce = sl.cache.addRef(metKey, ref, lset, stCache)
 				hasCE = true
 				if hasMRC {
-					sl.cache.setSeriesMeta(metHash, origMetaHandle, sampleMetaHandle, origMFNameHandle, sampleMFNameHandle)
+					sl.cache.setSeriesMeta(metKey, origMetaHandle, sampleMetaHandle, origMFNameHandle, sampleMFNameHandle)
 				}
 
 				if sampleLimitErr == nil && bucketLimitErr == nil {
@@ -511,11 +511,11 @@ loop:
 			if sampleAdded {
 				if ce.st != stCache {
 					ce.st = stCache // Set it, even if it's nil (explicit reset).
-					sl.cache.series[metHash] = ce
+					sl.cache.series.set(metKey, ce)
 				}
 			} else if ce.st != nil {
 				ce.st = nil // Clear state on failure for existing series.
-				sl.cache.series[metHash] = ce
+				sl.cache.series.set(metKey, ce)
 			}
 		}
 
@@ -570,7 +570,7 @@ loop:
 }
 
 func (sl *scrapeLoopAppenderV2) addReportSample(s reportSample, t int64, v float64, b *labels.Builder, rejectOOO bool) (err error) {
-	metHash, ce, ok, _ := sl.cache.get(s.name)
+	metKey, ce, ok, _ := sl.cache.get(s.name)
 	var ref storage.SeriesRef
 	var lset labels.Labels
 	if ok {
@@ -593,7 +593,7 @@ func (sl *scrapeLoopAppenderV2) addReportSample(s reportSample, t int64, v float
 	switch {
 	case err == nil:
 		if !ok {
-			sl.cache.addRef(metHash, ref, lset, nil)
+			sl.cache.addRef(metKey, ref, lset, nil)
 		}
 		return nil
 	case errors.Is(err, storage.ErrOutOfOrderSample), errors.Is(err, storage.ErrDuplicateSampleForTimestamp):
