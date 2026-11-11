@@ -3689,6 +3689,11 @@ access_key: <string>
 # Refresh interval to re-read the targets list.
 [ refresh_interval: <duration> | default = 60s ]
 
+# Restrict discovery to VMs carrying all of the given tags, each formatted as
+# "key=value". See https://docs.outscale.com/en/userguide/About-Tags.html for more details.
+tags:
+  [ - <string> ... ]
+
 # HTTP client settings.
 [ <http_config> ]
 ```

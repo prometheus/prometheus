@@ -67,8 +67,10 @@ func (d *vmDiscovery) refresh(ctx context.Context) ([]*targetgroup.Group, error)
 
 	tg := &targetgroup.Group{Source: d.cfg.Region}
 
+	filters := buildFiltersVM(d.cfg.Tags)
+
 	var allVms []osc.Vm
-	req := d.client.VmApi.ReadVms(ctx).ReadVmsRequest(osc.ReadVmsRequest{})
+	req := d.client.VmApi.ReadVms(ctx).ReadVmsRequest(osc.ReadVmsRequest{Filters: filters})
 
 	for {
 		resp, _, err := req.Execute()
@@ -81,11 +83,20 @@ func (d *vmDiscovery) refresh(ctx context.Context) ([]*targetgroup.Group, error)
 		if resp.NextPageToken == nil || *resp.NextPageToken == "" {
 			break
 		}
-		req = d.client.VmApi.ReadVms(ctx).ReadVmsRequest(osc.ReadVmsRequest{NextPageToken: resp.NextPageToken})
+		req = d.client.VmApi.ReadVms(ctx).ReadVmsRequest(osc.ReadVmsRequest{Filters: filters, NextPageToken: resp.NextPageToken})
 	}
 
 	tg.Targets = vmsToLabelSets(allVms, d.cfg)
 	return []*targetgroup.Group{tg}, nil
+}
+
+// buildFiltersVM returns the Outscale API filters restricting discovery to
+// VMs carrying all of the given tags, or nil if no tags are configured.
+func buildFiltersVM(tags []string) *osc.FiltersVm {
+	if len(tags) == 0 {
+		return nil
+	}
+	return &osc.FiltersVm{Tags: &tags}
 }
 
 // vmsToLabelSets converts Outscale VMs into target label sets.
