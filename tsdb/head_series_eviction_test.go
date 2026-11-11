@@ -17,6 +17,7 @@ import (
 	"context"
 	"fmt"
 	"math"
+	"math/rand"
 	"path/filepath"
 	"slices"
 	"strconv"
@@ -37,6 +38,7 @@ import (
 	"github.com/prometheus/prometheus/tsdb/chunks"
 	"github.com/prometheus/prometheus/tsdb/record"
 	"github.com/prometheus/prometheus/tsdb/tombstones"
+	"github.com/prometheus/prometheus/tsdb/wlog"
 	"github.com/prometheus/prometheus/util/compression"
 )
 
@@ -889,6 +891,115 @@ func TestSeriesEviction_CreationPausedBeforeInsertionIsDeclaredAfterTombstone(t 
 	}
 }
 
+// TestHead_WALReplay_RecreatedSeriesKeepsSamplesBelowOldMmappedChunks verifies
+// that a replacement series keeps its samples after restart, even when their
+// timestamps are older than chunks the evicted series had written to disk.
+//
+// The test starts recreating the series after eviction removes it from Head,
+// but before its tombstone is written. Creation must wait for the tombstone,
+// so WAL replay restores the replacement as a separate series.
+//
+// If replay attached the replacement to the old series, it could incorrectly
+// skip the replacement's older samples, assuming they were already stored in
+// the old series' chunks on disk.
+func TestHead_WALReplay_RecreatedSeriesKeepsSamplesBelowOldMmappedChunks(t *testing.T) {
+	ctx := context.Background()
+	head, w := newTestHead(t, 10000, compression.None, false)
+	require.NoError(t, head.Init(0))
+	lset := labels.FromStrings("foo", "bar")
+	matcher := labels.MustNewMatcher(labels.MatchEqual, "foo", "bar")
+	querySamples := func(h *Head) []int64 {
+		q, err := NewBlockQuerier(h, math.MinInt64, math.MaxInt64)
+		require.NoError(t, err)
+		defer q.Close()
+		var timestamps []int64
+		for _, samples := range query(t, q, matcher) {
+			for _, s := range samples {
+				timestamps = append(timestamps, s.T())
+			}
+		}
+		return timestamps
+	}
+
+	// The old series: 130 samples at t=0,2,...,258, the last one a stale marker. A chunk
+	// holds about 120 samples, so the first ones end up in a chunk that is written to
+	// disk, and the last ones stay in the head chunk.
+	app := head.Appender(ctx)
+	var oldRef storage.SeriesRef
+	for i := range 130 {
+		v := float64(i)
+		if i == 129 {
+			v = math.Float64frombits(value.StaleNaN)
+		}
+		var err error
+		oldRef, err = app.Append(0, lset, int64(2*i), v)
+		require.NoError(t, err)
+	}
+	require.NoError(t, app.Commit())
+	head.mmapHeadChunks()
+	oldSeries := head.series.getByID(chunks.HeadSeriesRef(oldRef))
+	require.NotEmpty(t, oldSeries.mmappedChunks)
+	mappedMax := oldSeries.mmappedChunks[len(oldSeries.mmappedChunks)-1].maxTime
+	require.Greater(t, mappedMax, int64(151), "the replacement's sample must be older than the chunk on disk")
+	require.Less(t, mappedMax, int64(258))
+	t.Logf("the evicted series has chunks on disk up to t=%d", mappedMax)
+
+	// Evict the old series. Right after it is removed from the head, and before its
+	// tombstone is written, ingestion recreates it with a sample older than mappedMax.
+	var newRef storage.SeriesRef
+	recreated := make(chan error, 1)
+	head.series.seriesLifecycleCallback = seriesEvictionPostDeletionCallback{
+		postDeletion: func(deleted map[chunks.HeadSeriesRef]labels.Labels) {
+			if _, ok := deleted[chunks.HeadSeriesRef(oldRef)]; !ok {
+				return
+			}
+			// A series with the labels of the evicted one waits for its tombstone, so it can't be
+			// created from the goroutine that writes it.
+			go func() {
+				app := head.Appender(ctx)
+				var err error
+				newRef, err = app.Append(0, lset, 151, 42)
+				if err == nil {
+					err = app.Commit()
+				}
+				recreated <- err
+			}()
+		},
+	}
+	refs := []storage.SeriesRef{oldRef}
+	require.NoError(t, head.truncateStaleSeries(refs, 258, head.snapshotFingerprints(refs, math.MaxUint64)))
+	require.NoError(t, <-recreated)
+	require.NotEqual(t, oldRef, newRef)
+
+	app = head.Appender(ctx)
+	_, err := app.Append(newRef, lset, 301, 43)
+	require.NoError(t, err)
+	require.NoError(t, app.Commit())
+
+	// While running, both samples of the replacement are there.
+	require.Equal(t, []int64{151, 301}, querySamples(head))
+	require.NoError(t, head.Close())
+
+	// Restart.
+	w, err = wlog.New(nil, nil, w.Dir(), compression.None)
+	require.NoError(t, err)
+	opts := DefaultHeadOptions()
+	opts.ChunkRange = 10000
+	opts.ChunkDirRoot = head.opts.ChunkDirRoot
+	head, err = NewHead(nil, nil, w, nil, opts, nil)
+	require.NoError(t, err)
+	require.NoError(t, head.Init(0))
+	t.Cleanup(func() { require.NoError(t, head.Close()) })
+
+	replayed := head.series.getByHash(lset.Hash(), lset)
+	require.NotNil(t, replayed)
+	t.Logf("replacement series %d replays as series %d, which skips every sample <= %d", newRef, replayed.ref, replayed.mmMaxTime)
+
+	// Replay must restore only the replacement's samples. The old series'
+	// tombstone removes it before the replacement is declared.
+	require.Equal(t, []int64{151, 301}, querySamples(head))
+}
+
 func TestEvictedSeries_Contains(t *testing.T) {
 	refs := []storage.SeriesRef{3, 5, 6, 100, 1 << 40}
 
@@ -1180,5 +1291,155 @@ func BenchmarkTruncateSeries(b *testing.B) {
 				b.StartTimer()
 			}
 		})
+	}
+}
+
+// BenchmarkTruncateSeriesCreatorWait measures how long creating a series can take while truncateSeries evicts the
+// series of a head with a WAL. The creators call getOrCreate in a loop while the eviction runs:
+//   - "matching" creators use the labels of the series being evicted, so the ones that miss because their series
+//     was just unlinked wait for the tombstone to be written.
+//   - "unrelated" creators use labels that are not evicted, which measures the cost of the check for series that
+//     don't wait.
+//
+// The committers append and commit samples of other series in a loop, which keeps the WAL busy, so that the tombstone
+// write has to wait for the WAL lock.
+//
+// The reported metrics are, averaged over the iterations: maxwait-ms, the longest call to getOrCreate; blocked, the
+// number of calls that took at least a millisecond; and creates, the number of calls.
+func BenchmarkTruncateSeriesCreatorWait(b *testing.B) {
+	const (
+		creatorGoroutines = 4
+		blockedThreshold  = time.Millisecond
+		unrelatedSeries   = 100_000
+	)
+
+	for _, n := range []int{100_000, 500_000} {
+		for _, committers := range []int{0, 8} {
+			for _, creators := range []string{"matching", "unrelated"} {
+				b.Run(fmt.Sprintf("series=%d/committers=%d/creators=%s", n, committers, creators), func(b *testing.B) {
+					var (
+						iterations int
+						maxWaits   time.Duration
+						blocked    int
+						calls      int
+					)
+					for b.Loop() {
+						b.StopTimer()
+						h, _ := newTestHead(b, 10000, compression.None, false)
+						app := h.Appender(context.Background())
+						refs := make([]storage.SeriesRef, 0, n)
+						evicted := make([]labels.Labels, 0, n)
+						for i := range n {
+							lset := labels.FromStrings("__name__", "series", "id", fmt.Sprintf("%07d", i))
+							ref, err := app.Append(0, lset, 10, 1)
+							require.NoError(b, err)
+							refs = append(refs, ref)
+							evicted = append(evicted, lset)
+						}
+						require.NoError(b, app.Commit())
+
+						creatorLabels := evicted
+						if creators == "unrelated" {
+							creatorLabels = make([]labels.Labels, unrelatedSeries)
+							for i := range creatorLabels {
+								creatorLabels[i] = labels.FromStrings("__name__", "unrelated", "id", fmt.Sprintf("%07d", i))
+							}
+						}
+						hashes := make([]uint64, len(creatorLabels))
+						for i, lset := range creatorLabels {
+							hashes[i] = lset.Hash()
+						}
+
+						stop := make(chan struct{})
+						var running, ready sync.WaitGroup
+						for c := range committers {
+							lset := labels.FromStrings("__name__", "background", "id", strconv.Itoa(c))
+							app := h.Appender(context.Background())
+							_, err := app.Append(0, lset, 100, 1)
+							require.NoError(b, err)
+							require.NoError(b, app.Commit())
+							ready.Add(1)
+							running.Add(1)
+							go func() {
+								defer running.Done()
+								ready.Done()
+								for ts := int64(101); ; ts++ {
+									select {
+									case <-stop:
+										return
+									default:
+									}
+									app := h.Appender(context.Background())
+									if _, err := app.Append(0, lset, ts, 1); err != nil {
+										panic(err)
+									}
+									if err := app.Commit(); err != nil {
+										panic(err)
+									}
+								}
+							}()
+						}
+
+						type creatorResult struct {
+							maxWait time.Duration
+							blocked int
+							calls   int
+						}
+						results := make([]creatorResult, creatorGoroutines)
+						for g := range creatorGoroutines {
+							ready.Add(1)
+							running.Add(1)
+							go func() {
+								defer running.Done()
+								ready.Done()
+								r := rand.New(rand.NewSource(int64(g)))
+								res := &results[g]
+								for {
+									select {
+									case <-stop:
+										return
+									default:
+									}
+									i := r.Intn(len(creatorLabels))
+									start := time.Now()
+									if _, _, err := h.getOrCreate(hashes[i], creatorLabels[i], false); err != nil {
+										panic(err)
+									}
+									d := time.Since(start)
+									res.calls++
+									res.maxWait = max(res.maxWait, d)
+									if d >= blockedThreshold {
+										res.blocked++
+									}
+								}
+							}()
+						}
+						ready.Wait()
+
+						b.StartTimer()
+						n2, err := h.truncateSeries(refs, 10, func(*memSeries) bool { return true })
+						b.StopTimer()
+						close(stop)
+						running.Wait()
+						require.NoError(b, err)
+						require.Equal(b, n, n2)
+						require.NoError(b, h.Close())
+
+						iterations++
+						var iterationMax time.Duration
+						for _, res := range results {
+							iterationMax = max(iterationMax, res.maxWait)
+							blocked += res.blocked
+							calls += res.calls
+						}
+						maxWaits += iterationMax
+						b.StartTimer()
+					}
+					b.ReportMetric(float64(maxWaits)/1e6/float64(iterations), "maxwait-ms")
+					b.ReportMetric(float64(blocked)/float64(iterations), "blocked")
+					b.ReportMetric(float64(calls)/float64(iterations), "creates")
+				})
+			}
+		}
 	}
 }

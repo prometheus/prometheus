@@ -186,17 +186,19 @@ type Head struct {
 	pendingTombstones pendingTombstones
 }
 
-// pendingTombstones is the set of label hashes of the series that were evicted from the head, and whose
-// tombstones have not been written to the WAL yet.
+// pendingTombstones coordinates series eviction with the creation of replacement
+// series. Its purpose is to put the evicted series' tombstone before the
+// replacement's declaration in the WAL.
 //
-// On replay, a series record with the labels of an already replayed series is attached to that series. If a series
-// that was created after the eviction declared itself in the WAL before the tombstone of the evicted series,
-// replay would take the two for the same series: the replacement would inherit what is known of the evicted
-// series, such as the chunks it had on disk, and the tombstone would delete them both. Creating the replacement
-// only once the tombstone is in the WAL puts its declaration after the tombstone, which makes replay start it
-// from scratch.
+// Without this ordering, WAL replay can treat both references as one series
+// and apply the old tombstone to the replacement's samples.
 //
-// The zero value is ready to use. Only one eviction runs at a time, see chunkSnapshotMtx.
+// Eviction registers each label hash before removing its series from Head.
+// Creation checks for a pending tombstone under the same stripe lock used
+// for insertion.
+//
+// The zero value is ready to use. Only one eviction may run at a time;
+// Head.chunkSnapshotMtx ensures this.
 type pendingTombstones struct {
 	// active is true while the set is not empty, so that creating a series does not lock mtx when no eviction is running.
 	active atomic.Bool
@@ -206,9 +208,9 @@ type pendingTombstones struct {
 	released chan struct{} // Closed by releaseAll.
 }
 
-// add adds the hash of a series that is about to be removed from the head. It must be called before the series
-// is unlinked, with the lock of its stripe, so that creating a series with the same labels, which takes the same
-// lock, finds the hash.
+// add registers a label hash whose eviction tombstone is not in the WAL yet.
+// The caller must hold the hash's stripe lock and call add before unlinking
+// the series from Head.
 func (p *pendingTombstones) add(hash uint64) {
 	p.active.Store(true)
 	p.mtx.Lock()
@@ -220,10 +222,17 @@ func (p *pendingTombstones) add(hash uint64) {
 	p.mtx.Unlock()
 }
 
-// pending returns a channel that is closed when the tombstones are written, if a series with this hash was evicted
-// and its tombstone is not written yet, or nil. It must be called with the lock of the stripe of the hash, which
-// add holds too, so that a series is not created after the eviction unlinked its predecessor, and before the
-// tombstone of the latter is written. It is safe to call on a nil pendingTombstones.
+// pending returns a channel if hash has a pending eviction tombstone.
+// Otherwise, it returns nil, including for a nil receiver.
+//
+// Call pending with the hash's stripe lock held. If it returns nil,
+// insert the series before releasing that lock.
+//
+// If it returns a channel, release the stripe lock and any held
+// seriesCreationMtx, then wait for the channel to close.
+// Once it closes, repeat the series lookup and pending check.
+//
+// The channel closes after the WAL write attempt finishes, even if it fails.
 func (p *pendingTombstones) pending(hash uint64) <-chan struct{} {
 	if p == nil || !p.active.Load() {
 		return nil
@@ -236,7 +245,14 @@ func (p *pendingTombstones) pending(hash uint64) <-chan struct{} {
 	return p.released
 }
 
-// releaseAll is called when the tombstones are written, or if writing them failed.
+// releaseAll clears the current eviction's pending hashes and wakes all
+// creators waiting for it.
+//
+// Call it after the tombstone WAL write attempt finishes, even if writing
+// failed, so creators are not left blocked. The next eviction must not start
+// until releaseAll returns.
+//
+// It is safe to call when no hashes are pending.
 func (p *pendingTombstones) releaseAll() {
 	p.mtx.Lock()
 	released := p.released
@@ -1637,11 +1653,10 @@ func (h *Head) truncateSeries(seriesRefs []storage.SeriesRef, maxt int64, should
 	// Record the deleted series refs in the WAL so that we can ignore them during replay.
 	if h.wal != nil {
 		stones := make([]tombstones.Stone, 0, len(seriesRefs))
+		// The encoder only reads the interval, so all the stones can share it.
+		intervals := tombstones.Intervals{{Mint: math.MinInt64, Maxt: math.MaxInt64}}
 		for ref := range deleted {
-			stones = append(stones, tombstones.Stone{
-				Ref:       ref,
-				Intervals: tombstones.Intervals{{Mint: math.MinInt64, Maxt: math.MaxInt64}},
-			})
+			stones = append(stones, tombstones.Stone{Ref: ref, Intervals: intervals})
 		}
 		var enc record.Encoder
 		if err := h.wal.Log(enc.Tombstones(stones, nil)); err != nil {
