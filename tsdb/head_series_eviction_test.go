@@ -22,13 +22,13 @@ import (
 	"slices"
 	"strconv"
 	"sync"
-	"sync/atomic"
 	"testing"
 	"testing/synctest"
 	"time"
 
 	prom_testutil "github.com/prometheus/client_golang/prometheus/testutil"
 	"github.com/stretchr/testify/require"
+	"go.uber.org/atomic"
 
 	"github.com/prometheus/prometheus/model/exemplar"
 	"github.com/prometheus/prometheus/model/labels"
@@ -713,7 +713,7 @@ func TestSeriesEviction_RecreationIsDeclaredAfterTombstone(t *testing.T) {
 			require.Nil(t, reopened.head.series.getByID(chunks.HeadSeriesRef(oldRef)))
 			newSeries := reopened.head.series.getByID(chunks.HeadSeriesRef(newRef))
 			require.NotNil(t, newSeries)
-			require.Equal(t, lset, newSeries.labels())
+			require.True(t, labels.Equal(lset, newSeries.labels()))
 			headQuerier, err := NewBlockQuerier(reopened.Head(), math.MinInt64, math.MaxInt64)
 			require.NoError(t, err)
 			require.Equal(t, []chunks.Sample{sample{t: 400, f: 42}, sample{t: 500, f: 43}}, query(t, headQuerier, evictionTestMatcher)[lset.String()])
@@ -1362,9 +1362,7 @@ func BenchmarkTruncateSeriesCreatorWait(b *testing.B) {
 							require.NoError(b, err)
 							require.NoError(b, app.Commit())
 							ready.Add(1)
-							running.Add(1)
-							go func() {
-								defer running.Done()
+							running.Go(func() {
 								ready.Done()
 								for {
 									select {
@@ -1380,7 +1378,7 @@ func BenchmarkTruncateSeriesCreatorWait(b *testing.B) {
 										panic(err)
 									}
 								}
-							}()
+							})
 						}
 
 						type creatorResult struct {
@@ -1391,9 +1389,7 @@ func BenchmarkTruncateSeriesCreatorWait(b *testing.B) {
 						results := make([]creatorResult, creatorGoroutines)
 						for g := range creatorGoroutines {
 							ready.Add(1)
-							running.Add(1)
-							go func() {
-								defer running.Done()
+							running.Go(func() {
 								ready.Done()
 								r := rand.New(rand.NewSource(int64(g)))
 								res := &results[g]
@@ -1415,7 +1411,7 @@ func BenchmarkTruncateSeriesCreatorWait(b *testing.B) {
 										res.blocked++
 									}
 								}
-							}()
+							})
 						}
 						ready.Wait()
 
