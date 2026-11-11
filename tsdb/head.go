@@ -208,6 +208,15 @@ type pendingTombstones struct {
 	released chan struct{} // Closed by releaseAll.
 }
 
+// reserve prepares the set for up to n hashes, so that adding them doesn't grow it. Call it before the first add
+// of an eviction, with n the number of series that the eviction may remove.
+func (p *pendingTombstones) reserve(n int) {
+	p.mtx.Lock()
+	p.hashes = make(map[uint64]struct{}, n)
+	p.released = make(chan struct{})
+	p.mtx.Unlock()
+}
+
 // add registers a label hash whose eviction tombstone is not in the WAL yet.
 // The caller must hold the hash's stripe lock and call add before unlinking
 // the series from Head.
@@ -1647,6 +1656,9 @@ func (h *Head) truncateSeries(seriesRefs []storage.SeriesRef, maxt int64, should
 	// Series with the labels of the removed ones can be created again once their tombstones are written, or if
 	// writing them fails.
 	defer h.pendingTombstones.releaseAll()
+	if h.wal != nil {
+		h.pendingTombstones.reserve(len(seriesRefs))
+	}
 
 	deleted := h.gcSeries(seriesRefs, maxt, shouldEvict)
 
