@@ -1352,6 +1352,9 @@ func BenchmarkTruncateSeriesCreatorWait(b *testing.B) {
 
 						stop := make(chan struct{})
 						var running, ready sync.WaitGroup
+						// The committers share the clock, so that none of them falls out of the head's bounds.
+						var clock atomic.Int64
+						clock.Store(100)
 						for c := range committers {
 							lset := labels.FromStrings("__name__", "background", "id", strconv.Itoa(c))
 							app := h.Appender(context.Background())
@@ -1363,14 +1366,14 @@ func BenchmarkTruncateSeriesCreatorWait(b *testing.B) {
 							go func() {
 								defer running.Done()
 								ready.Done()
-								for ts := int64(101); ; ts++ {
+								for {
 									select {
 									case <-stop:
 										return
 									default:
 									}
 									app := h.Appender(context.Background())
-									if _, err := app.Append(0, lset, ts, 1); err != nil {
+									if _, err := app.Append(0, lset, clock.Add(1), 1); err != nil {
 										panic(err)
 									}
 									if err := app.Commit(); err != nil {
