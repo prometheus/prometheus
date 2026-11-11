@@ -175,6 +175,10 @@ type Head struct {
 	// the open readers, and before it removes the series. Tests use it to open a reader at the point
 	// where a reader would otherwise not be waited for.
 	testAfterWaitingForReadersToEvictSeries func()
+	// TODO: find a better solution than this test hook in production code.
+	// testBeforeDeletingPostings is invoked by gcSeries after it unlinked the series, and before it deletes
+	// them from the postings, which is slow. Tests use it to pause the eviction there.
+	testBeforeDeletingPostings func()
 
 	// evictingSeries is the set of series that truncateSeries is removing, or nil if it is not running.
 	// The readers of queries opened while it is set skip the chunks of those series that are removed
@@ -1654,26 +1658,32 @@ func (h *Head) truncateSeries(seriesRefs []storage.SeriesRef, maxt int64, should
 	}
 
 	// Series with the labels of the removed ones can be created again once their tombstones are written, or if
-	// writing them fails.
+	// writing them fails. They are released right after the series are unlinked, see below, and the deferred call
+	// makes sure that they are also released if this function exits before.
 	defer h.pendingTombstones.releaseAll()
 	if h.wal != nil {
 		h.pendingTombstones.reserve(len(seriesRefs))
 	}
 
-	deleted := h.gcSeries(seriesRefs, maxt, shouldEvict)
-
-	// Record the deleted series refs in the WAL so that we can ignore them during replay.
-	if h.wal != nil {
-		stones := make([]tombstones.Stone, 0, len(seriesRefs))
-		// The encoder only reads the interval, so all the stones can share it.
-		intervals := tombstones.Intervals{{Mint: math.MinInt64, Maxt: math.MaxInt64}}
-		for ref := range deleted {
-			stones = append(stones, tombstones.Stone{Ref: ref, Intervals: intervals})
+	// Record the deleted series refs in the WAL so that we can ignore them during replay. This is done as soon as
+	// the series are unlinked, before gcSeries deletes them from the postings, which takes long: the creation of
+	// the series with the same labels waits until the tombstones are written.
+	var logErr error
+	deleted := h.gcSeries(seriesRefs, maxt, shouldEvict, func(deleted map[storage.SeriesRef]struct{}) {
+		if h.wal != nil {
+			stones := make([]tombstones.Stone, 0, len(seriesRefs))
+			// The encoder only reads the interval, so all the stones can share it.
+			intervals := tombstones.Intervals{{Mint: math.MinInt64, Maxt: math.MaxInt64}}
+			for ref := range deleted {
+				stones = append(stones, tombstones.Stone{Ref: ref, Intervals: intervals})
+			}
+			var enc record.Encoder
+			logErr = h.wal.Log(enc.Tombstones(stones, nil))
 		}
-		var enc record.Encoder
-		if err := h.wal.Log(enc.Tombstones(stones, nil)); err != nil {
-			return 0, err
-		}
+		h.pendingTombstones.releaseAll()
+	})
+	if logErr != nil {
+		return 0, logErr
 	}
 	return len(deleted), nil
 }
@@ -2823,8 +2833,11 @@ func (s *stripeSeries) gc(mint int64, minOOOMmapRef chunks.ChunkDiskMapperRef) (
 // Series whose exemplars still need replay retain their identity, but their persisted
 // sample chunks are released if shouldEvict returns true.
 //
+// If afterUnlink is not nil, it is called with the series that got deleted once they are unlinked from the head, and
+// before they are deleted from the postings, which can take a long time because it yields to the readers.
+//
 // The returned references are the series that got deleted.
-func (h *Head) gcSeries(seriesRefs []storage.SeriesRef, maxt int64, shouldEvict func(*memSeries) bool) map[storage.SeriesRef]struct{} {
+func (h *Head) gcSeries(seriesRefs []storage.SeriesRef, maxt int64, shouldEvict func(*memSeries) bool, afterUnlink func(deleted map[storage.SeriesRef]struct{})) map[storage.SeriesRef]struct{} {
 	minValidTime := h.minValidTime.Load()
 	evicting := h.evictingSeries.Load()
 	var protectedChunksRemoved int
@@ -2860,6 +2873,9 @@ func (h *Head) gcSeries(seriesRefs []storage.SeriesRef, maxt int64, shouldEvict 
 		// Prevent deletion of the series identity while its exemplar can still be replayed.
 		return false
 	})
+	if afterUnlink != nil {
+		afterUnlink(deleted)
+	}
 	seriesRemoved := len(deleted)
 	chunksRemoved += protectedChunksRemoved
 
@@ -2870,6 +2886,10 @@ func (h *Head) gcSeries(seriesRefs []storage.SeriesRef, maxt int64, shouldEvict 
 	h.numStaleSeries.Sub(uint64(staleSeriesDeleted))
 	h.numNativeHistogramSeries.Sub(uint64(histogramSeriesDeleted))
 	h.numNativeHistogramBuckets.Sub(uint64(histogramBucketsDeleted))
+
+	if h.testBeforeDeletingPostings != nil {
+		h.testBeforeDeletingPostings()
+	}
 
 	// Remove deleted series IDs from the postings lists.
 	h.postings.Delete(deleted, affected)

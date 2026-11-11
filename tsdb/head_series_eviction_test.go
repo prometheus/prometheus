@@ -1000,6 +1000,100 @@ func TestHead_WALReplay_RecreatedSeriesKeepsSamplesBelowOldMmappedChunks(t *test
 	require.Equal(t, []int64{151, 301}, querySamples(head))
 }
 
+// TestSeriesEviction_CreatorsAreReleasedBeforePostingsAreDeleted verifies that the creation of a series with the
+// labels of an evicted series waits until the tombstones are written, and not until the eviction deletes the series
+// from the postings, which takes long because it yields to the readers. The tombstones are in the WAL before the
+// declaration of the new series.
+func TestSeriesEviction_CreatorsAreReleasedBeforePostingsAreDeleted(t *testing.T) {
+	const timeout = 10 * time.Second
+
+	for name, evict := range evictionTestEvictions() {
+		t.Run(name, func(t *testing.T) {
+			testDB := newSeriesEvictionTestDB(t)
+			db := testDB.db
+			oldRef := testDB.evictedRefs[0]
+			lset := evictionTestLabels(0)
+
+			// Pause the eviction after it unlinked the series, and wrote the tombstones, and before it deletes the
+			// postings.
+			inPostings, finish := make(chan struct{}), make(chan struct{})
+			var pausedOnce, finishOnce sync.Once
+			resumeEviction := func() { finishOnce.Do(func() { close(finish) }) }
+			db.head.testBeforeDeletingPostings = func() {
+				pausedOnce.Do(func() { close(inPostings) })
+				<-finish
+			}
+			evicted := make(chan error, 1)
+			evictionDone := make(chan struct{})
+			go func() {
+				defer close(evictionDone)
+				evicted <- evict(db, testDB.evictedRefs)
+			}()
+			t.Cleanup(func() {
+				resumeEviction()
+				select {
+				case <-evictionDone:
+				case <-time.After(timeout):
+					t.Error("the eviction did not finish")
+				}
+			})
+			select {
+			case <-inPostings:
+			case err := <-evicted:
+				t.Fatalf("the eviction returned before it deleted the postings: %v", err)
+			case <-time.After(timeout):
+				t.Fatal("the eviction did not reach the deletion of the postings")
+			}
+			require.False(t, db.head.pendingTombstones.active.Load(), "the creators must be released")
+
+			// The old series is unlinked, so this creates a new one. It must not wait for the eviction to finish.
+			var newRef storage.SeriesRef
+			created := make(chan error, 1)
+			go func() {
+				app := db.Appender(t.Context())
+				var err error
+				newRef, err = app.Append(0, lset, 400, 42)
+				if err == nil {
+					err = app.Commit()
+				}
+				created <- err
+			}()
+			select {
+			case err := <-created:
+				require.NoError(t, err)
+			case <-time.After(timeout):
+				require.FailNow(t, "the creator was not released while the eviction deletes the postings")
+			}
+			require.NotEqual(t, oldRef, newRef)
+
+			resumeEviction()
+			require.NoError(t, <-evicted)
+			require.NoError(t, db.Close())
+
+			stonePosition, seriesPosition := -1, -1
+			for i, entry := range readTestWAL(t, filepath.Join(db.Dir(), "wal")) {
+				switch records := entry.(type) {
+				case []tombstones.Stone:
+					for _, stone := range records {
+						if stone.Ref == oldRef {
+							stonePosition = i
+						}
+					}
+				case []record.RefSeries:
+					for _, series := range records {
+						if series.Ref == chunks.HeadSeriesRef(newRef) {
+							seriesPosition = i
+						}
+					}
+				}
+			}
+			require.NotEqual(t, -1, stonePosition)
+			require.NotEqual(t, -1, seriesPosition)
+			require.Greater(t, seriesPosition, stonePosition, "the declaration of the new series must follow the tombstone of the old one")
+		})
+	}
+}
+
 func TestEvictedSeries_Contains(t *testing.T) {
 	refs := []storage.SeriesRef{3, 5, 6, 100, 1 << 40}
 

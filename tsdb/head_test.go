@@ -6124,7 +6124,7 @@ func TestHead_mmapHeadChunks(t *testing.T) {
 		require.NotNil(t, chk)
 
 		// Retire the series directly to test the saved chunk independently of reader waiting.
-		deleted := h.gcSeries([]storage.SeriesRef{ref}, 100, func(*memSeries) bool { return true })
+		deleted := h.gcSeries([]storage.SeriesRef{ref}, 100, func(*memSeries) bool { return true }, nil)
 		require.Contains(t, deleted, ref)
 		require.Zero(t, h.NumSeries())
 		require.Nil(t, h.series.getByID(chunks.HeadSeriesRef(ref)))
@@ -6167,7 +6167,7 @@ func TestHead_mmapHeadChunks(t *testing.T) {
 		stripe := h.series.refStripe(series.ref)
 		require.Equal(t, int32(1), h.series.mmapReady[stripe].Load())
 
-		deleted := h.gcSeries([]storage.SeriesRef{ref}, math.MaxInt64, func(*memSeries) bool { return true })
+		deleted := h.gcSeries([]storage.SeriesRef{ref}, math.MaxInt64, func(*memSeries) bool { return true }, nil)
 		require.Contains(t, deleted, ref)
 		require.Nil(t, h.series.getByID(chunks.HeadSeriesRef(ref)))
 		require.True(t, series.isGCed())
