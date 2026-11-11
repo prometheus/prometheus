@@ -1,0 +1,34 @@
+# Unit tests that reuse expected labels and annotations through YAML anchors,
+# overriding some of the merged keys.
+rule_files:
+  - rules.yml
+
+evaluation_interval: 1m
+
+tests:
+  - interval: 1m
+    input_series:
+      - series: 'up{job="prometheus", instance="localhost:9090"}'
+        values: "0+0x1440"
+      - series: 'up{job="node", instance="localhost:9100"}'
+        values: "0+0x1440"
+
+    alert_rule_test:
+      - eval_time: 1d
+        alertname: InstanceDown
+        exp_alerts:
+          - exp_labels: &instance-down-labels
+              severity: page
+              instance: localhost:9090
+              job: prometheus
+            exp_annotations: &instance-down-annotations
+              summary: "Instance localhost:9090 down"
+              description: "localhost:9090 of job prometheus has been down for more than 5 minutes."
+          - exp_labels:
+              <<: *instance-down-labels
+              instance: localhost:9100
+              job: node
+            exp_annotations:
+              <<: *instance-down-annotations
+              summary: "Instance localhost:9100 down"
+              description: "localhost:9100 of job node has been down for more than 5 minutes."

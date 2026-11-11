@@ -18,7 +18,9 @@ import (
 	"encoding/xml"
 	"fmt"
 	"testing"
+	"time"
 
+	"github.com/prometheus/common/model"
 	"github.com/stretchr/testify/require"
 
 	"github.com/prometheus/prometheus/promql/parser"
@@ -155,6 +157,13 @@ func TestRulesUnitTest(t *testing.T) {
 			},
 			queryOpts: promqltest.LazyLoaderOpts{
 				EnableAtModifier: true,
+			},
+			want: 0,
+		},
+		{
+			name: "YAML merge keys overriding anchored values",
+			args: args{
+				files: []string{"./testdata/yaml-merge-test.yml"},
 			},
 			want: 0,
 		},
@@ -298,6 +307,75 @@ func TestRulesUnitTestRun(t *testing.T) {
 			t.Parallel()
 			got := RulesUnitTest(tt.queryOpts, parser.NewParser(parser.Options{}), tt.args.run, false, false, tt.ignoreUnknownFields, tt.args.files...)
 			require.Equal(t, tt.want, got)
+		})
+	}
+}
+
+func TestParseUnitTestFile(t *testing.T) {
+	t.Parallel()
+	for _, tc := range []struct {
+		name    string
+		input   string
+		wantErr string
+		check   func(*testing.T, unitTestFile)
+	}{
+		{
+			name:  "empty file",
+			input: "",
+		},
+		{
+			name: "merge key overrides anchored labels",
+			input: `
+tests:
+  - interval: 1m
+    alert_rule_test:
+      - eval_time: 5m
+        alertname: Foo
+        exp_alerts:
+          - exp_labels: &labels
+              job: a
+              severity: page
+          - exp_labels:
+              <<: *labels
+              job: b
+`,
+			check: func(t *testing.T, utf unitTestFile) {
+				require.Equal(t, model.Duration(time.Minute), utf.Tests[0].Interval)
+				alerts := utf.Tests[0].AlertRuleTests[0].ExpAlerts
+				require.Len(t, alerts, 2)
+				require.Equal(t, map[string]string{"job": "a", "severity": "page"}, alerts[0].ExpLabels)
+				require.Equal(t, map[string]string{"job": "b", "severity": "page"}, alerts[1].ExpLabels)
+			},
+		},
+		{
+			name: "unknown field",
+			input: `
+tests:
+  - intervall: 1m
+`,
+			wantErr: "field intervall not found",
+		},
+		{
+			name: "duplicate key",
+			input: `
+tests:
+  - interval: 1m
+    interval: 2m
+`,
+			wantErr: `mapping key "interval" already defined`,
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			utf, err := parseUnitTestFile([]byte(tc.input))
+			if tc.wantErr != "" {
+				require.ErrorContains(t, err, tc.wantErr)
+				return
+			}
+			require.NoError(t, err)
+			if tc.check != nil {
+				tc.check(t, utf)
+			}
 		})
 	}
 }

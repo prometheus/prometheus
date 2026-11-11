@@ -175,6 +175,20 @@ exp_annotations:
   [ <labelname>: <string> ]
 ```
 
+To avoid repeating the same labels and annotations across expected alerts, you
+can use YAML anchors and merge keys. Keys set next to a merge key override the
+ones coming from the anchor:
+
+``` yaml
+exp_alerts:
+  - exp_labels: &labels
+      severity: page
+      job: prometheus
+  - exp_labels:
+      <<: *labels
+      job: node
+```
+
 ### `<promql_test_case>`
 
 ```yaml

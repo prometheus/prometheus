@@ -14,6 +14,7 @@
 package main
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
@@ -33,7 +34,7 @@ import (
 	"github.com/nsf/jsondiff"
 	"github.com/prometheus/common/model"
 	"github.com/prometheus/common/promslog"
-	"go.yaml.in/yaml/v2"
+	"go.yaml.in/yaml/v3"
 
 	"github.com/prometheus/prometheus/model/histogram"
 	"github.com/prometheus/prometheus/model/labels"
@@ -91,8 +92,8 @@ func ruleUnitTest(filename string, queryOpts promqltest.LazyLoaderOpts, p parser
 		return []error{err}
 	}
 
-	var unitTestInp unitTestFile
-	if err := yaml.UnmarshalStrict(b, &unitTestInp); err != nil {
+	unitTestInp, err := parseUnitTestFile(b)
+	if err != nil {
 		ts.Abort(err)
 		return []error{err}
 	}
@@ -188,6 +189,19 @@ func resolveAndGlobFilepaths(baseDir string, utf *unitTestFile) error {
 	}
 	utf.RuleFiles = globbedFiles
 	return nil
+}
+
+// parseUnitTestFile decodes a rule unit test file. Unknown fields are still
+// rejected, but yaml.v3 is used so that merge keys (<<: *anchor) can override
+// keys coming from the anchor, which yaml.v2's strict mode refuses.
+func parseUnitTestFile(b []byte) (unitTestFile, error) {
+	var utf unitTestFile
+	dec := yaml.NewDecoder(bytes.NewReader(b))
+	dec.KnownFields(true)
+	if err := dec.Decode(&utf); err != nil && !errors.Is(err, io.EOF) {
+		return unitTestFile{}, err
+	}
+	return utf, nil
 }
 
 // testStartTimestamp wraps time.Time to support custom YAML unmarshaling.
