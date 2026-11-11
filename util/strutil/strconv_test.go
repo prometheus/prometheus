@@ -226,3 +226,24 @@ func TestSanitizeFullLabelName(t *testing.T) {
 		})
 	}
 }
+
+func BenchmarkSanitizeFullLabelName(b *testing.B) {
+	cases := []struct {
+		name  string
+		input string
+	}{
+		{"valid_short", "http_requests_total"},
+		{"valid_long", "container_cpu_usage_seconds_total_with_extended_dimensions_and_namespaces"},
+		{"needs_sanitizing_short", "123-invalid.metric.name"},
+		{"needs_sanitizing_long", "http-service.cluster.local:8080/metrics@prod-us-west-2/system-metric"},
+	}
+
+	for _, bc := range cases {
+		b.Run(bc.name, func(b *testing.B) {
+			b.ReportAllocs()
+			for range b.N {
+				_ = SanitizeFullLabelName(bc.input)
+			}
+		})
+	}
+}
