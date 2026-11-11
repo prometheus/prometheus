@@ -101,21 +101,9 @@ func (b *bstream) writeByte(byt byte) {
 
 // writeBits writes the nbits right-most bits of u to the stream
 // in left-to-right order.
-// TODO: Once XOR2 stabilizes, replace writeBits with the writeBitsFast implementation and remove writeBitsFast.
+// TODO: Once XOR2 stabilizes, move the writeBitsFast implementation here and remove writeBitsFast.
 func (b *bstream) writeBits(u uint64, nbits int) {
-	u <<= 64 - uint(nbits)
-	for nbits >= 8 {
-		byt := byte(u >> 56)
-		b.writeByte(byt)
-		u <<= 8
-		nbits -= 8
-	}
-
-	for nbits > 0 {
-		b.writeBit((u >> 63) == 1)
-		u <<= 1
-		nbits--
-	}
+	b.writeBitsFast(u, nbits)
 }
 
 // writeBitsFast is like writeBits but handles the partial last byte inline to
