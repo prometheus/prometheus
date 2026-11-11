@@ -178,6 +178,94 @@ func TestChunkDiskMapper_WriteChunk_Chunk_IterateChunks(t *testing.T) {
 	require.Len(t, expectedData, idx)
 }
 
+// faultyByteSlice simulates a memory-mapped region whose backing file has been
+// truncated or become unreadable under the mapping: Len() still reports the
+// original mapped size (so the in-code bounds checks pass), but touching the
+// pages via Range() faults. On a real mmap this surfaces as SIGBUS, which the
+// Go runtime delivers as a recoverable runtime error when
+// debug.SetPanicOnFault(true) is in effect.
+type faultyByteSlice struct {
+	data     []byte
+	faultAt  int // byte offset at or beyond which Range() faults
+	panicVal any // value to panic with (mimics the runtime fault error)
+}
+
+func (b faultyByteSlice) Len() int {
+	return len(b.data)
+}
+
+func (b faultyByteSlice) Range(start, end int) []byte {
+	if end > b.faultAt {
+		panic(b.panicVal)
+	}
+	return b.data[start:end]
+}
+
+// TestChunkDiskMapper_Chunk_FaultReturnsCorruptionErr verifies that a fault
+// while dereferencing the memory-mapped head chunk file (truncated or
+// unreadable backing file) is converted into a *CorruptionErr instead of
+// crashing the process with a fatal runtime fault.
+func TestChunkDiskMapper_Chunk_FaultReturnsCorruptionErr(t *testing.T) {
+	t.Parallel()
+
+	for _, tc := range []struct {
+		name     string
+		panicVal any
+	}{
+		// An error value, as a real SIGBUS/SIGSEGV fault is delivered by the
+		// runtime (runtime.Error implements error).
+		{name: "error panic", panicVal: errors.New("simulated runtime fault")},
+		// A plain string panic, to exercise the non-error branch of recover.
+		{name: "string panic", panicVal: "simulated mmap fault"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			hrw := createChunkDiskMapper(t, "")
+			dir := hrw.dir.Name()
+
+			// Write a valid chunk and keep its reference.
+			_, chkRef, _, _, _, _ := createChunk(t, 0, hrw)
+
+			// Close and reopen so the chunk is served from the memory-mapped
+			// file rather than the in-memory buffer or the write queue; this is
+			// the path the fault-recovery guards.
+			require.NoError(t, hrw.Close())
+			hrw = createChunkDiskMapper(t, dir)
+			defer func() {
+				require.NoError(t, hrw.Close())
+			}()
+			require.NoError(t, hrw.IterateAllChunks(func(HeadSeriesRef, ChunkDiskMapperRef, int64, int64, uint16, chunkenc.Encoding, bool) error {
+				return nil
+			}))
+
+			sgmIndex, _ := chkRef.Unpack()
+			require.Contains(t, hrw.mmappedChunkFiles, sgmIndex)
+
+			// It is readable normally from the mmap.
+			_, err := hrw.Chunk(chkRef)
+			require.NoError(t, err)
+
+			// Replace the segment's byte slice with one that faults when the
+			// chunk-data region is touched, while still reporting the original
+			// length so the in-code bounds checks are satisfied.
+			orig := hrw.mmappedChunkFiles[sgmIndex].byteSlice
+			hrw.mmappedChunkFiles[sgmIndex].byteSlice = faultyByteSlice{
+				data:     orig.Range(0, orig.Len()),
+				faultAt:  HeadChunkFileHeaderSize, // fault once past the file header
+				panicVal: tc.panicVal,
+			}
+
+			// The read must not crash the process; it must return a CorruptionErr.
+			chunk, err := hrw.Chunk(chkRef)
+			require.Nil(t, chunk)
+			require.Error(t, err)
+
+			var corrErr *CorruptionErr
+			require.ErrorAs(t, err, &corrErr, "expected a *CorruptionErr, got %T: %v", err, err)
+			require.Equal(t, sgmIndex, corrErr.FileIndex)
+		})
+	}
+}
+
 // TestChunkDiskMapper_Truncate tests
 // * If truncation is happening properly based on the time passed.
 // * The active file is not deleted even if the passed time makes it eligible to be deleted.
