@@ -142,3 +142,38 @@ func TestDigitalOceanSDRefresh(t *testing.T) {
 		})
 	}
 }
+
+func TestDigitalOceanSDRefreshWithTagFilter(t *testing.T) {
+	t.Parallel()
+	mock := NewSDMock(t)
+	mock.Setup()
+	t.Cleanup(mock.ShutdownServer)
+	mock.HandleDropletsListByTag("monitor")
+
+	cfg := DefaultSDConfig
+	cfg.HTTPClientConfig.BearerToken = tokenID
+	cfg.TagName = "monitor"
+
+	reg := prometheus.NewRegistry()
+	refreshMetrics := discovery.NewRefreshMetrics(reg)
+	metrics := cfg.NewDiscovererMetrics(reg, refreshMetrics)
+	require.NoError(t, metrics.Register())
+	defer metrics.Unregister()
+	defer refreshMetrics.Unregister()
+
+	d, err := newRefresher(&cfg)
+	require.NoError(t, err)
+	endpoint, err := url.Parse(mock.Endpoint())
+	require.NoError(t, err)
+	d.(*dropletsDiscovery).client.BaseURL = endpoint
+
+	ctx := context.Background()
+	tgs, err := d.refresh(ctx)
+	require.NoError(t, err)
+
+	require.Len(t, tgs, 1)
+	tg := tgs[0]
+	require.Len(t, tg.Targets, 1)
+	require.Equal(t, model.LabelValue("3164494"), tg.Targets[0]["__meta_digitalocean_droplet_id"])
+	require.Equal(t, model.LabelValue("prometheus"), tg.Targets[0]["__meta_digitalocean_droplet_name"])
+}

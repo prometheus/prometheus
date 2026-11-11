@@ -1718,6 +1718,10 @@ The following meta labels are available on targets during [relabeling](#relabel_
 # The time after which the targets are refreshed.
 [ refresh_interval: <duration> | default = 60s ]
 
+# Restrict discovery to droplets carrying this tag. See https://docs.digitalocean.com/products/droplets/how-to/tag/ for more details.
+# Only used when role is droplets.
+[ tag_name: <string> ]
+
 # HTTP client settings, including authentication methods (such as basic auth and
 # authorization), proxy configurations, TLS options, custom HTTP headers, etc.
 [ <http_config> ]

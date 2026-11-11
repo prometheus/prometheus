@@ -107,6 +107,10 @@ type SDConfig struct {
 	Port            int            `yaml:"port"`
 	Role            Role           `yaml:"role"`
 
+	// TagName restricts the droplets role to droplets carrying this tag.
+	// Only used when Role is DropletsRole.
+	TagName string `yaml:"tag_name,omitempty"`
+
 	// Internal field for testing.
 	HTTPClient *http.Client
 }
@@ -191,7 +195,7 @@ func newRefresher(conf *SDConfig) (refresher, error) {
 
 	switch conf.Role {
 	case DropletsRole:
-		return &dropletsDiscovery{client: client, port: conf.Port}, nil
+		return &dropletsDiscovery{client: client, port: conf.Port, tagName: conf.TagName}, nil
 	case DatabasesRole:
 		return &databasesDiscovery{client: client, port: conf.Port}, nil
 	}
@@ -199,8 +203,9 @@ func newRefresher(conf *SDConfig) (refresher, error) {
 }
 
 type dropletsDiscovery struct {
-	client *godo.Client
-	port   int
+	client  *godo.Client
+	port    int
+	tagName string
 }
 
 func (d *dropletsDiscovery) refresh(ctx context.Context) ([]*targetgroup.Group, error) {
@@ -272,7 +277,16 @@ func (d *dropletsDiscovery) listDroplets(ctx context.Context) ([]godo.Droplet, e
 		opts     = &godo.ListOptions{}
 	)
 	for {
-		paginatedDroplets, resp, err := d.client.Droplets.List(ctx, opts)
+		var (
+			paginatedDroplets []godo.Droplet
+			resp              *godo.Response
+			err               error
+		)
+		if d.tagName != "" {
+			paginatedDroplets, resp, err = d.client.Droplets.ListByTag(ctx, d.tagName, opts)
+		} else {
+			paginatedDroplets, resp, err = d.client.Droplets.List(ctx, opts)
+		}
 		if err != nil {
 			return nil, fmt.Errorf("error while listing droplets page %d: %w", opts.Page, err)
 		}
