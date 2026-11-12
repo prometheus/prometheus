@@ -450,6 +450,7 @@ type headMetrics struct {
 	staleSeries               prometheus.GaugeFunc
 	nativeHistogramSeries     prometheus.GaugeFunc
 	nativeHistogramBuckets    prometheus.GaugeFunc
+	labelPairs                prometheus.GaugeFunc
 	seriesCreated             prometheus.Counter
 	seriesRemoved             prometheus.Counter
 	seriesNotFound            prometheus.Counter
@@ -520,6 +521,12 @@ func newHeadMetrics(h *Head, r prometheus.Registerer) *headMetrics {
 			Help: "Number of positive and negative bucket entries in the most recent in-order native histogram sample of each series, including entries carried by staleness markers.",
 		}, func() float64 {
 			return float64(h.NumNativeHistogramBuckets())
+		}),
+		labelPairs: prometheus.NewGaugeFunc(prometheus.GaugeOpts{
+			Name: "prometheus_tsdb_head_label_pairs",
+			Help: "Number of distinct label name and value pairs in the head block.",
+		}, func() float64 {
+			return float64(h.NumLabelPairs())
 		}),
 		seriesCreated: prometheus.NewCounter(prometheus.CounterOpts{
 			Name: "prometheus_tsdb_head_series_created_total",
@@ -663,6 +670,7 @@ func newHeadMetrics(h *Head, r prometheus.Registerer) *headMetrics {
 			m.staleSeries,
 			m.nativeHistogramSeries,
 			m.nativeHistogramBuckets,
+			m.labelPairs,
 			m.chunks,
 			m.chunksCreated,
 			m.chunksRemoved,
@@ -2196,6 +2204,12 @@ func (h *Head) updateStaleSeriesMetricOnAppend(wasStale, isStale bool) {
 	case wasStale && !isStale:
 		h.numStaleSeries.Dec()
 	}
+}
+
+// NumLabelPairs returns the number of distinct label name and value pairs in
+// the head. It's the same number as numLabelPairs in the TSDB status API.
+func (h *Head) NumLabelPairs() uint64 {
+	return uint64(h.postings.NumLabelPairs())
 }
 
 // NumNativeHistogramSeries returns the number of series in the head whose most

@@ -245,6 +245,23 @@ func (p *MemPostings) Stats(label string, limit int, labelSizeFunc func(string, 
 	}
 }
 
+// NumLabelPairs returns the number of distinct label name and value pairs,
+// not counting the special all-postings key. It only walks the label names,
+// so it's much cheaper than Stats.
+func (p *MemPostings) NumLabelPairs() int {
+	p.mtx.RLock()
+	defer p.mtx.RUnlock()
+
+	n := 0
+	for name, values := range p.m {
+		if name == allPostingsKey.Name {
+			continue
+		}
+		n += len(values)
+	}
+	return n
+}
+
 // All returns a postings list over all documents ever added.
 func (p *MemPostings) All() Postings {
 	return p.Postings(context.Background(), allPostingsKey.Name, allPostingsKey.Value)
