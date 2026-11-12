@@ -51,11 +51,11 @@ func TestExprString(t *testing.T) {
 		},
 		{
 			in:  `sum by("foo.bar") (task:errors:rate10s{job="s"})`,
-			out: `sum by (foo.bar) (task:errors:rate10s{job="s"})`,
+			out: `sum by ("foo.bar") (task:errors:rate10s{job="s"})`,
 		},
 		{
 			in:  `sum without("foo.bar") (task:errors:rate10s{job="s"})`,
-			out: `sum without (foo.bar) (task:errors:rate10s{job="s"})`,
+			out: `sum without ("foo.bar") (task:errors:rate10s{job="s"})`,
 		},
 		{
 			in: `topk(5, task:errors:rate10s{job="s"})`,
@@ -269,7 +269,7 @@ func TestExprString(t *testing.T) {
 		},
 		{
 			in:  `{"a.b"="c"}`,
-			out: `{a.b="c"}`,
+			out: `{"a.b"="c"}`,
 		},
 		{
 			in: `{"0"="1"}`,
@@ -333,6 +333,18 @@ func TestExprString(t *testing.T) {
 			in: "foo[(5m):(1m)]",
 		},
 		{
+			in: "foo offset (1s1ms)",
+		},
+		{
+			in: "foo offset (-1s1ms)",
+		},
+		{
+			in: "foo[(1s3ms)]",
+		},
+		{
+			in: "foo offset (11574d1h46m40s5ms)",
+		},
+		{
 			in:  "foo offset +min_of(10s, 20s)",
 			out: "foo offset min_of(10s, 20s)",
 		},
@@ -370,15 +382,15 @@ func TestExprString(t *testing.T) {
 		},
 		{
 			in:  `sum by("üüü") (foo)`,
-			out: `sum by (üüü) (foo)`,
+			out: `sum by ("üüü") (foo)`,
 		},
 		{
 			in:  `sum without("äää") (foo)`,
-			out: `sum without (äää) (foo)`,
+			out: `sum without ("äää") (foo)`,
 		},
 		{
 			in:  `count by("ööö", job) (foo)`,
-			out: `count by (ööö, job) (foo)`,
+			out: `count by ("ööö", job) (foo)`,
 		},
 	}
 
@@ -603,27 +615,27 @@ func TestBinaryExprUTF8Labels(t *testing.T) {
 		{
 			name:     "UTF-8 labels in on clause",
 			input:    `foo / on("äää") bar`,
-			expected: `foo / on (äää) bar`,
+			expected: `foo / on ("äää") bar`,
 		},
 		{
 			name:     "UTF-8 labels in ignoring clause",
 			input:    `foo / ignoring("üüü") bar`,
-			expected: `foo / ignoring (üüü) bar`,
+			expected: `foo / ignoring ("üüü") bar`,
 		},
 		{
 			name:     "UTF-8 labels in group_left clause",
 			input:    `foo / on("äää") group_left("ööö") bar`,
-			expected: `foo / on (äää) group_left (ööö) bar`,
+			expected: `foo / on ("äää") group_left ("ööö") bar`,
 		},
 		{
 			name:     "UTF-8 labels in group_right clause",
 			input:    `foo / on("äää") group_right("ööö") bar`,
-			expected: `foo / on (äää) group_right (ööö) bar`,
+			expected: `foo / on ("äää") group_right ("ööö") bar`,
 		},
 		{
 			name:     "Mixed legacy and UTF-8 labels",
 			input:    `foo / on(legacy, "üüü") bar`,
-			expected: `foo / on (legacy, üüü) bar`,
+			expected: `foo / on (legacy, "üüü") bar`,
 		},
 		{
 			name:     "Legacy labels only (should not quote)",

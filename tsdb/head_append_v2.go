@@ -209,6 +209,8 @@ func (a *headAppenderV2) Append(ref storage.SeriesRef, ls labels.Labels, st, t i
 			a.head.metrics.outOfOrderSamples.WithLabelValues(sampleMetricType).Inc()
 		case errors.Is(appErr, storage.ErrTooOldSample):
 			a.head.metrics.tooOldSamples.WithLabelValues(sampleMetricType).Inc()
+		case errors.Is(appErr, errConflictingSample):
+			a.head.metrics.duplicateSamples.WithLabelValues(sampleMetricType).Inc()
 		}
 		return 0, appErr
 	}
@@ -270,7 +272,7 @@ func (a *headAppenderV2) appendFloat(s *memSeries, st, t int64, v float64, fastR
 	}
 	// TODO(codesome): If we definitely know at this point that the sample is ooo, then optimise
 	// to skip that sample from the WAL and write only in the WBL.
-	isOOO, delta, err := s.appendable(t, v, a.headMaxt, a.minValidTime, a.oooTimeWindow)
+	isOOO, delta, err := s.appendable(t, v, a.headMaxt, a.minValidTime, a.oooTimeWindow, a.head)
 	if isOOO && fastRejectOOO {
 		s.Unlock()
 		return nil, storage.ErrOutOfOrderSample
@@ -287,7 +289,7 @@ func (a *headAppenderV2) appendFloat(s *memSeries, st, t int64, v float64, fastR
 	}
 
 	b := a.getCurrentBatch(stFloat, s.ref)
-	b.floats = append(b.floats, record.RefSample{Ref: s.ref, ST: st, T: t, V: v})
+	b.floats = append(b.floats, record.RefSample{Ref: s.ref, ST: a.zeroOrST(st), T: t, V: v})
 	b.floatSeries = append(b.floatSeries, s)
 	return s, nil
 }
@@ -301,7 +303,7 @@ func (a *headAppenderV2) appendHistogram(s *memSeries, st, t int64, h *histogram
 	}
 	// TODO(codesome): If we definitely know at this point that the sample is ooo, then optimise
 	// to skip that sample from the WAL and write only in the WBL.
-	isOOO, delta, err := s.appendableHistogram(t, h, a.headMaxt, a.minValidTime, a.oooTimeWindow)
+	isOOO, delta, err := s.appendableHistogram(t, h, a.headMaxt, a.minValidTime, a.oooTimeWindow, a.head)
 	if isOOO && fastRejectOOO {
 		s.Unlock()
 		return nil, storage.ErrOutOfOrderSample
@@ -321,7 +323,7 @@ func (a *headAppenderV2) appendHistogram(s *memSeries, st, t int64, h *histogram
 		sTyp = stCustomBucketHistogram
 	}
 	b := a.getCurrentBatch(sTyp, s.ref)
-	b.histograms = append(b.histograms, record.RefHistogramSample{Ref: s.ref, ST: st, T: t, H: h})
+	b.histograms = append(b.histograms, record.RefHistogramSample{Ref: s.ref, ST: a.zeroOrST(st), T: t, H: h})
 	b.histogramSeries = append(b.histogramSeries, s)
 	return s, nil
 }
@@ -336,7 +338,7 @@ func (a *headAppenderV2) appendFloatHistogram(s *memSeries, st, t int64, fh *his
 	}
 	// TODO(codesome): If we definitely know at this point that the sample is ooo, then optimise
 	// to skip that sample from the WAL and write only in the WBL.
-	isOOO, delta, err := s.appendableFloatHistogram(t, fh, a.headMaxt, a.minValidTime, a.oooTimeWindow)
+	isOOO, delta, err := s.appendableFloatHistogram(t, fh, a.headMaxt, a.minValidTime, a.oooTimeWindow, a.head)
 	if isOOO && fastRejectOOO {
 		s.Unlock()
 		return nil, storage.ErrOutOfOrderSample
@@ -356,7 +358,7 @@ func (a *headAppenderV2) appendFloatHistogram(s *memSeries, st, t int64, fh *his
 		sTyp = stCustomBucketFloatHistogram
 	}
 	b := a.getCurrentBatch(sTyp, s.ref)
-	b.floatHistograms = append(b.floatHistograms, record.RefFloatHistogramSample{Ref: s.ref, ST: st, T: t, FH: fh})
+	b.floatHistograms = append(b.floatHistograms, record.RefFloatHistogramSample{Ref: s.ref, ST: a.zeroOrST(st), T: t, FH: fh})
 	b.floatHistogramSeries = append(b.floatHistogramSeries, s)
 	return s, nil
 }
@@ -410,6 +412,8 @@ func (a *headAppenderV2) bestEffortAppendSTZeroSample(s *memSeries, ls labels.La
 		err      error
 		appended *memSeries
 	)
+	// The zero sample's start timestamp is st too, matching the samples that follow,
+	// so ST-capable chunks don't have to encode a start timestamp change.
 	switch {
 	case fh != nil:
 		zeroFloatHistogram := &histogram.FloatHistogram{
@@ -420,7 +424,7 @@ func (a *headAppenderV2) bestEffortAppendSTZeroSample(s *memSeries, ls labels.La
 			ZeroThreshold: fh.ZeroThreshold,
 			CustomValues:  fh.CustomValues,
 		}
-		appended, err = a.appendFloatHistogram(s, 0, st, zeroFloatHistogram, true)
+		appended, err = a.appendFloatHistogram(s, st, st, zeroFloatHistogram, true)
 	case h != nil:
 		zeroHistogram := &histogram.Histogram{
 			// The STZeroSample represents a counter reset by definition.
@@ -430,9 +434,9 @@ func (a *headAppenderV2) bestEffortAppendSTZeroSample(s *memSeries, ls labels.La
 			ZeroThreshold: h.ZeroThreshold,
 			CustomValues:  h.CustomValues,
 		}
-		appended, err = a.appendHistogram(s, 0, st, zeroHistogram, true)
+		appended, err = a.appendHistogram(s, st, st, zeroHistogram, true)
 	default:
-		appended, err = a.appendFloat(s, 0, st, 0, true)
+		appended, err = a.appendFloat(s, st, st, 0, true)
 	}
 
 	if err != nil {

@@ -2569,8 +2569,7 @@ eval range from 1s to 9s step 2s metric_for_at @ end()
 
 # Tests for min_of() and max_of() scalar functions.
 
-# min_of(a, b) returns math.Min(a, b).
-# max_of(a, b) returns math.Max(a, b).
+# min_of(a, b) and max_of(a, b) follow the min and max aggregators.
 
 # Basic literal comparisons.
 eval instant at 0s min_of(3, 5)
@@ -2606,18 +2605,43 @@ eval instant at 0s min_of(0, 1)
 eval instant at 0s max_of(0, 1)
   1
 
-# NaN propagation: any NaN input yields NaN.
+# NaN is only returned if both arguments are NaN.
 eval instant at 0s min_of(NaN, 3)
-  NaN
+  3
 
 eval instant at 0s min_of(3, NaN)
-  NaN
+  3
 
 eval instant at 0s max_of(NaN, 3)
-  NaN
+  3
 
 eval instant at 0s max_of(3, NaN)
+  3
+
+eval instant at 0s min_of(NaN, NaN)
   NaN
+
+eval instant at 0s max_of(NaN, NaN)
+  NaN
+
+# Infinities.
+eval instant at 0s min_of(NaN, -Inf)
+  -Inf
+
+eval instant at 0s min_of(+Inf, NaN)
+  +Inf
+
+eval instant at 0s max_of(-Inf, NaN)
+  -Inf
+
+eval instant at 0s max_of(NaN, +Inf)
+  +Inf
+
+eval instant at 0s min_of(-Inf, +Inf)
+  -Inf
+
+eval instant at 0s max_of(-Inf, +Inf)
+  +Inf
 
 clear
 

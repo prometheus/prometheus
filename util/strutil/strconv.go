@@ -53,6 +53,7 @@ func SanitizeFullLabelName(name string) string {
 		return "_"
 	}
 	var validSb strings.Builder
+	validSb.Grow(len(name))
 	for i, b := range name {
 		if (b >= 'a' && b <= 'z') || (b >= 'A' && b <= 'Z') || b == '_' || (b >= '0' && b <= '9' && i > 0) {
 			validSb.WriteRune(b)

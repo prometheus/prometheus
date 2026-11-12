@@ -4711,63 +4711,64 @@ func TestHeadAppender_WBLEncoder_EnableSTStorage(t *testing.T) {
 }
 
 // TestHeadAppender_STStorage_Disabled verifies that when EnableSTStorage is false,
-// start timestamps are NOT stored in chunks (AtST returns 0).
+// start timestamps are NOT stored in chunks (AtST returns 0), including with
+// ST-capable chunk encodings and for out-of-order samples.
 func TestHeadAppender_STStorage_Disabled(t *testing.T) {
-	type sampleData struct {
+	samples := []struct {
 		st      int64
 		ts      int64
 		fSample float64
-	}
-
-	samples := []sampleData{
+	}{
 		{st: 10, ts: 100, fSample: 1.0},
 		{st: 20, ts: 200, fSample: 2.0},
 		{st: 30, ts: 300, fSample: 3.0},
+		{st: 5, ts: 50, fSample: 0.5}, // Out of order.
 	}
 
-	opts := newTestHeadDefaultOptions(DefaultBlockDuration, false)
-	opts.EnableSTStorage.Store(false) // Explicitly disable ST storage.
-	h, _ := newTestHeadWithOptions(t, compression.None, opts)
+	for _, sampleType := range []chunkenc.ValueType{chunkenc.ValFloat, chunkenc.ValHistogram, chunkenc.ValFloatHistogram} {
+		for _, stEncodings := range []bool{false, true} {
+			t.Run(fmt.Sprintf("%s/ST-capable chunk encodings=%t", sampleType, stEncodings), func(t *testing.T) {
+				opts := DefaultOptions()
+				opts.EnableSTStorage = false // Explicitly disable ST storage.
+				opts.OutOfOrderTimeWindow = 10 * time.Minute.Milliseconds()
+				if stEncodings {
+					opts.FloatChunkEncoding = chunkenc.EncXOR2
+					opts.EnableHistogramSTEncoding = true
+				}
+				db := newTestDB(t, withOpts(opts))
 
-	lbls := labels.FromStrings("foo", "bar")
+				var h *histogram.Histogram
+				var fh *histogram.FloatHistogram
+				switch sampleType {
+				case chunkenc.ValHistogram:
+					h = tsdbutil.GenerateTestHistogram(1)
+				case chunkenc.ValFloatHistogram:
+					fh = tsdbutil.GenerateTestFloatHistogram(1)
+				}
 
-	a := h.AppenderV2(context.Background())
-	for _, s := range samples {
-		_, err := a.Append(0, lbls, s.st, s.ts, s.fSample, nil, nil, storage.AOptions{})
-		require.NoError(t, err)
-	}
-	require.NoError(t, a.Commit())
+				lbls := labels.FromStrings("foo", "bar")
+				for _, s := range samples {
+					var f float64
+					if sampleType == chunkenc.ValFloat {
+						f = s.fSample
+					}
 
-	ctx := context.Background()
-	idxReader, err := h.Index()
-	require.NoError(t, err)
-	defer idxReader.Close()
+					// Commit each sample on its own, so the last one goes to the out-of-order head.
+					a := db.AppenderV2(t.Context())
+					_, err := a.Append(0, lbls, s.st, s.ts, f, h, fh, storage.AOptions{})
+					require.NoError(t, err)
+					require.NoError(t, a.Commit())
+				}
 
-	chkReader, err := h.Chunks()
-	require.NoError(t, err)
-	defer chkReader.Close()
-
-	p, err := idxReader.Postings(ctx, "foo", "bar")
-	require.NoError(t, err)
-
-	var lblBuilder labels.ScratchBuilder
-	require.True(t, p.Next())
-	sRef := p.At()
-
-	var chkMetas []chunks.Meta
-	require.NoError(t, idxReader.Series(sRef, &lblBuilder, &chkMetas))
-
-	for _, meta := range chkMetas {
-		chk, iterable, err := chkReader.ChunkOrIterable(meta)
-		require.NoError(t, err)
-		require.Nil(t, iterable)
-
-		it := chk.Iterator(nil)
-		for it.Next() != chunkenc.ValNone {
-			st := it.AtST()
-			require.Equal(t, int64(0), st, "ST should be 0 when EnableSTStorage is false")
+				q, err := db.Querier(math.MinInt64, math.MaxInt64)
+				require.NoError(t, err)
+				result := query(t, q, labels.MustNewMatcher(labels.MatchEqual, "foo", "bar"))
+				require.Len(t, result[`{foo="bar"}`], len(samples))
+				for _, s := range result[`{foo="bar"}`] {
+					require.Equal(t, int64(0), s.ST(), "ST should be 0 when EnableSTStorage is false")
+				}
+			})
 		}
-		require.NoError(t, it.Err())
 	}
 }
 
@@ -6718,4 +6719,207 @@ func testOOORestartResetsFirstOOOChunkID(t *testing.T, scenario sampleTypeScenar
 	}
 
 	require.NoError(t, h.Close())
+}
+
+func TestHeadAppender_DuplicateSamplesDroppedMetric(t *testing.T) {
+	newStatsHead := func(t *testing.T, oooEnabled bool) *Head {
+		opts := newTestHeadDefaultOptions(DefaultBlockDuration, oooEnabled)
+		opts.EnableCommitStats = true
+		head, _ := newTestHeadWithOptions(t, compression.None, opts)
+		return head
+	}
+	type reportingAppender interface {
+		storage.AppenderV2
+		storage.CommitStatsReporter
+	}
+	newAppender := func(t *testing.T, src storage.AppendableV2) reportingAppender {
+		app, ok := src.AppenderV2(t.Context()).(reportingAppender)
+		require.True(t, ok, "appender must report commit stats")
+		return app
+	}
+	lbls := labels.FromStrings("foo", "bar")
+
+	requireStats := func(t *testing.T, app storage.CommitStatsReporter, wantSameValue, wantDifferentValue int) {
+		t.Helper()
+		stats := app.CommitStats().DiscardedSamples
+		require.Equal(t, wantSameValue, stats.TotalSameValue(), "same-value dropped samples")
+		require.Equal(t, wantDifferentValue, stats.TotalDifferentValue(), "different-value dropped samples")
+	}
+
+	for name, scenario := range sampleTypeScenarios {
+		t.Run(name, func(t *testing.T) {
+			head := newStatsHead(t, true)
+
+			dupsDropped := func() float64 {
+				return prom_testutil.ToFloat64(head.metrics.duplicateSamples.WithLabelValues(scenario.sampleType))
+			}
+
+			app := newAppender(t, head)
+			_, _, err := scenario.appendFunc(app, lbls, 60_000, 1)
+			require.NoError(t, err)
+			_, _, err = scenario.appendFunc(app, lbls, 120_000, 2)
+			require.NoError(t, err)
+			require.NoError(t, app.Commit())
+			requireStats(t, app, 0, 0)
+
+			// Exact duplicate of the latest in-order sample: dropped at commit.
+			app = newAppender(t, head)
+			_, _, err = scenario.appendFunc(app, lbls, 120_000, 2)
+			require.NoError(t, err)
+			require.NoError(t, app.Commit())
+			require.Equal(t, 1.0, dupsDropped())
+			requireStats(t, app, 1, 0)
+
+			// Different value against a committed sample: Append error. Counted in
+			// the metric (all duplicate discards) but NOT in CommitStats, which only
+			// reclassifies samples that Append accepted.
+			app = newAppender(t, head)
+			_, _, err = scenario.appendFunc(app, lbls, 120_000, 3)
+			require.ErrorIs(t, err, storage.ErrDuplicateSampleForTimestamp)
+			require.NoError(t, app.Commit())
+			require.Equal(t, 2.0, dupsDropped())
+			requireStats(t, app, 0, 0)
+			// Must not be counted as an out-of-order rejection.
+			require.Equal(t, 0.0, prom_testutil.ToFloat64(head.metrics.outOfOrderSamples.WithLabelValues(scenario.sampleType)))
+
+			// Within-batch conflict: passes Append, dropped at commit, first sample wins.
+			app = newAppender(t, head)
+			_, _, err = scenario.appendFunc(app, lbls, 180_000, 6)
+			require.NoError(t, err)
+			_, _, err = scenario.appendFunc(app, lbls, 180_000, 7)
+			require.NoError(t, err)
+			require.NoError(t, app.Commit())
+			require.Equal(t, 3.0, dupsDropped())
+			requireStats(t, app, 0, 1)
+
+			// Within-batch exact duplicate.
+			app = newAppender(t, head)
+			_, _, err = scenario.appendFunc(app, lbls, 240_000, 8)
+			require.NoError(t, err)
+			_, _, err = scenario.appendFunc(app, lbls, 240_000, 8)
+			require.NoError(t, err)
+			require.NoError(t, app.Commit())
+			require.Equal(t, 4.0, dupsDropped())
+			requireStats(t, app, 1, 0)
+
+			// First out-of-order sample is accepted.
+			app = newAppender(t, head)
+			_, _, err = scenario.appendFunc(app, lbls, 30_000, 4)
+			require.NoError(t, err)
+			require.NoError(t, app.Commit())
+			require.Equal(t, 4.0, dupsDropped())
+			requireStats(t, app, 0, 0)
+
+			// Exact duplicate of the out-of-order sample.
+			app = newAppender(t, head)
+			_, _, err = scenario.appendFunc(app, lbls, 30_000, 4)
+			require.NoError(t, err)
+			require.NoError(t, app.Commit())
+			require.Equal(t, 5.0, dupsDropped())
+			requireStats(t, app, 1, 0)
+
+			// OOO timestamp clash is dropped even when the value differs.
+			app = newAppender(t, head)
+			_, _, err = scenario.appendFunc(app, lbls, 30_000, 5)
+			require.NoError(t, err)
+			require.NoError(t, app.Commit())
+			require.Equal(t, 6.0, dupsDropped())
+			requireStats(t, app, 0, 1)
+
+			// Dropped duplicates must not inflate the appended count (5 stored samples).
+			require.Equal(t, 5.0, prom_testutil.ToFloat64(head.metrics.samplesAppended.WithLabelValues(scenario.sampleType)))
+		})
+	}
+
+	t.Run("type clashes count as different values", func(t *testing.T) {
+		head := newStatsHead(t, false)
+
+		app := newAppender(t, head)
+		_, err := app.Append(0, lbls, 0, 100, 1, nil, nil, storage.AOptions{})
+		require.NoError(t, err)
+		_, err = app.Append(0, lbls, 0, 100, 0, tsdbutil.GenerateTestHistogram(2), nil, storage.AOptions{})
+		require.NoError(t, err)
+		require.NoError(t, app.Commit())
+
+		stats := app.CommitStats().DiscardedSamples
+		require.Equal(t, []storage.DiscardedSeriesSamples{{Labels: lbls, Count: 1}}, stats.SameTimestampDifferentValue)
+		require.Empty(t, stats.SameTimestampSameValue)
+	})
+
+	t.Run("stats aggregate per series with counts", func(t *testing.T) {
+		head := newStatsHead(t, false)
+		lblsA := labels.FromStrings("foo", "bar")
+		lblsB := labels.FromStrings("foo", "baz")
+
+		app := newAppender(t, head)
+		_, err := app.Append(0, lblsA, 0, 100, 1, nil, nil, storage.AOptions{})
+		require.NoError(t, err)
+		require.NoError(t, app.Commit())
+
+		app = newAppender(t, head)
+		for range 3 {
+			_, err = app.Append(0, lblsA, 0, 100, 1, nil, nil, storage.AOptions{})
+			require.NoError(t, err)
+		}
+		_, err = app.Append(0, lblsB, 0, 100, 10, nil, nil, storage.AOptions{})
+		require.NoError(t, err)
+		_, err = app.Append(0, lblsB, 0, 100, 11, nil, nil, storage.AOptions{})
+		require.NoError(t, err)
+		_, err = app.Append(0, lblsB, 0, 100, 12, nil, nil, storage.AOptions{})
+		require.NoError(t, err)
+		require.NoError(t, app.Commit())
+
+		stats := app.CommitStats().DiscardedSamples
+		require.Equal(t, []storage.DiscardedSeriesSamples{{Labels: lblsA, Count: 3}}, stats.SameTimestampSameValue)
+		require.Equal(t, []storage.DiscardedSeriesSamples{{Labels: lblsB, Count: 2}}, stats.SameTimestampDifferentValue)
+	})
+
+	t.Run("rollback reports no stats", func(t *testing.T) {
+		head := newStatsHead(t, false)
+
+		app := newAppender(t, head)
+		_, err := app.Append(0, lbls, 0, 100, 1, nil, nil, storage.AOptions{})
+		require.NoError(t, err)
+		require.NoError(t, app.Commit())
+
+		app = newAppender(t, head)
+		_, err = app.Append(0, lbls, 0, 100, 1, nil, nil, storage.AOptions{})
+		require.NoError(t, err)
+		require.NoError(t, app.Rollback())
+		requireStats(t, app, 0, 0)
+	})
+
+	t.Run("stats reachable through the DB appender chain on first push", func(t *testing.T) {
+		opts := DefaultOptions()
+		opts.EnableCommitStats = true
+		db := newTestDB(t, withOpts(opts))
+
+		// First push routes through the DB and init appender wrappers.
+		app := newAppender(t, db)
+		_, err := app.Append(0, lbls, 0, 100, 1, nil, nil, storage.AOptions{})
+		require.NoError(t, err)
+		_, err = app.Append(0, lbls, 0, 100, 1, nil, nil, storage.AOptions{})
+		require.NoError(t, err)
+		require.NoError(t, app.Commit())
+		requireStats(t, app, 1, 0)
+	})
+
+	t.Run("stats disabled by default, metric still counts", func(t *testing.T) {
+		head, _ := newTestHead(t, DefaultBlockDuration, compression.None, false)
+
+		app := newAppender(t, head)
+		_, err := app.Append(0, lbls, 0, 100, 1, nil, nil, storage.AOptions{})
+		require.NoError(t, err)
+		_, err = app.Append(0, lbls, 0, 100, 1, nil, nil, storage.AOptions{})
+		require.NoError(t, err)
+		_, err = app.Append(0, lbls, 0, 200, 1, nil, nil, storage.AOptions{})
+		require.NoError(t, err)
+		_, err = app.Append(0, lbls, 0, 200, 2, nil, nil, storage.AOptions{})
+		require.NoError(t, err)
+		require.NoError(t, app.Commit())
+
+		requireStats(t, app, 0, 0)
+		require.Equal(t, 2.0, prom_testutil.ToFloat64(head.metrics.duplicateSamples.WithLabelValues(sampleMetricTypeFloat)))
+		require.Equal(t, 2.0, prom_testutil.ToFloat64(head.metrics.samplesAppended.WithLabelValues(sampleMetricTypeFloat)))
+	})
 }

@@ -1521,6 +1521,7 @@ The following meta labels are available on targets during [relabeling](#relabel_
 * `__meta_azure_machine_tag_<tagname>`: each tag value of the machine
 * `__meta_azure_machine_scale_set`: the name of the scale set which the vm is part of (this value is only set if you are using a [scale set](https://learn.microsoft.com/en-us/azure/virtual-machine-scale-sets/))
 * `__meta_azure_machine_size`: the machine size
+* `__meta_azure_machine_state`: the machine power state (`running`, `stopped`, `deallocated`, `starting`, `stopping`, `deallocating`, or empty if unavailable). Power states of virtual machines not in a uniform scale set are read with one subscription-wide request, so the label is empty if the credentials cannot list virtual machines in the subscription
 * `__meta_azure_subscription_id`: the subscription ID
 * `__meta_azure_tenant_id`: the tenant ID
 
@@ -2993,7 +2994,7 @@ The following meta labels are available on targets during [relabeling](#relabel_
 ### `<marathon_sd_config>`
 
 Marathon SD configurations allow retrieving scrape targets using the
-[Marathon](https://mesosphere.github.io/marathon/) REST API. Prometheus
+[Marathon](https://github.com/d2iq-archive/marathon) REST API. Prometheus
 will periodically check the REST endpoint for currently running tasks and
 create a target group for every app that has at least one healthy task.
 
@@ -3019,12 +3020,12 @@ servers:
 [ refresh_interval: <duration> | default = 30s ]
 
 # Optional authentication information for token-based authentication
-# https://docs.mesosphere.com/1.11/security/ent/iam-api/#passing-an-authentication-token
+# https://web.archive.org/web/20190718110036/https://docs.mesosphere.com/1.11/security/ent/iam-api/#passing-an-authentication-token
 # It is mutually exclusive with `auth_token_file` and other authentication mechanisms.
 [ auth_token: <secret> ]
 
 # Optional authentication information for token-based authentication
-# https://docs.mesosphere.com/1.11/security/ent/iam-api/#passing-an-authentication-token
+# https://web.archive.org/web/20190718110036/https://docs.mesosphere.com/1.11/security/ent/iam-api/#passing-an-authentication-token
 # It is mutually exclusive with `auth_token` and other authentication mechanisms.
 [ auth_token_file: <filename> ]
 
@@ -3845,6 +3846,21 @@ has the same configuration format and actions as target relabeling. Metric
 relabeling does not apply to automatically generated timeseries such as `up`.
 
 One use for this is to exclude time series that are too expensive to ingest.
+
+When `--enable-feature=metadata-relabeling` is enabled, the metric's metadata is
+exposed during metric relabeling via the reserved `__type__`, `__unit__`, and
+`__help__` labels. These labels can be read (for example, to drop or filter
+series by type or unit) and modified (for example, using `replace` to set or
+override a metric's type, unit, or help text). Replacing one of these labels
+with an empty value (`""`) clears that metadata field. `labeldrop` and
+`labelkeep` actions do not remove metric metadata. `__type__`, `__unit__`,
+and `__help__` are only exposed during relabeling and are not stored as series
+labels in TSDB unless `--enable-feature=type-and-unit-labels` is also enabled.
+When `--enable-feature=type-and-unit-labels` is set, `__type__` and `__unit__`
+are kept on the series while `__help__` remains metadata-only. While
+you can promote metadata to labels via relabeling (for example, targeting a new
+label without the `__` prefix), it is not recommended. Use the
+`type-and-unit-labels` feature instead.
 
 ### `<alert_relabel_configs>`
 

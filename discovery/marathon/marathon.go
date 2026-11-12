@@ -189,7 +189,7 @@ func newAuthTokenRoundTripper(token config.Secret, rt http.RoundTripper) (http.R
 }
 
 func (rt *authTokenRoundTripper) RoundTrip(request *http.Request) (*http.Response, error) {
-	// According to https://docs.mesosphere.com/1.11/security/oss/managing-authentication/
+	// According to https://web.archive.org/web/20190720050610/https://docs.mesosphere.com/1.11/security/oss/managing-authentication/
 	// DC/OS wants with "token=" a different Authorization header than implemented in httputil/client.go
 	// so we set this explicitly here.
 	request.Header.Set("Authorization", "token="+string(rt.authToken))
@@ -219,7 +219,7 @@ func (rt *authTokenFileRoundTripper) RoundTrip(request *http.Request) (*http.Res
 	}
 	authToken := strings.TrimSpace(string(b))
 
-	// According to https://docs.mesosphere.com/1.11/security/oss/managing-authentication/
+	// According to https://web.archive.org/web/20190720050610/https://docs.mesosphere.com/1.11/security/oss/managing-authentication/
 	// DC/OS wants with "token=" a different Authorization header than implemented in httputil/client.go
 	// so we set this explicitly here.
 	request.Header.Set("Authorization", "token="+authToken)

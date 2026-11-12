@@ -20,6 +20,21 @@ import { ValueType } from '../types';
 describe('promql operations', () => {
   const testCases = [
     {
+      expr: ':node_memory_MemAvailable_bytes',
+      expectedValueType: ValueType.vector,
+      expectedDiag: [] as Diagnostic[],
+    },
+    {
+      expr: 'sum by (a:b) (:温度)',
+      expectedValueType: ValueType.vector,
+      expectedDiag: [] as Diagnostic[],
+    },
+    {
+      expr: 'foo + on (a:b) group_left (:label) bar',
+      expectedValueType: ValueType.vector,
+      expectedDiag: [] as Diagnostic[],
+    },
+    {
       expr: 'foo{service.name="api"}',
       expectedValueType: ValueType.vector,
       expectedDiag: [] as Diagnostic[],
