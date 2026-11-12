@@ -149,6 +149,9 @@ type Head struct {
 
 	// chunkDiskMapper is used to write and read Head chunks to/from disk.
 	chunkDiskMapper *chunks.ChunkDiskMapper
+	// mmapMtx lets only one mmapHeadChunks run at a time, and never while
+	// head GC truncates chunk files.
+	mmapMtx sync.Mutex
 
 	chunkSnapshotMtx sync.Mutex
 
@@ -1847,6 +1850,10 @@ func (h *Head) truncateOOO(lastWBLFile int, newMinOOOMmapRef chunks.ChunkDiskMap
 // truncateSeriesAndChunkDiskMapper is a helper function for truncateMemory and truncateOOO.
 // It runs GC on the Head and truncates the ChunkDiskMapper accordingly.
 func (h *Head) truncateSeriesAndChunkDiskMapper(caller string) error {
+	// GC picks the oldest chunk file still in use and Truncate deletes the
+	// files before it, so head chunks must not be m-mapped in between.
+	h.mmapMtx.Lock()
+	defer h.mmapMtx.Unlock()
 	h.logger.Info("Head GC started", "caller", caller)
 	start := time.Now()
 	headMaxt := h.MaxTime()
@@ -2409,6 +2416,8 @@ func (h *Head) onChunkCreated(series *memSeries, prevHeadChunkCount uint32) {
 // M-mapping is serialised via the per-series lock and done away from the sample append path,
 // since holding the lock during an append could delay the next scrape or cause query timeouts.
 func (h *Head) mmapHeadChunks() {
+	h.mmapMtx.Lock()
+	defer h.mmapMtx.Unlock()
 	var count int
 	// candidates is reused across stripes: mmapHeadChunks only ever runs on
 	// one goroutine at a time, so it's safe to grow it once and keep reusing
