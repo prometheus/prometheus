@@ -60,10 +60,18 @@ type seriesEvictionTestDB struct {
 // The specified exemplarSeries also receive an exemplar.
 func newSeriesEvictionTestDB(t *testing.T, exemplarSeries ...int) *seriesEvictionTestDB {
 	t.Helper()
+	return newSeriesEvictionTestDBWithOOOTimeWindow(t, 0, exemplarSeries...)
+}
+
+// newSeriesEvictionTestDBWithOOOTimeWindow is like newSeriesEvictionTestDB, with out-of-order ingestion enabled
+// if oooTimeWindow is positive.
+func newSeriesEvictionTestDBWithOOOTimeWindow(t *testing.T, oooTimeWindow int64, exemplarSeries ...int) *seriesEvictionTestDB {
+	t.Helper()
 
 	opts := DefaultOptions()
 	opts.MinBlockDuration = 1000
 	opts.MaxBlockDuration = 1000
+	opts.OutOfOrderTimeWindow = oooTimeWindow
 	opts.EnableExemplarStorage = len(exemplarSeries) > 0
 	opts.MaxExemplars = int64(len(exemplarSeries))
 	db := newTestDB(t, withOpts(opts))
@@ -721,6 +729,37 @@ func TestSeriesEviction_RecreationIsDeclaredAfterTombstone(t *testing.T) {
 	}
 }
 
+// TestHead_GCSeriesWithoutAfterUnlinkDoesNotBlockRecreation verifies that gcSeries marks the label hashes of the series
+// it removes as pending only if it is given a callback that releases them. Otherwise nothing would release them, and a
+// series with the same labels could never be created again.
+func TestHead_GCSeriesWithoutAfterUnlinkDoesNotBlockRecreation(t *testing.T) {
+	testDB := newSeriesEvictionTestDB(t)
+	db := testDB.db
+	h := db.Head()
+	ref := testDB.evictedRefs[0]
+	lset := evictionTestLabels(0)
+
+	deleted := h.gcSeries([]storage.SeriesRef{ref}, math.MaxInt64, func(*memSeries) bool { return true }, nil)
+	require.Contains(t, deleted, ref)
+	require.Nil(t, h.pendingTombstones.pending(lset.Hash()))
+
+	recreated := make(chan error, 1)
+	go func() {
+		app := db.Appender(t.Context())
+		_, err := app.Append(0, lset, 400, 1)
+		if err == nil {
+			err = app.Commit()
+		}
+		recreated <- err
+	}()
+	select {
+	case err := <-recreated:
+		require.NoError(t, err)
+	case <-time.After(10 * time.Second):
+		require.FailNow(t, "the creation of a series with the labels of a removed series is blocked")
+	}
+}
+
 // TestSeriesEviction_CreationPausedBeforeInsertionIsDeclaredAfterTombstone verifies that a series that was not found,
 // and whose creation is delayed until after a series with the same labels is created and evicted, is not created
 // before the tombstone of the latter is written. The check for a pending tombstone is atomic with the insertion, so
@@ -1066,8 +1105,24 @@ func TestSeriesEviction_CreatorsAreReleasedBeforePostingsAreDeleted(t *testing.T
 			}
 			require.NotEqual(t, oldRef, newRef)
 
+			// The old series is no longer in the head, but both series are in the postings. The samples of the old one
+			// are in the block written by the eviction, and the ones of the new one are in the head.
+			requireQueriedTimestamps := func() {
+				t.Helper()
+				q, err := db.Querier(math.MinInt64, math.MaxInt64)
+				require.NoError(t, err)
+				var timestamps []int64
+				for _, s := range query(t, q, labels.MustNewMatcher(labels.MatchEqual, "id", lset.Get("id")))[lset.String()] {
+					timestamps = append(timestamps, s.T())
+				}
+				require.Equal(t, []int64{100, 200, 300, 400}, timestamps)
+			}
+			requireQueriedTimestamps()
+
 			resumeEviction()
 			require.NoError(t, <-evicted)
+			// Deleting the old series from the postings must not remove the new one.
+			requireQueriedTimestamps()
 			require.NoError(t, db.Close())
 
 			stonePosition, seriesPosition := -1, -1

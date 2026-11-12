@@ -2842,7 +2842,8 @@ func (h *Head) gcSeries(seriesRefs []storage.SeriesRef, maxt int64, shouldEvict 
 	evicting := h.evictingSeries.Load()
 	var protectedChunksRemoved int
 	var beforeUnlink func(hash uint64)
-	if h.wal != nil {
+	// The hashes are pending until afterUnlink releases them, so they are only marked if there is one.
+	if h.wal != nil && afterUnlink != nil {
 		beforeUnlink = h.pendingTombstones.add
 	}
 	deleted, affected, chunksRemoved, staleSeriesDeleted, histogramSeriesDeleted, histogramBucketsDeleted := h.series.gcSeries(seriesRefs, maxt, beforeUnlink, func(s *memSeries) bool {
