@@ -62,6 +62,7 @@ type Storage struct {
 	// For reads.
 	queryables []storage.SampleAndChunkQueryable
 	// required holds, for each queryable, whether its errors must fail the query.
+	// Queryables without an entry are best effort.
 	required               []bool
 	localStartTimeCallback startTimeCallback
 }
@@ -191,7 +192,7 @@ func (s *Storage) SplitQueriers(mint, maxt int64) (required, bestEffort []storag
 			}
 			return nil, nil, errors.Join(errs...)
 		}
-		if isRequired[i] {
+		if i < len(isRequired) && isRequired[i] {
 			required = append(required, q)
 		} else {
 			bestEffort = append(bestEffort, q)
@@ -232,7 +233,7 @@ func (s *Storage) SplitChunkQueriers(mint, maxt int64) (required, bestEffort []s
 			}
 			return nil, nil, errors.Join(errs...)
 		}
-		if isRequired[i] {
+		if i < len(isRequired) && isRequired[i] {
 			required = append(required, q)
 		} else {
 			bestEffort = append(bestEffort, q)
