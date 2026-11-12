@@ -641,90 +641,96 @@ func (c seriesEvictionPostDeletionCallback) PostDeletion(deleted map[chunks.Head
 func TestSeriesEviction_RecreationIsDeclaredAfterTombstone(t *testing.T) {
 	for name, evict := range evictionTestEvictions() {
 		t.Run(name, func(t *testing.T) {
-			testDB := newSeriesEvictionTestDB(t)
-			db := testDB.db
-			oldRef := testDB.evictedRefs[0]
-			lset := evictionTestLabels(0)
-			q, err := db.Querier(math.MinInt64, math.MaxInt64)
-			require.NoError(t, err)
-			expected := query(t, q, evictionTestMatcher)
-			expected[lset.String()] = append(expected[lset.String()], sample{t: 400, f: 42}, sample{t: 500, f: 43})
+			synctest.Test(t, func(t *testing.T) {
+				testDB := newSeriesEvictionTestDB(t)
+				db := testDB.db
+				oldRef := testDB.evictedRefs[0]
+				lset := evictionTestLabels(0)
+				q, err := db.Querier(math.MinInt64, math.MaxInt64)
+				require.NoError(t, err)
+				expected := query(t, q, evictionTestMatcher)
+				expected[lset.String()] = append(expected[lset.String()], sample{t: 400, f: 42}, sample{t: 500, f: 43})
 
-			var newRef storage.SeriesRef
-			recreated := make(chan error, 1)
-			db.head.series.seriesLifecycleCallback = seriesEvictionPostDeletionCallback{
-				postDeletion: func(deleted map[chunks.HeadSeriesRef]labels.Labels) {
-					if _, ok := deleted[chunks.HeadSeriesRef(oldRef)]; !ok {
-						return
-					}
-					// The old series is unlinked, but its tombstone is not written. A series with its labels waits
-					// for the tombstone, so it can't be created from the goroutine that writes it.
-					go func() {
-						app := db.Appender(t.Context())
-						var err error
-						newRef, err = app.Append(oldRef, lset, 400, 42)
-						if err == nil {
-							err = app.Commit()
+				var newRef storage.SeriesRef
+				recreated := make(chan error, 1)
+				db.head.series.seriesLifecycleCallback = seriesEvictionPostDeletionCallback{
+					postDeletion: func(deleted map[chunks.HeadSeriesRef]labels.Labels) {
+						if _, ok := deleted[chunks.HeadSeriesRef(oldRef)]; !ok {
+							return
 						}
-						recreated <- err
-					}()
-				},
-			}
+						// The old series is unlinked, but its tombstone is not written. A series with its labels waits
+						// for the tombstone, so it can't be created from the goroutine that writes it.
+						go func() {
+							app := db.Appender(t.Context())
+							var err error
+							newRef, err = app.Append(oldRef, lset, 400, 42)
+							if err == nil {
+								err = app.Commit()
+							}
+							recreated <- err
+						}()
+						// Wait until the creator is blocked on the pending tombstone, so that the eviction can't write it
+						// before the creator looks for it.
+						synctest.Wait()
+						require.Empty(t, recreated, "the creator must wait for the tombstone")
+					},
+				}
 
-			require.NoError(t, evict(db, testDB.evictedRefs))
-			require.NoError(t, <-recreated)
-			require.NotEqual(t, oldRef, newRef)
+				require.NoError(t, evict(db, testDB.evictedRefs))
+				require.NoError(t, <-recreated)
+				require.NotEqual(t, oldRef, newRef)
 
-			app := db.Appender(t.Context())
-			laterRef, err := app.Append(newRef, lset, 500, 43)
-			require.NoError(t, err)
-			require.Equal(t, newRef, laterRef)
-			require.NoError(t, app.Commit())
+				app := db.Appender(t.Context())
+				laterRef, err := app.Append(newRef, lset, 500, 43)
+				require.NoError(t, err)
+				require.Equal(t, newRef, laterRef)
+				require.NoError(t, app.Commit())
 
-			q, err = db.Querier(math.MinInt64, math.MaxInt64)
-			require.NoError(t, err)
-			require.Equal(t, expected, query(t, q, evictionTestMatcher))
-			require.NoError(t, db.Close())
+				q, err = db.Querier(math.MinInt64, math.MaxInt64)
+				require.NoError(t, err)
+				require.Equal(t, expected, query(t, q, evictionTestMatcher))
+				require.NoError(t, db.Close())
 
-			stonePosition, seriesPosition := -1, -1
-			for i, entry := range readTestWAL(t, filepath.Join(db.Dir(), "wal")) {
-				switch records := entry.(type) {
-				case []tombstones.Stone:
-					for _, stone := range records {
-						if stone.Ref == oldRef {
-							stonePosition = i
+				stonePosition, seriesPosition := -1, -1
+				for i, entry := range readTestWAL(t, filepath.Join(db.Dir(), "wal")) {
+					switch records := entry.(type) {
+					case []tombstones.Stone:
+						for _, stone := range records {
+							if stone.Ref == oldRef {
+								stonePosition = i
+							}
 						}
-					}
-				case []record.RefSeries:
-					for _, series := range records {
-						if series.Ref == chunks.HeadSeriesRef(newRef) {
-							seriesPosition = i
+					case []record.RefSeries:
+						for _, series := range records {
+							if series.Ref == chunks.HeadSeriesRef(newRef) {
+								seriesPosition = i
+							}
 						}
 					}
 				}
-			}
-			require.NotEqual(t, -1, stonePosition)
-			require.NotEqual(t, -1, seriesPosition)
-			require.Greater(t, seriesPosition, stonePosition, "the declaration of the new series must follow the tombstone of the old one")
+				require.NotEqual(t, -1, stonePosition)
+				require.NotEqual(t, -1, seriesPosition)
+				require.Greater(t, seriesPosition, stonePosition, "the declaration of the new series must follow the tombstone of the old one")
 
-			reopened, err := Open(db.Dir(), nil, nil, db.opts, nil)
-			require.NoError(t, err)
-			reopened.DisableCompactions()
-			t.Cleanup(func() { require.NoError(t, reopened.Close()) })
-			q, err = reopened.Querier(math.MinInt64, math.MaxInt64)
-			require.NoError(t, err)
-			require.Equal(t, expected, query(t, q, evictionTestMatcher))
-			require.Zero(t, prom_testutil.ToFloat64(reopened.head.metrics.walReplayUnknownRefsTotal.WithLabelValues("samples")))
+				reopened, err := Open(db.Dir(), nil, nil, db.opts, nil)
+				require.NoError(t, err)
+				reopened.DisableCompactions()
+				t.Cleanup(func() { require.NoError(t, reopened.Close()) })
+				q, err = reopened.Querier(math.MinInt64, math.MaxInt64)
+				require.NoError(t, err)
+				require.Equal(t, expected, query(t, q, evictionTestMatcher))
+				require.Zero(t, prom_testutil.ToFloat64(reopened.head.metrics.walReplayUnknownRefsTotal.WithLabelValues("samples")))
 
-			// The head alone, without the blocks, has only the new series, with the samples written after the eviction.
-			// The old one is not restored from its samples in the WAL, because its tombstone removes it.
-			require.Nil(t, reopened.head.series.getByID(chunks.HeadSeriesRef(oldRef)))
-			newSeries := reopened.head.series.getByID(chunks.HeadSeriesRef(newRef))
-			require.NotNil(t, newSeries)
-			require.True(t, labels.Equal(lset, newSeries.labels()))
-			headQuerier, err := NewBlockQuerier(reopened.Head(), math.MinInt64, math.MaxInt64)
-			require.NoError(t, err)
-			require.Equal(t, []chunks.Sample{sample{t: 400, f: 42}, sample{t: 500, f: 43}}, query(t, headQuerier, evictionTestMatcher)[lset.String()])
+				// The head alone, without the blocks, has only the new series, with the samples written after the eviction.
+				// The old one is not restored from its samples in the WAL, because its tombstone removes it.
+				require.Nil(t, reopened.head.series.getByID(chunks.HeadSeriesRef(oldRef)))
+				newSeries := reopened.head.series.getByID(chunks.HeadSeriesRef(newRef))
+				require.NotNil(t, newSeries)
+				require.True(t, labels.Equal(lset, newSeries.labels()))
+				headQuerier, err := NewBlockQuerier(reopened.Head(), math.MinInt64, math.MaxInt64)
+				require.NoError(t, err)
+				require.Equal(t, []chunks.Sample{sample{t: 400, f: 42}, sample{t: 500, f: 43}}, query(t, headQuerier, evictionTestMatcher)[lset.String()])
+			})
 		})
 	}
 }
@@ -767,165 +773,168 @@ func TestHead_GCSeriesWithoutAfterUnlinkDoesNotBlockRecreation(t *testing.T) {
 func TestSeriesEviction_CreationPausedBeforeInsertionIsDeclaredAfterTombstone(t *testing.T) {
 	for name, evict := range evictionTestEvictions() {
 		t.Run(name, func(t *testing.T) {
-			testDB := newSeriesEvictionTestDB(t)
-			db := testDB.db
-			ls := evictionTestLabels(20)
+			synctest.Test(t, func(t *testing.T) {
+				testDB := newSeriesEvictionTestDB(t)
+				db := testDB.db
+				ls := evictionTestLabels(20)
 
-			creatorPaused := make(chan struct{})
-			resumeCreator := make(chan struct{})
-			unlinked := make(chan struct{})
-			finishEviction := make(chan struct{})
-			var resumeOnce, finishOnce sync.Once
-			resume := func() { resumeOnce.Do(func() { close(resumeCreator) }) }
-			finish := func() { finishOnce.Do(func() { close(finishEviction) }) }
-			var firstCreation atomic.Bool
-			var oldRef storage.SeriesRef
-			db.head.series.seriesLifecycleCallback = seriesEvictionPostDeletionCallback{
-				preCreation: func(lset labels.Labels) error {
-					if labels.Equal(ls, lset) && firstCreation.CompareAndSwap(false, true) {
-						// The creator did not find the series. Suspend it before it inserts the series.
-						close(creatorPaused)
-						<-resumeCreator
+				creatorPaused := make(chan struct{})
+				resumeCreator := make(chan struct{})
+				unlinked := make(chan struct{})
+				finishEviction := make(chan struct{})
+				var resumeOnce, finishOnce sync.Once
+				resume := func() { resumeOnce.Do(func() { close(resumeCreator) }) }
+				finish := func() { finishOnce.Do(func() { close(finishEviction) }) }
+				var firstCreation atomic.Bool
+				var oldRef storage.SeriesRef
+				db.head.series.seriesLifecycleCallback = seriesEvictionPostDeletionCallback{
+					preCreation: func(lset labels.Labels) error {
+						if labels.Equal(ls, lset) && firstCreation.CompareAndSwap(false, true) {
+							// The creator did not find the series. Suspend it before it inserts the series.
+							close(creatorPaused)
+							<-resumeCreator
+						}
+						return nil
+					},
+					postDeletion: func(deleted map[chunks.HeadSeriesRef]labels.Labels) {
+						if _, ok := deleted[chunks.HeadSeriesRef(oldRef)]; ok {
+							// The old series is unlinked, and its tombstone is not written.
+							close(unlinked)
+							<-finishEviction
+						}
+					},
+				}
+
+				// Allocate the append ID of this transaction before the one of the delayed creator, so that it can be
+				// committed below the isolation watermark while the creator is still open.
+				oldApp := db.Appender(context.Background())
+				type appendResult struct {
+					ref storage.SeriesRef
+					err error
+				}
+				created := make(chan appendResult, 1)
+				creatorDone := make(chan struct{})
+				go func() {
+					defer close(creatorDone)
+					app := db.Appender(context.Background())
+					ref, err := app.Append(0, ls, 400, 42)
+					if err == nil {
+						err = app.Commit()
+					} else {
+						_ = app.Rollback()
 					}
-					return nil
-				},
-				postDeletion: func(deleted map[chunks.HeadSeriesRef]labels.Labels) {
-					if _, ok := deleted[chunks.HeadSeriesRef(oldRef)]; ok {
-						// The old series is unlinked, and its tombstone is not written.
-						close(unlinked)
-						<-finishEviction
+					created <- appendResult{ref, err}
+				}()
+				t.Cleanup(func() {
+					resume()
+					finish()
+					select {
+					case <-creatorDone:
+					case <-time.After(10 * time.Second):
+						t.Error("the creator did not finish")
 					}
-				},
-			}
-
-			// Allocate the append ID of this transaction before the one of the delayed creator, so that it can be
-			// committed below the isolation watermark while the creator is still open.
-			oldApp := db.Appender(context.Background())
-			type appendResult struct {
-				ref storage.SeriesRef
-				err error
-			}
-			created := make(chan appendResult, 1)
-			creatorDone := make(chan struct{})
-			go func() {
-				defer close(creatorDone)
-				app := db.Appender(context.Background())
-				ref, err := app.Append(0, ls, 400, 42)
-				if err == nil {
-					err = app.Commit()
-				} else {
-					_ = app.Rollback()
-				}
-				created <- appendResult{ref, err}
-			}()
-			t.Cleanup(func() {
-				resume()
-				finish()
+				})
 				select {
-				case <-creatorDone:
+				case <-creatorPaused:
 				case <-time.After(10 * time.Second):
-					t.Error("the creator did not finish")
+					t.Fatal("the creator did not reach the pause before the insertion")
 				}
-			})
-			select {
-			case <-creatorPaused:
-			case <-time.After(10 * time.Second):
-				t.Fatal("the creator did not reach the pause before the insertion")
-			}
 
-			for i := range 3 {
-				v := float64(i)
-				if i == 2 {
-					v = math.Float64frombits(value.StaleNaN)
+				for i := range 3 {
+					v := float64(i)
+					if i == 2 {
+						v = math.Float64frombits(value.StaleNaN)
+					}
+					var err error
+					oldRef, err = oldApp.Append(0, ls, int64((i+1)*100), v)
+					require.NoError(t, err)
 				}
-				var err error
-				oldRef, err = oldApp.Append(0, ls, int64((i+1)*100), v)
-				require.NoError(t, err)
-			}
-			require.NoError(t, oldApp.Commit())
+				require.NoError(t, oldApp.Commit())
 
-			evicted := make(chan error, 1)
-			evictionDone := make(chan struct{})
-			go func() {
-				defer close(evictionDone)
-				evicted <- evict(db, []storage.SeriesRef{oldRef})
-			}()
-			t.Cleanup(func() {
-				resume()
-				finish()
+				evicted := make(chan error, 1)
+				evictionDone := make(chan struct{})
+				go func() {
+					defer close(evictionDone)
+					evicted <- evict(db, []storage.SeriesRef{oldRef})
+				}()
+				t.Cleanup(func() {
+					resume()
+					finish()
+					select {
+					case <-evictionDone:
+					case <-time.After(10 * time.Second):
+						t.Error("the eviction did not finish")
+					}
+				})
 				select {
-				case <-evictionDone:
+				case <-unlinked:
+				case err := <-evicted:
+					t.Fatalf("the eviction returned without unlinking the series: %v", err)
 				case <-time.After(10 * time.Second):
-					t.Error("the eviction did not finish")
+					t.Fatal("the eviction did not reach the pause before the tombstone")
 				}
-			})
-			select {
-			case <-unlinked:
-			case err := <-evicted:
-				t.Fatalf("the eviction returned without unlinking the series: %v", err)
-			case <-time.After(10 * time.Second):
-				t.Fatal("the eviction did not reach the pause before the tombstone")
-			}
-			require.True(t, db.head.pendingTombstones.active.Load())
-			resume()
+				require.True(t, db.head.pendingTombstones.active.Load())
+				resume()
 
-			// The creator must stay blocked until the tombstone is written.
-			var result appendResult
-			select {
-			case result = <-created:
-				require.FailNow(t, "the creator was not blocked while the tombstone of the old series was pending")
-			case <-time.After(time.Second):
+				// The creator must stay blocked until the tombstone is written.
+				synctest.Wait()
+				select {
+				case <-created:
+					require.FailNow(t, "the creator was not blocked while the tombstone of the old series was pending")
+				default:
+				}
 				finish()
+				var result appendResult
 				select {
 				case result = <-created:
 				case <-time.After(10 * time.Second):
 					t.Fatal("the creator remained blocked after the tombstone was written")
 				}
-			}
-			require.NoError(t, result.err)
-			require.NotEqual(t, oldRef, result.ref)
-			require.NoError(t, <-evicted)
+				require.NoError(t, result.err)
+				require.NotEqual(t, oldRef, result.ref)
+				require.NoError(t, <-evicted)
 
-			app := db.Appender(context.Background())
-			_, err := app.Append(result.ref, ls, 500, 43)
-			require.NoError(t, err)
-			require.NoError(t, app.Commit())
-			matcher := labels.MustNewMatcher(labels.MatchEqual, "id", "20")
-			q, err := db.Querier(math.MinInt64, math.MaxInt64)
-			require.NoError(t, err)
-			before := query(t, q, matcher)
-			require.Len(t, before[ls.String()], 5)
-			require.NoError(t, db.Close())
+				app := db.Appender(context.Background())
+				_, err := app.Append(result.ref, ls, 500, 43)
+				require.NoError(t, err)
+				require.NoError(t, app.Commit())
+				matcher := labels.MustNewMatcher(labels.MatchEqual, "id", "20")
+				q, err := db.Querier(math.MinInt64, math.MaxInt64)
+				require.NoError(t, err)
+				before := query(t, q, matcher)
+				require.Len(t, before[ls.String()], 5)
+				require.NoError(t, db.Close())
 
-			oldStonePos, newSeriesPos := -1, -1
-			for i, entry := range readTestWAL(t, filepath.Join(db.Dir(), "wal")) {
-				switch records := entry.(type) {
-				case []tombstones.Stone:
-					for _, stone := range records {
-						if stone.Ref == oldRef {
-							oldStonePos = i
+				oldStonePos, newSeriesPos := -1, -1
+				for i, entry := range readTestWAL(t, filepath.Join(db.Dir(), "wal")) {
+					switch records := entry.(type) {
+					case []tombstones.Stone:
+						for _, stone := range records {
+							if stone.Ref == oldRef {
+								oldStonePos = i
+							}
 						}
-					}
-				case []record.RefSeries:
-					for _, series := range records {
-						if series.Ref == chunks.HeadSeriesRef(result.ref) {
-							newSeriesPos = i
+					case []record.RefSeries:
+						for _, series := range records {
+							if series.Ref == chunks.HeadSeriesRef(result.ref) {
+								newSeriesPos = i
+							}
 						}
 					}
 				}
-			}
-			require.NotEqual(t, -1, oldStonePos)
-			require.NotEqual(t, -1, newSeriesPos)
-			require.Greater(t, newSeriesPos, oldStonePos, "the declaration of the new series must follow the tombstone of the old one")
+				require.NotEqual(t, -1, oldStonePos)
+				require.NotEqual(t, -1, newSeriesPos)
+				require.Greater(t, newSeriesPos, oldStonePos, "the declaration of the new series must follow the tombstone of the old one")
 
-			reopened, err := Open(db.Dir(), nil, nil, db.opts, nil)
-			require.NoError(t, err)
-			reopened.DisableCompactions()
-			t.Cleanup(func() { require.NoError(t, reopened.Close()) })
-			q, err = reopened.Querier(math.MinInt64, math.MaxInt64)
-			require.NoError(t, err)
-			require.Equal(t, before, query(t, q, matcher), "the committed samples must survive replay")
-			require.Zero(t, prom_testutil.ToFloat64(reopened.head.metrics.walReplayUnknownRefsTotal.WithLabelValues("samples")))
+				reopened, err := Open(db.Dir(), nil, nil, db.opts, nil)
+				require.NoError(t, err)
+				reopened.DisableCompactions()
+				t.Cleanup(func() { require.NoError(t, reopened.Close()) })
+				q, err = reopened.Querier(math.MinInt64, math.MaxInt64)
+				require.NoError(t, err)
+				require.Equal(t, before, query(t, q, matcher), "the committed samples must survive replay")
+				require.Zero(t, prom_testutil.ToFloat64(reopened.head.metrics.walReplayUnknownRefsTotal.WithLabelValues("samples")))
+			})
 		})
 	}
 }
@@ -942,101 +951,107 @@ func TestSeriesEviction_CreationPausedBeforeInsertionIsDeclaredAfterTombstone(t 
 // skip the replacement's older samples, assuming they were already stored in
 // the old series' chunks on disk.
 func TestHead_WALReplay_RecreatedSeriesKeepsSamplesBelowOldMmappedChunks(t *testing.T) {
-	ctx := context.Background()
-	head, w := newTestHead(t, 10000, compression.None, false)
-	require.NoError(t, head.Init(0))
-	lset := labels.FromStrings("foo", "bar")
-	matcher := labels.MustNewMatcher(labels.MatchEqual, "foo", "bar")
-	querySamples := func(h *Head) []int64 {
-		q, err := NewBlockQuerier(h, math.MinInt64, math.MaxInt64)
-		require.NoError(t, err)
-		defer q.Close()
-		var timestamps []int64
-		for _, samples := range query(t, q, matcher) {
-			for _, s := range samples {
-				timestamps = append(timestamps, s.T())
-			}
-		}
-		return timestamps
-	}
-
-	// The old series: 130 samples at t=0,2,...,258, the last one a stale marker. A chunk
-	// holds about 120 samples, so the first ones end up in a chunk that is written to
-	// disk, and the last ones stay in the head chunk.
-	app := head.Appender(ctx)
-	var oldRef storage.SeriesRef
-	for i := range 130 {
-		v := float64(i)
-		if i == 129 {
-			v = math.Float64frombits(value.StaleNaN)
-		}
-		var err error
-		oldRef, err = app.Append(0, lset, int64(2*i), v)
-		require.NoError(t, err)
-	}
-	require.NoError(t, app.Commit())
-	head.mmapHeadChunks()
-	oldSeries := head.series.getByID(chunks.HeadSeriesRef(oldRef))
-	require.NotEmpty(t, oldSeries.mmappedChunks)
-	mappedMax := oldSeries.mmappedChunks[len(oldSeries.mmappedChunks)-1].maxTime
-	require.Greater(t, mappedMax, int64(151), "the replacement's sample must be older than the chunk on disk")
-	require.Less(t, mappedMax, int64(258))
-	t.Logf("the evicted series has chunks on disk up to t=%d", mappedMax)
-
-	// Evict the old series. Right after it is removed from the head, and before its
-	// tombstone is written, ingestion recreates it with a sample older than mappedMax.
-	var newRef storage.SeriesRef
-	recreated := make(chan error, 1)
-	head.series.seriesLifecycleCallback = seriesEvictionPostDeletionCallback{
-		postDeletion: func(deleted map[chunks.HeadSeriesRef]labels.Labels) {
-			if _, ok := deleted[chunks.HeadSeriesRef(oldRef)]; !ok {
-				return
-			}
-			// A series with the labels of the evicted one waits for its tombstone, so it can't be
-			// created from the goroutine that writes it.
-			go func() {
-				app := head.Appender(ctx)
-				var err error
-				newRef, err = app.Append(0, lset, 151, 42)
-				if err == nil {
-					err = app.Commit()
+	synctest.Test(t, func(t *testing.T) {
+		ctx := context.Background()
+		head, w := newTestHead(t, 10000, compression.None, false)
+		require.NoError(t, head.Init(0))
+		lset := labels.FromStrings("foo", "bar")
+		matcher := labels.MustNewMatcher(labels.MatchEqual, "foo", "bar")
+		querySamples := func(h *Head) []int64 {
+			q, err := NewBlockQuerier(h, math.MinInt64, math.MaxInt64)
+			require.NoError(t, err)
+			defer q.Close()
+			var timestamps []int64
+			for _, samples := range query(t, q, matcher) {
+				for _, s := range samples {
+					timestamps = append(timestamps, s.T())
 				}
-				recreated <- err
-			}()
-		},
-	}
-	refs := []storage.SeriesRef{oldRef}
-	require.NoError(t, head.truncateStaleSeries(refs, 258, head.snapshotFingerprints(refs, math.MaxUint64)))
-	require.NoError(t, <-recreated)
-	require.NotEqual(t, oldRef, newRef)
+			}
+			return timestamps
+		}
 
-	app = head.Appender(ctx)
-	_, err := app.Append(newRef, lset, 301, 43)
-	require.NoError(t, err)
-	require.NoError(t, app.Commit())
+		// The old series: 130 samples at t=0,2,...,258, the last one a stale marker. A chunk
+		// holds about 120 samples, so the first ones end up in a chunk that is written to
+		// disk, and the last ones stay in the head chunk.
+		app := head.Appender(ctx)
+		var oldRef storage.SeriesRef
+		for i := range 130 {
+			v := float64(i)
+			if i == 129 {
+				v = math.Float64frombits(value.StaleNaN)
+			}
+			var err error
+			oldRef, err = app.Append(0, lset, int64(2*i), v)
+			require.NoError(t, err)
+		}
+		require.NoError(t, app.Commit())
+		head.mmapHeadChunks()
+		oldSeries := head.series.getByID(chunks.HeadSeriesRef(oldRef))
+		require.NotEmpty(t, oldSeries.mmappedChunks)
+		mappedMax := oldSeries.mmappedChunks[len(oldSeries.mmappedChunks)-1].maxTime
+		require.Greater(t, mappedMax, int64(151), "the replacement's sample must be older than the chunk on disk")
+		require.Less(t, mappedMax, int64(258))
+		t.Logf("the evicted series has chunks on disk up to t=%d", mappedMax)
 
-	// While running, both samples of the replacement are there.
-	require.Equal(t, []int64{151, 301}, querySamples(head))
-	require.NoError(t, head.Close())
+		// Evict the old series. Right after it is removed from the head, and before its
+		// tombstone is written, ingestion recreates it with a sample older than mappedMax.
+		var newRef storage.SeriesRef
+		recreated := make(chan error, 1)
+		head.series.seriesLifecycleCallback = seriesEvictionPostDeletionCallback{
+			postDeletion: func(deleted map[chunks.HeadSeriesRef]labels.Labels) {
+				if _, ok := deleted[chunks.HeadSeriesRef(oldRef)]; !ok {
+					return
+				}
+				// A series with the labels of the evicted one waits for its tombstone, so it can't be
+				// created from the goroutine that writes it.
+				go func() {
+					app := head.Appender(ctx)
+					var err error
+					newRef, err = app.Append(0, lset, 151, 42)
+					if err == nil {
+						err = app.Commit()
+					}
+					recreated <- err
+				}()
+				// Wait until the creator is blocked on the pending tombstone, so that the eviction can't write it before
+				// the creator looks for it.
+				synctest.Wait()
+				require.Empty(t, recreated, "the creator must wait for the tombstone")
+			},
+		}
+		refs := []storage.SeriesRef{oldRef}
+		require.NoError(t, head.truncateStaleSeries(refs, 258, head.snapshotFingerprints(refs, math.MaxUint64)))
+		require.NoError(t, <-recreated)
+		require.NotEqual(t, oldRef, newRef)
 
-	// Restart.
-	w, err = wlog.New(nil, nil, w.Dir(), compression.None)
-	require.NoError(t, err)
-	opts := DefaultHeadOptions()
-	opts.ChunkRange = 10000
-	opts.ChunkDirRoot = head.opts.ChunkDirRoot
-	head, err = NewHead(nil, nil, w, nil, opts, nil)
-	require.NoError(t, err)
-	require.NoError(t, head.Init(0))
-	t.Cleanup(func() { require.NoError(t, head.Close()) })
+		app = head.Appender(ctx)
+		_, err := app.Append(newRef, lset, 301, 43)
+		require.NoError(t, err)
+		require.NoError(t, app.Commit())
 
-	replayed := head.series.getByHash(lset.Hash(), lset)
-	require.NotNil(t, replayed)
-	t.Logf("replacement series %d replays as series %d, which skips every sample <= %d", newRef, replayed.ref, replayed.mmMaxTime)
+		// While running, both samples of the replacement are there.
+		require.Equal(t, []int64{151, 301}, querySamples(head))
+		require.NoError(t, head.Close())
 
-	// Replay must restore only the replacement's samples. The old series'
-	// tombstone removes it before the replacement is declared.
-	require.Equal(t, []int64{151, 301}, querySamples(head))
+		// Restart.
+		w, err = wlog.New(nil, nil, w.Dir(), compression.None)
+		require.NoError(t, err)
+		opts := DefaultHeadOptions()
+		opts.ChunkRange = 10000
+		opts.ChunkDirRoot = head.opts.ChunkDirRoot
+		head, err = NewHead(nil, nil, w, nil, opts, nil)
+		require.NoError(t, err)
+		require.NoError(t, head.Init(0))
+		t.Cleanup(func() { require.NoError(t, head.Close()) })
+
+		replayed := head.series.getByHash(lset.Hash(), lset)
+		require.NotNil(t, replayed)
+		t.Logf("replacement series %d replays as series %d, which skips every sample <= %d", newRef, replayed.ref, replayed.mmMaxTime)
+
+		// Replay must restore only the replacement's samples. The old series'
+		// tombstone removes it before the replacement is declared.
+		require.Equal(t, []int64{151, 301}, querySamples(head))
+	})
 }
 
 // TestSeriesEviction_CreatorsAreReleasedBeforePostingsAreDeleted verifies that the creation of a series with the
