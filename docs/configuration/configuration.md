@@ -4355,6 +4355,12 @@ headers:
 # Whether to use the external labels as selectors for the remote read endpoint.
 [ filter_external_labels: <boolean> | default = true ]
 
+# Whether errors from this remote read endpoint should fail the query.
+# By default remote read endpoints are queried in a best effort manner and
+# their errors are returned as warnings alongside the partial result.
+# When set to true, a failing read makes the whole query fail instead.
+[ required: <boolean> | default = false ]
+
 # HTTP client settings, including authentication methods (such as basic auth and
 # authorization), proxy configurations, TLS options, custom HTTP headers, etc.
 [ <http_config> ]
