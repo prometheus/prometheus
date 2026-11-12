@@ -546,10 +546,14 @@ func (sp *scrapePool) sync(targets []*Target) {
 			// This might be a duplicated target.
 			if _, ok := uniqueLoops[hash]; !ok {
 				uniqueLoops[hash] = nil
+				// Need to keep the most updated ScrapeConfig for
+				// displaying labels in the Service Discovery web page.
+				sp.activeTargets[hash].SetScrapeConfig(sp.config, t.tLabels, t.tgLabels)
 			}
-			// Need to keep the most updated ScrapeConfig for
-			// displaying labels in the Service Discovery web page.
-			sp.activeTargets[hash].SetScrapeConfig(sp.config, t.tLabels, t.tgLabels)
+			// Otherwise another target with the same labels was already seen
+			// in this sync. Keep the discovered labels of that first one, so
+			// later duplicates (e.g. a pod's init containers, which come after
+			// the regular containers) don't take over.
 		}
 	}
 
