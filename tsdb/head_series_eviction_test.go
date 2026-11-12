@@ -1422,6 +1422,7 @@ func BenchmarkTruncateSeries(b *testing.B) {
 			for b.Loop() {
 				b.StopTimer()
 				h, _ := newTestHead(b, 10000, compression.None, false)
+				require.NoError(b, h.Init(0))
 				app := h.Appender(context.Background())
 				refs := make([]storage.SeriesRef, 0, n)
 				for i := range n {
@@ -1459,7 +1460,9 @@ func BenchmarkTruncateSeriesCreatorWait(b *testing.B) {
 	const (
 		creatorGoroutines = 4
 		blockedThreshold  = time.Millisecond
-		unrelatedSeries   = 100_000
+		// unrelatedSeries is the number of distinct series that each creator goroutine creates, one per call, until it
+		// has created them all. Then it starts again, and finds them.
+		unrelatedSeries = 250_000
 	)
 
 	for _, n := range []int{100_000, 500_000} {
@@ -1475,6 +1478,7 @@ func BenchmarkTruncateSeriesCreatorWait(b *testing.B) {
 					for b.Loop() {
 						b.StopTimer()
 						h, _ := newTestHead(b, 10000, compression.None, false)
+						require.NoError(b, h.Init(0))
 						app := h.Appender(context.Background())
 						refs := make([]storage.SeriesRef, 0, n)
 						evicted := make([]labels.Labels, 0, n)
@@ -1487,19 +1491,27 @@ func BenchmarkTruncateSeriesCreatorWait(b *testing.B) {
 						}
 						require.NoError(b, app.Commit())
 
-						creatorLabels := evicted
-						if creators == "unrelated" {
-							creatorLabels = make([]labels.Labels, unrelatedSeries)
-							for i := range creatorLabels {
-								creatorLabels[i] = labels.FromStrings("__name__", "unrelated", "id", fmt.Sprintf("%07d", i))
+						// The matching creators recreate random evicted series. Each unrelated creator creates its own
+						// distinct series one after the other, so that its calls reach the creation of a series, and
+						// not only the lookup of an existing one.
+						creatorLabels := make([][]labels.Labels, creatorGoroutines)
+						creatorHashes := make([][]uint64, creatorGoroutines)
+						for g := range creatorGoroutines {
+							creatorLabels[g] = evicted
+							if creators == "unrelated" {
+								creatorLabels[g] = make([]labels.Labels, unrelatedSeries)
+								for i := range creatorLabels[g] {
+									creatorLabels[g][i] = labels.FromStrings("__name__", "unrelated", "id", fmt.Sprintf("%d_%07d", g, i))
+								}
+							}
+							creatorHashes[g] = make([]uint64, len(creatorLabels[g]))
+							for i, lset := range creatorLabels[g] {
+								creatorHashes[g][i] = lset.Hash()
 							}
 						}
-						hashes := make([]uint64, len(creatorLabels))
-						for i, lset := range creatorLabels {
-							hashes[i] = lset.Hash()
-						}
 
-						stop := make(chan struct{})
+						// The goroutines start when the timer does, so that the creation of series does not begin before it.
+						stop, start := make(chan struct{}), make(chan struct{})
 						var running, ready sync.WaitGroup
 						// The committers share the clock, so that none of them falls out of the head's bounds.
 						var clock atomic.Int64
@@ -1513,6 +1525,7 @@ func BenchmarkTruncateSeriesCreatorWait(b *testing.B) {
 							ready.Add(1)
 							running.Go(func() {
 								ready.Done()
+								<-start
 								for {
 									select {
 									case <-stop:
@@ -1540,6 +1553,7 @@ func BenchmarkTruncateSeriesCreatorWait(b *testing.B) {
 							ready.Add(1)
 							running.Go(func() {
 								ready.Done()
+								<-start
 								r := rand.New(rand.NewSource(int64(g)))
 								res := &results[g]
 								for {
@@ -1548,12 +1562,15 @@ func BenchmarkTruncateSeriesCreatorWait(b *testing.B) {
 										return
 									default:
 									}
-									i := r.Intn(len(creatorLabels))
-									start := time.Now()
-									if _, _, err := h.getOrCreate(hashes[i], creatorLabels[i], false); err != nil {
+									i := res.calls % len(creatorLabels[g])
+									if creators == "matching" {
+										i = r.Intn(len(creatorLabels[g]))
+									}
+									callStart := time.Now()
+									if _, _, err := h.getOrCreate(creatorHashes[g][i], creatorLabels[g][i], false); err != nil {
 										panic(err)
 									}
-									d := time.Since(start)
+									d := time.Since(callStart)
 									res.calls++
 									res.maxWait = max(res.maxWait, d)
 									if d >= blockedThreshold {
@@ -1565,6 +1582,7 @@ func BenchmarkTruncateSeriesCreatorWait(b *testing.B) {
 						ready.Wait()
 
 						b.StartTimer()
+						close(start)
 						n2, err := h.truncateSeries(refs, 10, func(*memSeries) bool { return true })
 						b.StopTimer()
 						close(stop)
