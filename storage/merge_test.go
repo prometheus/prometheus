@@ -1322,6 +1322,99 @@ func TestChainSampleIteratorSeek(t *testing.T) {
 	}
 }
 
+func TestChainedSeriesMergeWithTieBreak(t *testing.T) {
+	// The tie-break keeps the higher of two float samples at the same timestamp.
+	higherFloat := func(a, b chunkenc.Iterator) bool {
+		_, av := a.At()
+		_, bv := b.At()
+		return av > bv
+	}
+	// Each iterator must get its own tie-break, so that a tie-break can keep state for its iterator.
+	newTieBreakCalls := 0
+	merge := ChainedSeriesMergeWithTieBreak(func() SampleTieBreakFunc {
+		newTieBreakCalls++
+		return higherFloat
+	})
+
+	// permutations returns all orders of the indexes 0 to n-1, because the result must be the same for each order
+	// of the input series.
+	var permutations func(n int) [][]int
+	permutations = func(n int) [][]int {
+		if n == 1 {
+			return [][]int{{0}}
+		}
+		var result [][]int
+		for _, p := range permutations(n - 1) {
+			for i := 0; i <= len(p); i++ {
+				result = append(result, slices.Insert(slices.Clone(p), i, n-1))
+			}
+		}
+		return result
+	}
+
+	for name, tc := range map[string]struct {
+		input    [][]chunks.Sample
+		expected []chunks.Sample
+	}{
+		"non overlapping series": {
+			input: [][]chunks.Sample{
+				{fSample{t: 0, f: 1}, fSample{t: 1, f: 1}},
+				{fSample{t: 2, f: 2}, fSample{t: 3, f: 2}},
+			},
+			expected: []chunks.Sample{fSample{t: 0, f: 1}, fSample{t: 1, f: 1}, fSample{t: 2, f: 2}, fSample{t: 3, f: 2}},
+		},
+		"different values at the first timestamp": {
+			input: [][]chunks.Sample{
+				{fSample{t: 0, f: 5}, fSample{t: 1, f: 1}},
+				{fSample{t: 0, f: 7}},
+			},
+			expected: []chunks.Sample{fSample{t: 0, f: 7}, fSample{t: 1, f: 1}},
+		},
+		"different values at a later timestamp in three series": {
+			input: [][]chunks.Sample{
+				{fSample{t: 0, f: 1}, fSample{t: 1, f: 10}, fSample{t: 2, f: 1}},
+				{fSample{t: 1, f: 20}},
+				{fSample{t: 1, f: 15}, fSample{t: 3, f: 1}},
+			},
+			expected: []chunks.Sample{fSample{t: 0, f: 1}, fSample{t: 1, f: 20}, fSample{t: 2, f: 1}, fSample{t: 3, f: 1}},
+		},
+		"different series have the higher value at different timestamps": {
+			input: [][]chunks.Sample{
+				{fSample{t: 0, f: 1}, fSample{t: 1, f: 9}, fSample{t: 2, f: 1}},
+				{fSample{t: 0, f: 2}, fSample{t: 1, f: 3}, fSample{t: 2, f: 8}},
+			},
+			expected: []chunks.Sample{fSample{t: 0, f: 2}, fSample{t: 1, f: 9}, fSample{t: 2, f: 8}},
+		},
+	} {
+		t.Run(name, func(t *testing.T) {
+			lbls := labels.FromStrings("foo", "bar")
+			for _, order := range permutations(len(tc.input)) {
+				series := make([]Series, 0, len(order))
+				for _, i := range order {
+					series = append(series, NewListSeries(lbls, tc.input[i]))
+				}
+				merged := merge(series...)
+				newTieBreakCalls = 0
+
+				actual, err := ExpandSamples(merged.Iterator(nil), nil)
+				require.NoError(t, err)
+				require.Equal(t, tc.expected, actual, "Next with series order %v", order)
+
+				for i, s := range tc.expected {
+					it := merged.Iterator(nil)
+					require.Equal(t, chunkenc.ValFloat, it.Seek(s.T()))
+					ts, f := it.At()
+					actual := []chunks.Sample{fSample{st: it.AtST(), t: ts, f: f}}
+					rest, err := ExpandSamples(it, nil)
+					require.NoError(t, err)
+					require.Equal(t, tc.expected[i:], append(actual, rest...), "Seek(%d) with series order %v", s.T(), order)
+				}
+				require.Equal(t, 1+len(tc.expected), newTieBreakCalls, "one tie-break for each iterator")
+			}
+		})
+	}
+}
+
 func TestChainSampleIteratorSeekFailingIterator(t *testing.T) {
 	merged := ChainSampleIteratorFromIterators(nil, []chunkenc.Iterator{
 		NewListSeriesIterator(samples{fSample{0, 0, 0.1}, fSample{0, 1, 1.1}, fSample{0, 2, 2.1}}),
@@ -1422,11 +1515,15 @@ func makeSeries(numSeries, numSamples int) []Series {
 }
 
 func makeMergeSeriesSet(serieses [][]Series) SeriesSet {
+	return makeMergeSeriesSetWithMergeFunc(serieses, ChainedSeriesMerge)
+}
+
+func makeMergeSeriesSetWithMergeFunc(serieses [][]Series, mergeFunc VerticalSeriesMergeFunc) SeriesSet {
 	seriesSets := make([]genericSeriesSet, len(serieses))
 	for i, s := range serieses {
 		seriesSets[i] = &genericSeriesSetAdapter{NewMockSeriesSet(s...)}
 	}
-	return &seriesSetAdapter{newGenericMergeSeriesSet(seriesSets, 0, (&seriesMergerAdapter{VerticalSeriesMergeFunc: ChainedSeriesMerge}).Merge)}
+	return &seriesSetAdapter{newGenericMergeSeriesSet(seriesSets, 0, (&seriesMergerAdapter{VerticalSeriesMergeFunc: mergeFunc}).Merge)}
 }
 
 func benchmarkDrain(b *testing.B, makeSeriesSet func() SeriesSet) {
@@ -1467,6 +1564,30 @@ func BenchmarkMergeSeriesSet(b *testing.B) {
 		}
 		b.Run(fmt.Sprintf("%d_%d_%d", bm.numSeriesSets, bm.numSeries, bm.numSamples), func(b *testing.B) {
 			benchmarkDrain(b, func() SeriesSet { return makeMergeSeriesSet(serieses) })
+		})
+	}
+}
+
+func BenchmarkMergeSeriesSetWithTieBreak(b *testing.B) {
+	higherFloat := func(a, b chunkenc.Iterator) bool {
+		_, av := a.At()
+		_, bv := b.At()
+		return av > bv
+	}
+	merge := ChainedSeriesMergeWithTieBreak(func() SampleTieBreakFunc { return higherFloat })
+	for _, bm := range []struct {
+		numSeriesSets, numSeries, numSamples int
+	}{
+		{1, 100, 100},
+		{10, 100, 100},
+		{100, 100, 100},
+	} {
+		serieses := [][]Series{}
+		for i := 0; i < bm.numSeriesSets; i++ {
+			serieses = append(serieses, makeSeries(bm.numSeries, bm.numSamples))
+		}
+		b.Run(fmt.Sprintf("%d_%d_%d", bm.numSeriesSets, bm.numSeries, bm.numSamples), func(b *testing.B) {
+			benchmarkDrain(b, func() SeriesSet { return makeMergeSeriesSetWithMergeFunc(serieses, merge) })
 		})
 	}
 }
