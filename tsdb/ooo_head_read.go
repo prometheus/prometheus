@@ -398,6 +398,9 @@ func NewOOOCompactionHead(ctx context.Context, head *Head) (*OOOCompactionHead, 
 
 		ch.mmapOOOSeriesChunk(ms, seriesRef, &lastSeq, &lastOff)
 	}
+	if err := p.Err(); err != nil {
+		return nil, fmt.Errorf("iterate postings: %w", err)
+	}
 
 	return ch, nil
 }
