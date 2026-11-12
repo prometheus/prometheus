@@ -207,7 +207,7 @@ const (
 	"Service": {
 		"ID": "test",
 		"Service": "test",
-		"Tags": ["tag1"],
+		"Tags": ["tag1", "env=staging", "team.name=web=ui", "=ignored"],
 		"Address": "",
 		"Meta": {"version":"1.0.0","environment":"staging"},
 		"Port": 3341,
@@ -293,7 +293,20 @@ func checkOneTarget(t *testing.T, tg []*targetgroup.Group) {
 	if target.Source == "test" {
 		// test service should have one node.
 		require.NotEmpty(t, target.Targets, "Test service should have one node")
+		checkTagLabels(t, target.Targets[0])
 	}
+}
+
+func checkTagLabels(t *testing.T, lbls model.LabelSet) {
+	t.Helper()
+	require.Equal(t, model.LabelValue("true"), lbls["__meta_consul_tagpresent_tag1"])
+	require.Equal(t, model.LabelValue("true"), lbls["__meta_consul_tagpresent_env"])
+	require.Equal(t, model.LabelValue("staging"), lbls["__meta_consul_tag_env"])
+	require.Equal(t, model.LabelValue("true"), lbls["__meta_consul_tagpresent_team_name"])
+	require.Equal(t, model.LabelValue("web=ui"), lbls["__meta_consul_tag_team_name"])
+	require.NotContains(t, lbls, model.LabelName("__meta_consul_tag_tag1"))
+	require.NotContains(t, lbls, model.LabelName("__meta_consul_tag_"))
+	require.NotContains(t, lbls, model.LabelName("__meta_consul_tagpresent_"))
 }
 
 // Watch all the services in the catalog.

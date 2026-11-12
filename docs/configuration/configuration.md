@@ -1595,6 +1595,8 @@ The following meta labels are available on targets during [relabeling](#relabel_
 * `__meta_consul_service`: the name of the service the target belongs to
 * `__meta_consul_tagged_address_<key>`: each node tagged address key value of the target
 * `__meta_consul_tags`: the list of tags of the target joined by the tag separator
+* `__meta_consul_tag_<key>`: the value of each `key=value` tag of the target, split on the first `=`
+* `__meta_consul_tagpresent_<key>`: `true` for each tag of the target, where `<key>` is the part before the first `=` or the whole tag
 
 ```yaml
 # The information to access the Consul API. It is to be defined
@@ -3081,6 +3083,8 @@ The following meta labels are available on targets during [relabeling](#relabel_
 * `__meta_nomad_service_id`: the service ID of the target
 * `__meta_nomad_service_port`: the service port of the target
 * `__meta_nomad_tags`: the list of tags of the target joined by the tag separator
+* `__meta_nomad_tag_<key>`: the value of each `key=value` tag of the target, split on the first `=`
+* `__meta_nomad_tagpresent_<key>`: `true` for each tag of the target, where `<key>` is the part before the first `=` or the whole tag
 
 ```yaml
 # The information to access the Nomad API. It is to be defined

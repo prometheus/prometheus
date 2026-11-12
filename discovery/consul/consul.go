@@ -49,6 +49,10 @@ const (
 	serviceMetaDataLabel = model.MetaLabelPrefix + "consul_service_metadata_"
 	// tagsLabel is the name of the label containing the tags assigned to the target.
 	tagsLabel = model.MetaLabelPrefix + "consul_tags"
+	// tagLabel is the prefix for the labels mapping key=value tags to their own labels.
+	tagLabel = model.MetaLabelPrefix + "consul_tag_"
+	// tagPresentLabel is the prefix for the labels marking which tags are set on the target.
+	tagPresentLabel = model.MetaLabelPrefix + "consul_tagpresent_"
 	// serviceLabel is the name of the label containing the service name.
 	serviceLabel = model.MetaLabelPrefix + "consul_service"
 	// healthLabel is the name of the label containing the health of the service instance.
@@ -583,11 +587,32 @@ func (srv *consulService) watch(ctx context.Context, ch chan<- []*targetgroup.Gr
 			labels[taggedAddressesLabel+model.LabelName(name)] = model.LabelValue(v)
 		}
 
+		addTagLabels(labels, serviceNode.Service.Tags)
+
 		tgroup.Targets = append(tgroup.Targets, labels)
 	}
 
 	select {
 	case <-ctx.Done():
 	case ch <- []*targetgroup.Group{&tgroup}:
+	}
+}
+
+// addTagLabels adds a label for each of the given tags, so they can be picked
+// up with labelmap instead of matching on the joined tags label. A "key=value"
+// tag is exposed as __meta_consul_tag_<key>="value", and every tag gets
+// __meta_consul_tagpresent_<key>="true", where key is the part before the
+// first "=" (or the whole tag if there is none).
+func addTagLabels(labels model.LabelSet, tags []string) {
+	for _, tag := range tags {
+		key, value, hasValue := strings.Cut(tag, "=")
+		if key == "" {
+			continue
+		}
+		name := model.LabelName(strutil.SanitizeLabelName(key))
+		labels[tagPresentLabel+name] = "true"
+		if hasValue {
+			labels[tagLabel+name] = model.LabelValue(value)
+		}
 	}
 }
