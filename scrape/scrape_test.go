@@ -9485,12 +9485,12 @@ func testTargetScrapeConfigWithLabels(t *testing.T, appV2 bool) {
 		jobName              = "test"
 	)
 
-	createTestServer := func(t *testing.T, done chan struct{}) *url.URL {
+	createTestServer := func(t *testing.T, done chan struct{}, wantParams []string) *url.URL {
 		server := httptest.NewServer(
 			http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 				defer close(done)
 				require.Equal(t, expectedTimeout, r.Header.Get("X-Prometheus-Scrape-Timeout-Seconds"))
-				require.Equal(t, expectedParam, r.URL.Query().Get("param"))
+				require.Equal(t, wantParams, r.URL.Query()["param"])
 				require.Equal(t, expectedPath, r.URL.Path)
 
 				w.Header().Set("Content-Type", `text/plain; version=0.0.4`)
@@ -9503,9 +9503,9 @@ func testTargetScrapeConfigWithLabels(t *testing.T, appV2 bool) {
 		return serverURL
 	}
 
-	run := func(t *testing.T, cfg *config.ScrapeConfig, targets []*targetgroup.Group) chan struct{} {
+	run := func(t *testing.T, cfg *config.ScrapeConfig, targets []*targetgroup.Group, wantParams []string) chan struct{} {
 		done := make(chan struct{})
-		srvURL := createTestServer(t, done)
+		srvURL := createTestServer(t, done, wantParams)
 
 		// Update target addresses to use the dynamically created server URL.
 		for _, target := range targets {
@@ -9524,9 +9524,10 @@ func testTargetScrapeConfigWithLabels(t *testing.T, appV2 bool) {
 	}
 
 	cases := []struct {
-		name    string
-		cfg     *config.ScrapeConfig
-		targets []*targetgroup.Group
+		name       string
+		cfg        *config.ScrapeConfig
+		targets    []*targetgroup.Group
+		wantParams []string
 	}{
 		{
 			name: "Everything in scrape config",
@@ -9547,6 +9548,7 @@ func testTargetScrapeConfigWithLabels(t *testing.T, appV2 bool) {
 					},
 				},
 			},
+			wantParams: []string{expectedParam},
 		},
 		{
 			name: "Overridden in target",
@@ -9572,6 +9574,32 @@ func testTargetScrapeConfigWithLabels(t *testing.T, appV2 bool) {
 					},
 				},
 			},
+			wantParams: []string{expectedParam},
+		},
+		{
+			name: "Multiple values overridden in target",
+			cfg: &config.ScrapeConfig{
+				ScrapeInterval:             model.Duration(2 * time.Second),
+				ScrapeTimeout:              model.Duration(configTimeout),
+				JobName:                    jobName,
+				Scheme:                     httpScheme,
+				MetricsPath:                expectedPath,
+				MetricNameValidationScheme: model.UTF8Validation,
+				MetricNameEscapingScheme:   model.AllowUTF8,
+				Params:                     url.Values{"param": []string{secondParam}},
+			},
+			targets: []*targetgroup.Group{
+				{
+					Targets: []model.LabelSet{
+						{
+							model.AddressLabel: model.LabelValue(""),
+							paramLabel:         expectedParam,
+							paramLabel + "_1":  secondParam,
+						},
+					},
+				},
+			},
+			wantParams: []string{expectedParam, secondParam},
 		},
 		{
 			name: "Overridden in relabel_config",
@@ -9623,6 +9651,7 @@ func testTargetScrapeConfigWithLabels(t *testing.T, appV2 bool) {
 					},
 				},
 			},
+			wantParams: []string{expectedParam},
 		},
 	}
 
@@ -9630,7 +9659,7 @@ func testTargetScrapeConfigWithLabels(t *testing.T, appV2 bool) {
 		t.Run(c.name, func(t *testing.T) {
 			t.Parallel()
 			select {
-			case <-run(t, c.cfg, c.targets):
+			case <-run(t, c.cfg, c.targets, c.wantParams):
 			case <-time.After(10 * time.Second):
 				t.Fatal("timeout after 10 seconds")
 			}
