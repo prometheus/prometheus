@@ -109,9 +109,9 @@ Check if the config files are valid or not.
 
 ###### Arguments
 
-| Argument | Description | Required |
-| --- | --- | --- |
-| config-files | The config files to check. | Yes |
+| Argument | Description |
+| --- | --- |
+| config-files | The config files to check, default is read from standard input. |
 
 
 
