@@ -476,24 +476,39 @@ func ChainedSeriesMerge(series ...Series) Series {
 	}
 }
 
-// SampleTieBreakFunc returns true if the current sample of a must be kept instead of the current sample of b.
-// It is called only when a and b are at samples with the same timestamp.
-//
-// It must be a strict weak ordering of the samples, otherwise the sample that is kept can depend on the order of the
-// iterators. It must not move a or b. To get the type of the current sample, use Seek with the current timestamp, for
-// example a.Seek(a.AtT()), which does not move the iterator.
+// SampleTieBreaker decides which sample to keep when two iterators are at samples with the same timestamp.
+type SampleTieBreaker interface {
+	// Prefer returns true if the current sample of a must be kept instead of the current sample of b. It is called
+	// only when a and b are at samples with the same timestamp.
+	//
+	// It must be a strict weak ordering of the samples, otherwise the sample that is kept can depend on the order of
+	// the iterators. It must not move a or b. To get the type of the current sample, use Seek with the current
+	// timestamp, for example a.Seek(a.AtT()), which does not move the iterator.
+	Prefer(a, b chunkenc.Iterator) bool
+}
+
+// SampleTieBreakFunc is a SampleTieBreaker that has no state.
 type SampleTieBreakFunc func(a, b chunkenc.Iterator) bool
+
+// Prefer calls f(a, b).
+func (f SampleTieBreakFunc) Prefer(a, b chunkenc.Iterator) bool {
+	return f(a, b)
+}
 
 // ChainedSeriesMergeWithTieBreak returns a VerticalSeriesMergeFunc that is like ChainedSeriesMerge, but if two or
 // more series have a sample with the same timestamp, it keeps the sample that the tie-break prefers.
 //
 // newTieBreak is called once for each iterator of a merged series, and the iterator uses only the tie-break that it
 // returns. So the tie-break can keep state between calls, for example buffers to read histograms into, without
-// synchronization. If the tie-break has no state, newTieBreak can return the same function each time.
+// synchronization. If the tie-break has no state, newTieBreak can return the same tie-break each time.
+//
+// When Series.Iterator is given an iterator to reuse, prev is the tie-break of that iterator, so that newTieBreak can
+// return prev to reuse its state. Otherwise prev is nil. prev can come from a different newTieBreak, so check its type
+// before reusing it.
 //
 // Use it when overlapping series can have different samples at the same timestamp, and the result must not depend on
 // the order of the series, for example when the order depends on which of many sources responds first.
-func ChainedSeriesMergeWithTieBreak(newTieBreak func() SampleTieBreakFunc) VerticalSeriesMergeFunc {
+func ChainedSeriesMergeWithTieBreak(newTieBreak func(prev SampleTieBreaker) SampleTieBreaker) VerticalSeriesMergeFunc {
 	return func(series ...Series) Series {
 		if len(series) == 0 {
 			return nil
@@ -501,8 +516,13 @@ func ChainedSeriesMergeWithTieBreak(newTieBreak func() SampleTieBreakFunc) Verti
 		return &SeriesEntry{
 			Lset: series[0].Labels(),
 			SampleIteratorFn: func(it chunkenc.Iterator) chunkenc.Iterator {
+				// Get the tie-break before ChainSampleIteratorFromSeries resets the iterator.
+				var prev SampleTieBreaker
+				if csi, ok := it.(*chainSampleIterator); ok {
+					prev = csi.h.tieBreak
+				}
 				csi := ChainSampleIteratorFromSeries(it, series).(*chainSampleIterator)
-				csi.h.tieBreak = newTieBreak()
+				csi.h.tieBreak = newTieBreak(prev)
 				return csi
 			},
 		}
@@ -738,7 +758,7 @@ func (c *chainSampleIterator) Err() error {
 type samplesIteratorHeap struct {
 	// its is nil until the heap is initialized by chainSampleIterator.Next or chainSampleIterator.Seek.
 	its      []chunkenc.Iterator
-	tieBreak SampleTieBreakFunc
+	tieBreak SampleTieBreaker
 }
 
 func (h *samplesIteratorHeap) Len() int      { return len(h.its) }
@@ -749,7 +769,7 @@ func (h *samplesIteratorHeap) Less(i, j int) bool {
 	if ti != tj || h.tieBreak == nil {
 		return ti < tj
 	}
-	return h.tieBreak(h.its[i], h.its[j])
+	return h.tieBreak.Prefer(h.its[i], h.its[j])
 }
 
 func (h *samplesIteratorHeap) Push(x any) {
