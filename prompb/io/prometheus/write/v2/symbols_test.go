@@ -14,6 +14,7 @@
 package writev2
 
 import (
+	"strconv"
 	"testing"
 
 	"github.com/stretchr/testify/require"
@@ -58,4 +59,35 @@ func TestSymbolsTable(t *testing.T) {
 	ls = labels.FromStrings("__name__", "qwer", "zxcv2222", "1234")
 	encoded = s.SymbolizeLabels(ls, []uint32{1, 3, 4, 5})
 	require.Equal(t, []uint32{1, 3, 6, 5}, encoded)
+}
+
+// Recommended CLI invocation:
+//
+//	export bench=symbols && go test ./prompb/io/prometheus/write/v2 \
+//		-run '^$' -bench '^BenchmarkSymbolsTable$' \
+//		-benchtime 2s -count 6 -cpu 2 -timeout 999m -benchmem \
+//		| tee ${bench}.txt
+func BenchmarkSymbolsTable(b *testing.B) {
+	const batchSize = 2_000
+	series := make([]labels.Labels, batchSize)
+	for i := range series {
+		series[i] = labels.FromStrings(
+			"__name__", "http_requests_total",
+			"instance", "pod-"+strconv.Itoa(i),
+			"job", "api-server",
+			"namespace", "prod",
+		)
+	}
+	st := NewSymbolTable()
+	buf := make([]uint32, 0, 16)
+
+	b.ReportAllocs()
+	b.ResetTimer()
+	for b.Loop() {
+		for _, ls := range series {
+			buf = st.SymbolizeLabels(ls, buf)
+			_ = st.Symbolize("")
+		}
+		st.Reset()
+	}
 }
