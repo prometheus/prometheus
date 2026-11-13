@@ -15,8 +15,10 @@ package tsdb
 
 import (
 	"context"
+	"encoding/binary"
 	"errors"
 	"fmt"
+	"io"
 	"math"
 	"math/rand"
 	"path/filepath"
@@ -1871,6 +1873,172 @@ func checkCurrVal(t *testing.T, valType chunkenc.ValueType, it *populateWithDelS
 	default:
 		panic("unexpected value type")
 	}
+}
+
+func TestBlockSeriesIteratorStopsOnChunkDecodeError(t *testing.T) {
+	valid, err := chunks.ChunkFromSamples([]chunks.Sample{sample{0, 0, 1, nil, nil}})
+	require.NoError(t, err)
+	afterData := append([]byte(nil), valid.Chunk.Bytes()...)
+	// Declare a second sample without writing it.
+	binary.BigEndian.PutUint16(afterData[:2], 2)
+	after, err := chunkenc.FromData(chunkenc.EncXOR, afterData)
+	require.NoError(t, err)
+	before, err := chunkenc.FromData(chunkenc.EncXOR, []byte{0, 1})
+	require.NoError(t, err)
+	later, err := chunks.ChunkFromSamples([]chunks.Sample{sample{0, 100, 2, nil, nil}})
+	require.NoError(t, err)
+	reuse, err := chunks.ChunkFromSamples([]chunks.Sample{sample{0, 200, 3, nil, nil}, sample{0, 300, 4, nil, nil}})
+	require.NoError(t, err)
+
+	for _, tc := range []struct {
+		name      string
+		first     chunkenc.Chunk
+		last      chunkenc.Chunk
+		intervals tombstones.Intervals
+		want      []int64
+		wantError bool
+	}{
+		{name: "before", first: before, last: later.Chunk, wantError: true},
+		{name: "after", first: after, last: later.Chunk, want: []int64{0}, wantError: true},
+		{name: "tombstone", first: after, last: later.Chunk, intervals: tombstones.Intervals{{Mint: 1, Maxt: 1}}, want: []int64{0}, wantError: true},
+		{name: "clean", first: valid.Chunk, last: later.Chunk, want: []int64{0, 100}},
+		{name: "final", first: valid.Chunk, last: before, want: []int64{0}, wantError: true},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			for _, onDisk := range []bool{false, true} {
+				t.Run(fmt.Sprintf("disk=%t", onDisk), func(t *testing.T) {
+					metas := []chunks.Meta{
+						{Ref: 0, Chunk: tc.first, MinTime: 0, MaxTime: 1},
+						{Ref: 1, Chunk: tc.last, MinTime: 100, MaxTime: 101},
+						{Ref: 2, Chunk: reuse.Chunk, MinTime: 200, MaxTime: 300},
+					}
+					var cr ChunkReader = mockChunkReader{0: tc.first, 1: tc.last, 2: reuse.Chunk}
+					if onDisk {
+						// The writer supplies valid checksums even for the malformed sample data.
+						dir := t.TempDir()
+						w, err := chunks.NewWriter(dir)
+						require.NoError(t, err)
+						require.NoError(t, w.WriteChunks(metas...))
+						require.NoError(t, w.Close())
+						cr, err = chunks.NewDirReader(dir, nil)
+						require.NoError(t, err)
+					}
+					ix := newMockIndex()
+					stones := tombstones.NewMemTombstones()
+					for i, name := range []string{"test", "reuse"} {
+						ref := storage.SeriesRef(i + 1)
+						chks := metas[:2]
+						if i == 1 {
+							chks = metas[2:]
+						}
+						require.NoError(t, ix.AddSeries(ref, labels.FromStrings("a", name), chks...))
+						require.NoError(t, ix.WritePostings("a", name, index.NewListPostings([]storage.SeriesRef{ref})))
+					}
+					stones.AddInterval(1, tc.intervals...)
+					stones.AddInterval(2, tombstones.Interval{Mint: 200, Maxt: 200})
+					q := blockQuerier{blockBaseQuerier: &blockBaseQuerier{
+						index: ix, chunks: cr, tombstones: stones, mint: math.MinInt64, maxt: math.MaxInt64,
+					}}
+					t.Cleanup(func() { require.NoError(t, q.Close()) })
+					series := make(map[string]storage.Series)
+					set := q.Select(context.Background(), false, nil, labels.MustNewMatcher(labels.MatchRegexp, "a", ".+"))
+					for set.Next() {
+						s := set.At()
+						series[s.Labels().Get("a")] = s
+					}
+					require.NoError(t, set.Err())
+					require.Len(t, series, 2)
+
+					for _, op := range []string{"next", "seek", "primed seek"} {
+						t.Run(op, func(t *testing.T) {
+							it := series["test"].Iterator(nil)
+							var got []int64
+							want := tc.want
+							if op != "next" {
+								want = nil
+								if op == "primed seek" && len(tc.want) > 0 {
+									require.Equal(t, chunkenc.ValFloat, it.Next())
+									require.Equal(t, int64(0), it.AtT())
+								}
+								if !tc.wantError {
+									want = []int64{100}
+								}
+							}
+							var vt chunkenc.ValueType
+							if op == "next" {
+								vt = it.Next()
+							} else {
+								vt = it.Seek(100)
+							}
+							for ; vt != chunkenc.ValNone; vt = it.Next() {
+								require.Equal(t, chunkenc.ValFloat, vt)
+								timestamp, value := it.At()
+								require.Equal(t, float64(timestamp/100+1), value)
+								got = append(got, timestamp)
+							}
+							if tc.wantError {
+								require.ErrorIs(t, it.Err(), io.EOF)
+							} else {
+								require.NoError(t, it.Err())
+							}
+							require.Equal(t, want, got)
+							for range 3 {
+								require.Equal(t, chunkenc.ValNone, it.Next())
+								if tc.wantError {
+									require.Equal(t, chunkenc.ValNone, it.Seek(0))
+									require.ErrorIs(t, it.Err(), io.EOF)
+								} else {
+									require.NoError(t, it.Err())
+								}
+							}
+							it = series["reuse"].Iterator(it)
+							require.Equal(t, chunkenc.ValFloat, it.Next())
+							timestamp, value := it.At()
+							require.Equal(t, int64(300), timestamp)
+							require.Equal(t, float64(4), value)
+							require.Equal(t, chunkenc.ValNone, it.Next())
+							require.NoError(t, it.Err())
+						})
+					}
+				})
+			}
+		})
+	}
+
+	t.Run("iterable", func(t *testing.T) {
+		for _, op := range []string{"next", "seek", "unprimed seek"} {
+			t.Run(op, func(t *testing.T) {
+				bad := before
+				if op != "next" {
+					bad = after
+				}
+				iterable := storage.ChainedSeriesMerge(
+					storage.NewListSeries(labels.EmptyLabels(), []chunks.Sample{sample{0, -1, 1, nil, nil}, sample{0, 200, 3, nil, nil}, sample{0, 300, 4, nil, nil}}),
+					&storage.SeriesEntry{SampleIteratorFn: bad.Iterator},
+				)
+				cr := &fakeChunksReader{iterables: map[chunks.ChunkRef]chunkenc.Iterable{0: iterable}}
+				it := &populateWithDelSeriesIterator{}
+				it.reset(ulid.ULID{}, cr, []chunks.Meta{{Ref: 0, MinTime: -1, MaxTime: 300}}, nil)
+				if op == "seek" {
+					require.Equal(t, chunkenc.ValFloat, it.Next())
+					require.Equal(t, int64(-1), it.AtT())
+				}
+				if op == "next" {
+					require.Equal(t, chunkenc.ValNone, it.Next())
+				} else {
+					require.NotPanics(t, func() {
+						require.Equal(t, chunkenc.ValNone, it.Seek(100))
+					})
+				}
+				require.ErrorIs(t, it.Err(), io.EOF)
+				for range 3 {
+					require.Equal(t, chunkenc.ValNone, it.Next())
+					require.Equal(t, chunkenc.ValNone, it.Seek(100))
+					require.ErrorIs(t, it.Err(), io.EOF)
+				}
+			})
+		}
+	})
 }
 
 // Regression for: https://github.com/prometheus/tsdb/pull/97
