@@ -1,6 +1,6 @@
 // Copyright The Prometheus Authors
 
-import { PropsWithChildren } from "react";
+import { PropsWithChildren, StrictMode, useState } from "react";
 import { MantineProvider } from "@mantine/core";
 import { notifications } from "@mantine/notifications";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
@@ -18,14 +18,17 @@ import { useAPIQuery } from "../../api/api";
 import ExpressionInput from "./ExpressionInput";
 import RangeInput from "./RangeInput";
 import ResolutionInput from "./ResolutionInput";
+import TimeInput from "./TimeInput";
 import LabelsExplorer from "./MetricsExplorer/LabelsExplorer";
 import { GraphResolution } from "../../state/queryPageSlice";
 
+const settings = vi.hoisted(() => ({ useLocalTime: false }));
 vi.mock("../../state/settingsSlice", () => ({
   useSettings: () => ({
     pathPrefix: "/prometheus",
     enableAutocomplete: false,
     enableLinter: false,
+    ...settings,
   }),
 }));
 vi.mock("../../state/hooks", () => ({
@@ -119,10 +122,348 @@ afterEach(() => {
   pending.length = 0;
   vi.clearAllMocks();
   vi.unstubAllGlobals();
+  vi.unstubAllEnvs();
+  vi.useRealTimers();
+  settings.useLocalTime = false;
   Reflect.deleteProperty(Element.prototype, "scrollIntoView");
 });
 
 describe("query input drafts", () => {
+  it.each([
+    {
+      timezone: "Europe/Berlin",
+      useLocalTime: false,
+      currentDay: 29,
+      selectedDays: [20, 21],
+      displayedHour: 12,
+      queryHour: 12,
+    },
+    {
+      timezone: "Europe/Berlin",
+      useLocalTime: false,
+      currentDay: 20,
+      selectedDays: [28, 29],
+      displayedHour: 12,
+      queryHour: 12,
+    },
+    {
+      timezone: "UTC",
+      useLocalTime: false,
+      currentDay: 29,
+      selectedDays: [20, 21],
+      displayedHour: 12,
+      queryHour: 12,
+    },
+    {
+      timezone: "Europe/Berlin",
+      useLocalTime: true,
+      currentDay: 29,
+      selectedDays: [20, 21],
+      displayedHour: 13,
+      queryHour: 11,
+    },
+    {
+      timezone: "Europe/Berlin",
+      useLocalTime: false,
+      month: 2,
+      currentDay: 29,
+      initialHour: 2,
+      minute: 30,
+      selectedDays: [28, 29, 30],
+      displayedHour: 2,
+      queryHour: 2,
+    },
+    {
+      timezone: "America/New_York",
+      useLocalTime: false,
+      month: 2,
+      currentDay: 7,
+      initialHour: 2,
+      minute: 30,
+      selectedDays: [8, 9],
+      displayedHour: 2,
+      queryHour: 2,
+    },
+    {
+      timezone: "Australia/Lord_Howe",
+      useLocalTime: false,
+      currentDay: 4,
+      initialHour: 2,
+      minute: 15,
+      selectedDays: [3, 4, 5],
+      displayedHour: 2,
+      queryHour: 2,
+    },
+    {
+      timezone: "Asia/Beirut",
+      useLocalTime: false,
+      month: 2,
+      currentDay: 29,
+      initialHour: 0,
+      minute: 30,
+      selectedDays: [28, 29, 30],
+      displayedHour: 0,
+      queryHour: 0,
+    },
+  ])(
+    "preserves the hour across date edits in $timezone (local time: $useLocalTime, current day: $currentDay)",
+    ({
+      timezone,
+      useLocalTime,
+      currentDay,
+      selectedDays,
+      displayedHour,
+      queryHour,
+      month = 9,
+      initialHour = 12,
+      minute = 0,
+    }) => {
+      vi.stubEnv("TZ", timezone);
+      vi.useFakeTimers({ toFake: ["Date"] });
+      const initialTime = Date.UTC(
+        2026,
+        month,
+        currentDay,
+        initialHour,
+        minute,
+      );
+      vi.setSystemTime(initialTime);
+      settings.useLocalTime = useLocalTime;
+      const onChangeTime = vi.fn();
+      const timeProps = {
+        range: 3600000,
+        description: "Evaluation time",
+        onChangeTime,
+      };
+      const { rerender } = render(
+        <TimeInput {...timeProps} time={initialTime} />,
+        { wrapper },
+      );
+      const picker = screen.getByRole("button", { name: "Evaluation time" });
+      const display = (day: number) =>
+        new Date(Date.UTC(2026, month, day, displayedHour, minute))
+          .toISOString()
+          .slice(0, 19)
+          .replace("T", " ");
+      expect(picker).toHaveTextContent(display(currentDay));
+      fireEvent.click(picker);
+
+      for (const day of selectedDays) {
+        fireEvent.click(
+          screen.getByRole("button", {
+            name: new Date(Date.UTC(2026, month, day)).toLocaleDateString(
+              "en-GB",
+              {
+                day: "numeric",
+                month: "long",
+                year: "numeric",
+                timeZone: "UTC",
+              },
+            ),
+          }),
+        );
+        const expectedTime = Date.UTC(2026, month, day, queryHour, minute);
+        expect(onChangeTime).toHaveBeenLastCalledWith(expectedTime);
+        rerender(<TimeInput {...timeProps} time={expectedTime} />);
+        expect(picker).toHaveTextContent(display(day));
+      }
+    },
+  );
+
+  it.each([
+    { field: "Hours", close: "Enter" },
+    { field: "Minutes", close: "Escape", partial: true },
+    { field: "Seconds", close: "Apply time" },
+    { field: "Hours", close: "Toggle", partial: true },
+    { field: "Hours", close: "Outside" },
+  ])(
+    "restores a cleared $field field after closing with $close and reopening",
+    async ({ field, close, partial = false }) => {
+      vi.stubEnv("TZ", "UTC");
+      const onChangeTime = vi.fn();
+      render(
+        <StrictMode>
+          <TimeInput
+            time={Date.UTC(2026, 9, 29, 12, 34, 56)}
+            range={3600000}
+            description="Evaluation time"
+            onChangeTime={onChangeTime}
+          />
+        </StrictMode>,
+        {
+          // Keep fields mounted to cover reopening during the closing transition.
+          wrapper: ({ children }) => (
+            <MantineProvider
+              env="test"
+              theme={{
+                components: {
+                  Popover: { defaultProps: { keepMounted: true } },
+                },
+              }}
+            >
+              {children}
+            </MantineProvider>
+          ),
+        },
+      );
+      const picker = screen.getByRole("button", { name: "Evaluation time" });
+      fireEvent.click(picker);
+      const input = await screen.findByRole("spinbutton", { name: field });
+      fireEvent.keyDown(input, { key: "Delete" });
+      expect(input).toHaveValue("");
+      if (partial) {
+        fireEvent.change(screen.getByRole("spinbutton", { name: "Hours" }), {
+          target: { value: "09" },
+        });
+      }
+
+      if (close === "Apply time") {
+        fireEvent.click(screen.getByRole("button", { name: close }));
+      } else if (close === "Toggle") {
+        fireEvent.click(picker);
+      } else if (close === "Outside") {
+        fireEvent.mouseDown(document.body);
+      } else {
+        fireEvent.keyDown(input, { key: close });
+      }
+      await waitFor(() =>
+        expect(picker).toHaveAttribute("aria-expanded", "false"),
+      );
+      fireEvent.click(picker);
+
+      expect(picker).toHaveTextContent("2026-10-29 12:34:56");
+      for (const [name, value] of [
+        ["Hours", "12"],
+        ["Minutes", "34"],
+        ["Seconds", "56"],
+      ]) {
+        expect(await screen.findByRole("spinbutton", { name })).toHaveValue(
+          value,
+        );
+      }
+      expect(onChangeTime).not.toHaveBeenCalled();
+    },
+  );
+
+  it.each([1, 3])(
+    "synchronizes a local DST-gap edit starting at %i:30",
+    (initialHour) => {
+      vi.stubEnv("TZ", "Europe/Berlin");
+      settings.useLocalTime = true;
+      const onChangeTime = vi.fn();
+      const initialTime = new Date(2026, 2, 29, initialHour, 30).getTime();
+      const normalizedTime = Date.parse("2026-03-29T01:30:00Z");
+      function ControlledTimeInput() {
+        const [time, setTime] = useState<number | null>(initialTime);
+        return (
+          <TimeInput
+            time={time}
+            range={3600000}
+            description="Evaluation time"
+            onChangeTime={(value) => {
+              onChangeTime(value);
+              setTime(value);
+            }}
+          />
+        );
+      }
+      render(<ControlledTimeInput />, { wrapper });
+      const picker = screen.getByRole("button", { name: "Evaluation time" });
+      fireEvent.click(picker);
+
+      for (let edit = 0; edit < 2; edit++) {
+        fireEvent.change(screen.getByRole("spinbutton", { name: "Hours" }), {
+          target: { value: "02" },
+        });
+        expect(onChangeTime).toHaveBeenLastCalledWith(normalizedTime);
+        expect(picker).toHaveTextContent("2026-03-29 03:30:00");
+        expect(screen.getByRole("spinbutton", { name: "Hours" })).toHaveValue(
+          "03",
+        );
+        expect(screen.getByRole("spinbutton", { name: "Minutes" })).toHaveValue(
+          "30",
+        );
+      }
+
+      fireEvent.click(screen.getByRole("button", { name: "30 March 2026" }));
+      expect(onChangeTime).toHaveBeenLastCalledWith(
+        Date.parse("2026-03-30T01:30:00Z"),
+      );
+      expect(picker).toHaveTextContent("2026-03-30 03:30:00");
+      expect(screen.getByRole("spinbutton", { name: "Hours" })).toHaveValue(
+        "03",
+      );
+    },
+  );
+
+  it.each([
+    { timezone: "Europe/Berlin", date: "2026-03-29", hour: 2, minute: 30 },
+    { timezone: "America/New_York", date: "2026-03-08", hour: 2, minute: 30 },
+    {
+      timezone: "Australia/Lord_Howe",
+      date: "2026-10-04",
+      hour: 2,
+      minute: 15,
+    },
+    { timezone: "Asia/Beirut", date: "2026-03-29", hour: 0, minute: 30 },
+  ])(
+    "edits and clears a UTC time inside a local DST gap in $timezone",
+    ({ timezone, date, hour, minute }) => {
+      vi.stubEnv("TZ", timezone);
+      const onChangeTime = vi.fn();
+      const props = {
+        range: 3600000,
+        description: "Evaluation time",
+        onChangeTime,
+      };
+      let time = Date.parse(`${date}T01:00:00Z`);
+      const { rerender } = render(<TimeInput {...props} time={time} />, {
+        wrapper,
+      });
+      const picker = screen.getByRole("button", { name: "Evaluation time" });
+      fireEvent.click(picker);
+
+      for (const [field, value, offset] of [
+        ["Hours", hour, 3600000],
+        ["Minutes", minute, 60000],
+        ["Seconds", 17, 1000],
+      ] as const) {
+        fireEvent.change(screen.getByRole("spinbutton", { name: field }), {
+          target: { value: String(value) },
+        });
+        time =
+          field === "Hours"
+            ? Date.parse(`${date}T00:00:00Z`) + value * offset
+            : time + value * offset;
+        expect(onChangeTime).toHaveBeenLastCalledWith(time);
+        rerender(<TimeInput {...props} time={time} />);
+      }
+
+      const expected = new Date(time)
+        .toISOString()
+        .slice(0, 19)
+        .replace("T", " ");
+      expect(picker).toHaveTextContent(expected);
+      fireEvent.click(screen.getByRole("button", { name: "Apply time" }));
+      expect(picker).toHaveAttribute("aria-expanded", "false");
+      fireEvent.click(picker);
+      expect(screen.getByRole("spinbutton", { name: "Hours" })).toHaveValue(
+        String(hour).padStart(2, "0"),
+      );
+      expect(screen.getByRole("spinbutton", { name: "Minutes" })).toHaveValue(
+        String(minute).padStart(2, "0"),
+      );
+      fireEvent.keyDown(screen.getByRole("spinbutton", { name: "Seconds" }), {
+        key: "Enter",
+      });
+      expect(picker).toHaveAttribute("aria-expanded", "false");
+      fireEvent.click(screen.getByRole("button", { name: "Clear time" }));
+      expect(onChangeTime).toHaveBeenLastCalledWith(null);
+      rerender(<TimeInput {...props} time={null} />);
+      expect(picker).toHaveTextContent("Evaluation time");
+    },
+  );
+
   it.each<{ label: string; resolution: GraphResolution }>([
     { label: "Low res.", resolution: { type: "auto", density: "low" } },
     { label: "30s", resolution: { type: "fixed", step: 30000 } },
