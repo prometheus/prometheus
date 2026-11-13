@@ -15,6 +15,7 @@ package tsdb
 
 import (
 	"bytes"
+	"cmp"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -22,6 +23,7 @@ import (
 	"math"
 	"os"
 	"path/filepath"
+	"slices"
 	"strconv"
 	"strings"
 	"sync"
@@ -1075,7 +1077,7 @@ func (h *Head) loadWBL(r *wlog.Reader, syms *labels.SymbolTable, multiRef map[ch
 					continue
 				}
 				idx := uint64(ms.ref) % uint64(concurrency)
-				processors[idx].input <- wblSubsetProcessorInputItem{mmappedSeries: ms}
+				processors[idx].input <- wblSubsetProcessorInputItem{mmappedSeries: ms, mmapRef: rm.MmapRef}
 			}
 		case []record.RefHistogramSample:
 			samples := v
@@ -1202,6 +1204,7 @@ type wblSubsetProcessor struct {
 
 type wblSubsetProcessorInputItem struct {
 	mmappedSeries    *memSeries
+	mmapRef          chunks.ChunkDiskMapperRef
 	samples          []record.RefSample
 	histogramSamples []histogramRecord
 }
@@ -1270,7 +1273,15 @@ func (wp *wblSubsetProcessor) processWBLSamples(h *Head) (map[chunks.HeadSeriesR
 			// chunk size parameters, we are not taking care of that here.
 			// TODO(codesome): see if there is a way to avoid duplicate m-map chunks if
 			// the size of ooo chunk was reduced between restart.
-			in.mmappedSeries.ooo.oooHeadChunk = nil
+			//
+			// A marker can name a chunk that is not on disk: ref 0 when a new head chunk was
+			// cut with nothing to m-map, which also follows an OOO compaction that m-mapped the
+			// previous head chunk without writing a marker, or a chunk that was still in the
+			// chunk disk mapper's write buffer when the process died. The samples replayed so
+			// far are then only in the WBL, so keep them unless this series has the chunk.
+			if hasOOOMmappedChunk(in.mmappedSeries, in.mmapRef) {
+				in.mmappedSeries.ooo.oooHeadChunk = nil
+			}
 			continue
 		}
 		for _, s := range in.samples {
@@ -1334,6 +1345,16 @@ func (wp *wblSubsetProcessor) processWBLSamples(h *Head) (map[chunks.HeadSeriesR
 	h.updateMinOOOMaxOOOTime(mint, maxt)
 
 	return missingSeries, unknownSampleRefs, unknownHistogramRefs
+}
+
+// hasOOOMmappedChunk reports whether s has an m-mapped OOO chunk with the given ref.
+// The chunks are sorted by ref, as loadMmappedChunks reads them in file order and
+// later chunks get higher refs.
+func hasOOOMmappedChunk(s *memSeries, ref chunks.ChunkDiskMapperRef) bool {
+	_, found := slices.BinarySearchFunc(s.ooo.oooMmappedChunks, ref, func(c *mmappedChunk, ref chunks.ChunkDiskMapperRef) int {
+		return cmp.Compare(c.ref, ref)
+	})
+	return found
 }
 
 const (
