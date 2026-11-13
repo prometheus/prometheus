@@ -495,3 +495,19 @@ load 1m
 
 eval range from 0m to 2m step 1m info(metric, {__name__=~".+_info"})
 	expect fail regex: conflicting label
+
+clear
+
+# A base series that keeps its name and one that drops it can have the same
+# labels until the name is removed. They must not be merged into one series.
+load 1m
+  metric{instance="a", job="1"} 50 150 50 150 50
+  target_info{instance="a", job="1", data="info"} 1 1 1 1 1
+
+eval range from 0 to 4m step 1m info(metric > 100 or metric * 2)
+  metric{instance="a", job="1", data="info"} _ 150 _ 150 _
+  {instance="a", job="1", data="info"} 100 _ 100 _ 100
+
+eval range from 1m to 4m step 1m info(metric > 100 or metric * 2)
+  metric{instance="a", job="1", data="info"} 150 _ 150 _
+  {instance="a", job="1", data="info"} _ 100 _ 100
