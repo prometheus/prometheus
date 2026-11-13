@@ -16,6 +16,8 @@ package rules
 import (
 	"context"
 	"errors"
+	"fmt"
+	"net/url"
 	"runtime"
 	"testing"
 	"time"
@@ -1185,6 +1187,62 @@ func TestFiringAlertResetToPendingOnHoldDurationIncrease(t *testing.T) {
 	for _, smpl := range res {
 		if smpl.Metric.Get("__name__") == "ALERTS" {
 			require.Equal(t, "firing", smpl.Metric.Get("alertstate"))
+		}
+	}
+}
+
+func BenchmarkAlertingRuleEval(b *testing.B) {
+	st := teststorage.New(b)
+	app := st.AppenderV2(context.Background())
+	for i := range 1000 {
+		ls := labels.FromStrings(
+			labels.MetricName, "up",
+			"instance", fmt.Sprintf("node-%05d:9090", i),
+			"job", "probe",
+			"cluster", "east",
+			"namespace", "monitoring",
+			"service", "node",
+		)
+		if _, err := app.Append(0, ls, 0, 0, 1, nil, nil, storage.AOptions{}); err != nil {
+			b.Fatal(err)
+		}
+	}
+	if err := app.Commit(); err != nil {
+		b.Fatal(err)
+	}
+
+	engine := promqltest.NewTestEngine(b, false, 24*time.Hour, 1_000_000)
+	expr, err := testParser.ParseExpr("up > 0")
+	if err != nil {
+		b.Fatal(err)
+	}
+	logger := promslog.NewNopLogger()
+	externalURL, err := url.Parse("http://localhost:9090")
+	if err != nil {
+		b.Fatal(err)
+	}
+	rule := NewAlertingRule(
+		"NodeAvailable",
+		expr,
+		0,
+		0,
+		labels.FromStrings("severity", "warning", "owner", "{{ $labels.namespace }}"),
+		labels.FromStrings(
+			"summary", "Node {{ $labels.instance }} is available",
+			"description", "{{ $labels.job }} in {{ $externalLabels.cluster }} has value {{ $value }}",
+		),
+		labels.FromStrings("cluster", "east"),
+		externalURL.String(),
+		true,
+		logger,
+	)
+
+	query := EngineQueryFunc(engine, st)
+	ts := time.Unix(1, 0)
+	b.ReportAllocs()
+	for b.Loop() {
+		if _, err := rule.Eval(context.Background(), 0, ts, query, externalURL, 0); err != nil {
+			b.Fatal(err)
 		}
 	}
 }
