@@ -1,0 +1,6 @@
+scrape_configs:
+  - job_name: scrape_interval_plus_timeout_test
+    scrape_interval: 3m
+    scrape_timeout: 2m55s
+rule_files:
+  - prometheus-config.rules.good.yml
