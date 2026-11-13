@@ -948,6 +948,8 @@ load 10s
   metricWith3SampleEvery10Seconds{a="2",b="2"} 1+1x100
   metricWith3SampleEvery10Seconds{a="3",b="2"} 1+1x100
   metricWith1HistogramEvery10Seconds {{schema:1 count:5 sum:20 buckets:[1 2 1 1]}}+{{schema:1 count:10 sum:5 buckets:[1 2 3 4]}}x100
+  metricWithVaryingHistograms{series="a"} {{schema:1 count:1 sum:1 buckets:[1]}} {{schema:0 count:3 sum:3 buckets:[1 1 1]}} {{schema:1 count:5 sum:5 buckets:[1 1 1 1 1]}} {{schema:0 count:7 sum:7 buckets:[1 1 1 1 1 1 1]}} {{schema:1 count:9 sum:9 buckets:[1 1 1 1 1 1 1 1 1]}}
+  metricWithVaryingHistograms{series="b"} {{schema:1 count:9 sum:9 buckets:[1 1 1 1 1 1 1 1 1]}} {{schema:0 count:7 sum:7 buckets:[1 1 1 1 1 1 1]}} {{schema:1 count:5 sum:5 buckets:[1 1 1 1 1]}} {{schema:0 count:9 sum:9 buckets:[1 1 1 1 1 1 1 1 1]}} {{schema:1 count:7 sum:7 buckets:[1 1 1 1 1 1 1]}}
 `)
 
 	type testCase struct {
@@ -1144,6 +1146,29 @@ load 10s
 			SamplesRead: 6,
 			SamplesReadPerStep: stats.TotalSamplesPerStep{
 				201000: 6,
+			},
+		},
+		{
+			// Alternating schemas keep TSDB from expanding earlier bucket layouts.
+			// HPoint weights at 10s through 40s are 13, 14, 15, 16 for a
+			// and 15, 14, 16, 15 for b. Each series retains a weight of 31
+			// in its final window and produces output with a weight of 45.
+			Query:        "last_over_time(metricWithVaryingHistograms[20s])",
+			Start:        time.Unix(20, 0),
+			End:          time.Unix(40, 0),
+			Interval:     10 * time.Second,
+			PeakSamples:  121, // Both outputs (90) plus the last input window (31).
+			TotalSamples: 177,
+			TotalSamplesPerStep: stats.TotalSamplesPerStep{
+				20000: 56,
+				30000: 59,
+				40000: 62,
+			},
+			SamplesRead: 118,
+			SamplesReadPerStep: stats.TotalSamplesPerStep{
+				20000: 56,
+				30000: 31,
+				40000: 31,
 			},
 		},
 		{
