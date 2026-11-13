@@ -1507,12 +1507,16 @@ func (r *Reader) traversePostingOffsets(ctx context.Context, off int, cb func(st
 		}
 		v := yoloString(d.UvarintBytes()) // Label value.
 		postingsOff := d.Uvarint64()      // Offset.
-		if ok, err := cb(v, postingsOff); err != nil {
+		ok, err := cb(v, postingsOff)
+		if err != nil {
 			return err
-		} else if !ok {
+		}
+		// Read the context before the break: a callback that stops the scan can
+		// have canceled it, and the caller has to hear about that.
+		ctxErr = ctx.Err()
+		if !ok {
 			break
 		}
-		ctxErr = ctx.Err()
 	}
 	if d.Err() != nil {
 		return fmt.Errorf("get postings offset entry: %w", d.Err())
@@ -1624,30 +1628,100 @@ func (r *Reader) postingsForLabelMatching(ctx context.Context, name string, matc
 		return EmptyPostings()
 	}
 
-	postingsEstimate := 0
-	if match == nil {
-		// The caller wants all postings for name.
-		postingsEstimate = len(e) * symbolFactor
-	}
-
 	lastVal := e[len(e)-1].value
-	its := make([]Postings, 0, postingsEstimate)
-	if err := r.traversePostingOffsets(ctx, e[0].off, func(val string, postingsOff uint64) (bool, error) {
-		if match == nil || match(val) {
-			// We want this postings iterator since the value is a match.
-			postingsDec := encoding.NewDecbufAt(r.b, int(postingsOff), castagnoliTable)
-			_, p, err := r.dec.DecodePostings(postingsDec)
+
+	if match == nil {
+		// The caller wants every value, so the number of iterators is already
+		// known well enough to size the slice, and each one is decoded as the
+		// scan reaches it. traversePostingOffsets checks the context after each
+		// decode.
+		its := make([]Postings, 0, len(e)*symbolFactor)
+		if err := r.traversePostingOffsets(ctx, e[0].off, func(val string, postingsOff uint64) (bool, error) {
+			p, err := r.decodePostingsAt(postingsOff)
 			if err != nil {
-				return false, fmt.Errorf("decode postings: %w", err)
+				return false, err
 			}
 			its = append(its, p)
+			return val != lastVal, nil
+		}); err != nil {
+			return ErrPostings(err)
 		}
+		return Merge(ctx, its...)
+	}
+
+	// The number of matches is not known before the scan. Collect the offsets of
+	// the matching values, so the iterator slice below is allocated once at the
+	// exact size: growing it one match at a time allocates more in total, and one
+	// scan combined for several matchers on the same label matches many values.
+	// Most scans match few values, so the first offsets go to a stack buffer.
+	// The rest go to heap chunks that double in size. A full chunk is kept as it
+	// is, so no offset is copied again when the scan outgrows a chunk.
+	var first [32]uint64
+	nFirst := 0
+	// 16 doubling chunks hold about four million offsets before rest itself
+	// has to grow on the heap.
+	var restBuf [16][]uint64
+	rest := restBuf[:0]
+	if err := r.traversePostingOffsets(ctx, e[0].off, func(val string, postingsOff uint64) (bool, error) {
+		if !match(val) {
+			return val != lastVal, nil
+		}
+		if nFirst < len(first) {
+			first[nFirst] = postingsOff
+			nFirst++
+			return val != lastVal, nil
+		}
+		if len(rest) == 0 || len(rest[len(rest)-1]) == cap(rest[len(rest)-1]) {
+			rest = append(rest, make([]uint64, 0, len(first)<<(len(rest)+1)))
+		}
+		rest[len(rest)-1] = append(rest[len(rest)-1], postingsOff)
 		return val != lastVal, nil
 	}); err != nil {
 		return ErrPostings(err)
 	}
 
+	// Each decode verifies the checksum of a whole postings list, so the context
+	// is checked before each one, as traversePostingOffsets does between lists.
+	if ctx.Err() != nil {
+		return ErrPostings(ctx.Err())
+	}
+	n := nFirst
+	for _, c := range rest {
+		n += len(c)
+	}
+	its := make([]Postings, 0, n)
+	for k := -1; k < len(rest); k++ {
+		offsets := first[:nFirst]
+		if k >= 0 {
+			offsets = rest[k]
+		}
+		for _, off := range offsets {
+			if ctx.Err() != nil {
+				return ErrPostings(ctx.Err())
+			}
+			p, err := r.decodePostingsAt(off)
+			if err != nil {
+				return ErrPostings(err)
+			}
+			its = append(its, p)
+		}
+	}
+	// The last decode can cancel the context.
+	if ctx.Err() != nil {
+		return ErrPostings(ctx.Err())
+	}
+
 	return Merge(ctx, its...)
+}
+
+// decodePostingsAt reads the postings list that starts at off.
+func (r *Reader) decodePostingsAt(off uint64) (Postings, error) {
+	d := encoding.NewDecbufAt(r.b, int(off), castagnoliTable)
+	_, p, err := r.dec.DecodePostings(d)
+	if err != nil {
+		return nil, fmt.Errorf("decode postings: %w", err)
+	}
+	return p, nil
 }
 
 func (r *Reader) postingsForLabelMatchingV1(ctx context.Context, name string, match func(string) bool) Postings {
