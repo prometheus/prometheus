@@ -623,6 +623,36 @@ func samplesForRange(minTime, maxTime int64, maxSamplesPerChunk int) (ret [][]sa
 	return ret
 }
 
+func TestWithDenseSymbolOffsets(t *testing.T) {
+	ctx := context.Background()
+	dir := createBlock(t, t.TempDir(), genSeries(33, 10, 0, 100))
+	ir, err := index.NewFileReader(filepath.Join(dir, "index"), index.DecodePostingsRaw)
+	require.NoError(t, err)
+	defer func() { require.NoError(t, ir.Close()) }()
+	for _, reader := range []IndexReader{ir, blockIndexReader{ir: ir}} {
+		view, err := withDenseSymbolOffsets(reader)
+		require.NoError(t, err)
+		dense := view
+		if br, ok := view.(blockIndexReader); ok {
+			dense = br.ir
+		}
+		require.Greater(t, dense.(*index.Reader).SymbolTableSize(), ir.SymbolTableSize())
+		name, value := index.AllPostingsKey()
+		p, err := view.Postings(ctx, name, value)
+		require.NoError(t, err)
+		var want, got labels.ScratchBuilder
+		seen := 0
+		for p.Next() {
+			require.NoError(t, ir.Series(p.At(), &want, nil))
+			require.NoError(t, view.Series(p.At(), &got, nil))
+			require.True(t, labels.Equal(want.Labels(), got.Labels()))
+			seen++
+		}
+		require.NoError(t, p.Err())
+		require.Equal(t, 33, seen)
+	}
+}
+
 func TestCompaction_populateBlock(t *testing.T) {
 	for _, tc := range []struct {
 		title              string
