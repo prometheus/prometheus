@@ -18,6 +18,10 @@ describe("parseTime", () => {
   test("parses date with different time values", () => {
     expect(parseTime("2024-06-15 23:59:59")).toBe(1718495999000);
   });
+
+  test("returns null for invalid date strings", () => {
+    expect(parseTime("invalid")).toBeNull();
+  });
 });
 
 describe("formatTime", () => {
@@ -38,6 +42,10 @@ describe("parseTime and formatTime roundtrip", () => {
   test("roundtrip preserves time", () => {
     const original = "2024-03-20 15:45:30";
     const timestamp = parseTime(original);
+    expect(timestamp).not.toBeNull();
+    if (timestamp === null) {
+      return;
+    }
     expect(formatTime(timestamp)).toBe(original);
   });
 });
@@ -191,6 +199,23 @@ describe("decodePanelOptionsFromURLParams", () => {
   test("decodes moment_input parameter", () => {
     const panels = decodePanelOptionsFromURLParams(
       "g0.expr=up&g0.moment_input=2024-01-15%2012%3A30%3A45"
+    );
+    expect(panels[0].visualizer.endTime).toBe(1705321845000);
+  });
+
+  test.each(["end_input", "moment_input"])(
+    "ignores an invalid %s parameter",
+    (parameter) => {
+      const panels = decodePanelOptionsFromURLParams(
+        `g0.expr=up&g0.${parameter}=invalid`
+      );
+      expect(panels[0].visualizer.endTime).toBeNull();
+    }
+  );
+
+  test("does not let invalid moment_input override end_input", () => {
+    const panels = decodePanelOptionsFromURLParams(
+      "g0.expr=up&g0.end_input=2024-01-15%2012%3A30%3A45&g0.moment_input=invalid"
     );
     expect(panels[0].visualizer.endTime).toBe(1705321845000);
   });
