@@ -2199,6 +2199,8 @@ func TestOOOCompactionCrashKeepsWBLSamples(t *testing.T) {
 			t.Parallel()
 			ctx := context.Background()
 			opts := DefaultOptions()
+			// The test copies the open data directory, and Windows refuses to read a held lock file.
+			opts.NoLockfile = true
 			opts.OutOfOrderTimeWindow = 6 * time.Hour.Milliseconds()
 			db := newTestDB(t, withOpts(opts))
 			db.DisableCompactions() // We want to call the compactions manually.
