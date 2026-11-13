@@ -3170,6 +3170,207 @@ test_metric 55
 	requireSample(t, got[11], "test_metric", 5, timestamp.FromTime(tsI), timestamp.FromTime(tsH), false)
 }
 
+func TestScrapeLoopAppend_StartTimeSynthesis_TypeChanges(t *testing.T) {
+	const contentType = "application/vnd.google.protobuf;proto=io.prometheus.client.MetricFamily;encoding=delimited"
+
+	// All formats expose metric_x with the same labels. Float histogram
+	// anchors have fractional bucket counts that cannot be reused for integers.
+	formats := map[string]string{
+		"counter":         `type: COUNTER metric: <counter: <value: %[1]d>>`,
+		"gauge":           `type: GAUGE metric: <gauge: <value: %[1]d>>`,
+		"untyped":         `type: UNTYPED metric: <untyped: <value: %[1]d>>`,
+		"histogram":       `type: HISTOGRAM metric: <histogram: <schema: 0 zero_threshold: 0.001 sample_count: %[1]d positive_span: <offset: 0 length: 2> positive_delta: %[2]d positive_delta: %[3]d>>`,
+		"float_histogram": `type: HISTOGRAM metric: <histogram: <schema: 0 zero_threshold: 0.001 sample_count_float: %[4]g positive_span: <offset: 0 length: 2> positive_count: %[5]g positive_count: %[5]g>>`,
+		"gauge_histogram": `type: GAUGE_HISTOGRAM metric: <histogram: <schema: 0 zero_threshold: 0.001 sample_count: %[1]d positive_span: <offset: 0 length: 2> positive_delta: %[2]d positive_delta: %[3]d>>`,
+	}
+	for _, tc := range []struct {
+		from, to                   string
+		cumulative                 bool
+		compatible, compatibleBack bool
+	}{
+		{from: "scalar_histogram", to: "histogram", cumulative: true},
+		{from: "scalar_histogram", to: "float_histogram", cumulative: true},
+		{from: "counter", to: "histogram", cumulative: true},
+		{from: "counter", to: "float_histogram", cumulative: true},
+		{from: "histogram", to: "counter", cumulative: true},
+		{from: "float_histogram", to: "counter", cumulative: true},
+		{from: "counter", to: "gauge"},
+		{from: "counter", to: "untyped"},
+		{from: "histogram", to: "gauge_histogram"},
+		{from: "histogram", to: "float_histogram", cumulative: true, compatible: true},
+		{from: "histogram", to: "custom_histogram", cumulative: true},
+		{from: "float_histogram", to: "custom_float_histogram", cumulative: true},
+		{from: "custom_float_histogram", to: "custom_histogram", cumulative: true, compatibleBack: true},
+		{from: "float_histogram", to: "histogram", cumulative: true, compatibleBack: true},
+	} {
+		t.Run(tc.from+"_to_"+tc.to, func(t *testing.T) {
+			appTest := teststorage.NewAppendable().Then(teststorage.New(t))
+			sl, _ := newTestScrapeLoop(t, withAppendable(appTest, true), func(sl *scrapeLoop) {
+				sl.synthesizeST = true
+				sl.enableNativeHistogramScraping = true
+				sl.alwaysScrapeClassicHist = false
+				sl.convertClassicHistToNHCB = true
+			})
+			for i, kind := range []string{tc.from, tc.from, tc.to, tc.to, tc.from, tc.from} {
+				tm := int64(i+1) * 1000
+				buf := &bytes.Buffer{}
+				ct := contentType
+				switch {
+				case strings.HasPrefix(kind, "custom_"):
+					count := float64(10 + 5*i)
+					if kind == "custom_float_histogram" {
+						count += 0.5
+					}
+					bucket := math.Floor(count / 2)
+					if kind == "custom_float_histogram" {
+						bucket = count / 2
+					}
+					fmt.Fprintf(buf, "# TYPE metric_x histogram\nmetric_x_bucket{le=\"0.5\"} %g\nmetric_x_bucket{le=\"+Inf\"} %g\nmetric_x_sum 0\nmetric_x_count %g\n", bucket, count, count)
+					ct = "text/plain"
+				case kind == "scalar_histogram":
+					// The text parser can yield a scalar with histogram metadata.
+					fmt.Fprintf(buf, "# TYPE metric_x histogram\nmetric_x %d\n", 10+5*i)
+					ct = "text/plain"
+				default:
+					require.NoError(t, textToProto(`name: "metric_x" `+fmt.Sprintf(formats[kind], 10+5*i, (10+5*i)/2, (10+5*i)%2, float64(10+5*i)+0.5, float64(10+5*i)/2+0.25), buf))
+				}
+				before := len(appTest.ResultSamples())
+				app := sl.appender()
+				var err error
+				require.NotPanics(t, func() {
+					_, _, _, err = app.append(buf.Bytes(), ct, timestamp.Time(tm))
+				})
+				require.NoError(t, err)
+				require.NoError(t, app.Commit())
+
+				// Every incompatible cumulative transition establishes a new
+				// anchor, including when the original kind returns.
+				if i == 0 || (i == 4 && !tc.compatibleBack) || (!tc.compatible && i == 2 && tc.cumulative) {
+					require.Len(t, appTest.ResultSamples(), before)
+					continue
+				}
+				require.Len(t, appTest.ResultSamples(), before+1)
+				got := appTest.ResultSamples()[before]
+				wantValue, wantST := 5.0, int64(1000)
+				switch {
+				case tc.compatible && i < 4:
+					wantValue = float64(5 * i)
+					if strings.Contains(kind, "float") {
+						wantValue += 0.5
+					}
+				case i >= 4:
+					wantST = 5000
+					if tc.compatibleBack {
+						wantValue, wantST = float64(5*(i-2))+0.5, 3000
+					}
+				case i >= 2:
+					if tc.cumulative {
+						wantST = 3000
+					} else {
+						wantValue, wantST = float64(10+5*i), 0
+					}
+				}
+				want := teststorage.Sample{L: labels.FromStrings(model.MetricNameLabel, "metric_x"), T: tm, ST: wantST}
+				switch kind {
+				case "histogram", "custom_histogram", "gauge_histogram":
+					want.H = &histogram.Histogram{Schema: 0, ZeroThreshold: 0.001, Count: uint64(wantValue), PositiveSpans: []histogram.Span{{Offset: 0, Length: 2}}, PositiveBuckets: []int64{int64(wantValue) / 2, int64(wantValue) % 2}}
+					if kind == "custom_histogram" {
+						want.H.Schema, want.H.ZeroThreshold, want.H.CustomValues = histogram.CustomBucketsSchema, 0, []float64{0.5}
+					}
+					if kind == "gauge_histogram" {
+						want.H.CounterResetHint = histogram.GaugeType
+					}
+				case "float_histogram", "custom_float_histogram":
+					want.FH = &histogram.FloatHistogram{Schema: 0, ZeroThreshold: 0.001, Count: wantValue, PositiveSpans: []histogram.Span{{Offset: 0, Length: 2}}, PositiveBuckets: []float64{wantValue / 2, wantValue / 2}}
+					if kind == "custom_float_histogram" {
+						want.FH.Schema, want.FH.ZeroThreshold, want.FH.CustomValues = histogram.CustomBucketsSchema, 0, []float64{0.5}
+					}
+				default:
+					want.V = wantValue
+				}
+				require.True(t, labels.Equal(want.L, got.L))
+				require.Equal(t, want.T, got.T)
+				require.Equal(t, want.ST, got.ST)
+				require.Equal(t, want.V, got.V)
+				require.True(t, want.H.Equals(got.H), "unexpected integer histogram: %v", got.H)
+				require.True(t, want.FH.Equals(got.FH), "unexpected float histogram: %v", got.FH)
+			}
+		})
+	}
+}
+
+func TestScrapeLoopAppend_StartTimeSynthesis_MetadataChanges(t *testing.T) {
+	for _, withMRC := range []bool{false, true} {
+		for _, explicitTimestamp := range []bool{false, true} {
+			for _, tc := range []struct {
+				name, middle                     string
+				quantile, cumulative, compatible bool
+			}{
+				{name: "summary", middle: "# TYPE metric_x summary\n", cumulative: true},
+				{name: "classic_histogram", middle: "# TYPE metric_x histogram\n", cumulative: true},
+				{name: "unrelated_family", middle: "# TYPE other counter\n"},
+				{name: "summary_quantile", middle: "# TYPE metric_x summary\n", quantile: true},
+				{name: "gauge", middle: "# TYPE metric_x_sum gauge\n"},
+				{name: "counter_family_alias", middle: "# TYPE metric_x counter\n", compatible: true},
+			} {
+				t.Run(fmt.Sprintf("%s/mrc=%v/timestamp=%v", tc.name, withMRC, explicitTimestamp), func(t *testing.T) {
+					appTest := teststorage.NewAppendable().Then(teststorage.New(t))
+					sl, _ := newTestScrapeLoop(t, withAppendable(appTest, true), func(sl *scrapeLoop) {
+						sl.synthesizeST = true
+						sl.honorTimestamps = true
+						if withMRC {
+							sl.mrc = []*relabel.Config{{Action: relabel.LabelDrop, Regex: relabel.MustNewRegexp("unused")}}
+							sl.sampleMutator = func(l labels.Labels) labels.Labels {
+								return mutateSampleLabels(l, &Target{}, true, sl.mrc)
+							}
+						}
+					})
+					name, sample := "metric_x_sum", "metric_x_sum"
+					if tc.quantile {
+						name, sample = "metric_x", `metric_x{quantile="0.5"}`
+					} else if tc.compatible {
+						name, sample = "metric_x_total", "metric_x_total"
+					}
+					counter := "# TYPE " + name + " counter\n"
+					for i, header := range []string{counter, counter, tc.middle, tc.middle, counter, counter} {
+						before := len(appTest.ResultSamples())
+						tm := int64(i+1) * 1000
+						text := fmt.Sprintf("%s%s %d", header, sample, 10+5*i)
+						if explicitTimestamp {
+							text += fmt.Sprintf(" %d", tm)
+						}
+						app := sl.appender()
+						_, _, _, err := app.append([]byte(text+"\n"), "text/plain", timestamp.Time(tm))
+						require.NoError(t, err)
+						require.NoError(t, app.Commit())
+						if i == 0 || (!tc.compatible && (i == 4 || (i == 2 && tc.cumulative))) {
+							require.Len(t, appTest.ResultSamples(), before)
+							continue
+						}
+						require.Len(t, appTest.ResultSamples(), before+1)
+						got := appTest.ResultSamples()[before]
+						wantValue, wantST := 5.0, int64(1000)
+						switch {
+						case tc.compatible:
+							wantValue = float64(5 * i)
+						case i == 5:
+							wantST = 5000
+						case i >= 2:
+							wantST = 3000
+							if !tc.cumulative {
+								wantValue, wantST = float64(10+5*i), 0
+							}
+						}
+						require.Equal(t, tm, got.T)
+						require.Equal(t, wantValue, got.V)
+						require.Equal(t, wantST, got.ST)
+					}
+				})
+			}
+		}
+	}
+}
+
 func TestScrapeLoopAppend_StartTimeSynthesis_WithSTStorage(t *testing.T) {
 	ts := time.Now()
 

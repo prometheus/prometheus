@@ -494,6 +494,7 @@ loop:
 		// But we only do this for series that were appended to TSDB without errors.
 		// If a series was new, but we didn't append it due to sample_limit or other errors then we don't need
 		// it in the scrape cache because we don't need to emit StaleNaNs for it when it disappears.
+		hadSynthesisState := seriesCached && ce.st != nil
 		hasCE := seriesCached
 		if !seriesCached {
 			if sampleAdded {
@@ -529,6 +530,10 @@ loop:
 		shouldTrackStaleness := parsedTimestamp == nil || sl.trackTimestampsStaleness || stCache != nil
 		if hasCE && ce.ref != 0 && shouldTrackStaleness && sampleAdded {
 			sl.cache.trackStaleness(ce.ref, ce.lset)
+		} else if hadSynthesisState && sampleAdded && !shouldTrackStaleness {
+			// This live, explicitly timestamped series no longer needs tracking.
+			// Do not mistake the cleared synthesis state for a disappeared series.
+			delete(sl.cache.seriesPrev, ce.ref)
 		}
 
 		// Increment added even if there's an error so we correctly report the
@@ -619,25 +624,51 @@ func (*scrapeLoop) checkAndSynthesizeStartTime(
 	var skipAppend bool
 	c := prevST
 
-	// TODO(https://github.com/prometheus/prometheus/issues/1790): Move isSeriesPartOfFamily inside parsers.
-	if c == nil {
-		var mName string
-		switch sampleType {
-		case model.MetricTypeCounter, model.MetricTypeHistogram:
-			mName = lset.Get(model.MetricNameLabel)
-		case model.MetricTypeSummary:
-			mName = lset.Get(model.MetricNameLabel)
-			if !strings.HasSuffix(mName, "_count") && !strings.HasSuffix(mName, "_sum") {
-				return st, val, h, fh, skipAppend, c
+	var kind synthesisKind
+	switch sampleType {
+	case model.MetricTypeCounter:
+		kind = synthesisCounter
+	case model.MetricTypeSummary:
+		kind = synthesisSummary
+	case model.MetricTypeHistogram:
+		switch {
+		case fh != nil:
+			kind = synthesisFloatHistogram
+			if histogram.IsCustomBucketsSchema(fh.Schema) {
+				kind = synthesisCustomFloatHistogram
+			}
+		case h != nil:
+			kind = synthesisIntHistogram
+			if histogram.IsCustomBucketsSchema(h.Schema) {
+				kind = synthesisCustomIntHistogram
 			}
 		default:
-			return st, val, h, fh, skipAppend, c
+			kind = synthesisClassicHistogram
+		}
+	default:
+		return st, val, h, fh, skipAppend, nil
+	}
+
+	compatible := c != nil && (c.kind == kind ||
+		(c.kind == synthesisIntHistogram && kind == synthesisFloatHistogram) ||
+		(c.kind == synthesisCustomIntHistogram && kind == synthesisCustomFloatHistogram))
+	if !compatible || c.family != sampleMFName {
+		// Eligibility can change even when the series name and labels stay the same.
+		// TODO(https://github.com/prometheus/prometheus/issues/1790): Move isSeriesPartOfFamily inside parsers.
+		mName := lset.Get(model.MetricNameLabel)
+		if sampleType == model.MetricTypeSummary && !strings.HasSuffix(mName, "_count") && !strings.HasSuffix(mName, "_sum") {
+			return st, val, h, fh, skipAppend, nil
 		}
 		if !isSeriesPartOfFamilyStr(mName, sampleMFName, sampleType) {
-			return st, val, h, fh, skipAppend, c
+			return st, val, h, fh, skipAppend, nil
 		}
-		c = &stCache{}
+		if !compatible {
+			c = &stCache{}
+		}
+		// A different eligible family spelling does not change the anchor.
+		c.family = mName[:len(sampleMFName)]
 	}
+	c.kind = kind
 
 	switch {
 	case fh != nil:
