@@ -597,7 +597,7 @@ func (cdm *ChunkDiskMapper) IsQueueEmpty() bool {
 	return cdm.writeQueue.queueIsEmpty()
 }
 
-// cutAndExpectRef creates a new m-mapped file.
+// cutAndExpectRef creates a new m-mapped file, named after the sequence of the given chunk reference.
 // The write lock should be held before calling this.
 // It ensures that the position in the new file matches the given chunk reference, if not then it errors.
 func (cdm *ChunkDiskMapper) cutAndExpectRef(chkRef ChunkDiskMapperRef) (err error) {
