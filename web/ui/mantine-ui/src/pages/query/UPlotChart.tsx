@@ -19,6 +19,7 @@ export interface UPlotChartRange {
 
 export interface UPlotChartProps {
   data: RangeSamples[];
+  expr: string;
   range: UPlotChartRange;
   width: number;
   showExemplars: boolean;
@@ -31,6 +32,7 @@ export interface UPlotChartProps {
 // uPlot format and sets up the uPlot options object depending on the UI settings.
 const UPlotChart: FC<UPlotChartProps> = ({
   data,
+  expr,
   range: { startTime, endTime, resolution },
   width,
   displayMode,
@@ -40,6 +42,15 @@ const UPlotChart: FC<UPlotChartProps> = ({
   const hostRef = useRef<HTMLDivElement>(null);
   const { useLocalTime } = useSettings();
   const theme = useComputedColorScheme();
+
+  // Legend show/hide state, keyed by series label so it survives series
+  // reordering. A new Map per expression resets it for a new query, while
+  // theme, resize and re-running the same query keep it.
+  const seriesVisibility = useMemo(
+    () => new Map<string, boolean>(),
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [expr],
+  );
 
   const chartSpec = useMemo(() => {
     if (width === 0) {
@@ -61,6 +72,7 @@ const UPlotChart: FC<UPlotChartProps> = ({
       yAxisMin,
       theme === "light",
       onSelectRange,
+      seriesVisibility,
     );
 
     return {
@@ -81,6 +93,7 @@ const UPlotChart: FC<UPlotChartProps> = ({
     theme,
     onSelectRange,
     yAxisMin,
+    seriesVisibility,
   ]);
 
   useEffect(() => {
