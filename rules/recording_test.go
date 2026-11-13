@@ -968,6 +968,8 @@ func TestRecordingRuleMetadataProvenance(t *testing.T) {
 				{`label_join(rate(http_requests_total[5m]), "__name__", "", "job")`, false},
 				{`label_replace(http_requests_total, "__type__", "info", "", ".*")`, false},
 				{`label_replace(http_requests_total, "__unit__", "seconds", "", ".*")`, false},
+				{`label_replace(http_requests_total, "__name__", "derived_total", "", ".*")`, false},
+				{`label_replace(count by (__name__) (http_requests_total), "service", "api", "", ".*")`, false},
 				{`sort(count by (__name__) (http_requests_total))`, false},
 				{`topk(1, count by (__name__) (http_requests_total))`, false},
 				{`count by (__name__) (http_requests_total) > 0`, false},
