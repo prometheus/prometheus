@@ -1598,6 +1598,14 @@ The following meta labels are available on targets during [relabeling](#relabel_
 * `__meta_consul_tag_<key>`: the value of each `key=value` tag of the target, split on the first `=`
 * `__meta_consul_tagpresent_<key>`: `true` for each tag of the target, where `<key>` is the part before the first `=` or the whole tag
 
+In the `__meta_consul_tag_<key>` and `__meta_consul_tagpresent_<key>` labels, any character of `<key>` that isn't valid in a label name is replaced with `_`. If several tags end up with the same `<key>`, for example `team.name=x` and `team_name=y`, the last one wins. To turn tags like `prom_label__team=web` into target labels, use a `labelmap` rule:
+
+```yaml
+relabel_configs:
+  - action: labelmap
+    regex: __meta_consul_tag_prom_label__(.+)
+```
+
 ```yaml
 # The information to access the Consul API. It is to be defined
 # as the Consul documentation requires.
@@ -3085,6 +3093,14 @@ The following meta labels are available on targets during [relabeling](#relabel_
 * `__meta_nomad_tags`: the list of tags of the target joined by the tag separator
 * `__meta_nomad_tag_<key>`: the value of each `key=value` tag of the target, split on the first `=`
 * `__meta_nomad_tagpresent_<key>`: `true` for each tag of the target, where `<key>` is the part before the first `=` or the whole tag
+
+In the `__meta_nomad_tag_<key>` and `__meta_nomad_tagpresent_<key>` labels, any character of `<key>` that isn't valid in a label name is replaced with `_`. If several tags end up with the same `<key>`, for example `team.name=x` and `team_name=y`, the last one wins. To turn tags like `prom_label__team=web` into target labels, use a `labelmap` rule:
+
+```yaml
+relabel_configs:
+  - action: labelmap
+    regex: __meta_nomad_tag_prom_label__(.+)
+```
 
 ```yaml
 # The information to access the Nomad API. It is to be defined

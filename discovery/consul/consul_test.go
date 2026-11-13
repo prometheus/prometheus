@@ -702,3 +702,55 @@ oauth2:
 		})
 	}
 }
+
+func TestAddTagLabels(t *testing.T) {
+	for _, tc := range []struct {
+		name     string
+		tags     []string
+		expected model.LabelSet
+	}{
+		{
+			name: "duplicate keys, the last tag wins",
+			tags: []string{"env=staging", "env=prod"},
+			expected: model.LabelSet{
+				"__meta_consul_tagpresent_env": "true",
+				"__meta_consul_tag_env":        "prod",
+			},
+		},
+		{
+			name: "keys that sanitize to the same name, the last tag wins",
+			tags: []string{"team.name=x", "team_name=y"},
+			expected: model.LabelSet{
+				"__meta_consul_tagpresent_team_name": "true",
+				"__meta_consul_tag_team_name":        "y",
+			},
+		},
+		{
+			name: "a tag without a value keeps the value of an earlier one",
+			tags: []string{"team.name=x", "team-name"},
+			expected: model.LabelSet{
+				"__meta_consul_tagpresent_team_name": "true",
+				"__meta_consul_tag_team_name":        "x",
+			},
+		},
+		{
+			name:     "empty keys are skipped",
+			tags:     []string{"", "=x"},
+			expected: model.LabelSet{},
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			lbls := model.LabelSet{}
+			addTagLabels(lbls, tc.tags)
+			require.Equal(t, tc.expected, lbls)
+		})
+	}
+}
+
+func BenchmarkAddTagLabels(b *testing.B) {
+	tags := []string{"metrics", "http", "env=prod", "team.name=web", "prom_label__tier=frontend", "version=1.2.3"}
+	b.ReportAllocs()
+	for b.Loop() {
+		addTagLabels(make(model.LabelSet, len(tags)*2), tags)
+	}
+}
