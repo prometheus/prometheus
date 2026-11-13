@@ -330,8 +330,10 @@ func setLabel(lb *labels.Builder, name, val string, withMetadata bool) {
 func ProcessBuilderWithMetadata(lb *labels.Builder, meta metadata.Metadata, cfgs ...*Config) (keep bool, _ metadata.Metadata) {
 	if !usesMetadata(cfgs...) {
 		lb.Del(model.MetricTypeLabel, model.MetricUnitLabel, metricHelpLabel)
-		if !ProcessBuilder(lb, cfgs...) {
-			return false, metadata.Metadata{}
+		for _, cfg := range cfgs {
+			if !relabel(cfg, lb, true) {
+				return false, metadata.Metadata{}
+			}
 		}
 		lb.Del(model.MetricTypeLabel, model.MetricUnitLabel, metricHelpLabel)
 		return true, meta
