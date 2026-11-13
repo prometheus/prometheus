@@ -115,6 +115,10 @@ func (mw *MetadataWatcher) loop() {
 	defer ticker.Stop()
 	defer close(mw.done)
 
+	// Collect once at start so remote storage gets metadata without waiting
+	// a full send_interval after the watcher begins.
+	mw.collect()
+
 	for {
 		select {
 		case <-mw.softShutdownCtx.Done():
