@@ -79,6 +79,19 @@ For further details on file format, see [TSDB format](/tsdb/docs/format/README.m
 
 ### Compaction
 
+Automatic Head compactions start after a random delay of up to 10% of the Head
+chunk range. This helps Prometheus instances avoid simultaneous compactions and
+reduces load on shared resources. The upper limit can be adjusted with
+`--storage.tsdb.delayed-compaction.max-percent` (between 1 and 100).
+
+Only automatic Head compactions and the operations directly resulting from them
+are delayed. If multiple consecutive Head compactions are possible, only the
+first is delayed. During the delay, the Head continues serving queries and
+appending samples. The resulting blocks remain time-aligned as before.
+
+The `--enable-feature=delayed-compaction` option is no longer required and is
+accepted as a no-op with a warning.
+
 The initial two-hour blocks are eventually compacted into longer blocks in the background.
 
 Compaction will create larger blocks containing data spanning up to 10% of the retention time,

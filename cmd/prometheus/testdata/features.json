@@ -270,7 +270,7 @@
     "value": true
   },
   "tsdb": {
-    "delayed_compaction": false,
+    "delayed_compaction": true,
     "exemplar_storage": false,
     "histograms_st_encoding": false,
     "isolation": true,
