@@ -2125,40 +2125,44 @@ func (api *API) metricMetadata(r *http.Request) apiFuncResult {
 		}
 	}
 
+	add := func(name string, m metadata.Metadata) {
+		set := metrics[name]
+		if limitPerMetric > 0 && len(set) >= limitPerMetric {
+			return
+		}
+		if set == nil {
+			set = map[metadata.Metadata]struct{}{}
+			metrics[name] = set
+		}
+		set[m] = struct{}{}
+	}
+
 	metric := r.FormValue("metric")
 	for _, tt := range api.targetRetriever(r.Context()).TargetsActive() {
 		for _, t := range tt {
 			if metric == "" {
 				for _, mm := range t.ListMetadata() {
-					m := metadata.Metadata{Type: mm.Type, Help: mm.Help, Unit: mm.Unit}
-					ms, ok := metrics[mm.MetricFamily]
-
-					if limitPerMetric > 0 && len(ms) >= limitPerMetric {
-						continue
-					}
-
-					if !ok {
-						ms = map[metadata.Metadata]struct{}{}
-						metrics[mm.MetricFamily] = ms
-					}
-					ms[m] = struct{}{}
+					add(mm.MetricFamily, metadata.Metadata{Type: mm.Type, Help: mm.Help, Unit: mm.Unit})
 				}
 				continue
 			}
 
 			if md, ok := t.GetMetadata(metric); ok {
-				m := metadata.Metadata{Type: md.Type, Help: md.Help, Unit: md.Unit}
-				ms, ok := metrics[md.MetricFamily]
+				add(md.MetricFamily, metadata.Metadata{Type: md.Type, Help: md.Help, Unit: md.Unit})
+			}
+		}
+	}
 
-				if limitPerMetric > 0 && len(ms) >= limitPerMetric {
+	if !api.isAgent {
+		for _, group := range api.rulesRetriever(r.Context()).RuleGroups() {
+			for _, rule := range group.Rules() {
+				rec, ok := rule.(*rules.RecordingRule)
+				if !ok || (metric != "" && rec.Name() != metric) {
 					continue
 				}
-
-				if !ok {
-					ms = map[metadata.Metadata]struct{}{}
-					metrics[md.MetricFamily] = ms
+				if m := rec.Metadata(); !m.IsEmpty() {
+					add(rec.Name(), m)
 				}
-				ms[m] = struct{}{}
 			}
 		}
 	}
