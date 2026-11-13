@@ -115,6 +115,35 @@ describe('Graph', () => {
     expect(latestSeries[0]).toMatchObject({ stack: false });
   });
 
+  it('plots start timestamps as distinct zero-value markers', () => {
+    const startTimestamps: GraphProps['startTimestamps'] = {
+      resultType: 'matrix',
+      result: [
+        {
+          metric: { job: 'prometheus', code: '200' },
+          values: [
+            [1572128592, '1572128500'],
+            [1572128620, '1572128610'],
+          ],
+        },
+      ],
+    };
+
+    render(<Graph {...defaultProps} startTimestamps={startTimestamps} />);
+
+    const plottedSeries = plotSpy.mock.calls[0][1] as GraphSeries[];
+    expect(plottedSeries).toHaveLength(3);
+    expect(plottedSeries[2]).toMatchObject({
+      startTimestamp: true,
+      lines: { show: false },
+      points: { show: true },
+      data: [
+        [1572128500000, 0],
+        [1572128610000, 0],
+      ],
+    });
+  });
+
   it('redraws highlighted series on legend hover and restores them on mouse out', () => {
     const { container } = render(<Graph {...defaultProps} />);
 

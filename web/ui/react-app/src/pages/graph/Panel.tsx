@@ -34,6 +34,8 @@ interface PanelState {
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   data: any; // TODO: Type data.
   exemplars: ExemplarData;
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  startTimestamps: any;
   lastQueryParams: QueryParams | null;
   loading: boolean;
   warnings: string[] | null;
@@ -85,6 +87,7 @@ class Panel extends Component<PanelProps, PanelState> {
     this.state = {
       data: null,
       exemplars: [],
+      startTimestamps: undefined,
       lastQueryParams: null,
       loading: false,
       warnings: null,
@@ -172,6 +175,30 @@ class Panel extends Component<PanelProps, PanelState> {
         throw new Error(query.error || 'invalid response JSON');
       }
 
+      let startTimestamps;
+      if (this.props.options.type === 'graph') {
+        const startTimestampParams = new URLSearchParams(params);
+        startTimestampParams.set('query', `start_timestamp(${expr})`);
+        try {
+          const startTimestampQuery = await fetch(
+            `${this.props.pathPrefix}/${API_PATH}/query_range?${startTimestampParams}`,
+            {
+              cache: 'no-store',
+              credentials: 'same-origin',
+              headers: { 'X-Prometheus-Use-Start-Timestamps': 'true' },
+              signal: abortController.signal,
+            }
+          ).then((resp) => resp.json());
+          if (startTimestampQuery.status === 'success') {
+            startTimestamps = startTimestampQuery.data;
+          }
+        } catch (err: unknown) {
+          if ((err as Error).name === 'AbortError') {
+            throw err;
+          }
+        }
+      }
+
       if (this.props.options.type === 'graph' && this.props.options.showExemplars) {
         params.delete('step'); // Not needed for this request.
         exemplars = await fetch(`${this.props.pathPrefix}/${API_PATH}/query_exemplars?${params}`, {
@@ -204,6 +231,7 @@ class Panel extends Component<PanelProps, PanelState> {
       this.setState({
         error: null,
         data: query.data,
+        startTimestamps,
         exemplars: exemplars?.data,
         warnings: query.warnings,
         infos: query.infos,
@@ -372,6 +400,7 @@ class Panel extends Component<PanelProps, PanelState> {
                     />
                     <GraphTabContent
                       data={this.state.data}
+                      startTimestamps={this.state.startTimestamps}
                       exemplars={this.state.exemplars}
                       displayMode={options.displayMode}
                       useLocalTime={this.props.useLocalTime}
