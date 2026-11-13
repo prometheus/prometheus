@@ -1,7 +1,8 @@
 groups:
   - name: indeterminate
     rules:
-      # This shouldn't run in parallel because of the open matcher
+      # The open matcher rule depends on all prior rules, but the prior
+      # independent rules can still run in parallel with each other.
       - record: job:http_requests:rate1m
         expr: sum by (job)(rate(http_requests_total[1m]))
       - record: job:http_requests:rate5m
