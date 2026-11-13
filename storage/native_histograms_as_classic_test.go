@@ -16,12 +16,15 @@ package storage
 import (
 	"context"
 	"errors"
+	"fmt"
 	"math"
 	"strings"
 	"testing"
 
 	"github.com/google/go-cmp/cmp"
 	"github.com/google/go-cmp/cmp/cmpopts"
+	"github.com/prometheus/client_golang/prometheus"
+	promtestutil "github.com/prometheus/client_golang/prometheus/testutil"
 	"github.com/prometheus/common/model"
 	"github.com/stretchr/testify/require"
 
@@ -642,7 +645,7 @@ func TestNativeHistogramsAsClassicQuerier_Select(t *testing.T) {
 						passthroughSeries: tc.passthroughSeries,
 						nhcbErr:           tc.nhcbErr,
 					}
-					q := NewNativeHistogramsAsClassicQuerier(mock)
+					q := NewNativeHistogramsAsClassicQuerier(mock, NewNativeHistogramsAsClassicMetrics(nil))
 
 					ss := q.Select(context.Background(), false, nil, tc.queryMatchers...)
 					var collected []Series
@@ -711,7 +714,7 @@ func TestNativeHistogramsAsClassicQuerier_ConsistentOrder(t *testing.T) {
 			NewListSeries(labels.FromStrings("__name__", "http_requests", "job", "web"), []chunks.Sample{hSample{t: 1, h: nhcb}}),
 		},
 	}
-	q := NewNativeHistogramsAsClassicQuerier(mock)
+	q := NewNativeHistogramsAsClassicQuerier(mock, NewNativeHistogramsAsClassicMetrics(nil))
 
 	// Run the same query multiple times and verify order is consistent.
 	for range 5 {
@@ -747,7 +750,7 @@ func TestNativeHistogramsAsClassicQuerier_SortedSelect(t *testing.T) {
 			NewListSeries(labels.FromStrings("__name__", "http_requests", "z_job", "api"), []chunks.Sample{hSample{t: 1, h: makeNHCB([]float64{1.0, 5.0}, []int64{2, 3, 5})}}),
 			NewListSeries(labels.FromStrings("__name__", "http_requests", "z_job", "web"), []chunks.Sample{hSample{t: 1, h: makeNHCB([]float64{1.0, 5.0}, []int64{2, 3, 5})}}),
 		},
-	})
+	}, NewNativeHistogramsAsClassicMetrics(nil))
 
 	ss := q.Select(context.Background(), true, nil, labels.MustNewMatcher(labels.MatchEqual, model.MetricNameLabel, "http_requests_bucket"))
 	var seriesLabels []string
@@ -785,7 +788,7 @@ func TestNativeHistogramsAsClassicQuerier_FloatHistogram(t *testing.T) {
 			NewListSeries(labels.FromStrings("__name__", "latency"), []chunks.Sample{fhSample{t: 1, fh: fhNHCB}}),
 		},
 	}
-	q := NewNativeHistogramsAsClassicQuerier(mock)
+	q := NewNativeHistogramsAsClassicQuerier(mock, NewNativeHistogramsAsClassicMetrics(nil))
 
 	ss := q.Select(context.Background(), false, nil, labels.MustNewMatcher(labels.MatchEqual, model.MetricNameLabel, "latency_bucket"))
 	var count int
@@ -1005,7 +1008,7 @@ func TestNativeHistogramsAsClassicQuerier_ErrorPropagation(t *testing.T) {
 
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
-			q := NewNativeHistogramsAsClassicQuerier(tc.querier)
+			q := NewNativeHistogramsAsClassicQuerier(tc.querier, NewNativeHistogramsAsClassicMetrics(nil))
 			ss := q.Select(context.Background(), false, nil,
 				labels.MustNewMatcher(labels.MatchEqual, model.MetricNameLabel, "http_requests_bucket"))
 			for ss.Next() {
@@ -1035,7 +1038,7 @@ func TestNativeHistogramsAsClassicQuerier_WarningPropagation(t *testing.T) {
 			classicSeries: []Series{},
 			nhcbSeries:    []Series{nhcbSeries},
 			nhcbWarnings:  warn,
-		})
+		}, NewNativeHistogramsAsClassicMetrics(nil))
 
 		ss := q.Select(context.Background(), false, nil,
 			labels.MustNewMatcher(labels.MatchEqual, model.MetricNameLabel, "http_requests_bucket"))
@@ -1050,7 +1053,7 @@ func TestNativeHistogramsAsClassicQuerier_WarningPropagation(t *testing.T) {
 		series := []Series{NewListSeries(labels.FromStrings("__name__", "my_gauge"), []chunks.Sample{fSample{t: 1, f: 1}})}
 		q := NewNativeHistogramsAsClassicQuerier(&nhcbSetQuerier{
 			nhcbSet: &mockSeriesSet{idx: -1, series: series, warnings: warn},
-		})
+		}, NewNativeHistogramsAsClassicMetrics(nil))
 
 		ss := q.Select(context.Background(), false, nil,
 			labels.MustNewMatcher(labels.MatchEqual, model.MetricNameLabel, "my_gauge"))
@@ -1059,4 +1062,132 @@ func TestNativeHistogramsAsClassicQuerier_WarningPropagation(t *testing.T) {
 		require.NoError(t, ss.Err())
 		require.Equal(t, warn, ss.Warnings())
 	})
+}
+
+func TestNativeHistogramsAsClassicQueryable_Metrics(t *testing.T) {
+	nhcb := makeNHCB([]float64{1.0, 5.0}, []int64{2, 3, 5})
+
+	storedClassicCount := func(name string) Series {
+		return NewListSeries(labels.FromStrings("__name__", name),
+			[]chunks.Sample{fSample{t: 1, f: 7}})
+	}
+	storedClassicBucket := func(name, le string) Series {
+		return NewListSeries(labels.FromStrings("__name__", name, "le", le),
+			[]chunks.Sample{fSample{t: 1, f: float64(len(le))}})
+	}
+	nhcbSeries := func(name string) Series {
+		return NewListSeries(labels.FromStrings("__name__", name),
+			[]chunks.Sample{hSample{t: 1, h: nhcb}})
+	}
+
+	tests := []struct {
+		name          string
+		classicSeries []Series
+		nhcbSeries    []Series
+		queryMatchers []*labels.Matcher
+		wantClassic   int
+		wantNHCB      int
+	}{
+		{
+			name:          "classic _count only",
+			classicSeries: []Series{storedClassicCount("solo_seconds_count")},
+			queryMatchers: []*labels.Matcher{labels.MustNewMatcher(labels.MatchEqual, model.MetricNameLabel, "solo_seconds_count")},
+			wantClassic:   1,
+		},
+		{
+			name:          "nhcb _count only",
+			nhcbSeries:    []Series{nhcbSeries("solo_seconds")},
+			queryMatchers: []*labels.Matcher{labels.MustNewMatcher(labels.MatchEqual, model.MetricNameLabel, "solo_seconds_count")},
+			wantNHCB:      1,
+		},
+		{
+			name:          "coexisting classic + nhcb _count",
+			classicSeries: []Series{storedClassicCount("both_seconds_count")},
+			nhcbSeries:    []Series{nhcbSeries("both_seconds")},
+			queryMatchers: []*labels.Matcher{labels.MustNewMatcher(labels.MatchEqual, model.MetricNameLabel, "both_seconds_count")},
+			wantClassic:   1,
+			wantNHCB:      1,
+		},
+		{
+			name:          "nhcb _sum only",
+			nhcbSeries:    []Series{nhcbSeries("solo_seconds")},
+			queryMatchers: []*labels.Matcher{labels.MustNewMatcher(labels.MatchEqual, model.MetricNameLabel, "solo_seconds_sum")},
+			wantNHCB:      1,
+		},
+		{
+			name: "classic _bucket only — no le filter",
+			classicSeries: []Series{
+				storedClassicBucket("stored_seconds_bucket", "1.0"),
+				storedClassicBucket("stored_seconds_bucket", "5.0"),
+				storedClassicBucket("stored_seconds_bucket", "+Inf"),
+			},
+			queryMatchers: []*labels.Matcher{labels.MustNewMatcher(labels.MatchEqual, model.MetricNameLabel, "stored_seconds_bucket")},
+			wantClassic:   3,
+		},
+		{
+			name: "classic _bucket — with le filter",
+			classicSeries: []Series{
+				storedClassicBucket("stored_seconds_bucket", "1.0"),
+				storedClassicBucket("stored_seconds_bucket", "5.0"),
+				storedClassicBucket("stored_seconds_bucket", "+Inf"),
+			},
+			queryMatchers: []*labels.Matcher{
+				labels.MustNewMatcher(labels.MatchEqual, model.MetricNameLabel, "stored_seconds_bucket"),
+				labels.MustNewMatcher(labels.MatchEqual, "le", "1.0"),
+			},
+			wantClassic: 1,
+		},
+		{
+			name:          "nhcb _bucket only",
+			nhcbSeries:    []Series{nhcbSeries("solo_seconds")},
+			queryMatchers: []*labels.Matcher{labels.MustNewMatcher(labels.MatchEqual, model.MetricNameLabel, "solo_seconds_bucket")},
+			wantNHCB:      3,
+		},
+		{
+			name: "coexisting classic + nhcb _bucket",
+			classicSeries: []Series{
+				storedClassicBucket("both_seconds_bucket", "1.0"),
+				storedClassicBucket("both_seconds_bucket", "+Inf"),
+			},
+			nhcbSeries:    []Series{nhcbSeries("both_seconds")},
+			queryMatchers: []*labels.Matcher{labels.MustNewMatcher(labels.MatchEqual, model.MetricNameLabel, "both_seconds_bucket")},
+			wantClassic:   2,
+			wantNHCB:      3,
+		},
+		{
+			name:          "pass-through non-histogram query",
+			nhcbSeries:    []Series{nhcbSeries("my_gauge")},
+			queryMatchers: []*labels.Matcher{labels.MustNewMatcher(labels.MatchEqual, model.MetricNameLabel, "my_gauge")},
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			reg := prometheus.NewRegistry()
+			metrics := NewNativeHistogramsAsClassicMetrics(reg)
+
+			mock := &nhcbMockQuerier{
+				classicSeries: tc.classicSeries,
+				nhcbSeries:    tc.nhcbSeries,
+			}
+			q := NewNativeHistogramsAsClassicQueryable(&MockQueryable{MockQuerier: mock}, metrics)
+			querier, err := q.Querier(0, math.MaxInt64)
+			require.NoError(t, err)
+			t.Cleanup(func() { require.NoError(t, querier.Close()) })
+
+			ss := querier.Select(context.Background(), false, nil, tc.queryMatchers...)
+			for ss.Next() {
+			}
+			require.NoError(t, ss.Err())
+
+			expected := fmt.Sprintf(`
+# HELP prometheus_engine_query_classic_histogram_series_total The total number of classic histogram series returned by selectors, by where they come from (classic or nhcb).
+# TYPE prometheus_engine_query_classic_histogram_series_total counter
+prometheus_engine_query_classic_histogram_series_total{from="classic"} %d
+prometheus_engine_query_classic_histogram_series_total{from="nhcb"} %d
+`, tc.wantClassic, tc.wantNHCB)
+			require.NoError(t, promtestutil.GatherAndCompare(reg, strings.NewReader(expected),
+				"prometheus_engine_query_classic_histogram_series_total"))
+		})
+	}
 }

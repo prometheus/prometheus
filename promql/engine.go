@@ -96,6 +96,7 @@ type engineMetrics struct {
 	queryRejectedTotal        *prometheus.CounterVec
 	querySeriesTouched        prometheus.Histogram
 	querySamplesReadHistogram prometheus.Histogram
+	nativeHistogramsAsClassic *storage.NativeHistogramsAsClassicMetrics
 }
 
 type (
@@ -674,6 +675,10 @@ func NewEngine(opts EngineOpts) *Engine {
 		})
 	}
 
+	if opts.EnableNativeHistogramsAsClassic {
+		metrics.nativeHistogramsAsClassic = storage.NewNativeHistogramsAsClassicMetrics(opts.Reg)
+	}
+
 	if t := opts.ActiveQueryTracker; t != nil {
 		metrics.maxConcurrentQueries.Set(float64(t.GetMaxConcurrent()))
 	} else {
@@ -891,7 +896,7 @@ func (ng *Engine) newQuery(q storage.Queryable, qs string, opts QueryOpts, start
 		// NOTE: Wrapping here, not in the storage, keeps the conversion scoped to
 		// PromQL evaluation while still covering every source behind q (e.g.
 		// remote-read secondaries of a fanout).
-		q = storage.NewNativeHistogramsAsClassicQueryable(q)
+		q = storage.NewNativeHistogramsAsClassicQueryable(q, ng.metrics.nativeHistogramsAsClassic)
 	}
 
 	lookbackDelta := opts.LookbackDelta()
