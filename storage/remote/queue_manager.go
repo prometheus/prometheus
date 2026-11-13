@@ -2199,21 +2199,21 @@ func (s *shards) updateMetrics(_ context.Context, err error, sampleCount, exempl
 // sendSamplesWithBackoff to the remote storage with backoff for recoverable errors.
 func (s *shards) sendSamplesWithBackoff(ctx context.Context, samples []prompb.TimeSeries, sampleCount, exemplarCount, histogramCount int, pBuf *proto.Buffer, buf compression.EncodeBuffer, compr compression.Type) (WriteResponseStats, error) {
 	// Build the WriteRequest with no metadata.
-	req, highest, lowest, err := buildWriteRequest(s.qm.logger, samples, nil, pBuf, nil, buf, compr)
-	s.qm.buildRequestLimitTimestamp.Store(lowest)
+	req, _, stats, err := buildWriteRequest(s.qm.logger, samples, nil, pBuf, nil, buf, compr)
+	s.qm.buildRequestLimitTimestamp.Store(stats.lowest)
 	if err != nil {
 		// Failing to build the write request is non-recoverable, since it will
 		// only error if marshaling the proto to bytes fails.
 		return WriteResponseStats{}, err
 	}
 
-	reqSize := len(req)
+	highest := stats.highest
 	sc := sendBatchContext{
 		ctx:            ctx,
 		sampleCount:    sampleCount,
 		exemplarCount:  exemplarCount,
 		histogramCount: histogramCount,
-		reqSize:        reqSize,
+		reqSize:        len(req),
 	}
 
 	metricsUpdater := batchMetricsUpdater{
@@ -2238,7 +2238,7 @@ func (s *shards) sendSamplesWithBackoff(ctx context.Context, samples []prompb.Ti
 		lowest := s.qm.buildRequestLimitTimestamp.Load()
 		if isSampleOld(currentTime, time.Duration(s.qm.cfg.SampleAgeLimit), lowest) {
 			// This will filter out old samples during retries.
-			req2, _, lowest, err := buildWriteRequest(
+			req2, writeReq, stats, err := buildWriteRequest(
 				s.qm.logger,
 				samples,
 				nil,
@@ -2247,11 +2247,17 @@ func (s *shards) sendSamplesWithBackoff(ctx context.Context, samples []prompb.Ti
 				buf,
 				compr,
 			)
-			s.qm.buildRequestLimitTimestamp.Store(lowest)
+			s.qm.buildRequestLimitTimestamp.Store(stats.lowest)
 			if err != nil {
 				return err
 			}
 			req = req2
+			samples = writeReq.Timeseries
+			highest = stats.highest
+			sc.sampleCount = stats.samples
+			sc.exemplarCount = stats.exemplars
+			sc.histogramCount = stats.histograms
+			sc.reqSize = len(req)
 		}
 
 		cl := s.qm.client()
@@ -2286,7 +2292,7 @@ func (s *shards) sendSamplesWithBackoff(ctx context.Context, samples []prompb.Ti
 		return accumulatedStats, err
 	}
 
-	s.qm.metrics.sentBytesTotal.Add(float64(reqSize))
+	s.qm.metrics.sentBytesTotal.Add(float64(len(req)))
 	s.qm.metrics.highestSentTimestamp.Set(float64(highest / 1000))
 
 	if err == nil && !accumulatedStats.Confirmed {
@@ -2304,27 +2310,26 @@ func (s *shards) sendSamplesWithBackoff(ctx context.Context, samples []prompb.Ti
 // sendV2SamplesWithBackoff to the remote storage with backoff for recoverable errors.
 func (s *shards) sendV2SamplesWithBackoff(ctx context.Context, samples []writev2.TimeSeries, labels []string, sampleCount, exemplarCount, histogramCount int, pBuf *[]byte, buf compression.EncodeBuffer, compr compression.Type) (WriteResponseStats, error) {
 	// Build the WriteRequest with no metadata.
-	req, v2Req, highest, lowest, err := buildV2WriteRequest(s.qm.logger, samples, labels, pBuf, nil, buf, compr)
-	s.qm.buildRequestLimitTimestamp.Store(lowest)
+	req, v2Req, stats, withMetadataCounts, err := buildV2WriteRequest(s.qm.logger, samples, labels, pBuf, nil, buf, compr)
+	s.qm.buildRequestLimitTimestamp.Store(stats.lowest)
 	if err != nil {
 		// Failing to build the write request is non-recoverable, since it will
 		// only error if marshaling the proto to bytes fails.
 		return WriteResponseStats{}, err
 	}
 
-	reqSize := len(req)
+	highest := stats.highest
 	sc := sendBatchContext{
 		ctx:            ctx,
 		sampleCount:    sampleCount,
 		exemplarCount:  exemplarCount,
 		histogramCount: histogramCount,
-		reqSize:        reqSize,
+		reqSize:        len(req),
 	}
 
 	metricsUpdater := batchMetricsUpdater{
 		metrics: s.qm.metrics,
 	}
-	withMetadataCounts := countV2DataWithMetadata(samples)
 
 	// Since we retry writes via attemptStore and sendWriteRequestWithBackoff we need
 	// to track the total amount of accepted data across the various attempts.
@@ -2344,7 +2349,7 @@ func (s *shards) sendV2SamplesWithBackoff(ctx context.Context, samples []writev2
 		lowest := s.qm.buildRequestLimitTimestamp.Load()
 		if isSampleOld(currentTime, time.Duration(s.qm.cfg.SampleAgeLimit), lowest) {
 			// This will filter out old samples during retries.
-			req2, v2Req2, _, lowest, err := buildV2WriteRequest(
+			req2, v2Req2, stats, metadataCounts, err := buildV2WriteRequest(
 				s.qm.logger,
 				samples,
 				labels,
@@ -2353,12 +2358,19 @@ func (s *shards) sendV2SamplesWithBackoff(ctx context.Context, samples []writev2
 				buf,
 				compr,
 			)
-			s.qm.buildRequestLimitTimestamp.Store(lowest)
+			s.qm.buildRequestLimitTimestamp.Store(stats.lowest)
 			if err != nil {
 				return err
 			}
 			req = req2
 			v2Req = v2Req2
+			samples = v2Req.Timeseries
+			highest = stats.highest
+			sc.sampleCount = stats.samples
+			sc.exemplarCount = stats.exemplars
+			sc.histogramCount = stats.histograms
+			sc.reqSize = len(req)
+			withMetadataCounts = metadataCounts
 		}
 
 		cl := s.qm.client()
@@ -2377,11 +2389,11 @@ func (s *shards) sendV2SamplesWithBackoff(ctx context.Context, samples []writev2
 		if err == nil {
 			// Check the case mentioned in PRW 2.0
 			// https://prometheus.io/docs/specs/remote_write_spec_2_0/#required-written-response-headers.
-			if sampleCount+histogramCount+exemplarCount > 0 && rs.NoDataWritten() {
+			if sc.sampleCount+sc.histogramCount+sc.exemplarCount > 0 && rs.NoDataWritten() {
 				err = fmt.Errorf(
 					"sent v2 request with %v samples, %v histograms and %v exemplars; got 2xx, but PRW 2.0 response header statistics indicate %v samples, %v histograms and %v exemplars were accepted;"+
 						" assuming failure e.g. the target only supports PRW 1.0 prometheus.WriteRequest, but does not check the Content-Type header correctly",
-					sampleCount, histogramCount, exemplarCount,
+					sc.sampleCount, sc.histogramCount, sc.exemplarCount,
 					rs.Samples, rs.Histograms, rs.Exemplars,
 				)
 				span.RecordError(err)
@@ -2410,7 +2422,7 @@ func (s *shards) sendV2SamplesWithBackoff(ctx context.Context, samples []writev2
 		return accumulatedStats, err
 	}
 
-	s.qm.metrics.sentBytesTotal.Add(float64(reqSize))
+	s.qm.metrics.sentBytesTotal.Add(float64(len(req)))
 	s.qm.metrics.highestSentTimestamp.Set(float64(highest / 1000))
 	return accumulatedStats, err
 }
@@ -2570,11 +2582,16 @@ func setAtomicToNewer(value *atomic.Int64, newValue int64) (previous int64, upda
 func buildTimeSeries(timeSeries []prompb.TimeSeries, filter func(prompb.TimeSeries) bool) ([]prompb.TimeSeries, *timeSeriesStats) {
 	stats := newTimeSeriesStats()
 
-	timeSeries = slices.DeleteFunc(timeSeries, func(ts prompb.TimeSeries) bool {
+	keepIdx := 0
+	for i, ts := range timeSeries {
 		if filter != nil && filter(ts) {
 			stats.recordDropped(len(ts.Samples) > 0, len(ts.Exemplars) > 0, len(ts.Histograms) > 0)
-			return true
+			continue
 		}
+
+		stats.samples += len(ts.Samples)
+		stats.exemplars += len(ts.Exemplars)
+		stats.histograms += len(ts.Histograms)
 
 		// At the moment we only ever append a TimeSeries with a single sample or exemplar in it.
 		if len(ts.Samples) > 0 {
@@ -2586,20 +2603,24 @@ func buildTimeSeries(timeSeries []prompb.TimeSeries, filter func(prompb.TimeSeri
 		if len(ts.Histograms) > 0 {
 			stats.updateTimestamp(ts.Histograms[0].Timestamp)
 		}
-		return false
-	})
+		if i != keepIdx {
+			// Swap rather than copy to preserve independent buffers for the next batch.
+			timeSeries[keepIdx], timeSeries[i] = timeSeries[i], timeSeries[keepIdx]
+		}
+		keepIdx++
+	}
 
-	return timeSeries, stats
+	return timeSeries[:keepIdx], stats
 }
 
-func buildWriteRequest(logger *slog.Logger, timeSeries []prompb.TimeSeries, metadata []prompb.MetricMetadata, pBuf *proto.Buffer, filter func(prompb.TimeSeries) bool, buf compression.EncodeBuffer, compr compression.Type) (_ []byte, highest, lowest int64, _ error) {
-	timeSeries, stats := buildTimeSeries(timeSeries, filter)
+func buildWriteRequest(logger *slog.Logger, timeSeries []prompb.TimeSeries, metadata []prompb.MetricMetadata, pBuf *proto.Buffer, filter func(prompb.TimeSeries) bool, buf compression.EncodeBuffer, compr compression.Type) (compressed []byte, req *prompb.WriteRequest, stats *timeSeriesStats, _ error) {
+	timeSeries, stats = buildTimeSeries(timeSeries, filter)
 
 	if stats.droppedSamples > 0 || stats.droppedExemplars > 0 || stats.droppedHistograms > 0 {
 		logger.Debug("dropped data due to their age", "droppedSamples", stats.droppedSamples, "droppedExemplars", stats.droppedExemplars, "droppedHistograms", stats.droppedHistograms)
 	}
 
-	req := &prompb.WriteRequest{
+	req = &prompb.WriteRequest{
 		Timeseries: timeSeries,
 		Metadata:   metadata,
 	}
@@ -2610,17 +2631,17 @@ func buildWriteRequest(logger *slog.Logger, timeSeries []prompb.TimeSeries, meta
 		pBuf.Reset()
 	}
 	if err := pBuf.Marshal(req); err != nil {
-		return nil, stats.highest, stats.lowest, err
+		return nil, req, stats, err
 	}
 
 	compressed, err := compression.Encode(compr, pBuf.Bytes(), buf)
 	if err != nil {
-		return nil, stats.highest, stats.lowest, err
+		return nil, req, stats, err
 	}
-	return compressed, stats.highest, stats.lowest, nil
+	return compressed, req, stats, nil
 }
 
-func buildV2WriteRequest(logger *slog.Logger, samples []writev2.TimeSeries, labels []string, pBuf *[]byte, filter func(writev2.TimeSeries) bool, buf compression.EncodeBuffer, compr compression.Type) (compressed []byte, req *writev2.Request, highest, lowest int64, _ error) {
+func buildV2WriteRequest(logger *slog.Logger, samples []writev2.TimeSeries, labels []string, pBuf *[]byte, filter func(writev2.TimeSeries) bool, buf compression.EncodeBuffer, compr compression.Type) (compressed []byte, req *writev2.Request, stats *timeSeriesStats, _ v2WithMetadataCounts, _ error) {
 	timeSeries, stats := buildV2TimeSeries(samples, filter)
 
 	if stats.droppedSamples > 0 || stats.droppedExemplars > 0 || stats.droppedHistograms > 0 {
@@ -2638,15 +2659,15 @@ func buildV2WriteRequest(logger *slog.Logger, samples []writev2.TimeSeries, labe
 
 	data, err := req.OptimizedMarshal(*pBuf)
 	if err != nil {
-		return nil, req, stats.highest, stats.lowest, err
+		return nil, req, stats, v2WithMetadataCounts{}, err
 	}
 	*pBuf = data
 
 	compressed, err = compression.Encode(compr, *pBuf, buf)
 	if err != nil {
-		return nil, req, stats.highest, stats.lowest, err
+		return nil, req, stats, v2WithMetadataCounts{}, err
 	}
-	return compressed, req, stats.highest, stats.lowest, nil
+	return compressed, req, stats, countV2DataWithMetadata(timeSeries), nil
 }
 
 func buildV2TimeSeries(timeSeries []writev2.TimeSeries, filter func(writev2.TimeSeries) bool) ([]writev2.TimeSeries, *timeSeriesStats) {
@@ -2658,6 +2679,10 @@ func buildV2TimeSeries(timeSeries []writev2.TimeSeries, filter func(writev2.Time
 			stats.recordDropped(len(ts.Samples) > 0, len(ts.Exemplars) > 0, len(ts.Histograms) > 0)
 			continue
 		}
+
+		stats.samples += len(ts.Samples)
+		stats.exemplars += len(ts.Exemplars)
+		stats.histograms += len(ts.Histograms)
 
 		// At the moment we only ever append a TimeSeries with a single sample or exemplar in it.
 		if len(ts.Samples) > 0 {
@@ -2683,6 +2708,9 @@ func buildV2TimeSeries(timeSeries []writev2.TimeSeries, filter func(writev2.Time
 
 // timeSeriesStats tracks statistics during time series processing.
 type timeSeriesStats struct {
+	samples           int
+	exemplars         int
+	histograms        int
 	highest           int64
 	lowest            int64
 	droppedSamples    int
