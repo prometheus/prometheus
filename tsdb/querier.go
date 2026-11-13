@@ -836,9 +836,15 @@ func (p *populateWithDelSeriesIterator) reset(blockID ulid.ULID, cr ChunkReader,
 }
 
 func (p *populateWithDelSeriesIterator) Next() chunkenc.ValueType {
+	if p.err != nil {
+		return chunkenc.ValNone
+	}
 	if p.curr != nil {
 		if valueType := p.curr.Next(); valueType != chunkenc.ValNone {
 			return valueType
+		}
+		if p.err = p.curr.Err(); p.err != nil {
+			return chunkenc.ValNone
 		}
 	}
 
@@ -851,22 +857,42 @@ func (p *populateWithDelSeriesIterator) Next() chunkenc.ValueType {
 		if valueType := p.curr.Next(); valueType != chunkenc.ValNone {
 			return valueType
 		}
+		if p.err = p.curr.Err(); p.err != nil {
+			return chunkenc.ValNone
+		}
 	}
 	return chunkenc.ValNone
 }
 
 func (p *populateWithDelSeriesIterator) Seek(t int64) chunkenc.ValueType {
-	if p.curr != nil {
-		if valueType := p.curr.Seek(t); valueType != chunkenc.ValNone {
-			return valueType
+	for {
+		if p.err != nil {
+			return chunkenc.ValNone
+		}
+		if p.curr != nil {
+			if valueType := p.curr.Seek(t); valueType != chunkenc.ValNone {
+				return valueType
+			}
+			if p.err = p.curr.Err(); p.err != nil {
+				return chunkenc.ValNone
+			}
+			// The current chunk is exhausted. Skip unopened chunks that cannot
+			// contain the target. MaxTime is not necessarily ordered across metas.
+			for p.i+1 < len(p.metas) && p.metas[p.i+1].MaxTime < t {
+				p.i++
+			}
+		}
+		// Always initialize the first chunk, including its error state, before
+		// skipping any later chunks.
+		if !p.next(false) {
+			return chunkenc.ValNone
+		}
+		if p.currDelIter != nil {
+			p.curr = p.currDelIter
+		} else {
+			p.curr = p.currMeta.Chunk.Iterator(p.curr)
 		}
 	}
-	for p.Next() != chunkenc.ValNone {
-		if valueType := p.curr.Seek(t); valueType != chunkenc.ValNone {
-			return valueType
-		}
-	}
-	return chunkenc.ValNone
 }
 
 func (p *populateWithDelSeriesIterator) At() (int64, float64) {
