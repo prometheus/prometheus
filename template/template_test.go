@@ -311,10 +311,22 @@ func TestTemplateExpansion(t *testing.T) {
 			output: "0:1:1.235M:18.45E:",
 		},
 		{
+			// Humanize - values that round up to the next prefix.
+			text:   "{{ range . }}{{ humanize . }}:{{ end }}",
+			input:  []float64{999.95, 999999, -999999, 0.99996, 0.0009999996},
+			output: "1k:1M:-1M:1:1m:",
+		},
+		{
 			// Humanize1024 - float64.
 			text:   "{{ range . }}{{ humanize1024 . }}:{{ end }}",
 			input:  []float64{0.0, 1.0, 1048576.0, .12},
 			output: "0:1:1Mi:0.12:",
+		},
+		{
+			// Humanize1024 - values that round up to the next prefix.
+			text:   "{{ range . }}{{ humanize1024 . }}:{{ end }}",
+			input:  []float64{1023.99, 1048575, -1048575},
+			output: "1ki:1Mi:-1Mi:",
 		},
 		{
 			// Humanize1024 - string.
