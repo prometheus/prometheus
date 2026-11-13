@@ -3952,15 +3952,20 @@ func (ev *evaluator) VectorBinop(op parser.ItemType, lhs, rhs Vector, matching *
 			}
 		}
 
-		dropMetricName := !ev.enableDelayedNameRemoval && returnBool
-		metric := resultMetric(ls.Metric, rs.Metric, op, matching, dropMetricName, enh)
-
 		if matching.Card == parser.CardOneToOne {
 			if matchedSigsPresent[sigOrd] {
 				ev.errorf("multiple matches for labels: many-to-one matching must be explicit (group_left/group_right)")
 			}
 			matchedSigsPresent[sigOrd] = true
-		} else {
+			if !keep && !returnBool {
+				return
+			}
+		}
+
+		dropMetricName := !ev.enableDelayedNameRemoval && returnBool
+		metric := resultMetric(ls.Metric, rs.Metric, op, matching, dropMetricName, enh)
+
+		if matching.Card != parser.CardOneToOne {
 			// In many-to-one matching the grouping labels have to ensure a unique metric
 			// for the result Vector. Check whether those labels have already been added for
 			// the same matching labels.
