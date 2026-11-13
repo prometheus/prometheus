@@ -1260,7 +1260,7 @@ def render_markdown(
     updated.sort(key=sort_key)
 
     lines.append("## Updated After Review (Author Pushed Fixes)")
-    lines.append("*A maintainer already reviewed these. All comments are resolved or responded to, and CI is green (or the author commented why it is not green).*")
+    lines.append("*Someone other than the author already reviewed these. All comments are resolved or responded to, and CI is green (or the author commented why it is not green).*")
     lines.append("")
     if updated:
         lines.append("| PR | Title | Author | CI | Diff | Hygiene | Waiting | Owners |")
@@ -1332,7 +1332,7 @@ def render_markdown(
         (
             "Waiting on Author (Changes Requested / Open Review Threads)",
             "Waiting on Author",
-            "Maintainer left feedback or requested changes; ball is in the author's court.",
+            "Someone other than the author left feedback or requested changes; ball is in the author's court.",
         ),
         ("Failing CI", "Failing CI", "CI is not green and there is no author comment explaining why."),
         ("Needs Rebase (Merge Conflicts)", "Needs Rebase", "Conflicting with base branch."),
