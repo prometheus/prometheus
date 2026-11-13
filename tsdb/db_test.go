@@ -2180,6 +2180,145 @@ func TestOOOSampleLossOnWALCheckpointBeforeOOOCompaction(t *testing.T) {
 	}
 }
 
+// TestOOOCompactionCrashKeepsWBLSamples checks that out-of-order samples that
+// only the WBL holds survive a crash in the middle of out-of-order compaction.
+//
+// NewOOOCompactionHead m-maps each series' out-of-order head chunk without
+// writing an m-map marker to the WBL, and the chunk stays in the chunk disk
+// mapper's write buffer until that buffer is flushed. An out-of-order sample
+// appended to the same series before the compaction writes its block cuts a new
+// head chunk with nothing to m-map, which logs an m-map marker with ref 0.
+// Copying the data directory at that point stands for a crash there: the copy
+// holds what reached the kernel, without the write buffer. WBL replay used to
+// accept the ref 0 marker and drop the samples it had replayed for the series,
+// which were then in no chunk on disk.
+func TestOOOCompactionCrashKeepsWBLSamples(t *testing.T) {
+	t.Parallel()
+	for name, scenario := range sampleTypeScenarios {
+		t.Run(name, func(t *testing.T) {
+			t.Parallel()
+			ctx := context.Background()
+			opts := DefaultOptions()
+			// The test copies the open data directory, and Windows refuses to read a held lock file.
+			opts.NoLockfile = true
+			opts.OutOfOrderTimeWindow = 6 * time.Hour.Milliseconds()
+			db := newTestDB(t, withOpts(opts))
+			db.DisableCompactions() // We want to call the compactions manually.
+
+			series := labels.FromStrings("foo", "bar")
+			var expected []chunks.Sample
+			appendSample := func(ts int64) {
+				app := db.AppenderV2(ctx)
+				_, s, err := scenario.appendFunc(app, series, ts, ts)
+				require.NoError(t, err)
+				require.NoError(t, app.Commit())
+				expected = append(expected, s)
+			}
+
+			// A block of in-order samples moves the head's minValidTime past the
+			// out-of-order samples below, so WAL replay drops their WAL copies and
+			// only the WBL can restore them.
+			app := db.AppenderV2(ctx)
+			inOrder := labels.FromStrings("foo", "in-order")
+			for _, ts := range []int64{0, 6 * time.Hour.Milliseconds()} {
+				_, _, err := scenario.appendFunc(app, inOrder, ts, ts)
+				require.NoError(t, err)
+			}
+			require.NoError(t, app.Commit())
+			require.NoError(t, db.Compact(ctx))
+			require.NotEmpty(t, db.Blocks())
+
+			// Fewer samples than OutOfOrderCapMax, so they stay in one head chunk.
+			oooStart := time.Hour.Milliseconds()
+			for i := range int64(20) {
+				appendSample(oooStart + i*1000)
+			}
+			require.Greater(t, db.head.minValidTime.Load(), expected[len(expected)-1].T())
+
+			copyDir := t.TempDir()
+			db.compactOOOHeadTestingCallback = func() {
+				appendSample(oooStart + 20*1000)
+				require.NoError(t, fileutil.CopyDirs(db.Dir(), copyDir))
+			}
+			require.NoError(t, db.CompactOOOHead(ctx))
+
+			restored := newTestDB(t, withDir(copyDir), withOpts(opts))
+			q, err := restored.Querier(math.MinInt64, math.MaxInt64)
+			require.NoError(t, err)
+			actual := query(t, q, labels.MustNewMatcher(labels.MatchEqual, "foo", "bar"))
+			requireEqualSeries(t, map[string][]chunks.Sample{series.String(): expected}, actual, true)
+		})
+	}
+}
+
+// TestWBLReplayKeepsSamplesOfPartlyWrittenOOOHeadChunk checks that WBL replay
+// keeps the samples of an out-of-order head chunk that was m-mapped into
+// several chunks when only the first of them reached the disk. A head chunk
+// that holds both float and histogram samples is written as one chunk per run
+// of a sample type, and the WBL gets one m-map marker per chunk. Replay used to
+// drop the samples on the first marker, whose chunk was loaded, although the
+// histogram samples were only in the later chunk, which was lost.
+func TestWBLReplayKeepsSamplesOfPartlyWrittenOOOHeadChunk(t *testing.T) {
+	t.Parallel()
+	ctx := context.Background()
+	hour := time.Hour.Milliseconds()
+	opts := DefaultOptions()
+	opts.OutOfOrderTimeWindow = 6 * hour
+	db := newTestDB(t, withOpts(opts))
+	db.DisableCompactions() // We want to call the compactions manually.
+
+	floats, histograms := sampleTypeScenarios[float], sampleTypeScenarios[intHistogram]
+	appendSample := func(scenario sampleTypeScenario, lbls labels.Labels, ts int64) sample {
+		app := db.AppenderV2(ctx)
+		_, s, err := scenario.appendFunc(app, lbls, ts, ts)
+		require.NoError(t, err)
+		require.NoError(t, app.Commit())
+		return s
+	}
+
+	// A block moves the head's minValidTime past the out-of-order samples
+	// below, so WAL replay drops their WAL copies and only the WBL can restore
+	// them.
+	inOrder := labels.FromStrings("foo", "in-order")
+	appendSample(floats, inOrder, 0)
+	appendSample(floats, inOrder, 6*hour)
+	require.NoError(t, db.Compact(ctx))
+	require.NotEmpty(t, db.Blocks())
+
+	// Fill one out-of-order head chunk with floats, then histograms. The next
+	// sample cuts a new head chunk and m-maps the full one as a float chunk and
+	// a histogram chunk, with a marker for each.
+	series := labels.FromStrings("foo", "bar")
+	var expected []chunks.Sample
+	capMax := opts.OutOfOrderCapMax
+	for i := range capMax + 1 {
+		scenario := floats
+		if i >= capMax/2 && i < capMax {
+			scenario = histograms
+		}
+		expected = append(expected, appendSample(scenario, series, hour+i*1000))
+	}
+	require.Greater(t, db.head.minValidTime.Load(), expected[len(expected)-1].T())
+	ms, created, err := db.head.getOrCreate(series.Hash(), series, false)
+	require.NoError(t, err)
+	require.False(t, created)
+	require.Len(t, ms.ooo.oooMmappedChunks, 2)
+	lost := ms.ooo.oooMmappedChunks[1].ref
+
+	// Closing the DB flushes both chunks. Cutting the chunk file where the
+	// histogram chunk starts stands for a crash after the float chunk reached
+	// the disk and before the histogram chunk did.
+	require.NoError(t, db.Close())
+	seq, off := lost.Unpack()
+	require.NoError(t, os.Truncate(filepath.Join(mmappedChunksDir(db.Dir()), fmt.Sprintf("%0.6d", seq)), int64(off)))
+
+	restored := newTestDB(t, withDir(db.Dir()), withOpts(opts))
+	q, err := restored.Querier(math.MinInt64, math.MaxInt64)
+	require.NoError(t, err)
+	actual := query(t, q, labels.MustNewMatcher(labels.MatchEqual, "foo", "bar"))
+	requireEqualSeries(t, map[string][]chunks.Sample{series.String(): expected}, actual, true)
+}
+
 func copyWithCounterReset(s sample, hint histogram.CounterResetHint) sample {
 	if s.h != nil {
 		h := s.h.Copy()
