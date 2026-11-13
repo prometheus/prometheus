@@ -952,6 +952,7 @@ load 10m
     histogram_mul_div {{schema:0 count:30 sum:33 z_bucket:3 z_bucket_w:0.001 buckets:[3 3 3] n_buckets:[6 6 6]}}x1
     float_series_3 3+0x1
     float_series_0 0+0x1
+    nhcb_mul_div {{schema:-53 count:10 sum:11 custom_values:[1 2] buckets:[3 3 4]}}x1
 
 eval instant at 10m histogram_mul_div*3
     expect no_info
@@ -1020,6 +1021,18 @@ eval instant at 10m histogram_mul_div/float_series_0
 eval instant at 10m histogram_mul_div*0/0
     expect no_info
     {} {{schema:0 count:NaN sum:NaN z_bucket_w:0.001 z_bucket:NaN}}
+
+eval instant at 10m nhcb_mul_div*3
+    expect no_info
+    {} {{schema:-53 count:30 sum:33 custom_values:[1 2] buckets:[9 9 12]}}
+
+eval instant at 10m nhcb_mul_div/0
+    expect no_info
+    {} {{schema:-53 count:Inf sum:Inf custom_values:[1 2]}}
+
+eval instant at 10m nhcb_mul_div*NaN
+    expect no_info
+    {} {{schema:-53 count:NaN sum:NaN custom_values:[1 2] buckets:[NaN NaN NaN]}}
 
 eval instant at 10m histogram_mul_div*histogram_mul_div
   expect info
