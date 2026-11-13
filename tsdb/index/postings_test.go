@@ -1140,6 +1140,158 @@ func TestFindIntersectingPostings(t *testing.T) {
 		require.Empty(t, indexes)
 	})
 
+	for _, tc := range []struct {
+		name     string
+		postings func() (Postings, []Postings)
+		limit    int
+		want     []int
+		err      string
+	}{
+		{
+			name: "limit counts confirmed intersections in traversal order",
+			postings: func() (Postings, []Postings) {
+				return NewListPostings([]storage.SeriesRef{10, 20, 30, 40, 50}), []Postings{
+					NewListPostings([]storage.SeriesRef{1, 3, 8}),
+					NewListPostings([]storage.SeriesRef{10}),
+					NewListPostings([]storage.SeriesRef{15}),
+					NewListPostings([]storage.SeriesRef{20}),
+					NewListPostings([]storage.SeriesRef{30}),
+				}
+			},
+			limit: 2, want: []int{1, 3},
+		},
+		{
+			name: "successful candidate seek reorders the heap",
+			postings: func() (Postings, []Postings) {
+				return NewListPostings([]storage.SeriesRef{20, 30}), []Postings{
+					NewListPostings([]storage.SeriesRef{1, 30}),
+					NewListPostings([]storage.SeriesRef{5, 20}),
+				}
+			},
+			limit: 1, want: []int{1},
+		},
+		{
+			name:     "empty candidates",
+			postings: func() (Postings, []Postings) { return EmptyPostings(), nil },
+			limit:    1,
+		},
+		{
+			name: "empty matcher",
+			postings: func() (Postings, []Postings) {
+				return EmptyPostings(), []Postings{NewListPostings([]storage.SeriesRef{1})}
+			},
+			limit: 1,
+		},
+		{
+			name: "exhaustion before the limit",
+			postings: func() (Postings, []Postings) {
+				return NewListPostings([]storage.SeriesRef{10, 20}), []Postings{
+					NewListPostings([]storage.SeriesRef{10}), NewListPostings([]storage.SeriesRef{30}),
+				}
+			},
+			limit: 2, want: []int{0},
+		},
+		{
+			name: "matcher error on limiting hit",
+			postings: func() (Postings, []Postings) {
+				return Merge(context.Background(), ErrPostings(context.Canceled), NewListPostings([]storage.SeriesRef{10})),
+					[]Postings{NewListPostings([]storage.SeriesRef{10}), NewListPostings([]storage.SeriesRef{20})}
+			},
+			limit: 1, err: "context canceled",
+		},
+		{
+			name: "matcher error before candidate exhaustion",
+			postings: func() (Postings, []Postings) {
+				return Merge(context.Background(), ErrPostings(context.Canceled), NewListPostings([]storage.SeriesRef{10, 20})),
+					[]Postings{NewListPostings([]storage.SeriesRef{1})}
+			},
+			limit: 2, err: "context canceled",
+		},
+		{
+			name: "matcher error on successful seek",
+			postings: func() (Postings, []Postings) {
+				return Merge[Postings](context.Background(), &postingsFailingAfterNthCall{2, NewListPostings([]storage.SeriesRef{1, 2})}, NewListPostings([]storage.SeriesRef{3})),
+					[]Postings{NewListPostings([]storage.SeriesRef{3}), NewListPostings([]storage.SeriesRef{4})}
+			},
+			limit: 1, err: "ttl exceeded",
+		},
+		{
+			name: "candidate error on successful next",
+			postings: func() (Postings, []Postings) {
+				return NewListPostings([]storage.SeriesRef{10, 30}), []Postings{
+					Merge(context.Background(), ErrPostings(context.Canceled), NewListPostings([]storage.SeriesRef{20})),
+					NewListPostings([]storage.SeriesRef{10}),
+				}
+			},
+			limit: 1, err: "postings 0: context canceled",
+		},
+		{
+			name: "candidate error on successful seek",
+			postings: func() (Postings, []Postings) {
+				return NewListPostings([]storage.SeriesRef{2, 4}), []Postings{
+					Merge[Postings](context.Background(), &postingsFailingAfterNthCall{2, NewListPostings([]storage.SeriesRef{1, 2})}, NewListPostings([]storage.SeriesRef{3})),
+					NewListPostings([]storage.SeriesRef{2}),
+				}
+			},
+			limit: 1, err: "postings 0: ttl exceeded",
+		},
+		{
+			name: "matcher failed seek",
+			postings: func() (Postings, []Postings) {
+				return &postingsFailingAfterNthCall{2, NewListPostings([]storage.SeriesRef{10, 20, 30})},
+					[]Postings{NewListPostings([]storage.SeriesRef{10}), NewListPostings([]storage.SeriesRef{20})}
+			},
+			limit: 2, err: "ttl exceeded",
+		},
+		{
+			name: "candidate failed next",
+			postings: func() (Postings, []Postings) {
+				return NewListPostings([]storage.SeriesRef{10, 20}), []Postings{NewListPostings([]storage.SeriesRef{10}), ErrPostings(context.Canceled)}
+			},
+			limit: 1, err: "context canceled",
+		},
+		{
+			name: "candidate failed seek",
+			postings: func() (Postings, []Postings) {
+				return NewListPostings([]storage.SeriesRef{10, 20, 30}), []Postings{
+					NewListPostings([]storage.SeriesRef{10}), &postingsFailingAfterNthCall{2, NewListPostings([]storage.SeriesRef{15, 20})},
+				}
+			},
+			limit: 2, err: "seek postings 1: ttl exceeded",
+		},
+		{
+			name: "iterator work after the limit is not visited",
+			postings: func() (Postings, []Postings) {
+				return NewListPostings([]storage.SeriesRef{10, 20, 30}), []Postings{
+					NewListPostings([]storage.SeriesRef{10}), NewListPostings([]storage.SeriesRef{20}),
+					&postingsFailingAfterNthCall{2, NewListPostings([]storage.SeriesRef{25, 30})},
+				}
+			},
+			limit: 2, want: []int{0, 1},
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			p, candidates := tc.postings()
+			got, err := FindIntersectingPostingsWithLimit(p, candidates, tc.limit)
+			if tc.err != "" {
+				require.EqualError(t, err, tc.err)
+				return
+			}
+			require.NoError(t, err)
+			require.Equal(t, tc.want, got)
+		})
+	}
+
+	for _, limit := range []int{0, -1} {
+		t.Run(fmt.Sprintf("limit=%d", limit), func(t *testing.T) {
+			p := NewListPostings([]storage.SeriesRef{10, 20, 30})
+			candidates := []Postings{NewListPostings([]storage.SeriesRef{10}), NewListPostings([]storage.SeriesRef{20}), NewListPostings([]storage.SeriesRef{30})}
+			got, err := FindIntersectingPostingsWithLimit(p, candidates, limit)
+			require.NoError(t, err)
+			require.Equal(t, []int{0, 1, 2}, got)
+		})
+	}
+
 	t.Run("p is ErrPostings", func(t *testing.T) {
 		p := ErrPostings(context.Canceled)
 		candidates := []Postings{NewListPostings([]storage.SeriesRef{1})}
