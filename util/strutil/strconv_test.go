@@ -217,12 +217,113 @@ func TestSanitizeFullLabelName(t *testing.T) {
 			input:    "0123test",
 			expected: "_123test",
 		},
+		{
+			name:     "invalid character at last position",
+			input:    "valid_name-",
+			expected: "valid_name_",
+		},
+		{
+			name:     "single invalid character",
+			input:    "-",
+			expected: "_",
+		},
+		{
+			name:     "single digit",
+			input:    "7",
+			expected: "_",
+		},
+		{
+			name:     "invalid first character followed by digits",
+			input:    "-1a2",
+			expected: "_1a2",
+		},
+		{
+			name:     "digits after an invalid character are kept",
+			input:    "a-0b9",
+			expected: "a_0b9",
+		},
+		{
+			name:     "two byte rune",
+			input:    "aéb",
+			expected: "a_b",
+		},
+		{
+			name:     "three byte rune",
+			input:    "a€b",
+			expected: "a_b",
+		},
+		{
+			name:     "four byte rune",
+			input:    "a😀b",
+			expected: "a_b",
+		},
+		{
+			name:     "multi byte rune at start",
+			input:    "éabc",
+			expected: "_abc",
+		},
+		{
+			name:     "multi byte rune at end",
+			input:    "abc😀",
+			expected: "abc_",
+		},
+		{
+			name:     "only multi byte runes",
+			input:    "日本語",
+			expected: "___",
+		},
+		{
+			name:     "invalid UTF-8 byte in middle",
+			input:    "a\xffb",
+			expected: "a_b",
+		},
+		{
+			name:     "invalid UTF-8 byte at start",
+			input:    "\xffabc",
+			expected: "_abc",
+		},
+		{
+			name:     "invalid UTF-8 byte at end",
+			input:    "abc\x80",
+			expected: "abc_",
+		},
+		{
+			name:     "truncated multi byte sequence at end",
+			input:    "ab\xe2\x82",
+			expected: "ab__",
+		},
+		{
+			name:     "invalid UTF-8 followed by valid multi byte rune",
+			input:    "a\xff€b",
+			expected: "a__b",
+		},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			actual := SanitizeFullLabelName(tt.input)
 			require.Equal(t, tt.expected, actual, "SanitizeFullLabelName(%q) = %q, want %q", tt.input, actual, tt.expected)
+		})
+	}
+}
+
+func BenchmarkSanitizeFullLabelName(b *testing.B) {
+	cases := []struct {
+		name  string
+		input string
+	}{
+		{"valid_short", "http_requests_total"},
+		{"valid_long", "container_cpu_usage_seconds_total_with_extended_dimensions_and_namespaces"},
+		{"needs_sanitizing_short", "123-invalid.metric.name"},
+		{"needs_sanitizing_long", "http-service.cluster.local:8080/metrics@prod-us-west-2/system-metric"},
+	}
+
+	for _, bc := range cases {
+		b.Run(bc.name, func(b *testing.B) {
+			b.ReportAllocs()
+			for range b.N {
+				_ = SanitizeFullLabelName(bc.input)
+			}
 		})
 	}
 }

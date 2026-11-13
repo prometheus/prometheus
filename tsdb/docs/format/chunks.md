@@ -143,11 +143,11 @@ The delta=0 check is skipped, saving one bit on the reuse path:
    ```
    where the highest bit `first_st_known` indicates if `st_0` is present or not.
    If the lower 7bits `st_changed_on` is 0, no `st_i (i>0)` is present.
-   Otherwise `st_i (i>=st_changed_on>)` is present, while
+   Otherwise `st_i (i>=st_changed_on)` is present, while
    `st_i (0<i<st_changed_on)` is not present.
 
    Due to the 7 bit limitation, once a chunk has at least 127 samples,
-   `st_changed_on` is set to 127 (0xEF) and the 127th and further samples will
+   `st_changed_on` is set to 127 (0x7F) and the 128th and further samples will
    have `st_i` present.
 * `st_0` is encoded as a `varint` if present.
 * `st_1` is encoded as a `varbit_ts` delta from `st_0` (or from 0 if `st_0` is

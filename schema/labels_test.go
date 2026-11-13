@@ -94,6 +94,26 @@ func TestMetadata(t *testing.T) {
 			}
 		})
 	}
+
+	t.Run("unrecognized type is normalized to unknown and omitted from labels", func(t *testing.T) {
+		got := NewMetadataFromLabels(labels.FromStrings(model.MetricNameLabel, "metric_total", model.MetricTypeLabel, "invalid_type", model.MetricUnitLabel, "seconds"))
+		require.Equal(t, Metadata{
+			Name: "metric_total",
+			Type: model.MetricTypeUnknown,
+			Unit: "seconds",
+		}, got)
+
+		invalidMeta := Metadata{
+			Name: "metric_total",
+			Type: model.MetricType("invalid_type"),
+			Unit: "seconds",
+		}
+		require.True(t, invalidMeta.IsTypeEmpty())
+
+		lb := labels.NewBuilder(labels.FromStrings(model.MetricTypeLabel, "counter", "foo", "bar"))
+		invalidMeta.SetToLabels(lb)
+		testutil.RequireEqual(t, labels.FromStrings(model.MetricNameLabel, "metric_total", model.MetricUnitLabel, "seconds", "foo", "bar"), lb.Labels())
+	})
 }
 
 func TestIgnoreOverriddenMetadataLabelsScratchBuilder(t *testing.T) {

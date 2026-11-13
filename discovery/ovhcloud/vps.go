@@ -50,7 +50,7 @@ type vpsModel struct {
 // independently.
 type virtualPrivateServer struct {
 	ips                []netip.Addr
-	Keymap             []string `json:"keymap"`
+	Keymap             string   `json:"keymap"`
 	Zone               string   `json:"zone"`
 	Model              vpsModel `json:"model"`
 	DisplayName        string   `json:"displayName"`

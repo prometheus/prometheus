@@ -1997,6 +1997,381 @@ bar 4
 	require.Len(t, sl.cache.droppedSeries, 1)
 }
 
+func TestScrapeLoopMetadataRelabeling(t *testing.T) {
+	for _, enableTypeAndUnitLabels := range []bool{false, true} {
+		t.Run(fmt.Sprintf("enableTypeAndUnitLabels=%v", enableTypeAndUnitLabels), func(t *testing.T) {
+			appTest := teststorage.NewAppendable()
+			target := NewTarget(
+				labels.FromStrings("instance", "localhost:9090", "job", "test"),
+				&config.ScrapeConfig{},
+				nil,
+				nil,
+			)
+			rc := []*relabel.Config{
+				// Drop dropped_metric_total completely; its metadata should not enter scrapeCache.
+				{
+					SourceLabels:         model.LabelNames{"__name__"},
+					Separator:            ";",
+					Regex:                relabel.MustNewRegexp("dropped_metric_total"),
+					Replacement:          "$1",
+					Action:               relabel.Drop,
+					NameValidationScheme: model.UTF8Validation,
+				},
+				// Drop untyped_drop_me only when its __type__ is empty.
+				{
+					SourceLabels:         model.LabelNames{"__name__", "__type__"},
+					Separator:            ";",
+					Regex:                relabel.MustNewRegexp("untyped_drop_me;"),
+					Replacement:          "$1",
+					Action:               relabel.Drop,
+					NameValidationScheme: model.UTF8Validation,
+				},
+				// Rename old_http_requests_total -> http_requests_total.
+				{
+					SourceLabels:         model.LabelNames{"__name__"},
+					Separator:            ";",
+					Regex:                relabel.MustNewRegexp("old_(http_requests_total)"),
+					TargetLabel:          "__name__",
+					Replacement:          "$1",
+					Action:               relabel.Replace,
+					NameValidationScheme: model.UTF8Validation,
+				},
+				// Infer counter type for untyped *_total metrics.
+				{
+					SourceLabels:         model.LabelNames{"__name__", "__type__"},
+					Separator:            ";",
+					Regex:                relabel.MustNewRegexp(".*_total;"),
+					TargetLabel:          "__type__",
+					Replacement:          "counter",
+					Action:               relabel.Replace,
+					NameValidationScheme: model.UTF8Validation,
+				},
+				// Infer unit for http_requests_total.
+				{
+					SourceLabels:         model.LabelNames{"__name__", "__unit__"},
+					Separator:            ";",
+					Regex:                relabel.MustNewRegexp("http_requests_total;"),
+					TargetLabel:          "__unit__",
+					Replacement:          "requests",
+					Action:               relabel.Replace,
+					NameValidationScheme: model.UTF8Validation,
+				},
+				// Override help for legacy_untyped_total.
+				{
+					SourceLabels:         model.LabelNames{"__name__"},
+					Separator:            ";",
+					Regex:                relabel.MustNewRegexp("legacy_untyped_total"),
+					TargetLabel:          "__help__",
+					Replacement:          "Synthesized help text.",
+					Action:               relabel.Replace,
+					NameValidationScheme: model.UTF8Validation,
+				},
+				// Ensure labeldrop: __tmp_.* and __(type|unit|help)__ does not drop metadata.
+				{
+					Regex:                relabel.MustNewRegexp("__(tmp_.*|type__|unit__|help__)"),
+					Replacement:          "$1",
+					Action:               relabel.LabelDrop,
+					NameValidationScheme: model.UTF8Validation,
+				},
+			}
+
+			var mutatorCalls int
+			sl, _ := newTestScrapeLoop(t, withAppendable(appTest, true), func(sl *scrapeLoop) {
+				sl.enableTypeAndUnitLabels = enableTypeAndUnitLabels
+				sl.mrc = rc
+				sl.sampleMutatorWithMetadata = func(l labels.Labels, m metadata.Metadata) (labels.Labels, metadata.Metadata) {
+					mutatorCalls++
+					return mutateSampleLabelsAndMetadata(l, m, target, false, enableTypeAndUnitLabels, rc)
+				}
+			})
+
+			scrape1 := []byte(`# TYPE dropped_metric_total counter
+# HELP dropped_metric_total should not be cached
+dropped_metric_total 10
+# TYPE old_http_requests counter
+# HELP old_http_requests Total HTTP requests
+old_http_requests_total 42
+# HELP legacy_untyped Help from family without TYPE
+legacy_untyped_total 7
+untyped_drop_me 99
+untyped_unitless_metric{__type__="gauge",__unit__="bytes",__help__="spoof"} 5
+# EOF
+`)
+			now := time.Now()
+			app := sl.appender()
+			total, added, seriesAdded, err := app.append(scrape1, "application/openmetrics-text", now)
+			require.NoError(t, err)
+			require.NoError(t, app.Commit())
+			require.Equal(t, 5, total)
+			require.Equal(t, 3, added)
+			require.Equal(t, 3, seriesAdded)
+			require.Equal(t, 5, mutatorCalls)
+			require.Len(t, sl.cache.droppedSeries, 2)
+			require.Len(t, sl.cache.droppedSeriesMeta, 2)
+
+			// Scrape 2: identical payload to exercise the seriesMeta and droppedSeries cache fast paths.
+			app = sl.appender()
+			total, added, seriesAdded, err = app.append(scrape1, "application/openmetrics-text", now.Add(time.Second))
+			require.NoError(t, err)
+			require.NoError(t, app.Commit())
+			require.Equal(t, 5, total)
+			require.Equal(t, 3, added)
+			require.Equal(t, 0, seriesAdded)
+			require.Equal(t, 5, mutatorCalls)
+
+			// Scrape 3: untyped_drop_me now exposes # TYPE gauge, so droppedSeries must invalidate and ingest it.
+			scrape3 := []byte(`# TYPE old_http_requests counter
+# HELP old_http_requests Total HTTP requests
+old_http_requests_total 43
+# HELP legacy_untyped Help from family without TYPE
+legacy_untyped_total 8
+# TYPE untyped_drop_me gauge
+# HELP untyped_drop_me Now typed as gauge
+untyped_drop_me 100
+untyped_unitless_metric{__type__="gauge",__unit__="bytes",__help__="spoof"} 6
+# EOF
+`)
+			app = sl.appender()
+			total, added, seriesAdded, err = app.append(scrape3, "application/openmetrics-text", now.Add(2*time.Second))
+			require.NoError(t, err)
+			require.NoError(t, app.Commit())
+			require.Equal(t, 4, total)
+			require.Equal(t, 4, added)
+			require.Equal(t, 1, seriesAdded)
+			require.Equal(t, 7, mutatorCalls)
+			require.Empty(t, sl.cache.droppedSeries)
+			require.Empty(t, sl.cache.droppedSeriesMeta)
+
+			// Dropped metric metadata must not be stored in scrapeCache (#14013).
+			_, ok := sl.cache.GetMetadata("dropped_metric_total")
+			require.False(t, ok, "expected dropped metric metadata to be absent from scrapeCache")
+
+			// Pre-rename metric family must not be stored under the old name.
+			_, ok = sl.cache.GetMetadata("old_http_requests")
+			require.False(t, ok, "expected pre-rename metric family to be absent from scrapeCache")
+
+			// Renamed metric family must have its metadata preserved + augmented with unit.
+			md, ok := sl.cache.GetMetadata("http_requests")
+			require.True(t, ok)
+			require.Equal(t, model.MetricTypeCounter, md.Type)
+			require.Equal(t, "requests", md.Unit)
+			require.Equal(t, "Total HTTP requests", md.Help)
+
+			// Untyped metric had its type and help synthesized under its family name.
+			md, ok = sl.cache.GetMetadata("legacy_untyped")
+			require.True(t, ok)
+			require.Equal(t, model.MetricTypeCounter, md.Type)
+			require.Empty(t, md.Unit)
+			require.Equal(t, "Synthesized help text.", md.Help)
+
+			// untyped_drop_me must have metadata after Scrape 3 added # TYPE gauge.
+			md, ok = sl.cache.GetMetadata("untyped_drop_me")
+			require.True(t, ok)
+			require.Equal(t, model.MetricTypeGauge, md.Type)
+			require.Equal(t, "Now typed as gauge", md.Help)
+
+			// Verify WAL / Appender metadata matches post-relabel metadata, and untyped_unitless_metric
+			// did not inherit sticky parser __type__ or __unit__.
+			expectedLset1 := labels.FromStrings("__name__", "http_requests_total", "instance", "localhost:9090", "job", "test")
+			expectedLset2 := labels.FromStrings("__name__", "legacy_untyped_total", "instance", "localhost:9090", "job", "test")
+			expectedLset3 := labels.FromStrings("__name__", "untyped_unitless_metric", "instance", "localhost:9090", "job", "test")
+			expectedLset4 := labels.FromStrings("__name__", "untyped_drop_me", "instance", "localhost:9090", "job", "test")
+			if enableTypeAndUnitLabels {
+				expectedLset1 = labels.FromStrings("__name__", "http_requests_total", "__type__", "counter", "__unit__", "requests", "instance", "localhost:9090", "job", "test")
+				expectedLset2 = labels.FromStrings("__name__", "legacy_untyped_total", "__type__", "counter", "instance", "localhost:9090", "job", "test")
+				expectedLset4 = labels.FromStrings("__name__", "untyped_drop_me", "__type__", "gauge", "instance", "localhost:9090", "job", "test")
+			}
+			teststorage.RequireEqual(t, []sample{
+				{
+					L: expectedLset1,
+					M: metadata.Metadata{Type: model.MetricTypeCounter, Unit: "requests", Help: "Total HTTP requests"},
+				},
+				{
+					L: expectedLset2,
+					M: metadata.Metadata{Type: model.MetricTypeCounter, Help: "Synthesized help text."},
+				},
+				{
+					L: expectedLset1,
+					M: metadata.Metadata{Type: model.MetricTypeCounter, Unit: "requests", Help: "Total HTTP requests"},
+				},
+				{
+					L: expectedLset2,
+					M: metadata.Metadata{Type: model.MetricTypeCounter, Help: "Synthesized help text."},
+				},
+				{
+					L: expectedLset1,
+					M: metadata.Metadata{Type: model.MetricTypeCounter, Unit: "requests", Help: "Total HTTP requests"},
+				},
+				{
+					L: expectedLset2,
+					M: metadata.Metadata{Type: model.MetricTypeCounter, Help: "Synthesized help text."},
+				},
+				{
+					L: expectedLset4,
+					M: metadata.Metadata{Type: model.MetricTypeGauge, Help: "Now typed as gauge"},
+				},
+			}, appTest.ResultMetadata())
+			// Verify untyped_unitless_metric was ingested without sticky or target-exposed __type__, __unit__, or __help__ labels.
+			_, ok = sl.cache.GetMetadata("untyped_unitless_metric")
+			require.False(t, ok, "expected target-exposed metadata labels not to spoof scrapeCache metadata")
+			testutil.RequireEqual(t, expectedLset3, appTest.ResultSamples()[2].L)
+
+			// Verify target-exposed __type__, __unit__, and __help__ do not leak into TSDB when metric_relabel_configs do not reference metadata.
+			appNoMetaRules := teststorage.NewAppendable()
+			rcNoMeta := []*relabel.Config{
+				{
+					SourceLabels:         model.LabelNames{"__name__"},
+					Separator:            ";",
+					Regex:                relabel.MustNewRegexp("dropped_metric_total"),
+					Replacement:          "$1",
+					Action:               relabel.Drop,
+					NameValidationScheme: model.UTF8Validation,
+				},
+			}
+			slNoMeta, _ := newTestScrapeLoop(t, withAppendable(appNoMetaRules, true), func(sl *scrapeLoop) {
+				sl.enableTypeAndUnitLabels = enableTypeAndUnitLabels
+				sl.mrc = rcNoMeta
+				sl.sampleMutatorWithMetadata = func(l labels.Labels, m metadata.Metadata) (labels.Labels, metadata.Metadata) {
+					return mutateSampleLabelsAndMetadata(l, m, target, false, enableTypeAndUnitLabels, rcNoMeta)
+				}
+			})
+			app = slNoMeta.appender()
+			_, _, _, err = app.append([]byte("untyped_unitless_metric{__type__=\"gauge\",__unit__=\"bytes\",__help__=\"spoof\"} 5\n# EOF\n"), "application/openmetrics-text", now)
+			require.NoError(t, err)
+			require.NoError(t, app.Commit())
+			testutil.RequireEqual(t, expectedLset3, appNoMetaRules.ResultSamples()[0].L)
+
+			// Verify an untyped *_total series after a typed family does not overwrite the preceding family's metadata.
+			appTypedFamily := teststorage.NewAppendable()
+			slTypedFamily, _ := newTestScrapeLoop(t, withAppendable(appTypedFamily, true), func(sl *scrapeLoop) {
+				sl.enableTypeAndUnitLabels = enableTypeAndUnitLabels
+				sl.mrc = rc
+				sl.sampleMutatorWithMetadata = func(l labels.Labels, m metadata.Metadata) (labels.Labels, metadata.Metadata) {
+					return mutateSampleLabelsAndMetadata(l, m, target, false, enableTypeAndUnitLabels, rc)
+				}
+			})
+			app = slTypedFamily.appender()
+			_, _, _, err = app.append([]byte("# TYPE foo gauge\n# HELP foo Gauge help\nfoo 1\nfoo_total 2\n# EOF\n"), "application/openmetrics-text", now)
+			require.NoError(t, err)
+			require.NoError(t, app.Commit())
+
+			md, ok = slTypedFamily.cache.GetMetadata("foo")
+			require.True(t, ok)
+			require.Equal(t, model.MetricTypeGauge, md.Type)
+			require.Equal(t, "Gauge help", md.Help)
+
+			md, ok = slTypedFamily.cache.GetMetadata("foo_total")
+			require.True(t, ok)
+			require.Equal(t, model.MetricTypeCounter, md.Type)
+			require.Empty(t, md.Help)
+
+			// Verify relabel rules can read (e.g. truncate) and clear (__help__/__unit__ = "") metadata
+			// from an untyped pre-relabel family when setting __type__ makes the series match that family,
+			// while leaving suffixed series that do not match the family untyped and metadata-free.
+			appUntypedFamily := teststorage.NewAppendable()
+			rcUntypedFamily := []*relabel.Config{
+				{
+					SourceLabels:         model.LabelNames{"__name__", "__type__"},
+					Separator:            ";",
+					Regex:                relabel.MustNewRegexp(".*_total;"),
+					TargetLabel:          "__type__",
+					Replacement:          "counter",
+					Action:               relabel.Replace,
+					NameValidationScheme: model.UTF8Validation,
+				},
+				{
+					SourceLabels:         model.LabelNames{"__name__", "__help__"},
+					Separator:            ";",
+					Regex:                relabel.MustNewRegexp("trunc_seconds_total;(.{9}).*"),
+					TargetLabel:          "__help__",
+					Replacement:          "$1",
+					Action:               relabel.Replace,
+					NameValidationScheme: model.UTF8Validation,
+				},
+				{
+					SourceLabels:         model.LabelNames{"__name__"},
+					Separator:            ";",
+					Regex:                relabel.MustNewRegexp("cleared_bytes_total"),
+					TargetLabel:          "__help__",
+					Replacement:          "",
+					Action:               relabel.Replace,
+					NameValidationScheme: model.UTF8Validation,
+				},
+				{
+					SourceLabels:         model.LabelNames{"__name__"},
+					Separator:            ";",
+					Regex:                relabel.MustNewRegexp("cleared_bytes_total"),
+					TargetLabel:          "__unit__",
+					Replacement:          "",
+					Action:               relabel.Replace,
+					NameValidationScheme: model.UTF8Validation,
+				},
+				{
+					SourceLabels:         model.LabelNames{"__name__", "__unit__"},
+					Separator:            ";",
+					Regex:                relabel.MustNewRegexp("dropped_seconds_total;seconds"),
+					Replacement:          "$1",
+					Action:               relabel.Drop,
+					NameValidationScheme: model.UTF8Validation,
+				},
+			}
+			slUntypedFamily, _ := newTestScrapeLoop(t, withAppendable(appUntypedFamily, true), func(sl *scrapeLoop) {
+				sl.enableTypeAndUnitLabels = enableTypeAndUnitLabels
+				sl.mrc = rcUntypedFamily
+				sl.sampleMutatorWithMetadata = func(l labels.Labels, m metadata.Metadata) (labels.Labels, metadata.Metadata) {
+					return mutateSampleLabelsAndMetadata(l, m, target, false, enableTypeAndUnitLabels, rcUntypedFamily)
+				}
+			})
+			untypedPayload := []byte(`# HELP trunc_seconds Very long help string
+# UNIT trunc_seconds seconds
+trunc_seconds_total 10
+# HELP cleared_bytes Help to be cleared
+# UNIT cleared_bytes bytes
+cleared_bytes_total 20
+# HELP dropped_seconds Should be dropped by unit
+# UNIT dropped_seconds seconds
+dropped_seconds_total 30
+# HELP unrelated_seconds Unrelated help
+# UNIT unrelated_seconds seconds
+unrelated_seconds 1
+unrelated_seconds_bucket 2
+# EOF
+`)
+			app = slUntypedFamily.appender()
+			_, _, _, err = app.append(untypedPayload, "application/openmetrics-text", now)
+			require.NoError(t, err)
+			require.NoError(t, app.Commit())
+
+			md, ok = slUntypedFamily.cache.GetMetadata("trunc_seconds")
+			require.True(t, ok)
+			require.Equal(t, MetricMetadata{
+				MetricFamily: "trunc_seconds",
+				Type:         model.MetricTypeCounter,
+				Unit:         "seconds",
+				Help:         "Very long",
+			}, md)
+
+			md, ok = slUntypedFamily.cache.GetMetadata("cleared_bytes")
+			require.True(t, ok)
+			require.Equal(t, MetricMetadata{
+				MetricFamily: "cleared_bytes",
+				Type:         model.MetricTypeCounter,
+			}, md)
+			if enableTypeAndUnitLabels {
+				require.Equal(t, "seconds", appUntypedFamily.ResultSamples()[0].L.Get(model.MetricUnitLabel))
+				require.Empty(t, appUntypedFamily.ResultSamples()[1].L.Get(model.MetricUnitLabel))
+				require.Empty(t, appUntypedFamily.ResultSamples()[3].L.Get(model.MetricUnitLabel))
+			}
+
+			_, ok = slUntypedFamily.cache.GetMetadata("dropped_seconds")
+			require.False(t, ok)
+
+			_, ok = slUntypedFamily.cache.GetMetadata("unrelated_seconds_bucket")
+			require.False(t, ok)
+		})
+	}
+}
+
 func TestScrapeLoopSeriesAdded(t *testing.T) {
 	foreachAppendable(t, func(t *testing.T, appV2 bool) {
 		testScrapeLoopSeriesAdded(t, appV2)
@@ -7497,22 +7872,25 @@ func testScrapeReportLimit(t *testing.T, appV2 bool) {
 	}
 
 	ctx := t.Context()
-	q, err := s.Querier(time.Time{}.UnixNano(), time.Now().UnixNano())
-	require.NoError(t, err)
-	t.Cleanup(func() { _ = q.Close() })
-	series := q.Select(ctx, false, nil, labels.MustNewMatcher(labels.MatchRegexp, "__name__", "up"))
+	require.Eventually(t, func() bool {
+		q, err := s.Querier(time.Time{}.UnixNano(), time.Now().UnixNano())
+		require.NoError(t, err)
+		defer q.Close()
+		series := q.Select(ctx, false, nil, labels.MustNewMatcher(labels.MatchRegexp, "__name__", "up"))
 
-	var found bool
-	for series.Next() {
-		i := series.At().Iterator(nil)
-		for i.Next() == chunkenc.ValFloat {
-			_, v := i.At()
-			require.Equal(t, 1.0, v)
-			found = true
+		var found bool
+		for series.Next() {
+			i := series.At().Iterator(nil)
+			for i.Next() == chunkenc.ValFloat {
+				_, v := i.At()
+				if v != 1.0 {
+					return false
+				}
+				found = true
+			}
 		}
-	}
-
-	require.True(t, found)
+		return found
+	}, 5*time.Second, 100*time.Millisecond, "up metric with value 1.0 not found or contains non-1.0 values")
 }
 
 func TestScrapeUTF8(t *testing.T) {
@@ -8481,94 +8859,151 @@ metric: <
 }
 
 func TestTypeUnitReLabel(t *testing.T) {
-	foreachAppendable(t, func(t *testing.T, appV2 bool) {
-		testTypeUnitReLabel(t, appV2)
-	})
-}
+	for _, enableMetadataRelabeling := range []bool{false, true} {
+		for _, enableTypeAndUnitLabels := range []bool{false, true} {
+			if !enableMetadataRelabeling && !enableTypeAndUnitLabels {
+				continue
+			}
+			t.Run(fmt.Sprintf("enableMetadataRelabeling=%v/enableTypeAndUnitLabels=%v", enableMetadataRelabeling, enableTypeAndUnitLabels), func(t *testing.T) {
+				s := teststorage.New(t)
 
-func testTypeUnitReLabel(t *testing.T, appV2 bool) {
-	s := teststorage.New(t)
+				cfg := &config.ScrapeConfig{
+					JobName: "test",
+					MetricRelabelConfigs: []*relabel.Config{
+						{
+							SourceLabels:         model.LabelNames{"__name__", "__type__"},
+							Separator:            ";",
+							Regex:                relabel.MustNewRegexp(".*_total;"),
+							Replacement:          "counter",
+							TargetLabel:          "__type__",
+							Action:               relabel.Replace,
+							NameValidationScheme: model.UTF8Validation,
+						},
+						{
+							SourceLabels:         model.LabelNames{"__name__", "__unit__"},
+							Separator:            ";",
+							Regex:                relabel.MustNewRegexp(".*_bytes;"),
+							Replacement:          "bytes",
+							TargetLabel:          "__unit__",
+							Action:               relabel.Replace,
+							NameValidationScheme: model.UTF8Validation,
+						},
+						{
+							SourceLabels:         model.LabelNames{"__name__", "__help__"},
+							Separator:            ";",
+							Regex:                relabel.MustNewRegexp("test_metric_2_total;"),
+							Replacement:          "Inferred help for metric 2",
+							TargetLabel:          "__help__",
+							Action:               relabel.Replace,
+							NameValidationScheme: model.UTF8Validation,
+						},
+					},
+					SampleLimit:                100,
+					Scheme:                     "http",
+					ScrapeInterval:             model.Duration(100 * time.Millisecond),
+					ScrapeTimeout:              model.Duration(100 * time.Millisecond),
+					MetricNameValidationScheme: model.UTF8Validation,
+					MetricNameEscapingScheme:   model.AllowUTF8,
+				}
 
-	cfg := &config.ScrapeConfig{
-		JobName: "test",
-		MetricRelabelConfigs: []*relabel.Config{
-			{
-				SourceLabels:         model.LabelNames{"__name__"},
-				Regex:                relabel.MustNewRegexp(".*_total$"),
-				Replacement:          "counter",
-				TargetLabel:          "__type__",
-				Action:               relabel.Replace,
-				NameValidationScheme: model.UTF8Validation,
-			},
-			{
-				SourceLabels:         model.LabelNames{"__name__"},
-				Regex:                relabel.MustNewRegexp(".*_bytes$"),
-				Replacement:          "bytes",
-				TargetLabel:          "__unit__",
-				Action:               relabel.Replace,
-				NameValidationScheme: model.UTF8Validation,
-			},
-		},
-		SampleLimit:                100,
-		Scheme:                     "http",
-		ScrapeInterval:             model.Duration(100 * time.Millisecond),
-		ScrapeTimeout:              model.Duration(100 * time.Millisecond),
-		MetricNameValidationScheme: model.UTF8Validation,
-		MetricNameEscapingScheme:   model.AllowUTF8,
-	}
+				metricsText := `
+test_metric_2_total 234
 
-	metricsText := `
 # HELP test_metric_1_total This is a counter
 # TYPE test_metric_1_total counter
 test_metric_1_total 123
-
-# HELP test_metric_2_total This is a counter
-# TYPE test_metric_2_total counter
-test_metric_2_total 234
 
 # HELP disk_usage_bytes This is a gauge
 # TYPE disk_usage_bytes gauge
 disk_usage_bytes 456
 `
 
-	ts, scrapedTwice := newScrapableServer(metricsText)
-	defer ts.Close()
+				ts, scrapedTwice := newScrapableServer(metricsText)
+				defer ts.Close()
 
-	sa := selectAppendable(s, appV2)
-	sp, err := newScrapePool(cfg, sa.V1(), sa.V2(), 0, nil, nil, &Options{}, newTestScrapeMetrics(t))
-	require.NoError(t, err)
-	defer sp.stop()
+				sa := selectAppendable(s, true)
+				sp, err := newScrapePool(cfg, sa.V1(), sa.V2(), 0, nil, nil, &Options{
+					EnableTypeAndUnitLabels:  enableTypeAndUnitLabels,
+					EnableMetadataRelabeling: enableMetadataRelabeling,
+					AppendMetadata:           true,
+				}, newTestScrapeMetrics(t))
+				require.NoError(t, err)
+				defer sp.stop()
 
-	testURL, err := url.Parse(ts.URL)
-	require.NoError(t, err)
-	sp.Sync([]*targetgroup.Group{
-		{
-			Targets: []model.LabelSet{{model.AddressLabel: model.LabelValue(testURL.Host)}},
-		},
-	})
-	require.Len(t, sp.ActiveTargets(), 1)
+				testURL, err := url.Parse(ts.URL)
+				require.NoError(t, err)
+				sp.Sync([]*targetgroup.Group{
+					{
+						Targets: []model.LabelSet{{model.AddressLabel: model.LabelValue(testURL.Host)}},
+					},
+				})
+				targets := sp.ActiveTargets()
+				require.Len(t, targets, 1)
 
-	select {
-	case <-time.After(5 * time.Second):
-		t.Fatal("target was not scraped")
-	case <-scrapedTwice:
-	}
+				select {
+				case <-time.After(5 * time.Second):
+					t.Fatal("target was not scraped")
+				case <-scrapedTwice:
+				}
 
-	ctx := t.Context()
-	q, err := s.Querier(time.Time{}.UnixNano(), time.Now().UnixNano())
-	require.NoError(t, err)
-	t.Cleanup(func() { _ = q.Close() })
+				ctx := t.Context()
+				q, err := s.Querier(time.Time{}.UnixNano(), time.Now().UnixNano())
+				require.NoError(t, err)
+				t.Cleanup(func() { _ = q.Close() })
 
-	series := q.Select(ctx, false, nil, labels.MustNewMatcher(labels.MatchRegexp, "__name__", ".*_total$"))
-	for series.Next() {
-		s := series.At()
-		require.Equal(t, "counter", s.Labels().Get("__type__"))
-	}
+				series := q.Select(ctx, false, nil, labels.MustNewMatcher(labels.MatchRegexp, "__name__", ".*_total$"))
+				var totalCount int
+				for series.Next() {
+					totalCount++
+					s := series.At()
+					if enableTypeAndUnitLabels {
+						require.Equal(t, "counter", s.Labels().Get("__type__"))
+					} else {
+						require.Empty(t, s.Labels().Get("__type__"))
+					}
+				}
+				require.Equal(t, 2, totalCount)
 
-	series = q.Select(ctx, false, nil, labels.MustNewMatcher(labels.MatchRegexp, "__name__", "disk_usage_bytes"))
-	for series.Next() {
-		s := series.At()
-		require.Equal(t, "bytes", s.Labels().Get("__unit__"))
+				series = q.Select(ctx, false, nil, labels.MustNewMatcher(labels.MatchRegexp, "__name__", "disk_usage_bytes"))
+				var diskCount int
+				for series.Next() {
+					diskCount++
+					s := series.At()
+					if enableTypeAndUnitLabels {
+						require.Equal(t, "gauge", s.Labels().Get("__type__"))
+						require.Equal(t, "bytes", s.Labels().Get("__unit__"))
+					} else {
+						require.Empty(t, s.Labels().Get("__type__"))
+						require.Empty(t, s.Labels().Get("__unit__"))
+					}
+				}
+				require.Equal(t, 1, diskCount)
+
+				md, ok := targets[0].GetMetadata("test_metric_1_total")
+				require.True(t, ok)
+				require.Equal(t, model.MetricTypeCounter, md.Type)
+				require.Equal(t, "This is a counter", md.Help)
+
+				md, ok = targets[0].GetMetadata("test_metric_2_total")
+				if enableMetadataRelabeling {
+					require.True(t, ok)
+					require.Equal(t, model.MetricTypeCounter, md.Type)
+					require.Equal(t, "Inferred help for metric 2", md.Help)
+				} else {
+					require.False(t, ok)
+				}
+
+				md, ok = targets[0].GetMetadata("disk_usage_bytes")
+				require.True(t, ok)
+				require.Equal(t, model.MetricTypeGauge, md.Type)
+				if enableMetadataRelabeling {
+					require.Equal(t, "bytes", md.Unit)
+				} else {
+					require.Empty(t, md.Unit)
+				}
+				require.Equal(t, "This is a gauge", md.Help)
+			})
+		}
 	}
 }
 

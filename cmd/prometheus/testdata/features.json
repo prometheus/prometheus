@@ -185,6 +185,7 @@
     "unless": true
   },
   "rules": {
+    "auto_recording_metadata": false,
     "concurrent_rule_eval": false,
     "keep_firing_for": true,
     "query_offset": true,
@@ -193,6 +194,7 @@
   },
   "scrape": {
     "extra_scrape_metrics": true,
+    "metadata_relabeling": false,
     "openmetrics2": false,
     "start_timestamp_zero_ingestion": false,
     "type_and_unit_labels": false

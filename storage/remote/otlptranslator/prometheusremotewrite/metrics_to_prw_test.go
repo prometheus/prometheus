@@ -1344,7 +1344,7 @@ func createPromNativeHistogramSeries(name string, hint histogram.CounterResetHin
 			Count:            1,
 			Sum:              5,
 			Schema:           0,
-			ZeroThreshold:    1e-128,
+			ZeroThreshold:    0,
 			ZeroCount:        0,
 			PositiveSpans:    []histogram.Span{{Offset: 1, Length: 1}},
 			PositiveBuckets:  []int64{1},

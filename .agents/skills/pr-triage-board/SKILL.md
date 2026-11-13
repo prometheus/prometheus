@@ -17,7 +17,7 @@ This skill generates a GitHub-flavored Markdown PR Triage Board for any GitHub r
 
    PRs are grouped into the following buckets:
    - **Quick Wins**: `<= 60` LOC, green CI, clean hygiene, waiting on maintainer.
-   - **Updated After Review**: Waiting on maintainer after a prior maintainer review, with new commits or author replies since that review.
+   - **Updated After Review**: Waiting on maintainer after a prior review from someone other than the author, with new commits or author replies since that review.
    - **Blocked on `/workflow-approve`**: First-time contributors waiting for CI approval, with a diff-safety check (`Makefile`/`.github` modifications flagged) and a copy-pasteable `gh pr comment --body "/workflow-approve"` block.
    - **Waiting on Maintainer**: Waiting on maintainer for initial review or merge.
    - **Waiting on Author / Failing CI / Needs Rebase**: Collapsed inside `<details>` blocks so they do not clutter the actionable queue.
