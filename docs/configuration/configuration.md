@@ -301,7 +301,7 @@ otlp:
   # Enables adding "service.name", "service.namespace" and "service.instance.id"
   # resource attributes to the "target_info" metric, on top of converting
   # them into the "instance" and "job" labels.
-  [ keep_identifying_resource_attributes: <boolean> | default = false ]
+  [ keep_identifying_resource_attributes: <boolean> | default = true ]
   # Configures optional translation of OTLP explicit bucket histograms into native histograms with custom buckets.
   [ convert_histograms_to_nhcb: <boolean> | default = false ]
   # Enables promotion of OTel scope metadata (i.e. name, version, schema URL, and attributes) to metric labels.
