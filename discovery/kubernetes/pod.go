@@ -51,6 +51,7 @@ type Pod struct {
 	withNamespaceMetadata  bool
 	replicaSetInf          cache.SharedInformer
 	withDeploymentMetadata bool
+	withDaemonSetMetadata  bool
 	jobInf                 cache.SharedInformer
 	withJobMetadata        bool
 	withCronJobMetadata    bool
@@ -60,7 +61,7 @@ type Pod struct {
 }
 
 // NewPod creates a new pod discovery.
-func NewPod(l *slog.Logger, pods cache.SharedIndexInformer, nodes, namespace, replicaSets, jobs cache.SharedInformer, withDeploymentMetadata, withJobMetadata, withCronJobMetadata bool, eventCount *prometheus.CounterVec) *Pod {
+func NewPod(l *slog.Logger, pods cache.SharedIndexInformer, nodes, namespace, replicaSets, jobs cache.SharedInformer, withDeploymentMetadata, withDaemonSetMetadata, withJobMetadata, withCronJobMetadata bool, eventCount *prometheus.CounterVec) *Pod {
 	if l == nil {
 		l = promslog.NewNopLogger()
 	}
@@ -77,6 +78,7 @@ func NewPod(l *slog.Logger, pods cache.SharedIndexInformer, nodes, namespace, re
 		withNamespaceMetadata:  namespace != nil,
 		replicaSetInf:          replicaSets,
 		withDeploymentMetadata: withDeploymentMetadata,
+		withDaemonSetMetadata:  withDaemonSetMetadata,
 		jobInf:                 jobs,
 		withJobMetadata:        withJobMetadata,
 		withCronJobMetadata:    withCronJobMetadata,
@@ -267,6 +269,7 @@ const (
 	podContainerPortProtocolLabel = metaLabelPrefix + "pod_container_port_protocol"
 	podContainerIsInit            = metaLabelPrefix + "pod_container_init"
 	podCronJobNameLabel           = metaLabelPrefix + "pod_cronjob_name"
+	podDaemonSetNameLabel         = metaLabelPrefix + "pod_daemonset_name"
 	podDeploymentNameLabel        = metaLabelPrefix + "pod_deployment_name"
 	podJobNameLabel               = metaLabelPrefix + "pod_job_name"
 	podReadyLabel                 = metaLabelPrefix + "pod_ready"
@@ -289,7 +292,7 @@ func GetControllerOf(controllee metav1.Object) *metav1.OwnerReference {
 	return nil
 }
 
-func podLabels(pod *apiv1.Pod, replicaSetInf, jobInf cache.SharedInformer, withDeploymentMetadata, withJobMetadata, withCronJobMetadata bool) model.LabelSet {
+func podLabels(pod *apiv1.Pod, replicaSetInf, jobInf cache.SharedInformer, withDeploymentMetadata, withDaemonSetMetadata, withJobMetadata, withCronJobMetadata bool) model.LabelSet {
 	ls := model.LabelSet{
 		podIPLabel:       lv(pod.Status.PodIP),
 		podReadyLabel:    podReady(pod),
@@ -322,6 +325,10 @@ func podLabels(pod *apiv1.Pod, replicaSetInf, jobInf cache.SharedInformer, withD
 						}
 					}
 				}
+			}
+		case "DaemonSet":
+			if withDaemonSetMetadata {
+				ls[podDaemonSetNameLabel] = lv(createdBy.Name)
 			}
 		case "Job":
 			if withJobMetadata {
@@ -385,7 +392,7 @@ func (p *Pod) buildPod(pod *apiv1.Pod) *targetgroup.Group {
 		}
 	}
 
-	tg.Labels = podLabels(pod, p.replicaSetInf, p.jobInf, p.withDeploymentMetadata, p.withJobMetadata, p.withCronJobMetadata)
+	tg.Labels = podLabels(pod, p.replicaSetInf, p.jobInf, p.withDeploymentMetadata, p.withDaemonSetMetadata, p.withJobMetadata, p.withCronJobMetadata)
 	tg.Labels[namespaceLabel] = lv(pod.Namespace)
 	if p.withNodeMetadata {
 		tg.Labels = addNodeLabels(tg.Labels, p.nodeInf, p.logger, &pod.Spec.NodeName)
