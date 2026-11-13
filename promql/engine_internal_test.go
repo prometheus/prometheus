@@ -303,3 +303,12 @@ func TestCostFallbackSampleWindow(t *testing.T) {
 		})
 	}
 }
+
+func TestHistogramStatsSafeFunctionsExist(t *testing.T) {
+	// A misspelled or renamed function would silently lose the
+	// optimization, as unknown functions are treated as needing buckets.
+	for name := range histogramStatsSafeFunctions {
+		_, ok := parser.Functions[name]
+		require.True(t, ok, "unknown function %q", name)
+	}
+}
