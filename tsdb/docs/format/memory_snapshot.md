@@ -6,7 +6,15 @@ Below are the formats of the individual records.
 The order of records in the snapshot is always:
 1. Starts with series records, one per series, in an unsorted fashion.
 2. After all series are done, we write a tombstone record containing all the tombstones.
-3. At the end, we write one or more exemplar records while batching up the exemplars in each record. Exemplars are in the order they were written to the circular buffer.
+3. Exemplar records follow, batching up the exemplars in each record. Exemplars are in the order they were written to the circular buffer.
+4. At the end, we write one or more WAL series expiry records. An empty record is written even when there are no expiries.
+
+When the WAL is enabled, snapshots without WAL series expiry records are replayed from the WAL instead. This
+includes snapshots written by older versions, which did not preserve the state
+needed to keep series metadata during subsequent WAL checkpointing. Readers from
+older versions also fall back to the WAL when they encounter the new record type.
+Legacy snapshots remain usable when the WAL is disabled, since no WAL checkpoint
+can remove their series metadata in that configuration.
 
 ### Series records
 
@@ -91,3 +99,23 @@ A single exemplar record contains one or more exemplars, encoded in the same way
 │                               . . .                               │
 └───────────────────────────────────────────────────────────────────┘
 ```
+
+### WAL series expiry record
+
+Record type `4` preserves references that are no longer in the Head but whose
+series metadata must remain in the WAL. It contains up to 10,000 pairs, in no
+particular order, each consisting of a big-endian `uint64` series reference and
+a big-endian `int64` keep-until timestamp. There is no pair count; the record
+length determines the number of pairs. A one-byte record contains no expiries.
+
+The timestamp is inclusive: the series record is retained in a checkpoint whose
+minimum timestamp is less than or equal to the keep-until timestamp. Restoring
+these references also advances the series ID counter so that new series cannot
+reuse references still needed by WAL readers.
+
+| Field | Size |
+| --- | --- |
+| Record type (`4`) | 1 byte |
+| Series reference | 8 bytes |
+| Keep-until timestamp | 8 bytes |
+| Further reference/timestamp pairs | 16 bytes each |
