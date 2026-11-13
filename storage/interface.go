@@ -474,8 +474,9 @@ type Appender interface {
 	StartTimestampAppender
 }
 
-// GetRef is an extra interface on Appenders used by downstream projects
-// (e.g. Cortex) to avoid maintaining a parallel set of references.
+// GetRef is an extra interface on Appenders. Scraping uses it to keep the
+// labels the storage already holds instead of its own copy, and downstream
+// projects (e.g. Cortex) use it to avoid maintaining a parallel set of references.
 type GetRef interface {
 	// GetRef returns a reference number that can be used to pass to AppenderV2.Append(),
 	// and a set of labels that will not cause another copy when passed to AppenderV2.Append().
