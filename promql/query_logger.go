@@ -213,8 +213,17 @@ func newJSONEntry(query string, logger *slog.Logger) []byte {
 	timestamp := time.Now().Unix()
 	minEntryJSON := _newJSONEntry("", timestamp, logger)
 
+	// Escaping can make the encoded entry larger than the raw query, so trim
+	// until the encoded entry fits the slot, leaving the last byte for the
+	// separator.
+	budget := entrySize - 1
 	query = trimStringByBytes(query, entrySize-(len(minEntryJSON)+1))
 	jsonEntry := _newJSONEntry(query, timestamp, logger)
+	for len(jsonEntry) > budget && query != "" {
+		newLen := max(len(query)-(len(jsonEntry)-budget), 0)
+		query = trimStringByBytes(query, newLen)
+		jsonEntry = _newJSONEntry(query, timestamp, logger)
+	}
 
 	return jsonEntry
 }
@@ -241,7 +250,9 @@ func (tracker ActiveQueryTracker) Insert(ctx context.Context, query string) (int
 		entry := newJSONEntry(query, tracker.logger)
 		start, end := i, i+entrySize
 
-		copy(fileBytes[start:], entry)
+		// Bound the copy to the slot so an oversized entry cannot overwrite
+		// the next one; the final byte holds the separator.
+		copy(fileBytes[start:end-1], entry)
 		copy(fileBytes[end-1:], ",")
 		return i, nil
 	case <-ctx.Done():

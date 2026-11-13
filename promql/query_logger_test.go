@@ -19,6 +19,7 @@ import (
 	"log/slog"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/grafana/regexp"
@@ -103,6 +104,24 @@ func TestQueryLogging(t *testing.T) {
 	}
 	require.True(t, regexp.MustCompile(`^\x00+$`).Match(fileAsBytes[1:1+entrySize*4]),
 		"All queries not deleted properly. Want only null bytes \\x00")
+}
+
+func TestInsertConfinedToSlot(t *testing.T) {
+	queryBytes := make([]byte, 1+2*entrySize)
+	queryLogger := ActiveQueryTracker{
+		mmappedFile:  queryBytes,
+		logger:       nil,
+		getNextIndex: make(chan int, 2),
+	}
+	queryLogger.generateIndices(2)
+
+	// A slot-sized NUL query encodes to ~6x its size once escaped and must
+	// still not write past its own slot.
+	queryLogger.Insert(context.Background(), strings.Repeat("\x00", entrySize))
+
+	next := queryBytes[1+entrySize : 1+2*entrySize]
+	require.True(t, regexp.MustCompile(`^\x00+$`).Match(next),
+		"entry spilled into the next slot")
 }
 
 func TestIndexReuse(t *testing.T) {
