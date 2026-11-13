@@ -3227,14 +3227,15 @@ type memSeries struct {
 	// Everything after here should only be accessed with the lock held.
 	sync.Mutex
 
+	// Whether an exemplar timestamp has been recorded, including zero or negative timestamps.
+	hasExemplar bool
+
 	lset labels.Labels // Locking required with -tags dedupelabels, not otherwise.
 	meta unique.Handle[metadata.Metadata]
 
 	// Latest accepted exemplar timestamp, including exemplars awaiting commit.
 	// A rolled-back exemplar may conservatively delay eviction until this time.
 	lastExemplarTs int64
-	// Whether an exemplar timestamp has been recorded, including zero or negative timestamps.
-	hasExemplar bool
 
 	// Immutable chunks on disk that have not yet gone into a block, in order of ascending time stamps.
 	// When compaction runs, chunks get moved into a block and all pointers are shifted like so:
