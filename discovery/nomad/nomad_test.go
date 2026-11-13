@@ -27,6 +27,8 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/prometheus/prometheus/discovery"
+	"github.com/prometheus/prometheus/model/labels"
+	"github.com/prometheus/prometheus/model/relabel"
 )
 
 type NomadSDTestSuite struct {
@@ -114,7 +116,8 @@ func (m *SDMock) HandleServiceHashiCupsGet() {
 				"JobID": "dashboard",
 				"AllocID": "6a1d5f0a-7362-3f5d-9baf-5ed438918e50",
 				"Tags": [
-				"metrics"
+				"metrics",
+				"prom_label__team=web"
 				],
 				"Address": "127.0.0.1",
 				"Port": 30456,
@@ -212,7 +215,35 @@ func TestNomadSDRefresh(t *testing.T) {
 		"__meta_nomad_service_address": model.LabelValue("127.0.0.1"),
 		"__meta_nomad_service_id":      model.LabelValue("_nomad-task-6a1d5f0a-7362-3f5d-9baf-5ed438918e50-group-hashicups-hashicups-hashicups_ui"),
 		"__meta_nomad_service_port":    model.LabelValue("30456"),
-		"__meta_nomad_tags":            model.LabelValue(",metrics,"),
+		"__meta_nomad_tags":            model.LabelValue(",metrics,prom_label__team=web,"),
+
+		"__meta_nomad_tagpresent_metrics":          model.LabelValue("true"),
+		"__meta_nomad_tagpresent_prom_label__team": model.LabelValue("true"),
+		"__meta_nomad_tag_prom_label__team":        model.LabelValue("web"),
 	}
 	require.Equal(t, lbls, tg.Targets[0])
+}
+
+func TestTagLabelsWithLabelmap(t *testing.T) {
+	lbls := model.LabelSet{}
+	addTagLabels(lbls, []string{"metrics", "prom_label__team=web", "prom_label__tier=frontend", "env=prod"})
+
+	lb := labels.NewBuilder(labels.EmptyLabels())
+	for name, value := range lbls {
+		lb.Set(string(name), string(value))
+	}
+
+	keep := relabel.ProcessBuilder(lb, &relabel.Config{
+		Action:               relabel.LabelMap,
+		Regex:                relabel.MustNewRegexp("__meta_nomad_tag_prom_label__(.+)"),
+		Replacement:          "$1",
+		NameValidationScheme: model.UTF8Validation,
+	})
+	require.True(t, keep)
+
+	got := lb.Labels()
+	require.Equal(t, "web", got.Get("team"))
+	require.Equal(t, "frontend", got.Get("tier"))
+	require.False(t, got.Has("env"))
+	require.False(t, got.Has("metrics"))
 }
