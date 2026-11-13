@@ -259,9 +259,26 @@ func (t *injectHeadersRoundTripper) RoundTrip(req *http.Request) (*http.Response
 
 const defaultBackoff = 0
 
+type retryReason string
+
+const (
+	reasonRateLimited  retryReason = "rate_limited"
+	reasonServerError  retryReason = "server_error"
+	reasonNetworkError retryReason = "network_error"
+	reasonClientError  retryReason = "client_error"
+	reasonPartialWrite retryReason = "partial_write"
+	reasonShutdown     retryReason = "shutdown"
+)
+
 type RecoverableError struct {
 	error
+	reason     retryReason
 	retryAfter model.Duration
+}
+
+type unrecoverableError struct {
+	error
+	reason retryReason
 }
 
 // Store sends a batch of samples to the HTTP endpoint, the request is the proto marshalled
@@ -298,7 +315,7 @@ func (c *Client) Store(ctx context.Context, req []byte, attempt int) (WriteRespo
 	if err != nil {
 		// Errors from Client.Do are from (for example) network errors, so are
 		// recoverable.
-		return WriteResponseStats{}, RecoverableError{err, defaultBackoff}
+		return WriteResponseStats{}, RecoverableError{error: err, reason: reasonNetworkError, retryAfter: defaultBackoff}
 	}
 	defer func() {
 		_, _ = io.Copy(io.Discard, httpResp.Body)
@@ -322,9 +339,22 @@ func (c *Client) Store(ctx context.Context, req []byte, attempt int) (WriteRespo
 	body, _ := io.ReadAll(io.LimitReader(httpResp.Body, maxErrMsgLen))
 	err = fmt.Errorf("server returned HTTP status %s: %s", httpResp.Status, body)
 
-	if httpResp.StatusCode/100 == 5 ||
-		(c.retryOnRateLimit && httpResp.StatusCode == http.StatusTooManyRequests) {
-		return rs, RecoverableError{err, retryAfterDuration(httpResp.Header.Get("Retry-After"))}
+	if httpResp.StatusCode/100 == 5 {
+		return rs, RecoverableError{
+			error:      err,
+			reason:     reasonServerError,
+			retryAfter: retryAfterDuration(httpResp.Header.Get("Retry-After")),
+		}
+	}
+	if c.retryOnRateLimit && httpResp.StatusCode == http.StatusTooManyRequests {
+		return rs, RecoverableError{
+			error:      err,
+			reason:     reasonRateLimited,
+			retryAfter: retryAfterDuration(httpResp.Header.Get("Retry-After")),
+		}
+	}
+	if httpResp.StatusCode/100 == 4 {
+		return rs, unrecoverableError{error: err, reason: reasonClientError}
 	}
 	return rs, err
 }
