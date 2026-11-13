@@ -341,12 +341,12 @@ func matchesLe(lset labels.Labels, leMatchers []*labels.Matcher) bool {
 	return true
 }
 
-func (b *classicSeriesBuilder) buildSeries(dst []Series, leMatchers []*labels.Matcher) []Series {
+func (b *classicSeriesBuilder) buildSeries(dst []Series) []Series {
 	matchCount := 0
 	totalSamples := 0
 	for i := range b.series {
 		s := &b.series[i]
-		if len(s.samples) == 0 || !matchesLe(s.labels, leMatchers) {
+		if len(s.samples) == 0 {
 			continue
 		}
 		matchCount++
@@ -365,7 +365,7 @@ func (b *classicSeriesBuilder) buildSeries(dst []Series, leMatchers []*labels.Ma
 
 	for i := range b.series {
 		s := &b.series[i]
-		if len(s.samples) == 0 || !matchesLe(s.labels, leMatchers) {
+		if len(s.samples) == 0 {
 			continue
 		}
 		n := len(s.samples)
@@ -437,6 +437,16 @@ func (s *nhcbToClassicSeriesSet) convertSeries(dst []Series, nhcbSeries Series) 
 	s.builder.reset()
 	if s.emitFn == nil {
 		s.emitFn = s.builder.emitSample
+		if len(s.leMatchers) > 0 {
+			s.seriesCache.SetBucketFilter(func(le string) bool {
+				for _, m := range s.leMatchers {
+					if !m.Matches(le) {
+						return false
+					}
+				}
+				return true
+			})
+		}
 	}
 
 	nhcbLabels := nhcbSeries.Labels()
@@ -488,7 +498,7 @@ func (s *nhcbToClassicSeriesSet) convertSeries(dst []Series, nhcbSeries Series) 
 		return nil
 	}
 
-	return s.builder.buildSeries(dst, s.leMatchers)
+	return s.builder.buildSeries(dst)
 }
 
 func (s *nhcbToClassicSeriesSet) At() Series {
