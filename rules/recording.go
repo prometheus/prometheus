@@ -25,7 +25,6 @@ import (
 
 	"github.com/prometheus/common/model"
 	"go.uber.org/atomic"
-	"go.yaml.in/yaml/v2"
 
 	"github.com/prometheus/prometheus/model/histogram"
 	"github.com/prometheus/prometheus/model/labels"
@@ -34,6 +33,7 @@ import (
 	"github.com/prometheus/prometheus/promql"
 	"github.com/prometheus/prometheus/promql/parser"
 	"github.com/prometheus/prometheus/schema"
+	"github.com/prometheus/prometheus/util/yamlutil"
 )
 
 var (
@@ -329,7 +329,7 @@ func (rule *RecordingRule) String() string {
 		Metadata: meta,
 	}
 
-	byt, err := yaml.Marshal(r)
+	byt, err := yamlutil.Marshal(r)
 	if err != nil {
 		return fmt.Sprintf("error marshaling recording rule: %q", err.Error())
 	}

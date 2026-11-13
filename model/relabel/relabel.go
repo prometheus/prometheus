@@ -116,6 +116,25 @@ func (c *Config) UnmarshalYAML(unmarshal func(any) error) error {
 	if err := unmarshal((*plain)(c)); err != nil {
 		return err
 	}
+	// An explicit `action: null` leaves fields untouched when unmarshalling with
+	// yaml/v4, which means the default (replace) action would survive. yaml/v2
+	// zeroed the field instead, making Validate reject the config with "relabel
+	// action cannot be empty". Restore that behavior, so that a null action is
+	// still reported rather than silently becoming a replace action.
+	//
+	// yaml/v4 does not call a field's UnmarshalYAML for an explicit null, so this
+	// cannot be fixed in Action.UnmarshalYAML: the value has to be inspected here.
+	// Revisit once https://github.com/yaml/go-yaml settles the intended behavior.
+	//
+	// This is deliberately stricter than the rest of the config, where an explicit
+	// null now keeps the field's default (see config.TestNullFieldsKeepDefaults):
+	// defaulting to replace would silently rewrite labels instead of failing.
+	var raw map[string]any
+	if err := unmarshal(&raw); err == nil {
+		if v, ok := raw["action"]; ok && v == nil {
+			c.Action = ""
+		}
+	}
 	if c.Regex.Regexp == nil {
 		c.Regex = MustNewRegexp("")
 	}

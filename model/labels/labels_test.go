@@ -23,7 +23,8 @@ import (
 
 	"github.com/prometheus/common/model"
 	"github.com/stretchr/testify/require"
-	"go.yaml.in/yaml/v2"
+
+	"github.com/prometheus/prometheus/util/yamlutil"
 )
 
 var (
@@ -1179,12 +1180,12 @@ func TestMarshaling(t *testing.T) {
 	require.Equal(t, lbls, gotJ)
 
 	expectedYAML := "aaa: \"111\"\nbbb: \"2222\"\nccc: \"33333\"\n"
-	b, err = yaml.Marshal(lbls)
+	b, err = yamlutil.Marshal(lbls)
 	require.NoError(t, err)
 	require.YAMLEq(t, expectedYAML, string(b))
 
 	var gotY Labels
-	err = yaml.Unmarshal(b, &gotY)
+	err = yamlutil.UnmarshalStrict(b, &gotY)
 	require.NoError(t, err)
 	require.Equal(t, lbls, gotY)
 
@@ -1204,13 +1205,13 @@ func TestMarshaling(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, f, gotFJ)
 
-	b, err = yaml.Marshal(f)
+	b, err = yamlutil.Marshal(f)
 	require.NoError(t, err)
 	expectedYAMLFromStruct := "a_labels:\n  aaa: \"111\"\n  bbb: \"2222\"\n  ccc: \"33333\"\n"
 	require.YAMLEq(t, expectedYAMLFromStruct, string(b))
 
 	var gotFY foo
-	err = yaml.Unmarshal(b, &gotFY)
+	err = yamlutil.UnmarshalStrict(b, &gotFY)
 	require.NoError(t, err)
 	require.Equal(t, f, gotFY)
 }

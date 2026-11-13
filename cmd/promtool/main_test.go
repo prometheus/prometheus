@@ -192,7 +192,9 @@ func TestCheckSDFile(t *testing.T) {
 		{
 			name: "bad format",
 			file: "./testdata/bad-sd-file-format.yml",
-			err:  "yaml: unmarshal errors:\n  line 1: field targats not found in type struct { Targets []string \"yaml:\\\"targets\\\"\"; Labels model.LabelSet \"yaml:\\\"labels\\\"\" }",
+			// Only the part of the message we own is asserted: yaml/v2 and yaml/v4
+			// format the surrounding error differently and that is not under test.
+			err: "field targats not found in type struct { Targets []string \"yaml:\\\"targets\\\"\"; Labels model.LabelSet \"yaml:\\\"labels\\\"\" }",
 		},
 	}
 	for _, test := range cases {
@@ -200,7 +202,7 @@ func TestCheckSDFile(t *testing.T) {
 			t.Parallel()
 			_, err := checkSDFile(test.file)
 			if test.err != "" {
-				require.EqualErrorf(t, err, test.err, "Expected error %q, got %q", test.err, err.Error())
+				require.ErrorContains(t, err, test.err, "Expected error to contain %q, got %q", test.err, err)
 				return
 			}
 			require.NoError(t, err)

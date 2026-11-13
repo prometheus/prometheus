@@ -24,9 +24,9 @@ import (
 	"testing"
 
 	"github.com/stretchr/testify/require"
-	"go.yaml.in/yaml/v2"
 
 	"github.com/prometheus/prometheus/util/strutil"
+	"github.com/prometheus/prometheus/util/yamlutil"
 )
 
 // SDMock is the interface for the DigitalOcean mock.
@@ -65,7 +65,7 @@ func (m *SDMock) SetupHandlers() {
 	headers := make(map[string]string)
 	rawHeaders, err := os.ReadFile(filepath.Join("testdata", m.directory, "headers.yml"))
 	require.NoError(m.t, err)
-	yaml.Unmarshal(rawHeaders, &headers)
+	require.NoError(m.t, yamlutil.Unmarshal(rawHeaders, &headers))
 
 	prefix := "/"
 	if v, ok := headers["Api-Version"]; ok {

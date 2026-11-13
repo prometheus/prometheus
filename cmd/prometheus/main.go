@@ -19,6 +19,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io/fs"
 	"log/slog"
 	"math"
 	"math/bits"
@@ -55,7 +56,6 @@ import (
 	toolkit_web "github.com/prometheus/exporter-toolkit/web"
 	"go.uber.org/atomic"
 	"go.uber.org/automaxprocs/maxprocs"
-	"go.yaml.in/yaml/v2"
 	"k8s.io/client-go/rest"
 	"k8s.io/klog"
 	klogv2 "k8s.io/klog/v2"
@@ -87,6 +87,7 @@ import (
 	"github.com/prometheus/prometheus/util/logging"
 	"github.com/prometheus/prometheus/util/notifications"
 	prom_runtime "github.com/prometheus/prometheus/util/runtime"
+	"github.com/prometheus/prometheus/util/yamlutil"
 	"github.com/prometheus/prometheus/web"
 )
 
@@ -763,7 +764,7 @@ func main() {
 		localStoragePath = cfg.agentStoragePath
 	}
 
-	cfg.web.ExternalURL, err = computeExternalURL(cfg.prometheusURL, cfg.web.ListenAddresses[0], *webConfig)
+	cfg.web.ExternalURL, err = computeExternalURL(cfg.prometheusURL, cfg.web.ListenAddresses[0], *webConfig, logger)
 	if err != nil {
 		fmt.Fprintln(os.Stderr, fmt.Errorf("parse external URL %q: %w", cfg.prometheusURL, err))
 		os.Exit(2)
@@ -1854,7 +1855,7 @@ func compileCORSRegexString(s string) (*regexp.Regexp, error) {
 // computeExternalURL computes a sanitized external URL from a raw input. It infers unset
 // URL parts from the OS and the given listen address. When u is empty, the scheme of the
 // inferred URL is set to https if webConfigFile configures TLS.
-func computeExternalURL(u, listenAddr, webConfigFile string) (*url.URL, error) {
+func computeExternalURL(u, listenAddr, webConfigFile string, logger *slog.Logger) (*url.URL, error) {
 	if u == "" {
 		hostname, err := os.Hostname()
 		if err != nil {
@@ -1865,8 +1866,19 @@ func computeExternalURL(u, listenAddr, webConfigFile string) (*url.URL, error) {
 			return nil, err
 		}
 		scheme := "http"
-		if webConfigHasTLSServerConfig(webConfigFile) {
-			scheme = "https"
+		tlsEnabled, err := webConfigHasTLSServerConfig(webConfigFile)
+		if err == nil {
+			if tlsEnabled {
+				scheme = "https"
+			}
+		} else if !errors.Is(err, fs.ErrNotExist) && toolkit_web.Validate(webConfigFile) == nil {
+			// exporter-toolkit parses the file strictly with yaml/v2, so in practice it
+			// rejects everything yaml/v4 rejects here, and its own error is reported at
+			// startup. This is a safety net for the remaining cases, e.g. differing
+			// limits, where Prometheus may still start and serve TLS with a scheme that
+			// does not match the inferred external URL.
+			logger.Warn("could not determine whether the web config file enables TLS, assuming plain HTTP for the inferred external URL",
+				"file", webConfigFile, "err", err)
 		}
 		u = fmt.Sprintf("%s://%s:%s/", scheme, hostname, port)
 	}
@@ -1891,25 +1903,29 @@ func computeExternalURL(u, listenAddr, webConfigFile string) (*url.URL, error) {
 
 // webConfigHasTLSServerConfig reports whether the web config file at path configures TLS,
 // i.e. contains a tls_server_config section that sets at least one TLS-enabling field, as
-// decided by exporter-toolkit's own TLSConfig.IsEnabled(). An empty path, or a file that
-// cannot be read or parsed as YAML, is treated as not configuring TLS; a definitive error
-// for such cases is reported later by toolkit_web.Validate.
-func webConfigHasTLSServerConfig(path string) bool {
+// decided by exporter-toolkit's own TLSConfig.IsEnabled(). It returns an error when the
+// file cannot be read or parsed as YAML; a definitive error for such cases is reported
+// later by toolkit_web.Validate.
+//
+// Note that exporter-toolkit parses the same file strictly with go.yaml.in/yaml/v2,
+// while this function parses it leniently with yaml/v4, so the two parsers can
+// disagree. Callers must therefore not treat a parse error as "TLS is disabled".
+func webConfigHasTLSServerConfig(path string) (bool, error) {
 	if path == "" {
-		return false
+		return false, nil
 	}
 
 	data, err := os.ReadFile(path)
 	if err != nil {
-		return false
+		return false, err
 	}
 
 	var webConfig toolkit_web.Config
-	if err := yaml.Unmarshal(data, &webConfig); err != nil {
-		return false
+	if err := yamlutil.Unmarshal(data, &webConfig); err != nil {
+		return false, err
 	}
 
-	return webConfig.TLSConfig.IsEnabled()
+	return webConfig.TLSConfig.IsEnabled(), nil
 }
 
 // storagePathFsSize returns the filesystem size for path or its closest existing parent.

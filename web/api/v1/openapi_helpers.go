@@ -14,6 +14,7 @@
 package v1
 
 import (
+	"fmt"
 	"time"
 
 	jsoniter "github.com/json-iterator/go"
@@ -23,6 +24,7 @@ import (
 	"github.com/pb33f/libopenapi/orderedmap"
 
 	"github.com/prometheus/prometheus/promql"
+	"github.com/prometheus/prometheus/util/yamlutil"
 )
 
 // Helper functions for building common structures.
@@ -307,11 +309,18 @@ func pathParam(name, description string, schema *base.SchemaProxy) *v3.Parameter
 	}
 }
 
-// createYAMLNode converts Go data to yaml.Node for use in examples.
+// createYAMLNode converts Go data to yaml.Node for use in examples. It panics if
+// data cannot be converted, which only happens for values that are not
+// representable as YAML: all callers pass literals.
 func createYAMLNode(data any) *yaml.Node {
+	dataBytes, err := yamlutil.Marshal(data)
+	if err != nil {
+		panic(fmt.Errorf("marshaling %T for a YAML example: %w", data, err))
+	}
 	node := &yaml.Node{}
-	bytes, _ := yaml.Marshal(data)
-	_ = yaml.Unmarshal(bytes, node)
+	if err := yaml.Unmarshal(dataBytes, node); err != nil {
+		panic(fmt.Errorf("parsing %T as a YAML example: %w", data, err))
+	}
 	return node
 }
 

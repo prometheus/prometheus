@@ -26,10 +26,10 @@ import (
 	"github.com/prometheus/common/model"
 	"github.com/stretchr/testify/require"
 	"go.uber.org/goleak"
-	"go.yaml.in/yaml/v2"
 
 	"github.com/prometheus/prometheus/discovery"
 	"github.com/prometheus/prometheus/discovery/targetgroup"
+	"github.com/prometheus/prometheus/util/yamlutil"
 )
 
 func TestMain(m *testing.M) {
@@ -278,7 +278,7 @@ func TestDNS(t *testing.T) {
 
 func TestSDConfigUnmarshalYAML(t *testing.T) {
 	marshal := func(c SDConfig) []byte {
-		d, err := yaml.Marshal(c)
+		d, err := yamlutil.Marshal(c)
 		if err != nil {
 			panic(err)
 		}
@@ -287,7 +287,7 @@ func TestSDConfigUnmarshalYAML(t *testing.T) {
 
 	unmarshal := func(d []byte) func(any) error {
 		return func(o any) error {
-			return yaml.Unmarshal(d, o)
+			return yamlutil.UnmarshalStrict(d, o)
 		}
 	}
 

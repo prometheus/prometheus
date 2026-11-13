@@ -20,11 +20,11 @@ import (
 
 	"github.com/prometheus/common/model"
 	"github.com/stretchr/testify/require"
-	"go.yaml.in/yaml/v2"
 
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/model/metadata"
 	"github.com/prometheus/prometheus/util/testutil"
+	"github.com/prometheus/prometheus/util/yamlutil"
 )
 
 func TestRelabel(t *testing.T) {
@@ -1693,7 +1693,7 @@ func BenchmarkRelabel(b *testing.B) {
 		},
 	}
 	for i := range tests {
-		err := yaml.UnmarshalStrict([]byte(tests[i].config), &tests[i].cfgs)
+		err := yamlutil.UnmarshalStrict([]byte(tests[i].config), &tests[i].cfgs)
 		require.NoError(b, err)
 	}
 	for _, tt := range tests {
@@ -1758,10 +1758,10 @@ action: replace
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
 			unmarshalled := Config{}
-			err := yaml.Unmarshal([]byte(test.inputYaml), &unmarshalled)
+			err := yamlutil.UnmarshalStrict([]byte(test.inputYaml), &unmarshalled)
 			require.NoError(t, err)
 
-			marshalled, err := yaml.Marshal(&unmarshalled)
+			marshalled, err := yamlutil.Marshal(&unmarshalled)
 			require.NoError(t, err)
 
 			require.Equal(t, test.inputYaml, string(marshalled))
@@ -1775,7 +1775,7 @@ func TestConfig_UnmarshalNullRegex(t *testing.T) {
 	t.Cleanup(func() { DefaultRelabelConfig = original })
 
 	var cfgs []*Config
-	err := yaml.UnmarshalStrict([]byte(`
+	err := yamlutil.UnmarshalStrict([]byte(`
 - source_labels: [plane]
   regex: 'null'
   target_label: plane
@@ -1789,15 +1789,63 @@ func TestConfig_UnmarshalNullRegex(t *testing.T) {
 	require.Equal(t, "(.*)", cfgs[1].Regex.String())
 }
 
+func TestConfig_UnmarshalNullAction(t *testing.T) {
+	tests := []struct {
+		name        string
+		input       string
+		expectedErr string
+	}{
+		{
+			name:        "null action",
+			input:       "action: null\n",
+			expectedErr: "relabel action cannot be empty",
+		},
+		{
+			name:        "null action with target label",
+			input:       "action: null\ntarget_label: foo\n",
+			expectedErr: "relabel action cannot be empty",
+		},
+		{
+			name:        "empty action",
+			input:       "action: ''\n",
+			expectedErr: `unknown relabel action ""`,
+		},
+		{
+			// A missing action still defaults to replace, only an explicit null
+			// is treated as an empty action.
+			name:  "missing action",
+			input: "target_label: foo\n",
+		},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			var cfg Config
+			err := yamlutil.UnmarshalStrict([]byte(test.input), &cfg)
+			// Unmarshalling an explicit empty action fails right away, a null one
+			// only fails validation.
+			if err == nil {
+				err = cfg.Validate(model.UTF8Validation)
+			}
+			if test.expectedErr != "" {
+				require.ErrorContains(t, err, test.expectedErr)
+				return
+			}
+			require.NoError(t, err)
+			require.Equal(t, Replace, cfg.Action)
+		})
+	}
+}
+
 func TestRegexp_ShouldMarshalAndUnmarshalZeroValue(t *testing.T) {
 	var zero Regexp
 
-	marshalled, err := yaml.Marshal(&zero)
+	marshalled, err := yamlutil.Marshal(&zero)
 	require.NoError(t, err)
 	require.Equal(t, "null\n", string(marshalled))
 
 	var unmarshalled Regexp
-	err = yaml.Unmarshal(marshalled, &unmarshalled)
+	err = yamlutil.UnmarshalStrict(marshalled, &unmarshalled)
 	require.NoError(t, err)
 	require.Nil(t, unmarshalled.Regexp)
 }

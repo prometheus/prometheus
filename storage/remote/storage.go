@@ -25,13 +25,13 @@ import (
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/common/model"
 	"github.com/prometheus/common/promslog"
-	"go.yaml.in/yaml/v2"
 
 	"github.com/prometheus/prometheus/config"
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/scrape"
 	"github.com/prometheus/prometheus/storage"
 	"github.com/prometheus/prometheus/util/logging"
+	"github.com/prometheus/prometheus/util/yamlutil"
 )
 
 // String constants for instrumentation.
@@ -233,8 +233,15 @@ func labelsToEqualityMatchers(ls model.LabelSet) []*labels.Matcher {
 }
 
 // Used for hashing configs and diff'ing hashes in ApplyConfig.
+//
+// The hash doubles as the generated remote name when a config does not set one,
+// which ends up in the remote_name label of the prometheus_remote_storage_*
+// metrics. It must therefore stay stable across yaml library upgrades: see
+// TestToHash, which pins it. Keep hashing the YAML representation rather than,
+// say, JSON: several fields only have a yaml tag, so a JSON hash would make
+// distinct configs collide and be rejected as duplicates.
 func toHash(data any) (string, error) {
-	bytes, err := yaml.Marshal(data)
+	bytes, err := yamlutil.Marshal(data)
 	if err != nil {
 		return "", err
 	}

@@ -24,12 +24,12 @@ import (
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/common/model"
 	"github.com/stretchr/testify/require"
-	"go.yaml.in/yaml/v2"
 	"google.golang.org/protobuf/proto"
 	"google.golang.org/protobuf/types/known/anypb"
 
 	"github.com/prometheus/prometheus/discovery"
 	"github.com/prometheus/prometheus/discovery/targetgroup"
+	"github.com/prometheus/prometheus/util/yamlutil"
 )
 
 var (
@@ -256,7 +256,7 @@ tls_config:
 `, s.URL)
 
 	var cfg KumaSDConfig
-	require.NoError(t, yaml.Unmarshal([]byte(cfgString), &cfg))
+	require.NoError(t, yamlutil.UnmarshalStrict([]byte(cfgString), &cfg))
 
 	kd, err := newKumaTestHTTPDiscovery(cfg)
 	require.NoError(t, err)
