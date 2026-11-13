@@ -4170,6 +4170,10 @@ write_relabel_configs:
 # This is an experimental feature, and its behavior might still change, or even get removed.
 [ round_robin_dns: <boolean> | default = false ]
 
+# Path of a unix-domain socket to send batches over instead of opening a TCP
+# connection. The endpoint URL is still used; https also works over the socket.
+[ unix_socket_path: <string> ]
+
 # Optionally configures AWS's Signature Verification 4 signing process to
 # sign requests. Cannot be set at the same time as basic_auth, authorization, oauth2, or azuread.
 # To use the default credentials from the AWS SDK, use `sigv4: {}`.
