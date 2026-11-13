@@ -1205,7 +1205,7 @@ func searchMetricNamesResponseExamples() *orderedmap.Map[string, *base.Example] 
 
 	examples.Set("metricNamesStream", &base.Example{
 		Summary: "NDJSON stream of metric names",
-		Value:   createYAMLNode("{\"results\":[{\"name\":\"http_requests_total\",\"type\":\"counter\",\"help\":\"Total HTTP requests.\"}]}\n{\"status\":\"success\",\"has_more\":false}\n"),
+		Value:   createYAMLNode("{\"results\":[{\"name\":\"http_requests_total\",\"type\":\"counter\",\"help\":\"Total HTTP requests.\"}]}\n{\"status\":\"success\",\"has_more\":false,\"returned\":1}\n"),
 	})
 
 	return examples
@@ -1217,7 +1217,7 @@ func searchLabelNamesResponseExamples() *orderedmap.Map[string, *base.Example] {
 
 	examples.Set("labelNamesStream", &base.Example{
 		Summary: "NDJSON stream of label names",
-		Value:   createYAMLNode("{\"results\":[{\"name\":\"instance\"},{\"name\":\"job\"}]}\n{\"status\":\"success\",\"has_more\":false}\n"),
+		Value:   createYAMLNode("{\"results\":[{\"name\":\"instance\"},{\"name\":\"job\"}]}\n{\"status\":\"success\",\"has_more\":false,\"returned\":2}\n"),
 	})
 
 	return examples
@@ -1229,7 +1229,7 @@ func searchLabelValuesResponseExamples() *orderedmap.Map[string, *base.Example] 
 
 	examples.Set("labelValuesStream", &base.Example{
 		Summary: "NDJSON stream of label values",
-		Value:   createYAMLNode("{\"results\":[{\"value\":\"localhost:9090\"},{\"value\":\"localhost:9091\"}]}\n{\"status\":\"success\",\"has_more\":true}\n"),
+		Value:   createYAMLNode("{\"results\":[{\"value\":\"localhost:9090\"},{\"value\":\"localhost:9091\"}]}\n{\"status\":\"success\",\"has_more\":true,\"returned\":2}\n"),
 	})
 
 	return examples

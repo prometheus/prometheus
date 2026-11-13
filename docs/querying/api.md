@@ -767,8 +767,12 @@ These endpoints return newline-delimited JSON with content type
 - Zero or more **batch lines**, each with a `results` array and an optional
   `warnings` array.
 - The stream then ends with **either** a **trailer line** (`status`, `has_more`,
-  optional `warnings`) **or** an **error line** (`status`, `errorType`, `error`)
-  if iteration failed mid-stream after the first batch was sent.
+  `returned`, optional `warnings`) **or** an **error line** (`status`,
+  `errorType`, `error`) if iteration failed mid-stream after the first batch was
+  sent.
+
+The `returned` field in the trailer is the number of results in the response,
+across all batch lines.
 
 Searches return results from supported storage backends. Participating
 remote-read storage that does not support search contributes a warning instead
@@ -780,7 +784,7 @@ only describes truncation of the available results by the requested limit.
 
 ```json
 {"results":[{"name":"http_requests_total","type":"counter","help":"Total HTTP requests."}]}
-{"status":"success","has_more":false}
+{"status":"success","has_more":false,"returned":1}
 ```
 
 If an error occurs **before** streaming starts, the API returns the usual
@@ -864,7 +868,7 @@ curl -g 'http://localhost:9090/api/v1/search/metric_names?search[]=http_req&sort
 
 ```json
 {"results":[{"name":"http_requests_total","type":"counter","help":"Total HTTP requests."}]}
-{"status":"success","has_more":false}
+{"status":"success","has_more":false,"returned":1}
 ```
 
 This example searches label values for the `instance` label within the `up`
@@ -876,7 +880,7 @@ curl -g 'http://localhost:9090/api/v1/search/label_values?label=instance&match[]
 
 ```json
 {"results":[{"value":"localhost:9090"},{"value":"localhost:9091"}]}
-{"status":"success","has_more":true}
+{"status":"success","has_more":true,"returned":2}
 ```
 
 ## Querying exemplars
