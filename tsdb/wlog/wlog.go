@@ -172,7 +172,10 @@ func OpenReadSegment(fn string) (*Segment, error) {
 // WL is a write log that stores records in segment files.
 // It must be read from start to end once before logging new data.
 // If an error occurs during read, the repair procedure must be called
-// before it's safe to do further writes.
+// before it's safe to do further writes. If a write leaves a record incomplete,
+// further appends are rejected until the WAL is closed, reopened, and repaired.
+// Failures with a complete record buffered, or with none of its bytes written,
+// do not halt the writer; buffered complete records flush on the next write.
 //
 // Segments are written to in pages of 32KB, with records possibly split
 // across page boundaries.
@@ -189,7 +192,8 @@ type WL struct {
 	page        *page    // Active page.
 	stopc       chan chan struct{}
 	actorc      chan func()
-	closed      bool // To allow calling Close() more than once without blocking.
+	closed      bool  // To allow calling Close() more than once without blocking.
+	failedErr   error // A write failure that left a record incomplete.
 	compress    compression.Type
 	cEnc        compression.EncodeBuffer
 
@@ -398,6 +402,9 @@ Loop:
 // Repair attempts to repair the WAL based on the error.
 // It discards all data after the corruption.
 func (w *WL) Repair(origErr error) error {
+	if w.failedErr != nil {
+		return fmt.Errorf("write log halted after incomplete record: %w", w.failedErr)
+	}
 	// We could probably have a mode that only discards torn records right around
 	// the corruption to preserve as data much as possible.
 	// But that's not generally applicable if the records have any kind of causality.
@@ -531,6 +538,9 @@ func (w *WL) nextSegment(async bool) (int, error) {
 	if w.closed {
 		return 0, errors.New("wlog is closed")
 	}
+	if w.failedErr != nil {
+		return 0, fmt.Errorf("write log halted after incomplete record: %w", w.failedErr)
+	}
 
 	// Only flush the current page if it actually holds data.
 	if w.page.alloc > 0 {
@@ -657,6 +667,13 @@ func (w *WL) pagesPerSegment() int {
 func (w *WL) Log(recs ...[]byte) error {
 	w.mtx.Lock()
 	defer w.mtx.Unlock()
+	if len(recs) == 0 {
+		return nil
+	}
+	if w.failedErr != nil {
+		w.metrics.writesFailed.Inc()
+		return fmt.Errorf("write log halted after incomplete record: %w", w.failedErr)
+	}
 	// Callers could just implement their own list record format but adding
 	// a bit of extra logic here frees them from that overhead.
 	for i, r := range recs {
@@ -717,6 +734,7 @@ func (w *WL) log(rec []byte, final bool) error {
 	// Be careful to always do one pass to ensure we write zero-length records.
 	for i := 0; i == 0 || len(enc) > 0; i++ {
 		p := w.page
+		prevAlloc := p.alloc
 
 		// Find how much of the record we can fit into the page.
 		var (
@@ -761,9 +779,18 @@ func (w *WL) log(rec []byte, final bool) error {
 
 		if w.page.full() {
 			if err := w.flushPage(true); err != nil {
-				// TODO When the flushing fails at this point and the record has not been
-				// fully written to the buffer, we end up with a corrupted WAL because some part of the
-				// record have been written to the buffer, while the rest of the record will be discarded.
+				if len(enc) > l {
+					if i == 0 && p.flushed <= prevAlloc {
+						// No bytes of this record reached disk. Discard its first
+						// fragment, preserving any earlier records in the page.
+						clear(p.buf[prevAlloc:])
+						p.alloc = prevAlloc
+					} else {
+						// Some of the record reached disk, but its unbuffered tail
+						// is lost. Later records would not be replayable.
+						w.failedErr = err
+					}
+				}
 				return err
 			}
 		}
@@ -785,6 +812,10 @@ func (w *WL) log(rec []byte, final bool) error {
 func (w *WL) LastSegmentAndOffset() (seg, offset int, err error) {
 	w.mtx.Lock()
 	defer w.mtx.Unlock()
+
+	if w.failedErr != nil {
+		return 0, 0, fmt.Errorf("write log halted after incomplete record: %w", w.failedErr)
+	}
 
 	_, seg, err = Segments(w.Dir())
 	if err != nil {
@@ -850,17 +881,19 @@ func (w *WL) Close() (err error) {
 	// Flush the last page and zero out all its remaining size.
 	// We must not flush an empty page as it would falsely signal
 	// the segment is done if we start writing to it again after opening.
-	if w.page.alloc > 0 {
-		if err := w.flushPage(true); err != nil {
-			return err
-		}
+	if w.failedErr != nil {
+		// The buffered fragment cannot complete the record. Do not retry it,
+		// but still release resources and report the failure to the caller.
+		err = fmt.Errorf("write log halted after incomplete record: %w", w.failedErr)
+	} else if w.page.alloc > 0 {
+		err = w.flushPage(true)
 	}
 
 	donec := make(chan struct{})
 	w.stopc <- donec
 	<-donec
 
-	if err = w.fsync(w.segment); err != nil {
+	if err := w.fsync(w.segment); err != nil {
 		w.logger.Error("sync previous segment", "err", err)
 	}
 	if err := w.segment.Close(); err != nil {
@@ -869,7 +902,7 @@ func (w *WL) Close() (err error) {
 
 	w.metrics.Unregister()
 	w.closed = true
-	return nil
+	return err
 }
 
 // Segments returns the range [first, n] of currently existing segments.
