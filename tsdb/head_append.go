@@ -426,6 +426,8 @@ type headAppenderBase struct {
 
 	typesInBatch map[chunks.HeadSeriesRef]sampleType // Which (one) sample type each series holds in the most recent batch.
 
+	nativeMetricMetadata *nativeMetricMetadataAppender
+
 	appendID, cleanupAppendIDsBelow uint64
 	closed                          bool
 	storeST                         bool // Whether start-timestamp storage is enabled for this append.
@@ -434,6 +436,45 @@ type headAppenderBase struct {
 
 	// commitStats is populated at the end of Commit, readable via CommitStats.
 	commitStats storage.CommitStats
+}
+
+// shouldObserveNativeMetricMetadataLocked checks committed and transaction-local state.
+// The caller must hold the series lock.
+// Discarded observations cannot reassert metadata after intervening changes.
+func (a *headAppenderBase) shouldObserveNativeMetricMetadataLocked(s *memSeries, timestamp int64, m *metadata.Metadata) bool {
+	// A pending change can make a return to the committed value significant:
+	// with committed A, the transaction must retain both B and a following A.
+	if s.pendingCommitCount() > 1 && a.nativeMetricMetadata != nil && a.nativeMetricMetadata.mayHaveObservedSeries(s.ref) {
+		return true
+	}
+	native := s.nativeMetadataLocked()
+	// Matching the newest value does not establish what applied at an older
+	// timestamp; that observation may move the start of the matching version.
+	return native == nil || native.effectiveFrom > timestamp || *native.metadata != *m
+}
+
+func (a *headAppenderBase) recordNativeMetricMetadata(s *memSeries, timestamp int64, m metadata.Metadata) {
+	if a.nativeMetricMetadata == nil {
+		a.nativeMetricMetadata = a.head.nativeMetricMetadata.getAppender()
+	}
+	a.nativeMetricMetadata.observe(s, timestamp, m)
+}
+
+func (a *headAppenderBase) clearNativeMetricMetadata() {
+	if a.nativeMetricMetadata == nil {
+		return
+	}
+	appender := a.nativeMetricMetadata
+	a.nativeMetricMetadata = nil
+	a.head.nativeMetricMetadata.putAppender(appender)
+}
+
+func (a *headAppenderBase) commitNativeMetricMetadata() {
+	if a.nativeMetricMetadata == nil {
+		return
+	}
+	a.head.nativeMetricMetadata.commitAppender(a.nativeMetricMetadata)
+	a.clearNativeMetricMetadata()
 }
 
 type headAppender struct {
@@ -1154,7 +1195,8 @@ func (a *headAppender) UpdateMetadata(ref storage.SeriesRef, lset labels.Labels,
 	}
 
 	s.Lock()
-	hasNewMetadata := metadata.IsZeroHandle(s.meta) || s.meta.Value() != meta
+	currentMetadata := s.legacyMetadataLocked()
+	hasNewMetadata := metadata.IsZeroHandle(currentMetadata) || currentMetadata.Value() != meta
 	s.Unlock()
 
 	if hasNewMetadata {
@@ -1833,7 +1875,7 @@ func commitMetadata(b *appendBatch) {
 	for i, m := range b.metadata {
 		series = b.metadataSeries[i]
 		series.Lock()
-		series.meta = unique.Make(metadata.Metadata{Type: record.ToMetricType(m.Type), Unit: m.Unit, Help: m.Help})
+		series.setLegacyMetadataLocked(unique.Make(metadata.Metadata{Type: record.ToMetricType(m.Type), Unit: m.Unit, Help: m.Help}))
 		series.Unlock()
 	}
 }
@@ -1923,6 +1965,11 @@ func (a *headAppenderBase) Commit() (err error) {
 		}
 	}()
 
+	// Publish native metadata before sample commits release the reservations
+	// that keep their series indexed. A sample rejected below, for example as
+	// out of order after a concurrent commit, can still leave its metadata
+	// version behind.
+	a.commitNativeMetricMetadata()
 	for _, b := range a.batches {
 		// Do not change the order of these calls. We depend on it for
 		// correct commit order of samples and for the staleness marker
@@ -2418,6 +2465,7 @@ func (a *headAppenderBase) Rollback() (err error) {
 	}
 	h := a.head
 	defer func() {
+		a.clearNativeMetricMetadata()
 		a.releaseCreatedSeriesReservations()
 		h.iso.closeAppend(a.appendID)
 		h.metrics.activeAppenders.Dec()
