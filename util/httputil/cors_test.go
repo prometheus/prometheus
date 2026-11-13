@@ -15,10 +15,13 @@ package httputil
 
 import (
 	"net/http"
+	"net/http/httptest"
 	"testing"
 
 	"github.com/grafana/regexp"
 	"github.com/stretchr/testify/require"
+
+	"github.com/prometheus/prometheus/model/relabel"
 )
 
 func getCORSHandlerFunc() http.Handler {
@@ -80,4 +83,18 @@ func TestCORSHandler(t *testing.T) {
 
 	AccessControlAllowOrigin = resp.Header.Get("Access-Control-Allow-Origin")
 	require.Empty(t, AccessControlAllowOrigin)
+}
+
+func TestSetCORSAnyOrigin(t *testing.T) {
+	// The --web.cors.origin flag defaults to ".*" and is compiled with relabel.NewRegexp.
+	anyOrigin, err := relabel.NewRegexp(".*")
+	require.NoError(t, err)
+
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/query", http.NoBody)
+	req.Header.Set("Origin", "https://example.com")
+	w := httptest.NewRecorder()
+	SetCORS(w, anyOrigin.Regexp, req)
+
+	require.Equal(t, "*", w.Header().Get("Access-Control-Allow-Origin"))
+	require.Equal(t, "Origin", w.Header().Get("Vary"))
 }
