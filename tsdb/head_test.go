@@ -2627,6 +2627,8 @@ func TestTornWALTailKeepsWBLSamples(t *testing.T) {
 			ctx := context.Background()
 			hour := time.Hour.Milliseconds()
 			opts := DefaultOptions()
+			// The test copies the open data directory, and Windows refuses to read a held lock file.
+			opts.NoLockfile = true
 			opts.OutOfOrderTimeWindow = 6 * hour
 			db := newTestDB(t, withOpts(opts))
 			db.DisableCompactions() // We want to call the compactions manually.
