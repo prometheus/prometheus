@@ -449,7 +449,12 @@ meaningful results. To mitigate the issue, `histogram_quantile` assumes that
 tiny relative differences between consecutive buckets are happening because of
 floating point precision errors and ignores them. (The threshold to ignore a
 difference between two buckets is a trillionth (1e-12) of the sum of both
-buckets.) Furthermore, if there are non-monotonic bucket counts even after this
+buckets.) The same threshold applies when `histogram_quantile` compares the
+rank of the requested quantile with the bucket counts: a bucket whose count is
+lower than the rank by less than the threshold is treated as reaching it. This
+way, a quantile that lies exactly on a bucket boundary selects the same bucket
+regardless of how the counts were rounded. This also applies to native
+histograms. Furthermore, if there are non-monotonic bucket counts even after this
 adjustment, they are increased to the value of the previous buckets to enforce
 monotonicity. The latter is evidence for an actual issue with the input data
 and is therefore flagged by an info-level annotation reading `input to

@@ -25,7 +25,7 @@ import (
 	"github.com/prometheus/prometheus/promql/parser/posrange"
 )
 
-func TestBucketQuantile_ForcedMonotonicity(t *testing.T) {
+func TestBucketQuantile(t *testing.T) {
 	t.Run("empty buckets", func(t *testing.T) {
 		for name, buckets := range map[string]Buckets{"nil": nil, "empty": {}} {
 			for _, tc := range []struct {
@@ -63,6 +63,7 @@ func TestBucketQuantile_ForcedMonotonicity(t *testing.T) {
 		expectedForced bool
 		expectedFixed  bool
 		expectedValues map[float64]float64
+		exact          bool // Compare the quantiles exactly instead of within eps.
 	}{
 		"simple - monotonic": {
 			getInput: func() Buckets {
@@ -340,14 +341,143 @@ func TestBucketQuantile_ForcedMonotonicity(t *testing.T) {
 				0.5:  0.0025752314815104174,
 			},
 		},
+		// The rank 0.9 * 0.16666666666666666 is exactly 0.15, the count of the three equal buckets.
+		// The quantile is the upper bound of the first of them, whether the counts are exact or are
+		// off by one ULP because they were summed in a different order.
+		"real example - rank ties with equal buckets": {
+			getInput: func() Buckets {
+				return rankTieBuckets(0.15, 0.16666666666666666)
+			},
+			expectedForced: false,
+			expectedFixed:  false,
+			expectedValues: map[float64]float64{
+				0.9: 0.1,
+			},
+			exact: true,
+		},
+		"real example - rank ties with equal buckets, counts one ULP below the rank": {
+			getInput: func() Buckets {
+				return rankTieBuckets(0.14999999999999997, 0.16666666666666666)
+			},
+			expectedForced: false,
+			expectedFixed:  false,
+			expectedValues: map[float64]float64{
+				0.9: 0.1,
+			},
+			exact: true,
+		},
+		"real example - rank ties with equal buckets, total one ULP above the rank": {
+			getInput: func() Buckets {
+				return rankTieBuckets(0.15, 0.16666666666666669)
+			},
+			expectedForced: false,
+			expectedFixed:  false,
+			expectedValues: map[float64]float64{
+				0.9: 0.1,
+			},
+			exact: true,
+		},
 	} {
 		t.Run(name, func(t *testing.T) {
 			for q, v := range tc.expectedValues {
 				quantile, forced, fixed, _, _, _ := BucketQuantile(q, tc.getInput())
 				require.Equal(t, tc.expectedForced, forced)
 				require.Equal(t, tc.expectedFixed, fixed)
-				require.InEpsilon(t, v, quantile, eps)
+				if tc.exact {
+					require.Equal(t, v, quantile)
+				} else {
+					require.InEpsilon(t, v, quantile, eps)
+				}
 			}
+		})
+	}
+}
+
+// rankTieBuckets returns the cumulative bucket counts of a sparse classic histogram seen in
+// production, with the count of the three equal buckets and the total count as parameters.
+func rankTieBuckets(equal, total float64) Buckets {
+	return Buckets{
+		{UpperBound: 0.005, Count: 0.03333333333333333},
+		{UpperBound: 0.01, Count: 0.03333333333333333},
+		{UpperBound: 0.025, Count: 0.1},
+		{UpperBound: 0.05, Count: 0.13333333333333333},
+		{UpperBound: 0.075, Count: 0.14791680555555556},
+		{UpperBound: 0.1, Count: equal},
+		{UpperBound: 0.25, Count: equal},
+		{UpperBound: 0.5, Count: equal},
+		{UpperBound: 0.75, Count: total},
+		{UpperBound: 1, Count: total},
+		{UpperBound: 2.5, Count: total},
+		{UpperBound: 5, Count: total},
+		{UpperBound: 7.5, Count: total},
+		{UpperBound: 10, Count: total},
+		{UpperBound: math.Inf(1), Count: total},
+	}
+}
+
+func TestHistogramQuantile_RankTies(t *testing.T) {
+	newHistogram := func(customValues, buckets []float64) *histogram.FloatHistogram {
+		return &histogram.FloatHistogram{
+			Schema:          histogram.CustomBucketsSchema,
+			CustomValues:    customValues,
+			Count:           12,
+			Sum:             30,
+			PositiveSpans:   []histogram.Span{{Offset: 0, Length: uint32(len(buckets))}},
+			PositiveBuckets: buckets,
+		}
+	}
+	// Custom buckets (-Inf,1] (1,2] (2,3] (3,4] (4,+Inf]. The two middle buckets are empty, so a
+	// rank that ties with the count of a bucket next to them selects a different bucket if the
+	// count is off by one ULP, and the result jumps by whole buckets.
+	narrow := []float64{1, 2, 3, 4}
+	// Custom buckets (-Inf,1] (1,4] (4,+Inf]. The bucket (1,4] is wide compared to its lower
+	// bound, so a result below the lower bound by a fraction of the bucket width shows.
+	wide := []float64{1, 4}
+
+	for name, tc := range map[string]struct {
+		h    *histogram.FloatHistogram
+		q    float64
+		want float64
+	}{
+		// The forward iterator is used for q < 0.5. The rank 0.25 * 12 = 3 is the count of the first bucket.
+		"forward, exact tie": {
+			h:    newHistogram(narrow, []float64{3, 0, 0, 9}),
+			q:    0.25,
+			want: 1,
+		},
+		"forward, count one ULP below the rank": {
+			h:    newHistogram(narrow, []float64{2.9999999999999996, 0, 0, 9.000000000000002}),
+			q:    0.25,
+			want: 1,
+		},
+		// The reverse iterator is used for q >= 0.5. The rank (1 - 0.75) * 12 = 3 is the count of the last bucket.
+		"reverse, exact tie": {
+			h:    newHistogram(narrow, []float64{9, 0, 0, 3}),
+			q:    0.75,
+			want: 3,
+		},
+		"reverse, count one ULP below the rank": {
+			h:    newHistogram(narrow, []float64{9.000000000000002, 0, 0, 2.9999999999999996}),
+			q:    0.75,
+			want: 3,
+		},
+		"reverse, wide bucket, exact tie": {
+			h:    newHistogram(wide, []float64{9, 3}),
+			q:    0.75,
+			want: 1,
+		},
+		"reverse, wide bucket, count one ULP below the rank": {
+			h:    newHistogram(wide, []float64{9.000000000000002, 2.9999999999999996}),
+			q:    0.75,
+			want: 1,
+		},
+	} {
+		t.Run(name, func(t *testing.T) {
+			got, annos := HistogramQuantile(tc.q, tc.h, "", posrange.PositionRange{})
+			require.Empty(t, annos)
+			// Compare exactly: without the clamp of the fraction, a count one ULP below the rank
+			// gives a result just outside the selected bucket.
+			require.Equal(t, tc.want, got)
 		})
 	}
 }

@@ -1579,11 +1579,15 @@ const funcDocs: Record<string, React.ReactNode> = {
         <code>histogram_quantile</code> would be unable to return meaningful results. To mitigate the issue,{" "}
         <code>histogram_quantile</code> assumes that tiny relative differences between consecutive buckets are happening
         because of floating point precision errors and ignores them. (The threshold to ignore a difference between two
-        buckets is a trillionth (1e-12) of the sum of both buckets.) Furthermore, if there are non-monotonic bucket
-        counts even after this adjustment, they are increased to the value of the previous buckets to enforce
-        monotonicity. The latter is evidence for an actual issue with the input data and is therefore flagged by an
-        info-level annotation reading <code>input to histogram_quantile needed to be fixed for monotonicity</code>. If
-        you encounter this annotation, you should find and remove the source of the invalid data.
+        buckets is a trillionth (1e-12) of the sum of both buckets.) The same threshold applies when{" "}
+        <code>histogram_quantile</code> compares the rank of the requested quantile with the bucket counts: a bucket
+        whose count is lower than the rank by less than the threshold is treated as reaching it. This way, a quantile
+        that lies exactly on a bucket boundary selects the same bucket regardless of how the counts were rounded. This
+        also applies to native histograms. Furthermore, if there are non-monotonic bucket counts even after this
+        adjustment, they are increased to the value of the previous buckets to enforce monotonicity. The latter is
+        evidence for an actual issue with the input data and is therefore flagged by an info-level annotation reading{" "}
+        <code>input to histogram_quantile needed to be fixed for monotonicity</code>. If you encounter this annotation,
+        you should find and remove the source of the invalid data.
       </p>
     </>
   ),
