@@ -58,6 +58,11 @@ var (
 		"(?s:.+)",
 		"(?s:^.*foo$)",
 		"(?i:foo)",
+		// A character class keeps FoldCase as residue once the parser has expanded
+		// folding into its rune set, so these must behave like "a|A|B".
+		"[aA]|B",
+		"(?i:a)|B",
+		"a|A|B",
 		"(?i:(foo|bar))",
 		"(?i:(foo1|foo2|bar))",
 		"^(?i:foo|oo)|(bar)$",
@@ -134,6 +139,7 @@ var (
 		"-a-a-a-",
 		"|foo|",
 		"|foo-bar|",
+		"b", "B",
 		"x-ab-y",
 		"x-abc-y",
 
@@ -267,6 +273,11 @@ func TestFindSetMatches(t *testing.T) {
 		// class starting with "-"
 		{"[-1-2][a-c]", []string{"-a", "-b", "-c", "1a", "1b", "1c", "2a", "2b", "2c"}, true},
 		{"[1^3]", []string{"1", "3", "^"}, true},
+		// A character class has already had case folding expanded into its rune
+		// set, so [aA]|B collapses to the class [ABa] and matching it case
+		// insensitively would fold a second time and admit "b".
+		{"[aA]|B", []string{"A", "B", "a"}, true},
+		{"(?i:a)|B", []string{"A", "B", "a"}, true},
 		// OpPlus with concat
 		{"(.+)/(foo|bar)", nil, false},
 		// Simple sets containing special characters without escaping.
