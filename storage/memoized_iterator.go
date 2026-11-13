@@ -32,6 +32,7 @@ type MemoizedSeriesIterator struct {
 	valueType chunkenc.ValueType
 
 	// Keep track of the previously returned value.
+	prevValid          bool
 	prevST             int64
 	prevTime           int64
 	prevValue          float64
@@ -47,8 +48,7 @@ func NewMemoizedEmptyIterator(delta int64) *MemoizedSeriesIterator {
 // time range of the current element and the duration of delta before.
 func NewMemoizedIterator(it chunkenc.Iterator, delta int64) *MemoizedSeriesIterator {
 	bit := &MemoizedSeriesIterator{
-		delta:    delta,
-		prevTime: math.MinInt64,
+		delta: delta,
 	}
 	bit.Reset(it)
 
@@ -60,14 +60,14 @@ func (b *MemoizedSeriesIterator) Reset(it chunkenc.Iterator) {
 	b.it = it
 	b.prevST = 0
 	b.lastTime = math.MinInt64
-	b.prevTime = math.MinInt64
+	b.prevValid = false
 	b.valueType = it.Next()
 }
 
 // PeekPrev returns the previous element of the iterator. If there is none buffered,
 // ok is false.
 func (b *MemoizedSeriesIterator) PeekPrev() (st, t int64, v float64, fh *histogram.FloatHistogram, ok bool) {
-	if b.prevTime == math.MinInt64 {
+	if !b.prevValid {
 		return 0, 0, 0, nil, false
 	}
 	return b.prevST, b.prevTime, b.prevValue, b.prevFloatHistogram, true
@@ -80,7 +80,7 @@ func (b *MemoizedSeriesIterator) Seek(t int64) chunkenc.ValueType {
 	if b.valueType != chunkenc.ValNone && t0 > b.lastTime {
 		// Reset the previously stored element because the seek advanced
 		// more than the delta.
-		b.prevTime = math.MinInt64
+		b.prevValid = false
 
 		b.valueType = b.it.Seek(t0)
 		switch b.valueType {
@@ -120,6 +120,7 @@ func (b *MemoizedSeriesIterator) Next() chunkenc.ValueType {
 		b.prevTime, b.prevFloatHistogram = b.it.AtFloatHistogram(nil)
 	}
 
+	b.prevValid = true
 	b.valueType = b.it.Next()
 	if b.valueType != chunkenc.ValNone {
 		b.lastTime = b.it.AtT()
