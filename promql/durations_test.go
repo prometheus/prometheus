@@ -297,6 +297,27 @@ func TestCalculateDuration(t *testing.T) {
 			// representable as a time.Duration. The exact value is preserved.
 			expected: time.Duration(1e9) * time.Second,
 		},
+		{
+			name: "duration rounding up past the upper bound is rejected",
+			// 9223372036.8546s passes the seconds bound (~9223372036.8548s),
+			// but rounds to 9223372036855ms, one millisecond more than a
+			// time.Duration can hold; converting it would overflow.
+			expr:         &parser.NumberLiteral{Val: 9223372036.8546},
+			errorMessage: "duration is out of range",
+		},
+		{
+			name:            "duration rounding down past the lower bound is rejected",
+			expr:            &parser.NumberLiteral{Val: -9223372036.8546},
+			errorMessage:    "duration is out of range",
+			allowedNegative: true,
+		},
+		{
+			name: "duration just inside the rounded upper bound is accepted",
+			// 9223372036.8544s rounds to 9223372036854ms, the largest whole
+			// number of milliseconds a time.Duration can hold.
+			expr:     &parser.NumberLiteral{Val: 9223372036.8544},
+			expected: time.Duration(9223372036854) * time.Millisecond,
+		},
 	}
 
 	for _, tt := range tests {
@@ -311,5 +332,42 @@ func TestCalculateDuration(t *testing.T) {
 			require.NoError(t, err)
 			require.Equal(t, tt.expected, result)
 		})
+	}
+}
+
+// Duration expressions must evaluate to exactly the same duration as the
+// plain form: (1s1ms) is 1001ms, not 1000ms. The literal is carried as
+// float64 seconds (1.001 is stored as 1.0009999999999998898...), so the
+// conversion to time.Duration must round rather than truncate.
+func TestDurationExprMillisecondExactness(t *testing.T) {
+	p := parser.NewParser(parser.Options{})
+	for _, tc := range []struct {
+		query   string
+		want    time.Duration
+		wantErr string
+	}{
+		{query: "m offset (1s1ms)", want: 1001 * time.Millisecond},
+		{query: "m offset (1s + 1ms)", want: 1001 * time.Millisecond},
+		{query: "m offset (-1s1ms)", want: -1001 * time.Millisecond},
+		{query: "m offset (2s500ms)", want: 2500 * time.Millisecond},
+		{query: "m offset (1m1s1ms)", want: 61001 * time.Millisecond},
+		// 9223372036.8546s passes the seconds bound, but rounding it to
+		// whole milliseconds overflows time.Duration, so it must be
+		// rejected instead of wrapping to a negative duration.
+		{query: "m offset (9223372036.8546 * 1s)", wantErr: "duration is out of range"},
+		{query: "m offset (-9223372036.8546 * 1s)", wantErr: "duration is out of range"},
+	} {
+		expr, err := p.ParseExpr(tc.query)
+		require.NoError(t, err)
+		out, err := PreprocessExpr(expr, time.Unix(0, 0), time.Unix(3600, 0), time.Minute)
+		if tc.wantErr != "" {
+			require.Error(t, err, "query %q", tc.query)
+			require.Contains(t, err.Error(), tc.wantErr, "query %q", tc.query)
+			continue
+		}
+		require.NoError(t, err)
+		vs, ok := out.(*parser.VectorSelector)
+		require.True(t, ok, "expected vector selector for %q", tc.query)
+		require.Equal(t, tc.want, vs.OriginalOffset, "query %q", tc.query)
 	}
 }
