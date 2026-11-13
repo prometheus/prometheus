@@ -18,12 +18,14 @@ import (
 	"errors"
 	"log/slog"
 	"net"
+	"strconv"
 	"testing"
 	"time"
 
 	"github.com/miekg/dns"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/common/model"
+	"github.com/prometheus/common/promslog"
 	"github.com/stretchr/testify/require"
 	"go.uber.org/goleak"
 	"go.yaml.in/yaml/v2"
@@ -274,6 +276,75 @@ func TestDNS(t *testing.T) {
 			metrics.Unregister()
 		})
 	}
+}
+
+// TestDNSLocalName checks that a .local name is sent as an ordinary unicast
+// query to the configured DNS server. Multicast DNS is not used, so the name
+// is not resolved unless that server can answer for it.
+func TestDNSLocalName(t *testing.T) {
+	pc, err := net.ListenPacket("udp", "127.0.0.1:0")
+	require.NoError(t, err)
+
+	questions := make(chan string, 1)
+	started := make(chan struct{})
+	stopped := make(chan struct{})
+	server := &dns.Server{
+		PacketConn: pc,
+		Handler: dns.HandlerFunc(func(w dns.ResponseWriter, r *dns.Msg) {
+			questions <- r.Question[0].Name
+			m := &dns.Msg{}
+			m.SetRcode(r, dns.RcodeNameError)
+			w.WriteMsg(m)
+		}),
+		NotifyStartedFunc: func() { close(started) },
+	}
+	go func() {
+		server.ActivateAndServe()
+		close(stopped)
+	}()
+	<-started
+	t.Cleanup(func() {
+		server.Shutdown()
+		<-stopped
+	})
+
+	conf := &dns.ClientConfig{
+		Servers: []string{"127.0.0.1"},
+		Port:    strconv.Itoa(pc.LocalAddr().(*net.UDPAddr).Port),
+	}
+	lookup := func(name string, qtype uint16, logger *slog.Logger) (*dns.Msg, error) {
+		return lookupFromAnyServer(name, qtype, conf, logger)
+	}
+
+	response, err := lookup("printer.local.", dns.TypeA, promslog.NewNopLogger())
+	require.NoError(t, err)
+	require.Equal(t, "printer.local.", <-questions)
+	require.Equal(t, dns.RcodeNameError, response.Rcode)
+	require.Empty(t, response.Answer)
+
+	config := SDConfig{
+		Names:           []string{"printer.local."},
+		RefreshInterval: model.Duration(time.Minute),
+		Port:            80,
+		Type:            "A",
+	}
+	reg := prometheus.NewRegistry()
+	refreshMetrics := discovery.NewRefreshMetrics(reg)
+	metrics := config.NewDiscovererMetrics(reg, refreshMetrics)
+	require.NoError(t, metrics.Register())
+	defer metrics.Unregister()
+
+	sd, err := NewDiscovery(config, discovery.DiscovererOptions{
+		Metrics: metrics,
+		SetName: "dns",
+	})
+	require.NoError(t, err)
+	sd.lookupFn = lookup
+
+	tgs, err := sd.refresh(context.Background())
+	require.NoError(t, err)
+	require.Equal(t, "printer.local.", <-questions)
+	require.Equal(t, []*targetgroup.Group{{Source: "printer.local."}}, tgs)
 }
 
 func TestSDConfigUnmarshalYAML(t *testing.T) {
