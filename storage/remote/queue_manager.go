@@ -460,6 +460,11 @@ type WriteClient interface {
 	Endpoint() string
 }
 
+type cachedMetadata struct {
+	meta        unique.Handle[metadata.Metadata]
+	helpSentGen uint64
+}
+
 // QueueManager manages a queue of samples to be sent to the Storage
 // indicated by the provided WriteClient. Implements writeTo interface
 // used by WAL Watcher.
@@ -477,6 +482,7 @@ type QueueManager struct {
 	relabelConfigs          []*relabel.Config
 	sendExemplars           bool
 	sendNativeHistograms    bool
+	sendHelpInterval        time.Duration
 	enableTypeAndUnitLabels bool
 	failedRequestLogging    bool
 	convertNHCBToClassic    bool
@@ -489,15 +495,17 @@ type QueueManager struct {
 	mode        remoteapi.WriteMode
 	compr       compression.Type
 
-	seriesMtx        sync.Mutex // Covers seriesLabels, seriesMetadata, droppedSeries, the NHCB fields and builder.
-	seriesLabels     map[chunks.HeadSeriesRef]labels.Labels
-	seriesMetadata   map[chunks.HeadSeriesRef]unique.Handle[metadata.Metadata]
-	droppedSeries    map[chunks.HeadSeriesRef]struct{}
-	nhcbSeriesBounds map[chunks.HeadSeriesRef]*nhcbLayout // Layout of each converted NHCB series.
-	nhcbLayouts      map[string]*nhcbLayout               // Keyed by the encoded bounds.
-	nhcbLayoutKey    []byte                               // Scratch space for layout keys.
-	nhcbCounts       []float64                            // Scratch space for bucket counts.
-	builder          *labels.Builder
+	seriesMtx         sync.Mutex // Covers seriesLabels, seriesMetadata, helpSentGen, lastHelpSentReset, droppedSeries, the NHCB fields and builder.
+	seriesLabels      map[chunks.HeadSeriesRef]labels.Labels
+	seriesMetadata    map[chunks.HeadSeriesRef]cachedMetadata
+	helpSentGen       uint64
+	lastHelpSentReset time.Time
+	droppedSeries     map[chunks.HeadSeriesRef]struct{}
+	nhcbSeriesBounds  map[chunks.HeadSeriesRef]*nhcbLayout // Layout of each converted NHCB series.
+	nhcbLayouts       map[string]*nhcbLayout               // Keyed by the encoded bounds.
+	nhcbLayoutKey     []byte                               // Scratch space for layout keys.
+	nhcbCounts        []float64                            // Scratch space for bucket counts.
+	builder           *labels.Builder
 
 	seriesSegmentMtx     sync.Mutex // Covers seriesSegmentIndexes - if you also lock seriesMtx, take seriesMtx first.
 	seriesSegmentIndexes map[chunks.HeadSeriesRef]int
@@ -544,6 +552,7 @@ func NewQueueManager(
 	recordBuf *record.BuffersPool,
 	failedRequestLogging bool,
 	convertNHCBToClassic bool,
+	sendHelpInterval time.Duration,
 ) *QueueManager {
 	if logger == nil {
 		logger = promslog.NewNopLogger()
@@ -566,11 +575,12 @@ func NewQueueManager(
 		storeClient:             client,
 		sendExemplars:           enableExemplarRemoteWrite,
 		sendNativeHistograms:    enableNativeHistogramRemoteWrite,
+		sendHelpInterval:        sendHelpInterval,
 		enableTypeAndUnitLabels: enableTypeAndUnitLabels,
 		failedRequestLogging:    failedRequestLogging,
 
 		seriesLabels:         make(map[chunks.HeadSeriesRef]labels.Labels),
-		seriesMetadata:       make(map[chunks.HeadSeriesRef]unique.Handle[metadata.Metadata]),
+		seriesMetadata:       make(map[chunks.HeadSeriesRef]cachedMetadata),
 		seriesSegmentIndexes: make(map[chunks.HeadSeriesRef]int),
 		droppedSeries:        make(map[chunks.HeadSeriesRef]struct{}),
 		nhcbSeriesBounds:     make(map[chunks.HeadSeriesRef]*nhcbLayout),
@@ -861,6 +871,44 @@ func (t *QueueManager) shouldDropHistogramForMode(ref chunks.HeadSeriesRef, st i
 	return false
 }
 
+// omitHelpForSend reports whether Help should be omitted for an outgoing sample or histogram.
+// When send_help_interval > 0, Help is sent once after StoreMetadata and once per interval;
+// synchronizing interval expiry via helpSentGen aligns series from the same family into the same batch.
+// Caller must hold t.seriesMtx.
+func (t *QueueManager) omitHelpForSend(ref chunks.HeadSeriesRef, sm cachedMetadata, now time.Time) bool {
+	if t.sendHelpInterval <= 0 {
+		return false
+	}
+	if metadata.IsZeroHandle(sm.meta) {
+		return true
+	}
+	if t.helpSentGen == 0 || now.Sub(t.lastHelpSentReset) >= t.sendHelpInterval {
+		t.helpSentGen++
+		t.lastHelpSentReset = now
+	}
+	if sm.helpSentGen == t.helpSentGen {
+		return true
+	}
+	sm.helpSentGen = t.helpSentGen
+	t.seriesMetadata[ref] = sm
+	return sm.meta.Value().Help == ""
+}
+
+// checkOmitHelpBeforeModeUnlock determines omitHelp while holding t.seriesMtx before unlocking
+// for stateless mode validation, avoiding a second lock acquisition in steady state.
+func (t *QueueManager) checkOmitHelpBeforeModeUnlock(ref chunks.HeadSeriesRef, sm cachedMetadata, now time.Time) (omitHelp, markHelp bool) {
+	if t.mode == remoteapi.WriteModeNone {
+		return t.omitHelpForSend(ref, sm, now), false
+	}
+	if t.sendHelpInterval <= 0 {
+		return false, false
+	}
+	if metadata.IsZeroHandle(sm.meta) || (t.helpSentGen != 0 && now.Sub(t.lastHelpSentReset) < t.sendHelpInterval && sm.helpSentGen == t.helpSentGen) {
+		return true, false
+	}
+	return false, true
+}
+
 // Append queues a sample to be sent to the remote storage. Blocks until all samples are
 // enqueued on their shards or a shutdown signal is received.
 func (t *QueueManager) Append(samples []record.RefSample) bool {
@@ -886,7 +934,7 @@ outer:
 		}
 		// TODO(cstyan): Handle or at least log an error if no metadata is found.
 		// See https://github.com/prometheus/prometheus/issues/14405
-		meta := t.seriesMetadata[s.Ref]
+		sm := t.seriesMetadata[s.Ref]
 		if t.convertNHCBToClassic {
 			if _, ok := t.nhcbSeriesBounds[s.Ref]; ok {
 				// A float sample for a converted NHCB series is either its stale marker or
@@ -896,17 +944,23 @@ outer:
 				var replacement *timeSeries
 				if !value.IsStaleNaN(s.V) {
 					st = 0
-					replacement = &timeSeries{seriesLabels: lbls, metadata: meta, startTimestamp: s.ST, timestamp: s.T, value: s.V, sType: tSample}
+					replacement = &timeSeries{seriesLabels: lbls, metadata: sm.meta, startTimestamp: s.ST, timestamp: s.T, value: s.V, sType: tSample}
 				}
-				if !t.convertAndEnqueueNHCB(s.Ref, st, s.T, nil, nil, true, lbls, meta, replacement) {
+				if !t.convertAndEnqueueNHCB(s.Ref, st, s.T, nil, nil, true, lbls, sm, currentTime, replacement) {
 					return false
 				}
 				continue
 			}
 		}
+		omitHelp, markHelp := t.checkOmitHelpBeforeModeUnlock(s.Ref, sm, currentTime)
 		t.seriesMtx.Unlock()
-		if t.mode != remoteapi.WriteModeNone && t.shouldDropFloatSampleForMode(s.Ref, s.ST, value.IsStaleNaN(s.V), lbls, meta) {
+		if t.mode != remoteapi.WriteModeNone && t.shouldDropFloatSampleForMode(s.Ref, s.ST, value.IsStaleNaN(s.V), lbls, sm.meta) {
 			continue
+		}
+		if markHelp {
+			t.seriesMtx.Lock()
+			omitHelp = t.omitHelpForSend(s.Ref, t.seriesMetadata[s.Ref], currentTime)
+			t.seriesMtx.Unlock()
 		}
 		// Start with a very small backoff. This should not be t.cfg.MinBackoff
 		// as it can happen without errors, and we want to pickup work after
@@ -921,11 +975,12 @@ outer:
 			}
 			if t.shards.enqueue(s.Ref, timeSeries{
 				seriesLabels:   lbls,
-				metadata:       meta,
+				metadata:       sm.meta,
 				startTimestamp: s.ST,
 				timestamp:      s.T,
 				value:          s.V,
 				sType:          tSample,
+				omitHelp:       omitHelp,
 			}) {
 				continue outer
 			}
@@ -985,7 +1040,7 @@ outer:
 				}
 			}
 		}
-		meta := t.seriesMetadata[e.Ref]
+		meta := t.seriesMetadata[e.Ref].meta
 		t.seriesMtx.Unlock()
 		if t.mode != remoteapi.WriteModeNone {
 			// TODO(bwplotka): Dropping detached exemplars after series/NHCB lookup above is a temporary stop-gap until
@@ -1010,6 +1065,9 @@ outer:
 				value:          e.V,
 				exemplarLabels: e.Labels,
 				sType:          tExemplar,
+				// Detached exemplars omit Help when send_help_interval > 0 so they do not
+				// emit Help on every exemplar or consume the series' Help interval.
+				omitHelp: t.sendHelpInterval > 0,
 			}) {
 				continue outer
 			}
@@ -1067,7 +1125,7 @@ func (t *QueueManager) releaseNHCBLayout(layout *nhcbLayout) {
 // into classic _bucket, _count, and _sum samples while holding seriesMtx, then enqueues them
 // after releasing the lock. Caller must hold t.seriesMtx on entry; this method unlocks it.
 // A replacement follows the converted stale markers when changing sample type.
-func (t *QueueManager) convertAndEnqueueNHCB(ref chunks.HeadSeriesRef, st, ts int64, nhcb any, customValues []float64, isStale bool, lbls labels.Labels, meta unique.Handle[metadata.Metadata], replacement *timeSeries) bool {
+func (t *QueueManager) convertAndEnqueueNHCB(ref chunks.HeadSeriesRef, st, ts int64, nhcb any, customValues []float64, isStale bool, lbls labels.Labels, sm cachedMetadata, now time.Time, replacement *timeSeries) bool {
 	prev, wasActive := t.nhcbSeriesBounds[ref]
 	var prevBounds []float64
 	if wasActive {
@@ -1082,6 +1140,25 @@ func (t *QueueManager) convertAndEnqueueNHCB(ref chunks.HeadSeriesRef, st, ts in
 		}
 	}
 
+	baseName := lbls.Get(model.MetricNameLabel)
+	var (
+		count, sum float64
+		err        error
+	)
+	if baseName == "" {
+		err = errors.New("metric name label '__name__' is missing")
+	} else {
+		t.nhcbCounts, count, sum, err = histogram.ClassicBucketCounts(nhcb, t.nhcbCounts)
+	}
+	if err != nil {
+		t.seriesMtx.Unlock()
+		t.logger.Error("Conversion error", "err", err)
+		t.metrics.droppedHistogramsTotal.WithLabelValues(reasonNHCBConversionError).Inc()
+		t.dataDropped.incr(1)
+		return true
+	}
+
+	omitHelp := t.omitHelpForSend(ref, sm, now)
 	sameBounds := wasActive && slices.Equal(prevBounds, customValues)
 	capacity := len(customValues) + 3
 	if wasActive && !sameBounds {
@@ -1094,89 +1171,73 @@ func (t *QueueManager) convertAndEnqueueNHCB(ref chunks.HeadSeriesRef, st, ts in
 	emit := func(bucketLabels labels.Labels, value float64) {
 		classicSeries = append(classicSeries, timeSeries{
 			seriesLabels:   bucketLabels,
-			metadata:       meta,
+			metadata:       sm.meta,
 			startTimestamp: st,
 			timestamp:      ts,
 			value:          value,
 			sType:          tSample,
+			omitHelp:       omitHelp,
 		})
 	}
-	baseName := lbls.Get(model.MetricNameLabel)
-	var (
-		count, sum float64
-		err        error
-	)
-	if baseName == "" {
-		err = errors.New("metric name label '__name__' is missing")
-	} else {
-		t.nhcbCounts, count, sum, err = histogram.ClassicBucketCounts(nhcb, t.nhcbCounts)
-	}
 	layout := prev
-	if err == nil {
-		if !sameBounds {
-			layout = t.acquireNHCBLayout(customValues)
-		}
-		bucketName := baseName + "_bucket"
-		for i, c := range t.nhcbCounts {
-			t.builder.Reset(lbls)
-			t.builder.Set(model.MetricNameLabel, bucketName)
-			t.builder.Set(model.BucketLabel, layout.le[i])
-			emit(t.builder.Labels(), c)
-		}
-		t.builder.Reset(lbls)
-		t.builder.Set(model.MetricNameLabel, baseName+"_count")
-		emit(t.builder.Labels(), count)
-		t.builder.Reset(lbls)
-		t.builder.Set(model.MetricNameLabel, baseName+"_sum")
-		emit(t.builder.Labels(), sum)
+	if !sameBounds {
+		layout = t.acquireNHCBLayout(customValues)
 	}
-	if err == nil && wasActive && !sameBounds {
+	bucketName := baseName + "_bucket"
+	for i, c := range t.nhcbCounts {
+		t.builder.Reset(lbls)
+		t.builder.Set(model.MetricNameLabel, bucketName)
+		t.builder.Set(model.BucketLabel, layout.le[i])
+		emit(t.builder.Labels(), c)
+	}
+	t.builder.Reset(lbls)
+	t.builder.Set(model.MetricNameLabel, baseName+"_count")
+	emit(t.builder.Labels(), count)
+	t.builder.Reset(lbls)
+	t.builder.Set(model.MetricNameLabel, baseName+"_sum")
+	emit(t.builder.Labels(), sum)
+
+	if wasActive && !sameBounds {
 		staleVal := math.Float64frombits(value.StaleNaN)
 		for i, prevBound := range prevBounds {
 			if slices.Contains(customValues, prevBound) {
 				continue
 			}
 			t.builder.Reset(lbls)
-			t.builder.Set(model.MetricNameLabel, baseName+"_bucket")
+			t.builder.Set(model.MetricNameLabel, bucketName)
 			t.builder.Set(model.BucketLabel, prev.le[i])
 			// Retired buckets get no start time; st belongs to the new layout.
 			classicSeries = append(classicSeries, timeSeries{
 				seriesLabels:   t.builder.Labels(),
-				metadata:       meta,
+				metadata:       sm.meta,
 				startTimestamp: 0,
 				timestamp:      ts,
 				value:          staleVal,
 				sType:          tSample,
+				omitHelp:       omitHelp,
 			})
 		}
 	}
-	if err == nil {
-		if isStale {
-			if !sameBounds {
-				// A stale marker needed the new layout only for its labels.
-				t.releaseNHCBLayout(layout)
-			}
-			if wasActive {
-				t.releaseNHCBLayout(prev)
-			}
-			delete(t.nhcbSeriesBounds, ref)
-		} else if !sameBounds {
-			if wasActive {
-				t.releaseNHCBLayout(prev)
-			}
-			t.nhcbSeriesBounds[ref] = layout
+	if isStale {
+		if !sameBounds {
+			// A stale marker needed the new layout only for its labels.
+			t.releaseNHCBLayout(layout)
 		}
-		if replacement != nil {
-			classicSeries = append(classicSeries, *replacement)
+		if wasActive {
+			t.releaseNHCBLayout(prev)
 		}
+		delete(t.nhcbSeriesBounds, ref)
+	} else if !sameBounds {
+		if wasActive {
+			t.releaseNHCBLayout(prev)
+		}
+		t.nhcbSeriesBounds[ref] = layout
+	}
+	if replacement != nil {
+		replacement.omitHelp = omitHelp
+		classicSeries = append(classicSeries, *replacement)
 	}
 	t.seriesMtx.Unlock()
-	if err != nil {
-		t.logger.Error("Conversion error", "err", err)
-		t.metrics.droppedHistogramsTotal.WithLabelValues(reasonNHCBConversionError).Inc()
-		t.dataDropped.incr(1)
-		return true
-	}
 	if len(classicSeries) > 1 {
 		// WriteStorage counts the incoming sample as a single item in dataIn;
 		// account for the extra classic series produced by NHCB expansion here.
@@ -1246,13 +1307,13 @@ outer:
 			t.seriesMtx.Unlock()
 			continue
 		}
-		meta := t.seriesMetadata[h.Ref]
+		sm := t.seriesMetadata[h.Ref]
 		if transition {
 			var replacement *timeSeries
 			if t.sendNativeHistograms {
-				replacement = &timeSeries{seriesLabels: lbls, metadata: meta, startTimestamp: h.ST, timestamp: h.T, histogram: h.H, sType: tHistogram}
+				replacement = &timeSeries{seriesLabels: lbls, metadata: sm.meta, startTimestamp: h.ST, timestamp: h.T, histogram: h.H, sType: tHistogram}
 			}
-			if !t.convertAndEnqueueNHCB(h.Ref, 0, h.T, nil, nil, true, lbls, meta, replacement) {
+			if !t.convertAndEnqueueNHCB(h.Ref, 0, h.T, nil, nil, true, lbls, sm, currentTime, replacement) {
 				return false
 			}
 			continue
@@ -1265,14 +1326,20 @@ outer:
 				nhcb = h.H
 				customValues = h.H.CustomValues
 			}
-			if !t.convertAndEnqueueNHCB(h.Ref, h.ST, h.T, nhcb, customValues, isStale, lbls, meta, nil) {
+			if !t.convertAndEnqueueNHCB(h.Ref, h.ST, h.T, nhcb, customValues, isStale, lbls, sm, currentTime, nil) {
 				return false
 			}
 			continue
 		}
+		omitHelp, markHelp := t.checkOmitHelpBeforeModeUnlock(h.Ref, sm, currentTime)
 		t.seriesMtx.Unlock()
-		if t.mode != remoteapi.WriteModeNone && t.shouldDropHistogramForMode(h.Ref, h.ST, isStale, lbls, meta) {
+		if t.mode != remoteapi.WriteModeNone && t.shouldDropHistogramForMode(h.Ref, h.ST, isStale, lbls, sm.meta) {
 			continue
+		}
+		if markHelp {
+			t.seriesMtx.Lock()
+			omitHelp = t.omitHelpForSend(h.Ref, t.seriesMetadata[h.Ref], currentTime)
+			t.seriesMtx.Unlock()
 		}
 
 		backoff := model.Duration(5 * time.Millisecond)
@@ -1284,11 +1351,12 @@ outer:
 			}
 			if t.shards.enqueue(h.Ref, timeSeries{
 				seriesLabels:   lbls,
-				metadata:       meta,
+				metadata:       sm.meta,
 				startTimestamp: h.ST,
 				timestamp:      h.T,
 				histogram:      h.H,
 				sType:          tHistogram,
+				omitHelp:       omitHelp,
 			}) {
 				continue outer
 			}
@@ -1345,13 +1413,13 @@ outer:
 			t.seriesMtx.Unlock()
 			continue
 		}
-		meta := t.seriesMetadata[h.Ref]
+		sm := t.seriesMetadata[h.Ref]
 		if transition {
 			var replacement *timeSeries
 			if t.sendNativeHistograms {
-				replacement = &timeSeries{seriesLabels: lbls, metadata: meta, startTimestamp: h.ST, timestamp: h.T, floatHistogram: h.FH, sType: tFloatHistogram}
+				replacement = &timeSeries{seriesLabels: lbls, metadata: sm.meta, startTimestamp: h.ST, timestamp: h.T, floatHistogram: h.FH, sType: tFloatHistogram}
 			}
-			if !t.convertAndEnqueueNHCB(h.Ref, 0, h.T, nil, nil, true, lbls, meta, replacement) {
+			if !t.convertAndEnqueueNHCB(h.Ref, 0, h.T, nil, nil, true, lbls, sm, currentTime, replacement) {
 				return false
 			}
 			continue
@@ -1364,14 +1432,20 @@ outer:
 				nhcb = h.FH
 				customValues = h.FH.CustomValues
 			}
-			if !t.convertAndEnqueueNHCB(h.Ref, h.ST, h.T, nhcb, customValues, isStale, lbls, meta, nil) {
+			if !t.convertAndEnqueueNHCB(h.Ref, h.ST, h.T, nhcb, customValues, isStale, lbls, sm, currentTime, nil) {
 				return false
 			}
 			continue
 		}
+		omitHelp, markHelp := t.checkOmitHelpBeforeModeUnlock(h.Ref, sm, currentTime)
 		t.seriesMtx.Unlock()
-		if t.mode != remoteapi.WriteModeNone && t.shouldDropHistogramForMode(h.Ref, h.ST, isStale, lbls, meta) {
+		if t.mode != remoteapi.WriteModeNone && t.shouldDropHistogramForMode(h.Ref, h.ST, isStale, lbls, sm.meta) {
 			continue
+		}
+		if markHelp {
+			t.seriesMtx.Lock()
+			omitHelp = t.omitHelpForSend(h.Ref, t.seriesMetadata[h.Ref], currentTime)
+			t.seriesMtx.Unlock()
 		}
 
 		backoff := model.Duration(5 * time.Millisecond)
@@ -1383,11 +1457,12 @@ outer:
 			}
 			if t.shards.enqueue(h.Ref, timeSeries{
 				seriesLabels:   lbls,
-				metadata:       meta,
+				metadata:       sm.meta,
 				startTimestamp: h.ST,
 				timestamp:      h.T,
 				floatHistogram: h.FH,
 				sType:          tFloatHistogram,
+				omitHelp:       omitHelp,
 			}) {
 				continue outer
 			}
@@ -1475,11 +1550,15 @@ func (t *QueueManager) StoreMetadata(meta []record.RefMetadata) {
 	t.seriesMtx.Lock()
 	defer t.seriesMtx.Unlock()
 	for _, m := range meta {
-		t.seriesMetadata[m.Ref] = unique.Make(metadata.Metadata{
-			Type: record.ToMetricType(m.Type),
-			Unit: m.Unit,
-			Help: m.Help,
-		})
+		// TSDB only logs metadata records on series creation or change; leaving helpSentGen
+		// at 0 ensures Help is emitted on the next send for this series.
+		t.seriesMetadata[m.Ref] = cachedMetadata{
+			meta: unique.Make(metadata.Metadata{
+				Type: record.ToMetricType(m.Type),
+				Unit: m.Unit,
+				Help: m.Help,
+			}),
+		}
 	}
 }
 
@@ -1853,10 +1932,11 @@ type timeSeries struct {
 	startTimestamp, timestamp int64
 	exemplarLabels            labels.Labels
 	// The type of series: sample, exemplar, or histogram.
-	sType seriesType
+	sType    seriesType
+	omitHelp bool
 }
 
-type seriesType int
+type seriesType uint8
 
 const (
 	tSample seriesType = iota
@@ -2428,7 +2508,9 @@ func populateV2TimeSeries(symbolTable *writev2.SymbolsTable, batch []timeSeries,
 			meta := d.metadata.Value()
 			mType = meta.Type
 			unit = meta.Unit
-			help = meta.Help
+			if !d.omitHelp {
+				help = meta.Help
+			}
 		}
 		if enableTypeAndUnitLabels {
 			m := schema.NewMetadataFromLabels(d.seriesLabels)
