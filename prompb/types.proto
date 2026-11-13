@@ -163,6 +163,13 @@ message ReadHints {
   repeated string grouping = 5; // List of label names used in aggregation.
   bool by = 6; // Indicate whether it is without or by.
   int64 range_ms = 7; // Range vector selector range in milliseconds.
+  // Total number of shards to split series into. Zero disables sharding.
+  uint64 shard_count = 8;
+  // Zero-based shard index, which must be less than shard_count when enabled,
+  // and zero when sharding is disabled. Series are assigned using the stable
+  // hash of their TSDB labels, before external labels are added, modulo
+  // shard_count. Older servers may ignore these optional hints.
+  uint64 shard_index = 9;
 }
 
 // Chunk represents a TSDB chunk.
