@@ -112,6 +112,12 @@ type queueManagerMetrics struct {
 
 	samplesMetadataTotal    *prometheus.CounterVec
 	histogramsMetadataTotal *prometheus.CounterVec
+	samplesMetadataType     prometheus.Counter
+	samplesMetadataUnit     prometheus.Counter
+	samplesMetadataHelp     prometheus.Counter
+	histogramsMetadataType  prometheus.Counter
+	histogramsMetadataUnit  prometheus.Counter
+	histogramsMetadataHelp  prometheus.Counter
 }
 
 func newQueueManagerMetrics(r prometheus.Registerer, rn, e string) *queueManagerMetrics {
@@ -158,10 +164,12 @@ func newQueueManagerMetrics(r prometheus.Registerer, rn, e string) *queueManager
 		Help:        "Total number of histograms sent to remote storage using Remote Write 2.0 with the specified metadata field set.",
 		ConstLabels: constLabels,
 	}, []string{"field"})
-	for _, field := range []string{metadataFieldType, metadataFieldUnit, metadataFieldHelp} {
-		m.samplesMetadataTotal.WithLabelValues(field)
-		m.histogramsMetadataTotal.WithLabelValues(field)
-	}
+	m.samplesMetadataType = m.samplesMetadataTotal.WithLabelValues(metadataFieldType)
+	m.samplesMetadataUnit = m.samplesMetadataTotal.WithLabelValues(metadataFieldUnit)
+	m.samplesMetadataHelp = m.samplesMetadataTotal.WithLabelValues(metadataFieldHelp)
+	m.histogramsMetadataType = m.histogramsMetadataTotal.WithLabelValues(metadataFieldType)
+	m.histogramsMetadataUnit = m.histogramsMetadataTotal.WithLabelValues(metadataFieldUnit)
+	m.histogramsMetadataHelp = m.histogramsMetadataTotal.WithLabelValues(metadataFieldHelp)
 	m.metadataTotal = prometheus.NewCounter(prometheus.CounterOpts{
 		Namespace:   namespace,
 		Subsystem:   subsystem,
@@ -854,9 +862,30 @@ func (t *QueueManager) shouldDropHistogramForMode(ref chunks.HeadSeriesRef, st i
 	return false
 }
 
-var lookupEntriesPool = sync.Pool{
+type shardedItem struct {
+	ref chunks.HeadSeriesRef
+	ts  timeSeries
+}
+
+type appendScratch struct {
+	entries [lookupChunkSize]seriesEntry
+	items   []shardedItem
+	order   []int
+	counts  []int
+	offsets []int
+	cursors []int
+	timer   *time.Timer
+}
+
+var appendScratchPool = sync.Pool{
 	New: func() any {
-		return new([lookupChunkSize]seriesEntry)
+		return &appendScratch{
+			items:   make([]shardedItem, 0, lookupChunkSize),
+			order:   make([]int, lookupChunkSize),
+			counts:  make([]int, 64),
+			offsets: make([]int, 65),
+			cursors: make([]int, 64),
+		}
 	},
 }
 
@@ -876,28 +905,51 @@ func (t *QueueManager) Append(samples []record.RefSample) bool {
 		limitTime = time.Now().Add(-ageLimit)
 	}
 
-	entriesBuf := lookupEntriesPool.Get().(*[lookupChunkSize]seriesEntry)
-	defer lookupEntriesPool.Put(entriesBuf)
+	sc := appendScratchPool.Get().(*appendScratch)
+	defer func() {
+		sc.items = sc.items[:0]
+		appendScratchPool.Put(sc)
+	}()
+
+	var nTooOld, nDropped, nUnintentional int
+	flushDrops := func() {
+		if nTooOld > 0 {
+			t.metrics.droppedSamplesTotal.WithLabelValues(reasonTooOld).Add(float64(nTooOld))
+			nTooOld = 0
+		}
+		if droppedTotal := nDropped + nUnintentional; droppedTotal > 0 {
+			t.dataDropped.incr(int64(droppedTotal))
+			if nDropped > 0 {
+				t.metrics.droppedSamplesTotal.WithLabelValues(reasonDroppedSeries).Add(float64(nDropped))
+				nDropped = 0
+			}
+			if nUnintentional > 0 {
+				t.metrics.droppedSamplesTotal.WithLabelValues(reasonUnintentionalDroppedSeries).Add(float64(nUnintentional))
+				nUnintentional = 0
+			}
+		}
+	}
 
 	for off := 0; off < len(samples); off += lookupChunkSize {
 		chunk := samples[off:min(off+lookupChunkSize, len(samples))]
-		t.series.lookupSamples(chunk, entriesBuf[:len(chunk)])
+		t.series.lookupSamples(chunk, sc.entries[:len(chunk)])
+
+		sc.items = sc.items[:0]
+		var maxTS int64 = math.MinInt64
 		checkNHCB := t.convertNHCBToClassic && t.activeNHCBSeries.Load() > 0
 
-	outer:
 		for i, s := range chunk {
 			if checkAge && timestamp.Time(s.T).Before(limitTime) {
-				t.metrics.droppedSamplesTotal.WithLabelValues(reasonTooOld).Inc()
+				nTooOld++
 				continue
 			}
-			entry := entriesBuf[i]
+			entry := sc.entries[i]
 			if entry.state != seriesStateActive {
-				t.dataDropped.incr(1)
 				if entry.state == seriesStateDropped {
-					t.metrics.droppedSamplesTotal.WithLabelValues(reasonDroppedSeries).Inc()
+					nDropped++
 				} else {
 					t.logger.Info("Dropped sample for series that was not explicitly dropped via relabelling", "ref", s.Ref)
-					t.metrics.droppedSamplesTotal.WithLabelValues(reasonUnintentionalDroppedSeries).Inc()
+					nUnintentional++
 				}
 				continue
 			}
@@ -905,9 +957,24 @@ func (t *QueueManager) Append(samples []record.RefSample) bool {
 			// See https://github.com/prometheus/prometheus/issues/14405
 			lbls := entry.labels
 			meta := entry.metadata
+
 			if checkNHCB {
 				t.nhcbMtx.Lock()
-				if _, ok := t.nhcbSeriesBounds[s.Ref]; ok {
+				_, isTrackedNHCB := t.nhcbSeriesBounds[s.Ref]
+				if isTrackedNHCB && len(sc.items) > 0 {
+					t.nhcbMtx.Unlock()
+					// Flush any preceding normal samples first so per-series ordering is preserved.
+					flushDrops()
+					if !t.enqueueBatch(sc, tSample, maxTS, 5*time.Millisecond) {
+						return false
+					}
+					sc.items = sc.items[:0]
+					maxTS = math.MinInt64
+					t.nhcbMtx.Lock()
+					_, isTrackedNHCB = t.nhcbSeriesBounds[s.Ref]
+				}
+				if isTrackedNHCB {
+					flushDrops()
 					// A float sample for a converted NHCB series is either its stale marker or
 					// a change of sample type. Both retire the classic series; a type change
 					// also forwards the float, whose start time stays off the retired series.
@@ -928,36 +995,26 @@ func (t *QueueManager) Append(samples []record.RefSample) bool {
 			if t.mode != remoteapi.WriteModeNone && t.shouldDropFloatSampleForMode(s.Ref, s.ST, value.IsStaleNaN(s.V), lbls, meta) {
 				continue
 			}
-			// Start with a very small backoff. This should not be t.cfg.MinBackoff
-			// as it can happen without errors, and we want to pickup work after
-			// filling a queue/resharding as quickly as possible.
-			// TODO: Consider using the average duration of a request as the backoff.
-			backoff := model.Duration(5 * time.Millisecond)
-			for {
-				select {
-				case <-t.quit:
-					return false
-				default:
-				}
-				if t.shards.enqueue(s.Ref, timeSeries{
+			if s.T > maxTS {
+				maxTS = s.T
+			}
+			sc.items = append(sc.items, shardedItem{
+				ref: s.Ref,
+				ts: timeSeries{
 					seriesLabels:   lbls,
 					metadata:       meta,
 					startTimestamp: s.ST,
 					timestamp:      s.T,
 					value:          s.V,
 					sType:          tSample,
-				}) {
-					continue outer
-				}
+				},
+			})
+		}
 
-				t.metrics.enqueueRetriesTotal.Inc()
-				time.Sleep(time.Duration(backoff))
-				backoff *= 2
-				// It is reasonable to use t.cfg.MaxBackoff here, as if we have hit
-				// the full backoff we are likely waiting for external resources.
-				if backoff > t.cfg.MaxBackoff {
-					backoff = t.cfg.MaxBackoff
-				}
+		flushDrops()
+		if len(sc.items) > 0 {
+			if !t.enqueueBatch(sc, tSample, maxTS, 5*time.Millisecond) {
+				return false
 			}
 		}
 	}
@@ -965,25 +1022,32 @@ func (t *QueueManager) Append(samples []record.RefSample) bool {
 }
 
 func (t *QueueManager) AppendExemplars(exemplars []record.RefExemplar) bool {
-	if !t.sendExemplars {
+	if !t.sendExemplars || len(exemplars) == 0 {
 		return true
 	}
 	currentTime := time.Now()
-outer:
+	sc := appendScratchPool.Get().(*appendScratch)
+	defer func() {
+		sc.items = sc.items[:0]
+		appendScratchPool.Put(sc)
+	}()
+
+	var nTooOld, nDropped, nUnintentional, nDetached int
+	sc.items = sc.items[:0]
+	var maxTS int64 = math.MinInt64
+
 	for _, e := range exemplars {
 		if isSampleOld(currentTime, time.Duration(t.cfg.SampleAgeLimit), e.T) {
-			t.metrics.droppedExemplarsTotal.WithLabelValues(reasonTooOld).Inc()
+			nTooOld++
 			continue
 		}
 		entry := t.series.lookup(e.Ref)
 		if entry.state != seriesStateActive {
-			// Track dropped exemplars in the same EWMA for sharding calc.
-			t.dataDropped.incr(1)
 			if entry.state == seriesStateDropped {
-				t.metrics.droppedExemplarsTotal.WithLabelValues(reasonDroppedSeries).Inc()
+				nDropped++
 			} else {
 				t.logger.Info("Dropped exemplar for series that was not explicitly dropped via relabelling", "ref", e.Ref)
-				t.metrics.droppedExemplarsTotal.WithLabelValues(reasonUnintentionalDroppedSeries).Inc()
+				nUnintentional++
 			}
 			continue
 		}
@@ -1011,37 +1075,44 @@ outer:
 		if t.mode != remoteapi.WriteModeNone {
 			// TODO(bwplotka): Dropping detached exemplars after series/NHCB lookup above is a temporary stop-gap until
 			// https://github.com/prometheus/prometheus/pull/20070 coalesces exemplars onto matching TimeSeries in populateV2TimeSeries.
-			t.dataDropped.incr(1)
-			t.metrics.droppedExemplarsTotal.WithLabelValues(reasonDetachedExemplarNotAllowed).Inc()
+			nDetached++
 			t.logger.Debug("Dropped detached exemplar; remote_write mode requires exemplars to be attached to a series with samples or histograms", "mode", t.mode, "ref", e.Ref, "series", lbls)
 			continue
 		}
-		// This will only loop if the queues are being resharded.
-		backoff := t.cfg.MinBackoff
-		for {
-			select {
-			case <-t.quit:
-				return false
-			default:
-			}
-			if t.shards.enqueue(e.Ref, timeSeries{
+		if e.T > maxTS {
+			maxTS = e.T
+		}
+		sc.items = append(sc.items, shardedItem{
+			ref: e.Ref,
+			ts: timeSeries{
 				seriesLabels:   lbls,
 				metadata:       meta,
 				timestamp:      e.T,
 				value:          e.V,
 				exemplarLabels: e.Labels,
 				sType:          tExemplar,
-			}) {
-				continue outer
-			}
+			},
+		})
+	}
 
-			t.metrics.enqueueRetriesTotal.Inc()
-			time.Sleep(time.Duration(backoff))
-			backoff *= 2
-			if backoff > t.cfg.MaxBackoff {
-				backoff = t.cfg.MaxBackoff
-			}
+	if nTooOld > 0 {
+		t.metrics.droppedExemplarsTotal.WithLabelValues(reasonTooOld).Add(float64(nTooOld))
+	}
+	if droppedTotal := nDropped + nUnintentional + nDetached; droppedTotal > 0 {
+		// Track dropped exemplars in the same EWMA for sharding calc.
+		t.dataDropped.incr(int64(droppedTotal))
+		if nDropped > 0 {
+			t.metrics.droppedExemplarsTotal.WithLabelValues(reasonDroppedSeries).Add(float64(nDropped))
 		}
+		if nUnintentional > 0 {
+			t.metrics.droppedExemplarsTotal.WithLabelValues(reasonUnintentionalDroppedSeries).Add(float64(nUnintentional))
+		}
+		if nDetached > 0 {
+			t.metrics.droppedExemplarsTotal.WithLabelValues(reasonDetachedExemplarNotAllowed).Add(float64(nDetached))
+		}
+	}
+	if len(sc.items) > 0 {
+		return t.enqueueBatch(sc, tExemplar, maxTS, time.Duration(t.cfg.MinBackoff))
 	}
 	return true
 }
@@ -1111,15 +1182,28 @@ func (t *QueueManager) convertAndEnqueueNHCB(ref chunks.HeadSeriesRef, st, ts in
 	if replacement != nil {
 		capacity++
 	}
-	classicSeries := make([]timeSeries, 0, capacity)
+	sc := appendScratchPool.Get().(*appendScratch)
+	defer func() {
+		sc.items = sc.items[:0]
+		appendScratchPool.Put(sc)
+	}()
+	if cap(sc.items) < capacity {
+		sc.items = make([]shardedItem, 0, capacity)
+	} else {
+		sc.items = sc.items[:0]
+	}
+
 	emit := func(bucketLabels labels.Labels, value float64) {
-		classicSeries = append(classicSeries, timeSeries{
-			seriesLabels:   bucketLabels,
-			metadata:       meta,
-			startTimestamp: st,
-			timestamp:      ts,
-			value:          value,
-			sType:          tSample,
+		sc.items = append(sc.items, shardedItem{
+			ref: ref,
+			ts: timeSeries{
+				seriesLabels:   bucketLabels,
+				metadata:       meta,
+				startTimestamp: st,
+				timestamp:      ts,
+				value:          value,
+				sType:          tSample,
+			},
 		})
 	}
 	baseName := lbls.Get(model.MetricNameLabel)
@@ -1161,16 +1245,20 @@ func (t *QueueManager) convertAndEnqueueNHCB(ref chunks.HeadSeriesRef, st, ts in
 			t.nhcbBuilder.Set(model.MetricNameLabel, baseName+"_bucket")
 			t.nhcbBuilder.Set(model.BucketLabel, prev.le[i])
 			// Retired buckets get no start time; st belongs to the new layout.
-			classicSeries = append(classicSeries, timeSeries{
-				seriesLabels:   t.nhcbBuilder.Labels(),
-				metadata:       meta,
-				startTimestamp: 0,
-				timestamp:      ts,
-				value:          staleVal,
-				sType:          tSample,
+			sc.items = append(sc.items, shardedItem{
+				ref: ref,
+				ts: timeSeries{
+					seriesLabels:   t.nhcbBuilder.Labels(),
+					metadata:       meta,
+					startTimestamp: 0,
+					timestamp:      ts,
+					value:          staleVal,
+					sType:          tSample,
+				},
 			})
 		}
 	}
+	var replacementItem *shardedItem
 	if err == nil {
 		if isStale || t.series.lookup(ref).state != seriesStateActive {
 			if !sameBounds {
@@ -1191,7 +1279,11 @@ func (t *QueueManager) convertAndEnqueueNHCB(ref chunks.HeadSeriesRef, st, ts in
 			t.nhcbSeriesBounds[ref] = layout
 		}
 		if replacement != nil {
-			classicSeries = append(classicSeries, *replacement)
+			if replacement.sType == tSample {
+				sc.items = append(sc.items, shardedItem{ref: ref, ts: *replacement})
+			} else {
+				replacementItem = &shardedItem{ref: ref, ts: *replacement}
+			}
 		}
 	}
 	t.nhcbMtx.Unlock()
@@ -1201,40 +1293,66 @@ func (t *QueueManager) convertAndEnqueueNHCB(ref chunks.HeadSeriesRef, st, ts in
 		t.dataDropped.incr(1)
 		return true
 	}
-	if len(classicSeries) > 1 {
+	totalProduced := len(sc.items)
+	if replacementItem != nil {
+		totalProduced++
+	}
+	if totalProduced > 1 {
 		// WriteStorage counts the incoming sample as a single item in dataIn;
 		// account for the extra classic series produced by NHCB expansion here.
-		t.dataInExpanded.incr(int64(len(classicSeries) - 1))
+		t.dataInExpanded.incr(int64(totalProduced - 1))
 	}
-	for _, s := range classicSeries {
-		backoff := model.Duration(5 * time.Millisecond)
-		for {
-			select {
-			case <-t.quit:
-				return false
-			default:
-			}
-			if t.shards.enqueue(ref, s) {
-				break
-			}
-
-			t.metrics.enqueueRetriesTotal.Inc()
-			time.Sleep(time.Duration(backoff))
-			backoff *= 2
-			if backoff > t.cfg.MaxBackoff {
-				backoff = t.cfg.MaxBackoff
-			}
+	if len(sc.items) > 0 {
+		if !t.enqueueBatch(sc, tSample, ts, 5*time.Millisecond) {
+			return false
+		}
+	}
+	if replacementItem != nil {
+		sc.items = append(sc.items[:0], *replacementItem)
+		if !t.enqueueBatch(sc, replacementItem.ts.sType, replacementItem.ts.timestamp, 5*time.Millisecond) {
+			return false
 		}
 	}
 	return true
 }
 
 func (t *QueueManager) AppendHistograms(histograms []record.RefHistogramSample) bool {
-	if !t.sendNativeHistograms && !t.convertNHCBToClassic {
+	if (!t.sendNativeHistograms && !t.convertNHCBToClassic) || len(histograms) == 0 {
 		return true
 	}
 	currentTime := time.Now()
-outer:
+	sc := appendScratchPool.Get().(*appendScratch)
+	defer func() {
+		sc.items = sc.items[:0]
+		appendScratchPool.Put(sc)
+	}()
+
+	var nTooOld, nNHCBNotSupported, nDropped, nUnintentional int
+	flushDrops := func() {
+		if nTooOld > 0 {
+			t.metrics.droppedHistogramsTotal.WithLabelValues(reasonTooOld).Add(float64(nTooOld))
+			nTooOld = 0
+		}
+		if nNHCBNotSupported > 0 {
+			t.metrics.droppedHistogramsTotal.WithLabelValues(reasonNHCBNotSupported).Add(float64(nNHCBNotSupported))
+			nNHCBNotSupported = 0
+		}
+		if droppedTotal := nDropped + nUnintentional; droppedTotal > 0 {
+			t.dataDropped.incr(int64(droppedTotal))
+			if nDropped > 0 {
+				t.metrics.droppedHistogramsTotal.WithLabelValues(reasonDroppedSeries).Add(float64(nDropped))
+				nDropped = 0
+			}
+			if nUnintentional > 0 {
+				t.metrics.droppedHistogramsTotal.WithLabelValues(reasonUnintentionalDroppedSeries).Add(float64(nUnintentional))
+				nUnintentional = 0
+			}
+		}
+	}
+
+	sc.items = sc.items[:0]
+	var maxTS int64 = math.MinInt64
+
 	for _, h := range histograms {
 		isNHCB := h.H != nil && h.H.Schema == histogram.CustomBucketsSchema
 		isStale := h.H != nil && value.IsStaleNaN(h.H.Sum)
@@ -1250,29 +1368,36 @@ outer:
 			continue
 		}
 		if isSampleOld(currentTime, time.Duration(t.cfg.SampleAgeLimit), h.T) {
-			t.metrics.droppedHistogramsTotal.WithLabelValues(reasonTooOld).Inc()
+			nTooOld++
 			continue
 		}
 		if !t.convertNHCBToClassic && t.protoMsg == remoteapi.WriteV1MessageType && isNHCB {
 			// We cannot send native histograms with custom buckets (NHCB) via remote write v1.
-			t.metrics.droppedHistogramsTotal.WithLabelValues(reasonNHCBNotSupported).Inc()
+			nNHCBNotSupported++
 			t.logger.Warn("Dropped native histogram with custom buckets (NHCB) as remote write v1 does not support it", "ref", h.Ref)
 			continue
 		}
 		entry := t.series.lookup(h.Ref)
 		if entry.state != seriesStateActive {
-			t.dataDropped.incr(1)
 			if entry.state == seriesStateDropped {
-				t.metrics.droppedHistogramsTotal.WithLabelValues(reasonDroppedSeries).Inc()
+				nDropped++
 			} else {
 				t.logger.Info("Dropped histogram for series that was not explicitly dropped via relabelling", "ref", h.Ref)
-				t.metrics.droppedHistogramsTotal.WithLabelValues(reasonUnintentionalDroppedSeries).Inc()
+				nUnintentional++
 			}
 			continue
 		}
 		lbls := entry.labels
 		meta := entry.metadata
 		if transition || convertNHCB {
+			flushDrops()
+			if len(sc.items) > 0 {
+				if !t.enqueueBatch(sc, tHistogram, maxTS, 5*time.Millisecond) {
+					return false
+				}
+				sc.items = sc.items[:0]
+				maxTS = math.MinInt64
+			}
 			t.nhcbMtx.Lock()
 			if !isNHCB {
 				_, isTrackedNHCB = t.nhcbSeriesBounds[h.Ref]
@@ -1309,42 +1434,66 @@ outer:
 		if t.mode != remoteapi.WriteModeNone && t.shouldDropHistogramForMode(h.Ref, h.ST, isStale, lbls, meta) {
 			continue
 		}
-
-		backoff := model.Duration(5 * time.Millisecond)
-		for {
-			select {
-			case <-t.quit:
-				return false
-			default:
-			}
-			if t.shards.enqueue(h.Ref, timeSeries{
+		if h.T > maxTS {
+			maxTS = h.T
+		}
+		sc.items = append(sc.items, shardedItem{
+			ref: h.Ref,
+			ts: timeSeries{
 				seriesLabels:   lbls,
 				metadata:       meta,
 				startTimestamp: h.ST,
 				timestamp:      h.T,
 				histogram:      h.H,
 				sType:          tHistogram,
-			}) {
-				continue outer
-			}
+			},
+		})
+	}
 
-			t.metrics.enqueueRetriesTotal.Inc()
-			time.Sleep(time.Duration(backoff))
-			backoff *= 2
-			if backoff > t.cfg.MaxBackoff {
-				backoff = t.cfg.MaxBackoff
-			}
-		}
+	flushDrops()
+	if len(sc.items) > 0 {
+		return t.enqueueBatch(sc, tHistogram, maxTS, 5*time.Millisecond)
 	}
 	return true
 }
 
 func (t *QueueManager) AppendFloatHistograms(floatHistograms []record.RefFloatHistogramSample) bool {
-	if !t.sendNativeHistograms && !t.convertNHCBToClassic {
+	if (!t.sendNativeHistograms && !t.convertNHCBToClassic) || len(floatHistograms) == 0 {
 		return true
 	}
 	currentTime := time.Now()
-outer:
+	sc := appendScratchPool.Get().(*appendScratch)
+	defer func() {
+		sc.items = sc.items[:0]
+		appendScratchPool.Put(sc)
+	}()
+
+	var nTooOld, nNHCBNotSupported, nDropped, nUnintentional int
+	flushDrops := func() {
+		if nTooOld > 0 {
+			t.metrics.droppedHistogramsTotal.WithLabelValues(reasonTooOld).Add(float64(nTooOld))
+			nTooOld = 0
+		}
+		if nNHCBNotSupported > 0 {
+			t.metrics.droppedHistogramsTotal.WithLabelValues(reasonNHCBNotSupported).Add(float64(nNHCBNotSupported))
+			nNHCBNotSupported = 0
+		}
+		if droppedTotal := nDropped + nUnintentional; droppedTotal > 0 {
+			t.dataDropped.incr(int64(droppedTotal))
+			if nDropped > 0 {
+				t.metrics.droppedHistogramsTotal.WithLabelValues(reasonDroppedSeries).Add(float64(nDropped))
+				nDropped = 0
+			}
+			if nUnintentional > 0 {
+				t.metrics.droppedHistogramsTotal.WithLabelValues(reasonUnintentionalDroppedSeries).Add(float64(nUnintentional))
+				nUnintentional = 0
+			}
+		}
+	}
+
+	sc.items = sc.items[:0]
+	var maxTS int64 = math.MinInt64
+
 	for _, h := range floatHistograms {
 		isNHCB := h.FH != nil && h.FH.Schema == histogram.CustomBucketsSchema
 		isStale := h.FH != nil && value.IsStaleNaN(h.FH.Sum)
@@ -1360,29 +1509,36 @@ outer:
 			continue
 		}
 		if isSampleOld(currentTime, time.Duration(t.cfg.SampleAgeLimit), h.T) {
-			t.metrics.droppedHistogramsTotal.WithLabelValues(reasonTooOld).Inc()
+			nTooOld++
 			continue
 		}
 		if !t.convertNHCBToClassic && t.protoMsg == remoteapi.WriteV1MessageType && isNHCB {
 			// We cannot send native histograms with custom buckets (NHCB) via remote write v1.
-			t.metrics.droppedHistogramsTotal.WithLabelValues(reasonNHCBNotSupported).Inc()
+			nNHCBNotSupported++
 			t.logger.Warn("Dropped float native histogram with custom buckets (NHCB) as remote write v1 does not support it", "ref", h.Ref)
 			continue
 		}
 		entry := t.series.lookup(h.Ref)
 		if entry.state != seriesStateActive {
-			t.dataDropped.incr(1)
 			if entry.state == seriesStateDropped {
-				t.metrics.droppedHistogramsTotal.WithLabelValues(reasonDroppedSeries).Inc()
+				nDropped++
 			} else {
 				t.logger.Info("Dropped histogram for series that was not explicitly dropped via relabelling", "ref", h.Ref)
-				t.metrics.droppedHistogramsTotal.WithLabelValues(reasonUnintentionalDroppedSeries).Inc()
+				nUnintentional++
 			}
 			continue
 		}
 		lbls := entry.labels
 		meta := entry.metadata
 		if transition || convertNHCB {
+			flushDrops()
+			if len(sc.items) > 0 {
+				if !t.enqueueBatch(sc, tFloatHistogram, maxTS, 5*time.Millisecond) {
+					return false
+				}
+				sc.items = sc.items[:0]
+				maxTS = math.MinInt64
+			}
 			t.nhcbMtx.Lock()
 			if !isNHCB {
 				_, isTrackedNHCB = t.nhcbSeriesBounds[h.Ref]
@@ -1419,32 +1575,25 @@ outer:
 		if t.mode != remoteapi.WriteModeNone && t.shouldDropHistogramForMode(h.Ref, h.ST, isStale, lbls, meta) {
 			continue
 		}
-
-		backoff := model.Duration(5 * time.Millisecond)
-		for {
-			select {
-			case <-t.quit:
-				return false
-			default:
-			}
-			if t.shards.enqueue(h.Ref, timeSeries{
+		if h.T > maxTS {
+			maxTS = h.T
+		}
+		sc.items = append(sc.items, shardedItem{
+			ref: h.Ref,
+			ts: timeSeries{
 				seriesLabels:   lbls,
 				metadata:       meta,
 				startTimestamp: h.ST,
 				timestamp:      h.T,
 				floatHistogram: h.FH,
 				sType:          tFloatHistogram,
-			}) {
-				continue outer
-			}
+			},
+		})
+	}
 
-			t.metrics.enqueueRetriesTotal.Inc()
-			time.Sleep(time.Duration(backoff))
-			backoff *= 2
-			if backoff > t.cfg.MaxBackoff {
-				backoff = t.cfg.MaxBackoff
-			}
-		}
+	flushDrops()
+	if len(sc.items) > 0 {
+		return t.enqueueBatch(sc, tFloatHistogram, maxTS, 5*time.Millisecond)
 	}
 	return true
 }
@@ -1806,39 +1955,202 @@ func (s *shards) stop() {
 	logDroppedError("histograms", s.histogramsDroppedOnHardShutdown)
 }
 
-// enqueue data (sample or exemplar). If the shard is full, shutting down, or
-// resharding, it will return false; in this case, you should back off and
-// retry. A shard is full when its configured capacity has been reached,
-// specifically, when s.queues[shard] has filled its batchQueue channel and the
-// partial batch has also been filled.
-func (s *shards) enqueue(ref chunks.HeadSeriesRef, data timeSeries) bool {
-	s.mtx.RLock()
-	defer s.mtx.RUnlock()
-	shard := uint64(ref) % uint64(len(s.queues))
-	select {
-	case <-s.softShutdown:
-		return false
-	default:
-		appended := s.queues[shard].Append(data)
-		if !appended {
-			return false
+// enqueueBatch enqueues sc.items into their target shards, batching RWMutex, per-shard
+// batchMtx, and pending/timestamp metric updates across the slice. When a shard's queue is
+// full, it waits on that queue's drained notification channel rather than sleeping blindly.
+func (t *QueueManager) enqueueBatch(sc *appendScratch, sType seriesType, maxTS int64, initBackoff time.Duration) bool {
+	backoff := model.Duration(initBackoff)
+	timerActive := false
+	defer func() {
+		if timerActive && !sc.timer.Stop() {
+			select {
+			case <-sc.timer.C:
+			default:
+			}
 		}
-		switch data.sType {
-		case tSample:
-			s.qm.metrics.pendingSamples.Inc()
-			s.enqueuedSamples.Inc()
-		case tExemplar:
-			s.qm.metrics.pendingExemplars.Inc()
-			s.enqueuedExemplars.Inc()
-		case tHistogram, tFloatHistogram:
-			s.qm.metrics.pendingHistograms.Inc()
-			s.enqueuedHistograms.Inc()
+	}()
+
+	for len(sc.items) > 0 {
+		select {
+		case <-t.quit:
+			return false
 		default:
+		}
+
+		blockedQueue, softShutdown := t.shards.tryEnqueueBatch(sc, sType, maxTS)
+		if len(sc.items) == 0 {
 			return true
 		}
-		s.qm.metrics.highestTimestamp.Set(float64(data.timestamp / 1000))
-		return true
+
+		t.metrics.enqueueRetriesTotal.Inc()
+		if backoff > t.cfg.MaxBackoff {
+			backoff = t.cfg.MaxBackoff
+		}
+		if sc.timer == nil {
+			sc.timer = time.NewTimer(time.Duration(backoff))
+		} else {
+			if !sc.timer.Stop() {
+				select {
+				case <-sc.timer.C:
+				default:
+				}
+			}
+			sc.timer.Reset(time.Duration(backoff))
+		}
+		timerActive = true
+
+		if blockedQueue != nil {
+			select {
+			case <-t.quit:
+				return false
+			case <-blockedQueue.drained:
+				// A batch was consumed from the full shard; retry immediately without increasing backoff.
+				continue
+			case <-softShutdown:
+				// Shards are resharding or stopping; wait for timer so reshardLoop can swap queues.
+				select {
+				case <-t.quit:
+					return false
+				case <-sc.timer.C:
+				}
+			case <-sc.timer.C:
+			}
+		} else {
+			// softShutdown was closed before any queue blocked; wait briefly for reshard or quit.
+			select {
+			case <-t.quit:
+				return false
+			case <-sc.timer.C:
+			}
+		}
+		backoff = min(backoff*2, t.cfg.MaxBackoff)
 	}
+	return true
+}
+
+// tryEnqueueBatch attempts to enqueue sc.items under a single RLock and leaves any
+// unaccepted items compacted in sc.items.
+func (s *shards) tryEnqueueBatch(sc *appendScratch, sType seriesType, maxTS int64) (*queue, <-chan struct{}) {
+	s.mtx.RLock()
+	softShutdown := s.softShutdown
+	select {
+	case <-softShutdown:
+		s.mtx.RUnlock()
+		return nil, softShutdown
+	default:
+	}
+
+	nQueues := len(s.queues)
+	items := sc.items
+
+	var (
+		totalAccepted int
+		blockedQueue  *queue
+		acceptedMaxTS int64 = math.MinInt64
+	)
+
+	if nQueues == 1 {
+		accepted := s.queues[0].appendShardedItems(items)
+		totalAccepted = accepted
+		if accepted == len(items) {
+			acceptedMaxTS = maxTS
+			sc.items = items[:0]
+		} else {
+			blockedQueue = s.queues[0]
+			for i := range accepted {
+				if items[i].ts.timestamp > acceptedMaxTS {
+					acceptedMaxTS = items[i].ts.timestamp
+				}
+			}
+			n := copy(items, items[accepted:])
+			sc.items = items[:n]
+		}
+	} else {
+		if cap(sc.order) < len(items) {
+			sc.order = make([]int, len(items))
+		} else {
+			sc.order = sc.order[:len(items)]
+		}
+		if cap(sc.counts) < nQueues {
+			sc.counts = make([]int, nQueues)
+			sc.offsets = make([]int, nQueues+1)
+			sc.cursors = make([]int, nQueues)
+		} else {
+			sc.counts = sc.counts[:nQueues]
+			sc.offsets = sc.offsets[:nQueues+1]
+			sc.cursors = sc.cursors[:nQueues]
+			clear(sc.counts)
+		}
+
+		nQueuesU64 := uint64(nQueues)
+		for i := range items {
+			sc.counts[uint64(items[i].ref)%nQueuesU64]++
+		}
+		sc.offsets[0] = 0
+		for sh := range nQueues {
+			sc.offsets[sh+1] = sc.offsets[sh] + sc.counts[sh]
+		}
+		copy(sc.cursors, sc.offsets[:nQueues])
+		for i := range items {
+			sh := int(uint64(items[i].ref) % nQueuesU64)
+			pos := sc.cursors[sh]
+			sc.order[pos] = i
+			sc.cursors[sh] = pos + 1
+		}
+
+		for sh := range nQueues {
+			start, end := sc.offsets[sh], sc.offsets[sh+1]
+			if start == end {
+				continue
+			}
+			accepted := s.queues[sh].appendIndexed(items, sc.order[start:end])
+			sc.cursors[sh] = accepted
+			totalAccepted += accepted
+			if accepted < end-start && blockedQueue == nil {
+				blockedQueue = s.queues[sh]
+			}
+		}
+
+		if totalAccepted == len(items) {
+			acceptedMaxTS = maxTS
+			sc.items = items[:0]
+		} else {
+			rem := 0
+			for i := range items {
+				sh := int(uint64(items[i].ref) % nQueuesU64)
+				if sc.cursors[sh] > 0 {
+					sc.cursors[sh]--
+					if items[i].ts.timestamp > acceptedMaxTS {
+						acceptedMaxTS = items[i].ts.timestamp
+					}
+					continue
+				}
+				items[rem] = items[i]
+				rem++
+			}
+			sc.items = items[:rem]
+		}
+	}
+
+	if totalAccepted > 0 {
+		switch sType {
+		case tSample:
+			s.qm.metrics.pendingSamples.Add(float64(totalAccepted))
+			s.enqueuedSamples.Add(int64(totalAccepted))
+		case tExemplar:
+			s.qm.metrics.pendingExemplars.Add(float64(totalAccepted))
+			s.enqueuedExemplars.Add(int64(totalAccepted))
+		case tHistogram, tFloatHistogram:
+			s.qm.metrics.pendingHistograms.Add(float64(totalAccepted))
+			s.enqueuedHistograms.Add(int64(totalAccepted))
+		}
+		if acceptedMaxTS != math.MinInt64 {
+			s.qm.metrics.highestTimestamp.Set(float64(acceptedMaxTS / 1000))
+		}
+	}
+
+	s.mtx.RUnlock()
+	return blockedQueue, softShutdown
 }
 
 type queue struct {
@@ -1846,6 +2158,8 @@ type queue struct {
 	batchMtx   sync.Mutex
 	batch      []timeSeries
 	batchQueue chan []timeSeries
+	// drained signals blocked producers when a batch has been consumed from batchQueue.
+	drained chan struct{}
 
 	// Since we know there are a limited number of batches out, using a stack
 	// is easy and safe so a sync.Pool is not necessary.
@@ -1866,7 +2180,7 @@ type timeSeries struct {
 	sType seriesType
 }
 
-type seriesType int
+type seriesType uint8
 
 const (
 	tSample seriesType = iota
@@ -1878,7 +2192,7 @@ const (
 
 func newQueue(batchSize, capacity int) *queue {
 	batches := capacity / batchSize
-	// Always create an unbuffered channel even if capacity is configured to be
+	// Always create a buffered channel even if capacity is configured to be
 	// less than max_samples_per_send.
 	if batches == 0 {
 		batches = 1
@@ -1886,34 +2200,78 @@ func newQueue(batchSize, capacity int) *queue {
 	return &queue{
 		batch:      make([]timeSeries, 0, batchSize),
 		batchQueue: make(chan []timeSeries, batches),
+		drained:    make(chan struct{}, 1),
 		// batchPool should have capacity for everything in the channel + 1 for
 		// the batch being processed.
 		batchPool: make([][]timeSeries, 0, batches+1),
 	}
 }
 
-// Append the timeSeries to the buffered batch. Returns false if it
-// cannot be added and must be retried.
-func (q *queue) Append(datum timeSeries) bool {
-	q.batchMtx.Lock()
-	defer q.batchMtx.Unlock()
-	// TODO(cstyan): Check if metadata now means we've reduced the total # of samples
-	// we can batch together here, and if so find a way to not include metadata
-	// in the batch size calculation.
-	// See https://github.com/prometheus/prometheus/issues/14405
-	q.batch = append(q.batch, datum)
-	if len(q.batch) == cap(q.batch) {
+func (q *queue) flushFullBatchLocked() bool {
+	for {
 		select {
 		case q.batchQueue <- q.batch:
 			q.batch = q.newBatch(cap(q.batch))
 			return true
 		default:
-			// Remove the sample we just appended. It will get retried.
+			// Clear any stale drain notification before unlocking so a blocked caller
+			// waits for the next batch consumed by runShard. If a drain signal was
+			// present, a slot in batchQueue may have opened after the send check above,
+			// so retry sending once more before giving up.
+			select {
+			case <-q.drained:
+				continue
+			default:
+			}
+			// Remove the last sample we just appended so q.batch stays below capacity
+			// and will trigger a flush when retried.
 			q.batch = q.batch[:len(q.batch)-1]
 			return false
 		}
 	}
-	return true
+}
+
+// appendShardedItems appends as many items from src as fit into q without blocking,
+// returning the number of items accepted.
+func (q *queue) appendShardedItems(src []shardedItem) int {
+	q.batchMtx.Lock()
+	batchCap := cap(q.batch)
+	for i := range src {
+		q.batch = append(q.batch, src[i].ts)
+		if len(q.batch) == batchCap && !q.flushFullBatchLocked() {
+			q.batchMtx.Unlock()
+			return i
+		}
+	}
+	q.batchMtx.Unlock()
+	return len(src)
+}
+
+// appendIndexed appends items[indices[0..]] directly into q.batch under a single lock,
+// avoiding an intermediate copy of the 80-byte timeSeries struct.
+func (q *queue) appendIndexed(items []shardedItem, indices []int) int {
+	q.batchMtx.Lock()
+	batchCap := cap(q.batch)
+	for i, idx := range indices {
+		// TODO(cstyan): Check if metadata now means we've reduced the total # of samples
+		// we can batch together here, and if so find a way to not include metadata
+		// in the batch size calculation.
+		// See https://github.com/prometheus/prometheus/issues/14405
+		q.batch = append(q.batch, items[idx].ts)
+		if len(q.batch) == batchCap && !q.flushFullBatchLocked() {
+			q.batchMtx.Unlock()
+			return i
+		}
+	}
+	q.batchMtx.Unlock()
+	return len(indices)
+}
+
+func (q *queue) notifyDrained() {
+	select {
+	case q.drained <- struct{}{}:
+	default:
+	}
 }
 
 func (q *queue) Chan() <-chan []timeSeries {
@@ -1926,6 +2284,7 @@ func (q *queue) Batch() []timeSeries {
 	defer q.batchMtx.Unlock()
 	select {
 	case batch := <-q.batchQueue:
+		q.notifyDrained()
 		return batch
 	default:
 		batch := q.batch
@@ -1937,10 +2296,10 @@ func (q *queue) Batch() []timeSeries {
 // ReturnForReuse adds the batch buffer back to the internal pool.
 func (q *queue) ReturnForReuse(batch []timeSeries) {
 	q.poolMtx.Lock()
-	defer q.poolMtx.Unlock()
 	if len(q.batchPool) < cap(q.batchPool) {
 		q.batchPool = append(q.batchPool, batch[:0])
 	}
+	q.poolMtx.Unlock()
 }
 
 // FlushAndShutdown stops the queue and flushes any samples. No appends can be
@@ -1951,6 +2310,7 @@ loop:
 		select {
 		case <-done:
 			break loop
+		case <-q.drained:
 		case <-time.After(time.Second):
 		}
 	}
@@ -1970,28 +2330,36 @@ func (q *queue) tryEnqueueingBatch(done <-chan struct{}) bool {
 		return false
 	}
 
-	select {
-	case q.batchQueue <- q.batch:
-		return false
-	case <-done:
-		// The shard has been hard shut down, so no more samples can be sent.
-		// No need to try again as we will drop everything left in the queue.
-		return false
-	default:
-		// The batchQueue is full, so we need to try again later.
-		return true
+	for {
+		select {
+		case q.batchQueue <- q.batch:
+			return false
+		case <-done:
+			// The shard has been hard shut down, so no more samples can be sent.
+			// No need to try again as we will drop everything left in the queue.
+			return false
+		default:
+			select {
+			case <-q.drained:
+				continue
+			default:
+			}
+			// The batchQueue is full, so we need to try again later.
+			return true
+		}
 	}
 }
 
 func (q *queue) newBatch(capacity int) []timeSeries {
 	q.poolMtx.Lock()
-	defer q.poolMtx.Unlock()
 	batches := len(q.batchPool)
 	if batches > 0 {
 		batch := q.batchPool[batches-1]
 		q.batchPool = q.batchPool[:batches-1]
+		q.poolMtx.Unlock()
 		return batch
 	}
+	q.poolMtx.Unlock()
 	return make([]timeSeries, 0, capacity)
 }
 
@@ -2003,16 +2371,18 @@ func (s *shards) runShard(ctx context.Context, shardID int, queue *queue) {
 	}()
 
 	shardNum := strconv.Itoa(shardID)
-	symbolTable := writev2.NewSymbolTable()
 
 	// Send batches of at most MaxSamplesPerSend samples to the remote storage.
 	// If we have fewer samples than that, flush them out after a deadline anyways.
 	var (
 		maxCount = s.qm.cfg.MaxSamplesPerSend
 
-		pBuf    = proto.NewBuffer(nil)
-		pBufRaw []byte
-		encBuf  = compression.NewSyncEncodeBuffer()
+		pBuf          *proto.Buffer
+		pBufRaw       []byte
+		encBuf        = compression.NewSyncEncodeBuffer()
+		symbolTable   writev2.SymbolsTable
+		pendingData   []prompb.TimeSeries
+		pendingDataV2 []writev2.TimeSeries
 	)
 	// TODO(@tpaschalis) Should we also raise the max if we have WAL metadata?
 	if s.qm.sendExemplars {
@@ -2021,16 +2391,28 @@ func (s *shards) runShard(ctx context.Context, shardID int, queue *queue) {
 
 	// TODO: Dry all of this, we should make an interface/generic for the timeseries type.
 	batchQueue := queue.Chan()
-	pendingData := make([]prompb.TimeSeries, maxCount)
-	for i := range pendingData {
-		pendingData[i].Samples = []prompb.Sample{{}}
+	switch s.qm.protoMsg {
+	case remoteapi.WriteV1MessageType:
+		pBuf = proto.NewBuffer(nil)
+		pendingData = make([]prompb.TimeSeries, maxCount)
+		samplesBacking := make([]prompb.Sample, maxCount)
+		var exemplarsBacking []prompb.Exemplar
 		if s.qm.sendExemplars {
-			pendingData[i].Exemplars = []prompb.Exemplar{{}}
+			exemplarsBacking = make([]prompb.Exemplar, maxCount)
 		}
-	}
-	pendingDataV2 := make([]writev2.TimeSeries, maxCount)
-	for i := range pendingDataV2 {
-		pendingDataV2[i].Samples = []writev2.Sample{{}}
+		for i := range pendingData {
+			pendingData[i].Samples = samplesBacking[i : i : i+1]
+			if s.qm.sendExemplars {
+				pendingData[i].Exemplars = exemplarsBacking[i : i : i+1]
+			}
+		}
+	case remoteapi.WriteV2MessageType:
+		symbolTable = writev2.NewSymbolTable()
+		pendingDataV2 = make([]writev2.TimeSeries, maxCount)
+		samplesBacking := make([]writev2.Sample, maxCount)
+		for i := range pendingDataV2 {
+			pendingDataV2[i].Samples = samplesBacking[i : i : i+1]
+		}
 	}
 
 	timer := time.NewTimer(time.Duration(s.qm.cfg.BatchSendDeadline))
@@ -2088,6 +2470,7 @@ func (s *shards) runShard(ctx context.Context, shardID int, queue *queue) {
 			if !ok {
 				return
 			}
+			queue.notifyDrained()
 
 			sendBatch(batch, s.qm.protoMsg, s.qm.compr, false)
 			// TODO(bwplotka): Previously the return was between popular and send.
@@ -2794,12 +3177,12 @@ func (b *batchMetricsUpdater) recordBatchAttempt(sc sendBatchContext) {
 }
 
 func (b *batchMetricsUpdater) recordV2WithMetadataAttempt(counts v2WithMetadataCounts) {
-	b.metrics.samplesMetadataTotal.WithLabelValues(metadataFieldType).Add(float64(counts.samples.typ))
-	b.metrics.samplesMetadataTotal.WithLabelValues(metadataFieldUnit).Add(float64(counts.samples.unit))
-	b.metrics.samplesMetadataTotal.WithLabelValues(metadataFieldHelp).Add(float64(counts.samples.help))
-	b.metrics.histogramsMetadataTotal.WithLabelValues(metadataFieldType).Add(float64(counts.histograms.typ))
-	b.metrics.histogramsMetadataTotal.WithLabelValues(metadataFieldUnit).Add(float64(counts.histograms.unit))
-	b.metrics.histogramsMetadataTotal.WithLabelValues(metadataFieldHelp).Add(float64(counts.histograms.help))
+	b.metrics.samplesMetadataType.Add(float64(counts.samples.typ))
+	b.metrics.samplesMetadataUnit.Add(float64(counts.samples.unit))
+	b.metrics.samplesMetadataHelp.Add(float64(counts.samples.help))
+	b.metrics.histogramsMetadataType.Add(float64(counts.histograms.typ))
+	b.metrics.histogramsMetadataUnit.Add(float64(counts.histograms.unit))
+	b.metrics.histogramsMetadataHelp.Add(float64(counts.histograms.help))
 }
 
 // recordLatency records the observed send duration for a batch attempt.

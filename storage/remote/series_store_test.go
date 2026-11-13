@@ -14,13 +14,19 @@
 package remote
 
 import (
+	"context"
 	"math"
 	"strconv"
+	"sync"
 	"testing"
+	"time"
 
+	remoteapi "github.com/prometheus/client_golang/exp/api/remote"
+	client_testutil "github.com/prometheus/client_golang/prometheus/testutil"
 	"github.com/prometheus/common/model"
 	"github.com/stretchr/testify/require"
 
+	"github.com/prometheus/prometheus/config"
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/model/metadata"
 	"github.com/prometheus/prometheus/model/relabel"
@@ -186,4 +192,163 @@ func TestSeriesStore_DenseSparseAndLifecycle(t *testing.T) {
 	}, 5, nil, nil)
 	require.NotNil(t, store.stripes[1].pages[0])
 	require.Equal(t, seriesStateActive, store.lookup(stripe1Base).state)
+}
+
+func TestQueueManager_ConcurrentAppendBackpressureAndSeriesReset(t *testing.T) {
+	t.Parallel()
+
+	for _, maxBatch := range []int{1, 10} {
+		t.Run("max_batch="+strconv.Itoa(maxBatch), func(t *testing.T) {
+			t.Parallel()
+
+			recClient := NewTestWriteClient(remoteapi.WriteV2MessageType)
+			client := &MockWriteClient{
+				StoreFunc: func(ctx context.Context, req []byte, attempt int) (WriteResponseStats, error) {
+					// Small delay so shard queues fill and exercise drained wakeups.
+					select {
+					case <-time.After(time.Millisecond):
+					case <-ctx.Done():
+						return WriteResponseStats{}, ctx.Err()
+					}
+					return recClient.Store(ctx, req, attempt)
+				},
+				NameFunc:     recClient.Name,
+				EndpointFunc: recClient.Endpoint,
+			}
+
+			cfg := config.DefaultQueueConfig
+			cfg.MinShards = 4
+			cfg.MaxShards = 4
+			cfg.MaxSamplesPerSend = maxBatch
+			cfg.Capacity = maxBatch * 2
+			cfg.BatchSendDeadline = model.Duration(10 * time.Millisecond)
+
+			qm := newTestQueueManager(t, cfg, config.DefaultMetadataConfig, 5*time.Second, client, remoteapi.WriteV2MessageType)
+
+			const activeSeries = 200
+			var initial []record.RefSeries
+			var initialMeta []record.RefMetadata
+			for i := range activeSeries {
+				ref := chunks.HeadSeriesRef(i + 1)
+				initial = append(initial, record.RefSeries{
+					Ref:    ref,
+					Labels: labels.FromStrings("__name__", "active_metric", "idx", strconv.Itoa(i)),
+				})
+				initialMeta = append(initialMeta, record.RefMetadata{
+					Ref:  ref,
+					Type: uint8(record.Counter),
+					Help: "active counter",
+				})
+			}
+			qm.StoreSeries(initial, 10)
+			qm.StoreMetadata(initialMeta)
+
+			qm.Start()
+
+			// Run concurrent ephemeral series churn + SeriesReset alongside Append.
+			var wg sync.WaitGroup
+			stopChurn := make(chan struct{})
+			wg.Go(func() {
+				seg := 1
+				for {
+					select {
+					case <-stopChurn:
+						return
+					default:
+					}
+					ephemeral := []record.RefSeries{
+						{Ref: chunks.HeadSeriesRef(10_000 + seg), Labels: labels.FromStrings("__name__", "churn")},
+					}
+					qm.StoreSeries(ephemeral, seg)
+					qm.UpdateSeriesSegment(initial, 10)
+					qm.SeriesReset(seg + 1)
+					seg++
+					if seg >= 9 {
+						seg = 1
+					}
+				}
+			})
+
+			samples := make([]record.RefSample, activeSeries)
+			for round := range 5 {
+				for i := range activeSeries {
+					samples[i] = record.RefSample{
+						Ref: chunks.HeadSeriesRef(i + 1),
+						T:   int64(1_000_000 + round*1000 + i),
+						V:   float64(round),
+					}
+				}
+				require.True(t, qm.Append(samples))
+			}
+
+			close(stopChurn)
+			wg.Wait()
+			qm.Stop()
+
+			require.Zero(t, client_testutil.ToFloat64(qm.metrics.droppedSamplesTotal.WithLabelValues(reasonUnintentionalDroppedSeries)))
+			require.Zero(t, client_testutil.ToFloat64(qm.metrics.failedSamplesTotal))
+			require.Zero(t, client_testutil.ToFloat64(qm.metrics.pendingSamples))
+			require.Equal(t, 5*activeSeries, deepLen(recClient.receivedSamples))
+			for i, s := range initial {
+				got := recClient.receivedSamples[s.Labels.String()]
+				require.Len(t, got, 5, "series %d (%s)", i, s.Labels)
+				for round := range 5 {
+					require.Equal(t, int64(1_000_000+round*1000+i), got[round].Timestamp)
+					require.Equal(t, float64(round), got[round].Value)
+				}
+			}
+		})
+	}
+}
+
+func TestShards_TryEnqueueBatchPartialMultiShard(t *testing.T) {
+	t.Parallel()
+
+	cfg := config.DefaultQueueConfig
+	cfg.MinShards = 2
+	cfg.MaxShards = 2
+	cfg.MaxSamplesPerSend = 2
+	cfg.Capacity = 2 // 1 batch of 2 in batchQueue + 1 partial batch of <2 in q.batch (max 3 buffered before blocking).
+
+	qm := newTestQueueManager(t, cfg, config.DefaultMetadataConfig, defaultFlushDeadline, NewTestBlockedWriteClient(), remoteapi.WriteV2MessageType)
+	// Populate 2 shard queues without starting background runShard consumers so we can
+	// deterministically inspect partial acceptance and compaction.
+	qm.shards.queues = []*queue{
+		newQueue(cfg.MaxSamplesPerSend, cfg.Capacity),
+		newQueue(cfg.MaxSamplesPerSend, cfg.Capacity),
+	}
+
+	// Pre-fill shard 1 (1 full batch of 2 in batchQueue + 1 item in partial batch = 3 items).
+	// Next item on shard 1 will fill the partial batch to 2 and fail flushFullBatchLocked().
+	require.Equal(t, 3, qm.shards.queues[1].appendShardedItems([]shardedItem{
+		{ts: timeSeries{timestamp: 100}},
+		{ts: timeSeries{timestamp: 101}},
+		{ts: timeSeries{timestamp: 102}},
+	}))
+
+	sc := &appendScratch{
+		items: []shardedItem{
+			{ref: 0, ts: timeSeries{timestamp: 1000, value: 1, sType: tSample}}, // Shard 0 (even ref).
+			{ref: 1, ts: timeSeries{timestamp: 5000, value: 2, sType: tSample}}, // Shard 1 (odd ref, blocked).
+			{ref: 2, ts: timeSeries{timestamp: 2000, value: 3, sType: tSample}}, // Shard 0 (even ref).
+			{ref: 3, ts: timeSeries{timestamp: 6000, value: 4, sType: tSample}}, // Shard 1 (odd ref, blocked).
+		},
+	}
+
+	blocked, _ := qm.shards.tryEnqueueBatch(sc, tSample, 6000)
+	require.Same(t, qm.shards.queues[1], blocked)
+	// Only the 2 shard-0 items were accepted; the 2 shard-1 items must remain compacted in sc.items.
+	require.Len(t, sc.items, 2)
+	require.Equal(t, chunks.HeadSeriesRef(1), sc.items[0].ref)
+	require.Equal(t, chunks.HeadSeriesRef(3), sc.items[1].ref)
+	require.Equal(t, 2.0, client_testutil.ToFloat64(qm.metrics.pendingSamples))
+	require.Equal(t, 2.0, qm.metrics.highestTimestamp.Get()) // 2000ms / 1000 = 2s (not 6000ms from unaccepted shard 1).
+
+	// Drain 1 batch from shard 1 and retry: now the remaining 2 shard-1 items are accepted.
+	_ = qm.shards.queues[1].Batch()
+	blocked, _ = qm.shards.tryEnqueueBatch(sc, tSample, 6000)
+	require.Nil(t, blocked)
+	require.Empty(t, sc.items)
+	require.Equal(t, 4.0, client_testutil.ToFloat64(qm.metrics.pendingSamples))
+	require.Equal(t, 6.0, qm.metrics.highestTimestamp.Get()) // 6000ms / 1000 = 6s.
 }
