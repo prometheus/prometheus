@@ -1826,9 +1826,9 @@ bar 1
 	require.Equal(t, 7, added)
 	require.Equal(t, 7, seriesAdded)
 	require.Equal(t, 8, mutatorCalls)
-	require.Len(t, sl.cache.series, 7)
-	require.Len(t, sl.cache.seriesMeta, 7)
-	require.Len(t, sl.cache.droppedSeries, 1)
+	require.Equal(t, 7, sl.cache.series.count)
+	require.Equal(t, 7, sl.cache.seriesMeta.count)
+	require.Equal(t, 1, sl.cache.droppedSeries.count)
 
 	// Dropped metric metadata must not be stored in scrapeCache (#14013).
 	_, ok := sl.cache.GetMetadata("dropped_metric")
@@ -1915,9 +1915,9 @@ bar 2
 	require.Equal(t, 2, added)
 	require.Equal(t, 0, seriesAdded)
 	require.Equal(t, 9, mutatorCalls)
-	require.Len(t, sl.cache.series, 2)
-	require.Len(t, sl.cache.seriesMeta, 2)
-	require.Len(t, sl.cache.droppedSeries, 1)
+	require.Equal(t, 2, sl.cache.series.count)
+	require.Equal(t, 2, sl.cache.seriesMeta.count)
+	require.Equal(t, 1, sl.cache.droppedSeries.count)
 
 	md, ok = sl.cache.GetMetadata("bar")
 	require.True(t, ok, "expected bar metadata to be present after second scrape")
@@ -1964,9 +1964,9 @@ bar 3
 	}
 	require.True(t, sawNewBar, "expected new bar series with __type__ label to be appended")
 	require.True(t, sawStaleOldBar, "expected old bar series without __type__ label to be marked stale")
-	require.Len(t, sl.cache.series, 1)
-	require.Len(t, sl.cache.seriesMeta, 1)
-	require.Empty(t, sl.cache.droppedSeries)
+	require.Equal(t, 1, sl.cache.series.count)
+	require.Equal(t, 1, sl.cache.seriesMeta.count)
+	require.Zero(t, sl.cache.droppedSeries.count)
 
 	// Fourth scrape: when a previously cached series has its metadata change so that metric_relabel_configs
 	// drops it, deleteSeries must remove it from series and seriesMeta and add it to droppedSeries.
@@ -1981,9 +1981,9 @@ bar 4
 	require.Equal(t, 0, added)
 	require.Equal(t, 0, seriesAdded)
 	require.Equal(t, 11, mutatorCalls)
-	require.Empty(t, sl.cache.series)
-	require.Empty(t, sl.cache.seriesMeta)
-	require.Len(t, sl.cache.droppedSeries, 1)
+	require.Zero(t, sl.cache.series.count)
+	require.Zero(t, sl.cache.seriesMeta.count)
+	require.Equal(t, 1, sl.cache.droppedSeries.count)
 
 	// Fifth scrape: the newly dropped series must hit droppedSeries without invoking sampleMutator.
 	app = sl.appender()
@@ -1994,7 +1994,7 @@ bar 4
 	require.Equal(t, 0, added)
 	require.Equal(t, 0, seriesAdded)
 	require.Equal(t, 11, mutatorCalls)
-	require.Len(t, sl.cache.droppedSeries, 1)
+	require.Equal(t, 1, sl.cache.droppedSeries.count)
 }
 
 func TestScrapeLoopMetadataRelabeling(t *testing.T) {
@@ -2106,8 +2106,8 @@ untyped_unitless_metric{__type__="gauge",__unit__="bytes",__help__="spoof"} 5
 			require.Equal(t, 3, added)
 			require.Equal(t, 3, seriesAdded)
 			require.Equal(t, 5, mutatorCalls)
-			require.Len(t, sl.cache.droppedSeries, 2)
-			require.Len(t, sl.cache.droppedSeriesMeta, 2)
+			require.Equal(t, 2, sl.cache.droppedSeries.count)
+			require.Equal(t, 2, sl.cache.droppedSeriesMeta.count)
 
 			// Scrape 2: identical payload to exercise the seriesMeta and droppedSeries cache fast paths.
 			app = sl.appender()
@@ -2139,8 +2139,8 @@ untyped_unitless_metric{__type__="gauge",__unit__="bytes",__help__="spoof"} 6
 			require.Equal(t, 4, added)
 			require.Equal(t, 1, seriesAdded)
 			require.Equal(t, 7, mutatorCalls)
-			require.Empty(t, sl.cache.droppedSeries)
-			require.Empty(t, sl.cache.droppedSeriesMeta)
+			require.Zero(t, sl.cache.droppedSeries.count)
+			require.Zero(t, sl.cache.droppedSeriesMeta.count)
 
 			// Dropped metric metadata must not be stored in scrapeCache (#14013).
 			_, ok := sl.cache.GetMetadata("dropped_metric_total")
@@ -5016,7 +5016,7 @@ func testScrapeLoopSeriesRefChange(t *testing.T, appV2 bool) {
 
 			teststorage.RequireEqual(t, tc.expectedSamples, app.ResultSamples())
 
-			ce, ok := sl.cache.series[xxhash.Sum64([]byte("metric_a"))]
+			ce, ok := sl.cache.series.get(scrapeCacheKey{hash: xxhash.Sum64String("metric_a"), metric: "metric_a"})
 			require.True(t, ok)
 			require.Equal(t, tc.expectedRef, ce.ref)
 		})
@@ -5050,14 +5050,14 @@ func testScrapeLoopCache(t *testing.T, appV2 bool) {
 	scraper.scrapeFunc = func(_ context.Context, w io.Writer) error {
 		switch numScrapes {
 		case 1, 2:
-			_, ok := sl.cache.series[xxhash.Sum64([]byte("metric_a"))]
+			_, ok := sl.cache.series.get(scrapeCacheKey{hash: xxhash.Sum64String("metric_a"), metric: "metric_a"})
 			require.True(t, ok, "metric_a missing from cache after scrape %d", numScrapes)
-			_, ok = sl.cache.series[xxhash.Sum64([]byte("metric_b"))]
+			_, ok = sl.cache.series.get(scrapeCacheKey{hash: xxhash.Sum64String("metric_b"), metric: "metric_b"})
 			require.True(t, ok, "metric_b missing from cache after scrape %d", numScrapes)
 		case 3:
-			_, ok := sl.cache.series[xxhash.Sum64([]byte("metric_a"))]
+			_, ok := sl.cache.series.get(scrapeCacheKey{hash: xxhash.Sum64String("metric_a"), metric: "metric_a"})
 			require.True(t, ok, "metric_a missing from cache after scrape %d", numScrapes)
-			_, ok = sl.cache.series[xxhash.Sum64([]byte("metric_b"))]
+			_, ok = sl.cache.series.get(scrapeCacheKey{hash: xxhash.Sum64String("metric_b"), metric: "metric_b"})
 			require.False(t, ok, "metric_b present in cache after scrape %d", numScrapes)
 		}
 
@@ -5090,6 +5090,99 @@ func testScrapeLoopCache(t *testing.T, appV2 bool) {
 	// 3 stale marker after samples were missing.
 	// 4x 5 report samples for each scrape successful or not.
 	require.Len(t, appTest.ResultSamples(), 26, "Appended samples not as expected:\n%s", appTest)
+}
+
+func TestScrapeLoopCacheHashCollisions(t *testing.T) {
+	metrics := []string{`m{l="aaaaaaaaaaaaaaaaaaaaaaaa"}`, `m{l="%*!~h+_h-w#aaaaaaaaaaaaa"}`}
+	require.Equal(t, xxhash.Sum64String(metrics[0]), xxhash.Sum64String(metrics[1]))
+	foreachAppendable(t, func(t *testing.T, appV2 bool) {
+		for _, tc := range []struct {
+			name     string
+			scrapes  [][]int
+			drop     string
+			metadata bool
+		}{
+			{name: "both series", scrapes: [][]int{{0, 1}, {1, 0}, {0}, {1}, {0, 1}}},
+			{name: "replacement", scrapes: [][]int{{0}, {1}, {0}}},
+			{name: "drop first", scrapes: [][]int{{0, 1}, {1, 0}, {0}, {1}}, drop: "aaaaaaaaaaaaaaaaaaaaaaaa"},
+			{name: "drop second", scrapes: [][]int{{1, 0}, {0, 1}, {1}, {0}}, drop: "%*!~h+_h-w#aaaaaaaaaaaaa"},
+			{name: "metadata changes", metadata: true, scrapes: [][]int{{0, 1}, {1, 0}, {0}, {1}, {0, 1}}},
+			{name: "metadata drop invalidation", metadata: true, scrapes: [][]int{{0, 1}, {1, 0}, {0, 1}, {1}}, drop: "aaaaaaaaaaaaaaaaaaaaaaaa"},
+		} {
+			if tc.metadata && !appV2 {
+				continue
+			}
+			t.Run(tc.name, func(t *testing.T) {
+				sink := teststorage.NewAppendable()
+				rc := []*relabel.Config{{Action: relabel.Drop, SourceLabels: model.LabelNames{"l"}, Separator: ";", Regex: relabel.MustNewRegexp(regexp.QuoteMeta(tc.drop))}}
+				if tc.metadata {
+					rc[0].SourceLabels = append(rc[0].SourceLabels, "__help__")
+					rc[0].Regex = relabel.MustNewRegexp(regexp.QuoteMeta(tc.drop) + ";drop")
+					rc = append(rc, &relabel.Config{Action: relabel.Replace, SourceLabels: model.LabelNames{"l"}, TargetLabel: "__help__", Regex: relabel.MustNewRegexp("(.*)"), Replacement: "$1", NameValidationScheme: model.UTF8Validation})
+				}
+
+				target := &Target{labels: labels.EmptyLabels()}
+				sl, _ := newTestScrapeLoop(t, withAppendable(sink, appV2), func(sl *scrapeLoop) {
+					if tc.metadata {
+						sl.sampleMutatorWithMetadata = func(l labels.Labels, m metadata.Metadata) (labels.Labels, metadata.Metadata) {
+							return mutateSampleLabelsAndMetadata(l, m, target, false, false, rc)
+						}
+					}
+					sl.mrc = rc
+					sl.sampleMutator = func(l labels.Labels) labels.Labels {
+						return mutateSampleLabels(l, target, false, rc)
+					}
+				})
+				previous := map[string]bool{}
+				for step, exposed := range tc.scrapes {
+					var body strings.Builder
+					if tc.metadata {
+						help := "drop"
+						if step >= 2 {
+							help = "keep"
+						}
+						fmt.Fprintf(&body, "# HELP m %s\n", help)
+					}
+					current := map[string]bool{}
+					for _, idx := range exposed {
+						fmt.Fprintf(&body, "%s %d\n", metrics[idx], step+1)
+						l := strings.TrimSuffix(strings.TrimPrefix(metrics[idx], `m{l="`), `"}`)
+						if l != tc.drop || (tc.metadata && step >= 2) {
+							current[l] = true
+						}
+					}
+					before := len(sink.ResultSamples())
+					app := sl.appender()
+					_, added, _, err := app.append([]byte(body.String()), "text/plain", time.Unix(int64(100+step), 0))
+					require.NoError(t, err)
+					require.NoError(t, app.Commit())
+					require.Equal(t, len(current), added)
+					want := map[string]float64{}
+					for l := range current {
+						want[l] = float64(step + 1)
+					}
+					for l := range previous {
+						if !current[l] {
+							want[l] = math.Float64frombits(value.StaleNaN)
+						}
+					}
+					got := sink.ResultSamples()[before:]
+					require.Len(t, got, len(want))
+					for _, sample := range got {
+						l := sample.L.Get("l")
+						v, ok := want[l]
+						require.True(t, ok, "unexpected series %s", sample.L)
+						require.Equal(t, math.Float64bits(v), math.Float64bits(sample.V))
+						if tc.metadata && !value.IsStaleNaN(sample.V) {
+							require.Equal(t, l, sample.M.Help)
+						}
+						delete(want, l)
+					}
+					previous = current
+				}
+			})
+		}
+	})
 }
 
 func TestScrapeLoopCacheMemoryExhaustionProtection(t *testing.T) {
@@ -5133,7 +5226,7 @@ func testScrapeLoopCacheMemoryExhaustionProtection(t *testing.T, appV2 bool) {
 		require.FailNow(t, "Scrape wasn't stopped.")
 	}
 
-	require.LessOrEqual(t, len(sl.cache.series), 2000, "More than 2000 series cached.")
+	require.LessOrEqual(t, sl.cache.series.count, 2000, "More than 2000 series cached.")
 }
 
 func TestScrapeLoopAppend_HonorLabels(t *testing.T) {
@@ -5324,7 +5417,7 @@ func testScrapeLoopAppendCacheEntryButErrNotFound(t *testing.T, appV2 bool) {
 	p.Labels(&lset)
 
 	// Create a fake entry in the cache.
-	sl.cache.addRef(xxhash.Sum64(metric), fakeRef, lset, nil)
+	sl.cache.addRef(scrapeCacheKey{hash: xxhash.Sum64(metric), metric: string(metric)}, fakeRef, lset, nil)
 	now := time.Now()
 
 	app := sl.appender()
@@ -7704,9 +7797,9 @@ func testScrapeAddFast(t *testing.T, appV2 bool) {
 
 	// Poison the cache. There is just one entry, and one series in the
 	// storage. Changing the ref will create a 'not found' error.
-	for k, v := range sl.getCache().series {
-		v.ref++
-		sl.getCache().series[k] = v
+	for k, v := range sl.getCache().series.unique {
+		v.value.ref++
+		sl.getCache().series.unique[k] = v
 	}
 
 	app = sl.appender()

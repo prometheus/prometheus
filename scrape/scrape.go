@@ -1049,22 +1049,20 @@ type scrapeCache struct {
 	// How many series and metadata entries there were at the last success.
 	successfulCount int
 
-	// Hash of exposed metric string (xxhash.Sum64) to an entry with information
-	// about the actual label set and its storage reference. Keyed by hash and
-	// stored by value to avoid retaining a heap-allocated metric string and
-	// *cacheEntry pointer per active series.
-	series map[uint64]cacheEntry
+	// Exposed metric string to its label set and storage reference.
+	// Keep the complete string so hash collisions cannot alias distinct series.
+	series scrapeCacheMap[cacheEntry]
 
-	// Cache of dropped metric string hashes (xxhash.Sum64) and their last seen iteration.
-	droppedSeries map[uint64]uint64
+	// Cache of dropped metric strings and their last seen iteration.
+	droppedSeries scrapeCacheMap[uint64]
 
 	// Series that were seen in the current and previous scrape, for staleness detection.
 	seriesCur  map[storage.SeriesRef]labels.Labels
 	seriesPrev map[storage.SeriesRef]labels.Labels
 
 	// Per-series post-relabel metadata cache, lazily allocated only when metric_relabel_configs is non-empty.
-	seriesMeta        map[uint64]seriesMetaEntry
-	droppedSeriesMeta map[uint64]seriesMetaEntry
+	seriesMeta        scrapeCacheMap[seriesMetaEntry]
+	droppedSeriesMeta scrapeCacheMap[seriesMetaEntry]
 
 	// TODO(bwplotka): Consider moving metadata caching to head. See
 	// https://github.com/prometheus/prometheus/issues/17619.
@@ -1130,12 +1128,10 @@ func (m *metaEntry) size() int {
 
 func newScrapeCache(metrics *scrapeMetrics) *scrapeCache {
 	return &scrapeCache{
-		series:        map[uint64]cacheEntry{},
-		droppedSeries: map[uint64]uint64{},
-		seriesCur:     map[storage.SeriesRef]labels.Labels{},
-		seriesPrev:    map[storage.SeriesRef]labels.Labels{},
-		metadata:      map[string]*metaEntry{},
-		metrics:       metrics,
+		seriesCur:  map[storage.SeriesRef]labels.Labels{},
+		seriesPrev: map[storage.SeriesRef]labels.Labels{},
+		metadata:   map[string]*metaEntry{},
+		metrics:    metrics,
 	}
 }
 
@@ -1144,7 +1140,7 @@ func (c *scrapeCache) iterDone(flushCache bool) {
 	c.flushPending()
 	c.pendingHelp = nil
 	c.pendingUnit = nil
-	count := len(c.series) + len(c.droppedSeries) + len(c.metadata)
+	count := c.series.count + c.droppedSeries.count + len(c.metadata)
 	c.metaMtx.Unlock()
 
 	switch {
@@ -1164,22 +1160,20 @@ func (c *scrapeCache) iterDone(flushCache bool) {
 		// All caches may grow over time through series churn
 		// or multiple string representations of the same metric. Clean up entries
 		// that haven't appeared in the last scrape.
-		for h, e := range c.series {
+		c.series.retain(func(key scrapeCacheKey, e cacheEntry) bool {
 			if c.iter != e.lastIter {
-				delete(c.series, h)
-				if c.seriesMeta != nil {
-					delete(c.seriesMeta, h)
-				}
+				c.seriesMeta.del(key)
+				return false
 			}
-		}
-		for h, iter := range c.droppedSeries {
+			return true
+		})
+		c.droppedSeries.retain(func(key scrapeCacheKey, iter uint64) bool {
 			if c.iter != iter {
-				delete(c.droppedSeries, h)
-				if c.droppedSeriesMeta != nil {
-					delete(c.droppedSeriesMeta, h)
-				}
+				c.droppedSeriesMeta.del(key)
+				return false
 			}
-		}
+			return true
+		})
 		c.metaMtx.Lock()
 		for m, e := range c.metadata {
 			// Keep metadata around for 10 scrapes after its metric disappeared.
@@ -1198,82 +1192,82 @@ func (c *scrapeCache) iterDone(flushCache bool) {
 	c.iter++
 }
 
-func (c *scrapeCache) get(met []byte) (uint64, cacheEntry, bool, bool) {
-	h := xxhash.Sum64(met)
-	e, ok := c.series[h]
+func (c *scrapeCache) get(met []byte) (scrapeCacheKey, cacheEntry, bool, bool) {
+	key := scrapeCacheKey{hash: xxhash.Sum64(met), metric: yoloString(met)}
+	entry, ok := c.series.getEntry(key)
 	if !ok {
-		return h, cacheEntry{}, false, false
+		if dropped, found := c.droppedSeries.getEntry(key); found {
+			key.metric = dropped.metric
+		} else {
+			// Only new metrics need an owned copy. All per-series caches share it.
+			key.metric = string(met)
+		}
+		return key, cacheEntry{}, false, false
 	}
+	key.metric = entry.metric
+	e := entry.value
 	alreadyScraped := e.lastIter == c.iter
 	if !alreadyScraped {
 		e.lastIter = c.iter
-		c.series[h] = e
+		c.series.set(key, e)
 	}
-	return h, e, true, alreadyScraped
+	return key, e, true, alreadyScraped
 }
 
-func (c *scrapeCache) addRef(metHash uint64, ref storage.SeriesRef, lset labels.Labels, st *stCache) cacheEntry {
+func (c *scrapeCache) addRef(metKey scrapeCacheKey, ref storage.SeriesRef, lset labels.Labels, st *stCache) cacheEntry {
 	ce := cacheEntry{ref: ref, lastIter: c.iter, lset: lset, st: st}
-	c.series[metHash] = ce
+	c.series.set(metKey, ce)
 	return ce
 }
 
-func (c *scrapeCache) setSeriesMeta(metHash uint64, origMeta, meta unique.Handle[metadata.Metadata], origMFName, mfName unique.Handle[string]) {
-	if c.seriesMeta == nil {
-		c.seriesMeta = make(map[uint64]seriesMetaEntry)
-	}
-	c.seriesMeta[metHash] = seriesMetaEntry{
+func (c *scrapeCache) setSeriesMeta(metKey scrapeCacheKey, origMeta, meta unique.Handle[metadata.Metadata], origMFName, mfName unique.Handle[string]) {
+	c.seriesMeta.set(metKey, seriesMetaEntry{
 		origMeta:   origMeta,
 		meta:       meta,
 		origMFName: origMFName,
 		mfName:     mfName,
-	}
+	})
 }
 
-func (c *scrapeCache) deleteSeries(metHash uint64) {
-	delete(c.series, metHash)
-	if c.seriesMeta != nil {
-		delete(c.seriesMeta, metHash)
-	}
+func (c *scrapeCache) deleteSeries(metKey scrapeCacheKey) {
+	c.series.del(metKey)
+	c.seriesMeta.del(metKey)
 }
 
-func (c *scrapeCache) addDropped(metHash uint64) {
-	c.droppedSeries[metHash] = c.iter
+func (c *scrapeCache) addDropped(metKey scrapeCacheKey) {
+	c.droppedSeries.set(metKey, c.iter)
 }
 
-func (c *scrapeCache) addDroppedWithMeta(metHash uint64, origMFName unique.Handle[string], origMeta unique.Handle[metadata.Metadata]) {
-	c.addDropped(metHash)
-	if c.droppedSeriesMeta == nil {
-		c.droppedSeriesMeta = make(map[uint64]seriesMetaEntry)
-	}
-	c.droppedSeriesMeta[metHash] = seriesMetaEntry{
+func (c *scrapeCache) addDroppedWithMeta(metKey scrapeCacheKey, origMFName unique.Handle[string], origMeta unique.Handle[metadata.Metadata]) {
+	c.addDropped(metKey)
+	c.droppedSeriesMeta.set(metKey, seriesMetaEntry{
 		origMFName: origMFName,
 		origMeta:   origMeta,
-	}
+	})
 }
 
-func (c *scrapeCache) getDropped(metHash uint64) bool {
-	lastIter, ok := c.droppedSeries[metHash]
+func (c *scrapeCache) getDropped(metKey scrapeCacheKey) bool {
+	lastIter, ok := c.droppedSeries.get(metKey)
 	if ok && lastIter != c.iter {
-		c.droppedSeries[metHash] = c.iter
+		c.droppedSeries.set(metKey, c.iter)
 	}
 	return ok
 }
 
-func (c *scrapeCache) getDroppedWithMeta(metHash uint64, origMFName unique.Handle[string], origMeta unique.Handle[metadata.Metadata]) bool {
-	lastIter, ok := c.droppedSeries[metHash]
+func (c *scrapeCache) getDroppedWithMeta(metKey scrapeCacheKey, origMFName unique.Handle[string], origMeta unique.Handle[metadata.Metadata]) bool {
+	lastIter, ok := c.droppedSeries.get(metKey)
 	if !ok {
 		return false
 	}
-	if c.droppedSeriesMeta != nil {
-		if dm, hasMeta := c.droppedSeriesMeta[metHash]; hasMeta && (dm.origMFName != origMFName || dm.origMeta != origMeta) {
-			delete(c.droppedSeries, metHash)
-			delete(c.droppedSeriesMeta, metHash)
+	if c.droppedSeriesMeta.count != 0 {
+		if dm, hasMeta := c.droppedSeriesMeta.get(metKey); hasMeta && (dm.origMFName != origMFName || dm.origMeta != origMeta) {
+			c.droppedSeries.del(metKey)
+			c.droppedSeriesMeta.del(metKey)
 			return false
 		}
 	}
 	if lastIter != c.iter {
-		c.droppedSeries[metHash] = c.iter
+		c.droppedSeries.set(metKey, c.iter)
 	}
 	return true
 }
@@ -1282,7 +1276,7 @@ func (c *scrapeCache) getDroppedWithMeta(metHash uint64, origMFName unique.Handl
 // storage garbage collected the series and had to recreate it. Staleness is tracked
 // per reference, so the tracking has to follow the entry to the new reference,
 // otherwise the series looks like it stopped being exposed and gets a stale marker.
-func (c *scrapeCache) updateRef(metHash uint64, ce *cacheEntry, ref storage.SeriesRef) {
+func (c *scrapeCache) updateRef(metKey scrapeCacheKey, ce *cacheEntry, ref storage.SeriesRef) {
 	if ce.ref == ref {
 		return
 	}
@@ -1291,7 +1285,7 @@ func (c *scrapeCache) updateRef(metHash uint64, ce *cacheEntry, ref storage.Seri
 		moveStaleness(c.seriesCur, ce.ref, ref, ce.lset)
 	}
 	ce.ref = ref
-	c.series[metHash] = *ce
+	c.series.set(metKey, *ce)
 }
 
 // moveStaleness re-keys the staleness tracking of lset from oldRef to ref. Whether the
@@ -2170,8 +2164,8 @@ loop:
 			t = *parsedTimestamp
 		}
 
-		metHash, ce, seriesCached, seriesAlreadyScraped := sl.cache.get(met)
-		if !seriesCached && sl.cache.getDropped(metHash) {
+		metKey, ce, seriesCached, seriesAlreadyScraped := sl.cache.get(met)
+		if !seriesCached && sl.cache.getDropped(metKey) {
 			continue
 		}
 		var ref storage.SeriesRef
@@ -2187,7 +2181,7 @@ loop:
 
 			// The label set may be set to empty to indicate dropping.
 			if lset.IsEmpty() {
-				sl.cache.addDropped(metHash)
+				sl.cache.addDropped(metKey)
 				continue
 			}
 
@@ -2243,7 +2237,7 @@ loop:
 		if err == nil && seriesCached {
 			// Append may return a new ref; keep the cache in sync.
 			if ref != 0 {
-				sl.cache.updateRef(metHash, &ce, ref)
+				sl.cache.updateRef(metKey, &ce, ref)
 			}
 			if (parsedTimestamp == nil || sl.trackTimestampsStaleness) && ce.ref != 0 {
 				sl.cache.trackStaleness(ce.ref, ce.lset)
@@ -2263,7 +2257,7 @@ loop:
 		// If a series was new but we didn't append it due to sample_limit or other errors then we don't need
 		// it in the scrape cache because we don't need to emit StaleNaNs for it when it disappears.
 		if !seriesCached && sampleAdded {
-			ce = sl.cache.addRef(metHash, ref, lset, nil)
+			ce = sl.cache.addRef(metKey, ref, lset, nil)
 			if ce.ref != 0 && (parsedTimestamp == nil || sl.trackTimestampsStaleness) {
 				// Bypass staleness logic if there is an explicit timestamp.
 				sl.cache.trackStaleness(ce.ref, ce.lset)
@@ -2652,7 +2646,7 @@ func (sl *scrapeLoop) reportStale(app scrapeLoopAppendAdapter, start time.Time) 
 }
 
 func (sl *scrapeLoopAppender) addReportSample(s reportSample, t int64, v float64, b *labels.Builder, rejectOOO bool) (err error) {
-	metHash, ce, ok, _ := sl.cache.get(s.name)
+	metKey, ce, ok, _ := sl.cache.get(s.name)
 	var ref storage.SeriesRef
 	var lset labels.Labels
 	if ok {
@@ -2679,7 +2673,7 @@ func (sl *scrapeLoopAppender) addReportSample(s reportSample, t int64, v float64
 	switch {
 	case err == nil:
 		if !ok {
-			sl.cache.addRef(metHash, ref, lset, nil)
+			sl.cache.addRef(metKey, ref, lset, nil)
 			// We only need to add metadata once a scrape target appears.
 			if sl.appendMetadataToWAL {
 				if _, merr := sl.UpdateMetadata(ref, lset, s.Metadata); merr != nil {
