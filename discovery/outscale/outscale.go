@@ -54,6 +54,10 @@ type SDConfig struct {
 	RefreshInterval  model.Duration          `yaml:"refresh_interval,omitempty"`
 	Port             int                     `yaml:"port"`
 	HTTPClientConfig config.HTTPClientConfig `yaml:",inline"`
+
+	// Tags restricts discovery to VMs carrying all of the given tags, each
+	// formatted as "key=value".
+	Tags []string `yaml:"tags,omitempty"`
 }
 
 // NewDiscovererMetrics implements discovery.Config.
