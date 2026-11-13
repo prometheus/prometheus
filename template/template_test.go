@@ -21,6 +21,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/prometheus/client_golang/prometheus/testutil"
 	"github.com/prometheus/common/model"
 	"github.com/stretchr/testify/require"
 
@@ -630,6 +631,13 @@ func testTemplateExpansion(t *testing.T, scenarios []scenario) {
 			result, err = expander.ExpandHTML(nil)
 		} else {
 			result, err = expander.Expand()
+			boundResult, boundErr := expander.CompileText(s.text).Expand(s.input)
+			require.Equal(t, result, boundResult)
+			if err != nil {
+				require.EqualError(t, boundErr, err.Error())
+			} else {
+				require.NoError(t, boundErr)
+			}
 		}
 		if s.shouldFail {
 			require.Error(t, err, "%v", s.text)
@@ -695,4 +703,27 @@ func Test_floatToTime(t *testing.T) {
 			}
 		})
 	}
+}
+
+func TestBoundTemplateCountsExpansionAttempts(t *testing.T) {
+	beforeTotal := testutil.ToFloat64(templateTextExpansionTotal)
+	beforeFailures := testutil.ToFloat64(templateTextExpansionFailures)
+	expander := NewTemplateExpander(context.Background(), "", "counter-test", nil, 0, nil, &url.URL{}, nil)
+
+	bound := expander.CompileText("{{.}}")
+	require.Equal(t, beforeTotal, testutil.ToFloat64(templateTextExpansionTotal))
+	got, err := bound.Expand("value")
+	require.NoError(t, err)
+	require.Equal(t, "value", got)
+
+	parseFailure := expander.CompileText("{{")
+	_, err = parseFailure.Expand(nil)
+	require.ErrorContains(t, err, "error parsing template counter-test")
+
+	executionFailure := expander.CompileText("{{index . 1}}")
+	_, err = executionFailure.Expand([]string{"only"})
+	require.ErrorContains(t, err, "error executing template counter-test")
+
+	require.Equal(t, float64(3), testutil.ToFloat64(templateTextExpansionTotal)-beforeTotal)
+	require.Equal(t, float64(2), testutil.ToFloat64(templateTextExpansionFailures)-beforeFailures)
 }
