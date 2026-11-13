@@ -776,6 +776,9 @@ func (it *chunkedSeriesIterator) Seek(t int64) chunkenc.ValueType {
 		return chunkenc.ValNone
 	}
 
+	// Seek within the requested window, including when the target is earlier.
+	t = max(t, it.mint)
+
 	startIdx := it.idx
 	it.idx += sort.Search(len(it.chunks)-startIdx, func(i int) bool {
 		return it.chunks[startIdx+i].MaxTimeMs >= t
@@ -789,19 +792,29 @@ func (it *chunkedSeriesIterator) Seek(t int64) chunkenc.ValueType {
 		}
 	}
 
-	for it.valType = it.cur.Next(); it.valType != chunkenc.ValNone; it.valType = it.cur.Next() {
-		ts := it.cur.AtT()
-		if ts > it.maxt {
-			it.chunks = nil // Exhaust this iterator so follow-up calls to Next or Seek return fast.
+	for {
+		for it.valType = it.cur.Next(); it.valType != chunkenc.ValNone; it.valType = it.cur.Next() {
+			ts := it.cur.AtT()
+			if ts > it.maxt {
+				it.chunks = nil // Exhaust this iterator so follow-up calls to Next or Seek return fast.
+				return chunkenc.ValNone
+			}
+			if ts >= t {
+				return it.valType
+			}
+		}
+
+		// Enclosing chunk bounds may select a chunk without an eligible sample.
+		// Its exhaustion does not exhaust the remaining series.
+		if it.idx >= len(it.chunks)-1 {
 			return chunkenc.ValNone
 		}
-		if ts >= t && ts >= it.mint {
-			return it.valType
+		it.idx++
+		it.resetIterator()
+		if it.err != nil {
+			return chunkenc.ValNone
 		}
 	}
-
-	it.valType = chunkenc.ValNone
-	return it.valType
 }
 
 func (it *chunkedSeriesIterator) resetIterator() {
