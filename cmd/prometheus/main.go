@@ -1644,7 +1644,7 @@ func main() {
 					"TruncateFrequency", cfg.agent.TruncateFrequency,
 					"MinWALTime", cfg.agent.MinWALTime,
 					"MaxWALTime", cfg.agent.MaxWALTime,
-					"OutOfOrderTimeWindow", cfg.agent.OutOfOrderTimeWindow,
+					"OutOfOrderTimeWindow", opts.OutOfOrderTimeWindow,
 					"EnableSTAsZeroSample", cfg.agent.EnableSTAsZeroSample,
 					"EnableSTStorage", cfg.tsdb.EnableSTStorage,
 					"EnableMetadataWALRecords", cfg.agent.EnableMetadataWALRecords,
@@ -2291,7 +2291,6 @@ type agentOptions struct {
 	TruncateFrequency            model.Duration
 	MinWALTime, MaxWALTime       model.Duration
 	NoLockfile                   bool
-	OutOfOrderTimeWindow         int64 // TODO(bwplotka): Unused option, fix it or remove.
 	EnableSTAsZeroSample         bool
 	EnableSTStorage              bool
 	EnableMetadataWALRecords     bool
