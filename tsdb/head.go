@@ -184,22 +184,19 @@ type Head struct {
 	// The readers of queries opened while it is set skip the chunks of those series that are removed
 	// before they read them. See headChunkReader.evicting.
 	evictingSeries atomic.Pointer[evictedSeries]
-
-	// pendingTombstones holds the series that truncateSeries removed from the head, and whose tombstones are not in
-	// the WAL yet. A series with the same labels must not be created until then. See pendingTombstones.
-	pendingTombstones pendingTombstones
 }
 
 // pendingTombstones coordinates series eviction with the creation of replacement
 // series. Its purpose is to put the evicted series' tombstone before the
-// replacement's declaration in the WAL.
+// replacement's WAL series record in the WAL.
 //
 // Without this ordering, WAL replay can treat both references as one series
 // and apply the old tombstone to the replacement's samples.
 //
-// Eviction registers each label hash before removing its series from Head.
-// Creation checks for a pending tombstone under the same stripe lock used
-// for insertion.
+// Eviction calls reserve before unlinking series, registers each label hash via
+// add under the stripe lock before removing its series from Head, and calls
+// releaseAll once the WAL tombstone write finishes. Creation checks for a
+// pending tombstone under the same stripe lock used for insertion.
 //
 // The zero value is ready to use. Only one eviction may run at a time;
 // Head.chunkSnapshotMtx ensures this.
@@ -222,16 +219,15 @@ func (p *pendingTombstones) reserve(n int) {
 }
 
 // add registers a label hash whose eviction tombstone is not in the WAL yet.
+// It is a no-op unless reserve has been called for an active WAL-backed eviction.
 // The caller must hold the hash's stripe lock and call add before unlinking
 // the series from Head.
 func (p *pendingTombstones) add(hash uint64) {
-	p.active.Store(true)
 	p.mtx.Lock()
-	if p.hashes == nil {
-		p.hashes = map[uint64]struct{}{}
-		p.released = make(chan struct{})
+	if p.hashes != nil {
+		p.hashes[hash] = struct{}{}
+		p.active.Store(true)
 	}
-	p.hashes[hash] = struct{}{}
 	p.mtx.Unlock()
 }
 
@@ -1657,33 +1653,9 @@ func (h *Head) truncateSeries(seriesRefs []storage.SeriesRef, maxt int64, should
 		h.testAfterWaitingForReadersToEvictSeries = nil
 	}
 
-	// Series with the labels of the removed ones can be created again once their tombstones are written, or if
-	// writing them fails. They are released right after the series are unlinked, see below, and the deferred call
-	// makes sure that they are also released if this function exits before.
-	defer h.pendingTombstones.releaseAll()
-	if h.wal != nil {
-		h.pendingTombstones.reserve(len(seriesRefs))
-	}
-
-	// Record the deleted series refs in the WAL so that we can ignore them during replay. This is done as soon as
-	// the series are unlinked, before gcSeries deletes them from the postings, which takes long: the creation of
-	// the series with the same labels waits until the tombstones are written.
-	var logErr error
-	deleted := h.gcSeries(seriesRefs, maxt, shouldEvict, func(deleted map[storage.SeriesRef]struct{}) {
-		if h.wal != nil {
-			stones := make([]tombstones.Stone, 0, len(seriesRefs))
-			// The encoder only reads the interval, so all the stones can share it.
-			intervals := tombstones.Intervals{{Mint: math.MinInt64, Maxt: math.MaxInt64}}
-			for ref := range deleted {
-				stones = append(stones, tombstones.Stone{Ref: ref, Intervals: intervals})
-			}
-			var enc record.Encoder
-			logErr = h.wal.Log(enc.Tombstones(stones, nil))
-		}
-		h.pendingTombstones.releaseAll()
-	})
-	if logErr != nil {
-		return 0, logErr
+	deleted, err := h.gcSeries(seriesRefs, maxt, shouldEvict)
+	if err != nil {
+		return 0, err
 	}
 	return len(deleted), nil
 }
@@ -2472,11 +2444,11 @@ func (h *Head) getOrCreateWithOptionalID(id chunks.HeadSeriesRef, hash uint64, l
 			optimisticallyCreatedSeries.ref = id
 		}
 
-		s, created, pending := h.series.setUnlessAlreadySet(hash, lset, optimisticallyCreatedSeries, &h.pendingTombstones)
+		s, created, pending := h.series.setUnlessAlreadySet(hash, lset, optimisticallyCreatedSeries)
 		if pending != nil {
-			// A series with these labels was evicted, and its tombstone is not in the WAL yet. The declaration of this
-			// series must follow it in the WAL, which is written when the series is committed. Waiting without the
-			// series creation lock does not block the creation of other series.
+			// A series with these labels was evicted, and its tombstone is not in the WAL yet. The WAL series record
+			// of this replacement series must follow the tombstone in the WAL, which is written when the series is
+			// committed. Waiting without the series creation lock does not block the creation of other series.
 			if assignID {
 				h.seriesCreationMtx.Unlock()
 			}
@@ -2683,6 +2655,11 @@ type stripeSeries struct {
 	locks                   []stripeLock                          // Sharded by ref for series access, by label hash for hashes access.
 	mmapReady               []paddedAtomicInt32                   // Per-stripe count of series with headChunkCount >= 2 (ready for mmapping).
 	seriesLifecycleCallback SeriesLifecycleCallback
+
+	// pendingTombstones holds the label hashes of series that gcSeries unlinked from the head
+	// and whose tombstones are not in the WAL yet. A series with the same labels must not be
+	// created until then.
+	pendingTombstones pendingTombstones
 }
 
 type stripeLock struct {
@@ -2833,20 +2810,19 @@ func (s *stripeSeries) gc(mint int64, minOOOMmapRef chunks.ChunkDiskMapperRef) (
 // Series whose exemplars still need replay retain their identity, but their persisted
 // sample chunks are released if shouldEvict returns true.
 //
-// If afterUnlink is not nil, it is called with the series that got deleted once they are unlinked from the head, and
-// before they are deleted from the postings, which can take a long time because it yields to the readers.
-//
 // The returned references are the series that got deleted.
-func (h *Head) gcSeries(seriesRefs []storage.SeriesRef, maxt int64, shouldEvict func(*memSeries) bool, afterUnlink func(deleted map[storage.SeriesRef]struct{})) map[storage.SeriesRef]struct{} {
+func (h *Head) gcSeries(seriesRefs []storage.SeriesRef, maxt int64, shouldEvict func(*memSeries) bool) (map[storage.SeriesRef]struct{}, error) {
 	minValidTime := h.minValidTime.Load()
 	evicting := h.evictingSeries.Load()
 	var protectedChunksRemoved int
-	var beforeUnlink func(hash uint64)
-	// The hashes are pending until afterUnlink releases them, so they are only marked if there is one.
-	if h.wal != nil && afterUnlink != nil {
-		beforeUnlink = h.pendingTombstones.add
+	// Series with the labels of the removed ones can be created again once their tombstones are written, or if
+	// writing them fails. They are released right after the series are unlinked below, and the deferred call
+	// makes sure that they are also released if this function exits early.
+	if h.wal != nil {
+		h.series.pendingTombstones.reserve(len(seriesRefs))
+		defer h.series.pendingTombstones.releaseAll()
 	}
-	deleted, affected, chunksRemoved, staleSeriesDeleted, histogramSeriesDeleted, histogramBucketsDeleted := h.series.gcSeries(seriesRefs, maxt, beforeUnlink, func(s *memSeries) bool {
+	deleted, affected, chunksRemoved, staleSeriesDeleted, histogramSeriesDeleted, histogramBucketsDeleted := h.series.gcSeries(seriesRefs, maxt, func(s *memSeries) bool {
 		// Keep unpersisted samples before considering chunk removal or series eviction.
 		if !shouldEvict(s) {
 			return false
@@ -2874,9 +2850,23 @@ func (h *Head) gcSeries(seriesRefs []storage.SeriesRef, maxt int64, shouldEvict 
 		// Prevent deletion of the series identity while its exemplar can still be replayed.
 		return false
 	})
-	if afterUnlink != nil {
-		afterUnlink(deleted)
+
+	// Record the deleted series refs in the WAL so that we can ignore them during replay. This is done as soon as
+	// the series are unlinked, before deleting them from the postings, which takes long: the creation of series
+	// with the same labels waits until the tombstones are written.
+	var logErr error
+	if h.wal != nil {
+		stones := make([]tombstones.Stone, 0, len(deleted))
+		// The encoder only reads the interval, so all the stones can share it.
+		intervals := tombstones.Intervals{{Mint: math.MinInt64, Maxt: math.MaxInt64}}
+		for ref := range deleted {
+			stones = append(stones, tombstones.Stone{Ref: ref, Intervals: intervals})
+		}
+		var enc record.Encoder
+		logErr = h.wal.Log(enc.Tombstones(stones, nil))
+		h.series.pendingTombstones.releaseAll()
 	}
+
 	seriesRemoved := len(deleted)
 	chunksRemoved += protectedChunksRemoved
 
@@ -2912,7 +2902,7 @@ func (h *Head) gcSeries(seriesRefs []storage.SeriesRef, maxt int64, shouldEvict 
 		h.walExpiriesMtx.Unlock()
 	}
 
-	return deleted
+	return deleted, logErr
 }
 
 // deleteSeriesByID deletes the series with the given reference.
@@ -3004,7 +2994,7 @@ func (h *Head) deleteSeriesByID(refs []chunks.HeadSeriesRef) {
 // <= maxt, and for which shouldEvict returns true. Returns the set of deleted refs, the set
 // of label-name/value pairs whose postings are affected, the count of removed chunks, and
 // the number of deleted series that carried a stale-NaN last value.
-func (s *stripeSeries) gcSeries(seriesRefs []storage.SeriesRef, maxt int64, beforeUnlink func(hash uint64), shouldEvict func(*memSeries) bool) (_ map[storage.SeriesRef]struct{}, _ map[labels.Label]struct{}, _, _, _, _ int) {
+func (s *stripeSeries) gcSeries(seriesRefs []storage.SeriesRef, maxt int64, shouldEvict func(*memSeries) bool) (_ map[storage.SeriesRef]struct{}, _ map[labels.Label]struct{}, _, _, _, _ int) {
 	var (
 		deleted                 = map[storage.SeriesRef]struct{}{}
 		affected                = map[labels.Label]struct{}{}
@@ -3066,10 +3056,8 @@ func (s *stripeSeries) gcSeries(seriesRefs []storage.SeriesRef, maxt int64, befo
 			histogramBucketsDeleted += buckets
 		}
 		series.lset.Range(func(l labels.Label) { affected[l] = struct{}{} })
-		if beforeUnlink != nil {
-			// The stripe lock is held, so a series with these labels can only be created after this call.
-			beforeUnlink(hash)
-		}
+		// The stripe lock is held, so a series with these labels can only be created after this call.
+		s.pendingTombstones.add(hash)
 		s.hashes[hashShard].del(hash, series.ref)
 		delete(s.series[stripe], series.ref)
 		deletedForCallback[series.ref] = series.lset // OK to access lset; series is locked at the top of this function.
@@ -3155,16 +3143,17 @@ func (s *stripeSeries) unlinkHash(hash uint64, ref chunks.HeadSeriesRef) {
 }
 
 // setUnlessAlreadySet adds the series unless one with the same labels is already set, which is returned instead.
-// If the labels hash is in pending, nothing is added and the returned channel is non-nil: the caller must wait for it
-// to be closed, and retry. The check is done with the lock of the stripe, so that it is atomic with the insertion.
-func (s *stripeSeries) setUnlessAlreadySet(hash uint64, lset labels.Labels, series *memSeries, pending *pendingTombstones) (*memSeries, bool, <-chan struct{}) {
+// If the labels hash is in pendingTombstones, nothing is added and the returned channel is non-nil: the caller must
+// wait for it to be closed, and retry. The check is done with the lock of the stripe, so that it is atomic with the
+// insertion.
+func (s *stripeSeries) setUnlessAlreadySet(hash uint64, lset labels.Labels, series *memSeries) (*memSeries, bool, <-chan struct{}) {
 	i := hash & uint64(s.size-1)
 	s.locks[i].Lock()
 	if prev := s.hashes[i].get(hash, lset); prev != nil {
 		s.locks[i].Unlock()
 		return prev, false, nil
 	}
-	if wait := pending.pending(hash); wait != nil {
+	if wait := s.pendingTombstones.pending(hash); wait != nil {
 		s.locks[i].Unlock()
 		return nil, false, wait
 	}

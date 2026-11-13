@@ -60,18 +60,10 @@ type seriesEvictionTestDB struct {
 // The specified exemplarSeries also receive an exemplar.
 func newSeriesEvictionTestDB(t *testing.T, exemplarSeries ...int) *seriesEvictionTestDB {
 	t.Helper()
-	return newSeriesEvictionTestDBWithOOOTimeWindow(t, 0, exemplarSeries...)
-}
-
-// newSeriesEvictionTestDBWithOOOTimeWindow is like newSeriesEvictionTestDB, with out-of-order ingestion enabled
-// if oooTimeWindow is positive.
-func newSeriesEvictionTestDBWithOOOTimeWindow(t *testing.T, oooTimeWindow int64, exemplarSeries ...int) *seriesEvictionTestDB {
-	t.Helper()
 
 	opts := DefaultOptions()
 	opts.MinBlockDuration = 1000
 	opts.MaxBlockDuration = 1000
-	opts.OutOfOrderTimeWindow = oooTimeWindow
 	opts.EnableExemplarStorage = len(exemplarSeries) > 0
 	opts.MaxExemplars = int64(len(exemplarSeries))
 	db := newTestDB(t, withOpts(opts))
@@ -735,24 +727,31 @@ func TestSeriesEviction_RecreationIsDeclaredAfterTombstone(t *testing.T) {
 	}
 }
 
-// TestHead_GCSeriesWithoutAfterUnlinkDoesNotBlockRecreation verifies that gcSeries marks the label hashes of the series
-// it removes as pending only if it is given a callback that releases them. Otherwise nothing would release them, and a
-// series with the same labels could never be created again.
-func TestHead_GCSeriesWithoutAfterUnlinkDoesNotBlockRecreation(t *testing.T) {
+// TestHead_GCSeriesDoesNotBlockRecreation verifies that calling gcSeries directly writes the tombstones and releases
+// pendingTombstones, and that calling stripeSeries.gcSeries without reserve does not mark hashes as pending.
+func TestHead_GCSeriesDoesNotBlockRecreation(t *testing.T) {
 	testDB := newSeriesEvictionTestDB(t)
 	db := testDB.db
 	h := db.Head()
-	ref := testDB.evictedRefs[0]
-	lset := evictionTestLabels(0)
+	ref0, ref1 := testDB.evictedRefs[0], testDB.evictedRefs[1]
+	lset0, lset1 := evictionTestLabels(0), evictionTestLabels(1)
 
-	deleted := h.gcSeries([]storage.SeriesRef{ref}, math.MaxInt64, func(*memSeries) bool { return true }, nil)
-	require.Contains(t, deleted, ref)
-	require.Nil(t, h.pendingTombstones.pending(lset.Hash()))
+	deleted, err := h.gcSeries([]storage.SeriesRef{ref0}, math.MaxInt64, func(*memSeries) bool { return true })
+	require.NoError(t, err)
+	require.Contains(t, deleted, ref0)
+	require.Nil(t, h.series.pendingTombstones.pending(lset0.Hash()))
+
+	deleted, _, _, _, _, _ = h.series.gcSeries([]storage.SeriesRef{ref1}, math.MaxInt64, func(*memSeries) bool { return true })
+	require.Contains(t, deleted, ref1)
+	require.Nil(t, h.series.pendingTombstones.pending(lset1.Hash()))
 
 	recreated := make(chan error, 1)
 	go func() {
 		app := db.Appender(t.Context())
-		_, err := app.Append(0, lset, 400, 1)
+		_, err := app.Append(0, lset0, 400, 1)
+		if err == nil {
+			_, err = app.Append(0, lset1, 400, 1)
+		}
 		if err == nil {
 			err = app.Commit()
 		}
@@ -873,7 +872,7 @@ func TestSeriesEviction_CreationPausedBeforeInsertionIsDeclaredAfterTombstone(t 
 				case <-time.After(10 * time.Second):
 					t.Fatal("the eviction did not reach the pause before the tombstone")
 				}
-				require.True(t, db.head.pendingTombstones.active.Load())
+				require.True(t, db.head.series.pendingTombstones.active.Load())
 				resume()
 
 				// The creator must stay blocked until the tombstone is written.
@@ -1098,7 +1097,7 @@ func TestSeriesEviction_CreatorsAreReleasedBeforePostingsAreDeleted(t *testing.T
 			case <-time.After(timeout):
 				t.Fatal("the eviction did not reach the deletion of the postings")
 			}
-			require.False(t, db.head.pendingTombstones.active.Load(), "the creators must be released")
+			require.False(t, db.head.series.pendingTombstones.active.Load(), "the creators must be released")
 
 			// The old series is unlinked, so this creates a new one. It must not wait for the eviction to finish.
 			var newRef storage.SeriesRef
@@ -1380,7 +1379,7 @@ func TestSeriesEviction_SamplesAndEvictionWhileWaitingForReaders(t *testing.T) {
 	go func() { first <- db.CompactSelectedSeries(testDB.evictedRefs) }()
 	require.Eventually(t, func() bool { return head.evictingSeries.Load() != nil }, timeout, 10*time.Millisecond,
 		"the first eviction must be waiting for the query")
-	require.False(t, head.pendingTombstones.active.Load(), "nothing is unlinked while waiting for the readers")
+	require.False(t, head.series.pendingTombstones.active.Load(), "nothing is unlinked while waiting for the readers")
 
 	// If these appends waited for the eviction, the test would time out.
 	app := db.Appender(context.Background())
@@ -1421,7 +1420,7 @@ func TestSeriesEviction_SamplesAndEvictionWhileWaitingForReaders(t *testing.T) {
 	require.NotNil(t, lateSeriesBeforeSecondEviction)
 	require.Nil(t, head.series.getByHash(evictionTestLabels(0).Hash(), evictionTestLabels(0)))
 
-	require.False(t, head.pendingTombstones.active.Load())
+	require.False(t, head.series.pendingTombstones.active.Load())
 	// Only the series that were not selected remain, and the new one.
 	require.Equal(t, uint64(evictionTestSeries-evictionTestEvictedSeries+1), head.NumSeries())
 

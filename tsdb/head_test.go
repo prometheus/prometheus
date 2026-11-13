@@ -3744,12 +3744,12 @@ func stripeSeriesWithCollidingSeries(t *testing.T) (*stripeSeries, *memSeries, *
 	hash := lbls1.Hash()
 	s := newStripeSeries(1, noopSeriesLifecycleCallback{})
 
-	got, created, _ := s.setUnlessAlreadySet(hash, lbls1, ms1, nil)
+	got, created, _ := s.setUnlessAlreadySet(hash, lbls1, ms1)
 	require.True(t, created)
 	require.Same(t, ms1, got)
 
 	// Add a conflicting series
-	got, created, _ = s.setUnlessAlreadySet(hash, lbls2, ms2, nil)
+	got, created, _ = s.setUnlessAlreadySet(hash, lbls2, ms2)
 	require.True(t, created)
 	require.Same(t, ms2, got)
 
@@ -3778,7 +3778,7 @@ func TestStripeSeries_gc(t *testing.T) {
 			{ref: chunks.ChunkDiskMapperRef(2 << 32), minTime: 200, maxTime: 250},
 		}
 		s := newStripeSeries(1, noopSeriesLifecycleCallback{})
-		_, created, _ := s.setUnlessAlreadySet(lset.Hash(), lset, series, nil)
+		_, created, _ := s.setUnlessAlreadySet(lset.Hash(), lset, series)
 		require.True(t, created)
 
 		for _, tc := range []struct {
@@ -3821,7 +3821,7 @@ func TestStripeSeries_gc(t *testing.T) {
 			lset := labels.FromStrings("a", "1")
 			series := &memSeries{lset: lset, ref: 1}
 			s := newStripeSeries(1, noopSeriesLifecycleCallback{})
-			_, created, _ := s.setUnlessAlreadySet(lset.Hash(), lset, series, nil)
+			_, created, _ := s.setUnlessAlreadySet(lset.Hash(), lset, series)
 			require.True(t, created)
 
 			s.gc(mint, 0)
@@ -3836,7 +3836,7 @@ func TestStripeSeries_gc(t *testing.T) {
 			lset := labels.FromStrings("a", "1")
 			series := &memSeries{lset: lset, ref: 1}
 			s := newStripeSeries(1, noopSeriesLifecycleCallback{})
-			_, created, _ := s.setUnlessAlreadySet(lset.Hash(), lset, series, nil)
+			_, created, _ := s.setUnlessAlreadySet(lset.Hash(), lset, series)
 			require.True(t, created)
 
 			series.updateExemplarTimestamp(ts)
@@ -3861,7 +3861,7 @@ func TestStripeSeries_gc(t *testing.T) {
 		series.Unlock()
 
 		s := newStripeSeries(1, noopSeriesLifecycleCallback{})
-		got, created, _ := s.setUnlessAlreadySet(lset.Hash(), lset, series, nil)
+		got, created, _ := s.setUnlessAlreadySet(lset.Hash(), lset, series)
 		require.True(t, created)
 		require.Same(t, series, got)
 
@@ -6124,7 +6124,8 @@ func TestHead_mmapHeadChunks(t *testing.T) {
 		require.NotNil(t, chk)
 
 		// Retire the series directly to test the saved chunk independently of reader waiting.
-		deleted := h.gcSeries([]storage.SeriesRef{ref}, 100, func(*memSeries) bool { return true }, nil)
+		deleted, err := h.gcSeries([]storage.SeriesRef{ref}, 100, func(*memSeries) bool { return true })
+		require.NoError(t, err)
 		require.Contains(t, deleted, ref)
 		require.Zero(t, h.NumSeries())
 		require.Nil(t, h.series.getByID(chunks.HeadSeriesRef(ref)))
@@ -6167,7 +6168,8 @@ func TestHead_mmapHeadChunks(t *testing.T) {
 		stripe := h.series.refStripe(series.ref)
 		require.Equal(t, int32(1), h.series.mmapReady[stripe].Load())
 
-		deleted := h.gcSeries([]storage.SeriesRef{ref}, math.MaxInt64, func(*memSeries) bool { return true }, nil)
+		deleted, err := h.gcSeries([]storage.SeriesRef{ref}, math.MaxInt64, func(*memSeries) bool { return true })
+		require.NoError(t, err)
 		require.Contains(t, deleted, ref)
 		require.Nil(t, h.series.getByID(chunks.HeadSeriesRef(ref)))
 		require.True(t, series.isGCed())
