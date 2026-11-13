@@ -112,11 +112,14 @@ labels:
   [ <labelname>: <labelvalue> ]
 
 # Optional metric metadata for the recorded time series.
+# Overrides automatic runtime metadata deduction (--enable-feature=auto-recording-metadata) when set (unknown is treated as unset, and native histogram samples require histogram or gaugehistogram).
 metadata:
   [ help: <string> ]
   [ type: <string> ] # One of counter, gauge, histogram, gaugehistogram, summary, info, stateset, unknown.
   [ unit: <string> ]
 ```
+
+When [`--enable-feature=auto-recording-metadata`](../feature_flags.md#automatic-recording-rule-metadata) is enabled (alongside [`--enable-feature=metadata-wal-records`](../feature_flags.md#metadata-wal-records) or [`--enable-feature=type-and-unit-labels`](../feature_flags.md#type-and-unit-labels)), Prometheus automatically deduces `type` and `unit` for recorded series at evaluation time and uses any compatible fields under `metadata:` as overrides.
 
 The syntax for alerting rules is:
 
