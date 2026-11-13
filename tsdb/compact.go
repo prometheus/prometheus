@@ -29,6 +29,7 @@ import (
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/common/promslog"
 
+	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/storage"
 	"github.com/prometheus/prometheus/tsdb/chunkenc"
 	"github.com/prometheus/prometheus/tsdb/chunks"
@@ -952,9 +953,42 @@ func (DefaultBlockPopulator) PopulateBlock(ctx context.Context, metrics *Compact
 		closers = append(closers, tombsr)
 
 		postings := postingsFunc(ctx, indexr)
+
+		var (
+			refs      []storage.SeriesRef
+			symbolSet = make(map[string]struct{})
+			builder   labels.ScratchBuilder
+			chks      []chunks.Meta
+		)
+		for postings.Next() {
+			ref := postings.At()
+			refs = append(refs, ref)
+			if err := indexr.Series(ref, &builder, &chks); err != nil {
+				if errors.Is(err, storage.ErrNotFound) {
+					continue
+				}
+				return fmt.Errorf("get series %d: %w", ref, err)
+			}
+			builder.Labels().Range(func(l labels.Label) {
+				symbolSet[l.Name] = struct{}{}
+				symbolSet[l.Value] = struct{}{}
+			})
+		}
+		if err := postings.Err(); err != nil {
+			return fmt.Errorf("iterate postings: %w", err)
+		}
+		postings = index.NewListPostings(refs)
+
 		// Blocks meta is half open: [min, max), so subtract 1 to ensure we don't hold samples with exact meta.MaxTime timestamp.
 		sets = append(sets, NewBlockChunkSeriesSet(b.Meta().ULID, indexr, chunkr, tombsr, postings, meta.MinTime, meta.MaxTime-1, false))
-		syms := indexr.Symbols()
+
+		blockSymbols := make([]string, 0, len(symbolSet))
+		for symbol := range symbolSet {
+			blockSymbols = append(blockSymbols, symbol)
+		}
+		slices.Sort(blockSymbols)
+		syms := index.NewStringListIter(blockSymbols)
+
 		if i == 0 {
 			symbols = syms
 			continue
