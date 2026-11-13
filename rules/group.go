@@ -873,10 +873,12 @@ func (g *Group) RestoreForState(ts time.Time) {
 			continue
 		}
 
-		// While not technically the same number of series we expect, it's as good of an approximation as any.
-		seriesByLabels := make(map[string]storage.Series, alertRule.ActiveAlertsCount())
+		// Multiple ALERTS_FOR_STATE series can map to the same alert labels within
+		// OutageTolerance across schema-label transitions (e.g. toggling type-and-unit-labels).
+		seriesByLabels := make(map[string][]storage.Series, alertRule.ActiveAlertsCount())
 		for sset.Next() {
-			seriesByLabels[sset.At().Labels().DropReserved(func(n string) bool { return n == labels.MetricName }).String()] = sset.At()
+			key := sset.At().Labels().DropReserved(schema.IsMetadataLabel).String()
+			seriesByLabels[key] = append(seriesByLabels[key], sset.At())
 		}
 
 		// No results for this alert rule.
@@ -887,25 +889,37 @@ func (g *Group) RestoreForState(ts time.Time) {
 		}
 
 		alertRule.ForEachActiveAlert(func(a *Alert) {
-			var s storage.Series
-
-			s, ok := seriesByLabels[a.Labels.String()]
+			seriesList, ok := seriesByLabels[a.Labels.String()]
 			if !ok {
 				return
 			}
-			// Series found for the 'for' state.
-			var t int64
-			var v float64
-			it := s.Iterator(nil)
-			for it.Next() == chunkenc.ValFloat {
-				t, v = it.At()
+			// Pick the most recent sample across all matching ALERTS_FOR_STATE series.
+			var (
+				t     int64
+				v     float64
+				found bool
+				it    chunkenc.Iterator
+			)
+			for _, s := range seriesList {
+				it = s.Iterator(it)
+				var seriesT int64
+				var seriesV float64
+				var seriesFound bool
+				for it.Next() == chunkenc.ValFloat {
+					seriesT, seriesV = it.At()
+					seriesFound = true
+				}
+				if it.Err() != nil {
+					g.logger.Error("Failed to restore 'for' state",
+						labels.AlertName, alertRule.Name(), "stage", "Iterator", "err", it.Err())
+					return
+				}
+				if seriesFound && (!found || seriesT > t) {
+					t, v = seriesT, seriesV
+					found = true
+				}
 			}
-			if it.Err() != nil {
-				g.logger.Error("Failed to restore 'for' state",
-					labels.AlertName, alertRule.Name(), "stage", "Iterator", "err", it.Err())
-				return
-			}
-			if value.IsStaleNaN(v) { // Alert was not active.
+			if !found || value.IsStaleNaN(v) { // Alert was not active.
 				return
 			}
 

@@ -3477,3 +3477,222 @@ groups:
 		require.False(t, g1[key].Equals(g2[key]), "Group.Equals must detect YAML metadata updates")
 	})
 }
+
+func TestAlertingRuleSchemaLabelsAndRestoreForState(t *testing.T) {
+	baseTime := time.Unix(1_700_000_000, 0).UTC()
+	engine := promqltest.NewTestEngineWithOpts(t, promql.EngineOpts{
+		MaxSamples:              1000,
+		Timeout:                 10 * time.Second,
+		EnableTypeAndUnitLabels: true,
+	})
+	expr, err := testParser.ParseExpr("http_requests_total > 0")
+	require.NoError(t, err)
+
+	seedInputCounter := func(t *testing.T, st *teststorage.TestStorage) {
+		t.Helper()
+		app := st.AppenderV2(t.Context())
+		for step := range 5 {
+			tsMs := timestamp.FromTime(baseTime.Add(time.Duration(step) * time.Minute))
+			_, err := app.Append(
+				0,
+				labels.FromStrings(
+					model.MetricNameLabel, "http_requests_total",
+					model.MetricTypeLabel, "counter",
+					model.MetricUnitLabel, "requests",
+					"job", "api",
+				),
+				0,
+				tsMs,
+				float64((step+1)*10),
+				nil,
+				nil,
+				storage.AOptions{},
+			)
+			require.NoError(t, err)
+		}
+		require.NoError(t, app.Commit())
+	}
+
+	t.Run("strips_schema_labels_from_alerts_and_restores_across_schema_labels", func(t *testing.T) {
+		st := teststorage.New(t)
+		seedInputCounter(t, st)
+
+		// Seed a pre-fix ALERTS_FOR_STATE series carrying leaked __type__ and __unit__ labels at t=0.
+		preFixApp := st.AppenderV2(t.Context())
+		_, err := preFixApp.Append(
+			0,
+			labels.FromStrings(
+				model.MetricNameLabel, alertForStateMetricName,
+				model.MetricTypeLabel, "counter",
+				model.MetricUnitLabel, "requests",
+				labels.AlertName, "HighRequests",
+				"job", "api",
+				"severity", "critical",
+			),
+			0,
+			timestamp.FromTime(baseTime),
+			float64(baseTime.Unix()),
+			nil,
+			nil,
+			storage.AOptions{},
+		)
+		require.NoError(t, err)
+		require.NoError(t, preFixApp.Commit())
+
+		opts := &ManagerOptions{
+			Context:                 t.Context(),
+			AppendableV2:            st,
+			Queryable:               st,
+			QueryFunc:               EngineQueryFunc(engine, st),
+			NotifyFunc:              func(context.Context, string, ...*Alert) {},
+			Logger:                  promslog.NewNopLogger(),
+			EnableTypeAndUnitLabels: true,
+			OutageTolerance:         30 * time.Minute,
+			ForGracePeriod:          10 * time.Minute,
+		}
+		ruleLabels := labels.FromStrings(
+			"severity", "critical",
+			model.MetricTypeLabel, "counter",
+			model.MetricUnitLabel, "bytes",
+		)
+
+		restoredRule := NewAlertingRule(
+			"HighRequests",
+			expr,
+			15*time.Minute,
+			0,
+			ruleLabels,
+			labels.EmptyLabels(),
+			labels.EmptyLabels(),
+			"",
+			false,
+			promslog.NewNopLogger(),
+		)
+		restoredGroup := NewGroup(GroupOptions{
+			Name:          "alert_schema",
+			Interval:      time.Minute,
+			Rules:         []Rule{restoredRule},
+			ShouldRestore: true,
+			Opts:          opts,
+		})
+
+		restoreTime := baseTime.Add(2 * time.Minute)
+		restoredGroup.Eval(t.Context(), restoreTime.Add(-time.Minute))
+		restoredGroup.Eval(t.Context(), restoreTime)
+		restoredGroup.RestoreForState(restoreTime)
+		require.True(t, restoredRule.Restored())
+
+		alerts := restoredRule.ActiveAlerts()
+		require.Len(t, alerts, 1)
+		prom_testutil.RequireEqual(
+			t,
+			labels.FromStrings(labels.AlertName, "HighRequests", "job", "api", "severity", "critical"),
+			alerts[0].Labels,
+		)
+		// Restored ActiveAt shifts by downDuration (restoreTime - baseTime = 2m) from baseTime.
+		require.Equal(t, baseTime.Add(2*time.Minute), alerts[0].ActiveAt)
+
+		// Subsequent evaluation writes clean ALERTS and ALERTS_FOR_STATE series without __type__ or __unit__.
+		evalTime := restoreTime.Add(time.Minute)
+		restoredGroup.Eval(t.Context(), evalTime)
+
+		q, err := st.Querier(timestamp.FromTime(evalTime), timestamp.FromTime(evalTime))
+		require.NoError(t, err)
+		defer func() { require.NoError(t, q.Close()) }()
+
+		for _, metricName := range []string{alertMetricName, alertForStateMetricName} {
+			ss := q.Select(t.Context(), false, nil, labels.MustNewMatcher(labels.MatchEqual, model.MetricNameLabel, metricName))
+			require.True(t, ss.Next())
+			require.Empty(t, ss.At().Labels().Get(model.MetricTypeLabel))
+			require.Empty(t, ss.At().Labels().Get(model.MetricUnitLabel))
+			require.False(t, ss.Next())
+			require.NoError(t, ss.Err())
+		}
+	})
+
+	t.Run("prefers_newest_for_state_sample_when_colliding_schema_series_exist", func(t *testing.T) {
+		st := teststorage.New(t)
+		seedInputCounter(t, st)
+
+		// Seed two colliding ALERTS_FOR_STATE series within OutageTolerance:
+		// 1. An older series without __type__ that was active long enough ago to fire immediately.
+		// 2. A newer series with __type__="gauge" (which sorts lexicographically BEFORE alertname)
+		//    marked StaleNaN at t=1m because the alert resolved before the restart.
+		seedApp := st.AppenderV2(t.Context())
+		_, err := seedApp.Append(
+			0,
+			labels.FromStrings(
+				model.MetricNameLabel, alertForStateMetricName,
+				labels.AlertName, "HighRequests",
+				"job", "api",
+			),
+			0,
+			timestamp.FromTime(baseTime),
+			float64(baseTime.Add(-20*time.Minute).Unix()),
+			nil,
+			nil,
+			storage.AOptions{},
+		)
+		require.NoError(t, err)
+		_, err = seedApp.Append(
+			0,
+			labels.FromStrings(
+				model.MetricNameLabel, alertForStateMetricName,
+				model.MetricTypeLabel, "gauge",
+				labels.AlertName, "HighRequests",
+				"job", "api",
+			),
+			0,
+			timestamp.FromTime(baseTime.Add(time.Minute)),
+			math.Float64frombits(value.StaleNaN),
+			nil,
+			nil,
+			storage.AOptions{},
+		)
+		require.NoError(t, err)
+		require.NoError(t, seedApp.Commit())
+
+		opts := &ManagerOptions{
+			Context:                 t.Context(),
+			AppendableV2:            st,
+			Queryable:               st,
+			QueryFunc:               EngineQueryFunc(engine, st),
+			NotifyFunc:              func(context.Context, string, ...*Alert) {},
+			Logger:                  promslog.NewNopLogger(),
+			EnableTypeAndUnitLabels: true,
+			OutageTolerance:         30 * time.Minute,
+			ForGracePeriod:          10 * time.Minute,
+		}
+
+		restoredRule := NewAlertingRule(
+			"HighRequests",
+			expr,
+			15*time.Minute,
+			0,
+			labels.EmptyLabels(),
+			labels.EmptyLabels(),
+			labels.EmptyLabels(),
+			"",
+			false,
+			promslog.NewNopLogger(),
+		)
+		restoredGroup := NewGroup(GroupOptions{
+			Name:          "alert_schema",
+			Interval:      time.Minute,
+			Rules:         []Rule{restoredRule},
+			ShouldRestore: true,
+			Opts:          opts,
+		})
+
+		restoreTime := baseTime.Add(2 * time.Minute)
+		restoredGroup.Eval(t.Context(), restoreTime)
+		restoredGroup.RestoreForState(restoreTime)
+		require.True(t, restoredRule.Restored())
+
+		// Because the newer series at t=1m ended in StaleNaN, RestoreForState must not
+		// restore the stale ActiveAt from the older t=0 series.
+		alerts := restoredRule.ActiveAlerts()
+		require.Len(t, alerts, 1)
+		require.Equal(t, restoreTime, alerts[0].ActiveAt)
+	})
+}
