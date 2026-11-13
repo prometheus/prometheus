@@ -19,6 +19,7 @@ import (
 	"encoding/binary"
 	"errors"
 	"fmt"
+	"math"
 	"math/rand"
 	"slices"
 	"sort"
@@ -26,6 +27,8 @@ import (
 	"strings"
 	"sync"
 	"testing"
+	"testing/synctest"
+	"time"
 
 	"github.com/grafana/regexp"
 	"github.com/stretchr/testify/require"
@@ -35,14 +38,170 @@ import (
 	"github.com/prometheus/prometheus/util/testutil"
 )
 
-func TestMemPostings_addFor(t *testing.T) {
-	p := NewMemPostings()
-	p.m[allPostingsKey.Name] = map[string][]storage.SeriesRef{}
-	p.m[allPostingsKey.Name][allPostingsKey.Value] = []storage.SeriesRef{1, 2, 3, 4, 6, 7, 8}
+func TestMemPostings_Add(t *testing.T) {
+	// Every series in this test has lset, so its labels are the ones a deletion affects.
+	lset := labels.FromStrings("shared", "value")
+	deleteIDs := func(p *MemPostings, ids ...storage.SeriesRef) {
+		deleted := make(map[storage.SeriesRef]struct{}, len(ids))
+		for _, id := range ids {
+			deleted[id] = struct{}{}
+		}
+		affected := map[labels.Label]struct{}{}
+		lset.Range(func(l labels.Label) { affected[l] = struct{}{} })
+		p.Delete(deleted, affected)
+	}
+	requirePostings := func(t *testing.T, want []storage.SeriesRef, p Postings) {
+		t.Helper()
+		got, err := ExpandPostings(p)
+		require.NoError(t, err)
+		require.Equal(t, want, got)
+	}
+	orderViolation := func(id, maximum storage.SeriesRef) string {
+		return fmt.Sprintf("cannot add series ID %d to ordered postings with maximum ID %d", id, maximum)
+	}
 
-	p.addFor(5, allPostingsKey)
+	for _, tc := range []struct {
+		name         string
+		existing     []storage.SeriesRef
+		unordered    bool
+		ensureOrder  bool
+		deleted      []storage.SeriesRef
+		add          storage.SeriesRef
+		want         []storage.SeriesRef // Postings after adding.
+		wantPanicMax storage.SeriesRef   // If nonzero, adding panics, reporting this maximum ID.
+	}{
+		{name: "empty", add: 0, want: []storage.SeriesRef{0}},
+		{name: "increasing", existing: []storage.SeriesRef{1, 3}, add: 4, want: []storage.SeriesRef{1, 3, 4}},
+		{name: "equal", existing: []storage.SeriesRef{1, 3}, add: 3, want: []storage.SeriesRef{1, 3, 3}},
+		{name: "decreasing", existing: []storage.SeriesRef{1, 3}, add: 2, wantPanicMax: 3},
+		{name: "unordered", unordered: true, existing: []storage.SeriesRef{3, 1}, add: 2, want: []storage.SeriesRef{1, 2, 3}},
+		{name: "after sorting", unordered: true, ensureOrder: true, existing: []storage.SeriesRef{3, 1}, add: 4, want: []storage.SeriesRef{1, 3, 4}},
+		{name: "decreasing after sorting", unordered: true, ensureOrder: true, existing: []storage.SeriesRef{3, 1}, add: 2, wantPanicMax: 3},
+		{name: "nonmaximum deleted", existing: []storage.SeriesRef{1, 3, 5}, deleted: []storage.SeriesRef{3}, add: 4, wantPanicMax: 5},
+		{name: "maximum deleted", existing: []storage.SeriesRef{1, 3}, deleted: []storage.SeriesRef{3}, add: 2, want: []storage.SeriesRef{1, 2}},
+		{name: "all deleted", existing: []storage.SeriesRef{1, 3}, deleted: []storage.SeriesRef{1, 3}, add: 0, want: []storage.SeriesRef{0}},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			p := NewMemPostings()
+			if tc.unordered {
+				p = NewUnorderedMemPostings()
+			}
+			for _, id := range tc.existing {
+				p.Add(id, lset)
+			}
+			if tc.ensureOrder {
+				p.EnsureOrder(2)
+			}
+			if len(tc.deleted) > 0 {
+				deleteIDs(p, tc.deleted...)
+			}
 
-	require.Equal(t, []storage.SeriesRef{1, 2, 3, 4, 5, 6, 7, 8}, p.m[allPostingsKey.Name][allPostingsKey.Value])
+			if tc.wantPanicMax != 0 {
+				require.PanicsWithValue(t, orderViolation(tc.add, tc.wantPanicMax), func() { p.Add(tc.add, lset) })
+				return
+			}
+			p.Add(tc.add, lset)
+			// Unordered postings must be sorted before they can be read.
+			p.EnsureOrder(2)
+			requirePostings(t, tc.want, p.All())
+			requirePostings(t, tc.want, p.Postings(t.Context(), "shared", "value"))
+		})
+	}
+
+	t.Run("full ID range", func(t *testing.T) {
+		// Zero is both the smallest ID and the bound of empty postings, and nothing
+		// fits above the largest ID.
+		p := NewMemPostings()
+		largestID := storage.SeriesRef(math.MaxUint64)
+		p.Add(0, lset)
+		p.Add(largestID, lset)
+		p.Add(largestID, lset)
+		deleteIDs(p, largestID)
+		p.Add(1, lset)
+		deleteIDs(p, 0, 1)
+		p.Add(0, lset)
+		requirePostings(t, []storage.SeriesRef{0}, p.All())
+
+		p.Add(largestID, lset)
+		require.PanicsWithValue(t, orderViolation(largestID-1, largestID), func() { p.Add(largestID-1, lset) })
+	})
+
+	t.Run("retained iterators", func(t *testing.T) {
+		// Postings read before later writes keep their contents: Add only appends
+		// past the end that earlier readers see, and Delete builds new lists.
+		p := NewMemPostings()
+		p.Add(1, lset)
+		p.Add(2, lset)
+		all := p.All()
+		shared := p.Postings(t.Context(), "shared", "value")
+		// These additions exercise both reuse and growth of the backing arrays.
+		for id := storage.SeriesRef(3); id <= 8; id++ {
+			p.Add(id, lset)
+		}
+		deleteIDs(p, 1)
+		requirePostings(t, []storage.SeriesRef{1, 2}, all)
+		requirePostings(t, []storage.SeriesRef{1, 2}, shared)
+		requirePostings(t, []storage.SeriesRef{2, 3, 4, 5, 6, 7, 8}, p.All())
+	})
+}
+
+func BenchmarkMemPostings_Add(b *testing.B) {
+	const batchSize = 1024
+	for _, mode := range []string{"ordered", "unordered"} {
+		b.Run(mode, func(b *testing.B) {
+			newPostings := NewMemPostings
+			if mode == "unordered" {
+				newPostings = NewUnorderedMemPostings
+			}
+			for _, labelCount := range []int{2, 10, 30} {
+				b.Run(fmt.Sprintf("labels=%d", labelCount), func(b *testing.B) {
+					series := make([]labels.Labels, batchSize)
+					for i := range series {
+						pairs := []string{"series", strconv.Itoa(i)}
+						for j := 1; j < labelCount; j++ {
+							pairs = append(pairs, fmt.Sprintf("label_%d", j), "shared")
+						}
+						series[i] = labels.FromStrings(pairs...)
+					}
+					b.ResetTimer()
+					for b.Loop() {
+						p := newPostings()
+						for i, lset := range series {
+							p.Add(storage.SeriesRef(i), lset)
+						}
+					}
+				})
+			}
+		})
+	}
+}
+
+func BenchmarkMemPostings_DeleteBound(b *testing.B) {
+	const count = 1024
+	series := make([]labels.Labels, count)
+	for i := range series {
+		series[i] = labels.FromStrings("job", "bench", "series", strconv.Itoa(i+1))
+	}
+	for _, removed := range []int{1, 128} {
+		b.Run(fmt.Sprintf("removed=%d", removed), func(b *testing.B) {
+			deleted := map[storage.SeriesRef]struct{}{}
+			affected := map[labels.Label]struct{}{}
+			for i := count - removed; i < count; i++ {
+				deleted[storage.SeriesRef(i+1)] = struct{}{}
+				series[i].Range(func(l labels.Label) { affected[l] = struct{}{} })
+			}
+			b.ResetTimer()
+			for range b.N {
+				b.StopTimer()
+				p := NewMemPostings()
+				for i, lset := range series {
+					p.Add(storage.SeriesRef(i+1), lset)
+				}
+				b.StartTimer()
+				p.Delete(deleted, affected)
+			}
+		})
+	}
 }
 
 func TestMemPostings_ensureOrder(t *testing.T) {
@@ -1011,6 +1170,63 @@ func TestMemPostings_Delete(t *testing.T) {
 	expanded, err = ExpandPostings(deleted)
 	require.NoError(t, err)
 	require.Empty(t, expanded, "expected empty postings, got %v", expanded)
+
+	t.Run("bound during deletion yields", func(t *testing.T) {
+		// Delete periodically releases the lock so that readers can proceed, and
+		// concurrent writers can then call Add. At every release the cached maximum
+		// must equal the all-series tail: a lower value would let Add append an ID
+		// below one that is still indexed, unsorting the postings.
+		synctest.Test(t, func(t *testing.T) {
+			p := NewMemPostings()
+			p.Add(1, labels.FromStrings("survivor", "value"))
+			// Enough affected labels for Delete to release the lock before it
+			// reaches the all-series list; it currently does so every 512 labels.
+			const labelCount = 2048
+			pairs := make([]string, 0, 2*labelCount)
+			affected := make(map[labels.Label]struct{}, labelCount)
+			for i := range labelCount {
+				name := fmt.Sprintf("delete_%04d", i)
+				pairs = append(pairs, name, "value")
+				affected[labels.Label{Name: name, Value: "value"}] = struct{}{}
+			}
+			p.Add(3, labels.FromStrings(pairs...))
+
+			done := make(chan struct{})
+			go func() {
+				defer close(done)
+				p.Delete(map[storage.SeriesRef]struct{}{3: {}}, affected)
+			}()
+			// Let Delete finish if an assertion fails, so the bubble can exit.
+			defer func() { <-done }()
+
+			// The cache is read directly because Add only exposes it by panicking.
+			boundAndTail := func() (bound, tail storage.SeriesRef) {
+				p.mtx.RLock()
+				defer p.mtx.RUnlock()
+				if all := p.m[allPostingsKey.Name][allPostingsKey.Value]; len(all) > 0 {
+					tail = all[len(all)-1]
+				}
+				return p.maxID, tail
+			}
+			var tails []storage.SeriesRef
+			for deleting := true; deleting; {
+				// Wait until Delete either pauses with the lock released or returns.
+				synctest.Wait()
+				select {
+				case <-done:
+					deleting = false
+				default:
+				}
+				bound, tail := boundAndTail()
+				require.Equal(t, tail, bound, "cached maximum differs from the all-series tail")
+				tails = append(tails, tail)
+				// Advance the fake clock so that a paused Delete resumes.
+				time.Sleep(time.Millisecond)
+			}
+			require.Contains(t, tails, storage.SeriesRef(3), "Delete must release the lock before removing the series from the all-series list")
+			require.Equal(t, storage.SeriesRef(1), tails[len(tails)-1])
+		})
+	})
 }
 
 // BenchmarkMemPostings_Delete is quite heavy, so consider running it with
@@ -1538,11 +1754,11 @@ func TestMemPostings_PostingsForLabelMatchingHonorsContextCancel(t *testing.T) {
 func TestMemPostings_LabelValuesLimitSmallest(t *testing.T) {
 	ctx := context.Background()
 
-	// Added in descending order
+	// Label values are added in descending order.
 	p := NewMemPostings()
 	all := []string{"a", "b", "c", "d", "e"}
 	for i, v := range slices.Backward(all) {
-		p.Add(storage.SeriesRef(i+1), labels.FromStrings("lbl", v))
+		p.Add(storage.SeriesRef(len(all)-i), labels.FromStrings("lbl", v))
 	}
 
 	shared := slices.Clone(p.lvs["lbl"])
