@@ -386,7 +386,7 @@ func NewOOOCompactionHead(ctx context.Context, head *Head) (*OOOCompactionHead, 
 	if err != nil {
 		return nil, err
 	}
-	p = hr.SortedPostings(p)
+	p = hr.SortedPostings(ctx, p)
 
 	var lastSeq, lastOff int
 	for p.Next() {
@@ -397,6 +397,9 @@ func NewOOOCompactionHead(ctx context.Context, head *Head) (*OOOCompactionHead, 
 		}
 
 		ch.mmapOOOSeriesChunk(ms, seriesRef, &lastSeq, &lastOff)
+	}
+	if err := p.Err(); err != nil {
+		return nil, fmt.Errorf("iterate postings: %w", err)
 	}
 
 	return ch, nil
@@ -522,14 +525,14 @@ func (*OOOCompactionHeadIndexReader) PostingsForAllLabelValues(context.Context, 
 	return index.ErrPostings(errors.New("not supported"))
 }
 
-func (*OOOCompactionHeadIndexReader) SortedPostings(p index.Postings) index.Postings {
+func (*OOOCompactionHeadIndexReader) SortedPostings(_ context.Context, p index.Postings) index.Postings {
 	// This will already be sorted from the Postings() call above.
 	return p
 }
 
-func (ir *OOOCompactionHeadIndexReader) ShardedPostings(p index.Postings, shardIndex, shardCount uint64) index.Postings {
+func (ir *OOOCompactionHeadIndexReader) ShardedPostings(ctx context.Context, p index.Postings, shardIndex, shardCount uint64) index.Postings {
 	hr := headIndexReader{head: ir.ch.head, mint: ir.ch.mint, maxt: ir.ch.maxt}
-	return hr.ShardedPostings(p, shardIndex, shardCount)
+	return hr.ShardedPostings(ctx, p, shardIndex, shardCount)
 }
 
 func (ir *OOOCompactionHeadIndexReader) Series(ref storage.SeriesRef, builder *labels.ScratchBuilder, chks *[]chunks.Meta) error {

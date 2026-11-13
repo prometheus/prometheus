@@ -1682,18 +1682,21 @@ func (r *Reader) postingsForLabelMatchingV1(ctx context.Context, name string, ma
 
 // SortedPostings returns the given postings list reordered so that the backing series
 // are sorted.
-func (*Reader) SortedPostings(p Postings) Postings {
+func (*Reader) SortedPostings(_ context.Context, p Postings) Postings {
 	return p
 }
 
 // ShardedPostings returns a postings list filtered by the provided shardIndex out of shardCount.
-func (r *Reader) ShardedPostings(p Postings, shardIndex, shardCount uint64) Postings {
+func (r *Reader) ShardedPostings(ctx context.Context, p Postings, shardIndex, shardCount uint64) Postings {
 	var (
 		out     = make([]storage.SeriesRef, 0, 128)
 		bufLbls = labels.ScratchBuilder{}
 	)
 
-	for p.Next() {
+	for i := 0; p.Next(); i++ {
+		if i%checkContextEveryNIterations == 0 && ctx.Err() != nil {
+			return ErrPostings(ctx.Err())
+		}
 		id := p.At()
 
 		// Get the series labels (no chunks).

@@ -3042,7 +3042,7 @@ func TestHeadShardedPostings(t *testing.T) {
 		p, err = ir.Postings(ctx, "const", "1")
 		require.NoError(t, err)
 
-		p = ir.ShardedPostings(p, shardIndex, shardCount)
+		p = ir.ShardedPostings(ctx, p, shardIndex, shardCount)
 		for p.Next() {
 			ref := p.At()
 
@@ -3075,11 +3075,23 @@ func TestHeadShardedPostings(t *testing.T) {
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			p := index.Merge(ctx, index.NewListPostings(tc.refs), index.ErrPostings(errExpected))
-			p = ir.ShardedPostings(p, 0, shardCount)
+			p = ir.ShardedPostings(ctx, p, 0, shardCount)
 			require.False(t, p.Next())
 			require.ErrorIs(t, p.Err(), errExpected)
 		})
 	}
+
+	t.Run("context canceled", func(t *testing.T) {
+		cancelCtx := &testutil.MockContextErrAfter{FailAfter: 1}
+		p := ir.ShardedPostings(cancelCtx, index.NewListPostings(expected), 0, shardCount)
+		require.False(t, p.Next())
+		require.ErrorIs(t, p.Err(), context.Canceled)
+
+		cancelCtx = &testutil.MockContextErrAfter{FailAfter: 1}
+		p = ir.SortedPostings(cancelCtx, index.NewListPostings(expected))
+		require.False(t, p.Next())
+		require.ErrorIs(t, p.Err(), context.Canceled)
+	})
 }
 
 func BenchmarkHeadLabelValuesWithMatchers(b *testing.B) {

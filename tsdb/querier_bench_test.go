@@ -26,6 +26,7 @@ import (
 	"github.com/prometheus/prometheus/storage"
 	"github.com/prometheus/prometheus/tsdb/index"
 	"github.com/prometheus/prometheus/util/compression"
+	"github.com/prometheus/prometheus/util/testutil"
 )
 
 // Make entries ~50B in size, to emulate real-world high cardinality.
@@ -291,7 +292,7 @@ func createHeadForBenchmarkSelect(b *testing.B, numSeries int, addSeries func(ap
 	return h, db
 }
 
-func benchmarkSelect(b *testing.B, queryable storage.Queryable, numSeries int, sorted bool) {
+func benchmarkSelect(b *testing.B, queryable storage.Queryable, numSeries int, sorted bool, failAfter uint64) {
 	matcher := labels.MustNewMatcher(labels.MatchEqual, "foo", "bar")
 	b.ResetTimer()
 	for s := 1; s <= numSeries; s *= 10 {
@@ -301,10 +302,16 @@ func benchmarkSelect(b *testing.B, queryable storage.Queryable, numSeries int, s
 
 			b.ResetTimer()
 			for b.Loop() {
-				ss := q.Select(context.Background(), sorted, nil, matcher)
+				ctx := context.Background()
+				if failAfter > 0 {
+					ctx = &testutil.MockContextErrAfter{FailAfter: failAfter}
+				}
+				ss := q.Select(ctx, sorted, nil, matcher)
 				for ss.Next() {
 				}
-				require.NoError(b, ss.Err())
+				if failAfter == 0 {
+					require.NoError(b, ss.Err())
+				}
 			}
 			q.Close()
 		})
@@ -321,10 +328,14 @@ func BenchmarkQuerierSelect(b *testing.B) {
 	})
 
 	b.Run("Head", func(b *testing.B) {
-		benchmarkSelect(b, db, numSeries, false)
+		benchmarkSelect(b, db, numSeries, false, 0)
 	})
 	b.Run("SortedHead", func(b *testing.B) {
-		benchmarkSelect(b, db, numSeries, true)
+		benchmarkSelect(b, db, numSeries, true, 0)
+	})
+	// Cancel at the first context check after PostingsForMatchers, which is inside SortedPostings.
+	b.Run("SortedHeadCanceled", func(b *testing.B) {
+		benchmarkSelect(b, db, numSeries, true, 2)
 	})
 
 	b.Run("Block", func(b *testing.B) {
@@ -337,7 +348,7 @@ func BenchmarkQuerierSelect(b *testing.B) {
 			require.NoError(b, block.Close())
 		}()
 
-		benchmarkSelect(b, (*queryableBlock)(block), numSeries, false)
+		benchmarkSelect(b, (*queryableBlock)(block), numSeries, false, 0)
 	})
 }
 
@@ -363,7 +374,7 @@ func BenchmarkQuerierSelectWithOutOfOrder(b *testing.B) {
 	})
 
 	b.Run("Head", func(b *testing.B) {
-		benchmarkSelect(b, db, numSeries, false)
+		benchmarkSelect(b, db, numSeries, false, 0)
 	})
 }
 
