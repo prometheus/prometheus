@@ -151,7 +151,10 @@ func (a *headAppenderV2) Append(ref storage.SeriesRef, ls labels.Labels, st, t i
 		return 0, storage.ErrOutOfBounds
 	}
 
-	s := a.head.series.getByID(chunks.HeadSeriesRef(ref))
+	var s *memSeries
+	if ref != 0 {
+		s = a.head.series.getByID(chunks.HeadSeriesRef(ref))
+	}
 	if hook := a.head.testAfterSeriesLookup; hook != nil {
 		hook(s)
 	}
