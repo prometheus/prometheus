@@ -420,11 +420,15 @@ func (w *WL) Repair(origErr error) error {
 	}
 	w.logger.Warn("Deleting all segments newer than corrupted segment", "segment", cerr.Segment)
 
-	for _, s := range segs {
+	// Delete newest first: if the repair is interrupted, the remaining
+	// segments are still sequential, so the next start can open the WAL and
+	// repair again. Deleting oldest first could leave a gap, which fails
+	// with "segments are not sequential".
+	for _, s := range slices.Backward(segs) {
 		if w.segment.i == s.index {
 			// The active segment needs to be removed,
 			// close it first (Windows!). Can be closed safely
-			// as we set the current segment to repaired file
+			// as we set the current segment to a new one
 			// below.
 			if err := w.segment.Close(); err != nil {
 				return fmt.Errorf("close active segment: %w", err)
@@ -438,70 +442,114 @@ func (w *WL) Repair(origErr error) error {
 		}
 	}
 	// Regardless of the corruption offset, no record reaches into the previous segment.
-	// So we can safely repair the WAL by removing the segment and re-inserting all
-	// its records up to the corruption.
+	// So we can safely repair the WAL by keeping only the records of the
+	// corrupted segment up to the corruption.
 	w.logger.Warn("Rewrite corrupted segment", "segment", cerr.Segment)
 
 	fn := SegmentName(w.Dir(), cerr.Segment)
-	tmpfn := fn + ".repair"
+	// Not "<seg>.repair": an interrupted repair of an older version can have
+	// left that file, holding the only copy of the intact records.
+	tmpfn := fn + ".repair.tmp"
 
-	if err := fileutil.Rename(fn, tmpfn); err != nil {
-		return err
-	}
-	// Create a clean segment and make it the active one.
-	s, err := CreateSegment(w.Dir(), cerr.Segment)
-	if err != nil {
-		return err
-	}
-	if err := w.setSegment(s); err != nil {
-		return err
-	}
-
-	f, err := os.Open(tmpfn)
+	// Find the end of the last intact record before the corruption.
+	f, err := os.Open(fn)
 	if err != nil {
 		return fmt.Errorf("open segment: %w", err)
 	}
-	defer f.Close()
-
-	r := NewReader(bufio.NewReader(f))
-
-	for r.Next() {
-		// Add records only up to the where the error was.
-		if r.Offset() >= cerr.Offset {
-			break
-		}
-		if err := w.Log(r.Record()); err != nil {
-			return fmt.Errorf("insert record: %w", err)
-		}
+	end, err := intactPrefixEnd(f, cerr.Offset)
+	if err != nil {
+		f.Close()
+		return fmt.Errorf("re-read segment %d, not repairing: %w", cerr.Segment, err)
 	}
-	// We expect an error here from r.Err(), so nothing to handle.
-
-	// We need to pad to the end of the last page in the repaired segment
-	if err := w.flushPage(true); err != nil {
-		return fmt.Errorf("flush page in repair: %w", err)
-	}
-
-	// We explicitly close even when there is a defer for Windows to be
-	// able to delete it. The defer is in place to close it in-case there
-	// are errors above.
 	if err := f.Close(); err != nil {
 		return fmt.Errorf("close corrupted file: %w", err)
 	}
-	if err := os.Remove(tmpfn); err != nil {
-		return fmt.Errorf("delete corrupted segment: %w", err)
+
+	// Copy those bytes unchanged (no re-encoding, so no rotation and no
+	// change of compression) into a temporary file, zero-pad the last page
+	// (a zero header means "rest of page is empty"), make it durable, and
+	// atomically replace the corrupted segment. Until the rename the
+	// corrupted segment stays in place, so an interruption only means
+	// repairing again on the next start.
+	if err := writeRepairedSegment(fn, tmpfn, end); err != nil {
+		os.Remove(tmpfn)
+		return err
+	}
+	if err := fileutil.Rename(tmpfn, fn); err != nil {
+		return fmt.Errorf("replace corrupted segment: %w", err)
 	}
 
-	// Explicitly close the segment we just repaired to avoid issues with Windows.
-	s.Close()
-
-	// We always want to start writing to a new Segment rather than an existing
-	// Segment, which is handled by NewSize, but earlier in Repair we're deleting
-	// all segments that come after the corrupted Segment. Recreate a new Segment here.
-	s, err = CreateSegment(w.Dir(), cerr.Segment+1)
+	s, err := CreateSegment(w.Dir(), cerr.Segment+1)
 	if err != nil {
 		return err
 	}
 	return w.setSegment(s)
+}
+
+// intactPrefixEnd returns the end offset of the last complete record in rd
+// that ends before limit. The scan stops at the first malformed record, which
+// is what it is looking for. A failure to read rd itself is an error, so a
+// transient read error cannot make the repair keep fewer records than the
+// segment holds.
+func intactPrefixEnd(rd io.Reader, limit int64) (int64, error) {
+	er := &readErrRecorder{r: rd}
+	r := NewReader(bufio.NewReader(er))
+	var end int64
+	for r.Next() {
+		if r.Offset() >= limit {
+			break
+		}
+		end = r.Offset()
+	}
+	if er.err != nil {
+		return 0, er.err
+	}
+	return end, nil
+}
+
+// readErrRecorder remembers the first read error other than io.EOF.
+type readErrRecorder struct {
+	r   io.Reader
+	err error
+}
+
+func (e *readErrRecorder) Read(p []byte) (int, error) {
+	n, err := e.r.Read(p)
+	if err != nil && err != io.EOF && e.err == nil {
+		e.err = err
+	}
+	return n, err
+}
+
+// writeRepairedSegment writes the first n bytes of src to dst, zero-padded to
+// at least one whole page, and syncs dst.
+func writeRepairedSegment(src, dst string, n int64) error {
+	in, err := os.Open(src)
+	if err != nil {
+		return fmt.Errorf("open segment: %w", err)
+	}
+	defer in.Close()
+	out, err := os.OpenFile(dst, os.O_WRONLY|os.O_CREATE|os.O_TRUNC, 0o666)
+	if err != nil {
+		return fmt.Errorf("create repaired segment: %w", err)
+	}
+	if _, err := io.CopyN(out, in, n); err != nil {
+		out.Close()
+		return fmt.Errorf("copy intact records: %w", err)
+	}
+	// Write a zeroed page even when no records are kept, as the old repair
+	// did through flushPage(true).
+	if rem := n % pageSize; rem != 0 || n == 0 {
+		if _, err := out.Write(make([]byte, pageSize-rem)); err != nil {
+			out.Close()
+			return fmt.Errorf("pad last page: %w", err)
+		}
+	}
+	if err := out.Sync(); err != nil {
+		out.Close()
+		return fmt.Errorf("sync repaired segment: %w", err)
+	}
+	return out.Close()
 }
 
 // SegmentName builds a segment name for the directory.
