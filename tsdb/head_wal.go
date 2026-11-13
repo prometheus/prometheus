@@ -1180,6 +1180,9 @@ func (h *Head) loadWBL(r *wlog.Reader, syms *labels.SymbolTable, multiRef map[ch
 
 type errLoadWbl struct {
 	err error
+	// walErr is the WAL corruption that ended the WAL replay before the WBL
+	// replay, if any. It needs a repair too.
+	walErr error
 }
 
 func (e errLoadWbl) Error() string {
