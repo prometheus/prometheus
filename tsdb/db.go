@@ -364,6 +364,9 @@ type DB struct {
 	// irrespective of success or failure. This does not include out-of-order compaction and stale series compaction.
 	lastHeadCompactionTime time.Time
 
+	// headMmapDonec is closed when the goroutine started by runHeadMmap exits.
+	headMmapDonec chan struct{}
+
 	writeNotified wlog.WriteNotified
 
 	registerer prometheus.Registerer
@@ -1265,6 +1268,8 @@ func open(dir string, l *slog.Logger, r prometheus.Registerer, opts *Options, rn
 		opts.CompactionDelay = db.generateCompactionDelay()
 	}
 
+	db.headMmapDonec = make(chan struct{})
+	go db.runHeadMmap()
 	go db.run(ctx)
 
 	return db, nil
@@ -1322,8 +1327,6 @@ func (db *DB) run(ctx context.Context) {
 			case db.compactc <- struct{}{}:
 			default:
 			}
-			// We attempt mmapping of head chunks regularly.
-			db.head.mmapHeadChunks()
 
 			numStaleSeries, numSeries := db.Head().NumStaleSeries(), db.Head().NumSeries()
 			if db.autoCompact && numSeries > 0 && db.opts.staleSeriesCompactionThreshold.Load() > 0 {
@@ -1364,6 +1367,25 @@ func (db *DB) run(ctx context.Context) {
 			db.autoCompactMtx.Unlock()
 		case <-db.stopc:
 			return
+		}
+	}
+}
+
+// runHeadMmap m-maps full head chunks every BlockReloadInterval until the DB
+// is closed. It runs apart from db.run, which also runs compactions: writing a
+// head block or merging blocks can take over an hour, and every chunk that
+// fills up in that time would otherwise stay in memory until it ends.
+func (db *DB) runHeadMmap() {
+	defer close(db.headMmapDonec)
+
+	ticker := time.NewTicker(db.opts.BlockReloadInterval)
+	defer ticker.Stop()
+	for {
+		select {
+		case <-db.stopc:
+			return
+		case <-ticker.C:
+			db.head.mmapHeadChunks()
 		}
 	}
 }
@@ -2539,6 +2561,9 @@ func (db *DB) Close() error {
 		db.compactCancel()
 	}
 	<-db.donec
+	if db.headMmapDonec != nil {
+		<-db.headMmapDonec
+	}
 
 	db.mtx.Lock()
 	defer db.mtx.Unlock()
