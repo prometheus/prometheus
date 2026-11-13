@@ -939,6 +939,16 @@ func (db *DB) Close() error {
 	return errors.Join(db.locker.Release(), db.wal.Close())
 }
 
+const (
+	// Maximum slice capacities retained when returning appenders and WAL encoding
+	// buffers to their sync.Pools. Larger backing arrays from high-cardinality
+	// batches are dropped on Commit/Rollback so a single large batch cannot grow
+	// every pooled appender up to its peak size.
+	maxPooledSamplesCap = 4096
+	maxPooledAuxCap     = 1024
+	maxPooledBufCap     = 64 * 1024
+)
+
 type appenderBase struct {
 	*DB
 
@@ -1342,7 +1352,7 @@ func (a *appenderBase) log() error {
 	encoder := record.Encoder{EnableSTStorage: a.opts.EnableSTStorage}
 	buf := a.bufPool.Get().([]byte)
 	defer func() {
-		a.bufPool.Put(buf[:0]) //nolint:staticcheck
+		a.putBuf(buf)
 	}()
 
 	if len(a.pendingSeries) > 0 {
@@ -1446,31 +1456,43 @@ func (a *appenderBase) log() error {
 	return nil
 }
 
-// clearData clears all pending data before the appender is returned to its sync.Pool.
+// clearData clears all pending data and drops oversized backing arrays before
+// the appender is returned to its sync.Pool.
+func (a *appenderBase) clearData() {
+	a.pendingSeries = clearAndResetSlice(a.pendingSeries, maxPooledAuxCap)
+	// RefSample has only scalar fields, so skip zeroing its elements.
+	if cap(a.pendingSamples) > maxPooledSamplesCap {
+		a.pendingSamples = nil
+	} else {
+		a.pendingSamples = a.pendingSamples[:0]
+	}
+	a.pendingHistograms = clearAndResetSlice(a.pendingHistograms, maxPooledAuxCap)
+	a.pendingFloatHistograms = clearAndResetSlice(a.pendingFloatHistograms, maxPooledAuxCap)
+	a.pendingExamplars = clearAndResetSlice(a.pendingExamplars, maxPooledAuxCap)
+	a.pendingMetadata = clearAndResetSlice(a.pendingMetadata, maxPooledAuxCap)
+	a.sampleSeries = clearAndResetSlice(a.sampleSeries, maxPooledSamplesCap)
+	a.histogramSeries = clearAndResetSlice(a.histogramSeries, maxPooledAuxCap)
+	a.floatHistogramSeries = clearAndResetSlice(a.floatHistogramSeries, maxPooledAuxCap)
+	a.metadataSeries = clearAndResetSlice(a.metadataSeries, maxPooledAuxCap)
+}
+
+// clearAndResetSlice zeroes s[:len(s)] so pointer fields do not retain referenced
+// objects while pooled, or drops the backing array if it grew past maxCap.
 // NOTE: Go's clear built-in only zeroes up to len(s); elements in s[len(s):cap(s)]
 // are already zero because pending slices are only ever grown via append and
 // cleared here before reslicing to [:0].
-func (a *appenderBase) clearData() {
-	clear(a.pendingSeries)
-	a.pendingSeries = a.pendingSeries[:0]
-	// RefSample has only scalar fields, so skip zeroing its elements.
-	a.pendingSamples = a.pendingSamples[:0]
-	clear(a.pendingHistograms)
-	a.pendingHistograms = a.pendingHistograms[:0]
-	clear(a.pendingFloatHistograms)
-	a.pendingFloatHistograms = a.pendingFloatHistograms[:0]
-	clear(a.pendingExamplars)
-	a.pendingExamplars = a.pendingExamplars[:0]
-	clear(a.pendingMetadata)
-	a.pendingMetadata = a.pendingMetadata[:0]
-	clear(a.sampleSeries)
-	a.sampleSeries = a.sampleSeries[:0]
-	clear(a.histogramSeries)
-	a.histogramSeries = a.histogramSeries[:0]
-	clear(a.floatHistogramSeries)
-	a.floatHistogramSeries = a.floatHistogramSeries[:0]
-	clear(a.metadataSeries)
-	a.metadataSeries = a.metadataSeries[:0]
+func clearAndResetSlice[T any](s []T, maxCap int) []T {
+	if cap(s) > maxCap {
+		return nil
+	}
+	clear(s)
+	return s[:0]
+}
+
+func (a *appenderBase) putBuf(buf []byte) {
+	if cap(buf) <= maxPooledBufCap {
+		a.bufPool.Put(buf[:0]) //nolint:staticcheck
+	}
 }
 
 func (a *appenderBase) rollback() error {
@@ -1490,7 +1512,7 @@ func (a *appenderBase) logSeries() error {
 	if len(a.pendingSeries) > 0 {
 		buf := a.bufPool.Get().([]byte)
 		defer func() {
-			a.bufPool.Put(buf[:0]) //nolint:staticcheck
+			a.putBuf(buf)
 		}()
 
 		encoder := record.Encoder{EnableSTStorage: a.opts.EnableSTStorage}
