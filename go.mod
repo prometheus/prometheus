@@ -64,7 +64,7 @@ require (
 	github.com/pb33f/go-yaml v0.1.1
 	github.com/pb33f/libopenapi v0.41.6
 	github.com/pb33f/libopenapi-validator v0.16.1
-	github.com/prometheus/alertmanager v0.34.1
+	github.com/prometheus/alertmanager v0.35.0
 	github.com/prometheus/client_golang v1.25.0
 	github.com/prometheus/client_golang/exp v0.0.0-20261028105007-0b2f01f00376
 	github.com/prometheus/client_model v0.6.3
@@ -185,7 +185,7 @@ require (
 	github.com/fxamacker/cbor/v2 v2.9.1 // indirect
 	github.com/go-logr/logr v1.4.4 // indirect
 	github.com/go-logr/stdr v1.2.2 // indirect
-	github.com/go-openapi/analysis v1.0.0 // indirect
+	github.com/go-openapi/analysis v1.0.1 // indirect
 	github.com/go-openapi/errors v0.22.9 // indirect
 	github.com/go-openapi/jsonpointer v1.0.2 // indirect
 	github.com/go-openapi/jsonreference v1.0.2 // indirect
