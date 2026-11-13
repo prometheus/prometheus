@@ -16,6 +16,7 @@ package config
 import (
 	"errors"
 	"fmt"
+	"io"
 	"log/slog"
 	"mime"
 	"net/url"
@@ -134,9 +135,39 @@ func LoadFile(filename string, agentMode bool, logger *slog.Logger) (*Config, er
 	if err != nil {
 		return nil, err
 	}
-	cfg, err := Load(string(content), logger)
+	cfg, err := loadChecked(string(content), "YAML file "+filename, agentMode, logger)
 	if err != nil {
-		return nil, fmt.Errorf("parsing YAML file %s: %w", filename, err)
+		return nil, err
+	}
+	cfg.SetDirectory(filepath.Dir(filename))
+	return cfg, nil
+}
+
+// LoadReader parses and validates the YAML read from r into a read-only
+// Config, applying the same checks as LoadFile. The name describes the input
+// in error messages, for example "standard input". As there is no file
+// location, relative paths in the config are resolved against the current
+// working directory. Callers should never write to or shallow copy the
+// returned Config.
+func LoadReader(r io.Reader, name string, agentMode bool, logger *slog.Logger) (*Config, error) {
+	content, err := io.ReadAll(r)
+	if err != nil {
+		return nil, err
+	}
+	cfg, err := loadChecked(string(content), "YAML from "+name, agentMode, logger)
+	if err != nil {
+		return nil, err
+	}
+	cfg.SetDirectory(".")
+	return cfg, nil
+}
+
+// loadChecked is the shared implementation of LoadFile and LoadReader. The
+// source describes the content in error messages.
+func loadChecked(content, source string, agentMode bool, logger *slog.Logger) (*Config, error) {
+	cfg, err := Load(content, logger)
+	if err != nil {
+		return nil, fmt.Errorf("parsing %s: %w", source, err)
 	}
 
 	if agentMode {
@@ -152,8 +183,6 @@ func LoadFile(filename string, agentMode bool, logger *slog.Logger) (*Config, er
 			return nil, errors.New("field remote_read is not allowed in agent mode")
 		}
 	}
-
-	cfg.SetDirectory(filepath.Dir(filename))
 	return cfg, nil
 }
 

@@ -111,7 +111,7 @@ Check if the config files are valid or not.
 
 | Argument | Description | Required |
 | --- | --- | --- |
-| config-files | The config files to check. | Yes |
+| config-files | The config files to check. Use '-' to read from standard input once; relative paths in a config read from standard input are resolved against the working directory. | Yes |
 
 
 
@@ -184,7 +184,7 @@ Check if the rule files are valid or not.
 
 | Argument | Description |
 | --- | --- |
-| rule-files | The rule files to check, default is read from standard input. |
+| rule-files | The rule files to check. If none are given, or for '-', the rules are read from standard input (at most once). |
 
 
 
