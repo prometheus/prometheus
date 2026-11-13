@@ -306,6 +306,7 @@ type Options struct {
 	EnableSearch               bool
 	EnableQueryCost            bool
 	MaxSearchLimit             int
+	MetadataDefaultTimeRange   time.Duration // Zero disables the default time range.
 	PageTitle                  string
 	RemoteReadSampleLimit      int
 	RemoteReadConcurrencyLimit int
@@ -442,6 +443,7 @@ func New(logger *slog.Logger, o *Options) *Handler {
 		o.Parser,
 		o.EnableQueryCost,
 		o.QueryTimeout,
+		o.MetadataDefaultTimeRange,
 	)
 
 	if r := o.FeatureRegistry; r != nil {
@@ -452,6 +454,7 @@ func New(logger *slog.Logger, o *Options) *Handler {
 		r.Set(features.API, "otlp_write_receiver", o.EnableOTLPWriteReceiver)
 		r.Set(features.API, "query_cost", o.EnableQueryCost)
 		r.Set(features.API, "search", o.EnableSearch)
+		r.Set(features.API, "metadata_default_time_range", o.MetadataDefaultTimeRange > 0)
 		for _, alg := range api_v1.FuzzAlgorithms() {
 			r.Enable(features.API, "search_fuzz_alg_"+alg)
 		}

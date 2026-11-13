@@ -586,6 +586,10 @@ URL query parameters:
 - `end=<rfc3339 | unix_timestamp>`: End timestamp.
 - `limit=<number>`: Maximum number of returned series. Optional. 0 means disabled.
 
+If `--enable-feature=metadata-default-time-range` is set and `start` or `end` is
+omitted, a default time range applies and the response contains a warning. See
+[Metadata default time range](../feature_flags.md#metadata-default-time-range).
+
 You can URL-encode these parameters directly in the request body by using the `POST` method and
 `Content-Type: application/x-www-form-urlencoded` header. This is useful when specifying a large
 or dynamic number of series selectors that may breach server-side URL character limits.
@@ -642,6 +646,10 @@ URL query parameters:
   series from which to read the label names. Optional.
 - `limit=<number>`: Maximum number of returned series. Optional. 0 means disabled.
 
+If `--enable-feature=metadata-default-time-range` is set and `start` or `end` is
+omitted, a default time range applies and the response contains a warning. See
+[Metadata default time range](../feature_flags.md#metadata-default-time-range).
+
 The `data` section of the JSON response is a list of string label names. Note
 that the `start` and `end` times are approximate and the result may contain
 label names for series which have no samples in the given interval.
@@ -696,6 +704,10 @@ URL query parameters:
 - `match[]=<series_selector>`: Repeated series selector argument that selects the
   series from which to read the label values. Optional.
 - `limit=<number>`: Maximum number of returned series. Optional. 0 means disabled.
+
+If `--enable-feature=metadata-default-time-range` is set and `start` or `end` is
+omitted, a default time range applies and the response contains a warning. See
+[Metadata default time range](../feature_flags.md#metadata-default-time-range).
 
 The `data` section of the JSON response is a list of string label values. Note
 that the `start` and `end` times are approximate and the result may contain
@@ -822,6 +834,10 @@ Common URL query parameters:
 The `start` and `end` parameters narrow results to the selected time window.
 Results may include values from series active slightly outside that window,
 because Prometheus stores data in fixed-size blocks (typically 2 hours each).
+
+If `--enable-feature=metadata-default-time-range` is set and `start` or `end` is
+omitted, a default time range applies and the response contains a warning. See
+[Metadata default time range](../feature_flags.md#metadata-default-time-range).
 
 Additional parameters for `/api/v1/search/metric_names`:
 

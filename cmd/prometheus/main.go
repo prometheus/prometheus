@@ -199,6 +199,7 @@ type flagConfig struct {
 	lookbackDelta                model.Duration
 	webTimeout                   model.Duration
 	queryTimeout                 model.Duration
+	metadataDefaultTimeRange     model.Duration
 	queryConcurrency             int
 	queryMaxSamples              int
 	convertClassicHistogramsFrom []string
@@ -362,6 +363,12 @@ func (c *flagConfig) setFeatureListOptions(logger *slog.Logger) error {
 			case "search-api":
 				c.web.EnableSearch = true
 				logger.Info("Experimental search API enabled.")
+			case "metadata-default-time-range":
+				if c.metadataDefaultTimeRange <= 0 {
+					return fmt.Errorf("--web.metadata.default-time-range must be greater than 0 when metadata-default-time-range is enabled; got %s", c.metadataDefaultTimeRange)
+				}
+				c.web.MetadataDefaultTimeRange = time.Duration(c.metadataDefaultTimeRange)
+				logger.Info("Experimental metadata default time range enabled.", "range", c.metadataDefaultTimeRange)
 			case "promql-native-histograms-as-classic":
 				c.enableNativeHistogramsAsClassic = true
 				logger.Info("Experimental PromQL native histograms as classic conversion enabled.")
@@ -624,6 +631,9 @@ func main() {
 	serverOnlyFlag(a, "web.search.max-limit", "Hard upper bound on the \"limit\" query parameter accepted by the experimental search API (--enable-feature=search-api). Requests with a higher limit are rejected with HTTP 400. 0 disables the cap.").
 		Default("10000").IntVar(&cfg.web.MaxSearchLimit)
 
+	serverOnlyFlag(a, "web.metadata.default-time-range", "Time range applied to the series, label names, label values and search API endpoints when a request omits start or end. The range ends at the given end, or at the current time. Use with --enable-feature=metadata-default-time-range.").
+		Default("1h").SetValue(&cfg.metadataDefaultTimeRange)
+
 	serverOnlyFlag(a, "rules.alert.for-outage-tolerance", "Max time to tolerate prometheus outage for restoring \"for\" state of alert.").
 		Default("1h").SetValue(&cfg.outageTolerance)
 
@@ -669,7 +679,7 @@ func main() {
 	a.Flag("scrape.discovery-reload-interval", "Interval used by scrape manager to throttle target groups updates.").
 		Hidden().Default("5s").SetValue(&cfg.scrape.DiscoveryReloadInterval)
 
-	a.Flag("enable-feature", "Comma separated feature names to enable. Valid options: concurrent-rule-eval, created-timestamp-zero-ingestion, delayed-compaction, exemplar-storage, extra-scrape-metrics, histograms-st-encoding, memory-snapshot-on-shutdown, metadata-relabeling, metadata-wal-records, old-ui, openmetrics2, otlp-deltatocumulative, otlp-native-delta-ingestion, promql-binop-fill-modifiers, promql-delayed-name-removal, promql-experimental-functions, promql-native-histograms-as-classic, promql-per-step-stats, promql-unquoted-utf8-names, query-cost, search-api, st-storage, st-synthesis, type-and-unit-labels, use-start-timestamps, use-uncached-io, xor2-encoding, zstd-scrape. See https://prometheus.io/docs/prometheus/latest/feature_flags/ for more details.").
+	a.Flag("enable-feature", "Comma separated feature names to enable. Valid options: concurrent-rule-eval, created-timestamp-zero-ingestion, delayed-compaction, exemplar-storage, extra-scrape-metrics, histograms-st-encoding, memory-snapshot-on-shutdown, metadata-default-time-range, metadata-relabeling, metadata-wal-records, old-ui, openmetrics2, otlp-deltatocumulative, otlp-native-delta-ingestion, promql-binop-fill-modifiers, promql-delayed-name-removal, promql-experimental-functions, promql-native-histograms-as-classic, promql-per-step-stats, promql-unquoted-utf8-names, query-cost, search-api, st-storage, st-synthesis, type-and-unit-labels, use-start-timestamps, use-uncached-io, xor2-encoding, zstd-scrape. See https://prometheus.io/docs/prometheus/latest/feature_flags/ for more details.").
 		StringsVar(&cfg.featureList)
 
 	a.Flag("agent", "Run Prometheus in 'Agent mode'.").BoolVar(&agentMode)
