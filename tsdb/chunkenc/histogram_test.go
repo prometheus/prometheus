@@ -270,7 +270,8 @@ func TestHistogramChunkBucketChanges(t *testing.T) {
 	require.Empty(t, backwardNegativeInserts)
 	require.True(t, ok) // Only new buckets came in.
 	require.Equal(t, NotCounterReset, cr)
-	c, app = hApp.recode(posInterjections, negInterjections, h2.PositiveSpans, h2.NegativeSpans)
+	c, app, err = hApp.recode(posInterjections, negInterjections, h2.PositiveSpans, h2.NegativeSpans)
+	require.NoError(t, err)
 	chk, _, _, err = app.AppendHistogram(nil, 0, ts2, h2, false)
 	require.NoError(t, err)
 	require.Nil(t, chk)
@@ -1884,4 +1885,46 @@ func TestHistogramIteratorReduceSchema(t *testing.T) {
 
 func TestHistogramChunkOverFlowPanics(t *testing.T) {
 	testChunkOverFlowPanics(t, EncHistogram, ValHistogram)
+}
+
+// TestHistogramRecodeIteratorError verifies that recode propagates iterator
+// errors (e.g. from a corrupted source chunk) and still returns the appender.
+func TestHistogramRecodeIteratorError(t *testing.T) {
+	chk := NewHistogramChunk()
+	app, err := chk.Appender()
+	require.NoError(t, err)
+
+	h1 := &histogram.Histogram{
+		Count: 27, ZeroCount: 2, Sum: 18.4, ZeroThreshold: 1e-125, Schema: 1,
+		PositiveSpans: []histogram.Span{
+			{Offset: 0, Length: 2}, {Offset: 2, Length: 1}, {Offset: 3, Length: 2}, {Offset: 3, Length: 1}, {Offset: 1, Length: 1},
+		},
+		PositiveBuckets: []int64{6, -3, 0, -1, 2, 1, -4},
+		NegativeSpans:   []histogram.Span{{Offset: 1, Length: 1}},
+		NegativeBuckets: []int64{1},
+	}
+	_, _, app, err = app.AppendHistogram(nil, 0, 1, h1, false)
+	require.NoError(t, err)
+
+	// Expanded spans will require recoding.
+	h2 := h1.Copy()
+	h2.PositiveSpans = []histogram.Span{
+		{Offset: 0, Length: 3}, {Offset: 1, Length: 1}, {Offset: 1, Length: 4}, {Offset: 3, Length: 3},
+	}
+	h2.NegativeSpans = []histogram.Span{{Offset: 0, Length: 2}}
+	h2.Count, h2.ZeroCount, h2.Sum = 35, 3, 30
+	h2.PositiveBuckets = []int64{7, -2, -4, 2, -2, -1, 2, 3, 0, -5, 1}
+	h2.NegativeBuckets = []int64{2, -1}
+
+	hApp := app.(*HistogramAppender)
+	pos, neg, _, _, ok, _ := hApp.appendable(h2)
+	require.NotEmpty(t, pos)
+	require.NotEmpty(t, neg)
+	require.True(t, ok)
+
+	// Direct recode: corrupt stream, verify error + non-nil appender.
+	hApp.b.stream = hApp.b.stream[:len(hApp.b.stream)/2]
+	_, happ, recodeErr := hApp.recode(pos, neg, h2.PositiveSpans, h2.NegativeSpans)
+	require.Error(t, recodeErr)
+	require.NotNil(t, happ, "recode must still return the appender on error")
 }
