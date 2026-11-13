@@ -1180,14 +1180,16 @@ func TestOMNullByteHandling(t *testing.T) {
 	}
 }
 
-// TestSTParseFailures tests known failure edge cases, we know does not work due
-// current OM spec limitations or clients with broken OM format.
+// TestOpenMetricsStartTimestamp covers OpenMetrics start-timestamp behavior,
+// including cases limited by the current specification or malformed clients.
 // TODO(maniktherana): Make sure OM 1.1/2.0 pass ST via metadata or exemplar-like to avoid this.
-func TestSTParseFailures(t *testing.T) {
+func TestOpenMetricsStartTimestamp(t *testing.T) {
 	for _, tcase := range []struct {
-		name     string
-		input    string
-		expected []parsedEntry
+		name                    string
+		input                   string
+		expected                []parsedEntry
+		checkValuesAndLabels    bool
+		enableTypeAndUnitLabels bool
 	}{
 		{
 			name: "_created line is a first one",
@@ -1267,11 +1269,136 @@ foo_created{a="b"} 1520872608.123
 				},
 			},
 		},
+		{
+			name: "distinct label sets with a positive cache hit",
+			input: `# TYPE c counter
+c_total{a="x",b="by"} 1
+c_created{a="x",b="by"} 100
+c_total{a="xb",b="y"} 2
+c_created{a="xb",b="y"} 200
+# EOF
+`,
+			expected: []parsedEntry{
+				{m: "c", typ: model.MetricTypeCounter},
+				{
+					m:    `c_total{a="x",b="by"}`,
+					v:    1,
+					lset: labels.FromStrings("__name__", "c_total", "a", "x", "b", "by"),
+					st:   100000,
+				},
+				{
+					m:    `c_total{a="xb",b="y"}`,
+					v:    2,
+					lset: labels.FromStrings("__name__", "c_total", "a", "xb", "b", "y"),
+					st:   200000,
+				},
+			},
+			checkValuesAndLabels: true,
+		},
+		{
+			name: "distinct metric families do not share cached timestamps",
+			input: `# TYPE foo counter
+foo_total{a="bc"} 1
+foo_created{a="bc"} 100
+# TYPE cfoo counter
+cfoo_total{a="b"} 2
+cfoo_created{a="b"} 200
+# EOF
+`,
+			expected: []parsedEntry{
+				{m: "foo", typ: model.MetricTypeCounter},
+				{
+					m:    `foo_total{a="bc"}`,
+					v:    1,
+					lset: labels.FromStrings("__name__", "foo_total", "a", "bc"),
+					st:   100000,
+				},
+				{m: "cfoo", typ: model.MetricTypeCounter},
+				{
+					m:    `cfoo_total{a="b"}`,
+					v:    2,
+					lset: labels.FromStrings("__name__", "cfoo_total", "a", "b"),
+					st:   200000,
+				},
+			},
+			checkValuesAndLabels: true,
+		},
+		{
+			name: "lookahead ignores a different label set",
+			input: `# TYPE c counter
+c_total{a="x",b="by"} 1
+c_total{a="xb",b="y"} 2
+c_created{a="xb",b="y"} 200
+# EOF
+`,
+			expected: []parsedEntry{
+				{m: "c", typ: model.MetricTypeCounter},
+				{
+					m:    `c_total{a="x",b="by"}`,
+					v:    1,
+					lset: labels.FromStrings("__name__", "c_total", "a", "x", "b", "by"),
+				},
+				{
+					m:    `c_total{a="xb",b="y"}`,
+					v:    2,
+					lset: labels.FromStrings("__name__", "c_total", "a", "xb", "b", "y"),
+					st:   200000,
+				},
+			},
+			checkValuesAndLabels: true,
+		},
+		{
+			name: "lookahead restores unit metadata",
+			input: `# TYPE c counter
+c_total{a="x",b="by"} 1
+c_created{a="x",b="by"} 100
+c_total{a="xb",b="y"} 2
+c_total 3
+# UNIT next_seconds seconds
+# TYPE next_seconds gauge
+next_seconds 4
+# EOF
+`,
+			expected: []parsedEntry{
+				{m: "c", typ: model.MetricTypeCounter},
+				{
+					m:    `c_total{a="x",b="by"}`,
+					v:    1,
+					lset: labels.FromStrings("__name__", "c_total", "__type__", "counter", "a", "x", "b", "by"),
+					st:   100000,
+				},
+				{
+					m:    `c_total{a="xb",b="y"}`,
+					v:    2,
+					lset: labels.FromStrings("__name__", "c_total", "__type__", "counter", "a", "xb", "b", "y"),
+				},
+				{
+					m:    "c_total",
+					v:    3,
+					lset: labels.FromStrings("__name__", "c_total", "__type__", "counter"),
+				},
+				{m: "next_seconds", unit: "seconds"},
+				{m: "next_seconds", typ: model.MetricTypeGauge},
+				{
+					m:    "next_seconds",
+					v:    4,
+					lset: labels.FromStrings("__name__", "next_seconds", "__type__", "gauge", "__unit__", "seconds"),
+				},
+			},
+			checkValuesAndLabels:    true,
+			enableTypeAndUnitLabels: true,
+		},
 	} {
 		t.Run(fmt.Sprintf("case=%v", tcase.name), func(t *testing.T) {
-			p := NewOpenMetricsParser([]byte(tcase.input), labels.NewSymbolTable(), WithOMParserSTSeriesSkipped())
+			opts := []OpenMetricsOption{WithOMParserSTSeriesSkipped()}
+			if tcase.enableTypeAndUnitLabels {
+				opts = append(opts, WithOMParserTypeAndUnitLabels())
+			}
+			p := NewOpenMetricsParser([]byte(tcase.input), labels.NewSymbolTable(), opts...)
 			got := testParse(t, p)
-			resetValAndLset(got) // Keep this test focused on metric, basic entries and ST only.
+			if !tcase.checkValuesAndLabels {
+				resetValAndLset(got) // Keep the existing failure cases focused on metric entries and ST.
+			}
 			requireEntries(t, tcase.expected, got)
 		})
 	}
