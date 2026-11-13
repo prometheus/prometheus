@@ -15,6 +15,7 @@ package rules
 
 import (
 	"context"
+	"fmt"
 	"math"
 	"testing"
 	"time"
@@ -862,7 +863,7 @@ func TestRecordingRuleMetadataDeduction(t *testing.T) {
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			for _, appendMetadata := range []bool{false, true} {
-				expr, err := testParser.ParseExpr("vector(1)")
+				expr, err := testParser.ParseExpr("input_metric")
 				require.NoError(t, err)
 				rule := NewRecordingRuleWithMetadata("job:req:rate5m", expr, tc.ruleLabels, tc.ruleMeta)
 				require.Equal(t, tc.ruleMeta, rule.Metadata())
@@ -932,5 +933,88 @@ func TestRecordingRuleMetadataDeduction(t *testing.T) {
 				teststorage.RequireEqual(t, wantStale, app.ResultSamples())
 			}
 		})
+	}
+}
+
+func TestRecordingRuleMetadataProvenance(t *testing.T) {
+	queryStore := promqltest.LoadedStorage(t, `
+		load 1m
+			http_requests_total{__type__="counter",__unit__="requests",job="api"} 0+60x5
+	`)
+	for _, delayed := range []bool{false, true} {
+		engine := promqltest.NewTestEngineWithOpts(t, promql.EngineOpts{
+			MaxSamples:               10000,
+			Timeout:                  time.Minute,
+			EnableDelayedNameRemoval: delayed,
+		})
+		for _, schemaLabels := range []bool{false, true} {
+			for _, tc := range []struct {
+				expr            string
+				preservesSchema bool
+			}{
+				{`http_requests_total`, true},
+				{`(http_requests_total)`, true},
+				{`http_requests_total > 0`, true},
+				{`0 < http_requests_total`, true},
+				{`sort(http_requests_total)`, true},
+				{`topk(1, http_requests_total)`, true},
+				{`label_replace(http_requests_total, "service", "$1", "job", "(.*)")`, true},
+				{`label_join(http_requests_total, "service", "-", "job")`, true},
+				{`http_requests_total and http_requests_total`, true},
+				{`http_requests_total or http_requests_total`, true},
+				{`count by (__name__) (http_requests_total)`, false},
+				{`count by (__name__, __type__, __unit__) (http_requests_total)`, false},
+				{`label_replace(rate(http_requests_total[5m]), "__name__", "derived_total", "", ".*")`, false},
+				{`label_join(rate(http_requests_total[5m]), "__name__", "", "job")`, false},
+				{`label_replace(http_requests_total, "__type__", "info", "", ".*")`, false},
+				{`label_replace(http_requests_total, "__unit__", "seconds", "", ".*")`, false},
+				{`sort(count by (__name__) (http_requests_total))`, false},
+				{`topk(1, count by (__name__) (http_requests_total))`, false},
+				{`count by (__name__) (http_requests_total) > 0`, false},
+				{`http_requests_total > bool 0`, false},
+				{`http_requests_total or label_replace(vector(1), "__name__", "derived_total", "", ".*")`, false},
+			} {
+				t.Run(fmt.Sprintf("delayed=%t/schema_labels=%t/%s", delayed, schemaLabels, tc.expr), func(t *testing.T) {
+					expr, err := testParser.ParseExpr(tc.expr)
+					require.NoError(t, err)
+					rule := NewRecordingRule("recorded", expr, labels.EmptyLabels())
+					app := teststorage.NewAppendable()
+					group := NewGroup(GroupOptions{
+						Name:     "test",
+						File:     "test.rules",
+						Interval: time.Minute,
+						Rules:    []Rule{rule},
+						Opts: &ManagerOptions{
+							AppendableV2:            app,
+							QueryFunc:               EngineQueryFunc(engine, queryStore),
+							AppendMetadata:          true,
+							EnableTypeAndUnitLabels: schemaLabels,
+							AutoRecordingMetadata:   true,
+						},
+					})
+					group.Eval(t.Context(), time.Unix(300, 0))
+					require.NoError(t, rule.LastError())
+					samples := app.ResultSamples()
+					require.NotEmpty(t, samples)
+					want := metadata.Metadata{Type: model.MetricTypeGauge}
+					if tc.preservesSchema {
+						want.Type = model.MetricTypeCounter
+						if schemaLabels {
+							want.Unit = "requests"
+						}
+					}
+					for _, sample := range samples {
+						require.Equal(t, want, sample.M)
+						if schemaLabels {
+							require.Equal(t, string(want.Type), sample.L.Get(model.MetricTypeLabel))
+							require.Equal(t, want.Unit, sample.L.Get(model.MetricUnitLabel))
+						} else {
+							require.False(t, sample.L.Has(model.MetricTypeLabel))
+							require.False(t, sample.L.Has(model.MetricUnitLabel))
+						}
+					}
+				})
+			}
+		}
 	}
 }
