@@ -406,7 +406,10 @@ func NewAPI(
 	}
 
 	if rwEnabled {
-		a.remoteWriteHandler = remote.NewWriteHandler(logger, registerer, apV2, acceptRemoteWriteProtoMsgs, enableTypeAndUnitLabels, appendMetadata)
+		a.remoteWriteHandler = remote.NewWriteHandler(logger, registerer, apV2, acceptRemoteWriteProtoMsgs, enableTypeAndUnitLabels, appendMetadata, remote.WithWriteHandlerLabelLengthLimits(func() (int, int) {
+			cfg := configFunc()
+			return int(cfg.GlobalConfig.LabelNameLengthLimit), int(cfg.GlobalConfig.LabelValueLengthLimit)
+		}))
 	}
 	if otlpEnabled {
 		a.otlpWriteHandler = remote.NewOTLPWriteHandler(logger, registerer, apV2, configFunc, remote.OTLPOptions{
