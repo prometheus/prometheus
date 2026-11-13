@@ -21,9 +21,11 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"runtime"
 	"strconv"
 	"strings"
 	"sync"
+	"syscall"
 	"testing"
 	"time"
 
@@ -225,18 +227,27 @@ func commandWithLogging(t testing.TB, logProcessor func(testing.TB, io.Reader), 
 
 	go func() {
 		defer wg.Done()
+		defer func() { _, _ = io.Copy(io.Discard, stdoutPipe) }()
 		logProcessor(t, stdoutPipe)
 	}()
 	go func() {
 		defer wg.Done()
+		defer func() { _, _ = io.Copy(io.Discard, stderrPipe) }()
 		logProcessor(t, stderrPipe)
 	}()
 
 	t.Cleanup(func() {
-		cmd.Process.Kill()
-		cmd.Wait()
-		stdoutWriter.Close()
-		stderrWriter.Close()
+		// Terminate the process gracefully, as that's the expected shutdown path.
+		// Prometheus must handle this signal cleanly.
+		if runtime.GOOS != "windows" {
+			require.NoError(t, cmd.Process.Signal(syscall.SIGTERM))
+			require.NoError(t, cmd.Wait())
+		} else {
+			require.NoError(t, cmd.Process.Kill())
+			cmd.Wait()
+		}
+		require.NoError(t, stdoutWriter.Close())
+		require.NoError(t, stderrWriter.Close())
 		wg.Wait()
 	})
 	return cmd
@@ -247,6 +258,7 @@ func prometheusCommandWithLogging(t testing.TB, configFilePath string, port int,
 		"-test.main",
 		"--config.file=" + configFilePath,
 		"--web.listen-address=0.0.0.0:" + strconv.Itoa(port),
+		"--log.level=debug",
 	}
 	args = append(args, extraArgs...)
 	return commandWithLogging(t, nil, promPath, args...)
