@@ -225,6 +225,7 @@ Run query against a Prometheus server.
 | --- | --- | --- |
 | <code class="text-nowrap">-o</code>, <code class="text-nowrap">--format</code> | Output format of the query. | `promql` |
 | <code class="text-nowrap">--http.config.file</code> | HTTP client configuration file, see details at https://prometheus.io/docs/prometheus/latest/configuration/promtool |  |
+| <code class="text-nowrap">--header</code> | Extra headers to send to server. |  |
 
 
 
@@ -240,7 +241,6 @@ Run instant query.
 | Flag | Description |
 | --- | --- |
 | <code class="text-nowrap">--time</code> | Query evaluation time (RFC3339 or Unix timestamp). |
-| <code class="text-nowrap">--header</code> | Extra headers to send to server. |
 
 
 
@@ -265,7 +265,6 @@ Run range query.
 
 | Flag | Description |
 | --- | --- |
-| <code class="text-nowrap">--header</code> | Extra headers to send to server. |
 | <code class="text-nowrap">--start</code> | Query range start time (RFC3339 or Unix timestamp). |
 | <code class="text-nowrap">--end</code> | Query range end time (RFC3339 or Unix timestamp). |
 | <code class="text-nowrap">--step</code> | Query step size (duration). |
