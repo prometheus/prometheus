@@ -1322,6 +1322,175 @@ func TestChainSampleIteratorSeek(t *testing.T) {
 	}
 }
 
+// testTieBreak prefers a histogram to a float, then the higher value or histogram count, then the later start
+// timestamp. It reads histograms into buffers, to test a tie-break that has state.
+type testTieBreak struct {
+	ah, bh *histogram.Histogram
+}
+
+func (tb *testTieBreak) Prefer(a, b chunkenc.Iterator) bool {
+	at, bt := a.Seek(a.AtT()), b.Seek(b.AtT())
+	if at != bt {
+		return at == chunkenc.ValHistogram
+	}
+	switch at {
+	case chunkenc.ValFloat:
+		_, av := a.At()
+		_, bv := b.At()
+		if av != bv {
+			return av > bv
+		}
+	case chunkenc.ValHistogram:
+		_, tb.ah = a.AtHistogram(tb.ah)
+		_, tb.bh = b.AtHistogram(tb.bh)
+		if tb.ah.Count != tb.bh.Count {
+			return tb.ah.Count > tb.bh.Count
+		}
+	}
+	return a.AtST() > b.AtST()
+}
+
+// reuseTestTieBreak returns prev if it is a testTieBreak, so that its buffers are reused.
+func reuseTestTieBreak(prev SampleTieBreaker) SampleTieBreaker {
+	if tb, ok := prev.(*testTieBreak); ok {
+		return tb
+	}
+	return &testTieBreak{}
+}
+
+func TestChainedSeriesMergeWithTieBreak(t *testing.T) {
+	// Each iterator must get its own tie-break, so that a tie-break can keep state for its iterator. When an iterator
+	// is reused, its tie-break must be given to newTieBreak, so that its state can be reused.
+	newTieBreakCalls, newTestTieBreaks := 0, 0
+	merge := ChainedSeriesMergeWithTieBreak(func(prev SampleTieBreaker) SampleTieBreaker {
+		newTieBreakCalls++
+		tb := reuseTestTieBreak(prev)
+		if tb != prev {
+			newTestTieBreaks++
+		}
+		return tb
+	})
+
+	// permutations returns all orders of the indexes 0 to n-1, because the result must be the same for each order
+	// of the input series.
+	var permutations func(n int) [][]int
+	permutations = func(n int) [][]int {
+		if n == 1 {
+			return [][]int{{0}}
+		}
+		var result [][]int
+		for _, p := range permutations(n - 1) {
+			for i := 0; i <= len(p); i++ {
+				result = append(result, slices.Insert(slices.Clone(p), i, n-1))
+			}
+		}
+		return result
+	}
+
+	histogramWithCount := func(count uint64) *histogram.Histogram {
+		h := tsdbutil.GenerateTestHistogram(1)
+		h.Count = count
+		return h
+	}
+
+	for name, tc := range map[string]struct {
+		input    [][]chunks.Sample
+		expected []chunks.Sample
+	}{
+		"non overlapping series": {
+			input: [][]chunks.Sample{
+				{fSample{t: 0, f: 1}, fSample{t: 1, f: 1}},
+				{fSample{t: 2, f: 2}, fSample{t: 3, f: 2}},
+			},
+			expected: []chunks.Sample{fSample{t: 0, f: 1}, fSample{t: 1, f: 1}, fSample{t: 2, f: 2}, fSample{t: 3, f: 2}},
+		},
+		"different values at the first timestamp": {
+			input: [][]chunks.Sample{
+				{fSample{t: 0, f: 5}, fSample{t: 1, f: 1}},
+				{fSample{t: 0, f: 7}},
+			},
+			expected: []chunks.Sample{fSample{t: 0, f: 7}, fSample{t: 1, f: 1}},
+		},
+		"different values at a later timestamp in three series": {
+			input: [][]chunks.Sample{
+				{fSample{t: 0, f: 1}, fSample{t: 1, f: 10}, fSample{t: 2, f: 1}},
+				{fSample{t: 1, f: 20}},
+				{fSample{t: 1, f: 15}, fSample{t: 3, f: 1}},
+			},
+			expected: []chunks.Sample{fSample{t: 0, f: 1}, fSample{t: 1, f: 20}, fSample{t: 2, f: 1}, fSample{t: 3, f: 1}},
+		},
+		"different series have the higher value at different timestamps": {
+			input: [][]chunks.Sample{
+				{fSample{t: 0, f: 1}, fSample{t: 1, f: 9}, fSample{t: 2, f: 1}},
+				{fSample{t: 0, f: 2}, fSample{t: 1, f: 3}, fSample{t: 2, f: 8}},
+			},
+			expected: []chunks.Sample{fSample{t: 0, f: 2}, fSample{t: 1, f: 9}, fSample{t: 2, f: 8}},
+		},
+		"histogram and float at the same timestamp": {
+			input: [][]chunks.Sample{
+				{fSample{t: 0, f: 100}, fSample{t: 1, f: 1}},
+				{hSample{t: 0, h: histogramWithCount(1)}},
+			},
+			expected: []chunks.Sample{hSample{t: 0, h: histogramWithCount(1)}, fSample{t: 1, f: 1}},
+		},
+		"different histograms at the same timestamp": {
+			input: [][]chunks.Sample{
+				{hSample{t: 0, h: histogramWithCount(5)}, hSample{t: 1, h: histogramWithCount(9)}},
+				{hSample{t: 0, h: histogramWithCount(7)}, hSample{t: 1, h: histogramWithCount(3)}},
+			},
+			expected: []chunks.Sample{hSample{t: 0, h: histogramWithCount(7)}, hSample{t: 1, h: histogramWithCount(9)}},
+		},
+		"same value with different start timestamps": {
+			input: [][]chunks.Sample{
+				{fSample{st: 1, t: 5, f: 1}},
+				{fSample{st: 3, t: 5, f: 1}},
+				{fSample{st: 2, t: 5, f: 1}},
+			},
+			expected: []chunks.Sample{fSample{st: 3, t: 5, f: 1}},
+		},
+	} {
+		t.Run(name, func(t *testing.T) {
+			lbls := labels.FromStrings("foo", "bar")
+			newTestTieBreaks = 0
+			// it is reused for each iterator, as the PromQL engine does.
+			var it chunkenc.Iterator
+			for _, order := range permutations(len(tc.input)) {
+				series := make([]Series, 0, len(order))
+				for _, i := range order {
+					series = append(series, NewListSeries(lbls, tc.input[i]))
+				}
+				merged := merge(series...)
+				newTieBreakCalls = 0
+
+				it = merged.Iterator(it)
+				actual, err := ExpandSamples(it, nil)
+				require.NoError(t, err)
+				require.Equal(t, tc.expected, actual, "Next with series order %v", order)
+
+				for i, s := range tc.expected {
+					it = merged.Iterator(it)
+					var actual []chunks.Sample
+					switch it.Seek(s.T()) {
+					case chunkenc.ValFloat:
+						ts, f := it.At()
+						actual = append(actual, fSample{st: it.AtST(), t: ts, f: f})
+					case chunkenc.ValHistogram:
+						ts, h := it.AtHistogram(nil)
+						actual = append(actual, hSample{st: it.AtST(), t: ts, h: h})
+					default:
+						require.Fail(t, "unexpected value type", "Seek(%d) with series order %v", s.T(), order)
+					}
+					rest, err := ExpandSamples(it, nil)
+					require.NoError(t, err)
+					require.Equal(t, tc.expected[i:], append(actual, rest...), "Seek(%d) with series order %v", s.T(), order)
+				}
+				require.Equal(t, 1+len(tc.expected), newTieBreakCalls, "one tie-break for each iterator")
+			}
+			require.Equal(t, 1, newTestTieBreaks, "the tie-break of a reused iterator is reused")
+		})
+	}
+}
+
 func TestChainSampleIteratorSeekFailingIterator(t *testing.T) {
 	merged := ChainSampleIteratorFromIterators(nil, []chunkenc.Iterator{
 		NewListSeriesIterator(samples{fSample{0, 0, 0.1}, fSample{0, 1, 1.1}, fSample{0, 2, 2.1}}),
@@ -1422,11 +1591,15 @@ func makeSeries(numSeries, numSamples int) []Series {
 }
 
 func makeMergeSeriesSet(serieses [][]Series) SeriesSet {
+	return makeMergeSeriesSetWithMergeFunc(serieses, ChainedSeriesMerge)
+}
+
+func makeMergeSeriesSetWithMergeFunc(serieses [][]Series, mergeFunc VerticalSeriesMergeFunc) SeriesSet {
 	seriesSets := make([]genericSeriesSet, len(serieses))
 	for i, s := range serieses {
 		seriesSets[i] = &genericSeriesSetAdapter{NewMockSeriesSet(s...)}
 	}
-	return &seriesSetAdapter{newGenericMergeSeriesSet(seriesSets, 0, (&seriesMergerAdapter{VerticalSeriesMergeFunc: ChainedSeriesMerge}).Merge)}
+	return &seriesSetAdapter{newGenericMergeSeriesSet(seriesSets, 0, (&seriesMergerAdapter{VerticalSeriesMergeFunc: mergeFunc}).Merge)}
 }
 
 func benchmarkDrain(b *testing.B, makeSeriesSet func() SeriesSet) {
@@ -1454,6 +1627,11 @@ func BenchmarkNoMergeSeriesSet_100_100(b *testing.B) {
 }
 
 func BenchmarkMergeSeriesSet(b *testing.B) {
+	higherFloat := SampleTieBreakFunc(func(a, b chunkenc.Iterator) bool {
+		_, av := a.At()
+		_, bv := b.At()
+		return av > bv
+	})
 	for _, bm := range []struct {
 		numSeriesSets, numSeries, numSamples int
 	}{
@@ -1465,9 +1643,18 @@ func BenchmarkMergeSeriesSet(b *testing.B) {
 		for i := 0; i < bm.numSeriesSets; i++ {
 			serieses = append(serieses, makeSeries(bm.numSeries, bm.numSamples))
 		}
-		b.Run(fmt.Sprintf("%d_%d_%d", bm.numSeriesSets, bm.numSeries, bm.numSamples), func(b *testing.B) {
-			benchmarkDrain(b, func() SeriesSet { return makeMergeSeriesSet(serieses) })
-		})
+		for _, mf := range []struct {
+			name  string
+			merge VerticalSeriesMergeFunc
+		}{
+			{"", ChainedSeriesMerge},
+			{"_tie_break", ChainedSeriesMergeWithTieBreak(func(SampleTieBreaker) SampleTieBreaker { return higherFloat })},
+			{"_stateful_tie_break", ChainedSeriesMergeWithTieBreak(reuseTestTieBreak)},
+		} {
+			b.Run(fmt.Sprintf("%d_%d_%d%s", bm.numSeriesSets, bm.numSeries, bm.numSamples, mf.name), func(b *testing.B) {
+				benchmarkDrain(b, func() SeriesSet { return makeMergeSeriesSetWithMergeFunc(serieses, mf.merge) })
+			})
+		}
 	}
 }
 
