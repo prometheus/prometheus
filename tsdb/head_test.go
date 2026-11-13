@@ -25,6 +25,7 @@ import (
 	"path/filepath"
 	"sort"
 	"strconv"
+	"strings"
 	"sync"
 	"testing"
 	"testing/synctest"
@@ -2607,6 +2608,111 @@ func TestWblRepair_DecodingError(t *testing.T) {
 				}
 				require.NoError(t, r.Err())
 				require.Equal(t, expRecs, actRec, "Wrong number of intact records")
+			}
+		})
+	}
+}
+
+// TestTornWALTailKeepsWBLSamples checks that out-of-order samples that only the
+// WBL holds survive a torn record at the tail of the WAL. A WAL record that
+// spans pages is written one page at a time, so a crash between two of those
+// writes leaves the segment cut at a page boundary inside the record. Head.Init
+// used to stop at the torn record before it replayed the WBL, and DB.Open
+// repaired the WAL without replaying the WBL.
+func TestTornWALTailKeepsWBLSamples(t *testing.T) {
+	t.Parallel()
+	for name, corruptWBL := range map[string]bool{"torn WAL": false, "torn WAL and corrupted WBL": true} {
+		t.Run(name, func(t *testing.T) {
+			t.Parallel()
+			ctx := context.Background()
+			hour := time.Hour.Milliseconds()
+			opts := DefaultOptions()
+			opts.OutOfOrderTimeWindow = 6 * hour
+			db := newTestDB(t, withOpts(opts))
+			db.DisableCompactions() // We want to call the compactions manually.
+
+			appendSamples := func(ts int64, series ...labels.Labels) {
+				app := db.Appender(ctx)
+				for _, lbls := range series {
+					_, err := app.Append(0, lbls, ts, float64(ts))
+					require.NoError(t, err)
+				}
+				require.NoError(t, app.Commit())
+			}
+			// A block moves the head's minValidTime past the out-of-order samples
+			// below, so WAL replay drops their WAL copies and only the WBL can
+			// restore them.
+			inOrder := labels.FromStrings("foo", "in-order")
+			appendSamples(0, inOrder)
+			appendSamples(6*hour, inOrder)
+			require.NoError(t, db.Compact(ctx))
+			require.NotEmpty(t, db.Blocks())
+
+			series := labels.FromStrings("foo", "bar")
+			var expected []chunks.Sample
+			for i := range int64(20) {
+				ts := hour + i*1000
+				appendSamples(ts, series)
+				expected = append(expected, sample{t: ts, f: float64(ts)})
+			}
+			require.Greater(t, db.head.minValidTime.Load(), expected[len(expected)-1].T())
+
+			// The WAL write that the crash interrupts: series records with large
+			// labels, which span several pages.
+			const pageSize = 32 * 1024 // The WAL page size.
+			lastWALSegment := func(dir string) (string, int64) {
+				_, last, err := wlog.Segments(dir)
+				require.NoError(t, err)
+				name := wlog.SegmentName(dir, last)
+				fi, err := os.Stat(name)
+				require.NoError(t, err)
+				return name, fi.Size()
+			}
+			_, sizeBefore := lastWALSegment(db.head.wal.Dir())
+			padding := strings.Repeat("x", 8192)
+			var large []labels.Labels
+			for i := range 8 {
+				large = append(large, labels.FromStrings("foo", "large", "id", strconv.Itoa(i), "padding", padding))
+			}
+			appendSamples(6*hour+1000, large...)
+			_, sizeAfter := lastWALSegment(db.head.wal.Dir())
+			cut := (sizeAfter - 1) / pageSize * pageSize
+			require.Greater(t, cut, sizeBefore, "the last WAL record must span a page boundary")
+
+			copyDir := t.TempDir()
+			require.NoError(t, fileutil.CopyDirs(db.Dir(), copyDir))
+			walSegment, _ := lastWALSegment(filepath.Join(copyDir, "wal"))
+			require.NoError(t, os.Truncate(walSegment, cut))
+			if corruptWBL {
+				// Corrupt the last WBL record, which holds the last out-of-order sample.
+				wblSegment, size := lastWALSegment(filepath.Join(copyDir, wlog.WblDirName))
+				f, err := os.OpenFile(wblSegment, os.O_RDWR, 0o666)
+				require.NoError(t, err)
+				b := make([]byte, 1)
+				_, err = f.ReadAt(b, size-1)
+				require.NoError(t, err)
+				_, err = f.WriteAt([]byte{^b[0]}, size-1)
+				require.NoError(t, err)
+				require.NoError(t, f.Close())
+				expected = expected[:len(expected)-1]
+			}
+
+			restored := newTestDB(t, withDir(copyDir), withOpts(opts))
+			require.Equal(t, 1.0, prom_testutil.ToFloat64(restored.head.metrics.walCorruptionsTotal))
+			q, err := restored.Querier(math.MinInt64, math.MaxInt64)
+			require.NoError(t, err)
+			actual := query(t, q, labels.MustNewMatcher(labels.MatchEqual, "foo", "bar"))
+			require.Equal(t, map[string][]chunks.Sample{series.String(): expected}, actual)
+
+			// Both logs were repaired.
+			for _, dir := range []string{"wal", wlog.WblDirName} {
+				sr, err := wlog.NewSegmentsReader(filepath.Join(copyDir, dir))
+				require.NoError(t, err)
+				r := wlog.NewReader(sr)
+				for r.Next() {
+				}
+				require.NoError(t, r.Err(), dir)
+				require.NoError(t, sr.Close())
 			}
 		})
 	}
