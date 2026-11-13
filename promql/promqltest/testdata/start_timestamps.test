@@ -403,28 +403,6 @@ eval instant at 103m series[2m] anchored
 
 clear
 
-
-# Special case to check that counter resets don't get lost when the `pickOrInterpolateLeft()` function
-# projects/interpolates samples at the range start. This might happen if there was a sample whose ST
-# pointed to the range start. If there were no samples at the range start, then this means a counter reset.
-# However, once we project/interpolate a sample at the range start, with particular ST values this might
-# become unknown ST, losing the reset.
-load 1m
-    series{type="potentially_unknown_ST=0"}@st     _x100    _    _  -1m    _
-    series{type="potentially_unknown_ST=0"}        _x100   60    _   60    _
-    series{type="potentially_unknown_ST=T"}@st     _x100    0    _  -1m    _
-    series{type="potentially_unknown_ST=T"}        _x100   60    _   60    _
-
-eval instant at 103m increase(series[2m] anchored)
-    {type="potentially_unknown_ST=0"}       60
-    {type="potentially_unknown_ST=T"}       60
-
-eval instant at 103m rate(series[2m] smoothed)
-    {type="potentially_unknown_ST=0"}       0.5
-    {type="potentially_unknown_ST=T"}       0.5
-
-clear
-
 # Tests for rate(), irate() and increase() on cumulative histograms. Includes various approaches for start timestamps:
 # * ST_curr = T_prev (OTel)
 # * ST_curr = T_prev (GCP)
@@ -447,6 +425,12 @@ eval range from 7m to 15m step 1m irate(cumulative[5m])
 # Resets function also considers start timestamp resets.
 eval range from 7m to 15m step 1m resets(cumulative[5m])
     {} 1 2 1 1 2 1 1 2 1
+
+eval range from 7m to 15m step 1m increase(cumulative[5m] anchored)
+    {} {{count:420 sum:420}} {{count:720 sum:720}} {{count:720 sum:720}} {{count:600 sum:600}} {{count:1080 sum:1080}} {{count:1080 sum:1080}} {{count:780 sum:780}} {{count:1440 sum:1440}} {{count:1440 sum:1440}}
+
+eval range from 7m to 15m step 1m increase(cumulative[5m] smoothed)
+    {} {{count:420 sum:420}} {{count:720 sum:720}} {{count:720 sum:720}} {{count:600 sum:600}} {{count:1080 sum:1080}} {{count:1080 sum:1080}} {{count:780 sum:780}} {{count:1440 sum:1440}} {{count:1440 sum:1440}}
 
 clear
 
@@ -489,6 +473,249 @@ load 1m
 
 eval instant at 3m rate(series[5m])
     {} {{count:0.2 sum:0.2}}
+
+clear
+
+# Tests for extended range selectors (`anchored`, `smoothed`) with native histograms.
+# These mirror the float tests for extended range selectors above.
+load 1m
+    series{type="1_dp_before/st_outside_lookback"}@st            _x100    -10m                            _       _       _
+    series{type="1_dp_before/st_outside_lookback"}               _x100    {{schema:0 sum:60 count:60}}    _       _       _
+    series{type="1_dp_before/st_outside_range"}@st               _x100    -3m                             _       _       _
+    series{type="1_dp_before/st_outside_range"}                  _x100    {{schema:0 sum:60 count:60}}    _       _       _
+    series{type="1_dp_before/st_at_range_edge"}@st               _x100    -1m                             _       _       _
+    series{type="1_dp_before/st_at_range_edge"}                  _x100    {{schema:0 sum:60 count:60}}    _       _       _
+    series{type="1_dp_before/st_inside"}@st                      _x100    -30s                            _       _       _
+    series{type="1_dp_before/st_inside"}                         _x100    {{schema:0 sum:60 count:60}}    _       _       _
+
+load 1m
+    series{type="1_dp_at/st_outside_lookback"}@st                _x100    _       -10m                            _       _
+    series{type="1_dp_at/st_outside_lookback"}                   _x100    _       {{schema:0 sum:60 count:60}}    _       _
+    series{type="1_dp_at/st_outside_range"}@st                   _x100    _       -3m                             _       _
+    series{type="1_dp_at/st_outside_range"}                      _x100    _       {{schema:0 sum:60 count:60}}    _       _
+    series{type="1_dp_at/st_at_range_edge"}@st                   _x100    _       -2m                             _       _
+    series{type="1_dp_at/st_at_range_edge"}                      _x100    _       {{schema:0 sum:60 count:60}}    _       _
+    series{type="1_dp_at/st_inside_range"}@st                    _x100    _       -1m                             _       _
+    series{type="1_dp_at/st_inside_range"}                       _x100    _       {{schema:0 sum:60 count:60}}    _       _
+
+load 1m
+    series{type="1_dp_after/st_outside_lookback"}@st             _x100    _       _       -10m                            _
+    series{type="1_dp_after/st_outside_lookback"}                _x100    _       _       {{schema:0 sum:60 count:60}}    _
+    series{type="1_dp_after/st_outside_range"}@st                _x100    _       _       -5m                             _
+    series{type="1_dp_after/st_outside_range"}                   _x100    _       _       {{schema:0 sum:60 count:60}}    _
+    series{type="1_dp_after/st_at_range_edge"}@st                _x100    _       _       -3m                             _
+    series{type="1_dp_after/st_at_range_edge"}                   _x100    _       _       {{schema:0 sum:60 count:60}}    _
+    series{type="1_dp_after/st_close"}@st                        _x100    _       _       -2m                             _
+    series{type="1_dp_after/st_close"}                           _x100    _       _       {{schema:0 sum:60 count:60}}    _
+    series{type="1_dp_after/st_closer"}@st                       _x100    _       _       -1m                             _
+    series{type="1_dp_after/st_closer"}                          _x100    _       _       {{schema:0 sum:60 count:60}}    _
+    series{type="1_dp_after/st_closest"}@st                      _x100    _       _       -30s                            _
+    series{type="1_dp_after/st_closest"}                         _x100    _       _       {{schema:0 sum:60 count:60}}    _
+
+load 1m
+    series{type="2_dp_before/st_no_reset"}@st                    _x100    -1m                            -2m                                  _     _
+    series{type="2_dp_before/st_no_reset"}                       _x100    {{schema:0 sum:60 count:60}}   {{schema:0 sum:120 count:120}}       _     _
+    series{type="2_dp_before/st_delta_reset"}@st                 _x100    -1m                            -1m                                  _     _
+    series{type="2_dp_before/st_delta_reset"}                    _x100    {{schema:0 sum:60 count:60}}   {{schema:0 sum:60 count:60}}         _     _
+    series{type="2_dp_before/st_reset_inside"}@st                _x100    -1m                            -30s                                 _     _
+    series{type="2_dp_before/st_reset_inside"}                   _x100    {{schema:0 sum:60 count:60}}   {{schema:0 sum:60 count:60}}         _     _
+    series{type="2_dp_before/st_unknown"}@st                     _x100    0                              -1m                                  _     _
+    series{type="2_dp_before/st_unknown"}                        _x100    {{schema:0 sum:60 count:60}}   {{schema:0 sum:120 count:120}}       _     _
+
+load 1m
+    series{type="2_dp_straddle/st_no_reset"}@st                  _x100    -1m                            _      -3m                                 _
+    series{type="2_dp_straddle/st_no_reset"}                     _x100    {{schema:0 sum:60 count:60}}   _      {{schema:0 sum:120 count:120}}      _
+    series{type="2_dp_straddle/st_delta_reset"}@st               _x100    -1m                            _      -2m                                 _
+    series{type="2_dp_straddle/st_delta_reset"}                  _x100    {{schema:0 sum:60 count:60}}   _      {{schema:0 sum:60 count:60}}        _
+    series{type="2_dp_straddle/st_reset_inside"}@st              _x100    -1m                            _      -90s                                _
+    series{type="2_dp_straddle/st_reset_inside"}                 _x100    {{schema:0 sum:60 count:60}}   _      {{schema:0 sum:60 count:60}}        _
+    series{type="2_dp_straddle/st_reset_inside_closer"}@st       _x100    -1m                            _      -30s                                _
+    series{type="2_dp_straddle/st_reset_inside_closer"}          _x100    {{schema:0 sum:60 count:60}}   _      {{schema:0 sum:60 count:60}}        _
+    series{type="2_dp_straddle/st_unknown"}@st                   _x100    0                              _      -2m                                 _
+    series{type="2_dp_straddle/st_unknown"}                      _x100    {{schema:0 sum:60 count:60}}   _      {{schema:0 sum:120 count:120}}      _
+
+load 1m
+    series{type="2_dp_after/st_no_reset"}@st                     _x100    _      -1m                            -2m                                 _
+    series{type="2_dp_after/st_no_reset"}                        _x100    _      {{schema:0 sum:60 count:60}}   {{schema:0 sum:120 count:120}}      _
+    series{type="2_dp_after/st_delta_reset"}@st                  _x100    _      -1m                            -1m                                 _
+    series{type="2_dp_after/st_delta_reset"}                     _x100    _      {{schema:0 sum:60 count:60}}   {{schema:0 sum:60 count:60}}        _
+    series{type="2_dp_after/st_reset_inside"}@st                 _x100    _      -1m                            -30s                                _
+    series{type="2_dp_after/st_reset_inside"}                    _x100    _      {{schema:0 sum:60 count:60}}   {{schema:0 sum:60 count:60}}        _
+    series{type="2_dp_after/st_unknown"}@st                      _x100    _      0                              -1m                                 _
+    series{type="2_dp_after/st_unknown"}                         _x100    _      {{schema:0 sum:60 count:60}}   {{schema:0 sum:120 count:120}}      _
+
+eval instant at 101m increase(series[2m] anchored)
+    {type="1_dp_before/st_outside_lookback"}              {{}}
+    {type="1_dp_before/st_outside_range"}                 {{count:60 sum:60}}
+    {type="1_dp_before/st_at_range_edge"}                 {{count:60 sum:60}}
+    {type="1_dp_before/st_inside"}                        {{count:60 sum:60}}
+    {type="1_dp_at/st_outside_lookback"}                  {{}}
+    {type="1_dp_at/st_outside_range"}                     {{count:60 sum:60}}
+    {type="1_dp_at/st_at_range_edge"}                     {{count:60 sum:60}}
+    {type="1_dp_at/st_inside_range"}                      {{count:60 sum:60}}
+    {type="2_dp_before/st_no_reset"}                      {{count:120 sum:120}}
+    {type="2_dp_before/st_delta_reset"}                   {{count:120 sum:120}}
+    {type="2_dp_before/st_reset_inside"}                  {{count:120 sum:120}}
+    {type="2_dp_before/st_unknown"}                       {{count:60 sum:60}}
+    {type="2_dp_straddle/st_no_reset"}                    {{count:60 sum:60}}
+    {type="2_dp_straddle/st_delta_reset"}                 {{count:60 sum:60}}
+    {type="2_dp_straddle/st_reset_inside"}                {{count:60 sum:60}}
+    {type="2_dp_straddle/st_reset_inside_closer"}         {{count:60 sum:60}}
+    {type="2_dp_straddle/st_unknown"}                     {{}}
+    {type="2_dp_after/st_no_reset"}                       {{count:60 sum:60}}
+    {type="2_dp_after/st_delta_reset"}                    {{count:60 sum:60}}
+    {type="2_dp_after/st_reset_inside"}                   {{count:60 sum:60}}
+    {type="2_dp_after/st_unknown"}                        {{}}
+
+eval instant at 103m increase(series[2m] anchored)
+    {type="1_dp_after/st_outside_lookback"}               {{}}
+    {type="1_dp_after/st_outside_range"}                  {{count:60 sum:60}}
+    {type="1_dp_after/st_at_range_edge"}                  {{count:60 sum:60}}
+    {type="1_dp_after/st_close"}                          {{count:60 sum:60}}
+    {type="1_dp_after/st_closer"}                         {{count:60 sum:60}}
+    {type="1_dp_after/st_closest"}                        {{count:60 sum:60}}
+    {type="2_dp_straddle/st_no_reset"}                    {{count:60 sum:60}}
+    {type="2_dp_straddle/st_delta_reset"}                 {{count:60 sum:60}}
+    {type="2_dp_straddle/st_reset_inside"}                {{count:60 sum:60}}
+    {type="2_dp_straddle/st_reset_inside_closer"}         {{count:60 sum:60}}
+    {type="2_dp_straddle/st_unknown"}                     {{count:60 sum:60}}
+    {type="2_dp_after/st_no_reset"}                       {{count:60 sum:60}}
+    {type="2_dp_after/st_delta_reset"}                    {{count:60 sum:60}}
+    {type="2_dp_after/st_reset_inside"}                   {{count:60 sum:60}}
+    {type="2_dp_after/st_unknown"}                        {{count:60 sum:60}}
+
+eval instant at 101m rate(series[2m] smoothed)
+    {type="1_dp_before/st_outside_lookback"}              {{}}
+    {type="1_dp_before/st_outside_range"}                 {{count:0.1666666666666667 sum:0.1666666666666667}}
+    {type="1_dp_before/st_at_range_edge"}                 {{count:0.5 sum:0.5}}
+    {type="1_dp_before/st_inside"}                        {{count:0.5 sum:0.5}}
+    {type="1_dp_at/st_outside_lookback"}                  {{}}
+    {type="1_dp_at/st_outside_range"}                     {{count:0.3333333333333333 sum:0.3333333333333333}}
+    {type="1_dp_at/st_at_range_edge"}                     {{count:0.5 sum:0.5}}
+    {type="1_dp_at/st_inside_range"}                      {{count:0.5 sum:0.5}}
+    {type="1_dp_after/st_outside_range"}                  {{count:0.2 sum:0.2}}
+    {type="1_dp_after/st_at_range_edge"}                  {{count:0.3333333333333333 sum:0.3333333333333333}}
+    {type="1_dp_after/st_close"}                          {{count:0.25 sum:0.25}}
+    {type="1_dp_after/st_closer"}                         {{}}
+    {type="2_dp_before/st_no_reset"}                      {{count:1 sum:1}}
+    {type="2_dp_before/st_delta_reset"}                   {{count:1 sum:1}}
+    {type="2_dp_before/st_reset_inside"}                  {{count:1 sum:1}}
+    {type="2_dp_before/st_unknown"}                       {{count:0.5 sum:0.5}}
+    {type="2_dp_straddle/st_no_reset"}                    {{count:0.75 sum:0.75}}
+    {type="2_dp_straddle/st_delta_reset"}                 {{count:0.75 sum:0.75}}
+    {type="2_dp_straddle/st_reset_inside"}                {{count:0.6666666666666667 sum:0.6666666666666667}}
+    {type="2_dp_straddle/st_reset_inside_closer"}         {{count:0.5 sum:0.5}}
+    {type="2_dp_straddle/st_unknown"}                     {{count:0.25 sum:0.25}}
+    {type="2_dp_after/st_no_reset"}                       {{count:0.5 sum:0.5}}
+    {type="2_dp_after/st_delta_reset"}                    {{count:0.5 sum:0.5}}
+    {type="2_dp_after/st_reset_inside"}                   {{count:0.5 sum:0.5}}
+    {type="2_dp_after/st_unknown"}                        {{}}
+
+eval instant at 103m rate(series[2m] smoothed)
+    {type="1_dp_after/st_outside_lookback"}               {{}}
+    {type="1_dp_after/st_outside_range"}                  {{count:0.1 sum:0.1}}
+    {type="1_dp_after/st_at_range_edge"}                  {{count:0.16666666666666667 sum:0.16666666666666667}}
+    {type="1_dp_after/st_close"}                          {{count:0.25 sum:0.25}}
+    {type="1_dp_after/st_closer"}                         {{count:0.5 sum:0.5}}
+    {type="1_dp_after/st_closest"}                        {{count:0.5 sum:0.5}}
+    {type="2_dp_straddle/st_no_reset"}                    {{count:0.25 sum:0.25}}
+    {type="2_dp_straddle/st_delta_reset"}                 {{count:0.25 sum:0.25}}
+    {type="2_dp_straddle/st_reset_inside"}                {{count:0.3333333333333333 sum:0.3333333333333333}}
+    {type="2_dp_straddle/st_reset_inside_closer"}         {{count:0.5 sum:0.5}}
+    {type="2_dp_straddle/st_unknown"}                     {{count:0.25 sum:0.25}}
+    {type="2_dp_after/st_no_reset"}                       {{count:0.5 sum:0.5}}
+    {type="2_dp_after/st_delta_reset"}                    {{count:0.5 sum:0.5}}
+    {type="2_dp_after/st_reset_inside"}                   {{count:0.5 sum:0.5}}
+    {type="2_dp_after/st_unknown"}                        {{count:0.5 sum:0.5}}
+
+clear
+
+# A few tests with selected gauge histogram timeseries to validate that the delta() function
+# ignores start timestamps.
+load 1m
+    series{type="st_no_reset"}@st                       _x100  -1m                                                    _  -3m                                                      _
+    series{type="st_no_reset"}                          _x100  {{schema:0 sum:60 count:60 counter_reset_hint:gauge}}  _  {{schema:0 sum:120 count:120 counter_reset_hint:gauge}}  _
+    series{type="st_delta_reset"}@st                    _x100  -1m                                                    _  -2m                                                      _
+    series{type="st_delta_reset"}                       _x100  {{schema:0 sum:60 count:60 counter_reset_hint:gauge}}  _  {{schema:0 sum:60 count:60 counter_reset_hint:gauge}}    _
+    series{type="st_reset_inside"}@st                   _x100  -1m                                                    _  -90s                                                     _
+    series{type="st_reset_inside"}                      _x100  {{schema:0 sum:60 count:60 counter_reset_hint:gauge}}  _  {{schema:0 sum:60 count:60 counter_reset_hint:gauge}}    _
+    series{type="st_reset_inside_closer"}@st            _x100  -1m                                                    _  -30s                                                     _
+    series{type="st_reset_inside_closer"}               _x100  {{schema:0 sum:60 count:60 counter_reset_hint:gauge}}  _  {{schema:0 sum:60 count:60 counter_reset_hint:gauge}}    _
+    series{type="st_unknown"}@st                        _x100  0                                                      _  -2m                                                      _
+    series{type="st_unknown"}                           _x100  {{schema:0 sum:60 count:60 counter_reset_hint:gauge}}  _  {{schema:0 sum:120 count:120 counter_reset_hint:gauge}}  _
+
+eval instant at 101m delta(series[2m] smoothed)
+    {type="st_no_reset"}             {{count:30 sum:30}}
+    {type="st_delta_reset"}          {{}}
+    {type="st_reset_inside"}         {{}}
+    {type="st_reset_inside_closer"}  {{}}
+    {type="st_unknown"}              {{count:30 sum:30}}
+
+eval instant at 103m delta(series[2m] anchored)
+    {type="st_no_reset"}             {{count:60 sum:60}}
+    {type="st_delta_reset"}          {{}}
+    {type="st_reset_inside"}         {{}}
+    {type="st_reset_inside_closer"}  {{}}
+    {type="st_unknown"}              {{count:60 sum:60}}
+
+clear
+
+# Special case to check that counter resets don't get lost when the `pickOrInterpolateLeft*()` function
+# projects/interpolates samples at the range start. This might happen if there was a sample whose ST
+# pointed to the range start. If there were no samples at the range start, then this means a counter reset.
+# However, once we project/interpolate a sample at the range start, with particular ST values this might
+# become unknown ST, losing the reset.
+load 1m
+    series{type="float/potentially_unknown_ST=0"}@st     _x100    _    _  -1m    _
+    series{type="float/potentially_unknown_ST=0"}        _x100   60    _   60    _
+    series{type="float/potentially_unknown_ST=T"}@st     _x100    0    _  -1m    _
+    series{type="float/potentially_unknown_ST=T"}        _x100   60    _   60    _
+
+load 1m
+    series{type="histogram/potentially_unknown_ST=0"}@st     _x100    _                    _  -1m                    _
+    series{type="histogram/potentially_unknown_ST=0"}        _x100    {{sum:60 count:60}}  _  {{sum:60 count:60}}    _
+    series{type="histogram/potentially_unknown_ST=T"}@st     _x100    0                    _  -1m                    _
+    series{type="histogram/potentially_unknown_ST=T"}        _x100    {{sum:60 count:60}}  _  {{sum:60 count:60}}    _
+
+eval instant at 103m increase(series[2m] anchored)
+    {type="float/potentially_unknown_ST=0"}       60
+    {type="float/potentially_unknown_ST=T"}       60
+    {type="histogram/potentially_unknown_ST=0"}   {{sum:60 count:60}}
+    {type="histogram/potentially_unknown_ST=T"}   {{sum:60 count:60}}
+
+eval instant at 103m rate(series[2m] smoothed)
+    {type="float/potentially_unknown_ST=0"}       0.5
+    {type="float/potentially_unknown_ST=T"}       0.5
+    {type="histogram/potentially_unknown_ST=0"}   {{sum:0.5 count:0.5}}
+    {type="histogram/potentially_unknown_ST=T"}   {{sum:0.5 count:0.5}}
+
+clear
+
+# Tests to check that unknown start timestamp (ST == T, OTel) on the newest sample in the window
+# is not treated as a counter reset. This could happen if the sample is projected forward while keeping the original ST.
+# This sample has to be processed as a part of the sequence, since without the original ST == T datapoint
+# it might look as a counter reset.
+load 1m
+    series{type="float/st_unknown_newest"}@st          _x100  _  0                    0                      _
+    series{type="float/st_unknown_newest"}             _x100  _  60                   120                    _
+    series{type="float/st_known_then_unknown"}@st      _x100  _  -1m                  0                      _
+    series{type="float/st_known_then_unknown"}         _x100  _  60                   120                    _
+    series{type="histogram/st_unknown_newest"}@st      _x100  _  0                    0                      _
+    series{type="histogram/st_unknown_newest"}         _x100  _  {{sum:60 count:60}}  {{sum:120 count:120}}  _
+    series{type="histogram/st_known_then_unknown"}@st  _x100  _  -1m                  0                      _
+    series{type="histogram/st_known_then_unknown"}     _x100  _  {{sum:60 count:60}}  {{sum:120 count:120}}  _
+
+eval instant at 103m increase(series[2m] anchored)
+    {type="float/st_unknown_newest"}            60
+    {type="float/st_known_then_unknown"}        60
+    {type="histogram/st_unknown_newest"}        {{count:60 sum:60}}
+    {type="histogram/st_known_then_unknown"}    {{count:60 sum:60}}
+
+eval instant at 103m increase(series[2m] smoothed)
+    {type="float/st_unknown_newest"}            60
+    {type="float/st_known_then_unknown"}        60
+    {type="histogram/st_unknown_newest"}        {{count:60 sum:60}}
+    {type="histogram/st_known_then_unknown"}    {{count:60 sum:60}}
 
 clear
 
