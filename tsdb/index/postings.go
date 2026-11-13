@@ -64,9 +64,6 @@ type MemPostings struct {
 	//
 	// mtx must be held when interacting with m (the appropriate one for reading or writing).
 	// It is safe to retain a reference to a postings list after releasing the lock.
-	//
-	// BUG: There's currently a data race in addFor, which might modify the tail of the postings list:
-	// https://github.com/prometheus/prometheus/issues/15317
 	m map[string]map[string][]storage.SeriesRef
 
 	// lvs holds the label values for each label name.
@@ -435,6 +432,11 @@ func (p *MemPostings) addFor(id storage.SeriesRef, l labels.Label) {
 	vm, ok := nm[l.Value]
 	if !ok {
 		p.lvs[l.Name] = appendWithExponentialGrowth(p.lvs[l.Name], l.Value)
+	}
+	if p.ordered && len(vm) > 0 && id < vm[len(vm)-1] {
+		// The order is repaired below by moving entries, and readers may still
+		// hold vm, so make appendWithExponentialGrowth copy it.
+		vm = slices.Clip(vm)
 	}
 	list := appendWithExponentialGrowth(vm, id)
 	nm[l.Value] = list
