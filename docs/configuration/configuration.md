@@ -4347,6 +4347,12 @@ required_matchers:
 # Timeout for requests to the remote read endpoint.
 [ remote_timeout: <duration> | default = 1m ]
 
+# Maximum size, in bytes, of a single protobuf frame accepted in a streamed
+# (chunked) remote read response. A frame larger than this fails the read with
+# a "message size exceeded the limit" error. Raise it if the remote endpoint
+# returns very large frames.
+[ chunked_read_limit: <int> | default = 50000000 ]
+
 # Custom HTTP headers to be sent along with each remote read request.
 # Be aware that headers that are set by Prometheus itself can't be overwritten.
 headers:
