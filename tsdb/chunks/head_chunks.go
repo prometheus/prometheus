@@ -24,6 +24,7 @@ import (
 	"math"
 	"os"
 	"path/filepath"
+	"runtime/debug"
 	"slices"
 	"strconv"
 	"sync"
@@ -762,6 +763,46 @@ func (cdm *ChunkDiskMapper) Chunk(ref ChunkDiskMapperRef) (chunkenc.Chunk, error
 			Err:       fmt.Errorf("head chunk file index %d does not exist on disk", sgmIndex),
 		}
 	}
+
+	// The reads below dereference the memory-mapped head chunk file. If the
+	// backing file has been truncated or becomes unreadable (for example a
+	// device I/O error or a truncation under the mapping), accessing the mapped
+	// pages raises SIGBUS/SIGSEGV. The Go runtime turns such a fault into a
+	// fatal error that crashes the whole process. readChunkFromMmap runs the
+	// mmap-touching work under debug.SetPanicOnFault so the fault becomes a
+	// recoverable panic that is converted into a CorruptionErr, letting the
+	// query fail gracefully instead of taking Prometheus down.
+	return cdm.readChunkFromMmap(mmapFile, sgmIndex, chkStart)
+}
+
+// readChunkFromMmap reads a single chunk out of the memory-mapped file. It must
+// be called with cdm.readPathMtx held (read lock is sufficient) so the mapping
+// cannot be unmapped while it runs.
+//
+// All access to the mmap-ed byte slice happens inside a goroutine-local
+// debug.SetPanicOnFault(true) scope. A page fault on the mapping (truncated or
+// unreadable backing file) is then delivered as a recoverable runtime panic,
+// which the deferred recover converts into a *CorruptionErr instead of letting
+// the runtime abort the process with "fatal error: fault".
+func (cdm *ChunkDiskMapper) readChunkFromMmap(mmapFile *mmappedChunkFile, sgmIndex, chkStart int) (chunk chunkenc.Chunk, err error) {
+	// SetPanicOnFault is per-goroutine; save and restore the previous value so
+	// we do not change behaviour for anything else that runs on this goroutine.
+	prevPanicOnFault := debug.SetPanicOnFault(true)
+	defer func() {
+		debug.SetPanicOnFault(prevPanicOnFault)
+		if r := recover(); r != nil {
+			rerr, ok := r.(error)
+			if !ok {
+				rerr = fmt.Errorf("%v", r)
+			}
+			chunk = nil
+			err = &CorruptionErr{
+				Dir:       cdm.dir.Name(),
+				FileIndex: sgmIndex,
+				Err:       fmt.Errorf("fault while reading memory-mapped head chunk file (truncated or unreadable backing file): %w", rerr),
+			}
+		}
+	}()
 
 	if chkStart+MaxChunkLengthFieldSize > mmapFile.byteSlice.Len() {
 		return nil, &CorruptionErr{
