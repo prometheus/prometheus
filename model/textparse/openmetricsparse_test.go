@@ -1283,3 +1283,25 @@ func resetValAndLset(e []parsedEntry) {
 		e[i].lset = labels.EmptyLabels()
 	}
 }
+
+func TestOpenMetricsStartTimestampShortSeriesLine(t *testing.T) {
+	// A target can declare a long metric family name in # TYPE and then emit a
+	// shorter series line. StartTimestamp() used to slice p.series using the
+	// family-name length (p.mfNameLen), which exceeds len(p.series) here and
+	// panicked, crashing the scrape goroutine (and the process). Such a series
+	// cannot belong to the declared family, so it has no shared start timestamp:
+	// StartTimestamp() must return 0 instead of slicing out of range.
+	input := []byte("# TYPE aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa counter\na 1\n# EOF\n")
+	p := NewOpenMetricsParser(input, labels.NewSymbolTable(), WithOMParserSTSeriesSkipped())
+	for {
+		e, err := p.Next()
+		if err != nil {
+			break
+		}
+		if e == EntrySeries {
+			if ts := p.StartTimestamp(); ts != 0 {
+				t.Fatalf("expected start timestamp 0 for short series line, got %d", ts)
+			}
+		}
+	}
+}
