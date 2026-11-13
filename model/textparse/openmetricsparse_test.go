@@ -17,6 +17,7 @@ import (
 	"fmt"
 	"io"
 	"math"
+	"strings"
 	"testing"
 
 	"github.com/prometheus/common/model"
@@ -1282,4 +1283,33 @@ func resetValAndLset(e []parsedEntry) {
 		e[i].v = 0
 		e[i].lset = labels.EmptyLabels()
 	}
+}
+
+func TestOpenMetricsParse_ExceedsMaxLabelLength(t *testing.T) {
+	t.Run("metric name exceeds limit", func(t *testing.T) {
+		oversizedMetric := strings.Repeat("m", labels.MaxLabelLength+1)
+		input := oversizedMetric + " 1\n# EOF\n"
+		p := NewOpenMetricsParser([]byte(input), labels.NewSymbolTable())
+		_, err := p.Next()
+		require.Error(t, err)
+		require.Contains(t, err.Error(), "metric name exceeds limit")
+	})
+
+	t.Run("label name exceeds limit", func(t *testing.T) {
+		oversizedName := strings.Repeat("l", labels.MaxLabelLength+1)
+		input := "metric{" + oversizedName + `="v"} 1` + "\n# EOF\n"
+		p := NewOpenMetricsParser([]byte(input), labels.NewSymbolTable())
+		_, err := p.Next()
+		require.Error(t, err)
+		require.Contains(t, err.Error(), "label name exceeds limit")
+	})
+
+	t.Run("label value exceeds limit", func(t *testing.T) {
+		oversizedVal := strings.Repeat("x", labels.MaxLabelLength+1)
+		input := `metric{foo="` + oversizedVal + `"}` + " 1\n# EOF\n"
+		p := NewOpenMetricsParser([]byte(input), labels.NewSymbolTable())
+		_, err := p.Next()
+		require.Error(t, err)
+		require.Contains(t, err.Error(), "label value exceeds limit")
+	})
 }

@@ -16,6 +16,7 @@ package labels
 import (
 	"bytes"
 	"encoding/json"
+	"fmt"
 	"slices"
 	"strconv"
 	"unsafe"
@@ -24,6 +25,10 @@ import (
 )
 
 const (
+	// MaxLabelLength is the maximum allowed length (in bytes) of a label name or label value
+	// that can be encoded in Prometheus labels (2^24 bytes = 16 MiB).
+	MaxLabelLength = 1 << 24
+
 	// MetricName is a special label name that represent a metric name.
 	//
 	// Deprecated: Instead, consider using schema.Metadata structure and its methods for consistent metadata behaviour with the newly added __type__ and __unit__ labels. Alternatively use github.com/prometheus/common/model.MetricNameLabel for the direct replacement.
@@ -229,6 +234,26 @@ func (b *Builder) Range(f func(l Label)) {
 	for _, a := range origAdd {
 		f(a)
 	}
+}
+
+// ValidateLength checks if any label name or value in the builder exceeds maxLen.
+// If maxLen is <= 0, MaxLabelLength is used.
+func (b *Builder) ValidateLength(maxLen int) error {
+	if maxLen <= 0 {
+		maxLen = MaxLabelLength
+	}
+	var err error
+	b.Range(func(l Label) {
+		if err != nil {
+			return
+		}
+		if len(l.Name) > maxLen {
+			err = fmt.Errorf("label name %q exceeds limit of %d bytes", l.Name, maxLen)
+		} else if len(l.Value) > maxLen {
+			err = fmt.Errorf("label value exceeds limit of %d bytes", maxLen)
+		}
+	})
+	return err
 }
 
 func contains(s []Label, n string) bool {

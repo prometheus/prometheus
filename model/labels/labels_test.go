@@ -1214,3 +1214,41 @@ func TestMarshaling(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, f, gotFY)
 }
+
+func TestValidateLength(t *testing.T) {
+	require.Equal(t, 1<<24, MaxLabelLength)
+
+	t.Run("Builder", func(t *testing.T) {
+		b := NewBuilder(EmptyLabels())
+		b.Set("a", "b")
+		require.NoError(t, b.ValidateLength(100))
+
+		b.Set("a", "123456")
+		err := b.ValidateLength(5)
+		require.Error(t, err)
+		require.Contains(t, err.Error(), "label value exceeds limit of 5 bytes")
+
+		b2 := NewBuilder(EmptyLabels())
+		b2.Set("toolongname", "val")
+		err = b2.ValidateLength(5)
+		require.Error(t, err)
+		require.Contains(t, err.Error(), `label name "toolongname" exceeds limit of 5 bytes`)
+	})
+
+	t.Run("ScratchBuilder", func(t *testing.T) {
+		sb := NewScratchBuilder(2)
+		sb.Add("a", "b")
+		require.NoError(t, sb.ValidateLength(100))
+
+		sb.Add("c", "123456")
+		err := sb.ValidateLength(5)
+		require.Error(t, err)
+		require.Contains(t, err.Error(), "label value exceeds limit of 5 bytes")
+
+		sb2 := NewScratchBuilder(1)
+		sb2.Add("toolongname", "val")
+		err = sb2.ValidateLength(5)
+		require.Error(t, err)
+		require.Contains(t, err.Error(), `label name "toolongname" exceeds limit of 5 bytes`)
+	})
+}
