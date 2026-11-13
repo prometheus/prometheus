@@ -591,6 +591,12 @@ query($owner: String!, $name: String!, $limit: Int!, $after: String) {
               statusCheckRollup {
                 state
               }
+              checkSuites(first: 20) {
+                nodes {
+                  conclusion
+                  app { slug }
+                }
+              }
             }
           }
         }
@@ -793,6 +799,26 @@ CI_ISSUE_RE = re.compile(
 )
 
 
+def ci_state_from_commit(commit):
+    """Return the CI state of a PR head commit.
+
+    GitHub Actions runs that wait for /workflow-approve show up as check suites
+    with conclusion ACTION_REQUIRED and are not part of statusCheckRollup, so
+    they are checked first. A commit without any checks is NO_CHECKS, not
+    PENDING_APPROVAL, because there is nothing to approve.
+    """
+    if not commit:
+        return "NO_CHECKS"
+    suites = (commit.get("checkSuites") or {}).get("nodes") or []
+    if any(
+        s.get("conclusion") == "ACTION_REQUIRED"
+        and (s.get("app") or {}).get("slug") == "github-actions"
+        for s in suites
+    ):
+        return "PENDING_APPROVAL"
+    return (commit.get("statusCheckRollup") or {}).get("state") or "NO_CHECKS"
+
+
 def has_author_ci_explanation(author_comments_after_commit):
     for _, body in author_comments_after_commit:
         if CI_TOPIC_RE.search(body) and CI_ISSUE_RE.search(body):
@@ -854,14 +880,9 @@ def analyze_prs(repos, max_prs, maintainer_filter=None):
 
             hygiene = check_hygiene(model, pr)
             commits = pr.get("commits", {}).get("nodes", [])
-            ci_state = "PENDING_APPROVAL"
-            commit_date = pr["updatedAt"]
-            if commits:
-                c = commits[-1]["commit"]
-                commit_date = c["committedDate"]
-                rollup = c.get("statusCheckRollup")
-                if rollup and rollup.get("state"):
-                    ci_state = rollup["state"]
+            head_commit = commits[-1]["commit"] if commits else None
+            commit_date = head_commit["committedDate"] if head_commit else pr["updatedAt"]
+            ci_state = ci_state_from_commit(head_commit)
 
             opinionated_reviews = [
                 r
@@ -1143,6 +1164,8 @@ def render_markdown(
     def fmt_ci(state, explained=False):
         if state == "SUCCESS":
             return "pass"
+        if state == "NO_CHECKS":
+            return "no-checks"
         if explained:
             return "fail (commented)" if state in ("FAILURE", "ERROR") else "running (commented)"
         if state == "PENDING_APPROVAL":

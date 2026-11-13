@@ -258,6 +258,119 @@ class TestGenerateTriageBoard(unittest.TestCase):
         )
         self.assertLess(md.index("[#11]("), md.index("[#10]("))
 
+    def test_ci_state_from_commit(self):
+        def suite(slug, conclusion):
+            return {"conclusion": conclusion, "app": {"slug": slug}}
+
+        cases = [
+            (
+                "green rollup",
+                {
+                    "statusCheckRollup": {"state": "SUCCESS"},
+                    "checkSuites": {"nodes": [suite("github-actions", "SUCCESS")]},
+                },
+                "SUCCESS",
+            ),
+            (
+                "actions runs awaiting approval behind a green rollup",
+                {
+                    "statusCheckRollup": {"state": "SUCCESS"},
+                    "checkSuites": {
+                        "nodes": [
+                            suite("dco", "SUCCESS"),
+                            suite("github-actions", "ACTION_REQUIRED"),
+                        ]
+                    },
+                },
+                "PENDING_APPROVAL",
+            ),
+            (
+                "actions runs awaiting approval without a rollup",
+                {
+                    "statusCheckRollup": None,
+                    "checkSuites": {"nodes": [suite("github-actions", "ACTION_REQUIRED")]},
+                },
+                "PENDING_APPROVAL",
+            ),
+            (
+                "missing DCO sign-off is not an approval wait",
+                {
+                    "statusCheckRollup": {"state": "FAILURE"},
+                    "checkSuites": {"nodes": [suite("dco", "ACTION_REQUIRED")]},
+                },
+                "FAILURE",
+            ),
+            (
+                "running checks",
+                {
+                    "statusCheckRollup": {"state": "PENDING"},
+                    "checkSuites": {"nodes": [suite("github-actions", None)]},
+                },
+                "PENDING",
+            ),
+            (
+                "no checks at all",
+                {"statusCheckRollup": None, "checkSuites": {"nodes": []}},
+                "NO_CHECKS",
+            ),
+            (
+                "suite without an app",
+                {
+                    "statusCheckRollup": {"state": "SUCCESS"},
+                    "checkSuites": {"nodes": [{"conclusion": "ACTION_REQUIRED", "app": None}]},
+                },
+                "SUCCESS",
+            ),
+            ("no head commit", None, "NO_CHECKS"),
+        ]
+        for name, commit, expected in cases:
+            with self.subTest(name):
+                self.assertEqual(gtb.ci_state_from_commit(commit), expected)
+        self.assertIn("checkSuites", gtb.GRAPHQL_QUERY)
+
+    def test_no_checks_has_its_own_ci_label(self):
+        now = datetime.datetime(2026, 11, 2, 5, 0, tzinfo=datetime.timezone.utc)
+        pr = {
+            "repo_full": "prometheus/prometheus",
+            "repo": "prometheus",
+            "number": 12,
+            "title": "PR without checks, author explained why",
+            "url": "https://github.com/prometheus/prometheus/pull/12",
+            "author": "newbie",
+            "author_cell": "@newbie<br>*(New Contributor)*",
+            "trust_score": 30.0,
+            "priority_score": 30.0,
+            "waitingSince": "2026-10-30T00:00:00Z",
+            "updatedEpoch": datetime.datetime(
+                2026, 10, 30, tzinfo=datetime.timezone.utc
+            ).timestamp(),
+            "owners_cell": "`@bwplotka`",
+            "status_bucket": "Waiting on Maintainer",
+            "ci_state": "NO_CHECKS",
+            "ci_explained": True,
+            "hygiene": [],
+            "additions": 5,
+            "deletions": 1,
+            "loc": 6,
+            "changedFiles": 1,
+            "updatedAt": "2026-10-30T00:00:00Z",
+            "commitDate": "2026-10-30T00:00:00Z",
+            "lastActor": "newbie",
+            "lastEventType": "commit",
+            "approved": False,
+            "touchesWorkflow": False,
+        }
+
+        md = gtb.render_markdown(
+            ["prometheus/prometheus"],
+            now,
+            {"prometheus/prometheus": 1},
+            [pr],
+            100,
+        )
+        row = next(line for line in md.splitlines() if "[#12](" in line)
+        self.assertIn("`no-checks`", row)
+
     def test_standalone_without_contributor_trust_skill(self):
         src_script = os.path.join(
             os.path.dirname(os.path.abspath(__file__)), "generate_triage_board.py"
