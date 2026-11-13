@@ -17,6 +17,7 @@ import (
 	"fmt"
 	"net/url"
 	"strings"
+	"unicode/utf8"
 
 	"github.com/grafana/regexp"
 )
@@ -46,19 +47,56 @@ func SanitizeLabelName(name string) string {
 	return invalidLabelCharRE.ReplaceAllString(name, "_")
 }
 
+// Helper for SanitizeFullLabelName: validLabelChar[b] is true for bytes that are valid anywhere in a label name.
+var validLabelChar = func() (t [256]bool) {
+	for c := 'a'; c <= 'z'; c++ {
+		t[c] = true
+		t[c-'a'+'A'] = true
+	}
+	for c := '0'; c <= '9'; c++ {
+		t[c] = true
+	}
+	t['_'] = true
+	return t
+}()
+
 // SanitizeFullLabelName replaces any invalid character with an underscore, and
 // if given an empty string, returns a string containing a single underscore.
 func SanitizeFullLabelName(name string) string {
 	if name == "" {
 		return "_"
 	}
-	var validSb strings.Builder
-	for i, b := range name {
-		if (b >= 'a' && b <= 'z') || (b >= 'A' && b <= 'Z') || b == '_' || (b >= '0' && b <= '9' && i > 0) {
-			validSb.WriteRune(b)
-		} else {
-			validSb.WriteRune('_')
+	// Fast path: find the first byte that needs replacing, without allocating.
+	i := 0
+	if validLabelChar[name[0]] && name[0] > '9' {
+		for i = 1; i < len(name) && validLabelChar[name[i]]; i++ {
+		}
+		if i == len(name) {
+			return name
 		}
 	}
-	return validSb.String()
+	var sb strings.Builder
+	sb.Grow(len(name))
+	sb.WriteString(name[:i])
+	// Replace first invalid character with an underscore.
+	_, w := utf8.DecodeRuneInString(name[i:])
+	i += w
+	sb.WriteByte('_')
+	for i < len(name) {
+		c := name[i]
+		switch {
+		case c >= utf8.RuneSelf:
+			// One underscore per (possibly invalid) rune.
+			_, w := utf8.DecodeRuneInString(name[i:])
+			i += w
+			sb.WriteByte('_')
+		case validLabelChar[c]:
+			sb.WriteByte(c)
+			i++
+		default:
+			sb.WriteByte('_')
+			i++
+		}
+	}
+	return sb.String()
 }

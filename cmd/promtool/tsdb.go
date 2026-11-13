@@ -34,6 +34,7 @@ import (
 	"time"
 
 	"github.com/alecthomas/units"
+	"github.com/prometheus/common/model"
 	"github.com/prometheus/common/promslog"
 	"go.uber.org/atomic"
 
@@ -787,19 +788,42 @@ func formatSeriesSet(ss storage.SeriesSet) error {
 	return nil
 }
 
-// CondensedString is labels.Labels.String() without spaces after the commas.
-func CondensedString(ls labels.Labels) string {
+// openMetricsEscaper escapes a label value or a quoted name as required by the
+// OpenMetrics text format, which only knows the \\, \" and \n escape sequences.
+var openMetricsEscaper = strings.NewReplacer(`\`, `\\`, "\n", `\n`, `"`, `\"`)
+
+// CondensedString returns the series identified by metricName and ls in the
+// OpenMetrics text format, without spaces after the commas. Names that are not
+// valid legacy names are quoted, and a quoted metric name goes inside the braces.
+func CondensedString(metricName string, ls labels.Labels) string {
 	var b bytes.Buffer
 
-	b.WriteByte('{')
+	writeQuoted := func(s string) {
+		b.WriteByte('"')
+		b.WriteString(openMetricsEscaper.Replace(s))
+		b.WriteByte('"')
+	}
+
 	i := 0
+	if metricName != "" && !model.LegacyValidation.IsValidMetricName(metricName) {
+		b.WriteByte('{')
+		writeQuoted(metricName)
+		i++
+	} else {
+		b.WriteString(metricName)
+		b.WriteByte('{')
+	}
 	ls.Range(func(l labels.Label) {
 		if i > 0 {
 			b.WriteByte(',')
 		}
-		b.WriteString(l.Name)
+		if model.LegacyValidation.IsValidLabelName(l.Name) {
+			b.WriteString(l.Name)
+		} else {
+			writeQuoted(l.Name)
+		}
 		b.WriteByte('=')
-		b.WriteString(strconv.Quote(l.Value))
+		writeQuoted(l.Value)
 		i++
 	})
 	b.WriteByte('}')
@@ -839,7 +863,7 @@ func formatSeriesSetOpenMetrics(ss storage.SeriesSet) error {
 		it := series.Iterator(nil)
 		for it.Next() == chunkenc.ValFloat {
 			ts, val := it.At()
-			fmt.Printf("%s%s %g %.3f\n", metricName, CondensedString(lbs), val, float64(ts)/1000)
+			fmt.Printf("%s %g %.3f\n", CondensedString(metricName, lbs), val, float64(ts)/1000)
 		}
 		if it.Err() != nil {
 			return it.Err()

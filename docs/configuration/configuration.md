@@ -557,6 +557,10 @@ triton_sd_configs:
 uyuni_sd_configs:
   [ - <uyuni_sd_config> ... ]
 
+# List of Vultr service discovery configurations.
+vultr_sd_configs:
+  [ - <vultr_sd_config> ... ]
+
 # List of labeled statically configured targets for this job.
 static_configs:
   [ - <static_config> ... ]
@@ -3334,7 +3338,7 @@ From a given Service Account json
 properties can be mapped as:
 
 ```yaml
-stackit_sd_config:
+stackit_sd_configs:
 - oauth2:
     client_id: <credentials.sub>
     client_certificate_key: <credentials.privateKey>
