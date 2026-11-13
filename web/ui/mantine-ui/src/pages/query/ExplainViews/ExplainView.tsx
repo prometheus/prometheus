@@ -17,12 +17,14 @@ import { IconInfoCircle } from "@tabler/icons-react";
 
 interface ExplainViewProps {
   node: ASTNode | null;
+  endTime: number | null;
   treeShown: boolean;
   showTree: () => void;
 }
 
 const ExplainView: FC<ExplainViewProps> = ({
   node,
+  endTime,
   treeShown,
   showTree: setShowTree,
 }) => {
@@ -51,7 +53,7 @@ const ExplainView: FC<ExplainViewProps> = ({
     case nodeType.aggregation:
       return <AggregationExplainView node={node} />;
     case nodeType.binaryExpr:
-      return <BinaryExprExplainView node={node} />;
+      return <BinaryExprExplainView node={node} endTime={endTime} />;
     case nodeType.call:
       return (
         <Card withBorder>
