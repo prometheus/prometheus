@@ -23,6 +23,7 @@ import (
 	"os"
 	"path/filepath"
 	"slices"
+	"sync"
 	"time"
 
 	"github.com/oklog/ulid/v2"
@@ -80,6 +81,7 @@ type Compactor interface {
 type LeveledCompactor struct {
 	metrics                     *CompactorMetrics
 	logger                      *slog.Logger
+	rangesMtx                   sync.RWMutex // Guards ranges.
 	ranges                      []int64
 	chunkPool                   chunkenc.Pool
 	ctx                         context.Context
@@ -246,6 +248,26 @@ func NewLeveledCompactorWithOptions(ctx context.Context, r prometheus.Registerer
 	}, nil
 }
 
+// getRanges returns the current compaction ranges. The returned slice must not be modified.
+func (c *LeveledCompactor) getRanges() []int64 {
+	c.rangesMtx.RLock()
+	defer c.rangesMtx.RUnlock()
+	return c.ranges
+}
+
+// SetRanges replaces the compaction ranges. It is safe to call concurrently
+// with Plan. At least one range must be provided and the slice must not be
+// modified afterwards.
+func (c *LeveledCompactor) SetRanges(ranges []int64) error {
+	if len(ranges) == 0 {
+		return errors.New("at least one range must be provided")
+	}
+	c.rangesMtx.Lock()
+	defer c.rangesMtx.Unlock()
+	c.ranges = ranges
+	return nil
+}
+
 type dirMeta struct {
 	dir  string
 	meta *BlockMeta
@@ -363,6 +385,9 @@ func (c *LeveledCompactor) planClass(dms []dirMeta) ([]string, error) {
 		}
 	})
 
+	// Use a single snapshot of the ranges for the whole planning run, as they can change concurrently.
+	ranges := c.getRanges()
+
 	res := c.selectOverlappingDirs(dms)
 	if len(res) > 0 {
 		return res, nil
@@ -372,7 +397,7 @@ func (c *LeveledCompactor) planClass(dms []dirMeta) ([]string, error) {
 	// This gives users a window of a full block size to piece-wise backup new data without having to care about data overlap.
 	dms = dms[:len(dms)-1]
 
-	for _, dm := range c.selectDirs(dms) {
+	for _, dm := range selectDirs(dms, ranges) {
 		res = append(res, dm.dir)
 	}
 	if len(res) > 0 {
@@ -382,7 +407,7 @@ func (c *LeveledCompactor) planClass(dms []dirMeta) ([]string, error) {
 	// Compact any blocks with big enough time range that have >5% tombstones.
 	for _, v := range slices.Backward(dms) {
 		meta := v.meta
-		if meta.MaxTime-meta.MinTime < c.ranges[len(c.ranges)/2] {
+		if meta.MaxTime-meta.MinTime < ranges[len(ranges)/2] {
 			// If the block is entirely deleted, then we don't care about the block being big enough.
 			// TODO: This is assuming a single tombstone is for a distinct series, which might not be true.
 			if meta.Stats.NumTombstones > 0 && meta.Stats.NumTombstones >= meta.Stats.NumSeries {
@@ -400,14 +425,14 @@ func (c *LeveledCompactor) planClass(dms []dirMeta) ([]string, error) {
 
 // selectDirs returns the dir metas that should be compacted into a single new block.
 // If only a single block range is configured, the result is always nil.
-func (c *LeveledCompactor) selectDirs(ds []dirMeta) []dirMeta {
-	if len(c.ranges) < 2 || len(ds) < 1 {
+func selectDirs(ds []dirMeta, ranges []int64) []dirMeta {
+	if len(ranges) < 2 || len(ds) < 1 {
 		return nil
 	}
 
 	highTime := ds[len(ds)-1].meta.MinTime
 
-	for _, iv := range c.ranges[1:] {
+	for _, iv := range ranges[1:] {
 		parts := splitByRange(ds, iv)
 		if len(parts) == 0 {
 			continue
