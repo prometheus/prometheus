@@ -47,10 +47,11 @@ var ErrDuplicateRecordingLabelSet = errors.New("vector contains metrics with the
 
 // A RecordingRule records its vector expression into new timeseries.
 type RecordingRule struct {
-	name   string
-	vector parser.Expr
-	labels labels.Labels
-	meta   metadata.Metadata
+	name            string
+	vector          parser.Expr
+	labels          labels.Labels
+	meta            metadata.Metadata
+	preservesSchema bool
 	// The health of the recording rule.
 	health *atomic.String
 	// Timestamp of last evaluation of the recording rule.
@@ -77,6 +78,7 @@ func NewRecordingRuleWithMetadata(name string, vector parser.Expr, lset labels.L
 		vector:              vector,
 		labels:              lset,
 		meta:                meta,
+		preservesSchema:     preservesRecordingSchema(vector),
 		health:              atomic.NewString(string(HealthUnknown)),
 		evaluationTimestamp: atomic.NewTime(time.Time{}),
 		evaluationDuration:  atomic.NewDuration(0),
@@ -182,7 +184,7 @@ func (rule *RecordingRule) evalWithMetadata(
 
 // deduceSampleMetadata infers metric metadata (type, unit, help) for an evaluated
 // recording rule sample:
-//  1. Preserved schema: when __name__ survived PromQL evaluation (DropName == false),
+//  1. Preserved schema: when the expression preserves the input schema and __name__ survives,
 //     read preserved __type__ and __unit__ labels (if type-and-unit-labels is enabled)
 //     and fall back to _total (counter), _bucket (histogram), or _info (info) naming
 //     suffixes on float samples when type is empty.
@@ -193,17 +195,17 @@ func (rule *RecordingRule) evalWithMetadata(
 func (rule *RecordingRule) deduceSampleMetadata(sample *promql.Sample, enableTypeAndUnitLabels bool) metadata.Metadata {
 	isNativeHist := sample.H != nil
 	var preserved schema.Metadata
-	if origName := sample.Metric.Get(labels.MetricName); origName != "" {
+	if origName := sample.Metric.Get(labels.MetricName); origName != "" && !sample.DropName && rule.preservesSchema {
 		if enableTypeAndUnitLabels {
 			preserved = schema.NewMetadataFromLabels(sample.Metric)
 		} else {
 			preserved.Name = origName
 		}
 		if !isNativeHist && preserved.IsTypeEmpty() {
-			// NOTE(bwplotka): Until native TSDB metadata lookup lands (prometheus#19563),
-			// fall back to unambiguous Prometheus naming suffixes when __name__ survived
-			// PromQL evaluation unchanged (DropName == false). _sum and _count are omitted
-			// because they are shared by classic histograms and summaries.
+			// Until native TSDB metadata lookup lands (prometheus#19563), fall back
+			// to Prometheus naming suffixes for schema-preserving expressions.
+			// The _sum and _count suffixes are omitted because they are shared by
+			// classic histograms and summaries.
 			switch {
 			case strings.HasSuffix(origName, "_total"):
 				preserved.Type = model.MetricTypeCounter
@@ -241,6 +243,58 @@ func (rule *RecordingRule) deduceSampleMetadata(sample *promql.Sample, enableTyp
 		Unit: unit,
 		Help: rule.meta.Help,
 	}
+}
+
+// preservesRecordingSchema conservatively identifies expressions that only select,
+// filter, or reorder input samples without changing their schema labels. A surviving
+// metric name alone is insufficient: aggregations can group by it and label functions
+// can recreate it after a schema-changing operation. Until PromQL tracks schema
+// provenance per sample, all possible output branches must preserve the schema.
+func preservesRecordingSchema(expr parser.Expr) bool {
+	switch e := expr.(type) {
+	case *parser.VectorSelector:
+		return true
+	case *parser.ParenExpr:
+		return preservesRecordingSchema(e.Expr)
+	case *parser.StepInvariantExpr:
+		return preservesRecordingSchema(e.Expr)
+	case *parser.AggregateExpr:
+		switch e.Op {
+		case parser.TOPK, parser.BOTTOMK, parser.LIMITK, parser.LIMIT_RATIO:
+			return preservesRecordingSchema(e.Expr)
+		}
+	case *parser.BinaryExpr:
+		switch e.Op {
+		case parser.LAND, parser.LUNLESS:
+			return preservesRecordingSchema(e.LHS)
+		case parser.LOR:
+			return preservesRecordingSchema(e.LHS) && preservesRecordingSchema(e.RHS)
+		}
+		if e.Op.IsComparisonOperator() && !e.ReturnBool {
+			if e.RHS.Type() == parser.ValueTypeScalar {
+				return preservesRecordingSchema(e.LHS)
+			}
+			if e.LHS.Type() == parser.ValueTypeScalar {
+				return preservesRecordingSchema(e.RHS)
+			}
+		}
+	case *parser.Call:
+		switch e.Func.Name {
+		case "sort", "sort_desc", "sort_by_label", "sort_by_label_desc":
+			return preservesRecordingSchema(e.Args[0])
+		case "label_replace", "label_join":
+			dst, ok := e.Args[1].(*parser.StringLiteral)
+			if !ok {
+				return false
+			}
+			switch dst.Val {
+			case model.MetricNameLabel, model.MetricTypeLabel, model.MetricUnitLabel:
+				return false
+			}
+			return preservesRecordingSchema(e.Args[0])
+		}
+	}
+	return false
 }
 
 // isSampleTypeCompatible reports whether t is a known non-unknown metric type
