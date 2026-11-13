@@ -14,10 +14,14 @@
 package compression
 
 import (
+	"bytes"
 	"errors"
 	"fmt"
+	"slices"
 	"testing"
+	"unsafe"
 
+	"github.com/golang/snappy"
 	"github.com/stretchr/testify/require"
 )
 
@@ -138,6 +142,46 @@ func TestEncodeDecode(t *testing.T) {
 			})
 		}
 	}
+
+	t.Run("snappy buffer growth", func(t *testing.T) {
+		// Each message either reuses the previous buffer or grows it to exactly the
+		// allocator block for its maximum encoded length.
+		buf := NewSyncEncodeBuffer()
+		for _, tc := range []struct {
+			name      string
+			size      int
+			fitsSlack bool
+		}{
+			{"first", 1 << 10, false},
+			{"small", 16 << 10, false},
+			{"size class slack", 17 << 10, true},
+			{"large", 4 << 20, false},
+			{"page slack", 4<<20 + 4<<10, true},
+			{"next page", 4<<20 + 8<<10, false},
+		} {
+			t.Run(tc.name, func(t *testing.T) {
+				src := bytes.Repeat([]byte("x"), tc.size)
+				required := snappy.MaxEncodedLen(tc.size)
+				prev := buf.get()
+				require.Equal(t, tc.fitsSlack, cap(prev) >= required)
+
+				got, err := Encode(Snappy, src, buf)
+				require.NoError(t, err)
+				if tc.fitsSlack {
+					require.Same(t, unsafe.SliceData(prev), unsafe.SliceData(got))
+				} else {
+					require.Equal(t, cap(slices.Grow([]byte(nil), required)), cap(got))
+					if required > 32<<10 {
+						// Go allocates objects above 32 KiB in whole 8 KiB pages.
+						require.Less(t, cap(got)-required, 8<<10)
+					}
+				}
+				decoded, err := Decode(Snappy, got, nil)
+				require.NoError(t, err)
+				require.Equal(t, src, decoded)
+			})
+		}
+	})
 }
 
 /*
