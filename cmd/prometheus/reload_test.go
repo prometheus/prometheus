@@ -227,10 +227,12 @@ func commandWithLogging(t testing.TB, logProcessor func(testing.TB, io.Reader), 
 
 	go func() {
 		defer wg.Done()
+		defer func() { _, _ = io.Copy(io.Discard, stdoutPipe) }()
 		logProcessor(t, stdoutPipe)
 	}()
 	go func() {
 		defer wg.Done()
+		defer func() { _, _ = io.Copy(io.Discard, stderrPipe) }()
 		logProcessor(t, stderrPipe)
 	}()
 
