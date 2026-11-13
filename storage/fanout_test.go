@@ -385,6 +385,79 @@ func TestFanoutErrors(t *testing.T) {
 	}
 }
 
+// splitErrStorage is a secondary storage whose only querier always fails
+// and is reported as required or best effort.
+type splitErrStorage struct {
+	errStorage
+	required bool
+}
+
+func (s splitErrStorage) SplitQueriers(_, _ int64) (required, bestEffort []storage.Querier, err error) {
+	if s.required {
+		return []storage.Querier{errQuerier{}}, nil, nil
+	}
+	return nil, []storage.Querier{errQuerier{}}, nil
+}
+
+func (s splitErrStorage) SplitChunkQueriers(_, _ int64) (required, bestEffort []storage.ChunkQuerier, err error) {
+	if s.required {
+		return []storage.ChunkQuerier{errChunkQuerier{}}, nil, nil
+	}
+	return nil, []storage.ChunkQuerier{errChunkQuerier{}}, nil
+}
+
+func TestFanout_RequiredSecondaryQueriers(t *testing.T) {
+	matcher := labels.MustNewMatcher(labels.MatchEqual, "a", "b")
+
+	for _, required := range []bool{false, true} {
+		t.Run("required="+strconv.FormatBool(required), func(t *testing.T) {
+			fanoutStorage := storage.NewFanout(nil, teststorage.New(t), splitErrStorage{required: required})
+
+			t.Run("samples", func(t *testing.T) {
+				querier, err := fanoutStorage.Querier(0, 8000)
+				require.NoError(t, err)
+				defer querier.Close()
+
+				ss := querier.Select(context.Background(), true, nil, matcher)
+				for ss.Next() {
+					ss.At()
+				}
+				if required {
+					require.ErrorIs(t, ss.Err(), errSelect)
+				} else {
+					require.NoError(t, ss.Err())
+					require.ErrorIs(t, ss.Warnings().AsErrors()[0], errSelect)
+				}
+
+				_, ws, err := querier.LabelValues(context.Background(), "a", nil)
+				if required {
+					require.ErrorContains(t, err, "label values error")
+				} else {
+					require.NoError(t, err)
+					require.ErrorContains(t, ws.AsErrors()[0], "label values error")
+				}
+			})
+
+			t.Run("chunks", func(t *testing.T) {
+				querier, err := fanoutStorage.ChunkQuerier(0, 8000)
+				require.NoError(t, err)
+				defer querier.Close()
+
+				ss := querier.Select(context.Background(), true, nil, matcher)
+				for ss.Next() {
+					ss.At()
+				}
+				if required {
+					require.ErrorIs(t, ss.Err(), errSelect)
+				} else {
+					require.NoError(t, ss.Err())
+					require.ErrorIs(t, ss.Warnings().AsErrors()[0], errSelect)
+				}
+			})
+		})
+	}
+}
+
 func TestFanout_Querier_SearcherCapability(t *testing.T) {
 	primary := teststorage.New(t)
 	app := primary.Appender(t.Context())

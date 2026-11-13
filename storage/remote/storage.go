@@ -17,6 +17,7 @@ import (
 	"context"
 	"crypto/md5"
 	"encoding/hex"
+	"errors"
 	"fmt"
 	"log/slog"
 	"sync"
@@ -59,11 +60,17 @@ type Storage struct {
 	rws *WriteStorage
 
 	// For reads.
-	queryables             []storage.SampleAndChunkQueryable
+	queryables []storage.SampleAndChunkQueryable
+	// required holds, for each queryable, whether its errors must fail the query.
+	// Queryables without an entry are best effort.
+	required               []bool
 	localStartTimeCallback startTimeCallback
 }
 
-var _ storage.Storage = &Storage{}
+var (
+	_ storage.Storage                 = &Storage{}
+	_ storage.RequiredQueriersStorage = &Storage{}
+)
 
 // NewStorage returns a remote.Storage.
 func NewStorage(l *slog.Logger, reg prometheus.Registerer, stCallback startTimeCallback, walDir string, flushDeadline time.Duration, sm ReadyScrapeManager, enableTypeAndUnitLabels, enableMetadataWALRecords, enableSTStorage bool) *Storage {
@@ -98,6 +105,7 @@ func (s *Storage) ApplyConfig(conf *config.Config) error {
 	// Update read clients
 	readHashes := make(map[string]struct{})
 	queryables := make([]storage.SampleAndChunkQueryable, 0, len(conf.RemoteReadConfigs))
+	required := make([]bool, 0, len(conf.RemoteReadConfigs))
 	for _, rrConf := range conf.RemoteReadConfigs {
 		hash, err := toHash(rrConf)
 		if err != nil {
@@ -140,8 +148,10 @@ func (s *Storage) ApplyConfig(conf *config.Config) error {
 			rrConf.ReadRecent,
 			s.localStartTimeCallback,
 		))
+		required = append(required, rrConf.Required)
 	}
 	s.queryables = queryables
+	s.required = required
 
 	return nil
 }
@@ -153,23 +163,42 @@ func (*Storage) StartTime() (int64, error) {
 
 // Querier returns a storage.MergeQuerier combining the remote client queriers
 // of each configured remote read endpoint.
-// Returned querier will never return error as all queryables are assumed best effort.
+// Returned querier will never return error as all queryables are treated as best effort here.
+// Use SplitQueriers to honour remote read endpoints marked as required.
 // Additionally all returned queriers ensure that its Select's SeriesSets have ready data after first `Next` invoke.
 // This is because Prometheus (fanout and secondary queries) can't handle the stream failing half way through by design.
 func (s *Storage) Querier(mint, maxt int64) (storage.Querier, error) {
+	required, bestEffort, err := s.SplitQueriers(mint, maxt)
+	if err != nil {
+		return nil, err
+	}
+	return storage.NewMergeQuerier(nil, append(required, bestEffort...), storage.ChainedSeriesMerge), nil
+}
+
+// SplitQueriers implements storage.RequiredQueriersStorage. It returns the
+// queriers of remote read endpoints marked as required separately from the
+// best effort ones.
+func (s *Storage) SplitQueriers(mint, maxt int64) (required, bestEffort []storage.Querier, err error) {
 	s.mtx.Lock()
-	queryables := s.queryables
+	queryables, isRequired := s.queryables, s.required
 	s.mtx.Unlock()
 
-	queriers := make([]storage.Querier, 0, len(queryables))
-	for _, queryable := range queryables {
-		q, err := queryable.Querier(mint, maxt)
-		if err != nil {
-			return nil, err
+	for i, queryable := range queryables {
+		q, qErr := queryable.Querier(mint, maxt)
+		if qErr != nil {
+			errs := []error{qErr}
+			for _, open := range append(required, bestEffort...) {
+				errs = append(errs, open.Close())
+			}
+			return nil, nil, errors.Join(errs...)
 		}
-		queriers = append(queriers, q)
+		if i < len(isRequired) && isRequired[i] {
+			required = append(required, q)
+		} else {
+			bestEffort = append(bestEffort, q)
+		}
 	}
-	return storage.NewMergeQuerier(nil, queriers, storage.ChainedSeriesMerge), nil
+	return required, bestEffort, nil
 }
 
 // CostSamplingQueryable reports an empty source only when no remote readers are configured.
@@ -182,19 +211,35 @@ func (s *Storage) CostSamplingQueryable() (storage.SampleAndChunkQueryable, bool
 // ChunkQuerier returns a storage.MergeQuerier combining the remote client queriers
 // of each configured remote read endpoint.
 func (s *Storage) ChunkQuerier(mint, maxt int64) (storage.ChunkQuerier, error) {
+	required, bestEffort, err := s.SplitChunkQueriers(mint, maxt)
+	if err != nil {
+		return nil, err
+	}
+	return storage.NewMergeChunkQuerier(nil, append(required, bestEffort...), storage.NewCompactingChunkSeriesMerger(storage.ChainedSeriesMerge)), nil
+}
+
+// SplitChunkQueriers implements storage.RequiredQueriersStorage.
+func (s *Storage) SplitChunkQueriers(mint, maxt int64) (required, bestEffort []storage.ChunkQuerier, err error) {
 	s.mtx.Lock()
-	queryables := s.queryables
+	queryables, isRequired := s.queryables, s.required
 	s.mtx.Unlock()
 
-	queriers := make([]storage.ChunkQuerier, 0, len(queryables))
-	for _, queryable := range queryables {
-		q, err := queryable.ChunkQuerier(mint, maxt)
-		if err != nil {
-			return nil, err
+	for i, queryable := range queryables {
+		q, qErr := queryable.ChunkQuerier(mint, maxt)
+		if qErr != nil {
+			errs := []error{qErr}
+			for _, open := range append(required, bestEffort...) {
+				errs = append(errs, open.Close())
+			}
+			return nil, nil, errors.Join(errs...)
 		}
-		queriers = append(queriers, q)
+		if i < len(isRequired) && isRequired[i] {
+			required = append(required, q)
+		} else {
+			bestEffort = append(bestEffort, q)
+		}
 	}
-	return storage.NewMergeChunkQuerier(nil, queriers, storage.NewCompactingChunkSeriesMerger(storage.ChainedSeriesMerge)), nil
+	return required, bestEffort, nil
 }
 
 // Appender implements storage.Storage.

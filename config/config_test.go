@@ -203,6 +203,7 @@ var expectedConf = &Config{
 			ReadRecent:       false,
 			Name:             "read_special",
 			RequiredMatchers: model.LabelSet{"job": "special"},
+			Required:         true,
 			HTTPClientConfig: config.HTTPClientConfig{
 				TLSConfig: config.TLSConfig{
 					CertFile: filepath.FromSlash("testdata/valid_cert_file"),

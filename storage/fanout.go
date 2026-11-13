@@ -42,7 +42,8 @@ type fanout struct {
 // * If any secondary querier returns an error the result from that queries is discarded. The overall operation will succeed,
 // and the error from the secondary querier will be returned as a warning.
 //
-// NOTE: In the case of Prometheus, it treats all remote storages as secondary / best effort.
+// NOTE: In the case of Prometheus, it treats all remote storages as secondary / best effort,
+// unless a remote read endpoint is marked as required (see RequiredQueriersStorage).
 func NewFanout(logger *slog.Logger, primary Storage, secondaries ...Storage) Storage {
 	return &fanout{
 		logger:      logger,
@@ -72,31 +73,57 @@ func (f *fanout) StartTime() (int64, error) {
 	return firstTime, nil
 }
 
+// RequiredQueriersStorage can be implemented by a Storage that is passed to
+// NewFanout as a secondary, but holds some data sources that must not be
+// treated as best effort. Required queriers are merged like the primary one,
+// so their errors fail the query instead of being turned into warnings.
+type RequiredQueriersStorage interface {
+	// SplitQueriers returns the queriers whose errors must fail the query and
+	// the ones that can be queried in a best effort manner.
+	SplitQueriers(mint, maxt int64) (required, bestEffort []Querier, err error)
+	// SplitChunkQueriers is the ChunkQuerier version of SplitQueriers.
+	SplitChunkQueriers(mint, maxt int64) (required, bestEffort []ChunkQuerier, err error)
+}
+
 func (f *fanout) Querier(mint, maxt int64) (Querier, error) {
 	primary, err := f.primary.Querier(mint, maxt)
 	if err != nil {
 		return nil, err
 	}
 
+	primaries := []Querier{primary}
 	secondaries := make([]Querier, 0, len(f.secondaries))
 	for _, storage := range f.secondaries {
-		querier, err := storage.Querier(mint, maxt)
+		var (
+			required   []Querier
+			bestEffort []Querier
+		)
+		if rs, ok := storage.(RequiredQueriersStorage); ok {
+			required, bestEffort, err = rs.SplitQueriers(mint, maxt)
+		} else {
+			var querier Querier
+			querier, err = storage.Querier(mint, maxt)
+			bestEffort = []Querier{querier}
+		}
 		if err != nil {
 			// Close already open Queriers, append potential errors to returned error.
-			errs := []error{
-				err,
-				primary.Close(),
+			errs := []error{err}
+			for _, q := range primaries {
+				errs = append(errs, q.Close())
 			}
 			for _, q := range secondaries {
 				errs = append(errs, q.Close())
 			}
 			return nil, errors.Join(errs...)
 		}
-		if _, ok := querier.(noopQuerier); !ok {
-			secondaries = append(secondaries, querier)
+		primaries = append(primaries, required...)
+		for _, q := range bestEffort {
+			if _, ok := q.(noopQuerier); !ok {
+				secondaries = append(secondaries, q)
+			}
 		}
 	}
-	return NewMergeQuerier([]Querier{primary}, secondaries, ChainedSeriesMerge), nil
+	return NewMergeQuerier(primaries, secondaries, ChainedSeriesMerge), nil
 }
 
 // CostSamplingQueryable forwards a safe primary when every secondary is empty.
@@ -129,23 +156,35 @@ func (f *fanout) ChunkQuerier(mint, maxt int64) (ChunkQuerier, error) {
 		return nil, err
 	}
 
+	primaries := []ChunkQuerier{primary}
 	secondaries := make([]ChunkQuerier, 0, len(f.secondaries))
 	for _, storage := range f.secondaries {
-		querier, err := storage.ChunkQuerier(mint, maxt)
+		var (
+			required   []ChunkQuerier
+			bestEffort []ChunkQuerier
+		)
+		if rs, ok := storage.(RequiredQueriersStorage); ok {
+			required, bestEffort, err = rs.SplitChunkQueriers(mint, maxt)
+		} else {
+			var querier ChunkQuerier
+			querier, err = storage.ChunkQuerier(mint, maxt)
+			bestEffort = []ChunkQuerier{querier}
+		}
 		if err != nil {
 			// Close already open Queriers, append potential errors to returned error.
-			errs := []error{
-				err,
-				primary.Close(),
+			errs := []error{err}
+			for _, q := range primaries {
+				errs = append(errs, q.Close())
 			}
 			for _, q := range secondaries {
 				errs = append(errs, q.Close())
 			}
 			return nil, errors.Join(errs...)
 		}
-		secondaries = append(secondaries, querier)
+		primaries = append(primaries, required...)
+		secondaries = append(secondaries, bestEffort...)
 	}
-	return NewMergeChunkQuerier([]ChunkQuerier{primary}, secondaries, NewCompactingChunkSeriesMerger(ChainedSeriesMerge)), nil
+	return NewMergeChunkQuerier(primaries, secondaries, NewCompactingChunkSeriesMerger(ChainedSeriesMerge)), nil
 }
 
 func (f *fanout) Appender(ctx context.Context) Appender {

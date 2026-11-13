@@ -14,7 +14,10 @@
 package remote
 
 import (
+	"context"
 	"fmt"
+	"net/http"
+	"net/http/httptest"
 	"net/url"
 	"sync"
 	"testing"
@@ -24,6 +27,8 @@ import (
 
 	"github.com/prometheus/prometheus/config"
 	"github.com/prometheus/prometheus/model/labels"
+	"github.com/prometheus/prometheus/storage"
+	"github.com/prometheus/prometheus/util/teststorage"
 )
 
 func TestStorageLifecycle(t *testing.T) {
@@ -124,6 +129,57 @@ func TestIgnoreExternalLabels(t *testing.T) {
 
 	err := s.Close()
 	require.NoError(t, err)
+}
+
+func TestRequiredRemoteRead(t *testing.T) {
+	failing := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		http.Error(w, "remote read is down", http.StatusInternalServerError)
+	}))
+	t.Cleanup(failing.Close)
+
+	for _, required := range []bool{false, true} {
+		t.Run(fmt.Sprintf("required=%t", required), func(t *testing.T) {
+			s := NewStorage(nil, nil, nil, t.TempDir(), defaultFlushDeadline, nil, false, false, false)
+			t.Cleanup(func() { require.NoError(t, s.Close()) })
+
+			rrConf := baseRemoteReadConfig(failing.URL)
+			rrConf.ReadRecent = true
+			rrConf.Required = required
+			require.NoError(t, s.ApplyConfig(&config.Config{
+				GlobalConfig:      config.DefaultGlobalConfig,
+				RemoteReadConfigs: []*config.RemoteReadConfig{rrConf},
+			}))
+
+			req, bestEffort, err := s.SplitQueriers(0, 1000)
+			require.NoError(t, err)
+			if required {
+				require.Len(t, req, 1)
+				require.Empty(t, bestEffort)
+			} else {
+				require.Empty(t, req)
+				require.Len(t, bestEffort, 1)
+			}
+			for _, q := range append(req, bestEffort...) {
+				require.NoError(t, q.Close())
+			}
+
+			fanout := storage.NewFanout(nil, teststorage.New(t), s)
+			q, err := fanout.Querier(0, 1000)
+			require.NoError(t, err)
+			defer q.Close()
+
+			ss := q.Select(context.Background(), false, nil, labels.MustNewMatcher(labels.MatchEqual, "__name__", "up"))
+			for ss.Next() {
+				ss.At()
+			}
+			if required {
+				require.ErrorContains(t, ss.Err(), "remote read is down")
+			} else {
+				require.NoError(t, ss.Err())
+				require.NotEmpty(t, ss.Warnings())
+			}
+		})
+	}
 }
 
 // mustURLParse parses a URL and panics on error.

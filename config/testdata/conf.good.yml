@@ -59,6 +59,7 @@ remote_read:
   - url: http://remote3/read
     read_recent: false
     name: read_special
+    required: true
     required_matchers:
       job: special
     tls_config:
