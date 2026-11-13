@@ -2297,6 +2297,7 @@ func TestLoadConfig(t *testing.T) {
 		cmpopts.IgnoreUnexported(regexp.Regexp{}),
 		cmpopts.IgnoreUnexported(hetzner.SDConfig{}),
 		cmpopts.IgnoreUnexported(Config{}),
+		cmpopts.IgnoreUnexported(RemoteWriteConfig{}),
 	})
 }
 
@@ -3938,6 +3939,26 @@ remote_write:
 			require.Len(t, cfg.RemoteWriteConfigs, 1)
 			require.Equal(t, tc.expectMode, cfg.RemoteWriteConfigs[0].Mode)
 			require.Equal(t, tc.expectSendNativeHistograms, cfg.RemoteWriteConfigs[0].SendNativeHistograms)
+		})
+	}
+}
+
+func TestRemoteWriteConfigSendNativeHistogramsYAML(t *testing.T) {
+	for _, tc := range []struct {
+		name string
+		yaml string
+		want bool
+	}{
+		{"v2 unset", "url: http://example.com\nprotobuf_message: io.prometheus.write.v2.Request\n", true},
+		{"v2 explicit false", "url: http://example.com\nprotobuf_message: io.prometheus.write.v2.Request\nsend_native_histograms: false\n", false},
+		{"v2 explicit true", "url: http://example.com\nprotobuf_message: io.prometheus.write.v2.Request\nsend_native_histograms: true\n", true},
+		{"v1 unset", "url: http://example.com\n", false},
+		{"v1 explicit true", "url: http://example.com\nsend_native_histograms: true\n", true},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			c := &RemoteWriteConfig{}
+			require.NoError(t, yaml.Unmarshal([]byte(tc.yaml), c))
+			require.Equal(t, tc.want, c.SendNativeHistogramsEnabled())
 		})
 	}
 }
