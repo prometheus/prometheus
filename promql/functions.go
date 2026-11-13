@@ -44,6 +44,9 @@ import (
 // Vector, scalars a Vector with one series whose value is the scalar
 // value, and nil for strings.
 //
+// Matrix input points are reused between steps; implementations must copy any
+// points they retain or return.
+//
 // Scalar vectors passed to range-vector functions may be reused between series
 // and steps. Function implementations must not retain or modify them.
 //
