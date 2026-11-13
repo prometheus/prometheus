@@ -341,16 +341,50 @@ func (te Expander) Expand() (result string, resultErr error) {
 
 	templateTextExpansionTotal.Inc()
 
-	tmpl := text_template.New(te.name).Funcs(te.funcMap)
-	tmpl.Option(te.options...)
-	tmpl, err := tmpl.Parse(te.text)
-	if err != nil {
-		return "", fmt.Errorf("error parsing template %v: %w", te.name, err)
+	return te.CompileText(te.text).execute(te.data)
+}
+
+// BoundTemplate is a parsed text template with the expander's function bindings.
+// Those bindings, including the query context and timestamp, remain fixed for its
+// lifetime. Use a new expander when the evaluation context changes.
+type BoundTemplate struct {
+	name     string
+	template *text_template.Template
+	parseErr error
+}
+
+// CompileText parses text using the expander's name, functions and options.
+// Parse errors are retained and reported by each call to Expand.
+func (te Expander) CompileText(text string) BoundTemplate {
+	tmpl, err := text_template.New(te.name).Funcs(te.funcMap).Option(te.options...).Parse(text)
+	return BoundTemplate{name: te.name, template: tmpl, parseErr: err}
+}
+
+// Expand executes a parsed template with the supplied data and counts the attempt.
+func (bt BoundTemplate) Expand(data any) (result string, resultErr error) {
+	defer func() {
+		if r := recover(); r != nil {
+			var ok bool
+			resultErr, ok = r.(error)
+			if !ok {
+				resultErr = fmt.Errorf("panic expanding template %v: %v", bt.name, r)
+			}
+		}
+		if resultErr != nil {
+			templateTextExpansionFailures.Inc()
+		}
+	}()
+	templateTextExpansionTotal.Inc()
+	return bt.execute(data)
+}
+
+func (bt BoundTemplate) execute(data any) (string, error) {
+	if bt.parseErr != nil {
+		return "", fmt.Errorf("error parsing template %v: %w", bt.name, bt.parseErr)
 	}
 	var buffer bytes.Buffer
-	err = tmpl.Execute(&buffer, te.data)
-	if err != nil {
-		return "", fmt.Errorf("error executing template %v: %w", te.name, err)
+	if err := bt.template.Execute(&buffer, data); err != nil {
+		return "", fmt.Errorf("error executing template %v: %w", bt.name, err)
 	}
 	return buffer.String(), nil
 }
