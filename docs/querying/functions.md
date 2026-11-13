@@ -966,6 +966,13 @@ expression is to be evaluated.
 the given vector as the number of seconds since January 1, 1970 UTC. It acts on
 float and histogram samples in the same way.
 
+The original sample timestamps are only returned if `timestamp()` is used
+directly on an instant vector selector, e.g. `timestamp(http_requests_total)`.
+For any other expression, e.g. `timestamp(abs(http_requests_total))`, it
+returns the evaluation timestamp (or the timestamp of the current step in the
+case of a range query), because the result of such an expression consists of
+new samples with that timestamp.
+
 ## `vector()`
 
 `vector(s scalar)` converts the scalar `s` to a float sample and returns it as
