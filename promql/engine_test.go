@@ -1019,7 +1019,7 @@ load 10s
 			// timestamp function has a special handling.
 			Query:        "timestamp(metricWith1SampleEvery10Seconds)",
 			Start:        time.Unix(21, 0),
-			PeakSamples:  2,
+			PeakSamples:  1,
 			TotalSamples: 1, // 1 sample / 10 seconds
 			TotalSamplesPerStep: stats.TotalSamplesPerStep{
 				21000: 1,
@@ -1032,7 +1032,7 @@ load 10s
 		{
 			Query:        "timestamp(metricWith1HistogramEvery10Seconds)",
 			Start:        time.Unix(21, 0),
-			PeakSamples:  2,
+			PeakSamples:  1,
 			TotalSamples: 1, // 1 float sample (because of timestamp) / 10 seconds
 			TotalSamplesPerStep: stats.TotalSamplesPerStep{
 				21000: 1,
@@ -1437,7 +1437,7 @@ load 10s
 			Start:        time.Unix(201, 0),
 			End:          time.Unix(220, 0),
 			Interval:     5 * time.Second,
-			PeakSamples:  5,
+			PeakSamples:  4,
 			TotalSamples: 4, // 1 sample per query * 4 steps
 			TotalSamplesPerStep: stats.TotalSamplesPerStep{
 				201000: 1,
@@ -1459,7 +1459,7 @@ load 10s
 			Start:        time.Unix(201, 0),
 			End:          time.Unix(220, 0),
 			Interval:     5 * time.Second,
-			PeakSamples:  5,
+			PeakSamples:  4,
 			TotalSamples: 4, // 1 sample per query * 4 steps
 			TotalSamplesPerStep: stats.TotalSamplesPerStep{
 				201000: 1,
@@ -1473,6 +1473,50 @@ load 10s
 				206000: 1,
 				211000: 1,
 				216000: 1,
+			},
+		},
+		{
+			// inPlaceFloatUnaryFuncs evaluates in place on the child Matrix without a second Matrix allocation.
+			Query:        "abs(metricWith1SampleEvery10Seconds)",
+			Start:        time.Unix(201, 0),
+			End:          time.Unix(220, 0),
+			Interval:     5 * time.Second,
+			PeakSamples:  4,
+			TotalSamples: 4,
+			TotalSamplesPerStep: stats.TotalSamplesPerStep{
+				201000: 1,
+				206000: 1,
+				211000: 1,
+				216000: 1,
+			},
+			SamplesRead: 4,
+			SamplesReadPerStep: stats.TotalSamplesPerStep{
+				201000: 1,
+				206000: 1,
+				211000: 1,
+				216000: 1,
+			},
+		},
+		{
+			// Dropping histogram samples in inPlaceFloatUnaryFuncs reclaims currentSamples before evaluating RHS.
+			Query:        "abs(metricWith1HistogramEvery10Seconds) or metricWith1SampleEvery10Seconds",
+			Start:        time.Unix(201, 0),
+			End:          time.Unix(220, 0),
+			Interval:     5 * time.Second,
+			PeakSamples:  52,
+			TotalSamples: 56,
+			TotalSamplesPerStep: stats.TotalSamplesPerStep{
+				201000: 14,
+				206000: 14,
+				211000: 14,
+				216000: 14,
+			},
+			SamplesRead: 56,
+			SamplesReadPerStep: stats.TotalSamplesPerStep{
+				201000: 14,
+				206000: 14,
+				211000: 14,
+				216000: 14,
 			},
 		},
 		{
