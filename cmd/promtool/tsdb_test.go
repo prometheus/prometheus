@@ -316,6 +316,8 @@ func TestTSDBDumpOpenMetrics(t *testing.T) {
 		load 1m
 			my_counter{foo="bar", baz="abc"} 1 2 3 4 5
 			my_gauge{bar="foo", abc="baz"} 9 8 0 4 7
+			my_stale{foo="bar"} 1 2 stale 4 5
+			my_mixed{foo="bar"} 1 {{sum:2 count:2}} 3
 	`)
 
 	tests := []struct {

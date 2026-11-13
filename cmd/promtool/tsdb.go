@@ -38,6 +38,7 @@ import (
 	"go.uber.org/atomic"
 
 	"github.com/prometheus/prometheus/model/labels"
+	"github.com/prometheus/prometheus/model/value"
 	"github.com/prometheus/prometheus/promql/parser"
 	"github.com/prometheus/prometheus/storage"
 	"github.com/prometheus/prometheus/tsdb"
@@ -837,8 +838,16 @@ func formatSeriesSetOpenMetrics(ss storage.SeriesSet) error {
 		metricName := lbs.Get(labels.MetricName)
 		lbs = lbs.DropReserved(func(n string) bool { return n == labels.MetricName })
 		it := series.Iterator(nil)
-		for it.Next() == chunkenc.ValFloat {
+		for valType := it.Next(); valType != chunkenc.ValNone; valType = it.Next() {
+			// Native histograms and staleness markers cannot be represented
+			// in OpenMetrics, so they are skipped.
+			if valType != chunkenc.ValFloat {
+				continue
+			}
 			ts, val := it.At()
+			if value.IsStaleNaN(val) {
+				continue
+			}
 			fmt.Printf("%s%s %g %.3f\n", metricName, CondensedString(lbs), val, float64(ts)/1000)
 		}
 		if it.Err() != nil {
