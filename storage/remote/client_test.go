@@ -1022,13 +1022,13 @@ func createSampledResponseHandler(t *testing.T, queries []*prompb.Query) http.Ha
 				var labels []prompb.Label
 				if queryIndex == 0 {
 					labels = []prompb.Label{
-						{Name: "job", Value: "prometheus"},
 						{Name: "instance", Value: fmt.Sprintf("localhost:%d", 9090+seriesIndex)},
+						{Name: "job", Value: "prometheus"},
 					}
 				} else {
 					labels = []prompb.Label{
-						{Name: "job", Value: "node_exporter"},
 						{Name: "instance", Value: fmt.Sprintf("localhost:%d", 9100+seriesIndex)},
+						{Name: "job", Value: "node_exporter"},
 					}
 				}
 
