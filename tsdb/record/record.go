@@ -370,9 +370,7 @@ func (*Decoder) samplesV1(dec *encoding.Decbuf, samples []RefSample) ([]RefSampl
 		baseTime = dec.Be64int64()
 	)
 	// Allow 1 byte for each varint and 8 for the value; the output slice must be at least that big.
-	if minSize := dec.Len() / (1 + 1 + 8); cap(samples) < minSize {
-		samples = slices.Grow(samples, minSize)
-	}
+	samples = slices.Grow(samples, dec.Len()/(1+1+8))
 	for len(dec.B) > 0 && dec.Err() == nil {
 		dref := dec.Varint64()
 		dtime := dec.Varint64()
@@ -401,9 +399,7 @@ func (*Decoder) samplesV2(dec *encoding.Decbuf, samples []RefSample) ([]RefSampl
 		return samples, nil
 	}
 	// Allow 1 byte for each varint and 8 for the value; the output slice must be at least that big.
-	if minSize := dec.Len() / (1 + 1 + 8); cap(samples) < minSize {
-		samples = slices.Grow(samples, minSize)
-	}
+	samples = slices.Grow(samples, dec.Len()/(1+1+8))
 	var firstT, firstST int64
 	initialSamplesLen := len(samples)
 	for len(dec.B) > 0 && dec.Err() == nil {

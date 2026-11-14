@@ -16,10 +16,10 @@ package record
 
 import (
 	"bytes"
-	"encoding/hex"
 	"fmt"
 	"math"
 	"math/rand"
+	"slices"
 	"testing"
 
 	"github.com/prometheus/common/model"
@@ -135,87 +135,53 @@ func TestRecord_EncodeDecode(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, samplesWithConstST, decSamples)
 
-	t.Run("SamplesV2 append", func(t *testing.T) {
+	t.Run("Samples append", func(t *testing.T) {
 		for _, tc := range []struct {
-			name string
-			wire string
-			want []RefSample
+			name       string
+			recordType Type
+			samples    []RefSample
 		}{
-			{"empty", "0b", nil},
-			{"one sample without ST", "0b0214003ff0000000000000", []RefSample{{Ref: 1, T: 10, V: 1}}},
-			{"two samples without ST", "0b0214003ff00000000000000202004000000000000000", []RefSample{{Ref: 1, T: 10, V: 1}, {Ref: 2, T: 11, V: 2}}},
+			{"V1/empty", Samples, nil},
+			{"V1/one sample", Samples, []RefSample{{Ref: 1, T: 10, V: 1}}},
+			{"V1/two samples", Samples, []RefSample{{Ref: 1, T: 10, V: 1}, {Ref: 2, T: 11, V: 2}}},
+			{"V2/empty", SamplesV2, nil},
+			{"V2/one sample", SamplesV2, []RefSample{{Ref: 1, T: 10, V: 1}}},
+			{"V2/two samples", SamplesV2, []RefSample{{Ref: 1, T: 10, V: 1}, {Ref: 2, T: 11, V: 2}}},
 			// Initial ST=5, same ST, absent ST, then ST=4 as a delta to the first.
-			{"ST markers", "0b02140a3ff000000000000002020140000000000000000204004008000000000000020602014010000000000000", []RefSample{{Ref: 1, ST: 5, T: 10, V: 1}, {Ref: 2, ST: 5, T: 11, V: 2}, {Ref: 3, T: 12, V: 3}, {Ref: 4, ST: 4, T: 13, V: 4}}},
+			{"V2/ST markers", SamplesV2, []RefSample{{Ref: 1, ST: 5, T: 10, V: 1}, {Ref: 2, ST: 5, T: 11, V: 2}, {Ref: 3, T: 12, V: 3}, {Ref: 4, ST: 4, T: 13, V: 4}}},
 		} {
-			for _, prefix := range []bool{false, true} {
-				t.Run(fmt.Sprintf("%s/prefix%t", tc.name, prefix), func(t *testing.T) {
-					wire, err := hex.DecodeString(tc.wire)
-					require.NoError(t, err)
-					// Spare capacity isolates record-local initialization from allocation.
-					destination := make([]RefSample, 0, 64)
-					var want []RefSample
-					repeats := 1
-					if prefix {
-						destination = append(destination, RefSample{Ref: 7, ST: 3, T: 5, V: 2})
-						want = append(want, RefSample{Ref: 7, ST: 3, T: 5, V: 2})
-						repeats = 2
+			// Small capacities exercise growth; ample capacity isolates V2 initialization.
+			for _, dst := range []struct {
+				name     string
+				prefix   bool
+				capacity int
+			}{
+				{"nil", false, 0},
+				{"empty", false, 64},
+				{"prefix/cap1", true, 1},
+				{"prefix/cap2", true, 2},
+				{"prefix/cap64", true, 64},
+			} {
+				t.Run(tc.name+"/"+dst.name, func(t *testing.T) {
+					var destination []RefSample
+					if dst.capacity > 0 {
+						destination = make([]RefSample, 0, dst.capacity)
 					}
-					for range repeats {
+					if dst.prefix {
+						destination = append(destination, RefSample{Ref: 7, ST: 3, T: 5, V: 2})
+					}
+					want := slices.Clone(destination)
+					enc := Encoder{EnableSTStorage: tc.recordType == SamplesV2}
+					wire := enc.Samples(tc.samples, nil)
+					require.Equal(t, tc.recordType, dec.Type(wire))
+					for range 2 {
+						var err error
 						destination, err = dec.Samples(wire, destination)
 						require.NoError(t, err)
-						want = append(want, tc.want...)
-						require.Len(t, destination, len(want))
-						for i, expected := range want {
-							require.Equal(t, expected.Ref, destination[i].Ref)
-							require.Equal(t, expected.ST, destination[i].ST)
-							require.Equal(t, expected.T, destination[i].T)
-							require.Equal(t, math.Float64bits(expected.V), math.Float64bits(destination[i].V))
-						}
+						want = append(want, tc.samples...)
+						require.Equal(t, want, destination)
 					}
 				})
-			}
-		}
-	})
-
-	t.Run("Samples preserve prefix", func(t *testing.T) {
-		for _, tc := range []struct {
-			name string
-			wire []string
-			want []RefSample
-		}{
-			{"V1", []string{"02", "020000000000000001000000000000000a00003ff000000000000002024000000000000000"}, []RefSample{{Ref: 1, T: 10, V: 1}, {Ref: 2, T: 11, V: 2}}},
-			{"V2", []string{"0b", "0b02140a3ff00000000000000202014000000000000000"}, []RefSample{{Ref: 1, ST: 5, T: 10, V: 1}, {Ref: 2, ST: 5, T: 11, V: 2}}},
-		} {
-			for n, wireHex := range tc.wire {
-				for _, prefix := range []bool{false, true} {
-					for _, capacity := range []int{1, 64} {
-						t.Run(fmt.Sprintf("%s/nonempty%t/prefix%t/cap%d", tc.name, n != 0, prefix, capacity), func(t *testing.T) {
-							wire, err := hex.DecodeString(wireHex)
-							require.NoError(t, err)
-							// Capacity one forces preallocation for the two-sample records.
-							destination := make([]RefSample, 0, capacity)
-							var want []RefSample
-							if prefix {
-								destination = append(destination, RefSample{Ref: 7, ST: 3, T: 5, V: 2})
-								want = append(want, RefSample{Ref: 7, ST: 3, T: 5, V: 2})
-							}
-							for range 2 {
-								destination, err = dec.Samples(wire, destination)
-								require.NoError(t, err)
-								if n != 0 {
-									want = append(want, tc.want...)
-								}
-								require.Len(t, destination, len(want))
-								for i, expected := range want {
-									require.Equal(t, expected.Ref, destination[i].Ref)
-									require.Equal(t, expected.ST, destination[i].ST)
-									require.Equal(t, expected.T, destination[i].T)
-									require.Equal(t, math.Float64bits(expected.V), math.Float64bits(destination[i].V))
-								}
-							}
-						})
-					}
-				}
 			}
 		}
 	})
