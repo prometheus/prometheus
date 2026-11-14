@@ -346,8 +346,8 @@ durationPrimary[@inline] {
   LineComment { "#" ![\n]* }
 
   number {
-      (std.digit+ (("_")? std.digit)* ("." std.digit+ (("_")? std.digit)*)? | "." std.digit+ (("_")? std.digit)*) (("e" | "E") ("+" | "-")? std.digit+ (("_")? std.digit)*)? |
-      "0x" (std.digit | $[a-fA-F])+ | duration
+      (std.digit+ (("_")? std.digit)* ("." (std.digit+ (("_")? std.digit)*)?)? | "." std.digit+ (("_")? std.digit)*) (("e" | "E") ("+" | "-")? std.digit+ (("_")? std.digit)*)? |
+      "0" ("x" | "X") "_"? (std.digit | $[a-fA-F]) ("_"? (std.digit | $[a-fA-F]))* | duration
   }
   StringLiteral { // TODO: This is for JS, make this work for PromQL.
     '"' (![\\\n"] | "\\" _)* '"'? |
@@ -433,6 +433,10 @@ durationPrimary[@inline] {
   EndFn,
   AtStart,
   AtEnd,
+  DurationStep,
+  DurationRange,
+  DurationMinOf,
+  DurationMaxOf,
   Smoothed,
   Anchored,
   Fill,
@@ -534,7 +538,3 @@ durationPrimary[@inline] {
 
 // Conditional function names (only parsed as function names when used as such).
 condFn<term> { @extend<Identifier, term> }
-DurationStep { condFn<"step"> }
-DurationRange { condFn<"range"> }
-DurationMinOf { condFn<"min_of"> }
-DurationMaxOf { condFn<"max_of"> }
