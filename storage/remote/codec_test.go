@@ -295,6 +295,14 @@ func TestValidateLabelsAndMetricName(t *testing.T) {
 			expectedErr: "invalid label name: ",
 			description: "don't report as duplicate label name",
 		},
+		{
+			input: []prompb.Label{
+				{Name: "zone", Value: "east"},
+				{Name: "app", Value: "web"},
+			},
+			expectedErr: "labels are not sorted lexicographically: app comes before zone",
+			description: "unsorted label names",
+		},
 	}
 
 	for _, test := range tests {
