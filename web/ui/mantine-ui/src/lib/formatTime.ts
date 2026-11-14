@@ -99,8 +99,9 @@ export const formatPrometheusDuration = (d: number): string => {
   return formatDuration(d);
 };
 
-export function parseTime(timeText: string): number {
-  return dayjs.utc(timeText).valueOf();
+export function parseTime(timeText: string): number | null {
+  const parsedTime = dayjs.utc(timeText);
+  return parsedTime.isValid() ? parsedTime.valueOf() : null;
 }
 
 export const now = (): number => dayjs().valueOf();
@@ -115,7 +116,7 @@ export const humanizeDurationRelative = (
   suffix: string = " ago"
 ): string => {
   const start = parseTime(startStr);
-  if (start < 0) {
+  if (start === null || start < 0 || !Number.isFinite(end)) {
     return "never";
   }
   return humanizeDuration(end - start) + suffix;
