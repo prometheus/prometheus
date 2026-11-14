@@ -1,7 +1,9 @@
 import {
   humanizeDuration,
+  humanizeDurationRelative,
   formatPrometheusDuration,
   parsePrometheusDuration,
+  parseTime,
 } from "./formatTime";
 
 describe("parsePrometheusDuration", () => {
@@ -132,5 +134,78 @@ describe("humanizeDuration", () => {
 
   test("omits zero values", () => {
     expect(humanizeDuration(86400000 + 1000)).toBe("1d 1s");
+  });
+});
+
+describe("parseTime", () => {
+  test("parses date and time strings", () => {
+    expect(parseTime("2024-01-15 12:30:45")).toBe(1705321845000);
+    expect(parseTime("2024-01-01 00:00:00")).toBe(1704067200000);
+  });
+
+  test("parses ISO 8601 UTC strings", () => {
+    expect(parseTime("2024-01-15T12:30:45Z")).toBe(1705321845000);
+    expect(parseTime("1970-01-01T00:00:00Z")).toBe(0);
+  });
+
+  test("parses negative timestamps", () => {
+    expect(parseTime("0001-01-01T00:00:00Z")).toBe(-62135596800000);
+    expect(parseTime("1969-12-31T23:59:59Z")).toBe(-1000);
+  });
+
+  test("returns null for invalid date strings", () => {
+    expect(parseTime("invalid")).toBeNull();
+    expect(parseTime("")).toBeNull();
+    expect(parseTime("not-a-date")).toBeNull();
+  });
+});
+
+describe("humanizeDurationRelative", () => {
+  test("formats relative duration for valid timestamps", () => {
+    const start = "2024-01-15 12:30:00";
+    const end = 1705321860000; // 60s later (2024-01-15 12:31:00 UTC)
+    expect(humanizeDurationRelative(start, end)).toBe("1m ago");
+  });
+
+  test("respects custom suffix", () => {
+    const start = "2024-01-15 12:30:00";
+    const end = 1705321860000;
+    expect(humanizeDurationRelative(start, end, "")).toBe("1m");
+    expect(humanizeDurationRelative(start, end, " earlier")).toBe("1m earlier");
+  });
+
+  test("handles negative elapsed time (future timestamps)", () => {
+    const start = "2024-01-15 12:31:00";
+    const end = 1705321800000; // 60s earlier
+    expect(humanizeDurationRelative(start, end)).toBe("-1m ago");
+  });
+
+  test('returns "never" for negative timestamps', () => {
+    expect(
+      humanizeDurationRelative("0001-01-01T00:00:00Z", 1705321845000),
+    ).toBe("never");
+    expect(
+      humanizeDurationRelative("1969-12-31T23:59:59Z", 1705321845000),
+    ).toBe("never");
+  });
+
+  test('returns "never" for invalid timestamp strings', () => {
+    expect(humanizeDurationRelative("invalid", 1705321845000)).toBe("never");
+    expect(humanizeDurationRelative("", 1705321845000)).toBe("never");
+    expect(humanizeDurationRelative("not-a-date", 1705321845000)).toBe("never");
+  });
+
+  test('returns "never" for non-finite end values', () => {
+    expect(humanizeDurationRelative("2024-01-15 12:30:00", NaN)).toBe("never");
+    expect(humanizeDurationRelative("2024-01-15 12:30:00", Infinity)).toBe(
+      "never",
+    );
+    expect(humanizeDurationRelative("2024-01-15 12:30:00", -Infinity)).toBe(
+      "never",
+    );
+  });
+
+  test('returns "never" when both start is invalid and end is non-finite', () => {
+    expect(humanizeDurationRelative("invalid", NaN)).toBe("never");
   });
 });
