@@ -256,6 +256,12 @@ func rangeQueryCases() []benchCase {
 			steps: 100,
 		},
 		{
+			expr: "quantile(0.9, a_X)",
+		},
+		{
+			expr: "quantile by (l) (0.9, h_X)",
+		},
+		{
 			expr: "topk(1, a_X)",
 		},
 		{
@@ -304,6 +310,9 @@ func rangeQueryCases() []benchCase {
 		},
 		{
 			expr: "quantile_over_time(time() % 100 / 100, a_X[1m:10s] @ 86400)",
+		},
+		{
+			expr: "mad_over_time(a_X[1m])",
 		},
 		// Functions which have special handling inside eval().
 		{
