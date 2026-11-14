@@ -4348,9 +4348,11 @@ required_matchers:
 [ remote_timeout: <duration> | default = 1m ]
 
 # Maximum size, in bytes, of a single protobuf frame accepted in a streamed
-# (chunked) remote read response. A frame larger than this fails the read with
+# (STREAMED_XOR_CHUNKS) remote read response, which is the response type
+# Prometheus requests by default. A frame larger than this fails the read with
 # a "message size exceeded the limit" error. Raise it if the remote endpoint
-# returns very large frames.
+# returns very large frames. The limit does not apply to endpoints that only
+# answer with the SAMPLES response type.
 [ chunked_read_limit: <int> | default = 50000000 ]
 
 # Custom HTTP headers to be sent along with each remote read request.
