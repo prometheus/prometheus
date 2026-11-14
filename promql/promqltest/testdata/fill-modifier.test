@@ -185,13 +185,13 @@ load 5m
 eval instant at 0m node_meta * on(instance) group_right fill_left(1) cpu_info
   {instance="a", cpu="0"} 100
   {instance="a", cpu="1"} 100
-  {instance="c"} 300
+  {instance="b", cpu="0"} 1
 
 # group_right with fill_right: fill missing "many" side series.
 eval instant at 0m node_meta * on(instance) group_right fill_right(0) cpu_info
   {instance="a", cpu="0"} 100
   {instance="a", cpu="1"} 100
-  {instance="b", cpu="0"} 0
+  {instance="c"} 0
 
 # group_right with fill on both sides.
 eval instant at 0m node_meta * on(instance) group_right fill(1) cpu_info
@@ -199,6 +199,32 @@ eval instant at 0m node_meta * on(instance) group_right fill(1) cpu_info
   {instance="a", cpu="1"} 100
   {instance="b", cpu="0"} 1
   {instance="c"} 300
+
+# Unequal fill values and subtraction preserve original operand sides.
+# Missing node_meta is on the left: 5 - cpu_info; missing cpu_info is
+# on the right: node_meta - 7. Matched pairs remain node_meta - cpu_info.
+eval instant at 0m node_meta - on(instance) group_right fill_left(5) cpu_info
+  {instance="a", cpu="0"} 99
+  {instance="a", cpu="1"} 99
+  {instance="b", cpu="0"} 4
+
+eval instant at 0m node_meta - on(instance) group_right fill_right(7) cpu_info
+  {instance="a", cpu="0"} 99
+  {instance="a", cpu="1"} 99
+  {instance="c"} 293
+
+eval instant at 0m node_meta - on(instance) group_right fill_left(5) fill_right(7) cpu_info
+  {instance="a", cpu="0"} 99
+  {instance="a", cpu="1"} 99
+  {instance="b", cpu="0"} 4
+  {instance="c"} 293
+
+# Swap operands and fill values together: every subtraction changes sign.
+eval instant at 0m cpu_info - on(instance) group_left fill_left(7) fill_right(5) node_meta
+  {instance="a", cpu="0"} -99
+  {instance="a", cpu="1"} -99
+  {instance="b", cpu="0"} -4
+  {instance="c"} -293
 
 # ---------- fill with group_left/group_right and extra labels ----------
 

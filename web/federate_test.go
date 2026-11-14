@@ -306,11 +306,9 @@ func normalizeBody(body *bytes.Buffer) string {
 }
 
 func TestFederationWithNativeHistograms(t *testing.T) {
-	storage := teststorage.New(t)
-
 	var expVec promql.Vector
 
-	db := storage.DB
+	db := teststorage.New(t).DB
 	hist := &histogram.Histogram{
 		Count:         12,
 		ZeroCount:     2,
@@ -354,14 +352,14 @@ func TestFederationWithNativeHistograms(t *testing.T) {
 		PositiveBuckets: []int64{3, -1, -1},
 		CustomValues:    []float64{0.1, 0.2, 0.5, 1, 2},
 	}
-	app := db.Appender(context.Background())
+	app := db.AppenderV2(context.Background())
 	for i := range 7 {
 		l := labels.FromStrings("__name__", "test_metric", "foo", strconv.Itoa(i))
 		expL := labels.FromStrings("__name__", "test_metric", "instance", "", "foo", strconv.Itoa(i))
 		var err error
 		switch i {
 		case 0, 3:
-			_, err = app.Append(0, l, 100*60*1000, float64(i*100))
+			_, err = app.Append(0, l, 0, 100*60*1000, float64(i*100), nil, nil, storage.AOptions{})
 			expVec = append(expVec, promql.Sample{
 				T:      100 * 60 * 1000,
 				F:      float64(i * 100),
@@ -372,14 +370,14 @@ func TestFederationWithNativeHistograms(t *testing.T) {
 			hist.ZeroCount++
 			hist.Count++
 			fh := hist.ToFloat(nil)
-			_, err = app.AppendHistogram(0, l, 100*60*1000, nil, fh.Copy())
+			_, err = app.Append(0, l, 0, 100*60*1000, 0, nil, fh.Copy(), storage.AOptions{})
 			expVec = append(expVec, promql.Sample{
 				T:      100 * 60 * 1000,
 				H:      fh,
 				Metric: expL,
 			})
 		case 4:
-			_, err = app.AppendHistogram(0, l, 100*60*1000, histWithoutZeroBucket.Copy(), nil)
+			_, err = app.Append(0, l, 0, 100*60*1000, 0, histWithoutZeroBucket.Copy(), nil, storage.AOptions{})
 			expVec = append(expVec, promql.Sample{
 				T:      100 * 60 * 1000,
 				H:      histWithoutZeroBucket.ToFloat(nil),
@@ -388,14 +386,14 @@ func TestFederationWithNativeHistograms(t *testing.T) {
 		case 5:
 			hist.ZeroCount++
 			hist.Count++
-			_, err = app.AppendHistogram(0, l, 100*60*1000, hist.Copy(), nil)
+			_, err = app.Append(0, l, 0, 100*60*1000, 0, hist.Copy(), nil, storage.AOptions{})
 			expVec = append(expVec, promql.Sample{
 				T:      100 * 60 * 1000,
 				H:      hist.ToFloat(nil),
 				Metric: expL,
 			})
 		case 6:
-			_, err = app.AppendHistogram(0, l, 100*60*1000, nhcb.Copy(), nil)
+			_, err = app.Append(0, l, 0, 100*60*1000, 0, nhcb.Copy(), nil, storage.AOptions{})
 			expL = labels.FromStrings("__name__", "test_metric_count", "instance", "", "foo", strconv.Itoa(i))
 			expVec = append(expVec, promql.Sample{
 				T:      100 * 60 * 1000,
@@ -506,4 +504,115 @@ func TestFederationWithNativeHistograms(t *testing.T) {
 	// test it with switching histogram types for metric families.
 	require.Equal(t, 4, metricFamilies)
 	testutil.RequireEqual(t, expVec, actVec)
+}
+
+// TestFederationNHCBCountBelowBucketSum checks that a float NHCB whose count is
+// marginally below the sum of its buckets, as can result from floating point
+// rounding in PromQL (e.g. sum(rate(...))), is federated as a valid classic
+// histogram that converts back into an NHCB without negative buckets.
+func TestFederationNHCBCountBelowBucketSum(t *testing.T) {
+	db := teststorage.New(t).DB
+	// 0.1 + 0.2 == 0.30000000000000004 > 0.3.
+	fh := &histogram.FloatHistogram{
+		CounterResetHint: histogram.GaugeType,
+		Count:            0.3,
+		Sum:              1,
+		Schema:           histogram.CustomBucketsSchema,
+		PositiveSpans:    []histogram.Span{{Offset: 0, Length: 2}},
+		PositiveBuckets:  []float64{0.1, 0.2},
+		CustomValues:     []float64{1, 2},
+	}
+	require.NoError(t, fh.Validate())
+
+	app := db.AppenderV2(context.Background())
+	_, err := app.Append(0, labels.FromStrings("__name__", "test_metric"), 0, 100*60*1000, 0, nil, fh, storage.AOptions{})
+	require.NoError(t, err)
+	require.NoError(t, app.Commit())
+
+	h := &Handler{
+		localStorage:  &dbAdapter{db},
+		lookbackDelta: 5 * time.Minute,
+		now:           func() model.Time { return 101 * 60 * 1000 },
+		config:        &config.Config{GlobalConfig: config.GlobalConfig{}},
+		options:       &Options{Parser: testParser},
+	}
+	req := httptest.NewRequest(http.MethodGet, "http://example.org/federate?match[]=test_metric", http.NoBody)
+	req.Header.Add("Accept", `application/vnd.google.protobuf;proto=io.prometheus.client.MetricFamily;encoding=delimited`)
+	res := httptest.NewRecorder()
+	h.federation(res, req)
+	require.Equal(t, http.StatusOK, res.Code)
+
+	body, err := io.ReadAll(res.Body)
+	require.NoError(t, err)
+	p := textparse.NewProtobufParser(body, false, false, true, false, labels.NewSymbolTable())
+	var histograms int
+	for {
+		et, err := p.Next()
+		if errors.Is(err, io.EOF) {
+			break
+		}
+		require.NoError(t, err)
+		if et != textparse.EntryHistogram {
+			continue
+		}
+		histograms++
+		_, _, _, got := p.Histogram()
+		require.NotNil(t, got)
+		require.NoError(t, got.Validate())
+		require.InDelta(t, 0.3, got.Count, 1e-15)
+	}
+	require.Equal(t, 1, histograms)
+}
+
+func TestMakeClassicHistogramCount(t *testing.T) {
+	for name, tc := range map[string]struct {
+		count     float64
+		buckets   []float64
+		spans     []histogram.Span
+		wantCount float64 // Zero means the bucket sum, added at runtime.
+	}{
+		"count equals bucket sum": {
+			count:     6,
+			buckets:   []float64{3, 2, 1},
+			spans:     []histogram.Span{{Offset: 0, Length: 3}},
+			wantCount: 6,
+		},
+		"count above bucket sum is kept": {
+			count:     7,
+			buckets:   []float64{3, 2, 1},
+			spans:     []histogram.Span{{Offset: 0, Length: 3}},
+			wantCount: 7,
+		},
+		"count below bucket sum without +Inf bucket": {
+			count:   0.3,
+			buckets: []float64{0.1, 0.2},
+			spans:   []histogram.Span{{Offset: 0, Length: 2}},
+		},
+		"count below bucket sum with +Inf bucket": {
+			count:   0.6,
+			buckets: []float64{0.1, 0.2, 0.3},
+			spans:   []histogram.Span{{Offset: 0, Length: 1}, {Offset: 1, Length: 2}},
+		},
+	} {
+		t.Run(name, func(t *testing.T) {
+			fh := &histogram.FloatHistogram{
+				Count:           tc.count,
+				Schema:          histogram.CustomBucketsSchema,
+				PositiveSpans:   tc.spans,
+				PositiveBuckets: tc.buckets,
+				CustomValues:    []float64{1, 2, 5},
+			}
+			require.NoError(t, fh.Validate())
+			if tc.wantCount == 0 {
+				for _, b := range tc.buckets {
+					tc.wantCount += b
+				}
+				require.Greater(t, tc.wantCount, tc.count)
+			}
+			got := makeClassicHistogram(fh)
+			require.Equal(t, tc.wantCount, got.GetSampleCountFloat())
+			last := got.Bucket[len(got.Bucket)-1].GetCumulativeCountFloat()
+			require.GreaterOrEqual(t, got.GetSampleCountFloat(), last)
+		})
+	}
 }

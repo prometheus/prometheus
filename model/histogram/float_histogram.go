@@ -144,11 +144,14 @@ func (h *FloatHistogram) CopyTo(to *FloatHistogram) {
 // CopyToSchema works like Copy, but the returned deep copy has the provided
 // target schema, which must be ≤ the original schema (i.e. it must have a lower
 // resolution). This method panics if a custom buckets schema is used in the
-// receiving FloatHistogram or as the provided targetSchema.
-func (h *FloatHistogram) CopyToSchema(targetSchema int32) *FloatHistogram {
+// receiving FloatHistogram or as the provided targetSchema, as those are
+// programming errors. It returns an error if the resolution has to be reduced
+// and the receiving FloatHistogram has an invalid bucket layout, which can
+// happen with invalid stored data.
+func (h *FloatHistogram) CopyToSchema(targetSchema int32) (*FloatHistogram, error) {
 	if targetSchema == h.Schema {
 		// Fast path.
-		return h.Copy()
+		return h.Copy(), nil
 	}
 	if h.UsesCustomBuckets() {
 		panic(fmt.Errorf("cannot reduce resolution to %d when there are custom buckets", targetSchema))
@@ -160,17 +163,23 @@ func (h *FloatHistogram) CopyToSchema(targetSchema int32) *FloatHistogram {
 		panic(fmt.Errorf("cannot copy from schema %d to %d", h.Schema, targetSchema))
 	}
 	c := FloatHistogram{
-		Schema:        targetSchema,
-		ZeroThreshold: h.ZeroThreshold,
-		ZeroCount:     h.ZeroCount,
-		Count:         h.Count,
-		Sum:           h.Sum,
+		CounterResetHint: h.CounterResetHint,
+		Schema:           targetSchema,
+		ZeroThreshold:    h.ZeroThreshold,
+		ZeroCount:        h.ZeroCount,
+		Count:            h.Count,
+		Sum:              h.Sum,
 	}
 
-	c.PositiveSpans, c.PositiveBuckets = mustReduceResolution(h.PositiveSpans, h.PositiveBuckets, h.Schema, targetSchema, false, false)
-	c.NegativeSpans, c.NegativeBuckets = mustReduceResolution(h.NegativeSpans, h.NegativeBuckets, h.Schema, targetSchema, false, false)
+	var err error
+	if c.PositiveSpans, c.PositiveBuckets, err = reduceResolution(h.PositiveSpans, h.PositiveBuckets, h.Schema, targetSchema, false, false); err != nil {
+		return nil, err
+	}
+	if c.NegativeSpans, c.NegativeBuckets, err = reduceResolution(h.NegativeSpans, h.NegativeBuckets, h.Schema, targetSchema, false, false); err != nil {
+		return nil, err
+	}
 
-	return &c
+	return &c, nil
 }
 
 // String returns a string representation of the Histogram.
@@ -349,9 +358,17 @@ func (h *FloatHistogram) Div(scalar float64) *FloatHistogram {
 // In case of mismatched NHCB bounds, they will be reconciled to the intersection of
 // both histograms, and nhcbBoundsReconciled will be returned as true.
 //
+// If the schemas differ, the histogram with the higher schema has its
+// resolution reduced first. An error is returned if that histogram has an
+// invalid bucket layout, which can happen with invalid stored data. In that
+// case, neither histogram is modified.
+//
 // This method returns a pointer to the receiving histogram for convenience.
 func (h *FloatHistogram) Add(other *FloatHistogram) (res *FloatHistogram, counterResetCollision, nhcbBoundsReconciled bool, err error) {
 	if err := h.checkSchemaAndBounds(other); err != nil {
+		return nil, false, false, err
+	}
+	if err := checkSpansForResolutionReduction(h, other); err != nil {
 		return nil, false, false, err
 	}
 	counterResetCollision = h.adjustCounterReset(other)
@@ -539,6 +556,9 @@ func (h *FloatHistogram) KahanAdd(other, c *FloatHistogram) (updatedC *FloatHist
 // calling this method.
 func (h *FloatHistogram) Sub(other *FloatHistogram) (res *FloatHistogram, counterResetCollision, nhcbBoundsReconciled bool, err error) {
 	if err := h.checkSchemaAndBounds(other); err != nil {
+		return nil, false, false, err
+	}
+	if err := checkSpansForResolutionReduction(h, other); err != nil {
 		return nil, false, false, err
 	}
 	counterResetCollision = h.adjustCounterReset(other)
@@ -2066,6 +2086,28 @@ func (h *FloatHistogram) checkSchemaAndBounds(other *FloatHistogram) error {
 		return ErrHistogramsIncompatibleSchema
 	}
 	return nil
+}
+
+// checkSpansForResolutionReduction returns an error if the histogram whose
+// resolution Add or Sub will reduce, which is whichever of h and other has the
+// higher schema, has an invalid bucket layout. It checks the same conditions
+// that make reduceResolution fail, so that Add and Sub can return the error
+// before they modify either histogram, and can then call mustReduceResolution
+// without it panicking.
+func checkSpansForResolutionReduction(h, other *FloatHistogram) error {
+	var toReduce *FloatHistogram
+	switch {
+	case other.Schema < h.Schema:
+		toReduce = h
+	case other.Schema > h.Schema:
+		toReduce = other
+	default:
+		return nil
+	}
+	if err := checkHistogramSpans(toReduce.PositiveSpans, len(toReduce.PositiveBuckets)); err != nil {
+		return err
+	}
+	return checkHistogramSpans(toReduce.NegativeSpans, len(toReduce.NegativeBuckets))
 }
 
 // adjustCounterReset is used for addition and subtraction. Those operation are

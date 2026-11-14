@@ -26,3 +26,8 @@ jobs:
           PR_DESCRIPTION: ${{ github.event.pull_request.body }}
         run: |
           echo "$PR_DESCRIPTION" | ./scripts/check_release_notes.sh
+      - name: Check that the CHANGELOG heading matches VERSION
+        # Releases are tagged from release branches, so only their VERSION has to
+        # match the heading; on main, drift would fail every unrelated PR.
+        if: startsWith(github.base_ref, 'release-')
+        run: ./scripts/bump_changelog_version.sh --check

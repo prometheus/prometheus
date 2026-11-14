@@ -390,6 +390,46 @@ func TestDebugHandler(t *testing.T) {
 	}
 }
 
+func TestGraphRedirect(t *testing.T) {
+	for _, tc := range []struct {
+		prefix, url, location string
+	}{
+		{"/", "/graph", "/query"},
+		{"/", "/graph?g0.expr=up&g0.tab=0", "/query?g0.expr=up&g0.tab=0"},
+		{"/foo", "/foo/graph?g0.expr=up", "/foo/query?g0.expr=up"},
+		// The query string must not be path-cleaned: ".." segments in it
+		// would otherwise rewrite the redirect target to an arbitrary
+		// location, e.g. "/\evil.example", which browsers resolve as
+		// "//evil.example".
+		{"/", `/graph?/../\evil.example`, `/query?/../\evil.example`},
+		{"/foo", `/foo/graph?/../../\evil.example`, `/foo/query?/../../\evil.example`},
+		{"/foo", "/foo/graph?/../../bar", "/foo/query?/../../bar"},
+	} {
+		opts := &Options{
+			RoutePrefix:     tc.prefix,
+			ListenAddresses: []string{"somehost:9090"},
+			ExternalURL: &url.URL{
+				Host:   "localhost.localdomain:9090",
+				Scheme: "http",
+				Path:   tc.prefix,
+			},
+			Version: &PrometheusVersion{},
+		}
+		handler := New(nil, opts)
+		handler.SetReady(Ready)
+
+		w := httptest.NewRecorder()
+
+		req, err := http.NewRequest(http.MethodGet, tc.url, http.NoBody)
+		require.NoError(t, err)
+
+		handler.router.ServeHTTP(w, req)
+
+		require.Equal(t, http.StatusFound, w.Code)
+		require.Equal(t, tc.location, w.Header().Get("Location"))
+	}
+}
+
 func TestHTTPMetrics(t *testing.T) {
 	t.Parallel()
 	handler := New(nil, &Options{

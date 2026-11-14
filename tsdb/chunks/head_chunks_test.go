@@ -16,6 +16,7 @@ package chunks
 import (
 	"encoding/binary"
 	"errors"
+	"io"
 	"math/rand"
 	"os"
 	"strconv"
@@ -302,11 +303,13 @@ func TestChunkDiskMapper_Truncate_PreservesFileSequence(t *testing.T) {
 	emptyFile := func() {
 		t.Helper()
 
-		_, _, err := hrw.cut()
-		require.NoError(t, err)
+		// cut() names the file from the sequence passed by the caller, so
+		// advance it first, as getNextChunkRef does in production.
 		hrw.evtlPosMtx.Lock()
 		hrw.evtlPos.toNewFile()
+		_, _, err := hrw.cut(int(hrw.evtlPos.seq))
 		hrw.evtlPosMtx.Unlock()
+		require.NoError(t, err)
 	}
 
 	nonEmptyFile := func() {
@@ -543,6 +546,25 @@ func TestHeadReadWriter_ReadRepairOnEmptyLastFile(t *testing.T) {
 
 	// Check that it does not delete a valid last file.
 	checkRepair()
+
+	// Read failure closes the file.
+	reader := &repairReader{}
+	_, err := readChunkHeaderAndClose(reader, make([]byte, MagicChunksSize))
+	require.ErrorIs(t, err, io.ErrUnexpectedEOF)
+	require.True(t, reader.closed)
+}
+
+type repairReader struct {
+	closed bool
+}
+
+func (*repairReader) Read([]byte) (int, error) {
+	return 0, io.ErrUnexpectedEOF
+}
+
+func (r *repairReader) Close() error {
+	r.closed = true
+	return nil
 }
 
 func createChunkDiskMapper(t *testing.T, dir string) *ChunkDiskMapper {

@@ -8,7 +8,7 @@
   "name": "abc",
   "vcore": 1,
   "state": "running",
-  "keymap": null,
+  "keymap": "fr",
   "netbootMode": "local",
   "model": {
     "name": "vps-value-1-2-40",

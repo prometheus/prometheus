@@ -590,9 +590,9 @@ func (a *appenderV2) Append(ref storage.SeriesRef, ls labels.Labels, st, t int64
 
 		if len(opts.Exemplars) > 0 {
 			if a.a.appendExemplarsError != nil {
-				var exErrs []error
-				for range opts.Exemplars {
-					exErrs = append(exErrs, a.a.appendExemplarsError)
+				var exErrs []storage.ExemplarError
+				for i := range opts.Exemplars {
+					exErrs = append(exErrs, storage.ExemplarError{Index: i, Err: a.a.appendExemplarsError})
 				}
 				if len(exErrs) > 0 {
 					partialErr = &storage.AppendPartialError{ExemplarErrors: exErrs}
@@ -683,9 +683,9 @@ func (a *appenderV2) AppendExemplars(ref storage.SeriesRef, l labels.Labels, exe
 
 	if !a.a.skipRecording && len(exemplars) > 0 {
 		if a.a.appendExemplarsError != nil {
-			exErrs := make([]error, len(exemplars))
+			exErrs := make([]storage.ExemplarError, len(exemplars))
 			for i := range exemplars {
-				exErrs[i] = a.a.appendExemplarsError
+				exErrs[i] = storage.ExemplarError{Index: i, Err: a.a.appendExemplarsError}
 			}
 			partialErr, _ = partialErr.Handle(&storage.AppendPartialError{ExemplarErrors: exErrs})
 		} else {

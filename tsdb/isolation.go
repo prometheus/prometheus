@@ -323,6 +323,15 @@ func (txr *txRing) iterator() *txRingIterator {
 	}
 }
 
+// Returns the ID of the most recently added sample, if any.
+func (txr *txRing) lastAppendID() (uint64, bool) {
+	if txr == nil || txr.txIDCount == 0 || len(txr.txIDs) == 0 {
+		return 0, false
+	}
+	pos := (int(txr.txIDFirst) + int(txr.txIDCount) - 1) % len(txr.txIDs)
+	return txr.txIDs[pos], true
+}
+
 // txRingIterator lets you iterate over the ring. It doesn't terminate,
 // it DOESN'T terminate.
 type txRingIterator struct {

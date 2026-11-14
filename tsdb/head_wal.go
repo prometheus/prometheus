@@ -26,6 +26,7 @@ import (
 	"strings"
 	"sync"
 	"time"
+	"unique"
 
 	"github.com/prometheus/client_golang/prometheus"
 	"go.uber.org/atomic"
@@ -147,6 +148,9 @@ func (h *Head) loadWAL(r *wlog.Reader, syms *labels.SymbolTable, multiRef map[ch
 			// At the moment the only possible error here is out of order exemplars, which we shouldn't see when
 			// replaying the WAL, so lets just log the error if it's not that type.
 			err = h.exemplars.AddExemplar(ms.labels(), exemplar.Exemplar{Ts: e.T, Value: e.V, Labels: e.Labels})
+			if err == nil {
+				ms.updateExemplarTimestamp(e.T)
+			}
 			if err != nil && errors.Is(err, storage.ErrOutOfOrderExemplar) {
 				h.logger.Warn("Unexpected error when replaying WAL on exemplar record", "err", err)
 			}
@@ -466,11 +470,11 @@ Outer:
 					missingSeries[m.Ref] = struct{}{}
 					continue
 				}
-				s.meta = &metadata.Metadata{
+				s.meta = unique.Make(metadata.Metadata{
 					Type: record.ToMetricType(m.Type),
 					Unit: m.Unit,
 					Help: m.Help,
-				}
+				})
 			}
 			clear(v) // Zero out to avoid retaining metadata strings.
 			h.wlReplayMetadataPool.Put(v[:0])
@@ -1923,6 +1927,7 @@ Outer:
 					loopErr = fmt.Errorf("add exemplar: %w", err)
 					break Outer
 				}
+				ms.updateExemplarTimestamp(e.T)
 			}
 
 		default:

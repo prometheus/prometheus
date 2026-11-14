@@ -466,6 +466,10 @@ eval instant at 100m predict_linear(http_requests_inf[100m], 6000)
 eval instant at 50m predict_linear(http_requests_total[50m], 3600) - (http_requests_total + deriv(http_requests_total[50m]) * 3600)
 	{group="canary", instance="1", job="app-server"} 0
 
+# Scalar arguments to range-vector functions must be refreshed for every step.
+eval range from 10m to 20m step 5m predict_linear(http_requests_total[10m], time())
+	{group="canary", instance="1", job="app-server"} 320 480 640
+
 clear
 
 # Tests for label_replace.
@@ -929,6 +933,11 @@ load 10s
 	http_requests_mix{job="api-server", instance="0", group="canary"}		0+30x1000 300+80x1000 {{schema:0 count:1 sum:2}}x1000
 	http_requests_mix{job="api-server", instance="1", group="canary"}		0+40x2000 {{schema:0 count:1 sum:2}}x1000
 	http_requests_histogram{job="api-server", instance="1", group="canary"}	{{schema:0 count:1 sum:2}}x1000
+	scalar_args	0 10 5 20 10
+
+# Scalar arguments to range-vector functions must be refreshed for every step.
+eval range from 20s to 40s step 10s double_exponential_smoothing(scalar_args[31s], 0.1 + time() / 1000, 0.2 + time() / 10000)
+	{} 18.200000000000003 26.659110499999997 -0.000768000000000324
 
 eval instant at 8000s double_exponential_smoothing(http_requests[1m], 0.01, 0.1)
 	expect no_info
@@ -1711,6 +1720,39 @@ eval instant at 1m quantile_over_time(0.5, data_histogram{test="mix samples"}[2m
 	expect no_warn
 	{test="mix samples"} 1
 
+# Scalar arguments to range-vector functions must be refreshed for every step.
+eval range from 10s to 30s step 10s quantile_over_time(time() / 100, data{test="three samples"}[20s])
+	{test="three samples"} 0.1 1.2 2
+
+# Exact-ranked infinities in quantile_over_time must not become NaN.
+clear
+
+load 10s
+	data{test="finite before +Inf"} 1 2 Inf
+	data{test="finite after -Inf"} -Inf 2 3
+	data{test="positive infinity"} 1 Inf
+	data{test="negative infinity"} -Inf
+	data{test="mixed infinities"} -Inf Inf
+
+eval instant at 1m quantile_over_time(0.5, data[2m])
+	expect no_info
+	expect no_warn
+	{test="finite before +Inf"} 2
+	{test="finite after -Inf"} 2
+	{test="positive infinity"} +Inf
+	{test="negative infinity"} -Inf
+	{test="mixed infinities"} NaN
+
+eval instant at 1m quantile_over_time(1, data{test="positive infinity"}[2m])
+	expect no_info
+	expect no_warn
+	{test="positive infinity"} +Inf
+
+eval instant at 1m quantile_over_time(0, data{test="negative infinity"}[2m])
+	expect no_info
+	expect no_warn
+	{test="negative infinity"} -Inf
+
 clear
 
 # Test time-related functions.
@@ -1725,6 +1767,52 @@ eval instant at 1ms time()
 
 eval instant at 50m time()
   3000
+
+# Negative fractional timestamps belong to the preceding second.
+eval instant at 0m year(vector(-0.5))
+  {} 1969
+
+eval instant at 0m month(vector(-0.5))
+  {} 12
+
+eval instant at 0m day_of_month(vector(-0.5))
+  {} 31
+
+eval instant at 0m day_of_week(vector(-0.5))
+  {} 3
+
+eval instant at 0m day_of_year(vector(-0.5))
+  {} 365
+
+eval instant at 0m days_in_month(vector(-0.5))
+  {} 31
+
+eval instant at 0m hour(vector(-0.5))
+  {} 23
+
+eval instant at 0m minute(vector(-60.5))
+  {} 58
+
+# Even values just below zero must use the preceding second.
+eval instant at 0m minute(vector(-0.001))
+  {} 59
+
+eval instant at 0m hour(vector(-3600.001))
+  {} 22
+
+# The implicit query timestamp must also handle negative milliseconds.
+eval instant at 0m last_over_time(year()[1ms:1ms] @ -0.001)
+  {} 1969
+
+eval instant at 0m last_over_time(hour()[1ms:1ms] @ -0.001)
+  {} 23
+
+eval instant at 0m last_over_time(minute()[1ms:1ms] @ -60.001)
+  {} 58
+
+# Positive fractional timestamps remain in the current second.
+eval instant at 0m year(vector(0.5))
+  {} 1970
 
 eval instant at 0m year(vector(1136239445))
   {} 2006
@@ -2481,8 +2569,7 @@ eval range from 1s to 9s step 2s metric_for_at @ end()
 
 # Tests for min_of() and max_of() scalar functions.
 
-# min_of(a, b) returns math.Min(a, b).
-# max_of(a, b) returns math.Max(a, b).
+# min_of(a, b) and max_of(a, b) follow the min and max aggregators.
 
 # Basic literal comparisons.
 eval instant at 0s min_of(3, 5)
@@ -2518,15 +2605,162 @@ eval instant at 0s min_of(0, 1)
 eval instant at 0s max_of(0, 1)
   1
 
-# NaN propagation: any NaN input yields NaN.
+# NaN is only returned if both arguments are NaN.
 eval instant at 0s min_of(NaN, 3)
-  NaN
+  3
 
 eval instant at 0s min_of(3, NaN)
-  NaN
+  3
 
 eval instant at 0s max_of(NaN, 3)
-  NaN
+  3
 
 eval instant at 0s max_of(3, NaN)
+  3
+
+eval instant at 0s min_of(NaN, NaN)
   NaN
+
+eval instant at 0s max_of(NaN, NaN)
+  NaN
+
+# Infinities.
+eval instant at 0s min_of(NaN, -Inf)
+  -Inf
+
+eval instant at 0s min_of(+Inf, NaN)
+  +Inf
+
+eval instant at 0s max_of(-Inf, NaN)
+  -Inf
+
+eval instant at 0s max_of(NaN, +Inf)
+  +Inf
+
+eval instant at 0s min_of(-Inf, +Inf)
+  -Inf
+
+eval instant at 0s max_of(-Inf, +Inf)
+  +Inf
+
+clear
+
+# Tests for scalar() on float-only input.
+load 5m
+  single{a="1"} 1+1x2
+  pair{b="1"} 4+1x2
+  pair{b="2"} 7+1x2
+
+# Exactly one series: its sample value.
+eval instant at 10m scalar(single)
+  3
+
+# More than one series: NaN.
+eval instant at 10m scalar(pair)
+  NaN
+
+# No series: NaN.
+eval instant at 10m scalar(nonexistent)
+  NaN
+
+# The result is a scalar and can be used in scalar arithmetic.
+eval instant at 10m scalar(single) + 1
+  4
+
+eval range from 0 to 10m step 5m scalar(single)
+  {} 1 2 3
+
+eval range from 0 to 10m step 5m scalar(pair)
+  {} NaN NaN NaN
+
+clear
+
+# Tests for clamp(), clamp_min() and clamp_max() on float-only input.
+load 5m
+  test_clamp{src="low"} -50
+  test_clamp{src="zero"} 0
+  test_clamp{src="high"} 100
+  test_clamp{src="nan"} NaN
+  rising 1+1x4
+
+# The metric name is dropped from the result.
+eval instant at 0m clamp_max(test_clamp, 75)
+  {src="low"} -50
+  {src="zero"} 0
+  {src="high"} 75
+  {src="nan"} NaN
+
+eval instant at 0m clamp_min(test_clamp, -25)
+  {src="low"} -25
+  {src="zero"} 0
+  {src="high"} 100
+  {src="nan"} NaN
+
+eval instant at 0m clamp(test_clamp, -25, 75)
+  {src="low"} -25
+  {src="zero"} 0
+  {src="high"} 75
+  {src="nan"} NaN
+
+# min == max collapses every value onto that bound. NaN input stays NaN.
+eval instant at 0m clamp(test_clamp, 10, 10)
+  {src="low"} 10
+  {src="zero"} 10
+  {src="high"} 10
+  {src="nan"} NaN
+
+# min > max returns an empty vector.
+eval instant at 0m clamp(test_clamp, 75, -25)
+
+eval instant at 0m clamp(test_clamp, 1, 0)
+
+# Range query: each step is clamped independently.
+eval range from 0 to 20m step 5m clamp(rising, 2, 4)
+  {} 2 2 3 4 4
+
+eval range from 0 to 20m step 5m clamp_min(rising, 3)
+  {} 3 3 3 4 5
+
+eval range from 0 to 20m step 5m clamp_max(rising, 3)
+  {} 1 2 3 3 3
+
+clear
+
+# Tests for delta() on float-only input.
+load 1m
+  gauge 0+1x10
+  gauge_late _x5 0+1x5
+  gauge_early 0+1x5 _x5
+  counter 0+9x4 0+9x5
+
+# The range (0m, 10m] holds 10 samples spaced 1m apart. The first sample
+# at 1m is within 1.1 intervals of the range start, so the delta is
+# extrapolated to both edges: (10-1) * (600s / 540s) = 10.
+eval instant at 10m delta(gauge[10m])
+  {} 10
+
+# Samples only start at 5m. The gap to the range start is wider than
+# 1.1 intervals, so the start is extrapolated by half an interval only:
+# (5-0) * (330s / 300s) = 5.5.
+eval instant at 10m delta(gauge_late[10m])
+  {} 5.5
+
+# Samples end at 5m. Full extrapolation to the start, half an interval at
+# the end: (5-1) * (330s / 240s) = 5.5.
+eval instant at 10m delta(gauge_early[10m])
+  {} 5.5
+
+# A single sample in the range yields no result.
+eval instant at 10m delta(gauge[1m])
+
+eval instant at 5m delta(gauge_late[5m])
+
+# delta does not account for counter resets, unlike increase():
+# (45-9) * (600s / 540s) = 40.
+eval instant at 10m delta(counter[10m])
+  {} 40
+
+# Each step sees 5 samples spaced 1m apart, extrapolated to both edges:
+# 4 * (300s / 240s) = 5.
+eval range from 5m to 10m step 1m delta(gauge[5m])
+  {} 5 5 5 5 5 5

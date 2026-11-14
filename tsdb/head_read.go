@@ -185,6 +185,9 @@ func (h *headIndexReader) ShardedPostings(p index.Postings, shardIndex, shardCou
 	if notFoundSeriesCount > 0 {
 		h.head.logger.Debug("Looked up series not found", "count", notFoundSeriesCount)
 	}
+	if err := p.Err(); err != nil {
+		return index.ErrPostings(fmt.Errorf("expand postings: %w", err))
+	}
 
 	return index.NewListPostings(out)
 }
@@ -280,7 +283,7 @@ type seriesRefs struct {
 //
 // The returned series are provided in two orders:
 //
-//   - sortedByRef preserves the order of the input postings
+//   - sortedByRef preserves the order of the input postings, which are sorted in ascending order of the refs
 //   - sortedByLabels is sorted by series labels
 //
 // When keep is non-nil, it is invoked while holding the series lock and
@@ -507,6 +510,13 @@ type headChunkReader struct {
 	head       *Head
 	mint, maxt int64
 	isoState   *isolationState
+	// evicting captures the series eviction in progress when this reader is opened.
+	// It allows missing chunks from that eviction to be skipped. Set only for query
+	// readers that also read the blocks containing those samples.
+	//
+	// Before setting evicting, the caller must ensure that the series' samples have
+	// been written to blocks and those blocks have been added to the DB.
+	evicting *evictedSeries
 	// When true, enables the head-chunks cache. Range queries benefit from
 	// caching because they look up every chunk of a series; instant queries
 	// only need one chunk per series, so the cache is wasted overhead.
@@ -588,6 +598,9 @@ func (h *headChunkReader) getOrCollectHeadChunks(s *memSeries) []*memChunk {
 // ChunkOrIterable returns the chunk for the reference number.
 func (h *headChunkReader) ChunkOrIterable(meta chunks.Meta) (chunkenc.Chunk, chunkenc.Iterable, error) {
 	chk, _, err := h.chunk(meta, false)
+	if errors.Is(err, storage.ErrNotFound) && h.skipEvictedSeries(meta) {
+		return nil, noSamples{}, nil
+	}
 	return chk, nil, err
 }
 
@@ -599,7 +612,43 @@ type ChunkReaderWithCopy interface {
 // If the chunk is the in-memory chunk, then it makes a copy and returns the copied chunk, plus the max time of the chunk.
 func (h *headChunkReader) ChunkOrIterableWithCopy(meta chunks.Meta) (chunkenc.Chunk, chunkenc.Iterable, int64, error) {
 	chk, maxTime, err := h.chunk(meta, true)
+	if errors.Is(err, storage.ErrNotFound) && h.skipEvictedSeries(meta) {
+		return nil, noSamples{}, 0, nil
+	}
 	return chk, nil, maxTime, err
+}
+
+// skipEvictedSeries reports whether a chunk can be skipped because its series
+// was removed or its chunks were reclaimed by this eviction.
+func (h *headChunkReader) skipEvictedSeries(meta chunks.Meta) bool {
+	sid, cid, isOOO := unpackHeadChunkRef(meta.Ref)
+	// Series with out-of-order data are excluded from these evictions, so missing
+	// out-of-order chunks must not be skipped.
+	if isOOO {
+		return false
+	}
+	if !h.evicting.contains(sid) {
+		return false
+	}
+	if h.head.series.getByID(sid) != nil {
+		truncated, ok := h.evicting.truncatedChunks.Load(sid)
+		if !ok {
+			return false
+		}
+		r := truncated.(evictedChunkRange)
+		if int(wrapChunkID(cid-r.first)) >= r.count {
+			return false
+		}
+	}
+	h.head.metrics.chunkReadsOfRemovedSeries.Inc()
+	return true
+}
+
+// noSamples is a chunkenc.Iterable without samples.
+type noSamples struct{}
+
+func (noSamples) Iterator(chunkenc.Iterator) chunkenc.Iterator {
+	return chunkenc.NewNopIterator()
 }
 
 // chunk returns the chunk for the reference number.
@@ -661,6 +710,21 @@ func (h *Head) chunkFromSeries(s *memSeries, cid chunks.HeadChunkID, isOOO bool,
 		chk, err = h.opts.ChunkPool.Get(s.headChunks.chunk.Encoding(), newB)
 		if err != nil {
 			return nil, 0, err
+		}
+	}
+
+	// Skip the per-sample isolation scan in iteratorForChunkCopy when every sample in s is already visible:
+	// - s.txs is empty, meaning all append IDs were already pruned below lowWatermark or loaded via WAL replay.
+	// - No appends were in flight at snapshot time and lastAppendID <= maxAppendID, meaning nothing was appended after the snapshot.
+	// NOTE: When incompleteAppends is non-empty, lastAppendID alone is not enough because appendIDs are assigned when
+	// opening an appender while s.txs records commit order, so an incomplete higher ID can sit before a committed lower ID.
+	if copyLastChunk && isoState != nil && !isoState.IsolationDisabled() {
+		if len(isoState.incompleteAppends) == 0 {
+			if lastAppendID, ok := s.txs.lastAppendID(); !ok || lastAppendID <= isoState.maxAppendID {
+				isoState = nil
+			}
+		} else if _, ok := s.txs.lastAppendID(); !ok {
+			isoState = nil
 		}
 	}
 
@@ -767,15 +831,30 @@ type safeHeadChunk struct {
 }
 
 func (c *safeHeadChunk) Iterator(reuseIter chunkenc.Iterator) chunkenc.Iterator {
-	c.s.Lock()
-	it := c.s.iterator(c.cid, c.Chunk, c.isoState, reuseIter)
-	c.s.Unlock()
+	it, _ := c.iterator(reuseIter, false)
 	return it
 }
 
-// iterator returns a chunk iterator for the requested chunk ID, or a NopIterator if it is out of range.
+// The isolation-filtered iterator for a copied chunk also reports whether it hides samples.
+// The chunk bytes are stable at this point: open chunks were copied, and closed or mmapped chunks cannot be appended to.
+func (c *safeHeadChunk) iteratorForChunkCopy(reuseIter chunkenc.Iterator) (chunkenc.Iterator, bool) {
+	if c.isoState == nil || c.isoState.IsolationDisabled() {
+		return nil, false
+	}
+	return c.iterator(reuseIter, true)
+}
+
+func (c *safeHeadChunk) iterator(reuseIter chunkenc.Iterator, onlyIfFiltered bool) (chunkenc.Iterator, bool) {
+	c.s.Lock()
+	it, filtersSamples := c.s.iterator(c.cid, c.Chunk, c.isoState, reuseIter, onlyIfFiltered)
+	c.s.Unlock()
+	return it, filtersSamples
+}
+
+// The iterator for the requested chunk ID reports whether it filters any samples.
+// If onlyIfFiltered is true, it returns nil instead when no samples are hidden.
 // It is unsafe to call this concurrently with s.append(...) without holding the series lock.
-func (s *memSeries) iterator(id chunks.HeadChunkID, c chunkenc.Chunk, isoState *isolationState, it chunkenc.Iterator) chunkenc.Iterator {
+func (s *memSeries) iterator(id chunks.HeadChunkID, c chunkenc.Chunk, isoState *isolationState, it chunkenc.Iterator, onlyIfFiltered bool) (chunkenc.Iterator, bool) {
 	ix := int(wrapChunkID(id - s.firstChunkID))
 
 	numSamples := c.NumSamples()
@@ -830,13 +909,16 @@ func (s *memSeries) iterator(id chunks.HeadChunkID, c chunkenc.Chunk, isoState *
 		}
 	}
 
+	if onlyIfFiltered && stopAfter == numSamples {
+		return nil, false
+	}
 	if stopAfter == 0 {
-		return chunkenc.NewNopIterator()
+		return chunkenc.NewNopIterator(), numSamples > 0
 	}
 	if stopAfter == numSamples {
-		return c.Iterator(it)
+		return c.Iterator(it), false
 	}
-	return makeStopIterator(c, it, stopAfter)
+	return makeStopIterator(c, it, stopAfter), stopAfter < numSamples
 }
 
 // stopIterator wraps an Iterator, but only returns the first

@@ -27,6 +27,7 @@ import (
 	"github.com/prometheus/common/model"
 	"go.yaml.in/yaml/v3"
 
+	"github.com/prometheus/prometheus/model/metadata"
 	"github.com/prometheus/prometheus/model/timestamp"
 	"github.com/prometheus/prometheus/promql"
 	"github.com/prometheus/prometheus/promql/parser"
@@ -178,13 +179,21 @@ type RuleGroupNode struct {
 
 // Rule describes an alerting or recording rule.
 type Rule struct {
-	Record        string            `yaml:"record,omitempty"`
-	Alert         string            `yaml:"alert,omitempty"`
-	Expr          string            `yaml:"expr"`
-	For           model.Duration    `yaml:"for,omitempty"`
-	KeepFiringFor model.Duration    `yaml:"keep_firing_for,omitempty"`
-	Labels        map[string]string `yaml:"labels,omitempty"`
-	Annotations   map[string]string `yaml:"annotations,omitempty"`
+	Record        string             `yaml:"record,omitempty"`
+	Alert         string             `yaml:"alert,omitempty"`
+	Expr          string             `yaml:"expr"`
+	For           model.Duration     `yaml:"for,omitempty"`
+	KeepFiringFor model.Duration     `yaml:"keep_firing_for,omitempty"`
+	Labels        map[string]string  `yaml:"labels,omitempty"`
+	Annotations   map[string]string  `yaml:"annotations,omitempty"`
+	Metadata      *metadata.Metadata `yaml:"metadata,omitempty"`
+}
+
+// RuleMetadataNode adds yaml.v3 layer to support line and column outputs for invalid rule metadata.
+type RuleMetadataNode struct {
+	Help yaml.Node `yaml:"help,omitempty"`
+	Type yaml.Node `yaml:"type,omitempty"`
+	Unit yaml.Node `yaml:"unit,omitempty"`
 }
 
 // RuleNode adds yaml.v3 layer to support line and column outputs for invalid rules.
@@ -196,6 +205,30 @@ type RuleNode struct {
 	KeepFiringFor model.Duration    `yaml:"keep_firing_for,omitempty"`
 	Labels        map[string]string `yaml:"labels,omitempty"`
 	Annotations   map[string]string `yaml:"annotations,omitempty"`
+	Metadata      yaml.Node         `yaml:"metadata,omitempty"`
+}
+
+func isValidMetricType(t model.MetricType) bool {
+	switch t {
+	case model.MetricTypeCounter,
+		model.MetricTypeGauge,
+		model.MetricTypeHistogram,
+		model.MetricTypeGaugeHistogram,
+		model.MetricTypeSummary,
+		model.MetricTypeInfo,
+		model.MetricTypeStateset,
+		model.MetricTypeUnknown:
+		return true
+	default:
+		return false
+	}
+}
+
+func errorNode(primary, fallback *yaml.Node) *yaml.Node {
+	if primary.Line != 0 {
+		return primary
+	}
+	return fallback
 }
 
 // Validate the rule and return a list of encountered errors.
@@ -259,6 +292,34 @@ func (r *Rule) Validate(node RuleNode, nameValidationScheme model.ValidationSche
 				node: &node.Record,
 			})
 		}
+		if r.Metadata != nil {
+			var metaNode RuleMetadataNode
+			_ = node.Metadata.Decode(&metaNode)
+			if r.Metadata.Type != "" && !isValidMetricType(r.Metadata.Type) {
+				nodes = append(nodes, WrappedError{
+					err:  fmt.Errorf("invalid metric type %q in recording rule", r.Metadata.Type),
+					node: errorNode(&metaNode.Type, &node.Record),
+				})
+			}
+			if r.Metadata.Help != "" && !model.LabelValue(r.Metadata.Help).IsValid() {
+				nodes = append(nodes, WrappedError{
+					err:  fmt.Errorf("invalid help value: %s", r.Metadata.Help),
+					node: errorNode(&metaNode.Help, &node.Record),
+				})
+			}
+			if r.Metadata.Unit != "" && !model.LabelValue(r.Metadata.Unit).IsValid() {
+				nodes = append(nodes, WrappedError{
+					err:  fmt.Errorf("invalid unit value: %s", r.Metadata.Unit),
+					node: errorNode(&metaNode.Unit, &node.Record),
+				})
+			}
+		}
+	}
+	if r.Alert != "" && r.Metadata != nil {
+		nodes = append(nodes, WrappedError{
+			err:  errors.New("invalid field 'metadata' in alerting rule"),
+			node: errorNode(&node.Metadata, &node.Alert),
+		})
 	}
 
 	for k, v := range r.Labels {
@@ -362,11 +423,14 @@ func Parse(
 	if err != nil && !errors.Is(err, io.EOF) {
 		errs = append(errs, err)
 	}
-	// Check for a second document.
-	var secondDoc any
-	err = decoder.Decode(&secondDoc)
-	if !errors.Is(err, io.EOF) {
-		logger.Warn("Multiple document yaml rules files are not supported, only the first document is processed")
+	// Check for a second document. Only do this if the first document was decoded,
+	// as after a syntax error the decoder returns that error again instead of io.EOF.
+	if err == nil {
+		var secondDoc any
+		err = decoder.Decode(&secondDoc)
+		if !errors.Is(err, io.EOF) {
+			logger.Warn("Multiple document yaml rules files are not supported, only the first document is processed")
+		}
 	}
 
 	err = yaml.Unmarshal(content, &node)

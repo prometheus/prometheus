@@ -147,42 +147,42 @@ both cases.
 For example if we had a discovery mechanism and it retrieves the following groups:
 
 ```go
-[]targetgroup.Group{
+[]*targetgroup.Group{
 	{
 		Targets: []model.LabelSet{
 			{
-				"__instance__": "10.11.150.1:7870",
-				"hostname":     "demo-target-1",
-				"test":         "simple-test",
+				"__address__": "10.11.150.1:7870",
+				"hostname":    "demo-target-1",
+				"test":        "simple-test",
 			},
 			{
-				"__instance__": "10.11.150.4:7870",
-				"hostname":     "demo-target-2",
-				"test":         "simple-test",
+				"__address__": "10.11.150.4:7870",
+				"hostname":    "demo-target-2",
+				"test":        "simple-test",
 			},
 		},
 		Labels: model.LabelSet{
 			"job": "mysql",
 		},
-		"Source": "file1",
+		Source: "file1",
 	},
 	{
 		Targets: []model.LabelSet{
 			{
-				"__instance__": "10.11.122.11:6001",
-				"hostname":     "demo-postgres-1",
-				"test":         "simple-test",
+				"__address__": "10.11.122.11:6001",
+				"hostname":    "demo-postgres-1",
+				"test":        "simple-test",
 			},
 			{
-				"__instance__": "10.11.122.15:6001",
-				"hostname":     "demo-postgres-2",
-				"test":         "simple-test",
+				"__address__": "10.11.122.15:6001",
+				"hostname":    "demo-postgres-2",
+				"test":        "simple-test",
 			},
 		},
 		Labels: model.LabelSet{
 			"job": "postgres",
 		},
-		"Source": "file2",
+		Source: "file2",
 	},
 }
 ```
@@ -194,15 +194,15 @@ In this case, both the target groups are sent down the channel the first time `R
 &targetgroup.Group{
 	Targets: []model.LabelSet{
 		{
-			"__instance__": "10.11.122.11:6001",
-			"hostname":     "demo-postgres-1",
-			"test":         "simple-test",
+			"__address__": "10.11.122.11:6001",
+			"hostname":    "demo-postgres-1",
+			"test":        "simple-test",
 		},
 	},
 	Labels: model.LabelSet{
 		"job": "postgres",
 	},
-	"Source": "file2",
+	Source: "file2",
 }
 ```
 down the channel.
@@ -210,8 +210,8 @@ down the channel.
 If all the targets in a group go away, we need to send the target groups with empty `Targets` down the channel. i.e, if all targets with `job: postgres` go away, we send:
 ```go
 &targetgroup.Group{
-	Targets:  nil,
-	"Source": "file2",
+	Targets: nil,
+	Source:  "file2",
 }
 ```
 down the channel.

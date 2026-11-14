@@ -136,9 +136,17 @@ func (v *durationVisitor) evaluateDurationExpr(expr parser.Expr) (float64, error
 		case parser.RANGE:
 			return float64(v.queryRange.Seconds()), nil
 		case parser.MIN_OF:
-			return math.Min(lhs, rhs), nil
+			// Match the min aggregator: NaN is only returned if both values are NaN.
+			if lhs > rhs || math.IsNaN(lhs) {
+				lhs = rhs
+			}
+			return lhs, nil
 		case parser.MAX_OF:
-			return math.Max(lhs, rhs), nil
+			// Match the max aggregator: NaN is only returned if both values are NaN.
+			if lhs < rhs || math.IsNaN(lhs) {
+				lhs = rhs
+			}
+			return lhs, nil
 		case parser.ADD:
 			if n.LHS == nil {
 				// Unary positive duration expression.

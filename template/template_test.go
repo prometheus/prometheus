@@ -584,6 +584,21 @@ func TestTemplateExpansion(t *testing.T) {
 			text:   "{{ \"[2001:0DB8::1]::12345\" | stripDomain }}",
 			output: "[2001:0DB8::1]::12345",
 		},
+		{
+			// IPv6 address with a zone identifier containing dots.
+			text:   "{{ \"fe80::1%eth0.100\" | stripDomain }}",
+			output: "fe80::1%eth0.100",
+		},
+		{
+			// IPv6 address with a zone identifier containing dots and a port.
+			text:   "{{ \"[fe80::1%eth0.100]:9090\" | stripDomain }}",
+			output: "[fe80::1%eth0.100]:9090",
+		},
+		{
+			// IPv4-mapped IPv6 address with a zone identifier containing dots.
+			text:   "{{ \"::ffff:192.0.2.1%eth0.100\" | stripDomain }}",
+			output: "::ffff:192.0.2.1%eth0.100",
+		},
 	})
 }
 

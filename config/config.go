@@ -498,6 +498,18 @@ type GlobalConfig struct {
 	RuleQueryOffset model.Duration `yaml:"rule_query_offset,omitempty"`
 	// File to which PromQL queries are logged.
 	QueryLogFile string `yaml:"query_log_file,omitempty"`
+	// QueryMaxSeries is the maximum number of series a query may touch before it
+	// is rejected. It is only enforced when the query-cost feature is enabled.
+	// Zero means no limit.
+	QueryMaxSeries uint64 `yaml:"query_max_series,omitempty"`
+	// QueryMaxSamplesRead is the maximum number of samples a query may read
+	// before it is rejected. It is only enforced when the query-cost feature is
+	// enabled. Zero means no limit.
+	QueryMaxSamplesRead uint64 `yaml:"query_max_samples_read,omitempty"`
+	// QueryMaxDuration is the maximum wall-clock duration a query may take before
+	// it is rejected. It is only enforced when the query-cost feature is enabled.
+	// Zero falls back to the --query.timeout flag.
+	QueryMaxDuration model.Duration `yaml:"query_max_duration,omitempty"`
 	// File to which scrape failures are logged.
 	ScrapeFailureLogFile string `yaml:"scrape_failure_log_file,omitempty"`
 	// The labels to add to any timeseries that this Prometheus instance scrapes.
@@ -578,16 +590,19 @@ var (
 	PrometheusText1_0_0  ScrapeProtocol = "PrometheusText1.0.0"
 	OpenMetricsText0_0_1 ScrapeProtocol = "OpenMetricsText0.0.1"
 	OpenMetricsText1_0_0 ScrapeProtocol = "OpenMetricsText1.0.0"
-	OpenMetricsText2_0_0 ScrapeProtocol = "OpenMetricsText2.0.0"
-	UTF8NamesHeader      string         = model.EscapingKey + "=" + model.AllowUTF8
+	//nolint:revive // Allow for underscores.
+	OpenMetricsText2_0_0_rc ScrapeProtocol = "OpenMetricsText2.0.0-rc"
+	OpenMetricsText2_0_0    ScrapeProtocol = "OpenMetricsText2.0.0"
+	UTF8NamesHeader         string         = model.EscapingKey + "=" + model.AllowUTF8
 
 	ScrapeProtocolsHeaders = map[ScrapeProtocol]string{
-		PrometheusProto:      "application/vnd.google.protobuf;proto=io.prometheus.client.MetricFamily;encoding=delimited",
-		PrometheusText0_0_4:  "text/plain;version=0.0.4",
-		PrometheusText1_0_0:  "text/plain;version=1.0.0",
-		OpenMetricsText0_0_1: "application/openmetrics-text;version=0.0.1",
-		OpenMetricsText1_0_0: "application/openmetrics-text;version=1.0.0",
-		OpenMetricsText2_0_0: "application/openmetrics-text;version=2.0.0",
+		PrometheusProto:         "application/vnd.google.protobuf;proto=io.prometheus.client.MetricFamily;encoding=delimited",
+		PrometheusText0_0_4:     "text/plain;version=0.0.4",
+		PrometheusText1_0_0:     "text/plain;version=1.0.0",
+		OpenMetricsText0_0_1:    "application/openmetrics-text;version=0.0.1",
+		OpenMetricsText1_0_0:    "application/openmetrics-text;version=1.0.0",
+		OpenMetricsText2_0_0_rc: "application/openmetrics-text;version=2.0.0-rc",
+		OpenMetricsText2_0_0:    "application/openmetrics-text;version=2.0.0",
 	}
 
 	// DefaultScrapeProtocols is the set of scrape protocols that will be proposed
@@ -715,6 +730,9 @@ func (c *GlobalConfig) isZero() bool {
 		c.EvaluationInterval == 0 &&
 		c.RuleQueryOffset == 0 &&
 		c.QueryLogFile == "" &&
+		c.QueryMaxSeries == 0 &&
+		c.QueryMaxSamplesRead == 0 &&
+		c.QueryMaxDuration == 0 &&
 		c.ScrapeFailureLogFile == "" &&
 		c.ScrapeProtocols == nil &&
 		c.ScrapeNativeHistograms == nil &&
@@ -1510,6 +1528,9 @@ type RemoteWriteConfig struct {
 	// ProtobufMessage specifies the protobuf message to use against the remote
 	// receiver as specified in https://prometheus.io/docs/specs/remote_write_spec_2_0/
 	ProtobufMessage remoteapi.WriteMessageType `yaml:"protobuf_message,omitempty"`
+	// Mode specifies the optional Remote-Write 2.0 mode (e.g. "stateless", "stateless-st")
+	// as specified in https://prometheus.io/docs/specs/prw/remote_write_spec_2_0/#modes
+	Mode remoteapi.WriteMode `yaml:"mode,omitempty"`
 	// FailedRequestLogging enables debug logging of remote write V2 request on send error.
 	FailedRequestLogging bool `yaml:"failed_request_logging,omitempty"`
 
@@ -1521,6 +1542,13 @@ type RemoteWriteConfig struct {
 	SigV4Config      *sigv4.SigV4Config      `yaml:"sigv4,omitempty"`
 	AzureADConfig    *azuread.AzureADConfig  `yaml:"azuread,omitempty"`
 	GoogleIAMConfig  *googleiam.Config       `yaml:"google_iam,omitempty"`
+
+	// EXPERIMENTAL: Converts native histograms with custom buckets (NHCB) to classic histograms
+	// after applying write_relabel_configs. This enables using NHCB locally (for cheaper storage
+	// and histogram atomicity) while sending classic histograms to external systems that do not
+	// support native histograms yet. Useful for migration scenarios and external system support
+	// without sacrificing local storage efficiency.
+	ConvertNHCBToClassic bool `yaml:"convert_nhcb_to_classic,omitempty"`
 }
 
 // SetDirectory joins any relative file paths with dir.
@@ -1549,6 +1577,23 @@ func (c *RemoteWriteConfig) UnmarshalYAML(unmarshal func(any) error) error {
 
 	if err := c.ProtobufMessage.Validate(); err != nil {
 		return fmt.Errorf("invalid protobuf_message value: %w", err)
+	}
+	c.Mode = c.Mode.Normalize()
+	if err := c.Mode.Validate(c.ProtobufMessage); err != nil {
+		return err
+	}
+	if c.Mode != remoteapi.WriteModeNone {
+		if c.ConvertNHCBToClassic {
+			return fmt.Errorf("convert_nhcb_to_classic cannot be enabled when remote_write mode is %q", c.Mode)
+		}
+		var raw map[string]any
+		if err := unmarshal(&raw); err != nil {
+			return err
+		}
+		if _, set := raw["send_native_histograms"]; set && !c.SendNativeHistograms {
+			return fmt.Errorf("send_native_histograms cannot be false when remote_write mode is %q", c.Mode)
+		}
+		c.SendNativeHistograms = true
 	}
 
 	// The UnmarshalYAML method of HTTPClientConfig is not being called because it's not a pointer.

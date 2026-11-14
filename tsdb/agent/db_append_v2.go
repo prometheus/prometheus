@@ -21,6 +21,7 @@ import (
 	"github.com/prometheus/prometheus/model/exemplar"
 	"github.com/prometheus/prometheus/model/histogram"
 	"github.com/prometheus/prometheus/model/labels"
+	"github.com/prometheus/prometheus/model/metadata"
 	"github.com/prometheus/prometheus/model/value"
 	"github.com/prometheus/prometheus/storage"
 	"github.com/prometheus/prometheus/tsdb/chunks"
@@ -37,7 +38,6 @@ type appenderV2 struct {
 }
 
 // Append appends pending sample to agent's DB.
-// TODO: Wire metadata in the Agent's appender.
 func (a *appenderV2) Append(ref storage.SeriesRef, ls labels.Labels, st, t int64, v float64, h *histogram.Histogram, fh *histogram.FloatHistogram, opts storage.AOptions) (storage.SeriesRef, error) {
 	var (
 		// Avoid shadowing err variables for reliability.
@@ -111,16 +111,27 @@ func (a *appenderV2) Append(ref storage.SeriesRef, ls labels.Labels, st, t int64
 		a.sampleSeries = append(a.sampleSeries, s)
 	}
 	a.metrics.totalAppendedSamples.WithLabelValues(sampleMetricType).Inc()
-	if isStale {
-		// For stale values we never attempt to process metadata/exemplars, claim the success.
-		return storage.SeriesRef(s.ref), nil
-	}
 
-	// Append exemplars if any and if storage was configured for it.
+	// Append exemplars only for non-stale samples.
 	// TODO(bwplotka): Agent does not have equivalent of a.head.opts.EnableExemplarStorage && a.head.opts.MaxExemplars.Load() > 0 ?
-	if len(opts.Exemplars) > 0 {
+	if !isStale && len(opts.Exemplars) > 0 {
 		// Currently only exemplars can return partial errors.
 		partialErr = a.appendExemplars(s, opts.Exemplars)
+	}
+	// Preserve metadata for all samples, including stale samples.
+	if a.opts.EnableMetadataWALRecords && !opts.Metadata.IsEmpty() {
+		s.Lock()
+		metaChanged := metadata.IsZeroHandle(s.meta) || !s.meta.Value().Equals(opts.Metadata)
+		s.Unlock()
+		if metaChanged {
+			a.pendingMetadata = append(a.pendingMetadata, record.RefMetadata{
+				Ref:  s.ref,
+				Type: record.GetMetricType(opts.Metadata.Type),
+				Unit: opts.Metadata.Unit,
+				Help: opts.Metadata.Help,
+			})
+			a.metadataSeries = append(a.metadataSeries, s)
+		}
 	}
 	return storage.SeriesRef(s.ref), partialErr
 }
@@ -144,7 +155,10 @@ func (a *appenderV2) AppendExemplars(ref storage.SeriesRef, ls labels.Labels, ex
 	return storage.SeriesRef(s.ref), a.appendExemplars(s, exemplars)
 }
 
-var _ storage.ExemplarAppenderV2 = &appenderV2{}
+var (
+	_ storage.ExemplarAppenderV2 = &appenderV2{}
+	_ storage.GetRef             = &appenderV2{}
+)
 
 func (a *appenderV2) Commit() error {
 	defer a.appenderV2Pool.Put(a)
@@ -157,15 +171,15 @@ func (a *appenderV2) Rollback() error {
 }
 
 func (a *appenderV2) appendExemplars(s *memSeries, exemplar []exemplar.Exemplar) error {
-	var errs []error
-	for _, e := range exemplar {
+	var errs []storage.ExemplarError
+	for i, e := range exemplar {
 		// Ensure no empty labels have gotten through.
 		e.Labels = e.Labels.WithoutEmpty()
 
 		if err := a.validateExemplar(s.ref, e); err != nil {
 			if !errors.Is(err, storage.ErrDuplicateExemplar) {
 				// Except duplicates, return partial errors.
-				errs = append(errs, err)
+				errs = append(errs, storage.ExemplarError{Index: i, Err: err})
 				continue
 			}
 			if !errors.Is(err, storage.ErrOutOfOrderExemplar) {
@@ -204,6 +218,8 @@ func (a *appenderV2) bestEffortAppendSTZeroSample(s *memSeries, ls labels.Labels
 		return
 	}
 
+	// The zero sample's start timestamp is st too, matching the samples that follow,
+	// so storage receiving them doesn't see a start timestamp change.
 	switch {
 	case fh != nil:
 		zeroFloatHistogram := &histogram.FloatHistogram{
@@ -214,7 +230,7 @@ func (a *appenderV2) bestEffortAppendSTZeroSample(s *memSeries, ls labels.Labels
 			ZeroThreshold: fh.ZeroThreshold,
 			CustomValues:  fh.CustomValues,
 		}
-		a.pendingFloatHistograms = append(a.pendingFloatHistograms, record.RefFloatHistogramSample{Ref: s.ref, T: st, FH: zeroFloatHistogram})
+		a.pendingFloatHistograms = append(a.pendingFloatHistograms, record.RefFloatHistogramSample{Ref: s.ref, ST: st, T: st, FH: zeroFloatHistogram})
 		a.floatHistogramSeries = append(a.floatHistogramSeries, s)
 		a.metrics.totalAppendedSamples.WithLabelValues(sampleMetricTypeHistogram).Inc()
 	case h != nil:
@@ -226,11 +242,11 @@ func (a *appenderV2) bestEffortAppendSTZeroSample(s *memSeries, ls labels.Labels
 			ZeroThreshold: h.ZeroThreshold,
 			CustomValues:  h.CustomValues,
 		}
-		a.pendingHistograms = append(a.pendingHistograms, record.RefHistogramSample{Ref: s.ref, T: st, H: zeroHistogram})
+		a.pendingHistograms = append(a.pendingHistograms, record.RefHistogramSample{Ref: s.ref, ST: st, T: st, H: zeroHistogram})
 		a.histogramSeries = append(a.histogramSeries, s)
 		a.metrics.totalAppendedSamples.WithLabelValues(sampleMetricTypeHistogram).Inc()
 	default:
-		a.pendingSamples = append(a.pendingSamples, record.RefSample{Ref: s.ref, T: st, V: 0})
+		a.pendingSamples = append(a.pendingSamples, record.RefSample{Ref: s.ref, ST: st, T: st, V: 0})
 		a.sampleSeries = append(a.sampleSeries, s)
 		a.metrics.totalAppendedSamples.WithLabelValues(sampleMetricTypeFloat).Inc()
 	}
