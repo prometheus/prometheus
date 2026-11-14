@@ -299,9 +299,9 @@ func TestCalculateDuration(t *testing.T) {
 		},
 		{
 			name: "duration rounding up past the upper bound is rejected",
-			// 9223372036.8546s passes the seconds bound (~9223372036.8548s),
-			// but rounds to 9223372036855ms, one millisecond more than a
-			// time.Duration can hold; converting it would overflow.
+			// 9223372036.8546s rounds to 9223372036855ms, one millisecond
+			// more than a time.Duration can hold; converting it would
+			// overflow.
 			expr:         &parser.NumberLiteral{Val: 9223372036.8546},
 			errorMessage: "duration is out of range",
 		},
@@ -351,9 +351,9 @@ func TestDurationExprMillisecondExactness(t *testing.T) {
 		{query: "m offset (-1s1ms)", want: -1001 * time.Millisecond},
 		{query: "m offset (2s500ms)", want: 2500 * time.Millisecond},
 		{query: "m offset (1m1s1ms)", want: 61001 * time.Millisecond},
-		// 9223372036.8546s passes the seconds bound, but rounding it to
-		// whole milliseconds overflows time.Duration, so it must be
-		// rejected instead of wrapping to a negative duration.
+		// 9223372036.8546s rounds to a whole number of milliseconds that
+		// overflows time.Duration, so it must be rejected instead of
+		// wrapping to a negative duration.
 		{query: "m offset (9223372036.8546 * 1s)", wantErr: "duration is out of range"},
 		{query: "m offset (-9223372036.8546 * 1s)", wantErr: "duration is out of range"},
 	} {

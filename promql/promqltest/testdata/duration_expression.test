@@ -149,6 +149,18 @@ eval instant at 1000s metric1_total offset (-2 ^ 2)
 
 clear
 
+load 1ms
+  m 0+1x4000
+
+# A duration expression offset selects the same sample as the equivalent
+# plain duration: offset (1s1ms) is 1001ms, so at 3s it selects the sample
+# at 1999ms, whose value is 1999 (truncating the offset to 1000ms would
+# select the sample at 2000ms instead).
+eval range from 3s to 3s step 1ms m offset (1s1ms)
+  m{} 1999
+
+clear
+
 load 1s
   metric1_total 0+1x100
 
