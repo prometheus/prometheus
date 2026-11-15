@@ -94,6 +94,29 @@ func TestDurationVisitor(t *testing.T) {
 	require.Equal(t, 1*time.Hour, countMatrix.Range) // 2h * 0.5
 }
 
+func TestDurationExpressionMillisecondPrecision(t *testing.T) {
+	for _, tc := range []struct {
+		query string
+		want  time.Duration
+	}{
+		{`metric offset 1s1ms`, 1001 * time.Millisecond},
+		{`metric offset (1s1ms)`, 1001 * time.Millisecond},
+		{`metric offset (1s + 1ms)`, 1001 * time.Millisecond},
+		{`metric offset (-1s1ms)`, -1001 * time.Millisecond},
+		{`metric offset (2s500ms)`, 2500 * time.Millisecond},
+	} {
+		t.Run(tc.query, func(t *testing.T) {
+			p := parser.NewParser(parser.Options{})
+			expr, err := p.ParseExpr(tc.query)
+			require.NoError(t, err)
+			require.NoError(t, parser.Walk(&durationVisitor{}, expr, nil))
+			selector, ok := expr.(*parser.VectorSelector)
+			require.True(t, ok)
+			require.Equal(t, tc.want, selector.OriginalOffset)
+		})
+	}
+}
+
 func TestCalculateDuration(t *testing.T) {
 	tests := []struct {
 		name            string
@@ -110,6 +133,22 @@ func TestCalculateDuration(t *testing.T) {
 				Op:  parser.ADD,
 			},
 			expected: 15 * time.Second,
+		},
+		{
+			name:     "whole milliseconds survive float conversion",
+			expr:     &parser.NumberLiteral{Val: 1.001},
+			expected: 1001 * time.Millisecond,
+		},
+		{
+			name:     "another rounded-down millisecond",
+			expr:     &parser.NumberLiteral{Val: 1.003},
+			expected: 1003 * time.Millisecond,
+		},
+		{
+			name:            "negative milliseconds preserve magnitude",
+			expr:            &parser.NumberLiteral{Val: -1.001},
+			expected:        -1001 * time.Millisecond,
+			allowedNegative: true,
 		},
 		{
 			name: "subtraction",
