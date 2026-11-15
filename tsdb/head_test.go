@@ -19,6 +19,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"log/slog"
 	"math"
 	"math/rand"
 	"os"
@@ -1594,6 +1595,100 @@ func TestHead_Truncate(t *testing.T) {
 		"a": {"1": struct{}{}, "2": struct{}{}},
 		"b": {"1": struct{}{}},
 	}, values)
+}
+
+// gcCompletedGate is a slog handler that blocks the first "Head GC completed"
+// log call until resume is closed.
+type gcCompletedGate struct {
+	once    sync.Once
+	reached chan struct{}
+	resume  chan struct{}
+}
+
+func (*gcCompletedGate) Enabled(context.Context, slog.Level) bool { return true }
+
+func (g *gcCompletedGate) Handle(_ context.Context, r slog.Record) error {
+	if r.Message == "Head GC completed" {
+		g.once.Do(func() {
+			close(g.reached)
+			<-g.resume
+		})
+	}
+	return nil
+}
+
+func (g *gcCompletedGate) WithAttrs([]slog.Attr) slog.Handler { return g }
+
+func (g *gcCompletedGate) WithGroup(string) slog.Handler { return g }
+
+// TestHeadMmapDuringTruncationKeepsChunkFiles verifies that chunks m-mapped
+// while the head is truncated stay readable. Head GC picks the oldest chunk
+// file still in use and then deletes the files before it, so a chunk m-mapped
+// in between must not end up in a deleted file.
+func TestHeadMmapDuringTruncationKeepsChunkFiles(t *testing.T) {
+	for name, truncate := range map[string]func(*Head) error{
+		"truncateMemory": func(h *Head) error { return h.truncateMemory(1) },
+		"truncateOOO":    func(h *Head) error { return h.truncateOOO(0, 1) },
+	} {
+		t.Run(name, func(t *testing.T) {
+			opts := newTestHeadDefaultOptions(100000, false)
+			opts.ChunkWriteQueueSize = 0
+			h, _ := newTestHeadWithOptions(t, compression.None, opts)
+			gate := &gcCompletedGate{reached: make(chan struct{}), resume: make(chan struct{})}
+			h.logger = slog.New(gate)
+			require.NoError(t, h.Init(0))
+
+			var series []*memSeries
+			for _, name := range []string{"a", "b"} {
+				lbls := labels.FromStrings("__name__", name)
+				app := h.Appender(context.Background())
+				for ts := range int64(300) {
+					_, err := app.Append(0, lbls, ts, float64(ts))
+					require.NoError(t, err)
+				}
+				require.NoError(t, app.Commit())
+				s := h.series.getByHash(lbls.Hash(), lbls)
+				require.GreaterOrEqual(t, s.headChunkCount.Load(), uint32(2))
+				series = append(series, s)
+			}
+
+			// Pause the truncation after GC has picked the files to keep.
+			truncated := make(chan error, 1)
+			go func() { truncated <- truncate(h) }()
+			select {
+			case <-gate.reached:
+			case <-time.After(time.Minute):
+				t.Fatal("head GC did not complete")
+			}
+
+			// M-map, then start a new chunk file, as a large m-map pass does.
+			// The m-map has to wait for the truncation, so don't wait for it long.
+			mmapped := make(chan struct{})
+			go func() {
+				h.mmapHeadChunks()
+				close(mmapped)
+			}()
+			select {
+			case <-mmapped:
+			case <-time.After(100 * time.Millisecond):
+			}
+			h.chunkDiskMapper.CutNewFile()
+			var writeErr error
+			h.chunkDiskMapper.WriteChunk(0, 0, 0, chunkenc.NewXORChunk(), false, func(err error) { writeErr = err })
+			require.NoError(t, writeErr)
+
+			close(gate.resume)
+			require.NoError(t, <-truncated)
+			<-mmapped
+			for _, s := range series {
+				require.NotEmpty(t, s.mmappedChunks)
+				for _, c := range s.mmappedChunks {
+					_, err := h.chunkDiskMapper.Chunk(c.ref)
+					require.NoError(t, err)
+				}
+			}
+		})
+	}
 }
 
 // Validate various behaviors brought on by firstChunkID accounting for

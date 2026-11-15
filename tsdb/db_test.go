@@ -1738,6 +1738,70 @@ func TestSeriesCompactionReclaimsChunksWithExemplars(t *testing.T) {
 	}
 }
 
+// TestDBMmapsHeadChunksDuringHeadBlockWrite verifies that full head chunks
+// are m-mapped while db.run is busy writing a head block. Writing a large head
+// block can take over an hour, and chunks that fill up in that time must not
+// wait in memory until the write ends.
+func TestDBMmapsHeadChunksDuringHeadBlockWrite(t *testing.T) {
+	t.Parallel()
+
+	blockRange := int64(1000)
+	opts := DefaultOptions()
+	opts.MinBlockDuration = blockRange
+	opts.MaxBlockDuration = blockRange
+	opts.BlockReloadInterval = MinBlockReloadInterval
+	ctx := context.Background()
+	db := newTestDB(t, withOpts(opts), withRngs(blockRange))
+
+	// The head block write blocks until the test ends.
+	writeStarted := make(chan struct{})
+	releaseWrite := make(chan struct{})
+	defer close(releaseWrite)
+	var startOnce sync.Once
+	// Swap the compactor while compactions are disabled, so that db.run
+	// sees the new compactor once compactions are enabled again.
+	db.DisableCompactions()
+	db.compactor = &mockCompactorFn{
+		planFn:    func() ([]string, error) { return nil, nil },
+		compactFn: func() ([]ulid.ULID, error) { return nil, nil },
+		writeFn: func() ([]ulid.ULID, error) {
+			startOnce.Do(func() { close(writeStarted) })
+			<-releaseWrite
+			return nil, nil
+		},
+	}
+	db.EnableCompactions()
+
+	lbls := labels.FromStrings("foo", "bar")
+	appendRange := func(mint, maxt int64) {
+		app := db.Appender(ctx)
+		for ts := mint; ts < maxt; ts++ {
+			_, err := app.Append(0, lbls, ts, float64(ts))
+			require.NoError(t, err)
+		}
+		require.NoError(t, app.Commit())
+	}
+	// The head spans more than 1.5 block ranges, so db.run writes a head block.
+	appendRange(0, 2*blockRange)
+	select {
+	case <-writeStarted:
+	case <-time.After(time.Minute):
+		t.Fatal("head block write did not start")
+	}
+
+	// Chunks that fill up while the head block is written can only be
+	// m-mapped by something other than db.run.
+	appendRange(2*blockRange, 2*blockRange+300)
+	series := db.head.series.getByHash(lbls.Hash(), lbls)
+	require.NotNil(t, series)
+	require.Eventually(t, func() bool {
+		series.Lock()
+		defer series.Unlock()
+		n := len(series.mmappedChunks)
+		return series.headChunkCount.Load() == 1 && n > 0 && series.mmappedChunks[n-1].maxTime >= 2*blockRange
+	}, 30*time.Second, 10*time.Millisecond, "chunks appended during the head block write were not m-mapped")
+}
+
 func TestNoPanicOnTSDBOpenError(t *testing.T) {
 	tmpdir := t.TempDir()
 
