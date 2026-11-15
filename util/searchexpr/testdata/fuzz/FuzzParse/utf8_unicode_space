@@ -1,0 +1,2 @@
+go test fuzz v1
+string("a\u00a0b OR c\u3000d")

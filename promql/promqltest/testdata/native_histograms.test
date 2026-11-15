@@ -2690,6 +2690,14 @@ eval instant at 2m histogram_count(hist_eq_a != hist_eq_b)
 eval instant at 2m histogram_sum(hist_eq_a != hist_eq_b)
   {} 10
 
+eval instant at 2m timestamp(hist_eq_a == hist_eq_b)
+
+eval instant at 2m absent(hist_eq_a == hist_eq_b)
+  {} 1
+
+eval instant at 2m count(timestamp(hist_eq_a != hist_eq_b))
+  {} 1
+
 clear
 
 # Detecting changes and counting distinct values needs the buckets, even if
@@ -2710,5 +2718,13 @@ eval instant at 2m count(count_values("value", {__name__=~"hist_values_.*"}))
 
 eval instant at 2m histogram_count(hist_values_a and on() count(count_values("value", {__name__=~"hist_values_.*"})) > 1)
   {} 4
+
+eval instant at 2m timestamp(changes(hist_changes[5m]) > 0)
+  {} 120
+
+eval instant at 2m absent(changes(hist_changes[5m]) > 0)
+
+eval instant at 2m count(timestamp(count_values("value", {__name__=~"hist_values_.*"})))
+  {} 2
 
 clear

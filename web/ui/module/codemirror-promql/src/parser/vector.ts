@@ -17,7 +17,7 @@ import {
   And,
   BinaryExpr,
   MatchingModifierClause,
-  LabelName,
+  GroupingLabelName,
   GroupingLabels,
   GroupLeft,
   GroupRight,
@@ -51,7 +51,7 @@ export function buildVectorMatching(state: EditorState, binaryNode: SyntaxNode):
   if (modifierClause) {
     result.on = modifierClause.getChild(On) !== null;
     const labelNode = modifierClause.getChild(GroupingLabels);
-    const labels = labelNode ? labelNode.getChildren(LabelName) : [];
+    const labels = labelNode ? labelNode.getChildren(GroupingLabelName) : [];
     for (const label of labels) {
       result.matchingLabels.push(state.sliceDoc(label.from, label.to));
     }
@@ -62,7 +62,7 @@ export function buildVectorMatching(state: EditorState, binaryNode: SyntaxNode):
     if (group) {
       result.card = groupLeft ? VectorMatchCardinality.CardManyToOne : VectorMatchCardinality.CardOneToMany;
       const labelNode = group.nextSibling;
-      const labels = labelNode?.getChildren(LabelName) || [];
+      const labels = labelNode?.getChildren(GroupingLabelName) || [];
       for (const label of labels) {
         result.include.push(state.sliceDoc(label.from, label.to));
       }

@@ -218,10 +218,16 @@ type RefMmapMarker struct {
 	MmapRef chunks.ChunkDiskMapperRef
 }
 
+// maxMetadataInternEntries caps the per-Decoder metadata string cache so a long-lived
+// Decoder cannot grow unboundedly if metric help/unit strings churn.
+const maxMetadataInternEntries = 8192
+
 // Decoder decodes series, sample, metadata and tombstone records.
+// Decoder is not safe for concurrent use.
 type Decoder struct {
-	builder labels.ScratchBuilder
-	logger  *slog.Logger
+	builder     labels.ScratchBuilder
+	logger      *slog.Logger
+	metaStrings map[string]string
 }
 
 func NewDecoder(_ *labels.SymbolTable, logger *slog.Logger) Decoder { // FIXME remove t (or use scratch builder with symbols)
@@ -288,7 +294,7 @@ func (*Decoder) MinValidTime(rec []byte) (int64, error) {
 }
 
 // Metadata appends metadata in rec to the given slice.
-func (*Decoder) Metadata(rec []byte, metadata []RefMetadata) ([]RefMetadata, error) {
+func (d *Decoder) Metadata(rec []byte, metadata []RefMetadata) ([]RefMetadata, error) {
 	dec := encoding.Decbuf{B: rec}
 
 	if Type(dec.Byte()) != Metadata {
@@ -304,13 +310,17 @@ func (*Decoder) Metadata(rec []byte, metadata []RefMetadata) ([]RefMetadata, err
 		// so we can correctly align with the start with the next metadata record.
 		var unit, help string
 		for range numFields {
-			fieldName := dec.UvarintStr()
-			fieldValue := dec.UvarintStr()
+			fieldName := yoloString(dec.UvarintBytes())
+			fieldValue := dec.UvarintBytes()
+			if len(fieldValue) == 0 {
+				continue
+			}
+			// Intern unit and help strings across series sharing a metric family.
 			switch fieldName {
 			case unitMetaName:
-				unit = fieldValue
+				unit = d.internMetadataString(fieldValue)
 			case helpMetaName:
-				help = fieldValue
+				help = d.internMetadataString(fieldValue)
 			}
 		}
 
@@ -328,6 +338,20 @@ func (*Decoder) Metadata(rec []byte, metadata []RefMetadata) ([]RefMetadata, err
 		return nil, fmt.Errorf("unexpected %d bytes left in entry", len(dec.B))
 	}
 	return metadata, nil
+}
+
+func (d *Decoder) internMetadataString(b []byte) string {
+	if s, ok := d.metaStrings[string(b)]; ok {
+		return s
+	}
+	if d.metaStrings == nil {
+		d.metaStrings = make(map[string]string, 64)
+	} else if len(d.metaStrings) >= maxMetadataInternEntries {
+		clear(d.metaStrings)
+	}
+	s := string(b)
+	d.metaStrings[s] = s
+	return s
 }
 
 func yoloString(b []byte) string {

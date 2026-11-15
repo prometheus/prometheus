@@ -85,6 +85,15 @@ func (c *stCache) synthesizeHistogram(h *histogram.Histogram, t int64) (*histogr
 		c.h = &histogramSynthesis{}
 	}
 	n := c.h
+
+	if err := h.Validate(); err != nil {
+		// An invalid histogram must not become the anchor or the previous
+		// sample, as later samples are compared with and subtracted from them.
+		// Return it unchanged, so that it is handled as it would be without
+		// start timestamp synthesis, and rejected when it is appended.
+		return h, c.st, false
+	}
+
 	currFloat := h.ToFloat(nil)
 
 	if c.st == 0 {
@@ -117,7 +126,13 @@ func (c *stCache) synthesizeHistogram(h *histogram.Histogram, t int64) (*histogr
 	// natively for histograms.
 
 	// Subtract the origin anchor.
-	subFloat, _, _, _ := currFloat.Sub(n.starting)
+	subFloat, _, _, err := currFloat.Sub(n.starting)
+	if err != nil {
+		// Sub returns an error only when a histogram has an invalid bucket
+		// layout. Panic rather than append a sample that was not adjusted,
+		// which would be wrong data.
+		panic(err)
+	}
 	subFloat = subFloat.Compact(0)
 
 	// Since we are synthesizing an integer histogram, we must cast the float subtraction back to ints.
@@ -171,6 +186,14 @@ func (c *stCache) synthesizeFloatHistogram(fh *histogram.FloatHistogram, t int64
 	}
 	n := c.h
 
+	if err := fh.Validate(); err != nil {
+		// An invalid histogram must not become the anchor or the previous
+		// sample, as later samples are compared with and subtracted from them.
+		// Return it unchanged, so that it is handled as it would be without
+		// start timestamp synthesis, and rejected when it is appended.
+		return fh, c.st, false
+	}
+
 	if c.st == 0 {
 		// First sample.
 		n.prev = fh.Copy()
@@ -196,7 +219,13 @@ func (c *stCache) synthesizeFloatHistogram(fh *histogram.FloatHistogram, t int64
 	}
 
 	// Subtract the origin anchor.
-	adjusted, _, _, _ := fh.Sub(n.starting)
+	adjusted, _, _, err := fh.Sub(n.starting)
+	if err != nil {
+		// Sub returns an error only when a histogram has an invalid bucket
+		// layout. Panic rather than append a sample that was not adjusted,
+		// which would be wrong data.
+		panic(err)
+	}
 	adjusted = adjusted.Compact(0)
 
 	return adjusted, c.st, false

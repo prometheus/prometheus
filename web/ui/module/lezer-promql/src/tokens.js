@@ -11,10 +11,18 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+import { ExternalTokenizer } from "@lezer/lr";
+
 import {
+  Identifier,
+  LabelName,
+  GroupingLabelName,
   And,
   Avg,
   Atan2,
+  BitAnd,
+  BitOr,
+  BitXor,
   Bool,
   Bottomk,
   By,
@@ -51,6 +59,41 @@ import {
   FillRight,
 } from "./parser.terms.js";
 
+// Name starts are Unicode letters or underscores; combining marks require quotes.
+const nameStart = /[\p{L}_]/u;
+
+// InputStream exposes UTF-16 code units; names may contain astral letters.
+function readCodePoint(input) {
+  const first = input.next;
+  if (first >= 0xd800 && first <= 0xdbff) {
+    const second = input.peek(1);
+    if (second >= 0xdc00 && second <= 0xdfff) {
+      return 0x10000 + ((first - 0xd800) << 10) + second - 0xdc00;
+    }
+  }
+  return first;
+}
+
+function isNameStart(ch) {
+  return ch >= 0 && nameStart.test(String.fromCodePoint(ch));
+}
+
+export const names = new ExternalTokenizer(
+  (input, stack) => {
+    const selectorLabel = stack.canShift(LabelName);
+    const groupingLabel = stack.canShift(GroupingLabelName);
+    let ch = readCodePoint(input);
+    if (!isNameStart(ch) && (selectorLabel || ch !== 58)) return;
+    // Grouping labels allow colons for compatibility, unlike selector labels.
+    do {
+      input.advance(ch > 0xffff ? 2 : 1);
+      ch = readCodePoint(input);
+    } while (isNameStart(ch) || (ch >= 48 && ch <= 57) || ch === 46 || (!selectorLabel && ch === 58));
+    input.acceptToken(selectorLabel ? LabelName : groupingLabel ? GroupingLabelName : Identifier);
+  },
+  { contextual: true }
+);
+
 const keywordTokens = {
   inf: inf,
   nan: nan,
@@ -63,12 +106,16 @@ const keywordTokens = {
 };
 
 export const specializeIdentifier = (value, stack) => {
+  if (/[^\x00-\x7f]/.test(value)) return -1;
   return keywordTokens[value.toLowerCase()] || -1;
 };
 
 const contextualKeywordTokens = {
   avg: Avg,
   atan2: Atan2,
+  bitand: BitAnd,
+  bitor: BitOr,
+  bitxor: BitXor,
   bottomk: Bottomk,
   count: Count,
   count_values: CountValues,
@@ -95,6 +142,8 @@ const contextualKeywordTokens = {
 };
 
 export const extendIdentifier = (value, stack) => {
+  // Unicode letters that lowercase to ASCII must remain names, not keywords.
+  if (/[^\x00-\x7f]/.test(value)) return -1;
   if (value === "start" && stack.canShift(StartFn)) {
     return StartFn;
   }

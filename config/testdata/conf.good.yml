@@ -41,6 +41,7 @@ remote_write:
   - url: http://remote2/push
     protobuf_message: io.prometheus.write.v2.Request
     name: rw_tls
+    convert_nhcb_to_classic: true
     tls_config:
       cert_file: valid_cert_file
       key_file: valid_key_file

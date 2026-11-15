@@ -320,6 +320,14 @@ func (c *PrometheusConverter) addHistogramDataPoints(
 			bound := pt.ExplicitBounds().At(i)
 			cumulativeCount += pt.BucketCounts().At(i)
 
+			// The le="+Inf" series is synthesized from count below; emitting
+			// this bound would write it a second time at the same timestamp.
+			if math.IsInf(bound, 1) {
+				c.plusInfAnnots.Add(newCategorizedWarningf(WarningCategoryHistogramPlusInfBound,
+					"histogram data point has an explicit +Inf bound, le=\"+Inf\" is taken from count"))
+				continue
+			}
+
 			// Find exemplars that belong to this bucket. Both exemplars and
 			// buckets are sorted in ascending order.
 			appOpts.Exemplars = appOpts.Exemplars[:0]
@@ -562,6 +570,9 @@ func (c *PrometheusConverter) addResourceTargetInfo(resource pcommon.Resource, s
 	}
 
 	attributes := resource.Attributes()
+	if attributes.Len() == 0 {
+		return nil
+	}
 	identifyingAttrs := []string{
 		string(semconv.ServiceNamespaceKey),
 		string(semconv.ServiceNameKey),
@@ -574,7 +585,7 @@ func (c *PrometheusConverter) addResourceTargetInfo(resource pcommon.Resource, s
 			nonIdentifyingAttrsCount--
 		}
 	}
-	if nonIdentifyingAttrsCount == 0 {
+	if !settings.KeepIdentifyingResourceAttributes && nonIdentifyingAttrsCount == 0 {
 		// If we only have job + instance, then target_info isn't useful, so don't add it.
 		return nil
 	}

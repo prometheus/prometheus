@@ -582,12 +582,13 @@ func TestHistogramSeriesToChunks(t *testing.T) {
 
 	for testName, test := range tests {
 		t.Run(testName, func(t *testing.T) {
-			testHistogramsSeriesToChunks(t, test)
+			t.Run("list", func(t *testing.T) { testHistogramsSeriesToChunks(t, test, false) })
+			t.Run("chunks", func(t *testing.T) { testHistogramsSeriesToChunks(t, test, true) })
 		})
 	}
 }
 
-func testHistogramsSeriesToChunks(t *testing.T, test histogramTest) {
+func testHistogramsSeriesToChunks(t *testing.T, test histogramTest, fromChunks bool) {
 	lbs := labels.FromStrings("__name__", "up", "instance", "localhost:8080")
 	copiedSamples := []chunks.Sample{}
 	for _, s := range test.samples {
@@ -600,7 +601,16 @@ func testHistogramsSeriesToChunks(t *testing.T, test histogramTest) {
 			t.Error("internal error, unexpected type")
 		}
 	}
-	series := NewListSeries(lbs, copiedSamples)
+	var series Series = NewListSeries(lbs, copiedSamples)
+	if fromChunks {
+		var parts []Series
+		for _, s := range copiedSamples {
+			chk, err := chunks.ChunkFromSamples([]chunks.Sample{s})
+			require.NoError(t, err)
+			parts = append(parts, newChunkToSeriesDecoder(lbs, chk))
+		}
+		series = ChainedSeriesMerge(parts...)
+	}
 	encoder := NewSeriesToChunkEncoder(series)
 	require.Equal(t, lbs, encoder.Labels())
 

@@ -12,7 +12,7 @@ jobs:
     runs-on: ubuntu-latest
     if: github.repository_owner == 'prometheus'
     container:
-      image: quay.io/prometheus/golang-builder
+      image: quay.io/prometheus/golang-builder@sha256:24333f0d2950931d355b21d8b36ba0d0811c573169131c63c289aea65aedd2d6
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:

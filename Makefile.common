@@ -360,8 +360,7 @@ common-docker-manifest:
 				echo "Skipping manifest for $$variant_name variant (no supported architectures)"; \
 				continue; \
 			fi; \
-			DOCKER_CLI_EXPERIMENTAL=enabled docker manifest create -a "$(DOCKER_REPO)/$(DOCKER_IMAGE_NAME):$(SANITIZED_DOCKER_IMAGE_TAG)-$$variant_name" $$refs; \
-			DOCKER_CLI_EXPERIMENTAL=enabled docker manifest push "$(DOCKER_REPO)/$(DOCKER_IMAGE_NAME):$(SANITIZED_DOCKER_IMAGE_TAG)-$$variant_name"; \
+			docker buildx imagetools create -t "$(DOCKER_REPO)/$(DOCKER_IMAGE_NAME):$(SANITIZED_DOCKER_IMAGE_TAG)-$$variant_name" $$refs; \
 		fi; \
 		if [ "$$dockerfile" = "Dockerfile" ]; then \
 			echo "Creating default variant ($$variant_name) manifest"; \
@@ -373,8 +372,7 @@ common-docker-manifest:
 				echo "Skipping default variant manifest (no supported architectures)"; \
 				continue; \
 			fi; \
-			DOCKER_CLI_EXPERIMENTAL=enabled docker manifest create -a "$(DOCKER_REPO)/$(DOCKER_IMAGE_NAME):$(SANITIZED_DOCKER_IMAGE_TAG)" $$refs; \
-			DOCKER_CLI_EXPERIMENTAL=enabled docker manifest push "$(DOCKER_REPO)/$(DOCKER_IMAGE_NAME):$(SANITIZED_DOCKER_IMAGE_TAG)"; \
+			docker buildx imagetools create -t "$(DOCKER_REPO)/$(DOCKER_IMAGE_NAME):$(SANITIZED_DOCKER_IMAGE_TAG)" $$refs; \
 		fi; \
 		if [ "$(DOCKER_IMAGE_TAG)" = "latest" ]; then \
 			if [ "$$dockerfile" != "Dockerfile" ] || [ "$$variant_name" != "default" ]; then \
@@ -388,8 +386,7 @@ common-docker-manifest:
 						echo "Skipping version-tag manifest for $$variant_name variant (no supported architectures)"; \
 						continue; \
 					fi; \
-					DOCKER_CLI_EXPERIMENTAL=enabled docker manifest create -a "$(DOCKER_REPO)/$(DOCKER_IMAGE_NAME):$$tag-$$variant_name" $$refs; \
-					DOCKER_CLI_EXPERIMENTAL=enabled docker manifest push "$(DOCKER_REPO)/$(DOCKER_IMAGE_NAME):$$tag-$$variant_name"; \
+					docker buildx imagetools create -t "$(DOCKER_REPO)/$(DOCKER_IMAGE_NAME):$$tag-$$variant_name" $$refs; \
 				done; \
 			fi; \
 			if [ "$$dockerfile" = "Dockerfile" ]; then \
@@ -403,8 +400,7 @@ common-docker-manifest:
 						echo "Skipping default variant version-tag manifest (no supported architectures)"; \
 						continue; \
 					fi; \
-					DOCKER_CLI_EXPERIMENTAL=enabled docker manifest create -a "$(DOCKER_REPO)/$(DOCKER_IMAGE_NAME):$$tag" $$refs; \
-					DOCKER_CLI_EXPERIMENTAL=enabled docker manifest push "$(DOCKER_REPO)/$(DOCKER_IMAGE_NAME):$$tag"; \
+					docker buildx imagetools create -t "$(DOCKER_REPO)/$(DOCKER_IMAGE_NAME):$$tag" $$refs; \
 				done; \
 			fi; \
 		fi; \
