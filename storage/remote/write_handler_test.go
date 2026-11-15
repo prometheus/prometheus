@@ -459,6 +459,16 @@ func TestRemoteWriteHandler_V2Message(t *testing.T) {
 			expectedRespBody: "invalid metric name or labels, got {__name__=\"\"}\n",
 		},
 		{
+			desc: "Partial write; first series with unsorted labels",
+			input: append(
+				// Series with __name__="test_metric1", foo="bar", b="c" (unsorted: foo comes before b).
+				[]writev2.TimeSeries{{LabelsRefs: []uint32{1, 2, 9, 10, 3, 4}, Samples: []writev2.Sample{{Value: 1, Timestamp: 1}}}},
+				writeV2RequestFixture.Timeseries...,
+			),
+			expectedCode:     http.StatusBadRequest,
+			expectedRespBody: "labels are not sorted lexicographically for series {__name__=\"test_metric1\", b=\"c\", foo=\"bar\"}\n",
+		},
+		{
 			desc: "Partial write; first series with duplicate labels",
 			input: append(
 				// Series with __name__="test_metric1",test_metric1="test_metric1",test_metric1="test_metric1" labels.
@@ -2264,4 +2274,86 @@ func TestTimeLimitAppenderV2_LimitExemplars(t *testing.T) {
 		require.Len(t, appendable.exemplars, 1)
 		require.Equal(t, int64(900), appendable.exemplars[0].t)
 	})
+}
+
+func TestAreLabelsSorted(t *testing.T) {
+	tests := []struct {
+		name     string
+		input    []prompb.Label
+		expected bool
+	}{
+		{
+			name:     "empty labels",
+			input:    nil,
+			expected: true,
+		},
+		{
+			name: "single label",
+			input: []prompb.Label{
+				{Name: "__name__", Value: "test"},
+			},
+			expected: true,
+		},
+		{
+			name: "sorted labels",
+			input: []prompb.Label{
+				{Name: "__name__", Value: "test"},
+				{Name: "app", Value: "frontend"},
+				{Name: "zone", Value: "us-east"},
+			},
+			expected: true,
+		},
+		{
+			name: "unsorted labels",
+			input: []prompb.Label{
+				{Name: "__name__", Value: "test"},
+				{Name: "zone", Value: "us-east"},
+				{Name: "app", Value: "frontend"},
+			},
+			expected: false,
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			require.Equal(t, tc.expected, areLabelsSorted(tc.input))
+		})
+	}
+}
+
+func TestAreV2LabelsSorted(t *testing.T) {
+	symbols := []string{"", "__name__", "test", "app", "frontend", "zone", "us-east"}
+
+	tests := []struct {
+		name      string
+		labelRefs []uint32
+		expected  bool
+	}{
+		{
+			name:      "empty refs",
+			labelRefs: nil,
+			expected:  true,
+		},
+		{
+			name:      "single label",
+			labelRefs: []uint32{1, 2},
+			expected:  true,
+		},
+		{
+			name:      "sorted labels",
+			labelRefs: []uint32{1, 2, 3, 4, 5, 6},
+			expected:  true,
+		},
+		{
+			name:      "unsorted labels",
+			labelRefs: []uint32{1, 2, 5, 6, 3, 4},
+			expected:  false,
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			require.Equal(t, tc.expected, areV2LabelsSorted(tc.labelRefs, symbols))
+		})
+	}
 }

@@ -187,6 +187,10 @@ func (h *writeHandler) write(ctx context.Context, req *prompb.WriteRequest) (err
 			h.logger.Warn("Invalid labels for series.", "labels", ls.String(), "duplicated_label", duplicateLabel)
 			samplesWithInvalidLabels++
 			continue
+		} else if !areLabelsSorted(ts.Labels) {
+			h.logger.Warn("Labels are not sorted lexicographically", "labels", ls.String())
+			samplesWithInvalidLabels++
+			continue
 		}
 
 		ref, err := h.appendV1Samples(app, ts.Samples, ls)
@@ -362,6 +366,10 @@ func (h *writeHandler) appendV2(app *timeLimitExemplarAppenderV2, req *writev2.R
 			continue
 		} else if duplicateLabel, hasDuplicate := ls.HasDuplicateLabelNames(); hasDuplicate {
 			badRequestErrs = append(badRequestErrs, fmt.Errorf("invalid labels for series, labels %v, duplicated label %s", ls.String(), duplicateLabel))
+			samplesWithInvalidLabels += len(ts.Samples) + len(ts.Histograms)
+			continue
+		} else if !areV2LabelsSorted(ts.LabelsRefs, req.Symbols) {
+			badRequestErrs = append(badRequestErrs, fmt.Errorf("labels are not sorted lexicographically for series %v", ls.String()))
 			samplesWithInvalidLabels += len(ts.Samples) + len(ts.Histograms)
 			continue
 		}
@@ -591,4 +599,24 @@ func (app *timeLimitExemplarAppenderV2) AppendExemplars(ref storage.SeriesRef, l
 		return ref, err
 	}
 	return ref, partialErr.ToError()
+}
+
+func areLabelsSorted(ls []prompb.Label) bool {
+	for i := 1; i < len(ls); i++ {
+		if ls[i].Name < ls[i-1].Name {
+			return false
+		}
+	}
+	return true
+}
+
+func areV2LabelsSorted(labelRefs []uint32, symbols []string) bool {
+	for i := 2; i < len(labelRefs); i += 2 {
+		currName := symbols[labelRefs[i]]
+		prevName := symbols[labelRefs[i-2]]
+		if currName < prevName {
+			return false
+		}
+	}
+	return true
 }
