@@ -968,6 +968,7 @@ float and histogram samples in the same way.
 
 The original sample timestamps are only returned if `timestamp()` is used
 directly on an instant vector selector, e.g. `timestamp(http_requests_total)`.
+Parentheses around the selector do not change this.
 For any other expression, e.g. `timestamp(abs(http_requests_total))`, it
 returns the evaluation timestamp (or the timestamp of the current step in the
 case of a range query), because the result of such an expression consists of
