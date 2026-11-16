@@ -571,6 +571,7 @@ type headMetrics struct {
 	mmapChunksTotal           prometheus.Counter
 	walReplayUnknownRefsTotal *prometheus.CounterVec
 	wblReplayUnknownRefsTotal *prometheus.CounterVec
+	walReplayDupSeriesRefTotal prometheus.Counter
 }
 
 const (
@@ -744,6 +745,10 @@ func newHeadMetrics(h *Head, r prometheus.Registerer) *headMetrics {
 			Name: "prometheus_tsdb_wbl_replay_unknown_refs_total",
 			Help: "Total number of unknown series references encountered during WBL replay.",
 		}, []string{"type"}),
+		walReplayDupSeriesRefTotal: prometheus.NewCounter(prometheus.CounterOpts{
+			Name: "prometheus_tsdb_wal_replay_duplicate_series_ref_total",
+			Help: "Total number of series records ignored during replay because their ref was already used by a different series.",
+		}),
 	}
 
 	if r != nil {
@@ -821,6 +826,7 @@ func newHeadMetrics(h *Head, r prometheus.Registerer) *headMetrics {
 			}),
 			m.walReplayUnknownRefsTotal,
 			m.wblReplayUnknownRefsTotal,
+			m.walReplayDupSeriesRefTotal,
 		)
 	}
 	return m
@@ -2416,6 +2422,20 @@ func (h *Head) getOrCreate(hash uint64, lset labels.Labels, pendingCommit bool) 
 func (h *Head) getOrCreateWithOptionalID(id chunks.HeadSeriesRef, hash uint64, lset labels.Labels, pendingCommit bool) (*memSeries, bool, error) {
 	if preCreationErr := h.series.seriesLifecycleCallback.PreCreation(lset); preCreationErr != nil {
 		return nil, false, preCreationErr
+	}
+	if id != 0 {
+		if existing := h.series.getByID(id); existing != nil && !labels.Equal(existing.labels(), lset) {
+			// The WAL or chunk snapshot contains two different series sharing the
+			// same ref. This should never happen, but if it does, overwriting the
+			// existing series would corrupt the ref-to-series map and make queries
+			// return series belonging to another metric. Keep the first series and
+			// ignore the colliding record instead.
+			// See https://github.com/prometheus/prometheus/issues/18547.
+			h.logger.Warn("Ignoring series record with a ref already used by another series",
+				"ref", id, "existing", existing.labels().String(), "ignored", lset.String())
+			h.metrics.walReplayDupSeriesRefTotal.Inc()
+			return existing, false, nil
+		}
 	}
 
 	shardHash := uint64(0)
