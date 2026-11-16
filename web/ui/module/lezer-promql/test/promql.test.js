@@ -75,3 +75,36 @@ describe('unquoted UTF-8 names', () => {
         });
     }
 });
+
+// Keep literal and duration keyword syntax aligned with the Go parser.
+describe('literal and duration keyword compatibility', () => {
+    const strictParser = parser.configure({ strict: true });
+    const valid = [
+        'histogram_quantile(1./6., rate(testhistogram2_bucket[15m]))',
+        '2.', '1.e2', '1.E-2', '1_000.', '1.2_3', '.1_2', '1e1_0',
+        '0X1F', '0x_53_AB_F3_82', '0X_53_AB_F3_82', '0x1_f',
+        'foo[STEP()]',
+        'foo[RaNgE()]',
+        'rate(foo[MIN_OF(5m, RANGE())])',
+        'avg_over_time(foo[MAX_OF(STEP(), 1m)])',
+        'foo[1h:StEp()]',
+        'metric1_total offset STEP()',
+        'foo offset MaX_Of(RaNgE(), 1m)',
+        'foo[step()]',
+    ];
+    for (const query of valid) {
+        it(`accepts ${query}`, () => {
+            expect(() => strictParser.parse(query)).not.toThrow();
+        });
+    }
+    for (const query of ['1._2', '1_.2', '0x_', '0x1_', '0x1__2', '0X', '0x1.2', 'foo[ſtep()]', 'STEP()', 'RANGE()']) {
+        it(`rejects ${query}`, () => {
+            expect(() => strictParser.parse(query)).toThrow();
+        });
+    }
+    for (const name of ['step', 'STEP', 'range', 'RANGE', 'min_of', 'MIN_OF', 'max_of', 'MAX_OF']) {
+        it(`preserves ${name} as a metric name`, () => {
+            expect(strictParser.parse(name).toString()).toBe('PromQL(VectorSelector(Identifier))');
+        });
+    }
+});

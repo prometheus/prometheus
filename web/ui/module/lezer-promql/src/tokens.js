@@ -51,6 +51,10 @@ import {
   Unless,
   Without,
   AtEnd,
+  DurationStep,
+  DurationRange,
+  DurationMinOf,
+  DurationMaxOf,
   AtStart,
   Smoothed,
   Anchored,
@@ -111,6 +115,10 @@ export const specializeIdentifier = (value, stack) => {
 };
 
 const contextualKeywordTokens = {
+  step: DurationStep,
+  range: DurationRange,
+  min_of: DurationMinOf,
+  max_of: DurationMaxOf,
   avg: Avg,
   atan2: Atan2,
   bitand: BitAnd,
