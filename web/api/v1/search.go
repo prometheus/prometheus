@@ -704,25 +704,9 @@ func buildSearchFilter(searches []string, fuzzThreshold int, fuzzAlg string, cas
 	if len(terms) == 0 {
 		return nil
 	}
-	threshold := float64(fuzzThreshold) / 100.0
 	filters := make([]storage.Filter, 0, len(terms))
 	for _, s := range terms {
-		var f storage.Filter
-		if fuzzAlg == "subsequence" {
-			f = NewSubsequenceFilter(s, threshold)
-		} else {
-			// Jaro-Winkler: substring OR Jaro-Winkler fuzzy.
-			substringFilter := NewSubstringFilter(s)
-			var fuzzyFilter *FuzzyFilter
-			if fuzzThreshold > 0 {
-				fuzzyFilter = NewFuzzyFilter(s, threshold)
-			}
-			f = &orFilter{
-				substringFilter: substringFilter,
-				fuzzyFilter:     fuzzyFilter,
-			}
-		}
-		filters = append(filters, f)
+		filters = append(filters, newSearchTermFilter(s, fuzzThreshold, fuzzAlg))
 	}
 	var combined storage.Filter
 	if len(filters) == 1 {
@@ -730,13 +714,37 @@ func buildSearchFilter(searches []string, fuzzThreshold int, fuzzAlg string, cas
 	} else {
 		combined = newOrSearchesFilter(filters...)
 	}
+	return wrapSearchFilter(combined, fuzzThreshold, fuzzAlg, caseSensitive)
+}
+
+// newSearchTermFilter returns the filter for one search term. The term must
+// already be lowercased for a case-insensitive search.
+func newSearchTermFilter(term string, fuzzThreshold int, fuzzAlg string) storage.Filter {
+	threshold := float64(fuzzThreshold) / 100.0
+	if fuzzAlg == "subsequence" {
+		return NewSubsequenceFilter(term, threshold)
+	}
+	// Jaro-Winkler: substring OR Jaro-Winkler fuzzy.
+	var fuzzyFilter *FuzzyFilter
+	if fuzzThreshold > 0 {
+		fuzzyFilter = NewFuzzyFilter(term, threshold)
+	}
+	return &orFilter{
+		substringFilter: NewSubstringFilter(term),
+		fuzzyFilter:     fuzzyFilter,
+	}
+}
+
+// wrapSearchFilter adds the case folding and memoization wrappers that
+// buildSearchFilter documents.
+func wrapSearchFilter(filter storage.Filter, fuzzThreshold int, fuzzAlg string, caseSensitive bool) storage.Filter {
 	if !caseSensitive {
-		combined = newCaseFoldingFilter(combined)
+		filter = newCaseFoldingFilter(filter)
 	}
 	if filterChainHasExpensiveScoring(fuzzThreshold, fuzzAlg) {
-		combined = newMemoizingFilter(combined)
+		filter = newMemoizingFilter(filter)
 	}
-	return combined
+	return filter
 }
 
 // filterChainHasExpensiveScoring reports whether the search filter chain built
