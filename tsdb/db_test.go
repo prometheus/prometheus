@@ -1652,13 +1652,13 @@ func TestSeriesCompactionReclaimsChunksWithExemplars(t *testing.T) {
 	}
 }
 
-// TestEarlyCompactionExemplarProtectionOrphansLaterSample verifies that
+// TestSeriesCompactionWithExemplarsPreservesWALSampleReferences verifies that
 // CompactSelectedSeries and CompactStaleHead retain WAL declarations
 // needed to replay samples after regular GC and checkpointing.
 // Previously, exemplar protection kept empty series without eviction tombstones.
 // GC could then assign a WAL expiry below the last sample's timestamp, allowing
 // checkpointing to drop the declaration while that sample still needed replay.
-func TestEarlyCompactionExemplarProtectionOrphansLaterSample(t *testing.T) {
+func TestSeriesCompactionWithExemplarsPreservesWALSampleReferences(t *testing.T) {
 	for _, compaction := range []string{"selected", "stale"} {
 		t.Run(compaction, func(t *testing.T) {
 			const chunkRange = 1000
@@ -1707,7 +1707,7 @@ func TestEarlyCompactionExemplarProtectionOrphansLaterSample(t *testing.T) {
 				require.NoError(t, db.CompactSelectedSeries([]storage.SeriesRef{selRef}))
 			}
 			require.Len(t, db.Blocks(), 1)
-			
+
 			require.NoError(t, db.head.truncateMemory(e.Ts+1))
 			require.Nil(t, db.Head().series.getByID(chunks.HeadSeriesRef(selRef)), "sel must be fully evicted by now")
 
