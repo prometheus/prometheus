@@ -20,6 +20,7 @@ permissions:
 
 jobs:
   govulncheck:
+    if: github.repository_owner == 'prometheus' || github.repository_owner == 'prometheus-community' # Don't run this workflow on forks.
     runs-on: ubuntu-latest
     name: Run govulncheck
     steps:

@@ -1062,7 +1062,8 @@ type scrapeCache struct {
 	seriesCur  map[storage.SeriesRef]labels.Labels
 	seriesPrev map[storage.SeriesRef]labels.Labels
 
-	// Per-series post-relabel metadata cache, lazily allocated only when metric_relabel_configs is non-empty.
+	// Per-series post-relabel metadata cache, lazily allocated when metric relabel rules
+	// or metadata relabeling are enabled.
 	seriesMeta        map[uint64]seriesMetaEntry
 	droppedSeriesMeta map[uint64]seriesMetaEntry
 

@@ -1997,6 +1997,44 @@ bar 4
 	require.Len(t, sl.cache.droppedSeries, 1)
 }
 
+func TestScrapeLoopMetadataWithoutRelabelRules(t *testing.T) {
+	for _, enableTypeAndUnitLabels := range []bool{false, true} {
+		for _, typed := range []bool{false, true} {
+			t.Run(fmt.Sprintf("typeAndUnitLabels=%v/typed=%v", enableTypeAndUnitLabels, typed), func(t *testing.T) {
+				sink := teststorage.NewAppendable()
+				target := &Target{labels: labels.EmptyLabels()}
+				sl, _ := newTestScrapeLoop(t, withAppendable(sink, true), func(sl *scrapeLoop) {
+					sl.enableTypeAndUnitLabels = enableTypeAndUnitLabels
+					sl.sampleMutatorWithMetadata = func(l labels.Labels, m metadata.Metadata) (labels.Labels, metadata.Metadata) {
+						return mutateSampleLabelsAndMetadata(l, m, target, false, enableTypeAndUnitLabels, nil)
+					}
+				})
+				for step := range 3 {
+					body := `foo{__help__="spoof",__type__="counter",__unit__="spoof"} 1` + "\n"
+					var wantMeta metadata.Metadata
+					wantLabels := labels.FromStrings("__name__", "foo")
+					if typed {
+						wantMeta = metadata.Metadata{Type: model.MetricTypeGauge, Help: fmt.Sprintf("Real help %d.", step/2)}
+						body = "# TYPE foo gauge\n# HELP foo " + wantMeta.Help + "\n" + body
+						if enableTypeAndUnitLabels {
+							wantLabels = labels.FromStrings("__name__", "foo", "__type__", "gauge")
+						}
+					}
+					app := sl.appender()
+					_, added, _, err := app.append([]byte(body), "text/plain", time.Unix(int64(100+step), 0))
+					require.NoError(t, err)
+					require.NoError(t, app.Commit())
+					require.Equal(t, 1, added)
+					samples := sink.ResultSamples()
+					require.Len(t, samples, step+1)
+					testutil.RequireEqual(t, wantLabels, samples[step].L)
+					require.True(t, wantMeta.Equals(samples[step].M), "metadata: got %v, want %v", samples[step].M, wantMeta)
+				}
+			})
+		}
+	}
+}
+
 func TestScrapeLoopMetadataRelabeling(t *testing.T) {
 	for _, enableTypeAndUnitLabels := range []bool{false, true} {
 		t.Run(fmt.Sprintf("enableTypeAndUnitLabels=%v", enableTypeAndUnitLabels), func(t *testing.T) {
