@@ -92,6 +92,20 @@ func isASCII(s string) bool {
 	return true
 }
 
+// containsFilter accepts values that contain query. Every accepted value
+// scores 1.0, so use it only where the caller ignores the score.
+type containsFilter struct {
+	query string
+}
+
+// Accept returns true with a score of 1.0 if the value contains the query.
+func (f *containsFilter) Accept(value string) (bool, float64) {
+	if !strings.Contains(value, f.query) {
+		return false, 0.0
+	}
+	return true, 1.0
+}
+
 // FuzzyFilter implements Jaro-Winkler fuzzy matching against a query.
 type FuzzyFilter struct {
 	query     string
@@ -185,9 +199,9 @@ const (
 
 // memoizingFilter caches the (accepted, score) returned by the inner filter
 // for each distinct value. It is intended to be used as the outermost wrapper
-// in buildSearchFilter so that values reaching the chain multiple times in a
-// single search (e.g. once per TSDB block during a multi-block lookup) are
-// scored only once.
+// in buildSearchFilter and buildSearchExprFilter so that values reaching the
+// chain multiple times in a single search (e.g. once per TSDB block during a
+// multi-block lookup) are scored only once.
 //
 // memoizingFilter is not safe for concurrent use: the search path drives
 // SearchResultSet iteration from a single goroutine (the merge driver pulls

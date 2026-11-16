@@ -803,6 +803,13 @@ Common URL query parameters:
   search. Optional.
 - `search[]=<string>`: Repeated search string matched against names or values.
   Multiple values use OR semantics. Optional.
+- `search_expr=<string>`: Boolean search expression matched against names or
+  values. Optional. You cannot use it together with a non-empty `search[]`
+  value. Prometheus treats an empty value as absent. A value with only spaces
+  is not empty, so Prometheus returns an error for it. If the request repeats
+  `search_expr`, Prometheus uses only the first value. In a POST request, the
+  values in the body come before the values in the URL. See the search
+  expression syntax below.
 - `fuzz_threshold=<number>`: Fuzzy threshold from 0 to 100. Optional. A value
   of 0 is the lowest fuzzy threshold.
 - `fuzz_alg=<subsequence | jarowinkler>`: Matching algorithm. Optional. Default
@@ -856,6 +863,25 @@ Additional parameters for `/api/v1/search/label_values`:
 - `label=<label_name>`: Label name whose values should be searched. Required.
 - `sort_by=<alpha | score>`
 
+A `search_expr` expression combines terms with `NOT`, `AND`, `OR`, and
+parentheses. `NOT` binds more tightly than `AND`, and `AND` binds more tightly
+than `OR`. Operators are case-insensitive. Write each operator explicitly:
+`http requests` is not valid, but `http AND requests` is. To search for a term
+that contains a space, a parenthesis, or an operator word, put it in double
+quotes. Inside quotes, `\"` and `\\` are the only escapes.
+
+A positive term has an even number of `NOT` operators above it. A negated term
+has an odd number, so in `NOT NOT http` the term `http` is positive. Every
+accepting path must contain a positive term, so `NOT http` alone is not valid.
+An expression can have at most 4096 bytes, 32 terms, and 16 nesting levels.
+Each `NOT` and each parenthesized group adds one nesting level.
+
+A positive term uses the same matching as a `search[]` term, with `fuzz_alg`,
+`fuzz_threshold`, and `case_sensitive`. A negated term excludes only the values
+that contain the term as a substring. A fuzzy match of a negated term never
+excludes a value. The score of a result is the highest mean score of the
+positive terms on any path that accepts the value.
+
 This example searches metric names for autocomplete:
 
 ```bash
@@ -877,6 +903,12 @@ curl -g 'http://localhost:9090/api/v1/search/label_values?label=instance&match[]
 ```json
 {"results":[{"value":"localhost:9090"},{"value":"localhost:9091"}]}
 {"status":"success","has_more":true}
+```
+
+This example searches metric names that contain `http` but not `bucket`:
+
+```bash
+curl -G 'http://localhost:9090/api/v1/search/metric_names' --data-urlencode 'search_expr=http AND NOT bucket'
 ```
 
 ## Querying exemplars
