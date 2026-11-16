@@ -31,9 +31,7 @@ if ! command -v release-notes >/dev/null 2>&1; then
 	exit 1
 fi
 
-TMPL='{{- $version := .CurrentRevision -}}
-{{- if not $version}}{{- $version = "X.Y.Z" -}}{{end -}}
-## {{$version}} / YYYY-MM-DD
+TMPL='## @VERSION@ / YYYY-MM-DD
 {{/* Sort the sections */}}
 {{- range .Notes}}{{range $note := .NoteEntries}}{{if eq (slice $note 0 10) "[SECURITY]"}}- {{$note}}
 {{end}}{{end}}{{end -}}
@@ -48,6 +46,8 @@ TMPL='{{- $version := .CurrentRevision -}}
 {{- range .Notes}}{{range $note := .NoteEntries}}{{if eq (slice $note 0 8) "[BUGFIX]"}}- {{$note}}
 {{end}}{{end}}{{end}}
 .'
+# CurrentRevision is the branch passed as --end-rev, not the requested release.
+TMPL="${TMPL/@VERSION@/${version}}"
 
 release_branch="release-${major}.${minor}"
 
@@ -64,7 +64,8 @@ if [[ "${patch}" == "0" ]]; then
 		--org prometheus --repo prometheus \
 		--required-author="" --dependencies=false \
 		--go-template="go-template:inline:${TMPL}" \
-		--output=/dev/stdout
+		--output=/dev/stdout |
+		sed -E 's/\(#([0-9]+), @[A-Za-z0-9_-]+\)$/#\1/'
 else
 	# Patch release: cover commits since the previous patch tag.
 	prev_patch=$(( patch - 1 ))
@@ -79,5 +80,6 @@ else
 		--required-author="" --dependencies=false \
 		--go-template="go-template:inline:${TMPL}" \
 		--skip-first-commit \
-		--output=/dev/stdout
+		--output=/dev/stdout |
+		sed -E 's/\(#([0-9]+), @[A-Za-z0-9_-]+\)$/#\1/'
 fi

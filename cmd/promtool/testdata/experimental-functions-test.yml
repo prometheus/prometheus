@@ -1,0 +1,7 @@
+rule_files:
+  - experimental-functions.yml
+
+tests:
+  - input_series:
+      - series: "requests{}"
+        values: 1

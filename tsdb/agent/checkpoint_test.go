@@ -54,7 +54,7 @@ func TestCheckpointReplayCompatibility(t *testing.T) {
 		rs := remote.NewStorage(
 			promslog.NewNopLogger(), nil,
 			startTime, storageDir,
-			30*time.Second, nil, false,
+			30*time.Second, nil, false, false, false,
 		)
 		defer rs.Close()
 
@@ -208,7 +208,7 @@ func requireStripeSeriesEqual(t *testing.T, want, got *stripeSeries) {
 			"ref %d labels mismatch: wlog=%s agent=%s", ref, w.lset.String(), g.lset.String())
 		require.Equalf(t, w.lastTs, g.lastTs, "ref %d lastTs mismatch", ref)
 		require.Equalf(t, w.Metadata(), g.Metadata(), "ref %d metadata mismatch", ref)
-		if g.Metadata() != nil {
+		if !metadata.IsZeroHandle(g.Metadata()) {
 			metadataCount++
 		}
 	}
@@ -332,7 +332,7 @@ func benchCheckpoint(b *testing.B, p benchCheckpointParams) {
 	rs := remote.NewStorage(
 		promslog.NewNopLogger(), nil,
 		startTime, p.storageDir,
-		30*time.Second, nil, false,
+		30*time.Second, nil, false, false, false,
 	)
 	defer rs.Close()
 

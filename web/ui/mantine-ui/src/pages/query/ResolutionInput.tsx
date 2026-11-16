@@ -81,6 +81,10 @@ const ResolutionInput: FC<ResolutionInputProps> = ({
               : "custom"
         }
         onChange={(_value, option) => {
+          if (option === null) {
+            return;
+          }
+
           if (["low", "medium", "high"].includes(option.value)) {
             onChangeResolution({
               type: "auto",

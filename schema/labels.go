@@ -25,6 +25,23 @@ func IsMetadataLabel(name string) bool {
 	return name == model.MetricNameLabel || name == model.MetricTypeLabel || name == model.MetricUnitLabel
 }
 
+// IsValidMetricType returns true if v is a known non-unknown Prometheus metric type.
+// Based on OpenMetrics metric types.
+func IsValidMetricType(v model.MetricType) bool {
+	switch v {
+	case model.MetricTypeCounter,
+		model.MetricTypeGauge,
+		model.MetricTypeHistogram,
+		model.MetricTypeGaugeHistogram,
+		model.MetricTypeSummary,
+		model.MetricTypeInfo,
+		model.MetricTypeStateset:
+		return true
+	default:
+		return false
+	}
+}
+
 // Metadata represents the core metric schema/metadata elements that:
 // * are describing and identifying the metric schema/shape (e.g. name, type and unit).
 // * are contributing to the general metric/series identity.
@@ -69,8 +86,8 @@ type Metadata struct {
 // NewMetadataFromLabels returns the schema metadata from the labels.
 func NewMetadataFromLabels(ls labels.Labels) Metadata {
 	typ := model.MetricTypeUnknown
-	if got := ls.Get(model.MetricTypeLabel); got != "" {
-		typ = model.MetricType(got)
+	if got := model.MetricType(ls.Get(model.MetricTypeLabel)); IsValidMetricType(got) {
+		typ = got
 	}
 	return Metadata{
 		Name: ls.Get(model.MetricNameLabel),
@@ -79,9 +96,9 @@ func NewMetadataFromLabels(ls labels.Labels) Metadata {
 	}
 }
 
-// IsTypeEmpty returns true if the metric type is empty (not set).
+// IsTypeEmpty returns true if the metric type is empty or unrecognized.
 func (m Metadata) IsTypeEmpty() bool {
-	return m.Type == "" || m.Type == model.MetricTypeUnknown
+	return !IsValidMetricType(m.Type)
 }
 
 // IsEmptyFor returns true if the Metadata field, represented by the given labelName
@@ -119,8 +136,8 @@ func (m Metadata) AddToLabels(b *labels.ScratchBuilder) {
 // remove the corresponding existing labels if they were previously set.
 func (m Metadata) SetToLabels(b *labels.Builder) {
 	b.Set(model.MetricNameLabel, m.Name)
-	if m.Type == model.MetricTypeUnknown {
-		// Unknown equals empty semantically, so remove the label on unknown too as per
+	if m.IsTypeEmpty() {
+		// Unknown or unrecognized type equals empty semantically, so remove the label as per
 		// method signature comment.
 		b.Set(model.MetricTypeLabel, "")
 	} else {

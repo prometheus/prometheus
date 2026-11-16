@@ -453,7 +453,7 @@ func TestReadToEndWithCheckpoint(t *testing.T) {
 					}
 				}
 
-				Checkpoint(promslog.NewNopLogger(), w, 0, 1, func(chunks.HeadSeriesRef) bool { return true }, 0, enableSTStorage, true)
+				Checkpoint(promslog.NewNopLogger(), w, 0, 1, func(chunks.HeadSeriesRef) bool { return true }, 0, enableSTStorage)
 				w.Truncate(1)
 
 				// Write more records after checkpointing.
@@ -546,7 +546,7 @@ func TestReadCheckpoint(t *testing.T) {
 				}
 				_, err = w.NextSegmentSync()
 				require.NoError(t, err)
-				_, err = Checkpoint(promslog.NewNopLogger(), w, 30, 31, func(chunks.HeadSeriesRef) bool { return true }, 0, enableSTStorage, true)
+				_, err = Checkpoint(promslog.NewNopLogger(), w, 30, 31, func(chunks.HeadSeriesRef) bool { return true }, 0, enableSTStorage)
 				require.NoError(t, err)
 				require.NoError(t, w.Truncate(32))
 
@@ -717,7 +717,15 @@ func TestCheckpointSeriesReset(t *testing.T) {
 				return wt.checkNumSeries() == seriesCount
 			}, 10*time.Second, 1*time.Second)
 
-			_, err = Checkpoint(promslog.NewNopLogger(), w, 2, 4, func(chunks.HeadSeriesRef) bool { return true }, 0, true, false)
+			// Simulate a second watcher lagging at segment 1 before checkpoint and truncate.
+			restartWt := newWriteToMock(0)
+			restartWatcher := NewWatcher(wMetrics, nil, nil, "", restartWt, subdir, false, false, false, nil)
+			restartWatcher.SetMetrics()
+			restartWatcher.MaxSegment = 1
+			require.NoError(t, restartWatcher.Run())
+			require.Equal(t, seriesCount-tc.segments, restartWt.checkNumSeries())
+
+			_, err = Checkpoint(promslog.NewNopLogger(), w, 2, 4, func(chunks.HeadSeriesRef) bool { return true }, 0, true)
 			require.NoError(t, err)
 
 			err = w.Truncate(5)
@@ -738,6 +746,14 @@ func TestCheckpointSeriesReset(t *testing.T) {
 			require.Eventually(t, func() bool {
 				return wt.checkNumSeries() == tc.segments
 			}, 20*time.Second, 1*time.Second)
+
+			// When Run restarts on a checkpoint that garbageCollectSeries never processed,
+			// it must call SeriesReset to drop series from segments older than the checkpoint.
+			restartWatcher.MaxSegment = cpi + 1
+			require.NoError(t, restartWatcher.Run())
+			for ref, seg := range restartWt.seriesSegmentIndexes {
+				require.GreaterOrEqual(t, seg, cpi, "series %d from segment %d was not garbage collected on Run restart", ref, seg)
+			}
 		})
 	}
 }

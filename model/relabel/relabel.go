@@ -26,7 +26,12 @@ import (
 	"github.com/prometheus/common/model"
 
 	"github.com/prometheus/prometheus/model/labels"
+	"github.com/prometheus/prometheus/model/metadata"
+	"github.com/prometheus/prometheus/schema"
 )
+
+// metricHelpLabel is the synthetic label name used to read and mutate metric help metadata during relabeling.
+const metricHelpLabel = "__help__"
 
 var (
 	// relabelTargetLegacy allows targeting labels with legacy Prometheus character set, plus ${<var>} variables for dynamic characters from source the metrics.
@@ -188,6 +193,12 @@ func (c *Config) Validate(nameValidationScheme model.ValidationScheme) error {
 		}
 	}
 
+	if c.Action == Replace && c.TargetLabel == model.MetricTypeLabel && !varInRegexTemplate(c.Replacement) {
+		if !schema.IsValidMetricType(model.MetricType(c.Replacement)) && c.Replacement != "" && c.Replacement != string(model.MetricTypeUnknown) {
+			return fmt.Errorf("%q is invalid 'replacement' for %s action on %s", c.Replacement, c.Action, model.MetricTypeLabel)
+		}
+	}
+
 	return nil
 }
 
@@ -273,7 +284,7 @@ func (re Regexp) String() string {
 // The rules are applied in order of input. Returns false if the rule says to drop.
 func ProcessBuilder(lb *labels.Builder, cfgs ...*Config) (keep bool) {
 	for _, cfg := range cfgs {
-		keep = relabel(cfg, lb)
+		keep = relabel(cfg, lb, false)
 		if !keep {
 			return false
 		}
@@ -281,7 +292,76 @@ func ProcessBuilder(lb *labels.Builder, cfgs ...*Config) (keep bool) {
 	return true
 }
 
-func relabel(cfg *Config, lb *labels.Builder) (keep bool) {
+// usesMetadata returns true if any relabel configuration reads or writes
+// metric metadata (__type__, __unit__, or __help__).
+func usesMetadata(cfgs ...*Config) bool {
+	for _, cfg := range cfgs {
+		for _, sl := range cfg.SourceLabels {
+			if isMetadataRelabelName(string(sl)) {
+				return true
+			}
+		}
+		if isMetadataRelabelName(cfg.TargetLabel) || varInRegexTemplate(cfg.TargetLabel) {
+			return true
+		}
+	}
+	return false
+}
+
+func isMetadataRelabelName(ln string) bool {
+	return ln == model.MetricTypeLabel || ln == model.MetricUnitLabel || ln == metricHelpLabel
+}
+
+// setLabel sets name to val on lb, deleting __type__ when set to "unknown" during
+// metadata relabeling so subsequent rules consistently read empty __type__ for unknown types.
+func setLabel(lb *labels.Builder, name, val string, withMetadata bool) {
+	if withMetadata && name == model.MetricTypeLabel && val == string(model.MetricTypeUnknown) {
+		lb.Del(name)
+		return
+	}
+	lb.Set(name, val)
+}
+
+// ProcessBuilderWithMetadata applies relabeling configurations (rules) to the labels in lb
+// and metadata in meta. Any pre-existing __type__, __unit__, or __help__ labels in lb on entry
+// are replaced by meta (or stripped when empty in meta), and removed from lb before returning.
+// Bulk label actions (labeldrop, labelkeep, labelmap) only operate on regular series labels
+// and leave metadata untouched.
+func ProcessBuilderWithMetadata(lb *labels.Builder, meta metadata.Metadata, cfgs ...*Config) (keep bool, _ metadata.Metadata) {
+	if !usesMetadata(cfgs...) {
+		lb.Del(model.MetricTypeLabel, model.MetricUnitLabel, metricHelpLabel)
+		if !ProcessBuilder(lb, cfgs...) {
+			return false, metadata.Metadata{}
+		}
+		lb.Del(model.MetricTypeLabel, model.MetricUnitLabel, metricHelpLabel)
+		return true, meta
+	}
+
+	setLabel(lb, model.MetricTypeLabel, string(meta.Type), true)
+	lb.Set(model.MetricUnitLabel, meta.Unit)
+	lb.Set(metricHelpLabel, meta.Help)
+
+	for _, cfg := range cfgs {
+		if !relabel(cfg, lb, true) {
+			return false, metadata.Metadata{}
+		}
+	}
+
+	t := model.MetricType(lb.Get(model.MetricTypeLabel))
+	switch {
+	case schema.IsValidMetricType(t):
+		meta.Type = t
+	case t != "" || meta.Type != "":
+		meta.Type = model.MetricTypeUnknown
+	}
+	meta.Unit = lb.Get(model.MetricUnitLabel)
+	meta.Help = lb.Get(metricHelpLabel)
+
+	lb.Del(model.MetricTypeLabel, model.MetricUnitLabel, metricHelpLabel)
+	return true, meta
+}
+
+func relabel(cfg *Config, lb *labels.Builder, withMetadata bool) (keep bool) {
 	var va [16]string
 	values := va[:0]
 	if len(cfg.SourceLabels) > cap(values) {
@@ -313,7 +393,7 @@ func relabel(cfg *Config, lb *labels.Builder) (keep bool) {
 		// Fast path to add or delete label pair.
 		if val == "" && cfg.Regex == DefaultRelabelConfig.Regex &&
 			!varInRegexTemplate(cfg.TargetLabel) && !varInRegexTemplate(cfg.Replacement) {
-			lb.Set(cfg.TargetLabel, cfg.Replacement)
+			setLabel(lb, cfg.TargetLabel, cfg.Replacement, withMetadata)
 			break
 		}
 
@@ -327,13 +407,9 @@ func relabel(cfg *Config, lb *labels.Builder) (keep bool) {
 			break
 		}
 		res := cfg.Regex.ExpandString([]byte{}, cfg.Replacement, val, indexes)
-		if len(res) == 0 {
-			lb.Del(target)
-			break
-		}
-		lb.Set(target, string(res))
+		setLabel(lb, target, string(res), withMetadata)
 	case Lowercase:
-		lb.Set(cfg.TargetLabel, strings.ToLower(val))
+		setLabel(lb, cfg.TargetLabel, strings.ToLower(val), withMetadata)
 	case Uppercase:
 		lb.Set(cfg.TargetLabel, strings.ToUpper(val))
 	case HashMod:
@@ -343,19 +419,31 @@ func relabel(cfg *Config, lb *labels.Builder) (keep bool) {
 		lb.Set(cfg.TargetLabel, strconv.FormatUint(mod, 10))
 	case LabelMap:
 		lb.Range(func(l labels.Label) {
+			if withMetadata && isMetadataRelabelName(l.Name) {
+				return
+			}
 			if cfg.Regex.MatchString(l.Name) {
 				res := cfg.Regex.ReplaceAllString(l.Name, cfg.Replacement)
+				if withMetadata && isMetadataRelabelName(res) {
+					return
+				}
 				lb.Set(res, l.Value)
 			}
 		})
 	case LabelDrop:
 		lb.Range(func(l labels.Label) {
+			if withMetadata && isMetadataRelabelName(l.Name) {
+				return
+			}
 			if cfg.Regex.MatchString(l.Name) {
 				lb.Del(l.Name)
 			}
 		})
 	case LabelKeep:
 		lb.Range(func(l labels.Label) {
+			if withMetadata && isMetadataRelabelName(l.Name) {
+				return
+			}
 			if !cfg.Regex.MatchString(l.Name) {
 				lb.Del(l.Name)
 			}

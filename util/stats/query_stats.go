@@ -305,11 +305,6 @@ type QuerySamples struct {
 	Interval           int64
 }
 
-type Stats struct {
-	TimerStats  *QueryTimers
-	SampleStats *QuerySamples
-}
-
 func (qs *QuerySamples) InitStepTracking(start, end, interval int64) {
 	if qs == nil {
 		return

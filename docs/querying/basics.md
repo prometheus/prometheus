@@ -106,6 +106,11 @@ Example:
     'these are unescaped: \n \\ \t'
     `these are not unescaped: \n ' " \t`
 
+This can be useful for [`regular expressions`](#regular-expressions) in [`label_replace()`](functions.md#label_replace), for example:
+
+    label_replace(up, "host", "$1", "instance", "(.*)\\.example\\.com")
+    label_replace(up, "host", "$1", "instance", `(.*)\.example\.com`)
+
 ### Float literals and time durations
 
 Scalar float values can be written as literal integer or floating-point numbers
@@ -219,6 +224,10 @@ The following functions can be used inside duration expressions:
 For example, `max_of(step(), 5s)` ensures the duration is never shorter than
 `5s`, while `min_of(range(), 1h)` caps the duration at `1h`.
 
+Like the scalar functions, `min_of` and `max_of` ignore a `NaN` argument if the
+other argument is not `NaN`. If both arguments are `NaN`, the result is `NaN`.
+A duration expression whose final result is `NaN` or infinite is rejected.
+
 **Note**: Duration expressions are not supported in the [`@` modifier](#modifier).
 
 Examples of equivalent durations:
@@ -281,6 +290,11 @@ For example, this selects all `http_requests_total` time series for `staging`,
 
     http_requests_total{environment=~"staging|testing|development",method!="GET"}
 
+Label matcher values follow the same quoting and escaping rules as [string literals](#string-literals). This can be useful for [`regular expressions`](#regular-expressions) on the regex-match selectors, for example:
+
+    {le=~"0\\.5"}
+    {le=~`0\.5`}
+
 Label matchers that match empty label values also select all time series that
 do not have the specific label set at all. It is possible to have multiple matchers for the same label name.
 
@@ -336,6 +350,63 @@ The metric name must not be one of the keywords `bool`, `on`, `ignoring`, `group
 A workaround for this restriction is to use the `__name__` label:
 
     {__name__="on"} # Good!
+
+### Metric and label names
+
+Metric and label names containing characters outside the traditional ASCII name
+syntax can be quoted. A quoted metric name goes inside the selector's braces:
+
+```promql
+{"http.server.request.duration", "service.name"="api"}
+```
+
+The same selector can be written without quotes:
+
+```promql
+http.server.request.duration{service.name="api"}
+```
+
+The printer quotes names outside the traditional ASCII syntax by default for
+compatibility with earlier Prometheus 3.x releases. Enable
+`--enable-feature=promql-unquoted-utf8-names` to print these names without quotes.
+This flag does not affect which input is accepted.
+
+Unquoted names follow these rules:
+
+| Name | First character | Subsequent characters |
+| --- | --- | --- |
+| Metric | Unicode letter, `_`, or `:` | Unicode letter, ASCII digit `0`–`9`, `_`, `:`, or `.` |
+| Label | Unicode letter or `_` | Unicode letter, ASCII digit `0`–`9`, `_`, or `.` |
+
+Unicode letters are the characters recognized by Go's `unicode.IsLetter`
+(Unicode category L), using the Unicode version bundled with the Go compiler.
+These rules also apply to grouping labels, vector matching, and labels in
+`group_left` and `group_right` modifiers, except that these may also contain `:`
+where metric names may, as in `sum by (a:b) (foo)`, for compatibility with
+earlier versions. Existing keyword restrictions still apply, and string
+arguments containing label names remain strings.
+
+Dots are ordinary name characters: `resource.k8s.namespace`, `target.info`, and
+`histogram.count` have no metadata lookup, namespace, or histogram field access
+semantics. Consecutive and trailing dots are allowed, as in `foo..bar` and `foo.`.
+Names beginning with a dot or digit still require quoting; `.5` is a numeric
+literal. Combining marks, non-ASCII digits, emoji, spaces, and other punctuation
+also require quoting.
+
+`Inf` and `NaN` (case insensitive) remain numeric literals, as do durations such
+as `5m`. To select metrics with these names, use quoted selectors such as
+`{"Inf"}`, `{"NaN"}`, or `{"5m"}`. Dotted names such as `Inf.total` and `NaN.total`
+are metric names.
+
+Names retain their exact spelling without Unicode normalization or case folding.
+For example, Latin `a` and Cyrillic `а` are distinct names. Precomposed `ö` can be
+unquoted, while `o` followed by a combining diaeresis requires quotes and denotes
+a different name.
+
+Quoted and unquoted spellings of the same name select the same series. Quoting
+remains supported and is required when targeting older PromQL parsers or servers
+without support for these names. These syntax rules do not change storage, ingestion
+validation, text exposition, or metric name translation.
 
 ### Range Vector Selectors
 

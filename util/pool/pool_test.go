@@ -48,3 +48,17 @@ func TestPool(t *testing.T) {
 		testPool.Put(ret)
 	}
 }
+
+func TestPoolRejectsFactorAtOrBelowOne(t *testing.T) {
+	// A factor of 1 would repeat the same size forever, and anything smaller
+	// would not grow the bucket sizes at all.
+	require.Panics(t, func() { New(1, 10, 1, makeFunc) })
+	require.Panics(t, func() { New(1, 10, 0.5, makeFunc) })
+}
+
+func TestPoolAdvancesWithFractionalFactor(t *testing.T) {
+	// A factor only slightly above 1 rounds back to the same integer, which would
+	// make the loop run forever; the sequence must advance by at least one.
+	p := New(1, 5, 1.01, makeFunc)
+	require.Equal(t, []int{1, 2, 3, 4, 5}, p.sizes)
+}

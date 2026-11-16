@@ -16,6 +16,7 @@ package agent
 import (
 	"iter"
 	"sync"
+	"unique"
 
 	"github.com/prometheus/prometheus/model/exemplar"
 	"github.com/prometheus/prometheus/model/labels"
@@ -34,7 +35,7 @@ type memSeries struct {
 	// stale.
 	lastTs int64
 
-	meta *metadata.Metadata
+	meta unique.Handle[metadata.Metadata]
 }
 
 // updateTimestamp obtains the lock on s and will attempt to update lastTs.
@@ -61,8 +62,8 @@ func (m *memSeries) LastSampleTimestamp() int64 {
 	return m.lastTs
 }
 
-// Metadata returns the metadata associated with the series, or nil if none is set.
-func (m *memSeries) Metadata() *metadata.Metadata {
+// Metadata returns the metadata handle associated with the series, or the zero handle if none is set.
+func (m *memSeries) Metadata() unique.Handle[metadata.Metadata] {
 	m.Lock()
 	defer m.Unlock()
 	return m.meta
@@ -350,7 +351,7 @@ type seriesSnapshot struct {
 	ref    chunks.HeadSeriesRef
 	lset   labels.Labels
 	lastTs int64
-	meta   *metadata.Metadata
+	meta   unique.Handle[metadata.Metadata]
 }
 
 func (s *seriesSnapshot) Ref() chunks.HeadSeriesRef {
@@ -365,7 +366,7 @@ func (s *seriesSnapshot) LastSampleTimestamp() int64 {
 	return s.lastTs
 }
 
-func (s *seriesSnapshot) Metadata() *metadata.Metadata {
+func (s *seriesSnapshot) Metadata() unique.Handle[metadata.Metadata] {
 	return s.meta
 }
 
@@ -425,7 +426,7 @@ var (
 type deletedSeries struct {
 	ref    chunks.HeadSeriesRef
 	labels labels.Labels
-	meta   *metadata.Metadata
+	meta   unique.Handle[metadata.Metadata]
 }
 
 func (series deletedSeries) Ref() chunks.HeadSeriesRef {
@@ -436,6 +437,6 @@ func (series deletedSeries) Labels() labels.Labels {
 	return series.labels
 }
 
-func (series deletedSeries) Metadata() *metadata.Metadata {
+func (series deletedSeries) Metadata() unique.Handle[metadata.Metadata] {
 	return series.meta
 }
