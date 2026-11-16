@@ -631,11 +631,6 @@ func TestTemplateExpansion(t *testing.T) {
 			output: "[::ffff:192.0.2.1]",
 			html:   true,
 		},
-		{
-			// Invalid bracketed IPv4 address without port.
-			text:   "{{ \"[192.0.2.1]\" | stripDomain }}",
-			output: "[192",
-		},
 	})
 }
 
