@@ -14,17 +14,82 @@
 """Unit tests for generate_triage_board.py."""
 import datetime
 import importlib.util
+import io
+import json
 import os
 import shutil
 import sys
 import tempfile
 import unittest
+from unittest import mock
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import generate_triage_board as gtb  # noqa: E402
 
 
 class TestGenerateTriageBoard(unittest.TestCase):
+    def test_cli_default_limit_includes_older_prometheus_pr(self):
+        # GitHub returns all open PRs by updatedAt, including bots and drafts.
+        raw_prs = []
+        for index in range(160):
+            number = 20100 if index == 140 else index + 1
+            updated = (
+                datetime.datetime(2026, 11, 16, tzinfo=datetime.timezone.utc)
+                - datetime.timedelta(hours=index)
+            ).isoformat()
+            raw_prs.append({
+                "number": number,
+                "title": "promtool: support CFAccess",
+                "url": f"https://github.com/prometheus/prometheus/pull/{number}",
+                "author": {"login": "dependabot[bot]" if index == 0 else "jaymzh"},
+                "authorAssociation": "CONTRIBUTOR",
+                "updatedAt": updated,
+                "isDraft": index == 1,
+                "mergeable": "MERGEABLE",
+                "commits": {"nodes": [{"commit": {
+                    "message": "promtool: support CFAccess\n\nSigned-off-by: Jay <jay@example.com>",
+                    "committedDate": updated,
+                    "statusCheckRollup": {"state": "SUCCESS"},
+                }}]},
+            })
+
+        for flags, expected_limit in (([], 150), (["--limit", "100"], 100), (["-l", "151"], 151)):
+            with self.subTest(flags=flags):
+                pages = []
+
+                def github_page(cmd):
+                    fields = dict(arg.split("=", 1) for arg in cmd if "=" in arg)
+                    start = int(fields.get("after", "0"))
+                    end = min(start + int(fields["limit"]), len(raw_prs))
+                    pages.append((start, end))
+                    return json.dumps({"data": {"repository": {"pullRequests": {
+                        "totalCount": len(raw_prs),
+                        "nodes": raw_prs[start:end],
+                        "pageInfo": {"hasNextPage": end < len(raw_prs), "endCursor": str(end)},
+                    }}}})
+
+                output = io.StringIO()
+                with (
+                    mock.patch.object(sys, "argv", ["generate_triage_board.py", "--repo", "prometheus/prometheus", *flags]),
+                    mock.patch.object(gtb, "run_cmd", side_effect=github_page),
+                    mock.patch.object(gtb, "fetch_file_from_repo", return_value=None),
+                    mock.patch.object(gtb.sc, "fetch_repo_contributor_profiles", return_value={}),
+                    mock.patch.object(sys, "stdout", output),
+                ):
+                    gtb.main()
+
+                md = output.getvalue()
+                if expected_limit >= 141:
+                    self.assertTrue("[#20100](" in md, "PR #20100 at updatedAt rank 141 fell off the default board")
+                else:
+                    self.assertNotIn("[#20100](", md)
+                self.assertEqual(pages[-1][1], expected_limit)
+                self.assertIn(f"up to {expected_limit} most recently active per repo", md)
+                self.assertNotIn("[#1](", md)
+                self.assertNotIn("[#2](", md)
+                self.assertIn(f"[#{expected_limit}](", md)
+                self.assertNotIn(f"[#{expected_limit + 1}](", md)
+
     def test_waiting_queue_sorted_by_approved_then_trust_plus_aging(self):
         now = datetime.datetime(2026, 11, 2, 5, 0, tzinfo=datetime.timezone.utc)
         prs = [
