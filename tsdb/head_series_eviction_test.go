@@ -379,12 +379,11 @@ func TestSeriesEviction_QueryOpenedAfterWaitingForReaders(t *testing.T) {
 					removed := evictionTestEvictedSeries - len(tt.lateSeries)
 					for _, i := range tt.exemplarSeries {
 						s := db.Head().series.getByID(chunks.HeadSeriesRef(testDB.evictedRefs[i]))
-						require.NotNil(t, s, "the exemplar keeps the series identity")
-						if !slices.Contains(tt.lateSeries, i) {
-							removed--
-							require.Zero(t, s.headChunkCount.Load())
-							require.Empty(t, s.mmappedChunks)
+						if slices.Contains(tt.lateSeries, i) {
+							require.NotNil(t, s, "a late sample keeps the series, regardless of its exemplar")
+							continue
 						}
+						require.Nil(t, s, "the series is evicted immediately, not kept chunk-less for its exemplar")
 					}
 					require.Equal(t, uint64(evictionTestSeries), numSeriesInCallback, "the series must be removed after the callback")
 					require.Equal(t, uint64(evictionTestSeries-removed), db.Head().NumSeries())
@@ -508,10 +507,10 @@ func TestSeriesEviction_OnlyQueriesSkipRemovedSeries(t *testing.T) {
 }
 
 // TestSeriesEviction_OtherNotFoundErrorsAreReturned verifies that query readers do not skip missing chunks
-// unless the series or the particular chunk was removed by the eviction.
+// unless the series was removed by the eviction.
 func TestSeriesEviction_OtherNotFoundErrorsAreReturned(t *testing.T) {
 	for _, truncate := range []bool{false, true} {
-		t.Run(fmt.Sprintf("chunks reclaimed=%t", truncate), func(t *testing.T) {
+		t.Run(fmt.Sprintf("evicted=%t", truncate), func(t *testing.T) {
 			testDB := newSeriesEvictionTestDB(t, 0)
 			head := testDB.db.Head()
 			evicting := &evictedSeries{refs: testDB.evictedRefs}
@@ -520,29 +519,46 @@ func TestSeriesEviction_OtherNotFoundErrorsAreReturned(t *testing.T) {
 				require.NoError(t, testDB.db.CompactSelectedSeries(testDB.evictedRefs))
 			}
 
-			// Both series remain in the head, and neither ever had chunk 1000.
-			tests := map[string]storage.SeriesRef{
-				"a series being evicted":     testDB.evictedRefs[0],
-				"a series not being evicted": testDB.evictedRefs[len(testDB.evictedRefs)-1] + 1,
+			// Missing in-order chunks are skipped only for series removed by this eviction,
+			// including chunk IDs the series never had.
+			tests := map[string]struct {
+				ref     storage.SeriesRef
+				skipped bool
+			}{
+				"a series being evicted":     {ref: testDB.evictedRefs[0], skipped: truncate},
+				"a series not being evicted": {ref: testDB.evictedRefs[len(testDB.evictedRefs)-1] + 1},
 			}
-			for name, ref := range tests {
+			for name, tc := range tests {
 				t.Run(name, func(t *testing.T) {
-					require.NotNil(t, head.series.getByID(chunks.HeadSeriesRef(ref)), "the series must be in the head")
-					missingChunk := chunks.Meta{Ref: chunks.ChunkRef(chunks.NewHeadChunkRef(chunks.HeadSeriesRef(ref), 1000))}
+					if tc.skipped {
+						require.Nil(t, head.series.getByID(chunks.HeadSeriesRef(tc.ref)), "the series must be fully evicted")
+					} else {
+						require.NotNil(t, head.series.getByID(chunks.HeadSeriesRef(tc.ref)), "the series must be in the head")
+					}
+					missingChunk := chunks.Meta{Ref: chunks.ChunkRef(chunks.NewHeadChunkRef(chunks.HeadSeriesRef(tc.ref), 1000))}
+					readsBefore := prom_testutil.ToFloat64(head.metrics.chunkReadsOfRemovedSeries)
 
 					reader := &headChunkReader{head: head, mint: 0, maxt: 1000, evicting: evicting}
 					_, _, err := reader.ChunkOrIterable(missingChunk)
-					require.ErrorIs(t, err, storage.ErrNotFound)
-					_, _, _, err = reader.ChunkOrIterableWithCopy(missingChunk)
-					require.ErrorIs(t, err, storage.ErrNotFound)
+					_, _, _, err2 := reader.ChunkOrIterableWithCopy(missingChunk)
 
 					oooReader := NewHeadAndOOOChunkReader(head, 0, 1000, reader, nil, 0)
-					_, _, err = oooReader.ChunkOrIterable(missingChunk)
-					require.ErrorIs(t, err, storage.ErrNotFound)
-					_, _, _, err = oooReader.ChunkOrIterableWithCopy(missingChunk)
-					require.ErrorIs(t, err, storage.ErrNotFound)
+					_, _, err3 := oooReader.ChunkOrIterable(missingChunk)
+					_, _, _, err4 := oooReader.ChunkOrIterableWithCopy(missingChunk)
 
-					require.Equal(t, float64(0), prom_testutil.ToFloat64(head.metrics.chunkReadsOfRemovedSeries))
+					if tc.skipped {
+						require.NoError(t, err)
+						require.NoError(t, err2)
+						require.NoError(t, err3)
+						require.NoError(t, err4)
+						require.Equal(t, readsBefore+4, prom_testutil.ToFloat64(head.metrics.chunkReadsOfRemovedSeries))
+					} else {
+						require.ErrorIs(t, err, storage.ErrNotFound)
+						require.ErrorIs(t, err2, storage.ErrNotFound)
+						require.ErrorIs(t, err3, storage.ErrNotFound)
+						require.ErrorIs(t, err4, storage.ErrNotFound)
+						require.Equal(t, readsBefore, prom_testutil.ToFloat64(head.metrics.chunkReadsOfRemovedSeries))
+					}
 				})
 			}
 		})
