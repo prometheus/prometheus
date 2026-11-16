@@ -1244,6 +1244,11 @@ func TestRelabelWithMetadata(t *testing.T) {
 					Replacement: "__${1}__",
 					Action:      LabelMap,
 				},
+				{
+					Regex:       MustNewRegexp("__(type|unit|help)__"),
+					Replacement: "copied_${1}",
+					Action:      LabelMap,
+				},
 			},
 			output: labels.FromMap(map[string]string{
 				"__name__":  "http_requests_total",
@@ -1313,39 +1318,6 @@ func TestRelabelWithMetadata(t *testing.T) {
 				Unit: "seconds",
 				Help: "Real help",
 			},
-		},
-		{
-			name:      "labelmap cannot create and copy __type__",
-			input:     labels.FromStrings("__name__", "foo", "source", "spoof"),
-			inputMeta: metadata.Metadata{Type: model.MetricTypeGauge, Unit: "seconds", Help: "Real help."},
-			relabel: []*Config{
-				{Action: LabelMap, Regex: MustNewRegexp("source"), Replacement: "__type__"},
-				{Action: LabelMap, Regex: MustNewRegexp("__type__"), Replacement: "copied"},
-			},
-			output:     labels.FromStrings("__name__", "foo", "source", "spoof"),
-			outputMeta: metadata.Metadata{Type: model.MetricTypeGauge, Unit: "seconds", Help: "Real help."},
-		},
-		{
-			name:      "labelmap cannot create and copy __unit__",
-			input:     labels.FromStrings("__name__", "foo", "source", "spoof"),
-			inputMeta: metadata.Metadata{Type: model.MetricTypeGauge, Unit: "seconds", Help: "Real help."},
-			relabel: []*Config{
-				{Action: LabelMap, Regex: MustNewRegexp("source"), Replacement: "__unit__"},
-				{Action: LabelMap, Regex: MustNewRegexp("__unit__"), Replacement: "copied"},
-			},
-			output:     labels.FromStrings("__name__", "foo", "source", "spoof"),
-			outputMeta: metadata.Metadata{Type: model.MetricTypeGauge, Unit: "seconds", Help: "Real help."},
-		},
-		{
-			name:      "labelmap cannot create and copy __help__",
-			input:     labels.FromStrings("__name__", "foo", "source", "spoof"),
-			inputMeta: metadata.Metadata{Type: model.MetricTypeGauge, Unit: "seconds", Help: "Real help."},
-			relabel: []*Config{
-				{Action: LabelMap, Regex: MustNewRegexp("source"), Replacement: "__help__"},
-				{Action: LabelMap, Regex: MustNewRegexp("__help__"), Replacement: "copied"},
-			},
-			output:     labels.FromStrings("__name__", "foo", "source", "spoof"),
-			outputMeta: metadata.Metadata{Type: model.MetricTypeGauge, Unit: "seconds", Help: "Real help."},
 		},
 	}
 

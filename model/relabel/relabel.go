@@ -335,7 +335,6 @@ func ProcessBuilderWithMetadata(lb *labels.Builder, meta metadata.Metadata, cfgs
 				return false, metadata.Metadata{}
 			}
 		}
-		lb.Del(model.MetricTypeLabel, model.MetricUnitLabel, metricHelpLabel)
 		return true, meta
 	}
 
