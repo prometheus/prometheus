@@ -1380,14 +1380,9 @@ func TestOpen_VariousBlockStates(t *testing.T) {
 	require.True(t, os.IsNotExist(err))
 }
 
-// TestExemplarAfterLastSampleSurvivesCompaction verifies that the regular head-truncation
-// path (Head.gc, triggered by ordinary compaction) keeps a series with a recent exemplar
-// alive, chunk-less, so the exemplar survives WAL cleanup and a restart. Head.gcSeries
-// (selected/stale compaction) does not provide this guarantee: it evicts and tombstones a
-// series immediately regardless of any exemplar, the same as it would without one, so an
-// exemplar on a gcSeries-evicted series may or may not survive a restart, just like it may
-// or may not survive the circular exemplar buffer overwriting it. That lack of a guarantee
-// isn't worth asserting here one way or the other.
+// TestExemplarAfterLastSampleSurvivesCompaction verifies that ordinary compaction
+// retains an empty series while its exemplar remains eligible for replay,
+// including through checkpointing and restarts.
 func TestExemplarAfterLastSampleSurvivesCompaction(t *testing.T) {
 	t.Parallel()
 	for _, enableSnapshot := range []bool{false, true} {
@@ -1425,7 +1420,7 @@ func TestExemplarAfterLastSampleSurvivesCompaction(t *testing.T) {
 			require.NoError(t, err)
 			require.NoError(t, app.Commit())
 
-			// Ordinary compaction is triggered by the unrelated ingestion below.
+			// Advance the head with another series so ordinary compaction can run.
 			activeLabels := labels.FromStrings("name", "active")
 			app = db.AppenderV2(ctx)
 			activeRef, err := app.Append(0, activeLabels, 0, blockRange*3/2+101, 1, nil, nil, storage.AOptions{})
@@ -1434,8 +1429,8 @@ func TestExemplarAfterLastSampleSurvivesCompaction(t *testing.T) {
 			require.NoError(t, db.Compact(ctx))
 			require.Len(t, db.Blocks(), 1)
 
-			// The regular head-truncation path protects a series with a recent
-			// exemplar by keeping its identity chunk-less.
+			// Regular GC retains the series without chunks while its exemplar
+			// remains eligible for replay.
 			series := db.Head().series.getByID(chunks.HeadSeriesRef(ref))
 			require.NotNil(t, series)
 			require.Nil(t, series.headChunks)
@@ -1478,8 +1473,8 @@ func TestExemplarAfterLastSampleSurvivesCompaction(t *testing.T) {
 			testutil.RequireEqual(t, expected, afterRestart, "the exemplar must survive ordinary compaction and restart")
 			require.Zero(t, prom_testutil.ToFloat64(reopened.head.metrics.walReplayUnknownRefsTotal.WithLabelValues("exemplars")))
 
-			// Replay must restore the exemplar's eviction protection, so another compaction
-			// and restart cannot lose an exemplar that survived the first restart.
+			// Verify that recovery preserves exemplar protection through another
+			// compaction and restart.
 			app = reopened.AppenderV2(ctx)
 			_, err = app.Append(0, activeLabels, 0, blockRange*11/2+101, 4, nil, nil, storage.AOptions{})
 			require.NoError(t, err)
@@ -1499,13 +1494,8 @@ func TestExemplarAfterLastSampleSurvivesCompaction(t *testing.T) {
 }
 
 // TestSeriesCompactionReclaimsChunksWithExemplars verifies that selected and stale
-// compaction evict a series and release its chunks immediately, exemplar or not.
-// Concurrent appends must prevent eviction entirely, in which case there is no
-// tombstone and the exemplar is guaranteed to survive replay like any other data.
-// Once the series is actually evicted, its samples still survive replay (maxt alone
-// protects the declaration long enough), but its exemplar's survival is not
-// guaranteed: replay recreates the declaration only transiently before its
-// tombstone deletes it again, racing the exemplar's own replay processing.
+// compaction fully evict series with exemplars unless concurrent sample appends
+// prevent eviction.
 func TestSeriesCompactionReclaimsChunksWithExemplars(t *testing.T) {
 	t.Parallel()
 	for _, compaction := range []string{"selected", "stale"} {
@@ -1611,14 +1601,11 @@ func TestSeriesCompactionReclaimsChunksWithExemplars(t *testing.T) {
 						require.Positive(t, series.headChunkCount.Load(), "unpersisted samples must keep their chunks")
 						require.Equal(t, removedBefore, prom_testutil.ToFloat64(db.Head().metrics.chunksRemoved))
 					} else {
-						// Without exemplar protection, the series is evicted and
-						// tombstoned immediately, not kept around chunk-less.
 						require.Equal(t, uint64(1), db.Head().NumSeries(), "only the active series remains")
 						require.Nil(t, db.Head().series.getByID(seriesRef), "the series is fully evicted, not kept chunk-less")
 						require.Equal(t, removedBefore+float64(chunkCount), prom_testutil.ToFloat64(db.Head().metrics.chunksRemoved))
 						require.Equal(t, float64(1), prom_testutil.ToFloat64(db.Head().metrics.chunks), "only the active series retains a chunk")
-						// Compacting again must neither find the already-evicted series,
-						// nor write another block, nor count the removed chunks twice.
+						// Repeating compaction must not write another block or count removed chunks again.
 						compact(db)
 						require.Len(t, db.Blocks(), 1)
 						require.Equal(t, removedBefore+float64(chunkCount), prom_testutil.ToFloat64(db.Head().metrics.chunksRemoved))
@@ -1642,28 +1629,21 @@ func TestSeriesCompactionReclaimsChunksWithExemplars(t *testing.T) {
 						testutil.RequireEqual(t, []exemplar.QueryResult{{SeriesLabels: seriesLabels, Exemplars: []exemplar.Exemplar{e}}}, got)
 					}
 					checkSamples(db)
-					checkExemplar(db) // The live exemplar storage is unaffected by eviction.
+					checkExemplar(db) // Already-stored exemplars remain queryable after eviction.
 					require.NoError(t, db.Close())
 					reopened := newTestDB(t, withDir(db.Dir()), withOpts(opts))
 					reopened.DisableCompactions()
-					// Samples are always recoverable: maxt alone protects the declaration
-					// long enough, regardless of any exemplar.
+					// Sample queries include blocks, so also check for unknown sample refs during replay.
 					checkSamples(reopened)
 					require.Zero(t, prom_testutil.ToFloat64(reopened.head.metrics.walReplayUnknownRefsTotal.WithLabelValues("samples")))
 					if concurrentAppend {
-						// The series was never evicted, so there is no tombstone to race
-						// the exemplar's own replay: it is guaranteed to survive, the
-						// same as with ordinary compaction.
+						// Concurrent sample appends prevented eviction, so the exemplar
+						// must survive this restart.
 						checkExemplar(reopened)
 						require.Zero(t, prom_testutil.ToFloat64(reopened.head.metrics.walReplayUnknownRefsTotal.WithLabelValues("exemplars")))
 					} else {
-						// Without exemplar protection, the declaration survives replay
-						// only transiently: its tombstone, written at eviction time,
-						// deletes it again, racing the exemplar's own replay processing.
-						// Whether the exemplar itself survives that race isn't
-						// guaranteed, the same as it isn't guaranteed to survive the
-						// circular exemplar buffer overwriting it, so it's not worth
-						// asserting either way here.
+						// Tombstone and exemplar replay run in separate workers, so
+						// exemplar recovery is not asserted for evicted series.
 						require.Nil(t, reopened.Head().series.getByID(seriesRef))
 					}
 				})

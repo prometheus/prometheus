@@ -2799,10 +2799,8 @@ func (s *stripeSeries) gc(mint int64, minOOOMmapRef chunks.ChunkDiskMapperRef) (
 // postings, tombstones and WAL expiries accordingly. Series with pending commits
 // or samples after maxt are skipped. The caller's shouldEvict predicate runs under
 // the series lock and must reject series with unpersisted samples or out-of-order data.
-// A deleted series is always evicted and tombstoned, exemplar or not: there is no
-// guarantee that an exemplar on an evicted series will or won't survive a subsequent
-// restart, the same as there is no guarantee against the circular exemplar buffer
-// overwriting it.
+// Exemplars do not prevent eviction. Pending exemplars may be discarded, and
+// exemplar recovery after a restart is not guaranteed.
 //
 // The returned references are the series that got deleted.
 func (h *Head) gcSeries(seriesRefs []storage.SeriesRef, maxt int64, shouldEvict func(*memSeries) bool) (map[storage.SeriesRef]struct{}, error) {
@@ -2853,11 +2851,8 @@ func (h *Head) gcSeries(seriesRefs []storage.SeriesRef, maxt int64, shouldEvict 
 
 	if h.wal != nil {
 		h.walExpiriesMtx.Lock()
-		// Keep series records until we're past timestamp maxt because the WAL will
-		// still have sample records with this ref ID. If we didn't keep these series
-		// records then on start up when we replay the WAL, or any other code that
-		// reads the WAL, wouldn't be able to use those samples since we would have no
-		// labels for that ref ID.
+		// Retain series declarations while WAL samples up to maxt may still be replayed.
+		// Preserve any later expiry already recorded.
 		for ref := range deleted {
 			hRef := chunks.HeadSeriesRef(ref)
 			h.walExpiries[hRef] = max(maxt, h.walExpiries[hRef])

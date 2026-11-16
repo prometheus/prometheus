@@ -383,7 +383,6 @@ func TestSeriesEviction_QueryOpenedAfterWaitingForReaders(t *testing.T) {
 							require.NotNil(t, s, "a late sample keeps the series, regardless of its exemplar")
 							continue
 						}
-						// Without exemplar protection, the series is evicted immediately like any other.
 						require.Nil(t, s, "the series is evicted immediately, not kept chunk-less for its exemplar")
 					}
 					require.Equal(t, uint64(evictionTestSeries), numSeriesInCallback, "the series must be removed after the callback")
@@ -508,7 +507,7 @@ func TestSeriesEviction_OnlyQueriesSkipRemovedSeries(t *testing.T) {
 }
 
 // TestSeriesEviction_OtherNotFoundErrorsAreReturned verifies that query readers do not skip missing chunks
-// unless the series or the particular chunk was removed by the eviction.
+// unless the series was removed by the eviction.
 func TestSeriesEviction_OtherNotFoundErrorsAreReturned(t *testing.T) {
 	for _, truncate := range []bool{false, true} {
 		t.Run(fmt.Sprintf("evicted=%t", truncate), func(t *testing.T) {
@@ -520,9 +519,8 @@ func TestSeriesEviction_OtherNotFoundErrorsAreReturned(t *testing.T) {
 				require.NoError(t, testDB.db.CompactSelectedSeries(testDB.evictedRefs))
 			}
 
-			// Without exemplar protection, truncate=true fully evicts evictedRefs[0]: any of
-			// its chunk refs, including one it never had, must now be skipped rather than
-			// reported as a real error. The other series is untouched either way.
+			// Missing in-order chunks are skipped only for series removed by this eviction,
+			// including chunk IDs the series never had.
 			tests := map[string]struct {
 				ref     storage.SeriesRef
 				skipped bool

@@ -507,11 +507,8 @@ Outer:
 
 	missingExemplarRefs := unknownExemplarRefs.Load()
 	totalUnknownRefs := unknownSampleRefs.Load() + missingExemplarRefs + unknownHistogramRefs.Load() + unknownMetadataRefs.Load() + unknownTombstoneRefs.Load()
-	// If exemplars are the only unknown-ref dimension this replay hit, it's most likely
-	// their series was evicted and tombstoned (gcSeries doesn't protect exemplars from
-	// eviction), and the exemplar simply lost the unsynchronized race against the
-	// tombstone being applied, rather than a genuinely missing series. Report that
-	// case under its own message so it can be told apart from other causes.
+	// Report exemplar-only unknown references separately. They can occur when
+	// tombstone replay removes a series before its exemplars are processed.
 	if totalUnknownRefs > 0 && totalUnknownRefs == missingExemplarRefs {
 		h.logger.Warn(
 			"Unknown series references for exemplars",

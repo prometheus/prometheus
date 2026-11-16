@@ -631,9 +631,7 @@ func (h *headChunkReader) skipEvictedSeries(meta chunks.Meta) bool {
 		return false
 	}
 	if h.head.series.getByID(sid) != nil {
-		// This ref was a candidate for eviction, but shouldEvict rejected it (e.g. a
-		// pending commit, a mutation since the snapshot, or OOO data): it was left
-		// untouched, so its chunk is still valid and must not be skipped.
+		// The series was retained, so preserve the missing-chunk error.
 		return false
 	}
 	h.head.metrics.chunkReadsOfRemovedSeries.Inc()
