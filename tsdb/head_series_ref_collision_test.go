@@ -18,9 +18,8 @@ import (
 	"path"
 	"testing"
 
-	"github.com/stretchr/testify/require"
-
 	prom_testutil "github.com/prometheus/client_golang/prometheus/testutil"
+	"github.com/stretchr/testify/require"
 
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/tsdb/record"
