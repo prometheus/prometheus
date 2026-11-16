@@ -505,31 +505,20 @@ Outer:
 		return fmt.Errorf("read records: %w", err)
 	}
 
-	missingExemplarRefs := unknownExemplarRefs.Load()
-	totalUnknownRefs := unknownSampleRefs.Load() + missingExemplarRefs + unknownHistogramRefs.Load() + unknownMetadataRefs.Load() + unknownTombstoneRefs.Load()
-	// Report exemplar-only unknown references separately. They can occur when
-	// tombstone replay removes a series before its exemplars are processed.
-	if totalUnknownRefs > 0 && totalUnknownRefs == missingExemplarRefs {
-		h.logger.Warn(
-			"Unknown series references for exemplars",
-			"series", unknownSeriesRefs.count(),
-			"exemplars", missingExemplarRefs,
-		)
-	} else if totalUnknownRefs > 0 {
+	if unknownSampleRefs.Load()+unknownExemplarRefs.Load()+unknownHistogramRefs.Load()+unknownMetadataRefs.Load()+unknownTombstoneRefs.Load() > 0 {
 		h.logger.Warn(
 			"Unknown series references",
 			"series", unknownSeriesRefs.count(),
 			"samples", unknownSampleRefs.Load(),
-			"exemplars", missingExemplarRefs,
+			"exemplars", unknownExemplarRefs.Load(),
 			"histograms", unknownHistogramRefs.Load(),
 			"metadata", unknownMetadataRefs.Load(),
 			"tombstones", unknownTombstoneRefs.Load(),
 		)
-	}
-	if totalUnknownRefs > 0 {
+
 		counterAddNonZero(h.metrics.walReplayUnknownRefsTotal, float64(unknownSeriesRefs.count()), "series")
 		counterAddNonZero(h.metrics.walReplayUnknownRefsTotal, float64(unknownSampleRefs.Load()), "samples")
-		counterAddNonZero(h.metrics.walReplayUnknownRefsTotal, float64(missingExemplarRefs), "exemplars")
+		counterAddNonZero(h.metrics.walReplayUnknownRefsTotal, float64(unknownExemplarRefs.Load()), "exemplars")
 		counterAddNonZero(h.metrics.walReplayUnknownRefsTotal, float64(unknownHistogramRefs.Load()), "histograms")
 		counterAddNonZero(h.metrics.walReplayUnknownRefsTotal, float64(unknownMetadataRefs.Load()), "metadata")
 		counterAddNonZero(h.metrics.walReplayUnknownRefsTotal, float64(unknownTombstoneRefs.Load()), "tombstones")

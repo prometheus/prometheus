@@ -1652,6 +1652,110 @@ func TestSeriesCompactionReclaimsChunksWithExemplars(t *testing.T) {
 	}
 }
 
+// TestEarlyCompactionExemplarProtectionOrphansLaterSample reproduces the mechanism behind a
+// real production incident (observed independently on two ingesters running early
+// compaction, via both CompactSelectedSeries and CompactStaleHead): early compaction
+// protects a series with a recent exemplar by emptying its chunks without evicting or
+// tombstoning it, a later regular GC (as triggered by ordinary compaction) then deletes that
+// same series once its exemplar is no longer recent enough, but the walExpiry it records for
+// checkpointing purposes reflects only that regular GC's own cutoff, not the series's own,
+// higher-timestamped sample still awaiting replay in a WAL segment the checkpoint has not
+// reached yet. Checkpointing then drops the series's declaration while that segment
+// survives, so WAL replay after a restart finds the sample's reference unresolvable and logs
+// it as unknown, even though the sample itself was already safely captured in the
+// early-compaction block.
+func TestEarlyCompactionExemplarProtectionOrphansLaterSample(t *testing.T) {
+	for _, compaction := range []string{"selected", "stale"} {
+		t.Run(compaction, func(t *testing.T) {
+			const chunkRange = 1000
+			opts := DefaultOptions()
+			opts.MinBlockDuration = chunkRange
+			opts.MaxBlockDuration = chunkRange
+			opts.EnableExemplarStorage = true
+			opts.MaxExemplars = 10
+			db := newTestDB(t, withOpts(opts))
+			db.DisableCompactions()
+			ctx := context.Background()
+
+			sel := labels.FromStrings("name", "selected")
+			app := db.AppenderV2(ctx)
+			selRef, err := app.Append(0, sel, 0, 50, 1.0, nil, nil, storage.AOptions{})
+			require.NoError(t, err)
+			e := exemplar.Exemplar{Labels: labels.FromStrings("trace_id", "abc123"), Value: 1, Ts: 100}
+			_, err = app.(storage.ExemplarAppenderV2).AppendExemplars(selRef, sel, []exemplar.Exemplar{e})
+			require.NoError(t, err)
+			require.NoError(t, app.Commit())
+
+			// Roll the WAL well past the segment holding sel's declaration and exemplar, so
+			// sel's later sample below lands in a segment the checkpoints forced later never
+			// reach.
+			const preRollSegments = 30
+			for range preRollSegments {
+				_, err := db.head.wal.NextSegment()
+				require.NoError(t, err)
+			}
+
+			// CompactStaleHead only picks up series whose last sample is a stale marker.
+			v := 2.0
+			if compaction == "stale" {
+				v = math.Float64frombits(value.StaleNaN)
+			}
+			app = db.AppenderV2(ctx)
+			_, err = app.Append(selRef, sel, 0, 900, v, nil, nil, storage.AOptions{})
+			require.NoError(t, err)
+			require.NoError(t, app.Commit())
+			require.Equal(t, int64(900), db.Head().MaxTime())
+
+			// Early compaction compacts both of sel's samples into a block. On an unpatched
+			// Head.gcSeries, sel's recent exemplar keeps its identity alive, chunk-less,
+			// instead of evicting and tombstoning it.
+			if compaction == "stale" {
+				require.NoError(t, db.CompactStaleHead())
+			} else {
+				require.NoError(t, db.CompactSelectedSeries([]storage.SeriesRef{selRef}))
+			}
+			require.Len(t, db.Blocks(), 1)
+
+			// A regular GC, as triggered by ordinary compaction, stops protecting a
+			// still-alive sel via its exemplar once mint passes it -- well before sel's own
+			// second sample at 900 -- and deletes it without writing a tombstone for it. The
+			// walExpiry it then records reflects only this GC's own cutoff, not sel's own
+			// later sample still awaiting replay.
+			require.NoError(t, db.head.truncateMemory(e.Ts+1))
+			require.Nil(t, db.Head().series.getByID(chunks.HeadSeriesRef(selRef)), "sel must be fully evicted by now")
+
+			// Force a checkpoint past the exemplar's timestamp, but still well before sel's
+			// own second sample, so the WAL segment holding it is left untouched either way.
+			const truncateMint = 150
+			for range 10 {
+				db.head.lastWALTruncationTime.Store(0)
+				require.NoError(t, db.head.truncateWAL(truncateMint))
+				if _, _, err := wlog.LastCheckpoint(db.head.wal.Dir()); err == nil {
+					break
+				}
+			}
+			_, _, err = wlog.LastCheckpoint(db.head.wal.Dir())
+			require.NoError(t, err, "a checkpoint must have been produced")
+
+			require.NoError(t, db.Close())
+			reopened, err := Open(db.Dir(), nil, nil, opts, nil)
+			require.NoError(t, err)
+			t.Cleanup(func() { require.NoError(t, reopened.Close()) })
+
+			// sel's second sample is already safely stored in the early-compaction block, so
+			// losing its WAL replay is not sample loss by itself, but it must not be
+			// misreported as an unknown series reference: the series was deliberately
+			// evicted, not corrupted data.
+			unknownSamples := prom_testutil.ToFloat64(reopened.head.metrics.walReplayUnknownRefsTotal.WithLabelValues("samples"))
+			require.Zero(t, unknownSamples,
+				"WAL replay must not report unknown series references for sel's second "+
+					"sample; a regular GC must not let an exemplar-protected series's "+
+					"declaration be dropped from the checkpoint before every WAL record it "+
+					"still has gets a chance to replay or be truncated away")
+		})
+	}
+}
+
 func TestNoPanicOnTSDBOpenError(t *testing.T) {
 	tmpdir := t.TempDir()
 
