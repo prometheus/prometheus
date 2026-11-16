@@ -1380,9 +1380,6 @@ func TestOpen_VariousBlockStates(t *testing.T) {
 	require.True(t, os.IsNotExist(err))
 }
 
-// TestExemplarAfterLastSampleSurvivesCompaction verifies that an exemplar newer
-// than its series's last sample survives ordinary, selected, and stale compaction,
-// WAL cleanup, and subsequent compaction after restart.
 // TestExemplarAfterLastSampleSurvivesCompaction verifies that the regular head-truncation
 // path (Head.gc, triggered by ordinary compaction) keeps a series with a recent exemplar
 // alive, chunk-less, so the exemplar survives WAL cleanup and a restart. Head.gcSeries

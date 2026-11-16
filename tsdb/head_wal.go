@@ -505,20 +505,34 @@ Outer:
 		return fmt.Errorf("read records: %w", err)
 	}
 
-	if unknownSampleRefs.Load()+unknownExemplarRefs.Load()+unknownHistogramRefs.Load()+unknownMetadataRefs.Load()+unknownTombstoneRefs.Load() > 0 {
+	missingExemplarRefs := unknownExemplarRefs.Load()
+	totalUnknownRefs := unknownSampleRefs.Load() + missingExemplarRefs + unknownHistogramRefs.Load() + unknownMetadataRefs.Load() + unknownTombstoneRefs.Load()
+	// If exemplars are the only unknown-ref dimension this replay hit, it's most likely
+	// their series was evicted and tombstoned (gcSeries doesn't protect exemplars from
+	// eviction), and the exemplar simply lost the unsynchronized race against the
+	// tombstone being applied, rather than a genuinely missing series. Report that
+	// case under its own message so it can be told apart from other causes.
+	if totalUnknownRefs > 0 && totalUnknownRefs == missingExemplarRefs {
+		h.logger.Warn(
+			"Unknown series references for exemplars",
+			"series", unknownSeriesRefs.count(),
+			"exemplars", missingExemplarRefs,
+		)
+	} else if totalUnknownRefs > 0 {
 		h.logger.Warn(
 			"Unknown series references",
 			"series", unknownSeriesRefs.count(),
 			"samples", unknownSampleRefs.Load(),
-			"exemplars", unknownExemplarRefs.Load(),
+			"exemplars", missingExemplarRefs,
 			"histograms", unknownHistogramRefs.Load(),
 			"metadata", unknownMetadataRefs.Load(),
 			"tombstones", unknownTombstoneRefs.Load(),
 		)
-
+	}
+	if totalUnknownRefs > 0 {
 		counterAddNonZero(h.metrics.walReplayUnknownRefsTotal, float64(unknownSeriesRefs.count()), "series")
 		counterAddNonZero(h.metrics.walReplayUnknownRefsTotal, float64(unknownSampleRefs.Load()), "samples")
-		counterAddNonZero(h.metrics.walReplayUnknownRefsTotal, float64(unknownExemplarRefs.Load()), "exemplars")
+		counterAddNonZero(h.metrics.walReplayUnknownRefsTotal, float64(missingExemplarRefs), "exemplars")
 		counterAddNonZero(h.metrics.walReplayUnknownRefsTotal, float64(unknownHistogramRefs.Load()), "histograms")
 		counterAddNonZero(h.metrics.walReplayUnknownRefsTotal, float64(unknownMetadataRefs.Load()), "metadata")
 		counterAddNonZero(h.metrics.walReplayUnknownRefsTotal, float64(unknownTombstoneRefs.Load()), "tombstones")
