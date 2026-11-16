@@ -868,13 +868,8 @@ func validateLabelsAndMetricName(ls []prompb.Label) error {
 		if !model.LabelValue(l.Value).IsValid() {
 			return fmt.Errorf("invalid label value: %v", l.Value)
 		}
-		if i > 0 {
-			if l.Name == ls[i-1].Name {
-				return fmt.Errorf("duplicate label with name: %v", l.Name)
-			}
-			if l.Name < ls[i-1].Name {
-				return fmt.Errorf("labels are not sorted lexicographically: %s comes before %s", l.Name, ls[i-1].Name)
-			}
+		if i > 0 && l.Name == ls[i-1].Name {
+			return fmt.Errorf("duplicate label with name: %v", l.Name)
 		}
 	}
 	return nil

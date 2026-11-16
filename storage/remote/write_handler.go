@@ -44,6 +44,7 @@ type writeHandler struct {
 	appendableV2 storage.AppendableV2
 
 	samplesWithInvalidLabelsTotal  prometheus.Counter
+	samplesWithUnsortedLabelsTotal prometheus.Counter
 	samplesAppendedWithoutMetadata prometheus.Counter
 
 	enableTypeAndUnitLabels bool
@@ -67,6 +68,12 @@ func NewWriteHandler(logger *slog.Logger, reg prometheus.Registerer, appendableV
 			Subsystem: "api",
 			Name:      "remote_write_invalid_labels_samples_total",
 			Help:      "The total number of received remote write samples and histogram samples which were rejected due to invalid labels.",
+		}),
+		samplesWithUnsortedLabelsTotal: promauto.With(reg).NewCounter(prometheus.CounterOpts{
+			Namespace: "prometheus",
+			Subsystem: "api",
+			Name:      "remote_write_unsorted_labels_samples_total",
+			Help:      "The total number of received remote write v1 samples (and histogram samples) which were ingested with unsorted labels.",
 		}),
 		samplesAppendedWithoutMetadata: promauto.With(reg).NewCounter(prometheus.CounterOpts{
 			Namespace: "prometheus",
@@ -152,6 +159,7 @@ func (h *writeHandler) Store(r *http.Request, msgType remoteapi.WriteMessageType
 func (h *writeHandler) write(ctx context.Context, req *prompb.WriteRequest) (err error) {
 	outOfOrderExemplarErrs := 0
 	samplesWithInvalidLabels := 0
+	samplesWithUnsortedLabels := 0
 	samplesAppended := 0
 
 	appV2 := h.appendableV2.AppenderV2(ctx)
@@ -187,10 +195,9 @@ func (h *writeHandler) write(ctx context.Context, req *prompb.WriteRequest) (err
 			h.logger.Warn("Invalid labels for series.", "labels", ls.String(), "duplicated_label", duplicateLabel)
 			samplesWithInvalidLabels++
 			continue
-		} else if !areLabelsSorted(ts.Labels) {
-			h.logger.Warn("Labels are not sorted lexicographically", "labels", ls.String())
-			samplesWithInvalidLabels++
-			continue
+		}
+		if !areLabelsSorted(ts.Labels) {
+			samplesWithUnsortedLabels += len(ts.Samples) + len(ts.Histograms)
 		}
 
 		ref, err := h.appendV1Samples(app, ts.Samples, ls)
@@ -231,6 +238,9 @@ func (h *writeHandler) write(ctx context.Context, req *prompb.WriteRequest) (err
 	}
 	if samplesWithInvalidLabels > 0 {
 		h.samplesWithInvalidLabelsTotal.Add(float64(samplesWithInvalidLabels))
+	}
+	if samplesWithUnsortedLabels > 0 {
+		h.samplesWithUnsortedLabelsTotal.Add(float64(samplesWithUnsortedLabels))
 	}
 	return nil
 }
@@ -331,7 +341,7 @@ func (h *writeHandler) appendV2(app *timeLimitExemplarAppenderV2, req *writev2.R
 		exemplars = make([]exemplar.Exemplar, 0, 1)
 	)
 	for _, ts := range req.Timeseries {
-		ls, err := ts.ToLabels(&b, req.Symbols)
+		ls, err := desymbolizeAndValidate(&b, ts.LabelsRefs, req.Symbols)
 		if err != nil {
 			badRequestErrs = append(badRequestErrs, fmt.Errorf("parsing labels for series %v: %w", ts.LabelsRefs, err))
 			samplesWithInvalidLabels += len(ts.Samples) + len(ts.Histograms)
@@ -362,14 +372,6 @@ func (h *writeHandler) appendV2(app *timeLimitExemplarAppenderV2, req *writev2.R
 		// specific limits and follow https://prometheus.io/docs/specs/remote_write_spec_2_0/#invalid-samples case.
 		if !ls.Has(labels.MetricName) || !ls.IsValid(model.UTF8Validation) {
 			badRequestErrs = append(badRequestErrs, fmt.Errorf("invalid metric name or labels, got %v", ls.String()))
-			samplesWithInvalidLabels += len(ts.Samples) + len(ts.Histograms)
-			continue
-		} else if duplicateLabel, hasDuplicate := ls.HasDuplicateLabelNames(); hasDuplicate {
-			badRequestErrs = append(badRequestErrs, fmt.Errorf("invalid labels for series, labels %v, duplicated label %s", ls.String(), duplicateLabel))
-			samplesWithInvalidLabels += len(ts.Samples) + len(ts.Histograms)
-			continue
-		} else if !areV2LabelsSorted(ts.LabelsRefs, req.Symbols) {
-			badRequestErrs = append(badRequestErrs, fmt.Errorf("labels are not sorted lexicographically for series %v", ls.String()))
 			samplesWithInvalidLabels += len(ts.Samples) + len(ts.Histograms)
 			continue
 		}
@@ -610,13 +612,31 @@ func areLabelsSorted(ls []prompb.Label) bool {
 	return true
 }
 
-func areV2LabelsSorted(labelRefs []uint32, symbols []string) bool {
-	for i := 2; i < len(labelRefs); i += 2 {
-		currName := symbols[labelRefs[i]]
-		prevName := symbols[labelRefs[i-2]]
-		if currName < prevName {
-			return false
-		}
+func desymbolizeAndValidate(b *labels.ScratchBuilder, labelRefs []uint32, symbols []string) (labels.Labels, error) {
+	if len(labelRefs)%2 != 0 {
+		return labels.EmptyLabels(), fmt.Errorf("invalid labelRefs length %d", len(labelRefs))
 	}
-	return true
+
+	b.Reset()
+	var prevName string
+	for i := 0; i < len(labelRefs); i += 2 {
+		nameRef, valueRef := labelRefs[i], labelRefs[i+1]
+		if int(nameRef) >= len(symbols) || int(valueRef) >= len(symbols) {
+			return labels.EmptyLabels(), fmt.Errorf("labelRefs %d (name) = %d (value) outside of symbols table (size %d)", nameRef, valueRef, len(symbols))
+		}
+		name := symbols[nameRef]
+		value := symbols[valueRef]
+
+		if i > 0 {
+			if name == prevName {
+				return labels.EmptyLabels(), fmt.Errorf("duplicate label with name: %s", name)
+			}
+			if name < prevName {
+				return labels.EmptyLabels(), fmt.Errorf("labels are not sorted lexicographically: %s is not after %s", name, prevName)
+			}
+		}
+		b.Add(name, value)
+		prevName = name
+	}
+	return b.Labels(), nil
 }

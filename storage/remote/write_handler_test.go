@@ -31,6 +31,7 @@ import (
 	"github.com/gogo/protobuf/proto"
 	"github.com/google/go-cmp/cmp"
 	remoteapi "github.com/prometheus/client_golang/exp/api/remote"
+	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/common/promslog"
 	"github.com/stretchr/testify/require"
 
@@ -397,6 +398,52 @@ func TestRemoteWriteHandler_V1Message(t *testing.T) {
 	}
 }
 
+func TestRemoteWriteHandler_V1Message_UnsortedLabels(t *testing.T) {
+	reg := prometheus.NewRegistry()
+	appendable := &mockAppendable{}
+	handler := NewWriteHandler(promslog.NewNopLogger(), reg, appendable, []remoteapi.WriteMessageType{remoteapi.WriteV1MessageType}, false, false)
+
+	// Series with unsorted labels: "zone" before "app"
+	unsortedSeries := []prompb.TimeSeries{
+		{
+			Labels: []prompb.Label{
+				{Name: "__name__", Value: "test_metric"},
+				{Name: "zone", Value: "us-east"},
+				{Name: "app", Value: "web"},
+			},
+			Samples: []prompb.Sample{
+				{Value: 42, Timestamp: 1000},
+			},
+		},
+	}
+
+	payload, _, _, err := buildWriteRequest(nil, unsortedSeries, nil, nil, nil, nil, "snappy")
+	require.NoError(t, err)
+
+	req, err := http.NewRequest(http.MethodPost, "", bytes.NewReader(payload))
+	require.NoError(t, err)
+
+	recorder := httptest.NewRecorder()
+	handler.ServeHTTP(recorder, req)
+
+	resp := recorder.Result()
+	require.Equal(t, http.StatusNoContent, resp.StatusCode)
+	require.Len(t, appendable.samples, 1)
+
+	mfs, err := reg.Gather()
+	require.NoError(t, err)
+
+	var counterVal float64
+	for _, mf := range mfs {
+		if mf.GetName() == "prometheus_api_remote_write_unsorted_labels_samples_total" {
+			for _, m := range mf.GetMetric() {
+				counterVal += m.GetCounter().GetValue()
+			}
+		}
+	}
+	require.Equal(t, 1.0, counterVal)
+}
+
 func expectHeaderValue(t testing.TB, expected int, got string) {
 	t.Helper()
 
@@ -466,8 +513,9 @@ func TestRemoteWriteHandler_V2Message(t *testing.T) {
 				writeV2RequestFixture.Timeseries...,
 			),
 			expectedCode:     http.StatusBadRequest,
-			expectedRespBody: "labels are not sorted lexicographically for series {__name__=\"test_metric1\", b=\"c\", foo=\"bar\"}\n",
+			expectedRespBody: "parsing labels for series [1 2 9 10 3 4]: labels are not sorted lexicographically: b is not after foo\n",
 		},
+
 		{
 			desc: "Partial write; first series with duplicate labels",
 			input: append(
@@ -476,7 +524,7 @@ func TestRemoteWriteHandler_V2Message(t *testing.T) {
 				writeV2RequestFixture.Timeseries...,
 			),
 			expectedCode:     http.StatusBadRequest,
-			expectedRespBody: "invalid labels for series, labels {__name__=\"test_metric1\", test_metric1=\"test_metric1\", test_metric1=\"test_metric1\"}, duplicated label test_metric1\n",
+			expectedRespBody: "parsing labels for series [1 2 2 2 2 2]: duplicate label with name: test_metric1\n",
 		},
 		{
 			desc: "Partial write; first series with odd number of label refs",
@@ -956,6 +1004,38 @@ func TestRemoteWriteHandler_V2Message(t *testing.T) {
 // type-and-unit-labels feature is enabled, the receiver correctly handles cases where
 // __type__ and __unit__ labels are already present in the incoming labels.
 // Regression test for https://github.com/prometheus/prometheus/issues/17480.
+func TestRemoteWriteHandler_V2Message_UnsortedStringOrderDiffersFromIndexOrder(t *testing.T) {
+	symbols := []string{"", "__name__", "test_metric1", "zeta", "val1", "alpha", "val2"}
+	input := []writev2.TimeSeries{
+		{
+			LabelsRefs: []uint32{1, 2, 3, 4, 5, 6}, // symbol refs 1, 3, 5 ascending, but strings __name__, zeta, alpha are unsorted
+			Samples:    []writev2.Sample{{Value: 1, Timestamp: 1}},
+		},
+	}
+
+	payload, _, _, _, err := buildV2WriteRequest(promslog.NewNopLogger(), input, symbols, nil, nil, nil, "snappy")
+	require.NoError(t, err)
+
+	req, err := http.NewRequest(http.MethodPost, "", bytes.NewReader(payload))
+	require.NoError(t, err)
+
+	req.Header.Set("Content-Type", remoteWriteContentTypeHeaders[remoteapi.WriteV2MessageType])
+	req.Header.Set("Content-Encoding", compression.Snappy)
+	req.Header.Set(RemoteWriteVersionHeader, RemoteWriteVersion20HeaderValue)
+
+	appendable := &mockAppendable{}
+	handler := NewWriteHandler(promslog.NewNopLogger(), nil, appendable, []remoteapi.WriteMessageType{remoteapi.WriteV2MessageType}, false, false)
+
+	recorder := httptest.NewRecorder()
+	handler.ServeHTTP(recorder, req)
+
+	resp := recorder.Result()
+	require.Equal(t, http.StatusBadRequest, resp.StatusCode)
+	respBody, err := io.ReadAll(resp.Body)
+	require.NoError(t, err)
+	require.Equal(t, "parsing labels for series [1 2 3 4 5 6]: labels are not sorted lexicographically: alpha is not after zeta\n", string(respBody))
+}
+
 func TestRemoteWriteHandler_V2Message_NoDuplicateTypeAndUnitLabels(t *testing.T) {
 	for _, tc := range []struct {
 		desc           string
@@ -2276,84 +2356,17 @@ func TestTimeLimitAppenderV2_LimitExemplars(t *testing.T) {
 	})
 }
 
-func TestAreLabelsSorted(t *testing.T) {
-	tests := []struct {
-		name     string
-		input    []prompb.Label
-		expected bool
-	}{
-		{
-			name:     "empty labels",
-			input:    nil,
-			expected: true,
-		},
-		{
-			name: "single label",
-			input: []prompb.Label{
-				{Name: "__name__", Value: "test"},
-			},
-			expected: true,
-		},
-		{
-			name: "sorted labels",
-			input: []prompb.Label{
-				{Name: "__name__", Value: "test"},
-				{Name: "app", Value: "frontend"},
-				{Name: "zone", Value: "us-east"},
-			},
-			expected: true,
-		},
-		{
-			name: "unsorted labels",
-			input: []prompb.Label{
-				{Name: "__name__", Value: "test"},
-				{Name: "zone", Value: "us-east"},
-				{Name: "app", Value: "frontend"},
-			},
-			expected: false,
-		},
-	}
+func BenchmarkDesymbolizeAndValidate(b *testing.B) {
+	symbols := []string{"", "__name__", "test_metric", "app", "frontend", "env", "production", "zone", "us-east-1"}
+	labelRefs := []uint32{1, 2, 3, 4, 5, 6, 7, 8} // sorted: __name__, app, env, zone
+	builder := labels.NewScratchBuilder(0)
 
-	for _, tc := range tests {
-		t.Run(tc.name, func(t *testing.T) {
-			require.Equal(t, tc.expected, areLabelsSorted(tc.input))
-		})
-	}
-}
-
-func TestAreV2LabelsSorted(t *testing.T) {
-	symbols := []string{"", "__name__", "test", "app", "frontend", "zone", "us-east"}
-
-	tests := []struct {
-		name      string
-		labelRefs []uint32
-		expected  bool
-	}{
-		{
-			name:      "empty refs",
-			labelRefs: nil,
-			expected:  true,
-		},
-		{
-			name:      "single label",
-			labelRefs: []uint32{1, 2},
-			expected:  true,
-		},
-		{
-			name:      "sorted labels",
-			labelRefs: []uint32{1, 2, 3, 4, 5, 6},
-			expected:  true,
-		},
-		{
-			name:      "unsorted labels",
-			labelRefs: []uint32{1, 2, 5, 6, 3, 4},
-			expected:  false,
-		},
-	}
-
-	for _, tc := range tests {
-		t.Run(tc.name, func(t *testing.T) {
-			require.Equal(t, tc.expected, areV2LabelsSorted(tc.labelRefs, symbols))
-		})
+	b.ResetTimer()
+	b.ReportAllocs()
+	for b.Loop() {
+		_, err := desymbolizeAndValidate(&builder, labelRefs, symbols)
+		if err != nil {
+			b.Fatal(err)
+		}
 	}
 }
