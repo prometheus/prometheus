@@ -4367,92 +4367,119 @@ func TestAppendToConvertNHCBToClassic(t *testing.T) {
 	})
 
 	t.Run("exemplars", func(t *testing.T) {
-		for _, kind := range []string{"integer histogram", "float histogram", "classic control", "native control"} {
-			t.Run(kind, func(t *testing.T) {
-				// Use a fresh receiver so an existing base series cannot hide incorrect exemplar routing.
-				opts := tsdb.DefaultHeadOptions()
-				opts.ChunkDirRoot = t.TempDir()
-				opts.EnableExemplarStorage = true
-				opts.MaxExemplars.Store(10)
-				head, err := tsdb.NewHead(nil, nil, nil, nil, opts, nil)
-				require.NoError(t, err)
-				t.Cleanup(func() { require.NoError(t, head.Close()) })
-				require.NoError(t, head.Init(math.MinInt64))
-				handler := NewWriteHandler(promslog.NewNopLogger(), nil, head, []remoteapi.WriteMessageType{remoteapi.WriteV1MessageType}, false, false)
-				c := NewTestWriteClient(remoteapi.WriteV1MessageType)
-				var statuses []int
-				client := &MockWriteClient{
-					NameFunc:     c.Name,
-					EndpointFunc: c.Endpoint,
-					StoreFunc: func(ctx context.Context, payload []byte, attempt int) (WriteResponseStats, error) {
-						req := httptest.NewRequestWithContext(ctx, http.MethodPost, "/", bytes.NewReader(payload))
-						req.Header.Set("Content-Type", remoteWriteContentTypeHeaders[remoteapi.WriteV1MessageType])
-						req.Header.Set("Content-Encoding", compression.Snappy)
-						response := httptest.NewRecorder()
-						handler.ServeHTTP(response, req)
-						statuses = append(statuses, response.Code)
-						if response.Code != http.StatusNoContent {
-							return WriteResponseStats{}, fmt.Errorf("receiver returned HTTP %d: %s", response.Code, response.Body.String())
-						}
-						return c.Store(ctx, payload, attempt)
-					},
-				}
-				m, stop := newTestNHCBQueueManager(t, client, nhcbQueueTestOptions{
-					protoMsg:             remoteapi.WriteV1MessageType,
-					sendExemplars:        true,
-					sendNativeHistograms: kind == "native control",
-				})
-				if kind == "classic control" {
-					m.StoreSeries(classicSeries, 0)
-					for i, series := range classicSeries {
-						require.True(t, m.Append([]record.RefSample{{Ref: series.Ref, T: 1000, V: classicValues[i]}}))
-					}
-				} else {
-					m.StoreSeries([]record.RefSeries{baseSeries}, 0)
-					h := newHistogram()
-					if kind == "native control" {
-						// Use an exponential histogram to exercise native delivery without NHCB conversion.
-						h.Schema = 0
-						h.CustomValues = nil
-					}
-					appendHistogram(t, m, h, 1000, kind == "float histogram")
-				}
-				// Ref 1 identifies the le="1.0" bucket in the classic control and the original histogram otherwise.
-				exemplarLabels := labels.FromStrings("trace_id", "abc")
-				require.True(t, m.AppendExemplars([]record.RefExemplar{{Ref: 1, T: 1000, V: 0.5, Labels: exemplarLabels}}))
-				stop()
-				require.Equal(t, 1, deepLen(c.receivedExemplars), "sender must transmit exactly one exemplar")
-				// RW1 may return HTTP 204 after dropping an exemplar for an unknown series, so query storage below.
-				require.NotEmpty(t, statuses)
-				for _, status := range statuses {
-					require.Equal(t, http.StatusNoContent, status)
-				}
-				if kind == "native control" {
-					require.Equal(t, uint64(1), head.NumSeries())
-					require.Len(t, c.receivedHistograms[baseSeries.Labels.String()], 1)
-				} else {
-					require.Equal(t, uint64(len(classicSeries)), head.NumSeries())
-					requireInitialSamples(t, c)
-				}
-				q, err := head.ExemplarQuerier(t.Context())
-				require.NoError(t, err)
-				got, err := q.Select(0, 2000, []*labels.Matcher{labels.MustNewMatcher(labels.MatchRegexp, "__name__", "latency.*")})
-				require.NoError(t, err)
-				require.Len(t, got, 1, "receiver must preserve the histogram exemplar")
-				require.Len(t, got[0].Exemplars, 1)
-				testutil.RequireEqual(t, exemplarLabels, got[0].Exemplars[0].Labels)
-				require.Equal(t, 0.5, got[0].Exemplars[0].Value)
-				require.Equal(t, int64(1000), got[0].Exemplars[0].Ts)
-				if kind == "native control" {
-					testutil.RequireEqual(t, baseSeries.Labels, got[0].SeriesLabels)
-				} else {
-					require.Equal(t, "latency_bucket", got[0].SeriesLabels.Get("__name__"))
-					bound, err := strconv.ParseFloat(got[0].SeriesLabels.Get("le"), 64)
+		for _, protoMsg := range []remoteapi.WriteMessageType{remoteapi.WriteV1MessageType, remoteapi.WriteV2MessageType} {
+			for _, kind := range []string{"integer histogram", "float histogram", "classic control", "native control"} {
+				t.Run(fmt.Sprintf("%s/%s", protoMsg, kind), func(t *testing.T) {
+					// Use a fresh receiver so an existing base series cannot hide incorrect exemplar routing.
+					opts := tsdb.DefaultHeadOptions()
+					opts.ChunkDirRoot = t.TempDir()
+					opts.EnableExemplarStorage = true
+					opts.MaxExemplars.Store(10)
+					head, err := tsdb.NewHead(nil, nil, nil, nil, opts, nil)
 					require.NoError(t, err)
-					require.GreaterOrEqual(t, bound, 0.5)
-					require.NotEmpty(t, c.receivedSamples[got[0].SeriesLabels.String()])
-				}
-			})
+					t.Cleanup(func() { require.NoError(t, head.Close()) })
+					require.NoError(t, head.Init(math.MinInt64))
+					handler := NewWriteHandler(promslog.NewNopLogger(), nil, head, []remoteapi.WriteMessageType{protoMsg}, false, false)
+					c := NewTestWriteClient(protoMsg)
+					var statuses []int
+					client := &MockWriteClient{
+						NameFunc:     c.Name,
+						EndpointFunc: c.Endpoint,
+						StoreFunc: func(ctx context.Context, payload []byte, attempt int) (WriteResponseStats, error) {
+							req := httptest.NewRequestWithContext(ctx, http.MethodPost, "/", bytes.NewReader(payload))
+							req.Header.Set("Content-Type", remoteWriteContentTypeHeaders[protoMsg])
+							req.Header.Set("Content-Encoding", compression.Snappy)
+							response := httptest.NewRecorder()
+							handler.ServeHTTP(response, req)
+							statuses = append(statuses, response.Code)
+							if response.Code != http.StatusNoContent {
+								return WriteResponseStats{}, fmt.Errorf("receiver returned HTTP %d: %s", response.Code, response.Body.String())
+							}
+							return c.Store(ctx, payload, attempt)
+						},
+					}
+					m, stop := newTestNHCBQueueManager(t, client, nhcbQueueTestOptions{
+						protoMsg:             protoMsg,
+						sendExemplars:        true,
+						sendNativeHistograms: kind == "native control",
+					})
+					if kind == "classic control" {
+						m.StoreSeries(classicSeries, 0)
+						for i, series := range classicSeries {
+							require.True(t, m.Append([]record.RefSample{{Ref: series.Ref, T: 1000, V: classicValues[i]}}))
+						}
+					} else {
+						m.StoreSeries([]record.RefSeries{baseSeries}, 0)
+						h := newHistogram()
+						if kind == "native control" {
+							// Use an exponential histogram to exercise native delivery without NHCB conversion.
+							h.Schema = 0
+							h.CustomValues = nil
+						}
+						appendHistogram(t, m, h, 1000, kind == "float histogram")
+					}
+					// Ref 1 identifies the le="1.0" bucket in the classic control and the original histogram otherwise.
+					exemplarLabels := labels.FromStrings("trace_id", "abc")
+					require.True(t, m.AppendExemplars([]record.RefExemplar{{Ref: 1, T: 1000, V: 0.5, Labels: exemplarLabels}}))
+					stop()
+					require.Equal(t, 1, deepLen(c.receivedExemplars), "sender must transmit exactly one exemplar")
+					// RW1 may return HTTP 204 after dropping an exemplar for an unknown series, so query storage below.
+					require.NotEmpty(t, statuses)
+					for _, status := range statuses {
+						require.Equal(t, http.StatusNoContent, status)
+					}
+					if protoMsg == remoteapi.WriteV2MessageType {
+						require.NotEmpty(t, c.receivedV2Requests)
+						b := labels.NewScratchBuilder(0)
+						var coalescedCount int
+						for _, req := range c.receivedV2Requests {
+							for _, ts := range req.Timeseries {
+								require.NotZero(t, len(ts.Samples)+len(ts.Histograms), "exemplars must coalesce onto the matching series instead of being detached")
+								if len(ts.Exemplars) == 0 {
+									continue
+								}
+								coalescedCount += len(ts.Exemplars)
+								gotLbls, err := ts.ToLabels(&b, req.Symbols)
+								require.NoError(t, err)
+								if kind == "native control" {
+									testutil.RequireEqual(t, baseSeries.Labels, gotLbls)
+									require.Len(t, ts.Histograms, 1)
+								} else {
+									require.Equal(t, "latency_bucket", gotLbls.Get("__name__"))
+									require.Equal(t, "1.0", gotLbls.Get("le"))
+									require.Len(t, ts.Samples, 1)
+								}
+							}
+						}
+						require.Equal(t, 1, coalescedCount)
+					}
+					if kind == "native control" {
+						require.Equal(t, uint64(1), head.NumSeries())
+						require.Len(t, c.receivedHistograms[baseSeries.Labels.String()], 1)
+					} else {
+						require.Equal(t, uint64(len(classicSeries)), head.NumSeries())
+						requireInitialSamples(t, c)
+					}
+					q, err := head.ExemplarQuerier(t.Context())
+					require.NoError(t, err)
+					got, err := q.Select(0, 2000, []*labels.Matcher{labels.MustNewMatcher(labels.MatchRegexp, "__name__", "latency.*")})
+					require.NoError(t, err)
+					require.Len(t, got, 1, "receiver must preserve the histogram exemplar")
+					require.Len(t, got[0].Exemplars, 1)
+					testutil.RequireEqual(t, exemplarLabels, got[0].Exemplars[0].Labels)
+					require.Equal(t, 0.5, got[0].Exemplars[0].Value)
+					require.Equal(t, int64(1000), got[0].Exemplars[0].Ts)
+					if kind == "native control" {
+						testutil.RequireEqual(t, baseSeries.Labels, got[0].SeriesLabels)
+					} else {
+						require.Equal(t, "latency_bucket", got[0].SeriesLabels.Get("__name__"))
+						bound, err := strconv.ParseFloat(got[0].SeriesLabels.Get("le"), 64)
+						require.NoError(t, err)
+						require.GreaterOrEqual(t, bound, 0.5)
+						require.NotEmpty(t, c.receivedSamples[got[0].SeriesLabels.String()])
+					}
+				})
+			}
 		}
 	})
 }
