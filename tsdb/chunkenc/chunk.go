@@ -454,8 +454,12 @@ func (p *pool) Put(c Chunk) error {
 
 // FromData returns a chunk from a byte slice of chunk data.
 // This is there so that users of the library can easily create chunks from
-// bytes.
+// bytes. It returns an error if d is shorter than the encoding's header,
+// which the chunk's iterators read without checking its length.
 func FromData(e Encoding, d []byte) (Chunk, error) {
+	if header := headerSize(e); len(d) < header {
+		return nil, fmt.Errorf("%s chunk data is %d bytes, shorter than its %d-byte header", e, len(d), header)
+	}
 	switch e {
 	case EncXOR:
 		return &XORChunk{b: bstream{count: 0, stream: d}}, nil
@@ -471,6 +475,20 @@ func FromData(e Encoding, d []byte) (Chunk, error) {
 		return &FloatHistogramSTChunk{b: bstream{count: 0, stream: d}}, nil
 	}
 	return nil, fmt.Errorf("invalid chunk encoding %q", e)
+}
+
+// headerSize returns the size of the header that every chunk of encoding e
+// starts with, or 0 for an unknown encoding.
+func headerSize(e Encoding) int {
+	switch e {
+	case EncXOR:
+		return chunkHeaderSize
+	case EncXOR2:
+		return chunkHeaderSize + chunkSTHeaderSize
+	case EncHistogram, EncFloatHistogram, EncHistogramST, EncFloatHistogramST:
+		return histogramHeaderSize
+	}
+	return 0
 }
 
 // NewEmptyChunk returns an empty chunk for the given encoding.
