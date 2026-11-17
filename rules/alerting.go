@@ -250,7 +250,7 @@ func (r *AlertingRule) sample(alert *Alert, ts time.Time) promql.Sample {
 		lb.Set(l.Name, l.Value)
 	})
 
-	lb.Set(labels.MetricName, alertMetricName)
+	schema.Metadata{Name: alertMetricName}.SetToLabels(lb)
 	lb.Set(labels.AlertName, r.name)
 	lb.Set(alertStateLabel, alert.State.String())
 
@@ -273,7 +273,7 @@ func (r *AlertingRule) forStateSample(alert *Alert, ts time.Time, v float64) pro
 		})
 	}
 
-	lb.Set(labels.MetricName, alertForStateMetricName)
+	schema.Metadata{Name: alertForStateMetricName}.SetToLabels(lb)
 	lb.Set(labels.AlertName, r.name)
 
 	s := promql.Sample{
@@ -440,13 +440,13 @@ func (r *AlertingRule) Eval(ctx context.Context, queryOffset time.Duration, ts t
 		}
 
 		lb.Reset(smpl.Metric)
-		// Strip __name__, __type__, and __unit__ from the input metric so schema
-		// metadata labels from the evaluated expression do not leak into alert labels,
-		// ALERTS, or ALERTS_FOR_STATE.
-		schema.Metadata{}.SetToLabels(lb)
 		r.labels.Range(func(l labels.Label) {
 			lb.Set(l.Name, expand(l.Value))
 		})
+		// Strip __name__, __type__, and __unit__ after applying rule labels so schema
+		// metadata labels from the evaluated expression or rule config do not leak into
+		// alert labels, ALERTS, or ALERTS_FOR_STATE.
+		schema.Metadata{}.SetToLabels(lb)
 		lb.Set(labels.AlertName, r.Name())
 
 		sb.Reset()

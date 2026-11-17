@@ -1461,4 +1461,132 @@ func TestAlertingRuleStripsMetadataLabels(t *testing.T) {
 			})
 		}
 	})
+
+	t.Run("rule_labels_cannot_reinject_metadata_labels", func(t *testing.T) {
+		ruleLbls := labels.FromStrings(
+			model.MetricTypeLabel, string(model.MetricTypeGauge),
+			model.MetricUnitLabel, "seconds",
+			"job", "override",
+			"severity", "page",
+		)
+		r := NewAlertingRule(
+			"HighErrors",
+			expr,
+			5*time.Minute,
+			0,
+			ruleLbls,
+			labels.EmptyLabels(),
+			labels.EmptyLabels(),
+			"",
+			true,
+			promslog.NewNopLogger(),
+		)
+		vec, err := r.Eval(t.Context(), 0, evalTime, EngineQueryFunc(ng, st), nil, 0)
+		require.NoError(t, err)
+		require.Len(t, vec, 2)
+
+		wantAlertLbls := labels.FromStrings(labels.AlertName, "HighErrors", "job", "override", "severity", "page")
+		gotActive := r.ActiveAlerts()
+		require.Len(t, gotActive, 1)
+		testutil.RequireEqual(t, wantAlertLbls, gotActive[0].Labels)
+
+		testutil.RequireEqual(t, promql.Vector{
+			{
+				Metric: labels.FromStrings(
+					model.MetricNameLabel, alertMetricName,
+					labels.AlertName, "HighErrors",
+					alertStateLabel, "pending",
+					"job", "override",
+					"severity", "page",
+				),
+				T: timestamp.FromTime(evalTime),
+				F: 1,
+			},
+			{
+				Metric: labels.FromStrings(
+					model.MetricNameLabel, alertForStateMetricName,
+					labels.AlertName, "HighErrors",
+					"job", "override",
+					"severity", "page",
+				),
+				T: timestamp.FromTime(evalTime),
+				F: float64(evalTime.Unix()),
+			},
+		}, vec)
+
+		// Verify RestoreForState still matches stored ALERTS_FOR_STATE when rule labels contain __type__/__unit__.
+		restoreStore := teststorage.New(t)
+		app := restoreStore.AppenderV2(t.Context())
+		_, err = app.Append(
+			0,
+			labels.FromStrings(
+				model.MetricNameLabel, "http_errors_total",
+				model.MetricTypeLabel, string(model.MetricTypeCounter),
+				model.MetricUnitLabel, "errors",
+				"job", "api",
+			),
+			0,
+			timestamp.FromTime(evalTime),
+			42,
+			nil,
+			nil,
+			storage.AOptions{},
+		)
+		require.NoError(t, err)
+		_, err = app.Append(
+			0,
+			labels.FromStrings(
+				model.MetricNameLabel, alertForStateMetricName,
+				labels.AlertName, "HighErrors",
+				"job", "override",
+				"severity", "page",
+			),
+			0,
+			timestamp.FromTime(evalTime),
+			float64(evalTime.Add(-4*time.Minute).Unix()),
+			nil,
+			nil,
+			storage.AOptions{},
+		)
+		require.NoError(t, err)
+		require.NoError(t, app.Commit())
+
+		restored := NewAlertingRule(
+			"HighErrors",
+			expr,
+			5*time.Minute,
+			0,
+			ruleLbls,
+			labels.EmptyLabels(),
+			labels.EmptyLabels(),
+			"",
+			false,
+			promslog.NewNopLogger(),
+		)
+		grp := NewGroup(GroupOptions{
+			Name:          "default",
+			Interval:      time.Minute,
+			Rules:         []Rule{restored},
+			ShouldRestore: true,
+			Opts: &ManagerOptions{
+				Context:                 t.Context(),
+				Queryable:               restoreStore,
+				QueryFunc:               EngineQueryFunc(ng, restoreStore),
+				AppendableV2:            restoreStore,
+				NotifyFunc:              func(context.Context, string, ...*Alert) {},
+				OutageTolerance:         time.Hour,
+				ForGracePeriod:          30 * time.Second,
+				Logger:                  promslog.NewNopLogger(),
+				EnableTypeAndUnitLabels: true,
+			},
+		})
+		grp.Eval(t.Context(), evalTime)
+		require.NoError(t, restored.LastError())
+		grp.RestoreForState(evalTime.Add(30 * time.Second))
+		require.True(t, restored.Restored())
+
+		gotRestored := restored.ActiveAlerts()
+		require.Len(t, gotRestored, 1)
+		require.Equal(t, evalTime.Add(-3*time.Minute-30*time.Second), gotRestored[0].ActiveAt)
+	})
 }
