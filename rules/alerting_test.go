@@ -1288,7 +1288,7 @@ func TestAlertingRuleStripsMetadataLabels(t *testing.T) {
 		5*time.Minute,
 		0,
 		labels.FromStrings("severity", "page"),
-		labels.EmptyLabels(),
+		labels.FromStrings("summary", "{{ $labels.__name__ }} {{ $labels.__type__ }} {{ $labels.__unit__ }}"),
 		labels.EmptyLabels(),
 		"",
 		true,
@@ -1302,6 +1302,7 @@ func TestAlertingRuleStripsMetadataLabels(t *testing.T) {
 	active := rule.ActiveAlerts()
 	require.Len(t, active, 1)
 	testutil.RequireEqual(t, labels.FromStrings(labels.AlertName, "HighErrors", "job", "api", "severity", "page"), active[0].Labels)
+	testutil.RequireEqual(t, labels.FromStrings("summary", "http_errors_total counter errors"), active[0].Annotations)
 
 	expected := promql.Vector{
 		{
