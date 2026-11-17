@@ -126,7 +126,7 @@ nansum{quantile="0.99"} NaN`
 	input += "\n# HELP metric foo\x00bar"
 	input += "\nnull_byte_metric{a=\"abc\x00\"} 1"
 	input += "\n# TYPE esc_ex counter"
-	input += "\nesc_ex_total 3 # {trace_id=\"a\\nb\\\"c\\\\d\"} 1.5 1699999999.0"
+	input += "\nesc_ex_total 3 # {trace_id=\"a\\nb\\\"c\\\\d\",\"trace\\\"_id\"=\"a\"} 1.5 1699999999.0"
 	input += "\nesc_ex_created 1699999900.0"
 	input += "\n# EOF\n"
 
@@ -697,7 +697,7 @@ nansum{quantile="0.99"} NaN`
 						labels.FromStrings("__name__", "esc_ex_total"),
 					),
 					es: []exemplar.Exemplar{
-						{Labels: labels.FromStrings("trace_id", "a\nb\"c\\d"), Value: 1.5, HasTs: true, Ts: 1699999999000},
+						{Labels: labels.FromStrings("trace\"_id", "a", "trace_id", "a\nb\"c\\d"), Value: 1.5, HasTs: true, Ts: 1699999999000},
 					},
 					st: 1699999900000,
 				},
