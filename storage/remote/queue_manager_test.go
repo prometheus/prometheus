@@ -2750,11 +2750,15 @@ func TestBuildV2TimeSeries_CoalescedExemplars(t *testing.T) {
 			expectedHighest: 8000,
 		},
 		{
-			name: "old sample keeps fresh exemplar in WriteModeNone",
+			name: "old sample and old histogram keep fresh exemplars in WriteModeNone",
 			input: []writev2.TimeSeries{
 				{
 					Samples:   []writev2.Sample{{Timestamp: 3000, Value: 1}},
 					Exemplars: []writev2.Exemplar{{Timestamp: 3500, Value: 1}, {Timestamp: 7000, Value: 2}},
+				},
+				{
+					Histograms: []writev2.Histogram{{Timestamp: 4000}},
+					Exemplars:  []writev2.Exemplar{{Timestamp: 7500, Value: 3}},
 				},
 			},
 			withAgeFilter: true,
@@ -2764,12 +2768,17 @@ func TestBuildV2TimeSeries_CoalescedExemplars(t *testing.T) {
 					Samples:   []writev2.Sample{},
 					Exemplars: []writev2.Exemplar{{Timestamp: 7000, Value: 2}},
 				},
+				{
+					Histograms: []writev2.Histogram{},
+					Exemplars:  []writev2.Exemplar{{Timestamp: 7500, Value: 3}},
+				},
 			},
-			expectedLowest:           7000,
-			expectedHighest:          7000,
-			expectedDroppedSamples:   1,
-			expectedDroppedExemplars: 1,
-			expectedTooOldExemplars:  1,
+			expectedLowest:            7000,
+			expectedHighest:           7500,
+			expectedDroppedSamples:    1,
+			expectedDroppedExemplars:  1,
+			expectedDroppedHistograms: 1,
+			expectedTooOldExemplars:   1,
 		},
 		{
 			name: "old sample and old histogram drop fresh exemplars as detached in WriteModeStateless",
@@ -2802,6 +2811,52 @@ func TestBuildV2TimeSeries_CoalescedExemplars(t *testing.T) {
 			expectedDroppedHistograms:        1,
 			expectedTooOldExemplars:          1,
 			expectedDetachedDroppedExemplars: 2,
+		},
+		{
+			name: "all series filtered out in WriteModeStatelessST returns empty slice",
+			input: []writev2.TimeSeries{
+				{
+					Samples:   []writev2.Sample{{Timestamp: 3000, Value: 1}},
+					Exemplars: []writev2.Exemplar{{Timestamp: 7000, Value: 2}},
+				},
+				{
+					Samples:   []writev2.Sample{{Timestamp: 3500, Value: 2}},
+					Exemplars: []writev2.Exemplar{{Timestamp: 2500, Value: 3}, {Timestamp: 4000, Value: 4}},
+				},
+			},
+			withAgeFilter:                    true,
+			mode:                             remoteapi.WriteModeStatelessST,
+			expectedKept:                     []writev2.TimeSeries{},
+			expectedLowest:                   math.MaxInt64,
+			expectedHighest:                  0,
+			expectedDroppedSamples:           2,
+			expectedDroppedExemplars:         3,
+			expectedTooOldExemplars:          2,
+			expectedDetachedDroppedExemplars: 1,
+		},
+		{
+			name: "old sample with all-old exemplars in WriteModeStateless does not count detached",
+			input: []writev2.TimeSeries{
+				{
+					Samples:   []writev2.Sample{{Timestamp: 3000, Value: 1}},
+					Exemplars: []writev2.Exemplar{{Timestamp: 2000, Value: 1}, {Timestamp: 4000, Value: 2}},
+				},
+				{
+					Samples: []writev2.Sample{{Timestamp: 8000, Value: 2}},
+				},
+			},
+			withAgeFilter: true,
+			mode:          remoteapi.WriteModeStateless,
+			expectedKept: []writev2.TimeSeries{
+				{
+					Samples: []writev2.Sample{{Timestamp: 8000, Value: 2}},
+				},
+			},
+			expectedLowest:           8000,
+			expectedHighest:          8000,
+			expectedDroppedSamples:   1,
+			expectedDroppedExemplars: 2,
+			expectedTooOldExemplars:  2,
 		},
 		{
 			name: "fresh series with mixed-age and all-old exemplars drops only old exemplars",
@@ -2859,6 +2914,44 @@ func TestBuildV2TimeSeries_CoalescedExemplars(t *testing.T) {
 			}
 		})
 	}
+
+	t.Run("sequential retry filter passes do not double-count dropped metrics", func(t *testing.T) {
+		metrics := newQueueManagerMetrics(nil, "", "")
+		series := []writev2.TimeSeries{
+			{
+				Samples:   []writev2.Sample{{Timestamp: 6000, Value: 1}},
+				Exemplars: []writev2.Exemplar{{Timestamp: 4000, Value: 1}, {Timestamp: 8500, Value: 2}},
+			},
+			{
+				Samples:   []writev2.Sample{{Timestamp: 9000, Value: 2}},
+				Exemplars: []writev2.Exemplar{{Timestamp: 9500, Value: 3}},
+			},
+		}
+
+		// Pass 1 at t=10_000 (cutoff 5000): drops exemplar@4000 (too_old), keeps both series.
+		got, stats := buildV2TimeSeries(series, isV2TimeSeriesOldFilter(metrics, baseTime, ageLimit, remoteapi.WriteModeStatelessST))
+		require.Len(t, got, 2)
+		require.Equal(t, 0, stats.droppedSamples)
+		require.Equal(t, 1, stats.droppedExemplars)
+		require.Equal(t, int64(6000), stats.lowest)
+		require.Equal(t, 1.0, client_testutil.ToFloat64(metrics.droppedExemplarsTotal.WithLabelValues(reasonTooOld)))
+		require.Equal(t, 0.0, client_testutil.ToFloat64(metrics.droppedExemplarsTotal.WithLabelValues(reasonDetachedExemplarNotAllowed)))
+
+		// Pass 2 at t=12_000 (cutoff 7000): drops sample@6000 (too_old) and fresh exemplar@8500 (detached); does not re-count exemplar@4000.
+		got, stats = buildV2TimeSeries(got, isV2TimeSeriesOldFilter(metrics, time.UnixMilli(12_000), ageLimit, remoteapi.WriteModeStatelessST))
+		require.Equal(t, []writev2.TimeSeries{
+			{
+				Samples:   []writev2.Sample{{Timestamp: 9000, Value: 2}},
+				Exemplars: []writev2.Exemplar{{Timestamp: 9500, Value: 3}},
+			},
+		}, got)
+		require.Equal(t, 1, stats.droppedSamples)
+		require.Equal(t, 1, stats.droppedExemplars)
+		require.Equal(t, int64(9000), stats.lowest)
+		require.Equal(t, 1.0, client_testutil.ToFloat64(metrics.droppedSamplesTotal.WithLabelValues(reasonTooOld)))
+		require.Equal(t, 1.0, client_testutil.ToFloat64(metrics.droppedExemplarsTotal.WithLabelValues(reasonTooOld)))
+		require.Equal(t, 1.0, client_testutil.ToFloat64(metrics.droppedExemplarsTotal.WithLabelValues(reasonDetachedExemplarNotAllowed)))
+	})
 }
 
 func BenchmarkBuildTimeSeries(b *testing.B) {
