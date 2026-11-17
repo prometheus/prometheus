@@ -5434,6 +5434,8 @@ func canSkipHistogramBuckets(path []parser.Node) bool {
 			// If we ever see a subquery in the path, we will not
 			// skip the buckets. We need the buckets for correct
 			// counter reset detection.
+			// TODO: handle cases when counter resets don't matter, e.g.:
+			// count_over_time, last_over_time, present_over_time.
 			return false
 		}
 		if statsFuncFound {

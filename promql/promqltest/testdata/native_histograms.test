@@ -2737,8 +2737,10 @@ eval instant at 2m timestamp(resets(hist_gauge_resets[5m]) > 0)
 
 eval instant at 2m absent(resets(hist_gauge_resets[5m]) > 0)
 
-# Division does not need the buckets, so these cases check that the function
-# below it gets the buckets.
+# The count and sum of a histogram divided by a float only depend on the count
+# and sum of the histogram, so the left selector can skip the buckets. The
+# function on the right needs the buckets, so its selector must still decode
+# them.
 eval instant at 2m histogram_count(hist_values_a / on() changes(hist_changes[5m]))
   {} 4
 
