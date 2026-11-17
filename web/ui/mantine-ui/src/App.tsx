@@ -61,6 +61,8 @@ import ErrorBoundary from "./components/ErrorBoundary";
 import { ThemeSelector } from "./components/ThemeSelector";
 import { Notifications } from "@mantine/notifications";
 import { useSettings } from "./state/settingsSlice";
+import { useAppDispatch } from "./state/hooks";
+import { newDefaultPanel, setPanels } from "./state/queryPageSlice";
 import SettingsMenu from "./components/SettingsMenu";
 import ReadinessWrapper from "./components/ReadinessWrapper";
 import NotificationsProvider from "./components/NotificationsProvider";
@@ -189,6 +191,7 @@ const navLinkXPadding = "md";
 
 function App() {
   const [opened, { toggle }] = useDisclosure();
+  const dispatch = useAppDispatch();
 
   const { agentMode, consolesLink, pathPrefix } = useSettings();
 
@@ -213,6 +216,22 @@ function App() {
             key={p.path}
             component={NavLink}
             to={p.path}
+            replace={p.path === "/query" ? false : undefined}
+            onClick={(event) => {
+              const { altKey, button, ctrlKey, metaKey, shiftKey } = event;
+              if (
+                p.path === "/query" &&
+                !event.defaultPrevented &&
+                button === 0 &&
+                !(altKey || ctrlKey || metaKey || shiftKey)
+              ) {
+                if (event.currentTarget.href === window.location.href) {
+                  event.preventDefault();
+                } else {
+                  dispatch(setPanels([newDefaultPanel()]));
+                }
+              }
+            }}
             className={classes.link}
             leftSection={p.icon}
             px={navLinkXPadding}
