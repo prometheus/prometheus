@@ -16,6 +16,7 @@ package rules
 import (
 	"context"
 	"errors"
+	"math"
 	"runtime"
 	"testing"
 	"time"
@@ -28,6 +29,7 @@ import (
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/model/relabel"
 	"github.com/prometheus/prometheus/model/timestamp"
+	"github.com/prometheus/prometheus/model/value"
 	"github.com/prometheus/prometheus/notifier"
 	"github.com/prometheus/prometheus/promql"
 	"github.com/prometheus/prometheus/promql/parser"
@@ -1321,4 +1323,142 @@ func TestAlertingRuleStripsMetadataLabels(t *testing.T) {
 	restoredActive := restoredRule.ActiveAlerts()
 	require.Len(t, restoredActive, 1)
 	require.Equal(t, evalTime.Add(-3*time.Minute-30*time.Second), restoredActive[0].ActiveAt)
+
+	t.Run("restore_colliding_for_state_series", func(t *testing.T) {
+		type storedForState struct {
+			lbls labels.Labels
+			ts   time.Time
+			val  float64
+		}
+		stale := math.Float64frombits(value.StaleNaN)
+		activeVal := float64(evalTime.Add(-4 * time.Minute).Unix())
+		wantRestored := evalTime.Add(-3*time.Minute - 30*time.Second)
+
+		untypedLbls := labels.FromStrings(
+			model.MetricNameLabel, alertForStateMetricName,
+			labels.AlertName, "HighErrors",
+			"job", "api",
+			"severity", "page",
+		)
+		typedGaugeLbls := labels.FromStrings(
+			model.MetricNameLabel, alertForStateMetricName,
+			model.MetricTypeLabel, string(model.MetricTypeGauge),
+			labels.AlertName, "HighErrors",
+			"job", "api",
+			"severity", "page",
+		)
+		leakedCounterLbls := labels.FromStrings(
+			model.MetricNameLabel, alertForStateMetricName,
+			model.MetricTypeLabel, string(model.MetricTypeCounter),
+			model.MetricUnitLabel, "errors",
+			labels.AlertName, "HighErrors",
+			"job", "api",
+			"severity", "page",
+		)
+
+		cases := []struct {
+			name         string
+			series       []storedForState
+			wantActiveAt time.Time
+		}{
+			{
+				name: "newer_typed_beats_older_stale_untyped",
+				series: []storedForState{
+					{lbls: typedGaugeLbls, ts: evalTime, val: activeVal},
+					{lbls: untypedLbls, ts: evalTime.Add(-time.Minute), val: stale},
+				},
+				wantActiveAt: wantRestored,
+			},
+			{
+				name: "newer_stale_untyped_beats_older_active_leaked",
+				series: []storedForState{
+					{lbls: untypedLbls, ts: evalTime, val: stale},
+					{lbls: leakedCounterLbls, ts: evalTime.Add(-time.Minute), val: activeVal},
+				},
+				wantActiveAt: evalTime,
+			},
+			{
+				name: "same_timestamp_active_first_beats_stale",
+				series: []storedForState{
+					{lbls: untypedLbls, ts: evalTime, val: activeVal},
+					{lbls: leakedCounterLbls, ts: evalTime, val: stale},
+				},
+				wantActiveAt: wantRestored,
+			},
+			{
+				name: "same_timestamp_stale_first_loses_to_active",
+				series: []storedForState{
+					{lbls: leakedCounterLbls, ts: evalTime, val: stale},
+					{lbls: untypedLbls, ts: evalTime, val: activeVal},
+				},
+				wantActiveAt: wantRestored,
+			},
+		}
+
+		for _, tc := range cases {
+			t.Run(tc.name, func(t *testing.T) {
+				caseStore := teststorage.New(t)
+				app := caseStore.AppenderV2(t.Context())
+				_, err := app.Append(
+					0,
+					labels.FromStrings(
+						model.MetricNameLabel, "http_errors_total",
+						model.MetricTypeLabel, string(model.MetricTypeCounter),
+						model.MetricUnitLabel, "errors",
+						"job", "api",
+					),
+					0,
+					timestamp.FromTime(evalTime),
+					42,
+					nil,
+					nil,
+					storage.AOptions{},
+				)
+				require.NoError(t, err)
+				for _, s := range tc.series {
+					_, err := app.Append(0, s.lbls, 0, timestamp.FromTime(s.ts), s.val, nil, nil, storage.AOptions{})
+					require.NoError(t, err)
+				}
+				require.NoError(t, app.Commit())
+
+				r := NewAlertingRule(
+					"HighErrors",
+					expr,
+					5*time.Minute,
+					0,
+					labels.FromStrings("severity", "page"),
+					labels.EmptyLabels(),
+					labels.EmptyLabels(),
+					"",
+					false,
+					promslog.NewNopLogger(),
+				)
+				grp := NewGroup(GroupOptions{
+					Name:          "default",
+					Interval:      time.Minute,
+					Rules:         []Rule{r},
+					ShouldRestore: true,
+					Opts: &ManagerOptions{
+						Context:                 t.Context(),
+						Queryable:               caseStore,
+						QueryFunc:               EngineQueryFunc(ng, caseStore),
+						AppendableV2:            caseStore,
+						NotifyFunc:              func(context.Context, string, ...*Alert) {},
+						OutageTolerance:         time.Hour,
+						ForGracePeriod:          30 * time.Second,
+						Logger:                  promslog.NewNopLogger(),
+						EnableTypeAndUnitLabels: true,
+					},
+				})
+				grp.Eval(t.Context(), evalTime)
+				require.NoError(t, r.LastError())
+				grp.RestoreForState(evalTime.Add(30 * time.Second))
+				require.True(t, r.Restored())
+
+				got := r.ActiveAlerts()
+				require.Len(t, got, 1)
+				require.Equal(t, tc.wantActiveAt, got[0].ActiveAt)
+			})
+		}
+	})
 }
