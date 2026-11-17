@@ -1398,6 +1398,148 @@ func cmpStaleSeriesRef(s staleSeries, ref storage.SeriesRef) int {
 	return cmp.Compare(s.ref, ref)
 }
 
+// refBloom is a stack-allocated 1 KiB 2-hash Bloom filter over SeriesRef values.
+// For typical churn (up to ~1k stale series), it rejects >95% of non-matching live
+// refs in L1 cache without touching the stale slice.
+type refBloom [128]uint64
+
+func (b *refBloom) add(ref storage.SeriesRef) {
+	h1 := uint64(ref) * 0x9e3779b97f4a7c15
+	b[(h1>>57)&127] |= 1 << (h1 & 63)
+	h2 := (h1 >> 32) * 0xbf58476d1ce4e5b9
+	b[(h2>>57)&127] |= 1 << (h2 & 63)
+}
+
+func (b *refBloom) mayContain(ref storage.SeriesRef) bool {
+	h1 := uint64(ref) * 0x9e3779b97f4a7c15
+	if b[(h1>>57)&127]&(1<<(h1&63)) == 0 {
+		return false
+	}
+	h2 := (h1 >> 32) * 0xbf58476d1ce4e5b9
+	return b[(h2>>57)&127]&(1<<(h2&63)) != 0
+}
+
+// filterStaleHashes partitions unmatchedPrev in-place via swaps so all hashes
+// missing from unmatchedCur/curSet (or present in replacedPrev) occupy the returned
+// prefix, keeping every hash intact in unmatchedPrev for retry safety.
+func filterStaleHashes(unmatchedPrev, unmatchedCur []uint64, curSet map[uint64]struct{}, replacedPrev map[uint64]staleSeries, hashMapThreshold int) []uint64 {
+	if curSet == nil && len(unmatchedCur) == 0 {
+		return unmatchedPrev
+	}
+	if curSet == nil && len(unmatchedCur) > hashMapThreshold {
+		curSet = make(map[uint64]struct{}, len(unmatchedCur))
+		for _, h := range unmatchedCur {
+			curSet[h] = struct{}{}
+		}
+		unmatchedCur = nil
+	}
+
+	hasReplacedPrev := len(replacedPrev) > 0
+	keep := func(staleEnd, i int) int {
+		if staleEnd != i {
+			unmatchedPrev[staleEnd], unmatchedPrev[i] = unmatchedPrev[i], unmatchedPrev[staleEnd]
+		}
+		return staleEnd + 1
+	}
+	isReplaced := func(h uint64) bool {
+		if !hasReplacedPrev {
+			return false
+		}
+		_, replaced := replacedPrev[h]
+		return replaced
+	}
+
+	staleEnd := 0
+	switch {
+	case curSet != nil:
+		for i, h := range unmatchedPrev {
+			if isReplaced(h) {
+				staleEnd = keep(staleEnd, i)
+				continue
+			}
+			if _, found := curSet[h]; !found {
+				staleEnd = keep(staleEnd, i)
+			}
+		}
+	case len(unmatchedPrev) <= 16:
+		slices.Sort(unmatchedCur)
+		for i, h := range unmatchedPrev {
+			if isReplaced(h) {
+				staleEnd = keep(staleEnd, i)
+				continue
+			}
+			if _, found := slices.BinarySearch(unmatchedCur, h); !found {
+				staleEnd = keep(staleEnd, i)
+			}
+		}
+	default:
+		slices.Sort(unmatchedCur)
+		slices.Sort(unmatchedPrev)
+		ci := 0
+		// NOTE: staleEnd <= i holds throughout, so swapping into unmatchedPrev[staleEnd]
+		// only touches already-visited indices and preserves sorted order of unmatchedPrev[i+1:].
+		for i, h := range unmatchedPrev {
+			if isReplaced(h) {
+				staleEnd = keep(staleEnd, i)
+				continue
+			}
+			for ci < len(unmatchedCur) && unmatchedCur[ci] < h {
+				ci++
+			}
+			if ci >= len(unmatchedCur) || unmatchedCur[ci] != h {
+				staleEnd = keep(staleEnd, i)
+			}
+		}
+	}
+	return unmatchedPrev[:staleEnd]
+}
+
+// markLiveStaleSeries marks entries in sorted, deduplicated stale whose SeriesRef
+// is still live in seriesCur or extraCur. Returns true if all entries are alive.
+func (c *scrapeCache) markLiveStaleSeries(stale []staleSeries, hasMovedRefs bool) bool {
+	minRef := stale[0].ref
+	maxRef := stale[len(stale)-1].ref
+	var bloom refBloom
+	for _, s := range stale {
+		bloom.add(s.ref)
+	}
+
+	remaining := len(stale)
+	markAlive := func(ref storage.SeriesRef) bool {
+		if ref < minRef || ref > maxRef || !bloom.mayContain(ref) {
+			return false
+		}
+		if idx, ok := slices.BinarySearchFunc(stale, ref, cmpStaleSeriesRef); ok && !stale[idx].alive {
+			stale[idx].alive = true
+			remaining--
+			return remaining == 0
+		}
+		return false
+	}
+
+	for _, curH := range c.seriesCur {
+		if ce, ok := c.series[curH]; ok {
+			curRef := ce.ref
+			if hasMovedRefs {
+				curRef = c.remapRef(curRef, ce.lset)
+			}
+			if markAlive(curRef) {
+				return true
+			}
+		}
+	}
+	for _, cur := range c.extraCur {
+		curRef := cur.ref
+		if hasMovedRefs {
+			curRef = c.remapRef(curRef, cur.lset)
+		}
+		if markAlive(curRef) {
+			return true
+		}
+	}
+	return false
+}
+
 func (c *scrapeCache) prevSeries(h uint64) (storage.SeriesRef, labels.Labels, bool) {
 	if len(c.replacedPrev) > 0 {
 		if old, ok := c.replacedPrev[h]; ok {
@@ -1507,83 +1649,7 @@ func (c *scrapeCache) forEachStale(f func(storage.SeriesRef, labels.Labels) bool
 			if len(unmatchedPrev) > 0 {
 				// Remove hashes from unmatchedPrev that still appear in unmatchedCur (e.g. due to
 				// reordered metrics or shifted positions), unless they were deleted/replaced mid-scrape.
-				if curSet == nil && len(unmatchedCur) == 0 {
-					staleHashes = unmatchedPrev
-				} else {
-					if curSet == nil && len(unmatchedCur) > hashMapThreshold {
-						curSet = make(map[uint64]struct{}, len(unmatchedCur))
-						for _, h := range unmatchedCur {
-							curSet[h] = struct{}{}
-						}
-						unmatchedCur = nil
-					}
-
-					staleEnd := 0
-					if curSet != nil {
-						for i, h := range unmatchedPrev {
-							if hasReplacedPrev {
-								if _, deleted := c.replacedPrev[h]; deleted {
-									if staleEnd != i {
-										unmatchedPrev[staleEnd], unmatchedPrev[i] = unmatchedPrev[i], unmatchedPrev[staleEnd]
-									}
-									staleEnd++
-									continue
-								}
-							}
-							if _, found := curSet[h]; !found {
-								if staleEnd != i {
-									unmatchedPrev[staleEnd], unmatchedPrev[i] = unmatchedPrev[i], unmatchedPrev[staleEnd]
-								}
-								staleEnd++
-							}
-						}
-					} else {
-						slices.Sort(unmatchedCur)
-						if len(unmatchedPrev) <= 16 {
-							for i, h := range unmatchedPrev {
-								if hasReplacedPrev {
-									if _, deleted := c.replacedPrev[h]; deleted {
-										if staleEnd != i {
-											unmatchedPrev[staleEnd], unmatchedPrev[i] = unmatchedPrev[i], unmatchedPrev[staleEnd]
-										}
-										staleEnd++
-										continue
-									}
-								}
-								if _, found := slices.BinarySearch(unmatchedCur, h); !found {
-									if staleEnd != i {
-										unmatchedPrev[staleEnd], unmatchedPrev[i] = unmatchedPrev[i], unmatchedPrev[staleEnd]
-									}
-									staleEnd++
-								}
-							}
-						} else {
-							slices.Sort(unmatchedPrev)
-							ci := 0
-							for i, h := range unmatchedPrev {
-								if hasReplacedPrev {
-									if _, deleted := c.replacedPrev[h]; deleted {
-										if staleEnd != i {
-											unmatchedPrev[staleEnd], unmatchedPrev[i] = unmatchedPrev[i], unmatchedPrev[staleEnd]
-										}
-										staleEnd++
-										continue
-									}
-								}
-								for ci < len(unmatchedCur) && unmatchedCur[ci] < h {
-									ci++
-								}
-								if ci >= len(unmatchedCur) || unmatchedCur[ci] != h {
-									if staleEnd != i {
-										unmatchedPrev[staleEnd], unmatchedPrev[i] = unmatchedPrev[i], unmatchedPrev[staleEnd]
-									}
-									staleEnd++
-								}
-							}
-						}
-					}
-					staleHashes = unmatchedPrev[:staleEnd]
-				}
+				staleHashes = filterStaleHashes(unmatchedPrev, unmatchedCur, curSet, c.replacedPrev, hashMapThreshold)
 			}
 		}
 	}
@@ -1673,58 +1739,8 @@ func (c *scrapeCache) forEachStale(f func(storage.SeriesRef, labels.Labels) bool
 	})
 
 	if len(c.seriesCur) > 0 || len(c.extraCur) > 0 {
-		minRef := stale[0].ref
-		maxRef := stale[len(stale)-1].ref
-		// Stack-allocated 1 KiB Bloom filter rejects >95% of non-matching live refs
-		// in L1 cache without touching the stale slice.
-		var bloom [128]uint64
-		for _, s := range stale {
-			h1 := uint64(s.ref) * 0x9e3779b97f4a7c15
-			bloom[(h1>>57)&127] |= 1 << (h1 & 63)
-			h2 := (h1 >> 32) * 0xbf58476d1ce4e5b9
-			bloom[(h2>>57)&127] |= 1 << (h2 & 63)
-		}
-
-		remaining := len(stale)
-		markAlive := func(ref storage.SeriesRef) bool {
-			if ref < minRef || ref > maxRef {
-				return false
-			}
-			h1 := uint64(ref) * 0x9e3779b97f4a7c15
-			if bloom[(h1>>57)&127]&(1<<(h1&63)) == 0 {
-				return false
-			}
-			h2 := (h1 >> 32) * 0xbf58476d1ce4e5b9
-			if bloom[(h2>>57)&127]&(1<<(h2&63)) == 0 {
-				return false
-			}
-			if idx, ok := slices.BinarySearchFunc(stale, ref, cmpStaleSeriesRef); ok && !stale[idx].alive {
-				stale[idx].alive = true
-				remaining--
-				return remaining == 0
-			}
-			return false
-		}
-
-		for _, curH := range c.seriesCur {
-			if ce, ok := c.series[curH]; ok {
-				curRef := ce.ref
-				if hasMovedRefs {
-					curRef = c.remapRef(curRef, ce.lset)
-				}
-				if markAlive(curRef) {
-					return
-				}
-			}
-		}
-		for _, cur := range c.extraCur {
-			curRef := cur.ref
-			if hasMovedRefs {
-				curRef = c.remapRef(curRef, cur.lset)
-			}
-			if markAlive(curRef) {
-				return
-			}
+		if c.markLiveStaleSeries(stale, hasMovedRefs) {
+			return
 		}
 	}
 
