@@ -3212,10 +3212,14 @@ func TestPopulateV2TimeSeries_ExemplarCoalescing(t *testing.T) {
 	}
 	floatHist := hist.ToFloat(nil)
 	stale := math.Float64frombits(value.StaleNaN)
+	staleHist := &histogram.Histogram{Sum: stale}
+	staleFloatHist := &histogram.FloatHistogram{Sum: stale}
 	sCounter := labels.FromStrings("__name__", "requests_total", "job", "api")
 	sHist := labels.FromStrings("__name__", "latency_seconds", "job", "api")
 	sFloatHist := labels.FromStrings("__name__", "float_latency_seconds", "job", "api")
 	sStaleOnly := labels.FromStrings("__name__", "stale_only_total", "job", "api")
+	sStaleHistOnly := labels.FromStrings("__name__", "stale_hist_only", "job", "api")
+	sStaleFloatHistOnly := labels.FromStrings("__name__", "stale_fhist_only", "job", "api")
 	sDetached := labels.FromStrings("__name__", "detached_total", "job", "worker")
 
 	t.Run("exemplar before sample, staleness skipping, latest sample, and histogram series", func(t *testing.T) {
@@ -3226,41 +3230,51 @@ func TestPopulateV2TimeSeries_ExemplarCoalescing(t *testing.T) {
 			{sType: tMetadata, seriesLabels: labels.FromStrings("__name__", "unexpected_meta")},
 			// Exemplar arriving before its matching samples in the batch.
 			{sType: tExemplar, seriesLabels: sCounter, exemplarLabels: labels.FromStrings("trace_id", "ex1"), value: 1, timestamp: 100},
-			// Older sample followed by a newer sample for the same series; exemplars must attach to the latest live sample (index 1).
+			// Older live sample (0), newer live sample (1), and trailing stale sample (2); exemplars must attach to index 1.
 			{sType: tSample, seriesLabels: sCounter, value: 40, timestamp: 90, startTimestamp: 50},
 			{sType: tSample, seriesLabels: sCounter, value: 42, timestamp: 100, startTimestamp: 50},
+			{sType: tSample, seriesLabels: sCounter, value: stale, timestamp: 110},
 			// Second exemplar for the same sample series.
 			{sType: tExemplar, seriesLabels: sCounter, exemplarLabels: labels.FromStrings("trace_id", "ex2"), value: 2, timestamp: 101},
-			// Float staleness marker preceding native histogram for sHist; exemplar must skip stale entry (index 2) and attach to histogram (index 3).
+			// Leading stale float (3), live native histogram (4), and trailing stale native histogram (5); exemplar must attach to index 4.
 			{sType: tSample, seriesLabels: sHist, value: stale, timestamp: 199},
 			{sType: tHistogram, seriesLabels: sHist, histogram: hist, timestamp: 200, startTimestamp: 50},
+			{sType: tHistogram, seriesLabels: sHist, histogram: staleHist, timestamp: 210},
+			// Live float histogram (6) followed by trailing stale float histogram (7); exemplar must attach to index 6.
 			{sType: tFloatHistogram, seriesLabels: sFloatHist, floatHistogram: floatHist, timestamp: 300},
+			{sType: tFloatHistogram, seriesLabels: sFloatHist, floatHistogram: staleFloatHist, timestamp: 310},
+			// Stale-only float (8), int histogram (9), and float histogram (10) series.
 			{sType: tSample, seriesLabels: sStaleOnly, value: stale, timestamp: 350},
+			{sType: tHistogram, seriesLabels: sStaleHistOnly, histogram: staleHist, timestamp: 360},
+			{sType: tFloatHistogram, seriesLabels: sStaleFloatHistOnly, floatHistogram: staleFloatHist, timestamp: 370},
 			{sType: tExemplar, seriesLabels: sHist, exemplarLabels: labels.FromStrings("trace_id", "ex_hist"), value: 3, timestamp: 200},
 			{sType: tExemplar, seriesLabels: sFloatHist, exemplarLabels: labels.FromStrings("trace_id", "ex_fhist"), value: 4, timestamp: 300},
-			// Exemplar whose series only has a StaleNaN marker in the batch must be treated as detached and dropped in stateless mode.
+			// Exemplars whose series only have StaleNaN markers in the batch must be treated as detached and dropped in stateless mode.
 			{sType: tExemplar, seriesLabels: sStaleOnly, exemplarLabels: labels.FromStrings("trace_id", "stale_dropped"), value: 6, timestamp: 350},
+			{sType: tExemplar, seriesLabels: sStaleHistOnly, exemplarLabels: labels.FromStrings("trace_id", "stale_hist_dropped"), value: 7, timestamp: 360},
+			{sType: tExemplar, seriesLabels: sStaleFloatHistOnly, exemplarLabels: labels.FromStrings("trace_id", "stale_fhist_dropped"), value: 8, timestamp: 370},
 			// Detached exemplar with no matching sample or histogram.
 			{sType: tExemplar, seriesLabels: sDetached, exemplarLabels: labels.FromStrings("trace_id", "dropped_trace"), value: 5, timestamp: 400},
 		}
 
-		// Size pendingData to the exact number of output series (6) to verify attached and dropped exemplars do not index out of bounds.
-		pendingData := make([]writev2.TimeSeries, 6)
+		// Size pendingData to the exact number of output series (11) to verify attached and dropped exemplars do not index out of bounds.
+		pendingData := make([]writev2.TimeSeries, 11)
 		nSeries, nSamples, nExemplars, nHistograms, nUnexpected, nDropped := populateV2TimeSeries(
 			&symbolTable, batch, pendingData, nil, true, true, false, remoteapi.WriteModeStateless,
 		)
 
-		require.Equal(t, 6, nSeries)
-		require.Equal(t, 4, nSamples)
+		require.Equal(t, 11, nSeries)
+		require.Equal(t, 5, nSamples)
 		require.Equal(t, 4, nExemplars)
-		require.Equal(t, 2, nHistograms)
+		require.Equal(t, 6, nHistograms)
 		require.Equal(t, 1, nUnexpected)
-		require.Equal(t, 2, nDropped)
+		require.Equal(t, 4, nDropped)
 
-		// Older sCounter sample at index 0 has no exemplars; latest live sCounter sample at index 1 has both coalesced exemplars.
+		// Older sCounter sample (0) and trailing stale sample (2) have no exemplars; latest live sCounter sample (1) has both.
 		require.Empty(t, pendingData[0].Exemplars)
 		require.Len(t, pendingData[1].Samples, 1)
 		require.Len(t, pendingData[1].Exemplars, 2)
+		require.Empty(t, pendingData[2].Exemplars)
 		b := labels.NewScratchBuilder(0)
 		gotEx0, err := pendingData[1].Exemplars[0].ToExemplar(&b, symbolTable.Symbols())
 		require.NoError(t, err)
@@ -3269,22 +3283,29 @@ func TestPopulateV2TimeSeries_ExemplarCoalescing(t *testing.T) {
 		require.NoError(t, err)
 		testutil.RequireEqual(t, exemplar.Exemplar{Labels: labels.FromStrings("trace_id", "ex2"), Value: 2, Ts: 101, HasTs: true}, gotEx1)
 
-		// Float StaleNaN on sHist at index 2 has no exemplars; live histogram on sHist at index 3 has the coalesced exemplar.
-		require.Empty(t, pendingData[2].Exemplars)
-		require.Len(t, pendingData[3].Histograms, 1)
-		require.Len(t, pendingData[3].Exemplars, 1)
-		require.Equal(t, float64(3), pendingData[3].Exemplars[0].Value)
-
+		// Leading stale float (3) and trailing stale histogram (5) have no exemplars; live histogram (4) has the coalesced exemplar.
+		require.Empty(t, pendingData[3].Exemplars)
 		require.Len(t, pendingData[4].Histograms, 1)
 		require.Len(t, pendingData[4].Exemplars, 1)
-		require.Equal(t, float64(4), pendingData[4].Exemplars[0].Value)
-
-		// Stale-only series at index 5 must not carry exemplars.
+		require.Equal(t, float64(3), pendingData[4].Exemplars[0].Value)
 		require.Empty(t, pendingData[5].Exemplars)
+
+		// Live float histogram (6) has the coalesced exemplar; trailing stale float histogram (7) has none.
+		require.Len(t, pendingData[6].Histograms, 1)
+		require.Len(t, pendingData[6].Exemplars, 1)
+		require.Equal(t, float64(4), pendingData[6].Exemplars[0].Value)
+		require.Empty(t, pendingData[7].Exemplars)
+
+		// Stale-only series at indices 8, 9, 10 must not carry exemplars.
+		require.Empty(t, pendingData[8].Exemplars)
+		require.Empty(t, pendingData[9].Exemplars)
+		require.Empty(t, pendingData[10].Exemplars)
 
 		// Dropped exemplar labels and series labels must not leak into the symbol table.
 		require.NotContains(t, symbolTable.Symbols(), "dropped_trace")
 		require.NotContains(t, symbolTable.Symbols(), "stale_dropped")
+		require.NotContains(t, symbolTable.Symbols(), "stale_hist_dropped")
+		require.NotContains(t, symbolTable.Symbols(), "stale_fhist_dropped")
 		require.NotContains(t, symbolTable.Symbols(), "detached_total")
 		require.NotContains(t, symbolTable.Symbols(), "worker")
 
@@ -4794,6 +4815,7 @@ func TestQueueManager_RemoteWriteModes(t *testing.T) {
 			}))
 			require.True(t, m.AppendExemplars([]record.RefExemplar{
 				{Ref: sCounterWithST.Ref, T: 1000, V: 1, Labels: labels.FromStrings("trace_id", "abc")},    // Keep: coalesced onto live sCounterWithST sample
+				{Ref: sHistWithST.Ref, T: 2500, V: 2.5, Labels: labels.FromStrings("trace_id", "hst")},     // Keep: coalesced onto live sHistWithST histogram, skipping trailing stale markers
 				{Ref: sGaugeHistNoST.Ref, T: 2000, V: 1.5, Labels: labels.FromStrings("trace_id", "gh")},   // Keep: coalesced onto sGaugeHistNoST histogram
 				{Ref: sCounterNoST.Ref, T: 1000, V: 2, Labels: labels.FromStrings("trace_id", "def")},      // Drop: sample for sCounterNoST was dropped, so exemplar is detached
 				{Ref: sUntyped.Ref, T: 1000, V: 3, Labels: labels.FromStrings("trace_id", "untyped_stex")}, // Drop: sample for sUntyped was dropped, so exemplar is detached
@@ -4835,8 +4857,11 @@ func TestQueueManager_RemoteWriteModes(t *testing.T) {
 
 			require.Equal(t, map[string][]prompb.Exemplar{
 				sCounterWithST.Labels.String(): {{Labels: []prompb.Label{{Name: "trace_id", Value: "abc"}}, Value: 1, Timestamp: 1000}},
+				sHistWithST.Labels.String():    {{Labels: []prompb.Label{{Name: "trace_id", Value: "hst"}}, Value: 2.5, Timestamp: 2500}},
 				sGaugeHistNoST.Labels.String(): {{Labels: []prompb.Label{{Name: "trace_id", Value: "gh"}}, Value: 1.5, Timestamp: 2000}},
 			}, c.receivedExemplars)
+			var foundLiveHistWithExemplar bool
+			b := labels.NewScratchBuilder(0)
 			for _, req := range c.receivedV2Requests {
 				require.NotContains(t, req.Symbols, "def")
 				require.NotContains(t, req.Symbols, "untyped_stex")
@@ -4845,8 +4870,18 @@ func TestQueueManager_RemoteWriteModes(t *testing.T) {
 					if len(ts.Samples) > 0 && value.IsStaleNaN(ts.Samples[0].Value) {
 						require.Empty(t, ts.Exemplars, "exemplars must not attach to StaleNaN samples")
 					}
+					if len(ts.Histograms) > 0 && value.IsStaleNaN(ts.Histograms[0].Sum) {
+						require.Empty(t, ts.Exemplars, "exemplars must not attach to StaleNaN histograms")
+					}
+					gotLbls, err := ts.ToLabels(&b, req.Symbols)
+					require.NoError(t, err)
+					if labels.Equal(gotLbls, sHistWithST.Labels) && len(ts.Histograms) > 0 && !value.IsStaleNaN(ts.Histograms[0].Sum) && len(ts.Exemplars) > 0 {
+						require.Equal(t, int64(2500), ts.Histograms[0].Timestamp)
+						foundLiveHistWithExemplar = true
+					}
 				}
 			}
+			require.True(t, foundLiveHistWithExemplar)
 		})
 	}
 }
