@@ -2436,7 +2436,7 @@ func (s *shards) sendV2SamplesWithBackoff(ctx context.Context, samples []writev2
 	return accumulatedStats, err
 }
 
-func initV2TimeSeriesMetadata(ts *writev2.TimeSeries, symbolTable *writev2.SymbolsTable, d timeSeries, enableTypeAndUnitLabels bool) {
+func initV2TimeSeriesMetadata(ts *writev2.TimeSeries, symbolTable *writev2.SymbolsTable, d *timeSeries, enableTypeAndUnitLabels bool) {
 	var (
 		mType = model.MetricTypeUnknown
 		unit  string
@@ -2462,7 +2462,7 @@ func initV2TimeSeriesMetadata(ts *writev2.TimeSeries, symbolTable *writev2.Symbo
 	ts.Metadata.HelpRef = symbolTable.Symbolize(help)
 }
 
-func isStaleTimeSeries(d timeSeries) bool {
+func isStaleTimeSeries(d *timeSeries) bool {
 	switch d.sType {
 	case tSample:
 		return value.IsStaleNaN(d.value)
@@ -2505,7 +2505,7 @@ func findExemplarTargetIndex(batch []timeSeries, seriesIdx map[uint64]exemplarTa
 		if batch[i].sType == tExemplar || batch[i].sType == tMetadata {
 			continue
 		}
-		if !isStaleTimeSeries(batch[i]) && labels.Equal(batch[i].seriesLabels, seriesLabels) {
+		if !isStaleTimeSeries(&batch[i]) && labels.Equal(batch[i].seriesLabels, seriesLabels) {
 			attachedIdx = dataIdx
 		}
 		dataIdx++
@@ -2519,7 +2519,8 @@ func populateV2TimeSeries(symbolTable *writev2.SymbolsTable, batch []timeSeries,
 		hasExemplars                                                                                            bool
 	)
 
-	for _, d := range batch {
+	for i := range batch {
+		d := &batch[i]
 		if d.sType == tExemplar {
 			hasExemplars = true
 			continue
@@ -2529,32 +2530,38 @@ func populateV2TimeSeries(symbolTable *writev2.SymbolsTable, batch []timeSeries,
 			continue
 		}
 
-		pendingData[nSeries].Samples = pendingData[nSeries].Samples[:0]
+		ts := &pendingData[nSeries]
+		ts.Samples = ts.Samples[:0]
 		if sendExemplars {
-			pendingData[nSeries].Exemplars = pendingData[nSeries].Exemplars[:0]
+			ts.Exemplars = ts.Exemplars[:0]
 		}
 		if sendNativeHistograms {
-			pendingData[nSeries].Histograms = pendingData[nSeries].Histograms[:0]
+			ts.Histograms = ts.Histograms[:0]
 		}
-		initV2TimeSeriesMetadata(&pendingData[nSeries], symbolTable, d, enableTypeAndUnitLabels)
+		if !enableTypeAndUnitLabels && metadata.IsZeroHandle(d.metadata) {
+			// Empty string is always symbol ref 0 in writev2.SymbolsTable.
+			ts.Metadata = writev2.Metadata{}
+		} else {
+			initV2TimeSeriesMetadata(ts, symbolTable, d, enableTypeAndUnitLabels)
+		}
 
 		// Number of pending samples is limited by the fact that sendSamples (via sendSamplesWithBackoff)
 		// retries endlessly, so once we reach max samples, if we can never send to the endpoint we'll
 		// stop reading from the queue. This makes it safe to reference pendingSamples by index.
-		pendingData[nSeries].LabelsRefs = symbolTable.SymbolizeLabels(d.seriesLabels, pendingData[nSeries].LabelsRefs)
+		ts.LabelsRefs = symbolTable.SymbolizeLabels(d.seriesLabels, ts.LabelsRefs)
 		switch d.sType {
 		case tSample:
-			pendingData[nSeries].Samples = append(pendingData[nSeries].Samples, writev2.Sample{
+			ts.Samples = append(ts.Samples, writev2.Sample{
 				Value:          d.value,
 				Timestamp:      d.timestamp,
 				StartTimestamp: d.startTimestamp,
 			})
 			nPendingSamples++
 		case tHistogram:
-			pendingData[nSeries].Histograms = append(pendingData[nSeries].Histograms, writev2.FromIntHistogram(d.startTimestamp, d.timestamp, d.histogram))
+			ts.Histograms = append(ts.Histograms, writev2.FromIntHistogram(d.startTimestamp, d.timestamp, d.histogram))
 			nPendingHistograms++
 		case tFloatHistogram:
-			pendingData[nSeries].Histograms = append(pendingData[nSeries].Histograms, writev2.FromFloatHistogram(d.startTimestamp, d.timestamp, d.floatHistogram))
+			ts.Histograms = append(ts.Histograms, writev2.FromFloatHistogram(d.startTimestamp, d.timestamp, d.floatHistogram))
 			nPendingHistograms++
 		}
 		nSeries++
@@ -2574,14 +2581,15 @@ func populateV2TimeSeries(symbolTable *writev2.SymbolsTable, batch []timeSeries,
 			if batch[i].sType == tExemplar || batch[i].sType == tMetadata {
 				continue
 			}
-			if !isStaleTimeSeries(batch[i]) {
+			if !isStaleTimeSeries(&batch[i]) {
 				seriesIdx[batch[i].seriesLabels.Hash()] = exemplarTarget{batchIdx: i, dataIdx: dataIdx}
 			}
 			dataIdx++
 		}
 	}
 
-	for _, d := range batch {
+	for i := range batch {
+		d := &batch[i]
 		if d.sType != tExemplar {
 			continue
 		}
@@ -2601,17 +2609,22 @@ func populateV2TimeSeries(symbolTable *writev2.SymbolsTable, batch []timeSeries,
 			nDroppedExemplars++
 			continue
 		}
-		pendingData[nSeries].Samples = pendingData[nSeries].Samples[:0]
+		ts := &pendingData[nSeries]
+		ts.Samples = ts.Samples[:0]
 		if sendNativeHistograms {
-			pendingData[nSeries].Histograms = pendingData[nSeries].Histograms[:0]
+			ts.Histograms = ts.Histograms[:0]
 		}
-		pendingData[nSeries].LabelsRefs = symbolTable.SymbolizeLabels(d.seriesLabels, pendingData[nSeries].LabelsRefs)
-		pendingData[nSeries].Exemplars = append(pendingData[nSeries].Exemplars[:0], writev2.Exemplar{
+		ts.LabelsRefs = symbolTable.SymbolizeLabels(d.seriesLabels, ts.LabelsRefs)
+		ts.Exemplars = append(ts.Exemplars[:0], writev2.Exemplar{
 			LabelsRefs: symbolTable.SymbolizeLabels(d.exemplarLabels, nil), // TODO(bwplotka): Reuse Exemplar.LabelsRefs slice across batches.
 			Value:      d.value,
 			Timestamp:  d.timestamp,
 		})
-		initV2TimeSeriesMetadata(&pendingData[nSeries], symbolTable, d, enableTypeAndUnitLabels)
+		if !enableTypeAndUnitLabels && metadata.IsZeroHandle(d.metadata) {
+			ts.Metadata = writev2.Metadata{}
+		} else {
+			initV2TimeSeriesMetadata(ts, symbolTable, d, enableTypeAndUnitLabels)
+		}
 		nPendingExemplars++
 		nSeries++
 	}
