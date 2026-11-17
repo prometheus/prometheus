@@ -16,6 +16,7 @@ package scrape
 import (
 	"bufio"
 	"bytes"
+	"cmp"
 	"context"
 	"errors"
 	"fmt"
@@ -955,6 +956,12 @@ type cacheEntry struct {
 	st *stCache
 }
 
+type staleSeries struct {
+	lset  labels.Labels
+	ref   storage.SeriesRef
+	alive bool
+}
+
 // seriesMetaEntry caches a series' post-relabel metadata and metric family name (meta, mfName)
 // alongside the pre-relabel parser state (origMeta, origMFName) that produced them.
 // When metric_relabel_configs is configured, the fast path checks origMeta and origMFName
@@ -1058,9 +1065,17 @@ type scrapeCache struct {
 	// Cache of dropped metric string hashes (xxhash.Sum64) and their last seen iteration.
 	droppedSeries map[uint64]uint64
 
-	// Series that were seen in the current and previous scrape, for staleness detection.
-	seriesCur  map[storage.SeriesRef]labels.Labels
-	seriesPrev map[storage.SeriesRef]labels.Labels
+	// Metric hashes (matching keys in series) seen in the current and previous
+	// scrape, for staleness detection. Storing uint64 hashes keeps both slices
+	// pointer-free (noscan) at ~16 B/series across both slices.
+	seriesCur  []uint64
+	seriesPrev []uint64
+
+	// Lazily allocated only when deleteSeries removes a cached entry mid-scrape
+	// (e.g. metadata relabeling drops or changes a series' labels) so forEachStale
+	// still has the previous (ref, lset) to emit a stale marker.
+	deletedPrev map[uint64]staleSeries
+	deletedCur  map[uint64]staleSeries
 
 	// Per-series post-relabel metadata cache, lazily allocated when metric relabel rules
 	// or metadata relabeling are enabled.
@@ -1133,8 +1148,6 @@ func newScrapeCache(metrics *scrapeMetrics) *scrapeCache {
 	return &scrapeCache{
 		series:        map[uint64]cacheEntry{},
 		droppedSeries: map[uint64]uint64{},
-		seriesCur:     map[storage.SeriesRef]labels.Labels{},
-		seriesPrev:    map[storage.SeriesRef]labels.Labels{},
 		metadata:      map[string]*metaEntry{},
 		metrics:       metrics,
 	}
@@ -1192,9 +1205,13 @@ func (c *scrapeCache) iterDone(flushCache bool) {
 		c.metaMtx.Unlock()
 	}
 
-	// Swap current and previous series then clear the new current, to save allocations.
-	c.seriesPrev, c.seriesCur = c.seriesCur, c.seriesPrev
-	clear(c.seriesCur)
+	// Swap current and previous series slices, reusing backing arrays.
+	// Elements are uint64 hashes (pointer-free), so no clear() is needed.
+	c.seriesPrev, c.seriesCur = c.seriesCur, c.seriesPrev[:0]
+	if flushCache && cap(c.seriesCur) > 1024 && len(c.seriesPrev) < cap(c.seriesCur)/4 {
+		c.seriesCur = nil
+	}
+	c.deletedPrev, c.deletedCur = c.deletedCur, nil
 
 	c.iter++
 }
@@ -1231,8 +1248,27 @@ func (c *scrapeCache) setSeriesMeta(metHash uint64, origMeta, meta unique.Handle
 	}
 }
 
-func (c *scrapeCache) deleteSeries(metHash uint64) {
-	delete(c.series, metHash)
+func (c *scrapeCache) deleteSeries(metHash uint64, alreadyScraped bool) {
+	if ce, ok := c.series[metHash]; ok {
+		if ce.ref != 0 {
+			old := staleSeries{ref: ce.ref, lset: ce.lset}
+			if c.deletedPrev == nil {
+				c.deletedPrev = make(map[uint64]staleSeries)
+			}
+			if _, exists := c.deletedPrev[metHash]; !exists {
+				c.deletedPrev[metHash] = old
+			}
+			if alreadyScraped && slices.Contains(c.seriesCur, metHash) {
+				if c.deletedCur == nil {
+					c.deletedCur = make(map[uint64]staleSeries)
+				}
+				if _, exists := c.deletedCur[metHash]; !exists {
+					c.deletedCur[metHash] = old
+				}
+			}
+		}
+		delete(c.series, metHash)
+	}
 	if c.seriesMeta != nil {
 		delete(c.seriesMeta, metHash)
 	}
@@ -1280,43 +1316,318 @@ func (c *scrapeCache) getDroppedWithMeta(metHash uint64, origMFName unique.Handl
 }
 
 // updateRef points the cache entry at a new storage reference, e.g. because the
-// storage garbage collected the series and had to recreate it. Staleness is tracked
-// per reference, so the tracking has to follow the entry to the new reference,
-// otherwise the series looks like it stopped being exposed and gets a stale marker.
+// storage garbage collected the series and had to recreate it. Because seriesPrev
+// and seriesCur store metric hashes into c.series, updating ce.ref in c.series
+// keeps staleness tracking in sync without affecting other entries.
 func (c *scrapeCache) updateRef(metHash uint64, ce *cacheEntry, ref storage.SeriesRef) {
 	if ce.ref == ref {
 		return
-	}
-	if ce.ref != 0 {
-		moveStaleness(c.seriesPrev, ce.ref, ref, ce.lset)
-		moveStaleness(c.seriesCur, ce.ref, ref, ce.lset)
 	}
 	ce.ref = ref
 	c.series[metHash] = *ce
 }
 
-// moveStaleness re-keys the staleness tracking of lset from oldRef to ref. Whether the
-// series is considered stale is left as it is, only the reference it is tracked under
-// changes. Tracking that belongs to another series is left alone.
-func moveStaleness(tracked map[storage.SeriesRef]labels.Labels, oldRef, ref storage.SeriesRef, lset labels.Labels) {
-	trackedLset, ok := tracked[oldRef]
-	if !ok || !labels.Equal(trackedLset, lset) {
+func (c *scrapeCache) trackStaleness(metHash uint64) {
+	if n := len(c.seriesCur); n > 0 && c.seriesCur[n-1] == metHash {
 		return
 	}
-	delete(tracked, oldRef)
-	tracked[ref] = lset
+	c.seriesCur = append(c.seriesCur, metHash)
 }
 
-func (c *scrapeCache) trackStaleness(ref storage.SeriesRef, lset labels.Labels) {
-	c.seriesCur[ref] = lset
+func cmpStaleSeriesByRef(a, b staleSeries) int {
+	return cmp.Compare(a.ref, b.ref)
+}
+
+func cmpStaleSeriesRef(s staleSeries, ref storage.SeriesRef) int {
+	return cmp.Compare(s.ref, ref)
+}
+
+func (c *scrapeCache) prevSeries(h uint64) (storage.SeriesRef, labels.Labels, bool) {
+	if len(c.deletedPrev) > 0 {
+		if old, ok := c.deletedPrev[h]; ok {
+			return old.ref, old.lset, true
+		}
+	}
+	if ce, ok := c.series[h]; ok {
+		return ce.ref, ce.lset, true
+	}
+	return 0, labels.EmptyLabels(), false
 }
 
 func (c *scrapeCache) forEachStale(f func(storage.SeriesRef, labels.Labels) bool) {
-	for ref, lset := range c.seriesPrev {
-		if _, ok := c.seriesCur[ref]; !ok {
-			if !f(ref, lset) {
+	if len(c.seriesPrev) == 0 {
+		return
+	}
+
+	hasDeletedPrev := len(c.deletedPrev) > 0
+
+	// Fast path: when no cached entries were deleted mid-scrape and the scrape
+	// exposed the exact same metric hashes in the same order, nothing is stale.
+	if !hasDeletedPrev && slices.Equal(c.seriesPrev, c.seriesCur) {
+		return
+	}
+
+	// Scan index-by-index so unchanged series at identical positions skip hash
+	// sorting and map lookups completely.
+	minLen := min(len(c.seriesPrev), len(c.seriesCur))
+	firstMismatch := -1
+	if hasDeletedPrev {
+		firstMismatch = 0
+	} else {
+		for i := range minLen {
+			if c.seriesPrev[i] != c.seriesCur[i] {
+				firstMismatch = i
 				break
 			}
+		}
+		if firstMismatch < 0 {
+			if len(c.seriesPrev) <= len(c.seriesCur) {
+				// Pure append at the tail of the scrape; all previous series are still present.
+				return
+			}
+			firstMismatch = minLen
+		}
+	}
+
+	// Partition mismatched previous hashes into c.seriesPrev[firstMismatch:prevEnd]
+	// via swaps so c.seriesPrev keeps every hash intact for any retry before iterDone.
+	// Collect mismatched current hashes separately so c.seriesCur retains scrape order
+	// for the next iteration's fast path.
+	const hashMapThreshold = 2048
+	prevEnd := firstMismatch
+	var stackCur [64]uint64
+	unmatchedCur := stackCur[:0]
+	var curSet map[uint64]struct{}
+	for i := firstMismatch; i < minLen; i++ {
+		ph := c.seriesPrev[i]
+		ch := c.seriesCur[i]
+		if !hasDeletedPrev && ph == ch {
+			continue
+		}
+		if prevEnd != i {
+			c.seriesPrev[prevEnd], c.seriesPrev[i] = c.seriesPrev[i], c.seriesPrev[prevEnd]
+		}
+		prevEnd++
+		if curSet != nil {
+			curSet[ch] = struct{}{}
+		} else {
+			unmatchedCur = append(unmatchedCur, ch)
+			// When mismatch density is high (e.g. shuffled scrape order or heavy churn),
+			// switch to a presized map directly instead of growing and sorting a large slice.
+			if len(unmatchedCur) == hashMapThreshold && i-firstMismatch < hashMapThreshold*2 {
+				curSet = make(map[uint64]struct{}, len(c.seriesCur)-firstMismatch)
+				for _, h := range unmatchedCur {
+					curSet[h] = struct{}{}
+				}
+				unmatchedCur = nil
+			}
+		}
+	}
+	for i := max(firstMismatch, minLen); i < len(c.seriesPrev); i++ {
+		if prevEnd != i {
+			c.seriesPrev[prevEnd], c.seriesPrev[i] = c.seriesPrev[i], c.seriesPrev[prevEnd]
+		}
+		prevEnd++
+	}
+	if tailStart := max(firstMismatch, minLen); len(c.seriesCur) > tailStart {
+		if curSet != nil {
+			for _, h := range c.seriesCur[tailStart:] {
+				curSet[h] = struct{}{}
+			}
+		} else {
+			unmatchedCur = append(unmatchedCur, c.seriesCur[tailStart:]...)
+		}
+	}
+
+	unmatchedPrev := c.seriesPrev[firstMismatch:prevEnd]
+	if len(unmatchedPrev) == 0 {
+		return
+	}
+
+	// Remove hashes from unmatchedPrev that still appear in unmatchedCur (e.g. due to
+	// reordered metrics or shifted positions), unless they were deleted/replaced mid-scrape.
+	var staleHashes []uint64
+	if curSet == nil && len(unmatchedCur) == 0 {
+		staleHashes = unmatchedPrev
+	} else {
+		if curSet == nil && len(unmatchedCur) > hashMapThreshold {
+			curSet = make(map[uint64]struct{}, len(unmatchedCur))
+			for _, h := range unmatchedCur {
+				curSet[h] = struct{}{}
+			}
+			unmatchedCur = nil
+		}
+
+		staleEnd := 0
+		if curSet != nil {
+			for i, h := range unmatchedPrev {
+				if hasDeletedPrev {
+					if _, deleted := c.deletedPrev[h]; deleted {
+						if staleEnd != i {
+							unmatchedPrev[staleEnd], unmatchedPrev[i] = unmatchedPrev[i], unmatchedPrev[staleEnd]
+						}
+						staleEnd++
+						continue
+					}
+				}
+				if _, found := curSet[h]; !found {
+					if staleEnd != i {
+						unmatchedPrev[staleEnd], unmatchedPrev[i] = unmatchedPrev[i], unmatchedPrev[staleEnd]
+					}
+					staleEnd++
+				}
+			}
+		} else {
+			slices.Sort(unmatchedCur)
+			if len(unmatchedPrev) <= 16 {
+				for i, h := range unmatchedPrev {
+					if hasDeletedPrev {
+						if _, deleted := c.deletedPrev[h]; deleted {
+							if staleEnd != i {
+								unmatchedPrev[staleEnd], unmatchedPrev[i] = unmatchedPrev[i], unmatchedPrev[staleEnd]
+							}
+							staleEnd++
+							continue
+						}
+					}
+					if _, found := slices.BinarySearch(unmatchedCur, h); !found {
+						if staleEnd != i {
+							unmatchedPrev[staleEnd], unmatchedPrev[i] = unmatchedPrev[i], unmatchedPrev[staleEnd]
+						}
+						staleEnd++
+					}
+				}
+			} else {
+				slices.Sort(unmatchedPrev)
+				ci := 0
+				for i, h := range unmatchedPrev {
+					if hasDeletedPrev {
+						if _, deleted := c.deletedPrev[h]; deleted {
+							if staleEnd != i {
+								unmatchedPrev[staleEnd], unmatchedPrev[i] = unmatchedPrev[i], unmatchedPrev[staleEnd]
+							}
+							staleEnd++
+							continue
+						}
+					}
+					for ci < len(unmatchedCur) && unmatchedCur[ci] < h {
+						ci++
+					}
+					if ci >= len(unmatchedCur) || unmatchedCur[ci] != h {
+						if staleEnd != i {
+							unmatchedPrev[staleEnd], unmatchedPrev[i] = unmatchedPrev[i], unmatchedPrev[staleEnd]
+						}
+						staleEnd++
+					}
+				}
+			}
+		}
+		staleHashes = unmatchedPrev[:staleEnd]
+	}
+
+	if len(staleHashes) == 0 {
+		return
+	}
+
+	// Another cacheEntry (e.g. from changed label ordering or multiple raw metrics
+	// relabeling to the same series) may still have kept ref alive in seriesCur,
+	// or multiple disappearing entries may share the same ref.
+	if len(staleHashes) == 1 {
+		ref, lset, ok := c.prevSeries(staleHashes[0])
+		if !ok {
+			return
+		}
+		if len(c.seriesCur) > 0 {
+			for _, curH := range c.seriesCur {
+				if ce, ok := c.series[curH]; ok && ce.ref == ref {
+					return
+				}
+			}
+			for _, cur := range c.deletedCur {
+				if cur.ref == ref {
+					return
+				}
+			}
+		}
+		f(ref, lset)
+		return
+	}
+
+	var stackStale [32]staleSeries
+	var stale []staleSeries
+	if len(staleHashes) <= len(stackStale) {
+		stale = stackStale[:0]
+	} else {
+		stale = make([]staleSeries, 0, len(staleHashes))
+	}
+	for _, h := range staleHashes {
+		if ref, lset, ok := c.prevSeries(h); ok {
+			stale = append(stale, staleSeries{ref: ref, lset: lset})
+		}
+	}
+	if len(stale) == 0 {
+		return
+	}
+
+	slices.SortFunc(stale, cmpStaleSeriesByRef)
+	stale = slices.CompactFunc(stale, func(a, b staleSeries) bool {
+		return a.ref == b.ref
+	})
+
+	if len(c.seriesCur) > 0 {
+		minRef := stale[0].ref
+		maxRef := stale[len(stale)-1].ref
+		// Stack-allocated 1 KiB Bloom filter rejects >95% of non-matching live refs
+		// in L1 cache without touching the stale slice.
+		var bloom [128]uint64
+		for _, s := range stale {
+			h1 := uint64(s.ref) * 0x9e3779b97f4a7c15
+			bloom[(h1>>57)&127] |= 1 << (h1 & 63)
+			h2 := (h1 >> 32) * 0xbf58476d1ce4e5b9
+			bloom[(h2>>57)&127] |= 1 << (h2 & 63)
+		}
+
+		remaining := len(stale)
+		markAlive := func(ref storage.SeriesRef) bool {
+			if ref < minRef || ref > maxRef {
+				return false
+			}
+			h1 := uint64(ref) * 0x9e3779b97f4a7c15
+			if bloom[(h1>>57)&127]&(1<<(h1&63)) == 0 {
+				return false
+			}
+			h2 := (h1 >> 32) * 0xbf58476d1ce4e5b9
+			if bloom[(h2>>57)&127]&(1<<(h2&63)) == 0 {
+				return false
+			}
+			if idx, ok := slices.BinarySearchFunc(stale, ref, cmpStaleSeriesRef); ok && !stale[idx].alive {
+				stale[idx].alive = true
+				remaining--
+				return remaining == 0
+			}
+			return false
+		}
+
+		for _, curH := range c.seriesCur {
+			if ce, ok := c.series[curH]; ok {
+				if markAlive(ce.ref) {
+					return
+				}
+			}
+		}
+		for _, cur := range c.deletedCur {
+			if markAlive(cur.ref) {
+				return
+			}
+		}
+	}
+
+	for _, s := range stale {
+		if s.alive {
+			continue
+		}
+		if !f(s.ref, s.lset) {
+			return
 		}
 	}
 }
@@ -2247,7 +2558,7 @@ loop:
 				sl.cache.updateRef(metHash, &ce, ref)
 			}
 			if (parsedTimestamp == nil || sl.trackTimestampsStaleness) && ce.ref != 0 {
-				sl.cache.trackStaleness(ce.ref, ce.lset)
+				sl.cache.trackStaleness(metHash)
 			}
 		}
 
@@ -2267,7 +2578,7 @@ loop:
 			ce = sl.cache.addRef(metHash, ref, lset, nil)
 			if ce.ref != 0 && (parsedTimestamp == nil || sl.trackTimestampsStaleness) {
 				// Bypass staleness logic if there is an explicit timestamp.
-				sl.cache.trackStaleness(ce.ref, ce.lset)
+				sl.cache.trackStaleness(metHash)
 			}
 			if sampleLimitErr == nil && bucketLimitErr == nil {
 				seriesAdded++

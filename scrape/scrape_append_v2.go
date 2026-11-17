@@ -337,7 +337,7 @@ loop:
 				// The label set may be set to empty to indicate dropping.
 				if lset.IsEmpty() {
 					if seriesCached {
-						sl.cache.deleteSeries(metHash)
+						sl.cache.deleteSeries(metHash, seriesAlreadyScraped)
 					}
 					sl.cache.addDroppedWithMeta(metHash, origMFNameHandle, origMetaHandle)
 					continue
@@ -368,7 +368,7 @@ loop:
 						ref = ce.ref
 						sl.cache.setSeriesMeta(metHash, origMetaHandle, sampleMetaHandle, origMFNameHandle, sampleMFNameHandle)
 					} else {
-						sl.cache.deleteSeries(metHash)
+						sl.cache.deleteSeries(metHash, seriesAlreadyScraped)
 						ce = cacheEntry{}
 						seriesCached = false
 					}
@@ -530,7 +530,7 @@ loop:
 		// - Or we are synthesizing start times (stCache != nil), so we can clear stCache if it goes stale.
 		shouldTrackStaleness := parsedTimestamp == nil || sl.trackTimestampsStaleness || stCache != nil
 		if hasCE && ce.ref != 0 && shouldTrackStaleness && sampleAdded {
-			sl.cache.trackStaleness(ce.ref, ce.lset)
+			sl.cache.trackStaleness(metHash)
 		}
 
 		// Increment added even if there's an error so we correctly report the
