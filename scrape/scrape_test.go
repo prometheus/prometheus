@@ -10409,3 +10409,224 @@ func TestScrapeOffsetDistribution(t *testing.T) {
 		}
 	})
 }
+
+// BenchmarkScrapeCacheStaleness benchmarks scrapeCache staleness tracking across
+// steady-state scrapes, shuffled scrape order, and series churn, reporting
+// retained staleness bytes per series.
+//
+// Recommended CLI invocation:
+/*
+	export bench=staleness && go test ./scrape/... \
+		-run '^$' -bench '^BenchmarkScrapeCacheStaleness' \
+		-benchtime 2s -count 6 -cpu 2 -timeout 999m -benchmem \
+		| tee ${bench}.txt
+*/
+func BenchmarkScrapeCacheStaleness(b *testing.B) {
+	metrics := newTestScrapeMetrics(b)
+
+	liveHeap := func() uint64 {
+		runtime.GC()
+		runtime.GC() // The second cycle also empties sync.Pool victim caches.
+		samples := []runtimemetrics.Sample{{Name: "/gc/heap/live:bytes"}}
+		runtimemetrics.Read(samples)
+		return samples[0].Value.Uint64()
+	}
+
+	type benchSeries struct {
+		hash uint64
+		ce   cacheEntry
+	}
+
+	for _, numSeries := range []int{10000, 100000} {
+		entriesA := make([]benchSeries, numSeries)
+		entriesB := make([]benchSeries, numSeries)
+		for i := range numSeries {
+			id := strconv.Itoa(i)
+			entriesA[i] = benchSeries{
+				hash: xxhash.Sum64String("metric_a{id=\"" + id + "\"}"),
+				ce: cacheEntry{
+					ref:  storage.SeriesRef(i + 1),
+					lset: labels.FromStrings(model.MetricNameLabel, "metric_a", "id", id),
+				},
+			}
+			entriesB[i] = benchSeries{
+				hash: xxhash.Sum64String("metric_b{id=\"" + id + "\"}"),
+				ce: cacheEntry{
+					ref:  storage.SeriesRef(numSeries + i + 1),
+					lset: labels.FromStrings(model.MetricNameLabel, "metric_b", "id", id),
+				},
+			}
+		}
+
+		b.Run(fmt.Sprintf("series=%d/churn=none", numSeries), func(b *testing.B) {
+			c := newScrapeCache(metrics)
+			for i := range entriesA {
+				entriesA[i].ce = c.addRef(entriesA[i].hash, entriesA[i].ce.ref, entriesA[i].ce.lset, nil)
+			}
+			// Record initial cache size so iterDone(false) in the benchmark loop does not trigger
+			// forced cache eviction (targetScrapeCacheFlushForced).
+			c.successfulCount = len(c.series)
+
+			memBefore := liveHeap()
+			for range 2 {
+				for i := range entriesA {
+					c.trackStaleness(entriesA[i].ce.ref, entriesA[i].ce.lset)
+				}
+				staleCount := 0
+				c.forEachStale(func(storage.SeriesRef, labels.Labels) bool {
+					staleCount++
+					return true
+				})
+				if staleCount != 0 {
+					b.Fatalf("expected 0 stale series, got %d", staleCount)
+				}
+				c.iterDone(false)
+			}
+			memAfter := liveHeap()
+			var retainedPerSeries float64
+			if memAfter > memBefore {
+				retainedPerSeries = float64(memAfter-memBefore) / float64(numSeries)
+			}
+
+			b.ReportAllocs()
+			b.ResetTimer()
+			for b.Loop() {
+				for i := range entriesA {
+					c.trackStaleness(entriesA[i].ce.ref, entriesA[i].ce.lset)
+				}
+				c.forEachStale(func(storage.SeriesRef, labels.Labels) bool { return true })
+				c.iterDone(false)
+			}
+			b.StopTimer()
+			runtime.KeepAlive(c)
+			if retainedPerSeries > 0 {
+				b.ReportMetric(retainedPerSeries, "retained-B/series")
+			}
+		})
+
+		b.Run(fmt.Sprintf("series=%d/churn=none_shuffled", numSeries), func(b *testing.B) {
+			// Alternate forward and reverse scrape order so seriesCur and seriesPrev
+			// never match by index even with zero churn.
+			revA := make([]benchSeries, numSeries)
+			for i := range numSeries {
+				revA[i] = entriesA[numSeries-1-i]
+			}
+
+			c := newScrapeCache(metrics)
+			for i := range entriesA {
+				ce := c.addRef(entriesA[i].hash, entriesA[i].ce.ref, entriesA[i].ce.lset, nil)
+				entriesA[i].ce = ce
+				revA[numSeries-1-i].ce = ce
+			}
+			c.successfulCount = len(c.series)
+
+			memBefore := liveHeap()
+			for i := range entriesA {
+				c.trackStaleness(entriesA[i].ce.ref, entriesA[i].ce.lset)
+			}
+			c.iterDone(false)
+			for i := range revA {
+				c.trackStaleness(revA[i].ce.ref, revA[i].ce.lset)
+			}
+			staleCount := 0
+			c.forEachStale(func(storage.SeriesRef, labels.Labels) bool {
+				staleCount++
+				return true
+			})
+			if staleCount != 0 {
+				b.Fatalf("expected 0 stale series, got %d", staleCount)
+			}
+			c.iterDone(false)
+			memAfter := liveHeap()
+			var retainedPerSeries float64
+			if memAfter > memBefore {
+				retainedPerSeries = float64(memAfter-memBefore) / float64(numSeries)
+			}
+
+			useFwd := true
+			b.ReportAllocs()
+			b.ResetTimer()
+			for b.Loop() {
+				scrapeSet := revA
+				if useFwd {
+					scrapeSet = entriesA
+				}
+				useFwd = !useFwd
+				for i := range scrapeSet {
+					c.trackStaleness(scrapeSet[i].ce.ref, scrapeSet[i].ce.lset)
+				}
+				c.forEachStale(func(storage.SeriesRef, labels.Labels) bool { return true })
+				c.iterDone(false)
+			}
+			b.StopTimer()
+			runtime.KeepAlive(c)
+			if retainedPerSeries > 0 {
+				b.ReportMetric(retainedPerSeries, "retained-B/series")
+			}
+		})
+
+		b.Run(fmt.Sprintf("series=%d/churn=1pct", numSeries), func(b *testing.B) {
+			// Interleave the 1% churning series across the scrape order so stale entries
+			// are scattered across seriesPrev (exercising in-place partition swaps) and
+			// replacement series are appended out of SeriesRef order in seriesCur.
+			scrapeSetA := make([]*benchSeries, numSeries)
+			scrapeSetB := make([]*benchSeries, numSeries)
+			c := newScrapeCache(metrics)
+			for i := range numSeries {
+				entriesA[i].ce = c.addRef(entriesA[i].hash, entriesA[i].ce.ref, entriesA[i].ce.lset, nil)
+				scrapeSetA[i] = &entriesA[i]
+				if i%100 == 0 {
+					entriesB[i].ce = c.addRef(entriesB[i].hash, entriesB[i].ce.ref, entriesB[i].ce.lset, nil)
+					scrapeSetB[i] = &entriesB[i]
+				} else {
+					scrapeSetB[i] = &entriesA[i]
+				}
+			}
+			c.successfulCount = len(c.series)
+
+			memBefore := liveHeap()
+			for _, s := range scrapeSetA {
+				c.trackStaleness(s.ce.ref, s.ce.lset)
+			}
+			c.iterDone(false)
+			for _, s := range scrapeSetB {
+				c.trackStaleness(s.ce.ref, s.ce.lset)
+			}
+			staleCount := 0
+			c.forEachStale(func(storage.SeriesRef, labels.Labels) bool {
+				staleCount++
+				return true
+			})
+			if staleCount != numSeries/100 {
+				b.Fatalf("expected %d stale series, got %d", numSeries/100, staleCount)
+			}
+			c.iterDone(false)
+			memAfter := liveHeap()
+			var retainedPerSeries float64
+			if memAfter > memBefore {
+				retainedPerSeries = float64(memAfter-memBefore) / float64(numSeries)
+			}
+
+			useA := true
+			b.ReportAllocs()
+			b.ResetTimer()
+			for b.Loop() {
+				scrapeSet := scrapeSetB
+				if useA {
+					scrapeSet = scrapeSetA
+				}
+				useA = !useA
+				for _, s := range scrapeSet {
+					c.trackStaleness(s.ce.ref, s.ce.lset)
+				}
+				c.forEachStale(func(storage.SeriesRef, labels.Labels) bool { return true })
+				c.iterDone(false)
+			}
+			b.StopTimer()
+			runtime.KeepAlive(c)
+			if retainedPerSeries > 0 {
+				b.ReportMetric(retainedPerSeries, "retained-B/series")
+			}
+		})
+	}
+}
