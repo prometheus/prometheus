@@ -584,35 +584,95 @@ func BenchmarkAlertingRuleAtomicField(b *testing.B) {
 }
 
 func TestAlertingRuleDuplicate(t *testing.T) {
-	storage := teststorage.New(t)
-
-	opts := promql.EngineOpts{
-		Logger:     nil,
-		Reg:        nil,
-		MaxSamples: 10,
-		Timeout:    10 * time.Second,
+	evalTime := time.Unix(600, 0).UTC()
+	cases := []struct {
+		name                    string
+		series                  []labels.Labels
+		expr                    string
+		ruleLabels              labels.Labels
+		enableTypeAndUnitLabels bool
+	}{
+		{
+			name:       "rule_label_override",
+			expr:       `vector(0) or label_replace(vector(0),"test","x","","")`,
+			ruleLabels: labels.FromStrings("test", "test"),
+		},
+		{
+			name: "differing_only_by_type",
+			series: []labels.Labels{
+				labels.FromStrings(
+					model.MetricNameLabel, "http_errors_total",
+					model.MetricTypeLabel, string(model.MetricTypeCounter),
+					"job", "api",
+				),
+				labels.FromStrings(
+					model.MetricNameLabel, "http_errors_total",
+					model.MetricTypeLabel, string(model.MetricTypeGauge),
+					"job", "api",
+				),
+			},
+			expr:                    `http_errors_total > 10`,
+			ruleLabels:              labels.EmptyLabels(),
+			enableTypeAndUnitLabels: true,
+		},
+		{
+			name: "differing_only_by_unit",
+			series: []labels.Labels{
+				labels.FromStrings(
+					model.MetricNameLabel, "http_errors_total",
+					model.MetricTypeLabel, string(model.MetricTypeCounter),
+					model.MetricUnitLabel, "errors",
+					"job", "api",
+				),
+				labels.FromStrings(
+					model.MetricNameLabel, "http_errors_total",
+					model.MetricTypeLabel, string(model.MetricTypeCounter),
+					model.MetricUnitLabel, "requests",
+					"job", "api",
+				),
+			},
+			expr:                    `http_errors_total > 10`,
+			ruleLabels:              labels.EmptyLabels(),
+			enableTypeAndUnitLabels: true,
+		},
 	}
 
-	engine := promqltest.NewTestEngineWithOpts(t, opts)
-	ctx := t.Context()
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			st := teststorage.New(t)
+			if len(tc.series) > 0 {
+				app := st.AppenderV2(t.Context())
+				for _, lbls := range tc.series {
+					_, err := app.Append(0, lbls, 0, timestamp.FromTime(evalTime), 42, nil, nil, storage.AOptions{})
+					require.NoError(t, err)
+				}
+				require.NoError(t, app.Commit())
+			}
 
-	now := time.Now()
+			engine := promqltest.NewTestEngineWithOpts(t, promql.EngineOpts{
+				MaxSamples:              10,
+				Timeout:                 10 * time.Second,
+				EnableTypeAndUnitLabels: tc.enableTypeAndUnitLabels,
+			})
 
-	expr, _ := testParser.ParseExpr(`vector(0) or label_replace(vector(0),"test","x","","")`)
-	rule := NewAlertingRule(
-		"foo",
-		expr,
-		time.Minute,
-		0,
-		labels.FromStrings("test", "test"),
-		labels.EmptyLabels(),
-		labels.EmptyLabels(),
-		"",
-		true, promslog.NewNopLogger(),
-	)
-	_, err := rule.Eval(ctx, 0, now, EngineQueryFunc(engine, storage), nil, 0)
-	require.Error(t, err)
-	require.ErrorIs(t, err, ErrDuplicateAlertLabelSet)
+			expr, err := testParser.ParseExpr(tc.expr)
+			require.NoError(t, err)
+			rule := NewAlertingRule(
+				"foo",
+				expr,
+				time.Minute,
+				0,
+				tc.ruleLabels,
+				labels.EmptyLabels(),
+				labels.EmptyLabels(),
+				"",
+				true,
+				promslog.NewNopLogger(),
+			)
+			_, err = rule.Eval(t.Context(), 0, evalTime, EngineQueryFunc(engine, st), nil, 0)
+			require.ErrorIs(t, err, ErrDuplicateAlertLabelSet)
+		})
+	}
 }
 
 func TestAlertingRuleLimit(t *testing.T) {
