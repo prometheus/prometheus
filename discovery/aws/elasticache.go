@@ -149,8 +149,9 @@ const (
 	elasticacheLabelServerlessCacheEndpoint              = elasticacheLabelServerlessCache + "endpoint_"
 	elasticacheLabelServerlessCacheEndpointAddress       = elasticacheLabelServerlessCacheEndpoint + "address"
 	elasticacheLabelServerlessCacheEndpointPort          = elasticacheLabelServerlessCacheEndpoint + "port"
-	elasticacheLabelServerlessCacheReaderEndpointAddress = elasticacheLabelServerlessCacheEndpoint + "reader_address"
-	elasticacheLabelServerlessCacheReaderEndpointPort    = elasticacheLabelServerlessCacheEndpoint + "reader_port"
+	elasticacheLabelServerlessCacheReaderEndpoint        = elasticacheLabelServerlessCache + "reader_endpoint_"
+	elasticacheLabelServerlessCacheReaderEndpointAddress = elasticacheLabelServerlessCacheReaderEndpoint + "address"
+	elasticacheLabelServerlessCacheReaderEndpointPort    = elasticacheLabelServerlessCacheReaderEndpoint + "port"
 
 	// security group membership (slice - use with index).
 	elasticacheLabelServerlessCacheSecurityGroupID = elasticacheLabelServerlessCache + "security_group_id"
@@ -160,13 +161,21 @@ const (
 
 	// cache usage limits.
 	elasticacheLabelServerlessCacheCacheUsageLimit                        = elasticacheLabelServerlessCache + "cache_usage_limit_"
-	elasticacheLabelServerlessCacheCacheUsageLimitCacheDataStorage        = elasticacheLabelServerlessCacheCacheUsageLimit + "data_storage"
+	elasticacheLabelServerlessCacheCacheUsageLimitCacheDataStorage        = elasticacheLabelServerlessCacheCacheUsageLimit + "data_storage_"
 	elasticacheLabelServerlessCacheCacheUsageLimitCacheDataStorageMaximum = elasticacheLabelServerlessCacheCacheUsageLimitCacheDataStorage + "maximum"
 	elasticacheLabelServerlessCacheCacheUsageLimitCacheDataStorageMinimum = elasticacheLabelServerlessCacheCacheUsageLimitCacheDataStorage + "minimum"
 	elasticacheLabelServerlessCacheCacheUsageLimitCacheDataStorageUnit    = elasticacheLabelServerlessCacheCacheUsageLimitCacheDataStorage + "unit"
-	elasticacheLabelServerlessCacheCacheUsageLimitECPUPerSecond           = elasticacheLabelServerlessCacheCacheUsageLimit + "ecpu_per_second"
+	elasticacheLabelServerlessCacheCacheUsageLimitECPUPerSecond           = elasticacheLabelServerlessCacheCacheUsageLimit + "ecpu_per_second_"
 	elasticacheLabelServerlessCacheCacheUsageLimitECPUPerSecondMaximum    = elasticacheLabelServerlessCacheCacheUsageLimitECPUPerSecond + "maximum"
 	elasticacheLabelServerlessCacheCacheUsageLimitECPUPerSecondMinimum    = elasticacheLabelServerlessCacheCacheUsageLimitECPUPerSecond + "minimum"
+
+	// Previous label names, emitted before they were aligned with the documentation.
+	// They are deprecated but still set for backward compatibility, and will be
+	// removed in Prometheus 4.
+	elasticacheLabelServerlessCacheDeprecatedReaderEndpointAddress = elasticacheLabelServerlessCacheEndpoint + "reader_address"
+	elasticacheLabelServerlessCacheDeprecatedReaderEndpointPort    = elasticacheLabelServerlessCacheEndpoint + "reader_port"
+	elasticacheLabelServerlessCacheDeprecatedCacheDataStorage      = elasticacheLabelServerlessCacheCacheUsageLimit + "data_storage"
+	elasticacheLabelServerlessCacheDeprecatedECPUPerSecond         = elasticacheLabelServerlessCacheCacheUsageLimit + "ecpu_per_second"
 
 	// tags - create one label per tag key, with the format: elasticache_serverless_cache_tag_<tagkey>.
 	elasticacheLabelServerlessCacheTag = elasticacheLabelServerlessCache + "tag_"
@@ -678,9 +687,11 @@ func addServerlessCacheTargets(tg *targetgroup.Group, cache *types.ServerlessCac
 	if cache.ReaderEndpoint != nil {
 		if cache.ReaderEndpoint.Address != nil {
 			labels[elasticacheLabelServerlessCacheReaderEndpointAddress] = model.LabelValue(*cache.ReaderEndpoint.Address)
+			labels[elasticacheLabelServerlessCacheDeprecatedReaderEndpointAddress] = labels[elasticacheLabelServerlessCacheReaderEndpointAddress]
 		}
 		if cache.ReaderEndpoint.Port != nil {
 			labels[elasticacheLabelServerlessCacheReaderEndpointPort] = model.LabelValue(strconv.Itoa(int(*cache.ReaderEndpoint.Port)))
+			labels[elasticacheLabelServerlessCacheDeprecatedReaderEndpointPort] = labels[elasticacheLabelServerlessCacheReaderEndpointPort]
 		}
 	}
 
@@ -696,18 +707,23 @@ func addServerlessCacheTargets(tg *targetgroup.Group, cache *types.ServerlessCac
 		if cache.CacheUsageLimits.DataStorage != nil {
 			if cache.CacheUsageLimits.DataStorage.Maximum != nil {
 				labels[elasticacheLabelServerlessCacheCacheUsageLimitCacheDataStorageMaximum] = model.LabelValue(strconv.Itoa(int(*cache.CacheUsageLimits.DataStorage.Maximum)))
+				labels[elasticacheLabelServerlessCacheDeprecatedCacheDataStorage+"maximum"] = labels[elasticacheLabelServerlessCacheCacheUsageLimitCacheDataStorageMaximum]
 			}
 			if cache.CacheUsageLimits.DataStorage.Minimum != nil {
 				labels[elasticacheLabelServerlessCacheCacheUsageLimitCacheDataStorageMinimum] = model.LabelValue(strconv.Itoa(int(*cache.CacheUsageLimits.DataStorage.Minimum)))
+				labels[elasticacheLabelServerlessCacheDeprecatedCacheDataStorage+"minimum"] = labels[elasticacheLabelServerlessCacheCacheUsageLimitCacheDataStorageMinimum]
 			}
 			labels[elasticacheLabelServerlessCacheCacheUsageLimitCacheDataStorageUnit] = model.LabelValue(cache.CacheUsageLimits.DataStorage.Unit)
+			labels[elasticacheLabelServerlessCacheDeprecatedCacheDataStorage+"unit"] = labels[elasticacheLabelServerlessCacheCacheUsageLimitCacheDataStorageUnit]
 		}
 		if cache.CacheUsageLimits.ECPUPerSecond != nil {
 			if cache.CacheUsageLimits.ECPUPerSecond.Maximum != nil {
 				labels[elasticacheLabelServerlessCacheCacheUsageLimitECPUPerSecondMaximum] = model.LabelValue(strconv.Itoa(int(*cache.CacheUsageLimits.ECPUPerSecond.Maximum)))
+				labels[elasticacheLabelServerlessCacheDeprecatedECPUPerSecond+"maximum"] = labels[elasticacheLabelServerlessCacheCacheUsageLimitECPUPerSecondMaximum]
 			}
 			if cache.CacheUsageLimits.ECPUPerSecond.Minimum != nil {
 				labels[elasticacheLabelServerlessCacheCacheUsageLimitECPUPerSecondMinimum] = model.LabelValue(strconv.Itoa(int(*cache.CacheUsageLimits.ECPUPerSecond.Minimum)))
+				labels[elasticacheLabelServerlessCacheDeprecatedECPUPerSecond+"minimum"] = labels[elasticacheLabelServerlessCacheCacheUsageLimitECPUPerSecondMinimum]
 			}
 		}
 	}

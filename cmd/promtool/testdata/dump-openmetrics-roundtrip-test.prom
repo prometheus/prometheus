@@ -1,3 +1,4 @@
+{"my.metric","label.name"="a\\b",value="say \"hi\"\n	here"} 1 1700215884.373
 my_histogram_bucket{instance="localhost:8000",job="example2",le="+Inf"} 1.0267820369e+10 1700215884.373
 my_histogram_bucket{instance="localhost:8000",job="example2",le="+Inf"} 1.026872507e+10 1700215889.373
 my_histogram_bucket{instance="localhost:8000",job="example2",le="0.01"} 0 1700215884.373

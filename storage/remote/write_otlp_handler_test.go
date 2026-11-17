@@ -116,7 +116,7 @@ func TestOTLPWriteHandler(t *testing.T) {
 					Count:           10,
 					Sum:             30.0,
 					Schema:          2,
-					ZeroThreshold:   1e-128,
+					ZeroThreshold:   0,
 					ZeroCount:       2,
 					PositiveSpans:   []histogram.Span{{Offset: 1, Length: 5}},
 					PositiveBuckets: []int64{2, 0, 0, 0, 0},

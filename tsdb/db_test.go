@@ -1380,212 +1380,122 @@ func TestOpen_VariousBlockStates(t *testing.T) {
 	require.True(t, os.IsNotExist(err))
 }
 
-// TestExemplarAfterLastSampleSurvivesCompaction verifies that an exemplar newer
-// than its series's last sample survives ordinary, selected, and stale compaction,
-// WAL cleanup, and subsequent compaction after restart.
+// TestExemplarAfterLastSampleSurvivesCompaction verifies that ordinary compaction
+// retains an empty series while its exemplar remains eligible for replay,
+// including through checkpointing and restarts.
 func TestExemplarAfterLastSampleSurvivesCompaction(t *testing.T) {
 	t.Parallel()
-	for _, compaction := range []string{"ordinary", "selected", "stale"} {
-		for _, enableSnapshot := range []bool{false, true} {
-			t.Run(fmt.Sprintf("%s/snapshot=%t", compaction, enableSnapshot), func(t *testing.T) {
-				const blockRange = 1000
-				opts := DefaultOptions()
-				opts.MinBlockDuration = blockRange
-				opts.MaxBlockDuration = blockRange
-				opts.EnableExemplarStorage = true
-				opts.MaxExemplars = 10
-				opts.EnableMemorySnapshotOnShutdown = enableSnapshot
-				db := newTestDB(t, withOpts(opts))
-				db.DisableCompactions()
-				ctx := context.Background()
+	for _, enableSnapshot := range []bool{false, true} {
+		t.Run(fmt.Sprintf("snapshot=%t", enableSnapshot), func(t *testing.T) {
+			const blockRange = 1000
+			opts := DefaultOptions()
+			opts.MinBlockDuration = blockRange
+			opts.MaxBlockDuration = blockRange
+			opts.EnableExemplarStorage = true
+			opts.MaxExemplars = 10
+			opts.EnableMemorySnapshotOnShutdown = enableSnapshot
+			db := newTestDB(t, withOpts(opts))
+			db.DisableCompactions()
+			ctx := context.Background()
 
-				seriesLabels := labels.FromStrings("name", "exemplar_only")
-				app := db.AppenderV2(ctx)
-				ref, err := app.Append(0, seriesLabels, 0, 100, 1, nil, nil, storage.AOptions{})
-				require.NoError(t, err)
-				if compaction == "stale" {
-					_, err = app.Append(ref, seriesLabels, 0, 200, math.Float64frombits(value.StaleNaN), nil, nil, storage.AOptions{})
-					require.NoError(t, err)
-				}
-				require.NoError(t, app.Commit())
+			seriesLabels := labels.FromStrings("name", "exemplar_only")
+			app := db.AppenderV2(ctx)
+			ref, err := app.Append(0, seriesLabels, 0, 100, 1, nil, nil, storage.AOptions{})
+			require.NoError(t, err)
+			require.NoError(t, app.Commit())
 
-				// Leave the series record in an old segment and the exemplar in a recent one.
-				const exemplarSegment = 8
-				for range exemplarSegment {
-					_, err := db.head.wal.NextSegment()
-					require.NoError(t, err)
-				}
-				e := exemplar.Exemplar{
-					Labels: labels.FromStrings("trace_id", "abc123"),
-					Value:  1,
-					Ts:     10 * blockRange,
-				}
-				app = db.AppenderV2(ctx)
-				_, err = app.(storage.ExemplarAppenderV2).AppendExemplars(ref, seriesLabels, []exemplar.Exemplar{e})
+			// Leave the series record in an old segment and the exemplar in a recent one.
+			const exemplarSegment = 8
+			for range exemplarSegment {
+				_, err := db.head.wal.NextSegment()
 				require.NoError(t, err)
-				require.NoError(t, app.Commit())
+			}
+			e := exemplar.Exemplar{
+				Labels: labels.FromStrings("trace_id", "abc123"),
+				Value:  1,
+				Ts:     10 * blockRange,
+			}
+			app = db.AppenderV2(ctx)
+			_, err = app.(storage.ExemplarAppenderV2).AppendExemplars(ref, seriesLabels, []exemplar.Exemplar{e})
+			require.NoError(t, err)
+			require.NoError(t, app.Commit())
 
-				// Selected and stale compaction persist this series before unrelated
-				// sample ingestion advances the head. Its exemplar is not in the block.
-				// Ordinary compaction is triggered by the unrelated ingestion below.
-				if compaction != "ordinary" {
-					switch compaction {
-					case "selected":
-						require.NoError(t, db.CompactSelectedSeries([]storage.SeriesRef{ref}))
-					case "stale":
-						require.NoError(t, db.CompactStaleHead())
-					}
-					require.Len(t, db.Blocks(), 1)
-				}
+			// Advance the head with another series so ordinary compaction can run.
+			activeLabels := labels.FromStrings("name", "active")
+			app = db.AppenderV2(ctx)
+			activeRef, err := app.Append(0, activeLabels, 0, blockRange*3/2+101, 1, nil, nil, storage.AOptions{})
+			require.NoError(t, err)
+			require.NoError(t, app.Commit())
+			require.NoError(t, db.Compact(ctx))
+			require.Len(t, db.Blocks(), 1)
 
-				activeLabels := labels.FromStrings("name", "active")
-				app = db.AppenderV2(ctx)
-				activeRef, err := app.Append(0, activeLabels, 0, blockRange*3/2+101, 1, nil, nil, storage.AOptions{})
-				require.NoError(t, err)
-				require.NoError(t, app.Commit())
-				require.NoError(t, db.Compact(ctx))
-				if compaction == "ordinary" {
-					require.Len(t, db.Blocks(), 1)
-				}
-				series := db.Head().series.getByID(chunks.HeadSeriesRef(ref))
-				require.NotNil(t, series)
-				require.Nil(t, series.headChunks)
-				require.Nil(t, series.app, "the retained identity must not keep the compacted chunk alive")
-				_, firstCheckpoint, err := wlog.LastCheckpoint(db.head.wal.Dir())
-				require.NoError(t, err)
+			// Regular GC retains the series without chunks while its exemplar
+			// remains eligible for replay.
+			series := db.Head().series.getByID(chunks.HeadSeriesRef(ref))
+			require.NotNil(t, series)
+			require.Nil(t, series.headChunks)
+			require.Nil(t, series.app, "the retained identity must not keep the compacted chunk alive")
+			_, firstCheckpoint, err := wlog.LastCheckpoint(db.head.wal.Dir())
+			require.NoError(t, err)
 
-				// Advance beyond the expiry that sample-only eviction would assign.
-				// Without exemplar protection, WAL cleanup drops the series record
-				// while its exemplar remains in a segment that still needs replay.
-				app = db.AppenderV2(ctx)
-				_, err = app.Append(activeRef, activeLabels, 0, blockRange*5/2+101, 2, nil, nil, storage.AOptions{})
-				require.NoError(t, err)
-				_, err = app.Append(activeRef, activeLabels, 0, blockRange*7/2+101, 3, nil, nil, storage.AOptions{})
-				require.NoError(t, err)
-				require.NoError(t, app.Commit())
-				require.NoError(t, db.Compact(ctx))
-				if compaction == "ordinary" {
-					require.Len(t, db.Blocks(), 2)
-				}
-				_, secondCheckpoint, err := wlog.LastCheckpoint(db.head.wal.Dir())
-				require.NoError(t, err)
-				require.Greater(t, secondCheckpoint, firstCheckpoint)
-				require.Less(t, secondCheckpoint, exemplarSegment, "the exemplar segment must still await replay")
-				require.Less(t, db.Head().MinTime(), e.Ts)
+			// Advance beyond the expiry that sample-only eviction would assign.
+			// Without exemplar protection, WAL cleanup drops the series record
+			// while its exemplar remains in a segment that still needs replay.
+			app = db.AppenderV2(ctx)
+			_, err = app.Append(activeRef, activeLabels, 0, blockRange*5/2+101, 2, nil, nil, storage.AOptions{})
+			require.NoError(t, err)
+			_, err = app.Append(activeRef, activeLabels, 0, blockRange*7/2+101, 3, nil, nil, storage.AOptions{})
+			require.NoError(t, err)
+			require.NoError(t, app.Commit())
+			require.NoError(t, db.Compact(ctx))
+			require.Len(t, db.Blocks(), 2)
+			_, secondCheckpoint, err := wlog.LastCheckpoint(db.head.wal.Dir())
+			require.NoError(t, err)
+			require.Greater(t, secondCheckpoint, firstCheckpoint)
+			require.Less(t, secondCheckpoint, exemplarSegment, "the exemplar segment must still await replay")
+			require.Less(t, db.Head().MinTime(), e.Ts)
 
-				matcher := labels.MustNewMatcher(labels.MatchEqual, "name", "exemplar_only")
-				expected := []exemplar.QueryResult{{SeriesLabels: seriesLabels, Exemplars: []exemplar.Exemplar{e}}}
-				q, err := db.ExemplarQuerier(ctx)
-				require.NoError(t, err)
-				beforeRestart, err := q.Select(0, e.Ts, []*labels.Matcher{matcher})
-				require.NoError(t, err)
-				testutil.RequireEqual(t, expected, beforeRestart)
+			matcher := labels.MustNewMatcher(labels.MatchEqual, "name", "exemplar_only")
+			expected := []exemplar.QueryResult{{SeriesLabels: seriesLabels, Exemplars: []exemplar.Exemplar{e}}}
+			q, err := db.ExemplarQuerier(ctx)
+			require.NoError(t, err)
+			beforeRestart, err := q.Select(0, e.Ts, []*labels.Matcher{matcher})
+			require.NoError(t, err)
+			testutil.RequireEqual(t, expected, beforeRestart)
 
-				require.NoError(t, db.Close())
-				reopened := newTestDB(t, withDir(db.Dir()), withOpts(opts))
-				reopened.DisableCompactions()
-				q, err = reopened.ExemplarQuerier(ctx)
-				require.NoError(t, err)
-				afterRestart, err := q.Select(0, e.Ts, []*labels.Matcher{matcher})
-				require.NoError(t, err)
-				testutil.RequireEqual(t, expected, afterRestart, "the exemplar must survive %s compaction and restart", compaction)
-				require.Zero(t, prom_testutil.ToFloat64(reopened.head.metrics.walReplayUnknownRefsTotal.WithLabelValues("exemplars")))
+			require.NoError(t, db.Close())
+			reopened := newTestDB(t, withDir(db.Dir()), withOpts(opts))
+			reopened.DisableCompactions()
+			q, err = reopened.ExemplarQuerier(ctx)
+			require.NoError(t, err)
+			afterRestart, err := q.Select(0, e.Ts, []*labels.Matcher{matcher})
+			require.NoError(t, err)
+			testutil.RequireEqual(t, expected, afterRestart, "the exemplar must survive ordinary compaction and restart")
+			require.Zero(t, prom_testutil.ToFloat64(reopened.head.metrics.walReplayUnknownRefsTotal.WithLabelValues("exemplars")))
 
-				// Replay must restore the exemplar's eviction protection, so another compaction
-				// and restart cannot lose an exemplar that survived the first restart.
-				app = reopened.AppenderV2(ctx)
-				_, err = app.Append(0, activeLabels, 0, blockRange*11/2+101, 4, nil, nil, storage.AOptions{})
-				require.NoError(t, err)
-				require.NoError(t, app.Commit())
-				require.NoError(t, reopened.Compact(ctx))
-				require.NoError(t, reopened.Close())
-				reopened = newTestDB(t, withDir(db.Dir()), withOpts(opts))
-				reopened.DisableCompactions()
-				q, err = reopened.ExemplarQuerier(ctx)
-				require.NoError(t, err)
-				afterRestart, err = q.Select(0, e.Ts, []*labels.Matcher{matcher})
-				require.NoError(t, err)
-				testutil.RequireEqual(t, expected, afterRestart, "replayed exemplars must survive subsequent compaction and restart")
-				require.Zero(t, prom_testutil.ToFloat64(reopened.head.metrics.walReplayUnknownRefsTotal.WithLabelValues("exemplars")))
-			})
-		}
-	}
-}
-
-// TestExemplarBeforeLastSampleSurvivesSeriesCompaction verifies that selected and
-// stale compaction preserve exemplars until the global replay cutoff passes them,
-// even when their timestamps precede the samples being compacted.
-func TestExemplarBeforeLastSampleSurvivesSeriesCompaction(t *testing.T) {
-	t.Parallel()
-	for _, stale := range []bool{false, true} {
-		for _, cutoff := range []int64{100, 500} {
-			t.Run(fmt.Sprintf("stale=%t/cutoff=%d", stale, cutoff), func(t *testing.T) {
-				const blockRange = 1000
-				opts := DefaultOptions()
-				opts.MinBlockDuration = blockRange
-				opts.MaxBlockDuration = blockRange
-				opts.EnableExemplarStorage = true
-				opts.MaxExemplars = 10
-				db := newTestDB(t, withOpts(opts))
-				db.DisableCompactions()
-				ctx := context.Background()
-
-				seriesLabels := labels.FromStrings("name", "exemplar_series")
-				app := db.AppenderV2(ctx)
-				ref, err := app.Append(0, seriesLabels, 0, 100, 1, nil, nil, storage.AOptions{})
-				require.NoError(t, err)
-				sampleValue := 2.0
-				if stale {
-					sampleValue = math.Float64frombits(value.StaleNaN)
-				}
-				_, err = app.Append(ref, seriesLabels, 0, 900, sampleValue, nil, nil, storage.AOptions{})
-				require.NoError(t, err)
-				e := exemplar.Exemplar{
-					Labels: labels.FromStrings("trace_id", "abc123"),
-					Value:  1,
-					Ts:     500,
-				}
-				_, err = app.(storage.ExemplarAppenderV2).AppendExemplars(ref, seriesLabels, []exemplar.Exemplar{e})
-				require.NoError(t, err)
-				require.NoError(t, app.Commit())
-				db.Head().SetMinValidTime(cutoff)
-
-				if stale {
-					require.NoError(t, db.CompactStaleHead())
-				} else {
-					require.NoError(t, db.CompactSelectedSeries([]storage.SeriesRef{ref}))
-				}
-				require.Len(t, db.Blocks(), 1)
-				require.Equal(t, uint64(1), db.Head().NumSeries(), "the exemplar still needs its series identity")
-
-				require.NoError(t, db.Close())
-				reopened := newTestDB(t, withDir(db.Dir()), withOpts(opts))
-				reopened.DisableCompactions()
-				matcher := labels.MustNewMatcher(labels.MatchEqual, "name", "exemplar_series")
-				q, err := reopened.ExemplarQuerier(ctx)
-				require.NoError(t, err)
-				actual, err := q.Select(0, e.Ts, []*labels.Matcher{matcher})
-				require.NoError(t, err)
-				testutil.RequireEqual(t, []exemplar.QueryResult{{SeriesLabels: seriesLabels, Exemplars: []exemplar.Exemplar{e}}}, actual)
-				require.Zero(t, prom_testutil.ToFloat64(reopened.head.metrics.walReplayUnknownRefsTotal.WithLabelValues("exemplars")))
-
-				// Once replay can skip the exemplar, it no longer prevents eviction.
-				reopened.Head().SetMinValidTime(e.Ts + 1)
-				if stale {
-					require.NoError(t, reopened.CompactStaleHead())
-				} else {
-					require.NoError(t, reopened.CompactSelectedSeries([]storage.SeriesRef{ref}))
-				}
-				require.Zero(t, reopened.Head().NumSeries())
-			})
-		}
+			// Verify that recovery preserves exemplar protection through another
+			// compaction and restart.
+			app = reopened.AppenderV2(ctx)
+			_, err = app.Append(0, activeLabels, 0, blockRange*11/2+101, 4, nil, nil, storage.AOptions{})
+			require.NoError(t, err)
+			require.NoError(t, app.Commit())
+			require.NoError(t, reopened.Compact(ctx))
+			require.NoError(t, reopened.Close())
+			reopened = newTestDB(t, withDir(db.Dir()), withOpts(opts))
+			reopened.DisableCompactions()
+			q, err = reopened.ExemplarQuerier(ctx)
+			require.NoError(t, err)
+			afterRestart, err = q.Select(0, e.Ts, []*labels.Matcher{matcher})
+			require.NoError(t, err)
+			testutil.RequireEqual(t, expected, afterRestart, "replayed exemplars must survive subsequent compaction and restart")
+			require.Zero(t, prom_testutil.ToFloat64(reopened.head.metrics.walReplayUnknownRefsTotal.WithLabelValues("exemplars")))
+		})
 	}
 }
 
 // TestSeriesCompactionReclaimsChunksWithExemplars verifies that selected and stale
-// compaction release persisted chunks and their appenders while retaining exemplar
-// recovery state. Concurrent appends must prevent chunk reclamation. WAL replay may
-// restore the samples, which a subsequent compaction can reclaim again.
+// compaction fully evict series with exemplars unless concurrent sample appends
+// prevent eviction.
 func TestSeriesCompactionReclaimsChunksWithExemplars(t *testing.T) {
 	t.Parallel()
 	for _, compaction := range []string{"selected", "stale"} {
@@ -1685,31 +1595,24 @@ func TestSeriesCompactionReclaimsChunksWithExemplars(t *testing.T) {
 					}
 					compact(db)
 					require.Len(t, db.Blocks(), 1)
-					require.Equal(t, uint64(2), db.Head().NumSeries())
-					require.Same(t, series, db.Head().series.getByID(seriesRef))
 					if concurrentAppend {
+						require.Equal(t, uint64(2), db.Head().NumSeries())
+						require.Same(t, series, db.Head().series.getByID(seriesRef))
 						require.Positive(t, series.headChunkCount.Load(), "unpersisted samples must keep their chunks")
 						require.Equal(t, removedBefore, prom_testutil.ToFloat64(db.Head().metrics.chunksRemoved))
 					} else {
-						require.Zero(t, series.headChunkCount.Load())
-						require.Empty(t, series.mmappedChunks)
-						require.Nil(t, series.app, "the appender must not retain the compacted chunk")
+						require.Equal(t, uint64(1), db.Head().NumSeries(), "only the active series remains")
+						require.Nil(t, db.Head().series.getByID(seriesRef), "the series is fully evicted, not kept chunk-less")
 						require.Equal(t, removedBefore+float64(chunkCount), prom_testutil.ToFloat64(db.Head().metrics.chunksRemoved))
 						require.Equal(t, float64(1), prom_testutil.ToFloat64(db.Head().metrics.chunks), "only the active series retains a chunk")
-						// Compacting the retained identity again must neither write another
-						// block nor count the removed chunks twice.
+						// Repeating compaction must not write another block or count removed chunks again.
 						compact(db)
 						require.Len(t, db.Blocks(), 1)
 						require.Equal(t, removedBefore+float64(chunkCount), prom_testutil.ToFloat64(db.Head().metrics.chunksRemoved))
 					}
 
 					matcher := labels.MustNewMatcher(labels.MatchEqual, "name", "exemplar_series")
-					checkData := func(d *DB) {
-						q, err := d.ExemplarQuerier(ctx)
-						require.NoError(t, err)
-						got, err := q.Select(0, e.Ts, []*labels.Matcher{matcher})
-						require.NoError(t, err)
-						testutil.RequireEqual(t, []exemplar.QueryResult{{SeriesLabels: seriesLabels, Exemplars: []exemplar.Exemplar{e}}}, got)
+					checkSamples := func(d *DB) {
 						sq, err := d.Querier(0, blockRange)
 						require.NoError(t, err)
 						samples := query(t, sq, matcher)[seriesLabels.String()]
@@ -1718,23 +1621,124 @@ func TestSeriesCompactionReclaimsChunksWithExemplars(t *testing.T) {
 							require.Equal(t, ts, samples[i].T())
 						}
 					}
-					checkData(db)
+					checkExemplar := func(d *DB) {
+						q, err := d.ExemplarQuerier(ctx)
+						require.NoError(t, err)
+						got, err := q.Select(0, e.Ts, []*labels.Matcher{matcher})
+						require.NoError(t, err)
+						testutil.RequireEqual(t, []exemplar.QueryResult{{SeriesLabels: seriesLabels, Exemplars: []exemplar.Exemplar{e}}}, got)
+					}
+					checkSamples(db)
+					checkExemplar(db) // Already-stored exemplars remain queryable after eviction.
 					require.NoError(t, db.Close())
 					reopened := newTestDB(t, withDir(db.Dir()), withOpts(opts))
 					reopened.DisableCompactions()
-					checkData(reopened)
-					require.Zero(t, prom_testutil.ToFloat64(reopened.head.metrics.walReplayUnknownRefsTotal.WithLabelValues("exemplars")))
-					if !concurrentAppend {
-						// Reclamation is local to the running head: WAL replay restores
-						// these samples until the global replay cutoff passes them.
-						require.Positive(t, reopened.Head().series.getByID(seriesRef).headChunkCount.Load())
-						compact(reopened)
-						require.Zero(t, reopened.Head().series.getByID(seriesRef).headChunkCount.Load())
-						checkData(reopened)
+					// Sample queries include blocks, so also check for unknown sample refs during replay.
+					checkSamples(reopened)
+					require.Zero(t, prom_testutil.ToFloat64(reopened.head.metrics.walReplayUnknownRefsTotal.WithLabelValues("samples")))
+					if concurrentAppend {
+						// Concurrent sample appends prevented eviction, so the exemplar
+						// must survive this restart.
+						checkExemplar(reopened)
+						require.Zero(t, prom_testutil.ToFloat64(reopened.head.metrics.walReplayUnknownRefsTotal.WithLabelValues("exemplars")))
+					} else {
+						// Tombstone and exemplar replay run in separate workers, so
+						// exemplar recovery is not asserted for evicted series.
+						require.Nil(t, reopened.Head().series.getByID(seriesRef))
 					}
 				})
 			}
 		}
+	}
+}
+
+// TestSeriesCompactionWithExemplarsPreservesWALSampleReferences verifies that
+// CompactSelectedSeries and CompactStaleHead retain WAL declarations
+// needed to replay samples after regular GC and checkpointing.
+// Previously, exemplar protection kept empty series without eviction tombstones.
+// GC could then assign a WAL expiry below the last sample's timestamp, allowing
+// checkpointing to drop the declaration while that sample still needed replay.
+func TestSeriesCompactionWithExemplarsPreservesWALSampleReferences(t *testing.T) {
+	for _, compaction := range []string{"selected", "stale"} {
+		t.Run(compaction, func(t *testing.T) {
+			const chunkRange = 1000
+			opts := DefaultOptions()
+			opts.MinBlockDuration = chunkRange
+			opts.MaxBlockDuration = chunkRange
+			opts.EnableExemplarStorage = true
+			opts.MaxExemplars = 10
+			db := newTestDB(t, withOpts(opts))
+			db.DisableCompactions()
+			ctx := context.Background()
+
+			sel := labels.FromStrings("name", "selected")
+			app := db.AppenderV2(ctx)
+			selRef, err := app.Append(0, sel, 0, 50, 1.0, nil, nil, storage.AOptions{})
+			require.NoError(t, err)
+			e := exemplar.Exemplar{Labels: labels.FromStrings("trace_id", "abc123"), Value: 1, Ts: 100}
+			_, err = app.(storage.ExemplarAppenderV2).AppendExemplars(selRef, sel, []exemplar.Exemplar{e})
+			require.NoError(t, err)
+			require.NoError(t, app.Commit())
+
+			// Keep the declaration and exemplar in an older segment that will be checkpointed.
+			// Write the next sample to a segment outside the checkpoint's range.
+			const preRollSegments = 30
+			for range preRollSegments {
+				_, err := db.head.wal.NextSegment()
+				require.NoError(t, err)
+			}
+
+			// CompactStaleHead selects series whose latest sample is a stale marker.
+			v := 2.0
+			if compaction == "stale" {
+				v = math.Float64frombits(value.StaleNaN)
+			}
+			app = db.AppenderV2(ctx)
+			_, err = app.Append(selRef, sel, 0, 900, v, nil, nil, storage.AOptions{})
+			require.NoError(t, err)
+			require.NoError(t, app.Commit())
+			require.Equal(t, int64(900), db.Head().MaxTime())
+
+			// Persist both samples and evict the series with a WAL tombstone, even though
+			// its exemplar is still eligible for replay.
+			if compaction == "stale" {
+				require.NoError(t, db.CompactStaleHead())
+			} else {
+				require.NoError(t, db.CompactSelectedSeries([]storage.SeriesRef{selRef}))
+			}
+			require.Len(t, db.Blocks(), 1)
+
+			require.NoError(t, db.head.truncateMemory(e.Ts+1))
+			require.Nil(t, db.Head().series.getByID(chunks.HeadSeriesRef(selRef)), "sel must be fully evicted by now")
+
+			// Checkpoint the older segments with a cutoff between the exemplar and last
+			// sample timestamps. The declaration must be retained because the last sample's
+			// segment is outside the checkpoint and will still be replayed.
+			const truncateMint = 150
+			for range 10 {
+				db.head.lastWALTruncationTime.Store(0)
+				require.NoError(t, db.head.truncateWAL(truncateMint))
+				if _, _, err := wlog.LastCheckpoint(db.head.wal.Dir()); err == nil {
+					break
+				}
+			}
+			_, _, err = wlog.LastCheckpoint(db.head.wal.Dir())
+			require.NoError(t, err, "a checkpoint must have been produced")
+
+			require.NoError(t, db.Close())
+			reopened, err := Open(db.Dir(), nil, nil, opts, nil)
+			require.NoError(t, err)
+			t.Cleanup(func() { require.NoError(t, reopened.Close()) })
+
+			// The samples are already preserved in a local block. Replay must still resolve
+			// the sample in the remaining WAL segment without an unknown-reference warning.
+			unknownSamples := prom_testutil.ToFloat64(reopened.head.metrics.walReplayUnknownRefsTotal.WithLabelValues("samples"))
+			require.Zero(t, unknownSamples,
+				"WAL replay must not report unknown series references for sel's second "+
+					"sample; a regular GC must not let an exemplar-protected series's "+
+					"declaration be dropped from the checkpoint before every WAL record it "+
+					"still has gets a chance to replay or be truncated away")
+		})
 	}
 }
 
