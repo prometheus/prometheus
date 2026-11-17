@@ -309,8 +309,6 @@ type Lexer struct {
 	itemp       *Item        // Pointer to where the next scanned item should be placed.
 	scannedItem bool         // Set to true every time an item is scanned.
 
-	unquotedUTF8Names bool // Whether Unicode letters and non-leading dots are allowed in names.
-
 	parenDepth  int  // Nesting depth of ( ) exprs.
 	braceOpen   bool // Whether a { is opened.
 	bracketOpen bool // Whether a [ is opened.
@@ -501,7 +499,7 @@ func lexStatements(l *Lexer) stateFn {
 	case r == '`':
 		l.stringOpen = r
 		return lexRawString
-	case l.isNameStart(r) || r == ':':
+	case isNameStart(r) || r == ':':
 		if !l.bracketOpen {
 			l.backup()
 			return lexKeywordOrIdentifier
@@ -709,7 +707,7 @@ func lexInsideBraces(l *Lexer) stateFn {
 		return l.errorf("unexpected end of input inside braces")
 	case isSpace(r):
 		return lexSpace
-	case l.isNameStart(r):
+	case isNameStart(r):
 		l.backup()
 		return lexIdentifier
 	case r == ',':
@@ -1115,7 +1113,7 @@ func (l *Lexer) scanNumber() bool {
 // lexIdentifier scans an alphanumeric identifier. The next character
 // is known to be a letter.
 func lexIdentifier(l *Lexer) stateFn {
-	for l.isNameContinue(l.next()) {
+	for isNameContinue(l.next()) {
 		// Absorb.
 	}
 	l.backup()
@@ -1130,7 +1128,7 @@ func lexKeywordOrIdentifier(l *Lexer) stateFn {
 Loop:
 	for {
 		switch r := l.next(); {
-		case l.isNameContinue(r) || r == ':':
+		case isNameContinue(r) || r == ':':
 			// absorb.
 		default:
 			l.backup()
@@ -1216,12 +1214,12 @@ func isAlpha(r rune) bool {
 	return r == '_' || ('a' <= r && r <= 'z') || ('A' <= r && r <= 'Z')
 }
 
-func (l *Lexer) isNameStart(r rune) bool {
-	return isAlpha(r) || (l.unquotedUTF8Names && r >= utf8.RuneSelf && unicode.IsLetter(r))
+func isNameStart(r rune) bool {
+	return isAlpha(r) || (r >= utf8.RuneSelf && unicode.IsLetter(r))
 }
 
-func (l *Lexer) isNameContinue(r rune) bool {
-	return l.isNameStart(r) || isDigit(r) || (l.unquotedUTF8Names && r == '.')
+func isNameContinue(r rune) bool {
+	return isNameStart(r) || isDigit(r) || r == '.'
 }
 
 // lexDurationExpr scans arithmetic expressions within brackets for duration expressions.

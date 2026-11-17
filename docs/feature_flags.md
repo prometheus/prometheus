@@ -53,24 +53,6 @@ The Prometheus server exposes two counters for observability: `prometheus_engine
 When disabled in either the engine or the query, per-step statistics are not
 computed at all.
 
-## Unquoted UTF-8 names in PromQL
-
-`--enable-feature=promql-unquoted-utf8-names`
-
-Allows Unicode letters and dots after the first character in unquoted metric and
-label names. For example:
-
-```promql
-http.server.request.duration{service.name="api"}
-温度{場所="東京"}
-sum by (service.name) (rate(http.server.requests[5m]))
-requests_total + on (service.name) group_left (équipe) service_info
-```
-
-See [metric and label names](querying/basics.md#metric-and-label-names) for the
-character rules and compatibility details. This flag is also supported by
-promtool when checking or testing rules and parsing or formatting queries.
-
 ## Experimental PromQL functions
 
 `--enable-feature=promql-experimental-functions`
@@ -168,9 +150,22 @@ Fall back to serving the old (Prometheus 2.x) web UI instead of the new UI. The 
 `--enable-feature=metadata-wal-records`
 
 When enabled, Prometheus (both in server and agent modes) will store metadata in-memory and keep track of
-metadata changes as WAL records on a per-series basis.
+metadata changes as WAL records on a per-series basis. Rule evaluation also appends metric metadata (`type`, `unit`, `help`) configured on recording rules, and automatically deduced recording rule metadata when [`auto-recording-metadata`](#automatic-recording-rule-metadata) is enabled.
 
 This must be used if you would like to send metadata using the new remote write 2.0.
+
+## Automatic recording rule metadata
+
+`--enable-feature=auto-recording-metadata`
+
+When enabled together with [`metadata-wal-records`](#metadata-wal-records) or [`type-and-unit-labels`](#type-and-unit-labels), [recording rule](configuration/recording_rules.md#rule) evaluation automatically deduces per-sample metric metadata (`type`, `unit`, `help`) as designed in the [PROM-103 proposal](https://github.com/prometheus/proposals/pull/103):
+
+* Explicit `help`, `type`, and `unit` fields configured under `metadata:` on the recording rule take precedence when compatible with the evaluated sample encoding (`unknown` is treated as unset, and native histogram samples require `histogram` or `gaugehistogram`, whereas float samples accept any valid metric type including classic `histogram` and `summary`).
+* When the expression is known to preserve the input schema and `__name__` survives PromQL evaluation, compatible preserved `__type__` and `__unit__` labels or standard `_total` (`counter`), `_bucket` (`histogram`), and `_info` (`info`) naming suffixes are used.
+* Schema preservation is inferred conservatively for selectors, sorting, sample-selecting aggregations (`topk`, `bottomk`, `limitk`, `limit_ratio`), scalar comparison filters, set operators, and `label_replace()` or `label_join()` calls that do not write `__name__`, `__type__`, or `__unit__`. Their output-producing input expressions must also preserve the schema: the left side of `and` or `unless`, and both sides of `or`, must qualify. Other expressions use the fallback below even if they retain or recreate a metric name. Configured metadata still takes precedence.
+* Otherwise, native histogram samples use `CounterResetHint` (`gaugehistogram` vs `histogram`), and float samples default to `gauge`.
+
+When disabled, recording rules only emit the static `help`, `type`, and `unit` fields explicitly configured under `metadata:`.
 
 ## Delay compaction start time
 
@@ -261,6 +256,14 @@ These may not work well if the `<range>` is not a multiple of the collection int
 
 * If there are multiple samples being ingested at the same timestamp, only one of the points is kept - the samples are **not** summed together (this is how Prometheus works in general - duplicate timestamp samples are rejected). Any aggregation will have to be done before sending samples to Prometheus.
 
+## Metadata Relabeling
+
+`--enable-feature=metadata-relabeling`
+
+When enabled, Prometheus exposes metric metadata (`type`, `unit`, and `help`) as reserved virtual labels `__type__`, `__unit__`, and `__help__` during `metric_relabel_configs`, as designed in the [PROM-104 proposal](https://github.com/prometheus/proposals/pull/104).
+
+This allows relabeling rules to filter series based on their metadata (for example, dropping untyped metrics) and to set, modify, or clear a metric's type, unit, or help text.
+
 ## Type and Unit Labels
 
 `--enable-feature=type-and-unit-labels`
@@ -269,8 +272,11 @@ When enabled, Prometheus will start injecting additional, reserved `__type__`
 and `__unit__` labels as designed in the [PROM-39 proposal](https://github.com/prometheus/proposals/pull/39).
 
 Those labels are sourced from the metadata structures of the existing scrape and ingestion formats
-like OpenMetrics Text, Prometheus Text, Prometheus Proto, Remote Write 2 and OTLP. All the user provided labels with
-`__type__` and `__unit__` will be overridden.
+like OpenMetrics Text, Prometheus Text, Prometheus Proto, Remote Write 2 and OTLP, as well as configured or deduced (when [`auto-recording-metadata`](#automatic-recording-rule-metadata) is enabled) metadata on recording rules. All the user provided labels with
+`__type__` and `__unit__` will be overridden. Note that when `--enable-feature=metadata-relabeling` is enabled,
+`__type__`, `__unit__`, and `__help__` are available in `metric_relabel_configs`
+for reading and modifying metric metadata regardless of whether `--enable-feature=type-and-unit-labels` is enabled;
+`--enable-feature=type-and-unit-labels` controls whether `__type__` and `__unit__` are kept as series labels in TSDB and PromQL.
 
 PromQL layer will handle those labels the same way `__name__` is handled, e.g. dropped
 on certain operations like `-` or `+` and affected by `promql-delayed-name-removal` feature.
@@ -291,6 +297,7 @@ when wrong types are used on wrong functions, automatic renames, delta types and
 When this feature is enabled and the metadata WAL records exists, in an unlikely situation when type or unit are different across those,
 the Prometheus outputs intends to prefer the `__type__` and `__unit__` labels values. For example on Remote Write 2.0,
 if  the metadata record somehow (e.g. due to bug) says "counter", but `__type__="gauge"` the remote time series will be set to a gauge.
+If either `__type__` or `__unit__` is missing on the series, for example when dropped via relabeling, Remote Write 2.0 falls back to the corresponding value from the metadata record.
 
 ## Use Uncached IO
 
@@ -478,3 +485,12 @@ the feature is disabled or `query_max_duration` is unset.
 
 Clients can detect the feature through [`/api/v1/features`](querying/api.md#features),
 where it is reported as `query_cost` in the `api` category.
+
+## Unquoted UTF-8 name printing
+
+`--enable-feature=promql-unquoted-utf8-names`
+
+Print Unicode letters and dots in metric and label names without quotes where
+allowed by PromQL. By default, the printer quotes names outside the traditional
+ASCII syntax for compatibility with earlier Prometheus 3.x releases. Unquoted
+input is accepted regardless of this flag.

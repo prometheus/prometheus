@@ -131,9 +131,8 @@ func labelNameRequiresQuoting(s string, unquotedUTF8Names bool) bool {
 	if s == "" {
 		return true
 	}
-	l := Lexer{unquotedUTF8Names: true}
 	for i, r := range s {
-		if (i == 0 && !l.isNameStart(r)) || (i > 0 && !l.isNameContinue(r)) {
+		if (i == 0 && !isNameStart(r)) || (i > 0 && !isNameContinue(r)) {
 			return true
 		}
 	}
@@ -426,10 +425,9 @@ func (node *SubqueryExpr) getSubqueryTimeSuffix() string {
 
 func (node *NumberLiteral) String() string {
 	if node.Duration {
-		if node.Val < 0 {
-			return fmt.Sprintf("-%s", model.Duration(-node.Val*1e9).String())
-		}
-		return model.Duration(node.Val * 1e9).String()
+		// Round to whole milliseconds: Val is float64 seconds, so 1.001 is
+		// stored as 1.000999... and truncating would print (1s1ms) as (1s).
+		return (model.Duration(math.Round(node.Val*1000)) * model.Duration(time.Millisecond)).String()
 	}
 	return strconv.FormatFloat(node.Val, 'f', -1, 64)
 }
@@ -472,7 +470,12 @@ func (node *VectorSelector) String() string {
 		}
 	}
 	b := bytes.NewBuffer(make([]byte, 0, 1024))
-	b.WriteString(node.Name)
+	name := node.Name
+	if name != "" && !node.unquotedUTF8Names && !model.LegacyValidation.IsValidMetricName(name) {
+		labelStrings = append(labelStrings, labels.MetricName+"="+strconv.Quote(name))
+		name = ""
+	}
+	b.WriteString(name)
 	if len(labelStrings) != 0 {
 		b.WriteByte('{')
 		sort.Strings(labelStrings)

@@ -16,6 +16,7 @@ package remote
 import (
 	"bytes"
 	"context"
+	"errors"
 	"fmt"
 	"log/slog"
 	"math"
@@ -116,7 +117,7 @@ func TestOTLPWriteHandler(t *testing.T) {
 					Count:           10,
 					Sum:             30.0,
 					Schema:          2,
-					ZeroThreshold:   1e-128,
+					ZeroThreshold:   0,
 					ZeroCount:       2,
 					PositiveSpans:   []histogram.Span{{Offset: 1, Length: 5}},
 					PositiveBuckets: []int64{2, 0, 0, 0, 0},
@@ -681,6 +682,43 @@ func (discardAppender) Commit() error {
 
 func (discardAppender) Rollback() error {
 	return nil
+}
+
+// commitErrorAppendable returns an appender whose Commit always fails.
+type commitErrorAppendable struct {
+	err error
+}
+
+func (a commitErrorAppendable) AppenderV2(context.Context) storage.AppenderV2 {
+	return commitErrorAppender{err: a.err}
+}
+
+type commitErrorAppender struct {
+	discardAppender
+	err error
+}
+
+func (a commitErrorAppender) Commit() error { return a.err }
+
+func TestConsumeMetricsPropagatesCommitError(t *testing.T) {
+	t.Parallel()
+
+	commitErr := errors.New("commit failed")
+	log := slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: slog.LevelWarn}))
+	reg := prometheus.NewRegistry()
+	handler := NewOTLPWriteHandler(log, reg, commitErrorAppendable{err: commitErr}, func() config.Config {
+		return config.Config{OTLPConfig: config.DefaultOTLPConfig}
+	}, OTLPOptions{})
+	ex := handler.(*otlpWriteHandler).defaultConsumer.(*rwExporter)
+
+	request := pmetricotlp.NewExportRequest()
+	m := request.Metrics().ResourceMetrics().AppendEmpty().ScopeMetrics().AppendEmpty().Metrics().AppendEmpty()
+	m.SetName("test_gauge")
+	dp := m.SetEmptyGauge().DataPoints().AppendEmpty()
+	dp.SetTimestamp(pcommon.NewTimestampFromTime(time.Now()))
+	dp.SetIntValue(1)
+
+	require.ErrorIs(t, ex.ConsumeMetrics(t.Context(), request.Metrics()), commitErr)
 }
 
 func BenchmarkOTLP(b *testing.B) {

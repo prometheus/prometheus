@@ -43,10 +43,12 @@ var parserPool = sync.Pool{
 
 // Options holds the configuration for the PromQL parser.
 type Options struct {
+	// EnableUnquotedUTF8Names allows the printer to emit unquoted Unicode letters and dots in names.
+	// Parsing accepts these names regardless of this option.
+	EnableUnquotedUTF8Names bool
+
 	EnableExperimentalFunctions bool
 	EnableBinopFillModifiers    bool
-	// EnableUnquotedUTF8Names allows Unicode letters and non-leading dots in unquoted names.
-	EnableUnquotedUTF8Names bool
 	// Functions is the set of functions the parser accepts, keyed by name.
 	// If nil, the default set in the package-level Functions variable is
 	// used. Otherwise it replaces the default set: to extend the default set,
@@ -205,9 +207,8 @@ func newParser(input string, opts Options) *parser {
 
 	// Clear lexer struct before reusing.
 	p.lex = Lexer{
-		input:             input,
-		state:             lexStatements,
-		unquotedUTF8Names: opts.EnableUnquotedUTF8Names,
+		input: input,
+		state: lexStatements,
 	}
 
 	return p

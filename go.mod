@@ -66,7 +66,7 @@ require (
 	github.com/pb33f/libopenapi-validator v0.16.1
 	github.com/prometheus/alertmanager v0.34.1
 	github.com/prometheus/client_golang v1.25.0
-	github.com/prometheus/client_golang/exp v0.0.0-20261021110645-cc3d26c3366a
+	github.com/prometheus/client_golang/exp v0.0.0-20261028105007-0b2f01f00376
 	github.com/prometheus/client_model v0.6.3
 	github.com/prometheus/common v0.72.1
 	github.com/prometheus/common/assets v0.2.0
@@ -93,7 +93,7 @@ require (
 	go.uber.org/atomic v1.12.0
 	go.uber.org/automaxprocs v1.6.0
 	go.uber.org/goleak v1.3.0
-	go.yaml.in/yaml/v2 v2.4.4
+	go.yaml.in/yaml/v2 v2.4.5
 	go.yaml.in/yaml/v3 v3.0.5
 	golang.org/x/oauth2 v0.37.0
 	golang.org/x/sync v0.24.0

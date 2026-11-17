@@ -249,3 +249,27 @@ load 1s
 # For an instant query (start == end), range() = 0s, offset 0s.
 eval instant at 50s metric1_total offset range()
 	metric1_total{} 50
+
+clear
+
+load 1s
+  duration_metric 0+1x10
+
+# Duration min_of and max_of ignore a single NaN, in either argument position.
+eval instant at 10s count_over_time(duration_metric[min_of((-1)^0.5, 5s)])
+  {} 5
+
+eval instant at 10s count_over_time(duration_metric[min_of(5s, (-1)^0.5)])
+  {} 5
+
+# Two NaNs still produce an invalid duration.
+eval_fail instant at 10s count_over_time(duration_metric[min_of((-1)^0.5, (-1)^0.5)])
+
+eval instant at 10s count_over_time(duration_metric[max_of((-1)^0.5, 5s)])
+  {} 5
+
+eval instant at 10s count_over_time(duration_metric[max_of(5s, (-1)^0.5)])
+  {} 5
+
+# Two NaNs still produce an invalid duration.
+eval_fail instant at 10s count_over_time(duration_metric[max_of((-1)^0.5, (-1)^0.5)])

@@ -1250,6 +1250,8 @@ func BenchmarkCompaction(b *testing.B) {
 	cases := []struct {
 		ranges         [][2]int64
 		compactionType string
+		sampleType     chunkenc.ValueType
+		nSeries        int
 	}{
 		{
 			ranges:         [][2]int64{{0, 100}, {200, 300}, {400, 500}, {600, 700}},
@@ -1284,17 +1286,38 @@ func BenchmarkCompaction(b *testing.B) {
 			ranges:         [][2]int64{{0, 5000}, {3000, 8000}, {6000, 11000}, {9000, 14000}},
 			compactionType: "vertical",
 		},
+		{
+			ranges: [][2]int64{{0, 120}, {60, 180}}, compactionType: "vertical",
+			sampleType: chunkenc.ValHistogram, nSeries: 1000,
+		},
+		{
+			ranges: [][2]int64{{0, 120}, {60, 180}}, compactionType: "vertical",
+			sampleType: chunkenc.ValFloatHistogram, nSeries: 1000,
+		},
 	}
 
-	nSeries := 10000
 	for _, c := range cases {
+		nSeries := c.nSeries
+		if nSeries == 0 {
+			nSeries = 10000
+		}
 		nBlocks := len(c.ranges)
-		b.Run(fmt.Sprintf("type=%s,blocks=%d,series=%d,samplesPerSeriesPerBlock=%d", c.compactionType, nBlocks, nSeries, c.ranges[0][1]-c.ranges[0][0]+1), func(b *testing.B) {
+		name := fmt.Sprintf("type=%s,blocks=%d,series=%d,samplesPerSeriesPerBlock=%d", c.compactionType, nBlocks, nSeries, c.ranges[0][1]-c.ranges[0][0]+1)
+		if c.sampleType != chunkenc.ValNone {
+			name += "/samples=" + c.sampleType.String()
+		}
+		b.Run(name, func(b *testing.B) {
 			dir := b.TempDir()
 			blockDirs := make([]string, 0, len(c.ranges))
 			var blocks []*Block
 			for _, r := range c.ranges {
-				block, err := OpenBlock(nil, createBlock(b, dir, genSeries(nSeries, 10, r[0], r[1])), nil, nil)
+				var series []storage.Series
+				if c.sampleType == chunkenc.ValNone {
+					series = genSeries(nSeries, 10, r[0], r[1])
+				} else {
+					series = genHistogramSeries(nSeries, 10, r[0], r[1], 1, c.sampleType == chunkenc.ValFloatHistogram)
+				}
+				block, err := OpenBlock(nil, createBlock(b, dir, series), nil, nil)
 				require.NoError(b, err)
 				blocks = append(blocks, block)
 				defer func() {

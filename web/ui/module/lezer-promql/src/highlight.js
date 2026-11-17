@@ -26,7 +26,7 @@ export const promQLHighLight = styleTags({
     'AtModifierPreprocessors By Without Bool On Ignoring GroupLeft GroupRight Offset Smoothed Anchored': tags.modifier,
     'DurationExpr/DurationStep DurationExpr/DurationRange DurationExpr/DurationMinOf DurationExpr/DurationMaxOf OffsetDurationExpr/DurationStep OffsetDurationExpr/DurationRange OffsetDurationExpr/DurationMinOf OffsetDurationExpr/DurationMaxOf': tags.function(tags.variableName),
     'And Unless Or': tags.logicOperator,
-    'Sub Add Mul Mod Div Atan2 Eql Neq Lte Lss Gte Gtr EqlRegex EqlSingle NeqRegex Pow At': tags.operator,
+    'Sub Add Mul Mod Div Atan2 BitAnd BitOr BitXor Eql Neq Lte Lss Gte Gtr EqlRegex EqlSingle NeqRegex Pow At': tags.operator,
     UnaryOp: tags.arithmeticOperator,
     '( )': tags.paren,
     '[ ]': tags.squareBracket,

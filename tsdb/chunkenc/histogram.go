@@ -117,6 +117,9 @@ func (c *HistogramChunk) Appender() (Appender, error) {
 		return nil, err
 	}
 
+	// Recover the writable bits after loading a serialized chunk.
+	c.b.count = it.br.valid
+
 	a := &HistogramAppender{
 		b: &c.b,
 

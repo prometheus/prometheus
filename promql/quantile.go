@@ -755,5 +755,12 @@ func quantile(q float64, values vectorByValueHeap) float64 {
 	if weight == 0 {
 		return values[int(lowerIndex)].F
 	}
-	return values[int(lowerIndex)].F*(1-weight) + values[int(upperIndex)].F*weight
+	lower := values[int(lowerIndex)].F
+	upper := values[int(upperIndex)].F
+	// Identical samples do not need interpolation; returning one avoids rounding error and underflow.
+	// Comparing bits distinguishes negative zero from positive zero.
+	if lower == upper && math.Float64bits(lower) == math.Float64bits(upper) {
+		return lower
+	}
+	return lower*(1-weight) + upper*weight
 }
