@@ -1302,20 +1302,22 @@ func TestAlertingRuleStripsMetadataLabels(t *testing.T) {
 		false,
 		promslog.NewNopLogger(),
 	)
+	var notified []*Alert
 	g := NewGroup(GroupOptions{
 		Name:          "default",
 		Interval:      time.Minute,
 		Rules:         []Rule{restoredRule},
 		ShouldRestore: true,
 		Opts: &ManagerOptions{
-			Context:         t.Context(),
-			Queryable:       st,
-			QueryFunc:       EngineQueryFunc(ng, st),
-			AppendableV2:    st,
-			NotifyFunc:      func(context.Context, string, ...*Alert) {},
-			OutageTolerance: time.Hour,
-			ForGracePeriod:  30 * time.Second,
-			Logger:          promslog.NewNopLogger(),
+			Context:                 t.Context(),
+			Queryable:               st,
+			QueryFunc:               EngineQueryFunc(ng, st),
+			AppendableV2:            st,
+			NotifyFunc:              func(_ context.Context, _ string, alerts ...*Alert) { notified = append(notified, alerts...) },
+			OutageTolerance:         time.Hour,
+			ForGracePeriod:          30 * time.Second,
+			Logger:                  promslog.NewNopLogger(),
+			EnableTypeAndUnitLabels: true,
 		},
 	})
 	g.Eval(t.Context(), evalTime)
@@ -1326,6 +1328,48 @@ func TestAlertingRuleStripsMetadataLabels(t *testing.T) {
 	restoredActive := restoredRule.ActiveAlerts()
 	require.Len(t, restoredActive, 1)
 	require.Equal(t, evalTime.Add(-3*time.Minute-30*time.Second), restoredActive[0].ActiveAt)
+
+	// Evaluate past the hold duration so Group.Eval fires NotifyFunc and persists ALERTS.
+	fireTime := evalTime.Add(2 * time.Minute)
+	app = st.AppenderV2(t.Context())
+	_, err = app.Append(
+		0,
+		labels.FromStrings(
+			model.MetricNameLabel, "http_errors_total",
+			model.MetricTypeLabel, string(model.MetricTypeCounter),
+			model.MetricUnitLabel, "errors",
+			"job", "api",
+		),
+		0,
+		timestamp.FromTime(fireTime),
+		42,
+		nil,
+		nil,
+		storage.AOptions{},
+	)
+	require.NoError(t, err)
+	require.NoError(t, app.Commit())
+
+	g.Eval(t.Context(), fireTime)
+	require.NoError(t, restoredRule.LastError())
+	require.Len(t, notified, 1)
+	require.Equal(t, StateFiring, notified[0].State)
+	testutil.RequireEqual(t, labels.FromStrings(labels.AlertName, "HighErrors", "job", "api", "severity", "page"), notified[0].Labels)
+
+	q, err := st.Querier(timestamp.FromTime(fireTime), timestamp.FromTime(fireTime))
+	require.NoError(t, err)
+	ss := q.Select(t.Context(), false, nil, labels.MustNewMatcher(labels.MatchEqual, model.MetricNameLabel, alertMetricName))
+	require.True(t, ss.Next())
+	testutil.RequireEqual(t, labels.FromStrings(
+		model.MetricNameLabel, alertMetricName,
+		labels.AlertName, "HighErrors",
+		alertStateLabel, "firing",
+		"job", "api",
+		"severity", "page",
+	), ss.At().Labels())
+	require.False(t, ss.Next())
+	require.NoError(t, ss.Err())
+	require.NoError(t, q.Close())
 
 	t.Run("restore_colliding_for_state_series", func(t *testing.T) {
 		type storedForState struct {
