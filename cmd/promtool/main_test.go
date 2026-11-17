@@ -415,40 +415,121 @@ func TestAuthorizationConfig(t *testing.T) {
 }
 
 func TestCheckMetricsExtended(t *testing.T) {
-	if runtime.GOOS == "windows" {
-		t.Skip("Skipping on windows")
-	}
 	t.Parallel()
 
-	f, err := os.Open("testdata/metrics-test.prom")
-	require.NoError(t, err)
-	defer f.Close()
+	tests := []struct {
+		name      string
+		skipOnWin bool
+		input     func(t *testing.T) io.Reader
+		wantTotal int
+		wantStats []metricStat
+	}{
+		{
+			name:      "file_testdata",
+			skipOnWin: true,
+			input: func(t *testing.T) io.Reader {
+				f, err := os.Open("testdata/metrics-test.prom")
+				require.NoError(t, err)
+				t.Cleanup(func() { f.Close() })
+				return f
+			},
+			wantTotal: 27,
+			wantStats: []metricStat{
+				{
+					name:        "prometheus_tsdb_compaction_chunk_size_bytes",
+					cardinality: 15,
+					percentage:  float64(15) / float64(27),
+				},
+				{
+					name:        "go_gc_duration_seconds",
+					cardinality: 7,
+					percentage:  float64(7) / float64(27),
+				},
+				{
+					name:        "net_conntrack_dialer_conn_attempted_total",
+					cardinality: 4,
+					percentage:  float64(4) / float64(27),
+				},
+				{
+					name:        "go_info",
+					cardinality: 1,
+					percentage:  float64(1) / float64(27),
+				},
+			},
+		},
+		{
+			name: "heterogeneous_histograms_and_summaries",
+			input: func(t *testing.T) io.Reader {
+				const input = `# HELP http_request_duration_seconds Histogram of latencies.
+# TYPE http_request_duration_seconds histogram
+http_request_duration_seconds_bucket{handler="/api/v1",le="0.1"} 10
+http_request_duration_seconds_bucket{handler="/api/v1",le="+Inf"} 10
+http_request_duration_seconds_sum{handler="/api/v1"} 0.5
+http_request_duration_seconds_count{handler="/api/v1"} 10
+http_request_duration_seconds_bucket{handler="/api/v2",le="0.05"} 5
+http_request_duration_seconds_bucket{handler="/api/v2",le="0.1"} 8
+http_request_duration_seconds_bucket{handler="/api/v2",le="0.25"} 10
+http_request_duration_seconds_bucket{handler="/api/v2",le="0.5"} 12
+http_request_duration_seconds_bucket{handler="/api/v2",le="+Inf"} 12
+http_request_duration_seconds_sum{handler="/api/v2"} 1.2
+http_request_duration_seconds_count{handler="/api/v2"} 12
+# HELP rpc_duration_seconds Summary of latencies.
+# TYPE rpc_duration_seconds summary
+rpc_duration_seconds{service="auth",quantile="0.99"} 0.05
+rpc_duration_seconds_sum{service="auth"} 10
+rpc_duration_seconds_count{service="auth"} 100
+rpc_duration_seconds{service="data",quantile="0.5"} 0.01
+rpc_duration_seconds{service="data",quantile="0.9"} 0.02
+rpc_duration_seconds{service="data",quantile="0.99"} 0.03
+rpc_duration_seconds_sum{service="data"} 50
+rpc_duration_seconds_count{service="data"} 500
+`
+				return strings.NewReader(input)
+			},
+			wantTotal: 19,
+			wantStats: []metricStat{
+				{
+					name:        "http_request_duration_seconds",
+					cardinality: 11,
+					percentage:  float64(11) / float64(19),
+				},
+				{
+					name:        "rpc_duration_seconds",
+					cardinality: 8,
+					percentage:  float64(8) / float64(19),
+				},
+			},
+		},
+		{
+			name: "empty_or_zero_metrics",
+			input: func(t *testing.T) io.Reader {
+				const input = `# HELP empty_histogram Histogram without series.
+# TYPE empty_histogram histogram
+`
+				return strings.NewReader(input)
+			},
+			wantTotal: 0,
+			wantStats: []metricStat{
+				{
+					name:        "empty_histogram",
+					cardinality: 0,
+					percentage:  0,
+				},
+			},
+		},
+	}
 
-	stats, total, err := checkMetricsExtended(f)
-	require.NoError(t, err)
-	require.Equal(t, 27, total)
-	require.Equal(t, []metricStat{
-		{
-			name:        "prometheus_tsdb_compaction_chunk_size_bytes",
-			cardinality: 15,
-			percentage:  float64(15) / float64(27),
-		},
-		{
-			name:        "go_gc_duration_seconds",
-			cardinality: 7,
-			percentage:  float64(7) / float64(27),
-		},
-		{
-			name:        "net_conntrack_dialer_conn_attempted_total",
-			cardinality: 4,
-			percentage:  float64(4) / float64(27),
-		},
-		{
-			name:        "go_info",
-			cardinality: 1,
-			percentage:  float64(1) / float64(27),
-		},
-	}, stats)
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if tt.skipOnWin && runtime.GOOS == "windows" {
+				t.Skip("Skipping on windows")
+			}
+			stats, total, err := checkMetricsExtended(tt.input(t))
+			require.NoError(t, err)
+			require.Equal(t, tt.wantTotal, total)
+			require.Equal(t, tt.wantStats, stats)
+		})
+	}
 }
 
 func TestCheckMetricsLintOptions(t *testing.T) {
