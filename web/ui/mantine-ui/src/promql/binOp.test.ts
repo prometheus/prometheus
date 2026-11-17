@@ -89,7 +89,7 @@ const testCases: TestCase[] = [
     rhs: testMetricB,
     result: {
       groups: {
-        [fnv1a(["a", "x", "same"])]: {
+        [fnv1a(["label1", "a", "label2", "x", "same", "same"])]: {
           groupLabels: { label1: "a", label2: "x", same: "same" },
           lhs: [
             {
@@ -126,7 +126,7 @@ const testCases: TestCase[] = [
           ],
           error: null,
         },
-        [fnv1a(["a", "y", "same"])]: {
+        [fnv1a(["label1", "a", "label2", "y", "same", "same"])]: {
           groupLabels: { label1: "a", label2: "y", same: "same" },
           lhs: [
             {
@@ -163,7 +163,7 @@ const testCases: TestCase[] = [
           ],
           error: null,
         },
-        [fnv1a(["b", "x", "same"])]: {
+        [fnv1a(["label1", "b", "label2", "x", "same", "same"])]: {
           groupLabels: { label1: "b", label2: "x", same: "same" },
           lhs: [
             {
@@ -200,7 +200,7 @@ const testCases: TestCase[] = [
           ],
           error: null,
         },
-        [fnv1a(["b", "y", "same"])]: {
+        [fnv1a(["label1", "b", "label2", "y", "same", "same"])]: {
           groupLabels: { label1: "b", label2: "y", same: "same" },
           lhs: [
             {
@@ -423,7 +423,7 @@ const testCases: TestCase[] = [
     rhs: testMetricB,
     result: {
       groups: {
-        [fnv1a(["a", "x"])]: {
+        [fnv1a(["label1", "a", "label2", "x"])]: {
           groupLabels: { label1: "a", label2: "x" },
           lhs: [
             {
@@ -460,7 +460,7 @@ const testCases: TestCase[] = [
           ],
           error: null,
         },
-        [fnv1a(["a", "y"])]: {
+        [fnv1a(["label1", "a", "label2", "y"])]: {
           groupLabels: { label1: "a", label2: "y" },
           lhs: [
             {
@@ -497,7 +497,7 @@ const testCases: TestCase[] = [
           ],
           error: null,
         },
-        [fnv1a(["b", "x"])]: {
+        [fnv1a(["label1", "b", "label2", "x"])]: {
           groupLabels: { label1: "b", label2: "x" },
           lhs: [
             {
@@ -534,7 +534,7 @@ const testCases: TestCase[] = [
           ],
           error: null,
         },
-        [fnv1a(["b", "y"])]: {
+        [fnv1a(["label1", "b", "label2", "y"])]: {
           groupLabels: { label1: "b", label2: "y" },
           lhs: [
             {
@@ -576,6 +576,47 @@ const testCases: TestCase[] = [
     },
   },
   {
+    // metric_a - metric_b
+    desc: "one-to-one matching on all labels with the same label value under different label names (no match)",
+    op: binaryOperatorType.sub,
+    matching: {
+      card: vectorMatchCardinality.oneToOne,
+      on: false,
+      include: [],
+      labels: [],
+      fillValues: { lhs: null, rhs: null },
+    },
+    lhs: [{ metric: { __name__: "metric_a", label1: "x" }, value: [0, "1"] }],
+    rhs: [{ metric: { __name__: "metric_b", label2: "x" }, value: [0, "10"] }],
+    result: {
+      groups: {
+        [fnv1a(["label1", "x"])]: {
+          groupLabels: { label1: "x" },
+          lhs: [
+            { metric: { __name__: "metric_a", label1: "x" }, value: [0, "1"] },
+          ],
+          lhsCount: 1,
+          rhs: [],
+          rhsCount: 0,
+          result: [],
+          error: null,
+        },
+        [fnv1a(["label2", "x"])]: {
+          groupLabels: { label2: "x" },
+          lhs: [],
+          lhsCount: 0,
+          rhs: [
+            { metric: { __name__: "metric_b", label2: "x" }, value: [0, "10"] },
+          ],
+          rhsCount: 1,
+          result: [],
+          error: null,
+        },
+      },
+      numGroups: 2,
+    },
+  },
+  {
     // metric_b - metric_c
     desc: "many-to-one matching with no matching labels specified (empty output)",
     op: binaryOperatorType.sub,
@@ -590,7 +631,7 @@ const testCases: TestCase[] = [
     rhs: testMetricC,
     result: {
       groups: {
-        [fnv1a(["a", "x", "same"])]: {
+        [fnv1a(["label1", "a", "label2", "x", "same", "same"])]: {
           groupLabels: { label1: "a", label2: "x", same: "same" },
           lhs: [
             {
@@ -609,7 +650,7 @@ const testCases: TestCase[] = [
           result: [],
           error: null,
         },
-        [fnv1a(["a", "y", "same"])]: {
+        [fnv1a(["label1", "a", "label2", "y", "same", "same"])]: {
           groupLabels: { label1: "a", label2: "y", same: "same" },
           lhs: [
             {
@@ -628,7 +669,7 @@ const testCases: TestCase[] = [
           result: [],
           error: null,
         },
-        [fnv1a(["b", "x", "same"])]: {
+        [fnv1a(["label1", "b", "label2", "x", "same", "same"])]: {
           groupLabels: { label1: "b", label2: "x", same: "same" },
           lhs: [
             {
@@ -647,7 +688,7 @@ const testCases: TestCase[] = [
           result: [],
           error: null,
         },
-        [fnv1a(["b", "y", "same"])]: {
+        [fnv1a(["label1", "b", "label2", "y", "same", "same"])]: {
           groupLabels: { label1: "b", label2: "y", same: "same" },
           lhs: [
             {
@@ -666,7 +707,7 @@ const testCases: TestCase[] = [
           result: [],
           error: null,
         },
-        [fnv1a(["a"])]: {
+        [fnv1a(["label1", "a"])]: {
           groupLabels: { label1: "a" },
           lhs: [],
           lhsCount: 0,
@@ -680,7 +721,7 @@ const testCases: TestCase[] = [
           result: [],
           error: null,
         },
-        [fnv1a(["b"])]: {
+        [fnv1a(["label1", "b"])]: {
           groupLabels: { label1: "b" },
           lhs: [],
           lhsCount: 0,
@@ -1240,7 +1281,7 @@ const testCases: TestCase[] = [
     rhs: testMetricB,
     result: {
       groups: {
-        [fnv1a(["a", "x", "same"])]: {
+        [fnv1a(["label1", "a", "label2", "x", "same", "same"])]: {
           groupLabels: { label1: "a", label2: "x", same: "same" },
           lhs: [
             {
@@ -1282,7 +1323,7 @@ const testCases: TestCase[] = [
           ],
           error: null,
         },
-        [fnv1a(["a", "y", "same"])]: {
+        [fnv1a(["label1", "a", "label2", "y", "same", "same"])]: {
           groupLabels: { label1: "a", label2: "y", same: "same" },
           lhs: [
             {
@@ -1324,7 +1365,7 @@ const testCases: TestCase[] = [
           ],
           error: null,
         },
-        [fnv1a(["b", "x", "same"])]: {
+        [fnv1a(["label1", "b", "label2", "x", "same", "same"])]: {
           groupLabels: { label1: "b", label2: "x", same: "same" },
           lhs: [
             {
@@ -1366,7 +1407,7 @@ const testCases: TestCase[] = [
           ],
           error: null,
         },
-        [fnv1a(["b", "y", "same"])]: {
+        [fnv1a(["label1", "b", "label2", "y", "same", "same"])]: {
           groupLabels: { label1: "b", label2: "y", same: "same" },
           lhs: [
             {
@@ -1427,7 +1468,7 @@ const testCases: TestCase[] = [
     rhs: testMetricB,
     result: {
       groups: {
-        [fnv1a(["a", "x", "same"])]: {
+        [fnv1a(["label1", "a", "label2", "x", "same", "same"])]: {
           groupLabels: { label1: "a", label2: "x", same: "same" },
           lhs: [
             {
@@ -1469,7 +1510,7 @@ const testCases: TestCase[] = [
           ],
           error: null,
         },
-        [fnv1a(["a", "y", "same"])]: {
+        [fnv1a(["label1", "a", "label2", "y", "same", "same"])]: {
           groupLabels: { label1: "a", label2: "y", same: "same" },
           lhs: [
             {
@@ -1511,7 +1552,7 @@ const testCases: TestCase[] = [
           ],
           error: null,
         },
-        [fnv1a(["b", "x", "same"])]: {
+        [fnv1a(["label1", "b", "label2", "x", "same", "same"])]: {
           groupLabels: { label1: "b", label2: "x", same: "same" },
           lhs: [
             {
@@ -1553,7 +1594,7 @@ const testCases: TestCase[] = [
           ],
           error: null,
         },
-        [fnv1a(["b", "y", "same"])]: {
+        [fnv1a(["label1", "b", "label2", "y", "same", "same"])]: {
           groupLabels: { label1: "b", label2: "y", same: "same" },
           lhs: [
             {
@@ -1615,7 +1656,7 @@ const testCases: TestCase[] = [
     rhs: testMetricB,
     result: {
       groups: {
-        [fnv1a(["a", "x", "same"])]: {
+        [fnv1a(["label1", "a", "label2", "x", "same", "same"])]: {
           groupLabels: { label1: "a", label2: "x", same: "same" },
           lhs: [
             {
@@ -1652,7 +1693,7 @@ const testCases: TestCase[] = [
           ],
           error: null,
         },
-        [fnv1a(["a", "y", "same"])]: {
+        [fnv1a(["label1", "a", "label2", "y", "same", "same"])]: {
           groupLabels: { label1: "a", label2: "y", same: "same" },
           lhs: [
             {
@@ -1689,7 +1730,7 @@ const testCases: TestCase[] = [
           ],
           error: null,
         },
-        [fnv1a(["b", "x", "same"])]: {
+        [fnv1a(["label1", "b", "label2", "x", "same", "same"])]: {
           groupLabels: { label1: "b", label2: "x", same: "same" },
           lhs: [
             {
@@ -1726,7 +1767,7 @@ const testCases: TestCase[] = [
           ],
           error: null,
         },
-        [fnv1a(["b", "y", "same"])]: {
+        [fnv1a(["label1", "b", "label2", "y", "same", "same"])]: {
           groupLabels: { label1: "b", label2: "y", same: "same" },
           lhs: [
             {
@@ -1783,7 +1824,7 @@ const testCases: TestCase[] = [
     rhs: testMetricB,
     result: {
       groups: {
-        [fnv1a(["a", "x", "same"])]: {
+        [fnv1a(["label1", "a", "label2", "x", "same", "same"])]: {
           groupLabels: { label1: "a", label2: "x", same: "same" },
           lhs: [
             {
@@ -1820,7 +1861,7 @@ const testCases: TestCase[] = [
           ],
           error: null,
         },
-        [fnv1a(["a", "y", "same"])]: {
+        [fnv1a(["label1", "a", "label2", "y", "same", "same"])]: {
           groupLabels: { label1: "a", label2: "y", same: "same" },
           lhs: [
             {
@@ -1857,7 +1898,7 @@ const testCases: TestCase[] = [
           ],
           error: null,
         },
-        [fnv1a(["b", "x", "same"])]: {
+        [fnv1a(["label1", "b", "label2", "x", "same", "same"])]: {
           groupLabels: { label1: "b", label2: "x", same: "same" },
           lhs: [
             {
@@ -1894,7 +1935,7 @@ const testCases: TestCase[] = [
           ],
           error: null,
         },
-        [fnv1a(["b", "y", "same"])]: {
+        [fnv1a(["label1", "b", "label2", "y", "same", "same"])]: {
           groupLabels: { label1: "b", label2: "y", same: "same" },
           lhs: [
             {
@@ -1951,7 +1992,7 @@ const testCases: TestCase[] = [
     limits: { maxGroups: 2 },
     result: {
       groups: {
-        [fnv1a(["a", "x", "same"])]: {
+        [fnv1a(["label1", "a", "label2", "x", "same", "same"])]: {
           groupLabels: { label1: "a", label2: "x", same: "same" },
           lhs: [
             {
@@ -1988,7 +2029,7 @@ const testCases: TestCase[] = [
           ],
           error: null,
         },
-        [fnv1a(["a", "y", "same"])]: {
+        [fnv1a(["label1", "a", "label2", "y", "same", "same"])]: {
           groupLabels: { label1: "a", label2: "y", same: "same" },
           lhs: [
             {
@@ -2180,7 +2221,7 @@ const testCases: TestCase[] = [
     rhs: testMetricB,
     result: {
       groups: {
-        [fnv1a(["a", "x", "same"])]: {
+        [fnv1a(["label1", "a", "label2", "x", "same", "same"])]: {
           groupLabels: { label1: "a", label2: "x", same: "same" },
           lhs: [
             {
@@ -2217,7 +2258,7 @@ const testCases: TestCase[] = [
           ],
           error: null,
         },
-        [fnv1a(["a", "y", "same"])]: {
+        [fnv1a(["label1", "a", "label2", "y", "same", "same"])]: {
           groupLabels: { label1: "a", label2: "y", same: "same" },
           lhs: [
             {
@@ -2254,7 +2295,7 @@ const testCases: TestCase[] = [
           ],
           error: null,
         },
-        [fnv1a(["b", "x", "same"])]: {
+        [fnv1a(["label1", "b", "label2", "x", "same", "same"])]: {
           groupLabels: { label1: "b", label2: "x", same: "same" },
           lhs: [
             {
@@ -2291,7 +2332,7 @@ const testCases: TestCase[] = [
           ],
           error: null,
         },
-        [fnv1a(["b", "y", "same"])]: {
+        [fnv1a(["label1", "b", "label2", "y", "same", "same"])]: {
           groupLabels: { label1: "b", label2: "y", same: "same" },
           lhs: [
             {
@@ -2347,7 +2388,7 @@ const testCases: TestCase[] = [
     rhs: testMetricB.slice(1, 4),
     result: {
       groups: {
-        [fnv1a(["a", "x", "same"])]: {
+        [fnv1a(["label1", "a", "label2", "x", "same", "same"])]: {
           groupLabels: { label1: "a", label2: "x", same: "same" },
           lhs: [
             {
@@ -2384,7 +2425,7 @@ const testCases: TestCase[] = [
           ],
           error: null,
         },
-        [fnv1a(["a", "y", "same"])]: {
+        [fnv1a(["label1", "a", "label2", "y", "same", "same"])]: {
           groupLabels: { label1: "a", label2: "y", same: "same" },
           lhs: [
             {
@@ -2421,7 +2462,7 @@ const testCases: TestCase[] = [
           ],
           error: null,
         },
-        [fnv1a(["b", "x", "same"])]: {
+        [fnv1a(["label1", "b", "label2", "x", "same", "same"])]: {
           groupLabels: { label1: "b", label2: "x", same: "same" },
           lhs: [
             {
@@ -2458,7 +2499,7 @@ const testCases: TestCase[] = [
           ],
           error: null,
         },
-        [fnv1a(["b", "y", "same"])]: {
+        [fnv1a(["label1", "b", "label2", "y", "same", "same"])]: {
           groupLabels: { label1: "b", label2: "y", same: "same" },
           lhs: [
             {
@@ -2611,7 +2652,7 @@ const testCases: TestCase[] = [
     rhs: testMetricB,
     result: {
       groups: {
-        [fnv1a(["a", "x", "same"])]: {
+        [fnv1a(["label1", "a", "label2", "x", "same", "same"])]: {
           groupLabels: { label1: "a", label2: "x", same: "same" },
           lhs: [
             {
@@ -2653,7 +2694,7 @@ const testCases: TestCase[] = [
           ],
           error: null,
         },
-        [fnv1a(["a", "y", "same"])]: {
+        [fnv1a(["label1", "a", "label2", "y", "same", "same"])]: {
           groupLabels: { label1: "a", label2: "y", same: "same" },
           lhs: [
             {
@@ -2695,7 +2736,7 @@ const testCases: TestCase[] = [
           ],
           error: null,
         },
-        [fnv1a(["b", "x", "same"])]: {
+        [fnv1a(["label1", "b", "label2", "x", "same", "same"])]: {
           groupLabels: { label1: "b", label2: "x", same: "same" },
           lhs: [
             {
@@ -2737,7 +2778,7 @@ const testCases: TestCase[] = [
           ],
           error: null,
         },
-        [fnv1a(["b", "y", "same"])]: {
+        [fnv1a(["label1", "b", "label2", "y", "same", "same"])]: {
           groupLabels: { label1: "b", label2: "y", same: "same" },
           lhs: [
             {
@@ -3159,7 +3200,7 @@ const testCases: TestCase[] = [
     rhs: testMetricB.slice(1, 4),
     result: {
       groups: {
-        [fnv1a(["a", "x", "same"])]: {
+        [fnv1a(["label1", "a", "label2", "x", "same", "same"])]: {
           groupLabels: {
             label1: "a",
             label2: "x",
@@ -3195,7 +3236,7 @@ const testCases: TestCase[] = [
           ],
           error: null,
         },
-        [fnv1a(["a", "y", "same"])]: {
+        [fnv1a(["label1", "a", "label2", "y", "same", "same"])]: {
           groupLabels: {
             label1: "a",
             label2: "y",
@@ -3241,7 +3282,7 @@ const testCases: TestCase[] = [
           ],
           error: null,
         },
-        [fnv1a(["b", "x", "same"])]: {
+        [fnv1a(["label1", "b", "label2", "x", "same", "same"])]: {
           groupLabels: {
             label1: "b",
             label2: "x",
@@ -3287,7 +3328,7 @@ const testCases: TestCase[] = [
           ],
           error: null,
         },
-        [fnv1a(["b", "y", "same"])]: {
+        [fnv1a(["label1", "b", "label2", "y", "same", "same"])]: {
           groupLabels: {
             label1: "b",
             label2: "y",
