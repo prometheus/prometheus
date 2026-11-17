@@ -894,9 +894,16 @@ func (t *QueueManager) omitHelpForSend(ref chunks.HeadSeriesRef, sm cachedMetada
 	return sm.meta.Value().Help == ""
 }
 
-// checkOmitHelpBeforeModeUnlock determines omitHelp while holding t.seriesMtx before unlocking
-// for stateless mode validation, avoiding a second lock acquisition in steady state.
-func (t *QueueManager) checkOmitHelpBeforeModeUnlock(ref chunks.HeadSeriesRef, sm cachedMetadata, now time.Time) (omitHelp, markHelp bool) {
+// checkOmitHelpBeforeModeUnlock checks Help omission while holding t.seriesMtx
+// before unlocking for stateless mode validation, avoiding a second lock
+// acquisition in steady state.
+//
+// When recheckHelp is false, omitHelp is final, and in WriteModeNone this
+// already marks Help as sent via omitHelpForSend. When recheckHelp is true,
+// Help may be due in stateless mode, so if mode validation passes the caller
+// must reacquire t.seriesMtx and call omitHelpForSend to compute omitHelp and
+// mark Help as sent.
+func (t *QueueManager) checkOmitHelpBeforeModeUnlock(ref chunks.HeadSeriesRef, sm cachedMetadata, now time.Time) (omitHelp, recheckHelp bool) {
 	if t.mode == remoteapi.WriteModeNone {
 		return t.omitHelpForSend(ref, sm, now), false
 	}
@@ -952,12 +959,12 @@ outer:
 				continue
 			}
 		}
-		omitHelp, markHelp := t.checkOmitHelpBeforeModeUnlock(s.Ref, sm, currentTime)
+		omitHelp, recheckHelp := t.checkOmitHelpBeforeModeUnlock(s.Ref, sm, currentTime)
 		t.seriesMtx.Unlock()
 		if t.mode != remoteapi.WriteModeNone && t.shouldDropFloatSampleForMode(s.Ref, s.ST, value.IsStaleNaN(s.V), lbls, sm.meta) {
 			continue
 		}
-		if markHelp {
+		if recheckHelp {
 			t.seriesMtx.Lock()
 			omitHelp = t.omitHelpForSend(s.Ref, t.seriesMetadata[s.Ref], currentTime)
 			t.seriesMtx.Unlock()
@@ -1331,12 +1338,12 @@ outer:
 			}
 			continue
 		}
-		omitHelp, markHelp := t.checkOmitHelpBeforeModeUnlock(h.Ref, sm, currentTime)
+		omitHelp, recheckHelp := t.checkOmitHelpBeforeModeUnlock(h.Ref, sm, currentTime)
 		t.seriesMtx.Unlock()
 		if t.mode != remoteapi.WriteModeNone && t.shouldDropHistogramForMode(h.Ref, h.ST, isStale, lbls, sm.meta) {
 			continue
 		}
-		if markHelp {
+		if recheckHelp {
 			t.seriesMtx.Lock()
 			omitHelp = t.omitHelpForSend(h.Ref, t.seriesMetadata[h.Ref], currentTime)
 			t.seriesMtx.Unlock()
@@ -1437,12 +1444,12 @@ outer:
 			}
 			continue
 		}
-		omitHelp, markHelp := t.checkOmitHelpBeforeModeUnlock(h.Ref, sm, currentTime)
+		omitHelp, recheckHelp := t.checkOmitHelpBeforeModeUnlock(h.Ref, sm, currentTime)
 		t.seriesMtx.Unlock()
 		if t.mode != remoteapi.WriteModeNone && t.shouldDropHistogramForMode(h.Ref, h.ST, isStale, lbls, sm.meta) {
 			continue
 		}
-		if markHelp {
+		if recheckHelp {
 			t.seriesMtx.Lock()
 			omitHelp = t.omitHelpForSend(h.Ref, t.seriesMetadata[h.Ref], currentTime)
 			t.seriesMtx.Unlock()
