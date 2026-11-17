@@ -1085,6 +1085,10 @@ type scrapeCache struct {
 	// checking seriesCur membership stays amortized O(1) instead of O(N).
 	seriesCurSet     map[uint64]struct{}
 	seriesCurIndexed int
+	// Lazily populated only when updateRef changes a non-zero SeriesRef, recording
+	// oldRef -> (newRef, lset) so stale aliases sharing the same label set follow
+	// the rotated reference in forEachStale (cleared in iterDone).
+	movedRefs map[storage.SeriesRef][]staleSeries
 
 	// Per-series post-relabel metadata cache, lazily allocated when metric relabel rules
 	// or metadata relabeling are enabled.
@@ -1224,6 +1228,7 @@ func (c *scrapeCache) iterDone(flushCache bool) {
 	c.extraPrev, c.extraCur = c.extraCur, nil
 	c.seriesCurSet = nil
 	c.seriesCurIndexed = 0
+	c.movedRefs = nil
 
 	c.iter++
 }
@@ -1339,15 +1344,43 @@ func (c *scrapeCache) getDroppedWithMeta(metHash uint64, origMFName unique.Handl
 }
 
 // updateRef points the cache entry at a new storage reference, e.g. because the
-// storage garbage collected the series and had to recreate it. Because seriesPrev
-// and seriesCur store metric hashes into c.series, updating ce.ref in c.series
-// keeps staleness tracking in sync without affecting other entries.
+// storage garbage collected the series and had to recreate it. Updating c.series
+// keeps the current metric hash in sync, and recording the remap in movedRefs
+// lets any other cached metric hash sharing the same label set follow the new
+// reference in forEachStale without affecting unrelated series.
 func (c *scrapeCache) updateRef(metHash uint64, ce *cacheEntry, ref storage.SeriesRef) {
 	if ce.ref == ref {
 		return
 	}
+	if ce.ref != 0 {
+		if c.movedRefs == nil {
+			c.movedRefs = make(map[storage.SeriesRef][]staleSeries)
+		}
+		c.movedRefs[ce.ref] = append(c.movedRefs[ce.ref], staleSeries{ref: ref, lset: ce.lset})
+	}
 	ce.ref = ref
 	c.series[metHash] = *ce
+}
+
+func (c *scrapeCache) remapRef(ref storage.SeriesRef, lset labels.Labels) storage.SeriesRef {
+	for range len(c.movedRefs) {
+		moves, ok := c.movedRefs[ref]
+		if !ok {
+			return ref
+		}
+		var next storage.SeriesRef
+		for i := len(moves) - 1; i >= 0; i-- {
+			if labels.Equal(moves[i].lset, lset) {
+				next = moves[i].ref
+				break
+			}
+		}
+		if next == 0 || next == ref {
+			return ref
+		}
+		ref = next
+	}
+	return ref
 }
 
 func (c *scrapeCache) trackStaleness(metHash uint64) {
@@ -1552,6 +1585,8 @@ func (c *scrapeCache) forEachStale(f func(storage.SeriesRef, labels.Labels) bool
 		return
 	}
 
+	hasMovedRefs := len(c.movedRefs) > 0
+
 	// Another cacheEntry (e.g. from changed label ordering or multiple raw metrics
 	// relabeling to the same series) may still have kept ref alive in seriesCur,
 	// or multiple disappearing entries may share the same ref.
@@ -1569,14 +1604,27 @@ func (c *scrapeCache) forEachStale(f func(storage.SeriesRef, labels.Labels) bool
 		if !ok {
 			return
 		}
+		if hasMovedRefs {
+			ref = c.remapRef(ref, lset)
+		}
 		if len(c.seriesCur) > 0 || len(c.extraCur) > 0 {
 			for _, curH := range c.seriesCur {
-				if ce, ok := c.series[curH]; ok && ce.ref == ref {
-					return
+				if ce, ok := c.series[curH]; ok {
+					curRef := ce.ref
+					if hasMovedRefs {
+						curRef = c.remapRef(curRef, ce.lset)
+					}
+					if curRef == ref {
+						return
+					}
 				}
 			}
 			for _, cur := range c.extraCur {
-				if cur.ref == ref {
+				curRef := cur.ref
+				if hasMovedRefs {
+					curRef = c.remapRef(curRef, cur.lset)
+				}
+				if curRef == ref {
 					return
 				}
 			}
@@ -1594,11 +1642,18 @@ func (c *scrapeCache) forEachStale(f func(storage.SeriesRef, labels.Labels) bool
 	}
 	for _, h := range staleHashes {
 		if ref, lset, ok := c.prevSeries(h); ok {
+			if hasMovedRefs {
+				ref = c.remapRef(ref, lset)
+			}
 			stale = append(stale, staleSeries{ref: ref, lset: lset})
 		}
 	}
 	for _, extra := range c.extraPrev {
-		stale = append(stale, staleSeries{ref: extra.ref, lset: extra.lset})
+		ref := extra.ref
+		if hasMovedRefs {
+			ref = c.remapRef(ref, extra.lset)
+		}
+		stale = append(stale, staleSeries{ref: ref, lset: extra.lset})
 	}
 	if len(stale) == 0 {
 		return
@@ -1645,13 +1700,21 @@ func (c *scrapeCache) forEachStale(f func(storage.SeriesRef, labels.Labels) bool
 
 		for _, curH := range c.seriesCur {
 			if ce, ok := c.series[curH]; ok {
-				if markAlive(ce.ref) {
+				curRef := ce.ref
+				if hasMovedRefs {
+					curRef = c.remapRef(curRef, ce.lset)
+				}
+				if markAlive(curRef) {
 					return
 				}
 			}
 		}
 		for _, cur := range c.extraCur {
-			if markAlive(cur.ref) {
+			curRef := cur.ref
+			if hasMovedRefs {
+				curRef = c.remapRef(curRef, cur.lset)
+			}
+			if markAlive(curRef) {
 				return
 			}
 		}
