@@ -1374,9 +1374,9 @@ func (c *scrapeCache) remapRef(ref storage.SeriesRef, lset labels.Labels) storag
 			return ref
 		}
 		var next storage.SeriesRef
-		for i := len(moves) - 1; i >= 0; i-- {
-			if labels.Equal(moves[i].lset, lset) {
-				next = moves[i].ref
+		for _, m := range slices.Backward(moves) {
+			if labels.Equal(m.lset, lset) {
+				next = m.ref
 				break
 			}
 		}
