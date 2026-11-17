@@ -1151,79 +1151,81 @@ func TestNotify(t *testing.T) {
 }
 
 func TestMetricsUpdate(t *testing.T) {
-	files := []string{"fixtures/rules.yaml", "fixtures/rules2.yaml"}
-	metricNames := []string{
-		"prometheus_rule_evaluations_total",
-		"prometheus_rule_evaluation_failures_total",
-		"prometheus_rule_group_interval_seconds",
-		"prometheus_rule_group_last_duration_seconds",
-		"prometheus_rule_group_last_rule_duration_sum_seconds",
-		"prometheus_rule_group_last_evaluation_timestamp_seconds",
-		"prometheus_rule_group_rules",
-	}
-
-	storage := teststorage.New(t)
-
-	registry := prometheus.NewRegistry()
-	opts := promql.EngineOpts{
-		Logger:     nil,
-		Reg:        nil,
-		MaxSamples: 10,
-		Timeout:    10 * time.Second,
-	}
-	engine := promqltest.NewTestEngineWithOpts(t, opts)
-	ruleManager := NewManager(&ManagerOptions{
-		AppendableV2: storage,
-		Queryable:    storage,
-		QueryFunc:    EngineQueryFunc(engine, storage),
-		Context:      context.Background(),
-		Logger:       promslog.NewNopLogger(),
-		Registerer:   registry,
-	})
-	ruleManager.start()
-	defer ruleManager.Stop()
-
-	countMetrics := func() int {
-		ms, err := registry.Gather()
-		require.NoError(t, err)
-		var metrics int
-		for _, m := range ms {
-			s := m.GetName()
-			if slices.Contains(metricNames, s) {
-				metrics += len(m.Metric)
-			}
+	synctest.Test(t, func(t *testing.T) {
+		files := []string{"fixtures/rules.yaml", "fixtures/rules2.yaml"}
+		metricNames := []string{
+			"prometheus_rule_evaluations_total",
+			"prometheus_rule_evaluation_failures_total",
+			"prometheus_rule_group_interval_seconds",
+			"prometheus_rule_group_last_duration_seconds",
+			"prometheus_rule_group_last_rule_duration_sum_seconds",
+			"prometheus_rule_group_last_evaluation_timestamp_seconds",
+			"prometheus_rule_group_rules",
 		}
-		return metrics
-	}
 
-	cases := []struct {
-		files   []string
-		metrics int
-	}{
-		{
-			files:   files,
-			metrics: 14,
-		},
-		{
-			files:   files[:1],
-			metrics: 7,
-		},
-		{
-			files:   files[:0],
-			metrics: 0,
-		},
-		{
-			files:   files[1:],
-			metrics: 7,
-		},
-	}
+		storage := teststorage.New(t)
 
-	for i, c := range cases {
-		err := ruleManager.Update(time.Second, c.files, labels.EmptyLabels(), "", nil)
-		require.NoError(t, err)
-		time.Sleep(2 * time.Second)
-		require.Equal(t, c.metrics, countMetrics(), "test %d: invalid count of metrics", i)
-	}
+		registry := prometheus.NewRegistry()
+		opts := promql.EngineOpts{
+			Logger:     nil,
+			Reg:        nil,
+			MaxSamples: 10,
+			Timeout:    10 * time.Second,
+		}
+		engine := promqltest.NewTestEngineWithOpts(t, opts)
+		ruleManager := NewManager(&ManagerOptions{
+			AppendableV2: storage,
+			Queryable:    storage,
+			QueryFunc:    EngineQueryFunc(engine, storage),
+			Context:      context.Background(),
+			Logger:       promslog.NewNopLogger(),
+			Registerer:   registry,
+		})
+		ruleManager.start()
+		defer ruleManager.Stop()
+
+		countMetrics := func() int {
+			ms, err := registry.Gather()
+			require.NoError(t, err)
+			var metrics int
+			for _, m := range ms {
+				s := m.GetName()
+				if slices.Contains(metricNames, s) {
+					metrics += len(m.Metric)
+				}
+			}
+			return metrics
+		}
+
+		cases := []struct {
+			files   []string
+			metrics int
+		}{
+			{
+				files:   files,
+				metrics: 14,
+			},
+			{
+				files:   files[:1],
+				metrics: 7,
+			},
+			{
+				files:   files[:0],
+				metrics: 0,
+			},
+			{
+				files:   files[1:],
+				metrics: 7,
+			},
+		}
+
+		for i, c := range cases {
+			err := ruleManager.Update(time.Second, c.files, labels.EmptyLabels(), "", nil)
+			require.NoError(t, err)
+			time.Sleep(2 * time.Second)
+			require.Equal(t, c.metrics, countMetrics(), "test %d: invalid count of metrics", i)
+		}
+	})
 }
 
 func TestGroupStalenessOnRemoval(t *testing.T) {
@@ -1232,77 +1234,79 @@ func TestGroupStalenessOnRemoval(t *testing.T) {
 		t.Skip("skipping test in short mode.")
 	}
 
-	files := []string{"fixtures/rules2.yaml"}
-	sameFiles := []string{"fixtures/rules2_copy.yaml"}
+	synctest.Test(t, func(t *testing.T) {
+		files := []string{"fixtures/rules2.yaml"}
+		sameFiles := []string{"fixtures/rules2_copy.yaml"}
 
-	storage := teststorage.New(t)
+		storage := teststorage.New(t)
 
-	opts := promql.EngineOpts{
-		Logger:     nil,
-		Reg:        nil,
-		MaxSamples: 10,
-		Timeout:    10 * time.Second,
-	}
-	engine := promqltest.NewTestEngineWithOpts(t, opts)
-	ruleManager := NewManager(&ManagerOptions{
-		AppendableV2: storage,
-		Queryable:    storage,
-		QueryFunc:    EngineQueryFunc(engine, storage),
-		Context:      context.Background(),
-		Logger:       promslog.NewNopLogger(),
-	})
-	var stopped bool
-	ruleManager.start()
-	defer func() {
-		if !stopped {
-			ruleManager.Stop()
+		opts := promql.EngineOpts{
+			Logger:     nil,
+			Reg:        nil,
+			MaxSamples: 10,
+			Timeout:    10 * time.Second,
 		}
-	}()
+		engine := promqltest.NewTestEngineWithOpts(t, opts)
+		ruleManager := NewManager(&ManagerOptions{
+			AppendableV2: storage,
+			Queryable:    storage,
+			QueryFunc:    EngineQueryFunc(engine, storage),
+			Context:      context.Background(),
+			Logger:       promslog.NewNopLogger(),
+		})
+		var stopped bool
+		ruleManager.start()
+		defer func() {
+			if !stopped {
+				ruleManager.Stop()
+			}
+		}()
 
-	cases := []struct {
-		files    []string
-		staleNaN int
-	}{
-		{
-			files:    files,
-			staleNaN: 0,
-		},
-		{
-			// When we remove the files, it should produce a staleness marker.
-			files:    files[:0],
-			staleNaN: 1,
-		},
-		{
-			// Rules that produce the same metrics but in a different file
-			// should not produce staleness marker.
-			files:    sameFiles,
-			staleNaN: 0,
-		},
-		{
-			// Staleness marker should be present as we don't have any rules
-			// loaded anymore.
-			files:    files[:0],
-			staleNaN: 1,
-		},
-		{
-			// Add rules back so we have rules loaded when we stop the manager
-			// and check for the absence of staleness markers.
-			files:    sameFiles,
-			staleNaN: 0,
-		},
-	}
+		cases := []struct {
+			files    []string
+			staleNaN int
+		}{
+			{
+				files:    files,
+				staleNaN: 0,
+			},
+			{
+				// When we remove the files, it should produce a staleness marker.
+				files:    files[:0],
+				staleNaN: 1,
+			},
+			{
+				// Rules that produce the same metrics but in a different file
+				// should not produce staleness marker.
+				files:    sameFiles,
+				staleNaN: 0,
+			},
+			{
+				// Staleness marker should be present as we don't have any rules
+				// loaded anymore.
+				files:    files[:0],
+				staleNaN: 1,
+			},
+			{
+				// Add rules back so we have rules loaded when we stop the manager
+				// and check for the absence of staleness markers.
+				files:    sameFiles,
+				staleNaN: 0,
+			},
+		}
 
-	var totalStaleNaN int
-	for i, c := range cases {
-		err := ruleManager.Update(time.Second, c.files, labels.EmptyLabels(), "", nil)
-		require.NoError(t, err)
-		time.Sleep(3 * time.Second)
-		totalStaleNaN += c.staleNaN
-		require.Equal(t, totalStaleNaN, countStaleNaN(t, storage), "test %d/%q: invalid count of staleness markers", i, c.files)
-	}
-	ruleManager.Stop()
-	stopped = true
-	require.Equal(t, totalStaleNaN, countStaleNaN(t, storage), "invalid count of staleness markers after stopping the engine")
+		var totalStaleNaN int
+		for i, c := range cases {
+			err := ruleManager.Update(time.Second, c.files, labels.EmptyLabels(), "", nil)
+			require.NoError(t, err)
+			time.Sleep(3 * time.Second)
+			totalStaleNaN += c.staleNaN
+			require.Equal(t, totalStaleNaN, countStaleNaN(t, storage), "test %d/%q: invalid count of staleness markers", i, c.files)
+		}
+		ruleManager.Stop()
+		stopped = true
+		require.Equal(t, totalStaleNaN, countStaleNaN(t, storage), "invalid count of staleness markers after stopping the engine")
+	})
 }
 
 func TestMetricsStalenessOnManagerShutdown(t *testing.T) {
